@@ -1,0 +1,74 @@
+<html>
+  <head>
+    <title>Elsa-Stack</title>
+  </head>
+
+  <body>
+    <h1>Elsa-Stack</h1>
+
+    <p>Welcome!  This is the homepage for Elsa-Stack.  Elsa-stack is the
+      minimum collection of software necessary to build and run Elsa.
+      Elsa-stack contains the repositories:
+    </p>
+    <ul>
+      <li>smbase</li>
+      <li>ast</li>
+      <li><a href="http://www.cs.berkeley.edu/~smcpeak/elkhound/">Elkhound</a>
+      <li><a href="http://www.cs.berkeley.edu/~smcpeak/elkhound/sources/elsa/">Elsa</a>
+    </ul>
+
+    <p>
+      This repository is what we call a "software stack": it is a collection of
+      repositories that together form one large project of composable parts.  The
+      name is reminiscent of the TCP/IP networking stack, which we think of as being
+      organized this way.
+    </p>
+
+    <p>
+      If you want to use Elsa you should create your own stack that uses the same
+      components that Elsa-stack uses: smbase ast elkhound elsa, plus your
+      own.
+    </p>
+
+    <h2>Author</h2>
+    <p>
+      The author and maintainer of smbase, ast, elkhound, and elsa is Scott
+      McPeak
+<pre>
+  smcpeak cs berkeley edu
+         @  .        .
+</pre>
+
+      Homepage: <a href="http://www.cs.berkeley.edu/~smcpeak/">http://www.cs.berkeley.edu/~smcpeak/</a>.
+    </p>
+
+    <h2>Getting the code</h2>
+    <p>To check out elsa, install Subversion, then type:
+
+      <blockquote>
+        <tt>svn checkout https://svn.cubewano.org/repos/elsa-stack/trunk elsa-stack</tt>
+      </blockquote>
+    </p>
+
+    <p>To install Subversion with SSL enabled from source:
+      <blockquote>
+        <tt>
+          wget http://subversion.tigris.org/tarballs/subversion-1.3.0.tar.gz<br/>
+          tar xzf subversion-1.3.0.tar.gz<br/>
+          cd subversion-1.3.0<br/>
+          ./configure --with-ssl<br/>
+          make all<br/>
+          sudo make install
+        </tt>
+      </blockquote>
+
+    </p>
+
+    <h2>Documentation</h2>
+    <p>
+      See the <tt>README.txt</tt> for how to build.
+      Please see documentation for Elsa in <tt>elsa-stack/elsa/doc/</tt> .
+    </p>
+
+  </body>
+</html>
