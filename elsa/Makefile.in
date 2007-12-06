@@ -13,11 +13,13 @@ all: cc.ast.gen.h tlexer packedword_test ccparse quicktest
 SMBASE   := @SMBASE@
 AST      := @AST@
 ELKHOUND := @ELKHOUND@
+LLVM     := @LLVM@
 
 # stuff inside those other directories
 LIBSMBASE   := $(SMBASE)/libsmbase.a
 LIBAST      := $(AST)/libast.a
 LIBELKHOUND := $(ELKHOUND)/libelkhound.a
+LLVMLDFLAGS := $(shell llvm-config --ldflags --libs core)
 
 # external tools
 PERL := @PERL@
@@ -78,6 +80,9 @@ CC_AST_MODS += bpprint.ast
 # lowering to C
 CC_AST_MODS += cc2c.ast
 
+# lowering to LLVM
+CC_AST_MODS += cc2llvm.ast
+
 
 # optional: GNU language extension
 USE_GNU := @USE_GNU@
@@ -104,7 +109,7 @@ endif
 CXX := @CXX@
 
 # flags for the C++ compiler (and preprocessor)
-CCFLAGS := @CCFLAGS@ -Woverloaded-virtual -I$(SMBASE) -I$(AST) -I$(ELKHOUND)
+CCFLAGS := @CCFLAGS@ -Woverloaded-virtual -I$(SMBASE) -I$(AST) -I$(ELKHOUND) -I$(LLVM)/include
 
 # how to enable coverage
 GCOV_OPTS := -fprofile-arcs -ftest-coverage
@@ -125,6 +130,15 @@ notopt.o: notopt.cc
 	$(CXX) -c -o $@ $< $(CCFLAGS) -O0
 	@$(DEP)   -o $@ $< $(CCFLAGS) -O0 >$*.d
 
+LLVMCCFLAGS = $(shell llvm-config --cxxflags)
+
+main.o: main.cc
+	$(CXX) -c -o $@ $< $(if $(findstring $*,$(GCOV_MODS)),$(GCOV_OPTS) )$(CCFLAGS) $(LLVMCCFLAGS)
+	@$(DEP)   -o $@ $< $(if $(findstring $*,$(GCOV_MODS)),$(GCOV_OPTS) )$(CCFLAGS) $(LLVMCCFLAGS) >$*.d
+
+cc2llvm.o: cc2llvm.cc
+	$(CXX) -c -o $@ $< $(if $(findstring $*,$(GCOV_MODS)),$(GCOV_OPTS) )$(CCFLAGS) $(LLVMCCFLAGS)
+	@$(DEP)   -o $@ $< $(if $(findstring $*,$(GCOV_MODS)),$(GCOV_OPTS) )$(CCFLAGS) $(LLVMCCFLAGS) >$*.d
 
 # ------------------------ tlexer -------------------
 LEXER_OBJS := \
@@ -283,6 +297,7 @@ $(CC_GR_GEN_FILES): $(CC_GR_MODS) cc_tokens.ids $(ELKHOUND)/elkhound
 # that finds serious compilation problems earliest (it's ok to
 # rearrange as different parts of the code are in flux)
 CCPARSE_OBJS := \
+  cc2llvm.o \
   cc2c.o \
   bpprint.o \
   ia64mangle.o \
@@ -327,7 +342,7 @@ CCPARSE_OBJS := \
 # parser binary
 TOCLEAN += ccparse
 ccparse: $(CCPARSE_OBJS) main.o $(libraries)
-	$(CXX) -o $@ $(CCPARSE_OBJS) main.o $(LDFLAGS)
+	$(CXX) -o $@ $(CCPARSE_OBJS) main.o $(LDFLAGS) $(LLVMLDFLAGS)
 
 
 # run the binary; the 'quicktest' file is so we don't run it if

@@ -31,7 +31,13 @@
 #include "xml_type_writer.h" // XmlTypeWriter
 #include "bpprint.h"      // bppTranslationUnit
 #include "cc2c.h"         // cc_to_c
+#include "cc2llvm.h"      // cc_to_llvm
 
+// LLVM
+#include <llvm/Module.h>
+#include <llvm/Pass.h>
+#include <llvm/PassManager.h>
+#include <llvm/Assembly/PrintModulePass.h>
 
 // true to print the tchecked C++ syntax using bpprint after
 // tcheck
@@ -43,6 +49,9 @@ static bool wantBpprintAfterElab = false;
 
 // nonempty if we want to run cc2c; value of "-" means stdout
 static string cc2cOutputFname;
+
+// nonempty if we want to run cc2llvm; value of "-" means stdout
+static string cc2llvmOutputFname;
 
 
 // little check: is it true that only global declarators
@@ -211,6 +220,15 @@ char *myProcessArgs(int argc, char **argv, char const *additionalInfo)
       SHIFT;
       SHIFT;
     }
+    else if (0==strcmp(argv[1], "-cc2llvm")) {
+      if (argc < 3) {
+        cout << "-cc2llvm requires a file name argument\n";
+        exit(2);
+      }
+      cc2llvmOutputFname = argv[2];
+      SHIFT;
+      SHIFT;
+    }
     else {
       break;     // didn't find any more options
     }
@@ -225,6 +243,7 @@ char *myProcessArgs(int argc, char **argv, char const *additionalInfo)
             "    -bbprint:          print parsed C++ back out using bpprint\n"
             "    -bbprintAfterElab: bpprint after elaboration\n"
             "    -cc2c <fname>:     generate C, write to <fname>; \"-\" means stdout\n"
+            "    -cc2llvm <fname>:  generate LLVM code, write to <fname>; \"-\" means stdout\n"
          << (additionalInfo? additionalInfo : "");
     exit(argc==1? 0 : 2);    // error if any args supplied
   }
@@ -824,6 +843,24 @@ void doit(int argc, char **argv)
       out << "// cc2c\n";
       bppTranslationUnit(out, *lowered);
     }
+  }
+
+  if (!cc2llvmOutputFname.empty()) {
+    llvm::Module* mod = cc_to_llvm(cc2llvmOutputFname, strTable, *unit);
+
+    // Output the module.
+    llvm::PassManager PM;
+    std::ostream *out = &std::cout;  // Default to printing to stdout.
+    if (cc2llvmOutputFname != string("-")) {
+      out = new std::ofstream(cc2llvmOutputFname.c_str());
+      if (!out) {
+        xsyserror("open", stringb("write \"" << cc2llvmOutputFname << "\""));
+      }
+    }
+    llvm::OStream L(*out);
+    PM.add(new llvm::PrintModulePass(&L));
+    PM.run(*mod);
+    delete mod;
   }
 
   //traceProgress() << "cleaning up...\n";

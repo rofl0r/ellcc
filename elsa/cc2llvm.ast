@@ -1,0 +1,87 @@
+// cc2llvm.ast
+// extension of cc.ast: additional entry points for cc2llvm
+
+verbatim {
+  class CC2LLVMEnv;             // cc2llvm.h
+  namespace llvm {
+    class Value;
+  };
+}
+
+
+// TranslationUnit
+
+class TopForm {
+  public void cc2llvm(CC2LLVMEnv &env) const;
+}
+
+class Function {
+  public void cc2llvm(CC2LLVMEnv &env) const;
+}
+
+// MemberInit
+
+class Declaration {
+  public void cc2llvm(CC2LLVMEnv &env) const;
+}
+
+// ASTTypeId
+
+// PQName
+
+// TypeSpecifier
+
+// BaseClassSpec
+
+// Enumerator
+
+// MemberList
+
+// Member
+
+// Declarator
+
+// IDeclarator
+
+// ExceptionSpec
+
+// OperatorName
+
+class Statement {
+  pure_virtual void cc2llvm(CC2LLVMEnv &env) const;
+}
+
+// Condition
+
+// Handler
+
+class Expression {
+  // RICH: This should be handled by the parser.
+  // Translate the source expression, expecting that there are no side
+  // effects.  In this context, that just means that no statements are
+  // added; things like ++ should not be here, but that is not
+  // detected nor really relevant to the translation.
+  public llvm::Value *cc2llvmNoSideEffects(CC2LLVMEnv &env, bool lvalue = false) const;
+
+  pure_virtual llvm::Value *cc2llvm(CC2LLVMEnv &env, bool lvalue = false) const;
+}
+
+class FullExpression {
+  public llvm::Value *cc2llvm(CC2LLVMEnv &env, bool lvalue = false) const;
+}
+
+// ArgExpression
+
+// ArgExpressionListOpt
+
+// Initializer
+
+// TemplateDeclaration
+
+// TemplateParameter
+
+// TemplateArgument
+
+// NamespaceDecl
+
+// EOF
