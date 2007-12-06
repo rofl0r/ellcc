@@ -46,15 +46,17 @@ void CC2LLVMEnv::checkCurrentBlock()
 
 const llvm::Type* CC2LLVMEnv::makeTypeSpecifier(Type *t)
 {
-  if (t->isCVAtomicType()) {
-    // no need for a declarator
-    CVAtomicType *at = t->asCVAtomicType();
-    return makeAtomicTypeSpecifier(at->atomic);
-  } else {
-    // Need a declarator.
-    xunimp("makeTypeSpecifier for non-atomic");
-    return NULL;
-  }
+    if (t->isCVAtomicType()) {
+        // no need for a declarator
+        CVAtomicType *at = t->asCVAtomicType();
+        return makeAtomicTypeSpecifier(at->atomic);
+    } else if (t->isPointerType()) {
+        xunimp("unhandled pointer type");
+    } else {
+        // Need a declarator.
+        xunimp("unhandled makeTypeSpecifier");
+        return NULL;
+    }
 }
 
 const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(AtomicType *at)
@@ -170,6 +172,7 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
     llvm::FunctionType* ft = llvm::FunctionType::get(returnType, args, funcType->acceptsVarargs(), NULL);	// RICH: Parameter attributes.
     env.function = new llvm::Function(ft, llvm::GlobalValue::ExternalLinkage,	// RICH: Linkage.
         nameAndParams->var->name, env.mod);
+    env.variables.add(nameAndParams->var, env.function);
     env.entryBlock = new llvm::BasicBlock("entry", env.function, NULL);
 
     // Set the initial current block.
@@ -578,7 +581,13 @@ llvm::Value *E_variable::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
     return value;
 }
 
-llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, bool lvalue) const { xunimp(""); return NULL; }
+llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
+{
+    env.checkCurrentBlock();
+    llvm::Value* function = func->cc2llvm(env, true);
+    return new llvm::CallInst(function, "", env.currentBlock);
+}
+
 llvm::Value *E_constructor::cc2llvm(CC2LLVMEnv &env, bool lvalue) const { xunimp(""); return NULL; }
 llvm::Value *E_fieldAcc::cc2llvm(CC2LLVMEnv &env, bool lvalue) const { xunimp(""); return NULL; }
 llvm::Value *E_sizeof::cc2llvm(CC2LLVMEnv &env, bool lvalue) const { xunimp(""); return NULL; }
