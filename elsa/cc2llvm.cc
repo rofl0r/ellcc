@@ -17,6 +17,8 @@
 #include <llvm/Support/MathExtras.h>
 #include <llvm/Analysis/Verifier.h>
 
+#define BITS_PER_BYTE	8	// RICH: Temporary.
+
 // -------------------- CC2LLVMEnv ---------------------
 CC2LLVMEnv::CC2LLVMEnv(StringTable &s, string name, const TranslationUnit& input)
   : str(s),
@@ -27,7 +29,7 @@ CC2LLVMEnv::CC2LLVMEnv(StringTable &s, string name, const TranslationUnit& input
     returnBlock(NULL),
     returnValue(NULL),
     currentBlock(NULL),
-    loopBlock(NULL),
+    continueBlock(NULL),
     nextBlock(NULL)
 { }
 
@@ -46,17 +48,60 @@ void CC2LLVMEnv::checkCurrentBlock()
 
 const llvm::Type* CC2LLVMEnv::makeTypeSpecifier(Type *t)
 {
-    if (t->isCVAtomicType()) {
-        // no need for a declarator
+    const llvm::Type* type = NULL;
+
+    switch (t->getTag())
+    {
+    case Type::T_ATOMIC: {
+        // No need for a declarator.
+	// RICH: Is const, volatile?
         CVAtomicType *at = t->asCVAtomicType();
-        return makeAtomicTypeSpecifier(at->atomic);
-    } else if (t->isPointerType()) {
-        xunimp("unhandled pointer type");
-    } else {
-        // Need a declarator.
-        xunimp("unhandled makeTypeSpecifier");
-        return NULL;
+        type =  makeAtomicTypeSpecifier(at->atomic);
+        break;
     }
+    case Type::T_POINTER: {
+	// RICH: Is const, volatile?
+        PointerType *pt = t->asPointerType();
+        type =  llvm::PointerType::get(makeTypeSpecifier(pt->atType));
+        break;
+    }
+    case Type::T_REFERENCE: {
+        xunimp("unhandled reference type");
+	// The following isn't right. Experimenting.
+        ReferenceType *rt = t->asReferenceType();
+        type =  makeTypeSpecifier(rt->atType);
+        break;
+    }
+    case Type::T_FUNCTION: {
+        FunctionType *ft = t->asFunctionType();
+        const llvm::Type* returnType = makeTypeSpecifier(ft->retType);
+        std::vector<const llvm::Type*>args;
+        makeParameterTypes(ft, args);
+        type = llvm::FunctionType::get(returnType, args, ft->acceptsVarargs(), NULL);	// RICH: Parameter attributes.
+        break;
+    }
+    case Type::T_ARRAY: {
+        ArrayType *at = t->asArrayType();
+	int size = at->getSize();
+	if (size == ArrayType::NO_SIZE) {
+	    size = 0;
+	} else if (size == ArrayType::DYN_SIZE) {
+            xunimp("unhandled dynamic array type");
+	}
+        type = llvm::ArrayType::get(makeTypeSpecifier(at->eltType), size);
+        break;
+    }
+    case Type::T_POINTERTOMEMBER:
+        xunimp("unhandled pointer to member type");
+        break;
+    case Type::T_DEPENDENTSIZEDARRAY:
+        xunimp("unhandled dependent sized array type");
+        break;
+    case Type::T_LAST_TYPE_TAG:	// Quell warnings.
+        break;
+    }
+
+    return type;
 }
 
 const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(AtomicType *at)
@@ -72,7 +117,7 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(AtomicType *at)
             type = llvm::Type::VoidTy;
         } else if (::isIntegerType(id)) {
 	    // Define an integer type.
-            type = llvm::IntegerType::get(simpleTypeReprSize(id) * 8);	// RICH: Bits per byte.
+            type = llvm::IntegerType::get(simpleTypeReprSize(id) * BITS_PER_BYTE);
         } else {
             xunimp("makeAtomicTypeSpecifier for simple type");
         }
@@ -172,6 +217,7 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
     llvm::FunctionType* ft = llvm::FunctionType::get(returnType, args, funcType->acceptsVarargs(), NULL);	// RICH: Parameter attributes.
     env.function = new llvm::Function(ft, llvm::GlobalValue::ExternalLinkage,	// RICH: Linkage.
         nameAndParams->var->name, env.mod);
+    env.function->setCallingConv(llvm::CallingConv::C); // RICH: Calling convention.
     env.variables.add(nameAndParams->var, env.function);
     env.entryBlock = new llvm::BasicBlock("entry", env.function, NULL);
 
@@ -194,7 +240,7 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
         new llvm::StoreInst(nullInt, env.returnValue, false, env.entryBlock);	// RICH: main() only.
 
         // Generate the function return.
-        llvm::LoadInst* rv = new llvm::LoadInst(env.returnValue, "", false, env.returnBlock);
+        llvm::LoadInst* rv = new llvm::LoadInst(env.returnValue, "", false, env.returnBlock);	// RICH: Volatile
         new llvm::ReturnInst(rv, env.returnBlock);
     }
 
@@ -271,7 +317,11 @@ void Declaration::cc2llvm(CC2LLVMEnv &env) const
         // Create the full generated declaration.
         const llvm::Type* type = env.makeTypeSpecifier(var->type);
         if (var->type->getTag() == Type::T_FUNCTION) {
-            xunimp("unhandled function declaration");
+            llvm::Function* gf = new llvm::Function((llvm::FunctionType*)type, 
+                (var->flags & DF_STATIC) ? llvm::GlobalValue::InternalLinkage : llvm::GlobalValue::ExternalLinkage,
+	        env.makeName(var)->name, env.mod);
+            gf->setCallingConv(llvm::CallingConv::C); // RICH: Calling convention.
+            env.variables.add(var, gf);
         } else if (var->type->getTag() == Type::T_DEPENDENTSIZEDARRAY) {
             xunimp("unhandled dependent sized array declaration");
         } else if (var->type->getTag() == Type::T_LAST_TYPE_TAG) {
@@ -368,8 +418,12 @@ void S_if::cc2llvm(CC2LLVMEnv &env) const
     env.checkCurrentBlock();
     const CN_expr* condition = cond->asCN_exprC();
     llvm::Value* value = condition->expr->cc2llvm(env);
-    llvm::Value* zero = llvm::Constant::getNullValue(value->getType());
-    value = new llvm::ICmpInst(llvm::ICmpInst::ICMP_NE, value, zero, "", env.currentBlock);
+    if (value->getType() != llvm::Type::Int1Ty)
+    {
+        // Not a boolean, check for non-zero.
+        llvm::Value* zero = llvm::Constant::getNullValue(value->getType());
+        value = new llvm::ICmpInst(llvm::ICmpInst::ICMP_NE, value, zero, "", env.currentBlock);
+    }
     llvm::BasicBlock* ifTrue = new llvm::BasicBlock("ifTrue", env.function, env.returnBlock);
     llvm::BasicBlock* ifFalse = new llvm::BasicBlock("ifFalse", env.function, env.returnBlock);
     llvm::BasicBlock* next = new llvm::BasicBlock("next", env.function, env.returnBlock);
@@ -400,71 +454,123 @@ void S_switch::cc2llvm(CC2LLVMEnv &env) const { xunimp("switch"); }
 void S_while::cc2llvm(CC2LLVMEnv &env) const
 {
     // Save the old loop context.
-    llvm::BasicBlock* oldLoopBlock = env.loopBlock;
+    llvm::BasicBlock* oldContinueBlock = env.continueBlock;
     llvm::BasicBlock* oldNextBlock = env.nextBlock;
 
-    env.loopBlock = new llvm::BasicBlock("loop", env.function, env.returnBlock);
+    env.continueBlock = new llvm::BasicBlock("continue", env.function, env.returnBlock);
     llvm::BasicBlock* bodyBlock = new llvm::BasicBlock("body", env.function, env.returnBlock);
     env.nextBlock = new llvm::BasicBlock("next", env.function, env.returnBlock);
     if (env.currentBlock) {
         // Close the current block.
-        new llvm::BranchInst(env.loopBlock, env.currentBlock);
+        new llvm::BranchInst(env.continueBlock, env.currentBlock);
     }
 
     // Set the current block.
-    env.currentBlock = env.loopBlock;
+    env.currentBlock = env.continueBlock;
 
     // Generate the test.
     const CN_expr* condition = cond->asCN_exprC();
     llvm::Value* value = condition->expr->cc2llvm(env);
-    llvm::Value* zero = llvm::Constant::getNullValue(value->getType());
-    value = new llvm::ICmpInst(llvm::ICmpInst::ICMP_NE, value, zero, "", env.currentBlock);
+    if (value->getType() != llvm::Type::Int1Ty)
+    {
+        // Not a boolean, check for non-zero.
+        llvm::Value* zero = llvm::Constant::getNullValue(value->getType());
+        value = new llvm::ICmpInst(llvm::ICmpInst::ICMP_NE, value, zero, "", env.currentBlock);
+    }
     new llvm::BranchInst(bodyBlock, env.nextBlock, value, env.currentBlock);
 
     env.currentBlock = bodyBlock;
     body->cc2llvm(env);
-    new llvm::BranchInst(env.loopBlock, env.currentBlock);
+    new llvm::BranchInst(env.continueBlock, env.currentBlock);
     env.currentBlock = env.nextBlock;
 
     // Restore the old loop context.
-    env.loopBlock = oldLoopBlock;
+    env.continueBlock = oldContinueBlock;
     env.nextBlock = oldNextBlock;
 }
 
 void S_doWhile::cc2llvm(CC2LLVMEnv &env) const
 {
     // Save the old loop context.
-    llvm::BasicBlock* oldLoopBlock = env.loopBlock;
+    llvm::BasicBlock* oldContinueBlock = env.continueBlock;
     llvm::BasicBlock* oldNextBlock = env.nextBlock;
 
     llvm::BasicBlock* bodyBlock = new llvm::BasicBlock("body", env.function, env.returnBlock);
-    env.loopBlock = new llvm::BasicBlock("loop", env.function, env.returnBlock);
+    env.continueBlock = new llvm::BasicBlock("continue", env.function, env.returnBlock);
     env.nextBlock = new llvm::BasicBlock("next", env.function, env.returnBlock);
     if (env.currentBlock) {
         // Close the current block.
-        new llvm::BranchInst(env.loopBlock, env.currentBlock);
+        new llvm::BranchInst(env.continueBlock, env.currentBlock);
     }
 
     // Set the current block.
     env.currentBlock = bodyBlock;
     body->cc2llvm(env);
-    new llvm::BranchInst(env.loopBlock, env.currentBlock);
+    new llvm::BranchInst(env.continueBlock, env.currentBlock);
 
     // Generate the test.
-    env.currentBlock = env.loopBlock;
+    env.currentBlock = env.continueBlock;
     llvm::Value* value = expr->cc2llvm(env);
-    llvm::Value* zero = llvm::Constant::getNullValue(value->getType());
-    value = new llvm::ICmpInst(llvm::ICmpInst::ICMP_NE, value, zero, "", env.currentBlock);
+    if (value->getType() != llvm::Type::Int1Ty)
+    {
+        // Not a boolean, check for non-zero.
+        llvm::Value* zero = llvm::Constant::getNullValue(value->getType());
+        value = new llvm::ICmpInst(llvm::ICmpInst::ICMP_NE, value, zero, "", env.currentBlock);
+    }
     new llvm::BranchInst(bodyBlock, env.nextBlock, value, env.currentBlock);
 
     env.currentBlock = env.nextBlock;
 
     // Restore the old loop context.
-    env.loopBlock = oldLoopBlock;
+    env.continueBlock = oldContinueBlock;
     env.nextBlock = oldNextBlock;
 }
 
-void S_for::cc2llvm(CC2LLVMEnv &env) const { xunimp("for"); }
+void S_for::cc2llvm(CC2LLVMEnv &env) const
+{
+    // Save the old loop context.
+    llvm::BasicBlock* oldContinueBlock = env.continueBlock;
+    llvm::BasicBlock* oldNextBlock = env.nextBlock;
+
+    llvm::BasicBlock* testBlock = new llvm::BasicBlock("test", env.function, env.returnBlock);
+    llvm::BasicBlock* bodyBlock = new llvm::BasicBlock("body", env.function, env.returnBlock);
+    env.continueBlock = new llvm::BasicBlock("continue", env.function, env.returnBlock);
+    env.nextBlock = new llvm::BasicBlock("next", env.function, env.returnBlock);
+
+    env.checkCurrentBlock();
+    // Handle the for() initialization.
+    init->cc2llvm(env);
+    new llvm::BranchInst(testBlock, env.currentBlock);
+
+    // Set the current block.
+    env.currentBlock = testBlock;
+
+    // Generate the test.
+    const CN_expr* condition = cond->asCN_exprC();
+    llvm::Value* value = condition->expr->cc2llvm(env);
+    if (value->getType() != llvm::Type::Int1Ty)
+    {
+        // Not a boolean, check for non-zero.
+        llvm::Value* zero = llvm::Constant::getNullValue(value->getType());
+        value = new llvm::ICmpInst(llvm::ICmpInst::ICMP_NE, value, zero, "", env.currentBlock);
+    }
+    new llvm::BranchInst(bodyBlock, env.nextBlock, value, env.currentBlock);
+
+    env.currentBlock = bodyBlock;
+    body->cc2llvm(env);
+    new llvm::BranchInst(env.continueBlock, env.currentBlock);
+
+    // Handle the continue block.
+    env.currentBlock = env.continueBlock;
+    after->cc2llvm(env);
+    new llvm::BranchInst(testBlock, env.currentBlock);
+
+    env.currentBlock = env.nextBlock;
+
+    // Restore the old loop context.
+    env.continueBlock = oldContinueBlock;
+    env.nextBlock = oldNextBlock;
+}
 
 void S_break::cc2llvm(CC2LLVMEnv &env) const
 {
@@ -475,8 +581,8 @@ void S_break::cc2llvm(CC2LLVMEnv &env) const
 
 void S_continue::cc2llvm(CC2LLVMEnv &env) const
 {
-    xassert(env.loopBlock && "continue not in a loop");
-    new llvm::BranchInst(env.loopBlock, env.currentBlock);
+    xassert(env.continueBlock && "continue not in a loop");
+    new llvm::BranchInst(env.continueBlock, env.currentBlock);
     env.currentBlock = NULL;
 }
 
@@ -555,16 +661,53 @@ llvm::Value *Expression::cc2llvmNoSideEffects(CC2LLVMEnv &env, bool lvalue) cons
     return ret;
 }
 
-llvm::Value *E_boolLit::cc2llvm(CC2LLVMEnv &env, bool lvalue) const { xunimp(""); return NULL; }
+llvm::Value *E_boolLit::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
+{
+    return llvm::ConstantInt::get(llvm::APInt(1, (int)b));
+}
 
 llvm::Value *E_intLit::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 {
-    return llvm::ConstantInt::get(llvm::APInt(32, text, 10));	// RICH: Size, base.
+    int radix = 10;
+    const char* p = text;
+    if (p[0] == '0') {
+        // Octal or hex.
+        if (tolower(p[1]) == 'x') {
+	    radix = 16;
+            p = p + 2;
+        } else {
+	    radix = 8;
+        }
+    }
+
+    return llvm::ConstantInt::get(llvm::APInt(type->reprSize() * BITS_PER_BYTE, p, radix));
 }
 
 llvm::Value *E_floatLit::cc2llvm(CC2LLVMEnv &env, bool lvalue) const { xunimp(""); return NULL; }
-llvm::Value *E_stringLit::cc2llvm(CC2LLVMEnv &env, bool lvalue) const { xunimp(""); return NULL; }
-llvm::Value *E_charLit::cc2llvm(CC2LLVMEnv &env, bool lvalue) const { xunimp(""); return NULL; }
+
+llvm::Value *E_stringLit::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
+{
+    // RICH: fullTextNQ is not quite right: has e.g. "\n" not replaced with \x10.
+    llvm::Constant* c = llvm::ConstantArray::get(fullTextNQ, true);
+    // RICH: Sizeof char.
+    llvm::ArrayType* at = llvm::ArrayType::get(llvm::IntegerType::get(8), strlen(fullTextNQ) + 1);
+    // RICH: Non-constant strings?
+    llvm::GlobalVariable* gv = new llvm::GlobalVariable(at, true, llvm::GlobalValue::InternalLinkage, c, ".str", env.mod);
+
+    // Get the address of the string as an open array.
+    env.checkCurrentBlock();
+    std::vector<llvm::Value*> indices;
+    indices.push_back(llvm::Constant::getNullValue(llvm::IntegerType::get(32)));
+    indices.push_back(llvm::Constant::getNullValue(llvm::IntegerType::get(32)));
+    llvm::Instruction* address = new llvm::GetElementPtrInst(gv, indices.begin(), indices.end(), "", env.currentBlock);
+    return address;
+}
+
+llvm::Value *E_charLit::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
+{
+    return llvm::ConstantInt::get(llvm::APInt(type->reprSize() * BITS_PER_BYTE, c));
+}
+
 llvm::Value *E_this::cc2llvm(CC2LLVMEnv &env, bool lvalue) const { xunimp(""); return NULL; }
 
 /** Get a variable used in an expression.
@@ -574,7 +717,9 @@ llvm::Value *E_variable::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
     // The variable will have been previously seen in a declaration.
     llvm::Value* value = env.variables.get(var);
     xassert(value && "An undeclared variable has been referenced");
-    if (!lvalue) {
+    xassert(value->getType()->getTypeID() == llvm::Type::PointerTyID && "expected pointer type");
+    bool first = value->getType()->getContainedType(0)->isFirstClassType();
+    if (!lvalue && first) {
         // Return the value this represents.
         value = new llvm::LoadInst(value, "", false, env.currentBlock);		// RICH: isVolatile
     }
@@ -584,15 +729,57 @@ llvm::Value *E_variable::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 {
     env.checkCurrentBlock();
+    std::vector<llvm::Value*> parameters;
+    FAKELIST_FOREACH(ArgExpression, args, arg) {
+        parameters.push_back(arg->expr->cc2llvm(env));
+    }
+
     llvm::Value* function = func->cc2llvm(env, true);
-    return new llvm::CallInst(function, "", env.currentBlock);
+    return new llvm::CallInst(function, parameters.begin(), parameters.end(), "", env.currentBlock);
 }
 
 llvm::Value *E_constructor::cc2llvm(CC2LLVMEnv &env, bool lvalue) const { xunimp(""); return NULL; }
 llvm::Value *E_fieldAcc::cc2llvm(CC2LLVMEnv &env, bool lvalue) const { xunimp(""); return NULL; }
 llvm::Value *E_sizeof::cc2llvm(CC2LLVMEnv &env, bool lvalue) const { xunimp(""); return NULL; }
 llvm::Value *E_unary::cc2llvm(CC2LLVMEnv &env, bool lvalue) const { xunimp(""); return NULL; }
-llvm::Value *E_effect::cc2llvm(CC2LLVMEnv &env, bool lvalue) const { xunimp(""); return NULL; }
+
+/** Unary expression with side effects.
+ */
+llvm::Value *E_effect::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
+{
+    // Evaluate the expression as an lvalue.
+    llvm::Value* value = expr->cc2llvm(env, true);
+    llvm::Value* result = NULL;
+    llvm::Value* temp = NULL;
+
+    if (isPostfix(op)) {
+        // A postfix operator: return the result from before the operation.
+        result = new llvm::LoadInst(value, "", false, env.currentBlock);	// RICH: Volatile
+        temp = new llvm::LoadInst(value, "", false, env.currentBlock);	// RICH: Volatile
+    } else {
+        temp = new llvm::LoadInst(value, "", false, env.currentBlock);	// RICH: Volatile
+    }
+
+    if (temp->getType()->getTypeID() == llvm::Type::PointerTyID) {
+        // This is a pointer increment/decrement.
+        xunimp("pointer ++,--");
+    } else if (temp->getType()->isInteger()) {
+	llvm::Instruction::BinaryOps opcode = op == EFF_POSTDEC || op == EFF_PREDEC ?
+	    llvm::Instruction::Sub :
+	    llvm::Instruction::Add;
+
+        llvm::ConstantInt* one = llvm::ConstantInt::get(llvm::APInt(temp->getType()->getPrimitiveSizeInBits(), 1));
+	temp = llvm::BinaryOperator::create(opcode, temp, one, "", env.currentBlock);
+        new llvm::StoreInst(temp, value, false, env.currentBlock);	// RICH: Volatile
+    } else {
+        xunimp("++,-- for this operand type");
+    }
+
+    if (!isPostfix(op)) {
+        result = temp;
+    }
+    return result;
+}
 
 llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 {
@@ -600,10 +787,32 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
     llvm::Value* left = e1->cc2llvm(env);
     llvm::Value* right = e2->cc2llvm(env);
     llvm::Value* result = NULL;
+
     switch (op)
     {
     case BIN_PLUS:
-	result = llvm::BinaryOperator::create(llvm::Instruction::Add, left, right, "", env.currentBlock);
+        if (left->getType() != right->getType()) {
+            // The types differ. This could be an array reference *(a + i).
+	    if (right->getType()->getTypeID() == llvm::Type::PointerTyID) {
+		// Place the pointer on the left.
+	        llvm::Value* temp = right;
+		left = right;
+		right = temp;
+	    }
+
+	    if (   left->getType()->getTypeID() == llvm::Type::PointerTyID
+	        && right->getType()->getTypeID() == llvm::Type::IntegerTyID) {
+	        // If the left size is a pointer and the left side is an integer, calculate the address.
+		std::vector<llvm::Value*> index;
+	        index.push_back(llvm::Constant::getNullValue(right->getType()));
+	        index.push_back(right);
+		result = new llvm::GetElementPtrInst(left, index.begin(), index.end(), "", env.currentBlock);
+	    } else {
+	        xunimp("addition of unlike types");
+	    }
+        } else {
+	    result = llvm::BinaryOperator::create(llvm::Instruction::Add, left, right, "", env.currentBlock);
+	}
         break;
     case BIN_EQUAL:
         result = new llvm::ICmpInst(llvm::ICmpInst::ICMP_EQ, left, right, "", env.currentBlock);
@@ -614,6 +823,9 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
     case BIN_LESS:	// RICH: Signed vs. unsigned.
         result = new llvm::ICmpInst(llvm::ICmpInst::ICMP_SLT, left, right, "", env.currentBlock);
         break;
+    case BIN_LESSEQ:	// RICH: Signed vs. unsigned.
+        result = new llvm::ICmpInst(llvm::ICmpInst::ICMP_SLE, left, right, "", env.currentBlock);
+        break;
     default:
         xunimp("");
         break;
@@ -623,9 +835,23 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 }
 
 llvm::Value *E_addrOf::cc2llvm(CC2LLVMEnv &env, bool lvalue) const { xunimp(""); return NULL; }
-llvm::Value *E_deref::cc2llvm(CC2LLVMEnv &env, bool lvalue) const { xunimp(""); return NULL; }
+
+llvm::Value *E_deref::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
+{
+    if (lvalue) {
+        // The dereference will happen later.
+	return ptr->cc2llvm(env);
+    }
+
+    env.checkCurrentBlock();
+    llvm::Value* source = ptr->cc2llvm(env);
+    return new llvm::LoadInst(source, "", false, env.currentBlock);	// RICH: Volatile
+}
+
 llvm::Value *E_cast::cc2llvm(CC2LLVMEnv &env, bool lvalue) const { xunimp(""); return NULL; }
+
 llvm::Value *E_cond::cc2llvm(CC2LLVMEnv &env, bool lvalue) const { xunimp(""); return NULL; }
+
 llvm::Value *E_sizeofType::cc2llvm(CC2LLVMEnv &env, bool lvalue) const { xunimp(""); return NULL; }
 
 llvm::Value *E_assign::cc2llvm(CC2LLVMEnv &env, bool lvalue) const

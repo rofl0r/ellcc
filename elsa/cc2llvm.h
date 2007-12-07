@@ -94,9 +94,9 @@ public:      // funcs
   /** The current block being processed.
    */
   llvm::BasicBlock* currentBlock;
-  /** The top of the current loop.
+  /** The continuation point of the current loop.
    */
-  llvm::BasicBlock* loopBlock;
+  llvm::BasicBlock* continueBlock;
   /** The block following current loop or switch.
    */
   llvm::BasicBlock* nextBlock;
