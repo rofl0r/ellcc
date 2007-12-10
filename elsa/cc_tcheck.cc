@@ -8117,8 +8117,10 @@ Type *E_binary::itcheck_x(Env &env, Expression *&replacement)
     case BIN_BITOR:               // |
     case BIN_MINIMUM:             // <?
     case BIN_MAXIMUM:             // >?
+      return usualArithmeticConversions(env.tfac, lhsType, rhsType);
+      // rdp: I replaced the following. I needed the conversions for LLVM.
       // default behavior of returning the left side is close enough for now.
-      break;
+      // break;
 
     // BIN_ASSIGN can't appear in E_binary
 

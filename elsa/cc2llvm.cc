@@ -25,6 +25,7 @@ CC2LLVMEnv::CC2LLVMEnv(StringTable &s, string name, const TranslationUnit& input
     input(input),
     mod(new llvm::Module(name.c_str())),
     function(NULL),
+    functionAST(NULL),
     entryBlock(NULL),
     returnBlock(NULL),
     returnValue(NULL),
@@ -62,7 +63,18 @@ const llvm::Type* CC2LLVMEnv::makeTypeSpecifier(Type *t)
     case Type::T_POINTER: {
 	// RICH: Is const, volatile?
         PointerType *pt = t->asPointerType();
-        type =  llvm::PointerType::get(makeTypeSpecifier(pt->atType));
+	type = makeTypeSpecifier(pt->atType);
+        if (type == NULL || type == llvm::Type::VoidTy) {
+            /** If type is NULL, we have a va_list pointer (i.e. *...").
+	     *  treat this as a void*.
+	     * LLVM doesn't understand void*. Make it into iBITS_PER_BYTE*.
+	     */
+            type = llvm::IntegerType::get(BITS_PER_BYTE);
+	}
+
+	cout << pt->atType->toString() << "\n";
+	xassert(type != NULL && "A NULL type encountered");
+        type =  llvm::PointerType::get(type);
         break;
     }
     case Type::T_REFERENCE: {
@@ -74,8 +86,19 @@ const llvm::Type* CC2LLVMEnv::makeTypeSpecifier(Type *t)
     }
     case Type::T_FUNCTION: {
         FunctionType *ft = t->asFunctionType();
+	cout << ft->toString() << "\n";
         const llvm::Type* returnType = makeTypeSpecifier(ft->retType);
         std::vector<const llvm::Type*>args;
+	if (returnType->getTypeID() == llvm::Type::StructTyID) {
+	    /* LLVM does not support a compound return type.
+             * We'll call it a pointer here. In practice, a pointer to
+	     * the return value holding area will be passed as the first
+	     * argument to the function. The function the returns void.
+	     */
+	    const llvm::Type* rt = llvm::PointerType::get(returnType);
+            args.push_back(rt);
+            returnType = llvm::Type::VoidTy;
+	}
         makeParameterTypes(ft, args);
         type = llvm::FunctionType::get(returnType, args, ft->acceptsVarargs(), NULL);	// RICH: Parameter attributes.
         break;
@@ -111,31 +134,85 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(AtomicType *at)
     case AtomicType::T_SIMPLE: {
         SimpleType *st = at->asSimpleType();
         SimpleTypeId id = st->type;
-        if (id == ST_BOOL) {
-            type = llvm::IntegerType::get(1);
-        } else if (id == ST_VOID) {
-            type = llvm::Type::VoidTy;
-        } else if (::isIntegerType(id)) {
+	switch (id) {
+	case ST_CHAR:
+	case ST_UNSIGNED_CHAR:
+	case ST_SIGNED_CHAR:
+	case ST_INT:
+	case ST_UNSIGNED_INT:
+	case ST_LONG_INT:
+        case ST_UNSIGNED_LONG_INT:
+        case ST_LONG_LONG:              // GNU/C99 extension
+	case ST_UNSIGNED_LONG_LONG:     // GNU/C99 extension
+        case ST_SHORT_INT:
+        case ST_UNSIGNED_SHORT_INT:
+	case ST_WCHAR_T:
 	    // Define an integer type.
             type = llvm::IntegerType::get(simpleTypeReprSize(id) * BITS_PER_BYTE);
-        } else {
+            break;
+	case ST_BOOL:
+            type = llvm::IntegerType::get(1);
+            break;
+	case ST_FLOAT:
+	    type = llvm::Type::FloatTy;
+	    break;
+	case ST_DOUBLE:
+	    type = llvm::Type::DoubleTy;
+	    break;
+        case ST_LONG_DOUBLE:
+	    type = llvm::Type::FP128Ty;	// RICH: Is this right?
+	    break;
+        case ST_VOID:
+            type = llvm::Type::VoidTy;
+	    break;
+        case ST_ELLIPSIS:
+	    /* ... is not a type in LLVM. 
+	     * We can ignore this because we use acceptsVarargs().
+	     */
+            break;
+
+	default:
+	case ST_FLOAT_COMPLEX:          // GNU/C99 (see doc/complex.txt)
+        case ST_DOUBLE_COMPLEX:         // GNU/C99
+        case ST_LONG_DOUBLE_COMPLEX:    // GNU/C99
+        case ST_FLOAT_IMAGINARY:        // C99
+	case ST_DOUBLE_IMAGINARY:       // C99
+        case ST_LONG_DOUBLE_IMAGINARY:  // C99
+	    cout << st->toString() << "\n";
             xunimp("makeAtomicTypeSpecifier for simple type");
+	    break;
         }
-      
+	
         break;
     }
 
     case AtomicType::T_COMPOUND: {
-        xunimp("makeAtomicTypeSpecifier for compound");
-        break;
-#if RICH
         CompoundType *ct = at->asCompoundType();
-        return new TS_elaborated(
-          SL_GENERATED,
-          ct->keyword == CompoundType::K_UNION? TI_UNION : TI_STRUCT,
-          makePQ_name(getCompoundTypeName(ct))
-        );
-#endif
+	type = compounds.get(ct);
+	if (type) {
+	    // We already have this one.
+	    break;
+	}
+
+	// Create an opaque type to eliminate recursion.
+	llvm::PATypeHolder fwd = llvm::OpaqueType::get();
+        // Get the type pointer.
+        type = llvm::cast<llvm::Type>(fwd.get());
+	// Add this to the compound map now so we don't recurse.
+        compounds.add(ct, type);
+
+	// Get the members.
+	std::vector<const llvm::Type*>fields;
+        SFOREACH_OBJLIST(Variable, ct->dataMembers, iter) {
+            Variable const *v = iter.data();
+	    fields.push_back(makeTypeSpecifier(v->type));
+        }
+
+	llvm::StructType* st = llvm::StructType::get(fields, false);	// RICH: isPacked
+        llvm::cast<llvm::OpaqueType>(fwd.get())->refineAbstractTypeTo(st);
+	type = llvm::cast<llvm::Type>(fwd.get());
+        compounds.add(ct, type);
+        break;
     }
 
     case AtomicType::T_ENUM:
@@ -175,9 +252,13 @@ PQ_name *CC2LLVMEnv::makePQ_name(StringRef name)
 void CC2LLVMEnv::makeParameterTypes(FunctionType *ft, std::vector<const llvm::Type*>& args)
 {
     SFOREACH_OBJLIST(Variable, ft->params, iter) {
-      Variable const *param = iter.data();
+        Variable const *param = iter.data();
     
-      args.push_back(makeTypeSpecifier(param->type));
+	const llvm::Type* type = makeTypeSpecifier(param->type);
+	// type will be NULL if a "..." is encountered in the parameter list.
+	if (type) {
+           args.push_back(type);
+        }
     }
 }
 
@@ -211,18 +292,39 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
         xunimp("exception handlers");
     }
 
+    const Function* oldFunctionAST = env.functionAST;	// Handle nested functions.
+    env.functionAST = this;
     const llvm::Type* returnType = env.makeTypeSpecifier(funcType->retType);
     std::vector<const llvm::Type*>args;
     env.makeParameterTypes(funcType, args);
     llvm::FunctionType* ft = llvm::FunctionType::get(returnType, args, funcType->acceptsVarargs(), NULL);	// RICH: Parameter attributes.
     env.function = new llvm::Function(ft, llvm::GlobalValue::ExternalLinkage,	// RICH: Linkage.
         nameAndParams->var->name, env.mod);
+
     env.function->setCallingConv(llvm::CallingConv::C); // RICH: Calling convention.
     env.variables.add(nameAndParams->var, env.function);
     env.entryBlock = new llvm::BasicBlock("entry", env.function, NULL);
 
     // Set the initial current block.
     env.currentBlock = env.entryBlock;
+
+    // Add the parameter names.
+    llvm::Function::arg_iterator llargs = env.function->arg_begin();
+    SFOREACH_OBJLIST(Variable, funcType->params, iter) {
+        const Variable *param = iter.data();
+        llvm::Value* arg = llargs++;
+	// Make space for the argument.
+	const llvm::Type* type = arg->getType();
+	// type will be NULL for "...".
+    cout << "one " << param->toString() << "\n";
+	if (type) {
+	    llvm::AllocaInst* addr = new llvm::AllocaInst(type, param->name, env.currentBlock);
+	    // Remember where the argument can be retrieved.
+            env.variables.add(param, addr);
+	    // Store the argument for later use.
+	    new llvm::StoreInst(arg, addr, false, env.currentBlock);	// RICH: IsVolatile.
+        }
+    }
 
     // Set up the return block.
     env.returnBlock = new llvm::BasicBlock("return", env.function, 0);
@@ -233,10 +335,13 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
         new llvm::ReturnInst(env.returnBlock);
     } else {
         // Create the return value holder.
+	
         env.returnValue = new llvm::AllocaInst(returnType, "retval", env.entryBlock);
+	cout << "retval " << nameAndParams->var->toString() << " -> "; env.returnValue->print(cout);
 
         // RICH: This should happen in main() only: Default return value.
         llvm::Constant* nullInt = llvm::Constant::getNullValue(returnType);
+    cout << "two " << "\n";
         new llvm::StoreInst(nullInt, env.returnValue, false, env.entryBlock);	// RICH: main() only.
 
         // Generate the function return.
@@ -255,6 +360,8 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
       new llvm::BranchInst(env.returnBlock, env.currentBlock);
       env.currentBlock = NULL;
     }
+
+    env.functionAST = oldFunctionAST;	// Restore any old function context.
 }
 
 // ----------------------- Declaration -------------------------
@@ -295,24 +402,8 @@ void Declaration::cc2llvm(CC2LLVMEnv &env) const
             xunimp("declaration with ctorStatement or dtorStatement");
         }
 
-        // Initializer.        
-        llvm::Value* value = NULL;
-        if (declarator->init) {
-            if (declarator->init->isIN_expr()) {
-                Expression const *e = declarator->init->asIN_exprC()->e;
-
-                // RICH: TRAP_SIDE_EFFECTS_STMT(temp);
-                value = e->cc2llvm(env);
-
-	#if RICH
-                if (temp.stmts.isNotEmpty()) {
-                    xunimp("initializer expression with side effects");
-                }
-        #endif
-            } else {
-                xunimp("unhandled kind of initializer");
-            }
-        }
+        // Get any initializer.        
+        llvm::Value* init = env.initializer(declarator->init);
 
         // Create the full generated declaration.
         const llvm::Type* type = env.makeTypeSpecifier(var->type);
@@ -328,12 +419,12 @@ void Declaration::cc2llvm(CC2LLVMEnv &env) const
             xunimp("unhandled last type tag declaration");
         } else if (var->flags & (DF_STATIC|DF_GLOBAL)) {
 	    // A global variable.
-            if (value == NULL) {
-                value = llvm::Constant::getNullValue(type);
+            if (init == NULL) {
+                init = llvm::Constant::getNullValue(type);
             }
             llvm::GlobalVariable* gv = new llvm::GlobalVariable(type, false,	// RICH: isConstant
                 (var->flags & DF_STATIC) ? llvm::GlobalValue::InternalLinkage : llvm::GlobalValue::ExternalLinkage,
-	        (llvm::Constant*)value, env.makeName(var)->name, env.mod);
+	        (llvm::Constant*)init, env.makeName(var)->name, env.mod);
             env.variables.add(var, gv);
         } else {
             // A local variable.
@@ -345,9 +436,10 @@ void Declaration::cc2llvm(CC2LLVMEnv &env) const
                 lv = new llvm::AllocaInst(type, env.makeName(var)->name, env.entryBlock->getTerminator());
 	    }
 
-	    if (value) {
+	    if (init) {
 	        env.checkCurrentBlock();
-	        new llvm::StoreInst(value, lv, false, env.currentBlock);	// RICH: isVolatile.
+    cout << "three " << var->toString() << "\n";
+	        new llvm::StoreInst(init, lv, false, env.currentBlock);	// RICH: isVolatile.
 	    }
             env.variables.add(var, lv);
         }
@@ -593,6 +685,10 @@ void S_return::cc2llvm(CC2LLVMEnv &env) const
         // A return value is specified.
         xassert(env.returnValue && "return a value in a function returning void");
         llvm::Value* value = expr->cc2llvm(env);
+    value->print(cout);
+    env.returnValue->print(cout);
+    cout << "four " << expr->expr->type->toString() << "\n";
+	env.makeCast(expr->expr->type, value, env.functionAST->funcType->retType);
         new llvm::StoreInst(value, env.returnValue, false, env.currentBlock);	// RICH: isVolatile
     } else {
         xassert(env.returnValue == NULL && "no return value in a function not returning void");
@@ -683,14 +779,56 @@ llvm::Value *E_intLit::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
     return llvm::ConstantInt::get(llvm::APInt(type->reprSize() * BITS_PER_BYTE, p, radix));
 }
 
-llvm::Value *E_floatLit::cc2llvm(CC2LLVMEnv &env, bool lvalue) const { xunimp(""); return NULL; }
+llvm::Value *E_floatLit::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
+{
+    const llvm::Type* ftype = env.makeTypeSpecifier(type);
+#if RICH
+    // Will be supported in LLVM 2.2, I think.
+    const llvm::fltSemantics* semantics;
+    switch (ftype->getTypeID()) {
+    case llvm::Type::FloatTyID:
+        semantics = &llvm::APFloat::IEEEsingle;
+        break;
+    case llvm::Type::DoubleTyID:
+        semantics = &llvm::APFloat::IEEEdouble;
+        break;
+    case llvm::Type::X86_FP80TyID:
+        semantics = &llvm::APFloat::x87DoubleExtended;
+        break;
+    case llvm::Type::FP128TyID:
+        semantics = &llvm::APFloat::IEEEquad;
+        break;
+    case llvm::Type::PPC_FP128TyID:
+        semantics = &llvm::APFloat::PPCDoubleDouble;
+        break;
+    default:
+        xunimp("unhandled floating point type");
+        break;
+    }
+    return llvm::ConstantFP::get(ftype, llvm::APFloat(*semantics, text));
+#else
+    switch (ftype->getTypeID()) {
+    case llvm::Type::FloatTyID: {
+	float value = strtof(text, NULL);
+        return llvm::ConstantFP::get(ftype, llvm::APFloat(value));
+    }
+    case llvm::Type::DoubleTyID: {
+	double value = strtod(text, NULL);
+        return llvm::ConstantFP::get(ftype, llvm::APFloat(value));
+    }
+    default:
+        xunimp("unhandled floating point type");
+        return NULL;
+    }
+#endif
+}
 
 llvm::Value *E_stringLit::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 {
     // RICH: fullTextNQ is not quite right: has e.g. "\n" not replaced with \x10.
     llvm::Constant* c = llvm::ConstantArray::get(fullTextNQ, true);
     // RICH: Sizeof char.
-    llvm::ArrayType* at = llvm::ArrayType::get(llvm::IntegerType::get(8), strlen(fullTextNQ) + 1);
+    llvm::ArrayType* at = llvm::ArrayType::get(llvm::IntegerType::get(BITS_PER_BYTE), strlen(fullTextNQ) + 1);
     // RICH: Non-constant strings?
     llvm::GlobalVariable* gv = new llvm::GlobalVariable(at, true, llvm::GlobalValue::InternalLinkage, c, ".str", env.mod);
 
@@ -741,7 +879,40 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 llvm::Value *E_constructor::cc2llvm(CC2LLVMEnv &env, bool lvalue) const { xunimp(""); return NULL; }
 llvm::Value *E_fieldAcc::cc2llvm(CC2LLVMEnv &env, bool lvalue) const { xunimp(""); return NULL; }
 llvm::Value *E_sizeof::cc2llvm(CC2LLVMEnv &env, bool lvalue) const { xunimp(""); return NULL; }
-llvm::Value *E_unary::cc2llvm(CC2LLVMEnv &env, bool lvalue) const { xunimp(""); return NULL; }
+
+llvm::Value *E_unary::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
+{
+    llvm::Value* value = expr->cc2llvm(env, true);
+
+    switch (op) {
+    case UNY_PLUS:      // +
+        break;		// NO-OP.
+
+    case UNY_MINUS: {   // -
+	// Negate the value.
+	env.checkCurrentBlock();
+        llvm::Value* zero = llvm::Constant::getNullValue(value->getType());
+	value = llvm::BinaryOperator::create(llvm::Instruction::Sub, zero, value, "", env.currentBlock);
+        break;
+    }
+
+    case UNY_NOT:       // !
+        xunimp("!");
+
+    case UNY_BITNOT: {  // ~
+        // Negate the integer value.
+	env.checkCurrentBlock();
+        llvm::Value* ones = llvm::Constant::getAllOnesValue(value->getType());
+        value = llvm::BinaryOperator::create(llvm::Instruction::Xor, value, ones, "", env.currentBlock);
+	break;
+    }
+
+    case NUM_UNARYOPS:
+        break;
+    }
+
+    return value;
+}
 
 /** Unary expression with side effects.
  */
@@ -770,6 +941,7 @@ llvm::Value *E_effect::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 
         llvm::ConstantInt* one = llvm::ConstantInt::get(llvm::APInt(temp->getType()->getPrimitiveSizeInBits(), 1));
 	temp = llvm::BinaryOperator::create(opcode, temp, one, "", env.currentBlock);
+    cout << "five " << "\n";
         new llvm::StoreInst(temp, value, false, env.currentBlock);	// RICH: Volatile
     } else {
         xunimp("++,-- for this operand type");
@@ -781,16 +953,401 @@ llvm::Value *E_effect::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
     return result;
 }
 
+/** Make two operand the same type or cast the first operand to the second type.
+ * We use both the AST and LLVM information to do this.
+ */
+CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(Type* leftType, llvm::Value*& leftValue, Type* rightType, llvm::Value** rightValue)
+{
+    // For operators, we need simple types or pointers.
+    // At this point we can treat a refrence as its inderlying type.
+    // RICH: This may be wrong.
+    if (leftType->isReference()) {
+	leftType = leftType->asReferenceType()->atType;
+    }
+    if (rightType->isReference()) {
+	rightType = rightType->asReferenceType()->atType;
+    }
+
+    /** This structure lets us gather information about an operand.
+     * The information is used to determine how to cast and classify
+     * the operand.
+     */
+    struct Data {
+        bool isPointer;
+        bool isSimple;
+	bool isInteger;
+	bool isUnsigned;
+	bool isFloat;
+	int size;
+	Type * type;
+	llvm::Value** value;
+        Data(Type* type, llvm::Value** value) : type(type), value(value) {
+            // Information needed convert and classify.
+            isPointer = type->isPtrOrRef();
+            isSimple = type->isSimpleType();
+            xassert(isSimple || isPointer);
+	    isInteger = false; isUnsigned = false; size = 0; value = NULL;
+            if (isSimple) {
+	        const SimpleType* st = type->asSimpleTypeC();
+                isInteger = ::isIntegerType(st->type);
+                isUnsigned = ::isExplicitlyUnsigned(st->type);
+                isFloat = ::isFloatType(st->type);
+                size = simpleTypeReprSize(st->type);
+            }
+	}
+    };
+
+    Data left(leftType, &leftValue);
+    Data right(rightType, rightValue);
+    Data* source = NULL;	// This will remain NULL if no cast is needed.
+    Data* target = &right;
+
+    if (right.value == NULL) {
+        // This is a cast of the left value to the right type.
+        target = &right;
+        source = &left;
+    } else if ((*right.value)->getType() == (*left.value)->getType()) {
+        // No conversion is needed.
+    } else if (left.isFloat) {
+	// Cast to the wider of the two operands.
+        if (right.isFloat) {
+	    // Both are float, make sure they are the same size.
+	    if (right.size > left.size) {
+	        source = &left;
+		target = &right;
+	    } else if (left.size > right.size) {
+	        source = &right;
+		target = &left;
+	    }
+	} else {
+	    // Need to convert the right side to floating point.
+	    source = &right;
+	    target = &left;
+	}
+    } else if (right.isFloat) {
+	// Need to convert the left side to floating point.
+	source = &left;
+	target = &right;
+    } else if (left.isPointer) {
+	if (right.isPointer) {
+	    // Check type, may need a bit cast.
+	    if (right.type != left.type) {
+		// Doesn't matter which way we go.
+	        source = &left;
+		target = &right;
+	    }
+	} else {
+	    // The right side is an integer.
+	    source = &right;
+	    target = &left;
+	}
+    } else if (right.isPointer) {
+	// The left side is an integer.
+	source = &left;
+	target = &right;
+    } else {
+        // Both sides are integers.
+	if (left.size > right.size) {
+	    // Promote the right side.
+	    source = &right;
+	    target = &left;
+	} else if (right.size > left.size) {
+	    // Promote the left side.
+	    source = &left;
+	    target = &right;
+	} else {
+	    // The sizes are the same.
+            if (left.isUnsigned && !right.isUnsigned) {
+	        // Promote the right side.
+	        source = &right;
+	        target = &left;
+            } else if (!left.isUnsigned && right.isUnsigned) {
+	        // Promote the left side.
+	        source = &left;
+	        target = &right;
+	    }
+	}
+    }
+
+    // Classify the result.
+    OperatorClass c;
+    if (target->isFloat) {
+        c = OC_FLOAT;
+    } else if (target->isInteger) {
+        if (target->isUnsigned) {
+	    c = OC_UINT;
+        } else {
+	    c = OC_SINT;
+	}
+    } else if (target->isPointer) {
+        c = OC_POINTER;
+    } else {
+        c = OC_OTHER;
+	xunimp("unhandled cast class");
+    }
+
+    if (source) {
+        // We may need to generate a cast operator.
+	switch (c)
+	{
+	case OC_UINT:
+	case OC_SINT:
+            if (source->isInteger) {
+		// Convert integer to integer.
+		if (source->size == target->size) {
+		    // Do nothing.
+		} else if (source->size > target->size) {
+		    // Truncate the source value.
+	            checkCurrentBlock();
+	            *source->value = new llvm::TruncInst(*source->value, makeTypeSpecifier(target->type), "", currentBlock);
+		} else if (source->isUnsigned) {
+	            checkCurrentBlock();
+		    cout << "source " << source->size << " target " << target->size << "\n";
+	            *source->value = new llvm::ZExtInst(*source->value, makeTypeSpecifier(target->type), "", currentBlock);
+		} else {
+	            checkCurrentBlock();
+	            *source->value = new llvm::SExtInst(*source->value, makeTypeSpecifier(target->type), "", currentBlock);
+		}
+	    } else if (source->isPointer) {
+	        // Convert pointer to integer.
+	        xunimp("unhandled pointer to int conversion");
+	    } else if (source->isFloat) {
+	        // Convert Float to integer.
+	        xunimp("unhandled float to int conversion");
+	    }
+            break;
+
+	case OC_POINTER:
+	    xunimp("unhandled pointer conversion");
+        case OC_FLOAT:
+	    xunimp("unhandled float conversion");
+	case OC_OTHER:
+	    break;
+	}
+    }
+
+    return c;
+}
+
+/** Create a value from an initializer.
+ */
+llvm::Value* CC2LLVMEnv::initializer(const Initializer* init)
+{
+    if (init == NULL) {
+        // No initializer.
+	return NULL;
+    }
+
+    llvm::Value* value = NULL;
+
+    // Handle an initializer.
+    ASTSWITCHC(Initializer, init) {
+    ASTCASEC(IN_expr, e) {
+        value = e->e->cc2llvm(*this);
+    }
+
+    ASTNEXTC(IN_compound, c) {
+        FOREACH_ASTLIST(Initializer, c->inits, iter) {
+            initializer(iter.data());
+        }
+        xunimp("unhandled compound initializer");
+    }
+
+    ASTNEXTC(IN_ctor, c) {
+        xunimp("unhandled ctor initializer");
+    }
+
+    ASTNEXTC(IN_designated, d) {
+        xunimp("unhandled designalted initializer");
+    }
+
+    ASTENDCASED
+    }
+
+    return value;
+}
+
 llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 {
     env.checkCurrentBlock();
     llvm::Value* left = e1->cc2llvm(env);
     llvm::Value* right = e2->cc2llvm(env);
     llvm::Value* result = NULL;
+    CC2LLVMEnv::OperatorClass c = CC2LLVMEnv::OC_OTHER;
 
     switch (op)
     {
-    case BIN_PLUS:
+    case BIN_EQUAL:	// ==
+	c = env.makeCast(e1->type, left, e2->type, &right);
+	switch (c) {
+	case CC2LLVMEnv::OC_SINT:
+	case CC2LLVMEnv::OC_UINT:
+	case CC2LLVMEnv::OC_POINTER:
+            result = new llvm::ICmpInst(llvm::ICmpInst::ICMP_EQ, left, right, "", env.currentBlock);
+            break;
+	case CC2LLVMEnv::OC_FLOAT:
+	    // RICH: ordered vs. unordered.
+            result = new llvm::FCmpInst(llvm::FCmpInst::FCMP_OEQ, left, right, "", env.currentBlock);
+            break;
+	case CC2LLVMEnv::OC_OTHER:
+	    xunimp("operator == class");
+	    break;
+	}
+        break;
+
+    case BIN_NOTEQUAL:	// !=
+	c = env.makeCast(e1->type, left, e2->type, &right);
+	switch (c) {
+	case CC2LLVMEnv::OC_SINT:
+	case CC2LLVMEnv::OC_UINT:
+	case CC2LLVMEnv::OC_POINTER:
+            result = new llvm::ICmpInst(llvm::ICmpInst::ICMP_NE, left, right, "", env.currentBlock);
+            break;
+	case CC2LLVMEnv::OC_FLOAT:
+	    // RICH: ordered vs. unordered.
+            result = new llvm::FCmpInst(llvm::FCmpInst::FCMP_ONE, left, right, "", env.currentBlock);
+            break;
+	case CC2LLVMEnv::OC_OTHER:
+	    xunimp("operator != class");
+	    break;
+	}
+        break;
+
+    case BIN_LESS:	// < 
+	c = env.makeCast(e1->type, left, e2->type, &right);
+	switch (c) {
+	case CC2LLVMEnv::OC_SINT:
+            result = new llvm::ICmpInst(llvm::ICmpInst::ICMP_SLT, left, right, "", env.currentBlock);
+	    break;
+	case CC2LLVMEnv::OC_UINT:
+	case CC2LLVMEnv::OC_POINTER:
+            result = new llvm::ICmpInst(llvm::ICmpInst::ICMP_ULT, left, right, "", env.currentBlock);
+            break;
+	case CC2LLVMEnv::OC_FLOAT:
+	    // RICH: ordered vs. unordered.
+            result = new llvm::FCmpInst(llvm::FCmpInst::FCMP_OLT, left, right, "", env.currentBlock);
+            break;
+	case CC2LLVMEnv::OC_OTHER:
+	    xunimp("operator < class");
+	    break;
+	}
+        break;
+
+    case BIN_LESSEQ:	// <= 
+	c = env.makeCast(e1->type, left, e2->type, &right);
+	switch (c) {
+	case CC2LLVMEnv::OC_SINT:
+            result = new llvm::ICmpInst(llvm::ICmpInst::ICMP_SLE, left, right, "", env.currentBlock);
+	    break;
+	case CC2LLVMEnv::OC_UINT:
+	case CC2LLVMEnv::OC_POINTER:
+            result = new llvm::ICmpInst(llvm::ICmpInst::ICMP_ULE, left, right, "", env.currentBlock);
+            break;
+	case CC2LLVMEnv::OC_FLOAT:
+	    // RICH: ordered vs. unordered.
+            result = new llvm::FCmpInst(llvm::FCmpInst::FCMP_OLE, left, right, "", env.currentBlock);
+            break;
+	case CC2LLVMEnv::OC_OTHER:
+	    xunimp("operator <= class");
+	    break;
+	}
+        break;
+
+    case BIN_GREATER:   // >
+	c = env.makeCast(e1->type, left, e2->type, &right);
+	switch (c) {
+	case CC2LLVMEnv::OC_SINT:
+            result = new llvm::ICmpInst(llvm::ICmpInst::ICMP_SGT, left, right, "", env.currentBlock);
+	    break;
+	case CC2LLVMEnv::OC_UINT:
+	case CC2LLVMEnv::OC_POINTER:
+            result = new llvm::ICmpInst(llvm::ICmpInst::ICMP_UGT, left, right, "", env.currentBlock);
+            break;
+	case CC2LLVMEnv::OC_FLOAT:
+	    // RICH: ordered vs. unordered.
+            result = new llvm::FCmpInst(llvm::FCmpInst::FCMP_OGT, left, right, "", env.currentBlock);
+            break;
+	case CC2LLVMEnv::OC_OTHER:
+	    xunimp("operator > class");
+	    break;
+	}
+        break;
+
+    case BIN_GREATEREQ: // >=
+	c = env.makeCast(e1->type, left, e2->type, &right);
+	switch (c) {
+	case CC2LLVMEnv::OC_SINT:
+            result = new llvm::ICmpInst(llvm::ICmpInst::ICMP_SGE, left, right, "", env.currentBlock);
+	    break;
+	case CC2LLVMEnv::OC_UINT:
+	case CC2LLVMEnv::OC_POINTER:
+            result = new llvm::ICmpInst(llvm::ICmpInst::ICMP_UGE, left, right, "", env.currentBlock);
+            break;
+	case CC2LLVMEnv::OC_FLOAT:
+	    // RICH: ordered vs. unordered.
+            result = new llvm::FCmpInst(llvm::FCmpInst::FCMP_OGE, left, right, "", env.currentBlock);
+            break;
+	case CC2LLVMEnv::OC_OTHER:
+	    xunimp("operator >= class");
+	    break;
+	}
+        break;
+
+    case BIN_MULT:      // *
+	c = env.makeCast(e1->type, left, e2->type, &right);
+	switch (c) {
+	case CC2LLVMEnv::OC_SINT:
+	case CC2LLVMEnv::OC_UINT:
+	case CC2LLVMEnv::OC_POINTER:
+	case CC2LLVMEnv::OC_FLOAT:
+	    result = llvm::BinaryOperator::create(llvm::Instruction::Mul, left, right, "", env.currentBlock);
+            break;
+	case CC2LLVMEnv::OC_OTHER:
+	    xunimp("operator * class");
+	    break;
+	}
+        break;
+
+    case BIN_DIV:       // /
+	c = env.makeCast(e1->type, left, e2->type, &right);
+	switch (c) {
+	case CC2LLVMEnv::OC_SINT:
+	    result = llvm::BinaryOperator::create(llvm::Instruction::SDiv, left, right, "", env.currentBlock);
+	    break;
+	case CC2LLVMEnv::OC_UINT:
+	case CC2LLVMEnv::OC_POINTER:
+	    result = llvm::BinaryOperator::create(llvm::Instruction::UDiv, left, right, "", env.currentBlock);
+            break;
+	case CC2LLVMEnv::OC_FLOAT:
+	    result = llvm::BinaryOperator::create(llvm::Instruction::FDiv, left, right, "", env.currentBlock);
+            break;
+	case CC2LLVMEnv::OC_OTHER:
+	    xunimp("operator / class");
+	    break;
+	}
+        break;
+
+    case BIN_MOD:       // %
+	c = env.makeCast(e1->type, left, e2->type, &right);
+	switch (c) {
+	case CC2LLVMEnv::OC_SINT:
+	    result = llvm::BinaryOperator::create(llvm::Instruction::SRem, left, right, "", env.currentBlock);
+	    break;
+	case CC2LLVMEnv::OC_UINT:
+	case CC2LLVMEnv::OC_POINTER:
+	    result = llvm::BinaryOperator::create(llvm::Instruction::URem, left, right, "", env.currentBlock);
+            break;
+	case CC2LLVMEnv::OC_FLOAT:
+	    result = llvm::BinaryOperator::create(llvm::Instruction::FRem, left, right, "", env.currentBlock);
+            break;
+	case CC2LLVMEnv::OC_OTHER:
+	    xunimp("operator % class");
+	    break;
+	}
+        break;
+
+    case BIN_PLUS:      // +
+    case BIN_MINUS:     // -
         if (left->getType() != right->getType()) {
             // The types differ. This could be an array reference *(a + i).
 	    if (right->getType()->getTypeID() == llvm::Type::PointerTyID) {
@@ -802,32 +1359,153 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 
 	    if (   left->getType()->getTypeID() == llvm::Type::PointerTyID
 	        && right->getType()->getTypeID() == llvm::Type::IntegerTyID) {
-	        // If the left size is a pointer and the left side is an integer, calculate the address.
+	        // If the left size is a pointer and the right side is an integer, calculate the address.
+		if (op == BIN_MINUS) {
+		    // Negate the integer value.
+                    llvm::Value* zero = llvm::Constant::getNullValue(right->getType());
+		    right = llvm::BinaryOperator::create(llvm::Instruction::Sub, zero, right, "", env.currentBlock);
+		}
 		std::vector<llvm::Value*> index;
 	        index.push_back(llvm::Constant::getNullValue(right->getType()));
 	        index.push_back(right);
 		result = new llvm::GetElementPtrInst(left, index.begin(), index.end(), "", env.currentBlock);
-	    } else {
-	        xunimp("addition of unlike types");
+	        break;
 	    }
-        } else {
-	    result = llvm::BinaryOperator::create(llvm::Instruction::Add, left, right, "", env.currentBlock);
+        }
+
+	c = env.makeCast(e1->type, left, e2->type, &right);
+	switch (c) {
+	case CC2LLVMEnv::OC_SINT:
+	case CC2LLVMEnv::OC_UINT:
+	case CC2LLVMEnv::OC_POINTER:
+	case CC2LLVMEnv::OC_FLOAT:
+	    result = llvm::BinaryOperator::create(op == BIN_PLUS ? llvm::Instruction::Add : llvm::Instruction::Sub,
+	        left, right, "", env.currentBlock);
+            break;
+	case CC2LLVMEnv::OC_OTHER:
+	    xunimp("operator +/- class");
+	    break;
 	}
         break;
-    case BIN_EQUAL:
-        result = new llvm::ICmpInst(llvm::ICmpInst::ICMP_EQ, left, right, "", env.currentBlock);
+
+    case BIN_LSHIFT:    // <<
+	c = env.makeCast(e1->type, left, e2->type, &right);
+	switch (c) {
+	case CC2LLVMEnv::OC_SINT:
+	case CC2LLVMEnv::OC_UINT:
+	    result = llvm::BinaryOperator::create(llvm::Instruction::Shl, left, right, "", env.currentBlock);
+            break;
+	case CC2LLVMEnv::OC_POINTER:
+	case CC2LLVMEnv::OC_FLOAT:
+	case CC2LLVMEnv::OC_OTHER:
+	    xunimp("operator << class");
+	    break;
+	}
         break;
-    case BIN_NOTEQUAL:
-        result = new llvm::ICmpInst(llvm::ICmpInst::ICMP_NE, left, right, "", env.currentBlock);
+
+    case BIN_RSHIFT:    // >>
+	c = env.makeCast(e1->type, left, e2->type, &right);
+	switch (c) {
+	case CC2LLVMEnv::OC_SINT:
+	    result = llvm::BinaryOperator::create(llvm::Instruction::AShr, left, right, "", env.currentBlock);
+            break;
+	case CC2LLVMEnv::OC_UINT:
+	    result = llvm::BinaryOperator::create(llvm::Instruction::LShr, left, right, "", env.currentBlock);
+            break;
+	case CC2LLVMEnv::OC_POINTER:
+	case CC2LLVMEnv::OC_FLOAT:
+	case CC2LLVMEnv::OC_OTHER:
+	    xunimp("operator >> class");
+	    break;
+	}
         break;
-    case BIN_LESS:	// RICH: Signed vs. unsigned.
-        result = new llvm::ICmpInst(llvm::ICmpInst::ICMP_SLT, left, right, "", env.currentBlock);
+
+    case BIN_BITAND:    // &
+	c = env.makeCast(e1->type, left, e2->type, &right);
+	switch (c) {
+	case CC2LLVMEnv::OC_SINT:
+	case CC2LLVMEnv::OC_UINT:
+	    result = llvm::BinaryOperator::create(llvm::Instruction::And, left, right, "", env.currentBlock);
+            break;
+	case CC2LLVMEnv::OC_POINTER:
+	case CC2LLVMEnv::OC_FLOAT:
+	case CC2LLVMEnv::OC_OTHER:
+	    xunimp("operator & class");
+	    break;
+	}
         break;
-    case BIN_LESSEQ:	// RICH: Signed vs. unsigned.
-        result = new llvm::ICmpInst(llvm::ICmpInst::ICMP_SLE, left, right, "", env.currentBlock);
+
+    case BIN_BITXOR:    // ^
+	c = env.makeCast(e1->type, left, e2->type, &right);
+	switch (c) {
+	case CC2LLVMEnv::OC_SINT:
+	case CC2LLVMEnv::OC_UINT:
+	    result = llvm::BinaryOperator::create(llvm::Instruction::Xor, left, right, "", env.currentBlock);
+            break;
+	case CC2LLVMEnv::OC_POINTER:
+	case CC2LLVMEnv::OC_FLOAT:
+	case CC2LLVMEnv::OC_OTHER:
+	    xunimp("operator ^ class");
+	    break;
+	}
         break;
-    default:
-        xunimp("");
+
+    case BIN_BITOR:     // |
+	c = env.makeCast(e1->type, left, e2->type, &right);
+	switch (c) {
+	case CC2LLVMEnv::OC_SINT:
+	case CC2LLVMEnv::OC_UINT:
+	    result = llvm::BinaryOperator::create(llvm::Instruction::Or, left, right, "", env.currentBlock);
+            break;
+	case CC2LLVMEnv::OC_POINTER:
+	case CC2LLVMEnv::OC_FLOAT:
+	case CC2LLVMEnv::OC_OTHER:
+	    xunimp("operator | class");
+	    break;
+	}
+        break;
+
+    case BIN_AND:       // &&
+        xunimp("&&");
+        break;
+    case BIN_OR:        // ||
+        xunimp("||");
+        break;
+    case BIN_COMMA:     // ,
+        xunimp(",");
+        break;
+
+    // gcc extensions
+    case BIN_MINIMUM:   // <?
+        xunimp("<?");
+        break;
+    case BIN_MAXIMUM:   // >?
+        xunimp(">?");
+        break;
+
+    // this exists only between parsing and typechecking
+    case BIN_BRACKETS:  // []
+        break;		// Never get here.
+
+    case BIN_ASSIGN:    // = (used to denote simple assignments in AST, as opposed to (say) "+=")
+        break;		// Never get here, see E_assign.
+
+    // C++ operators
+    case BIN_DOT_STAR:    // .*
+        xunimp(".*");
+        break;
+    case BIN_ARROW_STAR:  // ->*
+        xunimp("->*");
+        break;
+
+    // theorem prover extension
+    case BIN_IMPLIES:     // ==>
+        xunimp("==>");
+        break;
+    case BIN_EQUIVALENT:  // <==>
+        xunimp("<==>");
+        break;
+    case NUM_BINARYOPS:
         break;
     }
 
@@ -848,7 +1526,13 @@ llvm::Value *E_deref::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
     return new llvm::LoadInst(source, "", false, env.currentBlock);	// RICH: Volatile
 }
 
-llvm::Value *E_cast::cc2llvm(CC2LLVMEnv &env, bool lvalue) const { xunimp(""); return NULL; }
+llvm::Value *E_cast::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
+{
+    llvm::Value* result = expr->cc2llvm(env);
+    // RICH: The following cast gets rid of "const". Should be a better way.
+    env.makeCast(expr->type, result, ((E_cast*)this)->getType());
+    return result;
+}
 
 llvm::Value *E_cond::cc2llvm(CC2LLVMEnv &env, bool lvalue) const { xunimp(""); return NULL; }
 
@@ -862,6 +1546,7 @@ llvm::Value *E_assign::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
     switch (op)
     {
     case BIN_ASSIGN:
+    cout << "six " << "\n";
 	destination = new llvm::StoreInst(source, destination, false, env.currentBlock);	// RICH: isVolatile
         break;
     default:

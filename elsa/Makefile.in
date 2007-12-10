@@ -13,7 +13,6 @@ all: cc.ast.gen.h tlexer packedword_test ccparse quicktest
 SMBASE   := @SMBASE@
 AST      := @AST@
 ELKHOUND := @ELKHOUND@
-LLVM     := @LLVM@
 
 # stuff inside those other directories
 LIBSMBASE   := $(SMBASE)/libsmbase.a
@@ -109,7 +108,7 @@ endif
 CXX := @CXX@
 
 # flags for the C++ compiler (and preprocessor)
-CCFLAGS := @CCFLAGS@ -Woverloaded-virtual -I$(SMBASE) -I$(AST) -I$(ELKHOUND) -I$(LLVM)/include
+CCFLAGS := @CCFLAGS@ -Woverloaded-virtual -I$(SMBASE) -I$(AST) -I$(ELKHOUND)
 
 # how to enable coverage
 GCOV_OPTS := -fprofile-arcs -ftest-coverage
@@ -357,7 +356,7 @@ quicktest: ccparse
 # -------------------- semgrep --------------------
 TOCLEAN += semgrep
 semgrep: $(CCPARSE_OBJS) semgrep.o $(libraries) $(LIBSMBASE)
-	$(CXX) -o $@ $(CCPARSE_OBJS) semgrep.o $(LDFLAGS)
+	$(CXX) -o $@ $(CCPARSE_OBJS) semgrep.o $(LDFLAGS) $(LLVMLDFLAGS)
 
 
 # --------------------- iptree --------------------

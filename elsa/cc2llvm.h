@@ -1,8 +1,5 @@
 // cc2llvm.h
-// Given a C++ TranslationUnit, produce a C TranslationUnit.
-// That is, compile C++ down into C.
-
-// See cc2llvm.txt for some design notes.
+// Given a C++ TranslationUnit, produce LLVM code.
 
 #ifndef CC2LLVM_H
 #define CC2LLVM_H
@@ -26,92 +23,131 @@ namespace llvm {
 // System
 #include <vector>
 
-// Main translator entry point.  Output tree is completely disjoint
-// from the input tree, with the (optional) exception of the string
-// table.  Also, the output tree is just (unambiguous) syntax; it is
-// not decorated with types.  In contrast, the input tree must already
-// be typechecked *and* elaborated (with cc_elaborate.{h,cc}, using
-// all elaboration mechanisms).
+/** The main translator entry point.
+ */
 llvm::Module* cc_to_llvm(string name, StringTable &str, TranslationUnit const &input);
 
 
-// Translation environment.  Among other things, holds the output
-// TranslationUnit while it is being built.
+/** The translation environment.
+ * Among other things, the environment holds the output LLVM module.
+ * while it is being built.
+ */
 class CC2LLVMEnv {
 public:      // data
-  // StringTable for use by the created AST nodes.  Can be the
-  // same as the input tree's table, but can also be different.
-  StringTable &str;
+    /** StringTable for storing generated strings.
+     */ 
+    StringTable &str;
 
 public:      // funcs
-  CC2LLVMEnv(StringTable &str, string name, const TranslationUnit& input);
-  ~CC2LLVMEnv();
+    /** Construct an LLVM convertor.
+     */
+    CC2LLVMEnv(StringTable &str, string name, const TranslationUnit& input);
+    /** Destruct an LLVM convertor.
+     */
+    ~CC2LLVMEnv();
 
-  // Create a new TypeSpecifier that names type 't'.
-  const llvm::Type* makeTypeSpecifier(Type *t);
-  const llvm::Type* makeAtomicTypeSpecifier(AtomicType *t);
+    /** Convert an AST type specifier into an LLVM type specifier.
+     */
+    const llvm::Type* makeTypeSpecifier(Type *t);
 
-  /** Make sure the current block has been opened.
-   */
-  void checkCurrentBlock();
+    /** Convert an AST atomoc type specifier into an LLVM atomoc type specifier.
+     */
+    const llvm::Type* makeAtomicTypeSpecifier(AtomicType *t);
 
-  // Get a name for a variable.  Employs the name mangler.
-  StringRef getVariableName(Variable const *v);
+    /** Make sure the current basic block has been opened.
+     */
+    void checkCurrentBlock();
 
-  // Make a PQ_name for a variable.
-  PQ_name *makeName(Variable const *v);
+     /** Get a name for a variable.
+      * Employs the name mangler.
+      */
+    StringRef getVariableName(Variable const *v);
 
-  // Create a PQ_name.  Just encapsulates an allocation.
-  PQ_name *makePQ_name(StringRef name);
+    /** Make a PQ_name for a variable.
+     */
+    PQ_name *makeName(Variable const *v);
 
-  // Create a list of parameters suitable for inclusion in a D_func,
-  // based on 'ft'.
-  void makeParameterTypes(FunctionType *ft, std::vector<const llvm::Type*>& args);
+    /** Create a PQ_name.  Just encapsulates an allocation.
+     */
+    PQ_name *makePQ_name(StringRef name);
 
-  /** Perform the AST to LLVM lowering.
-   * @return The LLVM module.
-   */
-  llvm::Module* doit();
+    /** Create a list of parameters suitable for inclusion in a llvm::FunctionType.
+     */
+    void makeParameterTypes(FunctionType *ft, std::vector<const llvm::Type*>& args);
 
-  /** The input AST.
-   */
-  const TranslationUnit& input;
-  /** The LLVM module created.
-   */
-  llvm::Module* mod;
-  /** The current function.
-   */
-  llvm::Function* function;
-  /** The current function entry block.
-   */
-  llvm::BasicBlock* entryBlock;
-  /** The current function return block.
-   */
-  llvm::BasicBlock* returnBlock;
-  /** The return value.
-   */
-  llvm::Value* returnValue;
-  /** The current block being processed.
-   */
-  llvm::BasicBlock* currentBlock;
-  /** The continuation point of the current loop.
-   */
-  llvm::BasicBlock* continueBlock;
-  /** The block following current loop or switch.
-   */
-  llvm::BasicBlock* nextBlock;
-  /** Map AST variables to LLVM variables.
-   */
-  PtrMap<Variable, llvm::Value> variables;
-  /** Map labels to LLVM blocks.
-   */
-  PtrMap<const char, llvm::BasicBlock> labels;
+    /** Operator classification.
+     */
+    enum OperatorClass {
+      /** Signed integer.
+       */
+      OC_SINT,
+      /** Unsigned integer.
+       */
+      OC_UINT,
+      /** A pointer.
+       */
+      OC_POINTER,
+      /** Floating point.
+       */
+      OC_FLOAT,
+      /** Everything else.
+       */
+      OC_OTHER
+    };
 
+    /** Make two operand the same type or cast the first operand to the second type.
+     * @return The TypeID of the result.
+     */
+    OperatorClass makeCast(Type* leftType, llvm::Value*& leftValue, Type* rightType, llvm::Value** rightValue = NULL);
+    /** Create a value from an initializer.
+     * @return The LLVM value representing the initializer.
+     */
+    llvm::Value* initializer(const Initializer* init);
+
+    /** Perform the AST to LLVM lowering.
+     * @return The LLVM module.
+     */
+    llvm::Module* doit();
+
+    /** The input AST.
+     */
+    const TranslationUnit& input;
+    /** The LLVM module created.
+     */
+    llvm::Module* mod;
+    /** The current function.
+     */
+    llvm::Function* function;
+    /** The AST of the currrent function.
+     */
+    const Function* functionAST;
+    /** The current function entry block.
+     */
+    llvm::BasicBlock* entryBlock;
+    /** The current function return block.
+     */
+    llvm::BasicBlock* returnBlock;
+    /** The return value.
+     */
+    llvm::Value* returnValue;
+    /** The current block being processed.
+     */
+    llvm::BasicBlock* currentBlock;
+    /** The continuation point of the current loop.
+     */
+    llvm::BasicBlock* continueBlock;
+    /** The block following current loop or switch.
+     */
+    llvm::BasicBlock* nextBlock;
+    /** Map AST variables to LLVM variables.
+     */
+    PtrMap<const Variable, llvm::Value> variables;
+    /** Map AST compound types to LLVM compound types.
+     */
+    PtrMap<CompoundType, const llvm::Type> compounds;
+    /** Map labels to LLVM blocks.
+     */
+    PtrMap<const char, llvm::BasicBlock> labels;
 };
-
-
-// TODO: Add a visitor to check that a TranslationUnit only uses
-// things that are legal in C.
-
 
 #endif // CC2LLVM_H
