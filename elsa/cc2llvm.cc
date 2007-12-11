@@ -20,8 +20,9 @@
 #define BITS_PER_BYTE	8	// RICH: Temporary.
 
 // -------------------- CC2LLVMEnv ---------------------
-CC2LLVMEnv::CC2LLVMEnv(StringTable &s, string name, const TranslationUnit& input)
+CC2LLVMEnv::CC2LLVMEnv(StringTable &s, string name, const TranslationUnit& input, string targetData, string targetTriple)
   : str(s),
+    targetData(targetData.c_str()),
     input(input),
     mod(new llvm::Module(name.c_str())),
     function(NULL),
@@ -32,7 +33,10 @@ CC2LLVMEnv::CC2LLVMEnv(StringTable &s, string name, const TranslationUnit& input
     currentBlock(NULL),
     continueBlock(NULL),
     nextBlock(NULL)
-{ }
+{ 
+    mod->setDataLayout("e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:32:64-f32:32:32-f64:32:64-v64:64:64-v128:128:128-a0:0:64-s0:0:64-f80:32:32");
+    mod->setTargetTriple("i686-pc-linux-gnu");
+}
 
 CC2LLVMEnv::~CC2LLVMEnv()
 { }
@@ -49,7 +53,12 @@ void CC2LLVMEnv::checkCurrentBlock()
 
 const llvm::Type* CC2LLVMEnv::makeTypeSpecifier(Type *t)
 {
-    const llvm::Type* type = NULL;
+    const llvm::Type* type = types.get(t);
+
+    if (type) {
+        // This type has already been seen.
+	return type;
+    }
 
     switch (t->getTag())
     {
@@ -124,6 +133,8 @@ const llvm::Type* CC2LLVMEnv::makeTypeSpecifier(Type *t)
         break;
     }
 
+    // Remember the mapping of this type.
+    types.add(t, type);
     return type;
 }
 
@@ -194,6 +205,7 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(AtomicType *at)
 	    break;
 	}
 
+	// RICH: struct, union, class, other stuff in a class.
 	// Create an opaque type to eliminate recursion.
 	llvm::PATypeHolder fwd = llvm::OpaqueType::get();
         // Get the type pointer.
@@ -403,7 +415,7 @@ void Declaration::cc2llvm(CC2LLVMEnv &env) const
         }
 
         // Get any initializer.        
-        llvm::Value* init = env.initializer(declarator->init);
+        llvm::Value* init = env.initializer(declarator->init, var->type);
 
         // Create the full generated declaration.
         const llvm::Type* type = env.makeTypeSpecifier(var->type);
@@ -1087,7 +1099,7 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(Type* leftType, llvm::Value*& lef
     }
 
     if (source) {
-        // We may need to generate a cast operator.
+        // We may need to generate a cast instruction.
 	switch (c)
 	{
 	case OC_UINT:
@@ -1101,26 +1113,86 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(Type* leftType, llvm::Value*& lef
 	            checkCurrentBlock();
 	            *source->value = new llvm::TruncInst(*source->value, makeTypeSpecifier(target->type), "", currentBlock);
 		} else if (source->isUnsigned) {
+		    // Zero extend the source value.
 	            checkCurrentBlock();
-		    cout << "source " << source->size << " target " << target->size << "\n";
 	            *source->value = new llvm::ZExtInst(*source->value, makeTypeSpecifier(target->type), "", currentBlock);
 		} else {
+		    // Sign extend the source value.
 	            checkCurrentBlock();
 	            *source->value = new llvm::SExtInst(*source->value, makeTypeSpecifier(target->type), "", currentBlock);
 		}
 	    } else if (source->isPointer) {
 	        // Convert pointer to integer.
-	        xunimp("unhandled pointer to int conversion");
+	        checkCurrentBlock();
+	        *source->value = new llvm::PtrToIntInst(*source->value, makeTypeSpecifier(target->type), "", currentBlock);
 	    } else if (source->isFloat) {
 	        // Convert Float to integer.
-	        xunimp("unhandled float to int conversion");
+	        checkCurrentBlock();
+		if (c == OC_UINT) {
+		    // Float to unsigned int.
+	            *source->value = new llvm::FPToUIInst(*source->value, makeTypeSpecifier(target->type), "", currentBlock);
+		} else {
+		    // Float to signed int.
+	            *source->value = new llvm::FPToSIInst(*source->value, makeTypeSpecifier(target->type), "", currentBlock);
+		}
 	    }
             break;
 
 	case OC_POINTER:
-	    xunimp("unhandled pointer conversion");
+            if (source->isInteger) {
+		// Convert integer to pointer.
+	        checkCurrentBlock();
+	        *source->value = new llvm::IntToPtrInst(*source->value, makeTypeSpecifier(target->type), "", currentBlock);
+	    } else if (source->isPointer) {
+	        // Convert pointer to pointer.
+	        checkCurrentBlock();
+	        *source->value = new llvm::BitCastInst(*source->value, makeTypeSpecifier(target->type), "", currentBlock);
+	    } else if (source->isFloat) {
+	        // Convert Float to pointer.
+	        checkCurrentBlock();
+		// Float to unsigned int.
+                const llvm::Type* itype = llvm::IntegerType::get(targetData.getPointerSize());
+	        *source->value = new llvm::FPToUIInst(*source->value, itype, "", currentBlock);
+	        // Unsigned int to pointer.
+	        *source->value = new llvm::IntToPtrInst(*source->value, makeTypeSpecifier(target->type), "", currentBlock);
+	    }
+            break;
+
         case OC_FLOAT:
-	    xunimp("unhandled float conversion");
+            if (source->isInteger) {
+		// Convert integer to float.
+	        checkCurrentBlock();
+		if (source->isUnsigned) {
+		    // Unsigned int to float.
+	            *source->value = new llvm::UIToFPInst(*source->value, makeTypeSpecifier(target->type), "", currentBlock);
+		} else {
+		    // Signed int to float.
+	            *source->value = new llvm::SIToFPInst(*source->value, makeTypeSpecifier(target->type), "", currentBlock);
+		}
+	    } else if (source->isPointer) {
+	        // Convert pointer to float.
+	        checkCurrentBlock();
+		// Pointer to unsigned int.
+                const llvm::Type* itype = llvm::IntegerType::get(targetData.getPointerSize());
+	        *source->value = new llvm::PtrToIntInst(*source->value, itype, "", currentBlock);
+	        // Unsigned int to float.
+	        *source->value = new llvm::UIToFPInst(*source->value, makeTypeSpecifier(target->type), "", currentBlock);
+	    } else if (source->isFloat) {
+	        // Convert Float to Float.
+		if (source->size == target->size) {
+		    // Do nothing.
+		} else if (source->size > target->size) {
+		    // Truncate the source value.
+	            checkCurrentBlock();
+	            *source->value = new llvm::FPTruncInst(*source->value, makeTypeSpecifier(target->type), "", currentBlock);
+		} else {
+		    // Extend the source value.
+	            checkCurrentBlock();
+	            *source->value = new llvm::FPExtInst(*source->value, makeTypeSpecifier(target->type), "", currentBlock);
+		}
+	    }
+            break;
+
 	case OC_OTHER:
 	    break;
 	}
@@ -1131,7 +1203,7 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(Type* leftType, llvm::Value*& lef
 
 /** Create a value from an initializer.
  */
-llvm::Value* CC2LLVMEnv::initializer(const Initializer* init)
+llvm::Value* CC2LLVMEnv::initializer(const Initializer* init, Type* type)
 {
     if (init == NULL) {
         // No initializer.
@@ -1140,17 +1212,38 @@ llvm::Value* CC2LLVMEnv::initializer(const Initializer* init)
 
     llvm::Value* value = NULL;
 
+    if (type) cout << "initializing " << type->toString() << "\n";
+
     // Handle an initializer.
     ASTSWITCHC(Initializer, init) {
     ASTCASEC(IN_expr, e) {
         value = e->e->cc2llvm(*this);
+        makeCast(e->e->type, value, type);
     }
 
     ASTNEXTC(IN_compound, c) {
-        FOREACH_ASTLIST(Initializer, c->inits, iter) {
-            initializer(iter.data());
-        }
-        xunimp("unhandled compound initializer");
+	if (type->isArrayType()) {
+            ArrayType *at = type->asArrayType();
+	    int size = at->getSize();
+	    if (size == ArrayType::NO_SIZE) {
+	        size = 0;
+	    } else if (size == ArrayType::DYN_SIZE) {
+                xunimp("unhandled dynamic array type in initializer");
+	    }
+
+	    xassert(size == c->inits.count());
+	    std::vector<llvm::Constant*> elements;
+            FOREACH_ASTLIST(Initializer, c->inits, iter) {
+                elements.push_back((llvm::Constant*)initializer(iter.data(), at->eltType));
+            }
+	    value = llvm::ConstantArray::get((llvm::ArrayType*)makeTypeSpecifier(type), elements);
+	    break;
+	} else if (type->isCompoundType()) {
+            FOREACH_ASTLIST(Initializer, c->inits, iter) {
+                initializer(iter.data(), NULL);
+            }
+            xunimp("unhandled compound initializer");
+	}
     }
 
     ASTNEXTC(IN_ctor, c) {
@@ -1585,10 +1678,6 @@ llvm::Value *FullExpression::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 // ------------------ Translate ----------------------
 llvm::Module* CC2LLVMEnv::doit()
 {
-    // RICH: Data layout and target triple.
-    mod->setDataLayout("e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:32:64-f32:32:32-f64:32:64-v64:64:64-v128:128:128-a0:0:64-s0:0:64-f80:32:32");
-    mod->setTargetTriple("i686-pc-linux-gnu");
-
     FOREACH_ASTLIST(TopForm, input.topForms, iter) {
         iter.data()->cc2llvm(*this);
     }
@@ -1601,9 +1690,9 @@ llvm::Module* CC2LLVMEnv::doit()
 }
 
 // ------------------- entry point -------------------
-llvm::Module* cc_to_llvm(string name, StringTable &str, TranslationUnit const &input)
+llvm::Module* cc_to_llvm(string name, StringTable &str, TranslationUnit const &input, string targetData, string targetTriple)
 {
-    CC2LLVMEnv env(str, name, input);
+    CC2LLVMEnv env(str, name, input, targetData, targetTriple);
     return env.doit();
 }
 

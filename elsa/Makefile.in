@@ -18,7 +18,7 @@ ELKHOUND := @ELKHOUND@
 LIBSMBASE   := $(SMBASE)/libsmbase.a
 LIBAST      := $(AST)/libast.a
 LIBELKHOUND := $(ELKHOUND)/libelkhound.a
-LLVMLDFLAGS := $(shell llvm-config --ldflags --libs core)
+LLVMLDFLAGS := $(shell llvm-config --ldflags --libs core target)
 
 # external tools
 PERL := @PERL@

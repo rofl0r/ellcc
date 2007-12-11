@@ -12,6 +12,7 @@ namespace llvm {
     class BasicBlock;
     class Value;
 };
+#include <llvm/Target/TargetData.h>
 
 // Elsa
 #include "cc_ast.h"          // C++ AST
@@ -25,7 +26,7 @@ namespace llvm {
 
 /** The main translator entry point.
  */
-llvm::Module* cc_to_llvm(string name, StringTable &str, TranslationUnit const &input);
+llvm::Module* cc_to_llvm(string name, StringTable &str, TranslationUnit const &input, string targetData, string targetTriple);
 
 
 /** The translation environment.
@@ -41,10 +42,14 @@ public:      // data
 public:      // funcs
     /** Construct an LLVM convertor.
      */
-    CC2LLVMEnv(StringTable &str, string name, const TranslationUnit& input);
+    CC2LLVMEnv(StringTable &str, string name, const TranslationUnit& input, string targetData, string targetTriple);
     /** Destruct an LLVM convertor.
      */
     ~CC2LLVMEnv();
+
+    /** Information aboue the target.
+     */
+    llvm::TargetData targetData;
 
     /** Convert an AST type specifier into an LLVM type specifier.
      */
@@ -102,7 +107,7 @@ public:      // funcs
     /** Create a value from an initializer.
      * @return The LLVM value representing the initializer.
      */
-    llvm::Value* initializer(const Initializer* init);
+    llvm::Value* initializer(const Initializer* init, Type* type);
 
     /** Perform the AST to LLVM lowering.
      * @return The LLVM module.
@@ -145,6 +150,9 @@ public:      // funcs
     /** Map AST compound types to LLVM compound types.
      */
     PtrMap<CompoundType, const llvm::Type> compounds;
+    /** Map AST types to LLVM types.
+     */
+    PtrMap<Type, const llvm::Type> types;
     /** Map labels to LLVM blocks.
      */
     PtrMap<const char, llvm::BasicBlock> labels;
