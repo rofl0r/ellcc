@@ -5494,8 +5494,8 @@ Type *E_this::itcheck_x(Env &env, Expression *&replacement)
 E_fieldAcc *wrapWithImplicitThis(Env &env, Variable *var, PQName *name)
 {
   // make *this
-  E_this *ths = new E_this;
-  Expression *thisRef = new E_deref(ths);
+  E_this *ths = new E_this(var->loc);
+  Expression *thisRef = new E_deref(var->loc, ths);
   thisRef->tcheck(env, thisRef);
 
   // sm: this assertion can fail if the method we are in right now
@@ -5508,7 +5508,7 @@ E_fieldAcc *wrapWithImplicitThis(Env &env, Variable *var, PQName *name)
   }
 
   // no need to tcheck as the variable has already been looked up
-  E_fieldAcc *efieldAcc = new E_fieldAcc(thisRef, name);
+  E_fieldAcc *efieldAcc = new E_fieldAcc(var->loc, thisRef, name);
   efieldAcc->field = var;
 
   // E_fieldAcc::itcheck_fieldAcc() does something a little more
@@ -6050,7 +6050,7 @@ int compareArgsToParams(Env &env, FunctionType *ft, FakeList<ArgExpression> *arg
                                             new IN_expr(loc, arg->expr)));
             ASTTypeId *ati = env.buildASTTypeId(param->type);
             E_compoundLit *ecl =
-              new E_compoundLit(ati, new IN_compound(loc, inits));
+              new E_compoundLit(loc, ati, new IN_compound(loc, inits));
 
             // now stick this new thing into arg->expr, so the whole
             // thing is still a tree
@@ -6226,7 +6226,7 @@ Type *E_funCall::itcheck_x(Env &env, Expression *&replacement)
         new ASTTypeId(new TS_simple(env.loc(), ST_VOID),
                       new Declarator(new D_name(env.loc(), NULL /*name*/),
                                      NULL /*init*/));
-      replacement = new E_cast(voidId, fa->obj);
+      replacement = new E_cast(env.loc(), voidId, fa->obj);
       replacement->tcheck(env, replacement);
       return replacement->type;
     }
@@ -6538,7 +6538,7 @@ Type *E_funCall::inner2_itcheck(Env &env, LookupSet &candidates)
       if (funcVar) {
         // rewrite AST to reflect use of 'operator()'
         Expression *object = func;
-        E_fieldAcc *fa = new E_fieldAcc(object,
+        E_fieldAcc *fa = new E_fieldAcc(env.loc(), object,
           new PQ_operator(env.loc(), new ON_operator(OP_PARENS), env.functionOperatorName));
         fa->field = funcVar;
         fa->type = funcVar->type;
@@ -7023,7 +7023,7 @@ Type *E_constructor::inner2_itcheck(Env &env, Expression *&replacement)
       new Declarator(new D_name(this->spec->loc, NULL /*name*/), NULL /*init*/));
     if (args->count() == 1) {
       replacement =
-        new E_cast(typeSyntax, args->first()->expr);
+        new E_cast(this->spec->loc, typeSyntax, args->first()->expr);
     }
     else {   /* zero args */
       // The correct semantics (e.g. from a verification point of
@@ -7033,7 +7033,7 @@ Type *E_constructor::inner2_itcheck(Env &env, Expression *&replacement)
       // very unlikely to cause a real problem, so my solution is to
       // pretend it's always the value 0.
       replacement =
-        new E_cast(typeSyntax, env.build_E_intLit(0));
+        new E_cast(this->spec->loc, typeSyntax, env.build_E_intLit(0));
     }
     replacement->tcheck(env, replacement);
     return replacement->type;
@@ -7610,7 +7610,7 @@ Type *E_arrow::itcheck_arrow_set(Env &env, Expression *&replacement,
   }
 
   // now replace with '*' and '.' and proceed
-  E_fieldAcc *eacc = new E_fieldAcc(new E_deref(obj), fieldName);
+  E_fieldAcc *eacc = new E_fieldAcc(env.loc(), new E_deref(env.loc(), obj), fieldName);
   if (t && t->isDependent()) {
     // Do not actually do the rewriting, since the degree to which
     // further rewriting via operator-> is done depends on template
@@ -7690,16 +7690,16 @@ Type *resolveOverloadedUnaryOperator(
 
         if (winner->hasFlag(DF_MEMBER)) {
           // replace '~a' with 'a.operator~()'
-          replacement = new E_funCall(
-            new E_fieldAcc(expr, pqo),               // function
+          replacement = new E_funCall(env.loc(),
+            new E_fieldAcc(env.loc(), expr, pqo),    // function
             FakeList<ArgExpression>::emptyList()     // arguments
           );
         }
         else {
           // replace '~a' with '<scope>::operator~(a)'
-          replacement = new E_funCall(
+          replacement = new E_funCall(env.loc(),
             // function to invoke
-            new E_variable(env.makeFullyQualifiedName(winner->scope, pqo)),
+            new E_variable(env.loc(), env.makeFullyQualifiedName(winner->scope, pqo)),
             // arguments
             makeExprList1(expr)
           );
@@ -7797,7 +7797,7 @@ Type *resolveOverloadedBinaryOperator(
 
       if (!e2) {
         // synthesize and tcheck a 0 for the second argument to postfix inc/dec
-        e2 = new E_intLit(env.str("0"));
+        e2 = new E_intLit(env.loc(), env.str("0"));
         e2->tcheck(env, e2);
       }
 
@@ -7810,18 +7810,18 @@ Type *resolveOverloadedBinaryOperator(
         PQ_operator *pqo = new PQ_operator(env.loc(), new ON_operator(op), opName);
         if (winner->hasFlag(DF_MEMBER)) {
           // replace 'a+b' with 'a.operator+(b)'
-          replacement = new E_funCall(
+          replacement = new E_funCall(env.loc(),
             // function to invoke
-            new E_fieldAcc(e1, pqo),
+            new E_fieldAcc(env.loc(), e1, pqo),
             // arguments
             makeExprList1(e2)
           );
         }
         else {
           // replace 'a+b' with '<scope>::operator+(a,b)'
-          replacement = new E_funCall(
+          replacement = new E_funCall(env.loc(),
             // function to invoke
-            new E_variable(env.makeFullyQualifiedName(winner->scope, pqo)),
+            new E_variable(env.loc(), env.makeFullyQualifiedName(winner->scope, pqo)),
             // arguments
             makeExprList2(e1, e2)
           );
@@ -7856,10 +7856,10 @@ Type *resolveOverloadedBinaryOperator(
 
           Type *ret = resolver.getReturnType(winnerCand);
 
-          E_binary *bin = new E_binary(e1, BIN_PLUS, e2);
+          E_binary *bin = new E_binary(env.loc(), e1, BIN_PLUS, e2);
           bin->type = env.tfac.makePointerType(CV_NONE, ret->asRval());
 
-          E_deref *deref = new E_deref(bin);
+          E_deref *deref = new E_deref(env.loc(), bin);
           deref->type = ret;
 
           replacement = deref;
@@ -8048,7 +8048,7 @@ Type *E_binary::itcheck_x(Env &env, Expression *&replacement)
 
   if (op == BIN_BRACKETS) {
     // built-in a[b] is equivalent to *(a+b)
-    replacement = new E_deref(new E_binary(e1, BIN_PLUS, e2));
+    replacement = new E_deref(env.loc(), new E_binary(env.loc(), e1, BIN_PLUS, e2));
     replacement->tcheck(env, replacement);
     return replacement->type;
   }
@@ -8921,11 +8921,11 @@ Type *E_delete::itcheck_x(Env &env, Expression *&replacement)
     }
     else {
       // create a call to the chosen conversion function
-      E_fieldAcc *acc = new E_fieldAcc(expr,
+      E_fieldAcc *acc = new E_fieldAcc(env.loc(), expr,
         new PQ_variable(env.loc(), selected));
       acc->field = selected;
       acc->type = selected->type;
-      E_funCall *call = new E_funCall(acc, NULL /*args*/);
+      E_funCall *call = new E_funCall(env.loc(), acc, NULL /*args*/);
       call->type = selectedRetType;
 
       // insert it in place of 'expr', still underneath this E_delete
@@ -9376,7 +9376,7 @@ void IN_ctor::tcheck(Env &env, Type *destType)
         if (ic.user->type->asFunctionType()->isConstructor()) {
           // wrap 'args' in an E_constructor
           TypeSpecifier *destTS = new TS_type(loc, destType);
-          E_constructor *ector = new E_constructor(destTS, args);
+          E_constructor *ector = new E_constructor(loc, destTS, args);
           ector->type = destType;
           ector->ctorVar = ic.user;
           args = FakeList<ArgExpression>::makeList(new ArgExpression(ector));
@@ -9387,10 +9387,10 @@ void IN_ctor::tcheck(Env &env, Type *destType)
         }
         else {
           // wrap 'args' in an E_funCall of a conversion function
-          E_fieldAcc *efacc = new E_fieldAcc(src, new PQ_variable(loc, ic.user));
+          E_fieldAcc *efacc = new E_fieldAcc(loc, src, new PQ_variable(loc, ic.user));
           efacc->type = ic.user->type;
           efacc->field = ic.user;
-          E_funCall *efc = new E_funCall(efacc, FakeList<ArgExpression>::emptyList());
+          E_funCall *efc = new E_funCall(loc, efacc, FakeList<ArgExpression>::emptyList());
           efc->type = ic.user->type->asFunctionType()->retType;
           args = FakeList<ArgExpression>::makeList(new ArgExpression(efc));
 

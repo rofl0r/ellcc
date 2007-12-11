@@ -4857,7 +4857,7 @@ Type *Env::pseudoSelfInstantiation(CompoundType *ct, CVFlags cv)
           // perhaps there should be an STemplateArgument variant that
           // is like STA_DEPEXPR but can only hold a single Variable?
           PQ_name *name = new PQ_name(param->loc, param->name);
-          E_variable *evar = new E_variable(name);
+          E_variable *evar = new E_variable(param->loc, name);
           evar->var = param;
           sta->setDepExpr(evar);
           break;

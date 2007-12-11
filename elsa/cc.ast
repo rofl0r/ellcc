@@ -549,7 +549,7 @@ class Handler (
 
 // ----------------- expressions -----------------
 // C expressions
-class Expression {
+class Expression (SourceLoc loc) {
   // NOTE: we never make lists of Expressions, only of ArgExpressions
 
   // same as we do for statements

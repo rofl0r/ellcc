@@ -613,7 +613,7 @@ Expression *E_boolLit::cc2c(CC2CEnv &env) const { xunimp(""); return NULL; }
 
 Expression *E_intLit::cc2c(CC2CEnv &env) const
 {
-  return new E_intLit(text);
+  return new E_intLit(SL_GENERATED, text);
 }
 
 
@@ -625,7 +625,7 @@ Expression *E_this::cc2c(CC2CEnv &env) const { xunimp(""); return NULL; }
 
 Expression *E_variable::cc2c(CC2CEnv &env) const
 {
-  return new E_variable(env.makeName(var));
+  return new E_variable(SL_GENERATED, env.makeName(var));
 }
 
 

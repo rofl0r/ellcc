@@ -53,15 +53,21 @@ public:      // funcs
 
     /** Convert an AST type specifier into an LLVM type specifier.
      */
-    const llvm::Type* makeTypeSpecifier(Type *t);
+    const llvm::Type* makeTypeSpecifier(SourceLoc loc, Type *t);
 
     /** Convert an AST atomoc type specifier into an LLVM atomoc type specifier.
      */
-    const llvm::Type* makeAtomicTypeSpecifier(AtomicType *t);
+    const llvm::Type* makeAtomicTypeSpecifier(SourceLoc loc, AtomicType *t);
 
     /** Make sure the current basic block has been opened.
      */
     void checkCurrentBlock();
+    /** Check a condition in preparation for a branch.
+     */
+    llvm::Value* checkCondition(SourceLoc loc, llvm::Value* value);
+    /** Check a condition in preparation for a branch.
+     */
+    llvm::Value* checkCondition(Expression* cond);
 
      /** Get a name for a variable.
       * Employs the name mangler.
@@ -103,7 +109,8 @@ public:      // funcs
     /** Make two operand the same type or cast the first operand to the second type.
      * @return The TypeID of the result.
      */
-    OperatorClass makeCast(Type* leftType, llvm::Value*& leftValue, Type* rightType, llvm::Value** rightValue = NULL);
+    OperatorClass makeCast(SourceLoc loc, Type* leftType,
+        llvm::Value*& leftValue, Type* rightType, llvm::Value** rightValue = NULL);
     /** Create a value from an initializer.
      * @return The LLVM value representing the initializer.
      */

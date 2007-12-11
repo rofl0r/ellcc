@@ -412,7 +412,7 @@ nonterm(ASTTypeId*) ParameterDeclaration {
 // ------ implicit int for cast expressions ------
 nonterm(Expression*) CastExpression {
   -> "(" t:ImplicitIntTypeId ")" e:CastExpression
-       { return new E_cast(t, e); }
+       { return new E_cast(loc, t, e); }
 }
 
 nonterm(TypeSpecifier*) ImplicitIntTypeSpecifier {

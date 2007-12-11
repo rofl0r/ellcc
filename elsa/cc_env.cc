@@ -3888,7 +3888,7 @@ void Env::addedNewVariable(Scope *, Variable *)
 E_intLit *Env::build_E_intLit(int i)
 {
   StringRef text = str(stringc << i);
-  E_intLit *ret = new E_intLit(text);
+  E_intLit *ret = new E_intLit(SL_UNKNOWN, text);
   ret->i = i;
   ret->type = tfac.getSimpleType(ST_INT);
   return ret;
@@ -3900,7 +3900,7 @@ Type *makeLvalType(TypeFactory &tfac, Type *underlying);
 
 E_variable *Env::build_E_variable(Variable *var)
 {
-  E_variable *ret = new E_variable(new PQ_variable(SL_UNKNOWN, var));
+  E_variable *ret = new E_variable(SL_UNKNOWN, new PQ_variable(SL_UNKNOWN, var));
   ret->var = var;
 
   // Wrap with ReferenceType?  (similar to E_variable::itcheck)
@@ -3917,7 +3917,7 @@ E_variable *Env::build_E_variable(Variable *var)
 
 E_addrOf *Env::build_E_addrOf(Expression *underlying)
 {
-  E_addrOf *ret = new E_addrOf(underlying);
+  E_addrOf *ret = new E_addrOf(underlying->loc, underlying);
 
   // are we building an address-of nonstatic member?
   if (underlying->isE_variable()) {
@@ -5935,7 +5935,7 @@ DisambiguationErrorTrapper::~DisambiguationErrorTrapper()
 E_addrOf *makeAddr(TypeFactory &tfac, SourceLoc loc, Expression *e)
 {
   // "&e"
-  E_addrOf *amprE = new E_addrOf(e);
+  E_addrOf *amprE = new E_addrOf(e->loc, e);
   amprE->type = tfac.makePointerType(CV_CONST, e->type);
 
   return amprE;

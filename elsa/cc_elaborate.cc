@@ -223,7 +223,7 @@ Function *ElabVisitor::makeFunction(SourceLoc loc, Variable *var,
 // given a Variable, make an E_variable referring to it
 E_variable *ElabVisitor::makeE_variable(SourceLoc loc, Variable *var)
 {
-  E_variable *evar = new E_variable(new PQ_variable(loc, var));
+  E_variable *evar = new E_variable(loc, new PQ_variable(loc, var));
   evar->type = makeLvalType(tfac, var->type);
   evar->var = var;
   return evar;
@@ -232,7 +232,7 @@ E_variable *ElabVisitor::makeE_variable(SourceLoc loc, Variable *var)
 E_fieldAcc *ElabVisitor::makeE_fieldAcc
   (SourceLoc loc, Expression *obj, Variable *field)
 {
-  E_fieldAcc *efieldacc = new E_fieldAcc(obj, new PQ_variable(loc, field));
+  E_fieldAcc *efieldacc = new E_fieldAcc(loc, obj, new PQ_variable(loc, field));
   efieldacc->type = makeLvalType(tfac, field->type);
   efieldacc->field = field;
   return efieldacc;
@@ -246,7 +246,7 @@ E_funCall *ElabVisitor::makeMemberCall
   E_fieldAcc *efieldacc = makeE_fieldAcc(loc, obj, func);
 
   // "a.f(<args>)"
-  E_funCall *funcall = new E_funCall(efieldacc, args);
+  E_funCall *funcall = new E_funCall(loc, efieldacc, args);
   funcall->type = func->type->asFunctionType()->retType;
 
   return funcall;
@@ -264,12 +264,12 @@ Expression *ElabVisitor::makeThisRef(SourceLoc loc)
   Variable *receiver = functionStack.top()->receiver;
 
   // "this"
-  E_this *ths = new E_this;
+  E_this *ths = new E_this(loc);
   ths->receiver = receiver;
   ths->type = tfac.makePointerType(CV_CONST, receiver->type->asRval());
 
   // "*this"
-  E_deref *deref = new E_deref(ths);
+  E_deref *deref = new E_deref(loc, ths);
   deref->type = receiver->type;
 
   return deref;
@@ -306,7 +306,7 @@ E_constructor *ElabVisitor::makeCtorExpr(
 {
   xassert(target->type->isReference());
 
-  E_constructor *ector0 = new E_constructor(new TS_type(loc, type), args);
+  E_constructor *ector0 = new E_constructor(loc, new TS_type(loc, type), args);
   ector0->type = type;
   ector0->ctorVar = ctor;
   ector0->artificial = true;
@@ -651,7 +651,7 @@ Expression *ElabVisitor::elaborateCallByValue
   // sm: I choose to call 'makeE_variable' twice instead of using clone()
   // since I trust the former more
   Expression *byValueArg = makeE_variable(loc, tempVar);
-  Expression *ret = new E_binary(ector, BIN_COMMA, byValueArg);
+  Expression *ret = new E_binary(loc, ector, BIN_COMMA, byValueArg);
   ret->type = byValueArg->type;
   xassert(byValueArg->getType()->isReference()); // the whole point
   return ret;
@@ -1105,7 +1105,7 @@ S_expr *ElabVisitor::make_S_expr_memberCopyAssign
     // use the E_assign built-in operator
 
     // "(*this).y = other.y"
-    action = new E_assign(makeE_fieldAcc(loc, makeThisRef(loc), member),
+    action = new E_assign(loc, makeE_fieldAcc(loc, makeThisRef(loc), member),
                           BIN_ASSIGN,
                           otherDotY);
     action->type = otherDotY->type;
@@ -1563,7 +1563,7 @@ bool E_delete::elaborate(ElabVisitor &env)
     Expression *origExpr = expr;
     expr = env.cloneExpr(expr);
 
-    E_deref *deref = new E_deref(origExpr);
+    E_deref *deref = new E_deref(loc, origExpr);
     deref->type = env.tfac.makeReferenceType(to->atType);
 
     dtorStatement = env.makeDtorStatement

@@ -284,22 +284,22 @@ nonterm(Expression*) PrimaryExpression {
        { return e; }
 
   -> "this"
-       { return new E_this; }
+       { return new E_this(loc); }
 
   -> "(" e:Expression ")"
-       { return new E_grouping(e); }
+       { return new E_grouping(loc, e); }
 
   -> e:IdExpression
-       { return new E_variable(e); }
+       { return new E_variable(loc, e); }
 }
 
 nonterm(Expression*) Literal {
-  -> i:TOK_INT_LITERAL    { return new E_intLit(i); }
-  -> f:TOK_FLOAT_LITERAL  { return new E_floatLit(f); }
+  -> i:TOK_INT_LITERAL    { return new E_intLit(loc, i); }
+  -> f:TOK_FLOAT_LITERAL  { return new E_floatLit(loc, f); }
   -> s:StringLiteral      { return s; }
-  -> c:TOK_CHAR_LITERAL   { return new E_charLit(c); }
-  -> TOK_TRUE             { return new E_boolLit(true); }
-  -> TOK_FALSE            { return new E_boolLit(false); }
+  -> c:TOK_CHAR_LITERAL   { return new E_charLit(loc, c); }
+  -> TOK_TRUE             { return new E_boolLit(loc, true); }
+  -> TOK_FALSE            { return new E_boolLit(loc, false); }
 }
 
 // a single quoted sequence of characters; this nonterminal exists
@@ -310,8 +310,8 @@ nonterm(StringRef) PreprocString {
 
 // a string literal, with all concatenated parts
 nonterm(E_stringLit*) StringLiteral {
-  -> s:PreprocString                        { return new E_stringLit(s); }
-  -> s:PreprocString cont:StringLiteral     { return new E_stringLit(s, cont); }
+  -> s:PreprocString                        { return new E_stringLit(loc, s); }
+  -> s:PreprocString cont:StringLiteral     { return new E_stringLit(loc, s, cont); }
 }
 
 
@@ -406,11 +406,11 @@ nonterm(Expression*) PostfixExpression {
 
   // array access
   -> a:PostfixExpression "[" e:Expression "]"
-       { return new E_binary(a, BIN_BRACKETS, e); }
+       { return new E_binary(loc, a, BIN_BRACKETS, e); }
 
   // fn call
   -> f:PostfixExpression a:ArgumentList
-       { return new E_funCall(f, a); }
+       { return new E_funCall(loc, f, a); }
 
   // cppstd has two things with "typename", but I can't find anyplace
   // where their semantics are spelled out.. I have some code from
@@ -424,35 +424,35 @@ nonterm(Expression*) PostfixExpression {
   // "typename" can only be used with a qualified name, whereas I
   // enforce that in the type checker (more informative message).
   -> "typename" t:IdExpression a:ArgumentList
-       { return new E_constructor(new TS_name(loc, t, true /*typenameUsed*/),
+       { return new E_constructor(loc, new TS_name(loc, t, true /*typenameUsed*/),
                                   a); }
 
   // function-style cast, or (equivalently) call to constructor; will
   // almost always be ambiguous with function call, so the distinction
   // will have to be delayed until typechecking
   -> spec:CtorExpressionType a:ArgumentList
-       { return new E_constructor(spec, a); }
+       { return new E_constructor(loc, spec, a); }
 
   // field access (includes pseudo-destructor)
   -> p:PostfixExpression "." n:NameAfterDot
-       { return new E_fieldAcc(p, n); }
+       { return new E_fieldAcc(loc, p, n); }
 
   // deref + field access
   -> p:PostfixExpression "->" n:NameAfterDot
-       { return new E_arrow(p, n); }
+       { return new E_arrow(loc, p, n); }
 
   -> p:PostfixExpression "++"
-       { return new E_effect(EFF_POSTINC, p); }
+       { return new E_effect(loc, EFF_POSTINC, p); }
   -> p:PostfixExpression "--"
-       { return new E_effect(EFF_POSTDEC, p); }
+       { return new E_effect(loc, EFF_POSTDEC, p); }
 
   -> k:CastKeyword "<" t:TypeId ">" "(" e:Expression ")"
-       { return new E_keywordCast(k, t, e); }
+       { return new E_keywordCast(loc, k, t, e); }
 
   -> "typeid" "(" e:Expression ")"
-       { return new E_typeidExpr(e); }
+       { return new E_typeidExpr(loc, e); }
   -> "typeid" "(" t:TypeId ")"
-       { return new E_typeidType(t); }
+       { return new E_typeidType(loc, t); }
 }
 
 // the std calls this SimpleTypeSpecifier, but then also uses that
@@ -521,26 +521,26 @@ nonterm(Expression*) UnaryExpression {
 
   -> e:PostfixExpression         { return e; }
 
-  -> "++" e:CastExpression       { return new E_effect(EFF_PREINC, e); }
-  -> "--" e:CastExpression       { return new E_effect(EFF_PREDEC, e); }
+  -> "++" e:CastExpression       { return new E_effect(loc, EFF_PREINC, e); }
+  -> "--" e:CastExpression       { return new E_effect(loc, EFF_PREDEC, e); }
 
   // size of expression
-  -> "sizeof" e:UnaryExpression  { return new E_sizeof(e); }
+  -> "sizeof" e:UnaryExpression  { return new E_sizeof(loc, e); }
 
   -> e:DeleteExpression          { return e; }
 
   // dereference, addrof
-  -> "*" e:CastExpression        { return new E_deref(e); }
-  -> "&" e:CastExpression        { return new E_addrOf(e); }
+  -> "*" e:CastExpression        { return new E_deref(loc, e); }
+  -> "&" e:CastExpression        { return new E_addrOf(loc, e); }
 
   // other unary operators
-  -> "+" e:CastExpression        { return new E_unary(UNY_PLUS, e); }
-  -> "-" e:CastExpression        { return new E_unary(UNY_MINUS, e); }
-  -> "!" e:CastExpression        { return new E_unary(UNY_NOT, e); }
-  -> "~" e:CastExpression        { return new E_unary(UNY_BITNOT, e); }
+  -> "+" e:CastExpression        { return new E_unary(loc, UNY_PLUS, e); }
+  -> "-" e:CastExpression        { return new E_unary(loc, UNY_MINUS, e); }
+  -> "!" e:CastExpression        { return new E_unary(loc, UNY_NOT, e); }
+  -> "~" e:CastExpression        { return new E_unary(loc, UNY_BITNOT, e); }
 
   // size of type
-  -> "sizeof" "(" t:TypeId ")"   { return new E_sizeofType(t); }
+  -> "sizeof" "(" t:TypeId ")"   { return new E_sizeofType(loc, t); }
 
   -> e:NewExpression             { return e; }
 }
@@ -557,9 +557,9 @@ nonterm(E_new*) NewExpression {
   fun merge(L,R) { L->addAmbiguity(R); return L; }
 
   -> c:ColonColonOpt "new" p:NewPlacementOpt t:NewTypeId i:NewInitializerOpt
-       { return new E_new(c, p, t, i); }
+       { return new E_new(loc, c, p, t, i); }
   -> c:ColonColonOpt "new" p:NewPlacementOpt "(" t:TypeId ")" i:NewInitializerOpt
-       { return new E_new(c, p, t, i); }
+       { return new E_new(loc, c, p, t, i); }
 }
 
 nonterm(FakeList<ArgExpression>*) NewPlacementOpt {
@@ -609,9 +609,9 @@ nonterm(ArgExpressionListOpt*) NewInitializerOpt {
 
 nonterm(Expression*) DeleteExpression {
   -> c:ColonColonOpt "delete" e:CastExpression
-       { return new E_delete(c, false /*array*/, e); }
+       { return new E_delete(loc, c, false /*array*/, e); }
   -> c:ColonColonOpt "delete" "[" "]" e:CastExpression
-       { return new E_delete(c, true /*array*/, e); }
+       { return new E_delete(loc, c, true /*array*/, e); }
 }
 // ------------ end of "new" and "delete" expressions -------------
 
@@ -694,7 +694,7 @@ nonterm(Expression*) CastExpression {
   -> e:UnaryExpression
        { return e; }
   -> "(" t:TypeId ")" e:CastExpression
-       { return new E_cast(t, e); }
+       { return new E_cast(loc, t, e); }
 }
 
 // ---- binary operator expression ----
@@ -708,16 +708,16 @@ nonterm(Expression*) BinExp_high {
 
   -> e:CastExpression                          { return e; }
 
-  -> left:BinExp_high ".*"  right:BinExp_high  { return new E_binary(left, BIN_DOT_STAR, right); }
-  -> left:BinExp_high "->*" right:BinExp_high  { return new E_binary(left, BIN_ARROW_STAR, right); }
+  -> left:BinExp_high ".*"  right:BinExp_high  { return new E_binary(loc, left, BIN_DOT_STAR, right); }
+  -> left:BinExp_high "->*" right:BinExp_high  { return new E_binary(loc, left, BIN_ARROW_STAR, right); }
 
-  -> left:BinExp_high "*"  right:BinExp_high   { return new E_binary(left, BIN_MULT, right); }
-  -> left:BinExp_high "/"  right:BinExp_high   { return new E_binary(left, BIN_DIV, right); }
-  -> left:BinExp_high "%"  right:BinExp_high   { return new E_binary(left, BIN_MOD, right); }
-  -> left:BinExp_high "+"  right:BinExp_high   { return new E_binary(left, BIN_PLUS, right); }
-  -> left:BinExp_high "-"  right:BinExp_high   { return new E_binary(left, BIN_MINUS, right); }
-  -> left:BinExp_high "<<" right:BinExp_high   { return new E_binary(left, BIN_LSHIFT, right); }
-  -> left:BinExp_high ">>" right:BinExp_high   { return new E_binary(left, BIN_RSHIFT, right); }
+  -> left:BinExp_high "*"  right:BinExp_high   { return new E_binary(loc, left, BIN_MULT, right); }
+  -> left:BinExp_high "/"  right:BinExp_high   { return new E_binary(loc, left, BIN_DIV, right); }
+  -> left:BinExp_high "%"  right:BinExp_high   { return new E_binary(loc, left, BIN_MOD, right); }
+  -> left:BinExp_high "+"  right:BinExp_high   { return new E_binary(loc, left, BIN_PLUS, right); }
+  -> left:BinExp_high "-"  right:BinExp_high   { return new E_binary(loc, left, BIN_MINUS, right); }
+  -> left:BinExp_high "<<" right:BinExp_high   { return new E_binary(loc, left, BIN_LSHIFT, right); }
+  -> left:BinExp_high ">>" right:BinExp_high   { return new E_binary(loc, left, BIN_RSHIFT, right); }
 }
 
 // binary exprs with same precedence as ">"
@@ -740,10 +740,10 @@ nonterm(Expression*) BinExp_mid {
   // must express associativity directly; since these are all
   // left-associative, we require that there not be any reduced
   // ">" operators in the right context
-  -> left:BinExp_mid "<"  right:BinExp_high    { return new E_binary(left, BIN_LESS, right); }
-  -> left:BinExp_mid ">"  right:BinExp_high    { return new E_binary(left, BIN_GREATER, right); }
-  -> left:BinExp_mid "<=" right:BinExp_high    { return new E_binary(left, BIN_LESSEQ, right); }
-  -> left:BinExp_mid ">=" right:BinExp_high    { return new E_binary(left, BIN_GREATEREQ, right); }
+  -> left:BinExp_mid "<"  right:BinExp_high    { return new E_binary(loc, left, BIN_LESS, right); }
+  -> left:BinExp_mid ">"  right:BinExp_high    { return new E_binary(loc, left, BIN_GREATER, right); }
+  -> left:BinExp_mid "<=" right:BinExp_high    { return new E_binary(loc, left, BIN_LESSEQ, right); }
+  -> left:BinExp_mid ">=" right:BinExp_high    { return new E_binary(loc, left, BIN_GREATEREQ, right); }
 }
 
 // binary exprs with lower precedence than ">"
@@ -756,14 +756,14 @@ nonterm(Expression*) BinaryExpression {
 
   -> e:BinExp_mid                                        { return e; }
 
-  -> left:BinaryExpression "==" right:BinaryExpression   { return new E_binary(left, BIN_EQUAL, right); }
-  -> left:BinaryExpression "!=" right:BinaryExpression   { return new E_binary(left, BIN_NOTEQUAL, right); }
-  -> left:BinaryExpression "&"  right:BinaryExpression   { return new E_binary(left, BIN_BITAND, right); }
-  -> left:BinaryExpression "^"  right:BinaryExpression   { return new E_binary(left, BIN_BITXOR, right); }
-  -> left:BinaryExpression "|"  right:BinaryExpression   { return new E_binary(left, BIN_BITOR, right); }
+  -> left:BinaryExpression "==" right:BinaryExpression   { return new E_binary(loc, left, BIN_EQUAL, right); }
+  -> left:BinaryExpression "!=" right:BinaryExpression   { return new E_binary(loc, left, BIN_NOTEQUAL, right); }
+  -> left:BinaryExpression "&"  right:BinaryExpression   { return new E_binary(loc, left, BIN_BITAND, right); }
+  -> left:BinaryExpression "^"  right:BinaryExpression   { return new E_binary(loc, left, BIN_BITXOR, right); }
+  -> left:BinaryExpression "|"  right:BinaryExpression   { return new E_binary(loc, left, BIN_BITOR, right); }
 
-  -> left:BinaryExpression "&&" right:BinaryExpression   { return new E_binary(left, BIN_AND, right); }
-  -> left:BinaryExpression "||" right:BinaryExpression   { return new E_binary(left, BIN_OR, right); }
+  -> left:BinaryExpression "&&" right:BinaryExpression   { return new E_binary(loc, left, BIN_AND, right); }
+  -> left:BinaryExpression "||" right:BinaryExpression   { return new E_binary(loc, left, BIN_OR, right); }
 }
 
 
@@ -775,7 +775,7 @@ nonterm(Expression*) ConditionalExpression {
        { return e; }
 
   -> cond:BinaryExpression "?" th:Expression ":" el:AssignmentExpression
-       { return new E_cond(cond, th, el); }
+       { return new E_cond(loc, cond, th, el); }
 }
 
 // why is conditional not allowed on left side of = ?  can I confirm
@@ -786,7 +786,7 @@ nonterm(Expression*) AssignmentExpression {
        { return e; }
 
   -> e1:BinaryExpression op:AssignmentOperator e2:AssignmentExpression
-       { return new E_assign(e1, op, e2); }
+       { return new E_assign(loc, e1, op, e2); }
 
   -> e:ThrowExpression
        { return e; }
@@ -825,12 +825,12 @@ nonterm(Expression*) Expression {
        { return ae; }
 
   -> e:Expression "," ae:AssignmentExpression
-       { return new E_binary(e, BIN_COMMA, ae); }
+       { return new E_binary(loc, e, BIN_COMMA, ae); }
 }
 
 nonterm(Expression*) ExpressionOpt {
   // empty expression is a true no-op
-  -> empty         { return new E_boolLit(true); }
+  -> empty         { return new E_boolLit(loc, true); }
   -> e:Expression  { return e; }
 }
 
@@ -986,7 +986,7 @@ nonterm(Condition*) Condition {
 
 nonterm(Condition*) ConditionOpt {
   // an empty condition (e.g. in a for loop) is interpreted as true
-  -> empty             { return new CN_expr(new FullExpression(new E_boolLit(true))); }
+  -> empty             { return new CN_expr(new FullExpression(new E_boolLit(loc, true))); }
   -> c:Condition       { return c; }
 }
 
@@ -2575,8 +2575,8 @@ nonterm(IDeclarator*) UnqualifiedDeclarator {
 
 
 nonterm(E_throw*) ThrowExpression {
-  -> "throw"                         { return new E_throw(NULL); }
-  -> "throw" e:AssignmentExpression  { return new E_throw(e); }
+  -> "throw"                         { return new E_throw(loc, NULL); }
+  -> "throw" e:AssignmentExpression  { return new E_throw(loc, e); }
 }
 
 
