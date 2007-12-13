@@ -330,11 +330,19 @@ class PrintEnv {
   CodeOutStream *out;
   SourceLoc loc;
 
+  // When true, some of the print routines will print info inside
+  // comment characters as a debugging aid.  This flag is provided
+  // because it may be necessary to disable printing of comments when
+  // they nest (thus precluding parsing the output).  The default
+  // state is 'true';
+  bool printComments;
+
   public:
   PrintEnv(TypePrinter &typePrinter0, CodeOutStream *out0)
     : typePrinter(typePrinter0)
     , out(out0)
     , loc(SL_UNKNOWN)
+    , printComments(true)
   {}
 
   TypeLike const *getTypeLike(Variable const *var)

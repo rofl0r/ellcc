@@ -2043,9 +2043,9 @@ void E_stdConv::iprint(PrintEnv &env)
 {
   TreeWalkDebug treeDebug("E_stdConv::iprint");
 
-//  if (env.printComments) {
-  //  *env.out << "/""*" << toString(stdConv) << "*/";
-  //}
+  if (env.printComments) {
+    *env.out << "/""*" << toString(stdConv) << "*/";
+  }
 
   expr->print(env);
 }
