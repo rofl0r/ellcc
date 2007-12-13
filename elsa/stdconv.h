@@ -73,6 +73,10 @@ ENUM_BITWISE_NOT(StandardConversion, SC_ERROR);
 // render in C++ syntax as bitwise OR of the constants above
 string toString(StandardConversion c);
 
+// for XML
+string toXml(StandardConversion c);
+void fromXml(StandardConversion &out, rostring str);
+
 
 // remove SC_LVAL_TO_RVAL from a conversion sequence
 StandardConversion removeLval(StandardConversion scs);

@@ -1369,6 +1369,10 @@ void E_cast::iprint(BPEnv &bp) const
   printSubexpR(bp, expr);
 }
 
+void E_stdConv::iprint(BPEnv &bp) const
+{
+}
+
 void E_cond::iprint(BPEnv &bp) const
 {
   SEQ {

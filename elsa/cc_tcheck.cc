@@ -4931,6 +4931,10 @@ void CN_expr::itcheck(Env &env)
   // TODO: verify 'expr' makes sense in a boolean or switch context
 }
 
+Type *CN_expr::getType() const
+{
+  return expr->getType();
+}
 
 void CN_decl::itcheck(Env &env)
 {
@@ -4939,6 +4943,11 @@ void CN_decl::itcheck(Env &env)
 
   // TODO: verify the type of the variable declared makes sense
   // in a boolean or switch context
+}
+
+Type *CN_decl::getType() const
+{
+  return typeId->getType();
 }
 
 
@@ -9007,6 +9016,29 @@ Type *E_grouping::itcheck_grouping_set(Env &env, Expression *&replacement,
   replacement = expr;
 
   return expr->type;
+}
+
+Type *E_stdConv::itcheck_x(Env &env, Expression *&replacement)
+{               
+  // This node does not carry enough information to be type checked
+  // from scratch.  However, it might end up inside an AST fragment
+  // that needs to be re-type-checked, in which case it should not
+  // interfere.
+  
+  // First, make sure this node carries tcheck results already.
+  xassert(type);
+  
+  // Remember the source expr's type.
+  Type *origExprType = expr->type;
+
+  // Propagate the tcheck request.
+  expr->tcheck(env, expr);
+
+  // Make sure the expr's type did not change; if it did, that would
+  // potentially invalidate this conversion.
+  xassert(expr->type->equals(origExprType));
+
+  return type;
 }
 
 

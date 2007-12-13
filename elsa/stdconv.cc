@@ -87,6 +87,18 @@ string toString(StandardConversion c)
 }
 
 
+string toXml(StandardConversion c)
+{
+  throw_XUnimp("toXml(StandardConversion)");
+  return "";
+}
+
+void fromXml(StandardConversion &out, rostring str)
+{
+  throw_XUnimp("fromXml(StandardConversion)");
+}
+
+
 StandardConversion removeLval(StandardConversion scs)
 {
   if ((scs & SC_GROUP_1_MASK) == SC_LVAL_TO_RVAL) {

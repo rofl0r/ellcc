@@ -639,6 +639,7 @@ Expression *E_binary::cc2c(CC2CEnv &env) const { xunimp(""); return NULL; }
 Expression *E_addrOf::cc2c(CC2CEnv &env) const { xunimp(""); return NULL; }
 Expression *E_deref::cc2c(CC2CEnv &env) const { xunimp(""); return NULL; }
 Expression *E_cast::cc2c(CC2CEnv &env) const { xunimp(""); return NULL; }
+Expression *E_stdConv::cc2c(CC2CEnv &env) const { xunimp(""); return NULL; }
 Expression *E_cond::cc2c(CC2CEnv &env) const { xunimp(""); return NULL; }
 Expression *E_sizeofType::cc2c(CC2CEnv &env) const { xunimp(""); return NULL; }
 Expression *E_assign::cc2c(CC2CEnv &env) const { xunimp(""); return NULL; }

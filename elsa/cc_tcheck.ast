@@ -16,9 +16,20 @@ verbatim {
   #include "template.h"      // STemplateArgument
   #include "const_eval.h"    // ConstEval
   #include "macros.h"        // Restorer
+  #include "stdconv.h"       // StandardConversion
 
   class Env;                 // cc_env.h
   class ArgumentInfo;        // overload.h
+  class DataBlock;           // smbase/datablok.h
+                      
+#if RICH
+  inline void fromXml(DeclaratorContext &out, string str) {
+    out = static_cast<DeclaratorContext>(atoi(str));
+  }
+#endif
+
+  // defined in cc_ast_aux.cc
+  string toXml(DataBlock *&block);
 }
 
 impl_verbatim {
@@ -497,6 +508,9 @@ class Condition {
   public /*no_ignore*/ Condition *tcheck(Env &env);
   public void mid_tcheck(Env &env, int &) { itcheck(env); };
   pure_virtual void itcheck(Env &env);
+
+  // can use after calling 'tcheck'
+  pure_virtual Type *getType() const;
 }
 
 
@@ -574,7 +588,19 @@ class Expression {
   // interpretations of literals
   -> E_intLit      { public(xml) unsigned long i = 0; }
   -> E_floatLit    { public(xml) double d = 0; }
-  -> E_stringLit   { /* TODO: put a DataBlock here */ }
+
+  -> E_stringLit   {
+       // The decoded string contents, including the contents from
+       // continuations, and a final NUL character.  If this is a wide
+       // string literal, then the data block contains wchar_ts.  The
+       // exact number of characters, including the NUL, and the
+       // character type (and hence width), are available from the
+       // ArrayType attached to this Expression.
+       //
+       // This is NULL only until it has been type checked.
+       public /* RICH: (xml) */ DataBlock *data = NULL;
+     }
+
   -> E_charLit     { public(xml) unsigned int c = 0; }
 
   -> E_this {
@@ -680,6 +706,20 @@ class Expression {
        public Type *itcheck_arrow_set(Env &env, Expression *&replacement,
                                       LookupFlags flags, LookupSet &set);
      }
+     
+  // Carry an implicit standard conversion.  The reason I do not
+  // re-use E_cast is that E_cast wants to carry a syntactic name for
+  // the destination type, but I don't want to waste space by
+  // constructing it (nor do I want to make E_cast::type nullable).
+  //
+  // 'stdConv' is the overall description of the conversion; it is
+  // never SC_ERROR nor SC_IDENTITY.  The exact conversion is
+  // 'expr->type' being converted to 'this->type'.
+  -> E_stdConv(Expression expr, StandardConversion stdConv) {
+       ctor {
+         xassert(stdConv != SC_ERROR && stdConv != SC_IDENTITY);
+       };
+     }
 }
 
 
@@ -728,6 +768,7 @@ class Initializer {
   -> IN_ctor() {
        // constructor function being called
        public(xml_TY,xmlShouldSerialize) Variable *ctorVar = NULL;
+       custom debugPrint { ind(os,indent) << "ctorVar: " << refersTo(ctorVar) << "\n"; }
 
        // true if this was originally an IN_expr that the type
        // checker rewrote as IN_ctor; needed to implement 8.5p14
