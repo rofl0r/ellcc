@@ -29,6 +29,9 @@
 #include "owner.h"          // Owner
 #include "mtype.h"          // MType
 
+// smbase
+#include "datablok.h"       // DataBlock
+
 #include <stdlib.h>         // strtoul, strtod
 #include <ctype.h>          // isdigit
 #include <limits.h>         // INT_MAX, UINT_MAX, LONG_MAX
@@ -4924,6 +4927,7 @@ Condition *Condition::tcheck(Env &env)
   return resolveAmbiguity(this, env, "Condition", false /*priority*/, dummy);
 }
 
+
 void CN_expr::itcheck(Env &env)
 {
   expr->tcheck(env);
@@ -4935,6 +4939,7 @@ Type *CN_expr::getType() const
 {
   return expr->getType();
 }
+
 
 void CN_decl::itcheck(Env &env)
 {
@@ -5359,6 +5364,151 @@ Type *E_floatLit::itcheck_x(Env &env, Expression *&replacement)
   return env.getSimpleType(ST_DOUBLE);
 }
 
+static void appendCharacter(DataBlock *block, unsigned int c, 
+                            SimpleTypeId charType)
+{
+  int charWidth = simpleTypeReprSize(charType);
+  
+  if (block->getDataLen() + charWidth > block->getAllocated()) {
+    // should be right up against the boundary
+    xassert(block->getDataLen() == block->getAllocated());
+
+    // double in size
+    block->setAllocated(block->getAllocated() * 2);
+  }
+
+  byte *dest = block->getData() + block->getDataLen();
+  block->changeDataLen(+charWidth);
+      
+  // I will assume that the host compiler wchar_t size equals the
+  // parser's idea of wchar_t, as I currently lack any mechanism for
+  // allowing them to differ.
+  switch (charWidth) {
+    default:
+      xfailure("Char width is not same as host compiler 'char' or 'wchar_t'");
+
+    case 1:
+      *dest = (byte)c;
+      break;
+
+    case sizeof(wchar_t):
+      *((wchar_t*)dest) = (wchar_t)c;
+      break;
+  }
+}
+
+
+static bool isOctalDigit(char c)
+{
+  return '0' <= c && c <= '7';
+}
+
+static unsigned int decodeOctalDigit(char c)
+{
+  return c - '0';
+}
+
+
+static bool isHexDigit(char c)
+{
+  return ('0' <= c && c <= '9') ||
+         ('A' <= c && c <= 'F') ||
+         ('a' <= c && c <= 'f');
+}
+
+static unsigned int decodeHexDigit(char c)
+{
+  if ('0' <= c && c <= '9') {
+    return c - '0';
+  }
+  if ('A' <= c && c <= 'F') {
+    return c - 'A' + 10;
+  }
+  if ('a' <= c && c <= 'f') {
+    return c - 'a' + 10;
+  }
+  xfailure("invalid hex digit");
+  return 0;
+}
+
+
+// Decode the escape sequence at 'p' (which currently points to a
+// backslash), and advance 'p' past that sequence.
+static unsigned int decodeEscape(Env &env, char const *&p)
+{
+  xassert(*p == '\\');
+  p++;
+
+  // cppstd, 2.13.2, table 5
+  switch (*(p++)) {
+    // special characters
+    case 'n': return '\n';
+    case 't': return '\t';
+    case 'v': return '\v';
+    case 'b': return '\b';
+    case 'r': return '\r';
+    case 'a': return '\a';
+    case '\\': return '\\';
+    case '?': return '?';
+    case '\'': return '\'';
+    case '\"': return '\"';
+
+    // octal escape sequence (note that '\0' is a special case)
+    case '0':
+    case '1':
+    case '2':
+    case '3':
+    case '4':
+    case '5':
+    case '6':
+    case '7': {
+      unsigned int ret = decodeOctalDigit(p[-1]);
+      int digits = 1;
+      while (digits < 3 && isOctalDigit(*p)) {
+        ret = (ret << 3) + decodeOctalDigit(*p);
+        p++;
+        digits++;
+      }
+      return ret;
+    }
+
+    // hex escape sequence
+    case 'x': {
+      if (!isHexDigit(*p)) {
+        env.error("hex escape sequence must begin with hex digit");
+      }
+      unsigned int ret = 0;
+      while (isHexDigit(*p)) {
+        ret = (ret << 4) + decodeHexDigit(*p);
+        p++;
+      }
+      return ret;
+    }
+
+    // universal character (cppstd 2.2p2)
+    case 'u':
+    case 'U': {
+      int nDigits = p[-1]=='u'? 4 : 8;
+      unsigned int ret = 0;
+      for (int i=0; i<nDigits; i++) {
+        if (!isHexDigit(*p)) {
+          env.error(stringb("universal char escape sequence must have " <<
+                            nDigits << " hex digits"));
+        }
+        ret = (ret << 4) + decodeHexDigit(*p);
+        p++;
+      }
+      return ret;
+    }
+
+    // unrecognized; technically invalid C++
+    default:
+      env.warning(stringb("unrecognized escape sequence: '\\" << p[-1] <<
+                          "'; treating as same as '" << p[-1] << "'"));
+      return p[-1];
+  }
+}
+
 
 Type *E_stringLit::itcheck_x(Env &env, Expression *&replacement)
 {
@@ -5367,6 +5517,15 @@ Type *E_stringLit::itcheck_x(Env &env, Expression *&replacement)
   // wide character?
   SimpleTypeId id = text[0]=='L'? ST_WCHAR_T : ST_CHAR;
 
+  if (data) {
+    // this string literal has already been tchecked, and the
+    // interpretation is independent of (ambiguity) context, so just
+    // keep the 'data' and 'type' we already have
+    xassert(type);
+    return type;
+  }
+
+#if RICH
   // TODO: this is wrong because I'm not properly tracking the string
   // size if it has escape sequences
   int len = 0;
@@ -5399,20 +5558,62 @@ Type *E_stringLit::itcheck_x(Env &env, Expression *&replacement)
     } while(p);
     fullTextNQ = env.str(sb);
   }
+#endif
 
+  // allocate block to hold contents; will expand it as necessary; the
+  // initial allocation estimate assumes no continuations and no
+  // escape characters
+  data = new DataBlock((strlen(text) + 1/*NUL*/ - 2/*quotes*/) *
+                       simpleTypeReprSize(id));
+
+  // iterate over continuation segments
+  E_stringLit *segment = this;
+  while (segment) {
+    char const *p = segment->text;
+    if (*p == 'L') { p++; }
+    xassert(*p == '"');
+    p++;
+
+    // iterate over characters
+    while (*p != '"') {
+      if (*p == '\\') {
+        unsigned int c = decodeEscape(env, p);
+        appendCharacter(data, c, id);
+      }
+      else {
+        appendCharacter(data, *p, id);
+        p++;
+      }
+    }
+    
+    segment = segment->continuation;
+    }
+  
+  // final NUL character
+  appendCharacter(data, 0, id);
+
+  // consolidate
+  data->setAllocated(data->getDataLen());
+  int len = data->getDataLen() / simpleTypeReprSize(id);
+
+  // set type
   CVFlags stringLitCharCVFlags = CV_NONE;
   if (env.lang.stringLitCharsAreConst) {
     stringLitCharCVFlags = CV_CONST;
   }
   Type *charConst = env.getSimpleType(id, stringLitCharCVFlags);
-  Type *arrayType = env.makeArrayType(charConst, len+1);    // +1 for implicit final NUL
+  // RICH: Type *arrayType = env.makeArrayType(charConst, len+1);    // +1 for implicit final NUL
+  Type *arrayType = env.makeArrayType(charConst, len);
 
   // C++ 5.1p2, C99 6.5.1p4: string literals are lvalues (in/k0036.cc)
   Type *ret = makeLvalType(env, arrayType);
 
   // apply the same type to the continuations, for visitors' benefit
-  for (p = continuation; p; p = p->continuation) {
-    p->type = ret;
+  // RICH: for (p = continuation; p; p = p->continuation) {
+  // RICH:   p->type = ret;
+  // RICH: }
+  for (segment = continuation; segment; segment = segment->continuation) {
+    segment->type = ret;
   }
 
   return ret;
@@ -5443,6 +5644,9 @@ Type *E_charLit::itcheck_x(Env &env, Expression *&replacement)
     id = ST_WCHAR_T;
     srcText++;
   }
+
+  // TODO: Change this code to use 'decodeEscape', the same function
+  // that E_stringLit uses to do decoding.
 
   ArrayStack<char> temp;
   quotedUnescape(temp, srcText, '\'', false /*allowNewlines*/);
@@ -8820,10 +9024,49 @@ Type *E_assign::itcheck_x(Env &env, Expression *&replacement)
   }
 
   // TODO: make sure 'target' and 'src' make sense together with 'op'
+  //
+  // 2007-04-01: Computing the E_stdConv partially does this.
 
   // this finalizes an overloaded function name if the use
   // of '=' was not overloadable
   env.possiblySetOverloadedFunctionVar(src, target->type, argInfo[1].overloadSet);
+
+  // on the assumption that they *do* make sense, this is what they
+  // will produce
+  Type *operationResultType;
+  if (op != BIN_ASSIGN && isArithmeticOrEnumType(target->type->asRval())) {
+    operationResultType = usualArithmeticConversions(env.tfac,
+      target->type->asRval(), src->type->asRval());
+  }
+  else {
+    operationResultType = target->type->asRval();
+  }
+
+  // insert the implicit conversion for 'src' for simple assignments
+  // and compound arithmetic assignments; note that in the latter case,
+  // there is still an unrecorded implicit conversion of the LHS to
+  // the RHS type before performing the arithmetic
+  if (op == BIN_ASSIGN || isArithmeticOrEnumType(target->type->asRval())) {
+    // simple assignment, compute standard conversion
+    string errorMsg;
+    StandardConversion sc = getStandardConversion(&errorMsg,
+      argInfo[1].special, src->type, operationResultType);
+    if (sc == SC_ERROR) {
+      env.error(errorMsg);
+    }
+    else if (sc == SC_IDENTITY) {
+      // no conversion necessary
+    }
+    else {
+      // insert the conversion between 'this' and 'src'
+      E_stdConv *conv = new E_stdConv(loc, src, sc);
+      conv->type = operationResultType;
+      src = conv;
+    }
+  }
+  else {
+    // compound pointer assignment; there is no conversion for the RHS
+  }
 
   return target->type;
 }
@@ -9017,6 +9260,7 @@ Type *E_grouping::itcheck_grouping_set(Env &env, Expression *&replacement,
 
   return expr->type;
 }
+
 
 Type *E_stdConv::itcheck_x(Env &env, Expression *&replacement)
 {               

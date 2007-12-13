@@ -1107,7 +1107,7 @@ S_expr *ElabVisitor::make_S_expr_memberCopyAssign
     // "(*this).y = other.y"
     action = new E_assign(loc, makeE_fieldAcc(loc, makeThisRef(loc), member),
                           BIN_ASSIGN,
-                          otherDotY);
+                          makeRval(otherDotY));
     action->type = otherDotY->type;
   }
 

@@ -13,21 +13,23 @@ typedef char y;
 
 int main()
 {
-  int x, *p, *pp;
+  int x, *p;
+  int (*parr)[5];
+
 
   // E_constructor
   x = int(6);
 
   // E_new
   p = new int;
-  
+
   // E_new of an array with non-const size
   p = new int[x];
 
   // E_new of an array of an array; this allocates
   // an array of objects, where each object has type
   // "int[5]", and 'x' objects are allocated
-  pp = new int[x][5];
+  parr = new int[x][5];
 
   // E_delete
   delete p;

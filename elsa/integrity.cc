@@ -49,27 +49,24 @@ bool IntegrityVisitor::visitExpression(Expression *obj)
     return false;
   }
 
-  // 2005-08-18: I started to do this, then realized that these might
-  // survive in template bodies.
-  //
-  // TODO: Make a way for ASTVisitorEx to communicate to visitors
-  // whether they are in template bodies or not.
-  //
-  // 2006-05-30: Um, what was I thinking?  Why is 'inTemplate' not
-  // sufficient?
-  #if 0
-  if (obj->isE_grouping()) {
-    xfatal(toString(loc) << ": internal error: found E_grouping after tcheck");
-  }
-  if (obj->isE_arrow()) {
-    xfatal(toString(loc) << ": internal error: found E_arrow after tcheck");
-  }
-  #endif // 0
+#if RICH
+  // RICH: This causes t0093.cc to fail.
+  if (!inTemplate) {
+    xassert(obj->type != NULL);
 
+    if (obj->isE_grouping()) {
+      xfatal(toString(loc) << ": internal error: found E_grouping after tcheck");
+    }
+    if (obj->isE_arrow()) {
+      xfatal(toString(loc) << ": internal error: found E_arrow after tcheck");
+    }
+  }
+#else
   // why was I not doing this before?  detects problem in/t0584.cc
   if (!inTemplate && obj->type) {
     checkNontemplateType(obj->type);
   }
+#endif
 
   return true;
 }

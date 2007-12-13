@@ -312,7 +312,7 @@ testparse t0036.cc
 testparse t0037.cc
 testparse t0038.cc
 testparse t0039.cc
-testparse t0040.cc
+failparse t0040.cc "implicit conversion of pointer to int"
 testparse t0041.cc
 testparse t0042.cc
 testparse t0043.cc

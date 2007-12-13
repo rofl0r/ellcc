@@ -350,6 +350,32 @@ public:      // types
   // NOTE: keep these consistent with TypeIntr (in file cc_flags.h)
   enum Keyword { K_STRUCT, K_CLASS, K_UNION, NUM_KEYWORDS };
 
+private:     // types
+  // state for evaluating layout characteristics
+  struct LayoutQuery {
+    // Current accumulated size.
+    int size;
+
+    // Field whose offset is desired.  NULL when we're trying to get
+    // the size of the entire structure.
+    //
+    // TODO: Due to multiple inheritance, I need a subobject too; but
+    // that information is not available in AST at the moment because
+    // the type checker does not write it down.
+    Variable * /*nullable*/ field;
+
+    // True once the desired field has been found, and hence we want
+    // to pop out of the recursion.
+    bool found;
+    
+  public:
+    LayoutQuery(Variable *f)
+      : size(0),
+        field(f),
+        found(false)
+    {}
+  };
+
 public:      // data
   bool forward : 1;               // true when it's only fwd-declared
 
@@ -431,6 +457,8 @@ private:     // funcs
      CompoundType const *requiredBase);
 
   void addLocalConversionOp(Variable *op);
+
+  void layoutQuery(LayoutQuery &query) const;
 
 protected:   // funcs
   // create an incomplete (forward-declared) compound

@@ -524,11 +524,17 @@ string CompoundType::toCString() const
 }
 
 
-int CompoundType::reprSize() const
+// It might seem odd that the parser (of which the type system is a
+// part) should have to commit to a specific object layout.  However,
+// this is indeed the case: the parser must be able to select template
+// specializations, which can depend on specific integer values, which
+// themselves can be derived from field offsets.  So it is not
+// possible to separate parsing C++ from object layout decisions (!).
+void CompoundType::layoutQuery(LayoutQuery &query) const
 {
-  int total = 0;
-
   // base classes
+  //
+  // TODO: this is wrong for virtual base classes
   {
     SObjList<BaseClassSubobj const> subobjs;
     getSubobjects(subobjs);
@@ -537,9 +543,30 @@ int CompoundType::reprSize() const
         // skip my own subobject, as that will be accounted for below
       }
       else {
-        total += iter.data()->ct->reprSize();
+        iter.data()->ct->layoutQuery(query);
+        if (query.found) {
+          return;
+        }
       }
     }
+  }
+
+  if (keyword == K_UNION) {
+    if (query.field && dataMembers.contains(query.field)) {
+      // the current size gives the offset of all of the union fields
+      query.found = true;
+    }
+    else {
+      int unionTotal = 0;
+      SFOREACH_OBJLIST(Variable, dataMembers, iter) {
+        Variable const *v = iter.data();
+
+        // representation size is max over field sizes
+        unionTotal = max(unionTotal, v->type->reprSize());
+      }
+      query.size += unionTotal;
+    }
+    return;
   }
 
   // This algorithm is a very crude approximation of the packing and
@@ -568,10 +595,9 @@ int CompoundType::reprSize() const
   SFOREACH_OBJLIST(Variable, dataMembers, iter) {
     Variable const *v = iter.data();
 
-    if (keyword == K_UNION) {
-      // representation size is max over field sizes
-      total = max(total, v->type->reprSize());
-      continue;
+    if (v == query.field) {
+      query.found = true;
+      return;
     }
 
     if (v->isBitfield()) {
@@ -593,7 +619,7 @@ int CompoundType::reprSize() const
     // 'v' is not a bitfield, so pack the bits seen so far into
     // 'align' units
     if (bits > 0) {
-      total += ((bits + (align*8-1)) / (align*8)) * align;
+      query.size += ((bits + (align*8 - 1)) / (align*8)) * align;
       bits = 0;
     }
 
@@ -618,12 +644,12 @@ int CompoundType::reprSize() const
 
       // consolidate any remaining bytes into 'align' units
       if (bytes > 0) {
-        total += ((bytes + align-1) / align) * align;
+        query.size += ((bytes + align-1) / align) * align;
         bytes = 0;
       }
 
       // add 'membSize'
-      total += (membSize / align) * align;
+      query.size += (membSize / align) * align;
       bytes += membSize % align;
     }
     else {
@@ -637,11 +663,31 @@ int CompoundType::reprSize() const
 
   // pad out to the next 'align' boundary
   bits += bytes*8;
-  total += ((bits + (align*8-1)) / (align*8)) * align;
-
-  return total;
+  query.size += ((bits + (align*8 - 1)) / (align*8)) * align;
 }
 
+
+int CompoundType::reprSize() const
+{
+  LayoutQuery query(NULL /*field*/);
+  layoutQuery(query);
+  xassert(!query.found);     // finding NULL would be weird
+  return query.size;
+}
+
+
+#if RICH
+int CompoundType::getDataMemberOffset(Variable *field) const
+{
+  LayoutQuery query(field);
+  layoutQuery(query);
+  if (!query.found) {
+    xfailure(stringb("fieldOffset: Could not find field \"" << 
+                     field->name << "\" in " << keywordAndName()));
+  }
+  return query.size;
+}
+#endif
 
 void CompoundType::traverse(TypeVisitor &vis)
 {
