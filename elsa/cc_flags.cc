@@ -265,25 +265,34 @@ bool isValid(SimpleTypeId id)
 }
 
 
-#define S(x) ((SimpleTypeFlags)(x))    // work around bitwise-OR in initializers..
+// work around bitwise-OR in initializers
+#define S(x) ((SimpleTypeFlags)(x))
+
+// yield name and size, for those types that exist in C++ and for
+// which can take the size; we take the sizes from the host compiler
+// for now, rather than build an entire abstraction layer for
+// implementation-defined quantities
+#define TN(type) #type, sizeof(type)
+
+
 static SimpleTypeInfo const simpleTypeInfoArray[] = {
   //name                   size,    flags
-  { "char",                   1,    S(STF_INTEGER                          ) },
-  { "unsigned char",          1,    S(STF_INTEGER | STF_UNSIGNED           ) },
-  { "signed char",            1,    S(STF_INTEGER                          ) },
-  { "bool",                   4,    S(STF_INTEGER                          ) },
-  { "int",                    4,    S(STF_INTEGER | STF_PROM               ) },
-  { "unsigned int",           4,    S(STF_INTEGER | STF_PROM | STF_UNSIGNED) },
-  { "long int",               4,    S(STF_INTEGER | STF_PROM               ) },
-  { "unsigned long int",      4,    S(STF_INTEGER | STF_PROM | STF_UNSIGNED) },
-  { "long long int",          8,    S(STF_INTEGER | STF_PROM               ) },
-  { "unsigned long long int", 8,    S(STF_INTEGER | STF_PROM | STF_UNSIGNED) },
-  { "short int",              2,    S(STF_INTEGER                          ) },
-  { "unsigned short int",     2,    S(STF_INTEGER | STF_UNSIGNED           ) },
-  { "wchar_t",                2,    S(STF_INTEGER                          ) },
-  { "float",                  4,    S(STF_FLOAT                            ) },
-  { "double",                 8,    S(STF_FLOAT | STF_PROM                 ) },
-  { "long double",           10,    S(STF_FLOAT                            ) },
+  { TN(char),                       S(STF_INTEGER                          ) },
+  { TN(unsigned char),              S(STF_INTEGER | STF_UNSIGNED           ) },
+  { TN(signed char),                S(STF_INTEGER                          ) },
+  { TN(bool),                       S(STF_INTEGER                          ) },
+  { TN(int),                        S(STF_INTEGER | STF_PROM               ) },
+  { TN(unsigned int),               S(STF_INTEGER | STF_PROM | STF_UNSIGNED) },
+  { TN(long int),                   S(STF_INTEGER | STF_PROM               ) },
+  { TN(unsigned long int),          S(STF_INTEGER | STF_PROM | STF_UNSIGNED) },
+  { TN(long long int),              S(STF_INTEGER | STF_PROM               ) },
+  { TN(unsigned long long int),     S(STF_INTEGER | STF_PROM | STF_UNSIGNED) },
+  { TN(short int),                  S(STF_INTEGER                          ) },
+  { TN(unsigned short int),         S(STF_INTEGER | STF_UNSIGNED           ) },
+  { TN(wchar_t),                    S(STF_INTEGER                          ) },
+  { TN(float),                      S(STF_FLOAT                            ) },
+  { TN(double),                     S(STF_FLOAT | STF_PROM                 ) },
+  { TN(long double),                S(STF_FLOAT                            ) },
   { "float _Complex",         8,    S(STF_FLOAT                            ) },
   { "double _Complex",       16,    S(STF_FLOAT                            ) },
   { "long double _Complex",  20,    S(STF_FLOAT                            ) },

@@ -1682,4 +1682,13 @@ void visitRealVarsF(TranslationUnit *tunit, VisitRealVars &visitReal) {
   tunit->traverse(vis.loweredVisitor);
 }
 
+// ------------------------- misc -------------------------
+// this is probably not the right place for this
+string toXml(DataBlock *&block)
+{
+  throw_XUnimp("XML serialization of string literal contents");
+  return string("");
+}
+
+
 // EOF

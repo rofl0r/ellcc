@@ -102,7 +102,14 @@ enum DeclFlags {
 
   // semantic flags on Variables
   DF_ENUMERATOR  = 0x00000400,    // true for values in an 'enum' (enumerators in the terminology of the C++ standard)
+  
+  // TODO: what about:
+  //   - static locals?
+  //   - class members?
+  //   - static class members?
+  //   - namespace members?
   DF_GLOBAL      = 0x00000800,    // set for globals, unset for locals
+
   DF_INITIALIZED = 0x00001000,    // true if has been declared with an initializer (or, for functions, with code)
   DF_BUILTIN     = 0x00002000,    // true for e.g. __builtin_constant_p -- don't emit later
   DF_PARAMETER   = 0x00010000,    // true if this is a function parameter or a handler "parameter"
