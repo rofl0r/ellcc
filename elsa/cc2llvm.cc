@@ -1723,6 +1723,13 @@ llvm::Value *E_cast::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
     return result;
 }
 
+llvm::Value *E_stdConv::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
+{
+    llvm::Value* result = expr->cc2llvm(env);
+    env.makeCast(loc, expr->type, result, type);
+    return result;
+}
+
 llvm::Value *E_cond::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 {
     /* This one is kind of tricky. Quoting the C standard (ISO/IEC 9899:1999) 6.5.15:
