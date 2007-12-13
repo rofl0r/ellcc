@@ -43,6 +43,7 @@ if ($smcv < $req_smcv) {
 @LDFLAGS = ("-g -Wall");
 $AST = "../ast";
 $ELKHOUND = "../elkhound";
+$LLVM = "../../llvm";
 $USE_GNU = "1";
 $USE_KANDR = "1";
 $GCOV_MODS = "";
@@ -56,6 +57,7 @@ package options:
   -prof              enable profiling
   -gcov=<mods>       enable coverage testing for modules <mods>
   -devel             add options useful while developing (-Werror)
+  -llvm=<dir>:       specify where the LLVM system is [$LLVM]
   -gnu=[0/1]         enable GNU extensions? [$USE_GNU]
   -kandr=[0/1]       enable K&R extensions? [$USE_KANDR]
   -ast=<dir>:        specify where the ast system is [$AST]
@@ -105,6 +107,10 @@ foreach $optionAndValue (@ARGV) {
     $ELKHOUND = getOptArg();
   }
 
+  elsif ($arg eq "llvm") {
+    $LLVM = getOptArg();
+  }
+
   elsif ($arg eq "gnu") {
     $USE_GNU = getBoolArg();
   }
@@ -143,6 +149,12 @@ if (! -f "$ELKHOUND/glr.h") {
       "If it's in a different location, use the -elkhound=<dir> option.\n";
 }
 
+# LLVM
+if (! -d "$LLVM") {
+  print("Cannot find $LLVM, disabling LLVM generation.\n");
+  $LLVM="disabled";
+}
+
 $PERL = get_PERL_variable();
 
 
@@ -155,6 +167,7 @@ cat <<EOF
   SMBASE:      $SMBASE
   AST:         $AST
   ELKHOUND:    $ELKHOUND
+  LLVM:        $LLVM
   USE_GNU:     $USE_GNU
   USE_KANDR:   $USE_KANDR
 EOF
@@ -173,6 +186,7 @@ writeConfigStatus("LDFLAGS" => "@LDFLAGS",
                   "AST" => "$AST",
                   "ELKHOUND" => "$ELKHOUND",
                   "PERL" => "$PERL",
+                  "LLVM" => "$LLVM",
                   "USE_GNU" => "$USE_GNU",
                   "USE_KANDR" => "$USE_KANDR",
                   "GCOV_MODS" => "$GCOV_MODS");

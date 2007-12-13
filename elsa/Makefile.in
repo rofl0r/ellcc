@@ -18,7 +18,18 @@ ELKHOUND := @ELKHOUND@
 LIBSMBASE   := $(SMBASE)/libsmbase.a
 LIBAST      := $(AST)/libast.a
 LIBELKHOUND := $(ELKHOUND)/libelkhound.a
-LLVMLDFLAGS := $(shell llvm-config --ldflags --libs core target)
+
+# optional: LLVM generation
+LLVM := @LLVM@
+ifneq ("$(LLVM)","disabled")
+  LLVMLDFLAGS := $(shell llvm-config --ldflags --libs core target)
+  LLVMCCFLAGS := $(shell llvm-config --cxxflags)
+  CC_AST_MODS += cc2llvm.ast
+  EXT_OBJS    += cc2llvm.o
+else
+  LLVMLDFLAGS :=
+  LLVMCCFLAGS :=
+endif
 
 # external tools
 PERL := @PERL@
@@ -79,10 +90,6 @@ CC_AST_MODS += bpprint.ast
 # lowering to C
 CC_AST_MODS += cc2c.ast
 
-# lowering to LLVM
-CC_AST_MODS += cc2llvm.ast
-
-
 # optional: GNU language extension
 USE_GNU := @USE_GNU@
 ifeq ($(USE_GNU),1)
@@ -129,15 +136,16 @@ notopt.o: notopt.cc
 	$(CXX) -c -o $@ $< $(CCFLAGS) -O0
 	@$(DEP)   -o $@ $< $(CCFLAGS) -O0 >$*.d
 
-LLVMCCFLAGS = $(shell llvm-config --cxxflags)
 
 main.o: main.cc
 	$(CXX) -c -o $@ $< $(if $(findstring $*,$(GCOV_MODS)),$(GCOV_OPTS) )$(CCFLAGS) $(LLVMCCFLAGS)
 	@$(DEP)   -o $@ $< $(if $(findstring $*,$(GCOV_MODS)),$(GCOV_OPTS) )$(CCFLAGS) $(LLVMCCFLAGS) >$*.d
 
+ifneq ($(LLVM),"disabled")
 cc2llvm.o: cc2llvm.cc
 	$(CXX) -c -o $@ $< $(if $(findstring $*,$(GCOV_MODS)),$(GCOV_OPTS) )$(CCFLAGS) $(LLVMCCFLAGS)
 	@$(DEP)   -o $@ $< $(if $(findstring $*,$(GCOV_MODS)),$(GCOV_OPTS) )$(CCFLAGS) $(LLVMCCFLAGS) >$*.d
+endif
 
 # ------------------------ tlexer -------------------
 LEXER_OBJS := \
@@ -296,7 +304,6 @@ $(CC_GR_GEN_FILES): $(CC_GR_MODS) cc_tokens.ids $(ELKHOUND)/elkhound
 # that finds serious compilation problems earliest (it's ok to
 # rearrange as different parts of the code are in flux)
 CCPARSE_OBJS := \
-  cc2llvm.o \
   cc2c.o \
   bpprint.o \
   ia64mangle.o \

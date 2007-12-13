@@ -2,6 +2,7 @@
 // extension of cc.ast: additional entry points for cc2llvm
 
 verbatim {
+  #define LLVM_EXTENSION        // this extension module is active
   class CC2LLVMEnv;             // cc2llvm.h
   namespace llvm {
     class Value;

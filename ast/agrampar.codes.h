@@ -1,34 +1,33 @@
-# define YYTOKENTYPE
-#define TOK_NAME 258
-#define TOK_INTLIT 259
-#define TOK_EMBEDDED_CODE 260
-#define TOK_LBRACE 261
-#define TOK_RBRACE 262
-#define TOK_SEMICOLON 263
-#define TOK_ARROW 264
-#define TOK_LPAREN 265
-#define TOK_RPAREN 266
-#define TOK_LANGLE 267
-#define TOK_RANGLE 268
-#define TOK_STAR 269
-#define TOK_AMPERSAND 270
-#define TOK_COMMA 271
-#define TOK_EQUALS 272
-#define TOK_COLON 273
-#define TOK_CLASS 274
-#define TOK_PUBLIC 275
-#define TOK_PRIVATE 276
-#define TOK_PROTECTED 277
-#define TOK_VERBATIM 278
-#define TOK_IMPL_VERBATIM 279
-#define TOK_XML_VERBATIM 280
-#define TOK_CTOR 281
-#define TOK_DTOR 282
-#define TOK_PURE_VIRTUAL 283
-#define TOK_CUSTOM 284
-#define TOK_OPTION 285
-#define TOK_NEW 286
-#define TOK_ENUM 287
-# define yystype YYSTYPE /* obsolescent; will be withdrawn */
-# define YYSTYPE_IS_DECLARED 1
+# define BISON_AGRAMPAR_TAB_H
+# define YYSTYPE yystype
 # define YYSTYPE_IS_TRIVIAL 1
+# define	TOK_NAME	257
+# define	TOK_INTLIT	258
+# define	TOK_EMBEDDED_CODE	259
+# define	TOK_LBRACE	260
+# define	TOK_RBRACE	261
+# define	TOK_SEMICOLON	262
+# define	TOK_ARROW	263
+# define	TOK_LPAREN	264
+# define	TOK_RPAREN	265
+# define	TOK_LANGLE	266
+# define	TOK_RANGLE	267
+# define	TOK_STAR	268
+# define	TOK_AMPERSAND	269
+# define	TOK_COMMA	270
+# define	TOK_EQUALS	271
+# define	TOK_COLON	272
+# define	TOK_CLASS	273
+# define	TOK_PUBLIC	274
+# define	TOK_PRIVATE	275
+# define	TOK_PROTECTED	276
+# define	TOK_VERBATIM	277
+# define	TOK_IMPL_VERBATIM	278
+# define	TOK_XML_VERBATIM	279
+# define	TOK_CTOR	280
+# define	TOK_DTOR	281
+# define	TOK_PURE_VIRTUAL	282
+# define	TOK_CUSTOM	283
+# define	TOK_OPTION	284
+# define	TOK_NEW	285
+# define	TOK_ENUM	286

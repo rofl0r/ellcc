@@ -31,6 +31,8 @@
 #include "xml_type_writer.h" // XmlTypeWriter
 #include "bpprint.h"      // bppTranslationUnit
 #include "cc2c.h"         // cc_to_c
+
+#ifdef LLVM_EXTENSION
 #include "cc2llvm.h"      // cc_to_llvm
 
 // LLVM
@@ -38,6 +40,7 @@
 #include <llvm/Pass.h>
 #include <llvm/PassManager.h>
 #include <llvm/Assembly/PrintModulePass.h>
+#endif
 
 // true to print the tchecked C++ syntax using bpprint after
 // tcheck
@@ -50,8 +53,10 @@ static bool wantBpprintAfterElab = false;
 // nonempty if we want to run cc2c; value of "-" means stdout
 static string cc2cOutputFname;
 
+#ifdef LLVM_EXTENSION
 // nonempty if we want to run cc2llvm; value of "-" means stdout
 static string cc2llvmOutputFname;
+#endif
 
 
 // little check: is it true that only global declarators
@@ -220,6 +225,7 @@ char *myProcessArgs(int argc, char **argv, char const *additionalInfo)
       SHIFT;
       SHIFT;
     }
+#ifdef LLVM_EXTENSION
     else if (0==strcmp(argv[1], "-cc2llvm")) {
       if (argc < 3) {
         cout << "-cc2llvm requires a file name argument\n";
@@ -229,6 +235,7 @@ char *myProcessArgs(int argc, char **argv, char const *additionalInfo)
       SHIFT;
       SHIFT;
     }
+#endif
     else {
       break;     // didn't find any more options
     }
@@ -243,7 +250,9 @@ char *myProcessArgs(int argc, char **argv, char const *additionalInfo)
             "    -bbprint:          print parsed C++ back out using bpprint\n"
             "    -bbprintAfterElab: bpprint after elaboration\n"
             "    -cc2c <fname>:     generate C, write to <fname>; \"-\" means stdout\n"
+#ifdef LLVM_EXTENSION
             "    -cc2llvm <fname>:  generate LLVM code, write to <fname>; \"-\" means stdout\n"
+#endif
          << (additionalInfo? additionalInfo : "");
     exit(argc==1? 0 : 2);    // error if any args supplied
   }
@@ -845,6 +854,7 @@ void doit(int argc, char **argv)
     }
   }
 
+#ifdef LLVM_EXTENSION
   if (!cc2llvmOutputFname.empty()) {
     llvm::Module* mod = cc_to_llvm(cc2llvmOutputFname, strTable, *unit,
 	// RICH: Target data and target triple.
@@ -865,6 +875,7 @@ void doit(int argc, char **argv)
     PM.run(*mod);
     delete mod;
   }
+#endif
 
   //traceProgress() << "cleaning up...\n";
 
