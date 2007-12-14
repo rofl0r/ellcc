@@ -6234,6 +6234,23 @@ int compareArgsToParams(Env &env, FunctionType *ft, FakeList<ArgExpression> *arg
     Variable *param = paramIter.data();
     ArgExpression *arg = argIter->first();
 
+    // rdp: Perform standard conversions.
+    string errorMsg;
+    StandardConversion sc = getStandardConversion(&errorMsg,
+            SE_NONE, arg->expr->type, param->type);
+    if (sc == SC_ERROR) {
+      env.error(errorMsg);
+    }
+    else if (sc == SC_IDENTITY) {
+      // no conversion necessary
+    }
+    else {
+      // insert the conversion between 'this' and 'src'
+      E_stdConv *conv = new E_stdConv(env.loc(), arg->expr, sc);
+      conv->type = param->type->asRval();
+      arg->expr = conv;
+    }
+
     // Normalize arguments passed to transparent unions.
     // http://gcc.gnu.org/onlinedocs/gcc-3.2/gcc/Type-Attributes.html
     //
@@ -6318,7 +6335,6 @@ int compareArgsToParams(Env &env, FunctionType *ft, FakeList<ArgExpression> *arg
                   << " type `" << param->type->toString() << "'");
       }
     }
-
   }
 
   if (!env.doCompareArgsToParams) {

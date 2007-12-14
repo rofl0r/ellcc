@@ -60,10 +60,11 @@ llvm::Value* CC2LLVMEnv::checkCondition(SourceLoc loc, llvm::Value* value)
     {
         // Not a boolean, check for non-zero.
         checkCurrentBlock();
+	llvm::Type::TypeID id = ctype->getTypeID();
         llvm::Value* zero = llvm::Constant::getNullValue(value->getType());
-	if (ctype->getTypeID() == llvm::Type::IntegerTyID) {
+	if (id == llvm::Type::IntegerTyID || id == llvm::Type::PointerTyID) {
             value = new llvm::ICmpInst(llvm::ICmpInst::ICMP_NE, value, zero, "", currentBlock);
-	} else if (ctype->getTypeID() == llvm::Type::FloatTyID) {
+	} else if (id == llvm::Type::FloatTyID) {
 	    // RICH: ordered vs. unordered.
             value = new llvm::FCmpInst(llvm::FCmpInst::FCMP_ONE, value, zero, "", currentBlock);
 	} else {
@@ -901,10 +902,12 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
     env.checkCurrentBlock();
     std::vector<llvm::Value*> parameters;
     FAKELIST_FOREACH(ArgExpression, args, arg) {
+        cout << arg->expr->type->toString() << "\n";
         parameters.push_back(arg->expr->cc2llvm(env));
     }
 
     llvm::Value* function = func->cc2llvm(env, true);
+            cout << toString(loc) << "\n";
     return new llvm::CallInst(function, parameters.begin(), parameters.end(), "", env.currentBlock);
 }
 
@@ -990,14 +993,23 @@ llvm::Value *E_effect::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 
     if (temp->getType()->getTypeID() == llvm::Type::PointerTyID) {
         // This is a pointer increment/decrement.
-        cerr << toString(loc) << ": ";
-        xunimp("pointer ++,--");
+	std::vector<llvm::Value*> index;
+	llvm::Value* one;
+	if (op == EFF_POSTDEC || op == EFF_PREDEC) {
+	    // Get a negative one.
+            one = llvm::ConstantInt::get(llvm::APInt(env.targetData.getTypeSizeInBits(temp->getType()), -1));
+	} else {
+	    // Get a positive one.
+            one = llvm::ConstantInt::get(llvm::APInt(env.targetData.getTypeSizeInBits(temp->getType()), 1));
+	}
+	index.push_back(one);
+	result = new llvm::GetElementPtrInst(temp, index.begin(), index.end(), "", env.currentBlock);
     } else if (temp->getType()->isInteger()) {
 	llvm::Instruction::BinaryOps opcode = op == EFF_POSTDEC || op == EFF_PREDEC ?
 	    llvm::Instruction::Sub :
 	    llvm::Instruction::Add;
 
-        llvm::ConstantInt* one = llvm::ConstantInt::get(llvm::APInt(temp->getType()->getPrimitiveSizeInBits(), 1));
+        llvm::ConstantInt* one = llvm::ConstantInt::get(llvm::APInt(env.targetData.getTypeSizeInBits(temp->getType()), 1));
 	temp = llvm::BinaryOperator::create(opcode, temp, one, "", env.currentBlock);
         new llvm::StoreInst(temp, value, false, env.currentBlock);	// RICH: Volatile
     } else {
@@ -1045,7 +1057,7 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
             isPointer = type->isPtrOrRef();
             isSimple = type->isSimpleType();
             xassert(isSimple || isPointer);
-	    isInteger = false; isUnsigned = false; size = 0; value = NULL;
+	    isInteger = false; isUnsigned = false; isFloat = false; size = 0;
             if (isSimple) {
 	        const SimpleType* st = type->asSimpleTypeC();
                 isInteger = ::isIntegerType(st->type);
@@ -1518,7 +1530,9 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 		    right = llvm::BinaryOperator::create(llvm::Instruction::Sub, zero, right, "", env.currentBlock);
 		}
 		std::vector<llvm::Value*> index;
-	        index.push_back(llvm::Constant::getNullValue(right->getType()));
+		if (left->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID) {
+	          index.push_back(llvm::Constant::getNullValue(right->getType()));
+		}
 	        index.push_back(right);
 		result = new llvm::GetElementPtrInst(left, index.begin(), index.end(), "", env.currentBlock);
 	        break;
@@ -1681,9 +1695,8 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 
 llvm::Value *E_addrOf::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 {
-    cerr << toString(loc) << ": ";
-    xunimp("&");
-    return NULL;
+    llvm::Value * result = expr->cc2llvm(env, true);	// Get the lvalue.
+    return result;
 }
 
 llvm::Value *E_deref::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
@@ -1708,6 +1721,11 @@ llvm::Value *E_cast::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 llvm::Value *E_stdConv::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 {
     llvm::Value* result = expr->cc2llvm(env);
+            cout << "stdconv: " << toString(loc) << ": " << toString(stdConv) << "\n";
+    cout << type->toString() << "\n";
+    cout << expr->type->toString() << "\n";
+    cout << this->asString() << "\n";
+
     env.makeCast(loc, expr->type, result, type);
     return result;
 }
@@ -1728,14 +1746,10 @@ llvm::Value *E_cond::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
      */
 
     // This starts out looking very much like an if statement.
-    
-
     llvm::Value* value = env.checkCondition(cond);
-
     llvm::BasicBlock* ifTrue = new llvm::BasicBlock("condTrue", env.function, env.returnBlock);
     llvm::BasicBlock* ifFalse = new llvm::BasicBlock("condFalse", env.function, env.returnBlock);
     llvm::BasicBlock* next = new llvm::BasicBlock("next", env.function, env.returnBlock);
-
     env.checkCurrentBlock();
     new llvm::BranchInst(ifTrue, ifFalse, value, env.currentBlock);
 
@@ -1756,9 +1770,17 @@ llvm::Value *E_cond::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
     }
 
     env.currentBlock = next;
-    cerr << toString(loc) << ": ";
-    xunimp("?:");
-    return NULL;
+    llvm::Value* result = NULL;
+    if (trueValue->getType()->isFirstClassType() && falseValue->getType()->isFirstClassType()) {
+        llvm::PHINode* phi = new llvm::PHINode(trueValue->getType(), "", env.currentBlock);
+	phi->addIncoming(trueValue, ifTrue);
+	phi->addIncoming(falseValue, ifFalse);
+        result = phi;
+    } else {
+        cerr << toString(loc) << ": ";
+        xunimp("?:");
+    }
+    return result;
 }
 
 llvm::Value *E_sizeofType::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
@@ -1776,7 +1798,8 @@ llvm::Value *E_assign::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
     env.checkCurrentBlock();
     if (op == BIN_ASSIGN) {
 	// Assign is simple. Get it out of the way.
-	return new llvm::StoreInst(source, destination, false, env.currentBlock);	// RICH: isVolatile
+	new llvm::StoreInst(source, destination, false, env.currentBlock);	// RICH: isVolatile
+        return source;
     }
 
     llvm::Value* temp = NULL;					// A place to store the temporary.
@@ -1889,7 +1912,7 @@ llvm::Value *E_assign::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 
     temp = llvm::BinaryOperator::create(opcode, temp, source, "", env.currentBlock);
     new llvm::StoreInst(temp, destination, false, env.currentBlock);	// RICH: Volatile
-    return temp;
+    return source;
 }
 
 llvm::Value *E_new::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
