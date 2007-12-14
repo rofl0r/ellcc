@@ -747,7 +747,8 @@ public:      // funcs
   Type *sizeofType(Type *t, int &size, Expression * /*nullable*/ expr);
 
   Expression *makeConvertedArg(Expression * const arg,
-                               ImplicitConversion const &ic);
+                               ImplicitConversion const &ic,
+                               Type *paramType = NULL);
 
   bool elaborateImplicitConversionArgToParam(Type *paramType, Expression *&arg);
 

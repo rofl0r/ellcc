@@ -5741,7 +5741,8 @@ ASTTypeId *Env::buildASTTypeId(Type *type)
 // Elaboration: if 'ic' involves a user-defined conversion, then modify the
 // AST to make that explicit.
 Expression *Env::makeConvertedArg(Expression * const arg,
-                                  ImplicitConversion const &ic)
+                                  ImplicitConversion const &ic,
+                                  Type* paramType)
 {
   Expression *newarg = arg;
 
@@ -5767,7 +5768,15 @@ Expression *Env::makeConvertedArg(Expression * const arg,
         break;
       }
     } else {
-      // TODO
+      // rdp: Make argument conversions explicit.
+      if (ic.scs == SC_IDENTITY) {
+        // no conversion necessary
+      }
+      else {
+        // Insert the conversion.
+        newarg = new E_stdConv(loc(), arg, ic.scs);
+        newarg->type = paramType;
+      }
     }
     break;
   case ImplicitConversion::IC_USER_DEFINED:
@@ -5814,7 +5823,7 @@ bool Env::elaborateImplicitConversionArgToParam(Type *paramType, Expression *&ar
 
   // Elaboration: if 'ic' involves a user-defined conversion, then
   // modify the AST to make that explicit
-  arg = env.makeConvertedArg(arg, ic);
+  arg = env.makeConvertedArg(arg, ic, paramType);
 
   // at least note that we plan to use this conversion, so
   // if it involves template functions, instantiate them
