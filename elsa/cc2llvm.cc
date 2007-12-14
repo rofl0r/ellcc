@@ -136,7 +136,7 @@ const llvm::Type* CC2LLVMEnv::makeTypeSpecifier(SourceLoc loc, Type *t)
             returnType = llvm::Type::VoidTy;
 	}
         makeParameterTypes(ft, args);
-        type = llvm::FunctionType::get(returnType, args, ft->acceptsVarargs(), NULL);	// RICH: Parameter attributes.
+        type = llvm::FunctionType::get(returnType, args, ft->acceptsVarargs());
         break;
     }
     case Type::T_ARRAY: {
@@ -344,7 +344,7 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
     const llvm::Type* returnType = env.makeTypeSpecifier(nameAndParams->var->loc, funcType->retType);
     std::vector<const llvm::Type*>args;
     env.makeParameterTypes(funcType, args);
-    llvm::FunctionType* ft = llvm::FunctionType::get(returnType, args, funcType->acceptsVarargs(), NULL);	// RICH: Parameter attributes.
+    llvm::FunctionType* ft = llvm::FunctionType::get(returnType, args, funcType->acceptsVarargs());
     env.function = new llvm::Function(ft, llvm::GlobalValue::ExternalLinkage,	// RICH: Linkage.
         nameAndParams->var->name, env.mod);
 
@@ -825,8 +825,6 @@ llvm::Value *E_intLit::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 llvm::Value *E_floatLit::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 {
     const llvm::Type* ftype = env.makeTypeSpecifier(loc, type);
-#if RICH
-    // Will be supported in LLVM 2.2, I think.
     const llvm::fltSemantics* semantics;
     switch (ftype->getTypeID()) {
     case llvm::Type::FloatTyID:
@@ -850,22 +848,6 @@ llvm::Value *E_floatLit::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
         break;
     }
     return llvm::ConstantFP::get(ftype, llvm::APFloat(*semantics, text));
-#else
-    switch (ftype->getTypeID()) {
-    case llvm::Type::FloatTyID: {
-	float value = strtof(text, NULL);
-        return llvm::ConstantFP::get(ftype, llvm::APFloat(value));
-    }
-    case llvm::Type::DoubleTyID: {
-	double value = strtod(text, NULL);
-        return llvm::ConstantFP::get(ftype, llvm::APFloat(value));
-    }
-    default:
-        cerr << toString(loc) << ": ";
-        xunimp("floating point type");
-        return NULL;
-    }
-#endif
 }
 
 llvm::Value *E_stringLit::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
