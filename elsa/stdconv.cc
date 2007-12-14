@@ -381,6 +381,11 @@ bool canConvertToBaseClass(Type const *src, Type const *dest, bool &ambig)
       return false;
     }
   }
+  else if (src->isVoid()) {
+      // rdp: Needed to compile in/gnu/c0001.c.
+      // I'm not happy with this. Why does the explicit cast fail?
+      return true;
+  }
   else {
     return false;
   }
@@ -412,6 +417,9 @@ bool couldBeAnything(Type const *t)
 // intermediate Type objects; I should be able to do this computation
 // without allocating, and if I can then that avoids interaction
 // problems with Type annotation systems
+/* RICH: This should have the ability to return conversions that may be allowed
+ * in C but not C++ (e.g. implicit int to ptr) (make SC_ERROR a bit?).
+ */
 StandardConversion getStandardConversion
   (string *errorMsg, SpecialExpr srcSpecial, Type const *src, Type const *dest,
    bool destIsReceiver)

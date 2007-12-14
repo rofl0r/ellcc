@@ -5525,23 +5525,22 @@ Type *E_stringLit::itcheck_x(Env &env, Expression *&replacement)
     return type;
   }
 
-#if RICH
+  // RICH: I'm leaving this in for now to fill fullTextNQ. This will go away
   // TODO: this is wrong because I'm not properly tracking the string
   // size if it has escape sequences
-  int len = 0;
-  E_stringLit *p = this;
-  while (p) {
-    len += strlen(p->text) - 2;   // don't include surrounding quotes
-    if (p->text[0]=='L') len--;   // don't count 'L' if present
-    p = p->continuation;
-  }
-
   {
     // quarl 2006-07-13
     //    Build the dequoted full text.
     //
     //    TODO: could just clobber text+continuations with fullText.  Or just
     //    do this in parsing...
+    int len = 0;
+    E_stringLit *p = this;
+    while (p) {
+      len += strlen(p->text) - 2;   // don't include surrounding quotes
+      if (p->text[0]=='L') len--;   // don't count 'L' if present
+      p = p->continuation;
+    }
     stringBuilder sb(len);
     p = this;
     do {
@@ -5558,7 +5557,7 @@ Type *E_stringLit::itcheck_x(Env &env, Expression *&replacement)
     } while(p);
     fullTextNQ = env.str(sb);
   }
-#endif
+  // RICH: End of go away section.
 
   // allocate block to hold contents; will expand it as necessary; the
   // initial allocation estimate assumes no continuations and no
@@ -5571,11 +5570,18 @@ Type *E_stringLit::itcheck_x(Env &env, Expression *&replacement)
   while (segment) {
     char const *p = segment->text;
     if (*p == 'L') { p++; }
-    xassert(*p == '"');
-    p++;
+    int l = strlen(p);
+    bool gccBug = false;
+    if (l >= 2 && p[0] == '\"' && p[l-1] == '\"') {
+      --l;
+      p++;
+    } else {
+      // see in/gnu/d0122.c for missing quotes
+      gccBug = true;
+    }
 
     // iterate over characters
-    while (*p != '"') {
+    while (l-- && *p != '"') {
       if (*p == '\\') {
         unsigned int c = decodeEscape(env, p);
         appendCharacter(data, c, id);
@@ -5587,7 +5593,7 @@ Type *E_stringLit::itcheck_x(Env &env, Expression *&replacement)
     }
     
     segment = segment->continuation;
-    }
+  }
   
   // final NUL character
   appendCharacter(data, 0, id);
@@ -5602,16 +5608,12 @@ Type *E_stringLit::itcheck_x(Env &env, Expression *&replacement)
     stringLitCharCVFlags = CV_CONST;
   }
   Type *charConst = env.getSimpleType(id, stringLitCharCVFlags);
-  // RICH: Type *arrayType = env.makeArrayType(charConst, len+1);    // +1 for implicit final NUL
   Type *arrayType = env.makeArrayType(charConst, len);
 
   // C++ 5.1p2, C99 6.5.1p4: string literals are lvalues (in/k0036.cc)
   Type *ret = makeLvalType(env, arrayType);
 
   // apply the same type to the continuations, for visitors' benefit
-  // RICH: for (p = continuation; p; p = p->continuation) {
-  // RICH:   p->type = ret;
-  // RICH: }
   for (segment = continuation; segment; segment = segment->continuation) {
     segment->type = ret;
   }

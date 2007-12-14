@@ -19,18 +19,6 @@ LIBSMBASE   := $(SMBASE)/libsmbase.a
 LIBAST      := $(AST)/libast.a
 LIBELKHOUND := $(ELKHOUND)/libelkhound.a
 
-# optional: LLVM generation
-LLVM := @LLVM@
-ifneq ("$(LLVM)","disabled")
-  LLVMLDFLAGS := $(shell llvm-config --ldflags --libs core target)
-  LLVMCCFLAGS := $(shell llvm-config --cxxflags)
-  CC_AST_MODS += cc2llvm.ast
-  EXT_OBJS    += cc2llvm.o
-else
-  LLVMLDFLAGS :=
-  LLVMCCFLAGS :=
-endif
-
 # external tools
 PERL := @PERL@
 MYFLEX := $(PERL) $(SMBASE)/run-flex.pl -nobackup -copies
@@ -100,13 +88,24 @@ ifeq ($(USE_GNU),1)
   EXT_OBJS    += gnu.o
 endif
 
-
 # optional: K&R language extension
 USE_KANDR := @USE_KANDR@
 ifeq ($(USE_KANDR),1)
   CC_AST_MODS += kandr.ast
   CC_GR_MODS  += kandr.gr
   EXT_OBJS    += kandr.o
+endif
+
+# optional: LLVM generation
+LLVM := @LLVM@
+ifneq ("$(LLVM)","disabled")
+  LLVMLDFLAGS := $(shell llvm-config --ldflags --libs core target)
+  LLVMCCFLAGS := $(shell llvm-config --cxxflags)
+  CC_AST_MODS += cc2llvm.ast
+  EXT_OBJS    += cc2llvm.o
+else
+  LLVMLDFLAGS :=
+  LLVMCCFLAGS :=
 endif
 
 

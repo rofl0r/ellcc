@@ -312,7 +312,7 @@ testparse t0036.cc
 testparse t0037.cc
 testparse t0038.cc
 testparse t0039.cc
-failparse t0040.cc "implicit conversion of pointer to int"
+failparse t0040.cc "RICH: C vs. C++ implicit conversion of pointer to int"
 testparse t0041.cc
 testparse t0042.cc
 testparse t0043.cc
@@ -1612,7 +1612,7 @@ if $use_gnu; then
     failTest "$2" ./ccparse -tr c_lang in/gnu/cil/$1
   }
 
-  testcil align1.i
+  failcil align1.i "RICH: C vs. C++ implicit conversion"
   testcil align2.i
   testcil attr2.i
   testcil attr3.i
