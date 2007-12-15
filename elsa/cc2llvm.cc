@@ -15,12 +15,15 @@
 #include <llvm/InlineAsm.h>
 #include <llvm/ParameterAttributes.h>
 #include <llvm/Support/MathExtras.h>
+#include <llvm/Support/LLVMBuilder.h>
 #include <llvm/Analysis/Verifier.h>
 
 #define BITS_PER_BYTE	8	// RICH: Temporary.
 
 // -------------------- CC2LLVMEnv ---------------------
-CC2LLVMEnv::CC2LLVMEnv(StringTable &s, string name, const TranslationUnit& input, string targetData, string targetTriple)
+CC2LLVMEnv::CC2LLVMEnv(StringTable &s, string name, const TranslationUnit& input,
+                       string targetData, string targetTriple,
+		       llvm::LLVMBuilder& builder)
   : str(s),
     targetData(targetData.c_str()),
     input(input),
@@ -34,14 +37,16 @@ CC2LLVMEnv::CC2LLVMEnv(StringTable &s, string name, const TranslationUnit& input
     continueBlock(NULL),
     nextBlock(NULL),
     switchInst(NULL),
-    switchType(NULL)
+    switchType(NULL),
+    builder(builder)
 { 
     mod->setDataLayout("e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:32:64-f32:32:32-f64:32:64-v64:64:64-v128:128:128-a0:0:64-s0:0:64-f80:32:32");
     mod->setTargetTriple("i686-pc-linux-gnu");
 }
 
 CC2LLVMEnv::~CC2LLVMEnv()
-{ }
+{
+}
 
 /** Make sure the current block has been opened.
  */
@@ -49,8 +54,20 @@ void CC2LLVMEnv::checkCurrentBlock()
 {
     if (currentBlock == NULL) {
         // No block is current, make one.
-        currentBlock = new llvm::BasicBlock("", function, returnBlock);
+        setCurrentBlock(new llvm::BasicBlock("", function, returnBlock));
     }
+}
+
+/** Set the current block.
+ */
+void CC2LLVMEnv::setCurrentBlock(llvm::BasicBlock* block)
+{
+    if (currentBlock) {
+      // Close out the last block.
+      builder.CreateBr(block);
+    }
+    currentBlock = block;
+    builder.SetInsertPoint(block);
 }
 
 /** Check a condition in preparation for a branch.
@@ -65,10 +82,10 @@ llvm::Value* CC2LLVMEnv::checkCondition(SourceLoc loc, llvm::Value* value)
 	llvm::Type::TypeID id = ctype->getTypeID();
         llvm::Value* zero = llvm::Constant::getNullValue(value->getType());
 	if (id == llvm::Type::IntegerTyID || id == llvm::Type::PointerTyID) {
-            value = new llvm::ICmpInst(llvm::ICmpInst::ICMP_NE, value, zero, "", currentBlock);
+	    value = builder.CreateICmpNE(value, zero);
 	} else if (id == llvm::Type::FloatTyID) {
 	    // RICH: ordered vs. unordered.
-            value = new llvm::FCmpInst(llvm::FCmpInst::FCMP_ONE, value, zero, "", currentBlock);
+	    value = builder.CreateFCmpONE(value, zero);
 	} else {
             cerr << toString(loc) << ": ";
             xunimp("checkCondition");
@@ -356,7 +373,7 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
     env.entryBlock = new llvm::BasicBlock("entry", env.function, NULL);
 
     // Set the initial current block.
-    env.currentBlock = env.entryBlock;
+    env.setCurrentBlock(env.entryBlock);
 
     // Add the parameter names.
     llvm::Function::arg_iterator llargs = env.function->arg_begin();
@@ -367,11 +384,11 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
 	const llvm::Type* type = arg->getType();
 	// type will be NULL for "...".
 	if (type) {
-	    llvm::AllocaInst* addr = new llvm::AllocaInst(type, param->name, env.currentBlock);
+	    llvm::AllocaInst* addr = env.builder.CreateAlloca(type, NULL, param->name);
 	    // Remember where the argument can be retrieved.
             env.variables.add(param, addr);
 	    // Store the argument for later use.
-	    new llvm::StoreInst(arg, addr, false, env.currentBlock);	// RICH: IsVolatile.
+	    env.builder.CreateStore(arg, addr, false);	// RICH: IsVolatile.
         }
     }
 
@@ -385,11 +402,11 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
     } else {
         // Create the return value holder.
 	
-        env.returnValue = new llvm::AllocaInst(returnType, "retval", env.entryBlock);
+        env.returnValue = env.builder.CreateAlloca(returnType, NULL, "retval");
 
         // RICH: This should happen in main() only: Default return value.
         llvm::Constant* nullInt = llvm::Constant::getNullValue(returnType);
-        new llvm::StoreInst(nullInt, env.returnValue, false, env.entryBlock);	// RICH: main() only.
+        env.builder.CreateStore(nullInt, env.returnValue, false);	// RICH: main() only.
 
         // Generate the function return.
         llvm::LoadInst* rv = new llvm::LoadInst(env.returnValue, "", false, env.returnBlock);	// RICH: Volatile
@@ -404,7 +421,7 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
 
     if (env.currentBlock) {
       // Close the current block.
-      new llvm::BranchInst(env.returnBlock, env.currentBlock);
+      env.builder.CreateBr(env.returnBlock);
       env.currentBlock = NULL;
     }
 
@@ -488,7 +505,7 @@ void Declaration::cc2llvm(CC2LLVMEnv &env) const
 
 	    if (init) {
 	        env.checkCurrentBlock();
-	        new llvm::StoreInst(init, lv, false, env.currentBlock);	// RICH: isVolatile.
+	        env.builder.CreateStore(init, lv, false);	// RICH: isVolatile.
 	    }
             env.variables.add(var, lv);
         }
@@ -513,12 +530,7 @@ void S_label::cc2llvm(CC2LLVMEnv &env) const
         block->moveBefore(env.returnBlock);
     }
 
-    if (env.currentBlock) {
-        // Close the current block.
-        new llvm::BranchInst(block, env.currentBlock);
-    }
-
-    env.currentBlock = block;
+    env.setCurrentBlock(block);
     s->cc2llvm(env);
 }
 
@@ -526,15 +538,11 @@ void S_case::cc2llvm(CC2LLVMEnv &env) const
 {
     xassert(env.switchInst);
     llvm::BasicBlock* block = new llvm::BasicBlock("case", env.function, env.returnBlock);
-    if (env.currentBlock) {
-        // Close the current block.
-        new llvm::BranchInst(block, env.currentBlock);
-    }
-
-    env.currentBlock = block;
+    env.setCurrentBlock(block);
     llvm::Value* value = expr->cc2llvm(env);
     env.makeCast(loc, expr->type, value, env.switchType);
     // LLVM will complain if the value is not a constant integer.
+    // Not clearly. The verifier complains about dominators.
     env.switchInst->addCase((llvm::ConstantInt*)value, block);
     s->cc2llvm(env);
 }
@@ -543,12 +551,7 @@ void S_default::cc2llvm(CC2LLVMEnv &env) const
 {
     xassert(env.switchInst);
     llvm::BasicBlock* block = new llvm::BasicBlock("default", env.function, env.returnBlock);
-    if (env.currentBlock) {
-        // Close the current block.
-        new llvm::BranchInst(block, env.currentBlock);
-    }
-
-    env.currentBlock = block;
+    env.setCurrentBlock(block);
     env.switchInst->setSuccessor(0, block);
     s->cc2llvm(env);
 }
@@ -574,25 +577,16 @@ void S_if::cc2llvm(CC2LLVMEnv &env) const
     llvm::BasicBlock* next = new llvm::BasicBlock("next", env.function, env.returnBlock);
 
     env.checkCurrentBlock();
-    new llvm::BranchInst(ifTrue, ifFalse, value, env.currentBlock);
+    env.builder.CreateCondBr(value, ifTrue, ifFalse);
+    env.currentBlock = NULL;
 
-    env.currentBlock = ifTrue;
+    env.setCurrentBlock(ifTrue);
     thenBranch->cc2llvm(env);
-    if (env.currentBlock) {
-        // Close the current block.
-        new llvm::BranchInst(next, env.currentBlock);
-        env.currentBlock = NULL;
-    }
 
-    env.currentBlock = ifFalse;
+    env.setCurrentBlock(ifFalse);
     elseBranch->cc2llvm(env);
-    if (env.currentBlock) {
-        // Close the current block.
-        new llvm::BranchInst(next, env.currentBlock);
-        env.currentBlock = NULL;
-    }
 
-    env.currentBlock = next;
+    env.setCurrentBlock(next);
 }
 
 void S_switch::cc2llvm(CC2LLVMEnv &env) const
@@ -614,7 +608,7 @@ void S_switch::cc2llvm(CC2LLVMEnv &env) const
      */
     env.checkCurrentBlock();
     // We'll use the next block as the default for now. May be overridden by a default:.
-    env.switchInst = new llvm::SwitchInst(value, env.nextBlock, 1, env.currentBlock);
+    env.switchInst = env.builder.CreateSwitch(value, env.nextBlock);
     env.switchType = condition->expr->expr->type;
     // Close the current block.
     env.currentBlock = NULL;
@@ -622,13 +616,7 @@ void S_switch::cc2llvm(CC2LLVMEnv &env) const
     // Do the body.
     branches->cc2llvm(env);
 
-    if (env.currentBlock) {
-        // Close the current block.
-        new llvm::BranchInst(env.nextBlock, env.currentBlock);
-        env.currentBlock = NULL;
-    }
-
-    env.currentBlock = env.nextBlock;
+    env.setCurrentBlock(env.nextBlock);
 
     // Restore the old switch context;
     env.switchInst = oldSwitchInst;
@@ -645,23 +633,21 @@ void S_while::cc2llvm(CC2LLVMEnv &env) const
     env.continueBlock = new llvm::BasicBlock("continue", env.function, env.returnBlock);
     llvm::BasicBlock* bodyBlock = new llvm::BasicBlock("body", env.function, env.returnBlock);
     env.nextBlock = new llvm::BasicBlock("next", env.function, env.returnBlock);
-    if (env.currentBlock) {
-        // Close the current block.
-        new llvm::BranchInst(env.continueBlock, env.currentBlock);
-    }
 
     // Set the current block.
-    env.currentBlock = env.continueBlock;
+    env.setCurrentBlock(env.continueBlock);
 
     // Generate the test.
     const CN_expr* condition = cond->asCN_exprC();
     llvm::Value* value = env.checkCondition(condition->expr->expr);
-    new llvm::BranchInst(bodyBlock, env.nextBlock, value, env.currentBlock);
+    env.builder.CreateCondBr(value, bodyBlock, env.nextBlock);
+    env.currentBlock = NULL;
 
-    env.currentBlock = bodyBlock;
+    env.setCurrentBlock(bodyBlock);
     body->cc2llvm(env);
-    new llvm::BranchInst(env.continueBlock, env.currentBlock);
-    env.currentBlock = env.nextBlock;
+    env.builder.CreateBr(env.continueBlock);
+    env.currentBlock = NULL;
+    env.setCurrentBlock(env.nextBlock);
 
     // Restore the old loop context.
     env.continueBlock = oldContinueBlock;
@@ -679,20 +665,21 @@ void S_doWhile::cc2llvm(CC2LLVMEnv &env) const
     env.nextBlock = new llvm::BasicBlock("next", env.function, env.returnBlock);
     if (env.currentBlock) {
         // Close the current block.
-        new llvm::BranchInst(env.continueBlock, env.currentBlock);
+        env.builder.CreateBr(env.continueBlock);
     }
+    env.currentBlock = NULL;
 
     // Set the current block.
-    env.currentBlock = bodyBlock;
+    env.setCurrentBlock(bodyBlock);
     body->cc2llvm(env);
-    new llvm::BranchInst(env.continueBlock, env.currentBlock);
 
     // Generate the test.
-    env.currentBlock = env.continueBlock;
+    env.setCurrentBlock(env.continueBlock);
     llvm::Value* value = env.checkCondition(expr->expr);
-    new llvm::BranchInst(bodyBlock, env.nextBlock, value, env.currentBlock);
+    env.builder.CreateCondBr(value, bodyBlock, env.nextBlock);
+    env.currentBlock = NULL;
 
-    env.currentBlock = env.nextBlock;
+    env.setCurrentBlock(env.nextBlock);
 
     // Restore the old loop context.
     env.continueBlock = oldContinueBlock;
@@ -713,26 +700,26 @@ void S_for::cc2llvm(CC2LLVMEnv &env) const
     env.checkCurrentBlock();
     // Handle the for() initialization.
     init->cc2llvm(env);
-    new llvm::BranchInst(testBlock, env.currentBlock);
 
     // Set the current block.
-    env.currentBlock = testBlock;
+    env.setCurrentBlock(testBlock);
 
     // Generate the test.
     const CN_expr* condition = cond->asCN_exprC();
     llvm::Value* value = env.checkCondition(condition->expr->expr);
-    new llvm::BranchInst(bodyBlock, env.nextBlock, value, env.currentBlock);
+    env.builder.CreateCondBr(value, bodyBlock, env.nextBlock);
+    env.currentBlock = NULL;
 
-    env.currentBlock = bodyBlock;
+    env.setCurrentBlock(bodyBlock);
     body->cc2llvm(env);
-    new llvm::BranchInst(env.continueBlock, env.currentBlock);
 
     // Handle the continue block.
-    env.currentBlock = env.continueBlock;
+    env.setCurrentBlock(env.continueBlock);
     after->cc2llvm(env);
-    new llvm::BranchInst(testBlock, env.currentBlock);
+    env.builder.CreateBr(testBlock);
+    env.currentBlock = NULL;
 
-    env.currentBlock = env.nextBlock;
+    env.setCurrentBlock(env.nextBlock);
 
     // Restore the old loop context.
     env.continueBlock = oldContinueBlock;
@@ -743,7 +730,7 @@ void S_break::cc2llvm(CC2LLVMEnv &env) const
 {
     xassert(env.nextBlock && "break not in a loop or switch");
     env.checkCurrentBlock();
-    new llvm::BranchInst(env.nextBlock, env.currentBlock);
+    env.builder.CreateBr(env.nextBlock);
     env.currentBlock = NULL;
 }
 
@@ -751,7 +738,7 @@ void S_continue::cc2llvm(CC2LLVMEnv &env) const
 {
     xassert(env.continueBlock && "continue not in a loop");
     env.checkCurrentBlock();
-    new llvm::BranchInst(env.continueBlock, env.currentBlock);
+    env.builder.CreateBr(env.continueBlock);
     env.currentBlock = NULL;
 }
 
@@ -763,12 +750,12 @@ void S_return::cc2llvm(CC2LLVMEnv &env) const
         xassert(env.returnValue && "return a value in a function returning void");
         llvm::Value* value = expr->cc2llvm(env);
 	env.makeCast(loc, expr->expr->type, value, env.functionAST->funcType->retType);
-        new llvm::StoreInst(value, env.returnValue, false, env.currentBlock);	// RICH: isVolatile
+        env.builder.CreateStore(value, env.returnValue, false);	// RICH: isVolatile
     } else {
         xassert(env.returnValue == NULL && "no return value in a function not returning void");
     }
 
-    new llvm::BranchInst(env.returnBlock, env.currentBlock);
+    env.builder.CreateBr(env.returnBlock);
     env.currentBlock = NULL;
 }
 
@@ -786,7 +773,7 @@ void S_goto::cc2llvm(CC2LLVMEnv &env) const
     }
 
     // Close the current block with the goto target.
-    new llvm::BranchInst(block, env.currentBlock);
+    env.builder.CreateBr(block);
     env.currentBlock = NULL;
 }
 
@@ -913,7 +900,7 @@ llvm::Value *E_stringLit::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
     std::vector<llvm::Value*> indices;
     indices.push_back(llvm::Constant::getNullValue(llvm::IntegerType::get(32)));	// RICH: 32
     indices.push_back(llvm::Constant::getNullValue(llvm::IntegerType::get(32)));	// RICH: 32
-    llvm::Instruction* address = new llvm::GetElementPtrInst(gv, indices.begin(), indices.end(), "", env.currentBlock);
+    llvm::Instruction* address = env.builder.CreateGEP(gv, indices.begin(), indices.end(), "");
     return address;
 }
 
@@ -945,7 +932,7 @@ llvm::Value *E_variable::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
     bool first = value->getType()->getContainedType(0)->isFirstClassType();
     if (!lvalue && first) {
         // Return the value this represents.
-        value = new llvm::LoadInst(value, "", false, env.currentBlock);		// RICH: isVolatile
+        value = env.builder.CreateLoad(value, false);		// RICH: isVolatile
     }
     return value;
 }
@@ -959,7 +946,7 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
     }
 
     llvm::Value* function = func->cc2llvm(env, true);
-    return new llvm::CallInst(function, parameters.begin(), parameters.end(), "", env.currentBlock);
+    return env.builder.CreateCall(function, parameters.begin(), parameters.end());
 }
 
 llvm::Value *E_constructor::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
@@ -1000,12 +987,11 @@ llvm::Value *E_unary::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 	// Negate the value.
 	env.checkCurrentBlock();
         llvm::Value* zero = llvm::Constant::getNullValue(value->getType());
-	value = llvm::BinaryOperator::create(llvm::Instruction::Sub, zero, value, "", env.currentBlock);
+	value = env.builder.CreateSub(zero, value);
         break;
     }
 
     case UNY_NOT: {     // !
-	// Get the class of the operator.
 	value = env.checkCondition(loc, value);
         break;
     }
@@ -1014,7 +1000,7 @@ llvm::Value *E_unary::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
         // Negate the integer value.
 	env.checkCurrentBlock();
         llvm::Value* ones = llvm::Constant::getAllOnesValue(value->getType());
-        value = llvm::BinaryOperator::create(llvm::Instruction::Xor, value, ones, "", env.currentBlock);
+        value = env.builder.CreateXor(value, ones);
 	break;
     }
 
@@ -1036,10 +1022,10 @@ llvm::Value *E_effect::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 
     if (isPostfix(op)) {
         // A postfix operator: return the result from before the operation.
-        result = new llvm::LoadInst(value, "", false, env.currentBlock);	// RICH: Volatile
-        temp = new llvm::LoadInst(value, "", false, env.currentBlock);	// RICH: Volatile
+        result = env.builder.CreateLoad(value, false);	// RICH: Volatile
+        temp = env.builder.CreateLoad(value, false);	// RICH: Volatile
     } else {
-        temp = new llvm::LoadInst(value, "", false, env.currentBlock);	// RICH: Volatile
+        temp = env.builder.CreateLoad(value, false);	// RICH: Volatile
     }
 
     if (temp->getType()->getTypeID() == llvm::Type::PointerTyID) {
@@ -1054,15 +1040,15 @@ llvm::Value *E_effect::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
             one = llvm::ConstantInt::get(llvm::APInt(env.targetData.getTypeSizeInBits(temp->getType()), 1));
 	}
 	index.push_back(one);
-	result = new llvm::GetElementPtrInst(temp, index.begin(), index.end(), "", env.currentBlock);
+	result = env.builder.CreateGEP(temp, index.begin(), index.end());
     } else if (temp->getType()->isInteger()) {
-	llvm::Instruction::BinaryOps opcode = op == EFF_POSTDEC || op == EFF_PREDEC ?
-	    llvm::Instruction::Sub :
-	    llvm::Instruction::Add;
-
         llvm::ConstantInt* one = llvm::ConstantInt::get(llvm::APInt(env.targetData.getTypeSizeInBits(temp->getType()), 1));
-	temp = llvm::BinaryOperator::create(opcode, temp, one, "", env.currentBlock);
-        new llvm::StoreInst(temp, value, false, env.currentBlock);	// RICH: Volatile
+	if (op == EFF_POSTDEC || op == EFF_PREDEC) {
+	    temp = env.builder.CreateSub(temp, one);
+	} else {
+	    temp = env.builder.CreateAdd(temp, one);
+	}
+        env.builder.CreateStore(temp, value, false);	// RICH: Volatile
     } else {
         cerr << toString(loc) << ": ";
         xunimp("++,--");
@@ -1239,29 +1225,29 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
 		} else if (source->size > target->size) {
 		    // Truncate the source value.
 	            checkCurrentBlock();
-	            *source->value = new llvm::TruncInst(*source->value, type, "", currentBlock);
+	            *source->value = builder.CreateTrunc(*source->value, type);
 		} else if (source->isUnsigned) {
 		    // Zero extend the source value.
 	            checkCurrentBlock();
-	            *source->value = new llvm::ZExtInst(*source->value, type, "", currentBlock);
+	            *source->value = builder.CreateZExt(*source->value, type);
 		} else {
 		    // Sign extend the source value.
 	            checkCurrentBlock();
-	            *source->value = new llvm::SExtInst(*source->value, type, "", currentBlock);
+	            *source->value = builder.CreateSExt(*source->value, type);
 		}
 	    } else if (source->isPointer) {
 	        // Convert pointer to integer.
 	        checkCurrentBlock();
-	        *source->value = new llvm::PtrToIntInst(*source->value, type, "", currentBlock);
+	        *source->value = builder.CreatePtrToInt(*source->value, type);
 	    } else if (source->isFloat) {
 	        // Convert Float to integer.
 	        checkCurrentBlock();
 		if (c == OC_UINT) {
 		    // Float to unsigned int.
-	            *source->value = new llvm::FPToUIInst(*source->value, type, "", currentBlock);
+	            *source->value = builder.CreateFPToUI(*source->value, type);
 		} else {
 		    // Float to signed int.
-	            *source->value = new llvm::FPToSIInst(*source->value, type, "", currentBlock);
+	            *source->value = builder.CreateFPToSI(*source->value, type);
 		}
 	    }
             break;
@@ -1270,19 +1256,19 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
             if (source->isInteger) {
 		// Convert integer to pointer.
 	        checkCurrentBlock();
-	        *source->value = new llvm::IntToPtrInst(*source->value, type, "", currentBlock);
+	        *source->value = builder.CreateIntToPtr(*source->value, type);
 	    } else if (source->isPointer) {
 	        // Convert pointer to pointer.
 	        checkCurrentBlock();
-	        *source->value = new llvm::BitCastInst(*source->value, type, "", currentBlock);
+	        *source->value = builder.CreateBitCast(*source->value, type);
 	    } else if (source->isFloat) {
 	        // Convert Float to pointer.
 	        checkCurrentBlock();
 		// Float to unsigned int.
                 const llvm::Type* itype = llvm::IntegerType::get(targetData.getPointerSize());
-	        *source->value = new llvm::FPToUIInst(*source->value, itype, "", currentBlock);
+	        *source->value = builder.CreateFPToUI(*source->value, itype);
 	        // Unsigned int to pointer.
-	        *source->value = new llvm::IntToPtrInst(*source->value, type, "", currentBlock);
+	        *source->value = builder.CreateIntToPtr(*source->value, type);
 	    }
             break;
 
@@ -1292,19 +1278,19 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
 	        checkCurrentBlock();
 		if (source->isUnsigned) {
 		    // Unsigned int to float.
-	            *source->value = new llvm::UIToFPInst(*source->value, type, "", currentBlock);
+	            *source->value = builder.CreateUIToFP(*source->value, type);
 		} else {
 		    // Signed int to float.
-	            *source->value = new llvm::SIToFPInst(*source->value, type, "", currentBlock);
+	            *source->value = builder.CreateSIToFP(*source->value, type);
 		}
 	    } else if (source->isPointer) {
 	        // Convert pointer to float.
 	        checkCurrentBlock();
 		// Pointer to unsigned int.
                 const llvm::Type* itype = llvm::IntegerType::get(targetData.getPointerSize());
-	        *source->value = new llvm::PtrToIntInst(*source->value, itype, "", currentBlock);
+	        *source->value = builder.CreatePtrToInt(*source->value, itype);
 	        // Unsigned int to float.
-	        *source->value = new llvm::UIToFPInst(*source->value, type, "", currentBlock);
+	        *source->value = builder.CreateUIToFP(*source->value, type);
 	    } else if (source->isFloat) {
 	        // Convert Float to Float.
 		if (source->size == target->size) {
@@ -1312,11 +1298,11 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
 		} else if (source->size > target->size) {
 		    // Truncate the source value.
 	            checkCurrentBlock();
-	            *source->value = new llvm::FPTruncInst(*source->value, type, "", currentBlock);
+	            *source->value = builder.CreateFPTrunc(*source->value, type);
 		} else {
 		    // Extend the source value.
 	            checkCurrentBlock();
-	            *source->value = new llvm::FPExtInst(*source->value, type, "", currentBlock);
+	            *source->value = builder.CreateFPExt(*source->value, type);
 		}
 	    }
             break;
@@ -1406,11 +1392,11 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 	case CC2LLVMEnv::OC_SINT:
 	case CC2LLVMEnv::OC_UINT:
 	case CC2LLVMEnv::OC_POINTER:
-            result = new llvm::ICmpInst(llvm::ICmpInst::ICMP_EQ, left, right, "", env.currentBlock);
+            result = env.builder.CreateICmpEQ(left, right);
             break;
 	case CC2LLVMEnv::OC_FLOAT:
 	    // RICH: ordered vs. unordered.
-            result = new llvm::FCmpInst(llvm::FCmpInst::FCMP_OEQ, left, right, "", env.currentBlock);
+            result = env.builder.CreateFCmpOEQ(left, right);
             break;
 	case CC2LLVMEnv::OC_OTHER:
             cerr << toString(loc) << ": ";
@@ -1425,11 +1411,11 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 	case CC2LLVMEnv::OC_SINT:
 	case CC2LLVMEnv::OC_UINT:
 	case CC2LLVMEnv::OC_POINTER:
-            result = new llvm::ICmpInst(llvm::ICmpInst::ICMP_NE, left, right, "", env.currentBlock);
+            result = env.builder.CreateICmpNE(left, right);
             break;
 	case CC2LLVMEnv::OC_FLOAT:
 	    // RICH: ordered vs. unordered.
-            result = new llvm::FCmpInst(llvm::FCmpInst::FCMP_ONE, left, right, "", env.currentBlock);
+            result = env.builder.CreateFCmpONE(left, right);
             break;
 	case CC2LLVMEnv::OC_OTHER:
             cerr << toString(loc) << ": ";
@@ -1442,15 +1428,15 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 	c = env.makeCast(loc, e1->type, left, e2->type, &right);
 	switch (c) {
 	case CC2LLVMEnv::OC_SINT:
-            result = new llvm::ICmpInst(llvm::ICmpInst::ICMP_SLT, left, right, "", env.currentBlock);
+            result = env.builder.CreateICmpSLT(left, right);
 	    break;
 	case CC2LLVMEnv::OC_UINT:
 	case CC2LLVMEnv::OC_POINTER:
-            result = new llvm::ICmpInst(llvm::ICmpInst::ICMP_ULT, left, right, "", env.currentBlock);
+            result = env.builder.CreateICmpULT(left, right);
             break;
 	case CC2LLVMEnv::OC_FLOAT:
 	    // RICH: ordered vs. unordered.
-            result = new llvm::FCmpInst(llvm::FCmpInst::FCMP_OLT, left, right, "", env.currentBlock);
+            result = env.builder.CreateFCmpOLT(left, right);
             break;
 	case CC2LLVMEnv::OC_OTHER:
             cerr << toString(loc) << ": ";
@@ -1463,15 +1449,15 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 	c = env.makeCast(loc, e1->type, left, e2->type, &right);
 	switch (c) {
 	case CC2LLVMEnv::OC_SINT:
-            result = new llvm::ICmpInst(llvm::ICmpInst::ICMP_SLE, left, right, "", env.currentBlock);
+            result = env.builder.CreateICmpSLE(left, right);
 	    break;
 	case CC2LLVMEnv::OC_UINT:
 	case CC2LLVMEnv::OC_POINTER:
-            result = new llvm::ICmpInst(llvm::ICmpInst::ICMP_ULE, left, right, "", env.currentBlock);
+            result = env.builder.CreateICmpULE(left, right);
             break;
 	case CC2LLVMEnv::OC_FLOAT:
 	    // RICH: ordered vs. unordered.
-            result = new llvm::FCmpInst(llvm::FCmpInst::FCMP_OLE, left, right, "", env.currentBlock);
+            result = env.builder.CreateFCmpOLE(left, right);
             break;
 	case CC2LLVMEnv::OC_OTHER:
             cerr << toString(loc) << ": ";
@@ -1484,15 +1470,15 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 	c = env.makeCast(loc, e1->type, left, e2->type, &right);
 	switch (c) {
 	case CC2LLVMEnv::OC_SINT:
-            result = new llvm::ICmpInst(llvm::ICmpInst::ICMP_SGT, left, right, "", env.currentBlock);
+            result = env.builder.CreateICmpSGT(left, right);
 	    break;
 	case CC2LLVMEnv::OC_UINT:
 	case CC2LLVMEnv::OC_POINTER:
-            result = new llvm::ICmpInst(llvm::ICmpInst::ICMP_UGT, left, right, "", env.currentBlock);
+            result = env.builder.CreateICmpUGT(left, right);
             break;
 	case CC2LLVMEnv::OC_FLOAT:
 	    // RICH: ordered vs. unordered.
-            result = new llvm::FCmpInst(llvm::FCmpInst::FCMP_OGT, left, right, "", env.currentBlock);
+            result = env.builder.CreateFCmpOGT(left, right);
             break;
 	case CC2LLVMEnv::OC_OTHER:
             cerr << toString(loc) << ": ";
@@ -1505,15 +1491,15 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 	c = env.makeCast(loc, e1->type, left, e2->type, &right);
 	switch (c) {
 	case CC2LLVMEnv::OC_SINT:
-            result = new llvm::ICmpInst(llvm::ICmpInst::ICMP_SGE, left, right, "", env.currentBlock);
+            result = env.builder.CreateICmpSGE(left, right);
 	    break;
 	case CC2LLVMEnv::OC_UINT:
 	case CC2LLVMEnv::OC_POINTER:
-            result = new llvm::ICmpInst(llvm::ICmpInst::ICMP_UGE, left, right, "", env.currentBlock);
+            result = env.builder.CreateICmpUGE(left, right);
             break;
 	case CC2LLVMEnv::OC_FLOAT:
 	    // RICH: ordered vs. unordered.
-            result = new llvm::FCmpInst(llvm::FCmpInst::FCMP_OGE, left, right, "", env.currentBlock);
+            result = env.builder.CreateFCmpOGE(left, right);
             break;
 	case CC2LLVMEnv::OC_OTHER:
             cerr << toString(loc) << ": ";
@@ -1529,7 +1515,7 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 	case CC2LLVMEnv::OC_UINT:
 	case CC2LLVMEnv::OC_POINTER:
 	case CC2LLVMEnv::OC_FLOAT:
-	    result = llvm::BinaryOperator::create(llvm::Instruction::Mul, left, right, "", env.currentBlock);
+            result = env.builder.CreateMul(left, right);
             break;
 	case CC2LLVMEnv::OC_OTHER:
             cerr << toString(loc) << ": ";
@@ -1542,14 +1528,14 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 	c = env.makeCast(loc, e1->type, left, e2->type, &right);
 	switch (c) {
 	case CC2LLVMEnv::OC_SINT:
-	    result = llvm::BinaryOperator::create(llvm::Instruction::SDiv, left, right, "", env.currentBlock);
+            result = env.builder.CreateSDiv(left, right);
 	    break;
 	case CC2LLVMEnv::OC_UINT:
 	case CC2LLVMEnv::OC_POINTER:
-	    result = llvm::BinaryOperator::create(llvm::Instruction::UDiv, left, right, "", env.currentBlock);
+            result = env.builder.CreateUDiv(left, right);
             break;
 	case CC2LLVMEnv::OC_FLOAT:
-	    result = llvm::BinaryOperator::create(llvm::Instruction::FDiv, left, right, "", env.currentBlock);
+            result = env.builder.CreateFDiv(left, right);
             break;
 	case CC2LLVMEnv::OC_OTHER:
             cerr << toString(loc) << ": ";
@@ -1562,14 +1548,14 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 	c = env.makeCast(loc, e1->type, left, e2->type, &right);
 	switch (c) {
 	case CC2LLVMEnv::OC_SINT:
-	    result = llvm::BinaryOperator::create(llvm::Instruction::SRem, left, right, "", env.currentBlock);
+            result = env.builder.CreateSRem(left, right);
 	    break;
 	case CC2LLVMEnv::OC_UINT:
 	case CC2LLVMEnv::OC_POINTER:
-	    result = llvm::BinaryOperator::create(llvm::Instruction::URem, left, right, "", env.currentBlock);
+            result = env.builder.CreateURem(left, right);
             break;
 	case CC2LLVMEnv::OC_FLOAT:
-	    result = llvm::BinaryOperator::create(llvm::Instruction::FRem, left, right, "", env.currentBlock);
+            result = env.builder.CreateFRem(left, right);
             break;
 	case CC2LLVMEnv::OC_OTHER:
             cerr << toString(loc) << ": ";
@@ -1595,14 +1581,14 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 		if (op == BIN_MINUS) {
 		    // Negate the integer value.
                     llvm::Value* zero = llvm::Constant::getNullValue(right->getType());
-		    right = llvm::BinaryOperator::create(llvm::Instruction::Sub, zero, right, "", env.currentBlock);
+		    right = env.builder.CreateSub(zero, right);
 		}
 		std::vector<llvm::Value*> index;
 		if (left->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID) {
 	          index.push_back(llvm::Constant::getNullValue(right->getType()));
 		}
 	        index.push_back(right);
-		result = new llvm::GetElementPtrInst(left, index.begin(), index.end(), "", env.currentBlock);
+		result = env.builder.CreateGEP(left, index.begin(), index.end());
 	        break;
 	    }
         }
@@ -1613,8 +1599,11 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 	case CC2LLVMEnv::OC_UINT:
 	case CC2LLVMEnv::OC_POINTER:
 	case CC2LLVMEnv::OC_FLOAT:
-	    result = llvm::BinaryOperator::create(op == BIN_PLUS ? llvm::Instruction::Add : llvm::Instruction::Sub,
-	        left, right, "", env.currentBlock);
+	    if (op == BIN_PLUS) {
+                result = env.builder.CreateAdd(left, right);
+	    } else {
+                result = env.builder.CreateSub(left, right);
+	    }
             break;
 	case CC2LLVMEnv::OC_OTHER:
             cerr << toString(loc) << ": ";
@@ -1628,7 +1617,7 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 	switch (c) {
 	case CC2LLVMEnv::OC_SINT:
 	case CC2LLVMEnv::OC_UINT:
-	    result = llvm::BinaryOperator::create(llvm::Instruction::Shl, left, right, "", env.currentBlock);
+            result = env.builder.CreateShl(left, right);
             break;
 	case CC2LLVMEnv::OC_POINTER:
 	case CC2LLVMEnv::OC_FLOAT:
@@ -1643,10 +1632,10 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 	c = env.makeCast(loc, e1->type, left, e2->type, &right);
 	switch (c) {
 	case CC2LLVMEnv::OC_SINT:
-	    result = llvm::BinaryOperator::create(llvm::Instruction::AShr, left, right, "", env.currentBlock);
+            result = env.builder.CreateAShr(left, right);
             break;
 	case CC2LLVMEnv::OC_UINT:
-	    result = llvm::BinaryOperator::create(llvm::Instruction::LShr, left, right, "", env.currentBlock);
+            result = env.builder.CreateLShr(left, right);
             break;
 	case CC2LLVMEnv::OC_POINTER:
 	case CC2LLVMEnv::OC_FLOAT:
@@ -1662,7 +1651,7 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 	switch (c) {
 	case CC2LLVMEnv::OC_SINT:
 	case CC2LLVMEnv::OC_UINT:
-	    result = llvm::BinaryOperator::create(llvm::Instruction::And, left, right, "", env.currentBlock);
+            result = env.builder.CreateAnd(left, right);
             break;
 	case CC2LLVMEnv::OC_POINTER:
 	case CC2LLVMEnv::OC_FLOAT:
@@ -1678,7 +1667,7 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 	switch (c) {
 	case CC2LLVMEnv::OC_SINT:
 	case CC2LLVMEnv::OC_UINT:
-	    result = llvm::BinaryOperator::create(llvm::Instruction::Xor, left, right, "", env.currentBlock);
+            result = env.builder.CreateXor(left, right);
             break;
 	case CC2LLVMEnv::OC_POINTER:
 	case CC2LLVMEnv::OC_FLOAT:
@@ -1694,7 +1683,7 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 	switch (c) {
 	case CC2LLVMEnv::OC_SINT:
 	case CC2LLVMEnv::OC_UINT:
-	    result = llvm::BinaryOperator::create(llvm::Instruction::Or, left, right, "", env.currentBlock);
+            result = env.builder.CreateOr(left, right);
             break;
 	case CC2LLVMEnv::OC_POINTER:
 	case CC2LLVMEnv::OC_FLOAT:
@@ -1713,23 +1702,25 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
         llvm::BasicBlock* next = new llvm::BasicBlock("next", env.function, env.returnBlock);
         env.checkCurrentBlock();
         new llvm::BranchInst(ifTrue, ifFalse, value, env.currentBlock);
+        env.currentBlock = NULL;
 
-        env.currentBlock = doRight;
+        env.setCurrentBlock(doRight);
         value = env.checkCondition(e2);
         env.checkCurrentBlock();
         new llvm::BranchInst(ifTrue, ifFalse, value, env.currentBlock);
+        env.currentBlock = NULL;
 
-        env.currentBlock = ifTrue;
+        env.setCurrentBlock(ifTrue);
         llvm::Value* tValue = new llvm::AllocaInst(llvm::IntegerType::get(1), "", env.entryBlock->getTerminator());
 	new llvm::StoreInst(llvm::ConstantInt::getTrue(), tValue, false, env.currentBlock);
         new llvm::BranchInst(next, env.currentBlock);
+        env.currentBlock = NULL;
 
-        env.currentBlock = ifFalse;
+        env.setCurrentBlock(ifFalse);
         llvm::Value* fValue = new llvm::AllocaInst(llvm::IntegerType::get(1), "", env.entryBlock->getTerminator());
 	new llvm::StoreInst(llvm::ConstantInt::getTrue(), fValue, false, env.currentBlock);
-        new llvm::BranchInst(next, env.currentBlock);
 
-        env.currentBlock = next;
+        env.setCurrentBlock(next);
         llvm::PHINode* phi = new llvm::PHINode(tValue->getType(), "", env.currentBlock);
 	phi->addIncoming(tValue, ifTrue);
 	phi->addIncoming(fValue, ifFalse);
@@ -1745,23 +1736,25 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
         llvm::BasicBlock* next = new llvm::BasicBlock("next", env.function, env.returnBlock);
         env.checkCurrentBlock();
         new llvm::BranchInst(ifTrue, doRight, value, env.currentBlock);
+        env.currentBlock = NULL;
 
-        env.currentBlock = doRight;
+        env.setCurrentBlock(doRight);
         value = env.checkCondition(e2);
         env.checkCurrentBlock();
         new llvm::BranchInst(ifTrue, ifFalse, value, env.currentBlock);
+        env.currentBlock = NULL;
 
-        env.currentBlock = ifTrue;
+        env.setCurrentBlock(ifTrue);
         llvm::Value* tValue = new llvm::AllocaInst(llvm::IntegerType::get(1), "", env.entryBlock->getTerminator());
 	new llvm::StoreInst(llvm::ConstantInt::getTrue(), tValue, false, env.currentBlock);
         new llvm::BranchInst(next, env.currentBlock);
+        env.currentBlock = NULL;
 
-        env.currentBlock = ifFalse;
+        env.setCurrentBlock(ifFalse);
         llvm::Value* fValue = new llvm::AllocaInst(llvm::IntegerType::get(1), "", env.entryBlock->getTerminator());
 	new llvm::StoreInst(llvm::ConstantInt::getTrue(), fValue, false, env.currentBlock);
-        new llvm::BranchInst(next, env.currentBlock);
 
-        env.currentBlock = next;
+        env.setCurrentBlock(next);
         llvm::PHINode* phi = new llvm::PHINode(tValue->getType(), "", env.currentBlock);
 	phi->addIncoming(tValue, ifTrue);
 	phi->addIncoming(fValue, ifFalse);
@@ -1870,8 +1863,9 @@ llvm::Value *E_cond::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
     llvm::BasicBlock* next = new llvm::BasicBlock("next", env.function, env.returnBlock);
     env.checkCurrentBlock();
     new llvm::BranchInst(ifTrue, ifFalse, value, env.currentBlock);
+    env.currentBlock = NULL;
 
-    env.currentBlock = ifTrue;
+    env.setCurrentBlock(ifTrue);
     llvm::Value* trueValue = th->cc2llvm(env);
     if (env.currentBlock) {
         // Close the current block.
@@ -1879,15 +1873,10 @@ llvm::Value *E_cond::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
         env.currentBlock = NULL;
     }
 
-    env.currentBlock = ifFalse;
+    env.setCurrentBlock(ifFalse);
     llvm::Value* falseValue = el->cc2llvm(env);
-    if (env.currentBlock) {
-        // Close the current block.
-        new llvm::BranchInst(next, env.currentBlock);
-        env.currentBlock = NULL;
-    }
 
-    env.currentBlock = next;
+    env.setCurrentBlock(next);
     llvm::Value* result = NULL;
     if (trueValue->getType()->isFirstClassType() && falseValue->getType()->isFirstClassType()) {
         llvm::PHINode* phi = new llvm::PHINode(trueValue->getType(), "", env.currentBlock);
@@ -2173,7 +2162,8 @@ llvm::Module* CC2LLVMEnv::doit()
 // ------------------- entry point -------------------
 llvm::Module* cc_to_llvm(string name, StringTable &str, TranslationUnit const &input, string targetData, string targetTriple)
 {
-    CC2LLVMEnv env(str, name, input, targetData, targetTriple);
+    llvm::LLVMFoldingBuilder builder;
+    CC2LLVMEnv env(str, name, input, targetData, targetTriple, builder);
     return env.doit();
 }
 

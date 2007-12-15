@@ -12,6 +12,7 @@ namespace llvm {
     class BasicBlock;
     class Value;
     class SwitchInst;
+    class LLVMBuilder;
 };
 #include <llvm/Target/TargetData.h>
 
@@ -43,7 +44,8 @@ public:      // data
 public:      // funcs
     /** Construct an LLVM convertor.
      */
-    CC2LLVMEnv(StringTable &str, string name, const TranslationUnit& input, string targetData, string targetTriple);
+    CC2LLVMEnv(StringTable &str, string name, const TranslationUnit& input,
+               string targetData, string targetTriple, llvm::LLVMBuilder& builder);
     /** Destruct an LLVM convertor.
      */
     ~CC2LLVMEnv();
@@ -63,6 +65,9 @@ public:      // funcs
     /** Make sure the current basic block has been opened.
      */
     void checkCurrentBlock();
+    /** Set the current block.
+     */
+    void setCurrentBlock(llvm::BasicBlock* block);
     /** Check a condition in preparation for a branch.
      */
     llvm::Value* checkCondition(SourceLoc loc, llvm::Value* value);
@@ -170,6 +175,9 @@ public:      // funcs
     /** Map labels to LLVM blocks.
      */
     PtrMap<const char, llvm::BasicBlock> labels;
+    /** The LLVM Builder.
+     */
+    llvm::LLVMBuilder& builder;
 };
 
 #endif // CC2LLVM_H
