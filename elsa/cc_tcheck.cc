@@ -9049,6 +9049,7 @@ Type *E_assign::itcheck_x(Env &env, Expression *&replacement)
   // the RHS type before performing the arithmetic
   if (op == BIN_ASSIGN || isArithmeticOrEnumType(target->type->asRval())) {
     // simple assignment, compute standard conversion
+#if RICH
     string errorMsg;
     StandardConversion sc = getStandardConversion(&errorMsg,
       argInfo[1].special, src->type, operationResultType);
@@ -9058,12 +9059,38 @@ Type *E_assign::itcheck_x(Env &env, Expression *&replacement)
     else if (sc == SC_IDENTITY) {
       // no conversion necessary
     }
-    else {
+    else  {
       // insert the conversion between 'this' and 'src'
-      E_stdConv *conv = new E_stdConv(loc, src, sc);
-      conv->type = operationResultType;
-      src = conv;
+      if (sc & SC_GROUP_1_MASK) {
+        switch (sc & SC_GROUP_1_MASK) {
+        case SC_LVAL_TO_RVAL:
+          // TODO
+          break;
+        case SC_ARRAY_TO_PTR:
+	  // TODO
+          break;
+        case SC_FUNC_TO_PTR: {
+          E_addrOf *conv = new E_addrOf(loc, src);
+          conv->type = env.tfac.makePointerType(CV_CONST, src->type);
+	  src = conv;
+          break;
+	}
+        default:
+          // only 3 kinds in SC_GROUP_1_MASK
+          xfailure("shouldn't reach here");
+          break;
+        }
+      }
+      if (sc & SC_GROUP_2_MASK) {
+        E_stdConv *conv = new E_stdConv(loc, src, sc);
+        conv->type = operationResultType;
+        src = conv;
+      }
     }
+#else
+    // rdp: This needs converstions that a parameter would need. Different name for function?
+    env.elaborateImplicitConversionArgToParam(operationResultType, src);
+#endif
   }
   else {
     // compound pointer assignment; there is no conversion for the RHS

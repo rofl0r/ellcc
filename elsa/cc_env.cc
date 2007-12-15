@@ -13,12 +13,8 @@
 #include "typelistiter.h"  // TypeListIter_GrowArray
 
 
-// forwards in this file
-
 // helper functions for elaboration not during elaboration stage, but during
 // type checking.
-E_addrOf *makeAddr(TypeFactory &tfac, SourceLoc loc, Expression *e);
-
 
 void gdbScopeSeq(ScopeSeq &ss)
 {
@@ -383,7 +379,7 @@ Env::Env(StringTable &s, CCLang &L, TypeFactory &tf,
 
     // this can be turned off with its own flag, or in C mode (since I
     // have not implemented any of the relaxed C rules)
-    doCompareArgsToParams(!tracingSys("doNotCompareArgsToParams") && L.isCplusplus),
+    doCompareArgsToParams(!tracingSys("doNotCompareArgsToParams") /* RICH: && L.isCplusplus */ ),
 
     // 2005-03-09: things are finally ready to turn strict checking
     // on by default (see doc/permissive.txt)
@@ -5756,27 +5752,32 @@ Expression *Env::makeConvertedArg(Expression * const arg,
       case SC_LVAL_TO_RVAL:
         // TODO
         break;
-      case SC_ARRAY_TO_PTR:
-        // TODO
+      case SC_ARRAY_TO_PTR: {
+	// Take the address of the array.
+        E_addrOf *conv = new E_addrOf(arg->loc, arg);
+	// This comes in as a reference.
+	xassert(arg->type->getAtType()->isArrayType());
+        conv->type = env.tfac.makePointerType(CV_CONST, arg->type->getAtType()->getAtType());
+	newarg = conv;
         break;
-      case SC_FUNC_TO_PTR:
-        newarg = makeAddr(env.tfac, env.loc(), arg);
+      }
+      case SC_FUNC_TO_PTR: {
+	// Take the address of the function.
+        E_addrOf *conv = new E_addrOf(arg->loc, arg);
+        conv->type = env.tfac.makePointerType(CV_CONST, arg->type);
+	newarg = conv;
         break;
+      }
       default:
         // only 3 kinds in SC_GROUP_1_MASK
         xfailure("shouldn't reach here");
         break;
       }
-    } else {
-      // rdp: Make argument conversions explicit.
-      if (ic.scs == SC_IDENTITY) {
-        // no conversion necessary
-      }
-      else {
-        // Insert the conversion.
-        newarg = new E_stdConv(loc(), arg, ic.scs);
-        newarg->type = paramType;
-      }
+    }
+    if (ic.scs & SC_GROUP_2_MASK) {
+      // Insert the conversion.
+      newarg = new E_stdConv(loc(), newarg, ic.scs);
+      newarg->type = paramType;
     }
     break;
   case ImplicitConversion::IC_USER_DEFINED:
@@ -5936,19 +5937,6 @@ DisambiguationErrorTrapper::~DisambiguationErrorTrapper()
 
 // ------------------------------------------------------------
 //
-// helper functions for elaboration not during elaboration stage, but during
-// type checking.
-
-// make a address-of operator.  This is not a method because it's used in
-// cc_tcheck to elaborate implicit conversions
-E_addrOf *makeAddr(TypeFactory &tfac, SourceLoc loc, Expression *e)
-{
-  // "&e"
-  E_addrOf *amprE = new E_addrOf(e->loc, e);
-  amprE->type = tfac.makePointerType(CV_CONST, e->type);
-
-  return amprE;
-}
 
 // -------- diagnostics --------
 Type *Env::errorType()

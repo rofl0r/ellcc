@@ -11,6 +11,7 @@ namespace llvm {
     class Function;
     class BasicBlock;
     class Value;
+    class SwitchInst;
 };
 #include <llvm/Target/TargetData.h>
 
@@ -151,6 +152,12 @@ public:      // funcs
     /** The block following current loop or switch.
      */
     llvm::BasicBlock* nextBlock;
+    /** The currently active switch instruction.
+     */
+    llvm::SwitchInst* switchInst;
+    /** The type of the currently active switch expression.
+     */
+    Type* switchType;
     /** Map AST variables to LLVM variables.
      */
     PtrMap<const Variable, llvm::Value> variables;

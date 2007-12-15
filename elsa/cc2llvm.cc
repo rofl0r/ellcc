@@ -32,7 +32,9 @@ CC2LLVMEnv::CC2LLVMEnv(StringTable &s, string name, const TranslationUnit& input
     returnValue(NULL),
     currentBlock(NULL),
     continueBlock(NULL),
-    nextBlock(NULL)
+    nextBlock(NULL),
+    switchInst(NULL),
+    switchType(NULL)
 { 
     mod->setDataLayout("e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:32:64-f32:32:32-f64:32:64-v64:64:64-v128:128:128-a0:0:64-s0:0:64-f80:32:32");
     mod->setTargetTriple("i686-pc-linux-gnu");
@@ -522,23 +524,32 @@ void S_label::cc2llvm(CC2LLVMEnv &env) const
 
 void S_case::cc2llvm(CC2LLVMEnv &env) const
 {
-    cerr << toString(loc) << ": ";
-    xunimp("case");
-#if RICH
-    env.addStatement(
-      new S_case(SL_GENERATED, expr->cc2llvmNoSideEffects(env), makeSkip()));
-#endif
+    xassert(env.switchInst);
+    llvm::BasicBlock* block = new llvm::BasicBlock("case", env.function, env.returnBlock);
+    if (env.currentBlock) {
+        // Close the current block.
+        new llvm::BranchInst(block, env.currentBlock);
+    }
+
+    env.currentBlock = block;
+    llvm::Value* value = expr->cc2llvm(env);
+    env.makeCast(loc, expr->type, value, env.switchType);
+    // LLVM will complain if the value is not a constant integer.
+    env.switchInst->addCase((llvm::ConstantInt*)value, block);
     s->cc2llvm(env);
 }
 
 void S_default::cc2llvm(CC2LLVMEnv &env) const
 {
-    cerr << toString(loc) << ": ";
-    xunimp("default");
-#if RICH
-    env.addStatement(
-      new S_default(SL_GENERATED, makeSkip()));
-#endif
+    xassert(env.switchInst);
+    llvm::BasicBlock* block = new llvm::BasicBlock("default", env.function, env.returnBlock);
+    if (env.currentBlock) {
+        // Close the current block.
+        new llvm::BranchInst(block, env.currentBlock);
+    }
+
+    env.currentBlock = block;
+    env.switchInst->setSuccessor(0, block);
     s->cc2llvm(env);
 }
 
@@ -586,8 +597,43 @@ void S_if::cc2llvm(CC2LLVMEnv &env) const
 
 void S_switch::cc2llvm(CC2LLVMEnv &env) const
 {
-    cerr << toString(loc) << ": ";
-    xunimp("switch");
+    // Save the current switch context.
+    llvm::SwitchInst* oldSwitchInst = env.switchInst;
+    Type* oldSwitchType = env.switchType;
+    llvm::BasicBlock* oldNextBlock = env.nextBlock;
+    // Create a block to follow the switch statement.
+    env.nextBlock = new llvm::BasicBlock("next", env.function, env.returnBlock);
+    // Generate the condition.
+    const CN_expr* condition = cond->asCN_exprC();
+    llvm::Value* value = condition->expr->expr->cc2llvm(env);
+
+    /* Not much to do here. We create the switch instruction and place it in the environment.
+     * Subsequent case statements will add to the switch instruction.
+     * Subsequent break statements will branch to the next block.
+     * A subsequent default statement will change the default target (setSuccessor(0, <default block>).
+     */
+    env.checkCurrentBlock();
+    // We'll use the next block as the default for now. May be overridden by a default:.
+    env.switchInst = new llvm::SwitchInst(value, env.nextBlock, 1, env.currentBlock);
+    env.switchType = condition->expr->expr->type;
+    // Close the current block.
+    env.currentBlock = NULL;
+
+    // Do the body.
+    branches->cc2llvm(env);
+
+    if (env.currentBlock) {
+        // Close the current block.
+        new llvm::BranchInst(env.nextBlock, env.currentBlock);
+        env.currentBlock = NULL;
+    }
+
+    env.currentBlock = env.nextBlock;
+
+    // Restore the old switch context;
+    env.switchInst = oldSwitchInst;
+    env.switchType = oldSwitchType;
+    env.nextBlock = oldNextBlock;
 }
 
 void S_while::cc2llvm(CC2LLVMEnv &env) const
@@ -696,6 +742,7 @@ void S_for::cc2llvm(CC2LLVMEnv &env) const
 void S_break::cc2llvm(CC2LLVMEnv &env) const
 {
     xassert(env.nextBlock && "break not in a loop or switch");
+    env.checkCurrentBlock();
     new llvm::BranchInst(env.nextBlock, env.currentBlock);
     env.currentBlock = NULL;
 }
@@ -703,6 +750,7 @@ void S_break::cc2llvm(CC2LLVMEnv &env) const
 void S_continue::cc2llvm(CC2LLVMEnv &env) const
 {
     xassert(env.continueBlock && "continue not in a loop");
+    env.checkCurrentBlock();
     new llvm::BranchInst(env.continueBlock, env.currentBlock);
     env.currentBlock = NULL;
 }
@@ -863,8 +911,8 @@ llvm::Value *E_stringLit::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
     // Get the address of the string as an open array.
     env.checkCurrentBlock();
     std::vector<llvm::Value*> indices;
-    indices.push_back(llvm::Constant::getNullValue(llvm::IntegerType::get(32)));
-    indices.push_back(llvm::Constant::getNullValue(llvm::IntegerType::get(32)));
+    indices.push_back(llvm::Constant::getNullValue(llvm::IntegerType::get(32)));	// RICH: 32
+    indices.push_back(llvm::Constant::getNullValue(llvm::IntegerType::get(32)));	// RICH: 32
     llvm::Instruction* address = new llvm::GetElementPtrInst(gv, indices.begin(), indices.end(), "", env.currentBlock);
     return address;
 }
@@ -885,6 +933,11 @@ llvm::Value *E_this::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
  */
 llvm::Value *E_variable::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 {
+    if (var->isEnumerator()) {
+        // This is an enumerator constant. Return it's value.
+        return llvm::ConstantInt::get(llvm::APInt(type->reprSize() * BITS_PER_BYTE, var->getEnumeratorValue()));
+    }
+
     // The variable will have been previously seen in a declaration.
     llvm::Value* value = env.variables.get(var);
     xassert(value && "An undeclared variable has been referenced");
@@ -902,12 +955,10 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
     env.checkCurrentBlock();
     std::vector<llvm::Value*> parameters;
     FAKELIST_FOREACH(ArgExpression, args, arg) {
-        cout << arg->expr->type->toString() << "\n";
         parameters.push_back(arg->expr->cc2llvm(env));
     }
 
     llvm::Value* function = func->cc2llvm(env, true);
-            cout << toString(loc) << "\n";
     return new llvm::CallInst(function, parameters.begin(), parameters.end(), "", env.currentBlock);
 }
 
@@ -1056,8 +1107,17 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
             // Information needed convert and classify.
             isPointer = type->isPtrOrRef();
             isSimple = type->isSimpleType();
-            xassert(isSimple || isPointer);
 	    isInteger = false; isUnsigned = false; isFloat = false; size = 0;
+	    if (type->isEnumType()) {
+	      // We have to handle enumerated constants specially.
+	      isInteger = true;
+	      EnumType* etype = type->asCVAtomicType()->atomic->asEnumType();
+	      isUnsigned = !etype->hasNegativeValues;
+	      size = etype->reprSize();
+	      type = NULL;	// See special handling below.
+	    } else {
+                xassert(isSimple || isPointer);
+	    }
             if (isSimple) {
 	        const SimpleType* st = type->asSimpleTypeC();
                 isInteger = ::isIntegerType(st->type);
@@ -1160,6 +1220,14 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
 
     if (source) {
         // We may need to generate a cast instruction.
+	// We may be here with an enumeration constant on the target side. Handle no type.
+	const llvm::Type* type;
+	if (target->type == NULL) {
+	    type = llvm::IntegerType::get(target->size * BITS_PER_BYTE);
+	} else {
+	    type = makeTypeSpecifier(loc, target->type);
+	}
+
 	switch (c)
 	{
 	case OC_UINT:
@@ -1171,29 +1239,29 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
 		} else if (source->size > target->size) {
 		    // Truncate the source value.
 	            checkCurrentBlock();
-	            *source->value = new llvm::TruncInst(*source->value, makeTypeSpecifier(loc, target->type), "", currentBlock);
+	            *source->value = new llvm::TruncInst(*source->value, type, "", currentBlock);
 		} else if (source->isUnsigned) {
 		    // Zero extend the source value.
 	            checkCurrentBlock();
-	            *source->value = new llvm::ZExtInst(*source->value, makeTypeSpecifier(loc, target->type), "", currentBlock);
+	            *source->value = new llvm::ZExtInst(*source->value, type, "", currentBlock);
 		} else {
 		    // Sign extend the source value.
 	            checkCurrentBlock();
-	            *source->value = new llvm::SExtInst(*source->value, makeTypeSpecifier(loc, target->type), "", currentBlock);
+	            *source->value = new llvm::SExtInst(*source->value, type, "", currentBlock);
 		}
 	    } else if (source->isPointer) {
 	        // Convert pointer to integer.
 	        checkCurrentBlock();
-	        *source->value = new llvm::PtrToIntInst(*source->value, makeTypeSpecifier(loc, target->type), "", currentBlock);
+	        *source->value = new llvm::PtrToIntInst(*source->value, type, "", currentBlock);
 	    } else if (source->isFloat) {
 	        // Convert Float to integer.
 	        checkCurrentBlock();
 		if (c == OC_UINT) {
 		    // Float to unsigned int.
-	            *source->value = new llvm::FPToUIInst(*source->value, makeTypeSpecifier(loc, target->type), "", currentBlock);
+	            *source->value = new llvm::FPToUIInst(*source->value, type, "", currentBlock);
 		} else {
 		    // Float to signed int.
-	            *source->value = new llvm::FPToSIInst(*source->value, makeTypeSpecifier(loc, target->type), "", currentBlock);
+	            *source->value = new llvm::FPToSIInst(*source->value, type, "", currentBlock);
 		}
 	    }
             break;
@@ -1202,11 +1270,11 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
             if (source->isInteger) {
 		// Convert integer to pointer.
 	        checkCurrentBlock();
-	        *source->value = new llvm::IntToPtrInst(*source->value, makeTypeSpecifier(loc, target->type), "", currentBlock);
+	        *source->value = new llvm::IntToPtrInst(*source->value, type, "", currentBlock);
 	    } else if (source->isPointer) {
 	        // Convert pointer to pointer.
 	        checkCurrentBlock();
-	        *source->value = new llvm::BitCastInst(*source->value, makeTypeSpecifier(loc, target->type), "", currentBlock);
+	        *source->value = new llvm::BitCastInst(*source->value, type, "", currentBlock);
 	    } else if (source->isFloat) {
 	        // Convert Float to pointer.
 	        checkCurrentBlock();
@@ -1214,7 +1282,7 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
                 const llvm::Type* itype = llvm::IntegerType::get(targetData.getPointerSize());
 	        *source->value = new llvm::FPToUIInst(*source->value, itype, "", currentBlock);
 	        // Unsigned int to pointer.
-	        *source->value = new llvm::IntToPtrInst(*source->value, makeTypeSpecifier(loc, target->type), "", currentBlock);
+	        *source->value = new llvm::IntToPtrInst(*source->value, type, "", currentBlock);
 	    }
             break;
 
@@ -1224,10 +1292,10 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
 	        checkCurrentBlock();
 		if (source->isUnsigned) {
 		    // Unsigned int to float.
-	            *source->value = new llvm::UIToFPInst(*source->value, makeTypeSpecifier(loc, target->type), "", currentBlock);
+	            *source->value = new llvm::UIToFPInst(*source->value, type, "", currentBlock);
 		} else {
 		    // Signed int to float.
-	            *source->value = new llvm::SIToFPInst(*source->value, makeTypeSpecifier(loc, target->type), "", currentBlock);
+	            *source->value = new llvm::SIToFPInst(*source->value, type, "", currentBlock);
 		}
 	    } else if (source->isPointer) {
 	        // Convert pointer to float.
@@ -1236,7 +1304,7 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
                 const llvm::Type* itype = llvm::IntegerType::get(targetData.getPointerSize());
 	        *source->value = new llvm::PtrToIntInst(*source->value, itype, "", currentBlock);
 	        // Unsigned int to float.
-	        *source->value = new llvm::UIToFPInst(*source->value, makeTypeSpecifier(loc, target->type), "", currentBlock);
+	        *source->value = new llvm::UIToFPInst(*source->value, type, "", currentBlock);
 	    } else if (source->isFloat) {
 	        // Convert Float to Float.
 		if (source->size == target->size) {
@@ -1244,11 +1312,11 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
 		} else if (source->size > target->size) {
 		    // Truncate the source value.
 	            checkCurrentBlock();
-	            *source->value = new llvm::FPTruncInst(*source->value, makeTypeSpecifier(loc, target->type), "", currentBlock);
+	            *source->value = new llvm::FPTruncInst(*source->value, type, "", currentBlock);
 		} else {
 		    // Extend the source value.
 	            checkCurrentBlock();
-	            *source->value = new llvm::FPExtInst(*source->value, makeTypeSpecifier(loc, target->type), "", currentBlock);
+	            *source->value = new llvm::FPExtInst(*source->value, type, "", currentBlock);
 		}
 	    }
             break;
@@ -1637,17 +1705,72 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 	}
         break;
 
-    case BIN_AND:       // &&
-        cerr << toString(loc) << ": ";
-        xunimp("&&");
+    case BIN_AND: {     // &&
+        llvm::Value* value = env.checkCondition(e1);
+        llvm::BasicBlock* doRight = new llvm::BasicBlock("doRight", env.function, env.returnBlock);
+        llvm::BasicBlock* ifFalse = new llvm::BasicBlock("condFalse", env.function, env.returnBlock);
+        llvm::BasicBlock* ifTrue = new llvm::BasicBlock("condTrue", env.function, env.returnBlock);
+        llvm::BasicBlock* next = new llvm::BasicBlock("next", env.function, env.returnBlock);
+        env.checkCurrentBlock();
+        new llvm::BranchInst(ifTrue, ifFalse, value, env.currentBlock);
+
+        env.currentBlock = doRight;
+        value = env.checkCondition(e2);
+        env.checkCurrentBlock();
+        new llvm::BranchInst(ifTrue, ifFalse, value, env.currentBlock);
+
+        env.currentBlock = ifTrue;
+        llvm::Value* tValue = new llvm::AllocaInst(llvm::IntegerType::get(1), "", env.entryBlock->getTerminator());
+	new llvm::StoreInst(llvm::ConstantInt::getTrue(), tValue, false, env.currentBlock);
+        new llvm::BranchInst(next, env.currentBlock);
+
+        env.currentBlock = ifFalse;
+        llvm::Value* fValue = new llvm::AllocaInst(llvm::IntegerType::get(1), "", env.entryBlock->getTerminator());
+	new llvm::StoreInst(llvm::ConstantInt::getTrue(), fValue, false, env.currentBlock);
+        new llvm::BranchInst(next, env.currentBlock);
+
+        env.currentBlock = next;
+        llvm::PHINode* phi = new llvm::PHINode(tValue->getType(), "", env.currentBlock);
+	phi->addIncoming(tValue, ifTrue);
+	phi->addIncoming(fValue, ifFalse);
+        result = phi;
         break;
-    case BIN_OR:        // ||
-        cerr << toString(loc) << ": ";
-        xunimp("||");
+    }
+
+    case BIN_OR: {      // ||
+        llvm::Value* value = env.checkCondition(e1);
+        llvm::BasicBlock* doRight = new llvm::BasicBlock("doRight", env.function, env.returnBlock);
+        llvm::BasicBlock* ifFalse = new llvm::BasicBlock("condFalse", env.function, env.returnBlock);
+        llvm::BasicBlock* ifTrue = new llvm::BasicBlock("condTrue", env.function, env.returnBlock);
+        llvm::BasicBlock* next = new llvm::BasicBlock("next", env.function, env.returnBlock);
+        env.checkCurrentBlock();
+        new llvm::BranchInst(ifTrue, doRight, value, env.currentBlock);
+
+        env.currentBlock = doRight;
+        value = env.checkCondition(e2);
+        env.checkCurrentBlock();
+        new llvm::BranchInst(ifTrue, ifFalse, value, env.currentBlock);
+
+        env.currentBlock = ifTrue;
+        llvm::Value* tValue = new llvm::AllocaInst(llvm::IntegerType::get(1), "", env.entryBlock->getTerminator());
+	new llvm::StoreInst(llvm::ConstantInt::getTrue(), tValue, false, env.currentBlock);
+        new llvm::BranchInst(next, env.currentBlock);
+
+        env.currentBlock = ifFalse;
+        llvm::Value* fValue = new llvm::AllocaInst(llvm::IntegerType::get(1), "", env.entryBlock->getTerminator());
+	new llvm::StoreInst(llvm::ConstantInt::getTrue(), fValue, false, env.currentBlock);
+        new llvm::BranchInst(next, env.currentBlock);
+
+        env.currentBlock = next;
+        llvm::PHINode* phi = new llvm::PHINode(tValue->getType(), "", env.currentBlock);
+	phi->addIncoming(tValue, ifTrue);
+	phi->addIncoming(fValue, ifFalse);
+        result = phi;
         break;
+    }
+
     case BIN_COMMA:     // ,
-        cerr << toString(loc) << ": ";
-        xunimp(",");
+	result = right;
         break;
 
     // gcc extensions
@@ -1721,11 +1844,6 @@ llvm::Value *E_cast::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 llvm::Value *E_stdConv::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 {
     llvm::Value* result = expr->cc2llvm(env);
-            cout << "stdconv: " << toString(loc) << ": " << toString(stdConv) << "\n";
-    cout << type->toString() << "\n";
-    cout << expr->type->toString() << "\n";
-    cout << this->asString() << "\n";
-
     env.makeCast(loc, expr->type, result, type);
     return result;
 }
@@ -1798,6 +1916,7 @@ llvm::Value *E_assign::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
     env.checkCurrentBlock();
     if (op == BIN_ASSIGN) {
 	// Assign is simple. Get it out of the way.
+	env.makeCast(loc, src->type, source, target->type);
 	new llvm::StoreInst(source, destination, false, env.currentBlock);	// RICH: isVolatile
         return source;
     }
@@ -2002,9 +2121,10 @@ llvm::Value *E_alignofType::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 
 llvm::Value *E___builtin_va_arg::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 {
-    cerr << toString(loc) << ": ";
-    xunimp("__builtin_va_arg");
-    return NULL;
+    llvm::Value* value = expr->cc2llvm(env);
+    const llvm::Type* type = env.makeTypeSpecifier(loc, atype->getType());
+    env.checkCurrentBlock();
+    return new llvm::VAArgInst(value, type, "", env.currentBlock);
 }
 
 llvm::Value *E___builtin_constant_p::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
