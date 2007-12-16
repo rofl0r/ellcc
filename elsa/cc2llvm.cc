@@ -1707,21 +1707,19 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
         env.setCurrentBlock(doRight);
         value = env.checkCondition(e2);
         env.checkCurrentBlock();
-        new llvm::BranchInst(ifTrue, ifFalse, value, env.currentBlock);
+	env.builder.CreateCondBr(value, ifTrue, ifFalse);
         env.currentBlock = NULL;
 
         env.setCurrentBlock(ifTrue);
-        llvm::Value* tValue = new llvm::AllocaInst(llvm::IntegerType::get(1), "", env.entryBlock->getTerminator());
-	new llvm::StoreInst(llvm::ConstantInt::getTrue(), tValue, false, env.currentBlock);
-        new llvm::BranchInst(next, env.currentBlock);
+        llvm::Value* tValue = llvm::ConstantInt::getTrue();
+	env.builder.CreateBr(next);
         env.currentBlock = NULL;
 
         env.setCurrentBlock(ifFalse);
-        llvm::Value* fValue = new llvm::AllocaInst(llvm::IntegerType::get(1), "", env.entryBlock->getTerminator());
-	new llvm::StoreInst(llvm::ConstantInt::getTrue(), fValue, false, env.currentBlock);
+        llvm::Value* fValue = llvm::ConstantInt::getFalse();
 
         env.setCurrentBlock(next);
-        llvm::PHINode* phi = new llvm::PHINode(tValue->getType(), "", env.currentBlock);
+        llvm::PHINode* phi = env.builder.CreatePHI(tValue->getType());
 	phi->addIncoming(tValue, ifTrue);
 	phi->addIncoming(fValue, ifFalse);
         result = phi;
@@ -1741,21 +1739,19 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
         env.setCurrentBlock(doRight);
         value = env.checkCondition(e2);
         env.checkCurrentBlock();
-        new llvm::BranchInst(ifTrue, ifFalse, value, env.currentBlock);
+	env.builder.CreateCondBr(value, ifTrue, ifFalse);
         env.currentBlock = NULL;
 
         env.setCurrentBlock(ifTrue);
-        llvm::Value* tValue = new llvm::AllocaInst(llvm::IntegerType::get(1), "", env.entryBlock->getTerminator());
-	new llvm::StoreInst(llvm::ConstantInt::getTrue(), tValue, false, env.currentBlock);
-        new llvm::BranchInst(next, env.currentBlock);
+        llvm::Value* tValue = llvm::ConstantInt::getTrue();
+	env.builder.CreateBr(next);
         env.currentBlock = NULL;
 
         env.setCurrentBlock(ifFalse);
-        llvm::Value* fValue = new llvm::AllocaInst(llvm::IntegerType::get(1), "", env.entryBlock->getTerminator());
-	new llvm::StoreInst(llvm::ConstantInt::getTrue(), fValue, false, env.currentBlock);
+        llvm::Value* fValue = llvm::ConstantInt::getFalse();
 
         env.setCurrentBlock(next);
-        llvm::PHINode* phi = new llvm::PHINode(tValue->getType(), "", env.currentBlock);
+        llvm::PHINode* phi = env.builder.CreatePHI(tValue->getType());
 	phi->addIncoming(tValue, ifTrue);
 	phi->addIncoming(fValue, ifFalse);
         result = phi;
