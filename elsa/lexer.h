@@ -54,6 +54,9 @@ protected:  // funcs
   // handle a #line directive
   void parseHashLine(char *directive, int len);
 
+  // handle a #include
+  void parseHashInclude(char *directive, int len);
+
   // report an error in a preprocessing task
   void pp_err(char const *msg);
 

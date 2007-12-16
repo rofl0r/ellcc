@@ -390,6 +390,11 @@ PPCHAR        ([^\\\n]|{BACKSL}{NOTNL})
    * I want to deal with that (I originally was using '^', but that
    * interacts badly with the whitespace rule) */
 
+"#"{SPTAB}*"include"{SPTAB}*{PPCHAR}*({BACKSL}{NL}{PPCHAR}*)*{BACKSL}?   {
+  parseHashInclude(yytext, yyleng);
+  whitespace();
+}
+
   /* #line directive: the word "line" is optional, then a space, and
    * then we accept the rest of the line; 'parseHashLine' will finish
    * parsing the directive */
@@ -398,10 +403,9 @@ PPCHAR        ([^\\\n]|{BACKSL}{NOTNL})
   whitespace();       // don't increment line count until after parseHashLine()
 }
 
-  /* other preprocessing: ignore it */
+  /* other preprocessing directives */
   /* trailing optional baskslash to avoid backing up */
 "#"{PPCHAR}*({BACKSL}{NL}{PPCHAR}*)*{BACKSL}?   {
-  // treat it like whitespace, ignoring it otherwise
   whitespace();
 }
 
