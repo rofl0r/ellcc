@@ -12,7 +12,7 @@ namespace llvm {
     class BasicBlock;
     class Value;
     class SwitchInst;
-    class LLVMBuilder;
+    class LLVMFoldingBuilder;
 };
 #include <llvm/Target/TargetData.h>
 
@@ -45,7 +45,7 @@ public:      // funcs
     /** Construct an LLVM convertor.
      */
     CC2LLVMEnv(StringTable &str, string name, const TranslationUnit& input,
-               string targetData, string targetTriple, llvm::LLVMBuilder& builder);
+               string targetData, string targetTriple, llvm::LLVMFoldingBuilder& builder);
     /** Destruct an LLVM convertor.
      */
     ~CC2LLVMEnv();
@@ -177,7 +177,7 @@ public:      // funcs
     PtrMap<const char, llvm::BasicBlock> labels;
     /** The LLVM Builder.
      */
-    llvm::LLVMBuilder& builder;
+    llvm::LLVMFoldingBuilder& builder;
 };
 
 #endif // CC2LLVM_H

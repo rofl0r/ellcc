@@ -23,7 +23,7 @@
 // -------------------- CC2LLVMEnv ---------------------
 CC2LLVMEnv::CC2LLVMEnv(StringTable &s, string name, const TranslationUnit& input,
                        string targetData, string targetTriple,
-		       llvm::LLVMBuilder& builder)
+		       llvm::LLVMFoldingBuilder& builder)
   : str(s),
     targetData(targetData.c_str()),
     input(input),
@@ -46,6 +46,17 @@ CC2LLVMEnv::CC2LLVMEnv(StringTable &s, string name, const TranslationUnit& input
 
 CC2LLVMEnv::~CC2LLVMEnv()
 {
+}
+
+static llvm::GlobalValue::LinkageTypes getLinkage(DeclFlags flags)
+{
+    if (flags & DF_INLINE) {
+        return llvm::GlobalValue::LinkOnceLinkage;
+    } else if (flags & DF_STATIC) {
+        return llvm::GlobalValue::InternalLinkage;
+    }
+
+    return llvm::GlobalValue::ExternalLinkage;
 }
 
 /** Make sure the current block has been opened.
@@ -359,14 +370,14 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
         xunimp("exception handlers");
     }
 
+    llvm::GlobalValue::LinkageTypes linkage = getLinkage(nameAndParams->var->flags);
     const Function* oldFunctionAST = env.functionAST;	// Handle nested functions.
     env.functionAST = this;
     const llvm::Type* returnType = env.makeTypeSpecifier(nameAndParams->var->loc, funcType->retType);
     std::vector<const llvm::Type*>args;
     env.makeParameterTypes(funcType, args);
     llvm::FunctionType* ft = llvm::FunctionType::get(returnType, args, funcType->acceptsVarargs());
-    env.function = new llvm::Function(ft, llvm::GlobalValue::ExternalLinkage,	// RICH: Linkage.
-        nameAndParams->var->name, env.mod);
+    env.function = new llvm::Function(ft, linkage, nameAndParams->var->name, env.mod);
 
     env.function->setCallingConv(llvm::CallingConv::C); // RICH: Calling convention.
     env.variables.add(nameAndParams->var, env.function);
@@ -473,9 +484,12 @@ void Declaration::cc2llvm(CC2LLVMEnv &env) const
         // Create the full generated declaration.
         const llvm::Type* type = env.makeTypeSpecifier(var->loc, var->type);
         if (var->type->getTag() == Type::T_FUNCTION) {
-            llvm::Function* gf = new llvm::Function((llvm::FunctionType*)type, 
-                (var->flags & DF_STATIC) ? llvm::GlobalValue::InternalLinkage : llvm::GlobalValue::ExternalLinkage,
-	        env.makeName(var)->name, env.mod);
+            llvm::GlobalValue::LinkageTypes linkage = llvm::GlobalValue::ExternalLinkage;
+            if (linkage == llvm::GlobalValue::LinkOnceLinkage) {
+                // Ignore inline declarations.
+                continue;
+            }
+            llvm::Function* gf = new llvm::Function((llvm::FunctionType*)type, linkage, env.makeName(var)->name, env.mod);
             gf->setCallingConv(llvm::CallingConv::C); // RICH: Calling convention.
             env.variables.add(var, gf);
         } else if (var->type->getTag() == Type::T_DEPENDENTSIZEDARRAY) {
@@ -490,7 +504,7 @@ void Declaration::cc2llvm(CC2LLVMEnv &env) const
                 init = llvm::Constant::getNullValue(type);
             }
             llvm::GlobalVariable* gv = new llvm::GlobalVariable(type, false,	// RICH: isConstant
-                (var->flags & DF_STATIC) ? llvm::GlobalValue::InternalLinkage : llvm::GlobalValue::ExternalLinkage,
+		getLinkage(var->flags),
 	        (llvm::Constant*)init, env.makeName(var)->name, env.mod);
             env.variables.add(var, gv);
         } else {
@@ -900,8 +914,7 @@ llvm::Value *E_stringLit::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
     std::vector<llvm::Value*> indices;
     indices.push_back(llvm::Constant::getNullValue(llvm::IntegerType::get(32)));	// RICH: 32
     indices.push_back(llvm::Constant::getNullValue(llvm::IntegerType::get(32)));	// RICH: 32
-    llvm::Instruction* address = env.builder.CreateGEP(gv, indices.begin(), indices.end(), "");
-    return address;
+    return env.builder.CreateGEP(gv, indices.begin(), indices.end(), "");
 }
 
 llvm::Value *E_charLit::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
@@ -1040,7 +1053,8 @@ llvm::Value *E_effect::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
             one = llvm::ConstantInt::get(llvm::APInt(env.targetData.getTypeSizeInBits(temp->getType()), 1));
 	}
 	index.push_back(one);
-	result = env.builder.CreateGEP(temp, index.begin(), index.end());
+	temp = env.builder.CreateGEP(temp, index.begin(), index.end());
+        env.builder.CreateStore(temp, value, false);	// RICH: Volatile
     } else if (temp->getType()->isInteger()) {
         llvm::ConstantInt* one = llvm::ConstantInt::get(llvm::APInt(env.targetData.getTypeSizeInBits(temp->getType()), 1));
 	if (op == EFF_POSTDEC || op == EFF_PREDEC) {
@@ -1701,7 +1715,7 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
         llvm::BasicBlock* ifTrue = new llvm::BasicBlock("condTrue", env.function, env.returnBlock);
         llvm::BasicBlock* next = new llvm::BasicBlock("next", env.function, env.returnBlock);
         env.checkCurrentBlock();
-        new llvm::BranchInst(ifTrue, ifFalse, value, env.currentBlock);
+        new llvm::BranchInst(doRight, ifFalse, value, env.currentBlock);
         env.currentBlock = NULL;
 
         env.setCurrentBlock(doRight);
