@@ -3,8 +3,9 @@
 
 #temporary: iptree iptparse cipart smin
 
-# main target is 'ccparse', a C++ parser
-all: cc.ast.gen.h tlexer packedword_test ccparse quicktest
+# main target is 'ccparse', a C++ parser, and libelsa.a, the Elsa library.
+THIS := libelsa.a
+all: cc.ast.gen.h tlexer packedword_test ccparse quicktest $(THIS)
 
 # work in progress..
 #iptree smin cipart
@@ -123,6 +124,9 @@ GCOV_OPTS := -fprofile-arcs -ftest-coverage
 libraries := $(LIBELKHOUND) $(LIBAST) $(LIBSMBASE)
 LDFLAGS := @LDFLAGS@ $(libraries)
 
+# some other tools
+AR     := ar
+RANLIB := ranlib
 
 # compile .cc in this directory to a .o
 TOCLEAN += *.o *.d
@@ -348,6 +352,11 @@ CCPARSE_OBJS := \
 TOCLEAN += ccparse
 ccparse: $(CCPARSE_OBJS) main.o $(libraries)
 	$(CXX) -o $@ $(CCPARSE_OBJS) main.o $(LDFLAGS) $(LLVMLDFLAGS)
+
+$(THIS): $(CCPARSE_OBJS)
+	rm -f $(THIS)
+	$(AR) -r $(THIS) $(CCPARSE_OBJS)
+	-$(RANLIB) $(THIS)
 
 
 # run the binary; the 'quicktest' file is so we don't run it if
