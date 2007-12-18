@@ -134,14 +134,15 @@ nonterm(Expression*) UnaryExpression {
   // varargs; dsw: I think that we should make all of these their own
   // AST node, I just don't want to deal with the parsing ambiguity
   // with E_funCall right now
-//   -> "__builtin_va_start" "(" e:Expression "," e2:Expression ")"
-//        { return new E___builtin_va_start(loc, e, e2); }
-//   -> "__builtin_va_copy" "(" e:Expression "," e2:Expression ")"
-//        { return new E___builtin_va_copy(loc, e, e2); }
+  // rdp: I'll give it a try.
+  -> "__builtin_va_start" "(" e:Expression "," e2:Expression ")"
+       { return new E___builtin_va_start(loc, e, e2); }
+  -> "__builtin_va_copy" "(" e:Expression "," e2:Expression ")"
+       { return new E___builtin_va_copy(loc, e, e2); }
   -> "__builtin_va_arg" "(" e:Expression "," t:TypeId ")"
        { return new E___builtin_va_arg(loc, e, t); }
-//   -> "__builtin_va_end" "(" e:Expression ")"
-//        { return new E___builtin_va_end(loc, e); }
+  -> "__builtin_va_end" "(" e:Expression ")"
+        { return new E___builtin_va_end(loc, e); }
 }
 
 // dsw: had to break this out for location recording reasons

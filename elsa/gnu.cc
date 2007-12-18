@@ -73,6 +73,7 @@ void Env::addGNUBuiltins()
                       FF_VARARGS, NULL);
 
 
+#if RICH
   // varargs; dsw: I think that we should make all of these their own
   // AST node, I just don't want to deal with the parsing ambiguity
   // with E_funCall right now
@@ -88,6 +89,7 @@ void Env::addGNUBuiltins()
   // void __builtin_va_end(__builtin_va_list __list);
   declareFunction1arg(t_void, "__builtin_va_end",
                       var__builtin_va_list->type, "__list");
+#endif
 
 
   // // void *__builtin_alloca(unsigned int __len);
@@ -773,12 +775,32 @@ Type *E___builtin_constant_p::itcheck_x(Env &env, Expression *&replacement)
 }
 
 
+Type *E___builtin_va_start::itcheck_x(Env &env, Expression *&replacement)
+{
+  expr->tcheck(env, expr);
+  expr2->tcheck(env, expr2);
+  return env.getSimpleType(ST_VOID);
+}
+
+Type *E___builtin_va_copy::itcheck_x(Env &env, Expression *&replacement)
+{
+  expr->tcheck(env, expr);
+  expr2->tcheck(env, expr2);
+  return env.getSimpleType(ST_VOID);
+}
+
 Type *E___builtin_va_arg::itcheck_x(Env &env, Expression *&replacement)
 {
   ASTTypeId::Tcheck tc(DF_NONE, DC_E_BUILTIN_VA_ARG);
   expr->tcheck(env, expr);
   atype = atype->tcheck(env, tc);
   return atype->getType();
+}
+
+Type *E___builtin_va_end::itcheck_x(Env &env, Expression *&replacement)
+{
+  expr->tcheck(env, expr);
+  return env.getSimpleType(ST_VOID);
 }
 
 
@@ -1144,6 +1166,24 @@ void E___builtin_constant_p::iprint(PrintEnv &env)
   expr->print(env);
 }
 
+void E___builtin_va_start::iprint(PrintEnv &env)
+{
+  TreeWalkDebug treeDebug("E___builtin_va_start::iprint");
+  PairDelim pair(*env.out, "__builtin_va_start", "(", ")");
+  expr->print(env);
+  *env.out << ", ";
+  expr2->print(env);
+}
+
+void E___builtin_va_copy::iprint(PrintEnv &env)
+{
+  TreeWalkDebug treeDebug("E___builtin_va_copy::iprint");
+  PairDelim pair(*env.out, "__builtin_va_copy", "(", ")");
+  expr->print(env);
+  *env.out << ", ";
+  expr2->print(env);
+}
+
 void E___builtin_va_arg::iprint(PrintEnv &env)
 {
   TreeWalkDebug treeDebug("E___builtin_va_arg::iprint");
@@ -1151,6 +1191,13 @@ void E___builtin_va_arg::iprint(PrintEnv &env)
   expr->print(env);
   *env.out << ", ";
   atype->print(env);
+}
+
+void E___builtin_va_end::iprint(PrintEnv &env)
+{
+  TreeWalkDebug treeDebug("E___builtin_va_end::iprint");
+  PairDelim pair(*env.out, "__builtin_va_end", "(", ")");
+  expr->print(env);
 }
 
 void E_alignofType::iprint(PrintEnv &env)

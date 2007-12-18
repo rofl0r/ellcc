@@ -3,6 +3,8 @@
 
 #include "cc2llvm.h"         // this module
 
+#include "datablok.h"
+
 // LLVM
 #include <llvm/Module.h>
 #include <llvm/DerivedTypes.h>
@@ -13,6 +15,7 @@
 #include <llvm/BasicBlock.h>
 #include <llvm/Instructions.h>
 #include <llvm/InlineAsm.h>
+#include <llvm/Intrinsics.h>
 #include <llvm/ParameterAttributes.h>
 #include <llvm/Support/MathExtras.h>
 #include <llvm/Support/LLVMBuilder.h>
@@ -500,12 +503,12 @@ void Declaration::cc2llvm(CC2LLVMEnv &env) const
             xunimp("last type tag");
         } else if (var->flags & (DF_STATIC|DF_GLOBAL)) {
 	    // A global variable.
-            if (init == NULL) {
+            if (!(var->flags & DF_EXTERN) && init == NULL) {
                 init = llvm::Constant::getNullValue(type);
             }
             llvm::GlobalVariable* gv = new llvm::GlobalVariable(type, false,	// RICH: isConstant
 		getLinkage(var->flags),
-	        (llvm::Constant*)init, env.makeName(var)->name, env.mod);
+	        (llvm::Constant*)init, env.makeName(var)->name, env.mod);	// RICH: cast
             env.variables.add(var, gv);
         } else {
             // A local variable.
@@ -902,10 +905,10 @@ llvm::Value *E_floatLit::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 
 llvm::Value *E_stringLit::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 {
-    // RICH: fullTextNQ is not quite right: has e.g. "\n" not replaced with \x10.
-    llvm::Constant* c = llvm::ConstantArray::get(fullTextNQ, true);
+    std::string value((const char*)data->getDataC(), data->getDataLen());	// RICH: cast
+    llvm::Constant* c = llvm::ConstantArray::get(value, false);	// Don't add a nul character.
     // RICH: Sizeof char.
-    llvm::ArrayType* at = llvm::ArrayType::get(llvm::IntegerType::get(BITS_PER_BYTE), strlen(fullTextNQ) + 1);
+    llvm::ArrayType* at = llvm::ArrayType::get(llvm::IntegerType::get(BITS_PER_BYTE), data->getDataLen());
     // RICH: Non-constant strings?
     llvm::GlobalVariable* gv = new llvm::GlobalVariable(at, true, llvm::GlobalValue::InternalLinkage, c, ".str", env.mod);
 
@@ -2118,12 +2121,45 @@ llvm::Value *E_alignofType::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
     return NULL;
 }
 
+llvm::Value *E___builtin_va_start::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
+{
+    llvm::Value* value = expr->cc2llvm(env, true);
+    const llvm::Type* type = llvm::IntegerType::get(BITS_PER_BYTE);
+    type =  llvm::PointerType::get(type);
+    env.checkCurrentBlock();
+    value = env.builder.CreateBitCast(value, type);
+    llvm::Function* function = llvm::Intrinsic::getDeclaration(env.mod, llvm::Intrinsic::vastart);
+    std::vector<llvm::Value*> parameters;
+    parameters.push_back(value);
+    return env.builder.CreateCall(function, parameters.begin(), parameters.end());
+}
+
+llvm::Value *E___builtin_va_copy::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
+{
+    cerr << toString(loc) << ": ";
+    xunimp("__builtin_va_copy");
+    return NULL;
+}
+
 llvm::Value *E___builtin_va_arg::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 {
     llvm::Value* value = expr->cc2llvm(env);
     const llvm::Type* type = env.makeTypeSpecifier(loc, atype->getType());
     env.checkCurrentBlock();
     return new llvm::VAArgInst(value, type, "", env.currentBlock);
+}
+
+llvm::Value *E___builtin_va_end::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
+{
+    llvm::Value* value = expr->cc2llvm(env, true);
+    const llvm::Type* type = llvm::IntegerType::get(BITS_PER_BYTE);
+    type =  llvm::PointerType::get(type);
+    env.checkCurrentBlock();
+    value = env.builder.CreateBitCast(value, type);
+    llvm::Function* function = llvm::Intrinsic::getDeclaration(env.mod, llvm::Intrinsic::vaend);
+    std::vector<llvm::Value*> parameters;
+    parameters.push_back(value);
+    return env.builder.CreateCall(function, parameters.begin(), parameters.end());
 }
 
 llvm::Value *E___builtin_constant_p::cc2llvm(CC2LLVMEnv &env, bool lvalue) const

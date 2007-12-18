@@ -1533,6 +1533,28 @@ void E_alignofType::iprint(BPEnv &bp) const
   bp << ")";
 }
 
+void E___builtin_va_start::iprint(BPEnv &bp) const
+{
+  bp << "__builtin_va_start(";
+  SEQ {
+    expr->print(bp);
+    bp << "," << bp.br;
+    expr2->print(bp);
+  }
+  bp << ")";
+}
+
+void E___builtin_va_copy::iprint(BPEnv &bp) const
+{
+  bp << "__builtin_va_copy(";
+  SEQ {
+    expr->print(bp);
+    bp << "," << bp.br;
+    expr2->print(bp);
+  }
+  bp << ")";
+}
+
 void E___builtin_va_arg::iprint(BPEnv &bp) const
 {
   bp << "__builtin_va_arg(";
@@ -1540,6 +1562,15 @@ void E___builtin_va_arg::iprint(BPEnv &bp) const
     expr->print(bp);
     bp << "," << bp.br;
     atype->print(bp);
+  }
+  bp << ")";
+}
+
+void E___builtin_va_end::iprint(BPEnv &bp) const
+{
+  bp << "__builtin_va_end(";
+  SEQ {
+    expr->print(bp);
   }
   bp << ")";
 }

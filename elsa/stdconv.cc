@@ -573,6 +573,10 @@ StandardConversion getStandardConversion
         if (conv.stripPtrCtor(srcCV, destCV, isReference))
           { return conv.ret; }
 
+	if (src->isVoid() || dest->isVoid()) {
+	    // void* can be converted either way.
+	    return conv.ret;
+	}
         break;
       }
 

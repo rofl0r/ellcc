@@ -20,7 +20,10 @@ enum DeclaratorContext {
   DC_E_COMPOUNDLIT,       //   E_compoundLit::stype
   DC_E_ALIGNOFTYPE,       //   E_alignofType::atype
   // DC_E_OFFSETOF,          //   E_offsetof::atype
+  DC_E_BUILTIN_VA_START,    //   E___builtin_va_start::atype
+  DC_E_BUILTIN_VA_COPY,    //   E___builtin_va_copy::atype
   DC_E_BUILTIN_VA_ARG,    //   E___builtin_va_arg::atype
+  DC_E_BUILTIN_VA_END,    //   E___builtin_va_end::atype
 }
 
 
@@ -73,10 +76,11 @@ class Expression {
   // varargs; dsw: I think that we should make all of these their own
   // AST node, I just don't want to deal with the parsing ambiguity
   // with E_funCall right now
-//   -> E___builtin_va_start(Expression expr, Expression expr2);
-//   -> E___builtin_va_copy(Expression expr, Expression expr2);
+  // rdp: I'll give it a try.
+  -> E___builtin_va_start(Expression expr, Expression expr2);
+  -> E___builtin_va_copy(Expression expr, Expression expr2);
   -> E___builtin_va_arg(Expression expr, ASTTypeId atype);
-//   -> E___builtin_va_end(Expression expr);
+  -> E___builtin_va_end(Expression expr);
 
   // alignment inquiry
   // http://gcc.gnu.org/onlinedocs/gcc-3.1/gcc/Alignment.html

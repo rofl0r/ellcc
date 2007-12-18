@@ -22,7 +22,10 @@
 "__typeof"             return tok(TOK___TYPEOF__);
 "__typeof__"           return tok(TOK___TYPEOF__);
 "__builtin_expect"     return tok(TOK___BUILTIN_EXPECT);
+"__builtin_va_start"   return tok(TOK___BUILTIN_VA_START);
+"__builtin_va_copy"    return tok(TOK___BUILTIN_VA_COPY);
 "__builtin_va_arg"     return tok(TOK___BUILTIN_VA_ARG);
+"__builtin_va_end"     return tok(TOK___BUILTIN_VA_END);
 
 "__null" {
   // gcc only recognizes __null as 0 in C++ mode, but I prefer the
