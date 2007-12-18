@@ -148,6 +148,7 @@ int Lexer::alternateKeyword_tok(TokenType t)
 
 void Lexer::parseHashInclude(char *directive, int len)
 {
+  cout << "in include\n";
 }
 
 
