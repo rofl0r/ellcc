@@ -48,7 +48,7 @@ TOCLEAN += *.bb *.bbg *.da
 # optional: LLVM generation
 LLVM := @LLVM@
 ifneq ("$(LLVM)","disabled")
-  LLVMLDFLAGS := $(shell llvm-config --ldflags --libs core target)
+  LLVMLDFLAGS := $(shell llvm-config --ldflags --libs core target bitreader bitwriter instrumentation scalaropts ipo)
   LLVMCCFLAGS := $(shell llvm-config --cxxflags)
   CC_AST_MODS += cc2llvm.ast
   EXT_OBJS    += cc2llvm.o
@@ -74,24 +74,8 @@ LDFLAGS := @LDFLAGS@ $(libraries)
 # compile .cc in this directory to a .o
 TOCLEAN += *.o *.d
 %.o: %.cc
-	$(CXX) -c -o $@ $< $(if $(findstring $*,$(GCOV_MODS)),$(GCOV_OPTS) )$(CCFLAGS)
-	@$(DEP)   -o $@ $< $(if $(findstring $*,$(GCOV_MODS)),$(GCOV_OPTS) )$(CCFLAGS) >$*.d
-
-# compile a special module; -O0 will override any earlier setting
-notopt.o: notopt.cc
-	$(CXX) -c -o $@ $< $(CCFLAGS) -O0
-	@$(DEP)   -o $@ $< $(CCFLAGS) -O0 >$*.d
-
-
-main.o: main.cc
 	$(CXX) -c -o $@ $< $(if $(findstring $*,$(GCOV_MODS)),$(GCOV_OPTS) )$(CCFLAGS) $(LLVMCCFLAGS)
 	@$(DEP)   -o $@ $< $(if $(findstring $*,$(GCOV_MODS)),$(GCOV_OPTS) )$(CCFLAGS) $(LLVMCCFLAGS) >$*.d
-
-ifneq ($(LLVM),"disabled")
-cc2llvm.o: cc2llvm.cc
-	$(CXX) -c -o $@ $< $(if $(findstring $*,$(GCOV_MODS)),$(GCOV_OPTS) )$(CCFLAGS) $(LLVMCCFLAGS)
-	@$(DEP)   -o $@ $< $(if $(findstring $*,$(GCOV_MODS)),$(GCOV_OPTS) )$(CCFLAGS) $(LLVMCCFLAGS) >$*.d
-endif
 
 # ------------------------- ellsif ---------------------
 
@@ -99,7 +83,9 @@ endif
 # that finds serious compilation problems earliest (it's ok to
 # rearrange as different parts of the code are in flux)
 ELLSIF_OBJS := \
-  main.o
+  ellsif.o \
+
+#  elsa.o
 
 -include $(ELLSIF_OBJS:.o=.d)
 

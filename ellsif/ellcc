@@ -1,5 +1,5 @@
 #!/bin/sh
 base=${1/\.*/}
 gcc -E -o $base.i $1 && \
-/home/rich/elsa/elsa/ccparse -cc2llvm $base.ll -tr c_lang $base.i
+../ellsif -cc2llvm $base.ll -tr c_lang $base.i
 llvm-as -f -o $base.bc $base.ll
