@@ -312,7 +312,7 @@ testparse t0036.cc
 testparse t0037.cc
 testparse t0038.cc
 testparse t0039.cc
-failparse t0040.cc "RICH: C vs. C++ implicit conversion of pointer to int"
+testparse t0040.cc
 testparse t0041.cc
 testparse t0042.cc
 testparse t0043.cc
@@ -1407,6 +1407,7 @@ list=`echo "
     t0037.cc
     t0038.cc
     t0039.cc
+    t0040.cc
     t0041.cc
     t0042.cc
     t0043.cc

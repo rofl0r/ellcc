@@ -148,7 +148,11 @@ int Lexer::alternateKeyword_tok(TokenType t)
 
 void Lexer::parseHashInclude(char *directive, int len)
 {
-  cout << "in include\n";
+  type = yylex();
+  updLoc();
+  if (type == TOK_STRING_LITERAL) {
+    cout << "in include " << yytext << "\n";
+  }
 }
 
 
@@ -161,7 +165,7 @@ void Lexer::parseHashLine(char *directive, int len)
 {
   char *endp = directive+len;
 
-  directive++;        // skip "#"
+  // directive++;        // skip "#"
   if (*directive == 'l') {
     directive += 4;   // skip "line"
   }
