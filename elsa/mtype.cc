@@ -259,6 +259,22 @@ bool IMType::imatchSTemplateArgument(STemplateArgument const *conc,
     return imatchNontypeWithVariable(conc, pat->getDepExpr()->asE_variableC(), flags);
   }
 
+  // C++ Draft Standard 14.1.3 -- enums and ints
+  if (pat->kind == STemplateArgument::STA_ENUMERATOR) {
+    if (conc->kind == STemplateArgument::STA_INT)
+      return conc->getInt() == pat->getEnumerator()->getEnumeratorValue();
+    if (conc->kind == STemplateArgument::STA_ENUMERATOR)
+      return conc->getEnumerator()->getEnumeratorValue() == pat->getEnumerator()->getEnumeratorValue();
+    return false;
+  }
+  if (pat->kind == STemplateArgument::STA_INT) {
+    if (conc->kind == STemplateArgument::STA_INT)
+      return pat->getInt() == conc->getInt();
+    if (conc->kind == STemplateArgument::STA_ENUMERATOR)
+      return conc->getEnumerator()->getEnumeratorValue() == pat->getInt();
+    return false;
+  }
+
   if (conc->kind != pat->kind) {
     return false;
   }
@@ -278,11 +294,11 @@ bool IMType::imatchSTemplateArgument(STemplateArgument const *conc,
       return imatchType(ct, pt, flags);
     }
 
-    case STemplateArgument::STA_INT:
-      return conc->getInt() == pat->getInt();
+    //case STemplateArgument::STA_INT:
+      //return conc->getInt() == pat->getInt();
       
-    case STemplateArgument::STA_ENUMERATOR:
-      return conc->getEnumerator() == pat->getEnumerator();
+    //case STemplateArgument::STA_ENUMERATOR:
+      //return conc->getEnumerator() == pat->getEnumerator();
 
     case STemplateArgument::STA_REFERENCE:
       return conc->getReference() == pat->getReference();

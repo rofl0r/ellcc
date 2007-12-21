@@ -5,6 +5,7 @@
 #include <stdlib.h>       // exit, getenv, abort
 #include <fstream.h>      // ofstream
 
+#include "elsa.h"         // This module.
 #include "trace.h"        // traceAddSys
 #include "syserr.h"       // xsyserror
 #include "parssppt.h"     // ParseTreeAndTokens, treeMain
@@ -31,8 +32,6 @@
 #include "xml_type_writer.h" // XmlTypeWriter
 #include "bpprint.h"      // bppTranslationUnit
 #include "cc2c.h"         // cc_to_c
-
-#ifdef LLVM_EXTENSION
 #include "cc2llvm.h"      // cc_to_llvm
 
 // LLVM
@@ -40,23 +39,95 @@
 #include <llvm/Pass.h>
 #include <llvm/PassManager.h>
 #include <llvm/Assembly/PrintModulePass.h>
-#endif
 
-// true to print the tchecked C++ syntax using bpprint after
-// tcheck
-static bool wantBpprint = false;
+/** The Elsa constructor.
+ */
+Elsa::Elsa()
+{
+    wantBpprint = false;
+    wantBpprintAfterElab = false;
+    // I think this is more noise than signal at this point
+    xBase::logExceptions = false;
 
-// same, but after elaboration
-static bool wantBpprintAfterElab = false;
+    traceAddFromEnvVar();           // Add environment variable traces.
+    traceAddSys("progress");
+    //traceAddSys("parse-tree");
 
+    if (tracingSys("malloc_stats")) {
+        malloc_stats();
+    }
+
+}
+
+/** The Elsa destructor.
+ */
+Elsa::~Elsa()
+{
+}
+
+/** Add trace systems.
+ */
+void Elsa::addTrace(const char* systems)
+{
+    traceAddMultiSys(systems);
+}
+
+/** Set up after command line parsing.
+ */
+void Elsa::setup()
+{
+  if (tracingSys("printAsML")) {
+    Type::printAsML = true;
+  }
+
+  // FIX: dsw: couldn't we put dashes or something in here to break up
+  // the word?
+  if (tracingSys("nohashline")) {
+    sourceLocManager->useHashLines = false;
+  }
+
+  if (tracingSys("tolerateHashlineErrors")) {
+    sourceLocManager->tolerateHashlineErrors = true;
+  }
+
+  if (tracingSys("no-orig-offset")) {
+    sourceLocManager->useOriginalOffset = false;
+  }
+
+  if (tracingSys("test_xfatal")) {
+    xfatal("this is a test error message");
+  }
+
+  if (tracingSys("templateDebug")) {
+    // predefined set of tracing flags I've been using while debugging
+    // the new templates implementation
+    traceAddSys("template");
+    traceAddSys("error");
+    traceAddSys("scope");
+    traceAddSys("templateParams");
+    traceAddSys("templateXfer");
+    traceAddSys("prettyPrint");
+    traceAddSys("xmlPrintAST");
+    traceAddSys("topform");
+  }
+
+  if (tracingSys("only_works_on_32bit") &&
+      sizeof(long) != 4) {
+    // we are running a regression test, and the testcase is known to
+    // fail due to dependence on architecture parameters, so skip it
+    cout << "skipping test b/c this is not a 32-bit architecture\n";
+    exit(0);
+  }
+
+  if (tracingSys("printTracers")) {
+    cout << "tracing flags:\n\t";
+    printTracers(std::cout, "\n\t");
+    cout << endl;
+  }
+}
 
 // nonempty if we want to run cc2c; value of "-" means stdout
 static string cc2cOutputFname;
-
-#ifdef LLVM_EXTENSION
-// nonempty if we want to run cc2llvm; value of "-" means stdout
-static string cc2llvmOutputFname;
-#endif
 
 // little check: is it true that only global declarators
 // ever have Declarator::type != Declarator::var->type?
@@ -132,14 +203,6 @@ public:
   }
 };
 
-void if_malloc_stats()
-{
-  if (tracingSys("malloc_stats")) {
-    malloc_stats();
-  }
-}
-
-
 class SectionTimer {
   long start;
   long &elapsed;
@@ -155,7 +218,7 @@ public:
   }
 };
 
-void handle_xBase(Env &env, xBase &x)
+static void handle_xBase(Env &env, xBase &x)
 {
   // typically an assertion failure from the tchecker; catch it here
   // so we can print the errors, and something about the location
@@ -180,229 +243,62 @@ void handle_xBase(Env &env, xBase &x)
   abort();
 }
 
-// this is a dumb way to organize argument processing...
-char *myProcessArgs(int argc, char **argv, char const *additionalInfo)
+
+int Elsa::doit(Language language, const char* inputFname, const char* outputFname, llvm::Module*& mod)
 {
-  // remember program name
-  char const *progName = argv[0];
+    mod = NULL;
+    SourceLocManager mgr;
+    // String table for storing parse tree identifiers.
+    StringTable strTable;
+    
 
-  #define SHIFT argv++; argc-- /* user ; */
-
-  // process args
-  while (argc >= 2) {
-    if (traceProcessArg(argc, argv)) {
-      continue;
-    }
-    else if (0==strcmp(argv[1], "-xc")) {
-      // treat this as a synonym for "-tr c_lang"
-      traceAddSys("c_lang");
-      SHIFT;
-    }
-    else if (0==strcmp(argv[1], "-w")) {
-      // synonym for -tr nowarnings
-      traceAddSys("nowarnings");
-      SHIFT;
-    }
-    else if (0==strcmp(argv[1], "-bpprint")) {
-      wantBpprint = true;
-      SHIFT;
-    }
-    else if (0==strcmp(argv[1], "-bpprintAfterElab")) {
-      wantBpprintAfterElab = true;
-      SHIFT;
-    }
-    else if (0==strcmp(argv[1], "-cc2c")) {
-      if (argc < 3) {
-        cout << "-cc2c requires a file name argument\n";
-        exit(2);
-      }
-      cc2cOutputFname = argv[2];
-      SHIFT;
-      SHIFT;
-    }
-#ifdef LLVM_EXTENSION
-    else if (0==strcmp(argv[1], "-cc2llvm")) {
-      if (argc < 3) {
-        cout << "-cc2llvm requires a file name argument\n";
-        exit(2);
-      }
-      cc2llvmOutputFname = argv[2];
-      SHIFT;
-      SHIFT;
-    }
+    // Parsing language options.
+    CCLang lang;
+    lang.GNU_Cplusplus();
+    switch (language) {
+    case GNUCXX:         // GNU C++
+        break;
+    case ANSICXX:        // ANSI C++
+        lang.ANSI_Cplusplus();
+        break;
+    case ANSIC89:        // ANSI C89
+        lang.ANSI_C89();
+        break;
+    case ANSIC99:        // ANSI C99
+        lang.ANSI_C99();
+        break;
+    case GNUC:           // GNU C
+        lang.GNU_C();
+        break;
+    case GNUC89:         // GNU C89
+        lang.ANSI_C89();
+        lang.GNU_C_extensions();
+        break;
+    case KANDRC:         // K&R C
+         lang.GNU_KandR_C();
+#ifndef KANDR_EXTENSION
+        xfatal("gnu_kandr_c_lang option requires the K&R module (./configure -kandr=yes)");
 #endif
-    else {
-      break;     // didn't find any more options
-    }
-  }
-
-  #undef SHIFT
-
-  if (argc != 2) {
-    cout << "usage: " << progName << " [options] input-file\n"
-            "  options:\n"
-            "    -tr <flags>:       turn on given tracing flags (comma-separated)\n"
-            "    -bbprint:          print parsed C++ back out using bpprint\n"
-            "    -bbprintAfterElab: bpprint after elaboration\n"
-            "    -cc2c <fname>:     generate C, write to <fname>; \"-\" means stdout\n"
-#ifdef LLVM_EXTENSION
-            "    -cc2llvm <fname>:  generate LLVM code, write to <fname>; \"-\" means stdout\n"
+        break;
+    case GNUKANDRC:      // GNU K&R C
+         lang.GNU2_KandR_C();
+#ifndef KANDR_EXTENSION
+        xfatal("gnu2_kandr_c_lang option requires the K&R module (./configure -kandr=yes)");
 #endif
-         << (additionalInfo? additionalInfo : "");
-    exit(argc==1? 0 : 2);    // error if any args supplied
-  }
-
-  // some -tr equivalents, which are convenient because they
-  // can be passed in the TRACE environment variable
-  wantBpprint = wantBpprint || tracingSys("bpprint");
-
-  return argv[1];
-}
-
-void doit(int argc, char **argv)
-{
-  // I think this is more noise than signal at this point
-  xBase::logExceptions = false;
-
-  traceAddSys("progress");
-  //traceAddSys("parse-tree");
-
-  if_malloc_stats();
-
-  SourceLocManager mgr;
-
-  // string table for storing parse tree identifiers
-  StringTable strTable;
-
-  // parsing language options
-  CCLang lang;
-  lang.GNU_Cplusplus();
-
-  // ------------- process command-line arguments ---------
-  char const *inputFname = myProcessArgs
-    (argc, argv,
-     "\n"
-     "  general behavior flags:\n"
-     "    c_lang             use C language rules (default is C++)\n"
-     "    nohashline         ignore #line when reporting locations\n"
-     "\n"
-     "  options to stop after a certain stage:\n"
-     "    stopAfterParse     stop after parsing\n"
-     "    stopAfterTCheck    stop after typechecking\n"
-     "    stopAfterElab      stop after semantic elaboration\n"
-     "\n"
-     "  output options:\n"
-     "    parseTree          make a parse tree and print that, only\n"
-     "    printAST           print AST after parsing\n"
-     "    printTypedAST      print AST with type info\n"
-     "    printElabAST       print AST after semantic elaboration\n"
-     "    prettyPrint        echo input as pretty-printed C++\n"
-     "    xmlPrintAST        print AST as XML\n"
-     "\n"
-     "  debugging output:\n"
-     "    malloc_stats       print malloc stats every so often\n"
-     "    env                print as variables are added to the environment\n"
-     "    error              print as errors are accumulated\n"
-     "    overload           print details of overload resolution\n"
-     "\n"
-     "  (grep in source for \"trace\" to find more obscure flags)\n"
-     "");
-
-  if (tracingSys("printAsML")) {
-    Type::printAsML = true;
-  }
-
-  // FIX: dsw: couldn't we put dashes or something in here to break up
-  // the word?
-  if (tracingSys("nohashline")) {
-    sourceLocManager->useHashLines = false;
-  }
-
-  if (tracingSys("tolerateHashlineErrors")) {
-    sourceLocManager->tolerateHashlineErrors = true;
-  }
-
-  if (tracingSys("no-orig-offset")) {
-    sourceLocManager->useOriginalOffset = false;
-  }
-
-  if (tracingSys("ansi")) {
-    lang.ANSI_Cplusplus();
-  }
-
-  if (tracingSys("ansi_c")) {
-    lang.ANSI_C89();
-  }
-
-  if (tracingSys("ansi_c99")) {
-    lang.ANSI_C99();
-  }
-
-  if (tracingSys("c_lang")) {
-    lang.GNU_C();
-  }
-
-  if (tracingSys("gnu_c89")) {
-    lang.ANSI_C89();
-    lang.GNU_C_extensions();
-  }
-
-  if (tracingSys("gnu_kandr_c_lang")) {
-    lang.GNU_KandR_C();
-    #ifndef KANDR_EXTENSION
-      xfatal("gnu_kandr_c_lang option requires the K&R module (./configure -kandr=yes)");
-    #endif
-  }
-
-  if (tracingSys("gnu2_kandr_c_lang")) {
-    lang.GNU2_KandR_C();
-    #ifndef KANDR_EXTENSION
-      xfatal("gnu2_kandr_c_lang option requires the K&R module (./configure -kandr=yes)");
-    #endif
-  }
-
-  if (tracingSys("test_xfatal")) {
-    xfatal("this is a test error message");
+        break;
   }
 
   if (tracingSys("msvcBugs")) {
     lang.MSVC_bug_compatibility();
   }
-
   if (!tracingSys("nowarnings")) {
     lang.enableAllWarnings();
-  }
-
-  if (tracingSys("templateDebug")) {
-    // predefined set of tracing flags I've been using while debugging
-    // the new templates implementation
-    traceAddSys("template");
-    traceAddSys("error");
-    traceAddSys("scope");
-    traceAddSys("templateParams");
-    traceAddSys("templateXfer");
-    traceAddSys("prettyPrint");
-    traceAddSys("xmlPrintAST");
-    traceAddSys("topform");
-  }
-
-  if (tracingSys("only_works_on_32bit") &&
-      sizeof(long) != 4) {
-    // we are running a regression test, and the testcase is known to
-    // fail due to dependence on architecture parameters, so skip it
-    cout << "skipping test b/c this is not a 32-bit architecture\n";
-    exit(0);
   }
 
   // dump out the lang settings if the user wants them
   if (tracingSys("printLang")) {
     cout << "language settings:\n";
     cout << lang.toString();
-    cout << endl;
-  }
-  if (tracingSys("printTracers")) {
-    cout << "tracing flags:\n\t";
-    printTracers(std::cout, "\n\t");
     cout << endl;
   }
 
@@ -421,7 +317,7 @@ void doit(int argc, char **argv)
       xmlDanglingPointersAllowed = false;
     }
     unit = xmlDoRead(strTable, inputFname);
-    if (!unit) return;
+    if (!unit) return 0;
   }
   else {
     SectionTimer timer(parseTime);
@@ -455,12 +351,12 @@ void doit(int argc, char **argv)
     }
 
     if (!toplevelParse(tree, inputFname)) {
-      exit(2); // parse error
+      return 2; // parse error
     }
 
     // check for parse errors detected by the context class
     if (parseContext->errors || lexer->errors) {
-      exit(2);
+      return 2;
     }
     parseWarnings = lexer->warnings + parseContext->warnings;
 
@@ -469,7 +365,7 @@ void doit(int argc, char **argv)
       // tree and bail
       PTreeNode *ptn = (PTreeNode*)treeTop;
       ptn->printTree(cout, PTreeNode::PF_EXPAND);
-      return;
+      return 0;
     }
 
     // treeTop is a TranslationUnit pointer
@@ -493,7 +389,7 @@ void doit(int argc, char **argv)
   //}
 
   if (tracingSys("stopAfterParse")) {
-    return;
+    return 0;
   }
 
 
@@ -542,7 +438,7 @@ void doit(int argc, char **argv)
         // failure, it's no good if Delta introduces an error.
         env.error("confused by earlier errors, bailing out");
         env.errors.print(cout);
-        exit(4);
+        return 4;
       }
 
       if (tracingSys("expect_xfailure")) {
@@ -603,7 +499,7 @@ void doit(int argc, char **argv)
          << "  warnings: " << numWarnings << "\n";
 
     if (numErrors != 0) {
-      exit(4);
+      return 4;
     }
 
     // lookup diagnostic
@@ -622,7 +518,7 @@ void doit(int argc, char **argv)
              << "  source: " << env.collectLookupResults << "\n"
              << "  tcheck: " << nc.sb << "\n"
              ;
-        exit(4);
+        return 4;
       }
     }
   }
@@ -663,7 +559,7 @@ void doit(int argc, char **argv)
     }
 
     if (tracingSys("stopAfterTCheck")) {
-      return;
+      return 0;
     }
   }
 
@@ -701,7 +597,7 @@ void doit(int argc, char **argv)
       unit->debugPrint(cout, 0);
     }
     if (tracingSys("stopAfterElab")) {
-      return;
+      return 0;
     }
   }
 
@@ -847,28 +743,10 @@ void doit(int argc, char **argv)
     }
   }
 
-#ifdef LLVM_EXTENSION
-  if (!cc2llvmOutputFname.empty()) {
-    llvm::Module* mod = cc_to_llvm(cc2llvmOutputFname, strTable, *unit,
-	// RICH: Target data and target triple.
+    // RICH: Target data and target triple.
+    mod = cc_to_llvm(outputFname, strTable, *unit,
         "e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:32:64-f32:32:32-f64:32:64-v64:64:64-v128:128:128-a0:0:64-s0:0:64-f80:32:32",
         "i686-pc-linux-gnu");
-
-    // Output the module.
-    llvm::PassManager PM;
-    std::ostream *out = &std::cout;  // Default to printing to stdout.
-    if (cc2llvmOutputFname != string("-")) {
-      out = new std::ofstream(cc2llvmOutputFname.c_str());
-      if (!out) {
-        xsyserror("open", stringb("write \"" << cc2llvmOutputFname << "\""));
-      }
-    }
-    llvm::OStream L(*out);
-    PM.add(new llvm::PrintModulePass(&L));
-    PM.run(*mod);
-    delete mod;
-  }
-#endif
 
   //traceProgress() << "cleaning up...\n";
 
@@ -883,12 +761,13 @@ void doit(int argc, char **argv)
 
   //checkHeap();
   //malloc_stats();
+  return 0;
 }
 
-int main(int argc, char **argv)
+int Elsa::parse(Language language, const char* inputFname, const char* outputFname, llvm::Module*& mod)
 {
   try {
-    doit(argc, argv);
+    return doit(language, inputFname, outputFname, mod);
   }
   catch (XUnimp &x) {
     HANDLER();

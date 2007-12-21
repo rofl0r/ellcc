@@ -146,7 +146,7 @@ const llvm::Type* CC2LLVMEnv::makeTypeSpecifier(SourceLoc loc, Type *t)
 	}
 
 	xassert(type != NULL && "A NULL type encountered");
-        type =  llvm::PointerType::get(type);
+        type =  llvm::PointerType::get(type, 0);	// RICH: Address space.
         break;
     }
     case Type::T_REFERENCE: {
@@ -165,7 +165,7 @@ const llvm::Type* CC2LLVMEnv::makeTypeSpecifier(SourceLoc loc, Type *t)
 	     * the return value holding area will be passed as the first
 	     * argument to the function. The function the returns void.
 	     */
-	    const llvm::Type* rt = llvm::PointerType::get(returnType);
+	    const llvm::Type* rt = llvm::PointerType::get(returnType, 0);	// RICH: address space.
             args.push_back(rt);
             returnType = llvm::Type::VoidTy;
 	}
@@ -2125,7 +2125,7 @@ llvm::Value *E___builtin_va_start::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 {
     llvm::Value* value = expr->cc2llvm(env, true);
     const llvm::Type* type = llvm::IntegerType::get(BITS_PER_BYTE);
-    type =  llvm::PointerType::get(type);
+    type =  llvm::PointerType::get(type, 0);	// RICH: address space.
     env.checkCurrentBlock();
     value = env.builder.CreateBitCast(value, type);
     llvm::Function* function = llvm::Intrinsic::getDeclaration(env.mod, llvm::Intrinsic::vastart);
@@ -2153,7 +2153,7 @@ llvm::Value *E___builtin_va_end::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 {
     llvm::Value* value = expr->cc2llvm(env, true);
     const llvm::Type* type = llvm::IntegerType::get(BITS_PER_BYTE);
-    type =  llvm::PointerType::get(type);
+    type =  llvm::PointerType::get(type, 0);	// RICH: address space.
     env.checkCurrentBlock();
     value = env.builder.CreateBitCast(value, type);
     llvm::Function* function = llvm::Intrinsic::getDeclaration(env.mod, llvm::Intrinsic::vaend);

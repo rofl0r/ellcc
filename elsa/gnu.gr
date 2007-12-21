@@ -81,7 +81,7 @@ nonterm(StringRef) PreprocString {
   -> TOK___PRETTY_FUNCTION__                { return str("__PRETTY_FUNCTION__"); }
 }
 
-nonterm(Expression*) UnaryExpression {
+nonterm(Expression*) PostfixExpression {
   // GNU extension; dsw: Since the argument is an expression, I know
   // of no way to handle this other than putting it into the grammar
   // directly.

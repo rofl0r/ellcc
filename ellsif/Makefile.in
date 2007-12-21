@@ -84,6 +84,7 @@ TOCLEAN += *.o *.d
 # rearrange as different parts of the code are in flux)
 ELLSIF_OBJS := \
   ellsif.o \
+  elsa.o
 
 #  elsa.o
 
