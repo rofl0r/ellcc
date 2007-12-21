@@ -566,6 +566,7 @@ Preprocessor Options
 #include "llvm/Support/PluginLoader.h"
 #include "llvm/Support/Streams.h"
 #include "llvm/Support/SystemUtils.h"
+#include "llvm/Support/Timer.h"
 #include "llvm/LinkAllPasses.h"
 #include "llvm/LinkAllVMCore.h"
 #include <iostream>
@@ -1338,7 +1339,14 @@ static void doSingle(Phases phase, Input& input)
         // RICH: Non bc targets.
         sys::Path to(input.name.getBasename() + ".bc");
         // RICH: Lang
+#if RICH
+	Timer timer("Parser");
+	timer.startTimer();
+#endif
         int result = elsa.parse(Elsa::GNUCXX, input.name.c_str(), to.c_str(), input.module);
+#if RICH
+	timer.stopTimer();
+#endif
         if (result) {
             Exit(result);
         }
