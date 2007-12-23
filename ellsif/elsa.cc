@@ -761,8 +761,9 @@ int Elsa::doit(Language language, const char* inputFname, const char* outputFnam
     }
     // RICH: Target data and target triple.
     mod = cc_to_llvm(outputFname, strTable, *unit,
-        "e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:32:64-f32:32:32-f64:32:64-v64:64:64-v128:128:128-a0:0:64-s0:0:64-f80:32:32",
-        "i686-pc-linux-gnu");
+            "e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:32:64-f32:32:32-f64:32:64-v64:64:64-v128:128:128-a0:0:64-s0:0:64-f80:32:32",
+            "i686-pc-linux-gnu");
+
     if (doTime) {
         llvmGenerationTimer.stopTimer();
     }
@@ -787,8 +788,7 @@ int Elsa::parse(Language language, const char* inputFname, const char* outputFna
 {
   try {
     return doit(language, inputFname, outputFname, mod);
-  }
-  catch (XUnimp &x) {
+  } catch (XUnimp &x) {
     HANDLER();
     cout << x << endl;
 
@@ -796,15 +796,13 @@ int Elsa::parse(Language language, const char* inputFname, const char* outputFna
     // I want to have tests in regrtest that are "expected" to fail
     // for the reason that they use unimplemented language features
     return 10;
-  }
-  catch (XFatal &x) {
+  } catch (XFatal &x) {
     HANDLER();
 
     // similar to XUnimp
     cout << x << endl;
     return 10;
-  }
-  catch (xBase &x) {
+  } catch (xBase &x) {
     HANDLER();
     cout << x << endl;
     abort();
@@ -814,3 +812,5 @@ int Elsa::parse(Language language, const char* inputFname, const char* outputFna
 
   return 0;
 }
+
+
