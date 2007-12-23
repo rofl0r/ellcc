@@ -1,11 +1,15 @@
 #ifndef _Elsa_h_
 #define _Elsa_h_
 
-#include <llvm/Module.h>
+namespace llvm {
+    class Module;
+};
+
+#include "llvm/Support/Timer.h"
 
 class Elsa {
 public:
-    Elsa();
+    Elsa(llvm::TimerGroup& timerGroup);
     ~Elsa();
 
     /** Print the tchecked C++ syntax using bpprint after tcheck.
@@ -19,7 +23,7 @@ public:
     void addTrace(const char* systems);
     /** Set up after command line parsing.
      */
-    void setup();
+    void setup(bool time);
 
     enum Language {
         GNUCXX,         // GNU C++
@@ -36,7 +40,19 @@ public:
     int parse(Language language, const char* inputFname, const char* outputFname, llvm::Module*& mod);
 
 private:
+    /** The default constructor (not implemented or used).
+     */
+    Elsa();
     int doit(Language language, const char* inputFname, const char* outputFname, llvm::Module*& mod);
+    /** true if phases should be timed.
+     */
+    bool doTime;
+public:
+    llvm::TimerGroup& timerGroup;
+    llvm::Timer parseTimer;
+    llvm::Timer typeCheckingTimer;
+    llvm::Timer elaborationTimer;
+    llvm::Timer integrityCheckingTimer;
 };
 
 #endif

@@ -48,7 +48,8 @@ TOCLEAN += *.bb *.bbg *.da
 # optional: LLVM generation
 LLVM := @LLVM@
 ifneq ("$(LLVM)","disabled")
-  LLVMLDFLAGS := $(shell llvm-config --ldflags --libs bitreader bitwriter instrumentation scalaropts ipo)
+  LLVMTARGETS := $(shell llvm-config --targets-built)
+  LLVMLDFLAGS := $(shell llvm-config --ldflags --libs $(LLVMTARGETS) bitreader bitwriter instrumentation scalaropts ipo linker)
   LLVMCCFLAGS := $(shell llvm-config --cxxflags)
   CC_AST_MODS += cc2llvm.ast
   EXT_OBJS    += cc2llvm.o

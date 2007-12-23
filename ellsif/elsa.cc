@@ -36,13 +36,16 @@
 
 // LLVM
 #include <llvm/Module.h>
-#include <llvm/Pass.h>
-#include <llvm/PassManager.h>
-#include <llvm/Assembly/PrintModulePass.h>
+#include <llvm/Support/Timer.h>
 
 /** The Elsa constructor.
  */
-Elsa::Elsa()
+Elsa::Elsa(llvm::TimerGroup& timerGroup) :
+     timerGroup(timerGroup),
+    parseTimer("Parsing", timerGroup),
+    typeCheckingTimer("Type checking", timerGroup),
+    elaborationTimer("Elaboration", timerGroup),
+    integrityCheckingTimer("Integrity checking", timerGroup)
 {
     wantBpprint = false;
     wantBpprintAfterElab = false;
@@ -57,6 +60,7 @@ Elsa::Elsa()
         malloc_stats();
     }
 
+    doTime = false;
 }
 
 /** The Elsa destructor.
@@ -74,8 +78,9 @@ void Elsa::addTrace(const char* systems)
 
 /** Set up after command line parsing.
  */
-void Elsa::setup()
+void Elsa::setup(bool time)
 {
+  doTime = time;
   if (tracingSys("printAsML")) {
     Type::printAsML = true;
   }
@@ -203,21 +208,6 @@ public:
   }
 };
 
-class SectionTimer {
-  long start;
-  long &elapsed;
-
-public:
-  SectionTimer(long &e)
-    : start(getMilliseconds()),
-      elapsed(e)
-  {}
-  ~SectionTimer()
-  {
-    elapsed += getMilliseconds() - start;
-  }
-};
-
 static void handle_xBase(Env &env, xBase &x)
 {
   // typically an assertion failure from the tchecker; catch it here
@@ -311,16 +301,17 @@ int Elsa::doit(Language language, const char* inputFname, const char* outputFnam
   ArrayStack<Variable*> builtinVars;
 
   int parseWarnings = 0;
-  long parseTime = 0;
   if (tracingSys("parseXml")) {
     if (tracingSys("parseXml-no-danglingPointers")) {
       xmlDanglingPointersAllowed = false;
     }
     unit = xmlDoRead(strTable, inputFname);
     if (!unit) return 0;
-  }
-  else {
-    SectionTimer timer(parseTime);
+  } else {
+    if (doTime) {
+        parseTimer.startTimer();
+    }
+
     SemanticValue treeTop;
     ParseTreeAndTokens tree(lang, treeTop, strTable, inputFname);
 
@@ -348,6 +339,10 @@ int Elsa::doit(Language language, const char* inputFname, const char* outputFnam
       tree.userAct = new ParseTreeActions(underAct, tables);
 
       // 'underLexer' and 'tree.userAct' will be leaked.. oh well
+    }
+
+    if (doTime) {
+        parseTimer.stopTimer();
     }
 
     if (!toplevelParse(tree, inputFname)) {
@@ -395,11 +390,13 @@ int Elsa::doit(Language language, const char* inputFname, const char* outputFnam
 
   // ---------------- typecheck -----------------
   BasicTypeFactory tfac;
-  long tcheckTime = 0;
   if (tracingSys("no-typecheck")) {
     cout << "no-typecheck" << endl;
   } else {
-    SectionTimer timer(tcheckTime);
+    if (doTime) {
+        typeCheckingTimer.startTimer();
+    }
+
     Env env(strTable, lang, tfac, madeUpVariables, builtinVars, unit);
     try {
       env.tcheckTranslationUnit(unit);
@@ -453,6 +450,10 @@ int Elsa::doit(Language language, const char* inputFname, const char* outputFnam
     catch (xBase &x) {
       HANDLER();
       handle_xBase(env, x);
+    }
+
+    if (doTime) {
+        typeCheckingTimer.stopTimer();
     }
 
     int numErrors = env.errors.numErrors();
@@ -531,9 +532,10 @@ int Elsa::doit(Language language, const char* inputFname, const char* outputFnam
   }
 
   // ---------------- integrity checking ----------------
-  long integrityTime = 0;
   {
-    SectionTimer timer(integrityTime);
+    if (doTime) {
+        integrityCheckingTimer.startTimer();
+    }
 
     // check AST integrity
     IntegrityVisitor ivis;
@@ -558,18 +560,23 @@ int Elsa::doit(Language language, const char* inputFname, const char* outputFnam
       cout << "instances of type != var->type: " << vis.instances << endl;
     }
 
+    if (doTime) {
+        integrityCheckingTimer.stopTimer();
+    }
+
     if (tracingSys("stopAfterTCheck")) {
       return 0;
     }
   }
 
   // ----------------- elaboration ------------------
-  long elaborationTime = 0;
   if (tracingSys("no-elaborate")) {
     cout << "no-elaborate" << endl;
   }
   else {
-    SectionTimer timer(elaborationTime);
+    if (doTime) {
+        elaborationTimer.startTimer();
+    }
 
     ElabVisitor vis(strTable, tfac, unit);
 
@@ -596,6 +603,10 @@ int Elsa::doit(Language language, const char* inputFname, const char* outputFnam
     if (tracingSys("printElabAST")) {
       unit->debugPrint(cout, 0);
     }
+
+    if (doTime) {
+        elaborationTimer.stopTimer();
+    }
     if (tracingSys("stopAfterElab")) {
       return 0;
     }
@@ -611,7 +622,9 @@ int Elsa::doit(Language language, const char* inputFname, const char* outputFnam
 
   // more integrity checking
   {
-    SectionTimer timer(integrityTime);
+    if (doTime) {
+        integrityCheckingTimer.startTimer();
+    }
 
     // check that the AST is a tree *and* that the lowered AST is a
     // tree (do this *after* elaboration!)
@@ -622,6 +635,10 @@ int Elsa::doit(Language language, const char* inputFname, const char* outputFnam
       traceProgress() << "done with tree check 2 ("
                       << (getMilliseconds() - start)
                       << " ms)\n";
+    }
+
+    if (doTime) {
+        integrityCheckingTimer.stopTimer();
     }
   }
 
@@ -719,13 +736,6 @@ int Elsa::doit(Language language, const char* inputFname, const char* outputFnam
     ofstream devnull("/dev/null");
     unit->debugPrint(devnull, 0);
   }
-
-  cout << "parse=" << parseTime << "ms"
-       << " tcheck=" << tcheckTime << "ms"
-       << " integ=" << integrityTime << "ms"
-       << " elab=" << elaborationTime << "ms"
-       << "\n"
-       ;
 
   if (!cc2cOutputFname.empty()) {
     TranslationUnit *lowered = cc_to_c(strTable, *unit);

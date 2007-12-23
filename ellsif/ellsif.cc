@@ -557,8 +557,11 @@ Preprocessor Options
 #include "llvm/Analysis/Verifier.h"
 #include "llvm/Analysis/LoopPass.h"
 #include "llvm/Analysis/CallGraph.h"
+#include "llvm/Target/SubtargetFeature.h"
 #include "llvm/Target/TargetData.h"
 #include "llvm/Target/TargetMachine.h"
+#include "llvm/Target/TargetMachineRegistry.h"
+#include "llvm/CodeGen/LinkAllCodegenComponents.h"
 #include "llvm/Support/PassNameParser.h"
 #include "llvm/System/Signals.h"
 #include "llvm/Support/ManagedStatic.h"
@@ -569,19 +572,18 @@ Preprocessor Options
 #include "llvm/Support/Timer.h"
 #include "llvm/LinkAllPasses.h"
 #include "llvm/LinkAllVMCore.h"
+#include "llvm/Linker.h"
 #include <iostream>
 #include <fstream>
 #include <memory>
 #include <algorithm>
 
 // Elsa.
-#include "elsa.h"                   // Elsa interfaces.
-
-Elsa elsa;                          // Get the parsing environment.
+#include "elsa.h"              // Elsa interfaces.
 
 using namespace llvm;
 
-static char* progname = "ellsif";   // Replaced by argv[0].
+static std::string progname;    // The program name.        
 
 /** File types.
  */
@@ -642,15 +644,20 @@ enum Phases {
 };
 
 
-static const char* phases[] = {
-    "preprocessing",
-    "translation",
-    "optimization",
-    "bclinking",
-    "bcassembly",
-    "assembly",
-    "linking"
+static const struct {
+    char* name;                 ///< The name of the action.
+    FileTypes result;           ///< The result of this phase if it processes multiple files.
+} phases[] = {
+    { "Preprocessing", },
+    { "Translation", },
+    { "Optimization", },
+    { "Bitcode linking", BC },
+    { "Bitcode to assembly", },
+    { "Assembly", },
+    { "Linking", EXE }
 };
+
+static Timer* timers[NUM_PHASES];       // The phase timers.
 
 /** Optimization levels.
  */
@@ -695,16 +702,15 @@ enum FileActions {
 
 static const struct {
     char* name;                 ///< The name of the action.
-    FileTypes result;           ///< The result of this phase if it processes multiple files.
 } fileActions[] = {
     { "preprocess" },
     { "compile" },
     { "llassemble" },
     { "optimize" },
-    { "bclink", BC },
+    { "bclink", },
     { "bcassemble" },
     { "assemble" },
-    { "link", EXE },
+    { "link", },
 };
 
 /** Association of file types, actions, and phases.
@@ -823,6 +829,8 @@ static cl::opt<OptimizationLevels> OptLevel(cl::ZeroOrMore,
       "An alias for the -O1 option"),
     clEnumValN(OPT_FAST_COMPILE,"O1",
       "Optimize for compilation speed, not execution speed"),
+    clEnumValN(OPT_FAST_COMPILE,"std-compile-opts",
+      "An alias for the -O1 option"),
     clEnumValN(OPT_SIMPLE,"O2",
       "Perform simple translation time optimizations"),
     clEnumValN(OPT_AGGRESSIVE,"O3",
@@ -834,6 +842,35 @@ static cl::opt<OptimizationLevels> OptLevel(cl::ZeroOrMore,
     clEnumValEnd
   )
 );
+
+static cl::opt<bool> DisableInline("disable-inlining",
+  cl::desc("Do not run the inliner pass"));
+
+static cl::opt<bool>
+DisableOptimizations("disable-opt",
+  cl::desc("Do not run any optimization passes"));
+
+static cl::opt<bool> DisableInternalize("disable-internalize",
+  cl::desc("Do not mark all symbols as internal"));
+
+static cl::opt<bool> VerifyEach("verify-each",
+ cl::desc("Verify intermediate results of all passes"));
+
+static cl::alias ExportDynamic("export-dynamic",
+  cl::aliasopt(DisableInternalize),
+  cl::desc("Alias for -disable-internalize"));
+
+static cl::opt<bool> Strip("strip-all", 
+  cl::desc("Strip all symbol info from executable"));
+
+static cl::alias A0("s", cl::desc("Alias for --strip-all"), 
+  cl::aliasopt(Strip));
+
+static cl::opt<bool> StripDebug("strip-debug",
+  cl::desc("Strip debugger symbol info from executable"));
+
+static cl::alias A1("SD", cl::desc("Alias for --strip-debug"),
+  cl::aliasopt(StripDebug));
 
 //===----------------------------------------------------------------------===//
 //===          TOOL OPTIONS
@@ -908,7 +945,7 @@ static cl::list<std::string> Defines("D", cl::Prefix,
 //===          OUTPUT OPTIONS
 //===----------------------------------------------------------------------===//
 
-static cl::opt<std::string> OutputFilename("o",
+static cl::opt<std::string> OutputFilename("o", cl::init("a.out"),
     cl::desc("Override output filename"), cl::value_desc("file"));
 
 static cl::opt<std::string> OutputMachine("m", cl::Prefix,
@@ -974,6 +1011,83 @@ static cl::opt<bool> ElsaPrettyPrintAfterElab("bpprintAfterElab", cl::Optional, 
     cl::desc("Output pretty printed source after elaboration"));
 
 //===----------------------------------------------------------------------===//
+//===          LINKER OPTIONS
+//===----------------------------------------------------------------------===//
+
+// Options to control the linking, optimization, and code gen processes
+static cl::opt<bool> LinkAsLibrary("link-as-library",
+  cl::desc("Link the .bc files together as a library, not an executable"));
+
+static cl::alias Relink("r", cl::aliasopt(LinkAsLibrary),
+  cl::desc("Alias for -link-as-library"));
+
+static cl::opt<bool>NativeCBE("native-cbe",
+  cl::desc("Generate a native binary with the C backend and GCC"));
+
+static cl::list<std::string> PostLinkOpts("post-link-opts",
+  cl::value_desc("path"),
+  cl::desc("Run one or more optimization programs after linking"));
+
+static cl::list<std::string> XLinker("Xlinker", cl::value_desc("option"),
+  cl::desc("Pass options to the system linker"));
+
+// Compatibility options that ellsif ignores but are supported for
+// compatibility with LD
+static cl::opt<std::string> CO3("soname", cl::Hidden,
+  cl::desc("Compatibility option: ignored"));
+
+static cl::opt<std::string> CO4("version-script", cl::Hidden,
+  cl::desc("Compatibility option: ignored"));
+
+static cl::opt<bool> CO5("eh-frame-hdr", cl::Hidden,
+  cl::desc("Compatibility option: ignored"));
+
+static  cl::opt<std::string> CO6("h", cl::Hidden,
+  cl::desc("Compatibility option: ignored"));
+
+static cl::opt<bool> CO7("start-group", cl::Hidden,
+  cl::desc("Compatibility option: ignored"));
+
+static cl::opt<bool> CO8("end-group", cl::Hidden,
+  cl::desc("Compatibility option: ignored"));
+
+//===----------------------------------------------------------------------===//
+//===          TARGET CODE GENERATOR OPTIONS
+//===----------------------------------------------------------------------===//
+
+static cl::opt<std::string>
+TargetTriple("mtriple", cl::desc("Override target triple for module"));
+
+static cl::opt<const TargetMachineRegistry::entry*, false,
+               TargetMachineRegistry::Parser>
+MArch("march", cl::desc("Architecture to generate code for:"));
+
+static cl::opt<std::string>
+MCPU("mcpu", 
+  cl::desc("Target a specific cpu type (-mcpu=help for details)"),
+  cl::value_desc("cpu-name"),
+  cl::init(""));
+
+static cl::list<std::string>
+MAttrs("mattr", 
+  cl::CommaSeparated,
+  cl::desc("Target specific attributes (-mattr=help for details)"),
+  cl::value_desc("a1,+a2,-a3,..."));
+
+cl::opt<TargetMachine::CodeGenFileType>
+FileType("filetype", cl::init(TargetMachine::AssemblyFile),
+  cl::desc("Choose a file type (not all types are supported by all targets):"),
+  cl::values(
+       clEnumValN(TargetMachine::AssemblyFile,    "asm",
+                  "  Emit an assembly ('.s') file"),
+       clEnumValN(TargetMachine::ObjectFile,    "obj",
+                  "  Emit a native object ('.o') file [experimental]"),
+       clEnumValN(TargetMachine::DynamicLibrary, "dynlib",
+                  "  Emit a native dynamic library ('.so') file"
+                  " [experimental]"),
+       clEnumValEnd));
+
+//===----------------------------------------------------------------------===//
 //===          ADVANCED OPTIONS
 //===----------------------------------------------------------------------===//
 
@@ -1019,7 +1133,7 @@ static cl::list<FileTypes> Languages("x", cl::ZeroOrMore,
 // PassNameParser.
 //
 static cl::list<const PassInfo*, bool, PassNameParser>
-PassList(cl::desc("Optimizations available:"));
+OptimizationList(cl::desc("Optimizations available:"));
 
 // Other command line options...
 //
@@ -1036,24 +1150,6 @@ NoOutput("disable-output",
 
 static cl::opt<bool>
 NoVerify("disable-verify", cl::desc("Do not verify result module"), cl::Hidden);
-
-static cl::opt<bool>
-VerifyEach("verify-each", cl::desc("Verify after each transform"));
-
-static cl::opt<bool>
-StripDebug("strip-debug",
-           cl::desc("Strip debugger symbol info from translation unit"));
-
-static cl::opt<bool>
-DisableInline("disable-inlining", cl::desc("Do not run the inliner pass"));
-
-static cl::opt<bool> 
-DisableOptimizations("disable-opt", 
-                     cl::desc("Do not run any optimization passes"));
-
-static cl::opt<bool>
-StandardCompileOpts("std-compile-opts", 
-                   cl::desc("Include the standard compile time optimizations"));
 
 static cl::opt<bool>
 Quiet("q", cl::desc("Obsolete option"), cl::Hidden);
@@ -1320,44 +1416,280 @@ static void Exit(int errcode = 1)
     exit(errcode);
 }
 
+/// Optimize - Perform link time optimizations. This will run the scalar
+/// optimizations, any loaded plugin-optimization modules, and then the
+/// inter-procedural optimizations if applicable.
+static void Optimize(Module* M)
+{
+  // Instantiate the pass manager to organize the passes.
+  PassManager Passes;
+
+  // If we're verifying, start off with a verification pass.
+  if (VerifyEach)
+    Passes.add(createVerifierPass());
+
+  // Add an appropriate TargetData instance for this module...
+  addPass(Passes, new TargetData(M));
+
+  if (!DisableOptimizations) {
+    // Now that composite has been compiled, scan through the module, looking
+    // for a main function.  If main is defined, mark all other functions
+    // internal.
+    if (!DisableInternalize)
+      addPass(Passes, createInternalizePass(true));
+
+    // Propagate constants at call sites into the functions they call.  This
+    // opens opportunities for globalopt (and inlining) by substituting function
+    // pointers passed as arguments to direct uses of functions.  
+    addPass(Passes, createIPSCCPPass());
+
+    // Now that we internalized some globals, see if we can hack on them!
+    addPass(Passes, createGlobalOptimizerPass());
+
+    // Linking modules together can lead to duplicated global constants, only
+    // keep one copy of each constant...
+    addPass(Passes, createConstantMergePass());
+
+    // Remove unused arguments from functions...
+    addPass(Passes, createDeadArgEliminationPass());
+
+    // Reduce the code after globalopt and ipsccp.  Both can open up significant
+    // simplification opportunities, and both can propagate functions through
+    // function pointers.  When this happens, we often have to resolve varargs
+    // calls, etc, so let instcombine do this.
+    addPass(Passes, createInstructionCombiningPass());
+
+    if (!DisableInline)
+      addPass(Passes, createFunctionInliningPass()); // Inline small functions
+
+    addPass(Passes, createPruneEHPass());            // Remove dead EH info
+    addPass(Passes, createGlobalOptimizerPass());    // Optimize globals again.
+    addPass(Passes, createGlobalDCEPass());          // Remove dead functions
+
+    // If we didn't decide to inline a function, check to see if we can
+    // transform it to pass arguments by value instead of by reference.
+    addPass(Passes, createArgumentPromotionPass());
+
+    // The IPO passes may leave cruft around.  Clean up after them.
+    addPass(Passes, createInstructionCombiningPass());
+
+    addPass(Passes, createScalarReplAggregatesPass()); // Break up allocas
+
+    // Run a few AA driven optimizations here and now, to cleanup the code.
+    addPass(Passes, createGlobalsModRefPass());      // IP alias analysis
+
+    addPass(Passes, createLICMPass());               // Hoist loop invariants
+    addPass(Passes, createGVNPass());                  // Remove redundancies
+    addPass(Passes, createDeadStoreEliminationPass()); // Nuke dead stores
+
+    // Cleanup and simplify the code after the scalar optimizations.
+    addPass(Passes, createInstructionCombiningPass());
+
+    // Delete basic blocks, which optimization passes may have killed...
+    addPass(Passes, createCFGSimplificationPass());
+
+    // Now that we have optimized the program, discard unreachable functions...
+    addPass(Passes, createGlobalDCEPass());
+  }
+
+  // If the -s or -S command line options were specified, strip the symbols out
+  // of the resulting program to make it smaller.  -s and -S are GNU ld options
+  // that we are supporting; they alias -strip-all and -strip-debug.
+  if (Strip || StripDebug)
+    addPass(Passes, createStripSymbolsPass(StripDebug && !Strip));
+
+  // Create a new optimization pass for each one specified on the command line
+  std::auto_ptr<TargetMachine> target;
+  for (unsigned i = 0; i < OptimizationList.size(); ++i) {
+    const PassInfo *Opt = OptimizationList[i];
+    if (Opt->getNormalCtor())
+      addPass(Passes, Opt->getNormalCtor()());
+    else
+      std::cerr << "llvm-ld: cannot create pass: " << Opt->getPassName() 
+                << "\n";
+  }
+
+  // The user's passes may leave cruft around. Clean up after them them but
+  // only if we haven't got DisableOptimizations set
+  if (!DisableOptimizations) {
+    addPass(Passes, createInstructionCombiningPass());
+    addPass(Passes, createCFGSimplificationPass());
+    addPass(Passes, createDeadCodeEliminationPass());
+    addPass(Passes, createGlobalDCEPass());
+  }
+
+  // Make sure everything is still good.
+  Passes.add(createVerifierPass());
+
+  // Run our queue of passes all at once now, efficiently.
+  Passes.run(*M);
+}
+
 //===----------------------------------------------------------------------===//
 //===          doMulti - Handle a phase acting on multiple files.
 //===----------------------------------------------------------------------===//
-static void doMulti(Phases phase, InputList& files, InputList& result)
+static void doMulti(Phases phase, InputList& files, InputList& result, TimerGroup& timerGroup)
 {
+    switch (phase) {
+    case BCLINKING: {
+        if (TimeActions) {
+            timers[phase]->startTimer();
+        }
+
+        // Generate the output name.
+        sys::Path outputName(OutputFilename);
+        outputName.eraseSuffix();
+        outputName.appendSuffix("bc");
+        // Construct a Linker.
+        Linker TheLinker(progname, outputName.toString(), Verbose);
+
+        // Keep track of the native link items (versus the bitcode items)
+        Linker::ItemList NativeLinkItems;
+
+        // Add library paths to the linker
+        TheLinker.addPaths(LibPaths);
+        TheLinker.addSystemPaths();
+
+        // Remove any consecutive duplicates of the same library...
+        Libraries.erase(std::unique(Libraries.begin(), Libraries.end()),
+                Libraries.end());
+
+        std::vector<sys::Path> Files;
+        for (unsigned i = 0; i < files.size(); ++i ) {
+            if (files[i].module) {
+                // We have this module.
+                if (TheLinker.LinkInModule(files[i].module)) {
+                    Exit(1); // Error already printed
+                }
+            } else {
+                Files.push_back(sys::Path(files[i].name));
+            }
+        }
+            
+        if (Files.size() && TheLinker.LinkInFiles(Files))
+            Exit(1); // Error already printed
+
+        if (LinkAsLibrary) {
+            // The libraries aren't linked in but are noted as "dependent" in the
+            // module.
+            for (cl::list<std::string>::const_iterator I = Libraries.begin(),
+                    E = Libraries.end(); I != E ; ++I) {
+                TheLinker.getModule()->addLibrary(*I);
+            }
+        } else {
+            // Add the libraries.
+            for (cl::list<std::string>::const_iterator I = Libraries.begin(),
+                    E = Libraries.end(); I != E ; ++I) {
+                bool isNative;  // RICH?
+                if (TheLinker.LinkInLibrary(*I, isNative)) {
+                    Exit(1); // Error already printed
+                }
+            }
+
+            // Link all the items together
+            Linker::ItemList Items;
+            if (TheLinker.LinkInItems(Items, NativeLinkItems) )
+                Exit(1); // Error already printed
+        }
+
+        Module* module = TheLinker.releaseModule();
+
+        // Optimize the module.
+        Optimize(module);
+
+        // Add the linked bitcode to the input list.
+        std::string name(outputName.toString());
+        Input input(name, BC, module);
+        if (Verbose) {
+            cout << "  " << fileActions[filePhases[BC][phase].action].name
+                << " " << outputName << " added to the file list\n";
+        }
+        result.push_back(input);
+
+        if (TimeActions) {
+	    timers[phase]->stopTimer();
+        }
+        break;
+    }
+    case LINKING: {
+        if (TimeActions) {
+            timers[phase]->startTimer();
+        }
+
+
+        if (TimeActions) {
+	    timers[phase]->stopTimer();
+        }
+        break;
+    }
+    default:
+        // RICH: Illegal single pass.
+        break;
+    }
 }
 
 //===----------------------------------------------------------------------===//
 //===          doSingle - Handle a phase acting on a single file.
 //===----------------------------------------------------------------------===//
-static void doSingle(Phases phase, Input& input)
+static void doSingle(Phases phase, Input& input, Elsa& elsa)
 {
     switch (phase) {
-    case PREPROCESSING:              // Source language combining, filtering, substitution
+    case PREPROCESSING: {              // Source language combining, filtering, substitution
+        if (TimeActions) {
+	    timers[phase]->startTimer();
+        }
+
+#if RICH
+// Change .c to .i, etc.
+        sys::Path to(input.name.getBasename());
+        to.appendSuffix("o");
+
+        // RICH: Do stuff.
+
+        input.name = to;
+#endif
+
+        if (TimeActions) {
+	    timers[phase]->stopTimer();
+        }
         break;
+    }
     case TRANSLATION: {              // Translate source -> LLVM bitcode/assembly
-        // RICH: Non bc targets.
-        sys::Path to(input.name.getBasename() + ".bc");
-        // RICH: Lang
 #if RICH
-	Timer timer("Parser");
-	timer.startTimer();
+        // Else does its own timing.
+        if (TimeActions) {
+	    timers[phase]->startTimer();
+        }
 #endif
-        int result = elsa.parse(Elsa::GNUCXX, input.name.c_str(), to.c_str(), input.module);
-#if RICH
-	timer.stopTimer();
-#endif
+
+        // RICH: Non c sources, e.g. .ll->.ubc
+        sys::Path to(input.name.getBasename());
+        to.appendSuffix("ubc");
+        // RICH: Lang: C, C++, K&R, etc.
+        int result = elsa.parse(Elsa::GNUC, input.name.c_str(), to.c_str(), input.module);
         if (result) {
             Exit(result);
         }
         input.name = to;
+
+#if RICH
+        if (TimeActions) {
+	    timers[phase]->stopTimer();
+        }
+#endif
         break;
     }
     case OPTIMIZATION: {             // Optimize translation result
+        if (TimeActions) {
+	    timers[phase]->startTimer();
+        }
+
+        sys::Path to(input.name.getBasename());
+        to.appendSuffix("bc");
         std::string ErrorMessage;
         if (input.module == NULL) {
             // Load the input module...
-            if (MemoryBuffer *Buffer = MemoryBuffer::getFileOrSTDIN(input.name.toString(), &ErrorMessage)) {
+            if (MemoryBuffer *Buffer = MemoryBuffer::getFileOrSTDIN(to.toString(), &ErrorMessage)) {
                 input.module = ParseBitcodeFile(Buffer, &ErrorMessage);
                 delete Buffer;
             }
@@ -1370,6 +1702,7 @@ static void doSingle(Phases phase, Input& input)
                 PrintAndExit("bitcode didn't read correctly.");
             }
         }
+        input.name = to;
 
 #if RICH
         // Figure out what stream we are supposed to write to...
@@ -1416,7 +1749,7 @@ static void doSingle(Phases phase, Input& input)
         // If -std-compile-opts is given, add in all the standard compilation 
         // optimizations first. This will handle -strip-debug, -disable-inline,
         // and -disable-opt as well.
-        if (StandardCompileOpts)
+        if (OptLevel > OPT_FAST_COMPILE)
             AddStandardCompilePasses(Passes);
 
         // otherwise if the -strip-debug command line option was specified, add it.
@@ -1424,8 +1757,8 @@ static void doSingle(Phases phase, Input& input)
             addPass(Passes, createStripSymbolsPass(true));
     
         // Create a new optimization pass for each one specified on the command line
-        for (unsigned i = 0; i < PassList.size(); ++i) {
-            const PassInfo *PassInf = PassList[i];
+        for (unsigned i = 0; i < OptimizationList.size(); ++i) {
+            const PassInfo *PassInf = OptimizationList[i];
             Pass *P = 0;
             if (PassInf->getNormalCtor())
               P = PassInf->getNormalCtor()();
@@ -1471,12 +1804,48 @@ static void doSingle(Phases phase, Input& input)
             delete Out;
 #endif
 
+        if (TimeActions) {
+	    timers[phase]->stopTimer();
+        }
+
         break;
     }
-    case BCASSEMBLY:                 // Convert .bc to .s
+    case BCASSEMBLY: {               // Convert .bc to .s
+        if (TimeActions) {
+	    timers[phase]->startTimer();
+        }
+
+        sys::Path to(input.name.getBasename());
+        to.appendSuffix("s");
+
+        // RICH: Do stuff.
+
+        input.name = to;
+
+        if (TimeActions) {
+	    timers[phase]->stopTimer();
+        }
+
         break;
-    case ASSEMBLY:                   // Convert .s to .o
+    }
+    case ASSEMBLY: {                 // Convert .s to .o
+        if (TimeActions) {
+	    timers[phase]->startTimer();
+        }
+
+        sys::Path to(input.name.getBasename());
+        to.appendSuffix("o");
+
+        // RICH: Do stuff.
+
+        input.name = to;
+
+        if (TimeActions) {
+	    timers[phase]->stopTimer();
+        }
+
         break;
+    }
     default:
         // RICH: Illegal single pass.
         break;
@@ -1488,31 +1857,38 @@ static void doSingle(Phases phase, Input& input)
 // main for ellsif
 //
 int main(int argc, char **argv) {
-    progname = argv[0];
-
-    // Initialize Elsa.
-    elsa.wantBpprint = ElsaPrettyPrint;
-    elsa.wantBpprintAfterElab = ElsaPrettyPrintAfterElab;
-    std::vector<std::string>::iterator traceIt = ElsaTraceOpts.begin();
-    for ( ; traceIt != ElsaTraceOpts.end(); ++traceIt) {
-        elsa.addTrace((*traceIt).c_str());
-    }
-    elsa.setup();
 
     llvm_shutdown_obj X;  // Call llvm_shutdown() on exit.
-    setupFileTypes();
     try {
-        cl::ParseCommandLineOptions(argc, argv,
-            "C/C++ compiler\n");
+        // Initial global variable above for convenience printing of program name.
+        progname = sys::Path(argv[0]).getBasename();
+        setupFileTypes();
+        TimerGroup timerGroup("... Ellsif action timing report ...");
+        for (int i = 0; i < NUM_PHASES; ++i) {
+            timers[i] = new Timer(phases[i].name, timerGroup);
+        }
+
+        // Parse the command line options.
+        cl::ParseCommandLineOptions(argc, argv, "C/C++ compiler\n");
         sys::PrintStackTraceOnErrorSignal();
 
         // Allocate a full target machine description only if necessary.
         // FIXME: The choice of target should be controllable on the command line.
         std::auto_ptr<TargetMachine> target;
 
+        // Initialize Elsa.
+        Elsa elsa(timerGroup);       // Get the parsing environment.
+        elsa.setup(TimeActions);
+        elsa.wantBpprint = ElsaPrettyPrint;
+        elsa.wantBpprintAfterElab = ElsaPrettyPrintAfterElab;
+        std::vector<std::string>::iterator traceIt = ElsaTraceOpts.begin();
+        for ( ; traceIt != ElsaTraceOpts.end(); ++traceIt) {
+            elsa.addTrace((*traceIt).c_str());
+        }
+
         std::string ErrorMessage;
 
-        // Gather the input files and determine therir types.
+        // Gather the input files and determine their types.
         InputList InpList;
         std::vector<std::string>::iterator fileIt = Files.begin();
         std::vector<std::string>::iterator libIt  = Libraries.begin();
@@ -1554,10 +1930,10 @@ int main(int argc, char **argv) {
         InputList::iterator it;
         for(Phases phase = PREPROCESSING; phase != NUM_PHASES; phase = (Phases)(phase + 1)) {
             if (Verbose) {
-                cout << "Phase: " << phases[phase] << "\n";
+                cout << "Phase: " << phases[phase].name << "\n";
             }
 
-            if (fileActions[phase].result != NONE) {
+            if (phases[phase].result != NONE) {
                 // This phase deals with muiltple files.
                 InputList files;
                 for (it = InpList.begin(); it != InpList.end(); ++it) {
@@ -1567,10 +1943,10 @@ int main(int argc, char **argv) {
                             // This file needs processing during this phase.
                             cout << "  " << fileActions[filePhases[it->type][phase].action].name
                                 << " " << it->name << " to become " << fileTypes[nextType] << "\n";
-                            it->type = nextType;
                         }
                         
                         files.push_back(*it);
+                        it->type = nextType;
                     } else {
                         if (Verbose) {
                             cout << "  " << it->name << " is ignored during this phase\n";
@@ -1580,7 +1956,7 @@ int main(int argc, char **argv) {
 
                 if (files.size()) {
                     // Perform the phase on the files.
-                    doMulti(phase, files, InpList);
+                    doMulti(phase, files, InpList, timerGroup);
                 }
             } else {
                 for (it = InpList.begin(); it != InpList.end(); ++it) {
@@ -1594,7 +1970,7 @@ int main(int argc, char **argv) {
                         }
 
                         // Perform the phase on the file.
-                        doSingle(phase, *it);
+                        doSingle(phase, *it, elsa);
                     } else {
                         if (Verbose) {
                             cout << "  " << it->name << " is ignored during this phase\n";
@@ -1604,16 +1980,20 @@ int main(int argc, char **argv) {
             }
 
             if (FinalPhase == phase) {
-                return 0;
+                break;
             }
         }
 
+        for (int i = 0; i < NUM_PHASES; ++i) {
+            delete timers[i];
+        }
         return 0;
     } catch (const std::string& msg) {
         cerr << argv[0] << ": " << msg << "\n";
     } catch (...) {
         cerr << argv[0] << ": Unexpected unknown exception occurred.\n";
     }
+
     llvm_shutdown();
     return 1;
 }
