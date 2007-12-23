@@ -1618,6 +1618,67 @@ static void RemoveEnv(const char * name, char ** const envp) {
   return;
 }
 
+/// Preprocess - Preprocess the given file.
+///
+/// Inputs:
+///  InputFilename   - The name of the input source file.
+///  OutputFilename  - The name of the file to generate.
+///  gcc             - The pathname to use for GGC.
+///  envp            - A copy of the process's current environment.
+///
+/// Outputs:
+///  None.
+///
+/// Returns non-zero value on error.
+///
+static int Preprocess(const std::string &OutputFilename,
+                          const std::string &InputFilename,
+                          const sys::Path &gcc, char ** const envp,
+                          std::string& ErrMsg)
+{
+  // Remove these environment variables from the environment of the
+  // programs that we will execute.  It appears that GCC sets these
+  // environment variables so that the programs it uses can configure
+  // themselves identically.
+  //
+  // However, when we invoke GCC below, we want it to use its normal
+  // configuration.  Hence, we must sanitize its environment.
+  char ** clean_env = CopyEnv(envp);
+  if (clean_env == NULL)
+    return 1;
+  RemoveEnv("LIBRARY_PATH", clean_env);
+  RemoveEnv("COLLECT_GCC_OPTIONS", clean_env);
+  RemoveEnv("GCC_EXEC_PREFIX", clean_env);
+  RemoveEnv("COMPILER_PATH", clean_env);
+  RemoveEnv("COLLECT_GCC", clean_env);
+
+  // Run GCC to preprocess the file..
+  std::vector<std::string> args;
+  args.push_back(gcc.c_str());
+  args.push_back("-E");
+  args.push_back("-o");
+  args.push_back(OutputFilename);
+  args.push_back(InputFilename);
+
+  // Now that "args" owns all the std::strings for the arguments, call the c_str
+  // method to get the underlying string array.  We do this game so that the
+  // std::string array is guaranteed to outlive the const char* array.
+  std::vector<const char *> Args;
+  for (unsigned i = 0, e = args.size(); i != e; ++i)
+    Args.push_back(args[i].c_str());
+  Args.push_back(0);
+  if (Verbose) {
+    cout << "Preprocessing source file with:\n";
+    PrintCommand(Args);
+  }
+
+  // Run gcc to preprocess the file.
+  int R = sys::Program::ExecuteAndWait(
+    gcc, &Args[0], (const char**)clean_env, 0, 0, 0, &ErrMsg);
+  delete [] clean_env;
+  return R;
+}
+
 /// GenerateNative - generates a native object file from the
 /// specified bitcode file.
 ///
@@ -1639,7 +1700,7 @@ static int GenerateNative(const std::string &OutputFilename,
                           const Linker::ItemList &LinkItems,
                           const sys::Path &gcc, char ** const envp,
                           std::string& ErrMsg)
- {
+{
   // Remove these environment variables from the environment of the
   // programs that we will execute.  It appears that GCC sets these
   // environment variables so that the programs it uses can configure
@@ -1848,8 +1909,6 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
 	    timers[phase]->startTimer();
         }
 
-#if RICH
-// Change .c to .i, etc.
         sys::Path to(input.name.getBasename());
         to.appendSuffix("i");
         if (Verbose) {
@@ -1858,10 +1917,21 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
                 << " to become " << fileTypes[nextType] << "\n";
         }
 
-        // RICH: Do stuff.
+        // Mark the output files for removal if we get an interrupt.
+        sys::RemoveFileOnSignal(to);
+
+        // Determine the location of the gcc program.
+        sys::Path gcc = FindExecutable("gcc", progname);
+        if (gcc.isEmpty())
+          PrintAndExit("Failed to find gcc");
+
+        extern char **environ;
+        std::string ErrMsg;  
+        if(Preprocess(to.toString(), input.name.toString(), gcc, environ, ErrMsg) != 0) {
+            PrintAndExit(ErrMsg);
+        }
 
         input.name = to;
-#endif
 
         if (TimeActions) {
 	    timers[phase]->stopTimer();
