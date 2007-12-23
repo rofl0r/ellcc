@@ -21,12 +21,12 @@
 
 char    flags[SIZEPL];
 
-main(int ac, char **av)
+int main(int ac, char **av)
         {
 	int     i,prime,k,count,iter;
 
-	printf("10 iterations\n");
-        for(iter=1; iter <= 10; iter++)
+	printf("10000 iterations\n");
+        for(iter=1; iter <= 10000; iter++)
                 {
                 count=0;
                 for(i=0; i <= SIZE; i++)

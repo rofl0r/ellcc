@@ -550,6 +550,7 @@ Preprocessor Options
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Module.h"
+#include "llvm/ModuleProvider.h"
 #include "llvm/PassManager.h"
 #include "llvm/CallGraphSCCPass.h"
 #include "llvm/Bitcode/ReaderWriter.h"
@@ -562,6 +563,7 @@ Preprocessor Options
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetMachineRegistry.h"
 #include "llvm/CodeGen/LinkAllCodegenComponents.h"
+#include "llvm/CodeGen/FileWriters.h"
 #include "llvm/Support/PassNameParser.h"
 #include "llvm/System/Signals.h"
 #include "llvm/Support/ManagedStatic.h"
@@ -606,6 +608,8 @@ enum FileTypes {
   A,                            ///< A library.
   EXE,                          ///< An executable file.
   LINKED,                       ///< A file that has been linked.
+  DLL,                          ///< A dynamic library.
+  CBE,                          ///< A C backend output file.
   NUM_FILE_TYPES                ///< Always last!
 };
 
@@ -624,10 +628,12 @@ static char* fileTypes[] = {
   "a linked LLVM bitcode file",
   "an assembly source file",
   "an assembly file that needs preprocessing",
-  "an object file, linker command file, etc",
+  "an object file",
   "a library",
   "an executable file",
-  "a file that has been linked"
+  "a file that has been linked",
+  "a dynamic library", 
+  "a C backend output file",
 };
 
 /** Translation phases.
@@ -637,8 +643,8 @@ enum Phases {
     TRANSLATION,                ///< Translate source -> LLVM bitcode/assembly
     OPTIMIZATION,               ///< Optimize translation result
     BCLINKING,                  ///< Link and optimize bitcode files. 
-    BCASSEMBLY,                 ///< Convert .bc to .s
-    ASSEMBLY,                   ///< Convert .s to .o
+    GENERATION,                 ///< Convert .bc to ...
+    // RICH ASSEMBLY,                   ///< Convert .s to .o
     LINKING,                    ///< Link and create executable
     NUM_PHASES                  ///< Always last!
 };
@@ -652,23 +658,12 @@ static const struct {
     { "Translation", },
     { "Optimization", },
     { "Bitcode linking", BC },
-    { "Bitcode to assembly", },
-    { "Assembly", },
+    { "Generating", },
+    // RICH { "Assembly", },
     { "Linking", EXE }
 };
 
 static Timer* timers[NUM_PHASES];       // The phase timers.
-
-/** Optimization levels.
- */
-enum OptimizationLevels {
-    OPT_FAST_COMPILE,           ///< Optimize to make >compile< go faster
-    OPT_SIMPLE,                 ///< Standard/simple optimizations
-    OPT_AGGRESSIVE,             ///< Aggressive optimizations
-    OPT_LINK_TIME,              ///< Aggressive + LinkTime optimizations
-    OPT_AGGRESSIVE_LINK_TIME,   ///< Make it go way fast!
-    OPT_NONE                    ///< No optimizations. Keep this at the end!
-};
 
 /** File types by extension.
  */
@@ -694,8 +689,8 @@ enum FileActions {
     LLASSEMBLE,                 ///> Assemble an LLVM assembly file.
     OPTIMIZE,                   ///> Optimize an LLVM bitcode file.
     BCLINK,                     ///> Link LLVM bitcode files.
-    BCASSEMBLE,                 ///> Convert .bc to .s.
-    ASSEMBLE,                   ///> Assemble a .s file.
+    GENERATE,                   ///> Convert .bc to .s.
+    // RICH ASSEMBLE,                   ///> Assemble a .s file.
     LINK,                       ///> Link object files files.
     NUM_ACTIONS                 ///> Always last!
 };
@@ -708,7 +703,7 @@ static const struct {
     { "llassemble" },
     { "optimize" },
     { "bclink", },
-    { "bcassemble" },
+    { "generate" },
     { "assemble" },
     { "link", },
 };
@@ -775,12 +770,18 @@ static void setupFileTypes()
     extToLang["bc"] = BC;
     filePhases[BC][BCLINKING].type = LINKED;
     filePhases[BC][BCLINKING].action = BCLINK;
-    filePhases[BC][BCASSEMBLY].type = S;
-    filePhases[BC][BCASSEMBLY].action = BCASSEMBLE;
+    filePhases[BC][GENERATION].type = S;
+    filePhases[BC][GENERATION].action = GENERATE;
 
+#if RICH
     extToLang["s"] = S;
     filePhases[S][ASSEMBLY].type = O;
     filePhases[S][ASSEMBLY].action = ASSEMBLE;
+#else
+    extToLang["s"] = O;
+    filePhases[S][LINKING].type = LINKED;
+    filePhases[S][LINKING].action = LINK;
+#endif
 
     extToLang["sx"] = SX;
     filePhases[SX][PREPROCESSING].type = S;
@@ -807,10 +808,12 @@ static cl::opt<Phases> FinalPhase(cl::Optional,
             "Stop translation after optimization phase"),
         clEnumValN(BCLINKING,"bc",
             "Stop translation after bitcode linking phase"),
-        clEnumValN(BCASSEMBLY,"S",
-            "Stop translation after bitcode to assembly phase"),
+        clEnumValN(GENERATION,"S",
+            "Stop translation after generation phase"),
+#if RICH
         clEnumValN(ASSEMBLY,"NS",
             "Stop translation after assembly phase"),
+#endif
         clEnumValEnd
     )
 );
@@ -819,14 +822,25 @@ static cl::opt<Phases> FinalPhase(cl::Optional,
 //===          OPTIMIZATION OPTIONS
 //===----------------------------------------------------------------------===//
 
+/** Optimization levels.
+ */
+enum OptimizationLevels {
+    OPT_FAST_COMPILE,           ///< Optimize to make >compile< go faster
+    OPT_SIMPLE,                 ///< Standard/simple optimizations
+    OPT_AGGRESSIVE,             ///< Aggressive optimizations
+    OPT_LINK_TIME,              ///< Aggressive + LinkTime optimizations
+    OPT_AGGRESSIVE_LINK_TIME,   ///< Make it go way fast!
+    OPT_NONE                    ///< No optimizations. Keep this at the end!
+};
+
 static cl::opt<OptimizationLevels> OptLevel(cl::ZeroOrMore,
   cl::desc("Choose level of optimization to apply:"),
   cl::init(OPT_FAST_COMPILE),
   cl::values(
     clEnumValN(OPT_FAST_COMPILE,"O",
       "An alias for the -O1 option"),
-    clEnumValN(OPT_FAST_COMPILE,"O0",
-      "An alias for the -O1 option"),
+    clEnumValN(OPT_NONE,"O0",
+      "Perform no optimizations"),
     clEnumValN(OPT_FAST_COMPILE,"O1",
       "Optimize for compilation speed, not execution speed"),
     clEnumValN(OPT_FAST_COMPILE,"std-compile-opts",
@@ -845,10 +859,6 @@ static cl::opt<OptimizationLevels> OptLevel(cl::ZeroOrMore,
 
 static cl::opt<bool> DisableInline("disable-inlining",
   cl::desc("Do not run the inliner pass"));
-
-static cl::opt<bool>
-DisableOptimizations("disable-opt",
-  cl::desc("Do not run any optimization passes"));
 
 static cl::opt<bool> DisableInternalize("disable-internalize",
   cl::desc("Do not mark all symbols as internal"));
@@ -1139,9 +1149,6 @@ OptimizationList(cl::desc("Optimizations available:"));
 //
 
 static cl::opt<bool>
-Force("f", cl::desc("Overwrite output files"));
-
-static cl::opt<bool>
 PrintEachXForm("p", cl::desc("Print module after each transformation"));
 
 static cl::opt<bool>
@@ -1313,7 +1320,7 @@ void AddStandardCompilePasses(PassManager &PM) {
   if (StripDebug)
     addPass(PM, createStripSymbolsPass(true));
 
-  if (DisableOptimizations) return;
+  if (OptLevel == OPT_NONE) return;
 
   addPass(PM, createRaiseAllocationsPass());     // call %malloc -> malloc inst
   addPass(PM, createCFGSimplificationPass());    // Clean up disgusting code
@@ -1431,7 +1438,7 @@ static void Optimize(Module* M)
   // Add an appropriate TargetData instance for this module...
   addPass(Passes, new TargetData(M));
 
-  if (!DisableOptimizations) {
+  if (OptLevel != OPT_NONE) {
     // Now that composite has been compiled, scan through the module, looking
     // for a main function.  If main is defined, mark all other functions
     // internal.
@@ -1510,8 +1517,8 @@ static void Optimize(Module* M)
   }
 
   // The user's passes may leave cruft around. Clean up after them them but
-  // only if we haven't got DisableOptimizations set
-  if (!DisableOptimizations) {
+  // only if we haven't got optimizations enabled
+  if (OptLevel != OPT_NONE) {
     addPass(Passes, createInstructionCombiningPass());
     addPass(Passes, createCFGSimplificationPass());
     addPass(Passes, createDeadCodeEliminationPass());
@@ -1523,6 +1530,189 @@ static void Optimize(Module* M)
 
   // Run our queue of passes all at once now, efficiently.
   Passes.run(*M);
+}
+
+static void PrintCommand(const std::vector<const char*> &args) {
+  std::vector<const char*>::const_iterator I = args.begin(), E = args.end(); 
+  for (; I != E; ++I)
+    if (*I)
+      cout << "'" << *I << "'" << " ";
+  cout << "\n" << std::flush;
+}
+
+/// CopyEnv - This function takes an array of environment variables and makes a
+/// copy of it.  This copy can then be manipulated any way the caller likes
+/// without affecting the process's real environment.
+///
+/// Inputs:
+///  envp - An array of C strings containing an environment.
+///
+/// Return value:
+///  NULL - An error occurred.
+///
+///  Otherwise, a pointer to a new array of C strings is returned.  Every string
+///  in the array is a duplicate of the one in the original array (i.e. we do
+///  not copy the char *'s from one array to another).
+///
+static char ** CopyEnv(char ** const envp) {
+  // Count the number of entries in the old list;
+  unsigned entries;   // The number of entries in the old environment list
+  for (entries = 0; envp[entries] != NULL; entries++)
+    /*empty*/;
+
+  // Add one more entry for the NULL pointer that ends the list.
+  ++entries;
+
+  // If there are no entries at all, just return NULL.
+  if (entries == 0)
+    return NULL;
+
+  // Allocate a new environment list.
+  char **newenv = new char* [entries];
+  if ((newenv = new char* [entries]) == NULL)
+    return NULL;
+
+  // Make a copy of the list.  Don't forget the NULL that ends the list.
+  entries = 0;
+  while (envp[entries] != NULL) {
+    newenv[entries] = new char[strlen (envp[entries]) + 1];
+    strcpy (newenv[entries], envp[entries]);
+    ++entries;
+  }
+  newenv[entries] = NULL;
+
+  return newenv;
+}
+
+
+/// RemoveEnv - Remove the specified environment variable from the environment
+/// array.
+///
+/// Inputs:
+///  name - The name of the variable to remove.  It cannot be NULL.
+///  envp - The array of environment variables.  It cannot be NULL.
+///
+/// Notes:
+///  This is mainly done because functions to remove items from the environment
+///  are not available across all platforms.  In particular, Solaris does not
+///  seem to have an unsetenv() function or a setenv() function (or they are
+///  undocumented if they do exist).
+///
+static void RemoveEnv(const char * name, char ** const envp) {
+  for (unsigned index=0; envp[index] != NULL; index++) {
+    // Find the first equals sign in the array and make it an EOS character.
+    char *p = strchr (envp[index], '=');
+    if (p == NULL)
+      continue;
+    else
+      *p = '\0';
+
+    // Compare the two strings.  If they are equal, zap this string.
+    // Otherwise, restore it.
+    if (!strcmp(name, envp[index]))
+      *envp[index] = '\0';
+    else
+      *p = '=';
+  }
+
+  return;
+}
+
+/// GenerateNative - generates a native object file from the
+/// specified bitcode file.
+///
+/// Inputs:
+///  InputFilename   - The name of the input bitcode file.
+///  OutputFilename  - The name of the file to generate.
+///  NativeLinkItems - The native libraries, files, code with which to link
+///  LibPaths        - The list of directories in which to find libraries.
+///  gcc             - The pathname to use for GGC.
+///  envp            - A copy of the process's current environment.
+///
+/// Outputs:
+///  None.
+///
+/// Returns non-zero value on error.
+///
+static int GenerateNative(const std::string &OutputFilename,
+                          InputList &InputFilenames,
+                          const Linker::ItemList &LinkItems,
+                          const sys::Path &gcc, char ** const envp,
+                          std::string& ErrMsg)
+ {
+  // Remove these environment variables from the environment of the
+  // programs that we will execute.  It appears that GCC sets these
+  // environment variables so that the programs it uses can configure
+  // themselves identically.
+  //
+  // However, when we invoke GCC below, we want it to use its normal
+  // configuration.  Hence, we must sanitize its environment.
+  char ** clean_env = CopyEnv(envp);
+  if (clean_env == NULL)
+    return 1;
+  RemoveEnv("LIBRARY_PATH", clean_env);
+  RemoveEnv("COLLECT_GCC_OPTIONS", clean_env);
+  RemoveEnv("GCC_EXEC_PREFIX", clean_env);
+  RemoveEnv("COMPILER_PATH", clean_env);
+  RemoveEnv("COLLECT_GCC", clean_env);
+
+
+  // Run GCC to assemble and link the program into native code.
+  //
+  // Note:
+  //  We can't just assemble and link the file with the system assembler
+  //  and linker because we don't know where to put the _start symbol.
+  //  GCC mysteriously knows how to do it.
+  std::vector<std::string> args;
+  args.push_back(gcc.c_str());
+  args.push_back("-fno-strict-aliasing");
+  args.push_back("-O3");
+  args.push_back("-o");
+  args.push_back(OutputFilename);
+  for (unsigned i = 0; i < InputFilenames.size(); ++i ) {
+      args.push_back(InputFilenames[i].name.toString());
+  }
+            
+  // Add in the library paths
+  for (unsigned index = 0; index < LibPaths.size(); index++) {
+    args.push_back("-L");
+    args.push_back(LibPaths[index]);
+  }
+
+  // Add the requested options
+  for (unsigned index = 0; index < XLinker.size(); index++) {
+    args.push_back(XLinker[index]);
+    args.push_back(Libraries[index]);
+  }
+
+  // Add in the libraries to link.
+  for (unsigned index = 0; index < LinkItems.size(); index++)
+    if (LinkItems[index].first != "crtend") {
+      if (LinkItems[index].second)
+        args.push_back("-l" + LinkItems[index].first);
+      else
+        args.push_back(LinkItems[index].first);
+    }
+
+      
+  // Now that "args" owns all the std::strings for the arguments, call the c_str
+  // method to get the underlying string array.  We do this game so that the
+  // std::string array is guaranteed to outlive the const char* array.
+  std::vector<const char *> Args;
+  for (unsigned i = 0, e = args.size(); i != e; ++i)
+    Args.push_back(args[i].c_str());
+  Args.push_back(0);
+
+  if (Verbose) {
+    cout << "Generating Native Executable With:\n";
+    PrintCommand(Args);
+  }
+
+  // Run the compiler to assembly and link together the program.
+  int R = sys::Program::ExecuteAndWait(
+    gcc, &Args[0], (const char**)clean_env, 0, 0, 0, &ErrMsg);
+  delete [] clean_env;
+  return R;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1558,16 +1748,18 @@ static void doMulti(Phases phase, InputList& files, InputList& result, TimerGrou
         for (unsigned i = 0; i < files.size(); ++i ) {
             if (files[i].module) {
                 // We have this module.
-                if (TheLinker.LinkInModule(files[i].module)) {
-                    Exit(1); // Error already printed
+                std::string ErrorMessage;
+                if (TheLinker.LinkInModule(files[i].module, &ErrorMessage)) {
+                    PrintAndExit(ErrorMessage);
                 }
+                files[i].module = NULL;         // The module has been consumed.
             } else {
                 Files.push_back(sys::Path(files[i].name));
             }
         }
             
         if (Files.size() && TheLinker.LinkInFiles(Files))
-            Exit(1); // Error already printed
+            PrintAndExit(TheLinker.getLastError());
 
         if (LinkAsLibrary) {
             // The libraries aren't linked in but are noted as "dependent" in the
@@ -1582,14 +1774,14 @@ static void doMulti(Phases phase, InputList& files, InputList& result, TimerGrou
                     E = Libraries.end(); I != E ; ++I) {
                 bool isNative;  // RICH?
                 if (TheLinker.LinkInLibrary(*I, isNative)) {
-                    Exit(1); // Error already printed
+                    PrintAndExit(TheLinker.getLastError());
                 }
             }
 
             // Link all the items together
             Linker::ItemList Items;
             if (TheLinker.LinkInItems(Items, NativeLinkItems) )
-                Exit(1); // Error already printed
+                PrintAndExit(TheLinker.getLastError());
         }
 
         Module* module = TheLinker.releaseModule();
@@ -1616,6 +1808,21 @@ static void doMulti(Phases phase, InputList& files, InputList& result, TimerGrou
             timers[phase]->startTimer();
         }
 
+        // Mark the output files for removal if we get an interrupt.
+        sys::RemoveFileOnSignal(sys::Path(OutputFilename));
+
+        // Determine the location of the gcc program.
+        sys::Path gcc = FindExecutable("gcc", progname);
+        if (gcc.isEmpty())
+          PrintAndExit("Failed to find gcc");
+
+        extern char **environ;
+        std::string ErrMsg;  
+        // Keep track of the native link items (versus the bitcode items)
+        Linker::ItemList NativeLinkItems;      // RICH
+        if (GenerateNative(OutputFilename, files, NativeLinkItems, gcc, environ, ErrMsg) != 0) {
+            PrintAndExit(ErrMsg);
+        }
 
         if (TimeActions) {
 	    timers[phase]->stopTimer();
@@ -1631,8 +1838,10 @@ static void doMulti(Phases phase, InputList& files, InputList& result, TimerGrou
 //===----------------------------------------------------------------------===//
 //===          doSingle - Handle a phase acting on a single file.
 //===----------------------------------------------------------------------===//
-static void doSingle(Phases phase, Input& input, Elsa& elsa)
+static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes thisType)
 {
+    FileTypes nextType = filePhases[thisType][phase].type;
+
     switch (phase) {
     case PREPROCESSING: {              // Source language combining, filtering, substitution
         if (TimeActions) {
@@ -1642,7 +1851,12 @@ static void doSingle(Phases phase, Input& input, Elsa& elsa)
 #if RICH
 // Change .c to .i, etc.
         sys::Path to(input.name.getBasename());
-        to.appendSuffix("o");
+        to.appendSuffix("i");
+        if (Verbose) {
+            // This file needs processing during this phase.
+            cout << "  " << fileActions[filePhases[thisType][phase].action].name << " " << input.name
+                << " to become " << fileTypes[nextType] << "\n";
+        }
 
         // RICH: Do stuff.
 
@@ -1663,6 +1877,12 @@ static void doSingle(Phases phase, Input& input, Elsa& elsa)
 #endif
 
         // RICH: Non c sources, e.g. .ll->.ubc
+        if (Verbose) {
+            // This file needs processing during this phase.
+            cout << "  " << fileActions[filePhases[thisType][phase].action].name << " " << input.name
+                << " to become " << fileTypes[nextType] << "\n";
+        }
+
         sys::Path to(input.name.getBasename());
         to.appendSuffix("ubc");
         // RICH: Lang: C, C++, K&R, etc.
@@ -1682,6 +1902,12 @@ static void doSingle(Phases phase, Input& input, Elsa& elsa)
     case OPTIMIZATION: {             // Optimize translation result
         if (TimeActions) {
 	    timers[phase]->startTimer();
+        }
+
+        if (Verbose) {
+            // This file needs processing during this phase.
+            cout << "  " << fileActions[filePhases[thisType][phase].action].name << " " << input.name
+                << " to become " << fileTypes[nextType] << "\n";
         }
 
         sys::Path to(input.name.getBasename());
@@ -1749,7 +1975,7 @@ static void doSingle(Phases phase, Input& input, Elsa& elsa)
         // If -std-compile-opts is given, add in all the standard compilation 
         // optimizations first. This will handle -strip-debug, -disable-inline,
         // and -disable-opt as well.
-        if (OptLevel > OPT_FAST_COMPILE)
+        if (OptLevel > OPT_FAST_COMPILE && OptLevel < OPT_NONE)
             AddStandardCompilePasses(Passes);
 
         // otherwise if the -strip-debug command line option was specified, add it.
@@ -1810,15 +2036,202 @@ static void doSingle(Phases phase, Input& input, Elsa& elsa)
 
         break;
     }
-    case BCASSEMBLY: {               // Convert .bc to .s
+    case GENERATION: {               // Convert .bc to ...
         if (TimeActions) {
 	    timers[phase]->startTimer();
         }
 
-        sys::Path to(input.name.getBasename());
-        to.appendSuffix("s");
+        std::string ErrorMessage;
+        if (input.module == NULL) {
+            // Load the input module...
+            if (MemoryBuffer *Buffer = MemoryBuffer::getFileOrSTDIN(input.name.toString(), &ErrorMessage)) {
+                input.module = ParseBitcodeFile(Buffer, &ErrorMessage);
+                delete Buffer;
+            }
+        }
 
-        // RICH: Do stuff.
+        if (input.module == NULL) {
+            if (ErrorMessage.size()) {
+                PrintAndExit(ErrorMessage);
+            } else {
+                PrintAndExit("bitcode didn't read correctly.");
+            }
+        }
+
+        // If we are supposed to override the target triple, do so now.
+        if (!TargetTriple.empty()) {
+            input.module->setTargetTriple(TargetTriple);
+        }
+
+        // Allocate target machine.  First, check whether the user has
+        // explicitly specified an architecture to compile for.
+        if (MArch == NULL) {
+            std::string Err;
+            MArch = TargetMachineRegistry::getClosestStaticTargetForModule(*input.module, Err);
+            if (MArch == NULL) {
+                // RICH: PrintAndExitN?
+                std::cerr << progname << ": error auto-selecting target for module '"
+                    << Err << "'.  Please use the -march option to explicitly "
+                    << "pick a target.\n";
+                Exit(1);
+            }
+        }
+
+        // Package up features to be passed to target/subtarget
+        std::string FeaturesStr;
+        if (MCPU.size() || MAttrs.size()) {
+            SubtargetFeatures Features;
+            Features.setCPU(MCPU);
+            for (unsigned i = 0; i != MAttrs.size(); ++i)
+                Features.AddFeature(MAttrs[i]);
+            FeaturesStr = Features.getString();
+        }
+
+        std::auto_ptr<TargetMachine> target(MArch->CtorFn(*input.module, FeaturesStr));
+        assert(target.get() && "Could not allocate target machine!");
+        TargetMachine &Target = *target.get();
+
+        sys::Path to(input.name.getBasename());
+
+#if RICH
+        // Figure out where we are going to send the output...
+        std::ostream *Out = NULL;
+        if (OutputFilename != "") {
+            if (OutputFilename == "-")
+                return &std::cout;
+
+            // Specified an output filename?
+            // Make sure that the Out file gets unlinked from the disk if we get a
+            // SIGINT
+            sys::RemoveFileOnSignal(sys::Path(OutputFilename));
+
+            return new std::ofstream(OutputFilename.c_str());
+        }
+
+        if (InputFilename == "-") {
+            OutputFilename = "-";
+            return &std::cout;
+        }
+
+        OutputFilename = GetFileNameRoot(InputFilename);
+#endif
+
+        switch (FileType) {
+            case TargetMachine::AssemblyFile:
+                if (MArch->Name[0] != 'c' || MArch->Name[1] != 0) { // not CBE
+                    to.appendSuffix("s");
+                    nextType = S;
+                } else {
+                    to.appendSuffix("cbe.c");
+                    nextType = CBE;
+                }
+                break;
+            case TargetMachine::ObjectFile:
+                to.appendSuffix("o");
+                nextType = O;
+                break;
+            case TargetMachine::DynamicLibrary:
+                to.appendSuffix("dll");
+                nextType = DLL;
+                break;
+        }
+
+        if (Verbose) {
+            // This file needs processing during this phase.
+            cout << "  " << fileActions[filePhases[thisType][phase].action].name << " " << input.name
+                << " to become " << fileTypes[nextType] << "\n";
+        }
+
+        // Make sure that the Out file gets unlinked from the disk if we get a
+        // SIGINT
+        sys::RemoveFileOnSignal(to);
+
+        std::ostream *Out = new std::ofstream(to.c_str());
+        if (Out == NULL || !Out->good()) {
+            std::cerr << progname << ": error opening " << OutputFilename << "!\n";
+            delete Out;
+            Exit(1);
+        }
+
+        // If this target requires addPassesToEmitWholeFile, do it now.  This is
+        // used by strange things like the C backend.
+        if (Target.WantsWholeFile()) {
+            PassManager PM;
+            PM.add(new TargetData(*Target.getTargetData()));
+            if (!NoVerify)
+                PM.add(createVerifierPass());
+
+            // Ask the target to add backend passes as necessary.
+            if (Target.addPassesToEmitWholeFile(PM, *Out, FileType, OptLevel == OPT_FAST_COMPILE)) {
+                // RICH:
+                std::cerr << progname << ": target does not support generation of this"
+                    << " file type!\n";
+                if (Out != &std::cout) delete Out;
+                // And the Out file is empty and useless, so remove it now.
+                sys::Path(OutputFilename).eraseFromDisk();
+                Exit(1);
+            }
+            PM.run(*input.module);
+        } else {
+            // Build up all of the passes that we want to do to the module.
+            FunctionPassManager Passes(new ExistingModuleProvider(input.module));
+            Passes.add(new TargetData(*Target.getTargetData()));
+
+#ifndef NDEBUG
+            if (!NoVerify)
+                Passes.add(createVerifierPass());
+#endif
+
+            // Ask the target to add backend passes as necessary.
+            MachineCodeEmitter *MCE = 0;
+
+            switch (Target.addPassesToEmitFile(Passes, *Out, FileType, OptLevel == OPT_FAST_COMPILE)) {
+                default:
+                    assert(0 && "Invalid file model!");
+                    Exit(1);
+                    break;
+                case FileModel::Error:
+                    std::cerr << progname << ": target does not support generation of this"
+                        << " file type!\n";
+                    if (Out != &std::cout) delete Out;
+                    // And the Out file is empty and useless, so remove it now.
+                    sys::Path(OutputFilename).eraseFromDisk();
+                    Exit(1);
+                    break;
+                case FileModel::AsmFile:
+                    break;
+                case FileModel::MachOFile:
+                    MCE = AddMachOWriter(Passes, *Out, Target);
+                    break;
+                case FileModel::ElfFile:
+                    MCE = AddELFWriter(Passes, *Out, Target);
+                    break;
+            }
+
+            if (Target.addPassesToEmitFileFinish(Passes, MCE, OptLevel == OPT_FAST_COMPILE)) {
+                std::cerr << progname << ": target does not support generation of this"
+                    << " file type!\n";
+                if (Out != &std::cout) delete Out;
+                // And the Out file is empty and useless, so remove it now.
+                sys::Path(OutputFilename).eraseFromDisk();
+                Exit(1);
+            }
+
+            Passes.doInitialization();
+
+            // Run our queue of passes all at once now, efficiently.
+            // TODO: this could lazily stream functions out of the module.
+            for (Module::iterator I = input.module->begin(), E = input.module->end(); I != E; ++I) {
+                if (!I->isDeclaration()) {
+                    Passes.run(*I);
+                }
+            }
+
+            Passes.doFinalization();
+        }
+
+        // Delete the ostream if it's not a stdout stream
+        if (Out != &std::cout) delete Out;
 
         input.name = to;
 
@@ -1828,9 +2241,16 @@ static void doSingle(Phases phase, Input& input, Elsa& elsa)
 
         break;
     }
+#if RICH
     case ASSEMBLY: {                 // Convert .s to .o
         if (TimeActions) {
 	    timers[phase]->startTimer();
+        }
+
+        if (Verbose) {
+            // This file needs processing during this phase.
+            cout << "  " << fileActions[filePhases[thisType][phase].action].name << " " << input.name
+                << " to become " << fileTypes[nextType] << "\n";
         }
 
         sys::Path to(input.name.getBasename());
@@ -1846,11 +2266,13 @@ static void doSingle(Phases phase, Input& input, Elsa& elsa)
 
         break;
     }
+#endif
     default:
         // RICH: Illegal single pass.
         break;
     }
     
+    return nextType;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1960,17 +2382,9 @@ int main(int argc, char **argv) {
                 }
             } else {
                 for (it = InpList.begin(); it != InpList.end(); ++it) {
-                    FileTypes nextType = filePhases[it->type][phase].type;
-                    if (nextType != NONE) {
-                        if (Verbose) {
-                            // This file needs processing during this phase.
-                            cout << "  " << fileActions[filePhases[it->type][phase].action].name << " " << it->name
-                                << " to become " << fileTypes[nextType] << "\n";
-                            it->type = nextType;
-                        }
-
+                    if (filePhases[it->type][phase].type != NONE) {
                         // Perform the phase on the file.
-                        doSingle(phase, *it, elsa);
+                        it->type = doSingle(phase, *it, elsa, it->type);
                     } else {
                         if (Verbose) {
                             cout << "  " << it->name << " is ignored during this phase\n";

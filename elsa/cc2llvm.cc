@@ -2143,7 +2143,7 @@ llvm::Value *E___builtin_va_copy::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 
 llvm::Value *E___builtin_va_arg::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 {
-    llvm::Value* value = expr->cc2llvm(env);
+    llvm::Value* value = expr->cc2llvm(env, true);
     const llvm::Type* type = env.makeTypeSpecifier(loc, atype->getType());
     env.checkCurrentBlock();
     return new llvm::VAArgInst(value, type, "", env.currentBlock);

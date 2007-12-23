@@ -53,6 +53,7 @@ public:
     llvm::Timer typeCheckingTimer;
     llvm::Timer elaborationTimer;
     llvm::Timer integrityCheckingTimer;
+    llvm::Timer llvmGenerationTimer;
 };
 
 #endif

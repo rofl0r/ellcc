@@ -186,7 +186,7 @@ int _vformat(FILE* fp, char* line, const char *format, va_list ap)
     while ((c = *format)) {
         if (c != '%') {
             // If no conversion specifier just send character.
-          //  status = putChar(fp, &line, c, &count);
+            status = putChar(fp, &line, c, &count);
 	    if (status < 0) {
 	        return status;
 	    }
