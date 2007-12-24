@@ -165,7 +165,7 @@ void Lexer::parseHashLine(char *directive, int len)
 {
   char *endp = directive+len;
 
-  // directive++;        // skip "#"
+  directive++;        // RICH: skip "#" 
   if (*directive == 'l') {
     directive += 4;   // skip "line"
   }

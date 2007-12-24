@@ -240,6 +240,18 @@ public:      // data
   // an an 'asm' directive (see TF_asm::itcheck)
   string collectLookupResults;
 
+  /** The AST of the currrent function.
+   */
+  const Function* functionAST;
+  /** The type of the currently active switch expression.
+   */
+  Type* switchType;
+  /** true if a continue is valid.
+   */
+  bool canContinue;
+  /** true if a break is valid.
+   */
+  bool canBreak;
 private:     // funcs
   // old
   //CompoundType *instantiateClass(

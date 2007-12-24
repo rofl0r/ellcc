@@ -432,6 +432,12 @@ void TF_namespaceDecl::itcheck(Env &env)
 void Function::tcheck(Env &env, Variable *instV)
 {
   bool checkBody = env.checkFunctionBodies;
+  const Function* oldFunctionAST = env.functionAST;
+  env.functionAST = this;
+  bool oldCanBreak = env.canBreak;
+  env.canBreak = false;
+  bool oldCanContinue = env.canContinue;
+  env.canContinue = false;
 
   if (env.secondPassTcheck) {
     // for the second pass, just force the use of the
@@ -521,6 +527,10 @@ void Function::tcheck(Env &env, Variable *instV)
   if (checkBody) {
     tcheckBody(env);
   }
+
+  env.canBreak = oldCanBreak;
+  env.canContinue = oldCanContinue;
+  env.functionAST = oldFunctionAST;
 }
 
 void Function::tcheckBody(Env &env)
@@ -4801,7 +4811,13 @@ void S_switch::itcheck(Env &env)
   implicitLocalScope(branches);
 
   cond = cond->tcheck(env);
+  Type* oldSwitchType = env.switchType;
+  env.switchType = cond->getType();
+  bool oldCanBreak = env.canBreak;
+  env.canBreak = true;
   branches = branches->tcheck(env);
+  env.canBreak = oldCanBreak;
+  env.switchType = oldSwitchType;
 
   env.exitScope(scope);
 }
@@ -4815,7 +4831,13 @@ void S_while::itcheck(Env &env)
   implicitLocalScope(body);
 
   cond = cond->tcheck(env);
+  bool oldCanBreak = env.canBreak;
+  env.canBreak = true;
+  bool oldCanContinue = env.canContinue;
+  env.canContinue = true;
   body = body->tcheck(env);
+  env.canBreak = oldCanBreak;
+  env.canContinue = oldCanContinue;
 
   env.exitScope(scope);
 }
@@ -4826,7 +4848,13 @@ void S_doWhile::itcheck(Env &env)
   // 6.5 para 2
   implicitLocalScope(body);
 
+  bool oldCanBreak = env.canBreak;
+  env.canBreak = true;
+  bool oldCanContinue = env.canContinue;
+  env.canContinue = true;
   body = body->tcheck(env);
+  env.canBreak = oldCanBreak;
+  env.canContinue = oldCanContinue;
   expr->tcheck(env);
 
   // TODO: verify that 'expr' makes sense in a boolean context
@@ -4843,7 +4871,13 @@ void S_for::itcheck(Env &env)
   init = init->tcheck(env);
   cond = cond->tcheck(env);
   after->tcheck(env);
+  bool oldCanBreak = env.canBreak;
+  env.canBreak = true;
+  bool oldCanContinue = env.canContinue;
+  env.canContinue = true;
   body = body->tcheck(env);
+  env.canBreak = oldCanBreak;
+  env.canContinue = oldCanContinue;
 
   env.exitScope(scope);
 }
@@ -4851,27 +4885,39 @@ void S_for::itcheck(Env &env)
 
 void S_break::itcheck(Env &env)
 {
-  // TODO: verify we're in the context of a 'switch'
+  if (!env.canBreak) {
+    env.error("'break' not in a 'switch', 'while', 'do', or 'for' statement");
+  }
 }
 
 
 void S_continue::itcheck(Env &env)
 {
-  // TODO: verify we're in the context of a 'switch'
+  if (!env.canContinue) {
+    env.error("'continue' not in a 'while', 'do', or 'for' statement");
+  }
 }
 
 
 void S_return::itcheck(Env &env)
 {
+  Type *returnType = env.functionAST->funcType->retType;
   if (expr) {
-    expr->tcheck(env);
-
-    // TODO: verify that 'expr' is compatible with the current
-    // function's declared return type
+    if (returnType->isVoid()) {
+      env.error("returning a value in a 'void' function");
+    } else {
+      expr->tcheck(env);
+      returnType = returnType->asRval();
+      // RICH: check that param conversion is OK.
+      env.elaborateImplicitConversionArgToParam(returnType, expr->expr);
+cout << "Return type " << returnType->toString() << " returned " << expr->expr->type->toString() << "\n";
+    }
   }
 
   else {
-    // TODO: check that the function is declared to return 'void'
+    if (!returnType->isVoid()) {
+      env.error("no return value for a non-'void' function");
+    }
   }
 }
 

@@ -169,6 +169,9 @@ public:      // funcs
     /** Map AST compound types to LLVM compound types.
      */
     PtrMap<CompoundType, const llvm::Type> compounds;
+    /** Map AST compound members types to LLVM indices.
+     */
+    PtrMap<const Variable, llvm::Value> members;
     /** Map AST types to LLVM types.
      */
     PtrMap<Type, const llvm::Type> types;

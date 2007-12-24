@@ -1918,7 +1918,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         }
 
         // Mark the output files for removal if we get an interrupt.
-        sys::RemoveFileOnSignal(to);
+        // RICH: sys::RemoveFileOnSignal(to);
 
         // Determine the location of the gcc program.
         sys::Path gcc = FindExecutable("gcc", progname);

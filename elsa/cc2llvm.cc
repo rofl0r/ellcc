@@ -279,8 +279,11 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLoc loc, AtomicType 
 
 	// Get the members.
 	std::vector<const llvm::Type*>fields;
+        int i = 0;
         SFOREACH_OBJLIST(Variable, ct->dataMembers, iter) {
             Variable const *v = iter.data();
+            // RICH: static and function members.
+            members.add(v, llvm::ConstantInt::get(targetData.getIntPtrType(), i++));
 	    fields.push_back(makeTypeSpecifier(v->loc, v->type));
         }
 
@@ -402,6 +405,8 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
 	    // Remember where the argument can be retrieved.
             env.variables.add(param, addr);
 	    // Store the argument for later use.
+cout << "Store3 source " << toString(param->loc); arg->print(cout);
+cout << "Store3 destination " << toString(param->loc); addr->print(cout);
 	    env.builder.CreateStore(arg, addr, false);	// RICH: IsVolatile.
         }
     }
@@ -420,6 +425,8 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
 
         // RICH: This should happen in main() only: Default return value.
         llvm::Constant* nullInt = llvm::Constant::getNullValue(returnType);
+cout << "Store4 source "; nullInt->print(cout); cout << "\n";
+cout << "Store4 destination "; env.returnValue->print(cout);
         env.builder.CreateStore(nullInt, env.returnValue, false);	// RICH: main() only.
 
         // Generate the function return.
@@ -522,6 +529,8 @@ void Declaration::cc2llvm(CC2LLVMEnv &env) const
 
 	    if (init) {
 	        env.checkCurrentBlock();
+cout << "Store5 source " << toString(var->loc); init->print(cout);
+cout << "Store5 destination " << toString(var->loc); lv->print(cout);
 	        env.builder.CreateStore(init, lv, false);	// RICH: isVolatile.
 	    }
             env.variables.add(var, lv);
@@ -767,6 +776,8 @@ void S_return::cc2llvm(CC2LLVMEnv &env) const
         xassert(env.returnValue && "return a value in a function returning void");
         llvm::Value* value = expr->cc2llvm(env);
 	env.makeCast(loc, expr->expr->type, value, env.functionAST->funcType->retType);
+cout << "Store6 source " << toString(loc); value->print(cout);
+cout << "Store6 destination " << toString(loc); env.returnValue->print(cout);
         env.builder.CreateStore(value, env.returnValue, false);	// RICH: isVolatile
     } else {
         xassert(env.returnValue == NULL && "no return value in a function not returning void");
@@ -872,7 +883,11 @@ llvm::Value *E_intLit::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
         }
     }
 
-    return llvm::ConstantInt::get(llvm::APInt(type->reprSize() * BITS_PER_BYTE, p, radix));
+    const char* endp = p;
+    while (isxdigit(*endp)) ++endp;
+
+cout << "IntLit " << toString(loc); cout << " " << text << " radix " << radix << "\n";
+    return llvm::ConstantInt::get(llvm::APInt(type->reprSize() * BITS_PER_BYTE, p, endp - p, radix));
 }
 
 llvm::Value *E_floatLit::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
@@ -915,8 +930,9 @@ llvm::Value *E_stringLit::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
     // Get the address of the string as an open array.
     env.checkCurrentBlock();
     std::vector<llvm::Value*> indices;
-    indices.push_back(llvm::Constant::getNullValue(llvm::IntegerType::get(32)));	// RICH: 32
-    indices.push_back(llvm::Constant::getNullValue(llvm::IntegerType::get(32)));	// RICH: 32
+    indices.push_back(llvm::Constant::getNullValue(env.targetData.getIntPtrType()));
+    indices.push_back(llvm::Constant::getNullValue(env.targetData.getIntPtrType()));
+cout << "GEP3 " << toString(loc) << "\n";
     return env.builder.CreateGEP(gv, indices.begin(), indices.end(), "");
 }
 
@@ -974,9 +990,28 @@ llvm::Value *E_constructor::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 
 llvm::Value *E_fieldAcc::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 {
-    cerr << toString(loc) << ": ";
-    xunimp("field access");
-    return NULL;
+    // 'field' is the member variable.
+    // The member will have been previously seen in a declaration.
+    llvm::Value* Composite = obj->cc2llvm(env, true);
+    llvm::Value* value = env.members.get(field);
+    xassert(value && "An undeclared member has been referenced");
+    std::vector<llvm::Value*> index;
+    if (   Composite->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID
+        || Composite->getType()->getContainedType(0)->getTypeID() == llvm::Type::StructTyID) {
+        index.push_back(llvm::Constant::getNullValue(value->getType()));
+    }
+    index.push_back(value);
+cout << "GEP4 " << toString(loc); Composite->print(cout);
+    env.checkCurrentBlock();
+    llvm::Value* result = env.builder.CreateGEP(Composite, index.begin(), index.end());
+    if (   result->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID
+        || result->getType()->getContainedType(0)->getTypeID() == llvm::Type::StructTyID
+        || lvalue) {
+        // The dereference will happen later.
+	return result;
+    }
+
+    return new llvm::LoadInst(result, "", false, env.currentBlock);	// RICH: Volatile
 }
 
 llvm::Value *E_sizeof::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
@@ -1056,7 +1091,10 @@ llvm::Value *E_effect::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
             one = llvm::ConstantInt::get(llvm::APInt(env.targetData.getTypeSizeInBits(temp->getType()), 1));
 	}
 	index.push_back(one);
+cout << "GEP1 " << toString(loc) << "\n";
 	temp = env.builder.CreateGEP(temp, index.begin(), index.end());
+cout << "Store7 source " << toString(loc); temp->print(cout);
+cout << "Store7 destination " << toString(loc); value->print(cout);
         env.builder.CreateStore(temp, value, false);	// RICH: Volatile
     } else if (temp->getType()->isInteger()) {
         llvm::ConstantInt* one = llvm::ConstantInt::get(llvm::APInt(env.targetData.getTypeSizeInBits(temp->getType()), 1));
@@ -1065,6 +1103,8 @@ llvm::Value *E_effect::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 	} else {
 	    temp = env.builder.CreateAdd(temp, one);
 	}
+cout << "Store8 source " << toString(loc); temp->print(cout);
+cout << "Store8 destination " << toString(loc); value->print(cout);
         env.builder.CreateStore(temp, value, false);	// RICH: Volatile
     } else {
         cerr << toString(loc) << ": ";
@@ -1116,7 +1156,7 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
 	      isInteger = true;
 	      EnumType* etype = type->asCVAtomicType()->atomic->asEnumType();
 	      isUnsigned = !etype->hasNegativeValues;
-	      size = etype->reprSize();
+	      size = etype->reprSize() * BITS_PER_BYTE;
 	      type = NULL;	// See special handling below.
 	    } else {
                 xassert(isSimple || isPointer);
@@ -1126,7 +1166,14 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
                 isInteger = ::isIntegerType(st->type);
                 isUnsigned = ::isExplicitlyUnsigned(st->type);
                 isFloat = ::isFloatType(st->type);
-                size = simpleTypeReprSize(st->type);
+                if (isInteger && value) {
+                    // Use the LLVM integer size.
+                    size = (*value)->getType()->getPrimitiveSizeInBits();
+                } else {
+                    size = simpleTypeReprSize(st->type) * BITS_PER_BYTE;
+                }
+            } else if (isPointer) {
+                size = type->reprSize() * BITS_PER_BYTE;
             }
 	}
     };
@@ -1226,7 +1273,7 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
 	// We may be here with an enumeration constant on the target side. Handle no type.
 	const llvm::Type* type;
 	if (target->type == NULL) {
-	    type = llvm::IntegerType::get(target->size * BITS_PER_BYTE);
+	    type = llvm::IntegerType::get(target->size);
 	} else {
 	    type = makeTypeSpecifier(loc, target->type);
 	}
@@ -1243,13 +1290,15 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
 		    // Truncate the source value.
 	            checkCurrentBlock();
 	            *source->value = builder.CreateTrunc(*source->value, type);
-		} else if (source->isUnsigned) {
+		} else if (source->size == 1 || source->isUnsigned) {
 		    // Zero extend the source value.
 	            checkCurrentBlock();
 	            *source->value = builder.CreateZExt(*source->value, type);
 		} else {
 		    // Sign extend the source value.
 	            checkCurrentBlock();
+cout << "SExt1 source " << toString(loc) << " size " << source->size << " "; (*source->value)->print(cout);
+cout << "SExt1 destination " << toString(loc) <<  " size " << target->size <<" "; type->print(cout); cout << "\n";
 	            *source->value = builder.CreateSExt(*source->value, type);
 		}
 	    } else if (source->isPointer) {
@@ -1585,36 +1634,67 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
     case BIN_MINUS:     // -
         if (left->getType() != right->getType()) {
             // The types differ. This could be an array reference *(a + i).
+            Type* itype = e2->type;
 	    if (right->getType()->getTypeID() == llvm::Type::PointerTyID) {
 		// Place the pointer on the left.
 	        llvm::Value* temp = right;
 		left = right;
 		right = temp;
+                itype = e1->type;
 	    }
 
-	    if (   left->getType()->getTypeID() == llvm::Type::PointerTyID
-	        && right->getType()->getTypeID() == llvm::Type::IntegerTyID) {
-	        // If the left size is a pointer and the right side is an integer, calculate the address.
-		if (op == BIN_MINUS) {
-		    // Negate the integer value.
-                    llvm::Value* zero = llvm::Constant::getNullValue(right->getType());
-		    right = env.builder.CreateSub(zero, right);
-		}
-		std::vector<llvm::Value*> index;
-		if (left->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID) {
-	          index.push_back(llvm::Constant::getNullValue(right->getType()));
-		}
-	        index.push_back(right);
-		result = env.builder.CreateGEP(left, index.begin(), index.end());
-	        break;
-	    }
+	    if (left->getType()->getTypeID() == llvm::Type::PointerTyID) {
+	        if (right->getType()->getTypeID() == llvm::Type::IntegerTyID) {
+                    // If the left size is a pointer and the right side is an integer, calculate the address.
+                    if (op == BIN_MINUS) {
+                        // Negate the integer value.
+                        llvm::Value* zero = llvm::Constant::getNullValue(right->getType());
+                        right = env.builder.CreateSub(zero, right);
+                    }
+
+                    // Make sure the pointer and index sizes match.
+                    uint64_t lsize = env.targetData.getTypeSizeInBits(left->getType());
+                    uint64_t rsize = env.targetData.getTypeSizeInBits(right->getType());
+                    if (lsize != rsize) {
+                        if (lsize > rsize) {
+                            // The pointer is bigger, check for signed vs. unsigned.
+                            const SimpleType* st = itype->asReferenceTypeC()->getAtType()->asSimpleTypeC();
+                            if (   right->getType()->getPrimitiveSizeInBits() == 1
+                                    || ::isExplicitlyUnsigned(st->type)) {
+                                right = env.builder.CreateZExt(right, env.targetData.getIntPtrType());
+                            } else {
+                                cout << "SExt2 source " << toString(loc) << " "; right->print(cout);
+                                cout << "SExt2 destination " << toString(loc) << " "; env.targetData.getIntPtrType()->print(cout); cout << "\n";
+                                right = env.builder.CreateSExt(right, env.targetData.getIntPtrType());
+                            }
+                        } else {
+                            // The integer is bigger.
+                            right = env.builder.CreateTrunc(right, env.targetData.getIntPtrType());
+                        }
+                    }
+
+                    std::vector<llvm::Value*> index;
+                    if (   left->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID
+                            || left->getType()->getContainedType(0)->getTypeID() == llvm::Type::StructTyID) {
+                        cout << "NullValue2 " << toString(loc) << " "; right->getType()->print(cout); cout << "\n";
+                        index.push_back(llvm::Constant::getNullValue(right->getType()));
+                    }
+                    index.push_back(right);
+                    cout << "GEP2 " << toString(loc); right->print(cout);
+                    result = env.builder.CreateGEP(left, index.begin(), index.end());
+                    break;
+                } else {
+                    xunimp("<pointer> +/- <other>");
+                }
+            }
         }
 
 	c = env.makeCast(loc, e1->type, left, e2->type, &right);
+cout << "PlusOrMinus left " << toString(loc); left->print(cout);
+cout << "PlusOrMinus right " << toString(loc); right->print(cout);
 	switch (c) {
 	case CC2LLVMEnv::OC_SINT:
 	case CC2LLVMEnv::OC_UINT:
-	case CC2LLVMEnv::OC_POINTER:
 	case CC2LLVMEnv::OC_FLOAT:
 	    if (op == BIN_PLUS) {
                 result = env.builder.CreateAdd(left, right);
@@ -1622,6 +1702,13 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
                 result = env.builder.CreateSub(left, right);
 	    }
             break;
+	case CC2LLVMEnv::OC_POINTER:
+            xassert(op == BIN_MINUS);
+            // To subtract two pointers we cast them to integers, and divide by
+            // the size of the (matching) dereference types.
+            cerr << toString(loc) << ": ";
+	    xunimp("<pointer> - <pointer>");
+	    break;
 	case CC2LLVMEnv::OC_OTHER:
             cerr << toString(loc) << ": ";
 	    xunimp("+/-");
@@ -1830,13 +1917,13 @@ llvm::Value *E_addrOf::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 
 llvm::Value *E_deref::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
 {
+    llvm::Value* source = ptr->cc2llvm(env);
     if (lvalue) {
         // The dereference will happen later.
-	return ptr->cc2llvm(env);
+	return source;
     }
 
     env.checkCurrentBlock();
-    llvm::Value* source = ptr->cc2llvm(env);
     return new llvm::LoadInst(source, "", false, env.currentBlock);	// RICH: Volatile
 }
 
@@ -1919,6 +2006,8 @@ llvm::Value *E_assign::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
     if (op == BIN_ASSIGN) {
 	// Assign is simple. Get it out of the way.
 	env.makeCast(loc, src->type, source, target->type);
+cout << "Store1 source " << toString(loc); source->print(cout);
+cout << "Store1 destination " << toString(loc); destination->print(cout);
 	new llvm::StoreInst(source, destination, false, env.currentBlock);	// RICH: isVolatile
         return source;
     }
@@ -2032,6 +2121,8 @@ llvm::Value *E_assign::cc2llvm(CC2LLVMEnv &env, bool lvalue) const
     }
 
     temp = llvm::BinaryOperator::create(opcode, temp, source, "", env.currentBlock);
+cout << "Store2 source " << toString(loc); temp->print(cout);
+cout << "Store2 destination " << toString(loc); destination->print(cout);
     new llvm::StoreInst(temp, destination, false, env.currentBlock);	// RICH: Volatile
     return source;
 }

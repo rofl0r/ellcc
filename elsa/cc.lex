@@ -47,8 +47,6 @@
 
 /* start conditions */
 %x BUGGY_STRING_LIT
-%x DIRECTIVE
-%x INCLUDEFILE
 
 /* ------------------- definitions -------------------- */
 /* newline */
@@ -119,66 +117,6 @@ PPCHAR        ([^\\\n]|{BACKSL}{NOTNL})
 
 /* ------------- token definition rules --------------- */
 %%
-
-  /* Preprocessor directive related rules.  */
-^{SPTAB}*"#"{SPTAB}* { 				// Found a # at as the first non-blank on the line.
-    BEGIN(DIRECTIVE);
-}
-
-<DIRECTIVE>{
-  NL {
-      whitespace();
-      BEGIN(INITIAL);
-  }
-
-  <<EOF>> {
-      BEGIN(INITIAL);
-  }
-
-  "include"{SPTAB}* {
-    BEGIN(INCLUDEFILE);
-    parseHashInclude(yytext, yyleng);
-    whitespace();
-    BEGIN(INITIAL);
-  }
-
-  /* #line directive: the word "line" is optional, then a space, and
-   * then we accept the rest of the line; 'parseHashLine' will finish
-   * parsing the directive */
-  ("line"?){SPTAB}.* {
-    parseHashLine(yytext, yyleng);
-    whitespace();       // don't increment line count until after parseHashLine()
-    BEGIN(INITIAL);
-  }
-
-  /* other preprocessing directives */
-  {ALNUM}+.* {
-    // RICH: err("invalid preprocessor directive");
-    whitespace();
-    BEGIN(INITIAL);
-  }
-  
-}
-
-  <INCLUDEFILE>[<\"][^\">\n]+[>\"] {
-  return svalTok(TOK_STRING_LITERAL);
-  }
-  <INCLUDEFILE>EOL {
-  err("invalid include file name");
-    return 0; // RICH
- }
-  <INCLUDEFILE>.* {
-  err("invalid include file name");
-    return 0; // RICH
- }
-  <INCLUDEFILE><<EOF>> {
-    return 0; // RICH
-  }
-
-
-
-"#" {						// A non-directive #.
-}
 
   /* this comment is replaced, by an external script, with whatever
    * additional rules a language extension author desires */
@@ -445,6 +383,28 @@ PPCHAR        ([^\\\n]|{BACKSL}{NOTNL})
   /* sm: I moved the user-defined qualifier rule into qual_ext.lex
    * in the oink tree */
 
+
+  /* preprocessor */
+  /* technically, if this isn't at the start of a line (possibly after
+   * some whitespace), it should be an error.. I'm not sure right now how
+   * I want to deal with that (I originally was using '^', but that
+   * interacts badly with the whitespace rule) */
+
+  /* #line directive: the word "line" is optional, then a space, and
+   * then we accept the rest of the line; 'parseHashLine' will finish
+   * parsing the directive */
+"#"("line"?){SPTAB}.*{NL} {
+  parseHashLine(yytext, yyleng);
+  whitespace();       // don't increment line count until after parseHashLine()
+}
+
+  /* other preprocessing: ignore it */
+  /* trailing optional baskslash to avoid backing up */
+"#"{PPCHAR}*({BACKSL}{NL}{PPCHAR}*)*{BACKSL}?   {
+  // treat it like whitespace, ignoring it otherwise
+  whitespace();
+}
+
   /* whitespace */
   /* 10/20/02: added '\r' to accomodate files coming from Windows; this
    * could be seen as part of the mapping from physical source file
@@ -476,7 +436,7 @@ PPCHAR        ([^\\\n]|{BACKSL}{NOTNL})
 
 
   /* illegal */
-<*>.  {
+.  {
   updLoc();
   err(stringc << "illegal character: `" << yytext[0] << "'");
 }

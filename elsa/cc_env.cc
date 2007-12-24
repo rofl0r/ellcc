@@ -385,7 +385,12 @@ Env::Env(StringTable &s, CCLang &L, TypeFactory &tf,
     // on by default (see doc/permissive.txt)
     doReportTemplateErrors(!tracingSys("permissive")),
 
-    collectLookupResults("")
+    collectLookupResults(""),
+
+    functionAST(NULL),
+    switchType(NULL),
+    canContinue(false),
+    canBreak(false)
 {
   // create first scope
   SourceLoc emptyLoc = SL_UNKNOWN;
