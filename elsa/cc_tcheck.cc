@@ -4910,7 +4910,6 @@ void S_return::itcheck(Env &env)
       returnType = returnType->asRval();
       // RICH: check that param conversion is OK.
       env.elaborateImplicitConversionArgToParam(returnType, expr->expr);
-cout << "Return type " << returnType->toString() << " returned " << expr->expr->type->toString() << "\n";
     }
   }
 

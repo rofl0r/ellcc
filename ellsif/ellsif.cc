@@ -2348,8 +2348,8 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
 //===----------------------------------------------------------------------===//
 // main for ellsif
 //
-int main(int argc, char **argv) {
-
+int main(int argc, char **argv)
+ {
     llvm_shutdown_obj X;  // Call llvm_shutdown() on exit.
     try {
         // Initial global variable above for convenience printing of program name.

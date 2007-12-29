@@ -501,8 +501,9 @@ StandardConversion getStandardConversion
       scv = CV_NONE;   // avoid error in stripPtrCtor, below
     }
 
-    if (conv.stripPtrCtor(scv, dcv))
-      { return conv.ret; }
+    if (conv.stripPtrCtor(scv, dcv)) {
+       return conv.ret;
+    }
   }
   else if (src->isFunctionType() && dest->isPointerType()) {
     conv.ret |= SC_FUNC_TO_PTR;
@@ -575,7 +576,7 @@ StandardConversion getStandardConversion
 
 	if (src->isVoid() || dest->isVoid()) {
 	    // void* can be converted either way.
-	    return conv.ret;
+	    return conv.ret | SC_PTR_CONV;
 	}
         break;
       }

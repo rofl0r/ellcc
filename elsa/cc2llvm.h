@@ -70,10 +70,19 @@ public:      // funcs
     void setCurrentBlock(llvm::BasicBlock* block);
     /** Check a condition in preparation for a branch.
      */
-    llvm::Value* checkCondition(SourceLoc loc, llvm::Value* value);
+    llvm::Value* checkCondition(SourceLoc loc, llvm::Value* value, int deref, bool neg = false);
     /** Check a condition in preparation for a branch.
      */
     llvm::Value* checkCondition(Expression* cond);
+
+    /** Get access to an operand.
+     * @param value The value to access.
+     * @param isVolatile true if the value is volatile.
+     * @param deref The current indirection level.
+     * @param level The level of access wanted: 0 = value, 1 = *value, 2 = **value, etc.
+     * @return The (possibly modified) value.
+     */
+    llvm::Value* access(llvm::Value* value, bool isVolatile, int& deref, int level = 0);
 
      /** Get a name for a variable.
       * Employs the name mangler.
@@ -107,6 +116,9 @@ public:      // funcs
       /** Floating point.
        */
       OC_FLOAT,
+      /** Void.
+       */
+      OC_VOID,
       /** Everything else.
        */
       OC_OTHER
