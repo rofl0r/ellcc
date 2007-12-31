@@ -760,7 +760,7 @@ void S_doWhile::cc2llvm(CC2LLVMEnv &env) const
     env.nextBlock = new llvm::BasicBlock("next", env.function, env.returnBlock);
     if (env.currentBlock) {
         // Close the current block.
-        env.builder.CreateBr(env.continueBlock);
+        env.builder.CreateBr(bodyBlock);
     }
     env.currentBlock = NULL;
 
@@ -2310,6 +2310,8 @@ llvm::Value *E_assign::cc2llvm(CC2LLVMEnv &env, int& deref) const
         bool first = destination->getType()->getContainedType(0)->isFirstClassType();
         if (!first) {
             // This is a compound assignment.
+            source = env.access(source, false, deref2, 1);                 // RICH: Volatile.
+            destination = env.access(destination, false, deref1, 1);                 // RICH: Volatile.
             llvm::Function* function = llvm::Intrinsic::getDeclaration(env.mod, llvm::Intrinsic::memcpy_i32); // RICH: size.
             std::vector<llvm::Value*> parameters;
             const llvm::Type* type = llvm::IntegerType::get(BITS_PER_BYTE);
@@ -2329,7 +2331,7 @@ llvm::Value *E_assign::cc2llvm(CC2LLVMEnv &env, int& deref) const
                     llvm::ConstantInt::get(env.targetData.getIntPtrType(), 1));
             value = env.builder.CreatePtrToInt(value, env.targetData.getIntPtrType());
             parameters.push_back(value);
-            value = llvm::ConstantInt::get(env.targetData.getIntPtrType(), 0);
+            value = llvm::ConstantInt::get(env.targetData.getIntPtrType(), 0);                  // RICH: Alignment.
             parameters.push_back(value);
             value = env.builder.CreateCall(function, parameters.begin(), parameters.end());
             VDEBUG("E_assign memcpy", loc, value->print(cout));
