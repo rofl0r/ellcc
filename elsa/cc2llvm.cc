@@ -1929,7 +1929,7 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, int& deref) const
             xassert(right->getType() == left->getType());
             // To subtract two pointers we cast them to integers, and divide by
             // the size of the (matching) dereference types.
-            const llvm::Type* ptype = llvm::PointerType::get(left->getType(), 0);       // RICH: Address space.
+            const llvm::Type* ptype = llvm::PointerType::get(left->getType()->getContainedType(0), 0);       // RICH: Address space.
             llvm::Value* size = env.builder.CreateGEP(
                 llvm::Constant::getNullValue(ptype),
                 llvm::ConstantInt::get(env.targetData.getIntPtrType(), 1));
@@ -2325,7 +2325,7 @@ llvm::Value *E_assign::cc2llvm(CC2LLVMEnv &env, int& deref) const
             value = env.builder.CreateBitCast(source, type);
             VDEBUG("E_assign src cast", loc, value->print(cout));
             parameters.push_back(value);
-            const llvm::Type* ptype = llvm::PointerType::get(destination->getType(), 0);       // RICH: Address space.
+            const llvm::Type* ptype = llvm::PointerType::get(destination->getType()->getContainedType(0), 0);       // RICH: Address space.
             value = env.builder.CreateGEP(
                     llvm::Constant::getNullValue(ptype),
                     llvm::ConstantInt::get(env.targetData.getIntPtrType(), 1));
@@ -2405,11 +2405,21 @@ llvm::Value *E_assign::cc2llvm(CC2LLVMEnv &env, int& deref) const
         break;
 
     case BIN_PLUS:      // +=
-	opcode = llvm::Instruction::Add;
+	if (c == env.OC_SINT || c == env.OC_UINT || c == env.OC_FLOAT) {
+            opcode = llvm::Instruction::Add;
+	} else {
+            cerr << toString(loc) << ": ";
+            xunimp("+=");
+	}
         break;
 
     case BIN_MINUS:     // -=
-	opcode = llvm::Instruction::Sub;
+	if (c == env.OC_SINT || c == env.OC_UINT || c == env.OC_FLOAT) {
+            opcode = llvm::Instruction::Sub;
+	} else {
+            cerr << toString(loc) << ": ";
+            xunimp("-=");
+	}
         break;
 
     case BIN_LSHIFT:    // <<=
