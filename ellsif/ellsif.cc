@@ -583,6 +583,8 @@ Preprocessor Options
 // Elsa.
 #include "elsa.h"              // Elsa interfaces.
 
+#define VERSION "0.1"
+
 using namespace llvm;
 
 static std::string progname;    // The program name.        
@@ -1334,7 +1336,8 @@ void AddStandardCompilePasses(PassManager &PM) {
 
   addPass(PM, createPruneEHPass());              // Remove dead EH info
 
-  if (!DisableInline)
+  // RICH: If we inline here, an externally referenced function could be optimized out (bzip2).
+  if (0 && !DisableInline)
     addPass(PM, createFunctionInliningPass());   // Inline small functions
   addPass(PM, createArgumentPromotionPass());    // Scalarize uninlined fn args
 
@@ -2378,7 +2381,16 @@ int main(int argc, char **argv)
             elsa.addTrace((*traceIt).c_str());
         }
 
-        std::string ErrorMessage;
+        if (Files.size() == 0 && Libraries.size() == 0) {
+            // No input files present.
+            if (Verbose) {
+                // Just version information.
+                cerr << progname << " version " << VERSION << "\n";
+                Exit(0);
+            } else {
+                PrintAndExit("no input files");
+            }
+        }
 
         // Gather the input files and determine their types.
         InputList InpList;
