@@ -1550,7 +1550,7 @@ static void PrintCommand(const std::vector<const char*> &args) {
   std::vector<const char*>::const_iterator I = args.begin(), E = args.end(); 
   for (; I != E; ++I)
     if (*I)
-      cout << "'" << *I << "'" << " ";
+      cout << *I << " ";
   cout << "\n" << std::flush;
 }
 
@@ -1682,7 +1682,7 @@ static int Preprocess(const std::string &OutputFilename,
     Args.push_back(args[i].c_str());
   Args.push_back(0);
   if (Verbose) {
-    cout << "Preprocessing source file with:\n";
+    cout << "    ";
     PrintCommand(Args);
   }
 
@@ -1779,7 +1779,7 @@ static int GenerateNative(const std::string& OutputFilename,
   Args.push_back(0);
 
   if (Verbose) {
-    cout << "Generating Native Executable With:\n";
+    cout << "    ";
     PrintCommand(Args);
   }
 
@@ -2445,7 +2445,7 @@ int main(int argc, char **argv)
                 // Add a source file
                 FileTypes type = GetFileType(*fileIt, filePos);
                 if (Verbose) {
-                    cout << "Adding " << *fileIt << " as " << fileTypes[type] << "\n";
+                    cout << "  adding " << *fileIt << " as " << fileTypes[type] << "\n";
                 }
                 Input input(*fileIt, type);
                 InpList.push_back(input);
@@ -2453,7 +2453,7 @@ int main(int argc, char **argv)
             } else if ( libPos != 0 && (filePos == 0 || libPos < filePos) ) {
                 // Add a library
                 if (Verbose) {
-                    cout << "Adding " << *libIt << " as an input library\n";
+                    cout << "  adding " << *libIt << " as an input library\n";
                 }
                 Input input(*fileIt, A);
                 InpList.push_back(input);
@@ -2525,6 +2525,7 @@ int main(int argc, char **argv)
         for (InputList::iterator it = InpList.begin(); it != InpList.end(); ++it) {
             if (it->module && !it->temp) {
                 // Output the module.
+                // RICH: .ll vs. .bc.
                 llvm::PassManager PM;
                 std::ostream *out = new std::ofstream(it->name.c_str());
                 if (!out) {
