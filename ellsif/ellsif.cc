@@ -671,18 +671,6 @@ static Timer* timers[NUM_PHASES];       // The phase timers.
  */
 static std::map<std::string, FileTypes> extToLang;
 
-/** The input file list.
- */
-struct Input {
-    sys::Path name;             ///< The input's name.
-    FileTypes type;             ///< The input's type.
-    Module* module;             ///< The module associated with the input, if any.
-    Input() : type(NONE), module(NULL) {}
-    Input(std::string& name, FileTypes type = NONE, Module* module = NULL)
-        : name(name), type(type), module(module) {}
-};
-typedef std::vector<Input> InputList;
-
 /** Actions that can be taken on a file.
  */
 enum FileActions {
@@ -1168,6 +1156,29 @@ QuietA("quiet", cl::desc("Alias for -q"), cl::aliasopt(Quiet));
 
 static cl::opt<bool>
 AnalyzeOnly("analyze", cl::desc("Only perform analysis, no optimization"));
+
+/** The input file list.
+ */
+struct Input {
+    sys::Path name;             ///< The input's name.
+    FileTypes type;             ///< The input's type.
+    Module* module;             ///< The module associated with the input, if any.
+    bool temp;                  ///< true if this is contained in a temprary file.
+    Input() : type(NONE), module(NULL), temp(false) {}
+    Input(std::string& name, FileTypes type = NONE, Module* module = NULL, bool temp = false)
+        : name(name), type(type), module(module), temp(temp) {}
+    void setName(sys::Path newName)
+    {
+        if (temp) {
+            if (!name.eraseFromDisk() && Verbose) {
+                cout << "  " << name << " has been deleted\n";
+            }
+            temp = false;
+        }
+        name = newName;
+    }
+};
+typedef std::vector<Input> InputList;
 
 // ---------- Define Printers for module and function passes ------------
 namespace {
@@ -1698,10 +1709,10 @@ static int Preprocess(const std::string &OutputFilename,
 ///
 /// Returns non-zero value on error.
 ///
-static int GenerateNative(const std::string &OutputFilename,
-                          InputList &InputFilenames,
-                          const Linker::ItemList &LinkItems,
-                          const sys::Path &gcc, char ** const envp,
+static int GenerateNative(const std::string& OutputFilename,
+                          std::vector<Input*>& InputFilenames,
+                          const Linker::ItemList& LinkItems,
+                          const sys::Path& gcc, char** const envp,
                           std::string& ErrMsg)
 {
   // Remove these environment variables from the environment of the
@@ -1734,7 +1745,7 @@ static int GenerateNative(const std::string &OutputFilename,
   args.push_back("-o");
   args.push_back(OutputFilename);
   for (unsigned i = 0; i < InputFilenames.size(); ++i ) {
-      args.push_back(InputFilenames[i].name.toString());
+      args.push_back(InputFilenames[i]->name.toString());
   }
             
   // Add in the library paths
@@ -1782,7 +1793,7 @@ static int GenerateNative(const std::string &OutputFilename,
 //===----------------------------------------------------------------------===//
 //===          doMulti - Handle a phase acting on multiple files.
 //===----------------------------------------------------------------------===//
-static void doMulti(Phases phase, InputList& files, InputList& result, TimerGroup& timerGroup)
+static void doMulti(Phases phase, std::vector<Input*>& files, InputList& result, TimerGroup& timerGroup)
 {
     switch (phase) {
     case BCLINKING: {
@@ -1809,16 +1820,21 @@ static void doMulti(Phases phase, InputList& files, InputList& result, TimerGrou
                 Libraries.end());
 
         std::vector<sys::Path> Files;
-        for (unsigned i = 0; i < files.size(); ++i ) {
-            if (files[i].module) {
+        for (unsigned i = 0; i < files.size(); ++i) {
+            if (files[i]->module) {
                 // We have this module.
                 std::string ErrorMessage;
-                if (TheLinker.LinkInModule(files[i].module, &ErrorMessage)) {
+                if (TheLinker.LinkInModule(files[i]->module, &ErrorMessage)) {
                     PrintAndExit(ErrorMessage);
                 }
-                files[i].module = NULL;         // The module has been consumed.
+                if (Verbose) {
+                    cout << "  " << files[i]->name
+                        << " " << outputName << " was consumed by the bitcode linker\n";
+                }
+                files[i]->module = NULL;         // The module has been consumed.
+                files[i]->name.clear();
             } else {
-                Files.push_back(sys::Path(files[i].name));
+                Files.push_back(sys::Path(files[i]->name));
             }
         }
             
@@ -1856,6 +1872,7 @@ static void doMulti(Phases phase, InputList& files, InputList& result, TimerGrou
         // Add the linked bitcode to the input list.
         std::string name(outputName.toString());
         Input input(name, BC, module);
+        input.temp = true;
         if (Verbose) {
             cout << "  " << fileActions[filePhases[BC][phase].action].name
                 << " " << outputName << " added to the file list\n";
@@ -1894,8 +1911,18 @@ static void doMulti(Phases phase, InputList& files, InputList& result, TimerGrou
         break;
     }
     default:
-        // RICH: Illegal single pass.
+        // RICH: Illegal multi pass.
         break;
+    }
+
+    // Delete any consumed files.
+    for (unsigned i = 0; i < files.size(); ++i ) {
+        if (files[i]->temp) {
+            if (!files[i]->name.eraseFromDisk() && Verbose) {
+                cout << "  " << files[i]->name << " has been deleted\n";
+                files[i]->name.clear();
+            }
+        }
     }
 }
 
@@ -1921,7 +1948,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         }
 
         // Mark the output files for removal if we get an interrupt.
-        // RICH: sys::RemoveFileOnSignal(to);
+        sys::RemoveFileOnSignal(to);
 
         // Determine the location of the gcc program.
         sys::Path gcc = FindExecutable("gcc", progname);
@@ -1934,7 +1961,9 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
             PrintAndExit(ErrMsg);
         }
 
-        input.name = to;
+        input.setName(to);
+        // Mark the file as a temporary file.
+        input.temp = true;
 
         if (TimeActions) {
 	    timers[phase]->stopTimer();
@@ -1963,7 +1992,8 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         if (result) {
             Exit(result);
         }
-        input.name = to;
+
+        input.setName(to);
 
 #if RICH
         if (TimeActions) {
@@ -2001,7 +2031,8 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
                 PrintAndExit("bitcode didn't read correctly.");
             }
         }
-        input.name = to;
+
+        input.setName(to);
 
 #if RICH
         // Figure out what stream we are supposed to write to...
@@ -2306,7 +2337,9 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         // Delete the ostream if it's not a stdout stream
         if (Out != &std::cout) delete Out;
 
-        input.name = to;
+        input.setName(to);
+        // Mark the file as a temporary file.
+        input.temp = true;
 
         if (TimeActions) {
 	    timers[phase]->stopTimer();
@@ -2331,7 +2364,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
 
         // RICH: Do stuff.
 
-        input.name = to;
+        input.setName(to);
 
         if (TimeActions) {
 	    timers[phase]->stopTimer();
@@ -2354,6 +2387,8 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
 int main(int argc, char **argv)
  {
     llvm_shutdown_obj X;  // Call llvm_shutdown() on exit.
+    InputList InpList;
+    int status = 0;
     try {
         // Initial global variable above for convenience printing of program name.
         progname = sys::Path(argv[0]).getBasename();
@@ -2393,7 +2428,6 @@ int main(int argc, char **argv)
         }
 
         // Gather the input files and determine their types.
-        InputList InpList;
         std::vector<std::string>::iterator fileIt = Files.begin();
         std::vector<std::string>::iterator libIt  = Libraries.begin();
         unsigned libPos = 0, filePos = 0;
@@ -2439,8 +2473,11 @@ int main(int argc, char **argv)
 
             if (phases[phase].result != NONE) {
                 // This phase deals with muiltple files.
-                InputList files;
+                std::vector<Input*> files;
                 for (it = InpList.begin(); it != InpList.end(); ++it) {
+                    if (it->name.isEmpty()) {
+                        continue;
+                    }
                     FileTypes nextType = filePhases[it->type][phase].type;
                     if (nextType != NONE) {
                         if (Verbose) {
@@ -2449,7 +2486,7 @@ int main(int argc, char **argv)
                                 << " " << it->name << " to become " << fileTypes[nextType] << "\n";
                         }
                         
-                        files.push_back(*it);
+                        files.push_back(&*it);
                         it->type = nextType;
                     } else {
                         if (Verbose) {
@@ -2464,6 +2501,9 @@ int main(int argc, char **argv)
                 }
             } else {
                 for (it = InpList.begin(); it != InpList.end(); ++it) {
+                    if (it->name.isEmpty()) {
+                        continue;
+                    }
                     if (filePhases[it->type][phase].type != NONE) {
                         // Perform the phase on the file.
                         it->type = doSingle(phase, *it, elsa, it->type);
@@ -2478,18 +2518,42 @@ int main(int argc, char **argv)
             if (FinalPhase == phase) {
                 break;
             }
+
+        }
+
+        // Check to see if any module files should be generated
+        for (InputList::iterator it = InpList.begin(); it != InpList.end(); ++it) {
+            if (it->module && !it->temp) {
+                // Output the module.
+                llvm::PassManager PM;
+                std::ostream *out = new std::ofstream(it->name.c_str());
+                if (!out) {
+                    std::cerr << progname << ": can't open " << it->name << " for writing\n";
+                    Exit(1);
+                }
+                if (Verbose) {
+                    cout << "  Creating temporary file " << it->name << "\n";
+                }
+                llvm::OStream L(*out);
+                PM.add(new llvm::PrintModulePass(&L));
+                PM.run(*it->module);
+                delete it->module;
+            }
         }
 
         for (int i = 0; i < NUM_PHASES; ++i) {
             delete timers[i];
         }
-        return 0;
+            
+        status =  0;
     } catch (const std::string& msg) {
         cerr << argv[0] << ": " << msg << "\n";
+        status =  1;
     } catch (...) {
         cerr << argv[0] << ": Unexpected unknown exception occurred.\n";
+        status =  1;
     }
 
     llvm_shutdown();
-    return 1;
+    return status;
 }
