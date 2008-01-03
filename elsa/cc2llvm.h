@@ -132,8 +132,31 @@ public:      // funcs
     /** Create a value from an initializer.
      * @return The LLVM value representing the initializer.
      */
-    llvm::Value* initializer(const Initializer* init, Type* type);
+    llvm::Value* initializer(const Initializer* init, Type* type, int& deref, bool top = false);
 
+    /** Handle a binary operator.
+     * @param loc The source location.
+     * @param op The operator.
+     * @param e1 The left expression AST.
+     * @param left The left side.
+     * @param deref1 The left indirection level.
+     * @param e2 The right expression AST.
+     * @param right The right side.
+     * @param deref2 The right indirection level.
+     * @return The value generated.    
+     */
+    llvm::Value* binop(SourceLoc loc, BinaryOp op, Expression* e1, llvm::Value* left, int deref1,
+                                                   Expression* e2, llvm::Value* right, int deref2);
+
+    /** Handle an assignment.
+     * @param loc The source location.
+     * @param destination The destination value.
+     * @param deref1 The destination indirection level.
+     * @param source The source value.
+     * @param deref2 The source indirection level.
+     */
+    llvm::Value* doassign(SourceLoc loc, llvm::Value* destination, int deref1, Type* dtype,
+                                         llvm::Value* source, int deref2, Type* stype);
     /** Perform the AST to LLVM lowering.
      * @return The LLVM module.
      */

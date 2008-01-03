@@ -542,7 +542,8 @@ void Declaration::cc2llvm(CC2LLVMEnv &env) const
         }
 
         // Get any initializer.        
-        llvm::Value* init = env.initializer(declarator->init, var->type);
+        int deref;
+        llvm::Value* init = env.initializer(declarator->init, var->type, deref, true);
 
         // Create the full generated declaration.
         const llvm::Type* type = env.makeTypeSpecifier(var->loc, var->type);
@@ -583,10 +584,12 @@ void Declaration::cc2llvm(CC2LLVMEnv &env) const
 	    }
 
 	    if (init) {
-	        env.checkCurrentBlock();
+                env.doassign(var->loc, lv, 1, var->type, init, deref, var->type);
+#if RICH
                 VDEBUG("Store5 source", var->loc, init->print(cout));
                 VDEBUG("Store5 destination", var->loc, lv->print(cout));
 	        env.builder.CreateStore(init, lv, false);	// RICH: isVolatile.
+#endif
 	    }
             env.variables.add(var, lv);
         }
@@ -1530,8 +1533,9 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
 
 /** Create a value from an initializer.
  */
-llvm::Value* CC2LLVMEnv::initializer(const Initializer* init, Type* type)
+llvm::Value* CC2LLVMEnv::initializer(const Initializer* init, Type* type, int& deref, bool top)
 {
+    deref = 0;
     if (init == NULL) {
         // No initializer.
 	return NULL;
@@ -1542,10 +1546,11 @@ llvm::Value* CC2LLVMEnv::initializer(const Initializer* init, Type* type)
     // Handle an initializer.
     ASTSWITCHC(Initializer, init) {
     ASTCASEC(IN_expr, e) {
-        int deref;
         value = e->e->cc2llvm(*this, deref);
-        value = access(value, false, deref);                 // RICH: Volatile.
-        makeCast(e->e->loc, e->e->type, value, type);
+        if (!top) {
+            value = access(value, false, deref);                 // RICH: Volatile.
+            makeCast(e->e->loc, e->e->type, value, type);
+        }
     }
 
     ASTNEXTC(IN_compound, c) {
@@ -1562,13 +1567,13 @@ llvm::Value* CC2LLVMEnv::initializer(const Initializer* init, Type* type)
 	    xassert(size == c->inits.count());
 	    std::vector<llvm::Constant*> elements;
             FOREACH_ASTLIST(Initializer, c->inits, iter) {
-                elements.push_back((llvm::Constant*)initializer(iter.data(), at->eltType));
+                elements.push_back((llvm::Constant*)initializer(iter.data(), at->eltType, deref));
             }
 	    value = llvm::ConstantArray::get((llvm::ArrayType*)makeTypeSpecifier(init->loc, type), elements);
 	    break;
 	} else if (type->isCompoundType()) {
             FOREACH_ASTLIST(Initializer, c->inits, iter) {
-                initializer(iter.data(), NULL);
+                initializer(iter.data(), NULL, deref);
             }
             cerr << toString(init->loc) << ": ";
             xunimp("compound initializer");
@@ -1608,31 +1613,38 @@ static bool isInt(Type* type)
 
 llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
-    env.checkCurrentBlock();
     int deref1;
     llvm::Value* left = e1->cc2llvm(env, deref1);
     VDEBUG("E_binary left", e1->loc, cout <<  " deref " << deref1 << " "; left->print(cout));
     int deref2;
     llvm::Value* right = e2->cc2llvm(env, deref2);
     VDEBUG("E_binary right", e1->loc, right->print(cout));
+    llvm::Value* result = env.binop(loc, op, e1, left, deref1, e2, right, deref2);
+    deref = 0;
+    return result;
+}
+
+llvm::Value* CC2LLVMEnv::binop(SourceLoc loc, BinaryOp op, Expression* e1, llvm::Value* left, int deref1,
+                                                           Expression* e2, llvm::Value* right, int deref2)
+{
     llvm::Value* result = NULL;
-    CC2LLVMEnv::OperatorClass c = CC2LLVMEnv::OC_OTHER;
+    OperatorClass c = OC_OTHER;
 
     switch (op)
     {
     case BIN_EQUAL:	// ==
-        left = env.access(left, false, deref1);                 // RICH: Volatile.
-        right = env.access(right, false, deref2);                 // RICH: Volatile.
-	c = env.makeCast(loc, e1->type, left, e2->type, &right);
+        left = access(left, false, deref1);                 // RICH: Volatile.
+        right = access(right, false, deref2);                 // RICH: Volatile.
+	c = makeCast(loc, e1->type, left, e2->type, &right);
 	switch (c) {
 	case CC2LLVMEnv::OC_SINT:
 	case CC2LLVMEnv::OC_UINT:
 	case CC2LLVMEnv::OC_POINTER:
-            result = env.builder.CreateICmpEQ(left, right);
+            result = builder.CreateICmpEQ(left, right);
             break;
 	case CC2LLVMEnv::OC_FLOAT:
 	    // RICH: ordered vs. unordered.
-            result = env.builder.CreateFCmpOEQ(left, right);
+            result = builder.CreateFCmpOEQ(left, right);
             break;
 	case CC2LLVMEnv::OC_VOID:
 	case CC2LLVMEnv::OC_OTHER:
@@ -1643,18 +1655,18 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, int& deref) const
         break;
 
     case BIN_NOTEQUAL:	// !=
-        left = env.access(left, false, deref1);                 // RICH: Volatile.
-        right = env.access(right, false, deref2);                 // RICH: Volatile.
-	c = env.makeCast(loc, e1->type, left, e2->type, &right);
+        left = access(left, false, deref1);                 // RICH: Volatile.
+        right = access(right, false, deref2);                 // RICH: Volatile.
+	c = makeCast(loc, e1->type, left, e2->type, &right);
 	switch (c) {
 	case CC2LLVMEnv::OC_SINT:
 	case CC2LLVMEnv::OC_UINT:
 	case CC2LLVMEnv::OC_POINTER:
-            result = env.builder.CreateICmpNE(left, right);
+            result = builder.CreateICmpNE(left, right);
             break;
 	case CC2LLVMEnv::OC_FLOAT:
 	    // RICH: ordered vs. unordered.
-            result = env.builder.CreateFCmpONE(left, right);
+            result = builder.CreateFCmpONE(left, right);
             break;
 	case CC2LLVMEnv::OC_VOID:
 	case CC2LLVMEnv::OC_OTHER:
@@ -1665,20 +1677,20 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, int& deref) const
         break;
 
     case BIN_LESS:	// < 
-        left = env.access(left, false, deref1);                 // RICH: Volatile.
-        right = env.access(right, false, deref2);                 // RICH: Volatile.
-	c = env.makeCast(loc, e1->type, left, e2->type, &right);
+        left = access(left, false, deref1);                 // RICH: Volatile.
+        right = access(right, false, deref2);                 // RICH: Volatile.
+	c = makeCast(loc, e1->type, left, e2->type, &right);
 	switch (c) {
 	case CC2LLVMEnv::OC_SINT:
-            result = env.builder.CreateICmpSLT(left, right);
+            result = builder.CreateICmpSLT(left, right);
 	    break;
 	case CC2LLVMEnv::OC_UINT:
 	case CC2LLVMEnv::OC_POINTER:
-            result = env.builder.CreateICmpULT(left, right);
+            result = builder.CreateICmpULT(left, right);
             break;
 	case CC2LLVMEnv::OC_FLOAT:
 	    // RICH: ordered vs. unordered.
-            result = env.builder.CreateFCmpOLT(left, right);
+            result = builder.CreateFCmpOLT(left, right);
             break;
 	case CC2LLVMEnv::OC_VOID:
 	case CC2LLVMEnv::OC_OTHER:
@@ -1689,20 +1701,20 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, int& deref) const
         break;
 
     case BIN_LESSEQ:	// <= 
-        left = env.access(left, false, deref1);                 // RICH: Volatile.
-        right = env.access(right, false, deref2);                 // RICH: Volatile.
-	c = env.makeCast(loc, e1->type, left, e2->type, &right);
+        left = access(left, false, deref1);                 // RICH: Volatile.
+        right = access(right, false, deref2);                 // RICH: Volatile.
+	c = makeCast(loc, e1->type, left, e2->type, &right);
 	switch (c) {
 	case CC2LLVMEnv::OC_SINT:
-            result = env.builder.CreateICmpSLE(left, right);
+            result = builder.CreateICmpSLE(left, right);
 	    break;
 	case CC2LLVMEnv::OC_UINT:
 	case CC2LLVMEnv::OC_POINTER:
-            result = env.builder.CreateICmpULE(left, right);
+            result = builder.CreateICmpULE(left, right);
             break;
 	case CC2LLVMEnv::OC_FLOAT:
 	    // RICH: ordered vs. unordered.
-            result = env.builder.CreateFCmpOLE(left, right);
+            result = builder.CreateFCmpOLE(left, right);
             break;
 	case CC2LLVMEnv::OC_VOID:
 	case CC2LLVMEnv::OC_OTHER:
@@ -1713,20 +1725,20 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, int& deref) const
         break;
 
     case BIN_GREATER:   // >
-        left = env.access(left, false, deref1);                 // RICH: Volatile.
-        right = env.access(right, false, deref2);                 // RICH: Volatile.
-	c = env.makeCast(loc, e1->type, left, e2->type, &right);
+        left = access(left, false, deref1);                 // RICH: Volatile.
+        right = access(right, false, deref2);                 // RICH: Volatile.
+	c = makeCast(loc, e1->type, left, e2->type, &right);
 	switch (c) {
 	case CC2LLVMEnv::OC_SINT:
-            result = env.builder.CreateICmpSGT(left, right);
+            result = builder.CreateICmpSGT(left, right);
 	    break;
 	case CC2LLVMEnv::OC_UINT:
 	case CC2LLVMEnv::OC_POINTER:
-            result = env.builder.CreateICmpUGT(left, right);
+            result = builder.CreateICmpUGT(left, right);
             break;
 	case CC2LLVMEnv::OC_FLOAT:
 	    // RICH: ordered vs. unordered.
-            result = env.builder.CreateFCmpOGT(left, right);
+            result = builder.CreateFCmpOGT(left, right);
             break;
 	case CC2LLVMEnv::OC_VOID:
 	case CC2LLVMEnv::OC_OTHER:
@@ -1737,20 +1749,20 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, int& deref) const
         break;
 
     case BIN_GREATEREQ: // >=
-        left = env.access(left, false, deref1);                 // RICH: Volatile.
-        right = env.access(right, false, deref2);                 // RICH: Volatile.
-	c = env.makeCast(loc, e1->type, left, e2->type, &right);
+        left = access(left, false, deref1);                 // RICH: Volatile.
+        right = access(right, false, deref2);                 // RICH: Volatile.
+	c = makeCast(loc, e1->type, left, e2->type, &right);
 	switch (c) {
 	case CC2LLVMEnv::OC_SINT:
-            result = env.builder.CreateICmpSGE(left, right);
+            result = builder.CreateICmpSGE(left, right);
 	    break;
 	case CC2LLVMEnv::OC_UINT:
 	case CC2LLVMEnv::OC_POINTER:
-            result = env.builder.CreateICmpUGE(left, right);
+            result = builder.CreateICmpUGE(left, right);
             break;
 	case CC2LLVMEnv::OC_FLOAT:
 	    // RICH: ordered vs. unordered.
-            result = env.builder.CreateFCmpOGE(left, right);
+            result = builder.CreateFCmpOGE(left, right);
             break;
 	case CC2LLVMEnv::OC_VOID:
 	case CC2LLVMEnv::OC_OTHER:
@@ -1761,15 +1773,15 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, int& deref) const
         break;
 
     case BIN_MULT:      // *
-        left = env.access(left, false, deref1);                 // RICH: Volatile.
-        right = env.access(right, false, deref2);                 // RICH: Volatile.
-	c = env.makeCast(loc, e1->type, left, e2->type, &right);
+        left = access(left, false, deref1);                 // RICH: Volatile.
+        right = access(right, false, deref2);                 // RICH: Volatile.
+	c = makeCast(loc, e1->type, left, e2->type, &right);
 	switch (c) {
 	case CC2LLVMEnv::OC_SINT:
 	case CC2LLVMEnv::OC_UINT:
 	case CC2LLVMEnv::OC_POINTER:
 	case CC2LLVMEnv::OC_FLOAT:
-            result = env.builder.CreateMul(left, right);
+            result = builder.CreateMul(left, right);
             break;
 	case CC2LLVMEnv::OC_VOID:
 	case CC2LLVMEnv::OC_OTHER:
@@ -1780,19 +1792,19 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, int& deref) const
         break;
 
     case BIN_DIV:       // /
-        left = env.access(left, false, deref1);                 // RICH: Volatile.
-        right = env.access(right, false, deref2);                 // RICH: Volatile.
-	c = env.makeCast(loc, e1->type, left, e2->type, &right);
+        left = access(left, false, deref1);                 // RICH: Volatile.
+        right = access(right, false, deref2);                 // RICH: Volatile.
+	c = makeCast(loc, e1->type, left, e2->type, &right);
 	switch (c) {
 	case CC2LLVMEnv::OC_SINT:
-            result = env.builder.CreateSDiv(left, right);
+            result = builder.CreateSDiv(left, right);
 	    break;
 	case CC2LLVMEnv::OC_UINT:
 	case CC2LLVMEnv::OC_POINTER:
-            result = env.builder.CreateUDiv(left, right);
+            result = builder.CreateUDiv(left, right);
             break;
 	case CC2LLVMEnv::OC_FLOAT:
-            result = env.builder.CreateFDiv(left, right);
+            result = builder.CreateFDiv(left, right);
             break;
 	case CC2LLVMEnv::OC_VOID:
 	case CC2LLVMEnv::OC_OTHER:
@@ -1803,19 +1815,19 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, int& deref) const
         break;
 
     case BIN_MOD:       // %
-        left = env.access(left, false, deref1);                 // RICH: Volatile.
-        right = env.access(right, false, deref2);                 // RICH: Volatile.
-	c = env.makeCast(loc, e1->type, left, e2->type, &right);
+        left = access(left, false, deref1);                 // RICH: Volatile.
+        right = access(right, false, deref2);                 // RICH: Volatile.
+	c = makeCast(loc, e1->type, left, e2->type, &right);
 	switch (c) {
 	case CC2LLVMEnv::OC_SINT:
-            result = env.builder.CreateSRem(left, right);
+            result = builder.CreateSRem(left, right);
 	    break;
 	case CC2LLVMEnv::OC_UINT:
 	case CC2LLVMEnv::OC_POINTER:
-            result = env.builder.CreateURem(left, right);
+            result = builder.CreateURem(left, right);
             break;
 	case CC2LLVMEnv::OC_FLOAT:
-            result = env.builder.CreateFRem(left, right);
+            result = builder.CreateFRem(left, right);
             break;
 	case CC2LLVMEnv::OC_VOID:
 	case CC2LLVMEnv::OC_OTHER:
@@ -1845,14 +1857,14 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, int& deref) const
                     right = temp;
                     VDEBUG("swapping i + p", loc, );
                 
-                    right = env.access(right, false, deref1);                 // RICH: Volatile.
+                    right = access(right, false, deref1);                 // RICH: Volatile.
 
                     VDEBUG("after swapping left", loc, left->print(cout));
                     VDEBUG("after swapping right", loc, right->print(cout));
                     deref1 = deref2;
                     deref2 = 0;
                 } else {
-                    right = env.access(right, false, deref2);                 // RICH: Volatile.
+                    right = access(right, false, deref2);                 // RICH: Volatile.
                 }
             }
         }
@@ -1861,34 +1873,34 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, int& deref) const
             // If the left size is a pointer and the right side is an integer, calculate the result.
 
             // Get the value of the left side.
-            left = env.access(left, false, deref1);                 // RICH: Volatile.
+            left = access(left, false, deref1);                 // RICH: Volatile.
 
             if (op == BIN_MINUS) {
                 // Negate the integer value.
-                right = env.access(right, false, deref2);                 // RICH: Volatile.
+                right = access(right, false, deref2);                 // RICH: Volatile.
                 VDEBUG("BIN_MINUS right", loc, right->getType()->print(cout); cout << " "; right->print(cout));
                 llvm::Value* zero = llvm::Constant::getNullValue(right->getType());
-                right = env.builder.CreateSub(zero, right);
+                right = builder.CreateSub(zero, right);
             }
 
             // Make sure the pointer and index sizes match.
-            uint64_t lsize = env.targetData.getTypeSizeInBits(left->getType());
-            uint64_t rsize = env.targetData.getTypeSizeInBits(right->getType());
+            uint64_t lsize = targetData.getTypeSizeInBits(left->getType());
+            uint64_t rsize = targetData.getTypeSizeInBits(right->getType());
             if (lsize != rsize) {
                 if (lsize > rsize) {
                     // The pointer is bigger, check for signed vs. unsigned.
                     const SimpleType* st = te2->type->asReferenceTypeC()->getAtType()->asSimpleTypeC();
                     if (   right->getType()->getPrimitiveSizeInBits() == 1
                             || ::isExplicitlyUnsigned(st->type)) {
-                        right = env.builder.CreateZExt(right, env.targetData.getIntPtrType());
+                        right = builder.CreateZExt(right, targetData.getIntPtrType());
                     } else {
                         VDEBUG("SExt2 source", loc, right->print(cout));
-                        VDEBUG("SExt2 destination ", loc, env.targetData.getIntPtrType()->print(cout));
-                        right = env.builder.CreateSExt(right, env.targetData.getIntPtrType());
+                        VDEBUG("SExt2 destination ", loc, targetData.getIntPtrType()->print(cout));
+                        right = builder.CreateSExt(right, targetData.getIntPtrType());
                     }
                 } else {
                     // The integer is bigger.
-                    right = env.builder.CreateTrunc(right, env.targetData.getIntPtrType());
+                    right = builder.CreateTrunc(right, targetData.getIntPtrType());
                 }
             }
 
@@ -1901,17 +1913,16 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, int& deref) const
             index.push_back(right);
             VDEBUG("GEP2 left", loc, left->print(cout));
             VDEBUG("GEP2 right", loc, right->print(cout));
-            result = env.builder.CreateGEP(left, index.begin(), index.end());
+            result = builder.CreateGEP(left, index.begin(), index.end());
             VDEBUG("GEP2 result", loc, result->print(cout));
-            deref = 0;
             return result;
         }
 
-        left = env.access(left, false, deref1);                 // RICH: Volatile.
-        right = env.access(right, false, deref2);                 // RICH: Volatile.
+        left = access(left, false, deref1);                 // RICH: Volatile.
+        right = access(right, false, deref2);                 // RICH: Volatile.
         VDEBUG("makeCast left", loc, cout << te1->type->toString() << " "; left->print(cout));
         VDEBUG("makeCast right", loc, cout << te2->type->toString() << " "; right->print(cout));
-	c = env.makeCast(loc, te1->type, left, te2->type, &right);
+	c = makeCast(loc, te1->type, left, te2->type, &right);
         VDEBUG("PlusOrMinus left", loc, left->print(cout));
         VDEBUG("PlusOrMinus right", loc, right->print(cout));
 	switch (c) {
@@ -1919,9 +1930,9 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, int& deref) const
 	case CC2LLVMEnv::OC_UINT:
 	case CC2LLVMEnv::OC_FLOAT:
 	    if (op == BIN_PLUS) {
-                result = env.builder.CreateAdd(left, right);
+                result = builder.CreateAdd(left, right);
 	    } else {
-                result = env.builder.CreateSub(left, right);
+                result = builder.CreateSub(left, right);
 	    }
             break;
 	case CC2LLVMEnv::OC_POINTER: {
@@ -1930,14 +1941,14 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, int& deref) const
             // To subtract two pointers we cast them to integers, and divide by
             // the size of the (matching) dereference types.
             const llvm::Type* ptype = llvm::PointerType::get(left->getType()->getContainedType(0), 0);       // RICH: Address space.
-            llvm::Value* size = env.builder.CreateGEP(
+            llvm::Value* size = builder.CreateGEP(
                 llvm::Constant::getNullValue(ptype),
-                llvm::ConstantInt::get(env.targetData.getIntPtrType(), 1));
-            size = env.builder.CreatePtrToInt(size, env.targetData.getIntPtrType());
-	    left = env.builder.CreatePtrToInt(left, env.targetData.getIntPtrType());
-	    right = env.builder.CreatePtrToInt(right, env.targetData.getIntPtrType());
-            result = env.builder.CreateSub(left, right);
-            result = env.builder.CreateUDiv(result, size);
+                llvm::ConstantInt::get(targetData.getIntPtrType(), 1));
+            size = builder.CreatePtrToInt(size, targetData.getIntPtrType());
+	    left = builder.CreatePtrToInt(left, targetData.getIntPtrType());
+	    right = builder.CreatePtrToInt(right, targetData.getIntPtrType());
+            result = builder.CreateSub(left, right);
+            result = builder.CreateUDiv(result, size);
 	    break;
         }
 	case CC2LLVMEnv::OC_VOID:
@@ -1950,13 +1961,13 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, int& deref) const
     }
 
     case BIN_LSHIFT:    // <<
-        left = env.access(left, false, deref1);                 // RICH: Volatile.
-        right = env.access(right, false, deref2);                 // RICH: Volatile.
-	c = env.makeCast(loc, e1->type, left, e2->type, &right);
+        left = access(left, false, deref1);                 // RICH: Volatile.
+        right = access(right, false, deref2);                 // RICH: Volatile.
+	c = makeCast(loc, e1->type, left, e2->type, &right);
 	switch (c) {
 	case CC2LLVMEnv::OC_SINT:
 	case CC2LLVMEnv::OC_UINT:
-            result = env.builder.CreateShl(left, right);
+            result = builder.CreateShl(left, right);
             break;
 	case CC2LLVMEnv::OC_POINTER:
 	case CC2LLVMEnv::OC_FLOAT:
@@ -1969,15 +1980,15 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, int& deref) const
         break;
 
     case BIN_RSHIFT:    // >>
-        left = env.access(left, false, deref1);                 // RICH: Volatile.
-        right = env.access(right, false, deref2);                 // RICH: Volatile.
-	c = env.makeCast(loc, e1->type, left, e2->type, &right);
+        left = access(left, false, deref1);                 // RICH: Volatile.
+        right = access(right, false, deref2);                 // RICH: Volatile.
+	c = makeCast(loc, e1->type, left, e2->type, &right);
 	switch (c) {
 	case CC2LLVMEnv::OC_SINT:
-            result = env.builder.CreateAShr(left, right);
+            result = builder.CreateAShr(left, right);
             break;
 	case CC2LLVMEnv::OC_UINT:
-            result = env.builder.CreateLShr(left, right);
+            result = builder.CreateLShr(left, right);
             break;
 	case CC2LLVMEnv::OC_POINTER:
 	case CC2LLVMEnv::OC_FLOAT:
@@ -1990,13 +2001,13 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, int& deref) const
         break;
 
     case BIN_BITAND:    // &
-        left = env.access(left, false, deref1);                 // RICH: Volatile.
-        right = env.access(right, false, deref2);                 // RICH: Volatile.
-	c = env.makeCast(loc, e1->type, left, e2->type, &right);
+        left = access(left, false, deref1);                 // RICH: Volatile.
+        right = access(right, false, deref2);                 // RICH: Volatile.
+	c = makeCast(loc, e1->type, left, e2->type, &right);
 	switch (c) {
 	case CC2LLVMEnv::OC_SINT:
 	case CC2LLVMEnv::OC_UINT:
-            result = env.builder.CreateAnd(left, right);
+            result = builder.CreateAnd(left, right);
             break;
 	case CC2LLVMEnv::OC_POINTER:
 	case CC2LLVMEnv::OC_FLOAT:
@@ -2009,13 +2020,13 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, int& deref) const
         break;
 
     case BIN_BITXOR:    // ^
-        left = env.access(left, false, deref1);                 // RICH: Volatile.
-        right = env.access(right, false, deref2);                 // RICH: Volatile.
-	c = env.makeCast(loc, e1->type, left, e2->type, &right);
+        left = access(left, false, deref1);                 // RICH: Volatile.
+        right = access(right, false, deref2);                 // RICH: Volatile.
+	c = makeCast(loc, e1->type, left, e2->type, &right);
 	switch (c) {
 	case CC2LLVMEnv::OC_SINT:
 	case CC2LLVMEnv::OC_UINT:
-            result = env.builder.CreateXor(left, right);
+            result = builder.CreateXor(left, right);
             break;
 	case CC2LLVMEnv::OC_POINTER:
 	case CC2LLVMEnv::OC_FLOAT:
@@ -2028,13 +2039,13 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, int& deref) const
         break;
 
     case BIN_BITOR:     // |
-        left = env.access(left, false, deref1);                 // RICH: Volatile.
-        right = env.access(right, false, deref2);                 // RICH: Volatile.
-	c = env.makeCast(loc, e1->type, left, e2->type, &right);
+        left = access(left, false, deref1);                 // RICH: Volatile.
+        right = access(right, false, deref2);                 // RICH: Volatile.
+	c = makeCast(loc, e1->type, left, e2->type, &right);
 	switch (c) {
 	case CC2LLVMEnv::OC_SINT:
 	case CC2LLVMEnv::OC_UINT:
-            result = env.builder.CreateOr(left, right);
+            result = builder.CreateOr(left, right);
             break;
 	case CC2LLVMEnv::OC_POINTER:
 	case CC2LLVMEnv::OC_FLOAT:
@@ -2047,33 +2058,33 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, int& deref) const
         break;
 
     case BIN_AND: {     // &&
-        left = env.access(left, false, deref1);                 // RICH: Volatile.
-        right = env.access(right, false, deref2);                 // RICH: Volatile.
-        llvm::Value* value = env.checkCondition(e1);
-        llvm::BasicBlock* doRight = new llvm::BasicBlock("doRight", env.function, env.returnBlock);
-        llvm::BasicBlock* ifFalse = new llvm::BasicBlock("condFalse", env.function, env.returnBlock);
-        llvm::BasicBlock* ifTrue = new llvm::BasicBlock("condTrue", env.function, env.returnBlock);
-        llvm::BasicBlock* next = new llvm::BasicBlock("next", env.function, env.returnBlock);
-        env.checkCurrentBlock();
-        new llvm::BranchInst(doRight, ifFalse, value, env.currentBlock);
-        env.currentBlock = NULL;
+        left = access(left, false, deref1);                 // RICH: Volatile.
+        right = access(right, false, deref2);                 // RICH: Volatile.
+        llvm::Value* value = checkCondition(e1);
+        llvm::BasicBlock* doRight = new llvm::BasicBlock("doRight", function, returnBlock);
+        llvm::BasicBlock* ifFalse = new llvm::BasicBlock("condFalse", function, returnBlock);
+        llvm::BasicBlock* ifTrue = new llvm::BasicBlock("condTrue", function, returnBlock);
+        llvm::BasicBlock* next = new llvm::BasicBlock("next", function, returnBlock);
+        checkCurrentBlock();
+        new llvm::BranchInst(doRight, ifFalse, value, currentBlock);
+        currentBlock = NULL;
 
-        env.setCurrentBlock(doRight);
-        value = env.checkCondition(e2);
-        env.checkCurrentBlock();
-	env.builder.CreateCondBr(value, ifTrue, ifFalse);
-        env.currentBlock = NULL;
+        setCurrentBlock(doRight);
+        value = checkCondition(e2);
+        checkCurrentBlock();
+	builder.CreateCondBr(value, ifTrue, ifFalse);
+        currentBlock = NULL;
 
-        env.setCurrentBlock(ifTrue);
+        setCurrentBlock(ifTrue);
         llvm::Value* tValue = llvm::ConstantInt::getTrue();
-	env.builder.CreateBr(next);
-        env.currentBlock = NULL;
+	builder.CreateBr(next);
+        currentBlock = NULL;
 
-        env.setCurrentBlock(ifFalse);
+        setCurrentBlock(ifFalse);
         llvm::Value* fValue = llvm::ConstantInt::getFalse();
 
-        env.setCurrentBlock(next);
-        llvm::PHINode* phi = env.builder.CreatePHI(tValue->getType());
+        setCurrentBlock(next);
+        llvm::PHINode* phi = builder.CreatePHI(tValue->getType());
 	phi->addIncoming(tValue, ifTrue);
 	phi->addIncoming(fValue, ifFalse);
         result = phi;
@@ -2081,33 +2092,33 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, int& deref) const
     }
 
     case BIN_OR: {      // ||
-        left = env.access(left, false, deref1);                 // RICH: Volatile.
-        right = env.access(right, false, deref2);                 // RICH: Volatile.
-        llvm::Value* value = env.checkCondition(e1);
-        llvm::BasicBlock* doRight = new llvm::BasicBlock("doRight", env.function, env.returnBlock);
-        llvm::BasicBlock* ifFalse = new llvm::BasicBlock("condFalse", env.function, env.returnBlock);
-        llvm::BasicBlock* ifTrue = new llvm::BasicBlock("condTrue", env.function, env.returnBlock);
-        llvm::BasicBlock* next = new llvm::BasicBlock("next", env.function, env.returnBlock);
-        env.checkCurrentBlock();
-        new llvm::BranchInst(ifTrue, doRight, value, env.currentBlock);
-        env.currentBlock = NULL;
+        left = access(left, false, deref1);                 // RICH: Volatile.
+        right = access(right, false, deref2);                 // RICH: Volatile.
+        llvm::Value* value = checkCondition(e1);
+        llvm::BasicBlock* doRight = new llvm::BasicBlock("doRight", function, returnBlock);
+        llvm::BasicBlock* ifFalse = new llvm::BasicBlock("condFalse", function, returnBlock);
+        llvm::BasicBlock* ifTrue = new llvm::BasicBlock("condTrue", function, returnBlock);
+        llvm::BasicBlock* next = new llvm::BasicBlock("next", function, returnBlock);
+        checkCurrentBlock();
+        new llvm::BranchInst(ifTrue, doRight, value, currentBlock);
+        currentBlock = NULL;
 
-        env.setCurrentBlock(doRight);
-        value = env.checkCondition(e2);
-        env.checkCurrentBlock();
-	env.builder.CreateCondBr(value, ifTrue, ifFalse);
-        env.currentBlock = NULL;
+        setCurrentBlock(doRight);
+        value = checkCondition(e2);
+        checkCurrentBlock();
+	builder.CreateCondBr(value, ifTrue, ifFalse);
+        currentBlock = NULL;
 
-        env.setCurrentBlock(ifTrue);
+        setCurrentBlock(ifTrue);
         llvm::Value* tValue = llvm::ConstantInt::getTrue();
-	env.builder.CreateBr(next);
-        env.currentBlock = NULL;
+	builder.CreateBr(next);
+        currentBlock = NULL;
 
-        env.setCurrentBlock(ifFalse);
+        setCurrentBlock(ifFalse);
         llvm::Value* fValue = llvm::ConstantInt::getFalse();
 
-        env.setCurrentBlock(next);
-        llvm::PHINode* phi = env.builder.CreatePHI(tValue->getType());
+        setCurrentBlock(next);
+        llvm::PHINode* phi = builder.CreatePHI(tValue->getType());
 	phi->addIncoming(tValue, ifTrue);
 	phi->addIncoming(fValue, ifFalse);
         result = phi;
@@ -2115,21 +2126,21 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, int& deref) const
     }
 
     case BIN_COMMA:     // ,
-        left = env.access(left, false, deref1);                 // RICH: Volatile.
-        right = env.access(right, false, deref2);                 // RICH: Volatile.
+        left = access(left, false, deref1);                 // RICH: Volatile.
+        right = access(right, false, deref2);                 // RICH: Volatile.
 	result = right;
         break;
 
     // gcc extensions
     case BIN_MINIMUM:   // <?
-        left = env.access(left, false, deref1);                 // RICH: Volatile.
-        right = env.access(right, false, deref2);                 // RICH: Volatile.
+        left = access(left, false, deref1);                 // RICH: Volatile.
+        right = access(right, false, deref2);                 // RICH: Volatile.
         cerr << toString(loc) << ": ";
         xunimp("<?");
         break;
     case BIN_MAXIMUM:   // >?
-        left = env.access(left, false, deref1);                 // RICH: Volatile.
-        right = env.access(right, false, deref2);                 // RICH: Volatile.
+        left = access(left, false, deref1);                 // RICH: Volatile.
+        right = access(right, false, deref2);                 // RICH: Volatile.
         cerr << toString(loc) << ": ";
         xunimp(">?");
         break;
@@ -2153,14 +2164,14 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, int& deref) const
 
     // theorem prover extension
     case BIN_IMPLIES:     // ==>
-        left = env.access(left, false, deref1);                 // RICH: Volatile.
-        right = env.access(right, false, deref2);                 // RICH: Volatile.
+        left = access(left, false, deref1);                 // RICH: Volatile.
+        right = access(right, false, deref2);                 // RICH: Volatile.
         cerr << toString(loc) << ": ";
         xunimp("==>");
         break;
     case BIN_EQUIVALENT:  // <==>
-        left = env.access(left, false, deref1);                 // RICH: Volatile.
-        right = env.access(right, false, deref2);                 // RICH: Volatile.
+        left = access(left, false, deref1);                 // RICH: Volatile.
+        right = access(right, false, deref2);                 // RICH: Volatile.
         cerr << toString(loc) << ": ";
         xunimp("<==>");
         break;
@@ -2168,7 +2179,6 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, int& deref) const
         break;
     }
 
-    deref = 0;
     return result;
 }
 
@@ -2296,8 +2306,57 @@ llvm::Value *E_sizeofType::cc2llvm(CC2LLVMEnv &env, int& deref) const
     return value;
 }
 
-llvm::Value *E_assign::cc2llvm(CC2LLVMEnv &env, int& deref) const
+llvm::Value* CC2LLVMEnv::doassign(SourceLoc loc, llvm::Value* destination, int deref1, Type* dtype,
+                                                 llvm::Value* source, int deref2, Type* stype)
 {
+    checkCurrentBlock();
+    bool first = destination->getType()->getContainedType(0)->isFirstClassType();
+    if (!first) {
+        // This is a compound assignment.
+        source = access(source, false, deref2, 1);                 // RICH: Volatile.
+        destination = access(destination, false, deref1, 1);                 // RICH: Volatile.
+        llvm::Function* function = llvm::Intrinsic::getDeclaration(mod, llvm::Intrinsic::memcpy_i32); // RICH: size.
+        std::vector<llvm::Value*> parameters;
+        const llvm::Type* type = llvm::IntegerType::get(BITS_PER_BYTE);
+        type =  llvm::PointerType::get(type, 0);	// RICH: address space.
+        checkCurrentBlock();
+        VDEBUG("doassign dest", loc, destination->print(cout));
+        llvm::Value* value = builder.CreateBitCast(destination, type);
+        VDEBUG("doassign dest cast", loc, value->print(cout));
+        parameters.push_back(value);
+        VDEBUG("doassign src", loc, source->print(cout));
+        value = builder.CreateBitCast(source, type);
+        VDEBUG("doassign src cast", loc, value->print(cout));
+        parameters.push_back(value);
+        const llvm::Type* ptype = llvm::PointerType::get(destination->getType()->getContainedType(0), 0);       // RICH: Address space.
+        value = builder.CreateGEP(
+                llvm::Constant::getNullValue(ptype),
+                llvm::ConstantInt::get(targetData.getIntPtrType(), 1));
+        value = builder.CreatePtrToInt(value, targetData.getIntPtrType());
+        parameters.push_back(value);
+        value = llvm::ConstantInt::get(targetData.getIntPtrType(), 0);                  // RICH: Alignment.
+        parameters.push_back(value);
+        value = builder.CreateCall(function, parameters.begin(), parameters.end());
+        VDEBUG("doassign memcpy", loc, value->print(cout));
+        return source;
+    } else {
+        VDEBUG("doassign", loc, source->print(cout));
+        source = access(source, false, deref2);                 // RICH: Volatile.
+    }
+
+    VDEBUG("doassign get", loc, destination->print(cout));
+    destination = access(destination, false, deref1, 1);                 // RICH: Volatile.
+    VDEBUG("doassign cast", loc, cout <<  stype->toString() << " -> " << dtype->toString());
+    makeCast(loc, stype, source, dtype);
+    VDEBUG("doassign source", loc, source->print(cout));
+    VDEBUG("doassign destination", loc, destination->print(cout));
+    new llvm::StoreInst(source, destination, false, currentBlock);	// RICH: isVolatile
+    return source;
+}
+
+llvm::Value* E_assign::cc2llvm(CC2LLVMEnv &env, int& deref) const
+{
+    
     int deref1;
     llvm::Value* destination = target->cc2llvm(env, deref1);
     int deref2;
@@ -2306,62 +2365,24 @@ llvm::Value *E_assign::cc2llvm(CC2LLVMEnv &env, int& deref) const
     env.checkCurrentBlock();
     if (op == BIN_ASSIGN) {
 	// Assign is simple. Get it out of the way.
-        env.checkCurrentBlock();
-        bool first = destination->getType()->getContainedType(0)->isFirstClassType();
-        if (!first) {
-            // This is a compound assignment.
-            source = env.access(source, false, deref2, 1);                 // RICH: Volatile.
-            destination = env.access(destination, false, deref1, 1);                 // RICH: Volatile.
-            llvm::Function* function = llvm::Intrinsic::getDeclaration(env.mod, llvm::Intrinsic::memcpy_i32); // RICH: size.
-            std::vector<llvm::Value*> parameters;
-            const llvm::Type* type = llvm::IntegerType::get(BITS_PER_BYTE);
-            type =  llvm::PointerType::get(type, 0);	// RICH: address space.
-            env.checkCurrentBlock();
-            VDEBUG("E_assign dest", loc, destination->print(cout));
-            llvm::Value* value = env.builder.CreateBitCast(destination, type);
-            VDEBUG("E_assign dest cast", loc, value->print(cout));
-            parameters.push_back(value);
-            VDEBUG("E_assign src", loc, source->print(cout));
-            value = env.builder.CreateBitCast(source, type);
-            VDEBUG("E_assign src cast", loc, value->print(cout));
-            parameters.push_back(value);
-            const llvm::Type* ptype = llvm::PointerType::get(destination->getType()->getContainedType(0), 0);       // RICH: Address space.
-            value = env.builder.CreateGEP(
-                    llvm::Constant::getNullValue(ptype),
-                    llvm::ConstantInt::get(env.targetData.getIntPtrType(), 1));
-            value = env.builder.CreatePtrToInt(value, env.targetData.getIntPtrType());
-            parameters.push_back(value);
-            value = llvm::ConstantInt::get(env.targetData.getIntPtrType(), 0);                  // RICH: Alignment.
-            parameters.push_back(value);
-            value = env.builder.CreateCall(function, parameters.begin(), parameters.end());
-            VDEBUG("E_assign memcpy", loc, value->print(cout));
-            return source;
-        } else {
-            VDEBUG("E_assign", loc, source->print(cout));
-            source = env.access(source, false, deref2);                 // RICH: Volatile.
-        }
-
-        VDEBUG("E_assign get", loc, destination->print(cout));
-        destination = env.access(destination, false, deref1, 1);                 // RICH: Volatile.
-        VDEBUG("E_assign cast", loc, cout <<  src->type->toString() << " -> " << target->type->toString());
-	env.makeCast(loc, src->type, source, target->type);
-        VDEBUG("E_assign source", loc, source->print(cout));
-        VDEBUG("E_assign destination", loc, destination->print(cout));
-	new llvm::StoreInst(source, destination, false, env.currentBlock);	// RICH: isVolatile
+        source = env.doassign(loc, destination, deref1, target->type, source, deref2, src->type);
         deref = 0;
         return source;
     }
 
-    // Handle all othe forms of assignment operators.
-    destination = env.access(destination, false, deref1, 1);                 // RICH: Volatile.
-    source = env.access(source, false, deref2);                 // RICH: Volatile.
+    // Handle all other forms of assignment operators.
 
+    destination = env.access(destination, false, deref1, 1);                 // RICH: Volatile.
     llvm::Value* temp = NULL;					// A place to store the temporary.
-    llvm::Instruction::BinaryOps opcode;			// The opcode to use.
+    temp = env.binop(loc, op, target, destination, deref1, src, source, deref2);
+
+#if RICH
+    source = env.access(source, false, deref2);                 // RICH: Volatile.
 
     // Get the value.
     VDEBUG("Load2", loc, destination->print(cout));
     temp = env.builder.CreateLoad(destination, false);		// RICH: isVolatile
+
     if (temp->getType()->getTypeID() == llvm::Type::PointerTyID) {
         // Handle pointer arithmetic.
         cerr << toString(loc) << ": ";
@@ -2369,6 +2390,7 @@ llvm::Value *E_assign::cc2llvm(CC2LLVMEnv &env, int& deref) const
         return NULL;
     }
 
+    llvm::Instruction::BinaryOps opcode;			// The opcode to use.
     // Make sure the values match in type.
     CC2LLVMEnv::OperatorClass c = env.makeCast(loc, target->type, temp, src->type, &source);
 
@@ -2476,7 +2498,11 @@ llvm::Value *E_assign::cc2llvm(CC2LLVMEnv &env, int& deref) const
     }
 
     temp = llvm::BinaryOperator::create(opcode, temp, source, "", env.currentBlock);
-    if (temp->getType() != destination->getType()) {
+#endif
+
+    VDEBUG("E_assign", loc, cout << "result "; temp->getType()->print(cout);
+                            cout << " destination "; destination->getType()->getContainedType(0)->print(cout));
+    if (temp->getType() != destination->getType()->getContainedType(0)) {
         // Cast the result to the destination type.
         env.makeCast(loc, src->type, temp, target->type);
     }
