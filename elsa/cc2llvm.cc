@@ -585,11 +585,6 @@ void Declaration::cc2llvm(CC2LLVMEnv &env) const
 
 	    if (init) {
                 env.doassign(var->loc, lv, 1, var->type, init, deref, var->type);
-#if RICH
-                VDEBUG("Store5 source", var->loc, init->print(cout));
-                VDEBUG("Store5 destination", var->loc, lv->print(cout));
-	        env.builder.CreateStore(init, lv, false);	// RICH: isVolatile.
-#endif
 	    }
             env.variables.add(var, lv);
         }
@@ -2189,12 +2184,6 @@ llvm::Value *E_addrOf::cc2llvm(CC2LLVMEnv &env, int& deref) const
         --deref;
     }
     return result;
-#if RICH
-    result = env.access(result, false, deref, 1);                 // RICH: Volatile.
-    VDEBUG("addrOf", loc, result->print(cout));
-    deref = 0;
-    return result;
-#endif
 }
 
 llvm::Value *E_deref::cc2llvm(CC2LLVMEnv &env, int& deref) const
@@ -2204,19 +2193,8 @@ llvm::Value *E_deref::cc2llvm(CC2LLVMEnv &env, int& deref) const
     if (first) {
         ++deref;
     }
+    VDEBUG("E_deref", loc, cout << "deref " << deref << " "; source->print(cout));
     return source;
-#if RICH
-    source = env.access(source, false, deref, 1);                 // RICH: Volatile.
-    bool first = source->getType()->getContainedType(0)->isFirstClassType();
-    if (!first) {
-        // The dereference will happen later.
-	return source;
-    }
-
-    VDEBUG("E_deref", loc, cout << "deref " << deref << " "; source->print(cout));
-    return env.access(source, false, deref);                 // RICH: Volatile.
-#endif
-    VDEBUG("E_deref", loc, cout << "deref " << deref << " "; source->print(cout));
 }
 
 llvm::Value *E_cast::cc2llvm(CC2LLVMEnv &env, int& deref) const
@@ -2375,130 +2353,6 @@ llvm::Value* E_assign::cc2llvm(CC2LLVMEnv &env, int& deref) const
     destination = env.access(destination, false, deref1, 1);                 // RICH: Volatile.
     llvm::Value* temp = NULL;					// A place to store the temporary.
     temp = env.binop(loc, op, target, destination, deref1, src, source, deref2);
-
-#if RICH
-    source = env.access(source, false, deref2);                 // RICH: Volatile.
-
-    // Get the value.
-    VDEBUG("Load2", loc, destination->print(cout));
-    temp = env.builder.CreateLoad(destination, false);		// RICH: isVolatile
-
-    if (temp->getType()->getTypeID() == llvm::Type::PointerTyID) {
-        // Handle pointer arithmetic.
-        cerr << toString(loc) << ": ";
-        xunimp("pointer assignment operator");
-        return NULL;
-    }
-
-    llvm::Instruction::BinaryOps opcode;			// The opcode to use.
-    // Make sure the values match in type.
-    CC2LLVMEnv::OperatorClass c = env.makeCast(loc, target->type, temp, src->type, &source);
-
-    switch (op)
-    {
-    case BIN_MULT:      // *=
-	opcode = llvm::Instruction::Mul;
-        break;
-
-    case BIN_DIV:       // /=
-	if (c == env.OC_SINT) {
-	    opcode = llvm::Instruction::SDiv;
-	} else if (c == env.OC_UINT) {
-	    opcode = llvm::Instruction::UDiv;
-	} else if (c == env.OC_FLOAT) {
-	    opcode = llvm::Instruction::FDiv;
-	} else {
-            cerr << toString(loc) << ": ";
-            xunimp("/=");
-	}
-        break;
-
-    case BIN_MOD:       // %=
-	if (c == env.OC_SINT) {
-	    opcode = llvm::Instruction::SRem;
-	} else if (c == env.OC_UINT) {
-	    opcode = llvm::Instruction::URem;
-	} else if (c == env.OC_FLOAT) {
-	    opcode = llvm::Instruction::FRem;
-	} else {
-            cerr << toString(loc) << ": ";
-            xunimp("%=");
-	}
-        break;
-
-    case BIN_PLUS:      // +=
-	if (c == env.OC_SINT || c == env.OC_UINT || c == env.OC_FLOAT) {
-            opcode = llvm::Instruction::Add;
-	} else {
-            cerr << toString(loc) << ": ";
-            xunimp("+=");
-	}
-        break;
-
-    case BIN_MINUS:     // -=
-	if (c == env.OC_SINT || c == env.OC_UINT || c == env.OC_FLOAT) {
-            opcode = llvm::Instruction::Sub;
-	} else {
-            cerr << toString(loc) << ": ";
-            xunimp("-=");
-	}
-        break;
-
-    case BIN_LSHIFT:    // <<=
-	if (c == env.OC_SINT || c == env.OC_UINT) {
-	    opcode = llvm::Instruction::Shl;
-	} else {
-            cerr << toString(loc) << ": ";
-            xunimp("<<=");
-	}
-        break;
-
-    case BIN_RSHIFT:    // >>=
-	if (c == env.OC_SINT) {
-	    opcode = llvm::Instruction::AShr;
-	} else if (c == env.OC_UINT) {
-	    opcode = llvm::Instruction::LShr;
-	} else {
-            cerr << toString(loc) << ": ";
-            xunimp(">>=");
-	}
-        break;
-
-    case BIN_BITAND:    // &=
-	if (c == env.OC_SINT || c == env.OC_UINT) {
-	    opcode = llvm::Instruction::And;
-	} else {
-            cerr << toString(loc) << ": ";
-            xunimp("&=");
-	}
-        break;
-
-    case BIN_BITXOR:    // ^=
-	if (c == env.OC_SINT || c == env.OC_UINT) {
-	    opcode = llvm::Instruction::Xor;
-	} else {
-            cerr << toString(loc) << ": ";
-            xunimp("^=");
-	}
-        break;
-
-    case BIN_BITOR:     // |=
-	if (c == env.OC_SINT || c == env.OC_UINT) {
-	    opcode = llvm::Instruction::Or;
-	} else {
-            cerr << toString(loc) << ": ";
-            xunimp("<<=");
-	}
-        break;
-		     
-    default:
-        cerr << toString(loc) << ": ";
-        xunimp("assignment operator");
-        break;
-    }
-
-    temp = llvm::BinaryOperator::create(opcode, temp, source, "", env.currentBlock);
-#endif
 
     VDEBUG("E_assign", loc, cout << "result "; temp->getType()->print(cout);
                             cout << " destination "; destination->getType()->getContainedType(0)->print(cout));
