@@ -2306,7 +2306,7 @@ llvm::Value* CC2LLVMEnv::doassign(SourceLoc loc, llvm::Value* destination, int d
         value = builder.CreateBitCast(source, type);
         VDEBUG("doassign src cast", loc, value->print(cout));
         parameters.push_back(value);
-        const llvm::Type* ptype = llvm::PointerType::get(destination->getType()->getContainedType(0), 0);       // RICH: Address space.
+        const llvm::Type* ptype = llvm::PointerType::get(source->getType()->getContainedType(0), 0);       // RICH: Address space.
         value = builder.CreateGEP(
                 llvm::Constant::getNullValue(ptype),
                 llvm::ConstantInt::get(targetData.getIntPtrType(), 1));
