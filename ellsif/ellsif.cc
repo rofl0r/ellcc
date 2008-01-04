@@ -1828,8 +1828,7 @@ static void doMulti(Phases phase, std::vector<Input*>& files, InputList& result,
                     PrintAndExit(ErrorMessage);
                 }
                 if (Verbose) {
-                    cout << "  " << files[i]->name
-                        << " " << outputName << " was consumed by the bitcode linker\n";
+                    cout << "  " << files[i]->name << " was consumed by the bitcode linker\n";
                 }
                 files[i]->module = NULL;         // The module has been consumed.
                 files[i]->name.clear();
