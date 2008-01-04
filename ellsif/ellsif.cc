@@ -671,6 +671,10 @@ static Timer* timers[NUM_PHASES];       // The phase timers.
  */
 static std::map<std::string, FileTypes> extToLang;
 
+/** File extensions by language.
+ */
+static std::map<FileTypes, std::string> langToExt;
+
 /** Actions that can be taken on a file.
  */
 enum FileActions {
@@ -712,18 +716,22 @@ static void setupFileTypes()
 {
     // The extension to language and language to phase mapping.
     extToLang["c"] = C;                                 // A C file becomes a preprocessed file.
+    langToExt[C] = "c";
     filePhases[C][PREPROCESSING].type = I;
     filePhases[C][PREPROCESSING].action = PREPROCESS;
 
     extToLang["i"] = I;                                 // A preprocessed C file becomes a unoptimized bitcode file.
+    langToExt[I] = "i";
     filePhases[I][TRANSLATION].type = UBC;
     filePhases[I][TRANSLATION].action = CCOMPILE;
 
     extToLang["h"] = H;
+    langToExt[H] = "h";
     filePhases[H][PREPROCESSING].type = I;
     filePhases[H][PREPROCESSING].action = PREPROCESS;
 
     extToLang["cc"] = CC;
+    langToExt[CC] = "cc";
     filePhases[CC][PREPROCESSING].type = II;
     filePhases[CC][PREPROCESSING].action = PREPROCESS;
     extToLang["cp"] = CC;
@@ -733,10 +741,12 @@ static void setupFileTypes()
     extToLang["C"] = CC;
 
     extToLang["ii"] = II;
+    langToExt[II] = "ii";
     filePhases[II][TRANSLATION].type = UBC;
     filePhases[II][TRANSLATION].action = CCOMPILE;
 
     extToLang["hh"] = HH;
+    langToExt[HH] = "hh";
     filePhases[HH][PREPROCESSING].type = II;
     filePhases[HH][PREPROCESSING].action = PREPROCESS;
     extToLang["H"] = HH;
@@ -746,18 +756,22 @@ static void setupFileTypes()
     extToLang["tcc"] = HH;
 
     extToLang["ll"] = LL;
+    langToExt[LL] = "ll";
     filePhases[LL][TRANSLATION].type = UBC;
     filePhases[LL][TRANSLATION].action = LLASSEMBLE;
 
     extToLang["llx"] = LLX;
+    langToExt[LLX] = "llx";
     filePhases[LLX][PREPROCESSING].type = LL;
     filePhases[LLX][PREPROCESSING].action = PREPROCESS;
 
     extToLang["ubc"] = UBC;
+    langToExt[UBC] = "ubc";
     filePhases[UBC][OPTIMIZATION].type = BC;
     filePhases[UBC][OPTIMIZATION].action = OPTIMIZE;
 
     extToLang["bc"] = BC;
+    langToExt[BC] = "bc";
     filePhases[BC][BCLINKING].type = LINKED;
     filePhases[BC][BCLINKING].action = BCLINK;
     filePhases[BC][GENERATION].type = S;
@@ -765,19 +779,23 @@ static void setupFileTypes()
 
 #if RICH
     extToLang["s"] = S;
+    langToExt[S] = "s";
     filePhases[S][ASSEMBLY].type = O;
     filePhases[S][ASSEMBLY].action = ASSEMBLE;
 #else
     extToLang["s"] = O;
+    langToExt[S] = "s";
     filePhases[S][LINKING].type = LINKED;
     filePhases[S][LINKING].action = LINK;
 #endif
 
     extToLang["sx"] = SX;
+    langToExt[SX] = "s";
     filePhases[SX][PREPROCESSING].type = S;
     filePhases[SX][PREPROCESSING].action = PREPROCESS;
 
     extToLang["o"] = O;
+    langToExt[O] = "s";
     filePhases[O][LINKING].type = LINKED;
     filePhases[O][LINKING].action = LINK;
 }
@@ -1938,13 +1956,14 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
 	    timers[phase]->startTimer();
         }
 
-        sys::Path to(input.name.getBasename());
-        to.appendSuffix("i");
         if (Verbose) {
             // This file needs processing during this phase.
             cout << "  " << fileActions[filePhases[thisType][phase].action].name << " " << input.name
                 << " to become " << fileTypes[nextType] << "\n";
         }
+
+        sys::Path to(input.name.getBasename());
+        to.appendSuffix(langToExt[nextType]);
 
         // Mark the output files for removal if we get an interrupt.
         sys::RemoveFileOnSignal(to);
@@ -1970,14 +1989,8 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         break;
     }
     case TRANSLATION: {              // Translate source -> LLVM bitcode/assembly
-#if RICH
-        // Else does its own timing.
-        if (TimeActions) {
-	    timers[phase]->startTimer();
-        }
-#endif
+        // Elsa does its own timing.
 
-        // RICH: Non c sources, e.g. .ll->.ubc
         if (Verbose) {
             // This file needs processing during this phase.
             cout << "  " << fileActions[filePhases[thisType][phase].action].name << " " << input.name
@@ -1985,20 +1998,25 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         }
 
         sys::Path to(input.name.getBasename());
-        to.appendSuffix("ubc");
-        // RICH: Lang: C, C++, K&R, etc.
-        int result = elsa.parse(Elsa::GNUC, input.name.c_str(), to.c_str(), input.module);
-        if (result) {
-            Exit(result);
+        to.appendSuffix(langToExt[nextType]);
+        if (filePhases[thisType][phase].action == CCOMPILE) {
+            Elsa::Language lang = Elsa::GNUC;
+            if (thisType == II) {
+                // This is a C++ file.
+                lang = Elsa::GNUCXX;
+                // RICH: std: C, C++, K&R, etc.
+            } else {
+                // This is a C file.
+                // RICH: std: C, C++, K&R, etc.
+            }
+            int result = elsa.parse(lang, input.name.c_str(), to.c_str(), input.module);
+            if (result) {
+                Exit(result);
+            }
+        } else {
+            // RICH: Non C sources, e.g. .ll->.ubc
         }
-
         input.setName(to);
-
-#if RICH
-        if (TimeActions) {
-	    timers[phase]->stopTimer();
-        }
-#endif
         break;
     }
     case OPTIMIZATION: {             // Optimize translation result
@@ -2013,7 +2031,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         }
 
         sys::Path to(input.name.getBasename());
-        to.appendSuffix("bc");
+        to.appendSuffix(langToExt[nextType]);
         std::string ErrorMessage;
         if (input.module == NULL) {
             // Load the input module...
@@ -2359,7 +2377,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         }
 
         sys::Path to(input.name.getBasename());
-        to.appendSuffix("o");
+        to.appendSuffix(langToExt[nextType]);
 
         // RICH: Do stuff.
 
@@ -2532,10 +2550,13 @@ int main(int argc, char **argv)
                     Exit(1);
                 }
                 if (Verbose) {
-                    cout << "  Creating temporary file " << it->name << "\n";
+                    cout << "  creating temporary file " << it->name << "\n";
                 }
+#if RICH
                 llvm::OStream L(*out);
                 PM.add(new llvm::PrintModulePass(&L));
+#endif
+                PM.add(llvm::CreateBitcodeWriterPass(*out));
                 PM.run(*it->module);
                 delete it->module;
             }
