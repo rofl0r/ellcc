@@ -23,7 +23,7 @@
 
 #define BITS_PER_BYTE	8	// RICH: Temporary.
 
-#if 0
+#if 1
 // Really verbose debugging.
 #define VDEBUG(who, where, what) cout << toString(where) << ": " << who << " "; what; cout << "\n"
 #else
@@ -190,6 +190,7 @@ const llvm::Type* CC2LLVMEnv::makeTypeSpecifier(SourceLoc loc, Type *t)
 	// The type of a reference is the underlying type. (RICH: is it?)
         ReferenceType *rt = t->asReferenceType();
         type =  makeTypeSpecifier(loc, rt->atType);
+        type =  llvm::PointerType::get(type, 0);	// RICH: Address space.
         break;
     }
     case Type::T_FUNCTION: {
@@ -200,7 +201,7 @@ const llvm::Type* CC2LLVMEnv::makeTypeSpecifier(SourceLoc loc, Type *t)
 	    /* LLVM does not support a compound return type.
              * We'll call it a pointer here. In practice, a pointer to
 	     * the return value holding area will be passed as the first
-	     * argument to the function. The function the returns void.
+	     * argument to the function. The function returns void.
 	     */
 	    const llvm::Type* rt = llvm::PointerType::get(returnType, 0);	// RICH: address space.
             args.push_back(rt);
@@ -314,12 +315,11 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLoc loc, AtomicType 
 	// Add this to the compound map now so we don't recurse.
         compounds.add(ct, type);
 
-	// Get the members.
+	// Get the non-static data members.
 	std::vector<const llvm::Type*>fields;
         int i = 0;
         SFOREACH_OBJLIST(Variable, ct->dataMembers, iter) {
             Variable const *v = iter.data();
-            // RICH: static and function members.
             members.add(v, llvm::ConstantInt::get(targetData.getIntPtrType(), i++));
 	    fields.push_back(makeTypeSpecifier(v->loc, v->type));
         }
@@ -328,6 +328,23 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLoc loc, AtomicType 
         llvm::cast<llvm::OpaqueType>(fwd.get())->refineAbstractTypeTo(st);
 	type = llvm::cast<llvm::Type>(fwd.get());
         compounds.add(ct, type);
+
+        // Now, look for static members and methods.
+        for(StringRefMap<Variable>::Iter iter(ct->getVariableIter()); !iter.isDone(); iter.adv()) {
+            Variable *v = iter.value();
+            if (members.get(v)) {
+                // POD member.
+                continue;
+            }
+            
+            // RICH: static and function members.
+            if (v->funcDefn) {
+                // A function definition.
+                v->funcDefn->cc2llvm(*this);
+            } else {
+            }
+        }
+
         break;
     }
 
@@ -374,9 +391,9 @@ void CC2LLVMEnv::makeParameterTypes(FunctionType *ft, std::vector<const llvm::Ty
         Variable const *param = iter.data();
 
 	const llvm::Type* type = makeTypeSpecifier(param->loc, param->type);
-        VDEBUG("makeParameters", param->loc, type->print(cout));
 	// type will be NULL if a "..." is encountered in the parameter list.
 	if (type) {
+            VDEBUG("makeParameters", param->loc, type->print(cout));
             if (type->getTypeID() == llvm::Type::StructTyID) {
                 // Pass a structure by value.
                 // RICH: Ignore for now.
@@ -430,6 +447,7 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
         returnType = env.makeTypeSpecifier(nameAndParams->var->loc, funcType->retType);
         std::vector<const llvm::Type*>args;
         env.makeParameterTypes(funcType, args);
+        VDEBUG("Function", nameAndParams->var->loc, cout << nameAndParams->var->toString() << " "; returnType->print(cout));
         llvm::FunctionType* ft = llvm::FunctionType::get(returnType, args, funcType->acceptsVarargs());
         env.function = new llvm::Function(ft, linkage, nameAndParams->var->name, env.mod);
         env.function->setCallingConv(llvm::CallingConv::C); // RICH: Calling convention.
@@ -534,13 +552,6 @@ void Declaration::cc2llvm(CC2LLVMEnv &env) const
         // system; syntax is irrelevant, only semantics matters.
         Variable *var = declarator->var;
 
-        // But elaborated statements are relevant; for now, fail if
-        // they are present.
-        if (declarator->ctorStatement || declarator->dtorStatement) {
-            cerr << toString(var->loc) << ": ";
-            xunimp("ctorStatement or dtorStatement");
-        }
-
         // Get any initializer.        
         int deref;
         llvm::Value* init = env.initializer(declarator->init, var->type, deref, true);
@@ -587,6 +598,15 @@ void Declaration::cc2llvm(CC2LLVMEnv &env) const
                 env.doassign(var->loc, lv, 1, var->type, init, deref, var->type);
 	    }
             env.variables.add(var, lv);
+        }
+        
+        // Elaborated statements are relevant; for now, fail if
+        // they are present.
+        if (declarator->ctorStatement || declarator->dtorStatement) {
+            // RICH: declarator->ctorStatement->cc2llvm(env);
+            // RICH: declarator->dtorStatement->cc2llvm(env);
+            cerr << toString(var->loc) << ": ";
+            xunimp("ctorStatement or dtorStatement");
         }
     }
 }
@@ -1010,9 +1030,10 @@ llvm::Value *E_charLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
 llvm::Value *E_this::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     deref = 0;
-    cerr << toString(loc) << ": ";
-    xunimp("this");
-    return NULL;
+    llvm::Value* value = env.variables.get(receiver);
+    xassert(value && "'this' was not defined");
+    VDEBUG("E_this", loc, value->getType()->print(cout));
+    return value;
 }
 
 /** Get a variable used in an expression.
@@ -1092,6 +1113,7 @@ llvm::Value *E_fieldAcc::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     // 'field' is the member variable.
     // The member will have been previously seen in a declaration.
+    VDEBUG("E_field obj", loc, cout << obj->asString());
     llvm::Value* object = obj->cc2llvm(env, deref);
     object = env.access(object, false, deref, 1);                 // RICH: Volatile.
     llvm::Value* value = env.members.get(field);
@@ -1341,6 +1363,7 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
 	source = &left;
 	target = &right;
     } else if (left.isPointer) {
+        VDEBUG("makeCast ptr types", loc, cout << "left " << left.type->toString() << " right " << right.type->toString());
 	if (right.isPointer) {
 	    // Check type, may need a bit cast.
 	    if (right.type != left.type) {
@@ -1576,8 +1599,8 @@ llvm::Value* CC2LLVMEnv::initializer(const Initializer* init, Type* type, int& d
     }
 
     ASTNEXTC(IN_ctor, c) {
-        cerr << toString(init->loc) << ": ";
-        xunimp("ctor initializer");
+        // RICH: cerr << toString(init->loc) << ": ";
+        // RICH: xunimp("ctor initializer");
     }
 
     ASTNEXTC(IN_designated, d) {
