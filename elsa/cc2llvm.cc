@@ -447,6 +447,16 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
         returnType = env.makeTypeSpecifier(nameAndParams->var->loc, funcType->retType);
         std::vector<const llvm::Type*>args;
         env.makeParameterTypes(funcType, args);
+	if (returnType->getTypeID() == llvm::Type::StructTyID) {
+	    /* LLVM does not support a compound return type.
+             * We'll call it a pointer here. In practice, a pointer to
+	     * the return value holding area will be passed as the first
+	     * argument to the function. The function returns void.
+	     */
+	    const llvm::Type* rt = llvm::PointerType::get(returnType, 0);	// RICH: address space.
+            args.push_back(rt);
+            returnType = llvm::Type::VoidTy;
+	}
         VDEBUG("Function", nameAndParams->var->loc, cout << nameAndParams->var->toString() << " "; returnType->print(cout));
         llvm::FunctionType* ft = llvm::FunctionType::get(returnType, args, funcType->acceptsVarargs());
         env.function = new llvm::Function(ft, linkage, nameAndParams->var->name, env.mod);
@@ -605,8 +615,8 @@ void Declaration::cc2llvm(CC2LLVMEnv &env) const
         if (declarator->ctorStatement || declarator->dtorStatement) {
             // RICH: declarator->ctorStatement->cc2llvm(env);
             // RICH: declarator->dtorStatement->cc2llvm(env);
-            cerr << toString(var->loc) << ": ";
-            xunimp("ctorStatement or dtorStatement");
+            // RICH: cerr << toString(var->loc) << ": ";
+            // RICH: xunimp("ctorStatement or dtorStatement");
         }
     }
 }
@@ -868,9 +878,8 @@ void S_return::cc2llvm(CC2LLVMEnv &env) const
         int deref;
         llvm::Value* value = expr->cc2llvm(env, deref);
         value = env.access(value, false, deref);                 // RICH: Volatile.
-	env.makeCast(loc, expr->expr->type, value, env.functionAST->funcType->retType);
-        VDEBUG("Store6 source", loc, value->print(cout));
-        VDEBUG("Store6 destination", loc, env.returnValue->print(cout));
+        VDEBUG("S_return source", loc, value->print(cout));
+        VDEBUG("S_return destination", loc, env.returnValue->print(cout));
         env.builder.CreateStore(value, env.returnValue, false);	// RICH: isVolatile
     } else {
         xassert(env.returnValue == NULL && "no return value in a function not returning void");
@@ -1338,7 +1347,9 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
     Data* source = NULL;	// This will remain NULL if no cast is needed.
     Data* target = &right;
 
-    if (right.value == NULL) {
+    if (Type::equalTypes(left.type, right.type)) {
+        // Types identical. Do nothing.
+    } else if (right.value == NULL) {
         // This is a cast of the left value to the right type.
         target = &right;
         source = &left;
@@ -1443,7 +1454,8 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
 	    type = makeTypeSpecifier(loc, target->type);
 	}
 
-        VDEBUG("makeCast type", loc, type->print(cout));
+        VDEBUG("makeCast from type", loc, (*source->value)->getType()->print(cout));
+        VDEBUG("makeCast to type", loc, type->print(cout));
 
 	switch (c)
 	{

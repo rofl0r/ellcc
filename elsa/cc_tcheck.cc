@@ -627,6 +627,7 @@ void Function::tcheckBody(Env &env)
     xassert(!receiver);
     receiver = env.receiverParameter(loc, inClass, CV_NONE,
                                      NULL /*syntax*/);
+    funcType->addReceiver(receiver);
 
     xassert(receiver->type->isReference());   // paranoia
     env.addVariable(receiver);

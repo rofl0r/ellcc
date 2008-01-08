@@ -2166,7 +2166,7 @@ void FunctionType::addReceiver(Variable *param)
 {
   xassert(param->type->isReference());
   xassert(param->hasFlag(DF_PARAMETER));
-  xassert(!isConstructor());    // ctors don't get a __receiver param
+  // RICH: xassert(!isConstructor());    // ctors don't get a __receiver param (rdp: why not?)
   xassert(!isMethod());         // this is about to change below
   params.prepend(param);
   setFlag(FF_METHOD);
