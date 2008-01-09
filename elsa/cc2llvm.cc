@@ -342,6 +342,9 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLoc loc, AtomicType 
                 // A function definition.
                 v->funcDefn->cc2llvm(*this);
             } else {
+                VDEBUG("T_COMPOUND", v->loc, cout << v->toString());
+                // RICH: cerr << toString(loc) << ": ";
+                // xunimp("static member");
             }
         }
 
@@ -877,7 +880,7 @@ void S_return::cc2llvm(CC2LLVMEnv &env) const
         xassert(env.returnValue && "return a value in a function returning void");
         int deref;
         llvm::Value* value = expr->cc2llvm(env, deref);
-        value = env.access(value, false, deref);                 // RICH: Volatile.
+        value = env.access(value, false, deref, expr->expr->type->isReference() ? 1 : 0);                 // RICH: Volatile.
         VDEBUG("S_return source", loc, value->print(cout));
         VDEBUG("S_return destination", loc, env.returnValue->print(cout));
         env.builder.CreateStore(value, env.returnValue, false);	// RICH: isVolatile
@@ -1038,7 +1041,7 @@ llvm::Value *E_charLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
 
 llvm::Value *E_this::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
-    deref = 0;
+    deref = 1;
     llvm::Value* value = env.variables.get(receiver);
     xassert(value && "'this' was not defined");
     VDEBUG("E_this", loc, value->getType()->print(cout));
@@ -1126,6 +1129,23 @@ llvm::Value *E_fieldAcc::cc2llvm(CC2LLVMEnv &env, int& deref) const
     llvm::Value* object = obj->cc2llvm(env, deref);
     object = env.access(object, false, deref, 1);                 // RICH: Volatile.
     llvm::Value* value = env.members.get(field);
+    if (value == NULL) {
+        value = env.variables.get(field);
+        if (value) {
+            // Return the static value.
+            if (   value->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID
+                || value->getType()->getContainedType(0)->getTypeID() == llvm::Type::FunctionTyID) {
+                // Arrays and function pointers are their value.
+                deref = 0;
+            } else {
+                // Need one dereference to get the actual object.
+                deref = 1;
+            }
+            VDEBUG("E_field static", loc, cout << "ID " << value->getType()->getContainedType(0)->getTypeID() << " ";
+                    value->print(cout));
+            return value;
+        }
+    }
     xassert(value && "An undeclared member has been referenced");
     VDEBUG("E_field object", loc, cout << "ID " << object->getType()->getContainedType(0)->getTypeID() << " ";
         object->print(cout));
