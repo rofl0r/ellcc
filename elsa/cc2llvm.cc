@@ -1089,6 +1089,9 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     env.checkCurrentBlock();
     std::vector<llvm::Value*> parameters;
+    // Check for a method call.
+    if (func->kind() == E_FIELDACC) {
+    }
     FAKELIST_FOREACH(ArgExpression, args, arg) {
         llvm::Value* param = arg->expr->cc2llvm(env, deref);
         VDEBUG("Param", loc, param->print(cout));
