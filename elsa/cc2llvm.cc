@@ -337,14 +337,15 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLoc loc, AtomicType 
                 continue;
             }
             
-            // RICH: static and function members.
+            declaration(v, NULL, 0);
+        }
+
+        // Now, define function bodies.
+        for(StringRefMap<Variable>::Iter iter(ct->getVariableIter()); !iter.isDone(); iter.adv()) {
+            Variable *v = iter.value();
             if (v->funcDefn) {
                 // A function definition.
                 v->funcDefn->cc2llvm(*this);
-            } else {
-                VDEBUG("T_COMPOUND", v->loc, cout << v->toString());
-                // RICH: cerr << toString(loc) << ": ";
-                // xunimp("static member");
             }
         }
 
@@ -408,6 +409,64 @@ void CC2LLVMEnv::makeParameterTypes(FunctionType *ft, std::vector<const llvm::Ty
     }
 }
 
+llvm::Value* CC2LLVMEnv::declaration(Variable* var, llvm::Value* init, int deref)
+{
+    llvm::Value* value = NULL;
+    // Create the full generated declaration.
+    const llvm::Type* type = makeTypeSpecifier(var->loc, var->type);
+    VDEBUG("declaration", var->loc, cout << toString(var->flags) << " " << var->toString());
+    if (var->type->getTag() == Type::T_FUNCTION) {
+        llvm::GlobalValue::LinkageTypes linkage = getLinkage(var->flags);
+        llvm::Function* gf = new llvm::Function((llvm::FunctionType*)type, linkage, makeName(var)->name, mod);
+        gf->setCallingConv(llvm::CallingConv::C); // RICH: Calling convention.
+        variables.add(var, gf);
+        value = gf;
+    } else if (var->type->getTag() == Type::T_DEPENDENTSIZEDARRAY) {
+        cerr << toString(var->loc) << ": ";
+        xunimp("dependent sized array");
+    } else if (var->type->getTag() == Type::T_LAST_TYPE_TAG) {
+        cerr << toString(var->loc) << ": ";
+        xunimp("last type tag");
+    } else if (var->flags & (DF_STATIC|DF_GLOBAL)) {
+        // A global variable.
+        if (!(var->flags & DF_EXTERN) && init == NULL) {
+            init = llvm::Constant::getNullValue(type);
+        }
+        llvm::GlobalVariable* gv = (llvm::GlobalVariable*)variables.get(var);   // RICH: cast
+        if (gv == NULL) {
+            gv = new llvm::GlobalVariable(type, false,	// RICH: isConstant
+                    getLinkage(var->flags), (llvm::Constant*)init, makeName(var)->name, mod);	// RICH: cast
+            variables.add(var, gv);
+        } else {
+            if (init) {
+                gv->setInitializer((llvm::Constant*)init);
+            }
+        }
+        value = gv;
+    } else if (var->flags & DF_TYPEDEF) {
+        // Nothing.
+    } else if (var->flags & DF_DEFINITION) {
+        // A local variable.
+        xassert(entryBlock);
+        llvm::AllocaInst* lv;
+        if (entryBlock == currentBlock) {
+            lv = new llvm::AllocaInst(type, makeName(var)->name, entryBlock);
+        } else {
+            lv = new llvm::AllocaInst(type, makeName(var)->name, entryBlock->getTerminator());
+        }
+
+        if (init) {
+            doassign(var->loc, lv, 1, var->type, init, deref, var->type);
+        }
+        variables.add(var, lv);
+        value = lv;
+    } else {
+        xunimp("declaration type");
+    }
+
+    return value;
+}
+        
 // -------------------- TopForm --------------------
 void TopForm::cc2llvm(CC2LLVMEnv &env) const
 {
@@ -418,6 +477,17 @@ void TopForm::cc2llvm(CC2LLVMEnv &env) const
 
     ASTNEXTC(TF_func, f) {
         f->f->cc2llvm(env);
+    }
+
+    ASTNEXTC(TF_linkage, l) {
+        // RICH: linkage
+        FOREACH_ASTLIST(TopForm, l->forms->topForms, iter) {
+            iter.data()->cc2llvm(env);
+        }
+    }
+
+    ASTNEXTC(TF_one_linkage, l) {
+        l->form->cc2llvm(env);
     }
 
     ASTDEFAULTC {
@@ -456,11 +526,11 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
 	     * the return value holding area will be passed as the first
 	     * argument to the function. The function returns void.
 	     */
-	    const llvm::Type* rt = llvm::PointerType::get(returnType, 0);	// RICH: address space.
-            args.push_back(rt);
-            returnType = llvm::Type::VoidTy;
-	}
-        VDEBUG("Function", nameAndParams->var->loc, cout << nameAndParams->var->toString() << " "; returnType->print(cout));
+                const llvm::Type* rt = llvm::PointerType::get(returnType, 0);	// RICH: address space.
+                args.push_back(rt);
+                returnType = llvm::Type::VoidTy;
+            }
+            VDEBUG("Function", nameAndParams->var->loc, cout << nameAndParams->var->toString() << " "; returnType->print(cout));
         llvm::FunctionType* ft = llvm::FunctionType::get(returnType, args, funcType->acceptsVarargs());
         env.function = new llvm::Function(ft, linkage, nameAndParams->var->name, env.mod);
         env.function->setCallingConv(llvm::CallingConv::C); // RICH: Calling convention.
@@ -569,50 +639,44 @@ void Declaration::cc2llvm(CC2LLVMEnv &env) const
         int deref;
         llvm::Value* init = env.initializer(declarator->init, var->type, deref, true);
 
-        // Create the full generated declaration.
-        const llvm::Type* type = env.makeTypeSpecifier(var->loc, var->type);
-        if (var->type->getTag() == Type::T_FUNCTION) {
-            llvm::GlobalValue::LinkageTypes linkage = getLinkage(var->flags);
-            llvm::Function* gf = new llvm::Function((llvm::FunctionType*)type, linkage, env.makeName(var)->name, env.mod);
-            gf->setCallingConv(llvm::CallingConv::C); // RICH: Calling convention.
-            env.variables.add(var, gf);
-        } else if (var->type->getTag() == Type::T_DEPENDENTSIZEDARRAY) {
-            cerr << toString(var->loc) << ": ";
-            xunimp("dependent sized array");
-        } else if (var->type->getTag() == Type::T_LAST_TYPE_TAG) {
-            cerr << toString(var->loc) << ": ";
-            xunimp("last type tag");
-        } else if (var->flags & (DF_STATIC|DF_GLOBAL)) {
-	    // A global variable.
-            if (!(var->flags & DF_EXTERN) && init == NULL) {
-                init = llvm::Constant::getNullValue(type);
-            }
-            llvm::GlobalVariable* gv = (llvm::GlobalVariable*)env.variables.get(var);   // RICH: cast
-            if (gv == NULL) {
-                gv = new llvm::GlobalVariable(type, false,	// RICH: isConstant
-                        getLinkage(var->flags), (llvm::Constant*)init, env.makeName(var)->name, env.mod);	// RICH: cast
-                env.variables.add(var, gv);
-            } else {
-                if (init) {
-                    gv->setInitializer((llvm::Constant*)init);
-                }
-            }
-        } else {
-            // A local variable.
-            xassert(env.entryBlock);
-            llvm::AllocaInst* lv;
-            if (env.entryBlock == env.currentBlock) {
-                lv = new llvm::AllocaInst(type, env.makeName(var)->name, env.entryBlock);
-	    } else {
-                lv = new llvm::AllocaInst(type, env.makeName(var)->name, env.entryBlock->getTerminator());
-	    }
+        llvm::Value* object = env.declaration(var, init, deref);
 
-	    if (init) {
-                env.doassign(var->loc, lv, 1, var->type, init, deref, var->type);
-	    }
-            env.variables.add(var, lv);
+        if (declarator->ctorStatement) {
+            // Handle the constructor.
+            xassert(declarator->ctorStatement->kind() == Statement::S_EXPR);
+            Expression* expr = declarator->ctorStatement->asS_expr()->expr->expr;
+            xassert(expr->kind() == Expression::E_CONSTRUCTOR);
+            E_constructor* cons = expr->asE_constructor();
+            VDEBUG("constructor", var->loc, cout << cons->asString() << " " << cons->ctorVar->toString());
+            std::vector<llvm::Value*> parameters;
+            deref = 0;
+            object = env.access(object, false, deref);                 // RICH: Volatile.
+            parameters.push_back(object);
+            FAKELIST_FOREACH(ArgExpression, cons->args, arg) {
+                llvm::Value* param = arg->expr->cc2llvm(env, deref);
+                VDEBUG("Param", arg->expr->loc, param->print(cout));
+                param = env.access(param, false, deref);                 // RICH: Volatile.
+                VDEBUG("Param after", arg->expr->loc, param->print(cout));
+                if (   param->getType()->getTypeID() == llvm::Type::ArrayTyID
+                    || (   param->getType()->getTypeID() == llvm::Type::PointerTyID
+                        && param->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID)) {
+                    // This is somewhat of a hack: It should be done in cc_tcheck.cc.
+                    // Add an implicit cast of &array to *array.
+                    const llvm::Type* type = llvm::PointerType::get(param->getType()->getContainedType(0)->getContainedType(0), 0); // RICH: Address space.
+                    param = env.builder.CreateBitCast(param, type);
+                }
+                parameters.push_back(param);
+                VDEBUG("Param", arg->expr->loc, param->print(cout));
+            }
+
+            deref = 0;
+            llvm::Value* function = env.variables.get(cons->ctorVar);
+            xassert(function && "An undeclared constructor has been referenced");
+            function = env.access(function, false, deref);                 // RICH: Volatile.
+            VDEBUG("CreateCall", cons->ctorVar->loc, function->print(cout));
+            env.builder.CreateCall(function, parameters.begin(), parameters.end());
         }
-        
+
         // Elaborated statements are relevant; for now, fail if
         // they are present.
         if (declarator->ctorStatement || declarator->dtorStatement) {
@@ -1090,7 +1154,13 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, int& deref) const
     env.checkCurrentBlock();
     std::vector<llvm::Value*> parameters;
     // Check for a method call.
+    E_fieldAcc* fa = NULL;
     if (func->kind() == E_FIELDACC) {
+        VDEBUG("E_funCall method", loc, cout << func->asString());
+        fa = func->asE_fieldAcc();
+        llvm::Value* object = fa->obj->cc2llvm(env, deref);
+        object = env.access(object, false, deref, 1);                 // RICH: Volatile.
+        parameters.push_back(object);
     }
     FAKELIST_FOREACH(ArgExpression, args, arg) {
         llvm::Value* param = arg->expr->cc2llvm(env, deref);
@@ -1110,7 +1180,14 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, int& deref) const
     }
 
     deref = 0;
-    llvm::Value* function = func->cc2llvm(env, deref);
+    llvm::Value* function;
+    if (fa) {
+        // This is a method call.
+        function = env.variables.get(fa->field);
+        xassert(function && "An undeclared member has been referenced");
+    } else {
+        function = func->cc2llvm(env, deref);
+    }
     function = env.access(function, false, deref);                 // RICH: Volatile.
     VDEBUG("CreateCall", loc, function->print(cout));
     return env.builder.CreateCall(function, parameters.begin(), parameters.end());
@@ -1118,8 +1195,8 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, int& deref) const
 
 llvm::Value *E_constructor::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
+    // Will never get here.
     deref = 0;
-    cerr << toString(loc) << ": ";
     xunimp("constructor");
     return NULL;
 }
@@ -1132,23 +1209,6 @@ llvm::Value *E_fieldAcc::cc2llvm(CC2LLVMEnv &env, int& deref) const
     llvm::Value* object = obj->cc2llvm(env, deref);
     object = env.access(object, false, deref, 1);                 // RICH: Volatile.
     llvm::Value* value = env.members.get(field);
-    if (value == NULL) {
-        value = env.variables.get(field);
-        if (value) {
-            // Return the static value.
-            if (   value->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID
-                || value->getType()->getContainedType(0)->getTypeID() == llvm::Type::FunctionTyID) {
-                // Arrays and function pointers are their value.
-                deref = 0;
-            } else {
-                // Need one dereference to get the actual object.
-                deref = 1;
-            }
-            VDEBUG("E_field static", loc, cout << "ID " << value->getType()->getContainedType(0)->getTypeID() << " ";
-                    value->print(cout));
-            return value;
-        }
-    }
     xassert(value && "An undeclared member has been referenced");
     VDEBUG("E_field object", loc, cout << "ID " << object->getType()->getContainedType(0)->getTypeID() << " ";
         object->print(cout));

@@ -100,6 +100,12 @@ public:      // funcs
     /** Create a list of parameters suitable for inclusion in a llvm::FunctionType.
      */
     void makeParameterTypes(FunctionType *ft, std::vector<const llvm::Type*>& args);
+    /** Handle a variable declaration.
+     * @param var The variable to declare.
+     * @init The initialization value or NULL.
+     * @deref The initialization value dereference count.
+     */
+    llvm::Value* declaration(Variable* var, llvm::Value* init, int deref);
 
     /** Operator classification.
      */
