@@ -337,15 +337,31 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLoc loc, AtomicType 
                 continue;
             }
             
-            declaration(v, NULL, 0);
+            if (v->isOverloaded()) {
+                // This has been overloaded.
+                SFOREACH_OBJLIST(Variable, v->overload->set, iter) {
+                    declaration(iter.data(), NULL, 0);
+                }
+            } else {
+                declaration(v, NULL, 0);
+            }
         }
 
         // Now, define function bodies.
         for(StringRefMap<Variable>::Iter iter(ct->getVariableIter()); !iter.isDone(); iter.adv()) {
             Variable *v = iter.value();
-            if (v->funcDefn) {
+            if (v->isOverloaded()) {
+                // This has been overloaded.
+                SFOREACH_OBJLIST(Variable, v->overload->set, iter) {
+                    if (iter.data()->funcDefn) {
+                        iter.data()->funcDefn->cc2llvm(*this);
+                    }
+                }
+            } else {
                 // A function definition.
-                v->funcDefn->cc2llvm(*this);
+                if (v->funcDefn) {
+                    v->funcDefn->cc2llvm(*this);
+                }
             }
         }
 
@@ -409,7 +425,7 @@ void CC2LLVMEnv::makeParameterTypes(FunctionType *ft, std::vector<const llvm::Ty
     }
 }
 
-llvm::Value* CC2LLVMEnv::declaration(Variable* var, llvm::Value* init, int deref)
+llvm::Value* CC2LLVMEnv::declaration(const Variable* var, llvm::Value* init, int deref)
 {
     llvm::Value* value = NULL;
     // Create the full generated declaration.
@@ -502,6 +518,14 @@ void TopForm::cc2llvm(CC2LLVMEnv &env) const
 void Function::cc2llvm(CC2LLVMEnv &env) const
 {
     if (inits->isNotEmpty()) {
+        VDEBUG("member init for", nameAndParams->var->loc, cout << nameAndParams->var->toString());
+        FAKELIST_FOREACH(MemberInit, inits, init) {
+            VDEBUG("member init", init->member->loc, cout << init->member->toString());
+            FAKELIST_FOREACH(ArgExpression, init->args, arg) {
+                VDEBUG("member init arg", arg->expr->loc, cout << arg->expr->asString());
+            }
+        }
+
         cerr << toString(nameAndParams->var->loc) << ": ";
         xunimp("member initializers");
     }

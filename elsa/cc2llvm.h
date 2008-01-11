@@ -105,7 +105,7 @@ public:      // funcs
      * @init The initialization value or NULL.
      * @deref The initialization value dereference count.
      */
-    llvm::Value* declaration(Variable* var, llvm::Value* init, int deref);
+    llvm::Value* declaration(const Variable* var, llvm::Value* init, int deref);
 
     /** Operator classification.
      */
