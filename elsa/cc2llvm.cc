@@ -517,6 +517,77 @@ void TopForm::cc2llvm(CC2LLVMEnv &env) const
 
 void Function::cc2llvm(CC2LLVMEnv &env) const
 {
+    // Did we see this declaration?
+    env.function = (llvm::Function*)env.variables.get(nameAndParams->var);      // RICH: cast, check if func.
+    const llvm::Type* returnType;
+    if (env.function == NULL) {
+        // No, define it.
+        llvm::GlobalValue::LinkageTypes linkage = getLinkage(nameAndParams->var->flags);
+        returnType = env.makeTypeSpecifier(nameAndParams->var->loc, funcType->retType);
+        std::vector<const llvm::Type*>args;
+        env.makeParameterTypes(funcType, args);
+        if (returnType->getTypeID() == llvm::Type::StructTyID) {
+	    /* LLVM does not support a compound return type.
+             * We'll call it a pointer here. In practice, a pointer to
+	     * the return value holding area will be passed as the first
+	     * argument to the function. The function returns void.
+	     */
+            const llvm::Type* rt = llvm::PointerType::get(returnType, 0);	// RICH: address space.
+            args.push_back(rt);
+            returnType = llvm::Type::VoidTy;
+        }
+        llvm::FunctionType* ft = llvm::FunctionType::get(returnType, args, funcType->acceptsVarargs());
+        env.function = new llvm::Function(ft, linkage, nameAndParams->var->name, env.mod);
+        env.function->setCallingConv(llvm::CallingConv::C); // RICH: Calling convention.
+        env.variables.add(nameAndParams->var, env.function);
+    } else {
+        returnType = env.function->getReturnType();
+    }
+
+    VDEBUG("Function", nameAndParams->var->loc, cout << nameAndParams->var->toString() << " "; returnType->print(cout));
+    const Function* oldFunctionAST = env.functionAST;	// Handle nested functions.
+    env.functionAST = this;
+    env.entryBlock = new llvm::BasicBlock("entry", env.function, NULL);
+
+    // Set the initial current block.
+    env.setCurrentBlock(env.entryBlock);
+
+    // Add the parameter names.
+    llvm::Function::arg_iterator llargs = env.function->arg_begin();
+    bool first = true;
+    SFOREACH_OBJLIST(Variable, funcType->params, iter) {
+        const Variable *param = iter.data();
+        llvm::Value* arg = llargs++;
+        // Make space for the argument.
+        const llvm::Type* type = arg->getType();
+        if (first && receiver && param != receiver) {
+            // Yuck! The receiver is not explicit. I think it should be.
+            llvm::AllocaInst* addr = env.builder.CreateAlloca(type, NULL, receiver->name);
+            // Remember where the argument can be retrieved.
+            env.variables.add(receiver, addr);
+            // Store the argument for later use.
+            VDEBUG("Store3 source", receiver->loc, arg->print(cout));
+            VDEBUG("Store3 destination", receiver->loc, addr->print(cout));
+            env.builder.CreateStore(arg, addr, false);	// RICH: IsVolatile.
+
+            // Do the next argument.
+            arg = llargs++;
+            type = arg->getType();
+        }
+
+        first = false;
+	// type will be NULL for "...".
+	if (type) {
+	    llvm::AllocaInst* addr = env.builder.CreateAlloca(type, NULL, param->name);
+	    // Remember where the argument can be retrieved.
+            env.variables.add(param, addr);
+	    // Store the argument for later use.
+            VDEBUG("Store3 source", param->loc, arg->print(cout));
+            VDEBUG("Store3 destination", param->loc, addr->print(cout));
+	    env.builder.CreateStore(arg, addr, false);	// RICH: IsVolatile.
+        }
+    }
+
     if (inits->isNotEmpty()) {
         VDEBUG("member init for", nameAndParams->var->loc, cout << nameAndParams->var->toString());
         FAKELIST_FOREACH(MemberInit, inits, init) {
@@ -533,60 +604,6 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
     if (handlers->isNotEmpty()) {
         cerr << toString(nameAndParams->var->loc) << ": ";
         xunimp("exception handlers");
-    }
-
-    // Did we see this declaration?
-    env.function = (llvm::Function*)env.variables.get(nameAndParams->var);      // RICH: cast, check if func.
-    const llvm::Type* returnType;
-    if (env.function == NULL) {
-        // No, define it.
-        llvm::GlobalValue::LinkageTypes linkage = getLinkage(nameAndParams->var->flags);
-        returnType = env.makeTypeSpecifier(nameAndParams->var->loc, funcType->retType);
-        std::vector<const llvm::Type*>args;
-        env.makeParameterTypes(funcType, args);
-	if (returnType->getTypeID() == llvm::Type::StructTyID) {
-	    /* LLVM does not support a compound return type.
-             * We'll call it a pointer here. In practice, a pointer to
-	     * the return value holding area will be passed as the first
-	     * argument to the function. The function returns void.
-	     */
-                const llvm::Type* rt = llvm::PointerType::get(returnType, 0);	// RICH: address space.
-                args.push_back(rt);
-                returnType = llvm::Type::VoidTy;
-            }
-            VDEBUG("Function", nameAndParams->var->loc, cout << nameAndParams->var->toString() << " "; returnType->print(cout));
-        llvm::FunctionType* ft = llvm::FunctionType::get(returnType, args, funcType->acceptsVarargs());
-        env.function = new llvm::Function(ft, linkage, nameAndParams->var->name, env.mod);
-        env.function->setCallingConv(llvm::CallingConv::C); // RICH: Calling convention.
-        env.variables.add(nameAndParams->var, env.function);
-    } else {
-        returnType = env.function->getReturnType();
-    }
-
-    const Function* oldFunctionAST = env.functionAST;	// Handle nested functions.
-    env.functionAST = this;
-    env.entryBlock = new llvm::BasicBlock("entry", env.function, NULL);
-
-    // Set the initial current block.
-    env.setCurrentBlock(env.entryBlock);
-
-    // Add the parameter names.
-    llvm::Function::arg_iterator llargs = env.function->arg_begin();
-    SFOREACH_OBJLIST(Variable, funcType->params, iter) {
-        const Variable *param = iter.data();
-        llvm::Value* arg = llargs++;
-	// Make space for the argument.
-	const llvm::Type* type = arg->getType();
-	// type will be NULL for "...".
-	if (type) {
-	    llvm::AllocaInst* addr = env.builder.CreateAlloca(type, NULL, param->name);
-	    // Remember where the argument can be retrieved.
-            env.variables.add(param, addr);
-	    // Store the argument for later use.
-            VDEBUG("Store3 source", param->loc, arg->print(cout));
-            VDEBUG("Store3 destination", param->loc, addr->print(cout));
-	    env.builder.CreateStore(arg, addr, false);	// RICH: IsVolatile.
-        }
     }
 
     // Set up the return block.
@@ -968,7 +985,13 @@ void S_return::cc2llvm(CC2LLVMEnv &env) const
         xassert(env.returnValue && "return a value in a function returning void");
         int deref;
         llvm::Value* value = expr->cc2llvm(env, deref);
-        value = env.access(value, false, deref, expr->expr->type->isReference() ? 1 : 0);                 // RICH: Volatile.
+        VDEBUG("Return type", loc, cout << expr->expr->type->toString() << " deref " << deref);
+        if (deref >= 2 && expr->expr->type->isReference()) {
+            // Return a reference as a pointer.
+            value = env.access(value, false, deref, 1); // RICH: Volatile.
+        } else {
+            value = env.access(value, false, deref, 0); // RICH: Volatile.
+        }
         VDEBUG("S_return source", loc, value->print(cout));
         VDEBUG("S_return destination", loc, env.returnValue->print(cout));
         env.builder.CreateStore(value, env.returnValue, false);	// RICH: isVolatile
@@ -1182,9 +1205,13 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, int& deref) const
     if (func->kind() == E_FIELDACC) {
         VDEBUG("E_funCall method", loc, cout << func->asString());
         fa = func->asE_fieldAcc();
-        llvm::Value* object = fa->obj->cc2llvm(env, deref);
-        object = env.access(object, false, deref, 1);                 // RICH: Volatile.
-        parameters.push_back(object);
+        if (fa->field->isStaticMember()) {
+            llvm::Value* object = fa->obj->cc2llvm(env, deref);
+            object = env.access(object, false, deref, 1);                 // RICH: Volatile.
+            parameters.push_back(object);
+        } else {
+           fa = NULL;
+        }
     }
     FAKELIST_FOREACH(ArgExpression, args, arg) {
         llvm::Value* param = arg->expr->cc2llvm(env, deref);
