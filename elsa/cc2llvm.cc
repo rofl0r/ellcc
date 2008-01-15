@@ -591,14 +591,46 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
     if (inits->isNotEmpty()) {
         VDEBUG("member init for", nameAndParams->var->loc, cout << nameAndParams->var->toString());
         FAKELIST_FOREACH(MemberInit, inits, init) {
-            VDEBUG("member init", init->member->loc, cout << init->member->toString());
+            if (init->member) {
+                VDEBUG("member init", init->member->loc, cout << init->member->toString());
+            } else if(init->base) {
+                VDEBUG("base init", nameAndParams->var->loc, cout << init->base->toString());
+            } else {
+                xassert(init->member || init->base && "No target for member initializer");
+            }
+
+            Expression *expr = NULL;
             FAKELIST_FOREACH(ArgExpression, init->args, arg) {
                 VDEBUG("member init arg", arg->expr->loc, cout << arg->expr->asString());
+                xassert(expr == NULL && "more than one copy constructor argument");
+                expr = arg->expr;
+            }
+
+            xassert(expr && "no copy constructor argument");
+
+            /* Here there are two possibilities.
+             * 1. No copy constructor exists for the member, so we do the assignent
+             *    directly; or
+             * 2. we use the copy constructor (in ctorVar).
+             */
+            if (init->member) {
+                // Copy the member via an assignment.
+
+#if RICH
+                // use the E_assign built-in operator
+
+                // "(*this).y = other.y"
+                action = new E_assign(loc, makeE_fieldAcc(loc, makeThisRef(loc), target),
+                        BIN_ASSIGN,
+                        makeRval(expr));
+                action->type = expr->type;
+                expr = action;
+#endif
+            } else {
+                cerr << toString(nameAndParams->var->loc) << ": ";
+                xunimp("member initializers");
             }
         }
-
-        cerr << toString(nameAndParams->var->loc) << ": ";
-        xunimp("member initializers");
     }
 
     if (handlers->isNotEmpty()) {
@@ -1201,16 +1233,15 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, int& deref) const
     env.checkCurrentBlock();
     std::vector<llvm::Value*> parameters;
     // Check for a method call.
-    E_fieldAcc* fa = NULL;
+    llvm::Value* function = NULL;
     if (func->kind() == E_FIELDACC) {
         VDEBUG("E_funCall method", loc, cout << func->asString());
-        fa = func->asE_fieldAcc();
-        if (fa->field->isStaticMember()) {
+        E_fieldAcc* fa = func->asE_fieldAcc();
+        function = env.variables.get(fa->field);
+        if (function) {
             llvm::Value* object = fa->obj->cc2llvm(env, deref);
             object = env.access(object, false, deref, 1);                 // RICH: Volatile.
             parameters.push_back(object);
-        } else {
-           fa = NULL;
         }
     }
     FAKELIST_FOREACH(ArgExpression, args, arg) {
@@ -1231,12 +1262,8 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, int& deref) const
     }
 
     deref = 0;
-    llvm::Value* function;
-    if (fa) {
-        // This is a method call.
-        function = env.variables.get(fa->field);
-        xassert(function && "An undeclared member has been referenced");
-    } else {
+    if (!function) {
+        // This is not a method call.
         function = func->cc2llvm(env, deref);
     }
     function = env.access(function, false, deref);                 // RICH: Volatile.
@@ -1259,6 +1286,7 @@ llvm::Value *E_fieldAcc::cc2llvm(CC2LLVMEnv &env, int& deref) const
     VDEBUG("E_field obj", loc, cout << obj->asString());
     llvm::Value* object = obj->cc2llvm(env, deref);
     object = env.access(object, false, deref, 1);                 // RICH: Volatile.
+    VDEBUG("E_field field", loc, cout << field->toString());
     llvm::Value* value = env.members.get(field);
     xassert(value && "An undeclared member has been referenced");
     VDEBUG("E_field object", loc, cout << "ID " << object->getType()->getContainedType(0)->getTypeID() << " ";
