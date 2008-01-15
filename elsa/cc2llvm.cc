@@ -606,6 +606,7 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
                 expr = arg->expr;
             }
 
+            xassert(receiver && "no receiver");
             xassert(expr && "no copy constructor argument");
 
             /* Here there are two possibilities.
