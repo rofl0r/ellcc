@@ -616,17 +616,27 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
              */
             if (init->member) {
                 // Copy the member via an assignment.
+                // RICH: This isn't right. And I don't like it.
+                // RICH: Refactor to do the assign directly without building new nodes.
 
-#if RICH
                 // use the E_assign built-in operator
-
                 // "(*this).y = other.y"
-                action = new E_assign(loc, makeE_fieldAcc(loc, makeThisRef(loc), target),
-                        BIN_ASSIGN,
-                        makeRval(expr));
+                // "this"
+                E_this *ths = new E_this(expr->loc);
+                ths->receiver = receiver;
+                // RICH: ths->type = new PointerType(CV_CONST, receiver->type->asRval());
+
+                // "*this"
+                E_deref *deref = new E_deref(expr->loc, ths);
+                deref->type = receiver->type;
+                E_fieldAcc *efieldacc = new E_fieldAcc(expr->loc, deref, new PQ_variable(expr->loc, init->member));
+                efieldacc->type = init->member->type;
+                efieldacc->field = init->member;
+                Expression* action = new E_assign(expr->loc, efieldacc, BIN_ASSIGN, expr);
                 action->type = expr->type;
                 expr = action;
-#endif
+                int der;
+                expr->cc2llvm(env, der);
             } else {
                 cerr << toString(nameAndParams->var->loc) << ": ";
                 xunimp("member initializers");
@@ -1289,7 +1299,34 @@ llvm::Value *E_fieldAcc::cc2llvm(CC2LLVMEnv &env, int& deref) const
     object = env.access(object, false, deref, 1);                 // RICH: Volatile.
     VDEBUG("E_field field", loc, cout << field->toString());
     llvm::Value* value = env.members.get(field);
-    xassert(value && "An undeclared member has been referenced");
+    if (value == NULL) {
+        // Check for a static member.
+        value = env.variables.get(field);
+        xassert(value && "An undeclared member has been referenced");
+        xassert(value->getType()->getTypeID() == llvm::Type::PointerTyID && "expected pointer type");
+        bool first = value->getType()->getContainedType(0)->isFirstClassType();
+
+        VDEBUG("E_fieldAcc ID", loc, cout << value->getType()->getContainedType(0)->getTypeID());
+
+        deref = 0;
+        if (!first) {
+            // The object is not a first class object.
+            if (   value->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID
+                    || value->getType()->getContainedType(0)->getTypeID() == llvm::Type::FunctionTyID) {
+                // Arrays and function pointers are their value.
+                deref = 0;
+            } else {
+                // Need one dereference to get the actual object.
+                deref = 0;  // RICH
+            }
+        } else {
+            // Need one dereference to get the actual object.
+            deref = 1;
+        }
+
+    return value;
+    }
+
     VDEBUG("E_field object", loc, cout << "ID " << object->getType()->getContainedType(0)->getTypeID() << " ";
         object->print(cout));
     VDEBUG("E_field value", loc, value->print(cout));
