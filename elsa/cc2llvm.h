@@ -107,6 +107,17 @@ public:      // funcs
      */
     llvm::Value* declaration(const Variable* var, llvm::Value* init, int deref);
 
+    /** Handle an object constructor.
+     * @param object The object to construct.
+     * @param ctorStatement The constructor statement.
+     */
+    void constructor(llvm::Value* object, Statement* ctorStatement);
+    /** Handle an object constructor.
+     * @param object The object to construct.
+     * @param cons The constructor expression.
+     */
+    void constructor(llvm::Value* object, const E_constructor* cons);
+
     /** Operator classification.
      */
     enum OperatorClass {

@@ -960,11 +960,6 @@ MemberInit *ElabVisitor::makeCopyCtorMemberInit(
   // expression referring to "__other"
   Expression *expr = makeE_variable(loc, srcParam);
 
-  // "*__other"
-  E_deref *deref = new E_deref(loc, expr);
-  deref->type = tfac.makePointerType(CV_CONST, srcParam->type->asRval());
-  expr = deref;
-
   // are we initializing a member?  if not, it's a base class subobject
   bool isMember = !target->hasFlag(DF_TYPEDEF);
   if (isMember) {
@@ -1089,11 +1084,8 @@ S_return *ElabVisitor::make_S_return_this(SourceLoc loc)
 S_expr *ElabVisitor::make_S_expr_memberCopyAssign
   (SourceLoc loc, Variable *member, Variable *other)
 {
-  // "*__other"
-  // "(*__other).y"
-  E_deref *deref = new E_deref(loc, makeE_variable(loc, other));
-  deref->type = tfac.makePointerType(CV_CONST, other->type->asRval());
-  E_fieldAcc *otherDotY = makeE_fieldAcc(loc, deref, member);
+  // "(__other).y"
+  E_fieldAcc *otherDotY = makeE_fieldAcc(loc, makeE_variable(loc, other), member);
 
   Expression *action;
   if (member->type->isCompoundType()) {

@@ -461,7 +461,7 @@ llvm::Value* CC2LLVMEnv::declaration(const Variable* var, llvm::Value* init, int
         value = gv;
     } else if (var->flags & DF_TYPEDEF) {
         // Nothing.
-    } else if (var->flags & DF_DEFINITION) {
+    } else if (var->flags & (DF_DEFINITION|DF_TEMPORARY)) {
         // A local variable.
         xassert(entryBlock);
         llvm::AllocaInst* lv;
@@ -483,6 +483,51 @@ llvm::Value* CC2LLVMEnv::declaration(const Variable* var, llvm::Value* init, int
     return value;
 }
         
+void CC2LLVMEnv::constructor(llvm::Value* object, Statement* ctorStatement)
+{
+    if (ctorStatement) {
+        // Handle the constructor.
+        xassert(ctorStatement->kind() == Statement::S_EXPR);
+        Expression* expr = ctorStatement->asS_expr()->expr->expr;
+        xassert(expr->kind() == Expression::E_CONSTRUCTOR);
+        E_constructor* cons = expr->asE_constructor();
+        constructor(object, cons);
+    }
+}
+      
+void CC2LLVMEnv::constructor(llvm::Value* object, const E_constructor* cons)
+{
+    VDEBUG("constructor", cons->loc, cout << cons->asString() << " " << cons->ctorVar->toString());
+    std::vector<llvm::Value*> parameters;
+    // RICH: int deref = 0;
+    // RICH: object = access(object, false, deref);                 // RICH: Volatile.
+    parameters.push_back(object);
+    FAKELIST_FOREACH(ArgExpression, cons->args, arg) {
+        int deref;
+        llvm::Value* param = arg->expr->cc2llvm(*this, deref);
+        VDEBUG("Param", arg->expr->loc, param->print(cout));
+        param = access(param, false, deref);                 // RICH: Volatile.
+        VDEBUG("Param after", arg->expr->loc, param->print(cout));
+        if (   param->getType()->getTypeID() == llvm::Type::ArrayTyID
+                || (   param->getType()->getTypeID() == llvm::Type::PointerTyID
+                    && param->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID)) {
+            // This is somewhat of a hack: It should be done in cc_tcheck.cc.
+            // Add an implicit cast of &array to *array.
+            const llvm::Type* type = llvm::PointerType::get(param->getType()->getContainedType(0)->getContainedType(0), 0); // RICH: Address space.
+            param = builder.CreateBitCast(param, type);
+        }
+        parameters.push_back(param);
+        VDEBUG("Param", arg->expr->loc, param->print(cout));
+    }
+
+    llvm::Value* function = variables.get(cons->ctorVar);
+    xassert(function && "An undeclared constructor has been referenced");
+    // RICH: deref = 0;
+    // RICH: function = access(function, false, deref);                 // RICH: Volatile.
+    VDEBUG("CreateCall", cons->ctorVar->loc, function->print(cout));
+    builder.CreateCall(function, parameters.begin(), parameters.end());
+}
+
 // -------------------- TopForm --------------------
 void TopForm::cc2llvm(CC2LLVMEnv &env) const
 {
@@ -593,53 +638,57 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
         FAKELIST_FOREACH(MemberInit, inits, init) {
             if (init->member) {
                 VDEBUG("member init", init->member->loc, cout << init->member->toString());
-            } else if(init->base) {
+            }
+            if(init->base) {
                 VDEBUG("base init", nameAndParams->var->loc, cout << init->base->toString());
-            } else {
-                xassert(init->member || init->base && "No target for member initializer");
             }
 
             Expression *expr = NULL;
             FAKELIST_FOREACH(ArgExpression, init->args, arg) {
                 VDEBUG("member init arg", arg->expr->loc, cout << arg->expr->asString());
-                xassert(expr == NULL && "more than one copy constructor argument");
                 expr = arg->expr;
             }
 
             xassert(receiver && "no receiver");
-            xassert(expr && "no copy constructor argument");
 
             /* Here there are two possibilities.
-             * 1. No copy constructor exists for the member, so we do the assignent
+             * 1. No constructor exists for the member, so we do the assignent
              *    directly; or
-             * 2. we use the copy constructor (in ctorVar).
+             * 2. we use the constructor (in ctorVar).
              */
-            if (init->member) {
+            
+            // Compute the object address.
+            // "this"
+            E_this *ths = new E_this(nameAndParams->var->loc);
+            ths->receiver = receiver;
+            // "*this"
+            E_deref *deref = new E_deref(nameAndParams->var->loc, ths);
+            deref->type = receiver->type;
+            // "(*this).member
+            E_fieldAcc *efieldacc = new E_fieldAcc(nameAndParams->var->loc, deref, new PQ_variable(nameAndParams->var->loc, init->member));
+            efieldacc->type = init->member->type;
+            efieldacc->field = init->member;
+
+            if (init->ctorStatement) {
+                int der;
+                llvm::Value* object = efieldacc->cc2llvm(env, der);
+                env.constructor(object, init->ctorStatement);
+            } else if (init->ctorVar) {
+                cerr << toString(nameAndParams->var->loc) << ": ";
+                xunimp("member ctorVar");
+            } else {
+                xassert(expr && "no constructor argument");
                 // Copy the member via an assignment.
                 // RICH: This isn't right. And I don't like it.
                 // RICH: Refactor to do the assign directly without building new nodes.
 
-                // use the E_assign built-in operator
                 // "(*this).y = other.y"
-                // "this"
-                E_this *ths = new E_this(expr->loc);
-                ths->receiver = receiver;
-                // RICH: ths->type = new PointerType(CV_CONST, receiver->type->asRval());
-
-                // "*this"
-                E_deref *deref = new E_deref(expr->loc, ths);
-                deref->type = receiver->type;
-                E_fieldAcc *efieldacc = new E_fieldAcc(expr->loc, deref, new PQ_variable(expr->loc, init->member));
-                efieldacc->type = init->member->type;
-                efieldacc->field = init->member;
+                // use the E_assign built-in operator
                 Expression* action = new E_assign(expr->loc, efieldacc, BIN_ASSIGN, expr);
                 action->type = expr->type;
                 expr = action;
                 int der;
                 expr->cc2llvm(env, der);
-            } else {
-                cerr << toString(nameAndParams->var->loc) << ": ";
-                xunimp("member initializers");
             }
         }
     }
@@ -701,19 +750,6 @@ void Declaration::cc2llvm(CC2LLVMEnv &env) const
         return;
     }
 
-    // Generate a new declaration for each declarator.
-    //
-    // This is convenient for separating concerns, and necessary in
-    // the case of declarations containing pointer-to-member,
-    // because the PTM has to be handled separately, for example:
-    //
-    //   int i, C::*ptm;
-    //
-    // must become two declarations:
-    //
-    //  int i;
-    //  struct ptm__C_int { ... } ptm;
-    //
     FAKELIST_FOREACH(Declarator, decllist, declarator) {
         // At this point we exclusively consult the Type and Variable
         // system; syntax is irrelevant, only semantics matters.
@@ -722,44 +758,10 @@ void Declaration::cc2llvm(CC2LLVMEnv &env) const
         // Get any initializer.        
         int deref;
         llvm::Value* init = env.initializer(declarator->init, var->type, deref, true);
-
+        // Process the declaration.
         llvm::Value* object = env.declaration(var, init, deref);
-
-        if (declarator->ctorStatement) {
-            // Handle the constructor.
-            xassert(declarator->ctorStatement->kind() == Statement::S_EXPR);
-            Expression* expr = declarator->ctorStatement->asS_expr()->expr->expr;
-            xassert(expr->kind() == Expression::E_CONSTRUCTOR);
-            E_constructor* cons = expr->asE_constructor();
-            VDEBUG("constructor", var->loc, cout << cons->asString() << " " << cons->ctorVar->toString());
-            std::vector<llvm::Value*> parameters;
-            deref = 0;
-            object = env.access(object, false, deref);                 // RICH: Volatile.
-            parameters.push_back(object);
-            FAKELIST_FOREACH(ArgExpression, cons->args, arg) {
-                llvm::Value* param = arg->expr->cc2llvm(env, deref);
-                VDEBUG("Param", arg->expr->loc, param->print(cout));
-                param = env.access(param, false, deref);                 // RICH: Volatile.
-                VDEBUG("Param after", arg->expr->loc, param->print(cout));
-                if (   param->getType()->getTypeID() == llvm::Type::ArrayTyID
-                    || (   param->getType()->getTypeID() == llvm::Type::PointerTyID
-                        && param->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID)) {
-                    // This is somewhat of a hack: It should be done in cc_tcheck.cc.
-                    // Add an implicit cast of &array to *array.
-                    const llvm::Type* type = llvm::PointerType::get(param->getType()->getContainedType(0)->getContainedType(0), 0); // RICH: Address space.
-                    param = env.builder.CreateBitCast(param, type);
-                }
-                parameters.push_back(param);
-                VDEBUG("Param", arg->expr->loc, param->print(cout));
-            }
-
-            deref = 0;
-            llvm::Value* function = env.variables.get(cons->ctorVar);
-            xassert(function && "An undeclared constructor has been referenced");
-            function = env.access(function, false, deref);                 // RICH: Volatile.
-            VDEBUG("CreateCall", cons->ctorVar->loc, function->print(cout));
-            env.builder.CreateCall(function, parameters.begin(), parameters.end());
-        }
+        // Handle a constructor.
+        env.constructor(object, declarator->ctorStatement);
 
         // Elaborated statements are relevant; for now, fail if
         // they are present.
@@ -1214,11 +1216,16 @@ llvm::Value *E_variable::cc2llvm(CC2LLVMEnv &env, int& deref) const
 
     // The variable will have been previously seen in a declaration.
     llvm::Value* value = env.variables.get(var);
+    if (value == NULL) {
+        // Declare the variable.
+        env.declaration(var, NULL, 0);
+        value = env.variables.get(var);
+    }
     xassert(value && "An undeclared variable has been referenced");
     xassert(value->getType()->getTypeID() == llvm::Type::PointerTyID && "expected pointer type");
     bool first = value->getType()->getContainedType(0)->isFirstClassType();
 
-    VDEBUG("Load3 ID", loc, cout << value->getType()->getContainedType(0)->getTypeID());
+    VDEBUG("E_variable ID", loc, cout << value->getType()->getContainedType(0)->getTypeID());
 
     deref = 0;
     if (!first) {
@@ -1236,6 +1243,10 @@ llvm::Value *E_variable::cc2llvm(CC2LLVMEnv &env, int& deref) const
         deref = 1;
     }
 
+    if (var->type->isReference() && (var->flags & DF_PARAMETER)) {
+        ++deref;
+    }
+    VDEBUG("E_variable deref", loc, cout << deref);
     return value;
 }
 
@@ -1255,10 +1266,32 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, int& deref) const
             parameters.push_back(object);
         }
     }
+
+    /* I really don;t like having to do this, but...
+     * We walk both the argument list and the function's parameter list so that we can
+     * determine if a given argument is passed by reference.
+     */
+    
+    VDEBUG("E_funCall function", loc, cout << func->asString());
+    VDEBUG("E_funCall func type", loc, cout << func->type->toString());
+    FunctionType *ft;
+    if (func->type->isPtrOrRef()) {
+        ft = func->type->getAtType()->getAtType()->asFunctionType();
+    } else {
+        ft = func->type->asFunctionType();
+    }
+    SObjListIter<Variable> parms(ft->params);
     FAKELIST_FOREACH(ArgExpression, args, arg) {
+        Variable const *parameter = NULL;
+        if (!parms.isDone()) {
+            parameter = parms.data();
+            parms.adv();
+        }
+        bool ref = parameter && parameter->type && parameter->type->isReference();
         llvm::Value* param = arg->expr->cc2llvm(env, deref);
-        VDEBUG("Param", loc, param->print(cout));
-        param = env.access(param, false, deref);                 // RICH: Volatile.
+        VDEBUG("Param", loc, cout << (arg->expr->type->isReference() ? "&" : "") << arg->expr->asString() << " "; param->print(cout));
+        param = env.access(param, false, deref, ref ? 1 : 0);                 // RICH: Volatile.
+        // RICH: param = env.access(param, false, deref);                 // RICH: Volatile.
         VDEBUG("Param after", loc, param->print(cout));
         if (   param->getType()->getTypeID() == llvm::Type::ArrayTyID
             || (   param->getType()->getTypeID() == llvm::Type::PointerTyID
@@ -1284,10 +1317,15 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, int& deref) const
 
 llvm::Value *E_constructor::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
-    // Will never get here.
-    deref = 0;
-    xunimp("constructor");
-    return NULL;
+    VDEBUG("E_constructor", loc, cout << ctorVar->toString());
+    VDEBUG("E_constructor retObj", loc, cout << retObj->asString());
+    FAKELIST_FOREACH(ArgExpression, args, arg) {
+        VDEBUG("E_constructor arg", arg->expr->loc, cout << arg->expr->asString());
+    }
+    
+    llvm::Value* object = retObj->cc2llvm(env, deref);
+    env.constructor(object, this);
+    return object;
 }
 
 llvm::Value *E_fieldAcc::cc2llvm(CC2LLVMEnv &env, int& deref) const
