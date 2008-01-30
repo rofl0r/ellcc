@@ -485,19 +485,18 @@ llvm::Value* CC2LLVMEnv::declaration(const Variable* var, llvm::Value* init, int
         
 void CC2LLVMEnv::constructor(llvm::Value* object, Statement* ctorStatement)
 {
-    if (ctorStatement) {
-        // Handle the constructor.
-        xassert(ctorStatement->kind() == Statement::S_EXPR);
-        Expression* expr = ctorStatement->asS_expr()->expr->expr;
-        xassert(expr->kind() == Expression::E_CONSTRUCTOR);
-        E_constructor* cons = expr->asE_constructor();
-        constructor(object, cons);
-    }
+    // Handle the constructor.
+    xassert(ctorStatement->kind() == Statement::S_EXPR);
+    Expression* expr = ctorStatement->asS_expr()->expr->expr;
+    xassert(expr->kind() == Expression::E_CONSTRUCTOR);
+    E_constructor* cons = expr->asE_constructor();
+    constructor(object, cons);
 }
       
 void CC2LLVMEnv::constructor(llvm::Value* object, const E_constructor* cons)
 {
     VDEBUG("constructor", cons->loc, cout << cons->asString() << " " << cons->ctorVar->toString());
+    VDEBUG("constructor retObj", cons->loc, cout << cons->retObj->asString());
     std::vector<llvm::Value*> parameters;
     // RICH: int deref = 0;
     // RICH: object = access(object, false, deref);                 // RICH: Volatile.
@@ -651,12 +650,6 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
 
             xassert(receiver && "no receiver");
 
-            /* Here there are two possibilities.
-             * 1. No constructor exists for the member, so we do the assignent
-             *    directly; or
-             * 2. we use the constructor (in ctorVar).
-             */
-            
             // Compute the object address.
             // "this"
             E_this *ths = new E_this(nameAndParams->var->loc);
@@ -760,8 +753,10 @@ void Declaration::cc2llvm(CC2LLVMEnv &env) const
         llvm::Value* init = env.initializer(declarator->init, var->type, deref, true);
         // Process the declaration.
         llvm::Value* object = env.declaration(var, init, deref);
-        // Handle a constructor.
-        env.constructor(object, declarator->ctorStatement);
+        if (declarator->ctorStatement) {
+            // Handle a constructor.
+            env.constructor(object, declarator->ctorStatement);
+        }
 
         // Elaborated statements are relevant; for now, fail if
         // they are present.
