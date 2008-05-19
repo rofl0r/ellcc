@@ -7,42 +7,41 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include "pwOS.h"
-#include "pwString.h"
 #include "Ellp.h"
 
-pwNodePtr Ellp::lookup(const pwString& name, int line)
+EllpMacro* Ellp::lookup(std::string& name, int line)
 {
-    pwNodePtr macp;
+    EllpMacro* macp;
+    EllpMacroTable::iterator iter;
      
-    macros->lookup(name, macp);
-    if (macp == NULL) {
+    iter = macros.find(&name);
+    if (iter == macros.end()) {
         return NULL;
     }
 
-    if (macp->getAttribute("undefined")) {
+    macp = iter->second;
+
+    if (macp->undefined) {
         // The last definition has been undefined.
         return false;
     }
 
-    if (macp->getType() == "file") {
-        const pwString& temp = includes ? includes->name : this->name;
-        pwString file;
+    if (macp->type == "file") {
+        const std::string& temp = includes ? includes->name : this->name;
+        macp->body.erase();
 
         // Make the file name into a string.
-        file = "\"";
+        macp->body = "\"";
         for (int i = 0; i < temp.length(); ++i) {
-            file += temp[i];
+            macp->body += temp[i];
             if (temp[i] == '\\') {
-                file += '\\';
+                macp->body += '\\';
             }
         }
-        file += '"';
-
-        macp->setAttribute("body", file);
-    } else if (macp->getType() == "line") {
+        macp->body += '"';
+    } else if (macp->type == "line") {
         EllpStream *p;
-        pwString buffer;
+        char buffer[100];
 
         // Get the current line number.
         if (includes)
@@ -50,21 +49,21 @@ pwNodePtr Ellp::lookup(const pwString& name, int line)
         else
             p = pp;
 
-        pwsPrintf(buffer, "%d", p->startLine());
-        macp->setAttribute("body", buffer);
+        sprintf(buffer, "%d", p->startLine());
+        macp->body = buffer;
     }
 
     return macp;
 }
 
-int Ellp::isdefined(const pwString& name, int line)
+int Ellp::isdefined(std::string& name, int line)
 {
     return lookup(name, line) != NULL;
 }
 
-bool Ellp::lookupmacro(const pwString& name, int line, pwNodePtr& mpp)
+bool Ellp::lookupmacro(std::string& name, int line, EllpMacro*& mpp)
 {
-    pwNodePtr macp = lookup(name, line);
+    EllpMacro* macp = lookup(name, line);
 
     if (macp != NULL) {
         mpp = macp;
@@ -74,19 +73,19 @@ bool Ellp::lookupmacro(const pwString& name, int line, pwNodePtr& mpp)
     return false;
 }
 
-void Ellp::definemacro(int line, const pwString& filename, EllpStream* data)
+void Ellp::definemacro(int line, const std::string& filename, EllpStream* data)
 {
     definemacro(line, filename, *data, data->type, data->funlike, data->formal, data->body);
 }
 
-void Ellp::definemacro(int line,const pwString& filename, const pwTokenInfo& data,
-                        const pwString& type, bool funlike, const pwArray<pwString>& formal,
-                        const pwString& body)
+void Ellp::definemacro(int line, const std::string& filename, EllpTokenInfo& data,
+                        const std::string& type, bool funlike, const std::vector<std::string>& formal,
+                        const std::string& body)
 {
     int i;
-    pwNodePtr macp = lookup(data.string, line);
-    pwError *ep = NULL;
-    pwString buffer;
+    EllpMacro* macp = lookup(data.string, line);
+    EllError *ep = NULL;
+    std::string buffer;
 
     if (macp != NULL) {
         int args;
@@ -94,31 +93,28 @@ void Ellp::definemacro(int line,const pwString& filename, const pwTokenInfo& dat
 
         // Macro redefinition. Make sure it matches.
 
-        if (formal.size() != macp->size()) {
+        if (formal.size() != macp->arguments.size()) {
             match = false;
 
-            ep = error(pwError::ERROR,
+            ep = error(EllError::ERROR,
                        line, -1, 0, 0,
                        "Macro \"@s\" redefined with a different number of arguments.", &data.string);
         }
         if (match) {
-            for (args = 0; args < macp->size(); ++args)
-                if ((*macp)[args]->name() != formal[args]) {
+            for (args = 0; args < macp->arguments.size(); ++args)
+                if (macp->arguments[args] != formal[args]) {
                     match = false;
-                    ep = error(pwError::ERROR,
+                    ep = error(EllError::ERROR,
                                line, -1, 0, 0,
                                "Macro \"@s\" redefined with different argument spelling.", &data.string);
-                    pwError::info(ep, pwError::MORE, "First different argument: \"@s\".", &formal[args]);
+                    EllError::info(ep, EllError::MORE, "First different argument: \"@s\".", &formal[args]);
                     break;
                 }
         }
         if (match) {
-            pwString *temp;
-
-            macp->getAttribute("body", temp);
-            if (temp == NULL || *temp != body) {
+            if (macp->body != body) {
                 match = false;
-                ep = error(pwError::ERROR,
+                ep = error(EllError::ERROR,
                            line, -1, 0, 0,
                            "Macro \"@s\" redefined.", &data.string);
             }
@@ -130,41 +126,42 @@ void Ellp::definemacro(int line,const pwString& filename, const pwTokenInfo& dat
                               macp->startline, macp->startcolumn,
                               macp->endline, macp->endcolumn,
                               false);
-                pwError::info(ep, pwError::MORE, "Last definition in @s", &buffer);
+                EllError::info(ep, EllError::MORE, "Last definition in @s", &buffer);
             }
         }
-        macp->setAttribute("undefined", line);
+        macp->undefined = line;
     }
 
-    macp = new pwNode(data.string, type);
+    macp = new EllpMacro();
+    macp->string = data.string;
+    macp->type = type;
     macp->file = filename;
     macp->startline = data.startline;
     macp->startcolumn = data.startcolumn;
     macp->endline = data.endline;
     macp->endcolumn = data.endcolumn;
     if (funlike) {
-        macp->setAttribute("function");
+        macp->function = true;
         for (i = 0; i < formal.size(); ++i) {
-            pwNodePtr np = new pwNode(formal[i], "argument");
-            macp->add(np);
+            macp->arguments.push_back(formal[i]);
         }
     }
-    macp->setAttribute("body", body);
-    macros->add(macp);
+    macp->body = body;
+    macros.insert(std::pair<std::string*, EllpMacro*>(&macp->string, macp));
 }
 
-void Ellp::undefinemacro(const pwString& name, int line, int fileline, bool fixed)
+void Ellp::undefinemacro(std::string& name, int line, int fileline, bool fixed)
 {
-    pwNodePtr macp = lookup(name, line);
+    EllpMacro* macp = lookup(name, line);
 
     if (macp != NULL) {
-        if (!fixed && macp->getType() != "defined") {
-            error(pwError::ERROR,
+        if (!fixed && macp->type != "defined") {
+            error(EllError::ERROR,
                   line, -1, 0, 0,
                   "Can't undefine macro \"@s\".", &name);
             return;
         }
-        macp->setAttribute("undefined", line);
+        macp->undefined = line;
     }
 }
 
@@ -192,21 +189,21 @@ int Ellp::filegetc()
 //
 // addname - add a name to the list of input file names
 //
-pwString Ellp::addname(const pwString& name)
+std::string Ellp::addname(const std::string& name)
 {
     for (int i = 0; i < files.size(); ++i) {
         if (name == files[i])
             return files[i];                    // Already know this name.
     }
 
-    files += name;
+    files.push_back(name);
     return name;
 }
 
 //
 // addInclude - Add a name to the list of include directories.
 //
-void Ellp::addInclude(const pwString& name)
+void Ellp::addInclude(const std::string& name)
 {
     for (int i = 0; i < includedirs.size(); ++i) {
         if (name == includedirs[i]) {
@@ -214,7 +211,7 @@ void Ellp::addInclude(const pwString& name)
         }
     }
 
-    includedirs += name;
+    includedirs.push_back(name);
 }
 
 //
@@ -254,7 +251,7 @@ void Ellp::setOptions(EllpOptions *op)
 //
 // Ellp - Create a pre-processor object.
 //
-Ellp::Ellp(const pwString& name, pwNodePtr& macroTable) : macros(macroTable)
+Ellp::Ellp(const std::string& name, EllpMacroTable& macroTable) : macros(macroTable)
 {
     time_t timer;
     char *date;
@@ -273,8 +270,8 @@ Ellp::Ellp(const pwString& name, pwNodePtr& macroTable) : macros(macroTable)
 
     pp = new EllpStream(*this, &options);
 
-    pwTokenInfo def;
-    pwArray<pwString> formal;                   // An empty parameter list.
+    EllpTokenInfo def;
+    std::vector<std::string> formal;                   // An empty parameter list.
     // Define some predefined macros.
     def.string = "__FILE__";
     definemacro(0, "initialization", def, "file", false, formal, "");
@@ -314,7 +311,7 @@ bool Ellp::setInput(FILE *fp)
         this->fp = fp;
     else {
         myfp = true;
-        this->fp = pwtFopen(name, "r");
+        this->fp = fopen(name.c_str(), "r");
     }
     if (this->fp == NULL) {
         // error opening file
@@ -349,7 +346,7 @@ Ellp::~Ellp()
 //
 //      processnexttoken - get and process the next token
 //
-void Ellp::processnexttoken(pwTokenInfo& tinfo)
+void Ellp::processnexttoken(EllpTokenInfo& tinfo)
 {
     include *incp = includes;
     EllpStream *current;
@@ -411,25 +408,25 @@ void Ellp::processnexttoken(pwTokenInfo& tinfo)
                 // include a file
                 include *newp;
                 FILE *fp;
-                pwString name;
+                std::string name;
 
                 // Remember the line on which the #include occured.
                 if (!incp)
                     includeline = current->startline;
 
                 // Open a new include file.
-                fp = pwtFopen(current->string, "r");
+                fp = fopen(current->string.c_str(), "r");
                 if (!fp) {
                     // Check all paths.
                     for (int i = 0; i < includedirs.size(); ++i) {
-                        name = pwBuildFilename(includedirs[i], current->string, "");
-                        if ((fp = pwtFopen(name, "r")) != NULL) {
+                        name = includedirs[i] + current->string;
+                        if ((fp = fopen(name.c_str(), "r")) != NULL) {
                             break;
                         }
                     }
 
                     if (!fp) {
-                        error(pwError::ERROR,
+                        error(EllError::ERROR,
                               current->startline, current->startcolumn, current->endline, current->endcolumn,
                               "Can't find #include file \"@s\".", &current->string);
                         continue;
@@ -459,7 +456,7 @@ void Ellp::processnexttoken(pwTokenInfo& tinfo)
 //
 // pspToken - Get the next token.
 //
-void Ellp::getToken(pwTokenInfo& info, Filter filter)
+void Ellp::getToken(EllpTokenInfo& info, Filter filter)
 {
     include *incp;
 
@@ -473,11 +470,11 @@ void Ellp::getToken(pwTokenInfo& info, Filter filter)
             info.file = name;
         }
 
-        if (info.tokenclass == pwTokenInfo::TCSKIPPED) {
+        if (info.tokenclass == EllpTokenInfo::TCSKIPPED) {
             continue;
         }
 
-        if (filter == GETALL || info.tokenclass != pwTokenInfo::TCSPACE) {
+        if (filter == GETALL || info.tokenclass != EllpTokenInfo::TCSPACE) {
             return;                             // Return all tokens.
         }
 
@@ -490,10 +487,10 @@ void Ellp::getToken(pwTokenInfo& info, Filter filter)
 //
 // addDefine - Define a macro.
 //
-void Ellp::addDefine(const pwString& name, const pwString& value)
+void Ellp::addDefine(const std::string& name, const std::string& value)
 {
-    pwTokenInfo def;
-    pwArray<pwString> formal;
+    EllpTokenInfo def;
+    std::vector<std::string> formal;
 
     def.string = name;
     definemacro(0, "initialization", def, "defined", false, formal, value);
@@ -502,7 +499,7 @@ void Ellp::addDefine(const pwString& name, const pwString& value)
 //
 // pspUndefine - undefine a macro
 //
-void Ellp::undefine(const pwString& name, bool fixed)
+void Ellp::undefine(std::string& name, bool fixed)
 {
     EllpStream *p;
 
@@ -518,11 +515,11 @@ void Ellp::undefine(const pwString& name, bool fixed)
 //
 // fixedDefine - define a fixed macro
 //
-void Ellp::fixedDefine(const pwString& name, const char *value)
+void Ellp::fixedDefine(const std::string& name, const char *value)
 {
-    pwTokenInfo def;
-    pwArray<pwString> formal;
-    pwString body;
+    EllpTokenInfo def;
+    std::vector<std::string> formal;
+    std::string body;
 
     if (value)
         body = value;
@@ -598,26 +595,26 @@ bool Ellp::process()
                 // include a file
                 include *newp;
                 FILE *fp;
-                pwString name;
+                std::string name;
 
                 // remember the line that the #include occured
                 if (!incp)
                     includeline = current->startline;
 
                 // open a new include file
-                fp = pwtFopen(current->string, "r");
+                fp = fopen(current->string.c_str(), "r");
                 if (!fp) {
                     // check all paths
                     int i;
 
                     for (i = 0; i < includedirs.size(); ++i) {
-                        name = pwBuildFilename(includedirs[i], current->string, "");
-                        if ((fp = pwtFopen(name, "r")) != NULL)
+                        name = includedirs[i] + current->string;
+                        if ((fp = fopen(name.c_str(), "r")) != NULL)
                             break;
                     }
 
                     if (!fp) {
-                        current->tokenclass = pwTokenInfo::TCSKIPPED;
+                        current->tokenclass = EllpTokenInfo::TCSKIPPED;
                         break;
                     }
                 } else {
@@ -643,7 +640,7 @@ bool Ellp::process()
 //
 // depends - get the files the source file depends on
 //
-const pwArray<pwString>& Ellp::depends()
+const std::vector<std::string>& Ellp::depends()
 {
     process();
     return files;

@@ -1,26 +1,26 @@
 /*
  *    Ellp.h - The pre-processing object.
  *
- *    Copyright (C) 2007, Richard Pennington.
+ *    Copyright (C) 2008, Richard Pennington.
  */
 
 #ifndef Ellp_h
 #define Ellp_h
 
-#include "pwOS.h"
-#include "pwError.h"
-#include "pwToken.h"
-#include "pwArray.h"
-#include "pwStateMachine.h"
-#include "pwNode.h"
+#include <string>
+#include <vector>
+#include <map>
+#include "EllError.h"
+#include "EllpStateMachine.h"
 
-struct pwWordAssoc {                            // Word/token association.
+struct EllpWordAssoc
+{                            // Word/token association.
     char *word;
-    // pwString word;                           // RICH: when strings used.
     int token;
 };
 
-struct pwBracket {                              // Start/end bracketed definition.
+struct EllpBracket
+{                              // Start/end bracketed definition.
     char *start;
     char *end;
     int token;
@@ -33,12 +33,35 @@ struct EllpOptions {                            // Pre-processor options.
     int FLOAT;                                  // Float token.
     int STRING;                                 // String token.
     int IDENTIFIER;                             // Identifier token.
-    pwStateMachine *reservedwords;              // Reserved word matcher.
-    pwStateMachine *tokens;                     // Token matcher.
-    pwBracket *comments;                        // Comment matcher.
+    EllpStateMachine *reservedwords;              // Reserved word matcher.
+    EllpStateMachine *tokens;                     // Token matcher.
+    EllpBracket *comments;                        // Comment matcher.
 };
 
-struct pwTokenInfo : public pwToken {           // Token returned by Ellp.
+struct EllpPosition {				// An input stream position.
+    EllpPosition()
+        { startline = 0; startcolumn = 0; endline = 0; endcolumn = 0; }
+    EllpPosition(const EllpPosition& value)
+        {
+            startline = value.startline; startcolumn = value.startcolumn;
+            endline = value.endline; endcolumn = value.endcolumn;
+            file = value.file;
+        }
+    int startline, startcolumn;                 // Position of token in input stream.
+    int endline, endcolumn;
+    std::string file;                              // Name of input stream.
+};
+
+struct EllpToken : public EllpPosition {            // A preprocessor token.
+    EllpToken() : EllpPosition() {}
+    EllpToken(const EllpToken& value) : EllpPosition(value)
+        {
+            string = value.string;
+        }
+    std::string string;                            // Token string.
+};
+
+struct EllpTokenInfo : public EllpToken {           // Token returned by Ellp.
     enum TokenClass {                           // Classes of tokens.
         TCNONE, TCOPERATOR, TCRESERVED, TCCONSTANT, TCSTRING, TCIDENTIFIER,
         TCPPDIRECTIVE, TCSPACE, TCSKIPPED, TCERROR,
@@ -49,12 +72,25 @@ struct pwTokenInfo : public pwToken {           // Token returned by Ellp.
     int token;                                  // Token identifier.
 };
 
+struct EllpMacro : public EllpToken
+{
+public:
+    EllpMacro() : function(false), undefined(0) {}
+    std::string body;				// Macro body.
+    bool function;				// If this a function-like macro?
+    int undefined;
+    std::string type;
+    std::vector<std::string> arguments;		// Macro arguments.
+};
+
+typedef std::map<std::string*, EllpMacro*> EllpMacroTable;
+
 class Ellp;                                    // Forward declaration.
 
-class EllpStream : public pwTokenInfo {         // The pre-processing stream object.
+class EllpStream : public EllpTokenInfo {         // The pre-processing stream object.
 public:
     friend class Ellp;
-    EllpStream(Ellp& psp, pwPPOptions* options);
+    EllpStream(Ellp& psp, EllpOptions* options);
     ~EllpStream();
     void setInput(int (Ellp::*getc)())         // Set the input function.
         { fgetc = getc; }
@@ -88,17 +124,17 @@ public:
         NEVEREXPAND = 1, STARTMACRO, ENDMACRO, STRINGIZE, PASTE
     };
 
-    void getToken(pwTokenInfo& data);           // Get the next token from a stream.
+    void getToken(EllpTokenInfo& data);           // Get the next token from a stream.
     void getToken();                            // Get the next token from a stream.
     void optionsChanged();                      // Notify stream of changed options.
     int startLine()                             // Get the current tokens starting line.
         { return startline; }
 
 private:
-    pwString type;                              // Type of macro.
+    std::string type;                              // Type of macro.
     bool funlike;                               // Is this a function-like macro?
-    pwArray<pwString> formal;                   // Names of the formal arguments.
-    pwString body;                              // The macro body.
+    std::vector<std::string> formal;                   // Names of the formal arguments.
+    std::string body;                              // The macro body.
 
     struct Conditional {                        // Conditional compilation control.
         Conditional *next;                      // Next active conditional.
@@ -111,11 +147,11 @@ private:
 
     class Stream {                              // for macro streams
     public:
-        Stream(Stream *next, const pwString& name, const pwString& body, int nextchar, bool inhibit);
+        Stream(Stream *next, const std::string& name, const std::string& body, int nextchar, bool inhibit);
         Stream *next;                           // Next stream.
         bool inhibit;                           // Inhibit name scan.
-        pwString name;                          // Name associated with stream.
-        pwString body;                          // Body of macro.
+        std::string name;                          // Name associated with stream.
+        std::string body;                          // Body of macro.
         int index;                              // For sequencing through the body.
         int oldnextchar;                        // Last character in old stream.
     };
@@ -172,8 +208,8 @@ private:
     static void save(void *arg, int current);
     static void backup(void *arg, int good, int count);
     void setupStateMachines();
-    static char *convertcharacter(long *value, const pwString& string);
-    static char *convertnumber(long *value, const pwString& string);
+    static char *convertcharacter(long *value, const std::string& string);
+    static char *convertnumber(long *value, const std::string& string);
     bool primary(long *value);  
     bool unaryexpression(long *value);
     bool multiplicativeexpression(long *value);
@@ -192,14 +228,14 @@ private:
     void getpptoken();
     void pptoken();
 
-    void escape(pwString& string);
+    void escape(std::string& string);
     PPDirectives isppdirective();
     int isreserved();
     void readchar();
     void getnextchar();
 
-    static const pwWordAssoc directivelist[];
-    static const pwWordAssoc operatorlist[];
+    static const EllpWordAssoc directivelist[];
+    static const EllpWordAssoc operatorlist[];
 };
 
 class Ellp {                                   // The pre-processor object.
@@ -210,31 +246,31 @@ public:
         GETNL,                                  // Get all non-whitespace tokens plus newline.
     };
 
-    Ellp(const pwString& name, pwNodePtr& macroTable);
+    Ellp(const std::string& name, EllpMacroTable& macroTable);
+    virtual ~Ellp();
     bool setInput(const char *string);
     bool setInput(FILE *fp = NULL);
-    void addInclude(const pwString& name);
-    void addDefine(const pwString& name, const pwString& value);
-    void undefine(const pwString& name, bool fixed);
-    void fixedDefine(const pwString& name, const char *value);
-    virtual ~Ellp();
+    void addInclude(const std::string& name);
+    void addDefine(const std::string& name, const std::string& value);
+    void undefine(std::string& name, bool fixed);
+    void fixedDefine(const std::string& name, const char *value);
     void getOptions(EllpOptions *op);
     void setOptions(EllpOptions *op);
-    void getToken(pwTokenInfo& info, Filter filter);
-    const pwArray<pwString>& depends();
-    int isdefined(const pwString& name, int line);
-    bool lookupmacro(const pwString& name, int line, pwNodePtr& mpp);
-    virtual pwError* error(pwError::Type, int, int, int, int, const char*, ...) = 0;
-    virtual void errorPosition(pwString&, const pwString&, int, int, int, int, bool) = 0;
+    void getToken(EllpTokenInfo& info, Filter filter);
+    const std::vector<std::string>& depends();
+    int isdefined(std::string& name, int line);
+    bool lookupmacro(std::string& name, int line, EllpMacro*& mpp);
+    virtual EllError* error(EllError::Type, int, int, int, int, const char*, ...) = 0;
+    virtual void errorPosition(std::string&, const std::string&, int, int, int, int, bool) = 0;
 private:
     struct include {                            // Include file definition.
         include *next;                          // Next in include list.
-        pwString name;                          // Name of include file.
+        std::string name;                          // Name of include file.
         FILE *fp;                               // Include file.
         EllpStream *pp;                         // Scanner context.
     };
 
-    pwString name;                              // Name of input.
+    std::string name;                              // Name of input.
     bool myfp;                                  // True if fp is internal.
     FILE *fp;                                   // File pointer.
     char *sp;                                   // String pointer.
@@ -242,20 +278,20 @@ private:
     EllpStream *pp;                             // Scanner context.
     include *includes;                          // open include files
     int includeline;                            // last #include line
-    pwArray<pwString> files;                    // Input file names.
-    pwArray<pwString> includedirs;              // Include search path.
+    std::vector<std::string> files;                    // Input file names.
+    std::vector<std::string> includedirs;              // Include search path.
     EllpOptions options;                        // Pre-processor options.
-    pwNodePtr& macros;                          // The macro table.
-    pwNodePtr lookup(const pwString& name, int line);
-    void definemacro(int line,const pwString& filename, EllpStream* data);
-    void definemacro(int line,const pwString& filename, const pwTokenInfo& data,
-                     const pwString& type, bool funlike, const pwArray<pwString>& formal, const pwString& body);
-    void undefinemacro(const pwString& name, int line, int fileline, bool fixed);
+    EllpMacroTable& macros;                          // The macro table.
+    EllpMacro* lookup(std::string& name, int line);
+    void definemacro(int line, const std::string& filename, EllpStream* data);
+    void definemacro(int line, const std::string& filename, EllpTokenInfo& data,
+                     const std::string& type, bool funlike, const std::vector<std::string>& formal, const std::string& body);
+    void undefinemacro(std::string& name, int line, int fileline, bool fixed);
     int stringgetc();
     int filegetc();
-    pwString addname(const pwString& name);
+    std::string addname(const std::string& name);
     void initializeoptions();
-    void processnexttoken(pwTokenInfo& tinfo);
+    void processnexttoken(EllpTokenInfo& tinfo);
     bool process();
 };
 
