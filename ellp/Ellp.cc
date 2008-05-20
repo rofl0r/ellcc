@@ -79,7 +79,7 @@ void Ellp::definemacro(int line, const std::string& filename, EllpStream* data)
 }
 
 void Ellp::definemacro(int line, const std::string& filename, EllpTokenInfo& data,
-                        const std::string& type, bool funlike, const std::vector<std::string>& formal,
+                        const std::string& type, bool funlike, const ellsif::array<std::string>& formal,
                         const std::string& body)
 {
     int i;
@@ -143,7 +143,7 @@ void Ellp::definemacro(int line, const std::string& filename, EllpTokenInfo& dat
     if (funlike) {
         macp->function = true;
         for (i = 0; i < formal.size(); ++i) {
-            macp->arguments.push_back(formal[i]);
+            macp->arguments[i] = formal[i];
         }
     }
     macp->body = body;
@@ -196,7 +196,7 @@ std::string Ellp::addname(const std::string& name)
             return files[i];                    // Already know this name.
     }
 
-    files.push_back(name);
+    files += name;
     return name;
 }
 
@@ -211,7 +211,7 @@ void Ellp::addInclude(const std::string& name)
         }
     }
 
-    includedirs.push_back(name);
+    includedirs += name;
 }
 
 //
@@ -271,7 +271,7 @@ Ellp::Ellp(const std::string& name, EllpMacroTable& macroTable) : macros(macroTa
     pp = new EllpStream(*this, &options);
 
     EllpTokenInfo def;
-    std::vector<std::string> formal;                   // An empty parameter list.
+    ellsif::array<std::string> formal;                   // An empty parameter list.
     // Define some predefined macros.
     def.string = "__FILE__";
     definemacro(0, "initialization", def, "file", false, formal, "");
@@ -490,7 +490,7 @@ void Ellp::getToken(EllpTokenInfo& info, Filter filter)
 void Ellp::addDefine(const std::string& name, const std::string& value)
 {
     EllpTokenInfo def;
-    std::vector<std::string> formal;
+    ellsif::array<std::string> formal;
 
     def.string = name;
     definemacro(0, "initialization", def, "defined", false, formal, value);
@@ -518,7 +518,7 @@ void Ellp::undefine(std::string& name, bool fixed)
 void Ellp::fixedDefine(const std::string& name, const char *value)
 {
     EllpTokenInfo def;
-    std::vector<std::string> formal;
+    ellsif::array<std::string> formal;
     std::string body;
 
     if (value)
@@ -640,7 +640,7 @@ bool Ellp::process()
 //
 // depends - get the files the source file depends on
 //
-const std::vector<std::string>& Ellp::depends()
+const ellsif::array<std::string>& Ellp::depends()
 {
     process();
     return files;

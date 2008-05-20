@@ -8,6 +8,32 @@ static bool haveErrors;
 static std::string pplastfile;
 static std::string lastfile;
 
+enum tokens {
+    STRING = pwPPStream::CTNEXTOKEN, CHARACTER, INTEGER, FLOAT, IDENTIFIER
+};
+
+static EllpWordAssoc tokens[] = {
+    { " [a-zA-Z_][a-zA-Z_0-9]*", IDENTIFIER },
+    { " [1-9][0-9]*([uU]|[lL])*", INTEGER },            // Decimal integer
+    { " 0[xX][0-9a-fA-F]+([uU]|[lL])*", INTEGER },      // Hexadecimal integer
+    { " 0[0-7]*([uU]|[lL])*", INTEGER },                        // Octal integer
+    { " [0-9]+\\.[0-9]*([eE][-+]?[0-9]+)?", FLOAT },    // <digits>.
+    { " [0-9]*\\.[0-9]+([eE][-+]?[0-9]+)?",     FLOAT },    // .<digits>
+    { " [0-9]+[eE][-+]?[0-9]+", FLOAT },                        // <digits>e
+    { " L?\"(\\\\.|[^\"\n])*\"", STRING },
+    { " L?'(\\\\.|[^'\n])*'", CHARACTER },
+    { NULL,  0 },
+};
+
+static EllpBracket comments[] =
+{
+    { "//", "\n", pwPPStream::COMMENT },        // Single line comment.
+    { "/*", "*/", pwPPStream::COMMENT },        // Multi line comment.
+    { NULL, 0,     0 }
+};
+
+
+//
 //
 // verror - Handle an error.
 //
@@ -71,7 +97,11 @@ int main(int argc, char** argv)
 {
     std::string file(argv[1]);
     Ellp* pp = new PP(file);
+    FILE* fp = NULL;
     if (pp == NULL) exit(1);
+    if (!pp->setInput(fp)) {
+        fprintf(stderr, "can't open %s\n", argv[1]);
+    }
     
     pp->getToken(info, Ellp::GETALL);
     lastfile = info.file;                       // Remember the last file for error reporting.

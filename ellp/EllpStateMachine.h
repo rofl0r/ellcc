@@ -8,8 +8,8 @@
 #define EllpStateMachine_h
 
 #include <limits.h>
-#include <vector>
 #include <string>
+#include "EllsifArray.h"
 
 class EllpStateNode;
 
@@ -47,14 +47,14 @@ public:
 
     struct Machines {                           // A state machine list.
         void add(EllpStateMachine* p);
-        std::vector<EllpStateMachine*> list;
+        ellsif::array<EllpStateMachine*> list;
     };
 
     struct States {                             // A state list.
         void clear();
         int add(State* p, int min);
         void append(const States* from);
-        std::vector<State*> list;
+        ellsif::array<State*> list;
     };
 
     struct Entry {
@@ -71,7 +71,7 @@ public:
             int value;                          // Value of state if matched.
             States next;                        // Next state(s), if any.
         };
-        std::vector<AVPair> av;                     // Actions and/or values associated with this entry.
+        ellsif::array<AVPair> av;                     // Actions and/or values associated with this entry.
     };
 
     struct State {                              // State machine state.

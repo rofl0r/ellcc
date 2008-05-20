@@ -10,7 +10,7 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <string>
-#include <vector>
+#include "EllsifArray.h"
 #include "Ellp.h"
 
 #define VA_ARGS "__VA_ARGS__"                   // Name of the var-args "macro".
@@ -473,7 +473,7 @@ void EllpStream::pptoken()
             int parenlevel;
             bool oldexpand = noexpand;
             int arguments = 0;
-            std::vector<std::string> actual;
+            ellsif::array<std::string> actual;
             int oldnextchar;
             bool argalloced = false;
             bool hasstring = false;
@@ -856,7 +856,7 @@ void EllpStream::getToken()
                 if (skipping)
                     goto endofline;
 
-                formal.clear();
+                formal.truncate();
                 body.erase();
                 funlike = false;
 
