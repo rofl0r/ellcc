@@ -9,7 +9,7 @@ static std::string pplastfile;
 static std::string lastfile;
 
 enum tokens {
-    STRING = pwPPStream::CTNEXTOKEN, CHARACTER, INTEGER, FLOAT, IDENTIFIER
+    STRING = EllpStream::CTNEXTOKEN, CHARACTER, INTEGER, FLOAT, IDENTIFIER
 };
 
 static EllpWordAssoc tokens[] = {
@@ -27,8 +27,8 @@ static EllpWordAssoc tokens[] = {
 
 static EllpBracket comments[] =
 {
-    { "//", "\n", pwPPStream::COMMENT },        // Single line comment.
-    { "/*", "*/", pwPPStream::COMMENT },        // Multi line comment.
+    { "//", "\n", EllpStream::COMMENT },        // Single line comment.
+    { "/*", "*/", EllpStream::COMMENT },        // Multi line comment.
     { NULL, 0,     0 }
 };
 
