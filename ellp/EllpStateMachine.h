@@ -28,7 +28,7 @@ public:
     // Add elements to the state machine.
     bool addWord(const char* word, int value);
     bool addWord(const std::string& word, int value);
-
+    bool addTree(const EllpStateNode* tree, int value);
     // Match input to the state machine.
     int matchWord(const char* word);
     int matchWord(const std::string& word);
@@ -85,10 +85,13 @@ public:
         Entry* states;                          // Per-input states.
     };
 
+    bool addTree(State** root, States& rootlist, const EllpStateNode* tree,
+                 int value, const States *next, int depth);
+
 private:
     static bool hasTarget(State* sp, int target);
     State** setRoot(State** root, States& list, int depth, int index);
-    bool setValue(Entry* entry, int value);
+    bool setValue(Entry* entry, int value, const States* next = NULL);
     void statePrint(FILE* fp, State* sp, void* context);
     void reversePrint(FILE* fp, State* sp, void* context);
     int addWord(State** root, const char* word, int value, int depth);

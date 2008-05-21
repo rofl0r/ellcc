@@ -499,7 +499,7 @@ void EllpStream::pptoken()
                 if (token == ENDOFFILE) {
                     psp.error(EllError::ERROR,
                               mstartline, mstartcolumn, mendline, mendcolumn,
-                              "Call of \"@s\" terminated by end of file.", &name);
+                              "Call of \"%s\" terminated by end of file.", name.c_str());
                     break;
                 }
 
@@ -532,7 +532,7 @@ void EllpStream::pptoken()
                             if (!toomany) {
                                 psp.error(EllError::ERROR,
                                           startline, startcolumn, endline, endcolumn,
-                                          "Call of \"@s\" has too many arguments.", &name);
+                                          "Call of \"%s\" has too many arguments.", name.c_str());
                             }
                             toomany = true;
                         }
@@ -577,14 +577,14 @@ void EllpStream::pptoken()
 
                 ep = psp.error(EllError::ERROR,
                                startline, startcolumn, endline, endcolumn,
-                               "Call of \"@s\" has too few arguments %d.", &name, arguments);
-                EllError::info(ep, EllError::MORE, "\"@s\" is defined with %d arguments.",
-                              &name, def->arguments.size());
+                               "Call of \"%s\" has too few arguments %d.", name.c_str(), arguments);
+                EllError::info(ep, EllError::MORE, "\"%s\" is defined with %d arguments.",
+                              name.c_str(), def->arguments.size());
                 psp.errorPosition(buffer, def->file,
                                   def->startline, def->startcolumn,
                                   def->endline, def->endcolumn,
                                   false);
-                EllError::info(ep, EllError::MORE, "Last definition in @s", &buffer);
+                EllError::info(ep, EllError::MORE, "Last definition in %s", buffer.c_str());
             }
 
             oldnextchar = nextchar;
@@ -912,7 +912,7 @@ void EllpStream::getToken()
                         } else {
                             psp.error(EllError::ERROR,
                                       startline, startcolumn, endline, endcolumn,
-                                      "#define argument (@s) is not an identifier or \"...\".", &string);
+                                      "#define argument (%s) is not an identifier or \"...\".", string.c_str());
                             continue;
                         }
 
@@ -923,7 +923,7 @@ void EllpStream::getToken()
                             if (string == formal[i]) {
                                 psp.error(EllError::ERROR,
                                           startline, startcolumn, endline, endcolumn,
-                                          "Argument \"@s\" not unique in macro definition.", &string);
+                                          "Argument \"%s\" not unique in macro definition.", string.c_str());
                             }
                         }
 
@@ -1218,7 +1218,7 @@ void EllpStream::getToken()
             if (token != HEADER) {
                 psp.error(EllError::ERROR,
                           startline, startcolumn, endline, endcolumn,
-                          "#include missing filename, given \"@s\"", &string);
+                          "#include missing filename, given \"%s\"", string.c_str());
                 goto endofline;
             }
             startline = pstartline;
@@ -1271,7 +1271,7 @@ void EllpStream::getToken()
                 if (errorstring.length()) {
                     psp.error(EllError::ERROR,
                               estartline, estartcolumn, endline, endcolumn,
-                              "@s.", &errorstring);
+                              "%s.", errorstring.c_str());
                 } else {
                     psp.error(EllError::ERROR,
                               estartline, estartcolumn, endline, endcolumn,
@@ -1559,7 +1559,7 @@ bool EllpStream::primary(long *value)
     } else {
         psp.error(EllError::ERROR,
                   startline, startcolumn, endline, endcolumn,
-                  "Bad token (@s) in #if expression.", &string);
+                  "Bad token (%s) in #if expression.", string.c_str());
         return false;
     }
 

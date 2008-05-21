@@ -301,7 +301,7 @@ void EllErrorList::output(FILE* fp, EllError* ep)
     position(buffer, ep->file, ep->startline, ep->startcolumn,
              ep->endline, ep->endcolumn, true);
 
-    fprintf(fp, "@s %s - %s\n", &buffer, modifier, ep->string);
+    fprintf(fp, "%s %s - %s\n", buffer.c_str(), modifier, ep->string);
 
     // Print error information, if any.
     for (int which = 0; which < EllError::INFOCNT; ++which) {

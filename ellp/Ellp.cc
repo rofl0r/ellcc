@@ -98,7 +98,7 @@ void Ellp::definemacro(int line, const std::string& filename, EllpTokenInfo& dat
 
             ep = error(EllError::ERROR,
                        line, -1, 0, 0,
-                       "Macro \"@s\" redefined with a different number of arguments.", &data.string);
+                       "Macro \"%s\" redefined with a different number of arguments.", data.string.c_str());
         }
         if (match) {
             for (args = 0; args < macp->arguments.size(); ++args)
@@ -106,8 +106,8 @@ void Ellp::definemacro(int line, const std::string& filename, EllpTokenInfo& dat
                     match = false;
                     ep = error(EllError::ERROR,
                                line, -1, 0, 0,
-                               "Macro \"@s\" redefined with different argument spelling.", &data.string);
-                    EllError::info(ep, EllError::MORE, "First different argument: \"@s\".", &formal[args]);
+                               "Macro \"%s\" redefined with different argument spelling.", data.string.c_str());
+                    EllError::info(ep, EllError::MORE, "First different argument: \"%s\".", formal[args].c_str());
                     break;
                 }
         }
@@ -116,7 +116,7 @@ void Ellp::definemacro(int line, const std::string& filename, EllpTokenInfo& dat
                 match = false;
                 ep = error(EllError::ERROR,
                            line, -1, 0, 0,
-                           "Macro \"@s\" redefined.", &data.string);
+                           "Macro \"%s\" redefined.", data.string.c_str());
             }
         }
 
@@ -126,7 +126,7 @@ void Ellp::definemacro(int line, const std::string& filename, EllpTokenInfo& dat
                               macp->startline, macp->startcolumn,
                               macp->endline, macp->endcolumn,
                               false);
-                EllError::info(ep, EllError::MORE, "Last definition in @s", &buffer);
+                EllError::info(ep, EllError::MORE, "Last definition in %s", buffer.c_str());
             }
         }
         macp->undefined = line;
@@ -158,7 +158,7 @@ void Ellp::undefinemacro(std::string& name, int line, int fileline, bool fixed)
         if (!fixed && macp->type != "defined") {
             error(EllError::ERROR,
                   line, -1, 0, 0,
-                  "Can't undefine macro \"@s\".", &name);
+                  "Can't undefine macro \"%s\".", name.c_str());
             return;
         }
         macp->undefined = line;
@@ -428,7 +428,7 @@ void Ellp::processnexttoken(EllpTokenInfo& tinfo)
                     if (!fp) {
                         error(EllError::ERROR,
                               current->startline, current->startcolumn, current->endline, current->endcolumn,
-                              "Can't find #include file \"@s\".", &current->string);
+                              "Can't find #include file \"%s\".", current->string.c_str());
                         continue;
                     }
                 } else {

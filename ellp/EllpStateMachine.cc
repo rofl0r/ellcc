@@ -140,7 +140,7 @@ EllpStateMachine::State** EllpStateMachine::setRoot(State** root, States& list, 
 // setValue - Set a termination state value.
 //  This version resolves ambiguity by choosing the earliest value.
 //
-bool EllpStateMachine::setValue(Entry* entry, int value)
+bool EllpStateMachine::setValue(Entry* entry, int value, const States* next)
 {
     if (value == -1) {
         return true;                            // Not a stop state.
@@ -152,6 +152,9 @@ bool EllpStateMachine::setValue(Entry* entry, int value)
     }
 
     entry->value = value;
+    if (next) {
+        entry->next.append(next);
+    }
     if (value > maxvalue) {
         maxvalue = value;                       // Remember the largest value.
     }
@@ -213,6 +216,183 @@ bool EllpStateMachine::addWord(const std::string& word, int value)
 
     root = setRoot(start.list.size() ? &start.list[0] : NULL, start, 0, 0);
     return addWord(root, word, value, 0);
+}
+
+//
+// addTree - Add a tree to a state machine.
+//
+bool EllpStateMachine::addTree(State** root, States& rootlist, const EllpStateNode* tree,
+                             int value, const States *next, int depth)
+{
+    Input first, last, temp;
+    State* start;
+    States list;
+
+    if (!tree) {
+        return false;
+    }
+
+    root = setRoot(root, rootlist, depth, tree->index);   // Set up the initial state machine.
+    switch (tree->type) {
+    case EllpStateNode::UNKNOWN:
+        // Ignore. RICH: should be an error.
+        break;
+
+    case EllpStateNode::INPUT:
+        // Add a single input.
+        // Set the value.
+        setValue(&(*root)->states[tree->u.i.input], value, next);
+        if (tree->u.i.machine) {
+            (*root)->states[tree->u.i.input].machine = tree->u.i.machine;
+            (*root)->machines.add(tree->u.i.machine);
+        }
+        break;
+
+    case EllpStateNode::RANGE:
+        // Add a range of inputs.
+        first = tree->u.r.left;
+        last = tree->u.r.right;
+        if (first > last) {
+            // If first is bigger, swap.
+            temp = first;
+            first = last;
+            last = temp;
+        }
+
+        // Fill in values, if necessary.
+        if (last >= inputsize) {
+            // Max out at the size of the input set.
+            last = inputsize - 1;
+        }
+
+        for (int i = first; i <= last; ++i) {
+            // Set the values.
+            setValue(&(*root)->states[i], value, next);
+        }
+
+        break;
+
+    case EllpStateNode::CONCAT:
+        // Do the right side.
+        // Preserve the original start state.
+        start = *root;
+        *root = NULL;
+        root = setRoot(root, rootlist, depth + 1, tree->u.b.right->index);
+        list.add(*root, 0);
+        bool rightOptional;
+        bool leftOptional;
+        rightOptional = addTree(root, list, tree->u.b.right, value, next, depth + 1);
+        *root = start;
+        start->index = tree->u.b.left->index;
+        leftOptional = addTree(root, rootlist, tree->u.b.left, rightOptional ? value : -1, &list, depth);
+        return rightOptional && leftOptional;   // Return true if both sides are optional.
+
+    case EllpStateNode::OR:
+        // If in a set, add all trees to the same start state with the same follow state.
+        addTree(root, rootlist, tree->u.b.left, value, next, depth);
+        addTree(root, rootlist, tree->u.b.right, value, next, depth);
+        break;
+
+    case EllpStateNode::NOTSET:
+        // Add the set negated.
+        addTree(root, rootlist, tree->u.node, -2, &null, depth);
+        // Negate the set: false becomes true, true, false.
+        for (int i = 0; i < inputsize; ++i) {
+            if ((*root)->states[i].value == -1 && (*root)->states[i].next.list.size() == 0) {
+                // No state, use the target state.
+                setValue(&(*root)->states[i], value, next);
+            } else if ((*root)->states[i].value == -2) {
+                // Undefine this one.
+                (*root)->states[i].value = -1;
+                (*root)->states[i].next.list.truncate();
+            }
+        }
+        break;
+
+    case EllpStateNode::SET:
+        // Add this set to the root.
+        addTree(root, rootlist, tree->u.node, value, next, depth);
+        break;
+
+    case EllpStateNode::ZEROORONE:
+    case EllpStateNode::ZEROORMORE:
+    case EllpStateNode::ONEORMORE:
+        // Add the tree twice, second occurance loops.
+        // Create a new state.
+        if (tree->type == EllpStateNode::ZEROORMORE || tree->type == EllpStateNode::ONEORMORE) {
+            root = setRoot(root, rootlist, depth, tree->index);
+            list.add(*root, 0);
+            list.append(next);
+            addTree(root, rootlist, tree->u.node, value, &list, depth);
+            if (next->list.size()) {
+                // Allow the first state to be nul.
+                for (int i = 0; i < inputsize; ++i) {
+                    for (int j = 0; j < next->list.size(); ++j) {
+                        root = setRoot(root, rootlist, depth, next->list[j]->index);
+                        setValue(&(*root)->states[i], next->list[j]->states[i].value,
+                                 &next->list[j]->states[i].next);
+                        if (next->list[j]->states[i].machine) {
+                            (*root)->states[i].machine = next->list[j]->states[i].machine;
+                            (*root)->machines.add(next->list[j]->states[i].machine);
+                        }
+                    }
+                }
+            }
+        } else {
+            addTree(root, rootlist, tree->u.node, value, next, depth);
+        }
+
+        if (tree->type == EllpStateNode::ZEROORMORE || tree->type == EllpStateNode::ZEROORONE) {
+            // A potentially empty state.
+            if (next->list.size()) {
+                // Allow the first state to be nul.
+                for (int i = 0; i < inputsize; ++i) {
+                    for (int j = 0; j < next->list.size(); ++j) {
+                        root = setRoot(root, rootlist, depth, next->list[j]->index);
+                        setValue(&(*root)->states[i], next->list[j]->states[i].value,
+                                 &next->list[j]->states[i].next);
+                        if (next->list[j]->states[i].machine) {
+                            (*root)->states[i].machine = next->list[j]->states[i].machine;
+                            (*root)->machines.add(next->list[j]->states[i].machine);
+                        }
+                    }
+                }
+            }
+            return true;        // This state may have zero members.
+        }
+        break;
+    case EllpStateNode::NONE:
+        // Ignore. RICH: should be an error.
+        break;
+    }
+
+    return false;               // Not zero or more.
+}
+
+//
+// addTree - Add a tree to a state machine.
+//
+bool EllpStateMachine::addTree(const EllpStateNode* tree, int value)
+{
+    int result;
+
+    if (!tree) {
+        return false;
+    }
+
+
+    if (   tree->type == EllpStateNode::INPUT
+        || (   tree->type == EllpStateNode::CONCAT
+            && tree->u.b.left && tree->u.b.left->type == EllpStateNode::INPUT)) {
+        State **root;
+        // Add simple starting trees to state 0.
+
+        root = setRoot(start.list.size() ? &start.list[0] : NULL, start, 0, tree->index);
+        result = addTree(root, start, tree, value, &null, 0);
+    } else {
+        result = addTree(NULL, start, tree, value, &null, 0);
+    }
+    return result;
 }
 
 //
@@ -838,7 +1018,7 @@ void EllpStateNode::treePrint(FILE* fp, const char* (*inputname)(int, void*), vo
     case UNKNOWN:
         if (u.u.name) {
             std::string name = u.u.name(u.u.value);
-            fprintf(fp, "@s ", &name);
+            fprintf(fp, "%s ", name.c_str());
         } else {
             fprintf(fp, "UNKNOWN ");
         }
@@ -939,7 +1119,7 @@ void EllpStateMachine::statePrint(FILE* fp, State* sp, void* context)
         // This state has pre-state machines.
         fprintf(fp, "      (");
         for (int i = 0; i < sp->machines.list.size(); ++i) {
-            fprintf(fp, " @s", &sp->machines.list[i]->name);
+            fprintf(fp, " %s", sp->machines.list[i]->name.c_str());
         }
         fprintf(fp, " )\n");
     }
@@ -996,7 +1176,7 @@ void EllpStateMachine::reversePrint(FILE* fp, State* sp, void* context)
 //
 void EllpStateMachine::print(FILE* fp, void* context)
 {
-    fprintf(fp, "State machine: @s ", &name);
+    fprintf(fp, "State machine: %s ", name.c_str());
     fprintf(fp, "starts(");
     for (int i = 0; i < start.list.size(); ++i) {
         if (start.list[i]) {
