@@ -10,6 +10,7 @@
 #include <string>
 #include <map>
 #include "pwArray.h"
+#include "pwTable.h"
 #include "pwError.h"
 #include "pwMatcher.h"
 
@@ -83,9 +84,10 @@ public:
     int undefined;
     std::string type;
     pw::array<std::string> arguments;		// Macro arguments.
+    std::string& name() { return string; }
 };
 
-typedef std::map<std::string*, Macro*> MacroTable;
+typedef Table<Macro*> MacroTable;
 
 class PP;                                    // Forward declaration.
 

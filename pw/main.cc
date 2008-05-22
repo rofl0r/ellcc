@@ -149,6 +149,8 @@ int main(int argc, char** argv)
     if (pp == NULL) exit(1);
     if (!pp->setInput(fp)) {
         fprintf(stderr, "can't open %s\n", argv[1]);
+        delete pp;
+        exit(1);
     }
     
 #if 0
@@ -176,5 +178,34 @@ int main(int argc, char** argv)
         fprintf(stdout, "%s", info.string.c_str());
         pp->getToken(info, pw::PP::GETALL);
         lastfile = info.file;                       // Remember the last file for error reporting.
+    }
+
+    int totalerrors = 0;
+    for (int j = 0; j < pw::Error::ERRORCNT; ++j) {
+        // Calculate the total number of errors.
+        totalerrors += errorcount[j];
+    }
+
+    if (totalerrors) {
+        for (int i = 0; i < pw::Error::ERRORCNT; ++i) {
+            const char *name;
+            const char *plural;
+            int count = errorcount[i];
+
+            if (count == 0)
+                continue;
+
+            if (count == 1)
+                plural = "";
+            else
+                plural = "s";
+
+            name = pw::Error::modifier((pw::Error::Type)i);
+            fprintf(stdout, "%d %s message%s reported\n", count, name, plural);
+        }
+
+        // Show errors.
+        errors->sort();
+        errors->print(stdout);
     }
 }

@@ -13,15 +13,11 @@ namespace pw {
 
 Macro* PP::lookup(std::string& name, int line)
 {
-    Macro* macp;
-    MacroTable::iterator iter;
+    Macro* macp = macros.lookup(name);
      
-    iter = macros.find(&name);
-    if (iter == macros.end()) {
+    if (macp == NULL) {
         return NULL;
     }
-
-    macp = iter->second;
 
     if (macp->undefined) {
         // The last definition has been undefined.
@@ -149,7 +145,7 @@ void PP::definemacro(int line, const std::string& filename, TokenInfo& data,
         }
     }
     macp->body = body;
-    macros.insert(std::pair<std::string*, Macro*>(&macp->string, macp));
+    macros.add(macp);
 }
 
 void PP::undefinemacro(std::string& name, int line, int fileline, bool fixed)
