@@ -1,5 +1,5 @@
 /*
- *    PPScan.cc - Scanner for the pre-processing object.
+ *    PPStream.cc - Scanner for the pre-processing object.
  *
  *    Copyright (C) 2008, Richard Pennington.
  */
