@@ -11,7 +11,7 @@
 #include <map>
 #include "pwArray.h"
 #include "pwError.h"
-#include "EllpStateMachine.h"
+#include "pwMatcher.h"
 
 struct EllpWordAssoc
 {                            // Word/token association.
@@ -33,8 +33,8 @@ struct EllpOptions {                            // Pre-processor options.
     int FLOAT;                                  // Float token.
     int STRING;                                 // String token.
     int IDENTIFIER;                             // Identifier token.
-    EllpStateMachine *reservedwords;              // Reserved word matcher.
-    EllpStateMachine *tokens;                     // Token matcher.
+    pw::Matcher *reservedwords;              // Reserved word matcher.
+    pw::Matcher *tokens;                     // Token matcher.
     EllpBracket *comments;                        // Comment matcher.
 };
 

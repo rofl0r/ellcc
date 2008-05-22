@@ -15,7 +15,7 @@
 
 #define VA_ARGS "__VA_ARGS__"                   // Name of the var-args "macro".
 
-static EllpStateMachine* directives;              // Preprocessing directives.
+static pw::Matcher* directives;              // Preprocessing directives.
 const EllpWordAssoc EllpStream::directivelist[] = // List of preprocessor directives.
 {
     { "define",     PPDEFINE},
@@ -85,7 +85,7 @@ EllpStream::EllpStream(Ellp& ppsp, EllpOptions *options) : psp(ppsp)
     this->fgetc = NULL;                         // input function
     if (directives == NULL) {
         // Define the preprocessing directive state machine.
-        directives = new EllpStateMachine("directives", EllpStateMachine::CHARSIZE, stateCharName, NULL, 0);
+        directives = new pw::Matcher("directives", pw::Matcher::CHARSIZE, pw::stateCharName, NULL, 0);
         for (wp = directivelist; wp->word; ++wp) {
             directives->addWord(wp->word, wp->token);
         }

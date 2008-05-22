@@ -109,11 +109,11 @@ void PP::errorPosition(std::string& buffer, const std::string& file,
 
 static void setupStateMachines()
 {
-    EllpStateMachine *machine;
+    pw::Matcher *machine;
     const EllpWordAssoc *wp;
 
     if (options.reservedwords == NULL) {
-        machine = options.reservedwords = new EllpStateMachine("reserved words", EllpStateMachine::CHARSIZE,
+        machine = options.reservedwords = new pw::Matcher("reserved words", pw::Matcher::CHARSIZE,
                                                                 NULL,
                                                                 NULL, 0);
         for (wp = reservedWords; wp->word; ++wp) {
@@ -122,7 +122,7 @@ static void setupStateMachines()
     }
 
     if (options.tokens == NULL) {
-        machine = options.tokens = new EllpStateMachine("tokens", EllpStateMachine::CHARSIZE,
+        machine = options.tokens = new pw::Matcher("tokens", pw::Matcher::CHARSIZE,
                                                         NULL,
                                                         NULL, 0);
     for (wp = tokens; wp->word; ++wp) {
@@ -130,7 +130,7 @@ static void setupStateMachines()
                 // Match a regular expression.
                 std::string regstr;
                 regstr = wp->word + 1;
-                EllpStateNode regexp(regstr);
+                pw::MatchNode regexp(regstr);
                 machine->addTree(&regexp, wp->token);
             } else {
                 // Match a word.
