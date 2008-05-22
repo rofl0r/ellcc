@@ -1,22 +1,22 @@
-#include "Ellp.h"
+#include "pwPP.h"
 
-static EllpMacroTable macros;
+static pw::MacroTable macros;
 static pw::ErrorList *errors;                        // Errors encountered.
 static int errorcount[pw::Error::ERRORCNT];          // Number of errors encountered.
-static EllpTokenInfo info;                           // Information about the token.
+static pw::TokenInfo info;                           // Information about the token.
 static bool haveErrors;
 static std::string pplastfile;
 static std::string lastfile;
 
 enum tokens {
-    STRING = EllpStream::CTNEXTOKEN, CHARACTER, INTEGER, FLOAT, IDENTIFIER
+    STRING = pw::PPStream::CTNEXTOKEN, CHARACTER, INTEGER, FLOAT, IDENTIFIER
 };
 
-static EllpWordAssoc reservedWords[] = {
+static pw::WordAssoc reservedWords[] = {
     { NULL,  0 },
 };
 
-static EllpWordAssoc tokens[] = {
+static pw::WordAssoc tokens[] = {
     { " [a-zA-Z_][a-zA-Z_0-9]*", IDENTIFIER },
     { " [1-9][0-9]*([uU]|[lL])*", INTEGER },            	// Decimal integer
     { " 0[xX][0-9a-fA-F]+([uU]|[lL])*", INTEGER },      	// Hexadecimal integer
@@ -29,14 +29,14 @@ static EllpWordAssoc tokens[] = {
     { NULL,  0 },
 };
 
-static EllpBracket comments[] =
+static pw::Bracket comments[] =
 {
-    { "//", "\n", EllpStream::COMMENT },        		// Single line comment.
-    { "/*", "*/", EllpStream::COMMENT },        		// Multi line comment.
+    { "//", "\n", pw::PPStream::COMMENT },        		// Single line comment.
+    { "/*", "*/", pw::PPStream::COMMENT },        		// Multi line comment.
     { NULL, 0,     0 }
 };
 
-static EllpOptions options = {
+static pw::Options options = {
     true,                               			// Trigraphs allowed.
     INTEGER,                            			// Integer token.
     CHARACTER,                          			// Character token.
@@ -68,10 +68,10 @@ pw::Error* verror(pw::Error::Type type,
     return ep;
 }
 
-class PP : public Ellp
+class PP : public pw::PP
 {
 public:
-    PP(std::string& name) : Ellp(name, ::macros)
+    PP(std::string& name) : pw::PP(name, ::macros)
         { }
     pw::Error* error(pw::Error::Type type,
                    int startline, int startcolumn, int endline, int endcolumn,
@@ -110,7 +110,7 @@ void PP::errorPosition(std::string& buffer, const std::string& file,
 static void setupStateMachines()
 {
     pw::Matcher *machine;
-    const EllpWordAssoc *wp;
+    const pw::WordAssoc *wp;
 
     if (options.reservedwords == NULL) {
         machine = options.reservedwords = new pw::Matcher("reserved words", pw::Matcher::CHARSIZE,
@@ -144,7 +144,7 @@ int main(int argc, char** argv)
 {
     std::string file(argv[1]);
     errors = new pw::ErrorList;
-    Ellp* pp = new PP(file);
+    PP* pp = new PP(file);
     FILE* fp = NULL;
     if (pp == NULL) exit(1);
     if (!pp->setInput(fp)) {
@@ -161,10 +161,10 @@ int main(int argc, char** argv)
     setupStateMachines();
     pp->setOptions(&options);    // Set pre-processor options.
 
-    pp->getToken(info, Ellp::GETALL);
+    pp->getToken(info, pw::PP::GETALL);
     lastfile = info.file;                       // Remember the last file for error reporting.
     for (;;) {
-        if (info.token == EllpStream::ENDOFFILE) {
+        if (info.token == pw::PPStream::ENDOFFILE) {
             // End of file.
             break;
         }
@@ -174,7 +174,7 @@ int main(int argc, char** argv)
             fprintf(stdout, "#line %d \"%s\"\n", info.startline, lastfile.c_str());
         }
         fprintf(stdout, "%s", info.string.c_str());
-        pp->getToken(info, Ellp::GETALL);
+        pp->getToken(info, pw::PP::GETALL);
         lastfile = info.file;                       // Remember the last file for error reporting.
     }
 }

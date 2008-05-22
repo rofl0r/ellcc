@@ -1,5 +1,5 @@
 /*
- *    EllpScan.c - Scanner for the pre-processing object.
+ *    PPScan.cc - Scanner for the pre-processing object.
  *
  *    Copyright (C) 2008, Richard Pennington.
  */
@@ -11,12 +11,14 @@
 #include <stdlib.h>
 #include <string>
 #include "pwArray.h"
-#include "Ellp.h"
+#include "pwPP.h"
+
+namespace pw {
 
 #define VA_ARGS "__VA_ARGS__"                   // Name of the var-args "macro".
 
 static pw::Matcher* directives;              // Preprocessing directives.
-const EllpWordAssoc EllpStream::directivelist[] = // List of preprocessor directives.
+const WordAssoc PPStream::directivelist[] = // List of preprocessor directives.
 {
     { "define",     PPDEFINE},
     { "elif",       PPELIF},
@@ -33,7 +35,7 @@ const EllpWordAssoc EllpStream::directivelist[] = // List of preprocessor direct
     { NULL,         0}
 };
 
-const EllpWordAssoc EllpStream::operatorlist[] =         // List of preprocessor operators.
+const WordAssoc PPStream::operatorlist[] =         // List of preprocessor operators.
 {
     { "#",   POUND},
     { "##",  POUNDPOUND},
@@ -69,17 +71,17 @@ const EllpWordAssoc EllpStream::operatorlist[] =         // List of preprocessor
 //
 // optionsChanged - options have changed, adapt.
 //
-void EllpStream::optionsChanged()
+void PPStream::optionsChanged()
 {
     setupStateMachines();
 }
 
 //
-//      EllpStream - Preprocessor stream constructor.
+//      PPStream - Preprocessor stream constructor.
 //
-EllpStream::EllpStream(Ellp& ppsp, EllpOptions *options) : psp(ppsp)
+PPStream::PPStream(PP& ppsp, Options *options) : psp(ppsp)
 {
-    const EllpWordAssoc *wp;
+    const WordAssoc *wp;
 
     this->options = options;                    // Preprocessor options.
     this->fgetc = NULL;                         // input function
@@ -110,7 +112,7 @@ EllpStream::EllpStream(Ellp& ppsp, EllpOptions *options) : psp(ppsp)
     conditionals = NULL;                        // no conditionals yet
 }
 
-EllpStream::~EllpStream()
+PPStream::~PPStream()
 {
     delete commentbuffer;
 }
@@ -118,36 +120,36 @@ EllpStream::~EllpStream()
 //
 // Token state machine helper functions.
 //
-int EllpStream::read(void *arg)
+int PPStream::read(void *arg)
 {
-    EllpStream *pp = (EllpStream *)arg;
+    PPStream *pp = (PPStream *)arg;
     pp->readchar();
     return pp->nextchar;
 }
 
-void EllpStream::save(void *arg, int current)
+void PPStream::save(void *arg, int current)
 {
-    EllpStream *pp = (EllpStream *)arg;
+    PPStream *pp = (PPStream *)arg;
     pp->string += current;
 }
 
-void EllpStream::backup(void *arg, int good, int count)
+void PPStream::backup(void *arg, int good, int count)
 {
-    EllpStream *pp = (EllpStream *)arg;
+    PPStream *pp = (PPStream *)arg;
     // Restore uneeded characters.
-    pp->first = new EllpStream::Stream::Stream(pp->first, "", pp->string.substr(good, pp->string.length()),
+    pp->first = new PPStream::PPStream::Stream(pp->first, "", pp->string.substr(good, pp->string.length()),
                                                pp->nextchar, false);
     pp->string.erase(good, pp->string.length());
     pp->nextchar = 0;
     pp->readchar();
 }
 
-void EllpStream::setupStateMachines()
+void PPStream::setupStateMachines()
 {
     int nexttoken = CTNEXTOKEN;
-    const EllpWordAssoc *wp;
+    const WordAssoc *wp;
     int size = 0;
-    const EllpBracket *cp;
+    const Bracket *cp;
     int temp;
 
     if (!options) {
@@ -204,7 +206,7 @@ void EllpStream::setupStateMachines()
     }
 }
 
-EllpStream::Stream::Stream(Stream *next, const std::string& name, const std::string& body,
+PPStream::Stream::Stream(Stream *next, const std::string& name, const std::string& body,
                            int nextchar, bool inhibit)
 {
     this->body = body;
@@ -218,7 +220,7 @@ EllpStream::Stream::Stream(Stream *next, const std::string& name, const std::str
 //
 //      getpptoken - get the next non-blank token
 //
-void EllpStream::getpptoken()
+void PPStream::getpptoken()
 {
     do {
         pptoken();
@@ -232,11 +234,11 @@ void EllpStream::getpptoken()
 #define firstidentifier(ch) (isalpha(ch) || (ch) == '_')
 #define nextidentifier(ch) (isalnum(ch) || (ch) == '_')
 
-void EllpStream::pptoken()
+void PPStream::pptoken()
 {
     int mstartline, mstartcolumn;
     int mendline, mendcolumn;
-    const EllpBracket *cp;
+    const Bracket *cp;
 
     again:
     token = NONE;                               // No token, yet.
@@ -397,7 +399,7 @@ void EllpStream::pptoken()
     }if (token == options->IDENTIFIER) {
         std::string name;
         std::string body;
-        EllpMacro* def;
+        Macro* def;
         int myneednl;
 
         mendline = nextl;
@@ -754,7 +756,7 @@ void EllpStream::pptoken()
 //
 //      getToken - Get the next token.
 //
-void EllpStream::getToken(EllpTokenInfo& data)
+void PPStream::getToken(TokenInfo& data)
 {
     getToken();
     data = *this;
@@ -763,11 +765,11 @@ void EllpStream::getToken(EllpTokenInfo& data)
 //
 //      gettoken - Get the next token.
 //
-void EllpStream::getToken()
+void PPStream::getToken()
 {
     again:
     pptoken();
-    tokenclass = EllpTokenInfo::TCNONE;           // No class yet.
+    tokenclass = TokenInfo::TCNONE;           // No class yet.
     if (token == ENDOFFILE) {
         sawnewline = true;                      // have seen a new line
         while (conditionals) {
@@ -786,14 +788,14 @@ void EllpStream::getToken()
     if (token == COMMENT) {
         if (skipping)
             goto endofline;
-        tokenclass = EllpTokenInfo::TCSPACE;
+        tokenclass = TokenInfo::TCSPACE;
         token = COMMENT;
         return;
     }
 
     if (token == NL) {                          // newline
         sawnewline = true;                      // Have seen a new line.
-        tokenclass = EllpTokenInfo::TCSPACE;
+        tokenclass = TokenInfo::TCSPACE;
         if (inpragma) {
             // Leaving a pragma.
             inpragma = false;
@@ -806,7 +808,7 @@ void EllpStream::getToken()
     if (token == WS) {                          // whitespace
         if (skipping)
             goto again;
-        tokenclass = EllpTokenInfo::TCSPACE;
+        tokenclass = TokenInfo::TCSPACE;
         token = WS;
         return;
     }
@@ -818,7 +820,7 @@ void EllpStream::getToken()
         // This is a preprocessor directive.
         pstartline = startline;
         pstartcolumn = startcolumn;
-        tokenclass = EllpTokenInfo::TCPPDIRECTIVE;
+        tokenclass = TokenInfo::TCPPDIRECTIVE;
         noexpand = true;
         getpptoken();
         if (token == NL) {
@@ -836,7 +838,7 @@ void EllpStream::getToken()
                           "Missing preprocessor directive.");
             startline = pstartline;
             startcolumn = pstartcolumn;
-            tokenclass = EllpTokenInfo::TCSKIPPED;
+            tokenclass = TokenInfo::TCSKIPPED;
             noexpand = false;
             token = POTHER;
             return;
@@ -1056,7 +1058,7 @@ void EllpStream::getToken()
                 conditionals->haselse = true;
                 if (!conditionals->skipping) {
                     if (skipping) {
-                        tokenclass = EllpTokenInfo::TCSKIPPED;
+                        tokenclass = TokenInfo::TCSKIPPED;
                         pstartline = conditionals->skipline;
                         pstartcolumn = conditionals->skipcolumn;
                     } else {
@@ -1091,7 +1093,7 @@ void EllpStream::getToken()
                         // was skipping
                         startline = cp->skipline;
                         startcolumn = cp->skipcolumn;
-                        tokenclass = EllpTokenInfo::TCSKIPPED;
+                        tokenclass = TokenInfo::TCSKIPPED;
                     }
                     skipping = cp->skipping;
                     delete cp;
@@ -1129,7 +1131,7 @@ void EllpStream::getToken()
                 if (skipping) {
                     pstartline = conditionals->skipline;
                     pstartcolumn = conditionals->skipcolumn;
-                    tokenclass = EllpTokenInfo::TCSKIPPED;
+                    tokenclass = TokenInfo::TCSKIPPED;
                     skipping = false;
                 }
                 noexpand = false;
@@ -1368,7 +1370,7 @@ void EllpStream::getToken()
                 return;                         // EOF encountered
             }
         }
-        tokenclass = EllpTokenInfo::TCSPACE;
+        tokenclass = TokenInfo::TCSPACE;
         noexpand = false;
         sawnewline = true;                      // have seen a new line
         string = "\n";
@@ -1382,14 +1384,14 @@ void EllpStream::getToken()
     if (skipping)
         goto endofline;                         // skipping conditional stuff
 
-    tokenclass = EllpTokenInfo::TCOPERATOR;
+    tokenclass = TokenInfo::TCOPERATOR;
     if (token == options->INTEGER || token == options->FLOAT) {
-        tokenclass = EllpTokenInfo::TCCONSTANT;
+        tokenclass = TokenInfo::TCCONSTANT;
         return;
     }
 
     if (token == options->CHARACTER) {
-        tokenclass = EllpTokenInfo::TCCONSTANT;
+        tokenclass = TokenInfo::TCCONSTANT;
         token = options->CHARACTER;
         return;
     }
@@ -1427,7 +1429,7 @@ void EllpStream::getToken()
         nextchar = 0;
         string = thisString;
         token = options->STRING;
-        tokenclass = EllpTokenInfo::TCSTRING;
+        tokenclass = TokenInfo::TCSTRING;
         startline = sstartline;
         startcolumn = sstartcolumn;
         endline = sendline;
@@ -1442,12 +1444,12 @@ void EllpStream::getToken()
 
         // check for a reserved word
         if ((reserved = isreserved()) >= 0) {
-            tokenclass = EllpTokenInfo::TCRESERVED;
+            tokenclass = TokenInfo::TCRESERVED;
             token = reserved;
             return;
         }
 
-        tokenclass = EllpTokenInfo::TCIDENTIFIER;
+        tokenclass = TokenInfo::TCIDENTIFIER;
         token = options->IDENTIFIER;
         return;
     }
@@ -1458,7 +1460,7 @@ void EllpStream::getToken()
     }
 }
 
-int EllpStream::isreserved()
+int PPStream::isreserved()
 {
     if (!options->reservedwords) {
         return -1;
@@ -1467,11 +1469,11 @@ int EllpStream::isreserved()
     return options->reservedwords->matchWord(string);
 }
 
-EllpStream::PPDirectives EllpStream::isppdirective() {
+PPStream::PPDirectives PPStream::isppdirective() {
     return (PPDirectives)directives->matchWord(string);
 }
 
-bool EllpStream::primary(long *value)
+bool PPStream::primary(long *value)
 {
     char *p;
 
@@ -1567,7 +1569,7 @@ bool EllpStream::primary(long *value)
     return true;
 }
 
-bool EllpStream::unaryexpression(long *value)
+bool PPStream::unaryexpression(long *value)
 {
     int oper = token;
 
@@ -1597,7 +1599,7 @@ bool EllpStream::unaryexpression(long *value)
     return primary(value);
 }
 
-bool EllpStream::multiplicativeexpression(long *value)
+bool PPStream::multiplicativeexpression(long *value)
 {
     long value1;
     int i;
@@ -1622,7 +1624,7 @@ bool EllpStream::multiplicativeexpression(long *value)
     return true;
 }
 
-bool EllpStream::additiveexpression(long *value)
+bool PPStream::additiveexpression(long *value)
 {
     long value1;
     int i;
@@ -1641,7 +1643,7 @@ bool EllpStream::additiveexpression(long *value)
     return true;
 }
 
-bool EllpStream::shiftexpression(long *value)
+bool PPStream::shiftexpression(long *value)
 {
     long value1;
     int i;
@@ -1660,7 +1662,7 @@ bool EllpStream::shiftexpression(long *value)
     return true;
 }
 
-bool EllpStream::relationalexpression(long *value)
+bool PPStream::relationalexpression(long *value)
 {
     long value1;
     int i;
@@ -1686,7 +1688,7 @@ bool EllpStream::relationalexpression(long *value)
     return true;
 }
 
-bool EllpStream::equalityexpression(long *value)
+bool PPStream::equalityexpression(long *value)
 {
     long value1;
     int i;
@@ -1706,7 +1708,7 @@ bool EllpStream::equalityexpression(long *value)
     return true;
 }
 
-bool EllpStream::ANDexpression(long *value)
+bool PPStream::ANDexpression(long *value)
 {
     long value1;
 
@@ -1721,7 +1723,7 @@ bool EllpStream::ANDexpression(long *value)
     return true;
 }
 
-bool EllpStream::exclusiveORexpression(long *value)
+bool PPStream::exclusiveORexpression(long *value)
 {
     long value1;
 
@@ -1736,7 +1738,7 @@ bool EllpStream::exclusiveORexpression(long *value)
     return true;
 }
 
-bool EllpStream::inclusiveORexpression(long *value)
+bool PPStream::inclusiveORexpression(long *value)
 {
     long value1;
 
@@ -1751,7 +1753,7 @@ bool EllpStream::inclusiveORexpression(long *value)
     return true;
 }
 
-bool EllpStream::logicalANDexpression(long *value)
+bool PPStream::logicalANDexpression(long *value)
 {
     long value1;
 
@@ -1769,7 +1771,7 @@ bool EllpStream::logicalANDexpression(long *value)
     return true;
 }
 
-bool EllpStream::logicalORexpression(long *value)
+bool PPStream::logicalORexpression(long *value)
 {
     long value1;
 
@@ -1787,7 +1789,7 @@ bool EllpStream::logicalORexpression(long *value)
     return true;
 }
 
-bool EllpStream::conditionalexpression(long *value)
+bool PPStream::conditionalexpression(long *value)
 {
     long value1, value2;
 
@@ -1815,7 +1817,7 @@ bool EllpStream::conditionalexpression(long *value)
     return true;
 }
 
-bool EllpStream::expression(long *value)
+bool PPStream::expression(long *value)
 {
     if (!conditionalexpression(value))
         return false;
@@ -1831,7 +1833,7 @@ bool EllpStream::expression(long *value)
 //
 //      conditionalexpr - evaluate a preprocessor conditional expression
 //
-bool EllpStream::conditionalexpr()
+bool PPStream::conditionalexpr()
 {
     long value;
 
@@ -1852,7 +1854,7 @@ bool EllpStream::conditionalexpr()
 //
 //      convertcharacter - convert the token buffer to a character
 //
-char *EllpStream::convertcharacter(long *value, const std::string& string)
+char *PPStream::convertcharacter(long *value, const std::string& string)
 {
     int wide;
     int index;
@@ -1878,7 +1880,7 @@ char *EllpStream::convertcharacter(long *value, const std::string& string)
 //
 //      convertnumber - convert the string to a number
 //
-char *EllpStream::convertnumber(long *value, const std::string& string)
+char *PPStream::convertnumber(long *value, const std::string& string)
 {
     int base;
     bool islong, isunsigned;
@@ -1946,7 +1948,7 @@ char *EllpStream::convertnumber(long *value, const std::string& string)
 //
 //      getnextchar - low level character reader
 //
-void EllpStream::getnextchar()
+void PPStream::getnextchar()
 {
     again:
     if (first) {
@@ -2013,7 +2015,7 @@ void EllpStream::getnextchar()
 //      readchar - get the next character from the input stream
 //
 
-void EllpStream::readchar()
+void PPStream::readchar()
 {
     again:
     getnextchar();
@@ -2154,7 +2156,7 @@ void EllpStream::readchar()
 //
 //      escape - gather an escape sequence
 //
-void EllpStream::escape(std::string& string)
+void PPStream::escape(std::string& string)
 {
     string += '\\';
     readchar();
@@ -2212,3 +2214,4 @@ void EllpStream::escape(std::string& string)
     }
 }
 
+};

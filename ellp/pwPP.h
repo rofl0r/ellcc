@@ -1,11 +1,11 @@
 /*
- *    Ellp.h - The pre-processing object.
+ *    pwPP.h - The pre-processing object.
  *
  *    Copyright (C) 2008, Richard Pennington.
  */
 
-#ifndef Ellp_h
-#define Ellp_h
+#ifndef pwPP_h
+#define pwPP_h
 
 #include <string>
 #include <map>
@@ -13,20 +13,22 @@
 #include "pwError.h"
 #include "pwMatcher.h"
 
-struct EllpWordAssoc
+namespace pw {
+
+struct WordAssoc
 {                            // Word/token association.
     char *word;
     int token;
 };
 
-struct EllpBracket
+struct Bracket
 {                              // Start/end bracketed definition.
     char *start;
     char *end;
     int token;
 };
 
-struct EllpOptions {                            // Pre-processor options.
+struct Options {                            // Pre-processor options.
     bool trigraphs;                             // True if trigraphs enabled.
     int INTEGER;                                // Integer token.
     int CHARACTER;                              // Character token.
@@ -35,13 +37,13 @@ struct EllpOptions {                            // Pre-processor options.
     int IDENTIFIER;                             // Identifier token.
     pw::Matcher *reservedwords;              // Reserved word matcher.
     pw::Matcher *tokens;                     // Token matcher.
-    EllpBracket *comments;                        // Comment matcher.
+    Bracket *comments;                        // Comment matcher.
 };
 
-struct EllpPosition {				// An input stream position.
-    EllpPosition()
+struct Position {				// An input stream position.
+    Position()
         { startline = 0; startcolumn = 0; endline = 0; endcolumn = 0; }
-    EllpPosition(const EllpPosition& value)
+    Position(const Position& value)
         {
             startline = value.startline; startcolumn = value.startcolumn;
             endline = value.endline; endcolumn = value.endcolumn;
@@ -52,16 +54,16 @@ struct EllpPosition {				// An input stream position.
     std::string file;                              // Name of input stream.
 };
 
-struct EllpToken : public EllpPosition {            // A preprocessor token.
-    EllpToken() : EllpPosition() {}
-    EllpToken(const EllpToken& value) : EllpPosition(value)
+struct Token : public Position {            // A preprocessor token.
+    Token() : Position() {}
+    Token(const Token& value) : Position(value)
         {
             string = value.string;
         }
     std::string string;                            // Token string.
 };
 
-struct EllpTokenInfo : public EllpToken {           // Token returned by Ellp.
+struct TokenInfo : public Token {           // Token returned by .
     enum TokenClass {                           // Classes of tokens.
         TCNONE, TCOPERATOR, TCRESERVED, TCCONSTANT, TCSTRING, TCIDENTIFIER,
         TCPPDIRECTIVE, TCSPACE, TCSKIPPED, TCERROR,
@@ -72,10 +74,10 @@ struct EllpTokenInfo : public EllpToken {           // Token returned by Ellp.
     int token;                                  // Token identifier.
 };
 
-struct EllpMacro : public EllpToken
+struct Macro : public Token
 {
 public:
-    EllpMacro() : function(false), undefined(0) {}
+    Macro() : function(false), undefined(0) {}
     std::string body;				// Macro body.
     bool function;				// If this a function-like macro?
     int undefined;
@@ -83,16 +85,16 @@ public:
     pw::array<std::string> arguments;		// Macro arguments.
 };
 
-typedef std::map<std::string*, EllpMacro*> EllpMacroTable;
+typedef std::map<std::string*, Macro*> MacroTable;
 
-class Ellp;                                    // Forward declaration.
+class PP;                                    // Forward declaration.
 
-class EllpStream : public EllpTokenInfo {         // The pre-processing stream object.
+class PPStream : public TokenInfo {         // The pre-processing stream object.
 public:
-    friend class Ellp;
-    EllpStream(Ellp& psp, EllpOptions* options);
-    ~EllpStream();
-    void setInput(int (Ellp::*getc)())         // Set the input function.
+    friend class PP;
+    PPStream(PP& psp, Options* options);
+    ~PPStream();
+    void setInput(int (PP::*getc)())         // Set the input function.
         { fgetc = getc; }
 
     // Token definitions.
@@ -107,24 +109,24 @@ public:
 
 // Strings and values representing the basic pscan tokens.
 #define pwPSCANTOKENS                     \
-    { "<EOF>", EllpStream::ENDOFFILE },   \
-    { "NONE", EllpStream::NONE },         \
-    { "PINCLUDE", EllpStream::PINCLUDE }, \
-    { "PPRAGMA", EllpStream::PPRAGMA },   \
-    { "PLINE", EllpStream::PLINE },       \
-    { "PDEFINE", EllpStream::PDEFINE },   \
-    { "POTHER", EllpStream::POTHER },     \
-    { "HEADER", EllpStream::HEADER },     \
-    { "NL", EllpStream::NL },             \
-    { "WS", EllpStream::WS },             \
-    { "COMMENT", EllpStream::COMMENT },
+    { "<EOF>", PPStream::ENDOFFILE },   \
+    { "NONE", PPStream::NONE },         \
+    { "PINCLUDE", PPStream::PINCLUDE }, \
+    { "PPRAGMA", PPStream::PPRAGMA },   \
+    { "PLINE", PPStream::PLINE },       \
+    { "PDEFINE", PPStream::PDEFINE },   \
+    { "POTHER", PPStream::POTHER },     \
+    { "HEADER", PPStream::HEADER },     \
+    { "NL", PPStream::NL },             \
+    { "WS", PPStream::WS },             \
+    { "COMMENT", PPStream::COMMENT },
 
     // Special macro chars.
     enum {
         NEVEREXPAND = 1, STARTMACRO, ENDMACRO, STRINGIZE, PASTE
     };
 
-    void getToken(EllpTokenInfo& data);           // Get the next token from a stream.
+    void getToken(TokenInfo& data);           // Get the next token from a stream.
     void getToken();                            // Get the next token from a stream.
     void optionsChanged();                      // Notify stream of changed options.
     int startLine()                             // Get the current tokens starting line.
@@ -171,14 +173,14 @@ private:
     };
 
     bool hasspace;                              // Compress whitespace.
-    EllpOptions *options;                       // Pre-processor options.
+    Options *options;                       // Pre-processor options.
     Stream *first;                              // First open stream.
     int line, column;                           // Current source position.
     int commentstartline, commentstartcolumn;
     int commentendline, commentendcolumn;
     char *commentbuffer;                        // Start of comment buffer.
 
-    int (Ellp::*fgetc)();                      // Input function.
+    int (PP::*fgetc)();                      // Input function.
     bool iscomment;                             // Token is a comment.
     int nextchar;                               // Next character to scan.
     int nextl, nextc;                           // Position of nextchar.
@@ -193,7 +195,7 @@ private:
 
     Conditional *conditionals;                  // Active conditional list.
 
-    Ellp& psp;                                 // Preprocessor context.
+    PP& psp;                                 // Preprocessor context.
 
     int maxtoken;                               // Maximum token value.
 
@@ -234,11 +236,11 @@ private:
     void readchar();
     void getnextchar();
 
-    static const EllpWordAssoc directivelist[];
-    static const EllpWordAssoc operatorlist[];
+    static const WordAssoc directivelist[];
+    static const WordAssoc operatorlist[];
 };
 
-class Ellp {                                   // The pre-processor object.
+class  PP {                                   // The pre-processor object.
 public:
     enum Filter {                               // Token filters.
         GETALL,                                 // Get all tokens.
@@ -246,20 +248,20 @@ public:
         GETNL,                                  // Get all non-whitespace tokens plus newline.
     };
 
-    Ellp(const std::string& name, EllpMacroTable& macroTable);
-    virtual ~Ellp();
+    PP(const std::string& name, MacroTable& macroTable);
+    virtual ~PP();
     bool setInput(const char *string);
     bool setInput(FILE *fp = NULL);
     void addInclude(const std::string& name);
     void addDefine(const std::string& name, const std::string& value);
     void undefine(std::string& name, bool fixed);
     void fixedDefine(const std::string& name, const char *value);
-    void getOptions(EllpOptions *op);
-    void setOptions(EllpOptions *op);
-    void getToken(EllpTokenInfo& info, Filter filter);
+    void getOptions(Options *op);
+    void setOptions(Options *op);
+    void getToken(TokenInfo& info, Filter filter);
     const pw::array<std::string>& depends();
     int isdefined(std::string& name, int line);
-    bool lookupmacro(std::string& name, int line, EllpMacro*& mpp);
+    bool lookupmacro(std::string& name, int line, Macro*& mpp);
     virtual pw::Error* error(pw::Error::Type, int, int, int, int, const char*, ...) = 0;
     virtual void errorPosition(std::string&, const std::string&, int, int, int, int, bool) = 0;
 private:
@@ -267,7 +269,7 @@ private:
         include *next;                          // Next in include list.
         std::string name;                          // Name of include file.
         FILE *fp;                               // Include file.
-        EllpStream *pp;                         // Scanner context.
+        PPStream *pp;                         // Scanner context.
     };
 
     std::string name;                              // Name of input.
@@ -275,24 +277,26 @@ private:
     FILE *fp;                                   // File pointer.
     char *sp;                                   // String pointer.
     char *ip;                                   // string input pointer
-    EllpStream *pp;                             // Scanner context.
+    PPStream *pp;                             // Scanner context.
     include *includes;                          // open include files
     int includeline;                            // last #include line
     pw::array<std::string> files;                    // Input file names.
     pw::array<std::string> includedirs;              // Include search path.
-    EllpOptions options;                        // Pre-processor options.
-    EllpMacroTable& macros;                          // The macro table.
-    EllpMacro* lookup(std::string& name, int line);
-    void definemacro(int line, const std::string& filename, EllpStream* data);
-    void definemacro(int line, const std::string& filename, EllpTokenInfo& data,
+    Options options;                        // Pre-processor options.
+    MacroTable& macros;                          // The macro table.
+    Macro* lookup(std::string& name, int line);
+    void definemacro(int line, const std::string& filename, PPStream* data);
+    void definemacro(int line, const std::string& filename, TokenInfo& data,
                      const std::string& type, bool funlike, const pw::array<std::string>& formal, const std::string& body);
     void undefinemacro(std::string& name, int line, int fileline, bool fixed);
     int stringgetc();
     int filegetc();
     std::string addname(const std::string& name);
     void initializeoptions();
-    void processnexttoken(EllpTokenInfo& tinfo);
+    void processnexttoken(TokenInfo& tinfo);
     bool process();
+};
+
 };
 
 #endif

@@ -1,5 +1,5 @@
 /*
- *    Ellp.cc - The pre-processor object.
+ *    pwPP.cc - The pre-processor object.
  *
  *    Copyright (C) 2007, Richard Pennington.
  */
@@ -7,12 +7,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include "Ellp.h"
+#include "pwPP.h"
 
-EllpMacro* Ellp::lookup(std::string& name, int line)
+namespace pw {
+
+Macro* PP::lookup(std::string& name, int line)
 {
-    EllpMacro* macp;
-    EllpMacroTable::iterator iter;
+    Macro* macp;
+    MacroTable::iterator iter;
      
     iter = macros.find(&name);
     if (iter == macros.end()) {
@@ -40,7 +42,7 @@ EllpMacro* Ellp::lookup(std::string& name, int line)
         }
         macp->body += '"';
     } else if (macp->type == "line") {
-        EllpStream *p;
+        PPStream *p;
         char buffer[100];
 
         // Get the current line number.
@@ -56,14 +58,14 @@ EllpMacro* Ellp::lookup(std::string& name, int line)
     return macp;
 }
 
-int Ellp::isdefined(std::string& name, int line)
+int PP::isdefined(std::string& name, int line)
 {
     return lookup(name, line) != NULL;
 }
 
-bool Ellp::lookupmacro(std::string& name, int line, EllpMacro*& mpp)
+bool PP::lookupmacro(std::string& name, int line, Macro*& mpp)
 {
-    EllpMacro* macp = lookup(name, line);
+    Macro* macp = lookup(name, line);
 
     if (macp != NULL) {
         mpp = macp;
@@ -73,17 +75,17 @@ bool Ellp::lookupmacro(std::string& name, int line, EllpMacro*& mpp)
     return false;
 }
 
-void Ellp::definemacro(int line, const std::string& filename, EllpStream* data)
+void PP::definemacro(int line, const std::string& filename, PPStream* data)
 {
     definemacro(line, filename, *data, data->type, data->funlike, data->formal, data->body);
 }
 
-void Ellp::definemacro(int line, const std::string& filename, EllpTokenInfo& data,
+void PP::definemacro(int line, const std::string& filename, TokenInfo& data,
                         const std::string& type, bool funlike, const pw::array<std::string>& formal,
                         const std::string& body)
 {
     int i;
-    EllpMacro* macp = lookup(data.string, line);
+    Macro* macp = lookup(data.string, line);
     pw::Error *ep = NULL;
     std::string buffer;
 
@@ -132,7 +134,7 @@ void Ellp::definemacro(int line, const std::string& filename, EllpTokenInfo& dat
         macp->undefined = line;
     }
 
-    macp = new EllpMacro();
+    macp = new Macro();
     macp->string = data.string;
     macp->type = type;
     macp->file = filename;
@@ -147,12 +149,12 @@ void Ellp::definemacro(int line, const std::string& filename, EllpTokenInfo& dat
         }
     }
     macp->body = body;
-    macros.insert(std::pair<std::string*, EllpMacro*>(&macp->string, macp));
+    macros.insert(std::pair<std::string*, Macro*>(&macp->string, macp));
 }
 
-void Ellp::undefinemacro(std::string& name, int line, int fileline, bool fixed)
+void PP::undefinemacro(std::string& name, int line, int fileline, bool fixed)
 {
-    EllpMacro* macp = lookup(name, line);
+    Macro* macp = lookup(name, line);
 
     if (macp != NULL) {
         if (!fixed && macp->type != "defined") {
@@ -168,7 +170,7 @@ void Ellp::undefinemacro(std::string& name, int line, int fileline, bool fixed)
 //
 // stringgetc - get the next input character from a string
 //
-int Ellp::stringgetc()
+int PP::stringgetc()
 {
     if (!ip)
         return -1;                              // End of string.
@@ -178,7 +180,7 @@ int Ellp::stringgetc()
 //
 // filegetc - get the next input character from a file
 //
-int Ellp::filegetc()
+int PP::filegetc()
 {
     if (includes)
         return fgetc(includes->fp);
@@ -189,7 +191,7 @@ int Ellp::filegetc()
 //
 // addname - add a name to the list of input file names
 //
-std::string Ellp::addname(const std::string& name)
+std::string PP::addname(const std::string& name)
 {
     for (int i = 0; i < files.size(); ++i) {
         if (name == files[i])
@@ -203,7 +205,7 @@ std::string Ellp::addname(const std::string& name)
 //
 // addInclude - Add a name to the list of include directories.
 //
-void Ellp::addInclude(const std::string& name)
+void PP::addInclude(const std::string& name)
 {
     for (int i = 0; i < includedirs.size(); ++i) {
         if (name == includedirs[i]) {
@@ -217,7 +219,7 @@ void Ellp::addInclude(const std::string& name)
 //
 // initializeoptions - set pre-processor options to the default state.
 //
-void Ellp::initializeoptions()
+void PP::initializeoptions()
 {
     // default options (for C)
     options.trigraphs = true;
@@ -234,7 +236,7 @@ void Ellp::initializeoptions()
 //
 // getOptions - get the current options.
 //
-void Ellp::getOptions(EllpOptions *op)
+void PP::getOptions(Options *op)
 {
     *op = options;
 }
@@ -242,16 +244,16 @@ void Ellp::getOptions(EllpOptions *op)
 //
 // pspSetOptions - set the current options.
 //
-void Ellp::setOptions(EllpOptions *op)
+void PP::setOptions(Options *op)
 {
     options = *op;
     pp->optionsChanged();
 }
 
 //
-// Ellp - Create a pre-processor object.
+// PP - Create a pre-processor object.
 //
-Ellp::Ellp(const std::string& name, EllpMacroTable& macroTable) : macros(macroTable)
+PP::PP(const std::string& name, MacroTable& macroTable) : macros(macroTable)
 {
     time_t timer;
     char *date;
@@ -268,9 +270,9 @@ Ellp::Ellp(const std::string& name, EllpMacroTable& macroTable) : macros(macroTa
 
     initializeoptions();
 
-    pp = new EllpStream(*this, &options);
+    pp = new PPStream(*this, &options);
 
-    EllpTokenInfo def;
+    TokenInfo def;
     pw::array<std::string> formal;                   // An empty parameter list.
     // Define some predefined macros.
     def.string = "__FILE__";
@@ -294,17 +296,17 @@ Ellp::Ellp(const std::string& name, EllpMacroTable& macroTable) : macros(macroTa
     definemacro(0, "initialization", def, "fixed", false, formal, times);
 }
 
-bool Ellp::setInput(const char *string)
+bool PP::setInput(const char *string)
 {
     // Use a string for input.
     sp = strdup(string);                        // Set the string pointer.
     ip = sp;                                    // Start of string.
     fp = NULL;                                  // No file.
-    pp->setInput(&Ellp::stringgetc);
+    pp->setInput(&PP::stringgetc);
     return true;
 }
 
-bool Ellp::setInput(FILE *fp)
+bool PP::setInput(FILE *fp)
 {
     sp = NULL;                                  // No string for input.
     if (fp)
@@ -318,14 +320,14 @@ bool Ellp::setInput(FILE *fp)
         return false;
     }
 
-    pp->setInput(&Ellp::filegetc);
+    pp->setInput(&PP::filegetc);
     return true;
 }
 
 //
-// ~Ellp - Pre-processor object destructor.
+// ~PP - Pre-processor object destructor.
 //
-Ellp::~Ellp()
+PP::~PP()
 {
     delete pp;
 
@@ -346,10 +348,10 @@ Ellp::~Ellp()
 //
 //      processnexttoken - get and process the next token
 //
-void Ellp::processnexttoken(EllpTokenInfo& tinfo)
+void PP::processnexttoken(TokenInfo& tinfo)
 {
     include *incp = includes;
-    EllpStream *current;
+    PPStream *current;
 
     for ( ; ; ) {
         if (incp) {
@@ -357,7 +359,7 @@ void Ellp::processnexttoken(EllpTokenInfo& tinfo)
 
             current = incp->pp;
             current->getToken();
-            if (current->token == EllpStream::ENDOFFILE) {
+            if (current->token == PPStream::ENDOFFILE) {
                 // Close this include file...
 
                 fclose(incp->fp);
@@ -374,12 +376,12 @@ void Ellp::processnexttoken(EllpTokenInfo& tinfo)
             current->getToken();
         }
 
-        if (current->token == EllpStream::ENDOFFILE) {
+        if (current->token == PPStream::ENDOFFILE) {
             break;                              // end of main file was reached
         }
 
         switch (current->token) {
-        case EllpStream::PDEFINE:
+        case PPStream::PDEFINE:
             // define a macro
             if (incp) {
                 // define in an include file
@@ -390,7 +392,7 @@ void Ellp::processnexttoken(EllpTokenInfo& tinfo)
             }
             continue;
 
-        case EllpStream::PUNDEF:
+        case PPStream::PUNDEF:
             // undefine a macro
             if (incp) {
                 // undefine in an include file
@@ -403,7 +405,7 @@ void Ellp::processnexttoken(EllpTokenInfo& tinfo)
             }
             continue;
 
-        case EllpStream::PINCLUDE:
+        case PPStream::PINCLUDE:
             {
                 // include a file
                 include *newp;
@@ -441,8 +443,8 @@ void Ellp::processnexttoken(EllpTokenInfo& tinfo)
                 newp->fp = fp;
                 newp->name = addname(name);
                 // Open new scanning context.
-                newp->pp = new EllpStream(*this, &options);
-                newp->pp->setInput(&Ellp::filegetc);
+                newp->pp = new PPStream(*this, &options);
+                newp->pp->setInput(&PP::filegetc);
                 break;
             }
         }
@@ -456,7 +458,7 @@ void Ellp::processnexttoken(EllpTokenInfo& tinfo)
 //
 // pspToken - Get the next token.
 //
-void Ellp::getToken(EllpTokenInfo& info, Filter filter)
+void PP::getToken(TokenInfo& info, Filter filter)
 {
     include *incp;
 
@@ -470,15 +472,15 @@ void Ellp::getToken(EllpTokenInfo& info, Filter filter)
             info.file = name;
         }
 
-        if (info.tokenclass == EllpTokenInfo::TCSKIPPED) {
+        if (info.tokenclass == TokenInfo::TCSKIPPED) {
             continue;
         }
 
-        if (filter == GETALL || info.tokenclass != EllpTokenInfo::TCSPACE) {
+        if (filter == GETALL || info.tokenclass != TokenInfo::TCSPACE) {
             return;                             // Return all tokens.
         }
 
-        if (filter == GETNL && info.token == EllpStream::NL) {
+        if (filter == GETNL && info.token == PPStream::NL) {
             return;                             // Return newlines.
         }
     }
@@ -487,9 +489,9 @@ void Ellp::getToken(EllpTokenInfo& info, Filter filter)
 //
 // addDefine - Define a macro.
 //
-void Ellp::addDefine(const std::string& name, const std::string& value)
+void PP::addDefine(const std::string& name, const std::string& value)
 {
-    EllpTokenInfo def;
+    TokenInfo def;
     pw::array<std::string> formal;
 
     def.string = name;
@@ -499,9 +501,9 @@ void Ellp::addDefine(const std::string& name, const std::string& value)
 //
 // pspUndefine - undefine a macro
 //
-void Ellp::undefine(std::string& name, bool fixed)
+void PP::undefine(std::string& name, bool fixed)
 {
-    EllpStream *p;
+    PPStream *p;
 
     // Get the current line number.
     if (includes)
@@ -515,9 +517,9 @@ void Ellp::undefine(std::string& name, bool fixed)
 //
 // fixedDefine - define a fixed macro
 //
-void Ellp::fixedDefine(const std::string& name, const char *value)
+void PP::fixedDefine(const std::string& name, const char *value)
 {
-    EllpTokenInfo def;
+    TokenInfo def;
     pw::array<std::string> formal;
     std::string body;
 
@@ -532,9 +534,9 @@ void Ellp::fixedDefine(const std::string& name, const char *value)
 //
 // process - process a stream
 //
-bool Ellp::process()
+bool PP::process()
 {
-    EllpStream *current;
+    PPStream *current;
 
     do {
         include *incp = includes;
@@ -544,7 +546,7 @@ bool Ellp::process()
 
             current = incp->pp;
             current->getToken();
-            if (current->token == EllpStream::ENDOFFILE) {
+            if (current->token == PPStream::ENDOFFILE) {
                 // Close this include file...
 
                 fclose(incp->fp);
@@ -561,11 +563,11 @@ bool Ellp::process()
             current->getToken();
         }
 
-        if (current->token == EllpStream::ENDOFFILE)
+        if (current->token == PPStream::ENDOFFILE)
             break;                              // end of main file was reached
 
         switch (current->token) {
-        case EllpStream::PDEFINE:
+        case PPStream::PDEFINE:
             // define a macro
             if (incp) {
                 // define in an include file
@@ -576,7 +578,7 @@ bool Ellp::process()
             }
             break;
 
-        case EllpStream::PUNDEF:
+        case PPStream::PUNDEF:
             // undefine a macro
 
             if (incp) {
@@ -590,7 +592,7 @@ bool Ellp::process()
             }
             break;
 
-        case EllpStream::PINCLUDE:
+        case PPStream::PINCLUDE:
             {
                 // include a file
                 include *newp;
@@ -614,7 +616,7 @@ bool Ellp::process()
                     }
 
                     if (!fp) {
-                        current->tokenclass = EllpTokenInfo::TCSKIPPED;
+                        current->tokenclass = TokenInfo::TCSKIPPED;
                         break;
                     }
                 } else {
@@ -627,12 +629,12 @@ bool Ellp::process()
                 newp->fp = fp;
                 newp->name = addname(name);
                 // Open new scanning context.
-                newp->pp = new EllpStream(*this, &options);
-                newp->pp->setInput(&Ellp::filegetc);
+                newp->pp = new PPStream(*this, &options);
+                newp->pp->setInput(&PP::filegetc);
                 break;
             }
         }
-    } while (current->token != EllpStream::ENDOFFILE);
+    } while (current->token != PPStream::ENDOFFILE);
 
     return true;
 }
@@ -640,9 +642,10 @@ bool Ellp::process()
 //
 // depends - get the files the source file depends on
 //
-const pw::array<std::string>& Ellp::depends()
+const pw::array<std::string>& PP::depends()
 {
     process();
     return files;
 }
 
+};
