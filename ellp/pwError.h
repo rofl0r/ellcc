@@ -1,18 +1,20 @@
 /*
- *    EllError.h - Header file for the error object.
+ *    pwError.h - Header file for the error object.
  *
  *    Copyright (C) 2008, Richard Pennington.
  */
 
-#ifndef EllError_h
-#define EllError_h
+#ifndef pwError_h
+#define pwError_h
 
 #include <stdarg.h>
 #include <string>
 
-class EllError {
+namespace pw {
+
+class Error {
 public:
-    friend class EllErrorList;
+    friend class ErrorList;
     enum Type {
         // Listed in order of least to most severe for sorting.
         STYLE, INFO, UNDEFINED, WARNING, ERROR, INTERNAL, FATAL,
@@ -30,8 +32,8 @@ public:
     };
 
     bool info(Info which, const char* format, ...);
-    static bool info(EllError* ep, Info which, const char* format, ...);
-    bool info(EllError::Info which, const char* format, va_list ap);
+    static bool info(Error* ep, Info which, const char* format, ...);
+    bool info(Error::Info which, const char* format, va_list ap);
     const char* modifier()                      // Return a string representing the error modifier.
         { return modifier(type); }
     static const char* modifier(Type type);
@@ -47,17 +49,17 @@ private:
     const char** infoMsgs[INFOCNT];             // Info messages.
 };
 
-class EllErrorList {
+class ErrorList {
 public:
-    EllErrorList();
-    ~EllErrorList();
-    EllError* add(EllError::Type type,
+    ErrorList();
+    ~ErrorList();
+    Error* add(Error::Type type,
                  const std::string& file, int startline, int startcolumn, int endline, int endcolumn,
                  const char *format, va_list ap);
     void position(std::string& buffer,
                   const std::string& file, int startline, int startcolumn, int endline, int endcolumn,
                   bool trailer);
-    void output(FILE* fp, EllError* ep);
+    void output(FILE* fp, Error* ep);
     void print(FILE* fp);
     void sort();
     enum Mode {
@@ -73,8 +75,10 @@ public:
         { flags &= ~mode; }
 private:
     int count;                                  // Number of errors in the list.
-    EllError** messages;                         // Error messages.
+    Error** messages;                         // Error messages.
     int flags;                                  // Error flags.
+};
+
 };
 
 #endif

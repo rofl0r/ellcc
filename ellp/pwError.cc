@@ -1,16 +1,18 @@
 //
-//	EllError.c - Standard error handling.
+//	pwError.c - Standard error handling.
 //
 
 #include <stdarg.h>
 #include <string.h>
 #include <stdlib.h>
-#include "EllError.h"
+#include "pwError.h"
+
+namespace pw {
 
 //
-// EllErrorList - Error list constructor.
+// ErrorList - Error list constructor.
 //
-EllErrorList::EllErrorList()
+ErrorList::ErrorList()
 {
     count = 0;
     messages = NULL;
@@ -18,14 +20,14 @@ EllErrorList::EllErrorList()
 }
 
 //
-// ~EllErrorList - destruct an error list.
+// ~ErrorList - destruct an error list.
 //
-EllErrorList::~EllErrorList()
+ErrorList::~ErrorList()
 {
     for (int i = 0; i < count; ++i) {
         delete messages[i]->string;
 
-        for (int j = 0; j < EllError::INFOCNT; ++j) {
+        for (int j = 0; j < Error::INFOCNT; ++j) {
             if (messages[i]->infoMsgs[j]) {
                 for (int k = 0; k < messages[i]->count[j]; ++k)
                     delete messages[i]->infoMsgs[j][k];
@@ -43,16 +45,16 @@ EllErrorList::~EllErrorList()
 //
 // add - Add an error to an error list.
 //
-EllError *EllErrorList::add(EllError::Type type, const std::string& file,
+Error *ErrorList::add(Error::Type type, const std::string& file,
                           int startline, int startcolumn, int endline, int endcolumn,
                           const char *format, va_list ap)
 {
-    EllError *ep = new EllError;
-    EllError **epp;
+    Error *ep = new Error;
+    Error **epp;
     int i;
     char buffer[1024];	// RICH
 
-    for (i = 0; i < EllError::INFOCNT; ++i) {
+    for (i = 0; i < Error::INFOCNT; ++i) {
         ep->count[i] = 0;
         ep->infoMsgs[i] = NULL;
     }
@@ -76,7 +78,7 @@ EllError *EllErrorList::add(EllError::Type type, const std::string& file,
         return NULL;
     }
 
-    epp = (EllError **)realloc(messages, (count + 1) * sizeof(EllError *));
+    epp = (Error **)realloc(messages, (count + 1) * sizeof(Error *));
     if (epp == NULL) {
         delete ep->string;
         delete ep;
@@ -92,7 +94,7 @@ EllError *EllErrorList::add(EllError::Type type, const std::string& file,
 //
 // info - Add information to an error message.
 //
-bool EllError::info(EllError *errormsg, EllError::Info which, const char *format, ...)
+bool Error::info(Error *errormsg, Error::Info which, const char *format, ...)
 {
     va_list ap;
 
@@ -109,7 +111,7 @@ bool EllError::info(EllError *errormsg, EllError::Info which, const char *format
 //
 // info - Add information to an error message.
 //
-bool EllError::info(EllError::Info which, const char *format, ...)
+bool Error::info(Error::Info which, const char *format, ...)
 {
     va_list ap;
 
@@ -122,12 +124,12 @@ bool EllError::info(EllError::Info which, const char *format, ...)
 //
 // info - Add information to an error message.
 //
-bool EllError::info(EllError::Info which, const char *format, va_list ap)
+bool Error::info(Error::Info which, const char *format, va_list ap)
 {
     const char **ip;
     char buffer[1024];	// RICH
 
-    if (which >= EllError::INFOCNT) {
+    if (which >= Error::INFOCNT) {
         return false;
     }
 
@@ -151,10 +153,10 @@ bool EllError::info(EllError::Info which, const char *format, va_list ap)
 // compare - compare two error messages
 //
 int
-EllError::compare(const void *a, const void *b)
+Error::compare(const void *a, const void *b)
 {
-    const EllError *first = *(const EllError **)a;
-    const EllError *second = *(const EllError **)b;
+    const Error *first = *(const Error **)a;
+    const Error *second = *(const Error **)b;
     int i;
 
     // Sort by file name.
@@ -211,16 +213,16 @@ EllError::compare(const void *a, const void *b)
 //
 // sort - Sort an error list.
 //
-void EllErrorList::sort()
+void ErrorList::sort()
 {
-    qsort(messages, count, sizeof(EllError *), EllError::compare);
+    qsort(messages, count, sizeof(Error *), Error::compare);
 }
 
 
 //
 // errorPosition - Format an error's position in a standard way.
 //
-void errorPosition(EllErrorList *errorlist, std::string& buffer, const std::string& file,
+void errorPosition(ErrorList *errorlist, std::string& buffer, const std::string& file,
               int startline, int startcolumn, int endline, int endcolumn,
               bool trailer)
 {
@@ -230,7 +232,7 @@ void errorPosition(EllErrorList *errorlist, std::string& buffer, const std::stri
 //
 // position - Format an error's position in a standard way.
 //
-void EllErrorList::position(std::string& buffer, const std::string& file,
+void ErrorList::position(std::string& buffer, const std::string& file,
                            int startline, int startcolumn, int endline, int endcolumn,
                            bool trailer)
 {
@@ -268,21 +270,21 @@ void EllErrorList::position(std::string& buffer, const std::string& file,
 //
 // modifier - Return a modifier string.
 //
-const char *EllError::modifier(EllError::Type type) {
+const char *Error::modifier(Error::Type type) {
     switch (type) {
-    case EllError::WARNING:
+    case Error::WARNING:
         return "warning";
-    case EllError::UNDEFINED:
+    case Error::UNDEFINED:
         return "undefined";
-    case EllError::INFO:
+    case Error::INFO:
         return "information";
-    case EllError::FATAL:
+    case Error::FATAL:
         return "fatal error";
-    case EllError::INTERNAL:
+    case Error::INTERNAL:
         return "internal error";
-    case EllError::ERROR:
+    case Error::ERROR:
         return "error";
-    case EllError::STYLE:
+    case Error::STYLE:
         return "style";
     default:
         return "unknown";
@@ -292,7 +294,7 @@ const char *EllError::modifier(EllError::Type type) {
 //
 // output - Output an error message.
 //
-void EllErrorList::output(FILE* fp, EllError* ep)
+void ErrorList::output(FILE* fp, Error* ep)
 {
     const char *modifier;
     std::string buffer;
@@ -304,7 +306,7 @@ void EllErrorList::output(FILE* fp, EllError* ep)
     fprintf(fp, "%s %s - %s\n", buffer.c_str(), modifier, ep->string);
 
     // Print error information, if any.
-    for (int which = 0; which < EllError::INFOCNT; ++which) {
+    for (int which = 0; which < Error::INFOCNT; ++which) {
         for (int j = 0; j < ep->count[which]; ++j) {
             fprintf(fp, "%*s%s\n", (which+1)*4, " ", 
                    ep->infoMsgs[which][j]);
@@ -315,9 +317,11 @@ void EllErrorList::output(FILE* fp, EllError* ep)
 //
 // print - Print error messages in the standard format.
 //
-void EllErrorList::print(FILE *fp)
+void ErrorList::print(FILE *fp)
 {
     for (int i = 0; i < count; ++i) {
         output(fp, messages[i]);
     }
 }
+
+};

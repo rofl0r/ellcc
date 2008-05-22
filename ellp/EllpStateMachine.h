@@ -9,7 +9,7 @@
 
 #include <limits.h>
 #include <string>
-#include "EllsifArray.h"
+#include "pwArray.h"
 
 class EllpStateNode;
 
@@ -47,14 +47,14 @@ public:
 
     struct Machines {                           // A state machine list.
         void add(EllpStateMachine* p);
-        ellsif::array<EllpStateMachine*> list;
+        pw::array<EllpStateMachine*> list;
     };
 
     struct States {                             // A state list.
         void clear();
         int add(State* p, int min);
         void append(const States* from);
-        ellsif::array<State*> list;
+        pw::array<State*> list;
     };
 
     struct Entry {
@@ -71,7 +71,7 @@ public:
             int value;                          // Value of state if matched.
             States next;                        // Next state(s), if any.
         };
-        ellsif::array<AVPair> av;                     // Actions and/or values associated with this entry.
+        pw::array<AVPair> av;                     // Actions and/or values associated with this entry.
     };
 
     struct State {                              // State machine state.

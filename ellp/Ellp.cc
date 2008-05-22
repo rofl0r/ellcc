@@ -79,12 +79,12 @@ void Ellp::definemacro(int line, const std::string& filename, EllpStream* data)
 }
 
 void Ellp::definemacro(int line, const std::string& filename, EllpTokenInfo& data,
-                        const std::string& type, bool funlike, const ellsif::array<std::string>& formal,
+                        const std::string& type, bool funlike, const pw::array<std::string>& formal,
                         const std::string& body)
 {
     int i;
     EllpMacro* macp = lookup(data.string, line);
-    EllError *ep = NULL;
+    pw::Error *ep = NULL;
     std::string buffer;
 
     if (macp != NULL) {
@@ -96,7 +96,7 @@ void Ellp::definemacro(int line, const std::string& filename, EllpTokenInfo& dat
         if (formal.size() != macp->arguments.size()) {
             match = false;
 
-            ep = error(EllError::ERROR,
+            ep = error(pw::Error::ERROR,
                        line, -1, 0, 0,
                        "Macro \"%s\" redefined with a different number of arguments.", data.string.c_str());
         }
@@ -104,17 +104,17 @@ void Ellp::definemacro(int line, const std::string& filename, EllpTokenInfo& dat
             for (args = 0; args < macp->arguments.size(); ++args)
                 if (macp->arguments[args] != formal[args]) {
                     match = false;
-                    ep = error(EllError::ERROR,
+                    ep = error(pw::Error::ERROR,
                                line, -1, 0, 0,
                                "Macro \"%s\" redefined with different argument spelling.", data.string.c_str());
-                    EllError::info(ep, EllError::MORE, "First different argument: \"%s\".", formal[args].c_str());
+                    pw::Error::info(ep, pw::Error::MORE, "First different argument: \"%s\".", formal[args].c_str());
                     break;
                 }
         }
         if (match) {
             if (macp->body != body) {
                 match = false;
-                ep = error(EllError::ERROR,
+                ep = error(pw::Error::ERROR,
                            line, -1, 0, 0,
                            "Macro \"%s\" redefined.", data.string.c_str());
             }
@@ -126,7 +126,7 @@ void Ellp::definemacro(int line, const std::string& filename, EllpTokenInfo& dat
                               macp->startline, macp->startcolumn,
                               macp->endline, macp->endcolumn,
                               false);
-                EllError::info(ep, EllError::MORE, "Last definition in %s", buffer.c_str());
+                pw::Error::info(ep, pw::Error::MORE, "Last definition in %s", buffer.c_str());
             }
         }
         macp->undefined = line;
@@ -156,7 +156,7 @@ void Ellp::undefinemacro(std::string& name, int line, int fileline, bool fixed)
 
     if (macp != NULL) {
         if (!fixed && macp->type != "defined") {
-            error(EllError::ERROR,
+            error(pw::Error::ERROR,
                   line, -1, 0, 0,
                   "Can't undefine macro \"%s\".", name.c_str());
             return;
@@ -271,7 +271,7 @@ Ellp::Ellp(const std::string& name, EllpMacroTable& macroTable) : macros(macroTa
     pp = new EllpStream(*this, &options);
 
     EllpTokenInfo def;
-    ellsif::array<std::string> formal;                   // An empty parameter list.
+    pw::array<std::string> formal;                   // An empty parameter list.
     // Define some predefined macros.
     def.string = "__FILE__";
     definemacro(0, "initialization", def, "file", false, formal, "");
@@ -426,7 +426,7 @@ void Ellp::processnexttoken(EllpTokenInfo& tinfo)
                     }
 
                     if (!fp) {
-                        error(EllError::ERROR,
+                        error(pw::Error::ERROR,
                               current->startline, current->startcolumn, current->endline, current->endcolumn,
                               "Can't find #include file \"%s\".", current->string.c_str());
                         continue;
@@ -490,7 +490,7 @@ void Ellp::getToken(EllpTokenInfo& info, Filter filter)
 void Ellp::addDefine(const std::string& name, const std::string& value)
 {
     EllpTokenInfo def;
-    ellsif::array<std::string> formal;
+    pw::array<std::string> formal;
 
     def.string = name;
     definemacro(0, "initialization", def, "defined", false, formal, value);
@@ -518,7 +518,7 @@ void Ellp::undefine(std::string& name, bool fixed)
 void Ellp::fixedDefine(const std::string& name, const char *value)
 {
     EllpTokenInfo def;
-    ellsif::array<std::string> formal;
+    pw::array<std::string> formal;
     std::string body;
 
     if (value)
@@ -640,7 +640,7 @@ bool Ellp::process()
 //
 // depends - get the files the source file depends on
 //
-const ellsif::array<std::string>& Ellp::depends()
+const pw::array<std::string>& Ellp::depends()
 {
     process();
     return files;

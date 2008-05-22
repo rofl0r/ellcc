@@ -1,13 +1,13 @@
 /*
- *    EllsifArray.h - Header file for the array template.
+ *    pwArray.h - Header file for the array template.
  *
  *    Copyright (C) 2008, Richard Pennington.
  */
 
-#ifndef EllsifArray_h
-#define EllsifArray_h
+#ifndef pwArray_h
+#define pwArray_h
 
-namespace ellsif {
+namespace pw {
 
 template<class Type> class array {         	// The Array class.
 public:

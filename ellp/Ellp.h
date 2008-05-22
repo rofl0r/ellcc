@@ -9,8 +9,8 @@
 
 #include <string>
 #include <map>
-#include "EllsifArray.h"
-#include "EllError.h"
+#include "pwArray.h"
+#include "pwError.h"
 #include "EllpStateMachine.h"
 
 struct EllpWordAssoc
@@ -80,7 +80,7 @@ public:
     bool function;				// If this a function-like macro?
     int undefined;
     std::string type;
-    ellsif::array<std::string> arguments;		// Macro arguments.
+    pw::array<std::string> arguments;		// Macro arguments.
 };
 
 typedef std::map<std::string*, EllpMacro*> EllpMacroTable;
@@ -133,7 +133,7 @@ public:
 private:
     std::string type;                              // Type of macro.
     bool funlike;                               // Is this a function-like macro?
-    ellsif::array<std::string> formal;                   // Names of the formal arguments.
+    pw::array<std::string> formal;                   // Names of the formal arguments.
     std::string body;                              // The macro body.
 
     struct Conditional {                        // Conditional compilation control.
@@ -257,10 +257,10 @@ public:
     void getOptions(EllpOptions *op);
     void setOptions(EllpOptions *op);
     void getToken(EllpTokenInfo& info, Filter filter);
-    const ellsif::array<std::string>& depends();
+    const pw::array<std::string>& depends();
     int isdefined(std::string& name, int line);
     bool lookupmacro(std::string& name, int line, EllpMacro*& mpp);
-    virtual EllError* error(EllError::Type, int, int, int, int, const char*, ...) = 0;
+    virtual pw::Error* error(pw::Error::Type, int, int, int, int, const char*, ...) = 0;
     virtual void errorPosition(std::string&, const std::string&, int, int, int, int, bool) = 0;
 private:
     struct include {                            // Include file definition.
@@ -278,14 +278,14 @@ private:
     EllpStream *pp;                             // Scanner context.
     include *includes;                          // open include files
     int includeline;                            // last #include line
-    ellsif::array<std::string> files;                    // Input file names.
-    ellsif::array<std::string> includedirs;              // Include search path.
+    pw::array<std::string> files;                    // Input file names.
+    pw::array<std::string> includedirs;              // Include search path.
     EllpOptions options;                        // Pre-processor options.
     EllpMacroTable& macros;                          // The macro table.
     EllpMacro* lookup(std::string& name, int line);
     void definemacro(int line, const std::string& filename, EllpStream* data);
     void definemacro(int line, const std::string& filename, EllpTokenInfo& data,
-                     const std::string& type, bool funlike, const ellsif::array<std::string>& formal, const std::string& body);
+                     const std::string& type, bool funlike, const pw::array<std::string>& formal, const std::string& body);
     void undefinemacro(std::string& name, int line, int fileline, bool fixed);
     int stringgetc();
     int filegetc();

@@ -10,7 +10,7 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <string>
-#include "EllsifArray.h"
+#include "pwArray.h"
 #include "Ellp.h"
 
 #define VA_ARGS "__VA_ARGS__"                   // Name of the var-args "macro".
@@ -293,7 +293,7 @@ void EllpStream::pptoken()
 
                 getnextchar();
                 if (nextchar == -1) {
-                    psp.error(EllError::ERROR,
+                    psp.error(pw::Error::ERROR,
                               commentstartline, commentstartcolumn, 0, 0,
                               "Unterminated comment.");
                     return;
@@ -370,7 +370,7 @@ void EllpStream::pptoken()
         }
 
         if (nextchar != end)
-            psp.error(EllError::ERROR,
+            psp.error(pw::Error::ERROR,
                       startline, startcolumn, endline, endcolumn,
                       "#include name missing trailing \"%c\"..", end);
         else
@@ -473,7 +473,7 @@ void EllpStream::pptoken()
             int parenlevel;
             bool oldexpand = noexpand;
             int arguments = 0;
-            ellsif::array<std::string> actual;
+            pw::array<std::string> actual;
             int oldnextchar;
             bool argalloced = false;
             bool hasstring = false;
@@ -497,7 +497,7 @@ void EllpStream::pptoken()
                 pptoken();
 
                 if (token == ENDOFFILE) {
-                    psp.error(EllError::ERROR,
+                    psp.error(pw::Error::ERROR,
                               mstartline, mstartcolumn, mendline, mendcolumn,
                               "Call of \"%s\" terminated by end of file.", name.c_str());
                     break;
@@ -530,7 +530,7 @@ void EllpStream::pptoken()
                     if (arguments >= def->arguments.size()) {
                         if (arguments) {
                             if (!toomany) {
-                                psp.error(EllError::ERROR,
+                                psp.error(pw::Error::ERROR,
                                           startline, startcolumn, endline, endcolumn,
                                           "Call of \"%s\" has too many arguments.", name.c_str());
                             }
@@ -572,19 +572,19 @@ void EllpStream::pptoken()
             }
 
             if (arguments < def->arguments.size()) {
-                EllError *ep = NULL;
+                pw::Error *ep = NULL;
                 std::string buffer;
 
-                ep = psp.error(EllError::ERROR,
+                ep = psp.error(pw::Error::ERROR,
                                startline, startcolumn, endline, endcolumn,
                                "Call of \"%s\" has too few arguments %d.", name.c_str(), arguments);
-                EllError::info(ep, EllError::MORE, "\"%s\" is defined with %d arguments.",
+                pw::Error::info(ep, pw::Error::MORE, "\"%s\" is defined with %d arguments.",
                               name.c_str(), def->arguments.size());
                 psp.errorPosition(buffer, def->file,
                                   def->startline, def->startcolumn,
                                   def->endline, def->endcolumn,
                                   false);
-                EllError::info(ep, EllError::MORE, "Last definition in %s", buffer.c_str());
+                pw::Error::info(ep, pw::Error::MORE, "Last definition in %s", buffer.c_str());
             }
 
             oldnextchar = nextchar;
@@ -692,7 +692,7 @@ void EllpStream::pptoken()
                 if (string == VA_ARGS) {
                     // This substitutes for ...
                     if (elipsis < 0) {
-                        psp.error(EllError::ERROR,
+                        psp.error(pw::Error::ERROR,
                                   startline, startcolumn, endline, endcolumn,
                                   "\"%s\" in a macro body with no \"...\" argument.",
                                   VA_ARGS);
@@ -773,7 +773,7 @@ void EllpStream::getToken()
         while (conditionals) {
             Conditional *cp = conditionals;
 
-            psp.error(EllError::ERROR,
+            psp.error(pw::Error::ERROR,
                       cp->line, cp->column, 0, 0,
                       "Unterminated #if or #ifdef.");
             conditionals = cp->next;
@@ -831,7 +831,7 @@ void EllpStream::getToken()
         if (   token != options->IDENTIFIER
                || (ppdirective = isppdirective()) == PPDNONE) {
             if (!skipping)
-                psp.error(EllError::ERROR,
+                psp.error(pw::Error::ERROR,
                           startline, startcolumn, endline, endcolumn,
                           "Missing preprocessor directive.");
             startline = pstartline;
@@ -862,7 +862,7 @@ void EllpStream::getToken()
 
                 getpptoken();
                 if (token != options->IDENTIFIER) {
-                    psp.error(EllError::ERROR,
+                    psp.error(pw::Error::ERROR,
                               startline, startcolumn, endline, endcolumn,
                               "#define missing identifier.");
                     goto endofline;
@@ -877,7 +877,7 @@ void EllpStream::getToken()
                     for ( ;; ) {
                         getpptoken();
                         if (token == NL) {
-                            psp.error(EllError::ERROR,
+                            psp.error(pw::Error::ERROR,
                                       startline, startcolumn, endline, endcolumn,
                                       "#define missing closing paren.");
                             goto nullbody;
@@ -887,7 +887,7 @@ void EllpStream::getToken()
                         }
                         if (arguments > 0) {
                             if (token != operators[COMMA]) {
-                                psp.error(EllError::ERROR,
+                                psp.error(pw::Error::ERROR,
                                           startline, startcolumn, endline, endcolumn,
                                           "#define missing comma.");
                             } else
@@ -896,21 +896,21 @@ void EllpStream::getToken()
 
                         if (token == options->IDENTIFIER) {
                             if (haselipsis) {
-                                psp.error(EllError::ERROR,
+                                psp.error(pw::Error::ERROR,
                                           startline, startcolumn, endline, endcolumn,
                                           "Identifier #define argument follows an \"...\".");
                                 continue;
                             }
                         } else if (token == operators[ELIPSIS]) {
                             if (haselipsis) {
-                                psp.error(EllError::ERROR,
+                                psp.error(pw::Error::ERROR,
                                           startline, startcolumn, endline, endcolumn,
                                           "#define argument list has more than one \"...\".");
                                 continue;
                             }
                             haselipsis = true;
                         } else {
-                            psp.error(EllError::ERROR,
+                            psp.error(pw::Error::ERROR,
                                       startline, startcolumn, endline, endcolumn,
                                       "#define argument (%s) is not an identifier or \"...\".", string.c_str());
                             continue;
@@ -921,14 +921,14 @@ void EllpStream::getToken()
                         // Check for duplicate name.
                         for (i=0; i < arguments; ++i) {
                             if (string == formal[i]) {
-                                psp.error(EllError::ERROR,
+                                psp.error(pw::Error::ERROR,
                                           startline, startcolumn, endline, endcolumn,
                                           "Argument \"%s\" not unique in macro definition.", string.c_str());
                             }
                         }
 
                         if (string == VA_ARGS) {
-                            psp.error(EllError::ERROR,
+                            psp.error(pw::Error::ERROR,
                                       startline, startcolumn, endline, endcolumn,
                                       "\"%s\" not allowed in macro parameter list.", VA_ARGS);
                         }
@@ -956,7 +956,7 @@ void EllpStream::getToken()
                         }
 
                         if (body.length() == 0)
-                            psp.error(EllError::ERROR,
+                            psp.error(pw::Error::ERROR,
                                       startline, startcolumn, endline, endcolumn,
                                       "\"##\" operator illegal at start of replacement list.");
                         else {
@@ -1029,7 +1029,7 @@ void EllpStream::getToken()
                 }
 
                 if (haspaste) {
-                    psp.error(EllError::ERROR,
+                    psp.error(pw::Error::ERROR,
                               startline, startcolumn, endline, endcolumn,
                               "\"##\" operator illegal at end of replacement list.");
                 }
@@ -1045,11 +1045,11 @@ void EllpStream::getToken()
 
         case PPELSE:
             if (!conditionals) {
-                psp.error(EllError::ERROR,
+                psp.error(pw::Error::ERROR,
                           startline, startcolumn, endline, endcolumn,
                           "#else with no matching #if or #ifdef.");
             } else if (conditionals->haselse) {
-                psp.error(EllError::ERROR,
+                psp.error(pw::Error::ERROR,
                           startline, startcolumn, endline, endcolumn,
                           "Multiple #elses in conditional.");
             } else {
@@ -1081,7 +1081,7 @@ void EllpStream::getToken()
                 Conditional *cp;
 
                 if (!(cp = conditionals)) {
-                    psp.error(EllError::ERROR,
+                    psp.error(pw::Error::ERROR,
                               startline, startcolumn, endline, endcolumn,
                               "#endif with no matching #if or #ifdef.");
                     pptoken();
@@ -1108,12 +1108,12 @@ void EllpStream::getToken()
 
         case PPELIF:
             if (!conditionals) {
-                psp.error(EllError::ERROR,
+                psp.error(pw::Error::ERROR,
                           startline, startcolumn, endline, endcolumn,
                           "#elif with no matching #if or #ifdef.");
                 goto leave;
             } else if (conditionals->haselse) {
-                psp.error(EllError::ERROR,
+                psp.error(pw::Error::ERROR,
                           startline, startcolumn, endline, endcolumn,
                           "#elif follows #else in conditional.");
             }
@@ -1177,7 +1177,7 @@ void EllpStream::getToken()
                     getpptoken();
                     noexpand = false;
                     if (token != options->IDENTIFIER) {
-                        psp.error(EllError::ERROR,
+                        psp.error(pw::Error::ERROR,
                                   startline, startcolumn, endline, endcolumn,
                                   "#if%sdef missing identifier.",
                                   ppdirective == PPIFDEF ? "" : "n");
@@ -1216,7 +1216,7 @@ void EllpStream::getToken()
             getpptoken();
             allowheader = false;
             if (token != HEADER) {
-                psp.error(EllError::ERROR,
+                psp.error(pw::Error::ERROR,
                           startline, startcolumn, endline, endcolumn,
                           "#include missing filename, given \"%s\"", string.c_str());
                 goto endofline;
@@ -1233,7 +1233,7 @@ void EllpStream::getToken()
             getpptoken();
             noexpand = false;
             if (token != options->IDENTIFIER) {
-                psp.error(EllError::ERROR,
+                psp.error(pw::Error::ERROR,
                           startline, startcolumn, endline, endcolumn,
                           "#undef missing identifier.");
                 goto endofline;
@@ -1269,11 +1269,11 @@ void EllpStream::getToken()
                     pptoken();
                 }
                 if (errorstring.length()) {
-                    psp.error(EllError::ERROR,
+                    psp.error(pw::Error::ERROR,
                               estartline, estartcolumn, endline, endcolumn,
                               "%s.", errorstring.c_str());
                 } else {
-                    psp.error(EllError::ERROR,
+                    psp.error(pw::Error::ERROR,
                               estartline, estartcolumn, endline, endcolumn,
                               "#error.");
                 }
@@ -1297,7 +1297,7 @@ void EllpStream::getToken()
                 noexpand = false;
                 getpptoken();
                 if (token != options->INTEGER) {
-                    psp.error(EllError::ERROR,
+                    psp.error(pw::Error::ERROR,
                               startline, startcolumn, endline, endcolumn,
                               "Digit sequence required in #line.");
                     goto endofline;
@@ -1312,7 +1312,7 @@ void EllpStream::getToken()
                 }
 
                 if (index < string.length() - 1) {
-                    psp.error(EllError::ERROR,
+                    psp.error(pw::Error::ERROR,
                               startline, startcolumn,
                               endline, endcolumn,
                               "Non-digit encountered in #line.");
@@ -1321,7 +1321,7 @@ void EllpStream::getToken()
 
                 if (line == 0 || line > 2147483647) {
                     // These limits are defined in ISO/IEC 9899.
-                    psp.error(EllError::ERROR,
+                    psp.error(pw::Error::ERROR,
                               startline, startcolumn, endline, endcolumn,
                               "#line digit sequence should be greater than zero and less than 2147483647.");
                 }
@@ -1333,7 +1333,7 @@ void EllpStream::getToken()
                 else if (   token != HEADER
                             || string[0] == 'L'
                             || sysheader) {
-                    psp.error(EllError::ERROR,
+                    psp.error(pw::Error::ERROR,
                               startline, startcolumn,
                               endline, endcolumn,
                               "String literal required in #line.");
@@ -1353,7 +1353,7 @@ void EllpStream::getToken()
             pptoken();                          // skip whitespace
 
         if (token != NL) {
-            psp.error(EllError::ERROR,
+            psp.error(pw::Error::ERROR,
                       startline, startcolumn, endline, endcolumn,
                       "Badly formed preprocessor directive.");
             endofline:
@@ -1494,7 +1494,7 @@ bool EllpStream::primary(long *value)
             }
             noexpand = false;
             if (token != options->IDENTIFIER) {
-                psp.error(EllError::ERROR,
+                psp.error(pw::Error::ERROR,
                           startline, startcolumn, endline, endcolumn,
                           "The argument of \"defined\" must be an identifier.");
             } else {
@@ -1506,7 +1506,7 @@ bool EllpStream::primary(long *value)
             if (hasparen) {
                 getpptoken();
                 if (token != operators[RPAREN]) {
-                    psp.error(EllError::ERROR,
+                    psp.error(pw::Error::ERROR,
                               startline, startcolumn, endline, endcolumn,
                               "\"defined\" missing closing paren.");
                 }
@@ -1516,31 +1516,31 @@ bool EllpStream::primary(long *value)
         p = convertcharacter(value, string);
 
         if (p) {
-            psp.error(EllError::ERROR,
+            psp.error(pw::Error::ERROR,
                       startline, startcolumn, endline, endcolumn,
                       "%s.", p);
             return false;
         }
     } else if (token == options->FLOAT) {
-        psp.error(EllError::ERROR,
+        psp.error(pw::Error::ERROR,
                   startline, startcolumn, endline, endcolumn,
                   "Floating constant not allowed in #if expression.");
         return false;
     } else if (token == options->INTEGER) {
         p = convertnumber(value, string);
         if (p) {
-            psp.error(EllError::ERROR,
+            psp.error(pw::Error::ERROR,
                       startline, startcolumn, endline, endcolumn,
                       "%s.", p);
             return false;
         }
     } else if (token == options->STRING) {
-        psp.error(EllError::ERROR,
+        psp.error(pw::Error::ERROR,
                   startline, startcolumn, endline, endcolumn,
                   "String not allowed in #if expression.");
         return false;
     } else if (token == NL) {
-        psp.error(EllError::ERROR,
+        psp.error(pw::Error::ERROR,
                   startline, startcolumn, endline, endcolumn,
                   "Newline encountered before the end of an #if expression.");
 
@@ -1551,13 +1551,13 @@ bool EllpStream::primary(long *value)
         if (!expression(value))
             return false;
         if (token != operators[RPAREN]) {
-            psp.error(EllError::ERROR,
+            psp.error(pw::Error::ERROR,
                       startline, startcolumn, endline, endcolumn,
                       "')' missing in #if expression.");
             return false;
         }
     } else {
-        psp.error(EllError::ERROR,
+        psp.error(pw::Error::ERROR,
                   startline, startcolumn, endline, endcolumn,
                   "Bad token (%s) in #if expression.", string.c_str());
         return false;
@@ -1800,7 +1800,7 @@ bool EllpStream::conditionalexpression(long *value)
     if (!expression(&value1))
         return false;
     if (token != operators[COLON]) {
-        psp.error(EllError::ERROR,
+        psp.error(pw::Error::ERROR,
                   startline, startcolumn, endline, endcolumn,
                   "':' missing in #if expression.");
         return false;
@@ -2071,7 +2071,7 @@ void EllpStream::readchar()
                 commentendcolumn = nextc + 1;
                 iscomment = true;
                 if (nextchar == -1) {
-                    psp.error(EllError::ERROR,
+                    psp.error(pw::Error::ERROR,
                               commentstartline, commentstartcolumn, 0, 0,
                               "Unterminated comment.");
                     return;
@@ -2178,7 +2178,7 @@ void EllpStream::escape(std::string& string)
         string += nextchar;
         readchar();
         if (!isxdigit(nextchar))
-            psp.error(EllError::ERROR,
+            psp.error(pw::Error::ERROR,
                       startline, startcolumn, endline, endcolumn,
                       "\"\\x\" with no trailing hexadecimal digits.");
         while (isxdigit(nextchar)) {
@@ -2204,7 +2204,7 @@ void EllpStream::escape(std::string& string)
         break;
 
     default:
-        psp.error(EllError::UNDEFINED,
+        psp.error(pw::Error::UNDEFINED,
                   startline, startcolumn, endline, endcolumn,
                   "Undefined character \"%c\" in escape sequence.", nextchar);
         string += nextchar;
