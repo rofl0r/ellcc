@@ -40,7 +40,7 @@ public:
 
 private:
     static int compare(const void* a, const void* b);
-    char* string;                               // String associated with error.
+    std::string string;                               // String associated with error.
     std::string file;                              // File associated with error.
     int startline, startcolumn;                 // Error position in source.
     int endline, endcolumn;                     // If startline or endline == 0, not available.

@@ -128,8 +128,7 @@ static void setupStateMachines()
     for (wp = tokens; wp->word; ++wp) {
         if (*wp->word == ' ') {
                 // Match a regular expression.
-                std::string regstr;
-                regstr = wp->word + 1;
+                std::string regstr(wp->word + 1);
                 pw::MatchNode regexp(regstr);
                 machine->addTree(&regexp, wp->token);
             } else {

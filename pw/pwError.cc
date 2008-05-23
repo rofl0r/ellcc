@@ -25,8 +25,6 @@ ErrorList::ErrorList()
 ErrorList::~ErrorList()
 {
     for (int i = 0; i < count; ++i) {
-        delete messages[i]->string;
-
         for (int j = 0; j < Error::INFOCNT; ++j) {
             if (messages[i]->infoMsgs[j]) {
                 for (int k = 0; k < messages[i]->count[j]; ++k)
@@ -61,10 +59,6 @@ Error *ErrorList::add(Error::Type type, const std::string& file,
     ep->type = type;
     vsprintf(buffer, format, ap);
     ep->string = buffer;
-    if (ep->string == NULL) {
-        free(ep);
-        return NULL;
-    }
     ep->file = file;
     ep->startline = startline;
     ep->startcolumn = startcolumn;
@@ -80,7 +74,6 @@ Error *ErrorList::add(Error::Type type, const std::string& file,
 
     epp = (Error **)realloc(messages, (count + 1) * sizeof(Error *));
     if (epp == NULL) {
-        delete ep->string;
         delete ep;
         return NULL;
     }
@@ -303,7 +296,7 @@ void ErrorList::output(FILE* fp, Error* ep)
     position(buffer, ep->file, ep->startline, ep->startcolumn,
              ep->endline, ep->endcolumn, true);
 
-    fprintf(fp, "%s %s - %s\n", buffer.c_str(), modifier, ep->string);
+    fprintf(fp, "%s %s - %s\n", buffer.c_str(), modifier, ep->string.c_str());
 
     // Print error information, if any.
     for (int which = 0; which < Error::INFOCNT; ++which) {
