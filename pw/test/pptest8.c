@@ -58,3 +58,6 @@
 "foo"
 123.456
 0x3u
+// comment
+/* comment
+ */

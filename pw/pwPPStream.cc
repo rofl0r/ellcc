@@ -751,7 +751,6 @@ void PPStream::pptoken()
     // mark end of token
     endline = nextl;
     endcolumn = nextc;
-printf("pptoken = |%s|\n", string.c_str());
 }
 
 //

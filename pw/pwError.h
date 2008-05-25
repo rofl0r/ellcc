@@ -9,6 +9,7 @@
 
 #include <stdarg.h>
 #include <string>
+#include "pwArray.h"
 
 namespace pw {
 
@@ -45,8 +46,7 @@ private:
     int startline, startcolumn;                 // Error position in source.
     int endline, endcolumn;                     // If startline or endline == 0, not available.
     Type type;                                  // Type of error.
-    int count[INFOCNT];                         // Count of info messages.
-    const char** infoMsgs[INFOCNT];             // Info messages.
+    pw::array<std::string> infoMsgs[INFOCNT];             // Info messages.
 };
 
 class ErrorList {

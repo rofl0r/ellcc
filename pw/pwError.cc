@@ -25,14 +25,6 @@ ErrorList::ErrorList()
 ErrorList::~ErrorList()
 {
     for (int i = 0; i < count; ++i) {
-        for (int j = 0; j < Error::INFOCNT; ++j) {
-            if (messages[i]->infoMsgs[j]) {
-                for (int k = 0; k < messages[i]->count[j]; ++k)
-                    delete messages[i]->infoMsgs[j][k];
-                delete messages[i]->infoMsgs[j];
-
-            }
-        }
         delete messages[i];
     }
 
@@ -52,10 +44,6 @@ Error *ErrorList::add(Error::Type type, const std::string& file,
     int i;
     char buffer[1024];	// RICH
 
-    for (i = 0; i < Error::INFOCNT; ++i) {
-        ep->count[i] = 0;
-        ep->infoMsgs[i] = NULL;
-    }
     ep->type = type;
     vsprintf(buffer, format, ap);
     ep->string = buffer;
@@ -126,19 +114,8 @@ bool Error::info(Error::Info which, const char *format, va_list ap)
         return false;
     }
 
-    ip = (const char **)realloc(infoMsgs[which], (count[which] + 1) * sizeof( char *));
-    if (ip == NULL) {
-        return false;
-    }
-
-    infoMsgs[which] = ip;
     vsprintf(buffer, format, ap);
-    infoMsgs[which][count[which]] = buffer;
-    if (infoMsgs[which][count[which]] == NULL) {
-        return false;
-    }
-
-    ++count[which];
+    infoMsgs[which][infoMsgs[which].size()] = buffer;
     return true;
 }
 
@@ -300,9 +277,9 @@ void ErrorList::output(FILE* fp, Error* ep)
 
     // Print error information, if any.
     for (int which = 0; which < Error::INFOCNT; ++which) {
-        for (int j = 0; j < ep->count[which]; ++j) {
+        for (int j = 0; j < ep->infoMsgs[which].size(); ++j) {
             fprintf(fp, "%*s%s\n", (which+1)*4, " ", 
-                   ep->infoMsgs[which][j]);
+                   ep->infoMsgs[which][j].c_str());
         }
     }
 }

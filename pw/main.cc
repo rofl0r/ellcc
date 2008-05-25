@@ -45,7 +45,7 @@ static pw::Options options = {
     IDENTIFIER,                         			// Identifier token.
     NULL,                      					// Reserved words in this language.
     NULL,                             				// Tokens in the language.
-    NULL,                           				// Comments in the language.
+    comments,                           				// Comments in the language.
 };
 
 //
@@ -137,6 +137,7 @@ static void setupStateMachines()
             }
         }
     }
+    // RICH machine->print(stdout, NULL);
 }
 
 int main(int argc, char** argv)

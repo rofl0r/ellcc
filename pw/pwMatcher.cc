@@ -144,22 +144,49 @@ Matcher::State** Matcher::setRoot(State** root, States& list, int depth, int ind
 //
 bool Matcher::setValue(Entry* entry, int value, const States* next)
 {
-    if (value == -1) {
-        return true;                            // Not a stop state.
+    if (next == NULL) {
+        if (value == -1) {
+            return true;                            // Not a stop state.
+        }
+        if (entry->value != -1) {
+            // RICH: ambiguous.
+            return false;
+        }
+        entry->value = value;
+    } else {
+        if (value != -1 && entry->value == -1) {
+            // A stop state.
+            entry->value = value;
+        }
     }
 
-    if (entry->value != -1) {
-        // RICH: ambiguous.
-        return false;
-    }
-
-    entry->value = value;
     if (next) {
         entry->next.append(next);
     }
     if (value > maxvalue) {
         maxvalue = value;                       // Remember the largest value.
     }
+
+    if (next == NULL) {
+        return true;
+    }
+
+    bool found = false;
+    int size = entry->av.size();
+    for (int i = 0; i < size; ++i) {
+        // Check for value already in the list.
+        if (entry->av[i].value == value) {
+            entry->av[i].next.append(next);
+            found = true;
+            break;
+        }
+    }
+
+    if (!found) {
+        entry->av[size].value = value;
+        entry->av[size].next.append(next);
+    }
+
     return true;
 }
 
