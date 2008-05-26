@@ -1368,10 +1368,13 @@ void AddStandardCompilePasses(PassManager &PM) {
   // RICH: If we inline here, an externally referenced function could be optimized out (bzip2).
   if (0 && !DisableInline)
     addPass(PM, createFunctionInliningPass());   // Inline small functions
+
   addPass(PM, createArgumentPromotionPass());    // Scalarize uninlined fn args
 
   addPass(PM, createTailDuplicationPass());      // Simplify cfg by copying code
+  addPass(PM, createSimplifyLibCallsPass());     // Library Call Optimizations
   addPass(PM, createInstructionCombiningPass()); // Cleanup for scalarrepl.
+  addPass(PM, createJumpThreadingPass());        // Thread jumps.
   addPass(PM, createCFGSimplificationPass());    // Merge & remove BBs
   addPass(PM, createScalarReplAggregatesPass()); // Break up aggregate allocas
   addPass(PM, createInstructionCombiningPass()); // Combine silly seq's
@@ -1384,11 +1387,14 @@ void AddStandardCompilePasses(PassManager &PM) {
   addPass(PM, createLICMPass());                 // Hoist loop invariants
   addPass(PM, createLoopUnswitchPass());         // Unswitch loops.
   addPass(PM, createLoopIndexSplitPass());       // Index split loops.
-  addPass(PM, createInstructionCombiningPass()); // Clean up after LICM/reassoc
+  // FIXME : Removing instcombine causes nestedloop regression.
+  addPass(PM, createInstructionCombiningPass()); 
   addPass(PM, createIndVarSimplifyPass());       // Canonicalize indvars
+  addPass(PM, createLoopDeletionPass());         // Delete dead loops
   addPass(PM, createLoopUnrollPass());           // Unroll small loops
   addPass(PM, createInstructionCombiningPass()); // Clean up after the unroller
   addPass(PM, createGVNPass());                  // Remove redundancies
+  addPass(PM, createMemCpyOptPass());            // Remove memcpy / form memset
   addPass(PM, createSCCPPass());                 // Constant prop with SCCP
 
   // Run instcombine after redundancy elimination to exploit opportunities
@@ -1399,7 +1405,7 @@ void AddStandardCompilePasses(PassManager &PM) {
   addPass(PM, createDeadStoreEliminationPass()); // Delete dead stores
   addPass(PM, createAggressiveDCEPass());        // SSA based 'Aggressive DCE'
   addPass(PM, createCFGSimplificationPass());    // Merge & remove BBs
-  addPass(PM, createSimplifyLibCallsPass());     // Library Call Optimizations
+  addPass(PM, createStripDeadPrototypesPass());  // Get rid of dead prototypes
   addPass(PM, createDeadTypeEliminationPass());  // Eliminate dead types
   addPass(PM, createConstantMergePass());        // Merge dup global constants
 }

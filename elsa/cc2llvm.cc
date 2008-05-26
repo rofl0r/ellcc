@@ -18,12 +18,12 @@
 #include <llvm/Intrinsics.h>
 #include <llvm/ParameterAttributes.h>
 #include <llvm/Support/MathExtras.h>
-#include <llvm/Support/LLVMBuilder.h>
+#include <llvm/Support/IRBuilder.h>
 #include <llvm/Analysis/Verifier.h>
 
 #define BITS_PER_BYTE	8	// RICH: Temporary.
 
-#if 1
+#if 0
 // Really verbose debugging.
 #define VDEBUG(who, where, what) cout << toString(where) << ": " << who << " "; what; cout << "\n"
 #else
@@ -33,7 +33,7 @@
 // -------------------- CC2LLVMEnv ---------------------
 CC2LLVMEnv::CC2LLVMEnv(StringTable &s, string name, const TranslationUnit& input,
                        string targetData, string targetTriple,
-		       llvm::LLVMFoldingBuilder& builder)
+		       llvm::IRBuilder& builder)
   : str(s),
     targetData(targetData.c_str()),
     input(input),
@@ -320,6 +320,7 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLoc loc, AtomicType 
         int i = 0;
         SFOREACH_OBJLIST(Variable, ct->dataMembers, iter) {
             Variable const *v = iter.data();
+            VDEBUG("member", v->loc, cout << v->toString());
             members.add(v, llvm::ConstantInt::get(targetData.getIntPtrType(), i++));
 	    fields.push_back(makeTypeSpecifier(v->loc, v->type));
         }
@@ -433,7 +434,7 @@ llvm::Value* CC2LLVMEnv::declaration(const Variable* var, llvm::Value* init, int
     VDEBUG("declaration", var->loc, cout << toString(var->flags) << " " << var->toString());
     if (var->type->getTag() == Type::T_FUNCTION) {
         llvm::GlobalValue::LinkageTypes linkage = getLinkage(var->flags);
-        llvm::Function* gf = new llvm::Function((llvm::FunctionType*)type, linkage, makeName(var)->name, mod);
+        llvm::Function* gf = llvm::Function::Create((llvm::FunctionType*)type, linkage, makeName(var)->name, mod);
         gf->setCallingConv(llvm::CallingConv::C); // RICH: Calling convention.
         variables.add(var, gf);
         value = gf;
@@ -581,7 +582,7 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
             returnType = llvm::Type::VoidTy;
         }
         llvm::FunctionType* ft = llvm::FunctionType::get(returnType, args, funcType->acceptsVarargs());
-        env.function = new llvm::Function(ft, linkage, nameAndParams->var->name, env.mod);
+        env.function = llvm::Function::Create(ft, linkage, nameAndParams->var->name, env.mod);
         env.function->setCallingConv(llvm::CallingConv::C); // RICH: Calling convention.
         env.variables.add(nameAndParams->var, env.function);
     } else {
@@ -591,7 +592,7 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
     VDEBUG("Function", nameAndParams->var->loc, cout << nameAndParams->var->toString() << " "; returnType->print(cout));
     const Function* oldFunctionAST = env.functionAST;	// Handle nested functions.
     env.functionAST = this;
-    env.entryBlock = new llvm::BasicBlock("entry", env.function, NULL);
+    env.entryBlock = llvm::BasicBlock::Create("entry", env.function, NULL);
 
     // Set the initial current block.
     env.setCurrentBlock(env.entryBlock);
@@ -692,12 +693,12 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
     }
 
     // Set up the return block.
-    env.returnBlock = new llvm::BasicBlock("return", env.function, 0);
+    env.returnBlock = llvm::BasicBlock::Create("return", env.function, 0);
     // Set up the return value.
     if (returnType == llvm::Type::VoidTy) {
         // A void function.
         env.returnValue = NULL;
-        new llvm::ReturnInst(env.returnBlock);
+        llvm::ReturnInst::Create(env.returnBlock);
     } else {
         // Create the return value holder.
 	
@@ -711,7 +712,7 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
 
         // Generate the function return.
         llvm::LoadInst* rv = new llvm::LoadInst(env.returnValue, "", false, env.returnBlock);	// RICH: Volatile
-        new llvm::ReturnInst(rv, env.returnBlock);
+        llvm::ReturnInst::Create(rv, env.returnBlock);
     }
 
     // Clear function specific data.
@@ -779,7 +780,7 @@ void S_label::cc2llvm(CC2LLVMEnv &env) const
     llvm::BasicBlock* block = env.labels.get(label);
     if (block == NULL) {
         // Create the basic block here.
-        block = new llvm::BasicBlock(label, env.function, env.returnBlock);
+        block = llvm::BasicBlock::Create(label, env.function, env.returnBlock);
         // Remember the label.
         env.labels.add(label, block);
     } else {
@@ -794,7 +795,7 @@ void S_label::cc2llvm(CC2LLVMEnv &env) const
 void S_case::cc2llvm(CC2LLVMEnv &env) const
 {
     xassert(env.switchInst);
-    llvm::BasicBlock* block = new llvm::BasicBlock("case", env.function, env.returnBlock);
+    llvm::BasicBlock* block = llvm::BasicBlock::Create("case", env.function, env.returnBlock);
     env.setCurrentBlock(block);
     int deref;
     llvm::Value* value = expr->cc2llvm(env, deref);
@@ -810,7 +811,7 @@ void S_case::cc2llvm(CC2LLVMEnv &env) const
 void S_default::cc2llvm(CC2LLVMEnv &env) const
 {
     xassert(env.switchInst);
-    llvm::BasicBlock* block = new llvm::BasicBlock("default", env.function, env.returnBlock);
+    llvm::BasicBlock* block = llvm::BasicBlock::Create("default", env.function, env.returnBlock);
     env.setCurrentBlock(block);
     env.switchInst->setSuccessor(0, block);
     s->cc2llvm(env);
@@ -835,9 +836,9 @@ void S_if::cc2llvm(CC2LLVMEnv &env) const
 {
     const CN_expr* condition = cond->asCN_exprC();
     llvm::Value* value = env.checkCondition(condition->expr->expr);
-    llvm::BasicBlock* ifTrue = new llvm::BasicBlock("ifTrue", env.function, env.returnBlock);
-    llvm::BasicBlock* ifFalse = new llvm::BasicBlock("ifFalse", env.function, env.returnBlock);
-    llvm::BasicBlock* next = new llvm::BasicBlock("next", env.function, env.returnBlock);
+    llvm::BasicBlock* ifTrue = llvm::BasicBlock::Create("ifTrue", env.function, env.returnBlock);
+    llvm::BasicBlock* ifFalse = llvm::BasicBlock::Create("ifFalse", env.function, env.returnBlock);
+    llvm::BasicBlock* next = llvm::BasicBlock::Create("next", env.function, env.returnBlock);
 
     env.checkCurrentBlock();
     env.builder.CreateCondBr(value, ifTrue, ifFalse);
@@ -847,7 +848,7 @@ void S_if::cc2llvm(CC2LLVMEnv &env) const
     thenBranch->cc2llvm(env);
     if (env.currentBlock) {
         // Close the current block.
-        new llvm::BranchInst(next, env.currentBlock);
+        llvm::BranchInst::Create(next, env.currentBlock);
         env.currentBlock = NULL;
     }
 
@@ -865,7 +866,7 @@ void S_switch::cc2llvm(CC2LLVMEnv &env) const
     Type* oldSwitchType = env.switchType;
     llvm::BasicBlock* oldNextBlock = env.nextBlock;
     // Create a block to follow the switch statement.
-    env.nextBlock = new llvm::BasicBlock("next", env.function, env.returnBlock);
+    env.nextBlock = llvm::BasicBlock::Create("next", env.function, env.returnBlock);
     // Generate the condition.
     const CN_expr* condition = cond->asCN_exprC();
     int deref;
@@ -901,9 +902,9 @@ void S_while::cc2llvm(CC2LLVMEnv &env) const
     llvm::BasicBlock* oldContinueBlock = env.continueBlock;
     llvm::BasicBlock* oldNextBlock = env.nextBlock;
 
-    env.continueBlock = new llvm::BasicBlock("continue", env.function, env.returnBlock);
-    llvm::BasicBlock* bodyBlock = new llvm::BasicBlock("body", env.function, env.returnBlock);
-    env.nextBlock = new llvm::BasicBlock("next", env.function, env.returnBlock);
+    env.continueBlock = llvm::BasicBlock::Create("continue", env.function, env.returnBlock);
+    llvm::BasicBlock* bodyBlock = llvm::BasicBlock::Create("body", env.function, env.returnBlock);
+    env.nextBlock = llvm::BasicBlock::Create("next", env.function, env.returnBlock);
 
     // Set the current block.
     env.setCurrentBlock(env.continueBlock);
@@ -931,9 +932,9 @@ void S_doWhile::cc2llvm(CC2LLVMEnv &env) const
     llvm::BasicBlock* oldContinueBlock = env.continueBlock;
     llvm::BasicBlock* oldNextBlock = env.nextBlock;
 
-    llvm::BasicBlock* bodyBlock = new llvm::BasicBlock("body", env.function, env.returnBlock);
-    env.continueBlock = new llvm::BasicBlock("continue", env.function, env.returnBlock);
-    env.nextBlock = new llvm::BasicBlock("next", env.function, env.returnBlock);
+    llvm::BasicBlock* bodyBlock = llvm::BasicBlock::Create("body", env.function, env.returnBlock);
+    env.continueBlock = llvm::BasicBlock::Create("continue", env.function, env.returnBlock);
+    env.nextBlock = llvm::BasicBlock::Create("next", env.function, env.returnBlock);
     if (env.currentBlock) {
         // Close the current block.
         env.builder.CreateBr(bodyBlock);
@@ -963,10 +964,10 @@ void S_for::cc2llvm(CC2LLVMEnv &env) const
     llvm::BasicBlock* oldContinueBlock = env.continueBlock;
     llvm::BasicBlock* oldNextBlock = env.nextBlock;
 
-    llvm::BasicBlock* testBlock = new llvm::BasicBlock("test", env.function, env.returnBlock);
-    llvm::BasicBlock* bodyBlock = new llvm::BasicBlock("body", env.function, env.returnBlock);
-    env.continueBlock = new llvm::BasicBlock("continue", env.function, env.returnBlock);
-    env.nextBlock = new llvm::BasicBlock("next", env.function, env.returnBlock);
+    llvm::BasicBlock* testBlock = llvm::BasicBlock::Create("test", env.function, env.returnBlock);
+    llvm::BasicBlock* bodyBlock = llvm::BasicBlock::Create("body", env.function, env.returnBlock);
+    env.continueBlock = llvm::BasicBlock::Create("continue", env.function, env.returnBlock);
+    env.nextBlock = llvm::BasicBlock::Create("next", env.function, env.returnBlock);
 
     env.checkCurrentBlock();
     // Handle the for() initialization.
@@ -1051,7 +1052,7 @@ void S_goto::cc2llvm(CC2LLVMEnv &env) const
     llvm::BasicBlock* block = env.labels.get(label);
     if (block == NULL) {
         // The label has not been encountered, yet.
-        block = new llvm::BasicBlock(label, env.function, env.returnBlock);
+        block = llvm::BasicBlock::Create(label, env.function, env.returnBlock);
         // Remember the label.
         env.labels.add(label, block);
     }
@@ -1160,7 +1161,7 @@ llvm::Value *E_floatLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
         xunimp("floating point type");
         break;
     }
-    return llvm::ConstantFP::get(ftype, llvm::APFloat(*semantics, text));
+    return llvm::ConstantFP::get(llvm::APFloat(*semantics, text));
 }
 
 llvm::Value *E_stringLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
@@ -2324,12 +2325,12 @@ llvm::Value* CC2LLVMEnv::binop(SourceLoc loc, BinaryOp op, Expression* e1, llvm:
         left = access(left, false, deref1);                 // RICH: Volatile.
         right = access(right, false, deref2);                 // RICH: Volatile.
         llvm::Value* value = checkCondition(e1);
-        llvm::BasicBlock* doRight = new llvm::BasicBlock("doRight", function, returnBlock);
-        llvm::BasicBlock* ifFalse = new llvm::BasicBlock("condFalse", function, returnBlock);
-        llvm::BasicBlock* ifTrue = new llvm::BasicBlock("condTrue", function, returnBlock);
-        llvm::BasicBlock* next = new llvm::BasicBlock("next", function, returnBlock);
+        llvm::BasicBlock* doRight = llvm::BasicBlock::Create("doRight", function, returnBlock);
+        llvm::BasicBlock* ifFalse = llvm::BasicBlock::Create("condFalse", function, returnBlock);
+        llvm::BasicBlock* ifTrue = llvm::BasicBlock::Create("condTrue", function, returnBlock);
+        llvm::BasicBlock* next = llvm::BasicBlock::Create("next", function, returnBlock);
         checkCurrentBlock();
-        new llvm::BranchInst(doRight, ifFalse, value, currentBlock);
+        llvm::BranchInst::Create(doRight, ifFalse, value, currentBlock);
         currentBlock = NULL;
 
         setCurrentBlock(doRight);
@@ -2358,12 +2359,12 @@ llvm::Value* CC2LLVMEnv::binop(SourceLoc loc, BinaryOp op, Expression* e1, llvm:
         left = access(left, false, deref1);                 // RICH: Volatile.
         right = access(right, false, deref2);                 // RICH: Volatile.
         llvm::Value* value = checkCondition(e1);
-        llvm::BasicBlock* doRight = new llvm::BasicBlock("doRight", function, returnBlock);
-        llvm::BasicBlock* ifFalse = new llvm::BasicBlock("condFalse", function, returnBlock);
-        llvm::BasicBlock* ifTrue = new llvm::BasicBlock("condTrue", function, returnBlock);
-        llvm::BasicBlock* next = new llvm::BasicBlock("next", function, returnBlock);
+        llvm::BasicBlock* doRight = llvm::BasicBlock::Create("doRight", function, returnBlock);
+        llvm::BasicBlock* ifFalse = llvm::BasicBlock::Create("condFalse", function, returnBlock);
+        llvm::BasicBlock* ifTrue = llvm::BasicBlock::Create("condTrue", function, returnBlock);
+        llvm::BasicBlock* next = llvm::BasicBlock::Create("next", function, returnBlock);
         checkCurrentBlock();
-        new llvm::BranchInst(ifTrue, doRight, value, currentBlock);
+        llvm::BranchInst::Create(ifTrue, doRight, value, currentBlock);
         currentBlock = NULL;
 
         setCurrentBlock(doRight);
@@ -2502,11 +2503,11 @@ llvm::Value *E_cond::cc2llvm(CC2LLVMEnv &env, int& deref) const
 
     // This starts out looking very much like an if statement.
     llvm::Value* value = env.checkCondition(cond);
-    llvm::BasicBlock* ifTrue = new llvm::BasicBlock("condTrue", env.function, env.returnBlock);
-    llvm::BasicBlock* ifFalse = new llvm::BasicBlock("condFalse", env.function, env.returnBlock);
-    llvm::BasicBlock* next = new llvm::BasicBlock("next", env.function, env.returnBlock);
+    llvm::BasicBlock* ifTrue = llvm::BasicBlock::Create("condTrue", env.function, env.returnBlock);
+    llvm::BasicBlock* ifFalse = llvm::BasicBlock::Create("condFalse", env.function, env.returnBlock);
+    llvm::BasicBlock* next = llvm::BasicBlock::Create("next", env.function, env.returnBlock);
     env.checkCurrentBlock();
-    new llvm::BranchInst(ifTrue, ifFalse, value, env.currentBlock);
+    llvm::BranchInst::Create(ifTrue, ifFalse, value, env.currentBlock);
     env.currentBlock = NULL;
 
     env.setCurrentBlock(ifTrue);
@@ -2515,7 +2516,7 @@ llvm::Value *E_cond::cc2llvm(CC2LLVMEnv &env, int& deref) const
     VDEBUG("E_conv true", loc, trueValue->print(cout); cout << " is " << th->type->toString());
     if (env.currentBlock) {
         // Close the current block.
-        new llvm::BranchInst(next, env.currentBlock);
+        llvm::BranchInst::Create(next, env.currentBlock);
         env.currentBlock = NULL;
     }
 
@@ -2829,7 +2830,7 @@ llvm::Module* CC2LLVMEnv::doit()
 // ------------------- entry point -------------------
 llvm::Module* cc_to_llvm(string name, StringTable &str, TranslationUnit const &input, string targetData, string targetTriple)
 {
-    llvm::LLVMFoldingBuilder builder;
+    llvm::IRBuilder builder;
     CC2LLVMEnv env(str, name, input, targetData, targetTriple, builder);
     return env.doit();
 }
