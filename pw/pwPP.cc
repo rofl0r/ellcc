@@ -187,7 +187,7 @@ int PP::filegetc()
 //
 // addname - add a name to the list of input file names
 //
-std::string PP::addname(const std::string& name)
+std::string& PP::addname(const std::string& name)
 {
     for (int i = 0; i < files.size(); ++i) {
         if (name == files[i])
@@ -195,7 +195,7 @@ std::string PP::addname(const std::string& name)
     }
 
     files += name;
-    return name;
+    return files[files.size() - 1];
 }
 
 //
@@ -360,8 +360,9 @@ void PP::processnexttoken(TokenInfo& tinfo)
 
                 fclose(incp->fp);
                 delete incp->pp;
-                incp = includes = incp->next;
+                includes = incp->next;
                 delete incp;
+                incp = includes;
                 // ...and process next token.
                 continue;
             }

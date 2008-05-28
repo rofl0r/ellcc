@@ -293,7 +293,7 @@ private:
     void undefinemacro(std::string& name, int line, int fileline, bool fixed);
     int stringgetc();
     int filegetc();
-    std::string addname(const std::string& name);
+    std::string& addname(const std::string& name);
     void initializeoptions();
     void processnexttoken(TokenInfo& tinfo);
     bool process();
