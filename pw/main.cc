@@ -9,7 +9,8 @@ static std::string pplastfile;
 static std::string lastfile;
 
 enum tokens {
-    STRING = pw::PPStream::CTNEXTOKEN, CHARACTER, INTEGER, FLOAT, IDENTIFIER
+    STRING = pw::PPStream::CTNEXTOKEN, CHARACTER, INTEGER, FLOAT, IDENTIFIER,
+    LBRACE, RBRACE, COMMA, ASSIGN, RANGE, 
 };
 
 static pw::WordAssoc reservedWords[] = {
@@ -17,6 +18,11 @@ static pw::WordAssoc reservedWords[] = {
 };
 
 static pw::WordAssoc tokens[] = {
+    { "{",   LBRACE },
+    { "}",   RBRACE },
+    { ",",   COMMA },
+    { "=",   ASSIGN },
+    { "..",  RANGE},
     { " [a-zA-Z_][a-zA-Z_0-9]*", IDENTIFIER },
     { " [1-9][0-9]*([uU]|[lL])*", INTEGER },            	// Decimal integer
     { " 0[xX][0-9a-fA-F]+([uU]|[lL])*", INTEGER },      	// Hexadecimal integer
@@ -35,6 +41,40 @@ static pw::Bracket comments[] =
     { "/*", "*/", pw::PPStream::COMMENT },        		// Multi line comment.
     { NULL, 0,     0 }
 };
+
+//
+// tokenName - display a token name.
+//
+static const char* tokenName(int value, void* context)
+{
+    const pw::WordAssoc* wp;
+    static const pw::WordAssoc tokens[] = {
+        { "<EOF>", pw::PPStream::ENDOFFILE },
+        { "NL", pw::PPStream::NL },
+        { "WS", pw::PPStream::WS },
+        { "COMMENT", pw::PPStream::COMMENT },
+        { "STRING", STRING },
+        { "CHARACTER", CHARACTER },
+        { "INTEGER", INTEGER },
+        { "FLOAT", FLOAT },
+        { "IDENTIFIER", IDENTIFIER },
+        { "'{'",   LBRACE },
+        { "'}'",   RBRACE },
+        { "','",   COMMA },
+        { "'='",   ASSIGN },
+        { "'..'",  RANGE },
+        { NULL,  0 }
+    };
+
+    for (wp = tokens; wp->word; ++wp) {
+        if (wp->token == value) {
+            return wp->word;
+        }
+    }
+
+    // Use the default name.
+    return pw::stateValueName(value, context);
+}
 
 static pw::Options options = {
     true,                               			// Trigraphs allowed.
