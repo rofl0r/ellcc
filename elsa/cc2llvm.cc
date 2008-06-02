@@ -23,7 +23,7 @@
 
 #define BITS_PER_BYTE	8	// RICH: Temporary.
 
-#if 0
+#if 1
 // Really verbose debugging.
 #define VDEBUG(who, where, what) cout << toString(where) << ": " << who << " "; what; cout << "\n"
 #else
@@ -2155,7 +2155,7 @@ llvm::Value* CC2LLVMEnv::binop(SourceLoc loc, BinaryOp op, Expression* e1, llvm:
                     // The pointer is bigger, check for signed vs. unsigned.
                     const SimpleType* st = te2->type->asReferenceTypeC()->getAtType()->asSimpleTypeC();
                     if (   right->getType()->getPrimitiveSizeInBits() == 1
-                            || ::isExplicitlyUnsigned(st->type)) {
+                        || ::isExplicitlyUnsigned(st->type)) {
                         right = builder.CreateZExt(right, targetData.getIntPtrType());
                     } else {
                         VDEBUG("SExt2 source", loc, right->print(cout));
@@ -2170,7 +2170,7 @@ llvm::Value* CC2LLVMEnv::binop(SourceLoc loc, BinaryOp op, Expression* e1, llvm:
 
             std::vector<llvm::Value*> index;
             if (   left->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID
-                    || left->getType()->getContainedType(0)->getTypeID() == llvm::Type::StructTyID) {
+                || left->getType()->getContainedType(0)->getTypeID() == llvm::Type::StructTyID) {
                 VDEBUG("NullValue2", loc, right->getType()->print(cout));
                 index.push_back(llvm::Constant::getNullValue(right->getType()));
             }

@@ -1,10 +1,11 @@
 #include "pwPP.h"
 
-static pw::MacroTable macros;
+static bool haveErrors;
 static pw::ErrorList *errors;                        // Errors encountered.
 static int errorcount[pw::Error::ERRORCNT];          // Number of errors encountered.
+
+static pw::MacroTable macros;
 static pw::TokenInfo info;                           // Information about the token.
-static bool haveErrors;
 static std::string pplastfile;
 static std::string lastfile;
 
@@ -17,12 +18,15 @@ static pw::WordAssoc reservedWords[] = {
     { NULL,  0 },
 };
 
+#define PW_LEX_TOKENS \
+    { "{",   LBRACE },          \
+    { "}",   RBRACE },          \
+    { ",",   COMMA },           \
+    { "=",   ASSIGN },          \
+    { "..",  RANGE}
+
 static pw::WordAssoc tokens[] = {
-    { "{",   LBRACE },
-    { "}",   RBRACE },
-    { ",",   COMMA },
-    { "=",   ASSIGN },
-    { "..",  RANGE},
+    PW_LEX_TOKENS,
     { " [a-zA-Z_][a-zA-Z_0-9]*", IDENTIFIER },
     { " [1-9][0-9]*([uU]|[lL])*", INTEGER },            	// Decimal integer
     { " 0[xX][0-9a-fA-F]+([uU]|[lL])*", INTEGER },      	// Hexadecimal integer
@@ -58,11 +62,7 @@ static const char* tokenName(int value, void* context)
         { "INTEGER", INTEGER },
         { "FLOAT", FLOAT },
         { "IDENTIFIER", IDENTIFIER },
-        { "'{'",   LBRACE },
-        { "'}'",   RBRACE },
-        { "','",   COMMA },
-        { "'='",   ASSIGN },
-        { "'..'",  RANGE },
+        PW_LEX_TOKENS,
         { NULL,  0 }
     };
 
