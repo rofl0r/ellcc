@@ -4,6 +4,26 @@ static bool haveErrors;
 static pw::ErrorList *errors;                        // Errors encountered.
 static int errorcount[pw::Error::ERRORCNT];          // Number of errors encountered.
 
+namespace pw {
+
+/** A Language definition.
+ */
+class PPLanguage {
+public:
+private:
+    /** Reserved words in the language.
+     */
+    virtual const WordAssoc* getReservedWords() { return NULL; }
+    /** Tokens in the language.
+     */
+    virtual const WordAssoc* getTokensWords() { return NULL; }
+    /** Comments in the language.
+     */
+    virtual const Bracket* getComments() { return NULL; }
+};
+
+};
+
 static pw::MacroTable macros;
 static pw::TokenInfo info;                           // Information about the token.
 static std::string pplastfile;
@@ -14,7 +34,7 @@ enum tokens {
     LBRACE, RBRACE, COMMA, ASSIGN, RANGE, 
 };
 
-static pw::WordAssoc reservedWords[] = {
+static const pw::WordAssoc reservedWords[] = {
     { NULL,  0 },
 };
 
@@ -25,7 +45,7 @@ static pw::WordAssoc reservedWords[] = {
     { "=",   ASSIGN },          \
     { "..",  RANGE}
 
-static pw::WordAssoc tokens[] = {
+static const pw::WordAssoc tokens[] = {
     PW_LEX_TOKENS,
     { " [a-zA-Z_][a-zA-Z_0-9]*", IDENTIFIER },
     { " [1-9][0-9]*([uU]|[lL])*", INTEGER },            	// Decimal integer
@@ -39,7 +59,7 @@ static pw::WordAssoc tokens[] = {
     { NULL,  0 },
 };
 
-static pw::Bracket comments[] =
+static const pw::Bracket comments[] =
 {
     { "//", "\n", pw::PPStream::COMMENT },        		// Single line comment.
     { "/*", "*/", pw::PPStream::COMMENT },        		// Multi line comment.
@@ -85,7 +105,7 @@ static pw::Options options = {
     IDENTIFIER,                         			// Identifier token.
     NULL,                      					// Reserved words in this language.
     NULL,                             				// Tokens in the language.
-    comments,                           				// Comments in the language.
+    comments,                           			// Comments in the language.
 };
 
 //

@@ -16,14 +16,12 @@
 
 namespace pw {
 
-struct WordAssoc
-{                            // Word/token association.
+struct WordAssoc {                            // Word/token association.
     char *word;
     int token;
 };
 
-struct Bracket
-{                              // Start/end bracketed definition.
+struct Bracket {                              // Start/end bracketed definition.
     char *start;
     char *end;
     int token;
@@ -38,7 +36,7 @@ struct Options {                            // Pre-processor options.
     int IDENTIFIER;                             // Identifier token.
     pw::Matcher *reservedwords;              // Reserved word matcher.
     pw::Matcher *tokens;                     // Token matcher.
-    Bracket *comments;                        // Comment matcher.
+    const Bracket *comments;                        // Comment matcher.
 };
 
 struct Position {				// An input stream position.
