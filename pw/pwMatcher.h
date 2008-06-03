@@ -100,7 +100,7 @@ private:
     int addWord(State** root, const std::string& word, int value, int depth);
     int addSentence(State** root, const Input* sentence, int value, int depth);
     int checkWord(const char* word);
-    int checkWord(const std::string& word, int index);
+    int checkWord(const std::string& word, size_t index);
     int checkSentence(const Input* sentence);
 
     std::string name;                              // Name of the state machine.

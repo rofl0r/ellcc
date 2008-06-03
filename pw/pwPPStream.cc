@@ -640,7 +640,7 @@ void PPStream::pptoken()
                         needspace = false;
                     }
 
-                    for (int i = 0; i < string.length(); ++i) {
+                    for (size_t i = 0; i < string.length(); ++i) {
                         if (string[i] == '"' || string[i] == '\\')
                             body += '\\';
 
@@ -1306,7 +1306,7 @@ void PPStream::getToken()
                 }
 
                 unsigned long line = 0;
-                int index = 0;
+                size_t index = 0;
                 while (index < string.length() && isdigit(string[index])) {
                     line *= 10;
 

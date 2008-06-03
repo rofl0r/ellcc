@@ -30,7 +30,7 @@ Macro* PP::lookup(std::string& name, int line)
 
         // Make the file name into a string.
         macp->body = "\"";
-        for (int i = 0; i < temp.length(); ++i) {
+        for (size_t i = 0; i < temp.length(); ++i) {
             macp->body += temp[i];
             if (temp[i] == '\\') {
                 macp->body += '\\';

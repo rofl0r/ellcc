@@ -497,7 +497,7 @@ int Matcher::matchWord(const char* word)
 //
 // checkWord - Check for a std::string word in a state machine.
 //
-int Matcher::checkWord(const std::string& word, int index)
+int Matcher::checkWord(const std::string& word, size_t index)
 {
     int first, i, j, last;
     Input input;
@@ -1143,7 +1143,7 @@ void Matcher::statePrint(FILE* fp, State* sp, void* context)
     if (sp->index) {
         fprintf(fp, " $%d", sp->index);
     }
-    fprintf(fp, "):\n", sp->number, sp->depth);
+    fprintf(fp, "):\n");
     if (sp->machines.list.size()) {
         // This state has pre-state machines.
         fprintf(fp, "      (");

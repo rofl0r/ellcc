@@ -141,7 +141,7 @@ template<class Type> unsigned int Table<Type>::hash(const std::string& name)
 {
     unsigned int value = 0;
 
-    for (int i = 0; i < name.length(); ++i) {
+    for (size_t i = 0; i < name.length(); ++i) {
         value += name[i];
     }
 

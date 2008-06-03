@@ -10,17 +10,99 @@ namespace pw {
  */
 class PPLanguage {
 public:
+    /** Create a language definition.
+     * @param name The language name.
+     * @return A unique instance for each language or NULL if an error occured.
+     */
+    PPLanguage* Create(char* name);
+    /** Create a language definition.
+     * @param name The language name.
+     * @return A unique instance for each language or NULL if an error occured.
+     */
+    PPLanguage* Create(std::string name);
 private:
+    /** Constructor (not defined or used).
+     */
+    PPLanguage();
+    /** Copy constructor (not defined or used).
+     */
+    PPLanguage(PPLanguage&);
+    /** Constructor.
+     */
+    PPLanguage(std::string name);
+    /** Destructor.
+     */
+    virtual ~PPLanguage();
+
     /** Reserved words in the language.
+     * @return The reserved word table.
      */
     virtual const WordAssoc* getReservedWords() { return NULL; }
     /** Tokens in the language.
+     * @return The token table.
      */
     virtual const WordAssoc* getTokensWords() { return NULL; }
     /** Comments in the language.
+     * @return The comment table.
      */
     virtual const Bracket* getComments() { return NULL; }
+
+    /** The language name.
+     */
+    std::string name;
+    /** The known language array.
+     */
+    static array<PPLanguage*> languages;
+
+    /** Preprocessor options.
+     */
+    Options options;
 };
+
+/* The known language array.
+ */
+array<PPLanguage*> PPLanguage::languages;
+
+/* Construct a language entry.
+ */
+PPLanguage::PPLanguage(std::string name)
+{
+    this->name = name;
+}
+
+/* Destruct a language entry.
+ */
+PPLanguage::~PPLanguage()
+{
+}
+
+/* Create a language entry.
+ */
+PPLanguage* PPLanguage::Create(char* name)
+{
+    return Create(std::string(name));
+}
+
+/* Create a language entry.
+ */
+PPLanguage* PPLanguage::Create(std::string name)
+{
+    if (languages.size() == 0) {
+        // Create the configuration file scanner.
+        languages[0] = new PPLanguage(std::string("cfg"));
+    }
+
+    int i;
+    for (i = 0; i < languages.size(); ++i) {
+        if (languages[i]->name == name) {
+            return languages[i];
+        }
+    }
+
+    PPLanguage* lp = new PPLanguage(name);
+    languages[i] = lp;
+    return lp;
+}
 
 };
 

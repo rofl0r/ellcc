@@ -41,7 +41,6 @@ Error *ErrorList::add(Error::Type type, const std::string& file,
 {
     Error *ep = new Error;
     Error **epp;
-    int i;
     char buffer[1024];	// RICH
 
     ep->type = type;
@@ -107,7 +106,6 @@ bool Error::info(Error::Info which, const char *format, ...)
 //
 bool Error::info(Error::Info which, const char *format, va_list ap)
 {
-    const char **ip;
     char buffer[1024];	// RICH
 
     if (which >= Error::INFOCNT) {

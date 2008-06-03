@@ -154,7 +154,7 @@ private:
         bool inhibit;                           // Inhibit name scan.
         std::string name;                          // Name associated with stream.
         std::string body;                          // Body of macro.
-        int index;                              // For sequencing through the body.
+        size_t index;                              // For sequencing through the body.
         int oldnextchar;                        // Last character in old stream.
     };
 
