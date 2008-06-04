@@ -6,90 +6,122 @@ static int errorcount[pw::Error::ERRORCNT];          // Number of errors encount
 
 namespace pw {
 
-/** A Language definition.
+/** A Configuration file handler.
  */
-class PPLanguage {
+class Config {
 public:
-    /** Create a language definition.
-     * @param name The language name.
-     * @return A unique instance for each language or NULL if an error occured.
+    /** Create a configuration file parser.
+     * @param name The configuration name.
+     * @return A unique instance for each configuration or NULL if an error occured.
      */
-    PPLanguage* Create(char* name);
-    /** Create a language definition.
-     * @param name The language name.
-     * @return A unique instance for each language or NULL if an error occured.
+    static const Config* Create(char* name, ErrorList& errors);
+    /** Create configuration file parser definition.
+     * @param name The configuration name.
+     * @return A unique instance for each configuration or NULL if an error occured.
      */
-    PPLanguage* Create(std::string name);
+    static const Config* Create(std::string name, ErrorList& error);
+
 private:
     /** Constructor (not defined or used).
      */
-    PPLanguage();
+    Config();
     /** Copy constructor (not defined or used).
      */
-    PPLanguage(PPLanguage&);
+    Config(Config&);
     /** Constructor.
      */
-    PPLanguage(std::string name);
+    Config(std::string name, ErrorList& errors);
     /** Destructor.
      */
-    virtual ~PPLanguage();
+    virtual ~Config() { }
 
-    /** Reserved words in the language.
-     * @return The reserved word table.
+public:
+    /** The error list.
      */
-    virtual const WordAssoc* getReservedWords() { return NULL; }
-    /** Tokens in the language.
-     * @return The token table.
-     */
-    virtual const WordAssoc* getTokensWords() { return NULL; }
-    /** Comments in the language.
-     * @return The comment table.
-     */
-    virtual const Bracket* getComments() { return NULL; }
+    ErrorList& errors;
 
+    /** Preprocessor options.
+     */
+    Options options;
+
+    /** Configuration file token identifiers.
+     */
+    enum tokens {
+        STRING = PPStream::CTNEXTOKEN, CHARACTER, INTEGER, FLOAT, IDENTIFIER,
+        LBRACE, RBRACE, COMMA, ASSIGN, RANGE, 
+    };
+    /** A keyword parsing function.
+     */
+    typedef void Parser(Config& env, ErrorList& errors, void* data);
+    /** Define a configuration keyword.
+     */
+    void keyword(std::string name, Parser* handler, void* data = 0);
+    /** Parse a configuration file.
+     */
+    Config* parse(std::string name);
+
+private:
     /** The language name.
      */
     std::string name;
     /** The known language array.
      */
-    static array<PPLanguage*> languages;
+    static array<Config*> languages;
 
-    /** Preprocessor options.
+    /** Set preprocessor options.
      */
-    Options options;
+    void setupOptions();
+
+    /** Default configuration file options.
+     */
+    static Options configOptions;
+
+    /** Configuration file reserved words.
+     */
+    static const WordAssoc reservedWords[];
+    /** Configuration file tokens.
+     */
+    static const WordAssoc tokens[];
+    /** Configuration file token names.
+     */
+    static const char* tokenName(int value, void* context);
+    /** Configuration file comments.
+     */
+    static const Bracket comments[];
+
+    /* Configuration keyword handlers.
+     */
+    /** Set the needwhitespace flag.
+     */
+    static Parser needwhitespace;
 };
 
 /* The known language array.
  */
-array<PPLanguage*> PPLanguage::languages;
+array<Config*> Config::languages;
 
 /* Construct a language entry.
  */
-PPLanguage::PPLanguage(std::string name)
-{
-    this->name = name;
-}
-
-/* Destruct a language entry.
- */
-PPLanguage::~PPLanguage()
+Config::Config(std::string name, ErrorList& errors) : name(name), errors(errors)
 {
 }
 
 /* Create a language entry.
  */
-PPLanguage* PPLanguage::Create(char* name)
+const Config* Config::Create(char* name, ErrorList& errors)
 {
-    return Create(std::string(name));
+    return Create(std::string(name), errors);
 }
 
 /* Create a language entry.
  */
-PPLanguage* PPLanguage::Create(std::string name)
+const Config* Config::Create(std::string name, ErrorList& errors)
 {
     if (languages.size() == 0) {
         // Create the configuration file scanner.
-        languages[0] = new PPLanguage(std::string("cfg"));
+        languages[0] = new Config(std::string("config"), errors);
+        languages[0]->setupOptions();
+        languages[0]->keyword("needwhitespace", needwhitespace);
     }
 
     int i;
@@ -99,24 +131,15 @@ PPLanguage* PPLanguage::Create(std::string name)
         }
     }
 
-    PPLanguage* lp = new PPLanguage(name);
-    languages[i] = lp;
+    // Parse a config file.
+    Config* lp = languages[0]->parse(name);
+    if (lp) {
+        languages[i] = lp;
+    }
     return lp;
 }
 
-};
-
-static pw::MacroTable macros;
-static pw::TokenInfo info;                           // Information about the token.
-static std::string pplastfile;
-static std::string lastfile;
-
-enum tokens {
-    STRING = pw::PPStream::CTNEXTOKEN, CHARACTER, INTEGER, FLOAT, IDENTIFIER,
-    LBRACE, RBRACE, COMMA, ASSIGN, RANGE, 
-};
-
-static const pw::WordAssoc reservedWords[] = {
+const WordAssoc Config::reservedWords[] = {
     { NULL,  0 },
 };
 
@@ -127,7 +150,7 @@ static const pw::WordAssoc reservedWords[] = {
     { "=",   ASSIGN },          \
     { "..",  RANGE}
 
-static const pw::WordAssoc tokens[] = {
+const WordAssoc Config::tokens[] = {
     PW_LEX_TOKENS,
     { " [a-zA-Z_][a-zA-Z_0-9]*", IDENTIFIER },
     { " [1-9][0-9]*([uU]|[lL])*", INTEGER },            	// Decimal integer
@@ -141,24 +164,25 @@ static const pw::WordAssoc tokens[] = {
     { NULL,  0 },
 };
 
-static const pw::Bracket comments[] =
+const Bracket Config::comments[] =
 {
-    { "//", "\n", pw::PPStream::COMMENT },        		// Single line comment.
-    { "/*", "*/", pw::PPStream::COMMENT },        		// Multi line comment.
+    { "//", "\n", PPStream::COMMENT },        		// Single line comment.
+    { "/*", "*/", PPStream::COMMENT },        		// Multi line comment.
     { NULL, 0,     0 }
+
 };
 
 //
 // tokenName - display a token name.
 //
-static const char* tokenName(int value, void* context)
+const char* Config::tokenName(int value, void* context)
 {
-    const pw::WordAssoc* wp;
-    static const pw::WordAssoc tokens[] = {
-        { "<EOF>", pw::PPStream::ENDOFFILE },
-        { "NL", pw::PPStream::NL },
-        { "WS", pw::PPStream::WS },
-        { "COMMENT", pw::PPStream::COMMENT },
+    const WordAssoc* wp;
+    static const WordAssoc tokens[] = {
+        { "<EOF>", PPStream::ENDOFFILE },
+        { "NL", PPStream::NL },
+        { "WS", PPStream::WS },
+        { "COMMENT", PPStream::COMMENT },
         { "STRING", STRING },
         { "CHARACTER", CHARACTER },
         { "INTEGER", INTEGER },
@@ -175,10 +199,10 @@ static const char* tokenName(int value, void* context)
     }
 
     // Use the default name.
-    return pw::stateValueName(value, context);
+    return stateValueName(value, context);
 }
 
-static pw::Options options = {
+Options Config::configOptions(
     true,                               			// Trigraphs allowed.
     INTEGER,                            			// Integer token.
     CHARACTER,                          			// Character token.
@@ -187,8 +211,66 @@ static pw::Options options = {
     IDENTIFIER,                         			// Identifier token.
     NULL,                      					// Reserved words in this language.
     NULL,                             				// Tokens in the language.
-    comments,                           			// Comments in the language.
+    comments);                           			// Comments in the language.
+
+void Config::setupOptions()
+{
+    pw::Matcher *machine;
+    const pw::WordAssoc *wp;
+
+    options = configOptions;				// Set default options.
+    if (options.reservedwords == NULL) {
+        machine = options.reservedwords = new pw::Matcher("reserved words", pw::Matcher::CHARSIZE,
+                                                                NULL,
+                                                                NULL, 0);
+        for (wp = reservedWords; wp->word; ++wp) {
+            machine->addWord(wp->word, wp->token);
+        }
+    }
+
+    if (options.tokens == NULL) {
+        machine = options.tokens = new pw::Matcher("tokens", pw::Matcher::CHARSIZE,
+                                                        NULL,
+                                                        NULL, 0);
+    for (wp = tokens; wp->word; ++wp) {
+        if (*wp->word == ' ') {
+                // Match a regular expression.
+                std::string regstr(wp->word + 1);
+                pw::MatchNode regexp(regstr);
+                machine->addTree(&regexp, wp->token);
+            } else {
+                // Match a word.
+                machine->addWord(wp->word, wp->token);
+            }
+        }
+    }
+    // RICH machine->print(stdout, NULL);
+}
+
+/** Define a configuration keyword.
+ */
+void Config::keyword(std::string name, Parser* handler, void* data)
+{
+}
+
+/* Parse a configuration file.
+ */
+Config* Config::parse(std::string name)
+{
+    Config* lp = new Config(name, errors);
+    return lp;
+}
+
+void Config::needwhitespace(Config& env, ErrorList& errors, void* data)
+{
+}
+
 };
+
+static pw::MacroTable macros;
+static pw::TokenInfo info;                           // Information about the token.
+static std::string pplastfile;
+static std::string lastfile;
 
 //
 // verror - Handle an error.
@@ -249,39 +331,6 @@ void PP::errorPosition(std::string& buffer, const std::string& file,
     errors->position(buffer, file, startline, startcolumn, endline, endcolumn, trailer);
 }
 
-static void setupStateMachines()
-{
-    pw::Matcher *machine;
-    const pw::WordAssoc *wp;
-
-    if (options.reservedwords == NULL) {
-        machine = options.reservedwords = new pw::Matcher("reserved words", pw::Matcher::CHARSIZE,
-                                                                NULL,
-                                                                NULL, 0);
-        for (wp = reservedWords; wp->word; ++wp) {
-            machine->addWord(wp->word, wp->token);
-        }
-    }
-
-    if (options.tokens == NULL) {
-        machine = options.tokens = new pw::Matcher("tokens", pw::Matcher::CHARSIZE,
-                                                        NULL,
-                                                        NULL, 0);
-    for (wp = tokens; wp->word; ++wp) {
-        if (*wp->word == ' ') {
-                // Match a regular expression.
-                std::string regstr(wp->word + 1);
-                pw::MatchNode regexp(regstr);
-                machine->addTree(&regexp, wp->token);
-            } else {
-                // Match a word.
-                machine->addWord(wp->word, wp->token);
-            }
-        }
-    }
-    // RICH machine->print(stdout, NULL);
-}
-
 int main(int argc, char** argv)
 {
     std::string file(argv[1]);
@@ -302,8 +351,9 @@ int main(int argc, char** argv)
     }
 #endif
 
-    setupStateMachines();
-    pp->setOptions(&options);    // Set pre-processor options.
+    const pw::Config* config = pw::Config::Create("config", *errors);
+    pw::Options options = config->options;
+    pp->setOptions(&options);    		// Set pre-processor options.
 
     pp->getToken(info, pw::PP::GETALL);
     lastfile = info.file;                       // Remember the last file for error reporting.

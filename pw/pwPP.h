@@ -37,6 +37,12 @@ struct Options {                            // Pre-processor options.
     pw::Matcher *reservedwords;              // Reserved word matcher.
     pw::Matcher *tokens;                     // Token matcher.
     const Bracket *comments;                        // Comment matcher.
+    Options(bool trigraphs = false, int INTEGER = 0, int CHARACTER = 0, int FLOAT = 0,
+            int STRING = 0, int IDENTIFIER = 0, pw::Matcher *reservedwords = NULL,
+            pw::Matcher *tokens = NULL, const Bracket *comments = NULL)
+        : trigraphs(trigraphs), INTEGER(INTEGER), CHARACTER(CHARACTER), FLOAT(FLOAT),
+          STRING(STRING), IDENTIFIER(IDENTIFIER), reservedwords(reservedwords),
+          tokens(tokens), comments(comments) { }
 };
 
 struct Position {				// An input stream position.
