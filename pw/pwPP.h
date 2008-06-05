@@ -27,24 +27,6 @@ struct Bracket {                              // Start/end bracketed definition.
     int token;
 };
 
-struct Options {                            // Pre-processor options.
-    bool trigraphs;                             // True if trigraphs enabled.
-    int INTEGER;                                // Integer token.
-    int CHARACTER;                              // Character token.
-    int FLOAT;                                  // Float token.
-    int STRING;                                 // String token.
-    int IDENTIFIER;                             // Identifier token.
-    pw::Matcher *reservedwords;              // Reserved word matcher.
-    pw::Matcher *tokens;                     // Token matcher.
-    const Bracket *comments;                        // Comment matcher.
-    Options(bool trigraphs = false, int INTEGER = 0, int CHARACTER = 0, int FLOAT = 0,
-            int STRING = 0, int IDENTIFIER = 0, pw::Matcher *reservedwords = NULL,
-            pw::Matcher *tokens = NULL, const Bracket *comments = NULL)
-        : trigraphs(trigraphs), INTEGER(INTEGER), CHARACTER(CHARACTER), FLOAT(FLOAT),
-          STRING(STRING), IDENTIFIER(IDENTIFIER), reservedwords(reservedwords),
-          tokens(tokens), comments(comments) { }
-};
-
 struct Position {				// An input stream position.
     Position()
         { startline = 0; startcolumn = 0; endline = 0; endcolumn = 0; }
@@ -94,6 +76,7 @@ public:
 typedef Table<Macro*> MacroTable;
 
 class PP;                                    // Forward declaration.
+class Options;
 
 class PPStream : public TokenInfo {         // The pre-processing stream object.
 public:
@@ -246,6 +229,25 @@ private:
     static const WordAssoc operatorlist[];
 };
 
+struct Options {                            // Pre-processor options.
+    bool trigraphs;                             // True if trigraphs enabled.
+    int INTEGER;                                // Integer token.
+    int CHARACTER;                              // Character token.
+    int FLOAT;                                  // Float token.
+    int STRING;                                 // String token.
+    int IDENTIFIER;                             // Identifier token.
+    pw::Matcher *reservedwords;              // Reserved word matcher.
+    pw::Matcher *tokens;                     // Token matcher.
+    const Bracket *comments;                        // Comment matcher.
+    Options(bool trigraphs = false, int INTEGER = PPStream::NONE,
+            int CHARACTER = PPStream::NONE, int FLOAT = PPStream::NONE,
+            int STRING = PPStream::NONE, int IDENTIFIER = PPStream::NONE,
+            pw::Matcher *reservedwords = NULL, pw::Matcher *tokens = NULL, const Bracket *comments = NULL)
+        : trigraphs(trigraphs), INTEGER(INTEGER), CHARACTER(CHARACTER), FLOAT(FLOAT),
+          STRING(STRING), IDENTIFIER(IDENTIFIER), reservedwords(reservedwords),
+          tokens(tokens), comments(comments) { }
+};
+
 class  PP {                                   // The pre-processor object.
 public:
     enum Filter {                               // Token filters.
@@ -254,8 +256,9 @@ public:
         GETNL,                                  // Get all non-whitespace tokens plus newline.
     };
 
-    PP(const std::string& name, MacroTable& macroTable);
+    PP(const std::string& name, ErrorList& errors);
     virtual ~PP();
+    TokenInfo info;
     bool setInput(const char *string);
     bool setInput(FILE *fp = NULL);
     void addInclude(const std::string& name);
@@ -264,12 +267,14 @@ public:
     void fixedDefine(const std::string& name, const char *value);
     void getOptions(Options *op);
     void setOptions(Options *op);
-    void getToken(TokenInfo& info, Filter filter);
+    void getToken(Filter filter = PP::GETNWS);
     const pw::array<std::string>& depends();
     int isdefined(std::string& name, int line);
     bool lookupmacro(std::string& name, int line, Macro*& mpp);
-    virtual pw::Error* error(pw::Error::Type, int, int, int, int, const char*, ...) = 0;
-    virtual void errorPosition(std::string&, const std::string&, int, int, int, int, bool) = 0;
+    ErrorList& errors;
+    Error* error(Error::Type type, int sl, int sc, int el, int ec, const char* string, ...);
+    void errorPosition(std::string& buffer, const std::string& file, int sl, int sc, int el, int ec, bool trailer)
+        { errors.position(buffer, file, sl, sc, el, ec, trailer); }
 private:
     struct include {                            // Include file definition.
         include *next;                          // Next in include list.
@@ -289,7 +294,7 @@ private:
     pw::array<std::string> files;                    // Input file names.
     pw::array<std::string> includedirs;              // Include search path.
     Options options;                        // Pre-processor options.
-    MacroTable& macros;                          // The macro table.
+    MacroTable macros;                          // The macro table.
     Macro* lookup(std::string& name, int line);
     void definemacro(int line, const std::string& filename, PPStream* data);
     void definemacro(int line, const std::string& filename, TokenInfo& data,

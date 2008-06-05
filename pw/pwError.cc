@@ -17,6 +17,12 @@ ErrorList::ErrorList()
     count = 0;
     messages = NULL;
     flags = 0;
+    haveErrors = false;
+    recentErrors = false;
+    for (int i = 0; i < Error::ERRORCNT; ++i) {
+        errorcount[i] = 0;
+    }
+    fatal = NULL;
 }
 
 //
@@ -32,10 +38,30 @@ ErrorList::~ErrorList()
 }
 
 
+Error* ErrorList::add(Error::Type type, std::string file, int sl, int sc, int el, int ec, const char* string, ...)
+{
+    va_list ap;
+    Error *ep;
+    va_start(ap, string);
+    ep = vadd(type, file, sl, sc, el, ec, string, ap);
+    va_end(ap);
+    return ep;
+}
+
+Error* ErrorList::add(Error::Type type, int sl, int sc, int el, int ec, const char* string, ...)
+{
+    va_list ap;
+    Error *ep;
+    va_start(ap, string);
+    ep = vadd(type, sl, sc, el, ec, string, ap);
+    va_end(ap);
+    return ep;
+}
+
 //
 // add - Add an error to an error list.
 //
-Error *ErrorList::add(Error::Type type, const std::string& file,
+Error *ErrorList::vadd(Error::Type type, std::string file,
                           int startline, int startcolumn, int endline, int endcolumn,
                           const char *format, va_list ap)
 {
@@ -68,7 +94,26 @@ Error *ErrorList::add(Error::Type type, const std::string& file,
     epp[count] = ep;
     messages = epp;
     ++count;
+    ++errorcount[type];                         // Increment the error count for this type.
+    if (ep->isError()) {
+        haveErrors = true;                      // Inhibit subsequent processing.
+        recentErrors = true;
+    }
+    if (type == Error::FATAL && fatal) {
+        // A fatal error has occured.
+        longjmp(*fatal, 1);
+    }
     return ep;
+}
+
+//
+// add - Add an error to an error list.
+//
+Error *ErrorList::vadd(Error::Type type,
+                          int startline, int startcolumn, int endline, int endcolumn,
+                          const char *format, va_list ap)
+{
+    return vadd(type, file, startline, startcolumn, endline, endcolumn, format, ap);
 }
 
 //

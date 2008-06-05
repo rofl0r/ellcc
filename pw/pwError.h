@@ -8,6 +8,7 @@
 #define pwError_h
 
 #include <stdarg.h>
+#include <setjmp.h>
 #include <string>
 #include "pwArray.h"
 
@@ -53,9 +54,14 @@ class ErrorList {
 public:
     ErrorList();
     ~ErrorList();
-    Error* add(Error::Type type,
-                 const std::string& file, int startline, int startcolumn, int endline, int endcolumn,
+    Error* vadd(Error::Type type,
+                 int startline, int startcolumn, int endline, int endcolumn,
                  const char *format, va_list ap);
+    Error* add(Error::Type type, int sl, int sc, int el, int ec, const char* string, ...);
+    Error* vadd(Error::Type type, std::string file,
+                 int startline, int startcolumn, int endline, int endcolumn,
+                 const char *format, va_list ap);
+    Error* add(Error::Type type, std::string file, int sl, int sc, int el, int ec, const char* string, ...);
     void position(std::string& buffer,
                   const std::string& file, int startline, int startcolumn, int endline, int endcolumn,
                   bool trailer);
@@ -73,10 +79,18 @@ public:
         { flags |= mode; }
     void clearMode(int mode)                    // Clear mode flags.
         { flags &= ~mode; }
+    bool hasErrors() { return haveErrors; }	// Any errors encountered?
+    int errorCount(int type) { return errorcount[type]; }
+    std::string file;				// current file being processed.
+    void setFatal(jmp_buf* buf) { fatal = buf; }
+    bool recentErrors;
 private:
     int count;                                  // Number of errors in the list.
     Error** messages;                         // Error messages.
     int flags;                                  // Error flags.
+    bool haveErrors;
+    int errorcount[Error::ERRORCNT];          // Number of errors encountered by type.
+    jmp_buf* fatal;				// Fatal exit.
 };
 
 };

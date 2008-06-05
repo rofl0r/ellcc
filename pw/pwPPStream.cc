@@ -389,7 +389,11 @@ void PPStream::pptoken()
     // Remember potential start of macro call.
     mstartline = mendline = startline;
     mstartcolumn = mendcolumn = startcolumn;
-    token = options->tokens->matchStream(nextchar, read, save, backup, this);
+    if (options->tokens) {
+        token = options->tokens->matchStream(nextchar, read, save, backup, this);
+    } else {
+        token = -1;
+    }
 
     if (token == -1) {
         // No token found.

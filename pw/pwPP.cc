@@ -246,10 +246,21 @@ void PP::setOptions(Options *op)
     pp->optionsChanged();
 }
 
+Error* PP::error(Error::Type type, int sl, int sc, int el, int ec, const char* string, ...)
+{
+    va_list ap;
+    Error *ep;
+    va_start(ap, string);
+    ep = errors.vadd(type, sl, sc, el, ec, string, ap);
+    va_end(ap);
+    return ep;
+}
+
 //
 // PP - Create a pre-processor object.
 //
-PP::PP(const std::string& name, MacroTable& macroTable) : macros(macroTable)
+PP::PP(const std::string& name, ErrorList& errors)
+    : errors(errors)
 {
     time_t timer;
     char *date;
@@ -455,7 +466,7 @@ void PP::processnexttoken(TokenInfo& tinfo)
 //
 // pspToken - Get the next token.
 //
-void PP::getToken(TokenInfo& info, Filter filter)
+void PP::getToken(Filter filter)
 {
     include *incp;
 
@@ -474,7 +485,8 @@ void PP::getToken(TokenInfo& info, Filter filter)
         }
 
         if (filter == GETALL || info.tokenclass != TokenInfo::TCSPACE) {
-            return;                             // Return all tokens.
+            // Return all or non-space tokens.
+            return;
         }
 
         if (filter == GETNL && info.token == PPStream::NL) {

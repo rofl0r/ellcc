@@ -1,20 +1,11 @@
 #include "pwPP.h"
 
-static bool haveErrors;
-static pw::ErrorList *errors;                        // Errors encountered.
-static int errorcount[pw::Error::ERRORCNT];          // Number of errors encountered.
-
 namespace pw {
 
 /** A Configuration file handler.
  */
 class Config {
 public:
-    /** Create a configuration file parser.
-     * @param name The configuration name.
-     * @return A unique instance for each configuration or NULL if an error occured.
-     */
-    static const Config* Create(char* name, ErrorList& errors);
     /** Create configuration file parser definition.
      * @param name The configuration name.
      * @return A unique instance for each configuration or NULL if an error occured.
@@ -52,13 +43,13 @@ public:
     };
     /** A keyword parsing function.
      */
-    typedef void Parser(Config& env, ErrorList& errors, void* data);
+    typedef void Parser(PP& pp, Config& env, ErrorList& errors, void* data);
     /** Define a configuration keyword.
      */
-    void keyword(std::string name, Parser* handler, void* data = 0);
+    void keyword(std::string name, Parser* handler);
     /** Parse a configuration file.
      */
-    Config* parse(std::string name);
+    bool parse(std::string name, void* data);
 
 private:
     /** The language name.
@@ -89,11 +80,59 @@ private:
      */
     static const Bracket comments[];
 
+    /* Extensible parser handling.
+     */
+    /** A Parser entry.
+     */
+    class Entry {
+    public:
+        Entry(std::string string, Parser* parser)
+            : parser(parser), string(string) { }
+        std::string& name() { return string; }
+        Parser* parser;
+    private:
+        Entry();
+        std::string string;
+    };
+
+    /** The parser table.
+     */
+    Table<Entry*> parsers;
+
+    struct TokenDefinition : Token {                // A token definition.
+        TokenDefinition(const Token& value)
+            : Token(value), value(0), keyword(false)
+            { }
+
+        std::string& name()                         // Return the name of this token.
+            { return string; }
+
+        array<Token*> regex;                        // Defining regular expression(s), if any.
+        Matcher::Input value;                       // Token value.
+        bool keyword;                               // True if Token is a keyword.
+    };
+
+    struct State {
+        State()
+            : tokenCount(PPStream::CTNEXTOKEN), keywordCount(0), nextToken(PPStream::CTNEXTOKEN)
+            { }
+        Table<TokenDefinition*> tokens;             // Token hash table.
+        int tokenCount;                             // Number of tokens.
+        int keywordCount;                           // Number of keywords.
+        Matcher::Input nextToken;                   // Next token number.
+        Config* config;                             // The configuration to build.
+    };
+
+    static TokenDefinition* newToken(Token& info, State* state, bool keyword);
+
     /* Configuration keyword handlers.
      */
+    /** Parse tokens and keywords.
+     */
+    static Parser parseTokens;
     /** Set the needwhitespace flag.
      */
-    static Parser needwhitespace;
+    static Parser parseNeedwhitespace;
 };
 
 /* The known language array.
@@ -102,16 +141,150 @@ array<Config*> Config::languages;
 
 /* Construct a language entry.
  */
-Config::Config(std::string name, ErrorList& errors) : name(name), errors(errors)
+Config::Config(std::string name, ErrorList& errors) : errors(errors), name(name)
 {
 }
 
-/* Create a language entry.
- */
-const Config* Config::Create(char* name, ErrorList& errors)
+#if RICH
+//
+// setup_tokens - Check and setup the tokens for use.
+//
+static void setup_tokens(pwContext* cp)
 {
-    return Create(std::string(name), errors);
+    psynState* sp = (psynState*)cp->currentInfo->state;
+    pwLanguageInfo* lp = cp->langInfo;
+    Token* tp;
+    pwString temp;
+    pwToken regex;
+    pwStateMachine *rm, *tm;
+    int tindex, kindex;
+
+    if (lp->name.length() == 0) {
+        cp->error(pwError::ERROR,
+                  cp->info.startline, cp->info.startcolumn,
+                  cp->info.endline, cp->info.endcolumn,
+                  "No name defined for language.");
+    }
+
+    if (lp->description.length() == 0) {
+        cp->error(pwError::WARNING,
+                  cp->info.startline, cp->info.startcolumn,
+                  cp->info.endline, cp->info.endcolumn,
+                  "No description defined for language.");
+    }
+
+    // Allocate the token and keyword translation tables.
+    tindex = kindex = 0;
+    if (sp->tokenCount) {
+        static pwWordAssoc pptokens[] = {
+            pwPSCANTOKENS
+            { NULL, 0}
+        };
+        pwWordAssoc *wp;
+
+        // Define the preprocessor intrinsic tokens.
+        lp->tokens = new pwWordAssoc[sp->tokenCount + 1];
+        for (wp = pptokens; wp->word; ++wp) {
+            lp->tokens[tindex].word = strdup(wp->word);
+            lp->tokens[tindex].token = wp->token;
+            ++tindex;
+        }
+    }
+
+    if (sp->keywordCount) {
+        lp->reservedwords = new pwWordAssoc[sp->keywordCount + 1];
+    }
+
+    rm = NULL;
+    tm = NULL;
+    // Build the token and keyword state machine.
+    for (int i = 0; i < sp->tokens.size(); ++i) {
+        tp = sp->tokens[i];
+        if (tp->string[0] == '\'' || tp->string[0] == '"') {
+            temp = pwString(tp->string).convert();
+        } else {
+            temp = tp->string;
+        }
+
+        if (tp->keyword) {
+            // This is keyword.
+            if (rm == NULL) {
+                rm = lp->ppoptions.reservedwords = new pwStateMachine("reserved words", pwStateMachine::CHARSIZE,
+                                                                      lp->inputname, lp->valuename, 0);
+            }
+
+            // Add to the reserved word table.
+            rm->addWord(temp, tp->value);
+            lp->reservedwords[kindex].word = tp->string.toCharStar();
+            lp->reservedwords[kindex].token = tp->value;
+            ++kindex;
+        } else {
+            // This is a token.
+            if (tm == NULL) {
+                tm = lp->ppoptions.tokens = new pwStateMachine("tokens", pwStateMachine::CHARSIZE,
+                                                               lp->inputname, lp->valuename, 0);
+            }
+
+            // Add to the token table.
+            if (tp->regex.size()) {
+                int j;
+
+                for (j = 0; j < tp->regex.size(); ++j) {
+                    // Add a regular expression.
+                    regex = *tp->regex[j];
+                    regex.string = regex.string.convert();  // Translate escape sequences.
+                    pwStateNode regexp(regex);
+                    tm->addTree(&regexp, tp->value);
+                }
+            } else {
+                // A simple token.
+                tm->addWord(temp, tp->value);
+            }
+
+            lp->tokens[tindex].word = tp->string.toCharStar();
+            lp->tokens[tindex].token = tp->value;
+            ++tindex;
+        }
+
+        // p points to the token string, tp->value is its token value.
+
+        // Assign values to tokens needed by the preprocessor.
+        if (lp->ppoptions.INTEGER == pwPPStream::NONE && temp == "INTEGER") {
+            lp->ppoptions.INTEGER = tp->value;
+        }
+        if (lp->ppoptions.CHARACTER == pwPPStream::NONE && temp == "CHARACTER") {
+            lp->ppoptions.CHARACTER = tp->value;
+        }
+        if (lp->ppoptions.FLOAT == pwPPStream::NONE && temp == "FLOAT") {
+            lp->ppoptions.FLOAT = tp->value;
+        }
+        if (lp->ppoptions.STRING == pwPPStream::NONE && temp == "STRING") {
+            lp->ppoptions.STRING = tp->value;
+        }
+        if (lp->ppoptions.IDENTIFIER == pwPPStream::NONE && temp == "IDENTIFIER") {
+            lp->ppoptions.IDENTIFIER = tp->value;
+        }
+    }
+
+    // Terminate the token and keyword lookup tables.
+    if (tindex) {
+        lp->tokens[tindex].word = NULL;
+        lp->tokens[tindex].token = 0;
+    }
+
+    if (kindex) {
+        lp->reservedwords[kindex].word = NULL;
+        lp->reservedwords[kindex].token = 0;
+    }
+
+    if (lp->ppoptions.IDENTIFIER == pwPPStream::NONE && sp->keywordCount) {
+        cp->error(pwError::ERROR,
+                  cp->info.startline, cp->info.startcolumn,
+                  cp->info.endline, cp->info.endcolumn,
+                  "Language contains keywords but no IDENTIFIER token is defined.");
+    }
 }
+#endif
 
 /* Create a language entry.
  */
@@ -121,7 +294,8 @@ const Config* Config::Create(std::string name, ErrorList& errors)
         // Create the configuration file scanner.
         languages[0] = new Config(std::string("config"), errors);
         languages[0]->setupOptions();
-        languages[0]->keyword("needwhitespace", needwhitespace);
+        languages[0]->keyword("needwhitespace", parseNeedwhitespace);
+        languages[0]->keyword("tokens", parseTokens);
     }
 
     int i;
@@ -132,10 +306,19 @@ const Config* Config::Create(std::string name, ErrorList& errors)
     }
 
     // Parse a config file.
-    Config* lp = languages[0]->parse(name);
-    if (lp) {
+    State* sp = new State();
+    Config* lp = new Config(name, errors);
+    sp->config = lp;
+    errors.recentErrors = false;
+    if (languages[0]->parse(name, sp) && !errors.recentErrors) {
         languages[i] = lp;
+    } else {
+        // Some error occured.
+        delete lp;
+        lp = NULL;
     }
+
+    delete sp;
     return lp;
 }
 
@@ -249,93 +432,240 @@ void Config::setupOptions()
 
 /** Define a configuration keyword.
  */
-void Config::keyword(std::string name, Parser* handler, void* data)
+void Config::keyword(std::string name, Parser* handler)
 {
+    Entry* ep = new Entry(name, handler);
+    parsers += ep;
 }
 
 /* Parse a configuration file.
  */
-Config* Config::parse(std::string name)
+bool Config::parse(std::string name, void* data)
 {
-    Config* lp = new Config(name, errors);
-    return lp;
+    pw::PP* pp = new PP(name, errors);
+    FILE* fp = NULL;
+    if (pp == NULL) {
+        errors.add(Error::INTERNAL, __FILE__, __LINE__, 0, 0, 0, "Can't create preprocessor.");
+        return false;
+    }
+    if (!pp->setInput(fp)) {
+        errors.add(Error::ERROR, 0, 0, 0, 0, "Can't open %s.", name.c_str());
+        delete pp;
+        return false;
+    }
+    
+    pp->setOptions(&options);    		// Set pre-processor options.
+
+    pp->getToken();
+    errors.file = pp->info.file;
+    std::string lastfile;
+    for (;;) {
+        if (pp->info.token == PPStream::ENDOFFILE) {
+            // End of file.
+            break;
+        }
+        lastfile = errors.file;
+
+        // Have a token, check for parse functions.
+        Entry* ep = parsers.lookup(pp->info.string);
+        if (ep) {
+            // A parsing function has been found.
+            pp->getToken();
+            ep->parser(*pp, *this, errors, data);
+        } else {
+            // RICH: Define a value.
+            pp->getToken();
+        }
+        errors.file = pp->info.file;       	// Remember the last file for error reporting.
+    }
+
+    return true;
 }
 
-void Config::needwhitespace(Config& env, ErrorList& errors, void* data)
+/** Display a token expected error message.
+ */
+Error* expectedToken(PP& pp, const char* string)
 {
+    Error* ep;
+    const char* format = "%s expected before \"%s\".";
+
+    if (pp.info.token == PPStream::ENDOFFILE) {
+        format = "%s expected before the end of the file.";
+    }
+
+    if (!isupper(*string) && *string != '"' && *string != '\'') {
+        // Put quotes around the expected token.
+        format = "\"%s\" expected before \"%s\".";
+        if (pp.info.token == PPStream::ENDOFFILE) {
+            format = "\"%s\" expected before the end of the file.";
+        }
+    }
+
+    ep = pp.error(Error::ERROR,
+                  pp.info.startline, pp.info.startcolumn, pp.info.endline, pp.info.endcolumn,
+                  format, string, pp.info.string.c_str());
+    return ep;
+}
+
+/* Complain about an extra token.
+ */
+Error* extraToken(PP& pp, const char* string)
+{
+    Error *ep;
+    const char *format = "Extra %s found after %s.";
+
+    ep = pp.error(Error::ERROR,
+                  pp.info.startline, pp.info.startcolumn, pp.info.endline, pp.info.endcolumn,
+                  format, pp.info.string.c_str(), string);
+    return ep;
+}
+
+/* Create a new token entry.
+ */
+Config::TokenDefinition* Config::newToken(Token& info, State* state, bool keyword)
+{
+    TokenDefinition* tp = new TokenDefinition(info);
+
+    tp->value = state->nextToken++;
+    tp->keyword = keyword;
+    if (keyword) {
+        ++state->keywordCount;
+    } else {
+        ++state->tokenCount;
+    }
+    state->tokens += tp;
+    return tp;
+}
+
+/* Define tokens and keywords.
+ */
+void Config::parseTokens(PP& pp, Config& env, ErrorList& errors, void* data)
+{
+    bool keyword = false;
+    State* sp = (State*)data;
+    TokenDefinition* tp;
+    bool needregex;
+
+    if (pp.info.token != LBRACE) {
+        expectedToken(pp, "{");
+    } else {
+        pp.getToken();
+    }
+
+    while (pp.info.token != RBRACE) {
+        // Gather all comma separated tokens. We do an identifier check for keywords later.
+
+        if (pp.info.token == COMMA) {
+            // This comma is out of place.
+            pp.error(Error::ERROR,
+                     pp.info.startline, pp.info.startcolumn, pp.info.endline, pp.info.endcolumn,
+                     "Unexpected \"%s\".", pp.info.string.c_str());
+            pp.getToken();
+            continue;
+        }
+
+        tp = sp->tokens.lookup(pp.info.string);
+        if (tp && (keyword || !tp->regex.size())) {
+            Error *erp;
+            std::string buffer;
+
+            // Token already defined without a regular expression.
+            erp = pp.error(Error::ERROR,
+                           pp.info.startline, pp.info.startcolumn, pp.info.endline, pp.info.endcolumn,
+                           "%s %s has been reused.", keyword ? "Keyword" : "Token", pp.info.string.c_str());
+            pp.errorPosition(buffer, tp->file,
+                             tp->startline, tp->startcolumn, tp->endline, tp->endcolumn,
+                             false);
+            Error::info(erp, Error::MORE, "Last use as %s at %s",
+                        tp->keyword ? "keyword" : "token", buffer.c_str());
+            pp.getToken();
+            if (!keyword) {
+                // Tokens can be defined as a regular expression.
+                if (pp.info.token == ASSIGN) {
+                    // Find a regular expression string.
+                    pp.getToken();
+                    if (pp.info.token == STRING) {
+                        pp.getToken();
+                    }
+                }
+            }
+            continue;
+        }
+
+        if (!tp) {
+            // Need a new token definition.
+            tp = newToken(pp.info, sp, keyword);   // Define the token.
+            needregex = false;
+        } else {
+            // This token needs a regular expression.
+            needregex = true;
+        }
+
+        pp.getToken();
+        if (!keyword) {
+            // Tokens can be defined as a regular expression.
+            if (pp.info.token == ASSIGN) {
+                // Find a regular expression string.
+                needregex = false;
+                pp.getToken();
+                if (pp.info.token != STRING) {
+                    expectedToken(pp, "Regular expression");
+                } else {
+                    // Add a regular expression to this token's list.
+                    tp->regex[tp->regex.size()] = new Token(pp.info);
+                    pp.getToken();
+                }
+            }
+        }
+
+        if (needregex) {
+            Error *erp;
+            std::string buffer;
+
+            // Token already defined with a regular expression.
+            erp = pp.error(Error::ERROR,
+                           pp.info.startline, pp.info.startcolumn, pp.info.endline, pp.info.endcolumn,
+                           "Token %s has been previously defined as a regular expression.", tp->string.c_str());
+            pp.errorPosition(buffer, tp->file,
+                             tp->startline, tp->startcolumn, tp->endline, tp->endcolumn,
+                             false);
+            Error::info(erp, Error::MORE, "First defined at %s", buffer.c_str());
+            Error::info(erp, Error::MORE, "This definition must also have a regular expression.");
+        }
+
+        // Commas separate.
+        if (pp.info.token == COMMA) {
+            pp.getToken();
+        } else {
+            if (pp.info.token == RBRACE) {
+                break;
+            }
+
+            expectedToken(pp, ",");
+        }
+    }
+
+    if (pp.info.token != RBRACE) {
+        expectedToken(pp, "}");
+    } else {
+        pp.getToken();
+    }
+}
+
+void Config::parseNeedwhitespace(PP& pp, Config& env, ErrorList& errors, void* data)
+{
+    State* sp = (State*)data;
 }
 
 };
 
-static pw::MacroTable macros;
-static pw::TokenInfo info;                           // Information about the token.
-static std::string pplastfile;
-static std::string lastfile;
+static pw::ErrorList errors;
 
 //
-// verror - Handle an error.
-//
-pw::Error* verror(pw::Error::Type type,
-                           const std::string& file,
-                           int startline, int startcolumn, int endline, int endcolumn,
-                           const char *string, va_list ap)
-{
-    pw::Error *ep = errors->add(type, file, startline, startcolumn, endline, endcolumn, string, ap);
-    ++errorcount[type];                     // Increment the error count for this type.
-    if (ep && ep->isError())
-        haveErrors = true;                      // Inhibit subsequent processing.
-
-    if (type == pw::Error::FATAL)
-          exit(1);
-//        longjmp(fatal, 1);                      // Abort processing.
-
-    return ep;
-}
-
-class PP : public pw::PP
-{
-public:
-    PP(std::string& name) : pw::PP(name, ::macros)
-        { }
-    pw::Error* error(pw::Error::Type type,
-                   int startline, int startcolumn, int endline, int endcolumn,
-                   const char* format, ...);
-    void errorPosition(std::string& buffer, const std::string& file,
-                       int startline, int startcolumn, int endline, int endcolumn, bool trailer);
-private:
-};
-
-//
-// error - Handle an error.
-//
-pw::Error* PP::error(pw::Error::Type type,
-                       int startline, int startcolumn, int endline, int endcolumn,
-                       const char *string, ...)
-{
-    va_list ap;
-    pw::Error *ep;
-
-    va_start(ap, string);
-    ep = verror(type, lastfile, startline, startcolumn, endline, endcolumn, string, ap);
-    va_end(ap);
-
-    return ep;
-}
-
-//
-// errorPosition - Get an error position.
-//
-void PP::errorPosition(std::string& buffer, const std::string& file,
-                           int startline, int startcolumn, int endline, int endcolumn, bool trailer)
-{
-    errors->position(buffer, file, startline, startcolumn, endline, endcolumn, trailer);
-}
-
 int main(int argc, char** argv)
 {
     std::string file(argv[1]);
-    errors = new pw::ErrorList;
-    PP* pp = new PP(file);
+    pw::PP* pp = new pw::PP(file, errors);
     FILE* fp = NULL;
     if (pp == NULL) exit(1);
     if (!pp->setInput(fp)) {
@@ -351,38 +681,41 @@ int main(int argc, char** argv)
     }
 #endif
 
-    const pw::Config* config = pw::Config::Create("config", *errors);
-    pw::Options options = config->options;
-    pp->setOptions(&options);    		// Set pre-processor options.
+    const pw::Config* config = pw::Config::Create("c99.cfg", errors);
+    if (config) {
+        pw::Options options = config->options;
+        pp->setOptions(&options);    		// Set pre-processor options.
 
-    pp->getToken(info, pw::PP::GETALL);
-    lastfile = info.file;                       // Remember the last file for error reporting.
-    for (;;) {
-        if (info.token == pw::PPStream::ENDOFFILE) {
-            // End of file.
-            break;
+        pp->getToken(pw::PP::GETALL);
+        errors.file = pp->info.file;
+        std::string lastfile;
+        for (;;) {
+            if (pp->info.token == pw::PPStream::ENDOFFILE) {
+                // End of file.
+                break;
+            }
+            if (errors.file != lastfile) {
+                // Output #line directive if pre-processing.
+                lastfile = errors.file;
+                fprintf(stdout, "#line %d \"%s\"\n", pp->info.startline, errors.file.c_str());
+            }
+            fprintf(stdout, "%s", pp->info.string.c_str());
+            pp->getToken(pw::PP::GETALL);
+            errors.file = pp->info.file;     	// Remember the last file for error reporting.
         }
-        if (lastfile != pplastfile) {
-            // Output #line directive if pre-processing.
-            pplastfile = lastfile;
-            fprintf(stdout, "#line %d \"%s\"\n", info.startline, lastfile.c_str());
-        }
-        fprintf(stdout, "%s", info.string.c_str());
-        pp->getToken(info, pw::PP::GETALL);
-        lastfile = info.file;                       // Remember the last file for error reporting.
     }
 
     int totalerrors = 0;
     for (int j = 0; j < pw::Error::ERRORCNT; ++j) {
         // Calculate the total number of errors.
-        totalerrors += errorcount[j];
+        totalerrors += errors.errorCount(j);
     }
 
     if (totalerrors) {
         for (int i = 0; i < pw::Error::ERRORCNT; ++i) {
             const char *name;
             const char *plural;
-            int count = errorcount[i];
+            int count = errors.errorCount(i);
 
             if (count == 0)
                 continue;
@@ -397,7 +730,7 @@ int main(int argc, char** argv)
         }
 
         // Show errors.
-        errors->sort();
-        errors->print(stdout);
+        errors.sort();
+        errors.print(stdout);
     }
 }
