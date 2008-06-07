@@ -1,8 +1,8 @@
 # Makefile.in
 # this is the Makefile for Elsa, the Elkhound-based C++ Parser
 
-# main target is 'ellsif', a C/C++ parser.
-all: ellsif quicktest
+# main target is 'ellcc', a C/C++ parser.
+all: ellcc quicktest
 
 # directories of other software
 SMBASE   := @SMBASE@
@@ -78,29 +78,29 @@ TOCLEAN += *.o *.d
 	$(CXX) -c -o $@ $< $(if $(findstring $*,$(GCOV_MODS)),$(GCOV_OPTS) )$(CCFLAGS) $(LLVMCCFLAGS)
 	@$(DEP)   -o $@ $< $(if $(findstring $*,$(GCOV_MODS)),$(GCOV_OPTS) )$(CCFLAGS) $(LLVMCCFLAGS) >$*.d
 
-# ------------------------- ellsif ---------------------
+# ------------------------- ellcc ---------------------
 
 # list of modules needed for the parser; ideally they're in an order
 # that finds serious compilation problems earliest (it's ok to
 # rearrange as different parts of the code are in flux)
 ELLSIF_OBJS := \
-  ellsif.o \
+  ellcc.o \
   elsa.o
 
 #  elsa.o
 
 -include $(ELLSIF_OBJS:.o=.d)
 
-# ellsif binary
-TOCLEAN += ellsif
-ellsif: $(ELLSIF_OBJS) $(libraries)
+# ellcc binary
+TOCLEAN += ellcc
+ellcc: $(ELLSIF_OBJS) $(libraries)
 	$(CXX) -o $@ $(ELLSIF_OBJS) $(LDFLAGS) $(LLVMLDFLAGS)
 
 # run the binary; the 'quicktest' file is so we don't run it if
-# 'ellsif' hasn't recently changed
+# 'ellcc' hasn't recently changed
 TOCLEAN += quicktest
-quicktest: ellsif
-	./ellsif test/sieve.c
+quicktest: ellcc
+	./ellcc test/sieve.c
 	@touch quicktest
 	@echo BUILD FINISHED
 

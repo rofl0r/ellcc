@@ -1,5 +1,5 @@
 // main.cc            see license.txt for copyright and terms of use
-// The ellsif driver.
+// The ellcc driver.
 
 #include <iostream.h>     // cout
 #include <stdlib.h>       // exit, getenv, abort

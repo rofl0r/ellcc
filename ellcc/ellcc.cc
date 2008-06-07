@@ -1,4 +1,4 @@
-//===- ellsif.cpp - The Elsa<->LLVM driver -------------------------------===//
+//===- ellcc.cpp - The Elsa<->LLVM driver -------------------------------===//
 //
 //===----------------------------------------------------------------------===//
 /*
@@ -938,7 +938,7 @@ static cl::list<std::string> WOpts("W", cl::ZeroOrMore, cl::Prefix,
     cl::value_desc("option"));
 
 static cl::list<std::string> BOpt("B", cl::ZeroOrMore, cl::Prefix,
-    cl::desc("Specify path to find ellsif sub-tools"),
+    cl::desc("Specify path to find ellcc sub-tools"),
     cl::value_desc("dir"));
 
 //===----------------------------------------------------------------------===//
@@ -1049,7 +1049,7 @@ static cl::list<std::string> PostLinkOpts("post-link-opts",
 static cl::list<std::string> XLinker("Xlinker", cl::value_desc("option"),
   cl::desc("Pass options to the system linker"));
 
-// Compatibility options that ellsif ignores but are supported for
+// Compatibility options that ellcc ignores but are supported for
 // compatibility with LD
 static cl::opt<std::string> CO3("soname", cl::Hidden,
   cl::desc("Compatibility option: ignored"));
@@ -1120,7 +1120,7 @@ static cl::opt<bool> PipeCommands("pipe", cl::Optional,
     cl::desc("Invoke sub-commands by linking input/output with pipes"));
 
 static cl::opt<bool> KeepTemps("keep-temps", cl::Optional,
-    cl::desc("Don't delete temporary files created by ellsif"));
+    cl::desc("Don't delete temporary files created by ellcc"));
 
 //===----------------------------------------------------------------------===//
 //===          POSITIONAL OPTIONS
@@ -2405,7 +2405,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
 }
 
 //===----------------------------------------------------------------------===//
-// main for ellsif
+// main for ellcc
 //
 int main(int argc, char **argv)
  {
@@ -2416,7 +2416,7 @@ int main(int argc, char **argv)
         // Initial global variable above for convenience printing of program name.
         progname = sys::Path(argv[0]).getBasename();
         setupFileTypes();
-        TimerGroup timerGroup("... Ellsif action timing report ...");
+        TimerGroup timerGroup("... Ellcc action timing report ...");
         for (int i = 0; i < NUM_PHASES; ++i) {
             timers[i] = new Timer(phases[i].name, timerGroup);
         }
