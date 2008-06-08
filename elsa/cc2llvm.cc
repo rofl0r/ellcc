@@ -23,7 +23,7 @@
 
 #define BITS_PER_BYTE	8	// RICH: Temporary.
 
-#if 1
+#if 0
 // Really verbose debugging.
 #define VDEBUG(who, where, what) cout << toString(where) << ": " << who << " "; what; cout << "\n"
 #else
@@ -1226,17 +1226,16 @@ llvm::Value *E_variable::cc2llvm(CC2LLVMEnv &env, int& deref) const
     deref = 0;
     if (!first) {
         // The object is not a first class object.
+        deref = 0;
+    } else {
         if (   value->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID
-            || value->getType()->getContainedType(0)->getTypeID() == llvm::Type::FunctionTyID) {
-            // Arrays and function pointers are their value.
+            || value->getType()->getContainedType(0)->getTypeID() == llvm::Type::StructTyID) {
+            // Arrays are their value.
             deref = 0;
         } else {
             // Need one dereference to get the actual object.
-            deref = 0;  // RICH
+            deref = 1;
         }
-    } else {
-        // Need one dereference to get the actual object.
-        deref = 1;
     }
 
     if (var->type->isReference() && (var->flags & DF_PARAMETER)) {
@@ -1345,17 +1344,15 @@ llvm::Value *E_fieldAcc::cc2llvm(CC2LLVMEnv &env, int& deref) const
         deref = 0;
         if (!first) {
             // The object is not a first class object.
-            if (   value->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID
-                    || value->getType()->getContainedType(0)->getTypeID() == llvm::Type::FunctionTyID) {
-                // Arrays and function pointers are their value.
+            deref = 0;
+        } else {
+            if (value->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID) {
+                // Arrays are their value.
                 deref = 0;
             } else {
                 // Need one dereference to get the actual object.
-                deref = 0;  // RICH
+                deref = 1;
             }
-        } else {
-            // Need one dereference to get the actual object.
-            deref = 1;
         }
 
     return value;
@@ -1378,17 +1375,14 @@ llvm::Value *E_fieldAcc::cc2llvm(CC2LLVMEnv &env, int& deref) const
     deref = 0;
     if (!first) {
         // The object is not a first class object.
-        if (   result->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID
-            || result->getType()->getContainedType(0)->getTypeID() == llvm::Type::FunctionTyID) {
-            // Arrays and function pointers are their value.
+        deref = 0;
+    } else {
+        if (result->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID) {
             deref = 0;
         } else {
             // Need one dereference to get the actual object.
             deref = 1;
         }
-    } else {
-        // Need one dereference to get the actual object.
-        deref = 1;
     }
 
     VDEBUG("E_field deref", loc, cout << "deref " << deref << " "; result->print(cout));
@@ -2459,7 +2453,9 @@ llvm::Value *E_deref::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     llvm::Value* source = ptr->cc2llvm(env, deref);
     bool first = source->getType()->getContainedType(0)->isFirstClassType();
-    if (first) {
+    if (   first
+        && source->getType()->getContainedType(0)->getTypeID() != llvm::Type::ArrayTyID
+        && source->getType()->getContainedType(0)->getTypeID() != llvm::Type::StructTyID) {
         ++deref;
     }
     VDEBUG("E_deref", loc, cout << "deref " << deref << " "; source->print(cout));
@@ -2558,7 +2554,9 @@ llvm::Value* CC2LLVMEnv::doassign(SourceLoc loc, llvm::Value* destination, int d
 {
     checkCurrentBlock();
     bool first = destination->getType()->getContainedType(0)->isFirstClassType();
-    if (!first) {
+    if (   !first
+        || destination->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID
+        || destination->getType()->getContainedType(0)->getTypeID() == llvm::Type::StructTyID) {
         // This is a compound assignment.
         source = access(source, false, deref2, 1);                 // RICH: Volatile.
         destination = access(destination, false, deref1, 1);                 // RICH: Volatile.
