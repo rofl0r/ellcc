@@ -125,6 +125,10 @@ private:
 
     static TokenDefinition* newToken(Token& info, State* state, bool keyword);
 
+    /* Set up token information.
+     */
+    void setupTokens(State* sp);
+    
     /* Configuration keyword handlers.
      */
     /** Parse tokens and keywords.
@@ -145,20 +149,17 @@ Config::Config(std::string name, ErrorList& errors) : errors(errors), name(name)
 {
 }
 
-#if RICH
-//
-// setup_tokens - Check and setup the tokens for use.
-//
-static void setup_tokens(pwContext* cp)
+/* Check and setup the tokens for use.
+ */
+void Config::setupTokens(State* sp)
 {
-    psynState* sp = (psynState*)cp->currentInfo->state;
-    pwLanguageInfo* lp = cp->langInfo;
     Token* tp;
-    pwString temp;
-    pwToken regex;
-    pwStateMachine *rm, *tm;
+    std::string temp;
+    Token regex;
+    Matcher *rm, *tm;
     int tindex, kindex;
 
+#if RICH
     if (lp->name.length() == 0) {
         cp->error(pwError::ERROR,
                   cp->info.startline, cp->info.startcolumn,
@@ -172,12 +173,14 @@ static void setup_tokens(pwContext* cp)
                   cp->info.endline, cp->info.endcolumn,
                   "No description defined for language.");
     }
+#endif
 
+#if RICH
     // Allocate the token and keyword translation tables.
     tindex = kindex = 0;
     if (sp->tokenCount) {
-        static pwWordAssoc pptokens[] = {
-            pwPSCANTOKENS
+        static WordAssoc pptokens[] = {
+            PSCANTOKENS
             { NULL, 0}
         };
         pwWordAssoc *wp;
@@ -194,7 +197,9 @@ static void setup_tokens(pwContext* cp)
     if (sp->keywordCount) {
         lp->reservedwords = new pwWordAssoc[sp->keywordCount + 1];
     }
+#endif
 
+#if RICH
     rm = NULL;
     tm = NULL;
     // Build the token and keyword state machine.
@@ -209,7 +214,7 @@ static void setup_tokens(pwContext* cp)
         if (tp->keyword) {
             // This is keyword.
             if (rm == NULL) {
-                rm = lp->ppoptions.reservedwords = new pwStateMachine("reserved words", pwStateMachine::CHARSIZE,
+                rm = sp->ppoptions.reservedwords = new pwStateMachine("reserved words", pwStateMachine::CHARSIZE,
                                                                       lp->inputname, lp->valuename, 0);
             }
 
@@ -283,8 +288,8 @@ static void setup_tokens(pwContext* cp)
                   cp->info.endline, cp->info.endcolumn,
                   "Language contains keywords but no IDENTIFIER token is defined.");
     }
-}
 #endif
+}
 
 /* Create a language entry.
  */
