@@ -37,7 +37,7 @@ public:
 
     /** Configuration file token identifiers.
      */
-    enum tokens {
+    enum Tokens {
         STRING = PPStream::CTNEXTOKEN, CHARACTER, INTEGER, FLOAT, IDENTIFIER,
         LBRACE, RBRACE, COMMA, ASSIGN, RANGE, 
     };
@@ -69,16 +69,16 @@ private:
 
     /** Configuration file reserved words.
      */
-    static const WordAssoc reservedWords[];
+    static const WordAssoc CFGreservedWords[];
     /** Configuration file tokens.
      */
-    static const WordAssoc tokens[];
+    static const WordAssoc CFGtokens[];
     /** Configuration file token names.
      */
-    static const char* tokenName(int value, void* context);
+    static const char* CFGtokenName(int value, void* context);
     /** Configuration file comments.
      */
-    static const Bracket comments[];
+    static const Bracket CFGcomments[];
 
     /* Extensible parser handling.
      */
@@ -116,11 +116,11 @@ private:
         State()
             : tokenCount(PPStream::CTNEXTOKEN), keywordCount(0), nextToken(PPStream::CTNEXTOKEN)
             { }
-        Table<TokenDefinition*> tokens;             // Token hash table.
-        int tokenCount;                             // Number of tokens.
-        int keywordCount;                           // Number of keywords.
-        Matcher::Input nextToken;                   // Next token number.
-        Config* config;                             // The configuration to build.
+        Table<TokenDefinition*> tokenTable;            	// Token hash table.
+        int tokenCount;                             	// Number of tokens.
+        int keywordCount;                           	// Number of keywords.
+        Matcher::Input nextToken;                   	// Next token number.
+        Config* config;                             	// The configuration to build.
     };
 
     static TokenDefinition* newToken(Token& info, State* state, bool keyword);
@@ -137,6 +137,8 @@ private:
     /** Set the needwhitespace flag.
      */
     static Parser parseNeedwhitespace;
+    WordAssoc* reservedWords;
+    WordAssoc* tokens;
 };
 
 /* The known language array.
@@ -145,15 +147,153 @@ array<Config*> Config::languages;
 
 /* Construct a language entry.
  */
-Config::Config(std::string name, ErrorList& errors) : errors(errors), name(name)
+Config::Config(std::string name, ErrorList& errors)
+    : errors(errors), name(name), reservedWords(NULL), tokens(NULL)
 {
+}
+
+/* convert - Convert a string to the "real" value.
+ */
+static std::string convert(std::string& string)
+{
+    std::string result;
+    int next;
+    bool l = false;              // An L string.
+    int quote;
+    int i;
+    int value;
+    const char *p = string.c_str();
+    bool haveendquote = false;
+
+    next = *p++;
+    if (next == '\0') {
+        return result;          // End of string.
+    }
+
+    if (next == 'L') {
+        l = true;
+        next = *p++;
+    }
+
+    if (next != '"' && next != '\'') {
+        // No quote present, copy the string verbatim.
+
+        result = p;
+        return result;
+    }
+
+    quote = next;       // Remember the quote character.
+    for (;;) {
+        next = *p++;
+        if (!next) {
+            // End of the string.
+            break;
+        }
+        if (next == quote) {
+            // Have a quote character
+            if (!haveendquote) {
+                // This is an end quote.
+                haveendquote = true;
+            } else {
+                // This is a new start quote.
+                haveendquote = false;
+            }
+        } else if (!haveendquote) {
+            // Characters between quotes.
+            if (next == '\\') {
+                // This is an escape sequence.
+                next = *p++;
+                switch (next) {
+                case '\0':
+                    return result;      // This is a malformed constant.
+                case '\'':
+                    result += '\'';
+                    break;
+                case '"':
+                    result += '"';
+                    break;
+                case '?':
+                    result += '?';
+                    break;
+                case '\\':
+                    result += '\\';
+                    break;
+                case 'a':
+                    result += '\a';
+                    break;
+                case 'b':
+                    result += '\b';
+                    break;
+                case 'f':
+                    result += '\f';
+                    break;
+                case 'n':
+                    result += '\n';
+                    break;
+                case 'r':
+                    result += '\r';
+                    break;
+                case 't':
+                    result += '\t';
+                    break;
+                case 'v':
+                    result += '\v';
+                    break;
+                case 'x':
+                    // Hexadecimal constant.
+                    value = 0;
+                    i = 0;              // Character counter.
+                    next = *p++;
+                    while (isxdigit(next)) {
+                        value <<= 4;
+                        if (isdigit(next)) {
+                            next -= '0';
+                        } else {
+                            next = toupper(next) - 'A' + 10;
+                        }
+                        value += next;
+                        ++i;
+                        if (i == 2) {
+                            // Send the hex character.
+                            result += value;
+                            i = 0;
+                        }
+                        next = *p++;
+                    }
+                    break;
+                case '0': case '1': case '2': case '3':
+                case '4': case '5': case '6': case '7':
+                    // Octal constant.
+                    value = 0;
+                    i = 3;              // Max digit counter.
+                    while (i && next >= '0' && next <= '7') {
+                        value <<= 3;
+                        next -= '0';
+                        value += next;
+                        --i;
+                        next = *p++;
+                    }
+                    result += value;
+                    break;
+                default:
+                    result += next;
+                    break;
+                }
+            } else {
+                // Send the character.
+                result += next;
+            }
+        }
+    }
+
+    return result;
 }
 
 /* Check and setup the tokens for use.
  */
 void Config::setupTokens(State* sp)
 {
-    Token* tp;
+    TokenDefinition* tp;
     std::string temp;
     Token regex;
     Matcher *rm, *tm;
@@ -175,38 +315,35 @@ void Config::setupTokens(State* sp)
     }
 #endif
 
-#if RICH
     // Allocate the token and keyword translation tables.
     tindex = kindex = 0;
     if (sp->tokenCount) {
         static WordAssoc pptokens[] = {
-            PSCANTOKENS
+            pwPSCANTOKENS
             { NULL, 0}
         };
-        pwWordAssoc *wp;
+        WordAssoc *wp;
 
         // Define the preprocessor intrinsic tokens.
-        lp->tokens = new pwWordAssoc[sp->tokenCount + 1];
+        sp->config->tokens = new WordAssoc[sp->tokenCount + 1];
         for (wp = pptokens; wp->word; ++wp) {
-            lp->tokens[tindex].word = strdup(wp->word);
-            lp->tokens[tindex].token = wp->token;
+            sp->config->tokens[tindex].word = strdup(wp->word);
+            sp->config->tokens[tindex].token = wp->token;
             ++tindex;
         }
     }
 
     if (sp->keywordCount) {
-        lp->reservedwords = new pwWordAssoc[sp->keywordCount + 1];
+        sp->config->reservedWords = new WordAssoc[sp->keywordCount + 1];
     }
-#endif
 
-#if RICH
     rm = NULL;
     tm = NULL;
     // Build the token and keyword state machine.
-    for (int i = 0; i < sp->tokens.size(); ++i) {
-        tp = sp->tokens[i];
+    for (int i = 0; i < sp->tokenTable.size(); ++i) {
+        tp = sp->tokenTable[i];
         if (tp->string[0] == '\'' || tp->string[0] == '"') {
-            temp = pwString(tp->string).convert();
+            temp = convert(tp->string);
         } else {
             temp = tp->string;
         }
@@ -214,20 +351,20 @@ void Config::setupTokens(State* sp)
         if (tp->keyword) {
             // This is keyword.
             if (rm == NULL) {
-                rm = sp->ppoptions.reservedwords = new pwStateMachine("reserved words", pwStateMachine::CHARSIZE,
-                                                                      lp->inputname, lp->valuename, 0);
+                rm = sp->config->options.reservedWords = new Matcher("reserved words", Matcher::CHARSIZE,
+                                                             NULL, NULL, 0);
             }
 
             // Add to the reserved word table.
             rm->addWord(temp, tp->value);
-            lp->reservedwords[kindex].word = tp->string.toCharStar();
-            lp->reservedwords[kindex].token = tp->value;
+            sp->config->reservedWords[kindex].word = strdup(tp->string.c_str());
+            sp->config->reservedWords[kindex].token = tp->value;
             ++kindex;
         } else {
             // This is a token.
             if (tm == NULL) {
-                tm = lp->ppoptions.tokens = new pwStateMachine("tokens", pwStateMachine::CHARSIZE,
-                                                               lp->inputname, lp->valuename, 0);
+                tm = sp->config->options.tokens = new Matcher("tokens", Matcher::CHARSIZE,
+                                                       NULL, NULL, 0);
             }
 
             // Add to the token table.
@@ -237,8 +374,8 @@ void Config::setupTokens(State* sp)
                 for (j = 0; j < tp->regex.size(); ++j) {
                     // Add a regular expression.
                     regex = *tp->regex[j];
-                    regex.string = regex.string.convert();  // Translate escape sequences.
-                    pwStateNode regexp(regex);
+                    regex.string = convert(regex.string);	// Translate escape sequences.
+                    MatchNode regexp(regex.string);
                     tm->addTree(&regexp, tp->value);
                 }
             } else {
@@ -246,49 +383,47 @@ void Config::setupTokens(State* sp)
                 tm->addWord(temp, tp->value);
             }
 
-            lp->tokens[tindex].word = tp->string.toCharStar();
-            lp->tokens[tindex].token = tp->value;
+            sp->config->tokens[tindex].word = strdup(tp->string.c_str());
+            sp->config->tokens[tindex].token = tp->value;
             ++tindex;
         }
 
         // p points to the token string, tp->value is its token value.
 
         // Assign values to tokens needed by the preprocessor.
-        if (lp->ppoptions.INTEGER == pwPPStream::NONE && temp == "INTEGER") {
-            lp->ppoptions.INTEGER = tp->value;
+        if (sp->config->options.INTEGER == PPStream::NONE && temp == "INTEGER") {
+            sp->config->options.INTEGER = tp->value;
         }
-        if (lp->ppoptions.CHARACTER == pwPPStream::NONE && temp == "CHARACTER") {
-            lp->ppoptions.CHARACTER = tp->value;
+        if (sp->config->options.CHARACTER == PPStream::NONE && temp == "CHARACTER") {
+            sp->config->options.CHARACTER = tp->value;
         }
-        if (lp->ppoptions.FLOAT == pwPPStream::NONE && temp == "FLOAT") {
-            lp->ppoptions.FLOAT = tp->value;
+        if (sp->config->options.FLOAT == PPStream::NONE && temp == "FLOAT") {
+            sp->config->options.FLOAT = tp->value;
         }
-        if (lp->ppoptions.STRING == pwPPStream::NONE && temp == "STRING") {
-            lp->ppoptions.STRING = tp->value;
+        if (sp->config->options.STRING == PPStream::NONE && temp == "STRING") {
+            sp->config->options.STRING = tp->value;
         }
-        if (lp->ppoptions.IDENTIFIER == pwPPStream::NONE && temp == "IDENTIFIER") {
-            lp->ppoptions.IDENTIFIER = tp->value;
+        if (sp->config->options.IDENTIFIER == PPStream::NONE && temp == "IDENTIFIER") {
+            sp->config->options.IDENTIFIER = tp->value;
         }
     }
 
     // Terminate the token and keyword lookup tables.
     if (tindex) {
-        lp->tokens[tindex].word = NULL;
-        lp->tokens[tindex].token = 0;
+        sp->config->tokens[tindex].word = NULL;
+        sp->config->tokens[tindex].token = 0;
     }
 
     if (kindex) {
-        lp->reservedwords[kindex].word = NULL;
-        lp->reservedwords[kindex].token = 0;
+        sp->config->reservedWords[kindex].word = NULL;
+        sp->config->reservedWords[kindex].token = 0;
     }
 
-    if (lp->ppoptions.IDENTIFIER == pwPPStream::NONE && sp->keywordCount) {
-        cp->error(pwError::ERROR,
-                  cp->info.startline, cp->info.startcolumn,
-                  cp->info.endline, cp->info.endcolumn,
-                  "Language contains keywords but no IDENTIFIER token is defined.");
+    if (sp->config->options.IDENTIFIER == PPStream::NONE && sp->keywordCount) {
+        errors.add(Error::ERROR,
+                   0, 0, 0, 0,
+                   "Language contains keywords but no IDENTIFIER token is defined.");
     }
-#endif
 }
 
 /* Create a language entry.
@@ -315,7 +450,10 @@ const Config* Config::Create(std::string name, ErrorList& errors)
     Config* lp = new Config(name, errors);
     sp->config = lp;
     errors.recentErrors = false;
-    if (languages[0]->parse(name, sp) && !errors.recentErrors) {
+    if (languages[0]->parse(name, sp)) {
+        languages[0]->setupTokens(sp);
+    }
+    if (!errors.recentErrors) {
         languages[i] = lp;
     } else {
         // Some error occured.
@@ -327,7 +465,7 @@ const Config* Config::Create(std::string name, ErrorList& errors)
     return lp;
 }
 
-const WordAssoc Config::reservedWords[] = {
+const WordAssoc Config::CFGreservedWords[] = {
     { NULL,  0 },
 };
 
@@ -338,7 +476,7 @@ const WordAssoc Config::reservedWords[] = {
     { "=",   ASSIGN },          \
     { "..",  RANGE}
 
-const WordAssoc Config::tokens[] = {
+const WordAssoc Config::CFGtokens[] = {
     PW_LEX_TOKENS,
     { " [a-zA-Z_][a-zA-Z_0-9]*", IDENTIFIER },
     { " [1-9][0-9]*([uU]|[lL])*", INTEGER },            	// Decimal integer
@@ -352,7 +490,7 @@ const WordAssoc Config::tokens[] = {
     { NULL,  0 },
 };
 
-const Bracket Config::comments[] =
+const Bracket Config::CFGcomments[] =
 {
     { "//", "\n", PPStream::COMMENT },        		// Single line comment.
     { "/*", "*/", PPStream::COMMENT },        		// Multi line comment.
@@ -363,7 +501,7 @@ const Bracket Config::comments[] =
 //
 // tokenName - display a token name.
 //
-const char* Config::tokenName(int value, void* context)
+const char* Config::CFGtokenName(int value, void* context)
 {
     const WordAssoc* wp;
     static const WordAssoc tokens[] = {
@@ -399,7 +537,7 @@ Options Config::configOptions(
     IDENTIFIER,                         			// Identifier token.
     NULL,                      					// Reserved words in this language.
     NULL,                             				// Tokens in the language.
-    comments);                           			// Comments in the language.
+    CFGcomments);                           			// Comments in the language.
 
 void Config::setupOptions()
 {
@@ -407,11 +545,11 @@ void Config::setupOptions()
     const pw::WordAssoc *wp;
 
     options = configOptions;				// Set default options.
-    if (options.reservedwords == NULL) {
-        machine = options.reservedwords = new pw::Matcher("reserved words", pw::Matcher::CHARSIZE,
+    if (options.reservedWords == NULL) {
+        machine = options.reservedWords = new pw::Matcher("reserved words", pw::Matcher::CHARSIZE,
                                                                 NULL,
                                                                 NULL, 0);
-        for (wp = reservedWords; wp->word; ++wp) {
+        for (wp = CFGreservedWords; wp->word; ++wp) {
             machine->addWord(wp->word, wp->token);
         }
     }
@@ -420,7 +558,7 @@ void Config::setupOptions()
         machine = options.tokens = new pw::Matcher("tokens", pw::Matcher::CHARSIZE,
                                                         NULL,
                                                         NULL, 0);
-    for (wp = tokens; wp->word; ++wp) {
+    for (wp = CFGtokens; wp->word; ++wp) {
         if (*wp->word == ' ') {
                 // Match a regular expression.
                 std::string regstr(wp->word + 1);
@@ -538,7 +676,7 @@ Config::TokenDefinition* Config::newToken(Token& info, State* state, bool keywor
     } else {
         ++state->tokenCount;
     }
-    state->tokens += tp;
+    state->tokenTable += tp;
     return tp;
 }
 
@@ -569,7 +707,7 @@ void Config::parseTokens(PP& pp, Config& env, ErrorList& errors, void* data)
             continue;
         }
 
-        tp = sp->tokens.lookup(pp.info.string);
+        tp = sp->tokenTable.lookup(pp.info.string);
         if (tp && (keyword || !tp->regex.size())) {
             Error *erp;
             std::string buffer;

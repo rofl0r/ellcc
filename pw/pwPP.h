@@ -17,13 +17,13 @@
 namespace pw {
 
 struct WordAssoc {                            // Word/token association.
-    char *word;
+    const char *word;
     int token;
 };
 
 struct Bracket {                              // Start/end bracketed definition.
-    char *start;
-    char *end;
+    const char *start;
+    const char *end;
     int token;
 };
 
@@ -199,8 +199,8 @@ private:
     static void save(void *arg, int current);
     static void backup(void *arg, int good, int count);
     void setupStateMachines();
-    static char *convertcharacter(long *value, const std::string& string);
-    static char *convertnumber(long *value, const std::string& string);
+    static char *convertCharacter(long *value, const std::string& string);
+    static const char *convertNumber(long *value, const std::string& string);
     bool primary(long *value);  
     bool unaryexpression(long *value);
     bool multiplicativeexpression(long *value);
@@ -236,16 +236,17 @@ struct Options {                            // Pre-processor options.
     int FLOAT;                                  // Float token.
     int STRING;                                 // String token.
     int IDENTIFIER;                             // Identifier token.
-    pw::Matcher *reservedwords;              // Reserved word matcher.
-    pw::Matcher *tokens;                     // Token matcher.
+    Matcher *reservedWords;              // Reserved word matcher.
+    Matcher *tokens;                     	// Token matcher.
     const Bracket *comments;                        // Comment matcher.
     Options(bool trigraphs = false, int INTEGER = PPStream::NONE,
             int CHARACTER = PPStream::NONE, int FLOAT = PPStream::NONE,
             int STRING = PPStream::NONE, int IDENTIFIER = PPStream::NONE,
-            pw::Matcher *reservedwords = NULL, pw::Matcher *tokens = NULL, const Bracket *comments = NULL)
+            pw::Matcher *reservedWords = NULL, pw::Matcher *tokens = NULL, const Bracket *comments = NULL)
         : trigraphs(trigraphs), INTEGER(INTEGER), CHARACTER(CHARACTER), FLOAT(FLOAT),
-          STRING(STRING), IDENTIFIER(IDENTIFIER), reservedwords(reservedwords),
+          STRING(STRING), IDENTIFIER(IDENTIFIER), reservedWords(reservedWords),
           tokens(tokens), comments(comments) { }
+    ~Options() { delete reservedWords; delete tokens; }
 };
 
 class  PP {                                   // The pre-processor object.

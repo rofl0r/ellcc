@@ -224,7 +224,7 @@ void PP::initializeoptions()
     options.FLOAT = 0;   
     options.STRING = 0;   
     options.IDENTIFIER = 0;   
-    options.reservedwords = NULL;   
+    options.reservedWords = NULL;   
     options.tokens = NULL;   
     options.comments = NULL;   
 }

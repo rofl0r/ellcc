@@ -162,9 +162,9 @@ void PPStream::setupStateMachines()
         }
     }
 
-    if (options->reservedwords) {
-        if (options->reservedwords->getMaxvalue() > nexttoken) {
-            nexttoken = maxtoken = options->reservedwords->getMaxvalue();
+    if (options->reservedWords) {
+        if (options->reservedWords->getMaxvalue() > nexttoken) {
+            nexttoken = maxtoken = options->reservedWords->getMaxvalue();
         }
     }
 
@@ -1466,11 +1466,11 @@ void PPStream::getToken()
 
 int PPStream::isreserved()
 {
-    if (!options->reservedwords) {
+    if (!options->reservedWords) {
         return -1;
     }
 
-    return options->reservedwords->matchWord(string);
+    return options->reservedWords->matchWord(string);
 }
 
 PPStream::PPDirectives PPStream::isppdirective() {
@@ -1479,7 +1479,7 @@ PPStream::PPDirectives PPStream::isppdirective() {
 
 bool PPStream::primary(long *value)
 {
-    char *p;
+    const char *p;
 
     *value = 0;
 
@@ -1519,7 +1519,7 @@ bool PPStream::primary(long *value)
             }
         }
     } else if (token == options->CHARACTER) {
-        p = convertcharacter(value, string);
+        p = convertCharacter(value, string);
 
         if (p) {
             psp.error(pw::Error::ERROR,
@@ -1533,7 +1533,7 @@ bool PPStream::primary(long *value)
                   "Floating constant not allowed in #if expression.");
         return false;
     } else if (token == options->INTEGER) {
-        p = convertnumber(value, string);
+        p = convertNumber(value, string);
         if (p) {
             psp.error(pw::Error::ERROR,
                       startline, startcolumn, endline, endcolumn,
@@ -1856,9 +1856,9 @@ bool PPStream::conditionalexpr()
 }
 
 //
-//      convertcharacter - convert the token buffer to a character
+//      convertCharacter - convert the token buffer to a character
 //
-char *PPStream::convertcharacter(long *value, const std::string& string)
+char *PPStream::convertCharacter(long *value, const std::string& string)
 {
     int wide;
     int index;
@@ -1882,9 +1882,9 @@ char *PPStream::convertcharacter(long *value, const std::string& string)
 }
 
 //
-//      convertnumber - convert the string to a number
+//      convertNumber - convert the string to a number
 //
-char *PPStream::convertnumber(long *value, const std::string& string)
+const char *PPStream::convertNumber(long *value, const std::string& string)
 {
     int base;
     bool islong, isunsigned;

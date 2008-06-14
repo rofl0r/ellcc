@@ -615,7 +615,7 @@ enum FileTypes {
   NUM_FILE_TYPES                ///< Always last!
 };
 
-static char* fileTypes[] = {
+static const char* fileTypes[] = {
   "NONE",
   "a C file",
   "a preprocessed C file",
@@ -653,7 +653,7 @@ enum Phases {
 
 
 static const struct {
-    char* name;                 ///< The name of the action.
+    const char* name;           ///< The name of the action.
     FileTypes result;           ///< The result of this phase if it processes multiple files.
 } phases[] = {
     { "Preprocessing", },
@@ -690,7 +690,7 @@ enum FileActions {
 };
 
 static const struct {
-    char* name;                 ///< The name of the action.
+    const char* name;           ///< The name of the action.
 } fileActions[] = {
     { "preprocess" },
     { "compile" },
