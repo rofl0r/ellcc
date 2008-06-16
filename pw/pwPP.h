@@ -277,11 +277,21 @@ public:
     void errorPosition(std::string& buffer, const std::string& file, int sl, int sc, int el, int ec, bool trailer)
         { errors.position(buffer, file, sl, sc, el, ec, trailer); }
 private:
-    struct include {                            // Include file definition.
-        include *next;                          // Next in include list.
-        std::string name;                          // Name of include file.
-        FILE *fp;                               // Include file.
-        PPStream *pp;                         // Scanner context.
+    /** An include file definition.
+     */
+    struct include {
+        /** Next in the include stack.
+         */
+        include *next;
+        /* Full path name of include file.
+         */
+        std::string name;
+        /* The include file.
+         */
+        FILE *fp;
+        /* The scanner context.
+         */
+        PPStream *pp;
     };
 
     std::string name;                              // Name of input.
@@ -305,6 +315,11 @@ private:
     int filegetc();
     std::string& addname(const std::string& name);
     void initializeoptions();
+    /** Open an include file.
+     * @param current The current preprocessing context.
+     * @return true if the file was opened successfully.
+     */
+    bool doInclude(PPStream *current);
     void processnexttoken(TokenInfo& tinfo);
     bool process();
 };

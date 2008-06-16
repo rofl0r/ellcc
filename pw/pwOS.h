@@ -25,6 +25,7 @@ extern int fflush(FILE* fp);                                  // Flush a file.
 
 extern void parseFilename(const std::string& filename, std::string& path, std::string& name, std::string& extension);
 extern std::string buildFilename(const std::string& path, const std::string& name, const std::string& extension);
+extern bool fullPath(const std::string& path);
 
 };
 

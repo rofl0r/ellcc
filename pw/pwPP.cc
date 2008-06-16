@@ -8,6 +8,7 @@
 #include <string.h>
 #include <time.h>
 #include "pwPP.h"
+#include "pwOS.h"
 
 namespace pw {
 
@@ -320,7 +321,7 @@ bool PP::setInput(FILE *fp)
         this->fp = fp;
     else {
         myfp = true;
-        this->fp = fopen(name.c_str(), "r");
+        this->fp = tfopen(name.c_str(), "r");
     }
     if (this->fp == NULL) {
         // error opening file
@@ -341,15 +342,59 @@ PP::~PP()
     // Close and delete include files.
     while (includes) {
         include *tmp = includes;
-        fclose(tmp->fp);
+        pw::fclose(tmp->fp);
         includes = tmp->next;
         delete tmp;
     }
 
     if (myfp && fp)
-        fclose(fp);
+        pw::fclose(fp);
     
     delete sp;
+}
+
+/* Open an include file.
+ */
+bool PP::doInclude(PPStream *current)
+{
+    FILE *fp = NULL;
+    std::string name;
+
+    // Remember the line on which the #include occured.
+    if (includes == NULL)
+        includeline = current->startline;
+
+    // Open a new include file.
+    if (!current->sysheader || fullPath(current->string)) {
+        fp = tfopen(current->string.c_str(), "r");
+        name = current->string;
+    }
+    if (fp == NULL && !fullPath(current->string)) {
+        // Check all paths.
+        for (int i = 0; i < includedirs.size(); ++i) {
+            name = includedirs[i] + current->string;
+            if ((fp = tfopen(name.c_str(), "r")) != NULL) {
+                break;
+            }
+        }
+    }
+
+    if (fp == NULL) {
+        error(pw::Error::ERROR,
+              current->startline, current->startcolumn, current->endline, current->endcolumn,
+              "Can't find #include file \"%s\".", current->string.c_str());
+        return false;
+    }
+
+    include *newp = new include;
+    newp->next = includes;
+    includes = newp;
+    newp->fp = fp;
+    newp->name = addname(name);
+    // Open new scanning context.
+    newp->pp = new PPStream(*this, &options);
+    newp->pp->setInput(&PP::filegetc);
+    return true;
 }
 
 //
@@ -357,23 +402,22 @@ PP::~PP()
 //
 void PP::processnexttoken(TokenInfo& tinfo)
 {
-    include *incp = includes;
     PPStream *current;
 
     for ( ; ; ) {
-        if (incp) {
+        if (includes) {
             // processing an include file
 
-            current = incp->pp;
+            current = includes->pp;
             current->getToken();
             if (current->token == PPStream::ENDOFFILE) {
                 // Close this include file...
 
-                fclose(incp->fp);
-                delete incp->pp;
-                includes = incp->next;
+                pw::fclose(includes->fp);
+                delete includes->pp;
+                include *incp = includes;
+                includes = includes->next;
                 delete incp;
-                incp = includes;
                 // ...and process next token.
                 continue;
             }
@@ -391,9 +435,9 @@ void PP::processnexttoken(TokenInfo& tinfo)
         switch (current->token) {
         case PPStream::PDEFINE:
             // define a macro
-            if (incp) {
+            if (includes) {
                 // define in an include file
-                definemacro(includeline, incp->name, current);
+                definemacro(includeline, includes->name, current);
             } else {
                 // define in the main file
                 definemacro(current->startline, name, current);
@@ -402,7 +446,7 @@ void PP::processnexttoken(TokenInfo& tinfo)
 
         case PPStream::PUNDEF:
             // undefine a macro
-            if (incp) {
+            if (includes) {
                 // undefine in an include file
                 undefinemacro(current->string, includeline,
                               current->startline, false);
@@ -414,47 +458,11 @@ void PP::processnexttoken(TokenInfo& tinfo)
             continue;
 
         case PPStream::PINCLUDE:
-            {
-                // include a file
-                include *newp;
-                FILE *fp;
-                std::string name;
-
-                // Remember the line on which the #include occured.
-                if (!incp)
-                    includeline = current->startline;
-
-                // Open a new include file.
-                fp = fopen(current->string.c_str(), "r");
-                if (!fp) {
-                    // Check all paths.
-                    for (int i = 0; i < includedirs.size(); ++i) {
-                        name = includedirs[i] + current->string;
-                        if ((fp = fopen(name.c_str(), "r")) != NULL) {
-                            break;
-                        }
-                    }
-
-                    if (!fp) {
-                        error(pw::Error::ERROR,
-                              current->startline, current->startcolumn, current->endline, current->endcolumn,
-                              "Can't find #include file \"%s\".", current->string.c_str());
-                        continue;
-                    }
-                } else {
-                    name = current->string;
-                }
-
-                newp = new include;
-                newp->next = includes;
-                incp = includes = newp;
-                newp->fp = fp;
-                newp->name = addname(name);
-                // Open new scanning context.
-                newp->pp = new PPStream(*this, &options);
-                newp->pp->setInput(&PP::filegetc);
-                break;
+            // Include a file.
+            if (!doInclude(current)) {
+                continue;
             }
+            break;
         }
         break;
     }
@@ -468,14 +476,11 @@ void PP::processnexttoken(TokenInfo& tinfo)
 //
 void PP::getToken(Filter filter)
 {
-    include *incp;
-
     for (;;) {
         processnexttoken(info);
-        incp = includes;
 
-        if (incp) {
-            info.file = incp->name;
+        if (includes) {
+            info.file = includes->name;
         } else {
             info.file = name;
         }
@@ -548,19 +553,19 @@ bool PP::process()
     PPStream *current;
 
     do {
-        include *incp = includes;
 
-        if (incp) {
+        if (includes) {
             // Processing an include file.
 
-            current = incp->pp;
+            current = includes->pp;
             current->getToken();
             if (current->token == PPStream::ENDOFFILE) {
                 // Close this include file...
 
-                fclose(incp->fp);
-                delete incp->pp;
-                includes = incp->next;
+                pw::fclose(includes->fp);
+                delete includes->pp;
+                include *incp = includes;
+                includes = includes->next;
                 delete incp;
                 // ...and process next token.
                 continue;
@@ -578,9 +583,9 @@ bool PP::process()
         switch (current->token) {
         case PPStream::PDEFINE:
             // define a macro
-            if (incp) {
+            if (includes) {
                 // define in an include file
-                definemacro(includeline, incp->name, current);
+                definemacro(includeline, includes->name, current);
             } else {
                 // define in the main file
                 definemacro(current->startline, name, current);
@@ -590,7 +595,7 @@ bool PP::process()
         case PPStream::PUNDEF:
             // undefine a macro
 
-            if (incp) {
+            if (includes) {
                 // undefine in an include file
                 undefinemacro(current->string, includeline,
                               current->startline, false);
@@ -602,46 +607,9 @@ bool PP::process()
             break;
 
         case PPStream::PINCLUDE:
-            {
-                // include a file
-                include *newp;
-                FILE *fp;
-                std::string name;
-
-                // remember the line that the #include occured
-                if (!incp)
-                    includeline = current->startline;
-
-                // open a new include file
-                fp = fopen(current->string.c_str(), "r");
-                if (!fp) {
-                    // check all paths
-                    int i;
-
-                    for (i = 0; i < includedirs.size(); ++i) {
-                        name = includedirs[i] + current->string;
-                        if ((fp = fopen(name.c_str(), "r")) != NULL)
-                            break;
-                    }
-
-                    if (!fp) {
-                        current->tokenclass = TokenInfo::TCSKIPPED;
-                        break;
-                    }
-                } else {
-                    name = current->string;
-                }
-
-                newp = new include;
-                newp->next = includes;
-                includes = newp;
-                newp->fp = fp;
-                newp->name = addname(name);
-                // Open new scanning context.
-                newp->pp = new PPStream(*this, &options);
-                newp->pp->setInput(&PP::filegetc);
-                break;
-            }
+            // Include a file.
+            doInclude(current);
+            break;
         }
     } while (current->token != PPStream::ENDOFFILE);
 
