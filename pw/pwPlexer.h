@@ -84,7 +84,7 @@ private:
     static const char* CFGtokenName(int value, void* context);
     /** Configuration file comments.
      */
-    static const Bracket CFGcomments[];
+    static Bracket CFGcomments[];
 
     /* Extensible parser handling.
      */

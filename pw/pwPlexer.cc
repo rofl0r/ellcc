@@ -299,7 +299,7 @@ const Plexer* Plexer::Create(std::string name, ErrorList& errors)
         languages[0] = new Plexer(std::string("cfg"), errors);
         languages[0]->CFGsetupOptions();
         languages[0]->first("tokens", parseTokens);
-        languages[0]->first("comments", parseComments);
+        languages[0]->first("comment", parseComments);
         languages[0]->first("macros", parseMacros);
         languages[0]->first("needwhitespace", parseNeedwhitespace);
     }
@@ -356,7 +356,7 @@ const WordAssoc Plexer::CFGtokens[] = {
     { NULL,  0 },
 };
 
-const Bracket Plexer::CFGcomments[] =
+Bracket Plexer::CFGcomments[] =
 {
     { "//", "\n", PPStream::COMMENT },        		// Single line comment.
     { "/*", "*/", PPStream::COMMENT },        		// Multi line comment.
@@ -665,105 +665,101 @@ void Plexer::parseTokens(PP& pp, Plexer& env, ErrorList& errors, void* data)
  */
 void Plexer::parseComments(PP& pp, Plexer& env, ErrorList& errors, void* data)
 {
-#if 0
+    State* sp = (State*)data;
     std::string temp;
-    char *start = NULL, *end;
+    const char *start = NULL, *end;
     int count;
-    pwBracket *bp;
+    Bracket *bp;
 
-    if (cp->info.token != LBRACE) {
-        expectedToken(cp, "{");
+    if (pp.info.token != LBRACE) {
+        expectedToken(pp, "{");
     } else {
-        cp->getToken();
+        pp.getToken();
     }
 
-    while (cp->info.token != RBRACE) {
+    while (pp.info.token != RBRACE) {
         // Gather all comma separated comment definitions.
 
-        if (cp->info.token == COMMA) {
+        if (pp.info.token == COMMA) {
             // This comma is out of place.
-            cp->error(pwError::ERROR,
-                      cp->info.startline, cp->info.startcolumn, cp->info.endline, cp->info.endcolumn,
-                      "Unexpected \"@s\".", &cp->info.string);
-            cp->getToken();
+            pp.error(Error::ERROR,
+                     pp.info.startline, pp.info.startcolumn, pp.info.endline, pp.info.endcolumn,
+                     "Unexpected \"%s\".", pp.info.string.c_str());
+            pp.getToken();
             continue;
         }
 
-        if (cp->info.token == STRING) {
-            temp = std::string(cp->info.string).convert();
-            start = temp.toCharStar();
-            if (cp->langInfo->ppoptions.comments == NULL) {
+        if (pp.info.token == STRING) {
+            temp = convert(pp.info.string);
+            start = temp.c_str();
+            if (sp->language->options.comments == NULL) {
                 // No comments, yet.
                 count = 1;
             } else {
                 // Count the current number of entries.
-                for (count = 1, bp = cp->langInfo->ppoptions.comments; bp->start; ++count, ++bp) {
+                for (count = 1, bp = sp->language->options.comments; bp->start; ++count, ++bp) {
                     if (strcmp(start, bp->start) == 0) {
-                        cp->error(pwError::ERROR,
-                                  cp->info.startline, cp->info.startcolumn, cp->info.endline, cp->info.endcolumn,
-                                  "Comment start sequence \"@s\" has already been used.", &cp->info.string);
+                        pp.error(Error::ERROR,
+                                 pp.info.startline, pp.info.startcolumn, pp.info.endline, pp.info.endcolumn,
+                                 "Comment start sequence \"%s\" has already been used.", pp.info.string.c_str());
                     }
                     continue;
                 }
             }
 
-            cp->getToken();
+            pp.getToken();
         } else {
-            expectedToken(cp, "String");
-            cp->getToken();
-            delete start;
+            expectedToken(pp, "String");
+            pp.getToken();
             continue;
         }
 
-        if (cp->info.token == RANGE) {
-            cp->getToken();
+        if (pp.info.token == RANGE) {
+            pp.getToken();
         } else {
-            expectedToken(cp, "..");
-            delete start;
+            expectedToken(pp, "..");
             continue;
         }
 
-        if (cp->info.token == STRING) {
-            temp = std::string(cp->info.string).convert();
-            end = temp.toCharStar();
-            cp->getToken();
+        if (pp.info.token == STRING) {
+            temp = convert(pp.info.string);
+            end = temp.c_str();
+            pp.getToken();
         } else {
-            expectedToken(cp, "String");
-            cp->getToken();
-            delete start;
+            expectedToken(pp, "String");
+            pp.getToken();
             continue;
         }
 
         // Have a start and end marker. Add to the comment list.
-        cp->langInfo->ppoptions.comments = (pwBracket *)realloc(cp->langInfo->ppoptions.comments,
-                                                            (count + 1) * sizeof(pwBracket));
+        sp->language->options.comments = (Bracket *)realloc(sp->language->options.comments,
+                                                           (count + 1) * sizeof(Bracket));
         --count;
-        cp->langInfo->ppoptions.comments[count].start = start;
-        cp->langInfo->ppoptions.comments[count].end = end;
-        cp->langInfo->ppoptions.comments[count].token = pwPPStream::COMMENT;
+        sp->language->options.comments[count].start = start;
+        sp->language->options.comments[count].end = end;
+        sp->language->options.comments[count].token = PPStream::COMMENT;
         ++count;
-        cp->langInfo->ppoptions.comments[count].start = NULL;
-        cp->langInfo->ppoptions.comments[count].end = NULL;
-        cp->langInfo->ppoptions.comments[count].token = 0;
+        sp->language->options.comments[count].start = NULL;
+        sp->language->options.comments[count].end = NULL;
+        sp->language->options.comments[count].token = 0;
 
         // Commas separate.
-        if (cp->info.token == COMMA) {
-            cp->getToken();
+        if (pp.info.token == COMMA) {
+            pp.getToken();
         } else {
-            if (cp->info.token == RBRACE) {
+            if (pp.info.token == RBRACE) {
                 break;
             }
 
-            expectedToken(cp, ",");
+            expectedToken(pp, ",");
         }
     }
 
-    if (cp->info.token != RBRACE) {
-        expectedToken(cp, "}");
+    if (pp.info.token != RBRACE) {
+        expectedToken(pp, "}");
     } else {
-        cp->getToken();
+        pp.getToken();
     }
-#endif
 }
 
 /* Define macros.

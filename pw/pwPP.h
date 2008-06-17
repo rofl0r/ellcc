@@ -238,11 +238,11 @@ struct Options {                            // Pre-processor options.
     int IDENTIFIER;                             // Identifier token.
     Matcher *reservedWords;              // Reserved word matcher.
     Matcher *tokens;                     	// Token matcher.
-    const Bracket *comments;                        // Comment matcher.
+    Bracket *comments;                        // Comment matcher.
     Options(bool trigraphs = false, int INTEGER = PPStream::NONE,
             int CHARACTER = PPStream::NONE, int FLOAT = PPStream::NONE,
             int STRING = PPStream::NONE, int IDENTIFIER = PPStream::NONE,
-            pw::Matcher *reservedWords = NULL, pw::Matcher *tokens = NULL, const Bracket *comments = NULL)
+            pw::Matcher *reservedWords = NULL, pw::Matcher *tokens = NULL, Bracket *comments = NULL)
         : trigraphs(trigraphs), INTEGER(INTEGER), CHARACTER(CHARACTER), FLOAT(FLOAT),
           STRING(STRING), IDENTIFIER(IDENTIFIER), reservedWords(reservedWords),
           tokens(tokens), comments(comments) { }
