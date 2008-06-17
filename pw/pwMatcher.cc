@@ -409,7 +409,6 @@ bool Matcher::addTree(const MatchNode* tree, int value)
         return false;
     }
 
-
     if (   tree->type == MatchNode::INPUT
         || (   tree->type == MatchNode::CONCAT
             && tree->u.b.left && tree->u.b.left->type == MatchNode::INPUT)) {

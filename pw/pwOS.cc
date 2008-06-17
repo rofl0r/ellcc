@@ -10,13 +10,11 @@
 
 namespace pw {
 
-#if OSWIN32
+#if defined(__windows__)
 #include <process.h>
 #include <io.h>
 #include <windows.h>
-#endif
-
-#if defined(__linux__)
+#else
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <dlfcn.h>
@@ -31,27 +29,20 @@ void* findLibrary(const std::string& directory, const std::string& name)
 {
     std::string libname;
     void *handle = NULL;
-    const char *p;
-
     libname = directory;
 
-#if defined(__linux__)
-    libname = "lib";
-    libname += name;
-    libname = buildFilename(directory, libname, ".so");
-    p = libname.c_str();
-    handle = dlopen(p, RTLD_LAZY);
-#elif defined(__windows__)
+#if defined(__windows__)
     libname += name;
     libname += ".dll";
     libname = buildFilename(directory, name, ".dll");
-    p = libname.c_str();
-    handle = LoadLibrary(p);
+    handle = LoadLibrary(libname.c_str());
 #else
-#error No findLibrary body defined.
+    libname = "lib";
+    libname += name;
+    libname = buildFilename(directory, libname, ".so");
+    handle = dlopen(libname.c_str(), RTLD_LAZY);
 #endif
 
-    delete p;
     return handle;
 }
 
@@ -66,16 +57,12 @@ void* findLibrarySymbol(void *handle, const std::string& symbol)
     }
 
     void *result;
-    const char *p = symbol.c_str();
 
-#if defined(__linux__)
-    result = dlsym(handle, p);
-#elif defined(__windows__)
-    result =  (void *)GetProcAddress((HINSTANCE)handle, p);
+#if defined(__windows__)
+    result =  (void *)GetProcAddress((HINSTANCE)handle, symbol.c_str());
 #else
-#error No findLibrarySymbol body defined.
+    result = dlsym(handle, symbol.c_str());
 #endif
-    delete p;
     return result;
 }
 
@@ -103,7 +90,7 @@ std::string findExecutable(int argc, char **argv)
     }
 
     name = buffer;
-#elif defined(__linux__)
+#else
     struct stat statBuf;
     int len;
     std::string temp, nameString;
@@ -209,8 +196,6 @@ gotName:
     name = temp + name;
 
 done:
-#else
-#error No findExecutable body defined.
 #endif
 
     argv[0] = (char*)name.c_str();                // Save a copy in argv[0].    
@@ -224,19 +209,17 @@ done:
 FILE* bfopen(const std::string& name, const char* mode)
 {
     FILE* fp;
-    const char* p = name.c_str();
 
-#if OSWIN32
+#if defined(__windows__)
     char buf[5];
 
     strncpy(buf, mode, 3);
     strcat(buf, "b");
-    fp = ::fopen(p, buf);
+    fp = ::fopen(name.c_str(), buf);
 #else
-    fp = ::fopen(p, mode);
+    fp = ::fopen(name.c_str(), mode);
 #endif
 
-    delete p;
     return fp;
 }
 
@@ -246,16 +229,15 @@ FILE* bfopen(const std::string& name, const char* mode)
 FILE* tfopen(const std::string& name, const char* mode)
 {
     FILE* fp;
-    const char* p = name.c_str();
 
-#if OSWIN32
+#if defined(__windows__)
     char buf[5];
 
     strncpy(buf, mode, 3);
     strcat(buf, "t");
-    fp = ::fopen(p, buf);
+    fp = ::fopen(name.c_str(), buf);
 #else
-    fp = ::fopen(p, mode);
+    fp = ::fopen(name.c_str(), mode);
 #endif
 
     return fp;
@@ -266,16 +248,14 @@ FILE* tfopen(const std::string& name, const char* mode)
 //
 FILE* bfreopen(const std::string& name, const char* mode, FILE* fp)
 {
-    const char *p = name.c_str();
-
-#if OSWIN32
+#if defined(__windows__)
     char buf[5];
 
     strncpy(buf, mode, 3);
     strcat(buf, "b");
-    fp = ::freopen(p, buf, fp);
+    fp = ::freopen(name.c_str(), buf, fp);
 #else
-    fp = ::freopen(p, mode, fp);
+    fp = ::freopen(name.c_str(), mode, fp);
 #endif
 
     return fp;
@@ -286,19 +266,16 @@ FILE* bfreopen(const std::string& name, const char* mode, FILE* fp)
 //
 FILE* tfreopen(const std::string& name, const char* mode, FILE* fp)
 {
-    const char* p = name.c_str();
-
-#if OSWIN32
+#if defined(__windows__)
     char buf[5];
 
     strncpy(buf, mode, 3);
     strcat(buf, "t");
-    fp = ::freopen(p, buf, fp);
+    fp = ::freopen(name.c_str(), buf, fp);
 #else
-    fp = ::freopen(p, mode, fp);
+    fp = ::freopen(name.c_str(), mode, fp);
 #endif
 
-    delete p;
     return fp;
 }
 
@@ -318,16 +295,14 @@ int fflush(FILE* fp)
     return ::fflush(fp);
 }
 
-#if defined(__linux__)
-static const char DIRTERM[] = "/";              // The set of characters that terminate a directory name.
-#define BASETERM '.'		                // The character that terminates a base name.
-#define PATHSEP '/'		                // Path component separator.
-#endif
-
-#if     OSWIN32
+#if defined(__windows__)
 static char DIRTERM[] = "/\\";
 #define BASETERM '.'
 #define PATHSEP '/'
+#else
+static const char DIRTERM[] = "/";              // The set of characters that terminate a directory name.
+#define BASETERM '.'		                // The character that terminates a base name.
+#define PATHSEP '/'		                // Path component separator.
 #endif
 
 //

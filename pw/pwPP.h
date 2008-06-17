@@ -8,7 +8,6 @@
 #define pwPP_h
 
 #include <string>
-#include <map>
 #include "pwArray.h"
 #include "pwTable.h"
 #include "pwError.h"
@@ -149,7 +148,7 @@ private:
 
     enum PPDirectives {                         // Preprocessor directives.
         PPDNONE = -1, PPDEFINE, PPELIF, PPELSE, PPENDIF, PPERROR, PPIF,
-        PPIFDEF, PPIFNDEF, PPINCLUDE, PPLINE, PPPRAGMA, PPUNDEF,
+        PPIFDEF, PPIFNDEF, PPINCLUDE, PPINCLUDE_NEXT, PPLINE, PPPRAGMA, PPUNDEF,
     };
 
     enum {
@@ -184,7 +183,7 @@ private:
 
     Conditional *conditionals;                  // Active conditional list.
 
-    PP& psp;                                 // Preprocessor context.
+    PP& psp;                                 	// Preprocessor context.
 
     int maxtoken;                               // Maximum token value.
 
@@ -193,6 +192,7 @@ private:
 
     // information about a token
     bool sysheader;                             // true if string is a <> header.
+    bool include_next;                          // true if #include_next.
     int linevalue;                              // Line # returned by #line.
 
     static int read(void *arg);
@@ -263,7 +263,7 @@ public:
     bool setInput(const char *string);
     bool setInput(FILE *fp = NULL);
     void addInclude(const std::string& name);
-    void addDefine(const std::string& name, const std::string& value);
+    void addDefine(const std::string& name, const std::string& value = "");
     void undefine(std::string& name, bool fixed);
     void fixedDefine(const std::string& name, const char *value);
     void getOptions(Options *op);
@@ -283,15 +283,18 @@ private:
         /** Next in the include stack.
          */
         include *next;
-        /* Full path name of include file.
+        /** The name of the include file.
          */
         std::string name;
-        /* The include file.
+        /** The include file.
          */
         FILE *fp;
         /* The scanner context.
          */
         PPStream *pp;
+        /** The current file's include path level.
+         */
+        int level;
     };
 
     std::string name;                              // Name of input.

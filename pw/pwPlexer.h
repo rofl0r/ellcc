@@ -140,6 +140,12 @@ private:
     /** Parse tokens and keywords.
      */
     static Parser parseTokens;
+    /** Parse comments.
+     */
+    static Parser parseComments;
+    /** Parse macro definitions.
+     */
+    static Parser parseMacros;
     /** Set the needwhitespace flag.
      */
     static Parser parseNeedwhitespace;

@@ -20,52 +20,53 @@ namespace pw {
 static pw::Matcher* directives;              // Preprocessing directives.
 const WordAssoc PPStream::directivelist[] = // List of preprocessor directives.
 {
-    { "define",     PPDEFINE},
-    { "elif",       PPELIF},
-    { "else",       PPELSE},
-    { "endif",      PPENDIF},
-    { "error",      PPERROR},
-    { "if",         PPIF},
-    { "ifdef",      PPIFDEF},
-    { "ifndef",     PPIFNDEF},
-    { "include",    PPINCLUDE},
-    { "line",       PPLINE},
-    { "pragma",     PPPRAGMA},
-    { "undef",      PPUNDEF},
-    { NULL,         0}
+    { "define",       PPDEFINE },
+    { "elif",         PPELIF },
+    { "else",         PPELSE },
+    { "endif",        PPENDIF },
+    { "error",        PPERROR },
+    { "if",           PPIF },
+    { "ifdef",        PPIFDEF },
+    { "ifndef",       PPIFNDEF },
+    { "include",      PPINCLUDE },
+    { "include_next", PPINCLUDE_NEXT },
+    { "line",         PPLINE },
+    { "pragma",       PPPRAGMA },
+    { "undef",        PPUNDEF },
+    { NULL,           0 }
 };
 
 const WordAssoc PPStream::operatorlist[] =         // List of preprocessor operators.
 {
-    { "#",   POUND},
-    { "##",  POUNDPOUND},
-    { ",",   COMMA},
-    { "(",   LPAREN},
-    { ")",   RPAREN},
-    { "?",   QUESTION},
-    { ":",   COLON},
-    { "~",   TILDA},
-    { "==",  EQ},
-    { "*",   STAR},
-    { "/",   SLASH},
-    { "%",   PERCENT},
-    { "+",   PLUS},
-    { "-",   HYPHEN},
-    { "&",   AND},
-    { "&&",  ANDAND},
-    { "^",   CAROT},
-    { "|",   BAR},
-    { "||",  OROR},
-    { "!",   EXCLAMATION},
-    { "!=",  NE},
-    { "...", ELIPSIS},
-    { "<",   LT},
-    { "<=",  LE},
-    { "<<",  LL},
-    { ">",   GT},
-    { ">=",  GE},
-    { ">>",  RR},
-    { NULL,  0},
+    { "#",   POUND },
+    { "##",  POUNDPOUND },
+    { ",",   COMMA },
+    { "(",   LPAREN },
+    { ")",   RPAREN },
+    { "?",   QUESTION },
+    { ":",   COLON },
+    { "~",   TILDA },
+    { "==",  EQ },
+    { "*",   STAR },
+    { "/",   SLASH },
+    { "%",   PERCENT },
+    { "+",   PLUS },
+    { "-",   HYPHEN },
+    { "&",   AND },
+    { "&&",  ANDAND },
+    { "^",   CAROT },
+    { "|",   BAR },
+    { "||",  OROR },
+    { "!",   EXCLAMATION },
+    { "!=",  NE },
+    { "...", ELIPSIS },
+    { "<",   LT },
+    { "<=",  LE },
+    { "<<",  LL },
+    { ">",   GT },
+    { ">=",  GE },
+    { ">>",  RR },
+    { NULL,  0 }
 };
 
 //
@@ -110,6 +111,7 @@ PPStream::PPStream(PP& ppsp, Options *options) : psp(ppsp)
     noexpand = false;                           // set to inhibit macro expansion
     inpragma = false;                           // set if scanning a pragma.
     conditionals = NULL;                        // no conditionals yet
+    sysheader = false;				// Not a system header.
 }
 
 PPStream::~PPStream()
@@ -1213,7 +1215,14 @@ void PPStream::getToken()
                 break;
             }
 
+        case PPINCLUDE_NEXT:
+            include_next = true;
+            goto ppinclude;
+
         case PPINCLUDE:
+            include_next = false;
+
+        ppinclude:  
             if (skipping)
                 goto endofline;
 

@@ -358,23 +358,60 @@ PP::~PP()
 bool PP::doInclude(PPStream *current)
 {
     FILE *fp = NULL;
-    std::string name;
+    std::string file;
 
     // Remember the line on which the #include occured.
     if (includes == NULL)
         includeline = current->startline;
 
+    std::string string = current->string;
+
+again:
     // Open a new include file.
-    if (!current->sysheader || fullPath(current->string)) {
-        fp = tfopen(current->string.c_str(), "r");
-        name = current->string;
+    int level = 0;		// No search path yet.
+    if (fullPath(string)) {
+        // The full path has been provided.
+        fp = tfopen(string.c_str(), "r");
+        file = string;
+    } else if (!current->sysheader) {
+        // first, try to open in the current file's directory.
+        std::string path;
+        std::string base;
+        std::string extension;
+        if (includes) {
+            // We are in an include file, use its path.
+            parseFilename(includes->name, path, base, extension);
+        } else {
+            // Use the original source file's path.
+            parseFilename(name, path, base, extension);
+        }
+        file = buildFilename(path, string);
+        fp = tfopen(file.c_str(), "r");
     }
-    if (fp == NULL && !fullPath(current->string)) {
+
+    if (fp == NULL && !fullPath(string)) {
         // Check all paths.
-        for (int i = 0; i < includedirs.size(); ++i) {
-            name = includedirs[i] + current->string;
-            if ((fp = tfopen(name.c_str(), "r")) != NULL) {
+        if (includes && current->include_next) {
+            // This is an #include_next, continue searching where we left off.
+            level = includes->level + 1;
+        }
+        for ( ; level < includedirs.size(); ++level) {
+            file = buildFilename(includedirs[level], string);
+            if ((fp = tfopen(file.c_str(), "r")) != NULL) {
                 break;
+            }
+        }
+
+        if (fp == NULL) {
+            // Check for an include without the .h and add it if so. Try again.
+            std::string path;
+            std::string base;
+            std::string extension;
+            parseFilename(string, path, base, extension);
+            if (extension.length() == 0) {
+                // Add a ".h".
+                string = buildFilename(path, base, ".h");
+                goto again;
             }
         }
     }
@@ -390,7 +427,8 @@ bool PP::doInclude(PPStream *current)
     newp->next = includes;
     includes = newp;
     newp->fp = fp;
-    newp->name = addname(name);
+    newp->name = addname(file);
+    newp->level = level;
     // Open new scanning context.
     newp->pp = new PPStream(*this, &options);
     newp->pp->setInput(&PP::filegetc);

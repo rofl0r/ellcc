@@ -26,6 +26,11 @@ int main(int argc, char** argv)
     if (language) {
         pw::Options options = language->options;
         pp->setOptions(&options);    		// Set pre-processor options.
+        pp->addDefine("__i386__");							// RICH
+        pp->addInclude("/usr/lib/gcc/i686-pc-cygwin/3.4.4/include");			// RICH
+        pp->addInclude("/usr/lib/gcc-lib/i386-redhat-linux/3.3.2/include");		// RICH
+        pp->addInclude("/usr/lib/gcc/i386-redhat-linux/4.1.2/include");		        // RICH
+        pp->addInclude("/usr/include");							// RICH
 
         pp->getToken(pw::PP::GETALL);
         errors.file = pp->info.file;

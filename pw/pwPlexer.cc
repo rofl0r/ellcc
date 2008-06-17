@@ -298,8 +298,10 @@ const Plexer* Plexer::Create(std::string name, ErrorList& errors)
         // Create the language file scanner.
         languages[0] = new Plexer(std::string("cfg"), errors);
         languages[0]->CFGsetupOptions();
-        languages[0]->first("needwhitespace", parseNeedwhitespace);
         languages[0]->first("tokens", parseTokens);
+        languages[0]->first("comments", parseComments);
+        languages[0]->first("macros", parseMacros);
+        languages[0]->first("needwhitespace", parseNeedwhitespace);
     }
 
     int i;
@@ -657,6 +659,202 @@ void Plexer::parseTokens(PP& pp, Plexer& env, ErrorList& errors, void* data)
     } else {
         pp.getToken();
     }
+}
+
+/* Define comments.
+ */
+void Plexer::parseComments(PP& pp, Plexer& env, ErrorList& errors, void* data)
+{
+#if 0
+    std::string temp;
+    char *start = NULL, *end;
+    int count;
+    pwBracket *bp;
+
+    if (cp->info.token != LBRACE) {
+        expectedToken(cp, "{");
+    } else {
+        cp->getToken();
+    }
+
+    while (cp->info.token != RBRACE) {
+        // Gather all comma separated comment definitions.
+
+        if (cp->info.token == COMMA) {
+            // This comma is out of place.
+            cp->error(pwError::ERROR,
+                      cp->info.startline, cp->info.startcolumn, cp->info.endline, cp->info.endcolumn,
+                      "Unexpected \"@s\".", &cp->info.string);
+            cp->getToken();
+            continue;
+        }
+
+        if (cp->info.token == STRING) {
+            temp = std::string(cp->info.string).convert();
+            start = temp.toCharStar();
+            if (cp->langInfo->ppoptions.comments == NULL) {
+                // No comments, yet.
+                count = 1;
+            } else {
+                // Count the current number of entries.
+                for (count = 1, bp = cp->langInfo->ppoptions.comments; bp->start; ++count, ++bp) {
+                    if (strcmp(start, bp->start) == 0) {
+                        cp->error(pwError::ERROR,
+                                  cp->info.startline, cp->info.startcolumn, cp->info.endline, cp->info.endcolumn,
+                                  "Comment start sequence \"@s\" has already been used.", &cp->info.string);
+                    }
+                    continue;
+                }
+            }
+
+            cp->getToken();
+        } else {
+            expectedToken(cp, "String");
+            cp->getToken();
+            delete start;
+            continue;
+        }
+
+        if (cp->info.token == RANGE) {
+            cp->getToken();
+        } else {
+            expectedToken(cp, "..");
+            delete start;
+            continue;
+        }
+
+        if (cp->info.token == STRING) {
+            temp = std::string(cp->info.string).convert();
+            end = temp.toCharStar();
+            cp->getToken();
+        } else {
+            expectedToken(cp, "String");
+            cp->getToken();
+            delete start;
+            continue;
+        }
+
+        // Have a start and end marker. Add to the comment list.
+        cp->langInfo->ppoptions.comments = (pwBracket *)realloc(cp->langInfo->ppoptions.comments,
+                                                            (count + 1) * sizeof(pwBracket));
+        --count;
+        cp->langInfo->ppoptions.comments[count].start = start;
+        cp->langInfo->ppoptions.comments[count].end = end;
+        cp->langInfo->ppoptions.comments[count].token = pwPPStream::COMMENT;
+        ++count;
+        cp->langInfo->ppoptions.comments[count].start = NULL;
+        cp->langInfo->ppoptions.comments[count].end = NULL;
+        cp->langInfo->ppoptions.comments[count].token = 0;
+
+        // Commas separate.
+        if (cp->info.token == COMMA) {
+            cp->getToken();
+        } else {
+            if (cp->info.token == RBRACE) {
+                break;
+            }
+
+            expectedToken(cp, ",");
+        }
+    }
+
+    if (cp->info.token != RBRACE) {
+        expectedToken(cp, "}");
+    } else {
+        cp->getToken();
+    }
+#endif
+}
+
+/* Define macros.
+ */
+void Plexer::parseMacros(PP& pp, Plexer& env, ErrorList& errors, void* data)
+{
+#if 0
+    std::string name, definition;
+
+    if (cp->info.token != LBRACE) {
+        expectedToken(cp, "{");
+    } else {
+        cp->getToken();
+    }
+
+    while (cp->info.token != RBRACE) {
+        // Gather all comma separated comment definitions.
+
+        if (cp->info.token == COMMA) {
+            // This comma is out of place.
+            cp->error(pwError::ERROR,
+                      cp->info.startline, cp->info.startcolumn, cp->info.endline, cp->info.endcolumn,
+                      "Unexpected \"@s\".", &cp->info.string);
+            cp->getToken();
+            continue;
+        }
+
+        if (cp->info.token == STRING || cp->info.token == IDENTIFIER) {
+            if (cp->info.token == STRING) {
+                name = cp->info.string.convert();
+            } else {
+                name = cp->info.string;
+            }
+            if (cp->langInfo->macros.size()) {
+                // Check the current entries fopr a match.
+                for (int count = 0; count < cp->langInfo->macros.size(); ++count) {
+                    if (name == cp->langInfo->macros[count].name) {
+                        cp->error(pwError::ERROR,
+                                  cp->info.startline, cp->info.startcolumn,
+                                  cp->info.endline, cp->info.endcolumn,
+                                  "Macro \"@s\" has already been defined.", &name);
+                    }
+                    continue;
+                }
+            }
+
+            cp->getToken();
+        } else {
+            expectedToken(cp, "String or identifier");
+            cp->getToken();
+            continue;
+        }
+
+        if (cp->info.token == ASSIGN) {
+            cp->getToken();
+            if (cp->info.token == STRING) {
+                definition = cp->info.string.convert();
+                cp->getToken();
+            } else {
+                expectedToken(cp, "String");
+                cp->getToken();
+                continue;
+            }
+
+        } else {
+            definition = "1";
+        }
+
+        // Have a name and definition. Add to the macro list.
+        int size = cp->langInfo->macros.size();
+        cp->langInfo->macros[size].name = name;
+        cp->langInfo->macros[size].definition = definition;
+
+        // Commas separate.
+        if (cp->info.token == COMMA) {
+            cp->getToken();
+        } else {
+            if (cp->info.token == RBRACE) {
+                break;
+            }
+
+            expectedToken(cp, ",");
+        }
+    }
+
+    if (cp->info.token != RBRACE) {
+        expectedToken(cp, "}");
+    } else {
+        cp->getToken();
+    }
+#endif
 }
 
 void Plexer::parseNeedwhitespace(PP& pp, Plexer& env, ErrorList& errors, void* data)
