@@ -340,6 +340,7 @@ const WordAssoc Plexer::CFGreservedWords[] = {
     { "}",   RBRACE },          \
     { ",",   COMMA },           \
     { "=",   ASSIGN },          \
+    { ";",   SEMICOLON },       \
     { "..",  RANGE}
 
 const WordAssoc Plexer::CFGtokens[] = {
@@ -447,6 +448,44 @@ void Plexer::first(std::string name, Parser* handler)
     parsers += ep;
 }
 
+/** Display a token expected error message.
+ */
+static Error* expectedToken(PP& pp, const char* string)
+{
+    Error* ep;
+    const char* format = "%s expected before \"%s\".";
+
+    if (pp.info.token == PPStream::ENDOFFILE) {
+        format = "%s expected before the end of the file.";
+    }
+
+    if (!isupper(*string) && *string != '"' && *string != '\'') {
+        // Put quotes around the expected token.
+        format = "\"%s\" expected before \"%s\".";
+        if (pp.info.token == PPStream::ENDOFFILE) {
+            format = "\"%s\" expected before the end of the file.";
+        }
+    }
+
+    ep = pp.error(Error::ERROR,
+                  pp.info.startline, pp.info.startcolumn, pp.info.endline, pp.info.endcolumn,
+                  format, string, pp.info.string.c_str());
+    return ep;
+}
+
+/* Complain about an extra token.
+ */
+static Error* extraToken(PP& pp, const char* string)
+{
+    Error *ep;
+    const char *format = "Extra %s found after %s.";
+
+    ep = pp.error(Error::ERROR,
+                  pp.info.startline, pp.info.startcolumn, pp.info.endline, pp.info.endcolumn,
+                  format, pp.info.string.c_str(), string);
+    return ep;
+}
+
 /* Parse a language file.
  */
 bool Plexer::parse(std::string name, void* data)
@@ -485,48 +524,15 @@ bool Plexer::parse(std::string name, void* data)
             // RICH: Define a value.
             pp->getToken();
         }
+        if (pp->info.token != SEMICOLON) {
+            expectedToken(*pp, ";");
+        } else {
+            pp->getToken();
+        }
         errors.file = pp->info.file;       	// Remember the last file for error reporting.
     }
 
     return true;
-}
-
-/** Display a token expected error message.
- */
-Error* expectedToken(PP& pp, const char* string)
-{
-    Error* ep;
-    const char* format = "%s expected before \"%s\".";
-
-    if (pp.info.token == PPStream::ENDOFFILE) {
-        format = "%s expected before the end of the file.";
-    }
-
-    if (!isupper(*string) && *string != '"' && *string != '\'') {
-        // Put quotes around the expected token.
-        format = "\"%s\" expected before \"%s\".";
-        if (pp.info.token == PPStream::ENDOFFILE) {
-            format = "\"%s\" expected before the end of the file.";
-        }
-    }
-
-    ep = pp.error(Error::ERROR,
-                  pp.info.startline, pp.info.startcolumn, pp.info.endline, pp.info.endcolumn,
-                  format, string, pp.info.string.c_str());
-    return ep;
-}
-
-/* Complain about an extra token.
- */
-Error* extraToken(PP& pp, const char* string)
-{
-    Error *ep;
-    const char *format = "Extra %s found after %s.";
-
-    ep = pp.error(Error::ERROR,
-                  pp.info.startline, pp.info.startcolumn, pp.info.endline, pp.info.endcolumn,
-                  format, pp.info.string.c_str(), string);
-    return ep;
 }
 
 /* Create a new token entry.
@@ -691,7 +697,7 @@ void Plexer::parseComments(PP& pp, Plexer& env, ErrorList& errors, void* data)
 
         if (pp.info.token == STRING) {
             temp = convert(pp.info.string);
-            start = temp.c_str();
+            start = strdup(temp.c_str());
             if (sp->language->options.comments == NULL) {
                 // No comments, yet.
                 count = 1;
@@ -701,7 +707,7 @@ void Plexer::parseComments(PP& pp, Plexer& env, ErrorList& errors, void* data)
                     if (strcmp(start, bp->start) == 0) {
                         pp.error(Error::ERROR,
                                  pp.info.startline, pp.info.startcolumn, pp.info.endline, pp.info.endcolumn,
-                                 "Comment start sequence \"%s\" has already been used.", pp.info.string.c_str());
+                                 "Comment start sequence %s has already been used.", pp.info.string.c_str());
                     }
                     continue;
                 }
@@ -723,7 +729,7 @@ void Plexer::parseComments(PP& pp, Plexer& env, ErrorList& errors, void* data)
 
         if (pp.info.token == STRING) {
             temp = convert(pp.info.string);
-            end = temp.c_str();
+            end = strdup(temp.c_str());
             pp.getToken();
         } else {
             expectedToken(pp, "String");

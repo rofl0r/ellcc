@@ -45,7 +45,7 @@ public:
      */
     enum CFGTokens {
         STRING = PPStream::CTNEXTOKEN, CHARACTER, INTEGER, FLOAT, IDENTIFIER,
-        LBRACE, RBRACE, COMMA, ASSIGN, RANGE, 
+        LBRACE, RBRACE, COMMA, ASSIGN, SEMICOLON, RANGE, 
     };
     /** A parsing function.
      */
