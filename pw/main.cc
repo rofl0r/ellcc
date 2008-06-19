@@ -26,6 +26,9 @@ int main(int argc, char** argv)
     if (language) {
         pw::Options options = language->options;
         pp->setOptions(&options);    		// Set pre-processor options.
+        for (int i = 0; i < language->macros.size(); ++i) {
+            pp->addDefine(language->macros[i]);
+        }
         pp->addDefine("__i386__");							// RICH
         pp->addInclude("/usr/lib/gcc/i686-pc-cygwin/3.4.4/include");			// RICH
         pp->addInclude("/usr/lib/gcc-lib/i386-redhat-linux/3.3.2/include");		// RICH
@@ -33,7 +36,6 @@ int main(int argc, char** argv)
         pp->addInclude("/usr/include");							// RICH
 
         pp->getToken(pw::PP::GETALL);
-        errors.file = pp->info.file;
         std::string lastfile;
         for (;;) {
             if (pp->info.token == pw::PPStream::ENDOFFILE) {
@@ -43,11 +45,10 @@ int main(int argc, char** argv)
             if (errors.file != lastfile) {
                 // Output #line directive if pre-processing.
                 lastfile = errors.file;
-                fprintf(stdout, "#line %d \"%s\"\n", pp->info.startline, errors.file.c_str());
+                fprintf(stdout, "#line %d \"%s\"\n", pp->info.startline, errors.file);
             }
             fprintf(stdout, "%s", pp->info.string.c_str());
             pp->getToken(pw::PP::GETALL);
-            errors.file = pp->info.file;     	// Remember the last file for error reporting.
         }
     }
 

@@ -43,7 +43,7 @@ public:
 private:
     static int compare(const void* a, const void* b);
     std::string string;                               // String associated with error.
-    std::string file;                              // File associated with error.
+    const char* file;                              // File associated with error.
     int startline, startcolumn;                 // Error position in source.
     int endline, endcolumn;                     // If startline or endline == 0, not available.
     Type type;                                  // Type of error.
@@ -58,12 +58,12 @@ public:
                  int startline, int startcolumn, int endline, int endcolumn,
                  const char *format, va_list ap);
     Error* add(Error::Type type, int sl, int sc, int el, int ec, const char* string, ...);
-    Error* vadd(Error::Type type, std::string file,
+    Error* vadd(Error::Type type, const char* file,
                  int startline, int startcolumn, int endline, int endcolumn,
                  const char *format, va_list ap);
-    Error* add(Error::Type type, std::string file, int sl, int sc, int el, int ec, const char* string, ...);
+    Error* add(Error::Type type, const char* file, int sl, int sc, int el, int ec, const char* string, ...);
     void position(std::string& buffer,
-                  const std::string& file, int startline, int startcolumn, int endline, int endcolumn,
+                  const char* file, int startline, int startcolumn, int endline, int endcolumn,
                   bool trailer);
     void output(FILE* fp, Error* ep);
     void print(FILE* fp);
@@ -81,7 +81,7 @@ public:
         { flags &= ~mode; }
     bool hasErrors() { return haveErrors; }	// Any errors encountered?
     int errorCount(int type) { return errorcount[type]; }
-    std::string file;				// current file being processed.
+    const char* file;				// current file being processed.
     void setFatal(jmp_buf* buf) { fatal = buf; }
     bool recentErrors;
 private:

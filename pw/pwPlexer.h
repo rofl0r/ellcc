@@ -40,6 +40,9 @@ public:
     /** Preprocessor options.
      */
     Options options;
+    /** The predefined macro table.
+     */
+    array<Macro> macros;
 
     /** Configuration file token identifiers.
      */

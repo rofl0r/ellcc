@@ -25,7 +25,7 @@ Macro* PP::lookup(std::string& name, int line)
         return false;
     }
 
-    if (macp->type == "file") {
+    if (macp->type == Macro::FILE_MACRO) {
         const std::string& temp = includes ? includes->name : this->name;
         macp->body.erase();
 
@@ -38,7 +38,7 @@ Macro* PP::lookup(std::string& name, int line)
             }
         }
         macp->body += '"';
-    } else if (macp->type == "line") {
+    } else if (macp->type == Macro::LINE_MACRO) {
         PPStream *p;
         char buffer[100];
 
@@ -72,13 +72,13 @@ bool PP::lookupmacro(std::string& name, int line, Macro*& mpp)
     return false;
 }
 
-void PP::definemacro(int line, const std::string& filename, PPStream* data)
+void PP::definemacro(int line, const char* filename, PPStream* data)
 {
     definemacro(line, filename, *data, data->type, data->funlike, data->formal, data->body);
 }
 
-void PP::definemacro(int line, const std::string& filename, TokenInfo& data,
-                        const std::string& type, bool funlike, const pw::array<std::string>& formal,
+void PP::definemacro(int line, const char* filename, Token& data,
+                        Macro::Type type, bool funlike, const pw::array<std::string>& formal,
                         const std::string& body)
 {
     int i;
@@ -96,7 +96,7 @@ void PP::definemacro(int line, const std::string& filename, TokenInfo& data,
             match = false;
 
             ep = error(pw::Error::ERROR,
-                       line, -1, 0, 0,
+                       data.startline, data.startcolumn, data.endline, data.endcolumn,
                        "Macro \"%s\" redefined with a different number of arguments.", data.string.c_str());
         }
         if (match) {
@@ -104,7 +104,7 @@ void PP::definemacro(int line, const std::string& filename, TokenInfo& data,
                 if (macp->arguments[args] != formal[args]) {
                     match = false;
                     ep = error(pw::Error::ERROR,
-                               line, -1, 0, 0,
+                               data.startline, data.startcolumn, data.endline, data.endcolumn,
                                "Macro \"%s\" redefined with different argument spelling.", data.string.c_str());
                     pw::Error::info(ep, pw::Error::MORE, "First different argument: \"%s\".", formal[args].c_str());
                     break;
@@ -114,7 +114,7 @@ void PP::definemacro(int line, const std::string& filename, TokenInfo& data,
             if (macp->body != body) {
                 match = false;
                 ep = error(pw::Error::ERROR,
-                           line, -1, 0, 0,
+                           data.startline, data.startcolumn, data.endline, data.endcolumn,
                            "Macro \"%s\" redefined.", data.string.c_str());
             }
         }
@@ -154,7 +154,7 @@ void PP::undefinemacro(std::string& name, int line, int fileline, bool fixed)
     Macro* macp = lookup(name, line);
 
     if (macp != NULL) {
-        if (!fixed && macp->type != "defined") {
+        if (!fixed && macp->type != Macro::DEFINED_MACRO) {
             error(pw::Error::ERROR,
                   line, -1, 0, 0,
                   "Can't undefine macro \"%s\".", name.c_str());
@@ -186,17 +186,19 @@ int PP::filegetc()
 }
 
 //
-// addname - add a name to the list of input file names
+// addName - add a name to the list of input file names
 //
-std::string& PP::addname(const std::string& name)
+const char* PP::addName(const char* name)
 {
     for (int i = 0; i < files.size(); ++i) {
-        if (name == files[i])
+        if (strcmp(name, files[i]) == 0)
             return files[i];                    // Already know this name.
     }
 
-    files += name;
-    return files[files.size() - 1];
+    char* p = new char[strlen(name) + 1];
+    strcpy(p, name);
+    files += p;
+    return p;
 }
 
 //
@@ -269,7 +271,8 @@ PP::PP(const std::string& name, ErrorList& errors)
     int day, year;
     char dates[20], times[20];
 
-    this->name = addname(name);                 // Add the first input name.
+    this->name = addName(name.c_str());                 // Add the first input name.
+    errors.file = this->name;
 
     myfp = false;                               // No input source yet.
     fp = NULL;
@@ -284,10 +287,10 @@ PP::PP(const std::string& name, ErrorList& errors)
     pw::array<std::string> formal;                   // An empty parameter list.
     // Define some predefined macros.
     def.string = "__FILE__";
-    definemacro(0, "initialization", def, "file", false, formal, "");
+    definemacro(0, "initialization", def, Macro::FILE_MACRO, false, formal, "");
 
     def.string = "__LINE__";
-    definemacro(0, "initialization", def, "line", false, formal, "");
+    definemacro(0, "initialization", def, Macro::LINE_MACRO, false, formal, "");
 
     // Get the current time.
     if (time(&timer) == (time_t)-1) {
@@ -298,16 +301,17 @@ PP::PP(const std::string& name, ErrorList& errors)
     sprintf(dates, "\"%s %.2d %d\"", month, day, year);
     sprintf(times, "\"%s\"", thetime);
     def.string = "__DATE__";
-    definemacro(0, "initialization", def, "fixed", false, formal, dates);
+    definemacro(0, "initialization", def, Macro::FIXED_MACRO, false, formal, dates);
 
     def.string = "__TIME__";
-    definemacro(0, "initialization", def, "fixed", false, formal, times);
+    definemacro(0, "initialization", def, Macro::FIXED_MACRO, false, formal, times);
 }
 
 bool PP::setInput(const char *string)
 {
     // Use a string for input.
-    sp = strdup(string);                        // Set the string pointer.
+    sp = new char[strlen(string) + 1];
+    strcpy(sp, string);
     ip = sp;                                    // Start of string.
     fp = NULL;                                  // No file.
     pp->setInput(&PP::stringgetc);
@@ -321,7 +325,7 @@ bool PP::setInput(FILE *fp)
         this->fp = fp;
     else {
         myfp = true;
-        this->fp = tfopen(name.c_str(), "r");
+        this->fp = tfopen(name, "r");
     }
     if (this->fp == NULL) {
         // error opening file
@@ -350,6 +354,9 @@ PP::~PP()
     if (myfp && fp)
         pw::fclose(fp);
     
+    for (int i = 0; i < files.size(); ++i) {
+        delete[] files[i];
+    }
     delete sp;
 }
 
@@ -427,7 +434,7 @@ again:
     newp->next = includes;
     includes = newp;
     newp->fp = fp;
-    newp->name = addname(file);
+    newp->name = addName(file.c_str());
     newp->level = level;
     // Open new scanning context.
     newp->pp = new PPStream(*this, &options);
@@ -522,6 +529,8 @@ void PP::getToken(Filter filter)
         } else {
             info.file = name;
         }
+        // Remember the last file for error reporting.
+        errors.file = info.file;
 
         if (info.tokenclass == TokenInfo::TCSKIPPED) {
             continue;
@@ -547,7 +556,15 @@ void PP::addDefine(const std::string& name, const std::string& value)
     pw::array<std::string> formal;
 
     def.string = name;
-    definemacro(0, "initialization", def, "defined", false, formal, value);
+    definemacro(0, "initialization", def, Macro::DEFINED_MACRO, false, formal, value);
+}
+
+//
+// addDefine - Define a macro.
+//
+void PP::addDefine(Macro& macro)
+{
+    definemacro(0, macro.file, macro, macro.type, macro.function, macro.arguments, macro.body);
 }
 
 //
@@ -580,7 +597,7 @@ void PP::fixedDefine(const std::string& name, const char *value)
     else
         body = "1";
     def.string = name;
-    definemacro(0, "initialization", def, "fixed", false, formal, body);
+    definemacro(0, "initialization", def, Macro::FIXED_MACRO, false, formal, body);
 }
 
 //
@@ -657,7 +674,7 @@ bool PP::process()
 //
 // depends - get the files the source file depends on
 //
-const pw::array<std::string>& PP::depends()
+const pw::array<const char*>& PP::depends()
 {
     process();
     return files;

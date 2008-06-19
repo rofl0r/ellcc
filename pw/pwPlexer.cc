@@ -505,7 +505,6 @@ bool Plexer::parse(std::string name, void* data)
     pp->setOptions(&options);    		// Set pre-processor options.
 
     pp->getToken();
-    errors.file = pp->info.file;
     std::string lastfile;
     for (;;) {
         if (pp->info.token == PPStream::ENDOFFILE) {
@@ -529,7 +528,6 @@ bool Plexer::parse(std::string name, void* data)
         } else {
             pp->getToken();
         }
-        errors.file = pp->info.file;       	// Remember the last file for error reporting.
     }
 
     return true;
@@ -741,8 +739,8 @@ void Plexer::parseComments(PP& pp, Plexer& env, ErrorList& errors, void* data)
         sp->language->options.comments = (Bracket *)realloc(sp->language->options.comments,
                                                            (count + 1) * sizeof(Bracket));
         --count;
-        sp->language->options.comments[count].start = start;
-        sp->language->options.comments[count].end = end;
+        sp->language->options.comments[count].start = strdup(start);
+        sp->language->options.comments[count].end = strdup(end);
         sp->language->options.comments[count].token = PPStream::COMMENT;
         ++count;
         sp->language->options.comments[count].start = NULL;
@@ -772,61 +770,63 @@ void Plexer::parseComments(PP& pp, Plexer& env, ErrorList& errors, void* data)
  */
 void Plexer::parseMacros(PP& pp, Plexer& env, ErrorList& errors, void* data)
 {
-#if 0
-    std::string name, definition;
+    State* sp = (State*)data;
+    Token name;
+    std::string definition;
 
-    if (cp->info.token != LBRACE) {
-        expectedToken(cp, "{");
+    if (pp.info.token != LBRACE) {
+        expectedToken(pp, "{");
     } else {
-        cp->getToken();
+        pp.getToken();
     }
 
-    while (cp->info.token != RBRACE) {
+    while (pp.info.token != RBRACE) {
         // Gather all comma separated comment definitions.
 
-        if (cp->info.token == COMMA) {
+        if (pp.info.token == COMMA) {
             // This comma is out of place.
-            cp->error(pwError::ERROR,
-                      cp->info.startline, cp->info.startcolumn, cp->info.endline, cp->info.endcolumn,
-                      "Unexpected \"@s\".", &cp->info.string);
-            cp->getToken();
+            pp.error(Error::ERROR,
+                     pp.info.startline, pp.info.startcolumn, pp.info.endline, pp.info.endcolumn,
+                     "Unexpected \"%s\".", pp.info.string.c_str());
+            pp.getToken();
             continue;
         }
 
-        if (cp->info.token == STRING || cp->info.token == IDENTIFIER) {
-            if (cp->info.token == STRING) {
-                name = cp->info.string.convert();
+        if (pp.info.token == STRING || pp.info.token == IDENTIFIER) {
+            name = pp.info;
+            if (pp.info.token == STRING) {
+                name.string = convert(pp.info.string);
             } else {
-                name = cp->info.string;
+                name.string = pp.info.string;
             }
-            if (cp->langInfo->macros.size()) {
-                // Check the current entries fopr a match.
-                for (int count = 0; count < cp->langInfo->macros.size(); ++count) {
-                    if (name == cp->langInfo->macros[count].name) {
-                        cp->error(pwError::ERROR,
-                                  cp->info.startline, cp->info.startcolumn,
-                                  cp->info.endline, cp->info.endcolumn,
-                                  "Macro \"@s\" has already been defined.", &name);
+            if (sp->language->macros.size()) {
+                // Check the current entries for a match.
+                for (int count = 0; count < sp->language->macros.size(); ++count) {
+                    if (name.string == sp->language->macros[count].name()) {
+                        pp.error(Error::ERROR,
+                                 pp.info.startline, pp.info.startcolumn,
+                                 pp.info.endline, pp.info.endcolumn,
+                                 "Macro \"%s\" has already been defined.", name.string.c_str());
                     }
                     continue;
                 }
             }
 
-            cp->getToken();
+            pp.getToken();
         } else {
-            expectedToken(cp, "String or identifier");
-            cp->getToken();
+            expectedToken(pp, "String or identifier");
+            pp.getToken();
             continue;
         }
 
-        if (cp->info.token == ASSIGN) {
-            cp->getToken();
-            if (cp->info.token == STRING) {
-                definition = cp->info.string.convert();
-                cp->getToken();
+        if (pp.info.token == ASSIGN) {
+            pp.getToken();
+            if (pp.info.token == STRING) {
+                definition = convert(pp.info.string);
+                pp.getToken();
             } else {
-                expectedToken(cp, "String");
-                cp->getToken();
+                expectedToken(pp, "String");
+                pp.getToken();
                 continue;
             }
 
@@ -835,28 +835,34 @@ void Plexer::parseMacros(PP& pp, Plexer& env, ErrorList& errors, void* data)
         }
 
         // Have a name and definition. Add to the macro list.
-        int size = cp->langInfo->macros.size();
-        cp->langInfo->macros[size].name = name;
-        cp->langInfo->macros[size].definition = definition;
+        int size = sp->language->macros.size();
+        sp->language->macros[size].startline = name.startline;
+        sp->language->macros[size].startcolumn = name.startcolumn;
+        sp->language->macros[size].endline = name.endline;
+        sp->language->macros[size].endcolumn = name.endcolumn;
+        sp->language->macros[size].file = name.file;
+        sp->language->macros[size].string = name.string;
+        sp->language->macros[size].body = definition;
+        sp->language->macros[size].function = false;
+        sp->language->macros[size].type = Macro::DEFINED_MACRO;
 
         // Commas separate.
-        if (cp->info.token == COMMA) {
-            cp->getToken();
+        if (pp.info.token == COMMA) {
+            pp.getToken();
         } else {
-            if (cp->info.token == RBRACE) {
+            if (pp.info.token == RBRACE) {
                 break;
             }
 
-            expectedToken(cp, ",");
+            expectedToken(pp, ",");
         }
     }
 
-    if (cp->info.token != RBRACE) {
-        expectedToken(cp, "}");
+    if (pp.info.token != RBRACE) {
+        expectedToken(pp, "}");
     } else {
-        cp->getToken();
+        pp.getToken();
     }
-#endif
 }
 
 void Plexer::parseNeedwhitespace(PP& pp, Plexer& env, ErrorList& errors, void* data)

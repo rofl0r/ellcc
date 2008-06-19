@@ -37,7 +37,7 @@ struct Position {				// An input stream position.
         }
     int startline, startcolumn;                 // Position of token in input stream.
     int endline, endcolumn;
-    std::string file;                              // Name of input stream.
+    const char* file;                              // Name of input stream.
 };
 
 struct Token : public Position {            // A preprocessor token.
@@ -63,12 +63,29 @@ struct TokenInfo : public Token {           // Token returned by .
 struct Macro : public Token
 {
 public:
-    Macro() : function(false), undefined(0) {}
+    /** The macro type.
+     */
+    enum Type {
+        /** A user defined macro.
+         */
+        DEFINED_MACRO,
+        /** A fixed macro.
+         */
+        FIXED_MACRO,
+        /** __FILE__.
+         */
+        FILE_MACRO,
+        /** __LINE__.
+         */
+        LINE_MACRO,
+    };
+
+    Macro() : function(false), undefined(0), type(DEFINED_MACRO)  {}
     std::string body;				// Macro body.
     bool function;				// If this a function-like macro?
     int undefined;
-    std::string type;
-    pw::array<std::string> arguments;		// Macro arguments.
+    Type type;
+    array<std::string> arguments;		// Macro arguments.
     std::string& name() { return string; }
 };
 
@@ -121,9 +138,9 @@ public:
         { return startline; }
 
 private:
-    std::string type;                              // Type of macro.
+    Macro::Type type;                              // Type of macro.
     bool funlike;                               // Is this a function-like macro?
-    pw::array<std::string> formal;                   // Names of the formal arguments.
+    array<std::string> formal;                   // Names of the formal arguments.
     std::string body;                              // The macro body.
 
     struct Conditional {                        // Conditional compilation control.
@@ -242,7 +259,7 @@ struct Options {                            // Pre-processor options.
     Options(bool trigraphs = false, int INTEGER = PPStream::NONE,
             int CHARACTER = PPStream::NONE, int FLOAT = PPStream::NONE,
             int STRING = PPStream::NONE, int IDENTIFIER = PPStream::NONE,
-            pw::Matcher *reservedWords = NULL, pw::Matcher *tokens = NULL, Bracket *comments = NULL)
+            Matcher *reservedWords = NULL, Matcher *tokens = NULL, Bracket *comments = NULL)
         : trigraphs(trigraphs), INTEGER(INTEGER), CHARACTER(CHARACTER), FLOAT(FLOAT),
           STRING(STRING), IDENTIFIER(IDENTIFIER), reservedWords(reservedWords),
           tokens(tokens), comments(comments) { }
@@ -264,17 +281,18 @@ public:
     bool setInput(FILE *fp = NULL);
     void addInclude(const std::string& name);
     void addDefine(const std::string& name, const std::string& value = "");
+    void addDefine(Macro& macro);
     void undefine(std::string& name, bool fixed);
     void fixedDefine(const std::string& name, const char *value);
     void getOptions(Options *op);
     void setOptions(Options *op);
     void getToken(Filter filter = PP::GETNWS);
-    const pw::array<std::string>& depends();
+    const array<const char*>& depends();
     int isdefined(std::string& name, int line);
     bool lookupmacro(std::string& name, int line, Macro*& mpp);
     ErrorList& errors;
     Error* error(Error::Type type, int sl, int sc, int el, int ec, const char* string, ...);
-    void errorPosition(std::string& buffer, const std::string& file, int sl, int sc, int el, int ec, bool trailer)
+    void errorPosition(std::string& buffer, const char* file, int sl, int sc, int el, int ec, bool trailer)
         { errors.position(buffer, file, sl, sc, el, ec, trailer); }
 private:
     /** An include file definition.
@@ -285,7 +303,7 @@ private:
         include *next;
         /** The name of the include file.
          */
-        std::string name;
+        const char* name;
         /** The include file.
          */
         FILE *fp;
@@ -297,7 +315,7 @@ private:
         int level;
     };
 
-    std::string name;                              // Name of input.
+    const char* name;                              // Name of input.
     bool myfp;                                  // True if fp is internal.
     FILE *fp;                                   // File pointer.
     char *sp;                                   // String pointer.
@@ -305,18 +323,18 @@ private:
     PPStream *pp;                             // Scanner context.
     include *includes;                          // open include files
     int includeline;                            // last #include line
-    pw::array<std::string> files;                    // Input file names.
-    pw::array<std::string> includedirs;              // Include search path.
+    array<const char*> files;                    // Input file names.
+    array<std::string> includedirs;              // Include search path.
     Options options;                        // Pre-processor options.
     MacroTable macros;                          // The macro table.
     Macro* lookup(std::string& name, int line);
-    void definemacro(int line, const std::string& filename, PPStream* data);
-    void definemacro(int line, const std::string& filename, TokenInfo& data,
-                     const std::string& type, bool funlike, const pw::array<std::string>& formal, const std::string& body);
+    void definemacro(int line, const char* filename, PPStream* data);
+    void definemacro(int line, const char* filename, Token& data,
+                     Macro::Type type, bool funlike, const array<std::string>& formal, const std::string& body);
     void undefinemacro(std::string& name, int line, int fileline, bool fixed);
     int stringgetc();
     int filegetc();
-    std::string& addname(const std::string& name);
+    const char* addName(const char* name);
     void initializeoptions();
     /** Open an include file.
      * @param current The current preprocessing context.

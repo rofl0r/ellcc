@@ -1043,7 +1043,7 @@ void PPStream::getToken()
                 }
 
                 string = name;
-                type = "defined";
+                type = Macro::DEFINED_MACRO;
                 noexpand = false;
                 startline = pstartline;
                 startcolumn = pstartcolumn;

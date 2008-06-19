@@ -38,7 +38,7 @@ ErrorList::~ErrorList()
 }
 
 
-Error* ErrorList::add(Error::Type type, std::string file, int sl, int sc, int el, int ec, const char* string, ...)
+Error* ErrorList::add(Error::Type type, const char* file, int sl, int sc, int el, int ec, const char* string, ...)
 {
     va_list ap;
     Error *ep;
@@ -61,7 +61,7 @@ Error* ErrorList::add(Error::Type type, int sl, int sc, int el, int ec, const ch
 //
 // add - Add an error to an error list.
 //
-Error *ErrorList::vadd(Error::Type type, std::string file,
+Error *ErrorList::vadd(Error::Type type, const char* file,
                           int startline, int startcolumn, int endline, int endcolumn,
                           const char *format, va_list ap)
 {
@@ -173,18 +173,8 @@ Error::compare(const void *a, const void *b)
     int i;
 
     // Sort by file name.
-    if (first->file.length() && second->file.length()) {
-        i = first->file.compare(second->file);
-    } else if (first->file.length() == 0 && second->file.length() == 0) {
-        i = 0;                                  // Both empty.
-    } else if (first->file.length()) {
-        return 1;                               // First has a name.
-    } else {
-        return -1;                              // Second has a name.
-    }
-
-    if (i != 0) {
-        return i;                               // Alphabetically by file name.
+    if ((i = strcmp(first->file, second->file)) != 0) {
+        return i;
     }
 
     // Sort by source position.
@@ -235,7 +225,7 @@ void ErrorList::sort()
 //
 // errorPosition - Format an error's position in a standard way.
 //
-void errorPosition(ErrorList *errorlist, std::string& buffer, const std::string& file,
+void errorPosition(ErrorList *errorlist, std::string& buffer, const char* file,
               int startline, int startcolumn, int endline, int endcolumn,
               bool trailer)
 {
@@ -245,7 +235,7 @@ void errorPosition(ErrorList *errorlist, std::string& buffer, const std::string&
 //
 // position - Format an error's position in a standard way.
 //
-void ErrorList::position(std::string& buffer, const std::string& file,
+void ErrorList::position(std::string& buffer, const char* file,
                            int startline, int startcolumn, int endline, int endcolumn,
                            bool trailer)
 {
