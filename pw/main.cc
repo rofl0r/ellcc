@@ -5,51 +5,61 @@ static pw::ErrorList errors;
 //
 int main(int argc, char** argv)
 {
-    std::string file(argv[1]);
-    pw::PP* pp = new pw::PP(file, errors);
-    FILE* fp = NULL;
-    if (pp == NULL) exit(1);
-    if (!pp->setInput(fp)) {
-        fprintf(stderr, "can't open %s\n", argv[1]);
-        delete pp;
-        exit(1);
-    }
+    for (int i = 1; i < argc; ++i) {
+        if (argv[i] == NULL) {
+            // The argument was already processed.
+            continue;
+        }
+
+        std::string file(argv[i]);
+        pw::PP* pp = new pw::PP(file, errors);
+        FILE* fp = NULL;
+
+        if (pp == NULL) {
+            // An error occured creating the preprocessor.
+            exit(1);
+        }
+
+        if (!pp->setInput(fp)) {
+            fprintf(stderr, "can't open %s\n", file.c_str());
+            delete pp;
+            exit(1);
+        }
     
-#if 0
-    // Define any predefined macros.
-    for (int index = 0; index < lp->macros.size(); ++index) {
-        pp->addDefine(lp->macros[index].name, lp->macros[index].definition);
-    }
-#endif
+        const pw::Plexer* language = pw::Plexer::Create("c99.cfg", errors);
+        if (language) {
+            pw::Options options = language->options;
+            pp->setOptions(&options);    		// Set pre-processor options.
 
-    const pw::Plexer* language = pw::Plexer::Create("c99.cfg", errors);
-    if (language) {
-        pw::Options options = language->options;
-        pp->setOptions(&options);    		// Set pre-processor options.
-        for (int i = 0; i < language->macros.size(); ++i) {
-            pp->addDefine(language->macros[i]);
-        }
-        pp->addDefine("__i386__");							// RICH
-        pp->addInclude("/usr/lib/gcc/i686-pc-cygwin/3.4.4/include");			// RICH
-        pp->addInclude("/usr/lib/gcc-lib/i386-redhat-linux/3.3.2/include");		// RICH
-        pp->addInclude("/usr/lib/gcc/i386-redhat-linux/4.1.2/include");		        // RICH
-        pp->addInclude("/usr/include");							// RICH
+            // Set pre-defined macros.
+            for (int i = 0; i < language->macros.size(); ++i) {
+                pp->addDefine(language->macros[i]);
+            }
 
-        pp->getToken(pw::PP::GETALL);
-        std::string lastfile;
-        for (;;) {
-            if (pp->info.token == pw::PPStream::ENDOFFILE) {
-                // End of file.
-                break;
+            // Set the include paths.
+            for (int i = 0; i < language->includes.size(); ++i) {
+                pp->addInclude(language->includes[i]);
             }
-            if (errors.file != lastfile) {
-                // Output #line directive if pre-processing.
-                lastfile = errors.file;
-                fprintf(stdout, "#line %d \"%s\"\n", pp->info.startline, errors.file);
-            }
-            fprintf(stdout, "%s", pp->info.string.c_str());
+
+            // Preprocess the file.
             pp->getToken(pw::PP::GETALL);
+            std::string lastfile;
+            for (;;) {
+                if (pp->info.token == pw::PPStream::ENDOFFILE) {
+                    // End of file.
+                    break;
+                }
+                if (errors.file != lastfile) {
+                    // Output #line directive if pre-processing.
+                    lastfile = errors.file;
+                    fprintf(stdout, "#line %d \"%s\"\n", pp->info.startline, errors.file);
+                }
+    //            fprintf(stdout, "%s", pp->info.string.c_str());
+                pp->getToken(pw::PP::GETALL);
+            }
         }
+
+        delete pp;
     }
 
     int totalerrors = 0;

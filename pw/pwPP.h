@@ -253,17 +253,17 @@ struct Options {                            // Pre-processor options.
     int FLOAT;                                  // Float token.
     int STRING;                                 // String token.
     int IDENTIFIER;                             // Identifier token.
-    Matcher *reservedWords;              // Reserved word matcher.
-    Matcher *tokens;                     	// Token matcher.
-    Bracket *comments;                        // Comment matcher.
+    Matcher* reservedWords;              // Reserved word matcher.
+    Matcher* tokens;                     	// Token matcher.
+    Bracket* comments;                        // Comment matcher.
     Options(bool trigraphs = false, int INTEGER = PPStream::NONE,
             int CHARACTER = PPStream::NONE, int FLOAT = PPStream::NONE,
             int STRING = PPStream::NONE, int IDENTIFIER = PPStream::NONE,
-            Matcher *reservedWords = NULL, Matcher *tokens = NULL, Bracket *comments = NULL)
+            Matcher* reservedWords = NULL, Matcher* tokens = NULL, Bracket* comments = NULL)
         : trigraphs(trigraphs), INTEGER(INTEGER), CHARACTER(CHARACTER), FLOAT(FLOAT),
           STRING(STRING), IDENTIFIER(IDENTIFIER), reservedWords(reservedWords),
           tokens(tokens), comments(comments) { }
-    ~Options() { delete reservedWords; delete tokens; }
+    ~Options() { }
 };
 
 class  PP {                                   // The pre-processor object.
@@ -323,7 +323,7 @@ private:
     PPStream *pp;                             // Scanner context.
     include *includes;                          // open include files
     int includeline;                            // last #include line
-    array<const char*> files;                    // Input file names.
+    static array<const char*> files;                    // Input file names.
     array<std::string> includedirs;              // Include search path.
     Options options;                        // Pre-processor options.
     MacroTable macros;                          // The macro table.

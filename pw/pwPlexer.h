@@ -30,7 +30,7 @@ private:
     Plexer(std::string name, ErrorList& errors);
     /** Destructor.
      */
-    virtual ~Plexer() { }
+    ~Plexer() { delete options.reservedWords; delete options.tokens; }
 
 public:
     /** The error list.
@@ -43,7 +43,9 @@ public:
     /** The predefined macro table.
      */
     array<Macro> macros;
-
+    /** The include path table.
+     */
+    array<std::string> includes;
     /** Configuration file token identifiers.
      */
     enum CFGTokens {
@@ -149,6 +151,9 @@ private:
     /** Parse macro definitions.
      */
     static Parser parseMacros;
+    /** Parse include directories.
+     */
+    static Parser parseIncludes;
     /** Set the needwhitespace flag.
      */
     static Parser parseNeedwhitespace;

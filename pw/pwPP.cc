@@ -12,6 +12,9 @@
 
 namespace pw {
 
+// Input file names.
+array<const char*> PP::files;
+
 Macro* PP::lookup(std::string& name, int line)
 {
     Macro* macp = macros.lookup(name);
@@ -354,9 +357,6 @@ PP::~PP()
     if (myfp && fp)
         pw::fclose(fp);
     
-    for (int i = 0; i < files.size(); ++i) {
-        delete[] files[i];
-    }
     delete sp;
 }
 

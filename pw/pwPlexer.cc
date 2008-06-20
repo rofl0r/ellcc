@@ -301,6 +301,7 @@ const Plexer* Plexer::Create(std::string name, ErrorList& errors)
         languages[0]->first("tokens", parseTokens);
         languages[0]->first("comment", parseComments);
         languages[0]->first("macros", parseMacros);
+        languages[0]->first("includes", parseIncludes);
         languages[0]->first("needwhitespace", parseNeedwhitespace);
     }
 
@@ -453,7 +454,13 @@ void Plexer::first(std::string name, Parser* handler)
 static Error* expectedToken(PP& pp, const char* string)
 {
     Error* ep;
-    const char* format = "%s expected before \"%s\".";
+    const char* format;
+
+    if (pp.info.token == Plexer::STRING || pp.info.token == Plexer::CHARACTER) {
+        format = "%s expected before %s.";
+    } else {
+        format = "%s expected before \"%s\".";
+    }
 
     if (pp.info.token == PPStream::ENDOFFILE) {
         format = "%s expected before the end of the file.";
@@ -473,12 +480,18 @@ static Error* expectedToken(PP& pp, const char* string)
     return ep;
 }
 
-/* Complain about an extra token.
+/* Complain about an unexpected token.
  */
-static Error* extraToken(PP& pp, const char* string)
+static Error* unexpectedToken(PP& pp, const char* string = "")
 {
     Error *ep;
-    const char *format = "Extra %s found after %s.";
+    const char *format;
+
+    if (pp.info.token == Plexer::STRING || pp.info.token == Plexer::CHARACTER) {
+        format = "Extra %s found after %s.";
+    } else {
+        format = "Extra \"%s\" found%s.";
+    }
 
     ep = pp.error(Error::ERROR,
                   pp.info.startline, pp.info.startcolumn, pp.info.endline, pp.info.endcolumn,
@@ -570,9 +583,7 @@ void Plexer::parseTokens(PP& pp, Plexer& env, ErrorList& errors, void* data)
 
         if (pp.info.token == COMMA) {
             // This comma is out of place.
-            pp.error(Error::ERROR,
-                     pp.info.startline, pp.info.startcolumn, pp.info.endline, pp.info.endcolumn,
-                     "Unexpected \"%s\".", pp.info.string.c_str());
+            unexpectedToken(pp);
             pp.getToken();
             continue;
         }
@@ -686,9 +697,7 @@ void Plexer::parseComments(PP& pp, Plexer& env, ErrorList& errors, void* data)
 
         if (pp.info.token == COMMA) {
             // This comma is out of place.
-            pp.error(Error::ERROR,
-                     pp.info.startline, pp.info.startcolumn, pp.info.endline, pp.info.endcolumn,
-                     "Unexpected \"%s\".", pp.info.string.c_str());
+            unexpectedToken(pp);
             pp.getToken();
             continue;
         }
@@ -785,9 +794,7 @@ void Plexer::parseMacros(PP& pp, Plexer& env, ErrorList& errors, void* data)
 
         if (pp.info.token == COMMA) {
             // This comma is out of place.
-            pp.error(Error::ERROR,
-                     pp.info.startline, pp.info.startcolumn, pp.info.endline, pp.info.endcolumn,
-                     "Unexpected \"%s\".", pp.info.string.c_str());
+            unexpectedToken(pp);
             pp.getToken();
             continue;
         }
@@ -845,6 +852,61 @@ void Plexer::parseMacros(PP& pp, Plexer& env, ErrorList& errors, void* data)
         sp->language->macros[size].body = definition;
         sp->language->macros[size].function = false;
         sp->language->macros[size].type = Macro::DEFINED_MACRO;
+
+        // Commas separate.
+        if (pp.info.token == COMMA) {
+            pp.getToken();
+        } else {
+            if (pp.info.token == RBRACE) {
+                break;
+            }
+
+            expectedToken(pp, ",");
+        }
+    }
+
+    if (pp.info.token != RBRACE) {
+        expectedToken(pp, "}");
+    } else {
+        pp.getToken();
+    }
+}
+
+/* Define include directories.
+ */
+void Plexer::parseIncludes(PP& pp, Plexer& env, ErrorList& errors, void* data)
+{
+    State* sp = (State*)data;
+    std::string name;
+
+    if (pp.info.token != LBRACE) {
+        expectedToken(pp, "{");
+    } else {
+        pp.getToken();
+    }
+
+    while (pp.info.token != RBRACE) {
+        // Gather all comma separated comment definitions.
+
+        if (pp.info.token == COMMA) {
+            // This comma is out of place.
+            unexpectedToken(pp);
+            pp.getToken();
+            continue;
+        }
+
+        if (pp.info.token == STRING) {
+            name = convert(pp.info.string);
+            pp.getToken();
+        } else {
+            expectedToken(pp, "String");
+            pp.getToken();
+            continue;
+        }
+
+        // Have a name. Add to the include list.
+        int size = sp->language->includes.size();
+        sp->language->includes[size] = name;
 
         // Commas separate.
         if (pp.info.token == COMMA) {
