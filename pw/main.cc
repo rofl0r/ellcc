@@ -11,6 +11,8 @@ int main(int argc, char** argv)
             continue;
         }
 
+        const pw::Plexer* language = pw::Plexer::Create("c99.cfg", errors);
+
         std::string file(argv[i]);
         pw::PP* pp = new pw::PP(file, errors);
         FILE* fp = NULL;
@@ -26,7 +28,6 @@ int main(int argc, char** argv)
             exit(1);
         }
     
-        const pw::Plexer* language = pw::Plexer::Create("c99.cfg", errors);
         if (language) {
             pw::Options options = language->options;
             pp->setOptions(&options);    		// Set pre-processor options.
@@ -42,8 +43,10 @@ int main(int argc, char** argv)
             }
 
             // Preprocess the file.
+            const char* lastfile;
+            lastfile = errors.file;
+            fprintf(stdout, "#line %d \"%s\"\n", 1, errors.file);
             pp->getToken(pw::PP::GETALL);
-            std::string lastfile;
             for (;;) {
                 if (pp->info.token == pw::PPStream::ENDOFFILE) {
                     // End of file.
@@ -52,9 +55,9 @@ int main(int argc, char** argv)
                 if (errors.file != lastfile) {
                     // Output #line directive if pre-processing.
                     lastfile = errors.file;
-                    fprintf(stdout, "#line %d \"%s\"\n", pp->info.startline, errors.file);
+                    fprintf(stdout, "#line %d \"%s\"\n", pp->info.startline + 1, errors.file);
                 }
-    //            fprintf(stdout, "%s", pp->info.string.c_str());
+                fprintf(stdout, "%s", pp->info.string.c_str());
                 pp->getToken(pw::PP::GETALL);
             }
         }

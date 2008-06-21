@@ -488,9 +488,9 @@ static Error* unexpectedToken(PP& pp, const char* string = "")
     const char *format;
 
     if (pp.info.token == Plexer::STRING || pp.info.token == Plexer::CHARACTER) {
-        format = "Extra %s found after %s.";
+        format = "Unexpected token %s found%s.";
     } else {
-        format = "Extra \"%s\" found%s.";
+        format = "Unexpected token \"%s\" found%s.";
     }
 
     ep = pp.error(Error::ERROR,
@@ -533,8 +533,21 @@ bool Plexer::parse(std::string name, void* data)
             pp->getToken();
             ep->parser(*pp, *this, errors, data);
         } else {
-            // RICH: Define a value.
+            // We have an unexpected token.
+            unexpectedToken(*pp);
             pp->getToken();
+
+            // Scan until a semicolon or known start token is found.
+            while (   pp->info.token != SEMICOLON
+                   && pp->info.token != PPStream::ENDOFFILE
+                   && parsers.lookup(pp->info.string) == NULL) {
+                pp->getToken();
+            }
+
+            if (pp->info.token == SEMICOLON) {
+                pp->getToken();
+            }
+            continue;
         }
         if (pp->info.token != SEMICOLON) {
             expectedToken(*pp, ";");

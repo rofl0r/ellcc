@@ -507,7 +507,7 @@ void PP::processnexttoken(TokenInfo& tinfo)
             if (!doInclude(current)) {
                 continue;
             }
-            break;
+            continue;
         }
         break;
     }
@@ -536,6 +536,10 @@ void PP::getToken(Filter filter)
             continue;
         }
 
+        if (info.token == PPStream::POTHER) {
+            continue;
+        }
+
         if (filter == GETALL || info.tokenclass != TokenInfo::TCSPACE) {
             // Return all or non-space tokens.
             return;
@@ -548,7 +552,7 @@ void PP::getToken(Filter filter)
 }
 
 //
-// addDefine - Define a macro.
+// Define a macro.
 //
 void PP::addDefine(const std::string& name, const std::string& value)
 {
@@ -568,7 +572,7 @@ void PP::addDefine(Macro& macro)
 }
 
 //
-// pspUndefine - undefine a macro
+// Undefine a macro.
 //
 void PP::undefine(std::string& name, bool fixed)
 {
@@ -584,7 +588,7 @@ void PP::undefine(std::string& name, bool fixed)
 }
 
 //
-// fixedDefine - define a fixed macro
+// Define a fixed macro.
 //
 void PP::fixedDefine(const std::string& name, const char *value)
 {
