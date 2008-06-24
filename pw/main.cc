@@ -45,18 +45,20 @@ int main(int argc, char** argv)
             // Preprocess the file.
             const char* lastfile;
             lastfile = errors.file;
-            fprintf(stdout, "#line %d \"%s\"\n", 1, errors.file);
+            // RICH: fprintf(stdout, "#line %d \"%s\"\n", 1, errors.file);
             pp->getToken(pw::PP::GETALL);
             for (;;) {
                 if (pp->info.token == pw::PPStream::ENDOFFILE) {
                     // End of file.
                     break;
                 }
+
                 if (errors.file != lastfile) {
                     // Output #line directive if pre-processing.
                     lastfile = errors.file;
-                    fprintf(stdout, "#line %d \"%s\"\n", pp->info.startline + 1, errors.file);
+                    fprintf(stdout, "#line %d \"%s\"\n", pp->info.startline, errors.file);
                 }
+
                 fprintf(stdout, "%s", pp->info.string.c_str());
                 pp->getToken(pw::PP::GETALL);
             }

@@ -110,6 +110,7 @@ PPStream::PPStream(PP& ppsp, Options *options) : psp(ppsp)
     neverexpand = false;                        // set for PPIDENT
     noexpand = false;                           // set to inhibit macro expansion
     inpragma = false;                           // set if scanning a pragma.
+    inppdirective = false;                      // set if scanning a pre-processor directive.
     conditionals = NULL;                        // no conditionals yet
     sysheader = false;				// Not a system header.
 }
@@ -242,7 +243,7 @@ void PPStream::pptoken()
     int mendline, mendcolumn;
     const Bracket *cp;
 
-    again:
+again:
     token = NONE;                               // No token, yet.
     string.clear();
 
@@ -291,22 +292,30 @@ void PPStream::pptoken()
             // Have a valid starting sequence. Look for the end.
             p = cp->end;
             for (;;) {
-                if (*p == '\0') {
-                    break;                      // Have a comment end.
-                }
-
-                getnextchar();
                 if (nextchar == -1) {
                     psp.error(pw::Error::ERROR,
                               commentstartline, commentstartcolumn, 0, 0,
                               "Unterminated comment.");
                     return;
                 }
+
                 if (*p != nextchar) {
+                    // Not a matching end string.
+                    if (p == cp->end) {
+                        // No characters matched.
+                        getnextchar();
+                    }
                     p = cp->end;                // Reset end pointer.
-                    continue;
+                } else {
+                    ++p;
+                    if (*p == '\0') {
+                        // End string matched.
+                        break;
+                    }
+
+                    // Check the next character.
+                    getnextchar();
                 }
-                ++p;                            // Check the next character.
             }
 
             // Found the end of a comment.
@@ -773,10 +782,11 @@ void PPStream::getToken(TokenInfo& data)
 //
 void PPStream::getToken()
 {
-    again:
+again:
     pptoken();
     tokenclass = TokenInfo::TCNONE;           // No class yet.
     if (token == ENDOFFILE) {
+endoffile:
         sawnewline = true;                      // have seen a new line
         while (conditionals) {
             Conditional *cp = conditionals;
@@ -791,12 +801,46 @@ void PPStream::getToken()
         return;                                 // Hit end of file.
     }
 
+    if (inppdirective) {
+        inppdirective = false;
+        while (token == WS || token == COMMENT)
+            pptoken();                          // skip whitespace
+
+        if (token != NL) {
+            psp.error(pw::Error::ERROR,
+                      startline, startcolumn, endline, endcolumn,
+                      "Extra tokens after a pre-processor directive.");
+            while (token != NL && token != ENDOFFILE)
+                pptoken();
+            if (token == ENDOFFILE) {
+                goto endoffile;
+            }
+        }
+    }
+
     if (token == COMMENT) {
         if (skipping)
             goto endofline;
         tokenclass = TokenInfo::TCSPACE;
         token = COMMENT;
         return;
+    }
+
+    if (inppdirective) {
+        inppdirective = false;
+        while (token == WS || token == COMMENT)
+            pptoken();                          // skip whitespace
+
+        if (token != NL) {
+            psp.error(pw::Error::ERROR,
+                      startline, startcolumn, endline, endcolumn,
+                      "Extra tokens after a pre-processor directive.");
+            while (token != NL && token != ENDOFFILE)
+                pptoken();
+            if (token == ENDOFFILE) {
+                goto endoffile;
+            }
+        }
     }
 
     if (token == NL) {                          // newline
@@ -837,17 +881,17 @@ void PPStream::getToken()
         }
 
         if (   token != options->IDENTIFIER
-               || (ppdirective = isppdirective()) == PPDNONE) {
+            || (ppdirective = isppdirective()) == PPDNONE) {
             if (!skipping)
                 psp.error(pw::Error::ERROR,
                           startline, startcolumn, endline, endcolumn,
-                          "Missing preprocessor directive.");
+                          "Invalid pre-processor directive: \"%s\".", string.c_str());
             startline = pstartline;
             startcolumn = pstartcolumn;
             tokenclass = TokenInfo::TCSKIPPED;
             noexpand = false;
             token = POTHER;
-            return;
+            goto endofline;
         }
 
         switch (ppdirective) {
@@ -1078,11 +1122,7 @@ void PPStream::getToken()
             if (conditionals && conditionals->skipping)
                 goto endofline;                 // skipping enclosing
             pptoken();
-            startline = pstartline;
-            startcolumn = pstartcolumn;
-            noexpand = false;
-            token = POTHER;
-            return;                             // Only a newline or whitespace can follow.
+            break;                             // Only a newline or whitespace can follow.
 
         case PPENDIF:
             {
@@ -1092,7 +1132,6 @@ void PPStream::getToken()
                     psp.error(pw::Error::ERROR,
                               startline, startcolumn, endline, endcolumn,
                               "#endif with no matching #if or #ifdef.");
-                    pptoken();
                 } else {
                     conditionals = cp->next;
                     if (skipping) {
@@ -1105,13 +1144,9 @@ void PPStream::getToken()
                     delete cp;
                     if (skipping)
                         goto endofline;
-                    pptoken();
                 }
-                startline = pstartline;
-                startcolumn = pstartcolumn;
-                noexpand = false;
-                token = POTHER;
-                return;                         // Only a newline or whitespace can follow.
+                pptoken();
+                break;                         // Only a newline or whitespace can follow.
             }
 
         case PPELIF:
@@ -1150,12 +1185,8 @@ void PPStream::getToken()
                 conditionals->line = pstartline;
                 conditionals->column = pstartcolumn;
             }
-            leave:
-            startline = pstartline;
-            startcolumn = pstartcolumn;
-            noexpand = false;
-            token = POTHER;
-            return;
+        leave:
+            break;
 
         case PPIF:
         case PPIFDEF:
@@ -1204,10 +1235,7 @@ void PPStream::getToken()
 
                 cp->hastruepart = !skipping;
                 if (!skipping) {
-                    startline = pstartline;
-                    startcolumn = pstartcolumn;
-                    token = POTHER;
-                    return;
+                    break;
                 }
 
                 cp->skipline = pstartline;
@@ -1239,6 +1267,7 @@ void PPStream::getToken()
             startline = pstartline;
             startcolumn = pstartcolumn;
             token = PINCLUDE;
+            inppdirective = true;
             return;
 
         case PPUNDEF:   
@@ -1256,6 +1285,7 @@ void PPStream::getToken()
             startline = pstartline;
             startcolumn = pstartcolumn;
             token = PUNDEF;
+            inppdirective = true;
             return;
 
         case PPERROR:
@@ -1346,8 +1376,8 @@ void PPStream::getToken()
                 if (token == NL)
                     string.erase();
                 else if (   token != HEADER
-                            || string[0] == 'L'
-                            || sysheader) {
+                         || string[0] == 'L'
+                         || sysheader) {
                     psp.error(pw::Error::ERROR,
                               startline, startcolumn,
                               endline, endcolumn,
@@ -1358,6 +1388,7 @@ void PPStream::getToken()
                 startline = pstartline;
                 startcolumn = pstartcolumn;
                 token = PLINE;
+                inppdirective = true;
                 return;
             }
         default:
@@ -1367,20 +1398,16 @@ void PPStream::getToken()
         while (token == WS || token == COMMENT)
             pptoken();                          // skip whitespace
 
-        if (token != NL) {
+        if (!skipping && token != NL) {
             psp.error(pw::Error::ERROR,
                       startline, startcolumn, endline, endcolumn,
-                      "Badly formed preprocessor directive.");
-            endofline:
+                      "Extra tokens after a pre-processor directive.");
+        endofline:
             noexpand = false;
             while (token != NL && token != ENDOFFILE)
                 pptoken();
             if (token == ENDOFFILE) {
-                if (skipping) {
-                }
-                skipping = false;
-                token = ENDOFFILE;
-                return;                         // EOF encountered
+                goto endoffile;
             }
         }
         tokenclass = TokenInfo::TCSPACE;
@@ -1391,8 +1418,8 @@ void PPStream::getToken()
         return;
     }
 
-    sawnewline = false;                         // preprocessor directive not allowed until
-    // next newline
+    // Another preprocessor directive not allowed the next newline.
+    sawnewline = false;
 
     if (skipping)
         goto endofline;                         // skipping conditional stuff

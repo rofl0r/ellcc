@@ -197,6 +197,7 @@ private:
     bool neverexpand;                           // Set for IDENTIFIER.
     bool noexpand;                              // Set to inhibit macro expansion.
     bool inpragma;                              // Set if scanning a pragma.
+    bool inppdirective;                         // Set if scanning a pre-processor directive.
 
     Conditional *conditionals;                  // Active conditional list.
 

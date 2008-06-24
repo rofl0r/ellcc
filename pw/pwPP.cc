@@ -454,6 +454,7 @@ void PP::processnexttoken(TokenInfo& tinfo)
             // processing an include file
 
             current = includes->pp;
+            errors.file = includes->name;
             current->getToken();
             if (current->token == PPStream::ENDOFFILE) {
                 // Close this include file...
@@ -470,6 +471,7 @@ void PP::processnexttoken(TokenInfo& tinfo)
             // the main file
 
             current = pp;
+            errors.file = name;
             current->getToken();
         }
 
@@ -487,7 +489,9 @@ void PP::processnexttoken(TokenInfo& tinfo)
                 // define in the main file
                 definemacro(current->startline, name, current);
             }
-            continue;
+            current->token = PPStream::NL;
+            current->string = "\n";
+            break;
 
         case PPStream::PUNDEF:
             // undefine a macro
@@ -500,7 +504,9 @@ void PP::processnexttoken(TokenInfo& tinfo)
                 undefinemacro(current->string, current->startline,
                               current->startline, false);
             }
-            continue;
+            current->token = PPStream::NL;
+            current->string = "\n";
+            break;
 
         case PPStream::PINCLUDE:
             // Include a file.
@@ -617,6 +623,7 @@ bool PP::process()
             // Processing an include file.
 
             current = includes->pp;
+            errors.file = includes->name;
             current->getToken();
             if (current->token == PPStream::ENDOFFILE) {
                 // Close this include file...
@@ -633,6 +640,7 @@ bool PP::process()
             // The main file.
 
             current = pp;
+            errors.file = name;
             current->getToken();
         }
 
