@@ -145,17 +145,6 @@ int Lexer::alternateKeyword_tok(TokenType t)
   }
 }
 
-
-void Lexer::parseHashInclude(char *directive, int len)
-{
-  type = yylex();
-  updLoc();
-  if (type == TOK_STRING_LITERAL) {
-    cout << "in include " << yytext << "\n";
-  }
-}
-
-
 // examples of recognized forms
 //   #line 4 "foo.cc"       // canonical form
 //   # 4 "foo.cc"           // "line" can be omitted
