@@ -140,7 +140,9 @@ void PPStream::backup(void *arg, int good, int count)
 {
     PPStream *pp = (PPStream *)arg;
     // Restore uneeded characters.
-    pp->first = new PPStream::PPStream::Stream(pp->first, "", pp->string.substr(good, pp->string.length()),
+    pp->first = new PPStream::PPStream::Stream(pp->first,
+                                               "",
+                                               pp->string.substr(good, pp->string.length()),
                                                pp->nextchar, false);
     pp->string.erase(good, pp->string.length());
     pp->nextchar = 0;
@@ -242,6 +244,7 @@ void PPStream::pptoken()
     int mstartline, mstartcolumn;
     int mendline, mendcolumn;
     const Bracket *cp;
+    std::string sname;
 
 again:
     token = NONE;                               // No token, yet.
@@ -400,6 +403,11 @@ again:
     // Remember potential start of macro call.
     mstartline = mendline = startline;
     mstartcolumn = mendcolumn = startcolumn;
+    if (first) {
+        sname = first->name;
+    } else {
+        sname = "";
+    }
     if (options->tokens) {
         token = options->tokens->matchStream(nextchar, read, save, backup, this);
     } else {
@@ -439,12 +447,14 @@ again:
         bool flag;
 
         flag = false;
-        for (sp = first; sp; sp = sp->next) {
+        if (string == sname) {
+            flag = true;
+        }
+        for (sp = first; !flag && sp; sp = sp->next) {
             if (sp->inhibit)
                 break;
             if (string == sp->name) {
                 flag = true;
-                break;
             }
         }
 
@@ -1437,44 +1447,7 @@ endoffile:
     }
 
     if (token == options->STRING) {
-        std::string thisString;
-        int sstartline, sstartcolumn;
-        int sendline, sendcolumn;
-        int myneednl;
-
-        sstartline = startline;
-        sstartcolumn = startcolumn;
-
-        do {
-            // Combine adjacent strings.
-
-            thisString += string;
-            sendline = endline;
-            sendcolumn = endcolumn;
-
-            // Find the next token.
-            myneednl = 0;
-            do {
-                pptoken();
-                if (token == NL)
-                    ++myneednl;
-            }
-            while (token == WS || token == COMMENT || token == NL);
-
-        } while (token == options->STRING);
-
-        // Push the next token back.
-        newlinecount = myneednl;
-        first = new Stream(first, "", string, nextchar, false);
-        nextchar = 0;
-        string = thisString;
-        token = options->STRING;
         tokenclass = TokenInfo::TCSTRING;
-        startline = sstartline;
-        startcolumn = sstartcolumn;
-        endline = sendline;
-        endcolumn = sendcolumn;
-
         token = options->STRING;
         return;
     }
@@ -1513,7 +1486,7 @@ PPStream::PPDirectives PPStream::isppdirective() {
     return (PPDirectives)directives->matchWord(string);
 }
 
-bool PPStream::primary(long *value)
+bool PPStream::primary(ppint_t *value)
 {
     const char *p;
 
@@ -1609,7 +1582,7 @@ bool PPStream::primary(long *value)
     return true;
 }
 
-bool PPStream::unaryexpression(long *value)
+bool PPStream::unaryexpression(ppint_t *value)
 {
     int oper = token;
 
@@ -1639,9 +1612,9 @@ bool PPStream::unaryexpression(long *value)
     return primary(value);
 }
 
-bool PPStream::multiplicativeexpression(long *value)
+bool PPStream::multiplicativeexpression(ppint_t *value)
 {
-    long value1;
+    ppint_t value1;
     int i;
 
     if (!unaryexpression(value))
@@ -1664,9 +1637,9 @@ bool PPStream::multiplicativeexpression(long *value)
     return true;
 }
 
-bool PPStream::additiveexpression(long *value)
+bool PPStream::additiveexpression(ppint_t *value)
 {
-    long value1;
+    ppint_t value1;
     int i;
 
     if (!multiplicativeexpression(value))
@@ -1683,9 +1656,9 @@ bool PPStream::additiveexpression(long *value)
     return true;
 }
 
-bool PPStream::shiftexpression(long *value)
+bool PPStream::shiftexpression(ppint_t *value)
 {
-    long value1;
+    ppint_t value1;
     int i;
 
     if (!additiveexpression(value))
@@ -1702,9 +1675,9 @@ bool PPStream::shiftexpression(long *value)
     return true;
 }
 
-bool PPStream::relationalexpression(long *value)
+bool PPStream::relationalexpression(ppint_t *value)
 {
-    long value1;
+    ppint_t value1;
     int i;
     int cmp;
 
@@ -1728,9 +1701,9 @@ bool PPStream::relationalexpression(long *value)
     return true;
 }
 
-bool PPStream::equalityexpression(long *value)
+bool PPStream::equalityexpression(ppint_t *value)
 {
-    long value1;
+    ppint_t value1;
     int i;
     int cmp;
 
@@ -1748,9 +1721,9 @@ bool PPStream::equalityexpression(long *value)
     return true;
 }
 
-bool PPStream::ANDexpression(long *value)
+bool PPStream::ANDexpression(ppint_t *value)
 {
-    long value1;
+    ppint_t value1;
 
     if (!equalityexpression(value))
         return false;
@@ -1763,9 +1736,9 @@ bool PPStream::ANDexpression(long *value)
     return true;
 }
 
-bool PPStream::exclusiveORexpression(long *value)
+bool PPStream::exclusiveORexpression(ppint_t *value)
 {
-    long value1;
+    ppint_t value1;
 
     if (!ANDexpression(value))
         return false;
@@ -1778,9 +1751,9 @@ bool PPStream::exclusiveORexpression(long *value)
     return true;
 }
 
-bool PPStream::inclusiveORexpression(long *value)
+bool PPStream::inclusiveORexpression(ppint_t *value)
 {
-    long value1;
+    ppint_t value1;
 
     if (!exclusiveORexpression(value))
         return false;
@@ -1793,9 +1766,9 @@ bool PPStream::inclusiveORexpression(long *value)
     return true;
 }
 
-bool PPStream::logicalANDexpression(long *value)
+bool PPStream::logicalANDexpression(ppint_t *value)
 {
-    long value1;
+    ppint_t value1;
 
     if (!inclusiveORexpression(value))
         return false;
@@ -1811,9 +1784,9 @@ bool PPStream::logicalANDexpression(long *value)
     return true;
 }
 
-bool PPStream::logicalORexpression(long *value)
+bool PPStream::logicalORexpression(ppint_t *value)
 {
-    long value1;
+    ppint_t value1;
 
     if (!logicalANDexpression(value))
         return false;
@@ -1829,9 +1802,9 @@ bool PPStream::logicalORexpression(long *value)
     return true;
 }
 
-bool PPStream::conditionalexpression(long *value)
+bool PPStream::conditionalexpression(ppint_t *value)
 {
-    long value1, value2;
+    ppint_t value1, value2;
 
     if (!logicalORexpression(value))
         return false;
@@ -1857,7 +1830,7 @@ bool PPStream::conditionalexpression(long *value)
     return true;
 }
 
-bool PPStream::expression(long *value)
+bool PPStream::expression(ppint_t *value)
 {
     if (!conditionalexpression(value))
         return false;
@@ -1875,7 +1848,7 @@ bool PPStream::expression(long *value)
 //
 bool PPStream::conditionalexpr()
 {
-    long value;
+    ppint_t value;
 
     while (token == WS || token == COMMENT)
         pptoken();
@@ -1894,7 +1867,7 @@ bool PPStream::conditionalexpr()
 //
 //      convertCharacter - convert the token buffer to a character
 //
-char *PPStream::convertCharacter(long *value, const std::string& string)
+char *PPStream::convertCharacter(ppint_t *value, const std::string& string)
 {
     int wide;
     int index;
@@ -1920,14 +1893,16 @@ char *PPStream::convertCharacter(long *value, const std::string& string)
 //
 //      convertNumber - convert the string to a number
 //
-const char *PPStream::convertNumber(long *value, const std::string& string)
+const char *PPStream::convertNumber(ppint_t *value, const std::string& string)
 {
     int base;
-    bool islong, isunsigned;
+    int islong;
+    bool isunsigned;
     bool octalorhex = false;
     int index = 0;
 
-    islong = isunsigned = false;
+    islong = 0;
+    isunsigned = false;
 
     // this is an integer constant
     base = 10;
@@ -1968,9 +1943,9 @@ const char *PPStream::convertNumber(long *value, const std::string& string)
                 haserror = true;
             isunsigned = true;
         } else {
-            if (islong)
+            if (islong > 1)
                 haserror = true;
-            islong = true;
+            ++islong;
         }
         if (haserror)
             return "Duplicate suffixes in constant";
@@ -1990,10 +1965,8 @@ const char *PPStream::convertNumber(long *value, const std::string& string)
 //
 void PPStream::getnextchar()
 {
-    again:
+again:
     if (first) {
-        Stream *t;
-
         if (first->index >= first->body.length()) {
             nextchar = -1;
         } else {
@@ -2010,7 +1983,7 @@ void PPStream::getnextchar()
         if (nextchar != -1)
             return;
 
-        t = first;
+        Stream* t = first;
         first = first->next;
         nextchar = t->oldnextchar;
         delete t;
@@ -2020,7 +1993,7 @@ void PPStream::getnextchar()
     nextchar = (psp.*fgetc)();
 
     if (nextchar == EOF) {
-        // eof encountered
+        // EOF encountered.
 
         nextchar = -1;
         return;
@@ -2057,7 +2030,7 @@ void PPStream::getnextchar()
 
 void PPStream::readchar()
 {
-    again:
+again:
     getnextchar();
 
     if (nextchar < 0) {
@@ -2072,60 +2045,6 @@ void PPStream::readchar()
         case '\t':
         case ' ':
             break;
-#if 0
-        case '/':                               // look for a comment
-            commentstartline = nextl;
-            commentstartcolumn = nextc;
-            getnextchar();
-            if (nextchar == '/') {
-                // have a C++ comment
-
-                do {
-                    getnextchar();
-                    commentendline = nextl;
-                    commentendcolumn = nextc;
-                }
-                while (nextchar != '\n' && nextchar != -1);
-
-                iscomment = true;
-                nextchar = '\n';
-                break;
-            }
-
-            if (nextchar == '*') {
-                // have a C comment
-
-                commentloop:
-                do
-                    getnextchar();
-                while (nextchar != '*' && nextchar != -1);
-
-                // skip any number of asterisks
-                while (nextchar == '*')
-                    getnextchar();
-
-                if (nextchar != -1) {
-                    if (nextchar != '/')
-                        goto commentloop;
-                }
-
-                commentendline = nextl;
-                commentendcolumn = nextc + 1;
-                iscomment = true;
-                if (nextchar == -1) {
-                    psp.error(pw::Error::ERROR,
-                              commentstartline, commentstartcolumn, 0, 0,
-                              "Unterminated comment.");
-                    return;
-                } else
-                    nextchar = ' ';             // comment == space
-                break;
-            }
-
-            first = new Stream(first, "", "", nextchar, false);
-            nextchar = '/';
-            break;
-#endif
 
         case '\\':                              // look for an escaped newline
             getnextchar();

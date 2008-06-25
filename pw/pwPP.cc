@@ -373,7 +373,6 @@ bool PP::doInclude(PPStream *current)
 
     std::string string = current->string;
 
-again:
     // Open a new include file.
     int level = 0;		// No search path yet.
     if (fullPath(string)) {
@@ -406,19 +405,6 @@ again:
             file = buildFilename(includedirs[level], string);
             if ((fp = tfopen(file.c_str(), "r")) != NULL) {
                 break;
-            }
-        }
-
-        if (fp == NULL) {
-            // Check for an include without the .h and add it if so. Try again.
-            std::string path;
-            std::string base;
-            std::string extension;
-            parseFilename(string, path, base, extension);
-            if (extension.length() == 0) {
-                // Add a ".h".
-                string = buildFilename(path, base, ".h");
-                goto again;
             }
         }
     }
@@ -514,7 +500,17 @@ void PP::processnexttoken(TokenInfo& tinfo)
                 continue;
             }
             continue;
+
+        case PPStream::PPRAGMA:
+            // RICH: Handle a pragma.
+            
+            while (current->token != PPStream::NL && current->token != PPStream::ENDOFFILE) {
+                current->getToken();
+            }
+
+            continue;
         }
+
         break;
     }
 

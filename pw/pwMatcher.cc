@@ -570,10 +570,10 @@ int Matcher::matchWord(const std::string& word)
 //
 //
 int Matcher::matchStream(int current,                       // Current input.
-                                int (*next)(void*),                // Get next input.
-                                void (*save)(void*, int),          // Save matching input.
-                                void (*backup)(void*, int, int),   // Reuse unmatching input.
-                                void* context)                     // Input context.
+                         int (*next)(void*),                // Get next input.
+                         void (*save)(void*, int),          // Save matching input.
+                         void (*backup)(void*, int, int),   // Reuse unmatching input.
+                         void* context)                     // Input context.
 {
     int i, j, last;
     int count;
@@ -620,7 +620,7 @@ int Matcher::matchStream(int current,                       // Current input.
                     if (sp->list[j]) {
                         // Have a non-NULL pointer.
                         allnull = false;
-                        traverse.add(sp->list[j], j == 0 ? i : last);
+                        traverse.add(sp->list[j], 0); // RICH: j == 0 ? i : last);
                     }
                 }
             }

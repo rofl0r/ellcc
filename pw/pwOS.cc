@@ -338,25 +338,25 @@ breakout:
     if (index >= 0) {
         // We found a path.
         path = filename.substr(0, index);
+        name = filename.substr(index + 1);
+    } else {
+        name = filename;
     }
 
     ++index;    // Index contains the start of the name component.
     
     // Find the extension by finding the last occurrance of BASETERM.
-    for (ext = filename.length() - 1; ext >= index ; --ext) {
+    for (ext = name.length() - 1; ext >= 0 ; --ext) {
         if (filename[ext] == BASETERM) {
             // We found an extension separator.
             break;
         }
     }
     
-    if (ext >= index) {
+    if (ext >= 0) {
         // We have an extension.
-        name = filename.substr(index, ext);
-        extension = filename.substr(ext + 1, filename.length());
-    } else {
-        // We have a name only, no extension.
-        name = filename.substr(index, filename.length());
+        extension = name.substr(ext + 1);
+        name = name.substr(index, ext);
     }
 }
 
