@@ -297,6 +297,10 @@ public:
     Error* error(Error::Type type, int sl, int sc, int el, int ec, const char* string, ...);
     void errorPosition(std::string& buffer, const char* file, int sl, int sc, int el, int ec, bool trailer)
         { errors.position(buffer, file, sl, sc, el, ec, trailer); }
+
+    /** The macro table.
+     */
+    MacroTable macros;
 private:
     /** An include file definition.
      */
@@ -329,7 +333,6 @@ private:
     static array<const char*> files;                    // Input file names.
     array<std::string> includedirs;              // Include search path.
     Options options;                        // Pre-processor options.
-    MacroTable macros;                          // The macro table.
     Macro* lookup(std::string& name, int line);
     void definemacro(int line, const char* filename, PPStream* data);
     void definemacro(int line, const char* filename, Token& data,

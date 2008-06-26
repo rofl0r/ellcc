@@ -252,8 +252,6 @@ void Plexer::setupTokens(State* sp)
             ++tindex;
         }
 
-        // p points to the token string, tp->value is its token value.
-
         // Assign values to tokens needed by the preprocessor.
         if (sp->language->options.INTEGER == PPStream::NONE && temp == "INTEGER") {
             sp->language->options.INTEGER = tp->value;
@@ -300,7 +298,6 @@ const Plexer* Plexer::Create(std::string name, ErrorList& errors)
         languages[0]->CFGsetupOptions();
         languages[0]->first("tokens", parseTokens);
         languages[0]->first("comment", parseComments);
-        languages[0]->first("macros", parseMacros);
         languages[0]->first("includes", parseIncludes);
         languages[0]->first("needwhitespace", parseNeedwhitespace);
     }
@@ -317,7 +314,7 @@ const Plexer* Plexer::Create(std::string name, ErrorList& errors)
     Plexer* lp = new Plexer(name, errors);
     sp->language = lp;
     errors.recentErrors = false;
-    if (languages[0]->parse(name, sp)) {
+    if (languages[0]->parse(name, sp, &lp->macros)) {
         languages[0]->setupTokens(sp);
     }
     if (!errors.recentErrors) {
@@ -342,7 +339,7 @@ const WordAssoc Plexer::CFGreservedWords[] = {
     { ",",   COMMA },           \
     { "=",   ASSIGN },          \
     { ";",   SEMICOLON },       \
-    { "..",  RANGE}
+    { "..",  RANGE }
 
 const WordAssoc Plexer::CFGtokens[] = {
     PW_LEX_TOKENS,
@@ -501,7 +498,7 @@ static Error* unexpectedToken(PP& pp, const char* string = "")
 
 /* Parse a language file.
  */
-bool Plexer::parse(std::string name, void* data)
+bool Plexer::parse(std::string name, void* data, array<Macro>* macros)
 {
     pw::PP* pp = new PP(name, errors);
     FILE* fp = NULL;
@@ -556,6 +553,18 @@ bool Plexer::parse(std::string name, void* data)
         }
     }
 
+    if (macros) {
+        // Capture macros that have been defined.
+        for (int i = 0; i < pp->macros.size(); ++i) {
+            if (pp->macros[i]->type != Macro::DEFINED_MACRO) {
+                // Grab only user defined macros.
+                continue;
+            }
+            (*macros)[(*macros).size()] = *pp->macros[i];
+        }
+    }
+
+    delete pp;
     return true;
 }
 
@@ -768,103 +777,6 @@ void Plexer::parseComments(PP& pp, Plexer& env, ErrorList& errors, void* data)
         sp->language->options.comments[count].start = NULL;
         sp->language->options.comments[count].end = NULL;
         sp->language->options.comments[count].token = 0;
-
-        // Commas separate.
-        if (pp.info.token == COMMA) {
-            pp.getToken();
-        } else {
-            if (pp.info.token == RBRACE) {
-                break;
-            }
-
-            expectedToken(pp, ",");
-        }
-    }
-
-    if (pp.info.token != RBRACE) {
-        expectedToken(pp, "}");
-    } else {
-        pp.getToken();
-    }
-}
-
-/* Define macros.
- */
-void Plexer::parseMacros(PP& pp, Plexer& env, ErrorList& errors, void* data)
-{
-    State* sp = (State*)data;
-    Token name;
-    std::string definition;
-
-    if (pp.info.token != LBRACE) {
-        expectedToken(pp, "{");
-    } else {
-        pp.getToken();
-    }
-
-    while (pp.info.token != RBRACE) {
-        // Gather all comma separated comment definitions.
-
-        if (pp.info.token == COMMA) {
-            // This comma is out of place.
-            unexpectedToken(pp);
-            pp.getToken();
-            continue;
-        }
-
-        if (pp.info.token == STRING || pp.info.token == IDENTIFIER) {
-            name = pp.info;
-            if (pp.info.token == STRING) {
-                name.string = convert(pp.info.string);
-            } else {
-                name.string = pp.info.string;
-            }
-            if (sp->language->macros.size()) {
-                // Check the current entries for a match.
-                for (int count = 0; count < sp->language->macros.size(); ++count) {
-                    if (name.string == sp->language->macros[count].name()) {
-                        pp.error(Error::ERROR,
-                                 pp.info.startline, pp.info.startcolumn,
-                                 pp.info.endline, pp.info.endcolumn,
-                                 "Macro \"%s\" has already been defined.", name.string.c_str());
-                    }
-                    continue;
-                }
-            }
-
-            pp.getToken();
-        } else {
-            expectedToken(pp, "String or identifier");
-            pp.getToken();
-            continue;
-        }
-
-        if (pp.info.token == ASSIGN) {
-            pp.getToken();
-            if (pp.info.token == STRING) {
-                definition = convert(pp.info.string);
-                pp.getToken();
-            } else {
-                expectedToken(pp, "String");
-                pp.getToken();
-                continue;
-            }
-
-        } else {
-            definition = "1";
-        }
-
-        // Have a name and definition. Add to the macro list.
-        int size = sp->language->macros.size();
-        sp->language->macros[size].startline = name.startline;
-        sp->language->macros[size].startcolumn = name.startcolumn;
-        sp->language->macros[size].endline = name.endline;
-        sp->language->macros[size].endcolumn = name.endcolumn;
-        sp->language->macros[size].file = name.file;
-        sp->language->macros[size].string = name.string;
-        sp->language->macros[size].body = definition;
-        sp->language->macros[size].function = false;
-        sp->language->macros[size].type = Macro::DEFINED_MACRO;
 
         // Commas separate.
         if (pp.info.token == COMMA) {

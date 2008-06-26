@@ -476,6 +476,7 @@ void PP::processnexttoken(TokenInfo& tinfo)
                 definemacro(current->startline, name, current);
             }
             current->token = PPStream::NL;
+            current->tokenclass = TokenInfo::TCSPACE;
             current->string = "\n";
             break;
 
@@ -491,14 +492,13 @@ void PP::processnexttoken(TokenInfo& tinfo)
                               current->startline, false);
             }
             current->token = PPStream::NL;
+            current->tokenclass = TokenInfo::TCSPACE;
             current->string = "\n";
             break;
 
         case PPStream::PINCLUDE:
             // Include a file.
-            if (!doInclude(current)) {
-                continue;
-            }
+            doInclude(current);
             continue;
 
         case PPStream::PPRAGMA:

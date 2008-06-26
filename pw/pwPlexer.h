@@ -50,7 +50,7 @@ public:
      */
     enum CFGTokens {
         STRING = PPStream::CTNEXTOKEN, CHARACTER, INTEGER, FLOAT, IDENTIFIER,
-        LBRACE, RBRACE, COMMA, ASSIGN, SEMICOLON, RANGE, 
+        LBRACE, RBRACE, COMMA, ASSIGN, SEMICOLON, RANGE,
     };
     /** A parsing function.
      */
@@ -60,7 +60,7 @@ public:
     void first(std::string name, Parser* handler);
     /** Parse a language file.
      */
-    bool parse(std::string name, void* data);
+    bool parse(std::string name, void* data, array<Macro>* macros = NULL);
 
 private:
     /** The language name.
@@ -148,9 +148,6 @@ private:
     /** Parse comments.
      */
     static Parser parseComments;
-    /** Parse macro definitions.
-     */
-    static Parser parseMacros;
     /** Parse include directories.
      */
     static Parser parseIncludes;

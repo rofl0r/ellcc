@@ -29,7 +29,7 @@ public:
 
 private:
     enum {
-        ALLOC = 20
+        ALLOC = 32
     };                                          // Array allocation unit.
     void init();                                // Array initialization function.
     array<Type>& create(int element);         // Create an element.
@@ -97,7 +97,7 @@ template<class Type> Type& array<Type>::operator[](int element) const
 template<class Type> array<Type>& array<Type>::operator+=(const Type& value)
 {
     if (!open || open >= end - 1) {
-        // Allocate space for next element.
+        // Allocate space for the next element.
         create(size());
     }
 
@@ -173,22 +173,18 @@ template<class Type> array<Type>& array<Type>::create(int element)
 {
     Type* newp = new Type[element + ALLOC];
 
-    if (newp == NULL) {
-        // XXX out of memory
-        return *this;
-    } else {
-        // Copy data.
-        if (start) {
-            for (int i = 0; i < size(); ++i) {
-                newp[i] = start[i];
-            }
-            delete[] start;
+    // Copy data.
+    if (start) {
+        for (int i = 0; i < size(); ++i) {
+            newp[i] = start[i];
         }
-        // adjust pointers
-        open = newp + (open - start);
-        end = newp + (end - start);
-        start = newp;
     }
+ 
+    // Adjust pointers.
+    open = newp + (open - start);
+    end = newp + (end - start);
+    delete[] start;
+    start = newp;
 
     end += ALLOC;
     return *this;
