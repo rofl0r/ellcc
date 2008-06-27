@@ -45,7 +45,7 @@ int main(int argc, char** argv)
             // Preprocess the file.
             const char* lastfile;
             lastfile = errors.file;
-            // RICH: fprintf(stdout, "# %d \"%s\"\n", 1, errors.file);
+            fprintf(stdout, "# %d \"%s\"\n", 1, errors.file);
             pp->getToken(pw::PP::GETALL);
             for (;;) {
                 if (pp->info.token == pw::PPStream::ENDOFFILE) {

@@ -1679,7 +1679,7 @@ bool PPStream::relationalexpression(ppint_t *value)
 {
     ppint_t value1;
     int i;
-    int cmp;
+    ppint_t cmp;
 
     if (!shiftexpression(value))
         return false;
@@ -1688,7 +1688,7 @@ bool PPStream::relationalexpression(ppint_t *value)
         if (!shiftexpression(&value1))
             return false;
         cmp = *value - value1;
-        if ((cmp == 0 && (i == operators[LE] || i == operators[GE]))
+        if (   (cmp == 0 && (i == operators[LE] || i == operators[GE]))
             || (cmp < 0 && (i == operators[LT] || i == operators[LE]))
             || (cmp > 0 && (i == operators[GT] || i == operators[GE]))) {
             cmp = 1;
