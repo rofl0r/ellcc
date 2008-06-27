@@ -22,6 +22,7 @@ namespace pw {
 
 #define STRINGMAX 32767
 
+#if RICH        // Not for now.
 //
 // findLibrary - Find a loadable library and return its handle.
 //
@@ -65,6 +66,7 @@ void* findLibrarySymbol(void *handle, const std::string& symbol)
 #endif
     return result;
 }
+#endif
 
 //
 // findExecutable - Find the name of the executable program.
