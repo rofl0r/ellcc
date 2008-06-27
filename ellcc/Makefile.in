@@ -6,12 +6,14 @@ all: ellcc quicktest
 
 # directories of other software
 SMBASE   := @SMBASE@
+PW       := @PW@
 AST      := @AST@
 ELKHOUND := @ELKHOUND@
 ELSA     := @ELSA@
 
 # stuff inside those other directories
 LIBSMBASE   := $(SMBASE)/libsmbase.a
+LIBPW       := $(PW)/libpw.a
 LIBAST      := $(AST)/libast.a
 LIBELKHOUND := $(ELKHOUND)/libelkhound.a
 LIBELSA     := $(ELSA)/libelsa.a
@@ -63,13 +65,13 @@ endif
 CXX := @CXX@
 
 # flags for the C++ compiler (and preprocessor)
-CCFLAGS := @CCFLAGS@ -Woverloaded-virtual -I$(SMBASE) -I$(AST) -I$(ELKHOUND) -I$(ELSA)
+CCFLAGS := @CCFLAGS@ -Woverloaded-virtual -I$(SMBASE) -I$(PW) -I$(AST) -I$(ELKHOUND) -I$(ELSA)
 
 # how to enable coverage
 GCOV_OPTS := -fprofile-arcs -ftest-coverage
 
 # flags for the linker
-libraries := $(LIBELSA) $(LIBELKHOUND) $(LIBAST) $(LIBSMBASE)
+libraries := $(LIBELSA) $(LIBELKHOUND) $(LIBAST) $(LIBSMBASE) $(LIBPW)
 LDFLAGS := @LDFLAGS@ $(libraries)
 
 # compile .cc in this directory to a .o

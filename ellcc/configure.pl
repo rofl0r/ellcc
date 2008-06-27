@@ -41,6 +41,7 @@ if ($smcv < $req_smcv) {
 
 # defaults
 @LDFLAGS = ("-g -Wall");
+$PW = "../pw";
 $AST = "../ast";
 $ELKHOUND = "../elkhound";
 $ELSA = "../elsa";
@@ -61,6 +62,7 @@ package options:
   -llvm=<dir>:       specify where the LLVM system is [$LLVM]
   -gnu=[0/1]         enable GNU extensions? [$USE_GNU]
   -kandr=[0/1]       enable K&R extensions? [$USE_KANDR]
+  -pw=<dir>:         specify where the pw library is [$PW]
   -ast=<dir>:        specify where the ast system is [$AST]
   -elkhound=<dir>:   specify where the elkhound system is [$ELKHOUND]
   -elsa=<dir>:       specify where the elsa system is [$ELSA]
@@ -100,6 +102,10 @@ foreach $optionAndValue (@ARGV) {
 
   elsif ($arg eq "devel") {
     push @CCFLAGS, "-Werror";
+  }
+
+  elsif ($arg eq "pw") {
+    $PW = getOptArg();
   }
 
   elsif ($arg eq "ast") {
@@ -142,6 +148,13 @@ test_smbase_presence();
 
 test_CXX_compiler();
 
+# pw
+if (! -f "$PW/pwPP.h") {
+  die "I cannot find pwPP.h in `$PW'.\n" .
+      "The pw library is required for ellcc.\n" .
+      "If it's in a different location, use the -ast=<dir> option.\n";
+}
+
 # ast
 if (! -f "$AST/asthelp.h") {
   die "I cannot find asthelp.h in `$AST'.\n" .
@@ -179,6 +192,7 @@ $summary .= <<"OUTER_EOF";
 cat <<EOF
   LDFLAGS:     @LDFLAGS
   SMBASE:      $SMBASE
+  PW:          $PW
   AST:         $AST
   ELKHOUND:    $ELKHOUND
   ELSA:        $ELSA
@@ -198,6 +212,7 @@ writeConfigSummary($summary);
 # ------------------- config.status ------------------
 writeConfigStatus("LDFLAGS" => "@LDFLAGS",
                   "SMBASE" => "$SMBASE",
+                  "PW" => "$PW",
                   "AST" => "$AST",
                   "ELKHOUND" => "$ELKHOUND",
                   "ELSA" => "$ELSA",
