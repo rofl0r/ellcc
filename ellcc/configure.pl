@@ -1,12 +1,12 @@
 #!/usr/bin/perl -w
-# configure script for ellif
+# configure script for ellcc
 
 use strict 'subs';
 
 # default location of smbase relative to this package
 $SMBASE = "../smbase";
 $req_smcv = 1.03;            # required sm_config version number
-$thisPackage = "ellif";
+$thisPackage = "ellcc";
 
 # -------------- BEGIN common block ---------------
 # do an initial argument scan to find if smbase is somewhere else
@@ -145,21 +145,21 @@ test_CXX_compiler();
 # ast
 if (! -f "$AST/asthelp.h") {
   die "I cannot find asthelp.h in `$AST'.\n" .
-      "The ast system is required for ellif.\n" .
+      "The ast system is required for ellcc.\n" .
       "If it's in a different location, use the -ast=<dir> option.\n";
 }
 
 # elkhound
 if (! -f "$ELKHOUND/glr.h") {
   die "I cannot find glr.h in `$ELKHOUND'.\n" .
-      "The elkhound system is required for ellif.\n" .
+      "The elkhound system is required for ellcc.\n" .
       "If it's in a different location, use the -elkhound=<dir> option.\n";
 }
 
 # elsa
 if (! -f "$ELSA/cfg.h") {
   die "I cannot find cfg.h in `$ELSA'.\n" .
-      "The elsa system is required for ellif.\n" .
+      "The elsa system is required for ellcc.\n" .
       "If it's in a different location, use the -elsa=<dir> option.\n";
 }
 

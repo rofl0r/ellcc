@@ -1,5 +1,5 @@
 # Makefile.in
-# this is the Makefile for Elsa, the Elkhound-based C++ Parser
+# this is the Makefile for ellcc, the Elsa/LLVM C/C++ Parser
 
 # main target is 'ellcc', a C/C++ parser.
 all: ellcc quicktest
