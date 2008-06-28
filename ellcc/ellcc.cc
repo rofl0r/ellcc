@@ -1800,7 +1800,7 @@ static int Preprocess(const std::string &OutputFilename,
             if (errors.file != lastfile) {
                 // Output #line directive if pre-processing.
                 lastfile = errors.file;
-                fprintf(ofp, "# %d \"%s\"\n", pp->info.startline, errors.file);
+                // RICH: fprintf(ofp, "# %d \"%s\"\n", pp->info.startline, errors.file);
             }
 
             fprintf(ofp, "%s", pp->info.string.c_str());
