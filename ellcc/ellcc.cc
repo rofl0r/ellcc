@@ -2630,7 +2630,7 @@ int main(int argc, char **argv)
                 }
             }
 
-            if (FinalPhase == phase) {
+            if (FinalPhase == phase || errors.hasErrors()) {
                 break;
             }
 
@@ -2700,6 +2700,7 @@ int main(int argc, char **argv)
         // Show errors.
         errors.sort();
         errors.print(stdout);
+        status = errors.hasErrors();
     }
 
     llvm_shutdown();

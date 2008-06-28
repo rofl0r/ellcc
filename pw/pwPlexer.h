@@ -13,7 +13,8 @@ namespace pw {
 class Plexer {
 public:
     /** Create a Plexer definition.
-     * @param name The language name.
+     * @param name The language configuration file name.
+     * @param language The language name.
      * @return A unique instance for each language or NULL if an error occured.
      */
     static const Plexer* Create(std::string name, ErrorList& error);

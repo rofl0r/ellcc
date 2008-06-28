@@ -294,7 +294,7 @@ const Plexer* Plexer::Create(std::string name, ErrorList& errors)
 {
     if (languages.size() == 0) {
         // Create the language file scanner.
-        languages[0] = new Plexer(std::string("cfg"), errors);
+        languages[0] = new Plexer("cfg", errors);
         languages[0]->CFGsetupOptions();
         languages[0]->first("tokens", parseTokens);
         languages[0]->first("comment", parseComments);
@@ -507,7 +507,7 @@ bool Plexer::parse(std::string name, void* data, array<Macro>* macros)
         return false;
     }
     if (!pp->setInput(fp)) {
-        errors.add(Error::ERROR, 0, 0, 0, 0, "Can't open %s.", name.c_str());
+        errors.add(Error::ERROR, "<initialization>", 0, 0, 0, 0, "Can't open %s.", name.c_str());
         delete pp;
         return false;
     }
