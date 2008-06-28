@@ -582,10 +582,14 @@ Preprocessor Options
 
 // Elsa.
 #include "elsa.h"              // Elsa interfaces.
+// pwPlexer.
+#include "pwPlexer.h"          // The preprocessor.
 
 #define VERSION "0.1"
 
 using namespace llvm;
+
+static pw::ErrorList errors;    // The reported errors.
 
 static std::string progname;    // The program name.        
 
@@ -1656,6 +1660,8 @@ static void RemoveEnv(const char * name, char ** const envp) {
   return;
 }
 
+#if 0
+
 /// Preprocess - Preprocess the given file.
 ///
 /// Inputs:
@@ -1670,9 +1676,8 @@ static void RemoveEnv(const char * name, char ** const envp) {
 /// Returns non-zero value on error.
 ///
 static int Preprocess(const std::string &OutputFilename,
-                          const std::string &InputFilename,
-                          const sys::Path &gcc, char ** const envp,
-                          std::string& ErrMsg)
+                      const std::string &InputFilename,
+                      std::string& ErrMsg)
 {
   // Remove these environment variables from the environment of the
   // programs that we will execute.  It appears that GCC sets these
@@ -1681,7 +1686,13 @@ static int Preprocess(const std::string &OutputFilename,
   //
   // However, when we invoke GCC below, we want it to use its normal
   // configuration.  Hence, we must sanitize its environment.
-  char ** clean_env = CopyEnv(envp);
+  // Determine the location of the gcc program.
+  sys::Path gcc = FindExecutable("gcc", progname);
+  if (gcc.isEmpty())
+    PrintAndExit("Failed to find gcc");
+
+  extern char **environ;
+  char ** clean_env = CopyEnv(environ);
   if (clean_env == NULL)
     return 1;
   RemoveEnv("LIBRARY_PATH", clean_env);
@@ -1716,6 +1727,92 @@ static int Preprocess(const std::string &OutputFilename,
   delete [] clean_env;
   return R;
 }
+
+#else
+
+/// Preprocess - Preprocess the given file.
+///
+/// Inputs:
+///  InputFilename   - The name of the input source file.
+///  OutputFilename  - The name of the file to generate.
+///  gcc             - The pathname to use for GGC.
+///  envp            - A copy of the process's current environment.
+///
+/// Outputs:
+///  None.
+///
+/// Returns non-zero value on error.
+///
+static int Preprocess(const std::string &OutputFilename,
+                      const std::string &InputFilename,
+                      std::string& ErrMsg)
+{
+    // RICH: Get proper config file.
+    const pw::Plexer* language = pw::Plexer::Create("c99.cfg", errors);
+
+    pw::PP* pp = new pw::PP(InputFilename, errors);
+    FILE* fp = NULL;
+
+    if (pp == NULL) {
+        // An error occured creating the preprocessor.
+        ErrMsg = "can't create preprocessor";
+        return 1;
+    }
+
+    if (!pp->setInput(fp)) {
+        ErrMsg = "can't open " + InputFilename;
+        delete pp;
+        return 1;
+    }
+
+    FILE* ofp = fopen(OutputFilename.c_str(), "w");
+    if (ofp == NULL) {
+        ErrMsg = "can't open " + OutputFilename + " for writing.";
+        delete pp;
+        return 1;
+    }
+
+    if (language) {
+        pw::Options options = language->options;
+        pp->setOptions(&options);    		// Set pre-processor options.
+
+        // Set pre-defined macros.
+        for (int i = 0; i < language->macros.size(); ++i) {
+            pp->addDefine(language->macros[i]);
+        }
+
+        // Set the include paths.
+        for (int i = 0; i < language->includes.size(); ++i) {
+            pp->addInclude(language->includes[i]);
+        }
+
+        // Preprocess the file.
+        const char* lastfile;
+        lastfile = errors.file;
+        fprintf(ofp, "# %d \"%s\"\n", 1, errors.file);
+        pp->getToken(pw::PP::GETALL);
+        for (;;) {
+            if (pp->info.token == pw::PPStream::ENDOFFILE) {
+                // End of file.
+                break;
+            }
+
+            if (errors.file != lastfile) {
+                // Output #line directive if pre-processing.
+                lastfile = errors.file;
+                fprintf(ofp, "# %d \"%s\"\n", pp->info.startline, errors.file);
+            }
+
+            fprintf(ofp, "%s", pp->info.string.c_str());
+            pp->getToken(pw::PP::GETALL);
+        }
+    }
+
+    delete pp;
+    return 0;
+}
+
+#endif
 
 /// GenerateNative - generates a native object file from the
 /// specified bitcode file.
@@ -1974,14 +2071,8 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         // Mark the output files for removal if we get an interrupt.
         sys::RemoveFileOnSignal(to);
 
-        // Determine the location of the gcc program.
-        sys::Path gcc = FindExecutable("gcc", progname);
-        if (gcc.isEmpty())
-          PrintAndExit("Failed to find gcc");
-
-        extern char **environ;
         std::string ErrMsg;  
-        if(Preprocess(to.toString(), input.name.toString(), gcc, environ, ErrMsg) != 0) {
+        if(Preprocess(to.toString(), input.name.toString(), ErrMsg) != 0) {
             PrintAndExit(ErrMsg);
         }
 
@@ -2579,6 +2670,35 @@ int main(int argc, char **argv)
     } catch (...) {
         cerr << argv[0] << ": Unexpected unknown exception occurred.\n";
         status =  1;
+    }
+
+    int totalerrors = 0;
+    for (int j = 0; j < pw::Error::ERRORCNT; ++j) {
+        // Calculate the total number of errors.
+        totalerrors += errors.errorCount(j);
+    }
+
+    if (totalerrors) {
+        for (int i = 0; i < pw::Error::ERRORCNT; ++i) {
+            const char *name;
+            const char *plural;
+            int count = errors.errorCount(i);
+
+            if (count == 0)
+                continue;
+
+            if (count == 1)
+                plural = "";
+            else
+                plural = "s";
+
+            name = pw::Error::modifier((pw::Error::Type)i);
+            fprintf(stdout, "%d %s message%s reported\n", count, name, plural);
+        }
+
+        // Show errors.
+        errors.sort();
+        errors.print(stdout);
     }
 
     llvm_shutdown();
