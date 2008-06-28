@@ -125,8 +125,6 @@ writeConfigSummary($summary);
 # ------------------- config.status ------------------
 writeConfigStatus("LDFLAGS" => "@LDFLAGS",
                   "SMBASE" => "$SMBASE",
-                  "AST" => "$AST",
-                  "ELKHOUND" => "$ELKHOUND",
                   "PERL" => "$PERL",
                   "GCOV_MODS" => "$GCOV_MODS");
 
