@@ -1808,6 +1808,7 @@ static int Preprocess(const std::string &OutputFilename,
         }
     }
 
+    fclose(ofp);
     delete pp;
     return 0;
 }
