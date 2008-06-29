@@ -1,7 +1,9 @@
-/*
- *    pwPP.h - The pre-processing object.
+/** @file
+ * The pw preprocessor.
+ * @author Richard Pennington
+ * @date June 29, 2008
  *
- *    Copyright (C) 2008, Richard Pennington.
+ * Copyright (C) 2008, Richard Pennington.
  */
 
 #ifndef pwPP_h
@@ -15,104 +17,162 @@
 
 namespace pw {
 
-struct WordAssoc {                            // Word/token association.
-    const char *word;
-    int token;
+/** Associate a string with a value.
+ */
+struct WordAssoc {
+    const char *word;                           ///< The string.
+    int token;                                  ///< The associated value.
 };
 
-struct Bracket {                              // Start/end bracketed definition.
-    const char *start;
-    const char *end;
-    int token;
+/** A comment bracket definition and the associated value.
+ */
+struct Bracket {
+    const char *start;                          ///< The start string of a comment.
+    const char *end;                            ///< The end string of a comment.
+    int token;                                  ///< The associated value.
 };
 
-struct Position {				// An input stream position.
+/** An input stream position.
+ */
+struct Position {
+    /** The default constructor.
+     */
     Position()
         { startline = 0; startcolumn = 0; endline = 0; endcolumn = 0; }
+    /** The copy constructor.
+     */
     Position(const Position& value)
         {
             startline = value.startline; startcolumn = value.startcolumn;
             endline = value.endline; endcolumn = value.endcolumn;
             file = value.file;
         }
-    int startline, startcolumn;                 // Position of token in input stream.
-    int endline, endcolumn;
-    const char* file;                              // Name of input stream.
+
+    int startline;                              ///< The starting line.
+    int startcolumn;                            ///< The starting column.
+    int endline                                 ///< The ending line.
+    int endcolumn;                              ///< The ending column.
+    const char* file;                           ///< The name of the input stream.
 };
 
-struct Token : public Position {            // A preprocessor token.
+/** A token has a string and a source position associeted with it.
+ */
+struct Token : public Position {
+    /** The default constructor.
+     */
     Token() : Position() {}
+    /** The copy constructor.
+     */
     Token(const Token& value) : Position(value)
         {
             string = value.string;
         }
-    std::string string;                            // Token string.
+    std::string string;                         ///< The string associated with the token.
 };
 
-struct TokenInfo : public Token {           // Token returned by .
-    enum TokenClass {                           // Classes of tokens.
-        TCNONE, TCOPERATOR, TCRESERVED, TCCONSTANT, TCSTRING, TCIDENTIFIER,
-        TCPPDIRECTIVE, TCSPACE, TCSKIPPED, TCERROR,
-        TCCOUNT
+/** A classified token with a value.
+ */
+struct TokenInfo : public Token {
+    /** Classes of tokens.
+     */
+    enum TokenClass {
+        TCNONE,                                 ///< No classification.
+        TCOPERATOR,                             ///< An operator.
+        TCRESERVED,                             ///< A reserved word.
+        TCCONSTANT,                             ///< A constant.
+        TCSTRING,                               ///< A string.
+        TCIDENTIFIER,                           ///< An identifier
+        TCPPDIRECTIVE,                          ///< A preprocessing directive.
+        TCSPACE,                                ///< Whitespace.
+        TCSKIPPED,                              ///< A skipped token (e.g. via \#if).
+        TCERROR,                                ///< An error.
+        TCCOUNT                                 ///< The number of token classes.
     };
 
-    TokenClass tokenclass;                      // Token's class.
-    int token;                                  // Token identifier.
+    TokenClass tokenclass;                      ///< The token's class.
+    int token;                                  ///< The token's identifier.
 };
 
+/** A macro definition.
+ */
 struct Macro : public Token
 {
 public:
     /** The macro type.
      */
     enum Type {
-        /** A user defined macro.
-         */
-        DEFINED_MACRO,
-        /** A fixed macro.
-         */
-        FIXED_MACRO,
-        /** __FILE__.
-         */
-        FILE_MACRO,
-        /** __LINE__.
-         */
-        LINE_MACRO,
+        DEFINED_MACRO,                          ///< A user defined macro.
+        FIXED_MACRO,                            ///< A fixed macro.
+        FILE_MACRO,                             ///< __FILE__.
+        LINE_MACRO,                             ///< __LINE__.
     };
 
+    /** The default constructor.
+     */
     Macro() : function(false), undefined(0), type(DEFINED_MACRO)  {}
-    std::string body;				// Macro body.
-    bool function;				// If this a function-like macro?
-    int undefined;
-    Type type;
-    array<std::string> arguments;		// Macro arguments.
+
+    std::string body;				///< The macro body.
+    bool function;				///< Is this a function-like macro?
+    int undefined;                              ///< The source line number where this macro was \#undef'd.
+    Type type;                                  ///< The macro type.
+    array<std::string> arguments;		///< The formal arguments.
+    /** Get the name of a macro.
+     * @return The macro's name.
+     */
     std::string& name() { return string; }
 };
 
+/** A macro lookup table.
+ */
 typedef Table<Macro*> MacroTable;
 
-class PP;                                    // Forward declaration.
+// Forward declarations.
+class PP;
 class Options;
 
-class PPStream : public TokenInfo {         // The pre-processing stream object.
+/** A preprocessing stream.
+ */
+class PPStream : public TokenInfo {
 public:
     friend class PP;
+
+    /** The constructor.
+     * @param psp The preprocessing context.
+     * @param options Preprocessor options in this context.
+     */
     PPStream(PP& psp, Options* options);
+    /** The destructor.
+     */
     ~PPStream();
-    void setInput(int (PP::*getc)())         // Set the input function.
+
+    /** Set the input function for the stream.
+     * @param getc The function to retrurn a character from the stream.
+     */
+    void setInput(int (PP::*getc)())
         { fgetc = getc; }
 
-    // Token definitions.
+    /** Token definitions.
+     * These are the set of tokens that must be known by the preprocessor.
+     */
     enum {
-        ENDOFFILE, NONE,
+        ENDOFFILE,                              ///< End of file.
+        NONE,                                   ///< Not a defined token.
+        PINCLUDE,                               ///< An include directive.
+        PPRAGMA,                                ///< A pragma.
+        PLINE,                                  ///< A line directive.
+        PUNDEF,                                 ///< An undef directive.
+        PDEFINE,                                ///< A define directive.
+        POTHER,                                 ///< Some other preprocessing directive.
+        HEADER,                                 ///< An include file name.
+        NL,                                     ///< A newline.
+        WS,                                     ///< Witespace.
+        COMMENT,                                ///< A comment.
     
-        PINCLUDE, PPRAGMA, PLINE, PUNDEF, PDEFINE, POTHER, HEADER,
-        NL, WS, COMMENT,
-    
-        CTNEXTOKEN                              // This must be defined last.
+        CTNEXTOKEN                              ///< The number of preprocessor tokens. This must be defined last.
     };
 
-// Strings and values representing the basic pscan tokens.
+/** Strings and values representing the basic pscan tokens.
+ */
 #define pwPSCANTOKENS                     \
     { "<EOF>", PPStream::ENDOFFILE },   \
     { "NONE", PPStream::NONE },         \
@@ -126,61 +186,127 @@ public:
     { "WS", PPStream::WS },             \
     { "COMMENT", PPStream::COMMENT },
 
-    // Special macro chars.
+    /** Special macro characters.
+     */
     enum {
-        NEVEREXPAND = 1, STARTMACRO, ENDMACRO, STRINGIZE, PASTE
+        NEVEREXPAND = 1,                        ///< Never expand the identifier.
+        STARTMACRO,                             ///< The start of a macro body.
+        ENDMACRO,                               ///< The end of a macro body.
+        STRINGIZE,                              ///< Stringize the argument.
+        PASTE                                   ///< Paste tokens.
     };
 
-    void getToken(TokenInfo& data);           // Get the next token from a stream.
-    void getToken();                            // Get the next token from a stream.
-    void optionsChanged();                      // Notify stream of changed options.
-    int startLine()                             // Get the current tokens starting line.
+    /** Get the next token from a stream.
+     * @param data The returned token's information.
+     */
+    void getToken(TokenInfo& data);
+    /** Get the next token from a stream.
+     */
+    void getToken();
+    /** Notify the stream of changed options.
+     */
+    void optionsChanged(); 
+
+    /** Get the current token's starting line.
+     * @return The starting line position.
+     */
+    int startLine()
         { return startline; }
 
 private:
-    Macro::Type type;                              // Type of macro.
-    bool funlike;                               // Is this a function-like macro?
-    array<std::string> formal;                   // Names of the formal arguments.
-    std::string body;                              // The macro body.
+    Macro::Type type;                           ///< The type of the current macro.
+    bool funlike;                               ///< Is this a function-like macro?
+    array<std::string> formal;                  ///< Names of the formal arguments.
+    std::string body;                           ///< The macro body.
 
-    struct Conditional {                        // Conditional compilation control.
-        Conditional *next;                      // Next active conditional.
-        bool skipping;                          // Is enclosing conditional skipping?
-        bool haselse;                           // This conditional has an else.
-        bool hastruepart;                       // This conditional has a true part.
-        int line, column;                       // Starting line, column.
-        int skipline, skipcolumn;               // Start of skipped source.
+    /** Conditional compilation control.
+     */
+    struct Conditional {
+        Conditional *next;                      ///< The next active conditional.
+        bool skipping;                          ///< Is the enclosing conditional skipping?
+        bool haselse;                           ///< This conditional has an else.
+        bool hastruepart;                       ///< This conditional has a true part.
+        int line, column;                       ///< Starting line, column.
+        int skipline, skipcolumn;               ///< Start of skipped source.
     };
 
-    class Stream {                              // for macro streams
+    /** A macro stream.
+     */
+    class Stream {
     public:
+        /** The constructor.
+         * @param next The enclosing stream.
+         * @param name The name of the stream (i.e. the macro name).
+         * @param body The stream.
+         * @param nextchar The cjaracter immediately following the stream.
+         * @param inhibit true if name scanning is inhibited in this stream.
+         */
         Stream(Stream *next, const std::string& name, const std::string& body, int nextchar, bool inhibit);
-        Stream *next;                           // Next stream.
-        bool inhibit;                           // Inhibit name scan.
-        std::string name;                          // Name associated with stream.
-        std::string body;                          // Body of macro.
-        size_t index;                              // For sequencing through the body.
-        int oldnextchar;                        // Last character in old stream.
+        Stream *next;                           ///< Next stream.
+        bool inhibit;                           ///< Inhibit name scan.
+        std::string name;                       ///< Name associated with stream.
+        std::string body;                       ///< Body of macro.
+        size_t index;                           ///< For sequencing through the body.
+        int oldnextchar;                        ///< Last character in old stream.
     };
 
-    enum PPDirectives {                         // Preprocessor directives.
-        PPDNONE = -1, PPDEFINE, PPELIF, PPELSE, PPENDIF, PPERROR, PPIF,
-        PPIFDEF, PPIFNDEF, PPINCLUDE, PPINCLUDE_NEXT, PPLINE, PPPRAGMA, PPUNDEF,
+    /** Preprocessor directives.
+     */
+    enum PPDirectives {
+        PPDNONE = -1,                           ///< No directive.
+        PPDEFINE,                               ///< \#define
+        PPELIF,                                 ///< \#elif
+        PPELSE,                                 ///< \#else
+        PPENDIF,                                ///< \#endif
+        PPERROR,                                ///< \#error
+        PPIF,                                   ///< \#if
+        PPIFDEF,                                ///< \#ifdef
+        PPIFNDEF,                               ///< \#ifndef
+        PPINCLUDE,                              ///< \#include
+        PPINCLUDE_NEXT,                         ///< \#include_next
+        PPLINE,                                 ///< \#line
+        PPPRAGMA,                               ///< \#pragma
+        PPUNDEF,                                ///< \#undef
     };
 
+    /** Tokens used to parse preprocessor directives.
+     */
     enum {
-        POUND, POUNDPOUND, COMMA, LPAREN, RPAREN,
-        QUESTION, COLON, TILDA, EQ, STAR, SLASH,
-        PERCENT, PLUS, HYPHEN, AND, ANDAND, CAROT,
-        BAR, OROR, EXCLAMATION, NE, ELIPSIS,
-        LT, LE, LL, GT, GE, RR,
-        OPERCOUNT
+        POUND,                                  ///< \#
+        POUNDPOUND,                             ///< \#\#
+        COMMA,                                  ///< ,
+        LPAREN,                                 ///< (
+        RPAREN,                                 ///< )
+        QUESTION,                               ///< ?
+        COLON,                                  ///< :
+        TILDA,                                  ///< ~
+        EQ,                                     ///< ==
+        STAR,                                   ///< *
+        SLASH,                                  ///< /
+        PERCENT,                                ///< %
+        PLUS,                                   ///< +
+        HYPHEN,                                 ///< -
+        AND,                                    ///< &
+        ANDAND,                                 ///< &&
+        CAROT,                                  ///< ^
+        BAR,                                    ///< |
+        OROR,                                   ///< ||
+        EXCLAMATION,                            ///< !
+        NE,                                     ///< !=
+        ELIPSIS,                                ///< ...
+        LT,                                     ///< <
+        LE,                                     ///< <=
+        LL,                                     ///< <<
+        GT,                                     ///< >
+        GE,                                     ///< >=
+        RR,                                     ///< >>
+        OPERCOUNT                               ///< The number of preprocessor operators.
     };
 
-    bool hasspace;                              // Compress whitespace.
-    Options *options;                       // Pre-processor options.
-    Stream *first;                              // First open stream.
-    int line, column;                           // Current source position.
+    bool hasspace;                              ///< Whitespace has been encountered. Used to compress whitespace.
+    Options *options;                           ///< Pre-processor options.
+    Stream *first;                              ///< First open stream.
+    int line, column;                           ///< The current source position.
     int commentstartline, commentstartcolumn;
     int commentendline, commentendcolumn;
     char *commentbuffer;                        // Start of comment buffer.

@@ -1,11 +1,11 @@
 # Makefile.in
-# this is the Makefile for the pw library and ellcpp
+# this is the Makefile for the pw library and pwpp
 
 #temporary: iptree iptparse cipart smin
 
-# main target is 'ellcpp', a pre-processor, and libpw.a, the pw library.
+# main target is 'pwpp', a pre-processor, and libpw.a, the pw library.
 THIS := libpw.a
-all: $(THIS) ellcpp quicktest
+all: $(THIS) pwpp quicktest
 
 SMBASE   := @SMBASE@
 
@@ -71,7 +71,7 @@ main.o: main.cc
 
 #### pw client code
 
-# ------------------------- ellcpp ---------------------
+# ------------------------- pwpp ---------------------
 # combine base lexer description and extensions
 TOCLEAN += lexer.lex
 
@@ -90,8 +90,8 @@ PW_OBJS := \
 
 
 # parser binary
-TOCLEAN += ellcpp
-ellcpp: $(PW_OBJS) main.o $(libraries)
+TOCLEAN += pwpp
+pwpp: $(PW_OBJS) main.o $(libraries)
 	$(CXX) -o $@ $(PW_OBJS) main.o $(LDFLAGS) $(LLVMLDFLAGS)
 
 $(THIS): $(PW_OBJS)
@@ -101,10 +101,10 @@ $(THIS): $(PW_OBJS)
 
 
 # run the binary; the 'quicktest' file is so we don't run it if
-# 'ellcpp' hasn't recently changed
+# 'pwpp' hasn't recently changed
 TOCLEAN += quicktest
-quicktest: ellcpp
-	./ellcpp main.cc
+quicktest: pwpp
+	./pwpp main.cc
 	@touch quicktest
 	@echo BUILD FINISHED
 

@@ -1,5 +1,5 @@
 #!/usr/bin/perl -w
-# configure script for the pw library and ellcpp
+# configure script for the pw library and pwpp
 
 use strict 'subs';
 

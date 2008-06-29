@@ -1,0 +1,42 @@
+/* This file is the "root" file of the ELLCC documentation tree.
+ * The following comments define the main page of the documentation.
+ */
+
+/** @mainpage The Elkhound/LLVM Compiler Collection
+@author Richard Pennington
+@version 0.1
+@date June 29, 2008
+  
+ELLCC is a set of tools for building compilers as well as a collection of compilers built using those tools.
+
+The following is a brief table of contents for the ELLCC documentation tree:
+- @subpage definitions
+- @subpage related
+- <A HREF="../../pw/doc/html/index.html">The pw Library</A>
+  Preprocessing support.
+*/
+
+/*! @page definitions Common Terms and Acronyms Used in These Documents
+<TABLE>
+ <TR>
+  <TD>@b Term</TD><TD>@b Definition</TD>
+ </TR>
+ <TR>
+  <TD>Parser Generator</TD><TD>A tool to build a langauge parser.</TD>
+ </TR>
+ <TR>
+  <TD>IR</TD><TD>Intermediate Representation.</TD>
+ </TR>
+</TABLE>
+*/
+
+/*! @page related Related Documents
+<TABLE>
+ <TR>
+  <TD>@b Document</TD><TD>@b Author</TD><TD>@b Version</TD>
+ </TR>
+ <TR>
+  <TD><a href="http://llvm.org/docs">Documentation for the LLVM System</a></TD><TD>R. Pennington</TD><TD>0.5</TD>
+ </TR>
+</TABLE>
+*/

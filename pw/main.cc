@@ -1,10 +1,22 @@
+/* This file is a simple driver for the pw Lexer.
+ * It is not meant to be a full cpp replacement but merely an example of
+ * how one could use the pw lexer.
+ */
 #include "pwPlexer.h"
 
+/* The list of errors that occur during preprocessing.
+ */
 static pw::ErrorList errors;
 
-//
 int main(int argc, char** argv)
 {
+    // Simple command line argument gathering.
+
+    for (int i = 1; i < argc; ++i) {
+        if (*argv[i] == '-') {
+        }
+    }
+
     for (int i = 1; i < argc; ++i) {
         if (argv[i] == NULL) {
             // The argument was already processed.
