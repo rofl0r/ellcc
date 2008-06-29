@@ -50,7 +50,7 @@ struct Position {
 
     int startline;                              ///< The starting line.
     int startcolumn;                            ///< The starting column.
-    int endline                                 ///< The ending line.
+    int endline;                                ///< The ending line.
     int endcolumn;                              ///< The ending column.
     const char* file;                           ///< The name of the input stream.
 };
@@ -307,32 +307,30 @@ private:
     Options *options;                           ///< Pre-processor options.
     Stream *first;                              ///< First open stream.
     int line, column;                           ///< The current source position.
-    int commentstartline, commentstartcolumn;
-    int commentendline, commentendcolumn;
-    char *commentbuffer;                        // Start of comment buffer.
+    int commentstartline;                       ///< The starting line of the current comment.
+    int commentstartcolumn;                     ///< The starting column of the current comment.
+    int commentendline;                         ///< The ending line of the current comment.
+    int commentendcolumn;                       ///< The ending column of the current comment.
+    char *commentbuffer;                        ///< The comment start string buffer.
 
-    int (PP::*fgetc)();                      // Input function.
-    bool iscomment;                             // Token is a comment.
-    int nextchar;                               // Next character to scan.
-    int nextl, nextc;                           // Position of nextchar.
+    int (PP::*fgetc)();                         ///< The input function.
+    bool iscomment;                             ///< The current token is a comment.
+    int nextchar;                               ///< The next character to scan.
+    int nextl;                                  ///< The line number of nextchar.
+    int nextc;                                  ///< The column of nextchar.
 
-    bool sawnewline;                            // For # directives and asm labels.
-    bool skipping;                              // true if skipping input.
-    int newlinecount;                           // Count of scanned newlines.
-    bool allowheader;                           // Allow preprocessor header name.
-    bool neverexpand;                           // Set for IDENTIFIER.
-    bool noexpand;                              // Set to inhibit macro expansion.
-    bool inpragma;                              // Set if scanning a pragma.
-    bool inppdirective;                         // Set if scanning a pre-processor directive.
-
-    Conditional *conditionals;                  // Active conditional list.
-
-    PP& psp;                                 	// Preprocessor context.
-
-    int maxtoken;                               // Maximum token value.
-
-    // Internal tokens.
-    int operators[OPERCOUNT];
+    bool sawnewline;                            ///< For # directives and asm labels.
+    bool skipping;                              ///< true if skipping input.
+    int newlinecount;                           ///< The count of scanned newlines.
+    bool allowheader;                           ///< Gather a preprocessor header name.
+    bool neverexpand;                           ///< Set for IDENTIFIER.
+    bool noexpand;                              ///< Set to inhibit macro expansion.
+    bool inpragma;                              ///< Set if scanning a pragma.
+    bool inppdirective;                         ///< Set if scanning a pre-processor directive.
+    Conditional *conditionals;                  ///< The active conditional list.
+    PP& psp;                                 	///< The preprocessor context.
+    int maxtoken;                               ///< The maximum token value.
+    int operators[OPERCOUNT];                   ///< Internal token values.
 
     // information about a token
     bool sysheader;                             // true if string is a <> header.
