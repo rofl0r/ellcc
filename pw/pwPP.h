@@ -333,56 +333,168 @@ private:
     int operators[OPERCOUNT];                   ///< Internal token values.
 
     // information about a token
-    bool sysheader;                             // true if string is a <> header.
-    bool include_next;                          // true if #include_next.
-    int linevalue;                              // Line # returned by #line.
+    bool sysheader;                             ///< true if string is a <> header.
+    bool include_next;                          ///< true if \#include_next.
+    int linevalue;                              ///< Line \# returned by \#line.
 
+    /** Get the next character.
+     * A #matchStream callback function.
+     * @param arg The context.
+     * @return The next character in the stream.
+     */
     static int read(void *arg);
+    /** Save the next character.
+     * A #matchStream callback function.
+     * @param arg The context.
+     * @param current The character to save.
+     */
     static void save(void *arg, int current);
+    /** Back up N characters in a stream.
+     * A #matchStream callback function.
+     * @param arg The context.
+     * @param good The number of good characters.
+     * @param count The number of characters to back up.
+     */
     static void backup(void *arg, int good, int count);
+    /** Set to the lexer state machines.
+     */
     void setupStateMachines();
-
-    typedef long long ppint_t;
+    typedef long long ppint_t;                  ///< The type of a preprocessor expression integer.
+    /** Convert a string representing a character constant to a value.
+     * @param[out] value The resulting value.
+     * @param string The string to convert.
+     * @return If non-NULL, an error string.
+     */
     static char *convertCharacter(ppint_t *value, const std::string& string);
+    /** Convert a string representing a numeric constant to a value.
+     * @param[out] value The resulting value.
+     * @param string The string to convert.
+     * @return If non-NULL, an error string.
+     */
     static const char *convertNumber(ppint_t *value, const std::string& string);
+    /** Parse a primary expression.
+     * One of the preprocessor expression parsing functions.
+     * @param[in,out] value The value of the preprocessor expression.
+     * @return true if the parse is valid.
+     */
     bool primary(ppint_t *value);  
+    /** Parse a unary expression.
+     * One of the preprocessor expression parsing functions.
+     * @param[in,out] value The value of the preprocessor expression.
+     * @return true if the parse is valid.
+     */
     bool unaryexpression(ppint_t *value);
+    /** Parse a multiplicative expression.
+     * One of the preprocessor expression parsing functions.
+     * @param[in,out] value The value of the preprocessor expression.
+     * @return true if the parse is valid.
+     */
     bool multiplicativeexpression(ppint_t *value);
+    /** Parse an additive expression.
+     * One of the preprocessor expression parsing functions.
+     * @param[in,out] value The value of the preprocessor expression.
+     * @return true if the parse is valid.
+     */
     bool additiveexpression(ppint_t *value);
+    /** Parse a shift expression.
+     * One of the preprocessor expression parsing functions.
+     * @param[in,out] value The value of the preprocessor expression.
+     * @return true if the parse is valid.
+     */
     bool shiftexpression(ppint_t *value);
+    /** Parse a relational expression.
+     * One of the preprocessor expression parsing functions.
+     * @param[in,out] value The value of the preprocessor expression.
+     * @return true if the parse is valid.
+     */
     bool relationalexpression(ppint_t *value);
+    /** Parse an equality expression.
+     * One of the preprocessor expression parsing functions.
+     * @param[in,out] value The value of the preprocessor expression.
+     * @return true if the parse is valid.
+     */
     bool equalityexpression(ppint_t *value);
+    /** Parse an AND expression.
+     * One of the preprocessor expression parsing functions.
+     * @param[in,out] value The value of the preprocessor expression.
+     * @return true if the parse is valid.
+     */
     bool ANDexpression(ppint_t *value);
+    /** Parse an exclusive OR expression.
+     * One of the preprocessor expression parsing functions.
+     * @param[in,out] value The value of the preprocessor expression.
+     * @return true if the parse is valid.
+     */
     bool exclusiveORexpression(ppint_t *value);
+    /** Parse an inclusive expression.
+     * One of the preprocessor expression parsing functions.
+     * @param[in,out] value The value of the preprocessor expression.
+     * @return true if the parse is valid.
+     */
     bool inclusiveORexpression(ppint_t *value);
+    /** Parse a logical AND expression.
+     * One of the preprocessor expression parsing functions.
+     * @param[in,out] value The value of the preprocessor expression.
+     * @return true if the parse is valid.
+     */
     bool logicalANDexpression(ppint_t *value);
+    /** Parse a logical OR expression.
+     * One of the preprocessor expression parsing functions.
+     * @param[in,out] value The value of the preprocessor expression.
+     * @return true if the parse is valid.
+     */
     bool logicalORexpression(ppint_t *value);
+    /** Parse a conditional expression.
+     * One of the preprocessor expression parsing functions.
+     * @param[in,out] value The value of the preprocessor expression.
+     * @return true if the parse is valid.
+     */
     bool conditionalexpression(ppint_t *value);
+    /** Parse a preprocessor expression.
+     * One of the preprocessor expression parsing functions.
+     * @param[in,out] value The value of the preprocessor expression.
+     * @return true if the parse is valid.
+     */
     bool expression(ppint_t *value);
+    /** Parse a conditional expression.
+     * One of the preprocessor expression parsing functions.
+     * @return true if the parse results in a non-zero value.
+     */
     bool conditionalexpr();
-    void getpptoken();
-    void pptoken();
-
+    void getpptoken();                          ///< Get the next non-blank preprocessor token.
+    void pptoken();                             ///< Get the next preprocessor token.
+    /** Gather an escape sequence.
+     * @param[out] string The escape sequence.
+     */
     void escape(std::string& string);
+    /** Determine whether the current string is a preprocessor directive.
+     * @return #PPDNONE if the string is not a directive otherwise a valid #PPDirectives.
+     */
     PPDirectives isppdirective();
+    /** Is the current string a reserved word?
+     * @return -1 if not, otherwise the reserved word token value.
+     */
     int isreserved();
-    void readchar();
-    void getnextchar();
-
-    static const WordAssoc directivelist[];
-    static const WordAssoc operatorlist[];
+    void readchar();                            ///< Get the next character from the input stream.
+    void getnextchar();                         ///< The low level character reader.
+    static const WordAssoc directivelist[];     ///< The preprocessor directive list.
+    static const WordAssoc operatorlist[];      ///< The preprocessor operator list.
 };
 
-struct Options {                            // Pre-processor options.
-    bool trigraphs;                             // True if trigraphs enabled.
-    int INTEGER;                                // Integer token.
-    int CHARACTER;                              // Character token.
-    int FLOAT;                                  // Float token.
-    int STRING;                                 // String token.
-    int IDENTIFIER;                             // Identifier token.
-    Matcher* reservedWords;              // Reserved word matcher.
-    Matcher* tokens;                     	// Token matcher.
-    Bracket* comments;                        // Comment matcher.
+/** Pre-processor options.
+ */
+struct Options {
+    bool trigraphs;                             ///< True if trigraphs enabled.
+    int INTEGER;                                ///< Integer token.
+    int CHARACTER;                              ///< Character token.
+    int FLOAT;                                  ///< Float token.
+    int STRING;                                 ///< String token.
+    int IDENTIFIER;                             ///< Identifier token.
+    Matcher* reservedWords;                     ///< Reserved word matcher.
+    Matcher* tokens;                     	///< Token matcher.
+    Bracket* comments;                          ///< Comment matcher.
+    /** The Option constructor.
+     */
     Options(bool trigraphs = false, int INTEGER = PPStream::NONE,
             int CHARACTER = PPStream::NONE, int FLOAT = PPStream::NONE,
             int STRING = PPStream::NONE, int IDENTIFIER = PPStream::NONE,
@@ -390,10 +502,11 @@ struct Options {                            // Pre-processor options.
         : trigraphs(trigraphs), INTEGER(INTEGER), CHARACTER(CHARACTER), FLOAT(FLOAT),
           STRING(STRING), IDENTIFIER(IDENTIFIER), reservedWords(reservedWords),
           tokens(tokens), comments(comments) { }
-    ~Options() { }
 };
 
-class  PP {                                   // The pre-processor object.
+/** A preprocessor.
+ */
+class  PP {
 public:
     enum Filter {                               // Token filters.
         GETALL,                                 // Get all tokens.
