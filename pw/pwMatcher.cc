@@ -24,18 +24,17 @@ void Matcher::States::clear()
 //
 // add - Add a pointer to a state list.
 //
-int Matcher::States::add(State* p, int min)
+void Matcher::States::add(State* p)
 {
-    for (int i = min; i < list.size(); i++) {
+    for (int i = 0; i < list.size(); i++) {
         if (list[i] == NULL || list[i] == p) {
             list[i] = p;
-            return i;
+            return;
         }
     }
 
     // Not added, allocate space for a new one.
     list[list.size()] = p;
-    return list.size() - 1;
 }
 
 //
@@ -44,7 +43,7 @@ int Matcher::States::add(State* p, int min)
 void Matcher::States::append(const States* from)
 {
     for (int i = 0; i < from->list.size(); i++) {
-        add(from->list[i], 0);
+        add(from->list[i]);
     }
 }
 
@@ -89,12 +88,11 @@ Matcher::~Matcher()
 {
 }
 
-//
-// setRoot - Set up initial state machine, if necessary.
-//
-Matcher::State** Matcher::setRoot(State** root, States& list, int depth, int index)
+/* Set up initial the state machine, if necessary.
+ */
+Matcher::State** Matcher::setRoot(State** root, States& list, int depth)
 {
-    if (root == NULL || list.list.size() == 0 || (root && *root && (*root)->index != index)) {
+    if (root == NULL || list.list.size() == 0) {
         // This needs a new starting state.
 
         if (root) {
@@ -102,7 +100,7 @@ Matcher::State** Matcher::setRoot(State** root, States& list, int depth, int ind
             root = NULL;
             for (int i = 0; i < list.list.size(); ++i) {
                 State* sp = list.list[i];
-                if (sp && sp->index == index) {
+                if (sp) {
                     root = &list.list[i];
                     break;
                 }
@@ -123,7 +121,6 @@ Matcher::State** Matcher::setRoot(State** root, States& list, int depth, int ind
         (*root)->states = new Entry[inputsize];
         (*root)->number = nextnumber++;
         (*root)->depth = depth;
-        (*root)->index = index;
         // Create a linked list of all created states.
         (*root)->next = states;
         states = *root;
@@ -165,6 +162,7 @@ bool Matcher::setValue(Entry* entry, int value, const States* next)
         maxvalue = value;                       // Remember the largest value.
     }
 
+#if RICH
     if (next == NULL) {
         return true;
     }
@@ -184,6 +182,7 @@ bool Matcher::setValue(Entry* entry, int value, const States* next)
         entry->av[size].value = value;
         entry->av[size].next.append(next);
     }
+#endif
 
     return true;
 }
@@ -193,11 +192,11 @@ bool Matcher::setValue(Entry* entry, int value, const States* next)
 //
 int Matcher::addWord(State** root, const char* word, int value, int depth)
 {
-    root = setRoot(root, start, depth, 0);
+    root = setRoot(root, start, depth);
     if (*(word + 1)) {
         // More items in the word.
         if ((*root)->states[*word].next.list.size() == 0) {
-            (*root)->states[*word].next.add(NULL, 0);
+            (*root)->states[*word].next.add(NULL);
         }
         return addWord(&(*root)->states[*word].next.list[0], word + 1, value, depth + 1);
     } else {
@@ -212,7 +211,7 @@ bool Matcher::addWord(const char* word, int value)
 {
     State **root;
 
-    root = setRoot(start.list.size() ? &start.list[0] : NULL, start, 0, 0);
+    root = setRoot(start.list.size() ? &start.list[0] : NULL, start, 0);
     return addWord(root, word, value, 0);
 }
 
@@ -221,11 +220,11 @@ bool Matcher::addWord(const char* word, int value)
 //
 int Matcher::addWord(State** root, const std::string& word, int value, int depth)
 {
-    root = setRoot(root, start, depth, 0);
+    root = setRoot(root, start, depth);
     if (word[depth + 1]) {
         // More items in the word.
         if ((*root)->states[word[depth]].next.list.size() == 0) {
-            (*root)->states[word[depth]].next.add(NULL, 0);
+            (*root)->states[word[depth]].next.add(NULL);
         }
 
         return addWord(&(*root)->states[word[depth]].next.list[0], word, value, depth + 1);
@@ -241,7 +240,7 @@ bool Matcher::addWord(const std::string& word, int value)
 {
     State **root;
 
-    root = setRoot(start.list.size() ? &start.list[0] : NULL, start, 0, 0);
+    root = setRoot(start.list.size() ? &start.list[0] : NULL, start, 0);
     return addWord(root, word, value, 0);
 }
 
@@ -259,7 +258,7 @@ bool Matcher::addTree(State** root, States& rootlist, const MatchNode* tree,
         return false;
     }
 
-    root = setRoot(root, rootlist, depth, tree->index);   // Set up the initial state machine.
+    root = setRoot(root, rootlist, depth);   // Set up the initial state machine.
     switch (tree->type) {
     case MatchNode::UNKNOWN:
         // Ignore. RICH: should be an error.
@@ -300,13 +299,12 @@ bool Matcher::addTree(State** root, States& rootlist, const MatchNode* tree,
         // Preserve the original start state.
         start = *root;
         *root = NULL;
-        root = setRoot(root, rootlist, depth + 1, tree->u.b.right->index);
-        list.add(*root, 0);
+        root = setRoot(root, rootlist, depth + 1);
+        list.add(*root);
         bool rightOptional;
         bool leftOptional;
         rightOptional = addTree(root, list, tree->u.b.right, value, next, depth + 1);
         *root = start;
-        start->index = tree->u.b.left->index;
         leftOptional = addTree(root, rootlist, tree->u.b.left, rightOptional ? value : -1, &list, depth);
         return rightOptional && leftOptional;   // Return true if both sides are optional.
 
@@ -343,15 +341,15 @@ bool Matcher::addTree(State** root, States& rootlist, const MatchNode* tree,
         // Add the tree twice, second occurance loops.
         // Create a new state.
         if (tree->type == MatchNode::ZEROORMORE || tree->type == MatchNode::ONEORMORE) {
-            root = setRoot(root, rootlist, depth, tree->index);
-            list.add(*root, 0);
+            root = setRoot(root, rootlist, depth);
+            list.add(*root);
             list.append(next);
             addTree(root, rootlist, tree->u.node, value, &list, depth);
             if (next->list.size()) {
                 // Allow the first state to be nul.
                 for (int i = 0; i < inputsize; ++i) {
                     for (int j = 0; j < next->list.size(); ++j) {
-                        root = setRoot(root, rootlist, depth, next->list[j]->index);
+                        root = setRoot(root, rootlist, depth);
                         setValue(&(*root)->states[i], next->list[j]->states[i].value,
                                  &next->list[j]->states[i].next);
                     }
@@ -367,7 +365,7 @@ bool Matcher::addTree(State** root, States& rootlist, const MatchNode* tree,
                 // Allow the first state to be nul.
                 for (int i = 0; i < inputsize; ++i) {
                     for (int j = 0; j < next->list.size(); ++j) {
-                        root = setRoot(root, rootlist, depth, next->list[j]->index);
+                        root = setRoot(root, rootlist, depth);
                         setValue(&(*root)->states[i], next->list[j]->states[i].value,
                                  &next->list[j]->states[i].next);
                     }
@@ -401,7 +399,7 @@ bool Matcher::addTree(const MatchNode* tree, int value)
         State **root;
         // Add simple starting trees to state 0.
 
-        root = setRoot(start.list.size() ? &start.list[0] : NULL, start, 0, tree->index);
+        root = setRoot(start.list.size() ? &start.list[0] : NULL, start, 0);
         result = addTree(root, start, tree, value, &null, 0);
     } else {
         result = addTree(NULL, start, tree, value, &null, 0);
@@ -442,7 +440,7 @@ int Matcher::checkWord(const char* word)
                 sp = &traverse.list[i]->states[input].next;
                 traverse.list[i] = NULL;
                 for (j = 0; j < sp->list.size(); ++j) {
-                    traverse.add(sp->list[j], j == 0 ? i : last);
+                    traverse.add(sp->list[j]);
                 }
             }
         }
@@ -473,7 +471,7 @@ int Matcher::matchWord(const char* word)
     for (int i = 0; i < start.list.size(); ++i) {
         // Set up traversal pointers.
         if (start.list[i]) {
-            traverse.add(start.list[i], 0);
+            traverse.add(start.list[i]);
         }
     }
     return checkWord(word);
@@ -512,7 +510,7 @@ int Matcher::checkWord(const std::string& word, size_t index)
                 sp = &traverse.list[i]->states[input].next;
                 traverse.list[i] = NULL;
                 for (j = 0; j < sp->list.size(); ++j) {
-                    traverse.add(sp->list[j], j == 0 ? i : last);
+                    traverse.add(sp->list[j]);
                 }
             }
         }
@@ -543,7 +541,7 @@ int Matcher::matchWord(const std::string& word)
     for (int i = 0; i < start.list.size(); ++i) {
         // Set up traversal pointers.
         if (start.list[i]) {
-            traverse.add(start.list[i], 0);
+            traverse.add(start.list[i]);
         }
     }
     return checkWord(word, 0);
@@ -573,10 +571,11 @@ int Matcher::matchStream(int current,                       // Current input.
     }
 
     traverse.clear();                          // Clear the traversal pointers.
-    for (i = 0; i < start.list.size(); ++i) {
+    last = start.list.size();
+    for (i = 0; i < last; ++i) {
         // Set up traversal pointers.
         if (start.list[i]) {
-            traverse.add(start.list[i], 0);
+            traverse.add(start.list[i]);
         }
     }
 
@@ -584,7 +583,8 @@ int Matcher::matchStream(int current,                       // Current input.
     good = 0;
     for (;;) {
         save(context, current);
-        for (i = 0; i < traverse.list.size(); ++i) {
+        last = traverse.list.size();
+        for (i = 0; i < last; ++i) {
             if (traverse.list[i] && traverse.list[i]->states[current].value >= 0) {
                 // Remember the last successful input.
                 good = count;
@@ -598,15 +598,14 @@ int Matcher::matchStream(int current,                       // Current input.
         last = traverse.list.size();
         for (i = 0; i < last; ++i) {
             if (traverse.list[i]) {
-                States *sp;
-
-                sp = &traverse.list[i]->states[current].next;
+                States *sp = &traverse.list[i]->states[current].next;
                 traverse.list[i] = NULL;
-                for (j = 0; j < sp->list.size(); ++j) {
+                int states = sp->list.size();
+                for (j = 0; j < states; ++j) {
                     if (sp->list[j]) {
                         // Have a non-NULL pointer.
                         allnull = false;
-                        traverse.add(sp->list[j], 0); // RICH: j == 0 ? i : last);
+                        traverse.add(sp->list[j]);
                     }
                 }
             }
@@ -641,56 +640,51 @@ int Matcher::matchStream(int current,                       // Current input.
 //
 // MatchNode - Create an input node.
 //
-MatchNode::MatchNode(int index, Matcher::Input input, Matcher* machine)
+MatchNode::MatchNode(Matcher::Input input, Matcher* machine)
 {
     type = INPUT;
     u.i.input = input;
     u.i.machine = machine;
-    this->index = index;
 }
 
 //
 // MatchNode - Create a range node.
 //
-MatchNode::MatchNode(int index, Matcher::Input left, Matcher::Input right)
+MatchNode::MatchNode(Matcher::Input left, Matcher::Input right)
 {
     type = RANGE;
     u.r.left = left;
     u.r.right = right;
-    this->index = index;
 }
 
 //
 // MatchNode - Create a unary node.
 //
-MatchNode::MatchNode(int index, MatchNode::Type op, MatchNode* node)
+MatchNode::MatchNode(MatchNode::Type op, MatchNode* node)
 {
     type = op;
     u.node = node;
-    this->index = index;
 }
 
 //
 // MatchNode - Create a binary node.
 //
-MatchNode::MatchNode(int index, MatchNode::Type op, MatchNode* left, MatchNode* right)
+MatchNode::MatchNode(MatchNode::Type op, MatchNode* left, MatchNode* right)
 {
     type = op;
     u.b.left = left;
     u.b.right = right;
-    this->index = index;
 }
 
 //
 // MatchNode - Create an unknown node.
 //
-MatchNode::MatchNode(int index, void* value, void (*free)(void*), std::string (*name)(void*))
+MatchNode::MatchNode(void* value, void (*free)(void*), std::string (*name)(void*))
 {
     type = UNKNOWN;
     u.u.value = value;
     u.u.free = free;
     u.u.name = name;
-    this->index = index;
 }
 
 //
@@ -783,18 +777,18 @@ static MatchNode* getRanges(const std::string& input, int from, int to)
 
     if (from < (to - 2) && input[from + 1] == '-') {
         // The head is a range.
-        left = new MatchNode(0, input[from], input[from + 2]);
+        left = new MatchNode(input[from], input[from + 2]);
         from += 3;
     } else {
         // The head is a single character.
-        left = new MatchNode(0, input[from], (Matcher*)NULL);
+        left = new MatchNode(input[from], (Matcher*)NULL);
         from += 1;
     }
 
     right = getRanges(input, from, to);
     if (right) {
         // Add the right side.
-        left = new MatchNode(0, MatchNode::OR, left, right);
+        left = new MatchNode(MatchNode::OR, left, right);
     }
 
     return left;
@@ -807,7 +801,7 @@ static MatchNode* buildSet(MatchNode::Type type, const std::string& input, int f
 {
     MatchNode *np = getRanges(input, from, to);
 
-    return new MatchNode(0, type, np, NULL);
+    return new MatchNode(type, np, NULL);
 }
 
 //
@@ -829,11 +823,11 @@ static MatchNode* primary(const std::string& input, int& index, int& ch)
         }
     } else if (ch >= 0) {
         // A specific input.
-        node = new MatchNode(0, ch, (Matcher*)NULL);
+        node = new MatchNode(ch, (Matcher*)NULL);
         getinput(input, index, ch);
     } else if (ch == DOT) {
         // Match any input.
-        node = new MatchNode(0, 0, Matcher::INPUTMAX);
+        node = new MatchNode(0, Matcher::INPUTMAX);
         getinput(input, index, ch);
     } else if (ch == LBRACKET) {
         // A regular expression set.
@@ -921,7 +915,7 @@ static MatchNode* unary(const std::string& input, int& index, int& ch)
             }
             type = MatchNode::ONEORMORE;
         }
-        node = new MatchNode(0, type, node);
+        node = new MatchNode(type, node);
         getinput(input, index, ch);
     }
 
@@ -939,7 +933,7 @@ static MatchNode* concat(const std::string& input, int& index, int& ch)
     while (ch != EOS && ch != BAR && ch != RPAREN && ch != ']') {
         // Concatenated.
         right = unary(input, index, ch);
-        left = new MatchNode(0, MatchNode::CONCAT, left, right);
+        left = new MatchNode(MatchNode::CONCAT, left, right);
     }
     return left;
 }
@@ -956,7 +950,7 @@ static MatchNode* orop(const std::string& input, int& index, int& ch)
         // OR operator.
         getinput(input, index, ch);
         right = concat(input, index, ch);
-        left = new MatchNode(0, MatchNode::OR, left, right);
+        left = new MatchNode(MatchNode::OR, left, right);
     }
 
     return left;
@@ -1023,11 +1017,6 @@ enum {
 //
 void MatchNode::treePrint(FILE* fp, const char* (*inputname)(int, void*), void* context, int prec)
 {
-
-    if (index) {
-        fprintf(fp, "$%d = ", index);
-    }
-
     switch (type) {
     case UNKNOWN:
         if (u.u.name) {
@@ -1124,12 +1113,9 @@ void MatchNode::print(FILE* fp, const char* (*inputname)(int, void*), void* cont
 //
 void Matcher::statePrint(FILE* fp, State* sp, void* context)
 {
-    fprintf(fp, "    %d (%d", sp->number, sp->depth);
-    if (sp->index) {
-        fprintf(fp, " $%d", sp->index);
-    }
-    fprintf(fp, "):\n");
+    fprintf(fp, "    %d (%d):\n", sp->number, sp->depth);
     for (int i = 0; i < inputsize; ++i) {
+#if RICH
         char multi = sp->states[i].av.size() > 1 ? '*' : ' ';
         for (int j = 0; j < sp->states[i].av.size(); ++j) {
             if (sp->states[i].av[j].value != -1 || sp->states[i].next.list.size()) {
@@ -1161,6 +1147,7 @@ void Matcher::statePrint(FILE* fp, State* sp, void* context)
                 fprintf(fp, "\n");
             }
         }
+#endif
     }
 }
 

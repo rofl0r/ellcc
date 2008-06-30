@@ -89,8 +89,6 @@ ELLSIF_OBJS := \
   ellcc.o \
   elsa.o
 
-#  elsa.o
-
 -include $(ELLSIF_OBJS:.o=.d)
 
 # ellcc binary

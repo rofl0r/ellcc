@@ -114,10 +114,8 @@ public:
         void clear();                           ///< Clear the state list.
         /** Add a state to the list.
          * @param p The state to add.
-         * @param min Where in the current list to start.
-         * @return The index of the added state.
          */
-        int add(State* p, int min);
+        void add(State* p);
         /** Append a state list to the list.
          * @param from The state list to append.
          */
@@ -134,16 +132,6 @@ public:
             { value = -1; }
         int value;                              ///< The value of state if matched.
         States next;                            ///< The next state(s), if any.
-        /** An action/value pair.
-         */
-        struct AVPair {
-            /** The constructor.
-             */
-            AVPair() { value = -1; }
-            int value;                          ///< Value of state if matched.
-            States next;                        ///< Next state(s), if any.
-        };
-        pw::array<AVPair> av;                   ///< Actions and/or values associated with this entry.
     };
 
     /** A state machine state.
@@ -152,22 +140,49 @@ public:
         /** The constructor.
          */
         State()
-            { next = NULL; number = 0; depth = 0; index = 0; states = NULL; }
+            { next = NULL; number = 0; depth = 0; states = NULL; }
         State* next;                            ///< Next state in machine.
         int number;                             ///< State number.
         int depth;                              ///< Depth into state machine.
-        int index;                              ///< Parameter index, if any.
         Entry* states;                          ///< Per-input states.
     };
 
+    /** Add a tree to a state machine.
+     * @param[in,out] root The root pointer.
+     * @param rootlist The root states.
+     * @param tree The tree to add.
+     * @param value The value to return if matched.
+     * @param next Next states.
+     * @param depth The depth of the tree.
+     * @return true if the tree was added unambiguously.
+     */
     bool addTree(State** root, States& rootlist, const MatchNode* tree,
                  int value, const States *next, int depth);
 
 private:
-    static bool hasTarget(State* sp, int target);
-    State** setRoot(State** root, States& list, int depth, int index);
+    /** Set up initial the state machine, if necessary.
+     * @param[in,out] root The root pointer.
+     * @param list The root states.
+     * @param depth The depth of the tree.
+     */
+    State** setRoot(State** root, States& list, int depth);
+    /** Set the value of an entry.
+     * @param entry The entry to set.
+     * @param value The value to give it.
+     * @param next The states that may follow.
+     */
     bool setValue(Entry* entry, int value, const States* next = NULL);
+    /** Print a state to a file.
+     * @param fp The output file.
+     * @param sp The state to output.
+     * @param context The machine context.
+     */
     void statePrint(FILE* fp, State* sp, void* context);
+    /** Print a state to a file in reverse order.
+     * @param fp The output file.
+     * @param sp The state to output.
+     * @param context The machine context.
+     */
     void reversePrint(FILE* fp, State* sp, void* context);
     int addWord(State** root, const char* word, int value, int depth);
     int addWord(State** root, const std::string& word, int value, int depth);
@@ -204,15 +219,15 @@ public:
 
     // Constructors.
     // An input node.
-    MatchNode(int index, Matcher::Input input, Matcher* machine);
+    MatchNode(Matcher::Input input, Matcher* machine);
     // A range node.
-    MatchNode(int index, Matcher::Input left, Matcher::Input right);
+    MatchNode(Matcher::Input left, Matcher::Input right);
     // A unary operator node.
-    MatchNode(int index, Type op, MatchNode* node);
+    MatchNode(Type op, MatchNode* node);
     // A binary operator node.
-    MatchNode(int index, Type op, MatchNode* left, MatchNode* right);
+    MatchNode(Type op, MatchNode* left, MatchNode* right);
     // A user defined node.
-    MatchNode(int index, void* value, void (*free)(void*), std::string (*name)(void*));
+    MatchNode(void* value, void (*free)(void*), std::string (*name)(void*));
     // A regular expression.
     MatchNode(const std::string& input);
     static void freeTree(MatchNode* tree);
@@ -247,7 +262,6 @@ public:
         } u;
     } u;
 
-    int index;                                  // Index when used as a action parameter value.
 private:
     void treePrint(FILE* fp, const char* (*inputname)(int, void*), void* context, int prec);
 };
