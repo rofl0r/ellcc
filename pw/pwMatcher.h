@@ -114,8 +114,10 @@ public:
         void clear();                           ///< Clear the state list.
         /** Add a state to the list.
          * @param p The state to add.
+         * @param first The first slot to try to use.
+         * @return The slot that was used.
          */
-        void add(State* p);
+        int add(State* p, int first = 0);
         /** Append a state list to the list.
          * @param from The state list to append.
          */

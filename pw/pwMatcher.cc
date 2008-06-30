@@ -24,17 +24,19 @@ void Matcher::States::clear()
 //
 // add - Add a pointer to a state list.
 //
-void Matcher::States::add(State* p)
+int Matcher::States::add(State* p, int first)
 {
-    for (int i = 0; i < list.size(); i++) {
+    int last = list.size();
+    for (int i = first; i < last; i++) {
         if (list[i] == NULL || list[i] == p) {
             list[i] = p;
-            return;
+            return i;
         }
     }
 
     // Not added, allocate space for a new one.
-    list[list.size()] = p;
+    list[last] = p;
+    return last;
 }
 
 //
@@ -42,8 +44,10 @@ void Matcher::States::add(State* p)
 //
 void Matcher::States::append(const States* from)
 {
-    for (int i = 0; i < from->list.size(); i++) {
-        add(from->list[i]);
+    int last = from->list.size();
+    int next = 0;
+    for (int i = 0; i < last; i++) {
+        next = add(from->list[i], next);
     }
 }
 
@@ -52,7 +56,8 @@ void Matcher::States::append(const States* from)
 //
 void Matcher::Machines::add(Matcher* p)
 {
-    for (int i = 0; i < list.size(); i++) {
+    int last = list.size();
+    for (int i = 0; i < last; i++) {
         // Don't duplicate.
         if (list[i] == p) {
             return;
@@ -60,7 +65,7 @@ void Matcher::Machines::add(Matcher* p)
     }
 
     // Not added, allocate space for a new one.
-    list[list.size()] = p;
+    list[last] = p;
 }
 
 //
@@ -161,28 +166,6 @@ bool Matcher::setValue(Entry* entry, int value, const States* next)
     if (value > maxvalue) {
         maxvalue = value;                       // Remember the largest value.
     }
-
-#if RICH
-    if (next == NULL) {
-        return true;
-    }
-
-    bool found = false;
-    int size = entry->av.size();
-    for (int i = 0; i < size; ++i) {
-        // Check for value already in the list.
-        if (entry->av[i].value == value) {
-            entry->av[i].next.append(next);
-            found = true;
-            break;
-        }
-    }
-
-    if (!found) {
-        entry->av[size].value = value;
-        entry->av[size].next.append(next);
-    }
-#endif
 
     return true;
 }
@@ -575,7 +558,7 @@ int Matcher::matchStream(int current,                       // Current input.
     for (i = 0; i < last; ++i) {
         // Set up traversal pointers.
         if (start.list[i]) {
-            traverse.add(start.list[i]);
+            traverse.add(start.list[i], i);
         }
     }
 
@@ -595,7 +578,6 @@ int Matcher::matchStream(int current,                       // Current input.
 
         // Set up the next state pointers.
         allnull = true;
-        last = traverse.list.size();
         for (i = 0; i < last; ++i) {
             if (traverse.list[i]) {
                 States *sp = &traverse.list[i]->states[current].next;
@@ -605,7 +587,7 @@ int Matcher::matchStream(int current,                       // Current input.
                     if (sp->list[j]) {
                         // Have a non-NULL pointer.
                         allnull = false;
-                        traverse.add(sp->list[j]);
+                        traverse.add(sp->list[j], i);
                     }
                 }
             }
