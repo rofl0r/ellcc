@@ -555,10 +555,11 @@ int Matcher::matchStream(int current,                       // Current input.
 
     traverse.clear();                          // Clear the traversal pointers.
     last = start.list.size();
+    int nxt = 0;
     for (i = 0; i < last; ++i) {
         // Set up traversal pointers.
         if (start.list[i]) {
-            traverse.add(start.list[i], i);
+            nxt = traverse.add(start.list[i], nxt);
         }
     }
 
@@ -581,13 +582,14 @@ int Matcher::matchStream(int current,                       // Current input.
         for (i = 0; i < last; ++i) {
             if (traverse.list[i]) {
                 States *sp = &traverse.list[i]->states[current].next;
+                nxt = i;
                 traverse.list[i] = NULL;
                 int states = sp->list.size();
                 for (j = 0; j < states; ++j) {
                     if (sp->list[j]) {
                         // Have a non-NULL pointer.
                         allnull = false;
-                        traverse.add(sp->list[j], i);
+                        nxt = traverse.add(sp->list[j], nxt);
                     }
                 }
             }
