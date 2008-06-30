@@ -338,19 +338,19 @@ private:
     int linevalue;                              ///< Line \# returned by \#line.
 
     /** Get the next character.
-     * A #matchStream callback function.
+     * A Matcher::matchStream callback function.
      * @param arg The context.
      * @return The next character in the stream.
      */
     static int read(void *arg);
     /** Save the next character.
-     * A #matchStream callback function.
+     * A Matcher::matchStream callback function.
      * @param arg The context.
      * @param current The character to save.
      */
     static void save(void *arg, int current);
     /** Back up N characters in a stream.
-     * A #matchStream callback function.
+     * A Matcher::matchStream callback function.
      * @param arg The context.
      * @param good The number of good characters.
      * @param count The number of characters to back up.
@@ -508,16 +508,32 @@ struct Options {
  */
 class  PP {
 public:
-    enum Filter {                               // Token filters.
-        GETALL,                                 // Get all tokens.
-        GETNWS,                                 // Get all non-whitespace tokens.
-        GETNL,                                  // Get all non-whitespace tokens plus newline.
+    /** Token filters.
+     */
+    enum Filter {
+        GETALL,                                 ///< Get all tokens.
+        GETNWS,                                 ///< Get all non-whitespace tokens.
+        GETNL,                                  ///< Get all non-whitespace tokens plus newline.
     };
 
+    /** The preprocessor constructor.
+     * @param name The main file name.
+     * @param errors The error list.
+     */
     PP(const std::string& name, ErrorList& errors);
-    virtual ~PP();
-    TokenInfo info;
+    /** The preprocessor destructor.
+     */
+    ~PP();
+    TokenInfo info;                             ///< Information about he current token.
+    /** Set the current input stream to a string.
+     * @param string The string to preprocess.
+     * @return true if the operation suceedded.
+     */
     bool setInput(const char *string);
+    /** Set the current input stream to a file.
+     * @param fp If non-NULL The input file pointer, if NULL the current #name is opened..
+     * @return true if the operation suceedded.
+     */
     bool setInput(FILE *fp = NULL);
     void addInclude(const std::string& name);
     void addDefine(const std::string& name, const std::string& value = "");
@@ -559,33 +575,71 @@ private:
         int level;
     };
 
-    const char* name;                              // Name of input.
-    bool myfp;                                  // True if fp is internal.
-    FILE *fp;                                   // File pointer.
-    char *sp;                                   // String pointer.
-    char *ip;                                   // string input pointer
-    PPStream *pp;                             // Scanner context.
-    include *includes;                          // open include files
-    int includeline;                            // last #include line
-    static array<const char*> files;                    // Input file names.
-    array<std::string> includedirs;              // Include search path.
-    Options options;                        // Pre-processor options.
+    const char* name;                           ///< The name of input stream.
+    bool myfp;                                  ///< True if fp is internal.
+    FILE *fp;                                   ///< File pointer, if stream is a file.
+    char *sp;                                   ///< String pointer, if stream is a string.
+    char *ip;                                   ///< string input pointer
+    PPStream *pp;                               ///< The Stream context.
+    include *includes;                          ///< The open include file list.
+    int includeline;                            ///< last \#include line
+    static array<const char*> files;            ///< Input file names.
+    array<std::string> includedirs;             ///< The include search path.
+    Options options;                            ///< The preprocessor options.
+    /** Look up a macro.
+     * @param name The macro name to look up.
+     * @param line The current source line number.
+     * @return A pointer to the macro definition or NULL if it is not found.
+     */
     Macro* lookup(std::string& name, int line);
+    /** Define a macro with the current stream information.
+     * @param line The source line where the definition occurs.
+     * @param filename The name of the source file.
+     * @param data The input stream containing the macro definition.
+     */
     void definemacro(int line, const char* filename, PPStream* data);
+    /** Define a macro.
+     * @param line The source line where the definition occurs.
+     * @param filename The name of the source file.
+     * @param data The token containing the macro name.
+     * @param type The type of the macro.
+     * @param funlike true if the macro is a function-like macro.
+     * @param formal The macro's formal arguments if the macro is a function-like macro.
+     * @param body The body of the macro.
+     */
     void definemacro(int line, const char* filename, Token& data,
                      Macro::Type type, bool funlike, const array<std::string>& formal, const std::string& body);
+    /** Undefine a macro.
+     * @param name The name of the macro.
+     * @param line The current source line.
+     * @param fileline The line at which the current file was included.
+     * @param fixed true if the macro can't be changed.
+     */
     void undefinemacro(std::string& name, int line, int fileline, bool fixed);
+    /** Low level function to get the next character from a string.
+     * @return The next character in the string or -1 if the end of the string is encountered.
+     */
     int stringgetc();
+    /** Low level function to get the next character from a file.
+     * @return The next character in the file or -1 if the end of the file is encountered.
+     */
     int filegetc();
+    /** Add a file name to the file list.
+     * @param name The name to add.
+     * @return A pointer to the added name.
+     */
     const char* addName(const char* name);
-    void initializeoptions();
+    void initializeoptions();                   ///< Set preprocessor options to the default state.
     /** Open an include file.
      * @param current The current preprocessing context.
      * @return true if the file was opened successfully.
      */
     bool doInclude(PPStream *current);
+    /** Get the net token, handling some preprocessor directives.
+     * @param[out] tinfo Information about the next token.
+     */
     void processnexttoken(TokenInfo& tinfo);
-    bool process();
+    void process();                             ///< Process a file.
 };
 
 };

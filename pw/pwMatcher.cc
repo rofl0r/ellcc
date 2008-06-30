@@ -68,8 +68,7 @@ void Matcher::Machines::add(Matcher* p)
 // Matcher - Construct a new state machine.
 //
 Matcher::Matcher(const std::string& name, int maxinput,
-                               const char* (*inputname)(int, void*), const char* (*valuename)(int, void*),
-                               int value)
+                               const char* (*inputname)(int, void*), const char* (*valuename)(int, void*))
 {
     this->name = name;                          // Name of the state machine.
     this->inputname = inputname;                // Function to display input names.
@@ -78,7 +77,6 @@ Matcher::Matcher(const std::string& name, int maxinput,
     inputsize = maxinput + 1;                   // Size of input set.
     nextnumber = 0;                             // Next state number.
     maxvalue = 0;                               // Maximum value seen.
-    this->value = value;                        // State machine's nested value.
     traversing = false;                         // Clear the traversing flag.
     // Reserve space for state 0.
     start.list[0] = NULL;
@@ -271,10 +269,6 @@ bool Matcher::addTree(State** root, States& rootlist, const MatchNode* tree,
         // Add a single input.
         // Set the value.
         setValue(&(*root)->states[tree->u.i.input], value, next);
-        if (tree->u.i.machine) {
-            (*root)->states[tree->u.i.input].machine = tree->u.i.machine;
-            (*root)->machines.add(tree->u.i.machine);
-        }
         break;
 
     case MatchNode::RANGE:
@@ -360,10 +354,6 @@ bool Matcher::addTree(State** root, States& rootlist, const MatchNode* tree,
                         root = setRoot(root, rootlist, depth, next->list[j]->index);
                         setValue(&(*root)->states[i], next->list[j]->states[i].value,
                                  &next->list[j]->states[i].next);
-                        if (next->list[j]->states[i].machine) {
-                            (*root)->states[i].machine = next->list[j]->states[i].machine;
-                            (*root)->machines.add(next->list[j]->states[i].machine);
-                        }
                     }
                 }
             }
@@ -380,10 +370,6 @@ bool Matcher::addTree(State** root, States& rootlist, const MatchNode* tree,
                         root = setRoot(root, rootlist, depth, next->list[j]->index);
                         setValue(&(*root)->states[i], next->list[j]->states[i].value,
                                  &next->list[j]->states[i].next);
-                        if (next->list[j]->states[i].machine) {
-                            (*root)->states[i].machine = next->list[j]->states[i].machine;
-                            (*root)->machines.add(next->list[j]->states[i].machine);
-                        }
                     }
                 }
             }
@@ -1143,14 +1129,6 @@ void Matcher::statePrint(FILE* fp, State* sp, void* context)
         fprintf(fp, " $%d", sp->index);
     }
     fprintf(fp, "):\n");
-    if (sp->machines.list.size()) {
-        // This state has pre-state machines.
-        fprintf(fp, "      (");
-        for (int i = 0; i < sp->machines.list.size(); ++i) {
-            fprintf(fp, " %s", sp->machines.list[i]->name.c_str());
-        }
-        fprintf(fp, " )\n");
-    }
     for (int i = 0; i < inputsize; ++i) {
         char multi = sp->states[i].av.size() > 1 ? '*' : ' ';
         for (int j = 0; j < sp->states[i].av.size(); ++j) {

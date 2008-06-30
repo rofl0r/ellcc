@@ -1,7 +1,9 @@
-/*
- *    pwMatcher.h - Match strings and regular expressions.
+/** @file
+ * Match strings and regular expressions.
+ * @author Richard Pennington
+ * @date June 30, 2008
  *
- *    Copyright (C) 2008, Richard Pennington.
+ * Copyright (C) 2008, Richard Pennington.
  */
 
 #ifndef pwMatcher_h
@@ -15,76 +17,147 @@ namespace pw {
 
 class MatchNode;
 
+/** Match a string or regular expression.
+ */
 class Matcher {
 public:
-    typedef int Input;                          // State machine input type.
-    enum { INPUTMAX = INT_MAX,                  // Largest input word.
-           CHARSIZE = SCHAR_MAX                 // Number of characters in character set.
-    };
-
+    typedef int Input;                          ///< Matcher input type.
+    static const int INPUTMAX = INT_MAX;        ///< Largest input word.
+    static const int CHARSIZE = SCHAR_MAX;      ///< Number of characters in character set.
+    /** Construct a matcher.
+     * @param name The matcher's name.
+     * @param maxinput The maximum input value.
+     * @param inputname A function to return a string representing an input.
+     * @param valuename A function to return a string representing a value.
+     */
     Matcher(const std::string& name, int maxinput,
-                   const char* (*inputname)(int, void*), const char* (*valuename)(int, void*),
-                   int value);
+                   const char* (*inputname)(int, void*), const char* (*valuename)(int, void*));
+    /** Destruct a matcher.
+     */
     ~Matcher();
 
-    // Add elements to the state machine.
+    /** Add a word to the matcher.
+     * @param word The word to add.
+     * @param value The token value.
+     * @return true if the word is added unambiguously.
+     */
     bool addWord(const char* word, int value);
+    /** Add a word to the matcher.
+     * @param word The word to add.
+     * @param value The token value.
+     * @return true if the word is added unambiguously.
+     */
     bool addWord(const std::string& word, int value);
+    /** Add a MatchNode tree to the matcher.
+     * @param tree The tree to add.
+     * @param value The token value.
+     * @return true if the tree is added unambiguously.
+     */
     bool addTree(const MatchNode* tree, int value);
-    // Match input to the state machine.
+    /** Match a word.
+     * @param word The word to match.
+     * @return The token value or -1 if the word is not found.
+     */
     int matchWord(const char* word);
+    /** Match a word.
+     * @param word The word to match.
+     * @return The token value or -1 if the word is not found.
+     */
     int matchWord(const std::string& word);
-    int matchStream(int current,                       // Current input.
-                    int (*next)(void*),                // Get next input.
-                    void (*save)(void*, int),          // Save matching input.
-                    void (*backup)(void*, int, int),   // Reuse unmatching input.
-                    void* context);                    // Input context.
+    /** Match input from a stream.
+     * @param current The current input.
+     * @param next Get the next input.
+     * @param save Save matching input.
+     * @param backup Reuse unmatching input.
+     * @param context The scanning context.
+     * @return The token value or -1 if the word is not found.
+     */
+    int matchStream(int current,
+                    int (*next)(void*),
+                    void (*save)(void*, int),
+                    void (*backup)(void*, int, int),
+                    void* context);
 
+    /** Output a matcher to a file in human readable form.
+     * @param fp The output file.
+     * @param context The scanning context.
+     */
     void print(FILE* fp, void* context);
+    /** Get the maximum value that the matcher can return.
+     * @return The maximum value.
+     */
     int getMaxvalue() { return maxvalue; }
+    /** Get the maximum int value that the matcher can handle.
+     * @return The maximum value.
+     */
     int getInputsize() { return inputsize; }
+    /** Get the name of the matcher.
+     * @return The name.
+     */
     std::string& getName() { return name; }
 
     struct State;
 
-    struct Machines {                           // A state machine list.
+    /** A state machine list.
+     */
+    struct Machines {
+        /** Add a matcher.
+         * @param p The matcher.
+         */
         void add(Matcher* p);
-        pw::array<Matcher*> list;
+        pw::array<Matcher*> list;               ///< The matcher list.
     };
 
-    struct States {                             // A state list.
-        void clear();
+    /** A list of states.
+     */
+    struct States {
+        void clear();                           ///< Clear the state list.
+        /** Add a state to the list.
+         * @param p The state to add.
+         * @param min Where in the current list to start.
+         * @return The index of the added state.
+         */
         int add(State* p, int min);
+        /** Append a state list to the list.
+         * @param from The state list to append.
+         */
         void append(const States* from);
-        pw::array<State*> list;
+        pw::array<State*> list;                 ///< The state list.
     };
 
+    /** A state machine entry.
+     */
     struct Entry {
+        /** The constructor.
+         */
         Entry()
-            { value = -1; machine = NULL; }
-
-        int value;                              // Value of state if matched.
-        States next;                            // Next state(s), if any.
-        
-        Matcher* machine;                // State machine to generate, if any.
-
-        struct AVPair {                         // An action/value pair.
+            { value = -1; }
+        int value;                              ///< The value of state if matched.
+        States next;                            ///< The next state(s), if any.
+        /** An action/value pair.
+         */
+        struct AVPair {
+            /** The constructor.
+             */
             AVPair() { value = -1; }
-            int value;                          // Value of state if matched.
-            States next;                        // Next state(s), if any.
+            int value;                          ///< Value of state if matched.
+            States next;                        ///< Next state(s), if any.
         };
-        pw::array<AVPair> av;                     // Actions and/or values associated with this entry.
+        pw::array<AVPair> av;                   ///< Actions and/or values associated with this entry.
     };
 
-    struct State {                              // State machine state.
+    /** A state machine state.
+     */
+    struct State {
+        /** The constructor.
+         */
         State()
             { next = NULL; number = 0; depth = 0; index = 0; states = NULL; }
-        State* next;                            // Next state in machine.
-        Machines machines;                      // External state machine pointers.
-        int number;                             // State number.
-        int depth;                              // Depth into state machine.
-        int index;                              // Parameter index, if any.
-        Entry* states;                          // Per-input states.
+        State* next;                            ///< Next state in machine.
+        int number;                             ///< State number.
+        int depth;                              ///< Depth into state machine.
+        int index;                              ///< Parameter index, if any.
+        Entry* states;                          ///< Per-input states.
     };
 
     bool addTree(State** root, States& rootlist, const MatchNode* tree,
@@ -112,7 +185,6 @@ private:
     int maxvalue;                               // Maximum value returned by this state machine.
     States start;                               // Starting nodes.
     States traverse;                            // State traversal pointers.
-    int value;                                  // Value of nested state machine.
     bool traversing;                            // True if traversing this machine.
 };
 

@@ -215,8 +215,7 @@ void Plexer::setupTokens(State* sp)
         if (tp->keyword) {
             // This is keyword.
             if (rm == NULL) {
-                rm = sp->language->options.reservedWords = new Matcher("reserved words", Matcher::CHARSIZE,
-                                                             NULL, NULL, 0);
+                rm = sp->language->options.reservedWords = new Matcher("reserved words", Matcher::CHARSIZE, NULL, NULL);
             }
 
             // Add to the reserved word table.
@@ -227,8 +226,7 @@ void Plexer::setupTokens(State* sp)
         } else {
             // This is a token.
             if (tm == NULL) {
-                tm = sp->language->options.tokens = new Matcher("tokens", Matcher::CHARSIZE,
-                                                       NULL, NULL, 0);
+                tm = sp->language->options.tokens = new Matcher("tokens", Matcher::CHARSIZE, NULL, NULL);
             }
 
             // Add to the token table.
@@ -411,18 +409,14 @@ void Plexer::CFGsetupOptions()
 
     options = CFGoption;				// Set default options.
     if (options.reservedWords == NULL) {
-        machine = options.reservedWords = new pw::Matcher("reserved words", pw::Matcher::CHARSIZE,
-                                                           NULL,
-                                                           NULL, 0);
+        machine = options.reservedWords = new pw::Matcher("reserved words", pw::Matcher::CHARSIZE, NULL, NULL);
         for (wp = CFGreservedWords; wp->word; ++wp) {
             machine->addWord(wp->word, wp->token);
         }
     }
 
     if (options.tokens == NULL) {
-        machine = options.tokens = new pw::Matcher("tokens", pw::Matcher::CHARSIZE,
-                                                   NULL,
-                                                   NULL, 0);
+        machine = options.tokens = new pw::Matcher("tokens", pw::Matcher::CHARSIZE, NULL, NULL);
     for (wp = CFGtokens; wp->word; ++wp) {
         if (*wp->word == ' ') {
                 // Match a regular expression.

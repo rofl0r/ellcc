@@ -218,9 +218,8 @@ void PP::addInclude(const std::string& name)
     includedirs += name;
 }
 
-//
-// initializeoptions - set pre-processor options to the default state.
-//
+/* Set pre-processor options to the default state.
+ */
 void PP::initializeoptions()
 {
     // default options (for C)
@@ -609,7 +608,7 @@ void PP::fixedDefine(const std::string& name, const char *value)
 //
 // process - process a stream
 //
-bool PP::process()
+void PP::process()
 {
     PPStream *current;
 
@@ -675,8 +674,6 @@ bool PP::process()
             break;
         }
     } while (current->token != PPStream::ENDOFFILE);
-
-    return true;
 }
 
 //

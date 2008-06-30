@@ -88,7 +88,7 @@ PPStream::PPStream(PP& ppsp, Options *options) : psp(ppsp)
     this->fgetc = NULL;                         // input function
     if (directives == NULL) {
         // Define the preprocessing directive state machine.
-        directives = new pw::Matcher("directives", pw::Matcher::CHARSIZE, pw::stateCharName, NULL, 0);
+        directives = new pw::Matcher("directives", pw::Matcher::CHARSIZE, pw::stateCharName, NULL);
         for (wp = directivelist; wp->word; ++wp) {
             directives->addWord(wp->word, wp->token);
         }
