@@ -565,7 +565,6 @@ int Matcher::matchStream(int current,                       // Current input.
 
     count = 1;
     good = 0;
-    last = nxt + 1;
     int newnxt = nxt;
     for (;;) {
         save(context, current);
