@@ -565,9 +565,12 @@ int Matcher::matchStream(int current,                       // Current input.
 
     count = 1;
     good = 0;
+    last = nxt + 1;
+    int newnxt = nxt;
     for (;;) {
         save(context, current);
-        last = traverse.list.size();
+        // last = traverse.list.size();
+        last = newnxt + 1;
         for (i = 0; i < last; ++i) {
             if (traverse.list[i] && traverse.list[i]->states[current].value >= 0) {
                 // Remember the last successful input.
@@ -579,6 +582,7 @@ int Matcher::matchStream(int current,                       // Current input.
 
         // Set up the next state pointers.
         allnull = true;
+        newnxt = 0;
         for (i = 0; i < last; ++i) {
             if (traverse.list[i]) {
                 States *sp = &traverse.list[i]->states[current].next;
@@ -590,6 +594,9 @@ int Matcher::matchStream(int current,                       // Current input.
                         // Have a non-NULL pointer.
                         allnull = false;
                         nxt = traverse.add(sp->list[j], nxt);
+                        if (nxt > newnxt) {
+                            newnxt = nxt;
+                        }
                     }
                 }
             }
