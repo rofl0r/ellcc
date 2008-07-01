@@ -1659,8 +1659,6 @@ static void RemoveEnv(const char * name, char ** const envp) {
 /// Inputs:
 ///  InputFilename   - The name of the input source file.
 ///  OutputFilename  - The name of the file to generate.
-///  gcc             - The pathname to use for GGC.
-///  envp            - A copy of the process's current environment.
 ///
 /// Outputs:
 ///  None.
@@ -1682,6 +1680,9 @@ static int Preprocess(const std::string &OutputFilename,
   sys::Path gcc = FindExecutable("gcc", progname);
   if (gcc.isEmpty())
     PrintAndExit("Failed to find gcc");
+
+  // Mark the output files for removal if we get an interrupt.
+  sys::RemoveFileOnSignal(sys::Path(OutputFilename));
 
   extern char **environ;
   char ** clean_env = CopyEnv(environ);
@@ -1727,8 +1728,6 @@ static int Preprocess(const std::string &OutputFilename,
 /// Inputs:
 ///  InputFilename   - The name of the input source file.
 ///  OutputFilename  - The name of the file to generate.
-///  gcc             - The pathname to use for GGC.
-///  envp            - A copy of the process's current environment.
 ///
 /// Outputs:
 ///  None.
@@ -1807,7 +1806,7 @@ static int Preprocess(const std::string &OutputFilename,
 
 #endif
 
-/// GenerateNative - generates a native object file from the
+/// Link - generates a native object file from the
 /// specified bitcode file.
 ///
 /// Inputs:
@@ -1815,19 +1814,16 @@ static int Preprocess(const std::string &OutputFilename,
 ///  OutputFilename  - The name of the file to generate.
 ///  NativeLinkItems - The native libraries, files, code with which to link
 ///  LibPaths        - The list of directories in which to find libraries.
-///  gcc             - The pathname to use for GGC.
-///  envp            - A copy of the process's current environment.
 ///
 /// Outputs:
 ///  None.
 ///
 /// Returns non-zero value on error.
 ///
-static int GenerateNative(const std::string& OutputFilename,
-                          std::vector<Input*>& InputFilenames,
-                          const Linker::ItemList& LinkItems,
-                          const sys::Path& gcc, char** const envp,
-                          std::string& ErrMsg)
+static int Link(const std::string& OutputFilename,
+                std::vector<Input*>& InputFilenames,
+                const Linker::ItemList& LinkItems,
+                std::string& ErrMsg)
 {
   // Remove these environment variables from the environment of the
   // programs that we will execute.  It appears that GCC sets these
@@ -1836,7 +1832,17 @@ static int GenerateNative(const std::string& OutputFilename,
   //
   // However, when we invoke GCC below, we want it to use its normal
   // configuration.  Hence, we must sanitize its environment.
-  char ** clean_env = CopyEnv(envp);
+        
+  // Determine the location of the ld program.
+  sys::Path ld = FindExecutable("gcc", progname);
+  if (ld.isEmpty())
+    PrintAndExit("Failed to find ld");
+
+  // Mark the output files for removal if we get an interrupt.
+  sys::RemoveFileOnSignal(sys::Path(OutputFilename));
+
+  extern char **environ;
+  char ** clean_env = CopyEnv(environ);
   if (clean_env == NULL)
     return 1;
   RemoveEnv("LIBRARY_PATH", clean_env);
@@ -1853,9 +1859,9 @@ static int GenerateNative(const std::string& OutputFilename,
   //  and linker because we don't know where to put the _start symbol.
   //  GCC mysteriously knows how to do it.
   std::vector<std::string> args;
-  args.push_back(gcc.c_str());
-  args.push_back("-fno-strict-aliasing");
-  args.push_back("-O3");
+  args.push_back(ld.c_str());
+  // RICH: args.push_back("-fno-strict-aliasing");
+  // RICH: args.push_back("-O3");
   args.push_back("-o");
   args.push_back(OutputFilename);
   for (unsigned i = 0; i < InputFilenames.size(); ++i ) {
@@ -1883,7 +1889,6 @@ static int GenerateNative(const std::string& OutputFilename,
         args.push_back(LinkItems[index].first);
     }
 
-      
   // Now that "args" owns all the std::strings for the arguments, call the c_str
   // method to get the underlying string array.  We do this game so that the
   // std::string array is guaranteed to outlive the const char* array.
@@ -1899,7 +1904,7 @@ static int GenerateNative(const std::string& OutputFilename,
 
   // Run the compiler to assembly and link together the program.
   int R = sys::Program::ExecuteAndWait(
-    gcc, &Args[0], (const char**)clean_env, 0, 0, 0, &ErrMsg);
+    ld, &Args[0], (const char**)clean_env, 0, 0, 0, &ErrMsg);
   delete [] clean_env;
   return R;
 }
@@ -1927,6 +1932,9 @@ static int Assemble(const std::string &OutputFilename,
   sys::Path as = FindExecutable("as", progname);
   if (as.isEmpty())
     PrintAndExit("Failed to find as");
+
+  // Mark the output files for removal if we get an interrupt.
+  sys::RemoveFileOnSignal(sys::Path(OutputFilename));
 
   // Run as to preprocess the file..
   std::vector<std::string> args;
@@ -2051,19 +2059,10 @@ static void doMulti(Phases phase, std::vector<Input*>& files, InputList& result,
             timers[phase]->startTimer();
         }
 
-        // Mark the output files for removal if we get an interrupt.
-        sys::RemoveFileOnSignal(sys::Path(OutputFilename));
-
-        // Determine the location of the gcc program.
-        sys::Path gcc = FindExecutable("gcc", progname);
-        if (gcc.isEmpty())
-          PrintAndExit("Failed to find gcc");
-
-        extern char **environ;
         std::string ErrMsg;  
         // Keep track of the native link items (versus the bitcode items)
         Linker::ItemList NativeLinkItems;      // RICH
-        if (GenerateNative(OutputFilename, files, NativeLinkItems, gcc, environ, ErrMsg) != 0) {
+        if (Link(OutputFilename, files, NativeLinkItems, ErrMsg) != 0) {
             PrintAndExit(ErrMsg);
         }
 
@@ -2109,9 +2108,6 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
 
         sys::Path to(input.name.getBasename());
         to.appendSuffix(langToExt[nextType]);
-
-        // Mark the output files for removal if we get an interrupt.
-        sys::RemoveFileOnSignal(to);
 
         std::string ErrMsg;  
         if(Preprocess(to.toString(), input.name.toString(), ErrMsg) != 0) {
@@ -2516,9 +2512,6 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
 
         sys::Path to(input.name.getBasename());
         to.appendSuffix(langToExt[nextType]);
-
-        // Mark the output files for removal if we get an interrupt.
-        sys::RemoveFileOnSignal(to);
 
         std::string ErrMsg;  
         if(Assemble(to.toString(), input.name.toString(), ErrMsg) != 0) {
