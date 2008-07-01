@@ -1852,6 +1852,7 @@ static int Link(const std::string& OutputFilename,
   RemoveEnv("COLLECT_GCC", clean_env);
 
 
+  // RICH:
   // Run GCC to assemble and link the program into native code.
   //
   // Note:
