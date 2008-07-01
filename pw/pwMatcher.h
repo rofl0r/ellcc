@@ -186,90 +186,151 @@ private:
      * @param context The machine context.
      */
     void reversePrint(FILE* fp, State* sp, void* context);
-    int addWord(State** root, const char* word, int value, int depth);
-    int addWord(State** root, const std::string& word, int value, int depth);
+    /** Add a word to a state machine.
+     * @param root The root of the state machine.
+     * @param word The word to add.
+     * @param value The token value of the word.
+     * @param depth The state machine depth.
+     * @return true if the word was added unambiguously.
+     */
+    bool addWord(State** root, const char* word, int value, int depth);
+    /** Add a word to a state machine.
+     * @param root The root of the state machine.
+     * @param word The word to add.
+     * @param value The token value of the word.
+     * @param depth The state machine depth.
+     * @return true if the word was added unambiguously.
+     */
+    bool addWord(State** root, const std::string& word, int value, int depth);
+    /** Look for a word in a state machine.
+     * @param word The word to find.
+     * @return The token value of the word or -1 if the word is not found.
+     */
     int checkWord(const char* word);
+    /** Look for a word in a state machine.
+     * @param word The word to find.
+     * @param index The starting index in the word.
+     * @return The token value of the word or -1 if the word is not found.
+     */
     int checkWord(const std::string& word, size_t index);
 
-    std::string name;                              // Name of the state machine.
-    const char* (*inputname)(int, void*);       // Input name display function.
-    const char* (*valuename)(int, void*);       // Value name display function.
-    State* states;                              // List of states in this machine.
-    int inputsize;                              // # of distinct inputs.
-    int nextnumber;                             // Next state number to use.
-    int maxvalue;                               // Maximum value returned by this state machine.
-    States start;                               // Starting nodes.
-    States traverse;                            // State traversal pointers.
-    bool traversing;                            // True if traversing this machine.
+    std::string name;                           ///< The name of the state machine.
+    const char* (*inputname)(int, void*);       ///< The input name display function.
+    const char* (*valuename)(int, void*);       ///< The value name display function.
+    State* states;                              ///< The list of states in this machine.
+    int inputsize;                              ///< The number of distinct inputs.
+    int nextnumber;                             ///< The next state number to use.
+    int maxvalue;                               ///< The maximum value returned by this state machine.
+    States start;                               ///< Starting nodes.
+    States traverse;                            ///< State traversal pointers.
+    bool traversing;                            ///< true if traversing this machine.
 };
 
-class MatchNode {                             // A state tree node.
+/** A match node.
+ */
+class MatchNode {
 public:
-    enum Type {                                 // State tree node types.
-        NONE,                                   // No node.
-        INPUT,                                  // A state machine input.
-        RANGE,                                  // A range of inputs.
-        CONCAT,                                 // Concatenate operands.
-        OR,                                     // Operand choice.
-        SET,                                    // A set of inputs.
-        NOTSET,                                 // A set of excluded inputs.
-        ZEROORONE,                              // Zero or one occurances.
-        ZEROORMORE,                             // Zero or more occurances.
-        ONEORMORE,                              // One or more occurances.
-        UNKNOWN,                                // A state machine unknown value.
+    /** The type of the node.
+     */
+    enum Type {
+        NONE,                                   ///< No node.
+        INPUT,                                  ///< A state machine input.
+        RANGE,                                  ///< A range of inputs.
+        CONCAT,                                 ///< Concatenate operands.
+        OR,                                     ///< Operand choice.
+        SET,                                    ///< A set of inputs.
+        NOTSET,                                 ///< A set of excluded inputs.
+        ZEROORONE,                              ///< Zero or one occurances.
+        ZEROORMORE,                             ///< Zero or more occurances.
+        ONEORMORE,                              ///< One or more occurances.
     };
 
-    // Constructors.
-    // An input node.
-    MatchNode(Matcher::Input input, Matcher* machine);
-    // A range node.
+    /** An input node constructor.
+     * @param input The input to match.
+     */
+    MatchNode(Matcher::Input input);
+    /** A range node constructor.
+     * @param left The start of the range.
+     * @param right The end of the range.
+     */
     MatchNode(Matcher::Input left, Matcher::Input right);
-    // A unary operator node.
+    /** A unary operator node constructor.
+     * @param op The operator.
+     * @param node The node operated on.
+     */
     MatchNode(Type op, MatchNode* node);
-    // A binary operator node.
+    /** A binary operator node constructor.
+     * @param op The operator.
+     * @param left The left operand.
+     * @param right The right operand.
+     */
     MatchNode(Type op, MatchNode* left, MatchNode* right);
-    // A user defined node.
-    MatchNode(void* value, void (*free)(void*), std::string (*name)(void*));
-    // A regular expression.
+    /** A regular expression constructor.
+     * @param input The regular expression string.
+     */
     MatchNode(const std::string& input);
+    /** Free a node tree.
+     * @param tree The tree to free.
+     */
     static void freeTree(MatchNode* tree);
-
+    /** Print a node in human readable form.
+     * @param fp The file to send the output to.
+     * @param inputname The function to return the human readable of an input.
+     * @param context The node context.
+     */
     void print(FILE* fp, const char* (*inputname)(int, void*), void* context);
 
-    Type type;                                  // Type of the node.
-    union {                                     // Node operands.
-        struct {                                // An input operator.
-                                                // INPUT
-            Matcher::Input input;
-            Matcher* machine;            // State machine that produces this input.
+    Type type;                                  ///< Type of the node.
+    /** Node operands.
+     */
+    union {
+        /** An INPUT node.
+         */
+        struct {
+            Matcher::Input input;               ///< The input to match.
         } i;
-        struct {                                // Range operator operands.
-                                                // RANGE, 
-            Matcher::Input left;
-            Matcher::Input right;
+        /** A RANGE node.
+         */
+        struct {
+            Matcher::Input left;                ///< The start of the range.
+            Matcher::Input right;               ///< The end of the range.
         } r;
-        struct {                                // Binary operator operands:
-                                                // CONCAT, OR.
-            MatchNode* left;      
-            MatchNode* right;      
+        /** A binary operator node (CONCAT, OR).
+         */
+        struct {
+            MatchNode* left;                    ///< The left operand.
+            MatchNode* right;                   ///< The right operand.
         } b;
-        struct MatchNode* node;               // Unary operator operand:
-                                                // ZEROORONE, ZEROORMORE, ONEORMORE,
-                                                // SET, NOTSET.
-        struct {                                // Unknown operand.
-                                                // UNKNOWN.
-            void* value;                        // Unknown value.
-            void (*free)(void *);               // Free function.
-            std::string (*name)(void *);           // Name function.
-        } u;
+        struct MatchNode* node;                 ///< Unary operator operand:(ZEROORONE, ZEROORMORE, ONEORMORE, SET, NOTSET).
     } u;
 
 private:
+    /** Output a node tree in human readable form.
+     * @param fp The output file pointer.
+     * @param inputname The function to get a human readable form of the input.
+     * @param context The tree context.
+     * @param prec The node precedence.
+     */
     void treePrint(FILE* fp, const char* (*inputname)(int, void*), void* context, int prec);
 };
 
+/** Display a character in a standard way.
+ * @param value The value to display.
+ * @param context The tree context.
+ * @return A string representing the input.
+ */
 extern const char* stateCharName(int value, void* context);
+/** Display an input value in a standard way.
+ * @param value The value to display.
+ * @param context The tree context.
+ * @return A string representing the input.
+ */
 extern const char* stateInputName(int value, void* context);
+/** Display an output value in a standard way.
+ * @param value The value to display.
+ * @param context The tree context.
+ * @return A string representing the output value.
+ */
 extern const char* stateValueName(int value, void* context);
 
 };

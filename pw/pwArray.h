@@ -1,7 +1,9 @@
-/*
- *    pwArray.h - Header file for the array template.
+/** @file
+ * An array implementation.
+ * @author Richard Pennington
+ * @date July 1, 2008
  *
- *    Copyright (C) 2008, Richard Pennington.
+ * Copyright (C) 2008, Richard Pennington.
  */
 
 #ifndef pwArray_h

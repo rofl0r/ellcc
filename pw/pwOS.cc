@@ -17,56 +17,9 @@ namespace pw {
 #else
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <dlfcn.h>
 #endif
 
 #define STRINGMAX 32767
-
-#if RICH        // Not for now.
-//
-// findLibrary - Find a loadable library and return its handle.
-//
-void* findLibrary(const std::string& directory, const std::string& name)
-{
-    std::string libname;
-    void *handle = NULL;
-    libname = directory;
-
-#if defined(__windows__)
-    libname += name;
-    libname += ".dll";
-    libname = buildFilename(directory, name, ".dll");
-    handle = LoadLibrary(libname.c_str());
-#else
-    libname = "lib";
-    libname += name;
-    libname = buildFilename(directory, libname, ".so");
-    handle = dlopen(libname.c_str(), RTLD_LAZY);
-#endif
-
-    return handle;
-}
-
-//
-// findLibrarySymbol - Find a symbol in a loadable library.
-//
-void* findLibrarySymbol(void *handle, const std::string& symbol)
-{
-
-    if (!handle) {
-        return NULL;
-    }
-
-    void *result;
-
-#if defined(__windows__)
-    result =  (void *)GetProcAddress((HINSTANCE)handle, symbol.c_str());
-#else
-    result = dlsym(handle, symbol.c_str());
-#endif
-    return result;
-}
-#endif
 
 //
 // findExecutable - Find the name of the executable program.

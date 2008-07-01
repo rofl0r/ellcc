@@ -173,7 +173,7 @@ bool Matcher::setValue(Entry* entry, int value, const States* next)
 //
 // addWord - Add a character string word to a state machine.
 //
-int Matcher::addWord(State** root, const char* word, int value, int depth)
+bool Matcher::addWord(State** root, const char* word, int value, int depth)
 {
     root = setRoot(root, start, depth);
     if (*(word + 1)) {
@@ -201,7 +201,7 @@ bool Matcher::addWord(const char* word, int value)
 //
 // addWord - Add a string word to a state machine.
 //
-int Matcher::addWord(State** root, const std::string& word, int value, int depth)
+bool Matcher::addWord(State** root, const std::string& word, int value, int depth)
 {
     root = setRoot(root, start, depth);
     if (word[depth + 1]) {
@@ -243,10 +243,6 @@ bool Matcher::addTree(State** root, States& rootlist, const MatchNode* tree,
 
     root = setRoot(root, rootlist, depth);   // Set up the initial state machine.
     switch (tree->type) {
-    case MatchNode::UNKNOWN:
-        // Ignore. RICH: should be an error.
-        break;
-
     case MatchNode::INPUT:
         // Add a single input.
         // Set the value.
@@ -630,11 +626,10 @@ int Matcher::matchStream(int current,                       // Current input.
 //
 // MatchNode - Create an input node.
 //
-MatchNode::MatchNode(Matcher::Input input, Matcher* machine)
+MatchNode::MatchNode(Matcher::Input input)
 {
     type = INPUT;
     u.i.input = input;
-    u.i.machine = machine;
 }
 
 //
@@ -666,6 +661,7 @@ MatchNode::MatchNode(MatchNode::Type op, MatchNode* left, MatchNode* right)
     u.b.right = right;
 }
 
+#if RICH
 //
 // MatchNode - Create an unknown node.
 //
@@ -676,6 +672,7 @@ MatchNode::MatchNode(void* value, void (*free)(void*), std::string (*name)(void*
     u.u.free = free;
     u.u.name = name;
 }
+#endif
 
 //
 // The regular expression parser.
@@ -771,7 +768,7 @@ static MatchNode* getRanges(const std::string& input, int from, int to)
         from += 3;
     } else {
         // The head is a single character.
-        left = new MatchNode(input[from], (Matcher*)NULL);
+        left = new MatchNode(input[from]);
         from += 1;
     }
 
@@ -813,7 +810,7 @@ static MatchNode* primary(const std::string& input, int& index, int& ch)
         }
     } else if (ch >= 0) {
         // A specific input.
-        node = new MatchNode(ch, (Matcher*)NULL);
+        node = new MatchNode(ch);
         getinput(input, index, ch);
     } else if (ch == DOT) {
         // Match any input.
@@ -967,11 +964,6 @@ void MatchNode::freeTree(MatchNode* tree)
     }
 
     switch (tree->type) {
-    case UNKNOWN:
-        if (tree->u.u.free) {
-            tree->u.u.free(tree->u.u.value);
-        }
-        // Fall through.
     case RANGE:
     case INPUT:
         break;
@@ -1008,15 +1000,6 @@ enum {
 void MatchNode::treePrint(FILE* fp, const char* (*inputname)(int, void*), void* context, int prec)
 {
     switch (type) {
-    case UNKNOWN:
-        if (u.u.name) {
-            std::string name = u.u.name(u.u.value);
-            fprintf(fp, "%s ", name.c_str());
-        } else {
-            fprintf(fp, "UNKNOWN ");
-        }
-        break;
-
     case INPUT:
         if (inputname) {
             fprintf(fp, "%s ", inputname(u.i.input, context));
