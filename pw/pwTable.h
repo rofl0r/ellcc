@@ -1,7 +1,9 @@
-/*
- *    pwTable.h - Header file for the table template.
+/** @file
+ * A table implementation.
+ * @author Richard Pennington
+ * @date July 1, 2008
  *
- *    Copyright (C) 2008, Richard Pennington.
+ * Copyright (C) 2008, Richard Pennington.
  */
 
 #ifndef pwTable_h
@@ -12,47 +14,79 @@
 
 namespace pw {
 
+/** A table implementation.
+ * This class implements a table of values that can be looked up.
+ */
 template<class Type> class Table { 
 public:
-    Table();                                  // Basic constructor.
-    ~Table();                                 // Destructor.
-    Table(const Table& value);              // Copy constructor.
-    Table<Type>& operator+=(const Type& value);     // Append an element to a table.
-    Table<Type>& operator+=(const Table& value);  // Append a table to a table.
-    Table<Type>& operator=(const Table& value);   // Assign to a table.
-    Type& operator[](int element);              // Array reference.
-    Type& operator[](int element) const;        // Array reference.
-    int size() const                            // Return the size of a table.
+    Table();                                    ///< Basic constructor.
+    ~Table();                                   ///< Destructor.
+    Table(const Table& value);                  ///< Copy constructor.
+    Table<Type>& operator+=(const Type& value); ///< Append an element to a table.
+    Table<Type>& operator+=(const Table& value);///< Append a table to a table.
+    Table<Type>& operator=(const Table& value); ///< Assign to a table.
+    Type& operator[](int element);              ///< Array lvalue reference.
+    Type& operator[](int element) const;        ///< Array rvalue reference.
+    /** Return the size of a table.
+     */
+    int size() const
       { return contents.size(); }
-    Table<Type> slice(int from, int to) const;// Return a slice of a table.
-    void truncate();                            // Truncate a table.
-    void remove(int count);                     // Remove elements from a table.
-    void add(const Type& value)                 // Add a table element.
+    Table<Type> slice(int from, int to) const;  ///< Return a slice of a table.
+    void truncate();                            ///< Truncate a table.
+    void remove(int count);                     ///< Remove elements from a table.
+    /** Add a table element.
+     * @param value The value to add.
+     */
+    void add(const Type& value)
         { *this += value; }
+    /** Lookup a table entry.
+     * @param name The entry name.
+     * @return A pointer to the entry or NULL if it doesn't exist.
+     */
     Type lookup(const std::string& name);
+    /** Lookup a table entry.
+     * @param name The entry name.
+     * @return A pointer to the entry or NULL if it doesn't exist.
+     */
     Type lookup(const char* name);
+    /** Lookup a table entry.
+     * @param name The entry name.
+     * @param[out] result A pointer to the entry or NULL if it doesn't exist.
+     */
     void lookup(const std::string& name, Type& result);
+    /** Lookup a table entry.
+     * @param name The entry name.
+     * @param[out] result A pointer to the entry or NULL if it doesn't exist.
+     */
     void lookup(const char* name, Type& result);
+    /** Lookup multiple table entries.
+     * @param name The entry name.
+     * @param[out] result An array of all matching entries.
+     */
     void lookup(const std::string& name, array<Type>& result);
+    /** Lookup multiple table entries.
+     * @param name The entry name.
+     * @param[out] result An array of all matching entries.
+     */
     void lookup(const char* name, array<Type>& result);
-    void reHash();
+    void reHash();                              ///< Rehash the table.
 
 private:
-    enum {
-        HASHSIZE = 1024,                        // Size of hash table.
-        THRESHOLD = 30,                         // Minimum contents threshold before the hash table is created.
-    };
-    void init();                                // Table initialization function.
-    void checkHash();                           // Check whether a hash table is needed, create it if so.
+    static const int HASHSIZE = 1023;           ///< The size of hash table.
+    static const int THRESHOLD = 30;            ///< The minimum contents threshold before the hash table is created.
+    void init();                                ///< The table initialization function.
+    void checkHash();                           ///< Check whether a hash table is needed, create it if so.
+    /** A table element.
+     */
     struct element {
-        Type value;                             // Entry value.
-        int next;                               // Next element in the hash bucket.
+        Type value;                             ///< The entry value.
+        int next;                               ///< The next element in the hash bucket.
     };
-    void insert(int index);                     // Insert an entry in the hash table.
-    static unsigned int hash(const std::string& name); // Compute the hash value of a name.
-    static unsigned int hash(const char* name); // Compute the hash value of a name.
-    array<element> contents;
-    int* hashTable;                             // Hash table for contents.
+    void insert(int index);                     ///< Insert an entry in the hash table.
+    static unsigned int hash(const std::string& name); ///< Compute the hash value of a name.
+    static unsigned int hash(const char* name); ///< Compute the hash value of a name.
+    array<element> contents;                    ///< The table contents.
+    int* hashTable;                             ///< The hash table for contents.
 };
 
 

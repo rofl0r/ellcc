@@ -11,33 +11,39 @@
 
 namespace pw {
 
-template<class Type> class array {         	// The Array class.
+/** An array implementation.
+ */
+template<class Type> class array {
 public:
-    array();                                  // Basic constructor.
-    ~array();                                 // Destructor.
-    array(const array& value);              // Copy constructor.
-    array<Type>& operator+=(const Type& value);     // Append an element to an array.
-    array<Type>& operator+=(const array& value);  // Append an array to an array.
-    array<Type>& operator=(const array& value);   // Assign to an array.
-    array<Type>& truncate();                  // Truncate an array.
-    array<Type>& remove(int count);           // Remove elements from an array.
-    void add(const Type& value)                 // Add an array element.
+    array();                                    ///< The constructor.
+    ~array();                                   ///< The destructor.
+    array(const array& value);                  ///< The copy constructor.
+    array<Type>& operator+=(const Type& value); ///< Append an element to an array.
+    array<Type>& operator+=(const array& value);///< Append an array to an array.
+    array<Type>& operator=(const array& value); ///< Assign to an array.
+    array<Type>& truncate();                    ///< Truncate an array.
+    /** Remove elements from an array.
+     * @param count The number of elements to remove.
+     */
+    array<Type>& remove(int count);
+    /** Add an array element.
+     * @param value The value to add.
+     */
+    void add(const Type& value)
         { *this += value; }
-    Type& operator[](int element);              // Array reference.
-    Type& operator[](int element) const;        // Array reference.
-    int size() const                            // Return the size of an array.
+    Type& operator[](int element);              ///< Array lvalue reference.
+    Type& operator[](int element) const;        ///< Array rvalue reference.
+    int size() const                            ///< Return the size of an array.
       { return open - start; }
-    array<Type> slice(int from, int to) const;// Return a slice of an array.
+    array<Type> slice(int from, int to) const;  ///< Return a slice of an array.
 
 private:
-    enum {
-        ALLOC = 32
-    };                                          // Array allocation unit.
-    void init();                                // Array initialization function.
-    array<Type>& create(int element);         // Create an element.
-    Type* start;                                // Array buffer.
-    Type* end;                                  // End of array buffer.
-    Type* open;                                 // Next open array slot.
+    static coonst int ALLOC = 32;               ///< The array allocation unit.
+    void init();                                ///< The array initialization function.
+    array<Type>& create(int element);           ///< Create an element.
+    Type* start;                                ///< The array buffer.
+    Type* end;                                  ///< End of the array buffer.
+    Type* open;                                 ///< Next open array slot.
 };
 
 
