@@ -650,7 +650,7 @@ enum Phases {
     OPTIMIZATION,               ///< Optimize translation result
     BCLINKING,                  ///< Link and optimize bitcode files. 
     GENERATION,                 ///< Convert .bc to ...
-    // RICH ASSEMBLY,                   ///< Convert .s to .o
+    ASSEMBLY,                   ///< Convert .s to .o
     LINKING,                    ///< Link and create executable
     NUM_PHASES                  ///< Always last!
 };
@@ -665,7 +665,7 @@ static const struct {
     { "Optimization", },
     { "Bitcode linking", BC },
     { "Generating", },
-    // RICH { "Assembly", },
+    { "Assembly", },
     { "Linking", EXE }
 };
 
@@ -688,7 +688,7 @@ enum FileActions {
     OPTIMIZE,                   ///> Optimize an LLVM bitcode file.
     BCLINK,                     ///> Link LLVM bitcode files.
     GENERATE,                   ///> Convert .bc to .s.
-    // RICH ASSEMBLE,                   ///> Assemble a .s file.
+    ASSEMBLE,                   ///> Assemble a .s file.
     LINK,                       ///> Link object files files.
     NUM_ACTIONS                 ///> Always last!
 };
@@ -781,25 +781,19 @@ static void setupFileTypes()
     filePhases[BC][GENERATION].type = S;
     filePhases[BC][GENERATION].action = GENERATE;
 
-#if RICH
     extToLang["s"] = S;
     langToExt[S] = "s";
     filePhases[S][ASSEMBLY].type = O;
     filePhases[S][ASSEMBLY].action = ASSEMBLE;
-#else
-    extToLang["s"] = O;
-    langToExt[S] = "s";
-    filePhases[S][LINKING].type = LINKED;
-    filePhases[S][LINKING].action = LINK;
-#endif
 
     extToLang["sx"] = SX;
     langToExt[SX] = "s";
     filePhases[SX][PREPROCESSING].type = S;
     filePhases[SX][PREPROCESSING].action = PREPROCESS;
+    extToLang["S"] = SX;
 
     extToLang["o"] = O;
-    langToExt[O] = "s";
+    langToExt[O] = "o";
     filePhases[O][LINKING].type = LINKED;
     filePhases[O][LINKING].action = LINK;
 }
@@ -822,10 +816,8 @@ static cl::opt<Phases> FinalPhase(cl::Optional,
             "Stop translation after bitcode linking phase"),
         clEnumValN(GENERATION,"S",
             "Stop translation after generation phase"),
-#if RICH
         clEnumValN(ASSEMBLY,"NS",
             "Stop translation after assembly phase"),
-#endif
         clEnumValEnd
     )
 );
@@ -1912,6 +1904,55 @@ static int GenerateNative(const std::string& OutputFilename,
   return R;
 }
 
+/// Assemble - Assemble the given file.
+///
+/// Inputs:
+///  InputFilename   - The name of the input source file.
+///  OutputFilename  - The name of the file to generate.
+///
+/// Outputs:
+///  None.
+///
+/// Returns non-zero value on error.
+///
+static int Assemble(const std::string &OutputFilename,
+                      const std::string &InputFilename,
+                      std::string& ErrMsg)
+{
+  // Remove these environment variables from the environment of the
+  // programs that we will execute.  It appears that GCC sets these
+  // environment variables so that the programs it uses can configure
+  // themselves identically.
+  // RICH: Choose the appropriate assembler.
+  sys::Path as = FindExecutable("as", progname);
+  if (as.isEmpty())
+    PrintAndExit("Failed to find as");
+
+  // Run as to preprocess the file..
+  std::vector<std::string> args;
+  args.push_back(as.c_str());
+  args.push_back("-o");
+  args.push_back(OutputFilename);
+  args.push_back(InputFilename);
+
+  // Now that "args" owns all the std::strings for the arguments, call the c_str
+  // method to get the underlying string array.  We do this game so that the
+  // std::string array is guaranteed to outlive the const char* array.
+  std::vector<const char *> Args;
+  for (unsigned i = 0, e = args.size(); i != e; ++i)
+    Args.push_back(args[i].c_str());
+  Args.push_back(0);
+  if (Verbose) {
+    cout << "    ";
+    PrintCommand(Args);
+  }
+
+  // Run as to preprocess the file.
+  int R = sys::Program::ExecuteAndWait(
+    as, &Args[0], NULL, 0, 0, 0, &ErrMsg);
+  return R;
+}
+
 //===----------------------------------------------------------------------===//
 //===          doMulti - Handle a phase acting on multiple files.
 //===----------------------------------------------------------------------===//
@@ -2462,7 +2503,6 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
 
         break;
     }
-#if RICH
     case ASSEMBLY: {                 // Convert .s to .o
         if (TimeActions) {
 	    timers[phase]->startTimer();
@@ -2477,9 +2517,17 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         sys::Path to(input.name.getBasename());
         to.appendSuffix(langToExt[nextType]);
 
-        // RICH: Do stuff.
+        // Mark the output files for removal if we get an interrupt.
+        sys::RemoveFileOnSignal(to);
+
+        std::string ErrMsg;  
+        if(Assemble(to.toString(), input.name.toString(), ErrMsg) != 0) {
+            PrintAndExit(ErrMsg);
+        }
 
         input.setName(to);
+        // Mark the file as a temporary file.
+        input.temp = true;
 
         if (TimeActions) {
 	    timers[phase]->stopTimer();
@@ -2487,7 +2535,6 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
 
         break;
     }
-#endif
     default:
         // RICH: Illegal single pass.
         break;
