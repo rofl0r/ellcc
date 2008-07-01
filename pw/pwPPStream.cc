@@ -1,8 +1,11 @@
-/*
- *    PPStream.cc - Scanner for the pre-processing object.
+/** @file
+ * A scanner for the PP preprocessor.
+ * @author Richard Pennington
+ * @date July 1, 2008
  *
- *    Copyright (C) 2008, Richard Pennington.
+ * Copyright (C) 2008, Richard Pennington.
  */
+
 
 #include <ctype.h>
 #include <string.h>

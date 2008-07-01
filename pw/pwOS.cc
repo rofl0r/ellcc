@@ -1,7 +1,9 @@
-/*
- *    pwOS.c - The generic OS interface.
+/** @file
+ * A generic OS interface.
+ * @author Richard Pennington
+ * @date July 1, 2008
  *
- *    Copyright (C) 2004, Richard Pennington.
+ * Copyright (C) 2008, Richard Pennington.
  */
 
 #include <ctype.h>

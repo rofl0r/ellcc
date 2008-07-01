@@ -1,7 +1,9 @@
-/*
- *    pwPP.cc - The pre-processor object.
+/** @file
+ * A preprocessor.
+ * @author Richard Pennington
+ * @date July 1, 2008
  *
- *    Copyright (C) 2007, Richard Pennington.
+ * Copyright (C) 2008, Richard Pennington.
  */
 
 #include <stdlib.h>

@@ -1,4 +1,11 @@
-/* This file is a simple driver for the pw Lexer.
+/** @file
+ * A simple preprocessor.
+ * @author Richard Pennington
+ * @date July 1, 2008
+ *
+ * Copyright (C) 2008, Richard Pennington.
+ *
+ * This file is a simple driver for the pw Lexer.
  * It is not meant to be a full cpp replacement but merely an example of
  * how one could use the pw lexer.
  */

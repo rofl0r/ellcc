@@ -1,8 +1,11 @@
-/*
- *    pwMatcher.cc - Match strings and regular expressions.
+/** @file
+ * Match strings and regular expressions.
+ * @author Richard Pennington
+ * @date July 1, 2008
  *
- *    Copyright (C) 2008, Richard Pennington.
+ * Copyright (C) 2008, Richard Pennington.
  */
+
 
 #include <stdlib.h>
 #include "pwMatcher.h"

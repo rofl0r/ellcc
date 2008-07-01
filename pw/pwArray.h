@@ -38,7 +38,7 @@ public:
     array<Type> slice(int from, int to) const;  ///< Return a slice of an array.
 
 private:
-    static coonst int ALLOC = 32;               ///< The array allocation unit.
+    static const int ALLOC = 32;                ///< The array allocation unit.
     void init();                                ///< The array initialization function.
     array<Type>& create(int element);           ///< Create an element.
     Type* start;                                ///< The array buffer.

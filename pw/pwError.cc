@@ -1,6 +1,10 @@
-//
-//	pwError.c - Standard error handling.
-//
+/** @file
+ * Standard error message handling.
+ * @author Richard Pennington
+ * @date July 1, 2008
+ *
+ * Copyright (C) 2008, Richard Pennington.
+ */
 
 #include <stdarg.h>
 #include <string.h>

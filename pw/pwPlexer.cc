@@ -1,4 +1,9 @@
-/** A lexer with primative parsing hooks.
+/** @file
+ * A lexer with primative parsing hooks.
+ * @author Richard Pennington
+ * @date July 1, 2008
+ *
+ * Copyright (C) 2008, Richard Pennington.
  */
 
 #include "pwPlexer.h"
