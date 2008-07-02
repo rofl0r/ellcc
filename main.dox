@@ -12,7 +12,7 @@ ELLCC is a set of tools for building compilers as well as a collection of compil
 The following is a brief table of contents for the ELLCC documentation tree:
 - @subpage definitions
 - @subpage related
-- <A HREF="../../pw/doc/html/index.html">The pw Library</A>
+- <A target="top" href="../../pw/doc/html/index.html">The pw Library</A>
   Preprocessing support.
 */
 

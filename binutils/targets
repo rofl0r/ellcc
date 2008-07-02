@@ -1,0 +1,8 @@
+arm-elf
+spu-elf
+ia64-elf
+mips-elf
+powerpc-elf
+sparc-elf
+i686-elf
+i686-pe
