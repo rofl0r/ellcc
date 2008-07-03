@@ -40,7 +40,7 @@ case ${cpu} in
   crx*)			cpu_type=crx endian=little ;;
   fido)			cpu_type=m68k ;;
   hppa*)		cpu_type=hppa ;;
-  i[3-7]86)		cpu_type=i386 arch=i386;;
+  i[3-7]86|x86)		cpu_type=i386 arch=i386;;
   ia64)			cpu_type=ia64 ;;
   ip2k)			cpu_type=ip2k endian=big ;; 
   iq2000)		cpu_type=iq2000 endian=big ;; 
@@ -172,7 +172,8 @@ case ${generic_target} in
   i386-*-beospe*)			fmt=coff em=pe ;;
   i386-*-beos*)				fmt=elf ;;
   i386-*-coff)				fmt=coff ;;
-  i386-*-elf)				fmt=elf ;;
+  i386-*-elf  | \
+  x86-*-elf)				fmt=elf ;;
   i386-*-kaos*)				fmt=elf ;;
   i386-*-bsd*)				fmt=aout em=386bsd ;;
   i386-*-netbsd0.8)			fmt=aout em=386bsd ;;

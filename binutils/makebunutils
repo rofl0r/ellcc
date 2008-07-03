@@ -1,20 +1,18 @@
 #!/bin/sh
 
 prefix=/home/rich/local
-targets=`cat targets`
+targets=`cat ../targets`
 targetlist=`echo $targets | sed -e "s/ /,/g"`
 
 # Parse options.
 install=0
 while [ $# -gt 0 ] ; do
   case $1 in
-    -install)
+    install)
       install=1 ;;
-    -*)
+    *)
       echo "illegal option '$1'"
       exit ;;
-    *)
-      break ;;
   esac
   shift
 done

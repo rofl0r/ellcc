@@ -39,7 +39,8 @@ alpha*-*-osf*)		targ_emul=alpha ;;
 alpha*-*-gnu*)		targ_emul=elf64alpha ;;
 alpha*-*-netware*)	targ_emul=alpha ;;
 alpha*-*-netbsd*)	targ_emul=elf64alpha_nbsd ;;
-alpha*-*-openbsd*)	targ_emul=elf64alpha
+alpha*-*-openbsd*)	targ_emul=elf64alpha ;;
+alpha*-*-elf*)	        targ_emul=elf64alpha
 			;;
 arc-*-elf*)		targ_emul=arcelf
 			;;
@@ -230,8 +231,9 @@ x86_64-*-netbsd*)	targ_emul=elf_x86_64
 				        sed -e 's/netbsd/netbsdelf/'`;;
 			esac ;;
 i[3-7]86-*-netware)	targ_emul=i386nw ;;
-i[3-7]86-*-elf*)	targ_emul=elf_i386 ;;
-x86_64-*-elf*)		targ_emul=elf_x86_64
+i[3-7]86-*-elf* | x86-*-elf* )
+                	targ_emul=elf_i386 ;;
+x86_64-*-elf* )         targ_emul=elf_x86_64
 			targ_extra_emuls=elf_i386
 			;;
 i[3-7]86-*-kaos*)	targ_emul=elf_i386 ;;
@@ -256,7 +258,8 @@ i[3-7]86-*-msdos*)	targ_emul=i386msdos; targ_extra_emuls=i386aout ;;
 i[3-7]86-*-moss*)	targ_emul=i386moss; targ_extra_emuls=i386msdos ;;
 i[3-7]86-*-winnt*)	targ_emul=i386pe ;
 			targ_extra_ofiles="deffilep.o pe-dll.o" ;;
-i[3-7]86-*-pe)		targ_emul=i386pe ;
+i[3-7]86-*-pe | x86-*-pe)
+        		targ_emul=i386pe ;
 			targ_extra_ofiles="deffilep.o pe-dll.o" ;;
 i[3-7]86-*-cygwin*)	targ_emul=i386pe ;
 			targ_extra_ofiles="deffilep.o pe-dll.o"

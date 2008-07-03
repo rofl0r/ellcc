@@ -82,7 +82,7 @@ crx*)		 targ_archs=bfd_crx_arch ;;
 dlx*)		 targ_archs=bfd_dlx_arch ;;
 fido*)		 targ_archs=bfd_m68k_arch ;;
 hppa*)		 targ_archs=bfd_hppa_arch ;;
-i[3-7]86)	 targ_archs=bfd_i386_arch ;;
+i[3-7]86|x86)	 targ_archs=bfd_i386_arch ;;
 i370)		 targ_archs=bfd_i370_arch ;;
 m6811*|m68hc11*) targ_archs="bfd_m68hc11_arch bfd_m68hc12_arch" ;;
 m6812*|m68hc12*) targ_archs="bfd_m68hc12_arch bfd_m68hc11_arch" ;;
@@ -478,7 +478,8 @@ case "${targ}" in
     ;;
   i[3-7]86-*-sysv4* | i[3-7]86-*-unixware* | \
   i[3-7]86-*-elf | i[3-7]86-*-sco3.2v5* | \
-  i[3-7]86-*-dgux* | i[3-7]86-*-sysv5*)
+  i[3-7]86-*-dgux* | i[3-7]86-*-sysv5* | \
+  x86-*-elf)
     targ_defvec=bfd_elf32_i386_vec
     targ_selvecs=i386coff_vec
     ;;
@@ -644,7 +645,7 @@ case "${targ}" in
     targ_defvec=bfd_elf32_i386_vec
     targ_selvecs=i386coff_vec
     ;;
-  i[3-7]86-*-mingw32* | i[3-7]86-*-cygwin* | i[3-7]86-*-winnt | i[3-7]86-*-pe)
+  i[3-7]86-*-mingw32* | i[3-7]86-*-cygwin* | i[3-7]86-*-winnt | i[3-7]86-*-pe | x86-*-pe)
     targ_defvec=i386pe_vec
     targ_selvecs="i386pe_vec i386pei_vec bfd_elf32_i386_vec"
     targ_underscore=yes
