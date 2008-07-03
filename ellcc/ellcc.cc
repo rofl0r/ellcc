@@ -2627,11 +2627,11 @@ int main(int argc, char **argv)
         
         bool found = false;
         // Try the current directory first.
-        if (config.exists()) {
+        if (!found && config.exists()) {
             // Use the current directory.
             ecf = config;
             found = true;
-        } else {
+        } else if (!found) {
             // Use a directory based on the executable file.
             ecf = sys::Path::GetMainExecutable(argv[0], (void*)main);
             ecf.eraseComponent();
