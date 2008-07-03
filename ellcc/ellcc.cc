@@ -2545,6 +2545,7 @@ int main(int argc, char **argv)
     llvm_shutdown_obj X;  // Call llvm_shutdown() on exit.
     InputList InpList;
     int status = 0;
+
     try {
         // Initial global variable above for convenience printing of program name.
         progname = sys::Path(argv[0]).getBasename();
@@ -2619,7 +2620,47 @@ int main(int argc, char **argv)
                 break; // we're done with the list
         }
 
+        // Find configuration files.
+        sys::Path config(progname);
+        config.appendSuffix("ecf");
+        sys::Path ecf;
         
+        bool found = false;
+        // Try the current directory first.
+        if (config.exists()) {
+            // Use the current directory.
+            ecf = config;
+            found = true;
+        } else {
+            // Use a directory based on the executable file.
+            sys::Path me = sys::Path::GetMainExecutable(argv[0], (void*)main);
+            ecf.eraseComponent();
+            // Try .../config.
+            ecf.appendComponent("config");
+            if (ecf.isDirectory()) {
+                ecf.appendComponent(config.toString());
+                if (ecf.exists()) {
+                   found = true;
+                } else {
+                    ecf.eraseComponent();               // Remove the file name...
+                    ecf.eraseComponent();               // ... and the directory name.
+                }
+            }
+            if (!found) {
+                // Check the adjacent lib directory.
+                ecf.appendComponent("../lib/config");
+                ecf.appendComponent(config.toString());
+                if (ecf.exists()) {
+                   found = true;
+                }
+            }
+        }
+
+        if (!found) {
+            cerr << progname << " can't find " << config.toString() << "\n";
+            Exit(1);
+        }
+
         // Go through the phases.
         InputList::iterator it;
         for(Phases phase = PREPROCESSING; phase != NUM_PHASES; phase = (Phases)(phase + 1)) {
