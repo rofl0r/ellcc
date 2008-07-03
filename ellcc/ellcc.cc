@@ -2577,7 +2577,7 @@ int main(int argc, char **argv)
             // No input files present.
             if (Verbose) {
                 // Just version information.
-                cerr << progname << " version " << VERSION << "\n";
+                cerr << progname << ": version " << VERSION << "\n";
                 Exit(0);
             } else {
                 PrintAndExit("no input files");
@@ -2658,8 +2658,14 @@ int main(int argc, char **argv)
         }
 
         if (!found) {
-            cerr << progname << " can't find " << config.toString() << "\n";
+            cerr << progname << ": can't find " << config.toString() << "\n";
             Exit(1);
+        }
+
+        const pw::Plexer* configuration = pw::Plexer::Create(ecf.toString().c_str(), errors);
+
+        if (configuration == NULL) {
+            goto showerrors;
         }
 
         // Go through the phases.
@@ -2756,6 +2762,7 @@ int main(int argc, char **argv)
         status =  1;
     }
 
+showerrors:
     int totalerrors = 0;
     for (int j = 0; j < pw::Error::ERRORCNT; ++j) {
         // Calculate the total number of errors.
