@@ -2633,16 +2633,17 @@ int main(int argc, char **argv)
             found = true;
         } else {
             // Use a directory based on the executable file.
-            sys::Path me = sys::Path::GetMainExecutable(argv[0], (void*)main);
+            ecf = sys::Path::GetMainExecutable(argv[0], (void*)main);
             ecf.eraseComponent();
             // Try .../config.
-            ecf.appendComponent("config");
+            ecf.appendComponent("../config");
             if (ecf.isDirectory()) {
                 ecf.appendComponent(config.toString());
                 if (ecf.exists()) {
                    found = true;
                 } else {
                     ecf.eraseComponent();               // Remove the file name...
+                    ecf.eraseComponent();               // ... and the .. ...
                     ecf.eraseComponent();               // ... and the directory name.
                 }
             }
