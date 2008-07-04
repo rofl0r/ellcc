@@ -47,11 +47,11 @@ keywords {
 // Predefined macros.
 #define _GNU_SOURCE
 
-#include "c.cfg"
-// #include "cxx.cfg"
-// #include "cygwin32.cfg"
-#include "linux.cfg"
-#include "x86.cfg"
+#include "c.ecf"
+// #include "cxx.ecf"
+// #include "cygwin32.ecf"
+#include "linux.ecf"
+#include "x86.ecf"
 
 // Additional include paths.
 includes {
