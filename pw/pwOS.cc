@@ -313,7 +313,7 @@ breakout:
     if (ext >= 0) {
         // We have an extension.
         extension = name.substr(ext + 1);
-        name = name.substr(index, ext);
+        name = name.substr(0, ext);
     }
 }
 

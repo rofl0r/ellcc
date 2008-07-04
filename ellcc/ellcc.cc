@@ -598,8 +598,8 @@ Preprocessor Options
 using namespace llvm;
 
 static pw::ErrorList errors;    // The reported errors.
-
 static std::string progname;    // The program name.        
+pw::Plexer* language;           // The current language.
 
 /** File types.
  */
@@ -1746,9 +1746,6 @@ static int Preprocess(const std::string &OutputFilename,
                       const std::string &InputFilename,
                       std::string& ErrMsg)
 {
-    // RICH: Get proper config file.
-    const pw::Plexer* language = pw::Plexer::Create("c99.cfg", errors);
-
     pw::PP* pp = new pw::PP(InputFilename, errors);
     FILE* fp = NULL;
 
@@ -2690,6 +2687,9 @@ int main(int argc, char **argv)
             goto showerrors;
         }
 
+        // RICH: Configure the language.
+        language = pw::Plexer::Create("../config/c99.ecf", errors);
+        
         // Go through the phases.
         InputList::iterator it;
         for(Phases phase = PREPROCESSING; phase != NUM_PHASES; phase = (Phases)(phase + 1)) {
