@@ -599,7 +599,8 @@ using namespace llvm;
 
 static pw::ErrorList errors;    // The reported errors.
 static std::string progname;    // The program name.        
-
+static pw::Plexer* pconfig;     // The program configuration.
+ 
 /** File types.
  */
 enum FileTypes {
@@ -2647,9 +2648,9 @@ int main(int argc, char **argv)
         configuration->addDefine("__ELLCC_VERSION__",  str(ELLCC_VERSION));
  
         // Read the program configuration file.
-        pw::Plexer* program = pw::Plexer::Create(file.toString().c_str(), errors);
+        pconfig = pw::Plexer::Create(file.toString().c_str(), errors);
 
-        if (program == NULL) {
+        if (pconfig == NULL) {
             goto showerrors;
         }
 
