@@ -51,7 +51,7 @@ keywords {
 // #include "cxx.cfg"
 // #include "cygwin32.cfg"
 #include "linux.cfg"
-#include "i386.cfg"
+#include "x86.cfg"
 
 // Additional include paths.
 includes {
