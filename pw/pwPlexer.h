@@ -22,7 +22,7 @@ public:
      * @param error The message context.
      * @return A unique instance for each language or NULL if an error occured.
      */
-    static const Plexer* Create(std::string name, ErrorList& error);
+    static Plexer* Create(std::string name, ErrorList& error);
 
 private:
     Plexer();                                   ///< Constructor (not defined or used).
@@ -71,10 +71,19 @@ public:
     /** Parse a language file.
      * @param name The name of the file.
      * @param data Parsing specific context.
-     * @param macros Where to put macro definitions.
+     * @param fileMacros Where to put macro definitions.
      * @return true if the parse succeeded.
      */
-    bool parse(std::string name, void* data, array<Macro>* macros = NULL);
+    bool parse(std::string name, void* data, array<Macro>* fileMacros = NULL);
+    /** Add an include search directory.
+     * @param path The directory to add.
+     */
+    void addInclude(const std::string& path) { includes += path; }
+    /** Add a macro definition.
+     * @param name The macro name.
+     * @param value The macro value.
+     */
+    void addDefine(const std::string& name, const std::string& value);
 
 private:
     std::string name;                           ///< The language name.

@@ -100,7 +100,8 @@ ellcc: $(ELLSIF_OBJS) $(libraries)
 # 'ellcc' hasn't recently changed
 TOCLEAN += quicktest
 quicktest: ellcc
-	./ellcc test/sieve.c
+	./ellcc -o sieve test/sieve.c
+	./sieve
 	@touch quicktest
 	@echo BUILD FINISHED
 

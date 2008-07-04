@@ -293,11 +293,11 @@ void Plexer::setupTokens(State* sp)
 
 /* Create a language entry.
  */
-const Plexer* Plexer::Create(std::string name, ErrorList& errors)
+Plexer* Plexer::Create(std::string name, ErrorList& errors)
 {
     if (languages.size() == 0) {
         // Create the language file scanner.
-        languages[0] = new Plexer("cfg", errors);
+        languages[0] = new Plexer("ecf", errors);
         languages[0]->CFGsetupOptions();
         languages[0]->first("tokens", parseTokens);
         languages[0]->first("comment", parseComments);
@@ -497,7 +497,7 @@ static Error* unexpectedToken(PP& pp, const char* string = "")
 
 /* Parse a language file.
  */
-bool Plexer::parse(std::string name, void* data, array<Macro>* macros)
+bool Plexer::parse(std::string name, void* data, array<Macro>* fileMacros)
 {
     pw::PP* pp = new PP(name, errors);
     FILE* fp = NULL;
@@ -511,6 +511,20 @@ bool Plexer::parse(std::string name, void* data, array<Macro>* macros)
         return false;
     }
     
+    // Add include paths.
+    for (int i = 0; i < includes.size(); ++i) {
+        pp->addInclude(includes[i]);
+    }
+
+    // Add predefined macros.
+    for (int i = 0; i < macros.size(); ++i) {
+        if (macros[i].type != Macro::DEFINED_MACRO) {
+            // Grab only user defined macros.
+            continue;
+        }
+        pp->addDefine(macros[i]);
+    }
+
     pp->setOptions(&options);    		// Set pre-processor options.
 
     pp->getToken();
@@ -552,14 +566,14 @@ bool Plexer::parse(std::string name, void* data, array<Macro>* macros)
         }
     }
 
-    if (macros) {
+    if (fileMacros) {
         // Capture macros that have been defined.
         for (int i = 0; i < pp->macros.size(); ++i) {
             if (pp->macros[i]->type != Macro::DEFINED_MACRO) {
-                // Grab only user defined macros.
+                // Grab only user defined fileMacros.
                 continue;
             }
-            (*macros)[(*macros).size()] = *pp->macros[i];
+            (*fileMacros)[(*fileMacros).size()] = *pp->macros[i];
         }
     }
 
@@ -854,6 +868,18 @@ void Plexer::parseIncludes(PP& pp, Plexer& env, ErrorList& errors, void* data)
 void Plexer::parseNeedwhitespace(PP& pp, Plexer& env, ErrorList& errors, void* data)
 {
     State* sp = (State*)data;
+}
+
+/* Add a macro definition.
+ */
+void Plexer::addDefine(const std::string& name, const std::string& value)
+{
+    Macro macro;
+    macro.string = name;
+    macro.type = Macro::DEFINED_MACRO;
+    macro.file = "initialization";
+    macro.body = value;
+    macros += macro;
 }
 
 };

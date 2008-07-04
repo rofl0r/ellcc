@@ -585,7 +585,15 @@ Preprocessor Options
 // pwPlexer.
 #include "pwPlexer.h"          // The preprocessor.
 
-#define VERSION "0.1"
+#define xstr(x) #x
+#define str(x) xstr(x)
+
+#define ELLCC 0
+#define ELLCC_MINOR 1
+#define ELLCC_PATCHLEVEL 0
+#define ELLCC_VERSION_STRING str(ELLCC) "." str(ELLCC_MINOR) "." str(ELLCC_PATCHLEVEL)
+#define ELLCC_VERSION_MODIFIER "ALPHA"
+#define ELLCC_VERSION ELLCC_VERSION_STRING " " ELLCC_VERSION_MODIFIER " " __DATE__
 
 using namespace llvm;
 
@@ -2577,7 +2585,7 @@ int main(int argc, char **argv)
             // No input files present.
             if (Verbose) {
                 // Just version information.
-                cerr << progname << ": version " << VERSION << "\n";
+                cerr << progname << ": version " << ELLCC_VERSION << "\n";
                 Exit(0);
             } else {
                 PrintAndExit("no input files");
@@ -2623,46 +2631,60 @@ int main(int argc, char **argv)
         // Find configuration files.
         sys::Path config(progname);
         config.appendSuffix("ecf");
-        sys::Path ecf;
-        
+        sys::Path ecf = sys::Path::GetMainExecutable(argv[0], (void*)main);;
+        ecf.eraseComponent();                           // Get the executable directory.
         bool found = false;
-        // Try the current directory first.
-        if (!found && config.exists()) {
-            // Use the current directory.
-            ecf = config;
+
+        sys::Path file = config;
+        if (file.exists()) {
             found = true;
-        } else if (!found) {
-            // Use a directory based on the executable file.
-            ecf = sys::Path::GetMainExecutable(argv[0], (void*)main);
-            ecf.eraseComponent();
-            // Try .../config.
-            ecf.appendComponent("../config");
-            if (ecf.isDirectory()) {
-                ecf.appendComponent(config.toString());
-                if (ecf.exists()) {
-                   found = true;
-                } else {
-                    ecf.eraseComponent();               // Remove the file name...
-                    ecf.eraseComponent();               // ... and the .. ...
-                    ecf.eraseComponent();               // ... and the directory name.
-                }
-            }
+        }
+
+        // Set up configuration file include paths.
+        pw::Plexer* configuration = pw::Plexer::Create("ecf", errors);
+        if (configuration == NULL) {
+            goto showerrors;
+        }
+        configuration->addInclude("");                 // Add the current directory.
+ 
+        // Check for <execute directory>/../config.
+        ecf.appendComponent("..");
+        ecf.appendComponent("config");
+        if (ecf.isDirectory()) {
+            configuration->addInclude(ecf.toString());
             if (!found) {
-                // Check the adjacent lib directory.
-                ecf.appendComponent("../lib/config");
-                ecf.appendComponent(config.toString());
-                if (ecf.exists()) {
-                   found = true;
+                file = ecf;
+                file.appendComponent(config.toString());
+                if (file.exists()) {
+                    found = true;
                 }
             }
         }
-
-        if (!found) {
-            cerr << progname << ": can't find " << config.toString() << "\n";
-            Exit(1);
+        ecf.eraseComponent();                          // Remove config.
+        // Check for <execute directory>/../lib/ellcc/ELLCC_VERSION_STRING/config.
+        ecf.appendComponent("lib");
+        ecf.appendComponent("ellcc");
+        ecf.appendComponent(ELLCC_VERSION_STRING);
+        ecf.appendComponent("config");
+        if (ecf.isDirectory()) {
+            configuration->addInclude(ecf.toString());
+            if (!found) {
+                file = ecf;
+                file.appendComponent(config.toString());
+                if (file.exists()) {
+                    found = true;
+                }
+            }
         }
-
-        const pw::Plexer* configuration = pw::Plexer::Create(ecf.toString().c_str(), errors);
+        
+        configuration->addDefine("__ELLCC__",  str(ELLCC));
+        configuration->addDefine("__ELLCC_MINOR__",  str(ELLCC_MINOR));
+        configuration->addDefine("__ELLCC_PATCHLEVEL__",  str(ELLCC_PATCHLEVEL));
+        configuration->addDefine("__ELLCC_VERSION_STRING__",  str(ELLCC_VERSION_STRING));
+        configuration->addDefine("__ELLCC_VERSION__",  str(ELLCC_VERSION));
+ 
+        // Read the program configuration file.
+        configuration = pw::Plexer::Create(file.toString().c_str(), errors);
 
         if (configuration == NULL) {
             goto showerrors;

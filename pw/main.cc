@@ -10,6 +10,7 @@
  * how one could use the pw lexer.
  */
 #include "pwPlexer.h"
+#include "pwOS.h"
 
 /* The list of errors that occur during preprocessing.
  */
@@ -24,13 +25,39 @@ int main(int argc, char** argv)
         }
     }
 
+    // Find configuration files.
+    std::string exe = pw::findExecutable(argc, argv);
+    std::string path;
+    std::string mypath;
+    std::string name;
+    std::string extension;
+    pw::parseFilename(exe, path, name, extension);
+    std::string config = pw::buildFilename("", name, "ecf");
+
+    // Set up configuration file include paths.
+    pw::Plexer* configuration = pw::Plexer::Create("ecf", errors);
+    if (configuration == NULL) {
+        goto showerrors;
+    }
+    configuration->addInclude("");                 // Add the current directory.
+    mypath = pw::buildFilename(path, "..");
+    mypath = pw::buildFilename(mypath, "config");
+    configuration->addInclude(mypath.c_str());     // Add <exe dir>../config.
+    mypath = pw::buildFilename(path, "..");
+    mypath = pw::buildFilename(mypath, "lib");
+    mypath = pw::buildFilename(mypath, "pwpp");
+    configuration->addInclude(mypath.c_str());     // Add <exe dir>../lib/pwpp.
+    // Read the program configuration file.
+    configuration = pw::Plexer::Create(config.c_str(), errors);
+    if (configuration == NULL) {
+        goto showerrors;
+    }
+
     for (int i = 1; i < argc; ++i) {
         if (argv[i] == NULL) {
             // The argument was already processed.
             continue;
         }
-
-        const pw::Plexer* language = pw::Plexer::Create("c99.cfg", errors);
 
         std::string file(argv[i]);
         pw::PP* pp = new pw::PP(file, errors);
@@ -47,18 +74,18 @@ int main(int argc, char** argv)
             exit(1);
         }
     
-        if (language) {
-            pw::Options options = language->options;
+        if (configuration) {
+            pw::Options options = configuration->options;
             pp->setOptions(&options);    		// Set pre-processor options.
 
             // Set pre-defined macros.
-            for (int i = 0; i < language->macros.size(); ++i) {
-                pp->addDefine(language->macros[i]);
+            for (int i = 0; i < configuration->macros.size(); ++i) {
+                pp->addDefine(configuration->macros[i]);
             }
 
             // Set the include paths.
-            for (int i = 0; i < language->includes.size(); ++i) {
-                pp->addInclude(language->includes[i]);
+            for (int i = 0; i < configuration->includes.size(); ++i) {
+                pp->addInclude(configuration->includes[i]);
             }
 
             // Preprocess the file.
@@ -86,6 +113,7 @@ int main(int argc, char** argv)
         delete pp;
     }
 
+showerrors:
     int totalerrors = 0;
     for (int j = 0; j < pw::Error::ERRORCNT; ++j) {
         // Calculate the total number of errors.
@@ -114,4 +142,6 @@ int main(int argc, char** argv)
         errors.sort();
         errors.print(stdout);
     }
+
+    exit(errors.hasErrors() ? 1 : 0);
 }
