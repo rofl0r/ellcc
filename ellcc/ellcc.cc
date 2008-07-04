@@ -599,7 +599,6 @@ using namespace llvm;
 
 static pw::ErrorList errors;    // The reported errors.
 static std::string progname;    // The program name.        
-pw::Plexer* language;           // The current language.
 
 /** File types.
  */
@@ -1185,10 +1184,11 @@ struct Input {
     sys::Path name;             ///< The input's name.
     FileTypes type;             ///< The input's type.
     Module* module;             ///< The module associated with the input, if any.
-    bool temp;                  ///< true if this is contained in a temprary file.
+    bool temp;                  ///< true if this is contained in a temporary file.
+    pw::Plexer* language;       ///< Non-NULL if this type has a language definition.
     Input() : type(NONE), module(NULL), temp(false) {}
-    Input(std::string& name, FileTypes type = NONE, Module* module = NULL, bool temp = false)
-        : name(name), type(type), module(module), temp(temp) {}
+    Input(std::string& name, FileTypes type = NONE, Module* module = NULL, bool temp = false, pw::Plexer* language = NULL)
+        : name(name), type(type), module(module), temp(temp), language(language)  {}
     void setName(sys::Path newName)
     {
         if (temp) {
@@ -1675,6 +1675,7 @@ static void RemoveEnv(const char * name, char ** const envp) {
 ///
 static int Preprocess(const std::string &OutputFilename,
                       const std::string &InputFilename,
+                      pw::Plexer* language,
                       std::string& ErrMsg)
 {
   // Remove these environment variables from the environment of the
@@ -1744,6 +1745,7 @@ static int Preprocess(const std::string &OutputFilename,
 ///
 static int Preprocess(const std::string &OutputFilename,
                       const std::string &InputFilename,
+                      pw::Plexer* language,
                       std::string& ErrMsg)
 {
     pw::PP* pp = new pw::PP(InputFilename, errors);
@@ -2116,7 +2118,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         to.appendSuffix(langToExt[nextType]);
 
         std::string ErrMsg;  
-        if(Preprocess(to.toString(), input.name.toString(), ErrMsg) != 0) {
+        if(Preprocess(to.toString(), input.name.toString(), input.language, ErrMsg) != 0) {
             PrintAndExit(ErrMsg);
         }
 
@@ -2150,7 +2152,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
                 // This is a C file.
                 // RICH: std: C, C++, K&R, etc.
             }
-            int result = elsa.parse(lang, input.name.c_str(), to.c_str(), input.module);
+            int result = elsa.parse(lang, input.name.c_str(), to.c_str(), input.module, input.language);
             if (result) {
                 Exit(result);
             }
@@ -2589,42 +2591,6 @@ int main(int argc, char **argv)
             }
         }
 
-        // Gather the input files and determine their types.
-        std::vector<std::string>::iterator fileIt = Files.begin();
-        std::vector<std::string>::iterator libIt  = Libraries.begin();
-        unsigned libPos = 0, filePos = 0;
-        for ( ;; )  {
-            if (libIt != Libraries.end())
-                libPos = Libraries.getPosition( libIt - Libraries.begin() );
-            else
-                libPos = 0;
-            if (fileIt != Files.end())
-                filePos = Files.getPosition(fileIt - Files.begin());
-            else
-                filePos = 0;
-
-            if (filePos != 0 && (libPos == 0 || filePos < libPos)) {
-                // Add a source file
-                FileTypes type = GetFileType(*fileIt, filePos);
-                if (Verbose) {
-                    cout << "  adding " << *fileIt << " as " << fileTypes[type] << "\n";
-                }
-                Input input(*fileIt, type);
-                InpList.push_back(input);
-                ++fileIt;
-            } else if ( libPos != 0 && (filePos == 0 || libPos < filePos) ) {
-                // Add a library
-                if (Verbose) {
-                    cout << "  adding " << *libIt << " as an input library\n";
-                }
-                Input input(*fileIt, A);
-                InpList.push_back(input);
-                ++libIt;
-            }
-            else
-                break; // we're done with the list
-        }
-
         // Find configuration files.
         sys::Path config(progname);
         config.appendSuffix("ecf");
@@ -2681,15 +2647,51 @@ int main(int argc, char **argv)
         configuration->addDefine("__ELLCC_VERSION__",  str(ELLCC_VERSION));
  
         // Read the program configuration file.
-        configuration = pw::Plexer::Create(file.toString().c_str(), errors);
+        pw::Plexer* program = pw::Plexer::Create(file.toString().c_str(), errors);
 
-        if (configuration == NULL) {
+        if (program == NULL) {
             goto showerrors;
         }
 
-        // RICH: Configure the language.
-        language = pw::Plexer::Create("../config/c99.ecf", errors);
+        // Gather the input files and determine their types.
+        std::vector<std::string>::iterator fileIt = Files.begin();
+        std::vector<std::string>::iterator libIt  = Libraries.begin();
+        unsigned libPos = 0, filePos = 0;
         
+        for ( ;; )  {
+            if (libIt != Libraries.end())
+                libPos = Libraries.getPosition( libIt - Libraries.begin() );
+            else
+                libPos = 0;
+            if (fileIt != Files.end())
+                filePos = Files.getPosition(fileIt - Files.begin());
+            else
+                filePos = 0;
+
+            if (filePos != 0 && (libPos == 0 || filePos < libPos)) {
+                // Add a source file
+                FileTypes type = GetFileType(*fileIt, filePos);
+                if (Verbose) {
+                    cout << "  adding " << *fileIt << " as " << fileTypes[type] << "\n";
+                }
+                Input input(*fileIt, type);
+                // RICH: Configure the language.
+                input.language = pw::Plexer::Create("../config/c99.ecf", errors);
+                InpList.push_back(input);
+                ++fileIt;
+            } else if ( libPos != 0 && (filePos == 0 || libPos < filePos) ) {
+                // Add a library
+                if (Verbose) {
+                    cout << "  adding " << *libIt << " as an input library\n";
+                }
+                Input input(*fileIt, A);
+                InpList.push_back(input);
+                ++libIt;
+            }
+            else
+                break; // we're done with the list
+        }
+
         // Go through the phases.
         InputList::iterator it;
         for(Phases phase = PREPROCESSING; phase != NUM_PHASES; phase = (Phases)(phase + 1)) {

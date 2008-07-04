@@ -138,7 +138,7 @@ count-loc:
 
 # -------------------- clean, etc. -------------------
 clean:
-	rm -f $(TOCLEAN) gmon.out
+	rm -f $(TOCLEAN) gmon.out sieve
 	cd outdir && ls | grep -v CVS | xargs rm -f
 
 distclean: clean

@@ -784,7 +784,7 @@ int Elsa::doit(Language language, const char* inputFname, const char* outputFnam
   return 0;
 }
 
-int Elsa::parse(Language language, const char* inputFname, const char* outputFname, llvm::Module*& mod)
+int Elsa::parse(Language language, const char* inputFname, const char* outputFname, llvm::Module*& mod, pw::Plexer* lang)
 {
   try {
     return doit(language, inputFname, outputFname, mod);

@@ -5,6 +5,10 @@ namespace llvm {
     class Module;
 };
 
+namespace pw {
+    class Plexer;
+};
+
 #include "llvm/Support/Timer.h"
 
 class Elsa {
@@ -37,7 +41,7 @@ public:
     };
     /** Parse a source file.
      */
-    int parse(Language language, const char* inputFname, const char* outputFname, llvm::Module*& mod);
+    int parse(Language language, const char* inputFname, const char* outputFname, llvm::Module*& mod, pw::Plexer* lang);
 
 private:
     /** The default constructor (not implemented or used).
