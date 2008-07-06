@@ -894,6 +894,9 @@ static cl::opt<bool> StripDebug("strip-debug",
 static cl::alias A1("SD", cl::desc("Alias for --strip-debug"),
   cl::aliasopt(StripDebug));
 
+static cl::opt<bool> KeepInlineFunctions("fkeep-inline-functions", 
+  cl::desc("Keep static inline functions"));            // RICH
+//
 //===----------------------------------------------------------------------===//
 //===          TOOL OPTIONS
 //===----------------------------------------------------------------------===//
@@ -2677,7 +2680,11 @@ int main(int argc, char **argv)
                 }
                 Input input(*fileIt, type);
                 // RICH: Configure the language.
-                input.language = pw::Plexer::Create("/home/rich/ellcc/config/c99.ecf", errors);
+                if (type == CC || type == II) {
+                    input.language = pw::Plexer::Create("/home/rich/ellcc/config/cxx98.ecf", errors);
+                } else {
+                    input.language = pw::Plexer::Create("/home/rich/ellcc/config/c99.ecf", errors);
+                }
                 InpList.push_back(input);
                 ++fileIt;
             } else if ( libPos != 0 && (filePos == 0 || libPos < filePos) ) {

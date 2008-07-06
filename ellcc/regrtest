@@ -279,6 +279,7 @@ failCparse() {
   failTest "$2" perl ./multitest.pl ./ecc in/$1
 }
 testCparse t0001.c
+testCparse t0002.c
 
 
 # is K&R built?
