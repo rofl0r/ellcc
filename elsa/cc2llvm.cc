@@ -73,9 +73,9 @@ static llvm::GlobalValue::LinkageTypes getLinkage(DeclFlags flags)
  */
 void CC2LLVMEnv::checkCurrentBlock()
 {
-    if (currentBlock == NULL) {
+    if (currentBlock == NULL && function) {
         // No block is current, make one.
-        // RICH: setCurrentBlock(new llvm::BasicBlock("", function, returnBlock));
+        setCurrentBlock(llvm::BasicBlock::Create("", function, returnBlock));
     }
 }
 
@@ -727,6 +727,7 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
       env.currentBlock = NULL;
     }
 
+    env.function = NULL;
     env.functionAST = oldFunctionAST;	// Restore any old function context.
 }
 
