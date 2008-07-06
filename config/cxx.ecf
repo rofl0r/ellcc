@@ -1,3 +1,4 @@
 // C++ specific macros.
 #define __STDC__ 1
 #define __cplusplus 199711L
+#include "c.ecf"

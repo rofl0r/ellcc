@@ -3,6 +3,9 @@
 prefix=/home/rich/local
 targets=`cat ../targets`
 targetlist=`echo $targets | sed -e "s/ /,/g"`
+ellcc=`cd ../ellcc; pwd`
+ecc=$ellcc/ecc
+epp=$ellcc/e++
 
 # Parse options.
 install=0
@@ -26,7 +29,7 @@ cd obj
 
 if [ $install -eq 0 ] ; then
   echo Making binutils for $targets
-  ../src/configure CC=../../ellcc/ecc CXX=../../ellcc/e++ --enable-64-bit-bfd --enable-targets=$targetlist --prefix=$prefix
+  ../src/configure CC=$ecc CXX=$epp --enable-64-bit-bfd --enable-targets=$targetlist --prefix=$prefix
   if [ $? -ne 0 ] ; then
     echo configure for binutils failed
     exit 1
@@ -56,7 +59,7 @@ for t in $targets; do
     mkdir $t
     cd $t
     echo Making the assembler for $t
-    ../../src/gas/configure CC=../../ellcc/ecc CXX=../../ellcc/e++ --target=$t --program-prefix=${t}- --prefix=$prefix
+    ../../src/gas/configure CC=$ecc CXX=$epp --target=$t --program-prefix=${t}- --prefix=$prefix
     if [ $? -ne 0 ] ; then
       echo configure for $t failed
       exit 1

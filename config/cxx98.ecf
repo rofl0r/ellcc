@@ -1,14 +1,11 @@
-pragma PFX errorposition line
 // Syntax for the C++ 1998 language (ISO/IEC 14882:1998).
+#if 0
 language "C++98";
 description "C++ programming language: ISO/IEC 14882:1998";
 needwhitespace false;                   // White space not needed for parsing.
 neednewline false;                      // Newlines not needed for parsing.
 needtrigraphs true;                     // Trigraphs needed for parsing.
-
-// #pragma PSYN debug 0xf0014
-// #pragma PFX debug 0x00002
-#pragma PSYN substitute 0
+#endif
 
 /* RICH: '<:' = '{', ':>' = '}', '<%' = '[', '%>' = ']', '%:' = '#', '%:%:' = "##", */
 
@@ -35,6 +32,7 @@ tokens {
 comment { "//" .. "\n" };                               // Single line comment.
 comment { "/*" .. "*/" };                               // Multi line comment.
 
+#if 0
 // Language keywords (These must be a subset of IDENTIFIER).
 keywords {
  asm, auto, bool, break, catch, case, char, class, const, const_cast, continue,
@@ -47,6 +45,16 @@ keywords {
  /* RICH: and = '&&', and_eq = '&=', bitand = '&', bitor = '|', compl = '~',
  not = '!', not_eq = '!=', or = '||', or_eq = '!=', xor = '^', xor_eq = '^=', */
 };
+#endif
 
-#define __STDC__ 1
-#define __cplusplus 199711L
+// Predefined macros.
+#define _GNU_SOURCE
+
+#include "cxx.ecf"
+#include "linux.ecf"
+#include "x86.ecf"
+
+// Additional include paths.
+includes {
+    "/usr/include",
+};

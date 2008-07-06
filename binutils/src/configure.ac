@@ -1050,7 +1050,7 @@ else
 fi
 
 AC_PROG_CC
-AC_PROG_CXX
+# RICH AC_PROG_CXX
 
 # We must set the default linker to the linker used by gcc for the correct
 # operation of libtool.  If LD is not defined and we are using gcc, try to
