@@ -23,7 +23,7 @@
 
 #define BITS_PER_BYTE	8	// RICH: Temporary.
 
-#if 0
+#if 1
 // Really verbose debugging.
 #define VDEBUG(who, where, what) cout << toString(where) << ": " << who << " "; what; cout << "\n"
 #else
@@ -208,7 +208,7 @@ const llvm::Type* CC2LLVMEnv::makeTypeSpecifier(SourceLoc loc, Type *t)
             returnType = llvm::Type::VoidTy;
 	}
         makeParameterTypes(ft, args);
-        type = llvm::FunctionType::get(returnType, args, ft->acceptsVarargs());
+        type = llvm::FunctionType::get(returnType, args, ft->acceptsVarargs() || (ft->flags & FF_NO_PARAM_INFO));
         break;
     }
     case Type::T_ARRAY: {
@@ -1831,11 +1831,20 @@ llvm::Value* CC2LLVMEnv::initializer(const Initializer* init, Type* type, int& d
 	    value = llvm::ConstantArray::get((llvm::ArrayType*)makeTypeSpecifier(init->loc, type), elements);
 	    break;
 	} else if (type->isCompoundType()) {
-            FOREACH_ASTLIST(Initializer, c->inits, iter) {
-                initializer(iter.data(), NULL, deref);
+            CompoundType *ct = type->asCompoundType();
+            ASTListIter<Initializer> iiter(c->inits);
+            SFOREACH_OBJLIST(Variable, ct->dataMembers, iter) {
+                Variable const *v = iter.data();
+                if (!iiter.isDone()) {
+                    // Have an initializer for this.
+                    initializer(iiter.data(), v->type, deref);
+                    iiter.adv();
+                } else {
+                    // No initializer present.
+                    cerr << toString(init->loc) << ": ";
+                    xunimp("missing compound initializer");
+                }
             }
-            cerr << toString(init->loc) << ": ";
-            xunimp("compound initializer");
 	}
     }
 
@@ -2554,9 +2563,7 @@ llvm::Value* CC2LLVMEnv::doassign(SourceLoc loc, llvm::Value* destination, int d
                                                  llvm::Value* source, int deref2, Type* stype)
 {
     checkCurrentBlock();
-    bool first = destination->getType()->getContainedType(0)->isFirstClassType();
-    if (   !first
-        || destination->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID
+    if (   destination->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID
         || destination->getType()->getContainedType(0)->getTypeID() == llvm::Type::StructTyID) {
         // This is a compound assignment.
         source = access(source, false, deref2, 1);                 // RICH: Volatile.
