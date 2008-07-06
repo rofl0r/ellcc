@@ -8613,6 +8613,10 @@ Type *E_deref::itcheck_x(Env &env, Expression *&replacement)
 
   if (rt->isPointerType()) {
     PointerType *pt = rt->asPointerType();
+    if (pt->atType->isVoid()) {
+      return env.error(rt, stringc
+        << "cannot dereference type `" << rt->toString() << "'");
+    }
 
     // dereferencing yields an lvalue
     return makeLvalType(env, pt->atType);

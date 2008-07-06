@@ -164,7 +164,7 @@ void f()
   __getStandardConversion((Foo const *)0, (void const *)0, SC_PTR_CONV);
 
   __getStandardConversion((int const *)0, (void *)0, SC_ERROR);
-  __getStandardConversion((void *)0, (int *)0, SC_PTR_CONV);
+  __getStandardConversion((void *)0, (int *)0, SC_ERROR);
   __getStandardConversion((Foo *)0, (int *)0, SC_ERROR);
   __getStandardConversion((float *)0, (int *)0, SC_ERROR);
 
