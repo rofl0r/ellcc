@@ -818,13 +818,13 @@ static cl::opt<Phases> FinalPhase(cl::Optional,
             "Stop translation after pre-processing phase"),
         clEnumValN(TRANSLATION, "t",
             "Stop translation after translation phase"),
-        clEnumValN(OPTIMIZATION,"c",
+        clEnumValN(OPTIMIZATION,"obc",
             "Stop translation after optimization phase"),
-        clEnumValN(BCLINKING,"bc",
+        clEnumValN(BCLINKING,"lbc",
             "Stop translation after bitcode linking phase"),
         clEnumValN(GENERATION,"S",
             "Stop translation after generation phase"),
-        clEnumValN(ASSEMBLY,"NS",
+        clEnumValN(ASSEMBLY,"c",
             "Stop translation after assembly phase"),
         clEnumValEnd
     )
@@ -2696,6 +2696,10 @@ int main(int argc, char **argv)
         // Go through the phases.
         InputList::iterator it;
         for(Phases phase = PREPROCESSING; phase != NUM_PHASES; phase = (Phases)(phase + 1)) {
+            if (phase == BCLINKING && (FinalPhase == GENERATION || FinalPhase == ASSEMBLY)) {
+                // Don't link bitcode if assembly language or object files are wanted.
+                continue;
+            }
             if (Verbose) {
                 cout << "Phase: " << phases[phase].name << "\n";
             }

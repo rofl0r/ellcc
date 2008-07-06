@@ -53,10 +53,12 @@ int main(int ac, char **av)
         printf("__LINE__ = %d\n", __LINE__); 
         printf("__DATE__ = %s\n", __DATE__); 
         printf("__TIME__ = %s\n", __TIME__); 
+#ifdef __ELLCC__
         printf("__ELLCC__ = %d\n", __ELLCC__); 
         printf("__ELLCC_MINOR__ = %d\n", __ELLCC_MINOR__); 
         printf("__ELLCC_PATCHLEVEL__ = %d\n", __ELLCC_PATCHLEVEL__); 
         printf("__ELLCC_VERSION_STRING__ = %s\n", __ELLCC_VERSION_STRING__); 
         printf("__ELLCC_VERSIONG__ = %s\n", __ELLCC_VERSION__); 
+#endif
         }
                
