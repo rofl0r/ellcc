@@ -1,3 +1,4 @@
+// Implicit declaration in C.
 int
 main ()
 {

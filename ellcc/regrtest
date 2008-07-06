@@ -280,6 +280,8 @@ failCparse() {
 }
 testCparse t0001.c
 testCparse t0002.c
+testCparse t0003.c
+testCparse t0004.c
 
 
 # is K&R built?
