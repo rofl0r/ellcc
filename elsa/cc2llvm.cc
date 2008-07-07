@@ -2335,12 +2335,6 @@ llvm::Value* CC2LLVMEnv::binop(SourceLoc loc, BinaryOp op, Expression* e1, llvm:
         break;
 
     case BIN_AND: {     // &&
-#if RICH
-        left = e1->cc2llvm(*this, deref1);
-        VDEBUG("E_binary left", e1->loc, cout <<  " deref " << deref1 << " "; left->print(cout));
-        left = access(left, false, deref1);                 // RICH: Volatile.
-#endif
-
         llvm::Value* value = checkCondition(e1);
         llvm::BasicBlock* doRight = llvm::BasicBlock::Create("doRight", function, returnBlock);
         llvm::BasicBlock* ifFalse = llvm::BasicBlock::Create("condFalse", function, returnBlock);
@@ -2351,11 +2345,6 @@ llvm::Value* CC2LLVMEnv::binop(SourceLoc loc, BinaryOp op, Expression* e1, llvm:
         currentBlock = NULL;
 
         setCurrentBlock(doRight);
-#if RICH
-        right = e2->cc2llvm(*this, deref2);
-        VDEBUG("E_binary right", e1->loc, right->print(cout));
-        right = access(right, false, deref2);                 // RICH: Volatile.
-#endif
         value = checkCondition(e2);
         checkCurrentBlock();
 	builder.CreateCondBr(value, ifTrue, ifFalse);
@@ -2378,10 +2367,6 @@ llvm::Value* CC2LLVMEnv::binop(SourceLoc loc, BinaryOp op, Expression* e1, llvm:
     }
 
     case BIN_OR: {      // ||
-#if RICH
-        left = access(left, false, deref1);                 // RICH: Volatile.
-        right = access(right, false, deref2);                 // RICH: Volatile.
-#endif
         llvm::Value* value = checkCondition(e1);
         llvm::BasicBlock* doRight = llvm::BasicBlock::Create("doRight", function, returnBlock);
         llvm::BasicBlock* ifFalse = llvm::BasicBlock::Create("condFalse", function, returnBlock);
