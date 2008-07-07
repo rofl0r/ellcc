@@ -271,6 +271,9 @@ testCparse() {
 testCparse_special() {
   runTest perl ./multitest.pl ./ecc $1 in/$2
 }
+testCrun() {
+  runTest ./a.out from t0005.c
+}
 failCparse() {
   if [ "$2" = "" ]; then
     echo "failparse $1: failparse takes two arguments"
@@ -282,6 +285,8 @@ testCparse t0001.c
 testCparse t0002.c
 testCparse t0003.c
 testCparse t0004.c
+testCparse t0005.c
+testCrun
 
 
 # is K&R built?
