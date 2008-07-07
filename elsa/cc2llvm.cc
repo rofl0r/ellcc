@@ -2577,6 +2577,21 @@ llvm::Value* CC2LLVMEnv::doassign(SourceLoc loc, llvm::Value* destination, int d
         llvm::Value* value = builder.CreateBitCast(destination, type);
         VDEBUG("doassign dest cast", loc, value->print(cout));
         parameters.push_back(value);
+        if (llvm::ConstantArray::classof(source)) {
+            llvm::GlobalVariable* gv = new llvm::GlobalVariable(source->getType(), true, llvm::GlobalValue::InternalLinkage, (llvm::Constant*)source, ".ar", mod);
+            // Get the address of the array.
+            checkCurrentBlock();
+#if RICH
+            std::vector<llvm::Value*> indices;
+            indices.push_back(llvm::Constant::getNullValue(destination->getType()));
+            indices.push_back(llvm::Constant::getNullValue(destination->getType()));
+            VDEBUG("GEP4", loc, );
+            source = builder.CreateGEP(gv, indices.begin(), indices.end(), "");
+#endif
+            VDEBUG("GEP4", loc, );
+            source = builder.CreateGEP(gv, llvm::Constant::getNullValue(destination->getType()), "");
+            VDEBUG("GEP4", loc, source->print(cout));
+        }
         VDEBUG("doassign src", loc, source->print(cout));
         value = builder.CreateBitCast(source, type);
         VDEBUG("doassign src cast", loc, value->print(cout));
