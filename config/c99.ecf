@@ -45,7 +45,7 @@ keywords {
 #endif
 
 // Predefined macros.
-#define _GNU_SOURCE
+#define _GNU_SOURCE 1
 
 #include "c.ecf"
 // #include "cxx.ecf"
