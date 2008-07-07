@@ -23,7 +23,7 @@
 
 #define BITS_PER_BYTE	8	// RICH: Temporary.
 
-#if 1
+#if 0
 // Really verbose debugging.
 #define VDEBUG(who, where, what) cout << toString(where) << ": " << who << " "; what; cout << "\n"
 #else
@@ -2581,13 +2581,6 @@ llvm::Value* CC2LLVMEnv::doassign(SourceLoc loc, llvm::Value* destination, int d
             llvm::GlobalVariable* gv = new llvm::GlobalVariable(source->getType(), true, llvm::GlobalValue::InternalLinkage, (llvm::Constant*)source, ".ar", mod);
             // Get the address of the array.
             checkCurrentBlock();
-#if RICH
-            std::vector<llvm::Value*> indices;
-            indices.push_back(llvm::Constant::getNullValue(destination->getType()));
-            indices.push_back(llvm::Constant::getNullValue(destination->getType()));
-            VDEBUG("GEP4", loc, );
-            source = builder.CreateGEP(gv, indices.begin(), indices.end(), "");
-#endif
             VDEBUG("GEP4", loc, );
             source = builder.CreateGEP(gv, llvm::Constant::getNullValue(destination->getType()), "");
             VDEBUG("GEP4", loc, source->print(cout));
