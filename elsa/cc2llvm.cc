@@ -1540,7 +1540,7 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
             if (type->isReference()) {
                 type = type->getAtType();
             }
-            isPointer = type->isPtrOrRef() || type->isArrayType();
+            isPointer = type->isPtrOrRef() || type->isArrayType() || type->isFunctionType();
             isSimple = type->isSimpleType();
 	    isInteger = false; isUnsigned = false; isFloat = false; isVoid = false; size = 0;
 	    if (type->isEnumType()) {
