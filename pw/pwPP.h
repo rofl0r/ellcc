@@ -535,6 +535,7 @@ public:
      * @return true if the operation suceedded.
      */
     bool setInput(FILE *fp = NULL);
+    void addUserInclude(const std::string& name);
     void addInclude(const std::string& name);
     void addDefine(const std::string& name, const std::string& value = "");
     void addDefine(Macro& macro);
@@ -558,21 +559,12 @@ private:
     /** An include file definition.
      */
     struct include {
-        /** Next in the include stack.
-         */
-        include *next;
-        /** The name of the include file.
-         */
-        const char* name;
-        /** The include file.
-         */
-        FILE *fp;
-        /* The scanner context.
-         */
-        PPStream *pp;
-        /** The current file's include path level.
-         */
-        int level;
+        include *next;                          ///< Next in the include stack.
+        const char* name;                       ///< The name of the include file.
+        FILE *fp;                               ///< The include file.
+        PPStream *pp;                           ///< The scanner context.
+        int level;                              ///< The current file's include path level.
+        bool user;                              ///< true if level is in the user include path.
     };
 
     const char* name;                           ///< The name of input stream.
@@ -581,9 +573,10 @@ private:
     char *sp;                                   ///< String pointer, if stream is a string.
     char *ip;                                   ///< string input pointer
     PPStream *pp;                               ///< The Stream context.
-    include *includes;                          ///< The open include file list.
+    include *includes;                          ///< The open include list.
     int includeline;                            ///< last \#include line
     static array<const char*> files;            ///< Input file names.
+    array<std::string> userincludedirs;         ///< The user include search path.
     array<std::string> includedirs;             ///< The include search path.
     Options options;                            ///< The preprocessor options.
     /** Look up a macro.

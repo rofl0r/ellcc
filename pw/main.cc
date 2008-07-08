@@ -18,10 +18,17 @@ static pw::ErrorList errors;
 
 int main(int argc, char** argv)
 {
+    pw::array<char*> includes;
+    
     // Simple command line argument gathering.
-
     for (int i = 1; i < argc; ++i) {
         if (*argv[i] == '-') {
+            if (*(argv[i] + 1) == 'I') {
+                // Add an include path.
+                includes += argv[i] + 2;
+            }
+
+            argv[i] = NULL;
         }
     }
 
@@ -74,6 +81,20 @@ int main(int argc, char** argv)
             exit(1);
         }
     
+        // Set up the output file.
+        FILE* ofp;
+        std::string path;
+        std::string name;
+        std::string extension;
+        pw::parseFilename(file, path, name, extension);
+        name = pw::buildFilename("", name, "i");
+        ofp = pw::tfopen(name.c_str(), "w");
+        if (ofp == NULL) {
+            fprintf(stderr, "can't open %s for writing\n", name.c_str());
+            delete pp;
+            exit(1);
+        }
+
         if (configuration) {
             pw::Options options = configuration->options;
             pp->setOptions(&options);    		// Set pre-processor options.
@@ -81,6 +102,11 @@ int main(int argc, char** argv)
             // Set pre-defined macros.
             for (int i = 0; i < configuration->macros.size(); ++i) {
                 pp->addDefine(configuration->macros[i]);
+            }
+
+            // Set the user include paths.
+            for (int i = 0; i < includes.size(); ++i) {
+                pp->addUserInclude(includes[i]);
             }
 
             // Set the include paths.
@@ -91,7 +117,8 @@ int main(int argc, char** argv)
             // Preprocess the file.
             const char* lastfile;
             lastfile = errors.file;
-            fprintf(stdout, "# %d \"%s\"\n", 1, errors.file);
+            
+            fprintf(ofp, "# %d \"%s\"\n", 1, errors.file);
             pp->getToken(pw::PP::GETALL);
             for (;;) {
                 if (pp->info.token == pw::PPStream::ENDOFFILE) {
@@ -102,14 +129,15 @@ int main(int argc, char** argv)
                 if (errors.file != lastfile) {
                     // Output #line directive if pre-processing.
                     lastfile = errors.file;
-                    fprintf(stdout, "# %d \"%s\"\n", pp->info.startline, errors.file);
+                    fprintf(ofp, "# %d \"%s\"\n", pp->info.startline, errors.file);
                 }
 
-                fprintf(stdout, "%s", pp->info.string.c_str());
+                fprintf(ofp, "%s", pp->info.string.c_str());
                 pp->getToken(pw::PP::GETALL);
             }
         }
 
+        pw::fclose(ofp);
         delete pp;
     }
 

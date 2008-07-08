@@ -206,14 +206,33 @@ const char* PP::addName(const char* name)
     return p;
 }
 
-//
-// addInclude - Add a name to the list of include directories.
-//
+/* addUserInclude - Add a name to the list of user include directories.
+ */
+void PP::addUserInclude(const std::string& name)
+{
+    // Search the system includes first.
+    for (int i = 0; i < includedirs.size(); ++i) {
+        if (name == includedirs[i]) {
+            return;                             // We already know this name.
+        }
+    }
+
+    for (int i = 0; i < userincludedirs.size(); ++i) {
+        if (name == userincludedirs[i]) {
+            return;                             // We already know this name.
+        }
+    }
+
+    userincludedirs += name;
+}
+
+/* addInclude - Add a name to the list of include directories.
+ */
 void PP::addInclude(const std::string& name)
 {
     for (int i = 0; i < includedirs.size(); ++i) {
         if (name == includedirs[i]) {
-            return;                             // already know this name
+            return;                             // We already know this name.
         }
     }
 
@@ -376,6 +395,7 @@ bool PP::doInclude(PPStream *current)
 
     // Open a new include file.
     int level = 0;		// No search path yet.
+    bool user = true;           // Search the user paths first.
     if (fullPath(string)) {
         // The full path has been provided.
         fp = tfopen(string.c_str(), "r");
@@ -401,11 +421,31 @@ bool PP::doInclude(PPStream *current)
         if (includes && current->include_next) {
             // This is an #include_next, continue searching where we left off.
             level = includes->level + 1;
+            user = includes->user;
         }
-        for ( ; level < includedirs.size(); ++level) {
-            file = buildFilename(includedirs[level], string);
-            if ((fp = tfopen(file.c_str(), "r")) != NULL) {
-                break;
+
+        if (user) {
+            // Search the user paths.
+            for ( ; level < userincludedirs.size(); ++level) {
+                file = buildFilename(userincludedirs[level], string);
+                if ((fp = tfopen(file.c_str(), "r")) != NULL) {
+                    break;
+                }
+            }
+            if (fp == NULL) {
+                // Search all the system include paths.
+                level = 0;
+            }
+        }
+
+        if (fp == NULL) {
+            // Search the system paths.
+            for ( ; level < includedirs.size(); ++level) {
+                file = buildFilename(includedirs[level], string);
+                if ((fp = tfopen(file.c_str(), "r")) != NULL) {
+                    user = false;
+                    break;
+                }
             }
         }
     }
@@ -423,6 +463,7 @@ bool PP::doInclude(PPStream *current)
     newp->fp = fp;
     newp->name = addName(file.c_str());
     newp->level = level;
+    newp->user = user;
     // Open new scanning context.
     newp->pp = new PPStream(*this, &options);
     newp->pp->setInput(&PP::filegetc);
