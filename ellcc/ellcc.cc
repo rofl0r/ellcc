@@ -584,6 +584,7 @@ Preprocessor Options
 #include "elsa.h"              // Elsa interfaces.
 // pwPlexer.
 #include "pwPlexer.h"          // The preprocessor.
+#include "pwOS.h"
 
 #define xstr(x) #x
 #define str(x) xstr(x)
@@ -1767,11 +1768,17 @@ static int Preprocess(const std::string &OutputFilename,
         return 1;
     }
 
-    FILE* ofp = fopen(OutputFilename.c_str(), "w");
-    if (ofp == NULL) {
-        ErrMsg = "can't open " + OutputFilename + " for writing.";
-        delete pp;
-        return 1;
+    FILE* ofp;
+    if (FinalPhase == PREPROCESSING) {
+        // Output everything to stdout (like gcc).
+        ofp = stdout;
+    } else {
+        ofp = pw::tfopen(OutputFilename.c_str(), "w");
+        if (ofp == NULL) {
+            ErrMsg = "can't open " + OutputFilename + " for writing.";
+            delete pp;
+            return 1;
+        }
     }
 
     if (language) {
@@ -1781,6 +1788,11 @@ static int Preprocess(const std::string &OutputFilename,
         // Set pre-defined macros.
         for (int i = 0; i < language->macros.size(); ++i) {
             pp->addDefine(language->macros[i]);
+        }
+
+        // Set the user include paths.
+        for (size_t i = 0; i < Includes.size(); ++i) {
+            pp->addUserInclude(Includes[i]);
         }
 
         // Set the include paths.
@@ -1810,7 +1822,9 @@ static int Preprocess(const std::string &OutputFilename,
         }
     }
 
-    fclose(ofp);
+    if (FinalPhase != PREPROCESSING) {
+        pw::fclose(ofp);
+    }
     delete pp;
     return 0;
 }
