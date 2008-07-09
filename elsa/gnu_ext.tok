@@ -30,6 +30,7 @@ TOK___BUILTIN_VA_START,  "__builtin_va_start",        :    n
 TOK___BUILTIN_VA_COPY,   "__builtin_va_copy",         :    n
 TOK___BUILTIN_VA_ARG,    "__builtin_va_arg",          :    n
 TOK___BUILTIN_VA_END,    "__builtin_va_end",          :    n
+TOK___BUILTIN_ALLOCA,    "__builtin_alloca",          :    n
 
 TOK_MIN_OP,              "<?",                        :
 TOK_MAX_OP,              ">?",                        :

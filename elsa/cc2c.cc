@@ -661,6 +661,7 @@ Expression *E___builtin_va_copy::cc2c(CC2CEnv &env) const { xunimp(""); return N
 Expression *E___builtin_va_arg::cc2c(CC2CEnv &env) const { xunimp(""); return NULL; }
 Expression *E___builtin_va_end::cc2c(CC2CEnv &env) const { xunimp(""); return NULL; }
 Expression *E___builtin_constant_p::cc2c(CC2CEnv &env) const { xunimp(""); return NULL; }
+Expression *E___builtin_alloca::cc2c(CC2CEnv &env) const { xunimp(""); return NULL; }
 Expression *E_compoundLit::cc2c(CC2CEnv &env) const { xunimp(""); return NULL; }
 Expression *E_statement::cc2c(CC2CEnv &env) const { xunimp(""); return NULL; }
 

@@ -2808,6 +2808,24 @@ llvm::Value *E___builtin_constant_p::cc2llvm(CC2LLVMEnv &env, int& deref) const
     return NULL;
 }
 
+llvm::Value *E___builtin_alloca::cc2llvm(CC2LLVMEnv &env, int& deref) const
+{
+    llvm::Value* value = expr->cc2llvm(env, deref);
+    value = env.access(value, false, deref, 1);                 // RICH: Volatile.
+    deref = 0;
+    xassert(env.entryBlock);
+    const llvm::Type* type = llvm::IntegerType::get(BITS_PER_BYTE);
+    env.checkCurrentBlock();
+    llvm::AllocaInst* lv;
+    if (env.entryBlock == env.currentBlock) {
+        lv = new llvm::AllocaInst(type, value, "alloca", env.entryBlock);
+    } else {
+        lv = new llvm::AllocaInst(type, value, "alloca", env.entryBlock->getTerminator());
+    }
+
+    return lv;
+}
+
 llvm::Value *E_compoundLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     deref = 0;

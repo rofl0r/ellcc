@@ -774,6 +774,15 @@ Type *E___builtin_constant_p::itcheck_x(Env &env, Expression *&replacement)
            expr->type : env.getSimpleType(ST_UNSIGNED_INT);
 }
 
+Type *E___builtin_alloca::itcheck_x(Env &env, Expression *&replacement)
+{
+
+  expr->tcheck(env, expr);
+
+  // type is void*
+  return expr->type->isError()?
+           expr->type : env.makePtrType(env.getSimpleType(ST_VOID));
+}
 
 Type *E___builtin_va_start::itcheck_x(Env &env, Expression *&replacement)
 {
@@ -1163,6 +1172,13 @@ void E___builtin_constant_p::iprint(PrintEnv &env)
 {
   TreeWalkDebug treeDebug("E___builtin_constant_p::iprint");
   PairDelim pair(*env.out, "__builtin_constant_p", "(", ")");
+  expr->print(env);
+}
+
+void E___builtin_alloca::iprint(PrintEnv &env)
+{
+  TreeWalkDebug treeDebug("E___builtin_alloca::iprint");
+  PairDelim pair(*env.out, "__builtin_alloca", "(", ")");
   expr->print(env);
 }
 

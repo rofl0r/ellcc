@@ -26,6 +26,7 @@
 "__builtin_va_copy"    return tok(TOK___BUILTIN_VA_COPY);
 "__builtin_va_arg"     return tok(TOK___BUILTIN_VA_ARG);
 "__builtin_va_end"     return tok(TOK___BUILTIN_VA_END);
+"__builtin_alloca"     return tok(TOK___BUILTIN_ALLOCA);
 
 "__null" {
   // gcc only recognizes __null as 0 in C++ mode, but I prefer the

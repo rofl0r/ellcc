@@ -143,6 +143,9 @@ nonterm(Expression*) PostfixExpression {
        { return new E___builtin_va_arg(loc, e, t); }
   -> "__builtin_va_end" "(" e:Expression ")"
         { return new E___builtin_va_end(loc, e); }
+
+  -> "__builtin_alloca" "(" e:Expression ")"
+        { return new E___builtin_alloca(loc, e); }
 }
 
 // dsw: had to break this out for location recording reasons

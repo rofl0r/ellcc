@@ -24,6 +24,7 @@ enum DeclaratorContext {
   DC_E_BUILTIN_VA_COPY,    //   E___builtin_va_copy::atype
   DC_E_BUILTIN_VA_ARG,    //   E___builtin_va_arg::atype
   DC_E_BUILTIN_VA_END,    //   E___builtin_va_end::atype
+  DC_E_BUILTIN_ALLOCA,    //   E___builtin_alloca::atype
 }
 
 
@@ -81,6 +82,9 @@ class Expression {
   -> E___builtin_va_copy(Expression expr, Expression expr2);
   -> E___builtin_va_arg(Expression expr, ASTTypeId atype);
   -> E___builtin_va_end(Expression expr);
+
+  // alloca.
+  -> E___builtin_alloca(Expression expr);
 
   // alignment inquiry
   // http://gcc.gnu.org/onlinedocs/gcc-3.1/gcc/Alignment.html

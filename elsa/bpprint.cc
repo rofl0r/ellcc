@@ -1582,6 +1582,13 @@ void E___builtin_constant_p::iprint(BPEnv &bp) const
   bp << ")";
 }
 
+void E___builtin_alloca::iprint(BPEnv &bp) const
+{
+  bp << "__builtin_alloca(";
+  expr->print(bp);
+  bp << ")";
+}
+
 void E_compoundLit::iprint(BPEnv &bp) const
 {
   bp << "(";
