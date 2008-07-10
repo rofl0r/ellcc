@@ -57,6 +57,8 @@ case ${cpu} in
   mips*el)		cpu_type=mips endian=little ;;
   mips*)		cpu_type=mips endian=big ;;
   mt)                   cpu_type=mt endian=big ;;
+  nios2eb)              cpu_type=nios2 endian=big ;;
+  nios2el|nios2)        cpu_type=nios2 endian=little ;;
   or32*)		cpu_type=or32 endian=big ;;
   pjl*)			cpu_type=pj endian=little ;;
   pj*)			cpu_type=pj endian=big ;;
@@ -298,6 +300,8 @@ case ${generic_target} in
 
   msp430-*-*)				fmt=elf ;;
 
+  nios2*-*-*)                           fmt=elf ;;
+
   ns32k-pc532-mach*)			fmt=aout em=pc532mach ;;
   ns32k-pc532-ux*)			fmt=aout em=pc532mach ;;
   ns32k-pc532-lites*)			fmt=aout em=nbsd532 ;;
@@ -413,7 +417,7 @@ case ${generic_target} in
 esac
 
 case ${cpu_type} in
-  alpha | arm | i386 | ia64 | mips | ns32k | pdp11 | ppc | sparc | z80 | z8k)
+  alpha | arm | i386 | ia64 | mips | nios2 | ns32k | pdp11 | ppc | sparc | z80 | z8k)
     bfd_gas=yes
     ;;
 esac

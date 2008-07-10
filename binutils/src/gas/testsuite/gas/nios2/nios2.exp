@@ -1,0 +1,201 @@
+#
+# Some generic New Jersey tests
+#
+
+# "LOSE" marks information about tests which fail at a particular point
+# in time, but which are not XFAILed.  Either they used to pass
+# and indicate either regressions or the need to tweak the tests to keep
+# up the with code, or they are new tests and it is unknown whether or not
+# they should pass as-is for the given object formats.
+
+if ![info exists LD] then {
+    set LD [findfile $base_dir/../../ld/ld-new]
+}
+
+proc run_list_test { name  } {
+    global srcdir subdir
+    set testname "NIOS2 $name"
+    set file $srcdir/$subdir/$name
+    gas_run ${name}.s "" ">&dump.out"
+    if { [regexp_diff "dump.out" "${file}.l"] } then {
+	fail $testname
+	verbose "output is [file_contents "dump.out"]" 2
+	return
+    }
+    pass $testname
+}
+
+proc ld_run { obj0 obj1 opts } {
+    global LD
+    global comp_output
+    global srcdir
+    global subdir
+    global host_triplet
+
+    verbose "Executing $srcdir/lib/run $LD $obj0 $obj1 $opts"
+    catch "exec $srcdir/lib/run $LD $obj0 $obj1 $opts" comp_output
+    set comp_output [prune_warnings $comp_output]
+    verbose "output was $comp_output"
+    return [list $comp_output ""];
+}
+
+proc objdump_run { prog opts redir } {
+    global OBJDUMP
+    global comp_output
+    global srcdir
+    global subdir
+    global host_triplet
+
+    verbose "Executing $srcdir/lib/run $OBJDUMP -s $prog"
+    catch "exec $srcdir/lib/run $OBJDUMP $opts $prog $redir" comp_output
+    set comp_output [prune_warnings $comp_output]
+    verbose "output was $comp_output"
+    return [list $comp_output ""];
+}
+
+proc run_reloc_test { name other objdump_opts} {
+	global LD OBJDUMP AS
+	global srcdir subdir
+	set testname "NIOS2 $name"
+	set file $srcdir/$subdir/$name
+	set file1 $srcdir/$subdir/$other
+	gas_run ${name}.s "-o ${name}.o" ""
+	gas_run ${other}.s "-o ${other}.o" ""
+	ld_run ${name}.o ${other}.o "-o ${name}.exe"
+	objdump_run ${name}.exe ${objdump_opts} ">&dump.out"
+	if { [regexp_diff "dump.out" "${file}.d"] } then {
+		fail $testname
+		verbose "output is [file_contents "dump.out"]" 2
+		return
+	    }
+    	pass $testname
+}
+
+proc run_gpreloc_test { name objdump_opts} {
+	global LD OBJDUMP AS
+	global srcdir subdir
+	set testname "NIOS2 $name"
+	set file $srcdir/$subdir/$name
+	gas_run ${name}.s "-o ${name}.o" ""
+	ld_run ${name}.o "" "-o ${name}.exe"
+	objdump_run ${name}.exe ${objdump_opts} ">&dump.out"
+	if { [regexp_diff "dump.out" "${file}.d"] } then {
+		fail $testname
+		verbose "output is [file_contents "dump.out"]" 2
+		return
+	    }
+    	pass $testname
+}
+
+proc run_relax_test { name asm_opts link_opts objdump_opts} {
+	global LD OBJDUMP AS
+	global srcdir subdir
+	set testname "NIOS2 $name"
+	set file $srcdir/$subdir/$name
+	gas_run ${name}.s "-o ${name}.o" ${asm_opts}
+	ld_run ${name}.o "" "-o ${name}.exe -T${srcdir}/${subdir}/${link_opts} --relax"
+	objdump_run ${name}.exe ${objdump_opts} ">&dump.out"
+	if { [regexp_diff "dump.out" "${file}.d"] } then {
+			fail $testname
+			verbose "output is [file_contents "dump.out"]" 2
+			return
+	   }
+    	pass $testname
+}
+
+proc run_relax_section_test { name asm_opts objdump_opts} {
+	global LD OBJDUMP AS
+	global srcdir subdir
+	set testname "NIOS2 $name"
+	set file $srcdir/$subdir/$name
+	gas_run ${name}.s "-o ${name}.o" ${asm_opts}
+	ld_run ${name}.o "" "-o ${name}.exe"
+	objdump_run ${name}.exe ${objdump_opts} ">&dump.out"
+	if { [regexp_diff "dump.out" "${file}.d"] } then {
+			fail $testname
+			verbose "output is [file_contents "dump.out"]" 2
+			return
+	   }
+    	pass $testname
+}
+
+if { [istarget nios2-*-elf] } then {
+    set elf 1
+    
+    run_dump_test "add"
+    run_dump_test "and"
+    run_dump_test "align_fill"
+    run_dump_test "align_text"
+    
+    run_dump_test "branch"
+
+    
+    run_dump_test "break"
+    run_dump_test "bret"
+    run_dump_test "cache"
+    
+    run_dump_test "call"
+
+    
+    run_dump_test "cmp"
+   
+   
+    run_dump_test "jmp" 
+    run_dump_test "ldw"
+    run_dump_test "ldh"
+    run_dump_test "ldb"
+
+    run_dump_test "flushda" 
+     
+    run_dump_test "mul"
+ 
+    run_dump_test "nor"  
+    run_dump_test "or"
+    
+    run_dump_test "ctl"
+    run_dump_test "ret"
+    run_dump_test "rotate"
+    
+    run_dump_test "stw"
+    run_dump_test "sth"
+    run_dump_test "stb"
+    
+    run_dump_test "sub"
+    run_dump_test "sync"
+    run_dump_test "trap"
+    run_dump_test "tret"
+    
+    run_dump_test "custom"
+    run_dump_test "xor"
+    run_dump_test "movia"
+    
+    run_dump_test "complex"
+    run_dump_test "comments"
+    run_dump_test "etbt"
+    run_dump_test "lineseparator"
+    run_dump_test "movi"
+    
+    run_list_test "illegal"
+    run_list_test "warn_nobreak"
+    run_list_test "warn_noat"
+
+
+# now lets make sure that the assembler generates all the relocations
+# that it should correctly, and that the linker links them correctly
+     
+    run_reloc_test "nios2-reloc-r-nios2-bfd-reloc-xx" "reloc_symbols" "-s"
+    run_reloc_test "nios2-reloc-r-nios2-s16" "s16_symbol" "-s"
+    run_reloc_test "nios2-reloc-r-nios2-u16" "u16_symbol" "-s"
+    run_reloc_test "nios2-reloc-r-nios2-pcrel16" "pcrel_label" "-dr --prefix-addresses"
+    run_reloc_test "nios2-reloc-r-nios2-hilo16" "hilo_symbol" "-dr --prefix-addresses"
+    run_dump_test "nios2-reloc-r-nios2-call26"
+    run_reloc_test "nios2-reloc-r-nios2-imm5" "imm5_symbol" "-dr --prefix-addresses"
+    run_reloc_test "nios2-reloc-merged_strings" "str2" "-dr --prefix-addresses"
+    run_gpreloc_test "nios2-reloc-r-nios2-gprel" "-dr --prefix-addresses"
+    
+# relaxation tests
+    run_relax_test "relax_ujmp" "-relax-all" "link1.lds" "-dr --prefix-addresses"
+    run_relax_test "relax_cjmp" "-relax-all" "link1.lds" "-dr --prefix-addresses"
+    run_relax_test "relax_callr" "-relax-all" "link3.lds" "-dr --prefix-addresses"
+    run_relax_section_test "relax_section" "-relax-section" "-dr --prefix-addresses"
+}

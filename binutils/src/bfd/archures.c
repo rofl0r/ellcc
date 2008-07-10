@@ -396,6 +396,8 @@ DESCRIPTION
 .#define bfd_mach_z80            3 {* With ixl, ixh, iyl, and iyh.  *}
 .#define bfd_mach_z80full        7 {* All undocumented instructions.  *}
 .#define bfd_mach_r800           11 {* R800: successor with multiplication.  *}
+.  bfd_arch_nios2,      {* The Altera Nios2 soft core. *}
+.#define bfd_mach_nios2                    1
 .  bfd_arch_last
 .  };
 */
@@ -499,6 +501,7 @@ extern const bfd_arch_info_type bfd_xtensa_arch;
 extern const bfd_arch_info_type bfd_xc16x_arch;
 extern const bfd_arch_info_type bfd_z80_arch;
 extern const bfd_arch_info_type bfd_z8k_arch;
+extern const bfd_arch_info_type bfd_nios2_arch;
 
 static const bfd_arch_info_type * const bfd_archures_list[] =
   {
@@ -544,6 +547,7 @@ static const bfd_arch_info_type * const bfd_archures_list[] =
     &bfd_mn10300_arch,
     &bfd_mt_arch,
     &bfd_msp430_arch,
+    &bfd_nios2_arch,
     &bfd_ns32k_arch,
     &bfd_openrisc_arch,
     &bfd_or32_arch,

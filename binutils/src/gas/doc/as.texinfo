@@ -388,6 +388,13 @@ gcc(1), ld(1), and the Info entries for @file{binutils} and @file{ld}.
    [@b{--no-expand}] [@b{--no-merge-gregs}] [@b{-x}]
    [@b{--linker-allocated-gregs}]
 @end ifset
+@ifset NIOSII
+@emph{Target Altera Nios II options:}
+   [@b{-relax-all}]
+   [@b{-relax-section}]
+   [@b{-no-relax}]
+@end ifset
+
 @ifset PDP11
 
 @emph{Target PDP11 options:}
@@ -809,6 +816,20 @@ coprocessor instructions with the main processor.
 The target machine does (or does not) have a memory-management
 unit coprocessor.  The default is to assume an MMU for 68020 and up.
 
+@end table
+@end ifset
+
+@ifset NIOSII
+The following options are available when @value{AS} is configured for
+an Altera Nios II processor.
+
+@table @gcctabopt
+@item -relax-all
+Replace all branch and call instructions with @code{jmp} and @code{callr} sequences
+@item -relax-section
+Replace identified out of range branches with @code{jmp} sequences (default)
+@item -no-relax
+Do not replace any branches or calls
 @end table
 @end ifset
 
@@ -2171,6 +2192,9 @@ is considered a comment and is ignored.  The line comment character is
 @end ifset
 @ifset I960
 @samp{#} on the i960;
+@end ifset
+@ifset NIOSII
+@samp{#} for the Altera Nios II family;
 @end ifset
 @ifset PDP11
 @samp{;} for the PDP-11;
@@ -6413,6 +6437,9 @@ subject, see the hardware manufacturer's manual.
 @ifset MSP430
 * MSP430-Dependent::		MSP430 Dependent Features
 @end ifset
+@ifset NIOSII
+* NiosII-Dependent::            Altera Nios II Dependent Features
+@end ifset
 @ifset SH
 * SH-Dependent::                Renesas / SuperH SH Dependent Features
 * SH64-Dependent::              SuperH SH64 Dependent Features
@@ -6486,6 +6513,10 @@ subject, see the hardware manufacturer's manual.
 
 @ifset CRIS
 @include c-cris.texi
+@end ifset
+
+@ifset NIOSII
+@include c-nios2.texi
 @end ifset
 
 @ifset Renesas-all

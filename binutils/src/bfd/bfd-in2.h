@@ -2067,6 +2067,8 @@ enum bfd_architecture
 #define bfd_mach_z80            3 /* With ixl, ixh, iyl, and iyh.  */
 #define bfd_mach_z80full        7 /* All undocumented instructions.  */
 #define bfd_mach_r800           11 /* R800: successor with multiplication.  */
+  bfd_arch_nios2,      /* The Altera Nios2 soft core. */
+#define bfd_mach_nios2                    1
   bfd_arch_last
   };
 
@@ -4296,6 +4298,23 @@ This is the 5 bits of a value.  */
   BFD_RELOC_MSP430_16_BYTE,
   BFD_RELOC_MSP430_2X_PCREL,
   BFD_RELOC_MSP430_RL_PCREL,
+
+/* Relocations used by the Altera Nios2 soft core  */
+  BFD_RELOC_NIOS2_S16,
+  BFD_RELOC_NIOS2_U16,
+  BFD_RELOC_NIOS2_CALL26,
+  BFD_RELOC_NIOS2_IMM5,
+  BFD_RELOC_NIOS2_CACHE_OPX,
+  BFD_RELOC_NIOS2_IMM6,
+  BFD_RELOC_NIOS2_IMM8,
+  BFD_RELOC_NIOS2_HI16,
+  BFD_RELOC_NIOS2_LO16,
+  BFD_RELOC_NIOS2_HIADJ16,
+  BFD_RELOC_NIOS2_GPREL,
+  BFD_RELOC_NIOS2_UJMP,
+  BFD_RELOC_NIOS2_CJMP,
+  BFD_RELOC_NIOS2_CALLR,
+  BFD_RELOC_NIOS2_ALIGN,
 
 /* IQ2000 Relocations.  */
   BFD_RELOC_IQ2000_OFFSET_16,

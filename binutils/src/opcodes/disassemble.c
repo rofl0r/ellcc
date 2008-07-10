@@ -85,6 +85,7 @@
 #define ARCH_xtensa
 #define ARCH_z80
 #define ARCH_z8k
+#define ARCH_nios2
 #define INCLUDE_SHMEDIA
 #endif
 
@@ -443,6 +444,14 @@ disassembler (abfd)
     case bfd_arch_m32c:
       disassemble = print_insn_m32c;
       break;
+#endif
+#ifdef ARCH_nios2
+        case bfd_arch_nios2:
+      if (bfd_big_endian (abfd))
+        disassemble = print_insn_big_nios2;
+      else
+        disassemble = print_insn_little_nios2;
+          break;
 #endif
     default:
       return 0;
