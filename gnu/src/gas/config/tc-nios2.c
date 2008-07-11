@@ -426,10 +426,10 @@ nios2_relax_frag (segT segment, fragS * fragP, long stretch)
 
 #ifndef DIFF_EXPR_OK
 #if !defined (MANY_SEGMENTS) && !defined (BFD_ASSEMBLER)
-      know ((S_GET_SEGMENT (symbolP) == SEG_ABSOLUTE)
-	    || (S_GET_SEGMENT (symbolP) == SEG_DATA)
-	    || (S_GET_SEGMENT (symbolP) == SEG_BSS)
-	    || (S_GET_SEGMENT (symbolP) == SEG_TEXT));
+      know ((S_GET_SEGMENT (symbolP) == absolute_section)
+	    || (S_GET_SEGMENT (symbolP) == data_section)
+	    || (S_GET_SEGMENT (symbolP) == bss_section)
+	    || (S_GET_SEGMENT (symbolP) == text_section));
 #endif
       know (sym_frag != NULL);
 #endif

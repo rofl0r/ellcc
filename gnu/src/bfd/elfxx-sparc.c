@@ -1,5 +1,5 @@
 /* SPARC-specific support for ELF
-   Copyright 2005, 2006, 2007 Free Software Foundation, Inc.
+   Copyright 2005, 2006, 2007, 2008 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -510,17 +510,16 @@ struct _bfd_sparc_elf_obj_tdata
 #define _bfd_sparc_elf_local_got_tls_type(abfd) \
   (_bfd_sparc_elf_tdata (abfd)->local_got_tls_type)
 
+#define is_sparc_elf(bfd)				\
+  (bfd_get_flavour (bfd) == bfd_target_elf_flavour	\
+   && elf_tdata (bfd) != NULL				\
+   && elf_object_id (bfd) == SPARC_ELF_TDATA)
+
 bfd_boolean
 _bfd_sparc_elf_mkobject (bfd *abfd)
 {
-  if (abfd->tdata.any == NULL)
-    {
-      bfd_size_type amt = sizeof (struct _bfd_sparc_elf_obj_tdata);
-      abfd->tdata.any = bfd_zalloc (abfd, amt);
-      if (abfd->tdata.any == NULL)
-	return FALSE;
-    }
-  return bfd_elf_mkobject (abfd);
+  return bfd_elf_allocate_object (abfd, sizeof (struct _bfd_sparc_elf_obj_tdata),
+				  SPARC_ELF_TDATA);
 }
 
 static void
@@ -1090,7 +1089,7 @@ _bfd_sparc_elf_check_relocs (bfd *abfd, struct bfd_link_info *info,
     return TRUE;
 
   htab = _bfd_sparc_elf_hash_table (info);
-  symtab_hdr = &elf_tdata (abfd)->symtab_hdr;
+  symtab_hdr = &elf_symtab_hdr (abfd);
   sym_hashes = elf_sym_hashes (abfd);
   local_got_offsets = elf_local_got_offsets (abfd);
 
@@ -1100,6 +1099,9 @@ _bfd_sparc_elf_check_relocs (bfd *abfd, struct bfd_link_info *info,
     num_relocs = NUM_SHDR_ENTRIES (& elf_section_data (sec)->rel_hdr);
   else
     num_relocs = sec->reloc_count;
+
+  BFD_ASSERT (is_sparc_elf (abfd) || num_relocs == 0);
+
   rel_end = relocs + num_relocs;
   for (rel = relocs; rel < rel_end; rel++)
     {
@@ -1516,7 +1518,9 @@ _bfd_sparc_elf_check_relocs (bfd *abfd, struct bfd_link_info *info,
 	  break;
 
 	case R_SPARC_GNU_VTENTRY:
-	  if (!bfd_elf_gc_record_vtentry (abfd, sec, h, rel->r_addend))
+	  BFD_ASSERT (h != NULL);
+	  if (h != NULL
+	      && !bfd_elf_gc_record_vtentry (abfd, sec, h, rel->r_addend))
 	    return FALSE;
 	  break;
 
@@ -1561,10 +1565,15 @@ _bfd_sparc_elf_gc_sweep_hook (bfd *abfd, struct bfd_link_info *info,
   bfd_signed_vma *local_got_refcounts;
   const Elf_Internal_Rela *rel, *relend;
 
+  if (info->relocatable)
+    return TRUE;
+
+  BFD_ASSERT (is_sparc_elf (abfd) || sec->reloc_count == 0);
+
   elf_section_data (sec)->local_dynrel = NULL;
 
   htab = _bfd_sparc_elf_hash_table (info);
-  symtab_hdr = &elf_tdata (abfd)->symtab_hdr;
+  symtab_hdr = &elf_symtab_hdr (abfd);
   sym_hashes = elf_sym_hashes (abfd);
   local_got_refcounts = elf_local_got_refcounts (abfd);
 
@@ -2152,7 +2161,7 @@ _bfd_sparc_elf_size_dynamic_sections (bfd *output_bfd,
       Elf_Internal_Shdr *symtab_hdr;
       asection *srel;
 
-      if (bfd_get_flavour (ibfd) != bfd_target_elf_flavour)
+      if (! is_sparc_elf (ibfd))
 	continue;
 
       for (s = ibfd->sections; s != NULL; s = s->next)
@@ -2183,7 +2192,7 @@ _bfd_sparc_elf_size_dynamic_sections (bfd *output_bfd,
       if (!local_got)
 	continue;
 
-      symtab_hdr = &elf_tdata (ibfd)->symtab_hdr;
+      symtab_hdr = &elf_symtab_hdr (ibfd);
       locsymcount = symtab_hdr->sh_info;
       end_local_got = local_got + locsymcount;
       local_tls_type = _bfd_sparc_elf_local_got_tls_type (ibfd);
@@ -2394,6 +2403,9 @@ _bfd_sparc_elf_size_dynamic_sections (bfd *output_bfd,
 		eht->dynsymcount++;
 	      }
 	}
+      if (htab->is_vxworks
+	  && !elf_vxworks_add_dynamic_entries (output_bfd, info))
+	return FALSE;
     }
 #undef add_dynamic_entry
 
@@ -2478,7 +2490,7 @@ _bfd_sparc_elf_relocate_section (bfd *output_bfd,
   int num_relocs;
 
   htab = _bfd_sparc_elf_hash_table (info);
-  symtab_hdr = &elf_tdata (input_bfd)->symtab_hdr;
+  symtab_hdr = &elf_symtab_hdr (input_bfd);
   sym_hashes = elf_sym_hashes (input_bfd);
   local_got_offsets = elf_local_got_offsets (input_bfd);
 
@@ -3844,6 +3856,9 @@ sparc_finish_dyn (bfd *output_bfd, struct bfd_link_info *info,
 	      bed->s->swap_dyn_out (output_bfd, &dyn, dyncon);
 	    }
 	}
+      else if (htab->is_vxworks
+	       && elf_vxworks_finish_dynamic_entry (output_bfd, &dyn))
+	bed->s->swap_dyn_out (output_bfd, &dyn, dyncon);
       else if (abi_64_p && dyn.d_tag == DT_SPARC_REGISTER)
 	{
 	  if (stt_regidx == -1)

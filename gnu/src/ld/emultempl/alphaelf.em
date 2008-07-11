@@ -42,8 +42,8 @@ extern const bfd_target bfd_elf64_alpha_freebsd_vec;
 static void
 alpha_after_open (void)
 {
-  if (link_info.hash->creator == &bfd_elf64_alpha_vec
-      || link_info.hash->creator == &bfd_elf64_alpha_freebsd_vec)
+  if (link_info.output_bfd->xvec == &bfd_elf64_alpha_vec
+      || link_info.output_bfd->xvec == &bfd_elf64_alpha_freebsd_vec)
     {
       unsigned int num_plt;
       lang_output_section_statement_type *os;

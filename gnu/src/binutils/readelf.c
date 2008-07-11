@@ -81,6 +81,11 @@
 #include "elf/external.h"
 #include "elf/internal.h"
 
+#ifndef _bfd_int64_low
+// rdp: Until we sync up with a later binutils.
+#define _bfd_int64_low(x) ((unsigned long) (((x) & 0xffffffff)))
+#define _bfd_int64_high(x) ((unsigned long) (((x) >> 32) & 0xffffffff))
+#endif
 
 /* Included here, before RELOC_MACROS_GEN_FUNC is defined, so that
    we can obtain the H8 reloc numbers.  We need these for the

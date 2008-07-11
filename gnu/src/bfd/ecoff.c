@@ -1,6 +1,6 @@
 /* Generic ECOFF (Extended-COFF) routines.
    Copyright 1990, 1991, 1993, 1994, 1995, 1996, 1998, 1999, 2000, 2001,
-   2002, 2003, 2004, 2005, 2006, 2007 Free Software Foundation, Inc.
+   2002, 2003, 2004, 2005, 2006, 2007, 2008 Free Software Foundation, Inc.
    Original version by Per Bothner.
    Full support added by Ian Lance Taylor, ian@cygnus.com.
 
@@ -55,8 +55,8 @@ static asection bfd_debug_section =
 {
   /* name,      id,  index, next, prev, flags, user_set_vma,       */
      "*DEBUG*", 0,   0,     NULL, NULL, 0,     0,
-  /* linker_mark, linker_has_input, gc_mark, gc_mark_from_eh,      */
-     0,           0,                1,       0,
+  /* linker_mark, linker_has_input, gc_mark,                       */
+     0,           0,                1,
   /* segment_mark, sec_info_type, use_rela_p, has_tls_reloc,       */
      0,            0,             0,          0,
   /* has_gp_reloc, need_finalize_relax, reloc_done,                */
@@ -3154,89 +3154,6 @@ _bfd_ecoff_write_armap (bfd *abfd,
 
   return TRUE;
 }
-
-/* See whether this BFD is an archive.  If it is, read in the armap
-   and the extended name table.  */
-
-const bfd_target *
-_bfd_ecoff_archive_p (bfd *abfd)
-{
-  struct artdata *tdata_hold;
-  char armag[SARMAG + 1];
-  bfd_size_type amt;
-
-  if (bfd_bread ((void *) armag, (bfd_size_type) SARMAG, abfd) != SARMAG)
-    {
-      if (bfd_get_error () != bfd_error_system_call)
-	bfd_set_error (bfd_error_wrong_format);
-      return NULL;
-    }
-
-  if (! strneq (armag, ARMAG, SARMAG))
-    {
-      bfd_set_error (bfd_error_wrong_format);
-      return NULL;
-    }
-
-  tdata_hold = bfd_ardata (abfd);
-
-  amt = sizeof (struct artdata);
-  bfd_ardata (abfd) = bfd_zalloc (abfd, amt);
-  if (bfd_ardata (abfd) == NULL)
-    {
-      bfd_ardata (abfd) = tdata_hold;
-      return NULL;
-    }
-
-  bfd_ardata (abfd)->first_file_filepos = SARMAG;
-  /* Already cleared by bfd_zalloc above.
-     bfd_ardata (abfd)->cache = NULL;
-     bfd_ardata (abfd)->archive_head = NULL;
-     bfd_ardata (abfd)->symdefs = NULL;
-     bfd_ardata (abfd)->extended_names = NULL;
-     bfd_ardata (abfd)->extended_names_size = 0;
-     bfd_ardata (abfd)->tdata = NULL;  */
-
-  if (! _bfd_ecoff_slurp_armap (abfd)
-      || ! _bfd_ecoff_slurp_extended_name_table (abfd))
-    {
-      bfd_release (abfd, bfd_ardata (abfd));
-      bfd_ardata (abfd) = tdata_hold;
-      return NULL;
-    }
-
-  if (bfd_has_map (abfd))
-    {
-      bfd *first;
-
-      /* This archive has a map, so we may presume that the contents
-	 are object files.  Make sure that if the first file in the
-	 archive can be recognized as an object file, it is for this
-	 target.  If not, assume that this is the wrong format.  If
-	 the first file is not an object file, somebody is doing
-	 something weird, and we permit it so that ar -t will work.  */
-
-      first = bfd_openr_next_archived_file (abfd, NULL);
-      if (first != NULL)
-	{
-	  first->target_defaulted = FALSE;
-	  if (bfd_check_format (first, bfd_object)
-	      && first->xvec != abfd->xvec)
-	    {
-	      /* We ought to close `first' here, but we can't, because
-		 we have no way to remove it from the archive cache.
-		 It's almost impossible to figure out when we can
-		 release bfd_ardata.  FIXME.  */
-	      bfd_set_error (bfd_error_wrong_object_format);
-	      bfd_ardata (abfd) = tdata_hold;
-	      return NULL;
-	    }
-	  /* And we ought to close `first' here too.  */
-	}
-    }
-
-  return abfd->xvec;
-}
 
 /* ECOFF linker code.  */
 
@@ -3485,7 +3402,7 @@ ecoff_link_add_externals (bfd *abfd,
 
       /* If we are building an ECOFF hash table, save the external
 	 symbol information.  */
-      if (info->hash->creator->flavour == bfd_get_flavour (abfd))
+      if (bfd_get_flavour (info->output_bfd) == bfd_get_flavour (abfd))
 	{
 	  if (h->abfd == NULL
 	      || (! bfd_is_und_section (section)

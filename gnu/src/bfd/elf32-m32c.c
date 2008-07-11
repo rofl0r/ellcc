@@ -597,7 +597,6 @@ m32c_elf_check_relocs
 {
   Elf_Internal_Shdr *           symtab_hdr;
   struct elf_link_hash_entry ** sym_hashes;
-  struct elf_link_hash_entry ** sym_hashes_end;
   const Elf_Internal_Rela *     rel;
   const Elf_Internal_Rela *     rel_end;
   bfd_vma *local_plt_offsets;
@@ -613,10 +612,6 @@ m32c_elf_check_relocs
   splt = NULL;
   dynobj = elf_hash_table(info)->dynobj;
 
-  sym_hashes_end = sym_hashes + symtab_hdr->sh_size/sizeof (Elf32_External_Sym);
-  if (!elf_bad_symtab (abfd))
-    sym_hashes_end -= symtab_hdr->sh_info;
- 
   rel_end = relocs + sec->reloc_count;
   for (rel = relocs; rel < rel_end; rel++)
     {
@@ -1990,6 +1985,16 @@ m32c_elf_relax_delete_bytes
   return TRUE;
 }
 
+/* This is for versions of gcc prior to 4.3.  */
+static unsigned int
+_bfd_m32c_elf_eh_frame_address_size (bfd *abfd, asection *sec ATTRIBUTE_UNUSED)
+{
+  if ((elf_elfheader (abfd)->e_flags & EF_M32C_CPU_MASK) == EF_M32C_CPU_M16C)
+    return 2;
+  return 4;
+}
+
+
 
 #define ELF_ARCH		bfd_arch_m32c
 #define ELF_MACHINE_CODE	EM_M32C
@@ -2016,6 +2021,7 @@ m32c_elf_relax_delete_bytes
   m32c_elf_finish_dynamic_sections
 
 #define elf_backend_can_gc_sections		1
+#define elf_backend_eh_frame_address_size _bfd_m32c_elf_eh_frame_address_size
 
 #define bfd_elf32_bfd_reloc_type_lookup		m32c_reloc_type_lookup
 #define bfd_elf32_bfd_reloc_name_lookup	m32c_reloc_name_lookup

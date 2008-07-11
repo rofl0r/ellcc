@@ -23,7 +23,6 @@
    Foundation, Inc., 51 Franklin Street - Fifth Floor, Boston, MA
    02110-1301, USA.  */
 
-#include "alloca-conf.h"
 #include "sysdep.h"
 #include "bfd.h"
 
@@ -37,6 +36,32 @@
 #include <signal.h>
 #include <machine/reg.h>
 #include <sys/file.h>
+
+/* This is the code recommended in the autoconf documentation, almost
+   verbatim.  */
+
+#ifndef __GNUC__
+# if HAVE_ALLOCA_H
+#  include <alloca.h>
+# else
+#  ifdef _AIX
+/* Indented so that pre-ansi C compilers will ignore it, rather than
+   choke on it.  Some versions of AIX require this to be the first
+   thing in the file.  */
+ #pragma alloca
+#  else
+#   ifndef alloca /* predefined by HP cc +Olibcalls */
+#    if !defined (__STDC__) && !defined (__hpux)
+extern char *alloca ();
+#    else
+extern void *alloca ();
+#    endif /* __STDC__, __hpux */
+#   endif /* alloca */
+#  endif /* _AIX */
+# endif /* HAVE_ALLOCA_H */
+#else
+extern void *alloca (size_t);
+#endif /* __GNUC__ */
 
 static bfd_reloc_status_type hppa_som_reloc
   (bfd *, arelent *, asymbol *, void *, asection *, bfd *, char **);
@@ -4939,8 +4964,11 @@ som_get_reloc_upper_bound (bfd *abfd, sec_ptr asect)
 	return -1;
       return (asect->reloc_count + 1) * sizeof (arelent *);
     }
-  /* There are no relocations.  */
-  return 0;
+
+  /* There are no relocations.  Return enough space to hold the
+     NULL pointer which will be installed if som_canonicalize_reloc
+     is called.  */
+  return sizeof (arelent *);
 }
 
 /* Convert relocations from SOM (external) form into BFD internal
@@ -5331,15 +5359,57 @@ som_set_arch_mach (bfd *abfd,
 }
 
 static bfd_boolean
-som_find_nearest_line (bfd *abfd ATTRIBUTE_UNUSED,
-		       asection *section ATTRIBUTE_UNUSED,
-		       asymbol **symbols ATTRIBUTE_UNUSED,
-		       bfd_vma offset ATTRIBUTE_UNUSED,
-		       const char **filename_ptr ATTRIBUTE_UNUSED,
-		       const char **functionname_ptr ATTRIBUTE_UNUSED,
-		       unsigned int *line_ptr ATTRIBUTE_UNUSED)
+som_find_nearest_line (bfd *abfd,
+		       asection *section,
+		       asymbol **symbols,
+		       bfd_vma offset,
+		       const char **filename_ptr,
+		       const char **functionname_ptr,
+		       unsigned int *line_ptr)
 {
-  return FALSE;
+  bfd_boolean found;
+  asymbol *func;
+  bfd_vma low_func;
+  asymbol **p;
+
+  if (! _bfd_stab_section_find_nearest_line (abfd, symbols, section, offset,
+                                             & found, filename_ptr,
+                                             functionname_ptr, line_ptr,
+                                             & somdata (abfd).line_info))
+    return FALSE;
+
+  if (found)
+    return TRUE;
+
+  if (symbols == NULL)
+    return FALSE;
+
+  /* Fallback: find function name from symbols table.  */
+  func = NULL;
+  low_func = 0;
+
+  for (p = symbols; *p != NULL; p++)
+    { 
+      som_symbol_type *q = (som_symbol_type *) *p;
+  
+      if (q->som_type == SYMBOL_TYPE_ENTRY
+	  && q->symbol.section == section
+	  && q->symbol.value >= low_func
+	  && q->symbol.value <= offset)
+	{
+	  func = (asymbol *) q;
+	  low_func = q->symbol.value;
+	}
+    }
+
+  if (func == NULL)
+    return FALSE;
+
+  *filename_ptr = NULL;
+  *functionname_ptr = bfd_asymbol_name (func);
+  *line_ptr = 0;
+
+  return TRUE;
 }
 
 static int

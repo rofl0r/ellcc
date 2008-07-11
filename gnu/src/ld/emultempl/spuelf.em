@@ -58,7 +58,9 @@ static const struct _ovl_stream ovl_mgr_stream = {
   ovl_mgr + sizeof (ovl_mgr)
 };
 
+#if RICH // No overlay support until we sync with latest.
 static asection *toe = NULL;
+#endif
 
 
 static int
@@ -66,7 +68,7 @@ is_spu_target (void)
 {
   extern const bfd_target bfd_elf32_spu_vec;
 
-  return link_info.hash->creator == &bfd_elf32_spu_vec;
+  return link_info.output_bfd->xvec == &bfd_elf32_spu_vec;
 }
 
 /* Create our note section.  */
@@ -94,6 +96,7 @@ spu_after_open (void)
    attempt via a linker script to put .stub, .ovtab, and built-in
    overlay manager code somewhere else.  */
 
+#if RICH // No overlay support until we sync with latest.
 static void
 spu_place_special_section (asection *s, const char *output_name)
 {
@@ -164,7 +167,7 @@ spu_elf_load_ovl_mgr (void)
        os = os->next)
     if (os->bfd_section != NULL
 	&& spu_elf_section_data (os->bfd_section) != NULL
-	&& spu_elf_section_data (os->bfd_section)->ovl_index != 0)
+	&& spu_elf_section_data (os->bfd_section)->u.o.ovl_index != 0)
       {
 	if (os->bfd_section->alignment_power < 4)
 	  os->bfd_section->alignment_power = 4;
@@ -173,12 +176,14 @@ spu_elf_load_ovl_mgr (void)
 	os->block_value = 16;
       }
 }
+#endif
 
 /* Go find if we need to do anything special for overlays.  */
 
 static void
 spu_before_allocation (void)
 {
+#if RICH // No overlay support until we sync with latest.
   if (is_spu_target ()
       && !link_info.relocatable
       && !no_overlays)
@@ -211,6 +216,7 @@ spu_before_allocation (void)
       /* We must not cache anything from the preliminary sizing.  */
       lang_reset_memory_regions ();
     }
+#endif
 
   gld${EMULATION_NAME}_before_allocation ();
 }
@@ -235,10 +241,12 @@ gld${EMULATION_NAME}_finish (void)
 	einfo ("%X%P: %A exceeds local store range\n", s);
     }
 
+#if RICH // No overlay support until we sync with latest.
   if (toe != NULL
       && !spu_elf_build_stubs (&link_info,
 			       emit_stub_syms || link_info.emitrelocations,
 			       toe))
+#endif
     einfo ("%X%P: can not build overlay stubs: %E\n");
 
   finish_default ();

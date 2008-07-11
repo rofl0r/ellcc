@@ -1300,25 +1300,32 @@ elf_hppa_is_dynamic_loader_symbol (const char *name)
 
 /* Record the lowest address for the data and text segments.  */
 static void
-elf_hppa_record_segment_addrs (bfd *abfd ATTRIBUTE_UNUSED,
+elf_hppa_record_segment_addrs (bfd *abfd,
 			       asection *section,
 			       void *data)
 {
-  struct elf64_hppa_link_hash_table *hppa_info;
-  bfd_vma value;
+  struct elf64_hppa_link_hash_table *hppa_info = data;
 
-  hppa_info = data;
+  if ((section->flags & (SEC_ALLOC | SEC_LOAD)) == (SEC_ALLOC | SEC_LOAD))
+    {
+      bfd_vma value;
+      Elf_Internal_Phdr *p;
 
-  value = section->vma - section->filepos;
+      p = _bfd_elf_find_segment_containing_section (abfd, section->output_section);
+      BFD_ASSERT (p != NULL);
+      value = p->p_vaddr;
 
-  if (((section->flags & (SEC_ALLOC | SEC_LOAD | SEC_READONLY))
-       == (SEC_ALLOC | SEC_LOAD | SEC_READONLY))
-      && value < hppa_info->text_segment_base)
-    hppa_info->text_segment_base = value;
-  else if (((section->flags & (SEC_ALLOC | SEC_LOAD | SEC_READONLY))
-	    == (SEC_ALLOC | SEC_LOAD))
-	   && value < hppa_info->data_segment_base)
-    hppa_info->data_segment_base = value;
+      if (section->flags & SEC_READONLY)
+	{
+	  if (value < hppa_info->text_segment_base)
+	    hppa_info->text_segment_base = value;
+	}
+      else
+	{
+	  if (value < hppa_info->data_segment_base)
+	    hppa_info->data_segment_base = value;
+	}
+    }
 }
 
 /* Called after we have seen all the input files/sections, but before

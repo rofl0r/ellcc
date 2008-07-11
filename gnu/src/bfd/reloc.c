@@ -2361,6 +2361,18 @@ ENUM
   BFD_RELOC_MN10300_RELATIVE
 ENUMDOC
   Adjust by program base.
+ENUM
+  BFD_RELOC_MN10300_SYM_DIFF
+ENUMDOC
+  Together with another reloc targeted at the same location,
+  allows for a value that is the difference of two symbols
+  in the same section.
+ENUM
+  BFD_RELOC_MN10300_ALIGN
+ENUMDOC
+  The addend of this reloc is an alignment power that must
+  be honoured at the offset's location, regardless of linker
+  relaxation.
 COMMENT
 
 ENUM
@@ -2911,6 +2923,11 @@ ENUMX
   BFD_RELOC_ARM_LDC_SB_G2
 ENUMDOC
   ARM group relocations.
+
+ENUM
+  BFD_RELOC_ARM_V4BX
+ENUMDOC
+  Annotation of BX instructions.
 
 ENUM
   BFD_RELOC_ARM_IMMEDIATE
@@ -4570,6 +4587,12 @@ ENUMX
   BFD_RELOC_CR16_DISP24
 ENUMX
   BFD_RELOC_CR16_DISP24a
+ENUMX
+  BFD_RELOC_CR16_SWITCH8
+ENUMX
+  BFD_RELOC_CR16_SWITCH16
+ENUMX
+  BFD_RELOC_CR16_SWITCH32
 ENUMDOC
   NS CR16 Relocations.
 

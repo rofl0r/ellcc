@@ -545,7 +545,8 @@ bfd_openr_iovec (const char *filename, const char *target,
   nbfd->filename = filename;
   nbfd->direction = read_direction;
 
-  stream = open (nbfd, open_closure);
+  /* `open (...)' would get expanded by an the open(2) syscall macro.  */
+  stream = (*open) (nbfd, open_closure);
   if (stream == NULL)
     {
       _bfd_delete_bfd (nbfd);
@@ -1174,19 +1175,19 @@ separate_debug_file_exists (const char *name, const unsigned long crc)
 {
   static unsigned char buffer [8 * 1024];
   unsigned long file_crc = 0;
-  int fd;
+  FILE *f;
   bfd_size_type count;
 
   BFD_ASSERT (name);
 
-  fd = open (name, O_RDONLY);
-  if (fd < 0)
+  f = real_fopen (name, FOPEN_RB);
+  if (f == NULL)
     return FALSE;
 
-  while ((count = read (fd, buffer, sizeof (buffer))) > 0)
+  while ((count = fread (buffer, 1, sizeof (buffer), f)) > 0)
     file_crc = bfd_calc_gnu_debuglink_crc32 (file_crc, buffer, count);
 
-  close (fd);
+  fclose (f);
 
   return crc == file_crc;
 }
@@ -1216,46 +1217,48 @@ find_separate_debug_file (bfd *abfd, const char *debug_file_directory)
   char *debugfile;
   unsigned long crc32;
   int i;
+  size_t dirlen;
 
   BFD_ASSERT (abfd);
   if (debug_file_directory == NULL)
     debug_file_directory = ".";
 
   /* BFD may have been opened from a stream.  */
-  if (! abfd->filename)
-    return NULL;
+  if (abfd->filename == NULL)
+    {
+      bfd_set_error (bfd_error_invalid_operation);
+      return NULL;
+    }
 
   basename = get_debug_link_info (abfd, & crc32);
   if (basename == NULL)
     return NULL;
 
-  if (strlen (basename) < 1)
+  if (basename[0] == '\0')
     {
       free (basename);
+      bfd_set_error (bfd_error_no_debug_section);
       return NULL;
     }
 
-  dir = strdup (abfd->filename);
+  for (dirlen = strlen (abfd->filename); dirlen > 0; dirlen--)
+    if (IS_DIR_SEPARATOR (abfd->filename[dirlen - 1]))
+      break;
+
+  dir = bfd_malloc (dirlen + 1);
   if (dir == NULL)
     {
       free (basename);
       return NULL;
     }
-  BFD_ASSERT (strlen (dir) != 0);
+  memcpy (dir, abfd->filename, dirlen);
+  dir[dirlen] = '\0';
 
-  /* Strip off filename part.  */
-  for (i = strlen (dir) - 1; i >= 0; i--)
-    if (IS_DIR_SEPARATOR (dir[i]))
-      break;
-
-  dir[i + 1] = '\0';
-  BFD_ASSERT (dir[i] == '/' || dir[0] == '\0');
-
-  debugfile = malloc (strlen (debug_file_directory) + 1
-		      + strlen (dir)
-		      + strlen (".debug/")
-		      + strlen (basename)
-		      + 1);
+  debugfile = bfd_malloc (strlen (debug_file_directory) + 1
+			  + dirlen
+			  + strlen (".debug/")
+			  + strlen (basename)
+			  + 1);
   if (debugfile == NULL)
     {
       free (basename);
@@ -1434,6 +1437,7 @@ bfd_fill_in_gnu_debuglink_section (bfd *abfd,
   FILE * handle;
   static unsigned char buffer[8 * 1024];
   size_t count;
+  size_t filelen;
 
   if (abfd == NULL || sect == NULL || filename == NULL)
     {
@@ -1463,21 +1467,22 @@ bfd_fill_in_gnu_debuglink_section (bfd *abfd,
      now that we no longer need them.  */
   filename = lbasename (filename);
 
-  debuglink_size = strlen (filename) + 1;
+  filelen = strlen (filename);
+  debuglink_size = filelen + 1;
   debuglink_size += 3;
   debuglink_size &= ~3;
   debuglink_size += 4;
 
-  contents = malloc (debuglink_size);
+  contents = bfd_malloc (debuglink_size);
   if (contents == NULL)
     {
       /* XXX Should we delete the section from the bfd ?  */
-      bfd_set_error (bfd_error_no_memory);
       return FALSE;
     }
 
-  strcpy (contents, filename);
   crc_offset = debuglink_size - 4;
+  memcpy (contents, filename, filelen);
+  memset (contents + filelen, 0, crc_offset - filelen);
 
   bfd_put_32 (abfd, crc32, contents + crc_offset);
 

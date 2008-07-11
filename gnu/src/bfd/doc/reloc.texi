@@ -928,6 +928,16 @@ Create PLT entry.
 @deffn {} BFD_RELOC_MN10300_RELATIVE
 Adjust by program base.
 @end deffn
+@deffn {} BFD_RELOC_MN10300_SYM_DIFF
+Together with another reloc targeted at the same location,
+allows for a value that is the difference of two symbols
+in the same section.
+@end deffn
+@deffn {} BFD_RELOC_MN10300_ALIGN
+The addend of this reloc is an alignment power that must
+be honoured at the offset's location, regardless of linker
+relaxation.
+@end deffn
 @deffn {} BFD_RELOC_386_GOT32
 @deffnx {} BFD_RELOC_386_PLT32
 @deffnx {} BFD_RELOC_386_COPY
@@ -1226,6 +1236,9 @@ ARM thread-local storage relocations.
 @deffnx {} BFD_RELOC_ARM_LDC_SB_G1
 @deffnx {} BFD_RELOC_ARM_LDC_SB_G2
 ARM group relocations.
+@end deffn
+@deffn {} BFD_RELOC_ARM_V4BX
+Annotation of BX instructions.
 @end deffn
 @deffn {} BFD_RELOC_ARM_IMMEDIATE
 @deffnx {} BFD_RELOC_ARM_ADRL_IMMEDIATE
@@ -2299,6 +2312,9 @@ NS CR16C Relocations.
 @deffnx {} BFD_RELOC_CR16_DISP20
 @deffnx {} BFD_RELOC_CR16_DISP24
 @deffnx {} BFD_RELOC_CR16_DISP24a
+@deffnx {} BFD_RELOC_CR16_SWITCH8
+@deffnx {} BFD_RELOC_CR16_SWITCH16
+@deffnx {} BFD_RELOC_CR16_SWITCH32
 NS CR16 Relocations.
 @end deffn
 @deffn {} BFD_RELOC_CRX_REL4

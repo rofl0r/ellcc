@@ -1,6 +1,6 @@
 /* Generic BFD library interface and support routines.
    Copyright 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999,
-   2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007
+   2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008
    Free Software Foundation, Inc.
    Written by Cygnus Support.
 
@@ -476,6 +476,9 @@ _bfd_default_error_handler (const char *fmt, ...)
   size_t avail = 1000;
   char buf[1000];
 
+  /* PR 4992: Don't interrupt output being sent to stdout.  */
+  fflush (stdout);
+
   if (_bfd_error_program_name != NULL)
     fprintf (stderr, "%s: ", _bfd_error_program_name);
   else
@@ -913,6 +916,8 @@ bfd_get_sign_extend_vma (bfd *abfd)
   if (CONST_STRNEQ (name, "coff-go32")
       || strcmp (name, "pe-i386") == 0
       || strcmp (name, "pei-i386") == 0
+      || strcmp (name, "pe-x86-64") == 0
+      || strcmp (name, "pei-x86-64") == 0
       || strcmp (name, "pe-arm-wince-little") == 0
       || strcmp (name, "pei-arm-wince-little") == 0)
     return 1;
@@ -1376,31 +1381,51 @@ bfd_record_phdr (bfd *abfd,
   return TRUE;
 }
 
-void
-bfd_sprintf_vma (bfd *abfd, char *buf, bfd_vma value)
+#ifdef BFD64
+/* Return true iff this target is 32-bit.  */
+
+static bfd_boolean
+is32bit (bfd *abfd)
 {
   if (bfd_get_flavour (abfd) == bfd_target_elf_flavour)
-    get_elf_backend_data (abfd)->elf_backend_sprintf_vma (abfd, buf, value);
-  else
-    sprintf_vma (buf, value);
+    {
+      const struct elf_backend_data *bed = get_elf_backend_data (abfd);
+      return bed->s->elfclass == ELFCLASS32;
+    }
+
+  /* For non-ELF, make a guess based on the target name.  */
+  return (strstr (bfd_get_target (abfd), "64") == NULL
+	  && strcmp (bfd_get_target (abfd), "mmo") != 0);
+}
+#endif
+
+/* bfd_sprintf_vma and bfd_fprintf_vma display an address in the
+   target's address size.  */
+
+void
+bfd_sprintf_vma (bfd *abfd ATTRIBUTE_UNUSED, char *buf, bfd_vma value)
+{
+#ifdef BFD64
+  if (is32bit (abfd))
+    {
+      sprintf (buf, "%08lx", (unsigned long) value & 0xffffffff);
+      return;
+    }
+#endif
+  sprintf_vma (buf, value);
 }
 
 void
-bfd_fprintf_vma (bfd *abfd, void *stream, bfd_vma value)
+bfd_fprintf_vma (bfd *abfd ATTRIBUTE_UNUSED, void *stream, bfd_vma value)
 {
-  if (bfd_get_flavour (abfd) == bfd_target_elf_flavour)
-    get_elf_backend_data (abfd)->elf_backend_fprintf_vma (abfd, stream, value);
 #ifdef BFD64
-  /* fprintf_vma() on a 64-bit enabled host will always print a 64-bit
-     value, but really we want to display the address in the target's
-     address size.  Since we do not have a field in the bfd structure
-     to tell us this, we take a guess, based on the target's name.  */
-  else if (strstr (bfd_get_target (abfd), "64") == NULL
-	   && strcmp (bfd_get_target (abfd), "mmo") != 0)
-    fprintf ((FILE *) stream, "%08lx", (unsigned long) (value & 0xffffffff));
+  if (is32bit (abfd))
+    {
+      fprintf ((FILE *) stream, "%08lx", (unsigned long) value & 0xffffffff);
+      return;
+    }
 #endif
-  else
-    fprintf_vma ((FILE *) stream, value);
+  fprintf_vma ((FILE *) stream, value);
 }
 
 /*

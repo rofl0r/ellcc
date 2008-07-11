@@ -1,5 +1,5 @@
 /* Mach-O support for BFD.
-   Copyright 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007
+   Copyright 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008
    Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -644,7 +644,7 @@ bfd_mach_o_make_bfd_section (bfd *abfd, bfd_mach_o_section *section)
   sprintf (sname, "%s.%s.%s", prefix, section->segname, section->sectname);
 
   flags = SEC_ALLOC;
-  if (!(section->flags & BFD_MACH_O_S_ZEROFILL))
+  if ((section->flags & SECTION_TYPE) != BFD_MACH_O_S_ZEROFILL)
     flags = SEC_HAS_CONTENTS | SEC_LOAD | SEC_ALLOC | SEC_CODE;
   bfdsec = bfd_make_section_anyway_with_flags (abfd, sname, flags);
   if (bfdsec == NULL)
@@ -1923,13 +1923,18 @@ bfd_mach_o_core_fetch_environment (bfd *abfd,
 	      if (size > (end - start))
 		size = (end - start);
 
-	      buf = bfd_realloc (buf, size);
-
+	      buf = bfd_realloc_or_free (buf, size);
+	      if (buf == NULL)
+		return -1;
+	      
 	      bfd_seek (abfd, end - size, SEEK_SET);
 	      nread = bfd_bread (buf, size, abfd);
 
 	      if (nread != size)
-		return -1;
+		{
+		  free (buf);
+		  return -1;
+		}
 
 	      for (offset = 4; offset <= size; offset += 4)
 		{
@@ -1952,6 +1957,7 @@ bfd_mach_o_core_fetch_environment (bfd *abfd,
 		      *rlen = top - bottom;
 
 		      memcpy (*rbuf, buf + size - *rlen, *rlen);
+		      free (buf);
 		      return 0;
 		    }
 		}
@@ -1961,6 +1967,8 @@ bfd_mach_o_core_fetch_environment (bfd *abfd,
 
 	      size *= 2;
 	    }
+
+	  free (buf);
 	}
     }
 

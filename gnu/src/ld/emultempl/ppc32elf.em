@@ -52,7 +52,7 @@ static int old_got = 0;
 static void
 ppc_after_open (void)
 {
-  if (is_ppc_elf32_vec (link_info.hash->creator))
+  if (is_ppc_elf32_vec (link_info.output_bfd->xvec))
     {
       int new_plt;
       int keep_new;
@@ -109,7 +109,7 @@ ppc_after_open (void)
 static void
 ppc_before_allocation (void)
 {
-  if (is_ppc_elf32_vec (link_info.hash->creator))
+  if (is_ppc_elf32_vec (link_info.output_bfd->xvec))
     {
       if (ppc_elf_tls_setup (output_bfd, &link_info) && !notlsopt)
 	{

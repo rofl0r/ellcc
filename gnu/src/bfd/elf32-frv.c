@@ -1341,26 +1341,9 @@ _frvfdpic_add_rofixup (bfd *output_bfd, asection *rofixup, bfd_vma offset,
 static unsigned
 _frvfdpic_osec_to_segment (bfd *output_bfd, asection *osec)
 {
-  struct elf_segment_map *m;
-  Elf_Internal_Phdr *p;
+  Elf_Internal_Phdr *p = _bfd_elf_find_segment_containing_section (output_bfd, osec);
 
-  /* Find the segment that contains the output_section.  */
-  for (m = elf_tdata (output_bfd)->segment_map,
-	 p = elf_tdata (output_bfd)->phdr;
-       m != NULL;
-       m = m->next, p++)
-    {
-      int i;
-
-      for (i = m->count - 1; i >= 0; i--)
-	if (m->sections[i] == osec)
-	  break;
-
-      if (i >= 0)
-	break;
-    }
-
-  return p - elf_tdata (output_bfd)->phdr;
+  return (p != NULL) ? p - elf_tdata (output_bfd)->phdr : -1;
 }
 
 inline static bfd_boolean
@@ -5628,7 +5611,7 @@ _frvfdpic_check_discarded_relocs (bfd *abfd, asection *sec,
 				  bfd_boolean *changed)
 {
   Elf_Internal_Shdr *symtab_hdr;
-  struct elf_link_hash_entry **sym_hashes, **sym_hashes_end;
+  struct elf_link_hash_entry **sym_hashes;
   Elf_Internal_Rela *rel, *erel;
 
   if ((sec->flags & SEC_RELOC) == 0
@@ -5637,9 +5620,6 @@ _frvfdpic_check_discarded_relocs (bfd *abfd, asection *sec,
 
   symtab_hdr = &elf_tdata (abfd)->symtab_hdr;
   sym_hashes = elf_sym_hashes (abfd);
-  sym_hashes_end = sym_hashes + symtab_hdr->sh_size/sizeof(Elf32_External_Sym);
-  if (!elf_bad_symtab (abfd))
-    sym_hashes_end -= symtab_hdr->sh_info;
 
   rel = elf_section_data (sec)->relocs;
 
@@ -6179,7 +6159,7 @@ elf32_frv_check_relocs (abfd, info, sec, relocs)
      const Elf_Internal_Rela *relocs;
 {
   Elf_Internal_Shdr *symtab_hdr;
-  struct elf_link_hash_entry **sym_hashes, **sym_hashes_end;
+  struct elf_link_hash_entry **sym_hashes;
   const Elf_Internal_Rela *rel;
   const Elf_Internal_Rela *rel_end;
   bfd *dynobj;
@@ -6190,9 +6170,6 @@ elf32_frv_check_relocs (abfd, info, sec, relocs)
 
   symtab_hdr = &elf_tdata (abfd)->symtab_hdr;
   sym_hashes = elf_sym_hashes (abfd);
-  sym_hashes_end = sym_hashes + symtab_hdr->sh_size/sizeof(Elf32_External_Sym);
-  if (!elf_bad_symtab (abfd))
-    sym_hashes_end -= symtab_hdr->sh_info;
 
   dynobj = elf_hash_table (info)->dynobj;
   rel_end = relocs + sec->reloc_count;
@@ -6400,7 +6377,9 @@ elf32_frv_check_relocs (abfd, info, sec, relocs)
         /* This relocation describes which C++ vtable entries are actually
            used.  Record for later use during GC.  */
         case R_FRV_GNU_VTENTRY:
-          if (!bfd_elf_gc_record_vtentry (abfd, sec, h, rel->r_addend))
+          BFD_ASSERT (h != NULL);
+          if (h != NULL
+              && !bfd_elf_gc_record_vtentry (abfd, sec, h, rel->r_addend))
             return FALSE;
           break;
 

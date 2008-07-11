@@ -1,6 +1,6 @@
 /* 32-bit ELF support for ARM
-   Copyright 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007
-   Free Software Foundation, Inc.
+   Copyright 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007,
+   2008 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -1773,7 +1773,8 @@ static const struct elf32_arm_reloc_map elf32_arm_reloc_map[] =
     {BFD_RELOC_ARM_LDRS_SB_G2, R_ARM_LDRS_SB_G2},
     {BFD_RELOC_ARM_LDC_SB_G0, R_ARM_LDC_SB_G0},
     {BFD_RELOC_ARM_LDC_SB_G1, R_ARM_LDC_SB_G1},
-    {BFD_RELOC_ARM_LDC_SB_G2, R_ARM_LDC_SB_G2}
+    {BFD_RELOC_ARM_LDC_SB_G2, R_ARM_LDC_SB_G2},
+    {BFD_RELOC_ARM_V4BX,	     R_ARM_V4BX}
   };
 
 static reloc_howto_type *
@@ -1903,6 +1904,9 @@ typedef unsigned short int insn16;
 
 #define VFP11_ERRATUM_VENEER_SECTION_NAME ".vfp11_veneer"
 #define VFP11_ERRATUM_VENEER_ENTRY_NAME   "__vfp11_veneer_%x"
+
+#define ARM_BX_GLUE_SECTION_NAME ".v4_bx"
+#define ARM_BX_GLUE_ENTRY_NAME   "__bx_r%d"
 
 /* The name of the dynamic interpreter.  This is put in the .interp
    section.  */
@@ -2065,7 +2069,7 @@ _arm_elf_section_data;
 /* The size of the thread control block.  */
 #define TCB_SIZE	8
 
-struct elf32_arm_obj_tdata
+struct elf_arm_obj_tdata
 {
   struct elf_obj_tdata root;
 
@@ -2076,23 +2080,22 @@ struct elf32_arm_obj_tdata
   int no_enum_size_warning;
 };
 
-#define elf32_arm_tdata(abfd) \
-  ((struct elf32_arm_obj_tdata *) (abfd)->tdata.any)
+#define elf_arm_tdata(bfd) \
+  ((struct elf_arm_obj_tdata *) (bfd)->tdata.any)
 
-#define elf32_arm_local_got_tls_type(abfd) \
-  (elf32_arm_tdata (abfd)->local_got_tls_type)
+#define elf32_arm_local_got_tls_type(bfd) \
+  (elf_arm_tdata (bfd)->local_got_tls_type)
+
+#define is_arm_elf(bfd) \
+  (bfd_get_flavour (bfd) == bfd_target_elf_flavour \
+   && elf_tdata (bfd) != NULL \
+   && elf_object_id (bfd) == ARM_ELF_TDATA)
 
 static bfd_boolean
 elf32_arm_mkobject (bfd *abfd)
 {
-  if (abfd->tdata.any == NULL)
-    {
-      bfd_size_type amt = sizeof (struct elf32_arm_obj_tdata);
-      abfd->tdata.any = bfd_zalloc (abfd, amt);
-      if (abfd->tdata.any == NULL)
-	return FALSE;
-    }
-  return bfd_elf_mkobject (abfd);
+  return bfd_elf_allocate_object (abfd, sizeof (struct elf_arm_obj_tdata),
+				  ARM_ELF_TDATA);
 }
 
 /* The ARM linker needs to keep track of the number of relocs that it
@@ -2172,6 +2175,13 @@ struct elf32_arm_link_hash_table
     /* The size in bytes of the section containing the ARM-to-Thumb glue.  */
     bfd_size_type arm_glue_size;
 
+    /* The size in bytes of section containing the ARMv4 BX veneers.  */
+    bfd_size_type bx_glue_size;
+
+    /* Offsets of ARMv4 BX veneers.  Bit1 set if present, and Bit0 set when
+       veneer has been populated.  */
+    bfd_vma bx_glue_offset[15];
+
     /* The size in bytes of the section containing glue for VFP11 erratum
        veneers.  */
     bfd_size_type vfp11_erratum_glue_size;
@@ -2189,7 +2199,9 @@ struct elf32_arm_link_hash_table
     /* The relocation to use for R_ARM_TARGET2 relocations.  */
     int target2_reloc;
 
-    /* Nonzero to fix BX instructions for ARMv4 targets.  */
+    /* 0 = Ignore R_ARM_V4BX.
+       1 = Convert BX to MOV PC.
+       2 = Generate v4 interworing stubs.  */
     int fix_v4bx;
 
     /* Nonzero if the ARM/Thumb BLX instructions are available for use.  */
@@ -2470,6 +2482,8 @@ elf32_arm_link_hash_table_create (bfd *abfd)
   ret->srelplt2 = NULL;
   ret->thumb_glue_size = 0;
   ret->arm_glue_size = 0;
+  ret->bx_glue_size = 0;
+  memset (ret->bx_glue_offset, 0, sizeof(ret->bx_glue_offset));
   ret->vfp11_fix = BFD_ARM_VFP11_FIX_NONE;
   ret->vfp11_erratum_glue_size = 0;
   ret->num_vfp11_fixes = 0;
@@ -2520,9 +2534,10 @@ find_thumb_glue (struct bfd_link_info *link_info,
   hash = elf_link_hash_lookup
     (&(hash_table)->root, tmp_name, FALSE, FALSE, TRUE);
 
-  if (hash == NULL)
-    asprintf (error_message, _("unable to find THUMB glue '%s' for '%s'"),
-	      tmp_name, name);
+  if (hash == NULL
+      && asprintf (error_message, _("unable to find THUMB glue '%s' for '%s'"),
+		   tmp_name, name) == -1)
+    *error_message = (char *) bfd_errmsg (bfd_error_system_call);
 
   free (tmp_name);
 
@@ -2553,9 +2568,10 @@ find_arm_glue (struct bfd_link_info *link_info,
   myh = elf_link_hash_lookup
     (&(hash_table)->root, tmp_name, FALSE, FALSE, TRUE);
 
-  if (myh == NULL)
-    asprintf (error_message, _("unable to find ARM glue '%s' for '%s'"),
-	      tmp_name, name);
+  if (myh == NULL
+      && asprintf (error_message, _("unable to find ARM glue '%s' for '%s'"),
+		   tmp_name, name) == -1)
+    *error_message = (char *) bfd_errmsg (bfd_error_system_call);
 
   free (tmp_name);
 
@@ -2625,6 +2641,11 @@ static const insn32 t2a3_b_insn = 0xea000000;
 
 #define VFP11_ERRATUM_VENEER_SIZE 8
 
+#define ARM_BX_VENEER_SIZE 12
+static const insn32 armbx1_tst_insn = 0xe3100001;
+static const insn32 armbx2_moveq_insn = 0x01a0f000;
+static const insn32 armbx3_bx_insn = 0xe12fff10;
+
 #ifndef ELFARM_NABI_C_INCLUDED
 bfd_boolean
 bfd_elf32_arm_allocate_interworking_sections (struct bfd_link_info * info)
@@ -2680,6 +2701,21 @@ bfd_elf32_arm_allocate_interworking_sections (struct bfd_link_info * info)
 		       globals->vfp11_erratum_glue_size);
       
       BFD_ASSERT (s->size == globals->vfp11_erratum_glue_size);
+      s->contents = foo;
+    }
+
+  if (globals->bx_glue_size != 0)
+    {
+      BFD_ASSERT (globals->bfd_of_glue_owner != NULL);
+
+      s = bfd_get_section_by_name (globals->bfd_of_glue_owner,
+				   ARM_BX_GLUE_SECTION_NAME);
+
+      BFD_ASSERT (s != NULL);
+
+      foo = bfd_alloc (globals->bfd_of_glue_owner, globals->bx_glue_size);
+
+      BFD_ASSERT (s->size == globals->bx_glue_size);
       s->contents = foo;
     }
 
@@ -2834,6 +2870,64 @@ record_thumb_to_arm_glue (struct bfd_link_info *link_info,
 }
 
 
+/* Allocate space for ARMv4 BX veneers.  */
+
+static void
+record_arm_bx_glue (struct bfd_link_info * link_info, int reg)
+{
+  asection * s;
+  struct elf32_arm_link_hash_table *globals;
+  char *tmp_name;
+  struct elf_link_hash_entry *myh;
+  struct bfd_link_hash_entry *bh;
+  bfd_vma val;
+
+  /* BX PC does not need a veneer.  */
+  if (reg == 15)
+    return;
+
+  globals = elf32_arm_hash_table (link_info);
+
+  BFD_ASSERT (globals != NULL);
+  BFD_ASSERT (globals->bfd_of_glue_owner != NULL);
+
+  /* Check if this veneer has already been allocated.  */
+  if (globals->bx_glue_offset[reg])
+    return;
+
+  s = bfd_get_section_by_name
+    (globals->bfd_of_glue_owner, ARM_BX_GLUE_SECTION_NAME);
+
+  BFD_ASSERT (s != NULL);
+
+  /* Add symbol for veneer.  */
+  tmp_name = bfd_malloc ((bfd_size_type) strlen (ARM_BX_GLUE_ENTRY_NAME) + 1);
+  
+  BFD_ASSERT (tmp_name);
+  
+  sprintf (tmp_name, ARM_BX_GLUE_ENTRY_NAME, reg);
+  
+  myh = elf_link_hash_lookup
+    (&(globals)->root, tmp_name, FALSE, FALSE, FALSE);
+  
+  BFD_ASSERT (myh == NULL);
+  
+  bh = NULL;
+  val = globals->bx_glue_size;
+  _bfd_generic_link_add_one_symbol (link_info, globals->bfd_of_glue_owner,
+                                    tmp_name, BSF_FUNCTION | BSF_LOCAL, s, val,
+                                    NULL, TRUE, FALSE, &bh);
+
+  myh = (struct elf_link_hash_entry *) bh;
+  myh->type = ELF_ST_INFO (STB_LOCAL, STT_FUNC);
+  myh->forced_local = 1;
+
+  s->size += ARM_BX_VENEER_SIZE;
+  globals->bx_glue_offset[reg] = globals->bx_glue_size | 2;
+  globals->bx_glue_size += ARM_BX_VENEER_SIZE;
+}
+
+
 /* Add an entry to the code/data map for section SEC.  */
 
 static void
@@ -2854,12 +2948,15 @@ elf32_arm_section_map_add (asection *sec, char type, bfd_vma vma)
   if (sec_data->mapcount > sec_data->mapsize)
     {
       sec_data->mapsize *= 2;
-      sec_data->map = bfd_realloc (sec_data->map, sec_data->mapsize
-				     * sizeof (elf32_arm_section_map));
+      sec_data->map = bfd_realloc_or_free (sec_data->map, sec_data->mapsize
+					   * sizeof (elf32_arm_section_map));
     }
-  
-  sec_data->map[newidx].vma = vma;
-  sec_data->map[newidx].type = type;
+
+  if (sec_data->map)
+    {
+      sec_data->map[newidx].vma = vma;
+      sec_data->map[newidx].type = type;
+    }
 }
 
 
@@ -3057,6 +3154,24 @@ bfd_elf32_arm_add_glue_sections_to_bfd (bfd *abfd,
       sec->gc_mark = 1;
     }
 
+  sec = bfd_get_section_by_name (abfd, ARM_BX_GLUE_SECTION_NAME);
+
+  if (sec == NULL)
+    {
+      flags = (SEC_ALLOC | SEC_LOAD | SEC_HAS_CONTENTS | SEC_IN_MEMORY
+	       | SEC_CODE | SEC_READONLY);
+
+      sec = bfd_make_section_with_flags (abfd,
+					 ARM_BX_GLUE_SECTION_NAME,
+                                         flags);
+
+      if (sec == NULL
+	  || !bfd_set_section_alignment (abfd, sec, 2))
+	return FALSE;
+
+      sec->gc_mark = 1;
+    }
+
   return TRUE;
 }
 
@@ -3114,13 +3229,13 @@ bfd_elf32_arm_process_before_allocation (bfd *abfd,
   if (link_info->relocatable)
     return TRUE;
 
-  /* Here we have a bfd that is to be included on the link.  We have a hook
-     to do reloc rummaging, before section sizes are nailed down.  */
+  /* Here we have a bfd that is to be included on the link.  We have a
+     hook to do reloc rummaging, before section sizes are nailed down.  */
   globals = elf32_arm_hash_table (link_info);
-  check_use_blx (globals);
 
   BFD_ASSERT (globals != NULL);
-  BFD_ASSERT (globals->bfd_of_glue_owner != NULL);
+
+  check_use_blx (globals);
 
   if (globals->byteswap_code && !bfd_big_endian (abfd))
     {
@@ -3128,6 +3243,12 @@ bfd_elf32_arm_process_before_allocation (bfd *abfd,
 			  abfd);
       return FALSE;
     }
+
+  /* PR 5398: If we have not decided to include any loadable sections in
+     the output then we will not have a glue owner bfd.  This is OK, it
+     just means that there is nothing else for us to do here.  */
+  if (globals->bfd_of_glue_owner == NULL)
+    return TRUE;
 
   /* Rummage around all the relocs and map the glue vectors.  */
   sec = abfd->sections;
@@ -3143,7 +3264,7 @@ bfd_elf32_arm_process_before_allocation (bfd *abfd,
       if ((sec->flags & SEC_EXCLUDE) != 0)
 	continue;
 
-      symtab_hdr = &elf_tdata (abfd)->symtab_hdr;
+      symtab_hdr = & elf_symtab_hdr (abfd);
 
       /* Load the relocs.  */
       internal_relocs
@@ -3170,7 +3291,8 @@ bfd_elf32_arm_process_before_allocation (bfd *abfd,
 	      && r_type != R_ARM_CALL
 	      && r_type != R_ARM_JUMP24
 	      && r_type != R_ARM_THM_CALL
-	      && r_type != R_ARM_THM_JUMP24)
+	      && r_type != R_ARM_THM_JUMP24
+	      && (r_type != R_ARM_V4BX || globals->fix_v4bx < 2))
 	    continue;
 
 	  /* Get the section contents if we haven't done so already.  */
@@ -3185,6 +3307,15 @@ bfd_elf32_arm_process_before_allocation (bfd *abfd,
 		  if (! bfd_malloc_and_get_section (abfd, sec, &contents))
 		    goto error_return;
 		}
+	    }
+
+	  if (r_type == R_ARM_V4BX)
+	    {
+	      int reg;
+
+	      reg = bfd_get_32 (abfd, contents + irel->r_offset) & 0xf;
+	      record_arm_bx_glue (link_info, reg);
+	      continue;
 	    }
 
 	  /* If the relocation is not against a symbol it cannot concern us.  */
@@ -3277,7 +3408,7 @@ bfd_elf32_arm_init_maps (bfd *abfd)
   if ((abfd->flags & DYNAMIC) != 0)
     return;
 
-  hdr = &elf_tdata (abfd)->symtab_hdr;
+  hdr = & elf_symtab_hdr (abfd);
   localsyms = hdr->sh_info;
 
   /* Obtain a buffer full of symbols for this BFD. The hdr->sh_info field
@@ -3650,16 +3781,16 @@ bfd_elf32_arm_vfp11_erratum_scan (bfd *abfd, struct bfd_link_info *link_info)
   if (link_info->relocatable)
     return TRUE;
 
+  /* Skip if this bfd does not correspond to an ELF image.  */
+  if (! is_arm_elf (abfd))
+    return TRUE;
+  
   /* We should have chosen a fix type by the time we get here.  */
   BFD_ASSERT (globals->vfp11_fix != BFD_ARM_VFP11_FIX_DEFAULT);
 
   if (globals->vfp11_fix == BFD_ARM_VFP11_FIX_NONE)
     return TRUE;
 
-  /* Skip if this bfd does not correspond to an ELF image.  */
-  if (bfd_get_flavour (abfd) != bfd_target_elf_flavour)
-    return TRUE;
-  
   for (sec = abfd->sections; sec != NULL; sec = sec->next)
     {
       unsigned int i, span, first_fmac = 0, veneer_of_insn = 0;
@@ -3832,7 +3963,7 @@ bfd_elf32_arm_vfp11_fix_veneer_locations (bfd *abfd,
     return;
 
   /* Skip if this bfd does not correspond to an ELF image.  */
-  if (bfd_get_flavour (abfd) != bfd_target_elf_flavour)
+  if (! is_arm_elf (abfd))
     return;
 
   globals = elf32_arm_hash_table (link_info);
@@ -3935,7 +4066,8 @@ bfd_elf32_arm_set_target_relocs (struct bfd *output_bfd,
   globals->vfp11_fix = vfp11_fix;
   globals->pic_veneer = pic_veneer;
 
-  elf32_arm_tdata (output_bfd)->no_enum_size_warning = no_enum_warn;
+  BFD_ASSERT (is_arm_elf (output_bfd));
+  elf_arm_tdata (output_bfd)->no_enum_size_warning = no_enum_warn;
 }
 
 /* The thumb form of a long branch is a bit finicky, because the offset
@@ -4324,6 +4456,43 @@ elf32_arm_to_thumb_export_stub (struct elf_link_hash_entry *h, void * inf)
   return TRUE;
 }
 
+/* Populate ARMv4 BX veneers.  Returns the absolute adress of the veneer.  */
+
+static bfd_vma
+elf32_arm_bx_glue (struct bfd_link_info * info, int reg)
+{
+  bfd_byte *p;
+  bfd_vma glue_addr;
+  asection *s;
+  struct elf32_arm_link_hash_table *globals;
+
+  globals = elf32_arm_hash_table (info);
+
+  BFD_ASSERT (globals != NULL);
+  BFD_ASSERT (globals->bfd_of_glue_owner != NULL);
+
+  s = bfd_get_section_by_name (globals->bfd_of_glue_owner,
+			       ARM_BX_GLUE_SECTION_NAME);
+  BFD_ASSERT (s != NULL);
+  BFD_ASSERT (s->contents != NULL);
+  BFD_ASSERT (s->output_section != NULL);
+
+  BFD_ASSERT (globals->bx_glue_offset[reg] & 2);
+
+  glue_addr = globals->bx_glue_offset[reg] & ~(bfd_vma)3;
+
+  if ((globals->bx_glue_offset[reg] & 1) == 0)
+    {
+      p = s->contents + glue_addr;
+      bfd_put_32 (globals->obfd, armbx1_tst_insn + (reg << 16), p);
+      bfd_put_32 (globals->obfd, armbx2_moveq_insn + reg, p + 4);
+      bfd_put_32 (globals->obfd, armbx3_bx_insn + reg, p + 8);
+      globals->bx_glue_offset[reg] |= 1;
+    }
+
+  return glue_addr + s->output_section->vma + s->output_offset;
+}
+
 /* Generate Arm stubs for exported Thumb symbols.  */
 static void
 elf32_arm_begin_write_processing (bfd *abfd ATTRIBUTE_UNUSED, 
@@ -4520,7 +4689,9 @@ elf32_arm_final_link_relocate (reloc_howto_type *           howto,
 
   globals = elf32_arm_hash_table (info);
 
-  /* Some relocation type map to different relocations depending on the
+  BFD_ASSERT (is_arm_elf (input_bfd));
+
+  /* Some relocation types map to different relocations depending on the
      target.  We pick the right one here.  */
   r_type = arm_real_reloc_type (globals, r_type);
   if (r_type != howto->type)
@@ -4544,7 +4715,7 @@ elf32_arm_final_link_relocate (reloc_howto_type *           howto,
       sgot = bfd_get_section_by_name (dynobj, ".got");
       splt = bfd_get_section_by_name (dynobj, ".plt");
     }
-  symtab_hdr = & elf_tdata (input_bfd)->symtab_hdr;
+  symtab_hdr = & elf_symtab_hdr (input_bfd);
   sym_hashes = elf_sym_hashes (input_bfd);
   local_got_offsets = elf_local_got_offsets (input_bfd);
   r_symndx = ELF32_R_SYM (rel->r_info);
@@ -5700,18 +5871,32 @@ elf32_arm_final_link_relocate (reloc_howto_type *           howto,
 
     case R_ARM_V4BX:
       if (globals->fix_v4bx)
-        {
-          bfd_vma insn = bfd_get_32 (input_bfd, hit_data);
+	{
+	  bfd_vma insn = bfd_get_32 (input_bfd, hit_data);
 
-          /* Ensure that we have a BX instruction.  */
-          BFD_ASSERT ((insn & 0x0ffffff0) == 0x012fff10);
+	  /* Ensure that we have a BX instruction.  */
+	  BFD_ASSERT ((insn & 0x0ffffff0) == 0x012fff10);
 
-          /* Preserve Rm (lowest four bits) and the condition code
-             (highest four bits). Other bits encode MOV PC,Rm.  */
-          insn = (insn & 0xf000000f) | 0x01a0f000;
+	  if (globals->fix_v4bx == 2 && (insn & 0xf) != 0xf)
+	    {
+	      /* Branch to veneer.  */
+	      bfd_vma glue_addr;
+	      glue_addr = elf32_arm_bx_glue (info, insn & 0xf);
+	      glue_addr -= input_section->output_section->vma
+			   + input_section->output_offset
+			   + rel->r_offset + 8;
+	      insn = (insn & 0xf0000000) | 0x0a000000
+		     | ((glue_addr >> 2) & 0x00ffffff);
+	    }
+	  else
+	    {
+	      /* Preserve Rm (lowest four bits) and the condition code
+		 (highest four bits). Other bits encode MOV PC,Rm.  */
+	      insn = (insn & 0xf000000f) | 0x01a0f000;
+	    }
 
-          bfd_put_32 (input_bfd, insn, hit_data);
-        }
+	  bfd_put_32 (input_bfd, insn, hit_data);
+	}
       return bfd_reloc_ok;
 
     case R_ARM_MOVW_ABS_NC:
@@ -6311,7 +6496,7 @@ elf32_arm_relocate_section (bfd *                  output_bfd,
 
   globals = elf32_arm_hash_table (info);
 
-  symtab_hdr = & elf_tdata (input_bfd)->symtab_hdr;
+  symtab_hdr = & elf_symtab_hdr (input_bfd);
   sym_hashes = elf_sym_hashes (input_bfd);
 
   rel = relocs;
@@ -6600,8 +6785,7 @@ elf32_arm_copy_private_bfd_data (bfd *ibfd, bfd *obfd)
   flagword in_flags;
   flagword out_flags;
 
-  if (   bfd_get_flavour (ibfd) != bfd_target_elf_flavour
-      || bfd_get_flavour (obfd) != bfd_target_elf_flavour)
+  if (! is_arm_elf (ibfd) || ! is_arm_elf (obfd))
     return TRUE;
 
   in_flags  = elf_elfheader (ibfd)->e_flags;
@@ -6859,7 +7043,7 @@ elf32_arm_merge_eabi_attributes (bfd *ibfd, bfd *obfd)
 		}
 	      else if (in_attr[i].i != AEABI_enum_forced_wide
 		       && out_attr[i].i != in_attr[i].i
-		       && !elf32_arm_tdata (obfd)->no_enum_size_warning)
+		       && !elf_arm_tdata (obfd)->no_enum_size_warning)
 		{
 		  const char *aeabi_enum_names[] =
 		    { "", "variable-size", "32-bit", "" };
@@ -6955,8 +7139,7 @@ elf32_arm_merge_private_bfd_data (bfd * ibfd, bfd * obfd)
   if (! _bfd_generic_verify_endian_match (ibfd, obfd))
     return FALSE;
 
-  if (   bfd_get_flavour (ibfd) != bfd_target_elf_flavour
-      || bfd_get_flavour (obfd) != bfd_target_elf_flavour)
+  if (! is_arm_elf (ibfd) || ! is_arm_elf (obfd))
     return TRUE;
 
   if (!elf32_arm_merge_eabi_attributes (ibfd, obfd))
@@ -7343,11 +7526,14 @@ elf32_arm_gc_sweep_hook (bfd *                     abfd,
   const Elf_Internal_Rela *rel, *relend;
   struct elf32_arm_link_hash_table * globals;
 
+  if (info->relocatable)
+    return TRUE;
+
   globals = elf32_arm_hash_table (info);
 
   elf_section_data (sec)->local_dynrel = NULL;
 
-  symtab_hdr = &elf_tdata (abfd)->symtab_hdr;
+  symtab_hdr = & elf_symtab_hdr (abfd);
   sym_hashes = elf_sym_hashes (abfd);
   local_got_refcounts = elf_local_got_refcounts (abfd);
 
@@ -7471,7 +7657,6 @@ elf32_arm_check_relocs (bfd *abfd, struct bfd_link_info *info,
 {
   Elf_Internal_Shdr *symtab_hdr;
   struct elf_link_hash_entry **sym_hashes;
-  struct elf_link_hash_entry **sym_hashes_end;
   const Elf_Internal_Rela *rel;
   const Elf_Internal_Rela *rel_end;
   bfd *dynobj;
@@ -7481,6 +7666,8 @@ elf32_arm_check_relocs (bfd *abfd, struct bfd_link_info *info,
 
   if (info->relocatable)
     return TRUE;
+
+  BFD_ASSERT (is_arm_elf (abfd));
 
   htab = elf32_arm_hash_table (info);
   sreloc = NULL;
@@ -7497,13 +7684,8 @@ elf32_arm_check_relocs (bfd *abfd, struct bfd_link_info *info,
   dynobj = elf_hash_table (info)->dynobj;
   local_got_offsets = elf_local_got_offsets (abfd);
 
-  symtab_hdr = &elf_tdata (abfd)->symtab_hdr;
+  symtab_hdr = & elf_symtab_hdr (abfd);
   sym_hashes = elf_sym_hashes (abfd);
-  sym_hashes_end = sym_hashes
-    + symtab_hdr->sh_size / sizeof (Elf32_External_Sym);
-
-  if (!elf_bad_symtab (abfd))
-    sym_hashes_end -= symtab_hdr->sh_info;
 
   rel_end = relocs + sec->reloc_count;
   for (rel = relocs; rel < rel_end; rel++)
@@ -7795,7 +7977,9 @@ elf32_arm_check_relocs (bfd *abfd, struct bfd_link_info *info,
         /* This relocation describes which C++ vtable entries are actually
            used.  Record for later use during GC.  */
         case R_ARM_GNU_VTENTRY:
-          if (!bfd_elf_gc_record_vtentry (abfd, sec, h, rel->r_offset))
+          BFD_ASSERT (h != NULL);
+          if (h != NULL
+              && !bfd_elf_gc_record_vtentry (abfd, sec, h, rel->r_offset))
             return FALSE;
           break;
         }
@@ -7825,13 +8009,14 @@ elf32_arm_gc_mark_extra_sections(struct bfd_link_info *info,
 	{
 	  asection *o;
 
-	  if (bfd_get_flavour (sub) != bfd_target_elf_flavour)
+	  if (! is_arm_elf (sub))
 	    continue;
 
 	  elf_shdrp = elf_elfsections (sub);
 	  for (o = sub->sections; o != NULL; o = o->next)
 	    {
 	      Elf_Internal_Shdr *hdr;
+
 	      hdr = &elf_section_data (o)->this_hdr;
 	      if (hdr->sh_type == SHT_ARM_EXIDX && hdr->sh_link
 		  && !o->gc_mark
@@ -8517,7 +8702,7 @@ elf32_arm_size_dynamic_sections (bfd * output_bfd ATTRIBUTE_UNUSED,
       Elf_Internal_Shdr *symtab_hdr;
       asection *srel;
 
-      if (bfd_get_flavour (ibfd) != bfd_target_elf_flavour)
+      if (! is_arm_elf (ibfd))
 	continue;
 
       for (s = ibfd->sections; s != NULL; s = s->next)
@@ -8548,7 +8733,7 @@ elf32_arm_size_dynamic_sections (bfd * output_bfd ATTRIBUTE_UNUSED,
       if (!local_got)
 	continue;
 
-      symtab_hdr = &elf_tdata (ibfd)->symtab_hdr;
+      symtab_hdr = & elf_symtab_hdr (ibfd);
       locsymcount = symtab_hdr->sh_info;
       end_local_got = local_got + locsymcount;
       local_tls_type = elf32_arm_local_got_tls_type (ibfd);
@@ -8594,6 +8779,9 @@ elf32_arm_size_dynamic_sections (bfd * output_bfd ATTRIBUTE_UNUSED,
   /* Here we rummage through the found bfds to collect glue information.  */
   for (ibfd = info->input_bfds; ibfd != NULL; ibfd = ibfd->link_next)
     {
+      if (! is_arm_elf (ibfd))
+	continue;
+
       /* Initialise mapping tables for code/data.  */
       bfd_elf32_arm_init_maps (ibfd);
       
@@ -8725,6 +8913,9 @@ elf32_arm_size_dynamic_sections (bfd * output_bfd ATTRIBUTE_UNUSED,
 	  if (!add_dynamic_entry (DT_TEXTREL, 0))
 	    return FALSE;
 	}
+      if (htab->vxworks_p
+	  && !elf_vxworks_add_dynamic_entries (output_bfd, info))
+	return FALSE;
     }
 #undef add_dynamic_entry
 
@@ -9067,6 +9258,9 @@ elf32_arm_finish_dynamic_sections (bfd * output_bfd, struct bfd_link_info * info
 	      unsigned int type;
 
 	    default:
+	      if (htab->vxworks_p
+		  && elf_vxworks_finish_dynamic_entry (output_bfd, &dyn))
+		bfd_elf32_swap_dyn_out (output_bfd, &dyn, dyncon);
 	      break;
 
 	    case DT_HASH:
@@ -9713,6 +9907,18 @@ elf32_arm_output_arch_local_syms (bfd *output_bfd,
 	}
     }
 
+  /* ARMv4 BX veneers.  */
+  if (htab->bx_glue_size > 0)
+    {
+      osi.sec = bfd_get_section_by_name (htab->bfd_of_glue_owner,
+					 ARM_BX_GLUE_SECTION_NAME);
+
+      osi.sec_shndx = _bfd_elf_section_from_bfd_section
+	  (output_bfd, osi.sec->output_section);
+
+      elf32_arm_ouput_plt_map_sym (&osi, ARM_MAP_ARM, 0);
+    }
+
   /* Finally, output mapping symbols for the PLT.  */
   if (!htab->splt || htab->splt->size == 0)
     return TRUE;
@@ -9774,8 +9980,22 @@ elf32_arm_new_section_hook (bfd *abfd, asection *sec)
 static int
 elf32_arm_compare_mapping (const void * a, const void * b)
 {
-  return ((const elf32_arm_section_map *) a)->vma
-	 > ((const elf32_arm_section_map *) b)->vma;
+  const elf32_arm_section_map *amap = (const elf32_arm_section_map *) a;
+  const elf32_arm_section_map *bmap = (const elf32_arm_section_map *) b;
+
+  if (amap->vma > bmap->vma)
+    return 1;
+  else if (amap->vma < bmap->vma)
+    return -1;
+  else if (amap->type > bmap->type)
+    /* Ensure results do not depend on the host qsort for objects with
+       multiple mapping symbols at the same address by sorting on type
+       after vma.  */
+    return 1;
+  else if (amap->type < bmap->type)
+    return -1;
+  else
+    return 0;
 }
 
 

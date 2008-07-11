@@ -4,6 +4,9 @@
    language is requested. */
 #undef ENABLE_NLS
 
+/* Define to 1 if you have the <alloca.h> header file. */
+#undef HAVE_ALLOCA_H
+
 /* Define to 1 if you have the declaration of `basename', and to 0 if you
    don't. */
 #undef HAVE_DECL_BASENAME
@@ -264,9 +267,6 @@
 /* The size of a `void *', as computed by sizeof. */
 #undef SIZEOF_VOID_P
 
-/* The sizeof of a 'void *', as computed by sizeof. */
-#undef SIZEOF_VOID_P
-
 /* Define to 1 if you have the ANSI C header files. */
 #undef STDC_HEADERS
 
@@ -287,6 +287,9 @@
 
 /* Define if we should default to creating read-only plt entries */
 #undef USE_SECUREPLT
+
+/* Define if we may generate symbols with ELF's STT_COMMON type */
+#undef USE_STT_COMMON
 
 /* Version number of package */
 #undef VERSION

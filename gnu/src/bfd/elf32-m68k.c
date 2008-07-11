@@ -506,6 +506,9 @@ elf32_m68k_object_p (bfd *abfd)
 	case EF_M68K_CF_ISA_C:
 	  features |= mcfisa_a|mcfisa_c|mcfhwdiv|mcfusp;
 	  break;
+	case EF_M68K_CF_ISA_C_NODIV:
+	  features |= mcfisa_a|mcfisa_c|mcfusp;
+	  break;
 	}
       switch (eflags & EF_M68K_CF_MAC_MASK)
 	{
@@ -657,6 +660,10 @@ elf32_m68k_print_private_bfd_data (abfd, ptr)
 	      break;
 	    case EF_M68K_CF_ISA_C:
 	      isa = "C";
+	      break;
+	    case EF_M68K_CF_ISA_C_NODIV:
+	      isa = "C";
+	      additional = " [nodiv]";
 	      break;
 	    }
 	  fprintf (file, " [isa %s]%s", isa, additional);
@@ -1035,7 +1042,9 @@ elf_m68k_check_relocs (abfd, info, sec, relocs)
 	  /* This relocation describes which C++ vtable entries are actually
 	     used.  Record for later use during GC.  */
 	case R_68K_GNU_VTENTRY:
-	  if (!bfd_elf_gc_record_vtentry (abfd, sec, h, rel->r_addend))
+	  BFD_ASSERT (h != NULL);
+	  if (h != NULL
+	      && !bfd_elf_gc_record_vtentry (abfd, sec, h, rel->r_addend))
 	    return FALSE;
 	  break;
 
@@ -1083,6 +1092,9 @@ elf_m68k_gc_sweep_hook (bfd *abfd,
   bfd *dynobj;
   asection *sgot;
   asection *srelgot;
+
+  if (info->relocatable)
+    return TRUE;
 
   dynobj = elf_hash_table (info)->dynobj;
   if (dynobj == NULL)

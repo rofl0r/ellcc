@@ -74,8 +74,8 @@ ppc_create_output_section_statements (void)
   extern const bfd_target bfd_elf64_powerpc_vec;
   extern const bfd_target bfd_elf64_powerpcle_vec;
 
-  if (link_info.hash->creator != &bfd_elf64_powerpc_vec
-      && link_info.hash->creator != &bfd_elf64_powerpcle_vec)
+  if (link_info.output_bfd->xvec != &bfd_elf64_powerpc_vec
+      && link_info.output_bfd->xvec != &bfd_elf64_powerpcle_vec)
     return;
 
   link_info.wrap_char = '.';
@@ -103,7 +103,7 @@ ppc_before_allocation (void)
 {
   if (stub_file != NULL)
     {
-      if (!ppc64_elf_edit_opd (output_bfd, &link_info, no_opd_opt,
+      if (!ppc64_elf_edit_opd (output_bfd, &link_info, 
 			       non_overlapping_opd))
 	einfo ("%X%P: can not edit %s %E\n", "opd");
 

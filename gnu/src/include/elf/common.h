@@ -390,6 +390,8 @@
 #define NT_AUXV		6		/* Contains copy of Elfxx_auxv_t */
 #define NT_PRXFPREG	0x46e62b7f	/* Contains a user_xfpregs_struct; */
 					/*   note name must be "LINUX".  */
+#define NT_PPC_VMX	0x100		/* PowerPC Altivec/VMX registers */
+					/*   note name must be "LINUX".  */
 
 /* Note segments for core files on dir-style procfs systems.  */
 
@@ -780,6 +782,7 @@
 #define AT_SUN_EXECNAME 2014    /* Canonicalized file name given to execve.  */
 #define AT_SUN_MMU      2015    /* String for name of MMU module.   */
 #define AT_SUN_LDDATA   2016    /* Dynamic linker's data segment address.  */
+#define AT_SUN_AUXFLAGS	2017	/* AF_SUN_ flags passed from the kernel.  */
 
 
 #endif /* _ELF_COMMON_H */

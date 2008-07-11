@@ -1,7 +1,7 @@
 /* vms-misc.c -- Miscellaneous functions for VAX (openVMS/VAX) and
    EVAX (openVMS/Alpha) files.
    Copyright 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005,
-   2007 Free Software Foundation, Inc.
+   2007, 2008  Free Software Foundation, Inc.
 
    Written by Klaus K"ampf (kkaempf@rmi.de)
 
@@ -349,7 +349,7 @@ _bfd_vms_get_record (bfd * abfd)
 
       if (PRIV (rec_length) > PRIV (buf_size))
 	{
-	  PRIV (vms_buf) = bfd_realloc (vms_buf,
+	  PRIV (vms_buf) = bfd_realloc_or_free (vms_buf,
 					(bfd_size_type) PRIV (rec_length));
 	  vms_buf = PRIV (vms_buf);
 	  if (vms_buf == 0)
@@ -691,12 +691,17 @@ _bfd_vms_output_flush (bfd * abfd)
 
   if (PRIV (push_level) == 0)
     {
+      if (0
 #ifndef VMS
-	/* Write length first, see FF_FOREIGN in the input routines.  */
-      fwrite (PRIV (output_buf) + 2, 2, 1, (FILE *) abfd->iostream);
+	  /* Write length first, see FF_FOREIGN in the input routines.  */
+	  || fwrite (PRIV (output_buf) + 2, 2, 1,
+		     (FILE *) abfd->iostream) != 1
 #endif
-      fwrite (PRIV (output_buf), (size_t) real_size, 1,
-	      (FILE *) abfd->iostream);
+	  || (real_size != 0
+	      && fwrite (PRIV (output_buf), (size_t) real_size, 1,
+			 (FILE *) abfd->iostream) != 1))
+	/* FIXME: Return error status.  */
+	abort ();
 
       PRIV (output_size) = 0;
     }

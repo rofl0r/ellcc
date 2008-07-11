@@ -104,6 +104,8 @@ extern void *bfd_malloc
   (bfd_size_type);
 extern void *bfd_realloc
   (void *, bfd_size_type);
+extern void *bfd_realloc_or_free
+  (void *, bfd_size_type);
 extern void *bfd_zmalloc
   (bfd_size_type);
 extern void *bfd_malloc2
@@ -1046,6 +1048,8 @@ static const char *const bfd_reloc_code_real_names[] = { "@@uninitialized@@",
   "BFD_RELOC_MN10300_GLOB_DAT",
   "BFD_RELOC_MN10300_JMP_SLOT",
   "BFD_RELOC_MN10300_RELATIVE",
+  "BFD_RELOC_MN10300_SYM_DIFF",
+  "BFD_RELOC_MN10300_ALIGN",
 
   "BFD_RELOC_386_GOT32",
   "BFD_RELOC_386_PLT32",
@@ -1280,6 +1284,7 @@ static const char *const bfd_reloc_code_real_names[] = { "@@uninitialized@@",
   "BFD_RELOC_ARM_LDC_SB_G0",
   "BFD_RELOC_ARM_LDC_SB_G1",
   "BFD_RELOC_ARM_LDC_SB_G2",
+  "BFD_RELOC_ARM_V4BX",
   "BFD_RELOC_ARM_IMMEDIATE",
   "BFD_RELOC_ARM_ADRL_IMMEDIATE",
   "BFD_RELOC_ARM_T32_IMMEDIATE",
@@ -1833,6 +1838,9 @@ static const char *const bfd_reloc_code_real_names[] = { "@@uninitialized@@",
   "BFD_RELOC_CR16_DISP20",
   "BFD_RELOC_CR16_DISP24",
   "BFD_RELOC_CR16_DISP24a",
+  "BFD_RELOC_CR16_SWITCH8",
+  "BFD_RELOC_CR16_SWITCH16",
+  "BFD_RELOC_CR16_SWITCH32",
   "BFD_RELOC_CRX_REL4",
   "BFD_RELOC_CRX_REL8",
   "BFD_RELOC_CRX_REL8_CMP",

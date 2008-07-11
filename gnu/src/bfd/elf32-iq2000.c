@@ -306,6 +306,34 @@ iq2000_elf_relocate_hi16 (bfd *input_bfd,
   return bfd_reloc_ok;
 }
 
+static bfd_reloc_status_type
+iq2000_elf_relocate_offset16 (bfd *input_bfd,
+			      Elf_Internal_Rela *rel,
+			      bfd_byte *contents,
+			      bfd_vma value,
+			      bfd_vma location)
+{
+  bfd_vma insn;
+  bfd_vma jtarget;
+
+  insn = bfd_get_32 (input_bfd, contents + rel->r_offset);
+
+  value += rel->r_addend;
+
+  if (value & 3)
+    return bfd_reloc_dangerous;
+
+  jtarget = (value & 0x3fffc) | (location & 0xf0000000L);
+
+  if (jtarget != value)
+    return bfd_reloc_overflow;
+
+  insn = (insn & ~0xFFFF) | ((value >> 2) & 0xFFFF);
+
+  bfd_put_32 (input_bfd, insn, contents + rel->r_offset);
+  return bfd_reloc_ok;
+}
+
 /* Map BFD reloc types to IQ2000 ELF reloc types.  */
 
 static reloc_howto_type *
@@ -424,7 +452,7 @@ iq2000_elf_check_relocs (bfd *abfd,
 			 const Elf_Internal_Rela *relocs)
 {
   Elf_Internal_Shdr *symtab_hdr;
-  struct elf_link_hash_entry **sym_hashes, **sym_hashes_end;
+  struct elf_link_hash_entry **sym_hashes;
   const Elf_Internal_Rela *rel;
   const Elf_Internal_Rela *rel_end;
   bfd_boolean changed = FALSE;
@@ -434,9 +462,6 @@ iq2000_elf_check_relocs (bfd *abfd,
   
   symtab_hdr = &elf_tdata (abfd)->symtab_hdr;
   sym_hashes = elf_sym_hashes (abfd);
-  sym_hashes_end = sym_hashes + symtab_hdr->sh_size / sizeof (Elf32_External_Sym);
-  if (!elf_bad_symtab (abfd))
-    sym_hashes_end -= symtab_hdr->sh_info;
   
   rel_end = relocs + sec->reloc_count;
   for (rel = relocs; rel < rel_end; rel++)
@@ -467,7 +492,9 @@ iq2000_elf_check_relocs (bfd *abfd,
 	  /* This relocation describes which C++ vtable entries
 	     are actually used.  Record for later use during GC.  */
 	case R_IQ2000_GNU_VTENTRY:
-	  if (!bfd_elf_gc_record_vtentry (abfd, sec, h, rel->r_addend))
+	  BFD_ASSERT (h != NULL);
+	  if (h != NULL
+	      && !bfd_elf_gc_record_vtentry (abfd, sec, h, rel->r_addend))
 	    return FALSE;
 	  break;
 
@@ -573,15 +600,25 @@ iq2000_elf_relocate_section (bfd *		     output_bfd ATTRIBUTE_UNUSED,
       
       if (r_symndx < symtab_hdr->sh_info)
 	{
+	  asection *osec;
+
 	  sym = local_syms + r_symndx;
-	  sec = local_sections [r_symndx];
+	  osec = sec = local_sections [r_symndx];
+	  if ((sec->flags & SEC_MERGE)
+	      && ELF_ST_TYPE (sym->st_info) == STT_SECTION)
+	    /* This relocation is relative to a section symbol that is
+	       going to be merged.  Change it so that it is relative
+	       to the merged section symbol.  */
+	    rel->r_addend = _bfd_elf_rel_local_sym (output_bfd, sym, &sec,
+						    rel->r_addend);
+
 	  relocation = (sec->output_section->vma
 			+ sec->output_offset
 			+ sym->st_value);
 	  
 	  name = bfd_elf_string_from_elf_section
 	    (input_bfd, symtab_hdr->sh_link, sym->st_name);
-	  name = (name == NULL) ? bfd_section_name (input_bfd, sec) : name;
+	  name = (name == NULL) ? bfd_section_name (input_bfd, osec) : name;
 	}
       else
 	{
@@ -614,6 +651,13 @@ iq2000_elf_relocate_section (bfd *		     output_bfd ATTRIBUTE_UNUSED,
 	{
 	case R_IQ2000_HI16:
 	  r = iq2000_elf_relocate_hi16 (input_bfd, rel, contents, relocation);
+	  break;
+
+	case R_IQ2000_OFFSET_16:
+	  r = iq2000_elf_relocate_offset16 (input_bfd, rel, contents, relocation,
+					    input_section->output_section->vma
+					    + input_section->output_offset
+					    + rel->r_offset);
 	  break;
 
 	case R_IQ2000_PC16:

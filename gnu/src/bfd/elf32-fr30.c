@@ -71,7 +71,7 @@ static reloc_howto_type fr30_elf_howto_table [] =
 	 complain_overflow_bitfield, /* complain_on_overflow */
 	 bfd_elf_generic_reloc,	/* special_function */
 	 "R_FR30_8",		/* name */
-	 TRUE,			/* partial_inplace */
+	 FALSE,			/* partial_inplace */
 	 0x0000,		/* src_mask */
 	 0x0ff0,		/* dst_mask */
 	 FALSE),		/* pcrel_offset */
@@ -86,7 +86,7 @@ static reloc_howto_type fr30_elf_howto_table [] =
 	 complain_overflow_bitfield, /* complain_on_overflow */
 	 fr30_elf_i20_reloc,	/* special_function */
 	 "R_FR30_20",		/* name */
-	 TRUE,			/* partial_inplace */
+	 FALSE,			/* partial_inplace */
 	 0x00000000,		/* src_mask */
 	 0x00f0ffff,		/* dst_mask */
 	 FALSE),		/* pcrel_offset */
@@ -101,7 +101,7 @@ static reloc_howto_type fr30_elf_howto_table [] =
 	 complain_overflow_bitfield, /* complain_on_overflow */
 	 bfd_elf_generic_reloc,	/* special_function */
 	 "R_FR30_32",		/* name */
-	 TRUE,			/* partial_inplace */
+	 FALSE,			/* partial_inplace */
 	 0x00000000,		/* src_mask */
 	 0xffffffff,		/* dst_mask */
 	 FALSE),		/* pcrel_offset */
@@ -116,7 +116,7 @@ static reloc_howto_type fr30_elf_howto_table [] =
 	 complain_overflow_bitfield, /* complain_on_overflow */
 	 fr30_elf_i32_reloc,	/* special_function */
 	 "R_FR30_48",		/* name */
-	 TRUE,			/* partial_inplace */
+	 FALSE,			/* partial_inplace */
 	 0x00000000,		/* src_mask */
 	 0xffffffff,		/* dst_mask */
 	 FALSE),		/* pcrel_offset */
@@ -131,7 +131,7 @@ static reloc_howto_type fr30_elf_howto_table [] =
 	 complain_overflow_unsigned, /* complain_on_overflow */
 	 bfd_elf_generic_reloc,	/* special_function */
 	 "R_FR30_6_IN_4",	/* name */
-	 TRUE,			/* partial_inplace */
+	 FALSE,			/* partial_inplace */
 	 0x0000,		/* src_mask */
 	 0x00f0,		/* dst_mask */
 	 FALSE),		/* pcrel_offset */
@@ -146,7 +146,7 @@ static reloc_howto_type fr30_elf_howto_table [] =
 	 complain_overflow_signed, /* complain_on_overflow */
 	 bfd_elf_generic_reloc,/* special_function */
 	 "R_FR30_8_IN_8",	/* name */
-	 TRUE,			/* partial_inplace */
+	 FALSE,			/* partial_inplace */
 	 0x0000,		/* src_mask */
 	 0x0ff0,		/* dst_mask */
 	 FALSE),		/* pcrel_offset */
@@ -161,7 +161,7 @@ static reloc_howto_type fr30_elf_howto_table [] =
 	 complain_overflow_signed, /* complain_on_overflow */
 	 bfd_elf_generic_reloc,/* special_function */
 	 "R_FR30_9_IN_8",	/* name */
-	 TRUE,			/* partial_inplace */
+	 FALSE,			/* partial_inplace */
 	 0x0000,		/* src_mask */
 	 0x0ff0,		/* dst_mask */
 	 FALSE),		/* pcrel_offset */
@@ -176,7 +176,7 @@ static reloc_howto_type fr30_elf_howto_table [] =
 	 complain_overflow_signed, /* complain_on_overflow */
 	 bfd_elf_generic_reloc,/* special_function */
 	 "R_FR30_10_IN_8",	/* name */
-	 TRUE,			/* partial_inplace */
+	 FALSE,			/* partial_inplace */
 	 0x0000,		/* src_mask */
 	 0x0ff0,		/* dst_mask */
 	 FALSE),		/* pcrel_offset */
@@ -674,7 +674,7 @@ fr30_elf_check_relocs (abfd, info, sec, relocs)
      const Elf_Internal_Rela *relocs;
 {
   Elf_Internal_Shdr *symtab_hdr;
-  struct elf_link_hash_entry **sym_hashes, **sym_hashes_end;
+  struct elf_link_hash_entry **sym_hashes;
   const Elf_Internal_Rela *rel;
   const Elf_Internal_Rela *rel_end;
 
@@ -683,9 +683,6 @@ fr30_elf_check_relocs (abfd, info, sec, relocs)
 
   symtab_hdr = &elf_tdata (abfd)->symtab_hdr;
   sym_hashes = elf_sym_hashes (abfd);
-  sym_hashes_end = sym_hashes + symtab_hdr->sh_size/sizeof (Elf32_External_Sym);
-  if (!elf_bad_symtab (abfd))
-    sym_hashes_end -= symtab_hdr->sh_info;
 
   rel_end = relocs + sec->reloc_count;
   for (rel = relocs; rel < rel_end; rel++)
@@ -716,7 +713,9 @@ fr30_elf_check_relocs (abfd, info, sec, relocs)
         /* This relocation describes which C++ vtable entries are actually
            used.  Record for later use during GC.  */
         case R_FR30_GNU_VTENTRY:
-          if (!bfd_elf_gc_record_vtentry (abfd, sec, h, rel->r_addend))
+          BFD_ASSERT (h != NULL);
+          if (h != NULL
+              && !bfd_elf_gc_record_vtentry (abfd, sec, h, rel->r_addend))
             return FALSE;
           break;
         }

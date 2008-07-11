@@ -1,6 +1,6 @@
 /* MIPS ELF support for BFD.
    Copyright 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002,
-   2003, 2004, 2005
+   2003, 2004, 2005, 2008
    Free Software Foundation, Inc.
 
    By Ian Lance Taylor, Cygnus Support, <ian@cygnus.com>, from
@@ -213,9 +213,12 @@ END_RELOC_NUMBERS (R_MIPS_maxext)
 #define E_MIPS_MACH_4120	0x00870000
 #define E_MIPS_MACH_4111	0x00880000
 #define E_MIPS_MACH_SB1         0x008a0000
+#define E_MIPS_MACH_OCTEON	0x008b0000
 #define E_MIPS_MACH_5400	0x00910000
 #define E_MIPS_MACH_5500	0x00980000
 #define E_MIPS_MACH_9000	0x00990000
+#define E_MIPS_MACH_LS2E        0x00A00000
+#define E_MIPS_MACH_LS2F        0x00A10000
 
 /* Processor specific section indices.  These sections do not actually
    exist.  Symbols with a st_shndx field corresponding to one of these
@@ -1012,9 +1015,9 @@ enum
   /* 0-3 are generic.  */
   Tag_GNU_MIPS_ABI_FP = 4, /* Value 1 for hard-float -mdouble-float, 2
 			      for hard-float -msingle-float, 3 for
-			      soft-float; 0 for not tagged or not
-			      using any ABIs affected by the
-			      differences.  */
+			      soft-float, 4 for -mips32r2 -mfp64; 0 for
+			      not tagged or not using any ABIs affected
+			      by the differences.  */
 };
 
 #endif /* _ELF_MIPS_H */

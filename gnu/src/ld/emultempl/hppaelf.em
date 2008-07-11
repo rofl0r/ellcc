@@ -71,9 +71,9 @@ hppaelf_create_output_section_statements (void)
   extern const bfd_target bfd_elf32_hppa_nbsd_vec;
   extern const bfd_target bfd_elf32_hppa_vec;
 
-  if (link_info.hash->creator != &bfd_elf32_hppa_linux_vec
-      && link_info.hash->creator != &bfd_elf32_hppa_nbsd_vec
-      && link_info.hash->creator != &bfd_elf32_hppa_vec)
+  if (link_info.output_bfd->xvec != &bfd_elf32_hppa_linux_vec
+      && link_info.output_bfd->xvec != &bfd_elf32_hppa_nbsd_vec
+      && link_info.output_bfd->xvec != &bfd_elf32_hppa_vec)
     return;
 
   stub_file = lang_add_input_file ("linker stubs",

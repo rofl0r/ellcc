@@ -716,7 +716,7 @@ static reloc_howto_type bfin_howto_table [] =
 	 0,			/* bitpos */
 	 complain_overflow_signed, /* complain_on_overflow */
 	 bfd_elf_generic_reloc,	/* special_function */
-	 "R_BFIN_GOT12",		/* name */
+	 "R_BFIN_GOT17M4",	/* name */
 	 FALSE,			/* partial_inplace */
 	 0xffff,	        /* src_mask */
 	 0xffff,	        /* dst_mask */
@@ -1497,26 +1497,9 @@ _bfinfdpic_add_rofixup (bfd *output_bfd, asection *rofixup, bfd_vma offset,
 static unsigned
 _bfinfdpic_osec_to_segment (bfd *output_bfd, asection *osec)
 {
-  struct elf_segment_map *m;
-  Elf_Internal_Phdr *p;
+  Elf_Internal_Phdr *p = _bfd_elf_find_segment_containing_section (output_bfd, osec);
 
-  /* Find the segment that contains the output_section.  */
-  for (m = elf_tdata (output_bfd)->segment_map,
-	 p = elf_tdata (output_bfd)->phdr;
-       m != NULL;
-       m = m->next, p++)
-    {
-      int i;
-
-      for (i = m->count - 1; i >= 0; i--)
-	if (m->sections[i] == osec)
-	  break;
-
-      if (i >= 0)
-	break;
-    }
-
-  return p - elf_tdata (output_bfd)->phdr;
+  return (p != NULL) ? p - elf_tdata (output_bfd)->phdr : -1;
 }
 
 inline static bfd_boolean
@@ -1979,7 +1962,9 @@ bfin_check_relocs (bfd * abfd,
         /* This relocation describes which C++ vtable entries
            are actually used.  Record for later use during GC.  */
         case R_BFIN_GNU_VTENTRY:
-          if (!bfd_elf_gc_record_vtentry (abfd, sec, h, rel->r_addend))
+          BFD_ASSERT (h != NULL);
+          if (h != NULL
+              && !bfd_elf_gc_record_vtentry (abfd, sec, h, rel->r_addend))
             return FALSE;
           break;
 
@@ -2494,6 +2479,9 @@ bfinfdpic_relocate_section (bfd * output_bfd,
 	  {
 	    int dynindx;
 	    bfd_vma addend = rel->r_addend;
+	    bfd_vma offset;
+	    offset = _bfd_elf_section_offset (output_bfd, info,
+					      input_section, rel->r_offset);
 
 	    /* If the symbol is dynamic but binds locally, use
 	       section+offset.  */
@@ -2550,25 +2538,34 @@ bfinfdpic_relocate_section (bfd * output_bfd,
 		      }
 		    if (!h || h->root.type != bfd_link_hash_undefweak)
 		      {
-			_bfinfdpic_add_rofixup (output_bfd,
-					       bfinfdpic_gotfixup_section
-					       (info),
-					       _bfd_elf_section_offset
-					       (output_bfd, info,
-						input_section, rel->r_offset)
-					       + input_section
-					       ->output_section->vma
-					       + input_section->output_offset,
-					       picrel);
+			/* Only output a reloc for a not deleted entry.  */
+			if (offset >= (bfd_vma)-2)
+			  _bfinfdpic_add_rofixup (output_bfd,
+						  bfinfdpic_gotfixup_section
+						  (info), -1, picrel);
+			else
+			  _bfinfdpic_add_rofixup (output_bfd,
+						  bfinfdpic_gotfixup_section
+						  (info),
+						  offset + input_section
+						  ->output_section->vma
+						  + input_section->output_offset,
+						  picrel);
+
 			if (r_type == R_BFIN_FUNCDESC_VALUE)
-			  _bfinfdpic_add_rofixup
-			    (output_bfd,
-			     bfinfdpic_gotfixup_section (info),
-			     _bfd_elf_section_offset
-			     (output_bfd, info,
-			      input_section, rel->r_offset)
-			     + input_section->output_section->vma
-			     + input_section->output_offset + 4, picrel);
+			  {
+			    if (offset >= (bfd_vma)-2)
+			      _bfinfdpic_add_rofixup
+				(output_bfd,
+				 bfinfdpic_gotfixup_section (info),
+				 -1, picrel);
+			    else
+			      _bfinfdpic_add_rofixup
+				(output_bfd,
+				 bfinfdpic_gotfixup_section (info),
+				 offset + input_section->output_section->vma
+				 + input_section->output_offset + 4, picrel);
+			  }
 		      }
 		  }
 	      }
@@ -2588,15 +2585,19 @@ bfinfdpic_relocate_section (bfd * output_bfd,
 			   name, input_bfd, input_section, rel->r_offset);
 			return FALSE;
 		      }
-		    _bfinfdpic_add_dyn_reloc (output_bfd,
-					      bfinfdpic_gotrel_section (info),
-					      _bfd_elf_section_offset
-					      (output_bfd, info,
-					       input_section, rel->r_offset)
-					      + input_section
-					      ->output_section->vma
-					      + input_section->output_offset,
-					      r_type, dynindx, addend, picrel);
+		    /* Only output a reloc for a not deleted entry.  */
+		    if (offset >= (bfd_vma)-2)
+		      _bfinfdpic_add_dyn_reloc (output_bfd,
+						bfinfdpic_gotrel_section (info),
+						0, R_unused0, dynindx, addend, picrel);
+		    else
+		      _bfinfdpic_add_dyn_reloc (output_bfd,
+						bfinfdpic_gotrel_section (info),
+						offset
+						+ input_section
+						->output_section->vma
+						+ input_section->output_offset,
+						r_type, dynindx, addend, picrel);
 		  }
 		else if (osec)
 		  addend += osec->output_section->vma;
@@ -2606,7 +2607,7 @@ bfinfdpic_relocate_section (bfd * output_bfd,
 		relocation = addend - rel->r_addend;
 	      }
 
-	    if (r_type == R_BFIN_FUNCDESC_VALUE)
+	    if (r_type == R_BFIN_FUNCDESC_VALUE && offset < (bfd_vma)-2)
 	      {
 		/* If we've omitted the dynamic relocation, just emit
 		   the fixed addresses of the symbol and of the local
@@ -2938,6 +2939,14 @@ bfin_relocate_section (bfd * output_bfd,
 
 	  {
 	    bfd_vma off;
+
+	  if (dynobj == NULL)
+	    {
+	      /* Create the .got section.  */
+	      elf_hash_table (info)->dynobj = dynobj = output_bfd;
+	      if (!_bfd_elf_create_got_section (dynobj, info))
+		return FALSE;
+	    }
 
 	    if (sgot == NULL)
 	      {
@@ -4509,7 +4518,7 @@ bfinfdpic_check_relocs (bfd *abfd, struct bfd_link_info *info,
 			asection *sec, const Elf_Internal_Rela *relocs)
 {
   Elf_Internal_Shdr *symtab_hdr;
-  struct elf_link_hash_entry **sym_hashes, **sym_hashes_end;
+  struct elf_link_hash_entry **sym_hashes;
   const Elf_Internal_Rela *rel;
   const Elf_Internal_Rela *rel_end;
   bfd *dynobj;
@@ -4520,9 +4529,6 @@ bfinfdpic_check_relocs (bfd *abfd, struct bfd_link_info *info,
 
   symtab_hdr = &elf_tdata (abfd)->symtab_hdr;
   sym_hashes = elf_sym_hashes (abfd);
-  sym_hashes_end = sym_hashes + symtab_hdr->sh_size/sizeof(Elf32_External_Sym);
-  if (!elf_bad_symtab (abfd))
-    sym_hashes_end -= symtab_hdr->sh_info;
 
   dynobj = elf_hash_table (info)->dynobj;
   rel_end = relocs + sec->reloc_count;
@@ -4671,7 +4677,9 @@ bfinfdpic_check_relocs (bfd *abfd, struct bfd_link_info *info,
         /* This relocation describes which C++ vtable entries are actually
            used.  Record for later use during GC.  */
         case R_BFIN_GNU_VTENTRY:
-          if (!bfd_elf_gc_record_vtentry (abfd, sec, h, rel->r_addend))
+          BFD_ASSERT (h != NULL);
+          if (h != NULL
+              && !bfd_elf_gc_record_vtentry (abfd, sec, h, rel->r_addend))
             return FALSE;
           break;
 
@@ -4811,8 +4819,7 @@ elf32_bfin_print_private_bfd_data (bfd * abfd, PTR ptr)
 static bfd_boolean
 elf32_bfin_merge_private_bfd_data (bfd *ibfd, bfd *obfd)
 {
-  flagword old_flags, old_partial;
-  flagword new_flags, new_partial;
+  flagword old_flags, new_flags;
   bfd_boolean error = FALSE;
 
   new_flags = elf_elfheader (ibfd)->e_flags;
@@ -4830,37 +4837,10 @@ elf32_bfin_merge_private_bfd_data (bfd *ibfd, bfd *obfd)
   if (!elf_flags_init (obfd))			/* First call, no flags set.  */
     {
       elf_flags_init (obfd) = TRUE;
-      old_flags = new_flags;
+      elf_elfheader (obfd)->e_flags = new_flags;
     }
 
-  else if (new_flags == old_flags)		/* Compatible flags are ok.  */
-    ;
-
-  else						/* Possibly incompatible flags.  */
-    {
-      /* We don't have to do anything if the pic flags are the same, or the new
-         module(s) were compiled with -mlibrary-pic.  */
-      new_partial = (new_flags & EF_BFIN_PIC_FLAGS);
-      old_partial = (old_flags & EF_BFIN_PIC_FLAGS);
-      if (new_partial == old_partial)
-	;
-
-      /* If we have mixtures of -fpic and -fPIC, or in both bits.  */
-      else if (new_partial != 0 && old_partial != 0)
-	old_flags |= new_partial;
-
-      /* One module was compiled for pic and the other was not, see if we have
-         had any relocations that are not pic-safe.  */
-      else
-	old_flags |= new_partial;
-
-    }
-
-  /* Update the old flags now with changes made above.  */
-  elf_elfheader (obfd)->e_flags = old_flags;
-
-  if (((new_flags & EF_BFIN_FDPIC) == 0)
-      != (! IS_FDPIC (ibfd)))
+  if (((new_flags & EF_BFIN_FDPIC) == 0) != (! IS_FDPIC (obfd)))
     {
       error = TRUE;
       if (IS_FDPIC (obfd))

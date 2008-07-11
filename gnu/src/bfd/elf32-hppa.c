@@ -334,6 +334,15 @@ struct elf32_hppa_link_hash_table
 #define eh_name(eh) \
   (eh ? eh->root.root.string : "<undef>")
 
+/* Override the generic function because we want to mark our BFDs.  */
+
+static bfd_boolean
+elf32_hppa_mkobject (bfd *abfd)
+{
+  return bfd_elf_allocate_object (abfd, sizeof (struct elf_obj_tdata),
+				  HPPA_ELF_TDATA);
+}
+
 /* Assorted hash table functions.  */
 
 /* Initialize an entry in the stub hash table.  */
@@ -1278,7 +1287,9 @@ elf32_hppa_check_relocs (bfd *abfd,
 	  /* This relocation describes which C++ vtable entries are actually
 	     used.  Record for later use during GC.  */
 	case R_PARISC_GNU_VTENTRY:
-	  if (!bfd_elf_gc_record_vtentry (abfd, sec, &hh->eh, rela->r_addend))
+	  BFD_ASSERT (hh != NULL);
+	  if (hh != NULL
+	      && !bfd_elf_gc_record_vtentry (abfd, sec, &hh->eh, rela->r_addend))
 	    return FALSE;
 	  continue;
 
@@ -1619,6 +1630,9 @@ elf32_hppa_gc_sweep_hook (bfd *abfd,
   bfd_signed_vma *local_got_refcounts;
   bfd_signed_vma *local_plt_refcounts;
   const Elf_Internal_Rela *rela, *relend;
+
+  if (info->relocatable)
+    return TRUE;
 
   elf_section_data (sec)->local_dynrel = NULL;
 
@@ -3254,9 +3268,7 @@ elf32_hppa_final_link (bfd *abfd, struct bfd_link_info *info)
 /* Record the lowest address for the data and text segments.  */
 
 static void
-hppa_record_segment_addr (bfd *abfd ATTRIBUTE_UNUSED,
-			  asection *section,
-			  void *data)
+hppa_record_segment_addr (bfd *abfd, asection *section, void *data)
 {
   struct elf32_hppa_link_hash_table *htab;
 
@@ -3264,7 +3276,12 @@ hppa_record_segment_addr (bfd *abfd ATTRIBUTE_UNUSED,
 
   if ((section->flags & (SEC_ALLOC | SEC_LOAD)) == (SEC_ALLOC | SEC_LOAD))
     {
-      bfd_vma value = section->vma - section->filepos;
+      bfd_vma value;
+      Elf_Internal_Phdr *p;
+
+      p = _bfd_elf_find_segment_containing_section (abfd, section->output_section);
+      BFD_ASSERT (p != NULL);
+      value = p->p_vaddr;
 
       if ((section->flags & SEC_READONLY) != 0)
 	{
@@ -4594,11 +4611,12 @@ elf32_hppa_elf_get_symbol_type (Elf_Internal_Sym *elf_sym, int type)
 /* Misc BFD support code.  */
 #define bfd_elf32_bfd_is_local_label_name    elf_hppa_is_local_label_name
 #define bfd_elf32_bfd_reloc_type_lookup	     elf_hppa_reloc_type_lookup
-#define bfd_elf32_bfd_reloc_name_lookup elf_hppa_reloc_name_lookup
+#define bfd_elf32_bfd_reloc_name_lookup      elf_hppa_reloc_name_lookup
 #define elf_info_to_howto		     elf_hppa_info_to_howto
 #define elf_info_to_howto_rel		     elf_hppa_info_to_howto_rel
 
 /* Stuff for the BFD linker.  */
+#define bfd_elf32_mkobject		     elf32_hppa_mkobject
 #define bfd_elf32_bfd_final_link	     elf32_hppa_final_link
 #define bfd_elf32_bfd_link_hash_table_create elf32_hppa_link_hash_table_create
 #define bfd_elf32_bfd_link_hash_table_free   elf32_hppa_link_hash_table_free

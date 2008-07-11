@@ -1,0 +1,90 @@
+This is gdbint.info, produced by makeinfo version 4.11 from
+../.././gdb/doc/gdbint.texinfo.
+
+INFO-DIR-SECTION Software development
+START-INFO-DIR-ENTRY
+* Gdb-Internals: (gdbint).	The GNU debugger's internals.
+END-INFO-DIR-ENTRY
+
+   This file documents the internals of the GNU debugger GDB.
+Copyright (C) 1990, 1991, 1992, 1993, 1994, 1996, 1998, 1999, 2000,
+2001,    2002, 2003, 2004, 2005, 2006    Free Software Foundation, Inc.
+Contributed by Cygnus Solutions.  Written by John Gilmore.  Second
+Edition by Stan Shebs.
+
+   Permission is granted to copy, distribute and/or modify this document
+under the terms of the GNU Free Documentation License, Version 1.1 or
+any later version published by the Free Software Foundation; with no
+Invariant Sections, with no Front-Cover Texts, and with no Back-Cover
+Texts.  A copy of the license is included in the section entitled "GNU
+Free Documentation License".
+
+
+Indirect:
+gdbint.info-1: 905
+gdbint.info-2: 288530
+
+Tag Table:
+(Indirect)
+Node: Top905
+Node: Requirements1768
+Node: Overall Structure3256
+Node: Algorithms8192
+Node: User Interface40684
+Ref: User Interface-Footnote-164476
+Ref: User Interface-Footnote-264525
+Node: libgdb64760
+Node: Symbol Handling68720
+Node: Language Support83500
+Node: Host Definition88901
+Node: Target Architecture Definition95984
+Node: OS ABI Variant Handling96801
+Node: Initialize New Architecture101643
+Node: Registers and Memory103212
+Node: Pointers and Addresses104002
+Ref: Pointers and Addresses-Footnote-1110027
+Node: Address Classes110270
+Node: Raw and Virtual Registers113534
+Node: Register and Memory Data118418
+Node: Frame Interpretation121846
+Node: Inferior Call Setup122045
+Node: Compiler Characteristics122242
+Node: Target Conditionals122450
+Ref: gdbarch_breakpoint_from_pc127175
+Ref: frame_align133921
+Ref: DEPRECATED_FRAME_SAVED_PC136287
+Ref: gdbarch_unwind_pc136470
+Ref: gdbarch_unwind_sp137040
+Ref: gdbarch_stabs_argument_has_addr147069
+Ref: gdbarch_push_dummy_call147574
+Ref: gdbarch_push_dummy_code148190
+Ref: SAVE_DUMMY_FRAME_TOS149072
+Ref: gdbarch_return_value149734
+Ref: gdbarch_write_pc154656
+Ref: TARGET_READ_SP154690
+Ref: gdbarch_unwind_dummy_id156434
+Node: Adding a New Target157897
+Node: Target Descriptions160152
+Node: Target Descriptions Implementation161091
+Node: Adding Target Described Register Support162465
+Node: Target Vector Definition165411
+Node: Managing Execution State165943
+Node: Existing Targets167756
+Node: Native Debugging170077
+Node: Support Libraries178702
+Node: Coding190216
+Node: Porting GDB215192
+Node: Versions and Branches217101
+Ref: Tags223061
+Ref: experimental branch tags223392
+Node: Start of New Year Procedure224124
+Node: Releasing GDB225473
+Node: Testsuite243813
+Node: Hints251092
+Node: Getting Started251414
+Node: Debugging GDB255557
+Node: GDB Observers261484
+Node: GNU Free Documentation License266086
+Node: Index288530
+
+End Tag Table

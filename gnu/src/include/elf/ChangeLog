@@ -1,6 +1,111 @@
+2008-02-04  Adam Nemet  <anemet@caviumnetworks.com>
+
+	* mips.h: Update copyright.
+	(E_MIPS_MACH_OCTEON): New macro.
+
+2008-01-30  Tristan Gingold  <gingold@adacore.com>
+
+	Add OpenVMS extensions.
+	* ia64.h (SHF_IA_64_VMS_GLOBAL, SHF_IA_64_VMS_OVERLAID) 
+	(SHF_IA_64_VMS_SHARED, SHF_IA_64_VMS_VECTOR) 
+	(SHF_IA_64_VMS_ALLOC_64BIT, SHF_IA_64_VMS_PROTECTED)
+	(SHT_IA_64_VMS_TRACE, SHT_IA_64_VMS_TIE_SIGNATURES) 
+	(SHT_IA_64_VMS_DEBUG, SHT_IA_64_VMS_DEBUG_STR) 
+	(SHT_IA_64_VMS_LINKAGES, SHT_IA_64_VMS_SYMBOL_VECTOR) 
+	(SHT_IA_64_VMS_FIXUP, DT_IA_64_VMS_SUBTYPE) 
+	(DT_IA_64_VMS_IMGIOCNT, DT_IA_64_VMS_LNKFLAGS) 
+	(DT_IA_64_VMS_VIR_MEM_BLK_SIZ, DT_IA_64_VMS_IDENT) 
+	(DT_IA_64_VMS_NEEDED_IDENT, DT_IA_64_VMS_IMG_RELA_CNT) 
+	(DT_IA_64_VMS_SEG_RELA_CNT, DT_IA_64_VMS_FIXUP_RELA_CNT) 
+	(DT_IA_64_VMS_FIXUP_NEEDED, DT_IA_64_VMS_SYMVEC_CNT) 
+	(DT_IA_64_VMS_XLATED, DT_IA_64_VMS_STACKSIZE) 
+	(DT_IA_64_VMS_UNWINDSZ, DT_IA_64_VMS_UNWIND_CODSEG) 
+	(DT_IA_64_VMS_UNWIND_INFOSEG, DT_IA_64_VMS_LINKTIME) 
+	(DT_IA_64_VMS_SEG_NO, DT_IA_64_VMS_SYMVEC_OFFSET) 
+	(DT_IA_64_VMS_SYMVEC_SEG, DT_IA_64_VMS_UNWIND_OFFSET) 
+	(DT_IA_64_VMS_UNWIND_SEG, DT_IA_64_VMS_STRTAB_OFFSET) 
+	(DT_IA_64_VMS_SYSVER_OFFSET, DT_IA_64_VMS_IMG_RELA_OFF) 
+	(DT_IA_64_VMS_SEG_RELA_OFF, DT_IA_64_VMS_FIXUP_RELA_OFF) 
+	(DT_IA_64_VMS_PLTGOT_OFFSET, DT_IA_64_VMS_PLTGOT_SEG) 
+	(DT_IA_64_VMS_FPMODE, SHN_IA_64_VMS_SYMVEC): Define
+
+2008-01-16  Mark Kettenis  <kettenis@gnu.org>
+
+	* common.h (AT_SUN_AUXFLAGS): Define.
+
+2007-12-11  Daniel Jacobowitz  <dan@codesourcery.com>
+
+	* dwarf2.h (DW_AT_hi_user): Correct value.
+
+2007-12-07  Bob Wilson  <bob.wilson@acm.org>
+	
+	* xtensa.h (R_XTENSA_32_PCREL): New.
+	
+2007-11-29  Mark Shinwell  <shinwell@codesourcery.com>
+
+	* mips.h (E_MIPS_MACH_LS2E): New.
+	(E_MIPS_MACH_LS2F): New.
+
+2007-11-28  Nathan Sidwell  <nathan@codesourcery.com>
+
+	* internal.h (ELF_IS_SECTION_IN_SEGMENT): Adjust to cope with
+	segments at the end of memory.
+
+2007-11-16  Nick Clifton  <nickc@redhat.com>
+
+	* dwarf2.h: Mention the location of the DWARF3 spec on the web.
+	(DW_AT_stride_size): Rename to DW_AT_bit_stride.
+	(DW_AT_stride): Rename to DW_AT_byte_stride.
+
+2007-11-08  Nathan Sidwell  <nathan@codesourcery.com>
+
+	* vxworks.h: New.
+
+2007-10-30  Nick Clifton  <nickc@redhat.com>
+
+	* mn10300.h (R_MN10300_ALIGN): Define.
+
+2007-10-25  Daniel Jacobowitz  <dan@codesourcery.com>
+
+	* ppc.h (Tag_GNU_Power_ABI_Vector): New.
+
+2007-10-19  Nick Clifton  <nickc@redhat.com>
+
+	* mn10300.h: Add R_MN10300_SYM_DIFF reloc.
+
+2007-10-18  Roland McGrath  <roland@redhat.com>
+
+	* common.h (NT_PPC_VMX): New macro.
+
+2007-10-01  M R Swami Reddy <MR.Swami.Reddy@nsc.com>
+
+	* cr16.h: Updated with new relocaction macros.
+
+2007-09-17  H.J. Lu  <hongjiu.lu@intel.com>
+
+	PR binutils/3281
+	PR binutils/5037
+	* internal.h (elf_segment_map): Add p_size and p_size_valid.
+	(ELF_IS_SECTION_IN_SEGMENT): Allow SHF_TLS sections in
+	PT_GNU_RELRO segments.
+
+2007-09-11  Nathan Sidwell  <nathan@codesourcery.com>
+
+	* m68k.h (EF_M68K_CF_ISA_C_NODIV): New.
+
 2007-08-25  Ulrich Weigand  <uweigand@de.ibm.com>
 
 	* common.h (NT_SPU): Define.
+
+2007-08-16  H.J. Lu  <hongjiu.lu@intel.com>
+
+	* common.h: Revert last change.
+
+2007-08-16  H.J. Lu  <hongjiu.lu@intel.com>
+
+	* common.h (PT_GNU_STACK): Renamed to ...
+	(PT_GNU_ATTR): This.
+	(PT_GNU_STACK): New.  Make an alias of PT_GNU_ATTR.
 
 2007-07-09  Roland McGrath  <roland@redhat.com>
 

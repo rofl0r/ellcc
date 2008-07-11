@@ -1,6 +1,6 @@
 /* BFD library support routines for architectures.
    Copyright 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999,
-   2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007
+   2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008
    Free Software Foundation, Inc.
    Hacked by John Gilmore and Steve Chamberlain of Cygnus Support.
 
@@ -101,6 +101,9 @@ DESCRIPTION
 .#define bfd_mach_mcf_isa_c 26
 .#define bfd_mach_mcf_isa_c_mac 27
 .#define bfd_mach_mcf_isa_c_emac 28
+.#define bfd_mach_mcf_isa_c_nodiv 29
+.#define bfd_mach_mcf_isa_c_nodiv_mac 30
+.#define bfd_mach_mcf_isa_c_nodiv_emac 31
 .  bfd_arch_vax,       {* DEC Vax *}
 .  bfd_arch_i960,      {* Intel 960 *}
 .    {* The order of the following is important.
@@ -166,7 +169,10 @@ DESCRIPTION
 .#define bfd_mach_mips12000		12000
 .#define bfd_mach_mips16		16
 .#define bfd_mach_mips5                 5
+.#define bfd_mach_mips_loongson_2e      3001
+.#define bfd_mach_mips_loongson_2f      3002
 .#define bfd_mach_mips_sb1              12310201 {* octal 'SB', 01 *}
+.#define bfd_mach_mips_octeon		6501
 .#define bfd_mach_mipsisa32             32
 .#define bfd_mach_mipsisa32r2           33
 .#define bfd_mach_mipsisa64             64

@@ -370,11 +370,17 @@ elf_swap_phdr_out (bfd *abfd,
 		   const Elf_Internal_Phdr *src,
 		   Elf_External_Phdr *dst)
 {
+  const struct elf_backend_data *bed;
+  bfd_vma p_paddr;
+
+  bed = get_elf_backend_data (abfd);
+  p_paddr = bed->want_p_paddr_set_to_zero ? 0 : src->p_paddr;
+
   /* note that all elements of dst are *arrays of unsigned char* already...  */
   H_PUT_32 (abfd, src->p_type, dst->p_type);
   H_PUT_WORD (abfd, src->p_offset, dst->p_offset);
   H_PUT_WORD (abfd, src->p_vaddr, dst->p_vaddr);
-  H_PUT_WORD (abfd, src->p_paddr, dst->p_paddr);
+  H_PUT_WORD (abfd, p_paddr, dst->p_paddr);
   H_PUT_WORD (abfd, src->p_filesz, dst->p_filesz);
   H_PUT_WORD (abfd, src->p_memsz, dst->p_memsz);
   H_PUT_32 (abfd, src->p_flags, dst->p_flags);
@@ -1323,6 +1329,10 @@ elf_slurp_symbol_table (bfd *abfd, asymbol **symptrs, bfd_boolean dynamic)
 	    case STT_FUNC:
 	      sym->symbol.flags |= BSF_FUNCTION;
 	      break;
+	    case STT_COMMON:
+	      /* FIXME: Do we have to put the size field into the value field
+		 as we do with symbols in SHN_COMMON sections (see above) ?  */
+	      /* Fall through.  */
 	    case STT_OBJECT:
 	      sym->symbol.flags |= BSF_OBJECT;
 	      break;
@@ -1635,6 +1645,7 @@ NAME(_bfd_elf,bfd_from_remote_memory)
   int err;
   unsigned int i;
   bfd_vma loadbase;
+  bfd_boolean loadbase_set;
 
   /* Read in the ELF header in external format.  */
   err = target_read_memory (ehdr_vma, (bfd_byte *) &x_ehdr, sizeof x_ehdr);
@@ -1711,13 +1722,11 @@ NAME(_bfd_elf,bfd_from_remote_memory)
   contents_size = 0;
   last_phdr = NULL;
   loadbase = ehdr_vma;
+  loadbase_set = FALSE;
   for (i = 0; i < i_ehdr.e_phnum; ++i)
     {
       elf_swap_phdr_in (templ, &x_phdrs[i], &i_phdrs[i]);
-      /* IA-64 vDSO may have two mappings for one segment, where one mapping
-	 is executable only, and one is read only.  We must not use the
-	 executable one.  */
-      if (i_phdrs[i].p_type == PT_LOAD && (i_phdrs[i].p_flags & PF_R))
+      if (i_phdrs[i].p_type == PT_LOAD)
 	{
 	  bfd_vma segment_end;
 	  segment_end = (i_phdrs[i].p_offset + i_phdrs[i].p_filesz
@@ -1725,8 +1734,14 @@ NAME(_bfd_elf,bfd_from_remote_memory)
 	  if (segment_end > (bfd_vma) contents_size)
 	    contents_size = segment_end;
 
-	  if ((i_phdrs[i].p_offset & -i_phdrs[i].p_align) == 0)
-	    loadbase = ehdr_vma - (i_phdrs[i].p_vaddr & -i_phdrs[i].p_align);
+	  /* LOADADDR is the `Base address' from the gELF specification:
+	     `lowest p_vaddr value for a PT_LOAD segment' is P_VADDR from the
+	     first PT_LOAD as PT_LOADs are ordered by P_VADDR.  */
+	  if (!loadbase_set && (i_phdrs[i].p_offset & -i_phdrs[i].p_align) == 0)
+	    {
+	      loadbase = ehdr_vma - (i_phdrs[i].p_vaddr & -i_phdrs[i].p_align);
+	      loadbase_set = TRUE;
+	    }
 
 	  last_phdr = &i_phdrs[i];
 	}
@@ -1764,10 +1779,7 @@ NAME(_bfd_elf,bfd_from_remote_memory)
     }
 
   for (i = 0; i < i_ehdr.e_phnum; ++i)
-    /* IA-64 vDSO may have two mappings for one segment, where one mapping
-       is executable only, and one is read only.  We must not use the
-       executable one.  */
-    if (i_phdrs[i].p_type == PT_LOAD && (i_phdrs[i].p_flags & PF_R))
+    if (i_phdrs[i].p_type == PT_LOAD)
       {
 	bfd_vma start = i_phdrs[i].p_offset & -i_phdrs[i].p_align;
 	bfd_vma end = (i_phdrs[i].p_offset + i_phdrs[i].p_filesz
