@@ -723,10 +723,44 @@ struct FileInfo {
 };
 static FileInfo filePhases[NUM_FILE_TYPES][NUM_PHASES];
 
+/** Convert output machine to march.
+ */
+static std::map<std::string, std::string> machines;
+
+/** Convert output machine to linker emulation mode.
+ */
+static std::map<std::string, std::string> emulations;
+
 /** Set up the file type map.
  */
-static void setupFileTypes()
+static void setupMappings()
 {
+    machines["alpha"] = "alpha";
+    machines["arm"] = "arm";
+    machines["ia64"] = "ia64";
+    machines["mips"] = "mips";
+    machines["nios2"] = "nios2";
+    machines["powerpc"] = "ppc";
+    machines["powerpc64"] = "ppc64";
+    machines["sparc"] = "sparc";
+    machines["spu"] = "cellspu";
+    machines["x86"] = "x86";
+    machines["x86_64"] = "x86-64";
+
+    emulations["alpha"] = "elf64alpha";
+    emulations["arm"] = "armelf";
+    emulations["ia64"] = "elf64_ia64";
+    emulations["mips"] = "elf32ebmip";
+    emulations["nios2"] = "nios2elf";
+    emulations["powerpc"] = "elf32ppc";
+    emulations["powerpc64"] = "elf64ppc";
+    emulations["sparc"] = "elf32_sparc";
+    emulations["spu"] = "elf32_spu";
+    emulations["x86"] = "elf_i386";
+    emulations["x86_64"] = "elf_x86_64";
+    
+    //
+    //
     // The extension to language and language to phase mapping.
     extToLang["c"] = C;                                 // A C file becomes a preprocessed file.
     langToExt[C] = "c";
@@ -1553,7 +1587,6 @@ static void Optimize(Module* M)
     addPass(Passes, createStripSymbolsPass(StripDebug && !Strip));
 
   // Create a new optimization pass for each one specified on the command line
-  std::auto_ptr<TargetMachine> target;
   for (unsigned i = 0; i < OptimizationList.size(); ++i) {
     const PassInfo *Opt = OptimizationList[i];
     if (Opt->getNormalCtor())
@@ -1887,7 +1920,9 @@ static int Link(const std::string& OutputFilename,
   std::vector<std::string> args;
   args.push_back(ld.c_str());
   args.push_back("--build-id");
-  args.push_back("-melf_i386");
+  if (OutputMachine.size()) {
+      args.push_back("-m" + emulations[OutputMachine]);
+  } 
   args.push_back("-static");
   args.push_back("--hash-style=gnu");
   args.push_back("/home/rich/local/i686-pc-linux-gnu/lib/crt0.o");
@@ -1962,7 +1997,12 @@ static int Assemble(const std::string &OutputFilename,
   // environment variables so that the programs it uses can configure
   // themselves identically.
   // RICH: Choose the appropriate assembler.
-  sys::Path as = FindExecutable("as", progname);
+  std::string assm = "as";
+  if (OutputMachine.size()) {
+      assm = OutputMachine + "-elf-as";
+  }
+  
+  sys::Path as = FindExecutable(assm, progname);
   if (as.isEmpty())
     PrintAndExit("Failed to find as");
 
@@ -2350,6 +2390,8 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         // If we are supposed to override the target triple, do so now.
         if (!TargetTriple.empty()) {
             input.module->setTargetTriple(TargetTriple);
+        } else if (OutputMachine.size()) {
+            input.module->setTargetTriple(machines[OutputMachine] + "-elf");
         }
 
         // Allocate target machine.  First, check whether the user has
@@ -2581,7 +2623,16 @@ int main(int argc, char **argv)
     try {
         // Initial global variable above for convenience printing of program name.
         progname = sys::Path(argv[0]).getBasename();
-        setupFileTypes();
+        // See if a target machine is given in the program name.
+        size_t dash;
+
+        dash = progname.find_first_of('-');
+        if (dash != std::string::npos) {
+            OutputMachine = progname.substr(0, dash);
+        }
+
+        setupMappings();
+
         TimerGroup timerGroup("... Ellcc action timing report ...");
         for (int i = 0; i < NUM_PHASES; ++i) {
             timers[i] = new Timer(phases[i].name, timerGroup);
@@ -2589,11 +2640,15 @@ int main(int argc, char **argv)
 
         // Parse the command line options.
         cl::ParseCommandLineOptions(argc, argv, "C/C++ compiler\n");
-        sys::PrintStackTraceOnErrorSignal();
+        
+        // Check for a valid target machine.
+        if (OutputMachine.size()) {
+           if (machines.find(OutputMachine) == machines.end()) {
+                PrintAndExit(OutputMachine + "is not a valid machine name");
+           }
+        }
 
-        // Allocate a full target machine description only if necessary.
-        // FIXME: The choice of target should be controllable on the command line.
-        std::auto_ptr<TargetMachine> target;
+        sys::PrintStackTraceOnErrorSignal();
 
         // Initialize Elsa.
         Elsa elsa(timerGroup);       // Get the parsing environment.
