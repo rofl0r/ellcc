@@ -218,14 +218,14 @@ void
 finish_default (void)
 {
   if (!link_info.relocatable)
-    _bfd_fix_excluded_sec_syms (output_bfd, &link_info);
+    _bfd_fix_excluded_sec_syms (link_info.output_bfd, &link_info);
 }
 
 void
 set_output_arch_default (void)
 {
   /* Set the output architecture and machine if possible.  */
-  bfd_set_arch_mach (output_bfd,
+  bfd_set_arch_mach (link_info.output_bfd,
 		     ldfile_output_architecture, ldfile_output_machine);
 }
 

@@ -26,7 +26,6 @@ extern char *program_name;
 extern const char *ld_sysroot;
 extern char *ld_canon_sysroot;
 extern int ld_canon_sysroot_len;
-extern bfd *output_bfd;
 extern char *default_target;
 extern bfd_boolean trace_files;
 extern bfd_boolean trace_file_tries;

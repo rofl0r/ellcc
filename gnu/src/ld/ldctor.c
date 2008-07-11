@@ -273,13 +273,13 @@ ldctor_build_sets (void)
 	 except that we use the right size instead of .long.  When
 	 generating relocatable output, we generate relocs instead of
 	 addresses.  */
-      howto = bfd_reloc_type_lookup (output_bfd, p->reloc);
+      howto = bfd_reloc_type_lookup (link_info.output_bfd, p->reloc);
       if (howto == NULL)
 	{
 	  if (link_info.relocatable)
 	    {
 	      einfo (_("%P%X: %s does not support reloc %s for set %s\n"),
-		     bfd_get_target (output_bfd),
+		     bfd_get_target (link_info.output_bfd),
 		     bfd_get_reloc_code_name (p->reloc),
 		     p->h->root.string);
 	      continue;

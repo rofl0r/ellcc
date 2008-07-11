@@ -120,7 +120,7 @@ gld${EMULATION_NAME}_before_allocation (void)
 
   /* Let the backend work out the sizes of any sections required by
      dynamic linking.  */
-  if (! bfd_${EMULATION_NAME}_size_dynamic_sections (output_bfd, &link_info))
+  if (! bfd_${EMULATION_NAME}_size_dynamic_sections (link_info.output_bfd, &link_info))
     einfo ("%P%F: failed to set dynamic section sizes: %E\n");
 
   before_allocation_default ();

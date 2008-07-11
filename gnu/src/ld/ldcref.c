@@ -327,7 +327,7 @@ cref_fill_array (struct cref_hash_entry *h, void *data)
   struct cref_hash_entry ***pph = data;
 
   ASSERT (h->demangled == NULL);
-  h->demangled = bfd_demangle (output_bfd, h->root.string,
+  h->demangled = bfd_demangle (link_info.output_bfd, h->root.string,
 			       DMGL_ANSI | DMGL_PARAMS);
   if (h->demangled == NULL)
     h->demangled = h->root.string;

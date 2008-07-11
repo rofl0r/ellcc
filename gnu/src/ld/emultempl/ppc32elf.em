@@ -63,7 +63,7 @@ ppc_after_open (void)
       lang_output_section_statement_type *got_os[2];
 
       emit_stub_syms |= link_info.emitrelocations;
-      new_plt = ppc_elf_select_plt_layout (output_bfd, &link_info, plt_style,
+      new_plt = ppc_elf_select_plt_layout (link_info.output_bfd, &link_info, plt_style,
 					   emit_stub_syms);
       if (new_plt < 0)
 	einfo ("%X%P: select_plt_layout problem %E\n");
@@ -111,9 +111,9 @@ ppc_before_allocation (void)
 {
   if (is_ppc_elf32_vec (link_info.output_bfd->xvec))
     {
-      if (ppc_elf_tls_setup (output_bfd, &link_info) && !notlsopt)
+      if (ppc_elf_tls_setup (link_info.output_bfd, &link_info) && !notlsopt)
 	{
-	  if (!ppc_elf_tls_optimize (output_bfd, &link_info))
+	  if (!ppc_elf_tls_optimize (link_info.output_bfd, &link_info))
 	    {
 	      einfo ("%X%P: TLS problem %E\n");
 	      return;

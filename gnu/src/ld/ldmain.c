@@ -73,9 +73,6 @@ const char *ld_sysroot;
 char * ld_canon_sysroot;
 int ld_canon_sysroot_len;
 
-/* The file that we're creating.  */
-bfd *output_bfd = 0;
-
 /* Set by -G argument, for MIPS ECOFF target.  */
 int g_switch_value = 8;
 
@@ -173,8 +170,8 @@ remove_output (void)
 {
   if (output_filename)
     {
-      if (output_bfd)
-	bfd_cache_close (output_bfd);
+      if (link_info.output_bfd)
+	bfd_cache_close (link_info.output_bfd);
       if (delete_output_file_on_failure)
 	unlink_if_ordinary (output_filename);
     }
@@ -461,9 +458,9 @@ main (int argc, char **argv)
   /* Print error messages for any missing symbols, for any warning
      symbols, and possibly multiple definitions.  */
   if (link_info.relocatable)
-    output_bfd->flags &= ~EXEC_P;
+    link_info.output_bfd->flags &= ~EXEC_P;
   else
-    output_bfd->flags |= EXEC_P;
+    link_info.output_bfd->flags |= EXEC_P;
 
   ldwrite ();
 
@@ -490,8 +487,8 @@ main (int argc, char **argv)
     }
   else
     {
-      if (! bfd_close (output_bfd))
-	einfo (_("%F%B: final close failed: %E\n"), output_bfd);
+      if (! bfd_close (link_info.output_bfd))
+	einfo (_("%F%B: final close failed: %E\n"), link_info.output_bfd);
 
       /* If the --force-exe-suffix is enabled, and we're making an
 	 executable file and it doesn't end in .exe, copy it to one
@@ -1149,7 +1146,7 @@ constructor_callback (struct bfd_link_info *info,
 
   /* Ensure that BFD_RELOC_CTOR exists now, so that we can give a
      useful error message.  */
-  if (bfd_reloc_type_lookup (output_bfd, BFD_RELOC_CTOR) == NULL
+  if (bfd_reloc_type_lookup (link_info.output_bfd, BFD_RELOC_CTOR) == NULL
       && (info->relocatable
 	  || bfd_reloc_type_lookup (abfd, BFD_RELOC_CTOR) == NULL))
     einfo (_("%P%F: BFD backend error: BFD_RELOC_CTOR unsupported\n"));
@@ -1455,7 +1452,7 @@ reloc_overflow (struct bfd_link_info *info ATTRIBUTE_UNUSED,
 		 reloc_name, entry->root.string,
 		 entry->u.def.section,
 		 entry->u.def.section == bfd_abs_section_ptr
-		 ? output_bfd : entry->u.def.section->owner);
+		 ? link_info.output_bfd : entry->u.def.section->owner);
 	  break;
 	default:
 	  abort ();

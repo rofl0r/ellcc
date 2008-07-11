@@ -152,7 +152,7 @@ vfinfo (FILE *fp, const char *fmt, va_list arg, bfd_boolean is_warning)
 		  {
 		    char *demangled;
 
-		    demangled = bfd_demangle (output_bfd, name,
+		    demangled = bfd_demangle (link_info.output_bfd, name,
 					      DMGL_ANSI | DMGL_PARAMS);
 		    if (demangled != NULL)
 		      {

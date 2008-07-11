@@ -1311,7 +1311,7 @@ lang_output_section_find_by_flags (const asection *sec,
       if (look->bfd_section != NULL)
 	{
 	  flags = look->bfd_section->flags;
-	  if (match_type && !match_type (output_bfd, look->bfd_section,
+	  if (match_type && !match_type (link_info.output_bfd, look->bfd_section,
 					 sec->owner, sec))
 	    continue;
 	}
@@ -1336,7 +1336,7 @@ lang_output_section_find_by_flags (const asection *sec,
 	  if (look->bfd_section != NULL)
 	    {
 	      flags = look->bfd_section->flags;
-	      if (match_type && !match_type (output_bfd, look->bfd_section,
+	      if (match_type && !match_type (link_info.output_bfd, look->bfd_section,
 					     sec->owner, sec))
 		continue;
 	    }
@@ -1355,7 +1355,7 @@ lang_output_section_find_by_flags (const asection *sec,
 	  if (look->bfd_section != NULL)
 	    {
 	      flags = look->bfd_section->flags;
-	      if (match_type && !match_type (output_bfd, look->bfd_section,
+	      if (match_type && !match_type (link_info.output_bfd, look->bfd_section,
 					     sec->owner, sec))
 		continue;
 	    }
@@ -1375,7 +1375,7 @@ lang_output_section_find_by_flags (const asection *sec,
 	  if (look->bfd_section != NULL)
 	    {
 	      flags = look->bfd_section->flags;
-	      if (match_type && !match_type (output_bfd, look->bfd_section,
+	      if (match_type && !match_type (link_info.output_bfd, look->bfd_section,
 					     sec->owner, sec))
 		continue;
 	    }
@@ -1396,7 +1396,7 @@ lang_output_section_find_by_flags (const asection *sec,
 	  if (look->bfd_section != NULL)
 	    {
 	      flags = look->bfd_section->flags;
-	      if (match_type && !match_type (output_bfd, look->bfd_section,
+	      if (match_type && !match_type (link_info.output_bfd, look->bfd_section,
 					     sec->owner, sec))
 		continue;
 	    }
@@ -1415,7 +1415,7 @@ lang_output_section_find_by_flags (const asection *sec,
 	  if (look->bfd_section != NULL)
 	    {
 	      flags = look->bfd_section->flags;
-	      if (match_type && !match_type (output_bfd, look->bfd_section,
+	      if (match_type && !match_type (link_info.output_bfd, look->bfd_section,
 					     sec->owner, sec))
 		continue;
 	    }
@@ -1492,7 +1492,7 @@ lang_insert_orphan (asection *s,
 	  etree_type *e_align;
 
 	  symname = (char *) xmalloc (ps - secname + sizeof "__start_" + 1);
-	  symname[0] = bfd_get_symbol_leading_char (output_bfd);
+	  symname[0] = bfd_get_symbol_leading_char (link_info.output_bfd);
 	  sprintf (symname + (symname[0] != 0), "__start_%s", secname);
 	  e_align = exp_unop (ALIGN_K,
 			      exp_intop ((bfd_vma) 1 << s->alignment_power));
@@ -1527,7 +1527,7 @@ lang_insert_orphan (asection *s,
 	stat_ptr = &add;
 
       symname = (char *) xmalloc (ps - secname + sizeof "__stop_" + 1);
-      symname[0] = bfd_get_symbol_leading_char (output_bfd);
+      symname[0] = bfd_get_symbol_leading_char (link_info.output_bfd);
       sprintf (symname + (symname[0] != 0), "__stop_%s", secname);
       lang_add_assignment (exp_provide (symname,
 					exp_nameop (NAME, "."),
@@ -1564,7 +1564,7 @@ lang_insert_orphan (asection *s,
 	}
 
       if (place->section == NULL)
-	place->section = &output_bfd->sections;
+	place->section = &link_info.output_bfd->sections;
 
       as = *place->section;
 
@@ -1573,18 +1573,18 @@ lang_insert_orphan (asection *s,
 	  /* Put the section at the end of the list.  */
 
 	  /* Unlink the section.  */
-	  bfd_section_list_remove (output_bfd, snew);
+	  bfd_section_list_remove (link_info.output_bfd, snew);
 
 	  /* Now tack it back on in the right place.  */
-	  bfd_section_list_append (output_bfd, snew);
+	  bfd_section_list_append (link_info.output_bfd, snew);
 	}
       else if (as != snew && as->prev != snew)
 	{
 	  /* Unlink the section.  */
-	  bfd_section_list_remove (output_bfd, snew);
+	  bfd_section_list_remove (link_info.output_bfd, snew);
 
 	  /* Now tack it back on in the right place.  */
-	  bfd_section_list_insert_before (output_bfd, as, snew);
+	  bfd_section_list_insert_before (link_info.output_bfd, as, snew);
 	}
 
       /* Save the end of this list.  Further ophans of this type will
@@ -1747,7 +1747,7 @@ lang_map (void)
 
       for (s = file->the_bfd->sections; s != NULL; s = s->next)
 	if ((s->output_section == NULL
-	     || s->output_section->owner != output_bfd)
+	     || s->output_section->owner != link_info.output_bfd)
 	    && (s->flags & (SEC_LINKER_CREATED | SEC_KEEP)) == 0)
 	  {
 	    if (! dis_header_printed)
@@ -1871,14 +1871,14 @@ init_os (lang_output_section_statement_type *s, asection *isec,
   if (strcmp (s->name, DISCARD_SECTION_NAME) == 0)
     einfo (_("%P%F: Illegal use of `%s' section\n"), DISCARD_SECTION_NAME);
 
-  s->bfd_section = bfd_get_section_by_name (output_bfd, s->name);
+  s->bfd_section = bfd_get_section_by_name (link_info.output_bfd, s->name);
   if (s->bfd_section == NULL)
-    s->bfd_section = bfd_make_section_with_flags (output_bfd, s->name,
+    s->bfd_section = bfd_make_section_with_flags (link_info.output_bfd, s->name,
 						  flags);
   if (s->bfd_section == NULL)
     {
       einfo (_("%P%F: output format %s cannot represent section called %s\n"),
-	     output_bfd->xvec->name, s->name);
+	     link_info.output_bfd->xvec->name, s->name);
     }
   s->bfd_section->output_section = s->bfd_section;
   s->bfd_section->output_offset = 0;
@@ -1905,7 +1905,7 @@ init_os (lang_output_section_statement_type *s, asection *isec,
 
   if (isec)
     bfd_init_private_section_data (isec->owner, isec,
-				   output_bfd, s->bfd_section,
+				   link_info.output_bfd, s->bfd_section,
 				   &link_info);
 }
 
@@ -2841,21 +2841,21 @@ ldlang_open_output (lang_statement_union_type *statement)
   switch (statement->header.type)
     {
     case lang_output_statement_enum:
-      ASSERT (output_bfd == NULL);
-      output_bfd = open_output (statement->output_statement.name);
+      ASSERT (link_info.output_bfd == NULL);
+      link_info.output_bfd = open_output (statement->output_statement.name);
       ldemul_set_output_arch ();
       if (config.magic_demand_paged && !link_info.relocatable)
-	output_bfd->flags |= D_PAGED;
+	link_info.output_bfd->flags |= D_PAGED;
       else
-	output_bfd->flags &= ~D_PAGED;
+	link_info.output_bfd->flags &= ~D_PAGED;
       if (config.text_read_only)
-	output_bfd->flags |= WP_TEXT;
+	link_info.output_bfd->flags |= WP_TEXT;
       else
-	output_bfd->flags &= ~WP_TEXT;
+	link_info.output_bfd->flags &= ~WP_TEXT;
       if (link_info.traditional_format)
-	output_bfd->flags |= BFD_TRADITIONAL_FORMAT;
+	link_info.output_bfd->flags |= BFD_TRADITIONAL_FORMAT;
       else
-	output_bfd->flags &= ~BFD_TRADITIONAL_FORMAT;
+	link_info.output_bfd->flags &= ~BFD_TRADITIONAL_FORMAT;
       break;
 
     case lang_target_statement_enum:
@@ -3067,7 +3067,7 @@ ldlang_add_undef (const char *const name)
 
   new->name = xstrdup (name);
 
-  if (output_bfd != NULL)
+  if (link_info.output_bfd != NULL)
     insert_undefined (new->name);
 }
 
@@ -3353,7 +3353,7 @@ strip_excluded_output_sections (void)
 
       exclude = (output_section->rawsize == 0
 		 && (output_section->flags & SEC_KEEP) == 0
-		 && !bfd_section_removed_from_list (output_bfd,
+		 && !bfd_section_removed_from_list (link_info.output_bfd,
 						    output_section));
 
       /* Some sections have not yet been sized, notably .gnu.version,
@@ -3385,8 +3385,8 @@ strip_excluded_output_sections (void)
 	      && !os->update_dot_tree)
 	    os->ignored = TRUE;
 	  output_section->flags |= SEC_EXCLUDE;
-	  bfd_section_list_remove (output_bfd, output_section);
-	  output_bfd->section_count--;
+	  bfd_section_list_remove (link_info.output_bfd, output_section);
+	  link_info.output_bfd->section_count--;
 	}
     }
 
@@ -3636,7 +3636,7 @@ print_input_section (asection *i)
       ++len;
     }
 
-  if (i->output_section != NULL && i->output_section->owner == output_bfd)
+  if (i->output_section != NULL && i->output_section->owner == link_info.output_bfd)
     addr = i->output_section->vma + i->output_offset;
   else
     {
@@ -3663,7 +3663,7 @@ print_input_section (asection *i)
       minfo (_("%W (size before relaxing)\n"), i->rawsize);
     }
 
-  if (i->output_section != NULL && i->output_section->owner == output_bfd)
+  if (i->output_section != NULL && i->output_section->owner == link_info.output_bfd)
     {
       if (link_info.reduce_memory_overheads)
 	bfd_link_hash_traverse (link_info.hash, print_one_symbol, i);
@@ -4129,15 +4129,15 @@ lang_check_section_addresses (void)
   bfd_vma os_end;
   bfd_size_type amt;
 
-  if (bfd_count_sections (output_bfd) <= 1)
+  if (bfd_count_sections (link_info.output_bfd) <= 1)
     return;
 
-  amt = bfd_count_sections (output_bfd) * sizeof (asection *);
+  amt = bfd_count_sections (link_info.output_bfd) * sizeof (asection *);
   sections = xmalloc (amt);
 
   /* Scan all sections in the output list.  */
   count = 0;
-  for (s = output_bfd->sections; s != NULL; s = s->next)
+  for (s = link_info.output_bfd->sections; s != NULL; s = s->next)
     {
       /* Only consider loadable sections with real contents.  */
       if (IGNORE_SECTION (s) || s->size == 0)
@@ -4155,7 +4155,7 @@ lang_check_section_addresses (void)
 
   spp = sections;
   s = *spp++;
-  s_start = bfd_section_lma (output_bfd, s);
+  s_start = bfd_section_lma (link_info.output_bfd, s);
   s_end = s_start + TO_ADDR (s->size) - 1;
   for (count--; count; count--)
     {
@@ -4166,7 +4166,7 @@ lang_check_section_addresses (void)
       os_start = s_start;
       os_end = s_end;
       s = *spp++;
-      s_start = bfd_section_lma (output_bfd, s);
+      s_start = bfd_section_lma (link_info.output_bfd, s);
       s_end = s_start + TO_ADDR (s->size) - 1;
 
       /* Look for an overlap.  */
@@ -4260,8 +4260,8 @@ lang_size_sections_1
 	       address from the input section.  FIXME: This is COFF
 	       specific; it would be cleaner if there were some other way
 	       to do this, but nothing simple comes to mind.  */
-	    if ((bfd_get_flavour (output_bfd) == bfd_target_ecoff_flavour
-		 || bfd_get_flavour (output_bfd) == bfd_target_coff_flavour)
+	    if ((bfd_get_flavour (link_info.output_bfd) == bfd_target_ecoff_flavour
+		 || bfd_get_flavour (link_info.output_bfd) == bfd_target_coff_flavour)
 		&& (os->bfd_section->flags & SEC_COFF_SHARED_LIBRARY) != 0)
 	      {
 		asection *input;
@@ -4331,12 +4331,12 @@ lang_size_sections_1
 			if (command_line.check_section_addresses)
 			  einfo (_("%P%F: error: no memory region specified"
 				   " for loadable section `%s'\n"),
-				 bfd_get_section_name (output_bfd,
+				 bfd_get_section_name (link_info.output_bfd,
 						       os->bfd_section));
 			else
 			  einfo (_("%P: warning: no memory region specified"
 				   " for loadable section `%s'\n"),
-				 bfd_get_section_name (output_bfd,
+				 bfd_get_section_name (link_info.output_bfd,
 						       os->bfd_section));
 		      }
 
@@ -4801,7 +4801,7 @@ lang_size_sections (bfd_boolean *relax, bfd_boolean check_regions)
 
 	  /* Find maximum alignment power of sections between
 	     DATA_SEGMENT_ALIGN and DATA_SEGMENT_RELRO_END.  */
-	  for (sec = output_bfd->sections; sec; sec = sec->next)
+	  for (sec = link_info.output_bfd->sections; sec; sec = sec->next)
 	    if (sec->vma >= expld.dataseg.base
 		&& sec->vma < expld.dataseg.relro_end
 		&& sec->alignment_power > max_alignment_power)
@@ -4997,13 +4997,13 @@ lang_set_startof (void)
   if (link_info.relocatable)
     return;
 
-  for (s = output_bfd->sections; s != NULL; s = s->next)
+  for (s = link_info.output_bfd->sections; s != NULL; s = s->next)
     {
       const char *secname;
       char *buf;
       struct bfd_link_hash_entry *h;
 
-      secname = bfd_get_section_name (output_bfd, s);
+      secname = bfd_get_section_name (link_info.output_bfd, s);
       buf = xmalloc (10 + strlen (secname));
 
       sprintf (buf, ".startof.%s", secname);
@@ -5011,7 +5011,7 @@ lang_set_startof (void)
       if (h != NULL && h->type == bfd_link_hash_undefined)
 	{
 	  h->type = bfd_link_hash_defined;
-	  h->u.def.value = bfd_get_section_vma (output_bfd, s);
+	  h->u.def.value = bfd_get_section_vma (link_info.output_bfd, s);
 	  h->u.def.section = bfd_abs_section_ptr;
 	}
 
@@ -5057,10 +5057,10 @@ lang_end (void)
       bfd_vma val;
 
       val = (h->u.def.value
-	     + bfd_get_section_vma (output_bfd,
+	     + bfd_get_section_vma (link_info.output_bfd,
 				    h->u.def.section->output_section)
 	     + h->u.def.section->output_offset);
-      if (! bfd_set_start_address (output_bfd, val))
+      if (! bfd_set_start_address (link_info.output_bfd, val))
 	einfo (_("%P%F:%s: can't set start address\n"), entry_symbol.name);
     }
   else
@@ -5073,7 +5073,7 @@ lang_end (void)
       val = bfd_scan_vma (entry_symbol.name, &send, 0);
       if (*send == '\0')
 	{
-	  if (! bfd_set_start_address (output_bfd, val))
+	  if (! bfd_set_start_address (link_info.output_bfd, val))
 	    einfo (_("%P%F: can't set start address\n"));
 	}
       else
@@ -5082,16 +5082,16 @@ lang_end (void)
 
 	  /* Can't find the entry symbol, and it's not a number.  Use
 	     the first address in the text section.  */
-	  ts = bfd_get_section_by_name (output_bfd, entry_section);
+	  ts = bfd_get_section_by_name (link_info.output_bfd, entry_section);
 	  if (ts != NULL)
 	    {
 	      if (warn)
 		einfo (_("%P: warning: cannot find entry symbol %s;"
 			 " defaulting to %V\n"),
 		       entry_symbol.name,
-		       bfd_get_section_vma (output_bfd, ts));
-	      if (! bfd_set_start_address (output_bfd,
-					   bfd_get_section_vma (output_bfd,
+		       bfd_get_section_vma (link_info.output_bfd, ts));
+	      if (! bfd_set_start_address (link_info.output_bfd,
+					   bfd_get_section_vma (link_info.output_bfd,
 								ts)))
 		einfo (_("%P%F: can't set start address\n"));
 	    }
@@ -5133,7 +5133,7 @@ lang_check (void)
     {
       input_bfd = file->input_statement.the_bfd;
       compatible
-	= bfd_arch_get_compatible (input_bfd, output_bfd,
+	= bfd_arch_get_compatible (input_bfd, link_info.output_bfd,
 				   command_line.accept_unknown_input_arch);
 
       /* In general it is not possible to perform a relocatable
@@ -5144,13 +5144,13 @@ lang_check (void)
 	 relocs for other link purposes than a final link).  */
       if ((link_info.relocatable || link_info.emitrelocations)
 	  && (compatible == NULL
-	      || bfd_get_flavour (input_bfd) != bfd_get_flavour (output_bfd))
+	      || bfd_get_flavour (input_bfd) != bfd_get_flavour (link_info.output_bfd))
 	  && (bfd_get_file_flags (input_bfd) & HAS_RELOC) != 0)
 	{
 	  einfo (_("%P%F: Relocatable linking with relocations from"
 		   " format %s (%B) to format %s (%B) is not supported\n"),
 		 bfd_get_target (input_bfd), input_bfd,
-		 bfd_get_target (output_bfd), output_bfd);
+		 bfd_get_target (link_info.output_bfd), link_info.output_bfd);
 	  /* einfo with %F exits.  */
 	}
 
@@ -5160,7 +5160,7 @@ lang_check (void)
 	    einfo (_("%P%X: %s architecture of input file `%B'"
 		     " is incompatible with %s output\n"),
 		   bfd_printable_name (input_bfd), input_bfd,
-		   bfd_printable_name (output_bfd));
+		   bfd_printable_name (link_info.output_bfd));
 	}
       else if (bfd_count_sections (input_bfd))
 	{
@@ -5176,7 +5176,7 @@ lang_check (void)
 	     information which is needed in the output file.  */
 	  if (! command_line.warn_mismatch)
 	    pfn = bfd_set_error_handler (ignore_bfd_errors);
-	  if (! bfd_merge_private_bfd_data (input_bfd, output_bfd))
+	  if (! bfd_merge_private_bfd_data (input_bfd, link_info.output_bfd))
 	    {
 	      if (command_line.warn_mismatch)
 		einfo (_("%P%X: failed to merge target specific data"
@@ -5268,7 +5268,7 @@ lang_one_common (struct bfd_link_hash_entry *h, void *info)
 	  header_printed = TRUE;
 	}
 
-      name = bfd_demangle (output_bfd, h->root.string,
+      name = bfd_demangle (link_info.output_bfd, h->root.string,
 			   DMGL_ANSI | DMGL_PARAMS);
       if (name == NULL)
 	{
@@ -5443,7 +5443,7 @@ ldlang_add_file (lang_input_statement_type *entry)
   /* The BFD linker needs to have a list of all input BFDs involved in
      a link.  */
   ASSERT (entry->the_bfd->link_next == NULL);
-  ASSERT (entry->the_bfd != output_bfd);
+  ASSERT (entry->the_bfd != link_info.output_bfd);
 
   *link_info.input_bfds_tail = entry->the_bfd;
   link_info.input_bfds_tail = &entry->the_bfd->link_next;
@@ -5565,7 +5565,7 @@ lang_reset_memory_regions (void)
       os->processed_lma = FALSE;
     }
 
-  for (o = output_bfd->sections; o != NULL; o = o->next)
+  for (o = link_info.output_bfd->sections; o != NULL; o = o->next)
     {
       /* Save the last size for possible use by bfd_relax_section.  */
       o->rawsize = o->size;
@@ -5657,7 +5657,7 @@ lang_gc_sections (void)
     }
 
   if (link_info.gc_sections)
-    bfd_gc_sections (output_bfd, &link_info);
+    bfd_gc_sections (link_info.output_bfd, &link_info);
 }
 
 /* Relax all sections until bfd_relax_section gives up.  */
@@ -5765,10 +5765,10 @@ lang_process (void)
 	 sections, so that GCed sections are not merged, but before
 	 assigning dynamic symbols, since removing whole input sections
 	 is hard then.  */
-      bfd_merge_sections (output_bfd, &link_info);
+      bfd_merge_sections (link_info.output_bfd, &link_info);
 
       /* Look for a text section and set the readonly attribute in it.  */
-      found = bfd_get_section_by_name (output_bfd, ".text");
+      found = bfd_get_section_by_name (link_info.output_bfd, ".text");
 
       if (found != NULL)
 	{
@@ -6094,11 +6094,11 @@ lang_abs_symbol_at_beginning_of (const char *secname, const char *name)
 
       h->type = bfd_link_hash_defined;
 
-      sec = bfd_get_section_by_name (output_bfd, secname);
+      sec = bfd_get_section_by_name (link_info.output_bfd, secname);
       if (sec == NULL)
 	h->u.def.value = 0;
       else
-	h->u.def.value = bfd_get_section_vma (output_bfd, sec);
+	h->u.def.value = bfd_get_section_vma (link_info.output_bfd, sec);
 
       h->u.def.section = bfd_abs_section_ptr;
     }
@@ -6125,11 +6125,11 @@ lang_abs_symbol_at_end_of (const char *secname, const char *name)
 
       h->type = bfd_link_hash_defined;
 
-      sec = bfd_get_section_by_name (output_bfd, secname);
+      sec = bfd_get_section_by_name (link_info.output_bfd, secname);
       if (sec == NULL)
 	h->u.def.value = 0;
       else
-	h->u.def.value = (bfd_get_section_vma (output_bfd, sec)
+	h->u.def.value = (bfd_get_section_vma (link_info.output_bfd, sec)
 			  + TO_ADDR (sec->size));
 
       h->u.def.section = bfd_abs_section_ptr;
@@ -6309,7 +6309,7 @@ lang_record_phdrs (void)
       else
 	at = exp_get_vma (l->at, 0, "phdr load address");
 
-      if (! bfd_record_phdr (output_bfd, l->type,
+      if (! bfd_record_phdr (link_info.output_bfd, l->type,
 			     l->flags != NULL, flags, l->at != NULL,
 			     at, l->filehdr, l->phdrs, c, secs))
 	einfo (_("%F%P: bfd_record_phdr failed: %E\n"));
