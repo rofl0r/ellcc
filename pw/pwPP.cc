@@ -341,15 +341,45 @@ bool PP::setInput(const char *string)
     return true;
 }
 
-bool PP::setInput(FILE *fp)
+bool PP::setInput(FILE *fp, bool usePath)
 {
     sp = NULL;                                  // No string for input.
     if (fp)
         this->fp = fp;
     else {
         myfp = true;
-        this->fp = tfopen(name, "r");
+        if (!usePath) {
+            // Use the name exactly as given.
+            this->fp = tfopen(name, "r");
+        } else {
+            std::string file;
+
+            // Open the file verbatim.
+            this->fp = tfopen(name, "r");
+
+            if (this->fp == NULL && !fullPath(name)) {
+                // Check all paths.
+                // Search the user paths.
+                for (int level = 0; level < userincludedirs.size(); ++level) {
+                    file = buildFilename(userincludedirs[level], name);
+                    if ((this->fp = tfopen(file.c_str(), "r")) != NULL) {
+                        break;
+                    }
+                }
+
+                if (this->fp == NULL) {
+                    // Search the system paths.
+                    for (int level = 0; level < includedirs.size(); ++level) {
+                        file = buildFilename(includedirs[level], name);
+                        if ((this->fp = tfopen(file.c_str(), "r")) != NULL) {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
     }
+
     if (this->fp == NULL) {
         // error opening file
         return false;

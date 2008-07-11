@@ -505,7 +505,12 @@ bool Plexer::parse(std::string name, void* data, array<Macro>* fileMacros)
         errors.add(Error::INTERNAL, __FILE__, __LINE__, 0, 0, 0, "Can't create preprocessor.");
         return false;
     }
-    if (!pp->setInput(fp)) {
+    // Set up default include paths.
+    for (int level = 0; level < includes.size(); ++level) {
+        pp->addInclude(includes[level]);
+    }
+
+    if (!pp->setInput(fp, true)) {
         errors.add(Error::ERROR, "<initialization>", 0, 0, 0, 0, "Can't open %s.", name.c_str());
         delete pp;
         return false;

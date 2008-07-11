@@ -534,7 +534,7 @@ public:
      * @param fp If non-NULL The input file pointer, if NULL the current #name is opened..
      * @return true if the operation suceedded.
      */
-    bool setInput(FILE *fp = NULL);
+    bool setInput(FILE *fp = NULL, bool usePath = false);
     void addUserInclude(const std::string& name);
     void addInclude(const std::string& name);
     void addDefine(const std::string& name, const std::string& value = "");

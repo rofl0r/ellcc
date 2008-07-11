@@ -1859,7 +1859,7 @@ static int Link(const std::string& OutputFilename,
   // configuration.  Hence, we must sanitize its environment.
         
   // Determine the location of the ld program.
-  sys::Path ld = FindExecutable("gcc", progname);
+  sys::Path ld = FindExecutable("ld", progname);
   if (ld.isEmpty())
     PrintAndExit("Failed to find ld");
 
@@ -1886,8 +1886,11 @@ static int Link(const std::string& OutputFilename,
   //  GCC mysteriously knows how to do it.
   std::vector<std::string> args;
   args.push_back(ld.c_str());
-  // RICH: args.push_back("-fno-strict-aliasing");
-  // RICH: args.push_back("-O3");
+  args.push_back("--build-id");
+  args.push_back("-melf_i386");
+  args.push_back("-static");
+  args.push_back("--hash-style=gnu");
+  args.push_back("/home/rich/local/i686-pc-linux-gnu/lib/crt0.o");
   args.push_back("-o");
   args.push_back(OutputFilename);
   for (unsigned i = 0; i < InputFilenames.size(); ++i ) {
@@ -1915,6 +1918,10 @@ static int Link(const std::string& OutputFilename,
         args.push_back(LinkItems[index].first);
     }
 
+  args.push_back("-L/home/rich/local/i686-pc-linux-gnu/lib");
+  args.push_back("-lc");
+  args.push_back("-L/home/rich/llvm-gcc/install/lib/gcc/i686-pc-linux-gnu/4.2.1");
+  args.push_back("-lgcc");
   // Now that "args" owns all the std::strings for the arguments, call the c_str
   // method to get the underlying string array.  We do this game so that the
   // std::string array is guaranteed to outlive the const char* array.
@@ -2695,9 +2702,9 @@ int main(int argc, char **argv)
                 Input input(*fileIt, type);
                 // RICH: Configure the language.
                 if (type == CC || type == II) {
-                    input.language = pw::Plexer::Create("/home/rich/ellcc/config/cxx98.ecf", errors);
+                    input.language = pw::Plexer::Create("cxx98.ecf", errors);
                 } else {
-                    input.language = pw::Plexer::Create("/home/rich/ellcc/config/c99.ecf", errors);
+                    input.language = pw::Plexer::Create("c99.ecf", errors);
                 }
                 InpList.push_back(input);
                 ++fileIt;
