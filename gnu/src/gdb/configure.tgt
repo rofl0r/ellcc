@@ -220,6 +220,11 @@ iq2000-*-*)
 	gdb_sim=../sim/iq2000/libsim.a
 	;;
 
+nios2-*-*)
+	# Target: Altera Nios2 softcore
+	gdb_target_obs="nios2-tdep.o"
+	;;
+
 m32c-*-*)
 	# Target: Renesas M32C family
 	gdb_target_obs="m32c-tdep.o prologue-value.o"

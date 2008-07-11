@@ -38,7 +38,7 @@ if [ $install -eq 0 ] ; then
     exit 1
   fi
 
-  sed -e "s:/.*/binutils/src/missing ::g" Makefile > tmp$$
+  sed -e "s:/.*/gnu/src/missing ::g" Makefile > tmp$$
   mv tmp$$ Makefile
 
   make

@@ -104,7 +104,7 @@ $(THIS): $(PW_OBJS)
 # 'pwpp' hasn't recently changed
 TOCLEAN += quicktest
 quicktest: pwpp
-	./pwpp main.cc
+	-./pwpp main.cc
 	@touch quicktest
 	@echo BUILD FINISHED
 
