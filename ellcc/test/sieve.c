@@ -2,15 +2,6 @@
 /*      Erastosthenes Sieve Prime Number Program in C                   */
 /*      from Byte, Sept. 1981, pg. 186                                  */
 /*                                                                      */
-/*
- *	To compile with any Introl-C compiler
- *	(replace XX with processor number):
- *		ccXX -g sieve.c
- *	To link:
- *		ildXX -gnXX -o sieveXX sieve.oXX -lc
- *	To run:
- *		idb -mXX -w -i sieveXX
- */
 
 #include <stdio.h>
 

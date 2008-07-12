@@ -531,7 +531,8 @@ public:
      */
     bool setInput(const char *string);
     /** Set the current input stream to a file.
-     * @param fp If non-NULL The input file pointer, if NULL the current #name is opened..
+     * @param fp If non-NULL The input file pointer, if NULL the current #name is opened.
+     * @param usePath Use the inlude path list to find the file.
      * @return true if the operation suceedded.
      */
     bool setInput(FILE *fp = NULL, bool usePath = false);
