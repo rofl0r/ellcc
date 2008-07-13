@@ -32,7 +32,7 @@ cd obj
 
 if [ $install -eq 0 ] ; then
   echo Making binutils for $targets
-  ../src/configure CC=$cc CXX=$cxx --enable-64-bit-bfd --enable-targets=$targetlist --prefix=$prefix
+  ../src/configure CC=$cc CXX=$cxx --enable-64-bit-bfd --enable-targets=$targetlist --program-prefix=ecc- --prefix=$prefix
   if [ $? -ne 0 ] ; then
     echo configure for binutils failed
     exit 1

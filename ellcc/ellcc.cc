@@ -1892,7 +1892,7 @@ static int Link(const std::string& OutputFilename,
   // configuration.  Hence, we must sanitize its environment.
         
   // Determine the location of the ld program.
-  sys::Path ld = FindExecutable("ld", progname);
+  sys::Path ld = FindExecutable("ecc-ld", progname);
   if (ld.isEmpty())
     PrintAndExit("Failed to find ld");
 
@@ -1997,7 +1997,7 @@ static int Assemble(const std::string &OutputFilename,
   // environment variables so that the programs it uses can configure
   // themselves identically.
   // RICH: Choose the appropriate assembler.
-  std::string assm = "as";
+  std::string assm = "ecc-as";
   if (OutputMachine.size()) {
       assm = OutputMachine + "-elf-as";
   }
