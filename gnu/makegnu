@@ -30,6 +30,9 @@ fi
 
 cd obj
 
+# Symbolic links to create.
+linklist="addr2line ar ld nm objcopy objdump ranlib readelf size strings strip"
+
 if [ $install -eq 0 ] ; then
   echo Making binutils for $targets
   ../src/configure CC=$cc CXX=$cxx --enable-64-bit-bfd --enable-targets=$targetlist --program-prefix=ecc- --prefix=$prefix
@@ -52,6 +55,11 @@ else
     echo make install for binutils failed
     exit 1
   fi
+  for target in $targets ; do
+    for tool in $linklist ; do
+      (cd $prefix/bin; ln -sf ecc-$tool $target-$tool)
+    done
+  done
 fi
 
 cd ..

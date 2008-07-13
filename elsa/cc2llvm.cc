@@ -23,7 +23,7 @@
 
 #define BITS_PER_BYTE	8	// RICH: Temporary.
 
-#if 0
+#if 1
 // Really verbose debugging.
 #define VDEBUG(who, where, what) cout << toString(where) << ": " << who << " "; what; cout << "\n"
 #else
@@ -197,6 +197,7 @@ const llvm::Type* CC2LLVMEnv::makeTypeSpecifier(SourceLoc loc, Type *t)
         FunctionType *ft = t->asFunctionType();
         const llvm::Type* returnType = makeTypeSpecifier(loc, ft->retType);
         std::vector<const llvm::Type*>args;
+#if RICH
 	if (returnType->getTypeID() == llvm::Type::StructTyID) {
 	    /* LLVM does not support a compound return type.
              * We'll call it a pointer here. In practice, a pointer to
@@ -207,6 +208,7 @@ const llvm::Type* CC2LLVMEnv::makeTypeSpecifier(SourceLoc loc, Type *t)
             args.push_back(rt);
             returnType = llvm::Type::VoidTy;
 	}
+#endif
         makeParameterTypes(ft, args);
         type = llvm::FunctionType::get(returnType, args, ft->acceptsVarargs() || (ft->flags & FF_NO_PARAM_INFO));
         break;
@@ -415,13 +417,15 @@ void CC2LLVMEnv::makeParameterTypes(FunctionType *ft, std::vector<const llvm::Ty
 	// type will be NULL if a "..." is encountered in the parameter list.
 	if (type) {
             VDEBUG("makeParameters", param->loc, type->print(cout));
+#if RICH
             if (type->getTypeID() == llvm::Type::StructTyID) {
                 // Pass a structure by value.
                 // RICH: Ignore for now.
             } else {
+#endif
                 // A simple type.
                 args.push_back(type);
-            }
+// RICH            }
         }
     }
 }
@@ -571,6 +575,7 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
         returnType = env.makeTypeSpecifier(nameAndParams->var->loc, funcType->retType);
         std::vector<const llvm::Type*>args;
         env.makeParameterTypes(funcType, args);
+#if RICH
         if (returnType->getTypeID() == llvm::Type::StructTyID) {
 	    /* LLVM does not support a compound return type.
              * We'll call it a pointer here. In practice, a pointer to
@@ -581,6 +586,7 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
             args.push_back(rt);
             returnType = llvm::Type::VoidTy;
         }
+#endif
         llvm::FunctionType* ft = llvm::FunctionType::get(returnType, args, funcType->acceptsVarargs());
         env.function = llvm::Function::Create(ft, linkage, nameAndParams->var->name, env.mod);
         env.function->setCallingConv(llvm::CallingConv::C); // RICH: Calling convention.

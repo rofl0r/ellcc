@@ -997,6 +997,10 @@ static cl::list<std::string> Includes("I", cl::Prefix,
     cl::desc("Specify location to search for included source"),
     cl::value_desc("dir"));
 
+static cl::list<std::string> IncludeBefore("isystem", cl::Prefix,
+    cl::desc("Insert an include directory before the system include directories"),
+    cl::value_desc("dir"));
+
 static cl::list<std::string> Defines("D", cl::Prefix,
     cl::desc("Specify a pre-processor symbol to define"),
     cl::value_desc("symbol"));
@@ -1069,6 +1073,8 @@ static cl::opt<bool> ElsaPrettyPrint("bpprint", cl::Optional, cl::init(false),
     cl::desc("Output pretty printed source"));
 static cl::opt<bool> ElsaPrettyPrintAfterElab("bpprintAfterElab", cl::Optional, cl::init(false),
     cl::desc("Output pretty printed source after elaboration"));
+static cl::opt<bool> Fnobuiltin("fno-builtin", cl::Optional, cl::init(false),
+    cl::desc("gcc compatability option"));
 
 //===----------------------------------------------------------------------===//
 //===          LINKER OPTIONS
@@ -1828,6 +1834,11 @@ static int Preprocess(const std::string &OutputFilename,
             pp->addUserInclude(Includes[i]);
         }
 
+        // Set the initial system include paths.
+        for (size_t i = 0; i < IncludeBefore.size(); ++i) {
+            pp->addInclude(IncludeBefore[i]);
+        }
+
         // Set the include paths.
         for (int i = 0; i < language->includes.size(); ++i) {
             pp->addInclude(language->includes[i]);
@@ -1894,7 +1905,7 @@ static int Link(const std::string& OutputFilename,
   // Determine the location of the ld program.
   sys::Path ld = FindExecutable("ecc-ld", progname);
   if (ld.isEmpty())
-    PrintAndExit("Failed to find ld");
+    PrintAndExit("Failed to find " + ld.toString());
 
   // Mark the output files for removal if we get an interrupt.
   sys::RemoveFileOnSignal(sys::Path(OutputFilename));
@@ -2004,7 +2015,7 @@ static int Assemble(const std::string &OutputFilename,
   
   sys::Path as = FindExecutable(assm, progname);
   if (as.isEmpty())
-    PrintAndExit("Failed to find as");
+    PrintAndExit("Failed to find " + assm);
 
   // Mark the output files for removal if we get an interrupt.
   sys::RemoveFileOnSignal(sys::Path(OutputFilename));
@@ -2422,12 +2433,17 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         assert(target.get() && "Could not allocate target machine!");
         TargetMachine &Target = *target.get();
 
-        sys::Path to(input.name.getBasename());
+        sys::Path to;
+        if (phase == FinalPhase && OutputFilename != "") {
+            to = sys::Path(OutputFilename);
+        } else {
+            to = sys::Path(input.name.getBasename());
+        }
 
 #if RICH
         // Figure out where we are going to send the output...
         std::ostream *Out = NULL;
-        if (OutputFilename != "") {
+        if (phase == FinalPhase && OutputFilename != "") {
             if (OutputFilename == "-")
                 return &std::cout;
 
@@ -2448,23 +2464,31 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
 #endif
 
         switch (FileType) {
-            case TargetMachine::AssemblyFile:
-                if (MArch->Name[0] != 'c' || MArch->Name[1] != 0) { // not CBE
+        case TargetMachine::AssemblyFile:
+            if (MArch->Name[0] != 'c' || MArch->Name[1] != 0) { // not CBE
+                if (to.getSuffix() == "") {
                     to.appendSuffix("s");
-                    nextType = S;
-                } else {
-                    to.appendSuffix("cbe.c");
-                    nextType = CBE;
                 }
-                break;
-            case TargetMachine::ObjectFile:
+                nextType = S;
+            } else {
+                if (to.getSuffix() == "") {
+                    to.appendSuffix("cbe.c");
+                }
+                nextType = CBE;
+            }
+            break;
+        case TargetMachine::ObjectFile:
+            if (to.getSuffix() == "") {
                 to.appendSuffix("o");
-                nextType = O;
-                break;
-            case TargetMachine::DynamicLibrary:
+            }
+            nextType = O;
+            break;
+        case TargetMachine::DynamicLibrary:
+            if (to.getSuffix() == "") {
                 to.appendSuffix("dll");
-                nextType = DLL;
-                break;
+            }
+            nextType = DLL;
+            break;
         }
 
         if (Verbose) {
@@ -2585,8 +2609,14 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
                 << " to become " << fileTypes[nextType] << "\n";
         }
 
-        sys::Path to(input.name.getBasename());
-        to.appendSuffix(langToExt[nextType]);
+        sys::Path to;
+        if (phase == FinalPhase && OutputFilename != "") {
+            to = sys::Path(OutputFilename);
+        } else {
+            to = sys::Path(input.name.getBasename());
+            to.appendSuffix(langToExt[nextType]);
+        }
+
 
         std::string ErrMsg;  
         if(Assemble(to.toString(), input.name.toString(), ErrMsg) != 0) {
@@ -2774,6 +2804,12 @@ int main(int argc, char **argv)
             }
             else
                 break; // we're done with the list
+        }
+
+        if (   OutputFilename != ""
+            && InpList.size() > 1
+            && (FinalPhase == GENERATION || FinalPhase == ASSEMBLY)) {
+                PrintAndExit("an output file name was specified with multiple input files");
         }
 
         // Go through the phases.
