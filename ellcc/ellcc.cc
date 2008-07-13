@@ -740,8 +740,8 @@ static void setupMappings()
     machines["ia64"] = "ia64";
     machines["mips"] = "mips";
     machines["nios2"] = "nios2";
-    machines["powerpc"] = "ppc";
-    machines["powerpc64"] = "ppc64";
+    machines["powerpc"] = "powerpc";
+    machines["powerpc64"] = "powerpc64";
     machines["sparc"] = "sparc";
     machines["spu"] = "cellspu";
     machines["x86"] = "x86";
