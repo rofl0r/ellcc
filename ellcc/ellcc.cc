@@ -744,8 +744,8 @@ static void setupMappings()
     machines["powerpc64"] = "powerpc64";
     machines["sparc"] = "sparc";
     machines["spu"] = "cellspu";
-    machines["x86"] = "x86";
-    machines["x86_64"] = "x86-64";
+    machines["x86"] = "i686";
+    machines["x86_64"] = "x86_64";
 
     emulations["alpha"] = "elf64alpha";
     emulations["arm"] = "armelf";
