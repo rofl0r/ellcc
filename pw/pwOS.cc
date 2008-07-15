@@ -304,7 +304,7 @@ breakout:
     
     // Find the extension by finding the last occurrance of BASETERM.
     for (ext = name.length() - 1; ext >= 0 ; --ext) {
-        if (filename[ext] == BASETERM) {
+        if (name[ext] == BASETERM) {
             // We found an extension separator.
             break;
         }

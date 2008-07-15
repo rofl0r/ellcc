@@ -2,8 +2,8 @@
 typedef struct 
 {
 } div_t;
-div_t div (int numer, int denom);
-div_t div(int num , int denom)
+div_t main (int numer, int denom);
+div_t main(int num , int denom)
 {
  int r;
 

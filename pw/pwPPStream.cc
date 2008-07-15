@@ -422,7 +422,7 @@ again:
         string += nextchar;                     // Add character to token.
         readchar();
         token = NONE;
-    }if (token == options->IDENTIFIER) {
+    } if (token == options->IDENTIFIER) {
         std::string name;
         std::string body;
         Macro* def;
@@ -473,11 +473,14 @@ again:
             // The next pp token must be '(' to expand.
 
             myneednl = 0;
+            bool oldnoexpand = noexpand;
+            noexpand = true;
             do {
                 pptoken();
                 if (token == NL)
                     ++myneednl;
             } while (token == WS || token == NL || token == COMMENT);
+            noexpand = oldnoexpand;
 
             if (token != operators[LPAREN]) {
                 // Not a function-like macro expansion.
@@ -1197,6 +1200,8 @@ endoffile:
                 conditionals->hastruepart = true;
                 conditionals->line = pstartline;
                 conditionals->column = pstartcolumn;
+            } else {
+                goto endofline;
             }
         leave:
             break;

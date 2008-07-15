@@ -23,7 +23,7 @@
 
 #define BITS_PER_BYTE	8	// RICH: Temporary.
 
-#if 1
+#if 0
 // Really verbose debugging.
 #define VDEBUG(who, where, what) cout << toString(where) << ": " << who << " "; what; cout << "\n"
 #else
@@ -197,18 +197,6 @@ const llvm::Type* CC2LLVMEnv::makeTypeSpecifier(SourceLoc loc, Type *t)
         FunctionType *ft = t->asFunctionType();
         const llvm::Type* returnType = makeTypeSpecifier(loc, ft->retType);
         std::vector<const llvm::Type*>args;
-#if RICH
-	if (returnType->getTypeID() == llvm::Type::StructTyID) {
-	    /* LLVM does not support a compound return type.
-             * We'll call it a pointer here. In practice, a pointer to
-	     * the return value holding area will be passed as the first
-	     * argument to the function. The function returns void.
-	     */
-	    const llvm::Type* rt = llvm::PointerType::get(returnType, 0);	// RICH: address space.
-            args.push_back(rt);
-            returnType = llvm::Type::VoidTy;
-	}
-#endif
         makeParameterTypes(ft, args);
         type = llvm::FunctionType::get(returnType, args, ft->acceptsVarargs() || (ft->flags & FF_NO_PARAM_INFO));
         break;
@@ -417,15 +405,7 @@ void CC2LLVMEnv::makeParameterTypes(FunctionType *ft, std::vector<const llvm::Ty
 	// type will be NULL if a "..." is encountered in the parameter list.
 	if (type) {
             VDEBUG("makeParameters", param->loc, type->print(cout));
-#if RICH
-            if (type->getTypeID() == llvm::Type::StructTyID) {
-                // Pass a structure by value.
-                // RICH: Ignore for now.
-            } else {
-#endif
-                // A simple type.
-                args.push_back(type);
-// RICH            }
+            args.push_back(type);
         }
     }
 }
@@ -575,18 +555,6 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
         returnType = env.makeTypeSpecifier(nameAndParams->var->loc, funcType->retType);
         std::vector<const llvm::Type*>args;
         env.makeParameterTypes(funcType, args);
-#if RICH
-        if (returnType->getTypeID() == llvm::Type::StructTyID) {
-	    /* LLVM does not support a compound return type.
-             * We'll call it a pointer here. In practice, a pointer to
-	     * the return value holding area will be passed as the first
-	     * argument to the function. The function returns void.
-	     */
-            const llvm::Type* rt = llvm::PointerType::get(returnType, 0);	// RICH: address space.
-            args.push_back(rt);
-            returnType = llvm::Type::VoidTy;
-        }
-#endif
         llvm::FunctionType* ft = llvm::FunctionType::get(returnType, args, funcType->acceptsVarargs());
         env.function = llvm::Function::Create(ft, linkage, nameAndParams->var->name, env.mod);
         env.function->setCallingConv(llvm::CallingConv::C); // RICH: Calling convention.
@@ -1034,6 +1002,14 @@ void S_return::cc2llvm(CC2LLVMEnv &env) const
         int deref;
         llvm::Value* value = expr->cc2llvm(env, deref);
         VDEBUG("Return type", loc, cout << expr->expr->type->toString() << " deref " << deref);
+        if (   value->getType()->getTypeID() == llvm::Type::PointerTyID
+            && (   value->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID
+                || value->getType()->getContainedType(0)->getTypeID() == llvm::Type::StructTyID)) {
+            if (!llvm::Constant::classof(value)) {
+                ++deref;
+            }
+            value = env.access(value, false, deref, 0); // RICH: Volatile.
+        }
         if (deref >= 2 && expr->expr->type->isReference()) {
             // Return a reference as a pointer.
             value = env.access(value, false, deref, 1); // RICH: Volatile.
@@ -2577,6 +2553,28 @@ llvm::Value* CC2LLVMEnv::doassign(SourceLoc loc, llvm::Value* destination, int d
     if (   destination->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID
         || destination->getType()->getContainedType(0)->getTypeID() == llvm::Type::StructTyID) {
         // This is a compound assignment.
+#if 1 // RICH: These are now first class types.
+        if (llvm::ConstantArray::classof(source)) {
+#if RICH
+            llvm::GlobalVariable* gv = new llvm::GlobalVariable(source->getType(), true, llvm::GlobalValue::InternalLinkage, (llvm::Constant*)source, ".ar", mod);
+            // Get the address of the array.
+            checkCurrentBlock();
+            VDEBUG("GEP5", loc, );
+            source = builder.CreateGEP(gv, llvm::Constant::getNullValue(destination->getType()), "");
+            VDEBUG("GEP5", loc, source->print(cout));
+#endif
+            --deref2;
+        }
+        // ++deref1;
+        // ++deref2;
+        source = access(source, false, deref2);                 // RICH: Volatile.
+        VDEBUG("doassign get struct", loc, destination->print(cout));
+        destination = access(destination, false, deref1, 1);                 // RICH: Volatile.
+        VDEBUG("doassign source struct", loc, source->print(cout));
+        VDEBUG("doassign destination struct", loc, destination->print(cout));
+        new llvm::StoreInst(source, destination, false, currentBlock);	// RICH: isVolatile
+        return source;
+#else
         source = access(source, false, deref2, 1);                 // RICH: Volatile.
         destination = access(destination, false, deref1, 1);                 // RICH: Volatile.
         llvm::Function* function = llvm::Intrinsic::getDeclaration(mod, llvm::Intrinsic::memcpy_i32); // RICH: size.
@@ -2611,6 +2609,7 @@ llvm::Value* CC2LLVMEnv::doassign(SourceLoc loc, llvm::Value* destination, int d
         value = builder.CreateCall(function, parameters.begin(), parameters.end());
         VDEBUG("doassign memcpy", loc, value->print(cout));
         return source;
+#endif // RICH
     } else {
         VDEBUG("doassign", loc, source->print(cout));
         source = access(source, false, deref2);                 // RICH: Volatile.

@@ -19,6 +19,7 @@ static pw::ErrorList errors;
 int main(int argc, char** argv)
 {
     pw::array<char*> includes;
+    int files = 0;
     
     // Simple command line argument gathering.
     for (int i = 1; i < argc; ++i) {
@@ -29,6 +30,8 @@ int main(int argc, char** argv)
             }
 
             argv[i] = NULL;
+        } else {
+            ++files;
         }
     }
 
@@ -83,16 +86,20 @@ int main(int argc, char** argv)
     
         // Set up the output file.
         FILE* ofp;
-        std::string path;
-        std::string name;
-        std::string extension;
-        pw::parseFilename(file, path, name, extension);
-        name = pw::buildFilename("", name, "i");
-        ofp = pw::tfopen(name.c_str(), "w");
-        if (ofp == NULL) {
-            fprintf(stderr, "can't open %s for writing\n", name.c_str());
-            delete pp;
-            exit(1);
+        if (files > 1) {
+            std::string path;
+            std::string name;
+            std::string extension;
+            pw::parseFilename(file, path, name, extension);
+            name = pw::buildFilename("", name, "i");
+            ofp = pw::tfopen(name.c_str(), "w");
+            if (ofp == NULL) {
+                fprintf(stderr, "can't open %s for writing\n", name.c_str());
+                delete pp;
+                exit(1);
+            }
+        } else {
+            ofp = stdout;
         }
 
         if (configuration) {
@@ -137,7 +144,9 @@ int main(int argc, char** argv)
             }
         }
 
-        pw::fclose(ofp);
+        if (ofp != stdout) {
+            pw::fclose(ofp);
+        }
         delete pp;
     }
 

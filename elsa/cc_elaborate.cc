@@ -1593,6 +1593,11 @@ bool S_return::elaborate(ElabVisitor &env)
 
     if (ft->retType->isCompoundType()) {
       CompoundType *retTypeCt = ft->retType->asCompoundType();
+      Variable *ctor = env.getCopyCtor(retTypeCt);
+      if (ctor == NULL) {
+          // rdp: A trivial copy constructor. Treat as POD.
+          return true;
+      }
 
       // This is an instance of return by value of a compound type.
       // We accomplish this by calling the copy ctor.
@@ -1615,7 +1620,7 @@ bool S_return::elaborate(ElabVisitor &env)
       // make the constructor function
       env.push(expr->getAnnot());// e.g. in/d0049.cc breaks w/o this
       ctorStatement = env.makeCtorStatement(loc, retVar, ft->retType,
-                                            env.getCopyCtor(retTypeCt), args0);
+                                            ctor, args0);
       env.pop(expr->getAnnot());
 
       // make the original expression a clone

@@ -614,6 +614,18 @@ void PP::getToken(Filter filter)
             continue;
         }
 
+        if (info.tokenclass == TokenInfo::TCSPACE && (filter == GETALL || filter == GETNL)) {
+            if (info.token == PPStream::COMMENT) {
+                info.token = PPStream::NL;
+            }
+            if (info.startline + 1 < info.endline) {
+                // Compensate for multi line tokens.
+                for (int line = info.startline; line < info.endline; ++line) {
+                    info.string += "\n";
+                }
+            }
+        }
+
         if (filter == GETALL || info.tokenclass != TokenInfo::TCSPACE) {
             // Return all or non-space tokens.
             return;

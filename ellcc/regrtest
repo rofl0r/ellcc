@@ -290,6 +290,11 @@ testCrun
 testCparse t0006.c
 testCparse t0007.c
 testCparse t0008.c
+testCparse t0009.c
+testCparse t0010.c
+testCparse t0011.c
+testCparse t0012.c
+testCparse t0013.c
 
 
 # is K&R built?
