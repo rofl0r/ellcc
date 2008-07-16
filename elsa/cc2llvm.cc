@@ -1787,10 +1787,36 @@ llvm::Value* CC2LLVMEnv::initializer(const Initializer* init, Type* type, int& d
     // Handle an initializer.
     ASTSWITCHC(Initializer, init) {
     ASTCASEC(IN_expr, e) {
-        value = e->e->cc2llvm(*this, deref);
-        if (!top) {
-            value = access(value, false, deref);                 // RICH: Volatile.
-            makeCast(e->e->loc, e->e->type, value, type);
+	if (type->isArrayType()) {
+            const E_stringLit* s = e->e->ifE_stringLit();
+            cerr << toString(init->loc) << ": ";
+            if (s) {
+                // Initialize an array with a string.
+                ArrayType *at = type->asArrayType();
+                const llvm::Type* elttype = makeTypeSpecifier(init->loc, at->eltType);
+                int size = at->getSize();
+                if (size == ArrayType::NO_SIZE) {
+                    size = s->data->getDataLen();
+                } else if (size == ArrayType::DYN_SIZE) {
+                    cerr << toString(init->loc) << ": ";
+                    xunimp("dynamic array type in initializer");
+                }
+
+	        std::vector<llvm::Constant*> elements;
+                for (int i = 0; i < size; ++i) {
+                    elements.push_back(llvm::ConstantInt::get(elttype, i < s->data->getDataLen() ? s->data->getData()[i] : 0));
+                }
+	        value = llvm::ConstantArray::get((llvm::ArrayType*)makeTypeSpecifier(init->loc, type), elements);
+                break;
+            } else {
+                xunimp("initializing an array with an expression");
+            }
+        } else {
+            value = e->e->cc2llvm(*this, deref);
+            if (!top) {
+                value = access(value, false, deref);                 // RICH: Volatile.
+                makeCast(e->e->loc, e->e->type, value, type);
+            }
         }
     }
 
