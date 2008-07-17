@@ -506,7 +506,7 @@ struct Options {
 
 /** A preprocessor.
  */
-class  PP {
+class PP {
 public:
     /** Token filters.
      */

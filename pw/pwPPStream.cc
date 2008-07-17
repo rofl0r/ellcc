@@ -255,7 +255,7 @@ again:
 
     // newline and pp-token lookahead needed for macro (
     // and string concatenation
-    if (newlinecount) {
+    if (newlinecount && (first == NULL || first->name.length() == 0)) {
         --newlinecount;
         token = NL;
         string += '\n';
@@ -771,6 +771,10 @@ again:
             noexpand = oldexpand;
         }
 
+        if (first == NULL && mendline > mstartline) {
+            // A multi-line macro expansion.
+            newlinecount += mendline - mstartline;
+        }
         // expand macro
         first = new Stream(first, name, body, nextchar, false);
         nextchar = 0;
