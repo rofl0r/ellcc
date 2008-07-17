@@ -263,7 +263,8 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLoc loc, AtomicType 
 	    type = llvm::Type::DoubleTy;
 	    break;
         case ST_LONG_DOUBLE:
-	    type = llvm::Type::FP128Ty;	// RICH: Is this right?
+	    type = llvm::Type::FP128Ty;	// RICH: Is this right? This depends on the target processor.
+	    type = llvm::Type::DoubleTy; // RICH: Treat as double for now.
 	    break;
         case ST_VOID:
             type = llvm::Type::VoidTy;
