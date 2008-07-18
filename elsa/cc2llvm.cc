@@ -23,7 +23,7 @@
 
 #define BITS_PER_BYTE	8	// RICH: Temporary.
 
-#if 0
+#if 1
 // Really verbose debugging.
 #define VDEBUG(who, where, what) cout << toString(where) << ": " << who << " "; what; cout << "\n"
 #else
@@ -115,15 +115,14 @@ llvm::Value* CC2LLVMEnv::checkCondition(SourceLoc loc, llvm::Value* value, int d
     {
         // Not a boolean, check for non-zero.
         checkCurrentBlock();
-	llvm::Type::TypeID id = ctype->getTypeID();
         llvm::Value* zero = llvm::Constant::getNullValue(value->getType());
-	if (id == llvm::Type::IntegerTyID || id == llvm::Type::PointerTyID) {
+	if (ctype->isInteger() || ctype->getTypeID() == llvm::Type::PointerTyID) {
             if (neg) {
                 value = builder.CreateICmpEQ(value, zero);
             } else {
                 value = builder.CreateICmpNE(value, zero);
             }
-	} else if (id == llvm::Type::FloatTyID) {
+	} else if (ctype->isFloatingPoint()) {
 	    // RICH: ordered vs. unordered.
             if (neg) {
 	        value = builder.CreateFCmpOEQ(value, zero);
@@ -2664,12 +2663,11 @@ llvm::Value* E_assign::cc2llvm(CC2LLVMEnv &env, int& deref) const
     if (op == BIN_ASSIGN) {
 	// Assign is simple. Get it out of the way.
         source = env.doassign(loc, destination, deref1, target->type, source, deref2, src->type);
-        deref = 0;
-        return source;
+        deref = deref1;
+        return destination;
     }
 
     // Handle all other forms of assignment operators.
-
     destination = env.access(destination, false, deref1, 1);                 // RICH: Volatile.
     llvm::Value* temp = NULL;					// A place to store the temporary.
     temp = env.binop(loc, op, target, destination, deref1, src, source, deref2);
@@ -2682,9 +2680,9 @@ llvm::Value* E_assign::cc2llvm(CC2LLVMEnv &env, int& deref) const
     }
     VDEBUG("Store2 source", loc, temp->print(cout));
     VDEBUG("Store2 destination", loc, destination->print(cout));
+    deref = deref1;
     new llvm::StoreInst(temp, destination, false, env.currentBlock);	// RICH: Volatile
-    deref = 0;
-    return source;
+    return destination;
 }
 
 llvm::Value *E_new::cc2llvm(CC2LLVMEnv &env, int& deref) const

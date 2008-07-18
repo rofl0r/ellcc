@@ -295,6 +295,9 @@ testCparse t0010.c
 testCparse t0011.c
 testCparse t0012.c
 testCparse t0013.c
+testCparse t0014.c
+testCparse t0015.c
+testCparse t0016.c
 
 
 # is K&R built?

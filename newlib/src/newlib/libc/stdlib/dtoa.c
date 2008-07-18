@@ -447,7 +447,7 @@ _DEFUN (_dtoa_r,
 	    {
 	      /* prevent overflows */
 	      j &= Bletch - 1;
-	      d.d /= bigtens[n_bigtens - 1];
+	      // RICH d.d /= bigtens[n_bigtens - 1];
 	      ieps++;
 	    }
 	  for (; j; j >>= 1, i++)
@@ -456,7 +456,7 @@ _DEFUN (_dtoa_r,
 		ieps++;
 		ds *= bigtens[i];
 	      }
-	  d.d /= ds;
+	  // RICH d.d /= ds;
 	}
       else if ((j1 = -k) != 0)
 	{
@@ -495,7 +495,7 @@ _DEFUN (_dtoa_r,
 	  /* Use Steele & White method of only
 	   * generating digits needed.
 	   */
-	  eps.d = 0.5 / tens[ilim - 1] - eps.d;
+	  // RICH eps.d = 0.5 / tens[ilim - 1] - eps.d;
 	  for (i = 0;;)
 	    {
 	      L = d.d;
@@ -559,7 +559,7 @@ _DEFUN (_dtoa_r,
 	}
       for (i = 1;; i++)
 	{
-	  L = d.d / ds;
+	  // RICH L = d.d / ds;
 	  d.d -= L * ds;
 #ifdef Check_FLT_ROUNDS
 	  /* If FLT_ROUNDS == 2, L will usually be high by 1 */
