@@ -1,12 +1,1 @@
-alpha-elf
-arm-elf
-spu-elf
-ia64-elf
-nios2-elf
-mips-elf
-powerpc-elf
-powerpc64-elf
-sparc-elf
-x86-elf
-x86_64-elf
-x86-pe
+gnu/targets
