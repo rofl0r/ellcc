@@ -301,6 +301,8 @@ testCparse t0013.c
 testCparse t0014.c
 testCparse t0015.c
 testCparse_special_arm -S t0016.c
+testCparse t0017.c
+testCparse t0018.c
 
 
 # is K&R built?

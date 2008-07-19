@@ -1553,6 +1553,29 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
 	}
     };
 
+    if (leftType->isArrayType()) {
+        // An array becomes a pointer to the first element.
+        // leftValue = builder.CreateGEP(leftValue, llvm::ConstantInt::get(targetData.getIntPtrType(), 0));
+        std::vector<llvm::Value*> indices;
+        indices.push_back(llvm::Constant::getNullValue(targetData.getIntPtrType()));
+        indices.push_back(llvm::Constant::getNullValue(targetData.getIntPtrType()));
+        leftValue = builder.CreateGEP(leftValue, indices.begin(), indices.end(), "");
+        VDEBUG("makeCast array type", loc, cout << "left "; leftValue->print(cout));
+    }
+    if (rightType->isArrayType()) {
+        // An array becomes a pointer to the first element.
+        std::vector<llvm::Value*> indices;
+#if RICH
+        const llvm::ArrayType* at = &llvm::cast<llvm::ArrayType>(*(*rightValue)->getType());
+        const llvm::Type *et = at->getElementType();
+        indices.push_back(llvm::Constant::getNullValue(at));
+        indices.push_back(llvm::Constant::getNullValue(et));
+#endif
+        indices.push_back(llvm::Constant::getNullValue(targetData.getIntPtrType()));
+        indices.push_back(llvm::Constant::getNullValue(targetData.getIntPtrType()));
+        *rightValue = builder.CreateGEP(*rightValue, indices.begin(), indices.end(), "");
+        VDEBUG("makeCast array type", loc, cout << "right "; (*rightValue)->print(cout));
+    }
     Data left(leftType, &leftValue);
     Data right(rightType, rightValue);
     Data* source = NULL;	// This will remain NULL if no cast is needed.
@@ -2475,11 +2498,18 @@ llvm::Value *E_addrOf::cc2llvm(CC2LLVMEnv &env, int& deref) const
 llvm::Value *E_deref::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     llvm::Value* source = ptr->cc2llvm(env, deref);
+    VDEBUG("E_deref", loc, cout << "deref " << deref << " "; source->print(cout));
+    VDEBUG("E_deref", loc, cout << "deref " << deref << " "; source->getType()->getContainedType(0)->print(cout));
+    /** @TODO I'm not pleased with this mess. The parser should help us more here.
+     */
     bool first = source->getType()->getContainedType(0)->isFirstClassType();
     if (   first
         && source->getType()->getContainedType(0)->getTypeID() != llvm::Type::ArrayTyID
         && source->getType()->getContainedType(0)->getTypeID() != llvm::Type::StructTyID) {
-        ++deref;
+        if (   source->getType()->getContainedType(0)->getTypeID() != llvm::Type::PointerTyID
+            || source->getType()->getContainedType(0)->getContainedType(0)->getTypeID() != llvm::Type::FunctionTyID) {
+            ++deref;
+        }
     }
     VDEBUG("E_deref", loc, cout << "deref " << deref << " "; source->print(cout));
     return source;
@@ -2576,75 +2606,19 @@ llvm::Value* CC2LLVMEnv::doassign(SourceLoc loc, llvm::Value* destination, int d
                                                  llvm::Value* source, int deref2, Type* stype)
 {
     checkCurrentBlock();
-    if (   destination->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID
-        || destination->getType()->getContainedType(0)->getTypeID() == llvm::Type::StructTyID) {
-        // This is a compound assignment.
-#if 1 // RICH: These are now first class types.
-        if (llvm::ConstantArray::classof(source)) {
-#if RICH
-            llvm::GlobalVariable* gv = new llvm::GlobalVariable(source->getType(), true, llvm::GlobalValue::InternalLinkage, (llvm::Constant*)source, ".ar", mod);
-            // Get the address of the array.
-            checkCurrentBlock();
-            VDEBUG("GEP5", loc, );
-            source = builder.CreateGEP(gv, llvm::Constant::getNullValue(destination->getType()), "");
-            VDEBUG("GEP5", loc, source->print(cout));
-#endif
-            --deref2;
-        }
-        // ++deref1;
-        // ++deref2;
-        source = access(source, false, deref2);                 // RICH: Volatile.
-        VDEBUG("doassign get struct", loc, destination->print(cout));
-        destination = access(destination, false, deref1, 1);                 // RICH: Volatile.
-        VDEBUG("doassign source struct", loc, source->print(cout));
-        VDEBUG("doassign destination struct", loc, destination->print(cout));
-        new llvm::StoreInst(source, destination, false, currentBlock);	// RICH: isVolatile
-        return source;
-#else
-        source = access(source, false, deref2, 1);                 // RICH: Volatile.
-        destination = access(destination, false, deref1, 1);                 // RICH: Volatile.
-        llvm::Function* function = llvm::Intrinsic::getDeclaration(mod, llvm::Intrinsic::memcpy_i32); // RICH: size.
-        std::vector<llvm::Value*> parameters;
-        const llvm::Type* type = llvm::IntegerType::get(BITS_PER_BYTE);
-        type =  llvm::PointerType::get(type, 0);	// RICH: address space.
-        checkCurrentBlock();
-        VDEBUG("doassign dest", loc, destination->print(cout));
-        llvm::Value* value = builder.CreateBitCast(destination, type);
-        VDEBUG("doassign dest cast", loc, value->print(cout));
-        parameters.push_back(value);
-        if (llvm::ConstantArray::classof(source)) {
-            llvm::GlobalVariable* gv = new llvm::GlobalVariable(source->getType(), true, llvm::GlobalValue::InternalLinkage, (llvm::Constant*)source, ".ar", mod);
-            // Get the address of the array.
-            checkCurrentBlock();
-            VDEBUG("GEP4", loc, );
-            source = builder.CreateGEP(gv, llvm::Constant::getNullValue(destination->getType()), "");
-            VDEBUG("GEP4", loc, source->print(cout));
-        }
-        VDEBUG("doassign src", loc, source->print(cout));
-        value = builder.CreateBitCast(source, type);
-        VDEBUG("doassign src cast", loc, value->print(cout));
-        parameters.push_back(value);
-        const llvm::Type* ptype = llvm::PointerType::get(source->getType()->getContainedType(0), 0);       // RICH: Address space.
-        value = builder.CreateGEP(
-                llvm::Constant::getNullValue(ptype),
-                llvm::ConstantInt::get(targetData.getIntPtrType(), 1));
-        value = builder.CreatePtrToInt(value, targetData.getIntPtrType());
-        parameters.push_back(value);
-        value = llvm::ConstantInt::get(targetData.getIntPtrType(), 0);                  // RICH: Alignment.
-        parameters.push_back(value);
-        value = builder.CreateCall(function, parameters.begin(), parameters.end());
-        VDEBUG("doassign memcpy", loc, value->print(cout));
-        return source;
-#endif // RICH
-    } else {
-        VDEBUG("doassign", loc, source->print(cout));
-        source = access(source, false, deref2);                 // RICH: Volatile.
+    if (llvm::ConstantArray::classof(source)) {
+        --deref2;
     }
+    VDEBUG("doassign", loc, source->print(cout));
+    source = access(source, false, deref2);                 // RICH: Volatile.
 
     VDEBUG("doassign get", loc, destination->print(cout));
     destination = access(destination, false, deref1, 1);                 // RICH: Volatile.
     VDEBUG("doassign cast", loc, cout <<  stype->toString() << " -> " << dtype->toString());
-    makeCast(loc, stype, source, dtype);
+    if (   destination->getType()->getContainedType(0)->getTypeID() != llvm::Type::ArrayTyID
+        && destination->getType()->getContainedType(0)->getTypeID() != llvm::Type::StructTyID) {
+        makeCast(loc, stype, source, dtype);
+    }
     VDEBUG("doassign source", loc, source->print(cout));
     VDEBUG("doassign destination", loc, destination->print(cout));
     new llvm::StoreInst(source, destination, false, currentBlock);	// RICH: isVolatile
