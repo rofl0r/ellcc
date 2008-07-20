@@ -1017,6 +1017,9 @@ void S_return::cc2llvm(CC2LLVMEnv &env) const
             value = env.access(value, false, deref, 0); // RICH: Volatile.
         }
         VDEBUG("S_return source", loc, value->print(cout));
+        if (value->getType()->getTypeID() != llvm::Type::StructTyID) {
+            env.makeCast(loc, expr->expr->type, value, env.functionAST->funcType->retType);
+        }
         VDEBUG("S_return destination", loc, env.returnValue->print(cout));
         env.builder.CreateStore(value, env.returnValue, false);	// RICH: isVolatile
     } else {
