@@ -1075,6 +1075,8 @@ static cl::opt<bool> ElsaPrettyPrintAfterElab("bpprintAfterElab", cl::Optional, 
     cl::desc("Output pretty printed source after elaboration"));
 static cl::opt<bool> Fnobuiltin("fno-builtin", cl::Optional, cl::init(false),
     cl::desc("gcc compatability option"));
+static cl::opt<bool> Fshortenums("fshort-enums", cl::Optional, cl::init(false),
+    cl::desc("gcc compatability option"));
 
 //===----------------------------------------------------------------------===//
 //===          LINKER OPTIONS

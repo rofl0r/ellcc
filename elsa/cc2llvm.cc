@@ -1155,16 +1155,18 @@ llvm::Value *E_stringLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
     // RICH: Sizeof char.
     llvm::ArrayType* at = llvm::ArrayType::get(llvm::IntegerType::get(BITS_PER_BYTE), data->getDataLen());
     // RICH: Non-constant strings?
-    llvm::GlobalVariable* gv = new llvm::GlobalVariable(at, true, llvm::GlobalValue::InternalLinkage, c, ".str", env.mod);
+    llvm::Value* result = new llvm::GlobalVariable(at, true, llvm::GlobalValue::InternalLinkage, c, ".str", env.mod);
 
+#if RICH
     // Get the address of the string as an open array.
     env.checkCurrentBlock();
     std::vector<llvm::Value*> indices;
     indices.push_back(llvm::Constant::getNullValue(env.targetData.getIntPtrType()));
     indices.push_back(llvm::Constant::getNullValue(env.targetData.getIntPtrType()));
     VDEBUG("GEP3", loc, );
-    llvm::Value* result = env.builder.CreateGEP(gv, indices.begin(), indices.end(), "");
+    result = env.builder.CreateGEP(result, indices.begin(), indices.end(), "");
     VDEBUG("GEP3", loc, result->print(cout));
+#endif
     return result;
 }
 
@@ -1516,8 +1518,9 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
 	bool isVoid;
 	int size;
 	Type * type;
+        bool useValue;
 	llvm::Value** value;
-        Data(Type* type, llvm::Value** value) : type(type), value(value) {
+        Data(Type* type, llvm::Value** value, bool useValue = false) : type(type), useValue(useValue), value(value) {
             // Information needed convert and classify.
             if (type->isReference()) {
                 type = type->getAtType();
@@ -1553,15 +1556,19 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
 	}
     };
 
+    bool useValue = false;
     if (leftType->isArrayType()) {
         // An array becomes a pointer to the first element.
         // leftValue = builder.CreateGEP(leftValue, llvm::ConstantInt::get(targetData.getIntPtrType(), 0));
         std::vector<llvm::Value*> indices;
         indices.push_back(llvm::Constant::getNullValue(targetData.getIntPtrType()));
-        indices.push_back(llvm::Constant::getNullValue(targetData.getIntPtrType()));
         leftValue = builder.CreateGEP(leftValue, indices.begin(), indices.end(), "");
         VDEBUG("makeCast array type", loc, cout << "left "; leftValue->print(cout));
+        useValue = true;
     }
+    Data left(leftType, &leftValue, useValue);
+
+    useValue = false;
     if (rightType->isArrayType()) {
         // An array becomes a pointer to the first element.
         std::vector<llvm::Value*> indices;
@@ -1572,16 +1579,18 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
         indices.push_back(llvm::Constant::getNullValue(et));
 #endif
         indices.push_back(llvm::Constant::getNullValue(targetData.getIntPtrType()));
-        indices.push_back(llvm::Constant::getNullValue(targetData.getIntPtrType()));
         *rightValue = builder.CreateGEP(*rightValue, indices.begin(), indices.end(), "");
         VDEBUG("makeCast array type", loc, cout << "right "; (*rightValue)->print(cout));
+        useValue = true;
     }
-    Data left(leftType, &leftValue);
-    Data right(rightType, rightValue);
+    Data right(rightType, rightValue, useValue);
     Data* source = NULL;	// This will remain NULL if no cast is needed.
     Data* target = &right;
 
-    if (Type::equalTypes(left.type, right.type)) {
+    VDEBUG("makeCast types", loc, cout << "left " << left.type->toString() << " right " << right.type->toString());
+    VDEBUG("makeCast left value", loc, if (left.value) (*left.value)->print(cout); else cout << "NULL");
+    VDEBUG("makeCast right value", loc, if (right.value) (*right.value)->print(cout); else cout << "NULL");
+    if (0 && Type::equalTypes(left.type, right.type)) {
         // Types identical. Do nothing.
     } else if (right.value == NULL) {
         // This is a cast of the left value to the right type.
@@ -1685,7 +1694,11 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
 	if (target->type == NULL) {
 	    type = llvm::IntegerType::get(target->size);
 	} else {
-	    type = makeTypeSpecifier(loc, target->type);
+            if (target->useValue) {
+                type = (*target->value)->getType();
+	    } else {
+	        type = makeTypeSpecifier(loc, target->type);
+	    }
 	}
 
         VDEBUG("makeCast from type", loc, (*source->value)->getType()->print(cout));
