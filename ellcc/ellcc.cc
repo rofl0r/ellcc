@@ -1238,12 +1238,12 @@ struct Input {
         : name(name), type(type), module(module), temp(temp), language(language)  {}
     void setName(sys::Path newName)
     {
-        if (temp) {
+        if (temp && !KeepTemps) {
             if (!name.eraseFromDisk() && Verbose) {
                 cout << "  " << name << " has been deleted\n";
             }
-            temp = false;
         }
+        temp = false;
         name = newName;
     }
 };
@@ -2041,7 +2041,7 @@ static int Assemble(const std::string &OutputFilename,
     PrintCommand(Args);
   }
 
-  // Run as to preprocess the file.
+  // Run as to assemble the file.
   int R = sys::Program::ExecuteAndWait(
     as, &Args[0], NULL, 0, 0, 0, &ErrMsg);
   return R;
