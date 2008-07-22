@@ -4,3 +4,9 @@ PLUGIN_INSTALL_SRCDIR 	= cpuinfo.tcl \
 			  msrselection.ith \
 			  msrselection.itb
 
+.PHONY: info dvi ps pdf html
+.PHONY: install-info install-dvi install-ps install-pdf install-html
+
+info dvi ps pdf html:
+install-info install-dvi install-ps install-pdf install-html:
+

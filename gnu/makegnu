@@ -34,10 +34,10 @@ cd obj
 linklist="addr2line ar ld nm objcopy objdump ranlib readelf size strings strip"
 
 if [ $install -eq 0 ] ; then
-  echo Making binutils for $targets
+  echo Making tools for $targets
   ../src/configure CC=$cc CXX=$cxx --enable-64-bit-bfd --enable-targets=$targetlist --program-prefix=ecc- --prefix=$prefix
   if [ $? -ne 0 ] ; then
-    echo configure for binutils failed
+    echo configure for tools failed
     exit 1
   fi
 
@@ -46,13 +46,18 @@ if [ $install -eq 0 ] ; then
 
   make
   if [ $? -ne 0 ] ; then
-    echo make for binutils failed
+    echo make for tools failed
     exit 1
   fi
 else
   make install
   if [ $? -ne 0 ] ; then
-    echo make install for binutils failed
+    echo make install failed
+    exit 1
+  fi
+  make install-html
+  if [ $? -ne 0 ] ; then
+    echo make install-html failed
     exit 1
   fi
   for target in $targets ; do

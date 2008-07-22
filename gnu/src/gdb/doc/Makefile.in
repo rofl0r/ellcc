@@ -25,7 +25,7 @@ prefix = @prefix@
 
 infodir = @infodir@
 pdfdir = $(prefix)/share/doc/gdb
-htmldir = $(prefix)/html
+htmldir = $(prefix)/share/doc
 
 SHELL = @SHELL@
 
@@ -201,9 +201,16 @@ uninstall-info:
 	  (cd $(DESTDIR)$(infodir) && rm -f $$file $$file-[0-9] $$file-[0-9][0-9]); \
 	done
 
+html_dirs = annotate gdb gdbint stabs
+
 install-html: html
-	for i in *.html ; do \
-		$(INSTALL_DATA) $$i $(DESTDIR)$(htmldir)/$$i ; \
+	for d in $(html_dirs) ; do \
+	cd $$d ; \
+	  mkdir $(DESTDIR)$(htmldir)/$$d.html ; \
+	  for i in *.html ; do \
+		$(INSTALL_DATA) $$i $(DESTDIR)$(htmldir)/$$d.html/$$i ; \
+	  done ; \
+	cd .. ; \
 	done
 
 pdf__strip_dir = `echo $$p | sed -e 's|^.*/||'`;

@@ -7,3 +7,10 @@ PLUGIN_INSTALL_SRCDIR	= rhabout.itcl
 PLUGIN_INSTALL_TARGET   = nothing
 
 nothing:
+
+.PHONY: info dvi ps pdf html
+.PHONY: install-info install-dvi install-ps install-pdf install-html
+
+info dvi ps pdf html:
+install-info install-dvi install-ps install-pdf install-html:
+
