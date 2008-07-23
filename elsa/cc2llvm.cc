@@ -23,6 +23,8 @@
 
 #define BITS_PER_BYTE	8	// RICH: Temporary.
 
+#define SRET 1
+
 #if 1
 // Really verbose debugging.
 #define VDEBUG(who, where, what) cout << toString(where) << ": " << who << " "; what; cout << "\n"
@@ -196,7 +198,7 @@ const llvm::Type* CC2LLVMEnv::makeTypeSpecifier(SourceLoc loc, Type *t)
         FunctionType *ft = t->asFunctionType();
         const llvm::Type* returnType = makeTypeSpecifier(loc, ft->retType);
         std::vector<const llvm::Type*>args;
-        makeParameterTypes(ft, args);
+        returnType = makeParameterTypes(ft, returnType, args);
         type = llvm::FunctionType::get(returnType, args, ft->acceptsVarargs() || (ft->flags & FF_NO_PARAM_INFO));
         break;
     }
@@ -396,8 +398,19 @@ PQ_name *CC2LLVMEnv::makePQ_name(StringRef name)
     return new PQ_name(SL_UNKNOWN, name);		// RICH: Source location.
 }
 
-void CC2LLVMEnv::makeParameterTypes(FunctionType *ft, std::vector<const llvm::Type*>& args)
+const llvm::Type* CC2LLVMEnv::makeParameterTypes(FunctionType *ft,
+                                                 const llvm::Type* returnType,
+                                                 std::vector<const llvm::Type*>& args)
 {
+#if SRET
+    if (returnType->getTypeID() == llvm::Type::StructTyID) {
+        // RICH: sret
+        // We are returning a structure, turn it into a sret pointer.
+        const llvm::Type *ptr = llvm::PointerType::get(returnType, 0);	// RICH: address space.
+        args.push_back(ptr);
+        returnType = llvm::Type::VoidTy;
+    }
+#endif
     SFOREACH_OBJLIST(Variable, ft->params, iter) {
         Variable const *param = iter.data();
 
@@ -408,6 +421,8 @@ void CC2LLVMEnv::makeParameterTypes(FunctionType *ft, std::vector<const llvm::Ty
             args.push_back(type);
         }
     }
+
+    return returnType;
 }
 
 llvm::Value* CC2LLVMEnv::declaration(const Variable* var, llvm::Value* init, int deref)
@@ -554,7 +569,7 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
         llvm::GlobalValue::LinkageTypes linkage = getLinkage(nameAndParams->var->flags);
         returnType = env.makeTypeSpecifier(nameAndParams->var->loc, funcType->retType);
         std::vector<const llvm::Type*>args;
-        env.makeParameterTypes(funcType, args);
+        returnType = env.makeParameterTypes(funcType, returnType, args);
         llvm::FunctionType* ft = llvm::FunctionType::get(returnType, args, funcType->acceptsVarargs());
         env.function = llvm::Function::Create(ft, linkage, nameAndParams->var->name, env.mod);
         env.function->setCallingConv(llvm::CallingConv::C); // RICH: Calling convention.
@@ -571,8 +586,21 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
     // Set the initial current block.
     env.setCurrentBlock(env.entryBlock);
 
-    // Add the parameter names.
     llvm::Function::arg_iterator llargs = env.function->arg_begin();
+    env.returnValue = NULL;
+
+#if SRET
+    if (funcType->retType->isCompoundType()) {
+        const llvm::Type *ptr = llvm::PointerType::get(env.makeTypeSpecifier(nameAndParams->var->loc, funcType->retType),
+                                                       0);        // RICH: address space.
+        llvm::Value* arg = llargs++;
+	llvm::AllocaInst* addr = env.builder.CreateAlloca(ptr, NULL, "sret");
+        env.builder.CreateStore(arg, addr, false);	// RICH: IsVolatile.
+        env.returnValue = addr;
+    }
+#endif
+
+    // Add the parameter names.
     bool first = true;
     SFOREACH_OBJLIST(Variable, funcType->params, iter) {
         const Variable *param = iter.data();
@@ -671,7 +699,6 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
     // Set up the return value.
     if (returnType == llvm::Type::VoidTy) {
         // A void function.
-        env.returnValue = NULL;
         llvm::ReturnInst::Create(env.returnBlock);
     } else {
         // Create the return value holder.
@@ -1020,8 +1047,14 @@ void S_return::cc2llvm(CC2LLVMEnv &env) const
         if (value->getType()->getTypeID() != llvm::Type::StructTyID) {
             env.makeCast(loc, expr->expr->type, value, env.functionAST->funcType->retType);
         }
-        VDEBUG("S_return destination", loc, env.returnValue->print(cout));
-        env.builder.CreateStore(value, env.returnValue, false);	// RICH: isVolatile
+        llvm::Value* where = env.returnValue;
+#if SRET
+        if (env.functionAST->funcType->retType->isCompoundType()) {
+            where = env.builder.CreateLoad(where, false);     // RICH: Is volatile.
+        }
+#endif
+        VDEBUG("S_return destination", loc, where->print(cout));
+        env.builder.CreateStore(value, where, false);	// RICH: isVolatile
     } else {
         xassert(env.returnValue == NULL && "no return value in a function not returning void");
     }
@@ -1237,24 +1270,7 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     env.checkCurrentBlock();
     std::vector<llvm::Value*> parameters;
-    // Check for a method call.
-    llvm::Value* function = NULL;
-    if (func->kind() == E_FIELDACC) {
-        VDEBUG("E_funCall method", loc, cout << func->asString());
-        E_fieldAcc* fa = func->asE_fieldAcc();
-        function = env.variables.get(fa->field);
-        if (function) {
-            llvm::Value* object = fa->obj->cc2llvm(env, deref);
-            object = env.access(object, false, deref, 1);                 // RICH: Volatile.
-            parameters.push_back(object);
-        }
-    }
 
-    /* I really don;t like having to do this, but...
-     * We walk both the argument list and the function's parameter list so that we can
-     * determine if a given argument is passed by reference.
-     */
-    
     VDEBUG("E_funCall function", loc, cout << func->asString());
     VDEBUG("E_funCall func type", loc, cout << func->type->toString());
     FunctionType *ft;
@@ -1263,6 +1279,53 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, int& deref) const
     } else {
         ft = func->type->asFunctionType();
     }
+
+    llvm::Value* object = NULL;			// Non-NULL if a method call.
+    // Check for a method call.
+    llvm::Value* function = NULL;
+    if (func->kind() == E_FIELDACC) {
+        VDEBUG("E_funCall method", loc, cout << func->asString());
+        E_fieldAcc* fa = func->asE_fieldAcc();
+        function = env.variables.get(fa->field);
+        if (function) {
+            object = fa->obj->cc2llvm(env, deref);
+        }
+    }
+
+    deref = 0;
+    if (!function) {
+        // This is not a method call.
+        function = func->cc2llvm(env, deref);
+    }
+
+#if SRET
+    llvm::Value* sret = NULL;			// Non-NULL if a structure return.
+    if (ft->retType->isCompoundType()) {
+        // We need an implicit first parameter that points to the return value area.
+        const llvm::Type *type = env.makeTypeSpecifier(loc, ft->retType);
+        VDEBUG("E_funCall sret type", loc, type->print(cout));
+        if (env.entryBlock == env.currentBlock) {
+            sret = new llvm::AllocaInst(type, "sret", env.entryBlock);
+        } else {
+            sret = new llvm::AllocaInst(type, "sret", env.entryBlock->getTerminator());
+        }
+        VDEBUG("E_funCall sret", loc, sret->print(cout));
+        parameters.push_back(sret);
+    }
+#endif
+
+    if (object) {
+        // Send the "this" pointer.
+        int deref = 0;
+        object = env.access(object, false, deref, 1);                 // RICH: Volatile.
+        parameters.push_back(object);
+    }
+
+    /* I really don't like having to do this, but...
+     * We walk both the argument list and the function's parameter list so that we can
+     * determine if a given argument is passed by reference.
+     */
+    
     SObjListIter<Variable> parms(ft->params);
     FAKELIST_FOREACH(ArgExpression, args, arg) {
         Variable const *parameter = NULL;
@@ -1271,6 +1334,7 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, int& deref) const
             parms.adv();
         }
         bool ref = parameter && parameter->type && parameter->type->isReference();
+        int deref = 0;
         llvm::Value* param = arg->expr->cc2llvm(env, deref);
         VDEBUG("Param", loc, cout << (arg->expr->type->isReference() ? "&" : "") << arg->expr->asString() << " "; param->print(cout));
         param = env.access(param, false, deref, ref ? 1 : 0);                 // RICH: Volatile.
@@ -1288,14 +1352,17 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, int& deref) const
         VDEBUG("Param", loc, param->print(cout));
     }
 
-    deref = 0;
-    if (!function) {
-        // This is not a method call.
-        function = func->cc2llvm(env, deref);
-    }
     function = env.access(function, false, deref);                 // RICH: Volatile.
     VDEBUG("CreateCall", loc, function->print(cout));
-    return env.builder.CreateCall(function, parameters.begin(), parameters.end());
+    llvm::Value* result = env.builder.CreateCall(function, parameters.begin(), parameters.end());
+#if SRET
+    // RICH: sret
+    if (sret) {
+        // The result is the saved return value.
+        result = sret;
+    }
+#endif
+    return result;
 }
 
 llvm::Value *E_constructor::cc2llvm(CC2LLVMEnv &env, int& deref) const
