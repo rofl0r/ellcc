@@ -307,6 +307,8 @@ testCparse t0019.c
 testCparse t0020.c
 testCparse t0021.c
 testCparse t0022.c
+testCparse t0024.c
+testCparse t0025.c
 
 
 # is K&R built?
