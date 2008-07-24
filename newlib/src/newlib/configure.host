@@ -142,7 +142,7 @@ case "${host_cpu}" in
   i960)
 	machine_dir=i960
 	;;
-  i[34567]86)
+  i[34567]86 | x86)
 	# Don't use for these since they provide their own setjmp.
 	case ${host} in
 	*-*-sco* | *-*-cygwin*) 
