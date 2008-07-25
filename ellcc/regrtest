@@ -274,6 +274,9 @@ testCparse_special() {
 testCrun() {
   runTest ./a.out from t0005.c
 }
+testCparse_arm() {
+  runTest perl ./multitest.pl ./arm-elf-ecc in/$1
+}
 testCparse_special_arm() {
   runTest perl ./multitest.pl ./arm-elf-ecc $1 in/$2
 }
@@ -309,6 +312,8 @@ testCparse t0021.c
 testCparse t0022.c
 testCparse t0024.c
 testCparse t0025.c
+testCparse_special_arm -S t0026.c
+testCparse t0027.c
 
 
 # is K&R built?
