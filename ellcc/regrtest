@@ -314,7 +314,7 @@ testCparse t0024.c
 testCparse t0025.c
 testCparse_special_arm -S t0026.c
 testCparse t0027.c
-
+testCparse t0028.c
 
 # is K&R built?
 use_kandr=false
