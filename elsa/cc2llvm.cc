@@ -1588,9 +1588,10 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
 	bool isVoid;
 	int size;
 	Type * type;
-        bool useValue;
+        const llvm::Type* llvmType;
 	llvm::Value** value;
-        Data(Type* type, llvm::Value** value, bool useValue = false) : type(type), useValue(useValue), value(value) {
+        Data(Type* type, llvm::Value** value, const llvm::Type* llvmType = NULL) 
+            : type(type), llvmType(llvmType), value(value) {
             // Information needed convert and classify.
             if (type->isReference()) {
                 type = type->getAtType();
@@ -1626,34 +1627,34 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
 	}
     };
 
-    bool useValue = false;
+    const llvm::Type* llvmType = NULL;
     if (leftType->isArrayType()) {
         // An array becomes a pointer to the first element.
-        // leftValue = builder.CreateGEP(leftValue, llvm::ConstantInt::get(targetData.getIntPtrType(), 0));
         std::vector<llvm::Value*> indices;
         indices.push_back(llvm::Constant::getNullValue(targetData.getIntPtrType()));
         leftValue = builder.CreateGEP(leftValue, indices.begin(), indices.end(), "");
         VDEBUG("makeCast array type", loc, cout << "left "; leftValue->print(cout));
-        useValue = true;
+        llvmType = leftValue->getType();
     }
-    Data left(leftType, &leftValue, useValue);
+    Data left(leftType, &leftValue, llvmType);
 
-    useValue = false;
+    llvmType = NULL;
     if (rightType->isArrayType()) {
-        // An array becomes a pointer to the first element.
-        std::vector<llvm::Value*> indices;
-#if RICH
-        const llvm::ArrayType* at = &llvm::cast<llvm::ArrayType>(*(*rightValue)->getType());
-        const llvm::Type *et = at->getElementType();
-        indices.push_back(llvm::Constant::getNullValue(at));
-        indices.push_back(llvm::Constant::getNullValue(et));
-#endif
-        indices.push_back(llvm::Constant::getNullValue(targetData.getIntPtrType()));
-        *rightValue = builder.CreateGEP(*rightValue, indices.begin(), indices.end(), "");
-        VDEBUG("makeCast array type", loc, cout << "right "; (*rightValue)->print(cout));
-        useValue = true;
+        if (rightValue) {
+            // An array becomes a pointer to the first element.
+            std::vector<llvm::Value*> indices;
+            indices.push_back(llvm::Constant::getNullValue(targetData.getIntPtrType()));
+            *rightValue = builder.CreateGEP(*rightValue, indices.begin(), indices.end(), "");
+            VDEBUG("makeCast array type", loc, cout << "right "; (*rightValue)->print(cout));
+            llvmType = (*rightValue)->getType();
+        } else {
+            // Build the typeas pointer to element type.
+            ArrayType *at = rightType->asArrayType();
+            const llvm::Type* elttype = makeTypeSpecifier(loc, at->eltType);
+            llvmType = llvm::PointerType::get(elttype, 0);       // RICH: Address space.
+        }
     }
-    Data right(rightType, rightValue, useValue);
+    Data right(rightType, rightValue, llvmType);
     Data* source = NULL;	// This will remain NULL if no cast is needed.
     Data* target = &right;
 
@@ -1764,8 +1765,8 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
 	if (target->type == NULL) {
 	    type = llvm::IntegerType::get(target->size);
 	} else {
-            if (target->useValue) {
-                type = (*target->value)->getType();
+            if (target->llvmType) {
+                type = target->llvmType;
 	    } else {
 	        type = makeTypeSpecifier(loc, target->type);
 	    }
@@ -2646,6 +2647,7 @@ llvm::Value *E_cond::cc2llvm(CC2LLVMEnv &env, int& deref) const
     llvm::Value* trueValue = th->cc2llvm(env, deref);
     trueValue = env.access(trueValue, false, deref);                 // RICH: Volatile.
     VDEBUG("E_conv true", loc, trueValue->print(cout); cout << " is " << th->type->toString());
+    env.makeCast(loc, th->type, trueValue, type);
     if (env.currentBlock) {
         // Close the current block.
         llvm::BranchInst::Create(next, env.currentBlock);
@@ -2656,8 +2658,8 @@ llvm::Value *E_cond::cc2llvm(CC2LLVMEnv &env, int& deref) const
     llvm::Value* falseValue = el->cc2llvm(env, deref);
     falseValue = env.access(falseValue, false, deref);                 // RICH: Volatile.
     VDEBUG("E_conv false", loc, falseValue->print(cout); cout << " is " << el->type->toString());
+    env.makeCast(loc, el->type, falseValue, type);
 
-    env.makeCast(loc, th->type, trueValue, el->type, &falseValue);
     env.setCurrentBlock(next);
     llvm::Value* result = NULL;
     if (trueValue->getType()->isFirstClassType() && falseValue->getType()->isFirstClassType()) {
@@ -2923,10 +2925,26 @@ llvm::Value *E_compoundLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
 
 llvm::Value *E_statement::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
-    deref = 0;
-    cerr << toString(loc) << ": ";
-    xunimp("statement expression");
-    return NULL;
+    if (type->isVoid()) {
+        // No value from this statement group.
+        s->cc2llvm(env);
+        return NULL;
+    }
+
+    // Generate all but the last statement.
+    Statement* last = s->stmts.last();
+    FOREACH_ASTLIST(Statement, s->stmts, iter) {
+      VDEBUG("E_statement statement", loc, s->debugPrint(cout, 0));
+      
+      if (iter.data() == last) {
+          break;
+      }
+      iter.data()->cc2llvm(env);
+    }
+
+    Expression* expr = last->asS_expr()->expr->expr;
+    VDEBUG("E_statement expr", loc, cout << expr->asString());
+    return expr->cc2llvm(env, deref);
 }
 
 
