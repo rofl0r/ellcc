@@ -4905,16 +4905,17 @@ void S_return::itcheck(Env &env)
   Type *returnType = env.functionAST->funcType->retType;
   if (expr) {
     if (returnType->isVoid()) {
-      env.error("returning a value in a 'void' function");
+      expr->tcheck(env);
+      if (!expr->expr->type->isVoid()) {
+          env.error("returning a value in a 'void' function");
+      }
     } else {
       expr->tcheck(env);
       returnType = returnType->asRval();
       // RICH: check that param conversion is OK.
       env.elaborateImplicitConversionArgToParam(returnType, expr->expr);
     }
-  }
-
-  else {
+  } else {
     if (!returnType->isVoid()) {
       env.error("no return value for a non-'void' function");
     }
@@ -6293,7 +6294,7 @@ int compareArgsToParams(Env &env, FunctionType *ft, FakeList<ArgExpression> *arg
         SFOREACH_OBJLIST(Variable, ct->dataMembers, memberIter) {
           Variable const *memb = memberIter.data();
 
-          StandardConversion sc = getStandardConversion(NULL /*errorMsg*/,
+          StandardConversion sc = getStandardConversion(env, NULL /*errorMsg*/,
             SE_NONE, arg->expr->type, memb->type);
           if (sc != SC_ERROR) {
             // success
@@ -9101,7 +9102,7 @@ Type *E_assign::itcheck_x(Env &env, Expression *&replacement)
     // simple assignment, compute standard conversion
 #if RICH
     string errorMsg;
-    StandardConversion sc = getStandardConversion(&errorMsg,
+    StandardConversion sc = getStandardConversion(env, &errorMsg,
       argInfo[1].special, src->type, operationResultType);
     if (sc == SC_ERROR) {
       env.error(errorMsg);

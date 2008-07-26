@@ -10,7 +10,7 @@
 
 // prototypes
 StandardConversion tryCallCtor
-  (Variable const *var, SpecialExpr special, Type const *src);
+  (Env& env, Variable const *var, SpecialExpr special, Type const *src);
 
 
 
@@ -189,7 +189,7 @@ ImplicitConversion getImplicitConversion
   // check for a standard sequence
   {
     StandardConversion scs =
-      getStandardConversion(NULL /*errorMsg*/, special, src, dest, destIsReceiver);
+      getStandardConversion(env, NULL /*errorMsg*/, special, src, dest, destIsReceiver);
     if (scs != SC_ERROR) {
       ret.addStdConv(scs);
       return ret;
@@ -259,7 +259,7 @@ ImplicitConversion getImplicitConversion
 
       if (ctor) {
         // only one ctor now.. can we call it?
-        StandardConversion first = tryCallCtor(ctor, special, src);
+        StandardConversion first = tryCallCtor(env, ctor, special, src);
         if (first != SC_ERROR) {
           // success
           ret.addUserConv(first, ctor, SC_IDENTITY);
@@ -290,7 +290,7 @@ ImplicitConversion getImplicitConversion
 
 
 StandardConversion tryCallCtor
-  (Variable const *var, SpecialExpr special, Type const *src)
+  (Env& env, Variable const *var, SpecialExpr special, Type const *src)
 {
   // certainly should be a function
   FunctionType *ft = var->type->asFunctionType();
@@ -317,7 +317,7 @@ StandardConversion tryCallCtor
   }
 
   Variable const *param = ft->params.firstC();
-  return getStandardConversion(NULL /*errorMsg*/, special, src, param->type);
+  return getStandardConversion(env, NULL /*errorMsg*/, special, src, param->type);
 }
 
 

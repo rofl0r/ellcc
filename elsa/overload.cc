@@ -912,7 +912,7 @@ Candidate * /*owner*/ OverloadResolver::makeCandidate
     if (flags & OF_NO_USER) {
       // only consider standard conversions
       StandardConversion scs =
-        getStandardConversion(NULL /*errorMsg*/,
+        getStandardConversion(env, NULL /*errorMsg*/,
                               args[argIndex].special, args[argIndex].type,
                               paramIter.data()->type, destIsReceiver);
       if (scs != SC_ERROR) {
@@ -1154,9 +1154,9 @@ int OverloadResolver::compareCandidates(Candidate const *left, Candidate const *
   // if we're doing "initialization by user-defined conversion", then
   // look at the conversion sequences to the final destination type
   if (finalDestType) {
-    StandardConversion leftSC = getStandardConversion(
+    StandardConversion leftSC = getStandardConversion(env, 
       NULL /*errorMsg*/, SE_NONE, leftFunc->retType, finalDestType);
-    StandardConversion rightSC = getStandardConversion(
+    StandardConversion rightSC = getStandardConversion(env, 
       NULL /*errorMsg*/, SE_NONE, rightFunc->retType, finalDestType);
 
     ret = compareStandardConversions(
@@ -1714,7 +1714,7 @@ ImplicitConversion getConversionOperator(
     SFOREACH_OBJLIST_NC(Variable, ops, iter) {
       Variable *v = iter.data();
       Type *retType = v->type->asFunctionType()->retType->asRval();
-      if (SC_ERROR!=getStandardConversion(NULL /*errorMsg*/,
+      if (SC_ERROR!=getStandardConversion(env, NULL /*errorMsg*/,
             SE_NONE, retType, destType)) {
         // it's a candidate
         resolver.processCandidate(v);
@@ -1750,7 +1750,7 @@ ImplicitConversion getConversionOperator(
         // Note that this is *not* a case covered by 13.3.1.6, despite
         // the comment above; that section applies when both the
         // parameter and the conversion function have reference type.
-        if (SC_ERROR!=getStandardConversion(NULL /*errorMsg*/,
+        if (SC_ERROR!=getStandardConversion(env, NULL /*errorMsg*/,
               SE_NONE, retType, destType)) {
           resolver.processCandidate(v);
         }
@@ -1776,7 +1776,7 @@ ImplicitConversion getConversionOperator(
 
   // compute the standard conversion that obtains the destination
   // type, starting from what the conversion function yields
-  StandardConversion sc = getStandardConversion(
+  StandardConversion sc = getStandardConversion(env,
     NULL /*errorMsg*/,
     SE_NONE, winner->type->asFunctionType()->retType,   // conversion source
     destType                                            // conversion dest

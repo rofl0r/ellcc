@@ -24,7 +24,7 @@ bool ASTVisitorEx::visitFunction(Function *obj)
   // template with instantiations to visit?
   if (obj->isTemplate()) {
     // instantiations are concrete
-    Restorer<bool> r(inTemplate, false);
+    Restorer<bool> r(inTemplate, true);
 
     TemplateInfo *ti = obj->nameAndParams->var->templateInfo();
     SFOREACH_OBJLIST(Variable, ti->instantiations, iter) {

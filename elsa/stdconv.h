@@ -100,6 +100,7 @@ SCRank getRank(StandardConversion scs);
 // given two types, determine the Standard Conversion Sequence,
 // if any, that will convert 'src' into 'dest'
 StandardConversion getStandardConversion(
+  Env& env,            // The compilation environment.
   string *errorMsg,    // if non-null, failed conversion sets error message
   SpecialExpr special, // properties of the source expression
   Type const *src,     // source type

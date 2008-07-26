@@ -202,6 +202,8 @@ static char const *ctorName(Type::Tag tag)
 // implementation class
 class Conversion {
 public:
+  // The compilation environment.
+  Env& env;
   // original parameters to 'getStandardConversion'
   string *errorMsg;
   SpecialExpr srcSpecial;
@@ -221,8 +223,9 @@ public:
   int ptrCtorsStripped;
 
 public:
-  Conversion(string *e, SpecialExpr sp, Type const *s, Type const *d, bool dir)
-    : errorMsg(e),
+  Conversion(Env& env, string *e, SpecialExpr sp, Type const *s, Type const *d, bool dir)
+    : env(env),
+      errorMsg(e),
       srcSpecial(sp),
       src(s),
       dest(d),
@@ -252,7 +255,7 @@ StandardConversion Conversion::error(char const *why)
   // dest of just 'T'.
   if (dest->isReference() &&
       dest->getAtType()->isConst()) {
-    return getStandardConversion(errorMsg, srcSpecial, src, dest->getAtType(),
+    return getStandardConversion(env, errorMsg, srcSpecial, src, dest->getAtType(),
                                  destIsReceiver);
   }
 
@@ -421,10 +424,10 @@ bool couldBeAnything(Type const *t)
  * in C but not C++ (e.g. implicit int to ptr) (make SC_ERROR a bit?).
  */
 StandardConversion getStandardConversion
-  (string *errorMsg, SpecialExpr srcSpecial, Type const *src, Type const *dest,
+  (Env& env, string *errorMsg, SpecialExpr srcSpecial, Type const *src, Type const *dest,
    bool destIsReceiver)
 {
-  Conversion conv(errorMsg, srcSpecial, src, dest, destIsReceiver);
+  Conversion conv(env, errorMsg, srcSpecial, src, dest, destIsReceiver);
 
   // --------------- group 1 ----------------
   if (src->isReference() &&
@@ -574,8 +577,12 @@ StandardConversion getStandardConversion
         if (conv.stripPtrCtor(srcCV, destCV, isReference))
           { return conv.ret; }
 
-	if (src->isVoid() || dest->isVoid()) {
-	    // void* can be converted either way.
+	if (dest->isVoid()) {
+	    // any pointer can be converted to void* .
+	    return conv.ret | SC_PTR_CONV;
+	}
+	if (src->isVoid() && !env.lang.isCplusplus) {
+	    // void* to any pointer type in C.
 	    return conv.ret | SC_PTR_CONV;
 	}
         break;
@@ -773,7 +780,7 @@ StandardConversion getStandardConversion
         // just strip the reference part of the dest; this is like binding
         // the (const) reference, which is not an explicit part of the
         // "conversion"
-        return getStandardConversion(errorMsg, srcSpecial, conv.src, 
+        return getStandardConversion(env, errorMsg, srcSpecial, conv.src, 
                                      conv.dest->asRvalC(), destIsReceiver);
       }
 
@@ -1135,7 +1142,7 @@ void test_getStandardConversion(
 {
   // run our function
   string errorMsg;
-  StandardConversion actual = getStandardConversion(&errorMsg, special, src, dest);
+  StandardConversion actual = getStandardConversion(env, &errorMsg, special, src, dest);
 
   // turn any resulting messags into warnings, so I can see their
   // results without causing the final exit status to be nonzero
