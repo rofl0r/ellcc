@@ -420,9 +420,6 @@ bool couldBeAnything(Type const *t)
 // intermediate Type objects; I should be able to do this computation
 // without allocating, and if I can then that avoids interaction
 // problems with Type annotation systems
-/* RICH: This should have the ability to return conversions that may be allowed
- * in C but not C++ (e.g. implicit int to ptr) (make SC_ERROR a bit?).
- */
 StandardConversion getStandardConversion
   (Env& env, string *errorMsg, SpecialExpr srcSpecial, Type const *src, Type const *dest,
    bool destIsReceiver)
@@ -771,6 +768,12 @@ StandardConversion getStandardConversion
       return conv.ret;
     }
     else {
+      if (   !env.lang.isCplusplus
+          && src->isIntegerType()
+          && dest->isIntegerType()
+          && src->reprSize() == dest->reprSize()) {
+          return conv.ret | SC_PTR_CONV;      // Compatable pointers in C.
+      }
       // 9/25/04: (in/t0316.cc) I'm not sure where the best place to do
       // this is, in part b/c I don't know what the real rule is.  This
       // allows e.g. 'unsigned int &' to be passed where 'int const &'
