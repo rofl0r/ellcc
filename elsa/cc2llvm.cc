@@ -2265,6 +2265,8 @@ llvm::Value* CC2LLVMEnv::binop(SourceLoc loc, BinaryOp op, Expression* e1, llvm:
             // If the left size is a pointer and the right side is an integer, calculate the result.
 
             // Get the value of the left side.
+            const llvm::Value* before = left;
+            VDEBUG("before left", loc, left->print(cout));
             left = access(left, false, deref1);                 // RICH: Volatile.
 
             if (op == BIN_MINUS) {
@@ -2297,10 +2299,12 @@ llvm::Value* CC2LLVMEnv::binop(SourceLoc loc, BinaryOp op, Expression* e1, llvm:
             }
 
             std::vector<llvm::Value*> index;
-            if (   left->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID
-                || left->getType()->getContainedType(0)->getTypeID() == llvm::Type::StructTyID) {
-                VDEBUG("NullValue2", loc, right->getType()->print(cout));
-                index.push_back(llvm::Constant::getNullValue(right->getType()));
+            if (before == left) {
+                if (   left->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID
+                    || left->getType()->getContainedType(0)->getTypeID() == llvm::Type::StructTyID) {
+                    VDEBUG("NullValue2", loc, right->getType()->print(cout));
+                    index.push_back(llvm::Constant::getNullValue(right->getType()));
+                }
             }
             index.push_back(right);
             VDEBUG("GEP2 left", loc, left->print(cout));
