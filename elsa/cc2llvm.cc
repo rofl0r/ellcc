@@ -2652,6 +2652,7 @@ llvm::Value *E_cond::cc2llvm(CC2LLVMEnv &env, int& deref) const
     trueValue = env.access(trueValue, false, deref);                 // RICH: Volatile.
     VDEBUG("E_conv true", loc, trueValue->print(cout); cout << " is " << th->type->toString());
     env.makeCast(loc, th->type, trueValue, type);
+    ifTrue = env.currentBlock;
     if (env.currentBlock) {
         // Close the current block.
         llvm::BranchInst::Create(next, env.currentBlock);
@@ -2663,6 +2664,7 @@ llvm::Value *E_cond::cc2llvm(CC2LLVMEnv &env, int& deref) const
     falseValue = env.access(falseValue, false, deref);                 // RICH: Volatile.
     VDEBUG("E_conv false", loc, falseValue->print(cout); cout << " is " << el->type->toString());
     env.makeCast(loc, el->type, falseValue, type);
+    ifFalse = env.currentBlock;
 
     env.setCurrentBlock(next);
     llvm::Value* result = NULL;
