@@ -319,6 +319,7 @@ testCparse t0029.c
 testCparse t0030.c
 testCparse t0031.c
 testCparse t0032.c
+testCparse t0033.c
 
 # is K&R built?
 use_kandr=false

@@ -564,19 +564,26 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
     // Did we see this declaration?
     env.function = (llvm::Function*)env.variables.get(nameAndParams->var);      // RICH: cast, check if func.
     const llvm::Type* returnType;
-    if (env.function == NULL) {
-        // No, define it.
-        llvm::GlobalValue::LinkageTypes linkage = getLinkage(nameAndParams->var->flags);
-        returnType = env.makeTypeSpecifier(nameAndParams->var->loc, funcType->retType);
-        std::vector<const llvm::Type*>args;
-        returnType = env.makeParameterTypes(funcType, returnType, args);
-        llvm::FunctionType* ft = llvm::FunctionType::get(returnType, args, funcType->acceptsVarargs());
-        env.function = llvm::Function::Create(ft, linkage, nameAndParams->var->name, env.mod);
-        env.function->setCallingConv(llvm::CallingConv::C); // RICH: Calling convention.
-        env.variables.add(nameAndParams->var, env.function);
-    } else {
-        returnType = env.function->getReturnType();
+    llvm::GlobalValue::LinkageTypes linkage = getLinkage(nameAndParams->var->flags);
+    returnType = env.makeTypeSpecifier(nameAndParams->var->loc, funcType->retType);
+    std::vector<const llvm::Type*>args;
+    returnType = env.makeParameterTypes(funcType, returnType, args);
+    llvm::FunctionType* ft = llvm::FunctionType::get(returnType, args,
+                                                     funcType->acceptsVarargs() || (funcType->flags & FF_NO_PARAM_INFO));
+    if (env.function && env.function->getType() != (llvm::Type*)ft) {
+        // Make the old one anonymous.
+        env.function->setName("");
     }
+    llvm::Function* function = llvm::Function::Create(ft, linkage, nameAndParams->var->name, env.mod);
+    if (env.function && env.function->getType() != (llvm::Type*)ft) {
+        // A declaration exists.
+        env.function->uncheckedReplaceAllUsesWith(function);
+        env.function->eraseFromParent();
+    }
+
+    env.function = function;
+    env.function->setCallingConv(llvm::CallingConv::C); // RICH: Calling convention.
+    env.variables.add(nameAndParams->var, env.function);
 
     VDEBUG("Function", nameAndParams->var->loc, cout << nameAndParams->var->toString() << " "; returnType->print(cout));
     const Function* oldFunctionAST = env.functionAST;	// Handle nested functions.
@@ -607,14 +614,15 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
         llvm::Value* arg = llargs++;
         // Make space for the argument.
         const llvm::Type* type = arg->getType();
+        VDEBUG("Function arg", param->loc, type->print(cout));
         if (first && receiver && param != receiver) {
             // Yuck! The receiver is not explicit. I think it should be.
             llvm::AllocaInst* addr = env.builder.CreateAlloca(type, NULL, receiver->name);
             // Remember where the argument can be retrieved.
             env.variables.add(receiver, addr);
             // Store the argument for later use.
-            VDEBUG("Store3 source", receiver->loc, arg->print(cout));
-            VDEBUG("Store3 destination", receiver->loc, addr->print(cout));
+            VDEBUG("Function receiver source", receiver->loc, arg->print(cout));
+            VDEBUG("Function receiver destination", receiver->loc, addr->print(cout));
             env.builder.CreateStore(arg, addr, false);	// RICH: IsVolatile.
 
             // Do the next argument.
@@ -629,8 +637,8 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
 	    // Remember where the argument can be retrieved.
             env.variables.add(param, addr);
 	    // Store the argument for later use.
-            VDEBUG("Store3 source", param->loc, arg->print(cout));
-            VDEBUG("Store3 destination", param->loc, addr->print(cout));
+            VDEBUG("Function arg source", param->loc, arg->print(cout));
+            VDEBUG("Function arg destination", param->loc, addr->print(cout));
 	    env.builder.CreateStore(arg, addr, false);	// RICH: IsVolatile.
         }
     }
