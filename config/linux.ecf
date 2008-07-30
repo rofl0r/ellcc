@@ -24,10 +24,15 @@
 #define __STDC_HOSTED__ 1
 #define _GLIBCPP_USE_NAMESPACES
 
+#define _GCC_LIMITS_H_
+#define HAVE_MMAP 0
+
 includes {
     // "/home/rich/local/i686-pc-linux-gnu/include",
-    "/usr/lib/gcc-lib/i386-redhat-linux/3.3.2/include",
-    "/usr/lib/gcc/i386-redhat-linux/4.1.2/include",
-    "/usr/include/c++/4.1.2",
-    "/usr/include/c++/4.1.2/i386-redhat-linux",
+#if ECC_HOSTED
+     "/usr/lib/gcc-lib/i386-redhat-linux/3.3.2/include",
+     "/usr/lib/gcc/i386-redhat-linux/4.1.2/include",
+     "/usr/include/c++/4.1.2",
+     "/usr/include/c++/4.1.2/i386-redhat-linux",
+#endif
 };

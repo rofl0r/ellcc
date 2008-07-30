@@ -49,6 +49,8 @@ keywords {
 #define __GNU_LIBRARY__
 #define __USE_GNU
 
+#define ECC_HOSTED 1
+
 #include "c.ecf"
 // #include "cxx.ecf"
 // #include "cygwin32.ecf"
@@ -57,5 +59,7 @@ keywords {
 
 // Additional include paths.
 includes {
+#if ECC_HOSTED
     "/usr/include",
+#endif
 };

@@ -2708,6 +2708,7 @@ llvm::Value* CC2LLVMEnv::doassign(SourceLoc loc, llvm::Value* destination, int d
     if (llvm::ConstantArray::classof(source)) {
         --deref2;
     }
+
     VDEBUG("doassign", loc, source->print(cout));
     source = access(source, false, deref2);                 // RICH: Volatile.
 
@@ -2717,6 +2718,10 @@ llvm::Value* CC2LLVMEnv::doassign(SourceLoc loc, llvm::Value* destination, int d
     if (   destination->getType()->getContainedType(0)->getTypeID() != llvm::Type::ArrayTyID
         && destination->getType()->getContainedType(0)->getTypeID() != llvm::Type::StructTyID) {
         makeCast(loc, stype, source, dtype);
+    } else if (   destination->getType()->getContainedType(0)->getTypeID() == llvm::Type::StructTyID
+               && source->getType()->getTypeID() != llvm::Type::StructTyID) {
+        VDEBUG("doassign struct source", loc, cout << " deref2 " << deref2; source->print(cout));
+        source = builder.CreateLoad(source, false);     // RICH: Is volatile.
     }
     VDEBUG("doassign source", loc, source->print(cout));
     VDEBUG("doassign destination", loc, destination->print(cout));
