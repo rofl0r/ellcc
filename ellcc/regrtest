@@ -274,11 +274,11 @@ testCparse_special() {
 testCrun() {
   runTest ./a.out from t0005.c
 }
-testCparse_arm() {
-  runTest perl ./multitest.pl ./arm-elf-ecc in/$1
+testCparse_march() {
+  runTest perl ./multitest.pl ./$1-elf-ecc in/$2
 }
-testCparse_special_arm() {
-  runTest perl ./multitest.pl ./arm-elf-ecc $1 in/$2
+testCparse_special_march() {
+  runTest perl ./multitest.pl ./$1-elf-ecc $2 in/$3
 }
 failCparse() {
   if [ "$2" = "" ]; then
@@ -286,6 +286,13 @@ failCparse() {
     exit 4
   fi
   failTest "$2" perl ./multitest.pl ./ecc in/$1
+}
+failCparse_march() {
+  if [ "$3" = "" ]; then
+    echo "failparse_march $1: failparse_march takes three arguments"
+    exit 4
+  fi
+  failTest "$3" perl ./multitest.pl ./$1-elf-ecc in/$2
 }
 testCparse t0001.c
 testCparse t0002.c
@@ -303,7 +310,7 @@ testCparse t0012.c
 testCparse t0013.c
 testCparse t0014.c
 testCparse t0015.c
-testCparse_special_arm -S t0016.c
+testCparse_special_march arm -S t0016.c
 testCparse t0017.c
 testCparse t0018.c
 testCparse t0019.c
@@ -312,7 +319,7 @@ testCparse t0021.c
 testCparse t0022.c
 testCparse t0024.c
 testCparse t0025.c
-testCparse_special_arm -S t0026.c
+testCparse_special_march arm -S t0026.c
 testCparse t0027.c
 testCparse t0028.c
 testCparse t0029.c
@@ -322,6 +329,10 @@ testCparse t0032.c
 testCparse t0033.c
 failCparse t0034.c "Assignment of a struct"
 testCparse t0035.c
+testCparse t0036.c
+failCparse_march mips t0037.c "Return of a double"
+failCparse_march arm t0038.c "Simple int?"
+failCparse_march ia64 t0039.c "Function pointers?"
 
 # is K&R built?
 use_kandr=false

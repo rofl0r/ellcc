@@ -2039,6 +2039,12 @@ static int Assemble(const std::string &OutputFilename,
   args.push_back(OutputFilename);
   args.push_back(InputFilename);
 
+  // HACK: Handle any ppc opcodes.
+  if (OutputMachine == "powerpc64") {
+      args.push_back("-many");
+      args.push_back("-a64");
+  }
+  
   // Now that "args" owns all the std::strings for the arguments, call the c_str
   // method to get the underlying string array.  We do this game so that the
   // std::string array is guaranteed to outlive the const char* array.

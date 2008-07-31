@@ -52,8 +52,8 @@ CC2LLVMEnv::CC2LLVMEnv(StringTable &s, string name, const TranslationUnit& input
     switchType(NULL),
     builder(builder)
 { 
-    mod->setDataLayout("e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:32:64-f32:32:32-f64:32:64-v64:64:64-v128:128:128-a0:0:64-s0:0:64-f80:32:32");
-    mod->setTargetTriple("i686-pc-linux-gnu");
+    // RICH: mod->setDataLayout("e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:32:64-f32:32:32-f64:32:64-v64:64:64-v128:128:128-a0:0:64-s0:0:64-f80:32:32");
+    // RICH: mod->setTargetTriple("i686-pc-linux-gnu");
 }
 
 CC2LLVMEnv::~CC2LLVMEnv()
@@ -435,6 +435,7 @@ llvm::Value* CC2LLVMEnv::declaration(const Variable* var, llvm::Value* init, int
         llvm::GlobalValue::LinkageTypes linkage = getLinkage(var->flags);
         llvm::Function* gf = llvm::Function::Create((llvm::FunctionType*)type, linkage, makeName(var)->name, mod);
         gf->setCallingConv(llvm::CallingConv::C); // RICH: Calling convention.
+        gf->setDoesNotThrow();                  // RICH: When known.
         variables.add(var, gf);
         value = gf;
     } else if (var->type->getTag() == Type::T_DEPENDENTSIZEDARRAY) {
@@ -927,8 +928,10 @@ void S_while::cc2llvm(CC2LLVMEnv &env) const
 
     env.setCurrentBlock(bodyBlock);
     body->cc2llvm(env);
-    env.builder.CreateBr(env.continueBlock);
-    env.currentBlock = NULL;
+    if (env.currentBlock) {
+        env.builder.CreateBr(env.continueBlock);
+        env.currentBlock = NULL;
+    }
     env.setCurrentBlock(env.nextBlock);
 
     // Restore the old loop context.
