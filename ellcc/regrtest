@@ -292,7 +292,7 @@ failCparse_march() {
     echo "failparse_march $1: failparse_march takes three arguments"
     exit 4
   fi
-  failTest "$3" perl ./multitest.pl ./$1-elf-ecc in/$2
+  failTest "$3" perl ./multitest.pl ./$1-elf-ecc -c in/$2
 }
 testCparse t0001.c
 testCparse t0002.c
@@ -331,7 +331,7 @@ failCparse t0034.c "Assignment of a struct"
 testCparse t0035.c
 testCparse t0036.c
 failCparse_march mips t0037.c "Return of a double"
-failCparse_march arm t0038.c "Simple int?"
+failCparse_march spu t0038.c "Simple int?"
 failCparse_march ia64 t0039.c "Function pointers?"
 
 # is K&R built?
