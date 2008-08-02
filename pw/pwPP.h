@@ -190,7 +190,6 @@ public:
      */
     enum {
         NEVEREXPAND = 1,                        ///< Never expand the identifier.
-        STARTMACRO,                             ///< The start of a macro body.
         ENDMACRO,                               ///< The end of a macro body.
         STRINGIZE,                              ///< Stringize the argument.
         PASTE                                   ///< Paste tokens.

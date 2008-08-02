@@ -262,7 +262,7 @@ again:
         goto endpptoken;
     }
 
-    while (nextchar == 0)
+    while (nextchar == 0 || nextchar == ENDMACRO)
         readchar();                             // first character
 
     iscomment = false;
@@ -494,7 +494,6 @@ again:
         }
 
 
-        body = STARTMACRO;
         body += def->body;
         body += ENDMACRO;
 
@@ -630,7 +629,7 @@ again:
             haspaste = false;
 
             // get the body, expanding arguments
-            body = STARTMACRO;
+            body.erase();
 
             int oldnext = 0;
             for ( ;; ) {
@@ -705,7 +704,7 @@ again:
 
                 if (inargument || token != options->IDENTIFIER) {
                     // everything but identifiers
-                    saveit:                     // non-args come here
+                saveit:                     // non-args come here
                     if (needspace) {
                         // a space preceeded
                         body += ' ';
@@ -714,7 +713,7 @@ again:
 
                     // add the pp token
                     body += string;
-                    if (token == options->IDENTIFIER
+                    if (   token == options->IDENTIFIER
                         && (neverexpand || string == name)) {
                         body += NEVEREXPAND;
                     }
@@ -1977,19 +1976,11 @@ const char *PPStream::convertNumber(ppint_t *value, const std::string& string)
 //
 void PPStream::getnextchar()
 {
-again:
     if (first) {
         if (first->index >= first->body.length()) {
             nextchar = -1;
         } else {
             nextchar = first->body[first->index++];
-        }
-
-        if (nextchar == STARTMACRO) {
-            goto again;
-        }
-        if (nextchar == ENDMACRO) {
-            goto again;
         }
 
         if (nextchar != -1)
