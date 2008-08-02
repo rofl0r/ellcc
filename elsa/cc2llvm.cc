@@ -1952,18 +1952,24 @@ llvm::Value* CC2LLVMEnv::initializer(const Initializer* init, Type* type, int& d
 	    xassert(size == c->inits.count());
 	    std::vector<llvm::Constant*> elements;
             FOREACH_ASTLIST(Initializer, c->inits, iter) {
-                elements.push_back((llvm::Constant*)initializer(iter.data(), at->eltType, deref));
+                llvm::Value* value = initializer(iter.data(), at->eltType, deref);
+                VDEBUG("Init element", init->loc, value->print(cout));
+                elements.push_back((llvm::Constant*)value);
             }
-	    value = llvm::ConstantArray::get((llvm::ArrayType*)makeTypeSpecifier(init->loc, type), elements);
+            const llvm::Type* artype = makeTypeSpecifier(init->loc, type);
+            VDEBUG("Init type", init->loc, artype->print(cout));
+	    value = llvm::ConstantArray::get((llvm::ArrayType*)artype, elements);
 	    break;
 	} else if (type->isCompoundType()) {
             CompoundType *ct = type->asCompoundType();
             ASTListIter<Initializer> iiter(c->inits);
+	    std::vector<llvm::Constant*> members;
             SFOREACH_OBJLIST(Variable, ct->dataMembers, iter) {
                 Variable const *v = iter.data();
                 if (!iiter.isDone()) {
                     // Have an initializer for this.
-                    initializer(iiter.data(), v->type, deref);
+                    value = initializer(iiter.data(), v->type, deref);
+                    members.push_back((llvm::Constant*)value);
                     iiter.adv();
                 } else {
                     // No initializer present.
@@ -1971,6 +1977,8 @@ llvm::Value* CC2LLVMEnv::initializer(const Initializer* init, Type* type, int& d
                     xunimp("missing compound initializer");
                 }
             }
+            const llvm::Type* sttype = makeTypeSpecifier(init->loc, type);
+            value = llvm::ConstantStruct::get((llvm::StructType*)sttype, members);
 	}
     }
 
