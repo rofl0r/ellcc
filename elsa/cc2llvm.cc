@@ -1973,8 +1973,8 @@ llvm::Value* CC2LLVMEnv::initializer(const Initializer* init, Type* type, int& d
                     iiter.adv();
                 } else {
                     // No initializer present.
-                    cerr << toString(init->loc) << ": ";
-                    xunimp("missing compound initializer");
+                    const llvm::Type* type = makeTypeSpecifier(v->loc, v->type);
+                    members.push_back(llvm::Constant::getNullValue(type));
                 }
             }
             const llvm::Type* sttype = makeTypeSpecifier(init->loc, type);
@@ -2948,9 +2948,7 @@ llvm::Value *E___builtin_alloca::cc2llvm(CC2LLVMEnv &env, int& deref) const
 llvm::Value *E_compoundLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     deref = 0;
-    cerr << toString(loc) << ": ";
-    xunimp("compound literal");
-    return NULL;
+    return env.initializer(init, stype->getType(), deref, true);
 }
 
 llvm::Value *E_statement::cc2llvm(CC2LLVMEnv &env, int& deref) const
