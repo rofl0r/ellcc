@@ -450,6 +450,10 @@ llvm::Value* CC2LLVMEnv::declaration(const Variable* var, llvm::Value* init, int
             init = llvm::Constant::getNullValue(type);
         }
         llvm::GlobalVariable* gv = (llvm::GlobalVariable*)variables.get(var);   // RICH: cast
+        VDEBUG("global type", var->loc, type->print(cout));
+        if (init) {
+            VDEBUG("global initializer", var->loc, init->print(cout));
+        }
         if (gv == NULL) {
             gv = new llvm::GlobalVariable(type, false,	// RICH: isConstant
                     getLinkage(var->flags), (llvm::Constant*)init, makeName(var)->name, mod);	// RICH: cast
@@ -1907,7 +1911,6 @@ llvm::Value* CC2LLVMEnv::initializer(const Initializer* init, Type* type, int& d
     ASTCASEC(IN_expr, e) {
 	if (type->isArrayType()) {
             const E_stringLit* s = e->e->ifE_stringLit();
-            cerr << toString(init->loc) << ": ";
             if (s) {
                 // Initialize an array with a string.
                 ArrayType *at = type->asArrayType();
@@ -1931,7 +1934,8 @@ llvm::Value* CC2LLVMEnv::initializer(const Initializer* init, Type* type, int& d
             }
         } else {
             value = e->e->cc2llvm(*this, deref);
-            if (!top) {
+            const llvm::Type* totype = makeTypeSpecifier(init->loc, type);
+            if (!top || (totype->getTypeID() == llvm::Type::PointerTyID && value->getType() != totype)) {
                 value = access(value, false, deref);                 // RICH: Volatile.
                 makeCast(e->e->loc, e->e->type, value, type);
             }
