@@ -528,7 +528,7 @@ void CC2LLVMEnv::constructor(llvm::Value* object, const E_constructor* cons)
     xassert(function && "An undeclared constructor has been referenced");
     // RICH: deref = 0;
     // RICH: function = access(function, false, deref);                 // RICH: Volatile.
-    VDEBUG("CreateCall", cons->ctorVar->loc, function->print(cout));
+    VDEBUG("CreateCall constructor", cons->ctorVar->loc, function->print(cout));
     builder.CreateCall(function, parameters.begin(), parameters.end());
 }
 
@@ -1368,8 +1368,11 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, int& deref) const
         VDEBUG("Param", loc, param->print(cout));
     }
 
+    if (function->getType()->getContainedType(0)->getTypeID() == llvm::Type::PointerTyID && deref == 0) {
+        ++deref;
+    }
     function = env.access(function, false, deref);                 // RICH: Volatile.
-    VDEBUG("CreateCall", loc, function->print(cout));
+    VDEBUG("CreateCall call", loc, function->print(cout));
     llvm::Value* result = env.builder.CreateCall(function, parameters.begin(), parameters.end());
 #if SRET
     // RICH: sret
