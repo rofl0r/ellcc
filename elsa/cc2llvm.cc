@@ -1044,7 +1044,8 @@ void S_return::cc2llvm(CC2LLVMEnv &env) const
         int deref;
         llvm::Value* value = expr->cc2llvm(env, deref);
         VDEBUG("Return type", loc, cout << expr->expr->type->toString() << " deref " << deref);
-        if (   value->getType()->getTypeID() == llvm::Type::PointerTyID
+        if (   !expr->expr->type->isPointer()
+            && value->getType()->getTypeID() == llvm::Type::PointerTyID
             && (   value->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID
                 || value->getType()->getContainedType(0)->getTypeID() == llvm::Type::StructTyID)) {
             if (!llvm::Constant::classof(value)) {

@@ -338,6 +338,7 @@ testCparse t0040.c
 testCparse t0041.c
 failCparse t0042.c "Structured constant"
 testCparse t0043.c
+testCparse t0044.c
 
 # is K&R built?
 use_kandr=false
