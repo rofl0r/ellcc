@@ -1278,7 +1278,7 @@ llvm::Value *E_variable::cc2llvm(CC2LLVMEnv &env, int& deref) const
     if (var->type->isReference() && (var->flags & DF_PARAMETER)) {
         ++deref;
     }
-    VDEBUG("E_variable deref", loc, cout << deref);
+    VDEBUG("E_variable deref", loc, cout << deref << " " << var->getType()->toString());
     return value;
 }
 
@@ -1654,6 +1654,11 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
         leftValue = builder.CreateGEP(leftValue, indices.begin(), indices.end(), "");
         VDEBUG("makeCast array type", loc, cout << "left "; leftValue->print(cout));
         llvmType = leftValue->getType();
+    } else if (leftType->isFunctionType()) {
+        // A function becomes a pointer to the function.
+        VDEBUG("makeCast function type", loc, cout << "left "; leftValue->print(cout));
+        llvmType = leftValue->getType();
+        llvmType = llvm::PointerType::get(leftValue->getType(), 0);       // RICH: Address space.
     }
     Data left(leftType, &leftValue, llvmType);
 
@@ -1667,11 +1672,20 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
             VDEBUG("makeCast array type", loc, cout << "right "; (*rightValue)->print(cout));
             llvmType = (*rightValue)->getType();
         } else {
-            // Build the typeas pointer to element type.
+            // Build the type as pointer to element type.
             ArrayType *at = rightType->asArrayType();
             const llvm::Type* elttype = makeTypeSpecifier(loc, at->eltType);
             llvmType = llvm::PointerType::get(elttype, 0);       // RICH: Address space.
         }
+    } else if (rightType->isFunctionType()) {
+        // A function becomes a pointer to the function.
+        if (rightValue) {
+            VDEBUG("makeCast function type", loc, cout << "left "; (*rightValue)->print(cout));
+            llvmType = (*rightValue)->getType();
+            llvmType = llvm::PointerType::get((*rightValue)->getType(), 0);       // RICH: Address space.
+         } else {
+            llvmType = llvm::PointerType::get(makeTypeSpecifier(loc, rightType), 0);       // RICH: Address space.
+         }
     }
     Data right(rightType, rightValue, llvmType);
     Data* source = NULL;	// This will remain NULL if no cast is needed.
@@ -1680,7 +1694,7 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
     VDEBUG("makeCast types", loc, cout << "left " << left.type->toString() << " right " << right.type->toString());
     VDEBUG("makeCast left value", loc, if (left.value) (*left.value)->print(cout); else cout << "NULL");
     VDEBUG("makeCast right value", loc, if (right.value) (*right.value)->print(cout); else cout << "NULL");
-    if (0 && Type::equalTypes(left.type, right.type)) {
+    if (0 && Type::equalTypes(left.type, right.type)) { // RICH
         // Types identical. Do nothing.
     } else if (right.value == NULL) {
         // This is a cast of the left value to the right type.
@@ -2274,7 +2288,7 @@ llvm::Value* CC2LLVMEnv::binop(SourceLoc loc, BinaryOp op, Expression* e1, llvm:
             if ((isPtr(e1->type) && isInt(e2->type)) || (isInt(e1->type) && isPtr(e2->type))) {
                 // This could be an array reference *(a + i).
                 VDEBUG("+/- checking",  loc, cout << e1->type->toString() << " " << e2->type->toString());
-                if (e1->type->isIntegerType() && e2->type->isPtrOrRef()) {
+                if (isInt(e1->type) && isPtr(e2->type)) {
                     // Place the integer on the right.
                     te1 = e2;
                     te2 = e1;
