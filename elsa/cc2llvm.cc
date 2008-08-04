@@ -1957,13 +1957,21 @@ llvm::Value* CC2LLVMEnv::initializer(const Initializer* init, Type* type, int& d
                 xunimp("dynamic array type in initializer");
 	    }
 
-	    xassert(size == c->inits.count());
+	    xassert(size >= c->inits.count());
 	    std::vector<llvm::Constant*> elements;
+            int count = 0;
+            const llvm::Type* etype = makeTypeSpecifier(init->loc, at->eltType);
             FOREACH_ASTLIST(Initializer, c->inits, iter) {
                 llvm::Value* value = initializer(iter.data(), at->eltType, deref);
                 VDEBUG("Init element", init->loc, value->print(cout));
                 elements.push_back((llvm::Constant*)value);
+                ++count;
             }
+            while (count < size) {
+                elements.push_back(llvm::Constant::getNullValue(etype));
+                ++count;
+            }
+            
             const llvm::Type* artype = makeTypeSpecifier(init->loc, type);
             VDEBUG("Init type", init->loc, artype->print(cout));
 	    value = llvm::ConstantArray::get((llvm::ArrayType*)artype, elements);
