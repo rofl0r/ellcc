@@ -2040,7 +2040,7 @@ static bool isInt(Type* type)
     if (type->isReference()) {
         type = type->getAtType();
     }
-    return type->isIntegerType();
+    return type->isIntegerType() || type->isBool();
 }
 
 llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, int& deref) const
@@ -2332,9 +2332,9 @@ llvm::Value* CC2LLVMEnv::binop(SourceLoc loc, BinaryOp op, Expression* e1, llvm:
             if (lsize != rsize) {
                 if (lsize > rsize) {
                     // The pointer is bigger, check for signed vs. unsigned.
-                    const SimpleType* st = te2->type->asReferenceTypeC()->getAtType()->asSimpleTypeC();
                     if (   right->getType()->getPrimitiveSizeInBits() == 1
-                        || ::isExplicitlyUnsigned(st->type)) {
+                        || te2->type->isBool()
+                        || ::isExplicitlyUnsigned(te2->type->asReferenceTypeC()->getAtType()->asSimpleTypeC()->type)) {
                         right = builder.CreateZExt(right, targetData.getIntPtrType());
                     } else {
                         VDEBUG("SExt2 source", loc, right->print(cout));
