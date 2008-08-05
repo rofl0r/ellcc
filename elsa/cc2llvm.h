@@ -28,7 +28,8 @@ namespace llvm {
 
 /** The main translator entry point.
  */
-llvm::Module* cc_to_llvm(string name, StringTable &str, TranslationUnit const &input, string targetData, string targetTriple);
+llvm::Module* cc_to_llvm(string name, StringTable &str, TranslationUnit const &input,
+                         const char* targetData, const char* targetTriple);
 
 
 /** The translation environment.
@@ -45,7 +46,7 @@ public:      // funcs
     /** Construct an LLVM convertor.
      */
     CC2LLVMEnv(StringTable &str, string name, const TranslationUnit& input,
-               string targetData, string targetTriple, llvm::IRBuilder& builder);
+               const char* targetData, const char* targetTriple, llvm::IRBuilder& builder);
     /** Destruct an LLVM convertor.
      */
     ~CC2LLVMEnv();

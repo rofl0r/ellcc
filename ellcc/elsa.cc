@@ -235,7 +235,8 @@ static void handle_xBase(Env &env, xBase &x)
 }
 
 
-int Elsa::doit(Language language, const char* inputFname, const char* outputFname, llvm::Module*& mod)
+int Elsa::doit(Language language, const char* inputFname, const char* outputFname, llvm::Module*& mod,
+               const char* targetData, const char* targetTriple)
 {
     mod = NULL;
     SourceLocManager mgr;
@@ -759,10 +760,7 @@ int Elsa::doit(Language language, const char* inputFname, const char* outputFnam
     if (doTime) {
         llvmGenerationTimer.startTimer();
     }
-    // RICH: Target data and target triple.
-    mod = cc_to_llvm(outputFname, strTable, *unit,
-            "e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:32:64-f32:32:32-f64:32:64-v64:64:64-v128:128:128-a0:0:64-s0:0:64-f80:32:32",
-            "i686-pc-linux-gnu");
+    mod = cc_to_llvm(outputFname, strTable, *unit, targetData, targetTriple);
 
     if (doTime) {
         llvmGenerationTimer.stopTimer();
@@ -784,10 +782,11 @@ int Elsa::doit(Language language, const char* inputFname, const char* outputFnam
   return 0;
 }
 
-int Elsa::parse(Language language, const char* inputFname, const char* outputFname, llvm::Module*& mod, pw::Plexer* lang)
+int Elsa::parse(Language language, const char* inputFname, const char* outputFname, llvm::Module*& mod, pw::Plexer* lang,
+                const char* targetData, const char* targetTriple)
 {
   try {
-    return doit(language, inputFname, outputFname, mod);
+    return doit(language, inputFname, outputFname, mod, targetData, targetTriple);
   } catch (XUnimp &x) {
     HANDLER();
     cout << x << endl;

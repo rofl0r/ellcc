@@ -25,7 +25,7 @@
 
 #define SRET 1
 
-#if 1
+#if 0
 // Really verbose debugging.
 #define VDEBUG(who, where, what) cout << toString(where) << ": " << who << " "; what; cout << "\n"
 #else
@@ -34,10 +34,10 @@
 
 // -------------------- CC2LLVMEnv ---------------------
 CC2LLVMEnv::CC2LLVMEnv(StringTable &s, string name, const TranslationUnit& input,
-                       string targetData, string targetTriple,
+                       const char* targetData, const char* targetTriple,
 		       llvm::IRBuilder& builder)
   : str(s),
-    targetData(targetData.c_str()),
+    targetData(targetData),
     input(input),
     mod(new llvm::Module(name.c_str())),
     function(NULL),
@@ -52,8 +52,8 @@ CC2LLVMEnv::CC2LLVMEnv(StringTable &s, string name, const TranslationUnit& input
     switchType(NULL),
     builder(builder)
 { 
-    // RICH: mod->setDataLayout("e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:32:64-f32:32:32-f64:32:64-v64:64:64-v128:128:128-a0:0:64-s0:0:64-f80:32:32");
-    // RICH: mod->setTargetTriple("i686-pc-linux-gnu");
+    mod->setDataLayout(targetData);
+    mod->setTargetTriple(targetTriple);
 }
 
 CC2LLVMEnv::~CC2LLVMEnv()
@@ -3028,7 +3028,8 @@ llvm::Module* CC2LLVMEnv::doit()
 }
 
 // ------------------- entry point -------------------
-llvm::Module* cc_to_llvm(string name, StringTable &str, TranslationUnit const &input, string targetData, string targetTriple)
+llvm::Module* cc_to_llvm(string name, StringTable &str, TranslationUnit const &input,
+                         const char* targetData, const char* targetTriple)
 {
     llvm::IRBuilder builder;
     CC2LLVMEnv env(str, name, input, targetData, targetTriple, builder);

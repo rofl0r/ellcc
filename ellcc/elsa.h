@@ -41,13 +41,15 @@ public:
     };
     /** Parse a source file.
      */
-    int parse(Language language, const char* inputFname, const char* outputFname, llvm::Module*& mod, pw::Plexer* lang);
+    int parse(Language language, const char* inputFname, const char* outputFname, llvm::Module*& mod, pw::Plexer* lang,
+              const char* targetData, const char* targetTriple);
 
 private:
     /** The default constructor (not implemented or used).
      */
     Elsa();
-    int doit(Language language, const char* inputFname, const char* outputFname, llvm::Module*& mod);
+    int doit(Language language, const char* inputFname, const char* outputFname, llvm::Module*& mod,
+             const char* targetData, const char* targetTriple);
     /** true if phases should be timed.
      */
     bool doTime;

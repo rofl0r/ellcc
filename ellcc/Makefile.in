@@ -87,7 +87,6 @@ TOCLEAN += *.o *.d
 # rearrange as different parts of the code are in flux)
 ELLSIF_OBJS := \
   ellcc.o \
-  StructRetDemotion.o \
   elsa.o
 
 -include $(ELLSIF_OBJS:.o=.d)
