@@ -2247,16 +2247,19 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
                 // RICH: std: C, C++, K&R, etc.
             }
             // If we are supposed to override the target triple, do so now.
+            std::string triple;
             if (!TargetTriple.empty()) {
-                input.module->setTargetTriple(TargetTriple);
+                triple = TargetTriple;
             } else if (OutputMachine.size()) {
-                input.module->setTargetTriple(machines[OutputMachine] + "-elf");
+                triple = machines[OutputMachine] + "-elf";
+            } else {
+                triple = "i386-elf";             // RICH: default target triple.
             }
 
             // RICH: Hard coded.
             int result = elsa.parse(lang, input.name.c_str(), to.c_str(), input.module, input.language,
                                     "e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:32:64-f32:32:32-f64:32:64-v64:64:64-v128:128:128-a0:0:64-s0:0:64-f80:32:32",
-                                    "i686-pc-linux-gnu");
+                                    triple.c_str());
             if (result) {
                 Exit(result);
             }
