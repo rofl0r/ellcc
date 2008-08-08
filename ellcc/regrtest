@@ -336,7 +336,7 @@ failCparse_march spu t0038.c "Simple int?"
 failCparse_march ia64 t0039.c "Function pointers?"
 testCparse t0040.c
 testCparse t0041.c
-failCparse t0042.c "Structured constant"
+testCparse t0042.c
 testCparse t0043.c
 testCparse t0044.c
 testCparse t0045.c
@@ -344,6 +344,8 @@ testCparse t0046.c
 testCparse t0047.c
 testCparse t0048.c
 testCparse t0049.c
+failCparse t0050.c "K&R definition"
+testCparse_special_march sparc -S t0051.c
 
 # is K&R built?
 use_kandr=false
