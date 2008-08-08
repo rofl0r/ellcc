@@ -344,7 +344,7 @@ testCparse t0046.c
 testCparse t0047.c
 testCparse t0048.c
 testCparse t0049.c
-failCparse t0050.c "K&R definition"
+failCparse t0050.c "K&R argument promotion"
 testCparse_special_march sparc -S t0051.c
 
 # is K&R built?
