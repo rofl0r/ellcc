@@ -1,8 +1,6 @@
 // cc2llvm.cc
 // code for cc2llvm.h
 
-#include "cc2llvm.h"         // this module
-
 #include "datablok.h"
 
 // LLVM
@@ -18,8 +16,9 @@
 #include <llvm/Intrinsics.h>
 #include <llvm/ParameterAttributes.h>
 #include <llvm/Support/MathExtras.h>
-#include <llvm/Support/IRBuilder.h>
 #include <llvm/Analysis/Verifier.h>
+
+#include "cc2llvm.h"         // this module
 
 #define BITS_PER_BYTE	8	// RICH: Temporary.
 
@@ -35,7 +34,7 @@
 // -------------------- CC2LLVMEnv ---------------------
 CC2LLVMEnv::CC2LLVMEnv(StringTable &s, string name, const TranslationUnit& input,
                        const char* targetData, const char* targetTriple,
-		       llvm::IRBuilder& builder)
+		       llvm::IRBuilder<>& builder)
   : str(s),
     targetData(targetData),
     input(input),
@@ -3031,7 +3030,7 @@ llvm::Module* CC2LLVMEnv::doit()
 llvm::Module* cc_to_llvm(string name, StringTable &str, TranslationUnit const &input,
                          const char* targetData, const char* targetTriple)
 {
-    llvm::IRBuilder builder;
+    llvm::IRBuilder<> builder;
     CC2LLVMEnv env(str, name, input, targetData, targetTriple, builder);
     return env.doit();
 }

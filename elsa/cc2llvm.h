@@ -4,6 +4,9 @@
 #ifndef CC2LLVM_H
 #define CC2LLVM_H
 
+#include <llvm/Support/IRBuilder.h>
+#include <llvm/Target/TargetData.h>
+
 // LLVM
 namespace llvm {
     class Module;
@@ -12,9 +15,7 @@ namespace llvm {
     class BasicBlock;
     class Value;
     class SwitchInst;
-    class IRBuilder;
 };
-#include <llvm/Target/TargetData.h>
 
 // Elsa
 #include "cc_ast.h"          // C++ AST
@@ -46,7 +47,7 @@ public:      // funcs
     /** Construct an LLVM convertor.
      */
     CC2LLVMEnv(StringTable &str, string name, const TranslationUnit& input,
-               const char* targetData, const char* targetTriple, llvm::IRBuilder& builder);
+               const char* targetData, const char* targetTriple, llvm::IRBuilder<>& builder);
     /** Destruct an LLVM convertor.
      */
     ~CC2LLVMEnv();
@@ -235,7 +236,7 @@ public:      // funcs
     PtrMap<const char, llvm::BasicBlock> labels;
     /** The LLVM Builder.
      */
-    llvm::IRBuilder& builder;
+    llvm::IRBuilder<>& builder;
 };
 
 #endif // CC2LLVM_H
