@@ -579,6 +579,8 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
         env.function->setName("");
     }
     llvm::Function* function = llvm::Function::Create(ft, linkage, nameAndParams->var->name, env.mod);
+    function->setCallingConv(llvm::CallingConv::C); // RICH: Calling convention.
+    function->setDoesNotThrow();                  // RICH: When known.
     if (env.function && env.function->getType() != (llvm::Type*)ft) {
         // A declaration exists.
         env.function->uncheckedReplaceAllUsesWith(function);

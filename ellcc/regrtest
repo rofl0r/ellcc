@@ -328,7 +328,7 @@ testCparse t0030.c
 testCparse t0031.c
 testCparse t0032.c
 testCparse t0033.c
-failCparse t0034.c "Assignment of a struct"
+testCparse t0034.c
 testCparse t0035.c
 testCparse t0036.c
 failCparse_march mips t0037.c "Return of a double"
@@ -346,6 +346,7 @@ testCparse t0048.c
 testCparse t0049.c
 failCparse t0050.c "K&R argument promotion"
 testCparse_special_march sparc -S t0051.c
+testCparse_special -O0 t0052.c
 
 # is K&R built?
 use_kandr=false
