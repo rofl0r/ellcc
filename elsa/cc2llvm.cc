@@ -33,10 +33,10 @@
 
 // -------------------- CC2LLVMEnv ---------------------
 CC2LLVMEnv::CC2LLVMEnv(StringTable &s, string name, const TranslationUnit& input,
-                       const char* targetData, const char* targetTriple,
-		       llvm::IRBuilder<>& builder)
+                       const char* targetDataString, const char* targetTriple)
   : str(s),
-    targetData(targetData),
+    targetData(targetDataString),
+    targetFolder(targetData),
     input(input),
     mod(new llvm::Module(name.c_str())),
     function(NULL),
@@ -49,9 +49,9 @@ CC2LLVMEnv::CC2LLVMEnv(StringTable &s, string name, const TranslationUnit& input
     nextBlock(NULL),
     switchInst(NULL),
     switchType(NULL),
-    builder(builder)
+    builder(targetFolder)
 { 
-    mod->setDataLayout(targetData);
+    mod->setDataLayout(targetDataString);
     mod->setTargetTriple(targetTriple);
 }
 
@@ -3032,8 +3032,7 @@ llvm::Module* CC2LLVMEnv::doit()
 llvm::Module* cc_to_llvm(string name, StringTable &str, TranslationUnit const &input,
                          const char* targetData, const char* targetTriple)
 {
-    llvm::IRBuilder<> builder;
-    CC2LLVMEnv env(str, name, input, targetData, targetTriple, builder);
+    CC2LLVMEnv env(str, name, input, targetData, targetTriple);
     return env.doit();
 }
 

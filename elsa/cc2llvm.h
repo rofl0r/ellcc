@@ -6,6 +6,7 @@
 
 #include <llvm/Support/IRBuilder.h>
 #include <llvm/Target/TargetData.h>
+#include <llvm/Support/TargetFolder.h>
 
 // LLVM
 namespace llvm {
@@ -30,7 +31,7 @@ namespace llvm {
 /** The main translator entry point.
  */
 llvm::Module* cc_to_llvm(string name, StringTable &str, TranslationUnit const &input,
-                         const char* targetData, const char* targetTriple);
+                         const char* targetDataString, const char* targetTriple);
 
 
 /** The translation environment.
@@ -44,10 +45,10 @@ public:      // data
     StringTable &str;
 
 public:      // funcs
-    /** Construct an LLVM convertor.
+    /** Construct an LLVM converter.
      */
     CC2LLVMEnv(StringTable &str, string name, const TranslationUnit& input,
-               const char* targetData, const char* targetTriple, llvm::IRBuilder<>& builder);
+               const char* targetData, const char* targetTriple);
     /** Destruct an LLVM convertor.
      */
     ~CC2LLVMEnv();
@@ -55,6 +56,9 @@ public:      // funcs
     /** Information aboue the target.
      */
     llvm::TargetData targetData;
+    /** The target aware folder.
+     */
+    llvm::TargetFolder targetFolder;
 
     /** Convert an AST type specifier into an LLVM type specifier.
      */
@@ -236,7 +240,7 @@ public:      // funcs
     PtrMap<const char, llvm::BasicBlock> labels;
     /** The LLVM Builder.
      */
-    llvm::IRBuilder<>& builder;
+    llvm::IRBuilder<true, llvm::TargetFolder> builder;
 };
 
 #endif // CC2LLVM_H

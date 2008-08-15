@@ -292,7 +292,7 @@ failCparse_special() {
     echo "failparse $1: failparse takes three arguments"
     exit 4
   fi
-  failTest "$3" perl ./multitest.pl ./ecc $2 in/$1
+  failTest "$3" perl ./multitest.pl ./ecc $1 in/$2
 }
 failCparse_march() {
   if [ "$3" = "" ]; then
@@ -353,7 +353,7 @@ testCparse t0048.c
 testCparse t0049.c
 failCparse t0050.c "K&R argument promotion"
 testCparse_special_march sparc -S t0051.c
-failCparse_special -O0 t0052.c "Nested GEP"
+testCparse_special -O0 t0052.c
 
 # is K&R built?
 use_kandr=false
