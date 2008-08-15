@@ -1345,7 +1345,7 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, int& deref) const
     
     SObjListIter<Variable> parms(ft->params);
     FAKELIST_FOREACH(ArgExpression, args, arg) {
-        Variable const *parameter = NULL;
+        const Variable* parameter = NULL;
         if (!parms.isDone()) {
             parameter = parms.data();
             parms.adv();
@@ -1364,6 +1364,11 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, int& deref) const
             // Add an implicit cast of &array to *array.
             const llvm::Type* type = llvm::PointerType::get(param->getType()->getContainedType(0)->getContainedType(0), 0); // RICH: Address space.
 	    param = env.builder.CreateBitCast(param, type);
+        } else if (   parameter && parameter->getTypeC()->isCompoundType()
+                   && param->getType()->getTypeID() == llvm::Type::PointerTyID
+                   && param->getType()->getContainedType(0)->getTypeID() == llvm::Type::StructTyID) {
+            param = env.builder.CreateLoad(param, false);     // RICH: Is volatile.
+            VDEBUG("Param struct", loc, param->print(cout));
         }
         parameters.push_back(param);
         VDEBUG("Param", loc, param->print(cout));

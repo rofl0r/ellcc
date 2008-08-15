@@ -633,6 +633,11 @@ Expression *ElabVisitor::elaborateCallByValue
   (SourceLoc loc, Type *paramType, Expression *argExpr)
 {
   CompoundType *paramCt = paramType->asCompoundType();
+  Variable *ctor = env.getCopyCtor(paramCt);
+  if (ctor == NULL) {
+      // rdp: A trivial copy constructor. Treat as POD.
+      return argExpr;
+  }
 
   // E_variable that points to the temporary
   Variable *tempVar = insertTempDeclaration(loc, paramType);
@@ -643,7 +648,7 @@ Expression *ElabVisitor::elaborateCallByValue
   // function is expected to do it
   E_constructor *ector =
     env.makeCtorExpr(loc, makeE_variable(loc, tempVar), paramType,
-                     getCopyCtor(paramCt), makeExprList1(argExpr));
+                     ctor, makeExprList1(argExpr));
 
   // combine into a comma expression so we do both but return the
   // value of the second

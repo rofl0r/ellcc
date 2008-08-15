@@ -324,7 +324,7 @@ testCparse t0019.c
 testCparse t0020.c
 testCparse t0021.c
 testCparse t0022.c
-failCparse t0023.c "Passing a struct as an argument"
+testCparse t0023.c
 testCparse t0024.c
 testCparse t0025.c
 testCparse_special_march arm -S t0026.c
