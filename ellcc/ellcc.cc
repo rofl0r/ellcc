@@ -839,6 +839,11 @@ static void setupMappings()
     langToExt[O] = "o";
     filePhases[O][LINKING].type = LINKED;
     filePhases[O][LINKING].action = LINK;
+
+    extToLang["a"] = A;
+    langToExt[A] = "a";
+    filePhases[A][LINKING].type = A;
+    filePhases[A][LINKING].action = LINK;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1009,7 +1014,7 @@ static cl::list<std::string> Defines("D", cl::Prefix,
 //===          OUTPUT OPTIONS
 //===----------------------------------------------------------------------===//
 
-static cl::opt<std::string> OutputFilename("o", cl::init("a.out"),
+static cl::opt<std::string> OutputFilename("o", cl::init(""),
     cl::desc("Override output filename"), cl::value_desc("file"));
 
 static cl::opt<std::string> OutputMachine("m", cl::Prefix,
@@ -1952,7 +1957,9 @@ static int Link(const std::string& OutputFilename,
   args.push_back("-o");
   args.push_back(OutputFilename);
   for (unsigned i = 0; i < InputFilenames.size(); ++i ) {
-      args.push_back(InputFilenames[i]->name.toString());
+      if (InputFilenames[i]->type != A) {
+          args.push_back(InputFilenames[i]->name.toString());
+      }
   }
             
   // Add in the library paths
@@ -1968,6 +1975,11 @@ static int Link(const std::string& OutputFilename,
   }
 
   // Add in the libraries to link.
+  for (unsigned i = 0; i < InputFilenames.size(); ++i ) {
+      if (InputFilenames[i]->type == A) {
+          args.push_back("-l" + InputFilenames[i]->name.toString());
+      }
+  }
   for (unsigned index = 0; index < LinkItems.size(); index++)
     if (LinkItems[index].first != "crtend") {
       if (LinkItems[index].second)
@@ -2076,6 +2088,9 @@ static void doMulti(Phases phase, std::vector<Input*>& files, InputList& result,
         }
 
         // Generate the output name.
+        if (OutputFilename == "") {
+            OutputFilename = "a";
+        }
         sys::Path outputName(OutputFilename);
         outputName.eraseSuffix();
         outputName.appendSuffix("bc");
@@ -2163,6 +2178,9 @@ static void doMulti(Phases phase, std::vector<Input*>& files, InputList& result,
         }
 
         std::string ErrMsg;  
+        if (OutputFilename == "") {
+            OutputFilename = "a.out";
+        }
         // Keep track of the native link items (versus the bitcode items)
         Linker::ItemList NativeLinkItems;      // RICH
         if (Link(OutputFilename, files, NativeLinkItems, ErrMsg) != 0) {
@@ -2823,7 +2841,7 @@ int main(int argc, char **argv)
                 if (Verbose) {
                     cout << "  adding " << *libIt << " as an input library\n";
                 }
-                Input input(*fileIt, A);
+                Input input(*libIt, A);
                 InpList.push_back(input);
                 ++libIt;
             }

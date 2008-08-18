@@ -24,7 +24,7 @@
 
 #define SRET 1
 
-#if 1
+#if 0
 // Really verbose debugging.
 #define VDEBUG(who, where, what) cout << toString(where) << ": " << who << " "; what; cout << "\n"
 #else
