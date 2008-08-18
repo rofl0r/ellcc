@@ -354,6 +354,7 @@ testCparse t0049.c
 failCparse t0050.c "K&R argument promotion"
 testCparse_special_march sparc -S t0051.c
 testCparse_special -O0 t0052.c
+testCparse t0053.c
 
 # is K&R built?
 use_kandr=false

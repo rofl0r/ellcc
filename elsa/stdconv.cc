@@ -571,7 +571,8 @@ StandardConversion getStandardConversion
         CVFlags srcCV = getSrcCVFlags(src);
         CVFlags destCV = getDestCVFlags(dest, srcCV);
         
-        if (conv.stripPtrCtor(srcCV, destCV, isReference))
+        // rdp: Is this only for C++?
+        if (env.lang.isCplusplus && conv.stripPtrCtor(srcCV, destCV, isReference))
           { return conv.ret; }
 
 	if (dest->isVoid()) {

@@ -1976,7 +1976,8 @@ static int Link(const std::string& OutputFilename,
         args.push_back(LinkItems[index].first);
     }
 
-  args.push_back("-L/home/rich/local/i686-pc-linux-gnu/lib");
+  // args.push_back("-L/home/rich/local/i686-pc-linux-gnu/lib");
+  args.push_back("-L/home/rich/iellcc/newlib/obj/x86-elf/newlib/libc");
   args.push_back("-lc");
   args.push_back("-L/home/rich/llvm-gcc/install/lib/gcc/i686-pc-linux-gnu/4.2.1");
   args.push_back("-lgcc");
