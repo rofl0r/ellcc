@@ -432,11 +432,16 @@ llvm::Value* CC2LLVMEnv::declaration(const Variable* var, llvm::Value* init, int
     VDEBUG("declaration", var->loc, cout << toString(var->flags) << " " << var->toString());
     if (var->type->getTag() == Type::T_FUNCTION) {
         llvm::GlobalValue::LinkageTypes linkage = getLinkage(var->flags);
-        llvm::Function* gf = llvm::Function::Create((llvm::FunctionType*)type, linkage, makeName(var)->name, mod);
-        gf->setCallingConv(llvm::CallingConv::C); // RICH: Calling convention.
-        gf->setDoesNotThrow();                  // RICH: When known.
-        variables.add(var, gf);
-        value = gf;
+        llvm::GlobalVariable* gv = (llvm::GlobalVariable*)variables.get(var);   // RICH: cast
+        if (gv == NULL) {
+            llvm::Function* gf = llvm::Function::Create((llvm::FunctionType*)type, linkage, makeName(var)->name, mod);
+            gf->setCallingConv(llvm::CallingConv::C); // RICH: Calling convention.
+            gf->setDoesNotThrow();                  // RICH: When known.
+            variables.add(var, gf);
+            value = gf;
+        } else {
+            value = gv;
+        }
     } else if (var->type->getTag() == Type::T_DEPENDENTSIZEDARRAY) {
         cerr << toString(var->loc) << ": ";
         xunimp("dependent sized array");
