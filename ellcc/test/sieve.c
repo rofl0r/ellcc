@@ -49,7 +49,7 @@ int main(int ac, char **av)
         printf("__ELLCC_MINOR__ = %d\n", __ELLCC_MINOR__); 
         printf("__ELLCC_PATCHLEVEL__ = %d\n", __ELLCC_PATCHLEVEL__); 
         printf("__ELLCC_VERSION_STRING__ = %s\n", __ELLCC_VERSION_STRING__); 
-        printf("__ELLCC_VERSIONG__ = %s\n", __ELLCC_VERSION__); 
+        printf("__ELLCC_VERSION__ = %s\n", __ELLCC_VERSION__); 
 #endif
         }
                
