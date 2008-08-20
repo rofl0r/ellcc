@@ -63,7 +63,7 @@ EXT_OBJS      :=
 
 # ----------------------- compiler configuration -------------------
 # C++ preprocessor, compiler and linker
-CXX := g++
+CXX := @CXX@
 
 # flags for the C++ compiler (and preprocessor)
 CCFLAGS := @CCFLAGS@ -DXML -Woverloaded-virtual -I$(SMBASE) -I$(AST) -I$(ELKHOUND) -I$(ELSA)
