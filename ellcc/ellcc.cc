@@ -2090,12 +2090,12 @@ static void doMulti(Phases phase, std::vector<Input*>& files, InputList& result,
         }
 
         // Generate the output name.
+        sys::Path outputName;
         if (OutputFilename == "") {
-            OutputFilename = "a";
+             outputName = "a.bc";
+        } else {
+             outputName =  OutputFilename;
         }
-        sys::Path outputName(OutputFilename);
-        outputName.eraseSuffix();
-        outputName.appendSuffix("bc");
         // Construct a Linker.
         Linker TheLinker(progname, outputName.toString(), Verbose);
 
@@ -2180,12 +2180,15 @@ static void doMulti(Phases phase, std::vector<Input*>& files, InputList& result,
         }
 
         std::string ErrMsg;  
+        std::string outputName;
         if (OutputFilename == "") {
-            OutputFilename = "a.out";
+             outputName = "a.out";
+        } else {
+             outputName =  OutputFilename;
         }
         // Keep track of the native link items (versus the bitcode items)
         Linker::ItemList NativeLinkItems;      // RICH
-        if (Link(OutputFilename, files, NativeLinkItems, ErrMsg) != 0) {
+        if (Link(outputName, files, NativeLinkItems, ErrMsg) != 0) {
             PrintAndExit(ErrMsg);
         }
 
