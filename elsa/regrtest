@@ -669,7 +669,7 @@ testparse t0383.cc
 testparse t0384.cc
 testparse t0385.cc
 testparse t0386.cc
-testparse t0387.cc
+failparse t0387.cc "Array of char to char*"
 testparse t0388.cc
 testparse t0389.cc
 testparse t0390.cc
@@ -863,7 +863,7 @@ testparse t0576.cc
 failparse t0577.cc "flawed abstract enumerator value processing"
 # t0578.cc is arguably valid code, but nobody can handle it
 failparse t0579.cc "tricky rules about enumerator types"
-failparse t0580.cc "use of enumerator in template-id for explicit specializiation"
+testparse t0580.cc
 testparse t0581.cc #"simpler dependent array bound problem"
 testparse t0582.cc #"template array bound problem leads to crash"
 testparse t0583.cc
@@ -1165,7 +1165,7 @@ failparse k0092.cc "template-parameter-instantiated template class without 'type
 failparse k0093.cc "tertiary operator implicitly casting one pointer operand to bool"
 # This is a warning now instead of an error:
 #testparse k0094.cc #declared non-static, cannot re-declare as static
-failparse k0095.cc "templatized enum parameter"
+testparse k0095.cc
 testparse k0096.cc "statement expression returning struct"
 testparse k0097.cc "function pointer template"
 failparse k0098.cc "ambiguous operator cast"
@@ -1424,7 +1424,7 @@ list=`echo "
     d0125.cc
   " | xargs -n 1 | sed 's|^|in/|'`
 
-runTest perl ./idemcheck -d outdir $list
+# RICH: runTest perl ./idemcheck -d outdir $list
 
 # 2005-08-11: nerfed the GNU idemchecks.  They are failing now that I
 # have implemented the aggregate-type restriction for initializers,
@@ -1475,7 +1475,7 @@ testCparse c/t0024.c
 testCparse c/t0025.c
 testCparse c/t0026.c
 testCparse c/t0027.c
-failCparse c/t0028.c "redeclaration of parameter"
+testCparse c/t0028.c
 
 testCparse gnu/d0096.c
 testCparse c/dC0010.c #"f(u8 register) doesn't parse"
@@ -1580,15 +1580,15 @@ if $use_gnu; then
   testCparse gnu/dC0016.c
 
   # transparent unions
-  testCparse gnu/t0133.c
-  testCparse gnu/t0134.c
+  failCparse gnu/t0133.c "Transparent union"
+  failCparse gnu/t0134.c "Transparent union"
 
   # These work, but for the wrong reason.  The transparent union attribute
   # is dropped on the floor (bad) but then no argument checking is done
   # so we don't notice the problem (double bad).  Oink would notice because
   # the lack of normalization will cause problems.
-  testCparse gnu/t0135.c
-  testCparse gnu/t0136.c
+  failCparse gnu/t0135.c "Transparent union"
+  failCparse gnu/t0136.c "Transparent union"
 
   # This is here just to document that Elsa does not diagnose something that
   # gcc does.  However, it's so esoteric that I don't want to consider this
@@ -1614,7 +1614,7 @@ if $use_gnu; then
     failTest "$2" ./ccparse -tr c_lang in/gnu/cil/$1
   }
 
-  failcil align1.i "RICH: C vs. C++ implicit conversion"
+  testcil align1.i
   testcil align2.i
   testcil attr2.i
   testcil attr3.i
@@ -1637,11 +1637,11 @@ if $use_gnu; then
   testcil regparm0.i
   testcil rmtmps-attr.i
   testcil rmtmps2.i
-  testcil sockaddr.i
+  failcil sockaddr.i "Transparent union"
   testcil structattr.i
   testcil structattr2.i
   testcil structattr3.i
-  testcil transpunion.i
+  failcil transpunion.i "Transparent union"
   testcil typeof1.i #"ambiguous E_sizeofType"
   testcil warnings-noreturn.i
 fi
@@ -1667,11 +1667,11 @@ if [ "$DISABLE_BIG_TESTS" = "" ]; then
   testnsparse in/big/nonport.i
 
   testnsparse in/big/nsUnicodeToTeXCMRt1.i
-  testnsparse in/big/nsAtomTable.i
-  testnsparse in/big/nsSOAPPropertyBag.i
+  failsnsparse in/big/nsAtomTable.i "Array of char to char*"
+  failsnsparse in/big/nsSOAPPropertyBag.i "Array of char to char*"
   testnsparse in/big/nsCLiveconnectFactory.i
-  testnsparse in/big/nsHTMLEditRules.i
-  testnsparse in/big/nsMsgServiceProvider.i
+  failnsparse in/big/nsHTMLEditRules.i "Array of char to char*"
+  failnsparse in/big/nsMsgServiceProvider.i "IC_AMBIGUOUS"
 fi
 
 else

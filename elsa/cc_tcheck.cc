@@ -4907,7 +4907,11 @@ void S_return::itcheck(Env &env)
     if (returnType->isVoid()) {
       expr->tcheck(env);
       if (!expr->expr->type->isVoid()) {
-          env.error("returning a value in a 'void' function");
+          if (!env.lang.isCplusplus) {
+              env.warning("returning a value in a 'void' function");
+          } else {
+              env.error("returning a value in a 'void' function");
+          }
       }
     } else {
       expr->tcheck(env);

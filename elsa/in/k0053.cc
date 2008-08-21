@@ -21,7 +21,6 @@ void f()
     // to instantiate it is not fatal
     foo(ptr);
 
-    return 0;
 }
 
 // now suppose we see a defn
