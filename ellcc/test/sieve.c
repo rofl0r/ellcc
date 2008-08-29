@@ -40,6 +40,7 @@ int main(int ac, char **av)
                 }
 	printf("%d primes\n",count);
 
+#if 0
         printf("__FILE__ = %s\n", __FILE__); 
         printf("__LINE__ = %d\n", __LINE__); 
         printf("__DATE__ = %s\n", __DATE__); 
@@ -50,6 +51,7 @@ int main(int ac, char **av)
         printf("__ELLCC_PATCHLEVEL__ = %d\n", __ELLCC_PATCHLEVEL__); 
         printf("__ELLCC_VERSION_STRING__ = %s\n", __ELLCC_VERSION_STRING__); 
         printf("__ELLCC_VERSION__ = %s\n", __ELLCC_VERSION__); 
+#endif
 #endif
         }
                

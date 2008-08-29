@@ -6314,19 +6314,20 @@ int compareArgsToParams(Env &env, FunctionType *ft, FakeList<ArgExpression> *arg
             inits->append(new IN_designated(loc,
                                             FakeList<Designator>::makeList(d),
                                             new IN_expr(loc, arg->expr)));
-            ASTTypeId *ati = env.buildASTTypeId(param->type);
+            ASTTypeId *ati = env.buildASTTypeId(memb->type);
+cout << "cv = " << ati->spec->cv << "\n";
+            ati->spec->cv = (CVFlags)0; // RICH
             E_compoundLit *ecl =
               new E_compoundLit(loc, ati, new IN_compound(loc, inits));
 
             // now stick this new thing into arg->expr, so the whole
             // thing is still a tree
             arg->expr = ecl;
-
+ 
             // since we're in C mode, it should be quite safe to go
             // ahead and re-tcheck this (the original 'arg->expr' is
             // what is being tcheck'd twice)
             arg->expr->tcheck(env, arg->expr);
-
             // stop iterating over members
             break;
           }
@@ -6348,8 +6349,12 @@ int compareArgsToParams(Env &env, FunctionType *ft, FakeList<ArgExpression> *arg
     }
 
     // check correspondence between 'args' and 'argInfo'
+    if (argInfo[paramIndex].type && arg->getType() != argInfo[paramIndex].type) {
+        cout << arg->getType()->toString() << "|\n";
+        cout << argInfo[paramIndex].type->toString() << "|\n";
+    }
     xassert(!argInfo[paramIndex].type ||
-            arg->getType() == argInfo[paramIndex].type);
+            arg->getType()->equals(argInfo[paramIndex].type));
 
     // is the argument the name of an overloaded function? [cppstd 13.4]
     env.possiblySetOverloadedFunctionVar(arg->expr, param->type,

@@ -575,6 +575,7 @@ Preprocessor Options
 #include "llvm/LinkAllPasses.h"
 #include "llvm/LinkAllVMCore.h"
 #include "llvm/Linker.h"
+#include "llvm/Support/raw_ostream.h"
 #include <iostream>
 #include <fstream>
 #include <memory>
@@ -1453,7 +1454,6 @@ void AddStandardCompilePasses(PassManager &PM) {
   addPass(PM, createLICMPass());                 // Hoist loop invariants
   addPass(PM, createLoopUnswitchPass());         // Unswitch loops.
   addPass(PM, createLoopIndexSplitPass());       // Index split loops.
-  // FIXME : Removing instcombine causes nestedloop regression.
   addPass(PM, createInstructionCombiningPass()); 
   addPass(PM, createIndVarSimplifyPass());       // Canonicalize indvars
   addPass(PM, createLoopDeletionPass());         // Delete dead loops
@@ -1470,6 +1470,7 @@ void AddStandardCompilePasses(PassManager &PM) {
 
   addPass(PM, createDeadStoreEliminationPass()); // Delete dead stores
   addPass(PM, createAggressiveDCEPass());        // SSA based 'Aggressive DCE'
+
   addPass(PM, createCFGSimplificationPass());    // Merge & remove BBs
   addPass(PM, createStripDeadPrototypesPass());  // Get rid of dead prototypes
   addPass(PM, createDeadTypeEliminationPass());  // Eliminate dead types
@@ -1583,7 +1584,7 @@ static void Optimize(Module* M)
 
     // The IPO passes may leave cruft around.  Clean up after them.
     addPass(Passes, createInstructionCombiningPass());
-
+    addPass(Passes, createJumpThreadingPass());        // Thread jumps.
     addPass(Passes, createScalarReplAggregatesPass()); // Break up allocas
 
     // Run a few AA driven optimizations here and now, to cleanup the code.
@@ -1591,10 +1592,14 @@ static void Optimize(Module* M)
 
     addPass(Passes, createLICMPass());               // Hoist loop invariants
     addPass(Passes, createGVNPass());                  // Remove redundancies
+    addPass(Passes, createMemCpyOptPass());          // Remove dead memcpy's
     addPass(Passes, createDeadStoreEliminationPass()); // Nuke dead stores
 
     // Cleanup and simplify the code after the scalar optimizations.
     addPass(Passes, createInstructionCombiningPass());
+
+    addPass(Passes, createJumpThreadingPass());        // Thread jumps.
+    addPass(Passes, createPromoteMemoryToRegisterPass()); // Cleanup jumpthread.
 
     // Delete basic blocks, which optimization passes may have killed...
     addPass(Passes, createCFGSimplificationPass());
@@ -1629,7 +1634,8 @@ static void Optimize(Module* M)
   }
 
   // Make sure everything is still good.
-  Passes.add(createVerifierPass());
+  if (VerifyEach)
+      Passes.add(createVerifierPass());
 
   // Run our queue of passes all at once now, efficiently.
   Passes.run(*M);
@@ -2549,11 +2555,12 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         // SIGINT
         sys::RemoveFileOnSignal(to);
 
-        std::ostream *Out = new std::ofstream(to.c_str());
-        if (Out == NULL || !Out->good()) {
-            std::cerr << progname << ": error opening " << OutputFilename << "!\n";
-            delete Out;
-            Exit(1);
+        std::string error;
+        raw_ostream *Out = new raw_fd_ostream(to.c_str(), error);
+        if (!error.empty()) {
+          std::cerr << error << '\n';
+          delete Out;
+          Exit(1);
         }
 
         // If this target requires addPassesToEmitWholeFile, do it now.  This is
@@ -2569,7 +2576,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
                 // RICH:
                 std::cerr << progname << ": target does not support generation of this"
                     << " file type!\n";
-                if (Out != &std::cout) delete Out;
+                if (Out != &outs()) delete Out;
                 // And the Out file is empty and useless, so remove it now.
                 sys::Path(OutputFilename).eraseFromDisk();
                 Exit(1);
@@ -2596,7 +2603,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
                 case FileModel::Error:
                     std::cerr << progname << ": target does not support generation of this"
                         << " file type!\n";
-                    if (Out != &std::cout) delete Out;
+                    if (Out != &outs()) delete Out;
                     // And the Out file is empty and useless, so remove it now.
                     sys::Path(OutputFilename).eraseFromDisk();
                     Exit(1);
@@ -2614,7 +2621,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
             if (Target.addPassesToEmitFileFinish(Passes, MCE, OptLevel == OPT_FAST_COMPILE)) {
                 std::cerr << progname << ": target does not support generation of this"
                     << " file type!\n";
-                if (Out != &std::cout) delete Out;
+                if (Out != &outs()) delete Out;
                 // And the Out file is empty and useless, so remove it now.
                 sys::Path(OutputFilename).eraseFromDisk();
                 Exit(1);
@@ -2634,7 +2641,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         }
 
         // Delete the ostream if it's not a stdout stream
-        if (Out != &std::cout) delete Out;
+        if (Out != &outs()) delete Out;
 
         input.setName(to);
         // Mark the file as a temporary file.
