@@ -5,6 +5,8 @@
 #include <stdio.h>
 #include <stdarg.h>
 
+// #define double float
+
 #if INT_MAX == LONG_MAX
 /** Longs are the same as ints.
  */
@@ -292,6 +294,7 @@ int _vformat(FILE* fp, char* line, const char *format, va_list ap)
             // Fall through.
         case 'g':
             fflags |= NOTRAILZERO;
+#if 0
             ftemp = va_arg(ap, double);
             toASCII(ftemp, precision, &decpt, &negative, fflags, sizeof(work), workptr);
             if (abs(decpt) <= 4) {
@@ -387,6 +390,7 @@ int _vformat(FILE* fp, char* line, const char *format, va_list ap)
                           ((fflags & DECIMALPOINT) != 0) + ((flags & SIGNFLAG) != 0);
             totalLength += exponent;
             goto output;
+#endif
 
         case 'N':
         case 'n':
