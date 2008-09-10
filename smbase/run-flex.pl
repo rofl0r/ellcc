@@ -139,6 +139,7 @@ open(OUT, ">$outputFile") or die("cannot write $outputFile: $!\n");
 
 # keep track of what we've done
 $state = 1;
+$no_yywrap = 0;
 
 # name of derived lexer class (if any)
 $derivedClassName = "";
@@ -166,6 +167,16 @@ for ($i=0; $i < @lines; $i++) {
   if (defined($s) && $s ne "yyFlexLexer") {
     $derivedClassName = $s;
   }
+
+  # determine if yywrap is not to be include.
+  if ($line =~ /#define YY_SKIP_YYWRAP/) {
+    $no_yywrap = 1;
+  }
+  if ($no_yywrap = 1 && $line =~ /yyFlexLexer::yywrap()/) {
+   print "HELP";
+    next;
+  }
+
 
   # this is stateless because it does not occur in the cygwin
   # flex output (they have a different fix)
@@ -282,7 +293,8 @@ for ($i=0; $i < @lines; $i++) {
     if ($lines[$i+1] =~ m/^yyFlexLexer::yyFlexLexer/) {
       $state++;
       $lineno++;
-      print OUT ("#ifndef NO_YYFLEXLEXER_METHODS\n");
+      print OUT ($line .
+                 "#ifndef NO_YYFLEXLEXER_METHODS\n");
       next;
     }
   }
