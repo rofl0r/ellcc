@@ -30,7 +30,7 @@ namespace llvm {
 
 /** The main translator entry point.
  */
-llvm::Module* cc_to_llvm(string name, StringTable &str, TranslationUnit const &input,
+llvm::Module* cc_to_llvm(sm::string name, StringTable &str, TranslationUnit const &input,
                          const char* targetDataString, const char* targetTriple);
 
 
@@ -47,7 +47,7 @@ public:      // data
 public:      // funcs
     /** Construct an LLVM converter.
      */
-    CC2LLVMEnv(StringTable &str, string name, const TranslationUnit& input,
+    CC2LLVMEnv(StringTable &str, sm::string name, const TranslationUnit& input,
                const char* targetData, const char* targetTriple);
     /** Destruct an LLVM convertor.
      */

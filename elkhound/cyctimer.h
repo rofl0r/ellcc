@@ -13,7 +13,7 @@ public:
   
 public:
   CycleTimer();            // starts timer
-  string elapsed() const;  // formats elapsed time as "NN ms, NN_NNNNNN cycles"
+  sm::string elapsed() const;  // formats elapsed time as "NN ms, NN_NNNNNN cycles"
 };
 
 #endif // CYCTIMER_H

@@ -6,6 +6,7 @@
 #include "cc_env.h"        // Env
 #include "overload.h"      // getConversionOperators, OverloadResolver
 
+using namespace sm;
 
 // ------------------ CandidateSet -----------------
 CandidateSet::~CandidateSet()

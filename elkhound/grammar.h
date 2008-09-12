@@ -21,7 +21,7 @@
 #ifndef __GRAMMAR_H
 #define __GRAMMAR_H
 
-#include <iostream.h>    // ostream
+#include <iostream>      // ostream
 
 #include "str.h"         // string
 #include "objlist.h"     // ObjList
@@ -75,7 +75,7 @@ public:
   bool reachable;           // computed by constructLRItemSets; true when nonterminal reachable from start symbol
 
 protected:  // funcs
-  virtual void internalPrintDDM(ostream &os) const;
+  virtual void internalPrintDDM(std::ostream &os) const;
 
 public:      // funcs
   Symbol(LocString const &n, bool t, bool e = false);
@@ -112,16 +112,16 @@ public:      // funcs
 
   // debugging
   // print as '$name: isTerminal=$isTerminal' (no newline)
-  virtual void print(ostream &os) const;
+  virtual void print(std::ostream &os) const;
   OSTREAM_OPERATOR(Symbol)
 
   // print 'token[type] name { dup.. del.. merge.. }' (with newlines)
-  void printDDM(ostream &os) const;
+  void printDDM(std::ostream &os) const;
 
   // true if any of the handlers were specified
   virtual bool anyDDM() const;
 
-  virtual string toString() const { return string(name); }
+  virtual sm::string toString() const { return sm::string(name); }
 };
 
 // I have several needs for serf lists of symbols, so let's use this for now
@@ -135,7 +135,7 @@ typedef SObjListMutator<Symbol> SymbolListMutator;
 #define SMUTATE_EACH_SYMBOL(list, iter) SMUTATE_EACH_OBJLIST(Symbol, list, iter)
 
 // format: "s1 s2 s3"
-string symbolSequenceToString(SymbolList const &list);
+sm::string symbolSequenceToString(SymbolList const &list);
 
 
 // ---------------- Terminal --------------------
@@ -173,7 +173,7 @@ public:     // data
   int termIndex;
 
 protected:  // funcs  
-  virtual void internalPrintDDM(ostream &os) const;
+  virtual void internalPrintDDM(std::ostream &os) const;
 
 public:     // funcs
   Terminal(LocString const &name)        // canonical name for terminal class
@@ -188,13 +188,13 @@ public:     // funcs
   Terminal(Flatten &flat);
   void xfer(Flatten &flat);
 
-  virtual void print(ostream &os) const;
+  virtual void print(std::ostream &os) const;
   OSTREAM_OPERATOR(Terminal)
 
   virtual bool anyDDM() const;
 
   // return alias if defined, name otherwise
-  virtual string toString(bool quoteAliases = false) const;
+  virtual sm::string toString(bool quoteAliases = false) const;
 };
 
 typedef SObjList<Terminal> TerminalList;
@@ -210,7 +210,7 @@ inline ObjList<Symbol> const &toObjList(ObjList<Terminal> const &list)
   { return reinterpret_cast< ObjList<Symbol>const& >(list); }
 
 // format: "t1 t2 t3"
-string terminalSequenceToString(TerminalList const &list);
+sm::string terminalSequenceToString(TerminalList const &list);
 
 
 // ----------------- TerminalSet -------------------
@@ -264,7 +264,7 @@ public:     // funcs
   bool merge(TerminalSet const &obj);     // union; returns true if merging changed set
   bool removeSet(TerminalSet const &obj); // intersect with complement; returns true if this changed set
 
-  void print(ostream &os, Grammar const &g, char const *lead = ", ") const;
+  void print(std::ostream &os, Grammar const &g, char const *lead = ", ") const;
 };
 
 
@@ -286,7 +286,7 @@ public:
   SObjList<Nonterminal> subsets;      // preferred subsets (for scannerless)
 
 protected:  // funcs
-  virtual void internalPrintDDM(ostream &os) const;
+  virtual void internalPrintDDM(std::ostream &os) const;
 
 public:     // funcs
   Nonterminal(LocString const &name, bool isEmptyString=false);
@@ -296,7 +296,7 @@ public:     // funcs
   void xfer(Flatten &flat);
   void xferSerfs(Flatten &flat, Grammar &g);
 
-  virtual void print(ostream &os, Grammar const *grammer = NULL) const;
+  virtual void print(std::ostream &os, Grammar const *grammer = NULL) const;
   OSTREAM_OPERATOR(Nonterminal)
 
   virtual bool anyDDM() const;
@@ -394,7 +394,7 @@ public:	    // funcs
 
   // given an index as returned by 'findTaggedSymbol', translate that
   // back into a tag
-  string symbolTag(int symbolIndex) const;
+  sm::string symbolTag(int symbolIndex) const;
 
   // or translate a symbol index into a symbol
   Symbol const *symbolByIndexC(int symbolIndex) const;
@@ -412,17 +412,17 @@ public:	    // funcs
   void addForbid(Terminal *t, int totalNumTerminals);
 
   // print 'A -> B c D' (no newline)
-  string toString(bool printType = true, bool printIndex = true) const;
+  sm::string toString(bool printType = true, bool printIndex = true) const;
 
   // this one prints 'B c D' for above example rule
-  string rhsString(bool printTags = true, bool quoteAliases = false) const;
+  sm::string rhsString(bool printTags = true, bool quoteAliases = false) const;
 
-  void print(ostream &os) const;
+  void print(std::ostream &os) const;
   OSTREAM_OPERATOR(Production)
 
   // print entire input syntax, with newlines, e.g.
   //   A -> B c D { return foo; }
-  string toStringMore(bool printCode) const;
+  sm::string toStringMore(bool printCode) const;
 
 // ------ annotation ------
 private:    // data
@@ -481,7 +481,7 @@ public:	    // data
 
   // ---- declarative options ----
   // name of the target language; nominally "C++"
-  string targetLang;
+  sm::string targetLang;
 
   // when true, the default dup/del is what's expected for a
   // garbage-collected system: dup() is the identity function,
@@ -525,13 +525,13 @@ public:     // funcs
 
   // ---------- outputting a grammar --------------
   // print the list of symbols with type annotations
-  void printSymbolTypes(ostream &os) const;
+  void printSymbolTypes(std::ostream &os) const;
 
   // print the current list of productions
-  void printProductions(ostream &os, bool printCode=true) const;
+  void printProductions(std::ostream &os, bool printCode=true) const;
 
   // emit C++ code to construct this grammar later
-  void emitSelfCC(ostream &os) const;
+  void emitSelfCC(std::ostream &os) const;
 
   // ---- whole-grammar stuff ----
   // after adding all rules, check that all nonterminals have
@@ -543,7 +543,7 @@ public:     // funcs
   // output grammar in Bison's syntax
   // (coincidentally, when bison dumps its table with '-v', its table
   // dump syntax is similar to my input syntax)
-  void printAsBison(ostream &os) const;
+  void printAsBison(std::ostream &os) const;
 
   // ---- symbol access ----
   #define SYMBOL_ACCESS(Thing)                              \

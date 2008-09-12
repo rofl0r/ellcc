@@ -6,6 +6,8 @@
 #include "sobjlist.h"
 #include "objlist.h"
 
+using namespace sm;
+
 bool xmlDanglingPointersAllowed = true;
 
 UnsatLink::UnsatLink(void *ptr0, char const *id0, int kind0, bool embedded0)

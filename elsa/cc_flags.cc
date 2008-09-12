@@ -9,6 +9,7 @@
 #include "exc.h"          // xformat
 #include <ctype.h>        // toupper
 
+using namespace sm;
 
 // the check for array[limit-1] is meant to ensure that there
 // are as many specified entries as there are total entries

@@ -6,6 +6,7 @@
 #include "parsetables.h"     // ParseTables
 #include "trace.h"           // trace
 
+using namespace sm;
 
 // ------------------- ParseTreeLexer -------------------
 ParseTreeLexer::ParseTreeLexer(LexerInterface *u, UserActions *a)
@@ -58,7 +59,8 @@ STATICDEF SemanticValue ParseTreeActions::reduce(
   UserActions *context,
   int productionId,
   SemanticValue const *svals
-  SOURCELOCARG( SourceLoc loc ) )
+  SOURCELOCARG( SourceLoc )
+  ENDSOURCELOCARG( SourceLoc ) )
 {
   ParseTreeActions *ths = static_cast<ParseTreeActions*>(context);
 

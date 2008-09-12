@@ -8,7 +8,7 @@
 #include "str.h"       // string
 #include "srcloc.h"    // SourceLoc
 
-#include <ostream.h>   // ostream
+#include <ostream>     // ostream
 
 
 // flags on errors
@@ -70,14 +70,14 @@ ENUM_BITWISE_OPS(ErrorFlags, EF_ALL)
 class ErrorMsg {
 public:
   SourceLoc loc;          // where the error happened
-  string msg;             // english explanation
+  sm::string msg;             // english explanation
   ErrorFlags flags;       // various
   
   // string of instantiation locations leading to the error; if
   // no instantiations are involved, this should be "", which does
   // not require any allocation to store (you can also pass NULL
   // to mean "")
-  string instLoc;
+  sm::string instLoc;
 
 public:
   ErrorMsg(SourceLoc L, rostring m, ErrorFlags f)
@@ -91,7 +91,7 @@ public:
   bool disambiguates() const
     { return !!(flags & EF_DISAMBIGUATES); }
 
-  string toString() const;
+  sm::string toString() const;
 };
 
 
@@ -158,8 +158,8 @@ public:
   bool hasFromNonDisambErrors() const;
 
   // print all the errors, one per line, in order
-  void print(ostream &os) const;
-  string printToString() const;
+  void print(std::ostream &os) const;
+  sm::string printToString() const;
 };
 
 

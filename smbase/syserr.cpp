@@ -4,6 +4,8 @@
 
 #include "syserr.h"       // this module
 
+using namespace sm;
+
 // ---------------- portable code ----------------
 char const * const xSysError::reasonStrings[] = {
   "No error occurred",

@@ -6,6 +6,8 @@
 #include "trace.h"         // tracingSys
 #include "mangle.h"        // mangle()
 
+using namespace sm;
+
 // dsw: need this for Oink; we'll figure out how to make this non-global later
 bool variablesLinkerVisibleEvenIfNonStaticDataMember = false;
 
@@ -415,7 +417,7 @@ bool Variable::notQuantifiedOut()
 
 void Variable::gdb() const
 {
-  cout << toString() << endl;
+  std::cout << toString() << std::endl;
 }
 
 string Variable::toString() const
@@ -909,8 +911,9 @@ Scope *Variable::getDenotedScope() const
     CompoundType *ct = type->asCompoundType();
     return ct;
   }
-
-  xfailure(stringc << "expected `" << name << "' to name a scope");
+  // tglek: It makes sense for getDenotedScope() to return NULL
+  // otherwise callers have to replicat isNamespace/isCompoundType()
+  // guard at callsites.
   return NULL;    // silence warning
 }
 

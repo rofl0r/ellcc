@@ -238,7 +238,7 @@ public:      // data
   // when non-empty, the variable lookup results are collected and
   // compared to the text stored in this pointer; it is supplied via
   // an an 'asm' directive (see TF_asm::itcheck)
-  string collectLookupResults;
+  sm::string collectLookupResults;
 
   /** The AST of the currrent function.
    */
@@ -405,9 +405,9 @@ public:      // funcs
   // source location tracking
   void setLoc(SourceLoc loc);                // sets scope()->curLoc
   SourceLoc loc() const;                     // gets scope()->curLoc
-  string locStr() const { return toString(loc()); }
-  string locationStackString() const;        // all scope locations
-  string instLocStackString() const;         // inst locs only
+  sm::string locStr() const { return toString(loc()); }
+  sm::string locationStackString() const;        // all scope locations
+  sm::string instLocStackString() const;         // inst locs only
 
   // insertion into the current scope; return false if the
   // name collides with one that is already there (but if
@@ -562,7 +562,7 @@ public:      // funcs
   ErrorFlags maybeEF_STRONG() const;
 
   // report on unsearched base classes; "" if none
-  string unsearchedDependentBases();
+  sm::string unsearchedDependentBases();
 
   // return value for (some...) erroneous lookups
   Variable *lookupErrorObject(LookupFlags flags);
@@ -940,7 +940,11 @@ public:      // template funcs
     (SourceLoc loc,
      Variable *primary,
      ObjList<STemplateArgument> const &sargs);
-  void instantiateClassTemplateDefn(Variable *inst); // inst defn
+
+  // If suppressErrors is true, no errors will be reported. The 
+  // method will just silently fail in case of errors. This is
+  // for cases when instantiation is optional (see ensureClassBodyInstantiated).
+  void instantiateClassTemplateDefn(Variable *inst, bool suppressErrors = false);
 
   // instantiate the given class' body, *if* it is an instantiation
   // and instantiation is possible but hasn't already been done; note

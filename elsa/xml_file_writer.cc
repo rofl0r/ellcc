@@ -7,6 +7,8 @@
 
 #define serializeOracle serializeOracle_m
 
+using namespace std;
+
 XmlFileWriter::XmlFileWriter(IdentityManager &idmgr0,
                              ostream *out0, int &depth0, bool indent0,
                              XmlFileWriter::XFW_SerializeOracle *serializeOracle0)
@@ -108,7 +110,7 @@ void XmlFileWriter::toXml(HashLineMap *hashLines)
     tagPrinter.printOpenTag("HashLineMap", hashLines);
 
     // **** attributes
-    string &ppFname = hashLines->serializationOnly_get_ppFname();
+    sm::string &ppFname = hashLines->serializationOnly_get_ppFname();
     printStrRef(ppFname, ppFname.c_str());
 
     // NOTE: can't do this because it is private; FIX: I have inlined

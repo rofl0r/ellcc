@@ -10,7 +10,7 @@
 #include <stdio.h>        // printf
 #include <string.h>       // memcpy
 #include <ctype.h>        // isprint
-    
+#include <algorithm>      // max, min
     
 // define the endpost byte as something we hope is
 // unlikely to coincidentally be written during an
@@ -103,7 +103,7 @@ void DataBlock::copyCtorShared(DataBlock const &obj)
 
 DataBlock::DataBlock(DataBlock const &obj, int minToAllocate)
 {
-  init(max(obj.getAllocated(), minToAllocate));
+  init(std::max(obj.getAllocated(), minToAllocate));
   copyCtorShared(obj);
 }
     
@@ -255,7 +255,7 @@ void DataBlock::print(char const *label, int bytesPerLine) const
 
   int cursor = 0;
   while (cursor < getDataLen()) {
-    int linelen = min(bytesPerLine, getDataLen() - cursor);
+    int linelen = std::min(bytesPerLine, getDataLen() - cursor);
     xassert(linelen >= 1);    // ensure can't loop infinitely
 
     printf("  ");     // indent

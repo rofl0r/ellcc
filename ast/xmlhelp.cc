@@ -9,6 +9,7 @@
 #include "exc.h"                // xformat
 #include "ptrintmap.h"          // PtrIntMap
 
+using namespace sm;
 
 // FIX: pull this out into the configuration script
 #define CANONICAL_XML_IDS
@@ -245,7 +246,7 @@ void fromXml_SourceLoc(SourceLoc &loc, const char *str) {
 
 // Output SRC with escaping and quotes to output stream directly.  This is
 // more efficient than constructing strings and then outputting that.
-ostream &outputXmlAttrQuoted(ostream &o, const char *src)
+std::ostream &outputXmlAttrQuoted(std::ostream &o, const char *src)
 {
   o << '\'';
 

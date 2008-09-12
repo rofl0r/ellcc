@@ -7,6 +7,7 @@
 
 #include <stdio.h>       // sprintf
 
+using namespace sm;
 
 CycleTimer::CycleTimer()
 {

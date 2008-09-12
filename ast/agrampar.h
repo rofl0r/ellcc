@@ -40,13 +40,13 @@ extern int yydebug;
 
 // ---------- parser's view of the rest of the program -----------
 // return contents of 's', which is then deallocated
-string unbox(string *s);
+sm::string unbox(sm::string *s);
 
 // box 's' as a string object
-string *box(char const *s);
+sm::string *box(char const *s);
 
 // return concatenation of two strings; source strings are deallocated
-string *appendStr(string *left, string *right);
+sm::string *appendStr(sm::string *left, sm::string *right);
 
 // parse a string into components
 CtorArg *parseCtorArg(rostring str);

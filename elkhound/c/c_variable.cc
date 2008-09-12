@@ -4,6 +4,7 @@
 #include "c_variable.h"    // this module
 #include "c_type.h"        // Type
 
+using namespace sm;
 
 // ---------------------- Variable --------------------
 Variable::Variable(SourceLoc L, StringRef n, Type const *t, DeclFlags f)

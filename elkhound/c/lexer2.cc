@@ -11,6 +11,8 @@
 #include <stdlib.h>      // strtoul
 #include <string.h>      // strlen, strcmp
 
+using namespace sm;
+
 // ------------------ token type descriptions ----------------------
 struct Lexer2TokenTypeDesc
 {
@@ -529,7 +531,7 @@ void lexer2_lex(Lexer2 &dest, Lexer1 const &src, char const *fname)
 
           for (int i=0; i<tmp.length(); i++) {
             if (tmp[i]==0) {
-              cout << "warning: literal string with embedded nulls not handled properly\n";
+              std::cout << "warning: literal string with embedded nulls not handled properly\n";
               break;
             }
           }
@@ -572,7 +574,7 @@ void lexer2_lex(Lexer2 &dest, Lexer1 const &src, char const *fname)
       }
     }
     catch (xFormat &x) {
-      cout << toString(L1->loc) << ": " << x.cond() << endl;
+      std::cout << toString(L1->loc) << ": " << x.cond() << std::endl;
       continue;
     }
 

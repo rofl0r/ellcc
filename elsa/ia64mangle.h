@@ -15,7 +15,7 @@
 class Type;                  // cc_type.h
 class Variable;              // variable.h
 
-string ia64MangleType(Type *t);
-string ia64MangleVariable(Variable *v);
+sm::string ia64MangleType(Type *t);
+sm::string ia64MangleVariable(Variable *v);
 
 #endif // IA64MANGLE_H

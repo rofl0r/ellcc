@@ -8,7 +8,7 @@
 #ifndef __SVDICT_H
 #define __SVDICT_H
 
-#include <iostream.h>   // ostream
+#include <iostream>     // ostream
 #include "str.h"        // string
 #include "macros.h"     // DMEMB
 #include "xassert.h"    // xassert
@@ -28,13 +28,13 @@ private:    // types
   class Node {
   public:
     Node *next;
-    string key;
+    sm::string key;
     void *value;
 
   public:
     Node(char const *k, void *v, Node *n = NULL)
       : next(n), key(k), value(v) {}
-    Node(string const &k, void *v, Node *n = NULL)
+    Node(sm::string const &k, void *v, Node *n = NULL)
       : next(n), key(k), value(v) {}
     ~Node() {}
 
@@ -44,7 +44,7 @@ private:    // types
 public:     // types
   // function for general foreach; return false to continue,
   // true to stop iterating
-  typedef bool (*ForeachFn)(string const &key, void *value, void *extra);
+  typedef bool (*ForeachFn)(sm::string const &key, void *value, void *extra);
 
   // function type to delete void*s while emptying
   typedef void (*DelFn)(void *value);
@@ -67,7 +67,7 @@ public:     // types
     Iter& next() { xassert(current); current = current->next; return *this; }
       // 'next' returns a value primarily to allow use in for-loop comma exprs
 
-    string &key() const { return current->key; }
+    sm::string &key() const { return current->key; }
     void *&value() const { return current->value; }
 
     long private_getCurrent() const { return (long)current; }
@@ -88,7 +88,7 @@ public:     // types
     Iter::private_getCurrent;
 
     // others must be const-ified
-    string const &key() const { return Iter::key(); }
+    sm::string const &key() const { return Iter::key(); }
     void const *&value() const { return (void const *&)Iter::value(); }
   };
 
@@ -148,7 +148,7 @@ public:
 
   // -------- mutators -----------
   void add(char const *key, void *value);
-  void add(string const &key, void *value);
+  void add(sm::string const &key, void *value);
     // add a mapping from 'key' to 'value'; 'key' must initially be unmapped
 
   void *modify(char const *key, void *newValue);
@@ -182,7 +182,7 @@ public:
 
   // ------------ misc --------------
   INSERT_OSTREAM(StringVoidDict)
-  string toString() const;
+  sm::string toString() const;
 
   // debugging...
   long private_getTopAddr() const { return (long)top; }

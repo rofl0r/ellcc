@@ -144,7 +144,7 @@ Type *ImplicitConversion::inner_getConcreteDestType
 }
 
 
-string ImplicitConversion::debugString() const
+sm::string ImplicitConversion::debugString() const
 {
   stringBuilder sb;
   sb << kindNames[kind];

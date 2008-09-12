@@ -36,6 +36,8 @@
 #include <ctype.h>          // isdigit
 #include <limits.h>         // INT_MAX, UINT_MAX, LONG_MAX
 
+#include "exprloc.h"
+
 // D(): debug code
 #ifdef NDEBUG
   #define D(stuff)
@@ -156,27 +158,32 @@ bool strongMsgFilter(ErrorMsg *msg)
 class UninstTemplateErrorFilter {
   Env &env;                  // environment
   ErrorList existingErrors;  // saved messages
+  bool suppressErrors;
 
 public:
-  UninstTemplateErrorFilter(Env &e)
+  UninstTemplateErrorFilter(Env &e, bool suppressErrorsArg = false)
     : env(e), existingErrors()
   {
-    if (env.inUninstTemplate()) {
+    suppressErrors = suppressErrorsArg || 
+      env.inUninstTemplate() && !env.doReportTemplateErrors;
+    if (suppressErrors) {
+      //    if (1 || env.inUninstTemplate()) {
       existingErrors.takeMessages(env.errors);
     }
   }
 
   ~UninstTemplateErrorFilter()
   {
-    if (env.inUninstTemplate()) {
-      if (!env.doReportTemplateErrors) {
+    if (suppressErrors) {
+      //      if (1 || env.inUninstTemplate()) {
+      //if (1 || !env.doReportTemplateErrors) {
         // remove all messages that are not 'strong'
         // (see doc/permissive.txt)
         env.errors.filter(strongMsgFilter);
-      }
+	//}
 
       // now put back the saved messages
-      env.errors.prependMessages(existingErrors);
+      //env.errors.prependMessages(existingErrors);
     }
   }
 };
@@ -1949,7 +1956,7 @@ CompoundType *checkClasskeyAndName(
       // override any mismatching prior decl
       if (definition && !templateArgs) {
         TRACE("env", "changing " << ct->keywordAndName() <<
-                     " to a " << toString(keyword) << endl);
+                     " to a " << toString(keyword) << std::endl);
         ct->keyword = (CompoundType::Keyword)keyword;
       }
     }
@@ -2226,7 +2233,8 @@ Type *TS_classSpec::itcheck(Env &env, DeclFlags dflags, LookupFlags lflags)
 // to check newly-cloned AST fragments for template instantiation
 void TS_classSpec::tcheckIntoCompound(
   Env &env, DeclFlags dflags,    // as in tcheck
-  CompoundType *ct)              // compound into which we're putting declarations
+  CompoundType *ct,              // compound into which we're putting declarations
+  bool suppressErrors)
 {
   // should have set the annotation by now
   xassert(ctype);
@@ -2259,7 +2267,7 @@ void TS_classSpec::tcheckIntoCompound(
   //
   // The filtering only happens when the "permissive" tracing flag
   // is set.
-  UninstTemplateErrorFilter errorFilter(env);
+  UninstTemplateErrorFilter errorFilter(env, suppressErrors);
 
   // open a scope, and install 'ct' as the compound which is
   // being built; in fact, 'ct' itself is a scope, so we use
@@ -2330,8 +2338,8 @@ void TS_classSpec::tcheckIntoCompound(
     // we're finished constructing the inheritance hierarchy
     if (tracingSys("printHierarchies")) {
       string h1 = ct->renderSubobjHierarchy();
-      cout << "// ----------------- " << ct->name << " -------------------\n";
-      cout << h1;
+      std::cout << "// ----------------- " << ct->name << " -------------------\n";
+      std::cout << h1;
 
       // for debugging; this checks that the 'visited' flags are being
       // cleared properly, among other things
@@ -3408,6 +3416,12 @@ bool checkCompleteTypeRules(Env &env, DeclFlags dflags, DeclaratorContext contex
       return true;
     }
 
+    // dmandelin@mozilla.com
+    // The following section is commented out so that nsDOMClassInfo.ii
+    // gets templates instantiated that are referred to in array members.
+    // This code doesn't seem correct to me anyway, and it doesn't hurt
+    // regressions to take it out, so I did.
+#if 0
     if (context == DC_MR_DECL &&
         !env.lang.strictArraySizeRequirements) {
       // Allow incomplete array types, so-called "open arrays".
@@ -3415,6 +3429,7 @@ bool checkCompleteTypeRules(Env &env, DeclFlags dflags, DeclaratorContext contex
       // we do not check that.
       return true;
     }
+#endif
 
     #ifdef GNU_EXTENSION
     if (context == DC_E_COMPOUNDLIT) {
@@ -4781,7 +4796,7 @@ void implicitLocalScope(Statement *&stmt)
 {
   if (!stmt->isS_compound()) {
     Statement *orig = stmt;
-    stmt = new S_compound(orig->loc, new ASTList<Statement>(orig));
+    stmt = new S_compound(orig->loc ENDLOCARG(orig->endloc), new ASTList<Statement>(orig));
   }
 }
 
@@ -5757,11 +5772,11 @@ Type *E_this::itcheck_x(Env &env, Expression *&replacement)
 }
 
 
-E_fieldAcc *wrapWithImplicitThis(Env &env, Variable *var, PQName *name)
+E_fieldAcc *wrapWithImplicitThis(Env &env, Variable *var, PQName *name ENDLOCARG(SourceLoc endloc))
 {
   // make *this
-  E_this *ths = new E_this(var->loc);
-  Expression *thisRef = new E_deref(var->loc, ths);
+  E_this *ths = new E_this(EXPR_LOC1(name->loc ENDLOCARG(endloc)));
+  Expression *thisRef = new E_deref(EXPR_LOC(name->loc ENDLOCARG(endloc)) ths);
   thisRef->tcheck(env, thisRef);
 
   // sm: this assertion can fail if the method we are in right now
@@ -5774,7 +5789,7 @@ E_fieldAcc *wrapWithImplicitThis(Env &env, Variable *var, PQName *name)
   }
 
   // no need to tcheck as the variable has already been looked up
-  E_fieldAcc *efieldAcc = new E_fieldAcc(var->loc, thisRef, name);
+  E_fieldAcc *efieldAcc = new E_fieldAcc(EXPR_LOC(name->loc ENDLOCARG(endloc)) thisRef, name);
   efieldAcc->field = var;
 
   // E_fieldAcc::itcheck_fieldAcc() does something a little more
@@ -5917,7 +5932,7 @@ Type *E_variable::itcheck_var_set(Env &env, Expression *&replacement,
   // elaborate 'this->'
   if (!(flags & LF_NO_IMPL_THIS) &&
       var->isNonStaticMember()) {
-    replacement = wrapWithImplicitThis(env, var, name);
+    replacement = wrapWithImplicitThis(env, var, name ENDLOCARG(endloc));
     return replacement->type;
   }
 
@@ -6315,10 +6330,10 @@ int compareArgsToParams(Env &env, FunctionType *ft, FakeList<ArgExpression> *arg
                                             FakeList<Designator>::makeList(d),
                                             new IN_expr(loc, arg->expr)));
             ASTTypeId *ati = env.buildASTTypeId(memb->type);
-cout << "cv = " << ati->spec->cv << "\n";
+std::cout << "cv = " << ati->spec->cv << "\n";
             ati->spec->cv = (CVFlags)0; // RICH
             E_compoundLit *ecl =
-              new E_compoundLit(loc, ati, new IN_compound(loc, inits));
+              new E_compoundLit(EXPR_LOC(SL_UNKNOWN ENDLOCARG(SL_UNKNOWN)) ati, new IN_compound(loc, inits));
 
             // now stick this new thing into arg->expr, so the whole
             // thing is still a tree
@@ -6350,8 +6365,8 @@ cout << "cv = " << ati->spec->cv << "\n";
 
     // check correspondence between 'args' and 'argInfo'
     if (argInfo[paramIndex].type && arg->getType() != argInfo[paramIndex].type) {
-        cout << arg->getType()->toString() << "|\n";
-        cout << argInfo[paramIndex].type->toString() << "|\n";
+        std::cout << arg->getType()->toString() << "|\n";
+        std::cout << argInfo[paramIndex].type->toString() << "|\n";
     }
     xassert(!argInfo[paramIndex].type ||
             arg->getType()->equals(argInfo[paramIndex].type));
@@ -6496,7 +6511,7 @@ Type *E_funCall::itcheck_x(Env &env, Expression *&replacement)
         new ASTTypeId(new TS_simple(env.loc(), ST_VOID),
                       new Declarator(new D_name(env.loc(), NULL /*name*/),
                                      NULL /*init*/));
-      replacement = new E_cast(env.loc(), voidId, fa->obj);
+      replacement = new E_cast(EXPR_LOC(SL_UNKNOWN ENDLOCARG(SL_UNKNOWN)) voidId, fa->obj);
       replacement->tcheck(env, replacement);
       return replacement->type;
     }
@@ -6562,7 +6577,7 @@ void possiblyWrapWithImplicitThis(Env &env, Expression *&func,
   if (fevar &&
       fevar->var &&
       fevar->var->isNonStaticMember()) {
-    feacc = wrapWithImplicitThis(env, fevar->var, fevar->name);
+    feacc = wrapWithImplicitThis(env, fevar->var, fevar->name ENDLOCARG(fevar->endloc));
     func = feacc;
     fevar = NULL;
   }
@@ -6808,8 +6823,8 @@ Type *E_funCall::inner2_itcheck(Env &env, LookupSet &candidates)
       if (funcVar) {
         // rewrite AST to reflect use of 'operator()'
         Expression *object = func;
-        E_fieldAcc *fa = new E_fieldAcc(env.loc(), object,
-          new PQ_operator(env.loc(), new ON_operator(OP_PARENS), env.functionOperatorName));
+        E_fieldAcc *fa = new E_fieldAcc(EXPR_LOC(SL_UNKNOWN ENDLOCARG(SL_UNKNOWN)) object,
+   	    new PQ_operator(env.loc(), new ON_operator(OP_PARENS), env.functionOperatorName));
         fa->field = funcVar;
         fa->type = funcVar->type;
         func = fa;
@@ -7293,7 +7308,7 @@ Type *E_constructor::inner2_itcheck(Env &env, Expression *&replacement)
       new Declarator(new D_name(this->spec->loc, NULL /*name*/), NULL /*init*/));
     if (args->count() == 1) {
       replacement =
-        new E_cast(this->spec->loc, typeSyntax, args->first()->expr);
+        new E_cast(EXPR_LOC(this->spec->loc ENDLOCARG(SL_UNKNOWN)) typeSyntax, args->first()->expr);
     }
     else {   /* zero args */
       // The correct semantics (e.g. from a verification point of
@@ -7303,7 +7318,7 @@ Type *E_constructor::inner2_itcheck(Env &env, Expression *&replacement)
       // very unlikely to cause a real problem, so my solution is to
       // pretend it's always the value 0.
       replacement =
-        new E_cast(this->spec->loc, typeSyntax, env.build_E_intLit(0));
+        new E_cast(EXPR_LOC(this->spec->loc ENDLOCARG(SL_UNKNOWN)) typeSyntax, env.build_E_intLit(0));
     }
     replacement->tcheck(env, replacement);
     return replacement->type;
@@ -7880,7 +7895,8 @@ Type *E_arrow::itcheck_arrow_set(Env &env, Expression *&replacement,
   }
 
   // now replace with '*' and '.' and proceed
-  E_fieldAcc *eacc = new E_fieldAcc(env.loc(), new E_deref(env.loc(), obj), fieldName);
+  E_fieldAcc *eacc = new E_fieldAcc(EXPR_LOC(replacement->loc ENDLOCARG(replacement->endloc))
+				    new E_deref(EXPR_LOC(replacement->loc ENDLOCARG(replacement->endloc)) obj), fieldName);
   if (t && t->isDependent()) {
     // Do not actually do the rewriting, since the degree to which
     // further rewriting via operator-> is done depends on template
@@ -7960,16 +7976,16 @@ Type *resolveOverloadedUnaryOperator(
 
         if (winner->hasFlag(DF_MEMBER)) {
           // replace '~a' with 'a.operator~()'
-          replacement = new E_funCall(env.loc(),
-            new E_fieldAcc(env.loc(), expr, pqo),    // function
+          replacement = new E_funCall(EXPR_LOC(SL_UNKNOWN ENDLOCARG(SL_UNKNOWN)) 
+            new E_fieldAcc(EXPR_LOC(pqo->loc ENDLOCARG(SL_UNKNOWN)) expr, pqo),               // function
             FakeList<ArgExpression>::emptyList()     // arguments
           );
         }
         else {
           // replace '~a' with '<scope>::operator~(a)'
-          replacement = new E_funCall(env.loc(),
+          replacement = new E_funCall(EXPR_LOC(SL_UNKNOWN ENDLOCARG(SL_UNKNOWN)) 
             // function to invoke
-            new E_variable(env.loc(), env.makeFullyQualifiedName(winner->scope, pqo)),
+            new E_variable(EXPR_LOC(SL_UNKNOWN ENDLOCARG(SL_UNKNOWN)) env.makeFullyQualifiedName(winner->scope, pqo)),
             // arguments
             makeExprList1(expr)
           );
@@ -8067,7 +8083,7 @@ Type *resolveOverloadedBinaryOperator(
 
       if (!e2) {
         // synthesize and tcheck a 0 for the second argument to postfix inc/dec
-        e2 = new E_intLit(env.loc(), env.str("0"));
+        e2 = new E_intLit(EXPR_LOC(SL_UNKNOWN ENDLOCARG(SL_UNKNOWN)) env.str("0"));
         e2->tcheck(env, e2);
       }
 
@@ -8080,18 +8096,18 @@ Type *resolveOverloadedBinaryOperator(
         PQ_operator *pqo = new PQ_operator(env.loc(), new ON_operator(op), opName);
         if (winner->hasFlag(DF_MEMBER)) {
           // replace 'a+b' with 'a.operator+(b)'
-          replacement = new E_funCall(env.loc(),
+          replacement = new E_funCall(EXPR_LOC(e1->loc ENDLOCARG(e2->endloc)) 
             // function to invoke
-            new E_fieldAcc(env.loc(), e1, pqo),
+            new E_fieldAcc(EXPR_LOC(e1->loc ENDLOCARG(e2->endloc)) e1, pqo),
             // arguments
             makeExprList1(e2)
           );
         }
         else {
           // replace 'a+b' with '<scope>::operator+(a,b)'
-          replacement = new E_funCall(env.loc(),
+          replacement = new E_funCall(EXPR_LOC(SL_UNKNOWN ENDLOCARG(SL_UNKNOWN)) 
             // function to invoke
-            new E_variable(env.loc(), env.makeFullyQualifiedName(winner->scope, pqo)),
+            new E_variable(EXPR_LOC(SL_UNKNOWN ENDLOCARG(SL_UNKNOWN)) env.makeFullyQualifiedName(winner->scope, pqo)),
             // arguments
             makeExprList2(e1, e2)
           );
@@ -8126,10 +8142,10 @@ Type *resolveOverloadedBinaryOperator(
 
           Type *ret = resolver.getReturnType(winnerCand);
 
-          E_binary *bin = new E_binary(env.loc(), e1, BIN_PLUS, e2);
+          E_binary *bin = new E_binary(EXPR_LOC(e1->loc ENDLOCARG(e2->endloc)) e1, BIN_PLUS, e2);
           bin->type = env.tfac.makePointerType(CV_NONE, ret->asRval());
 
-          E_deref *deref = new E_deref(env.loc(), bin);
+          E_deref *deref = new E_deref(EXPR_LOC(bin->loc ENDLOCARG(bin->endloc)) bin);
           deref->type = ret;
 
           replacement = deref;
@@ -8318,7 +8334,7 @@ Type *E_binary::itcheck_x(Env &env, Expression *&replacement)
 
   if (op == BIN_BRACKETS) {
     // built-in a[b] is equivalent to *(a+b)
-    replacement = new E_deref(env.loc(), new E_binary(env.loc(), e1, BIN_PLUS, e2));
+    replacement = new E_deref(EXPR_LOC(loc ENDLOCARG(endloc)) new E_binary(EXPR_LOC(loc ENDLOCARG(endloc)) e1, BIN_PLUS, e2));
     replacement->tcheck(env, replacement);
     return replacement->type;
   }
@@ -9261,21 +9277,34 @@ Type *E_delete::itcheck_x(Env &env, Expression *&replacement)
     }
     else {
       // create a call to the chosen conversion function
-      E_fieldAcc *acc = new E_fieldAcc(env.loc(), expr,
-        new PQ_variable(env.loc(), selected));
+      E_fieldAcc *acc = new E_fieldAcc(expr->loc, expr->endloc, expr,
+          new PQ_variable(env.loc(), selected));
       acc->field = selected;
       acc->type = selected->type;
-      E_funCall *call = new E_funCall(env.loc(), acc, NULL /*args*/);
+      E_funCall *call = new E_funCall(expr->loc, expr->endloc, acc, NULL /*args*/);
       call->type = selectedRetType;
 
       // insert it in place of 'expr', still underneath this E_delete
       expr = call;
     }
   }
+#if 0
+  // dmandelin@mozilla.com -- commenting out for now. seems a little
+  // different, but hopefully can delete my code
   else if (!t->isPointer()) {
-    env.error(t, stringc
-      << "can only delete pointers, not `" << t->toString() << "'");
+    // dmandelin@mozilla.com -- 3.5.3.1 and Oink ticket #32
+    // based on Env::elaborateImplicitConversionArgToParam
+    ImplicitConversion ic = 
+      getPointerConversionOperator(env, expr->loc, NULL, t);
+    if (ic) {
+      expr = env.makeConvertedArg(expr, ic);
+      env.instantiateTemplatesInConversion(ic);
+    } else {
+      env.error(t, stringc
+	<< "can only delete pointers, not `" << t->toString() << "'");
+    }
   }
+#endif
 
   return env.getSimpleType(ST_VOID);
 }
@@ -9344,6 +9373,10 @@ Type *E_grouping::itcheck_grouping_set(Env &env, Expression *&replacement,
 
   // 2005-08-14: Let's try throwing away the E_groupings as part
   // of type checking.
+  if (expr->isE_cast()) {
+    EXPR_LOC1(expr->loc = loc);
+    ENDLOC1(expr->endloc = endloc);
+  }
   replacement = expr;
 
   return expr->type;
@@ -9740,7 +9773,7 @@ void IN_ctor::tcheck(Env &env, Type *destType)
         if (ic.user->type->asFunctionType()->isConstructor()) {
           // wrap 'args' in an E_constructor
           TypeSpecifier *destTS = new TS_type(loc, destType);
-          E_constructor *ector = new E_constructor(loc, destTS, args);
+          E_constructor *ector = new E_constructor(EXPR_LOC(loc ENDLOCARG(SL_UNKNOWN)) destTS, args);
           ector->type = destType;
           ector->ctorVar = ic.user;
           args = FakeList<ArgExpression>::makeList(new ArgExpression(ector));
@@ -9751,10 +9784,10 @@ void IN_ctor::tcheck(Env &env, Type *destType)
         }
         else {
           // wrap 'args' in an E_funCall of a conversion function
-          E_fieldAcc *efacc = new E_fieldAcc(loc, src, new PQ_variable(loc, ic.user));
+          E_fieldAcc *efacc = new E_fieldAcc(EXPR_LOC(loc ENDLOCARG(SL_UNKNOWN)) src, new PQ_variable(loc, ic.user));
           efacc->type = ic.user->type;
           efacc->field = ic.user;
-          E_funCall *efc = new E_funCall(loc, efacc, FakeList<ArgExpression>::emptyList());
+          E_funCall *efc = new E_funCall(EXPR_LOC(loc ENDLOCARG(SL_UNKNOWN)) efacc, FakeList<ArgExpression>::emptyList());
           efc->type = ic.user->type->asFunctionType()->retType;
           args = FakeList<ArgExpression>::makeList(new ArgExpression(efc));
 

@@ -6,6 +6,7 @@
 #include "exc.h"        // xassert
 #include <string.h>     // strtok
 
+using namespace sm;
 
 StrtokParse::StrtokParse(rostring origStr, rostring origDelim)
   : buf(strlen(origStr)+1)

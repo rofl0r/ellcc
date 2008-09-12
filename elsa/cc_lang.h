@@ -276,7 +276,7 @@ public:      // funcs
 
   // dsw: I regret having to mention all of the flags yet one more
   // place, however I think I need this.
-  string toString();
+  sm::string toString();
 };
 
 bool handleExternInline_asPrototype();

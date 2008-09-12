@@ -105,8 +105,8 @@ class Expression {
   public void print(PrintEnv &env);
   pure_virtual void iprint(PrintEnv &env);
 
-  public string exprToString() const;
-  public string asString() const { return exprToString(); };
+  public sm::string exprToString() const;
+  public sm::string asString() const { return exprToString(); };
 }
 
 verbatim {                               

@@ -7,7 +7,7 @@
 #ifndef __STRDICT_H
 #define __STRDICT_H
 
-#include <iostream.h>   // ostream
+#include <iostream>     // ostream
 #include "str.h"        // string
 #include "macros.h"     // DMEMB
 #include "xassert.h"    // xassert
@@ -18,7 +18,7 @@ private:    // types
   class Node {
   public:
     Node *next;
-    string key, value;
+    sm::string key, value;
 
   public:
     Node(char const *k, char const *v, Node *n = NULL)
@@ -44,8 +44,8 @@ public:     // types
     Iter& next() { xassert(current); current = current->next; return *this; }
       // 'next' returns a value primarily to allow use in for-loop comma exprs
 
-    string& key() const { return current->key; }
-    string& value() const { return current->value; }
+    sm::string& key() const { return current->key; }
+    sm::string& value() const { return current->value; }
   };
   friend class Iter;
 
@@ -62,8 +62,8 @@ public:     // types
     Iter::next;
 
     // others must be const-ified
-    string const &key() const { return Iter::key(); }
-    string const &value() const { return Iter::value(); }
+    sm::string const &key() const { return Iter::key(); }
+    sm::string const &value() const { return Iter::value(); }
   };
 
 private:    // data
@@ -100,11 +100,11 @@ public:
   bool isNotEmpty() const
     { return !isEmpty(); }
 
-  bool query(char const *key, string &value) const;
+  bool query(char const *key, sm::string &value) const;
     // if 'key' is mapped to a value, put it into 'value' and return true;
     // otherwise, return false
 
-  string queryf(char const *key) const;
+  sm::string queryf(char const *key) const;
     // return the value corresponding to 'key', or throw an exception of it's
     // not mapped
 
@@ -142,7 +142,7 @@ public:
 
   // ------------ misc --------------
   INSERT_OSTREAM(StringDict)
-  string toString() const;
+  sm::string toString() const;
 };
 
 #endif // __STRDICT_H

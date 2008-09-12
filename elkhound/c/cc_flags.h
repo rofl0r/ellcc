@@ -18,7 +18,7 @@ enum TypeIntr {
 };
 
 extern char const * const typeIntrNames[NUM_TYPEINTRS];    // "struct", ...
-string toString(TypeIntr tr);
+sm::string toString(TypeIntr tr);
 
 
 // --------------------- CVFlags ---------------------
@@ -38,7 +38,7 @@ enum CVFlags {
 };
 
 extern char const * const cvFlagNames[NUM_CVFLAGS];      // 0="const", 1="volatile", 2="owner"
-string toString(CVFlags cv);
+sm::string toString(CVFlags cv);
 
 inline CVFlags operator| (CVFlags f1, CVFlags f2)
   { return (CVFlags)((int)f1 | (int)f2); }
@@ -91,7 +91,7 @@ enum DeclFlags {
 };
 
 extern char const * const declFlagNames[NUM_DECLFLAGS];      // 0="inline", 1="virtual", 2="friend", ..
-string toString(DeclFlags df);
+sm::string toString(DeclFlags df);
 
 inline DeclFlags operator| (DeclFlags f1, DeclFlags f2)
   { return (DeclFlags)((int)f1 | (int)f2); }
@@ -148,8 +148,8 @@ inline char const *simpleTypeName(SimpleTypeId id)
   { return simpleTypeInfo(id).name; }
 inline int simpleTypeReprSize(SimpleTypeId id)
   { return simpleTypeInfo(id).reprSize; }
-inline string toString(SimpleTypeId id)
-  { return string(simpleTypeName(id)); }
+inline sm::string toString(SimpleTypeId id)
+  { return sm::string(simpleTypeName(id)); }
 
 
 // ---------------------------- UnaryOp ---------------------------
@@ -162,7 +162,7 @@ enum UnaryOp {
 };
 
 extern char const * const unaryOpNames[NUM_UNARYOPS];     // "+", ...
-string toString(UnaryOp op);
+sm::string toString(UnaryOp op);
 
 
 // unary operator with a side effect
@@ -175,7 +175,7 @@ enum EffectOp {
 };
 
 extern char const * const effectOpNames[NUM_EFFECTOPS];   // "++", ...
-string toString(EffectOp op);
+sm::string toString(EffectOp op);
 bool isPostfix(EffectOp op);
 
 
@@ -216,7 +216,7 @@ enum BinaryOp {
 };
 
 extern char const * const binaryOpNames[NUM_BINARYOPS];   // "*", ..
-string toString(BinaryOp op);
+sm::string toString(BinaryOp op);
 
 bool isPredicateCombinator(BinaryOp op);     // &&, ||, ==>
 bool isRelational(BinaryOp op);              // == thru >=
@@ -233,7 +233,7 @@ enum AccessKeyword {
 };
 
 extern char const * const accessKeywordNames[NUM_ACCESS_KEYWORDS];
-string toString(AccessKeyword key);
+sm::string toString(AccessKeyword key);
 
 // ---------------- cast keywords -------------
 enum CastKeyword {
@@ -246,7 +246,7 @@ enum CastKeyword {
 };
 
 extern char const * const castKeywordNames[NUM_CAST_KEYWORDS];
-string toString(CastKeyword key);
+sm::string toString(CastKeyword key);
 
 
 // --------------- overloadable operators --------
@@ -262,7 +262,7 @@ enum OverloadableOp {
 };
 
 extern char const * const overloadableOpNames[NUM_OVERLOADABLE_OPS];
-string toString(OverloadableOp op);
+sm::string toString(OverloadableOp op);
 
 
 // -------------------- uber modifiers -----------------
@@ -315,7 +315,7 @@ enum UberModifiers {
 
 // string repr.
 extern char const * const uberModifierNames[UM_NUM_FLAGS];
-string toString(UberModifiers m);
+sm::string toString(UberModifiers m);
 
 // select particular subsets
 inline DeclFlags uberDeclFlags(UberModifiers m)

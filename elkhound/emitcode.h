@@ -11,14 +11,14 @@
 class EmitCode : public stringBuilder {
 private:     // data
   ofstreamTS os;       // stream to write to
-  string fname;        // filename for emitting #line
+  sm::string fname;        // filename for emitting #line
   int line;            // current line number
 
 public:      // funcs
   EmitCode(rostring fname);
   ~EmitCode();
 
-  string const &getFname() const { return fname; }
+  sm::string const &getFname() const { return fname; }
 
   // get current line number; flushes internally
   int getLine();
@@ -29,7 +29,7 @@ public:      // funcs
 
 
 // return a #line directive for the given location
-string lineDirective(SourceLoc loc);
+sm::string lineDirective(SourceLoc loc);
 
 // emit a #line directive to restore reporting to the
 // EmitCode file itself (the 'sb' argument must be an EmitFile object)

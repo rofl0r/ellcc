@@ -48,11 +48,11 @@ public:
   // return the body of the embedded function; should
   // always return a complete function body, even when
   // exprOnly is true (by adding to 'text' if necessary)
-  virtual string getFuncBody() const = 0;
+  virtual sm::string getFuncBody() const = 0;
 
   // return the name of the declared function, assuming
   // that is the context in which 'text' was collected
-  virtual string getDeclName() const = 0;
+  virtual sm::string getDeclName() const = 0;
 };
 
 #endif // EMBEDDED_H

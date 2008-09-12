@@ -59,7 +59,7 @@ protected:   // types
     Type const *getType() const { return sarg.getType(); }
                             
     // debugging
-    string asString() const;
+    sm::string asString() const;
   };
 
 protected:   // data
@@ -187,7 +187,7 @@ private:     // funcs
   bool const allowNonConst;
 
 private:     // funcs
-  string bindingsToString() const;
+  sm::string bindingsToString() const;
   bool commonMatchType(Type const *conc, Type const *pat, MatchFlags flags);
   bool commonMatchSTemplateArguments(ObjList<STemplateArgument> const &conc,
                                      ObjList<STemplateArgument> const &pat,

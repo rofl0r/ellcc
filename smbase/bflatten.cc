@@ -119,7 +119,7 @@ void entry()
 {                    
   // make up some data
   int x = 9, y = 22;
-  string s("foo bar");
+  sm::string s("foo bar");
   int *px = &x, *py = &y;
 
   // open a file for writing them
@@ -136,7 +136,7 @@ void entry()
 
   // place to put the data we read
   int x2, y2;
-  string s2;
+  sm::string s2;
   int *px2, *py2;
 
   // read them back

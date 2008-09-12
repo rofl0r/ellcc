@@ -125,7 +125,7 @@ public:     // types
 
 
 BitArray stringToBitArray(char const *src);
-string toString(BitArray const &b);
+sm::string toString(BitArray const &b);
 
 
 #endif // BITARRAY_H

@@ -9,7 +9,7 @@
 
 verbatim {
   class ElabVisitor;             // cc_elaborate.h
-  string refersTo(Variable *v);  // cc_ast_aux.cc
+  sm::string refersTo(Variable *v);  // cc_ast_aux.cc
 }
 
 

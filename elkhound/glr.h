@@ -48,7 +48,7 @@
 #include "sobjlist.h"      // SObjList
 
 #include <stdio.h>         // FILE
-#include <iostream.h>      // ostream
+#include <iostream>        // ostream
 
 
 // fwds from other files
@@ -81,7 +81,7 @@ public:
   // at this stack node; this is in essence part of the semantic
   // value, but automatically propagated by the parser
   SOURCELOC( SourceLoc loc; )
-
+  ENDSOURCELOC ( SourceLoc endloc; )
   // number of times this 'sval' has been yielded; this is used
   // to track cases where we yield a value and then merge it
   // (which means the induced parse forest is incomplete)
@@ -92,7 +92,8 @@ public:
 
 public:
   SiblingLink(StackNode *s, SemanticValue sv
-              SOURCELOCARG( SourceLoc L ) );
+              SOURCELOCARG( SourceLoc L )
+              ENDSOURCELOCARG( SourceLoc R ) );
   ~SiblingLink();
   
   #if GLR_SOURCELOC
@@ -168,7 +169,8 @@ public:
 private:    // funcs
   SiblingLink *
     addAdditionalSiblingLink(StackNode *leftSib, SemanticValue sval
-                             SOURCELOCARG( SourceLoc loc ) );
+                             SOURCELOCARG( SourceLoc loc )
+			     ENDSOURCELOCARG( SourceLoc endloc ) );
 
 public:     // funcs
   StackNode();
@@ -184,12 +186,14 @@ public:     // funcs
 
   // add a new link with the given tree node; return the link
   SiblingLink *addSiblingLink(StackNode *leftSib, SemanticValue sval
-                              SOURCELOCARG( SourceLoc loc ) );
+                              SOURCELOCARG( SourceLoc loc )
+			      ENDSOURCELOCARG( SourceLoc endloc ) );
                                 
   // specialized version for performance-critical sections
   inline void
     addFirstSiblingLink_noRefCt(StackNode *leftSib, SemanticValue sval
-                                SOURCELOCARG( SourceLoc loc ) );
+                                SOURCELOCARG( SourceLoc loc )
+				ENDSOURCELOCARG( SourceLoc endloc ) );
 
   // return the symbol represented by this stack node;  it's
   // the symbol shifted or reduced-to to get to this state
@@ -381,7 +385,7 @@ public:
   // there is significant expense to computing the debug strings
   // (that are then usually not printed)
   bool trParse;                             // tracingSys("parse")
-  ostream &trsParse;                        // trace("parse")
+  std::ostream &trsParse;                   // trace("parse")
 
   // track column for new nodes
   NODE_COLUMN( int globalNodeColumn; )
@@ -416,12 +420,15 @@ private:    // funcs
   static bool innerGlrParse(GLR &glr, LexerInterface &lexer, SemanticValue &treeTop);
   SemanticValue doReductionAction(
     int productionId, SemanticValue const *svals
-    SOURCELOCARG( SourceLoc loc ) );
+    SOURCELOCARG( SourceLoc loc )
+    ENDSOURCELOCARG( SourceLoc endloc ) );
 
   void rwlProcessWorklist();
   SiblingLink *rwlShiftNonterminal(StackNode *leftSibling, int lhsIndex,
                                    SemanticValue /*owner*/ sval
-                                   SOURCELOCARG( SourceLoc loc ) );
+                                   SOURCELOCARG( SourceLoc loc )
+				   ENDSOURCELOCARG( SourceLoc endloc ) );
+
   int rwlEnqueueReductions(StackNode *parser, ActionEntry action,
                            SiblingLink *sibLink);
   void rwlCollectPathLink(
@@ -436,7 +443,7 @@ private:    // funcs
 
   void configCheck(char const *option, bool core, bool table);
 
-  string stackSummary() const;
+  sm::string stackSummary() const;
   void nodeSummary(stringBuilder &sb, StackNode const *node) const;
   void innerStackSummary(stringBuilder &sb,
                          SObjList<StackNode const> &printed,

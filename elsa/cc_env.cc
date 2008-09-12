@@ -11,7 +11,10 @@
 #include "mtype.h"         // MType
 #include "implconv.h"      // ImplicitConversion
 #include "typelistiter.h"  // TypeListIter_GrowArray
+#include "exprloc.h"
 
+using namespace std;
+// forwards in this file
 
 // helper functions for elaboration not during elaboration stage, but during
 // type checking.
@@ -1360,7 +1363,7 @@ SourceLoc Env::loc() const
 }
 
 
-string Env::locationStackString() const
+sm::string Env::locationStackString() const
 {
   stringBuilder sb;
 
@@ -1372,7 +1375,7 @@ string Env::locationStackString() const
 }
 
 
-string Env::instLocStackString() const
+sm::string Env::instLocStackString() const
 {
   // build a string that describes the instantiation context
   if (instantiationLocStack.isEmpty()) {
@@ -3482,7 +3485,7 @@ Variable *Env::createDeclaration(
       // name, but their types are different; we only jump here *after*
       // ruling out the possibility of function overloading
 
-      string msg = stringc
+      sm::string msg = stringc
         << "prior declaration of `" << name
         << "' at " << prior->loc
         << " had type `" << prior->type->toString()
@@ -3889,7 +3892,7 @@ void Env::addedNewVariable(Scope *, Variable *)
 E_intLit *Env::build_E_intLit(int i)
 {
   StringRef text = str(stringc << i);
-  E_intLit *ret = new E_intLit(SL_UNKNOWN, text);
+  E_intLit *ret = new E_intLit(EXPR_LOC(loc() ENDLOCARG(SL_UNKNOWN)) text);
   ret->i = i;
   ret->type = tfac.getSimpleType(ST_INT);
   return ret;
@@ -3901,7 +3904,7 @@ Type *makeLvalType(TypeFactory &tfac, Type *underlying);
 
 E_variable *Env::build_E_variable(Variable *var)
 {
-  E_variable *ret = new E_variable(SL_UNKNOWN, new PQ_variable(SL_UNKNOWN, var));
+  E_variable *ret = new E_variable(EXPR_LOC(SL_UNKNOWN ENDLOCARG(SL_UNKNOWN)) new PQ_variable(SL_UNKNOWN, var));
   ret->var = var;
 
   // Wrap with ReferenceType?  (similar to E_variable::itcheck)
@@ -3918,7 +3921,7 @@ E_variable *Env::build_E_variable(Variable *var)
 
 E_addrOf *Env::build_E_addrOf(Expression *underlying)
 {
-  E_addrOf *ret = new E_addrOf(underlying->loc, underlying);
+  E_addrOf *ret = new E_addrOf(EXPR_LOC(underlying->loc ENDLOCARG(SL_UNKNOWN)) underlying);
 
   // are we building an address-of nonstatic member?
   if (underlying->isE_variable()) {
@@ -4114,6 +4117,14 @@ bool Env::ensureCompleteType(char const *action, Type *type)
   if (type->isCompoundType()) {
     CompoundType *ct = type->asCompoundType();
     return ensureCompleteCompound(action, ct);
+  }
+  
+  // dmandelin@mozilla.com
+  // This was simply left out. We need it for nsDOMClassInfo.ii so that
+  // templates used in array members are instantiated.
+  if (type->isArrayType()) {
+    ArrayType *at = type->asArrayType();
+    return ensureCompleteType(action, at->eltType);
   }
 
   if (type->isArrayType() &&
@@ -4824,7 +4835,7 @@ AtomicType *Env::resolveDQTs_pi(SourceLoc loc, PseudoInstantiation *pi)
 
 // This function produces a string describing the set of dependent
 // base classes that were not searched during unqualified lookup.
-string Env::unsearchedDependentBases()
+sm::string Env::unsearchedDependentBases()
 {
   stringBuilder sb;
   int ct=0;
@@ -5066,7 +5077,7 @@ void Env::lookupPQ_withScope(LookupSet &set, PQName *name, LookupFlags flags,
 
     // get the destructor
     if (!className || !className->isClass()) {
-      string scopeName;
+      sm::string scopeName;
       if (lookupScope) {
         scopeName = stringc << "in scope `" << lookupScope->fullyQualifiedCName() << "'";
       }
@@ -5759,7 +5770,7 @@ Expression *Env::makeConvertedArg(Expression * const arg,
         break;
       case SC_ARRAY_TO_PTR: {
 	// Take the address of the array.
-        E_addrOf *conv = new E_addrOf(arg->loc, arg);
+        E_addrOf *conv = new E_addrOf(EXPR_LOC(arg->loc ENDLOCARG(SL_UNKNOWN)) arg);
 	// This comes in as a reference.
 	xassert(arg->type->getAtType()->isArrayType());
         conv->type = env.tfac.makePointerType(CV_CONST, arg->type->getAtType()->getAtType());
@@ -5768,7 +5779,7 @@ Expression *Env::makeConvertedArg(Expression * const arg,
       }
       case SC_FUNC_TO_PTR: {
 	// Take the address of the function.
-        E_addrOf *conv = new E_addrOf(arg->loc, arg);
+        E_addrOf *conv = new E_addrOf(EXPR_LOC(arg->loc ENDLOCARG(SL_UNKNOWN)) arg);
         conv->type = env.tfac.makePointerType(CV_CONST, arg->type);
 	newarg = conv;
         break;
@@ -5781,7 +5792,7 @@ Expression *Env::makeConvertedArg(Expression * const arg,
     }
     if (ic.scs & SC_GROUP_2_MASK) {
       // Insert the conversion.
-      newarg = new E_stdConv(loc(), newarg, ic.scs);
+      newarg = new E_stdConv(EXPR_LOC(loc() ENDLOCARG(SL_UNKNOWN)) newarg, ic.scs);
       newarg->type = paramType;
     }
     break;
@@ -5967,7 +5978,7 @@ Type *Env::warning(rostring msg)
 
 Type *Env::warning(SourceLoc loc, rostring msg)
 {
-  string instLoc = instLocStackString();
+  sm::string instLoc = instLocStackString();
   TRACE("error", "warning: " << msg << instLoc);
   errors.addError(new ErrorMsg(loc, msg, EF_WARNING, instLoc));
   return getSimpleType(ST_ERROR);
@@ -5976,7 +5987,7 @@ Type *Env::warning(SourceLoc loc, rostring msg)
 
 Type *Env::unimp(rostring msg)
 {
-  string instLoc = instLocStackString();
+  sm::string instLoc = instLocStackString();
 
   // always print this immediately, because in some cases I will
   // segfault (typically deref'ing NULL) right after printing this
@@ -6068,7 +6079,7 @@ void Env::weakError(SourceLoc L, rostring msg)
 }
 
 
-string errorFlagBlock(ErrorFlags eflags)
+sm::string errorFlagBlock(ErrorFlags eflags)
 {
   if (eflags == EF_NONE) {
     return "";
@@ -6111,7 +6122,7 @@ Type *Env::error(SourceLoc L, rostring msg, ErrorFlags eflags)
 // find it to put a breakpoint in it.
 void Env::addError(ErrorMsg * /*owner*/ e)
 {
-  string instLoc = instLocStackString();
+  sm::string instLoc = instLocStackString();
   if (instLoc.length()) {
     e->instLoc = instLoc;
   }

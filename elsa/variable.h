@@ -310,32 +310,32 @@ public:
     { return isTemplateParam() && getTemplateParameterKind() == TPK_TEMPLATE; }
 
   // generic print (C or ML depending on Type::printAsML)
-  string toString() const;
+  sm::string toString() const;
 
   // C declaration syntax
-  string toCString() const;
+  sm::string toCString() const;
 
   // syntax when used in a parameter list
-  string toCStringAsParameter() const;
+  sm::string toCStringAsParameter() const;
 
   // ML-style
-  string toMLString() const;
+  sm::string toMLString() const;
 
   // toString+newline to cout
   void gdb() const;
 
   // fully qualified but not mangled name
-  string fullyQualifiedName0() const;
+  sm::string fullyQualifiedName0() const;
   void appendMangledness(stringBuilder &mgldName);
-  string mangledName0(); 	// no scope
-  string fullyQualifiedMangledName0(); // scope+mangling
+  sm::string mangledName0(); 	// no scope
+  sm::string fullyQualifiedMangledName0(); // scope+mangling
 
   // like toString but with the fully qualified name
-  string toQualifiedString() const;
+  sm::string toQualifiedString() const;
 
   // hook for verifier: text to be printed after the variable's name
   // in declarator syntax
-  virtual string namePrintSuffix() const;    // default: ""
+  virtual sm::string namePrintSuffix() const;    // default: ""
 
   // if this is variable is actually an alias for another one, via a
   // "using declaration" (cppstd 7.3.3), then this points to the one
@@ -377,7 +377,7 @@ public:
   void traverse(TypeVisitor &vis);
 };
 
-inline string toString(Variable const *v) { return v->toString(); }
+inline sm::string toString(Variable const *v) { return v->toString(); }
 
 // true if 'v1' and 'v2' refer to the same run-time entity
 bool sameEntity(Variable const *v1, Variable const *v2);
@@ -410,7 +410,7 @@ public:
 // the AST.  If the AST-aware modules are compiled into this program,
 // then this function just calls into them, prepending the prefix; but
 // if not, then this always returns "".
-string renderExpressionAsString(char const *prefix, Expression const *e);
+sm::string renderExpressionAsString(char const *prefix, Expression const *e);
 
 
 /*

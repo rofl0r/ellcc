@@ -5,7 +5,7 @@
 #ifndef OFSTREAMTS_H
 #define OFSTREAMTS_H
 
-#include <fstream.h>
+#include <fstream>
 #include "str.h"
 
 // An ofstream which is timestamp-conscious.  It first writes to a temporary
@@ -18,22 +18,22 @@
 // atomic output.
 //
 // Call 'dontsave()' to avoid saving, e.g. if an error occurred.
-class ofstreamTS : public ofstream {
+class ofstreamTS : public std::ofstream {
   // The name of the file where the data is eventually saved
-  string destFname;
+  sm::string destFname;
 
   // The name of a temporary file where we write until we rename.
   //
   // This is currently "filename.tmp".  Since it is 'rename'd to destFname, it
   // must be in the same file system as destFname (i.e. generally not in
   // /tmp)
-  string tmpFname;
+  sm::string tmpFname;
 
   // Flag indicating whether the destructor should save.  See dontsave().
   bool dosave;
 
   // Initialize the member filenames; used internally by constructor
-  const char *init_fname(string const &destFname0);
+  const char *init_fname(sm::string const &destFname0);
 
   // Open the temporary file
   void openTmp() { open(tmpFname.c_str()); }
@@ -45,7 +45,7 @@ class ofstreamTS : public ofstream {
   void deleteTmp();
 
 public:
-  ofstreamTS(string const &destFname0) : dosave(true)
+  ofstreamTS(sm::string const &destFname0) : dosave(true)
   { init_fname(destFname0); openTmp(); }
   ~ofstreamTS() { if (dosave) save(); }
 

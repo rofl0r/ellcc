@@ -4,7 +4,7 @@
 #include "strhash.h"     // this module
 #include "xassert.h"     // xassert
 
-#include <string.h>      // strcmp
+#include <cstring>      // strcmp
 
 // notes on string hash functions ****************
 
@@ -272,15 +272,16 @@ STATICDEF bool StringHash::keyCompare(char const *key1, char const *key2)
 // ---------------------- test code --------------------
 #ifdef TEST_STRHASH
 
-#include <iostream.h>    // cout
 #include <stdlib.h>      // rand
-#include <iostream>      // istream
+#include <iostream>      // istream cout
 #include <fstream>       // filebuf
 #include "trace.h"       // traceProgress
 #include "crc.h"         // crc32
 #include "nonport.h"     // getMilliseconds
 #include "array.h"       // GrowArray
 #include "str.h"         // string
+
+using namespace std;
 
 // pair a GrowArray with its size
 struct StringArray {

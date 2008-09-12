@@ -41,12 +41,14 @@ public:     // data
   // source location of the token; this will only be used if the
   // parser has been compiled to automatically propagate it
   SourceLoc loc;
+  SourceLoc endloc;
 
 public:     // funcs
   LexerInterface()
     : type(0),
       sval((SemanticValue)DEFAULT_UNPRIMED_SVAL),
-      loc(SL_UNKNOWN)
+      loc(SL_UNKNOWN),
+      endloc(SL_UNKNOWN)
   {}
   virtual ~LexerInterface() {}
 
@@ -79,13 +81,13 @@ public:     // funcs
   // then the 'type' field above might have been changed by the
   // parser, in which case this function should ideally print
   // a description which takes the new type into account
-  virtual string tokenDesc() const=0;
+  virtual sm::string tokenDesc() const=0;
 
   // describe a token kind; this is different from tokenDesc(), since
   // it need not correspond to the token kind that was just yielded,
   // and hence any related lexeme data cannot be assumed to be
   // available; this is used during error diagnosis
-  virtual string tokenKindDesc(int kind) const=0;
+  virtual sm::string tokenKindDesc(int kind) const=0;
 };
 
 #endif // LEXERINT_H

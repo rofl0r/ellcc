@@ -1,7 +1,7 @@
 // semgrep.cc
 // example Elsa application: semantic grep
 
-#include <iostream.h>     // cout
+#include <iostream>       // cout
 #include <stdlib.h>       // exit, atoi
 
 #include "parssppt.h"     // ParseTreeAndTokens
@@ -13,12 +13,13 @@
 #include "cc.gr.gen.h"    // CCParse
 #include "strtokp.h"      // StrtokParse
 
+using namespace std;
 
 // ---------------------- GrepVisitor ------------------------
 class GrepVisitor : public ASTVisitor {
 public:      // data
   // name of interest
-  string name;
+  sm::string name;
   int line;
 
 public:      // funcs
@@ -94,7 +95,7 @@ void doit(int argc, char **argv)
   }
 
   GrepVisitor grepv(argv[1], atoi(argv[2]));
-  string inputFname = argv[3];
+  sm::string inputFname = argv[3];
 
   //cout << "grepping for " << grepv.name
   //     << " on line " << grepv.line

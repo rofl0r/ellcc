@@ -19,6 +19,6 @@ enum AssocKind {
   NUM_ASSOC_KINDS
 };
 
-string toString(AssocKind k);
+sm::string toString(AssocKind k);
 
 #endif // ASOCKIND_H

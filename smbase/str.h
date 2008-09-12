@@ -14,162 +14,140 @@
 #define STR_H
 
 #include "typ.h"         // bool
-#include <iostream.h>	 // istream, ostream
+#include <iostream>      // istream, ostream
 #include <stdarg.h>      // va_list
 #include <string.h>      // strcmp, etc.
 
 class Flatten;           // flatten.h
 
-// certain unfortunate implementation decisions by some compilers
-// necessitate avoiding the name 'string'
-//
-// 9/19/04: I originally made this definition to work around a problem
-// with Borland C++ 4.5.  It causes a problem when using the new
-// standard library, since the name clashes with std::string.  A
-// simple solution is to remove the #definition and let namespaces do
-// their job.  Since Intel's headers are the only ones that provoke
-// the problem I'll confine it to that case for now.  Eventually I
-// will do the same for gcc.
-//
-// 2005-02-28: Let's try getting rid of this.
-//
-// 2005-03-15: There were some problems on Redhat due to flex-2.5.4a-29.
-//             I have solved them differently, but it is worth noting
-//             that re-enabling this #define also fixed the problem.
-#if 0   //!defined(__INTEL_COMPILER)
-  #define string mystring
-#endif
-
-
 // ------------------------- string ---------------------
-// This is used when I want to call a function in smbase::string
-// that does not exist or has different semantics in std::string.
-// That way for now I can keep using the function, but it is
-// marked as incompatible.
-enum SmbaseStringFunc { SMBASE_STRING_FUNC };
+namespace sm {
+  class string {
+  public:
+    typedef int size_type;
+  protected:     // data
+    // 10/12/00: switching to never letting s be NULL
+    char *s;     	       	       	       // string contents; never NULL
+    static char * const emptyString;     // a global ""; should never be modified
 
-class string {
-public:
-  typedef int size_type;
-protected:     // data
-  // 10/12/00: switching to never letting s be NULL
-  char *s;     	       	       	       // string contents; never NULL
-  static char * const emptyString;     // a global ""; should never be modified
+  protected:     // funcs
+    void dup(char const *source);        // copies, doesn't dealloc first
+    void kill();                         // dealloc if str != 0
 
-protected:     // funcs
-  void dup(char const *source);        // copies, doesn't dealloc first
-  void kill();                         // dealloc if str != 0
+  public:	       // funcs
+    string(sm::string const &src) { dup(src.s); }
+    string(char const *src) { dup(src); }
+    string() { s=emptyString; }
+    ~string() { kill(); }
 
-public:	       // funcs
-  string(string const &src) { dup(src.s); }
-  string(char const *src) { dup(src); }
-  string() { s=emptyString; }
-  ~string() { kill(); }
+    // for this one, use ::substring instead
+    string(char const *src, int length);
 
-  // for this one, use ::substring instead
-  string(char const *src, int length, SmbaseStringFunc);
+    // for this one, there are two alternatives:
+    //   - stringBuilder has nearly the same constructor interface
+    //     as string had, but cannot export a char* for writing
+    //     (for the same reason string can't anymore); operator[] must
+    //     be used
+    //   - Array<char> is very flexible, but remember to add 1 to
+    //     the length passed to its constructor!
+    string(int length) { s=emptyString; setlength(length); }
 
-  // for this one, there are two alternatives:
-  //   - stringBuilder has nearly the same constructor interface
-  //     as string had, but cannot export a char* for writing
-  //     (for the same reason string can't anymore); operator[] must
-  //     be used
-  //   - Array<char> is very flexible, but remember to add 1 to
-  //     the length passed to its constructor!
-  string(int length, SmbaseStringFunc) { s=emptyString; setlength(length); }
+    string(Flatten&);
+    void xfer(Flatten &flat);
 
-  string(Flatten&);
-  void xfer(Flatten &flat);
+    // simple queries
+    int length() const;  	       	// returns number of non-null chars in the string; length of "" is 0
+    bool isempty() const { return s[0]==0; }
+    bool contains(char c) const;
 
-  // simple queries
-  int length() const;  	       	// returns number of non-null chars in the string; length of "" is 0
-  bool isempty() const { return s[0]==0; }
-  bool contains(char c) const;
+    // std::string has this instead; I will begin using slowly
+    bool empty() const { return isempty(); }
 
-  // std::string has this instead; I will begin using slowly
-  bool empty() const { return isempty(); }
+    // array-like access
+    char& operator[] (int i) { return s[i]; }
+    char operator[] (int i) const { return s[i]; }
 
-  // array-like access
-  char& operator[] (int i) { return s[i]; }
-  char operator[] (int i) const { return s[i]; }
+    // substring
+    sm::string substring(int startIndex, int length) const;
 
-  // substring
-  string substring(int startIndex, int length) const;
-
-  // conversions
-  #if 0    // removing these for more standard compliace
+    // conversions
+#if 0    // removing these for more standard compliace
     //operator char* () { return s; }      // ambiguities...
     operator char const* () const { return s; }
     char *pchar() { return s; }
     char const *pcharc() const { return s; }
-  #else
+#else
     char const *c_str() const { return s; }
-  #endif
+#endif
 
-  // assignment
-  string& operator=(string const &src)
+    // assignment
+    sm::string& operator=(sm::string const &src)
     { if (&src != this) { kill(); dup(src.s); } return *this; }
-  string& operator=(char const *src)
+    sm::string& operator=(char const *src)
     { if (src != s) { kill(); dup(src); } return *this; }
 
-  // allocate 'newlen' + 1 bytes (for null); initial contents is ""
-  string& setlength(int newlen);
+    // allocate 'newlen' + 1 bytes (for null); initial contents is ""
+    sm::string& setlength(int newlen);
 
-  // comparison; return value has same meaning as strcmp's return value:
-  //   <0   if   *this < src
-  //   0    if   *this == src
-  //   >0   if   *this > src
-  int compareTo(string const &src) const;
-  int compareTo(char const *src) const;
-  bool equals(char const *src) const { return compareTo(src) == 0; }
-  bool equals(string const &src) const { return compareTo(src) == 0; }
+    // comparison; return value has same meaning as strcmp's return value:
+    //   <0   if   *this < src
+    //   0    if   *this == src
+    //   >0   if   *this > src
+    int compareTo(sm::string const &src) const;
+    int compareTo(char const *src) const;
+    bool equals(char const *src) const { return compareTo(src) == 0; }
+    bool equals(sm::string const &src) const { return compareTo(src) == 0; }
 
-  #define MAKEOP(op)							       	 \
-    bool operator op (string const &src) const { return compareTo(src) op 0; }	 \
+#define MAKEOP(op)                                                      \
+    bool operator op (string const &src) const { return compareTo(src) op 0; } \
     /*bool operator op (const char *src) const { return compareTo(src) op 0; }*/ \
     /* killed stuff with char* because compilers are too flaky; use compareTo */
-  MAKEOP(==)  MAKEOP(!=)
-  MAKEOP(>=)  MAKEOP(>)
-  MAKEOP(<=)  MAKEOP(<)
-  #undef MAKEOP
+    MAKEOP(==)  MAKEOP(!=)
+    MAKEOP(>=)  MAKEOP(>)
+    MAKEOP(<=)  MAKEOP(<)
+#undef MAKEOP
 
-  // concatenation (properly handles string growth)
-  // uses '&' instead of '+' to avoid char* coercion problems
-  string operator& (string const &tail) const;
-  string& operator&= (string const &tail);
+    // concatenation (properly handles string growth)
+    // uses '&' instead of '+' to avoid char* coercion problems
+    sm::string operator& (sm::string const &tail) const;
+    sm::string& operator&= (sm::string const &tail);
 
-  // input/output
-  friend istream& operator>> (istream &is, string &obj)
+    // input/output
+    friend std::istream& operator>> (std::istream &is, sm::string &obj)
     { obj.readline(is); return is; }
-  friend ostream& operator<< (ostream &os, string const &obj)
+    friend std::ostream& operator<< (std::ostream &os, sm::string const &obj)
     { obj.write(os); return os; }
 
-  // note: the read* functions are currently implemented in a fairly
-  // inefficient manner (one char at a time)
+    // note: the read* functions are currently implemented in a fairly
+    // inefficient manner (one char at a time)
 
-  void readdelim(istream &is, char const *delim);
+    void readdelim(std::istream &is, char const *delim);
     // read from is until any character in delim is encountered; consumes that
     // character, but does not put it into the string; if delim is null or
     // empty, reads until EOF
 
-  void readall(istream &is) { readdelim(is, NULL); }
+    void readall(std::istream &is) { readdelim(is, NULL); }
     // read all remaining chars of is into this
 
-  void readline(istream &is) { readdelim(is, "\n"); }
+    void readline(std::istream &is) { readdelim(is, "\n"); }
     // read a line from input stream; consumes the \n, but doesn't put it into
     // the string
 
-  void write(ostream &os) const;
+    void write(std::ostream &os) const;
     // writes all stored characters (but not '\0')
 
-  // debugging
-  void selfCheck() const;
+    // debugging
+    void selfCheck() const;
     // fail an assertion if there is a problem
+  };
 };
 
+// tglek: for compatability while code is being rewritten
+// to use sm::string
+//using namespace sm;
 // ------------------------ rostring ----------------------
 // My plan is to use this in places I currently use 'char const *'.
-typedef string const &rostring;
+typedef sm::string const &rostring;
 
 // I have the modest hope that the transition to 'rostring' might be
 // reversible, so this function converts to 'char const *' but with a
@@ -184,7 +162,7 @@ void/*unusable*/ toCStr(char const *s);
 // I need some compatibility functions
 inline int strlen(rostring s) { return s.length(); }
 
-inline istream &getline(istream &in, string &line) { line.readline(in); return in; }
+inline std::istream &getline(std::istream &in, sm::string &line) { line.readline(in); return in; }
 
 int strcmp(rostring s1, rostring s2);
 int strcmp(rostring s1, char const *s2);
@@ -207,14 +185,14 @@ int atoi(rostring s);
 
 // construct a string out of characters from 'p' up to 'p+n-1',
 // inclusive; resulting string length is 'n'
-string substring(char const *p, int n);
-inline string substring(rostring p, int n)
+sm::string substring(char const *p, int n);
+inline sm::string substring(rostring p, int n)
   { return substring(p.c_str(), n); }
 
 
 // --------------------- stringBuilder --------------------
 // this class is specifically for appending lots of things
-class stringBuilder : public string {
+class stringBuilder : public sm::string {
 protected:
   enum { EXTRA_SPACE = 30 };    // extra space allocated in some situations
   char *end;          // current end of the string (points to the NUL character)
@@ -228,12 +206,12 @@ public:
   stringBuilder(int length=0);    // creates an empty string
   stringBuilder(char const *str);
   stringBuilder(char const *str, int length);
-  stringBuilder(string const &str) { dup(str.c_str()); }
+  stringBuilder(sm::string const &str) { dup(str.c_str()); }
   stringBuilder(stringBuilder const &obj) { dup(obj.c_str()); }
   ~stringBuilder() {}
 
   stringBuilder& operator= (char const *src);
-  stringBuilder& operator= (string const &s) { return operator= (s.c_str()); }
+  stringBuilder& operator= (sm::string const &s) { return operator= (s.c_str()); }
   stringBuilder& operator= (stringBuilder const &s) { return operator= (s.c_str()); }
 
   int length() const { return end-s; }
@@ -307,12 +285,12 @@ public:
   stringBuilder &myself() { return *this; }
 
   // stream readers
-  friend istream& operator>> (istream &is, stringBuilder &sb)
+  friend std::istream& operator>> (std::istream &is, stringBuilder &sb)
     { sb.readline(is); return is; }
-  void readall(istream &is) { readdelim(is, NULL); }
-  void readline(istream &is) { readdelim(is, "\n"); }
+  void readall(std::istream &is) { readdelim(is, NULL); }
+  void readline(std::istream &is) { readdelim(is, "\n"); }
 
-  void readdelim(istream &is, char const *delim);
+  void readdelim(std::istream &is, char const *delim);
 
   // an experiment: hex formatting (something I've sometimes done by resorting
   // to sprintf in the past)
@@ -341,19 +319,19 @@ public:
 
 
 // experimenting with using toString as a general method for datatypes
-string toString(int i);
-string toString(unsigned i);
-string toString(char c);
-string toString(long i);
-string toString(char const *str);
-string toString(float f);
+sm::string toString(int i);
+sm::string toString(unsigned i);
+sm::string toString(char c);
+sm::string toString(long i);
+sm::string toString(char const *str);
+sm::string toString(float f);
 
 
 // printf-like construction of a string; often very convenient, since
 // you can use any of the formatting characters (like %X) that your
 // libc's sprintf knows about
-string stringf(char const *format, ...);
-string vstringf(char const *format, va_list args);
+sm::string stringf(char const *format, ...);
+sm::string vstringf(char const *format, va_list args);
 
 
 #endif // STR_H

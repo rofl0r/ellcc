@@ -5,10 +5,10 @@
 #include "exc.h"          // this module
 
 #include <string.h>       // strlen, strcpy
-#include <iostream.h>     // clog
 #include <stdarg.h>       // va_xxx
 #include <ctype.h>        // toupper, tolower
 
+using namespace sm;
 
 // ------------------------- xBase -----------------
 bool xBase::logExceptions = true;
@@ -19,7 +19,7 @@ xBase::xBase(rostring m)
   : msg(m)
 {
   if (logExceptions) {
-    clog << "Exception thrown: " << m << endl;
+    std::clog << "Exception thrown: " << m << std::endl;
   }
 
   // done at very end when we know this object will
@@ -62,7 +62,7 @@ bool unwinding_other(xBase const &)
 }
 
 
-void xBase::insert(ostream &os) const
+void xBase::insert(std::ostream &os) const
 {
   os << why();
 }
@@ -99,6 +99,12 @@ x_assert::x_assert(rostring cond, rostring fname, int line)
     lineno(line)
 {}
 
+// failure function, declared in xassert.h
+void x_assert_fail(char const *cond, char const *file, int line)
+{
+  THROW(x_assert(cond, file, line));
+}
+
 x_assert::x_assert(x_assert const &obj)
   : xBase(obj),
     condition(obj.condition),
@@ -109,13 +115,18 @@ x_assert::x_assert(x_assert const &obj)
 x_assert::~x_assert()
 {}
 
+x_match::x_match(rostring cond, rostring fname, int line)
+  : x_assert(cond, fname, line)
+{}
 
-// failure function, declared in xassert.h
-void x_assert_fail(char const *cond, char const *file, int line)
+x_match::~x_match()
+{}
+
+// Pattern match failure function, declared in xassert.h
+void x_match_fail(char const *cond, char const *file, int line)
 {
-  THROW(x_assert(cond, file, line));
+  THROW(x_match(cond, file, line));
 }
-
 
 // --------------- xFormat ------------------
 xFormat::xFormat(rostring cond)

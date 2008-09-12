@@ -91,7 +91,7 @@ public:      // types
   // SourceLocManager when de-serializing it from XML.
   class FileData {
     public:
-    string name;
+    sm::string name;
     int numChars;
     int numLines;
     ArrayStack<unsigned char> *lineLengths;
@@ -119,7 +119,7 @@ public:      // types
     // file name; we consider two files to be the same if and only
     // if their names are equal, i.e. there is no checking done to
     // see if their names happen to be aliases in the filesystem
-    string name;
+    sm::string name;
 
     // start offset in the SourceLoc space
     SourceLoc startLoc;
@@ -230,7 +230,7 @@ public:      // types
   // information stored, and incremental update is impossible
   class StaticLoc {
   public:
-    string name;      // file name
+    sm::string name;      // file name
     int offset;       // char offset
     int line, col;    // line,col
 
@@ -381,7 +381,7 @@ public:      // funcs
     { return getFile(fname); }
 
   // render as string in "file:line:col" format
-  string getString(SourceLoc loc);
+  sm::string getString(SourceLoc loc);
 
   // versions of the decode routine that either use or do not use the
   // hashline map (when available) depending on an explicit flag,
@@ -392,12 +392,12 @@ public:      // funcs
   void decodeLineCol_explicitHL(SourceLoc loc, char const *&filename, int &line, int &col, bool localUseHashLines);
   void decodeLineCol_nohashline(SourceLoc loc, char const *&filename, int &line, int &col)
     { decodeLineCol_explicitHL(loc, filename, line, col, false); }
-  string getString_explicitHL(SourceLoc loc, bool localUseHashLines);
-  string getString_nohashline(SourceLoc loc)
+  sm::string getString_explicitHL(SourceLoc loc, bool localUseHashLines);
+  sm::string getString_nohashline(SourceLoc loc)
     { return getString_explicitHL(loc, false); }
 
   // "line:col" format
-  string getLCString(SourceLoc loc);
+  sm::string getLCString(SourceLoc loc);
 
   // dsw: the xml serialization code needs access to this field; the
   // idea is that the method name suggests that people not use it
@@ -415,15 +415,15 @@ extern SourceLocManager *sourceLocManager;
 // dsw: So that gdb can find it please DO NOT inline this; also the
 // unique public name is intentional: I don't want gdb doing
 // overloading and sometimes getting it wrong, which it does
-string locToStr(SourceLoc sl);
+sm::string locToStr(SourceLoc sl);
 
-inline string toString(SourceLoc sl)
+inline sm::string toString(SourceLoc sl)
   { return locToStr(sl); }
 
 inline stringBuilder& operator<< (stringBuilder &sb, SourceLoc sl)
   { return sb << toString(sl); }
 
-inline string toLCString(SourceLoc sl)
+inline sm::string toLCString(SourceLoc sl)
   { return sourceLocManager->getLCString(sl); }
 
 

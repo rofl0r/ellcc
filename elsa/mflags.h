@@ -137,7 +137,7 @@ enum MatchFlags {
 ENUM_BITWISE_OPS(MatchFlags, MF_ALL)
 
 // defined in mtype.cc
-string toString(MatchFlags flags);
+sm::string toString(MatchFlags flags);
 
 
 #endif // MFLAGS_H

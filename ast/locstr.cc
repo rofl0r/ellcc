@@ -4,6 +4,8 @@
 #include "locstr.h"     // this module
 #include "exc.h"        // LocString
 
+using namespace sm;
+
 LocString::LocString()
   : loc(SL_UNKNOWN),
     str(NULL)           // problem with "" is we don't have the string table here..

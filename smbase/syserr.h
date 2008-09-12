@@ -45,13 +45,13 @@ public:     // data
   int sysErrorCode;
 
   // reason string given by the OS, if any (might be NULL)
-  string sysReasonString;
+  sm::string sysReasonString;
 
   // name of syscall or API function name
-  string syscallName;
+  sm::string syscallName;
 
   // error context; what was being done (e.g., "opening an.important.file")
-  string context;
+  sm::string context;
 
 public:    // funcs
   xSysError(Reason r, int sysCode, rostring sysReason,
@@ -64,7 +64,7 @@ public:    // funcs
     // retrieve the error code used by local convention
     // [nonportable implementation]
 
-  static Reason portablize(int sysErrorCode, string &sysReason);
+  static Reason portablize(int sysErrorCode, sm::string &sysReason);
     // return a portable equivalent of a system error code;
     // returns R_UNKNOWN if the code is esoteric or invalid;
     // sets 'sysmsg' to the system's message string, if possible
@@ -74,7 +74,7 @@ public:    // funcs
     // translate a Reason into a string (if r is invalid, a string
     // saying to will be returned)
 
-  static string constructWhyString(Reason r, rostring sysReason,
+  static sm::string constructWhyString(Reason r, rostring sysReason,
                                    rostring syscall, rostring ctx);
     // construct the string we throw as the 'why' of xBase; if ctx is NULL,
     // the string doesn't include it
@@ -90,10 +90,10 @@ void xsyserror(rostring syscallName, rostring context);
 
 
 // get a representative string, for logging etc.
-string sysErrorCodeString(int systemErrorCode, rostring syscallName,
+sm::string sysErrorCodeString(int systemErrorCode, rostring syscallName,
                                                rostring context);
 
-string sysErrorString(char const *syscallName, char const *context=NULL);
+sm::string sysErrorString(char const *syscallName, char const *context=NULL);
 
 
 #endif // __SYSERR_H

@@ -5,13 +5,14 @@
 #include "trace.h"       // tracingSys
 #include "strutil.h"     // trimWhitespace
 
+using namespace std;
 
 // ----------------- ErrorMsg -----------------
 ErrorMsg::~ErrorMsg()
 {}
 
 
-string ErrorMsg::toString() const
+sm::string ErrorMsg::toString() const
 {
   stringBuilder sb;
   sb << ::toString(loc) << ": ";
@@ -188,7 +189,7 @@ void ErrorList::print(ostream &os) const
 }
 
 
-string ErrorList::printToString() const
+sm::string ErrorList::printToString() const
 {
   stringBuilder sb;
 

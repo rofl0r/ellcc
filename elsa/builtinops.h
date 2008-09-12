@@ -154,7 +154,7 @@ private:    // types
         DMEMB(rhsType)
     {}
     
-    string asString() const;
+    sm::string asString() const;
     unsigned hashValue() const;
   };
 

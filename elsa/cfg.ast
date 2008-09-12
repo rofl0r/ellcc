@@ -21,9 +21,9 @@ class Statement {
   // be called after 'computeCFG' has finished; if this returns an
   // empty set, it means that after the statement, the function returns
   public void getSuccessors(NextPtrList &dest, bool isContinue);
-  public string successorsToString() const;
+  public sm::string successorsToString() const;
   custom debugPrint {
-    ind(os, indent) << "succ=" << successorsToString() << endl;
+    ind(os, indent) << "succ=" << successorsToString() << std::endl;
   }
 
   // compute the CFG within this statement (e.g. a compound statement that

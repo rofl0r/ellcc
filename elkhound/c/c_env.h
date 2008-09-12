@@ -322,7 +322,7 @@ public:     // funcs
 
   
   // -------------- debugging -------------
-  string toString() const;
+  sm::string toString() const;
   void selfCheck() const;
 };
 

@@ -1,29 +1,30 @@
-# define BISON_GRAMPAR_TAB_H
-# define YYSTYPE yystype
+# define YYTOKENTYPE
+#define TOK_INTEGER 258
+#define TOK_NAME 259
+#define TOK_STRING 260
+#define TOK_LIT_CODE 261
+#define TOK_LBRACE 262
+#define TOK_RBRACE 263
+#define TOK_COLON 264
+#define TOK_SEMICOLON 265
+#define TOK_ARROW 266
+#define TOK_LPAREN 267
+#define TOK_RPAREN 268
+#define TOK_COMMA 269
+#define TOK_TERMINALS 270
+#define TOK_TOKEN 271
+#define TOK_NONTERM 272
+#define TOK_FUN 273
+#define TOK_VERBATIM 274
+#define TOK_IMPL_VERBATIM 275
+#define TOK_PRECEDENCE 276
+#define TOK_OPTION 277
+#define TOK_EXPECT 278
+#define TOK_CONTEXT_CLASS 279
+#define TOK_SUBSETS 280
+#define TOK_DELETE 281
+#define TOK_REPLACE 282
+#define TOK_FORBID_NEXT 283
+# define yystype YYSTYPE /* obsolescent; will be withdrawn */
+# define YYSTYPE_IS_DECLARED 1
 # define YYSTYPE_IS_TRIVIAL 1
-# define	TOK_INTEGER	257
-# define	TOK_NAME	258
-# define	TOK_STRING	259
-# define	TOK_LIT_CODE	260
-# define	TOK_LBRACE	261
-# define	TOK_RBRACE	262
-# define	TOK_COLON	263
-# define	TOK_SEMICOLON	264
-# define	TOK_ARROW	265
-# define	TOK_LPAREN	266
-# define	TOK_RPAREN	267
-# define	TOK_COMMA	268
-# define	TOK_TERMINALS	269
-# define	TOK_TOKEN	270
-# define	TOK_NONTERM	271
-# define	TOK_FUN	272
-# define	TOK_VERBATIM	273
-# define	TOK_IMPL_VERBATIM	274
-# define	TOK_PRECEDENCE	275
-# define	TOK_OPTION	276
-# define	TOK_EXPECT	277
-# define	TOK_CONTEXT_CLASS	278
-# define	TOK_SUBSETS	279
-# define	TOK_DELETE	280
-# define	TOK_REPLACE	281
-# define	TOK_FORBID_NEXT	282

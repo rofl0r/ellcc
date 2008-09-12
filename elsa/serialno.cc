@@ -3,9 +3,9 @@
 
 #include "serialno.h"         // this module
 #include "trace.h"            // tracingSys
-#include "fstream.h"          // ifstream
+#include "fstream"            // ifstream
 
-
+using namespace std;
 // -------------------- serial numbers ON --------------------
 #if USE_SERIAL_NUMBERS
 

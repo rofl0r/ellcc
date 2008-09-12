@@ -7,7 +7,7 @@
 #include "xassert.h"      // xassert
 #include <stdlib.h>       // qsort
 #include <string.h>       // memcpy
-#include <new.h>          // new
+#include <new>            // new
 
 
 // ------------------ BitwiseGrowArray --------------------
@@ -121,19 +121,19 @@ private:
 
   // shallow copy data from src to dest
   static void copy(T *dest, T *src, size_t count) {
-    memcpy(dest, src, sizeof(T)*count);
+    ::memcpy(dest, src, sizeof(T)*count);
   }
 
   // uninitialized alloc
   static T *alloc(size_t count) {
-    void *m = malloc(sizeof(T)*count);
-    if (!m) throw bad_alloc();
+    void *m = ::malloc(sizeof(T)*count);
+    if (!m) throw std::bad_alloc();
     return (T*) m;
   }
 
   // dealloc
   static void dealloc(T *ary) {
-    free(ary);
+    ::free(ary);
   }
 };
 

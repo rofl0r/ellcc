@@ -31,7 +31,7 @@ enum Lexer1TokenType {
 class Lexer1Token {
 public:
   Lexer1TokenType type;         // kind of token
-  string text;                  // token's text, null-terminated
+  sm::string text;                  // token's text, null-terminated
   int length;                   // length of text (somewhat redundant, but whatever)
   SourceLoc loc;                // location in input stream
 

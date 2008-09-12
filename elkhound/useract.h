@@ -53,7 +53,8 @@ public:
     UserActions *context,         // parser context class object
     int productionId,             // production being used to reduce
     SemanticValue const *svals    // array of semantic values
-    SOURCELOCARG( SourceLoc loc ) );
+    SOURCELOCARG( SourceLoc loc )
+    ENDSOURCELOCARG( SourceLoc endloc ) );
                                                      
   // get the actual function; two-step to avoid virtual call in inner loop
   virtual ReductionActionFunc getReductionAction()=0;
@@ -122,8 +123,8 @@ public:
 
   // descriptions of symbols with their semantic values; this is useful
   // for the ACTION_TRACE function of the parser
-  virtual string terminalDescription(int termId, SemanticValue sval)=0;
-  virtual string nonterminalDescription(int nontermId, SemanticValue sval)=0;
+  virtual sm::string terminalDescription(int termId, SemanticValue sval)=0;
+  virtual sm::string nonterminalDescription(int nontermId, SemanticValue sval)=0;
 
   // get static names for all of the symbols
   virtual char const *terminalName(int termId)=0;
@@ -159,8 +160,8 @@ public:
                                                                        \
   virtual ReclassifyFunc getReclassifier();                            \
                                                                        \
-  virtual string terminalDescription(int termId, SemanticValue sval);  \
-  virtual string nonterminalDescription(int nontermId, SemanticValue sval);  \
+  virtual sm::string terminalDescription(int termId, SemanticValue sval); \
+  virtual sm::string nonterminalDescription(int nontermId, SemanticValue sval); \
                                                                        \
   virtual char const *terminalName(int termId);                        \
   virtual char const *nonterminalName(int termId);
@@ -174,7 +175,8 @@ public:
   static SemanticValue doReductionAction(
     UserActions *ths,
     int productionId, SemanticValue const *svals
-    SOURCELOCARG( SourceLoc loc ) );
+    SOURCELOCARG( SourceLoc loc ) 
+    ENDSOURCELOCARG( SourceLoc ) );
 
   static int reclassifyToken(UserActions *ths, 
     int oldTokenType, SemanticValue sval);

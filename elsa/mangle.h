@@ -24,15 +24,15 @@ class STemplateArgument;     // template.h
 
 
 // main entry point
-string mangle(Type const *t);
+sm::string mangle(Type const *t);
 
 
 // helpers
-string mangleAtomic(AtomicType const *t);
-string leftMangle(Type const *t, bool innerParen = true);
-string rightMangle(Type const *t, bool innerParen = true);
-string mangleVariable(Variable const *v);
-string mangleTemplateParams(TemplateInfo const *tp);
+sm::string mangleAtomic(AtomicType const *t);
+sm::string leftMangle(Type const *t, bool innerParen = true);
+sm::string rightMangle(Type const *t, bool innerParen = true);
+sm::string mangleVariable(Variable const *v);
+sm::string mangleTemplateParams(TemplateInfo const *tp);
 
 
 #endif // MANGLE_H

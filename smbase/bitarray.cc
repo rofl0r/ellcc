@@ -4,8 +4,9 @@
 #include "bitarray.h"     // this module
 #include "flatten.h"      // Flatten
 
-#include <string.h>       // memset
+#include <cstring>        // memset
 
+using namespace sm;
 
 BitArray::BitArray(int n)
   : numBits(n)
@@ -199,7 +200,9 @@ void BitArray::Iter::adv()
 
 #include "test.h"     // USUAL_MAIN
 
-string toStringViaIter(BitArray const &b)
+using namespace std;
+
+sm::string toStringViaIter(BitArray const &b)
 { 
   stringBuilder sb;
   int index = 0;
@@ -227,8 +230,8 @@ void testIter(char const *str)
   BitArray b = stringToBitArray(str);
   b.selfCheck();
 
-  string s1 = toString(b);
-  string s2 = toStringViaIter(b);
+  sm::string s1 = toString(b);
+  sm::string s2 = toStringViaIter(b);
   if (s1 != s2 ||
       !s1.equals(str)) {
     cout << "str: " << str << endl;
@@ -247,7 +250,7 @@ void testIter(char const *str)
     inv << (str[i]=='0'? '1' : '0');
   }
 
-  string cStr = toString(c);
+  sm::string cStr = toString(c);
   if (!inv.equals(cStr)) {
     cout << " inv: " << inv << endl;
     cout << "cStr: " << cStr << endl;
@@ -273,8 +276,8 @@ void testUnionIntersection(char const *s1, char const *s2)
   BitArray u = b1 | b2;
   BitArray i = b1 & b2;
   
-  string uStr = toString(u);
-  string iStr = toString(i);
+  sm::string uStr = toString(u);
+  sm::string iStr = toString(i);
 
   if (!uStr.equals(expectUnion)) {
     cout << "         s1: " << s1 << endl;

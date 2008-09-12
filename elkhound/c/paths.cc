@@ -10,7 +10,7 @@
 #include "trace.h"       // tracingSys
 #include "treeout.h"     // treeOut
 
-
+using namespace std;
 // one thing to note about constness: when an AST node contains a field
 // to store the path count, the counting function is declared non-const;
 // but when the AST node does not store the count, the counting function

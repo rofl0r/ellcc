@@ -126,7 +126,7 @@ new class ASTTypeof {
   custom traverse { if (ambiguity) ambiguity->traverse(vis); }
 
   // print ambiguities
-  public void printAmbiguities(ostream &os, int indent) const;
+  public void printAmbiguities(std::ostream &os, int indent) const;
   custom preemptDebugPrint {
     if (ambiguity) {
       printAmbiguities(os, indent);
@@ -159,6 +159,11 @@ new class ASTTypeof {
 
 class TypeSpecifier {
   -> TS_typeof(ASTTypeof atype);
+  -> TS_classSpec 
+  {
+  public AttributeSpecifierList *alist=NULL;
+  }
+
 }
 
 
@@ -199,7 +204,7 @@ class Designator (SourceLoc loc) {
   custom traverse { if (ambiguity) ambiguity->traverse(vis); }
 
   // print ambiguities
-  public void printAmbiguities(ostream &os, int indent) const;
+  public void printAmbiguities(std::ostream &os, int indent) const;
   custom preemptDebugPrint {
     if (ambiguity) {
       printAmbiguities(os, indent);
@@ -325,7 +330,7 @@ verbatim {
                 AttributeSpecifierList *alist);
     virtual ~D_attribute();
 
-    virtual void debugPrint(ostream &os, int indent, char const *subtreeName = "tree") const;
+    virtual void debugPrint(std::ostream &os, int indent, char const *subtreeName = "tree") const;
     virtual void traverse(ASTVisitor &vis);
 
     virtual D_attribute *clone() const;

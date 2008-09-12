@@ -4,6 +4,7 @@
 #include "xassert.h"
 #include "exc.h"
 
+using namespace std;
 
 // ------------------------ XmlLexer -------------------
 static char const * const tokenNames[] = {
@@ -75,14 +76,14 @@ void XmlLexer::err(char const *msg)
   THROW(xBase(msg0));
 }
 
-string XmlLexer::tokenKindDesc(int kind) const
+sm::string XmlLexer::tokenKindDesc(int kind) const
 {
   xassert(0 <= kind && kind < NUM_XML_TOKEN_TYPES);
   xassert(tokenNames[kind]);     // make sure the tokenNames array grows with the enum
   return tokenNames[kind];
 }
 
-string XmlLexer::tokenKindDescV(int kind) const
+sm::string XmlLexer::tokenKindDescV(int kind) const
 {
   stringBuilder s;
   s << tokenKindDesc(kind)
@@ -90,7 +91,7 @@ string XmlLexer::tokenKindDescV(int kind) const
   return s;
 }
 
-string XmlLexer::tokenDesc(int kind) const
+sm::string XmlLexer::tokenDesc(int kind) const
 {
   stringBuilder sb;
   sb << tokenKindDesc(kind) 

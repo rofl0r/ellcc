@@ -56,7 +56,7 @@ A<int>::B<float> *bptr;
 // instantiate B's defn
 A<int>::B<float> b;
 
-int f()
+void f()
 {
   int *ip;
   float *fp;
@@ -64,5 +64,5 @@ int f()
   b.foo(ip, fp);
   b.bar(ip, fp);
 
-  return 1;
+  return;
 }

@@ -9,7 +9,7 @@
 #include "astvisit.h"         // ASTVisitorEx
 #include <string.h>           // strcmp
 
-
+using namespace std;
 // fwd in this file
 SimpleTypeId constructFloatingType(int prec, int axis);
 
@@ -628,6 +628,7 @@ void Env::addGNUBuiltins()
     "ctzll",
     "popcountll",
     "parityll",
+    #include "apple.h"
   };
 
   for (int i=0; i < TABLESIZE(arr); i++) {

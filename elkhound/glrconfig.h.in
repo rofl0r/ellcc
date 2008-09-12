@@ -23,6 +23,15 @@
   #define SOURCELOCARG(stuff) , stuff
 
   #define NOSOURCELOC(stuff)
+
+  #define ENDSOURCELOC(stuff) stuff
+
+  // this one adds a leading comma (I can't put that into the
+  // argument <stuff>, because then it looks like the macro is
+  // being passed 2 arguments)
+  #define ENDSOURCELOCARG(stuff) , stuff
+
+
 #else
   #define SOURCELOC(stuff)
   #define SOURCELOCARG(stuff)

@@ -5,6 +5,7 @@
 #include "trace.h"      // tracingSys
 #include <assert.h>     // assert
 
+using namespace sm;
 
 #if 0
 MLValue mlStorage(DeclFlags df)
@@ -392,7 +393,7 @@ int CompoundType::reprSize() const
     int membSize = iter.data()->type->reprSize();
     if (keyword == K_UNION) {
       // representation size is max over field sizes
-      total = max(total, membSize);
+      total = std::max(total, membSize);
     }
     else {
       // representation size is sum over field sizes
@@ -1039,7 +1040,7 @@ int ArrayType::reprSize() const
   }
   else {
     // or should I throw an exception ..?
-    cout << "warning: reprSize of a sizeless array\n";
+    std::cout << "warning: reprSize of a sizeless array\n";
     return 0;
   }
 }

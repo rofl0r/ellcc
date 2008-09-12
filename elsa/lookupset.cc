@@ -6,6 +6,7 @@
 #include "template.h"         // TemplateInfo
 #include "cc_flags.h"         // bitmapString
 
+using namespace sm;
 
 char const * const lookupFlagNames[NUM_LOOKUPFLAGS] = {
   "LF_INNER_ONLY",
@@ -256,7 +257,7 @@ string LookupSet::asString() const
 
 void LookupSet::gdb() const
 {
-  cout << asString();
+  std::cout << asString();
 }
 
 

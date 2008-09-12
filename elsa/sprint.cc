@@ -3,6 +3,7 @@
 
 #include "sprint.h"     // this module
 
+using namespace std;
 
 void StructurePrinter::digStmt(Statement *s)
 {

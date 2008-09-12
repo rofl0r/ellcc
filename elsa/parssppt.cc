@@ -8,6 +8,7 @@
 
 #include <stdlib.h>       // exit
 
+using namespace std;
 
 // ---------------------- ParseTree --------------------
 ParseTreeAndTokens::ParseTreeAndTokens(CCLang &L, SemanticValue &top,

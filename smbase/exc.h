@@ -14,7 +14,7 @@
 #include "typ.h"         // bool
 #include "xassert.h"     // xassert, for convenience for #includers
 #include "str.h"         // string
-#include <iostream.h>    // ostream
+#include <iostream>      // ostream
 
 // by using this macro, the debugger gets a shot before the stack is unwound
 #ifdef THROW
@@ -56,7 +56,7 @@ bool unwinding_other(xBase const &x);
 class xBase {
 protected:
   // the human-readable description of the exception
-  string msg;
+  sm::string msg;
 
 public:
   // initially true; when true, we write a record of the thrown exception
@@ -75,8 +75,8 @@ public:
     { return msg; }
 
   // print why
-  void insert(ostream &os) const;
-  friend ostream& operator << (ostream &os, xBase const &obj)
+  void insert(std::ostream &os) const;
+  friend std::ostream& operator << (std::ostream &os, xBase const &obj)
     { obj.insert(os); return os; }
 
   // add a string describing what was going on at the time the
@@ -96,8 +96,8 @@ void xbase(rostring msg) NORETURN;
 // thrown by _xassert_fail, declared in xassert.h
 // throwing this corresponds to detecting a bug in the program
 class x_assert : public xBase {
-  string condition;          // text of the failed condition
-  string filename;           // name of the source file
+  sm::string condition;          // text of the failed condition
+  sm::string filename;           // name of the source file
   int lineno;                // line number
 
 public:
@@ -110,13 +110,20 @@ public:
   int line() const { return lineno; }
 };
 
+// ---------------------- x_match  -------------------
+// thrown by as*C methods instead of x_assert
+class x_match : public x_assert {
+public:
+  x_match(rostring cond, rostring fname, int line);
+  ~x_match();
+};
 
 // ---------------------- xFormat -------------------
 // throwing this means a formatting error has been detected
 // in some input data; the program cannot process it, but it
 // is not a bug in the program
 class xFormat : public xBase {
-  string condition;          // what is wrong with the input
+  sm::string condition;          // what is wrong with the input
 
 public:
   xFormat(rostring cond);
@@ -144,7 +151,7 @@ void formatAssert_fail(char const *cond, char const *file, int line) NORETURN;
 // thrown when we fail to open a file
 class XOpen : public xBase {
 public:
-  string filename;
+  sm::string filename;
 
 public:
   XOpen(rostring fname);
@@ -159,8 +166,8 @@ void throw_XOpen(rostring fname) NORETURN;
 // more informative
 class XOpenEx : public XOpen {
 public:
-  string mode;         // fopen-style mode string, e.g. "r"
-  string cause;        // errno-derived failure cause, e.g. "no such file"
+  sm::string mode;         // fopen-style mode string, e.g. "r"
+  sm::string cause;        // errno-derived failure cause, e.g. "no such file"
 
 public:
   XOpenEx(rostring fname, rostring mode, rostring cause);
@@ -169,7 +176,7 @@ public:
 
   // convert a mode string as into human-readable participle,
   // e.g. "r" becomes "reading"
-  static string interpretMode(rostring mode);
+  static sm::string interpretMode(rostring mode);
 };
 
 void throw_XOpenEx(rostring fname, rostring mode, rostring cause) NORETURN;

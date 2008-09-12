@@ -16,8 +16,10 @@
 #include "ofstreamts.h"    // ofstreamTS
 
 #include <string.h>        // strncmp
-#include <fstream.h>       // ofstream
+#include <fstream>         // ofstream
 #include <ctype.h>         // isalnum
+
+using namespace sm;
 
 // propertly a member of ListClass below, but I don't like nested
 // things
@@ -693,11 +695,11 @@ void HGen::emitCtorFormal(int &ct, CtorArg const *arg)
       isTreeNode(type) ||
       type.equals("LocString")) {
     // lists and subtrees and LocStrings are constructed by passing pointers
-    trace("putStar") << "putting star for " << type << endl;
+    trace("putStar") << "putting star for " << type << std::endl;
     out << "*";
   }
   else {
-    trace("putStar") << "NOT putting star for " << type << endl;
+    trace("putStar") << "NOT putting star for " << type << std::endl;
   }
 
   out << "_" << arg->name;      // prepend underscore to param's name
@@ -816,7 +818,7 @@ void HGen::emitCommonFuncs(rostring virt)
 {
   // declare the functions they all have
   out << "  " << virt
-      << "void debugPrint(ostream &os, int indent, char const *subtreeName = \"tree\") const;\n";
+      << "void debugPrint(std::ostream &os, int indent, char const *subtreeName = \"tree\") const;\n";
 
   if (wantVisitor()) {
     // visitor traversal entry point
@@ -1143,7 +1145,7 @@ void CGen::emitTFClass(TF_class const &cls)
 
 
   // debugPrint
-  out << "void " << cls.super->name << "::debugPrint(ostream &os, int indent, char const *subtreeName) const\n";
+  out << "void " << cls.super->name << "::debugPrint(std::ostream &os, int indent, char const *subtreeName) const\n";
   out << "{\n";
   if (!cls.hasChildren()) {
     // childless superclasses get the preempt in the superclass;
@@ -1171,7 +1173,7 @@ void CGen::emitTFClass(TF_class const &cls)
   // gdb()
   if (wantGDB) {
     out << "void " << cls.super->name << "::gdb() const\n"
-        << "  { debugPrint(cout, 0); }\n"
+        << "  { debugPrint(std::cout, 0); }\n"
         << "\n"
         ;
   }
@@ -1196,7 +1198,7 @@ void CGen::emitTFClass(TF_class const &cls)
     emitDestructor(ctor);
 
     // subclass debugPrint
-    out << "void " << ctor.name << "::debugPrint(ostream &os, int indent, char const *subtreeName) const\n";
+    out << "void " << ctor.name << "::debugPrint(std::ostream &os, int indent, char const *subtreeName) const\n";
     out << "{\n";
 
     // the debug print preempter is declared in the outer "class",
@@ -1343,7 +1345,7 @@ void CGen::emitPrintFields(ASTList<Annotation> const &decls)
 void CGen::emitPrintField(rostring print,
                           bool isOwner, rostring type, rostring name)
 {
-  if (streq(type, "string")) {
+  if (streq(type, "sm::string") || streq(type, "string")) {
     out << "  " << print << "_STRING(" << name << ");\n";
   }
   else if (streq(type, "StringRef")) {
@@ -1481,7 +1483,7 @@ void CGen::emitCloneCode(ASTClass const *super, ASTClass const *sub)
 
 
 // -------------------------- visitor ---------------------------
-void emitTF_custom(ofstream &out, rostring qualifierName, bool addNewline)
+void emitTF_custom(std::ofstream &out, rostring qualifierName, bool addNewline)
 {
   FOREACH_ASTLIST_NC(ToplevelForm, wholeAST->forms, iter) {
     if (iter.data()->isTF_custom()) {
@@ -1923,7 +1925,7 @@ void CGen::emitXmlField(rostring type, rostring name, char const *baseName,
   // to represent NULL is also a valid string value, 3) quoting twice
   // is expensive; For now, I simply omit mention of it: it will
   // default to NULL.
-  if (streq(type, "string") || streq(type, "StringRef")) {
+  if (streq(type, "sm::string") || streq(type, "string") || streq(type, "StringRef")) {
     out << "  if (" << baseName << "->" << name << ") {\n";
     out << "    out << '\\n';\n";
     out << "    if (indent) printIndentation();\n";
@@ -2055,7 +2057,7 @@ void HGen::emitXmlVisitorInterface()
       << "class " << xmlVisitorName << " : public " << visitorName << " {\n";
 
   out << "protected:   // data\n";
-  out << "  ostream &out;                       // output stream to print to\n";
+  out << "  std::ostream &out;                  // output stream to print to\n";
 
   if (wantIdentityManager()) {
     out << "  " << identityManagerName << " &idmgr; // Identity Manager to use\n";
@@ -2087,7 +2089,7 @@ void HGen::emitXmlVisitorInterface()
   // ctor
   out << "public:      // funcs\n";
   out << "  explicit " << xmlVisitorName << "("
-      << "ostream &out0, ";
+      << "std::ostream &out0, ";
   if (wantIdentityManager()) out << identityManagerName << " &idmgr0, ";
   out << "int &depth0, "
       << "bool indent0 = false"
@@ -2497,7 +2499,7 @@ void XmlParserGen::collectXmlParserFields(ASTList<Annotation> const &decls, char
 void XmlParserGen::collectXmlParserField
   (rostring type, rostring name, char const *baseName, AccessMod*)
 {
-  if (streq(type, "string")) {
+  if (streq(type, "sm::string") || streq(type, "string")) {
     attributeNames.add(name);
   }
   else if (streq(type, "StringRef")) {
@@ -2556,7 +2558,7 @@ void XmlParserGen::emitXmlField_AttributeParseRule
 {
   string type = trimWhitespace(type0);
   //  cout << "emitXmlField_AttributeParseRule() name:" << name << ", type:" << type << endl;
-  if (streq(type, "string")) {
+  if (streq(type, "sm::string") || streq(type, "string")) {
     parser1_defs << "  case XTOK_" << name << ":\n";
     parser1_defs << "    obj->" << name << " = strdup(strValue);\n";
     parser1_defs << "    break;\n";
@@ -2966,7 +2968,7 @@ void XmlParserGen::emitXmlParserImplementation()
 void mergeClass(ASTClass *base, ASTClass *ext)
 {
   xassert(base->name.equals(ext->name));
-  trace("merge") << "merging class: " << ext->name << endl;
+  trace("merge") << "merging class: " << ext->name << std::endl;
 
   // move all ctor args to the base
   while (ext->args.isNotEmpty()) {
@@ -2983,7 +2985,7 @@ void mergeClass(ASTClass *base, ASTClass *ext)
 void mergeEnum(TF_enum *base, TF_enum *ext)
 {
   xassert(base->name.equals(ext->name));
-  trace("merge") << "merging enum: " << ext->name << endl;
+  trace("merge") << "merging enum: " << ext->name << std::endl;
 
   while (ext->enumerators.isNotEmpty()) {
     base->enumerators.append(ext->enumerators.removeFirst());
@@ -3005,7 +3007,7 @@ void mergeSuperclass(TF_class *base, TF_class *ext)
 {
   // should only get here for same-named classes
   xassert(base->super->name.equals(ext->super->name));
-  trace("merge") << "merging superclass: " << ext->super->name << endl;
+  trace("merge") << "merging superclass: " << ext->super->name << std::endl;
 
   // merge the superclass ctor args and annotations
   mergeClass(base->super, ext->super);
@@ -3021,7 +3023,7 @@ void mergeSuperclass(TF_class *base, TF_class *ext)
     }
     else {
       // add it wholesale
-      trace("merge") << "adding subclass: " << c->name << endl;
+      trace("merge") << "adding subclass: " << c->name << std::endl;
       base->ctors.append(c);
     }
   }
@@ -3073,7 +3075,7 @@ void mergeExtension(ASTSpecFile *base, ASTSpecFile *ext)
       }
       else {
         // add the whole class
-        trace("merge") << "adding new superclass: " << c->super->name << endl;
+        trace("merge") << "adding new superclass: " << c->super->name << std::endl;
         base->forms.append(c);
       }
     }
@@ -3089,7 +3091,7 @@ void mergeExtension(ASTSpecFile *base, ASTSpecFile *ext)
       }
       else {
         // add the whole enum
-        trace("merge") << "adding new enum: " << e->name << endl;
+        trace("merge") << "adding new enum: " << e->name << std::endl;
         base->forms.append(e);
       }
     }
@@ -3185,7 +3187,7 @@ void checkUnusedCustoms(ASTClass const *c)
     if (a->isCustomCode()) {
       CustomCode const *cc = a->asCustomCodeC();
       if (cc->used == false) {
-        cout << "warning: unused custom code `" << cc->qualifier << "'\n";
+        std::cout << "warning: unused custom code `" << cc->qualifier << "'\n";
       }
     }
   }
@@ -3221,7 +3223,7 @@ void entry(int argc, char **argv)
   SourceLocManager mgr;
 
   if (argc < 2) {
-    cout << "usage: " << argv[0] << " [options] file.ast [extension.ast [...]]\n"
+    std::cout << "usage: " << argv[0] << " [options] file.ast [extension.ast [...]]\n"
          << "  options:\n"
          << "    -o<name>   output filenames are name.{h,cc}\n"
          << "               (default is \"file\" for \"file.ast\")\n"
@@ -3342,13 +3344,13 @@ void entry(int argc, char **argv)
   if (!tracingSys("no_ast.gen")) {
     string hdrFname = base & ".h";
     HGen hg(srcFname, modules, hdrFname, *ast);
-    cout << "writing " << hdrFname << "...\n";
+    std::cout << "writing " << hdrFname << "...\n";
     hg.emitFile();
 
     // generated the c++ code
     string codeFname = base & ".cc";
     CGen cg(srcFname, modules, codeFname, *ast, hdrFname);
-    cout << "writing " << codeFname << "...\n";
+    std::cout << "writing " << codeFname << "...\n";
     cg.emitFile();
 
     // dsw: the xml parser stuff won't use the custom sections, so
@@ -3372,7 +3374,7 @@ void entry(int argc, char **argv)
         if (iter2.data()->isTF_custom()) {
           CustomCode const *cc = iter2.data()->asTF_customC()->cust;
           if (cc->used == false) {
-            cout << "warning: unused custom code `" << cc->qualifier << "'\n";
+            std::cout << "warning: unused custom code `" << cc->qualifier << "'\n";
           }
         }
       }

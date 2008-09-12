@@ -29,6 +29,7 @@
 
 #include <stdlib.h>     // getenv
 
+using namespace std;
 
 bool global_mayUseTypeAndVarToCString = true;
 
@@ -182,7 +183,7 @@ void AtomicType::gdb() const
 }
 
 
-string AtomicType::toString() const
+sm::string AtomicType::toString() const
 {
   if (!global_mayUseTypeAndVarToCString) xfailure("suspended during CTypePrinter::print");
   if (Type::printAsML) {
@@ -259,16 +260,16 @@ SimpleType SimpleType::fixed[NUM_SIMPLE_TYPES] = {
   SimpleType(ST_PRET_SECOND_PTR2REF),
 };
 
-string SimpleType::toCString() const
+sm::string SimpleType::toCString() const
 {
   if (!global_mayUseTypeAndVarToCString) xfailure("suspended during CTypePrinter::print");
   return simpleTypeName(type);
 }
 
 
-int SimpleType::reprSize() const
+void SimpleType::sizeInfo(int &size, int &align) const
 {
-  return simpleTypeReprSize(type);
+  size = align = simpleTypeReprSize(type);
 }
 
 
@@ -339,7 +340,7 @@ BaseClassSubobj::~BaseClassSubobj()
 }
 
 
-string BaseClassSubobj::canonName() const
+sm::string BaseClassSubobj::canonName() const
 {
   return stringc << ct->name << " (" << (void*)this << ")";
 }
@@ -471,7 +472,7 @@ bool CompoundType::hasVirtualFns() const
 }
 
 
-string CompoundType::toCString() const
+sm::string CompoundType::toCString() const
 {
   if (!global_mayUseTypeAndVarToCString) xfailure("suspended during CTypePrinter::print");
   stringBuilder sb;
@@ -524,17 +525,49 @@ string CompoundType::toCString() const
 }
 
 
-// It might seem odd that the parser (of which the type system is a
-// part) should have to commit to a specific object layout.  However,
-// this is indeed the case: the parser must be able to select template
-// specializations, which can depend on specific integer values, which
-// themselves can be derived from field offsets.  So it is not
-// possible to separate parsing C++ from object layout decisions (!).
-void CompoundType::layoutQuery(LayoutQuery &query) const
+// dmandelin@mozilla.com
+void CompoundType::sizeInfo(int &size, int &align) const
+{
+  size = 0;
+  align = 1;
+
+  if (hasVirtualFns()) {
+    size += 4;
+    align = 4;
+  }
+
+  memSizeInfo(size, align);
+}  
+
+// dmandelin@mozilla.com
+// Helper for memSizeInfo. Add one data item to the given size/align pair.
+static void sizeInfoAddData(int &size, int &align, int memSize, int memAlign)
+{
+  //  cout << "SIAD " << size << " " << align << " " << memSize << " " << memAlign << endl;
+  size = (size + memAlign - 1) / memAlign * memAlign + memSize;
+  align = max(align, memAlign);
+}
+
+// dmandelin@mozilla.com
+// Helper for memSizeInfo. Add a bitfield group to the given size/align pair.
+static void sizeInfoAddBitfield(int &size, int &align, int &bits)
+{
+  if (bits) {
+    int bfSize = 1;
+    while (bfSize * 8 < bits) bfSize *= 2;
+    sizeInfoAddData(size, align, bfSize, bfSize);
+    bits = 0;
+  }
+}
+
+// dmandelin@mozilla.com
+// Following ABI at http://www.codesourcery.com/cxx-abi/abi.html#layout
+// Compute the size of everything except the vptr. Note that size and
+// align must be initialized on entry.
+// We need this separate from sizeInfo so that we can add the vptr only once.
+void CompoundType::memSizeInfo(int &size, int &align) const
 {
   // base classes
-  //
-  // TODO: this is wrong for virtual base classes
   {
     SObjList<BaseClassSubobj const> subobjs;
     getSubobjects(subobjs);
@@ -543,85 +576,35 @@ void CompoundType::layoutQuery(LayoutQuery &query) const
         // skip my own subobject, as that will be accounted for below
       }
       else {
-        iter.data()->ct->layoutQuery(query);
-        if (query.found) {
-          return;
-        }
+	int baseSize = 0, baseAlign = 1;
+	iter.data()->ct->memSizeInfo(baseSize, baseAlign);
+	sizeInfoAddData(size, align, baseSize, baseAlign);
       }
     }
   }
 
-  if (keyword == K_UNION) {
-    if (query.field && dataMembers.contains(query.field)) {
-      // the current size gives the offset of all of the union fields
-      query.found = true;
-    }
-    else {
-      int unionTotal = 0;
-      SFOREACH_OBJLIST(Variable, dataMembers, iter) {
-        Variable const *v = iter.data();
-
-        // representation size is max over field sizes
-        unionTotal = max(unionTotal, v->type->reprSize());
-      }
-      query.size += unionTotal;
-    }
-    return;
-  }
-
-  // This algorithm is a very crude approximation of the packing and
-  // alignment behavior of some nominal compiler.  Ideally, we'd have
-  // a layout algorithm for each compiler we want to emulate, or
-  // perhaps even a generic algorithm with sufficient
-  // parameterization, but for now it's just a best effort driven by
-  // specific pieces of code that know how big their own structures
-  // are supposed to be.
-  //
-  // Were I to try to do a better job, a good starting point would be
-  // to research any published ABIs I could find for C and C++, as
-  // they would have to specify a layout algorithm.  Presumably, if I
-  // can emulate any published ABI then I will have the flexibility to
-  // emulate any compiler also.
-  //
-  // One test is in/t0513.cc.
-
-  // Maintain information about accumulated members that do not occupy
-  // a complete word.
-  int bits = 0;        // bitfield bits
-  int bytes = 0;       // unaligned bytes
-  int align = 1;       // prevailing alignment in bytes
+  // Number of bits in current bitfield group.
+  int bits = 0;
 
   // data members
   SFOREACH_OBJLIST(Variable, dataMembers, iter) {
     Variable const *v = iter.data();
+    int memSize, memAlign;
 
-    if (v == query.field) {
-      query.found = true;
-      return;
-    }
-
-    if (v->isBitfield()) {
-      // consolidate bytes as bits
-      bits += bytes*8;
-      bytes = 0;
-
-      int membBits = v->getBitfieldSize();
-      bits += membBits;
-
-      // increase alignment to accomodate this member
-      while (membBits > align*8 && align < 4) {
-        align *= 2;
-      }
-
+    if (keyword == K_UNION) {
+      v->type->sizeInfo(memSize, memAlign);
+      size = max(size, memSize);
+      align = max(align, memAlign);
       continue;
     }
 
-    // 'v' is not a bitfield, so pack the bits seen so far into
-    // 'align' units
-    if (bits > 0) {
-      query.size += ((bits + (align*8 - 1)) / (align*8)) * align;
-      bits = 0;
+    if (v->isBitfield()) {
+      bits += v->getBitfieldSize();
+      continue;
     }
+
+    // 'v' is not a bitfield, so pack the bits seen so far into bytes
+    sizeInfoAddBitfield(size, align, bits);
 
     if (v->type->isArrayType() &&
         !v->type->asArrayTypeC()->hasSize()) {
@@ -632,62 +615,17 @@ void CompoundType::layoutQuery(LayoutQuery &query) const
       continue;
     }
 
-    int membSize = v->type->reprSize();
-
-    if (membSize >= align) {
-      // increase alignment if necessary, up to 4 bytes;
-      // this is wrong because you can't tell the alignment
-      // of a structure just from its size
-      while (membSize > align && align < 4) {
-        align *= 2;
-      }
-
-      // consolidate any remaining bytes into 'align' units
-      if (bytes > 0) {
-        query.size += ((bytes + align-1) / align) * align;
-        bytes = 0;
-      }
-
-      // add 'membSize'
-      query.size += (membSize / align) * align;
-      bytes += membSize % align;
-    }
-    else {
-      // less than one alignment, just stuff it into 'bytes'; this
-      // is wrong because it doesn't take account of alignment
-      // less than 'align', e.g. 2-byte alignment of a 16-bit qty..
-      // oh well
-      bytes += membSize;
-    }
+    v->type->sizeInfo(memSize, memAlign);
+    sizeInfoAddData(size, align, memSize, memAlign);
   }
 
-  // pad out to the next 'align' boundary
-  bits += bytes*8;
-  query.size += ((bits + (align*8 - 1)) / (align*8)) * align;
+  // Last bitfield group, if any
+  sizeInfoAddBitfield(size, align, bits);
+
+  // Pad to align
+  size = (size + align - 1) / align * align;
 }
 
-
-int CompoundType::reprSize() const
-{
-  LayoutQuery query(NULL /*field*/);
-  layoutQuery(query);
-  xassert(!query.found);     // finding NULL would be weird
-  return query.size;
-}
-
-
-#if RICH
-int CompoundType::getDataMemberOffset(Variable *field) const
-{
-  LayoutQuery query(field);
-  layoutQuery(query);
-  if (!query.found) {
-    xfailure(stringb("fieldOffset: Could not find field \"" << 
-                     field->name << "\" in " << keywordAndName()));
-  }
-  return query.size;
-}
-#endif
 
 void CompoundType::traverse(TypeVisitor &vis)
 {
@@ -939,7 +877,7 @@ STATICDEF void CompoundType::getSubobjects_helper
 }
 
 
-string CompoundType::renderSubobjHierarchy() const
+sm::string CompoundType::renderSubobjHierarchy() const
 {
   stringBuilder sb;
   sb << "// subobject hierarchy for " << name << "\n"
@@ -978,10 +916,10 @@ string CompoundType::renderSubobjHierarchy() const
 }
 
 
-string toString(CompoundType::Keyword k)
+sm::string toString(CompoundType::Keyword k)
 {
   xassert((unsigned)k < (unsigned)CompoundType::NUM_KEYWORDS);
-  return string(typeIntrNames[k]);    // see cc_type.h
+  return sm::string(typeIntrNames[k]);    // see cc_type.h
 }
 
 
@@ -1187,7 +1125,7 @@ EnumType::~EnumType()
 {}
 
 
-string EnumType::toCString() const
+sm::string EnumType::toCString() const
 {
   if (!global_mayUseTypeAndVarToCString) xfailure("suspended during CTypePrinter::print");
 
@@ -1203,10 +1141,10 @@ string EnumType::toCString() const
 }
 
 
-int EnumType::reprSize() const
+void EnumType::sizeInfo(int &size, int &align) const
 {
   // this is the usual choice
-  return simpleTypeReprSize(ST_INT);
+  size = align = simpleTypeReprSize(ST_INT);
 }
 
 
@@ -1346,13 +1284,13 @@ STATICDEF bool BaseType::equalTypes(Type const *t1, Type const *t2)
 }
 
 
-string cvToString(CVFlags cv)
+sm::string cvToString(CVFlags cv)
 {
   if (cv != CV_NONE) {
     return stringc << " " << toString(cv);
   }
   else {
-    return string("");
+    return sm::string("");
   }
 }
 
@@ -1362,7 +1300,7 @@ void BaseType::gdb() const
   cout << toString() << endl;
 }
 
-string BaseType::toString() const
+sm::string BaseType::toString() const
 {
   if (!global_mayUseTypeAndVarToCString) xfailure("suspended during CTypePrinter::print");
   if (printAsML) {
@@ -1374,7 +1312,7 @@ string BaseType::toString() const
 }
 
 
-string BaseType::toCString() const
+sm::string BaseType::toCString() const
 {
   if (!global_mayUseTypeAndVarToCString) xfailure("suspended during CTypePrinter::print");
   if (isCVAtomicType()) {
@@ -1392,7 +1330,7 @@ string BaseType::toCString() const
   }
 }
 
-string BaseType::toCString(char const *name) const
+sm::string BaseType::toCString(char const *name) const
 {
   if (!global_mayUseTypeAndVarToCString) xfailure("suspended during CTypePrinter::print");
   // print the inner parentheses if the name is omitted
@@ -1419,7 +1357,7 @@ string BaseType::toCString(char const *name) const
 }
 
 // this is only used by CVAtomicType.. all others override it
-string BaseType::rightString(bool /*innerParen*/) const
+sm::string BaseType::rightString(bool /*innerParen*/) const
 {
   if (!global_mayUseTypeAndVarToCString) xfailure("suspended during CTypePrinter::print");
   return "";
@@ -1796,7 +1734,7 @@ bool AtomicType::containsVariables(MType *map) const
 }
 
 
-string toString(Type *t)
+sm::string toString(Type *t)
 {
   if (!global_mayUseTypeAndVarToCString) xfailure("suspended during CTypePrinter::print");
   return t->toString();
@@ -1819,7 +1757,7 @@ unsigned CVAtomicType::innerHashValue() const
 }
 
 
-string CVAtomicType::leftString(bool /*innerParen*/) const
+sm::string CVAtomicType::leftString(bool /*innerParen*/) const
 {
   if (!global_mayUseTypeAndVarToCString) xfailure("suspended during CTypePrinter::print");
   stringBuilder s;
@@ -1835,9 +1773,9 @@ string CVAtomicType::leftString(bool /*innerParen*/) const
 }
 
 
-int CVAtomicType::reprSize() const
+void CVAtomicType::sizeInfo(int &size, int &align) const
 {
-  return atomic->reprSize();
+  atomic->sizeInfo(size, align);
 }
 
 
@@ -1908,7 +1846,7 @@ unsigned PointerType::innerHashValue() const
 }
 
 
-string PointerType::leftString(bool /*innerParen*/) const
+sm::string PointerType::leftString(bool /*innerParen*/) const
 {
   if (!global_mayUseTypeAndVarToCString) xfailure("suspended during CTypePrinter::print");
   stringBuilder s;
@@ -1924,7 +1862,7 @@ string PointerType::leftString(bool /*innerParen*/) const
   return s;
 }
 
-string PointerType::rightString(bool /*innerParen*/) const
+sm::string PointerType::rightString(bool /*innerParen*/) const
 {
   if (!global_mayUseTypeAndVarToCString) xfailure("suspended during CTypePrinter::print");
   stringBuilder s;
@@ -1936,10 +1874,9 @@ string PointerType::rightString(bool /*innerParen*/) const
 }
 
 
-int PointerType::reprSize() const
+void PointerType::sizeInfo(int &size, int &align) const
 {
-  // a typical value .. (architecture-dependent)
-  return 4;
+  size = align = 4;
 }
 
 
@@ -1996,7 +1933,7 @@ unsigned ReferenceType::innerHashValue() const
 }
 
 
-string ReferenceType::leftString(bool /*innerParen*/) const
+sm::string ReferenceType::leftString(bool /*innerParen*/) const
 {
   if (!global_mayUseTypeAndVarToCString) xfailure("suspended during CTypePrinter::print");
   stringBuilder s;
@@ -2008,7 +1945,7 @@ string ReferenceType::leftString(bool /*innerParen*/) const
   return s;
 }
 
-string ReferenceType::rightString(bool /*innerParen*/) const
+sm::string ReferenceType::rightString(bool /*innerParen*/) const
 {
   if (!global_mayUseTypeAndVarToCString) xfailure("suspended during CTypePrinter::print");
   stringBuilder s;
@@ -2019,9 +1956,9 @@ string ReferenceType::rightString(bool /*innerParen*/) const
   return s;
 }
 
-int ReferenceType::reprSize() const
+void ReferenceType::sizeInfo(int &size, int &align) const
 {
-  return 4;
+  size = align = 4;
 }
 
 
@@ -2204,7 +2141,7 @@ NamedAtomicType *FunctionType::getNATOfMember()
 }
 
 
-string FunctionType::leftString(bool innerParen) const
+sm::string FunctionType::leftString(bool innerParen) const
 {
   if (!global_mayUseTypeAndVarToCString) xfailure("suspended during CTypePrinter::print");
   stringBuilder sb;
@@ -2234,7 +2171,7 @@ string FunctionType::leftString(bool innerParen) const
   return sb;
 }
 
-string FunctionType::rightString(bool innerParen) const
+sm::string FunctionType::rightString(bool innerParen) const
 {
   if (!global_mayUseTypeAndVarToCString) xfailure("suspended during CTypePrinter::print");
   // I split this into two pieces because the Cqual++ concrete
@@ -2246,7 +2183,7 @@ string FunctionType::rightString(bool innerParen) const
     << rightStringAfterQualifiers();
 }
 
-string FunctionType::rightStringUpToQualifiers(bool innerParen) const
+sm::string FunctionType::rightStringUpToQualifiers(bool innerParen) const
 {
   if (!global_mayUseTypeAndVarToCString) xfailure("suspended during CTypePrinter::print");
   // finish enclosing type
@@ -2284,7 +2221,7 @@ string FunctionType::rightStringUpToQualifiers(bool innerParen) const
   return sb;
 }
 
-STATICDEF string FunctionType::rightStringQualifiers(CVFlags cv)
+STATICDEF sm::string FunctionType::rightStringQualifiers(CVFlags cv)
 {
   if (!global_mayUseTypeAndVarToCString) xfailure("suspended during CTypePrinter::print");
   if (cv) {
@@ -2295,7 +2232,7 @@ STATICDEF string FunctionType::rightStringQualifiers(CVFlags cv)
   }
 }
 
-string FunctionType::rightStringAfterQualifiers() const
+sm::string FunctionType::rightStringAfterQualifiers() const
 {
   if (!global_mayUseTypeAndVarToCString) xfailure("suspended during CTypePrinter::print");
   stringBuilder sb;
@@ -2328,7 +2265,7 @@ void FunctionType::extraRightmostSyntax(stringBuilder &) const
 }
 
 
-string FunctionType::toString_withCV(CVFlags cv) const
+sm::string FunctionType::toString_withCV(CVFlags cv) const
 {
   if (!global_mayUseTypeAndVarToCString) xfailure("suspended during CTypePrinter::print");
   return stringc
@@ -2346,11 +2283,12 @@ bool FunctionType::usesPostfixTypeConstructorSyntax() const
 }
 
 
-int FunctionType::reprSize() const
+void FunctionType::sizeInfo(int &size, int &align) const
 {
   // thinking here about how this works when we're summing
   // the fields of a class with member functions ..
-  return 0;
+  size = 0;
+  align = 1;
 }
 
 
@@ -2432,13 +2370,13 @@ void PDSArrayType::checkWellFormedness() const
 }
 
 
-string PDSArrayType::leftString(bool /*innerParen*/) const
+sm::string PDSArrayType::leftString(bool /*innerParen*/) const
 {
   if (!global_mayUseTypeAndVarToCString) xfailure("suspended during CTypePrinter::print");
   return eltType->leftString();
 }
 
-string PDSArrayType::rightString(bool /*innerParen*/) const
+sm::string PDSArrayType::rightString(bool /*innerParen*/) const
 {
   if (!global_mayUseTypeAndVarToCString) xfailure("suspended during CTypePrinter::print");
   stringBuilder sb;
@@ -2482,7 +2420,7 @@ Type *PDSArrayType::getAtType() const
 
 
 // -------------------- ArrayType ------------------
-string ArrayType::sizeString() const
+sm::string ArrayType::sizeString() const
 {
   stringBuilder sb;
 
@@ -2506,13 +2444,13 @@ unsigned ArrayType::innerHashValue() const
 }
 
 
-int ArrayType::reprSize() const
+void ArrayType::sizeInfo(int &size, int &align) const
 {
   if (!hasSize()) {
-    throw_XReprSize(size == DYN_SIZE /*isDynamic*/);
+    throw_XReprSize(this->size == DYN_SIZE /*isDynamic*/);
   }
-
-  return eltType->reprSize() * size;
+  eltType->sizeInfo(size, align);
+  size *= this->size;
 }
 
 
@@ -2551,7 +2489,7 @@ unsigned PointerToMemberType::innerHashValue() const
 }
 
 
-string PointerToMemberType::leftString(bool /*innerParen*/) const
+sm::string PointerToMemberType::leftString(bool /*innerParen*/) const
 {
   if (!global_mayUseTypeAndVarToCString) xfailure("suspended during CTypePrinter::print");
   stringBuilder s;
@@ -2565,7 +2503,7 @@ string PointerToMemberType::leftString(bool /*innerParen*/) const
   return s;
 }
 
-string PointerToMemberType::rightString(bool /*innerParen*/) const
+sm::string PointerToMemberType::rightString(bool /*innerParen*/) const
 {
   if (!global_mayUseTypeAndVarToCString) xfailure("suspended during CTypePrinter::print");
   stringBuilder s;
@@ -2577,10 +2515,9 @@ string PointerToMemberType::rightString(bool /*innerParen*/) const
 }
 
 
-int PointerToMemberType::reprSize() const
+void PointerToMemberType::sizeInfo(int &size, int &align) const
 {
-  // a typical value .. (architecture-dependent)
-  return 4;
+  size = align = 4;
 }
 
 
@@ -2620,12 +2557,12 @@ Type *PointerToMemberType::getAtType() const
 // print out a type as an ML-style string
 
 //  Atomic
-string SimpleType::toMLString() const
+sm::string SimpleType::toMLString() const
 {
   return simpleTypeName(type);
 }
 
-string CompoundType::toMLString() const
+sm::string CompoundType::toMLString() const
 {
   stringBuilder sb;
 
@@ -2658,7 +2595,7 @@ string CompoundType::toMLString() const
   return sb;
 }
 
-string EnumType::toMLString() const
+sm::string EnumType::toMLString() const
 {
   stringBuilder sb;
   sb << "enum-";
@@ -2670,12 +2607,12 @@ string EnumType::toMLString() const
   return sb;
 }
 
-string TypeVariable::toMLString() const
+sm::string TypeVariable::toMLString() const
 {
-  return stringc << "typevar-'" << string(name) << "'";
+  return stringc << "typevar-'" << sm::string(name) << "'";
 }
 
-string PseudoInstantiation::toMLString() const
+sm::string PseudoInstantiation::toMLString() const
 {
   return stringc << "psuedoinstantiation-'" << primary->name << "'"
                  << sargsToString(args);      // sm: ?
@@ -2691,7 +2628,7 @@ void BaseType::putSerialNo(stringBuilder &sb) const
   #endif
 }
 
-string CVAtomicType::toMLString() const
+sm::string CVAtomicType::toMLString() const
 {
   stringBuilder sb;
   sb << cvToString(cv) << " ";
@@ -2700,7 +2637,7 @@ string CVAtomicType::toMLString() const
   return sb;
 }
 
-string PointerType::toMLString() const
+sm::string PointerType::toMLString() const
 {
   stringBuilder sb;
   if (cv) {
@@ -2711,7 +2648,7 @@ string PointerType::toMLString() const
   return sb;
 }
 
-string ReferenceType::toMLString() const
+sm::string ReferenceType::toMLString() const
 {
   stringBuilder sb;
   putSerialNo(sb);
@@ -2719,7 +2656,7 @@ string ReferenceType::toMLString() const
   return sb;
 }
 
-string FunctionType::toMLString() const
+sm::string FunctionType::toMLString() const
 {
   stringBuilder sb;
   // FIX: FUNC TEMPLATE LOSS
@@ -2762,7 +2699,7 @@ string FunctionType::toMLString() const
   return sb;
 }
 
-string ArrayType::toMLString() const
+sm::string ArrayType::toMLString() const
 {
   stringBuilder sb;
   putSerialNo(sb);
@@ -2779,7 +2716,7 @@ string ArrayType::toMLString() const
   return sb;
 }
 
-string PointerToMemberType::toMLString() const
+sm::string PointerToMemberType::toMLString() const
 {
   stringBuilder sb;
   if (cv) {
@@ -2793,7 +2730,7 @@ string PointerToMemberType::toMLString() const
   return sb;
 }
 
-string TemplateParams::paramsToMLString() const
+sm::string TemplateParams::paramsToMLString() const
 {
   stringBuilder sb;
   sb << "template <";

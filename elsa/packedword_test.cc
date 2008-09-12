@@ -6,6 +6,8 @@
 #include "packedword.h"
 #include "exc.h"
 
+using namespace std;
+
 class Foo {
   PackedWord pw;
   int a, b, c, d;

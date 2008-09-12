@@ -35,8 +35,8 @@ public:
   virtual void reset(int initNest = 0);
   virtual void handle(char const *str, int len, char finalDelim);
   virtual bool zeroNesting() const;
-  virtual string getFuncBody() const;
-  virtual string getDeclName() const;
+  virtual sm::string getFuncBody() const;
+  virtual sm::string getDeclName() const;
 };
 
 #endif // CCSSTR_H

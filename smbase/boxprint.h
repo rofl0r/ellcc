@@ -29,7 +29,7 @@ public:
 
   // text to begin every line with; not counted towards column
   // counts; defaults to ""
-  string lineStartText;
+  sm::string lineStartText;
 
 public:
   BPRender();
@@ -50,8 +50,8 @@ public:
 
   // take the string out of the rendering engine, replacing it
   // with the empty string
-  string takeString() {
-    string ret(sb);
+  sm::string takeString() {
+    sm::string ret(sb);
     reset();
     return ret;
   }
@@ -62,7 +62,7 @@ public:
 
   // take the tree out of a boxprint builder, convert it to a string,
   // and delete the tree
-  string takeAndRender(BoxPrint &bld);
+  sm::string takeAndRender(BoxPrint &bld);
 };
 
 
@@ -93,7 +93,7 @@ public:
 
   // print the boxprint tree; for debugging code that produces them;
   // these methods do not emit leading or trailing whitespace
-  virtual void debugPrint(ostream &os, int ind) const =0;
+  virtual void debugPrint(std::ostream &os, int ind) const =0;
 
   // deallocate the element
   virtual ~BPElement();
@@ -103,7 +103,7 @@ public:
 // leaf in the tree: text to print
 class BPText : public BPElement {
 public:
-  string text;
+  sm::string text;
 
 public:
   BPText(rostring t);
@@ -113,7 +113,7 @@ public:
   virtual int oneLineWidthEx(bool &forcedBreak);
   virtual void render(BPRender &mgr);
   virtual char getLastChar() const;
-  virtual void debugPrint(ostream &os, int ind) const;
+  virtual void debugPrint(std::ostream &os, int ind) const;
 };
 
 
@@ -151,7 +151,7 @@ public:
   virtual bool isBreak() const;
   virtual bool isForcedBreak() const;
   virtual char getLastChar() const;
-  virtual void debugPrint(ostream &os, int ind) const;
+  virtual void debugPrint(std::ostream &os, int ind) const;
 };
 
 
@@ -189,7 +189,7 @@ public:
   virtual int oneLineWidthEx(bool &forcedBreak);
   virtual void render(BPRender &mgr);
   virtual char getLastChar() const;
-  virtual void debugPrint(ostream &os, int ind) const;
+  virtual void debugPrint(std::ostream &os, int ind) const;
 };
 
 
@@ -279,7 +279,7 @@ public:      // funcs
   BPBox* /*owner*/ takeTree();
   
   // print the current stack of trees
-  void debugPrint(ostream &os) const;
+  void debugPrint(std::ostream &os) const;
   void debugPrintCout() const;      // for gdb
 };
 

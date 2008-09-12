@@ -24,9 +24,9 @@ public:
 
   // AtomicType interface
   virtual Tag getTag() const { return T_TYPEVAR; }
-  virtual string toCString() const;
-  virtual string toMLString() const;
-  virtual int reprSize() const;
+  virtual sm::string toCString() const;
+  virtual sm::string toMLString() const;
+  virtual void sizeInfo(int &size, int &align) const;
   virtual void traverse(TypeVisitor &vis);
 
   // true if this template parameter has been associated with
@@ -59,9 +59,9 @@ public:      // funcs
 
   // AtomicType interface
   virtual Tag getTag() const { return T_PSEUDOINSTANTIATION; }
-  virtual string toCString() const;
-  virtual string toMLString() const;
-  virtual int reprSize() const;
+  virtual sm::string toCString() const;
+  virtual sm::string toMLString() const;
+  virtual void sizeInfo(int &size, int &align) const;
   virtual void traverse(TypeVisitor &vis);
 };
 
@@ -89,9 +89,9 @@ public:      // data
 
   // AtomicType interface
   virtual Tag getTag() const { return T_DEPENDENTQTYPE; }
-  virtual string toCString() const;
-  virtual string toMLString() const;
-  virtual int reprSize() const;
+  virtual sm::string toCString() const;
+  virtual sm::string toMLString() const;
+  virtual void sizeInfo(int &align, int &size) const;
   virtual void traverse(TypeVisitor &vis);
 };
 
@@ -129,13 +129,13 @@ public:      // funcs
 
   // PDSArrayType interface
   virtual bool hasSize() const { return true; }
-  virtual string sizeString() const;
+  virtual sm::string sizeString() const;
 
   // Type interface
   virtual Tag getTag() const { return T_DEPENDENTSIZEDARRAY; }
   unsigned innerHashValue() const;
-  virtual string toMLString() const;
-  virtual int reprSize() const;
+  virtual sm::string toMLString() const;
+  virtual void sizeInfo(int &size, int &align) const;
 };      
 
 
@@ -153,17 +153,17 @@ public:    // funcs
   ~TemplateParams();
   
   // queries on parameters
-  string paramsToCString() const;
-  string paramsToMLString() const;
+  sm::string paramsToCString() const;
+  sm::string paramsToMLString() const;
   bool anyParamCtorSatisfies(TypePred &pred) const;
   
   // print the parameters like arguments, e.g. "<S, T>"
   // instead of "template <class S, class T>"
-  string paramsLikeArgsToString() const;
+  sm::string paramsLikeArgsToString() const;
 };
 
 // make this available outside the class too
-string paramsToCString(SObjList<Variable> const &params);
+sm::string paramsToCString(SObjList<Variable> const &params);
 
 
 // template parameters on an enclosing object; for example, if "this"
@@ -421,7 +421,7 @@ public:      // funcs
 
   // debugging/error messages: print the fully qualified name,
   // plus arguments/parameters, to identify this template thing
-  string templateName() const;
+  sm::string templateName() const;
                                            
   // visit the template arguments with 'vis'
   void traverseArguments(TypeVisitor &vis);
@@ -542,7 +542,7 @@ public:
   void traverse(TypeVisitor &vis);
 
   // debug print
-  string toString() const;
+  sm::string toString() const;
 
   // debugging
   void gdb();
@@ -550,10 +550,10 @@ public:
 };
 
 SObjList<STemplateArgument> *cloneSArgs(SObjList<STemplateArgument> &sargs);
-string sargsToString(SObjList<STemplateArgument> const &list);
-inline string sargsToString(ObjList<STemplateArgument> const &list)
+sm::string sargsToString(SObjList<STemplateArgument> const &list);
+inline sm::string sargsToString(ObjList<STemplateArgument> const &list)
   { return sargsToString((SObjList<STemplateArgument> const &)list); }
-string sargsToString(SObjListIter<STemplateArgument> &iter);
+sm::string sargsToString(SObjListIter<STemplateArgument> &iter);
 
 bool containsVariables(SObjList<STemplateArgument> const &args, MType *map = NULL);
 bool containsVariables(ObjList<STemplateArgument> const &args, MType *map = NULL);
@@ -675,9 +675,9 @@ public:      // funcs
 
   // AtomicType interface
   virtual Tag getTag() const { return T_TEMPLATETYPEVAR; }
-  virtual string toCString() const;
-  virtual string toMLString() const;
-  virtual int reprSize() const;
+  virtual sm::string toCString() const;
+  virtual sm::string toMLString() const;
+  virtual void sizeInfo(int &size, int &align) const;
   virtual void traverse(TypeVisitor &vis);
 
   // True if this template parameter has been associated with a

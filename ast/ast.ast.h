@@ -48,7 +48,7 @@ public:      // funcs
 
   ASTSpecFile *clone() const;
 
-  void debugPrint(ostream &os, int indent, char const *subtreeName = "tree") const;
+  void debugPrint(std::ostream &os, int indent, char const *subtreeName = "tree") const;
 
 };
 
@@ -79,23 +79,23 @@ public:      // funcs
 
   virtual ToplevelForm* clone() const=0;
 
-  virtual void debugPrint(ostream &os, int indent, char const *subtreeName = "tree") const;
+  virtual void debugPrint(std::ostream &os, int indent, char const *subtreeName = "tree") const;
 
 };
 
 class TF_verbatim : public ToplevelForm {
 public:      // data
-  string code;
+  sm::string code;
 
 public:      // funcs
-  TF_verbatim(string _code) : ToplevelForm(), code(_code) {
+  TF_verbatim(sm::string _code) : ToplevelForm(), code(_code) {
   }
   virtual ~TF_verbatim();
 
   virtual Kind kind() const { return TF_VERBATIM; }
   enum { TYPE_TAG = TF_VERBATIM };
 
-  virtual void debugPrint(ostream &os, int indent, char const *subtreeName = "tree") const;
+  virtual void debugPrint(std::ostream &os, int indent, char const *subtreeName = "tree") const;
 
   virtual TF_verbatim *clone() const;
 
@@ -103,17 +103,17 @@ public:      // funcs
 
 class TF_impl_verbatim : public ToplevelForm {
 public:      // data
-  string code;
+  sm::string code;
 
 public:      // funcs
-  TF_impl_verbatim(string _code) : ToplevelForm(), code(_code) {
+  TF_impl_verbatim(sm::string _code) : ToplevelForm(), code(_code) {
   }
   virtual ~TF_impl_verbatim();
 
   virtual Kind kind() const { return TF_IMPL_VERBATIM; }
   enum { TYPE_TAG = TF_IMPL_VERBATIM };
 
-  virtual void debugPrint(ostream &os, int indent, char const *subtreeName = "tree") const;
+  virtual void debugPrint(std::ostream &os, int indent, char const *subtreeName = "tree") const;
 
   virtual TF_impl_verbatim *clone() const;
 
@@ -121,17 +121,17 @@ public:      // funcs
 
 class TF_xml_verbatim : public ToplevelForm {
 public:      // data
-  string code;
+  sm::string code;
 
 public:      // funcs
-  TF_xml_verbatim(string _code) : ToplevelForm(), code(_code) {
+  TF_xml_verbatim(sm::string _code) : ToplevelForm(), code(_code) {
   }
   virtual ~TF_xml_verbatim();
 
   virtual Kind kind() const { return TF_XML_VERBATIM; }
   enum { TYPE_TAG = TF_XML_VERBATIM };
 
-  virtual void debugPrint(ostream &os, int indent, char const *subtreeName = "tree") const;
+  virtual void debugPrint(std::ostream &os, int indent, char const *subtreeName = "tree") const;
 
   virtual TF_xml_verbatim *clone() const;
 
@@ -150,7 +150,7 @@ public:      // funcs
   virtual Kind kind() const { return TF_CLASS; }
   enum { TYPE_TAG = TF_CLASS };
 
-  virtual void debugPrint(ostream &os, int indent, char const *subtreeName = "tree") const;
+  virtual void debugPrint(std::ostream &os, int indent, char const *subtreeName = "tree") const;
 
   virtual TF_class *clone() const;
 
@@ -159,18 +159,18 @@ public:      // funcs
 
 class TF_option : public ToplevelForm {
 public:      // data
-  string name;
-  ASTList <string > args;
+  sm::string name;
+  ASTList <sm::string > args;
 
 public:      // funcs
-  TF_option(string _name, ASTList <string > *_args) : ToplevelForm(), name(_name), args(_args) {
+  TF_option(sm::string _name, ASTList <sm::string > *_args) : ToplevelForm(), name(_name), args(_args) {
   }
   virtual ~TF_option();
 
   virtual Kind kind() const { return TF_OPTION; }
   enum { TYPE_TAG = TF_OPTION };
 
-  virtual void debugPrint(ostream &os, int indent, char const *subtreeName = "tree") const;
+  virtual void debugPrint(std::ostream &os, int indent, char const *subtreeName = "tree") const;
 
   virtual TF_option *clone() const;
 
@@ -188,7 +188,7 @@ public:      // funcs
   virtual Kind kind() const { return TF_CUSTOM; }
   enum { TYPE_TAG = TF_CUSTOM };
 
-  virtual void debugPrint(ostream &os, int indent, char const *subtreeName = "tree") const;
+  virtual void debugPrint(std::ostream &os, int indent, char const *subtreeName = "tree") const;
 
   virtual TF_custom *clone() const;
 
@@ -196,18 +196,18 @@ public:      // funcs
 
 class TF_enum : public ToplevelForm {
 public:      // data
-  string name;
-  ASTList <string > enumerators;
+  sm::string name;
+  ASTList <sm::string > enumerators;
 
 public:      // funcs
-  TF_enum(string _name, ASTList <string > *_enumerators) : ToplevelForm(), name(_name), enumerators(_enumerators) {
+  TF_enum(sm::string _name, ASTList <sm::string > *_enumerators) : ToplevelForm(), name(_name), enumerators(_enumerators) {
   }
   virtual ~TF_enum();
 
   virtual Kind kind() const { return TF_ENUM; }
   enum { TYPE_TAG = TF_ENUM };
 
-  virtual void debugPrint(ostream &os, int indent, char const *subtreeName = "tree") const;
+  virtual void debugPrint(std::ostream &os, int indent, char const *subtreeName = "tree") const;
 
   virtual TF_enum *clone() const;
 
@@ -218,14 +218,14 @@ public:      // funcs
 // *** DO NOT EDIT ***
 class ASTClass {
 public:      // data
-  string name;
+  sm::string name;
   ASTList <CtorArg > args;
   ASTList <CtorArg > lastArgs;
   ASTList <BaseClass > bases;
   ASTList <Annotation > decls;
 
 public:      // funcs
-  ASTClass(string _name, ASTList <CtorArg > *_args, ASTList <CtorArg > *_lastArgs, ASTList <BaseClass > *_bases, ASTList <Annotation > *_decls) : name(_name), args(_args), lastArgs(_lastArgs), bases(_bases), decls(_decls) {
+  ASTClass(sm::string _name, ASTList <CtorArg > *_args, ASTList <CtorArg > *_lastArgs, ASTList <BaseClass > *_bases, ASTList <Annotation > *_decls) : name(_name), args(_args), lastArgs(_lastArgs), bases(_bases), decls(_decls) {
   }
   ~ASTClass();
 
@@ -233,9 +233,9 @@ public:      // funcs
 
   ASTClass *clone() const;
 
-  void debugPrint(ostream &os, int indent, char const *subtreeName = "tree") const;
+  void debugPrint(std::ostream &os, int indent, char const *subtreeName = "tree") const;
 
-  public:  string classKindName() const;
+  public:  sm::string classKindName() const;
 };
 
 
@@ -256,16 +256,16 @@ public:      // funcs
   };
 
   // map the enum value to a string like "public"
-  string toString(AccessCtl acc);      // defined in ast.cc
+  sm::string toString(AccessCtl acc);      // defined in ast.cc
 
 // *** DO NOT EDIT ***
 class AccessMod {
 public:      // data
   AccessCtl acc;
-  ASTList <string > mods;
+  ASTList <sm::string > mods;
 
 public:      // funcs
-  AccessMod(AccessCtl _acc, ASTList <string > *_mods) : acc(_acc), mods(_mods) {
+  AccessMod(AccessCtl _acc, ASTList <sm::string > *_mods) : acc(_acc), mods(_mods) {
   }
   ~AccessMod();
 
@@ -273,11 +273,11 @@ public:      // funcs
 
   AccessMod *clone() const;
 
-  void debugPrint(ostream &os, int indent, char const *subtreeName = "tree") const;
+  void debugPrint(std::ostream &os, int indent, char const *subtreeName = "tree") const;
 
   public:  bool hasMod(char const *mod) const;
   public:  bool hasModPrefix(char const *mod) const;
-  public:  string getModSuffixFromPrefix(char const *mod) const;
+  public:  sm::string getModSuffixFromPrefix(char const *mod) const;
 };
 
 
@@ -302,25 +302,25 @@ public:      // funcs
 
   virtual Annotation* clone() const=0;
 
-  virtual void debugPrint(ostream &os, int indent, char const *subtreeName = "tree") const;
+  virtual void debugPrint(std::ostream &os, int indent, char const *subtreeName = "tree") const;
 
 };
 
 class UserDecl : public Annotation {
 public:      // data
   AccessMod *amod;
-  string code;
-  string init;
+  sm::string code;
+  sm::string init;
 
 public:      // funcs
-  UserDecl(AccessMod *_amod, string _code, string _init) : Annotation(), amod(_amod), code(_code), init(_init) {
+  UserDecl(AccessMod *_amod, sm::string _code, sm::string _init) : Annotation(), amod(_amod), code(_code), init(_init) {
   }
   virtual ~UserDecl();
 
   virtual Kind kind() const { return USERDECL; }
   enum { TYPE_TAG = USERDECL };
 
-  virtual void debugPrint(ostream &os, int indent, char const *subtreeName = "tree") const;
+  virtual void debugPrint(std::ostream &os, int indent, char const *subtreeName = "tree") const;
 
   virtual UserDecl *clone() const;
 
@@ -329,11 +329,11 @@ public:      // funcs
 
 class CustomCode : public Annotation {
 public:      // data
-  string qualifier;
-  string code;
+  sm::string qualifier;
+  sm::string code;
 
 public:      // funcs
-  CustomCode(string _qualifier, string _code) : Annotation(), qualifier(_qualifier), code(_code) {
+  CustomCode(sm::string _qualifier, sm::string _code) : Annotation(), qualifier(_qualifier), code(_code) {
      used=false;
   }
   virtual ~CustomCode();
@@ -341,7 +341,7 @@ public:      // funcs
   virtual Kind kind() const { return CUSTOMCODE; }
   enum { TYPE_TAG = CUSTOMCODE };
 
-  virtual void debugPrint(ostream &os, int indent, char const *subtreeName = "tree") const;
+  virtual void debugPrint(std::ostream &os, int indent, char const *subtreeName = "tree") const;
 
   virtual CustomCode *clone() const;
 
@@ -354,12 +354,12 @@ public:      // funcs
 class CtorArg {
 public:      // data
   bool isOwner;
-  string type;
-  string name;
-  string defaultValue;
+  sm::string type;
+  sm::string name;
+  sm::string defaultValue;
 
 public:      // funcs
-  CtorArg(bool _isOwner, string _type, string _name, string _defaultValue) : isOwner(_isOwner), type(_type), name(_name), defaultValue(_defaultValue) {
+  CtorArg(bool _isOwner, sm::string _type, sm::string _name, sm::string _defaultValue) : isOwner(_isOwner), type(_type), name(_name), defaultValue(_defaultValue) {
   }
   ~CtorArg();
 
@@ -367,7 +367,7 @@ public:      // funcs
 
   CtorArg *clone() const;
 
-  void debugPrint(ostream &os, int indent, char const *subtreeName = "tree") const;
+  void debugPrint(std::ostream &os, int indent, char const *subtreeName = "tree") const;
 
 };
 
@@ -377,10 +377,10 @@ public:      // funcs
 class BaseClass {
 public:      // data
   AccessCtl access;
-  string name;
+  sm::string name;
 
 public:      // funcs
-  BaseClass(AccessCtl _access, string _name) : access(_access), name(_name) {
+  BaseClass(AccessCtl _access, sm::string _name) : access(_access), name(_name) {
   }
   ~BaseClass();
 
@@ -388,11 +388,9 @@ public:      // funcs
 
   BaseClass *clone() const;
 
-  void debugPrint(ostream &os, int indent, char const *subtreeName = "tree") const;
+  void debugPrint(std::ostream &os, int indent, char const *subtreeName = "tree") const;
 
 };
-
-
 
 
 #endif // AST_AST_H

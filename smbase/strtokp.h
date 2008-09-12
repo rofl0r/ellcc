@@ -42,13 +42,13 @@ public:
   char const* operator[] (int which) const { return tokv(which); }
     // access to tokens; must make local copies to modify
 
-  string reassemble(int firstTok, int lastTok, rostring originalString) const;
+  sm::string reassemble(int firstTok, int lastTok, rostring originalString) const;
     // return the substring of the original string spanned by the
     // given range of tokens; if firstTok==lastTok, only that token is
     // returned (without any separators); must be that firstTok <=
     // lastTok
 
-  string join(int firstTok, int lastTok, rostring separator) const;
+  sm::string join(int firstTok, int lastTok, rostring separator) const;
     // return a string created by concatenating the given range of tokens
     // together with 'separator' in between them
 

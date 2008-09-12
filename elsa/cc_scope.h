@@ -321,10 +321,10 @@ public:      // funcs
   //
   // dsw: I made your way the only way; that is, I just inlined mangle
   // as set to false
-  string fullyQualifiedName();
+  sm::string fullyQualifiedName();
   
   // more C-like notation for a fully qualified name
-  string fullyQualifiedCName() {
+  sm::string fullyQualifiedCName() {
     // dsw: see the note above; these functions are now identical.
     return fullyQualifiedName();
   }
@@ -343,10 +343,10 @@ public:      // funcs
   void traverse_internal(TypeVisitor &vis);
 
   // name of this scope for use in error messages and such
-  string scopeName() const;
+  sm::string scopeName() const;
 
   // for debugging, a quick description of this scope
-  string desc() const;
+  sm::string desc() const;
   void gdb() const;
 };
 

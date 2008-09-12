@@ -71,10 +71,10 @@ ENUM_BITWISE_OR(StandardConversion)
 ENUM_BITWISE_NOT(StandardConversion, SC_ERROR);
 
 // render in C++ syntax as bitwise OR of the constants above
-string toString(StandardConversion c);
+sm::string toString(StandardConversion c);
 
 // for XML
-string toXml(StandardConversion c);
+sm::string toXml(StandardConversion c);
 void fromXml(StandardConversion &out, rostring str);
 
 
@@ -101,7 +101,7 @@ SCRank getRank(StandardConversion scs);
 // if any, that will convert 'src' into 'dest'
 StandardConversion getStandardConversion(
   Env& env,            // The compilation environment.
-  string *errorMsg,    // if non-null, failed conversion sets error message
+  sm::string *errorMsg,// if non-null, failed conversion sets error message
   SpecialExpr special, // properties of the source expression
   Type const *src,     // source type
   Type const *dest,    // destination type

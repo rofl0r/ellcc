@@ -7,6 +7,7 @@
 #include "strtable.h"    // StringTable
 #include "cc_lang.h"     // CCLang
 
+using namespace std;
 
 // --------------------- CFGEnv -----------------------
 CFGEnv::CFGEnv()
@@ -731,7 +732,7 @@ SourceLoc Env::currentLoc() const
 
 
 // ---------------------- debugging ---------------------
-string Env::toString() const
+sm::string Env::toString() const
 {
   stringBuilder sb;
 

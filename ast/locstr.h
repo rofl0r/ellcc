@@ -3,8 +3,8 @@
 
 #ifndef LOCSTR_H
 #define LOCSTR_H
-                                          
-#include <iostream.h>    // ostream
+
+#include <iostream>      // ostream
 #include <string.h>      // strlen
 
 #include "strtable.h"    // StringRef
@@ -34,10 +34,10 @@ public:    // funcs
     { loc = obj.loc; str = obj.str; return *this; }
 
   // string with location info
-  string locString() const { return toString(loc); }
+  sm::string locString() const { return toString(loc); }
 
   // (read-only) string-like behavior
-  friend ostream& operator<< (ostream &os, LocString const &loc)
+  friend std::ostream& operator<< (std::ostream &os, LocString const &loc)
     { return os << loc.str; }
   friend stringBuilder& operator<< (stringBuilder &sb, LocString const &loc)
     { return sb << loc.str; }
@@ -56,10 +56,10 @@ public:    // funcs
 };
 
 // yields simply the string, no location info
-string toString(LocString const &s);
+sm::string toString(LocString const &s);
 
 // xml stuff...
-string toXml(LocString op);
+sm::string toXml(LocString op);
 void fromXml(LocString &out, rostring str);
 
 

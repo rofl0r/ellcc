@@ -24,13 +24,13 @@ class TemplCandidates;
 extern int overloadNesting;      // overload resolutions ongoing
 
 // ostream with line prefix already printed
-ostream &overloadTrace();
+std::ostream &overloadTrace();
 
 #ifndef NDEBUG
   class OverloadIndTrace {
   public:
     OverloadIndTrace(char const *msg) {
-      overloadTrace() << msg << endl;
+      overloadTrace() << msg << std::endl;
       overloadNesting++;
     }
     ~OverloadIndTrace() {
@@ -45,7 +45,7 @@ ostream &overloadTrace();
 
   // just print a message at the current indentation
   #define OVERLOADTRACE(msg) \
-    overloadTrace() << msg << endl
+    overloadTrace() << msg << std::endl
 
 #else
   #define OVERLOADINDTRACE(msg) ((void)0)
@@ -171,7 +171,7 @@ private:     // funcs
 
   // debugging, error diagnosis
   void printArgInfo();
-  string argInfoString();
+  sm::string argInfoString();
 
 public:      // funcs
   // the ctor parameters mean the same as in 'resolveOverload'
@@ -271,6 +271,15 @@ ImplicitConversion getConversionOperator(
   Type *destType
 );
 
+// dmandelin@mozilla.com
+// Search the given object for a single conversion operator to
+// a pointer type. Needed for 5.3.5.1.
+ImplicitConversion getPointerConversionOperator(
+  Env &env,
+  SourceLoc loc,
+  ErrorList * /*nullable*/ errors,
+  Type *srcClassType      // must be a compound (or reference to one)
+);
 
 // least upper bound: given types T1 and T2, compute the unique type S
 // such that:

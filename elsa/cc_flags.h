@@ -61,8 +61,8 @@ enum CVFlags {
 };
 
 extern char const * const cvFlagNames[NUM_CVFLAGS];      // 0="const", 1="volatile", 2="owner"
-string toString(CVFlags cv);
-string toXml(CVFlags cv);
+sm::string toString(CVFlags cv);
+sm::string toXml(CVFlags cv);
 void fromXml(CVFlags &out, char const *str);
 
 ENUM_BITWISE_OPS(CVFlags, CV_ALL)
@@ -102,14 +102,7 @@ enum DeclFlags {
 
   // semantic flags on Variables
   DF_ENUMERATOR  = 0x00000400,    // true for values in an 'enum' (enumerators in the terminology of the C++ standard)
-  
-  // TODO: what about:
-  //   - static locals?
-  //   - class members?
-  //   - static class members?
-  //   - namespace members?
   DF_GLOBAL      = 0x00000800,    // set for globals, unset for locals
-
   DF_INITIALIZED = 0x00001000,    // true if has been declared with an initializer (or, for functions, with code)
   DF_BUILTIN     = 0x00002000,    // true for e.g. __builtin_constant_p -- don't emit later
   DF_PARAMETER   = 0x00010000,    // true if this is a function parameter or a handler "parameter"
@@ -143,8 +136,8 @@ enum DeclFlags {
 };
 
 extern char const * const declFlagNames[NUM_DECLFLAGS];      // 0="inline", 1="virtual", 2="friend", ..
-string toString(DeclFlags df);
-string toXml(DeclFlags df);
+sm::string toString(DeclFlags df);
+sm::string toXml(DeclFlags df);
 void fromXml(DeclFlags &out, char const *str);
 
 
@@ -154,7 +147,7 @@ inline bool operator>= (DeclFlags df1, DeclFlags df2)
   { return (df1 & df2) == df2; }
 
 // helper of possibly general purpose
-string bitmapString(int bitmap, char const * const *names,
+sm::string bitmapString(int bitmap, char const * const *names,
                     int numflags, char const *delim);
 
 
@@ -556,7 +549,7 @@ enum UberModifiers {
 
 // string repr.
 extern char const * const uberModifierNames[UM_NUM_FLAGS];
-string toString(UberModifiers m);
+sm::string toString(UberModifiers m);
 
 // select particular subsets
 inline DeclFlags uberDeclFlags(UberModifiers m)

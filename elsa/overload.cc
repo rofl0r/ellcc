@@ -15,6 +15,7 @@
 #include "strtokp.h"       // StrtokParse
 #include "mtype.h"         // MType
 
+using namespace sm;
 
 // ------------------- Candidate -------------------------
 Candidate::Candidate(Variable *v, Variable *instFrom0, int numArgs)
@@ -1714,10 +1715,22 @@ ImplicitConversion getConversionOperator(
     SFOREACH_OBJLIST_NC(Variable, ops, iter) {
       Variable *v = iter.data();
       Type *retType = v->type->asFunctionType()->retType->asRval();
-      if (SC_ERROR!=getStandardConversion(env, NULL /*errorMsg*/,
+      if (!retType->containsVariables()) {
+	// concrete type; easy case
+	if (SC_ERROR!=getStandardConversion(env, NULL /*errorMsg*/,
             SE_NONE, retType, destType)) {
-        // it's a candidate
-        resolver.processCandidate(v);
+          // it's a candidate
+          resolver.processCandidate(v);
+        }
+      }
+      else {
+        MType match(env);
+        if (match.matchTypeNC(destType->asRval(), retType,
+                              MF_MATCH | MF_IGNORE_TOP_CV)) {
+          // use the bindings to instantiate the template
+          Variable *inst = env.instantiateFunctionTemplate(loc, v, match);
+          resolver.processCandidate(inst);
+        }
       }
     }
   }
@@ -1786,6 +1799,35 @@ ImplicitConversion getConversionOperator(
   return ic;
 }
 
+// dmandelin@mozilla.com -- for 3.5.3.1 and Oink ticket #32.
+ImplicitConversion getPointerConversionOperator(
+  Env &env,
+  SourceLoc loc,
+  ErrorList * /*nullable*/ errors,
+  Type *srcClassType
+) {
+  CompoundType *srcClass = srcClassType->asRval()->asCompoundType();
+  OVERLOADINDTRACE("converting " << srcClassType->toString() <<
+                   " to pointer");
+
+  int opCount = 0;
+  Variable *chosenOp = NULL;
+  SObjList<Variable> &ops = srcClass->conversionOperators;
+  SFOREACH_OBJLIST_NC(Variable, ops, iter) {
+    Variable *v = iter.data();
+    Type *retType = v->type->asFunctionType()->retType->asRval();
+    if (retType->isPointerType()) {
+      ++opCount;
+      chosenOp = v;
+    }
+  }
+
+  ImplicitConversion ic;
+  if (opCount == 1) {
+    ic.addUserConv(SC_IDENTITY, chosenOp, SC_IDENTITY);
+  }
+  return ic;
+}
 
 
 // ------------------ LUB --------------------
@@ -2137,9 +2179,9 @@ InstCandidate *InstCandidateResolver::selectBestCandidate()
 // ----------------- debugging -------------------
 int overloadNesting = 0;
 
-ostream &overloadTrace()
+std::ostream &overloadTrace()
 {
-  ostream &os = trace("overload");
+  std::ostream &os = trace("overload");
   for (int i=0; i<overloadNesting; i++) {
     os << "  ";
   }

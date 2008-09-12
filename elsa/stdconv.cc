@@ -32,16 +32,16 @@
 
 
 // ----------------------- StandardConversion -------------------
-string toString(StandardConversion c)
+sm::string toString(StandardConversion c)
 {
   stringBuilder sb;
 
   if (c == SC_ERROR) {
-    return string("SC_ERROR");
+    return sm::string("SC_ERROR");
   }
 
   if (c == SC_IDENTITY) {
-    return string("SC_IDENTITY");
+    return sm::string("SC_IDENTITY");
   }
 
   #define CASE(label)                  \
@@ -87,7 +87,7 @@ string toString(StandardConversion c)
 }
 
 
-string toXml(StandardConversion c)
+sm::string toXml(StandardConversion c)
 {
   throw_XUnimp("toXml(StandardConversion)");
   return "";
@@ -205,7 +205,7 @@ public:
   // The compilation environment.
   Env& env;
   // original parameters to 'getStandardConversion'
-  string *errorMsg;
+  sm::string *errorMsg;
   SpecialExpr srcSpecial;
   Type const *src;
   Type const *dest;
@@ -223,7 +223,7 @@ public:
   int ptrCtorsStripped;
 
 public:
-  Conversion(Env& env, string *e, SpecialExpr sp, Type const *s, Type const *d, bool dir)
+  Conversion(Env& env, sm::string *e, SpecialExpr sp, Type const *s, Type const *d, bool dir)
     : env(env),
       errorMsg(e),
       srcSpecial(sp),
@@ -421,7 +421,7 @@ bool couldBeAnything(Type const *t)
 // without allocating, and if I can then that avoids interaction
 // problems with Type annotation systems
 StandardConversion getStandardConversion
-  (Env& env, string *errorMsg, SpecialExpr srcSpecial, Type const *src, Type const *dest,
+  (Env& env, sm::string *errorMsg, SpecialExpr srcSpecial, Type const *src, Type const *dest,
    bool destIsReceiver)
 {
   Conversion conv(env, errorMsg, srcSpecial, src, dest, destIsReceiver);
@@ -1094,8 +1094,8 @@ static SimpleTypeId uacHelper(SimpleTypeId leftId, SimpleTypeId rightId)
   getIntegerStats(rightId, rightLength, rightUns);
 
   // least upper bound of a product lattice
-  int lubLength = max(leftLength, rightLength);
-  int lubUns = max(leftUns, rightUns);
+  int lubLength = std::max(leftLength, rightLength);
+  int lubUns = std::max(leftUns, rightUns);
 
   // put them back together
   static SimpleTypeId const map[3 /*length*/][2 /*unsignedness*/] = {
@@ -1145,7 +1145,7 @@ void test_getStandardConversion(
   int expected)
 {
   // run our function
-  string errorMsg;
+  sm::string errorMsg;
   StandardConversion actual = getStandardConversion(env, &errorMsg, special, src, dest);
 
   // turn any resulting messags into warnings, so I can see their

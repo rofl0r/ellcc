@@ -8,7 +8,7 @@
 #include "agrampar.h"       // agrampar_yylex, etc.
 
 #include <stdlib.h>         // malloc, free
-#include <iostream.h>       // cout
+#include <iostream>         // cout
 
 // enable debugging the parser
 #ifndef NDEBUG
@@ -72,16 +72,16 @@
   TF_class *tfClass;
   ASTList<CtorArg> *ctorArgList;
   ASTList<Annotation> *userDeclList;
-  string *str;
+  sm::string *str;
   enum AccessCtl accessCtl;
   AccessMod *accessMod;
   ToplevelForm *verbatim;
   Annotation *annotation;
   TF_option *tfOption;
-  ASTList<string> *stringList;
+  ASTList<sm::string> *stringList;
   TF_enum *tfEnum;
-  ASTList<string> *enumeratorList;
-  string *enumerator;
+  ASTList<sm::string> *enumeratorList;
+  sm::string *enumerator;
   ASTList<BaseClass> *baseClassList;
   BaseClass *baseClass;
   CustomCode *customCode;
@@ -195,7 +195,7 @@ CtorArgs
 CtorArgList: Arg
                { $$ = new ASTList<CtorArg>;
                  {
-                   string tmp = unbox($1);
+                   sm::string tmp = unbox($1);
                    $$->append(parseCtorArg(tmp));
                  }
                }
@@ -279,7 +279,7 @@ AccessMod: Public
 
 /* yield ASTList<string> */
 StringList: TOK_NAME
-              { $$ = new ASTList<string>($1); }
+              { $$ = new ASTList<sm::string>($1); }
           | StringList "," TOK_NAME
               { ($$=$1)->append($3); }
           ;
@@ -300,7 +300,7 @@ Option: "option" TOK_NAME OptionArgs ";"
       
 /* yields ASTList<string> */
 OptionArgs: /*empty*/
-              { $$ = new ASTList<string>; }
+              { $$ = new ASTList<sm::string>; }
           | OptionArgs TOK_NAME
               { ($$=$1)->append($2); }
           ;
@@ -314,7 +314,7 @@ Enum: "enum" TOK_NAME "{" EnumeratorSeq "}"
 
 /* yields ASTList<string> */
 EnumeratorSeq: Enumerator
-                 { $$ = new ASTList<string>($1); }
+                 { $$ = new ASTList<sm::string>($1); }
              | EnumeratorSeq "," Enumerator
                  { ($$=$1)->append($3); }
              ;

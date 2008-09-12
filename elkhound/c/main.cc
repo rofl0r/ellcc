@@ -1,7 +1,7 @@
 // main.cc            see license.txt for copyright and terms of use
 // toplevel driver for the C parser
 
-#include <iostream.h>     // cout
+#include <iostream>       // cout
 #include <stdlib.h>       // exit
 
 #include "trace.h"        // traceAddSys
@@ -17,6 +17,7 @@
 #include "c.gr.gen.h"     // CParse
 #include "cyctimer.h"     // CycleTimer
 
+using namespace std;
 
 // no bison-parser present, so need to define this
 Lexer2Token const *yylval = NULL;

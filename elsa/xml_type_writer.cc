@@ -10,6 +10,8 @@
 
 #define serializeOracle serializeOracle_m
 
+using namespace std;
+
 // toXml for enums
 
 char const *toXml(CompoundType::Keyword id) {
@@ -21,7 +23,7 @@ char const *toXml(CompoundType::Keyword id) {
   }
 }
 
-string toXml(FunctionFlags id) {
+sm::string toXml(FunctionFlags id) {
   if (id == FF_NONE) return "FF_NONE";
   DelimStr b('|');
   PRINTFLAG(FF_METHOD);

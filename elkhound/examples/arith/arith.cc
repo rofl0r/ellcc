@@ -9,6 +9,7 @@
 
 #include <assert.h>    // assert
 
+using namespace sm;
 
 // ------------------ ArithLexer ------------------
 /*static*/ void ArithLexer::nextToken(ArithLexer *ths)
@@ -59,7 +60,7 @@ string ArithLexer::tokenKindDesc(int kind) const
 // --------------------- main ----------------------
 ArithLexer lexer;
 
-int main(int argc)
+int main(int argc, char *argv[])
 {
   // initialize lexer by grabbing first token
   lexer.nextToken(&lexer);
@@ -101,7 +102,7 @@ int main(int argc)
 
     // print the tree
     PTreeNode *ptn = (PTreeNode*)result;
-    ptn->printTree(cout, PTreeNode::PF_EXPAND);
+    ptn->printTree(std::cout, PTreeNode::PF_EXPAND);
   }
 
   return 0;

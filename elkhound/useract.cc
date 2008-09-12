@@ -5,6 +5,7 @@
 #include "typ.h"         // STATICDEF
 #include "xassert.h"     // xfailure
 
+using namespace sm;
 
 UserActions::~UserActions()
 {}
@@ -25,7 +26,8 @@ UserActions::ReductionActionFunc TrivialUserActions::getReductionAction()
 
 STATICDEF SemanticValue TrivialUserActions::doReductionAction(
   UserActions *, int , SemanticValue const *
-  SOURCELOCARG( SourceLoc ) )
+  SOURCELOCARG( SourceLoc ) 
+  ENDSOURCELOCARG( SourceLoc ) )
   { return NULL_SVAL; }
 
 SemanticValue TrivialUserActions::duplicateTerminalValue(

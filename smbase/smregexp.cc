@@ -20,6 +20,7 @@
   #include <gnuregex.h>
 #endif
 
+using namespace sm;
 
 // get an error string
 static string regexpErrorString(regex_t const *pat, int code)

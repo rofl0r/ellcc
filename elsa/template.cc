@@ -14,7 +14,9 @@
 #include "cc_ast_aux.h"    // LoweredASTVisitor
 #include "mtype.h"         // MType
 #include "pair.h"          // pair
+#include "exprloc.h"
 
+using namespace sm;
 
 void copyTemplateArgs(ObjList<STemplateArgument> &dest,
                       ObjList<STemplateArgument> const &src)
@@ -83,14 +85,14 @@ string TypeVariable::toCString() const
                  << name;
 }
 
-int TypeVariable::reprSize() const
+void TypeVariable::sizeInfo(int &size, int &align) const
 {
   //xfailure("you can't ask a type variable for its size");
 
   // this happens when we're typechecking a template class, without
   // instantiating it, and we want to verify that some size expression
   // is constant.. so make up a number
-  return 4;
+  size = align = 4;
 }
 
 
@@ -131,12 +133,12 @@ string PseudoInstantiation::toCString() const
   return stringc << name << sargsToString(args);
 }
 
-int PseudoInstantiation::reprSize() const
+void PseudoInstantiation::sizeInfo(int &size, int &align) const
 {
   // it shouldn't matter what we say here, since the query will only
   // be made in the context of checking (but not instantiating) a
   // template definition body
-  return 4;
+  size = align = 4;
 }
 
 
@@ -197,9 +199,9 @@ string DependentQType::toMLString() const
   return stringc << "dependentqtype-" << toCString();
 }
 
-int DependentQType::reprSize() const
+void DependentQType::sizeInfo(int &size, int &align) const
 {
-  return 4;    // should not matter
+  size = align = 4;
 }
 
 
@@ -277,9 +279,16 @@ string DependentSizedArrayType::toMLString() const
 }
 
 
-int DependentSizedArrayType::reprSize() const
+void DependentSizedArrayType::sizeInfo(int &size, int &align) const
 {
-  throw XReprSize();
+  // dmandelin@mozilla.com  bug 416182
+  // This represents the result of sizeof inside the template definition.
+  // It's not normally an error to do this (although it could be if it can
+  // be proven that the result is negative somehow). The result doesn't
+  // mean anything, but I don't think it normally gets used for anything 
+  // either.
+  size = 1;
+  align = 1;
 }
 
 
@@ -765,8 +774,8 @@ void TemplateInfo::gdb()
 
 void TemplateInfo::debugPrint(int depth, bool printPartialInsts)
 {
-  ind(cout, depth*2) << "TemplateInfo for "
-                     << (var? var->name : "(null var)") << " {" << endl;
+  ind(std::cout, depth*2) << "TemplateInfo for "
+                          << (var? var->name : "(null var)") << " {" << std::endl;
 
   depth++;
 
@@ -775,40 +784,40 @@ void TemplateInfo::debugPrint(int depth, bool printPartialInsts)
     // parameter info, so print it; but then *it* better not turn
     // around and print its partial instantiation list, otherwise we
     // get an infinite loop!  (discovered the hard way...)
-    ind(cout, depth*2) << "partialInstantiatedFrom:\n";
+    ind(std::cout, depth*2) << "partialInstantiatedFrom:\n";
     partialInstantiationOf->templateInfo()->
       debugPrint(depth+1, false /*printPartialInsts*/);
   }
 
   // inherited params
   FOREACH_OBJLIST(InheritedTemplateParams, inheritedParams, iter) {
-    ind(cout, depth*2) << "inherited from " << iter.data()->enclosing->name
-                       << ": " << iter.data()->paramsToCString() << endl;
+    ind(std::cout, depth*2) << "inherited from " << iter.data()->enclosing->name
+                            << ": " << iter.data()->paramsToCString() << std::endl;
   }
 
   // my params
-  ind(cout, depth*2) << "params: " << paramsToCString() << endl;
+  ind(std::cout, depth*2) << "params: " << paramsToCString() << std::endl;
 
-  ind(cout, depth*2) << "arguments:" << endl;
+  ind(std::cout, depth*2) << "arguments:" << std::endl;
   FOREACH_OBJLIST_NC(STemplateArgument, arguments, iter) {
     iter.data()->debugPrint(depth+1);
   }
 
-  ind(cout, depth*2) << "instantiations:" << endl;
+  ind(std::cout, depth*2) << "instantiations:" << std::endl;
   depth++;
   SFOREACH_OBJLIST_NC(Variable, instantiations, iter) {
     Variable *var = iter.data();
-    ind(cout, depth*2) << var->type->toString() << endl;
+    ind(std::cout, depth*2) << var->type->toString() << std::endl;
     var->templateInfo()->debugPrint(depth+1);
   }
   depth--;
 
   if (printPartialInsts) {
-    ind(cout, depth*2) << "partial instantiations:" << endl;
+    ind(std::cout, depth*2) << "partial instantiations:" << std::endl;
     depth++;
     SFOREACH_OBJLIST_NC(Variable, partialInstantiations, iter) {
       Variable *var = iter.data();
-      ind(cout, depth*2) << var->toString() << endl;
+      ind(std::cout, depth*2) << var->toString() << std::endl;
       var->templateInfo()->debugPrint(depth+1);
     }
     depth--;
@@ -816,7 +825,7 @@ void TemplateInfo::debugPrint(int depth, bool printPartialInsts)
 
   depth--;
 
-  ind(cout, depth*2) << "}" << endl;
+  ind(std::cout, depth*2) << "}" << std::endl;
 }
 
 
@@ -932,6 +941,10 @@ bool STemplateArgument::containsVariables(MType *map) const
   }
   else if (kind == STA_DEPEXPR) {
     return exprContainsVariables(value.e, map);
+    // in 'map'.  I think a reasonable solution would be to
+    // rehabilitate the TypeVisitor, and design a nice way for
+    // a TypeVisitor and an ASTVisitor to talk to each other.
+    return true;
   }
 
   return false;
@@ -1017,8 +1030,8 @@ void STemplateArgument::gdb()
 
 void STemplateArgument::debugPrint(int depth)
 {
-  for (int i=0; i<depth; ++i) cout << "  ";
-  cout << "STemplateArgument: " << toString() << endl;
+  for (int i=0; i<depth; ++i) std::cout << "  ";
+  std::cout << "STemplateArgument: " << toString() << std::endl;
 }
 
 
@@ -1905,8 +1918,7 @@ bool Env::insertTemplateArgBindings_oneParamList
         // check that this argument is compatible with the parameter
         // (TODO: this isn't exactly what 14.3.2p5 says)
         string errorMsg;
-        if (SC_ERROR == getStandardConversion(*this,
-                                              &errorMsg,
+        if (SC_ERROR == getStandardConversion(*this, &errorMsg,
                                               binding->value->getSpecial(lang),
                                               binding->value->type,
                                               param->type,
@@ -2936,7 +2948,7 @@ void tcheckDeclaratorPQName(Env &env, ScopeSeq &qualifierScopes,
                             PQName *name, LookupFlags lflags);
 
 
-void Env::instantiateClassTemplateDefn(Variable *inst)
+void Env::instantiateClassTemplateDefn(Variable *inst, bool suppressErrors)
 {
   TemplateInfo *instTI = inst->templateInfo();
   CompoundType *instCT = inst->type->asCompoundType();
@@ -3075,7 +3087,7 @@ void Env::instantiateClassTemplateDefn(Variable *inst)
   // method bodies
   {
     Restorer<bool> r(checkFunctionBodies, false);
-    instCT->syntax->tcheckIntoCompound(*this, DF_NONE, instCT);
+    instCT->syntax->tcheckIntoCompound(*this, DF_NONE, instCT, suppressErrors);
   }
 
   // Now, we've just tchecked the clone in an environment that
@@ -3119,6 +3131,10 @@ void Env::ensureClassBodyInstantiatedIfPossible(CompoundType *ct)
   if (!ct->isComplete() && ct->isInstantiation()) {
     Variable *inst = ct->typedefVar;
 
+    // dmandelin@mozilla.com -- The following could probably be removed
+    // using my new error suppression mechanism, but I'm not going to 
+    // mess with it unless needed.
+
     // 2005-04-17: in/k0053.cc: we would like to instantiate this
     // template, but if there has not yet been a definition, then skip
     // it (without error)
@@ -3132,7 +3148,9 @@ void Env::ensureClassBodyInstantiatedIfPossible(CompoundType *ct)
       return;
     }
 
-    instantiateClassTemplateDefn(inst);
+    // The true for the suppressErrors argument allows this to silently
+    // fail if not possible, which is exactly what we need here.
+    instantiateClassTemplateDefn(inst, true);
   }
 }
 
@@ -4422,7 +4440,7 @@ STemplateArgument Env::applyArgumentMapToExpression
 
   // First, 'map' needs to have been created with an environment.
   xassert(map.getEnvironment() == this);
-
+ 
   // Now fire off the const-evaluator.  This will call back into
   // 'applyArgumentMapToE_variable' (below) when it encounters a
   // template argument.
@@ -4430,8 +4448,8 @@ STemplateArgument Env::applyArgumentMapToExpression
   setSTemplArgFromExpr(ret, e, &map);
   return ret;
 }
-
-
+  
+  
 STemplateArgument Env::applyArgumentMapToE_variable
   (MType &map, E_variable const *evar)
 {
@@ -4858,7 +4876,7 @@ Type *Env::pseudoSelfInstantiation(CompoundType *ct, CVFlags cv)
           // perhaps there should be an STemplateArgument variant that
           // is like STA_DEPEXPR but can only hold a single Variable?
           PQ_name *name = new PQ_name(param->loc, param->name);
-          E_variable *evar = new E_variable(param->loc, name);
+          E_variable *evar = new E_variable(EXPR_LOC(param->loc ENDLOCARG(SL_UNKNOWN)) name);
           evar->var = param;
           sta->setDepExpr(evar);
           break;
@@ -5508,7 +5526,7 @@ string TemplateTypeVariable::toMLString() const
 }
 
 
-int TemplateTypeVariable::reprSize() const
+void TemplateTypeVariable::sizeInfo(int &size, int &align) const
 {
   throw XReprSize();
 }

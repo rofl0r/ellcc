@@ -7,7 +7,7 @@
 #include "variable.h"   // Variable
 #include "cc_print.h"   // PrintEnv
     
-
+using namespace sm;
 
 string mangleAtomic(AtomicType const *t)
 {
@@ -138,7 +138,8 @@ string leftMangle(Type const *t, bool innerParen)
 
       stringBuilder s;
       s << leftMangle(atType, false /*innerParen*/);
-      if (atType->usesPostfixTypeConstructorSyntax()) {
+      if (atType->isFunctionType() ||
+          atType->isArrayType()) {
         s << "(";
       }
       s << (t->isPointerType()? "*" : "&");

@@ -4,6 +4,7 @@
 #include "xmlhelp.h"            // writeSpaces
 #include "exc.h"                // xBase
 
+using namespace std;
 
 bool sortNameMapDomainWhenSerializing = true;
 

@@ -227,9 +227,9 @@ public:
 
   // debugging
   void print() const;
-  string toString(bool asSexp=false) const;
-  string toStringType(bool asSexp, Lexer2TokenType type) const;
-  string unparseString() const;  // return the source text that generated this token
+  sm::string toString(bool asSexp=false) const;
+  sm::string toStringType(bool asSexp, Lexer2TokenType type) const;
+  sm::string unparseString() const;  // return the source text that generated this token
 };
 
 
@@ -282,8 +282,8 @@ public:
 
   // LexerInterface functions
   virtual NextTokenFunc getTokenFunc() const;
-  virtual string tokenDesc() const;
-  virtual string tokenKindDesc(int kind) const;
+  virtual sm::string tokenDesc() const;
+  virtual sm::string tokenKindDesc(int kind) const;
 };
 
 

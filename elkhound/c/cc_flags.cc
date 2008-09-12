@@ -6,6 +6,7 @@
 #include "xassert.h"      // xassert
 #include "trace.h"        // tracingSys
 
+using namespace sm;
 
 // -------------------- TypeIntr -------------------------
 char const * const typeIntrNames[NUM_TYPEINTRS] = {

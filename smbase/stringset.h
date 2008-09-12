@@ -28,7 +28,7 @@ public:      // funcs
     bool isDone() const { return iter.isDone(); }
     Iter& next() { iter.next(); return *this; }
 
-    string const &data() const { return iter.key(); }
+    sm::string const &data() const { return iter.key(); }
 
     int private_getCurrent() const { return iter.private_getCurrent(); }
   };
@@ -46,7 +46,7 @@ public:      // funcs
     bool isDone() const { return iter.isDone(); }
     IterC& next() { iter.next(); return *this; }
 
-    string const &data() const { return iter.key(); }
+    sm::string const &data() const { return iter.key(); }
 
     int private_getCurrent() const { return iter.private_getCurrent(); }
   };

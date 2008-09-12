@@ -118,10 +118,10 @@ public:    // data
   LocString failToken;
 
   // what is wrong
-  string message;
+  sm::string message;
 
 private:   // funcs
-  static string constructMsg(LocString const &tok, rostring msg);
+  static sm::string constructMsg(LocString const &tok, rostring msg);
 
 public:    // funcs
   XASTParse(LocString const &tok, rostring msg);

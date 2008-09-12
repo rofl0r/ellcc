@@ -58,7 +58,7 @@ public:
 
   // like next()->kindLocString(), with a "(c)" appended if it's the
   // cont()==true half
-  string asString();
+  sm::string asString();
 };
 
 

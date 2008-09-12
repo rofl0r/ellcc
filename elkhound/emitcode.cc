@@ -88,7 +88,7 @@ char const *hashLine()
 
 
 // note that #line must be preceeded by a newline
-string lineDirective(SourceLoc loc)
+sm::string lineDirective(SourceLoc loc)
 {
   char const *fname;
   int line, col;

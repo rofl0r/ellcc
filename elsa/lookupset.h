@@ -48,8 +48,8 @@ enum LookupFlags {
 };
 
 extern char const * const lookupFlagNames[NUM_LOOKUPFLAGS];
-string toString(LookupFlags flags);
-string toString_LF(LookupFlags flags);
+sm::string toString(LookupFlags flags);
+sm::string toString_LF(LookupFlags flags);
 
 ENUM_BITWISE_OPS(LookupFlags, LF_ALL_FLAGS)     // smbase/macros.h
 
@@ -94,7 +94,7 @@ public:
   void removeNonTemplates();
   
   // construct a candidate list, one per line, indented
-  string asString() const;
+  sm::string asString() const;
   void gdb() const;
 };
 

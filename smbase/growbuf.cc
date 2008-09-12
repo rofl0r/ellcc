@@ -4,6 +4,7 @@
 #include "growbuf.h"      // this module
 
 #include <string.h>       // memcpy
+#include <algorithm>      // max, min
 
 void GrowBuffer::append(byte const *str, int len)
 {
@@ -11,7 +12,7 @@ void GrowBuffer::append(byte const *str, int len)
   int newLen = getDataLen() + len;
   if (newLen > getAllocated()) {
     // must grow
-    int newAlloc = max(getAllocated(), 16);
+    int newAlloc = std::max(getAllocated(), 16);
     while (newLen > newAlloc) {
       newAlloc *= 2;      // would like an overflow test here..
     }
@@ -43,7 +44,7 @@ void entry()
       xfailure("buffer contents are wrong");
     }
   }
-  cout << "growbuf ok\n";
+  std::cout << "growbuf ok\n";
 }
 
 USUAL_MAIN

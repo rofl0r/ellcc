@@ -63,17 +63,17 @@ public:     // funcs
   bool equals(AtomicType const *obj) const;
 
   // print in C notation
-  virtual string toCString() const = 0;
+  virtual sm::string toCString() const = 0;
 
   // print in a Cil notation, using integer ids
   // for all references to other types
-  virtual string toCilString(int depth=1) const = 0;
+  virtual sm::string toCilString(int depth=1) const = 0;
 
   // print in Cil with C notation in comments
-  string toString(int depth=1) const;
+  sm::string toString(int depth=1) const;
 
   // name of this type for references in Cil output
-  virtual string uniqueName() const = 0;
+  virtual sm::string uniqueName() const = 0;
 
   // size this type's representation occupies in memory
   virtual int reprSize() const = 0;
@@ -95,9 +95,9 @@ public:     // funcs
   SimpleType(SimpleTypeId t) : type(t) {}
 
   virtual Tag getTag() const { return T_SIMPLE; }
-  virtual string toCString() const;
-  virtual string toCilString(int depth) const;
-  virtual string uniqueName() const;
+  virtual sm::string toCString() const;
+  virtual sm::string toCilString(int depth) const;
+  virtual sm::string uniqueName() const;
   virtual int reprSize() const;
 };
 
@@ -112,7 +112,7 @@ public:
   ~NamedAtomicType();
 
   // globally unique name derived from 'name' and 'id'
-  virtual string uniqueName() const;
+  virtual sm::string uniqueName() const;
 };
 
 
@@ -169,12 +169,12 @@ public:      // funcs
   static char const *keywordName(Keyword k);
 
   virtual Tag getTag() const { return T_COMPOUND; }
-  virtual string toCString() const;
-  virtual string toCilString(int depth) const;
+  virtual sm::string toCString() const;
+  virtual sm::string toCilString(int depth) const;
   virtual int reprSize() const;
 
-  string toStringWithFields() const;
-  string keywordAndName() const { return toCString(); }
+  sm::string toStringWithFields() const;
+  sm::string keywordAndName() const { return toCString(); }
 
   int numFields() const;
   Field const *getNthField(int index) const;         // must exist
@@ -213,8 +213,8 @@ public:     // funcs
   ~EnumType();
 
   virtual Tag getTag() const { return T_ENUM; }
-  virtual string toCString() const;
-  virtual string toCilString(int depth) const;
+  virtual sm::string toCString() const;
+  virtual sm::string toCilString(int depth) const;
   virtual int reprSize() const;
 
   Value *addValue(StringRef name, int value, /*nullable*/ Variable *d);
@@ -229,7 +229,7 @@ public:     // types
   enum Tag { T_ATOMIC, T_POINTER, T_FUNCTION, T_ARRAY };
 
 private:    // funcs
-  string idComment() const;
+  sm::string idComment() const;
 
 public:     // funcs
   Type();
@@ -255,17 +255,17 @@ public:     // funcs
 
   // print the type, with an optional name like it was a declaration
   // for a variable of that type
-  string toCString() const;
-  string toCString(char const *name) const;
+  sm::string toCString() const;
+  sm::string toCString(char const *name) const;
 
   // the left/right business is to allow us to print function
   // and array types in C's syntax
-  virtual string leftString() const = 0;
-  virtual string rightString() const;    // default: returns ""
+  virtual sm::string leftString() const = 0;
+  virtual sm::string rightString() const;    // default: returns ""
 
   // same alternate syntaxes as AtomicType
-  virtual string toCilString(int depth=1) const = 0;
-  string toString(int depth=1) const;
+  virtual sm::string toCilString(int depth=1) const = 0;
+  sm::string toString(int depth=1) const;
 
   // size of representation
   virtual int reprSize() const = 0;
@@ -304,7 +304,7 @@ public:     // data
   static CVAtomicType const fixed[NUM_SIMPLE_TYPES];
 
 private:    // funcs
-  string atomicIdComment() const;
+  sm::string atomicIdComment() const;
 
 public:     // funcs
   CVAtomicType(AtomicType const *a, CVFlags c)
@@ -315,8 +315,8 @@ public:     // funcs
   bool innerEquals(CVAtomicType const *obj) const;
 
   virtual Tag getTag() const { return T_ATOMIC; }
-  virtual string leftString() const;
-  virtual string toCilString(int depth) const;
+  virtual sm::string leftString() const;
+  virtual sm::string toCilString(int depth) const;
   virtual int reprSize() const;
 };
 
@@ -344,9 +344,9 @@ public:
   bool innerEquals(PointerType const *obj) const;
 
   virtual Tag getTag() const { return T_POINTER; }
-  virtual string leftString() const;
-  virtual string rightString() const;
-  virtual string toCilString(int depth) const;
+  virtual sm::string leftString() const;
+  virtual sm::string rightString() const;
+  virtual sm::string toCilString(int depth) const;
   virtual int reprSize() const;
 };
 
@@ -369,7 +369,7 @@ public:     // types
       : name(n), type(t), decl(d) {}
     ~Param();
 
-    string toString() const;
+    sm::string toString() const;
   };
 
 public:     // data
@@ -393,9 +393,9 @@ public:     // funcs
   void addParam(Param *param);
 
   virtual Tag getTag() const { return T_FUNCTION; }
-  virtual string leftString() const;
-  virtual string rightString() const;
-  virtual string toCilString(int depth) const;
+  virtual sm::string leftString() const;
+  virtual sm::string rightString() const;
+  virtual sm::string toCilString(int depth) const;
   virtual int reprSize() const;
 };
 
@@ -416,9 +416,9 @@ public:
   bool innerEquals(ArrayType const *obj) const;
 
   virtual Tag getTag() const { return T_ARRAY; }
-  virtual string leftString() const;
-  virtual string rightString() const;
-  virtual string toCilString(int depth) const;
+  virtual sm::string leftString() const;
+  virtual sm::string rightString() const;
+  virtual sm::string toCilString(int depth) const;
   virtual int reprSize() const;
 };
 

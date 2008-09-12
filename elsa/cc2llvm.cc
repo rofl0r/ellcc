@@ -2,6 +2,7 @@
 // code for cc2llvm.h
 
 #include "datablok.h"
+#include "exprloc.h"
 
 // LLVM
 #include <llvm/Module.h>
@@ -32,7 +33,7 @@
 #endif
 
 // -------------------- CC2LLVMEnv ---------------------
-CC2LLVMEnv::CC2LLVMEnv(StringTable &s, string name, const TranslationUnit& input,
+CC2LLVMEnv::CC2LLVMEnv(StringTable &s, sm::string name, const TranslationUnit& input,
                        const char* targetDataString, const char* targetTriple)
   : str(s),
     targetData(targetDataString),
@@ -131,7 +132,7 @@ llvm::Value* CC2LLVMEnv::checkCondition(SourceLoc loc, llvm::Value* value, int d
 	        value = builder.CreateFCmpONE(value, zero);
             }
 	} else {
-            cerr << toString(loc) << ": ";
+            std::cerr << toString(loc) << ": ";
             xunimp("checkCondition");
 	}
     } else if (neg) {
@@ -207,18 +208,18 @@ const llvm::Type* CC2LLVMEnv::makeTypeSpecifier(SourceLoc loc, Type *t)
 	if (size == ArrayType::NO_SIZE) {
 	    size = 0;
 	} else if (size == ArrayType::DYN_SIZE) {
-            cerr << toString(loc) << ": ";
+            std::cerr << toString(loc) << ": ";
             xunimp("dynamic array type");
 	}
         type = llvm::ArrayType::get(makeTypeSpecifier(loc, at->eltType), size);
         break;
     }
     case Type::T_POINTERTOMEMBER:
-        cerr << toString(loc) << ": ";
+        std::cerr << toString(loc) << ": ";
         xunimp("pointer to member type");
         break;
     case Type::T_DEPENDENTSIZEDARRAY:
-        cerr << toString(loc) << ": ";
+        std::cerr << toString(loc) << ": ";
         xunimp("dependent sized array type");
         break;
     case Type::T_LAST_TYPE_TAG:	// Quell warnings.
@@ -282,7 +283,7 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLoc loc, AtomicType 
         case ST_FLOAT_IMAGINARY:        // C99
 	case ST_DOUBLE_IMAGINARY:       // C99
         case ST_LONG_DOUBLE_IMAGINARY:  // C99
-            cerr << toString(loc) << ": ";
+            std::cerr << toString(loc) << ": ";
             xunimp("simple type");
 	    break;
         }
@@ -370,7 +371,7 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLoc loc, AtomicType 
     case AtomicType::T_PSEUDOINSTANTIATION:
     case AtomicType::T_DEPENDENTQTYPE:
     case AtomicType::T_TEMPLATETYPEVAR:
-        cerr << toString(loc) << ": ";
+        std::cerr << toString(loc) << ": ";
         xunimp("template-related");
         break;
 
@@ -443,10 +444,10 @@ llvm::Value* CC2LLVMEnv::declaration(const Variable* var, llvm::Value* init, int
             value = gv;
         }
     } else if (var->type->getTag() == Type::T_DEPENDENTSIZEDARRAY) {
-        cerr << toString(var->loc) << ": ";
+        std::cerr << toString(var->loc) << ": ";
         xunimp("dependent sized array");
     } else if (var->type->getTag() == Type::T_LAST_TYPE_TAG) {
-        cerr << toString(var->loc) << ": ";
+        std::cerr << toString(var->loc) << ": ";
         xunimp("last type tag");
     } else if (var->flags & (DF_STATIC|DF_GLOBAL)) {
         // A global variable.
@@ -560,7 +561,7 @@ void TopForm::cc2llvm(CC2LLVMEnv &env) const
     }
 
     ASTDEFAULTC {
-        cerr << toString(loc) << ": ";
+        std::cerr << toString(loc) << ": ";
         xunimp("TopForm");
     }
     
@@ -674,13 +675,13 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
 
             // Compute the object address.
             // "this"
-            E_this *ths = new E_this(nameAndParams->var->loc);
+            E_this *ths = new E_this(EXPR_LOC1(nameAndParams->var->loc ENDLOCARG(SL_UNKNOWN)));
             ths->receiver = receiver;
             // "*this"
-            E_deref *deref = new E_deref(nameAndParams->var->loc, ths);
+            E_deref *deref = new E_deref(EXPR_LOC(nameAndParams->var->loc ENDLOCARG(SL_UNKNOWN)) ths);
             deref->type = receiver->type;
             // "(*this).member
-            E_fieldAcc *efieldacc = new E_fieldAcc(nameAndParams->var->loc, deref, new PQ_variable(nameAndParams->var->loc, init->member));
+            E_fieldAcc *efieldacc = new E_fieldAcc(EXPR_LOC(nameAndParams->var->loc ENDLOCARG(SL_UNKNOWN)) deref, new PQ_variable(nameAndParams->var->loc, init->member));
             efieldacc->type = init->member->type;
             efieldacc->field = init->member;
 
@@ -689,7 +690,7 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
                 llvm::Value* object = efieldacc->cc2llvm(env, der);
                 env.constructor(object, init->ctorStatement);
             } else if (init->ctorVar) {
-                cerr << toString(nameAndParams->var->loc) << ": ";
+                std::cerr << toString(nameAndParams->var->loc) << ": ";
                 xunimp("member ctorVar");
             } else {
                 xassert(expr && "no constructor argument");
@@ -699,7 +700,7 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
 
                 // "(*this).y = other.y"
                 // use the E_assign built-in operator
-                Expression* action = new E_assign(expr->loc, efieldacc, BIN_ASSIGN, expr);
+                Expression* action = new E_assign(EXPR_LOC(expr->loc ENDLOCARG(SL_UNKNOWN)) efieldacc, BIN_ASSIGN, expr);
                 action->type = expr->type;
                 expr = action;
                 int der;
@@ -709,7 +710,7 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
     }
 
     if (handlers->isNotEmpty()) {
-        cerr << toString(nameAndParams->var->loc) << ": ";
+        std::cerr << toString(nameAndParams->var->loc) << ": ";
         xunimp("exception handlers");
     }
 
@@ -785,7 +786,7 @@ void Declaration::cc2llvm(CC2LLVMEnv &env) const
         if (declarator->ctorStatement || declarator->dtorStatement) {
             // RICH: declarator->ctorStatement->cc2llvm(env);
             // RICH: declarator->dtorStatement->cc2llvm(env);
-            // RICH: cerr << toString(var->loc) << ": ";
+            // RICH: std::cerr << toString(var->loc) << ": ";
             // RICH: xunimp("ctorStatement or dtorStatement");
         }
     }
@@ -1110,13 +1111,13 @@ void S_decl::cc2llvm(CC2LLVMEnv &env) const
 
 void S_try::cc2llvm(CC2LLVMEnv &env) const
 {
-    cerr << toString(loc) << ": ";
+    std::cerr << toString(loc) << ": ";
     xunimp("try");
 }
 
 void S_asm::cc2llvm(CC2LLVMEnv &env) const
 {
-    cerr << toString(loc) << ": ";
+    std::cerr << toString(loc) << ": ";
     xunimp("asm");
 #if RICH
     env.addStatement(
@@ -1132,13 +1133,13 @@ void S_namespaceDecl::cc2llvm(CC2LLVMEnv &env) const
 
 void S_computedGoto::cc2llvm(CC2LLVMEnv &env) const
 {
-    cerr << toString(loc) << ": ";
+    std::cerr << toString(loc) << ": ";
     xunimp("computed goto");
 }
 
 void S_rangeCase::cc2llvm(CC2LLVMEnv &env) const
 {
-    cerr << toString(loc) << ": ";
+    std::cerr << toString(loc) << ": ";
     xunimp("range case");
 }
 
@@ -1198,7 +1199,7 @@ llvm::Value *E_floatLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
         semantics = &llvm::APFloat::PPCDoubleDouble;
         break;
     default:
-        cerr << toString(loc) << ": ";
+        std::cerr << toString(loc) << ": ";
         xunimp("floating point type");
         break;
     }
@@ -1578,7 +1579,7 @@ llvm::Value *E_effect::cc2llvm(CC2LLVMEnv &env, int& deref) const
         VDEBUG("Store8 destination", loc, value->print(cout));
         env.builder.CreateStore(temp, value, false);	// RICH: Volatile
     } else {
-        cerr << toString(loc) << ": ";
+        std::cerr << toString(loc) << ": ";
         xunimp("++,--");
     }
 
@@ -1798,7 +1799,7 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
         c = OC_VOID;
     } else {
         c = OC_OTHER;
-        cerr << toString(loc) << ": ";
+        std::cerr << toString(loc) << ": ";
 	xunimp("cast");
     }
 
@@ -1948,7 +1949,7 @@ llvm::Value* CC2LLVMEnv::initializer(const Initializer* init, Type* type, int& d
                 if (size == ArrayType::NO_SIZE) {
                     size = s->data->getDataLen();
                 } else if (size == ArrayType::DYN_SIZE) {
-                    cerr << toString(init->loc) << ": ";
+                    std::cerr << toString(init->loc) << ": ";
                     xunimp("dynamic array type in initializer");
                 }
 
@@ -1978,7 +1979,7 @@ llvm::Value* CC2LLVMEnv::initializer(const Initializer* init, Type* type, int& d
 	    if (size == ArrayType::NO_SIZE) {
 	        size = 0;
 	    } else if (size == ArrayType::DYN_SIZE) {
-                cerr << toString(init->loc) << ": ";
+                std::cerr << toString(init->loc) << ": ";
                 xunimp("dynamic array type in initializer");
 	    }
 
@@ -2024,12 +2025,12 @@ llvm::Value* CC2LLVMEnv::initializer(const Initializer* init, Type* type, int& d
     }
 
     ASTNEXTC(IN_ctor, c) {
-        // RICH: cerr << toString(init->loc) << ": ";
+        // RICH: std::cerr << toString(init->loc) << ": ";
         // RICH: xunimp("ctor initializer");
     }
 
     ASTNEXTC(IN_designated, d) {
-        cerr << toString(init->loc) << ": ";
+        std::cerr << toString(init->loc) << ": ";
         xunimp("designated initializer");
     }
 
@@ -2100,7 +2101,7 @@ llvm::Value* CC2LLVMEnv::binop(SourceLoc loc, BinaryOp op, Expression* e1, llvm:
             break;
 	case CC2LLVMEnv::OC_VOID:
 	case CC2LLVMEnv::OC_OTHER:
-            cerr << toString(loc) << ": ";
+            std::cerr << toString(loc) << ": ";
 	    xunimp("==");
 	    break;
 	}
@@ -2122,7 +2123,7 @@ llvm::Value* CC2LLVMEnv::binop(SourceLoc loc, BinaryOp op, Expression* e1, llvm:
             break;
 	case CC2LLVMEnv::OC_VOID:
 	case CC2LLVMEnv::OC_OTHER:
-            cerr << toString(loc) << ": ";
+            std::cerr << toString(loc) << ": ";
 	    xunimp("!=");
 	    break;
 	}
@@ -2146,7 +2147,7 @@ llvm::Value* CC2LLVMEnv::binop(SourceLoc loc, BinaryOp op, Expression* e1, llvm:
             break;
 	case CC2LLVMEnv::OC_VOID:
 	case CC2LLVMEnv::OC_OTHER:
-            cerr << toString(loc) << ": ";
+            std::cerr << toString(loc) << ": ";
 	    xunimp("<");
 	    break;
 	}
@@ -2170,7 +2171,7 @@ llvm::Value* CC2LLVMEnv::binop(SourceLoc loc, BinaryOp op, Expression* e1, llvm:
             break;
 	case CC2LLVMEnv::OC_VOID:
 	case CC2LLVMEnv::OC_OTHER:
-            cerr << toString(loc) << ": ";
+            std::cerr << toString(loc) << ": ";
 	    xunimp("<=");
 	    break;
 	}
@@ -2194,7 +2195,7 @@ llvm::Value* CC2LLVMEnv::binop(SourceLoc loc, BinaryOp op, Expression* e1, llvm:
             break;
 	case CC2LLVMEnv::OC_VOID:
 	case CC2LLVMEnv::OC_OTHER:
-            cerr << toString(loc) << ": ";
+            std::cerr << toString(loc) << ": ";
 	    xunimp(">");
 	    break;
 	}
@@ -2218,7 +2219,7 @@ llvm::Value* CC2LLVMEnv::binop(SourceLoc loc, BinaryOp op, Expression* e1, llvm:
             break;
 	case CC2LLVMEnv::OC_VOID:
 	case CC2LLVMEnv::OC_OTHER:
-            cerr << toString(loc) << ": ";
+            std::cerr << toString(loc) << ": ";
 	    xunimp(">=");
 	    break;
 	}
@@ -2237,7 +2238,7 @@ llvm::Value* CC2LLVMEnv::binop(SourceLoc loc, BinaryOp op, Expression* e1, llvm:
             break;
 	case CC2LLVMEnv::OC_VOID:
 	case CC2LLVMEnv::OC_OTHER:
-            cerr << toString(loc) << ": ";
+            std::cerr << toString(loc) << ": ";
 	    xunimp("*");
 	    break;
 	}
@@ -2260,7 +2261,7 @@ llvm::Value* CC2LLVMEnv::binop(SourceLoc loc, BinaryOp op, Expression* e1, llvm:
             break;
 	case CC2LLVMEnv::OC_VOID:
 	case CC2LLVMEnv::OC_OTHER:
-            cerr << toString(loc) << ": ";
+            std::cerr << toString(loc) << ": ";
 	    xunimp("/");
 	    break;
 	}
@@ -2283,7 +2284,7 @@ llvm::Value* CC2LLVMEnv::binop(SourceLoc loc, BinaryOp op, Expression* e1, llvm:
             break;
 	case CC2LLVMEnv::OC_VOID:
 	case CC2LLVMEnv::OC_OTHER:
-            cerr << toString(loc) << ": ";
+            std::cerr << toString(loc) << ": ";
 	    xunimp("%");
 	    break;
 	}
@@ -2409,7 +2410,7 @@ llvm::Value* CC2LLVMEnv::binop(SourceLoc loc, BinaryOp op, Expression* e1, llvm:
         }
 	case CC2LLVMEnv::OC_VOID:
 	case CC2LLVMEnv::OC_OTHER:
-            cerr << toString(loc) << ": ";
+            std::cerr << toString(loc) << ": ";
 	    xunimp("+/-");
 	    break;
 	}
@@ -2429,7 +2430,7 @@ llvm::Value* CC2LLVMEnv::binop(SourceLoc loc, BinaryOp op, Expression* e1, llvm:
 	case CC2LLVMEnv::OC_FLOAT:
 	case CC2LLVMEnv::OC_VOID:
 	case CC2LLVMEnv::OC_OTHER:
-            cerr << toString(loc) << ": ";
+            std::cerr << toString(loc) << ": ";
 	    xunimp("<<");
 	    break;
 	}
@@ -2450,7 +2451,7 @@ llvm::Value* CC2LLVMEnv::binop(SourceLoc loc, BinaryOp op, Expression* e1, llvm:
 	case CC2LLVMEnv::OC_FLOAT:
 	case CC2LLVMEnv::OC_VOID:
 	case CC2LLVMEnv::OC_OTHER:
-            cerr << toString(loc) << ": ";
+            std::cerr << toString(loc) << ": ";
 	    xunimp(">>");
 	    break;
 	}
@@ -2469,7 +2470,7 @@ llvm::Value* CC2LLVMEnv::binop(SourceLoc loc, BinaryOp op, Expression* e1, llvm:
 	case CC2LLVMEnv::OC_FLOAT:
 	case CC2LLVMEnv::OC_VOID:
 	case CC2LLVMEnv::OC_OTHER:
-            cerr << toString(loc) << ": ";
+            std::cerr << toString(loc) << ": ";
 	    xunimp("&");
 	    break;
 	}
@@ -2488,7 +2489,7 @@ llvm::Value* CC2LLVMEnv::binop(SourceLoc loc, BinaryOp op, Expression* e1, llvm:
 	case CC2LLVMEnv::OC_FLOAT:
 	case CC2LLVMEnv::OC_VOID:
 	case CC2LLVMEnv::OC_OTHER:
-            cerr << toString(loc) << ": ";
+            std::cerr << toString(loc) << ": ";
 	    xunimp("^");
 	    break;
 	}
@@ -2507,7 +2508,7 @@ llvm::Value* CC2LLVMEnv::binop(SourceLoc loc, BinaryOp op, Expression* e1, llvm:
 	case CC2LLVMEnv::OC_FLOAT:
 	case CC2LLVMEnv::OC_VOID:
 	case CC2LLVMEnv::OC_OTHER:
-            cerr << toString(loc) << ": ";
+            std::cerr << toString(loc) << ": ";
 	    xunimp("|");
 	    break;
 	}
@@ -2587,13 +2588,13 @@ llvm::Value* CC2LLVMEnv::binop(SourceLoc loc, BinaryOp op, Expression* e1, llvm:
     case BIN_MINIMUM:   // <?
         left = access(left, false, deref1);                 // RICH: Volatile.
         right = access(right, false, deref2);                 // RICH: Volatile.
-        cerr << toString(loc) << ": ";
+        std::cerr << toString(loc) << ": ";
         xunimp("<?");
         break;
     case BIN_MAXIMUM:   // >?
         left = access(left, false, deref1);                 // RICH: Volatile.
         right = access(right, false, deref2);                 // RICH: Volatile.
-        cerr << toString(loc) << ": ";
+        std::cerr << toString(loc) << ": ";
         xunimp(">?");
         break;
 
@@ -2606,11 +2607,11 @@ llvm::Value* CC2LLVMEnv::binop(SourceLoc loc, BinaryOp op, Expression* e1, llvm:
 
     // C++ operators
     case BIN_DOT_STAR:    // .*
-        cerr << toString(loc) << ": ";
+        std::cerr << toString(loc) << ": ";
         xunimp(".*");
         break;
     case BIN_ARROW_STAR:  // ->*
-        cerr << toString(loc) << ": ";
+        std::cerr << toString(loc) << ": ";
         xunimp("->*");
         break;
 
@@ -2618,13 +2619,13 @@ llvm::Value* CC2LLVMEnv::binop(SourceLoc loc, BinaryOp op, Expression* e1, llvm:
     case BIN_IMPLIES:     // ==>
         left = access(left, false, deref1);                 // RICH: Volatile.
         right = access(right, false, deref2);                 // RICH: Volatile.
-        cerr << toString(loc) << ": ";
+        std::cerr << toString(loc) << ": ";
         xunimp("==>");
         break;
     case BIN_EQUIVALENT:  // <==>
         left = access(left, false, deref1);                 // RICH: Volatile.
         right = access(right, false, deref2);                 // RICH: Volatile.
-        cerr << toString(loc) << ": ";
+        std::cerr << toString(loc) << ": ";
         xunimp("<==>");
         break;
     case NUM_BINARYOPS:
@@ -2734,7 +2735,7 @@ llvm::Value *E_cond::cc2llvm(CC2LLVMEnv &env, int& deref) const
 	phi->addIncoming(falseValue, ifFalse);
         result = phi;
     } else {
-        cerr << toString(loc) << ": ";
+        std::cerr << toString(loc) << ": ";
         xunimp("?:");
     }
     return result;
@@ -2818,7 +2819,7 @@ llvm::Value* E_assign::cc2llvm(CC2LLVMEnv &env, int& deref) const
 llvm::Value *E_new::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     deref = 0;
-    cerr << toString(loc) << ": ";
+    std::cerr << toString(loc) << ": ";
     xunimp("new");
     return NULL;
 }
@@ -2826,7 +2827,7 @@ llvm::Value *E_new::cc2llvm(CC2LLVMEnv &env, int& deref) const
 llvm::Value *E_delete::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     deref = 0;
-    cerr << toString(loc) << ": ";
+    std::cerr << toString(loc) << ": ";
     xunimp("delete");
     return NULL;
 }
@@ -2834,7 +2835,7 @@ llvm::Value *E_delete::cc2llvm(CC2LLVMEnv &env, int& deref) const
 llvm::Value *E_throw::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     deref = 0;
-    cerr << toString(loc) << ": ";
+    std::cerr << toString(loc) << ": ";
     xunimp("throw");
     return NULL;
 }
@@ -2842,7 +2843,7 @@ llvm::Value *E_throw::cc2llvm(CC2LLVMEnv &env, int& deref) const
 llvm::Value *E_keywordCast::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     deref = 0;
-    cerr << toString(loc) << ": ";
+    std::cerr << toString(loc) << ": ";
     xunimp("keyword cast");
     return NULL;
 }
@@ -2850,7 +2851,7 @@ llvm::Value *E_keywordCast::cc2llvm(CC2LLVMEnv &env, int& deref) const
 llvm::Value *E_typeidExpr::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     deref = 0;
-    cerr << toString(loc) << ": ";
+    std::cerr << toString(loc) << ": ";
     xunimp("typeid");
     return NULL;
 }
@@ -2858,7 +2859,7 @@ llvm::Value *E_typeidExpr::cc2llvm(CC2LLVMEnv &env, int& deref) const
 llvm::Value *E_typeidType::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     deref = 0;
-    cerr << toString(loc) << ": ";
+    std::cerr << toString(loc) << ": ";
     xunimp("typeid");
     return NULL;
 }
@@ -2866,7 +2867,7 @@ llvm::Value *E_typeidType::cc2llvm(CC2LLVMEnv &env, int& deref) const
 llvm::Value *E_grouping::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     deref = 0;
-    cerr << toString(loc) << ": ";
+    std::cerr << toString(loc) << ": ";
     xunimp("grouping");
     return NULL;
 }
@@ -2874,7 +2875,7 @@ llvm::Value *E_grouping::cc2llvm(CC2LLVMEnv &env, int& deref) const
 llvm::Value *E_arrow::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     deref = 0;
-    cerr << toString(loc) << ": ";
+    std::cerr << toString(loc) << ": ";
     xunimp("->");
     return NULL;
 }
@@ -2883,7 +2884,7 @@ llvm::Value *E_arrow::cc2llvm(CC2LLVMEnv &env, int& deref) const
 llvm::Value *E_addrOfLabel::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     deref = 0;
-    cerr << toString(loc) << ": ";
+    std::cerr << toString(loc) << ": ";
     xunimp("label address");
     return NULL;
 }
@@ -2891,7 +2892,7 @@ llvm::Value *E_addrOfLabel::cc2llvm(CC2LLVMEnv &env, int& deref) const
 llvm::Value *E_gnuCond::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     deref = 0;
-    cerr << toString(loc) << ": ";
+    std::cerr << toString(loc) << ": ";
     xunimp("gnu conditional");
     return NULL;
 }
@@ -2899,7 +2900,7 @@ llvm::Value *E_gnuCond::cc2llvm(CC2LLVMEnv &env, int& deref) const
 llvm::Value *E_alignofExpr::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     deref = 0;
-    cerr << toString(loc) << ": ";
+    std::cerr << toString(loc) << ": ";
     xunimp("alignof");
     return NULL;
 }
@@ -2907,7 +2908,7 @@ llvm::Value *E_alignofExpr::cc2llvm(CC2LLVMEnv &env, int& deref) const
 llvm::Value *E_alignofType::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     deref = 0;
-    cerr << toString(loc) << ": ";
+    std::cerr << toString(loc) << ": ";
     xunimp("alignof");
     return NULL;
 }
@@ -2930,7 +2931,7 @@ llvm::Value *E___builtin_va_start::cc2llvm(CC2LLVMEnv &env, int& deref) const
 llvm::Value *E___builtin_va_copy::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     deref = 0;
-    cerr << toString(loc) << ": ";
+    std::cerr << toString(loc) << ": ";
     xunimp("__builtin_va_copy");
     return NULL;
 }
@@ -2963,7 +2964,7 @@ llvm::Value *E___builtin_va_end::cc2llvm(CC2LLVMEnv &env, int& deref) const
 llvm::Value *E___builtin_constant_p::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     deref = 0;
-    cerr << toString(loc) << ": ";
+    std::cerr << toString(loc) << ": ";
     xunimp("__builtin_constant_p");
     return NULL;
 }
@@ -3039,7 +3040,7 @@ llvm::Module* CC2LLVMEnv::doit()
 }
 
 // ------------------- entry point -------------------
-llvm::Module* cc_to_llvm(string name, StringTable &str, TranslationUnit const &input,
+llvm::Module* cc_to_llvm(sm::string name, StringTable &str, TranslationUnit const &input,
                          const char* targetData, const char* targetTriple)
 {
     CC2LLVMEnv env(str, name, input, targetData, targetTriple);

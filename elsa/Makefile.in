@@ -156,7 +156,9 @@ LEXER_OBJS := \
   baselexer.o \
   lexer.o \
   lexer.yy.o \
-  cc_tokens.o
+  cc_tokens.o \
+  cppundolog.o
+
 -include $(LEXER_OBJS:.o=.d)
 -include tlexer.d
 

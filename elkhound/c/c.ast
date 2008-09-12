@@ -64,7 +64,7 @@ class TopForm (SourceLoc loc) {
        public int numPaths;
        ctor numPaths=0;
 
-       public void printExtras(ostream &os, int indent) const;   // tcheck.cc
+       public void printExtras(std::ostream &os, int indent) const;   // tcheck.cc
        custom debugPrint { printExtras(os, indent); }
      }
 }
@@ -255,7 +255,7 @@ verbatim {
 
   // prints like Statement::kindLocString, with a "(c)" appended
   // if it's the continue==true half
-  string nextPtrString(NextPtr np);
+  sm::string nextPtrString(NextPtr np);
 
   // after working with this system a while, I think it's good, so I
   // want more support for manipulating lists of NextPtrs
@@ -301,10 +301,10 @@ class Statement (SourceLoc loc) {
   // retrieve list of all successors of this node, given how we
   // got to this node ('isContinue'); 'dest' should be empty beforehand
   public virtual void getSuccessors(NextPtrList &dest, bool isContinue) const;
-  public string successorsToString() const;
+  public sm::string successorsToString() const;
 
   // e.g. "S_if@4:5" -- kind, line, col
-  public string kindLocString() const;
+  public sm::string kindLocString() const;
 
   // number of paths from this statement; counts all the various
   // paths through expressions, *including* expressions within
@@ -315,7 +315,7 @@ class Statement (SourceLoc loc) {
   custom debugPrint {
     ind(os, indent) << "numPaths=" << numPaths
                     << ", succ=" << successorsToString()
-                    << endl;
+                    << std::endl;
   }
 
   -> S_skip();      // nop; used whenever optional Statement is not present
@@ -382,12 +382,12 @@ class Expression {
   public int numPaths;
   ctor numPaths=0;
   public void recordSideEffect()
-    { numPaths = max(numPaths, 1); };
+    { numPaths = std::max(numPaths, 1); };
   public int numPaths1() const
-    { return max(numPaths, 1); };
+    { return std::max(numPaths, 1); };
 
   // print numPaths and type
-  public string extrasToString() const;
+  public sm::string extrasToString() const;
   custom debugPrint {
     ind(os, indent) << extrasToString() << "\n";
   }
@@ -398,7 +398,7 @@ class Expression {
   protected int xnonconst() const;       // throws XNonConst
 
   // unparse the expression
-  pure_virtual string toString() const;
+  pure_virtual sm::string toString() const;
 
   // given the current abstract environment, return the abstract value
   // representing this expression's result, and also update the environment

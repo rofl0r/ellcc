@@ -1,5 +1,5 @@
-// main.cc            see license.txt for copyright and terms of use
-// The ellcc driver.
+// elsa.cc            see license.txt for copyright and terms of use
+// The elsa interface.
 
 #include <iostream.h>     // cout
 #include <stdlib.h>       // exit, getenv, abort
@@ -133,7 +133,7 @@ void Elsa::setup(bool time)
 }
 
 // nonempty if we want to run cc2c; value of "-" means stdout
-static string cc2cOutputFname;
+static sm::string cc2cOutputFname;
 
 // little check: is it true that only global declarators
 // ever have Declarator::type != Declarator::var->type?
@@ -743,7 +743,7 @@ int Elsa::doit(Language language, const char* inputFname, const char* outputFnam
 
   if (!cc2cOutputFname.empty()) {
     TranslationUnit *lowered = cc_to_c(strTable, *unit);
-    if (cc2cOutputFname == string("-")) {
+    if (cc2cOutputFname == sm::string("-")) {
       cout << "// cc2c\n";
       bppTranslationUnit(cout, *lowered);
     }

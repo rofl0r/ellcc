@@ -63,8 +63,8 @@ public:    // funcs
   // debugging
   // experiment: member function is called 'debugString', and
   // global function is called 'toString'
-  string debugString() const;
-  friend string toString(ImplicitConversion const &ics)
+  sm::string debugString() const;
+  friend sm::string toString(ImplicitConversion const &ics)
     { return ics.debugString(); }
 };
 

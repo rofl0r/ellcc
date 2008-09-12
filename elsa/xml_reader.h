@@ -73,23 +73,23 @@ enum KindCategory {
 // hold the name while the value contained by it is being parsed.
 // Then it is deleted.
 struct ListItem {
-  string to;
+  sm::string to;
 };
 
 // the <_NameMap_Item> </_NameMap_Item> tag is parsed into this class
 // to hold the name while the value contained by it is being parsed.
 // Then it is deleted.
 struct NameMapItem {
-  string from;
-  string to;
+  sm::string from;
+  sm::string to;
 };
 
 // the <_Map_Item> </_Map_Item> tag is parsed into this class
 // to hold the name while the value contained by it is being parsed.
 // Then it is deleted.
 struct MapItem {
-  string from;
-  string to;
+  sm::string from;
+  sm::string to;
 };
 
 // datastructures for dealing with unsatisified links; FIX: we can
@@ -101,7 +101,7 @@ struct MapItem {
 // An unsatisfied link from an object A to another B
 struct UnsatLink {
   void *ptr;                    // a ptr to a member of A that should point to B (unless embedded)
-  string id;                    // id of B
+  sm::string id;                    // id of B
   int kind;                     // type of B (roll-our-own-RTTI)
   bool embedded;                // B embedded into A or pointed at?
   UnsatLink(void *ptr0, char const *id0, int kind0, bool embedded0);

@@ -10,6 +10,7 @@
 #include "objlist.h"        // ObjList
 #include "trace.h"          // TRACE
 
+using namespace sm;
 
 // defined in cc_tcheck.cc
 bool noDisambErrors(ErrorList const &list);
@@ -25,8 +26,8 @@ string ambiguousNodeName(NODE const *n)
 }
 
 // definitions in cc_tcheck.cc
-string ambiguousNodeName(Declarator const *n);
-string ambiguousNodeName(Expression const *e);
+sm::string ambiguousNodeName(Declarator const *n);
+sm::string ambiguousNodeName(Expression const *e);
 
 
 // after a node has failed to typecheck, I may need to mark it

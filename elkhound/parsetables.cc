@@ -15,6 +15,7 @@
 // array index code
 enum { UNASSIGNED = -1 };
 
+using namespace sm;
                
 // fwd
 template <class EltType>
@@ -1036,7 +1037,7 @@ int ParseTables::colorTheGraph(int *color, Bit2d &graph)
     }
   }
 
-  ostream &os = trace("graphColor") << "colors[]:";
+  std::ostream &os = trace("graphColor") << "colors[]:";
 
   for (int i=0; i<n; i++) {
     // every node should now have blocked == degree

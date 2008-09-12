@@ -7,9 +7,10 @@
 #include "strutil.h"     // string, replace
 #include "reporterr.h"   // silentReportError
 
-#include <iostream.h>    // cout
+#include <iostream>      // cout
 #include <ctype.h>       // isspace
 
+using namespace sm;
 
 CCSubstrate::CCSubstrate(ReportError *err)
   : EmbeddedLang(err)
@@ -346,7 +347,7 @@ int Test::main()
   badname(")");
   badname("main");
 
-  cout << "\nccsstr: all tests PASSED\n";
+  std::cout << "\nccsstr: all tests PASSED\n";
 
   return 0;
 }

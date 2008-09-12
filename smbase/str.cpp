@@ -8,9 +8,9 @@
 #include <stdio.h>          // sprintf
 #include <ctype.h>          // isspace
 #include <string.h>         // strcmp
-#include <iostream.h>       // ostream << char*
 #include <assert.h>         // assert
 #include <unistd.h>         // write
+#include <algorithm>        // max
 
 #include "xassert.h"        // xassert
 #include "ckheap.h"         // checkHeapNode
@@ -18,7 +18,7 @@
 #include "nonport.h"        // vnprintf
 #include "array.h"          // Array
 
-
+using namespace sm;
 // ----------------------- string ---------------------
 
 // put the empty string itself in read-only memory
@@ -30,7 +30,7 @@ char const nul_byte = 0;
 char * const string::emptyString = const_cast<char*>(&nul_byte);
 
 
-string::string(char const *src, int length, SmbaseStringFunc)
+string::string(char const *src, int length)
 {
   s=emptyString;
   setlength(length);       // setlength already has the +1; sets final NUL
@@ -127,7 +127,7 @@ int string::compareTo(char const *src) const
 
 string string::operator&(string const &tail) const
 {
-  string dest(length() + tail.length(), SMBASE_STRING_FUNC);
+  string dest(length() + tail.length());
   strcpy(dest.s, s);
   strcat(dest.s, tail.s);
   return dest;
@@ -139,7 +139,7 @@ string& string::operator&=(string const &tail)
 }
 
 
-void string::readdelim(istream &is, char const *delim)
+void string::readdelim(std::istream &is, char const *delim)
 {
   stringBuilder sb;
   sb.readdelim(is, delim);
@@ -147,7 +147,7 @@ void string::readdelim(istream &is, char const *delim)
 }
 
 
-void string::write(ostream &os) const
+void string::write(std::ostream &os) const
 {
   os << s;     // standard char* writing routine
 }
@@ -183,7 +183,7 @@ int atoi(rostring s)
 
 string substring(char const *p, int n)
 {
-  return string(p, n, SMBASE_STRING_FUNC);
+  return string(p, n);
 }
 
 
@@ -233,7 +233,7 @@ stringBuilder& stringBuilder::operator=(char const *src)
   if (s != src) {
     int srclen = strlen(src)+1;
     if (srclen > size) { // need to re-allocate?
-      delete[] s;
+      delete s;
       s = new char[ srclen ];
     }
     xassert(s);
@@ -313,7 +313,7 @@ void stringBuilder::grow(int newMinLength)
   int suggest = size * 3 / 2;
 
   // see which is bigger
-  newMinSize = max(newMinSize, suggest);
+  newMinSize = std::max(newMinSize, suggest);
 
   // remember old length..
   int len = length();
@@ -383,7 +383,7 @@ stringBuilder& stringBuilder::operator<< (Manipulator manip)
 
 
 // slow but reliable
-void stringBuilder::readdelim(istream &is, char const *delim)
+void stringBuilder::readdelim(std::istream &is, char const *delim)
 {
   char c;
   is.get(c);
@@ -479,13 +479,13 @@ string vstringf(char const *format, va_list args)
 // ------------------ test code --------------------
 #ifdef TEST_STR
 
-#include <iostream.h>    // cout
+#include <iostream>      // cout
 
 void test(unsigned long val)
 {
-  //cout << stringb(val << " in hex: 0x" << stringBuilder::Hex(val)) << endl;
+  //std::cout << stringb(val << " in hex: 0x" << stringBuilder::Hex(val)) << std::endl;
 
-  cout << stringb(val << " in hex: " << SBHex(val)) << endl;
+  std::cout << stringb(val << " in hex: " << SBHex(val)) << std::endl;
 }
 
 int main()
@@ -497,10 +497,10 @@ int main()
   test((unsigned long)(-1));
   test(1);
 
-  cout << "stringf: " << stringf("int=%d hex=%X str=%s char=%c float=%f",
-                                 5, 0xAA, "hi", 'f', 3.4) << endl;
+  std::cout << "stringf: " << stringf("int=%d hex=%X str=%s char=%c float=%f",
+                                      5, 0xAA, "hi", 'f', 3.4) << std::endl;
 
-  cout << "tests passed\n";
+  std::cout << "tests passed\n";
 
   return 0;
 }

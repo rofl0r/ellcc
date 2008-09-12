@@ -38,7 +38,7 @@ public:      // data
     long si;                 // K_SIGNED
     unsigned long ui;        // K_UNSIGNED
     float f;                 // K_FLOAT
-    string *why;             // K_ERROR
+    sm::string *why;             // K_ERROR
   };
 
 private:
@@ -72,7 +72,7 @@ public:      // funcs
   long getSignedValue() const    { xassert(isSigned()); return si; }
   long getUnsignedValue() const  { xassert(isUnsigned()); return ui; }
   float getFloatValue() const    { xassert(isFloat()); return f; }
-  string *getWhy() const         { xassert(isError()); return why; }
+  sm::string *getWhy() const         { xassert(isError()); return why; }
 
   bool isZero() const;
   bool isIntegral() const;
@@ -106,7 +106,7 @@ public:      // funcs
   void addOffset(int offset);
 
   // debugging
-  string asString() const;
+  sm::string asString() const;
 };
 
 

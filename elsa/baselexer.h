@@ -12,15 +12,16 @@
 
 #include "sm_flexlexer.h"   // yyFlexLexer
 
-#include <iostream.h>       // istream
+#include <iostream>         // istream
 #include "lexerint.h"       // LexerInterface
 #include "strtable.h"       // StringRef, StringTable
-
+#include "cppundolog.h"
+#include "exprloc.h"
 
 // lexer object
 class BaseLexer : public yyFlexLexer, public LexerInterface {
 protected:  // data
-  istream *inputStream;            // (owner) file from which we're reading
+  std::istream *inputStream;       // (owner) file from which we're reading
   SourceLocManager::File *srcFile; // (serf) contains the hash map we update
 
   SourceLoc nextLoc;               // location of *next* token
@@ -39,6 +40,7 @@ protected:  // funcs
   void updLoc() {
     loc = nextLoc;                 // location of *this* token
     nextLoc = advText(nextLoc, yytext, yyleng);
+    ENDLOC1(endloc = nextLoc;)
   }
 
   // adds a string with only the specified # of chars; writes (but
@@ -59,8 +61,8 @@ protected:  // funcs
   void warning(char const *msg);
 
   // part of the constructor
-  istream *openFile(char const *fname);
-  istream *openString(char const *buf, int len);
+  std::istream *openFile(char const *fname);
+  std::istream *openString(char const *buf, int len);
 
   // read the next token and return its code; returns 0 for end of file;
   // this function is defined in flex's output source code

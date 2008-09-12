@@ -49,37 +49,6 @@ inline int comparePointerAddresses(void const *p, void const *q)
                             +1 ;
 }
 
-
-// min, max
-#undef min
-#undef max
-       
-template <class T>
-inline T min(T const &a, T const &b)
-{
-  return a<b? a:b;
-}
-
-template <class T>
-inline T max(T const &a, T const &b)
-{
-  return a>b? a:b;
-}
-
-
-#if 0   // old
-  #ifndef __MINMAX_DEFINED
-  # ifndef min
-  #  define min(a,b) ((a)<(b)?(a):(b))
-  # endif
-  # ifndef max
-  #  define max(a,b) ((a)>(b)?(a):(b))
-  # endif
-  # define __MINMAX_DEFINED
-  #endif // __MINMAX_DEFINED
-#endif // 0
-
-
 // tag for definitions of static member functions; there is no
 // compiler in existence for which this is useful, but I like
 // to see *something* next to implementations of static members

@@ -75,7 +75,7 @@ class TopForm (SourceLoc loc) {
   custom traverse { if (ambiguity) ambiguity->traverse(vis); }
 
   // print ambiguities
-  public void printAmbiguities(ostream &os, int indent) const;
+  public void printAmbiguities(std::ostream &os, int indent) const;
   custom preemptDebugPrint {
     if (ambiguity) {
       printAmbiguities(os, indent);
@@ -137,6 +137,8 @@ class Function (
 }
 
 class MemberInit (
+  SourceLoc loc, 
+  SourceLoc endloc,
   PQName name,                    // name of member or base class
   FakeList<ArgExpression> *args   // arguments to its constructor
 ) {
@@ -172,7 +174,7 @@ class ASTTypeId (
   custom traverse { if (ambiguity) ambiguity->traverse(vis); }
 
   // print ambiguities
-  public void printAmbiguities(ostream &os, int indent) const;
+  public void printAmbiguities(std::ostream &os, int indent) const;
   custom preemptDebugPrint {
     if (ambiguity) {
       printAmbiguities(os, indent);
@@ -189,18 +191,18 @@ class ASTTypeId (
 class PQName(SourceLoc loc) {
   public bool hasQualifiers() const { return isPQ_qualifier(); };
 
-  public string qualifierString() const;
-  public string toString() const;
-  public string toString_noTemplArgs() const;
+  public sm::string qualifierString() const;
+  public sm::string toString() const;
+  public sm::string toString_noTemplArgs() const;
   public friend stringBuilder& operator<< (stringBuilder &sb, PQName const &obj);
-  public friend ostream& operator<< (ostream &os, PQName const &obj) { return os << obj.toString(); };
+  public friend std::ostream& operator<< (std::ostream &os, PQName const &obj) { return os << obj.toString(); };
 
   // retrieve a StringRef for the underlying name, be it a PQ_name or
   // a PQ_operator
   pure_virtual StringRef getName() const;
 
   // just this component; as if last in chain
-  pure_virtual string toComponentString() const;
+  pure_virtual sm::string toComponentString() const;
 
   // get the PQName at the bottom of any qualifiers
   public PQName const *getUnqualifiedNameC() const;
@@ -233,7 +235,7 @@ class PQName(SourceLoc loc) {
        custom traverse { if (ambiguity) ambiguity->traverse(vis); }
 
        // print ambiguities
-       public void printAmbiguities(ostream &os, int indent) const;
+       public void printAmbiguities(std::ostream &os, int indent) const;
        custom preemptDebugPrint {
          if (ambiguity) {
            printAmbiguities(os, indent);
@@ -248,7 +250,7 @@ class PQName(SourceLoc loc) {
   -> PQ_name(StringRef name);
 
   // "operator" names; 'o' has the full info, while 'fakeName' is
-  // for getName(), which is sometimes used for string maps
+  // for getName(), which is sometimes used for sm::string maps
   -> PQ_operator(OperatorName o, StringRef fakeName);
 
   // template instances: a template function or class name, plus
@@ -266,7 +268,7 @@ class TypeSpecifier(SourceLoc loc) {
   public(field,xml) CVFlags cv = CV_UNLOCKED;
   custom clone { ret->cv = cv; }
 
-  public void printExtras(ostream &os, int indent) const;
+  public void printExtras(std::ostream &os, int indent) const;
   custom debugPrint { printExtras(os, indent); }
 
   public bool canBeTypeParam() const;
@@ -335,7 +337,7 @@ class Enumerator (
 class MemberList (ASTList<Member> list);
 
 // member of a class
-class Member (SourceLoc loc) {
+class Member (SourceLoc loc, SourceLoc endloc) {
   -> MR_decl(Declaration d);            // data members or functions w/o bodies
   -> MR_func(Function f);               // function with body
   -> MR_access(AccessKeyword k);        // section header
@@ -362,7 +364,7 @@ class Declarator (
   custom traverse { if (ambiguity) ambiguity->traverse(vis); }
 
   // print ambiguities
-  public void printAmbiguities(ostream &os, int indent) const;
+  public void printAmbiguities(std::ostream &os, int indent) const;
   custom preemptDebugPrint {
     if (ambiguity) {
       printAmbiguities(os, indent);
@@ -465,14 +467,14 @@ class OperatorName {
 
 
 // ------------------- statements -----------------
-class Statement (SourceLoc loc) {
+class Statement (SourceLoc loc, SourceLoc endloc) {
   // represent ambiguous statements by forming a linked list of alternatives
   public Statement * ambiguity = NULL;
   public void addAmbiguity(Statement *alt);
   custom traverse { if (ambiguity) ambiguity->traverse(vis); }
 
   // print ambiguities
-  public void printAmbiguities(ostream &os, int indent) const;
+  public void printAmbiguities(std::ostream &os, int indent) const;
   custom preemptDebugPrint {
     if (ambiguity) {
       printAmbiguities(os, indent);
@@ -480,8 +482,8 @@ class Statement (SourceLoc loc) {
     }
   }
 
-  public string lineColString() const;      // e.g. "4:5"
-  public string kindLocString() const;      // e.g. "S_if@4:5"
+  public sm::string lineColString() const;      // e.g. "4:5"
+  public sm::string kindLocString() const;      // e.g. "S_if@4:5"
 
   -> S_skip();      // no-op; used whenever optional Statement is not present
   -> S_label(StringRef name, Statement s);
@@ -515,7 +517,7 @@ class Condition {
   custom traverse { if (ambiguity) ambiguity->traverse(vis); }
 
   // print ambiguities
-  public void printAmbiguities(ostream &os, int indent) const;
+  public void printAmbiguities(std::ostream &os, int indent) const;
   custom preemptDebugPrint {
     if (ambiguity) {
       printAmbiguities(os, indent);
@@ -549,7 +551,7 @@ class Handler (
 
 // ----------------- expressions -----------------
 // C expressions
-class Expression (SourceLoc loc) {
+class Expression(SourceLoc loc, SourceLoc endloc)  {
   // NOTE: we never make lists of Expressions, only of ArgExpressions
 
   // same as we do for statements
@@ -563,7 +565,7 @@ class Expression (SourceLoc loc) {
   }
 
   // print ambiguities
-  public void printAmbiguities(ostream &os, int indent) const;
+  public void printAmbiguities(std::ostream &os, int indent) const;
   custom preemptDebugPrint {
     if (ambiguity) {
       printAmbiguities(os, indent);
@@ -584,7 +586,7 @@ class Expression (SourceLoc loc) {
   // most of the literals are handled by simply storing the textual
   // representation the user typed in, including delimiters like
   // quotes; the tcheck pass could interpret those if desired (and
-  // does in some cases); concatenation of string literals is handled
+  // does in some cases); concatenation of sm::string literals is handled
   // by making a continuation list
   -> E_intLit(StringRef text);
   -> E_floatLit(StringRef text);
@@ -688,7 +690,7 @@ class ArgExpression(Expression expr) {   // expression in an argument list
   // are independent
   public ArgExpression *ambiguity = NULL;
   public void addAmbiguity(ArgExpression *alternative);
-  public void printAmbiguities(ostream &os, int indent) const;
+  public void printAmbiguities(std::ostream &os, int indent) const;
   custom traverse { if (ambiguity) ambiguity->traverse(vis); }
   custom preemptDebugPrint {
     if (ambiguity) {
@@ -751,7 +753,7 @@ class TemplateParameter (SourceLoc loc)(TemplateParameter /*nullable*/ next) {
   custom traverse { if (ambiguity) ambiguity->traverse(vis); }
 
   // print ambiguities
-  public void printAmbiguities(ostream &os, int indent) const;
+  public void printAmbiguities(std::ostream &os, int indent) const;
   custom preemptDebugPrint {
     if (ambiguity) {
       printAmbiguities(os, indent);
@@ -800,7 +802,7 @@ class TemplateArgument(/*first*/)(/*last*/ TemplateArgument next) {
   custom traverse { if (ambiguity) ambiguity->traverse(vis); }
 
   // print ambiguities
-  public void printAmbiguities(ostream &os, int indent) const;
+  public void printAmbiguities(std::ostream &os, int indent) const;
   custom preemptDebugPrint {
     if (ambiguity) {
       printAmbiguities(os, indent);
@@ -808,9 +810,9 @@ class TemplateArgument(/*first*/)(/*last*/ TemplateArgument next) {
     }
   }
 
-  // return a canonical string for this template argument,
+  // return a canonical sm::string for this template argument,
   // such that different arguments get different strings
-  pure_virtual string argString() const;
+  pure_virtual sm::string argString() const;
 
   // type argument, corresponds to a TP_type parameter
   -> TA_type(ASTTypeId type);

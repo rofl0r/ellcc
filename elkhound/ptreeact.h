@@ -27,8 +27,8 @@ public:
   virtual NextTokenFunc getTokenFunc() const
     { return &ParseTreeLexer::nextToken; }
 
-  virtual string tokenDesc() const;
-  virtual string tokenKindDesc(int kind) const;
+  virtual sm::string tokenDesc() const;
+  virtual sm::string tokenKindDesc(int kind) const;
 };
 
 
@@ -47,7 +47,9 @@ public:
     UserActions *context,
     int productionId,
     SemanticValue const *svals
-    SOURCELOCARG( SourceLoc loc ) );
+    SOURCELOCARG( SourceLoc loc )
+    ENDSOURCELOCARG( SourceLoc )  );
+
   virtual ReductionActionFunc getReductionAction()
     { return &ParseTreeActions::reduce; }
 

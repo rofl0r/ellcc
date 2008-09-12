@@ -7,6 +7,7 @@
 
 #include <string.h>      // memset
 
+using namespace sm;
 
 static void setWarning(Bool3 &b, bool enable)
 {

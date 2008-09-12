@@ -83,9 +83,9 @@ class IdSObjDict {
 public:
   IdSObjDict() : objectsById(64) {}
   void *queryif(char const *id);
-  void *queryif(string const &id) { return queryif(id.c_str()); }
+  void *queryif(sm::string const &id) { return queryif(id.c_str()); }
   void add(char const *id, void *obj);
-  void add(string const &id, void *obj) { add(id.c_str(), obj); }
+  void add(sm::string const &id, void *obj) { add(id.c_str(), obj); }
   bool isMapped(char const *id) { return queryif(id) != NULL; }
 
 protected:

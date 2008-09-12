@@ -16,12 +16,14 @@ char const *toString(TokenType type);
 TokenFlag tokenFlags(TokenType type);
 
 
+
 // lexer object
 class Lexer : public BaseLexer {
 private:    // data
   bool prevIsNonsep;               // true if last-yielded token was nonseparating
   StringRef prevHashLineFile;      // previously-seen #line directive filename
 
+  MacroUndoEntry *currentMacro;
 public:     // data
   CCLang &lang;                    // language options
 
@@ -57,6 +59,21 @@ protected:  // funcs
   // report an error in a preprocessing task
   void pp_err(char const *msg);
 
+  // Parse macro-undo start comment
+  void macroUndoStart(char *comment, int len);
+  
+  // Register a macro definition
+  void addMacroDefinition(char *macro, int len, MacroDefinition **m = NULL);
+
+  // Parse macro parameter definition
+  void macroParamDefinition(char *macro, int len);
+
+  // Parse macro definition
+  void macroDefinition(char *macro, int len);
+
+  // Process macro finish
+  void macroUndoStop();
+
   FLEX_OUTPUT_METHOD_DECLS
 
 public:     // funcs
@@ -71,9 +88,9 @@ public:     // funcs
 
   // LexerInterface funcs
   virtual NextTokenFunc getTokenFunc() const;
-  virtual string tokenDesc() const;
-  virtual string tokenKindDesc(int kind) const;
-  string tokenKindDescV(int kind) const;
+  virtual sm::string tokenDesc() const;
+  virtual sm::string tokenKindDesc(int kind) const;
+  sm::string tokenKindDescV(int kind) const;
 };
 
 

@@ -5,13 +5,13 @@
 #include "strtable.h"    // StringTable
 #include "exc.h"         // throw_XOpen
 
-#include <fstream.h>     // ifstream
+#include <fstream>       // ifstream
+
+using namespace std;
 
 #if defined(__GNUC__) && (__GNUC__ > 2)
   // gcc-3 doesn't have istrstream (but it is standard!), so fake it
   #include <sstream>       // istringstream
-
-  #undef string            // in case the string->mystring definition is active
 
   inline istream *construct_istrstream(char const *buf, int len)
   {

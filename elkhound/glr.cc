@@ -119,13 +119,15 @@
 #include <stdio.h>       // FILE
 #include <stdlib.h>      // getenv
 
+using namespace sm;
+
 // ACTION(..) is code to execute for action trace diagnostics, i.e. "-tr action"
 #ifndef ACTION_TRACE
   #define ACTION_TRACE 0
 #endif
 #if ACTION_TRACE
   #define ACTION(stmt) stmt
-  #define TRSACTION(stuff) if (tracingSys("action")) { cout << stuff << endl; }
+  #define TRSACTION(stuff) if (tracingSys("action")) { std::cout << stuff << std::endl; }
 #else
   #define ACTION(stmt)
   #define TRSACTION(stuff)
@@ -134,7 +136,7 @@
 // TRSPARSE(stuff) traces <stuff> during debugging with -tr parse
 #if !defined(NDEBUG)
   #define IF_NDEBUG(stuff)
-  #define TRSPARSE(stuff) if (trParse) { trsParse << stuff << endl; }
+  #define TRSPARSE(stuff) if (trParse) { trsParse << stuff << std::endl; }
   #define TRSPARSE_DECL(stuff) stuff
 #else
   #define IF_NDEBUG(stuff) stuff
@@ -281,9 +283,11 @@ void GLR::deallocateSemanticValue(SymbolId sym, SemanticValue sval)
 
 // ------------------ SiblingLink ------------------
 inline SiblingLink::SiblingLink(StackNode *s, SemanticValue sv
-                                SOURCELOCARG( SourceLoc L ) )
+                                SOURCELOCARG( SourceLoc L )
+                                ENDSOURCELOCARG( SourceLoc R ) )
   : sib(s), sval(sv)
     SOURCELOCARG( loc(L) )
+    ENDSOURCELOCARG( endloc(R) )
 {
   YIELD_COUNT( yieldCount = 0; )
 }
@@ -300,7 +304,7 @@ int StackNode::maxStackNodesAllocd=0;
 StackNode::StackNode()
   : state(STATE_INVALID),
     leftSiblings(),
-    firstSib(NULL, NULL_SVAL  SOURCELOCARG( SL_UNKNOWN ) ),
+    firstSib(NULL, NULL_SVAL  SOURCELOCARG( SL_UNKNOWN ) ENDSOURCELOCARG( SL_UNKNOWN ) ),
     referenceCount(0),
     determinDepth(0),
     glr(NULL)
@@ -383,7 +387,8 @@ void StackNode::deallocSemanticValues()
 // add the very first sibling
 inline void StackNode
   ::addFirstSiblingLink_noRefCt(StackNode *leftSib, SemanticValue sval
-                                SOURCELOCARG( SourceLoc loc ) )
+                                SOURCELOCARG( SourceLoc loc )
+				ENDSOURCELOCARG( SourceLoc endloc ))
 {
   xassertdb(hasZeroSiblings());
 
@@ -400,6 +405,7 @@ inline void StackNode
 
   // initialize some other fields
   SOURCELOC( firstSib.loc = loc; )
+  ENDSOURCELOC (firstSib.endloc = endloc; )
   YIELD_COUNT( firstSib.yieldCount = 0; )
 }
 
@@ -407,10 +413,12 @@ inline void StackNode
 // add a new sibling by creating a new link
 inline SiblingLink *StackNode::
   addSiblingLink(StackNode *leftSib, SemanticValue sval
-                 SOURCELOCARG( SourceLoc loc ) )
+                 SOURCELOCARG( SourceLoc loc ) 
+		 ENDSOURCELOCARG( SourceLoc endloc ))
 {
   if (hasZeroSiblings()) {
-    addFirstSiblingLink_noRefCt(leftSib, sval  SOURCELOCARG( loc ) );
+    addFirstSiblingLink_noRefCt(leftSib, sval  SOURCELOCARG( loc )
+				ENDSOURCELOCARG( endloc ));
 
     // manually increment leftSib's refct
     leftSib->incRefCt();
@@ -424,7 +432,8 @@ inline SiblingLink *StackNode::
     // as best I can tell, x86 static branch prediction is simply
     // "conditional forward branches are assumed not taken", hence
     // the uncommon case belongs in the 'else' branch
-    return addAdditionalSiblingLink(leftSib, sval  SOURCELOCARG( loc ) );
+    return addAdditionalSiblingLink(leftSib, sval  SOURCELOCARG( loc )
+				    ENDSOURCELOCARG( endloc ));  
   }
 }
 
@@ -434,14 +443,16 @@ inline SiblingLink *StackNode::
 // the code in this function is much less common
 SiblingLink *StackNode::
   addAdditionalSiblingLink(StackNode *leftSib, SemanticValue sval
-                           SOURCELOCARG( SourceLoc loc ) )
+                           SOURCELOCARG( SourceLoc loc )
+			   ENDSOURCELOCARG( SourceLoc endloc ))
 {
   // there's currently at least one sibling, and now we're adding another;
   // right now, no other stack node should point at this one (if it does,
   // most likely will catch that when we use the stale info)
   determinDepth = 0;
 
-  SiblingLink *link = new SiblingLink(leftSib, sval  SOURCELOCARG( loc ) );
+  SiblingLink *link = new SiblingLink(leftSib, sval  SOURCELOCARG( loc )
+				      ENDSOURCELOCARG (endloc) );
   leftSiblings.prepend(link);   // dsw: don't append; it becomes quadratic!
   return link;
 }
@@ -489,9 +500,9 @@ SiblingLink *StackNode::getLinkTo(StackNode *another)
 
 STATICDEF void StackNode::printAllocStats()
 {
-  cout << "stack nodes: " << numStackNodesAllocd
-       << ", max stack nodes: " << maxStackNodesAllocd
-       << endl;
+  std::cout << "stack nodes: " << numStackNodesAllocd
+            << ", max stack nodes: " << maxStackNodesAllocd
+            << std::endl;
 }
 
 
@@ -834,11 +845,11 @@ bool GLR::glrParse(LexerInterface &lexer, SemanticValue &treeTop)
   if (getenv("ELKHOUND_DEBUG")) {
     #if DO_ACCOUNTING
       StackNode::printAllocStats();
-      cout << "detShift=" << detShift
-           << ", detReduce=" << detReduce
-           << ", nondetShift=" << nondetShift
-           << ", nondetReduce=" << nondetReduce
-           << endl;
+      std::cout << "detShift=" << detShift
+                << ", detReduce=" << detReduce
+                << ", nondetShift=" << nondetShift
+                << ", nondetReduce=" << nondetReduce
+                << std::endl;
       //PVAL(parserMerges);
       PVAL(computeDepthIters);
       
@@ -928,7 +939,7 @@ STATICDEF bool GLR
 
     // some debugging streams so the TRSPARSE etc. macros work
     bool trParse       = glr.trParse;
-    ostream &trsParse  = glr.trsParse;
+    std::ostream &trsParse  = glr.trsParse;
   #endif
   for (;;) {
     // debugging
@@ -1021,7 +1032,7 @@ STATICDEF bool GLR
           // (used for epsilon rules)
           // update: use location of lookahead token instead, for epsilons
           SOURCELOC( SourceLoc leftEdge = lexer.loc; )
-
+	  ENDSOURCELOC ( SourceLoc rightEdge = /*lexer.endloc*/SL_UNKNOWN; )
           //toPass.ensureIndexDoubler(rhsLen-1);
           xassertdb(rhsLen <= MAX_RHSLEN);
 
@@ -1056,6 +1067,13 @@ STATICDEF bool GLR
                     leftEdge = sib.loc;
                   }
                 )
+		// not quite correct cos validLoc only checks leftedge
+                ENDSOURCELOC(
+                  if (rightEdge == SL_UNKNOWN && sib.validLoc()) {
+                    rightEdge = sib.endloc;
+                  }
+                )
+
                 parser->nextInFreeList = prev;
                 prev = parser;
                 parser = sib.sib;
@@ -1109,6 +1127,12 @@ STATICDEF bool GLR
                 leftEdge = sib.loc;
               }
             )
+	    // not quite correct cos validLoc only checks leftedge
+	    ENDSOURCELOC(
+	      if (rightEdge == SL_UNKNOWN && sib.validLoc()) {
+                rightEdge = sib.endloc;
+              }
+            )
 
             // pop 'parser' and move to the next one
             parser->nextInFreeList = prev;
@@ -1139,7 +1163,7 @@ STATICDEF bool GLR
               // update: now I don't even set it to NULL because the code here
               // has been changed to ignore *any* value
               //if (prev->firstSib.sval != NULL) {
-              //  cout << "I GOT THE ANALYSIS WRONG!\n";
+              //  std::cout << "I GOT THE ANALYSIS WRONG!\n";
               //}
 
               // cancelled(1) effect: parser->decRefCt();
@@ -1168,10 +1192,15 @@ STATICDEF bool GLR
           stackNodePool.private_setHead(prev);
 
           // call the user's action function (TREEBUILD)
-          SemanticValue sval =
+	  ENDSOURCELOC (
+	  if (rightEdge == SL_UNKNOWN) {
+	    rightEdge = lexer.endloc;
+	  }
+	  )
+	  SemanticValue sval =
           #if USE_ACTIONS
             reductionAction(userAct, prodIndex, toPass /*.getArray()*/
-                            SOURCELOCARG( leftEdge ) );
+                            SOURCELOCARG( leftEdge ) ENDSOURCELOCARG (rightEdge));
           #else
             NULL;
           #endif
@@ -1201,7 +1230,8 @@ STATICDEF bool GLR
           MAKE_STACK_NODE(newNode, newState, &glr, stackNodePool)
 
           newNode->addFirstSiblingLink_noRefCt(
-            parser, sval  SOURCELOCARG( leftEdge ) );
+					       parser, sval  SOURCELOCARG( leftEdge )
+					       ENDSOURCELOCARG( rightEdge ) );
           // cancelled(3) effect: parser->incRefCt();
 
           // cancelled(3) effect: xassertdb(parser->referenceCount==2);
@@ -1264,7 +1294,8 @@ STATICDEF bool GLR
         MAKE_STACK_NODE(rightSibling, newState, &glr, stackNodePool);
 
         rightSibling->addFirstSiblingLink_noRefCt(
-          parser, lexer.sval  SOURCELOCARG( lexer.loc ) );
+          parser, lexer.sval  SOURCELOCARG( lexer.loc ) 
+	  ENDSOURCELOCARG (lexer.endloc) );
         // cancelled(2) effect: parser->incRefCt();
 
         // replace 'parser' with 'rightSibling' in the topmostParsers list
@@ -1342,7 +1373,7 @@ string stackTraceString(StackNode *parser)
 // far as I can tell!)
 bool GLR::nondeterministicParseToken()
 {
-  //cout << "not deterministic\n";
+  //std::cout << "not deterministic\n";
 
   // ([GLR] called the code from here to the end of
   // the loop 'parseword')
@@ -1397,35 +1428,35 @@ void GLR::printParseErrorMessage(StateId lastToDie)
   // nondeterministic algorithm there might have been more than one
   // state that could have made progress..
   if (lastToDie != STATE_INVALID) {
-    cout << "In state " << lastToDie << ", I expected one of these tokens:\n";
-    cout << "  ";
+    std::cout << "In state " << lastToDie << ", I expected one of these tokens:\n";
+    std::cout << "  ";
     for (int i=0; i < tables->getNumTerms(); i++) {
       ActionEntry act = tables->getActionEntry(lastToDie, i);
       if (!tables->isErrorAction(act)) {
-        //cout << "  [" << i << "] " << lexerPtr->tokenKindDesc(i) << "\n";
-        cout << lexerPtr->tokenKindDesc(i) << ", ";
+        //std::cout << "  [" << i << "] " << lexerPtr->tokenKindDesc(i) << "\n";
+        std::cout << lexerPtr->tokenKindDesc(i) << ", ";
       }
     }
-    cout << "\n";
+    std::cout << "\n";
   }
   else {                                                                          
     // this happens because I lose the dead-parser info while processing
     // the reduction worklist; to implement this I'd need to remember each
     // state that died while processing the worklist; for now I'll just let
     // it be, and only have the right info sometimes
-    cout << "(expected-token info not available due to nondeterministic mode)\n";
+    std::cout << "(expected-token info not available due to nondeterministic mode)\n";
   }
 
   // failure caused by unprimed lexer?
   if (lexerPtr->type == 0 && 
       lexerPtr->sval == (SemanticValue)LexerInterface::DEFAULT_UNPRIMED_SVAL) {
-    cout << "It looks like you forgot to prime the lexer before calling the parser.\n";
+    std::cout << "It looks like you forgot to prime the lexer before calling the parser.\n";
   }
 
-  cout << toString(lexerPtr->loc)
-       << ": Parse error (state " << lastToDie << ") at "
-       << lexerPtr->tokenDesc()
-       << endl;
+  std::cout << toString(lexerPtr->loc)
+            << ": Parse error (state " << lastToDie << ") at "
+            << lexerPtr->tokenDesc()
+            << std::endl;
 
   // removing this for now since keeping it would mean putting
   // sample inputs and left contexts for all states into the
@@ -1433,15 +1464,15 @@ void GLR::printParseErrorMessage(StateId lastToDie)
   #if 0
   if (lastToDie == STATE_INVALID) {
     // I'm not entirely confident it has to be nonnull..
-    cout << "what the?  lastToDie is STATE_INVALID??\n";
+    std::cout << "what the?  lastToDie is STATE_INVALID??\n";
   }
   else {
     // print out the context of that parser
-    cout << "last parser (state " << lastToDie << ") to die had:\n"
-         << "  sample input: "
-         << sampleInput(getItemSet(lastToDie)) << "\n"
-         << "  left context: "
-         << leftContextString(getItemSet(lastToDie)) << "\n";
+    std::cout << "last parser (state " << lastToDie << ") to die had:\n"
+              << "  sample input: "
+              << sampleInput(getItemSet(lastToDie)) << "\n"
+              << "  left context: "
+              << leftContextString(getItemSet(lastToDie)) << "\n";
   }
   #endif // 0
 }
@@ -1449,11 +1480,13 @@ void GLR::printParseErrorMessage(StateId lastToDie)
 
 SemanticValue GLR::doReductionAction(
   int productionId, SemanticValue const *svals
-  SOURCELOCARG( SourceLoc loc ) )
+  SOURCELOCARG( SourceLoc loc )
+  ENDSOURCELOCARG( SourceLoc endloc ) )
 {
   // get the function pointer and invoke it; possible optimization
   // is to cache the function pointer in the GLR object
-  return (userAct->getReductionAction())(userAct, productionId, svals  SOURCELOCARG(loc));
+  return (userAct->getReductionAction())(userAct, productionId, svals  SOURCELOCARG(loc)
+					 ENDSOURCELOCARG(endloc));
 }
 
 
@@ -1465,7 +1498,7 @@ bool GLR::cleanupAfterParse(SemanticValue &treeTop)
 
   // finish the parse by reducing to start symbol
   if (topmostParsers.length() != 1) {
-    cout << "parsing finished with more than one active parser!\n";
+    std::cout << "parsing finished with more than one active parser!\n";
     return false;
   }
   StackNode *last = topmostParsers.top();
@@ -1486,7 +1519,8 @@ bool GLR::cleanupAfterParse(SemanticValue &treeTop)
               //getItemSet(last->state)->getFirstReduction()->prodIndex,
               tables->finalProductionIndex,
               arr
-              SOURCELOCARG( last->getUniqueLinkC()->loc ) );
+              SOURCELOCARG( last->getUniqueLinkC()->loc ) 
+	      ENDSOURCELOCARG( SL_UNKNOWN ) );
 
   // why do this song-and-dance here, instead of letting the normal
   // parser engine do the final reduction?  because the GLR algorithm
@@ -1831,7 +1865,7 @@ void GLR::rwlProcessWorklist()
 {
   // location of this token
   SOURCELOC( SourceLoc tokenLoc = lexerPtr->loc; )
-
+  
   while (pathQueue.isNotEmpty()) {
     // process the enabled reductions in priority order
     ReductionPathQueue::Path *path = pathQueue.dequeue();
@@ -1850,6 +1884,7 @@ void GLR::rwlProcessWorklist()
     // record location of left edge; initially is location of
     // the lookahead token
     SOURCELOC( SourceLoc leftEdge = tokenLoc; )
+    SOURCELOC( SourceLoc rightEdge = SL_UNKNOWN; )
 
     // build description of rhs for tracing
     ACTION(
@@ -1884,6 +1919,11 @@ void GLR::rwlProcessWorklist()
           leftEdge = sib->loc;
         }
       )
+      ENDSOURCELOC(
+        if (rightEdge == SL_UNKNOWN && sib->endloc != SL_UNKNOWN) {     
+          rightEdge = sib->endloc;
+        }
+      )
 
       // we inform the user, and the user responds with a value
       // to be kept in this sibling link *instead* of the passed
@@ -1899,7 +1939,8 @@ void GLR::rwlProcessWorklist()
     // (TREEBUILD)
     SemanticValue sval =
       doReductionAction(path->prodIndex, toPass.getArray()
-                        SOURCELOCARG( leftEdge ) );
+                        SOURCELOCARG( leftEdge )
+			ENDSOURCELOCARG( rightEdge ) );
 
     // emit tracing diagnostics for this reduction
     ACTION( string lhsDesc =
@@ -1915,7 +1956,8 @@ void GLR::rwlProcessWorklist()
       // shift the nonterminal with its reduced semantic value
       SiblingLink *newLink =
         rwlShiftNonterminal(path->leftEdgeNode, prodInfo.lhsIndex,
-                            sval  SOURCELOCARG( leftEdge ) );
+                            sval  SOURCELOCARG( leftEdge )
+			    ENDSOURCELOCARG( rightEdge ));
 
       if (newLink) {
         // for each 'finished' parser ...
@@ -1947,7 +1989,8 @@ void GLR::rwlProcessWorklist()
 //   - we merge two semantic values onto an existing link
 SiblingLink *GLR::rwlShiftNonterminal(StackNode *leftSibling, int lhsIndex,
                                       SemanticValue /*owner*/ sval
-                                      SOURCELOCARG( SourceLoc loc ) )
+                                      SOURCELOCARG( SourceLoc loc )
+				      ENDSOURCELOCARG( SourceLoc endloc))
 {
   // this is like a shift -- we need to know where to go; the
   // 'goto' table has this information
@@ -2008,18 +2051,18 @@ SiblingLink *GLR::rwlShiftNonterminal(StackNode *leftSibling, int lhsIndex,
         if (sibLink->yieldCount > 0) {
           // yield-then-merge (YTM) happened
           yieldThenMergeCt++;
-          SOURCELOC( trace("ytm") << "at " << toString(loc) << endl; )
+          SOURCELOC( trace("ytm") << "at " << toString(loc) << std::endl; )
 
           // if merging yielded a new semantic value, then we most likely
           // have a problem; if it yielded the *same* value, then most
           // likely the user has implemented the 'ambiguity' link soln,
           // so we're ok
           if (old2 != sibLink->sval) {
-            cout << "warning: incomplete parse forest: " << (void*)old2
-                 << " has already been yielded, but it now has been "
-                 << "merged with " << (void*)sval << " to make "
-                 << (void*)(sibLink->sval) << " (lhsIndex="
-                 << lhsIndex << ")" << endl;
+            std::cout << "warning: incomplete parse forest: " << (void*)old2
+                      << " has already been yielded, but it now has been "
+                      << "merged with " << (void*)sval << " to make "
+                      << (void*)(sibLink->sval) << " (lhsIndex="
+                      << lhsIndex << ")" << std::endl;
           }
         }
       )
@@ -2033,7 +2076,8 @@ SiblingLink *GLR::rwlShiftNonterminal(StackNode *leftSibling, int lhsIndex,
 
     // we get here if there is no suitable sibling link already
     // existing; so add the link (and keep the ptr for loop below)
-    sibLink = rightSibling->addSiblingLink(leftSibling, sval  SOURCELOCARG( loc ) );
+    sibLink = rightSibling->addSiblingLink(leftSibling, sval  SOURCELOCARG( loc )
+					   ENDSOURCELOCARG(endloc) );
 
     // adding a new sibling link may have introduced additional
     // opportunties to do reductions from parsers we thought
@@ -2090,7 +2134,8 @@ SiblingLink *GLR::rwlShiftNonterminal(StackNode *leftSibling, int lhsIndex,
     rightSibling = makeStackNode(rightSiblingState);
 
     // add the sibling link (and keep ptr for tree stuff)
-    rightSibling->addSiblingLink(leftSibling, sval  SOURCELOCARG( loc ) );
+    rightSibling->addSiblingLink(leftSibling, sval  SOURCELOCARG( loc )
+				 ENDSOURCELOCARG( endloc ) );
 
     // since this is a new parser top, it needs to become a
     // member of the frontier
@@ -2323,7 +2368,8 @@ void GLR::rwlShiftTerminals()
     // either way, add the sibling link now
     //TRSACTION("grabbed token sval " << lexerPtr->sval);
     prev = rightSibling->addSiblingLink(leftSibling, sval
-                                        SOURCELOCARG( lexerPtr->loc ) );
+                                        SOURCELOCARG( lexerPtr->loc ) 
+					ENDSOURCELOCARG( lexerPtr->endloc ));
 
     // adding this sibling link cannot violate the determinDepth
     // invariant of some other node, because all of the nodes created

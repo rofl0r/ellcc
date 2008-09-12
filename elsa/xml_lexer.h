@@ -4,8 +4,7 @@
 #define XML_LEXER_H
 
 #include <stdio.h>
-#include "fstream.h"            // ifstream
-
+#include "fstream"              // ifstream
 #include "str.h"                // string
 #include "sm_flexlexer.h"       // yyFlexLexer
 #include "baselexer.h"          // FLEX_OUTPUT_METHOD_DECLS
@@ -36,18 +35,18 @@ public:
   char const *currentText() const;
 
   // this is yyrestart.  For starting and restarting.
-  void restart(istream *in);
+  void restart(std::istream *in);
 
   int tok(XmlToken kind);
   int svalTok(XmlToken t);
   void err(char const *msg);
 
-  string tokenKindDesc(int kind) const;
-  string tokenKindDescV(int kind) const;
+  sm::string tokenKindDesc(int kind) const;
+  sm::string tokenKindDescV(int kind) const;
             
   // Describe the current token, assuming its kind is 'kind'.  This
   // prints the lexeme (token text) too.
-  string tokenDesc(int kind) const;
+  sm::string tokenDesc(int kind) const;
 
   FLEX_OUTPUT_METHOD_DECLS
 };

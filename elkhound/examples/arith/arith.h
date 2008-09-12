@@ -43,8 +43,8 @@ public:
 
   // LexerInterface functions
   virtual NextTokenFunc getTokenFunc() const;
-  virtual string tokenDesc() const;
-  virtual string tokenKindDesc(int kind) const;
+  virtual sm::string tokenDesc() const;
+  virtual sm::string tokenKindDesc(int kind) const;
 };
 
 // there will be only one

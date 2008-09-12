@@ -6,7 +6,7 @@
 // elsa
 #include "cc_ast.h"          // AST
 
-
+using namespace std;
 // Expands to a 'for' loop that inserts a box begin and end, and
 // executes the body of the loop exactly once.  Should be followed by
 // a brace-enclosed block that prints the things inside the box.

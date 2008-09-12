@@ -15,6 +15,7 @@
 // because I do not want the many call sites to have the overhead
 // of constructing and destructing temporary objects
 void x_assert_fail(char const *cond, char const *file, int line) NORETURN;
+void x_match_fail(char const *cond, char const *file, int line) NORETURN;
 
 // Ordinary 'xassert' *can* be turned off, but the nominal intent
 // is that it be left on, under the "ship what you test" theory.
@@ -26,6 +27,9 @@ void x_assert_fail(char const *cond, char const *file, int line) NORETURN;
 #else
   #define xassert(cond) ((void)0)
 #endif
+
+#define xmatch(cond)                                                    \
+  ((cond)? (void)0 : x_match_fail(#cond, __FILE__, __LINE__))
 
 // Here's a version which will turn off with ordinary NDEBUG.  It
 // is for more expensive checks that need not ship.

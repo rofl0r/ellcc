@@ -22,7 +22,7 @@ template <class T>
 class StringSObjDict {
 public:     // types
   // 'foreach' iterator functions
-  typedef bool (*ForeachFn)(string const &key, T * value, void *extra);
+  typedef bool (*ForeachFn)(sm::string const &key, T * value, void *extra);
 
   // external iterator
   class Iter {
@@ -37,7 +37,7 @@ public:     // types
     bool isDone() const { return iter.isDone(); }
     Iter& next() { iter.next(); return *this; }
 
-    string const &key() const { return iter.key(); }
+    sm::string const &key() const { return iter.key(); }
     T * &value() const { return (T * &)iter.value(); }
 
     int private_getCurrent() const { return iter.private_getCurrent(); }
@@ -56,7 +56,7 @@ public:     // types
     bool isDone() const { return iter.isDone(); }
     IterC& next() { iter.next(); return *this; }
 
-    string const &key() const { return iter.key(); }
+    sm::string const &key() const { return iter.key(); }
     T * value() const { return (T *)iter.value(); }
 
     int private_getCurrent() const { return iter.private_getCurrent(); }

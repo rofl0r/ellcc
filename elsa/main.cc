@@ -1,9 +1,9 @@
 // main.cc            see license.txt for copyright and terms of use
 // entry-point module for a program that parses C++
 
-#include <iostream.h>     // cout
+#include <iostream>       // cout
 #include <stdlib.h>       // exit, getenv, abort
-#include <fstream.h>      // ofstream
+#include <fstream>        // ofstream
 
 #include "trace.h"        // traceAddSys
 #include "syserr.h"       // xsyserror
@@ -32,6 +32,9 @@
 #include "bpprint.h"      // bppTranslationUnit
 #include "cc2c.h"         // cc_to_c
 
+using namespace sm;
+using namespace std;
+
 #ifdef LLVM_EXTENSION
 #include "cc2llvm.h"      // cc_to_llvm
 
@@ -51,11 +54,11 @@ static bool wantBpprintAfterElab = false;
 
 
 // nonempty if we want to run cc2c; value of "-" means stdout
-static string cc2cOutputFname;
+static sm::string cc2cOutputFname;
 
 #ifdef LLVM_EXTENSION
 // nonempty if we want to run cc2llvm; value of "-" means stdout
-static string cc2llvmOutputFname;
+static sm::string cc2llvmOutputFname;
 #endif
 
 
@@ -840,7 +843,7 @@ void doit(int argc, char **argv)
 
   if (!cc2cOutputFname.empty()) {
     TranslationUnit *lowered = cc_to_c(strTable, *unit);
-    if (cc2cOutputFname == string("-")) {
+    if (cc2cOutputFname == sm::string("-")) {
       cout << "// cc2c\n";
       bppTranslationUnit(cout, *lowered);
     }
@@ -864,7 +867,7 @@ void doit(int argc, char **argv)
     // Output the module.
     llvm::PassManager PM;
     std::ostream *out = &std::cout;  // Default to printing to stdout.
-    if (cc2llvmOutputFname != string("-")) {
+    if (cc2llvmOutputFname != sm::string("-")) {
       out = new std::ofstream(cc2llvmOutputFname.c_str());
       if (!out) {
         xsyserror("open", stringb("write \"" << cc2llvmOutputFname << "\""));

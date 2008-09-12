@@ -17,8 +17,10 @@
 #include "cc_lang.h"   // CCLang
 #include "exc.h"       // throw_XOpen
 
-#include <string.h>    // strcmp
+#include <cstring>      // strcmp
 #include <stdlib.h>    // exit
+
+using namespace std;
 
 // no bison-parser present, so need to define this
 Lexer2Token const *yylval = NULL;

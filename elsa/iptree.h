@@ -9,7 +9,7 @@
 #include "array.h"          // GrowArray
 #include "bitstrmap.h"      // BitStrMap
 
-#include <iostream.h>       // ostream
+#include <iostream>         // ostream
 #include <stdio.h>          // FILE
 #include <limits.h>         // INT_MAX
 
@@ -109,7 +109,7 @@ public:
 private:     // funcs
   int writeSubs(FILE *fp, GrowArray<char> const &source,
                 VariantCursor &cursor, int &curOffset);
-  void debugPrintSubs(ostream &os, int ind) const;
+  void debugPrintSubs(std::ostream &os, int ind) const;
 
 public:      // funcs
   Node(int lo, int hi);
@@ -146,7 +146,7 @@ public:      // funcs
 
   // print this subtree to the given stream at the given level
   // of indentation
-  void debugPrint(ostream &os, int ind) const;
+  void debugPrint(std::ostream &os, int ind) const;
 };
 
 

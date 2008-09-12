@@ -12,7 +12,7 @@
 #include "cc_ast.h"             // C++ AST; this module
 #include "str.h"                // stringBuilder
 
-#include <iostream.h>           // ostream
+#include <iostream>             // ostream
 
 // this virtual semi-abstract class is intended to act as a
 // "superclass" for ostream, stringBuilder, and any other "output
@@ -22,7 +22,7 @@ class OutStream {
   virtual ~OutStream() {}
 
   // special-case methods
-  virtual OutStream & operator << (ostream& (*manipfunc)(ostream& outs)) = 0;
+  virtual OutStream & operator << (std::ostream& (*manipfunc)(std::ostream& outs)) = 0;
   virtual void flush() = 0;
 
   // special method to support rostring
@@ -49,7 +49,7 @@ class StringBuilderOutStream : public OutStream {
   StringBuilderOutStream(stringBuilder &buffer0) : buffer(buffer0) {}
 
   // special-case methods
-  virtual StringBuilderOutStream & operator << (ostream& (*manipfunc)(ostream& outs)) {
+  virtual StringBuilderOutStream & operator << (std::ostream& (*manipfunc)(std::ostream& outs)) {
     buffer << "\n";             // assume that it is endl
     return *this;
   }
@@ -77,13 +77,13 @@ class StringBuilderOutStream : public OutStream {
 };
 
 class OStreamOutStream : public OutStream {
-  ostream &out;
+  std::ostream &out;
 
   public:
-  OStreamOutStream(ostream &out0) : out(out0) {}
+  OStreamOutStream(std::ostream &out0) : out(out0) {}
 
   // special-case methods
-  virtual OStreamOutStream & operator << (ostream& (*manipfunc)(ostream& outs)) {
+  virtual OStreamOutStream & operator << (std::ostream& (*manipfunc)(std::ostream& outs)) {
     out << manipfunc;
     return *this;
   }
@@ -132,7 +132,7 @@ class CodeOutStream : public OutStream {
   void finish();
 
   // OutStream methods
-  CodeOutStream & operator << (ostream& (*manipfunc)(ostream& outs));
+  CodeOutStream & operator << (std::ostream& (*manipfunc)(std::ostream& outs));
   void flush() { out.flush(); }
   CodeOutStream & operator << (char const *message);
 
@@ -190,7 +190,7 @@ class TreeWalkOutStream : public OutStream {
 
   public:
   // OutStream methods
-  virtual TreeWalkOutStream & operator << (ostream& (*manipfunc)(ostream& outs));
+  virtual TreeWalkOutStream & operator << (std::ostream& (*manipfunc)(std::ostream& outs));
   virtual void flush() { out.flush(); }
 
   // special method to support rostring
@@ -284,43 +284,43 @@ class CTypePrinter : public TypePrinter {
   //
   // SGM 2007-08-26: It's a bad idea to overload something using types
   // that are related by inheritance.  This method should be renamed.
-  string print(AtomicType const *atomic);
+  sm::string print(AtomicType const *atomic);
 
-  string print(SimpleType const *);
-  string print(CompoundType const *);
-  string print(EnumType const *);
-  string print(TypeVariable const *);
-  string print(PseudoInstantiation const *);
-  string print(DependentQType const *);
-  string print(TemplateTypeVariable const *);
+  sm::string print(SimpleType const *);
+  sm::string print(CompoundType const *);
+  sm::string print(EnumType const *);
+  sm::string print(TypeVariable const *);
+  sm::string print(PseudoInstantiation const *);
+  sm::string print(DependentQType const *);
+  sm::string print(TemplateTypeVariable const *);
 
   // **** [Compound]Type
-  string print(Type const *type);
-  string print(Type const *type, char const *name);
-  string printRight(Type const *type, bool innerParen = true);
-  string printLeft(Type const *type, bool innerParen = true);
+  sm::string print(Type const *type);
+  sm::string print(Type const *type, char const *name);
+  sm::string printRight(Type const *type, bool innerParen = true);
+  sm::string printLeft(Type const *type, bool innerParen = true);
 
-  string printLeft(CVAtomicType const *type, bool innerParen = true);
-  string printRight(CVAtomicType const *type, bool innerParen = true);
-  string printLeft(PointerType const *type, bool innerParen = true);
-  string printRight(PointerType const *type, bool innerParen = true);
-  string printLeft(ReferenceType const *type, bool innerParen = true);
-  string printRight(ReferenceType const *type, bool innerParen = true);
-  string printLeft(FunctionType const *type, bool innerParen = true);
-  string printRight(FunctionType const *type, bool innerParen = true);
-  string printRightUpToQualifiers(FunctionType const *type, bool innerParen);
-  string printRightQualifiers(FunctionType const *type, CVFlags cv);
-  string printRightAfterQualifiers(FunctionType const *type);
+  sm::string printLeft(CVAtomicType const *type, bool innerParen = true);
+  sm::string printRight(CVAtomicType const *type, bool innerParen = true);
+  sm::string printLeft(PointerType const *type, bool innerParen = true);
+  sm::string printRight(PointerType const *type, bool innerParen = true);
+  sm::string printLeft(ReferenceType const *type, bool innerParen = true);
+  sm::string printRight(ReferenceType const *type, bool innerParen = true);
+  sm::string printLeft(FunctionType const *type, bool innerParen = true);
+  sm::string printRight(FunctionType const *type, bool innerParen = true);
+  sm::string printRightUpToQualifiers(FunctionType const *type, bool innerParen);
+  sm::string printRightQualifiers(FunctionType const *type, CVFlags cv);
+  sm::string printRightAfterQualifiers(FunctionType const *type);
   void   printExtraRightmostSyntax(FunctionType const *type, stringBuilder &);
-  string printLeft(ArrayType const *type, bool innerParen = true);
-  string printRight(ArrayType const *type, bool innerParen = true);
-  string printLeft(PointerToMemberType const *type, bool innerParen = true);
-  string printRight(PointerToMemberType const *type, bool innerParen = true);
-  string printLeft(DependentSizedArrayType const *type, bool innerParen = true);
-  string printRight(DependentSizedArrayType const *type, bool innerParen = true);
+  sm::string printLeft(ArrayType const *type, bool innerParen = true);
+  sm::string printRight(ArrayType const *type, bool innerParen = true);
+  sm::string printLeft(PointerToMemberType const *type, bool innerParen = true);
+  sm::string printRight(PointerToMemberType const *type, bool innerParen = true);
+  sm::string printLeft(DependentSizedArrayType const *type, bool innerParen = true);
+  sm::string printRight(DependentSizedArrayType const *type, bool innerParen = true);
 
   // **** Variable
-  string printAsParameter(Variable const *var);
+  sm::string printAsParameter(Variable const *var);
 };
 
 // global context for a pretty-print
@@ -330,12 +330,12 @@ class PrintEnv {
   CodeOutStream *out;
   SourceLoc loc;
 
-  // When true, some of the print routines will print info inside
-  // comment characters as a debugging aid.  This flag is provided
-  // because it may be necessary to disable printing of comments when
-  // they nest (thus precluding parsing the output).  The default
-  // state is 'true';
-  bool printComments;
+ // When true, some of the print routines will print info inside
+ // comment characters as a debugging aid.  This flag is provided
+ // because it may be necessary to disable printing of comments when
+ // they nest (thus precluding parsing the output).  The default
+ // state is 'true';
+ bool printComments;
 
   public:
   PrintEnv(TypePrinter &typePrinter0, CodeOutStream *out0)
@@ -388,7 +388,7 @@ void printSTemplateArgument(PrintEnv &env, STemplateArgument const *sta);
 
 #define PRINT_AST(AST)                \
   do {                                \
-    OutStream out0(cout);         \
+    OutStream out0(std::cout);        \
     TypePrinter typePrinter0;         \
     PrintEnv penv0(typePrinter0);     \
     if (AST) AST->print(penv0, out0); \
@@ -401,7 +401,7 @@ void printSTemplateArgument(PrintEnv &env, STemplateArgument const *sta);
 // choice of output stream) from what the following function does.  I
 // made the following function by abstracting the -tr prettyPrint
 // behavior.
-void prettyPrintTranslationUnit(ostream &os, TranslationUnit const &unit);
+void prettyPrintTranslationUnit(std::ostream &os, TranslationUnit const &unit);
 
 
 #endif // CC_PRINT_H

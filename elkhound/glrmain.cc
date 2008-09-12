@@ -3,7 +3,7 @@
 // grammars (this file is *not* required for general use of
 // the Elkhound parser)
 
-#include <iostream.h>     // cout
+#include <iostream>       // cout
 #include <stdlib.h>       // exit
 
 #include "trace.h"        // traceAddSys
@@ -12,6 +12,8 @@
 #include "srcloc.h"       // SourceLocManager
 #include "cc_lang.h"      // CCLang
 #include "parsetables.h"  // ParseTables
+
+using namespace std;
 
 // no bison-parser present, so define it myself
 Lexer2Token const *yylval = NULL;

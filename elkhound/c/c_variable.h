@@ -56,10 +56,10 @@ public:    // funcs
   bool isGlobal() const { return flags & DF_GLOBAL; }
 
   // some ad-hoc thing
-  string toString() const;
+  sm::string toString() const;
 };
 
-inline string toString(Variable const *v) { return v->toString(); }
+inline sm::string toString(Variable const *v) { return v->toString(); }
 
 
 #endif // C_VARIABLE_H

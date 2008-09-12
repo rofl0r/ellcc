@@ -43,9 +43,8 @@ sub preamble {
   print(<<"EOF");
 
     verbatim [
-      #include <iostream.h>     // cout
+      #include <iostream>       // cout
       $addlIncl
-
       extern int count;
     ]
 
@@ -136,7 +135,7 @@ while (defined($line = <STDIN>)) {
       print("); ]\n");
     }
     else {
-      print("[ cout << \"reduced by $curNT $ruleText\\n\"; return ++count; ]\n");
+      print("[ std::cout << \"reduced by $curNT $ruleText\\n\"; return ++count; ]\n");
     }
     next;
   }

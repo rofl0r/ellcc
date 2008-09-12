@@ -4,11 +4,6 @@
 int something, a, whatever, something_else, x;
 typedef int X;
 
-void f()
-{
-    return;     // void return
-}
-
 int main()
 {
   3+4;
@@ -45,8 +40,8 @@ mylabel:
   // decl in init
   for (int j=9; j>0; j--) 18;
 
-  // 'return' a value
-  if (a) return x;
+  // both variants of 'return'
+  if (a) /* return; else */ return x;
 
   goto mylabel;
 

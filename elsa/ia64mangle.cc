@@ -10,6 +10,7 @@
 // smbase
 #include "strutil.h"         // replace
 
+using namespace sm;
 
 string ia64MangleType(Type *t)
 {

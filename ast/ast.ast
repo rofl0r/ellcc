@@ -14,13 +14,13 @@ class ASTSpecFile (ASTList<ToplevelForm> forms);
 
 class ToplevelForm {
   // code to be copied verbatim into the generated .h file
-  -> TF_verbatim(string code);
+  -> TF_verbatim(sm::string code);
 
   // code to be copied verbatim into the generated .cc file
-  -> TF_impl_verbatim(string code);
+  -> TF_impl_verbatim(sm::string code);
 
   // code to be copied verbatim into the generated optional xmlVisitor class
-  -> TF_xml_verbatim(string code);
+  -> TF_xml_verbatim(sm::string code);
 
   // a superclass, and a list of subclasses ("constructors")
   -> TF_class(ASTClass super,
@@ -30,7 +30,7 @@ class ToplevelForm {
    
   // a generic option: first word specifies the kind of option, and
   // additional words (if any) are arguments
-  -> TF_option(string name, ASTList<string> args);
+  -> TF_option(sm::string name, ASTList<sm::string> args);
   
   // generic custom/verbatim code
   -> TF_custom(CustomCode cust);
@@ -38,18 +38,18 @@ class ToplevelForm {
   // enumeration (at one point I had support for explicit enumerator
   // values, but decided that if the user wants that, they should put
   // the enum in a 'verbatim' section instead)
-  -> TF_enum(string name, ASTList<string> enumerators);
+  -> TF_enum(sm::string name, ASTList<sm::string> enumerators);
 }
 
 // a definition of a grammar terminal or nonterminal
-class ASTClass (string name,
+class ASTClass (sm::string name,
                 ASTList<CtorArg> args,
                 ASTList<CtorArg> lastArgs,    // only for nonterminal
                 ASTList<BaseClass> bases,
                 ASTList<Annotation> decls) {
   // the name of the enum constant denoting this ctor, as distinguished
   // from its sibling ctors
-  public string classKindName() const;
+  public sm::string classKindName() const;
 }
 
 verbatim {
@@ -67,17 +67,17 @@ verbatim {
   };
 
   // map the enum value to a string like "public"
-  string toString(AccessCtl acc);      // defined in ast.cc
+  sm::string toString(AccessCtl acc);      // defined in ast.cc
 }
 
 // an access control keyword with optional modifier list
-class AccessMod(AccessCtl acc, ASTList<string> mods) {
+class AccessMod(AccessCtl acc, ASTList<sm::string> mods) {
   // true if the given modifier is present
   public bool hasMod(char const *mod) const;
   // true if the given modifier prefix is present as a prefix of a modifier
   public bool hasModPrefix(char const *mod) const;
   // get the suffix after the given prefix of the (first) modifier it matches
-  public string getModSuffixFromPrefix(char const *mod) const;
+  public sm::string getModSuffixFromPrefix(char const *mod) const;
 }
 
 // additional user annotations
@@ -85,25 +85,25 @@ class Annotation {
   // verbatim declarations, plus an access qualifier, to be
   // copied into the a class declaration; also has an optional
   // initializer (might be "")
-  -> UserDecl (AccessMod amod, string code, string init) {
+  -> UserDecl (AccessMod amod, sm::string code, sm::string init) {
        public AccessCtl access() const { return amod->acc; };
      }
 
   // verbatim code to be inserted somewhere; exactly where depends
   // on the qualifier string
-  -> CustomCode (string qualifier, string code) {
+  -> CustomCode (sm::string qualifier, sm::string code) {
        // keep track of whether it gets used
        public bool used;  ctor used=false;
      }
 }
 
 // something that has to be passed to create a constructor
-class CtorArg (bool isOwner, string type, string name, string defaultValue);
+class CtorArg (bool isOwner, sm::string type, sm::string name, sm::string defaultValue);
 
 // designate a class that one of the ASTClasses should inherit; for
 // AST subclasses, this inheritance is in addition to inheriting the
 // corresponding AST superclass
-class BaseClass (AccessCtl access, string name);
+class BaseClass (AccessCtl access, sm::string name);
 
 
 // ------------------- extra implementation helpers ------------------
@@ -111,7 +111,7 @@ impl_verbatim {
 
 #include "strutil.h"      // stringToupper
 
-string toString(AccessCtl acc)
+sm::string toString(AccessCtl acc)
 {
   char const *arr[] = {
     "public",
@@ -123,12 +123,12 @@ string toString(AccessCtl acc)
   };
   STATIC_ASSERT(TABLESIZE(arr) == NUM_ACCESSCTLS);
   xassert((unsigned)acc < NUM_ACCESSCTLS);
-  return string(arr[acc]);
+  return sm::string(arr[acc]);
 }
 
-string ASTClass::classKindName() const
+sm::string ASTClass::classKindName() const
 {
-  string ret = stringToupper(name);
+  sm::string ret = stringToupper(name);
   if (ret == name) {
     // this simplemindedly avoids collisions with itself, and I think
     // it even avoids collisions with other classes, since if they would
@@ -141,7 +141,7 @@ string ASTClass::classKindName() const
 
 bool AccessMod::hasMod(char const *mod) const
 {
-  FOREACH_ASTLIST(string, mods, iter) {
+  FOREACH_ASTLIST(sm::string, mods, iter) {
     if (iter.data()->equals(mod)) {
       return true;
     }
@@ -151,8 +151,8 @@ bool AccessMod::hasMod(char const *mod) const
 
 bool AccessMod::hasModPrefix(char const *mod) const
 {
-  string mod0(mod);
-  FOREACH_ASTLIST(string, mods, iter) {
+  sm::string mod0(mod);
+  FOREACH_ASTLIST(sm::string, mods, iter) {
     rostring i = *iter.data();
     if (prefixEquals(i, mod0)) {
       return true;
@@ -161,12 +161,12 @@ bool AccessMod::hasModPrefix(char const *mod) const
   return false;      // not found
 }
 
-string AccessMod::getModSuffixFromPrefix(char const *mod) const
+sm::string AccessMod::getModSuffixFromPrefix(char const *mod) const
 {
-  string mod0(mod);
-  string ret;
+  sm::string mod0(mod);
+  sm::string ret;
   bool found = false;
-  FOREACH_ASTLIST(string, mods, iter) {
+  FOREACH_ASTLIST(sm::string, mods, iter) {
     rostring s = *iter.data();
     if (prefixEquals(s, mod0)) {
       if (found) {

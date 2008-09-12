@@ -4,6 +4,8 @@
 #include "asockind.h"    // this module
 #include "xassert.h"     // xassert
 
+using namespace sm;
+
 string toString(AssocKind k)
 {
   static char const * const arr[] = {

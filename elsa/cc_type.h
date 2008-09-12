@@ -227,17 +227,24 @@ public:     // funcs
   bool equals(AtomicType const *obj) const;
 
   // print the string according to 'Type::printAsML'
-  string toString() const;
+  sm::string toString() const;
 
   // print in C notation
-  virtual string toCString() const = 0;
+  virtual sm::string toCString() const = 0;
 
   // print in "ML" notation (really just more verbose)
-  virtual string toMLString() const = 0;
+  virtual sm::string toMLString() const = 0;
 
   // size this type's representation occupies in memory; this
   // might throw XReprSize, see below
-  virtual int reprSize() const = 0;
+  int reprSize() const { int size, align; sizeInfo(size, align); return size; }
+
+  // dmandelin@mozilla.com
+  // size and alignment of this type.
+  // This has replaced reprSize as the primary size computation
+  // function because it is necessary to compute alignments as
+  // well in order to compute sizes correctly.
+  virtual void sizeInfo(int &size, int &align) const = 0;
 
   // invoke 'vis.visitAtomicType(this)', and then traverse subtrees
   virtual void traverse(TypeVisitor &vis) = 0;
@@ -269,9 +276,9 @@ public:     // funcs
 
   // AtomicType interface
   virtual Tag getTag() const { return T_SIMPLE; }
-  virtual string toCString() const;
-  virtual string toMLString() const;
-  virtual int reprSize() const;
+  virtual sm::string toCString() const;
+  virtual sm::string toMLString() const;
+  virtual void sizeInfo(int &size, int &align) const;
   virtual void traverse(TypeVisitor &vis);
 };
 
@@ -338,7 +345,7 @@ public:
   // dsw: note: we use the implicit copy ctor and operator=() on this object
 
   // name and virtual address to uniquely identify this object
-  string canonName() const;
+  sm::string canonName() const;
 
   void traverse(TypeVisitor &vis);
 };
@@ -349,32 +356,6 @@ class CompoundType : public NamedAtomicType, public Scope {
 public:      // types
   // NOTE: keep these consistent with TypeIntr (in file cc_flags.h)
   enum Keyword { K_STRUCT, K_CLASS, K_UNION, NUM_KEYWORDS };
-
-private:     // types
-  // state for evaluating layout characteristics
-  struct LayoutQuery {
-    // Current accumulated size.
-    int size;
-
-    // Field whose offset is desired.  NULL when we're trying to get
-    // the size of the entire structure.
-    //
-    // TODO: Due to multiple inheritance, I need a subobject too; but
-    // that information is not available in AST at the moment because
-    // the type checker does not write it down.
-    Variable * /*nullable*/ field;
-
-    // True once the desired field has been found, and hence we want
-    // to pop out of the recursion.
-    bool found;
-    
-  public:
-    LayoutQuery(Variable *f)
-      : size(0),
-        field(f),
-        found(false)
-    {}
-  };
 
 public:      // data
   bool forward : 1;               // true when it's only fwd-declared
@@ -458,8 +439,6 @@ private:     // funcs
 
   void addLocalConversionOp(Variable *op);
 
-  void layoutQuery(LayoutQuery &query) const;
-
 protected:   // funcs
   // create an incomplete (forward-declared) compound
   // experiment: force creation of these to go through the factory too
@@ -498,13 +477,17 @@ public:      // funcs
 
   // AtomicType interface
   virtual Tag getTag() const { return T_COMPOUND; }
-  virtual string toCString() const;
-  virtual string toMLString() const;
-  virtual int reprSize() const;
+  virtual sm::string toCString() const;
+  virtual sm::string toMLString() const;
+  virtual void sizeInfo(int &size, int &align) const;
   virtual void traverse(TypeVisitor &vis);
 
-  string toStringWithFields() const;
-  string keywordAndName() const { return toCString(); }
+  // Return the sizeInfo not counting any vptr -- we need this
+  // because when we have base classes we don't include vptr twice
+  void memSizeInfo(int &size, int &align) const;
+
+  sm::string toStringWithFields() const;
+  sm::string keywordAndName() const { return toCString(); }
 
   int numFields() const;
 
@@ -554,7 +537,7 @@ public:      // funcs
                      CompoundType const *requiredBase = NULL) const;
 
   // render the subobject hierarchy to a 'dot' graph
-  string renderSubobjHierarchy() const;
+  sm::string renderSubobjHierarchy() const;
 
   // how many times does 'ct' appear as a subobject?
   // returns 1 if ct==this
@@ -586,7 +569,7 @@ public:      // funcs
   bool isAggregate() const;
 };
 
-string toString(CompoundType::Keyword k);
+sm::string toString(CompoundType::Keyword k);
 
 
 // represent an enumerated type
@@ -619,9 +602,9 @@ public:     // funcs
 
   // AtomicType interface
   virtual Tag getTag() const { return T_ENUM; }
-  virtual string toCString() const;
-  virtual string toMLString() const;
-  virtual int reprSize() const;
+  virtual sm::string toCString() const;
+  virtual sm::string toMLString() const;
+  virtual void sizeInfo(int &size, int &align) const;
   virtual void traverse(TypeVisitor &vis);
 
   Value *addValue(StringRef name, int value, /*nullable*/ Variable *d);
@@ -735,16 +718,16 @@ public:     // funcs
   static bool equalTypes(Type const *t1, Type const *t2);
 
   // print the string according to 'printAsML'
-  string toString() const;
+  sm::string toString() const;
 
   // print the type, with an optional name like it was a declaration
   // for a variable of that type
-  string toCString() const;
-  string toCString(char const * /*nullable*/ name) const;
-  string toCString(rostring name) const { return toCString(name.c_str()); }
+  sm::string toCString() const;
+  sm::string toCString(char const * /*nullable*/ name) const;
+  sm::string toCString(rostring name) const { return toCString(name.c_str()); }
 
   // NOTE: yes, toMLString() is virtual, whereas toCString() is not
-  virtual string toMLString() const = 0;
+  virtual sm::string toMLString() const = 0;
   void putSerialNo(stringBuilder &sb) const;
 
   // toString+newline to cout
@@ -754,8 +737,8 @@ public:     // funcs
   // and array types in C's syntax; if 'innerParen' is true then
   // the topmost type constructor should print the inner set of
   // paretheses
-  virtual string leftString(bool innerParen=true) const = 0;
-  virtual string rightString(bool innerParen=true) const;    // default: returns ""
+  virtual sm::string leftString(bool innerParen=true) const = 0;
+  virtual sm::string rightString(bool innerParen=true) const;    // default: returns ""
 
   // If this is true, the type constructor syntax is postfix.  This
   // information is needed when printing the prefix type constructors,
@@ -767,7 +750,9 @@ public:     // funcs
 
   // size of representation at run-time; for now uses nominal 32-bit
   // values
-  virtual int reprSize() const = 0;
+  int reprSize() const { int size, align; sizeInfo(size, align); return size; }
+
+  virtual void sizeInfo(int &size, int &align) const = 0;
 
   // filter on all constructed types that appear in the type,
   // *including* parameter types; return true if any constructor
@@ -899,7 +884,7 @@ public:     // funcs
   ALLOC_STATS_DECLARE
 };
 
-string cvToString(CVFlags cv);
+sm::string cvToString(CVFlags cv);
 
 #ifdef TYPE_CLASS_FILE
   // pull in the definition of Type, which may have additional
@@ -925,7 +910,7 @@ string cvToString(CVFlags cv);
 #endif // TYPE_CLASS_FILE
 
 // supports the use of 'Type*' in AST constructor argument lists
-string toString(Type *t);
+sm::string toString(Type *t);
 
 
 // essentially just a wrapper around an atomic type, but
@@ -952,9 +937,9 @@ public:
   // Type interface
   virtual Tag getTag() const { return T_ATOMIC; }
   unsigned innerHashValue() const;
-  virtual string toMLString() const;
-  virtual string leftString(bool innerParen=true) const;
-  virtual int reprSize() const;
+  virtual sm::string toMLString() const;
+  virtual sm::string leftString(bool innerParen=true) const;
+  virtual void sizeInfo(int &size, int &align) const;
   virtual bool anyCtorSatisfies(TypePred &pred) const;
   virtual CVFlags getCVFlags() const;
   virtual void traverse(TypeVisitor &vis);
@@ -979,10 +964,10 @@ public:
   // Type interface
   virtual Tag getTag() const { return T_POINTER; }
   unsigned innerHashValue() const;
-  virtual string toMLString() const;
-  virtual string leftString(bool innerParen=true) const;
-  virtual string rightString(bool innerParen=true) const;
-  virtual int reprSize() const;
+  virtual sm::string toMLString() const;
+  virtual sm::string leftString(bool innerParen=true) const;
+  virtual sm::string rightString(bool innerParen=true) const;
+  virtual void sizeInfo(int &size, int &align) const;
   virtual bool anyCtorSatisfies(TypePred &pred) const;
   virtual CVFlags getCVFlags() const;
   virtual void traverse(TypeVisitor &vis);
@@ -1007,10 +992,10 @@ public:
   // Type interface
   virtual Tag getTag() const { return T_REFERENCE; }
   unsigned innerHashValue() const;
-  virtual string toMLString() const;
-  virtual string leftString(bool innerParen=true) const;
-  virtual string rightString(bool innerParen=true) const;
-  virtual int reprSize() const;
+  virtual sm::string toMLString() const;
+  virtual sm::string leftString(bool innerParen=true) const;
+  virtual sm::string rightString(bool innerParen=true) const;
+  virtual void sizeInfo(int &size, int &align) const;
   virtual bool anyCtorSatisfies(TypePred &pred) const;
   virtual CVFlags getCVFlags() const;
   virtual void traverse(TypeVisitor &vis);
@@ -1115,13 +1100,13 @@ public:
   NamedAtomicType *getNATOfMember();
 
   // more specialized printing, for Cqual++ syntax
-  static string rightStringQualifiers(CVFlags cv);
-  virtual string rightStringUpToQualifiers(bool innerParen) const;
-  virtual string rightStringAfterQualifiers() const;
+  static sm::string rightStringQualifiers(CVFlags cv);
+  virtual sm::string rightStringUpToQualifiers(bool innerParen) const;
+  virtual sm::string rightStringAfterQualifiers() const;
 
   // print the function type, but use these cv-flags as the
   // receiver param cv-flags
-  string toString_withCV(CVFlags cv) const;
+  sm::string toString_withCV(CVFlags cv) const;
 
   // a hook for the verifier's printer
   virtual void extraRightmostSyntax(stringBuilder &sb) const;
@@ -1129,11 +1114,11 @@ public:
   // Type interface
   virtual Tag getTag() const { return T_FUNCTION; }
   unsigned innerHashValue() const;
-  virtual string toMLString() const;
-  virtual string leftString(bool innerParen=true) const;
-  virtual string rightString(bool innerParen=true) const;
+  virtual sm::string toMLString() const;
+  virtual sm::string leftString(bool innerParen=true) const;
+  virtual sm::string rightString(bool innerParen=true) const;
   virtual bool usesPostfixTypeConstructorSyntax() const;
-  virtual int reprSize() const;
+  virtual void sizeInfo(int &size, int &align) const;
   virtual bool anyCtorSatisfies(TypePred &pred) const;
   virtual void traverse(TypeVisitor &vis);
 };
@@ -1167,11 +1152,11 @@ public:       // funcs
   virtual bool hasSize() const=0;
 
   // return the string rendering of the size
-  virtual string sizeString() const=0;
+  virtual sm::string sizeString() const=0;
 
   // Type interface
-  virtual string leftString(bool innerParen=true) const;
-  virtual string rightString(bool innerParen=true) const;
+  virtual sm::string leftString(bool innerParen=true) const;
+  virtual sm::string rightString(bool innerParen=true) const;
   virtual bool usesPostfixTypeConstructorSyntax() const;
   virtual bool anyCtorSatisfies(TypePred &pred) const;
   virtual void traverse(TypeVisitor &vis);
@@ -1207,13 +1192,13 @@ public:
 
   // PDSArrayType interface
   virtual bool hasSize() const { return size >= 0; }
-  virtual string sizeString() const;
+  virtual sm::string sizeString() const;
 
   // Type interface
   virtual Tag getTag() const { return T_ARRAY; }
   unsigned innerHashValue() const;
-  virtual string toMLString() const;
-  virtual int reprSize() const;
+  virtual sm::string toMLString() const;
+  virtual void sizeInfo(int &size, int &align) const;
 };
 
 
@@ -1247,10 +1232,10 @@ public:
   // Type interface
   virtual Tag getTag() const { return T_POINTERTOMEMBER; }
   unsigned innerHashValue() const;
-  virtual string toMLString() const;
-  virtual string leftString(bool innerParen=true) const;
-  virtual string rightString(bool innerParen=true) const;
-  virtual int reprSize() const;
+  virtual sm::string toMLString() const;
+  virtual sm::string leftString(bool innerParen=true) const;
+  virtual sm::string rightString(bool innerParen=true) const;
+  virtual void sizeInfo(int &size, int &align) const;
   virtual bool anyCtorSatisfies(TypePred &pred) const;
   virtual CVFlags getCVFlags() const;
   virtual void traverse(TypeVisitor &vis);

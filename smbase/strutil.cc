@@ -12,6 +12,7 @@
 #include <stdlib.h>      // strtoul, qsort
 #include <time.h>        // time, asctime, localtime
 
+using namespace sm;
 
 // replace all instances of oldstr in src with newstr, return result
 string replace(rostring origSrc, rostring oldstr, rostring newstr)
@@ -568,7 +569,7 @@ void qsortStringArray(char const **strings, int size) {
 #include "test.h"      // USUAL_MAIN
 
 #include <assert.h>    // assert
-#include <fstream.h>   // ofstream
+#include <fstream>     // ofstream
 #include <stdlib.h>    // getenv
 #include <stdio.h>     // printf, remove
 
@@ -631,14 +632,14 @@ void translateAscii()
   underscore[255] = 0;
 
   {
-    ofstream file("strutil.out");
+    std::ofstream file("strutil.out");
     assert(file);
-    file << "Hallo" << endl
-         << ascii << endl
-         << "Hallo2" << endl
+    file << "Hallo" << std::endl
+         << ascii << std::endl
+         << "Hallo2" << std::endl
          << translate(ascii, "\001-\057\072-\101\133-\140\173-\377", underscore)
                                           // ^^^ probably should be 100, no biggie
-         << endl;
+         << std::endl;
   }
 
   if (!getenv("SAVE_OUTPUT")) {
