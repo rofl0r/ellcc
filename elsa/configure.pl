@@ -43,7 +43,7 @@ if ($smcv < $req_smcv) {
 @LDFLAGS = ("-g -Wall");
 $AST = "../ast";
 $ELKHOUND = "../elkhound";
-$LLVM = "../../llvm";
+$LLVM = "/usr/local";
 $USE_GNU = "1";
 $USE_KANDR = "1";
 $GCOV_MODS = "";
@@ -150,8 +150,8 @@ if (! -f "$ELKHOUND/glr.h") {
 }
 
 # LLVM
-if (! -d "$LLVM") {
-  print("Cannot find $LLVM, disabling LLVM generation.\n");
+if (! -d "$LLVM/include/llvm") {
+  print("Cannot find $LLVM/include/llvm, disabling LLVM generation.\n");
   $LLVM="disabled";
 }
 

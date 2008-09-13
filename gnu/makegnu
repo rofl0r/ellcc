@@ -6,8 +6,8 @@ targetlist=`echo $targets | sed -e "s/ /,/g"`
 ellcc=`cd ../ellcc; pwd`
 #cc=$ellcc/ecc
 #cxx=$ellcc/e++
-cc=gcc
-cxx=g++
+cc=$CC
+cxx=$CXX
 
 
 # Parse options.

@@ -45,7 +45,7 @@ $PW = "../pw";
 $AST = "../ast";
 $ELKHOUND = "../elkhound";
 $ELSA = "../elsa";
-$LLVM = "../../llvm";
+$LLVM = "/usr/local";
 $USE_GNU = "1";
 $USE_KANDR = "1";
 $GCOV_MODS = "";
@@ -177,8 +177,8 @@ if (! -f "$ELSA/cfg.h") {
 }
 
 # LLVM
-if (! -d "$LLVM") {
-  print("Cannot find $LLVM, disabling LLVM generation.\n");
+if (! -d "$LLVM/include/llvm") {
+  print("Cannot find $LLVM/include/llvm, disabling LLVM generation.\n");
   $LLVM="disabled";
 }
 

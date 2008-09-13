@@ -6,6 +6,8 @@
  * Copyright (C) 2008, Richard Pennington.
  */
 
+#include <string.h>
+#include <stdlib.h>
 #include "pwPlexer.h"
 
 namespace pw {

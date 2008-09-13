@@ -76,10 +76,10 @@ public:     // types
 m4_dnl  typedef outputCondTemplate([[[XSTROBJDICT<T>]]], [[[XSTROBJDICT]]]) [[[XSTROBJDICT_type]]];
   // 'foreach' iterator functions
 outputCond([[[m4_dnl
-  typedef bool (*ForeachFn)(string const &key, TPTR value, void *extra);
+  typedef bool (*ForeachFn)(sm::string const &key, TPTR value, void *extra);
 ]]],[[[m4_dnl
-  typedef bool (*ForeachCFn)(string const &key, TCPTR value, void *extra);
-  typedef bool (*ForeachFn)(string const &key, TPTR /*serf*/ value, void *extra);
+  typedef bool (*ForeachCFn)(sm::string const &key, TCPTR value, void *extra);
+  typedef bool (*ForeachFn)(sm::string const &key, TPTR /*serf*/ value, void *extra);
 ]]])m4_dnl
 
 outputCond([[[m4_dnl
@@ -96,7 +96,7 @@ outputCond([[[m4_dnl
     bool isDone() const { return iter.isDone(); }
     Iter& next() { iter.next(); return *this; }
 
-    string const &key() const { return iter.key(); }
+    sm::string const &key() const { return iter.key(); }
     TPTR &value() const { return (TPTR &)iter.value(); }
 
     int private_getCurrent() const { return iter.private_getCurrent(); }
@@ -115,7 +115,7 @@ outputCond([[[m4_dnl
     bool isDone() const { return iter.isDone(); }
     IterC& next() { iter.next(); return *this; }
 
-    string const &key() const { return iter.key(); }
+    sm::string const &key() const { return iter.key(); }
     TPTR value() const { return (TPTR)iter.value(); }
 
     int private_getCurrent() const { return iter.private_getCurrent(); }
@@ -135,7 +135,7 @@ outputCond([[[m4_dnl
     bool isDone() const { return iter.isDone(); }
     Iter& next() { iter.next(); return *this; }
 
-    string const &key() const { return iter.key(); }
+    sm::string const &key() const { return iter.key(); }
     TCPTR &value() const { return (TCPTR &)iter.value(); }
 
     int private_getCurrent() const { return iter.private_getCurrent(); }

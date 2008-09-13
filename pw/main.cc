@@ -9,6 +9,7 @@
  * It is not meant to be a full cpp replacement but merely an example of
  * how one could use the pw lexer.
  */
+#include <stdlib.h>
 #include "pwPlexer.h"
 #include "pwOS.h"
 
