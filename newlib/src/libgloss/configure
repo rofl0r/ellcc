@@ -2452,6 +2452,9 @@ case "${target}" in
 
 	config_testsuite=true
 	;;
+  nios2*-*-*)
+        configdirs="doc nios2 testsuite"
+        ;;
 esac
 
 # For now, don't bother configuring testsuite

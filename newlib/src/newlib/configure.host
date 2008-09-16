@@ -208,6 +208,10 @@ case "${host_cpu}" in
   mt*)
 	machine_dir=mt
 	;;
+  nios2*)
+        machine_dir=nios2
+        newlib_cflags="${newlib_cflags} -DHAVE_GETTIMEOFDAY  -DHAVE_RENAME -DWANT_PRINTF_LONG_LONG -DMALLOC_LOCK_PROVIDED -DMALLOC_LOCK=__malloc_lock -DMALLOC_UNLOCK=__malloc_unlock -DENV_LOCK_PROVIDED -DENV_LOCK=__env_lock -DENV_UNLOCK=__env_unlock"
+        ;;
   or16)
 	;;
   or32)

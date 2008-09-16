@@ -1,6 +1,11 @@
 
 _BEGIN_STD_C
 
+#ifdef __NIOS2__
+#define _JBLEN 40
+#define _JBTYPE unsigned long
+#endif
+
 #if defined(__arm__) || defined(__thumb__)
 /*
  * All callee preserved registers:

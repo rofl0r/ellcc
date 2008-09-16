@@ -302,6 +302,15 @@ case $basic_machine in
 		basic_machine=mt-unknown
 		;;
 
+        nios2 | nios2-* | nios2el | nios2el-*)
+                basic_machine=nios2-altera
+                os=-none_el
+                ;;
+        nios2eb | nios2eb-*)
+                basic_machine=nios2-altera
+                os=-none_eb
+                ;;
+ 
 	# We use `pc' rather than `unknown'
 	# because (1) that's what they normally are, and
 	# (2) the word "unknown" tends to confuse beginning users.

@@ -787,6 +787,9 @@ case "${target}" in
   mt-*-*)
     noconfigdirs="$noconfigdirs sim"
     ;;
+ nios2-*-*)
+    noconfigdirs="$noconfigdirs target-libiberty target-librx target-libg++ target-libstdc++ target-libio target-libf2c target-libchill target-zlib target-libobjc"
+    ;;
   powerpc-*-aix*)
     # copied from rs6000-*-* entry
     noconfigdirs="$noconfigdirs gprof target-libgloss target-libssp ${libgcj}"

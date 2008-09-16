@@ -50,6 +50,14 @@
 	
 */
 
+#ifdef __NIOS2__
+# ifdef __nios2_big_endian__
+#  define __IEEE_BIG_ENDIAN
+# else
+#  define __IEEE_LITTLE_ENDIAN
+# endif
+#endif
+
 #if (defined(__arm__) || defined(__thumb__)) && !defined(__MAVERICK__)
 /* ARM traditionally used big-endian words; and within those words the
    byte ordering was big or little endian depending upon the target.

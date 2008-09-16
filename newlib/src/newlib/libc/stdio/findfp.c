@@ -211,9 +211,19 @@ _DEFUN(__sinit, (s),
      requires both stdin and stdout to be line-buffered, but tradition
      leaves stdin alone on systems without fcntl.  */
 #ifdef HAVE_FCNTL
+ #ifdef __NIOS2__
+  /* NIOS2: Change to have no buffering on stdout */
+  std (s->_stdout, __SWR | __SNBF, 1, s);
+ #else
   std (s->_stdout, __SWR, 1, s);
+ #endif
 #else
+ #ifdef __NIOS2__
+  /* NIOS2: Change to have no buffering on stdout */
+  std (s->_stdout, __SWR | __SNBF, 1, s);
+ #else
   std (s->_stdout, __SWR | __SLBF, 1, s);
+ #endif
 #endif
 
   /* POSIX requires stderr to be opened for reading and writing, even

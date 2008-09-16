@@ -132,6 +132,9 @@ case "${target}" in
 	AC_CONFIG_SUBDIRS(iq2000)
 	config_testsuite=true
 	;;
+  nios2*-*-*)
+        configdirs="doc nios2 testsuite"
+        ;;
 esac
 
 # For now, don't bother configuring testsuite

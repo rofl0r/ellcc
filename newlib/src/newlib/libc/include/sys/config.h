@@ -11,6 +11,14 @@
 #define H8300 1
 #endif
 
+#ifdef __NIOS2__
+# ifdef __nios2_big_endian__
+#  define __IEEE_BIG_ENDIAN
+# else
+#  define __IEEE_LITTLE_ENDIAN
+# endif
+#endif /* __NIOS2__ */
+
 /* 16 bit integer machines */
 #if defined(__Z8001__) || defined(__Z8002__) || defined(__H8500__) || defined(__W65__) || defined (__mn10200__) || defined (__AVR__)
 
