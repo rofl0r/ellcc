@@ -140,7 +140,7 @@ count-loc:
 # -------------------- clean, etc. -------------------
 clean:
 	rm -f $(TOCLEAN) gmon.out
-	cd outdir && ls | grep -v CVS | xargs rm -f
+	-cd outdir && ls | grep -v CVS | xargs rm -f
 
 distclean: clean
 	rm -f $(TODISTCLEAN)

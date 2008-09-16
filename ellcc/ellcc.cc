@@ -1959,7 +1959,7 @@ static int Link(const std::string& OutputFilename,
   } 
   args.push_back("-static");
   args.push_back("--hash-style=gnu");
-  args.push_back("/home/rich/local/i686-pc-linux-gnu/lib/crt0.o");
+  args.push_back("/usr/local/i686-pc-linux-gnu/lib/crt0.o");
   args.push_back("-o");
   args.push_back(OutputFilename);
   for (unsigned i = 0; i < InputFilenames.size(); ++i ) {
@@ -1996,8 +1996,7 @@ static int Link(const std::string& OutputFilename,
 
   // args.push_back("-L/usr/lib");
   // args.push_back("-L/usr/lib/gcc/i386-redhat-linux/4.1.2");
-  args.push_back("-L/home/rich/local/i686-pc-linux-gnu/lib");
-  args.push_back("-L/home/rich/llvm-gcc/install/lib/gcc/i686-pc-linux-gnu/4.2.1");
+  args.push_back("-L/usr/local/i686-pc-linux-gnu/lib");
   // args.push_back("-L/home/rich/local/x86-elf/lib");
   args.push_back("-lc");
   args.push_back("-lgcc");
