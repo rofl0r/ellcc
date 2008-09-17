@@ -21,6 +21,9 @@
 #include "sysdep.h"
 #include "bfd.h"
 #include "bucomm.h"
+#if defined(__CYGWIN__)
+#include <io.h>
+#endif
 
 #if !defined O_BINARY && defined _O_BINARY
   /* For MSC-compatible compilers.  */
@@ -35,7 +38,7 @@
 #endif
 
 #if O_BINARY
-# ifndef __DJGPP__
+# if !defined(__DJGPP__) && !defined(__CYGWIN__)
 #  define setmode _setmode
 #  define fileno(_fp) _fileno (_fp)
 # endif /* not DJGPP */
