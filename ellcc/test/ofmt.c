@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 
-// #define double float
+#define double float
 
 #if INT_MAX == LONG_MAX
 /** Longs are the same as ints.
