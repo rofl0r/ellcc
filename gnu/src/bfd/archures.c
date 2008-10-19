@@ -404,6 +404,7 @@ DESCRIPTION
 .#define bfd_mach_r800           11 {* R800: successor with multiplication.  *}
 .  bfd_arch_nios2,      {* The Altera Nios2 soft core. *}
 .#define bfd_mach_nios2                    1
+.  bfd_arch_microblaze, {* The Xilinx Microblaze soft core. *}
 .  bfd_arch_last
 .  };
 */
@@ -475,12 +476,14 @@ extern const bfd_arch_info_type bfd_m88k_arch;
 extern const bfd_arch_info_type bfd_maxq_arch;
 extern const bfd_arch_info_type bfd_mcore_arch;
 extern const bfd_arch_info_type bfd_mep_arch;
+extern const bfd_arch_info_type bfd_microblaze_arch;
 extern const bfd_arch_info_type bfd_mips_arch;
 extern const bfd_arch_info_type bfd_mmix_arch;
 extern const bfd_arch_info_type bfd_mn10200_arch;
 extern const bfd_arch_info_type bfd_mn10300_arch;
 extern const bfd_arch_info_type bfd_msp430_arch;
 extern const bfd_arch_info_type bfd_mt_arch;
+extern const bfd_arch_info_type bfd_nios2_arch;
 extern const bfd_arch_info_type bfd_ns32k_arch;
 extern const bfd_arch_info_type bfd_openrisc_arch;
 extern const bfd_arch_info_type bfd_or32_arch;
@@ -507,7 +510,6 @@ extern const bfd_arch_info_type bfd_xtensa_arch;
 extern const bfd_arch_info_type bfd_xc16x_arch;
 extern const bfd_arch_info_type bfd_z80_arch;
 extern const bfd_arch_info_type bfd_z8k_arch;
-extern const bfd_arch_info_type bfd_nios2_arch;
 
 static const bfd_arch_info_type * const bfd_archures_list[] =
   {
@@ -547,6 +549,7 @@ static const bfd_arch_info_type * const bfd_archures_list[] =
     &bfd_maxq_arch,
     &bfd_mcore_arch,
     &bfd_mep_arch,
+    &bfd_microblaze_arch,
     &bfd_mips_arch,
     &bfd_mmix_arch,
     &bfd_mn10200_arch,

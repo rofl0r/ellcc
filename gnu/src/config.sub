@@ -270,6 +270,7 @@ case $basic_machine in
 	| mn10200 | mn10300 \
 	| mt \
 	| msp430 \
+        | microblaze \
 	| nios | nios2 \
 	| ns16k | ns32k \
 	| or32 \

@@ -4901,6 +4901,27 @@ ENUMDOC
   Relocations used by the Altera Nios2 soft core
 
 ENUM
+  BFD_RELOC_MICROBLAZE_32_LO
+ENUMDOC
+  This is a 32 bit reloc for the microblaze that stores the low 16 bits of a value
+ENUM
+  BFD_RELOC_MICROBLAZE_32_LO_PCREL
+ENUMDOC
+  This is a 32 bit pc-relative reloc for the microblaze that stores the low 16 bits of a value
+ENUM
+  BFD_RELOC_MICROBLAZE_32_ROSDA
+ENUMDOC
+  This is a 32 bit reloc for the microblaze that stores a value relative to the read-only small data area anchor
+ENUM
+  BFD_RELOC_MICROBLAZE_32_RWSDA
+ENUMDOC
+  This is a 32 bit reloc for the microblaze that stores a value relative to the read-write small data area anchor
+ENUM
+  BFD_RELOC_MICROBLAZE_32_SYM_OP_SYM
+ENUMDOC
+  This is a 32 bit reloc for the microblaze to handle expressions of the form "Symbol Op Symbol"
+
+ENUM
   BFD_RELOC_IQ2000_OFFSET_16
 ENUMX
   BFD_RELOC_IQ2000_OFFSET_21

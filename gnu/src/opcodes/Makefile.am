@@ -43,6 +43,7 @@ HFILES = \
 	m32r-desc.h m32r-opc.h \
 	mcore-opc.h \
 	mep-desc.h mep-opc.h \
+	microblaze-opc.h \
 	mt-desc.h mt-opc.h \
 	openrisc-desc.h openrisc-opc.h \
 	score-opc.h \
@@ -146,6 +147,7 @@ CFILES = \
 	mep-ibld.c \
 	mep-opc.c \
 	mips-dis.c \
+	microblaze-dis.c \
 	mips-opc.c \
 	mips16-opc.c \
 	m10200-dis.c \
@@ -293,6 +295,7 @@ ALL_MACHINES = \
 	mep-dis.lo \
 	mep-ibld.lo \
 	mep-opc.lo \
+	microblaze-dis.lo \
 	mips-dis.lo \
 	mips-opc.lo \
 	mips16-opc.lo \
@@ -1017,6 +1020,8 @@ mep-opc.lo: mep-opc.c sysdep.h config.h $(INCDIR)/ansidecl.h \
   $(INCDIR)/symcat.h $(INCDIR)/opcode/cgen-bitset.h mep-opc.h \
   $(INCDIR)/libiberty.h $(INCDIR)/ansidecl.h $(INCDIR)/elf/mep.h \
   $(INCDIR)/elf/reloc-macros.h
+microblaze-dis.lo: microblaze-dis.c microblaze-opc.h $(INCDIR)/ansidecl.h \
+  $(INCDIR)/dis-asm.h $(BFD_H)
 mips-dis.lo: mips-dis.c sysdep.h config.h $(INCDIR)/ansidecl.h \
   $(INCDIR)/dis-asm.h $(BFD_H) $(INCDIR)/ansidecl.h $(INCDIR)/symcat.h \
   $(INCDIR)/libiberty.h $(INCDIR)/ansidecl.h $(INCDIR)/opcode/mips.h \

@@ -195,9 +195,9 @@ ALL_EMULATIONS = \
 	eelf32ppcwindiss.o \
 	eelf32ppcvxworks.o \
 	eelf32vax.o \
-        eelf32xc16x.o \
-        eelf32xc16xl.o \
-        eelf32xc16xs.o \
+	eelf32xc16x.o \
+	eelf32xc16xl.o \
+	eelf32xc16xs.o \
 	eelf32xstormy16.o \
 	eelf32xtensa.o \
 	eelf_i386.o \
@@ -1478,6 +1478,9 @@ emsp430x449.c: $(srcdir)/emulparams/msp430all.sh \
 enews.c: $(srcdir)/emulparams/news.sh \
   $(srcdir)/emultempl/generic.em $(srcdir)/scripttempl/aout.sc ${GEN_DEPENDS}
 	${GENSCRIPTS} news "$(tdir_news)"
+eelf32microblaze.c: $(srcdir)/emulparams/elf32microblaze.sh \
+  $(srcdir)/emultempl/elf32.em $(srcdir)/scripttempl/elfmicroblaze.sc ${GEN_DEPENDS}
+    ${GENSCRIPTS} elf32microblaze "$(tdir_microblaze)"
 enios2elf.c: $(srcdir)/emulparams/nios2elf.sh \
   $(srcdir)/emultempl/generic.em $(srcdir)/scripttempl/elf.sc ${GEN_DEPENDS}
 	${GENSCRIPTS} nios2elf "$(tdir_nios2)"

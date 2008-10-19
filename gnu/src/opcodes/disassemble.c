@@ -55,12 +55,14 @@
 #define ARCH_maxq
 #define ARCH_mcore
 #define ARCH_mep
+#define ARCH_microblaze
 #define ARCH_mips
 #define ARCH_mmix
 #define ARCH_mn10200
 #define ARCH_mn10300
 #define ARCH_mt
 #define ARCH_msp430
+#define ARCH_nios2
 #define ARCH_ns32k
 #define ARCH_openrisc
 #define ARCH_or32
@@ -85,7 +87,6 @@
 #define ARCH_xtensa
 #define ARCH_z80
 #define ARCH_z8k
-#define ARCH_nios2
 #define INCLUDE_SHMEDIA
 #endif
 
@@ -438,6 +439,11 @@ disassembler (abfd)
 #ifdef ARCH_iq2000
     case bfd_arch_iq2000:
       disassemble = print_insn_iq2000;
+      break;
+#endif
+#ifdef ARCH_microblaze
+    case bfd_arch_microblaze:
+      disassemble = print_insn_microblaze;
       break;
 #endif
 #ifdef ARCH_m32c

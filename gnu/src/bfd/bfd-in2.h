@@ -2047,6 +2047,7 @@ enum bfd_architecture
   bfd_arch_score,     /* Sunplus score */ 
   bfd_arch_nios2,     /* The ALtera Nios2 soft core. */
 #define bfd_mach_nios2         1
+  bfd_arch_microblaze,/* The Xilinx Microblaze soft core. */
   bfd_arch_openrisc,  /* OpenRISC */
   bfd_arch_mmix,      /* Donald Knuth's educational processor.  */
   bfd_arch_xstormy16,
@@ -4343,6 +4344,25 @@ This is the 5 bits of a value.  */
   BFD_RELOC_NIOS2_CJMP,
   BFD_RELOC_NIOS2_CALLR,
   BFD_RELOC_NIOS2_ALIGN,
+
+/* This is a 32 bit reloc for the microblaze that stores the low 16 bits of a value */
+  BFD_RELOC_MICROBLAZE_32_LO,
+
+/* This is a 32 bit pc-relative reloc for the microblaze that stores the low 16 bits of a value */
+  BFD_RELOC_MICROBLAZE_32_LO_PCREL,
+
+/* This is a 32 bit reloc for the microblaze that stores a value relative to the read-only small data area anchor */
+  BFD_RELOC_MICROBLAZE_32_ROSDA,
+
+  /* This is a 32 bit reloc for the microblaze that stores a value relative to the read-write small data area anchor */
+  BFD_RELOC_MICROBLAZE_32_RWSDA,
+
+  /* This is a 32 bit reloc for the microblaze to handle expressions of the form "Symbol Op Symbol" */
+  BFD_RELOC_MICROBLAZE_32_SYM_OP_SYM,
+
+  /* This is a 64 bit reloc for the microblaze that stores the 32 bit pc relative value in two words (with an imm instruc
+tion).  No relocation is done here - only used for relaxing */
+  BFD_RELOC_MICROBLAZE_64_NONE,
 
 /* IQ2000 Relocations.  */
   BFD_RELOC_IQ2000_OFFSET_16,

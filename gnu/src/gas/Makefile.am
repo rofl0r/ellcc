@@ -71,12 +71,14 @@ CPU_TYPES = \
 	maxq \
 	mcore \
 	mep \
+	microblaze \
 	mips \
 	mmix \
 	mn10200 \
 	mn10300 \
 	msp430 \
 	mt \
+	nios2 \
 	ns32k \
 	openrisc \
 	or32 \
@@ -264,11 +266,13 @@ TARGET_CPU_CFILES = \
 	config/tc-m68k.c \
 	config/tc-mcore.c \
 	config/tc-mep.c \
+	config/tc-microblaze.c \
 	config/tc-mips.c \
 	config/tc-mmix.c \
 	config/tc-mn10200.c \
 	config/tc-mn10300.c \
 	config/tc-msp430.c \
+	config/tc-nios2.c \
 	config/tc-ns32k.c \
 	config/tc-openrisc.c \
 	config/tc-or32.c \
@@ -319,11 +323,13 @@ TARGET_CPU_HFILES = \
 	config/tc-m68k.h \
 	config/tc-mcore.h \
 	config/tc-mep.h \
+	config/tc-microblaze.h \
 	config/tc-mips.h \
 	config/tc-mmix.h \
 	config/tc-mn10200.h \
 	config/tc-mn10300.h \
 	config/tc-msp430.h \
+	config/tc-nios2.h \
 	config/tc-ns32k.h \
 	config/tc-openrisc.h \
 	config/tc-or32.h \
@@ -1236,6 +1242,11 @@ DEPTC_mep_elf = $(srcdir)/config/obj-elf.h $(BFDDIR)/elf-bfd.h \
   cgen.h $(INCDIR)/elf/common.h $(INCDIR)/elf/mep.h $(INCDIR)/elf/reloc-macros.h \
   $(BFDDIR)/libbfd.h $(INCDIR)/hashtab.h $(INCDIR)/xregex.h \
   $(INCDIR)/xregex2.h
+DEPTC_microblaze_elf = $(INCDIR)/bin-bugs.h $(srcdir)/config/obj-elf.h \
+  $(BFDDIR)/elf-bfd.h $(INCDIR)/elf/common.h $(INCDIR)/elf/internal.h \
+  $(INCDIR)/elf/external.h $(INCDIR)/bfdlink.h $(srcdir)/config/tc-microblaze.h \
+  emul.h subsegs.h $(INCDIR)/obstack.h $(srcdir)/../opcodes/microblaze-opc.h \
+  $(INCDIR)/elf/reloc-macros.h
 DEPTC_mips_coff = $(srcdir)/config/obj-coff.h $(srcdir)/config/tc-mips.h \
   $(INCDIR)/coff/internal.h $(INCDIR)/coff/mipspe.h $(INCDIR)/coff/external.h \
   $(BFDDIR)/libcoff.h $(INCDIR)/bfdlink.h subsegs.h $(INCDIR)/obstack.h \
@@ -1288,6 +1299,10 @@ DEPTC_mt_elf = $(srcdir)/config/obj-elf.h $(BFDDIR)/elf-bfd.h \
   $(INCDIR)/opcode/cgen-bitset.h $(srcdir)/../opcodes/mt-opc.h \
   cgen.h $(INCDIR)/elf/common.h $(INCDIR)/elf/mt.h $(INCDIR)/elf/reloc-macros.h \
   $(BFDDIR)/libbfd.h $(INCDIR)/hashtab.h
+EPTC_nios2_elf = $(INCDIR)/bin-bugs.h $(srcdir)/config/obj-elf.h \
+  $(BFDDIR)/elf-bfd.h $(INCDIR)/elf/common.h $(INCDIR)/elf/internal.h \
+  $(INCDIR)/elf/external.h $(INCDIR)/bfdlink.h $(srcdir)/config/tc-nios2.h \
+  emul.h subsegs.h $(INCDIR)/obstack.h $(INCDIR)/elf/reloc-macros.h
 DEPTC_ns32k_aout = $(srcdir)/config/obj-aout.h $(srcdir)/config/tc-ns32k.h \
   $(BFDDIR)/libaout.h $(INCDIR)/bfdlink.h $(INCDIR)/opcode/ns32k.h \
   $(INCDIR)/obstack.h
@@ -1643,6 +1658,9 @@ DEPOBJ_mep_elf = $(srcdir)/config/obj-elf.h $(BFDDIR)/elf-bfd.h \
   $(INCDIR)/safe-ctype.h subsegs.h $(INCDIR)/obstack.h \
   $(INCDIR)/obstack.h struc-symbol.h dwarf2dbg.h $(INCDIR)/elf/mep.h \
   $(INCDIR)/elf/reloc-macros.h $(INCDIR)/aout/aout64.h
+DEPOBJ_microblaze_elf = $(srcdir)/config/obj-elf.h $(BFDDIR)/elf-bfd.h \
+  $(INCDIR)/elf/common.h $(INCDIR)/elf/internal.h $(INCDIR)/elf/external.h \
+  $(INCDIR)/bfdlink.h $(srcdir)/config/tc-microblaze.h
 DEPOBJ_mips_coff = $(srcdir)/config/obj-coff.h $(srcdir)/config/tc-mips.h \
   $(INCDIR)/coff/internal.h $(INCDIR)/coff/mipspe.h $(INCDIR)/coff/external.h \
   $(BFDDIR)/libcoff.h $(INCDIR)/bfdlink.h $(INCDIR)/obstack.h \
@@ -1682,6 +1700,9 @@ DEPOBJ_mt_elf = $(srcdir)/config/obj-elf.h $(BFDDIR)/elf-bfd.h \
   $(INCDIR)/bfdlink.h $(srcdir)/config/tc-mt.h dwarf2dbg.h \
   $(INCDIR)/safe-ctype.h subsegs.h $(INCDIR)/obstack.h \
   $(INCDIR)/obstack.h struc-symbol.h dwarf2dbg.h $(INCDIR)/aout/aout64.h
+DEPOBJ_nios2_elf = $(srcdir)/config/obj-elf.h $(BFDDIR)/elf-bfd.h \
+  $(INCDIR)/elf/common.h $(INCDIR)/elf/internal.h $(INCDIR)/elf/external.h \
+  $(INCDIR)/bfdlink.h $(srcdir)/config/tc-nios2.h
 DEPOBJ_ns32k_aout = $(srcdir)/config/obj-aout.h $(srcdir)/config/tc-ns32k.h \
   $(BFDDIR)/libaout.h $(INCDIR)/bfdlink.h $(INCDIR)/aout/aout64.h \
   $(INCDIR)/obstack.h
@@ -1981,6 +2002,9 @@ DEP_mep_elf = $(srcdir)/config/obj-elf.h $(BFDDIR)/elf-bfd.h \
   $(INCDIR)/bfdlink.h $(srcdir)/config/tc-mep.h dwarf2dbg.h \
   $(srcdir)/config/obj-coff.h $(INCDIR)/coff/internal.h \
   $(BFDDIR)/libcoff.h
+DEP_microblaze_elf = $(srcdir)/config/obj-elf.h $(BFDDIR)/elf-bfd.h \
+  $(INCDIR)/elf/common.h $(INCDIR)/elf/internal.h $(INCDIR)/elf/external.h \
+  $(INCDIR)/bfdlink.h $(srcdir)/config/tc-microblaze.h
 DEP_mips_coff = $(srcdir)/config/obj-coff.h $(srcdir)/config/tc-mips.h \
   $(INCDIR)/coff/internal.h $(INCDIR)/coff/mipspe.h $(INCDIR)/coff/external.h \
   $(BFDDIR)/libcoff.h $(INCDIR)/bfdlink.h
@@ -2014,6 +2038,9 @@ DEP_mt_elf = $(srcdir)/config/obj-elf.h $(BFDDIR)/elf-bfd.h \
   $(INCDIR)/bfdlink.h $(srcdir)/config/tc-mt.h dwarf2dbg.h \
   $(srcdir)/config/obj-coff.h $(INCDIR)/coff/internal.h \
   $(BFDDIR)/libcoff.h
+DEP_nios2_elf = $(srcdir)/config/obj-elf.h $(BFDDIR)/elf-bfd.h \
+  $(INCDIR)/elf/common.h $(INCDIR)/elf/internal.h $(INCDIR)/elf/external.h \
+  $(INCDIR)/bfdlink.h $(srcdir)/config/tc-nios2.h
 DEP_ns32k_aout = $(srcdir)/config/obj-aout.h $(srcdir)/config/tc-ns32k.h \
   $(BFDDIR)/libaout.h $(INCDIR)/bfdlink.h
 DEP_openrisc_elf = $(srcdir)/config/obj-elf.h $(BFDDIR)/elf-bfd.h \

@@ -404,6 +404,7 @@ mmix-*-*)		targ_emul=mmo
 			targ_extra_emuls=elf64mmix
 			;;
 am33_2.0-*-linux*)	targ_emul=elf32am33lin ;;
+microblaze-*-*)         targ_emul=elf32microblaze ;;
 mn10200-*-*)		targ_emul=mn10200 ;;
 mn10300-*-*)		targ_emul=mn10300
 			;;
