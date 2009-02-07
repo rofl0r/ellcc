@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 
-#define double float
+#define USE_FLOATS 1
 
 #if INT_MAX == LONG_MAX
 /** Longs are the same as ints.
@@ -31,6 +31,7 @@
 #define	PRECISIONFLAG	0x080	///< User specified precision.
 #define	NOTRAILZERO	0x100	///< Don't output trailing zero's.
 
+#if USE_FLOATS
 // Definitions for floating point format flags.
 #define	FLOATFLAG	0x001	///< Are we in a float format?
 #define	DECIMALPOINT	0x002	///< Should we output a decimalpoint?
@@ -134,6 +135,7 @@ static void toASCII(double value, unsigned int ndigits, int* decpt,
 
     *buf = '\0';
 }
+#endif // USE_FLOATS
 
 /** Send a character to the output stream.
  */
@@ -289,6 +291,7 @@ int _vformat(FILE* fp, char* line, const char *format, va_list ap)
             }
             goto loop;
 
+#if USE_FLOATS
         case 'G':
             fflags |= EUPPER;
             // Fall through.
@@ -389,6 +392,7 @@ int _vformat(FILE* fp, char* line, const char *format, va_list ap)
                           ((fflags & DECIMALPOINT) != 0) + ((flags & SIGNFLAG) != 0);
             totalLength += exponent;
             goto output;
+#endif // USE_FLOATS
 
         case 'N':
         case 'n':
@@ -567,7 +571,9 @@ int _vformat(FILE* fp, char* line, const char *format, va_list ap)
             }
 
             flags &= ~LEADINGZERO;
+#if USE_FLOATS
             fflags &= ~(DECIMALPOINT | EXPONENT);
+#endif // USE_FLOATS
 
             if (precision && !width) {
                 width = precision;
@@ -621,9 +627,11 @@ int _vformat(FILE* fp, char* line, const char *format, va_list ap)
             if (!(flags & LEFTJUST)) {
                 int i;
 
+#if USE_FLOATS
                 if (fflags & FLOATFLAG) {
                     width += 1;
                 }
+#endif // USE_FLOATS
                 for (i = width - (totalLength < precision ? precision : totalLength); i > 0 ; --i) {
                     status = putChar(fp, &line, pad, &count);
 	            if (status < 0) {
@@ -648,6 +656,7 @@ int _vformat(FILE* fp, char* line, const char *format, va_list ap)
             }
 
             // Transfer the work buffer to the output.
+#if USE_FLOATS
             if (fflags & FLOATFLAG) {
                 if (decpt > 0) {
                     do {
@@ -720,6 +729,7 @@ int _vformat(FILE* fp, char* line, const char *format, va_list ap)
                     }
                 }
             } else {
+#endif // USE_FLOATS
                 int i;
                 if (!precision || numchars < precision) {
                     i = numchars;
@@ -733,13 +743,17 @@ int _vformat(FILE* fp, char* line, const char *format, va_list ap)
 	                return status;
 	            }
                 }
+#if USE_FLOATS
             }
+#endif // USE_FLOATS
 
             // If left justified, pad on the right.
             if (flags & LEFTJUST) {
+#if USE_FLOATS
                 if (fflags & FLOATFLAG) {
                     width += 1;
                 }
+#endif // USE_FLOATS
                 for (int i = width - totalLength; i > 0; i--) {
                     // Here always pad with spaces.
                     status = putChar(fp, &line, ' ', &count);

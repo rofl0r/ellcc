@@ -569,6 +569,7 @@ Preprocessor Options
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/PluginLoader.h"
+#include "llvm/Support/RegistryParser.h"
 #include "llvm/Support/Streams.h"
 #include "llvm/Support/SystemUtils.h"
 #include "llvm/Support/Timer.h"
@@ -1143,7 +1144,7 @@ static cl::opt<std::string>
 TargetTriple("mtriple", cl::desc("Override target triple for module"));
 
 static cl::opt<const TargetMachineRegistry::entry*, false,
-               TargetMachineRegistry::Parser>
+               RegistryParser<TargetMachine> >
 MArch("march", cl::desc("Architecture to generate code for:"));
 
 static cl::opt<std::string>
@@ -1995,7 +1996,7 @@ static int Link(const std::string& OutputFilename,
     }
 
   // args.push_back("-L/usr/lib");
-  // args.push_back("-L/usr/lib/gcc/i386-redhat-linux/4.1.2");
+  // args.push_back("-L/usr/lib/gcc/i386-redhat-linux/4.3.2");
   args.push_back("-L/usr/local/i686-pc-linux-gnu/lib");
   // args.push_back("-L/home/rich/local/x86-elf/lib");
   args.push_back("-lc");
@@ -2408,7 +2409,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
             }
           
             if (PrintEachXForm)
-                Passes.add(new PrintModulePass(&cerr));
+                Passes.add(createPrintModulePass(&errs()));
         }
     
         // Check that the module is well formed on completion of optimization
@@ -2516,17 +2517,20 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         OutputFilename = GetFileNameRoot(InputFilename);
 #endif
 
+        bool isBinary = true;
         switch (FileType) {
         case TargetMachine::AssemblyFile:
             if (MArch->Name[0] != 'c' || MArch->Name[1] != 0) { // not CBE
                 if (to.getSuffix() == "") {
                     to.appendSuffix("s");
                 }
+                isBinary = false;
                 nextType = S;
             } else {
                 if (to.getSuffix() == "") {
                     to.appendSuffix("cbe.c");
                 }
+                isBinary = false;
                 nextType = CBE;
             }
             break;
@@ -2555,7 +2559,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         sys::RemoveFileOnSignal(to);
 
         std::string error;
-        raw_ostream *Out = new raw_fd_ostream(to.c_str(), error);
+        raw_ostream *Out = new raw_fd_ostream(to.c_str(), isBinary, error);
         if (!error.empty()) {
           std::cerr << error << '\n';
           delete Out;
@@ -2947,6 +2951,7 @@ int main(int argc, char **argv)
 #endif
                 PM.add(llvm::CreateBitcodeWriterPass(*out));
                 PM.run(*it->module);
+                delete out;
                 delete it->module;
             }
         }
