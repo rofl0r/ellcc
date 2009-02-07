@@ -15,7 +15,6 @@
 #include <llvm/Instructions.h>
 #include <llvm/InlineAsm.h>
 #include <llvm/Intrinsics.h>
-#include <llvm/ParameterAttributes.h>
 #include <llvm/Support/MathExtras.h>
 #include <llvm/Analysis/Verifier.h>
 

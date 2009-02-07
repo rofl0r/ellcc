@@ -42,6 +42,7 @@ using namespace std;
 #include <llvm/Module.h>
 #include <llvm/Pass.h>
 #include <llvm/PassManager.h>
+#include "llvm/Support/raw_ostream.h"
 #include <llvm/Assembly/PrintModulePass.h>
 #endif
 
@@ -869,13 +870,17 @@ void doit(int argc, char **argv)
     std::ostream *out = &std::cout;  // Default to printing to stdout.
     if (cc2llvmOutputFname != sm::string("-")) {
       out = new std::ofstream(cc2llvmOutputFname.c_str());
-      if (!out) {
+      if (!out->good()) {
         xsyserror("open", stringb("write \"" << cc2llvmOutputFname << "\""));
       }
     }
-    llvm::OStream L(*out);
-    PM.add(new llvm::PrintModulePass(&L));
+    llvm::raw_os_ostream L(*out);
+    PM.add(createPrintModulePass(&L));
     PM.run(*mod);
+    if (out != &std::cout) {
+      ((std::ofstream*)out)->close();
+      delete out;
+    }
     delete mod;
   }
 #endif
