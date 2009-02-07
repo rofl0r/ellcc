@@ -220,11 +220,6 @@ iq2000-*-*)
 	gdb_sim=../sim/iq2000/libsim.a
 	;;
 
-nios2-*-*)
-	# Target: Altera Nios2 softcore
-	gdb_target_obs="nios2-tdep.o"
-	;;
-
 m32c-*-*)
 	# Target: Renesas M32C family
 	gdb_target_obs="m32c-tdep.o prologue-value.o"
@@ -286,6 +281,11 @@ mep-*-*)
 	# No sim needed. Target uses SID.
 	;;
 
+microblaze-*-*)
+	# Target: Xilinx Microblaze softcore
+	gdb_target_obs="microblaze-tdep.o"
+	;;
+
 mips*-sgi-irix5*)
 	# Target: MIPS SGI running Irix 5
 	gdb_target_obs="mips-tdep.o mips-irix-tdep.o solib.o solib-irix.o"
@@ -327,6 +327,11 @@ mn10300-*-*)
 mt-*-*)
 	# Target: Morpho Technologies ms1 processor
 	gdb_target_obs="mt-tdep.o"
+	;;
+
+nios2-*-*)
+	# Target: Altera Nios2 softcore
+	gdb_target_obs="nios2-tdep.o"
 	;;
 
 powerpc-*-netbsd* | powerpc-*-knetbsd*-gnu)

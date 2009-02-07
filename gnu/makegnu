@@ -1,6 +1,6 @@
 #!/bin/sh
 
-prefix=/home/rich/local
+prefix=/usr/local
 targets=`cat targets`
 targetlist=`echo $targets | sed -e "s/ /,/g"`
 ellcc=`cd ../ellcc; pwd`
