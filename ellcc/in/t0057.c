@@ -1,7 +1,8 @@
 int main()
 {
-    unsigned long long acc;
-    int c;
+    typedef long long type;
+    type acc;
+    type c;
 
-    acc += c;
+    acc = acc + c;
 }
