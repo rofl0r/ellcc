@@ -448,7 +448,7 @@ llvm::Value* CC2LLVMEnv::declaration(const Variable* var, llvm::Value* init, int
     } else if (var->type->getTag() == Type::T_LAST_TYPE_TAG) {
         std::cerr << toString(var->loc) << ": ";
         xunimp("last type tag");
-    } else if (var->flags & (DF_STATIC|DF_GLOBAL)) {
+    } else if (var->flags & (DF_STATIC|DF_GLOBAL|DF_EXTERN)) {
         // A global variable.
         if (!(var->flags & DF_EXTERN) && init == NULL) {
             init = llvm::Constant::getNullValue(type);

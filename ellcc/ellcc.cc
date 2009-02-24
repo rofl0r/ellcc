@@ -1025,7 +1025,7 @@ static cl::opt<std::string> OutputMachine("m", cl::Prefix,
 static cl::opt<bool> Native("native", cl::init(false),
     cl::desc("Generative native code instead of bitcode"));
 
-static cl::opt<bool> DebugOutput("g", cl::init(false),
+static cl::opt<bool> DebugOutput("g", cl::init(false), cl::ZeroOrMore,
     cl::desc("Generate objects that include debug symbols"));
 
 #if RICH
