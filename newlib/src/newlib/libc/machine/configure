@@ -932,6 +932,7 @@ mn10200
 mn10300
 mt
 necv70
+nios2
 powerpc
 sh
 sparc
@@ -11698,6 +11699,8 @@ if test -n "${machine_dir}"; then
 	mep ) subdirs="$subdirs mep"
  ;;
 	mips) subdirs="$subdirs mips"
+ ;;
+	nios2) subdirs="$subdirs nios2"
  ;;
 	mn10200) subdirs="$subdirs mn10200"
  ;;
