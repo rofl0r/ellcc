@@ -58,7 +58,6 @@ option identityManager IdentityManager;
 // emit gdb() methods for debugging
 option gdb;
 
-
 // ---------------- file -------------
 // an entire file (with #included stuff) of toplevel forms; I use
 // an ASTList here because I want to use left recursion, and
@@ -709,6 +708,10 @@ class ArgExpressionListOpt (
   FakeList<ArgExpression> *list
 );
 
+// The inline assembly handler.
+class Asm {
+    public E_stringLit* text = NULL;
+}
 
 // things that appear after declarations to assign initial values
 class Initializer (SourceLoc loc) {

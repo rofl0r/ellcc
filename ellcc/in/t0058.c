@@ -1,5 +1,6 @@
 register char * stack_ptr asm ("sp");
 
+//  asm("nop");
 void initialise_monitor_handles (void)
 {
  int i;

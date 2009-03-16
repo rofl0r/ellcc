@@ -175,8 +175,10 @@ class TypeSpecifier {
 
 
 // ----------- gcc asm -----------
-// (no AST extension b/c extra info dropped on floor)
-
+class Asm {
+    public FakeList<E_stringLit> *constraints;
+    public FakeList<ArgExpression> *args;
+}
 
 // ----------- gcc asm labels -----------
 // (no AST extension b/c extra info dropped on floor)
