@@ -136,7 +136,9 @@ void TF_one_linkage::print(BPEnv &bp) const
 void TF_asm::print(BPEnv &bp) const
 {
   bp << "asm(";
-  text->print(bp);
+  /** @TODO Full output.
+   */
+  def->text->print(bp);
   bp << ")";
 }
 
@@ -971,7 +973,9 @@ void S_asm::iprint(BPEnv &bp) const
 {
   SEQ {
     bp << "asm" << bp.br;
-    text->print(bp);
+    /** @TODO Full output.
+     */
+    def->text->print(bp);
     bp << ";";
   }
 }

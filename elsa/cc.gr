@@ -1352,8 +1352,8 @@ nonterm(Enumerator*) EnumeratorDefinition {
 // extension module.  Second, gnu.gr's AsmDefinition *extends* this
 // one, which is how it should be.  This is the AsmDefinition for
 // C++.
-nonterm(E_stringLit*) AsmDefinition {
-  -> "asm" "(" s:StringLiteral ")" ";"    { return s; }
+nonterm(Asm*) AsmDefinition {
+  -> "asm" "(" s:StringLiteral ")" ";"    { return new Asm(s); }
 }
 
 

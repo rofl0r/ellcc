@@ -392,7 +392,7 @@ nonterm NonemptyOpConstraints {
 
 
 // dsw: FIX: add returning rest of semantic value
-nonterm(E_stringLit*) AsmDefinition {
+nonterm(Asm*) AsmDefinition {
   // 7/31/04: For some time we have allowed "volatile" after "asm", as
   // is documented here:
   //   http://gcc.gnu.org/onlinedocs/gcc-3.1/gcc/Extended-Asm.html
@@ -401,15 +401,15 @@ nonterm(E_stringLit*) AsmDefinition {
 
   // NOTE: CVQualifierSeqOpt is simply discarded here
   -> "asm" q:CVQualifierSeq "(" s:StringLiteral ")" ";"
-       { return s; }
+       { return new Asm(s); }
 
   // I write two rules, exposing the optionality of CVQualifierSeq at
   // this level instead of pushing it down into CVQualifierSeqOpt, to
   // avoid an S/R conflict.
   -> "asm" q:CVQualifierSeq "(" s:StringLiteral ocs:NonemptyOpConstraints ")" ";"
-       { return s; }
+       { return new Asm(s); }
   -> "asm" "(" s:StringLiteral ocs:NonemptyOpConstraints ")" ";"
-       { return s; }
+       { return new Asm(s); }
 }
 
 

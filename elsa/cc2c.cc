@@ -580,7 +580,7 @@ void S_try::cc2c(CC2CEnv &env) const { xunimp("try"); }
 void S_asm::cc2c(CC2CEnv &env) const
 {
   env.addStatement(
-    new S_asm(SL_GENERATED ENDLOCARG(SL_GENERATED), text->cc2c(env)->asE_stringLit()));
+    new S_asm(SL_GENERATED ENDLOCARG(SL_GENERATED), def));
 }
 
 

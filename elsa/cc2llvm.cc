@@ -1117,8 +1117,8 @@ void S_try::cc2llvm(CC2LLVMEnv &env) const
 void S_asm::cc2llvm(CC2LLVMEnv &env) const
 {
     // xunimp("asm");
-    std::cerr << "asm " << text->asString() << "\n";
-    std::string str = text->asString().c_str();
+    std::cerr << "asm " << def->text->asString() << "\n";
+    std::string str = def->text->asString().c_str();
     std::string constraints;
     const llvm::Type* returnType = llvm::Type::VoidTy;
     std::vector<const llvm::Type*>args;

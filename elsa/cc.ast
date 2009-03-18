@@ -104,7 +104,7 @@ class TopForm (SourceLoc loc) {
   -> TF_one_linkage(StringRef linkageType, TopForm form);
 
   // assembly directive at toplevel
-  -> TF_asm(E_stringLit text);
+  -> TF_asm(Asm def);
 
   // namespace definition [cppstd 7.3.1]
   -> TF_namespaceDefn(StringRef /*nullable*/ name, ASTList<TopForm> forms);
@@ -502,7 +502,7 @@ class Statement (SourceLoc loc, SourceLoc endloc) {
   -> S_goto(StringRef target);
   -> S_decl(Declaration decl);
   -> S_try(Statement body, FakeList<Handler> *handlers);
-  -> S_asm(E_stringLit text);
+  -> S_asm(Asm def);
   -> S_namespaceDecl(NamespaceDecl decl);
 }
 

@@ -946,7 +946,7 @@ void TF_asm::print(PrintEnv &env)
 {
   TreeWalkDebug treeDebug("TF_asm");
   env.loc = loc;
-  *env.out << "asm(" << text->text << ");\n";
+  *env.out << "asm(" << def->text->text << ");\n";
 }
 
 void TF_namespaceDefn::print(PrintEnv &env)
@@ -1471,7 +1471,7 @@ void S_try::iprint(PrintEnv &env)
 void S_asm::iprint(PrintEnv &env)
 {
   TreeWalkDebug treeDebug("S_asm::iprint");
-  *env.out << "asm(" << text->text << ");\n";
+  *env.out << "asm(" << def->text->text << ");\n";
 }
 
 void S_namespaceDecl::iprint(PrintEnv &env)

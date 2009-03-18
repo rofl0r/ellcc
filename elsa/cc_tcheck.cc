@@ -368,9 +368,9 @@ void TF_asm::itcheck(Env &env)
 {
   env.setLoc(loc);
 
-  StringRef t = text->text;
+  StringRef t = def->text->text;
   if (t[0] == 'L') {
-    env.error(text->loc, stringc
+    env.error(def->text->loc, stringc
       << "wide string literal in ‘asm’");
     return;
   }
@@ -379,7 +379,7 @@ void TF_asm::itcheck(Env &env)
     // this activates an internal diagnostic that will collect
     // the E_variable lookup results as warnings, then at the
     // end of the program, compare them to this string
-    env.collectLookupResults = collectContinuations(text);
+    env.collectLookupResults = collectContinuations(def->text);
   }
 }
 
@@ -4979,9 +4979,9 @@ void S_asm::itcheck(Env &env)
 {
   env.setLoc(loc);
 
-  StringRef t = text->text;
+  StringRef t = def->text->text;
   if (t[0] == 'L') {
-    env.error(text->loc, stringc
+    env.error(def->text->loc, stringc
       << "wide string literal in ‘asm’");
     return;
   }
