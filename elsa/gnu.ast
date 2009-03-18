@@ -175,9 +175,7 @@ class TypeSpecifier {
 
 
 // ----------- gcc asm -----------
-class Asm {
-    public FakeList<E_stringLit> *constraints;
-    public FakeList<ArgExpression> *args;
+class Asm(ASTList<E_stringLit> constraints = NULL, ASTList<ArgExpression> args = NULL) {
 }
 
 // ----------- gcc asm labels -----------

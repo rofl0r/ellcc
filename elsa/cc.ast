@@ -709,8 +709,7 @@ class ArgExpressionListOpt (
 );
 
 // The inline assembly handler.
-class Asm {
-    public E_stringLit* text = NULL;
+class Asm(E_stringLit text) {
 }
 
 // things that appear after declarations to assign initial values
