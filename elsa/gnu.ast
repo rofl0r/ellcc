@@ -176,7 +176,7 @@ class TypeSpecifier {
 
 // ----------- gcc asm -----------
 
-class Constraint(E_stringLit constraint = NULL, Expression arg = NULL, E_stringLit name = NULL) {
+class Constraint(StringRef name, E_stringLit constr, Expression e) {
 }
 
 class Asm(ASTList<Constraint> constraints = NULL) {

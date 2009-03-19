@@ -351,23 +351,25 @@ nonterm(OperatorName*) Operator {
 //  }
 
 
-// dsw: FIX: add returning semantic value
-nonterm BracketedWordOpt {
-  -> empty ;
-  -> "[" id:Identifier "]" ;
+nonterm(StringRef) BracketedWordOpt {
+  -> empty
+        { return NULL; }
+  -> "[" id:Identifier "]"
+        { return id; }
 }
 
 
-// dsw: FIX: add returning semantic value
-nonterm ParenthesizedExpressionOpt {
-  -> empty ;
-  ->  "(" e:Expression ")" ;
+nonterm(Expression*) ParenthesizedExpressionOpt {
+  -> empty
+        { return NULL; }
+  ->  "(" e:Expression ")"
+        { return e; }
 }
 
 
-// dsw: FIX: add returning semantic value
-nonterm OpConstraint {
-  -> name:BracketedWordOpt constr:StringLiteral e:ParenthesizedExpressionOpt ;
+nonterm(Constraint*) OpConstraint {
+  -> name:BracketedWordOpt constr:StringLiteral e:ParenthesizedExpressionOpt
+        { return new Constraint(name, constr, e); }
 }
 
 
