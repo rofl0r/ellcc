@@ -175,7 +175,11 @@ class TypeSpecifier {
 
 
 // ----------- gcc asm -----------
-class Asm(ASTList<E_stringLit> constraints = NULL, ASTList<ArgExpression> args = NULL) {
+
+class Constraint(E_stringLit constraint = NULL, Expression arg = NULL, E_stringLit name = NULL) {
+}
+
+class Asm(ASTList<Constraint> constraints = NULL) {
 }
 
 // ----------- gcc asm labels -----------
