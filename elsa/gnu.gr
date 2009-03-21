@@ -384,6 +384,8 @@ nonterm(ASTList<Constraint>*) OpConstraintList {
 nonterm(Constraints*) OpConstraints {
   -> ":" o:OpConstraintList ":" i:OpConstraintList ":" c: OpConstraintList
         { return new Constraints(o, i, c); }
+  -> ":" o:OpConstraintList ":" i: OpConstraintList
+        { return new Constraints(o, i, NULL); }
   -> ":" o:OpConstraintList "::" c: OpConstraintList
         { return new Constraints(o, NULL, c); }
   -> "::" i:OpConstraintList ":" c: OpConstraintList
