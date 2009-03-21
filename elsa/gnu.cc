@@ -736,7 +736,11 @@ void Asm::itcheck_constraints(Env &env, bool module)
     if (constraints == NULL) {
         return;
     }
+
+    // Process the output constraints.
+    int numOutputs = 0;
     FOREACH_ASTLIST_NC(Constraint, constraints->outputs, c) {
+        ++numOutputs;
         E_stringLit* constr = c.data()->constr;
         Expression*& expr = c.data()->e;
         if (module && (constr || expr)) {
@@ -750,6 +754,30 @@ void Asm::itcheck_constraints(Env &env, bool module)
             const char* cp = (const char*)constr->data->getDataC();
             if (*cp != '=' && *cp != '+') {
                 env.error(constr->loc, "an inline asm output constraint must start with a '=' or '+'");
+            } else {
+                ++cp;
+            }
+
+            bool good = true;
+            while (good && *cp) {
+                switch (*cp) {
+                default: // RICH: Check for a target specific constraint.
+                    good = false;
+                    env.error(c.data()->loc, stringc << "the output constraint '"
+                              << *cp << "' is invalid");
+                    break;
+                case '&': // RICH: Early clobber.
+                    break;
+                case 'r': // RICH: General register.
+                    break;
+                case 'm': // RICH: Memory operand.
+                    break;
+                case 'g': // RICH: General register.
+                case 'X': // RICH: Any operand.
+                    break;
+                }
+
+                ++cp;
             }
         }
 
@@ -758,6 +786,12 @@ void Asm::itcheck_constraints(Env &env, bool module)
         } else {
             env.error(c.data()->loc, "an inline asm output constraint must have an expression");
         }
+    }
+
+    // Process the input constraints.
+    Constraint* last = NULL;
+    if (constraints) {
+        last = constraints->inputs.last();
     }
     FOREACH_ASTLIST_NC(Constraint, constraints->inputs, c) {
         E_stringLit* constr = c.data()->constr;
@@ -770,6 +804,46 @@ void Asm::itcheck_constraints(Env &env, bool module)
         if (constr) {
             Expression* dummy;
             constr->itcheck_x(env, dummy);
+            const char* cp = (const char*)constr->data->getDataC();
+            bool good = true;
+            while (good && *cp) {
+                switch (*cp) {
+                default:
+                    if (*cp >= '0' && *cp <= '9') {
+                        // A matching constrint.
+                        int i = *cp - '0';
+                        if (i >= numOutputs) {
+                            env.error(c.data()->loc, stringc << "the matching constraint '"
+                                      << *cp << "' exceeds the number of output constrints");
+                            good = false;
+                        }
+                    } else {
+                        // RICH: Check for a target specific constraint.
+                       good = false;
+                       env.error(c.data()->loc, stringc << "the input constraint '"
+                                 << *cp << "' is invalid");
+                    }
+                    break;
+                case '%': // Commutative.
+                    if (c.data() == last) {
+                       env.error(c.data()->loc, "the last input constraint is marked commutative");
+                    }
+                    break;
+                case 'i': // Immediate integer.
+                case 'I':
+                case 'n': // Immediate integer with a known value.
+                    break;
+                case 'r': // RICH: General register.
+                    break;
+                case 'm': // RICH: Memory operand.
+                    break;
+                case 'g': // RICH: General register, memory operand, or immediate integer.
+                case 'X': // RICH: Any operand.
+                    break;
+                }
+
+                ++cp;
+            }
         }
 
         if (expr) {
