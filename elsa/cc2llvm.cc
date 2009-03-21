@@ -1123,15 +1123,24 @@ void S_try::cc2llvm(CC2LLVMEnv &env) const
 void S_asm::cc2llvm(CC2LLVMEnv &env) const
 {
     std::string str((const char*)def->text->data->getDataC(),
-                      def->text->data->getDataLen());
+                    def->text->data->getDataLen());
     std::string constraints;
     const llvm::Type* returnType = llvm::Type::VoidTy;
-    std::vector<const llvm::Type*>args;
+    std::vector<llvm::Value*> args;
+    std::vector<const llvm::Type*> argTypes;
+
+#ifdef GNU_EXTENSION
+    // Keep track of inout constraints.
+    std::string inOutConstraints;
+    std::vector<llvm::Value*> inOutArgs;
+    std::vector<const llvm::Type*> inOutArgTypes;
+    // RICH: std::vector<TargetInfo::ConstraintInfo> outputConstraintInfos;
+#endif
+
     llvm::FunctionType* type =
-        llvm::FunctionType::get(returnType, args, false);
+        llvm::FunctionType::get(returnType, argTypes, false);
     llvm::InlineAsm* function = llvm::InlineAsm::get(type, str, constraints, false);
-    std::vector<llvm::Value*> parameters;
-    env.builder.CreateCall(function, parameters.begin(), parameters.end());
+    env.builder.CreateCall(function, args.begin(), args.end());
 }
 
 void S_namespaceDecl::cc2llvm(CC2LLVMEnv &env) const 
