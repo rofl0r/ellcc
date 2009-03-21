@@ -369,29 +369,30 @@ nonterm(Expression*) ParenthesizedExpressionOpt {
 
 nonterm(Constraint*) OpConstraint {
   -> name:BracketedWordOpt constr:StringLiteral e:ParenthesizedExpressionOpt
-        { return new Constraint(name, constr, e); }
+        { return new Constraint(loc, name, constr, e); }
 }
 
-
-// dsw: FIX: add returning semantic value
-nonterm OpConstraintList {
-  -> empty ;
-  -> oc:OpConstraint ;
-  -> oc:OpConstraint "," ocl:OpConstraintList ;
+nonterm(ASTList<Constraint>*) OpConstraintList {
+  -> empty
+        { return new ASTList<Constraint>(); }
+  -> c:OpConstraint
+        { return new ASTList<Constraint>(c); }
+  -> list:OpConstraintList "," c:OpConstraint
+        { list->append(c); return list; }
 }
 
-
-// dsw: FIX: add returning semantic value
-// note: technically you can only have up to 3, but I allow 0 or more
-nonterm OpConstraints {
-  -> empty;
-  -> NonemptyOpConstraints;
+nonterm(Constraints*) OpConstraints {
+  -> empty
+        { return NULL; }
+  -> ":" o:OpConstraintList ":" i:OpConstraintList ":" c: OpConstraintList
+        { return new Constraints(o, i, c); }
+  -> ":" o:OpConstraintList "::" c: OpConstraintList
+        { return new Constraints(o, NULL, c); }
+  -> "::" i:OpConstraintList ":" c: OpConstraintList
+        { return new Constraints(NULL, i, c); }
+  -> "::" i:OpConstraintList 
+        { return new Constraints(NULL, i, NULL); }
 }
-nonterm NonemptyOpConstraints {
-  -> ocs:OpConstraints ":" ocl:OpConstraintList ;
-  -> ocs:OpConstraints "::" ocl:OpConstraintList ;
-}
-
 
 // dsw: FIX: add returning rest of semantic value
 nonterm(Asm*) AsmDefinition {
@@ -408,10 +409,10 @@ nonterm(Asm*) AsmDefinition {
   // I write two rules, exposing the optionality of CVQualifierSeq at
   // this level instead of pushing it down into CVQualifierSeqOpt, to
   // avoid an S/R conflict.
-  -> "asm" q:CVQualifierSeq "(" s:StringLiteral ocs:NonemptyOpConstraints ")" ";"
-       { return new Asm(s); }
-  -> "asm" "(" s:StringLiteral ocs:NonemptyOpConstraints ")" ";"
-       { return new Asm(s); }
+  -> "asm" q:CVQualifierSeq "(" s:StringLiteral ocs:OpConstraints ")" ";"
+       { return new Asm(s, ocs); }
+  -> "asm" "(" s:StringLiteral ocs:OpConstraints ")" ";"
+       { return new Asm(s, ocs); }
 }
 
 

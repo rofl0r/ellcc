@@ -8,6 +8,7 @@
 #include "stdconv.h"          // usualArithmeticConversions
 #include "astvisit.h"         // ASTVisitorEx
 #include <string.h>           // strcmp
+#include "datablok.h"
 
 using namespace std;
 // fwd in this file
@@ -730,6 +731,68 @@ void S_computedGoto::itcheck(Env &env)
   }
 }
 
+void Asm::itcheck_constraints(Env &env, bool module)
+{
+    FOREACH_ASTLIST_NC(Constraint, constraints->outputs, c) {
+        E_stringLit* constr = c.data()->constr;
+        Expression*& expr = c.data()->e;
+        if (module && (constr || expr)) {
+            env.error(constr->loc, "a module level asm may not contain an output constraint");
+            return;
+        }
+
+        if (constr) {
+            Expression* dummy;
+            constr->itcheck_x(env, dummy);
+            const char* cp = (const char*)constr->data->getDataC();
+            if (*cp != '=' && *cp != '+') {
+                env.error(constr->loc, "an inline asm output constraint must start with a '=' or '+'");
+            }
+        }
+
+        if (expr) {
+            expr->tcheck(env, expr);
+        } else {
+            env.error(c.data()->loc, "an inline asm output constraint must have an expression");
+        }
+    }
+    FOREACH_ASTLIST_NC(Constraint, constraints->inputs, c) {
+        E_stringLit* constr = c.data()->constr;
+        Expression*& expr = c.data()->e;
+        if (module && (constr || expr)) {
+            env.error(constr->loc, "a module level asm may not contain an input constraint");
+            return;
+        }
+
+        if (constr) {
+            Expression* dummy;
+            constr->itcheck_x(env, dummy);
+        }
+
+        if (expr) {
+            expr->tcheck(env, expr);
+        } else {
+            env.error(c.data()->loc, "an inline asm input constraint must have an expression");
+        }
+    }
+    FOREACH_ASTLIST_NC(Constraint, constraints->clobbers, c) {
+        E_stringLit* constr = c.data()->constr;
+        Expression*& expr = c.data()->e;
+        if (module && (constr || expr)) {
+            env.error(constr->loc, "a module level asm may not contain a clobber constraint");
+            return;
+        }
+
+        if (constr) {
+            Expression* dummy;
+            constr->itcheck_x(env, dummy);
+        }
+
+        if (expr) {
+            env.error(expr->loc, "an inline asm clobber constraint cannot have an expression");
+        }
+    }
+}
 
 Type *E_compoundLit::itcheck_x(Env &env, Expression *&replacement)
 {

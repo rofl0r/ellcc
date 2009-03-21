@@ -1116,9 +1116,8 @@ void S_try::cc2llvm(CC2LLVMEnv &env) const
 
 void S_asm::cc2llvm(CC2LLVMEnv &env) const
 {
-    // xunimp("asm");
-    std::cerr << "asm " << def->text->asString() << "\n";
-    std::string str = def->text->asString().c_str();
+    std::string str((const char*)def->text->data->getDataC(),
+                      def->text->data->getDataLen());
     std::string constraints;
     const llvm::Type* returnType = llvm::Type::VoidTy;
     std::vector<const llvm::Type*>args;
@@ -1127,11 +1126,6 @@ void S_asm::cc2llvm(CC2LLVMEnv &env) const
     llvm::InlineAsm* function = llvm::InlineAsm::get(type, str, constraints, false);
     std::vector<llvm::Value*> parameters;
     env.builder.CreateCall(function, parameters.begin(), parameters.end());
-
-#if RICH
-    env.addStatement(
-      new S_asm(SL_GENERATED, text->cc2llvm(env)->asE_stringLit()));
-#endif
 }
 
 void S_namespaceDecl::cc2llvm(CC2LLVMEnv &env) const 

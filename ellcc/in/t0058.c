@@ -64,7 +64,7 @@ int _swiwrite ( char * ptr, int len)
  : "r0","r1","r2");
 }
 
-int _swiopen ()
+int _swiopen (char* path)
 {
  int aflags = 0, fh;
  int i;

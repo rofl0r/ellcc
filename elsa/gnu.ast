@@ -176,10 +176,16 @@ class TypeSpecifier {
 
 // ----------- gcc asm -----------
 
-class Constraint(StringRef name, E_stringLit constr, Expression e) {
+class Constraint(SourceLoc loc, StringRef name, E_stringLit constr, Expression e) {
 }
 
-class Asm(ASTList<Constraint> constraints = NULL) {
+class Constraints(ASTList<Constraint> outputs = NULL,
+                  ASTList<Constraint> inputs = NULL,
+                  ASTList<Constraint> clobbers = NULL) {
+}
+
+class Asm(Constraints constraints = NULL) {
+    public void itcheck_constraints(Env &env, bool module);
 }
 
 // ----------- gcc asm labels -----------

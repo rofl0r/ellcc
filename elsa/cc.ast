@@ -710,6 +710,7 @@ class ArgExpressionListOpt (
 
 // The inline assembly handler.
 class Asm(E_stringLit text) {
+    public void itcheck(Env &env, bool module = false);
 }
 
 // things that appear after declarations to assign initial values
