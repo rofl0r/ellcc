@@ -733,6 +733,9 @@ void S_computedGoto::itcheck(Env &env)
 
 void Asm::itcheck_constraints(Env &env, bool module)
 {
+    if (constraints == NULL) {
+        return;
+    }
     FOREACH_ASTLIST_NC(Constraint, constraints->outputs, c) {
         E_stringLit* constr = c.data()->constr;
         Expression*& expr = c.data()->e;
