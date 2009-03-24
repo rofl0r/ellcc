@@ -20,6 +20,9 @@
 
 #include "cc2llvm.h"         // this module
 
+#include "TargetInfo.h"
+using namespace elsa;
+
 #define BITS_PER_BYTE	8	// RICH: Temporary.
 
 #define SRET 1
@@ -1134,7 +1137,6 @@ void S_asm::cc2llvm(CC2LLVMEnv &env) const
     std::string inOutConstraints;
     std::vector<llvm::Value*> inOutArgs;
     std::vector<const llvm::Type*> inOutArgTypes;
-    // RICH: std::vector<TargetInfo::ConstraintInfo> outputConstraintInfos;
 #endif
 
     llvm::FunctionType* type =
