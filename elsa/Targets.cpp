@@ -13,14 +13,14 @@
 //===----------------------------------------------------------------------===//
 
 // FIXME: Layering violation
-#include "clang/AST/Builtins.h"
-#include "clang/AST/TargetBuiltins.h"
-#include "clang/Basic/TargetInfo.h"
-#include "clang/Basic/LangOptions.h"
+#include "Builtins.h"
+#include "TargetBuiltins.h"
+#include "TargetInfo.h"
+#include "LangOptions.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/SmallString.h"
-using namespace clang;
+using namespace elsa;
 
 //===----------------------------------------------------------------------===//
 //  Common code shared among targets.
@@ -197,7 +197,7 @@ public:
   virtual void getTargetBuiltins(const Builtin::Info *&Records,
                                  unsigned &NumRecords) const {
     Records = BuiltinInfo;
-    NumRecords = clang::PPC::LastTSBuiltin-Builtin::FirstTSBuiltin;
+    NumRecords = elsa::PPC::LastTSBuiltin-Builtin::FirstTSBuiltin;
   }
   
   virtual void getTargetDefines(const LangOptions &Opts,
@@ -241,7 +241,7 @@ public:
 const Builtin::Info PPCTargetInfo::BuiltinInfo[] = {
 #define BUILTIN(ID, TYPE, ATTRS) { #ID, TYPE, ATTRS, 0, false },
 #define LIBBUILTIN(ID, TYPE, ATTRS, HEADER) { #ID, TYPE, ATTRS, HEADER, false },
-#include "clang/AST/PPCBuiltins.def"
+#include "PPCBuiltins.def"
 };
   
   
@@ -411,7 +411,7 @@ namespace {
 const Builtin::Info BuiltinInfo[] = {
 #define BUILTIN(ID, TYPE, ATTRS) { #ID, TYPE, ATTRS, 0, false },
 #define LIBBUILTIN(ID, TYPE, ATTRS, HEADER) { #ID, TYPE, ATTRS, HEADER, false },
-#include "clang/AST/X86Builtins.def"
+#include "X86Builtins.def"
 };
 
 const char *GCCRegNames[] = {
@@ -452,7 +452,7 @@ public:
   virtual void getTargetBuiltins(const Builtin::Info *&Records,
                                  unsigned &NumRecords) const {
     Records = BuiltinInfo;
-    NumRecords = clang::X86::LastTSBuiltin-Builtin::FirstTSBuiltin;
+    NumRecords = elsa::X86::LastTSBuiltin-Builtin::FirstTSBuiltin;
   }
   virtual const char *getTargetPrefix() const {
     return "x86";
@@ -900,6 +900,19 @@ public:
 } // end anonymous namespace.
 
 namespace {
+// arm FreeBSD target
+class FreeBSDARMTargetInfo : public ARMTargetInfo {
+public:
+  FreeBSDARMTargetInfo(const std::string& triple) : ARMTargetInfo(triple) {}
+  virtual void getTargetDefines(const LangOptions &Opts,
+                                std::vector<char> &Defines) const {
+    ARMTargetInfo::getTargetDefines(Opts, Defines);
+    getFreeBSDDefines(Opts, 0, getTargetTriple(), Defines);
+  }
+};
+} // end anonymous namespace
+
+namespace {
 class SparcV8TargetInfo : public TargetInfo {
   static const TargetInfo::GCCRegAlias GCCRegAliases[];
   static const char * const GCCRegNames[];
@@ -1090,6 +1103,8 @@ TargetInfo* TargetInfo::CreateTargetInfo(const std::string &T) {
   }
 
   if (T.find("armv6-") == 0 || T.find("arm-") == 0) {
+    if (isFreeBSD)
+      return new FreeBSDARMTargetInfo(T);
     if (isDarwin)
       return new DarwinARMTargetInfo(T);
     return new ARMTargetInfo(T);

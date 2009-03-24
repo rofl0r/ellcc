@@ -16,7 +16,7 @@
 
 #include "llvm/Bitcode/SerializationFwd.h"
 
-namespace clang {
+namespace elsa {
 
 /// LangOptions - This class keeps track of the various options that can be
 /// enabled, which controls the dialect of C that is accepted.
@@ -100,6 +100,6 @@ public:
   void Read(llvm::Deserializer& S);  
 };
 
-}  // end namespace clang
+}  // end namespace elsa
 
 #endif

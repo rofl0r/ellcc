@@ -14,13 +14,17 @@
 #ifndef LLVM_CLANG_BASIC_TARGETINFO_H
 #define LLVM_CLANG_BASIC_TARGETINFO_H
 
+#ifndef __STDC_LIMIT_MACROS
+#define __STDC_LIMIT_MACROS 1
+#define __STDC_CONSTANT_MACROS 1
+#endif
 #include "llvm/Support/DataTypes.h"
 #include <vector>
 #include <string>
 
 namespace llvm { struct fltSemantics; }
 
-namespace clang {
+namespace elsa {
 
 class Diagnostic;
 class SourceManager;
@@ -285,6 +289,6 @@ protected:
                                      TargetInfo::ConstraintInfo &info) const= 0;
 };
 
-}  // end namespace clang
+}  // end namespace elsa
 
 #endif

@@ -10,14 +10,14 @@
 #ifndef LLVM_CLANG_AST_TARGET_BUILTINS_H
 #define LLVM_CLANG_AST_TARGET_BUILTINS_H
 
-#include "clang/AST/Builtins.h"
+#include "Builtins.h"
 #undef PPC
 
-namespace clang {
+namespace elsa {
   /// X86 builtins
   namespace X86 {
     enum {
-        LastTIBuiltin = clang::Builtin::FirstTSBuiltin-1,
+        LastTIBuiltin = elsa::Builtin::FirstTSBuiltin-1,
 #define BUILTIN(ID, TYPE, ATTRS) BI##ID,
 #include "X86Builtins.def"
         LastTSBuiltin
@@ -27,12 +27,12 @@ namespace clang {
   /// PPC builtins
   namespace PPC {
     enum {
-        LastTIBuiltin = clang::Builtin::FirstTSBuiltin-1,
+        LastTIBuiltin = elsa::Builtin::FirstTSBuiltin-1,
 #define BUILTIN(ID, TYPE, ATTRS) BI##ID,
 #include "PPCBuiltins.def"
         LastTSBuiltin
     };
   }
-} // end namespace clang.
+} // end namespace elsa.
 
 #endif

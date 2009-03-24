@@ -18,7 +18,7 @@
 #include <cstring>
 #include <string>
 
-namespace clang {
+namespace elsa {
   class TargetInfo;
   class IdentifierTable;
   class ASTContext;
@@ -28,7 +28,7 @@ namespace Builtin {
 enum ID {
   NotBuiltin  = 0,      // This is not a builtin function.
 #define BUILTIN(ID, TYPE, ATTRS) BI##ID,
-#include "clang/AST/Builtins.def"
+#include "Builtins.def"
   FirstTSBuiltin
 };
 
@@ -125,5 +125,5 @@ private:
 };
 
 }
-} // end namespace clang
+} // end namespace elsa
 #endif

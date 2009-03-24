@@ -11,11 +11,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "clang/Basic/TargetInfo.h"
+#include "TargetInfo.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/STLExtras.h"
 #include <cstdlib>
-using namespace clang;
+using namespace elsa;
 
 // TargetInfo Constructor.
 TargetInfo::TargetInfo(const std::string &T) : Triple(T) {
