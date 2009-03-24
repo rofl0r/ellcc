@@ -21,6 +21,9 @@ namespace llvm {
 // Elsa
 #include "cc_ast.h"          // C++ AST
 
+#include "TargetInfo.h"
+using namespace elsa;
+
 // smbase
 #include "ptrmap.h"          // PtrMap
 #include "strtable.h"        // StringTable
@@ -31,7 +34,7 @@ namespace llvm {
 /** The main translator entry point.
  */
 llvm::Module* cc_to_llvm(sm::string name, StringTable &str, TranslationUnit const &input,
-                         const char* targetDataString, const char* targetTriple);
+                         TargetInfo* targetInfo);
 
 
 /** The translation environment.
@@ -48,7 +51,7 @@ public:      // funcs
     /** Construct an LLVM converter.
      */
     CC2LLVMEnv(StringTable &str, sm::string name, const TranslationUnit& input,
-               const char* targetData, const char* targetTriple);
+               TargetInfo* targetInfo);
     /** Destruct an LLVM convertor.
      */
     ~CC2LLVMEnv();

@@ -36,9 +36,9 @@ using namespace elsa;
 
 // -------------------- CC2LLVMEnv ---------------------
 CC2LLVMEnv::CC2LLVMEnv(StringTable &s, sm::string name, const TranslationUnit& input,
-                       const char* targetDataString, const char* targetTriple)
+                       TargetInfo* targetInfo)
   : str(s),
-    targetData(targetDataString),
+    targetData(targetInfo->getTargetDescription()),
     targetFolder(targetData),
     input(input),
     mod(new llvm::Module(name.c_str())),
@@ -54,8 +54,8 @@ CC2LLVMEnv::CC2LLVMEnv(StringTable &s, sm::string name, const TranslationUnit& i
     switchType(NULL),
     builder(targetFolder)
 { 
-    mod->setDataLayout(targetDataString);
-    mod->setTargetTriple(targetTriple);
+    mod->setDataLayout(targetInfo->getTargetDescription());
+    mod->setTargetTriple(targetInfo->getTargetTriple());
 }
 
 CC2LLVMEnv::~CC2LLVMEnv()
@@ -3062,9 +3062,9 @@ llvm::Module* CC2LLVMEnv::doit()
 
 // ------------------- entry point -------------------
 llvm::Module* cc_to_llvm(sm::string name, StringTable &str, TranslationUnit const &input,
-                         const char* targetData, const char* targetTriple)
+                         TargetInfo* targetInfo)
 {
-    CC2LLVMEnv env(str, name, input, targetData, targetTriple);
+    CC2LLVMEnv env(str, name, input, targetInfo);
     return env.doit();
 }
 
