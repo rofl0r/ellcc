@@ -9,6 +9,9 @@ namespace pw {
     class Plexer;
 };
 
+#include "TargetInfo.h"
+using namespace elsa;
+
 #include "llvm/Support/Timer.h"
 
 class Elsa {
@@ -42,14 +45,14 @@ public:
     /** Parse a source file.
      */
     int parse(Language language, const char* inputFname, const char* outputFname, llvm::Module*& mod, pw::Plexer* lang,
-              const char* targetData, const char* targetTriple);
+              TargetInfo* targetInfo);
 
 private:
     /** The default constructor (not implemented or used).
      */
     Elsa();
     int doit(Language language, const char* inputFname, const char* outputFname, llvm::Module*& mod,
-             const char* targetData, const char* targetTriple);
+             TargetInfo* targetInfo);
     /** true if phases should be timed.
      */
     bool doTime;

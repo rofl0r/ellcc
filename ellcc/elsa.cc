@@ -41,7 +41,7 @@
 /** The Elsa constructor.
  */
 Elsa::Elsa(llvm::TimerGroup& timerGroup) :
-     timerGroup(timerGroup),
+    timerGroup(timerGroup),
     parseTimer("Parsing", timerGroup),
     typeCheckingTimer("Type checking", timerGroup),
     elaborationTimer("Elaboration", timerGroup),
@@ -236,7 +236,7 @@ static void handle_xBase(Env &env, xBase &x)
 
 
 int Elsa::doit(Language language, const char* inputFname, const char* outputFname, llvm::Module*& mod,
-               const char* targetData, const char* targetTriple)
+               TargetInfo* targetInfo)
 {
     mod = NULL;
     SourceLocManager mgr;
@@ -760,7 +760,7 @@ int Elsa::doit(Language language, const char* inputFname, const char* outputFnam
     if (doTime) {
         llvmGenerationTimer.startTimer();
     }
-    mod = cc_to_llvm(outputFname, strTable, *unit, targetData, targetTriple);
+    mod = cc_to_llvm(outputFname, strTable, *unit, targetInfo);
 
     if (doTime) {
         llvmGenerationTimer.stopTimer();
@@ -783,10 +783,10 @@ int Elsa::doit(Language language, const char* inputFname, const char* outputFnam
 }
 
 int Elsa::parse(Language language, const char* inputFname, const char* outputFname, llvm::Module*& mod, pw::Plexer* lang,
-                const char* targetData, const char* targetTriple)
+                TargetInfo* targetInfo)
 {
   try {
-    return doit(language, inputFname, outputFname, mod, targetData, targetTriple);
+    return doit(language, inputFname, outputFname, mod, targetInfo);
   } catch (XUnimp &x) {
     HANDLER();
     std::cout << x << std::endl;
