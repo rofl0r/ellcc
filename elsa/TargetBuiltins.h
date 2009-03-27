@@ -33,6 +33,37 @@ namespace elsa {
         LastTSBuiltin
     };
   }
+
+  /// Nios2 builtins
+  namespace Nios2 {
+    enum {
+        LastTIBuiltin = elsa::Builtin::FirstTSBuiltin-1,
+#define BUILTIN(ID, TYPE, ATTRS) BI##ID,
+#include "Nios2Builtins.def"
+        LastTSBuiltin
+    };
+  }
+
+  /// CellSPU builtins
+  namespace CellSPU {
+    enum {
+        LastTIBuiltin = elsa::Builtin::FirstTSBuiltin-1,
+#define BUILTIN(ID, TYPE, ATTRS) BI##ID,
+#include "CellSPUBuiltins.def"
+        LastTSBuiltin
+    };
+  }
+
+  /// Mips builtins
+  namespace Mips {
+    enum {
+        LastTIBuiltin = elsa::Builtin::FirstTSBuiltin-1,
+#define BUILTIN(ID, TYPE, ATTRS) BI##ID,
+#include "MipsBuiltins.def"
+        LastTSBuiltin
+    };
+  }
+    
 } // end namespace elsa.
 
 #endif
