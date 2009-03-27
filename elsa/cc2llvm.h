@@ -56,7 +56,10 @@ public:      // funcs
      */
     ~CC2LLVMEnv();
 
-    /** Information aboue the target.
+    /** Information about the target.
+     */
+    TargetInfo* targetInfo;
+    /** LLVM information about the target.
      */
     llvm::TargetData targetData;
     /** The target aware folder.

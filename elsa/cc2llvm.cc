@@ -38,6 +38,7 @@ using namespace elsa;
 CC2LLVMEnv::CC2LLVMEnv(StringTable &s, sm::string name, const TranslationUnit& input,
                        TargetInfo* targetInfo)
   : str(s),
+    targetInfo(targetInfo),
     targetData(targetInfo->getTargetDescription()),
     targetFolder(targetData),
     input(input),
