@@ -841,7 +841,7 @@ void Asm::itcheck_constraints(Env &env, bool module)
                     int index = 0;
                     std::string name(cp, p - cp);
                     FOREACH_ASTLIST_NC(Constraint, constraints->outputs, oc) {
-                        if (oc.data()->name && name == c.data()->name) {
+                        if (oc.data()->name && name == oc.data()->name) {
                             break;
                         }
                         ++index;
@@ -850,7 +850,9 @@ void Asm::itcheck_constraints(Env &env, bool module)
                         env.error(c.data()->loc, stringc << "the named input constraint '"
                                   << name.c_str() << "' is not defined in the output constraints");
                         good = false;
+                        break;
                     }
+                    cp = p;
                     break;
                 }
                 case '%': // Commutative.
