@@ -828,6 +828,31 @@ void Asm::itcheck_constraints(Env &env, bool module)
                         }
                     }
                     break;
+                case '[': { // Match an output constraint name.
+                    const char* p = ++cp;
+                    while (*p && *p != ']') {
+                        ++p;
+                    }
+                    if (!*p) {
+                        good = false;
+                        env.error(c.data()->loc, "output constraint is missing a ']'");
+                        break;
+                    } 
+                    int index = 0;
+                    std::string name(cp, p - cp);
+                    FOREACH_ASTLIST_NC(Constraint, constraints->outputs, oc) {
+                        if (oc.data()->name && name == c.data()->name) {
+                            break;
+                        }
+                        ++index;
+                    }
+                    if (index >= numOutputs) {
+                        env.error(c.data()->loc, stringc << "the named input constraint '"
+                                  << name.c_str() << "' is not defined in the output constraints");
+                        good = false;
+                    }
+                    break;
+                }
                 case '%': // Commutative.
                     if (c.data() == last) {
                        env.error(c.data()->loc, "the last input constraint is marked commutative");
@@ -837,12 +862,12 @@ void Asm::itcheck_constraints(Env &env, bool module)
                 case 'I':
                 case 'n': // Immediate integer with a known value.
                     break;
-                case 'r': // RICH: General register.
+                case 'r': // General register.
                     break;
-                case 'm': // RICH: Memory operand.
+                case 'm': // Memory operand.
                     break;
-                case 'g': // RICH: General register, memory operand, or immediate integer.
-                case 'X': // RICH: Any operand.
+                case 'g': // General register, memory operand, or immediate integer.
+                case 'X': // Any operand.
                     break;
                 }
 
