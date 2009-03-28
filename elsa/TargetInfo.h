@@ -285,6 +285,7 @@ protected:
                               unsigned &NumNames) const = 0;
   virtual void getGCCRegAliases(const GCCRegAlias *&Aliases, 
                                 unsigned &NumAliases) const = 0;
+public:
   virtual bool validateAsmConstraint(const char *&Name, 
                                      TargetInfo::ConstraintInfo &info) const= 0;
 };

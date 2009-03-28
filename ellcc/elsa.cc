@@ -38,6 +38,23 @@
 #include <llvm/Module.h>
 #include <llvm/Support/Timer.h>
 
+/** The Ellcc parsing environment.
+ */
+class EllccEnv : public Env {
+public:
+    EllccEnv(TargetInfo* targetInfo, StringTable &str, CCLang &lang, TypeFactory &tfac,
+             ArrayStack<Variable*> &madeUpVariables0, ArrayStack<Variable*> &builtinVars0,
+             TranslationUnit *unit0)
+             : Env(str, lang, tfac, madeUpVariables0, builtinVars0, unit0),
+               targetInfo(targetInfo) { }
+
+    bool validateAsmConstraint(const char* name)
+        { TargetInfo::ConstraintInfo info; return targetInfo->validateAsmConstraint(name, info); }
+private:
+    TargetInfo* targetInfo;
+    EllccEnv();
+};
+
 /** The Elsa constructor.
  */
 Elsa::Elsa(llvm::TimerGroup& timerGroup) :
@@ -399,7 +416,7 @@ int Elsa::doit(Language language, const char* inputFname, const char* outputFnam
         typeCheckingTimer.startTimer();
     }
 
-    Env env(strTable, lang, tfac, madeUpVariables, builtinVars, unit);
+    EllccEnv env(targetInfo, strTable, lang, tfac, madeUpVariables, builtinVars, unit);
     try {
       env.tcheckTranslationUnit(unit);
     }
@@ -489,7 +506,7 @@ int Elsa::doit(Language language, const char* inputFname, const char* outputFnam
       // this is useful to measure the cost of disambiguation, since
       // now the tree is entirely free of ambiguities
       traceProgress() << "beginning second tcheck...\n";
-      Env env2(strTable, lang, tfac, madeUpVariables, builtinVars, unit);
+      EllccEnv env2(targetInfo, strTable, lang, tfac, madeUpVariables, builtinVars, unit);
       unit->tcheck(env2);
       traceProgress() << "end of second tcheck\n";
     }
@@ -714,7 +731,7 @@ int Elsa::doit(Language language, const char* inputFname, const char* outputFnam
       ArrayStack<Variable*> madeUpVariables2;
       ArrayStack<Variable*> builtinVars2;
       // dsw: I hope you intend that I should use the cloned TranslationUnit
-      Env env3(strTable, lang, tfac, madeUpVariables2, builtinVars2, u2);
+      EllccEnv env3(targetInfo, strTable, lang, tfac, madeUpVariables2, builtinVars2, u2);
       u2->tcheck(env3);
 
       if (tracingSys("cloneTypedAST")) {

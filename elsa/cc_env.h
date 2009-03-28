@@ -682,6 +682,12 @@ public:      // funcs
   // less context is necessary
   virtual void addedNewVariable(Scope *s, Variable *v);
 
+  /** Validate an inline assembly constraint.
+   * @param string The constraint.
+   * @return true if the constraint is valid for the target.
+   */
+  virtual bool validateAsmConstraint(const char* name) { return true; }
+  
   // search in an overload set for an element, given its type
   Variable *findInOverloadSet(OverloadSet *oset,
                               FunctionType *ft, CVFlags receiverCV);

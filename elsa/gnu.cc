@@ -762,18 +762,20 @@ void Asm::itcheck_constraints(Env &env, bool module)
             while (good && *cp) {
                 switch (*cp) {
                 default: // RICH: Check for a target specific constraint.
-                    good = false;
-                    env.error(c.data()->loc, stringc << "the output constraint '"
-                              << *cp << "' is invalid");
+                    if (!env.validateAsmConstraint(cp)) {
+                        good = false;
+                        env.error(c.data()->loc, stringc << "the output constraint '"
+                                  << *cp << "' is invalid");
+                    }
                     break;
-                case '&': // RICH: Early clobber.
+                case '&': // Early clobber.
                     break;
-                case 'r': // RICH: General register.
+                case 'r': // General register.
                     break;
-                case 'm': // RICH: Memory operand.
+                case 'm': // Memory operand.
                     break;
-                case 'g': // RICH: General register.
-                case 'X': // RICH: Any operand.
+                case 'g': // General register.
+                case 'X': // Any operand.
                     break;
                 }
 
@@ -790,7 +792,7 @@ void Asm::itcheck_constraints(Env &env, bool module)
 
     // Process the input constraints.
     Constraint* last = NULL;
-    if (constraints) {
+    if (constraints && constraints->inputs.isNotEmpty()) {
         last = constraints->inputs.last();
     }
     FOREACH_ASTLIST_NC(Constraint, constraints->inputs, c) {
@@ -819,9 +821,11 @@ void Asm::itcheck_constraints(Env &env, bool module)
                         }
                     } else {
                         // RICH: Check for a target specific constraint.
-                       good = false;
-                       env.error(c.data()->loc, stringc << "the input constraint '"
-                                 << *cp << "' is invalid");
+                        if (!env.validateAsmConstraint(cp)) {
+                            good = false;
+                            env.error(c.data()->loc, stringc << "the input constraint '"
+                                      << *cp << "' is invalid");
+                        }
                     }
                     break;
                 case '%': // Commutative.

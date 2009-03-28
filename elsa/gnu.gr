@@ -386,6 +386,8 @@ nonterm(Constraints*) OpConstraints {
         { return new Constraints(o, i, c); }
   -> ":" o:OpConstraintList ":" i: OpConstraintList
         { return new Constraints(o, i, NULL); }
+  -> ":" o:OpConstraintList
+        { return new Constraints(o, NULL, NULL); }
   -> ":" o:OpConstraintList "::" c: OpConstraintList
         { return new Constraints(o, NULL, c); }
   -> "::" i:OpConstraintList ":" c: OpConstraintList

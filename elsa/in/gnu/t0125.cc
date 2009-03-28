@@ -1,13 +1,15 @@
 // dsw: from cqual/tests/linux/rtc.i; I think these are from the real
 // linux kernel
 
+typedef int __dummy_lock_t;                     // Now inline asm expressions are type checked.
+typedef struct { int a[100]; } foo;    // Moved from the asm cast.
 typedef struct { volatile int counter; } atomic_t;
 static __inline__ void atomic_add(int i, volatile atomic_t *v)
 {
   __asm__ __volatile__("lock ; "  "addl %1,%0"
                        // two colons here
-                       :"=m" ((*(volatile struct { int a[100]; } *) v ) )
-                       :"ir" (i), "m" ((*(volatile struct { int a[100]; } *) v ) ));
+                       :"=m" ((*(volatile foo *) v ) )
+                       :"ir" (i), "m" ((*(volatile foo *) v ) ));
 }
 
 typedef struct {
@@ -66,9 +68,7 @@ extern inline void read_lock2(rwlock_t *rw)
 
 void triple() {
   // three-colons now works also!
-  asm ("asdfasd" ::: "a"(rw) );
-  // and four
-  asm ("asdfasd" :::: "a"(rw) );
+  asm ("asdfasd" ::: "a" );
 }
 
 //  /home/dsw/oink_extra/ballAruns/tmpfiles/./arts-1.1-7/gsldatahandle-mad-04hG.i:2145:107: Parse error (state 222) at <string literal>: "fpatan"
@@ -77,6 +77,7 @@ typedef unsigned int guint32;
 typedef guint32 CORBA_unsigned_long;
 typedef unsigned char guchar;
 void f() {
+  int __v;
   guchar *_ORBIT_curptr;
         __asm__ __const__       // "const" is also legal after an asm
           ("rorw $8, %w0\n\t" "rorl $16, %0\n\t" "rorw $8, %w0": "=r" (__v):"0"

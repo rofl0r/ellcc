@@ -9107,6 +9107,10 @@ Type *E_assign::itcheck_x(Env &env, Expression *&replacement)
   tcheckArgumentExpression(env, target, argInfo[0]);
   tcheckArgumentExpression(env, src, argInfo[1]);
 
+  if (!env.onlyDisambiguating() && !target->type->isLval()) {
+      // The target of an assignment must be an lvalue.
+    env.error(target->loc, "the left hand side of an expression must be an lvalue");
+  }
   // check for operator overloading
   {
     Type *ovlRet = resolveOverloadedBinaryOperator(
