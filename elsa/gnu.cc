@@ -785,6 +785,10 @@ void Asm::itcheck_constraints(Env &env, bool module)
 
         if (expr) {
             expr->tcheck(env, expr);
+            if (!env.onlyDisambiguating() && !expr->type->isLval()) {
+                // The target of an assignment must be an lvalue.
+                env.error(expr->loc, "an inline asm output constraint must be an lvalue");
+            }
         } else {
             env.error(c.data()->loc, "an inline asm output constraint must have an expression");
         }
