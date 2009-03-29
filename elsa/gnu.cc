@@ -812,16 +812,30 @@ void Asm::itcheck_constraints(Env &env, bool module)
             constr->itcheck_x(env, dummy);
             const char* cp = (const char*)constr->data->getDataC();
             bool good = true;
+            int matches = -1;
             while (good && *cp) {
                 switch (*cp) {
                 default:
                     if (*cp >= '0' && *cp <= '9') {
-                        // A matching constrint.
-                        int i = *cp - '0';
-                        if (i >= numOutputs) {
+                        // A matching constraint.
+                        int index = *cp - '0';
+                        if (index >= numOutputs) {
                             env.error(c.data()->loc, stringc << "the matching constraint '"
                                       << *cp << "' exceeds the number of output constrints");
                             good = false;
+                        }
+                        if (matches > 0 && index != matches) {
+                            env.error(c.data()->loc, stringc << "the matching constraint '"
+                                      << *cp << "' is different than the previous matching constraint");
+                            good = false;
+                            break;
+                        }
+                        matches = index;
+                        if (*constraints->outputs.nth(index)->constr->data->getDataC() == '+') {
+                            env.error(c.data()->loc, stringc << "the matched constraint '"
+                                      << *cp << "' is defined as '+' and should be '='");
+                            good = false;
+                            break;
                         }
                     } else {
                         // RICH: Check for a target specific constraint.
@@ -856,6 +870,20 @@ void Asm::itcheck_constraints(Env &env, bool module)
                         good = false;
                         break;
                     }
+                    // Change the symbolic reference to a numeric one.
+                    if (matches > 0 && index != matches) {
+                        env.error(c.data()->loc, stringc << "the matching constraint '"
+                                  << name.c_str() << "' is different than the previous matching constraint");
+                        good = false;
+                        break;
+                    }
+                    if (*constraints->outputs.nth(index)->constr->data->getDataC() == '+') {
+                        env.error(c.data()->loc, stringc << "the matched constraint '"
+                                  << name.c_str() << "' is defined as '+' and should be '='");
+                        good = false;
+                        break;
+                    }
+                    matches = index;
                     cp = p;
                     break;
                 }
