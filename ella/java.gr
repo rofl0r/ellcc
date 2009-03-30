@@ -77,7 +77,7 @@ verbatim {
   head->next = list->first(); \
   return FakeList<type>::makeList(head)
 
-inline ostream& operator<< (ostream &os, SourceLoc sl)
+inline std::ostream& operator<< (std::ostream &os, SourceLoc sl)
   { return os << toString(sl); }
 
 class JavaParseShareable : public UserActions, public ParseEnv {

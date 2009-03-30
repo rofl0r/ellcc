@@ -148,7 +148,7 @@ Lexer::NextTokenFunc Lexer::getTokenFunc() const
 }
 
 
-string Lexer::tokenDesc() const
+sm::string Lexer::tokenDesc() const
 {
   if (tokenFlags((TokenType)type) & TF_MULTISPELL) {
     // for tokens with multiple spellings, decode 'sval' as a
@@ -158,12 +158,12 @@ string Lexer::tokenDesc() const
   }
   else {
     // for all others, consult the static table
-    return string(toString((TokenType)type));
+    return sm::string(toString((TokenType)type));
   }
 }
 
 
-string Lexer::tokenKindDesc(int kind) const
+sm::string Lexer::tokenKindDesc(int kind) const
 {
   // static table only
   return toString((TokenType)kind);

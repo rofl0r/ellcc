@@ -1,9 +1,9 @@
 // main.cc            see license.txt for copyright and terms of use
 // entry-point module for a program that parses Java
 
-#include <iostream.h>     // cout
+#include <iostream>       // cout
 #include <stdlib.h>       // exit, getenv, abort
-#include <fstream.h>      // ofstream
+#include <fstream>        // ofstream
 
 #include "trace.h"        // traceAddSys
 #include "exc.h"          // xfatal
@@ -48,7 +48,7 @@ char *myProcessArgs(int argc, char **argv, char const *additionalInfo)
   }
 
   if (argc != 2) {
-    cout << "usage: " << progName << " [options] input-file\n"
+    std::cout << "usage: " << progName << " [options] input-file\n"
             "  options:\n"
             "    -tr <flags>:       turn on given tracing flags (comma-separated)\n"
          << (additionalInfo? additionalInfo : "");
@@ -104,7 +104,7 @@ void doit(int argc, char **argv)
       sizeof(long) != 4) {
     // we are running a regression test, and the testcase is known to
     // fail due to dependence on architecture parameters, so skip it
-    cout << "skipping test b/c this is not a 32-bit architecture\n";
+    std::cout << "skipping test b/c this is not a 32-bit architecture\n";
     exit(0);
   }
 
@@ -163,7 +163,7 @@ void doit(int argc, char **argv)
   long endCycles = getCycles_ll();
 #endif
 
-  cout << "Parsing " << inputFname << " took " <<
+  std::cout << "Parsing " << inputFname << " took " <<
     ((double)(end-start))/1000.0 << "s" <<
 #ifdef COUNT_CYCLES
     ", " << (endCycles-startCycles) << " cycles" <<
@@ -176,7 +176,7 @@ void doit(int argc, char **argv)
     // the 'treeTop' is actually a PTreeNode pointer; print the
     // tree and bail
     PTreeNode *ptn = (PTreeNode*)treeTop;
-    ptn->printTree(cout, PTreeNode::PF_EXPAND);
+    ptn->printTree(std::cout, PTreeNode::PF_EXPAND);
     
     delete parseContext;
     delete tables;
@@ -187,7 +187,7 @@ void doit(int argc, char **argv)
   // treeTop is a TranslationUnit pointer
   unit = (CompilationUnit*)treeTop;
   
-  //unit->debugPrint(cout, 0);
+  //unit->debugPrint(std::cout, 0);
   
   delete parseContext;
   delete tables;
@@ -196,7 +196,7 @@ void doit(int argc, char **argv)
   
   // print abstract syntax tree
   if (tracingSys("printAST")) {
-    unit->debugPrint(cout, 0);
+    unit->debugPrint(std::cout, 0);
   }
 }
 
@@ -207,7 +207,7 @@ int main(int argc, char **argv)
   }
   catch (XUnimp &x) {
     HANDLER();
-    cout << x << endl;
+    std::cout << x << std::endl;
 
     // don't consider this the same as dying on an assertion failure;
     // I want to have tests in regrtest that are "expected" to fail
@@ -218,12 +218,12 @@ int main(int argc, char **argv)
     HANDLER();
     
     // similar to XUnimp
-    cout << x << endl;
+    std::cout << x << std::endl;
     return 10;
   }
   catch (xBase &x) {
     HANDLER();
-    cout << x << endl;
+    std::cout << x << std::endl;
     abort();
   }
 

@@ -60,8 +60,8 @@ public:     // funcs
 
   // LexerInterface funcs
   virtual NextTokenFunc getTokenFunc() const;
-  virtual string tokenDesc() const;
-  virtual string tokenKindDesc(int kind) const;
+  virtual sm::string tokenDesc() const;
+  virtual sm::string tokenKindDesc(int kind) const;
 };
 
 

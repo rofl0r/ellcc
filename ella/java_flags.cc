@@ -29,7 +29,7 @@ char const * const modifierNames[NUM_MODIFIERS] = {
   "strictfp"
 };
 
-string bitmapString(int bitmap, char const * const *names, int numflags)
+sm::string bitmapString(int bitmap, char const * const *names, int numflags)
 {
   stringBuilder sb;
   int count=0;
@@ -45,7 +45,7 @@ string bitmapString(int bitmap, char const * const *names, int numflags)
   return sb;
 }
 
-string toString(Modifiers m) {
+sm::string toString(Modifiers m) {
   xassert(modifierNames[NUM_MODIFIERS-1] != NULL);
   return bitmapString(m, modifierNames, NUM_MODIFIERS);
 }

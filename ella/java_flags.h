@@ -41,7 +41,7 @@ enum Modifiers {
 };
 
 extern char const * const modifierNames[NUM_MODIFIERS];
-string toString(Modifiers m);
+sm::string toString(Modifiers m);
 
 // Binary operators
 

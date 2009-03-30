@@ -4,7 +4,7 @@
 #include "javaparse.h"    // this module
 #include "trace.h"        // TRACE
 
-#include <iostream.h>     // cout
+#include <iostream>       // cout
 
 
 // ----------------------- ParseEnv -----------------------
@@ -69,14 +69,14 @@ Expression* ParseEnv::mergePostfix(Expression* e1, Expression* e2)
 
 void ParseEnv::noMerge(char const* desc, Expression* e1, Expression* e2)
 {
-  cout << toString(e1->loc)
-       << ": error: unable to merge "
-       << desc
-       << ' '
-       << e1->kindName()
-       << " and "
-       << e2->kindName()
-       << endl;
+  std::cout << toString(e1->loc)
+            << ": error: unable to merge "
+            << desc
+            << ' '
+            << e1->kindName()
+            << " and "
+            << e2->kindName()
+            << std::endl;
   abort();
 }
 
@@ -89,14 +89,14 @@ LocString * /*owner*/ ParseEnv::ls(SourceLoc loc, char const *name)
 
 void ParseEnv::error(SourceLoc loc, char const *msg)
 {
-  cout << toString(loc) << ": error: " << msg << endl;
+  std::cout << toString(loc) << ": error: " << msg << std::endl;
   errors++;
 }
 
 
 void ParseEnv::warning(SourceLoc loc, char const *msg)
 {
-  cout << toString(loc) << ": warning: " << msg << endl;
+  std::cout << toString(loc) << ": warning: " << msg << std::endl;
   warnings++;
 }
 
