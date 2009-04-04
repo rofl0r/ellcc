@@ -9,6 +9,8 @@
 verbatim {
   #define GNU_EXTENSION         // this extension module is active
 
+  #include "TargetInfo.h"
+  using namespace elsa;
   #include <limits.h>           // INT_MIN
 }
 
@@ -177,6 +179,7 @@ class TypeSpecifier {
 // ----------- gcc asm -----------
 
 class Constraint(SourceLoc loc, StringRef name, E_stringLit constr, Expression e) {
+    public TargetInfo::ConstraintInfo info = TargetInfo::CI_None;
 }
 
 class Constraints(ASTList<Constraint> outputs = NULL,

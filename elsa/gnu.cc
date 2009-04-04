@@ -9,6 +9,14 @@
 #include "astvisit.h"         // ASTVisitorEx
 #include <string.h>           // strcmp
 #include "datablok.h"
+#include "TargetInfo.h"
+using namespace elsa;
+
+#ifdef LLVM_EXTENSION
+#define __STDC_LIMIT_MACROS 1
+#define __STDC_CONSTANT_MACROS 1
+#include "llvm/Type.h"
+#endif
 
 using namespace std;
 // fwd in this file
@@ -733,205 +741,383 @@ void S_computedGoto::itcheck(Env &env)
 
 void Asm::itcheck_constraints(Env &env, bool module)
 {
-    if (constraints == NULL) {
-        return;
-    }
+#ifdef LLVM_EXTENSION
+    stringBuilder constring;    // The built-up contraint list.
+    stringBuilder inputs;       // The input constraints from '+' constraints.
+    int rwConstraints = 0;      // Keep track of the number of '+' constraints.
+    int numInputs = 0;          // The number of input constraints.
+    bool first = true;
+#endif
+    int numOutputs = 0;         // The number of output constraints.
 
-    // Process the output constraints.
-    int numOutputs = 0;
-    FOREACH_ASTLIST_NC(Constraint, constraints->outputs, c) {
-        ++numOutputs;
-        E_stringLit* constr = c.data()->constr;
-        Expression*& expr = c.data()->e;
-        if (module && (constr || expr)) {
-            env.error(constr->loc, "a module level asm may not contain an output constraint");
-            return;
-        }
-
-        if (constr) {
-            Expression* dummy;
-            constr->itcheck_x(env, dummy);
-            const char* cp = (const char*)constr->data->getDataC();
-            if (*cp != '=' && *cp != '+') {
-                env.error(constr->loc, "an inline asm output constraint must start with a '=' or '+'");
+    if (constraints) {
+        // Process the output constraints.
+        FOREACH_ASTLIST_NC(Constraint, constraints->outputs, c) {
+#ifdef LLVM_EXTENSION
+            if (!first) {
+                constring << ',';
             } else {
-                ++cp;
+                first = false;
+            }
+#endif
+            ++numOutputs;
+            Constraint* constraint = c.data();
+            E_stringLit* constr = constraint->constr;
+            Expression*& expr = constraint->e;
+            if (module && (constr || expr)) {
+                env.error(constr->loc, "a module level asm may not contain an output constraint");
+                return;
             }
 
-            bool good = true;
-            while (good && *cp) {
-                switch (*cp) {
-                default: // RICH: Check for a target specific constraint.
-                    if (!env.validateAsmConstraint(cp)) {
-                        good = false;
-                        env.error(c.data()->loc, stringc << "the output constraint '"
-                                  << *cp << "' is invalid");
+            if (constr) {
+                StringRef t = constr->text;
+                if (t[0] == 'L') {
+                  env.error(text->loc, stringc
+                    << "wide string literal in asm output constraint");
+                  return;
+                }
+                Expression* dummy;
+                constr->itcheck_x(env, dummy);
+
+                constraint->info = TargetInfo::CI_None;
+                const char* cp = (const char*)constr->data->getDataC();
+                if (*cp != '=' && *cp != '+') {
+                    env.error(constr->loc, "an inline asm output constraint must start with a '=' or '+'");
+                } else {
+#ifdef LLVM_EXTENSION
+                    if (*cp == '+') {
+                        inputs << ',' << (char)((numOutputs - 1) + '0');
+                        ++rwConstraints;
+                        constraint->info = TargetInfo::CI_ReadWrite;
                     }
-                    break;
-                case '&': // Early clobber.
-                    break;
-                case 'r': // General register.
-                    break;
-                case 'm': // Memory operand.
-                    break;
-                case 'g': // General register.
-                case 'X': // Any operand.
-                    break;
+                    constring << '=';
+#endif
+                    ++cp;
+
                 }
 
-                ++cp;
-            }
-        }
-
-        if (expr) {
-            expr->tcheck(env, expr);
-            if (!env.onlyDisambiguating() && !expr->type->isLval()) {
-                // The target of an assignment must be an lvalue.
-                env.error(expr->loc, "an inline asm output constraint must be an lvalue");
-            }
-        } else {
-            env.error(c.data()->loc, "an inline asm output constraint must have an expression");
-        }
-    }
-
-    // Process the input constraints.
-    Constraint* last = NULL;
-    if (constraints && constraints->inputs.isNotEmpty()) {
-        last = constraints->inputs.last();
-    }
-    FOREACH_ASTLIST_NC(Constraint, constraints->inputs, c) {
-        E_stringLit* constr = c.data()->constr;
-        Expression*& expr = c.data()->e;
-        if (module && (constr || expr)) {
-            env.error(constr->loc, "a module level asm may not contain an input constraint");
-            return;
-        }
-
-        if (constr) {
-            Expression* dummy;
-            constr->itcheck_x(env, dummy);
-            const char* cp = (const char*)constr->data->getDataC();
-            bool good = true;
-            int matches = -1;
-            while (good && *cp) {
-                switch (*cp) {
-                default:
-                    if (*cp >= '0' && *cp <= '9') {
-                        // A matching constraint.
-                        int index = *cp - '0';
-                        if (index >= numOutputs) {
-                            env.error(c.data()->loc, stringc << "the matching constraint '"
-                                      << *cp << "' exceeds the number of output constrints");
+                bool good = true;
+                while (good && *cp) {
+                    switch (*cp) {
+                    default: // Check for a target specific constraint.
+                        if (!env.validateAsmConstraint(cp, constraint->info)) {
                             good = false;
+                            env.error(constraint->loc, stringc << "the output constraint '"
+                                      << *cp << "' is invalid");
                         }
+                        break;
+                    case '&': // Early clobber.
+                        break;
+                    case 'r': // General register.
+                        break;
+                    case 'm': // Memory operand.
+                        break;
+                    case 'g': // General register.
+                    case 'X': // Any operand.
+                        break;
+                    }
+
+
+#ifdef LLVM_EXTENSION
+                    constring << env.convertConstraint(*cp).c_str();
+#endif
+                    ++cp;
+                }
+            }
+
+            if (expr) {
+                expr->tcheck(env, expr);
+                if (!env.onlyDisambiguating() && !expr->type->isLval()) {
+                    // The target of an assignment must be an lvalue.
+                    env.error(expr->loc, "an inline asm output constraint must be an lvalue");
+                }
+            } else {
+                env.error(constraint->loc, "an inline asm output constraint must have an expression");
+            }
+        }
+
+#ifdef LLVM_EXTENSION
+        constring << inputs;
+#endif
+        // Process the input constraints.
+        Constraint* last = NULL;
+        if (constraints && constraints->inputs.isNotEmpty()) {
+            last = constraints->inputs.last();
+        }
+
+        FOREACH_ASTLIST_NC(Constraint, constraints->inputs, c) {
+#ifdef LLVM_EXTENSION
+            ++numInputs;
+            if (!first) {
+                constring << ',';
+            } else {
+                first = false;
+            }
+#endif
+            Constraint* constraint = c.data();
+            E_stringLit* constr = constraint->constr;
+            Expression*& expr = constraint->e;
+            if (module && (constr || expr)) {
+                env.error(constr->loc, "a module level asm may not contain an input constraint");
+                return;
+            }
+
+            if (constr) {
+                StringRef t = constr->text;
+                if (t[0] == 'L') {
+                  env.error(text->loc, stringc
+                    << "wide string literal in asm input constraint");
+                  return;
+                }
+                Expression* dummy;
+                constr->itcheck_x(env, dummy);
+                const char* cp = (const char*)constr->data->getDataC();
+                bool good = true;
+                int matches = -1;
+                constraint->info = TargetInfo::CI_None;
+                while (good && *cp) {
+                    std::string result;
+                    switch (*cp) {
+                    default:
+                        if (*cp >= '0' && *cp <= '9') {
+                            // A matching constraint.
+                            int index = *cp - '0';
+                            result = *cp;
+                            if (index >= numOutputs) {
+                                env.error(constraint->loc, stringc << "the matching constraint '"
+                                          << *cp << "' exceeds the number of output constrints");
+                                good = false;
+                            }
+                            if (matches > 0 && index != matches) {
+                                env.error(constraint->loc, stringc << "the matching constraint '"
+                                          << *cp << "' is different than the previous matching constraint");
+                                good = false;
+                                break;
+                            }
+                            matches = index;
+                            if (*constraints->outputs.nth(index)->constr->data->getDataC() == '+') {
+                                env.error(constraint->loc, stringc << "the matched constraint '"
+                                          << *cp << "' is defined as '+' and should be '='");
+                                good = false;
+                                break;
+                            }
+                        } else {
+                            // Check for a target specific constraint.
+                            if (!env.validateAsmConstraint(cp, constraint->info)) {
+                                good = false;
+                                env.error(constraint->loc, stringc << "the input constraint '"
+                                          << *cp << "' is invalid");
+                            }
+                            result = env.convertConstraint(*cp);
+                        }
+                        break;
+                    case '[': { // Match an output constraint name.
+                        const char* p = ++cp;
+                        while (*p && *p != ']') {
+                            ++p;
+                        }
+                        if (!*p) {
+                            good = false;
+                            env.error(constraint->loc, "output constraint is missing a ']'");
+                            break;
+                        } 
+                        int index = 0;
+                        std::string name(cp, p - cp);
+                        FOREACH_ASTLIST_NC(Constraint, constraints->outputs, oc) {
+                            if (oc.data()->name && name == oc.data()->name) {
+                                break;
+                            }
+                            ++index;
+                        }
+                        if (index >= numOutputs) {
+                            env.error(constraint->loc, stringc << "the named input constraint '"
+                                      << name.c_str() << "' is not defined in the output constraints");
+                            good = false;
+                            break;
+                        }
+                        // Change the symbolic reference to a numeric one.
                         if (matches > 0 && index != matches) {
-                            env.error(c.data()->loc, stringc << "the matching constraint '"
-                                      << *cp << "' is different than the previous matching constraint");
+                            env.error(constraint->loc, stringc << "the matching constraint '"
+                                      << name.c_str() << "' is different than the previous matching constraint");
+                            good = false;
+                            break;
+                        }
+                        if (*constraints->outputs.nth(index)->constr->data->getDataC() == '+') {
+                            env.error(constraint->loc, stringc << "the matched constraint '"
+                                      << name.c_str() << "' is defined as '+' and should be '='");
                             good = false;
                             break;
                         }
                         matches = index;
-                        if (*constraints->outputs.nth(index)->constr->data->getDataC() == '+') {
-                            env.error(c.data()->loc, stringc << "the matched constraint '"
-                                      << *cp << "' is defined as '+' and should be '='");
-                            good = false;
-                            break;
-                        }
-                    } else {
-                        // RICH: Check for a target specific constraint.
-                        if (!env.validateAsmConstraint(cp)) {
-                            good = false;
-                            env.error(c.data()->loc, stringc << "the input constraint '"
-                                      << *cp << "' is invalid");
-                        }
-                    }
-                    break;
-                case '[': { // Match an output constraint name.
-                    const char* p = ++cp;
-                    while (*p && *p != ']') {
-                        ++p;
-                    }
-                    if (!*p) {
-                        good = false;
-                        env.error(c.data()->loc, "output constraint is missing a ']'");
+                        // The constraint should have the same info as the respective 
+                        // output constraint.
+                        constraint->info =
+                            (TargetInfo::ConstraintInfo)(constraint->info
+                            |constraints->outputs.nth(index)->info);
+                        cp = p;
+                        result = matches + '0';
                         break;
-                    } 
-                    int index = 0;
-                    std::string name(cp, p - cp);
+                    }
+                    case '%': // Commutative.
+                        if (constraint == last) {
+                           env.error(constraint->loc, "the last input constraint is marked commutative");
+                        }
+                        break;
+                    case 'i': // Immediate integer.
+                    case 'I':
+                    case 'n': // Immediate integer with a known value.
+                        result = *cp;
+                        break;
+                    case 'r': // General register.
+                        result = *cp;
+                        constraint->info = (TargetInfo::ConstraintInfo)(constraint->info
+                                                                        |TargetInfo::CI_AllowsRegister);
+                        break;
+                    case 'm': // Memory operand.
+                        result = *cp;
+                        constraint->info = (TargetInfo::ConstraintInfo)(constraint->info
+                                                                        |TargetInfo::CI_AllowsMemory);
+                        break;
+                    case 'g': // General register, memory operand, or immediate integer.
+                    case 'X': // Any operand.
+                        result = "imr";
+                        constraint->info =
+                            (TargetInfo::ConstraintInfo)(constraint->info
+                                                         |TargetInfo::CI_AllowsMemory
+                                                         |TargetInfo::CI_AllowsRegister);
+                        break;
+                    }
+
+#ifdef LLVM_EXTENSION
+                    constring << result.c_str();
+#endif
+                    ++cp;
+                }
+            }
+
+            if (expr) {
+                expr->tcheck(env, expr);
+            } else {
+                env.error(constraint->loc, "an inline asm input constraint must have an expression");
+            }
+        }
+
+        FOREACH_ASTLIST_NC(Constraint, constraints->clobbers, c) {
+#ifdef LLVM_EXTENSION
+            if (!first) {
+                constring << ',';
+            } else {
+                first = false;
+            }
+#endif
+            Constraint* constraint = c.data();
+            E_stringLit* constr = constraint->constr;
+            Expression*& expr = constraint->e;
+            if (module && (constr || expr)) {
+                env.error(constr->loc, "a module level asm may not contain a clobber constraint");
+                return;
+            }
+
+            if (constr) {
+                StringRef t = constr->text;
+                if (t[0] == 'L') {
+                  env.error(text->loc, stringc
+                    << "wide string literal in asm clobber constraint");
+                  return;
+                }
+                Expression* dummy;
+                constr->itcheck_x(env, dummy);
+                const char* cp = (const char*)constr->data->getDataC();
+                constring << "~{" << env.getNormalizedGCCRegisterName(cp) << "}";
+            }
+
+            if (expr) {
+                env.error(expr->loc, "an inline asm clobber constraint cannot have an expression");
+            }
+        }
+    }
+
+#ifdef LLVM_EXTENSION
+    stringBuilder asmstr;       // The built-up asm string.
+    const char* cp = (const char*)text->data->getDataC();
+    // Now we can walk through the assembly language string translating it.
+    while (*cp) {
+        if (*cp == '%') {
+            asmstr << '$';
+            if (*++cp == '%') {
+                asmstr << '$';
+            } else if (*cp >= '0' && *cp <= '9') {
+                // Translate the position number.
+                int index = *cp - '0';
+                if (index < numOutputs) {
+                    asmstr << *cp;
+                } else if (constraints == NULL || index > constraints->inputs.count()) {
+                    env.error(text->loc, stringc << "inline asm constraint index '"
+                                                 << *cp
+                                                 << "' has no matching constraint");
+                } else {
+                    // Adjust for '+' output constraints.
+                    asmstr << (char)(index + rwConstraints + '0');
+                }
+            } else if (*cp == '[') {
+                // Translate a position by name.
+                const char* p = ++cp;
+                while (*p && *p != ']') {
+                    ++p;
+                }
+                if (!*p) {
+                    env.error(text->loc, "inline asm string is missing a ']'");
+                    break;
+                } 
+                int index = 0;
+                std::string name(cp, p - cp);
+                if (constraints) {
                     FOREACH_ASTLIST_NC(Constraint, constraints->outputs, oc) {
                         if (oc.data()->name && name == oc.data()->name) {
                             break;
                         }
                         ++index;
                     }
-                    if (index >= numOutputs) {
-                        env.error(c.data()->loc, stringc << "the named input constraint '"
-                                  << name.c_str() << "' is not defined in the output constraints");
-                        good = false;
-                        break;
-                    }
-                    // Change the symbolic reference to a numeric one.
-                    if (matches > 0 && index != matches) {
-                        env.error(c.data()->loc, stringc << "the matching constraint '"
-                                  << name.c_str() << "' is different than the previous matching constraint");
-                        good = false;
-                        break;
-                    }
-                    if (*constraints->outputs.nth(index)->constr->data->getDataC() == '+') {
-                        env.error(c.data()->loc, stringc << "the matched constraint '"
-                                  << name.c_str() << "' is defined as '+' and should be '='");
-                        good = false;
-                        break;
-                    }
-                    matches = index;
-                    cp = p;
-                    break;
                 }
-                case '%': // Commutative.
-                    if (c.data() == last) {
-                       env.error(c.data()->loc, "the last input constraint is marked commutative");
+                if (index < numOutputs) {
+                    // An output constraint matched.
+                    asmstr << (char)(index + '0');
+                } else {
+                    int index = 0;
+                    if (constraints) {
+                        FOREACH_ASTLIST_NC(Constraint, constraints->inputs, ic) {
+                            if (ic.data()->name && name == ic.data()->name) {
+                                break;
+                            }
+                            ++index;
+                        }
                     }
-                    break;
-                case 'i': // Immediate integer.
-                case 'I':
-                case 'n': // Immediate integer with a known value.
-                    break;
-                case 'r': // General register.
-                    break;
-                case 'm': // Memory operand.
-                    break;
-                case 'g': // General register, memory operand, or immediate integer.
-                case 'X': // Any operand.
-                    break;
+                    if (constraints && index < constraints->inputs.count()) {
+                        asmstr << (char)(index + numOutputs + rwConstraints + '0');
+                    } else {
+                        env.error(text->loc, stringc << "constraint name '"
+                                                     << name.c_str()
+                                                     << "' does not match any named constraint");
+                    }
                 }
-
-                ++cp;
+                cp = p;
+            } else {
+                // Bad asm construct.
+                env.error(text->loc, "unrecognized '%' construct in inline asm");
             }
-        }
-
-        if (expr) {
-            expr->tcheck(env, expr);
+          
         } else {
-            env.error(c.data()->loc, "an inline asm input constraint must have an expression");
-        }
-    }
-    FOREACH_ASTLIST_NC(Constraint, constraints->clobbers, c) {
-        E_stringLit* constr = c.data()->constr;
-        Expression*& expr = c.data()->e;
-        if (module && (constr || expr)) {
-            env.error(constr->loc, "a module level asm may not contain a clobber constraint");
-            return;
+            asmstr << *cp;
         }
 
-        if (constr) {
-            Expression* dummy;
-            constr->itcheck_x(env, dummy);
-        }
-
-        if (expr) {
-            env.error(expr->loc, "an inline asm clobber constraint cannot have an expression");
-        }
+        ++cp;
     }
+
+    // Replace the original asm string.
+    delete text->data;
+    text->data = new DataBlock(asmstr.c_str());
+    constraintString = constring.c_str();
+#endif
 }
 
 Type *E_compoundLit::itcheck_x(Env &env, Expression *&replacement)
@@ -1224,7 +1410,7 @@ Type *E_binary::itcheck_complex_arith(Env &env)
 // invokes the type checker, which (due to disambiguation) may need to
 // change it to a different value, which in turn must be propagated to
 // the caller
-static void compile_time_compute_int_expr(Env &env, Expression *&e, int &x, char *error_msg) {
+static void compile_time_compute_int_expr(Env &env, Expression *&e, int &x, const char *error_msg) {
   e->tcheck(env, e);
   if (!e->constEval(env, x)) env.error(error_msg);
 }

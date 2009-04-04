@@ -48,8 +48,13 @@ public:
              : Env(str, lang, tfac, madeUpVariables0, builtinVars0, unit0),
                targetInfo(targetInfo) { }
 
-    bool validateAsmConstraint(const char* name)
-        { TargetInfo::ConstraintInfo info; return targetInfo->validateAsmConstraint(name, info); }
+    bool validateAsmConstraint(const char* name, TargetInfo::ConstraintInfo& info)
+        { return targetInfo->validateAsmConstraint(name, info); }
+    std::string convertConstraint(char ch)
+        { return targetInfo->convertConstraint(ch); }
+    const char* getNormalizedGCCRegisterName(const char* name)
+        { return targetInfo->getNormalizedGCCRegisterName(name); }
+        
 private:
     TargetInfo* targetInfo;
     EllccEnv();

@@ -3,14 +3,13 @@
 
 verbatim {
   #define LLVM_EXTENSION        // this extension module is active
+  #include <vector>
   class CC2LLVMEnv;             // cc2llvm.h
   namespace llvm {
     class Value;
+    class Type;
   };
 }
-
-
-// TranslationUnit
 
 class TopForm {
   public void cc2llvm(CC2LLVMEnv &env) const;
@@ -20,41 +19,13 @@ class Function {
   public void cc2llvm(CC2LLVMEnv &env) const;
 }
 
-// MemberInit
-
 class Declaration {
   public void cc2llvm(CC2LLVMEnv &env) const;
 }
 
-// ASTTypeId
-
-// PQName
-
-// TypeSpecifier
-
-// BaseClassSpec
-
-// Enumerator
-
-// MemberList
-
-// Member
-
-// Declarator
-
-// IDeclarator
-
-// ExceptionSpec
-
-// OperatorName
-
 class Statement {
   pure_virtual void cc2llvm(CC2LLVMEnv &env) const;
 }
-
-// Condition
-
-// Handler
 
 class Expression {
   pure_virtual llvm::Value *cc2llvm(CC2LLVMEnv &env, int& deref) const;
@@ -64,18 +35,8 @@ class FullExpression {
   public llvm::Value *cc2llvm(CC2LLVMEnv &env, int& deref) const;
 }
 
-// ArgExpression
-
-// ArgExpressionListOpt
-
-// Initializer
-
-// TemplateDeclaration
-
-// TemplateParameter
-
-// TemplateArgument
-
-// NamespaceDecl
+class Asm() {
+    public sm::string constraintString; // The constraint string in LLVM style.
+}
 
 // EOF

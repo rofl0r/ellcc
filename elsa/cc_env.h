@@ -20,6 +20,7 @@
 #include "cc_lang.h"      // Bool3
 #include "ptrmap.h"       // PtrMap
 #include "mflags.h"       // MatchFlags
+#include "TargetInfo.h"   // Target information.
 
 class StringTable;        // strtable.h
 class CCLang;             // cc_lang.h
@@ -686,8 +687,21 @@ public:      // funcs
    * @param string The constraint.
    * @return true if the constraint is valid for the target.
    */
-  virtual bool validateAsmConstraint(const char* name) { return true; }
+  virtual bool validateAsmConstraint(const char* name, elsa::TargetInfo::ConstraintInfo& info)
+      { return true; }
   
+  /** Convert an inline assembly constraint.
+   * @param string The constraint.
+   * @return A string with the constraint converted for the target backend.
+   */
+  std::string convertConstraint(char ch) { return std::string(1, ch); }
+
+  /** Normalize an inline assembly register name.
+   * @param string The register name.
+   * @return A string with the register name normalized for the target backend.
+   */
+  const char* getNormalizedGCCRegisterName(const char* name) { return name; }
+
   // search in an overload set for an element, given its type
   Variable *findInOverloadSet(OverloadSet *oset,
                               FunctionType *ft, CVFlags receiverCV);

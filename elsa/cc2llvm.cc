@@ -27,7 +27,7 @@ using namespace elsa;
 
 #define SRET 1
 
-#if 0
+#if 1
 // Really verbose debugging.
 #define VDEBUG(who, where, what) std::cerr << toString(where) << ": " << who << " "; what; std::cerr << "\n"
 #else
@@ -564,9 +564,7 @@ void TopForm::cc2llvm(CC2LLVMEnv &env) const
     }
 
     ASTNEXTC(TF_asm, a) {
-        std::string str((const char*)a->def->text->data->getDataC(),
-                        a->def->text->data->getDataLen() - 1);
-        env.mod->appendModuleInlineAsm(str);
+        env.mod->appendModuleInlineAsm((const char*)a->def->text->data->getDataC());
     }
 
     ASTDEFAULTC {
@@ -1126,23 +1124,53 @@ void S_try::cc2llvm(CC2LLVMEnv &env) const
 
 void S_asm::cc2llvm(CC2LLVMEnv &env) const
 {
-    std::string str((const char*)def->text->data->getDataC(),
-                    def->text->data->getDataLen());
-    std::string constraints;
     const llvm::Type* returnType = llvm::Type::VoidTy;
     std::vector<llvm::Value*> args;
     std::vector<const llvm::Type*> argTypes;
+    std::vector<llvm::Value*> rwargs;
+    std::vector<const llvm::Type*> rwargTypes;
 
-#ifdef GNU_EXTENSION
-    // Keep track of inout constraints.
-    std::string inOutConstraints;
-    std::vector<llvm::Value*> inOutArgs;
-    std::vector<const llvm::Type*> inOutArgTypes;
-#endif
+    if (def->constraints) {
+        // Go through the constraints and gather the arguments and types.
+        FOREACH_ASTLIST_NC(Constraint, def->constraints->outputs, c) {
+            Constraint* constraint = c.data();
+            Expression*& expr = constraint->e;
+            int deref;
+            llvm::Value* value = expr->cc2llvm(env, deref);
+            value = env.access(value, false, deref, 1);                 // RICH: Volatile.
+            VDEBUG("S_asm output", loc, value->print(std::cerr));
+            args.push_back(value);
+            argTypes.push_back(value->getType());
+            if (constraint->info & TargetInfo::CI_ReadWrite) {
+                value = env.access(value, false, deref);                 // RICH: Volatile.
+                VDEBUG("S_asm rw", loc, value->print(std::cerr));
+                rwargs.push_back(value);
+                rwargTypes.push_back(value->getType());
+            }
+        }
+        args.insert(args.end(), rwargs.begin(), rwargs.end());
+        argTypes.insert(argTypes.end(), rwargTypes.begin(), rwargTypes.end());
+        FOREACH_ASTLIST_NC(Constraint, def->constraints->inputs, c) {
+            Constraint* constraint = c.data();
+            Expression*& expr = constraint->e;
+            int deref;
+            llvm::Value* value = expr->cc2llvm(env, deref);
+            value = env.access(value, false, deref);                 // RICH: Volatile.
+            VDEBUG("S_asm input", loc, value->print(std::cerr));
+            args.push_back(value);
+            argTypes.push_back(value->getType());
+        }
+    }
 
-    llvm::FunctionType* type =
-        llvm::FunctionType::get(returnType, argTypes, false);
-    llvm::InlineAsm* function = llvm::InlineAsm::get(type, str, constraints, false);
+
+    llvm::FunctionType* type = llvm::FunctionType::get(returnType, argTypes, false);
+    VDEBUG("S_asm constraints", loc, std::cerr << def->constraintString.c_str());
+    VDEBUG("S_asm function type", loc, type->print(std::cerr));
+    llvm::InlineAsm* function = llvm::InlineAsm::get(type,
+                                                     (const char*)def->text->data->getDataC(),
+                                                     def->constraintString.c_str(),
+                                                     false);
+    VDEBUG("S_asm CreateCall call", loc, function->print(std::cerr));
     env.builder.CreateCall(function, args.begin(), args.end());
 }
 
