@@ -744,11 +744,11 @@ void Asm::itcheck_constraints(Env &env, bool module)
 #ifdef LLVM_EXTENSION
     stringBuilder constring;    // The built-up contraint list.
     stringBuilder inputs;       // The input constraints from '+' constraints.
-    int rwConstraints = 0;      // Keep track of the number of '+' constraints.
-    int numInputs = 0;          // The number of input constraints.
+    unsigned rwConstraints = 0; // Keep track of the number of '+' constraints.
+    unsigned numInputs = 0;     // The number of input constraints.
     bool first = true;
 #endif
-    int numOutputs = 0;         // The number of output constraints.
+    unsigned numOutputs = 0;    // The number of output constraints.
 
     if (constraints) {
         // Process the output constraints.
@@ -793,7 +793,6 @@ void Asm::itcheck_constraints(Env &env, bool module)
                     constring << '=';
 #endif
                     ++cp;
-
                 }
 
                 bool good = true;
@@ -879,28 +878,35 @@ void Asm::itcheck_constraints(Env &env, bool module)
                     std::string result;
                     switch (*cp) {
                     default:
-                        if (*cp >= '0' && *cp <= '9') {
+                        if (isdigit(*cp)) {
                             // A matching constraint.
-                            int index = *cp - '0';
-                            result = *cp;
+                            unsigned index = 0;
+                            while (isdigit(*cp)) {
+                                index = index * 10 + (*cp - '0');
+                                ++cp;
+                            }
                             if (index >= numOutputs) {
                                 env.error(constraint->loc, stringc << "the matching constraint '"
                                           << *cp << "' exceeds the number of output constrints");
                                 good = false;
+                                continue;
                             }
-                            if (matches > 0 && index != matches) {
+                            if (matches > 0 && (signed)index != matches) {
                                 env.error(constraint->loc, stringc << "the matching constraint '"
                                           << *cp << "' is different than the previous matching constraint");
                                 good = false;
-                                break;
+                                continue;
                             }
+                            result = stringc << index;
                             matches = index;
                             if (*constraints->outputs.nth(index)->constr->data->getDataC() == '+') {
                                 env.error(constraint->loc, stringc << "the matched constraint '"
                                           << *cp << "' is defined as '+' and should be '='");
                                 good = false;
-                                break;
+                                continue;
                             }
+                            constring << result.c_str();
+                            continue;
                         } else {
                             // Check for a target specific constraint.
                             if (!env.validateAsmConstraint(cp, constraint->info)) {
@@ -912,16 +918,13 @@ void Asm::itcheck_constraints(Env &env, bool module)
                         }
                         break;
                     case '[': { // Match an output constraint name.
-                        const char* p = ++cp;
-                        while (*p && *p != ']') {
-                            ++p;
-                        }
-                        if (!*p) {
+                        const char* p = strchr(++cp, ']');
+                        if (p == NULL) {
                             good = false;
-                            env.error(constraint->loc, "output constraint is missing a ']'");
+                            env.error(constraint->loc, "constraint name is missing a ']'");
                             break;
                         } 
-                        int index = 0;
+                        unsigned index = 0;
                         std::string name(cp, p - cp);
                         FOREACH_ASTLIST_NC(Constraint, constraints->outputs, oc) {
                             if (oc.data()->name && name == oc.data()->name) {
@@ -936,7 +939,7 @@ void Asm::itcheck_constraints(Env &env, bool module)
                             break;
                         }
                         // Change the symbolic reference to a numeric one.
-                        if (matches > 0 && index != matches) {
+                        if (matches > 0 && (signed)index != matches) {
                             env.error(constraint->loc, stringc << "the matching constraint '"
                                       << name.c_str() << "' is different than the previous matching constraint");
                             good = false;
@@ -955,7 +958,7 @@ void Asm::itcheck_constraints(Env &env, bool module)
                             (TargetInfo::ConstraintInfo)(constraint->info
                             |constraints->outputs.nth(index)->info);
                         cp = p;
-                        result = matches + '0';
+                        result = stringc << matches;
                         break;
                     }
                     case '%': // Commutative.
@@ -1042,74 +1045,123 @@ void Asm::itcheck_constraints(Env &env, bool module)
     const char* cp = (const char*)text->data->getDataC();
     // Now we can walk through the assembly language string translating it.
     while (*cp) {
+        if (*cp == '$') {
+            asmstr << "$$";
+            ++cp;
+            continue;
+        }
+
+        if (*cp != '%') {
+            // Anything but '%'.
+            asmstr << *cp++;
+            continue;
+        }
+            
+        // '%'
+        ++cp;
+        if (*cp == '\0') {
+            env.error(text->loc, "'%' at the end of an inline asm");
+            continue;
+        }
+
         if (*cp == '%') {
-            asmstr << '$';
-            if (*++cp == '%') {
-                asmstr << '$';
-            } else if (*cp >= '0' && *cp <= '9') {
-                // Translate the position number.
-                int index = *cp - '0';
-                if (index < numOutputs) {
-                    asmstr << *cp;
-                } else if (constraints == NULL || index > constraints->inputs.count()) {
-                    env.error(text->loc, stringc << "inline asm constraint index '"
-                                                 << *cp
-                                                 << "' has no matching constraint");
+            asmstr << '%';              // Escaped '%' ('%%') becomes '%'.
+            ++cp;
+            continue;
+        }
+
+        if (*cp == '=') {
+            asmstr << "${:uid}";        // Generate a unique ID.
+            ++cp;
+            continue;
+        }
+
+        char modifier = '\0';
+        if (isalpha(*cp)) {
+            modifier = *cp++;
+        }
+
+        if (isdigit(*cp)) {
+            unsigned index = 0;
+            while (isdigit(*cp)) {
+                index = index * 10 + (*cp - '0');
+                ++cp;
+            }
+
+            if (index < numOutputs) {
+                if (modifier) {
+                    asmstr << "${" << index << ':' << modifier << "}";
                 } else {
-                    // Adjust for '+' output constraints.
-                    asmstr << (char)(index + rwConstraints + '0');
+                    asmstr << '$' << index;
                 }
-            } else if (*cp == '[') {
-                // Translate a position by name.
-                const char* p = ++cp;
-                while (*p && *p != ']') {
-                    ++p;
+            } else if (constraints == NULL || (signed)index > constraints->inputs.count()) {
+                env.error(text->loc, stringc << "inline asm constraint index '"
+                                             << *cp
+                                             << "' has no matching constraint");
+            } else {
+                // Adjust for '+' output constraints.
+                if (modifier) {
+                    asmstr << "${" << index + rwConstraints << ':' << modifier << "}";
+                } else {
+                    asmstr << '$' << index + rwConstraints;
                 }
-                if (!*p) {
-                    env.error(text->loc, "inline asm string is missing a ']'");
-                    break;
-                } 
-                int index = 0;
-                std::string name(cp, p - cp);
+            }
+            continue;
+        }
+
+        if (*cp == '[') {
+            // Translate a position by name.
+            const char* p = strchr(++cp, ']') ;
+            if (p == NULL) {
+                env.error(text->loc, "inline asm string is missing a ']'");
+                continue;
+            } 
+            unsigned index = 0;
+            std::string name(cp, p - cp);
+            if (constraints) {
+                FOREACH_ASTLIST_NC(Constraint, constraints->outputs, oc) {
+                    if (oc.data()->name && name == oc.data()->name) {
+                        break;
+                    }
+                    ++index;
+                }
+            }
+            if (index < numOutputs) {
+                // An output constraint matched.
+                if (modifier) {
+                    asmstr << "${" << index << ':' << modifier << "}";
+                } else {
+                    asmstr << '$' << index;
+                }
+            } else {
+                index = 0;
                 if (constraints) {
-                    FOREACH_ASTLIST_NC(Constraint, constraints->outputs, oc) {
-                        if (oc.data()->name && name == oc.data()->name) {
+                    FOREACH_ASTLIST_NC(Constraint, constraints->inputs, ic) {
+                        if (ic.data()->name && name == ic.data()->name) {
                             break;
                         }
                         ++index;
                     }
                 }
-                if (index < numOutputs) {
-                    // An output constraint matched.
-                    asmstr << (char)(index + '0');
-                } else {
-                    int index = 0;
-                    if (constraints) {
-                        FOREACH_ASTLIST_NC(Constraint, constraints->inputs, ic) {
-                            if (ic.data()->name && name == ic.data()->name) {
-                                break;
-                            }
-                            ++index;
-                        }
-                    }
-                    if (constraints && index < constraints->inputs.count()) {
-                        asmstr << (char)(index + numOutputs + rwConstraints + '0');
+                if (constraints && (signed)index < constraints->inputs.count()) {
+                    if (modifier) {
+                        asmstr << "${" << index + numOutputs + rwConstraints << ':' << modifier << "}";
                     } else {
-                        env.error(text->loc, stringc << "constraint name '"
-                                                     << name.c_str()
-                                                     << "' does not match any named constraint");
+                        asmstr << '$' << index+ numOutputs + rwConstraints;
                     }
+                } else {
+                    env.error(text->loc, stringc << "constraint name '"
+                                                 << name.c_str()
+                                                 << "' does not match any named constraint");
                 }
-                cp = p;
-            } else {
-                // Bad asm construct.
-                env.error(text->loc, "unrecognized '%' construct in inline asm");
             }
-          
-        } else {
-            asmstr << *cp;
-        }
 
+            cp = p + 1;
+            continue;
+        }
+    
+        // Bad asm construct.
+        env.error(text->loc, "unrecognized '%' construct in inline asm");
         ++cp;
     }
 

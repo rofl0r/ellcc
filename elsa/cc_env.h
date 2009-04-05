@@ -694,7 +694,7 @@ public:      // funcs
    * @param string The constraint.
    * @return A string with the constraint converted for the target backend.
    */
-  std::string convertConstraint(char ch) { return std::string(1, ch); }
+  virtual std::string convertConstraint(char ch) { return std::string(1, ch); }
 
   /** Normalize an inline assembly register name.
    * @param string The register name.

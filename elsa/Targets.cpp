@@ -1627,7 +1627,7 @@ TargetInfo* TargetInfo::CreateTargetInfo(const std::string &T) {
   if (T.find("pic16-") == 0)
     return new PIC16TargetInfo(T);
 
-  if (IsX86(T)) {
+  if (IsX86(T) || T.find("x86-") == 0) {
     if (isDarwin)
       return new DarwinI386TargetInfo(T);
     if (isLinux)

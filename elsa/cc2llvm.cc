@@ -27,7 +27,7 @@ using namespace elsa;
 
 #define SRET 1
 
-#if 1
+#if 0
 // Really verbose debugging.
 #define VDEBUG(who, where, what) std::cerr << toString(where) << ": " << who << " "; what; std::cerr << "\n"
 #else
@@ -1124,6 +1124,7 @@ void S_try::cc2llvm(CC2LLVMEnv &env) const
 
 void S_asm::cc2llvm(CC2LLVMEnv &env) const
 {
+    llvm::Value* returnTarget = NULL;
     const llvm::Type* returnType = llvm::Type::VoidTy;
     std::vector<llvm::Value*> args;
     std::vector<const llvm::Type*> argTypes;
@@ -1132,6 +1133,7 @@ void S_asm::cc2llvm(CC2LLVMEnv &env) const
 
     if (def->constraints) {
         // Go through the constraints and gather the arguments and types.
+        bool first = true;
         FOREACH_ASTLIST_NC(Constraint, def->constraints->outputs, c) {
             Constraint* constraint = c.data();
             Expression*& expr = constraint->e;
@@ -1139,8 +1141,18 @@ void S_asm::cc2llvm(CC2LLVMEnv &env) const
             llvm::Value* value = expr->cc2llvm(env, deref);
             value = env.access(value, false, deref, 1);                 // RICH: Volatile.
             VDEBUG("S_asm output", loc, value->print(std::cerr));
-            args.push_back(value);
-            argTypes.push_back(value->getType());
+            if (   first
+                && !(constraint->info & TargetInfo::CI_AllowsMemory)
+                && value->getType()->isSingleValueType()) {
+                // Use this first output constraint as the return type.
+                value = env.access(value, false, deref);                 // RICH: Volatile.
+                returnTarget = value;
+                returnType = value->getType();
+            } else {
+                args.push_back(value);
+                argTypes.push_back(value->getType());
+            }
+            first = false;
             if (constraint->info & TargetInfo::CI_ReadWrite) {
                 value = env.access(value, false, deref);                 // RICH: Volatile.
                 VDEBUG("S_asm rw", loc, value->print(std::cerr));
@@ -1171,7 +1183,11 @@ void S_asm::cc2llvm(CC2LLVMEnv &env) const
                                                      def->constraintString.c_str(),
                                                      false);
     VDEBUG("S_asm CreateCall call", loc, function->print(std::cerr));
-    env.builder.CreateCall(function, args.begin(), args.end());
+    llvm::CallInst *result = env.builder.CreateCall(function, args.begin(), args.end());
+    result->addAttribute(~0, llvm::Attribute::NoUnwind);
+    if (returnTarget) {
+        // env.builder.CreateStore(result, returnTarget);
+    }
 }
 
 void S_namespaceDecl::cc2llvm(CC2LLVMEnv &env) const 
