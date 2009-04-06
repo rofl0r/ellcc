@@ -364,6 +364,7 @@ testCparse_special_march x86 -S t0059.c
 testCparse_special_march x86 -S t0060.c
 testCparse_special_march x86 -S t0061.c
 testCparse_special -S t0062.c
+testCparse_special_march arm -c t0063.S
 
 # is K&R built?
 use_kandr=false

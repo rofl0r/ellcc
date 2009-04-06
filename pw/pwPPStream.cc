@@ -475,16 +475,23 @@ again:
             myneednl = 0;
             bool oldnoexpand = noexpand;
             noexpand = true;
+            bool needaspace = false;
             do {
                 pptoken();
                 if (token == NL)
                     ++myneednl;
+                if (token == WS || token == NL || token == COMMENT) {
+                    needaspace = true;
+                }
             } while (token == WS || token == NL || token == COMMENT);
             noexpand = oldnoexpand;
 
             if (token != operators[LPAREN]) {
                 // Not a function-like macro expansion.
                 newlinecount = myneednl;
+                if (needaspace) {
+                    string = " " + string;
+                }
                 first = new Stream(first, "", string, nextchar ? nextchar : -1, false);
                 nextchar = 0;
                 string = name;
