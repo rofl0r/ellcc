@@ -1130,16 +1130,20 @@ void S_asm::cc2llvm(CC2LLVMEnv &env) const
     std::vector<const llvm::Type*> argTypes;
     std::vector<llvm::Value*> rwargs;
     std::vector<const llvm::Type*> rwargTypes;
+    stringBuilder constraints;
+    bool first = true;
 
     if (def->constraints) {
         // Go through the constraints and gather the arguments and types.
-        bool first = true;
         FOREACH_ASTLIST_NC(Constraint, def->constraints->outputs, c) {
             Constraint* constraint = c.data();
             Expression*& expr = constraint->e;
             int deref;
             llvm::Value* value = expr->cc2llvm(env, deref);
             value = env.access(value, false, deref, 1);                 // RICH: Volatile.
+            if (!first) {
+                constraints << ',';
+            }
             VDEBUG("S_asm output", loc, value->print(std::cerr));
             if (   first
                 && !(constraint->info & TargetInfo::CI_AllowsMemory)
@@ -1147,9 +1151,11 @@ void S_asm::cc2llvm(CC2LLVMEnv &env) const
                 // Use this first output constraint as the return type.
                 returnTarget = value;
                 returnType = llvm::cast<llvm::PointerType>(value->getType())->getElementType();
+                constraints << "=" << constraint->string.c_str();
             } else {
                 args.push_back(value);
                 argTypes.push_back(value->getType());
+                constraints << "=*" << constraint->string.c_str();
             }
             first = false;
             if (constraint->info & TargetInfo::CI_ReadWrite) {
@@ -1158,6 +1164,14 @@ void S_asm::cc2llvm(CC2LLVMEnv &env) const
                 rwargs.push_back(value);
                 rwargTypes.push_back(value->getType());
             }
+        }
+        if (def->rwInputs.length()) {
+           if (!first) {
+                constraints << ',';
+            } else {
+                first = false;
+            }
+            constraints << def->rwInputs.c_str();
         }
         args.insert(args.end(), rwargs.begin(), rwargs.end());
         argTypes.insert(argTypes.end(), rwargTypes.begin(), rwargTypes.end());
@@ -1170,6 +1184,20 @@ void S_asm::cc2llvm(CC2LLVMEnv &env) const
             VDEBUG("S_asm input", loc, value->print(std::cerr));
             args.push_back(value);
             argTypes.push_back(value->getType());
+            if (!first) {
+                constraints << ',';
+            } else {
+                first = false;
+            }
+            constraints << constraint->string.c_str();
+        }
+
+        std::string machineClobbers = env.targetInfo->getClobbers();
+        if (!machineClobbers.empty()) {
+            if (!first) {
+                constraints << ',';
+            }
+            constraints << machineClobbers.c_str();
         }
     }
 
@@ -1179,7 +1207,7 @@ void S_asm::cc2llvm(CC2LLVMEnv &env) const
     VDEBUG("S_asm function type", loc, type->print(std::cerr));
     llvm::InlineAsm* function = llvm::InlineAsm::get(type,
                                                      (const char*)def->text->data->getDataC(),
-                                                     def->constraintString.c_str(),
+                                                     constraints.c_str(),
                                                      false);
     VDEBUG("S_asm CreateCall call", loc, function->print(std::cerr));
     llvm::CallInst *result = env.builder.CreateCall(function, args.begin(), args.end());

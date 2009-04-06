@@ -35,8 +35,11 @@ class FullExpression {
   public llvm::Value *cc2llvm(CC2LLVMEnv &env, int& deref) const;
 }
 
-class Asm() {
-    public sm::string constraintString; // The constraint string in LLVM style.
+class Constraint() {
+    public sm::string string; // The constraint string in LLVM style.
 }
 
+class Asm() {
+    public sm::string rwInputs; // The rw inputs string.
+}
 // EOF

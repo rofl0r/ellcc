@@ -742,11 +742,9 @@ void S_computedGoto::itcheck(Env &env)
 void Asm::itcheck_constraints(Env &env, bool module)
 {
 #ifdef LLVM_EXTENSION
-    stringBuilder constring;    // The built-up contraint list.
     stringBuilder inputs;       // The input constraints from '+' constraints.
     unsigned rwConstraints = 0; // Keep track of the number of '+' constraints.
     unsigned numInputs = 0;     // The number of input constraints.
-    bool first = true;
 #endif
     unsigned numOutputs = 0;    // The number of output constraints.
 
@@ -754,11 +752,7 @@ void Asm::itcheck_constraints(Env &env, bool module)
         // Process the output constraints.
         FOREACH_ASTLIST_NC(Constraint, constraints->outputs, c) {
 #ifdef LLVM_EXTENSION
-            if (!first) {
-                constring << ',';
-            } else {
-                first = false;
-            }
+            stringBuilder constring;    // The built-up contraint.
 #endif
             ++numOutputs;
             Constraint* constraint = c.data();
@@ -790,7 +784,6 @@ void Asm::itcheck_constraints(Env &env, bool module)
                         ++rwConstraints;
                         constraint->info = TargetInfo::CI_ReadWrite;
                     }
-                    constring << '=';
 #endif
                     ++cp;
                 }
@@ -841,10 +834,12 @@ void Asm::itcheck_constraints(Env &env, bool module)
             } else {
                 env.error(constraint->loc, "an inline asm output constraint must have an expression");
             }
+
+            constraint->string = constring;
         }
 
 #ifdef LLVM_EXTENSION
-        constring << inputs;
+        rwInputs = inputs;
 #endif
         // Process the input constraints.
         Constraint* last = NULL;
@@ -855,11 +850,7 @@ void Asm::itcheck_constraints(Env &env, bool module)
         FOREACH_ASTLIST_NC(Constraint, constraints->inputs, c) {
 #ifdef LLVM_EXTENSION
             ++numInputs;
-            if (!first) {
-                constring << ',';
-            } else {
-                first = false;
-            }
+            stringBuilder constring;    // The built-up contraint list.
 #endif
             Constraint* constraint = c.data();
             E_stringLit* constr = constraint->constr;
@@ -1011,15 +1002,13 @@ void Asm::itcheck_constraints(Env &env, bool module)
             } else {
                 env.error(constraint->loc, "an inline asm input constraint must have an expression");
             }
+
+            constraint->string = constring;
         }
 
         FOREACH_ASTLIST_NC(Constraint, constraints->clobbers, c) {
 #ifdef LLVM_EXTENSION
-            if (!first) {
-                constring << ',';
-            } else {
-                first = false;
-            }
+            stringBuilder constring;    // The built-up contraint list.
 #endif
             Constraint* constraint = c.data();
             E_stringLit* constr = constraint->constr;
@@ -1045,6 +1034,7 @@ void Asm::itcheck_constraints(Env &env, bool module)
             if (expr) {
                 env.error(expr->loc, "an inline asm clobber constraint cannot have an expression");
             }
+            constraint->string = constring;
         }
     }
 
@@ -1176,7 +1166,6 @@ void Asm::itcheck_constraints(Env &env, bool module)
     // Replace the original asm string.
     delete text->data;
     text->data = new DataBlock(asmstr.c_str());
-    constraintString = constring.c_str();
 #endif
 }
 
