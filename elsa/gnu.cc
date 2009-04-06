@@ -808,11 +808,19 @@ void Asm::itcheck_constraints(Env &env, bool module)
                     case '&': // Early clobber.
                         break;
                     case 'r': // General register.
+                        constraint->info = (TargetInfo::ConstraintInfo)(constraint->info
+                                                                        |TargetInfo::CI_AllowsRegister);
                         break;
                     case 'm': // Memory operand.
+                        constraint->info = (TargetInfo::ConstraintInfo)(constraint->info
+                                                                        |TargetInfo::CI_AllowsMemory);
                         break;
                     case 'g': // General register.
                     case 'X': // Any operand.
+                        constraint->info =
+                            (TargetInfo::ConstraintInfo)(constraint->info
+                                                         |TargetInfo::CI_AllowsMemory
+                                                         |TargetInfo::CI_AllowsRegister);
                         break;
                     }
 

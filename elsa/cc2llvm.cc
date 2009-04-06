@@ -1145,9 +1145,8 @@ void S_asm::cc2llvm(CC2LLVMEnv &env) const
                 && !(constraint->info & TargetInfo::CI_AllowsMemory)
                 && value->getType()->isSingleValueType()) {
                 // Use this first output constraint as the return type.
-                value = env.access(value, false, deref);                 // RICH: Volatile.
                 returnTarget = value;
-                returnType = value->getType();
+                returnType = llvm::cast<llvm::PointerType>(value->getType())->getElementType();
             } else {
                 args.push_back(value);
                 argTypes.push_back(value->getType());
@@ -1186,7 +1185,7 @@ void S_asm::cc2llvm(CC2LLVMEnv &env) const
     llvm::CallInst *result = env.builder.CreateCall(function, args.begin(), args.end());
     result->addAttribute(~0, llvm::Attribute::NoUnwind);
     if (returnTarget) {
-        // env.builder.CreateStore(result, returnTarget);
+        env.builder.CreateStore(result, returnTarget);
     }
 }
 

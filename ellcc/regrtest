@@ -362,6 +362,7 @@ testCparse_special_march nios2 -S t0057.c
 testCparse_special_march arm -S t0058.c
 testCparse_special_march x86 -S t0059.c
 testCparse_special_march x86 -S t0060.c
+testCparse_special_march x86 -S t0061.c
 
 # is K&R built?
 use_kandr=false
