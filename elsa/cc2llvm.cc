@@ -436,6 +436,10 @@ llvm::Value* CC2LLVMEnv::declaration(const Variable* var, llvm::Value* init, int
     VDEBUG("declaration", var->loc, std::cerr << toString(var->flags) << " " << var->toString());
     if (var->type->getTag() == Type::T_FUNCTION) {
         llvm::GlobalValue::LinkageTypes linkage = getLinkage(var->flags);
+        if (linkage == llvm::GlobalValue::InternalLinkage && var->funcDefn == NULL) {
+            // No definition exists for this static function.
+            return NULL;
+        }
         llvm::GlobalVariable* gv = (llvm::GlobalVariable*)variables.get(var);   // RICH: cast
         if (gv == NULL) {
             llvm::Function* gf = llvm::Function::Create((llvm::FunctionType*)type, linkage, makeName(var)->name, mod);
@@ -783,7 +787,7 @@ void Declaration::cc2llvm(CC2LLVMEnv &env) const
         llvm::Value* init = env.initializer(declarator->init, var->type, deref, true);
         // Process the declaration.
         llvm::Value* object = env.declaration(var, init, deref);
-        if (declarator->ctorStatement) {
+        if (object && declarator->ctorStatement) {
             // Handle a constructor.
             env.constructor(object, declarator->ctorStatement);
         }
