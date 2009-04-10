@@ -1868,6 +1868,17 @@ static int Preprocess(const std::string &OutputFilename,
             pp->addInclude(language->includes[i]);
         }
 
+        // Set command line defines.
+        for (size_t i = 0; i < Defines.size(); ++i) {
+            size_t index = Defines[i].find_first_of('=');
+            if (index == std::string::npos) {
+                pp->addDefine(Defines[i]);
+            } else {
+                pp->addDefine(Defines[i].substr(0, index),
+                              Defines[i].substr(index + 1));
+            }
+        }
+
         // Preprocess the file.
         const char* lastfile;
         lastfile = errors.file;
