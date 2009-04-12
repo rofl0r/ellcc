@@ -2,6 +2,7 @@
 #define _WCTYPE_H_
 
 #include <_ansi.h>
+_BEGIN_STD_C
 #include <sys/_types.h>
 
 #define __need_wint_t
@@ -10,8 +11,6 @@
 #ifndef WEOF
 # define WEOF ((wint_t)-1)
 #endif
-
-_BEGIN_STD_C
 
 #ifndef _WCTYPE_T
 #define _WCTYPE_T
@@ -23,24 +22,24 @@ typedef int wctype_t;
 typedef int wctrans_t;
 #endif
 
-int	_EXFUN(iswalpha, (wint_t));
-int	_EXFUN(iswalnum, (wint_t));
-int	_EXFUN(iswblank, (wint_t));
-int	_EXFUN(iswcntrl, (wint_t));
-int	_EXFUN(iswctype, (wint_t, wctype_t));
-int	_EXFUN(iswdigit, (wint_t));
-int	_EXFUN(iswgraph, (wint_t));
-int	_EXFUN(iswlower, (wint_t));
-int	_EXFUN(iswprint, (wint_t));
-int	_EXFUN(iswpunct, (wint_t));
-int	_EXFUN(iswspace, (wint_t));
-int	_EXFUN(iswupper, (wint_t));
-int	_EXFUN(iswxdigit, (wint_t));
-wint_t	_EXFUN(towctrans, (wint_t, wctrans_t));
-wint_t	_EXFUN(towupper, (wint_t));
-wint_t	_EXFUN(towlower, (wint_t));
-wctrans_t _EXFUN(wctrans, (const char *));
-wctype_t _EXFUN(wctype, (const char *));
+int	iswalpha(wint_t);
+int	iswalnum(wint_t);
+int	iswblank(wint_t);
+int	iswcntrl(wint_t);
+int	iswctype(wint_t, wctype_t);
+int	iswdigit(wint_t);
+int	iswgraph(wint_t);
+int	iswlower(wint_t);
+int	iswprint(wint_t);
+int	iswpunct(wint_t);
+int	iswspace(wint_t);
+int	iswupper(wint_t);
+int	iswxdigit(wint_t);
+wint_t	towctrans(wint_t, wctrans_t);
+wint_t	towupper(wint_t);
+wint_t	towlower(wint_t);
+wctrans_t wctrans(const char *);
+wctype_t wctype(const char *);
 
 _END_STD_C
 

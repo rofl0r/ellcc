@@ -1,12 +1,9 @@
-/*
-	assert.h
-*/
-
-#ifdef __cplusplus
-extern "C" {
-#endif
+/* assert.h
+ */
 
 #include "_ansi.h"
+
+_BEGIN_STD_C
 
 #undef assert
 
@@ -32,11 +29,7 @@ extern "C" {
 # endif /* !__ASSERT_FUNC */
 #endif /* !NDEBUG */
 
-void _EXFUN(__assert, (const char *, int, const char *)
-	    _ATTRIBUTE ((__noreturn__)));
-void _EXFUN(__assert_func, (const char *, int, const char *, const char *)
-	    _ATTRIBUTE ((__noreturn__)));
+void __assert(const char *, int, const char *) __attribute__ ((__noreturn__));
+void __assert_func(const char *, int, const char *, const char *) __attribute__ ((__noreturn__));
 
-#ifdef __cplusplus
-}
-#endif
+_END_STD_C

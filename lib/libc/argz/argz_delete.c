@@ -9,11 +9,7 @@
 #include <string.h>
 #include <stdlib.h>
 
-error_t
-_DEFUN (argz_delete, (argz, argz_len, entry),
-       char **argz _AND
-       size_t *argz_len _AND
-       char *entry)
+error_t argz_delete(char **argz, size_t *argz_len, char *entry)
 {
   int len = 0;
   char *moveto = entry;

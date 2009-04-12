@@ -1,7 +1,9 @@
-#ifdef __cplusplus
-extern "C" {
-#endif
+#ifndef _TERMIOS_H_
+#define _TERMIOS_H_
+
+#include <_ansi.h>
+_BEGIN_STD_C
 #include <sys/termios.h>
-#ifdef __cplusplus
-}
+_END_STD_C
+
 #endif

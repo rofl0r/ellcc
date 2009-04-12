@@ -11,11 +11,7 @@
 #include <argz.h>
 #include <envz.h>
 
-void
-_DEFUN (envz_remove, (envz, envz_len, name),
-       char **envz _AND
-       size_t *envz_len _AND
-       const char *name)
+void envz_remove(char **envz, size_t *envz_len, const char *name)
 {
   char *entry = NULL;
   int len = 0;

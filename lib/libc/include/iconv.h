@@ -27,6 +27,7 @@
 #define _ICONV_H_
 
 #include <_ansi.h>
+_BEGIN_STD_C
 #include <reent.h>
 #include <sys/types.h>
 #include <sys/_types.h>
@@ -34,29 +35,19 @@
 /* iconv_t: charset conversion descriptor type */
 typedef _iconv_t iconv_t;
 
-_BEGIN_STD_C
-
 #ifndef _REENT_ONLY
-iconv_t 
-_EXFUN(iconv_open, (_CONST char *, _CONST char *));
+iconv_t iconv_open(_CONST char *, _CONST char *);
 
-size_t
-_EXFUN(iconv, (iconv_t, _CONST char **, size_t *, char **, size_t *));
+size_t iconv(iconv_t, _CONST char **, size_t *, char **, size_t *);
 
-int
-_EXFUN(iconv_close, (iconv_t));
+int iconv_close(iconv_t);
 #endif
 
-iconv_t
-_EXFUN(_iconv_open_r, (struct _reent *, _CONST char *, _CONST char *));
-
-size_t
-_EXFUN(_iconv_r, (struct _reent *, iconv_t, _CONST char **, 
-                  size_t *, char **, size_t *));
-
-int
-_EXFUN(_iconv_close_r, (struct _reent *, iconv_t));
+iconv_t _iconv_open_r(struct _reent *, _CONST char *, _CONST char *);
+size_t _iconv_r(struct _reent *, iconv_t, _CONST char **, 
+                size_t *, char **, size_t *);
+int _iconv_close_r, (struct _reent *, iconv_t);
 
 _END_STD_C
 
-#endif /* #ifndef _ICONV_H_ */
+#endif

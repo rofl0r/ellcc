@@ -13,9 +13,8 @@
 #ifndef _STDINT_H
 #define _STDINT_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+_BEGIN_STD_C
+_END_STD_C
 
 #if defined(__GNUC__) && \
   ( (__GNUC__ >= 4) || \
@@ -393,8 +392,6 @@ typedef unsigned long uintptr_t;
 #endif
 
 
-#ifdef __cplusplus
-}
-#endif
+_END_STD_C
 
 #endif /* _STDINT_H */

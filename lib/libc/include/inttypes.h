@@ -13,6 +13,9 @@
 #ifndef _INTTYPES_H
 #define _INTTYPES_H
 
+#include <_ansi.h>
+_BEGIN_STD_C
+
 #include <stdint.h>
 #define __need_wchar_t
 #include <stddef.h>
@@ -22,7 +25,6 @@
 /* 8-bit types */
 #define __PRI8(x) __STRINGIFY(x)
 #define __SCN8(x) __STRINGIFY(hh##x)
-
 
 #define PRId8		__PRI8(d)
 #define PRIi8		__PRI8(i)
@@ -37,7 +39,6 @@
 #define SCNu8		__SCN8(u)
 #define SCNx8		__SCN8(x)
 
-
 #define PRIdLEAST8	__PRI8(d)
 #define PRIiLEAST8	__PRI8(i)
 #define PRIoLEAST8	__PRI8(o)
@@ -50,7 +51,6 @@
 #define SCNoLEAST8	__SCN8(o)
 #define SCNuLEAST8	__SCN8(u)
 #define SCNxLEAST8	__SCN8(x)
-
 
 #define PRIdFAST8	__PRI8(d)
 #define PRIiFAST8	__PRI8(i)
@@ -69,7 +69,6 @@
 #define __PRI16(x) __STRINGIFY(x)
 #define __SCN16(x) __STRINGIFY(h##x)
 
-
 #define PRId16		__PRI16(d)
 #define PRIi16		__PRI16(i)
 #define PRIo16		__PRI16(o)
@@ -83,7 +82,6 @@
 #define SCNu16		__SCN16(u)
 #define SCNx16		__SCN16(x)
 
-
 #define PRIdLEAST16	__PRI16(d)
 #define PRIiLEAST16	__PRI16(i)
 #define PRIoLEAST16	__PRI16(o)
@@ -96,7 +94,6 @@
 #define SCNoLEAST16	__SCN16(o)
 #define SCNuLEAST16	__SCN16(u)
 #define SCNxLEAST16	__SCN16(x)
-
 
 #define PRIdFAST16	__PRI16(d)
 #define PRIiFAST16	__PRI16(i)
@@ -133,7 +130,6 @@
 #define SCNu32		__SCN32(u)
 #define SCNx32		__SCN32(x)
 
-
 #define PRIdLEAST32	__PRI32(d)
 #define PRIiLEAST32	__PRI32(i)
 #define PRIoLEAST32	__PRI32(o)
@@ -147,7 +143,6 @@
 #define SCNuLEAST32	__SCN32(u)
 #define SCNxLEAST32	__SCN32(x)
 
-
 #define PRIdFAST32	__PRI32(d)
 #define PRIiFAST32	__PRI32(i)
 #define PRIoFAST32	__PRI32(o)
@@ -160,7 +155,6 @@
 #define SCNoFAST32	__SCN32(o)
 #define SCNuFAST32	__SCN32(u)
 #define SCNxFAST32	__SCN32(x)
-
 
 /* 64-bit types */
 #if __have_longlong64
@@ -200,7 +194,6 @@
 #define SCNoLEAST64	__SCN64(o)
 #define SCNuLEAST64	__SCN64(u)
 #define SCNxLEAST64	__SCN64(x)
-
 
 #define PRIdFAST64	__PRI64(d)
 #define PRIiFAST64	__PRI64(i)
@@ -266,15 +259,10 @@
 #define SCNuPTR		__SCNPTR(u)
 #define SCNxPTR		__SCNPTR(x)
 
-
 typedef struct {
   intmax_t	quot;
   intmax_t	rem;
 } imaxdiv_t;
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 extern intmax_t  imaxabs(intmax_t j);
 extern imaxdiv_t imaxdiv(intmax_t numer, intmax_t denomer);
@@ -283,8 +271,6 @@ extern uintmax_t strtoumax(const char *__restrict, char **__restrict, int);
 extern intmax_t  wcstoimax(const wchar_t *__restrict, wchar_t **__restrict, int);
 extern uintmax_t wcstoumax(const wchar_t *__restrict, wchar_t **__restrict, int);
 
-#ifdef __cplusplus
-}
-#endif
+_END_STD_C
 
 #endif

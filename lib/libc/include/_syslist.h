@@ -1,7 +1,7 @@
 /* internal use only -- mapping of "system calls" for libraries that lose
    and only provide C names, so that we end up in violation of ANSI */
-#ifndef __SYSLIST_H
-#define __SYSLIST_H
+#ifndef __SYSLIST_H_
+#define __SYSLIST_H_
 
 #ifdef MISSING_SYSCALL_NAMES
 #define _close close
@@ -36,4 +36,4 @@
 #define _closedir closedir
 #endif /* MISSING_SYSCALL_NAMES || !HAVE_OPENDIR */
 
-#endif /* !__SYSLIST_H_ */
+#endif

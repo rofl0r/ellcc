@@ -1,14 +1,9 @@
 #ifndef _SCHED_H_
 #define _SCHED_H_
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
+#include <_ansi.h>
+_BEGIN_STD_C
 #include <sys/sched.h>
-
-#ifdef __cplusplus
-}
-#endif
+_END_STD_C
 
 #endif /* _SCHED_H_ */

@@ -1,9 +1,10 @@
 /* malloc.h -- header file for memory routines.  */
 
-#ifndef _INCLUDE_MALLOC_H_
-#define _INCLUDE_MALLOC_H_
+#ifndef _MALLOC_H_
+#define _MALLOC_H_
 
 #include <_ansi.h>
+_BEGIN_STD_C
 #include <sys/reent.h>
 
 #define __need_size_t
@@ -11,10 +12,6 @@
 
 /* include any machine-specific extensions */
 #include <machine/malloc.h>
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 /* This version of struct mallinfo must match the one in
    libc/stdlib/mallocr.c.  */
@@ -34,114 +31,49 @@ struct mallinfo {
 
 /* The routines.  */
 
-extern _PTR malloc _PARAMS ((size_t));
-#ifdef __CYGWIN__
-#undef _malloc_r
-#define _malloc_r(r, s) malloc (s)
-#else
-extern _PTR _malloc_r _PARAMS ((struct _reent *, size_t));
-#endif
+extern void *malloc(size_t);
+extern void * _malloc_r(struct _reent *, size_t);
 
-extern _VOID free _PARAMS ((_PTR));
-#ifdef __CYGWIN__
-#undef _free_r
-#define _free_r(r, p) free (p)
-#else
-extern _VOID _free_r _PARAMS ((struct _reent *, _PTR));
-#endif
+extern void free(void *);
+extern void _free_r(struct _reent *, void *);
 
-extern _PTR realloc _PARAMS ((_PTR, size_t));
-#ifdef __CYGWIN__
-#undef _realloc_r
-#define _realloc_r(r, p, s) realloc (p, s)
-#else
-extern _PTR _realloc_r _PARAMS ((struct _reent *, _PTR, size_t));
-#endif
+extern void * realloc(void *, size_t);
+extern void * _realloc_r(struct _reent *, void *, size_t);
 
-extern _PTR calloc _PARAMS ((size_t, size_t));
-#ifdef __CYGWIN__
-#undef _calloc_r
-#define _calloc_r(r, s1, s2) calloc (s1, s2);
-#else
-extern _PTR _calloc_r _PARAMS ((struct _reent *, size_t, size_t));
-#endif
+extern void * calloc(size_t, size_t);
+extern void * _calloc_r(struct _reent *, size_t, size_t);
 
-extern _PTR memalign _PARAMS ((size_t, size_t));
-#ifdef __CYGWIN__
-#undef _memalign_r
-#define _memalign_r(r, s1, s2) memalign (s1, s2);
-#else
-extern _PTR _memalign_r _PARAMS ((struct _reent *, size_t, size_t));
-#endif
+extern void * memalign(size_t, size_t);
+extern void * _memalign_r(struct _reent *, size_t, size_t);
 
-extern struct mallinfo mallinfo _PARAMS ((void));
-#ifdef __CYGWIN__
-#undef _mallinfo_r
-#define _mallinfo_r(r) mallinfo ()
-#else
-extern struct mallinfo _mallinfo_r _PARAMS ((struct _reent *));
-#endif
+extern struct mallinfo mallinfo(void);
+extern struct mallinfo _mallinfo_r(struct _reent *);
 
-extern void malloc_stats _PARAMS ((void));
-#ifdef __CYGWIN__
-#undef _malloc_stats_r
-#define _malloc_stats_r(r) malloc_stats ()
-#else
-extern void _malloc_stats_r _PARAMS ((struct _reent *));
-#endif
+extern void malloc_stats(void);
+extern void _malloc_stats_r(struct _reent *);
 
-extern int mallopt _PARAMS ((int, int));
-#ifdef __CYGWIN__
-#undef _mallopt_r
-#define _mallopt_r(i1, i2) mallopt (i1, i2)
-#else
-extern int _mallopt_r _PARAMS ((struct _reent *, int, int));
-#endif
+extern int mallopt(int, int);
+extern int _mallopt_r(struct _reent *, int, int);
 
-extern size_t malloc_usable_size _PARAMS ((_PTR));
-#ifdef __CYGWIN__
-#undef _malloc_usable_size_r
-#define _malloc_usable_size_r(r, p) malloc_usable_size (p)
-#else
-extern size_t _malloc_usable_size_r _PARAMS ((struct _reent *, _PTR));
-#endif
+extern size_t malloc_usable_size(void *);
+extern size_t _malloc_usable_size_r(struct _reent *, void *);
 
 /* These aren't too useful on an embedded system, but we define them
    anyhow.  */
 
-extern _PTR valloc _PARAMS ((size_t));
-#ifdef __CYGWIN__
-#undef _valloc_r
-#define _valloc_r(r, s) valloc (s)
-#else
-extern _PTR _valloc_r _PARAMS ((struct _reent *, size_t));
-#endif
+extern void * valloc(size_t);
+extern void * _valloc_r(struct _reent *, size_t);
 
-extern _PTR pvalloc _PARAMS ((size_t));
-#ifdef __CYGWIN__
-#undef _pvalloc_r
-#define _pvalloc_r(r, s) pvalloc (s)
-#else
-extern _PTR _pvalloc_r _PARAMS ((struct _reent *, size_t));
-#endif
+extern void * pvalloc(size_t);
+extern void * _pvalloc_r(struct _reent *, size_t);
 
-extern int malloc_trim _PARAMS ((size_t));
-#ifdef __CYGWIN__
-#undef _malloc_trim_r
-#define _malloc_trim_r(r, s) malloc_trim (s)
-#else
-extern int _malloc_trim_r _PARAMS ((struct _reent *, size_t));
-#endif
+extern int malloc_trim(size_t);
+extern int _malloc_trim_r(struct _reent *, size_t);
 
 /* A compatibility routine for an earlier version of the allocator.  */
 
-extern _VOID mstats _PARAMS ((char *));
-#ifdef __CYGWIN__
-#undef _mstats_r
-#define _mstats_r(r, p) mstats (p)
-#else
-extern _VOID _mstats_r _PARAMS ((struct _reent *, char *));
-#endif
+extern void mstats(char *);
+extern void _mstats_r(struct _reent *, char *);
 
 /* SVID2/XPG mallopt options */
 
@@ -157,13 +89,9 @@ extern _VOID _mstats_r _PARAMS ((struct _reent *, char *));
 #define M_MMAP_THRESHOLD    -3 
 #define M_MMAP_MAX          -4
 
-#ifndef __CYGWIN__
 /* Some systems provide this, so do too for compatibility.  */
-extern void cfree _PARAMS ((_PTR));
-#endif /* __CYGWIN__ */
+extern void cfree (void *);
 
-#ifdef __cplusplus
-}
+_END_STD_C
+
 #endif
-
-#endif /* _INCLUDE_MALLOC_H_ */

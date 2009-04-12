@@ -8,10 +8,7 @@
 #include <stddef.h>
 #include <sys/types.h>
 
-size_t
-_DEFUN (argz_count, (argz, argz_len), 
-       const char *argz _AND
-       size_t argz_len)
+size_t argz_count(const char *argz, size_t argz_len)
 {
   int i;
   size_t count = 0;

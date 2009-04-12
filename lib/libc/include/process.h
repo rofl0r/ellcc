@@ -1,11 +1,8 @@
-/* process.h.  This file comes with MSDOS and WIN32 systems.  */
-
 #ifndef __PROCESS_H_
 #define __PROCESS_H_
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+#include <_ansi.h>
+_BEGIN_STD_C
 
 int execl(const char *path, const char *argv0, ...);
 int execle(const char *path, const char *argv0, ... /*, char * const *envp */);
@@ -37,8 +34,6 @@ int cwait(int *, int, int);
 
 #define WAIT_CHILD 1
 
-#ifdef __cplusplus
-}
-#endif
+_END_STD_C
 
 #endif

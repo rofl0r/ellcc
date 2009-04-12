@@ -29,7 +29,8 @@
 #ifndef _LANGINFO_H_
 #define	_LANGINFO_H_
 
-#include <sys/cdefs.h>
+#include <_ansi.h>
+_BEGIN_STD_C
 
 typedef int nl_item;
 
@@ -133,8 +134,7 @@ typedef int nl_item;
 #define _NL_CTYPE_EXTRA_MAP_13 82
 #define _NL_CTYPE_EXTRA_MAP_14 83
 
-__BEGIN_DECLS
 char	*nl_langinfo(nl_item);
-__END_DECLS
+_BEGIN_STD_C
 
-#endif /* !_LANGINFO_H_ */
+#endif

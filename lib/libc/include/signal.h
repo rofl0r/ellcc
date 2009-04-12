@@ -2,9 +2,9 @@
 #define _SIGNAL_H_
 
 #include "_ansi.h"
-#include <sys/signal.h>
-
 _BEGIN_STD_C
+
+#include <sys/signal.h>
 
 typedef int	sig_atomic_t;		/* Atomic entity type (ANSI) */
 
@@ -14,14 +14,14 @@ typedef int	sig_atomic_t;		/* Atomic entity type (ANSI) */
 
 struct _reent;
 
-_sig_func_ptr _EXFUN(_signal_r, (struct _reent *, int, _sig_func_ptr));
-int	_EXFUN(_raise_r, (struct _reent *, int));
+_sig_func_ptr _signal_r(struct _reent *, int, _sig_func_ptr);
+int _raise_r(struct _reent *, int);
 
 #ifndef _REENT_ONLY
-_sig_func_ptr _EXFUN(signal, (int, _sig_func_ptr));
-int	_EXFUN(raise, (int));
+_sig_func_ptr signal(int, _sig_func_ptr);
+int raise(int);
 #endif
 
 _END_STD_C
 
-#endif /* _SIGNAL_H_ */
+#endif

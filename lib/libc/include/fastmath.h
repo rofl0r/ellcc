@@ -1,13 +1,11 @@
 #ifndef _FASTMATH_H_
-#ifdef __cplusplus
-extern "C" {
-#endif
 #define _FASTMATH_H_
+
+#include <_ansi.h>
+_BEGIN_STD_C
 
 #include <math.h>
 #include <machine/fastmath.h>
+_END_STD_C
 
-#ifdef __cplusplus
-}
 #endif
-#endif /* _FASTMATH_H_ */

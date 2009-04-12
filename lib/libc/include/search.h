@@ -9,6 +9,8 @@
 #ifndef _SEARCH_H_
 #define _SEARCH_H_
 
+#include <_ansi.h>
+_BEGIN_STD_C
 #include <sys/cdefs.h>
 #include <machine/ansi.h>
 #include <sys/types.h>
@@ -42,18 +44,17 @@ struct hsearch_data
   size_t htablesize;
 };
 
-__BEGIN_DECLS
-int	 hcreate(size_t);
-void	 hdestroy(void);
-ENTRY	*hsearch(ENTRY, ACTION);
-int	 hcreate_r(size_t, struct hsearch_data *);
-void	 hdestroy_r(struct hsearch_data *);
-int	hsearch_r(ENTRY, ACTION, ENTRY **, struct hsearch_data *);
-void	*tdelete(const void *, void **, int (*)(const void *, const void *));
-void	tdestroy (void *, void (*)(void *));
-void	*tfind(const void *, void **, int (*)(const void *, const void *));
-void	*tsearch(const void *, void **, int (*)(const void *, const void *));
-void      twalk(const void *, void (*)(const void *, VISIT, int));
-__END_DECLS
+int hcreate(size_t);
+void hdestroy(void);
+ENTRY *hsearch(ENTRY, ACTION);
+int hcreate_r(size_t, struct hsearch_data *);
+void hdestroy_r(struct hsearch_data *);
+int hsearch_r(ENTRY, ACTION, ENTRY **, struct hsearch_data *);
+void *tdelete(const void *, void **, int (*)(const void *, const void *));
+void tdestroy (void *, void (*)(void *));
+void *tfind(const void *, void **, int (*)(const void *, const void *));
+void *tsearch(const void *, void **, int (*)(const void *, const void *));
+void twalk(const void *, void (*)(const void *, VISIT, int));
+_END_STD_C
 
 #endif /* !_SEARCH_H_ */

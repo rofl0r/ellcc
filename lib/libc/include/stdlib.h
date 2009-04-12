@@ -8,6 +8,7 @@
 #define _STDLIB_H_
 
 #include "_ansi.h"
+_END_STD_C
 
 #define __need_size_t
 #define __need_wchar_t
@@ -18,12 +19,6 @@
 #ifndef __STRICT_ANSI__
 #include <alloca.h>
 #endif
-
-#ifdef __CYGWIN__
-#include <cygwin/stdlib.h>
-#endif
-
-_BEGIN_STD_C
 
 typedef struct 
 {
@@ -54,143 +49,143 @@ typedef struct
 
 #define RAND_MAX __RAND_MAX
 
-extern __IMPORT int __mb_cur_max;
+extern int __mb_cur_max;
 
 #define MB_CUR_MAX __mb_cur_max
 
-_VOID	_EXFUN(abort,(_VOID) _ATTRIBUTE ((noreturn)));
-int	_EXFUN(abs,(int));
-int	_EXFUN(atexit,(_VOID (*__func)(_VOID)));
-double	_EXFUN(atof,(const char *__nptr));
+void	abort(void) __attribute__ ((noreturn));
+int	abs(int);
+int	atexit(void (*__func)(void));
+double	atof(const char *__nptr);
 #ifndef __STRICT_ANSI__
-float	_EXFUN(atoff,(const char *__nptr));
+float	atoff(const char *__nptr);
 #endif
-int	_EXFUN(atoi,(const char *__nptr));
-int	_EXFUN(_atoi_r,(struct _reent *, const char *__nptr));
-long	_EXFUN(atol,(const char *__nptr));
-long	_EXFUN(_atol_r,(struct _reent *, const char *__nptr));
-_PTR	_EXFUN(bsearch,(const _PTR __key,
-		       const _PTR __base,
+int	atoi(const char *__nptr);
+int	_atoi_r(struct _reent *, const char *__nptr);
+long	atol(const char *__nptr);
+long	_atol_r(struct _reent *, const char *__nptr);
+void *	bsearch(const void * __key,
+		       const void * __base,
 		       size_t __nmemb,
 		       size_t __size,
-		       int _EXPARM(_compar,(const _PTR, const _PTR))));
-_PTR	_EXFUN(calloc,(size_t __nmemb, size_t __size));
-div_t	_EXFUN(div,(int __numer, int __denom));
-_VOID	_EXFUN(exit,(int __status) _ATTRIBUTE ((noreturn)));
-_VOID	_EXFUN(free,(_PTR));
-char *  _EXFUN(getenv,(const char *__string));
-char *	_EXFUN(_getenv_r,(struct _reent *, const char *__string));
-char *	_EXFUN(_findenv,(_CONST char *, int *));
-char *	_EXFUN(_findenv_r,(struct _reent *, _CONST char *, int *));
-long	_EXFUN(labs,(long));
-ldiv_t	_EXFUN(ldiv,(long __numer, long __denom));
-_PTR	_EXFUN(malloc,(size_t __size));
-int	_EXFUN(mblen,(const char *, size_t));
-int	_EXFUN(_mblen_r,(struct _reent *, const char *, size_t, _mbstate_t *));
-int	_EXFUN(mbtowc,(wchar_t *, const char *, size_t));
-int	_EXFUN(_mbtowc_r,(struct _reent *, wchar_t *, const char *, size_t, _mbstate_t *));
-int	_EXFUN(wctomb,(char *, wchar_t));
-int	_EXFUN(_wctomb_r,(struct _reent *, char *, wchar_t, _mbstate_t *));
-size_t	_EXFUN(mbstowcs,(wchar_t *, const char *, size_t));
-size_t	_EXFUN(_mbstowcs_r,(struct _reent *, wchar_t *, const char *, size_t, _mbstate_t *));
-size_t	_EXFUN(wcstombs,(char *, const wchar_t *, size_t));
-size_t	_EXFUN(_wcstombs_r,(struct _reent *, char *, const wchar_t *, size_t, _mbstate_t *));
+		       int (*_compar)(const void *, const void *));
+void *	calloc(size_t __nmemb, size_t __size);
+div_t	div(int __numer, int __denom);
+void	exit(int __status) __attribute__ ((noreturn));
+void	free(void *);
+char *  getenv(const char *__string);
+char *	_getenv_r(struct _reent *, const char *__string);
+char *	_findenv(const char *, int *);
+char *	_findenv_r(struct _reent *, const char *, int *);
+long	labs(long);
+ldiv_t	ldiv(long __numer, long __denom);
+void *	malloc(size_t __size);
+int	mblen(const char *, size_t);
+int	_mblen_r(struct _reent *, const char *, size_t, _mbstate_t *);
+int	mbtowc(wchar_t *, const char *, size_t);
+int	_mbtowc_r(struct _reent *, wchar_t *, const char *, size_t, _mbstate_t *);
+int	wctomb(char *, wchar_t);
+int	_wctomb_r(struct _reent *, char *, wchar_t, _mbstate_t *);
+size_t	mbstowcs(wchar_t *, const char *, size_t);
+size_t	_mbstowcs_r(struct _reent *, wchar_t *, const char *, size_t, _mbstate_t *);
+size_t	wcstombs(char *, const wchar_t *, size_t);
+size_t	_wcstombs_r(struct _reent *, char *, const wchar_t *, size_t, _mbstate_t *);
 #ifndef __STRICT_ANSI__
 #ifndef _REENT_ONLY
-int     _EXFUN(mkstemp,(char *));
-char *  _EXFUN(mktemp,(char *));
+int     mkstemp(char *);
+char *  mktemp(char *);
 #endif
 #endif
-_VOID	_EXFUN(qsort,(_PTR __base, size_t __nmemb, size_t __size, int(*_compar)(const _PTR, const _PTR)));
-int	_EXFUN(rand,(_VOID));
-_PTR	_EXFUN(realloc,(_PTR __r, size_t __size));
-_VOID	_EXFUN(srand,(unsigned __seed));
-double	_EXFUN(strtod,(const char *__n, char **__end_PTR));
-double	_EXFUN(_strtod_r,(struct _reent *,const char *__n, char **__end_PTR));
-float	_EXFUN(strtof,(const char *__n, char **__end_PTR));
+void	qsort(void * __base, size_t __nmemb, size_t __size, int(*_compar)(const void *, const void *));
+int	rand(void);
+void *	realloc(void * __r, size_t __size);
+void	srand(unsigned __seed);
+double	strtod(const char *__n, char **__end_PTR);
+double	_strtod_r(struct _reent *,const char *__n, char **__end_PTR);
+float	strtof(const char *__n, char **__end_PTR);
 #ifndef __STRICT_ANSI__
 /* the following strtodf interface is deprecated...use strtof instead */
 # ifndef strtodf 
 #  define strtodf strtof
 # endif
 #endif
-long	_EXFUN(strtol,(const char *__n, char **__end_PTR, int __base));
-long	_EXFUN(_strtol_r,(struct _reent *,const char *__n, char **__end_PTR, int __base));
-unsigned long _EXFUN(strtoul,(const char *__n, char **__end_PTR, int __base));
-unsigned long _EXFUN(_strtoul_r,(struct _reent *,const char *__n, char **__end_PTR, int __base));
+long	strtol(const char *__n, char **__end_PTR, int __base);
+long	_strtol_r(struct _reent *,const char *__n, char **__end_PTR, int __base);
+unsigned long strtoul(const char *__n, char **__end_PTR, int __base);
+unsigned long _strtoul_r(struct _reent *,const char *__n, char **__end_PTR, int __base);
 
-int	_EXFUN(system,(const char *__string));
+int	system(const char *__string);
 
 #ifndef __STRICT_ANSI__
-long    _EXFUN(a64l,(const char *__input));
-char *  _EXFUN(l64a,(long __input));
-char *  _EXFUN(_l64a_r,(struct _reent *,long __input));
-int	_EXFUN(on_exit,(_VOID (*__func)(int, _PTR),_PTR __arg));
-_VOID	_EXFUN(_Exit,(int __status) _ATTRIBUTE ((noreturn)));
-int	_EXFUN(putenv,(char *__string));
-int	_EXFUN(_putenv_r,(struct _reent *, char *__string));
-int	_EXFUN(setenv,(const char *__string, const char *__value, int __overwrite));
-int	_EXFUN(_setenv_r,(struct _reent *, const char *__string, const char *__value, int __overwrite));
+long    a64l(const char *__input);
+char *  l64a(long __input);
+char *  _l64a_r(struct _reent *,long __input);
+int	on_exit(void (*__func)(int, void *),void * __arg);
+void	_Exit(int __status) __attribute__ ((noreturn));
+int	putenv(char *__string);
+int	_putenv_r(struct _reent *, char *__string);
+int	setenv(const char *__string, const char *__value, int __overwrite);
+int	_setenv_r(struct _reent *, const char *__string, const char *__value, int __overwrite);
 
-char *	_EXFUN(gcvt,(double,int,char *));
-char *	_EXFUN(gcvtf,(float,int,char *));
-char *	_EXFUN(fcvt,(double,int,int *,int *));
-char *	_EXFUN(fcvtf,(float,int,int *,int *));
-char *	_EXFUN(ecvt,(double,int,int *,int *));
-char *	_EXFUN(ecvtbuf,(double, int, int*, int*, char *));
-char *	_EXFUN(fcvtbuf,(double, int, int*, int*, char *));
-char *	_EXFUN(ecvtf,(float,int,int *,int *));
-char *	_EXFUN(dtoa,(double, int, int, int *, int*, char**));
-int	_EXFUN(rand_r,(unsigned *__seed));
+char *	gcvt(double,int,char *);
+char *	gcvtf(float,int,char *);
+char *	fcvt(double,int,int *,int *);
+char *	fcvtf(float,int,int *,int *);
+char *	ecvt(double,int,int *,int *);
+char *	ecvtbuf(double, int, int*, int*, char *);
+char *	fcvtbuf(double, int, int*, int*, char *);
+char *	ecvtf(float,int,int *,int *);
+char *	dtoa(double, int, int, int *, int*, char**);
+int	rand_r(unsigned *__seed);
 
-double _EXFUN(drand48,(_VOID));
-double _EXFUN(_drand48_r,(struct _reent *));
-double _EXFUN(erand48,(unsigned short [3]));
-double _EXFUN(_erand48_r,(struct _reent *, unsigned short [3]));
-long   _EXFUN(jrand48,(unsigned short [3]));
-long   _EXFUN(_jrand48_r,(struct _reent *, unsigned short [3]));
-_VOID  _EXFUN(lcong48,(unsigned short [7]));
-_VOID  _EXFUN(_lcong48_r,(struct _reent *, unsigned short [7]));
-long   _EXFUN(lrand48,(_VOID));
-long   _EXFUN(_lrand48_r,(struct _reent *));
-long   _EXFUN(mrand48,(_VOID));
-long   _EXFUN(_mrand48_r,(struct _reent *));
-long   _EXFUN(nrand48,(unsigned short [3]));
-long   _EXFUN(_nrand48_r,(struct _reent *, unsigned short [3]));
+double drand48(void);
+double _drand48_r(struct _reent *);
+double erand48(unsigned short [3]);
+double _erand48_r(struct _reent *, unsigned short [3]);
+long   jrand48(unsigned short [3]);
+long   _jrand48_r(struct _reent *, unsigned short [3]);
+void  lcong48(unsigned short [7]);
+void  _lcong48_r(struct _reent *, unsigned short [7]);
+long   lrand48(void);
+long   _lrand48_r(struct _reent *);
+long   mrand48(void);
+long   _mrand48_r(struct _reent *);
+long   nrand48(unsigned short [3]);
+long   _nrand48_r(struct _reent *, unsigned short [3]);
 unsigned short *
-       _EXFUN(seed48,(unsigned short [3]));
+       seed48(unsigned short [3]);
 unsigned short *
-       _EXFUN(_seed48_r,(struct _reent *, unsigned short [3]));
-_VOID  _EXFUN(srand48,(long));
-_VOID  _EXFUN(_srand48_r,(struct _reent *, long));
-long long _EXFUN(atoll,(const char *__nptr));
-long long _EXFUN(_atoll_r,(struct _reent *, const char *__nptr));
-long long _EXFUN(llabs,(long long));
-lldiv_t	_EXFUN(lldiv,(long long __numer, long long __denom));
-long long _EXFUN(strtoll,(const char *__n, char **__end_PTR, int __base));
-long long _EXFUN(_strtoll_r,(struct _reent *, const char *__n, char **__end_PTR, int __base));
-unsigned long long _EXFUN(strtoull,(const char *__n, char **__end_PTR, int __base));
-unsigned long long _EXFUN(_strtoull_r,(struct _reent *, const char *__n, char **__end_PTR, int __base));
+       _seed48_r(struct _reent *, unsigned short [3]);
+void  srand48(long);
+void  _srand48_r(struct _reent *, long);
+long long atoll(const char *__nptr);
+long long _atoll_r(struct _reent *, const char *__nptr);
+long long llabs(long long);
+lldiv_t	lldiv(long long __numer, long long __denom);
+long long strtoll(const char *__n, char **__end_PTR, int __base);
+long long _strtoll_r(struct _reent *, const char *__n, char **__end_PTR, int __base);
+unsigned long long strtoull(const char *__n, char **__end_PTR, int __base);
+unsigned long long _strtoull_r(struct _reent *, const char *__n, char **__end_PTR, int __base);
 
 #ifndef __CYGWIN__
-_VOID	_EXFUN(cfree,(_PTR));
-void	_EXFUN(unsetenv,(const char *__string));
-void	_EXFUN(_unsetenv_r,(struct _reent *, const char *__string));
+void	cfree(void *);
+void	unsetenv(const char *__string);
+void	_unsetenv_r(struct _reent *, const char *__string);
 #endif
 
 #endif /* ! __STRICT_ANSI__ */
 
-char *	_EXFUN(_dtoa_r,(struct _reent *, double, int, int, int *, int*, char**));
+char *	_dtoa_r(struct _reent *, double, int, int, int *, int*, char**);
 #ifndef __CYGWIN__
-_PTR	_EXFUN(_malloc_r,(struct _reent *, size_t));
-_PTR	_EXFUN(_calloc_r,(struct _reent *, size_t, size_t));
-_VOID	_EXFUN(_free_r,(struct _reent *, _PTR));
-_PTR	_EXFUN(_realloc_r,(struct _reent *, _PTR, size_t));
-_VOID	_EXFUN(_mstats_r,(struct _reent *, char *));
+void *	_malloc_r(struct _reent *, size_t);
+void *	_calloc_r(struct _reent *, size_t, size_t);
+void	_free_r(struct _reent *, void *);
+void *	_realloc_r(struct _reent *, void *, size_t);
+void	_mstats_r(struct _reent *, char *);
 #endif
-int	_EXFUN(_system_r,(struct _reent *, const char *));
+int	_system_r(struct _reent *, const char *);
 
-_VOID	_EXFUN(__eprintf,(const char *, const char *, unsigned int, const char *));
+void	__eprintf(const char *, const char *, unsigned int, const char *);
 
 _END_STD_C
 

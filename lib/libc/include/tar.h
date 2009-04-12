@@ -2,8 +2,8 @@
  * tar.h
  */
 
-#ifndef _TAR_H
-#define _TAR_H
+#ifndef _TAR_H_
+#define _TAR_H_
 
 /* General definitions */
 #define TMAGIC 		"ustar" /* ustar plus null byte. */

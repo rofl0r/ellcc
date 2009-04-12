@@ -5,12 +5,10 @@
    in the namespace allotted to us.  */
 
 #ifndef _SYS_REENT_H_
-#ifdef __cplusplus
-extern "C" {
-#endif
 #define _SYS_REENT_H_
 
 #include <_ansi.h>
+_BEGIN_STD_C
 #include <sys/_types.h>
 
 #define _NULL 0
@@ -23,15 +21,6 @@ typedef unsigned __Long __ULong;
 #define __Long int
 typedef unsigned __Long __ULong;
 #endif
-#endif
-
-#if !defined( __Long)
-#include <sys/types.h>
-#endif
-
-#ifndef __Long
-#define __Long __int32_t
-typedef __uint32_t __ULong;
 #endif
 
 struct _reent;
@@ -153,7 +142,7 @@ struct __sFILE_fake {
 /* Following is needed both in libc/stdio and libc/stdlib so we put it
  * here instead of libc/stdio/local.h where it was previously. */
 
-extern _VOID   _EXFUN(__sinit,(struct _reent *));
+extern void   __sinit,(struct _reent *);
 
 # define _REENT_SMALL_CHECK_INIT(ptr)		\
   do						\
@@ -180,14 +169,13 @@ struct __sFILE {
 #endif
 
   /* operations */
-  _PTR	_cookie;	/* cookie passed to io functions */
+  void *	_cookie;	/* cookie passed to io functions */
 
-  _READ_WRITE_RETURN_TYPE _EXFUN((*_read),(struct _reent *, _PTR,
-					   char *, int));
-  _READ_WRITE_RETURN_TYPE _EXFUN((*_write),(struct _reent *, _PTR,
-					    const char *, int));
-  _fpos_t _EXFUN((*_seek),(struct _reent *, _PTR, _fpos_t, int));
-  int _EXFUN((*_close),(struct _reent *, _PTR));
+  int (*_read)(struct _reent *, void *, char *, int);
+  int (*_write)(struct _reent *, void *,
+					    const char *, int);
+  _fpos_t (*_seek)(struct _reent *, void *, _fpos_t, int);
+  int (*_close)(struct _reent *, void *);
 
   /* separate buffer for long sequences of ungetc() */
   struct __sbuf _ub;	/* ungetc buffer */
@@ -233,14 +221,14 @@ struct __sFILE64 {
   struct _reent *_data;
 
   /* operations */
-  _PTR	_cookie;	/* cookie passed to io functions */
+  void *	_cookie;	/* cookie passed to io functions */
 
-  _READ_WRITE_RETURN_TYPE _EXFUN((*_read),(struct _reent *, _PTR,
-					   char *, int));
-  _READ_WRITE_RETURN_TYPE _EXFUN((*_write),(struct _reent *, _PTR,
-					    const char *, int));
-  _fpos_t _EXFUN((*_seek),(struct _reent *, _PTR, _fpos_t, int));
-  int _EXFUN((*_close),(struct _reent *, _PTR));
+  int (*_read)(struct _reent *, void *,
+					   char *, int);
+  int (*_write)(struct _reent *, void *,
+					    const char *, int);
+  _fpos_t (*_seek)(struct _reent *, void *, _fpos_t, int);
+  int (*_close)(struct _reent *, void *);
 
   /* separate buffer for long sequences of ungetc() */
   struct __sbuf _ub;	/* ungetc buffer */
@@ -259,7 +247,7 @@ struct __sFILE64 {
   int   _flags2;        /* for future use */
 
   _off64_t _offset;     /* current lseek offset */
-  _fpos64_t _EXFUN((*_seek64),(struct _reent *, _PTR, _fpos64_t, int));
+  _fpos64_t (*_seek64)(struct _reent *, void *, _fpos64_t, int);
 
 #ifndef __SINGLE_THREAD__
   _flock_t _lock;	/* for thread-safety locking */
@@ -369,11 +357,11 @@ struct _reent
   int __sdidinit;		/* 1 means stdio has been init'd */
 
   int _current_category;	/* used by setlocale */
-  _CONST char *_current_locale;
+  const char *_current_locale;
 
   struct _mprec *_mp;
 
-  void _EXFUN((*__cleanup),(struct _reent *));
+  void (*__cleanup),(struct _reent *);
 
   int _gamma_signgam;
 
@@ -429,7 +417,7 @@ extern const struct __sFILE_fake __sf_fake_stderr;
     _NULL \
   }
 
-#define _REENT_INIT_PTR(var) \
+#define _REENT_INITvoid *(var) \
   { (var)->_stdin = (__FILE *)&__sf_fake_stdin; \
     (var)->_stdout = (__FILE *)&__sf_fake_stdout; \
     (var)->_stderr = (__FILE *)&__sf_fake_stderr; \
@@ -585,11 +573,11 @@ struct _reent
   char _emergency[_REENT_EMERGENCY_SIZE];
  
   int _current_category;	/* used by setlocale */
-  _CONST char *_current_locale;
+  const char *_current_locale;
 
   int __sdidinit;		/* 1 means stdio has been init'd */
 
-  void _EXFUN((*__cleanup),(struct _reent *));
+  void (*__cleanup)(struct _reent *);
 
   /* used by mprec routines */
   struct _Bigint *_result;
@@ -699,13 +687,13 @@ struct _reent
     {_NULL, 0, _NULL} \
   }
 
-#define _REENT_INIT_PTR(var) \
+#define _REENT_INITvoid *(var) \
   { (var)->_errno = 0; \
     (var)->_stdin = &(var)->__sf[0]; \
     (var)->_stdout = &(var)->__sf[1]; \
     (var)->_stderr = &(var)->__sf[2]; \
     (var)->_inc = 0; \
-    memset(&(var)->_emergency, 0, sizeof((var)->_emergency)); \
+    memset(&(var)->_emergency, 0, sizeof((var)->_emergency); \
     (var)->_current_category = 0; \
     (var)->_current_locale = "C"; \
     (var)->__sdidinit = 0; \
@@ -719,7 +707,7 @@ struct _reent
     (var)->_new._reent._unused_rand = 0; \
     (var)->_new._reent._strtok_last = _NULL; \
     (var)->_new._reent._asctime_buf[0] = 0; \
-    memset(&(var)->_new._reent._localtime_buf, 0, sizeof((var)->_new._reent._localtime_buf)); \
+    memset(&(var)->_new._reent._localtime_buf, 0, sizeof((var)->_new._reent._localtime_buf); \
     (var)->_new._reent._gamma_signgam = 0; \
     (var)->_new._reent._rand_next = 1; \
     (var)->_new._reent._r48._seed[0] = _RAND48_SEED_0; \
@@ -758,7 +746,7 @@ struct _reent
     (var)->__sglue._next = _NULL; \
     (var)->__sglue._niobs = 0; \
     (var)->__sglue._iobs = _NULL; \
-    memset(&(var)->__sf, 0, sizeof((var)->__sf)); \
+    memset(&(var)->__sf, 0, sizeof((var)->__sf); \
   }
 
 #define _REENT_CHECK_RAND48(ptr)	/* nothing */
@@ -806,9 +794,9 @@ struct _reent
 #endif
 
 extern struct _reent *_impure_ptr __ATTRIBUTE_IMPURE_PTR__;
-extern struct _reent *_CONST _global_impure_ptr __ATTRIBUTE_IMPURE_PTR__;
+extern struct _reent *const _global_impure_ptr __ATTRIBUTE_IMPURE_PTR__;
 
-void _reclaim_reent _PARAMS ((struct _reent *));
+void _reclaim_reent(struct _reent *);
 
 /* #define _REENT_ONLY define this to get only reentrant routines */
 
@@ -816,7 +804,7 @@ void _reclaim_reent _PARAMS ((struct _reent *));
 
 #if defined(__DYNAMIC_REENT__) && !defined(__SINGLE_THREAD__)
 #ifndef __getreent
-  struct _reent * _EXFUN(__getreent, (void));
+  struct _reent * __getreent(void);
 #endif
 # define _REENT (__getreent())
 #else /* __SINGLE_THREAD__ || !__DYNAMIC_REENT__ */

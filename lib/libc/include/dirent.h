@@ -1,15 +1,12 @@
 #ifndef _DIRENT_H_
 #define _DIRENT_H_
-#ifdef __cplusplus
-extern "C" {
-#endif
+#include <_ansi.h>
+_BEGIN_STD_C
 #include <sys/dirent.h>
 
 #if !defined(MAXNAMLEN) && !defined(_POSIX_SOURCE)
 #define MAXNAMLEN 1024
 #endif
 
-#ifdef __cplusplus
-}
+_END_STD_C
 #endif
-#endif /*_DIRENT_H_*/

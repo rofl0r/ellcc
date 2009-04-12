@@ -9,11 +9,7 @@
 #include <string.h>
 #include <stdlib.h>
 
-char *
-_DEFUN (argz_next, (argz, argz_len, entry),
-       char *argz _AND
-       size_t argz_len _AND
-       const char *entry)
+char * argz_next(char *argz, size_t argz_len, const char *entry)
 {
   if (entry)
     {

@@ -4,18 +4,13 @@
 /* Rearranged for general inclusion by stdlib.h.
    2001, Corinna Vinschen <vinschen@redhat.com> */
 
-#ifndef _NEWLIB_ALLOCA_H
-#define _NEWLIB_ALLOCA_H
+#ifndef _ALLOCA_H_
+#define _ALLOCA_H_
 
 #include "_ansi.h"
 #include <sys/reent.h>
 
 #undef alloca
-
-#ifdef __GNUC__
 #define alloca(size) __builtin_alloca(size)
-#else
-void * _EXFUN(alloca,(size_t));
-#endif
 
 #endif

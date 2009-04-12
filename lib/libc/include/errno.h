@@ -1,5 +1,5 @@
-#ifndef __ERRNO_H__
-#define __ERRNO_H__
+#ifndef _ERRNO_H_
+#define _ERRNO_H_
 
 #ifndef __error_t_defined
 typedef int error_t;
@@ -8,4 +8,4 @@ typedef int error_t;
 
 #include <sys/errno.h>
 
-#endif /* !__ERRNO_H__ */
+#endif

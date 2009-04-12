@@ -2,29 +2,28 @@
 #define _CTYPE_H_
 
 #include "_ansi.h"
-
 _BEGIN_STD_C
 
-int _EXFUN(isalnum, (int __c));
-int _EXFUN(isalpha, (int __c));
-int _EXFUN(iscntrl, (int __c));
-int _EXFUN(isdigit, (int __c));
-int _EXFUN(isgraph, (int __c));
-int _EXFUN(islower, (int __c));
-int _EXFUN(isprint, (int __c));
-int _EXFUN(ispunct, (int __c));
-int _EXFUN(isspace, (int __c));
-int _EXFUN(isupper, (int __c));
-int _EXFUN(isxdigit,(int __c));
-int _EXFUN(tolower, (int __c));
-int _EXFUN(toupper, (int __c));
+int isalnum(int __c);
+int isalpha(int __c);
+int iscntrl(int __c);
+int isdigit(int __c);
+int isgraph(int __c);
+int islower(int __c);
+int isprint(int __c);
+int ispunct(int __c);
+int isspace(int __c);
+int isupper(int __c);
+int isxdigit(int __c);
+int tolower(int __c);
+int toupper(int __c);
 
 #ifndef __STRICT_ANSI__
-int _EXFUN(isblank, (int __c));
-int _EXFUN(isascii, (int __c));
-int _EXFUN(toascii, (int __c));
-int _EXFUN(_tolower, (int __c));
-int _EXFUN(_toupper, (int __c));
+int isblank(int __c);
+int isascii(int __c);
+int toascii(int __c);
+int _tolower(int __c);
+int _toupper(int __c);
 #endif
 
 #define	_U	01
@@ -36,8 +35,8 @@ int _EXFUN(_toupper, (int __c));
 #define _X	0100
 #define	_B	0200
 
-extern	__IMPORT _CONST char	*__ctype_ptr;
-extern	__IMPORT _CONST char	_ctype_[];  /* For backward compatibility.  */
+extern	const char	*__ctype_ptr;
+extern	const char	_ctype_[];  /* For backward compatibility.  */
 
 #ifndef __cplusplus
 #define	isalpha(c)	((__ctype_ptr)[(unsigned)(c)]&(_U|_L))
@@ -52,15 +51,10 @@ extern	__IMPORT _CONST char	_ctype_[];  /* For backward compatibility.  */
 #define	isgraph(c)	((__ctype_ptr)[(unsigned)(c)]&(_P|_U|_L|_N))
 #define iscntrl(c)	((__ctype_ptr)[(unsigned)(c)]&_C)
 
-
-/* Non-gcc versions will get the library versions, and will be
-   slightly slower */
-#ifdef __GNUC__
 # define toupper(c) \
 	__extension__ ({ int __x = (c); islower(__x) ? (__x - 'a' + 'A') : __x;})
 # define tolower(c) \
 	__extension__ ({ int __x = (c); isupper(__x) ? (__x - 'A' + 'a') : __x;})
-#endif
 #endif /* !__cplusplus */
 
 #ifndef __STRICT_ANSI__
@@ -70,4 +64,4 @@ extern	__IMPORT _CONST char	_ctype_[];  /* For backward compatibility.  */
 
 _END_STD_C
 
-#endif /* _CTYPE_H_ */
+#endif

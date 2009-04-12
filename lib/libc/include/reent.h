@@ -1,4 +1,4 @@
-/* This header file provides the reentrancy.  */
+/* This header file provides reentrancy.  */
 
 /* The reentrant system calls here serve two purposes:
 
@@ -85,10 +85,9 @@
    in the namespace allotted to us.  */
 
 #ifndef _REENT_H_
-#ifdef __cplusplus
-extern "C" {
-#endif
 #define _REENT_H_
+#include <_ansi.h>
+_BEGIN_STD_C
 
 #include <sys/reent.h>
 #include <sys/_types.h>
@@ -135,44 +134,39 @@ struct timezone;
 #else
 /* Reentrant versions of system calls.  */
 
-extern int _close_r _PARAMS ((struct _reent *, int));
-extern int _execve_r _PARAMS ((struct _reent *, char *, char **, char **));
-extern int _fcntl_r _PARAMS ((struct _reent *, int, int, int));
-extern int _fork_r _PARAMS ((struct _reent *));
-extern int _fstat_r _PARAMS ((struct _reent *, int, struct stat *));
-extern int _getpid_r _PARAMS ((struct _reent *));
-extern int _isatty_r _PARAMS ((struct _reent *, int));
-extern int _kill_r _PARAMS ((struct _reent *, int, int));
-extern int _link_r _PARAMS ((struct _reent *, const char *, const char *));
-extern _off_t _lseek_r _PARAMS ((struct _reent *, int, _off_t, int));
-extern int _open_r _PARAMS ((struct _reent *, const char *, int, int));
-extern _ssize_t _read_r _PARAMS ((struct _reent *, int, void *, size_t));
-extern void *_sbrk_r _PARAMS ((struct _reent *, ptrdiff_t));
-extern int _stat_r _PARAMS ((struct _reent *, const char *, struct stat *));
-extern _CLOCK_T_ _times_r _PARAMS ((struct _reent *, struct tms *));
-extern int _unlink_r _PARAMS ((struct _reent *, const char *));
-extern int _wait_r _PARAMS ((struct _reent *, int *));
-extern _ssize_t _write_r _PARAMS ((struct _reent *, int, const void *, size_t));
+extern int _close_r(struct _reent *, int);
+extern int _execve_r(struct _reent *, char *, char **, char **);
+extern int _fcntl_r(struct _reent *, int, int, int);
+extern int _fork_r(struct _reent *);
+extern int _fstat_r(struct _reent *, int, struct stat *);
+extern int _getpid_r(struct _reent *);
+extern int _isatty_r(struct _reent *, int);
+extern int _kill_r(struct _reent *, int, int);
+extern int _link_r(struct _reent *, const char *, const char *);
+extern _off_t _lseek_r(struct _reent *, int, _off_t, int);
+extern int _open_r(struct _reent *, const char *, int, int);
+extern _ssize_t _read_r(struct _reent *, int, void *, size_t);
+extern void *_sbrk_r(struct _reent *, ptrdiff_t);
+extern int _stat_r(struct _reent *, const char *, struct stat *);
+extern _CLOCK_T_ _times_r(struct _reent *, struct tms *);
+extern int _unlink_r(struct _reent *, const char *);
+extern int _wait_r(struct _reent *, int *);
+extern _ssize_t _write_r(struct _reent *, int, const void *, size_t);
 
 /* This one is not guaranteed to be available on all targets.  */
-extern int _gettimeofday_r _PARAMS ((struct _reent *, struct timeval *__tp, void *__tzp));
+extern int _gettimeofday_r(struct _reent *, struct timeval *__tp, void *__tzp);
 
 #ifdef __LARGE64_FILES
 
-#if defined(__CYGWIN__) && defined(_COMPILING_NEWLIB)
-#define stat64 __stat64
-#endif
-
 struct stat64;
 
-extern _off64_t _lseek64_r _PARAMS ((struct _reent *, int, _off64_t, int));
-extern int _fstat64_r _PARAMS ((struct _reent *, int, struct stat64 *));
-extern int _open64_r _PARAMS ((struct _reent *, const char *, int, int));
+extern _off64_t _lseek64_r(struct _reent *, int, _off64_t, int);
+extern int _fstat64_r(struct _reent *, int, struct stat64 *);
+extern int _open64_r(struct _reent *, const char *, int, int);
 #endif
 
 #endif
 
-#ifdef __cplusplus
-}
-#endif
+_END_STD_C
+
 #endif /* _REENT_H_ */

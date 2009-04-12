@@ -6,18 +6,12 @@
 #define _LIBGEN_H_
 
 #include "_ansi.h"
+_BEGIN_STD_C
 #include <sys/reent.h>
 
-#ifdef __cplusplus
-extern "C" {
+char *basename(char *);
+char *dirname(char *);
+_END_STD_C
+
 #endif
-
-char      *_EXFUN(basename,     (char *));
-char      *_EXFUN(dirname,     (char *));
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif /* _LIBGEN_H_ */
 

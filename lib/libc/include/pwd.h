@@ -34,10 +34,9 @@
  */
 
 #ifndef _PWD_H_
-#ifdef __cplusplus
-extern "C" {
-#endif
 #define	_PWD_H_
+#include <_ansi.h>
+_BEGIN_STD_C
 
 #include <sys/types.h>
 
@@ -58,21 +57,16 @@ struct passwd {
 	char	*pw_shell;		/* default shell */
 };
 
-#ifndef __INSIDE_CYGWIN__
-struct passwd	*getpwuid (uid_t);
-struct passwd	*getpwnam (const char *);
-int 		 getpwnam_r (const char *, struct passwd *,
-			char *, size_t , struct passwd **);
-int		 getpwuid_r (uid_t, struct passwd *, char *,
-			size_t, struct passwd **);
+struct passwd *getpwuid(uid_t);
+struct passwd *getpwnam(const char *);
+int getpwnam_r(const char *, struct passwd *, char *, size_t , struct passwd **);
+int getpwuid_r(uid_t, struct passwd *, char *, size_t, struct passwd **);
 #ifndef _POSIX_SOURCE
-struct passwd	*getpwent (void);
-void		 setpwent (void);
-void		 endpwent (void);
-#endif
+struct passwd *getpwent(void);
+void setpwent(void);
+void endpwent(void);
 #endif
 
-#ifdef __cplusplus
-}
-#endif
+_END_STD_C
+
 #endif /* _PWD_H_ */

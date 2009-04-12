@@ -66,4 +66,4 @@ struct ar_hdr {
 	char ar_fmag[2];		/* consistency check */
 };
 
-#endif /* !_AR_H_ */
+#endif
