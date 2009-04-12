@@ -266,6 +266,7 @@ private:
         PPLINE,                                 ///< \#line
         PPPRAGMA,                               ///< \#pragma
         PPUNDEF,                                ///< \#undef
+        PPWARNING,                              ///< \#warning
     };
 
     /** Tokens used to parse preprocessor directives.

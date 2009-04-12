@@ -36,6 +36,7 @@ const WordAssoc PPStream::directivelist[] = // List of preprocessor directives.
     { "line",         PPLINE },
     { "pragma",       PPPRAGMA },
     { "undef",        PPUNDEF },
+    { "warning",      PPWARNING },
     { NULL,           0 }
 };
 
@@ -1317,6 +1318,7 @@ endoffile:
             return;
 
         case PPERROR:
+        case PPWARNING:
             {
                 std::string errorstring;
                 int estartline, estartcolumn;
@@ -1342,13 +1344,15 @@ endoffile:
                     pptoken();
                 }
                 if (errorstring.length()) {
-                    psp.error(pw::Error::ERROR,
+                    psp.error(ppdirective == PPERROR ? pw::Error::ERROR
+                                                     : pw::Error:: WARNING,
                               estartline, estartcolumn, endline, endcolumn,
                               "%s.", errorstring.c_str());
                 } else {
-                    psp.error(pw::Error::ERROR,
+                    psp.error(ppdirective == PPERROR ? pw::Error::ERROR
+                                                     : pw::Error:: WARNING,
                               estartline, estartcolumn, endline, endcolumn,
-                              "#error.");
+                              ppdirective == PPERROR ? "#error." : "#warning.");
                 }
 
                 break;
