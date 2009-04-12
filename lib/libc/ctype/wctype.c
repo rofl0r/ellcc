@@ -62,17 +62,13 @@ PORTABILITY
 No supporting OS subroutines are required.
 */
 
-#include <_ansi.h>
 #include <string.h>
 #include <reent.h>
 #include <wctype.h>
 #include <errno.h>
 #include "local.h"
 
-wctype_t
-_DEFUN (_wctype_r, (r, c), 
-	struct _reent *r _AND
-	const char *c)
+wctype_t _wctype_r(struct _reent *r, const char *c)
 {
   switch (*c)
     {
@@ -128,9 +124,7 @@ _DEFUN (_wctype_r, (r, c),
 }
 
 #ifndef _REENT_ONLY
-wctype_t
-_DEFUN (wctype, (c),
-	const char *c)
+wctype_t wctype(const char *c)
 {
   return _wctype_r (_REENT, c);
 }

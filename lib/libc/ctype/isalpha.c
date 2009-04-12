@@ -32,12 +32,10 @@ PORTABILITY
 No supporting OS subroutines are required.
 */
 
-#include <_ansi.h>
 #include <ctype.h>
 
 #undef isalpha
-int
-_DEFUN(isalpha,(c),int c)
+int isalpha(int c)
 {
 	return((_ctype_ + 1)[c] & (_U|_L));
 }

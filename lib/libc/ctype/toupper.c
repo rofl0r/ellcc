@@ -43,12 +43,10 @@ PORTABILITY
 No supporting OS subroutines are required.
 */
 
-#include <_ansi.h>
 #include <ctype.h>
 
 #undef toupper
-int
-_DEFUN(toupper,(c),int c)
+int toupper(int c)
 {
   return islower(c) ? c - 'a' + 'A' : c;
 }

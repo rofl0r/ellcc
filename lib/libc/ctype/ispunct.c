@@ -33,13 +33,10 @@ PORTABILITY
 No supporting OS subroutines are required.
 */
 
-#include <_ansi.h>
 #include <ctype.h>
 
-
 #undef ispunct
-int
-_DEFUN(ispunct,(c),int c)
+int ispunct(int c)
 {
 	return((_ctype_ + 1)[c] & _P);
 }

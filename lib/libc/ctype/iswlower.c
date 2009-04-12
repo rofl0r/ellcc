@@ -27,11 +27,9 @@ PORTABILITY
 
 No supporting OS subroutines are required.
 */
-#include <_ansi.h>
 #include <wctype.h>
 
-int
-_DEFUN(iswlower,(c),wint_t c)
+int iswlower(wint_t c)
 {
 	return (towupper (c) != c);
 }

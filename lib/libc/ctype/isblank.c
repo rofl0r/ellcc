@@ -27,14 +27,10 @@ RETURNS
 
 */
 
-#include <_ansi.h>
 #include <ctype.h>
 
-
-
 #undef isblank
-int
-_DEFUN(isblank,(c),int c)
+int isblank(int c)
 {
 	return (c == ' ' || c == '\t');
 }

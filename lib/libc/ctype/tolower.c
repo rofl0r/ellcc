@@ -44,12 +44,10 @@ programs.
 No supporting OS subroutines are required.
 */ 
 
-#include <_ansi.h>
 #include <ctype.h>
 
 #undef tolower
-int
-_DEFUN(tolower,(c),int c)
+int tolower(int c)
 {
 	return isupper(c) ? (c) - 'A' + 'a' : c;
 }

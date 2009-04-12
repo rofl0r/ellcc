@@ -28,12 +28,10 @@ PORTABILITY
 
 No supporting OS subroutines are required.
 */
-#include <_ansi.h>
 #include <wctype.h>
 #include "local.h"
 
-int
-_DEFUN(iswctype,(c, desc), wint_t c _AND wctype_t desc)
+int iswctype(wint_t c, wctype_t desc)
 {
   switch (desc)
     {

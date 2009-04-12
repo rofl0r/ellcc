@@ -26,11 +26,9 @@ PORTABILITY
 
 No supporting OS subroutines are required.
 */
-#include <_ansi.h>
 #include <wctype.h>
 
-int
-_DEFUN(iswalnum,(c),wint_t c)
+int iswalnum(wint_t c)
 {
   return (iswalpha (c) || iswdigit (c));
 }

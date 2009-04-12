@@ -29,15 +29,11 @@ PORTABILITY
 
 No supporting OS subroutines are required.
 */
-#include <_ansi.h>
 #include <ctype.h>
-
-
 
 #undef isascii
 
-int 
-_DEFUN(isascii,(c),int c)
+int isascii(int c)
 {
 	return c >= 0 && c< 128;
 }

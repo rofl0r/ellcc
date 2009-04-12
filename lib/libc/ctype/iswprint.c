@@ -55,7 +55,6 @@ PORTABILITY
 
 No supporting OS subroutines are required.
 */
-#include <_ansi.h>
 #include <newlib.h>
 #include <wctype.h>
 #include <string.h>
@@ -66,8 +65,7 @@ No supporting OS subroutines are required.
 #include "utf8print.h"
 #endif /* _MB_CAPABLE */
 
-int
-_DEFUN(iswprint,(c), wint_t c)
+int iswprint(wint_t c)
 {
   int unicode = 0;
   if (__lc_ctype[0] == 'C' && __lc_ctype[1] == '\0')

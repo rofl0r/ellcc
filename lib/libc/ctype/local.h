@@ -28,5 +28,5 @@ extern char __lc_ctype[12];
 #define JP_EUCJP	3
 
 /* internal function to translate JP to Unicode */
-wint_t _EXFUN (__jp2uc, (wint_t, int));
+wint_t __jp2uc(wint_t, int);
 

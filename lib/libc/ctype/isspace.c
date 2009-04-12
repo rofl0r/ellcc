@@ -31,13 +31,10 @@ PORTABILITY
 
 No supporting OS subroutines are required.
 */
-#include <_ansi.h>
 #include <ctype.h>
 
-
 #undef isspace
-int
-_DEFUN(isspace,(c),int c)
+int isspace(int c)
 {
 	return((_ctype_ + 1)[c] & _S);
 }

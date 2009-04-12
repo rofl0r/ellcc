@@ -68,10 +68,7 @@ No supporting OS subroutines are required.
 #include <errno.h>
 #include "local.h"
 
-wctrans_t
-_DEFUN (_wctrans_r, (r, c), 
-	struct _reent *r _AND
-	const char *c)
+wctrans_t _wctrans_r(struct _reent *r, const char *c)
 {
   if (!strcmp (c, "tolower"))
     return WCT_TOLOWER;
@@ -85,9 +82,7 @@ _DEFUN (_wctrans_r, (r, c),
 }
 
 #ifndef _REENT_ONLY
-wctrans_t
-_DEFUN (wctrans, (c),
-	const char *c)
+wctrans_t wctrans(const char *c)
 {
   return _wctrans_r (_REENT, c);
 }

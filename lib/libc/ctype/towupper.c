@@ -58,7 +58,6 @@ PORTABILITY
 No supporting OS subroutines are required.
 */
 
-#include <_ansi.h>
 #include <newlib.h>
 #include <string.h>
 #include <reent.h>
@@ -66,8 +65,7 @@ No supporting OS subroutines are required.
 #include <wctype.h>
 #include "local.h"
 
-wint_t
-_DEFUN(towupper,(c), wint_t c)
+wint_t towupper(wint_t c)
 {
   int unicode = 0;
 

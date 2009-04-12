@@ -33,8 +33,7 @@ No supporting OS subroutines are required.
 #include <ctype.h>
 #undef toascii
 
-int
-_DEFUN(toascii,(c),int c)
+int toascii(int c)
 {
   return (c)&0177;
 }

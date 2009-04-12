@@ -66,8 +66,7 @@ No supporting OS subroutines are required.
 #include <wctype.h>
 #include "local.h"
 
-wint_t
-_DEFUN(towlower,(c), wint_t c)
+wint_t towlower(wint_t c)
 {
   int unicode = 0;
 

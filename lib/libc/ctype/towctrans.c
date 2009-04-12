@@ -62,18 +62,13 @@ PORTABILITY
 No supporting OS subroutines are required.
 */
 
-#include <_ansi.h>
 #include <string.h>
 #include <reent.h>
 #include <wctype.h>
 #include <errno.h>
 #include "local.h"
 
-wint_t
-_DEFUN (_towctrans_r, (r, c, w), 
-	struct _reent *r _AND
-	wint_t c _AND 
-	wctrans_t w)
+wint_t _towctrans_r(struct _reent *r, wint_t c, wctrans_t w)
 {
   if (w == WCT_TOLOWER)
     return towlower (c);
@@ -87,10 +82,7 @@ _DEFUN (_towctrans_r, (r, c, w),
 }
 
 #ifndef _REENT_ONLY
-wint_t
-_DEFUN (towctrans, (c, w),
-	wint_t c _AND
-        wctrans_t w)
+wint_t towctrans(wint_t c, wctrans_t w)
 {
   return _towctrans_r (_REENT, c, w);
 }

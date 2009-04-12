@@ -33,13 +33,11 @@ PORTABILITY
 No OS subroutines are required.
 */
 
-#include <_ansi.h>
 #include <ctype.h>
 
 #undef isalnum
 
-int
-_DEFUN(isalnum,(c),int c)
+int isalnum(int c)
 {
 	return((_ctype_ + 1)[c] & (_U|_L|_N));
 }

@@ -55,11 +55,9 @@ PORTABILITY
 
 No supporting OS subroutines are required.
 */
-#include <_ansi.h>
 #include <wctype.h>
 
-int
-_DEFUN(iswgraph,(c),wint_t c)
+int iswgraph(wint_t c)
 {
   return (iswprint (c) && !iswspace (c));
 }
