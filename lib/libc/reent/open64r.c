@@ -50,11 +50,7 @@ DESCRIPTION
 */
 
 int
-_open64_r (ptr, file, flags, mode)
-     struct _reent *ptr;
-     _CONST char *file;
-     int flags;
-     int mode;
+_open64_r (struct _reent *ptr, const char *file, int flags, int mode)
 {
   int ret;
 

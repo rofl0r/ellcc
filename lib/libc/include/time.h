@@ -61,8 +61,8 @@ struct tm *localtime_r(const time_t *, struct tm *);
 
 #ifndef __STRICT_ANSI__
 char      *strptime(const char *, const char *, struct tm *);
-_VOID      tzset(_VOID);
-_VOID      _tzset_r(struct _reent *);
+void      tzset(void);
+void      _tzset_r(struct _reent *);
 
 typedef struct __tzrule_struct
 {
@@ -82,14 +82,14 @@ typedef struct __tzinfo_struct
   __tzrule_type __tzrule[2];
 } __tzinfo_type;
 
-__tzinfo_type *__gettzinfo(_VOID);
+__tzinfo_type *__gettzinfo(void);
 
 /* getdate functions */
 
 #ifdef HAVE_GETDATE
 #ifndef _REENT_ONLY
 #define getdate_err (*__getdate_err())
-int *__getdate_err(_VOID);
+int *__getdate_err(void);
 
 struct tm *	getdate(const char *);
 /* getdate_err is set to one of the following values to indicate the error.

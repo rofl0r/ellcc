@@ -3,7 +3,6 @@
 /* This and the other exec*.c files in this directory require 
    the target to provide the _execve syscall.  */
 
-#include <_ansi.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <dirent.h>
@@ -18,11 +17,7 @@
  * NUL-terminate the destination string (s1).
  */
 
-static char *
-_DEFUN (strccpy, (s1, s2, c),
-	char *s1 _AND
-	char *s2 _AND
-	char c)
+static char *strccpy(char *s1, char *s2, char c)
 {
   char *dest = s1;
 
@@ -33,10 +28,7 @@ _DEFUN (strccpy, (s1, s2, c),
   return dest;
 }
 
-int
-_DEFUN (execvp, (file, argv),
-	_CONST char *file _AND
-	char * _CONST argv[])
+int execvp(const char *file, char * const argv[])
 {
   char *path = getenv ("PATH");
   char buf[MAXNAMLEN];

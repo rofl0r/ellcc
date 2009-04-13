@@ -53,11 +53,7 @@ DESCRIPTION
 	that define __LARGE64_FILES.
 */
 
-int
-_DEFUN (_fstat64_r, (ptr, fd, pstat),
-     struct _reent *ptr _AND
-     int fd _AND
-     struct stat64 *pstat)
+int _fstat64_r(struct _reent *ptr, int fd, struct stat64 *pstat)
 {
   int ret;
 

@@ -1,10 +1,8 @@
 #ifndef	_SYS_TIMES_H
-#ifdef __cplusplus
-extern "C" {
-#endif
 #define	_SYS_TIMES_H
 
 #include <_ansi.h>
+_BEGIN_STD_C
 #include <machine/types.h>
 
 #ifndef __clock_t_defined
@@ -20,9 +18,7 @@ struct tms {
 	clock_t	tms_cstime;		/* system time, children */
 };
 
-clock_t _EXFUN(times,(struct tms *));
+clock_t times(struct tms *);
+_END_STD_C
 
-#ifdef __cplusplus
-}
-#endif
 #endif	/* !_SYS_TIMES_H */

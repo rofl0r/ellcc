@@ -13,9 +13,6 @@
 #ifndef _STDINT_H
 #define _STDINT_H
 
-_BEGIN_STD_C
-_END_STD_C
-
 #if defined(__GNUC__) && \
   ( (__GNUC__ >= 4) || \
     ( (__GNUC__ >= 3) && defined(__GNUC_MINOR__) && (__GNUC_MINOR__ > 2) ) )
@@ -390,8 +387,5 @@ typedef unsigned long uintptr_t;
 #define INTMAX_C(x)	x##L
 #define UINTMAX_C(x)	x##UL
 #endif
-
-
-_END_STD_C
 
 #endif /* _STDINT_H */

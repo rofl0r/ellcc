@@ -7,11 +7,7 @@
 #include <unistd.h>
 
 
-int
-_DEFUN(execve, (path, argv, envp),
-      const char *path _AND
-      char * const argv[] _AND
-      char * const envp[])
+int execve(const char *path, char * const argv[], char * const envp[])
 {
   return _execve (path, argv, envp);
 }

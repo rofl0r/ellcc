@@ -45,13 +45,13 @@ struct lconv
 };
 
 #ifndef _REENT_ONLY
-char *_EXFUN(setlocale,(int category, const char *locale));
-struct lconv *_EXFUN(localeconv,(void));
+char *setlocale(int category, const char *locale);
+struct lconv *localeconv(void);
 #endif
 
 struct _reent;
-char *_EXFUN(_setlocale_r,(struct _reent *, int category, const char *locale));
-struct lconv *_EXFUN(_localeconv_r,(struct _reent *));
+char *_setlocale_r(struct _reent *, int category, const char *locale);
+struct lconv *_localeconv_r(struct _reent *);
 _END_STD_C
 
 #endif

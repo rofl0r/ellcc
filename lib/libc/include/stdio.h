@@ -163,21 +163,21 @@ FILE *	freopen(const char *, const char *, FILE *);
 void	setbuf(FILE *, char *);
 int	setvbuf(FILE *, char *, int, size_t);
 int	fprintf(FILE *, const char *, ...)
-               __attribute__ ((__format__ (__printf__, 2, 3));
+               __attribute__ ((__format__ (__printf__, 2, 3)));
 int	fscanf(FILE *, const char *, ...)
-               __attribute__ ((__format__ (__scanf__, 2, 3));
+               __attribute__ ((__format__ (__scanf__, 2, 3)));
 int	printf(const char *, ...)
-               __attribute__ ((__format__ (__printf__, 1, 2));
+               __attribute__ ((__format__ (__printf__, 1, 2)));
 int	scanf(const char *, ...)
-               __attribute__ ((__format__ (__scanf__, 1, 2));
+               __attribute__ ((__format__ (__scanf__, 1, 2)));
 int	sscanf(const char *, const char *, ...)
-               __attribute__ ((__format__ (__scanf__, 2, 3));
+               __attribute__ ((__format__ (__scanf__, 2, 3)));
 int	vfprintf(FILE *, const char *, __VALIST)
-               __attribute__ ((__format__ (__printf__, 2, 0));
+               __attribute__ ((__format__ (__printf__, 2, 0)));
 int	vprintf(const char *, __VALIST)
-               __attribute__ ((__format__ (__printf__, 1, 0));
+               __attribute__ ((__format__ (__printf__, 1, 0)));
 int	vsprintf(char *, const char *, __VALIST)
-               __attribute__ ((__format__ (__printf__, 2, 0));
+               __attribute__ ((__format__ (__printf__, 2, 0)));
 int	fgetc(FILE *);
 char *  fgets(char *, int, FILE *);
 int	fputc(int, FILE *);
@@ -189,8 +189,8 @@ int	putc(int, FILE *);
 int	putchar(int);
 int	puts(const char *);
 int	ungetc(int, FILE *);
-size_t	fread(_PTR, size_t _size, size_t _n, FILE *);
-size_t	fwrite(const _PTR , size_t _size, size_t _n, FILE *);
+size_t	fread(void *, size_t _size, size_t _n, FILE *);
+size_t	fwrite(const void * , size_t _size, size_t _n, FILE *);
 #ifdef _COMPILING_NEWLIB
 int	fgetpos(FILE *, _fpos_t *);
 #else
@@ -211,7 +211,7 @@ void    perror(const char *);
 #ifndef _REENT_ONLY
 FILE *	fopen(const char *_name, const char *_type);
 int	sprintf(char *, const char *, ...)
-               __attribute__ ((__format__ (__printf__, 2, 3));
+               __attribute__ ((__format__ (__printf__, 2, 3)));
 int	remove(const char *);
 int	rename(const char *, const char *);
 #endif
@@ -225,67 +225,67 @@ off_t	ftello( FILE *);
 #endif
 #ifndef _REENT_ONLY
 int	asiprintf(char **, const char *, ...)
-               __attribute__ ((__format__ (__printf__, 2, 3));
+               __attribute__ ((__format__ (__printf__, 2, 3)));
 char *	asniprintf(char *, size_t *, const char *, ...)
-               __attribute__ ((__format__ (__printf__, 3, 4));
+               __attribute__ ((__format__ (__printf__, 3, 4)));
 char *	asnprintf(char *, size_t *, const char *, ...)
-               __attribute__ ((__format__ (__printf__, 3, 4));
+               __attribute__ ((__format__ (__printf__, 3, 4)));
 int	asprintf(char **, const char *, ...)
-               __attribute__ ((__format__ (__printf__, 2, 3));
+               __attribute__ ((__format__ (__printf__, 2, 3)));
 #ifndef diprintf
 int	diprintf(int, const char *, ...)
-               __attribute__ ((__format__ (__printf__, 2, 3));
+               __attribute__ ((__format__ (__printf__, 2, 3)));
 #endif
-int	fcloseall(_VOID);
+int	fcloseall(void);
 int	fiprintf(FILE *, const char *, ...)
-               __attribute__ ((__format__ (__printf__, 2, 3));
+               __attribute__ ((__format__ (__printf__, 2, 3)));
 int	fiscanf(FILE *, const char *, ...)
-               __attribute__ ((__format__ (__scanf__, 2, 3));
+               __attribute__ ((__format__ (__scanf__, 2, 3)));
 int	iprintf(const char *, ...)
-               __attribute__ ((__format__ (__printf__, 1, 2));
+               __attribute__ ((__format__ (__printf__, 1, 2)));
 int	iscanf(const char *, ...)
-               __attribute__ ((__format__ (__scanf__, 1, 2));
+               __attribute__ ((__format__ (__scanf__, 1, 2)));
 int	siprintf(char *, const char *, ...)
-               __attribute__ ((__format__ (__printf__, 2, 3));
+               __attribute__ ((__format__ (__printf__, 2, 3)));
 int	siscanf(const char *, const char *, ...)
-               __attribute__ ((__format__ (__scanf__, 2, 3));
+               __attribute__ ((__format__ (__scanf__, 2, 3)));
 int	snprintf(char *, size_t, const char *, ...)
-               __attribute__ ((__format__ (__printf__, 3, 4));
+               __attribute__ ((__format__ (__printf__, 3, 4)));
 int	sniprintf(char *, size_t, const char *, ...)
-               __attribute__ ((__format__ (__printf__, 3, 4));
+               __attribute__ ((__format__ (__printf__, 3, 4)));
 char *	tempnam(const char *, const char *);
 int	vasiprintf(char **, const char *, __VALIST)
-               __attribute__ ((__format__ (__printf__, 2, 0));
+               __attribute__ ((__format__ (__printf__, 2, 0)));
 char *	vasniprintf(char *, size_t *, const char *, __VALIST)
-               __attribute__ ((__format__ (__printf__, 3, 0));
+               __attribute__ ((__format__ (__printf__, 3, 0)));
 char *	vasnprintf(char *, size_t *, const char *, __VALIST)
-               __attribute__ ((__format__ (__printf__, 3, 0));
+               __attribute__ ((__format__ (__printf__, 3, 0)));
 int	vasprintf(char **, const char *, __VALIST)
-               __attribute__ ((__format__ (__printf__, 2, 0));
+               __attribute__ ((__format__ (__printf__, 2, 0)));
 int	vdiprintf(int, const char *, __VALIST)
-               __attribute__ ((__format__ (__printf__, 2, 0));
+               __attribute__ ((__format__ (__printf__, 2, 0)));
 int	vfiprintf(FILE *, const char *, __VALIST)
-               __attribute__ ((__format__ (__printf__, 2, 0));
+               __attribute__ ((__format__ (__printf__, 2, 0)));
 int	vfiscanf(FILE *, const char *, __VALIST)
-               __attribute__ ((__format__ (__scanf__, 2, 0));
+               __attribute__ ((__format__ (__scanf__, 2, 0)));
 int	vfscanf(FILE *, const char *, __VALIST)
-               __attribute__ ((__format__ (__scanf__, 2, 0));
+               __attribute__ ((__format__ (__scanf__, 2, 0)));
 int	viprintf(const char *, __VALIST)
-               __attribute__ ((__format__ (__printf__, 1, 0));
+               __attribute__ ((__format__ (__printf__, 1, 0)));
 int	viscanf(const char *, __VALIST)
-               __attribute__ ((__format__ (__scanf__, 1, 0));
+               __attribute__ ((__format__ (__scanf__, 1, 0)));
 int	vscanf(const char *, __VALIST)
-               __attribute__ ((__format__ (__scanf__, 1, 0));
+               __attribute__ ((__format__ (__scanf__, 1, 0)));
 int	vsiprintf(char *, const char *, __VALIST)
-               __attribute__ ((__format__ (__printf__, 2, 0));
+               __attribute__ ((__format__ (__printf__, 2, 0)));
 int	vsiscanf(const char *, const char *, __VALIST)
-               __attribute__ ((__format__ (__scanf__, 2, 0));
+               __attribute__ ((__format__ (__scanf__, 2, 0)));
 int	vsniprintf(char *, size_t, const char *, __VALIST)
-               __attribute__ ((__format__ (__printf__, 3, 0));
+               __attribute__ ((__format__ (__printf__, 3, 0)));
 int	vsnprintf(char *, size_t, const char *, __VALIST)
-               __attribute__ ((__format__ (__printf__, 3, 0));
+               __attribute__ ((__format__ (__printf__, 3, 0)));
 int	vsscanf(const char *, const char *, __VALIST)
-               __attribute__ ((__format__ (__scanf__, 2, 0));
+               __attribute__ ((__format__ (__scanf__, 2, 0)));
 #endif /* !_REENT_ONLY */
 #endif /* !__STRICT_ANSI__ */
 
@@ -367,12 +367,12 @@ int	_fprintf_r(struct _reent *, FILE *, const char *, ...)
                __attribute__ ((__format__ (__printf__, 3, 4)));
 int	_fputc_r(struct _reent *, int, FILE *);
 int	_fputs_r(struct _reent *, const char *, FILE *);
-size_t	_fread_r(struct _reent *, _PTR, size_t _size, size_t _n, FILE *);
+size_t	_fread_r(struct _reent *, void *, size_t _size, size_t _n, FILE *);
 int	_fscanf_r(struct _reent *, FILE *, const char *, ...)
                __attribute__ ((__format__ (__scanf__, 3, 4)));
 int	_fseek_r(struct _reent *, FILE *, long, int);
 long	_ftell_r(struct _reent *, FILE *);
-size_t	_fwrite_r(struct _reent *, const _PTR , size_t _size, size_t _n, FILE *);
+size_t	_fwrite_r(struct _reent *, const void * , size_t _size, size_t _n, FILE *);
 int	_getc_r(struct _reent *, FILE *);
 int	_getc_unlocked_r(struct _reent *, FILE *);
 int	_getchar_r(struct _reent *);
@@ -491,17 +491,17 @@ int	__swbuf_r(struct _reent *, int, FILE *);
 
 #ifndef __STRICT_ANSI__
 # ifdef __LARGE64_FILES
-FILE	*funopen(const _PTR __cookie,
-		int (*__readfn)(_PTR __c, char *__buf, int __n),
-		int (*__writefn)(_PTR __c, const char *__buf, int __n),
-		_fpos64_t (*__seekfn)(_PTR __c, _fpos64_t __off, int __whence),
-		int (*__closefn)(_PTR __c));
+FILE	*funopen(const void * __cookie,
+		int (*__readfn)(void * __c, char *__buf, int __n),
+		int (*__writefn)(void * __c, const char *__buf, int __n),
+		_fpos64_t (*__seekfn)(void * __c, _fpos64_t __off, int __whence),
+		int (*__closefn)(void * __c));
 # else
-FILE	*funopen(const _PTR __cookie,
-		 int (*__readfn)(_PTR __cookie, char *__buf, int __n),
-		 int (*__writefn)(_PTR __cookie, const char *__buf, int __n),
-		 fpos_t (*__seekfn)(_PTR __cookie, fpos_t __off, int __whence),
-		 int (*__closefn)(_PTR __cookie));
+FILE	*funopen(const void * __cookie,
+		 int (*__readfn)(void * __cookie, char *__buf, int __n),
+		 int (*__writefn)(void * __cookie, const char *__buf, int __n),
+		 fpos_t (*__seekfn)(void * __cookie, fpos_t __off, int __whence),
+		 int (*__closefn)(void * __cookie));
 # endif /* !__LARGE64_FILES */
 
 # define	fropen(__cookie, __fn) funopen(__cookie, __fn, (int (*)())0, \
@@ -528,8 +528,7 @@ typedef struct
   cookie_seek_function_t  *seek;
   cookie_close_function_t *close;
 } cookie_io_functions_t;
-FILE *fopencookie,(void *__cookie, const char *__mode,
-			  cookie_io_functions_t __functions));
+FILE *fopencookie(void *__cookie, const char *__mode, cookie_io_functions_t __functions);
 #endif /* ! __STRICT_ANSI__ */
 
 #ifndef __CUSTOM_FILE_IO__

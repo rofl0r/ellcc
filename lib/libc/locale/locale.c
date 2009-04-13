@@ -102,7 +102,7 @@ int __nlocale_changed = 0;
 int __mlocale_changed = 0;
 char *_PathLocale = NULL;
 
-static _CONST struct lconv lconv = 
+static const struct lconv lconv = 
 {
   ".", "", "", "", "", "", "", "", "", "",
   CHAR_MAX, CHAR_MAX, CHAR_MAX, CHAR_MAX,
@@ -110,16 +110,12 @@ static _CONST struct lconv lconv =
 };
 
 
-char * _EXFUN(__locale_charset,(_VOID));
+char *__locale_charset(void);
 
 static char *charset = "ISO-8859-1";
 char __lc_ctype[12] = "C";
 
-char *
-_DEFUN(_setlocale_r, (p, category, locale),
-       struct _reent *p _AND
-       int category _AND
-       _CONST char *locale)
+char * _setlocale_r(struct _reent *p, int category, const char *locale)
 {
 #ifndef _MB_CAPABLE
   if (locale)
@@ -269,31 +265,25 @@ _DEFUN(_setlocale_r, (p, category, locale),
 }
 
 char *
-_DEFUN_VOID(__locale_charset)
+_DEFUNvoid(__locale_charset)
 {
   return charset;
 }
 
-struct lconv *
-_DEFUN(_localeconv_r, (data), 
-      struct _reent *data)
+struct lconv * _localeconv_r(struct _reent *data)
 {
   return (struct lconv *) &lconv;
 }
 
 #ifndef _REENT_ONLY
 
-char *
-_DEFUN(setlocale, (category, locale),
-       int category _AND
-       _CONST char *locale)
+char *setlocale(int category, const char *locale)
 {
   return _setlocale_r (_REENT, category, locale);
 }
 
 
-struct lconv *
-_DEFUN_VOID(localeconv)
+struct lconv *localeconv(void)
 {
   return _localeconv_r (_REENT);
 }

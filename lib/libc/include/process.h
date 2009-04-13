@@ -4,15 +4,13 @@
 #include <_ansi.h>
 _BEGIN_STD_C
 
-int execl(const char *path, const char *argv0, ...);
-int execle(const char *path, const char *argv0, ... /*, char * const *envp */);
-int execlp(const char *path, const char *argv0, ...);
-int execlpe(const char *path, const char *argv0, ... /*, char * const *envp */);
+int execl(const char *path, const char *argv1, ...);
+int execle(const char *path, const char *argv1, ... /*, char * const *envp */);
+int execlp(const char *path, const char *argv1, ...);
 
 int execv(const char *path, char * const *argv);
 int execve(const char *path, char * const *argv, char * const *envp);
 int execvp(const char *path, char * const *argv);
-int execvpe(const char *path, char * const *argv, char * const *envp);
 
 int spawnl(int mode, const char *path, const char *argv0, ...);
 int spawnle(int mode, const char *path, const char *argv0, ... /*, char * const *envp */);

@@ -2,11 +2,9 @@
 
 #ifndef _SYS_SIGNAL_H
 #define _SYS_SIGNAL_H
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "_ansi.h"
+_BEGIN_STD_C
+
 #include <sys/features.h>
 
 /* #ifndef __STRICT_ANSI__*/
@@ -131,10 +129,10 @@ struct sigaction
 #define sigfillset(what)    (*(what) = ~(0), 0)
 #define sigismember(what,sig) (((*(what)) & (1<<(sig))) != 0)
 
-int _EXFUN(sigprocmask, (int how, const sigset_t *set, sigset_t *oset));
+int sigprocmask(int how, const sigset_t *set, sigset_t *oset);
 
 #if defined(_POSIX_THREADS)
-int _EXFUN(pthread_sigmask, (int how, const sigset_t *set, sigset_t *oset));
+int pthread_sigmask(int how, const sigset_t *set, sigset_t *oset);
 #endif
 
 /* protos for functions found in winsup sources for CYGWIN */
@@ -148,17 +146,17 @@ int _EXFUN(pthread_sigmask, (int how, const sigset_t *set, sigset_t *oset));
    <sys/types.h> always defines pid_t to be int.  If that ever
    changes, then we will need to do something else, perhaps along the
    lines of <machine/types.h>.  */
-int _EXFUN(kill, (int, int));
-int _EXFUN(killpg, (pid_t, int));
-int _EXFUN(sigaction, (int, const struct sigaction *, struct sigaction *));
-int _EXFUN(sigaddset, (sigset_t *, const int));
-int _EXFUN(sigdelset, (sigset_t *, const int));
-int _EXFUN(sigismember, (const sigset_t *, int));
-int _EXFUN(sigfillset, (sigset_t *));
-int _EXFUN(sigemptyset, (sigset_t *));
-int _EXFUN(sigpending, (sigset_t *));
-int _EXFUN(sigsuspend, (const sigset_t *));
-int _EXFUN(sigpause, (int));
+int kill(int, int);
+int killpg(pid_t, int);
+int sigaction(int, const struct sigaction *, struct sigaction *);
+int sigaddset(sigset_t *, const int);
+int sigdelset(sigset_t *, const int);
+int sigismember(const sigset_t *, int);
+int sigfillset(sigset_t *);
+int sigemptyset(sigset_t *);
+int sigpending(sigset_t *);
+int sigsuspend(const sigset_t *);
+int sigpause(int);
 
 #if defined(_POSIX_THREADS)
 #ifdef __CYGWIN__
@@ -166,7 +164,7 @@ int _EXFUN(sigpause, (int));
 #    error You need the winsup sources or a cygwin installation to compile the cygwin version of newlib.
 #  endif
 #endif
-int _EXFUN(pthread_kill, (pthread_t thread, int sig));
+int pthread_kill(pthread_t thread, int sig);
 #endif
 
 #if defined(_POSIX_REALTIME_SIGNALS)
@@ -174,14 +172,12 @@ int _EXFUN(pthread_kill, (pthread_t thread, int sig));
 /*  3.3.8 Synchronously Accept a Signal, P1003.1b-1993, p. 76
     NOTE: P1003.1c/D10, p. 39 adds sigwait().  */
 
-int _EXFUN(sigwaitinfo, (const sigset_t *set, siginfo_t *info));
-int _EXFUN(sigtimedwait,
-  (const sigset_t *set, siginfo_t *info, const struct timespec  *timeout)
-);
-int _EXFUN(sigwait, (const sigset_t *set, int *sig));
+int sigwaitinfo(const sigset_t *set, siginfo_t *info);
+int sigtimedwait(const sigset_t *set, siginfo_t *info, const struct timespec  *timeout);
+int sigwait(const sigset_t *set, int *sig);
 
 /*  3.3.9 Queue a Signal to a Process, P1003.1b-1993, p. 78 */
-int _EXFUN(sigqueue, (pid_t pid, int signo, const union sigval value));
+int sigqueue(pid_t pid, int signo, const union sigval value);
 
 #endif /* defined(_POSIX_REALTIME_SIGNALS) */
 
@@ -304,9 +300,7 @@ int _EXFUN(sigqueue, (pid_t pid, int signo, const union sigval value));
 #endif
 #endif
 
-#ifdef __cplusplus
-}
-#endif
+_END_STD_C
 
 #ifndef _SIGNAL_H_
 /* Some applications take advantage of the fact that <sys/signal.h>

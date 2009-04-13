@@ -45,12 +45,7 @@ DESCRIPTION
 	<<errno>>.
 */
 
-_off_t
-_DEFUN (_lseek_r, (ptr, fd, pos, whence),
-     struct _reent *ptr _AND
-     int fd _AND
-     _off_t pos _AND
-     int whence)
+_off_t _lseek_r(struct _reent *ptr, int fd, _off_t pos, int whence)
 {
   _off_t ret;
 

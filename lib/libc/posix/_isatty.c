@@ -4,8 +4,7 @@
 
 #include <sys/stat.h>
 
-int
-_DEFUN(_isatty, (fd), int fd)
+int _isatty(int fd)
 {
   struct stat buf;
 

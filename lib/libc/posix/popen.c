@@ -63,10 +63,7 @@ static struct pid {
 	pid_t pid;
 } *pidlist; 
 	
-FILE *
-_DEFUN(popen, (program, type),
-	const char *program _AND
-	const char *type)
+FILE *popen(const char *program, const char *type)
 {
 	struct pid *cur;
 	FILE *iop;
@@ -152,9 +149,7 @@ _DEFUN(popen, (program, type),
  *	Pclose returns -1 if stream is not associated with a `popened' command,
  *	if already `pclosed', or waitpid returns an error.
  */
-int
-_DEFUN(pclose, (iop),
-	FILE *iop)
+int pclose(FILE *iop)
 {
 	register struct pid *cur, *last;
 	int pstat;

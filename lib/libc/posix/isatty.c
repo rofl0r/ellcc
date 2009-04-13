@@ -3,8 +3,7 @@
 #include <unistd.h>
 #include <reent.h>
 
-int
-_DEFUN(isatty, (fd), int fd)
+int isatty(int fd)
 {
   return _isatty (fd);
 }

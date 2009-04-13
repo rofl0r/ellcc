@@ -6,11 +6,8 @@
 #define _SYS_TIME_H_
 
 #include <_ansi.h>
+_BEGIN_STD_C
 #include <sys/types.h>
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 #ifndef _WINSOCK_H
 struct timeval {
@@ -70,14 +67,11 @@ struct  itimerval {
   } while (0)
 #endif /* defined (__rtems__) || defined (__CYGWIN__) */
 
-int _EXFUN(gettimeofday, (struct timeval *__p, void *__tz));
-int _EXFUN(settimeofday, (const struct timeval *, const struct timezone *));
-int _EXFUN(utimes, (const char *__path, const struct timeval *__tvp));
-int _EXFUN(getitimer, (int __which, struct itimerval *__value));
-int _EXFUN(setitimer, (int __which, const struct itimerval *__value,
-					struct itimerval *__ovalue));
+int gettimeofday(struct timeval *__p, void *__tz);
+int settimeofday(const struct timeval *, const struct timezone *);
+int utimes(const char *__path, const struct timeval *__tvp);
+int getitimer(int __which, struct itimerval *__value);
+int setitimer(int __which, const struct itimerval *__value, struct itimerval *__ovalue);
+_END_STD_C
 
-#ifdef __cplusplus
-}
-#endif
 #endif /* _SYS_TIME_H_ */

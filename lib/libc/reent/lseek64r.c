@@ -48,12 +48,7 @@ DESCRIPTION
         with large file support.
 */
 
-_off64_t
-_DEFUN (_lseek64_r, (ptr, fd, pos, whence),
-     struct _reent *ptr _AND
-     int fd _AND
-     _off64_t pos _AND
-     int whence)
+_off64_t _lseek64_r(struct _reent *ptr, int fd, _off64_t pos, int whence)
 {
   _off64_t ret;
 

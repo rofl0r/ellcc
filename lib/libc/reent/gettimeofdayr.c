@@ -59,11 +59,7 @@ DESCRIPTION
 	Check libc.a to see if its available on yours.
 */
 
-int
-_DEFUN (_gettimeofday_r, (ptr, ptimeval, ptimezone),
-     struct _reent *ptr _AND
-     struct timeval *ptimeval _AND
-     void *ptimezone)
+int _gettimeofday_r(struct _reent *ptr, struct timeval *ptimeval, void *ptimezone)
 {
   int ret;
 
