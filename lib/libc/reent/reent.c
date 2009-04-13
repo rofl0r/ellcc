@@ -29,10 +29,7 @@ int errno;
 
 /* Interim cleanup code */
 
-void
-_DEFUN (cleanup_glue, (ptr, glue),
-     struct _reent *ptr _AND
-     struct _glue *glue)
+void cleanup_glue(struct _reent *ptr, struct _glue *glue)
 {
   /* Have to reclaim these in reverse order: */
   if (glue->_next)
@@ -41,9 +38,7 @@ _DEFUN (cleanup_glue, (ptr, glue),
   _free_r (ptr, glue);
 }
 
-void
-_DEFUN (_reclaim_reent, (ptr),
-     struct _reent *ptr)
+void _reclaim_reent(struct _reent *ptr)
 {
   if (ptr != _impure_ptr)
     {
@@ -124,8 +119,7 @@ _DEFUN (_reclaim_reent, (ptr),
  *         down which is used on a global basis.
  */
 
-void
-_DEFUN (_wrapup_reent, (ptr), struct _reent *ptr)
+void _wrapup_reent(struct _reent *ptr)
 {
   register struct _atexit *p;
   register int n;

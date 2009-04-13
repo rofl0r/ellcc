@@ -49,11 +49,7 @@ DESCRIPTION
 	<<errno>>.
 */
 
-int
-_DEFUN (_kill_r, (ptr, pid, sig),
-     struct _reent *ptr _AND
-     int pid _AND
-     int sig)
+int _kill_r(struct _reent *ptr, int pid, int sig)
 {
   int ret;
 
@@ -88,9 +84,7 @@ DESCRIPTION
 	still must have the reentrant pointer argument.
 */
 
-int
-_DEFUN (_getpid_r, (ptr),
-     struct _reent *ptr)
+int _getpid_r(struct _reent *ptr)
 {
   int ret;
   ret = _getpid ();
