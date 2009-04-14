@@ -56,26 +56,22 @@ Required OS subroutines: <<close>>, <<fstat>>, <<isatty>>, <<lseek>>,
 */
 /* This file based upon fwalk.c. */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
 #include "local.h"
 
-int
-_DEFUN(_fcloseall_r, (ptr),
-       struct _reent *ptr)
+int _fcloseall_r(struct _reent *ptr)
 {
   return _fwalk_reent (ptr, _fclose_r);
 }
 
 #ifndef _REENT_ONLY
 
-int
-_DEFUN_VOID(fcloseall)
+int fcloseall(void)
 {
-  return _fcloseall_r (_GLOBAL_REENT);
+  return _fcloseall_r(_GLOBAL_REENT);
 }
 
 #endif

@@ -449,7 +449,7 @@ enum __fdlibm_version
 #define _LIB_VERSION_TYPE enum __fdlibm_version
 #define _LIB_VERSION __fdlib_version
 
-extern g_LIB_VERSION_TYPE _LIB_VERSION;
+extern _LIB_VERSION_TYPE _LIB_VERSION;
 
 #define _IEEE_  __fdlibm_ieee
 #define _SVID_  __fdlibm_svid

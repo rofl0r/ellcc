@@ -45,13 +45,10 @@ POSIX requires <<fileno>>.
 Supporting OS subroutines required: none.
 */
 
-#include <_ansi.h>
 #include <stdio.h>
 #include "local.h"
 
-int
-_DEFUN(fileno, (f),
-       FILE * f)
+int fileno(FILE * f)
 {
   int result;
   CHECK_INIT (_REENT, f);

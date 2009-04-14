@@ -72,7 +72,6 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 <<lseek>>, <<open>>, <<read>>, <<sbrk>>, <<write>>.
 */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <time.h>
 #include <stdio.h>
@@ -86,12 +85,7 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
  * Re-direct an existing, open (probably) file to some other file.
  */
 
-FILE *
-_DEFUN(_freopen_r, (ptr, file, mode, fp),
-       struct _reent *ptr _AND
-       const char *file _AND
-       const char *mode _AND
-       register FILE *fp)
+FILE *_freopen_r(struct _reent *ptr, const char *file, const char *mode, register FILE *fp)
 {
   register int f;
   int flags, oflags;
@@ -216,7 +210,7 @@ _DEFUN(_freopen_r, (ptr, file, mode, fp),
 
   fp->_flags = flags;
   fp->_file = f;
-  fp->_cookie = (_PTR) fp;
+  fp->_cookie = (void *)fp;
   fp->_read = __sread;
   fp->_write = __swrite;
   fp->_seek = __sseek;
@@ -234,11 +228,7 @@ _DEFUN(_freopen_r, (ptr, file, mode, fp),
 
 #ifndef _REENT_ONLY
 
-FILE *
-_DEFUN(freopen, (file, mode, fp),
-       _CONST char *file _AND
-       _CONST char *mode _AND
-       register FILE *fp)
+FILE *freopen(const char *file, const char *mode, register FILE *fp)
 {
   return _freopen_r (_REENT, file, mode, fp);
 }

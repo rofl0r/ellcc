@@ -75,11 +75,7 @@ No supporting OS subroutines are required.
 #include <reent.h>
 #include <stdio.h>
 
-int
-_DEFUN(_fgetpos_r, (ptr, fp, pos),
-       struct _reent * ptr _AND
-       FILE * fp           _AND
-       _fpos_t * pos)
+int _fgetpos_r(struct _reent * ptr, FILE * fp, _fpos_t * pos)
 {
   *pos = _ftell_r (ptr, fp);
 
@@ -92,10 +88,7 @@ _DEFUN(_fgetpos_r, (ptr, fp, pos),
 
 #ifndef _REENT_ONLY
 
-int
-_DEFUN(fgetpos, (fp, pos),
-       FILE * fp _AND
-       _fpos_t * pos)
+int fgetpos(FILE * fp, _fpos_t * pos)
 {
   return _fgetpos_r (_REENT, fp, pos);
 }

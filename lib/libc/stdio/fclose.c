@@ -57,17 +57,13 @@ Required OS subroutines: <<close>>, <<fstat>>, <<isatty>>, <<lseek>>,
 <<read>>, <<sbrk>>, <<write>>.
 */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/lock.h>
 #include "local.h"
 
-int
-_DEFUN(_fclose_r, (rptr, fp),
-      struct _reent *rptr _AND
-      register FILE * fp)
+int _fclose_r(struct _reent *rptr, register FILE * fp)
 {
   int r;
 
@@ -111,9 +107,7 @@ _DEFUN(_fclose_r, (rptr, fp),
 
 #ifndef _REENT_ONLY
 
-int
-_DEFUN(fclose, (fp),
-       register FILE * fp)
+int fclose(register FILE * fp)
 {
   return _fclose_r(_REENT, fp);
 }

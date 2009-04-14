@@ -84,10 +84,7 @@ static char sccsid[] = "%W% (Berkeley) %G%";
 
 #ifdef __LARGE64_FILES
 
-_off64_t
-_DEFUN (_ftello64_r, (ptr, fp),
-	struct _reent *ptr _AND
-	register FILE * fp)
+_off64_t _ftello64_r(struct _reent *ptr, register FILE * fp)
 {
   _fpos64_t pos;
 
@@ -152,9 +149,7 @@ _DEFUN (_ftello64_r, (ptr, fp),
 
 #ifndef _REENT_ONLY
 
-_off64_t
-_DEFUN (ftello64, (fp),
-	register FILE * fp)
+_off64_t ftello64(register FILE * fp)
 {
   return _ftello64_r (_REENT, fp);
 }

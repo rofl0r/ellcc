@@ -61,9 +61,7 @@ static char sccsid[] = "%W% (Berkeley) %G%";
 
 #undef ferror
 
-int
-_DEFUN(ferror, (fp),
-       FILE * fp)
+int ferror(FILE * fp)
 {
   int result;
   CHECK_INIT(_REENT, fp);

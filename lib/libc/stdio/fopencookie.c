@@ -95,12 +95,7 @@ typedef struct fccookie {
   cookie_close_function_t *closefn;
 } fccookie;
 
-static _READ_WRITE_RETURN_TYPE
-_DEFUN(fcreader, (ptr, cookie, buf, n),
-       struct _reent *ptr _AND
-       void *cookie _AND
-       char *buf _AND
-       int n)
+static int fcreader(struct _reent *ptr, void *cookie, char *buf, int n)
 {
   int result;
   fccookie *c = (fccookie *) cookie;
@@ -110,12 +105,7 @@ _DEFUN(fcreader, (ptr, cookie, buf, n),
   return result;
 }
 
-static _READ_WRITE_RETURN_TYPE
-_DEFUN(fcwriter, (ptr, cookie, buf, n),
-       struct _reent *ptr _AND
-       void *cookie _AND
-       const char *buf _AND
-       int n)
+static int fcwriter(struct _reent *ptr, void *cookie, const char *buf, int n)
 {
   int result;
   fccookie *c = (fccookie *) cookie;
@@ -133,12 +123,7 @@ _DEFUN(fcwriter, (ptr, cookie, buf, n),
   return result;
 }
 
-static _fpos_t
-_DEFUN(fcseeker, (ptr, cookie, pos, whence),
-       struct _reent *ptr _AND
-       void *cookie _AND
-       _fpos_t pos _AND
-       int whence)
+static _fpos_t fcseeker(struct _reent *ptr, void *cookie, _fpos_t pos, int whence)
 {
   fccookie *c = (fccookie *) cookie;
 #ifndef __LARGE64_FILES
@@ -161,12 +146,7 @@ _DEFUN(fcseeker, (ptr, cookie, pos, whence),
 }
 
 #ifdef __LARGE64_FILES
-static _fpos64_t
-_DEFUN(fcseeker64, (ptr, cookie, pos, whence),
-       struct _reent *ptr _AND
-       void *cookie _AND
-       _fpos64_t pos _AND
-       int whence)
+static _fpos64_t fcseeker64(struct _reent *ptr, void *cookie, _fpos64_t pos, int whence)
 {
   _off64_t offset;
   fccookie *c = (fccookie *) cookie;
@@ -177,10 +157,7 @@ _DEFUN(fcseeker64, (ptr, cookie, pos, whence),
 }
 #endif /* __LARGE64_FILES */
 
-static int
-_DEFUN(fccloser, (ptr, cookie),
-       struct _reent *ptr _AND
-       void *cookie)
+static int fccloser(struct _reent *ptr, void *cookie)
 {
   int result = 0;
   fccookie *c = (fccookie *) cookie;
@@ -194,12 +171,7 @@ _DEFUN(fccloser, (ptr, cookie),
   return result;
 }
 
-FILE *
-_DEFUN(_fopencookie_r, (ptr, cookie, mode, functions),
-       struct _reent *ptr _AND
-       void *cookie _AND
-       const char *mode _AND
-       cookie_io_functions_t functions)
+FILE *_fopencookie_r(struct _reent *ptr, void *cookie, const char *mode, cookie_io_functions_t functions)
 {
   FILE *fp;
   fccookie *c;
@@ -250,11 +222,7 @@ _DEFUN(_fopencookie_r, (ptr, cookie, mode, functions),
 }
 
 #ifndef _REENT_ONLY
-FILE *
-_DEFUN(fopencookie, (cookie, mode, functions),
-       void *cookie _AND
-       const char *mode _AND
-       cookie_io_functions_t functions)
+FILE *fopencookie(void *cookie, const char *mode, cookie_io_functions_t functions)
 {
   return _fopencookie_r (_REENT, cookie, mode, functions);
 }

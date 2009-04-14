@@ -54,7 +54,6 @@ PORTABILITY
 <<fdopen>> is ANSI.
 */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <sys/types.h>
 #include <sys/fcntl.h>
@@ -63,11 +62,7 @@ PORTABILITY
 #include "local.h"
 #include <_syslist.h>
 
-FILE *
-_DEFUN(_fdopen_r, (ptr, fd, mode),
-       struct _reent *ptr _AND
-       int fd             _AND
-       _CONST char *mode)
+FILE *_fdopen_r(struct _reent *ptr, int fd, const char *mode)
 {
   register FILE *fp;
   int flags, oflags;
@@ -105,7 +100,7 @@ _DEFUN(_fdopen_r, (ptr, fd, mode),
     _fcntl_r (ptr, fd, F_SETFL, fdflags | O_APPEND);
 #endif
   fp->_file = fd;
-  fp->_cookie = (_PTR) fp;
+  fp->_cookie = (void *) fp;
 
 #undef _read
 #undef _write
@@ -127,18 +122,15 @@ _DEFUN(_fdopen_r, (ptr, fd, mode),
     fp->_flags |= __SCLE;
 #endif
 
-  _funlockfile (fp);
+  _funlockfile(fp);
   return fp;
 }
 
 #ifndef _REENT_ONLY
 
-FILE *
-_DEFUN(fdopen, (fd, mode),
-       int fd _AND
-       _CONST char *mode)
+FILE *fdopen(int fd, const char *mode)
 {
-  return _fdopen_r (_REENT, fd, mode);
+  return _fdopen_r(_REENT, fd, mode);
 }
 
 #endif

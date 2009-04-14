@@ -86,12 +86,7 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 
 #ifdef __LARGE64_FILES
 
-FILE *
-_DEFUN (_freopen64_r, (ptr, file, mode, fp),
-	struct _reent *ptr _AND
-	_CONST char *file _AND
-	_CONST char *mode _AND
-	register FILE *fp)
+FILE *_freopen64_r(struct _reent *ptr, const char *file, const char *mode, register FILE *fp)
 {
   register int f;
   int flags, oflags;
@@ -216,7 +211,7 @@ _DEFUN (_freopen64_r, (ptr, file, mode, fp),
 
   fp->_flags = flags;
   fp->_file = f;
-  fp->_cookie = (_PTR) fp;
+  fp->_cookie = (void *) fp;
   fp->_read = __sread;
   fp->_write = __swrite64;
   fp->_seek = __sseek;
@@ -237,11 +232,7 @@ _DEFUN (_freopen64_r, (ptr, file, mode, fp),
 
 #ifndef _REENT_ONLY
 
-FILE *
-_DEFUN (freopen64, (file, mode, fp),
-	_CONST char *file _AND
-	_CONST char *mode _AND
-	register FILE *fp)
+FILE *freopen64(const char *file, const char *mode, register FILE *fp)
 {
   return _freopen64_r (_REENT, file, mode, fp);
 }

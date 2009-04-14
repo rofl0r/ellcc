@@ -65,15 +65,14 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 <<lseek>>, <<read>>, <<sbrk>>, <<write>>.
 */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <stdio.h>
 
 int
 _DEFUN(_fsetpos_r, (ptr, iop, pos),
-       struct _reent * ptr _AND
-       FILE * iop          _AND
-       _CONST _fpos_t * pos)
+       struct _reent * ptr,
+       FILE * iop         ,
+       const _fpos_t * pos)
 {
   int x = _fseek_r (ptr, iop, *pos, SEEK_SET);
 
@@ -86,8 +85,8 @@ _DEFUN(_fsetpos_r, (ptr, iop, pos),
 
 int
 _DEFUN(fsetpos, (iop, pos),
-       FILE * iop _AND
-       _CONST _fpos_t * pos)
+       FILE * iop,
+       const _fpos_t * pos)
 {
   return _fsetpos_r (_REENT, iop, pos);
 }

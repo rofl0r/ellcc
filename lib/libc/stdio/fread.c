@@ -73,7 +73,6 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 <<lseek>>, <<read>>, <<sbrk>>, <<write>>.
 */
 
-#include <_ansi.h>
 #include <stdio.h>
 #include <string.h>
 #include <malloc.h>
@@ -82,10 +81,10 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 #ifdef __SCLE
 static size_t
 _DEFUN(crlf_r, (ptr, fp, buf, count, eof),
-       struct _reent * ptr _AND
-       FILE * fp _AND
-       char * buf _AND
-       size_t count _AND
+       struct _reent * ptr,
+       FILE * fp,
+       char * buf,
+       size_t count,
        int eof)
 {
   int newcount = 0, r;
@@ -129,13 +128,7 @@ _DEFUN(crlf_r, (ptr, fp, buf, count, eof),
 
 #endif
 
-size_t
-_DEFUN(_fread_r, (ptr, buf, size, count, fp),
-       struct _reent * ptr _AND
-       _PTR buf _AND
-       size_t size _AND
-       size_t count _AND
-       FILE * fp)
+size_t _fread_r(struct _reent * ptr, void * buf, size_t size, size_t count, FILE * fp)
 {
   register size_t resid;
   register char *p;
@@ -160,7 +153,7 @@ _DEFUN(_fread_r, (ptr, buf, size, count, fp),
     {
       /* First copy any available characters from ungetc buffer.  */
       int copy_size = resid > fp->_r ? fp->_r : resid;
-      _CAST_VOID memcpy ((_PTR) p, (_PTR) fp->_p, (size_t) copy_size);
+      (void)memcpy ((void *) p, (void *) fp->_p, (size_t) copy_size);
       fp->_p += copy_size;
       fp->_r -= copy_size;
       p += copy_size;
@@ -209,7 +202,7 @@ _DEFUN(_fread_r, (ptr, buf, size, count, fp),
     {
       while (resid > (r = fp->_r))
 	{
-	  _CAST_VOID memcpy ((_PTR) p, (_PTR) fp->_p, (size_t) r);
+	  (void)memcpy ((void *) p, (void *) fp->_p, (size_t) r);
 	  fp->_p += r;
 	  /* fp->_r = 0 ... done in __srefill */
 	  p += r;
@@ -228,7 +221,7 @@ _DEFUN(_fread_r, (ptr, buf, size, count, fp),
 	      return (total - resid) / size;
 	    }
 	}
-      _CAST_VOID memcpy ((_PTR) p, (_PTR) fp->_p, resid);
+      (void)memcpy ((void *) p, (void *) fp->_p, resid);
       fp->_r -= resid;
       fp->_p += resid;
     }
@@ -246,12 +239,7 @@ _DEFUN(_fread_r, (ptr, buf, size, count, fp),
 }
 
 #ifndef _REENT_ONLY
-size_t
-_DEFUN(fread, (buf, size, count, fp),
-       _PTR buf _AND
-       size_t size _AND
-       size_t count _AND
-       FILE * fp)
+size_t fread(void * buf, size_t size, size_t count, FILE * fp)
 {
    return _fread_r (_REENT, buf, size, count, fp);
 }

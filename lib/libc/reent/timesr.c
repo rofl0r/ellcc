@@ -50,10 +50,7 @@ DESCRIPTION
 	<<errno>>.
 */
 
-clock_t
-_DEFUN (_times_r, (ptr, ptms),
-     struct _reent *ptr _AND
-     struct tms *ptms)
+clock_t _times_r(struct _reent *ptr, struct tms *ptms)
 {
   clock_t ret;
 

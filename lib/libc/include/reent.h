@@ -92,13 +92,13 @@ _BEGIN_STD_C
 #include <sys/reent.h>
 #include <sys/_types.h>
 #include <machine/types.h>
+#include <sys/stat.h>
 
 #define __need_size_t
 #define __need_ptrdiff_t
 #include <stddef.h>
 
 /* FIXME: not namespace clean */
-struct stat;
 struct tms;
 struct timeval;
 struct timezone;
@@ -157,8 +157,6 @@ extern _ssize_t _write_r(struct _reent *, int, const void *, size_t);
 extern int _gettimeofday_r(struct _reent *, struct timeval *__tp, void *__tzp);
 
 #ifdef __LARGE64_FILES
-
-struct stat64;
 
 extern _off64_t _lseek64_r(struct _reent *, int, _off64_t, int);
 extern int _fstat64_r(struct _reent *, int, struct stat64 *);

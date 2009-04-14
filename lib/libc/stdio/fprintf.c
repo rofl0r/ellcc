@@ -16,16 +16,11 @@
  */
 /* doc in sprintf.c */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <stdio.h>
 #include <stdarg.h>
 
-int
-_DEFUN(_fprintf_r, (ptr, fp, fmt),
-       struct _reent *ptr _AND
-       FILE *fp _AND
-       const char *fmt _DOTS)
+int _fprintf_r(struct _reent *ptr, FILE *fp, const char *fmt, ...)
 {
   int ret;
   va_list ap;
@@ -38,10 +33,7 @@ _DEFUN(_fprintf_r, (ptr, fp, fmt),
 
 #ifndef _REENT_ONLY
 
-int
-_DEFUN(fprintf, (fp, fmt),
-       FILE *fp _AND
-       const char *fmt _DOTS)
+int fprintf(FILE *fp, const char *fmt, ...)
 {
   int ret;
   va_list ap;

@@ -33,37 +33,36 @@
 #endif
 
 
-extern int    _EXFUN(__svfscanf_r,(struct _reent *,FILE *, _CONST char *,va_list));
-extern int    _EXFUN(__ssvfscanf_r,(struct _reent *,FILE *, _CONST char *,va_list));
-extern int    _EXFUN(__svfiscanf_r,(struct _reent *,FILE *, _CONST char *,va_list));
-extern int    _EXFUN(__ssvfiscanf_r,(struct _reent *,FILE *, _CONST char *,va_list));
-int	      _EXFUN(_svfprintf_r,(struct _reent *, FILE *, const char *, 
+extern int    __svfscanf_r(struct _reent *,FILE *, const char *,va_list);
+extern int    __ssvfscanf_r(struct _reent *,FILE *, const char *,va_list);
+extern int    __svfiscanf_r(struct _reent *,FILE *, const char *,va_list);
+extern int    __ssvfiscanf_r(struct _reent *,FILE *, const char *,va_list);
+int	      _svfprintf_r(struct _reent *, FILE *, const char *, va_list)
+               			__attribute__ ((__format__ (__printf__, 3, 0)));
+int	      _svfiprintf_r(struct _reent *, FILE *, const char *, 
 				  va_list)
-               			_ATTRIBUTE ((__format__ (__printf__, 3, 0))));
-int	      _EXFUN(_svfiprintf_r,(struct _reent *, FILE *, const char *, 
-				  va_list)
-               			_ATTRIBUTE ((__format__ (__printf__, 3, 0))));
-extern FILE  *_EXFUN(__sfp,(struct _reent *));
-extern int    _EXFUN(__sflags,(struct _reent *,_CONST char*, int*));
-extern int    _EXFUN(__srefill_r,(struct _reent *,FILE *));
-extern _READ_WRITE_RETURN_TYPE _EXFUN(__sread,(struct _reent *, void *, char *,
-					       int));
-extern _READ_WRITE_RETURN_TYPE _EXFUN(__swrite,(struct _reent *, void *,
-						const char *, int));
-extern _fpos_t _EXFUN(__sseek,(struct _reent *, void *, _fpos_t, int));
-extern int    _EXFUN(__sclose,(struct _reent *, void *));
-extern int    _EXFUN(__stextmode,(int));
-extern _VOID   _EXFUN(__sinit,(struct _reent *));
-extern _VOID   _EXFUN(_cleanup_r,(struct _reent *));
-extern _VOID   _EXFUN(__smakebuf_r,(struct _reent *, FILE *));
-extern int    _EXFUN(_fwalk,(struct _reent *, int (*)(FILE *)));
-extern int    _EXFUN(_fwalk_reent,(struct _reent *, int (*)(struct _reent *, FILE *)));
-struct _glue * _EXFUN(__sfmoreglue,(struct _reent *,int n));
+               			__attribute__ ((__format__ (__printf__, 3, 0)));
+extern FILE  *__sfp(struct _reent *);
+extern int    __sflags(struct _reent *,const char*, int*);
+extern int    __srefill_r(struct _reent *,FILE *);
+extern int __sread(struct _reent *, void *, char *,
+					       int);
+extern int __swrite(struct _reent *, void *,
+						const char *, int);
+extern _fpos_t __sseek(struct _reent *, void *, _fpos_t, int);
+extern int    __sclose(struct _reent *, void *);
+extern int    __stextmode(int);
+extern void   __sinit(struct _reent *);
+extern void   _cleanup_r(struct _reent *);
+extern void   __smakebuf_r(struct _reent *, FILE *);
+extern int    _fwalk(struct _reent *, int (*)(FILE *));
+extern int    _fwalk_reent(struct _reent *, int (*)(struct _reent *, FILE *));
+struct _glue * __sfmoreglue(struct _reent *,int n);
 
 #ifdef __LARGE64_FILES
-extern _fpos64_t _EXFUN(__sseek64,(struct _reent *, void *, _fpos64_t, int));
-extern _READ_WRITE_RETURN_TYPE _EXFUN(__swrite64,(struct _reent *, void *,
-						  const char *, int));
+extern _fpos64_t __sseek64(struct _reent *, void *, _fpos64_t, int);
+extern int __swrite64(struct _reent *, void *,
+						  const char *, int);
 #endif
 
 /* Called by the main entry point fns to ensure stdio has been initialized.  */
@@ -119,17 +118,17 @@ extern _READ_WRITE_RETURN_TYPE _EXFUN(__swrite64,(struct _reent *, void *,
 /* Test for an fgetline() buffer.  */
 
 #define	HASLB(fp) ((fp)->_lb._base != NULL)
-#define	FREELB(ptr, fp) { _free_r(ptr,(char *)(fp)->_lb._base); \
+#define	FREELB(ptr, fp) { _free_r(ptr, (char *)(fp)->_lb._base); \
       (fp)->_lb._base = NULL; }
 
 /* WARNING: _dcvt is defined in the stdlib directory, not here!  */
 
-char *_EXFUN(_dcvt,(struct _reent *, char *, double, int, int, char, int));
-char *_EXFUN(_sicvt,(char *, short, char));
-char *_EXFUN(_icvt,(char *, int, char));
-char *_EXFUN(_licvt,(char *, long, char));
+char *_dcvt(struct _reent *, char *, double, int, int, char, int);
+char *_sicvt(char *, short, char);
+char *_icvt(char *, int, char);
+char *_licvt(char *, long, char);
 #ifdef __GNUC__
-char *_EXFUN(_llicvt,(char *, long long, char));
+char *_llicvt(char *, long long, char);
 #endif
 
 #define CVT_BUF_SIZE 128
@@ -142,8 +141,8 @@ char *_EXFUN(_llicvt,(char *, long long, char));
 #define __sinit_lock_acquire()
 #define __sinit_lock_release()
 #else
-_VOID _EXFUN(__sfp_lock_acquire,(_VOID));
-_VOID _EXFUN(__sfp_lock_release,(_VOID));
-_VOID _EXFUN(__sinit_lock_acquire,(_VOID));
-_VOID _EXFUN(__sinit_lock_release,(_VOID));
+void __sfp_lock_acquire(void);
+void __sfp_lock_release(void);
+void __sinit_lock_acquire(void);
+void __sinit_lock_release(void);
 #endif

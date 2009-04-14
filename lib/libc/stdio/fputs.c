@@ -71,11 +71,7 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
  * Write the given string to the given file.
  */
 
-int
-_DEFUN(_fputs_r, (ptr, s, fp),
-       struct _reent * ptr _AND
-       char _CONST * s _AND
-       FILE * fp)
+int _fputs_r(struct _reent * ptr, char const * s, FILE * fp)
 {
   int result;
   struct __suio uio;
@@ -95,11 +91,8 @@ _DEFUN(_fputs_r, (ptr, s, fp),
 }
 
 #ifndef _REENT_ONLY
-int
-_DEFUN(fputs, (s, fp),
-       char _CONST * s _AND
-       FILE * fp)
+int fputs(char const * s, FILE * fp)
 {
-  return _fputs_r (_REENT, s, fp);
+  return _fputs_r(_REENT, s, fp);
 }
 #endif /* !_REENT_ONLY */

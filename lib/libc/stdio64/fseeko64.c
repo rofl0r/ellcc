@@ -97,14 +97,9 @@ Supporting OS subroutines required: <<close>>, <<fstat64>>, <<isatty>>,
  * `Whence' must be one of the three SEEK_* macros.
  */
 
-_off64_t
-_DEFUN (_fseeko64_r, (ptr, fp, offset, whence),
-     struct _reent *ptr _AND
-     register FILE *fp _AND
-     _off64_t offset _AND
-     int whence)
+_off64_t _fseeko64_r(struct _reent *ptr, register FILE *fp, _off64_t offset, int whence)
 {
-  _fpos64_t _EXFUN ((*seekfn), (struct _reent *, void *, _fpos64_t, int));
+  _fpos64_t (*seekfn)(struct _reent *, void *, _fpos64_t, int);
   _fpos64_t target, curoff;
   size_t n;
 
@@ -353,11 +348,7 @@ dumb:
 
 #ifndef _REENT_ONLY
 
-_off64_t
-_DEFUN (fseeko64, (fp, offset, whence),
-     register FILE *fp _AND
-     _off64_t offset _AND
-     int whence)
+_off64_t fseeko64(register FILE *fp, _off64_t offset, int whence)
 {
   return _fseeko64_r (_REENT, fp, offset, whence);
 }

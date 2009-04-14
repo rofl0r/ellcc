@@ -1,0 +1,12 @@
+#!/bin/sh
+#CC=~/ellcc/ellcc/nios2-elf-ecc
+CC=gcc
+CFLAGS=-DHAVE_OPENDIR
+for i in */*.c ; do
+    echo $CC -c $CFLAGS -Iinclude $i
+    $CC -c $CFLAGS -Iinclude $i
+    if [ $? -ne 0 ] ; then
+        echo echo compilation failed
+        exit 1
+    fi
+done

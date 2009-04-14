@@ -5,19 +5,13 @@
 /* This code was derived from asprintf.c */
 /* doc in sprintf.c */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <limits.h>
 #include <errno.h>
 
-char *
-_DEFUN(_asnprintf_r, (ptr, buf, lenp, fmt),
-       struct _reent *ptr _AND
-       char *buf _AND
-       size_t *lenp _AND
-       const char *fmt _DOTS)
+char *_asnprintf_r(struct _reent *ptr, char *buf, size_t *lenp, const char *fmt, ...)
 {
   int ret;
   va_list ap;
@@ -59,11 +53,7 @@ _DEFUN(_asnprintf_r, (ptr, buf, lenp, fmt),
 
 #ifndef _REENT_ONLY
 
-char *
-_DEFUN(asnprintf, (buf, lenp, fmt),
-       char *buf _AND
-       size_t *lenp _AND
-       const char *fmt _DOTS)
+char *asnprintf(char *buf, size_t *lenp, const char *fmt, ...)
 {
   int ret;
   va_list ap;

@@ -98,7 +98,6 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 <<lseek>>, <<read>>, <<sbrk>>, <<write>>.
 */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <stdio.h>
 #include <time.h>
@@ -115,14 +114,9 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
  * `Whence' must be one of the three SEEK_* macros.
  */
 
-int
-_DEFUN(_fseek_r, (ptr, fp, offset, whence),
-       struct _reent *ptr _AND
-       register FILE *fp  _AND
-       long offset        _AND
-       int whence)
+int _fseek_r(struct _reent *ptr, register FILE *fp , long offset, int whence)
 {
-  _fpos_t _EXFUN((*seekfn), (struct _reent *, _PTR, _fpos_t, int));
+  _fpos_t (*seekfn)(struct _reent *, void *, _fpos_t, int);
   _fpos_t target;
   _fpos_t curoff = 0;
   size_t n;
@@ -135,9 +129,9 @@ _DEFUN(_fseek_r, (ptr, fp, offset, whence),
 
   /* Make sure stdio is set up.  */
 
-  CHECK_INIT (ptr, fp);
+  CHECK_INIT(ptr, fp);
 
-  _flockfile (fp);
+  _flockfile(fp);
 
   /* If we've been doing some writing, and we're in append mode
      then we don't really know where the filepos is.  */
@@ -175,7 +169,7 @@ _DEFUN(_fseek_r, (ptr, fp, offset, whence),
 	curoff = fp->_offset;
       else
 	{
-	  curoff = seekfn (ptr, fp->_cookie, (_fpos_t) 0, SEEK_CUR);
+	  curoff = seekfn(ptr, fp->_cookie, (_fpos_t) 0, SEEK_CUR);
 	  if (curoff == -1L)
 	    {
 	      _funlockfile (fp);
@@ -217,7 +211,7 @@ _DEFUN(_fseek_r, (ptr, fp, offset, whence),
    */
 
   if (fp->_bf._base == NULL)
-    __smakebuf_r (ptr, fp);
+    __smakebuf_r(ptr, fp);
   if (fp->_flags & (__SWR | __SRW | __SNBF | __SNPT))
     goto dumb;
   if ((fp->_flags & __SOPT) == 0)
@@ -252,9 +246,9 @@ _DEFUN(_fseek_r, (ptr, fp, offset, whence),
   else
     {
 #ifdef __USE_INTERNAL_STAT64
-      if (_fstat64_r (ptr, fp->_file, &st))
+      if (_fstat64_r(ptr, fp->_file, &st))
 #else
-      if (_fstat_r (ptr, fp->_file, &st))
+      if (_fstat_r(ptr, fp->_file, &st))
 #endif
 	goto dumb;
       target = st.st_size + offset;
@@ -332,7 +326,7 @@ _DEFUN(_fseek_r, (ptr, fp, offset, whence),
    */
 
   curoff = target & ~(fp->_blksize - 1);
-  if (seekfn (ptr, fp->_cookie, curoff, SEEK_SET) == POS_ERR)
+  if (seekfn(ptr, fp->_cookie, curoff, SEEK_SET) == POS_ERR)
     goto dumb;
   fp->_r = 0;
   fp->_p = fp->_bf._base;
@@ -357,7 +351,7 @@ _DEFUN(_fseek_r, (ptr, fp, offset, whence),
 
 dumb:
   if (_fflush_r (ptr, fp)
-      || seekfn (ptr, fp->_cookie, offset, whence) == POS_ERR)
+      || seekfn(ptr, fp->_cookie, offset, whence) == POS_ERR)
     {
       _funlockfile (fp);
       return EOF;
@@ -382,13 +376,9 @@ dumb:
 
 #ifndef _REENT_ONLY
 
-int
-_DEFUN(fseek, (fp, offset, whence),
-       register FILE *fp _AND
-       long offset       _AND
-       int whence)
+int fseek(register FILE *fp, long offset, int whence)
 {
-  return _fseek_r (_REENT, fp, offset, whence);
+  return _fseek_r(_REENT, fp, offset, whence);
 }
 
 #endif /* !_REENT_ONLY */

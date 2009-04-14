@@ -52,9 +52,7 @@ No supporting OS subroutines are required.
 
 #undef feof
 
-int 
-_DEFUN(feof, (fp),
-       FILE * fp)
+int feof(FILE * fp)
 {
   int result;
   CHECK_INIT(_REENT, fp);

@@ -25,12 +25,7 @@
 #include "local.h"
 
 #ifdef __LARGE64_FILES
-_fpos64_t
-_DEFUN(__sseek64, (ptr, cookie, offset, whence),
-       struct _reent *ptr _AND
-       void *cookie _AND
-       _fpos64_t offset _AND
-       int whence)
+_fpos64_t __sseek64(struct _reent *ptr, void *cookie, _fpos64_t offset, int whence)
 {
   register FILE *fp = (FILE *) cookie;
   register _off64_t ret;
@@ -46,12 +41,7 @@ _DEFUN(__sseek64, (ptr, cookie, offset, whence),
   return ret;
 }
 
-_READ_WRITE_RETURN_TYPE
-_DEFUN(__swrite64, (ptr, cookie, buf, n),
-       struct _reent *ptr _AND
-       void *cookie _AND
-       char const *buf _AND
-       int n)
+int __swrite64(struct _reent *ptr, void *cookie, char const *buf, int n)
 {
   register FILE *fp = (FILE *) cookie;
   int w;

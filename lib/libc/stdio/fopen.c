@@ -109,11 +109,6 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 <<lseek>>, <<open>>, <<read>>, <<sbrk>>, <<write>>.
 */
 
-#if defined(LIBC_SCCS) && !defined(lint)
-static char sccsid[] = "%W% (Berkeley) %G%";
-#endif /* LIBC_SCCS and not lint */
-
-#include <_ansi.h>
 #include <reent.h>
 #include <stdio.h>
 #include <errno.h>
@@ -123,11 +118,7 @@ static char sccsid[] = "%W% (Berkeley) %G%";
 #endif
 #include "local.h"
 
-FILE *
-_DEFUN(_fopen_r, (ptr, file, mode),
-       struct _reent *ptr _AND
-       _CONST char *file _AND
-       _CONST char *mode)
+FILE *_fopen_r(struct _reent *ptr, const char *file, const char *mode)
 {
   register FILE *fp;
   register int f;
@@ -153,7 +144,7 @@ _DEFUN(_fopen_r, (ptr, file, mode),
 
   fp->_file = f;
   fp->_flags = flags;
-  fp->_cookie = (_PTR) fp;
+  fp->_cookie = (void *) fp;
   fp->_read = __sread;
   fp->_write = __swrite;
   fp->_seek = __sseek;
@@ -173,10 +164,7 @@ _DEFUN(_fopen_r, (ptr, file, mode),
 
 #ifndef _REENT_ONLY
 
-FILE *
-_DEFUN(fopen, (file, mode),
-       _CONST char *file _AND
-       _CONST char *mode)
+FILE *fopen(const char *file, const char *mode)
 {
   return _fopen_r (_REENT, file, mode);
 }

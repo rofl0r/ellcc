@@ -40,18 +40,13 @@ This function is originally a GNU extension in glibc and is not portable.
 Supporting OS subroutines required: <<sbrk>>, <<write>>.
 */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <stdarg.h>
 #include "local.h"
 
-int
-_DEFUN(_dprintf_r, (ptr, fd, format),
-       struct _reent *ptr _AND
-       int fd _AND
-       const char *format _DOTS)
+int _dprintf_r(struct _reent *ptr, int fd, const char *format, ...)
 {
 	va_list ap;
 	int n;
@@ -64,10 +59,7 @@ _DEFUN(_dprintf_r, (ptr, fd, format),
 
 #ifndef _REENT_ONLY
 
-int
-_DEFUN(dprintf, (fd, format),
-       int fd _AND
-       const char *format _DOTS)
+int dprintf(int fd, const char *format, ...)
 {
   va_list ap;
   int n;

@@ -80,12 +80,7 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
  * Return first argument, or NULL if no characters were read.
  */
 
-char *
-_DEFUN(_fgets_r, (ptr, buf, n, fp),
-       struct _reent * ptr _AND
-       char *buf _AND
-       int n     _AND
-       FILE * fp)
+char *_fgets_r(struct _reent * ptr, char *buf, int n, FILE * fp)
 {
   size_t len;
   char *s;
@@ -151,20 +146,20 @@ _DEFUN(_fgets_r, (ptr, buf, n, fp),
        */
       if (len > n)
 	len = n;
-      t = (unsigned char *) memchr ((_PTR) p, '\n', len);
+      t = (unsigned char *) memchr ((void *) p, '\n', len);
       if (t != 0)
 	{
 	  len = ++t - p;
 	  fp->_r -= len;
 	  fp->_p = t;
-	  _CAST_VOID memcpy ((_PTR) s, (_PTR) p, len);
+	  (void)memcpy ((void *) s, (void *) p, len);
 	  s[len] = 0;
           _funlockfile (fp);
 	  return (buf);
 	}
       fp->_r -= len;
       fp->_p += len;
-      _CAST_VOID memcpy ((_PTR) s, (_PTR) p, len);
+      (void)memcpy ((void *) s, (void *) p, len);
       s += len;
     }
   while ((n -= len) != 0);
@@ -175,11 +170,7 @@ _DEFUN(_fgets_r, (ptr, buf, n, fp),
 
 #ifndef _REENT_ONLY
 
-char *
-_DEFUN(fgets, (buf, n, fp),
-       char *buf _AND
-       int n     _AND
-       FILE * fp)
+char *fgets(char *buf, int n, FILE * fp)
 {
   return _fgets_r (_REENT, buf, n, fp);
 }

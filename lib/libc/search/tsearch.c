@@ -12,23 +12,13 @@
  */
 
 #include <sys/cdefs.h>
-#if 0
-#if defined(LIBC_SCCS) && !defined(lint)
-__RCSID("$NetBSD: tsearch.c,v 1.3 1999/09/16 11:45:37 lukem Exp $");
-#endif /* LIBC_SCCS and not lint */
-#endif
-
 #include <assert.h>
 #define _SEARCH_PRIVATE
 #include <search.h>
 #include <stdlib.h>
 
 /* find or insert datum into search tree */
-void *
-_DEFUN(tsearch, (vkey, vrootp, compar),
-	const void *vkey _AND		/* key to be located */
-	void **vrootp _AND		/* address of tree root */
-	int (*compar)(const void *, const void *))
+void *tsearch(const void *vkey, void **vrootp, int (*compar)(const void *, const void *))
 {
 	node_t *q;
 	node_t **rootp = (node_t **)vrootp;

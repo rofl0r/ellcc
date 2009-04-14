@@ -17,18 +17,13 @@
 /* This code was copied from sprintf.c */
 /* doc in sprintf.c */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <limits.h>
 #include "local.h"
 
-int
-_DEFUN(_asprintf_r, (ptr, strp, fmt),
-       struct _reent *ptr _AND
-       char **strp        _AND
-       const char *fmt _DOTS)
+int _asprintf_r(struct _reent *ptr, char **strp       , const char *fmt, ...)
 {
   int ret;
   va_list ap;
@@ -52,10 +47,7 @@ _DEFUN(_asprintf_r, (ptr, strp, fmt),
 
 #ifndef _REENT_ONLY
 
-int
-_DEFUN(asprintf, (strp, fmt),
-       char **strp _AND
-       const char *fmt _DOTS)
+int asprintf(char **strp, const char *fmt, ...)
 {
   int ret;
   va_list ap;

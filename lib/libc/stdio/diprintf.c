@@ -44,11 +44,7 @@ Supporting OS subroutines required: <<sbrk>>, <<write>>.
 #include <unistd.h>
 #include <stdarg.h>
 
-int
-_DEFUN(_diprintf_r, (ptr, fd, format),
-       struct _reent *ptr _AND
-       int fd _AND
-       const char *format _DOTS)
+int _diprintf_r(struct _reent *ptr, int fd, const char *format, ...)
 {
   va_list ap;
   int n;
@@ -61,10 +57,7 @@ _DEFUN(_diprintf_r, (ptr, fd, format),
 
 #ifndef _REENT_ONLY
 
-int
-_DEFUN(diprintf, (fd, format),
-       int fd _AND
-       const char *format _DOTS)
+int diprintf(int fd, const char *format, ...)
 {
   va_list ap;
   int n;

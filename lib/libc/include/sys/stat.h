@@ -22,6 +22,7 @@ extern "C" {
 #define stat64 __stat64
 #endif
 #else
+#define stat64 stat
 struct	stat 
 {
   dev_t		st_dev;

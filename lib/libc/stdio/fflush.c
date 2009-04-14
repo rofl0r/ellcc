@@ -65,10 +65,7 @@ No supporting OS subroutines are required.
 
 /* Flush a single file, or (if fp is NULL) all files.  */
 
-int
-_DEFUN(_fflush_r, (ptr, fp),
-       struct _reent *ptr _AND
-       register FILE * fp)
+int _fflush_r(struct _reent *ptr, register FILE * fp)
 {
   register unsigned char *p;
   register int n, t;
@@ -211,9 +208,7 @@ _DEFUN(_fflush_r, (ptr, fp),
 
 #ifndef _REENT_ONLY
 
-int
-_DEFUN(fflush, (fp),
-       register FILE * fp)
+int fflush(register FILE * fp)
 {
   if (fp == NULL)
     return _fwalk_reent (_GLOBAL_REENT, _fflush_r);

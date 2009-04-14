@@ -59,9 +59,7 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<getpid>>,
 
 #ifdef __LARGE64_FILES
 
-FILE *
-_DEFUN (_tmpfile64_r, (ptr),
-	struct _reent *ptr)
+FILE *_tmpfile64_r(struct _reent *ptr)
 {
   FILE *fp;
   int e;
@@ -83,17 +81,16 @@ _DEFUN (_tmpfile64_r, (ptr),
   e = ptr->_errno;
   if (!fp)
     _close_r (ptr, fd);
-  _CAST_VOID _remove_r (ptr, f);
+  (void)_remove_r (ptr, f);
   ptr->_errno = e;
   return fp;
 }
 
 #ifndef _REENT_ONLY
 
-FILE *
-_DEFUN_VOID (tmpfile64)
+FILE * tmpfile64(void)
 {
-  return _tmpfile64_r (_REENT);
+  return _tmpfile64_r(_REENT);
 }
 
 #endif

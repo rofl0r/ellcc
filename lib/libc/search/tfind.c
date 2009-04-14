@@ -12,11 +12,6 @@
  */
 
 #include <sys/cdefs.h>
-#if 0
-#if defined(LIBC_SCCS) && !defined(lint)
-__RCSID("$NetBSD: tfind.c,v 1.2 1999/09/16 11:45:37 lukem Exp $");
-#endif /* LIBC_SCCS and not lint */
-#endif
 
 #include <assert.h>
 #define _SEARCH_PRIVATE
@@ -24,11 +19,7 @@ __RCSID("$NetBSD: tfind.c,v 1.2 1999/09/16 11:45:37 lukem Exp $");
 #include <search.h>
 
 /* find a node, or return 0 */
-void *
-_DEFUN(tfind, (vkey, vrootp, compar),
-	const void *vkey _AND		/* key to be found */
-	void **vrootp _AND		/* address of the tree root */
-	int (*compar)(const void *, const void *))
+void *tfind(const void *vkey, void **vrootp, int (*compar)(const void *, const void *))
 {
 	node_t **rootp = (node_t **)vrootp;
 
