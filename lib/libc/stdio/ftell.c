@@ -92,16 +92,12 @@ static char sccsid[] = "%W% (Berkeley) %G%";
  * ftell: return current offset.
  */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <stdio.h>
 #include <errno.h>
 #include "local.h"
 
-long
-_DEFUN(_ftell_r, (ptr, fp),
-       struct _reent *ptr _AND
-       register FILE * fp)
+long _ftell_r(struct _reent *ptr, register FILE * fp)
 {
   _fpos_t pos;
 
@@ -167,9 +163,7 @@ _DEFUN(_ftell_r, (ptr, fp),
 
 #ifndef _REENT_ONLY
 
-long
-_DEFUN(ftell, (fp),
-       register FILE * fp)
+long ftell(register FILE * fp)
 {
   return _ftell_r (_REENT, fp);
 }

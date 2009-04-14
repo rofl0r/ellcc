@@ -16,7 +16,6 @@
  */
 /* No user fns here.  Pesch 15apr92. */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <stdio.h>
 #include <sys/types.h>
@@ -29,12 +28,7 @@
  * These maintain the `known seek offset' for seek optimisation.
  */
 
-_READ_WRITE_RETURN_TYPE
-_DEFUN(__sread, (ptr, cookie, buf, n),
-       struct _reent *ptr _AND
-       void *cookie _AND
-       char *buf _AND
-       int n)
+int __sread(struct _reent *ptr, void *cookie, char *buf, int n)
 {
   register FILE *fp = (FILE *) cookie;
   register int ret;
@@ -61,12 +55,7 @@ _DEFUN(__sread, (ptr, cookie, buf, n),
   return ret;
 }
 
-_READ_WRITE_RETURN_TYPE
-_DEFUN(__swrite, (ptr, cookie, buf, n),
-       struct _reent *ptr _AND
-       void *cookie _AND
-       char const *buf _AND
-       int n)
+int __swrite(struct _reent *ptr, void *cookie, char const *buf, int n)
 {
   register FILE *fp = (FILE *) cookie;
   int w;
@@ -93,12 +82,7 @@ _DEFUN(__swrite, (ptr, cookie, buf, n),
   return w;
 }
 
-_fpos_t
-_DEFUN(__sseek, (ptr, cookie, offset, whence),
-       struct _reent *ptr _AND
-       void *cookie _AND
-       _fpos_t offset _AND
-       int whence)
+_fpos_t __sseek(struct _reent *ptr, void *cookie, _fpos_t offset, int whence)
 {
   register FILE *fp = (FILE *) cookie;
   register _off_t ret;
@@ -114,10 +98,7 @@ _DEFUN(__sseek, (ptr, cookie, offset, whence),
   return ret;
 }
 
-int
-_DEFUN(__sclose, (ptr, cookie),
-       struct _reent *ptr _AND
-       void *cookie)
+int __sclose(struct _reent *ptr, void *cookie)
 {
   FILE *fp = (FILE *) cookie;
 
@@ -125,9 +106,7 @@ _DEFUN(__sclose, (ptr, cookie),
 }
 
 #ifdef __SCLE
-int
-_DEFUN(__stextmode, (fd),
-       int fd)
+int __stextmode(int fd)
 {
 #ifdef __CYGWIN__
   extern int _cygwin_istext_for_stdio (int);

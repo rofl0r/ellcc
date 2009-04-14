@@ -67,15 +67,10 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 <<lseek>>, <<read>>, <<sbrk>>, <<write>>.
 */
 
-#include <_ansi.h>
 #include <stdio.h>
 #include "local.h"
 
-_VOID
-_DEFUN(setbuffer, (fp, buf, size),
-       FILE * fp _AND
-       char *buf _AND
-       int size)
+void setbuffer(FILE * fp, char *buf, int size)
 {
-  _CAST_VOID setvbuf (fp, buf, buf ? _IOFBF : _IONBF, (size_t) size);
+  (void) setvbuf (fp, buf, buf ? _IOFBF : _IONBF, (size_t) size);
 }

@@ -38,7 +38,6 @@ PORTABILITY
 No supporting OS subroutines are directly required.
 */
 
-#include <_ansi.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
@@ -47,12 +46,7 @@ No supporting OS subroutines are directly required.
 #define MIN_LINE_SIZE 4
 #define DEFAULT_LINE_SIZE 128
 
-ssize_t
-_DEFUN(__getdelim, (bufptr, n, delim, fp),
-       char **bufptr _AND
-       size_t *n     _AND
-       int delim     _AND 
-       FILE *fp)
+ssize_t __getdelim(char **bufptr, size_t *n, int delim, FILE *fp)
 {
   char *buf;
   char *ptr;

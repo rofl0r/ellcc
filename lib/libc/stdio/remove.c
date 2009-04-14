@@ -61,14 +61,10 @@ open file may vary among implementations.
 Supporting OS subroutine required: <<unlink>>.
 */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <stdio.h>
 
-int
-_DEFUN(_remove_r, (ptr, filename),
-       struct _reent *ptr _AND
-       _CONST char *filename)
+int _remove_r(struct _reent *ptr, const char *filename)
 {
   if (_unlink_r (ptr, filename) == -1)
     return -1;
@@ -78,9 +74,7 @@ _DEFUN(_remove_r, (ptr, filename),
 
 #ifndef _REENT_ONLY
 
-int
-_DEFUN(remove, (filename),
-       _CONST char *filename)
+int remove(const char *filename)
 {
   return _remove_r (_REENT, filename);
 }

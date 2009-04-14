@@ -56,11 +56,6 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 <<lseek>>, <<read>>, <<sbrk>>, <<write>>.
 */
 
-#if defined(LIBC_SCCS) && !defined(lint)
-static char sccsid[] = "%W% (Berkeley) %G%";
-#endif /* LIBC_SCCS and not lint */
-
-#include <_ansi.h>
 #include <stdio.h>
 
 /*
@@ -69,11 +64,7 @@ static char sccsid[] = "%W% (Berkeley) %G%";
 
 #undef putc_unlocked
 
-int
-_DEFUN(_putc_unlocked_r, (ptr, c, fp),
-       struct _reent *ptr _AND
-       int c _AND
-       register FILE *fp)
+int _putc_unlocked_r(struct _reent *ptr, int c, register FILE *fp)
 {
   /* CHECK_INIT is (eventually) called by __swbuf.  */
 
@@ -81,10 +72,7 @@ _DEFUN(_putc_unlocked_r, (ptr, c, fp),
 }
 
 #ifndef _REENT_ONLY
-int
-_DEFUN(putc_unlocked, (c, fp),
-       int c _AND
-       register FILE *fp)
+int putc_unlocked(int c, register FILE *fp)
 {
   /* CHECK_INIT is (eventually) called by __swbuf.  */
 

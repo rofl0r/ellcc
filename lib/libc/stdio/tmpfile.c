@@ -45,7 +45,6 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<getpid>>,
 <<tmpfile>> also requires the global pointer <<environ>>.
 */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <stdio.h>
 #include <errno.h>
@@ -56,9 +55,7 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<getpid>>,
 # define O_BINARY 0
 #endif
 
-FILE *
-_DEFUN(_tmpfile_r, (ptr),
-       struct _reent *ptr)
+FILE *_tmpfile_r(struct _reent *ptr)
 {
   FILE *fp;
   int e;
@@ -80,15 +77,14 @@ _DEFUN(_tmpfile_r, (ptr),
   e = ptr->_errno;
   if (!fp)
     _close_r (ptr, fd);
-  _CAST_VOID _remove_r (ptr, f);
+  (void) _remove_r (ptr, f);
   ptr->_errno = e;
   return fp;
 }
 
 #ifndef _REENT_ONLY
 
-FILE *
-_DEFUN_VOID(tmpfile)
+FILE *tmpfile(void)
 {
   return _tmpfile_r (_REENT);
 }

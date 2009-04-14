@@ -102,12 +102,7 @@ typedef struct funcookie {
   funclose closefn;
 } funcookie;
 
-static _READ_WRITE_RETURN_TYPE
-_DEFUN(funreader, (ptr, cookie, buf, n),
-       struct _reent *ptr _AND
-       void *cookie _AND
-       char *buf _AND
-       int n)
+static int funreader(struct _reent *ptr, void *cookie, char *buf, int n)
 {
   int result;
   funcookie *c = (funcookie *) cookie;
@@ -117,12 +112,7 @@ _DEFUN(funreader, (ptr, cookie, buf, n),
   return result;
 }
 
-static _READ_WRITE_RETURN_TYPE
-_DEFUN(funwriter, (ptr, cookie, buf, n),
-       struct _reent *ptr _AND
-       void *cookie _AND
-       const char *buf _AND
-       int n)
+static int funwriter(struct _reent *ptr, void *cookie, const char *buf, int n)
 {
   int result;
   funcookie *c = (funcookie *) cookie;
@@ -132,12 +122,7 @@ _DEFUN(funwriter, (ptr, cookie, buf, n),
   return result;
 }
 
-static _fpos_t
-_DEFUN(funseeker, (ptr, cookie, off, whence),
-       struct _reent *ptr _AND
-       void *cookie _AND
-       _fpos_t off _AND
-       int whence)
+static _fpos_t funseeker(struct _reent *ptr, void *cookie, _fpos_t off, int whence)
 {
   funcookie *c = (funcookie *) cookie;
 #ifndef __LARGE64_FILES
@@ -160,12 +145,7 @@ _DEFUN(funseeker, (ptr, cookie, off, whence),
 }
 
 #ifdef __LARGE64_FILES
-static _fpos64_t
-_DEFUN(funseeker64, (ptr, cookie, off, whence),
-       struct _reent *ptr _AND
-       void *cookie _AND
-       _fpos64_t off _AND
-       int whence)
+static _fpos64_t funseeker64(struct _reent *ptr, void *cookie, _fpos64_t off, int whence)
 {
   _fpos64_t result;
   funcookie *c = (funcookie *) cookie;
@@ -176,10 +156,7 @@ _DEFUN(funseeker64, (ptr, cookie, off, whence),
 }
 #endif /* __LARGE64_FILES */
 
-static int
-_DEFUN(funcloser, (ptr, cookie),
-       struct _reent *ptr _AND
-       void *cookie)
+static int funcloser(struct _reent *ptr, void *cookie)
 {
   int result = 0;
   funcookie *c = (funcookie *) cookie;
@@ -193,14 +170,8 @@ _DEFUN(funcloser, (ptr, cookie),
   return result;
 }
 
-FILE *
-_DEFUN(_funopen_r, (ptr, cookie, readfn, writefn, seekfn, closefn),
-       struct _reent *ptr _AND
-       const void *cookie _AND
-       funread readfn _AND
-       funwrite writefn _AND
-       funseek seekfn _AND
-       funclose closefn)
+FILE * _funopen_r(struct _reent *ptr, const void *cookie,
+                  funread readfn, funwrite writefn, funseek seekfn, funclose closefn)
 {
   FILE *fp;
   funcookie *c;
@@ -265,13 +236,7 @@ _DEFUN(_funopen_r, (ptr, cookie, readfn, writefn, seekfn, closefn),
 }
 
 #ifndef _REENT_ONLY
-FILE *
-_DEFUN(funopen, (cookie, readfn, writefn, seekfn, closefn),
-       const void *cookie _AND
-       funread readfn _AND
-       funwrite writefn _AND
-       funseek seekfn _AND
-       funclose closefn)
+FILE * funopen(const void *cookie, funread readfn, funwrite writefn, funseek seekfn, funclose closefn)
 {
   return _funopen_r (_REENT, cookie, readfn, writefn, seekfn, closefn);
 }

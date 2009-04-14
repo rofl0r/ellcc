@@ -75,7 +75,6 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 static char sccsid[] = "%W% (Berkeley) %G%";
 #endif /* LIBC_SCCS and not lint */
 
-#include <_ansi.h>
 #include <stdio.h>
 #include "local.h"
 
@@ -85,10 +84,7 @@ static char sccsid[] = "%W% (Berkeley) %G%";
 
 #undef getc
 
-int
-_DEFUN(_getc_r, (ptr, fp),
-       struct _reent *ptr _AND
-       register FILE *fp)
+int _getc_r(struct _reent *ptr, register FILE *fp)
 {
   int result;
   CHECK_INIT (ptr, fp);
@@ -100,9 +96,7 @@ _DEFUN(_getc_r, (ptr, fp),
 
 #ifndef _REENT_ONLY
 
-int
-_DEFUN(getc, (fp),
-       register FILE *fp)
+int getc(register FILE *fp)
 {
   int result;
   CHECK_INIT (_REENT, fp);

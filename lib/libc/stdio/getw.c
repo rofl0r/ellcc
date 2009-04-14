@@ -51,16 +51,9 @@ PORTABILITY
 
 Supporting OS subroutines required: <<fread>>.  */
 
-#if defined(LIBC_SCCS) && !defined(lint)
-static char sccsid[] = "%W% (Berkeley) %G%";
-#endif /* LIBC_SCCS and not lint */
-
-#include <_ansi.h>
 #include <stdio.h>
 
-int
-_DEFUN(getw, (fp),
-       register FILE *fp)
+int getw(register FILE *fp)
 {
   int result;
   if (fread ((char*)&result, sizeof (result), 1, fp) != 1)

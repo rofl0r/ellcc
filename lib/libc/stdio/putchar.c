@@ -60,25 +60,17 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 <<lseek>>, <<read>>, <<sbrk>>, <<write>>.
 */
 
-#if defined(LIBC_SCCS) && !defined(lint)
-static char sccsid[] = "%W% (Berkeley) %G%";
-#endif /* LIBC_SCCS and not lint */
-
 /*
  * A subroutine version of the macro putchar.
  */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <stdio.h>
 #include "local.h"
 
 #undef putchar
 
-int
-_DEFUN(_putchar_r, (ptr, c),
-       struct _reent *ptr _AND
-       int c)
+int _putchar_r(struct _reent *ptr, int c)
 {
   _REENT_SMALL_CHECK_INIT (ptr);
   return _putc_r (ptr, c, _stdout_r (ptr));
@@ -86,9 +78,7 @@ _DEFUN(_putchar_r, (ptr, c),
 
 #ifndef _REENT_ONLY
 
-int
-_DEFUN(putchar, (c),
-       int c)
+int putchar(int c)
 {
   _REENT_SMALL_CHECK_INIT (_REENT);
   return _putc_r (_REENT, c, _stdout_r (_REENT));

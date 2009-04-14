@@ -18,33 +18,14 @@
 /* This code created by modifying snprintf.c so copyright inherited. */
 /* doc in siprintf.c */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <stdio.h>
-#ifdef _HAVE_STDC
 #include <stdarg.h>
-#else
-#include <varargs.h>
-#endif
 #include <limits.h>
 #include <errno.h>
 #include "local.h"
 
-int
-#ifdef _HAVE_STDC
-_DEFUN (_sniprintf_r, (ptr, str, size, fmt),
-	struct _reent *ptr _AND
-	char *str _AND
-	size_t size _AND
-	_CONST char *fmt _DOTS)
-#else
-_sniprintf_r (ptr, str, size, fmt, va_alist)
-     struct _reent *ptr;
-     char *str;
-     size_t size;
-     _CONST char *fmt;
-     va_dcl
-#endif
+int _sniprintf_r(struct _reent *ptr, char *str, size_t size, const char *fmt, ...)
 {
   int ret;
   va_list ap;
@@ -59,11 +40,7 @@ _sniprintf_r (ptr, str, size, fmt, va_alist)
   f._bf._base = f._p = (unsigned char *) str;
   f._bf._size = f._w = (size > 0 ? size - 1 : 0);
   f._file = -1;  /* No file. */
-#ifdef _HAVE_STDC
   va_start (ap, fmt);
-#else
-  va_start (ap);
-#endif
   ret = _svfiprintf_r (ptr, &f, fmt, ap);
   va_end (ap);
   if (ret < EOF)
@@ -75,19 +52,7 @@ _sniprintf_r (ptr, str, size, fmt, va_alist)
 
 #ifndef _REENT_ONLY
 
-int
-#ifdef _HAVE_STDC
-_DEFUN (sniprintf, (str, size, fmt),
-	char *str _AND
-	size_t size _AND
-	_CONST char *fmt _DOTS)
-#else
-sniprintf (str, size, fmt, va_alist)
-     char *str;
-     size_t size;
-     _CONST char *fmt;
-     va_dcl
-#endif
+int sniprintf(char *str, size_t size, const char *fmt, ...)
 {
   int ret;
   va_list ap;
@@ -103,11 +68,7 @@ sniprintf (str, size, fmt, va_alist)
   f._bf._base = f._p = (unsigned char *) str;
   f._bf._size = f._w = (size > 0 ? size - 1 : 0);
   f._file = -1;  /* No file. */
-#ifdef _HAVE_STDC
   va_start (ap, fmt);
-#else
-  va_start (ap);
-#endif
   ret = _svfiprintf_r (ptr, &f, fmt, ap);
   va_end (ap);
   if (ret < EOF)

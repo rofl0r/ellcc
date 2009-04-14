@@ -74,33 +74,17 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 <<lseek>>, <<read>>, <<sbrk>>, <<write>>.
 */
 
-#if defined(LIBC_SCCS) && !defined(lint)
-static char sccsid[] = "%W% (Berkeley) %G%";
-#endif /* LIBC_SCCS and not lint */
-
-#include <_ansi.h>
 #include <stdio.h>
 #include <string.h>
-#if 0
-#include <sys/stdc.h>
-#endif
 #include "local.h"
-#if 1
 #include "fvwrite.h"
-#endif
 
 /*
  * Write `count' objects (each size `size') from memory to the given file.
  * Return the number of whole objects written.
  */
 
-size_t
-_DEFUN(_fwrite_r, (ptr, buf, size, count, fp),
-       struct _reent * ptr _AND
-       _CONST _PTR buf _AND
-       size_t size     _AND
-       size_t count    _AND
-       FILE * fp)
+size_t _fwrite_r(struct _reent * ptr, const void * buf, size_t size, size_t count, FILE * fp)
 {
   size_t n;
   struct __suio uio;
@@ -130,12 +114,7 @@ _DEFUN(_fwrite_r, (ptr, buf, size, count, fp),
 }
 
 #ifndef _REENT_ONLY
-size_t
-_DEFUN(fwrite, (buf, size, count, fp),
-       _CONST _PTR buf _AND
-       size_t size     _AND
-       size_t count    _AND
-       FILE * fp)
+size_t fwrite(const void * buf, size_t size, size_t count, FILE * fp)
 {
   return _fwrite_r (_REENT, buf, size, count, fp);
 }

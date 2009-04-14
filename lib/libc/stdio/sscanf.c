@@ -379,43 +379,22 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 <<lseek>>, <<read>>, <<sbrk>>, <<write>>.
 */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <stdio.h>
 #include <string.h>
-#ifdef _HAVE_STDC
 #include <stdarg.h>
-#else
-#include <varargs.h>
-#endif
 #include "local.h"
 
 /* | ARGSUSED */
 /*SUPPRESS 590*/
-static _READ_WRITE_RETURN_TYPE
-_DEFUN(eofread, (ptr, cookie, buf, len),
-       struct _reent *ptr _AND
-       _PTR cookie _AND
-       char *buf   _AND
-       int len)
+static int eofread(struct _reent *ptr, void * cookie, char *buf, int len)
 {
   return 0;
 }
 
 #ifndef _REENT_ONLY 
 
-#ifdef _HAVE_STDC
-int 
-_DEFUN(sscanf, (str, fmt),
-       _CONST char *str _AND
-       _CONST char *fmt _DOTS)
-#else
-int 
-sscanf(str, fmt, va_alist)
-       _CONST char *str;
-       _CONST char *fmt;
-       va_dcl
-#endif
+int sscanf(const char *str, const char *fmt, ...)
 {
   int ret;
   va_list ap;
@@ -428,11 +407,7 @@ sscanf(str, fmt, va_alist)
   f._ub._base = NULL;
   f._lb._base = NULL;
   f._file = -1;  /* No file. */
-#ifdef _HAVE_STDC
   va_start (ap, fmt);
-#else
-  va_start (ap);
-#endif
   ret = __ssvfscanf_r (_REENT, &f, fmt, ap);
   va_end (ap);
   return ret;
@@ -440,20 +415,7 @@ sscanf(str, fmt, va_alist)
 
 #endif /* !_REENT_ONLY */
 
-#ifdef _HAVE_STDC
-int 
-_DEFUN(_sscanf_r, (ptr, str, fmt), 
-       struct _reent *ptr _AND
-       _CONST char *str   _AND
-       _CONST char *fmt _DOTS)
-#else
-int 
-_sscanf_r(ptr, str, fmt, va_alist)
-          struct _reent *ptr;
-          _CONST char *str;
-          _CONST char *fmt;
-          va_dcl
-#endif
+int _sscanf_r(struct _reent *ptr, const char *str  , const char *fmt, ...)
 {
   int ret;
   va_list ap;
@@ -466,11 +428,7 @@ _sscanf_r(ptr, str, fmt, va_alist)
   f._ub._base = NULL;
   f._lb._base = NULL;
   f._file = -1;  /* No file. */
-#ifdef _HAVE_STDC
   va_start (ap, fmt);
-#else
-  va_start (ap);
-#endif
   ret = __ssvfscanf_r (ptr, &f, fmt, ap);
   va_end (ap);
   return ret;

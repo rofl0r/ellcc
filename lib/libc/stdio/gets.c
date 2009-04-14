@@ -67,14 +67,10 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 <<lseek>>, <<read>>, <<sbrk>>, <<write>>.
 */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <stdio.h>
 
-char *
-_DEFUN(_gets_r, (ptr, buf),
-       struct _reent *ptr _AND
-       char *buf)
+char *_gets_r(struct _reent *ptr, char *buf)
 {
   register int c;
   register char *s = buf;
@@ -93,9 +89,7 @@ _DEFUN(_gets_r, (ptr, buf),
 
 #ifndef _REENT_ONLY
 
-char *
-_DEFUN(gets, (buf),
-       char *buf)
+char *gets(char *buf)
 {
   return _gets_r (_REENT, buf);
 }

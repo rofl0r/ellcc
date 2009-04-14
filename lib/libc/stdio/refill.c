@@ -16,15 +16,12 @@
  */
 /* No user fns here.  Pesch 15apr92. */
 
-#include <_ansi.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
 #include "local.h"
 
-static int
-_DEFUN(lflush, (fp),
-       FILE *fp)
+static int lflush(FILE *fp)
 {
   if ((fp->_flags & (__SLBF | __SWR)) == (__SLBF | __SWR))
     return fflush (fp);
@@ -36,10 +33,7 @@ _DEFUN(lflush, (fp),
  * Return EOF on eof or error, 0 otherwise.
  */
 
-int
-_DEFUN(__srefill_r, (ptr, fp),
-       struct _reent * ptr _AND
-       register FILE * fp)
+int __srefill_r(struct _reent * ptr, register FILE * fp)
 {
   /* make sure stdio is set up */
 
@@ -102,7 +96,7 @@ _DEFUN(__srefill_r, (ptr, fp),
    */
 
   if (fp->_flags & (__SLBF | __SNBF))
-    _CAST_VOID _fwalk (_GLOBAL_REENT, lflush);
+    (void) _fwalk (_GLOBAL_REENT, lflush);
   fp->_p = fp->_bf._base;
   fp->_r = fp->_read (ptr, fp->_cookie, (char *) fp->_p, fp->_bf._size);
   fp->_flags &= ~__SMOD;	/* buffer contents are again pristine */

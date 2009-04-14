@@ -63,24 +63,17 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 <<lseek>>, <<read>>, <<sbrk>>, <<write>>.
 */
 
-#if defined(LIBC_SCCS) && !defined(lint)
-static char sccsid[] = "%W% (Berkeley) %G%";
-#endif /* LIBC_SCCS and not lint */
-
 /*
  * A subroutine version of the macro getchar.
  */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <stdio.h>
 #include "local.h"
 
 #undef getchar
 
-int
-_DEFUN(_getchar_r, (reent),
-       struct _reent *reent)
+int _getchar_r(struct _reent *reent)
 {
   _REENT_SMALL_CHECK_INIT (reent);
   return _getc_r (reent, _stdin_r (reent));
@@ -88,12 +81,11 @@ _DEFUN(_getchar_r, (reent),
 
 #ifndef _REENT_ONLY
 
-int
-_DEFUN_VOID(getchar)
+int getchar(void)
 {
   /* CHECK_INIT is called (eventually) by __srefill_r.  */
   _REENT_SMALL_CHECK_INIT (_REENT);
-  return _getc_r (_REENT, _stdin_r (_REENT));
+  return _getc_r(_REENT, _stdin_r (_REENT));
 }
 
 #endif

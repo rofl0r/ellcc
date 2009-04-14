@@ -16,7 +16,6 @@
  */
 /* No user fns here.  Pesch 15apr92. */
 
-#include <_ansi.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -25,7 +24,7 @@
 #include "fvwrite.h"
 
 #define	MIN(a, b) ((a) < (b) ? (a) : (b))
-#define	COPY(n)	  _CAST_VOID memmove ((_PTR) fp->_p, (_PTR) p, (size_t) (n))
+#define	COPY(n)	  (void) memmove ((void *) fp->_p, (void *) p, (size_t) (n))
 
 #define GETIOV(extra_work) \
   while (len == 0) \
@@ -43,14 +42,10 @@
  * to the three different kinds of output buffering is handled here.
  */
 
-int
-_DEFUN(__sfvwrite_r, (ptr, fp, uio),
-       struct _reent *ptr _AND
-       register FILE *fp _AND
-       register struct __suio *uio)
+int __sfvwrite_r(struct _reent *ptr, register FILE *fp, register struct __suio *uio)
 {
   register size_t len;
-  register _CONST char *p = NULL;
+  register const char *p = NULL;
   register struct __siov *iov;
   register int w, s;
   char *nl;
@@ -224,7 +219,7 @@ _DEFUN(__sfvwrite_r, (ptr, fp, uio),
 	  GETIOV (nlknown = 0);
 	  if (!nlknown)
 	    {
-	      nl = memchr ((_PTR) p, '\n', len);
+	      nl = memchr ((void *) p, '\n', len);
 	      nldist = nl ? nl + 1 - p : len + 1;
 	      nlknown = 1;
 	    }

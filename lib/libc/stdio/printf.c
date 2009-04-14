@@ -16,16 +16,12 @@
  */
 /* doc in sprintf.c */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include "local.h"
 
-int
-_DEFUN(_printf_r, (ptr, fmt),
-       struct _reent *ptr _AND
-       const char *fmt _DOTS)
+int _printf_r(struct _reent *ptr, const char *fmt, ...)
 {
   int ret;
   va_list ap;
@@ -39,9 +35,7 @@ _DEFUN(_printf_r, (ptr, fmt),
 
 #ifndef _REENT_ONLY
 
-int
-_DEFUN(printf, (fmt),
-       const char *fmt _DOTS)
+int printf(const char *fmt, ...)
 {
   int ret;
   va_list ap;

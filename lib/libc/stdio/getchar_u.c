@@ -55,31 +55,23 @@ be implemented as a macro.
 Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 <<lseek>>, <<read>>, <<sbrk>>, <<write>>.  */
 
-#if defined(LIBC_SCCS) && !defined(lint)
-static char sccsid[] = "%W% (Berkeley) %G%";
-#endif /* LIBC_SCCS and not lint */
-
 /*
  * A subroutine version of the macro getchar_unlocked.
  */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <stdio.h>
 
 #undef getchar_unlocked
 
-int
-_DEFUN(_getchar_unlocked_r, (ptr),
-       struct _reent *ptr)
+int _getchar_unlocked_r(struct _reent *ptr)
 {
-  return _getc_unlocked_r (ptr, _stdin_r (ptr));
+  return _getc_unlocked_r(ptr, _stdin_r (ptr));
 }
 
 #ifndef _REENT_ONLY
 
-int
-_DEFUN_VOID(getchar_unlocked)
+int getchar_unlocked(void)
 {
   /* CHECK_INIT is called (eventually) by __srefill_r.  */
 

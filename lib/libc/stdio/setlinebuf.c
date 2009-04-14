@@ -56,13 +56,10 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 <<lseek>>, <<read>>, <<sbrk>>, <<write>>.
 */
 
-#include <_ansi.h>
 #include <stdio.h>
 #include "local.h"
 
-int
-_DEFUN(setlinebuf, (fp),
-       FILE * fp)
+int setlinebuf(FILE * fp)
 {
   return (setvbuf (fp, (char *) NULL, _IOLBF, (size_t) 0));
 }

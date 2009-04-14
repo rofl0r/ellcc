@@ -46,33 +46,23 @@ be implemented as a macro.
 Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 <<lseek>>, <<read>>, <<sbrk>>, <<write>>.  */
 
-#if defined(LIBC_SCCS) && !defined(lint)
-static char sccsid[] = "%W% (Berkeley) %G%";
-#endif /* LIBC_SCCS and not lint */
-
 /*
  * A subroutine version of the macro putchar_unlocked.
  */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <stdio.h>
 
 #undef putchar_unlocked
 
-int
-_DEFUN(_putchar_unlocked_r, (ptr, c),
-       struct _reent *ptr _AND
-       int c)
+int _putchar_unlocked_r(struct _reent *ptr, int c)
 {
   return putc_unlocked (c, _stdout_r (ptr));
 }
 
 #ifndef _REENT_ONLY
 
-int
-_DEFUN(putchar_unlocked, (c),
-       int c)
+int putchar_unlocked(int c)
 {
   /* CHECK_INIT is (eventually) called by __swbuf.  */
 

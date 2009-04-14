@@ -16,7 +16,6 @@
  */
 /* No user fns here.  Pesch 15apr92. */
 
-#include <_ansi.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h>
@@ -34,13 +33,10 @@
  * optimization) right after the _fstat() that finds the buffer size.
  */
 
-_VOID
-_DEFUN(__smakebuf_r, (ptr, fp),
-       struct _reent *ptr _AND
-       register FILE *fp)
+void __smakebuf_r(struct _reent *ptr, register FILE *fp)
 {
   register size_t size, couldbetty;
-  register _PTR p;
+  register void * p;
 #ifdef __USE_INTERNAL_STAT64
   struct stat64 st;
 #else

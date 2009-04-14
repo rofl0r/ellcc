@@ -92,7 +92,6 @@ V Interface Definition requires <<mktemp>> as of Issue 2.
 Supporting OS subroutines required: <<getpid>>, <<open>>, <<stat>>.
 */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <sys/types.h>
 #include <fcntl.h>
@@ -101,11 +100,7 @@ Supporting OS subroutines required: <<getpid>>, <<open>>, <<stat>>.
 #include <stdio.h>
 #include <ctype.h>
 
-static int
-_DEFUN(_gettemp, (ptr, path, doopen),
-       struct _reent *ptr _AND
-       char *path         _AND
-       register int *doopen)
+static int _gettemp(struct _reent *ptr, char *path        , register int *doopen)
 {
   register char *start, *trv;
 #ifdef __USE_INTERNAL_STAT64
@@ -193,38 +188,28 @@ _DEFUN(_gettemp, (ptr, path, doopen),
   /*NOTREACHED*/
 }
 
-int
-_DEFUN(_mkstemp_r, (ptr, path),
-       struct _reent *ptr _AND
-       char *path)
+int _mkstemp_r(struct _reent *ptr, char *path)
 {
   int fd;
 
   return (_gettemp (ptr, path, &fd) ? fd : -1);
 }
 
-char *
-_DEFUN(_mktemp_r, (ptr, path),
-       struct _reent *ptr _AND
-       char *path)
+char *_mktemp_r(struct _reent *ptr, char *path)
 {
   return (_gettemp (ptr, path, (int *) NULL) ? path : (char *) NULL);
 }
 
 #ifndef _REENT_ONLY
 
-int
-_DEFUN(mkstemp, (path),
-       char *path)
+int mkstemp(char *path)
 {
   int fd;
 
   return (_gettemp (_REENT, path, &fd) ? fd : -1);
 }
 
-char *
-_DEFUN(mktemp, (path),
-       char *path)
+char * mktemp(char *path)
 {
   return (_gettemp (_REENT, path, (int *) NULL) ? path : (char *) NULL);
 }

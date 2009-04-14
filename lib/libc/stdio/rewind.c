@@ -52,28 +52,18 @@ ANSI C requires <<rewind>>.
 No supporting OS subroutines are required.
 */
 
-#if defined(LIBC_SCCS) && !defined(lint)
-static char sccsid[] = "%W% (Berkeley) %G%";
-#endif /* LIBC_SCCS and not lint */
-
-#include <_ansi.h>
 #include <reent.h>
 #include <stdio.h>
 
-_VOID
-_DEFUN(_rewind_r, (ptr, fp),
-       struct _reent * ptr _AND
-       register FILE * fp)
+void _rewind_r(struct _reent * ptr, register FILE * fp)
 {
-  _CAST_VOID _fseek_r (ptr, fp, 0L, SEEK_SET);
+  (void)_fseek_r(ptr, fp, 0L, SEEK_SET);
   clearerr (fp);
 }
 
 #ifndef _REENT_ONLY
 
-_VOID
-_DEFUN(rewind, (fp),
-       register FILE * fp)
+void rewind(register FILE * fp)
 {
   _rewind_r (_REENT, fp);
 }

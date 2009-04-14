@@ -58,11 +58,6 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 <<lseek>>, <<read>>, <<sbrk>>, <<write>>.
 */
 
-#if defined(LIBC_SCCS) && !defined(lint)
-static char sccsid[] = "%W% (Berkeley) %G%";
-#endif /* LIBC_SCCS and not lint */
-
-#include <_ansi.h>
 #include <reent.h>
 #include <stdio.h>
 #include <string.h>
@@ -73,10 +68,7 @@ static char sccsid[] = "%W% (Berkeley) %G%";
  * Write the given string to stdout, appending a newline.
  */
 
-int
-_DEFUN(_puts_r, (ptr, s),
-       struct _reent *ptr _AND
-       _CONST char * s)
+int _puts_r(struct _reent *ptr, const char * s)
 {
   size_t c = strlen (s);
   struct __suio uio;
@@ -96,9 +88,7 @@ _DEFUN(_puts_r, (ptr, s),
 
 #ifndef _REENT_ONLY
 
-int
-_DEFUN(puts, (s),
-       char _CONST * s)
+int puts(char const * s)
 {
   return _puts_r (_REENT, s);
 }

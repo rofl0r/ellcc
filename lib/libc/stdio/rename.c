@@ -52,17 +52,13 @@ as <<*<[new]>>> may vary from one implementation to another.
 Supporting OS subroutines required: <<link>>, <<unlink>>, or <<rename>>.
 */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <stdio.h>
 #include <sys/unistd.h>
 
 #ifndef _REENT_ONLY
 
-int
-_DEFUN(rename, (old, new),
-       _CONST char *old _AND
-       _CONST char *new)
+int rename(const char *old, const char *new)
 {
   return _rename_r (_REENT, old, new);
 }

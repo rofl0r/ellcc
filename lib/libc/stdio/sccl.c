@@ -17,7 +17,6 @@
 
 /* Split from vfscanf.c  */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <newlib.h>
 #include <stdio.h>
@@ -30,10 +29,7 @@
  * considered part of the scanset.
  */
 
-u_char *
-_DEFUN(__sccl, (tab, fmt),
-       register char *tab _AND
-       register u_char *fmt)
+u_char *__sccl(register char *tab, register u_char *fmt)
 {
   register int c, n, v;
 

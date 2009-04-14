@@ -86,7 +86,6 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 <<lseek>>, <<read>>, <<sbrk>>, <<write>>.
 */
 
-#include <_ansi.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include "local.h"
@@ -95,12 +94,7 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
  * Set one of the three kinds of buffering, optionally including a buffer.
  */
 
-int
-_DEFUN(setvbuf, (fp, buf, mode, size),
-       register FILE * fp _AND
-       char *buf          _AND
-       register int mode  _AND
-       register size_t size)
+int setvbuf(register FILE * fp, char *buf, register int mode, register size_t size)
 {
   int ret = 0;
 
@@ -130,7 +124,7 @@ _DEFUN(setvbuf, (fp, buf, mode, size),
   fp->_r = 0;
   fp->_lbfsize = 0;
   if (fp->_flags & __SMBF)
-    _free_r (_REENT, (_PTR) fp->_bf._base);
+    _free_r (_REENT, (void *) fp->_bf._base);
   fp->_flags &= ~(__SLBF | __SNBF | __SMBF);
 
   if (mode == _IONBF)

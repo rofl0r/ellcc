@@ -61,16 +61,12 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 <<lseek>>, <<read>>, <<sbrk>>, <<write>>.
 */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <stdio.h>
 #include <string.h>
 #include "local.h"
 
-_VOID
-_DEFUN(_perror_r, (ptr, s),
-       struct _reent *ptr _AND
-       _CONST char *s)
+void _perror_r(struct _reent *ptr, const char *s)
 {
   char *error;
 
@@ -89,9 +85,7 @@ _DEFUN(_perror_r, (ptr, s),
 
 #ifndef _REENT_ONLY
 
-_VOID
-_DEFUN(perror, (s),
-       _CONST char *s)
+void perror(const char *s)
 {
   _perror_r (_REENT, s);
 }
