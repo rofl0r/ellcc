@@ -2,10 +2,7 @@
 
 #include <reent.h>
 
-int
-_DEFUN (link, (old, new),
-     char *old _AND
-     char *new)
+int link(char *old, char *new)
 {
-  return _link_r (_REENT, old, new);
+  return _link_r(_REENT, old, new);
 }

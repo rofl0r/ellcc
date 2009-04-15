@@ -6,10 +6,9 @@
 
 #include <reent.h>
 
-int
-_DEFUN_VOID (fork)
+int fork(void)
 {
-  return _fork_r (_REENT);
+  return _fork_r(_REENT);
 }
 
 #endif

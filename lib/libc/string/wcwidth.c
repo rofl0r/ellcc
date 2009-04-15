@@ -36,14 +36,10 @@ PORTABILITY
 <<wcwidth>> has been marked as an extension in the Single UNIX Specification Volume 3.
 */
 
-#include <_ansi.h>
 #include <wchar.h>
 #include <wctype.h>
 
-int
-_DEFUN (wcwidth, (wc),
-	_CONST wchar_t wc)
-
+int wcwidth(const wchar_t wc)
 {
   if (iswprint (wc))
     return 1;

@@ -61,15 +61,10 @@ No supporting OS subroutines are required.
  *	citrus Id: wmemcpy.c,v 1.2 2000/12/20 14:08:31 itojun Exp
  */
 
-#include <_ansi.h>
 #include <string.h>
 #include <wchar.h>
 
-wchar_t *
-_DEFUN (wmemcpy, (d, s, n),
-	wchar_t * d _AND
-	_CONST wchar_t * s _AND
-	size_t n)
+wchar_t *wmemcpy(wchar_t * d, const wchar_t * s, size_t n)
 {
 
   return (wchar_t *) memcpy (d, s, n * sizeof (wchar_t));

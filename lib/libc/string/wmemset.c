@@ -61,14 +61,9 @@ No supporting OS subroutines are required.
  *	citrus Id: wmemset.c,v 1.2 2000/12/20 14:08:31 itojun Exp
  */
 
-#include <_ansi.h>
 #include <wchar.h>
 
-wchar_t	*
-_DEFUN(wmemset, (s, c, n),
-	wchar_t *s _AND
-	wchar_t c _AND
-	size_t n)
+wchar_t	*wmemset(wchar_t *s, wchar_t c, size_t n)
 {
 	size_t i;
 	wchar_t *p;

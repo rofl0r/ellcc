@@ -2,9 +2,7 @@
 
 #include <reent.h>
 
-int
-_DEFUN (unlink, (file),
-        char *file)
+int unlink(char *file)
 {
-  return _unlink_r (_REENT, file);
+  return _unlink_r(_REENT, file);
 }

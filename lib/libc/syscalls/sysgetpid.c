@@ -2,8 +2,7 @@
 
 #include <reent.h>
 
-int
-_DEFUN_VOID (getpid)
+int getpid(void)
 {
-  return _getpid_r (_REENT);
+  return _getpid_r(_REENT);
 }

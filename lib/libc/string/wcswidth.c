@@ -35,14 +35,9 @@ PORTABILITY
 <<wcswidth>> has been marked as an extension in the Single UNIX Specification Volume 3.
 */
 
-#include <_ansi.h>
 #include <wchar.h>
 
-int
-_DEFUN (wcswidth, (pwcs, n),
-	_CONST wchar_t *pwcs _AND
-	size_t n)
-
+int wcswidth(const wchar_t *pwcs, size_t n)
 {
   int w, len = 0;
   if (!pwcs || n == 0)

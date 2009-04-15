@@ -64,14 +64,9 @@ No supporting OS subroutines are required.
  *	citrus Id: wmemcmp.c,v 1.2 2000/12/20 14:08:31 itojun Exp
  */
 
-#include <_ansi.h>
 #include <wchar.h>
 
-int
-_DEFUN (wmemcmp, (s1, s2, n),
-	_CONST wchar_t * s1 _AND
-	_CONST wchar_t * s2 _AND
-	size_t n)
+int wmemcmp(const wchar_t * s1, const wchar_t * s2, size_t n)
 {
   size_t i;
 

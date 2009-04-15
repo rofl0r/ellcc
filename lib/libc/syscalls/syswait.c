@@ -2,9 +2,7 @@
 
 #include <reent.h>
 
-int
-_DEFUN (wait, (status),
-        int *status)
+int wait(int *status)
 {
-  return _wait_r (_REENT, status);
+  return _wait_r(_REENT, status);
 }

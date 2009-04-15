@@ -4,11 +4,7 @@
 #include <reent.h>
 #include <errno.h>
 
-int
-_DEFUN (fcntl, (fd, flag, arg),
-     int fd _AND
-     int flag _AND
-     int arg)
+int fcntl(int fd, int flag, int arg)
 {
 #ifdef HAVE_FCNTL
   return _fcntl_r (_REENT, fd, flag, arg);

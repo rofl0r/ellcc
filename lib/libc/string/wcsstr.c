@@ -60,18 +60,14 @@ PORTABILITY
  *	citrus Id: wcsstr.c,v 1.2 2000/12/21 05:07:25 itojun Exp
  */
 
-#include <_ansi.h>
 #include <stddef.h>
 #include <wchar.h>
 
-wchar_t *
-_DEFUN (wcsstr, (big, little),
-	_CONST wchar_t * big _AND
-	_CONST wchar_t * little)
+wchar_t *wcsstr(const wchar_t * big, const wchar_t * little)
 {
-  _CONST wchar_t *p;
-  _CONST wchar_t *q;
-  _CONST wchar_t *r;
+  const wchar_t *p;
+  const wchar_t *q;
+  const wchar_t *r;
 
   if (!*little)
     {

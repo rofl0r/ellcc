@@ -38,15 +38,9 @@ PORTABILITY
 <<wcsxfrm>> is ISO/IEC 9899/AMD1:1995 (ISO C).
 */
 
-#include <_ansi.h>
 #include <wchar.h>
 
-size_t
-_DEFUN (wcsxfrm, (a, b, n),
-	wchar_t *a _AND
-	_CONST wchar_t *b _AND
-	size_t n)
-
+size_t wcsxfrm(wchar_t *a, const wchar_t *b, size_t n)
 {
   return wcslcpy (a, b, n);
 }

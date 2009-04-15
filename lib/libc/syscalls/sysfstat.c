@@ -3,10 +3,7 @@
 #include <reent.h>
 #include <unistd.h>
 
-int
-_DEFUN (fstat, (fd, pstat),
-     int fd _AND
-     struct stat *pstat)
+int fstat(int fd, struct stat *pstat)
 {
-  return _fstat_r (_REENT, fd, pstat);
+  return _fstat_r(_REENT, fd, pstat);
 }
