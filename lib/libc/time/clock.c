@@ -5,8 +5,6 @@
 
 #ifdef CLOCK_PROVIDED
 
-int _dummy_clock = 1;
-
 #else
 
 /*
@@ -53,8 +51,7 @@ Supporting OS subroutine required: <<times>>.
 #include <sys/times.h>
 #include <reent.h>
 
-clock_t 
-clock ()
+clock_t clock()
 {
   struct tms tim_s;
   clock_t res;
