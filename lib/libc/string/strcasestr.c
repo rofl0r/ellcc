@@ -90,9 +90,7 @@ QUICKREF
 /*
  * Find the first occurrence of find in s, ignore case.
  */
-char *
-strcasestr(s, find)
-	const char *s, *find;
+char *strcasestr(const char *s, const char *find)
 {
 #if defined(PREFER_SIZE_OVER_SPEED) || defined(__OPTIMIZE_SIZE__)
 

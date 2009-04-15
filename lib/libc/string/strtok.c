@@ -83,17 +83,13 @@ QUICKREF
 /* undef STRICT_ANSI so that strtok_r prototype will be defined */
 #undef  __STRICT_ANSI__
 #include <string.h>
-#include <_ansi.h>
 #include <reent.h>
 
 #ifndef _REENT_ONLY
 
 extern char *__strtok_r (char *, const char *, char **, int);
 
-char *
-_DEFUN (strtok, (s, delim),
-	register char *s _AND
-	register const char *delim)
+char *strtok(register char *s, register const char *delim)
 {
 	_REENT_CHECK_MISC(_REENT);
 	return __strtok_r (s, delim, &(_REENT_STRTOK_LAST(_REENT)), 1);

@@ -35,10 +35,7 @@ QUICKREF
 
 #include <string.h>
 
-char *
-_DEFUN (index, (s, c),
-	_CONST char *s _AND
-	int c)
+char *index(const char *s, int c)
 {
-  return strchr (s, c);
+  return strchr(s, c);
 }

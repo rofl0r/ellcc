@@ -64,7 +64,6 @@ No supporting OS subroutines are required.
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <_ansi.h>
 #include <wchar.h>
 
 /*
@@ -74,14 +73,10 @@ No supporting OS subroutines are required.
  * Returns wcslen(initial dst) + wcslen(src); if retval >= siz,
  * truncation occurred.
  */
-size_t
-_DEFUN (wcslcat, (dst, src, siz),
-	wchar_t * dst _AND
-	_CONST wchar_t * src _AND
-	size_t siz)
+size_t wcslcat(wchar_t * dst, const wchar_t * src, size_t siz)
 {
   wchar_t *d = dst;
-  _CONST wchar_t *s = src;
+  const wchar_t *s = src;
   size_t n = siz;
   size_t dlen;
 

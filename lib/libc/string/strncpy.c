@@ -64,15 +64,11 @@ QUICKREF
 
 #define TOO_SMALL(LEN) ((LEN) < sizeof (long))
 
-char *
-_DEFUN (strncpy, (dst0, src0),
-	char *dst0 _AND
-	_CONST char *src0 _AND
-	size_t count)
+char *strncpy(char *dst0, const char *src0, size_t count)
 {
 #if defined(PREFER_SIZE_OVER_SPEED) || defined(__OPTIMIZE_SIZE__)
   char *dscan;
-  _CONST char *sscan;
+  const char *sscan;
 
   dscan = dst0;
   sscan = src0;
@@ -88,9 +84,9 @@ _DEFUN (strncpy, (dst0, src0),
   return dst0;
 #else
   char *dst = dst0;
-  _CONST char *src = src0;
+  const char *src = src0;
   long *aligned_dst;
-  _CONST long *aligned_src;
+  const long *aligned_src;
 
   /* If SRC and DEST is aligned and count large enough, then copy words.  */
   if (!UNALIGNED (src, dst) && !TOO_SMALL (count))

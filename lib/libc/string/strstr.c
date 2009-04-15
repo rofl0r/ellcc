@@ -44,10 +44,7 @@ QUICKREF
 # include "str-two-way.h"
 #endif
 
-char *
-_DEFUN (strstr, (searchee, lookfor),
-	_CONST char *searchee _AND
-	_CONST char *lookfor)
+char *strstr(const char *searchee, const char *lookfor)
 {
 #if defined(PREFER_SIZE_OVER_SPEED) || defined(__OPTIMIZE_SIZE__)
 

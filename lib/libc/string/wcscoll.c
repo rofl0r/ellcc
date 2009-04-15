@@ -35,13 +35,9 @@ PORTABILITY
 <<wcscoll>> is ISO/IEC 9899/AMD1:1995 (ISO C).
 */
 
-#include <_ansi.h>
 #include <wchar.h>
 
-int
-_DEFUN (wcscoll, (a, b),
-	_CONST wchar_t *a _AND
-	_CONST wchar_t *b)
+int wcscoll(const wchar_t *a, const wchar_t *b)
 
 {
   return wcscmp (a, b);

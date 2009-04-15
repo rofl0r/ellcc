@@ -40,11 +40,7 @@ PORTABILITY
 #include <errno.h>
 #include <string.h>
 
-char *
-_DEFUN (strerror_r, (errnum, buffer, n),
-	int errnum _AND
-	char *buffer _AND
-	size_t n)
+char *strerror_r(int errnum, char *buffer, size_t n)
 {
   char *error;
   error = strerror (errnum);

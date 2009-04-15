@@ -41,10 +41,7 @@ QUICKREF
 #include <string.h>
 #include <ctype.h>
 
-int
-_DEFUN (strcasecmp, (s1, s2),
-	_CONST char *s1 _AND
-	_CONST char *s2)
+int strcasecmp(const char *s1, const char *s2)
 {
   while (*s1 != '\0' && tolower(*s1) == tolower(*s2))
     {

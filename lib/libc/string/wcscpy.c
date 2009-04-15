@@ -57,16 +57,12 @@ No supporting OS subroutines are required.
  *	citrus Id: wcscpy.c,v 1.2 2000/12/21 04:51:09 itojun Exp
  */
 
-#include <_ansi.h>
 #include <wchar.h>
 
-wchar_t *
-_DEFUN (wcscpy, (s1, s2),
-	wchar_t * s1 _AND
-	_CONST wchar_t * s2)
+wchar_t *wcscpy(wchar_t * s1, const wchar_t * s2)
 {
   wchar_t *p;
-  _CONST wchar_t *q;
+  const wchar_t *q;
 
   *s1 = '\0';
   p = s1;

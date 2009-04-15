@@ -37,11 +37,7 @@ QUICKREF
 
 #include <string.h>
 
-int
-_DEFUN (bcmp, (m1, m2, n),
-	_CONST void *m1 _AND
-	_CONST void *m2 _AND
-	size_t n)
+int bcmp(const void *m1, const void *m2, size_t n)
 
 {
   return memcmp (m1, m2, n);

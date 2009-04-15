@@ -9,3 +9,5 @@
 #define USE_LOCALE // Uncomment if locale should be used.
 #define IEEE_Arith // Uncomment if IEEE floating point should be used.
 #define _MB_CAPABLE // Uncomment if multibyte characters should be used.
+
+PREFER_SIZE_OVER_SPEED __OPTIMIZE_SIZE__ Optimize for size.

@@ -59,10 +59,7 @@ QUICKREF
 /*SUPPRESS 560*/
 /*SUPPRESS 530*/
 
-char *
-_DEFUN (strcat, (s1, s2),
-	char *s1 _AND
-	_CONST char *s2)
+char *strcat(char *s1, const char *s2)
 {
 #if defined(PREFER_SIZE_OVER_SPEED) || defined(__OPTIMIZE_SIZE__)
   char *s = s1;

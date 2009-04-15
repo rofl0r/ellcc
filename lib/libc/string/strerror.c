@@ -310,12 +310,10 @@ QUICKREF
 #include <errno.h>
 #include <string.h>
 
-char *
-_DEFUN (strerror, (errnum),
-	int errnum)
+char *strerror(int errnum)
 {
   char *error;
-  extern char *_user_strerror _PARAMS ((int));
+  extern char *_user_strerror (int);
 
   switch (errnum)
     {

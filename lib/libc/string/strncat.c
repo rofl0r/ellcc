@@ -63,11 +63,7 @@ QUICKREF
 #error long int is not a 32bit or 64bit byte
 #endif
 
-char *
-_DEFUN (strncat, (s1, s2, n),
-	char *s1 _AND
-	_CONST char *s2 _AND
-	size_t n)
+char *strncat(char *s1, const char *s2, size_t n)
 {
 #if defined(PREFER_SIZE_OVER_SPEED) || defined(__OPTIMIZE_SIZE__)
   char *s = s1;

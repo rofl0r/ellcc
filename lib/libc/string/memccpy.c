@@ -34,7 +34,6 @@ PORTABILITY
 
 	*/
 
-#include <_ansi.h>
 #include <stddef.h>
 #include <string.h>
 #include <limits.h>
@@ -61,17 +60,10 @@ PORTABILITY
 #endif
 #endif
 
-
-_PTR
-_DEFUN (memccpy, (dst0, src0, endchar, len0),
-	_PTR dst0 _AND
-	_CONST _PTR src0 _AND
-	int endchar0 _AND
-	size_t len0)
+void *memccpy(void * dst0, const void * src0, int endchar0, size_t len0)
 {
-
 #if defined(PREFER_SIZE_OVER_SPEED) || defined(__OPTIMIZE_SIZE__)
-  _PTR ptr = NULL;
+  void * ptr = NULL;
   char *dst = (char *) dst0;
   char *src = (char *) src0;
   char endchar = endchar0 & 0xff;
@@ -87,11 +79,11 @@ _DEFUN (memccpy, (dst0, src0, endchar, len0),
 
   return ptr;
 #else
-  _PTR ptr = NULL;
+  void * ptr = NULL;
   char *dst = dst0;
-  _CONST char *src = src0;
+  const char *src = src0;
   long *aligned_dst;
-  _CONST long *aligned_src;
+  const long *aligned_src;
   int   len =  len0;
   char endchar = endchar0 & 0xff;
 

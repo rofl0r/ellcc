@@ -38,11 +38,7 @@ QUICKREF
 
 #include <string.h>
 
-int
-_DEFUN (strcoll, (a, b),
-	_CONST char *a _AND
-	_CONST char *b)
-
+int strcoll(const char *a, const char *b)
 {
   return strcmp (a, b);
 }

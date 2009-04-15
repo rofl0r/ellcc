@@ -45,12 +45,7 @@ QUICKREF
 # include "str-two-way.h"
 #endif
 
-void *
-_DEFUN (memmem, (haystack_start, haystack_len, needle_start, needle_len),
-	const void *haystack_start _AND
-	size_t haystack_len _AND
-	const void *needle_start _AND
-	size_t needle_len)
+void *memmem(const void *haystack_start, size_t haystack_len, const void *needle_start, size_t needle_len)
 {
   /* Abstract memory is considered to be an array of 'unsigned char' values,
      not an array of 'char' values.  See ISO C 99 section 6.2.6.1.  */

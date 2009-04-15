@@ -36,7 +36,6 @@ QUICKREF
 */
 
 #include <string.h>
-#include <_ansi.h>
 #include <stddef.h>
 #include <limits.h>
 
@@ -54,15 +53,11 @@ QUICKREF
 #define TOO_SMALL(LEN)  ((LEN) < BIGBLOCKSIZE)
 
 /*SUPPRESS 20*/
-_PTR
-_DEFUN (memmove, (dst_void, src_void, length),
-	_PTR dst_void _AND
-	_CONST _PTR src_void _AND
-	size_t length)
+void *memmove(void * dst_void, const void * src_void, size_t length)
 {
 #if defined(PREFER_SIZE_OVER_SPEED) || defined(__OPTIMIZE_SIZE__)
   char *dst = dst_void;
-  _CONST char *src = src_void;
+  const char *src = src_void;
 
   if (src < dst && dst < src + length)
     {
@@ -85,9 +80,9 @@ _DEFUN (memmove, (dst_void, src_void, length),
   return dst_void;
 #else
   char *dst = dst_void;
-  _CONST char *src = src_void;
+  const char *src = src_void;
   long *aligned_dst;
-  _CONST long *aligned_src;
+  const long *aligned_src;
   int   len =  length;
 
   if (src < dst && dst < src + len)

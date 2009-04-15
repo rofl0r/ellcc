@@ -34,14 +34,9 @@ PORTABILITY
 No supporting OS subroutines are required.
 */
 
-#include <_ansi.h>
 #include <wchar.h>
 
-wchar_t *
-_DEFUN (wcpncpy, (dst, src, count),
-	wchar_t * dst _AND
-	_CONST wchar_t * src _AND
-	size_t count)
+wchar_t *wcpncpy(wchar_t * dst, const wchar_t * src, size_t count)
 {
   wchar_t *ret = NULL;
 

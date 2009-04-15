@@ -4,10 +4,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-char *
-_DEFUN (strdup, (str), _CONST char *str)
+char *strdup(const char *str)
 {
-  return _strdup_r (_REENT, str);
+  return _strdup_r(_REENT, str);
 }
 
 #endif /* !_REENT_ONLY */

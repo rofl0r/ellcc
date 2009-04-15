@@ -58,16 +58,12 @@ No supporting OS subroutines are required.
  *	citrus Id: wcschr.c,v 1.2 2000/12/21 05:07:25 itojun Exp
  */
 
-#include <_ansi.h>
 #include <stddef.h>
 #include <wchar.h>
 
-wchar_t *
-_DEFUN (wcschr, (s, c),
-	_CONST wchar_t * s _AND
-	wchar_t c)
+wchar_t *wcschr(const wchar_t * s, wchar_t c)
 {
-  _CONST wchar_t *p;
+  const wchar_t *p;
 
   p = s;
   do

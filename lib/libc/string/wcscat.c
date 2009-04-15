@@ -61,17 +61,13 @@ No supporting OS subroutines are required.
  *	citrus Id: wcscat.c,v 1.1 1999/12/29 21:47:45 tshiozak Exp
  */
 
-#include <_ansi.h>
 #include <wchar.h>
 
-wchar_t *
-_DEFUN (wcscat, (s1, s2),
-	wchar_t * s1 _AND
-	_CONST wchar_t * s2)
+wchar_t *wcscat(wchar_t * s1, const wchar_t * s2)
 {
   wchar_t *p;
   wchar_t *q;
-  _CONST wchar_t *r;
+  const wchar_t *r;
 
   p = s1;
   while (*p)

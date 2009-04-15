@@ -32,10 +32,7 @@ Neither ANSI C nor the System V Interface Definition (Issue 2) require
 
 #include <string.h>
 
-_VOID
-_DEFUN (bzero, (b, length),
-	void *b _AND
-	size_t length)
+void bzero(void *b, size_t length)
 {
   char *ptr = (char *)b;
   while (length--)

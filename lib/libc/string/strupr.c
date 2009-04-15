@@ -32,9 +32,7 @@ QUICKREF
 #include <string.h>
 #include <ctype.h>
 
-char *
-strupr (a)
-     char *a;
+char *strupr(char *a)
 {
   char *ret = a;
 

@@ -53,16 +53,12 @@ PORTABILITY
  * SUCH DAMAGE.
  */
 
-#include <_ansi.h>
 #include <sys/types.h>
 #include <wchar.h>
 
-size_t
-_DEFUN(wcsnlen, (s, maxlen), 
-                 _CONST wchar_t *s _AND 
-                 size_t maxlen)
+size_t wcsnlen(const wchar_t *s, size_t maxlen)
 {
-  _CONST wchar_t *p;
+  const wchar_t *p;
 
   p = s;
   while (*p && maxlen-- > 0)

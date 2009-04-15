@@ -29,12 +29,7 @@
 
 #include <string.h>
 
-char *
-_DEFUN (__strtok_r, (s, delim, lasts, skip_leading_delim),
-	register char *s _AND
-	register const char *delim _AND
-	char **lasts _AND
-	int skip_leading_delim)
+char *__strtok_r(register char *s, register const char *delim, char **lasts, int skip_leading_delim)
 {
 	register char *spanp;
 	register int c, sc;
@@ -89,11 +84,7 @@ cont:
 	/* NOTREACHED */
 }
 
-char *
-_DEFUN (strtok_r, (s, delim, lasts),
-	register char *s _AND
-	register const char *delim _AND
-	char **lasts)
+char *strtok_r(register char *s, register const char *delim, char **lasts)
 {
 	return __strtok_r (s, delim, lasts, 1);
 }

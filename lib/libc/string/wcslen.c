@@ -55,14 +55,11 @@ No supporting OS subroutines are required.
  *	citrus Id: wcslen.c,v 1.1 1999/12/29 21:47:45 tshiozak Exp
  */
 
-#include <_ansi.h>
 #include <wchar.h>
 
-size_t
-_DEFUN (wcslen, (s),
-	_CONST wchar_t * s)
+size_t wcslen(const wchar_t * s)
 {
-  _CONST wchar_t *p;
+  const wchar_t *p;
 
   p = s;
   while (*p)

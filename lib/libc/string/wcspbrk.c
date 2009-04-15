@@ -57,17 +57,13 @@ No supporting OS subroutines are required.
  *	citrus Id: wcspbrk.c,v 1.2 2000/12/21 05:07:25 itojun Exp
  */
 
-#include <_ansi.h>
 #include <stddef.h>
 #include <wchar.h>
 
-wchar_t *
-_DEFUN (wcspbrk, (s, set),
-	_CONST wchar_t * s _AND
-	_CONST wchar_t * set)
+wchar_t *wcspbrk(const wchar_t * s, const wchar_t * set)
 {
-  _CONST wchar_t *p;
-  _CONST wchar_t *q;
+  const wchar_t *p;
+  const wchar_t *q;
 
   p = s;
   while (*p)

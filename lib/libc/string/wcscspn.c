@@ -57,16 +57,12 @@ No supporting OS subroutines are required.
  *	citrus Id: wcscspn.c,v 1.1 1999/12/29 21:47:45 tshiozak Exp
  */
 
-#include <_ansi.h>
 #include <wchar.h>
 
-size_t
-_DEFUN (wcscspn, (s, set),
-	_CONST wchar_t * s _AND
-	_CONST wchar_t * set)
+size_t wcscspn(const wchar_t * s, const wchar_t * set)
 {
-  _CONST wchar_t *p;
-  _CONST wchar_t *q;
+  const wchar_t *p;
+  const wchar_t *q;
 
   p = s;
   while (*p)
