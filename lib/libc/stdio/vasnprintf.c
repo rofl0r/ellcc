@@ -5,20 +5,13 @@
 /* This code was derived from asprintf.c */
 /* doc in vfprintf.c */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <limits.h>
 #include <errno.h>
 
-char *
-_DEFUN(_vasnprintf_r, (ptr, buf, lenp, fmt, ap),
-       struct _reent *ptr _AND
-       char *buf _AND
-       size_t *lenp _AND
-       const char *fmt _AND
-       va_list ap)
+char *_vasnprintf_r(struct _reent *ptr, char *buf, size_t *lenp, const char *fmt, va_list ap)
 {
   int ret;
   FILE f;
@@ -57,12 +50,7 @@ _DEFUN(_vasnprintf_r, (ptr, buf, lenp, fmt, ap),
 
 #ifndef _REENT_ONLY
 
-char *
-_DEFUN(vasnprintf, (buf, lenp, fmt, ap),
-       char *buf _AND
-       size_t *lenp _AND
-       const char *fmt _AND
-       va_list ap)
+char *vasnprintf(char *buf, size_t *lenp, const char *fmt, va_list ap)
 {
   return _vasnprintf_r (_REENT, buf, lenp, fmt, ap);
 }

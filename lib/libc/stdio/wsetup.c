@@ -17,7 +17,6 @@
  * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 
-#include <_ansi.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include "local.h"
@@ -28,10 +27,7 @@
  * _wsetup returns 0 if OK to write, nonzero otherwise.
  */
 
-int
-_DEFUN(__swsetup_r, (ptr, fp),
-       struct _reent *ptr _AND
-       register FILE * fp)
+int __swsetup_r(struct _reent *ptr, register FILE * fp)
 {
   /* Make sure stdio is set up.  */
 

@@ -16,22 +16,14 @@
  */
 /* doc in vfprintf.c */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <stdio.h>
-#ifdef _HAVE_STDC
 #include <stdarg.h>
-#else
-#include <varargs.h>
-#endif
 #include "local.h"
 
 #ifndef _REENT_ONLY
 
-int
-_DEFUN(vprintf, (fmt, ap),
-       _CONST char *fmt _AND
-       va_list ap)
+int vprintf(const char *fmt, va_list ap)
 {
   _REENT_SMALL_CHECK_INIT (_REENT);
   return _vfprintf_r (_REENT, _stdout_r (_REENT), fmt, ap);
@@ -39,11 +31,7 @@ _DEFUN(vprintf, (fmt, ap),
 
 #endif /* !_REENT_ONLY */
 
-int
-_DEFUN(_vprintf_r, (ptr, fmt, ap),
-       struct _reent *ptr _AND
-       _CONST char *fmt   _AND
-       va_list ap)
+int _vprintf_r(struct _reent *ptr, const char *fmt, va_list ap)
 {
   _REENT_SMALL_CHECK_INIT (ptr);
   return _vfprintf_r (ptr, _stdout_r (ptr), fmt, ap);

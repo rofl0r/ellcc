@@ -290,9 +290,15 @@ extern float fmaf(float, float, float);
 
 extern float infinityf(void);
 extern float nanf(const char *);
+#ifndef isnanf
 extern int isnanf(float);
+#endif
+#ifndef isinff
 extern int isinff(float);
+#endif
+#ifndef finitef
 extern int finitef(float);
+#endif
 extern float copysignf(float, float);
 extern int ilogbf(float);
 

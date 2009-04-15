@@ -102,11 +102,6 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 <<lseek>>, <<read>>, <<sbrk>>, <<write>>.
 */
 
-#if defined(LIBC_SCCS) && !defined(lint)
-/*static char *sccsid = "from: @(#)vfprintf.c	5.50 (Berkeley) 12/16/92";*/
-static char *rcsid = "$Id: vfprintf.c,v 1.43 2002/08/13 02:40:06 fitzsim Exp $";
-#endif /* LIBC_SCCS and not lint */
-
 /*
  * Actual printf innards.
  *
@@ -138,7 +133,6 @@ static char *rcsid = "$Id: vfprintf.c,v 1.43 2002/08/13 02:40:06 fitzsim Exp $";
 # undef _NO_POS_ARGS
 #endif
 
-#include <_ansi.h>
 #include <reent.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -158,6 +152,13 @@ static char *rcsid = "$Id: vfprintf.c,v 1.43 2002/08/13 02:40:06 fitzsim Exp $";
 #define _NO_LONGDBL
 #if defined _WANT_IO_LONG_DOUBLE && (LDBL_MANT_DIG > DBL_MANT_DIG)
 #undef _NO_LONGDBL
+#ifndef _LONG_DOUBLE
+#define _LONG_DOUBLE long double
+#endif
+#else
+#ifndef _LONG_DOUBLE
+#define _LONG_DOUBLE double
+#endif
 #endif
 
 #define _NO_LONGLONG
@@ -167,16 +168,12 @@ static char *rcsid = "$Id: vfprintf.c,v 1.43 2002/08/13 02:40:06 fitzsim Exp $";
 #endif
 
 #ifdef STRING_ONLY
-static int
-_DEFUN(__sprint_r, (ptr, fp, uio),
-       struct _reent *ptr _AND
-       FILE *fp _AND
-       register struct __suio *uio)
+static int __sprint_r(struct _reent *ptr, FILE *fp, register struct __suio *uio)
 {
 	register size_t len;
 	register int w;
 	register struct __siov *iov;
-	register _CONST char *p = NULL;
+	register const char *p = NULL;
 
 	iov = uio->uio_iov;
 	len = 0;
@@ -240,7 +237,7 @@ _DEFUN(__sprint_r, (ptr, fp, uio),
 		}
 		if (len < w)
 			w = len;
-		(void)memmove ((_PTR) fp->_p, (_PTR) p, (size_t) (w));
+		(void)memmove ((void *) fp->_p, (void *) p, (size_t) (w));
 		fp->_w -= w;
 		fp->_p += w;
 		w = len;          /* pretend we copied all */
@@ -264,11 +261,7 @@ err:
  * Flush out all the vectors defined by the given uio,
  * then reset it so that it can be reused.
  */
-static int
-_DEFUN(__sprint_r, (ptr, fp, uio),
-       struct _reent *ptr _AND
-       FILE *fp _AND
-       register struct __suio *uio)
+static int __sprint_r(struct _reent *ptr, FILE *fp, register struct __suio *uio)
 {
 	register int err;
 
@@ -287,12 +280,7 @@ _DEFUN(__sprint_r, (ptr, fp, uio),
  * temporary buffer.  We only work on write-only files; this avoids
  * worries about ungetc buffers and so forth.
  */
-static int
-_DEFUN(__sbprintf, (rptr, fp, fmt, ap),
-       struct _reent *rptr _AND
-       register FILE *fp   _AND
-       _CONST char *fmt  _AND
-       va_list ap)
+static int __sbprintf(struct _reent *rptr, register FILE *fp, const char *fmt, va_list ap)
 {
 	int ret;
 	FILE fake;
@@ -338,8 +326,7 @@ _DEFUN(__sbprintf, (rptr, fp, fmt, ap),
 
 # ifdef _NO_LONGDBL
 
-extern char *_dtoa_r _PARAMS((struct _reent *, double, int,
-			      int, int *, int *, char **));
+extern char *_dtoa_r(struct _reent *, double, int, int, int *, int *, char **);
 
 #  define _PRINTF_FLOAT_TYPE double
 #  define _DTOA_R _dtoa_r
@@ -347,8 +334,7 @@ extern char *_dtoa_r _PARAMS((struct _reent *, double, int,
 
 # else /* !_NO_LONGDBL */
 
-extern char *_ldtoa_r _PARAMS((struct _reent *, _LONG_DOUBLE, int,
-			      int, int *, int *, char **));
+extern char *_ldtoa_r(struct _reent *, _LONG_DOUBLE, int, int, int *, int *, char **);
 
 extern int _EXFUN(_ldcheck,(_LONG_DOUBLE *));
 
@@ -391,7 +377,7 @@ static int exponent(char *, int, int);
 #endif
 
 typedef quad_t * quad_ptr_t;
-typedef _PTR     void_ptr_t;
+typedef void *     void_ptr_t;
 typedef char *   char_ptr_t;
 typedef long *   long_ptr_t;
 typedef int  *   int_ptr_t;
@@ -425,9 +411,9 @@ union arg_val
 };
 
 static union arg_val *
-_EXFUN(get_arg, (struct _reent *data, int n, char *fmt,
+get_arg(struct _reent *data, int n, char *fmt,
                  va_list *ap, int *numargs, union arg_val *args,
-                 int *arg_type, char **last_fmt));
+                 int *arg_type, char **last_fmt);
 #endif /* !_NO_POS_ARGS */
 
 /*
@@ -461,14 +447,10 @@ _EXFUN(get_arg, (struct _reent *data, int n, char *fmt,
 # define CHARINT	0
 #endif
 
-int _EXFUN(_VFPRINTF_R, (struct _reent *, FILE *, _CONST char *, va_list));
+int _VFPRINTF_R(struct _reent *, FILE *, const char *, va_list);
 
 #ifndef STRING_ONLY
-int
-_DEFUN(VFPRINTF, (fp, fmt0, ap),
-       FILE * fp         _AND
-       _CONST char *fmt0 _AND
-       va_list ap)
+int VFPRINTF(FILE * fp, const char *fmt0, va_list ap)
 {
   int result;
   result = _VFPRINTF_R (_REENT, fp, fmt0, ap);
@@ -476,12 +458,7 @@ _DEFUN(VFPRINTF, (fp, fmt0, ap),
 }
 #endif /* STRING_ONLY */
 
-int
-_DEFUN(_VFPRINTF_R, (data, fp, fmt0, ap),
-       struct _reent *data _AND
-       FILE * fp           _AND
-       _CONST char *fmt0   _AND
-       va_list ap)
+int _VFPRINTF_R(struct _reent *data, FILE * fp, const char *fmt0, va_list ap)
 {
 	register char *fmt;	/* format string */
 	register int ch;	/* character from fmt */
@@ -537,9 +514,9 @@ _DEFUN(_VFPRINTF_R, (data, fp, fmt0, ap),
 	 * below longer.
 	 */
 #define	PADSIZE	16		/* pad chunk size */
-	static _CONST char blanks[PADSIZE] =
+	static const char blanks[PADSIZE] =
 	 {' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' '};
-	static _CONST char zeroes[PADSIZE] =
+	static const char zeroes[PADSIZE] =
 	 {'0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0'};
 
 #ifdef _MB_CAPABLE
@@ -925,7 +902,7 @@ reswitch:	switch (ch) {
 			if (ch == 'C' || (flags & LONGINT)) {
 				mbstate_t ps;
 
-				memset ((_PTR)&ps, '\0', sizeof (mbstate_t));
+				memset ((void *)&ps, '\0', sizeof (mbstate_t));
 				if ((size = (int)_wcrtomb_r (data, cp,
 					       (wchar_t)GET_ARG (N, ap, wint_t),
 						&ps)) == -1) {
@@ -1164,11 +1141,11 @@ reswitch:	switch (ch) {
 #ifdef _MB_CAPABLE
 			if (ch == 'S' || (flags & LONGINT)) {
 				mbstate_t ps;
-				_CONST wchar_t *wcp;
+				const wchar_t *wcp;
 
-				wcp = (_CONST wchar_t *)cp;
+				wcp = (const wchar_t *)cp;
 				size = m = 0;
-				memset ((_PTR)&ps, '\0', sizeof (mbstate_t));
+				memset ((void *)&ps, '\0', sizeof (mbstate_t));
 
 				/* Count number of bytes needed for multibyte
 				   string that will be produced from widechar
@@ -1196,7 +1173,7 @@ reswitch:	switch (ch) {
 						fp->_flags |= __SERR;
 						goto error;
 					}
-					wcp = (_CONST wchar_t *)cp;
+					wcp = (const wchar_t *)cp;
 				}
 
 				if (size == 0)
@@ -1214,7 +1191,7 @@ reswitch:	switch (ch) {
 					cp = buf;
 
 				/* Convert widechar string to multibyte string. */
-				memset ((_PTR)&ps, '\0', sizeof (mbstate_t));
+				memset ((void *)&ps, '\0', sizeof (mbstate_t));
 				if (_wcsrtombs_r (data, cp, &wcp, size, &ps)
 				    != size) {
 					fp->_flags |= __SERR;
@@ -1560,8 +1537,7 @@ cvt(struct _reent *data, _PRINTF_FLOAT_TYPE value, int ndigits, int flags,
 	return (digits);
 }
 
-static int
-exponent(char *p0, int exp, int fmtch)
+static int exponent(char *p0, int exp, int fmtch)
 {
 	register char *p, *t;
 	char expbuf[MAXEXPLEN];
@@ -1671,7 +1647,7 @@ typedef enum {
   PWPOS,   /* get positional parameter value for variable width or precision */
 } ACTION;
 
-_CONST static CH_CLASS chclass[256] = {
+const static CH_CLASS chclass[256] = {
   /* 00-07 */  OTHER,   OTHER,   OTHER,   OTHER,   OTHER,   OTHER,   OTHER,   OTHER,
   /* 08-0f */  OTHER,   OTHER,   OTHER,   OTHER,   OTHER,   OTHER,   OTHER,   OTHER,
   /* 10-17 */  OTHER,   OTHER,   OTHER,   OTHER,   OTHER,   OTHER,   OTHER,   OTHER,
@@ -1706,7 +1682,7 @@ _CONST static CH_CLASS chclass[256] = {
   /* f8-ff */  OTHER,   OTHER,   OTHER,   OTHER,   OTHER,   OTHER,   OTHER,   OTHER,
 };
 
-_CONST static STATE state_table[MAX_STATE][MAX_CH_CLASS] = {
+const static STATE state_table[MAX_STATE][MAX_CH_CLASS] = {
   /*             '0'     '1-9'     '$'     MODFR    SPEC    '.'     '*'    FLAG    OTHER */
   /* START */  { SFLAG,   WDIG,    DONE,   SMOD,    DONE,   SDOT,  VARW,   SFLAG,  DONE },
   /* SFLAG */  { SFLAG,   WDIG,    DONE,   SMOD,    DONE,   SDOT,  VARW,   SFLAG,  DONE },
@@ -1721,7 +1697,7 @@ _CONST static STATE state_table[MAX_STATE][MAX_CH_CLASS] = {
   /* VPDIG */  { DONE,    DONE,    PREC,   DONE,    DONE,   DONE,  DONE,   DONE,   DONE },
 };
 
-_CONST static ACTION action_table[MAX_STATE][MAX_CH_CLASS] = {
+const static ACTION action_table[MAX_STATE][MAX_CH_CLASS] = {
   /*             '0'     '1-9'     '$'     MODFR    SPEC    '.'     '*'    FLAG    OTHER */
   /* START */  { NOOP,    NUMBER,  NOOP,   GETMOD,  GETARG, NOOP,  NOOP,   NOOP,   NOOP },
   /* SFLAG */  { NOOP,    NUMBER,  NOOP,   GETMOD,  GETARG, NOOP,  NOOP,   NOOP,   NOOP },
@@ -1738,15 +1714,8 @@ _CONST static ACTION action_table[MAX_STATE][MAX_CH_CLASS] = {
 
 /* function to get positional parameter N where n = N - 1 */
 static union arg_val *
-_DEFUN(get_arg, (data, n, fmt, ap, numargs_p, args, arg_type, last_fmt),
-       struct _reent *data _AND
-       int n               _AND
-       char *fmt           _AND
-       va_list *ap         _AND
-       int *numargs_p      _AND
-       union arg_val *args _AND
-       int *arg_type       _AND
-       char **last_fmt)
+get_arg(struct _reent *data, int n, char *fmt, va_list *ap, int *numargs_p,
+        union arg_val *args, int *arg_type, char **last_fmt)
 {
   int ch;
   int number, flags;

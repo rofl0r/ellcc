@@ -4,7 +4,6 @@
  */
 /* doc in dprintf.c */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,12 +11,7 @@
 #include <stdarg.h>
 #include "local.h"
 
-int
-_DEFUN(_vdprintf_r, (ptr, fd, format, ap),
-       struct _reent *ptr _AND
-       int fd _AND
-       const char *format _AND
-       va_list ap)
+int _vdprintf_r(struct _reent *ptr, int fd, const char *format, va_list ap)
 {
   char *p;
   char buf[512];
@@ -35,11 +29,7 @@ _DEFUN(_vdprintf_r, (ptr, fd, format, ap),
 
 #ifndef _REENT_ONLY
 
-int
-_DEFUN(vdprintf, (fd, format, ap),
-       int fd _AND
-       const char *format _AND
-       va_list ap)
+int vdprintf(int fd, const char *format, va_list ap)
 {
   return _vdprintf_r (_REENT, fd, format, ap);
 }

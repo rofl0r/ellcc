@@ -82,22 +82,14 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 <<lseek>>, <<read>>, <<sbrk>>, <<write>>.
 */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <stdio.h>
-#ifdef _HAVE_STDC
 #include <stdarg.h>
-#else
-#include <varargs.h>
-#endif
 #include "local.h"
 
 #ifndef _REENT_ONLY
 
-int
-_DEFUN(viprintf, (fmt, ap),
-       _CONST char *fmt _AND
-       va_list ap)
+int viprintf(const char *fmt, va_list ap)
 {
   _REENT_SMALL_CHECK_INIT (_REENT);
   return _vfiprintf_r (_REENT, _stdout_r (_REENT), fmt, ap);
@@ -105,11 +97,7 @@ _DEFUN(viprintf, (fmt, ap),
 
 #endif /* !_REENT_ONLY */
 
-int
-_DEFUN(_viprintf_r, (ptr, fmt, ap),
-       struct _reent *ptr _AND
-       _CONST char *fmt   _AND
-       va_list ap)
+int _viprintf_r(struct _reent *ptr, const char *fmt, va_list ap)
 {
   _REENT_SMALL_CHECK_INIT (ptr);
   return _vfiprintf_r (ptr, _stdout_r (ptr), fmt, ap);

@@ -17,23 +17,13 @@
  * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <stdio.h>
 #include <string.h>
-#ifdef _HAVE_STDC
 #include <stdarg.h>
-#else
-#include <varargs.h>
-#endif
 #include "local.h"
 
-static _READ_WRITE_RETURN_TYPE
-_DEFUN(eofread1, (ptr, cookie, buf, len),
-       struct _reent *ptr _AND
-       _PTR cookie _AND
-       char *buf   _AND
-       int len)
+static int eofread1( struct _reent *ptr, void * cookie, char *buf, int len)
 {
   return 0;
 }
@@ -44,23 +34,14 @@ _DEFUN(eofread1, (ptr, cookie, buf, len),
 
 #ifndef _REENT_ONLY
 
-int
-_DEFUN(vsiscanf, (str, fmt, ap), 
-       _CONST char *str _AND 
-       _CONST char *fmt _AND 
-       va_list ap)
+int vsiscanf(const char *str, const char *fmt, va_list ap)
 {
   return _vsiscanf_r (_REENT, str, fmt, ap);
 }
 
 #endif /* !_REENT_ONLY */
 
-int
-_DEFUN(_vsiscanf_r, (ptr, str, fmt, ap),
-       struct _reent *ptr _AND 
-       _CONST char *str   _AND 
-       _CONST char *fmt   _AND 
-       va_list ap)
+int _vsiscanf_r(struct _reent *ptr, const char *str, const char *fmt, va_list ap)
 {
   FILE f;
 

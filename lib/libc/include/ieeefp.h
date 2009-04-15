@@ -187,7 +187,7 @@ int isinf(double);
 int finite(double);
 
 int isnanf(float);
-int isinff(float)
+int isinff(float);
 int finitef(float);
 
 #define __IEEE_DBL_EXPBIAS 1023

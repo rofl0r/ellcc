@@ -17,34 +17,20 @@
 /* This code was based on vsiprintf.c */
 /* doc in vfprintf.c */
 
-#if defined(LIBC_SCCS) && !defined(lint)
-static char sccsid[] = "%W% (Berkeley) %G%";
-#endif /* LIBC_SCCS and not lint */
-
-#include <_ansi.h>
 #include <stdio.h>
 #include <limits.h>
 #include <stdarg.h>
 
 #ifndef _REENT_ONLY
 
-int
-_DEFUN(vasiprintf, (strp, fmt, ap),
-       char **strp      _AND
-       const char *fmt _AND
-       va_list ap)
+int vasiprintf(char **strp, const char *fmt, va_list ap)
 {
   return _vasiprintf_r (_REENT, strp, fmt, ap);
 }
 
 #endif /* !_REENT_ONLY */
 
-int
-_DEFUN(_vasiprintf_r, (ptr, strp, fmt, ap),
-       struct _reent *ptr _AND
-       char **strp        _AND
-       const char *fmt   _AND
-       va_list ap)
+int _vasiprintf_r(struct _reent *ptr, char **strp, const char *fmt, va_list ap)
 {
   int ret;
   FILE f;

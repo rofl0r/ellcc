@@ -102,7 +102,6 @@ These are GNU extensions.
 Supporting OS subroutines required:
 */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <newlib.h>
 #include <ctype.h>
@@ -160,7 +159,14 @@ Supporting OS subroutines required:
 #define _NO_LONGDBL
 #if defined _WANT_IO_LONG_DOUBLE && (LDBL_MANT_DIG > DBL_MANT_DIG)
 #undef _NO_LONGDBL
-extern _LONG_DOUBLE _strtold _PARAMS((char *s, char **sptr));
+extern _LONG_DOUBLE _strtold(char *s, char **sptr);
+#ifndef _LONG_DOUBLE
+#define _LONG_DOUBLE long double
+#endif
+#else
+#ifndef _LONG_DOUBLE
+#define _LONG_DOUBLE double
+#endif
 #endif
 
 #include "floatio.h"
@@ -256,33 +262,20 @@ typedef unsigned long long u_long_long;
 
 #ifndef _REENT_ONLY
 
-int
-_DEFUN(VFSCANF, (fp, fmt, ap), 
-       register FILE *fp _AND 
-       _CONST char *fmt _AND 
-       va_list ap)
+int VFSCANF(register FILE *fp, const char *fmt, va_list ap)
 {
   CHECK_INIT(_REENT, fp);
   return __SVFSCANF_R (_REENT, fp, fmt, ap);
 }
 
-int
-_DEFUN(__SVFSCANF, (fp, fmt0, ap),
-       register FILE *fp _AND
-       char _CONST *fmt0 _AND
-       va_list ap)
+int __SVFSCANF(register FILE *fp, char const *fmt0, va_list ap)
 {
   return __SVFSCANF_R (_REENT, fp, fmt0, ap);
 }
 
 #endif /* !_REENT_ONLY */
 
-int
-_DEFUN(_VFSCANF_R, (data, fp, fmt, ap),
-       struct _reent *data _AND 
-       register FILE *fp   _AND 
-       _CONST char *fmt    _AND 
-       va_list ap)
+int _VFSCANF_R(struct _reent *data, register FILE *fp, const char *fmt, va_list ap)
 {
   CHECK_INIT(data, fp);
   return __SVFSCANF_R (data, fp, fmt, ap);
@@ -293,11 +286,7 @@ _DEFUN(_VFSCANF_R, (data, fp, fmt, ap),
 /* When dealing with the sscanf family, we don't want to use the
  * regular ungetc which will drag in file I/O items we don't need.
  * So, we create our own trimmed-down version.  */
-static int
-_DEFUN(_sungetc_r, (data, fp, ch),
-	struct _reent *data _AND
-	int c               _AND
-	register FILE *fp)
+static int _sungetc_r(struct _reent *data, int c, register FILE *fp)
 {
   if (c == EOF)
     return (EOF);
@@ -351,10 +340,7 @@ _DEFUN(_sungetc_r, (data, fp, ch),
 }
 
 /* String only version of __srefill_r for sscanf family.  */
-static int
-_DEFUN(__ssrefill_r, (ptr, fp),
-       struct _reent * ptr _AND
-       register FILE * fp)
+static int __ssrefill_r( struct _reent * ptr, register FILE * fp)
 {
   /*
    * Our only hope of further input is the ungetc buffer.
@@ -378,13 +364,7 @@ _DEFUN(__ssrefill_r, (ptr, fp),
   return EOF;
 } 
  
-static size_t
-_DEFUN(_sfread_r, (ptr, buf, size, count, fp),
-       struct _reent * ptr _AND
-       _PTR buf _AND
-       size_t size _AND
-       size_t count _AND
-       FILE * fp)
+static size_t _sfread_r(struct _reent * ptr, void * buf, size_t size, size_t count, FILE * fp)
 {
   register size_t resid;
   register char *p;
@@ -399,7 +379,7 @@ _DEFUN(_sfread_r, (ptr, buf, size, count, fp),
 
   while (resid > (r = fp->_r))
     {
-      _CAST_VOID memcpy ((_PTR) p, (_PTR) fp->_p, (size_t) r);
+      (void) memcpy ((void *) p, (void *) fp->_p, (size_t) r);
       fp->_p += r;
       fp->_r = 0;
       p += r;
@@ -410,19 +390,14 @@ _DEFUN(_sfread_r, (ptr, buf, size, count, fp),
           return (total - resid) / size;
         }
     }
-  _CAST_VOID memcpy ((_PTR) p, (_PTR) fp->_p, resid);
+  (void) memcpy ((void *) p, (void *) fp->_p, resid);
   fp->_r -= resid;
   fp->_p += resid;
   return count;
 }
 #endif /* STRING_ONLY */
 
-int
-_DEFUN(__SVFSCANF_R, (rptr, fp, fmt0, ap),
-       struct _reent *rptr _AND
-       register FILE *fp   _AND
-       char _CONST *fmt0   _AND
-       va_list ap)
+int __SVFSCANF_R(struct _reent *rptr, register FILE *fp, char const *fmt0, va_list ap)
 {
   register u_char *fmt = (u_char *) fmt0;
   register int c;		/* character from format, or conversion */
@@ -466,7 +441,7 @@ _DEFUN(__SVFSCANF_R, (rptr, fp, fmt0, ap),
 #endif
 
   /* `basefix' is used to avoid `if' tests in the integer scanner */
-  static _CONST short basefix[17] =
+  static const short basefix[17] =
     {10, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
 
   /* Macro to support positional arguments */
@@ -836,7 +811,7 @@ _DEFUN(__SVFSCANF_R, (rptr, fp, fmt0, ap),
                   buf[n++] = *fp->_p;
                   fp->_r -= 1;
                   fp->_p += 1;
-                  memset ((_PTR)&state, '\0', sizeof (mbstate_t));
+                  memset ((void *)&state, '\0', sizeof (mbstate_t));
                   if ((mbslen = _mbrtowc_r (rptr, wcp, buf, n, &state)) 
                                                          == (size_t)-1)
                     goto input_failure; /* Invalid sequence */
@@ -889,7 +864,7 @@ _DEFUN(__SVFSCANF_R, (rptr, fp, fmt0, ap),
 	    }
 	  else
 	    {
-	      size_t r = _fread_r (rptr, (_PTR) GET_ARG (N, ap, char *), 1, width, fp);
+	      size_t r = _fread_r (rptr, (void *) GET_ARG (N, ap, char *), 1, width, fp);
 
 	      if (r == 0)
 		goto input_failure;
@@ -965,7 +940,7 @@ _DEFUN(__SVFSCANF_R, (rptr, fp, fmt0, ap),
                   buf[n++] = *fp->_p;
                   fp->_r -= 1;
                   fp->_p += 1;
-                  memset ((_PTR)&state, '\0', sizeof (mbstate_t));
+                  memset ((void *)&state, '\0', sizeof (mbstate_t));
                   if ((mbslen = _mbrtowc_r (rptr, wcp, buf, n, &state)) 
                                                         == (size_t)-1)
                     goto input_failure;
@@ -1577,8 +1552,7 @@ all_done:
 /* Process all intermediate arguments.  Fortunately, with scanf, all
    intermediate arguments are sizeof(void*), so we don't need to scan
    ahead in the format string.  */
-static void *
-get_arg (int n, va_list *ap, int *numargs_p, void **args)
+static void *get_arg (int n, va_list *ap, int *numargs_p, void **args)
 {
   int numargs = *numargs_p;
   while (n >= numargs)

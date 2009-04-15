@@ -16,11 +16,6 @@
  */
 /* doc in vfprintf.c */
 
-#if defined(LIBC_SCCS) && !defined(lint)
-static char sccsid[] = "%W% (Berkeley) %G%";
-#endif /* LIBC_SCCS and not lint */
-
-#include <_ansi.h>
 #include <reent.h>
 #include <stdio.h>
 #include <limits.h>
@@ -29,25 +24,14 @@ static char sccsid[] = "%W% (Berkeley) %G%";
 
 #ifndef _REENT_ONLY
 
-int
-_DEFUN(vsnprintf, (str, size, fmt, ap),
-       char *str        _AND
-       size_t size      _AND
-       const char *fmt _AND
-       va_list ap)
+int vsnprintf(char *str, size_t size, const char *fmt, va_list ap)
 {
   return _vsnprintf_r (_REENT, str, size, fmt, ap);
 }
 
 #endif /* !_REENT_ONLY */
 
-int
-_DEFUN(_vsnprintf_r, (ptr, str, size, fmt, ap),
-       struct _reent *ptr _AND
-       char *str          _AND
-       size_t size        _AND
-       const char *fmt   _AND
-       va_list ap)
+int _vsnprintf_r(struct _reent *ptr, char *str, size_t size, const char *fmt, va_list ap)
 {
   int ret;
   FILE f;

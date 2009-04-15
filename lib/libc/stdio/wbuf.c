@@ -16,11 +16,6 @@
  */
 /* No user fns here.  Pesch 15apr92. */
 
-#if defined(LIBC_SCCS) && !defined(lint)
-static char sccsid[] = "%W% (Berkeley) %G%";
-#endif /* LIBC_SCCS and not lint */
-
-#include <_ansi.h>
 #include <stdio.h>
 #include <errno.h>
 #include "local.h"
@@ -32,11 +27,7 @@ static char sccsid[] = "%W% (Berkeley) %G%";
  * or if c=='\n' and the file is line buffered.
  */
 
-int
-_DEFUN(__swbuf_r, (ptr, c, fp),
-       struct _reent *ptr _AND
-       register int c _AND
-       register FILE *fp)
+int __swbuf_r(struct _reent *ptr, register int c, register FILE *fp)
 {
   register int n;
 
@@ -89,10 +80,7 @@ _DEFUN(__swbuf_r, (ptr, c, fp),
 /* This function isn't any longer declared in stdio.h, but it's
    required for backward compatibility with applications built against
    earlier dynamically built newlib libraries. */
-int
-_DEFUN(__swbuf, (c, fp),
-       register int c _AND
-       register FILE *fp)
+int __swbuf(register int c, register FILE *fp)
 {
   return __swbuf_r (_REENT, c, fp);
 }

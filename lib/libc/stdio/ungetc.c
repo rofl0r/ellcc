@@ -57,11 +57,6 @@ can.  Pushing back a signed char is a common application bug.
 Supporting OS subroutines required: <<sbrk>>.
 */
 
-#if defined(LIBC_SCCS) && !defined(lint)
-static char sccsid[] = "%W% (Berkeley) %G%";
-#endif /* LIBC_SCCS and not lint */
-
-#include <_ansi.h>
 #include <reent.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -76,10 +71,7 @@ static char sccsid[] = "%W% (Berkeley) %G%";
  */
 
 /*static*/
-int
-_DEFUN(__submore, (rptr, fp),
-       struct _reent *rptr _AND
-       register FILE *fp)
+int __submore(struct _reent *rptr, register FILE *fp)
 {
   register int i;
   register unsigned char *p;
@@ -100,21 +92,17 @@ _DEFUN(__submore, (rptr, fp),
       return 0;
     }
   i = fp->_ub._size;
-  p = (unsigned char *) _realloc_r (rptr, (_PTR) (fp->_ub._base), i << 1);
+  p = (unsigned char *) _realloc_r (rptr, (void *) (fp->_ub._base), i << 1);
   if (p == NULL)
     return EOF;
-  _CAST_VOID memcpy ((_PTR) (p + i), (_PTR) p, (size_t) i);
+  (void) memcpy ((void *) (p + i), (void *) p, (size_t) i);
   fp->_p = p + i;
   fp->_ub._base = p;
   fp->_ub._size = i << 1;
   return 0;
 }
 
-int
-_DEFUN(_ungetc_r, (rptr, c, fp),
-       struct _reent *rptr _AND
-       int c               _AND
-       register FILE *fp)
+int _ungetc_r(struct _reent *rptr, int c, register FILE *fp)
 {
   if (c == EOF)
     return (EOF);
@@ -205,10 +193,7 @@ _DEFUN(_ungetc_r, (rptr, c, fp),
 }
 
 #ifndef _REENT_ONLY
-int
-_DEFUN(ungetc, (c, fp),
-       int c               _AND
-       register FILE *fp)
+int ungetc(int c, register FILE *fp)
 {
   return _ungetc_r (_REENT, c, fp);
 }
