@@ -189,4 +189,4 @@ void	__eprintf(const char *, const char *, unsigned int, const char *);
 
 _END_STD_C
 
-#endif /* _STDLIB_H_ */
+#endif

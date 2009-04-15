@@ -117,7 +117,6 @@ No supporting OS subroutines are required.
  */
 
 
-#include <_ansi.h>
 #include <limits.h>
 #include <wctype.h>
 #include <errno.h>
@@ -126,11 +125,7 @@ No supporting OS subroutines are required.
 
 #ifndef _REENT_ONLY
 
-long long
-_DEFUN (wcstoll, (s, ptr, base),
-	_CONST wchar_t *s _AND
-	wchar_t **ptr _AND
-	int base)
+long long wcstoll(const wchar_t *s, wchar_t **ptr, int base)
 {
 	return _wcstoll_r (_REENT, s, ptr, base);
 }

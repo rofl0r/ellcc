@@ -118,7 +118,6 @@ PORTABILITY
  * SUCH DAMAGE.
  */
 
-#include <_ansi.h>
 #include <limits.h>
 #include <ctype.h>
 #include <errno.h>
@@ -131,12 +130,7 @@ PORTABILITY
  * Ignores `locale' stuff.  Assumes that the upper and lower case
  * alphabets and digits are each contiguous.
  */
-unsigned long
-_DEFUN (_strtoul_r, (rptr, nptr, endptr, base),
-	struct _reent *rptr _AND
-	_CONST char *nptr _AND
-	char **endptr _AND
-	int base)
+unsigned long _strtoul_r(struct _reent *rptr, const char *nptr, char **endptr, int base)
 {
 	register const char *s = nptr;
 	register unsigned long acc;
@@ -194,13 +188,9 @@ _DEFUN (_strtoul_r, (rptr, nptr, endptr, base),
 
 #ifndef _REENT_ONLY
 
-unsigned long
-_DEFUN (strtoul, (s, ptr, base),
-	_CONST char *s _AND
-	char **ptr _AND
-	int base)
+unsigned long strtoul(const char *s, char **ptr, int base)
 {
-	return _strtoul_r (_REENT, s, ptr, base);
+	return _strtoul_r(_REENT, s, ptr, base);
 }
 
 #endif

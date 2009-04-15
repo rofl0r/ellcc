@@ -98,9 +98,7 @@ No supporting OS subroutines are required.
  * In that case, to get the right answer, add 1 to r.quot and
  * subtract denom from r.rem.
  */
-lldiv_t
-_DEFUN (lldiv, (number, denom), 
-       long long numer _AND long long denom)
+lldiv_t lldiv(long long numer, long long denom)
 {
 	lldiv_t retval;
 
@@ -112,4 +110,3 @@ _DEFUN (lldiv, (number, denom),
 	}
 	return (retval);
 }
-

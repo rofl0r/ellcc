@@ -117,7 +117,6 @@ No supporting OS subroutines are required.
  */
 
 
-#include <_ansi.h>
 #include <limits.h>
 #include <wctype.h>
 #include <errno.h>
@@ -130,12 +129,7 @@ No supporting OS subroutines are required.
  * Ignores `locale' stuff.  Assumes that the upper and lower case
  * alphabets and digits are each contiguous.
  */
-long
-_DEFUN (_wcstol_r, (rptr, nptr, endptr, base),
-	struct _reent *rptr _AND
-	_CONST wchar_t *nptr _AND
-	wchar_t **endptr _AND
-	int base)
+long _wcstol_r(struct _reent *rptr, const wchar_t *nptr, wchar_t **endptr, int base)
 {
 	register const wchar_t *s = nptr;
 	register unsigned long acc;
@@ -214,11 +208,7 @@ _DEFUN (_wcstol_r, (rptr, nptr, endptr, base),
 
 #ifndef _REENT_ONLY
 
-long
-_DEFUN (wcstol, (s, ptr, base),
-	_CONST wchar_t *s _AND
-	wchar_t **ptr _AND
-	int base)
+long wcstol(const wchar_t *s, wchar_t **ptr, int base)
 {
 	return _wcstol_r (_REENT, s, ptr, base);
 }

@@ -9,12 +9,7 @@
 
 extern char __lc_ctype[12];
 
-int
-_DEFUN (_wctomb_r, (r, s, wchar, state),
-        struct _reent *r     _AND 
-        char          *s     _AND
-        wchar_t        _wchar _AND
-        mbstate_t     *state)
+int _wctomb_r(struct _reent *r, char *s, wchar_t _wchar, mbstate_t *state)
 {
   /* Avoids compiler warnings about comparisons that are always false
      due to limited range when sizeof(wchar_t) is 2 but sizeof(wint_t)

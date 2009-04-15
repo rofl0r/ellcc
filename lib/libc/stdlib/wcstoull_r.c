@@ -43,7 +43,6 @@
 #ifdef __GNUC__
 
 #define _GNU_SOURCE
-#include <_ansi.h>
 #include <limits.h>
 #include <wctype.h>
 #include <errno.h>
@@ -56,12 +55,7 @@
  * Ignores `locale' stuff.  Assumes that the upper and lower case
  * alphabets and digits are each contiguous.
  */
-unsigned long long
-_DEFUN (_wcstoull_r, (rptr, nptr, endptr, base),
-	struct _reent *rptr _AND
-	_CONST wchar_t *nptr _AND
-	wchar_t **endptr _AND
-	int base)
+unsigned long long _wcstoull_r(struct _reent *rptr, const wchar_t *nptr, wchar_t **endptr, int base)
 {
 	register const wchar_t *s = nptr;
 	register unsigned long long acc;

@@ -22,9 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-int
-_DEFUN (putenv, (str),
-	char *str)
+int putenv(char *str)
 {
   return _putenv_r (_REENT, str);
 }

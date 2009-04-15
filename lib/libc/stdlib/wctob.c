@@ -4,8 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
-int
-wctob (wint_t c)
+int wctob (wint_t c)
 {
   mbstate_t mbs;
   int retval = 0;

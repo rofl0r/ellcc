@@ -1,17 +1,7 @@
-/* VxWorks provides its own version of malloc, and we can't use this
-   one because VxWorks does not provide sbrk.  So we have a hook to
-   not compile this code.  */
-
 /* The routines here are simple cover fns to the routines that do the real
    work (the reentrant versions).  */
-/* FIXME: Does the warning below (see WARNINGS) about non-reentrancy still
-   apply?  A first guess would be "no", but how about reentrancy in the *same*
-   thread?  */
 
 #ifdef MALLOC_PROVIDED
-
-int _dummy_malloc = 1;
-
 #else
 
 /*
@@ -187,16 +177,12 @@ Supporting OS subroutines required: <<sbrk>>.  */
 
 #ifndef _REENT_ONLY
 
-_PTR
-_DEFUN (malloc, (nbytes),
-	size_t nbytes)		/* get a block */
+void *malloc(size_t nbytes)		/* get a block */
 {
   return _malloc_r (_REENT, nbytes);
 }
 
-void
-_DEFUN (free, (aptr),
-	_PTR aptr)
+void free(void * aptr)
 {
   _free_r (_REENT, aptr);
 }

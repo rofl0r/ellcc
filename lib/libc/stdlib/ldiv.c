@@ -83,13 +83,9 @@ No supporting OS subroutines are required.
  * SUCH DAMAGE.
  */
 
-#include <_ansi.h>
 #include <stdlib.h>		/* ldiv_t */
 
-ldiv_t
-_DEFUN (ldiv, (num, denom),
-        long num _AND
-        long denom)
+ldiv_t ldiv(long num, long denom)
 {
 	ldiv_t r;
 

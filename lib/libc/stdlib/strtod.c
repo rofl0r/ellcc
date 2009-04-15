@@ -110,16 +110,11 @@ THIS SOFTWARE.
 
 /* Original file gdtoa-strtod.c Modified 06-21-2006 by Jeff Johnston to work within newlib.  */
 
-#include <_ansi.h>
 #include <errno.h>
 #include <string.h>
 #include "mprec.h"
 #include "gdtoa.h"
 #include "gd_qnan.h"
-
-/* #ifndef NO_FENV_H */
-/* #include <fenv.h> */
-/* #endif */
 
 #ifdef USE_LOCALE
 #include "locale.h"
@@ -131,7 +126,7 @@ THIS SOFTWARE.
 #undef tinytens
 /* The factor of 2^53 in tinytens[4] helps us avoid setting the underflow */
 /* flag unnecessarily.  It leads to a song and dance at the end of strtod. */
-static _CONST double tinytens[] = { 1e-16, 1e-32, 1e-64, 1e-128,
+static const double tinytens[] = { 1e-16, 1e-32, 1e-64, 1e-128,
 		9007199254740992.e-256
 		};
 #endif
@@ -147,12 +142,7 @@ static _CONST double tinytens[] = { 1e-16, 1e-32, 1e-64, 1e-128,
 
 #ifndef NO_HEX_FP
 
-static void
-_DEFUN (ULtod, (L, bits, exp, k),
-	__ULong *L _AND
-	__ULong *bits _AND
-	Long exp _AND
-	int k)
+static void ULtod(__ULong *L, __ULong *bits, Long exp, int k)
 {
 	switch(k & STRTOG_Retmask) {
 	  case STRTOG_NoNumber:
@@ -186,13 +176,10 @@ _DEFUN (ULtod, (L, bits, exp, k),
 #endif /* !NO_HEX_FP */
 
 #ifdef INFNAN_CHECK
-static int
-_DEFUN (match, (sp, t),
-	_CONST char **sp _AND
-	char *t)
+static int match(const char **sp, char *t)
 {
 	int c, d;
-	_CONST char *s = *sp;
+	const char *s = *sp;
 
 	while( (d = *t++) !=0) {
 		if ((c = *++s) >= 'A' && c <= 'Z')
@@ -206,18 +193,14 @@ _DEFUN (match, (sp, t),
 #endif /* INFNAN_CHECK */
 
 
-double
-_DEFUN (_strtod_r, (ptr, s00, se),
-	struct _reent *ptr _AND
-	_CONST char *s00 _AND
-	char **se)
+double _strtod_r(struct _reent *ptr, const char *s00, char **se)
 {
 #ifdef Avoid_Underflow
 	int scale;
 #endif
 	int bb2, bb5, bbe, bd2, bd5, bbbits, bs2, c, decpt, dsign,
 		 e, e1, esign, i, j, k, nd, nd0, nf, nz, nz0, sign;
-	_CONST char *s, *s0, *s1;
+	const char *s, *s0, *s1;
 	double aadj, adj;
 	U aadj1, rv, rv0;
 	Long L;
@@ -1170,21 +1153,16 @@ _DEFUN (_strtod_r, (ptr, s00, se),
 
 #ifndef NO_REENT
 
-double
-_DEFUN (strtod, (s00, se),
-	_CONST char *s00 _AND char **se)
+double strtod(const char *s00, char **se)
 {
-  return _strtod_r (_REENT, s00, se);
+  return _strtod_r(_REENT, s00, se);
 }
 
-float
-_DEFUN (strtof, (s00, se),
-	_CONST char *s00 _AND
-	char **se)
+float strtof(const char *s00, char **se)
 {
-  double retval = _strtod_r (_REENT, s00, se);
-  if (isnan (retval))
-    return nanf (NULL);
+  double retval = _strtod_r(_REENT, s00, se);
+  if (isnan(retval))
+    return nanf(NULL);
   return (float)retval;
 }
 

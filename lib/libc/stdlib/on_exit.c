@@ -62,11 +62,7 @@ Supporting OS subroutines required: None
  * Register a function to be performed at exit.
  */
 
-int
-_DEFUN (on_exit,
-	(fn, arg),
-	_VOID _EXFUN ((*fn), (int, _PTR)) _AND
-        _PTR arg)
+int on_exit(void (*fn)(int, void *), void * arg)
 {
-  return __register_exitproc (__et_onexit, (void (*)(void)) fn, arg, NULL);
+  return __register_exitproc(__et_onexit, (void (*)(void)) fn, arg, NULL);
 }

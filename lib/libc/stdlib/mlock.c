@@ -43,18 +43,14 @@ that it already holds.
 __LOCK_INIT_RECURSIVE(static, __malloc_lock_object);
 #endif
 
-void
-__malloc_lock (ptr)
-     struct _reent *ptr;
+void __malloc_lock(struct _reent *ptr)
 {
 #ifndef __SINGLE_THREAD__
   __lock_acquire_recursive (__malloc_lock_object);
 #endif
 }
 
-void
-__malloc_unlock (ptr)
-     struct _reent *ptr;
+void __malloc_unlock(struct _reent *ptr)
 {
 #ifndef __SINGLE_THREAD__
   __lock_release_recursive (__malloc_lock_object);

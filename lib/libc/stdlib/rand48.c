@@ -155,10 +155,7 @@ No supporting OS subroutines are required.
 
 #include "rand48.h"
 
-void
-_DEFUN (__dorand48, (r, xseed),
-       struct _reent *r _AND
-       unsigned short xseed[3])
+void __dorand48(struct _reent *r, unsigned short xseed[3])
 {
   unsigned long accu;
   unsigned short temp[2];

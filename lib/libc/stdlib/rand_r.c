@@ -21,8 +21,7 @@
    it results in 0 itself
 */
       
-int
-_DEFUN (rand_r, (seed), unsigned int *seed)
+int rand_r(unsigned int *seed)
 {
         long k;
         long s = (long)(*seed);

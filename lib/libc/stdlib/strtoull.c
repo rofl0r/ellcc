@@ -118,7 +118,6 @@ PORTABILITY
  * SUCH DAMAGE.
  */
 
-#include <_ansi.h>
 #include <limits.h>
 #include <ctype.h>
 #include <errno.h>
@@ -127,11 +126,7 @@ PORTABILITY
 
 #ifndef _REENT_ONLY
 
-unsigned long long
-_DEFUN (strtoull, (s, ptr, base),
-	_CONST char *s _AND
-	char **ptr _AND
-	int base)
+unsigned long long strtoull(const char *s, char **ptr, int base)
 {
 	return _strtoull_r (_REENT, s, ptr, base);
 }

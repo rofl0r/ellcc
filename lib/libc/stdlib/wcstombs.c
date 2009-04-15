@@ -54,11 +54,7 @@ effects vary with the locale.
 #include <stdlib.h>
 #include <wchar.h>
 
-size_t
-_DEFUN (wcstombs, (s, pwcs, n),
-        char          *s    _AND
-        const wchar_t *pwcs _AND
-        size_t         n)
+size_t wcstombs(char          *s, const wchar_t *pwcs, size_t         n)
 {
 #ifdef _MB_CAPABLE
   mbstate_t state;

@@ -149,12 +149,6 @@ typedef _fpos64_t fpos64_t;
  * Functions defined in ANSI C standard.
  */
 
-#ifdef __GNUC__
-#define __VALIST __gnuc_va_list
-#else
-#define __VALIST char*
-#endif
-
 FILE *	tmpfile(void);
 char *	tmpnam(char *);
 int	fclose(FILE *);
@@ -172,11 +166,11 @@ int	scanf(const char *, ...)
                __attribute__ ((__format__ (__scanf__, 1, 2)));
 int	sscanf(const char *, const char *, ...)
                __attribute__ ((__format__ (__scanf__, 2, 3)));
-int	vfprintf(FILE *, const char *, __VALIST)
+int	vfprintf(FILE *, const char *, va_list)
                __attribute__ ((__format__ (__printf__, 2, 0)));
-int	vprintf(const char *, __VALIST)
+int	vprintf(const char *, va_list)
                __attribute__ ((__format__ (__printf__, 1, 0)));
-int	vsprintf(char *, const char *, __VALIST)
+int	vsprintf(char *, const char *, va_list)
                __attribute__ ((__format__ (__printf__, 2, 0)));
 int	fgetc(FILE *);
 char *  fgets(char *, int, FILE *);
@@ -254,37 +248,37 @@ int	snprintf(char *, size_t, const char *, ...)
 int	sniprintf(char *, size_t, const char *, ...)
                __attribute__ ((__format__ (__printf__, 3, 4)));
 char *	tempnam(const char *, const char *);
-int	vasiprintf(char **, const char *, __VALIST)
+int	vasiprintf(char **, const char *, va_list)
                __attribute__ ((__format__ (__printf__, 2, 0)));
-char *	vasniprintf(char *, size_t *, const char *, __VALIST)
+char *	vasniprintf(char *, size_t *, const char *, va_list)
                __attribute__ ((__format__ (__printf__, 3, 0)));
-char *	vasnprintf(char *, size_t *, const char *, __VALIST)
+char *	vasnprintf(char *, size_t *, const char *, va_list)
                __attribute__ ((__format__ (__printf__, 3, 0)));
-int	vasprintf(char **, const char *, __VALIST)
+int	vasprintf(char **, const char *, va_list)
                __attribute__ ((__format__ (__printf__, 2, 0)));
-int	vdiprintf(int, const char *, __VALIST)
+int	vdiprintf(int, const char *, va_list)
                __attribute__ ((__format__ (__printf__, 2, 0)));
-int	vfiprintf(FILE *, const char *, __VALIST)
+int	vfiprintf(FILE *, const char *, va_list)
                __attribute__ ((__format__ (__printf__, 2, 0)));
-int	vfiscanf(FILE *, const char *, __VALIST)
+int	vfiscanf(FILE *, const char *, va_list)
                __attribute__ ((__format__ (__scanf__, 2, 0)));
-int	vfscanf(FILE *, const char *, __VALIST)
+int	vfscanf(FILE *, const char *, va_list)
                __attribute__ ((__format__ (__scanf__, 2, 0)));
-int	viprintf(const char *, __VALIST)
+int	viprintf(const char *, va_list)
                __attribute__ ((__format__ (__printf__, 1, 0)));
-int	viscanf(const char *, __VALIST)
+int	viscanf(const char *, va_list)
                __attribute__ ((__format__ (__scanf__, 1, 0)));
-int	vscanf(const char *, __VALIST)
+int	vscanf(const char *, va_list)
                __attribute__ ((__format__ (__scanf__, 1, 0)));
-int	vsiprintf(char *, const char *, __VALIST)
+int	vsiprintf(char *, const char *, va_list)
                __attribute__ ((__format__ (__printf__, 2, 0)));
-int	vsiscanf(const char *, const char *, __VALIST)
+int	vsiscanf(const char *, const char *, va_list)
                __attribute__ ((__format__ (__scanf__, 2, 0)));
-int	vsniprintf(char *, size_t, const char *, __VALIST)
+int	vsniprintf(char *, size_t, const char *, va_list)
                __attribute__ ((__format__ (__printf__, 3, 0)));
-int	vsnprintf(char *, size_t, const char *, __VALIST)
+int	vsnprintf(char *, size_t, const char *, va_list)
                __attribute__ ((__format__ (__printf__, 3, 0)));
-int	vsscanf(const char *, const char *, __VALIST)
+int	vsscanf(const char *, const char *, va_list)
                __attribute__ ((__format__ (__scanf__, 2, 0)));
 #endif /* !_REENT_ONLY */
 #endif /* !__STRICT_ANSI__ */
@@ -331,7 +325,7 @@ FILE *	open_memstream(char **, size_t *);
 int	renameat(int, const char *, int, const char *);
 int	symlinkat(const char *, int, const char *);
 #endif
-int	vdprintf(int, const char *, __VALIST)
+int	vdprintf(int, const char *, va_list)
                __attribute__ ((__format__ (__printf__, 2, 0)));
 # endif
 #endif
@@ -414,45 +408,45 @@ char *	_tempnam_r(struct _reent *, const char *, const char *);
 FILE *	_tmpfile_r(struct _reent *);
 char *	_tmpnam_r(struct _reent *, char *);
 int	_ungetc_r(struct _reent *, int, FILE *);
-int	_vasiprintf_r(struct _reent *, char **, const char *, __VALIST)
+int	_vasiprintf_r(struct _reent *, char **, const char *, va_list)
                __attribute__ ((__format__ (__printf__, 3, 0)));
-char *	_vasniprintf_r(struct _reent*, char *, size_t *, const char *, __VALIST)
+char *	_vasniprintf_r(struct _reent*, char *, size_t *, const char *, va_list)
                __attribute__ ((__format__ (__printf__, 4, 0)));
-char *	_vasnprintf_r(struct _reent*, char *, size_t *, const char *, __VALIST)
+char *	_vasnprintf_r(struct _reent*, char *, size_t *, const char *, va_list)
                __attribute__ ((__format__ (__printf__, 4, 0)));
-int	_vasprintf_r(struct _reent *, char **, const char *, __VALIST)
+int	_vasprintf_r(struct _reent *, char **, const char *, va_list)
                __attribute__ ((__format__ (__printf__, 3, 0)));
-int	_vdiprintf_r(struct _reent *, int, const char *, __VALIST)
+int	_vdiprintf_r(struct _reent *, int, const char *, va_list)
                __attribute__ ((__format__ (__printf__, 3, 0)));
-int	_vdprintf_r(struct _reent *, int, const char *, __VALIST)
+int	_vdprintf_r(struct _reent *, int, const char *, va_list)
                __attribute__ ((__format__ (__printf__, 3, 0)));
-int	_vfiprintf_r(struct _reent *, FILE *, const char *, __VALIST)
+int	_vfiprintf_r(struct _reent *, FILE *, const char *, va_list)
                __attribute__ ((__format__ (__printf__, 3, 0)));
-int	_vfiscanf_r(struct _reent *, FILE *, const char *, __VALIST)
+int	_vfiscanf_r(struct _reent *, FILE *, const char *, va_list)
                __attribute__ ((__format__ (__scanf__, 3, 0)));
-int	_vfprintf_r(struct _reent *, FILE *, const char *, __VALIST)
+int	_vfprintf_r(struct _reent *, FILE *, const char *, va_list)
                __attribute__ ((__format__ (__printf__, 3, 0)));
-int	_vfscanf_r(struct _reent *, FILE *, const char *, __VALIST)
+int	_vfscanf_r(struct _reent *, FILE *, const char *, va_list)
                __attribute__ ((__format__ (__scanf__, 3, 0)));
-int	_viprintf_r(struct _reent *, const char *, __VALIST)
+int	_viprintf_r(struct _reent *, const char *, va_list)
                __attribute__ ((__format__ (__printf__, 2, 0)));
-int	_viscanf_r(struct _reent *, const char *, __VALIST)
+int	_viscanf_r(struct _reent *, const char *, va_list)
                __attribute__ ((__format__ (__scanf__, 2, 0)));
-int	_vprintf_r(struct _reent *, const char *, __VALIST)
+int	_vprintf_r(struct _reent *, const char *, va_list)
                __attribute__ ((__format__ (__printf__, 2, 0)));
-int	_vscanf_r(struct _reent *, const char *, __VALIST)
+int	_vscanf_r(struct _reent *, const char *, va_list)
                __attribute__ ((__format__ (__scanf__, 2, 0)));
-int	_vsiprintf_r(struct _reent *, char *, const char *, __VALIST)
+int	_vsiprintf_r(struct _reent *, char *, const char *, va_list)
                __attribute__ ((__format__ (__printf__, 3, 0)));
-int	_vsiscanf_r(struct _reent *, const char *, const char *, __VALIST)
+int	_vsiscanf_r(struct _reent *, const char *, const char *, va_list)
                __attribute__ ((__format__ (__scanf__, 3, 0)));
-int	_vsniprintf_r(struct _reent *, char *, size_t, const char *, __VALIST)
+int	_vsniprintf_r(struct _reent *, char *, size_t, const char *, va_list)
                __attribute__ ((__format__ (__printf__, 4, 0)));
-int	_vsnprintf_r(struct _reent *, char *, size_t, const char *, __VALIST)
+int	_vsnprintf_r(struct _reent *, char *, size_t, const char *, va_list)
                __attribute__ ((__format__ (__printf__, 4, 0)));
-int	_vsprintf_r(struct _reent *, char *, const char *, __VALIST)
+int	_vsprintf_r(struct _reent *, char *, const char *, va_list)
                __attribute__ ((__format__ (__printf__, 3, 0)));
-int	_vsscanf_r(struct _reent *, const char *, const char *, __VALIST)
+int	_vsscanf_r(struct _reent *, const char *, const char *, va_list)
                __attribute__ ((__format__ (__scanf__, 3, 0)));
 
 ssize_t __getdelim(char **, size_t *, int, FILE *);

@@ -1,0 +1,11 @@
+/*
+  Define HAVE_MMAP to optionally make malloc() use mmap() to
+  allocate very large blocks.  These will be returned to the
+  operating system immediately after a free().
+*/
+#define HAVE_MMAP 0
+
+//#define MALLOC_PROVIDED // Uncomment if an external malloc is provided.
+#define USE_LOCALE // Uncomment if locale should be used.
+#define IEEE_Arith // Uncomment if IEEE floating point should be used.
+#define _MB_CAPABLE // Uncomment if multibyte characters should be used.

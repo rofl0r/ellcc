@@ -49,10 +49,7 @@ effects vary with the locale.
 #include <newlib.h>
 #include <stdlib.h>
 
-int
-_DEFUN (wctomb, (s, wchar),
-        char *s _AND
-        wchar_t wchar)
+int wctomb(char *s, wchar_t wchar)
 {
 #ifdef _MB_CAPABLE
         _REENT_CHECK_MISC(_REENT);

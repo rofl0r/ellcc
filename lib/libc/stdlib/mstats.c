@@ -4,8 +4,6 @@
 
 #ifdef MALLOC_PROVIDED
 
-int _dummy_mstats = 1;
-
 #else
 
 /*
@@ -96,7 +94,6 @@ not portable.
 
 */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <stdlib.h>
 #include <malloc.h>
@@ -104,25 +101,20 @@ not portable.
 
 #ifndef _REENT_ONLY
 
-struct mallinfo
-_DEFUN_VOID (mallinfo)
+struct mallinfo mallinfo(void)
 {
-  return _mallinfo_r (_REENT);
+  return _mallinfo_r(_REENT);
 }
 
 #if !defined (_ELIX_LEVEL) || _ELIX_LEVEL >= 2
-void
-_DEFUN_VOID (malloc_stats)
+void malloc_stats(void)
 {
-  _malloc_stats_r (_REENT);
+  _malloc_stats_r(_REENT);
 }
 
-int
-_DEFUN (mallopt, (p, v),
-	int p _AND
-	int v)
+int mallopt(int p, int v)
 {
-  return _mallopt_r (_REENT, p, v);
+  return _mallopt_r(_REENT, p, v);
 }
 
 #endif /* !_ELIX_LEVEL || _ELIX_LEVEL >= 2 */
@@ -135,10 +127,7 @@ _DEFUN (mallopt, (p, v),
    previous version of the malloc routines.  It now just calls
    malloc_stats.  */
 
-void
-_DEFUN (_mstats_r, (ptr, s),
-	struct _reent *ptr _AND
-	char *s)
+void _mstats_r(struct _reent *ptr, char *s)
 {
   _REENT_SMALL_CHECK_INIT(ptr);
   fiprintf (_stderr_r (ptr), "Memory allocation statistics %s\n", s);
@@ -146,9 +135,7 @@ _DEFUN (_mstats_r, (ptr, s),
 }
 
 #ifndef _REENT_ONLY
-void
-_DEFUN (mstats, (s),
-	char *s)
+void mstats(char *s)
 {
   _mstats_r (_REENT, s);
 }

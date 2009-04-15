@@ -117,7 +117,6 @@ No supporting OS subroutines are required.
  */
 
 
-#include <_ansi.h>
 #include <limits.h>
 #include <ctype.h>
 #include <errno.h>
@@ -126,11 +125,7 @@ No supporting OS subroutines are required.
 
 #ifndef _REENT_ONLY
 
-long long
-_DEFUN (strtoll, (s, ptr, base),
-	_CONST char *s _AND
-	char **ptr _AND
-	int base)
+long long strtoll(const char *s, char **ptr, int base)
 {
 	return _strtoll_r (_REENT, s, ptr, base);
 }

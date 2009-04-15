@@ -4,8 +4,7 @@
 #include <stdio.h>
 #include <errno.h>
 
-int
-mbsinit(const mbstate_t *ps)
+int mbsinit(const mbstate_t *ps)
 {
   if (ps == NULL || ps->__count == 0)
     return 1;

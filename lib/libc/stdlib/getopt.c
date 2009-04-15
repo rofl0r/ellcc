@@ -114,8 +114,7 @@ static int optwhere = 0;
 /* functions */
 
 /* reverse_argv_elements:  reverses num elements starting at argv */
-static void
-reverse_argv_elements (char **argv, int num)
+static void reverse_argv_elements (char **argv, int num)
 {
   int i;
   char *tmp;
@@ -129,8 +128,7 @@ reverse_argv_elements (char **argv, int num)
 }
 
 /* permute: swap two blocks of argv-elements given their lengths */
-static void
-permute (char *const argv[], int len1, int len2)
+static void permute (char *const argv[], int len1, int len2)
 {
   reverse_argv_elements ((char **) argv, len1);
   reverse_argv_elements ((char **) argv, len1 + len2);
@@ -138,8 +136,7 @@ permute (char *const argv[], int len1, int len2)
 }
 
 /* is_option: is this argv-element an option or the end of the option list? */
-static int
-is_option (char *argv_element, int only)
+static int is_option (char *argv_element, int only)
 {
   return ((argv_element == 0)
 	  || (argv_element[0] == '-') || (only && argv_element[0] == '+'));
@@ -147,8 +144,7 @@ is_option (char *argv_element, int only)
 
 /* read_globals: read the values from the globals into a getopt_data 
    structure */
-static void
-read_globals (struct getopt_data *data)
+static void read_globals (struct getopt_data *data)
 {
   data->optarg = optarg;
   data->optind = optind;
@@ -159,19 +155,16 @@ read_globals (struct getopt_data *data)
 
 /* write_globals: write the values into the globals from a getopt_data
    structure */
-static void
-write_globals (struct getopt_data *data)
+static void write_globals (struct getopt_data *data)
 {
   optarg = data->optarg;
   optind = data->optind;
   opterr = data->opterr;
   optopt = data->optopt;
   optwhere = data->optwhere;
-}
-
+} 
 /* getopt_internal:  the function that does all the dirty work */
-static int
-getopt_internal (int argc, char *const argv[], const char *shortopts,
+static int getopt_internal (int argc, char *const argv[], const char *shortopts,
 		 const struct option *longopts, int *longind, int only,
 		 struct getopt_data *data)
 {
@@ -413,8 +406,7 @@ getopt_internal (int argc, char *const argv[], const char *shortopts,
     return data->optopt;
 }
 
-int
-getopt (int argc, char *const argv[], const char *optstring)
+int getopt (int argc, char *const argv[], const char *optstring)
 {
   struct getopt_data data;
   int r;
@@ -425,8 +417,7 @@ getopt (int argc, char *const argv[], const char *optstring)
   return r;
 }
 
-int
-getopt_long (int argc, char *const argv[], const char *shortopts,
+int getopt_long (int argc, char *const argv[], const char *shortopts,
 	     const struct option *longopts, int *longind)
 {
   struct getopt_data data;
@@ -438,8 +429,7 @@ getopt_long (int argc, char *const argv[], const char *shortopts,
   return r;
 }
 
-int
-getopt_long_only (int argc, char *const argv[], const char *shortopts,
+int getopt_long_only (int argc, char *const argv[], const char *shortopts,
 		  const struct option *longopts, int *longind)
 {
   struct getopt_data data;
@@ -449,25 +439,21 @@ getopt_long_only (int argc, char *const argv[], const char *shortopts,
   r = getopt_internal (argc, argv, shortopts, longopts, longind, 1, &data);
   write_globals (&data);
   return r;
-}
-
-int
-__getopt_r (int argc, char *const argv[], const char *optstring,
+} 
+int __getopt_r (int argc, char *const argv[], const char *optstring,
 	    struct getopt_data *data)
 {
   return getopt_internal (argc, argv, optstring, 0, 0, 0, data);
 }
 
-int
-__getopt_long_r (int argc, char *const argv[], const char *shortopts,
+int __getopt_long_r (int argc, char *const argv[], const char *shortopts,
 	         const struct option *longopts, int *longind,
 	         struct getopt_data *data)
 {
   return getopt_internal (argc, argv, shortopts, longopts, longind, 0, data);
 }
 
-int
-__getopt_long_only_r (int argc, char *const argv[], const char *shortopts,
+int __getopt_long_only_r (int argc, char *const argv[], const char *shortopts,
 		      const struct option *longopts, int *longind,
 		      struct getopt_data *data)
 {
@@ -475,5 +461,3 @@ __getopt_long_only_r (int argc, char *const argv[], const char *shortopts,
 }
 
 #endif /* !HAVE_GETOPT */
-
-/* end of file GETOPT.C */

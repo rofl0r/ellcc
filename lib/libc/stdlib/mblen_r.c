@@ -47,12 +47,7 @@ effects vary with the locale.
 #include <stdlib.h>
 #include <wchar.h>
 
-int
-_DEFUN (_mblen_r, (r, s, n, state), 
-        struct _reent *r    _AND
-        const char *s _AND
-        size_t n _AND
-        mbstate_t *state)
+int _mblen_r(struct _reent *r, const char *s, size_t n, mbstate_t *state)
 {
 #ifdef _MB_CAPABLE
   int retval;
@@ -73,4 +68,3 @@ _DEFUN (_mblen_r, (r, s, n, state),
   return 1;
 #endif /* not _MB_CAPABLE */
 }
-

@@ -117,7 +117,6 @@ No supporting OS subroutines are required.
  */
 
 
-#include <_ansi.h>
 #include <limits.h>
 #include <ctype.h>
 #include <errno.h>
@@ -130,11 +129,10 @@ No supporting OS subroutines are required.
  * Ignores `locale' stuff.  Assumes that the upper and lower case
  * alphabets and digits are each contiguous.
  */
-long
-_DEFUN (_strtol_r, (rptr, nptr, endptr, base),
-	struct _reent *rptr _AND
-	_CONST char *nptr _AND
-	char **endptr _AND
+long _strtol_r(
+	struct _reent *rptr,
+	const char *nptr,
+	char **endptr,
 	int base)
 {
 	register const char *s = nptr;
@@ -214,11 +212,7 @@ _DEFUN (_strtol_r, (rptr, nptr, endptr, base),
 
 #ifndef _REENT_ONLY
 
-long
-_DEFUN (strtol, (s, ptr, base),
-	_CONST char *s _AND
-	char **ptr _AND
-	int base)
+long strtol(const char *s, char **ptr, int base)
 {
 	return _strtol_r (_REENT, s, ptr, base);
 }

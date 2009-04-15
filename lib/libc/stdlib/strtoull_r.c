@@ -56,12 +56,7 @@
  * Ignores `locale' stuff.  Assumes that the upper and lower case
  * alphabets and digits are each contiguous.
  */
-unsigned long long
-_DEFUN (_strtoull_r, (rptr, nptr, endptr, base),
-	struct _reent *rptr _AND
-	_CONST char *nptr _AND
-	char **endptr _AND
-	int base)
+unsigned long long _strtoull_r(struct _reent *rptr, const char *nptr, char **endptr, int base)
 {
 	register const char *s = nptr;
 	register unsigned long long acc;

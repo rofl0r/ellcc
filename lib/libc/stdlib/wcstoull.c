@@ -118,7 +118,6 @@ PORTABILITY
  * SUCH DAMAGE.
  */
 
-#include <_ansi.h>
 #include <limits.h>
 #include <wctype.h>
 #include <errno.h>
@@ -127,11 +126,7 @@ PORTABILITY
 
 #ifndef _REENT_ONLY
 
-unsigned long long
-_DEFUN (wcstoull, (s, ptr, base),
-	_CONST wchar_t *s _AND
-	wchar_t **ptr _AND
-	int base)
+unsigned long long wcstoull(const wchar_t *s, wchar_t **ptr, int base)
 {
 	return _wcstoull_r (_REENT, s, ptr, base);
 }

@@ -5,12 +5,7 @@
  * convert it to float at the end of processing.
  */
 
-#include <_ansi.h>
-
-int
-_DEFUN (__ten_mul, (acc, digit),
-	double *acc _AND
-	int digit)
+int __ten_mul(double *acc, int digit)
 {
   /*
    * [atw] Crude, but effective (at least on a KB)...

@@ -55,11 +55,7 @@ effects vary with the locale.
 #include <stdlib.h>
 #include <wchar.h>
 
-int
-_DEFUN (mbtowc, (pwc, s, n),
-        wchar_t *pwc _AND
-        const char *s _AND
-        size_t n)
+int mbtowc(wchar_t *pwc, const char *s, size_t n)
 {
 #ifdef _MB_CAPABLE
   int retval = 0;

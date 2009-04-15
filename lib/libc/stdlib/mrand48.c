@@ -13,9 +13,7 @@
 
 #include "rand48.h"
 
-long
-_DEFUN (_mrand48_r, (r),
-       struct _reent *r)
+long _mrand48_r(struct _reent *r)
 {
   _REENT_CHECK_RAND48(r);
   __dorand48(r, __rand48_seed);
@@ -23,9 +21,8 @@ _DEFUN (_mrand48_r, (r),
 }
 
 #ifndef _REENT_ONLY
-long
-_DEFUN_VOID (mrand48)
+long mrand48(void)
 {
-  return _mrand48_r (_REENT);
+  return _mrand48_r(_REENT);
 }
 #endif /* !_REENT_ONLY */

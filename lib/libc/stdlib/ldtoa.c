@@ -2,7 +2,6 @@
   * This program has been placed in the public domain.
   */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <string.h>
 #include <stdlib.h>
@@ -287,9 +286,7 @@ static char *ermsg[7] = {
  */
 
 #include <stdio.h>
-/* #include "\usr\include\stdio.h" */
-/*#include "ehead.h"*/
-/*#include "mconf.h"*/
+
 /*							mconf.h
  *
  *	Common include file for math routines

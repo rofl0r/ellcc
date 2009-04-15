@@ -79,15 +79,11 @@ static char ***p_environ = &environ;
  *	This routine *should* be a static; don't use it.
  */
 
-char *
-_DEFUN (_findenv_r, (reent_ptr, name, offset),
-        struct _reent *reent_ptr   _AND
-	register _CONST char *name _AND
-	int *offset)
+char *_findenv_r(struct _reent *reent_ptr, register const char *name, int *offset)
 {
   register int len;
   register char **p;
-  _CONST char *c;
+  const char *c;
 
   ENV_LOCK;
 
@@ -124,10 +120,7 @@ _DEFUN (_findenv_r, (reent_ptr, name, offset),
  *	Returns ptr to value associated with name, if any, else NULL.
  */
 
-char *
-_DEFUN (_getenv_r, (reent_ptr, name),
-        struct _reent *reent_ptr _AND
-	_CONST char *name)
+char *_getenv_r(struct _reent *reent_ptr, const char *name)
 {
   int offset;
   char *_findenv_r ();

@@ -5,13 +5,7 @@
 #include <stdio.h>
 #include <errno.h>
 
-size_t
-_DEFUN (_mbsrtowcs_r, (r, dst, src, n, ps), 
-	struct _reent *r _AND
-	wchar_t *dst _AND
-	const char **src _AND
-	size_t n _AND
-	mbstate_t *ps)
+size_t _mbsrtowcs_r(struct _reent *r, wchar_t *dst, const char **src, size_t n, mbstate_t *ps)
 {
   wchar_t *ptr = dst;
   const char *tmp_src;
@@ -68,12 +62,7 @@ _DEFUN (_mbsrtowcs_r, (r, dst, src, n, ps),
 }
 
 #ifndef _REENT_ONLY
-size_t
-_DEFUN (mbsrtowcs, (dst, src, len, ps),
-	wchar_t *dst _AND
-	const char **src _AND
-	size_t len _AND
-	mbstate_t *ps)
+size_t mbsrtowcs(wchar_t *dst, const char **src, size_t len, mbstate_t *ps)
 {
   return _mbsrtowcs_r (_REENT, dst, src, len, ps);
 }

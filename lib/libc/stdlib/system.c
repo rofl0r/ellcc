@@ -64,10 +64,7 @@ Supporting OS subroutines required: <<_exit>>, <<_execve>>, <<_fork_r>>,
 static int do_system ();
 #endif
 
-int
-_system_r (ptr, s)
-     struct _reent *ptr;
-     _CONST char *s;
+int _system_r(struct _reent *ptr, const char *s)
 {
 #if defined(HAVE_SYSTEM)
   return _system (s);
@@ -100,9 +97,7 @@ _system_r (ptr, s)
 
 #ifndef _REENT_ONLY
 
-int
-system (s)
-     _CONST char *s;
+int system(const char *s)
 {
   return _system_r (_REENT, s);
 }
@@ -117,10 +112,7 @@ extern char **environ;
    'environ'.  */
 static char ***p_environ = &environ;
 
-static int
-do_system (ptr, s)
-     struct _reent *ptr;
-     _CONST char *s;
+static int do_system(struct _reent *ptr, const char *s)
 {
   char *argv[4];
   int pid, status;
@@ -149,10 +141,7 @@ do_system (ptr, s)
 #endif
 
 #if defined (__CYGWIN__)
-static int
-do_system (ptr, s)
-     struct _reent *ptr;
-     _CONST char *s;
+static int do_system(struct _reent *ptr, const char *s)
 {
   char *argv[4];
   int pid, status;

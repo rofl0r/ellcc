@@ -47,13 +47,7 @@ static JIS_ACTION JIS_action_table[JIS_S_NUM][JIS_C_NUM] = {
 
 extern char __lc_ctype[12];
 
-int
-_DEFUN (_mbtowc_r, (r, pwc, s, n, state),
-        struct _reent *r   _AND
-        wchar_t       *pwc _AND 
-        const char    *s   _AND        
-        size_t         n   _AND
-        mbstate_t      *state)
+int _mbtowc_r(struct _reent *r, wchar_t *pwc, const char *s, size_t n, mbstate_t *state)
 {
   wchar_t dummy;
   unsigned char *t = (unsigned char *)s;

@@ -5,13 +5,7 @@
 #include <stdio.h>
 #include <errno.h>
 
-size_t
-_DEFUN (_wcsrtombs_r, (r, dst, src, len, ps),
-	struct _reent *r _AND
-	char *dst _AND
-	const wchar_t **src _AND
-	size_t len _AND
-	mbstate_t *ps)
+size_t _wcsrtombs_r(struct _reent *r, char *dst, const wchar_t **src, size_t len, mbstate_t *ps)
 {
   char *ptr = dst;
   char buff[10];
@@ -75,12 +69,7 @@ _DEFUN (_wcsrtombs_r, (r, dst, src, len, ps),
 } 
 
 #ifndef _REENT_ONLY
-size_t
-_DEFUN (wcsrtombs, (dst, src, len, ps),
-	char *dst _AND
-	const wchar_t **src _AND
-	size_t len _AND
-	mbstate_t *ps)
+size_t wcsrtombs(char *dst, const wchar_t **src, size_t len, mbstate_t *ps)
 {
   return _wcsrtombs_r (_REENT, dst, src, len, ps);
 }

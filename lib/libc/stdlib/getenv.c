@@ -68,10 +68,7 @@ variables vary from one system to another.
  *	This routine *should* be a static; don't use it.
  */
 
-char *
-_DEFUN (_findenv, (name, offset),
-	register _CONST char *name _AND
-	int *offset)
+char *_findenv(register const char *name, int *offset)
 {
   return _findenv_r (_REENT, name, offset);
 }
@@ -81,9 +78,7 @@ _DEFUN (_findenv, (name, offset),
  *	Returns ptr to value associated with name, if any, else NULL.
  */
 
-char *
-_DEFUN (getenv, (name),
-	_CONST char *name)
+char *getenv(const char *name)
 {
   int offset;
   char *_findenv_r ();

@@ -58,9 +58,7 @@ No supporting OS subroutines are required.
 
 #include <stdlib.h>
 
-long long
-_DEFUN(llabs, (j),
-       long long j)
+long long llabs(long long j)
 {
 	return (j < 0 ? -j : j);
 }

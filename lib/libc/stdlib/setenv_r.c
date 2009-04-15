@@ -37,7 +37,7 @@ extern char **environ;
 static char ***p_environ = &environ;
 
 /* _findenv_r is defined in getenv_r.c.  */
-extern char *_findenv_r _PARAMS ((struct _reent *, const char *, int *));
+extern char *_findenv_r (struct _reent *, const char *, int *);
 
 /*
  * _setenv_r --
@@ -45,12 +45,7 @@ extern char *_findenv_r _PARAMS ((struct _reent *, const char *, int *));
  *	"value".  If rewrite is set, replace any current value.
  */
 
-int
-_DEFUN (_setenv_r, (reent_ptr, name, value, rewrite),
-        struct _reent *reent_ptr _AND
-	_CONST char *name _AND
-	_CONST char *value _AND
-	int rewrite)
+int _setenv_r(struct _reent *reent_ptr, const char *name, const char *value, int rewrite)
 {
   static int alloced;		/* if allocated space before */
   register char *C;
@@ -132,10 +127,7 @@ _DEFUN (_setenv_r, (reent_ptr, name, value, rewrite),
  * _unsetenv_r(name) --
  *	Delete environmental variable "name".
  */
-void
-_DEFUN (_unsetenv_r, (reent_ptr, name),
-        struct _reent *reent_ptr _AND
-        _CONST char *name)
+void _unsetenv_r(struct _reent *reent_ptr, const char *name)
 {
   register char **P;
   int offset;
