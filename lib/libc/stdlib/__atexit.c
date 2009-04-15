@@ -8,18 +8,11 @@
 #include <sys/lock.h>
 #include "atexit.h"
 
-
 /*
  * Register a function to be performed at exit or on shared library unload.
  */
 
-int
-_DEFUN (__register_exitproc,
-	(type, fn, arg, d),
-	int type _AND
-	void (*fn) (void) _AND
-	void *arg _AND
-	void *d)
+int __register_exitproc(int type, void (*fn) (void), void *arg, void *d)
 {
   struct _on_exit_args * args;
   register struct _atexit *p;

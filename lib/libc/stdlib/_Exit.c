@@ -38,9 +38,7 @@ Supporting OS subroutines required: <<_exit>>.
 #include <unistd.h>	/* for _exit() declaration */
 #include <reent.h>
 
-void 
-_DEFUN (_Exit, (code),
-	int code)
+void _Exit(int code)
 {
   _exit (code);
 }

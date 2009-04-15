@@ -1,13 +1,3 @@
-/* NetWare can not use this implementation of abort.  It provides its
-   own version of abort in clib.nlm.  If we can not use clib.nlm, then
-   we must write abort in sys/netware.  */
-
-#ifdef ABORT_PROVIDED
-
-int _dummy_abort = 1;
-
-#else
-
 /*
 FUNCTION
 <<abort>>---abnormal termination of a program
@@ -50,8 +40,7 @@ Supporting OS subroutines required: <<_exit>> and optionally, <<write>>.
 #include <unistd.h>
 #include <signal.h>
 
-_VOID
-_DEFUN_VOID (abort)
+void abort(void)
 {
 #ifdef ABORT_MESSAGE
   write (2, "Abort called\n", sizeof ("Abort called\n")-1);
@@ -63,5 +52,3 @@ _DEFUN_VOID (abort)
       _exit (1);
     }
 }
-
-#endif

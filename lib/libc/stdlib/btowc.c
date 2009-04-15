@@ -4,8 +4,7 @@
 #include <reent.h>
 #include <string.h>
 
-wint_t
-btowc (int c)
+wint_t btowc(int c)
 {
   mbstate_t mbs;
   int retval = 0;

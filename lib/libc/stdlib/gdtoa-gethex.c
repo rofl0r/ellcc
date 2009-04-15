@@ -29,7 +29,6 @@ THIS SOFTWARE.
 /* Please send bug reports to David M. Gay (dmg at acm dot org,
  * with " at " changed at "@" and " dot " changed to ".").	*/
 
-#include <_ansi.h>
 #include <reent.h>
 #include <string.h>
 #include "mprec.h"
@@ -42,19 +41,14 @@ THIS SOFTWARE.
 
 unsigned char hexdig[256];
 
-static void
-_DEFUN (htinit, (h, s, inc),
-	unsigned char *h _AND
-	unsigned char *s _AND
-	int inc)
+static void htinit(unsigned char *h, unsigned char *s, int inc)
 {
 	int i, j;
 	for(i = 0; (j = s[i]) !=0; i++)
 		h[j] = i + inc;
 }
 
-void
-_DEFUN_VOID (hexdig_init)
+void hexdig_init(void)
 {
 #define USC (unsigned char *)
 	htinit(hexdig, USC "0123456789", 0x10);
@@ -62,10 +56,7 @@ _DEFUN_VOID (hexdig_init)
 	htinit(hexdig, USC "ABCDEF", 0x10 + 10);
 }
 
-static void
-_DEFUN(rshift, (b, k),
-	_Bigint *b _AND
-	int k)
+static void rshift(_Bigint *b, int k)
 {
 	__ULong *x, *x1, *xe, y;
 	int n;
@@ -93,10 +84,7 @@ _DEFUN(rshift, (b, k),
 		b->_x[0] = 0;
 }
 
-static _Bigint *
-_DEFUN (increment, (ptr, b),
-	struct _reent *ptr _AND
-	_Bigint *b)
+static _Bigint *increment(struct _reent *ptr, _Bigint *b)
 {
 	__ULong *x, *xe;
 	_Bigint *b1;
@@ -136,18 +124,10 @@ _DEFUN (increment, (ptr, b),
 	return b;
 }
 
-
-int
-_DEFUN(gethex, (ptr, sp, fpi, exp, bp, sign),
-	struct _reent *ptr _AND
-	_CONST char **sp _AND
-	FPI *fpi _AND
-	Long *exp _AND
-	_Bigint **bp _AND
-	int sign)
+int gethex(struct _reent *ptr, const char **sp, FPI *fpi, Long *exp, _Bigint **bp, int sign)
 {
 	_Bigint *b;
-	_CONST unsigned char *decpt, *s0, *s, *s1;
+	const unsigned char *decpt, *s0, *s, *s1;
 	int esign, havedig, irv, k, n, nbits, up, zret;
 	__ULong L, lostbits, *x;
 	Long e, e1;
@@ -160,7 +140,7 @@ _DEFUN(gethex, (ptr, sp, fpi, exp, bp, sign),
 	if (!hexdig['0'])
 		hexdig_init();
 	havedig = 0;
-	s0 = *(_CONST unsigned char **)sp + 2;
+	s0 = *(const unsigned char **)sp + 2;
 	while(s0[havedig] == '0')
 		havedig++;
 	s0 += havedig;
@@ -348,4 +328,3 @@ _DEFUN(gethex, (ptr, sp, fpi, exp, bp, sign),
 	*exp = e;
 	return irv;
 }
-

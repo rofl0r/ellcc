@@ -59,13 +59,10 @@ PORTABILITY
 Supporting OS subroutines required: None.
 */
 
-#include <_ansi.h>
 #include <stdlib.h>
 #include <limits.h>
 
-long
-_DEFUN (a64l, (input),
-	const char *input)
+long a64l(const char *input)
 {
   const char *ptr;
   char ch;
@@ -77,7 +74,7 @@ _DEFUN (a64l, (input),
 
   ptr = input;
 
-  /* it easiest to go from most significant digit to least so find end of input or up
+  /* It is easiest to go from most significant digit to least so find end of input or up
      to 6 characters worth */
   for (i = 0; i < 6; ++i)
     {
@@ -191,7 +188,3 @@ _DEFUN (a64l, (input),
 
   return result;
 }
-
-
-
-

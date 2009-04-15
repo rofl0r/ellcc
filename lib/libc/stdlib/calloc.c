@@ -1,5 +1,4 @@
 #ifdef MALLOC_PROVIDED
-int _dummy_calloc = 1;
 #else
 /*
 FUNCTION
@@ -57,10 +56,7 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 
 #ifndef _REENT_ONLY
 
-_PTR
-_DEFUN (calloc, (n, size),
-	size_t n _AND
-	size_t size)
+void *calloc(size_t n, size_t size)
 {
   return _calloc_r (_REENT, n, size);
 }

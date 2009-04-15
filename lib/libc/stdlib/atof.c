@@ -51,8 +51,8 @@ and <<ERANGE>> is stored in <<errno>>.
 returns a <<float>>.
 
 PORTABILITY
-<<atof>> is ANSI C. <<atof>>, <<atoi>>, and <<atol>> are subsumed by <<strod>>
-and <<strol>>, but are used extensively in existing code. These functions are
+<<atof>> is ANSI C. <<atof>>, <<atoi>>, and <<atol>> are subsumed by <<strtod>>
+and <<strtol>>, but are used extensively in existing code. These functions are
 less reliable, but may be faster if the argument is verified to be in a valid
 range.
 
@@ -62,11 +62,8 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 
 
 #include <stdlib.h>
-#include <_ansi.h>
 
-double
-_DEFUN (atof, (s),
-	_CONST char *s)
+double atof(const char *s)
 {
   return strtod (s, NULL);
 }

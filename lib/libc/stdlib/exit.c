@@ -54,9 +54,7 @@ Supporting OS subroutines required: <<_exit>>.
  * Exit, flushing stdio buffers if necessary.
  */
 
-void 
-_DEFUN (exit, (code),
-	int code)
+void exit(int code)
 {
   __call_exitprocs (code, NULL);
 

@@ -37,18 +37,13 @@ THIS SOFTWARE.
 
 /* Modified 06-21-2006 by Jeff Johnston to work with newlib.  */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <string.h>
 #include "mprec.h"
 #include "gdtoa.h"
 
 #ifdef INFNAN_CHECK
-static void
-_DEFUN (L_shift, (x, x1, i),
-	__ULong *x _AND
-	__ULong *x1 _AND
-	int i)
+static void L_shift(__ULong *x, __ULong *x1, int i)
 {
 	int j;
 
@@ -61,14 +56,10 @@ _DEFUN (L_shift, (x, x1, i),
 		} while(++x < x1);
 }
 
-int
-_DEFUN (hexnan, (sp, fpi, x0),
-	_CONST char **sp _AND
-	FPI *fpi _AND
-	__ULong *x0)
+int hexnan(const char **sp, FPI *fpi, __ULong *x0)
 {
 	__ULong c, h, *x, *x1, *xe;
-	_CONST char *s;
+	const char *s;
 	int havedig, hd0, i, nbits;
 
 	if (!hexdig['0'])
@@ -81,7 +72,7 @@ _DEFUN (hexnan, (sp, fpi, x0),
 	x1 = xe = x;
 	havedig = hd0 = i = 0;
 	s = *sp;
-	while((c = *(_CONST unsigned char*)++s)) {
+	while((c = *(const unsigned char*)++s)) {
 		if (!(h = hexdig[c])) {
 			if (c <= ' ') {
 				if (hd0 < havedig) {

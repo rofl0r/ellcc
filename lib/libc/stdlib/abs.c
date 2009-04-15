@@ -36,8 +36,7 @@ No supporting OS subroutines are required.
 
 #include <stdlib.h>
 
-int
-_DEFUN (abs, (i), int i)
+int abs(int i)
 {
   return (i < 0) ? -i : i;
 }

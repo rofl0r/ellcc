@@ -2,7 +2,6 @@
  * Implementation if __cxa_finalize.
  */
 
-
 #include <stdlib.h>
 #include <reent.h>
 #include "atexit.h"
@@ -12,9 +11,7 @@
  * otherwise only the handlers from that DSO are called.
  */
 
-void 
-_DEFUN (__cxa_finalize, (d),
-	void * d)
+void __cxa_finalize(void *d)
 {
-  __call_exitprocs (0, d);
+  __call_exitprocs(0, d);
 }

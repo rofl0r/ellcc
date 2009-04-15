@@ -380,36 +380,36 @@ typedef struct _Bigint _Bigint;
 
 struct _reent ;
 struct FPI;
-double 		_EXFUN(ulp,(double x));
-double		_EXFUN(b2d,(_Bigint *a , int *e));
-_Bigint *	_EXFUN(Balloc,(struct _reent *p, int k));
-void 		_EXFUN(Bfree,(struct _reent *p, _Bigint *v));
-_Bigint *	_EXFUN(multadd,(struct _reent *p, _Bigint *, int, int));
-_Bigint *	_EXFUN(s2b,(struct _reent *, const char*, int, int, __ULong));
-_Bigint	*	_EXFUN(i2b,(struct _reent *,int));
-_Bigint *	_EXFUN(mult, (struct _reent *, _Bigint *, _Bigint *));
-_Bigint *	_EXFUN(pow5mult, (struct _reent *, _Bigint *, int k));
-int 		_EXFUN(hi0bits,(__ULong));
-int 		_EXFUN(lo0bits,(__ULong *));
-_Bigint *	_EXFUN(d2b,(struct _reent *p, double d, int *e, int *bits));
-_Bigint *	_EXFUN(lshift,(struct _reent *p, _Bigint *b, int k));
-_Bigint *	_EXFUN(diff,(struct _reent *p, _Bigint *a, _Bigint *b));
-int		_EXFUN(cmp,(_Bigint *a, _Bigint *b));
-int		_EXFUN(gethex,(struct _reent *p, _CONST char **sp, struct FPI *fpi, Long *exp, _Bigint **bp, int sign));     
-double		_EXFUN(ratio,(_Bigint *a, _Bigint *b));
-__ULong		_EXFUN(any_on,(_Bigint *b, int k));
-void		_EXFUN(copybits,(__ULong *c, int n, _Bigint *b));
-void		_EXFUN(hexdig_init,(void));
+double 		ulp(double x);
+double		b2d(_Bigint *a , int *e);
+_Bigint *	Balloc(struct _reent *p, int k);
+void 		Bfree(struct _reent *p, _Bigint *v);
+_Bigint *	multadd(struct _reent *p, _Bigint *, int, int);
+_Bigint *	s2b(struct _reent *, const char*, int, int, __ULong);
+_Bigint	*	i2b(struct _reent *,int);
+_Bigint *	mult(struct _reent *, _Bigint *, _Bigint *);
+_Bigint *	pow5mult(struct _reent *, _Bigint *, int k);
+int 		hi0bits(__ULong);
+int 		lo0bits(__ULong *);
+_Bigint *	d2b(struct _reent *p, double d, int *e, int *bits);
+_Bigint *	lshift(struct _reent *p, _Bigint *b, int k);
+_Bigint *	diff(struct _reent *p, _Bigint *a, _Bigint *b);
+int		cmp(_Bigint *a, _Bigint *b);
+int		gethex(struct _reent *p, const char **sp, struct FPI *fpi, Long *exp, _Bigint **bp, int sign);     
+double		ratio(_Bigint *a, _Bigint *b);
+__ULong		any_on(_Bigint *b, int k);
+void		copybits(__ULong *c, int n, _Bigint *b);
+void		hexdig_init(void);
 #ifdef INFNAN_CHECK
-int		_EXFUN(hexnan,(_CONST char **sp, struct FPI *fpi, __ULong *x0));
+int		hexnan(const char **sp, struct FPI *fpi, __ULong *x0);
 #endif
 
 #define Bcopy(x,y) memcpy((char *)&x->_sign, (char *)&y->_sign, y->_wds*sizeof(__Long) + 2*sizeof(int))
 
-extern _CONST double tinytens[];
-extern _CONST double bigtens[];
-extern _CONST double tens[];
+extern const double tinytens[];
+extern const double bigtens[];
+extern const double tens[];
 extern unsigned char hexdig[];
 
 
-double _EXFUN(_mprec_log10,(int));
+double _mprec_log10(int);

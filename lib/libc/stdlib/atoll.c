@@ -77,18 +77,13 @@ No supporting OS subroutines are required.
 #include <stddef.h>
 
 #ifndef _REENT_ONLY
-long long
-_DEFUN(atoll, (str),
-       _CONST char *str)
+long long atoll(const char *str)
 {
 	return strtoll(str, (char **)NULL, 10);
 }
 #endif /* !_REENT_ONLY */
 
-long long
-_DEFUN(_atoll_r, (ptr, str),
-       struct _reent *ptr _AND
-       _CONST char *str)
+long long _atoll_r(struct _reent *ptr, const char *str)
 {
 	return _strtoll_r(ptr, str, (char **)NULL, 10);
 }

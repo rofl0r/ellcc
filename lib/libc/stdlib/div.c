@@ -82,13 +82,9 @@ No supporting OS subroutines are required.
  * SUCH DAMAGE.
  */
 
-#include <_ansi.h>
 #include <stdlib.h>		/* div_t */
 
-div_t
-_DEFUN (div, (num, denom),
-	int num _AND
-	int denom)
+div_t div(int num, int denom)
 {
 	div_t r;
 

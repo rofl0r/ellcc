@@ -2,21 +2,12 @@
  * return (*acc) scaled by 10**dexp.
  */
 
-#include <_ansi.h>
 #include <reent.h>
 #include "std.h"
 
 #define abs(x) (((x) < 0) ? -(x) : (x))
 
-double
-_DEFUN (__adjust, (ptr, acc, dexp, sign),
-	struct _reent *ptr _AND
-	double *acc _AND
-	int dexp _AND
-	int sign)
-     /* *acc	the 64 bit accumulator */
-     /* dexp	decimal exponent       */
-     /* sign	sign flag   	       */
+double __adjust(struct _reent *ptr, double *acc, int dexp, int sign)
 {
   double r;
 

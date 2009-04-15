@@ -12,12 +12,7 @@
  * Register a function to be performed at exit or DSO unload.
  */
 
-int
-_DEFUN (__cxa_atexit,
-	(fn, arg, d),
-	void (*fn) (void *) _AND
-	void *arg _AND
-	void *d)
+int __cxa_atexit(void (*fn)(void *), void *arg, void *d)
 {
-  return __register_exitproc (__et_cxa, (void (*)(void)) fn, arg, d);
+  return __register_exitproc(__et_cxa, (void (*)(void)) fn, arg, d);
 }

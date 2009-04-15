@@ -67,22 +67,14 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 <<lseek>>, <<read>>, <<sbrk>>, <<write>>.
 */
 
-#include <_ansi.h>
 #include <stdlib.h>
 #include <string.h>
 #include <reent.h>
 #include "mprec.h"
 #include "local.h"
 
-static void
-_DEFUN (print_f, (ptr, buf, invalue, ndigit, type, dot, mode),
-	struct _reent *ptr _AND
-	char *buf _AND
-	double invalue _AND
-	int ndigit _AND
-	char type _AND
-	int dot _AND
-	int mode)
+static void print_f(struct _reent *ptr, char *buf, double invalue, int ndigit,
+	            char type, int dot, int mode)
 {
   int decpt;
   int sign;
@@ -142,14 +134,7 @@ _DEFUN (print_f, (ptr, buf, invalue, ndigit, type, dot, mode),
 
    WIDTH is the number of digits of precision after the decimal point.  */
 
-static void
-_DEFUN (print_e, (ptr, buf, invalue, width, type, dot),
-	struct _reent *ptr _AND
-	char *buf _AND
-	double invalue _AND
-	int width _AND
-	char type _AND
-	int dot)
+static void print_e(struct _reent *ptr, char *buf, double invalue, int width, char type, int dot)
 {
   int sign;
   char *end;
@@ -225,13 +210,7 @@ _DEFUN (print_e, (ptr, buf, invalue, width, type, dot),
    pointer to static space in the rent structure.  This is only to
    support ecvt and fcvt, which aren't ANSI anyway.  */
 
-char *
-_DEFUN (fcvtbuf, (invalue, ndigit, decpt, sign, fcvt_buf),
-	double invalue _AND
-	int ndigit _AND
-	int *decpt _AND
-	int *sign _AND
-	char *fcvt_buf)
+char *fcvtbuf(double invalue, int ndigit, int *decpt, int *sign, char *fcvt_buf)
 {
   char *save;
   char *p;
@@ -281,13 +260,7 @@ _DEFUN (fcvtbuf, (invalue, ndigit, decpt, sign, fcvt_buf),
   return save;
 }
 
-char *
-_DEFUN (ecvtbuf, (invalue, ndigit, decpt, sign, fcvt_buf),
-	double invalue _AND
-	int ndigit _AND
-	int *decpt _AND
-	int *sign _AND
-	char *fcvt_buf)
+char *ecvtbuf(double invalue, int ndigit, int *decpt, int *sign, char *fcvt_buf)
 {
   char *save;
   char *p;
@@ -331,14 +304,7 @@ _DEFUN (ecvtbuf, (invalue, ndigit, decpt, sign, fcvt_buf),
 
 #endif
 
-char *
-_DEFUN (_gcvt, (ptr, invalue, ndigit, buf, type, dot),
-	struct _reent *ptr _AND
-	double invalue _AND
-	int ndigit _AND
-	char *buf _AND
-	char type _AND
-	int dot)
+char *_gcvt(struct _reent *ptr, double invalue, int ndigit, char *buf, char type, int dot)
 {
   char *save = buf;
 
@@ -439,15 +405,8 @@ _DEFUN (_gcvt, (ptr, invalue, ndigit, buf, type, dot),
   return save;
 }
 
-char *
-_DEFUN (_dcvt, (ptr, buffer, invalue, precision, width, type, dot),
-	struct _reent *ptr _AND
-	char *buffer _AND
-	double invalue _AND
-	int precision _AND
-	int width _AND
-	char type _AND
-	int dot)
+char *_dcvt(struct _reent *ptr, char *buffer, double invalue, int precision, int width, char type,
+	    int dot)
 {
   switch (type)
     {
