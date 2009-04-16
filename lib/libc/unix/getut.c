@@ -4,15 +4,13 @@
 #include <unistd.h>
 #include <utmp.h>
 #include <_syslist.h>
-#include <_ansi.h>
 
 static int utmp_fd = -2;
 static char *utmp_file = UTMP_FILE;
 
 static struct utmp utmp_data;
 
-void
-setutent ()
+void setutent(void)
 {
   if (utmp_fd == -2)
     {
@@ -21,21 +19,18 @@ setutent ()
   lseek (utmp_fd, 0, SEEK_SET);
 }
 
-void
-endutent ()
+void endutent(void)
 {
   close (utmp_fd);
   utmp_fd = -2;
 }
 
-void
-utmpname (_CONST char *file)
+void utmpname(const char *file)
 {
   utmp_file = strdup (file);
 }
 
-struct utmp *
-getutent ()
+struct utmp *getutent(void)
 {
   if (utmp_fd == -2)
     setutent ();
@@ -44,8 +39,7 @@ getutent ()
   return &utmp_data;
 }
 
-struct utmp *
-getutid (struct utmp *id)
+struct utmp *getutid(struct utmp *id)
 {
   while (read (utmp_fd, &utmp_data, sizeof (utmp_data)) == sizeof (utmp_data))
     {
@@ -70,8 +64,7 @@ getutid (struct utmp *id)
   return 0;
 }
 
-struct utmp *
-getutline (struct utmp *line)
+struct utmp *getutline(struct utmp *line)
 {
   while (read (utmp_fd, &utmp_data, sizeof (utmp_data)) == sizeof (utmp_data))
     {

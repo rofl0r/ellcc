@@ -47,17 +47,10 @@ PORTABILITY
 Supporting OS subroutine required: <<read>>, <<lseek>>.
 */
 
-#include <_ansi.h>
 #include <unistd.h>
 #include <reent.h>
 
-ssize_t
-_DEFUN (_pread_r, (rptr, fd, buf, n, off),
-     struct _reent *rptr _AND
-     int fd _AND
-     _PTR buf _AND
-     size_t n _AND
-     off_t off)
+ssize_t _pread_r(struct _reent *rptr, int fd, void * buf, size_t n, off_t off)
 {
   off_t cur_pos;
   _READ_WRITE_RETURN_TYPE num_read;
@@ -78,12 +71,7 @@ _DEFUN (_pread_r, (rptr, fd, buf, n, off),
 
 #ifndef _REENT_ONLY
 
-ssize_t
-_DEFUN (pread, (fd, buf, n, off),
-     int fd _AND
-     _PTR buf _AND
-     size_t n _AND
-     off_t off)
+ssize_t pread(int fd, void * buf, size_t n, off_t off)
 {
   return _pread_r (_REENT, fd, buf, n, off);
 }
