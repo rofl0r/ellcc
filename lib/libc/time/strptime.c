@@ -106,15 +106,13 @@ const int tm_year_base = 1900;
  * Return TRUE iff `year' was a leap year.
  * Needed for strptime.
  */
-static int
-is_leap_year (int year)
+static int is_leap_year(int year)
 {
     return (year % 4) == 0 && ((year % 100) != 0 || (year % 400) == 0);
 }
 
 /* Needed for strptime. */
-static int
-match_string (const char **buf, const char **strs)
+static int match_string(const char **buf, const char **strs)
 {
     int i = 0;
 
@@ -130,8 +128,7 @@ match_string (const char **buf, const char **strs)
 }
 
 /* Needed for strptime. */
-static int
-first_day (int year)
+static int first_day(int year)
 {
     int ret = 4;
 
@@ -145,8 +142,7 @@ first_day (int year)
  * Needed for strptime
  */
 
-static void
-set_week_number_sun (struct tm *timeptr, int wnum)
+static void set_week_number_sun(struct tm *timeptr, int wnum)
 {
     int fday = first_day (timeptr->tm_year + tm_year_base);
 
@@ -162,8 +158,7 @@ set_week_number_sun (struct tm *timeptr, int wnum)
  * Needed for strptime
  */
 
-static void
-set_week_number_mon (struct tm *timeptr, int wnum)
+static void set_week_number_mon(struct tm *timeptr, int wnum)
 {
     int fday = (first_day (timeptr->tm_year + tm_year_base) + 6) % 7;
 
@@ -178,8 +173,7 @@ set_week_number_mon (struct tm *timeptr, int wnum)
  * Set `timeptr' given `wnum' (week number [0, 53])
  * Needed for strptime
  */
-static void
-set_week_number_mon4 (struct tm *timeptr, int wnum)
+static void set_week_number_mon4(struct tm *timeptr, int wnum)
 {
     int fday = (first_day (timeptr->tm_year + tm_year_base) + 6) % 7;
     int offset = 0;
@@ -196,12 +190,7 @@ set_week_number_mon4 (struct tm *timeptr, int wnum)
 
 /* strptime: roken */
 //extern "C"
-char *
-//strptime (const char *buf, const char *format, struct tm *timeptr)
-_DEFUN (strptime, (buf, format, timeptr),
-	_CONST char *buf _AND
-	_CONST char *format _AND
-	struct tm *timeptr)
+char *strptime(const char *buf, const char *format, struct tm *timeptr)
 {
     char c;
 
@@ -443,4 +432,3 @@ _DEFUN (strptime, (buf, format, timeptr),
     }
     return (char *)buf;
 }
-

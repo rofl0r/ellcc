@@ -255,17 +255,17 @@ This implementation does not support <<s>> being NULL, nor overlapping
 #include <stdlib.h>
 #include "local.h"
 
-static _CONST int dname_len[7] =
+static const int dname_len[7] =
 {6, 6, 7, 9, 8, 6, 8};
 
-static _CONST char *_CONST dname[7] =
+static const char *const dname[7] =
 {"Sunday", "Monday", "Tuesday", "Wednesday",
  "Thursday", "Friday", "Saturday"};
 
-static _CONST int mname_len[12] =
+static const int mname_len[12] =
 {7, 8, 5, 5, 3, 4, 4, 6, 9, 7, 8, 8};
 
-static _CONST char *_CONST mname[12] =
+static const char *const mname[12] =
 {"January", "February", "March", "April",
  "May", "June", "July", "August", "September", "October", "November",
  "December"};
@@ -273,9 +273,7 @@ static _CONST char *_CONST mname[12] =
 /* Using the tm_year, tm_wday, and tm_yday components of TIM_P, return
    -1, 0, or 1 as the adjustment to add to the year for the ISO week
    numbering used in "%g%G%V", avoiding overflow.  */
-static int
-_DEFUN (iso_year_adjust, (tim_p),
-	_CONST struct tm *tim_p)
+static int iso_year_adjust(const struct tm *tim_p)
 {
   /* Account for fact that tm_year==0 is year 1900.  */
   int leap = isleap (tim_p->tm_year + (YEAR_BASE
@@ -317,12 +315,7 @@ _DEFUN (iso_year_adjust, (tim_p),
 #undef PACK
 }
 
-size_t
-_DEFUN (strftime, (s, maxsize, format, tim_p),
-	char *s _AND
-	size_t maxsize _AND
-	_CONST char *format _AND
-	_CONST struct tm *tim_p)
+size_t strftime(char *s, size_t maxsize, const char *format, const struct tm *tim_p)
 {
   size_t count = 0;
   int i;

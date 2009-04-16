@@ -60,13 +60,11 @@ PORTABILITY
 Supporting OS subroutine required: None
 */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <time.h>
 #include "local.h"
 
-_VOID
-_DEFUN_VOID (tzset)
+void tzset(void)
 {
   _tzset_r (_REENT);
 }

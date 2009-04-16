@@ -14,27 +14,23 @@
 #include <time.h>
 #include "local.h"
 
-static _CONST int mon_lengths[2][MONSPERYEAR] = {
+static const int mon_lengths[2][MONSPERYEAR] = {
   {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31},
   {31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31}
 } ;
 
-static _CONST int year_lengths[2] = {
+static const int year_lengths[2] = {
   365,
   366
 } ;
 
-struct tm *
-_DEFUN (_mktm_r, (tim_p, res, is_gmtime),
-	_CONST time_t * tim_p _AND
-	struct tm *res _AND
-	int is_gmtime)
+struct tm *_mktm_r(const time_t * tim_p, struct tm *res, int is_gmtime)
 {
   long days, rem;
   time_t lcltime;
   int y;
   int yleap;
-  _CONST int *ip;
+  const int *ip;
    __tzinfo_type *tz = __gettzinfo ();
 
   /* base decision about std/dst time on current time */
@@ -195,9 +191,7 @@ _DEFUN (_mktm_r, (tim_p, res, is_gmtime),
   return (res);
 }
 
-int
-_DEFUN (__tzcalc_limits, (year),
-	int year)
+int __tzcalc_limits(int year)
 {
   int days, year_days, years;
   int i, j;
@@ -225,7 +219,7 @@ _DEFUN (__tzcalc_limits, (year),
 	{
 	  int yleap = isleap(year);
 	  int m_day, m_wday, wday_diff;
-	  _CONST int *ip = mon_lengths[yleap];
+	  const int *ip = mon_lengths[yleap];
 
 	  days = year_days;
 
@@ -254,4 +248,3 @@ _DEFUN (__tzcalc_limits, (year),
 
   return 1;
 }
-

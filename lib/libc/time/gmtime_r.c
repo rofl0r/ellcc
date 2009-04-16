@@ -5,10 +5,7 @@
 #include <time.h>
 #include "local.h"
 
-struct tm *
-_DEFUN (gmtime_r, (tim_p, res),
-	_CONST time_t * tim_p _AND
-	struct tm *res)
+struct tm *gmtime_r(const time_t * tim_p, struct tm *res)
 {
-  return (_mktm_r (tim_p, res, 1));
+  return _mktm_r(tim_p, res, 1);
 }

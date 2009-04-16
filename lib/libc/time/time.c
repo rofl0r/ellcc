@@ -32,14 +32,11 @@ Supporting OS subroutine required: Some implementations require
 
 /* Most times we have a system call in newlib/libc/sys/.. to do this job */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <sys/types.h>
 #include <sys/time.h>
 
-time_t
-_DEFUN (time, (t),
-	time_t * t)
+time_t time(time_t * t)
 {
   struct timeval now;
 

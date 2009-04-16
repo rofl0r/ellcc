@@ -1,4 +1,3 @@
-#include <_ansi.h>
 #include <reent.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,9 +10,7 @@ static char __tzname_std[11];
 static char __tzname_dst[11];
 static char *prev_tzenv = NULL;
 
-_VOID
-_DEFUN (_tzset_r, (reent_ptr),
-        struct _reent *reent_ptr)
+void _tzset_r(struct _reent *reent_ptr)
 {
   char *tzenv;
   unsigned short hh, mm, ss, m, w, d;
@@ -193,8 +190,3 @@ _DEFUN (_tzset_r, (reent_ptr),
 
   TZ_UNLOCK;
 }
-
-
-
-
-
