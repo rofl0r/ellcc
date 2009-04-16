@@ -6,9 +6,7 @@
 #include <libgen.h>
 #include <string.h>
 
-char* 
-_DEFUN (basename, (path),
-	char *path)
+char *basename(char *path)
 {
 	char *p;
 	if( path == NULL || *path == '\0' )

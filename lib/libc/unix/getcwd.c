@@ -31,10 +31,6 @@
  * SUCH DAMAGE.
  */
 
-#if defined(LIBC_SCCS) && !defined(lint)
-static char sccsid[] = "@(#)getcwd.c	5.11 (Berkeley) 2/24/91";
-#endif /* LIBC_SCCS and not lint */
-
 #include <sys/stat.h>
 #include <errno.h>
 #include <dirent.h>
@@ -53,10 +49,7 @@ static char sccsid[] = "@(#)getcwd.c	5.11 (Berkeley) 2/24/91";
 
 #ifndef _REENT_ONLY
 
-char *
-getcwd (pt, size)
-     char *pt;
-     size_t size;
+char *getcwd(char *pt; size_t size)
 {
   register struct dirent *dp;
   register DIR *dir;

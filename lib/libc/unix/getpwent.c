@@ -16,9 +16,7 @@ static char gecos[1024];
 static char dir[1024];
 static char shell[1024];
 
-struct passwd *
-getpwnam (name)
-     const char *name;
+struct passwd *getpwnam(const char *name)
 {
   FILE *fp;
   char buf[1024];
@@ -51,8 +49,7 @@ getpwnam (name)
   return NULL;
 }
 
-struct passwd *
-getpwuid (uid_t uid)
+struct passwd *getpwuid(uid_t uid)
 {
   FILE *fp;
   char buf[1024];
@@ -85,8 +82,7 @@ getpwuid (uid_t uid)
   return NULL;
 }
 
-struct passwd *
-getpwent ()
+struct passwd *getpwent(void)
 {
   char buf[1024];
 
@@ -110,8 +106,7 @@ getpwent ()
   return &pw_passwd;
 }
 
-void
-setpwent ()
+void setpwent(void)
 {
   if (passwd_fp != NULL)
     fclose (passwd_fp);
@@ -119,8 +114,7 @@ setpwent ()
   passwd_fp = fopen ("/etc/passwd", "r");
 }
 
-void
-endpwent ()
+void endpwent(void)
 {
   if (passwd_fp != NULL)
     fclose (passwd_fp);

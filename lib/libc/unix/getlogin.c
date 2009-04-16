@@ -5,8 +5,7 @@
 #include <fcntl.h>
 #include <_syslist.h>
 
-char *
-getlogin ()
+char *getlogin(void)
 {
   int utmp_fd;
   struct utmp utmp_buf;

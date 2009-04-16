@@ -31,10 +31,6 @@
  * SUCH DAMAGE.
  */
 
-#if defined(LIBC_SCCS) && !defined(lint)
-static char sccsid[] = "@(#)getpass.c	5.9 (Berkeley) 5/6/91";
-#endif /* LIBC_SCCS and not lint */
-
 #include <stdio.h>
 #include <unistd.h>
 #include <pwd.h>
@@ -50,9 +46,7 @@ static char sccsid[] = "@(#)getpass.c	5.9 (Berkeley) 5/6/91";
 #define _PASSWORD_LEN           128     /* max length, not counting NULL */
 #endif
 
-char *
-getpass (prompt)
-     const char *prompt;
+char *getpass(const char *prompt)
 {
   struct termios term;
   register int ch;
