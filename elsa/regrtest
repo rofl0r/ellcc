@@ -1486,6 +1486,7 @@ testCparse c/t0025.c
 testCparse c/t0026.c
 testCparse c/t0027.c
 testCparse c/t0028.c
+testCparse c/t0029.c
 
 testCparse gnu/d0096.c
 testCparse c/dC0010.c #"f(u8 register) doesn't parse"
