@@ -1,6 +1,6 @@
-int strlen(const char*);
+int f(char*);
 int main(int argc, char** argv)
 {
-      char buf[1024];
-      buf[strlen(buf)];
+      char b[1];
+      b[f(b)];
 }

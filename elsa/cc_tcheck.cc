@@ -6347,7 +6347,6 @@ int compareArgsToParams(Env &env, FunctionType *ft, FakeList<ArgExpression> *arg
                                             FakeList<Designator>::makeList(d),
                                             new IN_expr(loc, arg->expr)));
             ASTTypeId *ati = env.buildASTTypeId(memb->type);
-std::cout << "cv = " << ati->spec->cv << "\n";
             ati->spec->cv = (CVFlags)0; // RICH
             E_compoundLit *ecl =
               new E_compoundLit(EXPR_LOC(SL_UNKNOWN ENDLOCARG(SL_UNKNOWN)) ati, new IN_compound(loc, inits));
@@ -6391,6 +6390,11 @@ std::cout << "cv = " << ati->spec->cv << "\n";
     // is the argument the name of an overloaded function? [cppstd 13.4]
     env.possiblySetOverloadedFunctionVar(arg->expr, param->type,
                                          argInfo[paramIndex].overloadSet);
+
+    // RICH:
+    std::cerr << "before " << arg->expr->type->toString() << "\n";
+    arg->expr->type = normalizeParameterType(env, arg->expr->loc, arg->expr->type);
+    std::cerr << "after " << arg->expr->type->toString() << "\n";
 
     // dsw: I changed this from isGeneralizedDependent() to
     // containsGeneralizedDependent() because that is what I am doing
