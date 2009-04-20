@@ -6391,11 +6391,6 @@ int compareArgsToParams(Env &env, FunctionType *ft, FakeList<ArgExpression> *arg
     env.possiblySetOverloadedFunctionVar(arg->expr, param->type,
                                          argInfo[paramIndex].overloadSet);
 
-    // RICH:
-    std::cerr << "before " << arg->expr->type->toString() << "\n";
-    arg->expr->type = normalizeParameterType(env, arg->expr->loc, arg->expr->type);
-    std::cerr << "after " << arg->expr->type->toString() << "\n";
-
     // dsw: I changed this from isGeneralizedDependent() to
     // containsGeneralizedDependent() because that is what I am doing
     // at the other call site to
@@ -8355,7 +8350,9 @@ Type *E_binary::itcheck_x(Env &env, Expression *&replacement)
 
   if (op == BIN_BRACKETS) {
     // built-in a[b] is equivalent to *(a+b)
-    replacement = new E_deref(EXPR_LOC(loc ENDLOCARG(endloc)) new E_binary(EXPR_LOC(loc ENDLOCARG(endloc)) e1, BIN_PLUS, e2));
+    replacement = new E_deref(EXPR_LOC(loc ENDLOCARG(endloc))
+                              new E_binary(EXPR_LOC(loc ENDLOCARG(endloc))
+                                           e1, BIN_PLUS, e2));
     replacement->tcheck(env, replacement);
     return replacement->type;
   }
