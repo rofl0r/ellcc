@@ -6391,6 +6391,16 @@ int compareArgsToParams(Env &env, FunctionType *ft, FakeList<ArgExpression> *arg
     env.possiblySetOverloadedFunctionVar(arg->expr, param->type,
                                          argInfo[paramIndex].overloadSet);
 
+    // Make sure arrays are pointers to the first element.
+    if (!(param->type->isReferenceType() && !param->type->isPDSArrayType())) {
+        Type* t = arg->expr->type;
+        if (t->isReferenceType() && t->asRval()->isPDSArrayType()) {
+            t = t->asRval();
+            t = env.makePointerType(CV_NONE, t->getAtType());
+            arg->expr->type = t;
+        }
+    }
+
     // dsw: I changed this from isGeneralizedDependent() to
     // containsGeneralizedDependent() because that is what I am doing
     // at the other call site to

@@ -679,7 +679,7 @@ testparse t0383.cc
 testparse t0384.cc
 testparse t0385.cc
 testparse t0386.cc
-failparse t0387.cc "Array of char to char*"
+testparse t0387.cc
 testparse t0388.cc
 testparse t0389.cc
 testparse t0390.cc
