@@ -6395,10 +6395,10 @@ int compareArgsToParams(Env &env, FunctionType *ft, FakeList<ArgExpression> *arg
     std::cerr << "param type " << param->type->toString() << "\n";
     std::cerr << "arg->expr " << arg->expr->asString() << " " << arg->expr->kind() << " " << arg->expr->isE_addrOf() << "\n";
     std::cerr << "arg->expr type " << arg->expr->type->toString() << "\n";
-    if (1 || !env.inUninstTemplate()  &&   ((!arg->expr->isE_stringLit()
-            && !param->type->isReferenceType()
-            && !param->type->isPDSArrayType())
-         || arg->expr->isE_addrOf())) {
+    if ((   !arg->expr->isE_stringLit()
+         && !param->type->isReferenceType()
+         && !param->type->isPDSArrayType())
+         || arg->expr->isE_addrOf()) {
     // if (!(   arg->expr->isE_stringLit()
           // && param->type->isReferenceType()
           // && !param->type->isPDSArrayType())) {
