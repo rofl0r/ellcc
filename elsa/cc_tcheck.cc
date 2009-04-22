@@ -6392,9 +6392,19 @@ int compareArgsToParams(Env &env, FunctionType *ft, FakeList<ArgExpression> *arg
                                          argInfo[paramIndex].overloadSet);
 
     // Make sure arrays are pointers to the first element.
-    if (!(param->type->isReferenceType() && !param->type->isPDSArrayType())) {
+    std::cerr << "param type " << param->type->toString() << "\n";
+    std::cerr << "arg->expr " << arg->expr->asString() << " " << arg->expr->kind() << " " << arg->expr->isE_addrOf() << "\n";
+    std::cerr << "arg->expr type " << arg->expr->type->toString() << "\n";
+    if (1 || !env.inUninstTemplate()  &&   ((!arg->expr->isE_stringLit()
+            && !param->type->isReferenceType()
+            && !param->type->isPDSArrayType())
+         || arg->expr->isE_addrOf())) {
+    // if (!(   arg->expr->isE_stringLit()
+          // && param->type->isReferenceType()
+          // && !param->type->isPDSArrayType())) {
         Type* t = arg->expr->type;
-        if (t->isReferenceType() && t->asRval()->isPDSArrayType()) {
+        if (   t->isReferenceType()
+            && t->asRval()->isPDSArrayType()) {
             t = t->asRval();
             t = env.makePointerType(CV_NONE, t->getAtType());
             arg->expr->type = t;
