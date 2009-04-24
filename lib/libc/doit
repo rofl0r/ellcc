@@ -1,7 +1,8 @@
 #!/bin/sh
-#CC=~/ellcc/ellcc/nios2-elf-ecc
-CC=gcc
-CFLAGS="-DHAVE_OPENDIR -nostdinc -I. -Iinclude"
+CC=~/ellcc/ellcc/arm-elf-ecc
+CFLAGS="-DHAVE_OPENDIR -I. -Iinclude"
+#CC=gcc
+#CFLAGS="-DHAVE_OPENDIR -nostdinc -I. -Iinclude"
 for i in */*.c ; do
     echo $CC -c $CFLAGS $i
     $CC -c $CFLAGS $i

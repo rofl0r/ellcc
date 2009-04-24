@@ -27,7 +27,7 @@ using namespace elsa;
 
 #define SRET 1
 
-#if 0
+#if 1
 // Really verbose debugging.
 #define VDEBUG(who, where, what) std::cerr << toString(where) << ": " << who << " "; what; std::cerr << "\n"
 #else
@@ -1207,7 +1207,6 @@ void S_asm::cc2llvm(CC2LLVMEnv &env) const
 
 
     llvm::FunctionType* type = llvm::FunctionType::get(returnType, argTypes, false);
-    VDEBUG("S_asm constraints", loc, std::cerr << def->constraintString.c_str());
     VDEBUG("S_asm function type", loc, type->print(std::cerr));
     llvm::InlineAsm* function = llvm::InlineAsm::get(type,
                                                      (const char*)def->text->data->getDataC(),

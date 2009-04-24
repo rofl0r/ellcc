@@ -5063,12 +5063,15 @@ void Handler::tcheck(Env &env)
 // ------------------- Expression tcheck -----------------------
 Type *makeLvalType(TypeFactory &tfac, Type *underlying)
 {
+    std::cerr << __LINE__ << "\n";
   if (underlying->isLval()) {
+    std::cerr << __LINE__ << "\n";
     // this happens for example if a variable is declared to
     // a reference type
     return underlying;
   }
   else if (underlying->isFunctionType()) {
+    std::cerr << __LINE__ << "\n";
     // don't make references to functions
     return underlying;
 
@@ -5077,6 +5080,7 @@ Type *makeLvalType(TypeFactory &tfac, Type *underlying)
     //   int (&a)[];
   }
   else {
+    std::cerr << __LINE__ << "\n";
     return tfac.makeReferenceType(underlying);
   }
 }
@@ -6392,16 +6396,9 @@ int compareArgsToParams(Env &env, FunctionType *ft, FakeList<ArgExpression> *arg
                                          argInfo[paramIndex].overloadSet);
 
     // Make sure arrays are pointers to the first element.
-    std::cerr << "param type " << param->type->toString() << "\n";
-    std::cerr << "arg->expr " << arg->expr->asString() << " " << arg->expr->kind() << " " << arg->expr->isE_addrOf() << "\n";
-    std::cerr << "arg->expr type " << arg->expr->type->toString() << "\n";
-    if ((   !arg->expr->isE_stringLit()
-         && !param->type->isReferenceType()
-         && !param->type->isPDSArrayType())
-         || arg->expr->isE_addrOf()) {
-    // if (!(   arg->expr->isE_stringLit()
-          // && param->type->isReferenceType()
-          // && !param->type->isPDSArrayType())) {
+    if (   !arg->expr->isE_stringLit()
+        && !param->type->isReferenceType()
+        && !param->type->isPDSArrayType()) {
         Type* t = arg->expr->type;
         if (   t->isReferenceType()
             && t->asRval()->isPDSArrayType()) {
@@ -8660,8 +8657,7 @@ Type *E_deref::itcheck_x(Env &env, Expression *&replacement)
 
   // check for overloading
   {
-    Type *ovlRet = resolveOverloadedUnaryOperator(
-      env, replacement, /*this,*/ ptr, OP_STAR);
+    Type *ovlRet = resolveOverloadedUnaryOperator(env, replacement, /*this,*/ ptr, OP_STAR);
     if (ovlRet) {
       return ovlRet;
     }
@@ -8688,6 +8684,7 @@ Type *E_deref::itcheck_x(Env &env, Expression *&replacement)
 
   // implicit coercion of array to pointer for dereferencing
   if (rt->isPDSArrayType()) {
+    std::cerr << __LINE__ << "\n";
     return makeLvalType(env, rt->asPDSArrayType()->eltType);
   }
 
