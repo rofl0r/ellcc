@@ -27,7 +27,7 @@ using namespace elsa;
 
 #define SRET 1
 
-#if 0
+#if 1
 // Really verbose debugging.
 #define VDEBUG(who, where, what) std::cerr << toString(where) << ": " << who << " "; what; std::cerr << "\n"
 #else
@@ -158,12 +158,7 @@ llvm::Value* CC2LLVMEnv::checkCondition(Expression* cond)
 
 const llvm::Type* CC2LLVMEnv::makeTypeSpecifier(SourceLoc loc, Type *t)
 {
-    const llvm::Type* type = types.get(t);
-
-    if (type) {
-        // This type has already been seen.
-	return type;
-    }
+    const llvm::Type* type = NULL;
 
     switch (t->getTag())
     {
@@ -177,8 +172,8 @@ const llvm::Type* CC2LLVMEnv::makeTypeSpecifier(SourceLoc loc, Type *t)
     case Type::T_POINTER: {
 	// RICH: Is const, volatile?
         PointerType *pt = t->asPointerType();
-            type = makeTypeSpecifier(loc, pt->atType);
-            if (type == NULL || type == llvm::Type::VoidTy) {
+        type = makeTypeSpecifier(loc, pt->atType);
+        if (type == NULL || type == llvm::Type::VoidTy) {
             /** If type is NULL, we have a va_list pointer (i.e. *...").
 	     *  treat this as a void*.
 	     * LLVM doesn't understand void*. Make it into iBITS_PER_BYTE*.
@@ -186,8 +181,9 @@ const llvm::Type* CC2LLVMEnv::makeTypeSpecifier(SourceLoc loc, Type *t)
             type = llvm::IntegerType::get(BITS_PER_BYTE);
 	}
 
+        VDEBUG("makeTypeSpecifier pointer", loc, type->print(std::cerr));
 	xassert(type != NULL && "A NULL type encountered");
-        type =  llvm::PointerType::get(type, 0);	// RICH: Address space.
+        type = llvm::PointerType::get(type, 0);	// RICH: Address space.
         break;
     }
     case Type::T_REFERENCE: {
@@ -229,8 +225,7 @@ const llvm::Type* CC2LLVMEnv::makeTypeSpecifier(SourceLoc loc, Type *t)
         break;
     }
 
-    // Remember the mapping of this type.
-    types.add(t, type);
+    VDEBUG("makeTypeSpecifier done", loc, type->print(std::cerr));
     return type;
 }
 
@@ -297,6 +292,7 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLoc loc, AtomicType 
     case AtomicType::T_COMPOUND: {
         CompoundType *ct = at->asCompoundType();
 	type = compounds.get(ct);
+        VDEBUG("makeAtomicTypeSpecifier compound", loc, type->print(std::cerr));
 	if (type) {
 	    // We already have this one.
 	    break;
@@ -323,6 +319,7 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLoc loc, AtomicType 
 	llvm::StructType* st = llvm::StructType::get(fields, false);	// RICH: isPacked
         llvm::cast<llvm::OpaqueType>(fwd.get())->refineAbstractTypeTo(st);
 	type = llvm::cast<llvm::Type>(fwd.get());
+        VDEBUG("makeAtomicTypeSpecifier compound done", loc, type->print(std::cerr));
         compounds.add(ct, type);
 
         // Now, look for static members and methods.
@@ -382,6 +379,7 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLoc loc, AtomicType 
         break;
     }
 
+    VDEBUG("makeAtomicTypeSpecifier done", loc, type->print(std::cerr));
     return type;
 }
 

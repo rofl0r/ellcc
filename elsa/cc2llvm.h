@@ -238,9 +238,6 @@ public:      // funcs
     /** Map AST compound members types to LLVM indices.
      */
     PtrMap<const Variable, llvm::Value> members;
-    /** Map AST types to LLVM types.
-     */
-    PtrMap<Type, const llvm::Type> types;
     /** Map labels to LLVM blocks.
      */
     PtrMap<const char, llvm::BasicBlock> labels;
