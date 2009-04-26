@@ -5063,15 +5063,12 @@ void Handler::tcheck(Env &env)
 // ------------------- Expression tcheck -----------------------
 Type *makeLvalType(TypeFactory &tfac, Type *underlying)
 {
-    std::cerr << __LINE__ << "\n";
   if (underlying->isLval()) {
-    std::cerr << __LINE__ << "\n";
     // this happens for example if a variable is declared to
     // a reference type
     return underlying;
   }
   else if (underlying->isFunctionType()) {
-    std::cerr << __LINE__ << "\n";
     // don't make references to functions
     return underlying;
 
@@ -5080,7 +5077,6 @@ Type *makeLvalType(TypeFactory &tfac, Type *underlying)
     //   int (&a)[];
   }
   else {
-    std::cerr << __LINE__ << "\n";
     return tfac.makeReferenceType(underlying);
   }
 }
@@ -8674,22 +8670,21 @@ Type *E_deref::itcheck_x(Env &env, Expression *&replacement)
   if (rt->isPointerType()) {
     PointerType *pt = rt->asPointerType();
     if (pt->atType->isVoid()) {
-      return env.error(rt, stringc
-        << "cannot dereference type `" << rt->toString() << "'");
+      return env.error(rt, stringc << "cannot dereference type `" << rt->toString() << "'");
     }
 
     // dereferencing yields an lvalue
-    return makeLvalType(env, pt->atType);
+    rt = makeLvalType(env, pt->atType);
+    return rt;
   }
 
   // implicit coercion of array to pointer for dereferencing
   if (rt->isPDSArrayType()) {
-    std::cerr << __LINE__ << "\n";
-    return makeLvalType(env, rt->asPDSArrayType()->eltType);
+    rt = makeLvalType(env, rt->asPDSArrayType()->eltType);
+    return rt;
   }
 
-  return env.error(rt, stringc
-    << "cannot dereference non-pointer type `" << rt->toString() << "'");
+  return env.error(rt, stringc << "cannot dereference non-pointer type `" << rt->toString() << "'");
 }
 
 

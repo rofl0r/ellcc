@@ -27,7 +27,7 @@ using namespace elsa;
 
 #define SRET 1
 
-#if 1
+#if 0
 // Really verbose debugging.
 #define VDEBUG(who, where, what) std::cerr << toString(where) << ": " << who << " "; what; std::cerr << "\n"
 #else
@@ -2747,6 +2747,13 @@ llvm::Value *E_deref::cc2llvm(CC2LLVMEnv &env, int& deref) const
     VDEBUG("E_deref", loc, std::cerr << "deref " << deref << " "; source->getType()->getContainedType(0)->print(std::cerr));
     /** @TODO I'm not pleased with this mess. The parser should help us more here.
      */
+    if (source->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID) {
+        std::vector<llvm::Value*> indices;
+        indices.push_back(llvm::Constant::getNullValue(env.targetData.getIntPtrType()));
+        indices.push_back(llvm::Constant::getNullValue(env.targetData.getIntPtrType()));
+        source = env.builder.CreateGEP(source, indices.begin(), indices.end(), "");
+        VDEBUG("E_deref GEP", loc, source->print(std::cerr));
+    }
     bool first = source->getType()->getContainedType(0)->isFirstClassType();
     if (   first
         && source->getType()->getContainedType(0)->getTypeID() != llvm::Type::ArrayTyID
