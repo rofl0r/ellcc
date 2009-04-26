@@ -368,6 +368,8 @@ testCparse_special_march arm -c t0063.S
 testCparse_special_march arm -S t0064.c 
 failCparse_march mips t0065.c "mips code generation failure"
 testCparse_special -S t0066.c 
+testCparse_special -S t0067.c 
+testCparse_special -S t0068.c 
 
 # is K&R built?
 use_kandr=false
