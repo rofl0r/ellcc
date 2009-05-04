@@ -519,9 +519,14 @@ void CC2LLVMEnv::constructor(llvm::Value* object, const E_constructor* cons)
     FAKELIST_FOREACH(ArgExpression, cons->args, arg) {
         int deref;
         llvm::Value* param = arg->expr->cc2llvm(*this, deref);
-        VDEBUG("Param", arg->expr->loc, param->print(std::cerr));
-        param = access(param, false, deref);                 // RICH: Volatile.
-        VDEBUG("Param after", arg->expr->loc, param->print(std::cerr));
+        VDEBUG("Constructor", arg->expr->loc, param->print(std::cerr));
+        const llvm::GetElementPtrInst *gep;
+        if (   !(   (gep = llvm::dyn_cast<llvm::GetElementPtrInst>(param))
+                 && gep->getPointerOperandType()->getElementType()->getTypeID() == llvm::Type::ArrayTyID)
+            && (!llvm::isa<llvm::Constant>(param) || llvm::isa<llvm::GlobalValue>(param))) {
+            param = access(param, false, deref);                 // RICH: Volatile.
+        }
+        VDEBUG("Constructor after", arg->expr->loc, param->print(std::cerr));
         if (   param->getType()->getTypeID() == llvm::Type::ArrayTyID
                 || (   param->getType()->getTypeID() == llvm::Type::PointerTyID
                     && param->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID)) {
@@ -1454,8 +1459,12 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, int& deref) const
         int deref = 0;
         llvm::Value* param = arg->expr->cc2llvm(env, deref);
         VDEBUG("Param", loc, std::cerr << (arg->expr->type->isReference() ? "&" : "") << arg->expr->asString() << " "; param->print(std::cerr));
-        param = env.access(param, false, deref, ref ? 1 : 0);                 // RICH: Volatile.
-        // RICH: param = env.access(param, false, deref);                 // RICH: Volatile.
+        const llvm::GetElementPtrInst *gep;
+        if (   !(   (gep = llvm::dyn_cast<llvm::GetElementPtrInst>(param))
+                 && gep->getPointerOperandType()->getElementType()->getTypeID() == llvm::Type::ArrayTyID)
+            && (!llvm::isa<llvm::Constant>(param) || llvm::isa<llvm::GlobalValue>(param))) {
+            param = env.access(param, false, deref, ref ? 1 : 0);                 // RICH: Volatile.
+        }
         VDEBUG("Param after", loc, param->print(std::cerr));
         if (   param->getType()->getTypeID() == llvm::Type::ArrayTyID
             || (   param->getType()->getTypeID() == llvm::Type::PointerTyID
@@ -2422,7 +2431,12 @@ llvm::Value* CC2LLVMEnv::binop(SourceLoc loc, BinaryOp op, Expression* e1, llvm:
             // Get the value of the left side.
             const llvm::Value* before = left;
             VDEBUG("before left", loc, left->print(std::cerr));
-            left = access(left, false, deref1);                 // RICH: Volatile.
+            const llvm::GetElementPtrInst *gep;
+            if (   !(   (gep = llvm::dyn_cast<llvm::GetElementPtrInst>(left))
+                     && gep->getPointerOperandType()->getElementType()->getTypeID() == llvm::Type::ArrayTyID)
+                && (!llvm::isa<llvm::Constant>(left) || llvm::isa<llvm::GlobalValue>(left))) {
+                left = access(left, false, deref1);                 // RICH: Volatile.
+            }
 
             if (op == BIN_MINUS) {
                 // Negate the integer value.

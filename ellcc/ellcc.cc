@@ -911,6 +911,21 @@ static cl::opt<OptimizationLevels> OptLevel(cl::ZeroOrMore,
   )
 );
 
+static CodeGenOpt::Level getCodeGenOpt()
+{
+    switch (OptLevel) {
+    default:
+    case OPT_FAST_COMPILE:
+        return CodeGenOpt::None;
+    case OPT_SIMPLE:
+        return CodeGenOpt::Default;
+    case OPT_AGGRESSIVE:
+    case OPT_LINK_TIME:
+    case OPT_AGGRESSIVE_LINK_TIME:
+        return CodeGenOpt::Aggressive;
+    }
+}
+
 static cl::opt<bool> DisableInline("disable-inlining",
   cl::desc("Do not run the inliner pass"));
 
@@ -2588,7 +2603,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
                 PM.add(createVerifierPass());
 
             // Ask the target to add backend passes as necessary.
-            if (Target.addPassesToEmitWholeFile(PM, *Out, FileType, OptLevel == OPT_FAST_COMPILE)) {
+            if (Target.addPassesToEmitWholeFile(PM, *Out, FileType, getCodeGenOpt())) {
                 // RICH:
                 std::cerr << progname << ": target does not support generation of this"
                     << " file type!\n";
@@ -2611,7 +2626,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
             // Ask the target to add backend passes as necessary.
             MachineCodeEmitter *MCE = 0;
 
-            switch (Target.addPassesToEmitFile(Passes, *Out, FileType, OptLevel == OPT_FAST_COMPILE)) {
+            switch (Target.addPassesToEmitFile(Passes, *Out, FileType, getCodeGenOpt())) {
                 default:
                     assert(0 && "Invalid file model!");
                     Exit(1);
@@ -2634,7 +2649,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
                     break;
             }
 
-            if (Target.addPassesToEmitFileFinish(Passes, MCE, OptLevel == OPT_FAST_COMPILE)) {
+            if (Target.addPassesToEmitFileFinish(Passes, MCE, getCodeGenOpt())) {
                 std::cerr << progname << ": target does not support generation of this"
                     << " file type!\n";
                 if (Out != &outs()) delete Out;

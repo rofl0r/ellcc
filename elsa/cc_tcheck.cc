@@ -4110,7 +4110,10 @@ FakeList<ASTTypeId> *tcheckFakeASTTypeIdList(
 static Type *normalizeParameterType(Env &env, SourceLoc loc, Type *t)
 {
   if (t->isPDSArrayType()) {
-    return env.makePtrType(t->getAtType());
+    while (t->isPDSArrayType()) {
+      t = env.makePtrType(t->getAtType());
+    }
+    return t;
   }
   if (t->isFunctionType()) {
     return env.makePtrType(t);
@@ -6396,10 +6399,11 @@ int compareArgsToParams(Env &env, FunctionType *ft, FakeList<ArgExpression> *arg
         && !param->type->isReferenceType()
         && !param->type->isPDSArrayType()) {
         Type* t = arg->expr->type;
-        if (   t->isReferenceType()
-            && t->asRval()->isPDSArrayType()) {
+        if (t->isReferenceType()) {
             t = t->asRval();
-            t = env.makePointerType(CV_NONE, t->getAtType());
+            while (t->asRval()->isPDSArrayType()) {
+                t = env.makePointerType(CV_NONE, t->getAtType());
+            }
             arg->expr->type = t;
         }
     }

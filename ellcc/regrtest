@@ -370,6 +370,10 @@ failCparse_march mips t0065.c "mips code generation failure"
 testCparse_special -S t0066.c 
 testCparse_special -S t0067.c 
 testCparse_special -S t0068.c 
+testCparse_special -S t0069.c 
+testCparse_special -S t0070.c 
+testCparse_special -S t0071.c 
+testCparse_special -S t0072.c 
 
 # is K&R built?
 use_kandr=false
