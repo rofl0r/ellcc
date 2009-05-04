@@ -136,13 +136,13 @@ int	mknod( const char *__path, mode_t __mode, dev_t __dev );
 #endif
 
 #if defined (__CYGWIN__) && !defined(__INSIDE_CYGWIN__)
-int	fchmodat, (int, const char *, mode_t, int);
-int	fstatat, (int, const char *, struct stat *, int);
-int	mkdirat, (int, const char *, mode_t);
-int	mkfifoat, (int, const char *, mode_t);
-int	mknodat, (int, const char *, mode_t, dev_t);
-int	utimensat, (int, const char *, const struct timespec *, int);
-int	futimens, (int, const struct timespec *);
+int	fchmodat(int, const char *, mode_t, int);
+int	fstatat(int, const char *, struct stat *, int);
+int	mkdirat(int, const char *, mode_t);
+int	mkfifoat(int, const char *, mode_t);
+int	mknodat(int, const char *, mode_t, dev_t);
+int	utimensat(int, const char *, const struct timespec *, int);
+int	futimens(int, const struct timespec *);
 #endif
 
 /* Provide prototypes for most of the _<systemcall> names that are

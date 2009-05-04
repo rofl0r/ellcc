@@ -67,7 +67,7 @@ int     fsync(int __fd);
 int     fdatasync(int __fd);
 char    *getcwd(char *__buf, size_t __size );
 #if defined(__CYGWIN__)
-int	getdomainname ,(char *__name, size_t __len);
+int	getdomainname(char *__name, size_t __len);
 #endif
 #if !defined(__INSIDE_CYGWIN__)
 gid_t   getegid(void );
@@ -80,7 +80,7 @@ long    gethostid(void);
 #endif
 char    *getlogin(void );
 #if defined(_POSIX_THREAD_SAFE_FUNCTIONS)
-int getlogin_r(char *name, size_t namesize) );
+int getlogin_r(char *name, size_t namesize);
 #endif
 char 	*getpass(const char *__prompt);
 size_t  getpagesize(void);
