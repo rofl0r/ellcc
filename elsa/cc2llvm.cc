@@ -74,6 +74,20 @@ static llvm::GlobalValue::LinkageTypes getLinkage(DeclFlags flags)
     return llvm::GlobalValue::ExternalLinkage;
 }
 
+static bool accessValue(const llvm::Value* value)
+{
+    bool access = false;
+    const llvm::GetElementPtrInst *gep;
+    if (   !(   (gep = llvm::dyn_cast<llvm::GetElementPtrInst>(value))
+             && gep->getPointerOperandType()->getElementType()->getTypeID() == llvm::Type::ArrayTyID)
+        // && !llvm::isa<llvm::ConstantArray>(value)) { // || llvm::isa<llvm::ConstantArray>(value))) {
+        && (!llvm::isa<llvm::Constant>(value) || llvm::isa<llvm::GlobalValue>(value))) {
+        access = true;
+    }
+
+    return access;
+}
+
 /** Make sure the current block has been opened.
  */
 void CC2LLVMEnv::checkCurrentBlock()
@@ -520,10 +534,7 @@ void CC2LLVMEnv::constructor(llvm::Value* object, const E_constructor* cons)
         int deref;
         llvm::Value* param = arg->expr->cc2llvm(*this, deref);
         VDEBUG("Constructor", arg->expr->loc, param->print(std::cerr));
-        const llvm::GetElementPtrInst *gep;
-        if (   !(   (gep = llvm::dyn_cast<llvm::GetElementPtrInst>(param))
-                 && gep->getPointerOperandType()->getElementType()->getTypeID() == llvm::Type::ArrayTyID)
-            && (!llvm::isa<llvm::Constant>(param) || llvm::isa<llvm::GlobalValue>(param))) {
+        if (accessValue(param)) {
             param = access(param, false, deref);                 // RICH: Volatile.
         }
         VDEBUG("Constructor after", arg->expr->loc, param->print(std::cerr));
@@ -1459,10 +1470,7 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, int& deref) const
         int deref = 0;
         llvm::Value* param = arg->expr->cc2llvm(env, deref);
         VDEBUG("Param", loc, std::cerr << (arg->expr->type->isReference() ? "&" : "") << arg->expr->asString() << " "; param->print(std::cerr));
-        const llvm::GetElementPtrInst *gep;
-        if (   !(   (gep = llvm::dyn_cast<llvm::GetElementPtrInst>(param))
-                 && gep->getPointerOperandType()->getElementType()->getTypeID() == llvm::Type::ArrayTyID)
-            && (!llvm::isa<llvm::Constant>(param) || llvm::isa<llvm::GlobalValue>(param))) {
+        if (accessValue(param)) {
             param = env.access(param, false, deref, ref ? 1 : 0);                 // RICH: Volatile.
         }
         VDEBUG("Param after", loc, param->print(std::cerr));
@@ -2431,10 +2439,7 @@ llvm::Value* CC2LLVMEnv::binop(SourceLoc loc, BinaryOp op, Expression* e1, llvm:
             // Get the value of the left side.
             const llvm::Value* before = left;
             VDEBUG("before left", loc, left->print(std::cerr));
-            const llvm::GetElementPtrInst *gep;
-            if (   !(   (gep = llvm::dyn_cast<llvm::GetElementPtrInst>(left))
-                     && gep->getPointerOperandType()->getElementType()->getTypeID() == llvm::Type::ArrayTyID)
-                && (!llvm::isa<llvm::Constant>(left) || llvm::isa<llvm::GlobalValue>(left))) {
+            if (accessValue(left)) {
                 left = access(left, false, deref1);                 // RICH: Volatile.
             }
 
