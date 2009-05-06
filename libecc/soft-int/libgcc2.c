@@ -1,33 +1,29 @@
 /* More subroutines needed by GCC output code on some machines.  */
 /* Compile this one with gcc.  */
 /* Copyright (C) 1989, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999,
-   2000, 2001, 2002, 2003, 2004, 2005, 2007  Free Software Foundation, Inc.
+   2000, 2001, 2002, 2003, 2004, 2005, 2007, 2008, 2009
+   Free Software Foundation, Inc.
 
 This file is part of GCC.
 
 GCC is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free
-Software Foundation; either version 2, or (at your option) any later
+Software Foundation; either version 3, or (at your option) any later
 version.
-
-In addition to the permissions in the GNU General Public License, the
-Free Software Foundation gives you unlimited permission to link the
-compiled version of this file into combinations with other programs,
-and to distribute those combinations without any restriction coming
-from the use of this file.  (The General Public License restrictions
-do apply in other respects; for example, they cover modification of
-the file, and distribution when not linked into a combine
-executable.)
 
 GCC is distributed in the hope that it will be useful, but WITHOUT ANY
 WARRANTY; without even the implied warranty of MERCHANTABILITY or
 FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
 for more details.
 
-You should have received a copy of the GNU General Public License
-along with GCC; see the file COPYING.  If not, write to the Free
-Software Foundation, 51 Franklin Street, Fifth Floor, Boston, MA
-02110-1301, USA.  */
+Under Section 7 of GPL version 3, you are granted additional
+permissions described in the GCC Runtime Library Exception, version
+3.1, as published by the Free Software Foundation.
+
+You should have received a copy of the GNU General Public License and
+a copy of the GCC Runtime Library Exception along with this program;
+see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
+<http://www.gnu.org/licenses/>.  */
 
 #include "tconfig.h"
 #include "targetcalls.h"
@@ -82,7 +78,7 @@ __negdi2 (DWtype u)
 Wtype
 __addvSI3 (Wtype a, Wtype b)
 {
-  const Wtype w = a + b;
+  const Wtype w = (UWtype) a + (UWtype) b;
 
   if (b >= 0 ? w < a : w > a)
     abort ();
@@ -93,7 +89,7 @@ __addvSI3 (Wtype a, Wtype b)
 SItype
 __addvsi3 (SItype a, SItype b)
 {
-  const SItype w = a + b;
+  const SItype w = (USItype) a + (USItype) b;
 
   if (b >= 0 ? w < a : w > a)
     abort ();
@@ -107,7 +103,7 @@ __addvsi3 (SItype a, SItype b)
 DWtype
 __addvDI3 (DWtype a, DWtype b)
 {
-  const DWtype w = a + b;
+  const DWtype w = (UDWtype) a + (UDWtype) b;
 
   if (b >= 0 ? w < a : w > a)
     abort ();
@@ -120,7 +116,7 @@ __addvDI3 (DWtype a, DWtype b)
 Wtype
 __subvSI3 (Wtype a, Wtype b)
 {
-  const Wtype w = a - b;
+  const Wtype w = (UWtype) a - (UWtype) b;
 
   if (b >= 0 ? w > a : w < a)
     abort ();
@@ -131,7 +127,7 @@ __subvSI3 (Wtype a, Wtype b)
 SItype
 __subvsi3 (SItype a, SItype b)
 {
-  const SItype w = a - b;
+  const SItype w = (USItype) a - (USItype) b;
 
   if (b >= 0 ? w > a : w < a)
     abort ();
@@ -145,7 +141,7 @@ __subvsi3 (SItype a, SItype b)
 DWtype
 __subvDI3 (DWtype a, DWtype b)
 {
-  const DWtype w = a - b;
+  const DWtype w = (UDWtype) a - (UDWtype) b;
 
   if (b >= 0 ? w > a : w < a)
     abort ();
@@ -185,7 +181,7 @@ __mulvsi3 (SItype a, SItype b)
 Wtype
 __negvSI2 (Wtype a)
 {
-  const Wtype w = -a;
+  const Wtype w = -(UWtype) a;
 
   if (a >= 0 ? w > 0 : w < 0)
     abort ();
@@ -196,7 +192,7 @@ __negvSI2 (Wtype a)
 SItype
 __negvsi2 (SItype a)
 {
-  const SItype w = -a;
+  const SItype w = -(USItype) a;
 
   if (a >= 0 ? w > 0 : w < 0)
     abort ();
@@ -210,7 +206,7 @@ __negvsi2 (SItype a)
 DWtype
 __negvDI2 (DWtype a)
 {
-  const DWtype w = -a;
+  const DWtype w = -(UDWtype) a;
 
   if (a >= 0 ? w > 0 : w < 0)
     abort ();
@@ -229,7 +225,7 @@ __absvSI2 (Wtype a)
 #ifdef L_negvsi2
     w = __negvSI2 (a);
 #else
-    w = -a;
+    w = -(UWtype) a;
 
   if (w < 0)
     abort ();
@@ -247,7 +243,7 @@ __absvsi2 (SItype a)
 #ifdef L_negvsi2
     w = __negvsi2 (a);
 #else
-    w = -a;
+    w = -(USItype) a;
 
   if (w < 0)
     abort ();
@@ -268,7 +264,7 @@ __absvDI2 (DWtype a)
 #ifdef L_negvdi2
     w = __negvDI2 (a);
 #else
-    w = -a;
+    w = -(UDWtype) a;
 
   if (w < 0)
     abort ();
@@ -1804,7 +1800,7 @@ NAME (TYPE x, int m)
 #define isfinite(x)	__builtin_expect (!isnan((x) - (x)), 1)
 #define isinf(x)	__builtin_expect (!isnan(x) & !isfinite(x), 0)
 
-#define INFINITY	CONCAT2(__builtin_inf, CEXT) ()
+#define INFINITY	CONCAT2(__builtin_huge_val, CEXT) ()
 #define I		1i
 
 /* Helpers to make the following code slightly less gross.  */
@@ -1828,6 +1824,7 @@ CTYPE
 CONCAT3(__mul,MODE,3) (MTYPE a, MTYPE b, MTYPE c, MTYPE d)
 {
   MTYPE ac, bd, ad, bc, x, y;
+  CTYPE res;
 
   ac = a * c;
   bd = b * d;
@@ -1884,7 +1881,9 @@ CONCAT3(__mul,MODE,3) (MTYPE a, MTYPE b, MTYPE c, MTYPE d)
 	}
     }
 
-  return x + I * y;
+  __real__ res = x;
+  __imag__ res = y;
+  return res;
 }
 #endif /* complex multiply */
 
@@ -1895,6 +1894,7 @@ CTYPE
 CONCAT3(__div,MODE,3) (MTYPE a, MTYPE b, MTYPE c, MTYPE d)
 {
   MTYPE denom, ratio, x, y;
+  CTYPE res;
 
   /* ??? We can get better behavior from logarithmic scaling instead of
      the division.  But that would mean starting to link libgcc against
@@ -1940,7 +1940,9 @@ CONCAT3(__div,MODE,3) (MTYPE a, MTYPE b, MTYPE c, MTYPE d)
 	}
     }
 
-  return x + I * y;
+  __real__ res = x;
+  __imag__ res = y;
+  return res;
 }
 #endif /* complex divide */
 
@@ -2044,7 +2046,7 @@ __enable_execute_stack (void *addr __attribute__((__unused__)))
 
 /* Jump to a trampoline, loading the static chain address.  */
 
-#if defined(WINNT) && ! defined(__CYGWIN__) && ! defined (_UWIN)
+#if defined(WINNT) && ! defined(__CYGWIN__)
 
 int
 getpagesize (void)
@@ -2056,14 +2058,10 @@ getpagesize (void)
 #endif
 }
 
-#ifdef __i386__
-extern int VirtualProtect (char *, int, int, int *) __attribute__((stdcall));
-#endif
-
 int
 mprotect (char *addr, int len, int prot)
 {
-  int np, op;
+  DWORD np, op;
 
   if (prot == 7)
     np = 0x40;
@@ -2077,6 +2075,8 @@ mprotect (char *addr, int len, int prot)
     np = 0x02;
   else if (prot == 0)
     np = 0x01;
+  else
+    return -1;
 
   if (VirtualProtect (addr, len, np, &op))
     return 0;
@@ -2084,7 +2084,7 @@ mprotect (char *addr, int len, int prot)
     return -1;
 }
 
-#endif /* WINNT && ! __CYGWIN__ && ! _UWIN */
+#endif /* WINNT && ! __CYGWIN__ */
 
 #ifdef TRANSFER_FROM_TRAMPOLINE
 TRANSFER_FROM_TRAMPOLINE
