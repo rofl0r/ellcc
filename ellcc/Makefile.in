@@ -1,8 +1,8 @@
 # Makefile.in
-# this is the Makefile for ellcc, the Elsa/LLVM C/C++ Parser
+# this is the Makefile for ecc, the Elsa/LLVM C/C++ Parser
 
-# main target is 'ellcc', a C/C++ parser.
-all: ellcc quicktest
+# main target is 'ecc', a C/C++ parser.
+all: ecc quicktest
 
 # directories of other software
 SMBASE   := @SMBASE@
@@ -80,27 +80,27 @@ TOCLEAN += *.o *.d
 	$(CXX) -c -o $@ $< $(if $(findstring $*,$(GCOV_MODS)),$(GCOV_OPTS) )$(CCFLAGS) $(LLVMCCFLAGS)
 	@$(DEP)   -o $@ $< $(if $(findstring $*,$(GCOV_MODS)),$(GCOV_OPTS) )$(CCFLAGS) $(LLVMCCFLAGS) >$*.d
 
-# ------------------------- ellcc ---------------------
+# ------------------------- ecc ---------------------
 
 # list of modules needed for the parser; ideally they're in an order
 # that finds serious compilation problems earliest (it's ok to
 # rearrange as different parts of the code are in flux)
-ELLSIF_OBJS := \
+ECC_OBJS := \
   ellcc.o \
   elsa.o
 
--include $(ELLSIF_OBJS:.o=.d)
+-include $(ECC_OBJS:.o=.d)
 
-# ellcc binary
-TOCLEAN += ellcc
-ellcc: $(ELLSIF_OBJS) $(libraries)
-	$(CXX) -o $@ $(ELLSIF_OBJS) $(LDFLAGS) $(LLVMLDFLAGS)
+# ecc binary
+TOCLEAN += ecc
+ecc: $(ECC_OBJS) $(libraries)
+	$(CXX) -o $@ $(ECC_OBJS) $(LDFLAGS) $(LLVMLDFLAGS)
 
 # run the binary; the 'quicktest' file is so we don't run it if
-# 'ellcc' hasn't recently changed
+# 'ecc' hasn't recently changed
 TOCLEAN += quicktest
-quicktest: ellcc
-	./ellcc -o sieve test/sieve.c
+quicktest: ecc
+	./ecc -o sieve test/sieve.c
 	./sieve
 	@touch quicktest
 	@echo BUILD FINISHED
