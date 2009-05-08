@@ -27,7 +27,7 @@ using namespace elsa;
 
 #define SRET 1
 
-#if 0
+#if 1
 // Really verbose debugging.
 #define VDEBUG(who, where, what) std::cerr << toString(where) << ": " << who << " "; what; std::cerr << "\n"
 #else
@@ -77,11 +77,13 @@ static llvm::GlobalValue::LinkageTypes getLinkage(DeclFlags flags)
 static bool accessValue(const llvm::Value* value)
 {
     bool access = false;
-    const llvm::GetElementPtrInst *gep;
-    if (   !(   (gep = llvm::dyn_cast<llvm::GetElementPtrInst>(value))
-             && gep->getPointerOperandType()->getElementType()->getTypeID() == llvm::Type::ArrayTyID)
-        // && !llvm::isa<llvm::ConstantArray>(value)) { // || llvm::isa<llvm::ConstantArray>(value))) {
-        && (!llvm::isa<llvm::Constant>(value) || llvm::isa<llvm::GlobalValue>(value))) {
+    const llvm::GetElementPtrInst *gep = llvm::dyn_cast<llvm::GetElementPtrInst>(value);
+    bool isArray = gep && gep->getPointerOperandType()->getElementType()->getTypeID() == llvm::Type::ArrayTyID;
+    bool isConstant = llvm::isa<llvm::Constant>(value);
+    bool isGlobal = llvm::isa<llvm::GlobalValue>(value);
+    // bool isCStruct = llvm::isa<llvm::ConstantStruct>(value);
+    if (   !isArray
+        && (!isConstant || isGlobal)) {
         access = true;
     }
 
