@@ -7,7 +7,7 @@ CXXS=$(foreach target, $(shell cat ../targets),$(target)-e++)
 CXXS+=e++
 
 # main target is 'ecc', a C/C++ parser.
-all: ecc quicktest $(CCS) $(CXXS)
+all: ecc $(CCS) $(CXXS) quicktest
 
 # directories of other software
 SMBASE   := @SMBASE@
@@ -70,7 +70,7 @@ endif
 CXX := @CXX@
 
 # flags for the C++ compiler (and preprocessor)
-CCFLAGS := @CCFLAGS@ -Woverloaded-virtual -I$(SMBASE) -I$(PW) -I$(AST) -I$(ELKHOUND) -I$(ELSA)
+CCFLAGS := @CCFLAGS@ -Woverloaded-virtual -I$(SMBASE) -I$(PW) -I$(AST) -I$(ELKHOUND) -I$(ELSA) -I$(LLVM)/include
 
 # how to enable coverage
 GCOV_OPTS := -fprofile-arcs -ftest-coverage

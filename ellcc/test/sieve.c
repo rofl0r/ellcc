@@ -3,7 +3,7 @@
 /*      from Byte, Sept. 1981, pg. 186                                  */
 /*                                                                      */
 
-#include <stdio.h>
+//#include <stdio.h>
 
 #define TRUE    1
 #define FALSE   0
@@ -13,7 +13,7 @@
 char    flags[SIZEPL];
 
 int main(int ac, char **av)
-        {
+{
 	int     i,prime,k,count,iter;
 
 	printf("10000 iterations\n");
@@ -38,7 +38,7 @@ int main(int ac, char **av)
                                 }
                         }
                 }
-	printf("%d primes\n",count);
+        printf("%d primes\n",count);
 
 #if 0
         printf("__FILE__ = %s\n", __FILE__); 
@@ -53,5 +53,5 @@ int main(int ac, char **av)
         printf("__ELLCC_VERSION__ = %s\n", __ELLCC_VERSION__); 
 #endif
 #endif
-        }
+}
                
