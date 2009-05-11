@@ -3,7 +3,7 @@
 /*      from Byte, Sept. 1981, pg. 186                                  */
 /*                                                                      */
 
-//#include <stdio.h>
+#include <stdio.h>
 
 #define TRUE    1
 #define FALSE   0
