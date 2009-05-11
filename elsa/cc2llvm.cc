@@ -27,7 +27,7 @@ using namespace elsa;
 
 #define SRET 1
 
-#if 1
+#if 0
 // Really verbose debugging.
 #define VDEBUG(who, where, what) std::cerr << toString(where) << ": " << who << " "; what; std::cerr << "\n"
 #else
@@ -78,12 +78,30 @@ static bool accessValue(const llvm::Value* value)
 {
     bool access = false;
     const llvm::GetElementPtrInst *gep = llvm::dyn_cast<llvm::GetElementPtrInst>(value);
-    bool isArray = gep && gep->getPointerOperandType()->getElementType()->getTypeID() == llvm::Type::ArrayTyID;
+    const llvm::Type* gepType = gep ? gep->getPointerOperandType()->getElementType() : NULL;
+    bool isArray = gepType && gepType->getTypeID() == llvm::Type::ArrayTyID;
+    bool isStruct = gepType && gepType->getTypeID() == llvm::Type::StructTyID;
+    bool isArrayArray = isArray && gepType->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID;
     bool isConstant = llvm::isa<llvm::Constant>(value);
+    bool isConstantExpr = llvm::isa<llvm::ConstantExpr>(value);
+    bool isConstantGEP = isConstantExpr
+         && llvm::cast<llvm::ConstantExpr>(value)->getOpcode() == llvm::Instruction::GetElementPtr;
     bool isGlobal = llvm::isa<llvm::GlobalValue>(value);
-    // bool isCStruct = llvm::isa<llvm::ConstantStruct>(value);
+    bool isConstantStruct = llvm::isa<llvm::ConstantStruct>(value);
+    bool isConstantArray = llvm::isa<llvm::ConstantArray>(value);
+    VDEBUG("accessValue", 0, std::cerr << "isArray " << isArray << " "
+                                       << "isArrayArray " << isArrayArray << " "
+                                       << "isStruct " << isStruct << " "
+                                       << "isConstant " << isConstant << " "
+                                       << "isConstantExpr " << isConstantExpr << " "
+                                       << "isConstantGEP " << isConstantGEP << " "
+                                       << "isConstantArray " << isConstantArray << " "
+                                       << "isConstantStruct " << isConstantStruct << " "
+                                       << "isGlobal " << isGlobal << " "
+                                       << "isGEP " << (gep != NULL) << "\n");
     if (   !isArray
-        && (!isConstant || isGlobal)) {
+        && !isConstantArray
+        && !isConstantGEP) {
         access = true;
     }
 
