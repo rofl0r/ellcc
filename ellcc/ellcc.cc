@@ -741,6 +741,7 @@ static void setupMappings()
     machines["arm"] = "arm";
     machines["ia64"] = "ia64";
     machines["mips"] = "mips";
+    machines["msp430"] = "msp430";
     machines["nios2"] = "nios2";
     machines["powerpc"] = "powerpc";
     machines["powerpc64"] = "powerpc64";
@@ -753,6 +754,7 @@ static void setupMappings()
     emulations["arm"] = "armelf";
     emulations["ia64"] = "elf64_ia64";
     emulations["mips"] = "elf32ebmip";
+    emulations["msp430"] = "msp430";
     emulations["nios2"] = "nios2elf";
     emulations["powerpc"] = "elf32ppc";
     emulations["powerpc64"] = "elf64ppc";
@@ -2760,7 +2762,7 @@ int main(int argc, char **argv)
         // Check for a valid target machine.
         if (OutputMachine.size()) {
            if (machines.find(OutputMachine) == machines.end()) {
-                PrintAndExit(OutputMachine + "is not a valid machine name");
+                PrintAndExit(OutputMachine + " is not a valid machine name");
            }
         }
 

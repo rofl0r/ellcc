@@ -1249,7 +1249,7 @@ public:
   }
   virtual const char *getClobbers() const {return "";}
   virtual const char *getTargetPrefix() const {
-    return "nios2";
+    return "cellspu";
   }  
   virtual void getGCCRegNames(const char * const *&Names, 
                               unsigned &NumNames) const;
@@ -1415,7 +1415,7 @@ public:
   }
   virtual const char *getClobbers() const {return "";}
   virtual const char *getTargetPrefix() const {
-    return "nios2";
+    return "mips";
   }  
   virtual void getGCCRegNames(const char * const *&Names, 
                               unsigned &NumNames) const;
@@ -1565,6 +1565,172 @@ MipsTargetInfo::convertConstraint(const char Constraint) const {
 }
 } // end anonymous namespace
 
+namespace {
+// Msp430 target abstract base class.
+class Msp430TargetInfo : public TargetInfo {
+  static const Builtin::Info BuiltinInfo[];
+  static const char * const GCCRegNames[];
+public:
+  Msp430TargetInfo(const std::string& triple) 
+    : TargetInfo(triple) {
+  }
+  virtual void getTargetBuiltins(const Builtin::Info *&Records,
+                                 unsigned &NumRecords) const {
+    Records = BuiltinInfo;
+    NumRecords = elsa::Msp430::LastTSBuiltin-Builtin::FirstTSBuiltin;
+  }
+  virtual const char *getClobbers() const {return "";}
+  virtual const char *getTargetPrefix() const {
+    return "msp430";
+  }  
+  virtual void getGCCRegNames(const char * const *&Names, 
+                              unsigned &NumNames) const;
+  virtual bool validateAsmConstraint(const char *&Name,
+                                     TargetInfo::ConstraintInfo &info) const;
+  virtual std::string convertConstraint(const char Constraint) const;
+  virtual void getTargetDefines(const LangOptions &Opts,
+                                std::vector<char> &Defines) const;
+  virtual const char *getVAListDeclaration() const {
+    return "typedef char* __builtin_va_list;";
+  }
+  virtual void getGCCRegAliases(const GCCRegAlias *&Aliases, 
+                                unsigned &NumAliases) const {
+    // FIXME: Implement.
+    Aliases = 0;
+    NumAliases = 0;
+  }
+  virtual int HandleTargetFeatures(std::string *StrArray, unsigned NumStrs,
+                                   std::string &ErrorReason);
+};
+
+const Builtin::Info Msp430TargetInfo::BuiltinInfo[] = {
+#define BUILTIN(ID, TYPE, ATTRS) { #ID, TYPE, ATTRS, 0, false },
+#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER) { #ID, TYPE, ATTRS, HEADER, false },
+#include "Msp430Builtins.def"
+};
+  
+const char * const Msp430TargetInfo::GCCRegNames[] = {
+  "zero", "at", "r2", "r3", "r4", "r5", "r6", "r7", "r8",
+  "r9", "r10", "r11", "r12", "r13", "r14", "r15", "r16",
+  "r17", "r18", "r19", "r20", "r21", "r22", "r23", "et",
+  "bt", "gp", "sp", "fp", "ea", "ba", "ra"
+};
+
+void Msp430TargetInfo::getGCCRegNames(const char * const *&Names, 
+                                     unsigned &NumNames) const
+{
+  Names = GCCRegNames;
+  NumNames = llvm::array_lengthof(GCCRegNames);
+}
+
+//
+/// HandleTargetOptions - Handle target-specific options.
+/// An array of arguments is passed in: if they are all valid, this
+/// should handle them and return -1.  If there is an error, the index of the
+/// invalid argument should be returned along with an optional error string.
+int Msp430TargetInfo::HandleTargetFeatures(std::string *StrArray, unsigned NumStrs,
+                                          std::string &ErrorReason) {
+  for (unsigned i = 0; i != NumStrs; ++i) {
+    const std::string &Feature = StrArray[i];
+    if (Feature.size() < 2) return i;
+    // Ignore explicitly disabled features.
+    if (Feature[0] == '-') continue;
+    
+    // Feature strings are of the form "+feature".
+    if (Feature[0] != '+') return i;
+    
+    // The set of supported subtarget features is defined in
+    // lib/Target/Msp430/Msp430.td.  Here we recognize and map onto our internal
+    // state.
+#if TODO
+    if (Feature == "+mmx")
+      SSELevel = std::max(SSELevel, MMX);
+    else if (Feature == "+sse")
+      SSELevel = std::max(SSELevel, SSE1);
+    else if (Feature == "+sse2")
+      SSELevel = std::max(SSELevel, SSE2);
+    else if (Feature == "+sse3")
+      SSELevel = std::max(SSELevel, SSE3);
+    else if (Feature == "+ssse3")
+      SSELevel = std::max(SSELevel, SSSE3);
+    else if (Feature == "+sse41")
+      SSELevel = std::max(SSELevel, SSE41);
+    else if (Feature == "+sse42")
+      SSELevel = std::max(SSELevel, SSE42);
+    else if (Feature == "+64bit" || Feature == "+slow-bt-mem")
+      // Ignore these features.
+      continue;
+    else
+      return i;
+#endif
+  }
+  return -1;
+}
+
+/// Msp430TargetInfo::getTargetDefines - Return a set of the Msp430-specific #defines
+/// that are not tied to a specific subtarget.
+void Msp430TargetInfo::getTargetDefines(const LangOptions &Opts,
+                                       std::vector<char> &Defs) const {
+  // Target identification.
+  DefineStd(Defs, "msp430", Opts);
+  
+  // Target properties. FIXME: Big or little.
+  Define(Defs, "__LITTLE_ENDIAN__");
+  
+  // Subtarget options.
+  Define(Defs, "__REGISTER_PREFIX__", "");
+}
+  
+// FIXME
+bool
+Msp430TargetInfo::validateAsmConstraint(const char *&Name,
+                                       TargetInfo::ConstraintInfo &info) const {
+  switch (*Name) {
+  default: return false;
+  case 'a': // eax.
+  case 'b': // ebx.
+  case 'c': // ecx.
+  case 'd': // edx.
+  case 'S': // esi.
+  case 'D': // edi.
+  case 'A': // edx:eax.
+  case 't': // top of floating point stack.
+  case 'u': // second from top of floating point stack.
+  case 'q': // Any register accessible as [r]l: a, b, c, and d.
+  case 'y': // Any MMX register.
+  case 'x': // Any SSE register.
+  case 'Q': // Any register accessible as [r]h: a, b, c, and d.
+  case 'e': // 32-bit signed integer constant for use with zero-extending 
+            // x86_64 instructions.
+  case 'Z': // 32-bit unsigned integer constant for use with zero-extending 
+            // x86_64 instructions.
+  case 'N': // unsigned 8-bit integer constant for use with in and out
+            // instructions.
+    info = (TargetInfo::ConstraintInfo)(info|TargetInfo::CI_AllowsRegister);
+    return true;
+  }
+}
+
+// FIXME
+std::string
+Msp430TargetInfo::convertConstraint(const char Constraint) const {
+  switch (Constraint) {
+  case 'a': return std::string("{ax}");
+  case 'b': return std::string("{bx}");
+  case 'c': return std::string("{cx}");
+  case 'd': return std::string("{dx}");
+  case 'S': return std::string("{si}");
+  case 'D': return std::string("{di}");
+  case 't': // top of floating point stack.
+    return std::string("{st}");
+  case 'u': // second from top of floating point stack.
+    return std::string("{st(1)}"); // second from top of floating point stack.
+  default:
+    return std::string(1, Constraint);
+  }
+}
+} // end anonymous namespace
+
 //===----------------------------------------------------------------------===//
 // Driver code
 //===----------------------------------------------------------------------===//
@@ -1645,10 +1811,13 @@ TargetInfo* TargetInfo::CreateTargetInfo(const std::string &T) {
     return new Nios2TargetInfo(T);
 
   if (T.find("cellspu-") == 0)
-    return new Nios2TargetInfo(T);
+    return new CellSPUTargetInfo(T);
 
   if (T.find("mips-") == 0)
-    return new Nios2TargetInfo(T);
+    return new MipsTargetInfo(T);
+
+  if (T.find("msp430-") == 0)
+    return new Msp430TargetInfo(T);
 
   return NULL;
 }

@@ -1,8 +1,8 @@
 alpha-elf
 arm-elf
 ia64-elf
-microblaze-elf
 mips-elf
+msp430-elf
 nios2-elf
 powerpc-elf
 powerpc64-elf

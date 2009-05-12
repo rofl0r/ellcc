@@ -64,6 +64,16 @@ namespace elsa {
     };
   }
     
+  /// Msp430 builtins
+  namespace Msp430 {
+    enum {
+        LastTIBuiltin = elsa::Builtin::FirstTSBuiltin-1,
+#define BUILTIN(ID, TYPE, ATTRS) BI##ID,
+#include "Msp430Builtins.def"
+        LastTSBuiltin
+    };
+  }
+
 } // end namespace elsa.
 
 #endif
