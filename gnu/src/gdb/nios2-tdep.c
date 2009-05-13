@@ -1579,7 +1579,7 @@ _initialize_nios2_tdep (void)
        offset += nios2_register_info_table[i].size;
     }
 
-  for (i = NIOS2_MAX_REG_DISPLAYED_REGNUM + 1; i <= NIOS2_NUM_REGS; i++)
+  for (i = NIOS2_MAX_REG_DISPLAYED_REGNUM + 1; i < NIOS2_NUM_REGS; i++)
     {
        nios2_register_byte_table[i] = -1;
     }    
