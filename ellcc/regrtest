@@ -375,6 +375,7 @@ testCparse_special -S t0070.c
 testCparse_special -S t0071.c 
 testCparse_special -S t0072.c 
 testCparse_special -S t0073.c 
+testCparse_special -S t0074.c 
 
 # is K&R built?
 use_kandr=false

@@ -99,7 +99,7 @@ static bool accessValue(const llvm::Value* value)
                                        << "isConstantStruct " << isConstantStruct << " "
                                        << "isGlobal " << isGlobal << " "
                                        << "isGEP " << (gep != NULL) << "\n");
-    if (   !isArray
+    if (   !0
         && !isConstantArray
         && !isConstantGEP) {
         access = true;
@@ -1490,7 +1490,7 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, int& deref) const
         int deref = 0;
         llvm::Value* param = arg->expr->cc2llvm(env, deref);
         VDEBUG("Param", loc, std::cerr << (arg->expr->type->isReference() ? "&" : "") << arg->expr->asString() << " "; param->print(std::cerr));
-        if (accessValue(param)) {
+        if (accessValue(param) || arg->expr->isE_fieldAcc()) {
             param = env.access(param, false, deref, ref ? 1 : 0);                 // RICH: Volatile.
         }
         VDEBUG("Param after", loc, param->print(std::cerr));
@@ -2171,6 +2171,13 @@ llvm::Value* CC2LLVMEnv::initializer(const Initializer* init, Type* type, int& d
     return value;
 }
 
+static bool isArray(Type* type)
+{
+    if (type->isReference()) {
+        type = type->getAtType();
+    }
+    return type->isArrayType();
+}
 static bool isPtr(Type* type)
 {
     if (type->isReference()) {
@@ -2459,7 +2466,7 @@ llvm::Value* CC2LLVMEnv::binop(SourceLoc loc, BinaryOp op, Expression* e1, llvm:
             // Get the value of the left side.
             const llvm::Value* before = left;
             VDEBUG("before left", loc, left->print(std::cerr));
-            if (accessValue(left)) {
+            if (accessValue(left) && !isArray(te1->type)) {
                 left = access(left, false, deref1);                 // RICH: Volatile.
             }
 

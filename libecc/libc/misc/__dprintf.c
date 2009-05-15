@@ -9,15 +9,7 @@
 #include "string.h"
 #include "unctrl.h"
 
-#ifdef __STDC__
 #include "stdarg.h"
-#else
-#include "varargs.h"
-#endif
-
-#if 0
-static char *parse_number ();
-#endif
 
 /* For now hardcode 2 (stderr) as the console file descriptor.
    May wish to let the caller pass in a file descriptor or some such but
@@ -29,11 +21,7 @@ static int big_endian_p;
 
 /* Fetch the number at S of SIZE bytes.  */
 
-static long
-get_number (s, size, unsigned_p)
-     char *s;
-     long size;
-     int unsigned_p;
+static long get_number(char *s, long size, int unsigned_p)
 {
   long x;
   unsigned char *p = (unsigned char *) s;
@@ -74,9 +62,7 @@ get_number (s, size, unsigned_p)
    We go through the file descriptor directly because we can't assume
    stdio is working.  */
 
-static void
-write_char (c)
-     char c;
+static void write_char(char c)
 {
   _write_r (_REENT, CONSOLE_FD, &c, 1);
 }
@@ -85,20 +71,14 @@ write_char (c)
    We go through the file descriptor directly because we can't assume
    stdio is working.  */
 
-static void
-write_string (s)
-     char *s;
+static void write_string(char *s)
 {
   _write_r (_REENT, CONSOLE_FD, s, strlen (s));
 }
 
 /* Print X in base BASE.  */
 
-static void
-print_number (base, unsigned_p, n)
-     int base;
-     int unsigned_p;
-     long n;
+static void print_number(int base, int unsigned_p, long n)
 {
   static char chars[16] = "0123456789abcdef";
   char *p, buf[32];
@@ -144,14 +124,7 @@ print_number (base, unsigned_p, n)
    working.
 */
 
-void
-#ifdef __STDC__
-__dprintf (char *fmt, ...)
-#else
-__dprintf (fmt, va_alist)
-     char *fmt;
-     va_dcl
-#endif
+void __dprintf (char *fmt, ...)
 {
   va_list args;
 
@@ -161,11 +134,7 @@ __dprintf (fmt, va_alist)
     big_endian_p = *(char *) &tmp == 0;
   }
 
-#ifdef __STDC__
   va_start (args, fmt);
-#else
-  va_start (args);
-#endif
 
   while (*fmt)
     {
@@ -241,27 +210,3 @@ __dprintf (fmt, va_alist)
 
   va_end (args);
 }
-
-#if 0
-/* Parse a positive decimal integer at S.
-   FIXME: Was used in earlier version, but not currently used.
-   Keep for now.  */
-
-static char *
-parse_number (s, p)
-     char *s;
-     long *p;
-{
-  long x = 0;
-
-  while (isdigit (*s))
-    {
-      x = (x * 10) + (*s - '0');
-      ++s;
-    }
-
-  *p = x;
-  return s;
-}
-#endif
-
