@@ -10,6 +10,7 @@ namespace pw {
 };
 
 #include "TargetInfo.h"
+#include "LangOptions.h"
 using namespace elsa;
 
 #include "llvm/Support/Timer.h"

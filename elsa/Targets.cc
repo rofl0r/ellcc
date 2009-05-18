@@ -184,6 +184,158 @@ static void GetDarwinLanguageOptions(LangOptions &Opts,
 //===----------------------------------------------------------------------===//
 
 namespace {
+// Alpha target abstract base class.
+class AlphaTargetInfo : public TargetInfo {
+  static const Builtin::Info BuiltinInfo[];
+  static const char * const GCCRegNames[];
+public:
+  AlphaTargetInfo(const std::string& triple) 
+    : TargetInfo(triple) {
+  }
+  virtual void getTargetBuiltins(const Builtin::Info *&Records,
+                                 unsigned &NumRecords) const {
+    Records = BuiltinInfo;
+    NumRecords = elsa::Alpha::LastTSBuiltin-Builtin::FirstTSBuiltin;
+  }
+  virtual const char *getClobbers() const {return "";}
+  virtual const char *getTargetPrefix() const {
+    return "alpha";
+  }  
+  virtual void getGCCRegNames(const char * const *&Names, 
+                              unsigned &NumNames) const;
+  virtual bool validateAsmConstraint(const char *&Name,
+                                     TargetInfo::ConstraintInfo &info) const;
+  virtual std::string convertConstraint(const char Constraint) const;
+  virtual void getTargetDefines(const LangOptions &Opts,
+                                std::vector<char> &Defines) const;
+  virtual const char *getVAListDeclaration() const {
+    return "typedef char* __builtin_va_list;";
+  }
+  virtual void getGCCRegAliases(const GCCRegAlias *&Aliases, 
+                                unsigned &NumAliases) const {
+    // FIXME: Implement.
+    Aliases = 0;
+    NumAliases = 0;
+  }
+  virtual int HandleTargetFeatures(std::string *StrArray, unsigned NumStrs,
+                                   std::string &ErrorReason);
+};
+
+const Builtin::Info AlphaTargetInfo::BuiltinInfo[] = {
+#define BUILTIN(ID, TYPE, ATTRS) { #ID, TYPE, ATTRS, 0, false },
+#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER) { #ID, TYPE, ATTRS, HEADER, false },
+#include "AlphaBuiltins.def"
+};
+  
+const char * const AlphaTargetInfo::GCCRegNames[] = {
+  "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
+  "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15",
+  "r16", "r17", "r18", "r19", "r20", "r21", "r22", "r23",
+  "r24", "r25", "r26", "r27", "r28", "r29", "r30", "r31",
+  "r32", "r33", "r34", "r35", "r36", "r37", "r38", "r39",
+  "r40", "r41", "r42", "r43", "r44", "r45", "r46", "r47",
+  "r48", "r49", "r50", "r51", "r52", "r53", "r54", "r55",
+  "r56", "r57", "r58", "r59", "r60", "r61", "r62", "r63"
+};
+
+void AlphaTargetInfo::getGCCRegNames(const char * const *&Names, 
+                                     unsigned &NumNames) const
+{
+  Names = GCCRegNames;
+  NumNames = llvm::array_lengthof(GCCRegNames);
+}
+
+//
+/// HandleTargetOptions - Handle target-specific options.
+/// An array of arguments is passed in: if they are all valid, this
+/// should handle them and return -1.  If there is an error, the index of the
+/// invalid argument should be returned along with an optional error string.
+int AlphaTargetInfo::HandleTargetFeatures(std::string *StrArray, unsigned NumStrs,
+                                          std::string &ErrorReason) {
+  for (unsigned i = 0; i != NumStrs; ++i) {
+    const std::string &Feature = StrArray[i];
+    if (Feature.size() < 2) return i;
+    // Ignore explicitly disabled features.
+    if (Feature[0] == '-') continue;
+    
+    // Feature strings are of the form "+feature".
+    if (Feature[0] != '+') return i;
+    
+    // The set of supported subtarget features is defined in
+    // lib/Target/Alpha/Alpha.td.  Here we recognize and map onto our internal
+    // state.
+#if FIXME
+    if (Feature == "+cix")
+      // Ignore these features.
+      continue;
+    else
+      return i;
+#endif
+  }
+  return -1;
+}
+
+/// AlphaTargetInfo::getTargetDefines - Return a set of the Alpha-specific #defines
+/// that are not tied to a specific subtarget.
+void AlphaTargetInfo::getTargetDefines(const LangOptions &Opts,
+                                       std::vector<char> &Defs) const {
+  // Target identification.
+  DefineStd(Defs, "alpha", Opts);
+  
+  // Target properties. FIXME: Big or little.
+  Define(Defs, "__LITTLE_ENDIAN__");
+  
+  // Subtarget options.
+  Define(Defs, "__REGISTER_PREFIX__", "");
+}
+  
+// FIXME
+bool
+AlphaTargetInfo::validateAsmConstraint(const char *&Name,
+                                       TargetInfo::ConstraintInfo &info) const {
+  switch (*Name) {
+  default: return false;
+  case 'a': // r24 - input to divide.
+  case 'b': // r25 - input to divide.
+  case 'c': // r27 - function call address.
+  case 'f': // Any floating point register.
+  case 'v': // r0 - function return value.
+  case 'I': // An unsigned 8 bit constant.
+  case 'J': // The constant zero.
+  case 'K': // A signed 16 bit integer constant.
+  case 'L': // A shifted signed 16 bit constant for LDAH.
+  case 'M': // A ZAP instruction operand.
+  case 'N': // A complemented 8 bit unsigned constant.
+  case 'O': // A negated 8 bit unsigned constant.
+  case 'P': // 1, 2, or 3..
+  case 'H': // A ZAP instruction operand.
+  case 'G': // The floating point constant zero.
+  case 'Q': // A memory operand.
+  case 'R': // A direct call operand.
+  case 'S': // An unsigned 6 bit constant.
+  case 'T': // A high part symbol.
+  case 'U': // A UNICOSMK symbol.
+  case 'W': // A vector zero constant.
+    info = (TargetInfo::ConstraintInfo)(info|TargetInfo::CI_AllowsRegister);
+    return true;
+  }
+}
+
+// FIXME
+std::string
+AlphaTargetInfo::convertConstraint(const char Constraint) const {
+  switch (Constraint) {
+  case 'a': return std::string("{r24}");
+  case 'b': return std::string("{r25}");
+  case 'c': return std::string("{r27}");
+  case 'v': return std::string("{r0}");
+  default:
+    return std::string(1, Constraint);
+  }
+}
+} // end anonymous namespace
+
+namespace {
 // PPC abstract base class
 class PPCTargetInfo : public TargetInfo {
   static const Builtin::Info BuiltinInfo[];
@@ -350,8 +502,7 @@ namespace {
 class PPC32TargetInfo : public PPCTargetInfo {
 public:
   PPC32TargetInfo(const std::string& triple) : PPCTargetInfo(triple) {
-    DescriptionString = "E-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-"
-                        "i64:64:64-f32:32:32-f64:64:64-v128:128:128";
+    LongDoubleFormat = &llvm::APFloat::PPCDoubleDouble;
   }
 };
 } // end anonymous namespace.
@@ -361,8 +512,7 @@ class PPC64TargetInfo : public PPCTargetInfo {
 public:
   PPC64TargetInfo(const std::string& triple) : PPCTargetInfo(triple) {
     LongWidth = LongAlign = PointerWidth = PointerAlign = 64;
-    DescriptionString = "E-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-"
-                        "i64:64:64-f32:32:32-f64:64:64-v128:128:128";
+    LongDoubleFormat = &llvm::APFloat::PPCDoubleDouble;
   }
 };
 } // end anonymous namespace.
@@ -627,9 +777,6 @@ public:
     DoubleAlign = LongLongAlign = 32;
     LongDoubleWidth = 96;
     LongDoubleAlign = 32;
-    DescriptionString = "e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-"
-                        "i64:32:64-f32:32:32-f64:32:64-v64:64:64-v128:128:128-"
-                        "a0:0:64-f80:32:32";
   }
   virtual const char *getVAListDeclaration() const {
     return "typedef char* __builtin_va_list;";
@@ -645,9 +792,6 @@ public:
     LongDoubleWidth = 128;
     LongDoubleAlign = 128;
     PtrDiffType = SignedInt;
-    DescriptionString = "e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-"
-                        "i64:32:64-f32:32:32-f64:32:64-v64:64:64-v128:128:128-"
-                        "a0:0:64-f80:128:128";
   }
   virtual void getTargetDefines(const LangOptions &Opts,
                                 std::vector<char> &Defines) const {
@@ -751,10 +895,6 @@ public:
     LongDoubleAlign = 128;
     IntMaxType = SignedLong;
     UIntMaxType = UnsignedLong;
-
-    DescriptionString = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-"
-                        "i64:64:64-f32:32:32-f64:64:64-v64:64:64-v128:128:128-"
-                        "a0:0:64-f80:128:128";
   }
   virtual const char *getVAListDeclaration() const {
     return "typedef struct __va_list_tag {"
@@ -822,9 +962,6 @@ namespace {
 class ARMTargetInfo : public TargetInfo {
 public:
   ARMTargetInfo(const std::string& triple) : TargetInfo(triple) {
-    // FIXME: Are the defaults correct for ARM?
-    DescriptionString = "e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-"
-                        "i64:64:64-f32:32:32-f64:64:64-v64:64:64-v128:64:64";
   }
   virtual void getTargetDefines(const LangOptions &Opts,
                                 std::vector<char> &Defs) const {
@@ -918,9 +1055,6 @@ class SparcV8TargetInfo : public TargetInfo {
   static const char * const GCCRegNames[];
 public:
   SparcV8TargetInfo(const std::string& triple) : TargetInfo(triple) {
-    // FIXME: Support Sparc quad-precision long double?
-    DescriptionString = "e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-"
-                        "i64:64:64-f32:32:32-f64:64:64-v64:64:64";
   }
   virtual void getTargetDefines(const LangOptions &Opts,
                                 std::vector<char> &Defines) const {
@@ -1042,7 +1176,6 @@ namespace {
       UIntMaxType = UnsignedLong;
       IntPtrType = SignedShort;
       PtrDiffType = SignedInt;
-      DescriptionString = "e-p:16:8:8-i8:8:8-i16:8:8-i32:8:8";
     }
     virtual uint64_t getPointerWidthV(unsigned AddrSpace) const { return 16; }
     virtual uint64_t getPointerAlignV(unsigned AddrSpace) const { return 8; }
@@ -1753,6 +1886,9 @@ TargetInfo* TargetInfo::CreateTargetInfo(const std::string &T) {
   bool isWindows = T.find("-windows") != std::string::npos ||
                    T.find("-win32") != std::string::npos ||
                    T.find("-mingw") != std::string::npos;
+
+  if (T.find("alpha-") == 0)
+    return new AlphaTargetInfo(T);
 
   if (T.find("ppc-") == 0 || T.find("powerpc-") == 0) {
     if (isDarwin)

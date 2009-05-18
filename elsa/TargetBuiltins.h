@@ -14,6 +14,16 @@
 #undef PPC
 
 namespace elsa {
+  /// Alpha builtins
+  namespace Alpha {
+    enum {
+        LastTIBuiltin = elsa::Builtin::FirstTSBuiltin-1,
+#define BUILTIN(ID, TYPE, ATTRS) BI##ID,
+#include "AlphaBuiltins.def"
+        LastTSBuiltin
+    };
+  }
+    
   /// X86 builtins
   namespace X86 {
     enum {

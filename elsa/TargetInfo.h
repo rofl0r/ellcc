@@ -39,17 +39,24 @@ class TargetInfo {
 protected:
   // Target values set by the ctor of the actual target implementation.  Default
   // values are specified by the TargetInfo constructor.
+  bool BigEndian;
   bool CharIsSigned;
-  unsigned char PointerWidth, PointerAlign;
-  unsigned char WCharWidth, WCharAlign;
-  unsigned char IntWidth, IntAlign;
-  unsigned char FloatWidth, FloatAlign;
-  unsigned char DoubleWidth, DoubleAlign;
-  unsigned char LongDoubleWidth, LongDoubleAlign;
-  unsigned char LongWidth, LongAlign;
-  unsigned char LongLongWidth, LongLongAlign;
+  unsigned char CharWidth, CharAlign, PrefCharAlign;
+  unsigned char WCharWidth, WCharAlign, PrefWCharAlign;
+  unsigned char BoolWidth, BoolAlign, PrefBoolAlign;
+  unsigned char ShortWidth, ShortAlign, PrefShortAlign;
+  unsigned char IntWidth, IntAlign, PrefIntAlign;
+  unsigned char FloatWidth, FloatAlign, PrefFloatAlign;
+  unsigned char DoubleWidth, DoubleAlign, PrefDoubleAlign;
+  unsigned char LongDoubleWidth, LongDoubleAlign, PrefLongDoubleAlign;
+  unsigned char LongWidth, LongAlign, PrefLongAlign;
+  unsigned char LongLongWidth, LongLongAlign, PrefLongLongAlign;
+  unsigned char PointerWidth, PointerAlign, PrefPointerAlign;
+  unsigned char VectorWidth, VectorAlign, PrefVectorAlign;
+  unsigned char LongVectorWidth, LongVectorAlign, PrefLongVectorAlign;
+  unsigned char AggregateWidth, AggregateAlign, PrefAggregateAlign;
+
   unsigned char IntMaxTWidth;
-  const char *DescriptionString;
   const char *UserLabelPrefix;
   const llvm::fltSemantics *FloatFormat, *DoubleFormat, *LongDoubleFormat;
 
@@ -103,20 +110,20 @@ public:
   
   /// getBoolWidth/Align - Return the size of '_Bool' and C++ 'bool' for this
   /// target, in bits.
-  unsigned getBoolWidth(bool isWide = false) const { return 8; }  // FIXME
-  unsigned getBoolAlign(bool isWide = false) const { return 8; }  // FIXME
+  unsigned getBoolWidth() const { return BoolWidth; }
+  unsigned getBoolAlign() const { return BoolAlign; }
   
   unsigned getCharWidth(bool isWide = false) const {
-    return isWide ? getWCharWidth() : 8; // FIXME
+    return isWide ? getWCharWidth() : CharWidth;
   }
   unsigned getCharAlign(bool isWide = false) const {
-    return isWide ? getWCharAlign() : 8; // FIXME
+    return isWide ? getWCharAlign() : CharAlign;
   }
   
   /// getShortWidth/Align - Return the size of 'signed short' and
   /// 'unsigned short' for this target, in bits.  
-  unsigned getShortWidth() const { return 16; } // FIXME
-  unsigned getShortAlign() const { return 16; } // FIXME
+  unsigned getShortWidth() const { return ShortWidth; }
+  unsigned getShortAlign() const { return ShortAlign; }
   
   /// getIntWidth/Align - Return the size of 'signed int' and 'unsigned int' for
   /// this target, in bits.
@@ -238,9 +245,7 @@ public:
     return Triple.c_str();
   }
   
-  const char *getTargetDescription() const {
-    return DescriptionString;
-  }
+  void getTargetDescription(std::string& str);
 
   struct GCCRegAlias {
     const char * const Aliases[5];

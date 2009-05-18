@@ -15,6 +15,7 @@
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/STLExtras.h"
 #include <cstdlib>
+#include <sstream>
 using namespace elsa;
 
 // TargetInfo Constructor.
@@ -22,35 +23,121 @@ TargetInfo::TargetInfo(const std::string &T) : Triple(T) {
   // Set defaults.  Defaults are set for a 32-bit RISC platform,
   // like PPC or SPARC.
   // These should be overridden by concrete targets as needed.
+  BigEndian = false;
   CharIsSigned = true;
-  PointerWidth = PointerAlign = 32;
+  CharWidth = CharAlign = 8;
+  PrefCharAlign = 0;
   WCharWidth = WCharAlign = 32;
+  PrefWCharAlign = 0;
+  BoolWidth = BoolAlign = 8;
+  PrefBoolAlign = 0;
+  ShortWidth = ShortAlign = 16;
+  PrefShortAlign = 0;
   IntWidth = IntAlign = 32;
+  PrefIntAlign = 0;
   LongWidth = LongAlign = 32;
+  PrefLongAlign = 0;
   LongLongWidth = LongLongAlign = 64;
-  FloatWidth = 32;
-  FloatAlign = 32;
-  DoubleWidth = 64;
-  DoubleAlign = 64;
-  LongDoubleWidth = 64;
-  LongDoubleAlign = 64;
+  PrefLongLongAlign = 0;
   IntMaxTWidth = 64;
+  FloatWidth = FloatAlign = 32;
+  PrefFloatAlign = 0;
+  FloatFormat = &llvm::APFloat::IEEEsingle;
+
+  DoubleWidth = DoubleAlign = 64;
+  PrefDoubleAlign = 0;
+  DoubleFormat = &llvm::APFloat::IEEEdouble;
+
+  LongDoubleWidth = LongDoubleAlign = 128;
+  PrefLongDoubleAlign = 0;
+  LongDoubleFormat = &llvm::APFloat::IEEEquad;
+
+  PointerWidth = PointerAlign = 32;
+  PrefPointerAlign = 0;
+  VectorWidth = VectorAlign = 64;
+  PrefVectorAlign = 64;
+  LongVectorWidth = LongVectorAlign = 128;
+  PrefLongVectorAlign = 128;
+  AggregateWidth = 0;
+  AggregateAlign = 0;
+  PrefAggregateAlign = 0;
+
   SizeType = UnsignedLong;
   PtrDiffType = SignedLong;
   IntMaxType = SignedLongLong;
   UIntMaxType = UnsignedLongLong;
   IntPtrType = SignedLong;
   WCharType = SignedInt;
-  FloatFormat = &llvm::APFloat::IEEEsingle;
-  DoubleFormat = &llvm::APFloat::IEEEdouble;
-  LongDoubleFormat = &llvm::APFloat::IEEEdouble;
-  DescriptionString = "E-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-"
-                      "i64:64:64-f32:32:32-f64:64:64";
+
   UserLabelPrefix = "_";
 }
 
 // Out of line virtual dtor for TargetInfo.
 TargetInfo::~TargetInfo() {}
+
+// Get the target description string, e.g.:
+// "E-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64"
+
+#define xstr(x) #x
+#define str(x) xstr(x)
+#define DATA(type, name)                \
+    str << "-" str(type);               \
+    str << (int)name##Width;            \
+    str << ":";                         \
+    str << (int)name##Align;            \
+    if (Pref##name##Align) {            \
+        str << ":";                     \
+        str << (int)Pref##name##Align;  \
+    }
+
+#define DATAP(type, name)               \
+    str << "-" str(type);               \
+    str << ":";                         \
+    str << (int)name##Width;            \
+    str << ":";                         \
+    str << (int)name##Align;            \
+    if (Pref##name##Align) {            \
+        str << ":";                     \
+        str << (int)Pref##name##Align;  \
+    }
+
+#define DATAN(type, name)               \
+    str << "-" str(type);               \
+    str << ":";                         \
+    str << (int)name##Align;            \
+    if (Pref##name##Align) {            \
+        str << ":";                     \
+        str << (int)Pref##name##Align;  \
+    }
+
+void TargetInfo::getTargetDescription(std::string& res)
+{
+    std::stringstream str;
+    if (BigEndian) {
+        str << "E";
+    } else {
+        str << "e";
+    }
+    DATAP(p, Pointer);
+    DATAN(i1, Bool);
+    DATA(i, Char);
+    DATA(i, Short);
+    DATA(i, Int);
+    DATA(i, Long);
+    DATA(i, LongLong);
+    DATA(f, Float);
+    DATA(f, Double);
+    DATA(f, LongDouble);
+    DATA(v, Vector);
+    DATA(v, LongVector);
+    DATAN(a0, Aggregate);
+    str >> res;
+}
+#undef xstr
+#undef str
+#undef DATA
+#undef DATAP
+#undef DATAN
 
 /// getTypeName - Return the user string for the specified integer type enum.
 /// For example, SignedShort -> "short".

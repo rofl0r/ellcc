@@ -45,7 +45,7 @@ typedef W_TYPE size_t;
 #define LONG_LONG_TYPE_SIZE 64
 #define DOUBLE_TYPE_SIZE 64
 //#define LONG_DOUBLE_TYPE_SIZE 64    // DF=64, XF=80, TF=128
-#define __LDBL_MANT_DIG__ 53       // 53, 113, 106.
+//#define __LDBL_MANT_DIG__ 53       // 53, 113, 106.
 #define ROUND_TOWARDS_ZERO 0        // 1 if round to zero rather than nearest.
 #define _FP_W_TYPE_SIZE BITS_PER_WORD
 #define _FP_W_TYPE W_TYPE

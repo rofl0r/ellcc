@@ -39,7 +39,7 @@ CC2LLVMEnv::CC2LLVMEnv(StringTable &s, sm::string name, const TranslationUnit& i
                        TargetInfo* targetInfo)
   : str(s),
     targetInfo(targetInfo),
-    targetData(targetInfo->getTargetDescription()),
+    targetData(""),
     targetFolder(targetData),
     input(input),
     mod(new llvm::Module(name.c_str())),
@@ -55,7 +55,10 @@ CC2LLVMEnv::CC2LLVMEnv(StringTable &s, sm::string name, const TranslationUnit& i
     switchType(NULL),
     builder(targetFolder)
 { 
-    mod->setDataLayout(targetInfo->getTargetDescription());
+    std::string str;
+    targetInfo->getTargetDescription(str);
+    targetData.init(str);
+    mod->setDataLayout(str);
     mod->setTargetTriple(targetInfo->getTargetTriple());
 }
 

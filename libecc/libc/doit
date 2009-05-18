@@ -1,5 +1,5 @@
 #!/bin/sh
-CC=~/ellcc/ellcc/nios2-elf-ecc
+CC=~/ellcc/ellcc/$1-elf-ecc
 CFLAGS="-DHAVE_OPENDIR -I. -Iinclude"
 #CC=gcc
 #CFLAGS="-DHAVE_OPENDIR -nostdinc -I. -Iinclude"
