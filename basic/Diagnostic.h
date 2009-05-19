@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_DIAGNOSTIC_H
-#define LLVM_CLANG_DIAGNOSTIC_H
+#ifndef DIAGNOSTIC_H
+#define DIAGNOSTIC_H
 
 #include "SourceLocation.h"
 #include <string>

@@ -13,9 +13,9 @@
 
 #include "Diagnostic.h"
 
-// RICH #include "../Lex/LexDiagnostic.h"
-// RICH #include "../Elsa/ElsaDiagnostic.h"
-// RICH #include "../Ellcc/EllccDiagnostic.h"
+#include "../lex/LexDiagnostic.h"
+// RICH #include "../elsa/ElsaDiagnostic.h"
+// RICH #include "../ellcc/EllccDiagnostic.h"
 
 #include "IdentifierTable.h"
 #include "SourceLocation.h"
@@ -57,13 +57,13 @@ static const StaticDiagInfoRec StaticDiagInfo[] = {
 #define DIAG(ENUM,CLASS,DEFAULT_MAPPING,DESC,GROUP) \
   { diag::ENUM, DEFAULT_MAPPING, CLASS, DESC, GROUP },
 #include "DiagnosticCommonKinds.inc"
-#include "DiagnosticDriverKinds.inc"
-#include "DiagnosticFrontendKinds.inc"
+//RICH #include "DiagnosticDriverKinds.inc"
+//RICH #include "DiagnosticFrontendKinds.inc"
 #include "DiagnosticLexKinds.inc"
-#include "DiagnosticParseKinds.inc"
-#include "DiagnosticASTKinds.inc"
-#include "DiagnosticSemaKinds.inc"
-#include "DiagnosticAnalysisKinds.inc"
+//RICH #include "DiagnosticParseKinds.inc"
+//RICH #include "DiagnosticASTKinds.inc"
+//RICH #include "DiagnosticSemaKinds.inc"
+//RICH #include "DiagnosticAnalysisKinds.inc"
 { 0, 0, 0, 0, 0 }
 };
 #undef DIAG

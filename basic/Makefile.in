@@ -55,13 +55,17 @@ GCOV_OPTS := -fprofile-arcs -ftest-coverage
 # some other tools
 AR     := ar
 RANLIB := ranlib
+CMP    := cmp
+CP     := cp
+TBLGEN := tblgen
+ECHO   := echo
 
 # compile .cpp in this directory to a .o
 TOCLEAN += *.o *.d
 
 %.o: %.cpp
-	$(CXX) -c -o $@ $< $(if $(findstring $*,$(GCOV_MODS)),$(GCOV_OPTS) )$(CCFLAGS) $(LLVMCCFLAGS)
-	@$(DEP)   -o $@ $< $(if $(findstring $*,$(GCOV_MODS)),$(GCOV_OPTS) )$(CCFLAGS) $(LLVMCCFLAGS) >$*.d
+	$(CXX) -c -o $@ $< $(if $(findstring $*,$(GCOV_MODS)),$(GCOV_OPTS) )$(CCFLAGS)
+	@$(DEP)   -o $@ $< $(if $(findstring $*,$(GCOV_MODS)),$(GCOV_OPTS) )$(CCFLAGS) >$*.d
 
 
 #### basic client code
@@ -73,17 +77,49 @@ TOCLEAN += *.o *.d
 # rearrange as different parts of the code are in flux)
 BASIC_OBJS := \
   ConvertUTF.o FileManager.o SourceLocation.o TargetInfo.o TokenKinds.o \
-  IdentifierTable.o SourceManager.o Targets.o
-
-# Diagnostic.o
+  IdentifierTable.o SourceManager.o Targets.o \
+  Diagnostic.o
 
 -include $(BASIC_OBJS:.o=.d) main.d
 
 
-$(THIS): $(BASIC_OBJS)
+BUILT_SOURCES = \
+    DiagnosticLexKinds.inc \
+    DiagnosticCommonKinds.inc \
+    DiagnosticGroups.inc
+
+#    DiagnosticDriverKinds.inc \
+#    DiagnosticFrontendKinds.inc DiagnosticLexKinds.inc \
+#    DiagnosticParseKinds.inc DiagnosticSemaKinds.inc \
+#    DiagnosticAnalysisKinds.inc DiagnosticASTKinds.inc \
+
+INCFiles := $(filter %.inc,$(BUILT_SOURCES))
+INCTMPFiles := $(INCFiles:%=%.tmp)
+.PRECIOUS: $(INCTMPFiles) $(INCFiles)
+
+# INCFiles rule: All of the tblgen generated files are emitted to
+# $(ObjDir)/%.inc.tmp, instead of emitting them directly to %.inc.  This allows
+# us to only "touch" the real file if the contents of it change.  IOW, if
+# tblgen is modified, all of the .inc.tmp files are regenerated, but no
+# dependencies of the .inc files are, unless the contents of the .inc file
+# changes.
+$(INCFiles) : %.inc : %.inc.tmp
+	$(CMP) -s $@ $< || $(CP) $< $@
+
+$(THIS): $(BUILT_SOURCES) $(BASIC_OBJS) 
 	rm -f $(THIS)
 	$(AR) -r $(THIS) $(BASIC_OBJS)
 	-$(RANLIB) $(THIS)
+
+TBLGEN=tblgen
+
+Diagnostic%Kinds.inc.tmp : Diagnostic.td DiagnosticGroups.td Diagnostic%Kinds.td
+	@$(ECHO) "Building ELLCC $(patsubst Diagnostic%Kinds.inc.tmp,%,$(@F)) diagnostic tables with tblgen"
+	$(TBLGEN) -gen-clang-diags-defs -clang-component=$(patsubst Diagnostic%Kinds.inc.tmp,%,$(@F)) -o $@ $<
+
+DiagnosticGroups.inc.tmp : Diagnostic.td $(wildcard Diagnostic*.td)
+	@$(ECHO) "Building ELLCC diagnostic groups with tblgen"
+	$(TBLGEN) -gen-clang-diag-groups -o $@ $<
 
 # -------------------- count source lines -------------------
 # dsw: This should give the right answer even after a "make all",
@@ -115,7 +151,7 @@ count-loc:
 
 # -------------------- clean, etc. -------------------
 clean:
-	rm -f $(TOCLEAN) gmon.out
+	rm -f $(TOCLEAN) gmon.out $(INCFiles) $(INCTMPFiles)
 	-cd outdir && ls | grep -v CVS | xargs rm -f
 
 distclean: clean
