@@ -582,8 +582,7 @@ Preprocessor Options
 #include <memory>
 #include <algorithm>
 
-// Elsa.
-#include "elsa.h"              // Elsa interfaces.
+#include "ellcc.h"  
 // pwPlexer.
 #include "pwPlexer.h"          // The preprocessor.
 #include "pwOS.h"
@@ -599,6 +598,7 @@ Preprocessor Options
 #define ELLCC_VERSION ELLCC_VERSION_STRING " " ELLCC_VERSION_MODIFIER " " __DATE__
 
 using namespace llvm;
+using namespace ellcc;
 
 static pw::ErrorList errors;    // The reported errors.
 static std::string progname;    // The program name.        

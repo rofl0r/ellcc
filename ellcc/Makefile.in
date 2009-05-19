@@ -11,6 +11,8 @@ all: ecc $(CCS) $(CXXS) quicktest
 
 # directories of other software
 SMBASE   := @SMBASE@
+BASIC    := @BASIC@
+LEX      := @LEX@
 PW       := @PW@
 AST      := @AST@
 ELKHOUND := @ELKHOUND@
@@ -18,6 +20,8 @@ ELSA     := @ELSA@
 
 # stuff inside those other directories
 LIBSMBASE   := $(SMBASE)/libsmbase.a
+LIBBASIC     := $(BASIC)/libbasic.a
+LIBLEX     := $(LEX)/liblex.a
 LIBPW       := $(PW)/libpw.a
 LIBAST      := $(AST)/libast.a
 LIBELKHOUND := $(ELKHOUND)/libelkhound.a
@@ -70,13 +74,14 @@ endif
 CXX := @CXX@
 
 # flags for the C++ compiler (and preprocessor)
-CCFLAGS := @CCFLAGS@ -Woverloaded-virtual -I$(SMBASE) -I$(PW) -I$(AST) -I$(ELKHOUND) -I$(ELSA) -I$(LLVM)/include
+CCFLAGS := @CCFLAGS@ -Woverloaded-virtual -I$(SMBASE) -I$(BASIC) -I$(LEX) -I$(PW) -I$(AST) \
+                     -I$(ELKHOUND) -I$(ELSA) -I$(LLVM)/include
 
 # how to enable coverage
 GCOV_OPTS := -fprofile-arcs -ftest-coverage
 
 # flags for the linker
-libraries := $(LIBELSA) $(LIBELKHOUND) $(LIBAST) $(LIBSMBASE) $(LIBPW)
+libraries := $(LIBELSA) $(LIBELKHOUND) $(LIBAST) $(LIBSMBASE) $(LIBPW) $(LIBLEX) $(LIBBASIC)
 LDFLAGS := @LDFLAGS@ $(libraries)
 
 # compile .cc in this directory to a .o
@@ -92,7 +97,8 @@ TOCLEAN += *.o *.d
 # rearrange as different parts of the code are in flux)
 ECC_OBJS := \
   ellcc.o \
-  elsa.o
+  elsa.o \
+  ppoutput.o
 
 -include $(ECC_OBJS:.o=.d)
 

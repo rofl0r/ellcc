@@ -687,7 +687,7 @@ public:      // funcs
    * @param string The constraint.
    * @return true if the constraint is valid for the target.
    */
-  virtual bool validateAsmConstraint(const char* name, elsa::TargetInfo::ConstraintInfo& info)
+  virtual bool validateAsmConstraint(const char* name, ellcc::TargetInfo::ConstraintInfo& info)
       { return true; }
   
   /** Convert an inline assembly constraint.

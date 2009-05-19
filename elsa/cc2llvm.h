@@ -22,7 +22,7 @@ namespace llvm {
 #include "cc_ast.h"          // C++ AST
 
 #include "TargetInfo.h"
-using namespace elsa;
+using namespace ellcc;
 
 // smbase
 #include "ptrmap.h"          // PtrMap

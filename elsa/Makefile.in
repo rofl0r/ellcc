@@ -314,7 +314,6 @@ $(CC_GR_GEN_FILES): $(CC_GR_MODS) cc_tokens.ids $(ELKHOUND)/elkhound
 # rearrange as different parts of the code are in flux)
 CCPARSE_OBJS := \
   Targets.o \
-  TargetInfo.o \
   cc2c.o \
   bpprint.o \
   ia64mangle.o \

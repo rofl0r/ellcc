@@ -10,7 +10,7 @@ verbatim {
   #define GNU_EXTENSION         // this extension module is active
 
   #include "TargetInfo.h"
-  using namespace elsa;
+  using namespace ellcc;
   #include <limits.h>           // INT_MIN
 }
 

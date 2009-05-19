@@ -5,7 +5,7 @@
 #include <stdlib.h>       // exit, getenv, abort
 #include <fstream>        // ofstream
 
-#include "elsa.h"         // This module.
+#include "ellcc.h"        // This module.
 #include "trace.h"        // traceAddSys
 #include "syserr.h"       // xsyserror
 #include "parssppt.h"     // ParseTreeAndTokens, treeMain
@@ -37,6 +37,8 @@
 // LLVM
 #include <llvm/Module.h>
 #include <llvm/Support/Timer.h>
+
+using namespace ellcc;
 
 /** The Ellcc parsing environment.
  */

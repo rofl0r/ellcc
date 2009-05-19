@@ -21,7 +21,7 @@
 #include "cc2llvm.h"         // this module
 
 #include "TargetInfo.h"
-using namespace elsa;
+using namespace ellcc;
 
 #define BITS_PER_BYTE	8	// RICH: Temporary.
 

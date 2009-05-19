@@ -10,7 +10,7 @@
 #include <string.h>           // strcmp
 #include "datablok.h"
 #include "TargetInfo.h"
-using namespace elsa;
+using namespace ellcc;
 
 #ifdef LLVM_EXTENSION
 #define __STDC_LIMIT_MACROS 1
