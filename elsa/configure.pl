@@ -42,6 +42,8 @@ if ($smcv < $req_smcv) {
 # defaults
 @LDFLAGS = ("-g -Wall");
 $AST = "../ast";
+$BASIC = "../basic";
+$LEX = "../lex";
 $ELKHOUND = "../elkhound";
 $LLVM = "/usr/local";
 $USE_GNU = "1";
@@ -60,6 +62,8 @@ package options:
   -llvm=<dir>:       specify where the LLVM system is [$LLVM]
   -gnu=[0/1]         enable GNU extensions? [$USE_GNU]
   -kandr=[0/1]       enable K&R extensions? [$USE_KANDR]
+  -basic=<dir>:      specify where the basic library is [$BASIC]
+  -lex=<dir>:        specify where the lex library is [$BASIC]
   -ast=<dir>:        specify where the ast system is [$AST]
   -elkhound=<dir>:   specify where the elkhound system is [$ELKHOUND]
   -useSerialNumbers: give serial numbers to some objects for debugging
@@ -103,6 +107,15 @@ foreach $optionAndValue (@ARGV) {
   elsif ($arg eq "ast") {
     $AST = getOptArg();
   }
+
+  elsif ($arg eq "basic") {
+    $BASIC = getOptArg();
+  }
+
+  elsif ($arg eq "lex") {
+    $LEX = getOptArg();
+  }
+
   elsif ($arg eq "elkhound") {
     $ELKHOUND = getOptArg();
   }
@@ -135,6 +148,20 @@ test_smbase_presence();
 
 test_CXX_compiler();
 
+# basic
+if (! -f "$BASIC/Diagnostic.h") {
+  die "I cannot find Diagnostic.h in `$BASIC'.\n" .
+      "The basic library is required for elsa.\n" .
+      "If it's in a different location, use the -basic=<dir> option.\n";
+}
+
+# lex
+if (! -f "$LEX/Token.h") {
+  die "I cannot find Token.h in `$LEX'.\n" .
+      "The lex library is required for elsa.\n" .
+      "If it's in a different location, use the -lex=<dir> option.\n";
+}
+
 # ast
 if (! -f "$AST/asthelp.h") {
   die "I cannot find asthelp.h in `$AST'.\n" .
@@ -165,6 +192,8 @@ $summary .= <<"OUTER_EOF";
 cat <<EOF
   LDFLAGS:     @LDFLAGS
   SMBASE:      $SMBASE
+  BASIC:       $BASIC
+  LEX:         $LEX
   AST:         $AST
   ELKHOUND:    $ELKHOUND
   LLVM:        $LLVM
@@ -183,6 +212,8 @@ writeConfigSummary($summary);
 # ------------------- config.status ------------------
 writeConfigStatus("LDFLAGS" => "@LDFLAGS",
                   "SMBASE" => "$SMBASE",
+                  "BASIC" => "$BASIC",
+                  "LEX" => "$LEX",
                   "AST" => "$AST",
                   "ELKHOUND" => "$ELKHOUND",
                   "PERL" => "$PERL",

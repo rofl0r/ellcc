@@ -13,11 +13,11 @@
 #include "Builtins.h"
 #undef PPC
 
-namespace elsa {
+namespace ellcc {
   /// Alpha builtins
   namespace Alpha {
     enum {
-        LastTIBuiltin = elsa::Builtin::FirstTSBuiltin-1,
+        LastTIBuiltin = ellcc::Builtin::FirstTSBuiltin-1,
 #define BUILTIN(ID, TYPE, ATTRS) BI##ID,
 #include "AlphaBuiltins.def"
         LastTSBuiltin
@@ -27,7 +27,7 @@ namespace elsa {
   /// X86 builtins
   namespace X86 {
     enum {
-        LastTIBuiltin = elsa::Builtin::FirstTSBuiltin-1,
+        LastTIBuiltin = ellcc::Builtin::FirstTSBuiltin-1,
 #define BUILTIN(ID, TYPE, ATTRS) BI##ID,
 #include "X86Builtins.def"
         LastTSBuiltin
@@ -37,7 +37,7 @@ namespace elsa {
   /// PPC builtins
   namespace PPC {
     enum {
-        LastTIBuiltin = elsa::Builtin::FirstTSBuiltin-1,
+        LastTIBuiltin = ellcc::Builtin::FirstTSBuiltin-1,
 #define BUILTIN(ID, TYPE, ATTRS) BI##ID,
 #include "PPCBuiltins.def"
         LastTSBuiltin
@@ -47,7 +47,7 @@ namespace elsa {
   /// Nios2 builtins
   namespace Nios2 {
     enum {
-        LastTIBuiltin = elsa::Builtin::FirstTSBuiltin-1,
+        LastTIBuiltin = ellcc::Builtin::FirstTSBuiltin-1,
 #define BUILTIN(ID, TYPE, ATTRS) BI##ID,
 #include "Nios2Builtins.def"
         LastTSBuiltin
@@ -57,7 +57,7 @@ namespace elsa {
   /// CellSPU builtins
   namespace CellSPU {
     enum {
-        LastTIBuiltin = elsa::Builtin::FirstTSBuiltin-1,
+        LastTIBuiltin = ellcc::Builtin::FirstTSBuiltin-1,
 #define BUILTIN(ID, TYPE, ATTRS) BI##ID,
 #include "CellSPUBuiltins.def"
         LastTSBuiltin
@@ -67,7 +67,7 @@ namespace elsa {
   /// Mips builtins
   namespace Mips {
     enum {
-        LastTIBuiltin = elsa::Builtin::FirstTSBuiltin-1,
+        LastTIBuiltin = ellcc::Builtin::FirstTSBuiltin-1,
 #define BUILTIN(ID, TYPE, ATTRS) BI##ID,
 #include "MipsBuiltins.def"
         LastTSBuiltin
@@ -77,13 +77,13 @@ namespace elsa {
   /// Msp430 builtins
   namespace Msp430 {
     enum {
-        LastTIBuiltin = elsa::Builtin::FirstTSBuiltin-1,
+        LastTIBuiltin = ellcc::Builtin::FirstTSBuiltin-1,
 #define BUILTIN(ID, TYPE, ATTRS) BI##ID,
 #include "Msp430Builtins.def"
         LastTSBuiltin
     };
   }
 
-} // end namespace elsa.
+} // end namespace ellcc.
 
 #endif

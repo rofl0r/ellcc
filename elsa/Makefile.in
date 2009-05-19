@@ -12,11 +12,15 @@ all: cc.ast.gen.h tlexer packedword_test ccparse quicktest $(THIS)
 
 # directories of other software
 SMBASE   := @SMBASE@
+BASIC    := @BASIC@
+LEX      := @LEX@
 AST      := @AST@
 ELKHOUND := @ELKHOUND@
 
 # stuff inside those other directories
 LIBSMBASE   := $(SMBASE)/libsmbase.a
+LIBBASIC    := $(BASIC)/libbasic.a
+LIBLEX      := $(LEX)/liblex.a
 LIBAST      := $(AST)/libast.a
 LIBELKHOUND := $(ELKHOUND)/libelkhound.a
 
@@ -115,13 +119,13 @@ endif
 CXX := @CXX@
 
 # flags for the C++ compiler (and preprocessor)
-CCFLAGS := @CCFLAGS@ -Woverloaded-virtual -I$(SMBASE) -I$(AST) -I$(ELKHOUND) -I$(LLVM)/include
+CCFLAGS := @CCFLAGS@ -Woverloaded-virtual -I$(SMBASE) -I$(BASIC) -I$(LEX) -I$(AST) -I$(ELKHOUND) -I$(LLVM)/include
 
 # how to enable coverage
 GCOV_OPTS := -fprofile-arcs -ftest-coverage
 
 # flags for the linker
-libraries := $(LIBELKHOUND) $(LIBAST) $(LIBSMBASE)
+libraries := $(LIBELKHOUND) $(LIBAST) $(LIBSMBASE) $(LIBLEX) $(LIBBASIC)
 LDFLAGS := @LDFLAGS@ $(libraries)
 
 # some other tools
@@ -374,7 +378,7 @@ quicktest: ccparse
 
 # -------------------- semgrep --------------------
 TOCLEAN += semgrep
-semgrep: $(CCPARSE_OBJS) semgrep.o $(libraries) $(LIBSMBASE)
+semgrep: $(CCPARSE_OBJS) semgrep.o $(libraries) $(LIBSMBASE) $(LIBLEX) $(LIBBASIC)
 	$(CXX) -o $@ $(CCPARSE_OBJS) semgrep.o $(LDFLAGS) $(LLVMLDFLAGS)
 
 

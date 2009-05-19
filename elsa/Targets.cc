@@ -20,7 +20,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/SmallString.h"
-using namespace elsa;
+using namespace ellcc;
 
 //===----------------------------------------------------------------------===//
 //  Common code shared among targets.
@@ -195,7 +195,7 @@ public:
   virtual void getTargetBuiltins(const Builtin::Info *&Records,
                                  unsigned &NumRecords) const {
     Records = BuiltinInfo;
-    NumRecords = elsa::Alpha::LastTSBuiltin-Builtin::FirstTSBuiltin;
+    NumRecords = ellcc::Alpha::LastTSBuiltin-Builtin::FirstTSBuiltin;
   }
   virtual const char *getClobbers() const {return "";}
   virtual const char *getTargetPrefix() const {
@@ -349,7 +349,7 @@ public:
   virtual void getTargetBuiltins(const Builtin::Info *&Records,
                                  unsigned &NumRecords) const {
     Records = BuiltinInfo;
-    NumRecords = elsa::PPC::LastTSBuiltin-Builtin::FirstTSBuiltin;
+    NumRecords = ellcc::PPC::LastTSBuiltin-Builtin::FirstTSBuiltin;
   }
   
   virtual void getTargetDefines(const LangOptions &Opts,
@@ -602,7 +602,7 @@ public:
   virtual void getTargetBuiltins(const Builtin::Info *&Records,
                                  unsigned &NumRecords) const {
     Records = BuiltinInfo;
-    NumRecords = elsa::X86::LastTSBuiltin-Builtin::FirstTSBuiltin;
+    NumRecords = ellcc::X86::LastTSBuiltin-Builtin::FirstTSBuiltin;
   }
   virtual const char *getTargetPrefix() const {
     return "x86";
@@ -1212,7 +1212,7 @@ public:
   virtual void getTargetBuiltins(const Builtin::Info *&Records,
                                  unsigned &NumRecords) const {
     Records = BuiltinInfo;
-    NumRecords = elsa::Nios2::LastTSBuiltin-Builtin::FirstTSBuiltin;
+    NumRecords = ellcc::Nios2::LastTSBuiltin-Builtin::FirstTSBuiltin;
   }
   virtual const char *getClobbers() const {return "";}
   virtual const char *getTargetPrefix() const {
@@ -1378,7 +1378,7 @@ public:
   virtual void getTargetBuiltins(const Builtin::Info *&Records,
                                  unsigned &NumRecords) const {
     Records = BuiltinInfo;
-    NumRecords = elsa::CellSPU::LastTSBuiltin-Builtin::FirstTSBuiltin;
+    NumRecords = ellcc::CellSPU::LastTSBuiltin-Builtin::FirstTSBuiltin;
   }
   virtual const char *getClobbers() const {return "";}
   virtual const char *getTargetPrefix() const {
@@ -1544,7 +1544,7 @@ public:
   virtual void getTargetBuiltins(const Builtin::Info *&Records,
                                  unsigned &NumRecords) const {
     Records = BuiltinInfo;
-    NumRecords = elsa::Mips::LastTSBuiltin-Builtin::FirstTSBuiltin;
+    NumRecords = ellcc::Mips::LastTSBuiltin-Builtin::FirstTSBuiltin;
   }
   virtual const char *getClobbers() const {return "";}
   virtual const char *getTargetPrefix() const {
@@ -1710,7 +1710,7 @@ public:
   virtual void getTargetBuiltins(const Builtin::Info *&Records,
                                  unsigned &NumRecords) const {
     Records = BuiltinInfo;
-    NumRecords = elsa::Msp430::LastTSBuiltin-Builtin::FirstTSBuiltin;
+    NumRecords = ellcc::Msp430::LastTSBuiltin-Builtin::FirstTSBuiltin;
   }
   virtual const char *getClobbers() const {return "";}
   virtual const char *getTargetPrefix() const {
