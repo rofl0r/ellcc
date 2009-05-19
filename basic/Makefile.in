@@ -84,14 +84,11 @@ BASIC_OBJS := \
 
 
 BUILT_SOURCES = \
+    DiagnosticEllccKinds.inc \
+    DiagnosticElsaKinds.inc \
     DiagnosticLexKinds.inc \
     DiagnosticCommonKinds.inc \
     DiagnosticGroups.inc
-
-#    DiagnosticDriverKinds.inc \
-#    DiagnosticFrontendKinds.inc DiagnosticLexKinds.inc \
-#    DiagnosticParseKinds.inc DiagnosticSemaKinds.inc \
-#    DiagnosticAnalysisKinds.inc DiagnosticASTKinds.inc \
 
 INCFiles := $(filter %.inc,$(BUILT_SOURCES))
 INCTMPFiles := $(INCFiles:%=%.tmp)

@@ -33,14 +33,10 @@ namespace ellcc {
   namespace diag {
     // Start position for diagnostics.
     enum {
-      DIAG_START_DRIVER   =                        300,
-      DIAG_START_FRONTEND = DIAG_START_DRIVER   +  100,
-      DIAG_START_LEX      = DIAG_START_FRONTEND +  100,
-      DIAG_START_PARSE    = DIAG_START_LEX      +  300,
-      DIAG_START_AST      = DIAG_START_PARSE    +  300,
-      DIAG_START_SEMA     = DIAG_START_AST      +  100,
-      DIAG_START_ANALYSIS = DIAG_START_SEMA     + 1000,
-      DIAG_UPPER_LIMIT    = DIAG_START_ANALYSIS +  100
+      DIAG_START_ELLCC    =                        300,
+      DIAG_START_LEX      = DIAG_START_ELLCC    + 1000,
+      DIAG_START_ELSA     = DIAG_START_LEX      + 1000,
+      DIAG_UPPER_LIMIT    = DIAG_START_ELSA     + 1000
     };
 
     class CustomDiagInfo;

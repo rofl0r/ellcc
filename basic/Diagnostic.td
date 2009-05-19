@@ -62,12 +62,7 @@ class DefaultError  { DiagMapping DefaultMapping = MAP_ERROR; }
 class DefaultFatal  { DiagMapping DefaultMapping = MAP_FATAL; }
 
 // Definitions for Diagnostics.
-include "DiagnosticASTKinds.td"
-include "DiagnosticAnalysisKinds.td"
 include "DiagnosticCommonKinds.td"
-include "DiagnosticDriverKinds.td"
-include "DiagnosticFrontendKinds.td"
+include "DiagnosticEllccKinds.td"
+include "DiagnosticElsaKinds.td"
 include "DiagnosticLexKinds.td"
-include "DiagnosticParseKinds.td"
-include "DiagnosticSemaKinds.td"
-
