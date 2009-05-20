@@ -549,6 +549,9 @@ Preprocessor Options
 */
 //===----------------------------------------------------------------------===//
 
+#include "EllccDiagnostic.h"
+#include "ElsaDiagnostic.h"
+#include "LexDiagnostic.h"
 #include "llvm/Module.h"
 #include "llvm/ModuleProvider.h"
 #include "llvm/PassManager.h"
@@ -564,6 +567,7 @@ Preprocessor Options
 #include "llvm/Target/TargetMachineRegistry.h"
 #include "llvm/CodeGen/LinkAllCodegenComponents.h"
 #include "llvm/CodeGen/FileWriters.h"
+#include "llvm/ADT/OwningPtr.h"
 #include "llvm/Support/PassNameParser.h"
 #include "llvm/System/Signals.h"
 #include "llvm/Support/ManagedStatic.h"
@@ -3035,7 +3039,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
 // main for ellcc
 //
 int main(int argc, char **argv)
- {
+{
     llvm_shutdown_obj X;  // Call llvm_shutdown() on exit.
     InputList InpList;
     int status = 0;
@@ -3069,6 +3073,7 @@ int main(int argc, char **argv)
         }
 
         sys::PrintStackTraceOnErrorSignal();
+        PrettyStackTraceProgram X(argc, argv);
 
         // Initialize Elsa.
         Elsa elsa(timerGroup);       // Get the parsing environment.
@@ -3080,16 +3085,14 @@ int main(int argc, char **argv)
             elsa.addTrace((*traceIt).c_str());
         }
 
-        if (Files.size() == 0 && Libraries.size() == 0) {
+        if (Files.empty()) {
             // No input files present.
-            if (Verbose) {
-                // Just version information.
-                cerr << progname << ": version " << ELLCC_VERSION << "\n";
-                Exit(0);
-            } else {
-                PrintAndExit("no input files");
-            }
+            Files.push_back("-");
         }
+
+        // Create the diagnostic client for reporting errors or for
+        // implementing -verify.
+        llvm::OwningPtr<DiagnosticClient> DiagClient;
 
         // Find configuration files.
         sys::Path config(progname);
