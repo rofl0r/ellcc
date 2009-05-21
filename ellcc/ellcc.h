@@ -19,6 +19,7 @@ class Preprocessor;
 
 /// DoPrintPreprocessedInput - Implement -E mode.
 void DoPrintPreprocessedInput(Preprocessor &PP, const std::string& OutFile);
+bool ProcessWarningOptions(Diagnostic &Diags);
 
 class Elsa {
 public:

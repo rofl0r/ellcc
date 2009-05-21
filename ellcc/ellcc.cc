@@ -552,6 +552,7 @@ Preprocessor Options
 #include "EllccDiagnostic.h"
 #include "ElsaDiagnostic.h"
 #include "LexDiagnostic.h"
+#include "TextDiagnosticPrinter.h"
 #include "llvm/Module.h"
 #include "llvm/ModuleProvider.h"
 #include "llvm/PassManager.h"
@@ -3065,15 +3066,30 @@ int main(int argc, char **argv)
         // Parse the command line options.
         cl::ParseCommandLineOptions(argc, argv, "C/C++ compiler\n");
         
+        sys::PrintStackTraceOnErrorSignal();
+        PrettyStackTraceProgram X(argc, argv);
+
+        if (Files.empty()) {
+            // No input files present.
+            Files.push_back("-");
+        }
+
+        // Create the diagnostic client for reporting errors or for
+        // implementing -verify.
+        OwningPtr<DiagnosticClient> DiagClient;
+        DiagClient.reset(new TextDiagnosticPrinter(llvm::errs()));
+
+        // Configure our handling of diagnostics.
+        Diagnostic Diags(DiagClient.get());
+        if (ProcessWarningOptions(Diags))
+            return 1;
+
         // Check for a valid target machine.
         if (OutputMachine.size()) {
            if (machines.find(OutputMachine) == machines.end()) {
                 PrintAndExit(OutputMachine + " is not a valid machine name");
            }
         }
-
-        sys::PrintStackTraceOnErrorSignal();
-        PrettyStackTraceProgram X(argc, argv);
 
         // Initialize Elsa.
         Elsa elsa(timerGroup);       // Get the parsing environment.
@@ -3084,15 +3100,6 @@ int main(int argc, char **argv)
         for ( ; traceIt != ElsaTraceOpts.end(); ++traceIt) {
             elsa.addTrace((*traceIt).c_str());
         }
-
-        if (Files.empty()) {
-            // No input files present.
-            Files.push_back("-");
-        }
-
-        // Create the diagnostic client for reporting errors or for
-        // implementing -verify.
-        llvm::OwningPtr<DiagnosticClient> DiagClient;
 
         // Find configuration files.
         sys::Path config(progname);
