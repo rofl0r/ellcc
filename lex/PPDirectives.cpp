@@ -698,10 +698,6 @@ void Preprocessor::HandleLineDirective(Token &Tok) {
     assert(!Literal.AnyWide && "Didn't allow wide strings in");
     if (Literal.hadError)
       return DiscardUntilEndOfDirective();
-    if (Literal.Pascal) {
-      Diag(StrTok, diag::err_pp_linemarker_invalid_filename);
-      return DiscardUntilEndOfDirective();
-    }
     FilenameID = SourceMgr.getLineTableFilenameID(Literal.GetString(),
                                                   Literal.GetStringLength());
     
@@ -829,10 +825,6 @@ void Preprocessor::HandleDigitDirective(Token &DigitTok) {
     assert(!Literal.AnyWide && "Didn't allow wide strings in");
     if (Literal.hadError)
       return DiscardUntilEndOfDirective();
-    if (Literal.Pascal) {
-      Diag(StrTok, diag::err_pp_linemarker_invalid_filename);
-      return DiscardUntilEndOfDirective();
-    }
     FilenameID = SourceMgr.getLineTableFilenameID(Literal.GetString(),
                                                   Literal.GetStringLength());
     

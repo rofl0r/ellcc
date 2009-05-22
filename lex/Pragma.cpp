@@ -367,10 +367,6 @@ void Preprocessor::HandlePragmaComment(Token &Tok) {
     assert(!Literal.AnyWide && "Didn't allow wide strings in");
     if (Literal.hadError)
       return;
-    if (Literal.Pascal) {
-      Diag(StrToks[0].getLocation(), diag::err_pragma_comment_malformed);
-      return;
-    }
 
     ArgumentString = std::string(Literal.GetString(),
                                  Literal.GetString()+Literal.GetStringLength());
@@ -555,10 +551,6 @@ struct PragmaDiagnosticHandler : public PragmaHandler {
     assert(!Literal.AnyWide && "Didn't allow wide strings in");
     if (Literal.hadError)
       return;
-    if (Literal.Pascal) {
-      PP.Diag(StrToks[0].getLocation(), diag::warn_pragma_diagnostic_invalid);
-      return;
-    }
     
     std::string WarningName(Literal.GetString(),
                             Literal.GetString()+Literal.GetStringLength());

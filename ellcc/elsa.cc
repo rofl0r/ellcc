@@ -807,7 +807,7 @@ int Elsa::doit(Language language, const char* inputFname, const char* outputFnam
 }
 
 int Elsa::parse(Language language, const char* inputFname, const char* outputFname,
-                llvm::Module*& mod, pw::Plexer* lang,
+                llvm::Module*& mod,
                 TargetInfo* targetInfo)
 {
   try {

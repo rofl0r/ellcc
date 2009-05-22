@@ -152,7 +152,6 @@ public:
                       Preprocessor &PP);
   bool hadError;
   bool AnyWide;
-  bool Pascal;
   
   const char *GetString() { return &ResultBuf[0]; }
   unsigned GetStringLength() const { return ResultPtr-&ResultBuf[0]; }

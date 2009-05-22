@@ -55,7 +55,7 @@ public:
     /** Parse a source file.
      */
     int parse(Language language, const char* inputFname, const char* outputFname, llvm::Module*& mod,
-              pw::Plexer* lang, TargetInfo* targetInfo);
+              TargetInfo* targetInfo);
 
 private:
     /** The default constructor (not implemented or used).

@@ -5,6 +5,11 @@
 #include "EllccDiagnostic.h"
 #include "ElsaDiagnostic.h"
 #include "LexDiagnostic.h"
+#include "HeaderSearch.h"
+#include "InitHeaderSearch.h"
+#include "Preprocessor.h"
+#include "InitPreprocessor.h"
+#include "FileManager.h"
 #include "TextDiagnosticPrinter.h"
 #include "llvm/Module.h"
 #include "llvm/ModuleProvider.h"
@@ -22,8 +27,10 @@
 #include "llvm/CodeGen/LinkAllCodegenComponents.h"
 #include "llvm/CodeGen/FileWriters.h"
 #include "llvm/ADT/OwningPtr.h"
+#include "llvm/ADT/StringMap.h"
 #include "llvm/Support/PassNameParser.h"
 #include "llvm/System/Signals.h"
+#include "llvm/System/Host.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/PluginLoader.h"
@@ -60,7 +67,9 @@ using namespace ellcc;
 
 static pw::ErrorList errors;    // The reported errors.
 static std::string progname;    // The program name.        
+#if OLD
 static pw::Plexer* pconfig;     // The program configuration.
+#endif
  
 /** File types.
  */
@@ -203,6 +212,8 @@ static void setupMappings()
     machines["nios2"] = "nios2";
     machines["powerpc"] = "powerpc";
     machines["powerpc64"] = "powerpc64";
+    machines["ppc"] = "powerpc";
+    machines["ppc64"] = "powerpc64";
     machines["sparc"] = "sparc";
     machines["spu"] = "cellspu";
     machines["x86"] = "i686";
@@ -308,6 +319,13 @@ static void setupMappings()
     filePhases[A][LINKING].action = LINK;
 }
 
+//===----------------------------------------------------------------------===//
+// Global options.
+//===----------------------------------------------------------------------===//
+
+static llvm::cl::opt<bool>
+EmptyInputOnly("empty-input-only", 
+      llvm::cl::desc("Force running on an empty input file"));
 //===----------------------------------------------------------------------===//
 //===          PHASE OPTIONS
 //===----------------------------------------------------------------------===//
@@ -457,10 +475,6 @@ static cl::list<std::string> MOpts("M", cl::ZeroOrMore, cl::Prefix,
     cl::desc("Pass through -M options to compiler tools"),
     cl::value_desc("option"));
 
-static cl::list<std::string> WOpts("W", cl::ZeroOrMore, cl::Prefix,
-    cl::desc("Pass through -W options to compiler tools"),
-    cl::value_desc("option"));
-
 static cl::list<std::string> BOpt("B", cl::ZeroOrMore, cl::Prefix,
     cl::desc("Specify path to find ellcc sub-tools"),
     cl::value_desc("dir"));
@@ -475,17 +489,15 @@ static cl::list<std::string> LibPaths("L", cl::Prefix,
 static cl::list<std::string> Libraries("l", cl::Prefix,
     cl::desc("Specify base name of libraries to link to"), cl::value_desc("lib"));
 
+#if OLD
 static cl::list<std::string> Includes("I", cl::Prefix,
     cl::desc("Specify location to search for included source"),
-    cl::value_desc("dir"));
-
-static cl::list<std::string> IncludeBefore("isystem", cl::Prefix,
-    cl::desc("Insert an include directory before the system include directories"),
     cl::value_desc("dir"));
 
 static cl::list<std::string> Defines("D", cl::Prefix,
     cl::desc("Specify a pre-processor symbol to define"),
     cl::value_desc("symbol"));
+#endif
 
 //===----------------------------------------------------------------------===//
 //===          OUTPUT OPTIONS
@@ -493,9 +505,6 @@ static cl::list<std::string> Defines("D", cl::Prefix,
 
 static cl::opt<std::string> OutputFilename("o", cl::init(""),
     cl::desc("Override output filename"), cl::value_desc("file"));
-
-static cl::opt<std::string> OutputMachine("m", cl::Prefix,
-    cl::desc("Specify a target machine"), cl::value_desc("machine"));
 
 static cl::opt<bool> Native("native", cl::init(false),
     cl::desc("Generative native code instead of bitcode"));
@@ -615,18 +624,18 @@ static cl::opt<bool> CO8("end-group", cl::Hidden,
 //===          TARGET CODE GENERATOR OPTIONS
 //===----------------------------------------------------------------------===//
 
-static cl::opt<std::string>
-TargetTriple("mtriple", cl::desc("Override target triple for module"));
-
 static cl::opt<const TargetMachineRegistry::entry*, false,
                RegistryParser<TargetMachine> >
 MArch("march", cl::desc("Architecture to generate code for:"));
 
 static cl::opt<std::string>
 MCPU("mcpu", 
-  cl::desc("Target a specific cpu type (-mcpu=help for details)"),
-  cl::value_desc("cpu-name"),
-  cl::init(""));
+     cl::desc("Target a specific cpu type (-mcpu=help for details)"),
+     cl::value_desc("cpu-name"),
+     cl::init(""));
+
+static llvm::cl::list<std::string>
+TargetFeatures("target-feature", llvm::cl::desc("Target specific attributes"));
 
 static cl::list<std::string>
 MAttrs("mattr", 
@@ -671,24 +680,6 @@ static cl::opt<bool> KeepTemps("keep-temps", cl::Optional,
 static cl::list<std::string> Files(cl::Positional, cl::ZeroOrMore,
     cl::desc("[Sources/objects/libraries]"));
 
-static cl::list<FileTypes> Languages("x", cl::ZeroOrMore,
-    cl::desc("Specify the source language for subsequent files"),
-    cl::values(
-        clEnumValN(C, "c", "The C language"),
-        clEnumValN(I, "c-cpp-output", "Preprocessed C language"),
-        clEnumValN(H, "c-header", "A C language header"),
-        clEnumValN(CC, "c++", "The C++ language"),
-        clEnumValN(II, "c++-cpp-output", "Preprocessed C++ language"),
-        clEnumValN(HH, "c++-header", "A C++ language header"),
-        clEnumValN(LL, "llvm-as", "An LLVM assembly file"),
-        clEnumValN(LLX, "llvm-as-with-cpp", "An LLVM assembly file that must be preprocessed"),
-        clEnumValN(BC, "llvm-bc", "An LLVM bitcode file"),
-        clEnumValN(UBC, "llvm-bc", "An unoptimized LLVM bitcode file"),
-        clEnumValN(S, "assembly", "An assembly file"),
-        clEnumValN(SX, "assembly-with-cpp", "An LLVM assembly file that must be preprocessed"),
-        clEnumValN(O, "other", "An object file, linker command file, etc"),
-        clEnumValEnd));
-
 // The OptimizationList is automatically populated with registered Passes by the
 // PassNameParser.
 //
@@ -724,12 +715,15 @@ struct Input {
     FileTypes type;             ///< The input's type.
     Module* module;             ///< The module associated with the input, if any.
     bool temp;                  ///< true if this is contained in a temporary file.
+#if OLD
     pw::Plexer* language;       ///< Non-NULL if this type has a language definition.
+#else
+    LangOptions langInfo;       ///< Information about the language.
+#endif
     Input() : type(NONE), module(NULL), temp(false) {}
     Input(std::string& name, FileTypes type = NONE,
-          Module* module = NULL, bool temp = false,
-          pw::Plexer* language = NULL)
-        : name(name), type(type), module(module), temp(temp), language(language)  {}
+          Module* module = NULL, bool temp = false)
+        : name(name), type(type), module(module), temp(temp) {}
     void setName(sys::Path newName)
     {
         if (temp && !KeepTemps) {
@@ -742,6 +736,422 @@ struct Input {
     }
 };
 typedef std::vector<Input> InputList;
+
+/// PrintAndExit - Prints a message to standard error and exits with an error code.
+///
+/// Inputs:
+///  Message  - The message to print to standard error.
+///
+static void PrintAndExit(const std::string &Message, int errcode = 1)
+{
+    cerr << progname << ": " << Message << "\n";
+    llvm_shutdown();
+    exit(errcode);
+}
+
+/// Exit - Exit with an error code.
+///
+static void Exit(int errcode = 1)
+{
+    llvm_shutdown();
+    exit(errcode);
+}
+
+//===----------------------------------------------------------------------===//
+// Builtin Options
+//===----------------------------------------------------------------------===//
+
+static llvm::cl::opt<bool>
+TimeReport("ftime-report",
+           llvm::cl::desc("Print the amount of time each "
+                          "phase of compilation takes"));
+
+static llvm::cl::opt<bool>
+Freestanding("ffreestanding",
+             llvm::cl::desc("Assert that the compilation takes place in a "
+                            "freestanding environment"));
+
+static llvm::cl::opt<bool>
+AllowBuiltins("fbuiltin", llvm::cl::init(true),
+             llvm::cl::desc("Disable implicit builtin knowledge of functions"));
+
+
+static llvm::cl::opt<bool>
+MathErrno("fmath-errno", llvm::cl::init(true),
+          llvm::cl::desc("Require math functions to respect errno"));
+
+//===----------------------------------------------------------------------===//
+// Language Options
+//===----------------------------------------------------------------------===//
+
+static cl::list<FileTypes> Languages("x", cl::ZeroOrMore,
+    cl::desc("Specify the source language for subsequent files"),
+    cl::values(
+        clEnumValN(C, "c", "The C language"),
+        clEnumValN(I, "c-cpp-output", "Preprocessed C language"),
+        clEnumValN(H, "c-header", "A C language header"),
+        clEnumValN(CC, "c++", "The C++ language"),
+        clEnumValN(II, "c++-cpp-output", "Preprocessed C++ language"),
+        clEnumValN(HH, "c++-header", "A C++ language header"),
+        clEnumValN(LL, "llvm-as", "An LLVM assembly file"),
+        clEnumValN(LLX, "llvm-as-with-cpp", "An LLVM assembly file that must be preprocessed"),
+        clEnumValN(BC, "llvm-bc", "An LLVM bitcode file"),
+        clEnumValN(UBC, "llvm-bc", "An unoptimized LLVM bitcode file"),
+        clEnumValN(S, "assembly", "An assembly file"),
+        clEnumValN(SX, "assembly-with-cpp", "An assembly file that must be preprocessed"),
+        clEnumValN(O, "other", "An object file, linker command file, etc"),
+        clEnumValEnd));
+
+static llvm::cl::opt<bool>
+OverflowChecking("ftrapv",
+                 llvm::cl::desc("Trap on integer overflow"),
+                 llvm::cl::init(false));
+
+static void InitializeCOptions(LangOptions &Options) {
+    // Do nothing.
+}
+
+static void InitializeLangOptions(LangOptions &Options, FileTypes FT)
+{
+  // FIXME: implement -fpreprocessed mode.
+  bool NoPreprocess = false;
+  
+  switch (FT) {
+  default: assert(0 && "Unknown language kind!");
+  case SX:
+    Options.AsmPreprocessor = 1;
+    // FALLTHROUGH
+  case I:
+    NoPreprocess = true;
+    // FALLTHROUGH
+  case C:
+    InitializeCOptions(Options);
+    break;
+  case II:
+    NoPreprocess = true;
+    // FALLTHROUGH
+  case CC:
+    Options.CPlusPlus = 1;
+    break;
+  }
+  
+  Options.OverflowChecking = OverflowChecking;
+}
+
+/// LangStds - Language standards we support.
+enum LangStds {
+  lang_unspecified,  
+  lang_c89, lang_c94, lang_c99,
+  lang_gnu_START,
+  lang_gnu89 = lang_gnu_START, lang_gnu99,
+  lang_cxx98, lang_gnucxx98,
+  lang_cxx0x, lang_gnucxx0x
+};
+
+static llvm::cl::opt<LangStds>
+LangStd("std", llvm::cl::desc("Language standard to compile for"),
+        llvm::cl::init(lang_unspecified),
+  llvm::cl::values(clEnumValN(lang_c89,      "c89",            "ISO C 1990"),
+                   clEnumValN(lang_c89,      "c90",            "ISO C 1990"),
+                   clEnumValN(lang_c89,      "iso9899:1990",   "ISO C 1990"),
+                   clEnumValN(lang_c94,      "iso9899:199409",
+                              "ISO C 1990 with amendment 1"),
+                   clEnumValN(lang_c99,      "c99",            "ISO C 1999"),
+                   clEnumValN(lang_c99,      "c9x",            "ISO C 1999"),
+                   clEnumValN(lang_c99,      "iso9899:1999",   "ISO C 1999"),
+                   clEnumValN(lang_c99,      "iso9899:199x",   "ISO C 1999"),
+                   clEnumValN(lang_gnu89,    "gnu89",
+                              "ISO C 1990 with GNU extensions"),
+                   clEnumValN(lang_gnu99,    "gnu99",
+                              "ISO C 1999 with GNU extensions (default for C)"),
+                   clEnumValN(lang_gnu99,    "gnu9x",
+                              "ISO C 1999 with GNU extensions"),
+                   clEnumValN(lang_cxx98,    "c++98",
+                              "ISO C++ 1998 with amendments"),
+                   clEnumValN(lang_gnucxx98, "gnu++98",
+                              "ISO C++ 1998 with amendments and GNU "
+                              "extensions (default for C++)"),
+                   clEnumValN(lang_cxx0x,    "c++0x",
+                              "Upcoming ISO C++ 200x with amendments"),
+                   clEnumValN(lang_gnucxx0x, "gnu++0x",
+                              "Upcoming ISO C++ 200x with amendments and GNU "
+                              "extensions"),
+                   clEnumValEnd));
+
+static llvm::cl::opt<bool>
+NoOperatorNames("fno-operator-names",
+                llvm::cl::desc("Do not treat C++ operator name keywords as "
+                               "synonyms for operators"));
+
+static llvm::cl::opt<bool>
+WritableStrings("fwritable-strings",
+              llvm::cl::desc("Store string literals as writable data"));
+
+static llvm::cl::opt<bool>
+NoLaxVectorConversions("fno-lax-vector-conversions",
+                       llvm::cl::desc("Disallow implicit conversions between "
+                                      "vectors with a different number of "
+                                      "elements or different element types"));
+
+static llvm::cl::opt<bool>
+EnableBlocks("fblocks", llvm::cl::desc("enable the 'blocks' language feature"));
+
+static llvm::cl::opt<bool>
+EnableHeinousExtensions("fheinous-gnu-extensions",
+   llvm::cl::desc("enable GNU extensions that you really really shouldn't use"),
+                        llvm::cl::ValueDisallowed, llvm::cl::Hidden);
+
+static llvm::cl::opt<bool>
+ObjCNonFragileABI("fobjc-nonfragile-abi",
+                  llvm::cl::desc("enable objective-c's nonfragile abi"));
+
+
+static llvm::cl::opt<bool>
+EmitAllDecls("femit-all-decls",
+              llvm::cl::desc("Emit all declarations, even if unused"));
+
+static llvm::cl::opt<bool>
+Exceptions("fexceptions",
+           llvm::cl::desc("Enable support for exception handling"));
+
+static llvm::cl::opt<bool>
+GNURuntime("fgnu-runtime",
+            llvm::cl::desc("Generate output compatible with the standard GNU "
+                           "Objective-C runtime"));
+
+static llvm::cl::opt<bool>
+NeXTRuntime("fnext-runtime",
+            llvm::cl::desc("Generate output compatible with the NeXT "
+                           "runtime"));
+
+
+
+static llvm::cl::opt<bool>
+Trigraphs("trigraphs", llvm::cl::desc("Process trigraph sequences"));
+
+static llvm::cl::opt<unsigned>
+TemplateDepth("ftemplate-depth", llvm::cl::init(99),
+              llvm::cl::desc("Maximum depth of recursive template "
+                             "instantiation"));
+static llvm::cl::opt<bool>
+DollarsInIdents("fdollars-in-identifiers",
+                llvm::cl::desc("Allow '$' in identifiers"));
+
+
+static llvm::cl::opt<bool>
+OptSize("Os", llvm::cl::desc("Optimize for size"));
+
+static llvm::cl::opt<bool>
+NoCommon("fno-common",
+         llvm::cl::desc("Compile common globals like normal definitions"),
+         llvm::cl::ValueDisallowed);
+
+static llvm::cl::opt<std::string>
+MainFileName("main-file-name",
+             llvm::cl::desc("Main file name to use for debug info"));
+
+// FIXME: Also add an "-fno-access-control" option.
+static llvm::cl::opt<bool>
+AccessControl("faccess-control", 
+              llvm::cl::desc("Enable C++ access control"));
+
+static llvm::cl::opt<unsigned>
+PICLevel("pic-level", llvm::cl::desc("Value for __PIC__"));
+
+static llvm::cl::opt<bool>
+StaticDefine("static-define", llvm::cl::desc("Should __STATIC__ be defined"));
+
+static void InitializeLanguageStandard(LangOptions &Options, FileTypes FT,
+                                       TargetInfo *Target,
+                                       const llvm::StringMap<bool> &Features) {
+  // Allow the target to set the default the langauge options as it sees fit.
+  Target->getDefaultLangOptions(Options);
+
+  // Pass the map of target features to the target for validation and
+  // processing.
+  Target->HandleTargetFeatures(Features);
+  
+  if (LangStd == lang_unspecified) {
+    // Based on the base language, pick one.
+    switch (FT) {
+    case NONE: assert(0 && "Unknown base language");
+    default:
+    case C:
+    case SX:
+    case I:
+      LangStd = lang_gnu99;
+      break;
+    case CC:
+    case II:
+      LangStd = lang_gnucxx98;
+      break;
+    }
+  }
+  
+  switch (LangStd) {
+  default: assert(0 && "Unknown language standard!");
+
+  // Fall through from newer standards to older ones.  This isn't really right.
+  // FIXME: Enable specifically the right features based on the language stds.
+  case lang_gnucxx0x:
+  case lang_cxx0x:
+    Options.CPlusPlus0x = 1;
+    // FALL THROUGH
+  case lang_gnucxx98:
+  case lang_cxx98:
+    Options.CPlusPlus = 1;
+    Options.CXXOperatorNames = !NoOperatorNames;
+    // FALL THROUGH.
+  case lang_gnu99:
+  case lang_c99:
+    Options.C99 = 1;
+    Options.HexFloats = 1;
+    // FALL THROUGH.
+  case lang_gnu89:
+    Options.BCPLComment = 1;  // Only for C99/C++.
+    // FALL THROUGH.
+  case lang_c94:
+    Options.Digraphs = 1;     // C94, C99, C++.
+    // FALL THROUGH.
+  case lang_c89:
+    break;
+  }
+
+  // GNUMode - Set if we're in gnu99, gnu89, gnucxx98, etc.
+  Options.GNUMode = LangStd >= lang_gnu_START;
+  
+  if (Options.CPlusPlus) {
+    Options.C99 = 0;
+    Options.HexFloats = Options.GNUMode;
+  }
+  
+  if (LangStd == lang_c89 || LangStd == lang_c94 || LangStd == lang_gnu89)
+    Options.ImplicitInt = 1;
+  else
+    Options.ImplicitInt = 0;
+  
+  // Mimicing gcc's behavior, trigraphs are only enabled if -trigraphs
+  // is specified, or -std is set to a conforming mode.
+  Options.Trigraphs = !Options.GNUMode;
+  if (Trigraphs.getPosition())
+    Options.Trigraphs = Trigraphs;  // Command line option wins if specified.
+
+  // If in a conformant language mode (e.g. -std=c99) Blocks defaults to off
+  // even if they are normally on for the target.  In GNU modes (e.g.
+  // -std=gnu99) the default for blocks depends on the target settings.
+  if (!Options.GNUMode)
+    Options.Blocks = 0;
+  
+  // Default to not accepting '$' in identifiers when preprocessing assembler,
+  // but do accept when preprocessing C.  FIXME: these defaults are right for
+  // darwin, are they right everywhere?
+  Options.DollarIdents = FT != SX;
+  if (DollarsInIdents.getPosition())  // Explicit setting overrides default.
+    Options.DollarIdents = DollarsInIdents;
+  
+  Options.WritableStrings = WritableStrings;
+  if (NoLaxVectorConversions.getPosition())
+      Options.LaxVectorConversions = 0;
+  Options.Exceptions = Exceptions;
+  if (EnableBlocks.getPosition())
+    Options.Blocks = EnableBlocks;
+
+  if (!AllowBuiltins)
+    Options.NoBuiltin = 1;
+  if (Freestanding)
+    Options.Freestanding = Options.NoBuiltin = 1;
+  
+  if (EnableHeinousExtensions)
+    Options.HeinousExtensions = 1;
+
+  if (AccessControl)
+    Options.AccessControl = 1;
+  
+  Options.MathErrno = MathErrno;
+
+  Options.InstantiationDepth = TemplateDepth;
+
+  if (EmitAllDecls)
+    Options.EmitAllDecls = 1;
+
+  // The __OPTIMIZE_SIZE__ define is tied to -Oz, which we don't
+  // support.
+  Options.OptimizeSize = 0;
+  
+  // -Os implies -O2
+  if (OptSize || OptLevel)
+    Options.Optimize = 1;
+
+  assert(PICLevel <= 2 && "Invalid value for -pic-level");
+  Options.PICLevel = PICLevel;
+
+  Options.GNUInline = !Options.C99;
+  // FIXME: This is affected by other options (-fno-inline). 
+  Options.NoInline = !OptSize && !OptLevel;
+
+  Options.Static = StaticDefine;
+
+  if (MainFileName.getPosition())
+    Options.setMainFileName(MainFileName.c_str());
+}
+
+//===----------------------------------------------------------------------===//
+// Target Triple Processing.
+//===----------------------------------------------------------------------===//
+
+static llvm::cl::opt<std::string>
+TargetTriple("triple",
+  llvm::cl::desc("Specify target triple (e.g. mips-unknown-elf)"));
+
+static llvm::cl::opt<std::string>
+Arch("arch", llvm::cl::desc("Specify target architecture (e.g. nios2)"));
+
+/// CreateTargetTriple - Process the various options that affect the target
+/// triple and build a final aggregate triple that we are compiling for.
+static std::string CreateTargetTriple()
+{
+    // Initialize base triple.  If a -triple option has been specified, use
+    // that triple.  Otherwise, default to the host triple.
+    std::string Triple = TargetTriple;
+
+    if (Triple.empty()) {
+        // See if a target machine is given in the program name. (<arch>-<format>)
+        std::string::size_type dash;
+        dash = progname.find('-');
+        if (dash != std::string::npos) {
+            Arch = progname.substr(0, dash);
+            dash = progname.find('-', dash + 1);
+            if (dash != std::string::npos) {
+                Triple = progname.substr(0, dash);
+            }
+        } else {
+            Triple = sys::getHostTriple();
+            dash = progname.find('-');
+            if (dash != std::string::npos) {
+                Arch = progname.substr(0, dash);
+            }
+        }
+    }
+  
+    if (!Arch.empty()) {
+        // Decompose the base triple into "arch" and suffix.
+        std::string::size_type FirstDashIdx = Triple.find('-');
+    
+        if (FirstDashIdx == std::string::npos) {
+            PrintAndExit(std::string("Malformed target triple: \"")
+                         + Triple.c_str() + "\" ('-' could not be found)");
+        }
+    
+        // Canonicalize the triple to use LLVM machine names.
+        if (machines.find(Arch) == machines.end()) {
+            PrintAndExit(Arch + " is not a valid machine name");
+        }
+    
+        Triple = machines[Arch] + std::string(Triple.begin()+FirstDashIdx, Triple.end());
+    }
+
+    return Triple;
+}
 
 // ---------- Define Printers for module and function passes ------------
 namespace {
@@ -984,26 +1394,6 @@ static const FileTypes GetFileType(const std::string& fname, unsigned pos) {
     }
 
     return extToLang[ext];
-}
-
-/// PrintAndExit - Prints a message to standard error and exits with an error code.
-///
-/// Inputs:
-///  Message  - The message to print to standard error.
-///
-static void PrintAndExit(const std::string &Message, int errcode = 1)
-{
-    cerr << progname << ": " << Message << "\n";
-    llvm_shutdown();
-    exit(errcode);
-}
-
-/// Exit - Exit with an error code.
-///
-static void Exit(int errcode = 1)
-{
-    llvm_shutdown();
-    exit(errcode);
 }
 
 /// Optimize - Perform link time optimizations. This will run the scalar
@@ -1275,7 +1665,7 @@ static int Preprocess(const std::string &OutputFilename,
   return R;
 }
 
-#else
+#elsif OLD
 
 /// Preprocess - Preprocess the given file.
 ///
@@ -1385,6 +1775,398 @@ static int Preprocess(const std::string &OutputFilename,
     return 0;
 }
 
+#else
+
+//===----------------------------------------------------------------------===//
+// Preprocessor Initialization
+//===----------------------------------------------------------------------===//
+
+// FIXME: Preprocessor builtins to support.
+//   -A...    - Play with #assertions
+//   -undef   - Undefine all predefined macros
+
+static llvm::cl::list<std::string>
+D_macros("D", llvm::cl::value_desc("macro"), llvm::cl::Prefix,
+       llvm::cl::desc("Predefine the specified macro"));
+static llvm::cl::list<std::string>
+U_macros("U", llvm::cl::value_desc("macro"), llvm::cl::Prefix,
+         llvm::cl::desc("Undefine the specified macro"));
+
+static llvm::cl::list<std::string>
+ImplicitIncludes("include", llvm::cl::value_desc("file"),
+                 llvm::cl::desc("Include file before parsing"));
+static llvm::cl::list<std::string>
+ImplicitMacroIncludes("imacros", llvm::cl::value_desc("file"),
+                      llvm::cl::desc("Include macros from file before parsing"));
+
+static llvm::cl::opt<std::string>
+ImplicitIncludePTH("include-pth", llvm::cl::value_desc("file"),
+                   llvm::cl::desc("Include file before parsing"));
+
+//===----------------------------------------------------------------------===//
+// PTH.
+//===----------------------------------------------------------------------===//
+
+static llvm::cl::opt<std::string>
+TokenCache("token-cache", llvm::cl::value_desc("path"),
+           llvm::cl::desc("Use specified token cache file"));
+
+//===----------------------------------------------------------------------===//
+// Preprocessor include path information.
+//===----------------------------------------------------------------------===//
+
+// This tool exports a large number of command line options to control how the
+// preprocessor searches for header files.  At root, however, the Preprocessor
+// object takes a very simple interface: a list of directories to search for
+// 
+// FIXME: -nostdinc++
+// FIXME: -imultilib
+//
+
+static llvm::cl::opt<bool>
+nostdinc("nostdinc", llvm::cl::desc("Disable standard #include directories"));
+
+// Various command line options.  These four add directories to each chain.
+static llvm::cl::list<std::string>
+F_dirs("F", llvm::cl::value_desc("directory"), llvm::cl::Prefix,
+       llvm::cl::desc("Add directory to framework include search path"));
+static llvm::cl::list<std::string>
+I_dirs("I", llvm::cl::value_desc("directory"), llvm::cl::Prefix,
+       llvm::cl::desc("Add directory to include search path"));
+static llvm::cl::list<std::string>
+idirafter_dirs("idirafter", llvm::cl::value_desc("directory"), llvm::cl::Prefix,
+               llvm::cl::desc("Add directory to AFTER include search path"));
+static llvm::cl::list<std::string>
+iquote_dirs("iquote", llvm::cl::value_desc("directory"), llvm::cl::Prefix,
+               llvm::cl::desc("Add directory to QUOTE include search path"));
+static llvm::cl::list<std::string>
+isystem_dirs("isystem", llvm::cl::value_desc("directory"), llvm::cl::Prefix,
+            llvm::cl::desc("Add directory to SYSTEM include search path"));
+
+// These handle -iprefix/-iwithprefix/-iwithprefixbefore.
+static llvm::cl::list<std::string>
+iprefix_vals("iprefix", llvm::cl::value_desc("prefix"), llvm::cl::Prefix,
+             llvm::cl::desc("Set the -iwithprefix/-iwithprefixbefore prefix"));
+static llvm::cl::list<std::string>
+iwithprefix_vals("iwithprefix", llvm::cl::value_desc("dir"), llvm::cl::Prefix,
+     llvm::cl::desc("Set directory to SYSTEM include search path with prefix"));
+static llvm::cl::list<std::string>
+iwithprefixbefore_vals("iwithprefixbefore", llvm::cl::value_desc("dir"),
+                       llvm::cl::Prefix,
+            llvm::cl::desc("Set directory to include search path with prefix"));
+
+static llvm::cl::opt<std::string>
+isysroot("isysroot", llvm::cl::value_desc("dir"), llvm::cl::init("/"),
+         llvm::cl::desc("Set the system root directory (usually /)"));
+
+// Finally, implement the code that groks the options above.
+
+/// InitializeIncludePaths - Process the -I options and set them in the
+/// HeaderSearch object.
+void InitializeIncludePaths(const char *Argv0, HeaderSearch &Headers,
+                            FileManager &FM, const LangOptions &Lang) {
+  InitHeaderSearch Init(Headers, Verbose, isysroot);
+
+  // Handle -I... and -F... options, walking the lists in parallel.
+  unsigned Iidx = 0, Fidx = 0;
+  while (Iidx < I_dirs.size() && Fidx < F_dirs.size()) {
+    if (I_dirs.getPosition(Iidx) < F_dirs.getPosition(Fidx)) {
+      Init.AddPath(I_dirs[Iidx], InitHeaderSearch::Angled, false, true, false);
+      ++Iidx;
+    } else {
+      Init.AddPath(F_dirs[Fidx], InitHeaderSearch::Angled, false, true, true);
+      ++Fidx;
+    }
+  }
+  
+  // Consume what's left from whatever list was longer.
+  for (; Iidx != I_dirs.size(); ++Iidx)
+    Init.AddPath(I_dirs[Iidx], InitHeaderSearch::Angled, false, true, false);
+  for (; Fidx != F_dirs.size(); ++Fidx)
+    Init.AddPath(F_dirs[Fidx], InitHeaderSearch::Angled, false, true, true);
+  
+  // Handle -idirafter... options.
+  for (unsigned i = 0, e = idirafter_dirs.size(); i != e; ++i)
+    Init.AddPath(idirafter_dirs[i], InitHeaderSearch::After,
+        false, true, false);
+  
+  // Handle -iquote... options.
+  for (unsigned i = 0, e = iquote_dirs.size(); i != e; ++i)
+    Init.AddPath(iquote_dirs[i], InitHeaderSearch::Quoted, false, true, false);
+  
+  // Handle -isystem... options.
+  for (unsigned i = 0, e = isystem_dirs.size(); i != e; ++i)
+    Init.AddPath(isystem_dirs[i], InitHeaderSearch::System, false, true, false);
+
+  // Walk the -iprefix/-iwithprefix/-iwithprefixbefore argument lists in
+  // parallel, processing the values in order of occurance to get the right
+  // prefixes.
+  {
+    std::string Prefix = "";  // FIXME: this isn't the correct default prefix.
+    unsigned iprefix_idx = 0;
+    unsigned iwithprefix_idx = 0;
+    unsigned iwithprefixbefore_idx = 0;
+    bool iprefix_done           = iprefix_vals.empty();
+    bool iwithprefix_done       = iwithprefix_vals.empty();
+    bool iwithprefixbefore_done = iwithprefixbefore_vals.empty();
+    while (!iprefix_done || !iwithprefix_done || !iwithprefixbefore_done) {
+      if (!iprefix_done &&
+          (iwithprefix_done || 
+           iprefix_vals.getPosition(iprefix_idx) < 
+           iwithprefix_vals.getPosition(iwithprefix_idx)) &&
+          (iwithprefixbefore_done || 
+           iprefix_vals.getPosition(iprefix_idx) < 
+           iwithprefixbefore_vals.getPosition(iwithprefixbefore_idx))) {
+        Prefix = iprefix_vals[iprefix_idx];
+        ++iprefix_idx;
+        iprefix_done = iprefix_idx == iprefix_vals.size();
+      } else if (!iwithprefix_done &&
+                 (iwithprefixbefore_done || 
+                  iwithprefix_vals.getPosition(iwithprefix_idx) < 
+                  iwithprefixbefore_vals.getPosition(iwithprefixbefore_idx))) {
+        Init.AddPath(Prefix+iwithprefix_vals[iwithprefix_idx], 
+                InitHeaderSearch::System, false, false, false);
+        ++iwithprefix_idx;
+        iwithprefix_done = iwithprefix_idx == iwithprefix_vals.size();
+      } else {
+        Init.AddPath(Prefix+iwithprefixbefore_vals[iwithprefixbefore_idx], 
+                InitHeaderSearch::Angled, false, false, false);
+        ++iwithprefixbefore_idx;
+        iwithprefixbefore_done = 
+          iwithprefixbefore_idx == iwithprefixbefore_vals.size();
+      }
+    }
+  }
+
+  Init.AddDefaultEnvVarPaths(Lang);
+
+  // Add the ellcc headers, which are relative to the ellcc binary.
+  llvm::sys::Path MainExecutablePath = 
+     llvm::sys::Path::GetMainExecutable(Argv0, (void*)(intptr_t)InitializeIncludePaths);
+  if (!MainExecutablePath.isEmpty()) {
+    MainExecutablePath.eraseComponent();  // Remove prog   from foo/bin/prog
+    MainExecutablePath.eraseComponent();  // Remove /bin   from foo/bin
+
+    // Get foo/lib/ellcc/<version>/include    
+    MainExecutablePath.appendComponent("libecc");
+    MainExecutablePath.appendComponent(ELLCC_VERSION_STRING);
+    MainExecutablePath.appendComponent(Arch);
+    MainExecutablePath.appendComponent("include");
+    
+    // We pass true to ignore sysroot so that we *always* look for clang headers
+    // relative to our executable, never relative to -isysroot.
+    Init.AddPath(MainExecutablePath.c_str(), InitHeaderSearch::System,
+                 false, false, false, true /*ignore sysroot*/);
+  }
+  
+  if (!nostdinc) 
+    Init.AddDefaultSystemIncludePaths(Lang);
+
+  // Now that we have collected all of the include paths, merge them all
+  // together and tell the preprocessor about them.
+  
+  Init.Realize();
+}
+
+void InitializePreprocessorInitOptions(PreprocessorInitOptions &InitOpts)
+{
+  // Add macros from the command line.
+  unsigned d = 0, D = D_macros.size();
+  unsigned u = 0, U = U_macros.size();
+  while (d < D || u < U) {
+    if (u == U || (d < D && D_macros.getPosition(d) < U_macros.getPosition(u)))
+      InitOpts.addMacroDef(D_macros[d++]);
+    else
+      InitOpts.addMacroUndef(U_macros[u++]);
+  }
+
+  // If -imacros are specified, include them now.  These are processed before
+  // any -include directives.
+  for (unsigned i = 0, e = ImplicitMacroIncludes.size(); i != e; ++i)
+    InitOpts.addMacroInclude(ImplicitMacroIncludes[i]);
+
+  if (!ImplicitIncludePTH.empty() || !ImplicitIncludes.empty()) {
+    // We want to add these paths to the predefines buffer in order, make a
+    // temporary vector to sort by their occurrence.
+    llvm::SmallVector<std::pair<unsigned, std::string*>, 8> OrderedPaths;
+
+    if (!ImplicitIncludePTH.empty())
+      OrderedPaths.push_back(std::make_pair(ImplicitIncludePTH.getPosition(),
+                                            &ImplicitIncludePTH));
+    for (unsigned i = 0, e = ImplicitIncludes.size(); i != e; ++i)
+      OrderedPaths.push_back(std::make_pair(ImplicitIncludes.getPosition(i),
+                                            &ImplicitIncludes[i]));
+    llvm::array_pod_sort(OrderedPaths.begin(), OrderedPaths.end());
+
+
+    // Now that they are ordered by position, add to the predefines buffer.
+    for (unsigned i = 0, e = OrderedPaths.size(); i != e; ++i) {
+      std::string *Ptr = OrderedPaths[i].second;
+      if (!ImplicitIncludes.empty() &&
+          Ptr >= &ImplicitIncludes[0] &&
+          Ptr <= &ImplicitIncludes[ImplicitIncludes.size()-1]) {
+        InitOpts.addInclude(*Ptr, false);
+      } else if (Ptr == &ImplicitIncludePTH) {
+        InitOpts.addInclude(*Ptr, true);
+      } 
+    }
+  }
+}
+
+//===----------------------------------------------------------------------===//
+// Driver PreprocessorFactory - For lazily generating preprocessors ...
+//===----------------------------------------------------------------------===//
+
+namespace {
+class VISIBILITY_HIDDEN DriverPreprocessorFactory : public PreprocessorFactory {
+  Diagnostic        &Diags;
+  const LangOptions &LangInfo;
+  TargetInfo        &Target;
+  SourceManager     &SourceMgr;
+  HeaderSearch      &HeaderInfo;
+  
+public:
+  DriverPreprocessorFactory(Diagnostic &diags, const LangOptions &opts,
+                            TargetInfo &target, SourceManager &SM,
+                            HeaderSearch &Headers)  
+  : Diags(diags), LangInfo(opts), Target(target),
+    SourceMgr(SM), HeaderInfo(Headers) {}
+  
+  
+  virtual ~DriverPreprocessorFactory() {}
+  
+  virtual Preprocessor* CreatePreprocessor() {
+    llvm::OwningPtr<PTHManager> PTHMgr;
+
+    if (!TokenCache.empty() && !ImplicitIncludePTH.empty()) {
+      fprintf(stderr, "error: cannot use both -token-cache and -include-pth "
+                      "options\n");
+      exit(1);
+    }
+    
+    // Use PTH?
+    if (!TokenCache.empty() || !ImplicitIncludePTH.empty()) {
+      const std::string& x = TokenCache.empty() ? ImplicitIncludePTH:TokenCache;
+      PTHMgr.reset(PTHManager::Create(x, &Diags, 
+                                      TokenCache.empty() ? Diagnostic::Error
+                                                        : Diagnostic::Warning));
+    }
+    
+    if (Diags.hasErrorOccurred())
+      exit(1);
+    
+    // Create the Preprocessor.
+    llvm::OwningPtr<Preprocessor> PP(new Preprocessor(Diags, LangInfo, Target,
+                                                      SourceMgr, HeaderInfo,
+                                                      PTHMgr.get()));
+    
+    // Note that this is different then passing PTHMgr to Preprocessor's ctor.
+    // That argument is used as the IdentifierInfoLookup argument to
+    // IdentifierTable's ctor.
+    if (PTHMgr) {
+      PTHMgr->setPreprocessor(PP.get());
+      PP->setPTHManager(PTHMgr.take());
+    }
+
+    PreprocessorInitOptions InitOpts;
+    InitializePreprocessorInitOptions(InitOpts);
+    if (InitializePreprocessor(*PP, InitOpts))
+      return 0;
+
+    std::string ErrStr;
+    bool DFG = CreateDependencyFileGen(PP.get(), ErrStr);
+    if (!DFG && !ErrStr.empty()) {
+      fprintf(stderr, "%s", ErrStr.c_str());
+      return 0;
+    }
+
+    return PP.take();
+  }
+};
+}
+
+//===----------------------------------------------------------------------===//
+// SourceManager initialization.
+//===----------------------------------------------------------------------===//
+
+static bool InitializeSourceManager(Preprocessor &PP,
+                                    const std::string &InFile) {
+  // Figure out where to get and map in the main file.
+  SourceManager &SourceMgr = PP.getSourceManager();
+  FileManager &FileMgr = PP.getFileManager();
+
+  if (EmptyInputOnly) {
+    const char *EmptyStr = "";
+    llvm::MemoryBuffer *SB = 
+      llvm::MemoryBuffer::getMemBuffer(EmptyStr, EmptyStr, "<empty input>");
+    SourceMgr.createMainFileIDForMemBuffer(SB);
+  } else if (InFile != "-") {
+    const FileEntry *File = FileMgr.getFile(InFile);
+    if (File) SourceMgr.createMainFileID(File, SourceLocation());
+    if (SourceMgr.getMainFileID().isInvalid()) {
+      PP.getDiagnostics().Report(FullSourceLoc(), diag::err_fe_error_reading) 
+        << InFile.c_str();
+      return true;
+    }
+  } else {
+    llvm::MemoryBuffer *SB = llvm::MemoryBuffer::getSTDIN();
+
+    // If stdin was empty, SB is null.  Cons up an empty memory
+    // buffer now.
+    if (!SB) {
+      const char *EmptyStr = "";
+      SB = llvm::MemoryBuffer::getMemBuffer(EmptyStr, EmptyStr, "<stdin>");
+    }
+
+    SourceMgr.createMainFileIDForMemBuffer(SB);
+    if (SourceMgr.getMainFileID().isInvalid()) {
+      PP.getDiagnostics().Report(FullSourceLoc(), 
+                                 diag::err_fe_error_reading_stdin);
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/// Preprocess - Preprocess the given file.
+///
+/// Inputs:
+///  InputFilename   - The name of the input source file.
+///  OutputFilename  - The name of the file to generate.
+///
+/// Outputs:
+///  None.
+///
+/// Returns non-zero value on error.
+///
+static OwningPtr<SourceManager> SourceMgr;
+// Create a file manager object to provide access to and cache the filesystem.
+static FileManager FileMgr;
+static Diagnostic Diags;
+static OwningPtr<TargetInfo> Target;
+static const char* argv0;
+
+static int Preprocess(const std::string &OutputFilename, Input& input)
+{
+    // Process the -I options and set them in the HeaderInfo.
+    HeaderSearch HeaderInfo(FileMgr);
+    InitializeIncludePaths(argv0, HeaderInfo, FileMgr, input.langInfo);
+    // Set up the preprocessor with these options.
+    DriverPreprocessorFactory PPFactory(Diags, input.langInfo, *Target,
+                                        *SourceMgr.get(), HeaderInfo);
+    OwningPtr<Preprocessor> PP(PPFactory.CreatePreprocessor());
+
+    if (!PP)
+        PrintAndExit("Can't create a preprocessor");
+    
+    if (InitializeSourceManager(*PP.get(), input.name.toString()))
+        PrintAndExit("Can't initialize the source manager");
+
+    DoPrintPreprocessedInput(*PP.get(), OutputFilename);
+    return Diags.getNumErrors() != 0;
+}
+
 #endif
 
 /// Link - generates a native object file from the
@@ -1443,8 +2225,8 @@ static int Link(const std::string& OutputFilename,
   std::vector<std::string> args;
   args.push_back(ld.c_str());
   args.push_back("--build-id");
-  if (OutputMachine.size()) {
-      args.push_back("-m" + emulations[OutputMachine]);
+  if (Arch.size()) {
+      args.push_back("-m" + emulations[Arch]);
   } 
   args.push_back("-static");
   args.push_back("--hash-style=gnu");
@@ -1530,8 +2312,8 @@ static int Assemble(const std::string &OutputFilename,
   // themselves identically.
   // RICH: Choose the appropriate assembler.
   std::string assm = "ecc-as";
-  if (OutputMachine.size()) {
-      assm = OutputMachine + "-elf-as";
+  if (Arch.size()) {
+      assm = Arch + "-elf-as";
   }
   
   sys::Path as = FindExecutable(assm, progname);
@@ -1549,7 +2331,7 @@ static int Assemble(const std::string &OutputFilename,
   args.push_back(InputFilename);
 
   // HACK: Handle any ppc opcodes.
-  if (OutputMachine == "powerpc64") {
+  if (Arch == "powerpc64") {
       args.push_back("-many");
       args.push_back("-a64");
   }
@@ -1729,9 +2511,8 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         sys::Path to(input.name.getBasename());
         to.appendSuffix(langToExt[nextType]);
 
-        std::string ErrMsg;  
-        if(Preprocess(to.toString(), input.name.toString(), input.language, ErrMsg) != 0) {
-            PrintAndExit(ErrMsg);
+        if(Preprocess(to.toString(), input) != 0) {
+            Exit(1);
         }
 
         input.setName(to);
@@ -1764,22 +2545,9 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
                 // This is a C file.
                 // RICH: std: C, C++, K&R, etc.
             }
-            // If we are supposed to override the target triple, do so now.
-            std::string triple;
-            if (!TargetTriple.empty()) {
-                triple = TargetTriple;
-            } else if (OutputMachine.size()) {
-                triple = machines[OutputMachine] + "-elf";
-            } else {
-                triple = "i386-elf";             // Default target triple.
-            }
 
-            TargetInfo* targetInfo = TargetInfo::CreateTargetInfo(triple.c_str());
-            if (targetInfo == NULL) {
-                PrintAndExit(std::string("'") + triple + std::string("' is not a recognized target triple"));
-            }
             int result = elsa.parse(lang, input.name.c_str(), to.c_str(),
-                                    input.module, input.language, targetInfo);
+                                    input.module, Target.get());
             if (result) {
                 Exit(result);
             }
@@ -2189,26 +2957,47 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
     return nextType;
 }
 
+/// ComputeTargetFeatures - Recompute the target feature list to only
+/// be the list of things that are enabled, based on the target cpu
+/// and feature list.
+static void ComputeFeatureMap(TargetInfo *Target, llvm::StringMap<bool> &Features)
+{
+    assert(Features.empty() && "invalid map"); 
+
+    // Initialize the feature map based on the target.
+    Target->getDefaultFeatures(MCPU, Features);
+
+    // Apply the user specified deltas.
+    for (llvm::cl::list<std::string>::iterator it = TargetFeatures.begin(), 
+         ie = TargetFeatures.end(); it != ie; ++it) {
+        const char *Name = it->c_str();
+    
+        // FIXME: Don't handle errors like this.
+        if (Name[0] != '-' && Name[0] != '+') {
+            PrintAndExit(std::string("error: ") + progname + ": invalid target feature string: " + Name);
+        }
+        if (!Target->setFeatureEnabled(Features, Name + 1, (Name[0] == '+'))) {
+      fprintf(stderr, "error: clang-cc: invalid target feature name: %s\n", 
+              Name + 1);
+      exit(1);
+    }
+  }
+}
+
+
 //===----------------------------------------------------------------------===//
 // main for ellcc
 //
 int main(int argc, char **argv)
 {
-    llvm_shutdown_obj X;  // Call llvm_shutdown() on exit.
+    argv0 = argv[0];            // Save the name for later.
+    llvm_shutdown_obj X;        // Call llvm_shutdown() on exit.
     InputList InpList;
     int status = 0;
 
     try {
         // Initial global variable above for convenience printing of program name.
-        progname = sys::Path(argv[0]).getBasename();
-        // See if a target machine is given in the program name.
-        size_t dash;
-
-        dash = progname.find_first_of('-');
-        if (dash != std::string::npos) {
-            OutputMachine = progname.substr(0, dash);
-        }
-
+        progname = sys::Path(argv0).getBasename();
         setupMappings();
 
         TimerGroup timerGroup("... Ellcc action timing report ...");
@@ -2230,19 +3019,36 @@ int main(int argc, char **argv)
         // Create the diagnostic client for reporting errors or for
         // implementing -verify.
         OwningPtr<DiagnosticClient> DiagClient;
+        
+        // TODO: Add options for line length, etc.
         DiagClient.reset(new TextDiagnosticPrinter(llvm::errs()));
 
         // Configure our handling of diagnostics.
-        Diagnostic Diags(DiagClient.get());
+        Diags.setClient(DiagClient.get());
         if (ProcessWarningOptions(Diags))
-            return 1;
+            Exit(1);
 
-        // Check for a valid target machine.
-        if (OutputMachine.size()) {
-           if (machines.find(OutputMachine) == machines.end()) {
-                PrintAndExit(OutputMachine + " is not a valid machine name");
-           }
+        // -I- is a deprecated GCC feature, scan for it and reject it.
+        for (unsigned i = 0, e = I_dirs.size(); i != e; ++i) {
+            if (I_dirs[i] == "-") {
+                Diags.Report(FullSourceLoc(), diag::err_pp_I_dash_not_supported);
+                I_dirs.erase(I_dirs.begin()+i);
+                --i;
+            }
         }
+
+        // Get information about the target being compiled for.
+        std::string Triple = CreateTargetTriple();
+        Target.reset(TargetInfo::CreateTargetInfo(Triple));
+  
+        if (Target == 0) {
+            Diags.Report(FullSourceLoc(), diag::err_fe_unknown_triple) << Triple.c_str();
+            Exit(1);
+        }
+  
+        // Compute the feature set, unfortunately this effects the language!
+        llvm::StringMap<bool> Features;
+        ComputeFeatureMap(Target.get(), Features);
 
         // Initialize Elsa.
         Elsa elsa(timerGroup);       // Get the parsing environment.
@@ -2254,6 +3060,7 @@ int main(int argc, char **argv)
             elsa.addTrace((*traceIt).c_str());
         }
 
+#if OLD
         // Find configuration files.
         sys::Path config(progname);
         config.appendSuffix("ecf");
@@ -2315,6 +3122,7 @@ int main(int argc, char **argv)
         if (pconfig == NULL) {
             goto showerrors;
         }
+#endif
 
         // Gather the input files and determine their types.
         std::vector<std::string>::iterator fileIt = Files.begin();
@@ -2338,12 +3146,26 @@ int main(int argc, char **argv)
                     cout << "  adding " << *fileIt << " as " << fileTypes[type] << "\n";
                 }
                 Input input(*fileIt, type);
-                // RICH: Configure the language.
+    
+                /// Create a SourceManager object.  This tracks and owns all the file
+                /// buffers allocated to a translation unit.
+                if (!SourceMgr)
+                    SourceMgr.reset(new SourceManager());
+                else
+                    SourceMgr->clearIDTables();
+
+                // Initialize language options, inferring file types from input filenames.
+                DiagClient->setLangOptions(&input.langInfo);
+                InitializeLangOptions(input.langInfo, type);
+                InitializeLanguageStandard(input.langInfo, type, Target.get(), Features);
+
+#if OLD
                 if (type == CC || type == II) {
                     input.language = pw::Plexer::Create("cxx98.ecf", errors);
                 } else {
                     input.language = pw::Plexer::Create("c99.ecf", errors);
                 }
+#endif
                 InpList.push_back(input);
                 ++fileIt;
             } else if ( libPos != 0 && (filePos == 0 || libPos < filePos) ) {
@@ -2457,14 +3279,16 @@ int main(int argc, char **argv)
             
         status =  0;
     } catch (const std::string& msg) {
-        cerr << argv[0] << ": " << msg << "\n";
+        cerr << argv0 << ": " << msg << "\n";
         status =  1;
     } catch (...) {
-        cerr << argv[0] << ": Unexpected unknown exception occurred.\n";
+        cerr << argv0 << ": Unexpected unknown exception occurred.\n";
         status =  1;
     }
 
+#if OLD
 showerrors:
+#endif
     int totalerrors = 0;
     for (int j = 0; j < pw::Error::ERRORCNT; ++j) {
         // Calculate the total number of errors.

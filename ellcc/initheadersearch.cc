@@ -179,11 +179,11 @@ void InitHeaderSearch::AddDefaultSystemIncludePaths(const LangOptions &Lang) {
     AddPath("/usr/include/c++/4.2", System, true, false, false);
   }
 
+  // RICH:
+  AddPath("/usr/lib/gcc/i386-redhat-linux/4.3.2/include", System, false, false, false);
   AddPath("/usr/local/include", System, false, false, false);
 
   AddPath("/usr/include", System, false, false, false);
-  AddPath("/System/Library/Frameworks", System, true, false, true);
-  AddPath("/Library/Frameworks", System, true, false, true);
 #endif
 }
 
