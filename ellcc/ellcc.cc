@@ -2041,7 +2041,7 @@ public:
     if (!TokenCache.empty() && !ImplicitIncludePTH.empty()) {
       fprintf(stderr, "error: cannot use both -token-cache and -include-pth "
                       "options\n");
-      exit(1);
+      Exit(1);
     }
     
     // Use PTH?
@@ -2053,7 +2053,7 @@ public:
     }
     
     if (Diags.hasErrorOccurred())
-      exit(1);
+      Exit(1);
     
     // Create the Preprocessor.
     llvm::OwningPtr<Preprocessor> PP(new Preprocessor(Diags, LangInfo, Target,
@@ -2979,7 +2979,7 @@ static void ComputeFeatureMap(TargetInfo *Target, llvm::StringMap<bool> &Feature
         if (!Target->setFeatureEnabled(Features, Name + 1, (Name[0] == '+'))) {
       fprintf(stderr, "error: clang-cc: invalid target feature name: %s\n", 
               Name + 1);
-      exit(1);
+      Exit(1);
     }
   }
 }
