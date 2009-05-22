@@ -2990,13 +2990,13 @@ static void ComputeFeatureMap(TargetInfo *Target, llvm::StringMap<bool> &Feature
 //
 int main(int argc, char **argv)
 {
-    argv0 = argv[0];            // Save the name for later.
     llvm_shutdown_obj X;        // Call llvm_shutdown() on exit.
     InputList InpList;
     int status = 0;
 
     try {
         // Initial global variable above for convenience printing of program name.
+        argv0 = argv[0];            // Save the name for later.
         progname = sys::Path(argv0).getBasename();
         setupMappings();
 
