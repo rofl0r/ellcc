@@ -20,6 +20,9 @@ class Preprocessor;
 /// DoPrintPreprocessedInput - Implement -E mode.
 void DoPrintPreprocessedInput(Preprocessor &PP, const std::string& OutFile);
 bool ProcessWarningOptions(Diagnostic &Diags);
+bool CreateDependencyFileGen(Preprocessor *PP, std::string &ErrStr);
+void CacheTokens(Preprocessor &PP, const std::string &OutFile);
+bool CheckDiagnostics(Preprocessor &PP);
 
 class Elsa {
 public:
@@ -51,8 +54,8 @@ public:
     };
     /** Parse a source file.
      */
-    int parse(Language language, const char* inputFname, const char* outputFname, llvm::Module*& mod, pw::Plexer* lang,
-              TargetInfo* targetInfo);
+    int parse(Language language, const char* inputFname, const char* outputFname, llvm::Module*& mod,
+              pw::Plexer* lang, TargetInfo* targetInfo);
 
 private:
     /** The default constructor (not implemented or used).

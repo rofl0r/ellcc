@@ -692,8 +692,4 @@ void Preprocessor::RegisterBuiltinPragmas() {
   AddPragmaHandler("STDC", new PragmaSTDC_CX_LIMITED_RANGEHandler(
                                         getIdentifierInfo("CX_LIMITED_RANGE")));
   AddPragmaHandler("STDC", new PragmaSTDC_UnknownHandler());
-  
-  // MS extensions.
-  if (Features.Microsoft)
-    AddPragmaHandler(0, new PragmaCommentHandler(getIdentifierInfo("comment")));
 }

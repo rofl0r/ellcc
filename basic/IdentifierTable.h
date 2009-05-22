@@ -48,11 +48,10 @@ namespace ellcc {
 class IdentifierInfo {
   // Note: DON'T make TokenID a 'tok::TokenKind'; MSVC will treat it as a
   //       signed char and TokenKinds > 127 won't be handled correctly.
+
+  // builtin (__builtin_inf).
+  unsigned BuiltinID          :10;
   unsigned TokenID            : 8; // Front-end token ID or tok::identifier. 
-  // Objective-C keyword ('protocol' in '@protocol') or builtin (__builtin_inf).
-  // First NUM_OBJC_KEYWORDS values are for Objective-C, the remaining values
-  // are for builtins.
-  unsigned ObjCOrBuiltinID    :10; 
   bool HasMacro               : 1; // True if there is a #define for this.
   bool IsExtension            : 1; // True if identifier is a lang extension.
   bool IsPoisoned             : 1; // True if identifier is poisoned.
@@ -130,34 +129,8 @@ public:
   /// For example, "define" will return tok::pp_define.
   tok::PPKeywordKind getPPKeywordID() const;
   
-  /// getObjCKeywordID - Return the Objective-C keyword ID for the this
-  /// identifier.  For example, 'class' will return tok::objc_class if ObjC is
-  /// enabled.
-  tok::ObjCKeywordKind getObjCKeywordID() const {
-    if (ObjCOrBuiltinID < tok::NUM_OBJC_KEYWORDS) 
-      return tok::ObjCKeywordKind(ObjCOrBuiltinID);
-    else
-      return tok::objc_not_keyword;
-  }
-  void setObjCKeywordID(tok::ObjCKeywordKind ID) { ObjCOrBuiltinID = ID; }
-
-  /// getBuiltinID - Return a value indicating whether this is a builtin
-  /// function.  0 is not-built-in.  1 is builtin-for-some-nonprimary-target.
-  /// 2+ are specific builtin functions.
-  unsigned getBuiltinID() const { 
-    if (ObjCOrBuiltinID >= tok::NUM_OBJC_KEYWORDS)
-      return ObjCOrBuiltinID - tok::NUM_OBJC_KEYWORDS; 
-    else
-      return 0;
-  }
-  void setBuiltinID(unsigned ID) {
-    ObjCOrBuiltinID = ID + tok::NUM_OBJC_KEYWORDS;
-    assert(ObjCOrBuiltinID - unsigned(tok::NUM_OBJC_KEYWORDS) == ID 
-           && "ID too large for field!");
-  }
-
-  unsigned getObjCOrBuiltinID() const { return ObjCOrBuiltinID; }
-  void setObjCOrBuiltinID(unsigned ID) { ObjCOrBuiltinID = ID; }
+  unsigned getBuiltinID() const { return BuiltinID; }
+  void setBuiltinID(unsigned ID) { BuiltinID = ID; }
 
   /// get/setExtension - Initialize information about whether or not this
   /// language token is an extension.  This controls extension warnings, and is

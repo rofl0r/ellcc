@@ -26,7 +26,7 @@ using namespace ellcc;
 
 IdentifierInfo::IdentifierInfo() {
   TokenID = tok::identifier;
-  ObjCOrBuiltinID = 0;
+  BuiltinID = 0;
   HasMacro = false;
   IsExtension = false;
   IsPoisoned = false;
@@ -66,7 +66,6 @@ namespace {
     KEYCXX = 4,
     KEYCXX0X = 8,
     KEYGNU = 16,
-    KEYMS = 32
   };
 }
 
@@ -87,7 +86,6 @@ static void AddKeyword(const char *Keyword, unsigned KWLen,
   else if (LangOpts.CPlusPlus0x && (Flags & KEYCXX0X)) AddResult = 2;
   else if (LangOpts.C99 && (Flags & KEYC99)) AddResult = 2;
   else if (LangOpts.GNUMode && (Flags & KEYGNU)) AddResult = 1;
-  else if (LangOpts.Microsoft && (Flags & KEYMS)) AddResult = 1;
 
   // Don't add this keyword if disabled in this language.
   if (AddResult == 0) return;
@@ -107,14 +105,6 @@ static void AddCXXOperatorKeyword(const char *Keyword, unsigned KWLen,
   Info.setIsCPlusPlusOperatorKeyword();
 }
 
-/// AddObjCKeyword - Register an Objective-C @keyword like "class" "selector" or 
-/// "property".
-static void AddObjCKeyword(tok::ObjCKeywordKind ObjCID, 
-                           const char *Name, unsigned NameLen,
-                           IdentifierTable &Table) {
-  Table.get(Name, Name+NameLen).setObjCKeywordID(ObjCID);
-}
-
 /// AddKeywords - Add all keywords to the symbol table.
 ///
 void IdentifierTable::AddKeywords(const LangOptions &LangOpts) {
@@ -128,12 +118,6 @@ void IdentifierTable::AddKeywords(const LangOptions &LangOpts) {
 #define CXX_KEYWORD_OPERATOR(NAME, ALIAS) \
   if (LangOpts.CXXOperatorNames)          \
     AddCXXOperatorKeyword(#NAME, strlen(#NAME), tok::ALIAS, *this);
-#define OBJC1_AT_KEYWORD(NAME) \
-  if (LangOpts.ObjC1)          \
-    AddObjCKeyword(tok::objc_##NAME, #NAME, strlen(#NAME), *this);
-#define OBJC2_AT_KEYWORD(NAME) \
-  if (LangOpts.ObjC2)          \
-    AddObjCKeyword(tok::objc_##NAME, #NAME, strlen(#NAME), *this);
 #include "TokenKinds.def"
 }
 
@@ -230,7 +214,7 @@ unsigned llvm::DenseMapInfo<ellcc::Selector>::getHashValue(ellcc::Selector S) {
 namespace ellcc {
 /// MultiKeywordSelector - One of these variable length records is kept for each
 /// selector containing more than one keyword. We use a folding set
-/// to unique aggregate names (keyword selectors in ObjC parlance). Access to 
+/// to unique aggregate names. Access to 
 /// this class is provided strictly through Selector.
 class MultiKeywordSelector 
   : public DeclarationNameExtra, public llvm::FoldingSetNode {

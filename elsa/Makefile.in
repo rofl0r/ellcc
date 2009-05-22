@@ -313,7 +313,6 @@ $(CC_GR_GEN_FILES): $(CC_GR_MODS) cc_tokens.ids $(ELKHOUND)/elkhound
 # that finds serious compilation problems earliest (it's ok to
 # rearrange as different parts of the code are in flux)
 CCPARSE_OBJS := \
-  Targets.o \
   cc2c.o \
   bpprint.o \
   ia64mangle.o \

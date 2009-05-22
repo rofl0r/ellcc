@@ -181,7 +181,6 @@ TOK(at)                  // @
 //              implementation namespace
 //   KEYCXX0X - This is a C++ keyword introduced to C++ in C++0x
 //   KEYGNU   - This is a keyword if GNU extensions are enabled
-//   KEYMS    - This is a keyword if Microsoft extensions are enabled
 //
 KEYWORD(auto                        , KEYALL)
 KEYWORD(break                       , KEYALL)
@@ -341,7 +340,6 @@ ALIAS("__attribute__", __attribute, KEYALL)
 ALIAS("__const"      , const      , KEYALL)
 ALIAS("__const__"    , const      , KEYALL)
 ALIAS("__alignof__"  , __alignof  , KEYALL)
-ALIAS("_asm"         , asm        , KEYMS)
 ALIAS("__asm"        , asm        , KEYALL)
 ALIAS("__asm__"      , asm        , KEYALL)
 ALIAS("__complex"    , _Complex   , KEYALL)

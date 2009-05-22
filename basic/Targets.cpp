@@ -141,9 +141,6 @@ static bool getDarwinNumber(const char *Triple, unsigned &Maj, unsigned &Min) {
 static void getDarwinDefines(std::vector<char> &Defs, const char *Triple) {
   Define(Defs, "__APPLE__");
   Define(Defs, "__MACH__");
-  Define(Defs, "OBJC_NEW_PROPERTIES");
-  
-  // FIXME: OBJC_ZEROCOST_EXCEPTIONS when using zero cost eh.
   
   // Figure out which "darwin number" the target triple is.  "darwin9" -> 10.5.
   unsigned Maj, Min;
@@ -163,8 +160,6 @@ static void getDarwinDefines(std::vector<char> &Defs, const char *Triple) {
 /// GetDarwinLanguageOptions - Set the default language options for darwin.
 static void GetDarwinLanguageOptions(LangOptions &Opts,
                                      const char *Triple) {
-  Opts.NeXTRuntime = true;
-  
   unsigned Maj, Min;
   if (!getDarwinNumber(Triple, Maj, Min))
     return;
@@ -173,9 +168,6 @@ static void GetDarwinLanguageOptions(LangOptions &Opts,
   // As does nonfragile-abi for 64bit mode
   if (Maj > 9) 
     Opts.Blocks = 1;
-
-  if (Maj >= 9 && Opts.ObjC1 && !strncmp(Triple, "x86_64", 6))
-    Opts.ObjCNonFragileABI = 1;
 }
 
 
@@ -217,8 +209,6 @@ public:
     Aliases = 0;
     NumAliases = 0;
   }
-  virtual int HandleTargetFeatures(std::string *StrArray, unsigned NumStrs,
-                                   std::string &ErrorReason);
 };
 
 const Builtin::Info AlphaTargetInfo::BuiltinInfo[] = {
@@ -243,36 +233,6 @@ void AlphaTargetInfo::getGCCRegNames(const char * const *&Names,
 {
   Names = GCCRegNames;
   NumNames = llvm::array_lengthof(GCCRegNames);
-}
-
-//
-/// HandleTargetOptions - Handle target-specific options.
-/// An array of arguments is passed in: if they are all valid, this
-/// should handle them and return -1.  If there is an error, the index of the
-/// invalid argument should be returned along with an optional error string.
-int AlphaTargetInfo::HandleTargetFeatures(std::string *StrArray, unsigned NumStrs,
-                                          std::string &ErrorReason) {
-  for (unsigned i = 0; i != NumStrs; ++i) {
-    const std::string &Feature = StrArray[i];
-    if (Feature.size() < 2) return i;
-    // Ignore explicitly disabled features.
-    if (Feature[0] == '-') continue;
-    
-    // Feature strings are of the form "+feature".
-    if (Feature[0] != '+') return i;
-    
-    // The set of supported subtarget features is defined in
-    // lib/Target/Alpha/Alpha.td.  Here we recognize and map onto our internal
-    // state.
-#if FIXME
-    if (Feature == "+cix")
-      // Ignore these features.
-      continue;
-    else
-      return i;
-#endif
-  }
-  return -1;
 }
 
 /// AlphaTargetInfo::getTargetDefines - Return a set of the Alpha-specific #defines
@@ -626,50 +586,32 @@ public:
   virtual void getTargetDefines(const LangOptions &Opts,
                                 std::vector<char> &Defines) const;
   
-  virtual int HandleTargetFeatures(std::string *StrArray, unsigned NumStrs,
-                                   std::string &ErrorReason);
+  virtual void HandleTargetFeatures(const llvm::StringMap<bool> &Features);
 };
 
 /// HandleTargetOptions - Handle target-specific options like -msse2 and
 /// friends.  An array of arguments is passed in: if they are all valid, this
 /// should handle them and return -1.  If there is an error, the index of the
 /// invalid argument should be returned along with an optional error string.
-int X86TargetInfo::HandleTargetFeatures(std::string *StrArray, unsigned NumStrs,
-                                        std::string &ErrorReason) {
-  for (unsigned i = 0; i != NumStrs; ++i) {
-    const std::string &Feature = StrArray[i];
-    if (Feature.size() < 2) return i;
-    // Ignore explicitly disabled features.
-    if (Feature[0] == '-') continue;
-    
-    // Feature strings are of the form "+feature".
-    if (Feature[0] != '+') return i;
-    
-    // The set of supported subtarget features is defined in
-    // lib/Target/X86/X86.td.  Here we recognize and map onto our internal
-    // state.
-    if (Feature == "+mmx")
-      SSELevel = std::max(SSELevel, MMX);
-    else if (Feature == "+sse")
-      SSELevel = std::max(SSELevel, SSE1);
-    else if (Feature == "+sse2")
-      SSELevel = std::max(SSELevel, SSE2);
-    else if (Feature == "+sse3")
-      SSELevel = std::max(SSELevel, SSE3);
-    else if (Feature == "+ssse3")
-      SSELevel = std::max(SSELevel, SSSE3);
-    else if (Feature == "+sse41")
-      SSELevel = std::max(SSELevel, SSE41);
-    else if (Feature == "+sse42")
-      SSELevel = std::max(SSELevel, SSE42);
-    else if (Feature == "+64bit" || Feature == "+slow-bt-mem")
-      // Ignore these features.
-      continue;
-    else
-      return i;
-  }
-  return -1;
+/// HandleTargetOptions - Perform initialization based on the user
+/// configured set of features.
+void X86TargetInfo::HandleTargetFeatures(const llvm::StringMap<bool>&Features) {
+  if (Features.lookup("sse42"))
+    SSELevel = SSE42;
+  else if (Features.lookup("sse41"))
+    SSELevel = SSE41;
+  else if (Features.lookup("ssse3"))
+    SSELevel = SSSE3;
+  else if (Features.lookup("sse3"))
+    SSELevel = SSE3;
+  else if (Features.lookup("sse2"))
+    SSELevel = SSE2;
+  else if (Features.lookup("sse"))
+    SSELevel = SSE1;
+  else if (Features.lookup("mmx"))
+    SSELevel = MMX;
 }
+
 
 /// X86TargetInfo::getTargetDefines - Return a set of the X86-specific #defines
 /// that are not tied to a specific subtarget.
@@ -1234,8 +1176,6 @@ public:
     Aliases = 0;
     NumAliases = 0;
   }
-  virtual int HandleTargetFeatures(std::string *StrArray, unsigned NumStrs,
-                                   std::string &ErrorReason);
 };
 
 const Builtin::Info Nios2TargetInfo::BuiltinInfo[] = {
@@ -1256,50 +1196,6 @@ void Nios2TargetInfo::getGCCRegNames(const char * const *&Names,
 {
   Names = GCCRegNames;
   NumNames = llvm::array_lengthof(GCCRegNames);
-}
-
-//
-/// HandleTargetOptions - Handle target-specific options.
-/// An array of arguments is passed in: if they are all valid, this
-/// should handle them and return -1.  If there is an error, the index of the
-/// invalid argument should be returned along with an optional error string.
-int Nios2TargetInfo::HandleTargetFeatures(std::string *StrArray, unsigned NumStrs,
-                                          std::string &ErrorReason) {
-  for (unsigned i = 0; i != NumStrs; ++i) {
-    const std::string &Feature = StrArray[i];
-    if (Feature.size() < 2) return i;
-    // Ignore explicitly disabled features.
-    if (Feature[0] == '-') continue;
-    
-    // Feature strings are of the form "+feature".
-    if (Feature[0] != '+') return i;
-    
-    // The set of supported subtarget features is defined in
-    // lib/Target/Nios2/Nios2.td.  Here we recognize and map onto our internal
-    // state.
-#if TODO
-    if (Feature == "+mmx")
-      SSELevel = std::max(SSELevel, MMX);
-    else if (Feature == "+sse")
-      SSELevel = std::max(SSELevel, SSE1);
-    else if (Feature == "+sse2")
-      SSELevel = std::max(SSELevel, SSE2);
-    else if (Feature == "+sse3")
-      SSELevel = std::max(SSELevel, SSE3);
-    else if (Feature == "+ssse3")
-      SSELevel = std::max(SSELevel, SSSE3);
-    else if (Feature == "+sse41")
-      SSELevel = std::max(SSELevel, SSE41);
-    else if (Feature == "+sse42")
-      SSELevel = std::max(SSELevel, SSE42);
-    else if (Feature == "+64bit" || Feature == "+slow-bt-mem")
-      // Ignore these features.
-      continue;
-    else
-      return i;
-#endif
-  }
-  return -1;
 }
 
 /// Nios2TargetInfo::getTargetDefines - Return a set of the Nios2-specific #defines
@@ -1400,8 +1296,6 @@ public:
     Aliases = 0;
     NumAliases = 0;
   }
-  virtual int HandleTargetFeatures(std::string *StrArray, unsigned NumStrs,
-                                   std::string &ErrorReason);
 };
 
 const Builtin::Info CellSPUTargetInfo::BuiltinInfo[] = {
@@ -1422,50 +1316,6 @@ void CellSPUTargetInfo::getGCCRegNames(const char * const *&Names,
 {
   Names = GCCRegNames;
   NumNames = llvm::array_lengthof(GCCRegNames);
-}
-
-//
-/// HandleTargetOptions - Handle target-specific options.
-/// An array of arguments is passed in: if they are all valid, this
-/// should handle them and return -1.  If there is an error, the index of the
-/// invalid argument should be returned along with an optional error string.
-int CellSPUTargetInfo::HandleTargetFeatures(std::string *StrArray, unsigned NumStrs,
-                                          std::string &ErrorReason) {
-  for (unsigned i = 0; i != NumStrs; ++i) {
-    const std::string &Feature = StrArray[i];
-    if (Feature.size() < 2) return i;
-    // Ignore explicitly disabled features.
-    if (Feature[0] == '-') continue;
-    
-    // Feature strings are of the form "+feature".
-    if (Feature[0] != '+') return i;
-    
-    // The set of supported subtarget features is defined in
-    // lib/Target/CellSPU/CellSPU.td.  Here we recognize and map onto our internal
-    // state.
-#if FIXME
-    if (Feature == "+mmx")
-      SSELevel = std::max(SSELevel, MMX);
-    else if (Feature == "+sse")
-      SSELevel = std::max(SSELevel, SSE1);
-    else if (Feature == "+sse2")
-      SSELevel = std::max(SSELevel, SSE2);
-    else if (Feature == "+sse3")
-      SSELevel = std::max(SSELevel, SSE3);
-    else if (Feature == "+ssse3")
-      SSELevel = std::max(SSELevel, SSSE3);
-    else if (Feature == "+sse41")
-      SSELevel = std::max(SSELevel, SSE41);
-    else if (Feature == "+sse42")
-      SSELevel = std::max(SSELevel, SSE42);
-    else if (Feature == "+64bit" || Feature == "+slow-bt-mem")
-      // Ignore these features.
-      continue;
-    else
-      return i;
-#endif
-  }
-  return -1;
 }
 
 /// CellSPUTargetInfo::getTargetDefines - Return a set of the CellSPU-specific #defines
@@ -1566,8 +1416,6 @@ public:
     Aliases = 0;
     NumAliases = 0;
   }
-  virtual int HandleTargetFeatures(std::string *StrArray, unsigned NumStrs,
-                                   std::string &ErrorReason);
 };
 
 const Builtin::Info MipsTargetInfo::BuiltinInfo[] = {
@@ -1588,50 +1436,6 @@ void MipsTargetInfo::getGCCRegNames(const char * const *&Names,
 {
   Names = GCCRegNames;
   NumNames = llvm::array_lengthof(GCCRegNames);
-}
-
-//
-/// HandleTargetOptions - Handle target-specific options.
-/// An array of arguments is passed in: if they are all valid, this
-/// should handle them and return -1.  If there is an error, the index of the
-/// invalid argument should be returned along with an optional error string.
-int MipsTargetInfo::HandleTargetFeatures(std::string *StrArray, unsigned NumStrs,
-                                          std::string &ErrorReason) {
-  for (unsigned i = 0; i != NumStrs; ++i) {
-    const std::string &Feature = StrArray[i];
-    if (Feature.size() < 2) return i;
-    // Ignore explicitly disabled features.
-    if (Feature[0] == '-') continue;
-    
-    // Feature strings are of the form "+feature".
-    if (Feature[0] != '+') return i;
-    
-    // The set of supported subtarget features is defined in
-    // lib/Target/Mips/Mips.td.  Here we recognize and map onto our internal
-    // state.
-#if FIXME
-    if (Feature == "+mmx")
-      SSELevel = std::max(SSELevel, MMX);
-    else if (Feature == "+sse")
-      SSELevel = std::max(SSELevel, SSE1);
-    else if (Feature == "+sse2")
-      SSELevel = std::max(SSELevel, SSE2);
-    else if (Feature == "+sse3")
-      SSELevel = std::max(SSELevel, SSE3);
-    else if (Feature == "+ssse3")
-      SSELevel = std::max(SSELevel, SSSE3);
-    else if (Feature == "+sse41")
-      SSELevel = std::max(SSELevel, SSE41);
-    else if (Feature == "+sse42")
-      SSELevel = std::max(SSELevel, SSE42);
-    else if (Feature == "+64bit" || Feature == "+slow-bt-mem")
-      // Ignore these features.
-      continue;
-    else
-      return i;
-#endif
-  }
-  return -1;
 }
 
 /// MipsTargetInfo::getTargetDefines - Return a set of the Mips-specific #defines
@@ -1732,8 +1536,6 @@ public:
     Aliases = 0;
     NumAliases = 0;
   }
-  virtual int HandleTargetFeatures(std::string *StrArray, unsigned NumStrs,
-                                   std::string &ErrorReason);
 };
 
 const Builtin::Info Msp430TargetInfo::BuiltinInfo[] = {
@@ -1754,50 +1556,6 @@ void Msp430TargetInfo::getGCCRegNames(const char * const *&Names,
 {
   Names = GCCRegNames;
   NumNames = llvm::array_lengthof(GCCRegNames);
-}
-
-//
-/// HandleTargetOptions - Handle target-specific options.
-/// An array of arguments is passed in: if they are all valid, this
-/// should handle them and return -1.  If there is an error, the index of the
-/// invalid argument should be returned along with an optional error string.
-int Msp430TargetInfo::HandleTargetFeatures(std::string *StrArray, unsigned NumStrs,
-                                          std::string &ErrorReason) {
-  for (unsigned i = 0; i != NumStrs; ++i) {
-    const std::string &Feature = StrArray[i];
-    if (Feature.size() < 2) return i;
-    // Ignore explicitly disabled features.
-    if (Feature[0] == '-') continue;
-    
-    // Feature strings are of the form "+feature".
-    if (Feature[0] != '+') return i;
-    
-    // The set of supported subtarget features is defined in
-    // lib/Target/Msp430/Msp430.td.  Here we recognize and map onto our internal
-    // state.
-#if TODO
-    if (Feature == "+mmx")
-      SSELevel = std::max(SSELevel, MMX);
-    else if (Feature == "+sse")
-      SSELevel = std::max(SSELevel, SSE1);
-    else if (Feature == "+sse2")
-      SSELevel = std::max(SSELevel, SSE2);
-    else if (Feature == "+sse3")
-      SSELevel = std::max(SSELevel, SSE3);
-    else if (Feature == "+ssse3")
-      SSELevel = std::max(SSELevel, SSSE3);
-    else if (Feature == "+sse41")
-      SSELevel = std::max(SSELevel, SSE41);
-    else if (Feature == "+sse42")
-      SSELevel = std::max(SSELevel, SSE42);
-    else if (Feature == "+64bit" || Feature == "+slow-bt-mem")
-      // Ignore these features.
-      continue;
-    else
-      return i;
-#endif
-  }
-  return -1;
 }
 
 /// Msp430TargetInfo::getTargetDefines - Return a set of the Msp430-specific #defines

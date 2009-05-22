@@ -1885,8 +1885,7 @@ static void InitializePredefinedMacros(TargetInfo& TI, LangOptions& Opts, std::v
   
   // These should all be defined in the preprocessor according to the
   // current language configuration.
-  if (!Opts.Microsoft)
-    DefineBuiltinMacro(Buf, "__STDC__=1");
+  DefineBuiltinMacro(Buf, "__STDC__=1");
   if (Opts.AsmPreprocessor)
     DefineBuiltinMacro(Buf, "__ASSEMBLER__=1");
   if (Opts.C99 && !Opts.CPlusPlus)
@@ -1902,34 +1901,10 @@ static void InitializePredefinedMacros(TargetInfo& TI, LangOptions& Opts, std::v
   else
     DefineBuiltinMacro(Buf, "__STDC_HOSTED__=1");
   
-  if (Opts.ObjC1) {
-    DefineBuiltinMacro(Buf, "__OBJC__=1");
-    if (Opts.ObjCNonFragileABI)
-      DefineBuiltinMacro(Buf, "__OBJC2__=1");
-
-    if (Opts.getGCMode() == LangOptions::NonGC) {
-      DefineBuiltinMacro(Buf, "__weak=");
-      DefineBuiltinMacro(Buf, "__strong=");
-    } else {
-      DefineBuiltinMacro(Buf, "__weak=__attribute__((objc_gc(weak)))");
-      DefineBuiltinMacro(Buf, "__strong=__attribute__((objc_gc(strong)))");
-      DefineBuiltinMacro(Buf, "__OBJC_GC__=1");
-    }
-
-    if (Opts.NeXTRuntime)
-      DefineBuiltinMacro(Buf, "__NEXT_RUNTIME__=1");
-  }
-  
   // darwin_constant_cfstrings controls this. This is also dependent
   // on other things like the runtime I believe.  This is set even for C code.
   DefineBuiltinMacro(Buf, "__CONSTANT_CFSTRINGS__=1");
   
-  if (Opts.ObjC2)
-    DefineBuiltinMacro(Buf, "OBJC_NEW_PROPERTIES");
-
-  if (Opts.PascalStrings)
-    DefineBuiltinMacro(Buf, "__PASCAL_STRINGS__");
-
   if (Opts.Blocks) {
     DefineBuiltinMacro(Buf, "__block=__attribute__((__blocks__(byref)))");
     DefineBuiltinMacro(Buf, "__BLOCKS__=1");
@@ -1942,16 +1917,6 @@ static void InitializePredefinedMacros(TargetInfo& TI, LangOptions& Opts, std::v
     DefineBuiltinMacro(Buf, "__GXX_WEAK__=1");
     DefineBuiltinMacro(Buf, "__cplusplus=1");
     DefineBuiltinMacro(Buf, "__private_extern__=extern");
-  }
-  
-  // Filter out some microsoft extensions when trying to parse in ms-compat
-  // mode. 
-  if (Opts.Microsoft) {
-    DefineBuiltinMacro(Buf, "_cdecl=__cdecl");
-    DefineBuiltinMacro(Buf, "__int8=__INT8_TYPE__");
-    DefineBuiltinMacro(Buf, "__int16=__INT16_TYPE__");
-    DefineBuiltinMacro(Buf, "__int32=__INT32_TYPE__");
-    DefineBuiltinMacro(Buf, "__int64=__INT64_TYPE__");
   }
   
   // Define type sizing macros based on the target properties.

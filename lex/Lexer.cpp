@@ -36,24 +36,6 @@ using namespace ellcc;
 static void InitCharacterInfo();
 
 //===----------------------------------------------------------------------===//
-// Token Class Implementation
-//===----------------------------------------------------------------------===//
-
-/// isObjCAtKeyword - Return true if we have an ObjC keyword identifier. 
-bool Token::isObjCAtKeyword(tok::ObjCKeywordKind objcKey) const {
-  if (IdentifierInfo *II = getIdentifierInfo())
-    return II->getObjCKeywordID() == objcKey;
-  return false;
-}
-
-/// getObjCKeywordID - Return the ObjC keyword kind.
-tok::ObjCKeywordKind Token::getObjCKeywordID() const {
-  IdentifierInfo *specId = getIdentifierInfo();
-  return specId ? specId->getObjCKeywordID() : tok::objc_not_keyword;
-}
-
-
-//===----------------------------------------------------------------------===//
 // Lexer Class Implementation
 //===----------------------------------------------------------------------===//
 
@@ -1621,11 +1603,6 @@ LexNextToken:
         Kind = tok::hashhash;                          // '%:%:' -> '##'
         CurPtr = ConsumeChar(ConsumeChar(CurPtr, SizeTmp, Result),
                              SizeTmp2, Result);
-      } else if (Char == '@' && Features.Microsoft) {  // %:@ -> #@ -> Charize
-        CurPtr = ConsumeChar(CurPtr, SizeTmp, Result);
-        if (!isLexingRawMode())
-          Diag(BufferPtr, diag::charize_microsoft_ext);
-        Kind = tok::hashat;
       } else {                                         // '%:' -> '#'
         // We parsed a # character.  If this occurs at the start of the line,
         // it's actually the start of a preprocessing directive.  Callback to
@@ -1752,11 +1729,6 @@ LexNextToken:
     if (Char == '#') {
       Kind = tok::hashhash;
       CurPtr = ConsumeChar(CurPtr, SizeTmp, Result);
-    } else if (Char == '@' && Features.Microsoft) {  // #@ -> Charize
-      Kind = tok::hashat;
-      if (!isLexingRawMode())
-        Diag(BufferPtr, diag::charize_microsoft_ext);
-      CurPtr = ConsumeChar(CurPtr, SizeTmp, Result);
     } else {
       // We parsed a # character.  If this occurs at the start of the line,
       // it's actually the start of a preprocessing directive.  Callback to
@@ -1786,11 +1758,7 @@ LexNextToken:
     break;
 
   case '@':
-    // Objective C support.
-    if (CurPtr[-1] == '@' && Features.ObjC1)
-      Kind = tok::at;
-    else
-      Kind = tok::unknown;
+    Kind = tok::unknown;
     break;
     
   case '\\':

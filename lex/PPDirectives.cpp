@@ -1139,8 +1139,7 @@ void Preprocessor::HandleIncludeNextDirective(Token &IncludeNextTok) {
 /// HandleImportDirective - Implements #import.
 ///
 void Preprocessor::HandleImportDirective(Token &ImportTok) {
-  if (!Features.ObjC1)  // #import is standard for ObjC.
-    Diag(ImportTok, diag::ext_pp_import_directive);
+  Diag(ImportTok, diag::ext_pp_import_directive);
   
   return HandleIncludeDirective(ImportTok, 0, true);
 }

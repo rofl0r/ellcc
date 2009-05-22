@@ -2178,7 +2178,7 @@ def err_objc_array_of_interfaces : Error<
 def ext_c99_array_usage : Extension<
   "use of C99-specific array features, accepted as an extension">;
 def err_invalid_protocol_qualifiers : Error<
-  "invalid protocol qualifiers on non-ObjC type">;
+  "invalid protocol qualifiers on type">;
 def err_qualified_class_unsupported : Error<
   "protocol qualified 'Class' is unsupported">;
 def warn_ivar_use_hidden : Warning<

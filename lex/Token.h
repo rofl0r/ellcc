@@ -215,12 +215,6 @@ public:
     return (Flags & DisableExpand) ? true : false;
   }
   
-  /// isObjCAtKeyword - Return true if we have an ObjC keyword identifier. 
-  bool isObjCAtKeyword(tok::ObjCKeywordKind objcKey) const;
-  
-  /// getObjCKeywordID - Return the ObjC keyword kind.
-  tok::ObjCKeywordKind getObjCKeywordID() const;
-  
   /// needsCleaning - Return true if this token has trigraphs or escaped
   /// newlines in it.
   ///

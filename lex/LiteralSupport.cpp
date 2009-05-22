@@ -364,36 +364,6 @@ NumericLiteralParser(const char *begin, const char *end,
         isLong = true;
       }
       continue;  // Success.
-    case 'i':
-      if (PP.getLangOptions().Microsoft) {
-        // Allow i8, i16, i32, i64, and i128.
-        if (++s == ThisTokEnd) break;
-        switch (*s) {
-          case '8': 
-            s++; // i8 suffix
-            break;
-          case '1':
-            if (++s == ThisTokEnd) break;
-            if (*s == '6') s++; // i16 suffix
-            else if (*s == '2') {
-              if (++s == ThisTokEnd) break;
-              if (*s == '8') s++; // i128 suffix
-            }
-            break;
-          case '3':
-            if (++s == ThisTokEnd) break;
-            if (*s == '2') s++; // i32 suffix
-            break;
-          case '6':
-            if (++s == ThisTokEnd) break;
-            if (*s == '4') s++; // i64 suffix
-            break;
-          default:
-            break;
-        }
-        break;
-      }
-      // fall through.
     case 'I':
     case 'j':
     case 'J':
@@ -787,8 +757,6 @@ StringLiteralParser(const Token *StringToks, unsigned NumStringToks,
   // wide strings as appropriate.
   ResultPtr = &ResultBuf[0];   // Next byte to fill in.
   
-  Pascal = false;
-  
   for (unsigned i = 0, e = NumStringToks; i != e; ++i) {
     const char *ThisTokBuf = &TokenBuf[0];
     // Get the spelling of the token, which eliminates trigraphs, etc.  We know
@@ -809,19 +777,6 @@ StringLiteralParser(const Token *StringToks, unsigned NumStringToks,
     assert(ThisTokBuf[0] == '"' && "Expected quote, lexer broken?");
     ++ThisTokBuf;
     
-    // Check if this is a pascal string
-    if (pp.getLangOptions().PascalStrings && ThisTokBuf + 1 != ThisTokEnd &&
-        ThisTokBuf[0] == '\\' && ThisTokBuf[1] == 'p') {
-      
-      // If the \p sequence is found in the first token, we have a pascal string
-      // Otherwise, if we already have a pascal string, ignore the first \p
-      if (i == 0) {
-        ++ThisTokBuf;
-        Pascal = true;
-      } else if (Pascal)
-        ThisTokBuf += 2;
-    }
-      
     while (ThisTokBuf != ThisTokEnd) {
       // Is this a span of non-escape characters?
       if (ThisTokBuf[0] != '\\') {
@@ -864,19 +819,6 @@ StringLiteralParser(const Token *StringToks, unsigned NumStringToks,
         for (unsigned i = 1, e = wchar_tByteWidth; i != e; ++i)
           *ResultPtr++ = ResultChar >> i*8;
       }
-    }
-  }
-  
-  if (Pascal) {
-    ResultBuf[0] = ResultPtr-&ResultBuf[0]-1;
-
-    // Verify that pascal strings aren't too large.
-    if (GetStringLength() > 256) {
-      PP.Diag(StringToks[0].getLocation(), diag::err_pascal_string_too_long)
-        << SourceRange(StringToks[0].getLocation(),
-                       StringToks[NumStringToks-1].getLocation());
-      hadError = 1;
-      return;
     }
   }
 }
