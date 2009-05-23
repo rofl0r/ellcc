@@ -48,9 +48,7 @@
 #include <algorithm>
 
 #include "ellcc.h"  
-// pwPlexer.
-#include "pwPlexer.h"          // The preprocessor.
-#include "pwOS.h"
+//#include "pwOS.h"
 
 #define xstr(x) #x
 #define str(x) xstr(x)
@@ -65,11 +63,7 @@
 using namespace llvm;
 using namespace ellcc;
 
-static pw::ErrorList errors;    // The reported errors.
 static std::string progname;    // The program name.        
-#if OLD
-static pw::Plexer* pconfig;     // The program configuration.
-#endif
  
 /** File types.
  */
@@ -489,16 +483,6 @@ static cl::list<std::string> LibPaths("L", cl::Prefix,
 static cl::list<std::string> Libraries("l", cl::Prefix,
     cl::desc("Specify base name of libraries to link to"), cl::value_desc("lib"));
 
-#if OLD
-static cl::list<std::string> Includes("I", cl::Prefix,
-    cl::desc("Specify location to search for included source"),
-    cl::value_desc("dir"));
-
-static cl::list<std::string> Defines("D", cl::Prefix,
-    cl::desc("Specify a pre-processor symbol to define"),
-    cl::value_desc("symbol"));
-#endif
-
 //===----------------------------------------------------------------------===//
 //===          OUTPUT OPTIONS
 //===----------------------------------------------------------------------===//
@@ -715,11 +699,7 @@ struct Input {
     FileTypes type;             ///< The input's type.
     Module* module;             ///< The module associated with the input, if any.
     bool temp;                  ///< true if this is contained in a temporary file.
-#if OLD
-    pw::Plexer* language;       ///< Non-NULL if this type has a language definition.
-#else
     LangOptions langInfo;       ///< Information about the language.
-#endif
     Input() : type(NONE), module(NULL), temp(false) {}
     Input(std::string& name, FileTypes type = NONE,
           Module* module = NULL, bool temp = false)
@@ -1595,188 +1575,6 @@ static void RemoveEnv(const char * name, char ** const envp) {
   return;
 }
 
-#if 0
-
-/// Preprocess - Preprocess the given file.
-///
-/// Inputs:
-///  InputFilename   - The name of the input source file.
-///  OutputFilename  - The name of the file to generate.
-///
-/// Outputs:
-///  None.
-///
-/// Returns non-zero value on error.
-///
-static int Preprocess(const std::string &OutputFilename,
-                      const std::string &InputFilename,
-                      pw::Plexer* language,
-                      std::string& ErrMsg)
-{
-  // Remove these environment variables from the environment of the
-  // programs that we will execute.  It appears that GCC sets these
-  // environment variables so that the programs it uses can configure
-  // themselves identically.
-  //
-  // However, when we invoke GCC below, we want it to use its normal
-  // configuration.  Hence, we must sanitize its environment.
-  // Determine the location of the gcc program.
-  sys::Path gcc = FindExecutable("gcc", progname);
-  if (gcc.isEmpty())
-    PrintAndExit("Failed to find gcc");
-
-  // Mark the output files for removal if we get an interrupt.
-  sys::RemoveFileOnSignal(sys::Path(OutputFilename));
-
-  extern char **environ;
-  char ** clean_env = CopyEnv(environ);
-  if (clean_env == NULL)
-    return 1;
-  RemoveEnv("LIBRARY_PATH", clean_env);
-  RemoveEnv("COLLECT_GCC_OPTIONS", clean_env);
-  RemoveEnv("GCC_EXEC_PREFIX", clean_env);
-  RemoveEnv("COMPILER_PATH", clean_env);
-  RemoveEnv("COLLECT_GCC", clean_env);
-
-  // Run GCC to preprocess the file..
-  std::vector<std::string> args;
-  args.push_back(gcc.c_str());
-  args.push_back("-E");
-  args.push_back("-o");
-  args.push_back(OutputFilename);
-  args.push_back(InputFilename);
-
-  // Now that "args" owns all the std::strings for the arguments, call the c_str
-  // method to get the underlying string array.  We do this game so that the
-  // std::string array is guaranteed to outlive the const char* array.
-  std::vector<const char *> Args;
-  for (unsigned i = 0, e = args.size(); i != e; ++i)
-    Args.push_back(args[i].c_str());
-  Args.push_back(0);
-  if (Verbose) {
-    cout << "    ";
-    PrintCommand(Args);
-  }
-
-  // Run gcc to preprocess the file.
-  int R = sys::Program::ExecuteAndWait(
-    gcc, &Args[0], (const char**)clean_env, 0, 0, 0, &ErrMsg);
-  delete [] clean_env;
-  return R;
-}
-
-#elsif OLD
-
-/// Preprocess - Preprocess the given file.
-///
-/// Inputs:
-///  InputFilename   - The name of the input source file.
-///  OutputFilename  - The name of the file to generate.
-///
-/// Outputs:
-///  None.
-///
-/// Returns non-zero value on error.
-///
-static int Preprocess(const std::string &OutputFilename,
-                      const std::string &InputFilename,
-                      pw::Plexer* language,
-                      std::string& ErrMsg)
-{
-    pw::PP* pp = new pw::PP(InputFilename, errors);
-    FILE* fp = NULL;
-
-    if (pp == NULL) {
-        // An error occured creating the preprocessor.
-        ErrMsg = "can't create preprocessor";
-        return 1;
-    }
-
-    if (!pp->setInput(fp)) {
-        ErrMsg = "can't open " + InputFilename;
-        delete pp;
-        return 1;
-    }
-
-    FILE* ofp;
-    if (FinalPhase == PREPROCESSING) {
-        // Output everything to stdout (like gcc).
-        ofp = stdout;
-    } else {
-        ofp = pw::tfopen(OutputFilename.c_str(), "w");
-        if (ofp == NULL) {
-            ErrMsg = "can't open " + OutputFilename + " for writing.";
-            delete pp;
-            return 1;
-        }
-    }
-
-    if (language) {
-        pw::Options options = language->options;
-        pp->setOptions(&options);    		// Set pre-processor options.
-
-        // Set pre-defined macros.
-        for (int i = 0; i < language->macros.size(); ++i) {
-            pp->addDefine(language->macros[i]);
-        }
-
-        // Set the user include paths.
-        for (size_t i = 0; i < Includes.size(); ++i) {
-            pp->addUserInclude(Includes[i]);
-        }
-
-        // Set the initial system include paths.
-        for (size_t i = 0; i < IncludeBefore.size(); ++i) {
-            pp->addInclude(IncludeBefore[i]);
-        }
-
-        // Set the include paths.
-        for (int i = 0; i < language->includes.size(); ++i) {
-            pp->addInclude(language->includes[i]);
-        }
-
-        // Set command line defines.
-        for (size_t i = 0; i < Defines.size(); ++i) {
-            size_t index = Defines[i].find_first_of('=');
-            if (index == std::string::npos) {
-                pp->addDefine(Defines[i]);
-            } else {
-                pp->addDefine(Defines[i].substr(0, index),
-                              Defines[i].substr(index + 1));
-            }
-        }
-
-        // Preprocess the file.
-        const char* lastfile;
-        lastfile = errors.file;
-        fprintf(ofp, "# %d \"%s\"\n", 1, errors.file);
-        pp->getToken(pw::PP::GETALL);
-        for (;;) {
-            if (pp->info.token == pw::PPStream::ENDOFFILE) {
-                // End of file.
-                break;
-            }
-
-            if (errors.file != lastfile) {
-                // Output #line directive if pre-processing.
-                lastfile = errors.file;
-                fprintf(ofp, "# %d \"%s\"\n", pp->info.startline, errors.file);
-            }
-
-            fprintf(ofp, "%s", pp->info.string.c_str());
-            pp->getToken(pw::PP::GETALL);
-        }
-    }
-
-    if (FinalPhase != PREPROCESSING) {
-        pw::fclose(ofp);
-    }
-    delete pp;
-    return 0;
-}
-
-#else
-
 //===----------------------------------------------------------------------===//
 // Preprocessor Initialization
 //===----------------------------------------------------------------------===//
@@ -2166,8 +1964,6 @@ static int Preprocess(const std::string &OutputFilename, Input& input)
     DoPrintPreprocessedInput(*PP.get(), OutputFilename);
     return Diags.getNumErrors() != 0;
 }
-
-#endif
 
 /// Link - generates a native object file from the
 /// specified bitcode file.
@@ -3060,70 +2856,6 @@ int main(int argc, char **argv)
             elsa.addTrace((*traceIt).c_str());
         }
 
-#if OLD
-        // Find configuration files.
-        sys::Path config(progname);
-        config.appendSuffix("ecf");
-        sys::Path ecf = sys::Path::GetMainExecutable(argv[0], (void*)main);;
-        ecf.eraseComponent();                           // Get the executable directory.
-        bool found = false;
-
-        sys::Path file = config;
-        if (file.exists()) {
-            found = true;
-        }
-
-        // Set up configuration file include paths.
-        pw::Plexer* configuration = pw::Plexer::Create("ecf", errors);
-        if (configuration == NULL) {
-            goto showerrors;
-        }
-        configuration->addInclude("");                 // Add the current directory.
- 
-        // Check for <execute directory>/../config.
-        ecf.appendComponent("..");
-        ecf.appendComponent("config");
-        if (ecf.isDirectory()) {
-            configuration->addInclude(ecf.toString());
-            if (!found) {
-                file = ecf;
-                file.appendComponent(config.toString());
-                if (file.exists()) {
-                    found = true;
-                }
-            }
-        }
-        ecf.eraseComponent();                          // Remove config.
-        // Check for <execute directory>/../lib/ellcc/ELLCC_VERSION_STRING/config.
-        ecf.appendComponent("lib");
-        ecf.appendComponent("ellcc");
-        ecf.appendComponent(ELLCC_VERSION_STRING);
-        ecf.appendComponent("config");
-        if (ecf.isDirectory()) {
-            configuration->addInclude(ecf.toString());
-            if (!found) {
-                file = ecf;
-                file.appendComponent(config.toString());
-                if (file.exists()) {
-                    found = true;
-                }
-            }
-        }
-        
-        configuration->addDefine("__ELLCC__",  str(ELLCC));
-        configuration->addDefine("__ELLCC_MINOR__",  str(ELLCC_MINOR));
-        configuration->addDefine("__ELLCC_PATCHLEVEL__",  str(ELLCC_PATCHLEVEL));
-        configuration->addDefine("__ELLCC_VERSION_STRING__",  str(ELLCC_VERSION_STRING));
-        configuration->addDefine("__ELLCC_VERSION__",  str(ELLCC_VERSION));
- 
-        // Read the program configuration file.
-        pconfig = pw::Plexer::Create(file.toString().c_str(), errors);
-
-        if (pconfig == NULL) {
-            goto showerrors;
-        }
-#endif
-
         // Gather the input files and determine their types.
         std::vector<std::string>::iterator fileIt = Files.begin();
         std::vector<std::string>::iterator libIt  = Libraries.begin();
@@ -3158,14 +2890,6 @@ int main(int argc, char **argv)
                 DiagClient->setLangOptions(&input.langInfo);
                 InitializeLangOptions(input.langInfo, type);
                 InitializeLanguageStandard(input.langInfo, type, Target.get(), Features);
-
-#if OLD
-                if (type == CC || type == II) {
-                    input.language = pw::Plexer::Create("cxx98.ecf", errors);
-                } else {
-                    input.language = pw::Plexer::Create("c99.ecf", errors);
-                }
-#endif
                 InpList.push_back(input);
                 ++fileIt;
             } else if ( libPos != 0 && (filePos == 0 || libPos < filePos) ) {
@@ -3242,7 +2966,7 @@ int main(int argc, char **argv)
                 }
             }
 
-            if (FinalPhase == phase || errors.hasErrors()) {
+            if (FinalPhase == phase || Diags.hasErrorOccurred()) {
                 break;
             }
 
@@ -3284,39 +3008,6 @@ int main(int argc, char **argv)
     } catch (...) {
         cerr << argv0 << ": Unexpected unknown exception occurred.\n";
         status =  1;
-    }
-
-#if OLD
-showerrors:
-#endif
-    int totalerrors = 0;
-    for (int j = 0; j < pw::Error::ERRORCNT; ++j) {
-        // Calculate the total number of errors.
-        totalerrors += errors.errorCount(j);
-    }
-
-    if (totalerrors) {
-        for (int i = 0; i < pw::Error::ERRORCNT; ++i) {
-            const char *name;
-            const char *plural;
-            int count = errors.errorCount(i);
-
-            if (count == 0)
-                continue;
-
-            if (count == 1)
-                plural = "";
-            else
-                plural = "s";
-
-            name = pw::Error::modifier((pw::Error::Type)i);
-            fprintf(stdout, "%d %s message%s reported\n", count, name, plural);
-        }
-
-        // Show errors.
-        errors.sort();
-        errors.print(stdout);
-        status = errors.hasErrors();
     }
 
     llvm_shutdown();

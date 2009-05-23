@@ -10,7 +10,6 @@ all:
 
 check:
 	$(MAKE) -C smbase check
-	$(MAKE) -C pw check
 	$(MAKE) -C ast check
 	$(MAKE) -C elkhound check
 	$(MAKE) -C elsa check
