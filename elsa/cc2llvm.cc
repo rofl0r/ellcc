@@ -1284,7 +1284,7 @@ void S_function::cc2llvm(CC2LLVMEnv &env) const
 llvm::Value *E_boolLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     deref = 0;
-    return llvm::ConstantInt::get(llvm::APInt(1, (int)b));
+    return llvm::ConstantInt::getTrue();
 }
 
 llvm::Value *E_intLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
@@ -3113,10 +3113,16 @@ llvm::Value *E___builtin_va_end::cc2llvm(CC2LLVMEnv &env, int& deref) const
 
 llvm::Value *E___builtin_constant_p::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
+    llvm::Value* value = expr->cc2llvm(env, deref);
+    bool isConstantExpr = llvm::isa<llvm::ConstantExpr>(value);
+    if (isConstantExpr) {
+        value = llvm::ConstantInt::get(llvm::APInt(expr->type->reprSize() * BITS_PER_BYTE, 1));
+    } else {
+        value = llvm::ConstantInt::get(llvm::APInt(expr->type->reprSize() * BITS_PER_BYTE, 0));
+    }
+    env.makeCast(loc, expr->type, value, type);
     deref = 0;
-    std::cerr << toString(loc) << ": ";
-    xunimp("__builtin_constant_p");
-    return NULL;
+    return value;
 }
 
 llvm::Value *E___builtin_alloca::cc2llvm(CC2LLVMEnv &env, int& deref) const

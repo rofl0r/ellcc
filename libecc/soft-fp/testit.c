@@ -6,7 +6,9 @@
 #include "single.h"
 #include "double.h"
 
+#ifdef __i386__
 #include <fpu_control.h>
+#endif
 
 /*======================================================================*/
 /* declarations for the functions we are testing */
@@ -270,7 +272,9 @@ double build_double(const char *s, const char *e, const char *f)
       
 /*======================================================================*/
 
+#ifdef __i386__
 fpu_control_t fcw0, fcw1;
+#endif
 
 void test_float_arith(float (*tf)(float, float),
 		      float (*rf)(float, float),

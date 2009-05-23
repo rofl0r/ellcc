@@ -15,7 +15,6 @@
 #define __libgcc_cmp_return__ SI
 #define __libgcc_shift_count__ SI
 typedef unsigned long W_TYPE;   // The type of a word.
-typedef W_TYPE size_t;
 #define BITS_BIG_ENDIAN 0       // 1 if the highest bit in a byte is 0.
 #define BYTES_BIG_ENDIAN 0      // 1 of the most significant byte in a word is byte 0.
 #define WORDS_BIG_ENDIAN 0      // 1 if the most significant word in a multiword is word 0.
