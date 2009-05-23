@@ -3128,7 +3128,8 @@ llvm::Value *E___builtin_constant_p::cc2llvm(CC2LLVMEnv &env, int& deref) const
 llvm::Value *E___builtin_alloca::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     llvm::Value* value = expr->cc2llvm(env, deref);
-    value = env.access(value, false, deref, 1);                 // RICH: Volatile.
+    value = env.access(value, false, deref);                 // RICH: Volatile.
+    VDEBUG("E_builtin_alloca", loc, std::cerr << "value "; value->getType()->print(std::cerr));
     deref = 0;
     xassert(env.entryBlock);
     const llvm::Type* type = llvm::IntegerType::get(BITS_PER_BYTE);
