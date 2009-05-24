@@ -57,13 +57,9 @@ static const StaticDiagInfoRec StaticDiagInfo[] = {
 #define DIAG(ENUM,CLASS,DEFAULT_MAPPING,DESC,GROUP) \
   { diag::ENUM, DEFAULT_MAPPING, CLASS, DESC, GROUP },
 #include "DiagnosticCommonKinds.inc"
-//RICH #include "DiagnosticDriverKinds.inc"
-//RICH #include "DiagnosticFrontendKinds.inc"
+#include "DiagnosticEllccKinds.inc"
+#include "DiagnosticElsaKinds.inc"
 #include "DiagnosticLexKinds.inc"
-//RICH #include "DiagnosticParseKinds.inc"
-//RICH #include "DiagnosticASTKinds.inc"
-//RICH #include "DiagnosticSemaKinds.inc"
-//RICH #include "DiagnosticAnalysisKinds.inc"
 { 0, 0, 0, 0, 0 }
 };
 #undef DIAG

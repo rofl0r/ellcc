@@ -947,13 +947,13 @@ public:
                                      TargetInfo::ConstraintInfo &info) const {
     // FIXME: Check if this is complete
     switch (*Name) {
-    default:
+    default: return false;
     case 'l': // r0-r7
     case 'h': // r8-r15
     case 'w': // VFP Floating point register single precision
     case 'P': // VFP Floating point register double precision
-      info = (TargetInfo::ConstraintInfo)(info|TargetInfo::CI_AllowsRegister);
-      return true;
+        info = (TargetInfo::ConstraintInfo)(info|TargetInfo::CI_AllowsRegister);
+        return true;
     }
     return false;
   }
@@ -1458,25 +1458,14 @@ MipsTargetInfo::validateAsmConstraint(const char *&Name,
                                        TargetInfo::ConstraintInfo &info) const {
   switch (*Name) {
   default: return false;
-  case 'a': // eax.
-  case 'b': // ebx.
-  case 'c': // ecx.
-  case 'd': // edx.
-  case 'S': // esi.
-  case 'D': // edi.
-  case 'A': // edx:eax.
-  case 't': // top of floating point stack.
-  case 'u': // second from top of floating point stack.
-  case 'q': // Any register accessible as [r]l: a, b, c, and d.
-  case 'y': // Any MMX register.
-  case 'x': // Any SSE register.
-  case 'Q': // Any register accessible as [r]h: a, b, c, and d.
-  case 'e': // 32-bit signed integer constant for use with zero-extending 
-            // x86_64 instructions.
-  case 'Z': // 32-bit unsigned integer constant for use with zero-extending 
-            // x86_64 instructions.
-  case 'N': // unsigned 8-bit integer constant for use with in and out
-            // instructions.
+  case 'd': // An address register.
+  case 'f': // A floating point register.
+  case 'h': // The hi register..
+  case 'l': // The lo register.
+  case 'x': // the hi and lo registers.
+  case 'c': // An indirect jump register.
+  case 'y': // Backward compatability: equivalent to 'r'.
+  case 'z': // A floating point condition code register.
     info = (TargetInfo::ConstraintInfo)(info|TargetInfo::CI_AllowsRegister);
     return true;
   }

@@ -1180,6 +1180,11 @@ void S_asm::cc2llvm(CC2LLVMEnv &env) const
             Constraint* constraint = c.data();
             Expression*& expr = constraint->e;
             int deref;
+            E_cast* cexpr = expr->ifE_cast();
+            if (cexpr) {
+                // Handle a GNU lvalue cast.
+                expr = cexpr->expr;
+            }
             llvm::Value* value = expr->cc2llvm(env, deref);
             value = env.access(value, false, deref, 1);                 // RICH: Volatile.
             if (!first) {

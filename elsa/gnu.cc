@@ -886,13 +886,13 @@ void Asm::itcheck_constraints(Env &env, bool module)
                             }
                             if (index >= numOutputs) {
                                 env.error(constraint->loc, stringc << "the matching constraint '"
-                                          << *cp << "' exceeds the number of output constrints");
+                                          << index << "' exceeds the number of output constrints");
                                 good = false;
                                 continue;
                             }
                             if (matches > 0 && (signed)index != matches) {
                                 env.error(constraint->loc, stringc << "the matching constraint '"
-                                          << *cp << "' is different than the previous matching constraint");
+                                          << index << "' is different than the previous matching constraint");
                                 good = false;
                                 continue;
                             }
@@ -900,7 +900,7 @@ void Asm::itcheck_constraints(Env &env, bool module)
                             matches = index;
                             if (*constraints->outputs.nth(index)->constr->data->getDataC() == '+') {
                                 env.error(constraint->loc, stringc << "the matched constraint '"
-                                          << *cp << "' is defined as '+' and should be '='");
+                                          << index << "' is defined as '+' and should be '='");
                                 good = false;
                                 continue;
                             }
@@ -1068,6 +1068,11 @@ void Asm::itcheck_constraints(Env &env, bool module)
             continue;
         }
 
+        if (*cp == '@') {
+            asmstr << '@';             // Escaped '@' ('%@') becomes '@', the start of an ARM comment.
+            ++cp;
+            continue;
+        }
         if (*cp == '=') {
             asmstr << "${:uid}";        // Generate a unique ID.
             ++cp;
@@ -1092,16 +1097,16 @@ void Asm::itcheck_constraints(Env &env, bool module)
                 } else {
                     asmstr << '$' << index;
                 }
-            } else if (constraints == NULL || (signed)index > constraints->inputs.count()) {
+            } else if (constraints == NULL || index > constraints->inputs.count() + numOutputs) {
                 env.error(text->loc, stringc << "inline asm constraint index '"
-                                             << *cp
+                                             << index
                                              << "' has no matching constraint");
             } else {
                 // Adjust for '+' output constraints.
                 if (modifier) {
-                    asmstr << "${" << index + rwConstraints << ':' << modifier << "}";
+                    asmstr << "${" << index + rwConstraints - numOutputs << ':' << modifier << "}";
                 } else {
-                    asmstr << '$' << index + rwConstraints;
+                    asmstr << '$' << index + rwConstraints - numOutputs ;
                 }
             }
             continue;
@@ -1141,11 +1146,11 @@ void Asm::itcheck_constraints(Env &env, bool module)
                         ++index;
                     }
                 }
-                if (constraints && (signed)index < constraints->inputs.count()) {
+                if (constraints && index < constraints->inputs.count() + numOutputs) {
                     if (modifier) {
-                        asmstr << "${" << index + numOutputs + rwConstraints << ':' << modifier << "}";
+                        asmstr << "${" << index - numOutputs + rwConstraints << ':' << modifier << "}";
                     } else {
-                        asmstr << '$' << index+ numOutputs + rwConstraints;
+                        asmstr << '$' << index - numOutputs + rwConstraints;
                     }
                 } else {
                     env.error(text->loc, stringc << "constraint name '"
