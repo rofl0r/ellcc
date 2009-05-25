@@ -12,6 +12,8 @@
 #include "implconv.h"      // ImplicitConversion
 #include "typelistiter.h"  // TypeListIter_GrowArray
 #include "exprloc.h"
+#include "LangOptions.h"   // Language options.
+#include "TargetInfo.h"    // Target information.
 
 using namespace std;
 // forwards in this file
@@ -300,7 +302,8 @@ int throwClauseSerialNumber = 0; // don't make this a member of Env
 
 int Env::anonCounter = 1;
 
-Env::Env(StringTable &s, CCLang &L, TypeFactory &tf,
+Env::Env(StringTable &s, LangOptions& LO, TargetInfo& TI,
+         CCLang &L, TypeFactory &tf,
          ArrayStack<Variable*> &madeUpVariables0,
          ArrayStack<Variable*> &builtinVars0,
          TranslationUnit *unit0)
@@ -320,6 +323,8 @@ Env::Env(StringTable &s, CCLang &L, TypeFactory &tf,
     instantiationLocStack(),
 
     str(s),
+    LO(LO),
+    TI(TI),
     lang(L),
     tfac(tf),
     madeUpVariables(madeUpVariables0),

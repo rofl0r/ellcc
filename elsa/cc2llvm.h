@@ -34,7 +34,7 @@ using namespace ellcc;
 /** The main translator entry point.
  */
 llvm::Module* cc_to_llvm(sm::string name, StringTable &str, TranslationUnit const &input,
-                         TargetInfo* targetInfo);
+                         TargetInfo& TI);
 
 
 /** The translation environment.
@@ -51,14 +51,14 @@ public:      // funcs
     /** Construct an LLVM converter.
      */
     CC2LLVMEnv(StringTable &str, sm::string name, const TranslationUnit& input,
-               TargetInfo* targetInfo);
+               TargetInfo& TI);
     /** Destruct an LLVM convertor.
      */
     ~CC2LLVMEnv();
 
     /** Information about the target.
      */
-    TargetInfo* targetInfo;
+    TargetInfo& TI;
     /** LLVM information about the target.
      */
     llvm::TargetData targetData;

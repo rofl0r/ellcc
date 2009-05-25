@@ -7,8 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_AST_TARGET_BUILTINS_H
-#define LLVM_CLANG_AST_TARGET_BUILTINS_H
+#ifndef TARGET_BUILTINS_H
+#define TARGET_BUILTINS_H
 
 #include "Builtins.h"
 #undef PPC

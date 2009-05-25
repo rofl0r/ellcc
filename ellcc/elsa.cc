@@ -44,21 +44,19 @@ using namespace ellcc;
  */
 class EllccEnv : public Env {
 public:
-    EllccEnv(TargetInfo* targetInfo, StringTable &str, CCLang &lang, TypeFactory &tfac,
+    EllccEnv(LangOptions& LO, TargetInfo& TI, StringTable &str, CCLang &lang, TypeFactory &tfac,
              ArrayStack<Variable*> &madeUpVariables0, ArrayStack<Variable*> &builtinVars0,
              TranslationUnit *unit0)
-             : Env(str, lang, tfac, madeUpVariables0, builtinVars0, unit0),
-               targetInfo(targetInfo) { }
+             : Env(str, LO, TI, lang, tfac, madeUpVariables0, builtinVars0, unit0) { }
 
     bool validateAsmConstraint(const char* name, TargetInfo::ConstraintInfo& info)
-        { return targetInfo->validateAsmConstraint(name, info); }
+        { return TI.validateAsmConstraint(name, info); }
     std::string convertConstraint(char ch)
-        { return targetInfo->convertConstraint(ch); }
+        { return TI.convertConstraint(ch); }
     const char* getNormalizedGCCRegisterName(const char* name)
-        { return targetInfo->getNormalizedGCCRegisterName(name); }
+        { return TI.getNormalizedGCCRegisterName(name); }
         
 private:
-    TargetInfo* targetInfo;
     EllccEnv();
 };
 
@@ -258,9 +256,10 @@ static void handle_xBase(Env &env, xBase &x)
   abort();
 }
 
-
-int Elsa::doit(Language language, const char* inputFname, const char* outputFname, llvm::Module*& mod,
-               TargetInfo* targetInfo)
+int Elsa::doit(Preprocessor& PP, LangOptions& LO, TargetInfo& TI,
+               Language language,
+               const char* inputFname, const char* outputFname,
+               llvm::Module*& mod)
 {
     mod = NULL;
     SourceLocManager mgr;
@@ -423,7 +422,7 @@ int Elsa::doit(Language language, const char* inputFname, const char* outputFnam
         typeCheckingTimer.startTimer();
     }
 
-    EllccEnv env(targetInfo, strTable, lang, tfac, madeUpVariables, builtinVars, unit);
+    EllccEnv env(LO, TI, strTable, lang, tfac, madeUpVariables, builtinVars, unit);
     try {
       env.tcheckTranslationUnit(unit);
     }
@@ -513,7 +512,7 @@ int Elsa::doit(Language language, const char* inputFname, const char* outputFnam
       // this is useful to measure the cost of disambiguation, since
       // now the tree is entirely free of ambiguities
       traceProgress() << "beginning second tcheck...\n";
-      EllccEnv env2(targetInfo, strTable, lang, tfac, madeUpVariables, builtinVars, unit);
+      EllccEnv env2(LO, TI, strTable, lang, tfac, madeUpVariables, builtinVars, unit);
       unit->tcheck(env2);
       traceProgress() << "end of second tcheck\n";
     }
@@ -738,7 +737,7 @@ int Elsa::doit(Language language, const char* inputFname, const char* outputFnam
       ArrayStack<Variable*> madeUpVariables2;
       ArrayStack<Variable*> builtinVars2;
       // dsw: I hope you intend that I should use the cloned TranslationUnit
-      EllccEnv env3(targetInfo, strTable, lang, tfac, madeUpVariables2, builtinVars2, u2);
+      EllccEnv env3(LO, TI, strTable, lang, tfac, madeUpVariables2, builtinVars2, u2);
       u2->tcheck(env3);
 
       if (tracingSys("cloneTypedAST")) {
@@ -784,7 +783,7 @@ int Elsa::doit(Language language, const char* inputFname, const char* outputFnam
     if (doTime) {
         llvmGenerationTimer.startTimer();
     }
-    mod = cc_to_llvm(outputFname, strTable, *unit, targetInfo);
+    mod = cc_to_llvm(outputFname, strTable, *unit, TI);
 
     if (doTime) {
         llvmGenerationTimer.stopTimer();
@@ -806,12 +805,12 @@ int Elsa::doit(Language language, const char* inputFname, const char* outputFnam
   return 0;
 }
 
-int Elsa::parse(Language language, const char* inputFname, const char* outputFname,
-                llvm::Module*& mod,
-                TargetInfo* targetInfo)
+int Elsa::parse(Preprocessor& PP, LangOptions& LO, TargetInfo& TI,
+                Language language,
+                const char* inputFname, const char* outputFname, llvm::Module*& mod)
 {
   try {
-    return doit(language, inputFname, outputFname, mod, targetInfo);
+    return doit(PP, LO, TI, language, inputFname, outputFname, mod);
   } catch (XUnimp &x) {
     HANDLER();
     std::cout << x << std::endl;

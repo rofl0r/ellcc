@@ -9,13 +9,13 @@ namespace pw {
     class Plexer;
 };
 
-#include "TargetInfo.h"
-#include "LangOptions.h"
-
 #include "llvm/Support/Timer.h"
 
 namespace ellcc {
 class Preprocessor;
+class LangOptions;
+class TargetInfo;
+class Diagnostic;
 
 /// DoPrintPreprocessedInput - Implement -E mode.
 void DoPrintPreprocessedInput(Preprocessor &PP, const std::string& OutFile);
@@ -54,15 +54,17 @@ public:
     };
     /** Parse a source file.
      */
-    int parse(Language language, const char* inputFname, const char* outputFname, llvm::Module*& mod,
-              TargetInfo* targetInfo);
+    int parse(Preprocessor& PP, LangOptions& LO, TargetInfo& TI,
+              Language language,
+              const char* inputFname, const char* outputFname, llvm::Module*& mod);
 
 private:
     /** The default constructor (not implemented or used).
      */
     Elsa();
-    int doit(Language language, const char* inputFname, const char* outputFname, llvm::Module*& mod,
-             TargetInfo* targetInfo);
+    int doit(Preprocessor& PP, LangOptions& LO, TargetInfo& TI,
+             Language language,
+             const char* inputFname, const char* outputFname, llvm::Module*& mod);
     /** true if phases should be timed.
      */
     bool doTime;

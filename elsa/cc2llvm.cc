@@ -36,9 +36,9 @@ using namespace ellcc;
 
 // -------------------- CC2LLVMEnv ---------------------
 CC2LLVMEnv::CC2LLVMEnv(StringTable &s, sm::string name, const TranslationUnit& input,
-                       TargetInfo* targetInfo)
+                       TargetInfo& TI)
   : str(s),
-    targetInfo(targetInfo),
+    TI(TI),
     targetData(""),
     targetFolder(targetData),
     input(input),
@@ -56,10 +56,10 @@ CC2LLVMEnv::CC2LLVMEnv(StringTable &s, sm::string name, const TranslationUnit& i
     builder(targetFolder)
 { 
     std::string str;
-    targetInfo->getTargetDescription(str);
+    TI.getTargetDescription(str);
     targetData.init(str);
     mod->setDataLayout(str);
-    mod->setTargetTriple(targetInfo->getTargetTriple());
+    mod->setTargetTriple(TI.getTargetTriple());
 }
 
 CC2LLVMEnv::~CC2LLVMEnv()
@@ -1238,7 +1238,7 @@ void S_asm::cc2llvm(CC2LLVMEnv &env) const
             constraints << constraint->string.c_str();
         }
 
-        std::string machineClobbers = env.targetInfo->getClobbers();
+        std::string machineClobbers = env.TI.getClobbers();
         if (!machineClobbers.empty()) {
             if (!first) {
                 constraints << ',';
@@ -3203,9 +3203,9 @@ llvm::Module* CC2LLVMEnv::doit()
 
 // ------------------- entry point -------------------
 llvm::Module* cc_to_llvm(sm::string name, StringTable &str, TranslationUnit const &input,
-                         TargetInfo* targetInfo)
+                         TargetInfo& TI)
 {
-    CC2LLVMEnv env(str, name, input, targetInfo);
+    CC2LLVMEnv env(str, name, input, TI);
     return env.doit();
 }
 

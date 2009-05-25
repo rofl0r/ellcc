@@ -30,6 +30,10 @@ class MType;              // mtype.h
 class ImplicitConversion; // implconv.h
 class DelayedFuncInst;    // template.h
 
+namespace ellcc {
+class TargetInfo;         // TargetInfo.h
+class LangOptions;        // LangOptions.h
+}
 
 // type of collection to hold a sequence of scopes
 // for nested qualifiers; it can hold up to 2 scopes
@@ -131,6 +135,12 @@ public:      // data
 
   // string table for making new strings
   StringTable &str;
+
+  // Language options in effect.
+  LangOptions& LO;
+
+  // Target information.
+  TargetInfo& TI;
 
   // language options in effect
   CCLang &lang;
@@ -321,9 +331,9 @@ private:     // funcs
   void mergeDefaultArguments(SourceLoc loc, Variable *prior, FunctionType *type);
 
 public:      // funcs
-  Env(StringTable &str, CCLang &lang, TypeFactory &tfac,
-      ArrayStack<Variable*> &madeUpVariables0, ArrayStack<Variable*> &builtinVars0,
-      TranslationUnit *unit0);
+  Env(StringTable& str, LangOptions& LO, TargetInfo& TI, CCLang& lang, TypeFactory& tfac,
+      ArrayStack<Variable*>& madeUpVariables0, ArrayStack<Variable*>& builtinVars0,
+      TranslationUnit* unit0);
 
   // 'virtual' only to silence stupid warning; destruction is not part of polymorphic contract
   virtual ~Env();

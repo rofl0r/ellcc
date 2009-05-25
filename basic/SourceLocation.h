@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef SOURCELOCATION_H
-#define SOURCELOCATION_H
+#ifndef SOURCE_LOCATION_H
+#define SOURCE_LOCATION_H
 
 #include <utility>
 #include <cassert>

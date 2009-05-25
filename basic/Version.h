@@ -11,25 +11,25 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_BASIC_VERSION_H
-#define LLVM_CLANG_BASIC_VERSION_H
+#ifndef VERSION_H
+#define VERSION_H
 
 /// \brief Clang major version
-#define CLANG_VERSION_MAJOR 1
+#define ELLCC_VERSION_MAJOR 1
 
 /// \brief Clang minor version
-#define CLANG_VERSION_MINOR 0
+#define ELLCC_VERSION_MINOR 0
 
-/// \brief Helper macro for CLANG_VERSION_STRING.
-#define CLANG_MAKE_VERSION_STRING2(X) #X
+/// \brief Helper macro for ELLCC_VERSION_STRING.
+#define ELLCC_MAKE_VERSION_STRING2(X) #X
 
-/// \brief Helper macro for CLANG_VERSION_STRING.
-#define CLANG_MAKE_VERSION_STRING(X,Y) CLANG_MAKE_VERSION_STRING2(X.Y)
+/// \brief Helper macro for ELLCC_VERSION_STRING.
+#define ELLCC_MAKE_VERSION_STRING(X,Y) ELLCC_MAKE_VERSION_STRING2(X.Y)
 
 /// \brief A string that describes the Clang version number, e.g.,
 /// "1.0".
-#define CLANG_VERSION_STRING \
-  CLANG_MAKE_VERSION_STRING(CLANG_VERSION_MAJOR,CLANG_VERSION_MINOR)
+#define ELLCC_VERSION_STRING \
+  ELLCC_MAKE_VERSION_STRING(ELLCC_VERSION_MAJOR,ELLCC_VERSION_MINOR)
 
 
-#endif // LLVM_CLANG_BASIC_VERSION_H
+#endif

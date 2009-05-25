@@ -11,10 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_LANGOPTIONS_H
-#define LLVM_CLANG_LANGOPTIONS_H
-
-#include "llvm/Bitcode/SerializationFwd.h"
+#ifndef LANG_OPTIONS_H
+#define LANG_OPTIONS_H
 
 namespace ellcc {
 
@@ -117,12 +115,6 @@ public:
   
   const char *getMainFileName() const { return MainFileName; }
   void setMainFileName(const char *Name) { MainFileName = Name; }
-
-  /// Emit - Emit this LangOptions object to bitcode.
-  void Emit(llvm::Serializer& S) const;
-  
-  /// Read - Read new values for this LangOption object from bitcode.
-  void Read(llvm::Deserializer& S);  
 };
 
 }  // end namespace ellcc

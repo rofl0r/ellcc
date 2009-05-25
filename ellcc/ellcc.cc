@@ -11,6 +11,8 @@
 #include "InitPreprocessor.h"
 #include "FileManager.h"
 #include "TextDiagnosticPrinter.h"
+#include "LangOptions.h"
+#include "TargetInfo.h"
 #include "llvm/Module.h"
 #include "llvm/ModuleProvider.h"
 #include "llvm/PassManager.h"
@@ -699,7 +701,7 @@ struct Input {
     FileTypes type;             ///< The input's type.
     Module* module;             ///< The module associated with the input, if any.
     bool temp;                  ///< true if this is contained in a temporary file.
-    LangOptions langInfo;       ///< Information about the language.
+    LangOptions LO;             ///< Information about the language.
     Input() : type(NONE), module(NULL), temp(false) {}
     Input(std::string& name, FileTypes type = NONE,
           Module* module = NULL, bool temp = false)
@@ -818,7 +820,6 @@ static void InitializeLangOptions(LangOptions &Options, FileTypes FT)
   Options.OverflowChecking = OverflowChecking;
 }
 
-/// LangStds - Language standards we support.
 enum LangStds {
   lang_unspecified,  
   lang_c89, lang_c94, lang_c99,
@@ -942,14 +943,14 @@ static llvm::cl::opt<bool>
 StaticDefine("static-define", llvm::cl::desc("Should __STATIC__ be defined"));
 
 static void InitializeLanguageStandard(LangOptions &Options, FileTypes FT,
-                                       TargetInfo *Target,
+                                       TargetInfo& TI,
                                        const llvm::StringMap<bool> &Features) {
   // Allow the target to set the default the langauge options as it sees fit.
-  Target->getDefaultLangOptions(Options);
+  TI.getDefaultLangOptions(Options);
 
   // Pass the map of target features to the target for validation and
   // processing.
-  Target->HandleTargetFeatures(Features);
+  TI.HandleTargetFeatures(Features);
   
   if (LangStd == lang_unspecified) {
     // Based on the base language, pick one.
@@ -1818,16 +1819,16 @@ void InitializePreprocessorInitOptions(PreprocessorInitOptions &InitOpts)
 namespace {
 class VISIBILITY_HIDDEN DriverPreprocessorFactory : public PreprocessorFactory {
   Diagnostic        &Diags;
-  const LangOptions &LangInfo;
-  TargetInfo        &Target;
+  const LangOptions &LO;
+  TargetInfo        &TI;
   SourceManager     &SourceMgr;
   HeaderSearch      &HeaderInfo;
   
 public:
   DriverPreprocessorFactory(Diagnostic &diags, const LangOptions &opts,
-                            TargetInfo &target, SourceManager &SM,
+                            TargetInfo &TI, SourceManager &SM,
                             HeaderSearch &Headers)  
-  : Diags(diags), LangInfo(opts), Target(target),
+  : Diags(diags), LO(opts), TI(TI),
     SourceMgr(SM), HeaderInfo(Headers) {}
   
   
@@ -1854,7 +1855,7 @@ public:
       Exit(1);
     
     // Create the Preprocessor.
-    llvm::OwningPtr<Preprocessor> PP(new Preprocessor(Diags, LangInfo, Target,
+    llvm::OwningPtr<Preprocessor> PP(new Preprocessor(Diags, LO, TI,
                                                       SourceMgr, HeaderInfo,
                                                       PTHMgr.get()));
     
@@ -1942,16 +1943,16 @@ static OwningPtr<SourceManager> SourceMgr;
 // Create a file manager object to provide access to and cache the filesystem.
 static FileManager FileMgr;
 static Diagnostic Diags;
-static OwningPtr<TargetInfo> Target;
+static OwningPtr<TargetInfo> TI;
 static const char* argv0;
 
 static int Preprocess(const std::string &OutputFilename, Input& input)
 {
     // Process the -I options and set them in the HeaderInfo.
     HeaderSearch HeaderInfo(FileMgr);
-    InitializeIncludePaths(argv0, HeaderInfo, FileMgr, input.langInfo);
+    InitializeIncludePaths(argv0, HeaderInfo, FileMgr, input.LO);
     // Set up the preprocessor with these options.
-    DriverPreprocessorFactory PPFactory(Diags, input.langInfo, *Target,
+    DriverPreprocessorFactory PPFactory(Diags, input.LO, *TI,
                                         *SourceMgr.get(), HeaderInfo);
     OwningPtr<Preprocessor> PP(PPFactory.CreatePreprocessor());
 
@@ -2333,7 +2334,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         to.appendSuffix(langToExt[nextType]);
         if (filePhases[thisType][phase].action == CCOMPILE) {
             Elsa::Language lang = Elsa::GNUC;
-            if (thisType == II) {
+            if (thisType == II || thisType == CC) {
                 // This is a C++ file.
                 lang = Elsa::GNUCXX;
                 // RICH: std: C, C++, K&R, etc.
@@ -2342,9 +2343,24 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
                 // RICH: std: C, C++, K&R, etc.
             }
 
-            int result = elsa.parse(lang, input.name.c_str(), to.c_str(),
-                                    input.module, Target.get());
-            if (result) {
+            // Process the -I options and set them in the HeaderInfo.
+            HeaderSearch HeaderInfo(FileMgr);
+            InitializeIncludePaths(argv0, HeaderInfo, FileMgr, input.LO);
+            // Set up the preprocessor with these options.
+            DriverPreprocessorFactory PPFactory(Diags, input.LO, *TI,
+                                                *SourceMgr.get(), HeaderInfo);
+            OwningPtr<Preprocessor> PP(PPFactory.CreatePreprocessor());
+
+            if (!PP)
+                PrintAndExit("Can't create a preprocessor");
+    
+            if (InitializeSourceManager(*PP.get(), input.name.toString()))
+                PrintAndExit("Can't initialize the source manager");
+
+            int result = elsa.parse(*PP.get(), input.LO, *TI.get(),
+                                    lang, input.name.c_str(), to.c_str(),
+                                    input.module);
+            if (result || Diags.getNumErrors() != 0) {
                 Exit(result);
             }
         } else {
@@ -2756,12 +2772,12 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
 /// ComputeTargetFeatures - Recompute the target feature list to only
 /// be the list of things that are enabled, based on the target cpu
 /// and feature list.
-static void ComputeFeatureMap(TargetInfo *Target, llvm::StringMap<bool> &Features)
+static void ComputeFeatureMap(TargetInfo& TI, llvm::StringMap<bool> &Features)
 {
     assert(Features.empty() && "invalid map"); 
 
     // Initialize the feature map based on the target.
-    Target->getDefaultFeatures(MCPU, Features);
+    TI.getDefaultFeatures(MCPU, Features);
 
     // Apply the user specified deltas.
     for (llvm::cl::list<std::string>::iterator it = TargetFeatures.begin(), 
@@ -2772,7 +2788,7 @@ static void ComputeFeatureMap(TargetInfo *Target, llvm::StringMap<bool> &Feature
         if (Name[0] != '-' && Name[0] != '+') {
             PrintAndExit(std::string("error: ") + progname + ": invalid target feature string: " + Name);
         }
-        if (!Target->setFeatureEnabled(Features, Name + 1, (Name[0] == '+'))) {
+        if (!TI.setFeatureEnabled(Features, Name + 1, (Name[0] == '+'))) {
       fprintf(stderr, "error: clang-cc: invalid target feature name: %s\n", 
               Name + 1);
       Exit(1);
@@ -2835,16 +2851,16 @@ int main(int argc, char **argv)
 
         // Get information about the target being compiled for.
         std::string Triple = CreateTargetTriple();
-        Target.reset(TargetInfo::CreateTargetInfo(Triple));
+        TI.reset(TargetInfo::CreateTargetInfo(Triple));
   
-        if (Target == 0) {
+        if (TI == 0) {
             Diags.Report(FullSourceLoc(), diag::err_fe_unknown_triple) << Triple.c_str();
             Exit(1);
         }
   
         // Compute the feature set, unfortunately this effects the language!
         llvm::StringMap<bool> Features;
-        ComputeFeatureMap(Target.get(), Features);
+        ComputeFeatureMap(*TI.get(), Features);
 
         // Initialize Elsa.
         Elsa elsa(timerGroup);       // Get the parsing environment.
@@ -2887,9 +2903,9 @@ int main(int argc, char **argv)
                     SourceMgr->clearIDTables();
 
                 // Initialize language options, inferring file types from input filenames.
-                DiagClient->setLangOptions(&input.langInfo);
-                InitializeLangOptions(input.langInfo, type);
-                InitializeLanguageStandard(input.langInfo, type, Target.get(), Features);
+                DiagClient->setLangOptions(&input.LO);
+                InitializeLangOptions(input.LO, type);
+                InitializeLanguageStandard(input.LO, type, *TI.get(), Features);
                 InpList.push_back(input);
                 ++fileIt;
             } else if ( libPos != 0 && (filePos == 0 || libPos < filePos) ) {

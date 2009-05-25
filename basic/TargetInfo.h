@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_BASIC_TARGETINFO_H
-#define LLVM_CLANG_BASIC_TARGETINFO_H
+#ifndef TARGET_INFO_H
+#define TARGET_INFO_H
 
 #ifndef __STDC_LIMIT_MACROS
 #define __STDC_LIMIT_MACROS 1

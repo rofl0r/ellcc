@@ -31,6 +31,9 @@
 #include "xml_type_writer.h" // XmlTypeWriter
 #include "bpprint.h"      // bppTranslationUnit
 #include "cc2c.h"         // cc_to_c
+#include "LangOptions.h"
+#include "TargetInfo.h"
+#include "llvm/System/Host.h"
 
 using namespace sm;
 using namespace std;
@@ -287,7 +290,8 @@ void doit(int argc, char **argv)
   // parsing language options
   CCLang lang;
   lang.GNU_Cplusplus();
-
+  LangOptions LO;
+  TargetInfo *TI = TargetInfo::CreateTargetInfo(llvm::sys::getHostTriple());
 
   // ------------- process command-line arguments ---------
   char const *inputFname = myProcessArgs
@@ -515,7 +519,7 @@ void doit(int argc, char **argv)
     cout << "no-typecheck" << endl;
   } else {
     SectionTimer timer(tcheckTime);
-    Env env(strTable, lang, tfac, madeUpVariables, builtinVars, unit);
+    Env env(strTable, LO, *TI, lang, tfac, madeUpVariables, builtinVars, unit);
     try {
       env.tcheckTranslationUnit(unit);
     }
@@ -601,7 +605,7 @@ void doit(int argc, char **argv)
       // this is useful to measure the cost of disambiguation, since
       // now the tree is entirely free of ambiguities
       traceProgress() << "beginning second tcheck...\n";
-      Env env2(strTable, lang, tfac, madeUpVariables, builtinVars, unit);
+      Env env2(strTable, LO, *TI, lang, tfac, madeUpVariables, builtinVars, unit);
       unit->tcheck(env2);
       traceProgress() << "end of second tcheck\n";
     }
@@ -808,7 +812,7 @@ void doit(int argc, char **argv)
       ArrayStack<Variable*> madeUpVariables2;
       ArrayStack<Variable*> builtinVars2;
       // dsw: I hope you intend that I should use the cloned TranslationUnit
-      Env env3(strTable, lang, tfac, madeUpVariables2, builtinVars2, u2);
+      Env env3(strTable, LO, *TI, lang, tfac, madeUpVariables2, builtinVars2, u2);
       u2->tcheck(env3);
 
       if (tracingSys("cloneTypedAST")) {
@@ -860,9 +864,8 @@ void doit(int argc, char **argv)
 
 #ifdef LLVM_EXTENSION
   if (!cc2llvmOutputFname.empty()) {
-    TargetInfo* targetInfo = TargetInfo::CreateTargetInfo("i686-pc-linux-gnu");
-    llvm::Module* mod = cc_to_llvm(cc2llvmOutputFname, strTable, *unit,
-    				   targetInfo);
+    TargetInfo* TI = TargetInfo::CreateTargetInfo("i686-pc-linux-gnu");
+    llvm::Module* mod = cc_to_llvm(cc2llvmOutputFname, strTable, *unit, *TI);
 
     // Output the module.
     llvm::PassManager PM;

@@ -12,6 +12,9 @@
 #include "parsetables.h"  // ParseTables
 #include "cc.gr.gen.h"    // CCParse
 #include "strtokp.h"      // StrtokParse
+#include "LangOptions.h"
+#include "TargetInfo.h"
+#include "llvm/System/Host.h"
 
 using namespace std;
 
@@ -138,7 +141,9 @@ void doit(int argc, char **argv)
     BasicTypeFactory tfac;
     ArrayStack<Variable*> madeUpVariables;
     ArrayStack<Variable*> builtinVars;
-    Env env(strTable, lang, tfac, madeUpVariables, builtinVars, unit);
+    LangOptions LO;
+    TargetInfo *TI = TargetInfo::CreateTargetInfo(llvm::sys::getHostTriple());
+    Env env(strTable, LO, *TI, lang, tfac, madeUpVariables, builtinVars, unit);
     unit->tcheck(env);
 
     int numErrors = env.errors.numErrors();

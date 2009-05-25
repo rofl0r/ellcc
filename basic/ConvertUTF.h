@@ -128,7 +128,7 @@ ConversionResult ConvertUTF8toUTF16 (
 		const UTF8** sourceStart, const UTF8* sourceEnd, 
 		UTF16** targetStart, UTF16* targetEnd, ConversionFlags flags);
 
-#ifdef CLANG_NEEDS_THESE_ONE_DAY
+#ifdef ELLCC_NEEDS_THESE_ONE_DAY
 ConversionResult ConvertUTF16toUTF8 (
 		const UTF16** sourceStart, const UTF16* sourceEnd, 
 		UTF8** targetStart, UTF8* targetEnd, ConversionFlags flags);

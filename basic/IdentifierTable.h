@@ -12,8 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_BASIC_IDENTIFIERTABLE_H
-#define LLVM_CLANG_BASIC_IDENTIFIERTABLE_H
+#ifndef IDENTIFIER_TABLE_H
+#define IDENTIFIER_TABLE_H
 
 #include "OperatorKinds.h"
 #include "TokenKinds.h"
