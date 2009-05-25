@@ -10,6 +10,11 @@
 // fwd decls
 class CCLang;               // cc_lang.h
 
+namespace ellcc {
+class LangOptions;          // LangOptions.h
+}
+
+using namespace ellcc;
 
 // bounds-checking functional interfaces to tables declared in cc_tokens.h
 char const *toString(TokenType type);
@@ -26,6 +31,7 @@ private:    // data
   MacroUndoEntry *currentMacro;
 public:     // data
   CCLang &lang;                    // language options
+  LangOptions& LO;                 // Language Options.
 
 protected:  // funcs
   // see comments at top of lexer.cc
@@ -78,8 +84,8 @@ protected:  // funcs
 
 public:     // funcs
   // make a lexer to scan the given file
-  Lexer(StringTable &strtable, CCLang &lang, char const *fname);
-  Lexer(StringTable &strtable, CCLang &lang, SourceLoc initLoc,
+  Lexer(StringTable &strtable, LangOptions& LO, CCLang &lang, char const *fname);
+  Lexer(StringTable &strtable, LangOptions& LO, CCLang &lang, SourceLoc initLoc,
         char const *buf, int len);
   ~Lexer();
 

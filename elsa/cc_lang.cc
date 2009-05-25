@@ -46,7 +46,6 @@ void CCLang::ANSI_C89()
   // just in case I forget to initialize something....
   memset(this, 0, sizeof(*this));
 
-  isCplusplus = false;
   declareGNUBuiltins = false;
 
   tagsAreTypes = false;
@@ -178,7 +177,6 @@ void CCLang::ANSI_Cplusplus()
   // just in case...
   memset(this, 0, sizeof(*this));
 
-  isCplusplus = true;
   declareGNUBuiltins = false;
 
   tagsAreTypes = true;
@@ -282,7 +280,6 @@ bool handleExternInline_asWeakStaticInline() {
 string CCLang::toString() {
   stringBuilder str;
 #define PRINT(X) str << #X " " << X << '\n'
-  PRINT(isCplusplus);
   PRINT(declareGNUBuiltins);
   PRINT(tagsAreTypes);
   PRINT(recognizeCppKeywords);

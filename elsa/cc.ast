@@ -43,6 +43,9 @@ verbatim {
   #include "cc_flags.h"         // CVFlags, DeclFlags, etc. (r)
 
   class CCLang;                 // cc_lang.h
+  namespace ellcc {
+  class LangOptions;            // LangOptions.h
+  }
 }
 
 // use a new astgen feature: make a visitor!

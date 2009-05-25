@@ -3,6 +3,7 @@
 
 #include "lexer.h"       // this module
 #include "cc_lang.h"     // CCLang
+#include "LangOptions.h" // LangOptions
 
 #include <ctype.h>       // isdigit
 #include <stdlib.h>      // atoi
@@ -73,21 +74,21 @@ TokenFlag tokenFlags(TokenType type)
 
 
 // ------------------------ Lexer -------------------
-Lexer::Lexer(StringTable &s, CCLang &L, char const *fname)
+Lexer::Lexer(StringTable &s, LangOptions& LO, CCLang &L, char const *fname)
   : BaseLexer(s, fname),
 
     prevIsNonsep(false),
     prevHashLineFile(s.add(fname)),
     currentMacro(NULL),
-
-    lang(L)
+    lang(L),
+    LO(LO)
 {
   // prime this lexer with the first token
   getTokenFunc()(this);
 }
 
 
-Lexer::Lexer(StringTable &s, CCLang &L, SourceLoc initLoc,
+Lexer::Lexer(StringTable &s, LangOptions& LO, CCLang &L, SourceLoc initLoc,
              char const *buf, int len)
   : BaseLexer(s, initLoc, buf, len),
 
@@ -95,7 +96,8 @@ Lexer::Lexer(StringTable &s, CCLang &L, SourceLoc initLoc,
     prevHashLineFile(s.add(sourceLocManager->getFile(initLoc))),
     currentMacro(NULL),
 
-    lang(L)
+    lang(L),
+    LO(LO)
 {
   // do *not* prime the lexer; I think it is a mistake above, but
   // am leaving it for now
@@ -139,7 +141,7 @@ int Lexer::svalTok(TokenType t)
 
 int Lexer::alternateKeyword_tok(TokenType t)
 {
-  if (lang.isCplusplus) {
+  if (LO.CPlusPlus) {
     return tok(t);
   }
   else {

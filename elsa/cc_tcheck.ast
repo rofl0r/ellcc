@@ -580,7 +580,7 @@ class Expression {
   public virtual bool extHasUnparenthesizedGT();
 
   // return what kind of special expression this is, if any
-  public SpecialExpr getSpecial(CCLang &lang) const;
+  public SpecialExpr getSpecial(LangOptions& LO, CCLang &lang) const;
 
   public void printExtras(std::ostream &os, int indent) const;
   custom debugPrint { printExtras(os, indent); }
@@ -752,8 +752,8 @@ class ArgExpression {
     { return expr->iconstEval(env); };
   public bool hasUnparenthesizedGT()
     { return Expression::hasUnparenthesizedGT(expr); };
-  public SpecialExpr getSpecial(CCLang &lang) const
-    { return expr->getSpecial(lang); };
+  public SpecialExpr getSpecial(LangOptions& LO, CCLang &lang) const
+    { return expr->getSpecial(LO, lang); };
 
   public ArgExpression *tcheck(Env &env, ArgumentInfo &);
   public void mid_tcheck(Env &env, ArgumentInfo &);

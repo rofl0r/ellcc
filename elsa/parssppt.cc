@@ -11,10 +11,10 @@
 using namespace std;
 
 // ---------------------- ParseTree --------------------
-ParseTreeAndTokens::ParseTreeAndTokens(CCLang &L, SemanticValue &top,
+ParseTreeAndTokens::ParseTreeAndTokens(LangOptions& LO, CCLang &L, SemanticValue &top,
                                        StringTable &extTable, char const *fname)
   : treeTop(top),
-    lexer(new Lexer(extTable, L, fname)),
+    lexer(new Lexer(extTable, LO, L, fname)),
     userAct(NULL),
     tables(NULL)
 {}

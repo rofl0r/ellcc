@@ -149,7 +149,7 @@ bool testAmongOverloadSet(MemberFnTest test, Variable *v, CompoundType *ct)
 void addCompilerSuppliedDecls(Env &env, SourceLoc loc, CompoundType *ct)
 {
   // we shouldn't even be here if the language isn't C++.
-  xassert(env.lang.isCplusplus);
+  xassert(env.LO.CPlusPlus);
 
   // the caller should already have arranged so that 'ct' is the
   // innermost scope
@@ -449,7 +449,7 @@ Env::Env(StringTable &s, LangOptions& LO, TargetInfo& TI,
   // 'int' directly here instead of size_t
   Type *t_size_t = getSimpleType(ST_INT);
 
-  if (lang.isCplusplus) {
+  if (LO.CPlusPlus) {
     // must predefine this to be able to define bad_alloc
     Scope *std_scope = createNamespace(SL_INIT, str("std"), false /*isAnonymous*/);
 
@@ -3496,7 +3496,7 @@ Variable *Env::createDeclaration(
         << " had type `" << prior->type->toString()
         << "', but this one uses `" << type->toString() << "'";
 
-      if (!lang.isCplusplus &&
+      if (!LO.CPlusPlus &&
           prior->type->isFunctionType() &&
           type->isFunctionType() &&
           compatibleParamCounts(prior->type->asFunctionType(),
@@ -3533,7 +3533,7 @@ Variable *Env::createDeclaration(
         msg = stringc << msg << " (allowed due to C func param compatibility)";
         warning(msg);
       }
-      else if (!lang.isCplusplus &&
+      else if (!LO.CPlusPlus &&
                compatibleEnumAndIntegerTypes(prior->type, type)) {
         msg = stringc << msg << " (allowed due to C enum/int compatibility)";
         warning(msg);
@@ -3636,7 +3636,7 @@ Variable *Env::createDeclaration(
     // can have the FF_NO_PARAM_INFO flag even if we are in C++;
     // therefore we have to check for that and avoid it or we can get
     // a mismatch on the number of parameters
-    if (lang.isCplusplus && type->isFunctionType()
+    if (LO.CPlusPlus && type->isFunctionType()
         && !(prior->type->asFunctionType()->flags & FF_NO_PARAM_INFO)
         && !(type->asFunctionType()->flags & FF_NO_PARAM_INFO)
         ) {
@@ -5825,7 +5825,7 @@ bool Env::elaborateImplicitConversionArgToParam(Type *paramType, Expression *&ar
   Type *src = arg->getType();
   ImplicitConversion ic =
     getImplicitConversion(env,
-                          arg->getSpecial(env.lang),
+                          arg->getSpecial(env.LO, env.lang),
                           src,
                           paramType,
                           false /*destIsReceiver*/);

@@ -17,6 +17,7 @@
 #include "cc_print.h"       // PrintEnv
 #include "strutil.h"        // decodeEscapes
 #include "cc_lang.h"        // CCLang
+#include "LangOptions.h"    // LangOptions
 #include "stdconv.h"        // test_getStandardConversion
 #include "implconv.h"       // test_getImplicitConversion
 #include "overload.h"       // resolveOverload
@@ -210,7 +211,7 @@ void TranslationUnit::tcheck(Env &env)
   // TranslationUnit was wrapped in an extern "C" {} block.  This way
   // our mangled names from C and C++ translation units will link
   // together correctly.
-  if (!env.lang.isCplusplus) {
+  if (!env.LO.CPlusPlus) {
     // since there is no 'extern "C"' syntax in C, this block
     // shouldn't ever get called on this TranslationUnit from both
     // here and from TF_linkage::itcheck()
@@ -1599,7 +1600,7 @@ Type *TS_name::itcheck(Env &env, DeclFlags dflags, LookupFlags lflags)
     eflags |= EF_DISAMBIGUATES;
   }
 
-  if (!env.lang.isCplusplus) {
+  if (!env.LO.CPlusPlus) {
     // in C, we never look at a class scope unless the name is
     // preceded by "." or "->", which it certainly is not in a TS_name
     // (in/c/dC0013.c)
@@ -1843,7 +1844,7 @@ CompoundType *checkClasskeyAndName(
     if (templateParams) {
       lflags |= LF_TEMPL_PRIMARY;
     }
-    if (!env.lang.isCplusplus) {
+    if (!env.LO.CPlusPlus) {
       // in C mode, it is ok to have a typedef and a struct with the
       // same name (in/c/dC0023.cc)
       lflags |= LF_QUERY_TAGS;
@@ -1866,7 +1867,7 @@ CompoundType *checkClasskeyAndName(
       Variable *tag = env.lookupPQ_one(name, lflags);
       if (tag) {
         if (tag->type->isCompoundType()) {
-          if (env.lang.isCplusplus && !tag->hasAnyFlags(DF_IMPLICIT | DF_SELFNAME)) {
+          if (env.LO.CPlusPlus && !tag->hasAnyFlags(DF_IMPLICIT | DF_SELFNAME)) {
             // found a user-introduced (not implicit) typedef, which
             // is illegal (3.4.4p2,3; 7.1.5.3p2)
             env.error(stringc << "`" << *name << "' is a typedef-name, "
@@ -2379,7 +2380,7 @@ void TS_classSpec::tcheckIntoCompound(
   }
 
   // default ctor, copy ctor, operator=; only do this for C++.
-  if (env.lang.isCplusplus) {
+  if (env.LO.CPlusPlus) {
     addCompilerSuppliedDecls(env, loc, ct);
   }
 
@@ -3801,7 +3802,7 @@ void Declarator::mid_tcheck(Env &env, Tcheck &dt)
 
   // want only declarators corresp. to local/global variables
   // (it is disturbing that I have to check for so many things...)
-  if (env.lang.isCplusplus &&
+  if (env.LO.CPlusPlus &&
       !dt.hasFlag(DF_EXTERN) &&                 // not an extern decl
       !dt.hasFlag(DF_TYPEDEF) &&                // not a typedef
       isVariableDC(dt.context)) {               // local/global variable
@@ -4139,7 +4140,7 @@ void D_func::tcheck(Env &env, Declarator::Tcheck &dt)
 
   // handle "fake" return type ST_CDTOR
   if (dt.type->isSimple(ST_CDTOR)) {
-    if (env.lang.isCplusplus) {
+    if (env.LO.CPlusPlus) {
       // get the name being declared
       D_name *dname;
       PQName *name;
@@ -4924,7 +4925,7 @@ void S_return::itcheck(Env &env)
     if (returnType->isVoid()) {
       expr->tcheck(env);
       if (!expr->expr->type->isVoid()) {
-          if (!env.lang.isCplusplus) {
+          if (!env.LO.CPlusPlus) {
               env.warning("returning a value in a 'void' function");
           } else {
               env.error("returning a value in a 'void' function");
@@ -5418,7 +5419,7 @@ Type *E_intLit::itcheck_x(Env &env, Expression *&replacement)
 
   // compute the sequence to use
   SimpleTypeId const *seq =
-    env.lang.isCplusplus? cppMap[hasU + 2*hasL][radix!=10] :
+    env.LO.CPlusPlus? cppMap[hasU + 2*hasL][radix!=10] :
                           c99Map[hasU + 2*hasL][radix!=10] ;
 
   // At this point, we pick the type that is the first type in 'seq'
@@ -5722,7 +5723,7 @@ Type *E_charLit::itcheck_x(Env &env, Expression *&replacement)
 
   SimpleTypeId id = ST_CHAR;
 
-  if (!env.lang.isCplusplus) {
+  if (!env.LO.CPlusPlus) {
     // nominal type of character literals in C is int, not char
     id = ST_INT;
   }
@@ -5762,7 +5763,7 @@ Type *E_charLit::itcheck_x(Env &env, Expression *&replacement)
   // will do for now.
   c = (unsigned int)(unsigned char)temp[0];
 
-  if (!env.lang.isCplusplus && id == ST_WCHAR_T) {
+  if (!env.LO.CPlusPlus && id == ST_WCHAR_T) {
     // in C, 'wchar_t' is not built-in, it is defined; so we
     // have to look it up
     Variable *v = env.globalScope()->lookupVariable(env.str("wchar_t"), env);
@@ -5852,7 +5853,7 @@ Type *E_variable::itcheck_var_set(Env &env, Expression *&replacement,
     // "." or "->" (which is not E_variable)
     //
     // this is done above for TS_name as well..
-    if (!env.lang.isCplusplus) {
+    if (!env.LO.CPlusPlus) {
       flags |= LF_SKIP_CLASSES;
     }
 
@@ -5991,7 +5992,7 @@ static bool allMethods(SObjList<Variable> &set)
 // (tcheckArgExprList handles the case where it can)
 void getArgumentInfo(Env &env, ArgumentInfo &ai, Expression *e)
 {
-  ai.special = e->getSpecial(env.lang);
+  ai.special = e->getSpecial(env.LO, env.lang);
   ai.type = e->type;
 }
 
@@ -6266,7 +6267,7 @@ void tcheckArgumentExpression(Env &env, Expression *&expr, ArgumentInfo &info)
     info.overloadSet = set;
   }
   else {
-    info.special = expr->getSpecial(env.lang);
+    info.special = expr->getSpecial(env.LO, env.lang);
     info.type = expr->type;
   }
 }
@@ -6325,7 +6326,7 @@ int compareArgsToParams(Env &env, FunctionType *ft, FakeList<ArgExpression> *arg
     //
     // We only do this in C mode because our experiments indicate that
     // GCC does not do the transparent union thing in C++ mode.
-    if (!env.lang.isCplusplus && param->type->isUnionType()) {
+    if (!env.LO.CPlusPlus && param->type->isUnionType()) {
       CompoundType *ct = param->type->asCompoundType();
       if (ct->isTransparentUnion) {
         // look for a member of the union that has the same type
@@ -7027,7 +7028,7 @@ static Type *internalTestingHooks
         args->nth(2)->constEval(env, expect)) {
       test_getStandardConversion
         (env,
-         args->nth(0)->getSpecial(env.lang),     // is it special?
+         args->nth(0)->getSpecial(env.LO, env.lang),     // is it special?
          args->nth(0)->getType(),                // source type
          args->nth(1)->getType(),                // dest type
          expect);                                // expected result
@@ -7050,7 +7051,7 @@ static Type *internalTestingHooks
         args->nth(5)->constEval(env, expectSCS2)) {
       test_getImplicitConversion
         (env,
-         args->nth(0)->getSpecial(env.lang),     // is it special?
+         args->nth(0)->getSpecial(env.LO, env.lang),     // is it special?
          args->nth(0)->getType(),                // source type
          args->nth(1)->getType(),                // dest type
          expectKind, expectSCS, expectUserLine, expectSCS2);   // expected result
@@ -8251,7 +8252,7 @@ Type *E_unary::itcheck_x(Env &env, Expression *&replacement)
     case UNY_NOT: {
       // 5.3.1 para 8
       Type *t_bool = env.getSimpleType(ST_BOOL);
-      if (!getImplicitConversion(env, expr->getSpecial(env.lang), t, t_bool)) {
+      if (!getImplicitConversion(env, expr->getSpecial(env.LO, env.lang), t, t_bool)) {
         env.error(t, stringc
           << "argument to unary ! must be convertible to bool; `"
           << t->toString() << "' is not");
@@ -8705,7 +8706,7 @@ Type *E_cast::itcheck_x(Env &env, Expression *&replacement)
 {
   // check the dest type
   if (hasTypeDefn(ctype)) {
-    if (env.lang.isCplusplus) {
+    if (env.LO.CPlusPlus) {
       // 5.4p3: not allowed
       return env.error(ctype->spec->loc, "cannot define types in a cast");
     }
@@ -8854,7 +8855,7 @@ Type *E_cond::itcheck_x(Env &env, Expression *&replacement)
   cond->tcheck(env, cond);
 
   // para 1: 'cond' converted to bool
-  if (!getImplicitConversion(env, cond->getSpecial(env.lang), cond->type,
+  if (!getImplicitConversion(env, cond->getSpecial(env.LO, env.lang), cond->type,
                              env.getSimpleType(ST_BOOL))) {
     env.error(cond->type, stringc
       << "cannot convert `" << cond->type->toString()
@@ -8885,7 +8886,7 @@ Type *E_cond::itcheck_x(Env &env, Expression *&replacement)
   Type *thRval = th->type->asRval();
   Type *elRval = el->type->asRval();
 
-  if (!env.lang.isCplusplus) {
+  if (!env.LO.CPlusPlus) {
     // ANSI C99 mostly requires that the types be the same, but gcc
     // doesn't seem to enforce anything, so I won't either; and if
     // they are different, it isn't clear what the type should be ...
@@ -8940,9 +8941,9 @@ Type *E_cond::itcheck_x(Env &env, Expression *&replacement)
        elRval->isCompoundType())) {
     // try to convert each to the other
     ImplicitConversion ic_thToEl;
-    Type *thConv = attemptCondConversion(env, ic_thToEl, thType, elType, th->getSpecial(env.lang));
+    Type *thConv = attemptCondConversion(env, ic_thToEl, thType, elType, th->getSpecial(env.LO, env.lang));
     ImplicitConversion ic_elToTh;
-    Type *elConv = attemptCondConversion(env, ic_elToTh, elType, thType, el->getSpecial(env.lang));
+    Type *elConv = attemptCondConversion(env, ic_elToTh, elType, thType, el->getSpecial(env.LO, env.lang));
 
     if (thConv && elConv) {
       return env.error("class-valued argument(s) to ?: are ambiguously inter-convertible");
@@ -8981,9 +8982,9 @@ Type *E_cond::itcheck_x(Env &env, Expression *&replacement)
       (thRval->isCompoundType() || elRval->isCompoundType())) {
     // collect argument info
     ArgumentInfoArray args(2);
-    args[0].special = th->getSpecial(env.lang);
+    args[0].special = th->getSpecial(env.LO, env.lang);
     args[0].type = thType;
-    args[1].special = el->getSpecial(env.lang);
+    args[1].special = el->getSpecial(env.LO, env.lang);
     args[1].type = elType;
 
     // prepare the overload resolver
@@ -9036,10 +9037,10 @@ Type *E_cond::itcheck_x(Env &env, Expression *&replacement)
     }
 
     // bullet 3
-    if (thRval->isPointerType() && el->getSpecial(env.lang) == SE_ZERO) {
+    if (thRval->isPointerType() && el->getSpecial(env.LO, env.lang) == SE_ZERO) {
       return thRval;
     }
-    if (elRval->isPointerType() && th->getSpecial(env.lang) == SE_ZERO) {
+    if (elRval->isPointerType() && th->getSpecial(env.LO, env.lang) == SE_ZERO) {
       return elRval;
     }
     if (thRval->isPointerType() && elRval->isPointerType()) {
@@ -9050,10 +9051,10 @@ Type *E_cond::itcheck_x(Env &env, Expression *&replacement)
     }
 
     // bullet 4
-    if (thRval->isPointerToMemberType() && el->getSpecial(env.lang) == SE_ZERO) {
+    if (thRval->isPointerToMemberType() && el->getSpecial(env.LO, env.lang) == SE_ZERO) {
       return thRval;
     }
-    if (elRval->isPointerToMemberType() && th->getSpecial(env.lang) == SE_ZERO) {
+    if (elRval->isPointerToMemberType() && th->getSpecial(env.LO, env.lang) == SE_ZERO) {
       return elRval;
     }
     if (thRval->isPointerToMemberType() && elRval->isPointerToMemberType()) {
@@ -9074,7 +9075,7 @@ incompatible:
 Type *E_sizeofType::itcheck_x(Env &env, Expression *&replacement)
 {
   if (hasTypeDefn(atype)) {
-    if (env.lang.isCplusplus) {
+    if (env.LO.CPlusPlus) {
       // 5.3.3p5: cannot define types in 'sizeof'; the reason Elsa
       // enforces this rule is that if we allow type definitions then
       // there can be bad interactions with disambiguation (in/k0035.cc)
@@ -9363,7 +9364,7 @@ Type *E_throw::itcheck_x(Env &env, Expression *&replacement)
 
 Type *E_keywordCast::itcheck_x(Env &env, Expression *&replacement)
 {
-  if (env.lang.isCplusplus && hasTypeDefn(ctype)) {
+  if (env.LO.CPlusPlus && hasTypeDefn(ctype)) {
     // 5.2.7p1: not allowed in dynamic_cast
     // 5.2.9p1: not allowed in static_cast
     // 5.2.10p1: not allowed in reinterpret_cast
@@ -9596,7 +9597,7 @@ bool Expression::extHasUnparenthesizedGT()
 
 // can 0 be cast to 't' and still be regarded as a null pointer
 // constant?
-bool allowableNullPtrCastDest(CCLang &lang, Type *t)
+bool allowableNullPtrCastDest(LangOptions &LO, Type *t)
 {
   // C++ (4.10, 5.19)
   if (t->isIntegerType() || t->isEnumType()) {
@@ -9604,7 +9605,7 @@ bool allowableNullPtrCastDest(CCLang &lang, Type *t)
   }
 
   // C99 6.3.2.3: in C, void* casts are also allowed
-  if (!lang.isCplusplus &&
+  if (!LO.CPlusPlus &&
       t->isPointerType() &&
       t->asPointerType()->atType->isVoid()) {
     return true;
@@ -9613,7 +9614,7 @@ bool allowableNullPtrCastDest(CCLang &lang, Type *t)
   return false;
 }
 
-SpecialExpr Expression::getSpecial(CCLang &lang) const
+SpecialExpr Expression::getSpecial(LangOptions& LO, CCLang &lang) const
 {
   ASTSWITCHC(Expression, this) {
     ASTCASEC(E_intLit, i)
@@ -9624,15 +9625,15 @@ SpecialExpr Expression::getSpecial(CCLang &lang) const
 
     // 9/23/04: oops, forgot this
     ASTNEXTC(E_grouping, e)
-      return e->expr->getSpecial(lang);
+      return e->expr->getSpecial(LO, lang);
 
     // 9/24/04: cppstd 4.10: null pointer constant is integral constant
     // expression (5.19) that evaluates to 0.
     // cppstd 5.19: "... only type conversions to integral or enumeration
     // types can be used ..."
     ASTNEXTC(E_cast, e)
-      if (allowableNullPtrCastDest(lang, e->ctype->getType()) &&
-          e->expr->getSpecial(lang) == SE_ZERO) {
+      if (allowableNullPtrCastDest(LO, e->ctype->getType()) &&
+          e->expr->getSpecial(LO, lang) == SE_ZERO) {
         return SE_ZERO;
       }
       return SE_NONE;
@@ -9723,7 +9724,7 @@ void initializeAggregate(Env &env, Type *type,
       arg->tcheck(env, arg);
 
       ImplicitConversion ic = getImplicitConversion(env,
-        arg->getSpecial(env.lang),
+        arg->getSpecial(env.LO, env.lang),
         arg->getType(),
         type,
         false /*destIsReceiver*/);
@@ -9794,7 +9795,7 @@ void IN_ctor::tcheck(Env &env, Type *destType)
     else {
       // first, do an implicit conversion
       ImplicitConversion ic = getImplicitConversion(env,
-        src->getSpecial(env.lang),
+        src->getSpecial(env.LO, env.lang),
         srcType,
         destType,
         false /*destIsReceiver*/);

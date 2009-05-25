@@ -108,7 +108,7 @@ UberModifiers ParseEnv
 
   // any duplicate flags?
   UberModifiers dups = (UberModifiers)(m1 & m2);
-  if (!lang.isCplusplus) {
+  if (!LO.CPlusPlus) {
     // C99 6.7.3p4: const/volatile/restrict can be redundantly combined
     dups = (UberModifiers)(dups & ~UM_CVFLAGS);
   }

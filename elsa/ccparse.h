@@ -12,6 +12,7 @@
 #include "cc_ast.h"        // C++ AST classes, needed for the action function signatures
 #include "srcloc.h"        // SourceLoc
 #include "cc_lang.h"       // CCLang, Bool3
+#include "LangOptions.h"   // LangOptions
 
 // parsing action state
 class ParseEnv {
@@ -23,15 +24,17 @@ public:
   int errors;                             // parse errors
   int warnings;                           // and warnings
   StringRef strRefAttr;                   // "attr"
+  LangOptions& LO;                        // Language options.
   CCLang &lang;                           // language options
 
 public:
-  ParseEnv(StringTable &table, CCLang &aLang)
+  ParseEnv(StringTable &table, LangOptions& LO, CCLang &aLang)
     : classNameStack(),
       str(table),
       errors(0),
       warnings(0),
       strRefAttr(table.add("attr")),
+      LO(LO),
       lang(aLang)
    {}
   ~ParseEnv() {}

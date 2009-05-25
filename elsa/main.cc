@@ -291,6 +291,7 @@ void doit(int argc, char **argv)
   CCLang lang;
   lang.GNU_Cplusplus();
   LangOptions LO;
+  LO.CPlusPlus = 1;
   TargetInfo *TI = TargetInfo::CreateTargetInfo(llvm::sys::getHostTriple());
 
   // ------------- process command-line arguments ---------
@@ -343,27 +344,33 @@ void doit(int argc, char **argv)
 
   if (tracingSys("ansi")) {
     lang.ANSI_Cplusplus();
+    LO.CPlusPlus = 1;
   }
 
   if (tracingSys("ansi_c")) {
     lang.ANSI_C89();
+    LO.CPlusPlus = 0;
   }
 
   if (tracingSys("ansi_c99")) {
     lang.ANSI_C99();
+    LO.CPlusPlus = 0;
   }
 
   if (tracingSys("c_lang")) {
     lang.GNU_C();
+    LO.CPlusPlus = 0;
   }
 
   if (tracingSys("gnu_c89")) {
     lang.ANSI_C89();
     lang.GNU_C_extensions();
+    LO.CPlusPlus = 0;
   }
 
   if (tracingSys("gnu_kandr_c_lang")) {
     lang.GNU_KandR_C();
+    LO.CPlusPlus = 0;
     #ifndef KANDR_EXTENSION
       xfatal("gnu_kandr_c_lang option requires the K&R module (./configure -kandr=yes)");
     #endif
@@ -371,6 +378,7 @@ void doit(int argc, char **argv)
 
   if (tracingSys("gnu2_kandr_c_lang")) {
     lang.GNU2_KandR_C();
+    LO.CPlusPlus = 0;
     #ifndef KANDR_EXTENSION
       xfatal("gnu2_kandr_c_lang option requires the K&R module (./configure -kandr=yes)");
     #endif
@@ -441,14 +449,14 @@ void doit(int argc, char **argv)
   else {
     SectionTimer timer(parseTime);
     SemanticValue treeTop;
-    ParseTreeAndTokens tree(lang, treeTop, strTable, inputFname);
+    ParseTreeAndTokens tree(LO, lang, treeTop, strTable, inputFname);
 
     // grab the lexer so we can check it for errors (damn this
     // 'tree' thing is stupid..)
     Lexer *lexer = dynamic_cast<Lexer*>(tree.lexer);
     xassert(lexer);
 
-    CCParse *parseContext = new CCParse(strTable, lang);
+    CCParse *parseContext = new CCParse(strTable, LO, lang);
     tree.userAct = parseContext;
 
     traceProgress(2) << "building parse tables from internal data\n";
@@ -692,7 +700,7 @@ void doit(int argc, char **argv)
 
     ElabVisitor vis(strTable, tfac, unit);
 
-    if (!lang.isCplusplus) {
+    if (!LO.CPlusPlus) {
       // do only the C elaboration activities
       vis.activities = EA_C_ACTIVITIES;
     }

@@ -89,7 +89,8 @@ void doit(int argc, char **argv)
   // parsing language options
   CCLang lang;
   lang.GNU_Cplusplus();
-
+  LangOptions LO;
+  LO.CPlusPlus = 1;
 
   // process command-line arguments
   if (argc != 4) {
@@ -108,14 +109,14 @@ void doit(int argc, char **argv)
   TranslationUnit *unit;
   {
     SemanticValue treeTop;
-    ParseTreeAndTokens tree(lang, treeTop, strTable, inputFname.c_str());
+    ParseTreeAndTokens tree(LO, lang, treeTop, strTable, inputFname.c_str());
 
     // grab the lexer so we can check it for errors (damn this
     // 'tree' thing is stupid..)
     Lexer *lexer = dynamic_cast<Lexer*>(tree.lexer);
     xassert(lexer);
 
-    CCParse *parseContext = new CCParse(strTable, lang);
+    CCParse *parseContext = new CCParse(strTable, LO, lang);
     tree.userAct = parseContext;
 
     ParseTables *tables = parseContext->makeTables();
@@ -141,7 +142,6 @@ void doit(int argc, char **argv)
     BasicTypeFactory tfac;
     ArrayStack<Variable*> madeUpVariables;
     ArrayStack<Variable*> builtinVars;
-    LangOptions LO;
     TargetInfo *TI = TargetInfo::CreateTargetInfo(llvm::sys::getHostTriple());
     Env env(strTable, LO, *TI, lang, tfac, madeUpVariables, builtinVars, unit);
     unit->tcheck(env);

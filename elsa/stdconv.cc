@@ -3,6 +3,7 @@
 
 #include "stdconv.h"      // this module
 #include "cc_type.h"      // Type
+#include "LangOptions.h"  // LangOptions
 #include "cc_env.h"       // Env
 #include "trace.h"        // tracingSys
 
@@ -572,14 +573,14 @@ StandardConversion getStandardConversion
         CVFlags destCV = getDestCVFlags(dest, srcCV);
         
         // rdp: Is this only for C++?
-        if (env.lang.isCplusplus && conv.stripPtrCtor(srcCV, destCV, isReference))
+        if (env.LO.CPlusPlus && conv.stripPtrCtor(srcCV, destCV, isReference))
           { return conv.ret; }
 
 	if (dest->isVoid()) {
 	    // any pointer can be converted to void* .
 	    return conv.ret | SC_PTR_CONV;
 	}
-	if (src->isVoid() && !env.lang.isCplusplus) {
+	if (src->isVoid() && !env.LO.CPlusPlus) {
 	    // void* to any pointer type in C.
 	    return conv.ret | SC_PTR_CONV;
 	}
@@ -769,7 +770,7 @@ StandardConversion getStandardConversion
       return conv.ret;
     }
     else {
-      if (   !env.lang.isCplusplus
+      if (   !env.LO.CPlusPlus
           && src->isIntegerType()
           && dest->isIntegerType()
           && src->reprSize() == dest->reprSize()) {

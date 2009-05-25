@@ -75,6 +75,7 @@ verbatim {
 #include "trace.h"        // trace
 #include "cc_ast.h"       // C++ abstract syntax
 #include "cc_lang.h"      // CCLang
+#include "LangOptions.h"  // LangOptions
 #include "ccparse.h"      // ParseEnv, the parser context class
 #include "exprloc.h"      // EXPR_LOCK macros
 
@@ -101,8 +102,8 @@ bool keepDeclaration(Declaration const *d);
 // directly from CCParse
 class CCParseShareable : public UserActions, public ParseEnv {
 public:
-  CCParseShareable(StringTable &table, CCLang &lang)
-    : ParseEnv(table, lang) {}
+  CCParseShareable(StringTable &table, LangOptions& LO, CCLang &lang)
+    : ParseEnv(table, LO, lang) {}
 
   // when this is the last element in a parameter list, the function
   // is a vararg function
@@ -174,8 +175,8 @@ public:
 
 context_class CCParse : public CCParseShareable {
 public:
-  CCParse(StringTable &table, CCLang &lang)
-    : CCParseShareable(table, lang) {}
+  CCParse(StringTable &table, LangOptions& LO, CCLang &lang)
+    : CCParseShareable(table, LO, lang) {}
 };
 
 
@@ -1961,7 +1962,7 @@ nonterm(Member*) MemberDeclaration {
   // destructive action on 'spec'
   // member fn decl, or data member
   -> spec:DeclSpecifier list:MemberDeclaratorList ";"
-       { if (lang.isCplusplus &&        // 10/20/04: e.g. in/c/t0017.c
+       { if (LO.CPlusPlus &&        // 10/20/04: e.g. in/c/t0017.c
              list->firstC()->decl->skipGroups()->isD_name() &&
              !(spec->dflags & (DF_TYPEDEF | DF_STATIC)) &&
              spec->spec->isTS_name()) {

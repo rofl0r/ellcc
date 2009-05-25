@@ -1919,7 +1919,7 @@ bool Env::insertTemplateArgBindings_oneParamList
         // (TODO: this isn't exactly what 14.3.2p5 says)
         string errorMsg;
         if (SC_ERROR == getStandardConversion(*this, &errorMsg,
-                                              binding->value->getSpecial(lang),
+                                              binding->value->getSpecial(LO, lang),
                                               binding->value->type,
                                               param->type,
                                               false /*destIsReceiver*/)) {

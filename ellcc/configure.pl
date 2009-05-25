@@ -204,8 +204,9 @@ if (! -f "$ELSA/cfg.h") {
 
 # LLVM
 if (! -d "$LLVM/include/llvm") {
-  print("Cannot find $LLVM/include/llvm, disabling LLVM generation.\n");
-  $LLVM="disabled";
+  die "I cannot find include/llvm in `$LLVM'.\n" .
+      "LLVM is required for elsa.\n" .
+      "If it's in a different location, use the -llvm=<dir> option.\n";
 }
 
 $PERL = get_PERL_variable();

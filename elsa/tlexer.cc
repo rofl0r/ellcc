@@ -3,6 +3,7 @@
 
 #include "lexer.h"         // Lexer
 #include "strtable.h"      // StringTable
+#include "LangOptions.h"   // LangOptions
 #include "cc_lang.h"       // CCLang
 #include "test.h"          // ARGS_MAIN
 #include "nonport.h"       // getMilliseconds
@@ -10,6 +11,8 @@
 
 #include <iostream>        // cout
 
+
+using namespace ellcc;
 
 void entry(int argc, char **argv)
 {
@@ -27,8 +30,10 @@ void entry(int argc, char **argv)
   lang.ANSI_Cplusplus();     // want 'true' and 'false' keywords
   SourceLocManager mgr;
 
+  LangOptions LO;
+  LO.CPlusPlus = 1;
   traceProgress() << "making Lexer\n";
-  Lexer lexer(table, lang, argv[1]);
+  Lexer lexer(table, LO, lang, argv[1]);
   Lexer::NextTokenFunc nextToken = lexer.getTokenFunc();
 
   bool print = tracingSys("tokens");
