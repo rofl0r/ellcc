@@ -72,8 +72,10 @@ void LangOptions::ANSI_C89()
 
   GNUInline = false;
   NoInline = false;
+  Microsoft = false;
 
   MainFileName = NULL;
+
   declareGNUBuiltins = false;
 
   tagsAreTypes = false;

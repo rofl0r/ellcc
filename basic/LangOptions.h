@@ -274,6 +274,8 @@ public:
   bool NoInline;          // Should __NO_INLINE__ be defined.
 
   bool AccessControl;     // Whether C++ access control should be enabled.
+
+  bool Microsoft;         // Microsoft bug compatability.
 private:
   /// The user provided name for the "main file", if non-null. This is
   /// useful in situations where the input file name does not match

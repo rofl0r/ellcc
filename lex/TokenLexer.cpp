@@ -220,12 +220,21 @@ void TokenLexer::ExpandFunctionArguments() {
       
       ResultToks.append(ArgToks, ArgToks+NumToks);
       
-      // If the next token was supposed to get leading whitespace, ensure it has
-      // it now.
-      if (CurTok.hasLeadingSpace() || NextTokGetsSpace) {
+      // If this token (the macro argument) was supposed to get leading
+      // whitespace, transfer this information onto the first token of the
+      // expansion.
+      //
+      // Do not do this if the paste operator occurs before the macro argument,
+      // as in "A ## MACROARG".  In valid code, the first token will get
+      // smooshed onto the preceding one anyway (forming AMACROARG).  In
+      // assembler-with-cpp mode, invalid pastes are allowed through: in this
+      // case, we do not want the extra whitespace to be added.  For example,
+      // we want ". ## foo" -> ".foo" not ". foo".
+      if ((CurTok.hasLeadingSpace() || NextTokGetsSpace) &&
+          !PasteBefore)
         ResultToks[ResultToks.size()-NumToks].setFlag(Token::LeadingSpace);
-        NextTokGetsSpace = false;
-      }
+      
+      NextTokGetsSpace = false;
       continue;
     }
     
@@ -342,9 +351,10 @@ void TokenLexer::Lex(Token &Tok) {
   }
   
   // Handle recursive expansion!
-  if (IdentifierInfo *II = Tok.getIdentifierInfo()) {
+  if (!Tok.isAnnotation() && Tok.getIdentifierInfo() != 0) {
     // Change the kind of this identifier to the appropriate token kind, e.g.
     // turning "for" into a keyword.
+    IdentifierInfo *II = Tok.getIdentifierInfo();
     Tok.setKind(II->getTokenID());
     
     // If this identifier was poisoned and from a paste, emit an error.  This
@@ -452,6 +462,14 @@ bool TokenLexer::PasteTokens(Token &Tok) {
       // error.  This occurs with "x ## +"  and other stuff.  Return with Tok
       // unmodified and with RHS as the next token to lex.
       if (isInvalid) {
+        // Test for the Microsoft extension of /##/ turning into // here on the
+        // error path.
+        if (PP.getLangOptions().Microsoft && Tok.is(tok::slash) && 
+            RHS.is(tok::slash)) {
+          HandleMicrosoftCommentPaste(Tok);
+          return true;
+        }
+
         // Do not emit the warning when preprocessing assembler code.
         if (!PP.getLangOptions().AsmPreprocessor)
           PP.Diag(PasteOpLoc, diag::err_pp_bad_paste)
@@ -497,3 +515,22 @@ unsigned TokenLexer::isNextTokenLParen() const {
     return 2;
   return Tokens[CurToken].is(tok::l_paren);
 }
+
+
+/// HandleMicrosoftCommentPaste - In microsoft compatibility mode, /##/ pastes
+/// together to form a comment that comments out everything in the current
+/// macro, other active macros, and anything left on the current physical
+/// source line of the instantiated buffer.  Handle this by returning the
+/// first token on the next line.
+void TokenLexer::HandleMicrosoftCommentPaste(Token &Tok) {
+  // We 'comment out' the rest of this macro by just ignoring the rest of the
+  // tokens that have not been lexed yet, if any.
+  
+  // Since this must be a macro, mark the macro enabled now that it is no longer
+  // being expanded.
+  assert(Macro && "Token streams can't paste comments");
+  Macro->EnableMacro();
+  
+  PP.HandleMicrosoftCommentPaste(Tok);
+}
+
