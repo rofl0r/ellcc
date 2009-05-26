@@ -61,7 +61,7 @@ public:      // funcs
     TargetInfo& TI;
     /** LLVM information about the target.
      */
-    llvm::TargetData targetData;
+    llvm::TargetData TD;
     /** The target aware folder.
      */
     llvm::TargetFolder targetFolder;

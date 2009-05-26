@@ -39,8 +39,8 @@ CC2LLVMEnv::CC2LLVMEnv(StringTable &s, sm::string name, const TranslationUnit& i
                        TargetInfo& TI)
   : str(s),
     TI(TI),
-    targetData(""),
-    targetFolder(targetData),
+    TD(""),
+    targetFolder(TD),
     input(input),
     mod(new llvm::Module(name.c_str())),
     function(NULL),
@@ -57,7 +57,7 @@ CC2LLVMEnv::CC2LLVMEnv(StringTable &s, sm::string name, const TranslationUnit& i
 { 
     std::string str;
     TI.getTargetDescription(str);
-    targetData.init(str);
+    TD.init(str);
     mod->setDataLayout(str);
     mod->setTargetTriple(TI.getTargetTriple());
 }
@@ -213,7 +213,7 @@ const llvm::Type* CC2LLVMEnv::makeTypeSpecifier(SourceLoc loc, Type *t)
         if (type == NULL || type == llvm::Type::VoidTy) {
             /** If type is NULL, we have a va_list pointer (i.e. *...").
 	     *  treat this as a void*.
-	     * LLVM doesn't understand void*. Make it into iBITS_PER_BYTE*.
+	     * LLVM doesn't understand void*. Make it into BITS_PER_BYTE*.
 	     */
             type = llvm::IntegerType::get(BITS_PER_BYTE);
 	}
@@ -349,7 +349,7 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLoc loc, AtomicType 
         SFOREACH_OBJLIST(Variable, ct->dataMembers, iter) {
             Variable const *v = iter.data();
             VDEBUG("member", v->loc, std::cerr << v->toString());
-            members.add(v, llvm::ConstantInt::get(targetData.getIntPtrType(), i++));
+            members.add(v, llvm::ConstantInt::get(TD.getIntPtrType(), i++));
 	    fields.push_back(makeTypeSpecifier(v->loc, v->type));
         }
 
@@ -1358,8 +1358,8 @@ llvm::Value *E_stringLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
     // Get the address of the string as an open array.
     env.checkCurrentBlock();
     std::vector<llvm::Value*> indices;
-    indices.push_back(llvm::Constant::getNullValue(env.targetData.getIntPtrType()));
-    indices.push_back(llvm::Constant::getNullValue(env.targetData.getIntPtrType()));
+    indices.push_back(llvm::Constant::getNullValue(env.TD.getIntPtrType()));
+    indices.push_back(llvm::Constant::getNullValue(env.TD.getIntPtrType()));
     VDEBUG("GEP3", loc, );
     result = env.builder.CreateGEP(result, indices.begin(), indices.end(), "");
     VDEBUG("GEP3", loc, result->print(std::cerr));
@@ -1622,8 +1622,8 @@ llvm::Value *E_sizeof::cc2llvm(CC2LLVMEnv &env, int& deref) const
     const llvm::Type* ptype = llvm::PointerType::get(etype, 0);       // RICH: Address space.
     llvm::Value* value = env.builder.CreateGEP(
         llvm::Constant::getNullValue(ptype),
-        llvm::ConstantInt::get(env.targetData.getIntPtrType(), 1));
-    value = env.builder.CreatePtrToInt(value, env.targetData.getIntPtrType());
+        llvm::ConstantInt::get(env.TD.getIntPtrType(), 1));
+    value = env.builder.CreatePtrToInt(value, env.TD.getIntPtrType());
     const llvm::Type* rtype = env.makeTypeSpecifier(loc, type);
     value = env.builder.CreateIntCast(value, rtype, false);
     deref = 0;
@@ -1696,10 +1696,10 @@ llvm::Value *E_effect::cc2llvm(CC2LLVMEnv &env, int& deref) const
 	llvm::Value* one;
 	if (op == EFF_POSTDEC || op == EFF_PREDEC) {
 	    // Get a negative one.
-            one = llvm::ConstantInt::get(llvm::APInt(env.targetData.getTypeSizeInBits(temp->getType()), -1));
+            one = llvm::ConstantInt::get(llvm::APInt(env.TD.getTypeSizeInBits(temp->getType()), -1));
 	} else {
 	    // Get a positive one.
-            one = llvm::ConstantInt::get(llvm::APInt(env.targetData.getTypeSizeInBits(temp->getType()), 1));
+            one = llvm::ConstantInt::get(llvm::APInt(env.TD.getTypeSizeInBits(temp->getType()), 1));
 	}
 	index.push_back(one);
         VDEBUG("GEP1", loc, temp->print(std::cerr); );
@@ -1708,7 +1708,7 @@ llvm::Value *E_effect::cc2llvm(CC2LLVMEnv &env, int& deref) const
         VDEBUG("Store7 destination", loc, value->print(std::cerr));
         env.builder.CreateStore(temp, value, false);	// RICH: Volatile
     } else if (temp->getType()->isInteger()) {
-        llvm::ConstantInt* one = llvm::ConstantInt::get(llvm::APInt(env.targetData.getTypeSizeInBits(temp->getType()), 1));
+        llvm::ConstantInt* one = llvm::ConstantInt::get(llvm::APInt(env.TD.getTypeSizeInBits(temp->getType()), 1));
 	if (op == EFF_POSTDEC || op == EFF_PREDEC) {
 	    temp = env.builder.CreateSub(temp, one);
 	} else {
@@ -1801,7 +1801,7 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
     if (leftType->isArrayType()) {
         // An array becomes a pointer to the first element.
         std::vector<llvm::Value*> indices;
-        indices.push_back(llvm::Constant::getNullValue(targetData.getIntPtrType()));
+        indices.push_back(llvm::Constant::getNullValue(TD.getIntPtrType()));
         leftValue = builder.CreateGEP(leftValue, indices.begin(), indices.end(), "");
         VDEBUG("makeCast array type", loc, std::cerr << "left "; leftValue->print(std::cerr));
         llvmType = leftValue->getType();
@@ -1818,7 +1818,7 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
         if (rightValue) {
             // An array becomes a pointer to the first element.
             std::vector<llvm::Value*> indices;
-            indices.push_back(llvm::Constant::getNullValue(targetData.getIntPtrType()));
+            indices.push_back(llvm::Constant::getNullValue(TD.getIntPtrType()));
             *rightValue = builder.CreateGEP(*rightValue, indices.begin(), indices.end(), "");
             VDEBUG("makeCast array type", loc, std::cerr << "right "; (*rightValue)->print(std::cerr));
             llvmType = (*rightValue)->getType();
@@ -2012,7 +2012,7 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
 	        // Convert Float to pointer.
 	        checkCurrentBlock();
 		// Float to unsigned int.
-                const llvm::Type* itype = llvm::IntegerType::get(targetData.getPointerSize());
+                const llvm::Type* itype = llvm::IntegerType::get(TD.getPointerSize());
 	        *source->value = builder.CreateFPToUI(*source->value, itype);
 	        // Unsigned int to pointer.
 	        *source->value = builder.CreateIntToPtr(*source->value, type);
@@ -2034,7 +2034,7 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
 	        // Convert pointer to float.
 	        checkCurrentBlock();
 		// Pointer to unsigned int.
-                const llvm::Type* itype = llvm::IntegerType::get(targetData.getPointerSize());
+                const llvm::Type* itype = llvm::IntegerType::get(TD.getPointerSize());
 	        *source->value = builder.CreatePtrToInt(*source->value, itype);
 	        // Unsigned int to float.
 	        *source->value = builder.CreateUIToFP(*source->value, type);
@@ -2487,23 +2487,23 @@ llvm::Value* CC2LLVMEnv::binop(SourceLoc loc, BinaryOp op, Expression* e1, llvm:
             }
 
             // Make sure the pointer and index sizes match.
-            uint64_t lsize = targetData.getTypeSizeInBits(left->getType());
-            uint64_t rsize = targetData.getTypeSizeInBits(right->getType());
+            uint64_t lsize = TD.getTypeSizeInBits(left->getType());
+            uint64_t rsize = TD.getTypeSizeInBits(right->getType());
             if (lsize != rsize) {
                 if (lsize > rsize) {
                     // The pointer is bigger, check for signed vs. unsigned.
                     if (   right->getType()->getPrimitiveSizeInBits() == 1
                         || te2->type->isBool()
                         || ::isExplicitlyUnsigned(te2->type->asReferenceTypeC()->getAtType()->asSimpleTypeC()->type)) {
-                        right = builder.CreateZExt(right, targetData.getIntPtrType());
+                        right = builder.CreateZExt(right, TD.getIntPtrType());
                     } else {
                         VDEBUG("SExt2 source", loc, right->print(std::cerr));
-                        VDEBUG("SExt2 destination ", loc, targetData.getIntPtrType()->print(std::cerr));
-                        right = builder.CreateSExt(right, targetData.getIntPtrType());
+                        VDEBUG("SExt2 destination ", loc, TD.getIntPtrType()->print(std::cerr));
+                        right = builder.CreateSExt(right, TD.getIntPtrType());
                     }
                 } else {
                     // The integer is bigger.
-                    right = builder.CreateTrunc(right, targetData.getIntPtrType());
+                    right = builder.CreateTrunc(right, TD.getIntPtrType());
                 }
             }
 
@@ -2548,10 +2548,10 @@ llvm::Value* CC2LLVMEnv::binop(SourceLoc loc, BinaryOp op, Expression* e1, llvm:
             const llvm::Type* ptype = llvm::PointerType::get(left->getType()->getContainedType(0), 0);       // RICH: Address space.
             llvm::Value* size = builder.CreateGEP(
                 llvm::Constant::getNullValue(ptype),
-                llvm::ConstantInt::get(targetData.getIntPtrType(), 1));
-            size = builder.CreatePtrToInt(size, targetData.getIntPtrType());
-	    left = builder.CreatePtrToInt(left, targetData.getIntPtrType());
-	    right = builder.CreatePtrToInt(right, targetData.getIntPtrType());
+                llvm::ConstantInt::get(TD.getIntPtrType(), 1));
+            size = builder.CreatePtrToInt(size, TD.getIntPtrType());
+	    left = builder.CreatePtrToInt(left, TD.getIntPtrType());
+	    right = builder.CreatePtrToInt(right, TD.getIntPtrType());
             result = builder.CreateSub(left, right);
             result = builder.CreateUDiv(result, size);
 	    break;
@@ -2801,8 +2801,8 @@ llvm::Value *E_deref::cc2llvm(CC2LLVMEnv &env, int& deref) const
      */
     if (source->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID) {
         std::vector<llvm::Value*> indices;
-        indices.push_back(llvm::Constant::getNullValue(env.targetData.getIntPtrType()));
-        indices.push_back(llvm::Constant::getNullValue(env.targetData.getIntPtrType()));
+        indices.push_back(llvm::Constant::getNullValue(env.TD.getIntPtrType()));
+        indices.push_back(llvm::Constant::getNullValue(env.TD.getIntPtrType()));
         source = env.builder.CreateGEP(source, indices.begin(), indices.end(), "");
         VDEBUG("E_deref GEP", loc, source->print(std::cerr));
     }
@@ -2903,8 +2903,8 @@ llvm::Value *E_sizeofType::cc2llvm(CC2LLVMEnv &env, int& deref) const
     const llvm::Type* ptype = llvm::PointerType::get(etype, 0);       // RICH: Address space.
     llvm::Value* value = env.builder.CreateGEP(
         llvm::Constant::getNullValue(ptype),
-        llvm::ConstantInt::get(env.targetData.getIntPtrType(), 1));
-    value = env.builder.CreatePtrToInt(value, env.targetData.getIntPtrType());
+        llvm::ConstantInt::get(env.TD.getIntPtrType(), 1));
+    value = env.builder.CreatePtrToInt(value, env.TD.getIntPtrType());
     deref = 0;
     return value;
 }
