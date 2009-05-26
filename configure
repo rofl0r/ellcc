@@ -6,7 +6,8 @@
 # as desired
 
 (cd smbase && ./configure "$@") || exit 1
-(cd pw && ./configure "$@") || exit 1
+(cd basic && ./configure "$@") || exit 1
+(cd lex && ./configure "$@") || exit 1
 (cd ast && ./configure "$@") || exit 1
 (cd elkhound && ./configure "$@") || exit 1
 (cd elsa && ./configure "$@") || exit 1

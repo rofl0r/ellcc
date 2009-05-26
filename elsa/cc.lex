@@ -6,7 +6,9 @@
 %{
 
 #include "lexer.h"       // Lexer class
-#include "cc_lang.h"     // CCLang (actually gnu.lex needs CCLang, but can't add the #include by itself due to the way lexer extensions work ...)
+#include "LangOptions.h" // LangOptions (actually gnu.lex needs LangOptions,
+                         // but can't add the #include by itself due to the way
+                         // lexer extensions work ...)
 
 // this works around a problem with cygwin & fileno
 #define YY_NEVER_INTERACTIVE 1
@@ -312,7 +314,7 @@ PPCHAR        ([^\\\n]|{BACKSL}{NOTNL})
 
   /* string literal missing final quote */
 "L"?{QUOTE}({STRCHAR}|{ESCAPE})*{EOL}   {
-  if (lang.allowNewlinesInStringLits) {
+  if (LO.allowNewlinesInStringLits) {
     warning("string literal contains (unescaped) newline character; "
             "this is allowed for gcc-2 bug compatibility only "
             "(maybe the final `\"' is missing?)");

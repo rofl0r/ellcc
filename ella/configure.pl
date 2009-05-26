@@ -110,6 +110,9 @@ foreach $optionAndValue (@ARGV) {
     push @CCFLAGS, "-DUSE_SERIAL_NUMBERS=1";
   }
 
+  elsif ($arg eq "llvm") {
+    # Ignore
+  }
   else {
     die "unknown option: $arg\n";
   }

@@ -79,6 +79,9 @@ foreach $optionAndValue (@ARGV) {
     push @CCFLAGS, "-Werror";
   }
 
+  elsif ($arg eq "llvm") {
+    # Ignore
+  }
   else {
     die "unknown option: $arg\n";
   }

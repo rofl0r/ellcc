@@ -38,9 +38,9 @@
   return TOK_INT_LITERAL;
 }
 
-  /* behavior of these depends on CCLang settings */
+  /* behavior of these depends on LangOptions settings */
 "__FUNCTION__"|"__PRETTY_FUNCTION__" {
-  if (lang.gccFuncBehavior == CCLang::GFB_string) {
+  if (LO.gccFuncBehavior == LangOptions::GFB_string) {
     // yield with special token codes
     return tok(yytext[2]=='F'? TOK___FUNCTION__ : TOK___PRETTY_FUNCTION__);
   }
@@ -122,7 +122,7 @@
 
   /* C99 stuff */
 "restrict" {
-  if (lang.restrictIsAKeyword) {
+  if (LO.restrictIsAKeyword) {
     return tok(TOK_RESTRICT);
   }
   else {

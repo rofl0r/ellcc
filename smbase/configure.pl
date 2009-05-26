@@ -81,6 +81,9 @@ foreach $optionAndValue (@ARGV) {
     push @CCFLAGS, "-wd444,1418,810,271,981,279,383,327,1419";
   }
   
+  elsif ($arg eq "llvm") {
+    # Ignore
+  }
   else {
     print STDERR ("unknown option: $arg\n");
     exit(2);

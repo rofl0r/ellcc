@@ -181,6 +181,7 @@ void InitHeaderSearch::AddDefaultSystemIncludePaths(const LangOptions &Lang) {
 
   // RICH:
   AddPath("/usr/lib/gcc/i386-redhat-linux/4.3.2/include", System, false, false, false);
+  AddPath("/usr/lib/gcc/i386-redhat-linux/4.1.2/include", System, false, false, false);
   AddPath("/usr/local/include", System, false, false, false);
 
   AddPath("/usr/include", System, false, false, false);

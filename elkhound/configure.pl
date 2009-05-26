@@ -191,6 +191,9 @@ foreach $optionAndValue (@ARGV) {
     }
   }
 
+  elsif ($arg eq "llvm") {
+    # Ignore
+  }
   else {
     die "unknown option: $arg\n";
   }
