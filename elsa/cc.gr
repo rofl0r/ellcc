@@ -74,7 +74,6 @@ verbatim {
 #include "cc_tokens.h"    // lexer's token ids for classify()
 #include "trace.h"        // trace
 #include "cc_ast.h"       // C++ abstract syntax
-#include "cc_lang.h"      // CCLang
 #include "LangOptions.h"  // LangOptions
 #include "ccparse.h"      // ParseEnv, the parser context class
 #include "exprloc.h"      // EXPR_LOCK macros
@@ -102,8 +101,8 @@ bool keepDeclaration(Declaration const *d);
 // directly from CCParse
 class CCParseShareable : public UserActions, public ParseEnv {
 public:
-  CCParseShareable(StringTable &table, LangOptions& LO, CCLang &lang)
-    : ParseEnv(table, LO, lang) {}
+  CCParseShareable(StringTable &table, LangOptions& LO)
+    : ParseEnv(table, LO) {}
 
   // when this is the last element in a parameter list, the function
   // is a vararg function
@@ -147,7 +146,7 @@ public:
       TRACE("cancel", loc << ": function returning a function");
       return NULL;
     }
-    if (lang.allowImplicitInt
+    if (LO.allowImplicitInt
         && !filterOutImplIntFirstParam(loc, base, params)) {
       return NULL;
     }
@@ -175,8 +174,8 @@ public:
 
 context_class CCParse : public CCParseShareable {
 public:
-  CCParse(StringTable &table, LangOptions& LO, CCLang &lang)
-    : CCParseShareable(table, LO, lang) {}
+  CCParse(StringTable &table, LangOptions& LO)
+    : CCParseShareable(table, LO) {}
 };
 
 
@@ -2021,7 +2020,7 @@ nonterm(Member*) MemberDeclaration {
   // operator function
   -> d:CDtorProtoDecl
        {
-         if (lang.allowImplicitInt) {
+         if (LO.allowImplicitInt) {
            // in/c/k0004.c: ambiguity between constructor and implicit-int
            TRACE("cancel", loc << ": constructor decl in implicit-int language");
            return NULL;

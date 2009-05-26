@@ -495,7 +495,7 @@ StandardConversion getStandardConversion
       // converted 'char const []' to 'char const *', so this just
       // adds the qualification conversion
       //
-      // TODO: it might be nice to have a CCLang option to disable
+      // TODO: it might be nice to have a LangOptions option to disable
       // this, so that we could get soundness at the expense of
       // compatibility with legacy code
       conv.ret |= SC_QUAL_CONV;

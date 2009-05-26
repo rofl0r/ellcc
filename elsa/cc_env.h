@@ -17,13 +17,12 @@
 #include "cc_err.h"       // ErrorList
 #include "array.h"        // ArrayStack, ArrayStackEmbed
 #include "builtinops.h"   // CandidateSet
-#include "cc_lang.h"      // Bool3
+#include "LangOptions.h"  // bool3
 #include "ptrmap.h"       // PtrMap
 #include "mflags.h"       // MatchFlags
 #include "TargetInfo.h"   // Target information.
 
 class StringTable;        // strtable.h
-class CCLang;             // cc_lang.h
 class TypeListIter;       // typelistiter.h
 class SavedScopePair;     // fwd in this file
 class MType;              // mtype.h
@@ -141,9 +140,6 @@ public:      // data
 
   // Target information.
   TargetInfo& TI;
-
-  // language options in effect
-  CCLang &lang;
 
   // interface for making types
   TypeFactory &tfac;
@@ -331,7 +327,7 @@ private:     // funcs
   void mergeDefaultArguments(SourceLoc loc, Variable *prior, FunctionType *type);
 
 public:      // funcs
-  Env(StringTable& str, LangOptions& LO, TargetInfo& TI, CCLang& lang, TypeFactory& tfac,
+  Env(StringTable& str, LangOptions& LO, TargetInfo& TI, TypeFactory& tfac,
       ArrayStack<Variable*>& madeUpVariables0, ArrayStack<Variable*>& builtinVars0,
       TranslationUnit* unit0);
 
@@ -530,7 +526,7 @@ public:      // funcs
   Type *warning(SourceLoc L, rostring msg);
   Type *warning(rostring msg);
   Type *unimp(rostring msg);
-  void diagnose3(Bool3 b, SourceLoc L, rostring msg, ErrorFlags eflags = EF_NONE);
+  void diagnose3(bool3 b, SourceLoc L, rostring msg, ErrorFlags eflags = EF_NONE);
   void diagnose2(bool isError, SourceLoc L, rostring msg, ErrorFlags eflags = EF_NONE);
 
   // this is used when something is nominally an error, but I think

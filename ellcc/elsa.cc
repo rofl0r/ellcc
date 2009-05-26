@@ -14,7 +14,6 @@
 #include "cc_env.h"       // Env
 #include "cc_ast.h"       // C++ AST (r)
 #include "cc_ast_aux.h"   // class LoweredASTVisitor
-#include "cc_lang.h"      // CCLang
 #include "parsetables.h"  // ParseTables
 #include "cc_print.h"     // PrintEnv
 #include "cc.gr.gen.h"    // CCParse
@@ -44,10 +43,10 @@ using namespace ellcc;
  */
 class EllccEnv : public Env {
 public:
-    EllccEnv(LangOptions& LO, TargetInfo& TI, StringTable &str, CCLang &lang, TypeFactory &tfac,
+    EllccEnv(LangOptions& LO, TargetInfo& TI, StringTable &str, TypeFactory &tfac,
              ArrayStack<Variable*> &madeUpVariables0, ArrayStack<Variable*> &builtinVars0,
              TranslationUnit *unit0)
-             : Env(str, LO, TI, lang, tfac, madeUpVariables0, builtinVars0, unit0) { }
+             : Env(str, LO, TI, tfac, madeUpVariables0, builtinVars0, unit0) { }
 
     bool validateAsmConstraint(const char* name, TargetInfo::ConstraintInfo& info)
         { return TI.validateAsmConstraint(name, info); }
@@ -268,35 +267,40 @@ int Elsa::doit(Preprocessor& PP, LangOptions& LO, TargetInfo& TI,
     
 
     // Parsing language options.
-    CCLang lang;
-    lang.GNU_Cplusplus();
+    LO.GNU_Cplusplus0x();
     switch (language) {
     case GNUCXX:         // GNU C++
         break;
     case ANSICXX:        // ANSI C++
-        lang.ANSI_Cplusplus();
+        LO.ANSI_Cplusplus0x();
         break;
     case ANSIC89:        // ANSI C89
-        lang.ANSI_C89();
+        LO.ANSI_C89();
         break;
     case ANSIC99:        // ANSI C99
-        lang.ANSI_C99();
+        LO.ANSI_C99();
         break;
     case GNUC:           // GNU C
-        lang.GNU_C();
+        LO.GNU_C99();
         break;
     case GNUC89:         // GNU C89
-        lang.ANSI_C89();
-        lang.GNU_C_extensions();
+        LO.ANSI_C89();
+        LO.GNU_C_extensions();
         break;
     case KANDRC:         // K&R C
-         lang.GNU_KandR_C();
+         LO.KandR_C();
 #ifndef KANDR_EXTENSION
         xfatal("gnu_kandr_c_lang option requires the K&R module (./configure -kandr=yes)");
 #endif
         break;
-    case GNUKANDRC:      // GNU K&R C
-         lang.GNU2_KandR_C();
+    case GNU2KANDRC:      // GNU K&R C
+         LO.GNU2_KandR_C();
+#ifndef KANDR_EXTENSION
+        xfatal("gnu2_kandr_c_lang option requires the K&R module (./configure -kandr=yes)");
+#endif
+        break;
+    case GNU3KANDRC:      // GNU K&R C
+         LO.GNU3_KandR_C();
 #ifndef KANDR_EXTENSION
         xfatal("gnu2_kandr_c_lang option requires the K&R module (./configure -kandr=yes)");
 #endif
@@ -304,17 +308,10 @@ int Elsa::doit(Preprocessor& PP, LangOptions& LO, TargetInfo& TI,
   }
 
   if (tracingSys("msvcBugs")) {
-    lang.MSVC_bug_compatibility();
+    LO.MSVC_bug_compatibility();
   }
   if (!tracingSys("nowarnings")) {
-    lang.enableAllWarnings();
-  }
-
-  // dump out the lang settings if the user wants them
-  if (tracingSys("printLang")) {
-    std::cout << "language settings:\n";
-    std::cout << lang.toString();
-    std::cout << std::endl;
+    LO.enableAllWarnings();
   }
 
   // --------------- parse --------------
@@ -338,14 +335,14 @@ int Elsa::doit(Preprocessor& PP, LangOptions& LO, TargetInfo& TI,
     }
 
     SemanticValue treeTop;
-    ParseTreeAndTokens tree(LO, lang, treeTop, strTable, inputFname);
+    ParseTreeAndTokens tree(LO, treeTop, strTable, inputFname);
 
     // grab the lexer so we can check it for errors (damn this
     // 'tree' thing is stupid..)
     Lexer *lexer = dynamic_cast<Lexer*>(tree.lexer);
     xassert(lexer);
 
-    CCParse *parseContext = new CCParse(strTable, LO, lang);
+    CCParse *parseContext = new CCParse(strTable, LO);
     tree.userAct = parseContext;
 
     traceProgress(2) << "building parse tables from internal data\n";
@@ -422,7 +419,7 @@ int Elsa::doit(Preprocessor& PP, LangOptions& LO, TargetInfo& TI,
         typeCheckingTimer.startTimer();
     }
 
-    EllccEnv env(LO, TI, strTable, lang, tfac, madeUpVariables, builtinVars, unit);
+    EllccEnv env(LO, TI, strTable, tfac, madeUpVariables, builtinVars, unit);
     try {
       env.tcheckTranslationUnit(unit);
     }
@@ -512,7 +509,7 @@ int Elsa::doit(Preprocessor& PP, LangOptions& LO, TargetInfo& TI,
       // this is useful to measure the cost of disambiguation, since
       // now the tree is entirely free of ambiguities
       traceProgress() << "beginning second tcheck...\n";
-      EllccEnv env2(LO, TI, strTable, lang, tfac, madeUpVariables, builtinVars, unit);
+      EllccEnv env2(LO, TI, strTable, tfac, madeUpVariables, builtinVars, unit);
       unit->tcheck(env2);
       traceProgress() << "end of second tcheck\n";
     }
@@ -737,7 +734,7 @@ int Elsa::doit(Preprocessor& PP, LangOptions& LO, TargetInfo& TI,
       ArrayStack<Variable*> madeUpVariables2;
       ArrayStack<Variable*> builtinVars2;
       // dsw: I hope you intend that I should use the cloned TranslationUnit
-      EllccEnv env3(LO, TI, strTable, lang, tfac, madeUpVariables2, builtinVars2, u2);
+      EllccEnv env3(LO, TI, strTable, tfac, madeUpVariables2, builtinVars2, u2);
       u2->tcheck(env3);
 
       if (tracingSys("cloneTypedAST")) {

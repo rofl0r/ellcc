@@ -7,7 +7,6 @@
 #include "cc_print.h"      // CTypePrinter
 #include "trace.h"         // tracingSys
 #include "strtable.h"      // StringTable
-#include "cc_lang.h"       // CCLang
 #include "strutil.h"       // pluraln
 #include "overload.h"      // selectBestCandidate_templCompoundType
 #include "typelistiter.h"  // TypeListIter
@@ -15,6 +14,7 @@
 #include "mtype.h"         // MType
 #include "pair.h"          // pair
 #include "exprloc.h"
+#include "LangOptions.h"   // LangOptions
 
 using namespace sm;
 
@@ -1919,7 +1919,7 @@ bool Env::insertTemplateArgBindings_oneParamList
         // (TODO: this isn't exactly what 14.3.2p5 says)
         string errorMsg;
         if (SC_ERROR == getStandardConversion(*this, &errorMsg,
-                                              binding->value->getSpecial(LO, lang),
+                                              binding->value->getSpecial(LO),
                                               binding->value->type,
                                               param->type,
                                               false /*destIsReceiver*/)) {
@@ -2910,7 +2910,7 @@ Variable *Env::instantiateClassTemplateDecl
 
   // also make the self-name, which *does* go into the scope
   // (testcase: t0167.cc)
-  if (lang.compoundSelfName) {
+  if (LO.compoundSelfName) {
     Variable *self = makeVariable(loc, instCT->name, instType,
                                   DF_TYPEDEF | DF_SELFNAME);
     instCT->addUniqueVariable(self);

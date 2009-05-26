@@ -11,7 +11,7 @@ Function *makeKandRdefn(SourceLoc loc, Declaration *rds, IDeclarator *id,
 void fixUpKandRFunctionDef
   (Declaration *rds, IDeclarator *id, S_compound *ds);
 D_func *new_D_func_kandr
-  (CCLang &lang,
+  (LangOptions &LO,
    SourceLoc loc,
    IDeclarator *base,
    FakeList<ASTTypeId> *params,

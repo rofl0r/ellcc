@@ -156,7 +156,6 @@ endif
 
 # ------------------------ tlexer -------------------
 LEXER_OBJS := \
-  cc_lang.o \
   baselexer.o \
   lexer.o \
   lexer.yy.o \
@@ -466,7 +465,7 @@ gendoc/dependencies.dot:
 	  -Xcc_env.h=1 -Xcc_type.h=1 -Xcc_flags.h=1 -Xcc_ast.h=1 -Xvariable.h=1 \
           -Xcc_print.h -Xsprint.h -Xxml_type_reader.h -Xxml_type_writer.h -Xxml_ast_reader.h \
           -Xxml_do_read.h \
-	  -Xgeneric_aux.h -Xcc_ast_aux.h -Xcc_lang.h=1 \
+	  -Xgeneric_aux.h -Xcc_ast_aux.h \
 	  main.cc cc_tcheck.cc >$@
 
 gendoc/3.4.5.dot: ccparse in/std/3.4.5.cc

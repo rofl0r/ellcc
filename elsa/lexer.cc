@@ -2,7 +2,6 @@
 // code for lexer.h
 
 #include "lexer.h"       // this module
-#include "cc_lang.h"     // CCLang
 #include "LangOptions.h" // LangOptions
 
 #include <ctype.h>       // isdigit
@@ -74,13 +73,12 @@ TokenFlag tokenFlags(TokenType type)
 
 
 // ------------------------ Lexer -------------------
-Lexer::Lexer(StringTable &s, LangOptions& LO, CCLang &L, char const *fname)
+Lexer::Lexer(StringTable &s, LangOptions& LO, char const *fname)
   : BaseLexer(s, fname),
 
     prevIsNonsep(false),
     prevHashLineFile(s.add(fname)),
     currentMacro(NULL),
-    lang(L),
     LO(LO)
 {
   // prime this lexer with the first token
@@ -88,15 +86,13 @@ Lexer::Lexer(StringTable &s, LangOptions& LO, CCLang &L, char const *fname)
 }
 
 
-Lexer::Lexer(StringTable &s, LangOptions& LO, CCLang &L, SourceLoc initLoc,
+Lexer::Lexer(StringTable &s, LangOptions& LO, SourceLoc initLoc,
              char const *buf, int len)
   : BaseLexer(s, initLoc, buf, len),
 
     prevIsNonsep(false),
     prevHashLineFile(s.add(sourceLocManager->getFile(initLoc))),
     currentMacro(NULL),
-
-    lang(L),
     LO(LO)
 {
   // do *not* prime the lexer; I think it is a mistake above, but
@@ -263,7 +259,7 @@ STATICDEF void Lexer::c_tokenFunc(LexerInterface *lex)
 
 Lexer::NextTokenFunc Lexer::getTokenFunc() const
 {
-  if (lang.recognizeCppKeywords) {
+  if (LO.recognizeCppKeywords) {
     // expected case, yield the normal tokenizer
     return &Lexer::tokenFunc;
   }

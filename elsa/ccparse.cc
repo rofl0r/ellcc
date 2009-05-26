@@ -113,9 +113,9 @@ UberModifiers ParseEnv
     dups = (UberModifiers)(dups & ~UM_CVFLAGS);
   }
   if (dups) {
-    if (dups == UM_INT && lang.allowRepeatedTypeSpecifierKeywords) {
+    if (dups == UM_INT && LO.allowRepeatedTypeSpecifierKeywords) {
       // in/c/dC0024.c
-      diagnose3(lang.allowRepeatedTypeSpecifierKeywords, loc, 
+      diagnose3(LO.allowRepeatedTypeSpecifierKeywords, loc, 
                 "repeated 'int' type specifier (gcc bug allows it)");
     }
     else {
@@ -148,12 +148,12 @@ void ParseEnv::warning(SourceLoc loc, char const *msg)
 }
 
 
-void ParseEnv::diagnose3(Bool3 b, SourceLoc loc, char const *msg)
+void ParseEnv::diagnose3(bool3 b, SourceLoc loc, char const *msg)
 {
   if (!b) {
     error(loc, msg);
   }
-  else if (b == B3_WARN) {
+  else if (b == b3_WARN) {
     warning(loc, msg);
   }
 }

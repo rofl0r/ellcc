@@ -7,9 +7,6 @@
 #include "baselexer.h"      // BaseLexer
 #include "cc_tokens.h"      // TokenType
 
-// fwd decls
-class CCLang;               // cc_lang.h
-
 namespace ellcc {
 class LangOptions;          // LangOptions.h
 }
@@ -30,7 +27,6 @@ private:    // data
 
   MacroUndoEntry *currentMacro;
 public:     // data
-  CCLang &lang;                    // language options
   LangOptions& LO;                 // Language Options.
 
 protected:  // funcs
@@ -84,8 +80,8 @@ protected:  // funcs
 
 public:     // funcs
   // make a lexer to scan the given file
-  Lexer(StringTable &strtable, LangOptions& LO, CCLang &lang, char const *fname);
-  Lexer(StringTable &strtable, LangOptions& LO, CCLang &lang, SourceLoc initLoc,
+  Lexer(StringTable &strtable, LangOptions& LO, char const *fname);
+  Lexer(StringTable &strtable, LangOptions& LO, SourceLoc initLoc,
         char const *buf, int len);
   ~Lexer();
 

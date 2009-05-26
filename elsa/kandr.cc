@@ -3,7 +3,7 @@
 
 #include "kandr.h"          // this module
 #include "generic_aux.h"    // genericSetNext
-#include "cc_lang.h"        // CCLang
+#include "LangOptions.h"    // LangOptions
 
 
 // implemented in implint.cc
@@ -131,7 +131,7 @@ void fixUpKandRFunctionDef
 }
 
 D_func *new_D_func_kandr
-  (CCLang &lang,
+  (LangOptions &LO,
    SourceLoc loc,
    IDeclarator *base,
    FakeList<ASTTypeId> *params,
@@ -139,8 +139,7 @@ D_func *new_D_func_kandr
    ExceptionSpec /*nullable*/ *exnSpec,
    FakeList<PQ_name> *kAndR_params)
 {
-  if (lang.allowImplicitInt
-      && !filterOutImplIntFirstParam(loc, base, params)) {
+  if (LO.allowImplicitInt && !filterOutImplIntFirstParam(loc, base, params)) {
     return NULL;
   }
   return new D_func(loc, base, params, cv, exnSpec, kAndR_params);

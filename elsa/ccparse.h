@@ -11,7 +11,6 @@
 #include "cc_flags.h"      // UberModifiers, SimpleTypeId
 #include "cc_ast.h"        // C++ AST classes, needed for the action function signatures
 #include "srcloc.h"        // SourceLoc
-#include "cc_lang.h"       // CCLang, Bool3
 #include "LangOptions.h"   // LangOptions
 
 // parsing action state
@@ -25,17 +24,15 @@ public:
   int warnings;                           // and warnings
   StringRef strRefAttr;                   // "attr"
   LangOptions& LO;                        // Language options.
-  CCLang &lang;                           // language options
 
 public:
-  ParseEnv(StringTable &table, LangOptions& LO, CCLang &aLang)
+  ParseEnv(StringTable &table, LangOptions& LO)
     : classNameStack(),
       str(table),
       errors(0),
       warnings(0),
       strRefAttr(table.add("attr")),
-      LO(LO),
-      lang(aLang)
+      LO(LO)
    {}
   ~ParseEnv() {}
 
@@ -59,7 +56,7 @@ public:
   void warning(SourceLoc loc, char const *msg);
   
   // depending on 'b', accept, accept with warning, or reject
-  void diagnose3(Bool3 b, SourceLoc loc, char const *msg);
+  void diagnose3(bool3 b, SourceLoc loc, char const *msg);
 };
 
 

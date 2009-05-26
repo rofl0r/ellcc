@@ -50,7 +50,8 @@ public:
         GNUC,           // GNU C
         GNUC89,         // GNU C89
         KANDRC,         // K&R C
-        GNUKANDRC,      // GNU K&R C
+        GNU2KANDRC,     // GNU2 K&R C
+        GNU3KANDRC,     // GNU3 K&R C
     };
     /** Parse a source file.
      */

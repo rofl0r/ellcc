@@ -13,7 +13,6 @@
 #include "cc_env.h"       // Env
 #include "cc_ast.h"       // C++ AST (r)
 #include "cc_ast_aux.h"   // class LoweredASTVisitor
-#include "cc_lang.h"      // CCLang
 #include "parsetables.h"  // ParseTables
 #include "cc_print.h"     // PrintEnv
 #include "cc.gr.gen.h"    // CCParse
@@ -288,10 +287,8 @@ void doit(int argc, char **argv)
   StringTable strTable;
 
   // parsing language options
-  CCLang lang;
-  lang.GNU_Cplusplus();
   LangOptions LO;
-  LO.CPlusPlus = 1;
+  LO.GNU_Cplusplus0x();
   TargetInfo *TI = TargetInfo::CreateTargetInfo(llvm::sys::getHostTriple());
 
   // ------------- process command-line arguments ---------
@@ -343,42 +340,35 @@ void doit(int argc, char **argv)
   }
 
   if (tracingSys("ansi")) {
-    lang.ANSI_Cplusplus();
-    LO.CPlusPlus = 1;
+    LO.ANSI_Cplusplus0x();
   }
 
   if (tracingSys("ansi_c")) {
-    lang.ANSI_C89();
-    LO.CPlusPlus = 0;
+    LO.ANSI_C89();
   }
 
   if (tracingSys("ansi_c99")) {
-    lang.ANSI_C99();
-    LO.CPlusPlus = 0;
+    LO.ANSI_C99();
   }
 
   if (tracingSys("c_lang")) {
-    lang.GNU_C();
-    LO.CPlusPlus = 0;
+    LO.GNU_C99();
   }
 
   if (tracingSys("gnu_c89")) {
-    lang.ANSI_C89();
-    lang.GNU_C_extensions();
-    LO.CPlusPlus = 0;
+    LO.ANSI_C89();
+    LO.GNU_C_extensions();
   }
 
   if (tracingSys("gnu_kandr_c_lang")) {
-    lang.GNU_KandR_C();
-    LO.CPlusPlus = 0;
+    LO.GNU3_KandR_C();
     #ifndef KANDR_EXTENSION
-      xfatal("gnu_kandr_c_lang option requires the K&R module (./configure -kandr=yes)");
+      xfatal("gnu3_kandr_c_lang option requires the K&R module (./configure -kandr=yes)");
     #endif
   }
 
   if (tracingSys("gnu2_kandr_c_lang")) {
-    lang.GNU2_KandR_C();
-    LO.CPlusPlus = 0;
+    LO.GNU2_KandR_C();
     #ifndef KANDR_EXTENSION
       xfatal("gnu2_kandr_c_lang option requires the K&R module (./configure -kandr=yes)");
     #endif
@@ -389,11 +379,11 @@ void doit(int argc, char **argv)
   }
 
   if (tracingSys("msvcBugs")) {
-    lang.MSVC_bug_compatibility();
+    LO.MSVC_bug_compatibility();
   }
 
   if (!tracingSys("nowarnings")) {
-    lang.enableAllWarnings();
+    LO.enableAllWarnings();
   }
 
   if (tracingSys("templateDebug")) {
@@ -417,12 +407,6 @@ void doit(int argc, char **argv)
     exit(0);
   }
 
-  // dump out the lang settings if the user wants them
-  if (tracingSys("printLang")) {
-    cout << "language settings:\n";
-    cout << lang.toString();
-    cout << endl;
-  }
   if (tracingSys("printTracers")) {
     cout << "tracing flags:\n\t";
     printTracers(std::cout, "\n\t");
@@ -449,14 +433,14 @@ void doit(int argc, char **argv)
   else {
     SectionTimer timer(parseTime);
     SemanticValue treeTop;
-    ParseTreeAndTokens tree(LO, lang, treeTop, strTable, inputFname);
+    ParseTreeAndTokens tree(LO, treeTop, strTable, inputFname);
 
     // grab the lexer so we can check it for errors (damn this
     // 'tree' thing is stupid..)
     Lexer *lexer = dynamic_cast<Lexer*>(tree.lexer);
     xassert(lexer);
 
-    CCParse *parseContext = new CCParse(strTable, LO, lang);
+    CCParse *parseContext = new CCParse(strTable, LO);
     tree.userAct = parseContext;
 
     traceProgress(2) << "building parse tables from internal data\n";
@@ -527,7 +511,7 @@ void doit(int argc, char **argv)
     cout << "no-typecheck" << endl;
   } else {
     SectionTimer timer(tcheckTime);
-    Env env(strTable, LO, *TI, lang, tfac, madeUpVariables, builtinVars, unit);
+    Env env(strTable, LO, *TI, tfac, madeUpVariables, builtinVars, unit);
     try {
       env.tcheckTranslationUnit(unit);
     }
@@ -613,7 +597,7 @@ void doit(int argc, char **argv)
       // this is useful to measure the cost of disambiguation, since
       // now the tree is entirely free of ambiguities
       traceProgress() << "beginning second tcheck...\n";
-      Env env2(strTable, LO, *TI, lang, tfac, madeUpVariables, builtinVars, unit);
+      Env env2(strTable, LO, *TI, tfac, madeUpVariables, builtinVars, unit);
       unit->tcheck(env2);
       traceProgress() << "end of second tcheck\n";
     }
@@ -820,7 +804,7 @@ void doit(int argc, char **argv)
       ArrayStack<Variable*> madeUpVariables2;
       ArrayStack<Variable*> builtinVars2;
       // dsw: I hope you intend that I should use the cloned TranslationUnit
-      Env env3(strTable, LO, *TI, lang, tfac, madeUpVariables2, builtinVars2, u2);
+      Env env3(strTable, LO, *TI, tfac, madeUpVariables2, builtinVars2, u2);
       u2->tcheck(env3);
 
       if (tracingSys("cloneTypedAST")) {
