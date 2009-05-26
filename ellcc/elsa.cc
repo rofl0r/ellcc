@@ -338,14 +338,14 @@ int Elsa::doit(Preprocessor& PP, LangOptions& LO, TargetInfo& TI,
     }
 
     SemanticValue treeTop;
-    ParseTreeAndTokens tree(lang, treeTop, strTable, inputFname);
+    ParseTreeAndTokens tree(LO, lang, treeTop, strTable, inputFname);
 
     // grab the lexer so we can check it for errors (damn this
     // 'tree' thing is stupid..)
     Lexer *lexer = dynamic_cast<Lexer*>(tree.lexer);
     xassert(lexer);
 
-    CCParse *parseContext = new CCParse(strTable, lang);
+    CCParse *parseContext = new CCParse(strTable, LO, lang);
     tree.userAct = parseContext;
 
     traceProgress(2) << "building parse tables from internal data\n";
@@ -607,7 +607,7 @@ int Elsa::doit(Preprocessor& PP, LangOptions& LO, TargetInfo& TI,
 
     ElabVisitor vis(strTable, tfac, unit);
 
-    if (!lang.isCplusplus) {
+    if (!LO.CPlusPlus) {
       // do only the C elaboration activities
       vis.activities = EA_C_ACTIVITIES;
     }

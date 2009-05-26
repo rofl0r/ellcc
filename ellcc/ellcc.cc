@@ -822,9 +822,11 @@ static void InitializeLangOptions(LangOptions &Options, FileTypes FT)
 
 enum LangStds {
   lang_unspecified,  
-  lang_c89, lang_c94, lang_c99,
+  lang_KandR_C,
+  lang_c89, lang_c99,
   lang_gnu_START,
-  lang_gnu89 = lang_gnu_START, lang_gnu99,
+  lang_gnu2_KandR_C = lang_gnu_START,
+  lang_gnu3_KandR_C, lang_gnu99,
   lang_cxx98, lang_gnucxx98,
   lang_cxx0x, lang_gnucxx0x
 };
@@ -832,17 +834,18 @@ enum LangStds {
 static llvm::cl::opt<LangStds>
 LangStd("std", llvm::cl::desc("Language standard to compile for"),
         llvm::cl::init(lang_unspecified),
-  llvm::cl::values(clEnumValN(lang_c89,      "c89",            "ISO C 1990"),
+  llvm::cl::values(clEnumValN(lang_KandR_C,  "K&R",            "Kerninghan & Ritchie C"),
+                   clEnumValN(lang_c89,      "c89",            "ISO C 1990"),
                    clEnumValN(lang_c89,      "c90",            "ISO C 1990"),
                    clEnumValN(lang_c89,      "iso9899:1990",   "ISO C 1990"),
-                   clEnumValN(lang_c94,      "iso9899:199409",
-                              "ISO C 1990 with amendment 1"),
                    clEnumValN(lang_c99,      "c99",            "ISO C 1999"),
                    clEnumValN(lang_c99,      "c9x",            "ISO C 1999"),
                    clEnumValN(lang_c99,      "iso9899:1999",   "ISO C 1999"),
                    clEnumValN(lang_c99,      "iso9899:199x",   "ISO C 1999"),
-                   clEnumValN(lang_gnu89,    "gnu89",
-                              "ISO C 1990 with GNU extensions"),
+                   clEnumValN(lang_gnu2_KandR_C,  "K&R",
+                              "Kerninghan & Ritchie C with gcc2 extensions"),
+                   clEnumValN(lang_gnu3_KandR_C,  "K&R",
+                              "Kerninghan & Ritchie C with gcc3 extensions"),
                    clEnumValN(lang_gnu99,    "gnu99",
                               "ISO C 1999 with GNU extensions (default for C)"),
                    clEnumValN(lang_gnu99,    "gnu9x",
@@ -942,11 +945,11 @@ PICLevel("pic-level", llvm::cl::desc("Value for __PIC__"));
 static llvm::cl::opt<bool>
 StaticDefine("static-define", llvm::cl::desc("Should __STATIC__ be defined"));
 
-static void InitializeLanguageStandard(LangOptions &Options, FileTypes FT,
+static void InitializeLanguageStandard(LangOptions &LO, FileTypes FT,
                                        TargetInfo& TI,
                                        const llvm::StringMap<bool> &Features) {
   // Allow the target to set the default the langauge options as it sees fit.
-  TI.getDefaultLangOptions(Options);
+  TI.getDefaultLangOptions(LO);
 
   // Pass the map of target features to the target for validation and
   // processing.
@@ -971,109 +974,97 @@ static void InitializeLanguageStandard(LangOptions &Options, FileTypes FT,
   
   switch (LangStd) {
   default: assert(0 && "Unknown language standard!");
-
-  // Fall through from newer standards to older ones.  This isn't really right.
-  // FIXME: Enable specifically the right features based on the language stds.
   case lang_gnucxx0x:
+    LO.GNU_Cplusplus0x();
+    break;
   case lang_cxx0x:
-    Options.CPlusPlus0x = 1;
-    // FALL THROUGH
+    LO.ANSI_Cplusplus0x();
+    break;
   case lang_gnucxx98:
+    LO.GNU_Cplusplus98();
+    break;
   case lang_cxx98:
-    Options.CPlusPlus = 1;
-    Options.CXXOperatorNames = !NoOperatorNames;
-    // FALL THROUGH.
+    LO.ANSI_Cplusplus98();
+    break;
   case lang_gnu99:
+    LO.GNU_C99();
+    break;
   case lang_c99:
-    Options.C99 = 1;
-    Options.HexFloats = 1;
-    // FALL THROUGH.
-  case lang_gnu89:
-    Options.BCPLComment = 1;  // Only for C99/C++.
-    // FALL THROUGH.
-  case lang_c94:
-    Options.Digraphs = 1;     // C94, C99, C++.
-    // FALL THROUGH.
+    LO.ANSI_C99();
+    break;
   case lang_c89:
+    LO.ANSI_C89();
+    break;
+  case lang_gnu3_KandR_C:
+    LO.GNU3_KandR_C();
+    break;
+  case lang_gnu2_KandR_C:
+    LO.GNU3_KandR_C();
+    break;
+  case lang_KandR_C:
+    LO.KandR_C();
     break;
   }
-
-  // GNUMode - Set if we're in gnu99, gnu89, gnucxx98, etc.
-  Options.GNUMode = LangStd >= lang_gnu_START;
   
-  if (Options.CPlusPlus) {
-    Options.C99 = 0;
-    Options.HexFloats = Options.GNUMode;
+  if (LO.CPlusPlus) {
+    LO.CXXOperatorNames = !NoOperatorNames;
   }
-  
-  if (LangStd == lang_c89 || LangStd == lang_c94 || LangStd == lang_gnu89)
-    Options.ImplicitInt = 1;
-  else
-    Options.ImplicitInt = 0;
   
   // Mimicing gcc's behavior, trigraphs are only enabled if -trigraphs
   // is specified, or -std is set to a conforming mode.
-  Options.Trigraphs = !Options.GNUMode;
   if (Trigraphs.getPosition())
-    Options.Trigraphs = Trigraphs;  // Command line option wins if specified.
+    LO.Trigraphs = Trigraphs;  // Command line option wins if specified.
 
-  // If in a conformant language mode (e.g. -std=c99) Blocks defaults to off
-  // even if they are normally on for the target.  In GNU modes (e.g.
-  // -std=gnu99) the default for blocks depends on the target settings.
-  if (!Options.GNUMode)
-    Options.Blocks = 0;
-  
   // Default to not accepting '$' in identifiers when preprocessing assembler,
   // but do accept when preprocessing C.  FIXME: these defaults are right for
   // darwin, are they right everywhere?
-  Options.DollarIdents = FT != SX;
   if (DollarsInIdents.getPosition())  // Explicit setting overrides default.
-    Options.DollarIdents = DollarsInIdents;
+    LO.DollarIdents = DollarsInIdents;
   
-  Options.WritableStrings = WritableStrings;
+  LO.WritableStrings = WritableStrings;
   if (NoLaxVectorConversions.getPosition())
-      Options.LaxVectorConversions = 0;
-  Options.Exceptions = Exceptions;
+      LO.LaxVectorConversions = false;
+  LO.Exceptions = Exceptions;
   if (EnableBlocks.getPosition())
-    Options.Blocks = EnableBlocks;
+    LO.Blocks = EnableBlocks;
 
   if (!AllowBuiltins)
-    Options.NoBuiltin = 1;
+    LO.NoBuiltin = true;
   if (Freestanding)
-    Options.Freestanding = Options.NoBuiltin = 1;
+    LO.Freestanding = LO.NoBuiltin = true;
   
   if (EnableHeinousExtensions)
-    Options.HeinousExtensions = 1;
+    LO.HeinousExtensions = true;
 
   if (AccessControl)
-    Options.AccessControl = 1;
+    LO.AccessControl = true;
   
-  Options.MathErrno = MathErrno;
+  LO.MathErrno = MathErrno;
 
-  Options.InstantiationDepth = TemplateDepth;
+  LO.InstantiationDepth = TemplateDepth;
 
   if (EmitAllDecls)
-    Options.EmitAllDecls = 1;
+    LO.EmitAllDecls = true;
 
   // The __OPTIMIZE_SIZE__ define is tied to -Oz, which we don't
   // support.
-  Options.OptimizeSize = 0;
+  LO.OptimizeSize = false;
   
   // -Os implies -O2
   if (OptSize || OptLevel)
-    Options.Optimize = 1;
+    LO.Optimize = true;
 
   assert(PICLevel <= 2 && "Invalid value for -pic-level");
-  Options.PICLevel = PICLevel;
+  LO.PICLevel = PICLevel;
 
-  Options.GNUInline = !Options.C99;
+  LO.GNUInline = !LO.C99;
   // FIXME: This is affected by other options (-fno-inline). 
-  Options.NoInline = !OptSize && !OptLevel;
+  LO.NoInline = !OptSize && !OptLevel;
 
-  Options.Static = StaticDefine;
+  LO.Static = StaticDefine;
 
   if (MainFileName.getPosition())
-    Options.setMainFileName(MainFileName.c_str());
+    LO.setMainFileName(MainFileName.c_str());
 }
 
 //===----------------------------------------------------------------------===//

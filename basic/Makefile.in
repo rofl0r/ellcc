@@ -78,7 +78,7 @@ TOCLEAN += *.o *.d
 BASIC_OBJS := \
   ConvertUTF.o FileManager.o SourceLocation.o TargetInfo.o TokenKinds.o \
   IdentifierTable.o SourceManager.o Targets.o \
-  Diagnostic.o
+  Diagnostic.o LangOptions.o
 
 -include $(BASIC_OBJS:.o=.d) main.d
 

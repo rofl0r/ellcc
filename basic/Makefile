@@ -11,7 +11,7 @@ THIS := libbasic.a
 all: $(THIS)
 
 SMBASE   := ../smbase
-LLVM := /home/ctnetap1/penning/local/Linux
+LLVM := /usr/local
 LLVMCCFLAGS := $(shell llvm-config --cxxflags)
 
 # external tools
@@ -81,7 +81,7 @@ TOCLEAN += *.o *.d
 BASIC_OBJS := \
   ConvertUTF.o FileManager.o SourceLocation.o TargetInfo.o TokenKinds.o \
   IdentifierTable.o SourceManager.o Targets.o \
-  Diagnostic.o
+  Diagnostic.o LangOptions.o
 
 -include $(BASIC_OBJS:.o=.d) main.d
 
