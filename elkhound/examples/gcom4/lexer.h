@@ -29,8 +29,8 @@ public:
     { return &Lexer::nextToken; }
 
   // debugging assistance functions
-  string tokenDesc() const;
-  string tokenKindDesc(int kind) const;
+  sm::string tokenDesc() const;
+  sm::string tokenKindDesc(int kind) const;
 };
 
 

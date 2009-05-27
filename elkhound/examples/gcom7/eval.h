@@ -9,7 +9,7 @@
 
 class Binding {
 public:
-  string name;
+  sm::string name;
   int value;
   
 public:

@@ -98,7 +98,7 @@ while (defined($line = <STDIN>)) {
             "\n");
     }
     else {
-      #print("  fun merge(t1, t2)          [ cout << \"merged $nonterm\\n\"; return t1; ]\n\n");
+      #print("  fun merge(t1, t2)          [ std::cout << \"merged $nonterm\\n\"; return t1; ]\n\n");
     }
 
     next;

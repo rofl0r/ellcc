@@ -15,9 +15,9 @@ context_class GComContext : public UserActions {
 public:
   // given a lexer-allocated string, make a 'string', and
   // deallocate the lexer-created copy
-  static inline string copyAndFree(char *x)
+  static inline sm::string copyAndFree(char *x)
   {
-    string ret(x);
+    sm::string ret(x);
     delete x;
     return ret;
   }

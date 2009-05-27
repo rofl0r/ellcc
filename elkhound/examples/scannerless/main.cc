@@ -9,7 +9,7 @@
 #include "ptreeact.h"  // ParseTreeLexer, ParseTreeActions
 
 #include <stdio.h>     // getchar
-#include <iostream.h>  // cout
+#include <iostream>    // cout
 #include <string.h>    // strcmp
 
 
@@ -22,8 +22,8 @@ public:
     { return &Lexer::nextToken; }
 
   // debugging assistance functions
-  string tokenDesc() const;
-  string tokenKindDesc(int kind) const;
+  sm::string tokenDesc() const;
+  sm::string tokenKindDesc(int kind) const;
 };
 
 void Lexer::nextToken(LexerInterface *lex)
@@ -38,14 +38,14 @@ void Lexer::nextToken(LexerInterface *lex)
   }
 }
 
-string Lexer::tokenDesc() const
+sm::string Lexer::tokenDesc() const
 {
   return tokenKindDesc(type);
 }
 
-string Lexer::tokenKindDesc(int kind) const
+sm::string Lexer::tokenKindDesc(int kind) const
 {
-  string k = quoted(stringc << (char)kind);
+  sm::string k = quoted(stringc << (char)kind);
   return stringf("%s (%d)", k.c_str(), kind);
 }
 
@@ -79,7 +79,7 @@ int main(int argc, char *argv[])
 
     // print the tree
     PTreeNode *ptn = (PTreeNode*)result;
-    ptn->printTree(cout, PTreeNode::PF_EXPAND);
+    ptn->printTree(std::cout, PTreeNode::PF_EXPAND);
   }
   
   else {

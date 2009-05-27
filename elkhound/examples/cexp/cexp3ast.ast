@@ -2,7 +2,7 @@
 // simple expression AST
 
 verbatim {
-  inline string toString(Exp const *e) {
+  inline sm::string toString(Exp const *e) {
     return stringc << (void*)e;
   }
 }

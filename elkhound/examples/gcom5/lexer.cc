@@ -132,7 +132,7 @@ void Lexer::fail(char const *msg)
 }
 
 
-string Lexer::tokenDesc() const
+sm::string Lexer::tokenDesc() const
 {
   switch (type) {
     // for two kinds of tokens, interpret their semantic value
@@ -145,7 +145,7 @@ string Lexer::tokenDesc() const
 }
 
 
-string Lexer::tokenKindDesc(int kind) const
+sm::string Lexer::tokenKindDesc(int kind) const
 {
   switch (kind) {
     case TOK_EOF:          return "EOF";
@@ -196,7 +196,7 @@ int main()
     lexer.getTokenFunc()(&lexer);    // first call yields a function pointer
     
     // print the returned token
-    string desc = lexer.tokenDesc();
+    sm::string desc = lexer.tokenDesc();
     printf("%s\n", desc.c_str());
 
     if (lexer.type == TOK_EOF) {
