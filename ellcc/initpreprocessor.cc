@@ -208,7 +208,7 @@ static void DefineTypeSize(const char *MacroName, unsigned TypeWidth,
   DefineBuiltinMacro(Buf, MacroBuf);
 }
 
-static void DefineType(const char *MacroName, TargetInfo::IntType Ty,
+static void DefineType(const char *MacroName, TargetInfo::SimpleType Ty,
                        std::vector<char> &Buf) {
   char MacroBuf[60];
   sprintf(MacroBuf, "%s=%s", MacroName, TargetInfo::getTypeName(Ty));

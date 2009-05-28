@@ -139,20 +139,42 @@ void TargetInfo::getTargetDescription(std::string& res)
 #undef DATAP
 #undef DATAN
 
-/// getTypeName - Return the user string for the specified integer type enum.
+// Work around bitwise-OR in initializers.
+#define S(x) ((SimpleTypeFlags)(x))
+// Info about each simple type.
+const TargetInfo::SimpleTypeInfo TargetInfo::simpleTypes[SimpleTypeCount] =
+{
+  { "<no type>",                S(STF_NONE)                            },
+  { "bool",                     S(STF_INTEGER)                         },
+  { "char",                     S(STF_INTEGER)                         },
+  { "signed char",              S(STF_INTEGER)                         },
+  { "unsigned char",            S(STF_INTEGER|STF_UNSIGNED)            },
+  { "short",                    S(STF_INTEGER)                         },
+  { "unsigned short",           S(STF_INTEGER|STF_UNSIGNED)            },
+  { "wchar_t",                  S(STF_INTEGER)                         },
+  { "int",                      S(STF_INTEGER)                         },
+  { "unsigned int",             S(STF_INTEGER|STF_PROM|STF_UNSIGNED)   },
+  { "long",                     S(STF_INTEGER|STF_PROM)                },
+  { "unsigned long",            S(STF_INTEGER|STF_PROM|STF_UNSIGNED)   },
+  { "long long",                S(STF_INTEGER|STF_PROM)                },
+  { "unsigned long long",       S(STF_INTEGER|STF_PROM|STF_UNSIGNED)   },
+  { "float",                    S(STF_FLOAT)                           },
+  { "double",                   S(STF_FLOAT|STF_PROM)                  },
+  { "long double",              S(STF_FLOAT)                           },
+  { "float _Complex",           S(STF_FLOAT)                           },
+  { "double _Complex",          S(STF_FLOAT)                           },
+  { "long double _Complex",     S(STF_FLOAT)                           },
+  { "float _Imaginary",         S(STF_FLOAT)                           },
+  { "float _Imaginary",         S(STF_FLOAT)                           },
+  { "long double _Imaginary",   S(STF_FLOAT)                           },
+  { "void",                     S(STF_NONE)                            },
+};
+
+/// getTypeName - Return the user string for the specified type enum.
 /// For example, SignedShort -> "short".
-const char *TargetInfo::getTypeName(IntType T) {
-  switch (T) {
-  default: assert(0 && "not an integer!");
-  case SignedShort:      return "short";
-  case UnsignedShort:    return "unsigned short";
-  case SignedInt:        return "int";
-  case UnsignedInt:      return "unsigned int";
-  case SignedLong:       return "long int";
-  case UnsignedLong:     return "long unsigned int";
-  case SignedLongLong:   return "long long int";
-  case UnsignedLongLong: return "long long unsigned int";
-  }
+const char *TargetInfo::getTypeName(SimpleType T) {
+  assert(T < SimpleTypeCount && "Invalid type passed in");
+  return simpleTypes[T].name;
 }
 
 //===----------------------------------------------------------------------===//

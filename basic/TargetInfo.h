@@ -72,28 +72,64 @@ public:
   virtual ~TargetInfo();
 
   ///===---- Target Data Type Query Methods -------------------------------===//
-  enum IntType {
-    NoInt = 0,
+  // Warning! The order of these enum values is well known in the simpleTypes array.
+  enum SimpleType {
+    NoType = 0,
+    Bool,
+    Char,
+    SignedChar,
+    UnsignedChar,
     SignedShort,
+    Wchar_t,
     UnsignedShort,
     SignedInt,
     UnsignedInt,
     SignedLong,
     UnsignedLong,
     SignedLongLong,
-    UnsignedLongLong
+    UnsignedLongLong,
+    Float,
+    Double,
+    LongDouble,
+    FloatComplex,
+    DoubleComplex,
+    LongDoubleComplex,
+    FloatImaginary,
+    DoubleImaginary,
+    LongDoubleImaginary,
+    Void,
+    SimpleTypeCount
   };
+
+  // Some flags that can be set for simple types.
+  enum SimpleTypeFlags {
+    STF_NONE       = 0x00,
+    STF_INTEGER    = 0x01,     // "integral type" (3.9.1 para 7)
+    STF_FLOAT      = 0x02,     // "floating point type" (3.9.1 para 8).
+    STF_PROM       = 0x04,     // Can be destination of a promotion.
+    STF_UNSIGNED   = 0x08,     // Explicitly unsigned type.
+    STF_ALL        = 0x0F,
+  };
+
+private:
+  // Info about each simple type.
+  struct SimpleTypeInfo {
+    char const *name;       // e.g. "unsigned char".
+    SimpleTypeFlags flags;  // Various boolean attributes.
+  };
+  static const SimpleTypeInfo simpleTypes[SimpleTypeCount];
+
 protected:
-  IntType SizeType, IntMaxType, UIntMaxType, PtrDiffType, IntPtrType, WCharType;
+  SimpleType SizeType, IntMaxType, UIntMaxType, PtrDiffType, IntPtrType, WCharType;
 public:
-  IntType getSizeType() const { return SizeType; }
-  IntType getIntMaxType() const { return IntMaxType; }
-  IntType getUIntMaxType() const { return UIntMaxType; }
-  IntType getPtrDiffType(unsigned AddrSpace) const {
+  SimpleType getSizeType() const { return SizeType; }
+  SimpleType getIntMaxType() const { return IntMaxType; }
+  SimpleType getUIntMaxType() const { return UIntMaxType; }
+  SimpleType getPtrDiffType(unsigned AddrSpace) const {
     return AddrSpace == 0 ? PtrDiffType : getPtrDiffTypeV(AddrSpace);
   }
-  IntType getIntPtrType() const { return IntPtrType; }
-  IntType getWCharType() const { return WCharType; }
+  SimpleType getIntPtrType() const { return IntPtrType; }
+  SimpleType getWCharType() const { return WCharType; }
 
   /// isCharSigned - Return true if 'char' is 'signed char' or false if it is
   /// treated as 'unsigned char'.  This is implementation defined according to
@@ -180,7 +216,7 @@ public:
   
   /// getTypeName - Return the user string for the specified integer type enum.
   /// For example, SignedShort -> "short".
-  static const char *getTypeName(IntType T);
+  static const char *getTypeName(SimpleType T);
   
   ///===---- Other target property query methods --------------------------===//
   
@@ -288,7 +324,7 @@ protected:
   virtual uint64_t getPointerAlignV(unsigned AddrSpace) const {
     return PointerAlign;
   }
-  virtual enum IntType getPtrDiffTypeV(unsigned AddrSpace) const {
+  virtual enum SimpleType getPtrDiffTypeV(unsigned AddrSpace) const {
     return PtrDiffType;
   }
   virtual void getGCCRegNames(const char * const *&Names, 
