@@ -42,21 +42,6 @@ protected:
   // values are specified by the TargetInfo constructor.
   bool BigEndian;
   bool CharIsSigned;
-  unsigned char CharWidth, CharAlign, PrefCharAlign;
-  unsigned char WCharWidth, WCharAlign, PrefWCharAlign;
-  unsigned char BoolWidth, BoolAlign, PrefBoolAlign;
-  unsigned char ShortWidth, ShortAlign, PrefShortAlign;
-  unsigned char IntWidth, IntAlign, PrefIntAlign;
-  unsigned char FloatWidth, FloatAlign, PrefFloatAlign;
-  unsigned char DoubleWidth, DoubleAlign, PrefDoubleAlign;
-  unsigned char LongDoubleWidth, LongDoubleAlign, PrefLongDoubleAlign;
-  unsigned char LongWidth, LongAlign, PrefLongAlign;
-  unsigned char LongLongWidth, LongLongAlign, PrefLongLongAlign;
-  unsigned char PointerWidth, PointerAlign, PrefPointerAlign;
-  unsigned char VectorWidth, VectorAlign, PrefVectorAlign;
-  unsigned char LongVectorWidth, LongVectorAlign, PrefLongVectorAlign;
-  unsigned char AggregateWidth, AggregateAlign, PrefAggregateAlign;
-
   unsigned char IntMaxTWidth;
   const char *UserLabelPrefix;
   const llvm::fltSemantics *FloatFormat, *DoubleFormat, *LongDoubleFormat;
@@ -72,21 +57,21 @@ public:
   virtual ~TargetInfo();
 
   ///===---- Target Data Type Query Methods -------------------------------===//
-  // Warning! The order of these enum values is well known in the simpleTypes array.
+  // Warning! The order of these enum values is well known in the typeInfo array.
   enum SimpleType {
     NoType = 0,
     Bool,
     Char,
     SignedChar,
     UnsignedChar,
-    SignedShort,
-    Wchar_t,
+    WChar,
+    Short,
     UnsignedShort,
-    SignedInt,
+    Int,
     UnsignedInt,
-    SignedLong,
+    Long,
     UnsignedLong,
-    SignedLongLong,
+    LongLong,
     UnsignedLongLong,
     Float,
     Double,
@@ -97,9 +82,14 @@ public:
     FloatImaginary,
     DoubleImaginary,
     LongDoubleImaginary,
+    Vector,
+    LongVector,
+    Pointer,
+    Aggregate,
     Void,
     SimpleTypeCount
   };
+
 
   // Some flags that can be set for simple types.
   enum SimpleTypeFlags {
@@ -112,16 +102,57 @@ public:
   };
 
 private:
-  // Info about each simple type.
+  /** Info about each simple type.
+   */
   struct SimpleTypeInfo {
-    char const *name;       // e.g. "unsigned char".
-    SimpleTypeFlags flags;  // Various boolean attributes.
+    char const *name;           ///< The type name, e.g. "unsigned char".
+    SimpleTypeFlags flags;      ///< Various boolean attributes.
+    unsigned char Width;        ///< The type width in bytes.
+    unsigned char Align;        ///< The type's ABI alignment requirement.
+    unsigned char PrefAlign;    ///< The type's preferred alignment.
   };
-  static const SimpleTypeInfo simpleTypes[SimpleTypeCount];
+  static SimpleTypeInfo typeInfo[SimpleTypeCount];
 
 protected:
   SimpleType SizeType, IntMaxType, UIntMaxType, PtrDiffType, IntPtrType, WCharType;
 public:
+  // Define the simple type access functions.
+  // e.g.:
+  // void CharWidth(unsigned char Width)      { typeInfo[Char].Width = Width; }
+  // unsigned char CharWidth()                { return typeInfo[Char].Width; }
+#define TYPE_FUNC(type, value) \
+  void type##value(unsigned char value) { typeInfo[type].value = value; } \
+  unsigned char type##value() const { return typeInfo[type].value; }
+
+  // Define all three access functions for a type.
+#define TYPE_FUNCS(type) \
+  TYPE_FUNC(type, Width) \
+  TYPE_FUNC(type, Align) \
+  TYPE_FUNC(type, PrefAlign)
+  
+  // Treat the three types of char as "Char".
+  void CharWidth(unsigned char Width)                   { typeInfo[Char].Width = Width; }
+  unsigned char CharWidth() const                       { return typeInfo[Char].Width; }
+  void CharAlign(unsigned char Align)                   { typeInfo[Char].Align = Align; }
+  unsigned char CharAlign() const                       { return typeInfo[Char].Align; }
+  void CharPrefAlign(unsigned char PrefAlign)           { typeInfo[Char].PrefAlign = PrefAlign; }
+  unsigned char CharPrefAlign() const                   { return typeInfo[Char].PrefAlign; }
+  TYPE_FUNCS(WChar)
+  TYPE_FUNCS(Bool)
+  TYPE_FUNCS(Short)
+  TYPE_FUNCS(Int)
+  TYPE_FUNCS(Long)
+  TYPE_FUNCS(LongLong)
+  TYPE_FUNCS(Float)
+  TYPE_FUNCS(Double)
+  TYPE_FUNCS(LongDouble)
+  TYPE_FUNCS(Pointer)
+  TYPE_FUNCS(Vector)
+  TYPE_FUNCS(LongVector)
+  TYPE_FUNCS(Aggregate)
+#undef TYPE_FUNC
+#undef TYPE_FUNCS
+
   SimpleType getSizeType() const { return SizeType; }
   SimpleType getIntMaxType() const { return IntMaxType; }
   SimpleType getUIntMaxType() const { return UIntMaxType; }
@@ -139,63 +170,63 @@ public:
   /// getPointerWidth - Return the width of pointers on this target, for the
   /// specified address space.
   uint64_t getPointerWidth(unsigned AddrSpace) const {
-    return AddrSpace == 0 ? PointerWidth : getPointerWidthV(AddrSpace);
+    return AddrSpace == 0 ? typeInfo[Pointer].Width : getPointerWidthV(AddrSpace);
   }
   uint64_t getPointerAlign(unsigned AddrSpace) const {
-    return AddrSpace == 0 ? PointerAlign : getPointerAlignV(AddrSpace);
+    return AddrSpace == 0 ? typeInfo[Pointer].Align : getPointerAlignV(AddrSpace);
   }
   
   /// getBoolWidth/Align - Return the size of '_Bool' and C++ 'bool' for this
   /// target, in bits.
-  unsigned getBoolWidth() const { return BoolWidth; }
-  unsigned getBoolAlign() const { return BoolAlign; }
+  unsigned getBoolWidth() const { return typeInfo[Bool].Width; }
+  unsigned getBoolAlign() const { return typeInfo[Bool].Align; }
   
   unsigned getCharWidth(bool isWide = false) const {
-    return isWide ? getWCharWidth() : CharWidth;
+    return isWide ? getWCharWidth() : typeInfo[Char].Width;
   }
   unsigned getCharAlign(bool isWide = false) const {
-    return isWide ? getWCharAlign() : CharAlign;
+    return isWide ? getWCharAlign() : typeInfo[Char].Align;
   }
   
   /// getShortWidth/Align - Return the size of 'signed short' and
   /// 'unsigned short' for this target, in bits.  
-  unsigned getShortWidth() const { return ShortWidth; }
-  unsigned getShortAlign() const { return ShortAlign; }
+  unsigned getShortWidth() const { return typeInfo[Short].Width; }
+  unsigned getShortAlign() const { return typeInfo[Short].Align; }
   
   /// getIntWidth/Align - Return the size of 'signed int' and 'unsigned int' for
   /// this target, in bits.
-  unsigned getIntWidth() const { return IntWidth; }
-  unsigned getIntAlign() const { return IntAlign; }
+  unsigned getIntWidth() const { return typeInfo[Int].Width; }
+  unsigned getIntAlign() const { return typeInfo[Int].Align; }
   
   /// getLongWidth/Align - Return the size of 'signed long' and 'unsigned long'
   /// for this target, in bits.
-  unsigned getLongWidth() const { return LongWidth; }
-  unsigned getLongAlign() const { return LongAlign; }
+  unsigned getLongWidth() const { return typeInfo[Long].Width; }
+  unsigned getLongAlign() const { return typeInfo[Long].Align; }
   
   /// getLongLongWidth/Align - Return the size of 'signed long long' and
   /// 'unsigned long long' for this target, in bits.
-  unsigned getLongLongWidth() const { return LongLongWidth; }
-  unsigned getLongLongAlign() const { return LongLongAlign; }
+  unsigned getLongLongWidth() const { return typeInfo[LongLong].Width; }
+  unsigned getLongLongAlign() const { return typeInfo[LongLong].Align; }
   
   /// getWcharWidth/Align - Return the size of 'wchar_t' for this target, in
   /// bits.
-  unsigned getWCharWidth() const { return WCharWidth; }
-  unsigned getWCharAlign() const { return WCharAlign; }
+  unsigned getWCharWidth() const { return typeInfo[WChar].Width; }
+  unsigned getWCharAlign() const { return typeInfo[WChar].Align; }
 
   /// getFloatWidth/Align/Format - Return the size/align/format of 'float'.
-  unsigned getFloatWidth() const { return FloatWidth; }
-  unsigned getFloatAlign() const { return FloatAlign; }
+  unsigned getFloatWidth() const { return typeInfo[Float].Width; }
+  unsigned getFloatAlign() const { return typeInfo[Float].Align; }
   const llvm::fltSemantics &getFloatFormat() const { return *FloatFormat; }
 
   /// getDoubleWidth/Align/Format - Return the size/align/format of 'double'.
-  unsigned getDoubleWidth() const { return DoubleWidth; }
-  unsigned getDoubleAlign() const { return DoubleAlign; }
+  unsigned getDoubleWidth() const { return typeInfo[Double].Width; }
+  unsigned getDoubleAlign() const { return typeInfo[Double].Align; }
   const llvm::fltSemantics &getDoubleFormat() const { return *DoubleFormat; }
 
   /// getLongDoubleWidth/Align/Format - Return the size/align/format of 'long
   /// double'.
-  unsigned getLongDoubleWidth() const { return LongDoubleWidth; }
-  unsigned getLongDoubleAlign() const { return LongDoubleAlign; }
+  unsigned getLongDoubleWidth() const { return typeInfo[LongDouble].Width; }
+  unsigned getLongDoubleAlign() const { return typeInfo[LongDouble].Align; }
   const llvm::fltSemantics &getLongDoubleFormat() const {
     return *LongDoubleFormat;
   }
@@ -319,10 +350,10 @@ public:
   }
 protected:
   virtual uint64_t getPointerWidthV(unsigned AddrSpace) const {
-    return PointerWidth;
+    return typeInfo[Pointer].Width;
   }
   virtual uint64_t getPointerAlignV(unsigned AddrSpace) const {
-    return PointerAlign;
+    return typeInfo[Pointer].Align;
   }
   virtual enum SimpleType getPtrDiffTypeV(unsigned AddrSpace) const {
     return PtrDiffType;

@@ -25,49 +25,50 @@ TargetInfo::TargetInfo(const std::string &T) : Triple(T) {
   // These should be overridden by concrete targets as needed.
   BigEndian = false;
   CharIsSigned = true;
-  CharWidth = CharAlign = 8;
-  PrefCharAlign = 0;
-  WCharWidth = WCharAlign = 32;
-  PrefWCharAlign = 0;
-  BoolWidth = BoolAlign = 8;
-  PrefBoolAlign = 0;
-  ShortWidth = ShortAlign = 16;
-  PrefShortAlign = 0;
-  IntWidth = IntAlign = 32;
-  PrefIntAlign = 0;
-  LongWidth = LongAlign = 32;
-  PrefLongAlign = 0;
-  LongLongWidth = LongLongAlign = 64;
-  PrefLongLongAlign = 0;
-  IntMaxTWidth = 64;
-  FloatWidth = FloatAlign = 32;
-  PrefFloatAlign = 0;
+  CharWidth(8); CharAlign(8);
+  CharPrefAlign(0);
+  WCharWidth(32); WCharAlign(32);
+  WCharPrefAlign(0);
+  BoolWidth(8); BoolAlign(8);
+  BoolPrefAlign(0);
+  ShortWidth(16); ShortAlign(16);
+  ShortPrefAlign(0);
+  IntWidth(32); IntAlign(32);
+  IntPrefAlign(0);
+  LongWidth(32); LongAlign(32);
+  LongPrefAlign(0);
+  LongLongWidth(64); LongLongAlign(64);
+  LongLongPrefAlign(0);
+  FloatWidth(32); FloatAlign(32);
+  FloatPrefAlign(0);
   FloatFormat = &llvm::APFloat::IEEEsingle;
 
-  DoubleWidth = DoubleAlign = 64;
-  PrefDoubleAlign = 0;
+  DoubleWidth(64); DoubleAlign(64);
+  DoublePrefAlign(0);
   DoubleFormat = &llvm::APFloat::IEEEdouble;
 
-  LongDoubleWidth = LongDoubleAlign = 128;
-  PrefLongDoubleAlign = 0;
+  LongDoubleWidth(128); LongDoubleAlign(128);
+  LongDoublePrefAlign(0);
   LongDoubleFormat = &llvm::APFloat::IEEEquad;
 
-  PointerWidth = PointerAlign = 32;
-  PrefPointerAlign = 0;
-  VectorWidth = VectorAlign = 64;
-  PrefVectorAlign = 64;
-  LongVectorWidth = LongVectorAlign = 128;
-  PrefLongVectorAlign = 128;
-  AggregateWidth = 0;
-  AggregateAlign = 0;
-  PrefAggregateAlign = 0;
+  PointerWidth(32); PointerAlign(32);
+  PointerPrefAlign(0);
+  VectorWidth(64); VectorAlign(64);
+  VectorPrefAlign(64);
+  LongVectorWidth(128); LongVectorAlign(128);
+  LongVectorPrefAlign(0);
 
+  AggregateWidth(0);
+  AggregateAlign(0);
+  AggregatePrefAlign(0);
+
+  IntMaxTWidth = 64;
   SizeType = UnsignedLong;
-  PtrDiffType = SignedLong;
-  IntMaxType = SignedLongLong;
+  PtrDiffType = Long;
+  IntMaxType = LongLong;
   UIntMaxType = UnsignedLongLong;
-  IntPtrType = SignedLong;
-  WCharType = SignedInt;
+  IntPtrType = Long;
+  WCharType = Int;
 
   UserLabelPrefix = "_";
 }
@@ -80,34 +81,34 @@ TargetInfo::~TargetInfo() {}
 
 #define xstr(x) #x
 #define str(x) xstr(x)
-#define DATA(type, name)                \
-    str << "-" str(type);               \
-    str << (int)name##Width;            \
-    str << ":";                         \
-    str << (int)name##Align;            \
-    if (Pref##name##Align) {            \
-        str << ":";                     \
-        str << (int)Pref##name##Align;  \
+#define DATA(type, name)                            \
+    str << "-" str(type);                           \
+    str << (int)typeInfo[name].Width;               \
+    str << ":";                                     \
+    str << (int)typeInfo[name].Align;               \
+    if (typeInfo[name].Align) {                     \
+        str << ":";                                 \
+        str << (int)typeInfo[name].PrefAlign;       \
     }
 
-#define DATAP(type, name)               \
-    str << "-" str(type);               \
-    str << ":";                         \
-    str << (int)name##Width;            \
-    str << ":";                         \
-    str << (int)name##Align;            \
-    if (Pref##name##Align) {            \
-        str << ":";                     \
-        str << (int)Pref##name##Align;  \
+#define DATAP(type, name)                           \
+    str << "-" str(type);                           \
+    str << ":";                                     \
+    str << (int)typeInfo[name].Width;               \
+    str << ":";                                     \
+    str << (int)typeInfo[name].Align;               \
+    if (typeInfo[name].PrefAlign) {                 \
+        str << ":";                                 \
+        str << (int)typeInfo[name].PrefAlign;       \
     }
 
-#define DATAN(type, name)               \
-    str << "-" str(type);               \
-    str << ":";                         \
-    str << (int)name##Align;            \
-    if (Pref##name##Align) {            \
-        str << ":";                     \
-        str << (int)Pref##name##Align;  \
+#define DATAN(type, name)                           \
+    str << "-" str(type);                           \
+    str << ":";                                     \
+    str << (int)typeInfo[name].Align;               \
+    if (typeInfo[name].PrefAlign) {                 \
+        str << ":";                                 \
+        str << (int)typeInfo[name].PrefAlign;       \
     }
 
 void TargetInfo::getTargetDescription(std::string& res)
@@ -142,7 +143,7 @@ void TargetInfo::getTargetDescription(std::string& res)
 // Work around bitwise-OR in initializers.
 #define S(x) ((SimpleTypeFlags)(x))
 // Info about each simple type.
-const TargetInfo::SimpleTypeInfo TargetInfo::simpleTypes[SimpleTypeCount] =
+TargetInfo::SimpleTypeInfo TargetInfo::typeInfo[SimpleTypeCount] =
 {
   { "<no type>",                S(STF_NONE)                            },
   { "bool",                     S(STF_INTEGER)                         },
@@ -167,6 +168,10 @@ const TargetInfo::SimpleTypeInfo TargetInfo::simpleTypes[SimpleTypeCount] =
   { "float _Imaginary",         S(STF_FLOAT)                           },
   { "float _Imaginary",         S(STF_FLOAT)                           },
   { "long double _Imaginary",   S(STF_FLOAT)                           },
+  { "vector",                   S(STF_FLOAT)                           },   // FIXME
+  { "long vector",              S(STF_FLOAT)                           },   // FIXME
+  { "<aggregate>",              S(STF_NONE)                            },   // FIXME
+  { "<pointer>",                S(STF_NONE)                            },
   { "void",                     S(STF_NONE)                            },
 };
 
@@ -174,7 +179,7 @@ const TargetInfo::SimpleTypeInfo TargetInfo::simpleTypes[SimpleTypeCount] =
 /// For example, SignedShort -> "short".
 const char *TargetInfo::getTypeName(SimpleType T) {
   assert(T < SimpleTypeCount && "Invalid type passed in");
-  return simpleTypes[T].name;
+  return typeInfo[T].name;
 }
 
 //===----------------------------------------------------------------------===//

@@ -365,7 +365,7 @@ void PPCTargetInfo::getTargetDefines(const LangOptions &Opts,
   Define(Defs, "__ppc__");
   Define(Defs, "_ARCH_PPC");
   Define(Defs, "__POWERPC__");
-  if (PointerWidth == 64) {
+  if (PointerWidth() == 64) {
     Define(Defs, "_ARCH_PPC64");
     Define(Defs, "_LP64");
     Define(Defs, "__LP64__");
@@ -471,7 +471,7 @@ namespace {
 class PPC64TargetInfo : public PPCTargetInfo {
 public:
   PPC64TargetInfo(const std::string& triple) : PPCTargetInfo(triple) {
-    LongWidth = LongAlign = PointerWidth = PointerAlign = 64;
+    LongWidth(64); LongAlign(64); PointerWidth(64); PointerAlign(64);
     LongDoubleFormat = &llvm::APFloat::PPCDoubleDouble;
   }
 };
@@ -618,7 +618,7 @@ void X86TargetInfo::HandleTargetFeatures(const llvm::StringMap<bool>&Features) {
 void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
                                      std::vector<char> &Defs) const {
   // Target identification.
-  if (PointerWidth == 64) {
+  if (PointerWidth() == 64) {
     Define(Defs, "_LP64");
     Define(Defs, "__LP64__");
     Define(Defs, "__amd64__");
@@ -716,9 +716,9 @@ namespace {
 class X86_32TargetInfo : public X86TargetInfo {
 public:
   X86_32TargetInfo(const std::string& triple) : X86TargetInfo(triple) {
-    DoubleAlign = LongLongAlign = 32;
-    LongDoubleWidth = 96;
-    LongDoubleAlign = 32;
+    DoubleAlign(32); LongLongAlign(32);
+    LongDoubleWidth(96);
+    LongDoubleAlign(32);
   }
   virtual const char *getVAListDeclaration() const {
     return "typedef char* __builtin_va_list;";
@@ -731,9 +731,9 @@ namespace {
 class DarwinI386TargetInfo : public X86_32TargetInfo {
 public:
   DarwinI386TargetInfo(const std::string& triple) : X86_32TargetInfo(triple) {
-    LongDoubleWidth = 128;
-    LongDoubleAlign = 128;
-    PtrDiffType = SignedInt;
+    LongDoubleWidth(128);
+    LongDoubleAlign(128);
+    PtrDiffType = Int;
   }
   virtual void getTargetDefines(const LangOptions &Opts,
                                 std::vector<char> &Defines) const {
@@ -756,7 +756,7 @@ public:
   FreeBSDX86_32TargetInfo(const std::string& triple) :
       X86_32TargetInfo(triple) {
     SizeType = UnsignedInt;
-    PtrDiffType = SignedInt;
+    PtrDiffType = Int;
   }
   virtual void getTargetDefines(const LangOptions &Opts,
                                 std::vector<char> &Defines) const {
@@ -773,7 +773,7 @@ public:
   DragonFlyX86_32TargetInfo(const std::string& triple) :
       X86_32TargetInfo(triple) {
     SizeType = UnsignedInt;
-    PtrDiffType = SignedInt;
+    PtrDiffType = Int;
   }
   virtual void getTargetDefines(const LangOptions &Opts,
                                 std::vector<char> &Defines) const {
@@ -790,8 +790,8 @@ public:
   LinuxX86_32TargetInfo(const std::string& triple) : X86_32TargetInfo(triple) {
     UserLabelPrefix = "";
     SizeType = UnsignedInt;
-    PtrDiffType = SignedInt;
-    IntPtrType = SignedInt;
+    PtrDiffType = Int;
+    IntPtrType = Int;
   }
   virtual void getTargetDefines(const LangOptions &Opts,
                                 std::vector<char> &Defines) const {
@@ -811,7 +811,7 @@ public:
     // FIXME: We should probably enable -fms-extensions by default for
     // this target.
     SizeType = UnsignedInt;
-    PtrDiffType = SignedInt;
+    PtrDiffType = Int;
   }
   virtual void getTargetDefines(const LangOptions &Opts,
                                 std::vector<char> &Defines) const {
@@ -831,11 +831,11 @@ namespace {
 class X86_64TargetInfo : public X86TargetInfo {
 public:
   X86_64TargetInfo(const std::string &triple) : X86TargetInfo(triple) {
-    LongWidth = LongAlign = PointerWidth = PointerAlign = 64;
-    DoubleAlign = LongLongAlign = 64;
-    LongDoubleWidth = 128;
-    LongDoubleAlign = 128;
-    IntMaxType = SignedLong;
+    LongWidth(64); LongAlign(64); PointerWidth(64); PointerAlign(64);
+    DoubleAlign(64); LongLongAlign(64);
+    LongDoubleWidth(128);
+    LongDoubleAlign(128);
+    IntMaxType = Long;
     UIntMaxType = UnsignedLong;
   }
   virtual const char *getVAListDeclaration() const {
@@ -1092,7 +1092,7 @@ public:
   SolarisSparcV8TargetInfo(const std::string& triple) :
       SparcV8TargetInfo(triple) {
     SizeType = UnsignedInt;
-    PtrDiffType = SignedInt;
+    PtrDiffType = Int;
   }
 
   virtual void getTargetDefines(const LangOptions &Opts,
@@ -1107,17 +1107,17 @@ namespace {
   class PIC16TargetInfo : public TargetInfo{
   public:
     PIC16TargetInfo(const std::string& triple) : TargetInfo(triple) {
-      IntWidth = 16;
-      LongWidth = LongLongWidth = 32;
-      PointerWidth = 16;
-      IntAlign = 8;
-      LongAlign = LongLongAlign = 8;
-      PointerAlign = 8;
+      IntWidth(16);
+      LongWidth(32); LongLongWidth(32);
+      PointerWidth(16);
+      IntAlign(8);
+      LongAlign(8); LongLongAlign(8);
+      PointerAlign(8);
       SizeType = UnsignedInt;
-      IntMaxType = SignedLong;
+      IntMaxType = Long;
       UIntMaxType = UnsignedLong;
-      IntPtrType = SignedShort;
-      PtrDiffType = SignedInt;
+      IntPtrType = Short;
+      PtrDiffType = Int;
     }
     virtual uint64_t getPointerWidthV(unsigned AddrSpace) const { return 16; }
     virtual uint64_t getPointerAlignV(unsigned AddrSpace) const { return 8; }
