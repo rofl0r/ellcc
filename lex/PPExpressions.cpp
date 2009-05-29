@@ -218,7 +218,7 @@ static bool EvaluateValue(PPValue &Result, Token &PeekTok, DefinedTracker &DT,
                               PeekTok.getLocation(), PP);
     if (Literal.hadError())
       return true;  // A diagnostic was already emitted.
-
+ 
     // Character literals are always int or wchar_t, expand to intmax_t.
     TargetInfo &TI = PP.getTargetInfo();
     unsigned NumBits = TI.getCharWidth(Literal.isWide());

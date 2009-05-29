@@ -208,8 +208,7 @@ static void DefineTypeSize(const char *MacroName, unsigned TypeWidth,
   DefineBuiltinMacro(Buf, MacroBuf);
 }
 
-static void DefineType(const char *MacroName, TargetInfo::SimpleType Ty,
-                       std::vector<char> &Buf) {
+static void DefineType(const char *MacroName, TargetInfo::TypeID Ty, std::vector<char> &Buf) {
   char MacroBuf[60];
   sprintf(MacroBuf, "%s=%s", MacroName, TargetInfo::getTypeName(Ty));
   DefineBuiltinMacro(Buf, MacroBuf);
@@ -288,24 +287,24 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
 
   unsigned IntMaxWidth;
   const char *IntMaxSuffix;
-  if (TI.getIntMaxType() == TargetInfo::SignedLongLong) {
-    IntMaxWidth = TI.getLongLongWidth();
+  if (TI.getIntMaxType() == TargetInfo::LongLong) {
+    IntMaxWidth = TI.LongLongWidth();
     IntMaxSuffix = "LL";
-  } else if (TI.getIntMaxType() == TargetInfo::SignedLong) {
-    IntMaxWidth = TI.getLongWidth();
+  } else if (TI.getIntMaxType() == TargetInfo::Long) {
+    IntMaxWidth = TI.LongWidth();
     IntMaxSuffix = "L";
   } else {
-    assert(TI.getIntMaxType() == TargetInfo::SignedInt);
-    IntMaxWidth = TI.getIntWidth();
+    assert(TI.getIntMaxType() == TargetInfo::Int);
+    IntMaxWidth = TI.IntWidth();
     IntMaxSuffix = "";
   }
   
-  DefineTypeSize("__SCHAR_MAX__", TI.getCharWidth(), "", true, Buf);
-  DefineTypeSize("__SHRT_MAX__", TI.getShortWidth(), "", true, Buf);
-  DefineTypeSize("__INT_MAX__", TI.getIntWidth(), "", true, Buf);
-  DefineTypeSize("__LONG_MAX__", TI.getLongWidth(), "L", true, Buf);
-  DefineTypeSize("__LONG_LONG_MAX__", TI.getLongLongWidth(), "LL", true, Buf);
-  DefineTypeSize("__WCHAR_MAX__", TI.getWCharWidth(), "", true, Buf);
+  DefineTypeSize("__SCHAR_MAX__", TI.CharWidth(), "", true, Buf);
+  DefineTypeSize("__SHRT_MAX__", TI.ShortWidth(), "", true, Buf);
+  DefineTypeSize("__INT_MAX__", TI.IntWidth(), "", true, Buf);
+  DefineTypeSize("__LONG_MAX__", TI.LongWidth(), "L", true, Buf);
+  DefineTypeSize("__LONG_LONG_MAX__", TI.LongLongWidth(), "LL", true, Buf);
+  DefineTypeSize("__WCHAR_MAX__", TI.WCharWidth(), "", true, Buf);
   DefineTypeSize("__INTMAX_MAX__", IntMaxWidth, IntMaxSuffix, true, Buf);
 
   DefineType("__INTMAX_TYPE__", TI.getIntMaxType(), Buf);
@@ -329,12 +328,12 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
     DefineBuiltinMacro(Buf, "__CHAR_UNSIGNED__");  
 
   // Define fixed-sized integer types for stdint.h
-  assert(TI.getCharWidth() == 8 && "unsupported target types");
-  assert(TI.getShortWidth() == 16 && "unsupported target types");
+  assert(TI.CharWidth() == 8 && "unsupported target types");
+  assert(TI.ShortWidth() == 16 && "unsupported target types");
   DefineBuiltinMacro(Buf, "__INT8_TYPE__=char");
   DefineBuiltinMacro(Buf, "__INT16_TYPE__=short");
   
-  if (TI.getIntWidth() == 32)
+  if (TI.IntWidth() == 32)
     DefineBuiltinMacro(Buf, "__INT32_TYPE__=int");
   else {
     assert(TI.getLongLongWidth() == 32 && "unsupported target types");
@@ -342,7 +341,7 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
   }
   
   // 16-bit targets doesn't necessarily have a 64-bit type.
-  if (TI.getLongLongWidth() == 64)
+  if (TI.LongLongWidth() == 64)
     DefineBuiltinMacro(Buf, "__INT64_TYPE__=long long");
   
   // Add __builtin_va_list typedef.

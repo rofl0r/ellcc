@@ -63,6 +63,7 @@ TargetInfo::TargetInfo(const std::string &T) : Triple(T) {
   AggregatePrefAlign(0);
 
   IntMaxTWidth = 64;
+  MAUBits = 8;
   SizeType = UnsignedLong;
   PtrDiffType = Long;
   IntMaxType = LongLong;
@@ -141,9 +142,9 @@ void TargetInfo::getTargetDescription(std::string& res)
 #undef DATAN
 
 // Work around bitwise-OR in initializers.
-#define S(x) ((SimpleTypeFlags)(x))
+#define S(x) ((TypeFlags)(x))
 // Info about each simple type.
-TargetInfo::SimpleTypeInfo TargetInfo::typeInfo[SimpleTypeCount] =
+TargetInfo::TypeInfo TargetInfo::typeInfo[TypeIDCount] =
 {
   { "<no type>",                S(STF_NONE)                            },
   { "bool",                     S(STF_INTEGER)                         },
@@ -177,8 +178,8 @@ TargetInfo::SimpleTypeInfo TargetInfo::typeInfo[SimpleTypeCount] =
 
 /// getTypeName - Return the user string for the specified type enum.
 /// For example, SignedShort -> "short".
-const char *TargetInfo::getTypeName(SimpleType T) {
-  assert(T < SimpleTypeCount && "Invalid type passed in");
+const char *TargetInfo::getTypeName(TypeID T) {
+  assert(T < TypeID && "Invalid type passed in");
   return typeInfo[T].name;
 }
 

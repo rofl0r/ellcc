@@ -602,16 +602,16 @@ CharLiteralParser::CharLiteralParser(const char *begin, const char *end,
   // FIXME: The "Value" is an uint64_t so we can handle char literals of 
   // upto 64-bits.
   // FIXME: This extensively assumes that 'char' is 8-bits.
-  assert(PP.getTargetInfo().getCharWidth() == 8 &&
+  assert(PP.getTargetInfo().CharWidth() == 8 &&
          "Assumes char is 8 bits");
-  assert(PP.getTargetInfo().getIntWidth() <= 64 &&
-         (PP.getTargetInfo().getIntWidth() & 7) == 0 &&
+  assert(PP.getTargetInfo().IntWidth() <= 64 &&
+         (PP.getTargetInfo().IntWidth() & 7) == 0 &&
          "Assumes sizeof(int) on target is <= 64 and a multiple of char");
-  assert(PP.getTargetInfo().getWCharWidth() <= 64 &&
+  assert(PP.getTargetInfo().WCharWidth() <= 64 &&
          "Assumes sizeof(wchar) on target is <= 64");
 
   // This is what we will use for overflow detection 
-  llvm::APInt LitVal(PP.getTargetInfo().getIntWidth(), 0);
+  llvm::APInt LitVal(PP.getTargetInfo().IntWidth(), 0);
   
   unsigned NumCharsSoFar = 0;
   while (begin[0] != '\'') {
@@ -736,7 +736,7 @@ StringLiteralParser(const Token *StringToks, unsigned NumStringToks,
   // query the target.  As such, wchar_tByteWidth is only valid if AnyWide=true.
   wchar_tByteWidth = ~0U;
   if (AnyWide) {
-    wchar_tByteWidth = PP.getTargetInfo().getWCharWidth();
+    wchar_tByteWidth = PP.getTargetInfo().WCharWidth();
     assert((wchar_tByteWidth & 7) == 0 && "Assumes wchar_t is byte multiple!");
     wchar_tByteWidth /= 8;
   }
