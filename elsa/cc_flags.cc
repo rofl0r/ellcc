@@ -273,12 +273,11 @@ bool isValid(SimpleTypeId id)
 // which can take the size; we take the sizes from the host compiler
 // for now, rather than build an entire abstraction layer for
 // implementation-defined quantities
-#define TN(type) #type, sizeof(type)
-
+#define TN(type) NULL   // A placeholder. The name is obtained from TargetInfo.
 
 static SimpleTypeInfo const simpleTypeInfoArray[] = {
-  //name                   size,    flags
-  { "<no type>", 0,                 S(STF_NONE                             ) },
+  // name                            flags
+  { TN(<no type>),                  S(STF_NONE                             ) },
   { TN(bool),                       S(STF_INTEGER                          ) },
   { TN(char),                       S(STF_INTEGER                          ) },
   { TN(signed char),                S(STF_INTEGER                          ) },
@@ -295,44 +294,44 @@ static SimpleTypeInfo const simpleTypeInfoArray[] = {
   { TN(float),                      S(STF_FLOAT                            ) },
   { TN(double),                     S(STF_FLOAT | STF_PROM                 ) },
   { TN(long double),                S(STF_FLOAT                            ) },
-  { "float _Complex",         8,    S(STF_FLOAT                            ) },
-  { "double _Complex",       16,    S(STF_FLOAT                            ) },
-  { "long double _Complex",  20,    S(STF_FLOAT                            ) },
-  { "float _Imaginary",       4,    S(STF_FLOAT                            ) },
-  { "double _Imaginary",      8,    S(STF_FLOAT                            ) },
-  { "long double _Imaginary",10,    S(STF_FLOAT                            ) },
-  { "vector",                 8,    S(STF_FLOAT                            ) },
-  { "long vector",           16,    S(STF_FLOAT                            ) },
-  { "<pointer>",              1,    S(STF_NONE                             ) },
-  { "<aggregate>",            1,    S(STF_NONE                             ) },
-  { "void",                   1,    S(STF_NONE                             ) },    // gnu: sizeof(void) is 1
+  { TN(float _Complex),             S(STF_FLOAT                            ) },
+  { TN(double _Complex),            S(STF_FLOAT                            ) },
+  { TN(long double _Complex),       S(STF_FLOAT                            ) },
+  { TN(float _Imaginary),           S(STF_FLOAT                            ) },
+  { TN(double _Imaginary),          S(STF_FLOAT                            ) },
+  { TN(long double _Imaginary),     S(STF_FLOAT                            ) },
+  { TN(vector),                     S(STF_FLOAT                            ) },
+  { TN(long vector),                S(STF_FLOAT                            ) },
+  { TN(pointer>),                   S(STF_NONE                             ) },
+  { TN(aggregate>),                 S(STF_NONE                             ) },
+  { TN(void),                       S(STF_NONE                             ) },    // gnu: sizeof(void) is 1
 
   // these should go away early on in typechecking
-  { "...",                    0,    S(STF_NONE                             ) },
-  { "/*cdtor*/",              0,    S(STF_NONE                             ) },    // dsw: don't want to print <cdtor>
-  { "(error)",                0,    S(STF_NONE                             ) },
-  { "(dependent)",            0,    S(STF_NONE                             ) },
-  { "(implicit-int)",         0,    S(STF_NONE                             ) },
-  { "(notfound)",             0,    S(STF_NONE                             ) },
+  { "...",                          S(STF_NONE                             ) },
+  { "/*cdtor*/",                    S(STF_NONE                             ) },    // dsw: don't want to print <cdtor>
+  { "(error)",                      S(STF_NONE                             ) },
+  { "(dependent)",                  S(STF_NONE                             ) },
+  { "(implicit-int)",               S(STF_NONE                             ) },
+  { "(notfound)",                   S(STF_NONE                             ) },
 
 
-  { "(prom_int)",             0,    S(STF_NONE                             ) },
-  { "(prom_arith)",           0,    S(STF_NONE                             ) },
-  { "(integral)",             0,    S(STF_NONE                             ) },
-  { "(arith)",                0,    S(STF_NONE                             ) },
-  { "(arith_nobool)",         0,    S(STF_NONE                             ) },
-  { "(any_obj)",              0,    S(STF_NONE                             ) },
-  { "(non_void)",             0,    S(STF_NONE                             ) },
-  { "(any_type)",             0,    S(STF_NONE                             ) },
+  { "(prom_int)",                   S(STF_NONE                             ) },
+  { "(prom_arith)",                 S(STF_NONE                             ) },
+  { "(integral)",                   S(STF_NONE                             ) },
+  { "(arith)",                      S(STF_NONE                             ) },
+  { "(arith_nobool)",               S(STF_NONE                             ) },
+  { "(any_obj)",                    S(STF_NONE                             ) },
+  { "(non_void)",                   S(STF_NONE                             ) },
+  { "(any_type)",                   S(STF_NONE                             ) },
 
 
-  { "(pret_strip_ref)",       0,    S(STF_NONE                             ) },
-  { "(pret_ptm)",             0,    S(STF_NONE                             ) },
-  { "(pret_arith_conv)",      0,    S(STF_NONE                             ) },
-  { "(pret_first)",           0,    S(STF_NONE                             ) },
-  { "(pret_first_ptr2ref)",   0,    S(STF_NONE                             ) },
-  { "(pret_second)",          0,    S(STF_NONE                             ) },
-  { "(pret_second_ptr2ref)",  0,    S(STF_NONE                             ) },
+  { "(pret_strip_ref)",             S(STF_NONE                             ) },
+  { "(pret_ptm)",                   S(STF_NONE                             ) },
+  { "(pret_arith_conv)",            S(STF_NONE                             ) },
+  { "(pret_first)",                 S(STF_NONE                             ) },
+  { "(pret_first_ptr2ref)",         S(STF_NONE                             ) },
+  { "(pret_second)",                S(STF_NONE                             ) },
+  { "(pret_second_ptr2ref)",        S(STF_NONE                             ) },
 };
 #undef S
 

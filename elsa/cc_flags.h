@@ -248,15 +248,20 @@ enum SimpleTypeFlags {
 // info about each simple type
 struct SimpleTypeInfo {
   char const *name;       // e.g. "unsigned char"
-  int reprSize;           // # of bytes to store
   SimpleTypeFlags flags;  // various boolean attributes
 };
 
 bool isValid(SimpleTypeId id);                          // bounds check
 SimpleTypeInfo const &simpleTypeInfo(SimpleTypeId id);
 
-inline char const *simpleTypeName(SimpleTypeId id)       { return simpleTypeInfo(id).name; }
-inline int simpleTypeReprSize(TargetInfo &TI, SimpleTypeId id) { return simpleTypeInfo(id).reprSize; }
+inline char const *simpleTypeName(SimpleTypeId id)
+    { if (id < (SimpleTypeId)TargetInfo::TypeIDCount)
+          return TargetInfo::getTypeName((TargetInfo::TypeID)id);
+      else return simpleTypeInfo(id).name; }
+inline int simpleTypeReprSize(TargetInfo &TI, SimpleTypeId id)
+    { if (id < (SimpleTypeId)TargetInfo::TypeIDCount)
+          return TI.getTypeSizeInBytes((TargetInfo::TypeID)id);
+      else return 0; }
 inline bool isIntegerType(SimpleTypeId id)               { return !!(simpleTypeInfo(id).flags & STF_INTEGER); }
 inline bool isFloatType(SimpleTypeId id)                 { return !!(simpleTypeInfo(id).flags & STF_FLOAT); }
 inline bool isExplicitlyUnsigned(SimpleTypeId id)        { return !!(simpleTypeInfo(id).flags & STF_UNSIGNED); }

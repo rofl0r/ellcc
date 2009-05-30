@@ -58,7 +58,8 @@ public:
   virtual ~TargetInfo();
 
   ///===---- Target Data Type Query Methods -------------------------------===//
-  // Warning! The order of these enum values is well known in the typeInfo array.
+  // Warning! The order of these enum values is well known in the typeInfo and
+  // typeNames arrays.
   enum TypeID {
     NoType = 0,
     Bool,
@@ -91,28 +92,16 @@ public:
     TypeIDCount
   };
 
-
-  // Some flags that can be set for simple types.
-  enum TypeFlags {
-    STF_NONE       = 0x00,
-    STF_INTEGER    = 0x01,     // "integral type" (3.9.1 para 7)
-    STF_FLOAT      = 0x02,     // "floating point type" (3.9.1 para 8).
-    STF_PROM       = 0x04,     // Can be destination of a promotion.
-    STF_UNSIGNED   = 0x08,     // Explicitly unsigned type.
-    STF_ALL        = 0x0F,
-  };
-
 private:
   /** Info about each simple type.
    */
   struct TypeInfo {
-    char const *name;           ///< The type name, e.g. "unsigned char".
-    TypeFlags flags;            ///< Various boolean attributes.
     unsigned char Width;        ///< The type width in bytes.
     unsigned char Align;        ///< The type's ABI alignment requirement.
     unsigned char PrefAlign;    ///< The type's preferred alignment.
   };
-  static TypeInfo typeInfo[TypeIDCount];
+ TypeInfo typeInfo[TypeIDCount];
+ static const char* typeNames[TypeIDCount];
 
 protected:
   TypeID SizeType, IntMaxType, UIntMaxType, PtrDiffType, IntPtrType, WCharType;
@@ -181,7 +170,7 @@ public:
   }
   TypeID getIntPtrType() const { return IntPtrType; }
   TypeID getWCharType() const { return WCharType; }
-  unsigned char getTypeSizeInBytes(TypeID id) { return typeInfo[id].Width * MAUBits; }
+  unsigned char getTypeSizeInBytes(TypeID id) { return typeInfo[id].Width / MAUBits; }
 
   /// isCharSigned - Return true if 'char' is 'signed char' or false if it is
   /// treated as 'unsigned char'.  This is implementation defined according to
@@ -229,7 +218,8 @@ public:
   
   /// getTypeName - Return the user string for the specified integer type enum.
   /// For example, SignedShort -> "short".
-  static const char *getTypeName(TypeID T);
+  static const char *getTypeName(TypeID T)
+    { return typeNames[T]; }
   
   ///===---- Other target property query methods --------------------------===//
   

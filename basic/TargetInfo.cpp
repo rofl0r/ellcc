@@ -141,50 +141,40 @@ void TargetInfo::getTargetDescription(std::string& res)
 #undef DATAP
 #undef DATAN
 
-// Work around bitwise-OR in initializers.
-#define S(x) ((TypeFlags)(x))
-// Info about each simple type.
-TargetInfo::TypeInfo TargetInfo::typeInfo[TypeIDCount] =
+// The names of the simple types.
+const char*  TargetInfo::typeNames[TypeIDCount] =
 {
-  { "<no type>",                S(STF_NONE)                            },
-  { "bool",                     S(STF_INTEGER)                         },
-  { "char",                     S(STF_INTEGER)                         },
-  { "signed char",              S(STF_INTEGER)                         },
-  { "unsigned char",            S(STF_INTEGER|STF_UNSIGNED)            },
-  { "wchar_t",                  S(STF_INTEGER)                         },
-  { "short",                    S(STF_INTEGER)                         },
-  { "unsigned short",           S(STF_INTEGER|STF_UNSIGNED)            },
-  { "int",                      S(STF_INTEGER|STF_PROM)                },
-  { "unsigned int",             S(STF_INTEGER|STF_PROM|STF_UNSIGNED)   },
-  { "long",                     S(STF_INTEGER|STF_PROM)                },
-  { "unsigned long",            S(STF_INTEGER|STF_PROM|STF_UNSIGNED)   },
-  { "long long",                S(STF_INTEGER|STF_PROM)                },
-  { "unsigned long long",       S(STF_INTEGER|STF_PROM|STF_UNSIGNED)   },
-  { "float",                    S(STF_FLOAT)                           },
-  { "double",                   S(STF_FLOAT|STF_PROM)                  },
-  { "long double",              S(STF_FLOAT)                           },
-  { "float _Complex",           S(STF_FLOAT)                           },
-  { "double _Complex",          S(STF_FLOAT)                           },
-  { "long double _Complex",     S(STF_FLOAT)                           },
-  { "float _Imaginary",         S(STF_FLOAT)                           },
-  { "float _Imaginary",         S(STF_FLOAT)                           },
-  { "long double _Imaginary",   S(STF_FLOAT)                           },
-  { "vector",                   S(STF_FLOAT)                           },   // FIXME
-  { "long vector",              S(STF_FLOAT)                           },   // FIXME
-  { "<pointer>",                S(STF_NONE)                            },
-  { "<aggregate>",              S(STF_NONE)                            },   // FIXME
-  { "void",                     S(STF_NONE)                            },
+  "<no type>",
+  "bool",
+  "char",
+  "signed char",
+  "unsigned char",
+  "wchar_t",
+  "short",
+  "unsigned short",
+  "int",
+  "unsigned int",
+  "long",
+  "unsigned long",
+  "long long",
+  "unsigned long long",
+  "float",
+  "double",
+  "long double",
+  "float _Complex",
+  "double _Complex",
+  "long double _Complex",
+  "float _Imaginary",
+  "float _Imaginary",
+  "long double _Imaginary",
+  "vector",
+  "long vector",
+  "<pointer>",
+  "<aggregate>",
+  "void"
 };
 
-/// getTypeName - Return the user string for the specified type enum.
-/// For example, SignedShort -> "short".
-const char *TargetInfo::getTypeName(TypeID T) {
-  assert(T < TypeID && "Invalid type passed in");
-  return typeInfo[T].name;
-}
-
 //===----------------------------------------------------------------------===//
-
 
 static void removeGCCRegisterPrefix(const char *&Name) {
   if (Name[0] == '%' || Name[0] == '#')
