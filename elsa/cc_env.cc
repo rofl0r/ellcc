@@ -5471,7 +5471,7 @@ Type *Env::sizeofType(Type *t, int &size, Expression * /*nullable*/ expr)
   env.ensureCompleteType("compute size of", t);
 
   try {
-    size = t->reprSize();
+    size = t->reprSize(TI);
     TRACE("sizeof", "sizeof(" << (expr? expr->exprToString() : t->toString()) <<
                     ") is " << size);
   }

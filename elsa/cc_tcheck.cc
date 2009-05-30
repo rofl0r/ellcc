@@ -4433,7 +4433,7 @@ void D_array::tcheck(Env &env, Declarator::Tcheck &dt)
     if (size) {
       // try to evaluate the size to a constant
       int sz = 1;
-      ConstEval cenv(env.dependentVar);
+      ConstEval cenv(env.TI, env.dependentVar);
       CValue val = size->constEval(cenv);
       if (val.isError()) {
         // size didn't evaluate to a constant
@@ -5457,10 +5457,9 @@ Type *E_floatLit::itcheck_x(Env &env, Expression *&replacement)
   return env.getSimpleType(ST_DOUBLE);
 }
 
-static void appendCharacter(DataBlock *block, unsigned int c, 
-                            SimpleTypeId charType)
+static void appendCharacter(TargetInfo &TI, DataBlock *block, unsigned int c, SimpleTypeId charType)
 {
-  int charWidth = simpleTypeReprSize(charType);
+  int charWidth = simpleTypeReprSize(TI, charType);
   
   if (block->getDataLen() + charWidth > block->getAllocated()) {
     // should be right up against the boundary
@@ -5656,7 +5655,7 @@ Type *E_stringLit::itcheck_x(Env &env, Expression *&replacement)
   // initial allocation estimate assumes no continuations and no
   // escape characters
   data = new DataBlock((strlen(text) + 1/*NUL*/ - 2/*quotes*/) *
-                       simpleTypeReprSize(id));
+                       simpleTypeReprSize(env.TI, id));
 
   // iterate over continuation segments
   E_stringLit *segment = this;
@@ -5677,10 +5676,10 @@ Type *E_stringLit::itcheck_x(Env &env, Expression *&replacement)
     while (l-- && *p != '"') {
       if (*p == '\\') {
         unsigned int c = decodeEscape(env, p);
-        appendCharacter(data, c, id);
+        appendCharacter(env.TI, data, c, id);
       }
       else {
-        appendCharacter(data, *p, id);
+        appendCharacter(env.TI, data, *p, id);
         p++;
       }
     }
@@ -5689,11 +5688,11 @@ Type *E_stringLit::itcheck_x(Env &env, Expression *&replacement)
   }
   
   // final NUL character
-  appendCharacter(data, 0, id);
+  appendCharacter(env.TI, data, 0, id);
 
   // consolidate
   data->setAllocated(data->getDataLen());
-  int len = data->getDataLen() / simpleTypeReprSize(id);
+  int len = data->getDataLen() / simpleTypeReprSize(env.TI, id);
 
   // set type
   CVFlags stringLitCharCVFlags = CV_NONE;
@@ -9468,7 +9467,7 @@ bool Expression::constEval(Env &env, int &result, bool &dependent) const
 {
   dependent = false;
 
-  ConstEval cenv(env.dependentVar);
+  ConstEval cenv(env.TI, env.dependentVar);
 
   CValue val = constEval(cenv);
   if (val.isError()) {

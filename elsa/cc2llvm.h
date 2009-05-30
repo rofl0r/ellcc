@@ -21,7 +21,7 @@ namespace llvm {
 // Elsa
 #include "cc_ast.h"          // C++ AST
 
-#include "TargetInfo.h"
+class Env;
 using namespace ellcc;
 
 // smbase
@@ -56,7 +56,7 @@ public:      // funcs
      */
     ~CC2LLVMEnv();
 
-    /** Information about the target.
+    /** Information about the build environment.
      */
     TargetInfo& TI;
     /** LLVM information about the target.

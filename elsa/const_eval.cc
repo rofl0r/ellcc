@@ -4,6 +4,7 @@
 #include "const_eval.h"     // this module
 #include "cc_ast.h"         // C++ AST
 #include "cc_env.h"         // Env
+#include "TargetInfo.h"     // TargetInfo
 #include "stdconv.h"        // applyIntegralPromotions, etc.
 #include "mtype.h"          // MType::getEnvironment
 #include "template.h"       // STemplateArgument
@@ -178,7 +179,7 @@ void CValue::convertToType(SimpleTypeId newType)
   // dmandelin@mozilla.com
   // Fixes Oink ticket #164, Mozilla bug #411178
   // Truncate value according to C++ semantics
-  int reprSize = simpleTypeReprSize(type);
+  int reprSize = simpleTypeReprSize(TI, type);
   // Mask for bits to be kept in truncation.
   long mask = (1L << 8*reprSize) - 1;
   if (mask) { // zero mask means no truncation required
@@ -528,9 +529,9 @@ string CValue::asString() const
 
 
 // ----------------------- ConstEval ------------------------
-ConstEval::ConstEval(Variable *d, MType *m)
+ConstEval::ConstEval(TargetInfo& TI, Variable *d, MType *m)
   : dependentVar(d),
-    map(m)
+    map(m), TI(TI)
 {}
 
 ConstEval::~ConstEval()
@@ -562,13 +563,13 @@ CValue Expression::iconstEval(ConstEval &env) const
     // selecting a different interpretation) the user will never see
     // it; but by adding the error, I ensure this interpretation will
     // not part of a successful parse.
-    return CValue("ambiguous expr being const-eval'd (user should not see this)");
+    return CValue(env.TI, "ambiguous expr being const-eval'd (user should not see this)");
   }
 
   if (type->isError()) {
     // don't try to const-eval an expression that failed
     // to typecheck
-    return CValue("failed to tcheck");
+    return CValue(env.TI, "failed to tcheck");
   }
 
   ASTSWITCHC(Expression, this) {
@@ -578,12 +579,12 @@ CValue Expression::iconstEval(ConstEval &env) const
       return eaddr->expr->constEvalAddr(env);
 
     ASTNEXTC(E_boolLit, b)
-      CValue ret;
+      CValue ret(env.TI);
       ret.setBool(b->b);
       return ret;
 
     ASTNEXTC(E_intLit, i)
-      CValue ret;
+      CValue ret(env.TI);
       SimpleTypeId id = type->asSimpleTypeC()->type;
       switch (CValue::classify(id)) {
         default: xfailure("unexpected intlit type");
@@ -593,13 +594,13 @@ CValue Expression::iconstEval(ConstEval &env) const
       return ret;
 
     ASTNEXTC(E_floatLit, f)
-      CValue ret;
+      CValue ret(env.TI);
       SimpleTypeId id = type->asSimpleTypeC()->type;
       ret.setFloat(id, (float)f->d);
       return ret;
 
     ASTNEXTC(E_charLit, c)
-      CValue ret;
+      CValue ret(env.TI);
       SimpleTypeId id = type->asSimpleTypeC()->type;
       switch (CValue::classify(id)) {
         default: xfailure("unexpected charlit type");
@@ -617,14 +618,14 @@ CValue Expression::iconstEval(ConstEval &env) const
         return c->args->first()->constEval(env);
       }
       else {
-        return CValue("can only const-eval E_constructors for integer types");
+        return CValue(env.TI, "can only const-eval E_constructors for integer types");
       }
 
     ASTNEXTC(E_sizeof, s)
       // 5.3.3p6: result is of type 'size_t'; most systems (including my
       // elsa/include/stddef.h header) make that the same as 'unsigned';
       // in any case, it must be an unsigned integer type (c99, 7.17p2)
-      CValue ret;
+      CValue ret(env.TI);
       ret.setUnsigned(ST_UNSIGNED_INT, s->size);
       return ret;
 
@@ -642,13 +643,13 @@ CValue Expression::iconstEval(ConstEval &env) const
       CValue v1 = b->e1->constEval(env);
       // dmandelin -- fixed bug with template params causing spurious error
       if (b->op == BIN_AND && v1.isZero() && !v1.isSticky()) {
-        CValue ret;
+        CValue ret(env.TI);
         ret.setBool(false);   // short-circuit: propagate false
         return ret;
       }
       // dmandelin -- fixed bug with template params causing spurious error
       if (b->op == BIN_OR && !v1.isZero() && !v1.isSticky()) {
-        CValue ret;
+        CValue ret(env.TI);
         ret.setBool(true);    // short-circuit: propagate false
         return ret;
       }
@@ -663,7 +664,7 @@ CValue Expression::iconstEval(ConstEval &env) const
       
     ASTNEXTC(E_keywordCast, c)
       if (c->key == CK_DYNAMIC) {
-        return CValue("cannot const-eval a keyword_cast");
+        return CValue(env.TI, "cannot const-eval a keyword_cast");
       }
       else {
         // assume the other three work like C casts
@@ -685,9 +686,9 @@ CValue Expression::iconstEval(ConstEval &env) const
 
     ASTNEXTC(E_sizeofType, s)
       if (s->atype->getType()->isGeneralizedDependent()) {
-        return CValue(ST_DEPENDENT);
+        return CValue(env.TI, ST_DEPENDENT);
       }
-      CValue ret;
+      CValue ret(env.TI);
       ret.setUnsigned(ST_UNSIGNED_INT, s->size);
       return ret;
 
@@ -707,14 +708,14 @@ CValue Expression::iconstEval(ConstEval &env) const
 // the switch statement above, which is more compact.
 CValue Expression::extConstEval(ConstEval &env) const
 {
-  return CValue(stringc << kindName() << " is not constEval'able");
+  return CValue(env.TI, stringc << kindName() << " is not constEval'able");
 }
 
 
 CValue ConstEval::evaluateVariable(Variable *var)
 {
   if (var->isEnumerator()) {
-    CValue ret;
+    CValue ret(TI);
     ret.setSigned(ST_INT, var->getEnumeratorValue());
     return ret;
   }
@@ -728,19 +729,19 @@ CValue ConstEval::evaluateVariable(Variable *var)
 
   if (var->type->isGeneralizedDependent() &&
       var->value) {
-    return CValue(ST_DEPENDENT);
+    return CValue(TI, ST_DEPENDENT);
   }
 
   if (var->isTemplateParam()) {
-    return CValue(ST_DEPENDENT);
+    return CValue(TI, ST_DEPENDENT);
   }
 
   if (var == dependentVar) {
     // value-dependent expression
-    return CValue(ST_DEPENDENT);
+    return CValue(TI, ST_DEPENDENT);
   }
 
-  return CValue(stringc
+  return CValue(TI, stringc
     << "can't const-eval non-const variable `" << var->name << "'");
 }
 
@@ -759,8 +760,7 @@ CValue ConstEval::evaluateE_variable(E_variable const *evar)
   // const-eval dives back into the template mess, thus adding itself
   // to the giant ball of mutual dependencies despite my earlier
   // attempts to pull it off to the side...
-  STemplateArgument sarg = map->getEnvironment()->
-    applyArgumentMapToE_variable(*map, evar);
+  STemplateArgument sarg = map->getEnvironment()->applyArgumentMapToE_variable(*map, evar);
 
   // interpret the result
   switch (sarg.kind) {
@@ -808,7 +808,7 @@ CValue Expression::constEvalAddr(ConstEval &env) const
         // probably something weird like a template
       }
       else {
-        val.addOffset(ct->getDataMemberOffset(e->field));
+        val.addOffset(ct->getDataMemberOffset(env.TI, e->field));
       }
       return val;
     }
@@ -824,7 +824,7 @@ CValue Expression::constEvalAddr(ConstEval &env) const
           xfailure("bad CastKeyword");
 
         case CK_DYNAMIC:
-          return CValue("can't const-eval dynamic_cast");
+          return CValue(env.TI, "can't const-eval dynamic_cast");
 
         case CK_STATIC:
         case CK_REINTERPRET:
@@ -837,7 +837,7 @@ CValue Expression::constEvalAddr(ConstEval &env) const
       return e->expr->constEvalAddr(env);
 
     ASTDEFAULTC
-      return CValue("unhandled case in constEvalAddr");
+      return CValue(env.TI, "unhandled case in constEvalAddr");
 
     ASTENDCASEC
   }
@@ -862,7 +862,7 @@ CValue Expression::constEvalCast(ConstEval &env, ASTTypeId const *ctype,
   }
   else {
     // TODO: this is probably not the right rule..
-    return CValue(stringc
+    return CValue(env.TI, stringc
       << "in constant expression, can only cast to arithmetic or pointer types, not `"
       << t->toString() << "'");
   }

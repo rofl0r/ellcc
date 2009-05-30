@@ -211,19 +211,20 @@ bool AtomicType::equals(AtomicType const *obj) const
 
 // ------------------ SimpleType -----------------
 SimpleType SimpleType::fixed[NUM_SIMPLE_TYPES] = {
-  SimpleType(ST_CHAR),
-  SimpleType(ST_UNSIGNED_CHAR),
-  SimpleType(ST_SIGNED_CHAR),
+  SimpleType(),
   SimpleType(ST_BOOL),
+  SimpleType(ST_CHAR),
+  SimpleType(ST_SIGNED_CHAR),
+  SimpleType(ST_UNSIGNED_CHAR),
+  SimpleType(ST_WCHAR_T),
+  SimpleType(ST_SHORT_INT),
+  SimpleType(ST_UNSIGNED_SHORT_INT),
   SimpleType(ST_INT),
   SimpleType(ST_UNSIGNED_INT),
   SimpleType(ST_LONG_INT),
   SimpleType(ST_UNSIGNED_LONG_INT),
   SimpleType(ST_LONG_LONG),
   SimpleType(ST_UNSIGNED_LONG_LONG),
-  SimpleType(ST_SHORT_INT),
-  SimpleType(ST_UNSIGNED_SHORT_INT),
-  SimpleType(ST_WCHAR_T),
   SimpleType(ST_FLOAT),
   SimpleType(ST_DOUBLE),
   SimpleType(ST_LONG_DOUBLE),
@@ -233,8 +234,11 @@ SimpleType SimpleType::fixed[NUM_SIMPLE_TYPES] = {
   SimpleType(ST_FLOAT_IMAGINARY),
   SimpleType(ST_DOUBLE_IMAGINARY),
   SimpleType(ST_LONG_DOUBLE_IMAGINARY),
+  SimpleType(),
+  SimpleType(),
+  SimpleType(),
+  SimpleType(),
   SimpleType(ST_VOID),
-
   SimpleType(ST_ELLIPSIS),
   SimpleType(ST_CDTOR),
   SimpleType(ST_ERROR),
@@ -267,9 +271,9 @@ sm::string SimpleType::toCString() const
 }
 
 
-void SimpleType::sizeInfo(int &size, int &align) const
+void SimpleType::sizeInfo(TargetInfo& TI, int &size, int &align) const
 {
-  size = align = simpleTypeReprSize(type);
+  size = align = simpleTypeReprSize(TI, type);
 }
 
 
@@ -526,7 +530,7 @@ sm::string CompoundType::toCString() const
 
 
 // dmandelin@mozilla.com
-void CompoundType::sizeInfo(int &size, int &align) const
+void CompoundType::sizeInfo(TargetInfo& TI, int &size, int &align) const
 {
   size = 0;
   align = 1;
@@ -536,7 +540,7 @@ void CompoundType::sizeInfo(int &size, int &align) const
     align = 4;
   }
 
-  memSizeInfo(size, align);
+  memSizeInfo(TI, size, align);
 }  
 
 // dmandelin@mozilla.com
@@ -565,7 +569,7 @@ static void sizeInfoAddBitfield(int &size, int &align, int &bits)
 // Compute the size of everything except the vptr. Note that size and
 // align must be initialized on entry.
 // We need this separate from sizeInfo so that we can add the vptr only once.
-void CompoundType::memSizeInfo(int &size, int &align) const
+void CompoundType::memSizeInfo(TargetInfo& TI, int &size, int &align) const
 {
   // base classes
   {
@@ -577,7 +581,7 @@ void CompoundType::memSizeInfo(int &size, int &align) const
       }
       else {
 	int baseSize = 0, baseAlign = 1;
-	iter.data()->ct->memSizeInfo(baseSize, baseAlign);
+	iter.data()->ct->memSizeInfo(TI, baseSize, baseAlign);
 	sizeInfoAddData(size, align, baseSize, baseAlign);
       }
     }
@@ -592,7 +596,7 @@ void CompoundType::memSizeInfo(int &size, int &align) const
     int memSize, memAlign;
 
     if (keyword == K_UNION) {
-      v->type->sizeInfo(memSize, memAlign);
+      v->type->sizeInfo(TI, memSize, memAlign);
       size = max(size, memSize);
       align = max(align, memAlign);
       continue;
@@ -615,7 +619,7 @@ void CompoundType::memSizeInfo(int &size, int &align) const
       continue;
     }
 
-    v->type->sizeInfo(memSize, memAlign);
+    v->type->sizeInfo(TI, memSize, memAlign);
     sizeInfoAddData(size, align, memSize, memAlign);
   }
 
@@ -698,14 +702,14 @@ int CompoundType::getDataMemberPosition(StringRef name) const
 
 // TODO: Does this handle members of base classes correctly?  What
 // about virtual inheritance?
-int CompoundType::getDataMemberOffset(Variable *dataMember) const
+int CompoundType::getDataMemberOffset(TargetInfo& TI, Variable *dataMember) const
 {
   int offset = 0;
   SFOREACH_OBJLIST(Variable, dataMembers, iter) {
     if (iter.data() == dataMember) {
       return offset;
     }
-    offset += iter.data()->type->reprSize();
+    offset += iter.data()->type->reprSize(TI);
   }
 
   xfailure(stringc << "getDataMemberOffset: no such member: "
@@ -1141,10 +1145,10 @@ sm::string EnumType::toCString() const
 }
 
 
-void EnumType::sizeInfo(int &size, int &align) const
+void EnumType::sizeInfo(TargetInfo& TI, int &size, int &align) const
 {
   // this is the usual choice
-  size = align = simpleTypeReprSize(ST_INT);
+  size = align = simpleTypeReprSize(TI, ST_INT);
 }
 
 
@@ -1773,9 +1777,9 @@ sm::string CVAtomicType::leftString(bool /*innerParen*/) const
 }
 
 
-void CVAtomicType::sizeInfo(int &size, int &align) const
+void CVAtomicType::sizeInfo(TargetInfo& TI, int &size, int &align) const
 {
-  atomic->sizeInfo(size, align);
+  atomic->sizeInfo(TI, size, align);
 }
 
 
@@ -1874,7 +1878,7 @@ sm::string PointerType::rightString(bool /*innerParen*/) const
 }
 
 
-void PointerType::sizeInfo(int &size, int &align) const
+void PointerType::sizeInfo(TargetInfo& TI, int &size, int &align) const
 {
   size = align = 4;
 }
@@ -1956,7 +1960,7 @@ sm::string ReferenceType::rightString(bool /*innerParen*/) const
   return s;
 }
 
-void ReferenceType::sizeInfo(int &size, int &align) const
+void ReferenceType::sizeInfo(TargetInfo& TI, int &size, int &align) const
 {
   size = align = 4;
 }
@@ -2283,7 +2287,7 @@ bool FunctionType::usesPostfixTypeConstructorSyntax() const
 }
 
 
-void FunctionType::sizeInfo(int &size, int &align) const
+void FunctionType::sizeInfo(TargetInfo& TI, int &size, int &align) const
 {
   // thinking here about how this works when we're summing
   // the fields of a class with member functions ..
@@ -2444,12 +2448,12 @@ unsigned ArrayType::innerHashValue() const
 }
 
 
-void ArrayType::sizeInfo(int &size, int &align) const
+void ArrayType::sizeInfo(TargetInfo& TI, int &size, int &align) const
 {
   if (!hasSize()) {
     throw_XReprSize(this->size == DYN_SIZE /*isDynamic*/);
   }
-  eltType->sizeInfo(size, align);
+  eltType->sizeInfo(TI, size, align);
   size *= this->size;
 }
 
@@ -2515,7 +2519,7 @@ sm::string PointerToMemberType::rightString(bool /*innerParen*/) const
 }
 
 
-void PointerToMemberType::sizeInfo(int &size, int &align) const
+void PointerToMemberType::sizeInfo(TargetInfo& TI, int &size, int &align) const
 {
   size = align = 4;
 }
@@ -2971,19 +2975,20 @@ ArrayType *TypeFactory::setArraySize(SourceLoc loc, ArrayType *type, int size)
 CVAtomicType BasicTypeFactory::unqualifiedSimple[NUM_SIMPLE_TYPES] = {
   #define CVAT(id) \
     CVAtomicType(&SimpleType::fixed[id], CV_NONE),
-  CVAT(ST_CHAR)
-  CVAT(ST_UNSIGNED_CHAR)
-  CVAT(ST_SIGNED_CHAR)
+  CVAT(ST_NO_TYPE)
   CVAT(ST_BOOL)
+  CVAT(ST_CHAR)
+  CVAT(ST_SIGNED_CHAR)
+  CVAT(ST_UNSIGNED_CHAR)
+  CVAT(ST_WCHAR_T)
+  CVAT(ST_SHORT_INT)
+  CVAT(ST_UNSIGNED_SHORT_INT)
   CVAT(ST_INT)
   CVAT(ST_UNSIGNED_INT)
   CVAT(ST_LONG_INT)
   CVAT(ST_UNSIGNED_LONG_INT)
   CVAT(ST_LONG_LONG)
   CVAT(ST_UNSIGNED_LONG_LONG)
-  CVAT(ST_SHORT_INT)
-  CVAT(ST_UNSIGNED_SHORT_INT)
-  CVAT(ST_WCHAR_T)
   CVAT(ST_FLOAT)
   CVAT(ST_DOUBLE)
   CVAT(ST_LONG_DOUBLE)
@@ -2993,6 +2998,10 @@ CVAtomicType BasicTypeFactory::unqualifiedSimple[NUM_SIMPLE_TYPES] = {
   CVAT(ST_FLOAT_IMAGINARY)
   CVAT(ST_DOUBLE_IMAGINARY)
   CVAT(ST_LONG_DOUBLE_IMAGINARY)
+  CVAT(ST_NO_TYPE)
+  CVAT(ST_NO_TYPE)
+  CVAT(ST_NO_TYPE)
+  CVAT(ST_NO_TYPE)
   CVAT(ST_VOID)
 
   CVAT(ST_ELLIPSIS)

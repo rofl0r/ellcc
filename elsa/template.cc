@@ -85,7 +85,7 @@ string TypeVariable::toCString() const
                  << name;
 }
 
-void TypeVariable::sizeInfo(int &size, int &align) const
+void TypeVariable::sizeInfo(TargetInfo& TI, int &size, int &align) const
 {
   //xfailure("you can't ask a type variable for its size");
 
@@ -133,7 +133,7 @@ string PseudoInstantiation::toCString() const
   return stringc << name << sargsToString(args);
 }
 
-void PseudoInstantiation::sizeInfo(int &size, int &align) const
+void PseudoInstantiation::sizeInfo(TargetInfo& TI, int &size, int &align) const
 {
   // it shouldn't matter what we say here, since the query will only
   // be made in the context of checking (but not instantiating) a
@@ -199,7 +199,7 @@ string DependentQType::toMLString() const
   return stringc << "dependentqtype-" << toCString();
 }
 
-void DependentQType::sizeInfo(int &size, int &align) const
+void DependentQType::sizeInfo(TargetInfo& TI, int &size, int &align) const
 {
   size = align = 4;
 }
@@ -279,7 +279,7 @@ string DependentSizedArrayType::toMLString() const
 }
 
 
-void DependentSizedArrayType::sizeInfo(int &size, int &align) const
+void DependentSizedArrayType::sizeInfo(TargetInfo& TI, int &size, int &align) const
 {
   // dmandelin@mozilla.com  bug 416182
   // This represents the result of sizeof inside the template definition.
@@ -3277,7 +3277,7 @@ void Env::setSTemplArgFromExpr(STemplateArgument &sarg, Expression const *expr,
       rvalType->isEnumType() ||
       rvalType->containsGeneralizedDependent()) {    // hope const-eval can work it out
     // attempt to const-eval this expression
-    ConstEval cenv(env.dependentVar, map);
+    ConstEval cenv(env.TI, env.dependentVar, map);
     CValue val = expr->constEval(cenv);
     if (val.isDependent()) {
       sarg.setDepExpr(expr);
@@ -3380,7 +3380,7 @@ STemplateArgument Env::variableToSTemplateArgument(Variable *var)
   STemplateArgument ret;
 
   // try to evaluate to an integer
-  ConstEval cenv(env.dependentVar);
+  ConstEval cenv(env.TI, env.dependentVar);
   CValue val = cenv.evaluateVariable(var);
   if (val.isIntegral()) {
     ret.setInt(val.getIntegralValue());
@@ -5526,7 +5526,7 @@ string TemplateTypeVariable::toMLString() const
 }
 
 
-void TemplateTypeVariable::sizeInfo(int &size, int &align) const
+void TemplateTypeVariable::sizeInfo(TargetInfo& TI, int &size, int &align) const
 {
   throw XReprSize();
 }

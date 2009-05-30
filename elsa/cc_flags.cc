@@ -278,19 +278,20 @@ bool isValid(SimpleTypeId id)
 
 static SimpleTypeInfo const simpleTypeInfoArray[] = {
   //name                   size,    flags
-  { TN(char),                       S(STF_INTEGER                          ) },
-  { TN(unsigned char),              S(STF_INTEGER | STF_UNSIGNED           ) },
-  { TN(signed char),                S(STF_INTEGER                          ) },
+  { "<no type>", 0,                 S(STF_NONE                             ) },
   { TN(bool),                       S(STF_INTEGER                          ) },
+  { TN(char),                       S(STF_INTEGER                          ) },
+  { TN(signed char),                S(STF_INTEGER                          ) },
+  { TN(unsigned char),              S(STF_INTEGER | STF_UNSIGNED           ) },
+  { TN(wchar_t),                    S(STF_INTEGER                          ) },
+  { TN(short),                      S(STF_INTEGER                          ) },
+  { TN(unsigned short),             S(STF_INTEGER | STF_UNSIGNED           ) },
   { TN(int),                        S(STF_INTEGER | STF_PROM               ) },
   { TN(unsigned int),               S(STF_INTEGER | STF_PROM | STF_UNSIGNED) },
   { TN(long int),                   S(STF_INTEGER | STF_PROM               ) },
   { TN(unsigned long int),          S(STF_INTEGER | STF_PROM | STF_UNSIGNED) },
   { TN(long long int),              S(STF_INTEGER | STF_PROM               ) },
   { TN(unsigned long long int),     S(STF_INTEGER | STF_PROM | STF_UNSIGNED) },
-  { TN(short int),                  S(STF_INTEGER                          ) },
-  { TN(unsigned short int),         S(STF_INTEGER | STF_UNSIGNED           ) },
-  { TN(wchar_t),                    S(STF_INTEGER                          ) },
   { TN(float),                      S(STF_FLOAT                            ) },
   { TN(double),                     S(STF_FLOAT | STF_PROM                 ) },
   { TN(long double),                S(STF_FLOAT                            ) },
@@ -300,6 +301,10 @@ static SimpleTypeInfo const simpleTypeInfoArray[] = {
   { "float _Imaginary",       4,    S(STF_FLOAT                            ) },
   { "double _Imaginary",      8,    S(STF_FLOAT                            ) },
   { "long double _Imaginary",10,    S(STF_FLOAT                            ) },
+  { "vector",                 8,    S(STF_FLOAT                            ) },
+  { "long vector",           16,    S(STF_FLOAT                            ) },
+  { "<pointer>",              1,    S(STF_NONE                             ) },
+  { "<aggregate>",            1,    S(STF_NONE                             ) },
   { "void",                   1,    S(STF_NONE                             ) },    // gnu: sizeof(void) is 1
 
   // these should go away early on in typechecking

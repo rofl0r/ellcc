@@ -26,7 +26,7 @@ public:
   virtual Tag getTag() const { return T_TYPEVAR; }
   virtual sm::string toCString() const;
   virtual sm::string toMLString() const;
-  virtual void sizeInfo(int &size, int &align) const;
+  virtual void sizeInfo(TargetInfo& TI, int &size, int &align) const;
   virtual void traverse(TypeVisitor &vis);
 
   // true if this template parameter has been associated with
@@ -61,7 +61,7 @@ public:      // funcs
   virtual Tag getTag() const { return T_PSEUDOINSTANTIATION; }
   virtual sm::string toCString() const;
   virtual sm::string toMLString() const;
-  virtual void sizeInfo(int &size, int &align) const;
+  virtual void sizeInfo(TargetInfo& TI, int &size, int &align) const;
   virtual void traverse(TypeVisitor &vis);
 };
 
@@ -91,7 +91,7 @@ public:      // data
   virtual Tag getTag() const { return T_DEPENDENTQTYPE; }
   virtual sm::string toCString() const;
   virtual sm::string toMLString() const;
-  virtual void sizeInfo(int &align, int &size) const;
+  virtual void sizeInfo(TargetInfo& TI, int &align, int &size) const;
   virtual void traverse(TypeVisitor &vis);
 };
 
@@ -135,7 +135,7 @@ public:      // funcs
   virtual Tag getTag() const { return T_DEPENDENTSIZEDARRAY; }
   unsigned innerHashValue() const;
   virtual sm::string toMLString() const;
-  virtual void sizeInfo(int &size, int &align) const;
+  virtual void sizeInfo(TargetInfo& TI, int &size, int &align) const;
 };      
 
 
@@ -677,7 +677,7 @@ public:      // funcs
   virtual Tag getTag() const { return T_TEMPLATETYPEVAR; }
   virtual sm::string toCString() const;
   virtual sm::string toMLString() const;
-  virtual void sizeInfo(int &size, int &align) const;
+  virtual void sizeInfo(TargetInfo& TI, int &size, int &align) const;
   virtual void traverse(TypeVisitor &vis);
 
   // True if this template parameter has been associated with a

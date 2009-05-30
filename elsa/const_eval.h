@@ -12,6 +12,10 @@ class Variable;          // variable.h
 class MType;             // mtype.h
 class E_variable;        // cc_ast.h
 
+namespace ellcc {
+class TargetInfo;        // TargetInfo.h
+}
+
 
 // represent a value during constant evaluation; in essence, the
 // constant evaluator is an interpreter for a small fragment of the
@@ -45,12 +49,12 @@ private:
   void dup(CValue const &obj);
 
 public:      // funcs
-  explicit CValue(SimpleTypeId t = ST_INT)
+  explicit CValue(TargetInfo& TI, SimpleTypeId t = ST_INT) : TI(TI)
     { type=t; si=0; }
-  explicit CValue(rostring why)
+  explicit CValue(TargetInfo& TI, rostring why) : TI(TI)
     { setError(why); }
 
-  CValue(CValue const &obj)
+  CValue(CValue const &obj) : TI(obj.TI)
     { dup(obj); }
 
   CValue& operator= (CValue const &obj)
@@ -107,6 +111,8 @@ public:      // funcs
 
   // debugging
   sm::string asString() const;
+
+  TargetInfo& TI;
 };
 
 
@@ -126,8 +132,10 @@ public:      // data
   // provided in 'map'.
   MType * /*nullable*/ map;
 
+  TargetInfo& TI;
+
 public:
-  ConstEval(Variable * /*nullable*/ dependentVar,
+  ConstEval(TargetInfo& TI, Variable * /*nullable*/ dependentVar,
             MType * map = NULL);
   ~ConstEval();
 

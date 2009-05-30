@@ -151,10 +151,10 @@ TargetInfo::TypeInfo TargetInfo::typeInfo[TypeIDCount] =
   { "char",                     S(STF_INTEGER)                         },
   { "signed char",              S(STF_INTEGER)                         },
   { "unsigned char",            S(STF_INTEGER|STF_UNSIGNED)            },
+  { "wchar_t",                  S(STF_INTEGER)                         },
   { "short",                    S(STF_INTEGER)                         },
   { "unsigned short",           S(STF_INTEGER|STF_UNSIGNED)            },
-  { "wchar_t",                  S(STF_INTEGER)                         },
-  { "int",                      S(STF_INTEGER)                         },
+  { "int",                      S(STF_INTEGER|STF_PROM)                },
   { "unsigned int",             S(STF_INTEGER|STF_PROM|STF_UNSIGNED)   },
   { "long",                     S(STF_INTEGER|STF_PROM)                },
   { "unsigned long",            S(STF_INTEGER|STF_PROM|STF_UNSIGNED)   },
@@ -171,8 +171,8 @@ TargetInfo::TypeInfo TargetInfo::typeInfo[TypeIDCount] =
   { "long double _Imaginary",   S(STF_FLOAT)                           },
   { "vector",                   S(STF_FLOAT)                           },   // FIXME
   { "long vector",              S(STF_FLOAT)                           },   // FIXME
-  { "<aggregate>",              S(STF_NONE)                            },   // FIXME
   { "<pointer>",                S(STF_NONE)                            },
+  { "<aggregate>",              S(STF_NONE)                            },   // FIXME
   { "void",                     S(STF_NONE)                            },
 };
 

@@ -1495,7 +1495,7 @@ void IN_designated::tcheck(Env &env, Type *type)
 // ------------------ const-eval, etc. -------------------
 CValue E_alignofType::extConstEval(ConstEval &env) const
 {
-  CValue ret;
+  CValue ret(env.TI);
   ret.setUnsigned(ST_UNSIGNED_INT, alignment);
   return ret;
 }
@@ -1503,7 +1503,7 @@ CValue E_alignofType::extConstEval(ConstEval &env) const
 
 CValue E_alignofExpr::extConstEval(ConstEval &env) const
 {
-  CValue ret;
+  CValue ret(env.TI);
   ret.setUnsigned(ST_UNSIGNED_INT, alignment);
   return ret;
 }

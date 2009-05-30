@@ -20,6 +20,8 @@
 
 #include "str.h"     // string
 #include "macros.h"  // ENUM_BITWISE_OPS
+#include "TargetInfo.h"
+using namespace ellcc;
 
 // ----------------------- TypeIntr ----------------------
 // type introducer keyword
@@ -176,59 +178,60 @@ char const *toString(ScopeKind sk);
 // (like whether a floating-point type is unsigned)
 enum SimpleTypeId {
   // types that exist in C++
-  ST_CHAR,
-  ST_UNSIGNED_CHAR,
-  ST_SIGNED_CHAR,
-  ST_BOOL,
-  ST_INT,
-  ST_UNSIGNED_INT,
-  ST_LONG_INT,
-  ST_UNSIGNED_LONG_INT,
-  ST_LONG_LONG,              // GNU/C99 extension
-  ST_UNSIGNED_LONG_LONG,     // GNU/C99 extension
-  ST_SHORT_INT,
-  ST_UNSIGNED_SHORT_INT,
-  ST_WCHAR_T,
-  ST_FLOAT,
-  ST_DOUBLE,
-  ST_LONG_DOUBLE,
-  ST_FLOAT_COMPLEX,          // GNU/C99 (see doc/complex.txt)
-  ST_DOUBLE_COMPLEX,         // GNU/C99
-  ST_LONG_DOUBLE_COMPLEX,    // GNU/C99
-  ST_FLOAT_IMAGINARY,        // C99
-  ST_DOUBLE_IMAGINARY,       // C99
-  ST_LONG_DOUBLE_IMAGINARY,  // C99
-  ST_VOID,                   // last concrete type (see 'isConcreteSimpleType')
+  ST_NO_TYPE = TargetInfo::NoType,
+  ST_BOOL = TargetInfo::Bool,
+  ST_CHAR = TargetInfo::Char,
+  ST_SIGNED_CHAR = TargetInfo::SignedChar,
+  ST_UNSIGNED_CHAR = TargetInfo::UnsignedChar,
+  ST_WCHAR_T = TargetInfo::WChar,
+  ST_SHORT_INT = TargetInfo::Short,
+  ST_UNSIGNED_SHORT_INT = TargetInfo::UnsignedShort,
+  ST_INT = TargetInfo::Int,
+  ST_UNSIGNED_INT = TargetInfo::UnsignedInt,
+  ST_LONG_INT = TargetInfo::Long,
+  ST_UNSIGNED_LONG_INT = TargetInfo::UnsignedLong,
+  ST_LONG_LONG = TargetInfo::LongLong,
+  ST_UNSIGNED_LONG_LONG = TargetInfo::UnsignedLongLong,         // GNU/C99
+  ST_FLOAT = TargetInfo::Float,
+  ST_DOUBLE = TargetInfo::Double,
+  ST_LONG_DOUBLE = TargetInfo::LongDouble,
+  ST_FLOAT_COMPLEX = TargetInfo::FloatComplex,                  // GNU/C99 (see doc/complex.txt)
+  ST_DOUBLE_COMPLEX = TargetInfo::DoubleComplex,                // GNU/C99
+  ST_LONG_DOUBLE_COMPLEX = TargetInfo::LongDoubleComplex,       // GNU/C99
+  ST_FLOAT_IMAGINARY = TargetInfo::FloatImaginary,              // C99
+  ST_DOUBLE_IMAGINARY = TargetInfo::DoubleImaginary,            // C99
+  ST_LONG_DOUBLE_IMAGINARY = TargetInfo::LongDoubleImaginary,   // C99
+  ST_VOID = TargetInfo::Void,                   // last concrete type (see 'isConcreteSimpleType')
 
   // codes I use as a kind of implementation hack
-  ST_ELLIPSIS,               // used to encode vararg functions
-  ST_CDTOR,                  // "return type" for ctors and dtors
-  ST_ERROR,                  // this type is returned for typechecking errors
-  ST_DEPENDENT,              // depdenent on an uninstantiated template parameter type
-  ST_IMPLINT,                // implicit-int for K&R C
-  ST_NOTFOUND,               // delayed ST_ERROR
+  ST_ELLIPSIS = TargetInfo::TypeIDCount,        // used to encode vararg functions
+  ST_CDTOR,                                     // "return type" for ctors and dtors
+  ST_ERROR,                                     // this type is returned for typechecking errors
+  ST_DEPENDENT,                                 // depdenent on an uninstantiated template parameter type
+  ST_IMPLINT,                                   // implicit-int for K&R C
+  ST_NOTFOUND,                                  // delayed ST_ERROR
 
   // for polymorphic built-in operators (cppstd 13.6)
-  ST_PROMOTED_INTEGRAL,      // int,uint,long,ulong
-  ST_PROMOTED_ARITHMETIC,    // promoted integral + float,double,longdouble
-  ST_INTEGRAL,               // has STF_INTEGER
-  ST_ARITHMETIC,             // every simple type except void
-  ST_ARITHMETIC_NON_BOOL,    // every simple type except void & bool
-  ST_ANY_OBJ_TYPE,           // any object (non-function, non-void) type
-  ST_ANY_NON_VOID,           // any type except void
-  ST_ANY_TYPE,               // any type, including functions and void
+  ST_PROMOTED_INTEGRAL,                         // int,uint,long,ulong
+  ST_PROMOTED_ARITHMETIC,                       // promoted integral + float,double,longdouble
+  ST_INTEGRAL,                                  // has STF_INTEGER
+  ST_ARITHMETIC,                                // every simple type except void
+  ST_ARITHMETIC_NON_BOOL,                       // every simple type except void & bool
+  ST_ANY_OBJ_TYPE,                              // any object (non-function, non-void) type
+  ST_ANY_NON_VOID,                              // any type except void
+  ST_ANY_TYPE,                                  // any type, including functions and void
 
   // for polymorphic builtin *return* ("PRET") type algorithms
-  ST_PRET_STRIP_REF,         // strip reference and volatileness from 1st arg
-  ST_PRET_PTM,               // ptr-to-member: union CVs, 2nd arg atType
-  ST_PRET_ARITH_CONV,        // "usual arithmetic conversions" (5 para 9) on 1st, 2nd arg
-  ST_PRET_FIRST,             // 1st arg type
-  ST_PRET_FIRST_PTR2REF,     // 1st arg ptr type -> ref type
-  ST_PRET_SECOND,            // 2nd arg type
-  ST_PRET_SECOND_PTR2REF,    // 2nd arg ptr type -> ref type
+  ST_PRET_STRIP_REF,                            // strip reference and volatileness from 1st arg
+  ST_PRET_PTM,                                  // ptr-to-member: union CVs, 2nd arg atType
+  ST_PRET_ARITH_CONV,                           // "usual arithmetic conversions" (5 para 9) on 1st, 2nd arg
+  ST_PRET_FIRST,                                // 1st arg type
+  ST_PRET_FIRST_PTR2REF,                        // 1st arg ptr type -> ref type
+  ST_PRET_SECOND,                               // 2nd arg type
+  ST_PRET_SECOND_PTR2REF,                       // 2nd arg ptr type -> ref type
 
   NUM_SIMPLE_TYPES,
-  ST_BITMASK = 0xFF          // for extraction for OR with CVFlags
+  ST_BITMASK = 0xFF                             // for extraction for OR with CVFlags
 };
 
 // some flags that can be set for simple types
@@ -252,11 +255,11 @@ struct SimpleTypeInfo {
 bool isValid(SimpleTypeId id);                          // bounds check
 SimpleTypeInfo const &simpleTypeInfo(SimpleTypeId id);
 
-inline char const *simpleTypeName(SimpleTypeId id)  { return simpleTypeInfo(id).name; }
-inline int simpleTypeReprSize(SimpleTypeId id)      { return simpleTypeInfo(id).reprSize; }
-inline bool isIntegerType(SimpleTypeId id)          { return !!(simpleTypeInfo(id).flags & STF_INTEGER); }
-inline bool isFloatType(SimpleTypeId id)            { return !!(simpleTypeInfo(id).flags & STF_FLOAT); }
-inline bool isExplicitlyUnsigned(SimpleTypeId id)   { return !!(simpleTypeInfo(id).flags & STF_UNSIGNED); }
+inline char const *simpleTypeName(SimpleTypeId id)       { return simpleTypeInfo(id).name; }
+inline int simpleTypeReprSize(TargetInfo &TI, SimpleTypeId id) { return simpleTypeInfo(id).reprSize; }
+inline bool isIntegerType(SimpleTypeId id)               { return !!(simpleTypeInfo(id).flags & STF_INTEGER); }
+inline bool isFloatType(SimpleTypeId id)                 { return !!(simpleTypeInfo(id).flags & STF_FLOAT); }
+inline bool isExplicitlyUnsigned(SimpleTypeId id)        { return !!(simpleTypeInfo(id).flags & STF_UNSIGNED); }
 
 inline bool isArithmeticType(SimpleTypeId id)    // 3.9.1 para 8
   { return !!(simpleTypeInfo(id).flags & (STF_FLOAT | STF_INTEGER)); }

@@ -19,7 +19,6 @@
 #include <llvm/Analysis/Verifier.h>
 
 #include "cc2llvm.h"         // this module
-
 #include "TargetInfo.h"
 using namespace ellcc;
 
@@ -287,7 +286,7 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLoc loc, AtomicType 
         case ST_UNSIGNED_SHORT_INT:
 	case ST_WCHAR_T:
 	    // Define an integer type.
-            type = llvm::IntegerType::get(simpleTypeReprSize(id) * BITS_PER_BYTE);
+            type = llvm::IntegerType::get(simpleTypeReprSize(TI, id) * BITS_PER_BYTE);
             break;
 	case ST_BOOL:
             type = llvm::IntegerType::get(1);
@@ -400,7 +399,7 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLoc loc, AtomicType 
 
     case AtomicType::T_ENUM: {
         EnumType* et = at->asEnumType();
-        type = llvm::IntegerType::get(et->reprSize() * BITS_PER_BYTE);
+        type = llvm::IntegerType::get(et->reprSize(TI) * BITS_PER_BYTE);
         break;
     }
       
@@ -1311,7 +1310,7 @@ llvm::Value *E_intLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
     while (isxdigit(*endp)) ++endp;
 
     VDEBUG("IntLit", loc, std::cerr << text << " radix " << radix);
-    return llvm::ConstantInt::get(llvm::APInt(type->reprSize() * BITS_PER_BYTE, p, endp - p, radix));
+    return llvm::ConstantInt::get(llvm::APInt(type->reprSize(env.TI) * BITS_PER_BYTE, p, endp - p, radix));
 }
 
 llvm::Value *E_floatLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
@@ -1370,7 +1369,7 @@ llvm::Value *E_stringLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
 llvm::Value *E_charLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     deref = 0;
-    return llvm::ConstantInt::get(llvm::APInt(type->reprSize() * BITS_PER_BYTE, c));
+    return llvm::ConstantInt::get(llvm::APInt(type->reprSize(env.TI) * BITS_PER_BYTE, c));
 }
 
 llvm::Value *E_this::cc2llvm(CC2LLVMEnv &env, int& deref) const
@@ -1389,7 +1388,7 @@ llvm::Value *E_variable::cc2llvm(CC2LLVMEnv &env, int& deref) const
     if (var->isEnumerator()) {
         // This is an enumerator constant. Return it's value.
         deref = 0;
-        return llvm::ConstantInt::get(llvm::APInt(type->reprSize() * BITS_PER_BYTE, var->getEnumeratorValue()));
+        return llvm::ConstantInt::get(llvm::APInt(type->reprSize(env.TI) * BITS_PER_BYTE, var->getEnumeratorValue()));
     }
 
     // The variable will have been previously seen in a declaration.
@@ -1752,16 +1751,17 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
     struct Data {
         bool isPointer;
         bool isSimple;
-	bool isInteger;
-	bool isUnsigned;
-	bool isFloat;
-	bool isVoid;
-	int size;
-	Type * type;
+	    bool isInteger;
+	    bool isUnsigned;
+	    bool isFloat;
+	    bool isVoid;
+	    int size;
+	    Type * type;
         const llvm::Type* llvmType;
-	llvm::Value** value;
-        Data(Type* type, llvm::Value** value, const llvm::Type* llvmType = NULL) 
-            : type(type), llvmType(llvmType), value(value) {
+	    llvm::Value** value;
+        TargetInfo& TI;
+        Data(TargetInfo& TI, Type* type, llvm::Value** value, const llvm::Type* llvmType = NULL) 
+            : type(type), llvmType(llvmType), value(value), TI(TI) {
             // Information needed convert and classify.
             if (type->isReference()) {
                 type = type->getAtType();
@@ -1774,7 +1774,7 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
 	      isInteger = true;
 	      EnumType* etype = type->asCVAtomicType()->atomic->asEnumType();
 	      isUnsigned = !etype->hasNegativeValues;
-	      size = etype->reprSize() * BITS_PER_BYTE;
+	      size = etype->reprSize(TI) * BITS_PER_BYTE;
 	      type = NULL;	// See special handling below.
 	    } else {
                 xassert(isSimple || isPointer);
@@ -1789,10 +1789,10 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
                     // Use the LLVM integer size.
                     size = (*value)->getType()->getPrimitiveSizeInBits();       // RICH: replace
                 } else {
-                    size = simpleTypeReprSize(st->type) * BITS_PER_BYTE;
+                    size = simpleTypeReprSize(TI, st->type) * BITS_PER_BYTE;
                 }
             } else if (isPointer) {
-                size = type->reprSize() * BITS_PER_BYTE;
+                size = type->reprSize(TI) * BITS_PER_BYTE;
             }
 	}
     };
@@ -1811,7 +1811,7 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
         llvmType = leftValue->getType();
         llvmType = llvm::PointerType::get(leftValue->getType(), 0);       // RICH: Address space.
     }
-    Data left(leftType, &leftValue, llvmType);
+    Data left(TI, leftType, &leftValue, llvmType);
 
     llvmType = NULL;
     if (rightType->isArrayType()) {
@@ -1838,7 +1838,7 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
             llvmType = llvm::PointerType::get(makeTypeSpecifier(loc, rightType), 0);       // RICH: Address space.
          }
     }
-    Data right(rightType, rightValue, llvmType);
+    Data right(TI, rightType, rightValue, llvmType);
     Data* source = NULL;	// This will remain NULL if no cast is needed.
     Data* target = &right;
 
@@ -3121,9 +3121,9 @@ llvm::Value *E___builtin_constant_p::cc2llvm(CC2LLVMEnv &env, int& deref) const
     llvm::Value* value = expr->cc2llvm(env, deref);
     bool isConstantExpr = llvm::isa<llvm::ConstantExpr>(value);
     if (isConstantExpr) {
-        value = llvm::ConstantInt::get(llvm::APInt(expr->type->reprSize() * BITS_PER_BYTE, 1));
+        value = llvm::ConstantInt::get(llvm::APInt(expr->type->reprSize(env.TI) * BITS_PER_BYTE, 1));
     } else {
-        value = llvm::ConstantInt::get(llvm::APInt(expr->type->reprSize() * BITS_PER_BYTE, 0));
+        value = llvm::ConstantInt::get(llvm::APInt(expr->type->reprSize(env.TI) * BITS_PER_BYTE, 0));
     }
     env.makeCast(loc, expr->type, value, type);
     deref = 0;
