@@ -241,14 +241,16 @@ public:     // funcs
 
   // size this type's representation occupies in memory; this
   // might throw XReprSize, see below
-  int reprSize(TargetInfo& TI) const { int size, align; sizeInfo(TI, size, align); return size; }
+  int sizeInBytes(TargetInfo& TI) const { int size, align; sizeInfoInBytes(TI, size, align); return size; }
+  int sizeInBits(TargetInfo& TI) const { int size, align; sizeInfoInBits(TI, size, align); return size; }
 
   // dmandelin@mozilla.com
   // size and alignment of this type.
-  // This has replaced reprSize as the primary size computation
+  // This has replaced sizeInBytes as the primary size computation
   // function because it is necessary to compute alignments as
   // well in order to compute sizes correctly.
-  virtual void sizeInfo(TargetInfo& TI, int &size, int &align) const = 0;
+  virtual void sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const = 0;
+  virtual void sizeInfoInBits(TargetInfo& TI, int &size, int &align) const = 0;
 
   // invoke 'vis.visitAtomicType(this)', and then traverse subtrees
   virtual void traverse(TypeVisitor &vis) = 0;
@@ -282,7 +284,8 @@ public:     // funcs
   virtual Tag getTag() const { return T_SIMPLE; }
   virtual sm::string toCString() const;
   virtual sm::string toMLString() const;
-  virtual void sizeInfo(TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBits(TargetInfo& TI, int &size, int &align) const;
   virtual void traverse(TypeVisitor &vis);
 };
 
@@ -483,12 +486,14 @@ public:      // funcs
   virtual Tag getTag() const { return T_COMPOUND; }
   virtual sm::string toCString() const;
   virtual sm::string toMLString() const;
-  virtual void sizeInfo(TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBits(TargetInfo& TI, int &size, int &align) const;
   virtual void traverse(TypeVisitor &vis);
 
   // Return the sizeInfo not counting any vptr -- we need this
   // because when we have base classes we don't include vptr twice
-  void memSizeInfo(TargetInfo& TI, int &size, int &align) const;
+  void memSizeInfoInBytes(TargetInfo& TI, int &size, int &align) const;
+  void memSizeInfoInBits(TargetInfo& TI, int &size, int &align) const;
 
   sm::string toStringWithFields() const;
   sm::string keywordAndName() const { return toCString(); }
@@ -608,7 +613,8 @@ public:     // funcs
   virtual Tag getTag() const { return T_ENUM; }
   virtual sm::string toCString() const;
   virtual sm::string toMLString() const;
-  virtual void sizeInfo(TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBits(TargetInfo& TI, int &size, int &align) const;
   virtual void traverse(TypeVisitor &vis);
 
   Value *addValue(StringRef name, int value, /*nullable*/ Variable *d);
@@ -752,11 +758,12 @@ public:     // funcs
   // returns 'false'.
   virtual bool usesPostfixTypeConstructorSyntax() const;
 
-  // size of representation at run-time; for now uses nominal 32-bit
-  // values
-  int reprSize(TargetInfo& TI) const { int size, align; sizeInfo(TI, size, align); return size; }
+  // size of representation at run-time.
+  int sizeInBytes(TargetInfo& TI) const { int size, align; sizeInfoInBytes(TI, size, align); return size; }
+  int sizeInBits(TargetInfo& TI) const { int size, align; sizeInfoInBits(TI, size, align); return size; }
 
-  virtual void sizeInfo(TargetInfo& TI, int &size, int &align) const = 0;
+  virtual void sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const = 0;
+  virtual void sizeInfoInBits(TargetInfo& TI, int &size, int &align) const = 0;
 
   // filter on all constructed types that appear in the type,
   // *including* parameter types; return true if any constructor
@@ -944,7 +951,8 @@ public:
   unsigned innerHashValue() const;
   virtual sm::string toMLString() const;
   virtual sm::string leftString(bool innerParen=true) const;
-  virtual void sizeInfo(TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBits(TargetInfo& TI, int &size, int &align) const;
   virtual bool anyCtorSatisfies(TypePred &pred) const;
   virtual CVFlags getCVFlags() const;
   virtual void traverse(TypeVisitor &vis);
@@ -972,7 +980,8 @@ public:
   virtual sm::string toMLString() const;
   virtual sm::string leftString(bool innerParen=true) const;
   virtual sm::string rightString(bool innerParen=true) const;
-  virtual void sizeInfo(TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBits(TargetInfo& TI, int &size, int &align) const;
   virtual bool anyCtorSatisfies(TypePred &pred) const;
   virtual CVFlags getCVFlags() const;
   virtual void traverse(TypeVisitor &vis);
@@ -1000,7 +1009,8 @@ public:
   virtual sm::string toMLString() const;
   virtual sm::string leftString(bool innerParen=true) const;
   virtual sm::string rightString(bool innerParen=true) const;
-  virtual void sizeInfo(TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBits(TargetInfo& TI, int &size, int &align) const;
   virtual bool anyCtorSatisfies(TypePred &pred) const;
   virtual CVFlags getCVFlags() const;
   virtual void traverse(TypeVisitor &vis);
@@ -1123,7 +1133,8 @@ public:
   virtual sm::string leftString(bool innerParen=true) const;
   virtual sm::string rightString(bool innerParen=true) const;
   virtual bool usesPostfixTypeConstructorSyntax() const;
-  virtual void sizeInfo(TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBits(TargetInfo& TI, int &size, int &align) const;
   virtual bool anyCtorSatisfies(TypePred &pred) const;
   virtual void traverse(TypeVisitor &vis);
 };
@@ -1203,7 +1214,8 @@ public:
   virtual Tag getTag() const { return T_ARRAY; }
   unsigned innerHashValue() const;
   virtual sm::string toMLString() const;
-  virtual void sizeInfo(TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBits(TargetInfo& TI, int &size, int &align) const;
 };
 
 
@@ -1240,7 +1252,8 @@ public:
   virtual sm::string toMLString() const;
   virtual sm::string leftString(bool innerParen=true) const;
   virtual sm::string rightString(bool innerParen=true) const;
-  virtual void sizeInfo(TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBits(TargetInfo& TI, int &size, int &align) const;
   virtual bool anyCtorSatisfies(TypePred &pred) const;
   virtual CVFlags getCVFlags() const;
   virtual void traverse(TypeVisitor &vis);
@@ -1455,7 +1468,7 @@ inline SObjList<T> const & objToSObjListC(ObjList<T> const &list)
 
 
 // -------------------- XReprSize ---------------------
-// thrown when the reprSize() function cannot determine an
+// thrown when the sizeInfo*() functions cannot determine an
 // array size
 class XReprSize : public xBase {
 public:

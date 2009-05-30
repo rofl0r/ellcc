@@ -179,13 +179,13 @@ void CValue::convertToType(SimpleTypeId newType)
   // dmandelin@mozilla.com
   // Fixes Oink ticket #164, Mozilla bug #411178
   // Truncate value according to C++ semantics
-  int reprSize = simpleTypeReprSize(TI, type);
+  int size = simpleTypeSizeInBits(TI, type);
   // Mask for bits to be kept in truncation.
-  long mask = (1L << 8*reprSize) - 1;
+  long mask = (1L << size) - 1;
   if (mask) { // zero mask means no truncation required
     si &= mask;
     if (kind() == K_SIGNED) {
-      long signTestMask = 1 << (8*reprSize-1);
+      long signTestMask = 1 << (size-1);
       if (si & signTestMask) { si |= ~mask; }
     }
   }

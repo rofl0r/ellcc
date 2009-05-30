@@ -85,7 +85,7 @@ string TypeVariable::toCString() const
                  << name;
 }
 
-void TypeVariable::sizeInfo(TargetInfo& TI, int &size, int &align) const
+void TypeVariable::sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const
 {
   //xfailure("you can't ask a type variable for its size");
 
@@ -93,6 +93,16 @@ void TypeVariable::sizeInfo(TargetInfo& TI, int &size, int &align) const
   // instantiating it, and we want to verify that some size expression
   // is constant.. so make up a number
   size = align = 4;
+}
+
+void TypeVariable::sizeInfoInBits(TargetInfo& TI, int &size, int &align) const
+{
+  //xfailure("you can't ask a type variable for its size");
+
+  // this happens when we're typechecking a template class, without
+  // instantiating it, and we want to verify that some size expression
+  // is constant.. so make up a number
+  size = align = 4*8;
 }
 
 
@@ -133,12 +143,20 @@ string PseudoInstantiation::toCString() const
   return stringc << name << sargsToString(args);
 }
 
-void PseudoInstantiation::sizeInfo(TargetInfo& TI, int &size, int &align) const
+void PseudoInstantiation::sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const
 {
   // it shouldn't matter what we say here, since the query will only
   // be made in the context of checking (but not instantiating) a
   // template definition body
   size = align = 4;
+}
+
+void PseudoInstantiation::sizeInfoInBits(TargetInfo& TI, int &size, int &align) const
+{
+  // it shouldn't matter what we say here, since the query will only
+  // be made in the context of checking (but not instantiating) a
+  // template definition body
+  size = align = 4 * 32;
 }
 
 
@@ -199,9 +217,14 @@ string DependentQType::toMLString() const
   return stringc << "dependentqtype-" << toCString();
 }
 
-void DependentQType::sizeInfo(TargetInfo& TI, int &size, int &align) const
+void DependentQType::sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const
 {
   size = align = 4;
+}
+
+void DependentQType::sizeInfoInBits(TargetInfo& TI, int &size, int &align) const
+{
+  size = align = 4 * 8;
 }
 
 
@@ -279,7 +302,7 @@ string DependentSizedArrayType::toMLString() const
 }
 
 
-void DependentSizedArrayType::sizeInfo(TargetInfo& TI, int &size, int &align) const
+void DependentSizedArrayType::sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const
 {
   // dmandelin@mozilla.com  bug 416182
   // This represents the result of sizeof inside the template definition.
@@ -291,6 +314,17 @@ void DependentSizedArrayType::sizeInfo(TargetInfo& TI, int &size, int &align) co
   align = 1;
 }
 
+void DependentSizedArrayType::sizeInfoInBits(TargetInfo& TI, int &size, int &align) const
+{
+  // dmandelin@mozilla.com  bug 416182
+  // This represents the result of sizeof inside the template definition.
+  // It's not normally an error to do this (although it could be if it can
+  // be proven that the result is negative somehow). The result doesn't
+  // mean anything, but I don't think it normally gets used for anything 
+  // either.
+  size = 1 * 8;
+  align = 1 * 8;
+}
 
 // ------------------ TemplateParams ---------------
 TemplateParams::TemplateParams(TemplateParams const &obj)
@@ -5526,7 +5560,12 @@ string TemplateTypeVariable::toMLString() const
 }
 
 
-void TemplateTypeVariable::sizeInfo(TargetInfo& TI, int &size, int &align) const
+void TemplateTypeVariable::sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const
+{
+  throw XReprSize();
+}
+
+void TemplateTypeVariable::sizeInfoInBits(TargetInfo& TI, int &size, int &align) const
 {
   throw XReprSize();
 }

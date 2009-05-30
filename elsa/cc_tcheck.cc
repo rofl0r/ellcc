@@ -5459,7 +5459,7 @@ Type *E_floatLit::itcheck_x(Env &env, Expression *&replacement)
 
 static void appendCharacter(TargetInfo &TI, DataBlock *block, unsigned int c, SimpleTypeId charType)
 {
-  int charWidth = simpleTypeReprSize(TI, charType);
+  int charWidth = simpleTypeSizeInBytes(TI, charType);
   
   if (block->getDataLen() + charWidth > block->getAllocated()) {
     // should be right up against the boundary
@@ -5655,7 +5655,7 @@ Type *E_stringLit::itcheck_x(Env &env, Expression *&replacement)
   // initial allocation estimate assumes no continuations and no
   // escape characters
   data = new DataBlock((strlen(text) + 1/*NUL*/ - 2/*quotes*/) *
-                       simpleTypeReprSize(env.TI, id));
+                       simpleTypeSizeInBytes(env.TI, id));
 
   // iterate over continuation segments
   E_stringLit *segment = this;
@@ -5692,7 +5692,7 @@ Type *E_stringLit::itcheck_x(Env &env, Expression *&replacement)
 
   // consolidate
   data->setAllocated(data->getDataLen());
-  int len = data->getDataLen() / simpleTypeReprSize(env.TI, id);
+  int len = data->getDataLen() / simpleTypeSizeInBytes(env.TI, id);
 
   // set type
   CVFlags stringLitCharCVFlags = CV_NONE;

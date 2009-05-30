@@ -258,13 +258,28 @@ inline char const *simpleTypeName(SimpleTypeId id)
     { if (id < (SimpleTypeId)TargetInfo::TypeIDCount)
           return TargetInfo::getTypeName((TargetInfo::TypeID)id);
       else return simpleTypeInfo(id).name; }
-inline int simpleTypeReprSize(TargetInfo &TI, SimpleTypeId id)
+inline int simpleTypeSizeInBits(TargetInfo &TI, SimpleTypeId id)
+    { if (id < (SimpleTypeId)TargetInfo::TypeIDCount)
+          return TI.getTypeSizeInBits((TargetInfo::TypeID)id);
+      else return 0; }
+inline int simpleTypeSizeInBytes(TargetInfo &TI, SimpleTypeId id)
     { if (id < (SimpleTypeId)TargetInfo::TypeIDCount)
           return TI.getTypeSizeInBytes((TargetInfo::TypeID)id);
       else return 0; }
-inline bool isIntegerType(SimpleTypeId id)               { return !!(simpleTypeInfo(id).flags & STF_INTEGER); }
-inline bool isFloatType(SimpleTypeId id)                 { return !!(simpleTypeInfo(id).flags & STF_FLOAT); }
-inline bool isExplicitlyUnsigned(SimpleTypeId id)        { return !!(simpleTypeInfo(id).flags & STF_UNSIGNED); }
+inline int simpleTypeAlignInBits(TargetInfo &TI, SimpleTypeId id)
+    { if (id < (SimpleTypeId)TargetInfo::TypeIDCount)
+          return TI.getTypeAlignInBits((TargetInfo::TypeID)id);
+      else return 0; }
+inline int simpleTypeAlignInBytes(TargetInfo &TI, SimpleTypeId id)
+    { if (id < (SimpleTypeId)TargetInfo::TypeIDCount)
+          return TI.getTypeAlignInBytes((TargetInfo::TypeID)id);
+      else return 0; }
+inline bool isIntegerType(SimpleTypeId id)
+    { return !!(simpleTypeInfo(id).flags & STF_INTEGER); }
+inline bool isFloatType(SimpleTypeId id)
+    { return !!(simpleTypeInfo(id).flags & STF_FLOAT); }
+inline bool isExplicitlyUnsigned(SimpleTypeId id)
+    { return !!(simpleTypeInfo(id).flags & STF_UNSIGNED); }
 
 inline bool isArithmeticType(SimpleTypeId id)    // 3.9.1 para 8
   { return !!(simpleTypeInfo(id).flags & (STF_FLOAT | STF_INTEGER)); }

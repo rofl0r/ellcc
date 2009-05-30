@@ -29,7 +29,7 @@ TargetInfo::TargetInfo(const std::string &T) : Triple(T) {
   CharPrefAlign(0);
   WCharWidth(32); WCharAlign(32);
   WCharPrefAlign(0);
-  BoolWidth(8); BoolAlign(8);
+  BoolWidth(1); BoolAlign(8);
   BoolPrefAlign(0);
   ShortWidth(16); ShortAlign(16);
   ShortPrefAlign(0);
@@ -121,7 +121,7 @@ void TargetInfo::getTargetDescription(std::string& res)
         str << "e";
     }
     DATAP(p, Pointer);
-    DATAN(i1, Bool);
+    DATA(i, Bool);
     DATA(i, Char);
     DATA(i, Short);
     DATA(i, Int);

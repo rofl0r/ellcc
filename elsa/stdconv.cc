@@ -773,7 +773,7 @@ StandardConversion getStandardConversion
       if (   !env.LO.CPlusPlus
           && src->isIntegerType()
           && dest->isIntegerType()
-          && src->reprSize(env.TI) == dest->reprSize(env.TI)) {
+          && src->sizeInBytes(env.TI) == dest->sizeInBytes(env.TI)) {
           return conv.ret | SC_PTR_CONV;      // Compatable pointers in C.
       }
       // 9/25/04: (in/t0316.cc) I'm not sure where the best place to do

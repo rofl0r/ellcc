@@ -22,8 +22,6 @@
 #include "TargetInfo.h"
 using namespace ellcc;
 
-#define BITS_PER_BYTE	8	// RICH: Temporary.
-
 #define SRET 1
 
 #if 0
@@ -79,31 +77,11 @@ static llvm::GlobalValue::LinkageTypes getLinkage(DeclFlags flags)
 static bool accessValue(const llvm::Value* value)
 {
     bool access = false;
-    const llvm::GetElementPtrInst *gep = llvm::dyn_cast<llvm::GetElementPtrInst>(value);
-    const llvm::Type* gepType = gep ? gep->getPointerOperandType()->getElementType() : NULL;
-    bool isArray = gepType && gepType->getTypeID() == llvm::Type::ArrayTyID;
-    bool isStruct = gepType && gepType->getTypeID() == llvm::Type::StructTyID;
-    bool isArrayArray = isArray && gepType->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID;
-    bool isConstant = llvm::isa<llvm::Constant>(value);
     bool isConstantExpr = llvm::isa<llvm::ConstantExpr>(value);
     bool isConstantGEP = isConstantExpr
          && llvm::cast<llvm::ConstantExpr>(value)->getOpcode() == llvm::Instruction::GetElementPtr;
-    bool isGlobal = llvm::isa<llvm::GlobalValue>(value);
-    bool isConstantStruct = llvm::isa<llvm::ConstantStruct>(value);
     bool isConstantArray = llvm::isa<llvm::ConstantArray>(value);
-    VDEBUG("accessValue", 0, std::cerr << "isArray " << isArray << " "
-                                       << "isArrayArray " << isArrayArray << " "
-                                       << "isStruct " << isStruct << " "
-                                       << "isConstant " << isConstant << " "
-                                       << "isConstantExpr " << isConstantExpr << " "
-                                       << "isConstantGEP " << isConstantGEP << " "
-                                       << "isConstantArray " << isConstantArray << " "
-                                       << "isConstantStruct " << isConstantStruct << " "
-                                       << "isGlobal " << isGlobal << " "
-                                       << "isGEP " << (gep != NULL) << "\n");
-    if (   !0
-        && !isConstantArray
-        && !isConstantGEP) {
+    if (!isConstantArray && !isConstantGEP) {
         access = true;
     }
 
@@ -212,9 +190,9 @@ const llvm::Type* CC2LLVMEnv::makeTypeSpecifier(SourceLoc loc, Type *t)
         if (type == NULL || type == llvm::Type::VoidTy) {
             /** If type is NULL, we have a va_list pointer (i.e. *...").
 	     *  treat this as a void*.
-	     * LLVM doesn't understand void*. Make it into BITS_PER_BYTE*.
+	     * LLVM doesn't understand void*. Make it into MAUBits*.
 	     */
-            type = llvm::IntegerType::get(BITS_PER_BYTE);
+            type = llvm::IntegerType::get(TI.getMAUBits());
 	}
 
         VDEBUG("makeTypeSpecifier pointer", loc, type->print(std::cerr));
@@ -285,11 +263,9 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLoc loc, AtomicType 
         case ST_SHORT_INT:
         case ST_UNSIGNED_SHORT_INT:
 	case ST_WCHAR_T:
-	    // Define an integer type.
-            type = llvm::IntegerType::get(simpleTypeReprSize(TI, id) * BITS_PER_BYTE);
-            break;
 	case ST_BOOL:
-            type = llvm::IntegerType::get(1);
+	    // Define an integer  or boolean type.
+            type = llvm::IntegerType::get(simpleTypeSizeInBits(TI, id));
             break;
 	case ST_FLOAT:
 	    type = llvm::Type::FloatTy;
@@ -399,7 +375,7 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLoc loc, AtomicType 
 
     case AtomicType::T_ENUM: {
         EnumType* et = at->asEnumType();
-        type = llvm::IntegerType::get(et->reprSize(TI) * BITS_PER_BYTE);
+        type = llvm::IntegerType::get(et->sizeInBits(TI));
         break;
     }
       
@@ -1310,7 +1286,7 @@ llvm::Value *E_intLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
     while (isxdigit(*endp)) ++endp;
 
     VDEBUG("IntLit", loc, std::cerr << text << " radix " << radix);
-    return llvm::ConstantInt::get(llvm::APInt(type->reprSize(env.TI) * BITS_PER_BYTE, p, endp - p, radix));
+    return llvm::ConstantInt::get(llvm::APInt(type->sizeInBits(env.TI), p, endp - p, radix));
 }
 
 llvm::Value *E_floatLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
@@ -1369,7 +1345,7 @@ llvm::Value *E_stringLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
 llvm::Value *E_charLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     deref = 0;
-    return llvm::ConstantInt::get(llvm::APInt(type->reprSize(env.TI) * BITS_PER_BYTE, c));
+    return llvm::ConstantInt::get(llvm::APInt(type->sizeInBits(env.TI), c));
 }
 
 llvm::Value *E_this::cc2llvm(CC2LLVMEnv &env, int& deref) const
@@ -1388,7 +1364,7 @@ llvm::Value *E_variable::cc2llvm(CC2LLVMEnv &env, int& deref) const
     if (var->isEnumerator()) {
         // This is an enumerator constant. Return it's value.
         deref = 0;
-        return llvm::ConstantInt::get(llvm::APInt(type->reprSize(env.TI) * BITS_PER_BYTE, var->getEnumeratorValue()));
+        return llvm::ConstantInt::get(llvm::APInt(type->sizeInBits(env.TI), var->getEnumeratorValue()));
     }
 
     // The variable will have been previously seen in a declaration.
@@ -1774,7 +1750,7 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
 	      isInteger = true;
 	      EnumType* etype = type->asCVAtomicType()->atomic->asEnumType();
 	      isUnsigned = !etype->hasNegativeValues;
-	      size = etype->reprSize(TI) * BITS_PER_BYTE;
+	      size = etype->sizeInBits(TI);
 	      type = NULL;	// See special handling below.
 	    } else {
                 xassert(isSimple || isPointer);
@@ -1787,12 +1763,12 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
                 isVoid = type->isVoid();
                 if (isInteger && value) {
                     // Use the LLVM integer size.
-                    size = (*value)->getType()->getPrimitiveSizeInBits();       // RICH: replace
+                    size = (*value)->getType()->getPrimitiveSizeInBits();
                 } else {
-                    size = simpleTypeReprSize(TI, st->type) * BITS_PER_BYTE;
+                    size = simpleTypeSizeInBits(TI, st->type);
                 }
             } else if (isPointer) {
-                size = type->reprSize(TI) * BITS_PER_BYTE;
+                size = type->sizeInBits(TI);
             }
 	}
     };
@@ -3073,7 +3049,7 @@ llvm::Value *E___builtin_va_start::cc2llvm(CC2LLVMEnv &env, int& deref) const
     llvm::Value* value = expr->cc2llvm(env, deref);
     value = env.access(value, false, deref, 1);                 // RICH: Volatile.
     deref = 0;
-    const llvm::Type* type = llvm::IntegerType::get(BITS_PER_BYTE);
+    const llvm::Type* type = llvm::IntegerType::get(env.TI.getMAUBits());
     type =  llvm::PointerType::get(type, 0);	// RICH: address space.
     env.checkCurrentBlock();
     value = env.builder.CreateBitCast(value, type);
@@ -3106,7 +3082,7 @@ llvm::Value *E___builtin_va_end::cc2llvm(CC2LLVMEnv &env, int& deref) const
     llvm::Value* value = expr->cc2llvm(env, deref);
     value = env.access(value, false, deref, 1);                 // RICH: Volatile.
     deref = 0;
-    const llvm::Type* type = llvm::IntegerType::get(BITS_PER_BYTE);
+    const llvm::Type* type = llvm::IntegerType::get(env.TI.getMAUBits());
     type =  llvm::PointerType::get(type, 0);	// RICH: address space.
     env.checkCurrentBlock();
     value = env.builder.CreateBitCast(value, type);
@@ -3121,9 +3097,9 @@ llvm::Value *E___builtin_constant_p::cc2llvm(CC2LLVMEnv &env, int& deref) const
     llvm::Value* value = expr->cc2llvm(env, deref);
     bool isConstantExpr = llvm::isa<llvm::ConstantExpr>(value);
     if (isConstantExpr) {
-        value = llvm::ConstantInt::get(llvm::APInt(expr->type->reprSize(env.TI) * BITS_PER_BYTE, 1));
+        value = llvm::ConstantInt::get(llvm::APInt(expr->type->sizeInBits(env.TI), 1));
     } else {
-        value = llvm::ConstantInt::get(llvm::APInt(expr->type->reprSize(env.TI) * BITS_PER_BYTE, 0));
+        value = llvm::ConstantInt::get(llvm::APInt(expr->type->sizeInBits(env.TI), 0));
     }
     env.makeCast(loc, expr->type, value, type);
     deref = 0;
@@ -3137,7 +3113,7 @@ llvm::Value *E___builtin_alloca::cc2llvm(CC2LLVMEnv &env, int& deref) const
     VDEBUG("E_builtin_alloca", loc, std::cerr << "value "; value->getType()->print(std::cerr));
     deref = 0;
     xassert(env.entryBlock);
-    const llvm::Type* type = llvm::IntegerType::get(BITS_PER_BYTE);
+    const llvm::Type* type = llvm::IntegerType::get(env.TI.getMAUBits());
     env.checkCurrentBlock();
     llvm::AllocaInst* lv;
     if (env.entryBlock == env.currentBlock) {

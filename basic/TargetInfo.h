@@ -170,13 +170,23 @@ public:
   }
   TypeID getIntPtrType() const { return IntPtrType; }
   TypeID getWCharType() const { return WCharType; }
-  unsigned char getTypeSizeInBytes(TypeID id) { return typeInfo[id].Width / MAUBits; }
+  unsigned char getTypeSizeInBits(TypeID id) { return typeInfo[id].Width; }
+  unsigned char getTypeSizeInBytes(TypeID id)
+    { unsigned size = typeInfo[id].Width / MAUBits; return size ? size : 1; }
+  unsigned char getTypeAlignInBits(TypeID id) { return typeInfo[id].Align; }
+  unsigned char getTypeAlignInBytes(TypeID id)
+    { unsigned align = typeInfo[id].Align / MAUBits; return align ? align : 1; }
+
 
   /// isCharSigned - Return true if 'char' is 'signed char' or false if it is
   /// treated as 'unsigned char'.  This is implementation defined according to
   /// C99 6.2.5p15.  In our implementation, this is target-specific.
   bool isCharSigned() const { return CharIsSigned; }
   
+  /** Get the size of the minimum addressable unit.
+   */
+  unsigned char getMAUBits() { return MAUBits; }
+
   /// getCharWidth - Return the width a char or wide char.
   uint64_t getCharWidth(bool isWide) const {
     return isWide ? typeInfo[WChar].Width : typeInfo[Char].Width;
