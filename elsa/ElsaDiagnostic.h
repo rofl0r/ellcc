@@ -14,7 +14,7 @@ namespace ellcc {
   namespace diag { 
     enum {
 #define DIAG(ENUM,FLAGS,DEFAULT_MAPPING,DESC,GROUP) ENUM,
-#define ELSACSTART
+#define ELSASTART
 #include "../basic/DiagnosticElsaKinds.inc"
 #undef DIAG
       NUM_BUILTIN_ELSA_DIAGNOSTICS

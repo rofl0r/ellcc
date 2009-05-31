@@ -710,6 +710,14 @@ struct Input {
     Input(std::string& name, FileTypes type = NONE,
           Module* module = NULL, bool temp = false)
         : name(name), type(type), module(module), temp(temp) {}
+    ~Input()
+    {
+        if (temp && !KeepTemps) {
+            if (!name.eraseFromDisk() && Verbose) {
+                cout << "  " << name << " has been deleted\n";
+            }
+        }
+    }
     void setName(sys::Path newName)
     {
         if (temp && !KeepTemps) {
@@ -2353,8 +2361,9 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
             int result = elsa.parse(*PP.get(),
                                     input.name.c_str(), to.c_str(),
                                     input.module, ParseOnly);
-            if (input.module == NULL || result || Diags.getNumErrors() != 0) {
-                Exit(result);
+            if (result) {
+                // Report an error for now. Remove when the parser uses Diags.
+                Diags.Report(FullSourceLoc(), diag::err_ellcc_parse_error);
             }
         } else {
             // RICH: Non C sources, e.g. .ll->.ubc
@@ -2975,6 +2984,10 @@ int main(int argc, char **argv)
                 }
             }
 
+            if (phase == TRANSLATION && ParseOnly) {
+                // Done parsing. Stop.
+                break;
+            }
             if (FinalPhase == phase || Diags.hasErrorOccurred()) {
                 break;
             }
@@ -3010,7 +3023,7 @@ int main(int argc, char **argv)
             delete timers[i];
         }
             
-        status =  0;
+        status =  Diags.hasErrorOccurred();
     } catch (const std::string& msg) {
         cerr << argv0 << ": " << msg << "\n";
         status =  1;

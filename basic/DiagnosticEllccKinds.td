@@ -1,4 +1,4 @@
-//==--- DiagnosticDriverKinds.td - libdriver diagnostics ------------------===//
+//==--- DiagnosticEllccKinds.td - ellcc diagnostics ------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -7,7 +7,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-let Component = "Driver" in {
+let Component = "Ellcc" in {
+
+
+// This first error will be removed when Diags are integrated.
+def err_ellcc_parse_error : Error<"a parse error occured">;
 
 def err_drv_no_such_file : Error<"no such file or directory: '%0'">;
 def err_drv_unsupported_opt : Error<"unsupported option '%0'">;
