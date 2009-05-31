@@ -76,7 +76,7 @@ nonterm(Expression*) PrimaryExpression {
 nonterm(StringRef) PreprocString {
   // slightly subtle: ordinary strings are yielded *with quotes*,
   // whereas these special guys are not quoted; also note that
-  // yielding of these token codes depends on LO.gccFuncBehavior
+  // yielding of these token codes depends on PP.getLangOptions().gccFuncBehavior
   -> TOK___FUNCTION__                       { return str("__FUNCTION__"); }
   -> TOK___PRETTY_FUNCTION__                { return str("__PRETTY_FUNCTION__"); }
 }
@@ -511,7 +511,7 @@ nonterm(IDeclarator*) DirectAbstractDeclarator {
 nonterm(Declaration*) DeclSpecifier {
   -> n:PQTypeName BuggyGccTypeModifier/*ignored*/ m2:UberModifierSeqOpt
      {
-       diagnose3(LO.allowModifiersWithTypedefNames, loc,
+       diagnose3(PP.getLangOptions().allowModifiersWithTypedefNames, loc,
                  "typedef and type keyword in a single type "
                  "specifier (gcc2 bug accepts it)");
        return new Declaration(uberDeclFlags(m2),
@@ -520,7 +520,7 @@ nonterm(Declaration*) DeclSpecifier {
 
   -> m1:UberModifierSeq n:PQTypeName BuggyGccTypeModifier/*ignored*/ m2:UberModifierSeqOpt
      {
-       diagnose3(LO.allowModifiersWithTypedefNames, loc,
+       diagnose3(PP.getLangOptions().allowModifiersWithTypedefNames, loc,
                  "typedef and type keyword in a single type "
                  "specifier (gcc2 bug accepts it)");
        UberModifiers m = uberCombine(loc, m1, m2);

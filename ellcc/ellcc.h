@@ -42,30 +42,19 @@ public:
      */
     void setup(bool time);
 
-    enum Language {
-        GNUCXX,         // GNU C++
-        ANSICXX,        // ANSI C++
-        ANSIC89,        // ANSI C89
-        ANSIC99,        // ANSI C99
-        GNUC,           // GNU C
-        GNUC89,         // GNU C89
-        KANDRC,         // K&R C
-        GNU2KANDRC,     // GNU2 K&R C
-        GNU3KANDRC,     // GNU3 K&R C
-    };
     /** Parse a source file.
      */
-    int parse(Preprocessor& PP, LangOptions& LO, TargetInfo& TI,
-              Language language,
-              const char* inputFname, const char* outputFname, llvm::Module*& mod);
+    int parse(Preprocessor& PP,
+              const char* inputFname, const char* outputFname, llvm::Module*& mod,
+              bool parseOnly);
 
 private:
     /** The default constructor (not implemented or used).
      */
     Elsa();
-    int doit(Preprocessor& PP, LangOptions& LO, TargetInfo& TI,
-             Language language,
-             const char* inputFname, const char* outputFname, llvm::Module*& mod);
+    int doit(Preprocessor& PP,
+             const char* inputFname, const char* outputFname, llvm::Module*& mod,
+             bool parseOnly);
     /** true if phases should be timed.
      */
     bool doTime;

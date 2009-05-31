@@ -131,7 +131,7 @@ void fixUpKandRFunctionDef
 }
 
 D_func *new_D_func_kandr
-  (LangOptions &LO,
+  (const LangOptions &LO,
    SourceLoc loc,
    IDeclarator *base,
    FakeList<ASTTypeId> *params,

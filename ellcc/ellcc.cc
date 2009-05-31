@@ -346,6 +346,10 @@ static cl::opt<Phases> FinalPhase(cl::Optional,
     )
 );
 
+static llvm::cl::opt<bool>
+ParseOnly("PO", 
+      llvm::cl::desc("Parse only, do not translate"));
+
 //===----------------------------------------------------------------------===//
 //===          OPTIMIZATION OPTIONS
 //===----------------------------------------------------------------------===//
@@ -834,30 +838,30 @@ enum LangStds {
 static llvm::cl::opt<LangStds>
 LangStd("std", llvm::cl::desc("Language standard to compile for"),
         llvm::cl::init(lang_unspecified),
-  llvm::cl::values(clEnumValN(lang_KandR_C,  "K&R",            "Kerninghan & Ritchie C"),
-                   clEnumValN(lang_c89,      "c89",            "ISO C 1990"),
-                   clEnumValN(lang_c89,      "c90",            "ISO C 1990"),
-                   clEnumValN(lang_c89,      "iso9899:1990",   "ISO C 1990"),
-                   clEnumValN(lang_c99,      "c99",            "ISO C 1999"),
-                   clEnumValN(lang_c99,      "c9x",            "ISO C 1999"),
-                   clEnumValN(lang_c99,      "iso9899:1999",   "ISO C 1999"),
-                   clEnumValN(lang_c99,      "iso9899:199x",   "ISO C 1999"),
-                   clEnumValN(lang_gnu2_KandR_C,  "K&R",
+  llvm::cl::values(clEnumValN(lang_KandR_C,     "K+R",            "Kerninghan & Ritchie C"),
+                   clEnumValN(lang_c89,         "c89",            "ISO C 1990"),
+                   clEnumValN(lang_c89,         "c90",            "ISO C 1990"),
+                   clEnumValN(lang_c89,         "iso9899:1990",   "ISO C 1990"),
+                   clEnumValN(lang_c99,         "c99",            "ISO C 1999"),
+                   clEnumValN(lang_c99,         "c9x",            "ISO C 1999"),
+                   clEnumValN(lang_c99,         "iso9899:1999",   "ISO C 1999"),
+                   clEnumValN(lang_c99,         "iso9899:199x",   "ISO C 1999"),
+                   clEnumValN(lang_gnu2_KandR_C,"gnu2K+R",
                               "Kerninghan & Ritchie C with gcc2 extensions"),
-                   clEnumValN(lang_gnu3_KandR_C,  "K&R",
+                   clEnumValN(lang_gnu3_KandR_C,"gnu3K+R",
                               "Kerninghan & Ritchie C with gcc3 extensions"),
-                   clEnumValN(lang_gnu99,    "gnu99",
+                   clEnumValN(lang_gnu99,       "gnu99",
                               "ISO C 1999 with GNU extensions (default for C)"),
-                   clEnumValN(lang_gnu99,    "gnu9x",
+                   clEnumValN(lang_gnu99,       "gnu9x",
                               "ISO C 1999 with GNU extensions"),
-                   clEnumValN(lang_cxx98,    "c++98",
+                   clEnumValN(lang_cxx98,       "c++98",
                               "ISO C++ 1998 with amendments"),
-                   clEnumValN(lang_gnucxx98, "gnu++98",
+                   clEnumValN(lang_gnucxx98,    "gnu++98",
                               "ISO C++ 1998 with amendments and GNU "
                               "extensions (default for C++)"),
-                   clEnumValN(lang_cxx0x,    "c++0x",
+                   clEnumValN(lang_cxx0x,       "c++0x",
                               "Upcoming ISO C++ 200x with amendments"),
-                   clEnumValN(lang_gnucxx0x, "gnu++0x",
+                   clEnumValN(lang_gnucxx0x,    "gnu++0x",
                               "Upcoming ISO C++ 200x with amendments and GNU "
                               "extensions"),
                    clEnumValEnd));
@@ -944,6 +948,9 @@ PICLevel("pic-level", llvm::cl::desc("Value for __PIC__"));
 
 static llvm::cl::opt<bool>
 StaticDefine("static-define", llvm::cl::desc("Should __STATIC__ be defined"));
+
+static llvm::cl::opt<bool>
+MSVCCompat("msvc", llvm::cl::desc("Microsoft Visual C/C++ compatability"));
 
 static void InitializeLanguageStandard(LangOptions &LO, FileTypes FT,
                                        TargetInfo& TI,
@@ -1063,8 +1070,13 @@ static void InitializeLanguageStandard(LangOptions &LO, FileTypes FT,
 
   LO.Static = StaticDefine;
 
+  if (MSVCCompat) {
+      LO.MSVC_bug_compatibility();
+  }
+
   if (MainFileName.getPosition())
     LO.setMainFileName(MainFileName.c_str());
+
 }
 
 //===----------------------------------------------------------------------===//
@@ -2324,16 +2336,6 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         sys::Path to(input.name.getBasename());
         to.appendSuffix(langToExt[nextType]);
         if (filePhases[thisType][phase].action == CCOMPILE) {
-            Elsa::Language lang = Elsa::GNUC;
-            if (thisType == II || thisType == CC) {
-                // This is a C++ file.
-                lang = Elsa::GNUCXX;
-                // RICH: std: C, C++, K&R, etc.
-            } else {
-                // This is a C file.
-                // RICH: std: C, C++, K&R, etc.
-            }
-
             // Process the -I options and set them in the HeaderInfo.
             HeaderSearch HeaderInfo(FileMgr);
             InitializeIncludePaths(argv0, HeaderInfo, FileMgr, input.LO);
@@ -2348,10 +2350,10 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
             if (InitializeSourceManager(*PP.get(), input.name.toString()))
                 PrintAndExit("Can't initialize the source manager");
 
-            int result = elsa.parse(*PP.get(), input.LO, *TI.get(),
-                                    lang, input.name.c_str(), to.c_str(),
-                                    input.module);
-            if (result || Diags.getNumErrors() != 0) {
+            int result = elsa.parse(*PP.get(),
+                                    input.name.c_str(), to.c_str(),
+                                    input.module, ParseOnly);
+            if (input.module == NULL || result || Diags.getNumErrors() != 0) {
                 Exit(result);
             }
         } else {

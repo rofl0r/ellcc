@@ -96,7 +96,7 @@ TOCLEAN += *.o *.d
 ECC_OBJS := \
   ellcc.o elsa.o \
   ppoutput.o diagnosticbuffer.o diagnosticprinter.o warnings.o dependencyfile.o \
-  initheadersearch.o initpreprocessor.o diagchecker.o cachetokens.o
+  diagchecker.o cachetokens.o
 
 
 -include $(ECC_OBJS:.o=.d)
@@ -163,6 +163,7 @@ toolclean: clean
 	rm -f $(TOTOOLCLEAN)
 
 check: all
+	cd $(ELSA) && MAKE=$(MAKE) ./regrtest
 	MAKE=$(MAKE) ./regrtest
 	@echo ""
 	@echo "Regression tests passed."

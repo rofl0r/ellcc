@@ -140,6 +140,7 @@ void LangOptions::ANSI_C99_extensions()
   implicitFuncVariable = true;
   predefined_Bool = true;
   restrictIsAKeyword = true;
+  allowDynamicallySizedArrays = true;
 }
 
 void LangOptions::ANSI_C99()
@@ -308,6 +309,8 @@ void LangOptions::GNU_Cplusplus0x()
 {
   GNU_Cplusplus98();
   CPlusPlus0x = true;
+  allowMemberWithClassName = false;
+  allowQualifiedMemberDeclarations = b3_FALSE;
 }
 
 // -------------------------- MSVC ---------------------

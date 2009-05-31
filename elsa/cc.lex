@@ -39,7 +39,7 @@
 %option never-interactive
 
 /* and I will define the class (lexer.h) */
-%option yyclass="Lexer"
+%option yyclass="OLexer"
 
 /* output file name */
   /* dsw: Arg!  Don't do this, since it is not overrideable from the

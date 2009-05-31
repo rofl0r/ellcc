@@ -108,7 +108,7 @@ NODE *resolveImplIntAmbig(Env &env, NODE *node)
     // true.
     Declarator *d0 = NULL;
     if (hasImplicitInt(s0, d0)) {
-      xassert(env.LO.allowImplicitInt);
+      xassert(env.PP.getLangOptions().allowImplicitInt);
       xassert(d0);
 
       // if this is an implicit int declaration, then we allow it

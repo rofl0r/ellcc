@@ -10,12 +10,13 @@
 using namespace std;
 
 // ---------------------- ParseTree --------------------
-ParseTreeAndTokens::ParseTreeAndTokens(LangOptions& LO, SemanticValue &top,
+ParseTreeAndTokens::ParseTreeAndTokens(ellcc::Preprocessor& PP, SemanticValue &top,
                                        StringTable &extTable, char const *fname)
   : treeTop(top),
-    lexer(new Lexer(extTable, LO, fname)),
+    lexer(new OLexer(extTable, PP.getLangOptions(), fname)),
     userAct(NULL),
-    tables(NULL)
+    tables(NULL),
+    PP(PP)
 {}
 
 ParseTreeAndTokens::~ParseTreeAndTokens()

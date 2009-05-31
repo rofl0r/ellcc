@@ -11,8 +11,11 @@
 #include "cc_flags.h"      // UberModifiers, SimpleTypeId
 #include "cc_ast.h"        // C++ AST classes, needed for the action function signatures
 #include "srcloc.h"        // SourceLoc
-#include "LangOptions.h"   // LangOptions
+#include "LangOptions.h"   // bool3
 
+namespace ellcc {
+class Preprocessor;
+}
 // parsing action state
 class ParseEnv {
 private:
@@ -23,16 +26,16 @@ public:
   int errors;                             // parse errors
   int warnings;                           // and warnings
   StringRef strRefAttr;                   // "attr"
-  LangOptions& LO;                        // Language options.
+  ellcc::Preprocessor& PP;                // The preprocessor.
 
 public:
-  ParseEnv(StringTable &table, LangOptions& LO)
+  ParseEnv(StringTable &table, ellcc::Preprocessor& PP)
     : classNameStack(),
       str(table),
       errors(0),
       warnings(0),
       strRefAttr(table.add("attr")),
-      LO(LO)
+      PP(PP)
    {}
   ~ParseEnv() {}
 

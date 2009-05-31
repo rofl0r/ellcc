@@ -50,7 +50,7 @@ nonterm(Function*) KandRFunctionDefinition_implInt {
     {
       // FIX: otherwise this is a parse error; what should we do in
       // that case?
-      xassert(LO.allowImplicitInt);
+      xassert(PP.getLangOptions().allowImplicitInt);
 
       // the return type defaults to int
       Declaration *rds = new Declaration(DF_NONE, new TS_simple(loc, ST_IMPLINT), NULL);
@@ -60,7 +60,7 @@ nonterm(Function*) KandRFunctionDefinition_implInt {
   // one more, for "static" (etc.)
   -> m:UberModifierSeq id:KandRDeclarator ds:KandRSimpleDeclarationSeq b:FunctionBody
     {
-      xassert(LO.allowImplicitInt);
+      xassert(PP.getLangOptions().allowImplicitInt);
       DeclFlags df = uberDeclFlags(m);
       CVFlags cv = uberCVFlags(m);
       Declaration *rds = new Declaration(df, new_TS_simple(loc, cv, ST_IMPLINT), NULL);
@@ -153,7 +153,7 @@ nonterm(IDeclarator*) KandRDirectDeclarator {
 //       ql:QLiterals                      // qualifier literals
 //       cv:CVQualifierSeqOpt
       { return new_D_func_kandr
-          (LO, 
+          (PP.getLangOptions(), 
            loc,
            d,
            NULL/* no normal params*/,
@@ -172,7 +172,7 @@ nonterm(IDeclarator*) KandRDirectDeclarator {
 //       ql:QLiterals                      // qualifier literals
 //       cv:CVQualifierSeqOpt
       { return new_D_func_kandr
-          (LO,
+          (PP.getLangOptions(),
            loc,
            d,
            NULL/* no normal params*/,
@@ -189,7 +189,7 @@ nonterm(IDeclarator*) KandRDirectDeclarator {
 //       cv:CVQualifierSeqOpt                      // optional "const"
 //       e:ExceptionSpecificationOpt               // optional "throw" clause
     { return new_D_func_kandr
-        (LO,
+        (PP.getLangOptions(),
          loc,
          d,
          params,
@@ -331,7 +331,7 @@ nonterm(TopForm*) Declaration {
 
   -> m1:UberModifierSeqOpt /*implicit-int*/ list:InitDeclaratorList ";"
     {
-      if (!LO.allowImplicitInt) {
+      if (!PP.getLangOptions().allowImplicitInt) {
         trace("cancel") << loc
           << ": implicit-int top-level Declaration in non-implicit-int language\n";
         return NULL;
@@ -352,7 +352,7 @@ nonterm(Declaration*) KandRSimpleDeclaration {
   // (in/c/dC0026.c)
   -> "register" /*implicit-int*/ list:KandRInitDeclaratorList ";"
      {
-       if (!LO.allowImplicitInt) {
+       if (!PP.getLangOptions().allowImplicitInt) {
          trace("cancel") << loc
            << ": implicit-int KandRSimpleDeclaration in non-implicit-int language\n";
          return NULL;
@@ -368,7 +368,7 @@ nonterm(Statement*) Statement {
 
   -> m1:UberModifierSeq /*implicit-int*/ list:InitDeclaratorList ";"
     {
-      if (!LO.allowImplicitInt) {
+      if (!PP.getLangOptions().allowImplicitInt) {
         trace("cancel") << loc
           << ": implicit-int statement-level Declaration in non-implicit-int language\n";
         return NULL;
@@ -384,7 +384,7 @@ nonterm(ASTTypeId*) ParameterDeclaration {
   -> /*implicit-int*/ d:UnqualifiedDeclarator
     {
       // if this isn't K&R C, throw it out
-      if (!LO.allowImplicitInt) {
+      if (!PP.getLangOptions().allowImplicitInt) {
         trace("cancel") << loc
           << ": implicit-int parameter definition in non-implicit-int language\n";
         return NULL;
@@ -397,7 +397,7 @@ nonterm(ASTTypeId*) ParameterDeclaration {
   -> "register" /*implicit-int*/ d:UnqualifiedDeclarator
     {
       // if this isn't K&R C, throw it out
-      if (!LO.allowImplicitInt) {
+      if (!PP.getLangOptions().allowImplicitInt) {
         trace("cancel") << loc
           << ": implicit-int parameter definition in non-implicit-int language\n";
         return NULL;

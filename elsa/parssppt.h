@@ -21,11 +21,11 @@
 
 #include "lexer.h"        // Lexer
 #include "useract.h"      // SemanticValue, UserAction
+#include "Preprocessor.h"
 
 class ParseTables;
 class GLR;
 class LexerInterface;
-
 
 // ----------------- helpers for analysis drivers ---------------
 // a self-contained parse tree (or parse DAG, as the case may be)
@@ -43,8 +43,9 @@ public:
   // parse tables (or NULL)
   ParseTables *tables;             // (serf)
 
+  ellcc::Preprocessor& PP;
 public:
-  ParseTreeAndTokens(LangOptions& LO,
+  ParseTreeAndTokens(ellcc::Preprocessor& PP,
                      SemanticValue &top, StringTable &extTable,
                      char const *inputFname);
   ~ParseTreeAndTokens();

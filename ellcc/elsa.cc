@@ -43,17 +43,17 @@ using namespace ellcc;
  */
 class EllccEnv : public Env {
 public:
-    EllccEnv(LangOptions& LO, TargetInfo& TI, StringTable &str, TypeFactory &tfac,
+    EllccEnv(Preprocessor& PP, StringTable &str, TypeFactory &tfac,
              ArrayStack<Variable*> &madeUpVariables0, ArrayStack<Variable*> &builtinVars0,
              TranslationUnit *unit0)
-             : Env(str, LO, TI, tfac, madeUpVariables0, builtinVars0, unit0) { }
+             : Env(str, PP, tfac, madeUpVariables0, builtinVars0, unit0) { }
 
     bool validateAsmConstraint(const char* name, TargetInfo::ConstraintInfo& info)
-        { return TI.validateAsmConstraint(name, info); }
+        { return PP.getTargetInfo().validateAsmConstraint(name, info); }
     std::string convertConstraint(char ch)
-        { return TI.convertConstraint(ch); }
+        { return PP.getTargetInfo().convertConstraint(ch); }
     const char* getNormalizedGCCRegisterName(const char* name)
-        { return TI.getNormalizedGCCRegisterName(name); }
+        { return PP.getTargetInfo().getNormalizedGCCRegisterName(name); }
         
 private:
     EllccEnv();
@@ -255,64 +255,15 @@ static void handle_xBase(Env &env, xBase &x)
   abort();
 }
 
-int Elsa::doit(Preprocessor& PP, LangOptions& LO, TargetInfo& TI,
-               Language language,
+int Elsa::doit(Preprocessor& PP,
                const char* inputFname, const char* outputFname,
-               llvm::Module*& mod)
+               llvm::Module*& mod, bool parseOnly)
 {
     mod = NULL;
     SourceLocManager mgr;
     // String table for storing parse tree identifiers.
     StringTable strTable;
     
-
-    // Parsing language options.
-    LO.GNU_Cplusplus0x();
-    switch (language) {
-    case GNUCXX:         // GNU C++
-        break;
-    case ANSICXX:        // ANSI C++
-        LO.ANSI_Cplusplus0x();
-        break;
-    case ANSIC89:        // ANSI C89
-        LO.ANSI_C89();
-        break;
-    case ANSIC99:        // ANSI C99
-        LO.ANSI_C99();
-        break;
-    case GNUC:           // GNU C
-        LO.GNU_C99();
-        break;
-    case GNUC89:         // GNU C89
-        LO.ANSI_C89();
-        LO.GNU_C_extensions();
-        break;
-    case KANDRC:         // K&R C
-         LO.KandR_C();
-#ifndef KANDR_EXTENSION
-        xfatal("gnu_kandr_c_lang option requires the K&R module (./configure -kandr=yes)");
-#endif
-        break;
-    case GNU2KANDRC:      // GNU K&R C
-         LO.GNU2_KandR_C();
-#ifndef KANDR_EXTENSION
-        xfatal("gnu2_kandr_c_lang option requires the K&R module (./configure -kandr=yes)");
-#endif
-        break;
-    case GNU3KANDRC:      // GNU K&R C
-         LO.GNU3_KandR_C();
-#ifndef KANDR_EXTENSION
-        xfatal("gnu2_kandr_c_lang option requires the K&R module (./configure -kandr=yes)");
-#endif
-        break;
-  }
-
-  if (tracingSys("msvcBugs")) {
-    LO.MSVC_bug_compatibility();
-  }
-  if (!tracingSys("nowarnings")) {
-    LO.enableAllWarnings();
-  }
 
   // --------------- parse --------------
   TranslationUnit *unit;
@@ -335,14 +286,14 @@ int Elsa::doit(Preprocessor& PP, LangOptions& LO, TargetInfo& TI,
     }
 
     SemanticValue treeTop;
-    ParseTreeAndTokens tree(LO, treeTop, strTable, inputFname);
+    ParseTreeAndTokens tree(PP, treeTop, strTable, inputFname);
 
     // grab the lexer so we can check it for errors (damn this
     // 'tree' thing is stupid..)
-    Lexer *lexer = dynamic_cast<Lexer*>(tree.lexer);
+    OLexer *lexer = dynamic_cast<OLexer*>(tree.lexer);
     xassert(lexer);
 
-    CCParse *parseContext = new CCParse(strTable, LO);
+    CCParse *parseContext = new CCParse(strTable, PP);
     tree.userAct = parseContext;
 
     traceProgress(2) << "building parse tables from internal data\n";
@@ -419,7 +370,7 @@ int Elsa::doit(Preprocessor& PP, LangOptions& LO, TargetInfo& TI,
         typeCheckingTimer.startTimer();
     }
 
-    EllccEnv env(LO, TI, strTable, tfac, madeUpVariables, builtinVars, unit);
+    EllccEnv env(PP, strTable, tfac, madeUpVariables, builtinVars, unit);
     try {
       env.tcheckTranslationUnit(unit);
     }
@@ -509,7 +460,7 @@ int Elsa::doit(Preprocessor& PP, LangOptions& LO, TargetInfo& TI,
       // this is useful to measure the cost of disambiguation, since
       // now the tree is entirely free of ambiguities
       traceProgress() << "beginning second tcheck...\n";
-      EllccEnv env2(LO, TI, strTable, tfac, madeUpVariables, builtinVars, unit);
+      EllccEnv env2(PP, strTable, tfac, madeUpVariables, builtinVars, unit);
       unit->tcheck(env2);
       traceProgress() << "end of second tcheck\n";
     }
@@ -604,7 +555,7 @@ int Elsa::doit(Preprocessor& PP, LangOptions& LO, TargetInfo& TI,
 
     ElabVisitor vis(strTable, tfac, unit);
 
-    if (!LO.CPlusPlus) {
+    if (!PP.getLangOptions().CPlusPlus) {
       // do only the C elaboration activities
       vis.activities = EA_C_ACTIVITIES;
     }
@@ -734,7 +685,7 @@ int Elsa::doit(Preprocessor& PP, LangOptions& LO, TargetInfo& TI,
       ArrayStack<Variable*> madeUpVariables2;
       ArrayStack<Variable*> builtinVars2;
       // dsw: I hope you intend that I should use the cloned TranslationUnit
-      EllccEnv env3(LO, TI, strTable, tfac, madeUpVariables2, builtinVars2, u2);
+      EllccEnv env3(PP, strTable, tfac, madeUpVariables2, builtinVars2, u2);
       u2->tcheck(env3);
 
       if (tracingSys("cloneTypedAST")) {
@@ -777,14 +728,16 @@ int Elsa::doit(Preprocessor& PP, LangOptions& LO, TargetInfo& TI,
     }
   }
 
-    if (doTime) {
-        llvmGenerationTimer.startTimer();
-    }
-    mod = cc_to_llvm(outputFname, strTable, *unit, TI);
+  if (!parseOnly) {
+      if (doTime) {
+          llvmGenerationTimer.startTimer();
+      }
+      mod = cc_to_llvm(outputFname, strTable, *unit, PP.getTargetInfo());
 
-    if (doTime) {
-        llvmGenerationTimer.stopTimer();
-    }
+      if (doTime) {
+          llvmGenerationTimer.stopTimer();
+      }
+  }
 
   //traceProgress() << "cleaning up...\n";
 
@@ -802,12 +755,12 @@ int Elsa::doit(Preprocessor& PP, LangOptions& LO, TargetInfo& TI,
   return 0;
 }
 
-int Elsa::parse(Preprocessor& PP, LangOptions& LO, TargetInfo& TI,
-                Language language,
-                const char* inputFname, const char* outputFname, llvm::Module*& mod)
+int Elsa::parse(Preprocessor& PP,
+                const char* inputFname, const char* outputFname, llvm::Module*& mod,
+                bool parseOnly)
 {
   try {
-    return doit(PP, LO, TI, language, inputFname, outputFname, mod);
+    return doit(PP, inputFname, outputFname, mod, parseOnly);
   } catch (XUnimp &x) {
     HANDLER();
     std::cout << x << std::endl;

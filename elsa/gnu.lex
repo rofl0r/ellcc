@@ -40,7 +40,7 @@
 
   /* behavior of these depends on LangOptions settings */
 "__FUNCTION__"|"__PRETTY_FUNCTION__" {
-  if (LO.gccFuncBehavior == LangOptions::GFB_string) {
+  if (LO.gccFuncBehavior == ellcc::LangOptions::GFB_string) {
     // yield with special token codes
     return tok(yytext[2]=='F'? TOK___FUNCTION__ : TOK___PRETTY_FUNCTION__);
   }

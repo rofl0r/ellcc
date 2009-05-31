@@ -3,9 +3,9 @@
 
 #temporary: iptree iptparse cipart smin
 
-# main target is 'ccparse', a C++ parser, and libelsa.a, the Elsa library.
+# main target is libelsa.a, the Elsa library.
 THIS := libelsa.a
-all: cc.ast.gen.h tlexer packedword_test ccparse quicktest $(THIS)
+all: cc.ast.gen.h tlexer packedword_test $(THIS)
 
 # work in progress..
 #iptree smin cipart
@@ -14,6 +14,7 @@ all: cc.ast.gen.h tlexer packedword_test ccparse quicktest $(THIS)
 SMBASE   := @SMBASE@
 BASIC    := @BASIC@
 LEX      := @LEX@
+AST      := @AST@
 AST      := @AST@
 ELKHOUND := @ELKHOUND@
 
@@ -135,8 +136,8 @@ RANLIB := ranlib
 # compile .cc in this directory to a .o
 TOCLEAN += *.o *.d
 %.o: %.cc
-	$(CXX) -c -o $@ $< $(if $(findstring $*,$(GCOV_MODS)),$(GCOV_OPTS) )$(CCFLAGS)
-	@$(DEP)   -o $@ $< $(if $(findstring $*,$(GCOV_MODS)),$(GCOV_OPTS) )$(CCFLAGS) >$*.d
+	$(CXX) -c -o $@ $< $(if $(findstring $*,$(GCOV_MODS)),$(GCOV_OPTS) )$(CCFLAGS)$(LLVMCCFLAGS)
+	@$(DEP)   -o $@ $< $(if $(findstring $*,$(GCOV_MODS)),$(GCOV_OPTS) )$(CCFLAGS) $(LLVMCCFLAGS) >$*.d
 
 # compile a special module; -O0 will override any earlier setting
 notopt.o: notopt.cc
@@ -267,7 +268,7 @@ XML_OBJS += xml_do_read.o
 # -include $(XML_OBJS:.o=.d)
 
 
-# ------------------------- ccparse ---------------------
+# ------------------------- libelsa ---------------------
 # combine base lexer description and extensions
 TOCLEAN += lexer.lex
 lexer.lex: $(LEXER_MODS) merge-lexer-exts.pl
@@ -349,28 +350,16 @@ CCPARSE_OBJS := \
   cc_ast_aux.o \
   variable.o \
   lookupset.o \
-  ccparse.o
+  initpreprocessor.o \
+  initheadersearch.o
+
 -include $(CCPARSE_OBJS:.o=.d) main.d
 
-
-# parser binary
-TOCLEAN += ccparse
-ccparse: $(CCPARSE_OBJS) main.o $(libraries)
-	$(CXX) -o $@ $(CCPARSE_OBJS) main.o $(LDFLAGS) $(LLVMLDFLAGS)
 
 $(THIS): $(CCPARSE_OBJS)
 	rm -f $(THIS)
 	$(AR) -r $(THIS) $(CCPARSE_OBJS)
 	-$(RANLIB) $(THIS)
-
-
-# run the binary; the 'quicktest' file is so we don't run it if
-# 'ccparse' hasn't recently changed
-TOCLEAN += quicktest
-quicktest: ccparse
-	./ccparse in/t0001.cc
-	@touch quicktest
-	@echo BUILD FINISHED
 
 
 # -------------------- semgrep --------------------
@@ -553,9 +542,8 @@ distclean: clean
 toolclean: clean
 	rm -f $(TOTOOLCLEAN)
 
-check: semgrep all
+check: all
 	./packedword_test
-	MAKE=$(MAKE) ./regrtest
 	@echo ""
 	@echo "Regression tests passed."
 

@@ -72,8 +72,8 @@ TokenFlag tokenFlags(TokenType type)
 }
 
 
-// ------------------------ Lexer -------------------
-Lexer::Lexer(StringTable &s, LangOptions& LO, char const *fname)
+// ------------------------ OLexer -------------------
+OLexer::OLexer(StringTable &s, const ellcc::LangOptions& LO, char const *fname)
   : BaseLexer(s, fname),
 
     prevIsNonsep(false),
@@ -86,7 +86,7 @@ Lexer::Lexer(StringTable &s, LangOptions& LO, char const *fname)
 }
 
 
-Lexer::Lexer(StringTable &s, LangOptions& LO, SourceLoc initLoc,
+OLexer::OLexer(StringTable &s, const ellcc::LangOptions& LO, SourceLoc initLoc,
              char const *buf, int len)
   : BaseLexer(s, initLoc, buf, len),
 
@@ -100,11 +100,11 @@ Lexer::Lexer(StringTable &s, LangOptions& LO, SourceLoc initLoc,
 }
 
 
-Lexer::~Lexer()
+OLexer::~OLexer()
 {}
 
 
-void Lexer::whitespace()
+void OLexer::whitespace()
 {
   BaseLexer::whitespace();
 
@@ -117,7 +117,7 @@ void Lexer::whitespace()
 // yylex() function to be enormous; I want that to just have a bunch
 // of calls into these routines, which themselves can then have
 // plenty of things inlined into them
-int Lexer::tok(TokenType t)
+int OLexer::tok(TokenType t)
 {
   checkForNonsep(t);
   updLoc();
@@ -126,7 +126,7 @@ int Lexer::tok(TokenType t)
 }
 
 
-int Lexer::svalTok(TokenType t)
+int OLexer::svalTok(TokenType t)
 {
   checkForNonsep(t);
   updLoc();
@@ -135,7 +135,7 @@ int Lexer::svalTok(TokenType t)
 }
 
 
-int Lexer::alternateKeyword_tok(TokenType t)
+int OLexer::alternateKeyword_tok(TokenType t)
 {
   if (LO.CPlusPlus) {
     return tok(t);
@@ -152,7 +152,7 @@ int Lexer::alternateKeyword_tok(TokenType t)
 //   # 4 "foo.cc"           // "line" can be omitted
 //   # 4 "foo.cc" 1         // extra stuff is ignored
 //   # 4                    // omitted filename means "same as previous"
-void Lexer::parseHashLine(char *directive, int len)
+void OLexer::parseHashLine(char *directive, int len)
 {
   char *endp = directive+len;
 
@@ -219,7 +219,7 @@ void Lexer::parseHashLine(char *directive, int len)
 
 // preprocessing error: report the location information in the
 // preprocessed source, ignoring #line information
-void Lexer::pp_err(char const *msg)
+void OLexer::pp_err(char const *msg)
 {
   // print only line information, and subtract one because I account
   // for whitespace (including the final newline) before processing it
@@ -228,9 +228,9 @@ void Lexer::pp_err(char const *msg)
 }
 
 
-STATICDEF void Lexer::tokenFunc(LexerInterface *lex)
+STATICDEF void OLexer::tokenFunc(LexerInterface *lex)
 {
-  Lexer *ths = static_cast<Lexer*>(lex);
+  OLexer *ths = static_cast<OLexer*>(lex);
 
   // call into the flex lexer; this updates 'loc' and sets
   // 'sval' as appropriate
@@ -238,10 +238,10 @@ STATICDEF void Lexer::tokenFunc(LexerInterface *lex)
 }
 
 
-STATICDEF void Lexer::c_tokenFunc(LexerInterface *lex)
+STATICDEF void OLexer::c_tokenFunc(LexerInterface *lex)
 {
   // as above
-  Lexer *ths = static_cast<Lexer*>(lex);
+  OLexer *ths = static_cast<OLexer*>(lex);
   ths->type = ths->yylex();
 
   // map C++ keywords into identifiers
@@ -257,19 +257,19 @@ STATICDEF void Lexer::c_tokenFunc(LexerInterface *lex)
 }
 
 
-Lexer::NextTokenFunc Lexer::getTokenFunc() const
+OLexer::NextTokenFunc OLexer::getTokenFunc() const
 {
   if (LO.recognizeCppKeywords) {
     // expected case, yield the normal tokenizer
-    return &Lexer::tokenFunc;
+    return &OLexer::tokenFunc;
   }
   else {
     // yield the tokenizer that maps C++ keywords into C keywords
-    return &Lexer::c_tokenFunc;
+    return &OLexer::c_tokenFunc;
   }
 }
 
-string Lexer::tokenDesc() const
+string OLexer::tokenDesc() const
 {
   if (tokenFlags((TokenType)type) & TF_MULTISPELL) {
     // for tokens with multiple spellings, decode 'sval' as a
@@ -283,13 +283,13 @@ string Lexer::tokenDesc() const
   }
 }
 
-string Lexer::tokenKindDesc(int kind) const
+string OLexer::tokenKindDesc(int kind) const
 {
   // static table only
   return toString((TokenType)kind);
 }
 
-string Lexer::tokenKindDescV(int kind) const
+string OLexer::tokenKindDescV(int kind) const
 {
   stringBuilder s;
   s << toString((TokenType)kind)
@@ -309,7 +309,7 @@ static SourceLoc str2loc(char *str, char **endptr, char const * file) {
 }
 
 // comment of form /*<NAME lineStart:colStart endEnd:colEnd*/
-void Lexer::macroUndoStart(char *comment, int len) {
+void OLexer::macroUndoStart(char *comment, int len) {
   updLoc();
   prevIsNonsep = false;
   if (!sourceLocManager->useHashLines) return;
@@ -353,7 +353,7 @@ void Lexer::macroUndoStart(char *comment, int len) {
 }
 
 // m is only returned if it has a position
-void Lexer::addMacroDefinition(char *macro, int len, MacroDefinition **m) {
+void OLexer::addMacroDefinition(char *macro, int len, MacroDefinition **m) {
   SourceLoc fromLoc = SL_UNKNOWN;
   SourceLoc toLoc = SL_UNKNOWN;
 
@@ -373,7 +373,7 @@ void Lexer::addMacroDefinition(char *macro, int len, MacroDefinition **m) {
 }
 
 // comment of form /*<mNAME lineStart:colStart endEnd:colEnd*/
-void Lexer::macroDefinition(char *macro, int len) {
+void OLexer::macroDefinition(char *macro, int len) {
   updLoc();
   prevIsNonsep = false;
 
@@ -382,7 +382,7 @@ void Lexer::macroDefinition(char *macro, int len) {
 }
   
 // comment of form /*<!NAME lineStart:colStart endEnd:colEnd*/
-void Lexer::macroParamDefinition(char *macro, int len) {
+void OLexer::macroParamDefinition(char *macro, int len) {
   updLoc();
   prevIsNonsep = false;
 
@@ -401,7 +401,7 @@ void Lexer::macroParamDefinition(char *macro, int len) {
   currentMacro->postStartLoc = nextLoc;
 }
 
-void Lexer::macroUndoStop() {
+void OLexer::macroUndoStop() {
   SourceLoc postEndLoc = nextLoc;
 
   updLoc();

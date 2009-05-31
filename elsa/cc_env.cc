@@ -11,7 +11,7 @@
 #include "implconv.h"      // ImplicitConversion
 #include "typelistiter.h"  // TypeListIter_GrowArray
 #include "exprloc.h"
-#include "LangOptions.h"   // Language options.
+#include "Preprocessor.h"  // Language options.
 #include "TargetInfo.h"    // Target information.
 
 using namespace std;
@@ -148,7 +148,7 @@ bool testAmongOverloadSet(MemberFnTest test, Variable *v, CompoundType *ct)
 void addCompilerSuppliedDecls(Env &env, SourceLoc loc, CompoundType *ct)
 {
   // we shouldn't even be here if the language isn't C++.
-  xassert(env.LO.CPlusPlus);
+  xassert(env.PP.getLangOptions().CPlusPlus);
 
   // the caller should already have arranged so that 'ct' is the
   // innermost scope
@@ -301,8 +301,7 @@ int throwClauseSerialNumber = 0; // don't make this a member of Env
 
 int Env::anonCounter = 1;
 
-Env::Env(StringTable &s, LangOptions& LO, TargetInfo& TI,
-         TypeFactory &tf,
+Env::Env(StringTable &s, Preprocessor& PP, TypeFactory &tf,
          ArrayStack<Variable*> &madeUpVariables0,
          ArrayStack<Variable*> &builtinVars0,
          TranslationUnit *unit0)
@@ -322,8 +321,7 @@ Env::Env(StringTable &s, LangOptions& LO, TargetInfo& TI,
     instantiationLocStack(),
 
     str(s),
-    LO(LO),
-    TI(TI),
+    PP(PP),
     tfac(tf),
     madeUpVariables(madeUpVariables0),
     builtinVars(builtinVars0),
@@ -447,7 +445,7 @@ Env::Env(StringTable &s, LangOptions& LO, TargetInfo& TI,
   // 'int' directly here instead of size_t
   Type *t_size_t = getSimpleType(ST_INT);
 
-  if (LO.CPlusPlus) {
+  if (PP.getLangOptions().CPlusPlus) {
     // must predefine this to be able to define bad_alloc
     Scope *std_scope = createNamespace(SL_INIT, str("std"), false /*isAnonymous*/);
 
@@ -466,7 +464,7 @@ Env::Env(StringTable &s, LangOptions& LO, TargetInfo& TI,
     Type *t_bad_alloc =
       makeNewCompound(bad_alloc_ct, std_scope, str("bad_alloc"), SL_INIT,
                       TI_CLASS, mncFlags);
-    if (LO.gcc2StdEqualsGlobalHacks) {
+    if (PP.getLangOptions().gcc2StdEqualsGlobalHacks) {
       // using std::bad_alloc;
       Variable *using_bad_alloc_ct = makeUsingAliasFor(SL_INIT, bad_alloc_ct->typedefVar);
       env.builtinVars.push(using_bad_alloc_ct);
@@ -516,7 +514,7 @@ Env::Env(StringTable &s, LangOptions& LO, TargetInfo& TI,
   declareFunction1arg(t_voidptr, "__builtin_next_arg",
                       getSimpleType(ST_ANY_TYPE), "p");
 
-  if (LO.predefined_Bool) {
+  if (PP.getLangOptions().predefined_Bool) {
     // sm: I found this; it's a C99 feature: 6.2.5, para 2.  It's
     // actually a keyword, so should be lexed specially, but I'll
     // leave it alone for now.
@@ -530,7 +528,7 @@ Env::Env(StringTable &s, LangOptions& LO, TargetInfo& TI,
   memset(complexComponentFields, 0, sizeof(complexComponentFields));
 
   #ifdef GNU_EXTENSION
-    if (LO.declareGNUBuiltins) {
+    if (PP.getLangOptions().declareGNUBuiltins) {
       addGNUBuiltins();
     }
   #endif // GNU_EXTENSION
@@ -836,7 +834,7 @@ void Env::setupOperatorOverloading()
       OP_MINUSEQ       // VQ L& operator-= (VQ L&, R);
     };
     FOREACH_OPERATOR(op, ops) {
-      if (LO.nonstandardAssignmentOperator && op==OP_ASSIGN) {
+      if (PP.getLangOptions().nonstandardAssignmentOperator && op==OP_ASSIGN) {
         // do not add this variant; see below
         continue;
       }
@@ -860,7 +858,7 @@ void Env::setupOperatorOverloading()
   // T VQ & operator= (T VQ &, T);
   {
     Type* (*filter)(Type *t, bool) = para19_20filter;
-    if (LO.nonstandardAssignmentOperator) {
+    if (PP.getLangOptions().nonstandardAssignmentOperator) {
       // 9/25/04: as best I can tell, what is usually implemented is the
       //   T* VQ & operator= (T* VQ &, T*);
       // pattern where T can be pointer (para 19), enumeration (para 20),
@@ -1398,7 +1396,7 @@ sm::string Env::instLocStackString() const
 // -------- insertion --------
 Scope *Env::acceptingScope(DeclFlags df)
 {
-  if (LO.noInnerClasses &&
+  if (PP.getLangOptions().noInnerClasses &&
       (df & (DF_TYPEDEF | DF_ENUMERATOR))) {
     // C mode: typedefs and enumerators go into the outer scope
     return outerScope();
@@ -1658,7 +1656,7 @@ Type *Env::declareEnum(SourceLoc loc /*...*/, EnumType *et)
     // TODO: If the enum name is already the name of a typedef,
     // then that is an error in C++.
 
-    if (LO.tagsAreTypes && !addVariable(tv)) {
+    if (PP.getLangOptions().tagsAreTypes && !addVariable(tv)) {
       // this isn't really an error, because in C it would have
       // been allowed, so C++ does too [ref?]
       //return env.error(stringc
@@ -2492,7 +2490,7 @@ Type *Env::makeNewCompound(CompoundType *&ct, Scope * /*nullable*/ scope,
 
   if (name && scope) {
     scope->registerVariable(tv);
-    if (LO.tagsAreTypes) {
+    if (PP.getLangOptions().tagsAreTypes) {
       if (!scope->addVariable(tv)) {
         // this isn't really an error, because in C it would have
         // been allowed, so C++ does too [ref?]
@@ -2515,7 +2513,7 @@ Type *Env::makeNewCompound(CompoundType *&ct, Scope * /*nullable*/ scope,
   }
 
   // also add the typedef to the class' scope
-  if (name && LO.compoundSelfName) {
+  if (name && PP.getLangOptions().compoundSelfName) {
     if (tv->templateInfo() && tv->templateInfo()->hasParameters()) {
       // the self type should be a PseudoInstantiation, not the raw template
       //
@@ -2761,7 +2759,7 @@ bool multipleDefinitionsOK(Env &env, Variable *prior, DeclFlags dflags)
     return true;
   }
 
-  if (!env.LO.uninitializedGlobalDataIsCommon) {
+  if (!env.PP.getLangOptions().uninitializedGlobalDataIsCommon) {
     return false;
   }
 
@@ -3098,7 +3096,7 @@ static bool equivalentTemplateParameters(
 // and nullify 'prior'; otherwise return NULL
 OverloadSet *Env::getOverloadForDeclaration(Variable *&prior, Type *type)
 {
-  if (LO.allowOverloading &&
+  if (PP.getLangOptions().allowOverloading &&
       prior &&
       !(prior->name == string_main && prior->isGlobal()) &&   // cannot overload main()
       prior->type->isFunctionType() &&
@@ -3270,9 +3268,9 @@ Variable *Env::createDeclaration(
       //    where inlineImpliesStaticLinkage, so we check for that combination
       //    in isStaticLinkage().  It would be nice to factor DF_STATIC into
       //    DF_STATIC_LINKAGE and DF_STATIC_MEMBER.
-      xassert(env.LO.inlineImpliesStaticLinkage);
+      xassert(env.PP.getLangOptions().inlineImpliesStaticLinkage);
     } else {
-      if (env.LO.inlineImpliesStaticLinkage) {
+      if (env.PP.getLangOptions().inlineImpliesStaticLinkage) {
         if (!(dflags & DF_STATIC)) {
           dflags |= DF_STATIC;
           staticBecauseInline = true;
@@ -3298,7 +3296,7 @@ Variable *Env::createDeclaration(
           (dflags & DF_DEFINITION) &&
           !multipleDefinitionsOK(*this, prior, dflags)) {
         if (scope->isParameterScope()) {
-          env.diagnose3(env.LO.allowDuplicateParameterNames, loc, stringc
+          env.diagnose3(env.PP.getLangOptions().allowDuplicateParameterNames, loc, stringc
             << "parameter `" << type->toCString(name)
             << "' conflicts with previous parameter `"
             << prior->toCStringAsParameter() << "' (gcc bug allows it [gcc PR 13717])");
@@ -3383,7 +3381,7 @@ Variable *Env::createDeclaration(
           scope->registerVariable(prior);
           return prior;
         }
-        else if (LO.allowMemberWithClassName &&
+        else if (PP.getLangOptions().allowMemberWithClassName &&
                  prior->hasAllFlags(DF_SELFNAME | DF_TYPEDEF)) {
           // 9/22/04: Special case for 'struct ip_opts': allow the member
           // to replace the class name, despite 9.2 para 13.
@@ -3445,7 +3443,7 @@ Variable *Env::createDeclaration(
       // same types, same typedef disposition, so they refer
       // to the same thing
     }
-    else if (LO.allowExternCThrowMismatch &&
+    else if (PP.getLangOptions().allowExternCThrowMismatch &&
              prior->hasFlag(DF_EXTERN_C) &&
              (prior->flags & DF_TYPEDEF) == (dflags & DF_TYPEDEF) &&
              prior->type->isFunctionType() &&
@@ -3462,7 +3460,7 @@ Variable *Env::createDeclaration(
                       << "(conflicting decl at " << prior->loc
                       << ") due to extern-C");
     }
-    else if (LO.allowImplicitFunctionDecls &&
+    else if (PP.getLangOptions().allowImplicitFunctionDecls &&
              prior->hasFlag(DF_FORWARD) &&
              prior->type->isFunctionType() &&
              isImplicitKandRFuncType(prior->type->asFunctionType())) {
@@ -3498,7 +3496,7 @@ Variable *Env::createDeclaration(
         << " had type `" << prior->type->toString()
         << "', but this one uses `" << type->toString() << "'";
 
-      if (!LO.CPlusPlus &&
+      if (!PP.getLangOptions().CPlusPlus &&
           prior->type->isFunctionType() &&
           type->isFunctionType() &&
           compatibleParamCounts(prior->type->asFunctionType(),
@@ -3535,7 +3533,7 @@ Variable *Env::createDeclaration(
         msg = stringc << msg << " (allowed due to C func param compatibility)";
         warning(msg);
       }
-      else if (!LO.CPlusPlus &&
+      else if (!PP.getLangOptions().CPlusPlus &&
                compatibleEnumAndIntegerTypes(prior->type, type)) {
         msg = stringc << msg << " (allowed due to C enum/int compatibility)";
         warning(msg);
@@ -3607,7 +3605,7 @@ Variable *Env::createDeclaration(
             //    implicit from an inline definition.
             prior->setFlag(DF_STATIC);
           } else {
-            env.diagnose3(LO.allowStaticAfterNonStatic, loc, stringc
+            env.diagnose3(PP.getLangOptions().allowStaticAfterNonStatic, loc, stringc
                           << "prior declaration of `" << name
                           << "' at " << prior->loc
                           << " declared non-static, cannot re-declare as static");
@@ -3638,7 +3636,7 @@ Variable *Env::createDeclaration(
     // can have the FF_NO_PARAM_INFO flag even if we are in C++;
     // therefore we have to check for that and avoid it or we can get
     // a mismatch on the number of parameters
-    if (LO.CPlusPlus && type->isFunctionType()
+    if (PP.getLangOptions().CPlusPlus && type->isFunctionType()
         && !(prior->type->asFunctionType()->flags & FF_NO_PARAM_INFO)
         && !(type->asFunctionType()->flags & FF_NO_PARAM_INFO)
         ) {
@@ -4086,7 +4084,7 @@ Scope *Env::findParameterizingScope(Variable *bareQualifierVar,
                     << bareQualifierVar->name << "'");
     }
     else {
-      diagnose3(LO.allowExplicitSpecWithoutParams, loc(), stringc
+      diagnose3(PP.getLangOptions().allowExplicitSpecWithoutParams, loc(), stringc
         << "explicit specialization missing \"template <>\" (gcc bug allows it)");
     }
   }
@@ -4136,7 +4134,7 @@ bool Env::ensureCompleteType(char const *action, Type *type)
 
   if (type->isArrayType() &&
       type->asArrayType()->size == ArrayType::NO_SIZE) {
-    if (LO.assumeNoSizeArrayHasSizeOne) {
+    if (PP.getLangOptions().assumeNoSizeArrayHasSizeOne) {
       warning(stringc << "array of no size assumed to be a complete type");
       return true;
     } else {
@@ -5331,11 +5329,11 @@ void Env::checkTemplateKeyword(PQName *name)
   // other kind is rejected by the parser
   if (!templateUsed && hasTemplArgs) {
     // specific gcc-2 bug? (in/d0112.cc)
-    if (LO.allowGcc2HeaderSyntax &&
+    if (PP.getLangOptions().allowGcc2HeaderSyntax &&
         name->isPQ_qualifier() &&
         name->asPQ_qualifier()->qualifier == env.str("rebind") &&
         name->getName() == env.str("other")) {
-      env.diagnose3(LO.allowGcc2HeaderSyntax, name->loc,
+      env.diagnose3(PP.getLangOptions().allowGcc2HeaderSyntax, name->loc,
                     "dependent template scope name requires 'template' keyword (gcc-2 bug allows it)");
     }
     else {
@@ -5393,7 +5391,7 @@ void Env::checkForQualifiedMemberDeclarator(Declarator *decl)
   //    its class, ..." (emphasis mine)
 
   // complain
-  diagnose3(LO.allowQualifiedMemberDeclarations, name->loc,
+  diagnose3(PP.getLangOptions().allowQualifiedMemberDeclarations, name->loc,
             "qualified name is not allowed in member declaration "
             "(gcc bug accepts it)");
 
@@ -5471,7 +5469,7 @@ Type *Env::sizeofType(Type *t, int &size, Expression * /*nullable*/ expr)
   env.ensureCompleteType("compute size of", t);
 
   try {
-    size = t->sizeInBytes(TI);
+    size = t->sizeInBytes(PP.getTargetInfo());
     TRACE("sizeof", "sizeof(" << (expr? expr->exprToString() : t->toString()) <<
                     ") is " << size);
   }
@@ -5501,7 +5499,7 @@ Type *Env::sizeofType(Type *t, int &size, Expression * /*nullable*/ expr)
     else if (t->isArrayType()) {
       ArrayType *at = t->asArrayType();
       if (at->size == ArrayType::NO_SIZE &&
-          env.LO.assumeNoSizeArrayHasSizeOne) {
+          env.PP.getLangOptions().assumeNoSizeArrayHasSizeOne) {
         // just hacking this for now
         return env.sizeofType(at->eltType, size, expr);
       }
@@ -5827,7 +5825,7 @@ bool Env::elaborateImplicitConversionArgToParam(Type *paramType, Expression *&ar
   Type *src = arg->getType();
   ImplicitConversion ic =
     getImplicitConversion(env,
-                          arg->getSpecial(env.LO),
+                          arg->getSpecial(env.PP.getLangOptions()),
                           src,
                           paramType,
                           false /*destIsReceiver*/);
@@ -6052,7 +6050,7 @@ bool Env::doOperatorOverload() const
   static bool disabled = tracingSys("doNotOperatorOverload");
   if (disabled) { return false; }
 
-  if (!LO.allowOverloading) { return false; }
+  if (!PP.getLangOptions().allowOverloading) { return false; }
 
   // 10/09/04: *Do* overload resolution even in template bodies, as
   // long as the arguments are not dependent (checked elsewhere).

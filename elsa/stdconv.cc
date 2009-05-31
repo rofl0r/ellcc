@@ -3,7 +3,7 @@
 
 #include "stdconv.h"      // this module
 #include "cc_type.h"      // Type
-#include "LangOptions.h"  // LangOptions
+#include "Preprocessor.h" // LangOptions and TargetInfo
 #include "cc_env.h"       // Env
 #include "trace.h"        // tracingSys
 
@@ -573,14 +573,14 @@ StandardConversion getStandardConversion
         CVFlags destCV = getDestCVFlags(dest, srcCV);
         
         // rdp: Is this only for C++?
-        if (env.LO.CPlusPlus && conv.stripPtrCtor(srcCV, destCV, isReference))
+        if (env.PP.getLangOptions().CPlusPlus && conv.stripPtrCtor(srcCV, destCV, isReference))
           { return conv.ret; }
 
 	if (dest->isVoid()) {
 	    // any pointer can be converted to void* .
 	    return conv.ret | SC_PTR_CONV;
 	}
-	if (src->isVoid() && !env.LO.CPlusPlus) {
+	if (src->isVoid() && !env.PP.getLangOptions().CPlusPlus) {
 	    // void* to any pointer type in C.
 	    return conv.ret | SC_PTR_CONV;
 	}
@@ -770,10 +770,10 @@ StandardConversion getStandardConversion
       return conv.ret;
     }
     else {
-      if (   !env.LO.CPlusPlus
+      if (   !env.PP.getLangOptions().CPlusPlus
           && src->isIntegerType()
           && dest->isIntegerType()
-          && src->sizeInBytes(env.TI) == dest->sizeInBytes(env.TI)) {
+          && src->sizeInBytes(env.PP.getTargetInfo()) == dest->sizeInBytes(env.PP.getTargetInfo())) {
           return conv.ret | SC_PTR_CONV;      // Compatable pointers in C.
       }
       // 9/25/04: (in/t0316.cc) I'm not sure where the best place to do

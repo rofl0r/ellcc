@@ -34,19 +34,66 @@
 #include "TargetInfo.h"
 #include "llvm/System/Host.h"
 
-using namespace sm;
-using namespace std;
+#define xstr(x) #x
+#define str(x) xstr(x)
 
-#ifdef LLVM_EXTENSION
+#define ELLCC 0
+#define ELLCC_MINOR 1
+#define ELLCC_PATCHLEVEL 0
+#define ELLCC_VERSION_STRING str(ELLCC) "." str(ELLCC_MINOR) "." str(ELLCC_PATCHLEVEL)
+#define ELLCC_VERSION_MODIFIER "ALPHA"
+#define ELLCC_VERSION ELLCC_VERSION_STRING " " ELLCC_VERSION_MODIFIER " " __DATE__
+
+using namespace sm;
+using namespace llvm;
+
+#include "ElsaDiagnostic.h"
+#include "LexDiagnostic.h"
+#include "HeaderSearch.h"
+#include "InitHeaderSearch.h"
+#include "Preprocessor.h"
+#include "InitPreprocessor.h"
+#include "FileManager.h"
+#include "TextDiagnosticPrinter.h"
+#include "LangOptions.h"
+#include "TargetInfo.h"
 #include "cc2llvm.h"      // cc_to_llvm
 
 // LLVM
 #include <llvm/Module.h>
 #include <llvm/Pass.h>
 #include <llvm/PassManager.h>
-#include "llvm/Support/raw_ostream.h"
 #include <llvm/Assembly/PrintModulePass.h>
-#endif
+#include "llvm/Module.h"
+#include "llvm/ModuleProvider.h"
+#include "llvm/PassManager.h"
+#include "llvm/CallGraphSCCPass.h"
+#include "llvm/Bitcode/ReaderWriter.h"
+#include "llvm/Assembly/PrintModulePass.h"
+#include "llvm/Analysis/Verifier.h"
+#include "llvm/Analysis/LoopPass.h"
+#include "llvm/Analysis/CallGraph.h"
+#include "llvm/Target/SubtargetFeature.h"
+#include "llvm/Target/TargetData.h"
+#include "llvm/Target/TargetMachine.h"
+#include "llvm/Target/TargetMachineRegistry.h"
+#include "llvm/CodeGen/LinkAllCodegenComponents.h"
+#include "llvm/CodeGen/FileWriters.h"
+#include "llvm/ADT/OwningPtr.h"
+#include "llvm/ADT/StringMap.h"
+#include "llvm/Support/PassNameParser.h"
+#include "llvm/System/Signals.h"
+#include "llvm/System/Host.h"
+#include "llvm/Support/ManagedStatic.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/PluginLoader.h"
+#include "llvm/Support/RegistryParser.h"
+#include "llvm/Support/Streams.h"
+#include "llvm/Support/SystemUtils.h"
+#include "llvm/Support/Timer.h"
+#include "llvm/LinkAllPasses.h"
+#include "llvm/LinkAllVMCore.h"
+#include "llvm/Linker.h"
 
 // true to print the tchecked C++ syntax using bpprint after
 // tcheck
@@ -63,6 +110,28 @@ static sm::string cc2cOutputFname;
 // nonempty if we want to run cc2llvm; value of "-" means stdout
 static sm::string cc2llvmOutputFname;
 #endif
+
+static const char* progname;
+
+/// PrintAndExit - Prints a message to standard error and exits with an error code.
+///
+/// Inputs:
+///  Message  - The message to print to standard error.
+///
+static void PrintAndExit(const std::string &Message, int errcode = 1)
+{
+    cerr << progname << ": " << Message << "\n";
+    llvm_shutdown();
+    exit(errcode);
+}
+
+/// Exit - Exit with an error code.
+///
+static void Exit(int errcode = 1)
+{
+    llvm_shutdown();
+    exit(errcode);
+}
 
 
 // little check: is it true that only global declarators
@@ -95,7 +164,7 @@ bool DeclTypeChecker::visitDeclarator(Declarator *obj)
       !(obj->var->flags & (DF_GLOBAL | DF_MEMBER)) &&
       !obj->type->isArrayType()) {
     instances++;
-    cout << toString(obj->var->loc) << ": " << obj->var->name
+    std::cout << toString(obj->var->loc) << ": " << obj->var->name
          << " has type != var->type, but is not global or member or array\n";
   }
   return true;
@@ -169,9 +238,9 @@ void handle_xBase(Env &env, xBase &x)
 {
   // typically an assertion failure from the tchecker; catch it here
   // so we can print the errors, and something about the location
-  env.errors.print(cout);
-  cout << x << endl;
-  cout << "Failure probably related to code near " << env.locStr() << endl;
+  env.errors.print(std::cout);
+  std::cout << x << std::endl;
+  std::cout << "Failure probably related to code near " << env.locStr() << std::endl;
 
   // print all the locations on the scope stack; this is sometimes
   // useful when the env.locStr refers to some template code that
@@ -180,8 +249,8 @@ void handle_xBase(Env &env, xBase &x)
   // (unfortunately, env.instantiationLocStack isn't an option b/c
   // it will have been cleared by the automatic invocation of
   // destructors unwinding the stack...)
-  cout << "current location stack:\n";
-  cout << env.locationStackString();
+  std::cout << "current location stack:\n";
+  std::cout << env.locationStackString();
 
   // I changed from using exit(4) here to using abort() because
   // that way the multitest.pl script can distinguish them; the
@@ -224,7 +293,7 @@ char *myProcessArgs(int argc, char **argv, char const *additionalInfo)
     }
     else if (0==strcmp(argv[1], "-cc2c")) {
       if (argc < 3) {
-        cout << "-cc2c requires a file name argument\n";
+        std::cout << "-cc2c requires a file name argument\n";
         exit(2);
       }
       cc2cOutputFname = argv[2];
@@ -234,7 +303,7 @@ char *myProcessArgs(int argc, char **argv, char const *additionalInfo)
 #ifdef LLVM_EXTENSION
     else if (0==strcmp(argv[1], "-cc2llvm")) {
       if (argc < 3) {
-        cout << "-cc2llvm requires a file name argument\n";
+        std::cout << "-cc2llvm requires a file name argument\n";
         exit(2);
       }
       cc2llvmOutputFname = argv[2];
@@ -250,7 +319,7 @@ char *myProcessArgs(int argc, char **argv, char const *additionalInfo)
   #undef SHIFT
 
   if (argc != 2) {
-    cout << "usage: " << progName << " [options] input-file\n"
+    std::cout << "usage: " << progName << " [options] input-file\n"
             "  options:\n"
             "    -tr <flags>:       turn on given tracing flags (comma-separated)\n"
             "    -bbprint:          print parsed C++ back out using bpprint\n"
@@ -268,6 +337,367 @@ char *myProcessArgs(int argc, char **argv, char const *additionalInfo)
   wantBpprint = wantBpprint || tracingSys("bpprint");
 
   return argv[1];
+}
+
+//===----------------------------------------------------------------------===//
+// Preprocessor Initialization
+//===----------------------------------------------------------------------===//
+
+// FIXME: Preprocessor builtins to support.
+//   -A...    - Play with #assertions
+//   -undef   - Undefine all predefined macros
+
+static llvm::cl::list<std::string>
+D_macros("D", llvm::cl::value_desc("macro"), llvm::cl::Prefix,
+       llvm::cl::desc("Predefine the specified macro"));
+static llvm::cl::list<std::string>
+U_macros("U", llvm::cl::value_desc("macro"), llvm::cl::Prefix,
+         llvm::cl::desc("Undefine the specified macro"));
+
+static llvm::cl::list<std::string>
+ImplicitIncludes("include", llvm::cl::value_desc("file"),
+                 llvm::cl::desc("Include file before parsing"));
+static llvm::cl::list<std::string>
+ImplicitMacroIncludes("imacros", llvm::cl::value_desc("file"),
+                      llvm::cl::desc("Include macros from file before parsing"));
+
+static llvm::cl::opt<std::string>
+ImplicitIncludePTH("include-pth", llvm::cl::value_desc("file"),
+                   llvm::cl::desc("Include file before parsing"));
+
+//===----------------------------------------------------------------------===//
+// PTH.
+//===----------------------------------------------------------------------===//
+
+static llvm::cl::opt<std::string>
+TokenCache("token-cache", llvm::cl::value_desc("path"),
+           llvm::cl::desc("Use specified token cache file"));
+
+//===----------------------------------------------------------------------===//
+// Preprocessor include path information.
+//===----------------------------------------------------------------------===//
+
+// This tool exports a large number of command line options to control how the
+// preprocessor searches for header files.  At root, however, the Preprocessor
+// object takes a very simple interface: a list of directories to search for
+// 
+// FIXME: -nostdinc++
+// FIXME: -imultilib
+//
+
+static llvm::cl::opt<bool>
+nostdinc("nostdinc", llvm::cl::desc("Disable standard #include directories"));
+
+// Various command line options.  These four add directories to each chain.
+static llvm::cl::list<std::string>
+F_dirs("F", llvm::cl::value_desc("directory"), llvm::cl::Prefix,
+       llvm::cl::desc("Add directory to framework include search path"));
+static llvm::cl::list<std::string>
+I_dirs("I", llvm::cl::value_desc("directory"), llvm::cl::Prefix,
+       llvm::cl::desc("Add directory to include search path"));
+static llvm::cl::list<std::string>
+idirafter_dirs("idirafter", llvm::cl::value_desc("directory"), llvm::cl::Prefix,
+               llvm::cl::desc("Add directory to AFTER include search path"));
+static llvm::cl::list<std::string>
+iquote_dirs("iquote", llvm::cl::value_desc("directory"), llvm::cl::Prefix,
+               llvm::cl::desc("Add directory to QUOTE include search path"));
+static llvm::cl::list<std::string>
+isystem_dirs("isystem", llvm::cl::value_desc("directory"), llvm::cl::Prefix,
+            llvm::cl::desc("Add directory to SYSTEM include search path"));
+
+// These handle -iprefix/-iwithprefix/-iwithprefixbefore.
+static llvm::cl::list<std::string>
+iprefix_vals("iprefix", llvm::cl::value_desc("prefix"), llvm::cl::Prefix,
+             llvm::cl::desc("Set the -iwithprefix/-iwithprefixbefore prefix"));
+static llvm::cl::list<std::string>
+iwithprefix_vals("iwithprefix", llvm::cl::value_desc("dir"), llvm::cl::Prefix,
+     llvm::cl::desc("Set directory to SYSTEM include search path with prefix"));
+static llvm::cl::list<std::string>
+iwithprefixbefore_vals("iwithprefixbefore", llvm::cl::value_desc("dir"),
+                       llvm::cl::Prefix,
+            llvm::cl::desc("Set directory to include search path with prefix"));
+
+static llvm::cl::opt<std::string>
+isysroot("isysroot", llvm::cl::value_desc("dir"), llvm::cl::init("/"),
+         llvm::cl::desc("Set the system root directory (usually /)"));
+
+static cl::opt<bool> Verbose("verbose", cl::Optional, cl::init(false),
+    cl::desc("Print out each action taken"));
+
+static cl::alias VerboseAlias("v", cl::Optional,
+    cl::desc("Alias for -verbose"), cl::aliasopt(Verbose));
+
+static llvm::cl::opt<std::string>
+Arch("arch", llvm::cl::desc("Specify target architecture (e.g. nios2)"));
+
+// Finally, implement the code that groks the options above.
+
+/// InitializeIncludePaths - Process the -I options and set them in the
+/// HeaderSearch object.
+void InitializeIncludePaths(const char *Argv0, HeaderSearch &Headers,
+                            FileManager &FM, const LangOptions &Lang) {
+  InitHeaderSearch Init(Headers, Verbose, isysroot);
+
+  // Handle -I... and -F... options, walking the lists in parallel.
+  unsigned Iidx = 0, Fidx = 0;
+  while (Iidx < I_dirs.size() && Fidx < F_dirs.size()) {
+    if (I_dirs.getPosition(Iidx) < F_dirs.getPosition(Fidx)) {
+      Init.AddPath(I_dirs[Iidx], InitHeaderSearch::Angled, false, true, false);
+      ++Iidx;
+    } else {
+      Init.AddPath(F_dirs[Fidx], InitHeaderSearch::Angled, false, true, true);
+      ++Fidx;
+    }
+  }
+  
+  // Consume what's left from whatever list was longer.
+  for (; Iidx != I_dirs.size(); ++Iidx)
+    Init.AddPath(I_dirs[Iidx], InitHeaderSearch::Angled, false, true, false);
+  for (; Fidx != F_dirs.size(); ++Fidx)
+    Init.AddPath(F_dirs[Fidx], InitHeaderSearch::Angled, false, true, true);
+  
+  // Handle -idirafter... options.
+  for (unsigned i = 0, e = idirafter_dirs.size(); i != e; ++i)
+    Init.AddPath(idirafter_dirs[i], InitHeaderSearch::After,
+        false, true, false);
+  
+  // Handle -iquote... options.
+  for (unsigned i = 0, e = iquote_dirs.size(); i != e; ++i)
+    Init.AddPath(iquote_dirs[i], InitHeaderSearch::Quoted, false, true, false);
+  
+  // Handle -isystem... options.
+  for (unsigned i = 0, e = isystem_dirs.size(); i != e; ++i)
+    Init.AddPath(isystem_dirs[i], InitHeaderSearch::System, false, true, false);
+
+  // Walk the -iprefix/-iwithprefix/-iwithprefixbefore argument lists in
+  // parallel, processing the values in order of occurance to get the right
+  // prefixes.
+  {
+    std::string Prefix = "";  // FIXME: this isn't the correct default prefix.
+    unsigned iprefix_idx = 0;
+    unsigned iwithprefix_idx = 0;
+    unsigned iwithprefixbefore_idx = 0;
+    bool iprefix_done           = iprefix_vals.empty();
+    bool iwithprefix_done       = iwithprefix_vals.empty();
+    bool iwithprefixbefore_done = iwithprefixbefore_vals.empty();
+    while (!iprefix_done || !iwithprefix_done || !iwithprefixbefore_done) {
+      if (!iprefix_done &&
+          (iwithprefix_done || 
+           iprefix_vals.getPosition(iprefix_idx) < 
+           iwithprefix_vals.getPosition(iwithprefix_idx)) &&
+          (iwithprefixbefore_done || 
+           iprefix_vals.getPosition(iprefix_idx) < 
+           iwithprefixbefore_vals.getPosition(iwithprefixbefore_idx))) {
+        Prefix = iprefix_vals[iprefix_idx];
+        ++iprefix_idx;
+        iprefix_done = iprefix_idx == iprefix_vals.size();
+      } else if (!iwithprefix_done &&
+                 (iwithprefixbefore_done || 
+                  iwithprefix_vals.getPosition(iwithprefix_idx) < 
+                  iwithprefixbefore_vals.getPosition(iwithprefixbefore_idx))) {
+        Init.AddPath(Prefix+iwithprefix_vals[iwithprefix_idx], 
+                InitHeaderSearch::System, false, false, false);
+        ++iwithprefix_idx;
+        iwithprefix_done = iwithprefix_idx == iwithprefix_vals.size();
+      } else {
+        Init.AddPath(Prefix+iwithprefixbefore_vals[iwithprefixbefore_idx], 
+                InitHeaderSearch::Angled, false, false, false);
+        ++iwithprefixbefore_idx;
+        iwithprefixbefore_done = 
+          iwithprefixbefore_idx == iwithprefixbefore_vals.size();
+      }
+    }
+  }
+
+  Init.AddDefaultEnvVarPaths(Lang);
+
+  // Add the ellcc headers, which are relative to the ellcc binary.
+  llvm::sys::Path MainExecutablePath = 
+     llvm::sys::Path::GetMainExecutable(Argv0, (void*)(intptr_t)InitializeIncludePaths);
+  if (!MainExecutablePath.isEmpty()) {
+    MainExecutablePath.eraseComponent();  // Remove prog   from foo/bin/prog
+    MainExecutablePath.eraseComponent();  // Remove /bin   from foo/bin
+
+    // Get foo/lib/ellcc/<version>/include    
+    MainExecutablePath.appendComponent("libecc");
+    MainExecutablePath.appendComponent(ELLCC_VERSION_STRING);
+    MainExecutablePath.appendComponent(Arch);
+    MainExecutablePath.appendComponent("include");
+    
+    // We pass true to ignore sysroot so that we *always* look for clang headers
+    // relative to our executable, never relative to -isysroot.
+    Init.AddPath(MainExecutablePath.c_str(), InitHeaderSearch::System,
+                 false, false, false, true /*ignore sysroot*/);
+  }
+  
+  if (!nostdinc) 
+    Init.AddDefaultSystemIncludePaths(Lang);
+
+  // Now that we have collected all of the include paths, merge them all
+  // together and tell the preprocessor about them.
+  
+  Init.Realize();
+}
+
+void InitializePreprocessorInitOptions(PreprocessorInitOptions &InitOpts)
+{
+  // Add macros from the command line.
+  unsigned d = 0, D = D_macros.size();
+  unsigned u = 0, U = U_macros.size();
+  while (d < D || u < U) {
+    if (u == U || (d < D && D_macros.getPosition(d) < U_macros.getPosition(u)))
+      InitOpts.addMacroDef(D_macros[d++]);
+    else
+      InitOpts.addMacroUndef(U_macros[u++]);
+  }
+
+  // If -imacros are specified, include them now.  These are processed before
+  // any -include directives.
+  for (unsigned i = 0, e = ImplicitMacroIncludes.size(); i != e; ++i)
+    InitOpts.addMacroInclude(ImplicitMacroIncludes[i]);
+
+  if (!ImplicitIncludePTH.empty() || !ImplicitIncludes.empty()) {
+    // We want to add these paths to the predefines buffer in order, make a
+    // temporary vector to sort by their occurrence.
+    llvm::SmallVector<std::pair<unsigned, std::string*>, 8> OrderedPaths;
+
+    if (!ImplicitIncludePTH.empty())
+      OrderedPaths.push_back(std::make_pair(ImplicitIncludePTH.getPosition(),
+                                            &ImplicitIncludePTH));
+    for (unsigned i = 0, e = ImplicitIncludes.size(); i != e; ++i)
+      OrderedPaths.push_back(std::make_pair(ImplicitIncludes.getPosition(i),
+                                            &ImplicitIncludes[i]));
+    llvm::array_pod_sort(OrderedPaths.begin(), OrderedPaths.end());
+
+
+    // Now that they are ordered by position, add to the predefines buffer.
+    for (unsigned i = 0, e = OrderedPaths.size(); i != e; ++i) {
+      std::string *Ptr = OrderedPaths[i].second;
+      if (!ImplicitIncludes.empty() &&
+          Ptr >= &ImplicitIncludes[0] &&
+          Ptr <= &ImplicitIncludes[ImplicitIncludes.size()-1]) {
+        InitOpts.addInclude(*Ptr, false);
+      } else if (Ptr == &ImplicitIncludePTH) {
+        InitOpts.addInclude(*Ptr, true);
+      } 
+    }
+  }
+}
+
+//===----------------------------------------------------------------------===//
+// Driver PreprocessorFactory - For lazily generating preprocessors ...
+//===----------------------------------------------------------------------===//
+
+namespace {
+class VISIBILITY_HIDDEN DriverPreprocessorFactory : public PreprocessorFactory {
+  Diagnostic        &Diags;
+  const LangOptions &LO;
+  TargetInfo        &TI;
+  SourceManager     &SourceMgr;
+  HeaderSearch      &HeaderInfo;
+  
+public:
+  DriverPreprocessorFactory(Diagnostic &diags, const LangOptions &opts,
+                            TargetInfo &TI, SourceManager &SM,
+                            HeaderSearch &Headers)  
+  : Diags(diags), LO(opts), TI(TI),
+    SourceMgr(SM), HeaderInfo(Headers) {}
+  
+  
+  virtual ~DriverPreprocessorFactory() {}
+  
+  virtual Preprocessor* CreatePreprocessor() {
+    llvm::OwningPtr<PTHManager> PTHMgr;
+
+    if (!TokenCache.empty() && !ImplicitIncludePTH.empty()) {
+      fprintf(stderr, "error: cannot use both -token-cache and -include-pth "
+                      "options\n");
+      Exit(1);
+    }
+    
+    // Use PTH?
+    if (!TokenCache.empty() || !ImplicitIncludePTH.empty()) {
+      const std::string& x = TokenCache.empty() ? ImplicitIncludePTH:TokenCache;
+      PTHMgr.reset(PTHManager::Create(x, &Diags, 
+                                      TokenCache.empty() ? Diagnostic::Error
+                                                        : Diagnostic::Warning));
+    }
+    
+    if (Diags.hasErrorOccurred())
+      Exit(1);
+    
+    // Create the Preprocessor.
+    llvm::OwningPtr<Preprocessor> PP(new Preprocessor(Diags, LO, TI,
+                                                      SourceMgr, HeaderInfo,
+                                                      PTHMgr.get()));
+    
+    // Note that this is different then passing PTHMgr to Preprocessor's ctor.
+    // That argument is used as the IdentifierInfoLookup argument to
+    // IdentifierTable's ctor.
+    if (PTHMgr) {
+      PTHMgr->setPreprocessor(PP.get());
+      PP->setPTHManager(PTHMgr.take());
+    }
+
+    PreprocessorInitOptions InitOpts;
+    InitializePreprocessorInitOptions(InitOpts);
+    if (InitializePreprocessor(*PP, InitOpts))
+      return 0;
+
+    std::string ErrStr;
+    bool DFG = CreateDependencyFileGen(PP.get(), ErrStr);
+    if (!DFG && !ErrStr.empty()) {
+      fprintf(stderr, "%s", ErrStr.c_str());
+      return 0;
+    }
+
+    return PP.take();
+  }
+};
+}
+
+//===----------------------------------------------------------------------===//
+// SourceManager initialization.
+//===----------------------------------------------------------------------===//
+
+static bool InitializeSourceManager(Preprocessor &PP,
+                                    const std::string &InFile) {
+  // Figure out where to get and map in the main file.
+  SourceManager &SourceMgr = PP.getSourceManager();
+  FileManager &FileMgr = PP.getFileManager();
+
+  if (EmptyInputOnly) {
+    const char *EmptyStr = "";
+    llvm::MemoryBuffer *SB = 
+      llvm::MemoryBuffer::getMemBuffer(EmptyStr, EmptyStr, "<empty input>");
+    SourceMgr.createMainFileIDForMemBuffer(SB);
+  } else if (InFile != "-") {
+    const FileEntry *File = FileMgr.getFile(InFile);
+    if (File) SourceMgr.createMainFileID(File, SourceLocation());
+    if (SourceMgr.getMainFileID().isInvalid()) {
+      PP.getDiagnostics().Report(FullSourceLoc(), diag::err_fe_error_reading) 
+        << InFile.c_str();
+      return true;
+    }
+  } else {
+    llvm::MemoryBuffer *SB = llvm::MemoryBuffer::getSTDIN();
+
+    // If stdin was empty, SB is null.  Cons up an empty memory
+    // buffer now.
+    if (!SB) {
+      const char *EmptyStr = "";
+      SB = llvm::MemoryBuffer::getMemBuffer(EmptyStr, EmptyStr, "<stdin>");
+    }
+
+    SourceMgr.createMainFileIDForMemBuffer(SB);
+    if (SourceMgr.getMainFileID().isInvalid()) {
+      PP.getDiagnostics().Report(FullSourceLoc(), 
+                                 diag::err_fe_error_reading_stdin);
+      return true;
+    }
+  }
+
+  return false;
 }
 
 
@@ -289,6 +719,11 @@ void doit(int argc, char **argv)
   // parsing language options
   LangOptions LO;
   LO.GNU_Cplusplus0x();
+  OwningPtr<SourceManager> SourceMgr;
+// Create a file manager object to provide access to and cache the filesystem.
+  FileManager FileMgr;
+  Diagnostic Diags;
+  OwningPtr<TargetInfo> TI;
   TargetInfo *TI = TargetInfo::CreateTargetInfo(llvm::sys::getHostTriple());
 
   // ------------- process command-line arguments ---------
@@ -403,18 +838,32 @@ void doit(int argc, char **argv)
       sizeof(long) != 4) {
     // we are running a regression test, and the testcase is known to
     // fail due to dependence on architecture parameters, so skip it
-    cout << "skipping test b/c this is not a 32-bit architecture\n";
+    std::cout << "skipping test b/c this is not a 32-bit architecture\n";
     exit(0);
   }
 
   if (tracingSys("printTracers")) {
-    cout << "tracing flags:\n\t";
+    std::cout << "tracing flags:\n\t";
     printTracers(std::cout, "\n\t");
-    cout << endl;
+    std::cout << std::endl;
   }
 
   // --------------- parse --------------
   TranslationUnit *unit;
+
+  // Process the -I options and set them in the HeaderInfo.
+  HeaderSearch HeaderInfo(FileMgr);
+  InitializeIncludePaths(argv0, HeaderInfo, FileMgr, input.LO);
+  // Set up the preprocessor with these options.
+  DriverPreprocessorFactory PPFactory(Diags, input.LO, *TI,
+                                      *SourceMgr.get(), HeaderInfo);
+  OwningPtr<Preprocessor> PP(PPFactory.CreatePreprocessor());
+
+  if (!PP)
+      PrintAndExit("Can't create a preprocessor");
+  
+  if (InitializeSourceManager(*PP.get(), input.name.toString()))
+      PrintAndExit("Can't initialize the source manager");
 
   // dsw: I needed this to persist past typechecking, so I moved it
   // out here.  Feel free to refactor.
@@ -433,7 +882,7 @@ void doit(int argc, char **argv)
   else {
     SectionTimer timer(parseTime);
     SemanticValue treeTop;
-    ParseTreeAndTokens tree(LO, treeTop, strTable, inputFname);
+    ParseTreeAndTokens tree(PP, treeTop, strTable, inputFname);
 
     // grab the lexer so we can check it for errors (damn this
     // 'tree' thing is stupid..)
@@ -475,14 +924,14 @@ void doit(int argc, char **argv)
       // the 'treeTop' is actually a PTreeNode pointer; print the
       // tree and bail
       PTreeNode *ptn = (PTreeNode*)treeTop;
-      ptn->printTree(cout, PTreeNode::PF_EXPAND);
+      ptn->printTree(std::cout, PTreeNode::PF_EXPAND);
       return;
     }
 
     // treeTop is a TranslationUnit pointer
     unit = (TranslationUnit*)treeTop;
 
-    //unit->debugPrint(cout, 0);
+    //unit->debugPrint(std::cout, 0);
 
     delete parseContext;
     delete tables;
@@ -492,11 +941,11 @@ void doit(int argc, char **argv)
 
   // print abstract syntax tree
   if (tracingSys("printAST")) {
-    unit->debugPrint(cout, 0);
+    unit->debugPrint(std::cout, 0);
   }
 
   //if (unit) {     // when "-tr trivialActions" it's NULL...
-  //  cout << "ambiguous nodes: " << numAmbiguousNodes(unit) << endl;
+  //  std::cout << "ambiguous nodes: " << numAmbiguousNodes(unit) << std::endl;
   //}
 
   if (tracingSys("stopAfterParse")) {
@@ -508,7 +957,7 @@ void doit(int argc, char **argv)
   BasicTypeFactory tfac;
   long tcheckTime = 0;
   if (tracingSys("no-typecheck")) {
-    cout << "no-typecheck" << endl;
+    std::cout << "no-typecheck" << std::endl;
   } else {
     SectionTimer timer(tcheckTime);
     Env env(strTable, LO, *TI, tfac, madeUpVariables, builtinVars, unit);
@@ -519,7 +968,7 @@ void doit(int argc, char **argv)
       HANDLER();
 
       // relay to handler in main()
-      cout << "in code near " << env.locStr() << ":\n";
+      std::cout << "in code near " << env.locStr() << ":\n";
       throw;
     }
     catch (x_assert &x) {
@@ -527,7 +976,7 @@ void doit(int argc, char **argv)
 
       if (env.errors.hasFromNonDisambErrors()) {
         if (tracingSys("expect_confused_bail")) {
-          cout << "got the expected confused/bail\n";
+          std::cout << "got the expected confused/bail\n";
           exit(0);
         }
 
@@ -548,12 +997,12 @@ void doit(int argc, char **argv)
         // Delta might see it.  If I am intending to minimize an assertion
         // failure, it's no good if Delta introduces an error.
         env.error("confused by earlier errors, bailing out");
-        env.errors.print(cout);
+        env.errors.print(std::cout);
         exit(4);
       }
 
       if (tracingSys("expect_xfailure")) {
-        cout << "got the expected xfailure\n";
+        std::cout << "got the expected xfailure\n";
         exit(0);
       }
 
@@ -585,7 +1034,7 @@ void doit(int argc, char **argv)
 
     // print abstract syntax tree annotated with types
     if (tracingSys("printTypedAST")) {
-      unit->debugPrint(cout, 0);
+      unit->debugPrint(std::cout, 0);
     }
 
     // structural delta thing
@@ -603,9 +1052,9 @@ void doit(int argc, char **argv)
     }
 
     // print errors and warnings
-    env.errors.print(cout);
+    env.errors.print(std::cout);
 
-    cout << "typechecking results:\n"
+    std::cout << "typechecking results:\n"
          << "  errors:   " << numErrors << "\n"
          << "  warnings: " << numWarnings << "\n";
 
@@ -625,7 +1074,7 @@ void doit(int argc, char **argv)
         // ok
       }
       else {
-        cout << "collectLookupResults do not match:\n"
+        std::cout << "collectLookupResults do not match:\n"
              << "  source: " << env.collectLookupResults << "\n"
              << "  tcheck: " << nc.sb << "\n"
              ;
@@ -637,8 +1086,8 @@ void doit(int argc, char **argv)
   // do this before elaboration; I just want to see the result of type
   // checking and disambiguation
   if (wantBpprint) {
-    cout << "// bpprint\n";
-    bppTranslationUnit(cout, *unit);
+    std::cout << "// bpprint\n";
+    bppTranslationUnit(std::cout, *unit);
   }
 
   // ---------------- integrity checking ----------------
@@ -666,7 +1115,7 @@ void doit(int argc, char **argv)
     if (tracingSys("declTypeCheck") || getenv("declTypeCheck")) {
       DeclTypeChecker vis;
       unit->traverse(vis.loweredVisitor);
-      cout << "instances of type != var->type: " << vis.instances << endl;
+      std::cout << "instances of type != var->type: " << vis.instances << std::endl;
     }
 
     if (tracingSys("stopAfterTCheck")) {
@@ -677,7 +1126,7 @@ void doit(int argc, char **argv)
   // ----------------- elaboration ------------------
   long elaborationTime = 0;
   if (tracingSys("no-elaborate")) {
-    cout << "no-elaborate" << endl;
+    std::cout << "no-elaborate" << std::endl;
   }
   else {
     SectionTimer timer(elaborationTime);
@@ -705,7 +1154,7 @@ void doit(int argc, char **argv)
 
     // print abstract syntax tree annotated with types
     if (tracingSys("printElabAST")) {
-      unit->debugPrint(cout, 0);
+      unit->debugPrint(std::cout, 0);
     }
     if (tracingSys("stopAfterElab")) {
       return;
@@ -739,16 +1188,16 @@ void doit(int argc, char **argv)
   // dsw: pretty printing
   if (tracingSys("prettyPrint")) {
     traceProgress() << "dsw pretty print...\n";
-    cout << "---- START ----" << endl;
-    cout << "// -*-c++-*-" << endl;
-    prettyPrintTranslationUnit(cout, *unit);
-    cout << "---- STOP ----" << endl;
+    std::cout << "---- START ----" << std::endl;
+    std::cout << "// -*-c++-*-" << std::endl;
+    prettyPrintTranslationUnit(std::cout, *unit);
+    std::cout << "---- STOP ----" << std::endl;
     traceProgress() << "dsw pretty print... done\n";
   }
 
   if (wantBpprintAfterElab) {
-    cout << "// bpprintAfterElab\n";
-    bppTranslationUnit(cout, *unit);
+    std::cout << "// bpprintAfterElab\n";
+    bppTranslationUnit(std::cout, *unit);
   }
 
   // dsw: xml printing of the raw ast
@@ -756,18 +1205,18 @@ void doit(int argc, char **argv)
     traceProgress() << "dsw xml print...\n";
     bool indent = tracingSys("xmlPrintAST-indent");
     int depth = 0;              // shared depth counter between printers
-    cout << "---- START ----" << endl;
+    std::cout << "---- START ----" << std::endl;
 
     // serialize Files
     IdentityManager idmgr;
-    XmlFileWriter fileXmlWriter(idmgr, &cout, depth, indent, NULL);
+    XmlFileWriter fileXmlWriter(idmgr, &std::cout, depth, indent, NULL);
     fileXmlWriter.toXml(sourceLocManager->serializationOnly_get_files());
 
     // serialize AST and maybe Types
     if (tracingSys("xmlPrintAST-types")) {
       IdentityManager idmgr;
-      XmlTypeWriter xmlTypeVis( idmgr, (ASTVisitor*)NULL, &cout, depth, indent, NULL );
-      XmlTypeWriter_AstVisitor xmlVis_Types(xmlTypeVis, cout, depth, indent);
+      XmlTypeWriter xmlTypeVis( idmgr, (ASTVisitor*)NULL, &std::cout, depth, indent, NULL );
+      XmlTypeWriter_AstVisitor xmlVis_Types(xmlTypeVis, std::cout, depth, indent);
       xmlTypeVis.astVisitor = &xmlVis_Types;
       ASTVisitor *vis = &xmlVis_Types;
       LoweredASTVisitor loweredXmlVis(&xmlVis_Types); // might not be used
@@ -777,7 +1226,7 @@ void doit(int argc, char **argv)
       unit->traverse(*vis);
     } else {
       IdentityManager idmgr;
-      XmlAstWriter_AstVisitor xmlVis(cout, idmgr, depth, indent);
+      XmlAstWriter_AstVisitor xmlVis(std::cout, idmgr, depth, indent);
       ASTVisitor *vis = &xmlVis;
       LoweredASTVisitor loweredXmlVis(&xmlVis); // might not be used
       if (tracingSys("xmlPrintAST-lowered")) {
@@ -786,8 +1235,8 @@ void doit(int argc, char **argv)
       unit->traverse(*vis);
     }
 
-    cout << endl;
-    cout << "---- STOP ----" << endl;
+    std::cout << std::endl;
+    std::cout << "---- STOP ----" << std::endl;
     traceProgress() << "dsw xml print... done\n";
   }
 
@@ -796,8 +1245,8 @@ void doit(int argc, char **argv)
     TranslationUnit *u2 = unit->clone();
 
     if (tracingSys("cloneAST")) {
-      cout << "------- cloned AST --------\n";
-      u2->debugPrint(cout, 0);
+      std::cout << "------- cloned AST --------\n";
+      u2->debugPrint(std::cout, 0);
     }
 
     if (tracingSys("cloneCheck")) {
@@ -808,16 +1257,16 @@ void doit(int argc, char **argv)
       u2->tcheck(env3);
 
       if (tracingSys("cloneTypedAST")) {
-        cout << "------- cloned typed AST --------\n";
-        u2->debugPrint(cout, 0);
+        std::cout << "------- cloned typed AST --------\n";
+        u2->debugPrint(std::cout, 0);
       }
 
       if (tracingSys("clonePrint")) {
-        OStreamOutStream out0(cout);
+        OStreamOutStream out0(std::cout);
         CodeOutStream codeOut(out0);
         CTypePrinter typePrinter;
         PrintEnv penv(typePrinter, &codeOut);
-        cout << "---- cloned pretty print ----" << endl;
+        std::cout << "---- cloned pretty print ----" << std::endl;
         u2->print(penv);
         codeOut.finish();
       }
@@ -831,7 +1280,7 @@ void doit(int argc, char **argv)
     unit->debugPrint(devnull, 0);
   }
 
-  cout << "parse=" << parseTime << "ms"
+  std::cout << "parse=" << parseTime << "ms"
        << " tcheck=" << tcheckTime << "ms"
        << " integ=" << integrityTime << "ms"
        << " elab=" << elaborationTime << "ms"
@@ -841,8 +1290,8 @@ void doit(int argc, char **argv)
   if (!cc2cOutputFname.empty()) {
     TranslationUnit *lowered = cc_to_c(strTable, *unit);
     if (cc2cOutputFname == sm::string("-")) {
-      cout << "// cc2c\n";
-      bppTranslationUnit(cout, *lowered);
+      std::cout << "// cc2c\n";
+      bppTranslationUnit(std::cout, *lowered);
     }
     else {
       ofstream out(cc2cOutputFname.c_str());
@@ -896,12 +1345,13 @@ void doit(int argc, char **argv)
 
 int main(int argc, char **argv)
 {
+  progname = argv[0];
   try {
     doit(argc, argv);
   }
   catch (XUnimp &x) {
     HANDLER();
-    cout << x << endl;
+    std::cout << x << std::endl;
 
     // don't consider this the same as dying on an assertion failure;
     // I want to have tests in regrtest that are "expected" to fail
@@ -912,12 +1362,12 @@ int main(int argc, char **argv)
     HANDLER();
 
     // similar to XUnimp
-    cout << x << endl;
+    std::cout << x << std::endl;
     return 10;
   }
   catch (xBase &x) {
     HANDLER();
-    cout << x << endl;
+    std::cout << x << std::endl;
     abort();
   }
 

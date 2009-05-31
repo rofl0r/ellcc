@@ -16,7 +16,7 @@
 #include "trace.h"          // trace
 #include "cc_print.h"       // PrintEnv
 #include "strutil.h"        // decodeEscapes
-#include "LangOptions.h"    // LangOptions
+#include "Preprocessor.h"   // LangOptions
 #include "stdconv.h"        // test_getStandardConversion
 #include "implconv.h"       // test_getImplicitConversion
 #include "overload.h"       // resolveOverload
@@ -210,7 +210,7 @@ void TranslationUnit::tcheck(Env &env)
   // TranslationUnit was wrapped in an extern "C" {} block.  This way
   // our mangled names from C and C++ translation units will link
   // together correctly.
-  if (!env.LO.CPlusPlus) {
+  if (!env.PP.getLangOptions().CPlusPlus) {
     // since there is no 'extern "C"' syntax in C, this block
     // shouldn't ever get called on this TranslationUnit from both
     // here and from TF_linkage::itcheck()
@@ -477,7 +477,7 @@ void Function::tcheck(Env &env, Variable *instV)
   // supply DF_DEFINITION?
   DeclFlags dfDefn = (checkBody? DF_DEFINITION : DF_NONE);
   if (dflags >= (DF_EXTERN | DF_INLINE) &&
-      env.LO.handleExternInlineSpecially &&
+      env.PP.getLangOptions().handleExternInlineSpecially &&
       handleExternInline_asPrototype()) {
     // gcc treats extern-inline function definitions specially:
     //
@@ -583,7 +583,7 @@ void Function::tcheckBody(Env &env)
           // suppressing the error in this case
         }
         else {
-          env.diagnose3(env.LO.allowDefinitionsInWrongScopes, env.loc(), stringc
+          env.diagnose3(env.PP.getLangOptions().allowDefinitionsInWrongScopes, env.loc(), stringc
             << "function definition of `" << *(nameAndParams->getDeclaratorId())
             << "' must appear in a namespace that encloses the original declaration"
             << " (gcc bug allows it)");
@@ -652,14 +652,14 @@ void Function::tcheckBody(Env &env)
   tcheck_memberInits(env);
 
   // declare the __func__ variable
-  if (env.LO.implicitFuncVariable ||
-      env.LO.gccFuncBehavior == LangOptions::GFB_variable) {
+  if (env.PP.getLangOptions().implicitFuncVariable ||
+      env.PP.getLangOptions().gccFuncBehavior == LangOptions::GFB_variable) {
     // static char const __func__[] = "function-name";
     SourceLoc loc = body->loc;
     Type *charConst = env.getSimpleType(ST_CHAR, CV_CONST);
     Type *charConstArr = env.makeArrayType(charConst);
 
-    if (env.LO.implicitFuncVariable) {
+    if (env.PP.getLangOptions().implicitFuncVariable) {
       Variable *funcVar = env.makeVariable(loc, env.string__func__,
                                            charConstArr, DF_STATIC);
 
@@ -673,7 +673,7 @@ void Function::tcheckBody(Env &env)
 
     // dsw: these two are also gcc; see
     // http://gcc.gnu.org/onlinedocs/gcc-3.4.1/gcc/Function-Names.html#Function%20Names
-    if (env.LO.gccFuncBehavior == LangOptions::GFB_variable) {
+    if (env.PP.getLangOptions().gccFuncBehavior == LangOptions::GFB_variable) {
       env.addVariable(env.makeVariable(loc, env.string__FUNCTION__,
                                        charConstArr, DF_STATIC));
       env.addVariable(env.makeVariable(loc, env.string__PRETTY_FUNCTION__,
@@ -699,7 +699,7 @@ void Function::tcheckBody(Env &env)
   env.retractScopeSeq(qualifierScopes);
 
   if (dflags >= (DF_EXTERN | DF_INLINE) &&
-      env.LO.handleExternInlineSpecially &&
+      env.PP.getLangOptions().handleExternInlineSpecially &&
       handleExternInline_asPrototype()) {
     // more extern-inline nonsense; skip 'funcDefn' setting
     return;
@@ -1048,11 +1048,11 @@ void Declaration::tcheck(Env &env, DeclaratorContext context)
       spec->isTS_classSpec() &&
       spec->asTS_classSpec()->name == NULL &&
       spec->asTS_classSpec()->keyword != TI_UNION) {
-    if (env.LO.allowAnonymousStructs == b3_WARN) {
+    if (env.PP.getLangOptions().allowAnonymousStructs == b3_WARN) {
       env.warning(spec->loc, "anonymous structs are not legal in C++ "
                              "(gcc/msvc bug/extension allows it)");
     }
-    else if (env.LO.allowAnonymousStructs == b3_FALSE) {
+    else if (env.PP.getLangOptions().allowAnonymousStructs == b3_FALSE) {
       // it's actually not an error yet, it is just useless, because
       // it cannot be used
       env.warning(spec->loc, "useless declaration");
@@ -1521,8 +1521,8 @@ Type *TypeSpecifier::tcheck(Env &env, DeclFlags dflags, LookupFlags lflags)
   Type *t = itcheck(env, dflags, lflags);
   Type *ret = env.tfac.applyCVToType(loc, cv, t, this);
   if (!ret) {
-    if (t->isFunctionType() && env.LO.allowCVAppliedToFunctionTypes) {
-      env.diagnose3(env.LO.allowCVAppliedToFunctionTypes, loc,
+    if (t->isFunctionType() && env.PP.getLangOptions().allowCVAppliedToFunctionTypes) {
+      env.diagnose3(env.PP.getLangOptions().allowCVAppliedToFunctionTypes, loc,
                     "cannot apply const/volatile to function types (gcc bug allows it)");
       return t;    // ignore the cv-flags
     }
@@ -1606,7 +1606,7 @@ Type *TS_name::itcheck(Env &env, DeclFlags dflags, LookupFlags lflags)
     eflags |= EF_DISAMBIGUATES;
   }
 
-  if (!env.LO.CPlusPlus) {
+  if (!env.PP.getLangOptions().CPlusPlus) {
     // in C, we never look at a class scope unless the name is
     // preceded by "." or "->", which it certainly is not in a TS_name
     // (in/c/dC0013.c)
@@ -1629,7 +1629,7 @@ do_lookup:
 
   // gcc-2 hack
   if (!v &&
-      env.LO.gcc2StdEqualsGlobalHacks &&
+      env.PP.getLangOptions().gcc2StdEqualsGlobalHacks &&
       isTwoPartName(env, name, "std", "string")) {
     // try looking it up in global scope
     v = env.lookupPQ_one(name->getUnqualifiedName(), lflags);
@@ -1657,9 +1657,9 @@ do_lookup:
   if (!v->hasFlag(DF_TYPEDEF)) {
     if (v->type && v->type->isSimple(ST_DEPENDENT)) {
       // is this a gcc-2 header bug? (in/gnu/g0024.cc)
-      if (env.LO.allowGcc2HeaderSyntax &&
+      if (env.PP.getLangOptions().allowGcc2HeaderSyntax &&
           isBuggyGcc2HeaderDQT(env, name)) {
-        env.diagnose3(env.LO.allowGcc2HeaderSyntax, name->loc,
+        env.diagnose3(env.PP.getLangOptions().allowGcc2HeaderSyntax, name->loc,
                       stringc << "dependent type name `" << *name
                               << "' requires 'typename' keyword (gcc-2 bug allows it)");
         lflags |= LF_TYPENAME;
@@ -1815,9 +1815,9 @@ CompoundType *checkClasskeyAndName(
     //return env.error("templatized class declarations cannot have declarators");
   }
   if (definition && !templateParams && templateArgs) {
-    if (env.LO.allowGcc2HeaderSyntax &&
+    if (env.PP.getLangOptions().allowGcc2HeaderSyntax &&
         name->getName() == env.str("string_char_traits")) {
-      env.diagnose3(env.LO.allowGcc2HeaderSyntax, name->loc,
+      env.diagnose3(env.PP.getLangOptions().allowGcc2HeaderSyntax, name->loc,
                     "explicit class specialization requires \"template <>\" (gcc-2 bug allows it)");
       gcc2hack_explicitSpec = true;
 
@@ -1850,7 +1850,7 @@ CompoundType *checkClasskeyAndName(
     if (templateParams) {
       lflags |= LF_TEMPL_PRIMARY;
     }
-    if (!env.LO.CPlusPlus) {
+    if (!env.PP.getLangOptions().CPlusPlus) {
       // in C mode, it is ok to have a typedef and a struct with the
       // same name (in/c/dC0023.cc)
       lflags |= LF_QUERY_TAGS;
@@ -1873,7 +1873,7 @@ CompoundType *checkClasskeyAndName(
       Variable *tag = env.lookupPQ_one(name, lflags);
       if (tag) {
         if (tag->type->isCompoundType()) {
-          if (env.LO.CPlusPlus && !tag->hasAnyFlags(DF_IMPLICIT | DF_SELFNAME)) {
+          if (env.PP.getLangOptions().CPlusPlus && !tag->hasAnyFlags(DF_IMPLICIT | DF_SELFNAME)) {
             // found a user-introduced (not implicit) typedef, which
             // is illegal (3.4.4p2,3; 7.1.5.3p2)
             env.error(stringc << "`" << *name << "' is a typedef-name, "
@@ -2125,7 +2125,7 @@ Type *TS_elaborated::itcheck(Env &env, DeclFlags dflags, LookupFlags lflags)
   if (keyword == TI_ENUM) {
     Variable *tag = env.lookupPQ_one(name, lflags | LF_ONLY_TYPES);
     if (!tag) {
-      if (!env.LO.allowIncompleteEnums ||
+      if (!env.PP.getLangOptions().allowIncompleteEnums ||
           name->hasQualifiers()) {
         return env.error(stringc << "there is no enum called `" << *name << "'",
                          EF_DISAMBIGUATES);
@@ -2247,7 +2247,7 @@ void TS_classSpec::tcheckIntoCompound(
 
   // are we an inner class?
   CompoundType *containingClass = env.acceptingScope()->curCompound;
-  if (env.LO.noInnerClasses) {
+  if (env.PP.getLangOptions().noInnerClasses) {
     // nullify the above; act as if it's an outer class
     containingClass = NULL;
   }
@@ -2386,7 +2386,7 @@ void TS_classSpec::tcheckIntoCompound(
   }
 
   // default ctor, copy ctor, operator=; only do this for C++.
-  if (env.LO.CPlusPlus) {
+  if (env.PP.getLangOptions().CPlusPlus) {
     addCompilerSuppliedDecls(env, loc, ct);
   }
 
@@ -2447,7 +2447,7 @@ Type *TS_enumSpec::itcheck(Env &env, DeclFlags dflags, LookupFlags lflags)
   EnumType *et = NULL;
   Type *ret = NULL;
 
-  if (env.LO.allowIncompleteEnums && name) {
+  if (env.PP.getLangOptions().allowIncompleteEnums && name) {
     // is this referring to an existing forward-declared enum?
     et = env.lookupEnum(name, lflags | LF_INNER_ONLY);
     if (et) {
@@ -2879,7 +2879,7 @@ bool forAnonymous_isUnion(Env &env, CompoundType::Keyword k)
     return true;
   }
 
-  if (env.LO.allowAnonymousStructs) {
+  if (env.PP.getLangOptions().allowAnonymousStructs) {
     return true;
   }
 
@@ -3399,7 +3399,7 @@ bool checkCompleteTypeRules(Env &env, DeclFlags dflags, DeclaratorContext contex
   }
 
   if (context == DC_TF_DECL &&
-      env.LO.uninitializedGlobalDataIsCommon &&
+      env.PP.getLangOptions().uninitializedGlobalDataIsCommon &&
       !init) {
     // tentative global definition, type does not need to be complete;
     // c99 6.9.2p3 implies this is only allowed if 'static' is not
@@ -3429,7 +3429,7 @@ bool checkCompleteTypeRules(Env &env, DeclFlags dflags, DeclaratorContext contex
     // regressions to take it out, so I did.
 #if 0
     if (context == DC_MR_DECL &&
-        !env.LO.strictArraySizeRequirements) {
+        !env.PP.getLangOptions().strictArraySizeRequirements) {
       // Allow incomplete array types, so-called "open arrays".
       // Usually, such things only go at the *end* of a structure, but
       // we do not check that.
@@ -3595,7 +3595,7 @@ void Declarator::mid_tcheck(Env &env, Tcheck &dt)
   // DF_FRIEND gets turned off by 'declareNewVariable' ...
   bool isFriend = !!(dt.dflags & DF_FRIEND);
 
-  if ((dt.dflags >= (DF_EXTERN | DF_INLINE)) && env.LO.handleExternInlineSpecially) {
+  if ((dt.dflags >= (DF_EXTERN | DF_INLINE)) && env.PP.getLangOptions().handleExternInlineSpecially) {
     // dsw: We want to add a flag saying that this isn't really an
     // extern inline.  This is necessary because sometimes we still
     // need to know later that it started off as an extern inline even
@@ -3612,7 +3612,7 @@ void Declarator::mid_tcheck(Env &env, Tcheck &dt)
       dt.dflags |= DF_STATIC;   // add the 'static'
     }
   }
-  // else if (dt.dflags >= (DF_INLINE) && env.LO.inlineImpliesStaticLinkage) {
+  // else if (dt.dflags >= (DF_INLINE) && env.PP.getLangOptions().inlineImpliesStaticLinkage) {
   //   if (dt.dflags & DF_MEMBER) {
   //     // quarl 2006-07-11
   //     //    Can't set DF_STATIC since DF_MEMBER|DF_STATIC implies static
@@ -3808,7 +3808,7 @@ void Declarator::mid_tcheck(Env &env, Tcheck &dt)
 
   // want only declarators corresp. to local/global variables
   // (it is disturbing that I have to check for so many things...)
-  if (env.LO.CPlusPlus &&
+  if (env.PP.getLangOptions().CPlusPlus &&
       !dt.hasFlag(DF_EXTERN) &&                 // not an extern decl
       !dt.hasFlag(DF_TYPEDEF) &&                // not a typedef
       isVariableDC(dt.context)) {               // local/global variable
@@ -4146,7 +4146,7 @@ void D_func::tcheck(Env &env, Declarator::Tcheck &dt)
 
   // handle "fake" return type ST_CDTOR
   if (dt.type->isSimple(ST_CDTOR)) {
-    if (env.LO.CPlusPlus) {
+    if (env.PP.getLangOptions().CPlusPlus) {
       // get the name being declared
       D_name *dname;
       PQName *name;
@@ -4175,7 +4175,7 @@ void D_func::tcheck(Env &env, Declarator::Tcheck &dt)
           specialFunc = FF_CONVERSION;
         }
         else {
-          env.diagnose3(env.LO.allowImplicitIntForOperators, name->loc,
+          env.diagnose3(env.PP.getLangOptions().allowImplicitIntForOperators, name->loc,
                         stringc << "cannot declare `" << name->toString()
                                 << "' with no return type (MSVC bug accepts it)");
           dt.type = env.getSimpleType(ST_INT);     // recovery
@@ -4206,8 +4206,8 @@ void D_func::tcheck(Env &env, Declarator::Tcheck &dt)
         // constructor
         else {
           if (!inClass) {
-            if (!env.LO.allowImplicitInt &&
-                env.LO.allowImplicitIntForMain &&
+            if (!env.PP.getLangOptions().allowImplicitInt &&
+                env.PP.getLangOptions().allowImplicitIntForMain &&
                 nameString == env.str("main")) {
               // example: g0018.cc
               env.warning("obsolete use of implicit int in declaration of main()");
@@ -4245,7 +4245,7 @@ void D_func::tcheck(Env &env, Declarator::Tcheck &dt)
     }
 
     else {     // C
-      if (env.LO.allowImplicitInt) {
+      if (env.PP.getLangOptions().allowImplicitInt) {
         // surely this is not adequate, as implicit-int applies to
         // all declarations, not just those that appear in function
         // definitions... I think the rest of the implementation is
@@ -4321,7 +4321,7 @@ void D_func::tcheck(Env &env, Declarator::Tcheck &dt)
 
   // dsw: in K&R C, an empty parameter list means that the number of
   // arguments is not specified
-  if (env.LO.emptyParamsMeansNoInfo && params->isEmpty()) {
+  if (env.PP.getLangOptions().emptyParamsMeansNoInfo && params->isEmpty()) {
     ft->flags |= FF_NO_PARAM_INFO;
   }
 
@@ -4433,7 +4433,7 @@ void D_array::tcheck(Env &env, Declarator::Tcheck &dt)
     if (size) {
       // try to evaluate the size to a constant
       int sz = 1;
-      ConstEval cenv(env.TI, env.dependentVar);
+      ConstEval cenv(env.PP.getTargetInfo(), env.dependentVar);
       CValue val = size->constEval(cenv);
       if (val.isError()) {
         // size didn't evaluate to a constant
@@ -4453,7 +4453,7 @@ void D_array::tcheck(Env &env, Declarator::Tcheck &dt)
              #endif
              dt.context == DC_E_SIZEOFTYPE
             ) &&
-            env.LO.allowDynamicallySizedArrays) {
+            env.PP.getLangOptions().allowDynamicallySizedArrays) {
           // allow it anyway
           sz = ArrayType::DYN_SIZE;
         }
@@ -4472,7 +4472,7 @@ void D_array::tcheck(Env &env, Declarator::Tcheck &dt)
         sz = val.getIntegralValue();
 
         // check restrictions on array size (c.f. cppstd 8.3.4 para 1)
-        if (env.LO.strictArraySizeRequirements) {
+        if (env.PP.getLangOptions().strictArraySizeRequirements) {
           if (sz <= 0) {
             env.error(loc, stringc << "array size must be positive (it is " << sz << ")");
           }
@@ -4931,7 +4931,7 @@ void S_return::itcheck(Env &env)
     if (returnType->isVoid()) {
       expr->tcheck(env);
       if (!expr->expr->type->isVoid()) {
-          if (!env.LO.CPlusPlus) {
+          if (!env.PP.getLangOptions().CPlusPlus) {
               env.warning("returning a value in a 'void' function");
           } else {
               env.error("returning a value in a 'void' function");
@@ -5425,7 +5425,7 @@ Type *E_intLit::itcheck_x(Env &env, Expression *&replacement)
 
   // compute the sequence to use
   SimpleTypeId const *seq =
-    env.LO.CPlusPlus? cppMap[hasU + 2*hasL][radix!=10] :
+    env.PP.getLangOptions().CPlusPlus? cppMap[hasU + 2*hasL][radix!=10] :
                           c99Map[hasU + 2*hasL][radix!=10] ;
 
   // At this point, we pick the type that is the first type in 'seq'
@@ -5655,7 +5655,7 @@ Type *E_stringLit::itcheck_x(Env &env, Expression *&replacement)
   // initial allocation estimate assumes no continuations and no
   // escape characters
   data = new DataBlock((strlen(text) + 1/*NUL*/ - 2/*quotes*/) *
-                       simpleTypeSizeInBytes(env.TI, id));
+                       simpleTypeSizeInBytes(env.PP.getTargetInfo(), id));
 
   // iterate over continuation segments
   E_stringLit *segment = this;
@@ -5676,10 +5676,10 @@ Type *E_stringLit::itcheck_x(Env &env, Expression *&replacement)
     while (l-- && *p != '"') {
       if (*p == '\\') {
         unsigned int c = decodeEscape(env, p);
-        appendCharacter(env.TI, data, c, id);
+        appendCharacter(env.PP.getTargetInfo(), data, c, id);
       }
       else {
-        appendCharacter(env.TI, data, *p, id);
+        appendCharacter(env.PP.getTargetInfo(), data, *p, id);
         p++;
       }
     }
@@ -5688,15 +5688,15 @@ Type *E_stringLit::itcheck_x(Env &env, Expression *&replacement)
   }
   
   // final NUL character
-  appendCharacter(env.TI, data, 0, id);
+  appendCharacter(env.PP.getTargetInfo(), data, 0, id);
 
   // consolidate
   data->setAllocated(data->getDataLen());
-  int len = data->getDataLen() / simpleTypeSizeInBytes(env.TI, id);
+  int len = data->getDataLen() / simpleTypeSizeInBytes(env.PP.getTargetInfo(), id);
 
   // set type
   CVFlags stringLitCharCVFlags = CV_NONE;
-  if (env.LO.stringLitCharsAreConst) {
+  if (env.PP.getLangOptions().stringLitCharsAreConst) {
     stringLitCharCVFlags = CV_CONST;
   }
   Type *charConst = env.getSimpleType(id, stringLitCharCVFlags);
@@ -5728,7 +5728,7 @@ Type *E_charLit::itcheck_x(Env &env, Expression *&replacement)
 
   SimpleTypeId id = ST_CHAR;
 
-  if (!env.LO.CPlusPlus) {
+  if (!env.PP.getLangOptions().CPlusPlus) {
     // nominal type of character literals in C is int, not char
     id = ST_INT;
   }
@@ -5768,7 +5768,7 @@ Type *E_charLit::itcheck_x(Env &env, Expression *&replacement)
   // will do for now.
   c = (unsigned int)(unsigned char)temp[0];
 
-  if (!env.LO.CPlusPlus && id == ST_WCHAR_T) {
+  if (!env.PP.getLangOptions().CPlusPlus && id == ST_WCHAR_T) {
     // in C, 'wchar_t' is not built-in, it is defined; so we
     // have to look it up
     Variable *v = env.globalScope()->lookupVariable(env.str("wchar_t"), env);
@@ -5858,7 +5858,7 @@ Type *E_variable::itcheck_var_set(Env &env, Expression *&replacement,
     // "." or "->" (which is not E_variable)
     //
     // this is done above for TS_name as well..
-    if (!env.LO.CPlusPlus) {
+    if (!env.PP.getLangOptions().CPlusPlus) {
       flags |= LF_SKIP_CLASSES;
     }
 
@@ -5867,7 +5867,7 @@ Type *E_variable::itcheck_var_set(Env &env, Expression *&replacement,
 
     // gcc-2 hack
     if (candidates.isEmpty() &&
-        env.LO.gcc2StdEqualsGlobalHacks &&
+        env.PP.getLangOptions().gcc2StdEqualsGlobalHacks &&
         isTwoPartName(env, name, "std", "getline")) {
       // try looking it up in global scope
       env.lookupPQ(candidates, name->getUnqualifiedName(), flags);
@@ -5904,10 +5904,10 @@ Type *E_variable::itcheck_var_set(Env &env, Expression *&replacement,
       // notice this fact and if we are in K and R C we insert a
       // variable with signature "int ()(...)" which is what I recall as
       // the correct signature for such an implicit variable.
-      if (env.LO.allowImplicitFunctionDecls &&
+      if (env.PP.getLangOptions().allowImplicitFunctionDecls &&
           (flags & LF_FUNCTION_NAME) &&
           name->isPQ_name()) {
-        if (env.LO.allowImplicitFunctionDecls == b3_WARN) {
+        if (env.PP.getLangOptions().allowImplicitFunctionDecls == b3_WARN) {
           env.warning(name->loc, stringc << "implicit declaration of `" << *name << "'");
         }
 
@@ -5997,7 +5997,7 @@ static bool allMethods(SObjList<Variable> &set)
 // (tcheckArgExprList handles the case where it can)
 void getArgumentInfo(Env &env, ArgumentInfo &ai, Expression *e)
 {
-  ai.special = e->getSpecial(env.LO);
+  ai.special = e->getSpecial(env.PP.getLangOptions());
   ai.type = e->type;
 }
 
@@ -6272,7 +6272,7 @@ void tcheckArgumentExpression(Env &env, Expression *&expr, ArgumentInfo &info)
     info.overloadSet = set;
   }
   else {
-    info.special = expr->getSpecial(env.LO);
+    info.special = expr->getSpecial(env.PP.getLangOptions());
     info.type = expr->type;
   }
 }
@@ -6331,7 +6331,7 @@ int compareArgsToParams(Env &env, FunctionType *ft, FakeList<ArgExpression> *arg
     //
     // We only do this in C mode because our experiments indicate that
     // GCC does not do the transparent union thing in C++ mode.
-    if (!env.LO.CPlusPlus && param->type->isUnionType()) {
+    if (!env.PP.getLangOptions().CPlusPlus && param->type->isUnionType()) {
       CompoundType *ct = param->type->asCompoundType();
       if (ct->isTransparentUnion) {
         // look for a member of the union that has the same type
@@ -6695,7 +6695,7 @@ Type *E_funCall::inner2_itcheck(Env &env, LookupSet &candidates)
     fevar->nondependentVar == fevar->var;
 
   // 2005-02-18: rewrote function call site name lookup; see doc/lookup.txt
-  if (env.LO.allowOverloading &&
+  if (env.PP.getLangOptions().allowOverloading &&
       !alreadyDidLookup &&
       (func->type->isSimple(ST_NOTFOUND) ||
        func->type->asRval()->isFunctionType()) &&
@@ -7033,7 +7033,7 @@ static Type *internalTestingHooks
         args->nth(2)->constEval(env, expect)) {
       test_getStandardConversion
         (env,
-         args->nth(0)->getSpecial(env.LO),       // is it special?
+         args->nth(0)->getSpecial(env.PP.getLangOptions()),       // is it special?
          args->nth(0)->getType(),                // source type
          args->nth(1)->getType(),                // dest type
          expect);                                // expected result
@@ -7056,7 +7056,7 @@ static Type *internalTestingHooks
         args->nth(5)->constEval(env, expectSCS2)) {
       test_getImplicitConversion
         (env,
-         args->nth(0)->getSpecial(env.LO),       // is it special?
+         args->nth(0)->getSpecial(env.PP.getLangOptions()),       // is it special?
          args->nth(0)->getType(),                // source type
          args->nth(1)->getType(),                // dest type
          expectKind, expectSCS, expectUserLine, expectSCS2);   // expected result
@@ -8257,7 +8257,7 @@ Type *E_unary::itcheck_x(Env &env, Expression *&replacement)
     case UNY_NOT: {
       // 5.3.1 para 8
       Type *t_bool = env.getSimpleType(ST_BOOL);
-      if (!getImplicitConversion(env, expr->getSpecial(env.LO), t, t_bool)) {
+      if (!getImplicitConversion(env, expr->getSpecial(env.PP.getLangOptions()), t, t_bool)) {
         env.error(t, stringc
           << "argument to unary ! must be convertible to bool; `"
           << t->toString() << "' is not");
@@ -8711,7 +8711,7 @@ Type *E_cast::itcheck_x(Env &env, Expression *&replacement)
 {
   // check the dest type
   if (hasTypeDefn(ctype)) {
-    if (env.LO.CPlusPlus) {
+    if (env.PP.getLangOptions().CPlusPlus) {
       // 5.4p3: not allowed
       return env.error(ctype->spec->loc, "cannot define types in a cast");
     }
@@ -8745,7 +8745,7 @@ Type *E_cast::itcheck_x(Env &env, Expression *&replacement)
   // contradiction to the C99 spec: Section 6.5.4, footnote 85: "A
   // cast does not yield an lvalue".
   // http://gcc.gnu.org/onlinedocs/gcc-3.1/gcc/Lvalues.html
-  if (env.LO.lvalueFlowsThroughCast) {
+  if (env.PP.getLangOptions().lvalueFlowsThroughCast) {
     if (expr->getType()->isReference() && !ret->isReference()) {
       ret = env.makeReferenceType(ret);
     }
@@ -8860,7 +8860,7 @@ Type *E_cond::itcheck_x(Env &env, Expression *&replacement)
   cond->tcheck(env, cond);
 
   // para 1: 'cond' converted to bool
-  if (!getImplicitConversion(env, cond->getSpecial(env.LO), cond->type,
+  if (!getImplicitConversion(env, cond->getSpecial(env.PP.getLangOptions()), cond->type,
                              env.getSimpleType(ST_BOOL))) {
     env.error(cond->type, stringc
       << "cannot convert `" << cond->type->toString()
@@ -8891,7 +8891,7 @@ Type *E_cond::itcheck_x(Env &env, Expression *&replacement)
   Type *thRval = th->type->asRval();
   Type *elRval = el->type->asRval();
 
-  if (!env.LO.CPlusPlus) {
+  if (!env.PP.getLangOptions().CPlusPlus) {
     // ANSI C99 mostly requires that the types be the same, but gcc
     // doesn't seem to enforce anything, so I won't either; and if
     // they are different, it isn't clear what the type should be ...
@@ -8946,9 +8946,9 @@ Type *E_cond::itcheck_x(Env &env, Expression *&replacement)
        elRval->isCompoundType())) {
     // try to convert each to the other
     ImplicitConversion ic_thToEl;
-    Type *thConv = attemptCondConversion(env, ic_thToEl, thType, elType, th->getSpecial(env.LO));
+    Type *thConv = attemptCondConversion(env, ic_thToEl, thType, elType, th->getSpecial(env.PP.getLangOptions()));
     ImplicitConversion ic_elToTh;
-    Type *elConv = attemptCondConversion(env, ic_elToTh, elType, thType, el->getSpecial(env.LO));
+    Type *elConv = attemptCondConversion(env, ic_elToTh, elType, thType, el->getSpecial(env.PP.getLangOptions()));
 
     if (thConv && elConv) {
       return env.error("class-valued argument(s) to ?: are ambiguously inter-convertible");
@@ -8987,9 +8987,9 @@ Type *E_cond::itcheck_x(Env &env, Expression *&replacement)
       (thRval->isCompoundType() || elRval->isCompoundType())) {
     // collect argument info
     ArgumentInfoArray args(2);
-    args[0].special = th->getSpecial(env.LO);
+    args[0].special = th->getSpecial(env.PP.getLangOptions());
     args[0].type = thType;
-    args[1].special = el->getSpecial(env.LO);
+    args[1].special = el->getSpecial(env.PP.getLangOptions());
     args[1].type = elType;
 
     // prepare the overload resolver
@@ -9042,10 +9042,10 @@ Type *E_cond::itcheck_x(Env &env, Expression *&replacement)
     }
 
     // bullet 3
-    if (thRval->isPointerType() && el->getSpecial(env.LO) == SE_ZERO) {
+    if (thRval->isPointerType() && el->getSpecial(env.PP.getLangOptions()) == SE_ZERO) {
       return thRval;
     }
-    if (elRval->isPointerType() && th->getSpecial(env.LO) == SE_ZERO) {
+    if (elRval->isPointerType() && th->getSpecial(env.PP.getLangOptions()) == SE_ZERO) {
       return elRval;
     }
     if (thRval->isPointerType() && elRval->isPointerType()) {
@@ -9056,10 +9056,10 @@ Type *E_cond::itcheck_x(Env &env, Expression *&replacement)
     }
 
     // bullet 4
-    if (thRval->isPointerToMemberType() && el->getSpecial(env.LO) == SE_ZERO) {
+    if (thRval->isPointerToMemberType() && el->getSpecial(env.PP.getLangOptions()) == SE_ZERO) {
       return thRval;
     }
-    if (elRval->isPointerToMemberType() && th->getSpecial(env.LO) == SE_ZERO) {
+    if (elRval->isPointerToMemberType() && th->getSpecial(env.PP.getLangOptions()) == SE_ZERO) {
       return elRval;
     }
     if (thRval->isPointerToMemberType() && elRval->isPointerToMemberType()) {
@@ -9080,7 +9080,7 @@ incompatible:
 Type *E_sizeofType::itcheck_x(Env &env, Expression *&replacement)
 {
   if (hasTypeDefn(atype)) {
-    if (env.LO.CPlusPlus) {
+    if (env.PP.getLangOptions().CPlusPlus) {
       // 5.3.3p5: cannot define types in 'sizeof'; the reason Elsa
       // enforces this rule is that if we allow type definitions then
       // there can be bad interactions with disambiguation (in/k0035.cc)
@@ -9369,7 +9369,7 @@ Type *E_throw::itcheck_x(Env &env, Expression *&replacement)
 
 Type *E_keywordCast::itcheck_x(Env &env, Expression *&replacement)
 {
-  if (env.LO.CPlusPlus && hasTypeDefn(ctype)) {
+  if (env.PP.getLangOptions().CPlusPlus && hasTypeDefn(ctype)) {
     // 5.2.7p1: not allowed in dynamic_cast
     // 5.2.9p1: not allowed in static_cast
     // 5.2.10p1: not allowed in reinterpret_cast
@@ -9467,7 +9467,7 @@ bool Expression::constEval(Env &env, int &result, bool &dependent) const
 {
   dependent = false;
 
-  ConstEval cenv(env.TI, env.dependentVar);
+  ConstEval cenv(env.PP.getTargetInfo(), env.dependentVar);
 
   CValue val = constEval(cenv);
   if (val.isError()) {
@@ -9602,7 +9602,7 @@ bool Expression::extHasUnparenthesizedGT()
 
 // can 0 be cast to 't' and still be regarded as a null pointer
 // constant?
-bool allowableNullPtrCastDest(LangOptions &LO, Type *t)
+bool allowableNullPtrCastDest(const LangOptions &LO, Type *t)
 {
   // C++ (4.10, 5.19)
   if (t->isIntegerType() || t->isEnumType()) {
@@ -9619,7 +9619,7 @@ bool allowableNullPtrCastDest(LangOptions &LO, Type *t)
   return false;
 }
 
-SpecialExpr Expression::getSpecial(LangOptions& LO) const
+SpecialExpr Expression::getSpecial(const LangOptions& LO) const
 {
   ASTSWITCHC(Expression, this) {
     ASTCASEC(E_intLit, i)
@@ -9729,7 +9729,7 @@ void initializeAggregate(Env &env, Type *type,
       arg->tcheck(env, arg);
 
       ImplicitConversion ic = getImplicitConversion(env,
-        arg->getSpecial(env.LO),
+        arg->getSpecial(env.PP.getLangOptions()),
         arg->getType(),
         type,
         false /*destIsReceiver*/);
@@ -9800,7 +9800,7 @@ void IN_ctor::tcheck(Env &env, Type *destType)
     else {
       // first, do an implicit conversion
       ImplicitConversion ic = getImplicitConversion(env,
-        src->getSpecial(env.LO),
+        src->getSpecial(env.PP.getLangOptions()),
         srcType,
         destType,
         false /*destIsReceiver*/);

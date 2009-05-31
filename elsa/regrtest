@@ -1,8 +1,9 @@
 #!/bin/sh
 # regression tests
 
+parser="../ellcc/ecc -PO"
 # This file contains a list of tests that should be run in Elsa (via
-# ./ccparse) before each commit.  With the exception of a few stored
+# $parser before each commit.  With the exception of a few stored
 # in the elsa/in/big directory, they should be short tests that can be
 # parsed and typechecked quickly.  When a big test fails (either one
 # that is in elsa/in/big, or some other external package), the failing
@@ -23,7 +24,7 @@
 #   failparse foo.cc "give reason here"
 #
 # The "reason" string, ideally, should include (1) what response
-# ccparse gives (segfault, assertion failure, error message) and (2)
+# $parser gives (segfault, assertion failure, error message) and (2)
 # what kind of syntax characterizes the input (e.g., "template with
 # reference parameter").  The purpose of this string is to help me
 # prioritize which tests to fix first.
@@ -227,7 +228,7 @@ grepBoth() {
 # or change to 'fail' status those tests that are not working at
 # some given time
 testparse() {
-  runTest perl ./multitest.pl ./ccparse in/$1
+  runTest perl ./multitest.pl $parser in/$1
 }
 testparse_strict() {
   # this is for tests that include things that should be diagnosed
@@ -243,12 +244,12 @@ testparse_strict() {
   # 2005-03-09: The flag that "strict" used to control is now on
   # by default, though it can be disabled with "-tr permissive".
   # I will leave "testparse_strict", but not use it anymore.
-  runTest perl ./multitest.pl ./ccparse -tr strict in/$1
+  runTest perl ./multitest.pl $parser -tr strict in/$1
 }
 
 # run the parser with some specific tracing flag(s) added
 testparse_special() {
-  runTest perl ./multitest.pl ./ccparse -tr $1 in/$2
+  runTest perl ./multitest.pl $parser $1 in/$2
 }
 
 failparse() {
@@ -256,7 +257,7 @@ failparse() {
     echo "failparse $1: failparse takes two arguments"
     exit 4
   fi
-  failTest "$2" perl ./multitest.pl ./ccparse in/$1
+  failTest "$2" perl ./multitest.pl $parser in/$1
 }
 
 failparse_special() {
@@ -264,7 +265,7 @@ failparse_special() {
     echo "failparse_special $2: failparse_special takes three arguments"
     exit 4
   fi
-  failTest "$3" perl ./multitest.pl ./ccparse -tr $1 in/$2
+  failTest "$3" perl ./multitest.pl $parser -std=$1 in/$2
 }
 
 # ---- BEGIN: lots of tests ----
@@ -566,7 +567,7 @@ testparse t0275.cc
 testparse t0276.cc
 testparse t0277.cc
 testparse t0278.cc
-testparse_special eagerFBodyInst t0279.cc
+testparse_special "-tr eagerFBodyInst" t0279.cc
 testparse t0280.cc
 testparse t0281.cc
 testparse t0282.cc
@@ -652,7 +653,7 @@ testparse t0360.cc
 
 # this tests that Elsa diagnoses erroneous input, but gcc accepts it,
 # so Elsa only rejects in ANSI mode
-testparse_special ansi t0361.cc
+testparse_special -std=c++0x t0361.cc
 
 testparse t0362.cc
 testparse t0363.cc
@@ -848,7 +849,7 @@ testparse t0551.cc
 testparse t0552.cc
 testparse t0553.cc
 failparse t0554.cc "instantiation of static data template members not implemented"
-testparse_special ansi t0555.cc
+testparse_special -std=c++0x t0555.cc
 failparse t0556.cc "problem parsing elaborated type of static data member template"
 testparse t0557.cc
 testparse t0558.cc
@@ -1007,7 +1008,7 @@ testparse d0080.cc # "inheriting from dependent qualified type"
 testparse d0084.cc
 
 # tests a rule enforced only in ANSI mode
-runTest perl ./multitest.pl ./ccparse -tr ansi in/d0087.cc
+runTest perl ./multitest.pl $parser -std=c++0x in/d0087.cc
 
 testparse d0088.cc
 testparse d0089.cc
@@ -1038,13 +1039,13 @@ testparse d0117.cc
 testparse d0118.cc
 testparse d0119.cc
 testparse d0120.cc
-testparse_special ansi d0121.cc
+testparse_special -std=c++0x d0121.cc
 # sm: this is invalid C++
 #failparse d0123.cc "from the kernel; works in C mode but in C++ mode can't convert void* to function pointer"
 testparse d0124.cc
 testparse d0125.cc # __builtin_va_copy
 testparse d0126.cc
-testparse_special treeCheck dk0127.cc #"a non-tree AST results: default param arg in template class inner class"
+testparse_special -tr=treeCheck dk0127.cc #"a non-tree AST results: default param arg in template class inner class"
 
 # if the elaborateImplicitConversionArgToParam() check is turned on
 # for declarator initializers have to screen out types that
@@ -1059,17 +1060,17 @@ testparse k0001.cc #"left side of .* must be a class or reference to a class"
 testparse k0002.cc #"template function declared in another class (as a friend)"
 testparse k0003.cc #"template argument from static const member of template class"
 testparse k0004.cc #"non-typename template argument"
-testparse k0005.cc #"declaring a constructor with class name"
+testparse_special -std=gnu++98 k0005.cc #"declaring a constructor with class name"
 testparse k0005a.cc #"declaring variables and member functions with class name"
 testparse k0006.cc #"error: E_alignofType is not constEval'able"
 testparse k0007.cc
 # renamed k0008.cc to gnu/g0022.cc because it is a GNU feature
 testparse k0009.cc #"clash between function and instantiated template parameter member"
-testparse_special only_works_on_32bit k0010.cc
+testparse_special -tr=only_works_on_32bit k0010.cc
 # quarl 2006-11-13
 #     k0010a.cc commented out for now since it passes on 64bit but fails on
 #     32bit; is the meaning of "only_works_on_32bit" inverted?
-#failparse_special only_works_on_32bit k0010a.cc "compile-time type size checking - long long"
+#failparse_special -tr=only_works_on_32bit k0010a.cc "compile-time type size checking - long long"
 testparse k0011.cc
 testparse k0012.cc
 testparse k0013.cc #"cannot convert argument type `float (*)[4]' to parameter 1 type `float const (*)[4]'"
@@ -1118,7 +1119,7 @@ testparse k0043.cc #"voiding the result of a member call"
 testparse k0045.cc #"'operator delete' redeclared without throw()"
 testparse k0046.cc #"anonymous inline struct fields"
 testparse k0046a.cc #"anonymous struct fields in a union"
-testparse_special ansi k0046b.cc
+testparse_special -std=c++0x k0046b.cc
 testparse k0047.cc #"template<T> operator T*"
 testparse k0048.cc #"re-declaration of template base-class member"
 testparse k0049.cc #"'restrict' as name"
@@ -1216,14 +1217,14 @@ testparse sg0001.cc # invoke dtor on const object
 runTest perl ./multitest.pl ./five-errors in/t0151.cc
 
 # test some specialized error handling
-testparse_special expect_xfailure      t0518.cc
-testparse_special expect_confused_bail t0519.cc
-testparse_special expect_xfailure      t0520.cc
-testparse_special expect_confused_bail t0521.cc
+testparse_special -tr=expect_xfailure      t0518.cc
+testparse_special -tr=expect_confused_bail t0519.cc
+testparse_special -tr=expect_xfailure      t0520.cc
+testparse_special -tr=expect_confused_bail t0521.cc
 
 # test permissive-mode error diagnosis
-testparse_special permissive gnu/bugs/gb0005.cc
-testparse_special permissive gnu/bugs/gb0006.cc
+testparse_special -tr=permissive gnu/bugs/gb0005.cc
+testparse_special -tr=permissive gnu/bugs/gb0006.cc
 
 # t0539 has many variants; build them, then run them
 ${MAKE:-make} -C in t0539 || exit
@@ -1250,11 +1251,11 @@ testparse t0539_11.cc
 #   (plus more from before I started maintaining this list ...)
 rm -f in/std/*.error*.cc
 for fn in in/std/*.cc; do
-  runTest perl ./multitest.pl ./ccparse -tr ansi "$fn"
+  runTest perl ./multitest.pl $parser -std=c++0x "$fn"
 done
 
 # for the benefit of gcov
-runTest ./ccparse -tr printHierarchies,ansi in/std/3.4.5.cc
+runTest $parser -tr printHierarchies,ansi in/std/3.4.5.cc
 
 # more in another (private) repository, if present
 if [ -f ../cppstdex/regrtest_inner ]; then
@@ -1337,7 +1338,7 @@ if $use_gnu; then
 
   # test c99 extensions
   for fn in in/c99/*.c; do
-    runTest ./ccparse -tr c_lang "$fn"
+    runTest $parser -std=c99 "$fn"
   done
 
   testparse gnu/k0001.cc #"({...}) cannot be empty"
@@ -1348,7 +1349,7 @@ if $use_gnu; then
   testparse gnu/k0006.cc #"__offsetof__"
   testparse gnu/k0006a.cc #"__builtin_offsetof"
   failparse gnu/k0007.cc "__builtin_frame_address"
-  failparse gnu/k0008.c "declared extern inline, defined extern inline, defined non-extern-inline"
+  testparse gnu/k0008.c
   failparse gnu/k0009.cc "namespace attribute strong"
   failparse gnu/k0010.c "nested K&R function"
   testparse gnu/d0130.cc #"attributes on ctors and dtors"
@@ -1443,41 +1444,41 @@ list=`echo "
 
 # test the parser in C mode
 testCparse() {
-  runTest perl ./multitest.pl ./ccparse -tr c_lang in/$1
+  runTest perl ./multitest.pl $parser -std=c99 in/$1
 }
 testCparse_special() {
-  runTest perl ./multitest.pl ./ccparse -tr c_lang,$1 in/$2
+  runTest perl ./multitest.pl $parser $1 in/$2
 }
 failCparse() {
   if [ "$2" = "" ]; then
     echo "failparse $1: failparse takes two arguments"
     exit 4
   fi
-  failTest "$2" perl ./multitest.pl ./ccparse -tr c_lang in/$1
+  failTest "$2" perl ./multitest.pl $parser -std=c89 in/$1
 }
 testCparse c/t0001.c
 testCparse c/t0002.c
 testCparse c/t0003.c
 testCparse c/t0004.c
 testCparse c/t0005.c
-testCparse c/t0006.c
+testCparse_special -std=c89 c/t0006.c
 testCparse c/t0007.c
 testCparse c/t0008.c
 testCparse c/t0009.c
 testCparse c/t0010.c
-testCparse c/t0011.c
+testCparse_special -std=c89 c/t0011.c
 testCparse c/t0012.c
 testCparse c/t0013.c
 testCparse c/t0014.c
-testCparse c/t0015.c
-testCparse c/t0016.c
+testCparse_special -std=c89 c/t0015.c
+testCparse_special -std=c89 c/t0016.c
 testCparse c/t0017.c
 testCparse c/t0018.c
 testCparse c/t0019.c
 
 # for gcov
-runTest perl ./multitest.pl ./ccparse -tr ansi_c99 in/c/t0020.c
-runTest perl ./multitest.pl ./ccparse -tr ansi_c,warnings in/c/t0021.c
+runTest perl ./multitest.pl $parser -std=c99 in/c/t0020.c
+runTest perl ./multitest.pl $parser -std=c89 in/c/t0021.c
 
 testCparse c/t0022.c
 failCparse c/t0023.c "unhandled KandRSimpleDeclaration ambiguity"
@@ -1488,13 +1489,13 @@ testCparse c/t0027.c
 testCparse c/t0028.c
 testCparse c/t0029.c
 
-testCparse gnu/d0096.c
+testCparse_special -std=c89 gnu/d0096.c
 testCparse c/dC0010.c #"f(u8 register) doesn't parse"
 testCparse c/dC0011.c #"((size_t) &((struct scsi_cmnd *)0)->q) doesn't const eval"
 testCparse c/dC0012.c
 testCparse c/dC0013.c #"in C, a member with the same name as a type doesn't shadow the type"
 testCparse c/dC0017.c
-testCparse gnu/d0122.c
+failCparse gnu/d0122.c "multi line string"
 testCparse c/d0124b.c
 
 # dsw: fix these
@@ -1512,27 +1513,27 @@ testCparse c/dC0023.c # "in gcc, in C mode, a foo and a struct foo are unrelated
 #
 # 2005-08-04: but if people keep feeding me this bug, I guess I will
 # shut up and accept it
-testCparse c/dC0024.c # "bizarreness with redundant and useless typedefs"
+testCparse_special -std=gnu99 c/dC0024.c # "bizarreness with redundant and useless typedefs"
 
 testCparse c/dC0025.c # no-info-prototype of main(), then defn
-testCparse c/dC0026.c # implicit int in K&R decl
-testCparse_special gnu_c89 c/dC0027.c # "restrict in non-keyword role"
+testCparse_special -std=K+R c/dC0026.c # implicit int in K&R decl
+testCparse_special -std=K+R c/dC0027.c # "restrict in non-keyword role"
 testCparse c/dC0028.c # compound lit in ambiguous context
-testCparse_special gnu_c89 c/dC0029.c # "restrict in non-keyword role"
+testCparse_special -std=K+R c/dC0029.c # "restrict in non-keyword role"
 
 testCparse gnu/dC0017.c # "__alignof__ arguments can be full expressions ??"
 testCparse c/dC0030.c # "template disambiguation code??"
 testCparse c/dC0031.c # "can't const-eval size of type that is an array with a dynamic size"
 testCparse c/dC0032.c # "open arrays not handled right"
 
-testparse_special ansi_c c/k0001.c #"typedef int fooint; typedef fooint long;"
+testparse_special -std=c++0x c/k0001.c #"typedef int fooint; typedef fooint long;"
 testCparse c/k0002.c #"attempt to create an object of incomplete class `S'"
 testCparse c/k0003.c #"old-style function decl with parentheses around func name"
-testCparse c/k0003a.c #"old-style function decl with parentheses around func name, returning a struct-typedef"
+testCparse_special -std=K+R c/k0003a.c #"old-style function decl with parentheses around func name, returning a struct-typedef"
 testCparse c/k0004.c #'"merge nonterm MemberDeclaration"
 testCparse c/k0005.c #"multiply defined enum 'option'"
-testCparse c/k0006.c #"static inline function implicitly returning int"
-testCparse c/k0006a.c #"static inline function implicitly returning int, old-style param decl"
+testCparse_special -std=K+R c/k0006.c #"static inline function implicitly returning int"
+testCparse_special -std=K+R c/k0006a.c #"static inline function implicitly returning int, old-style param decl"
 testCparse c/k0011.c #"ambiguous s->z < 1 || 2 > (3)"
 testCparse c/k0007.c #"duplicate modifiers in C as warning, not error (?)"
 testCparse c/k0008.c #"function call vs type-cast ambiguity"
@@ -1559,7 +1560,7 @@ fi
 if $use_kandr; then
   # test the parser in C + K&R mode
   testKANDRparse() {
-    runTest perl ./multitest.pl ./ccparse -tr gnu_kandr_c_lang in/$1
+    runTest perl ./multitest.pl $parser -std=gnu3K+R in/$1
   }
   testKANDRparse kandr/t0001.c
   testKANDRparse kandr/t0002.c
@@ -1570,23 +1571,23 @@ fi
 
 # test GNU C
 if $use_gnu; then
-  testCparse gnu/g0009.c
-  testCparse gnu/d0083.c
+  testCparse_special -std=gnu99 gnu/g0009.c
+  testCparse_special -std=gnu99 gnu/d0083.c
   testCparse gnu/t0126.c
   testCparse gnu/d0095.c
-  testCparse gnu/c0001.c
-  testCparse gnu/c0002.c
+  testCparse_special -std=gnu99 gnu/c0001.c
+  testCparse_special -std=gnu99 gnu/c0002.c
 
   testCparse gnu/dC0001.c # hex floating-point literals
-  testCparse gnu/dC0002.c # arrays of no length are assumed to have one element
+  testCparse_special -std=gnu99 gnu/dC0002.c # arrays of no length are assumed to have one element
   testCparse gnu/dC0003.c # noInnerClasses: use a struct then define it but inside another
   testCparse gnu/dC0004.c # can take address of const E_compoundLit
-  testCparse gnu/dC0005.c # extern inline functions
+  testCparse_special -std=gnu99 gnu/dC0005.c # extern inline functions
   testCparse gnu/dC0006.c # more places where 0-length arrays are allowed
   testCparse gnu/dC0007.c # case 1 ... 3:
   testCparse gnu/dC0008.c # int a[] = { [1] 0 }; struct A a = { .x 8 };
   testCparse gnu/dC0009.c # UCHAR8 SampleResolution:2 __attribute__ ((packed));
-  testCparse gnu/dC0014.c # "'u32 long off' doesn't parse"
+  testCparse_special -std=gnu99 gnu/dC0014.c # "'u32 long off' doesn't parse"
   testCparse gnu/dC0015.c # function scope structs can contain arrays of dynamic size
   testCparse gnu/dC0016.c
 
@@ -1615,14 +1616,14 @@ if $use_gnu; then
   testCparse gnu/asm01.c
 
   # gcc C-mode bugs
-  testCparse gnu/bugs/gb0001.c
+  testCparse_special -std=gnu99 gnu/bugs/gb0001.c
 
   # tests (primarily for __attribute__) from CIL
   testcil() {
-    runTest ./ccparse -tr c_lang in/gnu/cil/$1
+    runTest $parser -std=gnu99 in/gnu/cil/$1
   }
   failcil() {
-    failTest "$2" ./ccparse -tr c_lang in/gnu/cil/$1
+    failTest "$2" $parser -std=gnu99 in/gnu/cil/$1
   }
 
   testcil align1.i
@@ -1659,7 +1660,7 @@ fi
 
 
 # msvc
-runTest ./ccparse -tr msvcBugs in/msvc/m0001.cc
+runTest $parser -msvc  in/msvc/m0001.cc
 
 
 # final parser checks against the big files, since they've now become
@@ -1667,10 +1668,10 @@ runTest ./ccparse -tr msvcBugs in/msvc/m0001.cc
 if $MAKE in/big; then
 
 testnsparse() {
-  runTest ./ccparse "$1"
+  runTest $parser -std=c++0x "$1"
 }
 failnsparse() {
-  failTest "$2" ./ccparse "$1"
+  failTest "$2" $parser -std=c++0x "$1"
 }
 
 if [ "$DISABLE_BIG_TESTS" = "" ]; then

@@ -1,7 +1,7 @@
 // tlexer.cc            see license.txt for copyright and terms of use
 // test the lexer alone
 
-#include "lexer.h"         // Lexer
+#include "lexer.h"         // OLexer
 #include "strtable.h"      // StringTable
 #include "LangOptions.h"   // LangOptions
 #include "test.h"          // ARGS_MAIN
@@ -26,9 +26,9 @@ void entry(int argc, char **argv)
   LangOptions LO;
   LO.ANSI_Cplusplus98();     // want 'true' and 'false' keywords
   SourceLocManager mgr;
-  traceProgress() << "making Lexer\n";
-  Lexer lexer(table, LO, argv[1]);
-  Lexer::NextTokenFunc nextToken = lexer.getTokenFunc();
+  traceProgress() << "making OLexer\n";
+  OLexer lexer(table, LO, argv[1]);
+  OLexer::NextTokenFunc nextToken = lexer.getTokenFunc();
 
   bool print = tracingSys("tokens");
 

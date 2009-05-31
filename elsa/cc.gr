@@ -74,7 +74,7 @@ verbatim {
 #include "cc_tokens.h"    // lexer's token ids for classify()
 #include "trace.h"        // trace
 #include "cc_ast.h"       // C++ abstract syntax
-#include "LangOptions.h"  // LangOptions
+#include "Preprocessor.h" // Preprocessor
 #include "ccparse.h"      // ParseEnv, the parser context class
 #include "exprloc.h"      // EXPR_LOCK macros
 
@@ -101,8 +101,8 @@ bool keepDeclaration(Declaration const *d);
 // directly from CCParse
 class CCParseShareable : public UserActions, public ParseEnv {
 public:
-  CCParseShareable(StringTable &table, LangOptions& LO)
-    : ParseEnv(table, LO) {}
+  CCParseShareable(StringTable &table, Preprocessor& PP)
+    : ParseEnv(table, PP) {}
 
   // when this is the last element in a parameter list, the function
   // is a vararg function
@@ -146,7 +146,7 @@ public:
       TRACE("cancel", loc << ": function returning a function");
       return NULL;
     }
-    if (LO.allowImplicitInt
+    if (PP.getLangOptions().allowImplicitInt
         && !filterOutImplIntFirstParam(loc, base, params)) {
       return NULL;
     }
@@ -174,8 +174,8 @@ public:
 
 context_class CCParse : public CCParseShareable {
 public:
-  CCParse(StringTable &table, LangOptions& LO)
-    : CCParseShareable(table, LO) {}
+  CCParse(StringTable &table, Preprocessor& PP)
+    : CCParseShareable(table, PP) {}
 };
 
 
@@ -1961,7 +1961,7 @@ nonterm(Member*) MemberDeclaration {
   // destructive action on 'spec'
   // member fn decl, or data member
   -> spec:DeclSpecifier list:MemberDeclaratorList ";"
-       { if (LO.CPlusPlus &&        // 10/20/04: e.g. in/c/t0017.c
+       { if (PP.getLangOptions().CPlusPlus &&        // 10/20/04: e.g. in/c/t0017.c
              list->firstC()->decl->skipGroups()->isD_name() &&
              !(spec->dflags & (DF_TYPEDEF | DF_STATIC)) &&
              spec->spec->isTS_name()) {
@@ -2020,7 +2020,7 @@ nonterm(Member*) MemberDeclaration {
   // operator function
   -> d:CDtorProtoDecl
        {
-         if (LO.allowImplicitInt) {
+         if (PP.getLangOptions().allowImplicitInt) {
            // in/c/k0004.c: ambiguity between constructor and implicit-int
            TRACE("cancel", loc << ": constructor decl in implicit-int language");
            return NULL;

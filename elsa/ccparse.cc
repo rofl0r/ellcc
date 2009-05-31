@@ -4,7 +4,7 @@
 #include "ccparse.h"      // this module
 #include "astvisit.h"     // ASTVisitorEx
 #include "trace.h"        // TRACE
-
+#include "Preprocessor.h"
 #include <iostream>       // cout
 
 
@@ -108,14 +108,14 @@ UberModifiers ParseEnv
 
   // any duplicate flags?
   UberModifiers dups = (UberModifiers)(m1 & m2);
-  if (!LO.CPlusPlus) {
+  if (!PP.getLangOptions().CPlusPlus) {
     // C99 6.7.3p4: const/volatile/restrict can be redundantly combined
     dups = (UberModifiers)(dups & ~UM_CVFLAGS);
   }
   if (dups) {
-    if (dups == UM_INT && LO.allowRepeatedTypeSpecifierKeywords) {
+    if (dups == UM_INT && PP.getLangOptions().allowRepeatedTypeSpecifierKeywords) {
       // in/c/dC0024.c
-      diagnose3(LO.allowRepeatedTypeSpecifierKeywords, loc, 
+      diagnose3(PP.getLangOptions().allowRepeatedTypeSpecifierKeywords, loc, 
                 "repeated 'int' type specifier (gcc bug allows it)");
     }
     else {

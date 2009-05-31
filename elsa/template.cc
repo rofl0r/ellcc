@@ -14,7 +14,7 @@
 #include "mtype.h"         // MType
 #include "pair.h"          // pair
 #include "exprloc.h"
-#include "LangOptions.h"   // LangOptions
+#include "Preprocessor.h"  // Preprocessor
 
 using namespace sm;
 
@@ -1953,7 +1953,7 @@ bool Env::insertTemplateArgBindings_oneParamList
         // (TODO: this isn't exactly what 14.3.2p5 says)
         string errorMsg;
         if (SC_ERROR == getStandardConversion(*this, &errorMsg,
-                                              binding->value->getSpecial(LO),
+                                              binding->value->getSpecial(PP.getLangOptions()),
                                               binding->value->type,
                                               param->type,
                                               false /*destIsReceiver*/)) {
@@ -2944,7 +2944,7 @@ Variable *Env::instantiateClassTemplateDecl
 
   // also make the self-name, which *does* go into the scope
   // (testcase: t0167.cc)
-  if (LO.compoundSelfName) {
+  if (PP.getLangOptions().compoundSelfName) {
     Variable *self = makeVariable(loc, instCT->name, instType,
                                   DF_TYPEDEF | DF_SELFNAME);
     instCT->addUniqueVariable(self);
@@ -3311,7 +3311,7 @@ void Env::setSTemplArgFromExpr(STemplateArgument &sarg, Expression const *expr,
       rvalType->isEnumType() ||
       rvalType->containsGeneralizedDependent()) {    // hope const-eval can work it out
     // attempt to const-eval this expression
-    ConstEval cenv(env.TI, env.dependentVar, map);
+    ConstEval cenv(env.PP.getTargetInfo(), env.dependentVar, map);
     CValue val = expr->constEval(cenv);
     if (val.isDependent()) {
       sarg.setDepExpr(expr);
@@ -3414,7 +3414,7 @@ STemplateArgument Env::variableToSTemplateArgument(Variable *var)
   STemplateArgument ret;
 
   // try to evaluate to an integer
-  ConstEval cenv(env.TI, env.dependentVar);
+  ConstEval cenv(env.PP.getTargetInfo(), env.dependentVar);
   CValue val = cenv.evaluateVariable(var);
   if (val.isIntegral()) {
     ret.setInt(val.getIntegralValue());

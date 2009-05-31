@@ -31,7 +31,7 @@ class DelayedFuncInst;    // template.h
 
 namespace ellcc {
 class TargetInfo;         // TargetInfo.h
-class LangOptions;        // LangOptions.h
+class Preprocessor;       // Preprocessor.h
 }
 
 // type of collection to hold a sequence of scopes
@@ -136,10 +136,7 @@ public:      // data
   StringTable &str;
 
   // Language options in effect.
-  LangOptions& LO;
-
-  // Target information.
-  TargetInfo& TI;
+  Preprocessor& PP;
 
   // interface for making types
   TypeFactory &tfac;
@@ -327,7 +324,7 @@ private:     // funcs
   void mergeDefaultArguments(SourceLoc loc, Variable *prior, FunctionType *type);
 
 public:      // funcs
-  Env(StringTable& str, LangOptions& LO, TargetInfo& TI, TypeFactory& tfac,
+  Env(StringTable& str, Preprocessor& PP, TypeFactory& tfac,
       ArrayStack<Variable*>& madeUpVariables0, ArrayStack<Variable*>& builtinVars0,
       TranslationUnit* unit0);
 

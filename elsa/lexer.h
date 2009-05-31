@@ -1,8 +1,8 @@
 // lexer.h            see license.txt for copyright and terms of use
 // lexer for C and C++ source files
 
-#ifndef LEXER_H
-#define LEXER_H
+#ifndef O_LEXER_H
+#define O_LEXER_H
 
 #include "baselexer.h"      // BaseLexer
 #include "cc_tokens.h"      // TokenType
@@ -11,8 +11,6 @@ namespace ellcc {
 class LangOptions;          // LangOptions.h
 }
 
-using namespace ellcc;
-
 // bounds-checking functional interfaces to tables declared in cc_tokens.h
 char const *toString(TokenType type);
 TokenFlag tokenFlags(TokenType type);
@@ -20,14 +18,14 @@ TokenFlag tokenFlags(TokenType type);
 
 
 // lexer object
-class Lexer : public BaseLexer {
+class OLexer : public BaseLexer {
 private:    // data
   bool prevIsNonsep;               // true if last-yielded token was nonseparating
   StringRef prevHashLineFile;      // previously-seen #line directive filename
 
   MacroUndoEntry *currentMacro;
 public:     // data
-  LangOptions& LO;                 // Language Options.
+  const ellcc::LangOptions& LO;   // Language Options.
 
 protected:  // funcs
   // see comments at top of lexer.cc
@@ -80,10 +78,10 @@ protected:  // funcs
 
 public:     // funcs
   // make a lexer to scan the given file
-  Lexer(StringTable &strtable, LangOptions& LO, char const *fname);
-  Lexer(StringTable &strtable, LangOptions& LO, SourceLoc initLoc,
+  OLexer(StringTable &strtable, const ellcc::LangOptions& LO, char const *fname);
+  OLexer(StringTable &strtable, const ellcc::LangOptions& LO, SourceLoc initLoc,
         char const *buf, int len);
-  ~Lexer();
+  ~OLexer();
 
   static void tokenFunc(LexerInterface *lex);
   static void c_tokenFunc(LexerInterface *lex);
