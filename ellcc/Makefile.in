@@ -96,8 +96,7 @@ TOCLEAN += *.o *.d
 ECC_OBJS := \
   ellcc.o elsa.o \
   ppoutput.o diagnosticbuffer.o diagnosticprinter.o warnings.o dependencyfile.o \
-  diagchecker.o cachetokens.o
-
+  diagchecker.o cachetokens.o initpreprocessor.o initheadersearch.o
 
 -include $(ECC_OBJS:.o=.d)
 

@@ -145,10 +145,6 @@ notopt.o: notopt.cc
 	@$(DEP)   -o $@ $< $(CCFLAGS) -O0 >$*.d
 
 
-main.o: main.cc
-	$(CXX) -c -o $@ $< $(if $(findstring $*,$(GCOV_MODS)),$(GCOV_OPTS) )$(CCFLAGS) $(LLVMCCFLAGS)
-	@$(DEP)   -o $@ $< $(if $(findstring $*,$(GCOV_MODS)),$(GCOV_OPTS) )$(CCFLAGS) $(LLVMCCFLAGS) >$*.d
-
 ifneq ($(LLVM),"disabled")
 cc2llvm.o: cc2llvm.cc
 	$(CXX) -c -o $@ $< $(if $(findstring $*,$(GCOV_MODS)),$(GCOV_OPTS) )$(CCFLAGS) $(LLVMCCFLAGS)
@@ -263,7 +259,7 @@ XML_OBJS += id_obj_dict.o
 XML_OBJS += xml_do_read.o
 
 # I don't think I need this line:
-# -include $(CCPARSE_OBJS:.o=.d) main.d
+# -include $(CCPARSE_OBJS:.o=.d)
 # because of this line:
 # -include $(XML_OBJS:.o=.d)
 
@@ -350,10 +346,9 @@ CCPARSE_OBJS := \
   cc_ast_aux.o \
   variable.o \
   lookupset.o \
-  initpreprocessor.o \
-  initheadersearch.o
+  ccparse.o
 
--include $(CCPARSE_OBJS:.o=.d) main.d
+-include $(CCPARSE_OBJS:.o=.d)
 
 
 $(THIS): $(CCPARSE_OBJS)
@@ -455,7 +450,7 @@ gendoc/dependencies.dot:
           -Xcc_print.h -Xsprint.h -Xxml_type_reader.h -Xxml_type_writer.h -Xxml_ast_reader.h \
           -Xxml_do_read.h \
 	  -Xgeneric_aux.h -Xcc_ast_aux.h \
-	  main.cc cc_tcheck.cc >$@
+	  cc_tcheck.cc >$@
 
 gendoc/3.4.5.dot: ccparse in/std/3.4.5.cc
 	./ccparse -tr printHierarchies in/std/3.4.5.cc | \
