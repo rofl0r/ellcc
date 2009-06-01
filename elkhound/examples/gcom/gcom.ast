@@ -30,7 +30,7 @@ class AExp {
   pure_virtual int eval(Env &env);
 
   -> A_lit(int n);
-  -> A_var(string x);
+  -> A_var(sm::string x);
   -> A_bin(AExp a1, AOp op, AExp a2);
 }
 
@@ -50,8 +50,8 @@ class Stmt {
 
   -> S_skip();
   -> S_abort();
-  -> S_print(string x);
-  -> S_assign(string x, AExp a);
+  -> S_print(sm::string x);
+  -> S_assign(sm::string x, AExp a);
   -> S_seq(Stmt s1, Stmt s2);
   -> S_if(GCom g);
   -> S_do(GCom g);
