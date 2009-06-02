@@ -53,13 +53,16 @@ struct StaticDiagInfoRec {
   }
 };
 
+/* Important! The .inc files in the followinf array have to be in order,
+ * smallest error number to largest as defined in Diagnostic.h.
+ */
 static const StaticDiagInfoRec StaticDiagInfo[] = {
 #define DIAG(ENUM,CLASS,DEFAULT_MAPPING,DESC,GROUP) \
   { diag::ENUM, DEFAULT_MAPPING, CLASS, DESC, GROUP },
 #include "DiagnosticCommonKinds.inc"
 #include "DiagnosticEllccKinds.inc"
-#include "DiagnosticElsaKinds.inc"
 #include "DiagnosticLexKinds.inc"
+#include "DiagnosticElsaKinds.inc"
 { 0, 0, 0, 0, 0 }
 };
 #undef DIAG
@@ -240,8 +243,9 @@ bool Diagnostic::isBuiltinExtensionDiag(unsigned DiagID) {
 /// getDescription - Given a diagnostic ID, return a description of the
 /// issue.
 const char *Diagnostic::getDescription(unsigned DiagID) const {
-  if (const StaticDiagInfoRec *Info = GetDiagInfo(DiagID))
+  if (const StaticDiagInfoRec *Info = GetDiagInfo(DiagID)) {
     return Info->Description;
+  }
   return CustomDiagInfo->getDescription(DiagID);
 }
 
