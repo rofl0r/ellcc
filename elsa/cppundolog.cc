@@ -9,7 +9,7 @@ TailList<MacroUndoEntry> macroUndoLog;
 // length of the /*>*/ macro closing comment
 const int MACRO_END_LENGTH = 5;
 
-CPPSourceLoc::CPPSourceLoc(SourceLoc loc):
+CPPSourceLocation::CPPSourceLocation(SourceLocation loc):
   macroExpansion(NULL),
   _loc(loc),
   exactPosition(false)
@@ -17,7 +17,7 @@ CPPSourceLoc::CPPSourceLoc(SourceLoc loc):
   init(loc);
 }
 
-void CPPSourceLoc::init(SourceLoc loc) {
+void CPPSourceLocation::init(SourceLocation loc) {
   MacroUndoEntry *priorMacro = NULL;
 
   for (TailListIterNC<MacroUndoEntry> it(macroUndoLog);
@@ -34,8 +34,8 @@ void CPPSourceLoc::init(SourceLoc loc) {
   // The following can determine position on macro boundaries
   // and gives up within them
   
-  SourceLoc postEndLoc;
-  SourceLoc preEndLoc;
+  SourceLocation postEndLoc;
+  SourceLocation preEndLoc;
   MacroUndoEntry *macroParam = NULL;
   // stuff within parameters is real code that got displaced
   // so position calculation logic is the same 
@@ -115,7 +115,7 @@ void CPPSourceLoc::init(SourceLoc loc) {
   if (!macroParam)
     col -= MACRO_END_LENGTH;
   
-  SourceLoc correctLoc = sourceLocManager->encodeLineCol(file,
+  SourceLocation correctLoc = sourceLocManager->encodeLineCol(file,
 							 line, col);
   this->_loc = correctLoc;
   this->macroExpansion = macroParam;

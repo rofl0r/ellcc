@@ -117,7 +117,7 @@ void fromXml_double(double &x, const char *str) {
 }
 
 
-string toXml_SourceLoc(SourceLoc loc) {
+string toXml_SourceLocation(SourceLocation loc) {
   // use "(noloc)" and "(init)" so we don't have to encode to &lt;init&gt;
   if (loc == SL_UNKNOWN) {
     return "(noloc)";
@@ -158,7 +158,7 @@ public:
 
 // Note: this function is performance-critical for deserialization, so don't
 // use StrtokParse.
-void fromXml_SourceLoc(SourceLoc &loc, const char *str) {
+void fromXml_SourceLocation(SourceLocation &loc, const char *str) {
   // the file format is filename:line:column
 
   if (streq(str, "(noloc)")) {

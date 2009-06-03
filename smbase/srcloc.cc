@@ -43,9 +43,9 @@ void addLineLength(ArrayStack<unsigned char> &lengths, int len)
 }
 
 
-SourceLocManager::File::File(char const *n, SourceLoc aStartLoc)
+SourceLocationManager::File::File(char const *n, SourceLocation aStartLoc)
   : name(n),
-    startLoc(aStartLoc),     // assigned by SourceLocManager
+    startLoc(aStartLoc),     // assigned by SourceLocationManager
     hashLines(NULL),
 
     // valid marker/col for the first char in the file
@@ -163,7 +163,7 @@ SourceLocManager::File::File(char const *n, SourceLoc aStartLoc)
   // 'fp' closed by the AutoFILE
 }
 
-SourceLocManager::File::~File()
+SourceLocationManager::File::~File()
 {
   if (hashLines) {
     delete hashLines;
@@ -172,9 +172,9 @@ SourceLocManager::File::~File()
   delete[] index;
 }
 
-SourceLocManager::File::File(FileData *fileData, SourceLoc aStartLoc)
+SourceLocationManager::File::File(FileData *fileData, SourceLocation aStartLoc)
   : name(fileData->name),
-    startLoc(aStartLoc),        // assigned by SourceLocManager
+    startLoc(aStartLoc),        // assigned by SourceLocationManager
 //      hashLines(fileData->hashLines),
     hashLines(NULL),            // dsw: initialized later
 
@@ -232,7 +232,7 @@ SourceLocManager::File::File(FileData *fileData, SourceLoc aStartLoc)
 }
 
 
-int SourceLocManager::File::lineLengthSum() const
+int SourceLocationManager::File::lineLengthSum() const
 {
   int sum = 0;
   for (int i=0; i<lineLengthsSize; i++) {
@@ -241,7 +241,7 @@ int SourceLocManager::File::lineLengthSum() const
   return sum;
 }
 
-void SourceLocManager::File::selfCheck() const
+void SourceLocationManager::File::selfCheck() const
 {
   xassert(lineLengthSum() + numLines-1 == numChars);
 
@@ -288,7 +288,7 @@ void SourceLocManager::File::selfCheck() const
 }
 
 
-void SourceLocManager::File::resetMarker()
+void SourceLocationManager::File::resetMarker()
 {
   marker.charOffset = 0;
   marker.lineOffset = 1;
@@ -299,7 +299,7 @@ void SourceLocManager::File::resetMarker()
 
 // it's conceivable gcc is smart enough to recognize
 // the induction variable, if I inline this..
-inline void SourceLocManager::File::advanceMarker()
+inline void SourceLocationManager::File::advanceMarker()
 {
   int len = (int)lineLengths[marker.arrayOffset];
   if (len < UCHAR_MAX) {
@@ -318,7 +318,7 @@ inline void SourceLocManager::File::advanceMarker()
 }
 
 
-int SourceLocManager::File::lineToChar(int lineNum)
+int SourceLocationManager::File::lineToChar(int lineNum)
 {
   xassert(1 <= lineNum);
   // xassert(lineNum <= numLines);
@@ -387,7 +387,7 @@ int SourceLocManager::File::lineToChar(int lineNum)
 }
 
 
-int SourceLocManager::File::lineColToChar(int lineNum, int col)
+int SourceLocationManager::File::lineColToChar(int lineNum, int col)
 {
   // use the above function first
   int offset = lineToChar(lineNum);
@@ -422,7 +422,7 @@ int SourceLocManager::File::lineColToChar(int lineNum, int col)
     }
     if (len < UCHAR_MAX) {
       // the line ends here, truncate and we're done
-      SourceLocManager::shortLineCount++;
+      SourceLocationManager::shortLineCount++;
       return offset + len;
     }
 
@@ -439,7 +439,7 @@ int SourceLocManager::File::lineColToChar(int lineNum, int col)
 }
 
 
-void SourceLocManager::File::charToLineCol(int offset, int &line, int &col)
+void SourceLocationManager::File::charToLineCol(int offset, int &line, int &col)
 {
   xassert(0 <= offset && offset <= numChars);
 
@@ -485,7 +485,7 @@ void SourceLocManager::File::charToLineCol(int offset, int &line, int &col)
 }
 
 
-void SourceLocManager::File::addHashLine
+void SourceLocationManager::File::addHashLine
   (int ppLine, int origLine, char const *origFname)
 {
   if (!hashLines) {
@@ -494,7 +494,7 @@ void SourceLocManager::File::addHashLine
   hashLines->addHashLine(ppLine, origLine, origFname);
 }
 
-void SourceLocManager::File::doneAdding()
+void SourceLocationManager::File::doneAdding()
 {
   if (hashLines) {
     hashLines->doneAdding();
@@ -507,18 +507,18 @@ void SourceLocManager::File::doneAdding()
 
 
 // ----------------------- StaticLoc -------------------
-SourceLocManager::StaticLoc::~StaticLoc()
+SourceLocationManager::StaticLoc::~StaticLoc()
 {}
 
 
-// ----------------------- SourceLocManager -------------------
-int SourceLocManager::shortLineCount = 0;
-bool SourceLocManager::tolerateHashlineErrors = false;
+// ----------------------- SourceLocationManager -------------------
+int SourceLocationManager::shortLineCount = 0;
+bool SourceLocationManager::tolerateHashlineErrors = false;
 
-SourceLocManager *sourceLocManager = NULL;
+SourceLocationManager *sourceLocManager = NULL;
 
 
-SourceLocManager::SourceLocManager()
+SourceLocationManager::SourceLocationManager()
   : files(),
     recent(NULL),
     statics(),
@@ -536,7 +536,7 @@ SourceLocManager::SourceLocManager()
   makeFirstStatics();
 }
 
-SourceLocManager::~SourceLocManager()
+SourceLocationManager::~SourceLocationManager()
 {
   if (sourceLocManager == this) {
     sourceLocManager = NULL;
@@ -544,7 +544,7 @@ SourceLocManager::~SourceLocManager()
 }
 
 
-void SourceLocManager::reset()
+void SourceLocationManager::reset()
 {
   files.deleteAll();
   recent = NULL;
@@ -554,10 +554,10 @@ void SourceLocManager::reset()
   makeFirstStatics();
 }
 
-void SourceLocManager::makeFirstStatics()
+void SourceLocationManager::makeFirstStatics()
 {
   // slightly clever: treat SL_UNKNOWN as a static
-  SourceLoc u = encodeStatic(StaticLoc("<noloc>", 0,1,1));
+  SourceLocation u = encodeStatic(StaticLoc("<noloc>", 0,1,1));
   xassert(u == SL_UNKNOWN);
   PRETEND_USED(u);     // silence warning in case xasserts are turned off
 
@@ -569,14 +569,14 @@ void SourceLocManager::makeFirstStatics()
 
 
 // find it, or return NULL
-SourceLocManager::File *SourceLocManager::findFile(char const *name)
+SourceLocationManager::File *SourceLocationManager::findFile(char const *name)
 {
   if (!this) {
     // it's quite common to forget to do this, and this function is
     // almost always the one which segfaults in that case, so I'll
     // make the error message a bit nicer to save a trip through
     // the debugger
-    xfailure("you have to create a SourceLocManager in your main() function");
+    xfailure("you have to create a SourceLocationManager in your main() function");
   }
 
   if (recent && recent->name.equals(name)) {
@@ -593,7 +593,7 @@ SourceLocManager::File *SourceLocManager::findFile(char const *name)
 }
 
 // find it or make it
-SourceLocManager::File *SourceLocManager::getFile(char const *name)
+SourceLocationManager::File *SourceLocationManager::getFile(char const *name)
 {
   File *f = findFile(name);
   if (!f) {
@@ -611,13 +611,13 @@ SourceLocManager::File *SourceLocManager::getFile(char const *name)
 
 
 // load a file from a FileData object
-void SourceLocManager::loadFile(FileData *fileData)
+void SourceLocationManager::loadFile(FileData *fileData)
 {
   xassert(fileData);
   // we should be loading a new file; dsw: I think this should remain
   // an assertion failure instead of being a user error because the
   // client code can check this before calling into the
-  // SourceLocManager and provide a better error message there
+  // SourceLocationManager and provide a better error message there
   xassert(!findFile(fileData->name.c_str()));
 
   // finish off the fileData->hashLines object; FIX: there is probably
@@ -654,7 +654,7 @@ void SourceLocManager::loadFile(FileData *fileData)
 }
 
 
-SourceLoc SourceLocManager::encodeOffset(
+SourceLocation SourceLocationManager::encodeOffset(
   char const *filename, int charOffset)
 {
   xassert(charOffset >= 0);
@@ -665,7 +665,7 @@ SourceLoc SourceLocManager::encodeOffset(
 }
 
 
-SourceLoc SourceLocManager::encodeLineCol(
+SourceLocation SourceLocationManager::encodeLineCol(
   char const *filename, int line, int col)
 {
   xassert(line >= 1);
@@ -679,7 +679,7 @@ SourceLoc SourceLocManager::encodeLineCol(
 }
 
 
-SourceLoc SourceLocManager::encodeStatic(StaticLoc const &obj)
+SourceLocation SourceLocationManager::encodeStatic(StaticLoc const &obj)
 {
   if (-toInt(nextStaticLoc) == maxStaticLocs) {
     // Each distinct static location should correspond to a single
@@ -701,13 +701,13 @@ SourceLoc SourceLocManager::encodeStatic(StaticLoc const &obj)
   statics.append(new StaticLoc(obj));
 
   // return current index, yield next
-  SourceLoc ret = nextStaticLoc;
+  SourceLocation ret = nextStaticLoc;
   nextStaticLoc = toLoc(toInt(ret) - 1);
   return ret;
 }
 
 
-SourceLocManager::File *SourceLocManager::findFileWithLoc(SourceLoc loc)
+SourceLocationManager::File *SourceLocationManager::findFileWithLoc(SourceLocation loc)
 {
   static int count1 = 0;
   ++count1;
@@ -753,21 +753,21 @@ SourceLocManager::File *SourceLocManager::findFileWithLoc(SourceLoc loc)
 }
 
 
-SourceLocManager::StaticLoc const *SourceLocManager::getStatic(SourceLoc loc)
+SourceLocationManager::StaticLoc const *SourceLocationManager::getStatic(SourceLocation loc)
 {
   int index = -toInt(loc);
   return statics.nthC(index);
 }
 
 
-void SourceLocManager::decodeOffset(
-  SourceLoc loc, char const *&filename, int &charOffset)
+void SourceLocationManager::decodeOffset(
+  SourceLocation loc, char const *&filename, int &charOffset)
 {
   decodeOffset_explicitHL(loc, filename, charOffset, this->useHashLines);
 }
 
-void SourceLocManager::decodeOffset_explicitHL(
-  SourceLoc loc, char const *&filename, int &charOffset,
+void SourceLocationManager::decodeOffset_explicitHL(
+  SourceLocation loc, char const *&filename, int &charOffset,
   bool localUseHashLines)
 {
   // check for static
@@ -815,14 +815,14 @@ void SourceLocManager::decodeOffset_explicitHL(
 }
 
 
-void SourceLocManager::decodeLineCol(
-  SourceLoc loc, char const *&filename, int &line, int &col)
+void SourceLocationManager::decodeLineCol(
+  SourceLocation loc, char const *&filename, int &line, int &col)
 {
   decodeLineCol_explicitHL(loc, filename, line, col, this->useHashLines);
 }
 
-void SourceLocManager::decodeLineCol_explicitHL(
-  SourceLoc loc, char const *&filename, int &line, int &col,
+void SourceLocationManager::decodeLineCol_explicitHL(
+  SourceLocation loc, char const *&filename, int &line, int &col,
   bool localUseHashLines)
 {
   if (!this) {
@@ -834,7 +834,7 @@ void SourceLocManager::decodeLineCol_explicitHL(
       return;
     }
     else {
-      xfailure("you have to create a SourceLocManager in your main() function");
+      xfailure("you have to create a SourceLocationManager in your main() function");
     }
   }
 
@@ -862,7 +862,7 @@ void SourceLocManager::decodeLineCol_explicitHL(
 }
 
 
-char const *SourceLocManager::getFile(SourceLoc loc, bool localUseHashLines)
+char const *SourceLocationManager::getFile(SourceLocation loc, bool localUseHashLines)
 {
   char const *name;
   int ofs;
@@ -871,7 +871,7 @@ char const *SourceLocManager::getFile(SourceLoc loc, bool localUseHashLines)
 }
 
 
-int SourceLocManager::getOffset(SourceLoc loc)
+int SourceLocationManager::getOffset(SourceLocation loc)
 {
   char const *name;
   int ofs;
@@ -879,7 +879,7 @@ int SourceLocManager::getOffset(SourceLoc loc)
   return ofs;
 }
 
-int SourceLocManager::getOffset_nohashline(SourceLoc loc)
+int SourceLocationManager::getOffset_nohashline(SourceLocation loc)
 {
   char const *name;
   int ofs;
@@ -887,7 +887,7 @@ int SourceLocManager::getOffset_nohashline(SourceLoc loc)
   return ofs;
 }
 
-int SourceLocManager::getLine(SourceLoc loc)
+int SourceLocationManager::getLine(SourceLocation loc)
 {
   char const *name;
   int line, col;
@@ -896,7 +896,7 @@ int SourceLocManager::getLine(SourceLoc loc)
 }
 
 
-int SourceLocManager::getCol(SourceLoc loc)
+int SourceLocationManager::getCol(SourceLocation loc)
 {
   char const *name;
   int line, col;
@@ -905,12 +905,12 @@ int SourceLocManager::getCol(SourceLoc loc)
 }
 
 
-string SourceLocManager::getString(SourceLoc loc)
+string SourceLocationManager::getString(SourceLocation loc)
 {
   return getString_explicitHL(loc, this->useHashLines);
 }
 
-string SourceLocManager::getString_explicitHL(SourceLoc loc, bool localUseHashLines)
+string SourceLocationManager::getString_explicitHL(SourceLocation loc, bool localUseHashLines)
 {
   char const *name;
   int line, col;
@@ -919,7 +919,7 @@ string SourceLocManager::getString_explicitHL(SourceLoc loc, bool localUseHashLi
   return stringc << name << ":" << line << ":" << col;
 }
 
-string SourceLocManager::getLCString(SourceLoc loc)
+string SourceLocationManager::getLCString(SourceLocation loc)
 {
   char const *name;
   int line, col;
@@ -929,7 +929,7 @@ string SourceLocManager::getLCString(SourceLoc loc)
 }
 
 
-string locToStr(SourceLoc sl)
+string locToStr(SourceLocation sl)
 {
   return sourceLocManager->getString(sl);
 }
@@ -945,12 +945,12 @@ string locToStr(SourceLoc sl)
 
 using namespace std;
 
-SourceLocManager mgr;
+SourceLocationManager mgr;
 int longestLen=0;
 
 // given a location, decode it into line/col and then re-encode,
 // and check that the new encoding matches the old
-void testRoundTrip(SourceLoc loc)
+void testRoundTrip(SourceLocation loc)
 {
   char const *fname;
   int line, col;
@@ -960,21 +960,21 @@ void testRoundTrip(SourceLoc loc)
     longestLen = col;
   }
 
-  SourceLoc loc2 = mgr.encodeLineCol(fname, line, col);
+  SourceLocation loc2 = mgr.encodeLineCol(fname, line, col);
 
   xassert(loc == loc2);
 }
 
 
-// location in SourceLoc and line/col
+// location in SourceLocation and line/col
 class BiLoc {
 public:
   int line, col;
-  SourceLoc loc;
+  SourceLocation loc;
 };
 
 
-// given a file, compute SourceLocs throughout it and verify
+// given a file, compute SourceLocations throughout it and verify
 // that round-trip encoding works
 void testFile(char const *fname)
 {
@@ -992,8 +992,8 @@ void testFile(char const *fname)
   }
 
   // get locations for the start and end
-  SourceLoc start = mgr.encodeOffset(fname, 0);
-  SourceLoc end = mgr.encodeOffset(fname, len);
+  SourceLocation start = mgr.encodeOffset(fname, 0);
+  SourceLocation end = mgr.encodeOffset(fname, len);
 
   // check expectations for start
   xassert(mgr.getLine(start) == 1);
@@ -1004,7 +1004,7 @@ void testFile(char const *fname)
   testRoundTrip(end);
 
   // temporary
-  //testRoundTrip((SourceLoc)11649);
+  //testRoundTrip((SourceLocation)11649);
 
   BiLoc *bi = new BiLoc[len+1];
   char const *dummy;
@@ -1015,7 +1015,7 @@ void testFile(char const *fname)
   // the char just beyond the end
   int i;
   for (i=0; i<=len; i++) {
-    SourceLoc loc = mgr.encodeOffset(fname, i);
+    SourceLocation loc = mgr.encodeOffset(fname, i);
     testRoundTrip(loc);
 
     bi[i].loc = loc;
@@ -1024,7 +1024,7 @@ void testFile(char const *fname)
 
   // backward sequential
   for (i=len; i>0; i--) {
-    SourceLoc loc = mgr.encodeOffset(fname, i);
+    SourceLocation loc = mgr.encodeOffset(fname, i);
     testRoundTrip(loc);
   }
 
@@ -1042,7 +1042,7 @@ void testFile(char const *fname)
     }
     else {
       // test line/col -> loc map
-      SourceLoc loc = mgr.encodeLineCol(fname, bi[j].line, bi[j].col);
+      SourceLocation loc = mgr.encodeLineCol(fname, bi[j].line, bi[j].col);
       xassert(loc == bi[j].loc);
     }
   }
@@ -1070,7 +1070,7 @@ void testFileString(char const *contents)
 
 
 // decode with given expectation, complain if it doesn't match
-void expect(SourceLoc loc, char const *expFname, int expLine, int expCol)
+void expect(SourceLocation loc, char const *expFname, int expLine, int expCol)
 {
   char const *fname;
   int line, col;
@@ -1094,7 +1094,7 @@ sm::string locString(char const *fname, int line, int col)
 }
 
 
-void buildHashMap(SourceLocManager::File *pp, char const *fname, int &expanderLine)
+void buildHashMap(SourceLocationManager::File *pp, char const *fname, int &expanderLine)
 {
   expanderLine = 0;
 
@@ -1140,8 +1140,8 @@ void testHashMap()
           "  cpp -DTEST_SRCLOC srcloc.test.cc >srcloc.tmp");
   }
 
-  SourceLocManager::File *pp = mgr.getInternalFile("srcloc.tmp");
-  SourceLocManager::File *orig = mgr.getInternalFile("srcloc.test.cc");
+  SourceLocationManager::File *pp = mgr.getInternalFile("srcloc.tmp");
+  SourceLocationManager::File *orig = mgr.getInternalFile("srcloc.test.cc");
 
   // read srcloc.tmp and install the hash maps
   int expanderLine=0;
@@ -1151,20 +1151,20 @@ void testHashMap()
   // first line in the orig src
   // update: this doesn't work with all preprocessors, and I'm
   // confident in the implementation now, so I'll turn this off
-  //SourceLoc lineTwo = mgr.encodeLineCol("srcloc.tmp", 2, 1);
+  //SourceLocation lineTwo = mgr.encodeLineCol("srcloc.tmp", 2, 1);
   //expect(lineTwo, "srcloc.cc", 1,1);
 
   // print decodes of first several lines (including those that
   // are technically undefined because they occur on #line lines)
   int ppLine;
   for (ppLine = 1; ppLine < 10; ppLine++) {
-    SourceLoc loc = mgr.encodeLineCol("srcloc.tmp", ppLine, 1);
+    SourceLocation loc = mgr.encodeLineCol("srcloc.tmp", ppLine, 1);
     cout << "ppLine " << ppLine << ": " << toString(loc) << endl;
   }
 
   // similar for last few lines
   for (ppLine = pp->numLines - 4; ppLine <= pp->numLines; ppLine++) {
-    SourceLoc loc = mgr.encodeLineCol("srcloc.tmp", ppLine, 1);
+    SourceLocation loc = mgr.encodeLineCol("srcloc.tmp", ppLine, 1);
     cout << "ppLine " << ppLine << ": " << toString(loc) << endl;
   }
 
@@ -1174,7 +1174,7 @@ void testHashMap()
     exit(2);
   }
   else {
-    SourceLoc loc = mgr.encodeLineCol("srcloc.tmp", expanderLine, 1);
+    SourceLocation loc = mgr.encodeLineCol("srcloc.tmp", expanderLine, 1);
     cout << "expander column 1: " << toString(loc) << endl;
 
     // in the pp file, I can advance the expander horizontally a long ways;
@@ -1202,13 +1202,13 @@ void testHashMap()
 
 void testHashMap2()
 {
-  SourceLocManager::File *pp = mgr.getInternalFile("srcloc.test2.cc");
+  SourceLocationManager::File *pp = mgr.getInternalFile("srcloc.test2.cc");
 
   int expanderLine=0;
   buildHashMap(pp, "srcloc.test2.cc", expanderLine);
 
   for (int ppLine = 1; ppLine <= pp->numLines; ppLine++) {
-    SourceLoc loc = mgr.encodeLineCol("srcloc.test2.cc", ppLine, 1);
+    SourceLocation loc = mgr.encodeLineCol("srcloc.test2.cc", ppLine, 1);
     cout << "ppLine " << ppLine << ": " << toString(loc) << endl;
   }
 }

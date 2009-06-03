@@ -9,7 +9,7 @@
 #include "strutil.h"       // replace, translate, localTimeString
 #include "sobjlist.h"      // SObjList
 #include "stringset.h"     // StringSet
-#include "srcloc.h"        // SourceLocManager
+#include "srcloc.h"        // SourceLocationManager
 #include "strtokp.h"       // StrtokParse
 #include "exc.h"           // xfatal
 #include "strdict.h"       // StringDict
@@ -1972,11 +1972,11 @@ void CGen::emitXmlField(rostring type, rostring name, char const *baseName,
     out << "  out << \"" << name << "=\";\n";
     out << "  outputXmlAttrQuotedNoEscape(out, toXml_double(" << baseName << "->" << name << "));\n";
   }
-  else if (streq(type, "SourceLoc")) {
+  else if (streq(type, "SourceLocation")) {
     out << "  out << '\\n';\n";
     out << "  if (indent) printIndentation();\n";
     out << "  out << \"" << name << "=\";\n";
-    out << "  outputXmlAttrQuoted(out, toXml_SourceLoc(" << baseName << "->" << name << "));\n";
+    out << "  outputXmlAttrQuoted(out, toXml_SourceLocation(" << baseName << "->" << name << "));\n";
   }
   else if (isListType(type)) {
     out << "  if (" << baseName << " && " << baseName << "->" << name << ".isNotEmpty()) {\n";
@@ -2600,9 +2600,9 @@ void XmlParserGen::emitXmlField_AttributeParseRule
     parser1_defs << "    fromXml_double(obj->" << name << ", strValue);\n";
     parser1_defs << "    break;\n";
   }
-  else if (streq(type, "SourceLoc")) {
+  else if (streq(type, "SourceLocation")) {
     parser1_defs << "  case XTOK_" << name << ":\n";
-    parser1_defs << "    fromXml_SourceLoc(obj->" << name << ", strValue);\n";
+    parser1_defs << "    fromXml_SourceLocation(obj->" << name << ", strValue);\n";
     parser1_defs << "    break;\n";
   }
   else if (isListType(type)) {
@@ -3220,7 +3220,7 @@ void entry(int argc, char **argv)
 {
   TRACE_ARGS();
   checkHeap();
-  SourceLocManager mgr;
+  SourceLocationManager mgr;
 
   if (argc < 2) {
     std::cout << "usage: " << argv[0] << " [options] file.ast [extension.ast [...]]\n"

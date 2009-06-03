@@ -232,7 +232,7 @@ void GrammarLexer::reportError(rostring msg)
   printError(curLoc(), msg);
 }
 
-void GrammarLexer::printError(SourceLoc loc, rostring msg)
+void GrammarLexer::printError(SourceLocation loc, rostring msg)
 {
   errors++;
   std::cerr << toString(loc) << ": error: " << msg << std::endl;
@@ -244,7 +244,7 @@ void GrammarLexer::reportWarning(rostring msg)
   printWarning(curLoc(), msg);
 }
 
-void GrammarLexer::printWarning(SourceLoc loc, rostring msg)
+void GrammarLexer::printWarning(SourceLocation loc, rostring msg)
 {
   std::cerr << toString(loc) << ": warning: " << msg << std::endl;
 }
@@ -329,7 +329,7 @@ bool isGramlexEmbed(int code);
 
 int main(int argc)
 {
-  SourceLocManager mgr;
+  SourceLocationManager mgr;
   GrammarLexer lexer(isGramlexEmbed);
   traceAddSys("lex");
 

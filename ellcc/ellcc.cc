@@ -1971,7 +1971,7 @@ static int Preprocess(const std::string &OutputFilename, Input& input)
         PrintAndExit("Can't create a preprocessor");
     
     if (InitializeSourceManager(*PP.get(), input.name.toString()))
-        PrintAndExit("Can't initialize the source manager");
+        Exit(1);
 
     DoPrintPreprocessedInput(*PP.get(), OutputFilename);
     return Diags.getNumErrors() != 0;
@@ -2356,8 +2356,9 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
                 PrintAndExit("Can't create a preprocessor");
     
             if (InitializeSourceManager(*PP.get(), input.name.toString()))
-                PrintAndExit("Can't initialize the source manager");
+                Exit(1);
 
+            (*PP.get()).EnterMainSourceFile();
             int result = elsa.parse(*PP.get(),
                                     input.name.c_str(), to.c_str(),
                                     input.module, ParseOnly);
@@ -2931,7 +2932,8 @@ int main(int argc, char **argv)
 
         // Go through the phases.
         InputList::iterator it;
-        for(Phases phase = PREPROCESSING; phase != NUM_PHASES; phase = (Phases)(phase + 1)) {
+        Phases phase;
+        for(phase = PREPROCESSING; phase != NUM_PHASES; phase = (Phases)(phase + 1)) {
             if (phase == BCLINKING && (FinalPhase == GENERATION || FinalPhase == ASSEMBLY)) {
                 // Don't link bitcode if assembly language or object files are wanted.
                 continue;
@@ -2988,6 +2990,11 @@ int main(int argc, char **argv)
                 // Done parsing. Stop.
                 break;
             }
+            if (FinalPhase == phase) {
+                for (it = InpList.begin(); it != InpList.end(); ++it) {
+                    it->temp = false;
+                }
+            }
             if (FinalPhase == phase || Diags.hasErrorOccurred()) {
                 break;
             }
@@ -2995,27 +3002,29 @@ int main(int argc, char **argv)
         }
 
         // Check to see if any module files should be generated
-        for (InputList::iterator it = InpList.begin(); it != InpList.end(); ++it) {
-            if (it->module && !it->temp) {
-                // Output the module.
-                // RICH: .ll vs. .bc.
-                llvm::PassManager PM;
-                std::ostream *out = new std::ofstream(it->name.c_str());
-                if (!out) {
-                    std::cerr << progname << ": can't open " << it->name << " for writing\n";
-                    Exit(1);
-                }
-                if (Verbose) {
-                    cout << "  creating temporary file " << it->name << "\n";
-                }
+        if (FinalPhase != phase) {
+            for (InputList::iterator it = InpList.begin(); it != InpList.end(); ++it) {
+                if (it->module && !it->temp) {
+                    // Output the module.
+                    // RICH: .ll vs. .bc.
+                    llvm::PassManager PM;
+                    std::ostream *out = new std::ofstream(it->name.c_str());
+                    if (!out) {
+                        std::cerr << progname << ": can't open " << it->name << " for writing\n";
+                        Exit(1);
+                    }
+                    if (Verbose) {
+                        cout << "  creating temporary file " << it->name << "\n";
+                    }
 #if RICH
-                llvm::OStream L(*out);
-                PM.add(new llvm::PrintModulePass(&L));
+                    llvm::OStream L(*out);
+                    PM.add(new llvm::PrintModulePass(&L));
 #endif
-                PM.add(llvm::CreateBitcodeWriterPass(*out));
-                PM.run(*it->module);
-                delete out;
-                delete it->module;
+                    PM.add(llvm::CreateBitcodeWriterPass(*out));
+                    PM.run(*it->module);
+                    delete out;
+                    delete it->module;
+                }
             }
         }
 

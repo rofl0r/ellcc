@@ -322,7 +322,7 @@ StandardConversion tryCallCtor
 
 
 // ----------------- test_getImplicitConversion ----------------
-int getLine(SourceLoc loc)
+int getLine(SourceLocation loc)
 {
   return sourceLocManager->getLine(loc);
 }

@@ -59,8 +59,8 @@ STATICDEF SemanticValue ParseTreeActions::reduce(
   UserActions *context,
   int productionId,
   SemanticValue const *svals
-  SOURCELOCARG( SourceLoc )
-  ENDSOURCELOCARG( SourceLoc ) )
+  SOURCELOCARG( SourceLocation )
+  ENDSOURCELOCARG( SourceLocation ) )
 {
   ParseTreeActions *ths = static_cast<ParseTreeActions*>(context);
 
@@ -83,7 +83,7 @@ STATICDEF SemanticValue ParseTreeActions::reduce(
 
 SemanticValue ParseTreeActions::mergeAlternativeParses(
   int ntIndex, SemanticValue left, SemanticValue right
-  SOURCELOCARG( SourceLoc loc ) )
+  SOURCELOCARG( SourceLocation loc ) )
 {
   trace("ptreeactMerge") << underlying->nonterminalName(ntIndex) << "\n";
 

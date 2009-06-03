@@ -33,7 +33,7 @@
 #ifndef VARIABLE_H
 #define VARIABLE_H
 
-#include "srcloc.h"            // SourceLoc
+#include "srcloc.h"            // SourceLocation
 #include "strtable.h"          // StringRef
 #include "cc_flags.h"          // DeclFlags, ScopeKind
 #include "sobjlist.h"          // SObjList
@@ -58,7 +58,7 @@ public:    // data
   // location if that exists, else the declaration location; there
   // are significant advantages to storing *two* locations (first
   // declaration, and definition), but I haven't done that yet
-  SourceLoc loc;          // location of the name in the source text
+  SourceLocation loc;          // location of the name in the source text
 
   // name introduced (possibly NULL for abstract declarators)
   StringRef name;
@@ -151,7 +151,7 @@ private:      // data
 
 protected:    // funcs
   friend class BasicTypeFactory;
-  Variable(SourceLoc L, StringRef n, Type *t, DeclFlags f);
+  Variable(SourceLocation L, StringRef n, Type *t, DeclFlags f);
   Variable(XmlReader&);         // ctor for de-serialization
 
 public:

@@ -8,7 +8,7 @@
 #include "sobjlist.h"      // SObjList
 #include "array.h"         // ArrayStack
 #include "implconv.h"      // ImplicitConversion, StandardConversion
-#include "srcloc.h"        // SourceLoc
+#include "srcloc.h"        // SourceLocation
 #include "cc_ast.h"        // PQName, ArgExpression, etc.
 #include "lookupset.h"     // LookupSet
 
@@ -143,7 +143,7 @@ class OverloadResolver {
 public:      // data
   // same meaning as corresponding arguments to 'resolveOverload'
   Env &env;
-  SourceLoc loc;
+  SourceLocation loc;
   ErrorList * /*nullable*/ errors;
   OverloadFlags flags;
   PQName * /*nullable*/ finalName;
@@ -176,7 +176,7 @@ private:     // funcs
 public:      // funcs
   // the ctor parameters mean the same as in 'resolveOverload'
   OverloadResolver(Env &env, 
-                   SourceLoc loc,
+                   SourceLocation loc,
                    ErrorList * /*nullable*/ errors,
                    OverloadFlags flags,
                    PQName * /*nullable*/ finalName,
@@ -238,7 +238,7 @@ Variable *selectBestCandidate_templCompoundType(TemplCandidates &resolver);
 // NULL
 Variable *resolveOverload(
   Env &env,                        // environment in which to perform lookups
-  SourceLoc loc,                   // location for error reports
+  SourceLocation loc,                   // location for error reports
   ErrorList * /*nullable*/ errors, // where to insert errors; if NULL, don't
   OverloadFlags flags,             // various options
   SObjList<Variable> &list,        // list of overloaded possibilities
@@ -265,7 +265,7 @@ Variable *resolveOverload(
 // (NOTE: this does *not* try "converting constructors" of 'destType')
 ImplicitConversion getConversionOperator(
   Env &env,
-  SourceLoc loc,
+  SourceLocation loc,
   ErrorList * /*nullable*/ errors,
   Type *srcClassType,      // must be a compound (or reference to one)
   Type *destType
@@ -276,7 +276,7 @@ ImplicitConversion getConversionOperator(
 // a pointer type. Needed for 5.3.5.1.
 ImplicitConversion getPointerConversionOperator(
   Env &env,
-  SourceLoc loc,
+  SourceLocation loc,
   ErrorList * /*nullable*/ errors,
   Type *srcClassType      // must be a compound (or reference to one)
 );

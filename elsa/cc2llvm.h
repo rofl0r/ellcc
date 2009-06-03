@@ -22,7 +22,6 @@ namespace llvm {
 #include "cc_ast.h"          // C++ AST
 
 class Env;
-using namespace ellcc;
 
 // smbase
 #include "ptrmap.h"          // PtrMap
@@ -34,7 +33,7 @@ using namespace ellcc;
 /** The main translator entry point.
  */
 llvm::Module* cc_to_llvm(sm::string name, StringTable &str, TranslationUnit const &input,
-                         TargetInfo& TI);
+                         ellcc::TargetInfo& TI);
 
 
 /** The translation environment.
@@ -51,14 +50,14 @@ public:      // funcs
     /** Construct an LLVM converter.
      */
     CC2LLVMEnv(StringTable &str, sm::string name, const TranslationUnit& input,
-               TargetInfo& TI);
+               ellcc::TargetInfo& TI);
     /** Destruct an LLVM convertor.
      */
     ~CC2LLVMEnv();
 
     /** Information about the build environment.
      */
-    TargetInfo& TI;
+    ellcc::TargetInfo& TI;
     /** LLVM information about the target.
      */
     llvm::TargetData TD;
@@ -68,11 +67,11 @@ public:      // funcs
 
     /** Convert an AST type specifier into an LLVM type specifier.
      */
-    const llvm::Type* makeTypeSpecifier(SourceLoc loc, Type *t);
+    const llvm::Type* makeTypeSpecifier(SourceLocation loc, Type *t);
 
     /** Convert an AST atomoc type specifier into an LLVM atomoc type specifier.
      */
-    const llvm::Type* makeAtomicTypeSpecifier(SourceLoc loc, AtomicType *t);
+    const llvm::Type* makeAtomicTypeSpecifier(SourceLocation loc, AtomicType *t);
 
     /** Make sure the current basic block has been opened.
      */
@@ -82,7 +81,7 @@ public:      // funcs
     void setCurrentBlock(llvm::BasicBlock* block);
     /** Check a condition in preparation for a branch.
      */
-    llvm::Value* checkCondition(SourceLoc loc, llvm::Value* value, int deref, bool neg = false);
+    llvm::Value* checkCondition(SourceLocation loc, llvm::Value* value, int deref, bool neg = false);
     /** Check a condition in preparation for a branch.
      */
     llvm::Value* checkCondition(Expression* cond);
@@ -158,7 +157,7 @@ public:      // funcs
     /** Make two operand the same type or cast the first operand to the second type.
      * @return The TypeID of the result.
      */
-    OperatorClass makeCast(SourceLoc loc, Type* leftType,
+    OperatorClass makeCast(SourceLocation loc, Type* leftType,
         llvm::Value*& leftValue, Type* rightType, llvm::Value** rightValue = NULL);
     /** Create a value from an initializer.
      * @return The LLVM value representing the initializer.
@@ -176,7 +175,7 @@ public:      // funcs
      * @param deref2 The right indirection level.
      * @return The value generated.    
      */
-    llvm::Value* binop(SourceLoc loc, BinaryOp op, Expression* e1, llvm::Value* left, int deref1,
+    llvm::Value* binop(SourceLocation loc, BinaryOp op, Expression* e1, llvm::Value* left, int deref1,
                                                    Expression* e2, llvm::Value* right, int deref2);
 
     /** Handle an assignment.
@@ -186,7 +185,7 @@ public:      // funcs
      * @param source The source value.
      * @param deref2 The source indirection level.
      */
-    llvm::Value* doassign(SourceLoc loc, llvm::Value* destination, int deref1, Type* dtype,
+    llvm::Value* doassign(SourceLocation loc, llvm::Value* destination, int deref1, Type* dtype,
                                          llvm::Value* source, int deref2, Type* stype);
     /** Perform the AST to LLVM lowering.
      * @return The LLVM module.

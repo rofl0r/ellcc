@@ -32,7 +32,7 @@ void gdbScopeSeq(ScopeSeq &ss)
 }
 
 
-inline ostream& operator<< (ostream &os, SourceLoc sl)
+inline ostream& operator<< (ostream &os, SourceLocation sl)
   { return os << toString(sl); }
 
 
@@ -145,7 +145,7 @@ bool testAmongOverloadSet(MemberFnTest test, Variable *v, CompoundType *ct)
 //
 // FIX: this should be a method on TS_classSpec
 // sm: I don't agree.
-void addCompilerSuppliedDecls(Env &env, SourceLoc loc, CompoundType *ct)
+void addCompilerSuppliedDecls(Env &env, SourceLocation loc, CompoundType *ct)
 {
   // we shouldn't even be here if the language isn't C++.
   xassert(env.PP.getLangOptions().CPlusPlus);
@@ -301,7 +301,7 @@ int throwClauseSerialNumber = 0; // don't make this a member of Env
 
 int Env::anonCounter = 1;
 
-Env::Env(StringTable &s, Preprocessor& PP, TypeFactory &tf,
+Env::Env(StringTable &s, ellcc::Preprocessor& PP, TypeFactory &tf,
          ArrayStack<Variable*> &madeUpVariables0,
          ArrayStack<Variable*> &builtinVars0,
          TranslationUnit *unit0)
@@ -397,7 +397,7 @@ Env::Env(StringTable &s, Preprocessor& PP, TypeFactory &tf,
     canBreak(false)
 {
   // create first scope
-  SourceLoc emptyLoc = SL_UNKNOWN;
+  SourceLocation emptyLoc = SL_UNKNOWN;
   {
     // among other things, SK_GLOBAL causes Variables inserted into
     // this scope to acquire DF_GLOBAL
@@ -1009,7 +1009,7 @@ void Env::tcheckTranslationUnit(TranslationUnit *tunit)
 }
 
 
-Variable *Env::makeVariable(SourceLoc L, StringRef n, Type *t, DeclFlags f)
+Variable *Env::makeVariable(SourceLocation L, StringRef n, Type *t, DeclFlags f)
 {
   if (!ctorFinished) {
     Variable *v = tfac.makeVariable(L, n, t, f);
@@ -1151,7 +1151,7 @@ Variable *Env::makeImplicitDeclFuncVar(StringRef name)
 }
 
 
-FunctionType *Env::beginConstructorFunctionType(SourceLoc loc, CompoundType *ct)
+FunctionType *Env::beginConstructorFunctionType(SourceLocation loc, CompoundType *ct)
 {
   FunctionType *ft = makeFunctionType(makeType(ct));
   ft->flags |= FF_CTOR;
@@ -1161,7 +1161,7 @@ FunctionType *Env::beginConstructorFunctionType(SourceLoc loc, CompoundType *ct)
 }
 
 
-FunctionType *Env::makeDestructorFunctionType(SourceLoc loc, CompoundType *ct)
+FunctionType *Env::makeDestructorFunctionType(SourceLocation loc, CompoundType *ct)
 {
   FunctionType *ft = makeFunctionType(getSimpleType(ST_VOID));
 
@@ -1346,7 +1346,7 @@ CompoundType *Env::getEnclosingCompound()
 #endif // 0
 
 
-void Env::setLoc(SourceLoc loc)
+void Env::setLoc(SourceLocation loc)
 {
   TRACE("loc", "setLoc: " << toString(loc));
 
@@ -1358,7 +1358,7 @@ void Env::setLoc(SourceLoc loc)
   }
 }
 
-SourceLoc Env::loc() const
+SourceLocation Env::loc() const
 {
   return scopeC()->curLoc;
 }
@@ -1641,7 +1641,7 @@ bool Env::addTypeTag(Variable *tag)
 }
 
 
-Type *Env::declareEnum(SourceLoc loc /*...*/, EnumType *et)
+Type *Env::declareEnum(SourceLocation loc /*...*/, EnumType *et)
 {
   Type *ret = makeType(et);
   if (et->name) {
@@ -2429,7 +2429,7 @@ TemplateInfo * /*owner*/ Env::takeCTemplateInfo(bool allowInherited)
 
 
 Type *Env::makeNewCompound(CompoundType *&ct, Scope * /*nullable*/ scope,
-                           StringRef name, SourceLoc loc,
+                           StringRef name, SourceLocation loc,
                            TypeIntr keyword, MakeNewCompoundFlags flags)
 {
   // compat. with previous code
@@ -2557,7 +2557,7 @@ Type *Env::implicitReceiverType()
 }
 
 
-Variable *Env::receiverParameter(SourceLoc loc, NamedAtomicType *nat, CVFlags cv,
+Variable *Env::receiverParameter(SourceLocation loc, NamedAtomicType *nat, CVFlags cv,
                                  D_func *syntax)
 {
   // For templatized classes, do something a little different.  It's
@@ -2800,7 +2800,7 @@ bool sameScopes(Scope *s1, Scope *s2)
 }
 
 // If a new variable was created, return it, else NULL.
-Variable *Env::makeUsingAliasFor(SourceLoc loc, Variable *origVar)
+Variable *Env::makeUsingAliasFor(SourceLocation loc, Variable *origVar)
 {
   Type *type = origVar->type;
   StringRef name = origVar->name;
@@ -3241,7 +3241,7 @@ static bool compatibleEnumAndIntegerTypes(Type *t1, Type *t2)
 //   - re-use existing declaration 'prior'
 // caller shouldn't have to distinguish first two
 Variable *Env::createDeclaration(
-  SourceLoc loc,            // location of new declaration
+  SourceLocation loc,            // location of new declaration
   StringRef name,           // name of new declared variable
   Type *type,               // type of that variable
   DeclFlags dflags,         // declaration flags for new variable
@@ -3698,7 +3698,7 @@ noPriorDeclaration:
 //   - the resulting type should have all the default arguments
 //     contiguous, and at the end of the parameter list
 // reference: cppstd, 8.3.6
-void Env::mergeDefaultArguments(SourceLoc loc, Variable *prior, FunctionType *type)
+void Env::mergeDefaultArguments(SourceLocation loc, Variable *prior, FunctionType *type)
 {
   if (prior->name == string_main && prior->isGlobal()) {
     // main() should not have default args anyway, and the scheme
@@ -3753,7 +3753,7 @@ void Env::mergeDefaultArguments(SourceLoc loc, Variable *prior, FunctionType *ty
 // that the name refers to an entity (possibly previously
 // declared) of type 'prior', while the current declaration
 // denoted 'type'
-void Env::handleTypeOfMain(SourceLoc loc, Variable *prior, Type *&type)
+void Env::handleTypeOfMain(SourceLocation loc, Variable *prior, Type *&type)
 {
   // relevent sections: C++ 3.6.1, C99 5.1.2.2.1
 
@@ -3885,7 +3885,7 @@ void Env::checkFuncAnnotations(FunctionType *, D_func *)
 void Env::addedNewCompound(CompoundType *)
 {}
 
-int Env::countInitializers(SourceLoc loc, Type *type, IN_compound const *cpd)
+int Env::countInitializers(SourceLocation loc, Type *type, IN_compound const *cpd)
 {
   return cpd->inits.count();
 }
@@ -4336,7 +4336,7 @@ PQName const *getExprName(Expression const *e)
 
 // given an expression that more or less begins with a name,
 // find its location
-SourceLoc getExprNameLoc(Expression const *e)
+SourceLocation getExprNameLoc(Expression const *e)
 {
   return getExprName(e)->loc;
 }
@@ -4597,7 +4597,7 @@ void Env::addCandidates(LookupSet &candidates, Variable *var)
 // that arises during declarator parsing.
 //
 // Returns NULL if no change is needed.
-Type *Env::resolveDQTs(SourceLoc loc, Type *t)
+Type *Env::resolveDQTs(SourceLocation loc, Type *t)
 {
   switch (t->getTag()) {
     default: xfailure("bad tag");
@@ -4708,7 +4708,7 @@ Type *Env::resolveDQTs(SourceLoc loc, Type *t)
 }
 
 
-Type *Env::resolveDQTs_atomic(SourceLoc loc, AtomicType *t)
+Type *Env::resolveDQTs_atomic(SourceLocation loc, AtomicType *t)
 {
   // (in/t0503.cc) might need to resolve DQTs inside template args
   if (t->isPseudoInstantiation()) {
@@ -4796,7 +4796,7 @@ CompoundType *Env::getMatchingTemplateInScope
 }
 
 
-AtomicType *Env::resolveDQTs_pi(SourceLoc loc, PseudoInstantiation *pi)
+AtomicType *Env::resolveDQTs_pi(SourceLocation loc, PseudoInstantiation *pi)
 {
   // work through the template arguments, attempting to resolve them
   bool resolvedAny = false;
@@ -5415,7 +5415,7 @@ void Env::checkForQualifiedMemberDeclarator(Declarator *decl)
 }
 
 
-Scope *Env::createNamespace(SourceLoc loc, StringRef name, bool isAnonymous)
+Scope *Env::createNamespace(SourceLocation loc, StringRef name, bool isAnonymous)
 {
   // in/t0625.cc: we never pass NULL to this function anymore
   xassert(name != NULL);
@@ -5981,7 +5981,7 @@ Type *Env::warning(rostring msg)
   return warning(loc(), msg);
 }
 
-Type *Env::warning(SourceLoc loc, rostring msg)
+Type *Env::warning(SourceLocation loc, rostring msg)
 {
   sm::string instLoc = instLocStackString();
   TRACE("error", "warning: " << msg << instLoc);
@@ -6005,7 +6005,7 @@ Type *Env::unimp(rostring msg)
 }
 
 
-Type *Env::error(Type *t, SourceLoc loc, rostring msg)
+Type *Env::error(Type *t, SourceLocation loc, rostring msg)
 {
   if (t->isSimple(ST_DEPENDENT)) {
     // no report, propagate dependentness
@@ -6060,24 +6060,24 @@ bool Env::doOperatorOverload() const
 }
 
 
-void Env::diagnose3(bool3 b, SourceLoc L, rostring msg, ErrorFlags eflags)
+void Env::diagnose3(ellcc::bool3 b, SourceLocation L, rostring msg, ErrorFlags eflags)
 {
-  if (b == b3_WARN) {
+  if (b == ellcc::b3_WARN) {
     warning(L, msg);
   }
-  else if (b == b3_FALSE) {
+  else if (b == ellcc::b3_FALSE) {
     error(L, msg, eflags);
   }
 }
 
 
-void Env::diagnose2(bool isError, SourceLoc L, rostring msg, ErrorFlags eflags)
+void Env::diagnose2(bool isError, SourceLocation L, rostring msg, ErrorFlags eflags)
 {
-  diagnose3(isError? b3_FALSE : b3_WARN, L, msg, eflags);
+  diagnose3(isError? ellcc::b3_FALSE : ellcc::b3_WARN, L, msg, eflags);
 }
 
 
-void Env::weakError(SourceLoc L, rostring msg)
+void Env::weakError(SourceLocation L, rostring msg)
 {
   warning(L, stringc << msg <<
     " (this will be an error when the implementation matures)");
@@ -6115,7 +6115,7 @@ sm::string errorFlagBlock(ErrorFlags eflags)
   }
 }
 
-Type *Env::error(SourceLoc L, rostring msg, ErrorFlags eflags)
+Type *Env::error(SourceLocation L, rostring msg, ErrorFlags eflags)
 {
   addError(new ErrorMsg(L, msg, eflags));
 

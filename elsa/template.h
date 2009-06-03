@@ -26,8 +26,8 @@ public:
   virtual Tag getTag() const { return T_TYPEVAR; }
   virtual sm::string toCString() const;
   virtual sm::string toMLString() const;
-  virtual void sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const;
-  virtual void sizeInfoInBits(TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const;
   virtual void traverse(TypeVisitor &vis);
 
   // true if this template parameter has been associated with
@@ -62,8 +62,8 @@ public:      // funcs
   virtual Tag getTag() const { return T_PSEUDOINSTANTIATION; }
   virtual sm::string toCString() const;
   virtual sm::string toMLString() const;
-  virtual void sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const;
-  virtual void sizeInfoInBits(TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const;
   virtual void traverse(TypeVisitor &vis);
 };
 
@@ -93,8 +93,8 @@ public:      // data
   virtual Tag getTag() const { return T_DEPENDENTQTYPE; }
   virtual sm::string toCString() const;
   virtual sm::string toMLString() const;
-  virtual void sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const;
-  virtual void sizeInfoInBits(TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const;
   virtual void traverse(TypeVisitor &vis);
 };
 
@@ -138,8 +138,8 @@ public:      // funcs
   virtual Tag getTag() const { return T_DEPENDENTSIZEDARRAY; }
   unsigned innerHashValue() const;
   virtual sm::string toMLString() const;
-  virtual void sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const;
-  virtual void sizeInfoInBits(TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const;
 };      
 
 
@@ -262,7 +262,7 @@ public:    // data
   // source location that gave rise to the need to instantiate it;
   // if not, it's just the location of the declaration of the
   // template itself
-  SourceLoc instLoc;
+  SourceLocation instLoc;
 
   // Bidirectional "partial instantiation" relation: a partial
   // instantiation is a template function that is in most respects a
@@ -321,7 +321,7 @@ private:     // funcs
 
 public:      // funcs
   // Q: can I make the 'var' argument mandatory?
-  TemplateInfo(SourceLoc instLoc, Variable *var = NULL);
+  TemplateInfo(SourceLocation instLoc, Variable *var = NULL);
   TemplateInfo(TemplateInfo const &obj);
   ~TemplateInfo();
 
@@ -652,15 +652,15 @@ public:      // data
   Variable *instV;
 
   // instantiation location stack
-  ArrayStack<SourceLoc> instLocStack;
+  ArrayStack<SourceLocation> instLocStack;
   
   // most proximal location from which the instantiation was
   // requested; additional context is in the loc stack
-  SourceLoc loc;
+  SourceLocation loc;
 
 public:
-  DelayedFuncInst(Variable *v, ArrayStack<SourceLoc> const &s,
-                  SourceLoc loc);
+  DelayedFuncInst(Variable *v, ArrayStack<SourceLocation> const &s,
+                  SourceLocation loc);
   ~DelayedFuncInst();
 };
 
@@ -681,8 +681,8 @@ public:      // funcs
   virtual Tag getTag() const { return T_TEMPLATETYPEVAR; }
   virtual sm::string toCString() const;
   virtual sm::string toMLString() const;
-  virtual void sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const;
-  virtual void sizeInfoInBits(TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const;
   virtual void traverse(TypeVisitor &vis);
 
   // True if this template parameter has been associated with a

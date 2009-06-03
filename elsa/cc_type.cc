@@ -271,13 +271,13 @@ sm::string SimpleType::toCString() const
 }
 
 
-void SimpleType::sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const
+void SimpleType::sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const
 {
   size = simpleTypeSizeInBytes(TI, type);
   align = simpleTypeAlignInBytes(TI, type);
 }
 
-void SimpleType::sizeInfoInBits(TargetInfo& TI, int &size, int &align) const
+void SimpleType::sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const
 {
   size = simpleTypeSizeInBits(TI, type);
   align = simpleTypeAlignInBits(TI, type);
@@ -536,7 +536,7 @@ sm::string CompoundType::toCString() const
 
 
 // dmandelin@mozilla.com
-void CompoundType::sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const
+void CompoundType::sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const
 {
   sizeInfoInBits(TI, size, align);
   if (size && size < TI.getMAUBits())
@@ -547,14 +547,14 @@ void CompoundType::sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const
   align /= TI.getMAUBits();
 }  
 
-void CompoundType::sizeInfoInBits(TargetInfo& TI, int &size, int &align) const
+void CompoundType::sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const
 {
   size = 0;
   align = TI.getMAUBits();
 
   if (hasVirtualFns()) {
-    size = TI.getTypeSizeInBits(TargetInfo::Pointer);
-    align = TI.getTypeAlignInBits(TargetInfo::Pointer);
+    size = TI.getTypeSizeInBits(ellcc::TargetInfo::Pointer);
+    align = TI.getTypeAlignInBits(ellcc::TargetInfo::Pointer);
   }
 
   memSizeInfoInBits(TI, size, align);
@@ -571,7 +571,7 @@ static void sizeInfoAddData(int &size, int &align, int memSize, int memAlign)
 
 // dmandelin@mozilla.com
 // Helper for memSizeInfo. Add a bitfield group to the given size/align pair.
-static void sizeInfoAddBitfield(TargetInfo& TI, int &size, int &align, int &bits)
+static void sizeInfoAddBitfield(ellcc::TargetInfo& TI, int &size, int &align, int &bits)
 {
   if (bits) {
     int bfSize = TI.getMAUBits();
@@ -586,7 +586,7 @@ static void sizeInfoAddBitfield(TargetInfo& TI, int &size, int &align, int &bits
 // Compute the size of everything except the vptr. Note that size and
 // align must be initialized on entry.
 // We need this separate from sizeInfo so that we can add the vptr only once.
-void CompoundType::memSizeInfoInBits(TargetInfo& TI, int &size, int &align) const
+void CompoundType::memSizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const
 {
   // base classes
   {
@@ -719,7 +719,7 @@ int CompoundType::getDataMemberPosition(StringRef name) const
 
 // TODO: Does this handle members of base classes correctly?  What
 // about virtual inheritance?
-int CompoundType::getDataMemberOffset(TargetInfo& TI, Variable *dataMember) const
+int CompoundType::getDataMemberOffset(ellcc::TargetInfo& TI, Variable *dataMember) const
 {
   int offset = 0;
   SFOREACH_OBJLIST(Variable, dataMembers, iter) {
@@ -1162,18 +1162,18 @@ sm::string EnumType::toCString() const
 }
 
 
-void EnumType::sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const
+void EnumType::sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const
 {
   // RICH: Optimize?
   // this is the usual choice
-  size = TI.getTypeSizeInBytes(TargetInfo::Int);
-  align = TI.getTypeAlignInBytes(TargetInfo::Int);
+  size = TI.getTypeSizeInBytes(ellcc::TargetInfo::Int);
+  align = TI.getTypeAlignInBytes(ellcc::TargetInfo::Int);
 }
 
-void EnumType::sizeInfoInBits(TargetInfo& TI, int &size, int &align) const
+void EnumType::sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const
 {
-  size = TI.getTypeSizeInBits(TargetInfo::Int);
-  align = TI.getTypeAlignInBits(TargetInfo::Int);
+  size = TI.getTypeSizeInBits(ellcc::TargetInfo::Int);
+  align = TI.getTypeAlignInBits(ellcc::TargetInfo::Int);
 }
 
 void EnumType::traverse(TypeVisitor &vis)
@@ -1801,12 +1801,12 @@ sm::string CVAtomicType::leftString(bool /*innerParen*/) const
 }
 
 
-void CVAtomicType::sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const
+void CVAtomicType::sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const
 {
   atomic->sizeInfoInBytes(TI, size, align);
 }
 
-void CVAtomicType::sizeInfoInBits(TargetInfo& TI, int &size, int &align) const
+void CVAtomicType::sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const
 {
   atomic->sizeInfoInBits(TI, size, align);
 }
@@ -1906,16 +1906,16 @@ sm::string PointerType::rightString(bool /*innerParen*/) const
 }
 
 
-void PointerType::sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const
+void PointerType::sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const
 {
-  size = TI.getTypeSizeInBytes(TargetInfo::Pointer);
-  align = TI.getTypeAlignInBytes(TargetInfo::Pointer);
+  size = TI.getTypeSizeInBytes(ellcc::TargetInfo::Pointer);
+  align = TI.getTypeAlignInBytes(ellcc::TargetInfo::Pointer);
 }
 
-void PointerType::sizeInfoInBits(TargetInfo& TI, int &size, int &align) const
+void PointerType::sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const
 {
-  size = TI.getTypeSizeInBits(TargetInfo::Pointer);
-  align = TI.getTypeAlignInBits(TargetInfo::Pointer);
+  size = TI.getTypeSizeInBits(ellcc::TargetInfo::Pointer);
+  align = TI.getTypeAlignInBits(ellcc::TargetInfo::Pointer);
 }
 
 bool PointerType::anyCtorSatisfies(TypePred &pred) const
@@ -1994,16 +1994,16 @@ sm::string ReferenceType::rightString(bool /*innerParen*/) const
   return s;
 }
 
-void ReferenceType::sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const
+void ReferenceType::sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const
 {
-  size = TI.getTypeSizeInBytes(TargetInfo::Pointer);
-  align = TI.getTypeAlignInBytes(TargetInfo::Pointer);
+  size = TI.getTypeSizeInBytes(ellcc::TargetInfo::Pointer);
+  align = TI.getTypeAlignInBytes(ellcc::TargetInfo::Pointer);
 }
 
-void ReferenceType::sizeInfoInBits(TargetInfo& TI, int &size, int &align) const
+void ReferenceType::sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const
 {
-  size = TI.getTypeSizeInBits(TargetInfo::Pointer);
-  align = TI.getTypeAlignInBits(TargetInfo::Pointer);
+  size = TI.getTypeSizeInBits(ellcc::TargetInfo::Pointer);
+  align = TI.getTypeAlignInBits(ellcc::TargetInfo::Pointer);
 }
 
 bool ReferenceType::anyCtorSatisfies(TypePred &pred) const
@@ -2327,7 +2327,7 @@ bool FunctionType::usesPostfixTypeConstructorSyntax() const
 }
 
 
-void FunctionType::sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const
+void FunctionType::sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const
 {
   // thinking here about how this works when we're summing
   // the fields of a class with member functions ..
@@ -2335,7 +2335,7 @@ void FunctionType::sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const
   align = 1;
 }
 
-void FunctionType::sizeInfoInBits(TargetInfo& TI, int &size, int &align) const
+void FunctionType::sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const
 {
   // thinking here about how this works when we're summing
   // the fields of a class with member functions ..
@@ -2495,7 +2495,7 @@ unsigned ArrayType::innerHashValue() const
 }
 
 
-void ArrayType::sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const
+void ArrayType::sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const
 {
   if (!hasSize()) {
     throw_XReprSize(this->size == DYN_SIZE /*isDynamic*/);
@@ -2504,7 +2504,7 @@ void ArrayType::sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const
   size *= this->size;
 }
 
-void ArrayType::sizeInfoInBits(TargetInfo& TI, int &size, int &align) const
+void ArrayType::sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const
 {
   if (!hasSize()) {
     throw_XReprSize(this->size == DYN_SIZE /*isDynamic*/);
@@ -2574,16 +2574,16 @@ sm::string PointerToMemberType::rightString(bool /*innerParen*/) const
 }
 
 // RICH: Are pointers to members two pointers?
-void PointerToMemberType::sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const
+void PointerToMemberType::sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const
 {
-  size = TI.getTypeSizeInBytes(TargetInfo::Pointer);
-  align = TI.getTypeAlignInBytes(TargetInfo::Pointer);
+  size = TI.getTypeSizeInBytes(ellcc::TargetInfo::Pointer);
+  align = TI.getTypeAlignInBytes(ellcc::TargetInfo::Pointer);
 }
 
-void PointerToMemberType::sizeInfoInBits(TargetInfo& TI, int &size, int &align) const
+void PointerToMemberType::sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const
 {
-  size = TI.getTypeSizeInBits(TargetInfo::Pointer);
-  align = TI.getTypeAlignInBits(TargetInfo::Pointer);
+  size = TI.getTypeSizeInBits(ellcc::TargetInfo::Pointer);
+  align = TI.getTypeAlignInBits(ellcc::TargetInfo::Pointer);
 }
 
 bool PointerToMemberType::anyCtorSatisfies(TypePred &pred) const
@@ -2893,7 +2893,7 @@ Type *TypeFactory::shallowCloneType(Type *baseType)
 //   byte const b;                   // cv = CV_CONST
 // yielding final type
 //   unsigned char const             // return value from this fn
-Type *TypeFactory::setQualifiers(SourceLoc loc, CVFlags cv, Type *baseType,
+Type *TypeFactory::setQualifiers(SourceLocation loc, CVFlags cv, Type *baseType,
                                  TypeSpecifier *)
 {
   if (baseType->isError()) {
@@ -2926,7 +2926,7 @@ Type *TypeFactory::setQualifiers(SourceLoc loc, CVFlags cv, Type *baseType,
 }
 
 
-Type *TypeFactory::applyCVToType(SourceLoc loc, CVFlags cv, Type *baseType,
+Type *TypeFactory::applyCVToType(SourceLocation loc, CVFlags cv, Type *baseType,
                                  TypeSpecifier *syntax)
 {
   if (baseType->isReferenceType()) {
@@ -2970,34 +2970,34 @@ bool TypeFactory::wantsQualifiedTypeReuseOptimization()
 }
 
 
-Type *TypeFactory::syntaxPointerType(SourceLoc loc,
+Type *TypeFactory::syntaxPointerType(SourceLocation loc,
   CVFlags cv, Type *type, D_pointer *)
 {
   return makePointerType(cv, type);
 }
 
-Type *TypeFactory::syntaxReferenceType(SourceLoc loc,
+Type *TypeFactory::syntaxReferenceType(SourceLocation loc,
   Type *type, D_reference *)
 {
   return makeReferenceType(type);
 }
 
 
-FunctionType *TypeFactory::syntaxFunctionType(SourceLoc loc,
+FunctionType *TypeFactory::syntaxFunctionType(SourceLocation loc,
   Type *retType, D_func *syntax, TranslationUnit *tunit)
 {
   return makeFunctionType(retType);
 }
 
 
-PointerToMemberType *TypeFactory::syntaxPointerToMemberType(SourceLoc loc,
+PointerToMemberType *TypeFactory::syntaxPointerToMemberType(SourceLocation loc,
   NamedAtomicType *inClassNAT, CVFlags cv, Type *atType, D_ptrToMember *syntax)
 {
   return makePointerToMemberType(inClassNAT, cv, atType);
 }
 
 
-Type *TypeFactory::makeTypeOf_receiver(SourceLoc loc,
+Type *TypeFactory::makeTypeOf_receiver(SourceLocation loc,
   NamedAtomicType *classType, CVFlags cv, D_func *syntax)
 {
   CVAtomicType *at = makeCVAtomicType(classType, cv);
@@ -3005,7 +3005,7 @@ Type *TypeFactory::makeTypeOf_receiver(SourceLoc loc,
 }
 
 
-FunctionType *TypeFactory::makeSimilarFunctionType(SourceLoc loc,
+FunctionType *TypeFactory::makeSimilarFunctionType(SourceLocation loc,
   Type *retType, FunctionType *similar)
 {
   FunctionType *ret =
@@ -3025,7 +3025,7 @@ CVAtomicType *TypeFactory::getSimpleType(SimpleTypeId st, CVFlags cv)
 }
 
 
-ArrayType *TypeFactory::setArraySize(SourceLoc loc, ArrayType *type, int size)
+ArrayType *TypeFactory::setArraySize(SourceLocation loc, ArrayType *type, int size)
 {
   return makeArrayType(type->eltType, size);
 }
@@ -3155,7 +3155,7 @@ DependentSizedArrayType *BasicTypeFactory::makeDependentSizedArrayType
 
 
 Variable *BasicTypeFactory::makeVariable
-  (SourceLoc L, StringRef n, Type *t, DeclFlags f)
+  (SourceLocation L, StringRef n, Type *t, DeclFlags f)
 {
   // I will turn this on from time to time as a way to check that
   // Types are always capable of printing themselves.  It should never

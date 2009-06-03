@@ -52,12 +52,12 @@ void tcheckPQName(PQName *&name, Env &env, Scope *scope = NULL,
                   LookupFlags lflags = LF_NONE);
 
 static Variable *outerResolveOverload_ctor
-  (Env &env, SourceLoc loc, Type *type, ArgumentInfoArray &argInfo);
+  (Env &env, SourceLocation loc, Type *type, ArgumentInfoArray &argInfo);
 
 static Variable *outerResolveOverload_explicitSet(
   Env &env,
   PQName * /*nullable*/ finalName,
-  SourceLoc loc,
+  SourceLocation loc,
   StringRef varName,
   ArgumentInfoArray &argInfo,
   SObjList<Variable> &candidates);
@@ -558,7 +558,7 @@ void Function::tcheckBody(Env &env)
   Restorer<bool> re(env.secondPassTcheck, false);
 
   // location for random purposes..
-  SourceLoc loc = nameAndParams->var->loc;
+  SourceLocation loc = nameAndParams->var->loc;
 
   // if this function was originally declared in another scope
   // (main example: it's a class member function), then start
@@ -653,9 +653,9 @@ void Function::tcheckBody(Env &env)
 
   // declare the __func__ variable
   if (env.PP.getLangOptions().implicitFuncVariable ||
-      env.PP.getLangOptions().gccFuncBehavior == LangOptions::GFB_variable) {
+      env.PP.getLangOptions().gccFuncBehavior == ellcc::LangOptions::GFB_variable) {
     // static char const __func__[] = "function-name";
-    SourceLoc loc = body->loc;
+    SourceLocation loc = body->loc;
     Type *charConst = env.getSimpleType(ST_CHAR, CV_CONST);
     Type *charConstArr = env.makeArrayType(charConst);
 
@@ -673,7 +673,7 @@ void Function::tcheckBody(Env &env)
 
     // dsw: these two are also gcc; see
     // http://gcc.gnu.org/onlinedocs/gcc-3.4.1/gcc/Function-Names.html#Function%20Names
-    if (env.PP.getLangOptions().gccFuncBehavior == LangOptions::GFB_variable) {
+    if (env.PP.getLangOptions().gccFuncBehavior == ellcc::LangOptions::GFB_variable) {
       env.addVariable(env.makeVariable(loc, env.string__FUNCTION__,
                                        charConstArr, DF_STATIC));
       env.addVariable(env.makeVariable(loc, env.string__PRETTY_FUNCTION__,
@@ -1048,11 +1048,11 @@ void Declaration::tcheck(Env &env, DeclaratorContext context)
       spec->isTS_classSpec() &&
       spec->asTS_classSpec()->name == NULL &&
       spec->asTS_classSpec()->keyword != TI_UNION) {
-    if (env.PP.getLangOptions().allowAnonymousStructs == b3_WARN) {
+    if (env.PP.getLangOptions().allowAnonymousStructs == ellcc::b3_WARN) {
       env.warning(spec->loc, "anonymous structs are not legal in C++ "
                              "(gcc/msvc bug/extension allows it)");
     }
-    else if (env.PP.getLangOptions().allowAnonymousStructs == b3_FALSE) {
+    else if (env.PP.getLangOptions().allowAnonymousStructs == ellcc::b3_FALSE) {
       // it's actually not an error yet, it is just useless, because
       // it cannot be used
       env.warning(spec->loc, "useless declaration");
@@ -1448,7 +1448,7 @@ void PQ_template::tcheck_pq(Env &env, Scope *, LookupFlags lflags)
 
 // lookup has found 'var', and we might want to stash it
 // in 'nondependentVar' too
-void maybeNondependent(Env &env, SourceLoc loc, Variable *&nondependentVar,
+void maybeNondependent(Env &env, SourceLocation loc, Variable *&nondependentVar,
                        Variable *var)
 {
   if (!var->hasFlag(DF_TYPEDEF) && var->type->isGeneralizedDependent()) {
@@ -1482,7 +1482,7 @@ void maybeNondependent(Env &env, SourceLoc loc, Variable *&nondependentVar,
 }
 
 // if we want to re-use 'nondependentVar', return it; otherwise return NULL
-Variable *maybeReuseNondependent(Env &env, SourceLoc loc, LookupFlags &lflags,
+Variable *maybeReuseNondependent(Env &env, SourceLocation loc, LookupFlags &lflags,
                                  Variable *nondependentVar)
 {
   // should I use 'nondependentVar'?
@@ -1767,7 +1767,7 @@ Type *TS_simple::itcheck(Env &env, DeclFlags dflags, LookupFlags lflags)
 CompoundType *checkClasskeyAndName(
   Env &env,
   Scope *scope,              // scope in which decl/defn appears
-  SourceLoc loc,             // location of type specifier
+  SourceLocation loc,             // location of type specifier
   DeclFlags dflags,          // syntactic and semantic declaration modifiers
   TypeIntr keyword,          // keyword used
   PQName *name)              // name, with qualifiers and template args (if any)
@@ -2646,7 +2646,7 @@ void possiblyConsumeFunctionType(Env &env, Declarator::Tcheck &dt,
 // member of, attach a 'this' parameter to the function type, and
 // close its parameter list
 void makeMemberFunctionType(Env &env, Declarator::Tcheck &dt,
-                            NamedAtomicType *inClassNAT, SourceLoc loc)
+                            NamedAtomicType *inClassNAT, SourceLocation loc)
 {
   // make the implicit 'this' parameter
   CVFlags thisCV = dt.funcSyntax? dt.funcSyntax->cv : CV_NONE;
@@ -2682,7 +2682,7 @@ void makeMemberFunctionType(Env &env, Declarator::Tcheck &dt,
 // change anything.  Parameters are same as declareNewVariable, plus
 // 'scope', the scope into which the name will be inserted.
 void checkOperatorOverload(Env &env, Declarator::Tcheck &dt,
-                           SourceLoc loc, PQName const *name,
+                           SourceLocation loc, PQName const *name,
                            Scope *scope)
 {
   if (!dt.type->isFunctionType()) {
@@ -2913,7 +2913,7 @@ static Variable *declareNewVariable(
   bool inGrouping,
 
   // source location where 'name' appeared
-  SourceLoc loc,
+  SourceLocation loc,
 
   // name being declared
   PQName *name)
@@ -3294,7 +3294,7 @@ Declarator *Declarator::tcheck(Env &env, Tcheck &dt)
 // which is equivalent to:
 //   static int y[] = {1, 2, 3};
 Type *Env::computeArraySizeFromCompoundInit
-  (SourceLoc tgt_loc, Type *tgt_type, Type *src_type, Initializer *init)
+  (SourceLocation tgt_loc, Type *tgt_type, Type *src_type, Initializer *init)
 {
   // If we start at a reference, we have to go down to the raw
   // ArrayType and then back up to a reference.
@@ -4114,7 +4114,7 @@ FakeList<ASTTypeId> *tcheckFakeASTTypeIdList(
 //   "function returning T" -> "pointer to function returning T"
 // also, since f(int) and f(int const) are the same function (not
 // overloadings), strip toplevel cv qualifiers
-static Type *normalizeParameterType(Env &env, SourceLoc loc, Type *t)
+static Type *normalizeParameterType(Env &env, SourceLocation loc, Type *t)
 {
   if (t->isPDSArrayType()) {
     while (t->isPDSArrayType()) {
@@ -5170,7 +5170,7 @@ void Expression::tcheck(Env &env, Expression *&replacement)
     // The code that follows is essentially resolveAmbiguity(),
     // specialized to two particular kinds of nodes, but only
     // tchecking the first part of each node to disambiguate.
-    IFDEBUG( SourceLoc loc = env.loc(); )
+    IFDEBUG( SourceLocation loc = env.loc(); )
     TRACE("disamb", toString(loc) << ": ambiguous: E_funCall vs. E_constructor");
 
     // grab errors
@@ -5457,7 +5457,7 @@ Type *E_floatLit::itcheck_x(Env &env, Expression *&replacement)
   return env.getSimpleType(ST_DOUBLE);
 }
 
-static void appendCharacter(TargetInfo &TI, DataBlock *block, unsigned int c, SimpleTypeId charType)
+static void appendCharacter(ellcc::TargetInfo &TI, DataBlock *block, unsigned int c, SimpleTypeId charType)
 {
   int charWidth = simpleTypeSizeInBytes(TI, charType);
   
@@ -5798,7 +5798,7 @@ Type *E_this::itcheck_x(Env &env, Expression *&replacement)
 }
 
 
-E_fieldAcc *wrapWithImplicitThis(Env &env, Variable *var, PQName *name ENDLOCARG(SourceLoc endloc))
+E_fieldAcc *wrapWithImplicitThis(Env &env, Variable *var, PQName *name ENDLOCARG(SourceLocation endloc))
 {
   // make *this
   E_this *ths = new E_this(EXPR_LOC1(name->loc ENDLOCARG(endloc)));
@@ -5907,7 +5907,7 @@ Type *E_variable::itcheck_var_set(Env &env, Expression *&replacement,
       if (env.PP.getLangOptions().allowImplicitFunctionDecls &&
           (flags & LF_FUNCTION_NAME) &&
           name->isPQ_name()) {
-        if (env.PP.getLangOptions().allowImplicitFunctionDecls == b3_WARN) {
+        if (env.PP.getLangOptions().allowImplicitFunctionDecls == ellcc::b3_WARN) {
           env.warning(name->loc, stringc << "implicit declaration of `" << *name << "'");
         }
 
@@ -6025,7 +6025,7 @@ void getArgumentInfo(Env &env, ArgumentInfo &ai, Expression *e)
 // the caller does not have to do so.
 static Variable *outerResolveOverload(Env &env,
                                       PQName * /*nullable*/ finalName,
-                                      SourceLoc loc, Variable *var,
+                                      SourceLocation loc, Variable *var,
                                       ArgumentInfoArray &argInfo)
 {
   // if no overload set, nothing to resolve
@@ -6040,7 +6040,7 @@ static Variable *outerResolveOverload(Env &env,
 static Variable *outerResolveOverload_explicitSet(
   Env &env,
   PQName * /*nullable*/ finalName,
-  SourceLoc loc,
+  SourceLocation loc,
   StringRef varName,
   ArgumentInfoArray &argInfo,
   SObjList<Variable> &candidates)
@@ -6090,7 +6090,7 @@ static Variable *outerResolveOverload_explicitSet(
 // version of 'outerResolveOverload' for constructors; 'type' is the
 // type of the object being constructed
 static Variable *outerResolveOverload_ctor
-  (Env &env, SourceLoc loc, Type *type, ArgumentInfoArray &argInfo)
+  (Env &env, SourceLocation loc, Type *type, ArgumentInfoArray &argInfo)
 {
   // skip overload resolution if any dependent args (in/t0412.cc)
   for (int i=0; i<argInfo.size(); i++) {
@@ -6349,7 +6349,7 @@ int compareArgsToParams(Env &env, FunctionType *ft, FakeList<ArgExpression> *arg
 
             // build a compound literal for it; this has a pointer
             // to the original 'arg->expr' inside it
-            SourceLoc loc = env.loc();
+            SourceLocation loc = env.loc();
             Designator *d = new FieldDesignator(loc, memb->name);
             ASTList<Initializer> *inits = new ASTList<Initializer>;
             inits->append(new IN_designated(loc,
@@ -8528,7 +8528,7 @@ Type *E_binary::itcheck_x(Env &env, Expression *&replacement)
 
 // someone took the address of 'var', and we must compute
 // the PointerToMemberType of that construct
-static Type *makePTMType(Env &env, Variable *var, SourceLoc loc)
+static Type *makePTMType(Env &env, Variable *var, SourceLocation loc)
 {
   // cppstd: 8.3.3 para 3, can't be static
   xassert(!var->hasFlag(DF_STATIC));
@@ -9602,7 +9602,7 @@ bool Expression::extHasUnparenthesizedGT()
 
 // can 0 be cast to 't' and still be regarded as a null pointer
 // constant?
-bool allowableNullPtrCastDest(const LangOptions &LO, Type *t)
+bool allowableNullPtrCastDest(const ellcc::LangOptions &LO, Type *t)
 {
   // C++ (4.10, 5.19)
   if (t->isIntegerType() || t->isEnumType()) {
@@ -9619,7 +9619,7 @@ bool allowableNullPtrCastDest(const LangOptions &LO, Type *t)
   return false;
 }
 
-SpecialExpr Expression::getSpecial(const LangOptions& LO) const
+SpecialExpr Expression::getSpecial(const ellcc::LangOptions& LO) const
 {
   ASTSWITCHC(Expression, this) {
     ASTCASEC(E_intLit, i)

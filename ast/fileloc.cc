@@ -60,8 +60,8 @@ SourceFile::~SourceFile()
 {}
 
 
-// ------------------- SourceLocation --------------------
-void SourceLocation::xfer(Flatten &flat)
+// ------------------- SourceLocationation --------------------
+void SourceLocationation::xfer(Flatten &flat)
 {
   if (flat.writing()) { 
     char *str = file? file->filename.pchar() : NULL;
@@ -84,7 +84,7 @@ void SourceLocation::xfer(Flatten &flat)
 }
 
 
-char const *SourceLocation::fname() const
+char const *SourceLocationation::fname() const
 { 
   if (file) {
     return file->filename;
@@ -94,7 +94,7 @@ char const *SourceLocation::fname() const
   }
 }
 
-string SourceLocation::oldToString() const
+string SourceLocationation::oldToString() const
 {
   if (fname()) {
     return stringc << "file " << fname() << ", "
@@ -105,7 +105,7 @@ string SourceLocation::oldToString() const
   }
 }
 
-string SourceLocation::likeGccToString() const
+string SourceLocationation::likeGccToString() const
 {
   if (validLoc()) {
     return stringc << fname() << ":" << line << ":" << col;

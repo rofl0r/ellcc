@@ -16,17 +16,17 @@ XmlFileWriter::XmlFileWriter(IdentityManager &idmgr0,
     serializeOracle(serializeOracle0)
 {}
 
-void XmlFileWriter::toXml(SourceLocManager::FileList &files)
+void XmlFileWriter::toXml(SourceLocationManager::FileList &files)
 {
-  travObjList0(files, files, SourceLocManager::File, FOREACH_OBJARRAYSTACK_NC, ObjArrayStack);
+  travObjList0(files, files, SourceLocationManager::File, FOREACH_OBJARRAYSTACK_NC, ObjArrayStack);
 
-  // FOREACH_OBJLIST_NC(SourceLocManager::File, files, iter) {
-  //   SourceLocManager::File *file = iter.data();
+  // FOREACH_OBJLIST_NC(SourceLocationManager::File, files, iter) {
+  //   SourceLocationManager::File *file = iter.data();
   //   toXml(file);
   // }
 }
 
-void XmlFileWriter::toXml(SourceLocManager::File *file)
+void XmlFileWriter::toXml(SourceLocationManager::File *file)
 {
   // idempotency
   if (idmgr.printed(file)) return;
@@ -65,7 +65,7 @@ void XmlFileWriter::toXml(SourceLocManager::File *file)
   trav(file->hashLines);
 }
 
-void XmlFileWriter::toXml_lineLengths(SourceLocManager::File *file)
+void XmlFileWriter::toXml_lineLengths(SourceLocationManager::File *file)
 {
   // NOTE: no idempotency check is needed as the line lengths are
   // one-to-one with the Files.

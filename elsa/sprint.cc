@@ -92,7 +92,7 @@ ostream &StructurePrinter::ind()
   return cout;
 }
 
-bool StructurePrinter::in(SourceLoc loc)
+bool StructurePrinter::in(SourceLocation loc)
 {
   if (begin) {
     // I'm first in my parent's list

@@ -153,7 +153,7 @@ private:    // data
   TF_func *currentFunction;
 
   // stack of source locations considered 'current'
-  ArrayStack<SourceLoc> locationStack;
+  ArrayStack<SourceLocation> locationStack;
 
 public:     // data
   // true in predicate expressions
@@ -242,8 +242,8 @@ public:     // funcs
   void warn(char const *str);
 
   // versions which explicitly specify a location
-  void errLoc(SourceLoc loc, char const *str);
-  void warnLoc(SourceLoc loc, char const *str);
+  void errLoc(SourceLocation loc, char const *str);
+  void warnLoc(SourceLocation loc, char const *str);
 
   // report an error, and throw an exception
   void errThrow(char const *str);
@@ -265,9 +265,9 @@ public:     // funcs
 
   bool isGlobalEnv() const              { return scopes.count() <= 1; }
 
-  void pushLocation(SourceLoc loc);
+  void pushLocation(SourceLocation loc);
   void popLocation()                    { locationStack.pop(); }
-  SourceLoc currentLoc() const;
+  SourceLocation currentLoc() const;
 
 
   // --------------- type construction -----------------

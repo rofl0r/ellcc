@@ -8,7 +8,7 @@
 
 // implemented in implint.cc
 bool filterOutImplIntFirstParam
-  (SourceLoc loc,
+  (SourceLocation loc,
    IDeclarator *base,
    FakeList<ASTTypeId> *&params);
 
@@ -75,7 +75,7 @@ FakeList<ASTTypeId>* kAndR_makeParamList
 }
 
 // create a Function definition with K&R params
-Function *makeKandRdefn(SourceLoc loc, Declaration *rds, IDeclarator *id,
+Function *makeKandRdefn(SourceLocation loc, Declaration *rds, IDeclarator *id,
                         S_compound *ds, S_compound *b)
 {
   Function *ret = new Function (
@@ -131,8 +131,8 @@ void fixUpKandRFunctionDef
 }
 
 D_func *new_D_func_kandr
-  (const LangOptions &LO,
-   SourceLoc loc,
+  (const ellcc::LangOptions &LO,
+   SourceLocation loc,
    IDeclarator *base,
    FakeList<ASTTypeId> *params,
    CVFlags cv,

@@ -78,7 +78,7 @@ enum ProdDeclKind {
 };
 
 // production: rhs description, and code to execute upon recognition
-class ProdDecl (SourceLoc loc, ProdDeclKind kind, ASTList<RHSElt> rhs, LocString actionCode);
+class ProdDecl (SourceLocation loc, ProdDeclKind kind, ASTList<RHSElt> rhs, LocString actionCode);
 
 // one of the things that appears after the '->', i.e. the
 // right-hand-side elements

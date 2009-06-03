@@ -104,7 +104,7 @@ typedef union YYSTYPE
 {
   int num;
   LocString *str;
-  SourceLoc loc;
+  SourceLocation loc;
 
   ASTList<TopForm> *topFormList;
   TopForm *topForm;

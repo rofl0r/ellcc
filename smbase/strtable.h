@@ -89,6 +89,7 @@ public:     // funcs
   //
   // note that this module does not retain a pointer or reference
   // to the original 'src' (it makes a copy if needed)
+  StringRef add(char const *src, int len);
   StringRef add(char const *src);
   StringRef add(rostring src) { return add(src.c_str()); }
 

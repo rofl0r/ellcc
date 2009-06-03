@@ -85,7 +85,7 @@ string TypeVariable::toCString() const
                  << name;
 }
 
-void TypeVariable::sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const
+void TypeVariable::sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const
 {
   //xfailure("you can't ask a type variable for its size");
 
@@ -95,7 +95,7 @@ void TypeVariable::sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const
   size = align = 4;
 }
 
-void TypeVariable::sizeInfoInBits(TargetInfo& TI, int &size, int &align) const
+void TypeVariable::sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const
 {
   //xfailure("you can't ask a type variable for its size");
 
@@ -143,7 +143,7 @@ string PseudoInstantiation::toCString() const
   return stringc << name << sargsToString(args);
 }
 
-void PseudoInstantiation::sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const
+void PseudoInstantiation::sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const
 {
   // it shouldn't matter what we say here, since the query will only
   // be made in the context of checking (but not instantiating) a
@@ -151,7 +151,7 @@ void PseudoInstantiation::sizeInfoInBytes(TargetInfo& TI, int &size, int &align)
   size = align = 4;
 }
 
-void PseudoInstantiation::sizeInfoInBits(TargetInfo& TI, int &size, int &align) const
+void PseudoInstantiation::sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const
 {
   // it shouldn't matter what we say here, since the query will only
   // be made in the context of checking (but not instantiating) a
@@ -217,12 +217,12 @@ string DependentQType::toMLString() const
   return stringc << "dependentqtype-" << toCString();
 }
 
-void DependentQType::sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const
+void DependentQType::sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const
 {
   size = align = 4;
 }
 
-void DependentQType::sizeInfoInBits(TargetInfo& TI, int &size, int &align) const
+void DependentQType::sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const
 {
   size = align = 4 * 8;
 }
@@ -302,7 +302,7 @@ string DependentSizedArrayType::toMLString() const
 }
 
 
-void DependentSizedArrayType::sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const
+void DependentSizedArrayType::sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const
 {
   // dmandelin@mozilla.com  bug 416182
   // This represents the result of sizeof inside the template definition.
@@ -314,7 +314,7 @@ void DependentSizedArrayType::sizeInfoInBytes(TargetInfo& TI, int &size, int &al
   align = 1;
 }
 
-void DependentSizedArrayType::sizeInfoInBits(TargetInfo& TI, int &size, int &align) const
+void DependentSizedArrayType::sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const
 {
   // dmandelin@mozilla.com  bug 416182
   // This represents the result of sizeof inside the template definition.
@@ -417,7 +417,7 @@ InheritedTemplateParams::~InheritedTemplateParams()
 
 
 // ------------------ TemplateInfo -------------
-TemplateInfo::TemplateInfo(SourceLoc il, Variable *v)
+TemplateInfo::TemplateInfo(SourceLocation il, Variable *v)
   : TemplateParams(),
     var(NULL),
     instantiationOf(NULL),
@@ -1712,7 +1712,7 @@ void Env::getFuncTemplArgs_oneParamList
 
 
 Variable *Env::instantiateFunctionTemplate
-  (SourceLoc loc, Variable *primary, MType &match)
+  (SourceLocation loc, Variable *primary, MType &match)
 {
   // map 'match' to a list of semantic arguments
   ObjList<STemplateArgument> sargs;
@@ -2581,7 +2581,7 @@ void Env::instantiateDefaultArgs(Variable *instV, int neededDefaults)
 // Note that this does *not* instantiate the function body; instead,
 // instantiateFunctionBody() has that responsibility.
 Variable *Env::instantiateFunctionTemplate
-  (SourceLoc loc,                              // location of instantiation request
+  (SourceLocation loc,                              // location of instantiation request
    Variable *primary,                          // template primary to instantiate
    ObjList<STemplateArgument> const &sargs)    // arguments to apply to 'primary'
 {
@@ -2743,7 +2743,7 @@ void Env::instantiateFunctionBody(Variable *instV)
   }
 }
 
-void Env::instantiateFunctionBodyNow(Variable *instV, SourceLoc loc)
+void Env::instantiateFunctionBodyNow(Variable *instV, SourceLocation loc)
 {
   TRACE("template", "instantiating func body: " << instV->toQualifiedString());
 
@@ -2846,7 +2846,7 @@ bool contains_STA_NONE(SObjList<STemplateArgument> const &args)
 //
 // Return NULL if there is a problem with the arguments.
 Variable *Env::instantiateClassTemplateDecl
-  (SourceLoc loc,                             // location of instantiation request
+  (SourceLocation loc,                             // location of instantiation request
    Variable *primary,                         // template primary to instantiate
    SObjList<STemplateArgument> const &origPrimaryArgs)  // arguments to apply to 'primary'
 {
@@ -2969,7 +2969,7 @@ Variable *Env::instantiateClassTemplateDecl
 }
   
 Variable *Env::instantiateClassTemplateDecl
-  (SourceLoc loc,
+  (SourceLocation loc,
    Variable *primary,
    ObjList<STemplateArgument> const &sargs)
 {
@@ -3461,7 +3461,7 @@ STemplateArgument Env::variableToSTemplateArgument(Variable *var)
 //
 // see comments above
 void Env::transferTemplateMemberInfo
-  (SourceLoc instLoc, TS_classSpec *source,
+  (SourceLocation instLoc, TS_classSpec *source,
    TS_classSpec *dest, ObjList<STemplateArgument> const &sargs)
 {
   // simultanous iteration
@@ -3615,7 +3615,7 @@ void Env::transferTemplateMemberInfo
 // transfer specifier info, particularly for nested class or
 // member template classes
 void Env::transferTemplateMemberInfo_typeSpec
-  (SourceLoc instLoc, TypeSpecifier *srcTS, CompoundType *sourceCT,
+  (SourceLocation instLoc, TypeSpecifier *srcTS, CompoundType *sourceCT,
    TypeSpecifier *destTS, ObjList<STemplateArgument> const &sargs)
 {
   if (srcTS->isTS_elaborated()) {
@@ -3655,7 +3655,7 @@ void Env::transferTemplateMemberInfo_typeSpec
 // transfer template information from primary 'srcVar' to
 // instantiation 'destVar'
 void Env::transferTemplateMemberInfo_one
-  (SourceLoc instLoc, Variable *srcVar, Variable *destVar,
+  (SourceLocation instLoc, Variable *srcVar, Variable *destVar,
    ObjList<STemplateArgument> const &sargs)
 {
   xassert(srcVar != destVar);
@@ -3697,7 +3697,7 @@ void Env::transferTemplateMemberInfo_one
 
 // this is for member templates ("membert")
 void Env::transferTemplateMemberInfo_membert
-  (SourceLoc instLoc, Variable *srcVar, Variable *destVar,
+  (SourceLocation instLoc, Variable *srcVar, Variable *destVar,
    ObjList<STemplateArgument> const &sargs)
 {
   // what follows is a modified version of 'transferTemplateMemberInfo_one'
@@ -4938,7 +4938,7 @@ Type *Env::pseudoSelfInstantiation(CompoundType *ct, CVFlags cv)
 
 
 Variable *Env::makeExplicitFunctionSpecialization
-  (SourceLoc loc, DeclFlags dflags, PQName *name, FunctionType *ft)
+  (SourceLocation loc, DeclFlags dflags, PQName *name, FunctionType *ft)
 {
   // find the overload set
   LookupSet set;
@@ -5115,7 +5115,7 @@ Variable *Env::makeExplicitFunctionSpecialization
 
 
 Variable *Env::makeSpecializationVariable
-  (SourceLoc loc, DeclFlags dflags, Variable *templ, FunctionType *type,
+  (SourceLocation loc, DeclFlags dflags, Variable *templ, FunctionType *type,
    SObjList<STemplateArgument> const &args)
 {
   // make 'type' into a method if 'templ' is
@@ -5465,7 +5465,7 @@ bool TemplateInfo::isMoreSpecificThan(TemplateInfo const *other) const
 
 
 // ------------------- InstantiationContextIsolator -----------------------
-InstantiationContextIsolator::InstantiationContextIsolator(Env &e, SourceLoc loc)
+InstantiationContextIsolator::InstantiationContextIsolator(Env &e, SourceLocation loc)
   : env(e),
     origNestingLevel(e.disambiguationNestingLevel),
     origSecondPass(e.secondPassTcheck),
@@ -5518,8 +5518,8 @@ void xTypeDeduction(rostring why)
 
 
 // ---------------------- DelayedFuncInst -----------------------
-DelayedFuncInst::DelayedFuncInst(Variable *v, ArrayStack<SourceLoc> const &s,
-                                 SourceLoc L)
+DelayedFuncInst::DelayedFuncInst(Variable *v, ArrayStack<SourceLocation> const &s,
+                                 SourceLocation L)
   : instV(v),
     instLocStack(s),
     loc(L)
@@ -5560,12 +5560,12 @@ string TemplateTypeVariable::toMLString() const
 }
 
 
-void TemplateTypeVariable::sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const
+void TemplateTypeVariable::sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const
 {
   throw XReprSize();
 }
 
-void TemplateTypeVariable::sizeInfoInBits(TargetInfo& TI, int &size, int &align) const
+void TemplateTypeVariable::sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const
 {
   throw XReprSize();
 }

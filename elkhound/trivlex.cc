@@ -12,7 +12,7 @@ void trivialLexer(char const *fname, Lexer2 &dest)
   if (!fp) {
     xsyserror("open", fname);
   }                    
-  SourceLoc loc = sourceLocManager->encodeBegin(fname);
+  SourceLocation loc = sourceLocManager->encodeBegin(fname);
 
   int ch;
   while ((ch = fgetc(fp)) != EOF) {

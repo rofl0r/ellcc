@@ -26,7 +26,7 @@ private:     // data
 
 private:     // funcs
   std::ostream &ind();
-  bool in(SourceLoc loc);
+  bool in(SourceLocation loc);
   void out();
   void digStmt(Statement *s);
 

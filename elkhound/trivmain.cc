@@ -110,7 +110,7 @@ void entry(int argc, char *argv[])
     argc--;
   }
 
-  SourceLocManager mgr;
+  SourceLocationManager mgr;
 
   char const *inputFname = argv[1];
 

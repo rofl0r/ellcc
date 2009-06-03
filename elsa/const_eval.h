@@ -49,9 +49,9 @@ private:
   void dup(CValue const &obj);
 
 public:      // funcs
-  explicit CValue(TargetInfo& TI, SimpleTypeId t = ST_INT) : TI(TI)
+  explicit CValue(ellcc::TargetInfo& TI, SimpleTypeId t = ST_INT) : TI(TI)
     { type=t; si=0; }
-  explicit CValue(TargetInfo& TI, rostring why) : TI(TI)
+  explicit CValue(ellcc::TargetInfo& TI, rostring why) : TI(TI)
     { setError(why); }
 
   CValue(CValue const &obj) : TI(obj.TI)
@@ -112,7 +112,7 @@ public:      // funcs
   // debugging
   sm::string asString() const;
 
-  TargetInfo& TI;
+  ellcc::TargetInfo& TI;
 };
 
 
@@ -132,10 +132,10 @@ public:      // data
   // provided in 'map'.
   MType * /*nullable*/ map;
 
-  TargetInfo& TI;
+  ellcc::TargetInfo& TI;
 
 public:
-  ConstEval(TargetInfo& TI, Variable * /*nullable*/ dependentVar,
+  ConstEval(ellcc::TargetInfo& TI, Variable * /*nullable*/ dependentVar,
             MType * map = NULL);
   ~ConstEval();
 

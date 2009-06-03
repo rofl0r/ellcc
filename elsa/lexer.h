@@ -79,7 +79,7 @@ protected:  // funcs
 public:     // funcs
   // make a lexer to scan the given file
   OLexer(StringTable &strtable, const ellcc::LangOptions& LO, char const *fname);
-  OLexer(StringTable &strtable, const ellcc::LangOptions& LO, SourceLoc initLoc,
+  OLexer(StringTable &strtable, const ellcc::LangOptions& LO, SourceLocation initLoc,
         char const *buf, int len);
   ~OLexer();
 

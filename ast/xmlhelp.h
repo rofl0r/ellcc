@@ -7,7 +7,7 @@
 #define XMLHELP_H
 
 #include "str.h"         // string
-#include "srcloc.h"      // SourceLoc
+#include "srcloc.h"      // SourceLocation
 
 typedef unsigned long xmlUniqueId_t;
 
@@ -87,8 +87,8 @@ void fromXml_unsigned_long(unsigned long &i, const char *str);
 static inline double toXml_double(double i) { return i; }
 void fromXml_double(double &x, const char *str);
 
-sm::string toXml_SourceLoc(SourceLoc loc);
-void fromXml_SourceLoc(SourceLoc &loc, const char *str);
+sm::string toXml_SourceLocation(SourceLocation loc);
+void fromXml_SourceLocation(SourceLocation &loc, const char *str);
 
 // output SRC with encoding and quotes around it.
 std::ostream &outputXmlAttrQuoted(std::ostream &o, const char *src);

@@ -59,7 +59,7 @@ bool SomeTypeVarNotInTemplParams_Pred::operator() (Type const *t)
 size_t Variable::numVariables = 0;
 
 // ---------------------- Variable --------------------
-Variable::Variable(SourceLoc L, StringRef n, Type *t, DeclFlags f)
+Variable::Variable(SourceLocation L, StringRef n, Type *t, DeclFlags f)
   : loc(L),
     name(n),
     type(t),

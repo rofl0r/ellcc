@@ -13,7 +13,7 @@
 // we should really construct a D_func that the grammar rule wants
 // to construct.
 bool filterOutImplIntFirstParam
-  (SourceLoc loc,
+  (SourceLocation loc,
    IDeclarator *base,
    FakeList<ASTTypeId> *&params) {
   // skip unless are we an anonymous function with at least one

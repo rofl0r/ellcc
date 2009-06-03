@@ -22,7 +22,7 @@
 #ifndef C_VARIABLE_H
 #define C_VARIABLE_H
 
-#include "srcloc.h"       // SourceLoc
+#include "srcloc.h"       // SourceLocation
 #include "strtable.h"     // StringRef
 #include "cc_flags.h"     // DeclFlags
 #include "sobjlist.h"     // SObjList
@@ -35,14 +35,14 @@ public:    // data
   // location if that exists, else the declaration location; there
   // are significant advantages to storing *two* locations (first
   // declaration, and definition), but I haven't done that yet
-  SourceLoc loc;          // location of the name in the source text
+  SourceLocation loc;          // location of the name in the source text
 
   StringRef name;         // name introduced (possibly NULL for abstract declarators)
   Type const *type;       // type of the variable
   DeclFlags flags;        // various flags
 
 public:    // funcs
-  Variable(SourceLoc L, StringRef n,
+  Variable(SourceLocation L, StringRef n,
            Type const *t, DeclFlags f);
   ~Variable();
 

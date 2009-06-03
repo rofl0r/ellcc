@@ -33,7 +33,7 @@
 #include "strtable.h"     // StringRef
 #include "strobjdict.h"   // StringObjDict
 #include "cc_scope.h"     // Scope
-#include "srcloc.h"       // SourceLoc
+#include "srcloc.h"       // SourceLocation
 #include "exc.h"          // xBase
 #include "serialno.h"     // INHERIT_SERIAL_BASE
 #include "mflags.h"       // MatchFlags
@@ -241,16 +241,16 @@ public:     // funcs
 
   // size this type's representation occupies in memory; this
   // might throw XReprSize, see below
-  int sizeInBytes(TargetInfo& TI) const { int size, align; sizeInfoInBytes(TI, size, align); return size; }
-  int sizeInBits(TargetInfo& TI) const { int size, align; sizeInfoInBits(TI, size, align); return size; }
+  int sizeInBytes(ellcc::TargetInfo& TI) const { int size, align; sizeInfoInBytes(TI, size, align); return size; }
+  int sizeInBits(ellcc::TargetInfo& TI) const { int size, align; sizeInfoInBits(TI, size, align); return size; }
 
   // dmandelin@mozilla.com
   // size and alignment of this type.
   // This has replaced sizeInBytes as the primary size computation
   // function because it is necessary to compute alignments as
   // well in order to compute sizes correctly.
-  virtual void sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const = 0;
-  virtual void sizeInfoInBits(TargetInfo& TI, int &size, int &align) const = 0;
+  virtual void sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const = 0;
+  virtual void sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const = 0;
 
   // invoke 'vis.visitAtomicType(this)', and then traverse subtrees
   virtual void traverse(TypeVisitor &vis) = 0;
@@ -284,8 +284,8 @@ public:     // funcs
   virtual Tag getTag() const { return T_SIMPLE; }
   virtual sm::string toCString() const;
   virtual sm::string toMLString() const;
-  virtual void sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const;
-  virtual void sizeInfoInBits(TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const;
   virtual void traverse(TypeVisitor &vis);
 };
 
@@ -486,14 +486,14 @@ public:      // funcs
   virtual Tag getTag() const { return T_COMPOUND; }
   virtual sm::string toCString() const;
   virtual sm::string toMLString() const;
-  virtual void sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const;
-  virtual void sizeInfoInBits(TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const;
   virtual void traverse(TypeVisitor &vis);
 
   // Return the sizeInfo not counting any vptr -- we need this
   // because when we have base classes we don't include vptr twice
-  void memSizeInfoInBytes(TargetInfo& TI, int &size, int &align) const;
-  void memSizeInfoInBits(TargetInfo& TI, int &size, int &align) const;
+  void memSizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const;
+  void memSizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const;
 
   sm::string toStringWithFields() const;
   sm::string keywordAndName() const { return toCString(); }
@@ -521,7 +521,7 @@ public:      // funcs
   // take a Variable* and the previous one a StringRef?  I'm not
   // sure, I think Variable* is better, but don't want to mess with
   // the other one right now)
-  int getDataMemberOffset(TargetInfo& TI, Variable *dataMember) const;
+  int getDataMemberOffset(ellcc::TargetInfo& TI, Variable *dataMember) const;
 
   // add to 'bases'; incrementally maintains 'virtualBases'
   virtual void addBaseClass(BaseClass * /*owner*/ newBase);
@@ -613,8 +613,8 @@ public:     // funcs
   virtual Tag getTag() const { return T_ENUM; }
   virtual sm::string toCString() const;
   virtual sm::string toMLString() const;
-  virtual void sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const;
-  virtual void sizeInfoInBits(TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const;
   virtual void traverse(TypeVisitor &vis);
 
   Value *addValue(StringRef name, int value, /*nullable*/ Variable *d);
@@ -759,11 +759,11 @@ public:     // funcs
   virtual bool usesPostfixTypeConstructorSyntax() const;
 
   // size of representation at run-time.
-  int sizeInBytes(TargetInfo& TI) const { int size, align; sizeInfoInBytes(TI, size, align); return size; }
-  int sizeInBits(TargetInfo& TI) const { int size, align; sizeInfoInBits(TI, size, align); return size; }
+  int sizeInBytes(ellcc::TargetInfo& TI) const { int size, align; sizeInfoInBytes(TI, size, align); return size; }
+  int sizeInBits(ellcc::TargetInfo& TI) const { int size, align; sizeInfoInBits(TI, size, align); return size; }
 
-  virtual void sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const = 0;
-  virtual void sizeInfoInBits(TargetInfo& TI, int &size, int &align) const = 0;
+  virtual void sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const = 0;
+  virtual void sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const = 0;
 
   // filter on all constructed types that appear in the type,
   // *including* parameter types; return true if any constructor
@@ -951,8 +951,8 @@ public:
   unsigned innerHashValue() const;
   virtual sm::string toMLString() const;
   virtual sm::string leftString(bool innerParen=true) const;
-  virtual void sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const;
-  virtual void sizeInfoInBits(TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const;
   virtual bool anyCtorSatisfies(TypePred &pred) const;
   virtual CVFlags getCVFlags() const;
   virtual void traverse(TypeVisitor &vis);
@@ -980,8 +980,8 @@ public:
   virtual sm::string toMLString() const;
   virtual sm::string leftString(bool innerParen=true) const;
   virtual sm::string rightString(bool innerParen=true) const;
-  virtual void sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const;
-  virtual void sizeInfoInBits(TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const;
   virtual bool anyCtorSatisfies(TypePred &pred) const;
   virtual CVFlags getCVFlags() const;
   virtual void traverse(TypeVisitor &vis);
@@ -1009,8 +1009,8 @@ public:
   virtual sm::string toMLString() const;
   virtual sm::string leftString(bool innerParen=true) const;
   virtual sm::string rightString(bool innerParen=true) const;
-  virtual void sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const;
-  virtual void sizeInfoInBits(TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const;
   virtual bool anyCtorSatisfies(TypePred &pred) const;
   virtual CVFlags getCVFlags() const;
   virtual void traverse(TypeVisitor &vis);
@@ -1133,8 +1133,8 @@ public:
   virtual sm::string leftString(bool innerParen=true) const;
   virtual sm::string rightString(bool innerParen=true) const;
   virtual bool usesPostfixTypeConstructorSyntax() const;
-  virtual void sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const;
-  virtual void sizeInfoInBits(TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const;
   virtual bool anyCtorSatisfies(TypePred &pred) const;
   virtual void traverse(TypeVisitor &vis);
 };
@@ -1214,8 +1214,8 @@ public:
   virtual Tag getTag() const { return T_ARRAY; }
   unsigned innerHashValue() const;
   virtual sm::string toMLString() const;
-  virtual void sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const;
-  virtual void sizeInfoInBits(TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const;
 };
 
 
@@ -1252,8 +1252,8 @@ public:
   virtual sm::string toMLString() const;
   virtual sm::string leftString(bool innerParen=true) const;
   virtual sm::string rightString(bool innerParen=true) const;
-  virtual void sizeInfoInBytes(TargetInfo& TI, int &size, int &align) const;
-  virtual void sizeInfoInBits(TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const;
   virtual bool anyCtorSatisfies(TypePred &pred) const;
   virtual CVFlags getCVFlags() const;
   virtual void traverse(TypeVisitor &vis);
@@ -1347,12 +1347,12 @@ public:
   // extension analyses
   //
   // NOTE: 'baseType' is *not* modified; a copy is returned if necessary
-  virtual Type *setQualifiers(SourceLoc loc, CVFlags cv, Type *baseType,
+  virtual Type *setQualifiers(SourceLocation loc, CVFlags cv, Type *baseType,
                                 TypeSpecifier * /*nullable*/ syntax);
 
   // add 'cv' to existing qualifiers; default implementation just
   // calls setQualifiers
-  virtual Type *applyCVToType(SourceLoc loc, CVFlags cv, Type *baseType,
+  virtual Type *applyCVToType(SourceLocation loc, CVFlags cv, Type *baseType,
                               TypeSpecifier * /*nullable*/ syntax);
 
   // Return true if this factory wants to reuse type objects in
@@ -1364,18 +1364,18 @@ public:
   // the factory to know the name of an AST node, but the default
   // implementation will not use it, so it need not be linked in for
   // this to make sense
-  virtual Type *syntaxPointerType(SourceLoc loc,
+  virtual Type *syntaxPointerType(SourceLocation loc,
     CVFlags cv, Type *underlying, D_pointer * /*nullable*/ syntax);
-  virtual Type *syntaxReferenceType(SourceLoc loc,
+  virtual Type *syntaxReferenceType(SourceLocation loc,
     Type *underlying, D_reference * /*nullable*/ syntax);
 
   // similar for a function type; the parameters will be added by
   // the caller after this function returns
-  virtual FunctionType *syntaxFunctionType(SourceLoc loc,
+  virtual FunctionType *syntaxFunctionType(SourceLocation loc,
     Type *retType, D_func * /*nullable*/ syntax, TranslationUnit *tunit);
 
   // and another for pointer-to-member
-  virtual PointerToMemberType *syntaxPointerToMemberType(SourceLoc loc,
+  virtual PointerToMemberType *syntaxPointerToMemberType(SourceLocation loc,
     NamedAtomicType *inClassNAT, CVFlags cv, Type *atType,
     D_ptrToMember * /*nullable*/ syntax);
 
@@ -1385,13 +1385,13 @@ public:
   // 4/18/04: the 'classType' has been generalized because we
   //          represent ptr-to-member-func using a FunctionType
   //          with receiver parameter of type 'classType'
-  virtual Type *makeTypeOf_receiver(SourceLoc loc,
+  virtual Type *makeTypeOf_receiver(SourceLocation loc,
     NamedAtomicType *classType, CVFlags cv, D_func * /*nullable*/ syntax);
 
   // given a function type and a return type, make a new function type
   // which is like it but has no parameters; i.e., copy all fields
   // except 'params'; this does *not* call doneParams
-  virtual FunctionType *makeSimilarFunctionType(SourceLoc loc,
+  virtual FunctionType *makeSimilarFunctionType(SourceLocation loc,
     Type *retType, FunctionType *similar);
 
   // ---- similar functions for Variable ----
@@ -1401,7 +1401,7 @@ public:
   //     or neither.
   //   - Variable is used by Type and vice-versa.. they could have
   //     both been defined in cc_type.h
-  virtual Variable *makeVariable(SourceLoc L, StringRef n, Type *t, DeclFlags f)=0;
+  virtual Variable *makeVariable(SourceLocation L, StringRef n, Type *t, DeclFlags f)=0;
 
 
   // ---- convenience functions ----
@@ -1423,7 +1423,7 @@ public:
 
   // given an array type with no size, return one that is
   // the same except its size is as specified
-  ArrayType *setArraySize(SourceLoc loc, ArrayType *type, int size);
+  ArrayType *setArraySize(SourceLocation loc, ArrayType *type, int size);
 };
 
 
@@ -1455,7 +1455,7 @@ public:    // funcs
   virtual DependentSizedArrayType *makeDependentSizedArrayType
     (Type *eltType, Expression *sizeExpr);
 
-  virtual Variable *makeVariable(SourceLoc L, StringRef n, Type *t, DeclFlags f);
+  virtual Variable *makeVariable(SourceLocation L, StringRef n, Type *t, DeclFlags f);
 };
 
 

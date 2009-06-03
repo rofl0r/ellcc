@@ -86,7 +86,7 @@ OLexer::OLexer(StringTable &s, const ellcc::LangOptions& LO, char const *fname)
 }
 
 
-OLexer::OLexer(StringTable &s, const ellcc::LangOptions& LO, SourceLoc initLoc,
+OLexer::OLexer(StringTable &s, const ellcc::LangOptions& LO, SourceLocation initLoc,
              char const *buf, int len)
   : BaseLexer(s, initLoc, buf, len),
 
@@ -298,7 +298,7 @@ string OLexer::tokenKindDescV(int kind) const
 }
 
 // parse line:col expressions
-static SourceLoc str2loc(char *str, char **endptr, char const * file) {
+static SourceLocation str2loc(char *str, char **endptr, char const * file) {
   int line = strtol(str, &str, 10);
   if (!line) return SL_UNKNOWN;
   str++;
@@ -314,8 +314,8 @@ void OLexer::macroUndoStart(char *comment, int len) {
   prevIsNonsep = false;
   if (!sourceLocManager->useHashLines) return;
   StringRef name(NULL);
-  SourceLoc preStartLoc(SL_UNKNOWN);
-  SourceLoc preEndLoc(SL_UNKNOWN);
+  SourceLocation preStartLoc(SL_UNKNOWN);
+  SourceLocation preEndLoc(SL_UNKNOWN);
   bool isParam = false;
 
   if (char *spc = strchr(comment, ' ')) {
@@ -354,8 +354,8 @@ void OLexer::macroUndoStart(char *comment, int len) {
 
 // m is only returned if it has a position
 void OLexer::addMacroDefinition(char *macro, int len, MacroDefinition **m) {
-  SourceLoc fromLoc = SL_UNKNOWN;
-  SourceLoc toLoc = SL_UNKNOWN;
+  SourceLocation fromLoc = SL_UNKNOWN;
+  SourceLocation toLoc = SL_UNKNOWN;
 
   char *spc = strchr(macro, ' ');
   if (spc) {
@@ -402,7 +402,7 @@ void OLexer::macroParamDefinition(char *macro, int len) {
 }
 
 void OLexer::macroUndoStop() {
-  SourceLoc postEndLoc = nextLoc;
+  SourceLocation postEndLoc = nextLoc;
 
   updLoc();
   prevIsNonsep = false;

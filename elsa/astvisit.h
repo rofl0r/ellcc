@@ -11,7 +11,7 @@
 class ASTVisitorEx : public ASTVisitor {
 public:      // data
   // the most recent location we've seen
-  SourceLoc loc;
+  SourceLocation loc;
 
 public:      // funcs
   ASTVisitorEx();

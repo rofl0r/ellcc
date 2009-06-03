@@ -98,7 +98,7 @@ StringRef ElabVisitor::makeCatchClauseVarName()
 }
 
 
-Variable *ElabVisitor::makeVariable(SourceLoc loc, StringRef name, Type *type, DeclFlags dflags)
+Variable *ElabVisitor::makeVariable(SourceLocation loc, StringRef name, Type *type, DeclFlags dflags)
 {
   return tfac.makeVariable(loc, name, type, dflags);
 }
@@ -114,7 +114,7 @@ Variable *ElabVisitor::makeVariable(SourceLoc loc, StringRef name, Type *type, D
 
 
 // Variable -> D_name
-D_name *ElabVisitor::makeD_name(SourceLoc loc, Variable *var)
+D_name *ElabVisitor::makeD_name(SourceLocation loc, Variable *var)
 {
   D_name *ret = new D_name(loc, new PQ_variable(loc, var));
   return ret;
@@ -124,7 +124,7 @@ D_name *ElabVisitor::makeD_name(SourceLoc loc, Variable *var)
 // given a Variable, make a Declarator that refers to it; assume it's
 // being preceded by a TS_name that fully specifies the variable's
 // type, so we just use a D_name to finish it off
-Declarator *ElabVisitor::makeDeclarator(SourceLoc loc, Variable *var, DeclaratorContext context)
+Declarator *ElabVisitor::makeDeclarator(SourceLocation loc, Variable *var, DeclaratorContext context)
 {
   IDeclarator *idecl = makeD_name(loc, var);
 
@@ -138,7 +138,7 @@ Declarator *ElabVisitor::makeDeclarator(SourceLoc loc, Variable *var, Declarator
 }
 
 // and similar for a full (singleton) declaration
-Declaration *ElabVisitor::makeDeclaration(SourceLoc loc, Variable *var, DeclaratorContext context)
+Declaration *ElabVisitor::makeDeclaration(SourceLocation loc, Variable *var, DeclaratorContext context)
 {
   Declarator *declarator = makeDeclarator(loc, var, context);
   Declaration *declaration =
@@ -150,7 +150,7 @@ Declaration *ElabVisitor::makeDeclaration(SourceLoc loc, Variable *var, Declarat
 
 // given a function declaration, make a Declarator containing
 // a D_func that refers to it
-Declarator *ElabVisitor::makeFuncDeclarator(SourceLoc loc, Variable *var, DeclaratorContext context)
+Declarator *ElabVisitor::makeFuncDeclarator(SourceLocation loc, Variable *var, DeclaratorContext context)
 {
   FunctionType *ft = var->type->asFunctionType();
 
@@ -190,7 +190,7 @@ Declarator *ElabVisitor::makeFuncDeclarator(SourceLoc loc, Variable *var, Declar
 
 
 // given a function declaration and a body, make a Function AST node
-Function *ElabVisitor::makeFunction(SourceLoc loc, Variable *var,
+Function *ElabVisitor::makeFunction(SourceLocation loc, Variable *var,
                                     FakeList<MemberInit> *inits,
                                     S_compound *body)
 {
@@ -225,7 +225,7 @@ Function *ElabVisitor::makeFunction(SourceLoc loc, Variable *var,
 
 
 // given a Variable, make an E_variable referring to it
-E_variable *ElabVisitor::makeE_variable(SourceLoc loc, Variable *var)
+E_variable *ElabVisitor::makeE_variable(SourceLocation loc, Variable *var)
 {
   E_variable *evar = new E_variable(EXPR_LOC(loc ENDLOCARG(SL_UNKNOWN)) new PQ_variable(loc, var));
   evar->type = makeLvalType(tfac, var->type);
@@ -234,7 +234,7 @@ E_variable *ElabVisitor::makeE_variable(SourceLoc loc, Variable *var)
 }
 
 E_fieldAcc *ElabVisitor::makeE_fieldAcc
-  (SourceLoc loc, Expression *obj, Variable *field)
+  (SourceLocation loc, Expression *obj, Variable *field)
 {
   E_fieldAcc *efieldacc = new E_fieldAcc(EXPR_LOC(loc ENDLOCARG(SL_UNKNOWN)) obj, new PQ_variable(loc, field));
   efieldacc->type = makeLvalType(tfac, field->type);
@@ -244,7 +244,7 @@ E_fieldAcc *ElabVisitor::makeE_fieldAcc
 
 
 E_funCall *ElabVisitor::makeMemberCall
-  (SourceLoc loc, Expression *obj, Variable *func, FakeList<ArgExpression> *args)
+  (SourceLocation loc, Expression *obj, Variable *func, FakeList<ArgExpression> *args)
 {
   // "a.f"
   E_fieldAcc *efieldacc = makeE_fieldAcc(loc, obj, func);
@@ -263,7 +263,7 @@ FakeList<ArgExpression> *ElabVisitor::emptyArgs()
 
 
 // reference to the receiver object of the current function
-Expression *ElabVisitor::makeThisRef(SourceLoc loc)
+Expression *ElabVisitor::makeThisRef(SourceLocation loc)
 {
   Variable *receiver = functionStack.top()->receiver;
 
@@ -281,14 +281,14 @@ Expression *ElabVisitor::makeThisRef(SourceLoc loc)
 
 
 // wrap up an expression in an S_expr
-S_expr *ElabVisitor::makeS_expr(SourceLoc loc, Expression *e)
+S_expr *ElabVisitor::makeS_expr(SourceLocation loc, Expression *e)
 {
   return new S_expr(loc ENDLOCARG(e->endloc), new FullExpression(e));
 }
 
 
 // make an empty S_compound
-S_compound *ElabVisitor::makeS_compound(SourceLoc loc)
+S_compound *ElabVisitor::makeS_compound(SourceLocation loc)
 {
   // note that the ASTList object created here is *deleted* by
   // the act of passing it to the S_compound; the S_compound has
@@ -302,7 +302,7 @@ S_compound *ElabVisitor::makeS_compound(SourceLoc loc)
 // constructed is in 'target' (a reference to some memory location).
 // 'args' is the list of arguments to the ctor call.
 E_constructor *ElabVisitor::makeCtorExpr(
-  SourceLoc loc,                    // where elaboration is occurring
+  SourceLocation loc,                    // where elaboration is occurring
   Expression *target,               // reference to object to construct
   Type *type,                       // type of the constructed object
   Variable *ctor,                   // ctor function to call
@@ -325,7 +325,7 @@ E_constructor *ElabVisitor::makeCtorExpr(
 // NOTE: the client should consider cloning the _args_ before passing
 // them in so that the AST remains a tree
 Statement *ElabVisitor::makeCtorStatement(
-  SourceLoc loc,
+  SourceLocation loc,
   Expression *target,
   Type *type,
   Variable *ctor,
@@ -346,7 +346,7 @@ Statement *ElabVisitor::makeCtorStatement(
 
 
 // ------------------------ makeDtor ----------------------
-Expression *ElabVisitor::makeDtorExpr(SourceLoc loc, Expression *target,
+Expression *ElabVisitor::makeDtorExpr(SourceLocation loc, Expression *target,
                                       Type *type)
 {
   Variable *dtor = getDtor(type->asCompoundType());
@@ -358,7 +358,7 @@ Expression *ElabVisitor::makeDtorExpr(SourceLoc loc, Expression *target,
 }
 
 // NOTE: consider cloning the target so that the AST remains a tree
-Statement *ElabVisitor::makeDtorStatement(SourceLoc loc, Expression *target,
+Statement *ElabVisitor::makeDtorStatement(SourceLocation loc, Expression *target,
                                           Type *type)
 {
   Expression *efc0 = makeDtorExpr(loc, target, type);
@@ -468,7 +468,7 @@ void Declarator::elaborateCDtors(ElabVisitor &env, DeclFlags dflags)
   }
 
   bool isAbstract = decl->isD_name() && !decl->asD_name()->name;
-  SourceLoc loc = getLoc();
+  SourceLocation loc = getLoc();
 
   if (init) {
     // sm: why this assertion?
@@ -592,7 +592,7 @@ void Declarator::elaborateCDtors(ElabVisitor &env, DeclFlags dflags)
 //
 // Make a Declaration for a temporary; yield the Variable too.
 Declaration *ElabVisitor::makeTempDeclaration
-  (SourceLoc loc, Type *retType, Variable *&var /*OUT*/, DeclaratorContext context)
+  (SourceLocation loc, Type *retType, Variable *&var /*OUT*/, DeclaratorContext context)
 {
   // while a user may attempt this, we should catch it earlier and not
   // end up down here.
@@ -615,7 +615,7 @@ Declaration *ElabVisitor::makeTempDeclaration
 
 // make the decl, and add it to the innermost FullExpressionAnnot;
 // yield the Variable since neither caller needs the Declaration
-Variable *ElabVisitor::insertTempDeclaration(SourceLoc loc, Type *retType)
+Variable *ElabVisitor::insertTempDeclaration(SourceLocation loc, Type *retType)
 {
   FullExpressionAnnot *fea0 = env.fullExpressionAnnotStack.top();
 
@@ -634,7 +634,7 @@ Variable *ElabVisitor::insertTempDeclaration(SourceLoc loc, Type *retType)
 // NOTE: the client is expected to clone _argExpr_ before passing it
 // in here *if* needed, since we don't clone it below
 Expression *ElabVisitor::elaborateCallByValue
-  (SourceLoc loc, Type *paramType, Expression *argExpr)
+  (SourceLocation loc, Type *paramType, Expression *argExpr)
 {
   CompoundType *paramCt = paramType->asCompoundType();
   Variable *ctor = env.getCopyCtor(paramCt);
@@ -669,7 +669,7 @@ Expression *ElabVisitor::elaborateCallByValue
 
 // this returns the 'retObj', the object that the call is constructing
 Expression *ElabVisitor::elaborateCallSite(
-  SourceLoc loc,
+  SourceLocation loc,
   FunctionType *ft,
   FakeList<ArgExpression> *args,
   bool artificalCtor)          // always false; see call sites
@@ -761,7 +761,7 @@ void ElabVisitor::elaborateFunctionStart(Function *f)
     // must simply know (by its name) that this variable is bound
     // to the reference passed as the 'retObj' at the call site.
 
-    SourceLoc loc = f->nameAndParams->decl->loc;
+    SourceLocation loc = f->nameAndParams->decl->loc;
     Type *retValType =
       env.tfac.makeReferenceType(ft->retType);
     StringRef retValName = env.str("<retVar>");
@@ -844,7 +844,7 @@ MemberInit *ElabVisitor::findMemberInitSuperclass
 // superclasses and members.
 void ElabVisitor::completeNoArgMemberInits(Function *ctor, CompoundType *ct)
 {
-  SourceLoc loc = ctor->getLoc();
+  SourceLocation loc = ctor->getLoc();
 
   // Iterate through the members in the declaration order (what is in
   // the CompoundType).  For each one, check to see if we have a
@@ -929,7 +929,7 @@ void ElabVisitor::completeNoArgMemberInits(Function *ctor, CompoundType *ct)
 // make no-arg ctor ****************
 
 // mirrors Env::receiverParameter()
-Variable *ElabVisitor::makeCtorReceiver(SourceLoc loc, CompoundType *ct)
+Variable *ElabVisitor::makeCtorReceiver(SourceLocation loc, CompoundType *ct)
 {
   Type *recType = tfac.makeTypeOf_receiver(loc, ct, CV_NONE, NULL /*syntax*/);
   return makeVariable(loc, receiverName, recType, DF_PARAMETER);
@@ -938,7 +938,7 @@ Variable *ElabVisitor::makeCtorReceiver(SourceLoc loc, CompoundType *ct)
 // for EA_IMPLICIT_MEMBER_DEFN
 MR_func *ElabVisitor::makeNoArgCtorBody(CompoundType *ct, Variable *ctor)
 {
-  SourceLoc loc = ctor->loc;
+  SourceLocation loc = ctor->loc;
 
   // empty body
   S_compound *body = makeS_compound(loc);
@@ -960,7 +960,7 @@ MR_func *ElabVisitor::makeNoArgCtorBody(CompoundType *ct, Variable *ctor)
 MemberInit *ElabVisitor::makeCopyCtorMemberInit(
   Variable *target,          // member or base class to initialize
   Variable *srcParam,        // "__other" parameter to the copy ctor
-  SourceLoc loc)
+  SourceLocation loc)
 {
   // compound, if class-valued (if not, we're initializing a member
   // that is not class-valued, so it's effectively just an assignment)
@@ -1013,7 +1013,7 @@ MR_func *ElabVisitor::makeCopyCtorBody(CompoundType *ct, Variable *ctor)
   // reversed print AST output; remember to read going up even for the
   // tree leaves
 
-  SourceLoc loc = ctor->loc;
+  SourceLocation loc = ctor->loc;
 
   // empty body
   S_compound *body = makeS_compound(loc);
@@ -1083,7 +1083,7 @@ MR_func *ElabVisitor::makeCopyCtorBody(CompoundType *ct, Variable *ctor)
 // make copy assign op ****************
 
 // "return *this;"
-S_return *ElabVisitor::make_S_return_this(SourceLoc loc)
+S_return *ElabVisitor::make_S_return_this(SourceLocation loc)
 {
   // "return *this;"
   return new S_return(loc ENDLOCARG(SL_UNKNOWN), new FullExpression(makeThisRef(loc)));
@@ -1091,7 +1091,7 @@ S_return *ElabVisitor::make_S_return_this(SourceLoc loc)
 
 // "this->y = __other.y;"
 S_expr *ElabVisitor::make_S_expr_memberCopyAssign
-  (SourceLoc loc, Variable *member, Variable *other)
+  (SourceLocation loc, Variable *member, Variable *other)
 {
   // "(__other).y"
   E_fieldAcc *otherDotY = makeE_fieldAcc(loc, makeE_variable(loc, other), member);
@@ -1126,7 +1126,7 @@ S_expr *ElabVisitor::make_S_expr_memberCopyAssign
 
 // "this->W::operator=(__other);"
 S_expr *ElabVisitor::make_S_expr_superclassCopyAssign
-  (SourceLoc loc, CompoundType *w, Variable *other)
+  (SourceLocation loc, CompoundType *w, Variable *other)
 {
   // "W::operator="
   Variable *assign = getAssignOperator(w);
@@ -1165,7 +1165,7 @@ S_expr *ElabVisitor::make_S_expr_superclassCopyAssign
 //
 // for EA_IMPLICIT_MEMBER_DEFN
 MR_func *ElabVisitor::makeCopyAssignBody
-  (SourceLoc loc, CompoundType *ct, Variable *assign)
+  (SourceLocation loc, CompoundType *ct, Variable *assign)
 {
   // get the source parameter, called "__other" (0th param is receiver
   // object, so 1st is __other)
@@ -1228,7 +1228,7 @@ MR_func *ElabVisitor::makeCopyAssignBody
 
 // "a.~A();"
 S_expr *ElabVisitor::make_S_expr_memberDtor
-  (SourceLoc loc, Expression *member, CompoundType *memberType)
+  (SourceLocation loc, Expression *member, CompoundType *memberType)
 {
   // "~A"
   Variable *dtor = getDtor(memberType);
@@ -1245,7 +1245,7 @@ void ElabVisitor::completeDtorCalls(
   Function *func,      // destructor being annotated
   CompoundType *ct)    // the class of which 'func' is a member
 {
-  SourceLoc loc = func->getLoc();
+  SourceLocation loc = func->getLoc();
 
   // We add to the statements in *forward* order, unlike when adding
   // to MemberInitializers, but since this is a dtor, not a ctor, we
@@ -1295,7 +1295,7 @@ void ElabVisitor::completeDtorCalls(
 // for EA_IMPLICIT_MEMBER_DEFN
 MR_func *ElabVisitor::makeDtorBody(CompoundType *ct, Variable *dtor)
 {
-  SourceLoc loc = dtor->loc;
+  SourceLocation loc = dtor->loc;
 
   // function with empty body; the member dtors will be elaborated later
   Function *f = makeFunction(loc, dtor,
@@ -1408,7 +1408,7 @@ Variable *ElabVisitor::getDtor(CompoundType *ct)
 // for EA_GLOBAL_EXCEPTION
 void Handler::elaborate(ElabVisitor &env)
 {
-  SourceLoc loc = body->loc;
+  SourceLocation loc = body->loc;
 
   // sm: grumble grumble, this code makes no sense... a separate
   // global for every handler?  who interacts with all these globals?
@@ -1475,7 +1475,7 @@ bool E_throw::elaborate(ElabVisitor &env)
   // sm: there is no location handy, and it wouldn't make sense anyway
   // because it makes no sense to associate a new global with every E_throw!
   // ok, maybe I'm being harsh.. but there's still no loc handy
-  SourceLoc loc = SL_UNKNOWN;
+  SourceLocation loc = SL_UNKNOWN;
 
   // If it is a throw by value, it gets copy ctored somewhere, which
   // in an implementation is some anonymous global.  I can't think of
@@ -1512,7 +1512,7 @@ bool E_throw::elaborate(ElabVisitor &env)
 // ------------------------ new/delete ---------------------------
 bool E_new::elaborate(ElabVisitor &env)
 {
-  SourceLoc loc = env.enclosingStmtLoc;
+  SourceLocation loc = env.enclosingStmtLoc;
 
   // TODO: this doesn't work for new[]
 
@@ -1547,7 +1547,7 @@ bool E_new::elaborate(ElabVisitor &env)
 
 bool E_delete::elaborate(ElabVisitor &env)
 {
-  SourceLoc loc = env.enclosingStmtLoc;
+  SourceLocation loc = env.enclosingStmtLoc;
 
   // TODO: this doesn't work for delete[]
 
@@ -1707,7 +1707,7 @@ bool ElabVisitor::visitMemberInit(MemberInit *mi)
   push(mi->getAnnot());
 
   Function *func = functionStack.top();
-  SourceLoc loc = mi->name->loc;
+  SourceLocation loc = mi->name->loc;
 
   // should already be tchecked, and either be a member or base class subobject
   xassert(mi->member || mi->base);
@@ -1766,7 +1766,7 @@ bool ElabVisitor::visitTypeSpecifier(TypeSpecifier *ts)
   if (doing(EA_IMPLICIT_MEMBER_DEFN) &&
       ts->isTS_classSpec()) {
     TS_classSpec *spec = ts->asTS_classSpec();
-    SourceLoc loc = spec->loc;
+    SourceLocation loc = spec->loc;
     CompoundType *ct = spec->ctype;
 
     if (!ct->name) {
@@ -1899,7 +1899,7 @@ void ElabVisitor::postvisitHandler(Handler *h)
 bool ElabVisitor::visitExpression(Expression *e)
 {
   // will have to suffice..
-  SourceLoc loc = enclosingStmtLoc;
+  SourceLocation loc = enclosingStmtLoc;
 
   if (e->isE_stringLit()) {
     // There is nothing to elaborate, and I don't want to look at

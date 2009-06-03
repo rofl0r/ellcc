@@ -130,13 +130,13 @@ public:      // data
   // initiated but not finished; this information can be used to
   // make error messages more informative, and also to detect
   // infinite looping in template instantiation
-  ArrayStack<SourceLoc> instantiationLocStack;
+  ArrayStack<SourceLocation> instantiationLocStack;
 
   // string table for making new strings
   StringTable &str;
 
   // Language options in effect.
-  Preprocessor& PP;
+  ellcc::Preprocessor& PP;
 
   // interface for making types
   TypeFactory &tfac;
@@ -321,10 +321,10 @@ private:     // funcs
 
   Scope *createScope(ScopeKind sk);
 
-  void mergeDefaultArguments(SourceLoc loc, Variable *prior, FunctionType *type);
+  void mergeDefaultArguments(SourceLocation loc, Variable *prior, FunctionType *type);
 
 public:      // funcs
-  Env(StringTable& str, Preprocessor& PP, TypeFactory& tfac,
+  Env(StringTable& str, ellcc::Preprocessor& PP, TypeFactory& tfac,
       ArrayStack<Variable*>& madeUpVariables0, ArrayStack<Variable*>& builtinVars0,
       TranslationUnit* unit0);
 
@@ -407,8 +407,8 @@ public:      // funcs
 
 
   // source location tracking
-  void setLoc(SourceLoc loc);                // sets scope()->curLoc
-  SourceLoc loc() const;                     // gets scope()->curLoc
+  void setLoc(SourceLocation loc);                // sets scope()->curLoc
+  SourceLocation loc() const;                     // gets scope()->curLoc
   sm::string locStr() const { return toString(loc()); }
   sm::string locationStackString() const;        // all scope locations
   sm::string instLocStackString() const;         // inst locs only
@@ -433,7 +433,7 @@ public:      // funcs
   void addVariableWithOload(Variable *prevLookup, Variable *v);
 
   // 'addEnum', plus typedef variable creation and checking for duplicates
-  Type *declareEnum(SourceLoc loc /*...*/, EnumType *et);
+  Type *declareEnum(SourceLocation loc /*...*/, EnumType *et);
 
 
   // lookup in the environment (all scopes); if the name is not found,
@@ -510,7 +510,7 @@ public:      // funcs
   // CompoundType's pointer in 'ct', after inserting it into 'scope'
   // (if that is not NULL)
   Type *makeNewCompound(CompoundType *&ct, Scope * /*nullable*/ scope,
-                        StringRef name, SourceLoc loc,
+                        StringRef name, SourceLocation loc,
                         TypeIntr keyword, MakeNewCompoundFlags flags);
 
 
@@ -518,23 +518,23 @@ public:      // funcs
   virtual void addError(ErrorMsg * /*owner*/ obj);
 
   // diagnostic reports; all return ST_ERROR type
-  Type *error(SourceLoc L, rostring msg, ErrorFlags eflags = EF_NONE);
+  Type *error(SourceLocation L, rostring msg, ErrorFlags eflags = EF_NONE);
   Type *error(rostring msg, ErrorFlags eflags = EF_NONE);
-  Type *warning(SourceLoc L, rostring msg);
+  Type *warning(SourceLocation L, rostring msg);
   Type *warning(rostring msg);
   Type *unimp(rostring msg);
-  void diagnose3(bool3 b, SourceLoc L, rostring msg, ErrorFlags eflags = EF_NONE);
-  void diagnose2(bool isError, SourceLoc L, rostring msg, ErrorFlags eflags = EF_NONE);
+  void diagnose3(ellcc::bool3 b, SourceLocation L, rostring msg, ErrorFlags eflags = EF_NONE);
+  void diagnose2(bool isError, SourceLocation L, rostring msg, ErrorFlags eflags = EF_NONE);
 
   // this is used when something is nominally an error, but I think
   // or know that the code that detects the error is itself not yet
   // trustworthy, so I want to just accept the input with a warning
-  void weakError(SourceLoc L, rostring msg);
+  void weakError(SourceLocation L, rostring msg);
 
   // diagnostics involving type clashes; will be suppressed
   // if the type is ST_ERROR
   Type *error(Type *t, rostring msg);
-  Type *error(Type *t, SourceLoc loc, rostring msg);
+  Type *error(Type *t, SourceLocation loc, rostring msg);
 
   // just return ST_ERROR
   Type *errorType();
@@ -577,11 +577,11 @@ public:      // funcs
 
   // makes a function type that returns ST_CDTOR and accepts no params
   // (other than the receiver object of type 'ct')
-  FunctionType *makeDestructorFunctionType(SourceLoc loc, CompoundType *ct);
+  FunctionType *makeDestructorFunctionType(SourceLocation loc, CompoundType *ct);
 
   // similar to above, except its flagged with FF_CTOR, and the caller
   // must call 'doneParams' when it has finished adding parameters
-  FunctionType *beginConstructorFunctionType(SourceLoc loc, CompoundType *ct);
+  FunctionType *beginConstructorFunctionType(SourceLocation loc, CompoundType *ct);
 
   // TypeFactory funcs; all of these simply delegate to 'tfac'
   CVAtomicType *makeCVAtomicType(AtomicType *atomic, CVFlags cv)
@@ -598,7 +598,7 @@ public:      // funcs
     { return tfac.makeArrayType(eltType, size); }
 
   // (this does the work of the old 'makeMadeUpVariable')
-  Variable *makeVariable(SourceLoc L, StringRef n, Type *t, DeclFlags f);
+  Variable *makeVariable(SourceLocation L, StringRef n, Type *t, DeclFlags f);
 
   CVAtomicType *getSimpleType(SimpleTypeId st, CVFlags cv = CV_NONE)
     { return tfac.getSimpleType(st, cv); }
@@ -615,7 +615,7 @@ public:      // funcs
   Type *implicitReceiverType();
 
   // create the receiver object parameter for use in a FunctionType
-  Variable *receiverParameter(SourceLoc loc, NamedAtomicType *nat, CVFlags cv,
+  Variable *receiverParameter(SourceLocation loc, NamedAtomicType *nat, CVFlags cv,
                               D_func *syntax = NULL);
 
   // standard conversion 4.1, 4.2, and 4.3
@@ -635,7 +635,7 @@ public:      // funcs
     (Scope *scope, StringRef name, Type *type, CVFlags this_cv);
   OverloadSet *getOverloadForDeclaration(Variable *&prior, Type *type);
   Variable *createDeclaration(
-    SourceLoc loc,
+    SourceLocation loc,
     StringRef name,
     Type *type,
     DeclFlags dflags,
@@ -651,10 +651,10 @@ public:      // funcs
                         MatchFlags mflags = MF_NONE);
 
   // create a "using declaration" alias
-  Variable *makeUsingAliasFor(SourceLoc loc, Variable *origVar);
+  Variable *makeUsingAliasFor(SourceLocation loc, Variable *origVar);
 
   // see comments at implementation site
-  void handleTypeOfMain(SourceLoc loc, Variable *prior, Type *&type);
+  void handleTypeOfMain(SourceLocation loc, Variable *prior, Type *&type);
 
   // pass Variable* through this before storing in the AST, so
   // that the AST only has de-aliased pointers (if desired);
@@ -679,7 +679,7 @@ public:      // funcs
   virtual void addedNewCompound(CompoundType *ct);
 
   // return # of array elements initialized
-  virtual int countInitializers(SourceLoc loc, Type *type, IN_compound const *cpd);
+  virtual int countInitializers(SourceLocation loc, Type *type, IN_compound const *cpd);
 
   // called when a variable is successfully added; note that there
   // is a similar mechanism in Scope itself, which can be used when
@@ -745,7 +745,7 @@ public:      // funcs
   Variable *declareSpecialFunction(char const *name);
 
   // see implementation; this is here b/c gnu.cc wants to call it
-  Type *computeArraySizeFromCompoundInit(SourceLoc tgt_loc, Type *tgt_type,
+  Type *computeArraySizeFromCompoundInit(SourceLocation tgt_loc, Type *tgt_type,
                                          Type *src_type, Initializer *init);
 
   // if 'type' is not a complete type, attempt to make it into one
@@ -770,7 +770,7 @@ public:      // funcs
   // see comments at implementation
   void checkForQualifiedMemberDeclarator(Declarator *decl);
 
-  Scope *createNamespace(SourceLoc loc, StringRef name, bool isAnonymous);
+  Scope *createNamespace(SourceLocation loc, StringRef name, bool isAnonymous);
 
   // ensureClassBodyInstantiatedIfPossible, then CompoundType::getSubobjects
   void getSubobjectsIfPossible(SObjList<BaseClassSubobj const> &dest,
@@ -822,11 +822,11 @@ public:      // funcs
                              LookupFlags flags);
 
   // handling of DQTs in type specifiers
-  Type *resolveDQTs(SourceLoc loc, Type *t);
-  Type *resolveDQTs_atomic(SourceLoc loc, AtomicType *t);
+  Type *resolveDQTs(SourceLocation loc, Type *t);
+  Type *resolveDQTs_atomic(SourceLocation loc, AtomicType *t);
   CompoundType *getMatchingTemplateInScope
     (CompoundType *primary, ObjList<STemplateArgument> const &sargs);
-  AtomicType *resolveDQTs_pi(SourceLoc loc, PseudoInstantiation *pi);
+  AtomicType *resolveDQTs_pi(SourceLocation loc, PseudoInstantiation *pi);
 
   // ------------ template instantiation stuff ------------
   // the following methods are implemented in template.cc
@@ -834,16 +834,16 @@ private:     // template funcs
   CompoundType *findEnclosingTemplateCalled(StringRef name);
 
   void transferTemplateMemberInfo
-    (SourceLoc instLoc, TS_classSpec *source,
+    (SourceLocation instLoc, TS_classSpec *source,
      TS_classSpec *dest, ObjList<STemplateArgument> const &sargs);
   void transferTemplateMemberInfo_typeSpec
-    (SourceLoc instLoc, TypeSpecifier *srcTS, CompoundType *sourceCT,
+    (SourceLocation instLoc, TypeSpecifier *srcTS, CompoundType *sourceCT,
      TypeSpecifier *destTS, ObjList<STemplateArgument> const &sargs);
   void transferTemplateMemberInfo_one
-    (SourceLoc instLoc, Variable *srcVar, Variable *destVar,
+    (SourceLocation instLoc, Variable *srcVar, Variable *destVar,
      ObjList<STemplateArgument> const &sargs);
   void transferTemplateMemberInfo_membert
-    (SourceLoc instLoc, Variable *srcVar, Variable *destVar,
+    (SourceLocation instLoc, Variable *srcVar, Variable *destVar,
      ObjList<STemplateArgument> const &sargs);
 
   void insertTemplateArgBindings
@@ -938,14 +938,14 @@ public:      // template funcs
 
   // function template instantiation chain
   Variable *instantiateFunctionTemplate
-    (SourceLoc loc,
+    (SourceLocation loc,
      Variable *primary,
      ObjList<STemplateArgument> const &sargs);
   Variable *instantiateFunctionTemplate
-    (SourceLoc loc, Variable *primary, MType &match);
+    (SourceLocation loc, Variable *primary, MType &match);
   void ensureFuncBodyTChecked(Variable *instV);    // try inst defn
   void instantiateFunctionBody(Variable *instV);   // inst defn
-  void instantiateFunctionBodyNow(Variable *instV, SourceLoc loc);
+  void instantiateFunctionBodyNow(Variable *instV, SourceLocation loc);
 
   // given a template function that was just made non-forward,
   // instantiate all of its forward-declared instances
@@ -956,11 +956,11 @@ public:      // template funcs
 
   // class template instantiation chain
   Variable *instantiateClassTemplateDecl             // inst decl 1
-    (SourceLoc loc,
+    (SourceLocation loc,
      Variable *primary,
      SObjList<STemplateArgument> const &sargs);
   Variable *instantiateClassTemplateDecl             // inst decl 2
-    (SourceLoc loc,
+    (SourceLocation loc,
      Variable *primary,
      ObjList<STemplateArgument> const &sargs);
 
@@ -1036,9 +1036,9 @@ public:      // template funcs
 
   // specialization support
   Variable *makeExplicitFunctionSpecialization
-    (SourceLoc loc, DeclFlags dflags, PQName *name, FunctionType *ft);
+    (SourceLocation loc, DeclFlags dflags, PQName *name, FunctionType *ft);
   Variable *makeSpecializationVariable
-    (SourceLoc loc, DeclFlags dflags, Variable *templ, FunctionType *type,
+    (SourceLocation loc, DeclFlags dflags, Variable *templ, FunctionType *type,
      SObjList<STemplateArgument> const &args);
 
   bool verifyCompatibleTemplateParameters
@@ -1123,7 +1123,7 @@ private:     // disallowed
   void operator=(InstantiationContextIsolator&);
 
 public:      // funcs
-  InstantiationContextIsolator(Env &env, SourceLoc loc);
+  InstantiationContextIsolator(Env &env, SourceLocation loc);
   ~InstantiationContextIsolator();
 };
 
@@ -1181,7 +1181,7 @@ public:      // funcs
 // misc
 bool isCopyConstructor(Variable const *funcVar, CompoundType *ct);
 bool isCopyAssignOp(Variable const *funcVar, CompoundType *ct);
-void addCompilerSuppliedDecls(Env &env, SourceLoc loc, CompoundType *ct);
+void addCompilerSuppliedDecls(Env &env, SourceLocation loc, CompoundType *ct);
 bool equalOrIsomorphic(Type const *a, Type const *b);
 
 

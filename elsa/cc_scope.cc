@@ -11,7 +11,7 @@
 
 using namespace sm;
 
-Scope::Scope(ScopeKind sk, int cc, SourceLoc initLoc)
+Scope::Scope(ScopeKind sk, int cc, SourceLocation initLoc)
   : variables(),
     typeTags(),
     changeCount(cc),

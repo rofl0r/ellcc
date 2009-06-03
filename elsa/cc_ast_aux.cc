@@ -510,7 +510,7 @@ void Function::printExtras(std::ostream &os, int indent) const
 }
 
 
-SourceLoc Function::getLoc() const
+SourceLocation Function::getLoc() const
 {
   return nameAndParams->getLoc();
 }
@@ -1032,7 +1032,7 @@ void Declarator::setDeclaratorId(PQName *n)
 }
 
 
-SourceLoc Declarator::getLoc() const
+SourceLocation Declarator::getLoc() const
 {
   return decl->loc;
 }

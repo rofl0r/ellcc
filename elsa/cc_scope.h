@@ -8,7 +8,7 @@
 #define CC_SCOPE_H
 
 #include "cc_flags.h"     // AccessKeyword
-#include "srcloc.h"       // SourceLoc
+#include "srcloc.h"       // SourceLocation
 #include "strtable.h"     // StringRef
 #include "sobjlist.h"     // SObjList
 #include "array.h"        // ArrayStack
@@ -145,7 +145,7 @@ public:      // data
   CompoundType *curCompound;          // (serf) CompoundType we're building
   AccessKeyword curAccess;            // access disposition in effect
   Function *curFunction;              // (serf) Function we're analyzing
-  SourceLoc curLoc;                   // latest AST location marker seen
+  SourceLocation curLoc;                   // latest AST location marker seen
 
 private:     // funcs
   Variable *lookupVariable_inner
@@ -180,7 +180,7 @@ protected:   // funcs
   virtual void afterAddVariable(Variable *v);
 
 public:      // funcs
-  Scope(ScopeKind sk, int changeCount, SourceLoc initLoc);
+  Scope(ScopeKind sk, int changeCount, SourceLocation initLoc);
   Scope(XmlReader&);
   virtual ~Scope();     // virtual to silence warning; destructor is not part of virtualized interface
 

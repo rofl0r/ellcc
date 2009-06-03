@@ -6,7 +6,7 @@
 #define __LEXER1_H
 
 #include "objlist.h"   // ObjList
-#include "srcloc.h"    // SourceLoc
+#include "srcloc.h"    // SourceLocation
 
 #include <stdio.h>     // FILE
 
@@ -33,11 +33,11 @@ public:
   Lexer1TokenType type;         // kind of token
   sm::string text;                  // token's text, null-terminated
   int length;                   // length of text (somewhat redundant, but whatever)
-  SourceLoc loc;                // location in input stream
+  SourceLocation loc;                // location in input stream
 
 public:
   Lexer1Token(Lexer1TokenType aType, char const *aText, int aLength,
-              SourceLoc aLoc);
+              SourceLocation aLoc);
   ~Lexer1Token();
 
   // debugging
@@ -52,7 +52,7 @@ public:
   bool allowMultilineStrings;             // true if newlines don't need to be escaped
 
   // lexing input state
-  SourceLoc loc;                          // current location
+  SourceLocation loc;                          // current location
   int errors;	                          // # of errors encountered so far
 
   // lexing results

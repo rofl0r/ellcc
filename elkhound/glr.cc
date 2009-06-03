@@ -283,8 +283,8 @@ void GLR::deallocateSemanticValue(SymbolId sym, SemanticValue sval)
 
 // ------------------ SiblingLink ------------------
 inline SiblingLink::SiblingLink(StackNode *s, SemanticValue sv
-                                SOURCELOCARG( SourceLoc L )
-                                ENDSOURCELOCARG( SourceLoc R ) )
+                                SOURCELOCARG( SourceLocation L )
+                                ENDSOURCELOCARG( SourceLocation R ) )
   : sib(s), sval(sv)
     SOURCELOCARG( loc(L) )
     ENDSOURCELOCARG( endloc(R) )
@@ -387,8 +387,8 @@ void StackNode::deallocSemanticValues()
 // add the very first sibling
 inline void StackNode
   ::addFirstSiblingLink_noRefCt(StackNode *leftSib, SemanticValue sval
-                                SOURCELOCARG( SourceLoc loc )
-				ENDSOURCELOCARG( SourceLoc endloc ))
+                                SOURCELOCARG( SourceLocation loc )
+				ENDSOURCELOCARG( SourceLocation endloc ))
 {
   xassertdb(hasZeroSiblings());
 
@@ -413,8 +413,8 @@ inline void StackNode
 // add a new sibling by creating a new link
 inline SiblingLink *StackNode::
   addSiblingLink(StackNode *leftSib, SemanticValue sval
-                 SOURCELOCARG( SourceLoc loc ) 
-		 ENDSOURCELOCARG( SourceLoc endloc ))
+                 SOURCELOCARG( SourceLocation loc ) 
+		 ENDSOURCELOCARG( SourceLocation endloc ))
 {
   if (hasZeroSiblings()) {
     addFirstSiblingLink_noRefCt(leftSib, sval  SOURCELOCARG( loc )
@@ -443,8 +443,8 @@ inline SiblingLink *StackNode::
 // the code in this function is much less common
 SiblingLink *StackNode::
   addAdditionalSiblingLink(StackNode *leftSib, SemanticValue sval
-                           SOURCELOCARG( SourceLoc loc )
-			   ENDSOURCELOCARG( SourceLoc endloc ))
+                           SOURCELOCARG( SourceLocation loc )
+			   ENDSOURCELOCARG( SourceLocation endloc ))
 {
   // there's currently at least one sibling, and now we're adding another;
   // right now, no other stack node should point at this one (if it does,
@@ -1031,8 +1031,8 @@ STATICDEF bool GLR
           // record location of left edge; defaults to no location
           // (used for epsilon rules)
           // update: use location of lookahead token instead, for epsilons
-          SOURCELOC( SourceLoc leftEdge = lexer.loc; )
-	  ENDSOURCELOC ( SourceLoc rightEdge = /*lexer.endloc*/SL_UNKNOWN; )
+          SOURCELOC( SourceLocation leftEdge = lexer.loc; )
+	  ENDSOURCELOC ( SourceLocation rightEdge = /*lexer.endloc*/SL_UNKNOWN; )
           //toPass.ensureIndexDoubler(rhsLen-1);
           xassertdb(rhsLen <= MAX_RHSLEN);
 
@@ -1480,8 +1480,8 @@ void GLR::printParseErrorMessage(StateId lastToDie)
 
 SemanticValue GLR::doReductionAction(
   int productionId, SemanticValue const *svals
-  SOURCELOCARG( SourceLoc loc )
-  ENDSOURCELOCARG( SourceLoc endloc ) )
+  SOURCELOCARG( SourceLocation loc )
+  ENDSOURCELOCARG( SourceLocation endloc ) )
 {
   // get the function pointer and invoke it; possible optimization
   // is to cache the function pointer in the GLR object
@@ -1864,7 +1864,7 @@ void ReductionPathQueue::deletePath(Path *p)
 void GLR::rwlProcessWorklist()
 {
   // location of this token
-  SOURCELOC( SourceLoc tokenLoc = lexerPtr->loc; )
+  SOURCELOC( SourceLocation tokenLoc = lexerPtr->loc; )
   
   while (pathQueue.isNotEmpty()) {
     // process the enabled reductions in priority order
@@ -1883,8 +1883,8 @@ void GLR::rwlProcessWorklist()
 
     // record location of left edge; initially is location of
     // the lookahead token
-    SOURCELOC( SourceLoc leftEdge = tokenLoc; )
-    SOURCELOC( SourceLoc rightEdge = SL_UNKNOWN; )
+    SOURCELOC( SourceLocation leftEdge = tokenLoc; )
+    SOURCELOC( SourceLocation rightEdge = SL_UNKNOWN; )
 
     // build description of rhs for tracing
     ACTION(
@@ -1989,8 +1989,8 @@ void GLR::rwlProcessWorklist()
 //   - we merge two semantic values onto an existing link
 SiblingLink *GLR::rwlShiftNonterminal(StackNode *leftSibling, int lhsIndex,
                                       SemanticValue /*owner*/ sval
-                                      SOURCELOCARG( SourceLoc loc )
-				      ENDSOURCELOCARG( SourceLoc endloc))
+                                      SOURCELOCARG( SourceLocation loc )
+				      ENDSOURCELOCARG( SourceLocation endloc))
 {
   // this is like a shift -- we need to know where to go; the
   // 'goto' table has this information

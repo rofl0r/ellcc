@@ -37,7 +37,7 @@ CFGEnv::~CFGEnv()
 {}
 
 
-void CFGEnv::err(SourceLoc loc, char const *str)
+void CFGEnv::err(SourceLocation loc, char const *str)
 {
   std::cout << toString(loc) << ": " << str << std::endl;
 }

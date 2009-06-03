@@ -14,7 +14,7 @@
 #include "exprloc.h"
 
 // for now
-SourceLoc const SL_GENERATED = SL_UNKNOWN;
+SourceLocation const SL_GENERATED = SL_UNKNOWN;
 
 
 // set/restore the current compound statement

@@ -10,7 +10,7 @@
 #include "sobjstack.h"    // SObjStack
 #include "strmap.h"       // StringRefMap
 #include "strtable.h"     // StringRef
-#include "srcloc.h"       // SourceLoc
+#include "srcloc.h"       // SourceLocation
 
 // can't just #include cc.ast.gen.h b/c that #includes this file
 class Statement;
@@ -98,7 +98,7 @@ public:     // funcs
   virtual ~CFGEnv();
 
   // report an error
-  void err(SourceLoc loc, char const *str);
+  void err(SourceLocation loc, char const *str);
 
   // manipulate a stack of lists of nodes whose 'next' link
   // needs to be set

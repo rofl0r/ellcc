@@ -8,7 +8,7 @@
 #include "trace.h"        // traceAddSys
 #include "syserr.h"       // xsyserror
 #include "parssppt.h"     // ParseTreeAndTokens, treeMain
-#include "srcloc.h"       // SourceLocManager
+#include "srcloc.h"       // SourceLocationManager
 #include "ckheap.h"       // malloc_stats
 #include "cc_env.h"       // Env
 #include "cc_ast.h"       // C++ AST (r)
@@ -673,9 +673,9 @@ static bool InitializeSourceManager(Preprocessor &PP,
     SourceMgr.createMainFileIDForMemBuffer(SB);
   } else if (InFile != "-") {
     const FileEntry *File = FileMgr.getFile(InFile);
-    if (File) SourceMgr.createMainFileID(File, SourceLocation());
+    if (File) SourceMgr.createMainFileID(File, SourceLocationation());
     if (SourceMgr.getMainFileID().isInvalid()) {
-      PP.getDiagnostics().Report(FullSourceLoc(), diag::err_fe_error_reading) 
+      PP.getDiagnostics().Report(FullSourceLocation(), diag::err_fe_error_reading) 
         << InFile.c_str();
       return true;
     }
@@ -691,7 +691,7 @@ static bool InitializeSourceManager(Preprocessor &PP,
 
     SourceMgr.createMainFileIDForMemBuffer(SB);
     if (SourceMgr.getMainFileID().isInvalid()) {
-      PP.getDiagnostics().Report(FullSourceLoc(), 
+      PP.getDiagnostics().Report(FullSourceLocation(), 
                                  diag::err_fe_error_reading_stdin);
       return true;
     }
@@ -711,7 +711,7 @@ void doit(int argc, char **argv)
 
   if_malloc_stats();
 
-  SourceLocManager mgr;
+  SourceLocationManager mgr;
 
   // string table for storing parse tree identifiers
   StringTable strTable;

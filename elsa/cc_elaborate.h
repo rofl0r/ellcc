@@ -134,7 +134,7 @@ public:      // data
 
   // location of the most recent Statement.. used for approximate
   // loc info when visiting Expressions
-  SourceLoc enclosingStmtLoc;
+  SourceLocation enclosingStmtLoc;
 
   // strings
   StringRef receiverName;
@@ -170,7 +170,7 @@ public:      // funcs
   StringRef makeCatchClauseVarName();
 
   // similar to a function in Env
-  Variable *makeVariable(SourceLoc loc, StringRef name,
+  Variable *makeVariable(SourceLocation loc, StringRef name,
                          Type *type, DeclFlags dflags);
 
   // syntactic convenience
@@ -184,41 +184,41 @@ public:      // funcs
   // are in the .cc file, so look there first.
 
   // AST creation
-  D_name *makeD_name(SourceLoc loc, Variable *var);
-  Declarator *makeDeclarator(SourceLoc loc, Variable *var, DeclaratorContext context);
-  Declaration *makeDeclaration(SourceLoc loc, Variable *var, DeclaratorContext context);
-  Declarator *makeFuncDeclarator(SourceLoc loc, Variable *var, DeclaratorContext context);
-  Function *makeFunction(SourceLoc loc, Variable *var,
+  D_name *makeD_name(SourceLocation loc, Variable *var);
+  Declarator *makeDeclarator(SourceLocation loc, Variable *var, DeclaratorContext context);
+  Declaration *makeDeclaration(SourceLocation loc, Variable *var, DeclaratorContext context);
+  Declarator *makeFuncDeclarator(SourceLocation loc, Variable *var, DeclaratorContext context);
+  Function *makeFunction(SourceLocation loc, Variable *var,
                          FakeList<MemberInit> *inits,
                          S_compound *body);
-  E_variable *makeE_variable(SourceLoc loc, Variable *var);
+  E_variable *makeE_variable(SourceLocation loc, Variable *var);
   E_fieldAcc *makeE_fieldAcc
-    (SourceLoc loc, Expression *obj, Variable *field);
+    (SourceLocation loc, Expression *obj, Variable *field);
   E_funCall *makeMemberCall
-    (SourceLoc loc, Expression *obj, Variable *func, FakeList<ArgExpression> *args);
+    (SourceLocation loc, Expression *obj, Variable *func, FakeList<ArgExpression> *args);
   FakeList<ArgExpression> *emptyArgs();
-  Expression *makeThisRef(SourceLoc loc);
-  S_expr *makeS_expr(SourceLoc loc, Expression *e);
-  S_compound *makeS_compound(SourceLoc loc);
+  Expression *makeThisRef(SourceLocation loc);
+  S_expr *makeS_expr(SourceLocation loc, Expression *e);
+  S_compound *makeS_compound(SourceLocation loc);
 
   // makeCtor
   E_constructor *makeCtorExpr(
-    SourceLoc loc,
+    SourceLocation loc,
     Expression *target,
     Type *type,
     Variable *ctor,
     FakeList<ArgExpression> *args);
   Statement *makeCtorStatement(
-    SourceLoc loc,
+    SourceLocation loc,
     Expression *target,
     Type *type,
     Variable *ctor,
     FakeList<ArgExpression> *args);
 
   // makeDtor
-  Expression *makeDtorExpr(SourceLoc loc, Expression *target,
+  Expression *makeDtorExpr(SourceLocation loc, Expression *target,
                            Type *type);
-  Statement *makeDtorStatement(SourceLoc loc, Expression *target,
+  Statement *makeDtorStatement(SourceLocation loc, Expression *target,
                                Type *type);
 
   // cloning
@@ -230,12 +230,12 @@ public:      // funcs
 
   // elaborateCallSite
   Declaration *makeTempDeclaration
-    (SourceLoc loc, Type *retType, Variable *&var /*OUT*/, DeclaratorContext context);
-  Variable *insertTempDeclaration(SourceLoc loc, Type *retType);
+    (SourceLocation loc, Type *retType, Variable *&var /*OUT*/, DeclaratorContext context);
+  Variable *insertTempDeclaration(SourceLocation loc, Type *retType);
   Expression *elaborateCallByValue
-    (SourceLoc loc, Type *paramType, Expression *argExpr);
+    (SourceLocation loc, Type *paramType, Expression *argExpr);
   Expression *elaborateCallSite(
-    SourceLoc loc,
+    SourceLocation loc,
     FunctionType *ft,
     FakeList<ArgExpression> *args,
     bool artificalCtor);
@@ -254,22 +254,22 @@ public:      // funcs
   void completeNoArgMemberInits(Function *ctor, CompoundType *ct);
 
   // make compiler-supplied member funcs
-  Variable *makeCtorReceiver(SourceLoc loc, CompoundType *ct);
+  Variable *makeCtorReceiver(SourceLocation loc, CompoundType *ct);
   MR_func *makeNoArgCtorBody(CompoundType *ct, Variable *ctor);
   MemberInit *makeCopyCtorMemberInit(
     Variable *target,
     Variable *srcParam,
-    SourceLoc loc);
+    SourceLocation loc);
   MR_func *makeCopyCtorBody(CompoundType *ct, Variable *ctor);
-  S_return *make_S_return_this(SourceLoc loc);
+  S_return *make_S_return_this(SourceLocation loc);
   S_expr *make_S_expr_memberCopyAssign
-    (SourceLoc loc, Variable *member, Variable *other);
+    (SourceLocation loc, Variable *member, Variable *other);
   S_expr *make_S_expr_superclassCopyAssign
-    (SourceLoc loc, CompoundType *w, Variable *other);
+    (SourceLocation loc, CompoundType *w, Variable *other);
   MR_func *makeCopyAssignBody
-    (SourceLoc loc, CompoundType *ct, Variable *assign);
+    (SourceLocation loc, CompoundType *ct, Variable *assign);
   S_expr *make_S_expr_memberDtor
-    (SourceLoc loc, Expression *member, CompoundType *memberType);
+    (SourceLocation loc, Expression *member, CompoundType *memberType);
   void completeDtorCalls(
     Function *func,
     CompoundType *ct);

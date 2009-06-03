@@ -69,26 +69,26 @@ public:
 
 
 // position in file, and pointer to which file
-class SourceLocation : public FileLocation {
+class SourceLocationation : public FileLocation {
 public:
   SourceFile *file;         // (serf)
 
 public:
-  SourceLocation(SourceFile *f = NULL) : file(f) {}
-  SourceLocation(FileLocation const &floc, SourceFile *f)
+  SourceLocationation(SourceFile *f = NULL) : file(f) {}
+  SourceLocationation(FileLocation const &floc, SourceFile *f)
     : FileLocation(floc),
       file(f)
   {}
-  SourceLocation(SourceLocation const &obj)
+  SourceLocationation(SourceLocationation const &obj)
     : FileLocation(obj),
       file(obj.file)
   {}
-  ~SourceLocation() {}
+  ~SourceLocationation() {}
 
-  SourceLocation(Flatten&) {}
+  SourceLocationation(Flatten&) {}
   void xfer(Flatten &flat);
 
-  SourceLocation& operator= (SourceLocation const &obj)
+  SourceLocationation& operator= (SourceLocationation const &obj)
   {
     FileLocation::operator=(obj);
     file = obj.file;
@@ -106,13 +106,13 @@ public:
 
   string toString() const { return likeGccToString(); }
 
-  friend stringBuilder& operator<< (stringBuilder &sb, SourceLocation const &obj)
+  friend stringBuilder& operator<< (stringBuilder &sb, SourceLocationation const &obj)
     { return sb << obj.toString(); }
-  friend ostream& operator<< (ostream &os, SourceLocation const &obj)
+  friend ostream& operator<< (ostream &os, SourceLocationation const &obj)
     { return os << obj.toString(); }
 };
 
-inline string toString(SourceLocation const &loc)
+inline string toString(SourceLocationation const &loc)
   { return loc.toString(); }
 
 
@@ -143,7 +143,7 @@ extern SourceFileList sourceFileList;
 // macro for obtaining a source location that points at the 
 // point in the source code where this macro is invoked
 #define HERE_SOURCELOCATION                        \
-  SourceLocation(FileLocation(__LINE__, 1),        \
+  SourceLocationation(FileLocation(__LINE__, 1),        \
                  sourceFileList.open(__FILE__))
 
 

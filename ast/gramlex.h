@@ -27,7 +27,7 @@
 // other includes
 #include "str.h"              // string
 #include "objlist.h"          // ObjList
-#include "srcloc.h"           // SourceLoc
+#include "srcloc.h"           // SourceLocation
 #include "embedded.h"         // EmbeddedLang
 #include "strtable.h"         // StringTable, StringRef
 
@@ -63,7 +63,7 @@ public:      // data
 private:     // data
   // state of a file we were or are lexing
   struct FileState {
-    SourceLoc loc;                 // location in the file
+    SourceLocation loc;                 // location in the file
     std::istream *source;          // (owner?) source stream
     yy_buffer_state *bufstate;     // (owner?) flex's internal buffer state
 
@@ -78,7 +78,7 @@ private:     // data
   FileState fileState;             // state for file we're lexing now
   ObjList<FileState> fileStack;    // stack of files we will return to
 
-  SourceLoc tokenStartLoc;         // location of start of current token
+  SourceLocation tokenStartLoc;         // location of start of current token
 
   // support for embedded code
   char embedStart;                 // if nonzero, punctuation that triggers
@@ -172,7 +172,7 @@ public:      // funcs
     { return sourceLocManager->getLine(tokenStartLoc); }
   int curCol() const 
     { return sourceLocManager->getCol(tokenStartLoc); }
-  SourceLoc curLoc() const { return tokenStartLoc; }
+  SourceLocation curLoc() const { return tokenStartLoc; }
   sm::string curLocStr() const;    // string with file/line/col
 
   // error reporting; called by the lexer code
@@ -181,8 +181,8 @@ public:      // funcs
   void errorMalformedInclude();
   void errorIllegalCharacter(char ch);
 
-  void printError(SourceLoc loc, rostring msg);
-  void printWarning(SourceLoc loc, rostring msg);
+  void printError(SourceLocation loc, rostring msg);
+  void printWarning(SourceLocation loc, rostring msg);
 
   // for processing includes
   void recursivelyProcess(rostring fname, std::istream * /*owner*/ source);

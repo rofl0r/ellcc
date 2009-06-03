@@ -124,7 +124,7 @@ llvm::Value* CC2LLVMEnv::access(llvm::Value* value, bool isVolatile, int& deref,
 
 /** Check a condition in preparation for a branch.
  */
-llvm::Value* CC2LLVMEnv::checkCondition(SourceLoc loc, llvm::Value* value, int deref, bool neg)
+llvm::Value* CC2LLVMEnv::checkCondition(SourceLocation loc, llvm::Value* value, int deref, bool neg)
 {
     value = access(value, false, deref);                 // RICH: Volatile.
 
@@ -170,7 +170,7 @@ llvm::Value* CC2LLVMEnv::checkCondition(Expression* cond)
     return checkCondition(cond->loc, value, deref);
 }
 
-const llvm::Type* CC2LLVMEnv::makeTypeSpecifier(SourceLoc loc, Type *t)
+const llvm::Type* CC2LLVMEnv::makeTypeSpecifier(SourceLocation loc, Type *t)
 {
     const llvm::Type* type = NULL;
 
@@ -243,7 +243,7 @@ const llvm::Type* CC2LLVMEnv::makeTypeSpecifier(SourceLoc loc, Type *t)
     return type;
 }
 
-const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLoc loc, AtomicType *at)
+const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLocation loc, AtomicType *at)
 {
     const llvm::Type* type = NULL;
     switch (at->getTag()) {
@@ -1707,7 +1707,7 @@ llvm::Value *E_effect::cc2llvm(CC2LLVMEnv &env, int& deref) const
 /** Make two operand the same type or cast the first operand to the second type.
  * We use both the AST and LLVM information to do this.
  */
-CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLoc loc, Type* leftType,
+CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLocation loc, Type* leftType,
     llvm::Value*& leftValue, Type* rightType, llvm::Value** rightValue)
 {
     // For operators, we need simple types or pointers.
@@ -2199,7 +2199,7 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, int& deref) const
     return result;
 }
 
-llvm::Value* CC2LLVMEnv::binop(SourceLoc loc, BinaryOp op, Expression* e1, llvm::Value* left, int deref1,
+llvm::Value* CC2LLVMEnv::binop(SourceLocation loc, BinaryOp op, Expression* e1, llvm::Value* left, int deref1,
                                                            Expression* e2, llvm::Value* right, int deref2)
 {
     llvm::Value* result = NULL;
@@ -2885,7 +2885,7 @@ llvm::Value *E_sizeofType::cc2llvm(CC2LLVMEnv &env, int& deref) const
     return value;
 }
 
-llvm::Value* CC2LLVMEnv::doassign(SourceLoc loc, llvm::Value* destination, int deref1, Type* dtype,
+llvm::Value* CC2LLVMEnv::doassign(SourceLocation loc, llvm::Value* destination, int deref1, Type* dtype,
                                                  llvm::Value* source, int deref2, Type* stype)
 {
     checkCurrentBlock();

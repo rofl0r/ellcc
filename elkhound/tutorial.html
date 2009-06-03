@@ -444,20 +444,20 @@ declarations used during parsing.
     static SemanticValue doReductionAction(
       GCom *ths,
       int productionId, SemanticValue const *semanticValues,
-    SourceLoc loc);
+    SourceLocation loc);
 
     // declare the classifier function
     static int reclassifyToken(
       GCom *ths,
       int oldTokenType, SemanticValue sval);
 
-    void action0___EarlyStartSymbol(SourceLoc loc, SemanticValue top);
-    void action1_AExp(SourceLoc loc);
-    void action2_AExp(SourceLoc loc);
-    void action3_AExp(SourceLoc loc);
-    void action4_AExp(SourceLoc loc);
-    void action5_AExp(SourceLoc loc);
-    void action6_AExp(SourceLoc loc);
+    void action0___EarlyStartSymbol(SourceLocation loc, SemanticValue top);
+    void action1_AExp(SourceLocation loc);
+    void action2_AExp(SourceLocation loc);
+    void action3_AExp(SourceLocation loc);
+    void action4_AExp(SourceLocation loc);
+    void action5_AExp(SourceLocation loc);
+    void action6_AExp(SourceLocation loc);
 
   // the function which makes the parse tables
   public:

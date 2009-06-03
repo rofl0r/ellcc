@@ -328,7 +328,7 @@ class PrintEnv {
   public:
   TypePrinter &typePrinter;
   CodeOutStream *out;
-  SourceLoc loc;
+  SourceLocation loc;
 
  // When true, some of the print routines will print info inside
  // comment characters as a debugging aid.  This flag is provided

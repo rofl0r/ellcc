@@ -5,7 +5,7 @@
 #include <stdlib.h>       // exit, atoi
 
 #include "parssppt.h"     // ParseTreeAndTokens
-#include "srcloc.h"       // SourceLocManager
+#include "srcloc.h"       // SourceLocationManager
 #include "cc_env.h"       // Env
 #include "cc_ast.h"       // C++ AST (r)
 #include "parsetables.h"  // ParseTables
@@ -32,7 +32,7 @@ public:      // funcs
   virtual ~GrepVisitor() {}
 
   bool matches(Variable *var);
-  void tryHit(Variable *var, SourceLoc refLoc, char const *use);
+  void tryHit(Variable *var, SourceLocation refLoc, char const *use);
 
   virtual bool visitExpression(Expression *obj);
   virtual bool visitDeclarator(Declarator *obj);
@@ -46,7 +46,7 @@ bool GrepVisitor::matches(Variable *var)
          name.equals(var->name);
 }
 
-void GrepVisitor::tryHit(Variable *var, SourceLoc refLoc, char const *use)
+void GrepVisitor::tryHit(Variable *var, SourceLocation refLoc, char const *use)
 {
   if (matches(var)) {
     cout << toString(refLoc) << ": " << use << "\n";
@@ -82,7 +82,7 @@ void doit(int argc, char **argv)
 {
   xBase::logExceptions = false;
 
-  SourceLocManager mgr;
+  SourceLocationManager mgr;
   StringTable strTable;
 
   // parsing language options

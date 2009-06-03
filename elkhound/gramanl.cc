@@ -4238,8 +4238,8 @@ void emitActionCode(GrammarAnalysis const &g, rostring hFname,
       << "  static SemanticValue doReductionAction(\n"
       << "    " << g.actionClassName << " *ths,\n"
       << "    int productionId, SemanticValue const *semanticValues"
-         SOURCELOC( << ",\n  SourceLoc loc" )
-         ENDSOURCELOC( << ",\n  SourceLoc endloc" )
+         SOURCELOC( << ",\n  SourceLocation loc" )
+         ENDSOURCELOC( << ",\n  SourceLocation endloc" )
       << ");\n"
       << "\n"
       << "  // declare the classifier function\n"
@@ -4271,7 +4271,7 @@ void emitActionCode(GrammarAnalysis const &g, rostring hFname,
   out << "\n";
   out << "#include \"" << sm_basename(hFname) << "\"     // " << g.actionClassName << "\n";
   out << "#include \"parsetables.h\" // ParseTables\n";
-  out << "#include \"srcloc.h\"      // SourceLoc\n";
+  out << "#include \"srcloc.h\"      // SourceLocation\n";
   out << "\n";
   out << "#include <assert.h>      // assert\n";
   out << "#include <iostream>      // cout\n";
@@ -4281,7 +4281,7 @@ void emitActionCode(GrammarAnalysis const &g, rostring hFname,
   NOSOURCELOC(
     out << "// parser-originated location information is disabled by\n"
         << "// NO_GLR_SOURCELOC; any rule which refers to 'loc' will get this one\n"
-        << "static SourceLoc const loc = SL_UNKNOWN;\n"
+        << "static SourceLocation const loc = SL_UNKNOWN;\n"
         << "\n\n";
   )
 
@@ -4481,13 +4481,13 @@ void emitActions(Grammar const &g, EmitCode &out, EmitCode &dcl)
     out << "inline " << prod.left->type << " "
         << g.actionClassName << "::" << actionFuncName(prod)
         << "("
-        SOURCELOC( << "SourceLoc loc" )
-        ENDSOURCELOC( << ", SourceLoc endloc" )
+        SOURCELOC( << "SourceLocation loc" )
+        ENDSOURCELOC( << ", SourceLocation endloc" )
         ;
 
     dcl << "  " << prod.left->type << " " << actionFuncName(prod) << "("
-        SOURCELOC( << "SourceLoc loc" )
-        ENDSOURCELOC( << ", SourceLoc endloc" )
+        SOURCELOC( << "SourceLocation loc" )
+        ENDSOURCELOC( << ", SourceLocation endloc" )
         ;
 
     int ct=0;
@@ -4525,8 +4525,8 @@ void emitActions(Grammar const &g, EmitCode &out, EmitCode &dcl)
   out << "/*static*/ SemanticValue " << g.actionClassName << "::doReductionAction(\n"
       << "  " << g.actionClassName << " *ths,\n"
       << "  int productionId, SemanticValue const *semanticValues"
-      SOURCELOC( << ",\n  SourceLoc loc" )
-      ENDSOURCELOC( << ",\n  SourceLoc endloc" )
+      SOURCELOC( << ",\n  SourceLocation loc" )
+      ENDSOURCELOC( << ",\n  SourceLocation endloc" )
       << ")\n";
   out << "{\n";
   out << "  switch (productionId) {\n";
@@ -4631,7 +4631,7 @@ void emitDupDelMerge(GrammarAnalysis const &g, EmitCode &out, EmitCode &dcl)
   emitSwitchCode(g, out,
     "SemanticValue $acn::mergeAlternativeParses(int nontermId, SemanticValue left,\n"
     "                                           SemanticValue right"
-    SOURCELOC(",  SourceLoc loc")
+    SOURCELOC(",  SourceLocation loc")
     ")",
     "nontermId",
     (ObjList<Symbol> const&)g.nonterminals,
@@ -4958,7 +4958,7 @@ int inner_entry(int argc, char **argv)
     prefix = replace(argv[0], ".gr", "");
   }
 
-  SourceLocManager mgr;
+  SourceLocationManager mgr;
 
   // parse the grammar
   string grammarFname = argv[0];

@@ -25,7 +25,7 @@ void entry(int argc, char **argv)
   StringTable table;
   LangOptions LO;
   LO.ANSI_Cplusplus98();     // want 'true' and 'false' keywords
-  SourceLocManager mgr;
+  SourceLocationManager mgr;
   traceProgress() << "making OLexer\n";
   OLexer lexer(table, LO, argv[1]);
   OLexer::NextTokenFunc nextToken = lexer.getTokenFunc();

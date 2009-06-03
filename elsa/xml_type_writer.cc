@@ -427,7 +427,7 @@ void XmlTypeWriter::toXml(CompoundType *cpd) {
 
 void XmlTypeWriter::toXml_Variable_properties(Variable *var) {
   xassert(writingP());
-  printXml_SourceLoc(loc, var->loc);
+  printXml_SourceLocation(loc, var->loc);
   printStrRef(name, var->name);
   printPtr(var, type);
   printXml(flags, var->flags);
@@ -657,7 +657,7 @@ void XmlTypeWriter::toXml_Scope_properties(Scope *scope) {
   printPtr(scope, namespaceVar);
   printEmbed(scope, templateParams);
   printPtr(scope, curCompound);
-  printXml_SourceLoc(curLoc, scope->curLoc);
+  printXml_SourceLocation(curLoc, scope->curLoc);
 }
 
 void XmlTypeWriter::toXml_Scope_subtags(Scope *scope) {
@@ -773,7 +773,7 @@ void XmlTypeWriter::toXml(TemplateInfo *ti) {
     printPtr(ti, specializationOf);
     printEmbed(ti, specializations);
     printEmbed(ti, arguments);
-    printXml_SourceLoc(instLoc, ti->instLoc);
+    printXml_SourceLocation(instLoc, ti->instLoc);
     printPtr(ti, partialInstantiationOf);
     printEmbed(ti, partialInstantiations);
     printEmbed(ti, argumentsToPrimary);

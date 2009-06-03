@@ -98,7 +98,7 @@ void emitMLActionCode(GrammarAnalysis const &g, rostring mliFname,
       << "  static SemanticValue doReductionAction(\n"
       << "    " << g.actionClassName << " *ths,\n"
       << "    int productionId, SemanticValue const *semanticValues"
-         SOURCELOC( << ",\n  SourceLoc loc" )
+         SOURCELOC( << ",\n  SourceLocation loc" )
       << ");\n"
       << "\n"
       << "  // declare the classifier function\n"
@@ -148,7 +148,7 @@ void emitMLActionCode(GrammarAnalysis const &g, rostring mliFname,
     out << "\n";
     out << "#include \"" << hFname << "\"     // " << g.actionClassName << "\n";
     out << "#include \"parsetables.h\" // ParseTables\n";
-    out << "#include \"srcloc.h\"      // SourceLoc\n";
+    out << "#include \"srcloc.h\"      // SourceLocation\n";
     out << "\n";
     out << "#include <assert.h>      // assert\n";
     out << "#include <iostream>      // cout\n";
@@ -158,7 +158,7 @@ void emitMLActionCode(GrammarAnalysis const &g, rostring mliFname,
     NOSOURCELOC(
       out << "// parser-originated location information is disabled by\n"
           << "// NO_GLR_SOURCELOC; any rule which refers to 'loc' will get this one\n"
-          << "static SourceLoc loc = SL_UNKNOWN;\n"
+          << "static SourceLocation loc = SL_UNKNOWN;\n"
           << "\n\n";
     )
   #endif // 0

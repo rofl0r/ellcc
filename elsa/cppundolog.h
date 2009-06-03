@@ -13,10 +13,10 @@ class MacroUndoEntry;
 
 class MacroDefinition {
 public:
-  SourceLoc fromLoc;
-  SourceLoc toLoc;
+  SourceLocation fromLoc;
+  SourceLocation toLoc;
   const char *name;
-  MacroDefinition(const char *name, SourceLoc fromLoc, SourceLoc toLoc):
+  MacroDefinition(const char *name, SourceLocation fromLoc, SourceLocation toLoc):
   fromLoc(fromLoc),
     toLoc(toLoc),
     name(name)
@@ -28,12 +28,12 @@ class MacroUndoEntry {
 public:
   // post-expansion start & end position
   // helps determine if an ast node is part of a macro
-  SourceLoc postStartLoc;
-  SourceLoc postEndLoc;
+  SourceLocation postStartLoc;
+  SourceLocation postEndLoc;
 
   // pre-expansion positions of the macro
-  SourceLoc preStartLoc;
-  SourceLoc preEndLoc;
+  SourceLocation preStartLoc;
+  SourceLocation preEndLoc;
 
   // macro name
   const char *name;
@@ -42,7 +42,7 @@ public:
   
   TailList<MacroDefinition> params;
 
-  MacroUndoEntry(SourceLoc postStartLoc, SourceLoc preStartLoc, SourceLoc preEndLoc,
+  MacroUndoEntry(SourceLocation postStartLoc, SourceLocation preStartLoc, SourceLocation preEndLoc,
 		 const char *name, MacroUndoEntry *parent):
     postStartLoc(postStartLoc),
     postEndLoc(SL_UNKNOWN),
@@ -59,28 +59,28 @@ public:
  
 };
 
-class CPPSourceLoc {
+class CPPSourceLocation {
 public:
   MacroUndoEntry *macroExpansion;
-  CPPSourceLoc(SourceLoc loc);
+  CPPSourceLocation(SourceLocation loc);
 
   bool hasExactPosition() const {
     return _loc != SL_UNKNOWN && (!macroExpansion || exactPosition);
   }
 
-  SourceLoc loc() const {
+  SourceLocation loc() const {
     return _loc;
   }
 
   // overriding loc implies that the position is now exact
-  void overrideLoc(SourceLoc loc) {
+  void overrideLoc(SourceLocation loc) {
     _loc = loc;
     exactPosition = true;
   } 
 private:
   // gdb wont let me debug the constructor
-  void init(SourceLoc loc);
-  SourceLoc _loc;
+  void init(SourceLocation loc);
+  SourceLocation _loc;
   // can be true when a position within a macro can be traced 
   // to an ectual position(ie at start/end or in a param).
   // This flag is only valid when macroExpansion != NULL

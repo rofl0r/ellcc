@@ -33,7 +33,7 @@ void ParseEnv::popClassName()
 }
 
 
-SimpleTypeId ParseEnv::uberSimpleType(SourceLoc loc, UberModifiers m)
+SimpleTypeId ParseEnv::uberSimpleType(SourceLocation loc, UberModifiers m)
 {
   m = (UberModifiers)(m & UM_TYPEKEYS);
 
@@ -92,7 +92,7 @@ SimpleTypeId ParseEnv::uberSimpleType(SourceLoc loc, UberModifiers m)
 
 
 UberModifiers ParseEnv
-  ::uberCombine(SourceLoc loc, UberModifiers m1, UberModifiers m2)
+  ::uberCombine(SourceLocation loc, UberModifiers m1, UberModifiers m2)
 {
   // check for long long (GNU extension)
   if (m1 & m2 & UM_LONG) {
@@ -128,32 +128,32 @@ UberModifiers ParseEnv
 }
 
 
-LocString * /*owner*/ ParseEnv::ls(SourceLoc loc, char const *name)
+LocString * /*owner*/ ParseEnv::ls(SourceLocation loc, char const *name)
 {
   return new LocString(loc, str(name));
 }
 
 
-void ParseEnv::error(SourceLoc loc, char const *msg)
+void ParseEnv::error(SourceLocation loc, char const *msg)
 {
   std::cout << toString(loc) << ": error: " << msg << std::endl;
   errors++;
 }
 
 
-void ParseEnv::warning(SourceLoc loc, char const *msg)
+void ParseEnv::warning(SourceLocation loc, char const *msg)
 {
   std::cout << toString(loc) << ": warning: " << msg << std::endl;
   warnings++;
 }
 
 
-void ParseEnv::diagnose3(bool3 b, SourceLoc loc, char const *msg)
+void ParseEnv::diagnose3(ellcc::bool3 b, SourceLocation loc, char const *msg)
 {
   if (!b) {
     error(loc, msg);
   }
-  else if (b == b3_WARN) {
+  else if (b == ellcc::b3_WARN) {
     warning(loc, msg);
   }
 }

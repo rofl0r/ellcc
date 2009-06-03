@@ -10,7 +10,7 @@
 #include "array.h"         // ArrayStack
 #include "cc_flags.h"      // UberModifiers, SimpleTypeId
 #include "cc_ast.h"        // C++ AST classes, needed for the action function signatures
-#include "srcloc.h"        // SourceLoc
+#include "srcloc.h"        // SourceLocation
 #include "LangOptions.h"   // bool3
 
 namespace ellcc {
@@ -48,18 +48,18 @@ public:
   StringRef curClassName() const   { return classNameStack.top(); }
 
   // manipulate UberModifiers
-  SimpleTypeId uberSimpleType(SourceLoc loc, UberModifiers m);
-  UberModifiers uberCombine(SourceLoc loc, UberModifiers m1, UberModifiers m2);
+  SimpleTypeId uberSimpleType(SourceLocation loc, UberModifiers m);
+  UberModifiers uberCombine(SourceLocation loc, UberModifiers m1, UberModifiers m2);
 
   // generate a LocString suitable for use during parsing
-  LocString * /*owner*/ ls(SourceLoc loc, char const *name);
+  LocString * /*owner*/ ls(SourceLocation loc, char const *name);
 
   // report an error or warning
-  void error(SourceLoc loc, char const *msg);
-  void warning(SourceLoc loc, char const *msg);
+  void error(SourceLocation loc, char const *msg);
+  void warning(SourceLocation loc, char const *msg);
   
   // depending on 'b', accept, accept with warning, or reject
-  void diagnose3(bool3 b, SourceLoc loc, char const *msg);
+  void diagnose3(ellcc::bool3 b, SourceLocation loc, char const *msg);
 };
 
 
@@ -82,7 +82,7 @@ void rejectAmbiguousNodes(TranslationUnit *unit);
 class LocationSearcher : public ASTVisitor {
 public:
   // location, or SL_UNKNOWN if not found yet
-  SourceLoc loc;
+  SourceLocation loc;
 
 public:
   LocationSearcher();
@@ -105,7 +105,7 @@ public:
 // use the searcher to retrieve the location for an arbitrary
 // AST node (may return SL_UNKNOWN if it cannot find one)
 template <class T>
-SourceLoc getASTNodeLoc(T *obj)
+SourceLocation getASTNodeLoc(T *obj)
 {
   LocationSearcher searcher;
   obj->traverse(searcher);

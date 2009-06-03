@@ -529,7 +529,7 @@ string CValue::asString() const
 
 
 // ----------------------- ConstEval ------------------------
-ConstEval::ConstEval(TargetInfo& TI, Variable *d, MType *m)
+ConstEval::ConstEval(ellcc::TargetInfo& TI, Variable *d, MType *m)
   : dependentVar(d),
     map(m), TI(TI)
 {}

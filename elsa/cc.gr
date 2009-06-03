@@ -66,7 +66,7 @@ option defaultMergeAborts;
 option shift_reduce_conflicts 58;
 option reduce_reduce_conflicts 70;
 option unreachable_nonterminals 0;
-option unreachable_terminals 6;
+option unreachable_terminals 35;
 
 verbatim {
 
@@ -81,12 +81,12 @@ verbatim {
 #define D(msg) \
   trace("cc") << msg << endl
 
-inline std::ostream& operator<< (std::ostream &os, SourceLoc sl)
+inline std::ostream& operator<< (std::ostream &os, SourceLocation sl)
   { return os << toString(sl); }
 
 // implemented in implint.cc
 bool filterOutImplIntFirstParam
-  (SourceLoc loc,
+  (SourceLocation loc,
    IDeclarator *base,
    FakeList<ASTTypeId> *&params);
 
@@ -101,12 +101,12 @@ bool keepDeclaration(Declaration const *d);
 // directly from CCParse
 class CCParseShareable : public UserActions, public ParseEnv {
 public:
-  CCParseShareable(StringTable &table, Preprocessor& PP)
+  CCParseShareable(StringTable &table, ellcc::Preprocessor& PP)
     : ParseEnv(table, PP) {}
 
   // when this is the last element in a parameter list, the function
   // is a vararg function
-  ASTTypeId *ellipsisTypeId(SourceLoc loc)
+  ASTTypeId *ellipsisTypeId(SourceLocation loc)
   {
     ASTTypeId *tid =
       new ASTTypeId(new TS_simple(loc, ST_ELLIPSIS),
@@ -116,7 +116,7 @@ public:
   }
 
   // make a TS_name, and supply CV flags
-  TS_name *new_TS_name(SourceLoc loc, CVFlags cv, PQName *n,
+  TS_name *new_TS_name(SourceLocation loc, CVFlags cv, PQName *n,
                        bool typenameUsed)
   {
     TS_name *ret = new TS_name(loc, n, typenameUsed);
@@ -125,7 +125,7 @@ public:
   }
 
   // make a TS_simple, and supply CV flags
-  TS_simple *new_TS_simple(SourceLoc loc, CVFlags cv, SimpleTypeId id)
+  TS_simple *new_TS_simple(SourceLocation loc, CVFlags cv, SimpleTypeId id)
   {
     TS_simple *ret = new TS_simple(loc, id);
     ret->cv = cv;
@@ -136,7 +136,7 @@ public:
   // another function (this helps resolve an ambiguity in the presence
   // of implicit int.. is it needed even without implicit int?)
   D_func *new_D_func
-    (SourceLoc loc,
+    (SourceLocation loc,
      IDeclarator *base,
      FakeList<ASTTypeId> *params,
      CVFlags cv,
@@ -154,7 +154,7 @@ public:
   }
 
   D_array *new_D_array
-    (SourceLoc loc, IDeclarator *base, Expression * /*nullable*/ size)
+    (SourceLocation loc, IDeclarator *base, Expression * /*nullable*/ size)
   {
     if (base->isD_func()) {
       TRACE("cancel", loc << ": function returning an array");
@@ -174,7 +174,7 @@ public:
 
 context_class CCParse : public CCParseShareable {
 public:
-  CCParse(StringTable &table, Preprocessor& PP)
+  CCParse(StringTable &table, ellcc::Preprocessor& PP)
     : CCParseShareable(table, PP) {}
 };
 
@@ -191,8 +191,6 @@ terminals {
 
   // similar for identifiers
   token(StringRef) TOK_NAME ;
-  token(StringRef) TOK_TYPE_NAME;
-  token(StringRef) TOK_VARIABLE_NAME;
 
   precedence {
     // high precedence

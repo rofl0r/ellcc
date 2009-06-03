@@ -19,7 +19,7 @@ TranslationUnit *xmlDoRead(StringTable &strTable, char const *inputFname) {
   XmlReaderManager manager(lexer, strTable);
   manager.inputFname = inputFname;
 
-  // prevent the SourceLocManager from looking at files in the file
+  // prevent the SourceLocationManager from looking at files in the file
   // system
   sourceLocManager->mayOpenFiles = false;
 
@@ -44,10 +44,10 @@ TranslationUnit *xmlDoRead(StringTable &strTable, char const *inputFname) {
       // complete the link graph so that the FileData object is
       // complete
       manager.satisfyLinks();
-      ObjList<SourceLocManager::FileData> *files =
-        (ObjList<SourceLocManager::FileData>*) manager.getLastNode();
-      FOREACH_OBJLIST_NC(SourceLocManager::FileData, *files, iter) {
-        SourceLocManager::FileData *fileData = iter.data();
+      ObjList<SourceLocationManager::FileData> *files =
+        (ObjList<SourceLocationManager::FileData>*) manager.getLastNode();
+      FOREACH_OBJLIST_NC(SourceLocationManager::FileData, *files, iter) {
+        SourceLocationManager::FileData *fileData = iter.data();
         if (!fileData->complete()) {
           manager.xmlUserFatalError("missing attributes to File tag");
         }

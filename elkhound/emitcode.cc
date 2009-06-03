@@ -3,7 +3,7 @@
 
 #include "emitcode.h"      // this module
 #include "syserr.h"        // xsyserror
-#include "srcloc.h"        // SourceLoc
+#include "srcloc.h"        // SourceLocation
 #include "trace.h"         // tracingSys
 #include <string.h>        // memcpy
 
@@ -88,7 +88,7 @@ char const *hashLine()
 
 
 // note that #line must be preceeded by a newline
-sm::string lineDirective(SourceLoc loc)
+sm::string lineDirective(SourceLocation loc)
 {
   char const *fname;
   int line, col;

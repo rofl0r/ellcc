@@ -22,9 +22,9 @@
 class BaseLexer : public yyFlexLexer, public LexerInterface {
 protected:  // data
   std::istream *inputStream;       // (owner) file from which we're reading
-  SourceLocManager::File *srcFile; // (serf) contains the hash map we update
+  SourceLocationManager::File *srcFile; // (serf) contains the hash map we update
 
-  SourceLoc nextLoc;               // location of *next* token
+  SourceLocation nextLoc;               // location of *next* token
   int curLine;                     // current line number; needed for #line directives
 
 public:     // data
@@ -79,7 +79,7 @@ public:     // funcs
   // make a lexer to scan an in-memory string; 'initLoc' is the
   // location that the first character should be regarded as being at;
   // the buffer must remain allocated as long as this BaseLexer is
-  BaseLexer(StringTable &strtable, SourceLoc initLoc,
+  BaseLexer(StringTable &strtable, SourceLocation initLoc,
             char const *buf, int len);
 
   ~BaseLexer();

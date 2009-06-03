@@ -1,14 +1,14 @@
 // xml_file_writer.h            see license.txt for copyright and terms of use
 
 // Serialization of file information for purposes of capturing the
-// state of the SourceLocManager.
+// state of the SourceLocationManager.
 
 #ifndef XML_FILE_WRITER_H
 #define XML_FILE_WRITER_H
 
 #include "sobjset.h"            // SObjSet
 #include "objlist.h"            // ObjList
-#include "srcloc.h"             // SourceLocManager
+#include "srcloc.h"             // SourceLocationManager
 #include "xml_writer.h"         // XmlWriter
 #include "hashline.h"           // HashLineMap
 
@@ -18,7 +18,7 @@ public:
   class XFW_SerializeOracle {
   public:
     virtual ~XFW_SerializeOracle() {}
-    virtual bool shouldSerialize(SourceLocManager::File const *) {return true;}
+    virtual bool shouldSerialize(SourceLocationManager::File const *) {return true;}
     virtual bool shouldSerialize(HashLineMap const *) {return true;}
     virtual bool shouldSerialize(HashLineMap::HashLine const *) {return true;}
   };
@@ -29,11 +29,11 @@ public:
                 XFW_SerializeOracle *serializeOracle0);
   virtual ~XmlFileWriter() {}
 
-  void toXml(SourceLocManager::FileList &files);
-  void toXml(SourceLocManager::File *file);
+  void toXml(SourceLocationManager::FileList &files);
+  void toXml(SourceLocationManager::File *file);
   // this is an exception to the generic toXml() mechanism since
   // lineLengths are not self-contained
-  void toXml_lineLengths(SourceLocManager::File *file);
+  void toXml_lineLengths(SourceLocationManager::File *file);
   void toXml(HashLineMap *hashLines);
   void toXml(HashLineMap::HashLine *hashLine);
 };

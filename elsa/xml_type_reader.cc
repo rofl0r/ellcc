@@ -321,7 +321,7 @@ void *XmlTypeReader::ctorNodeFromTag(int tag) {
     return new BaseClassSubobj(BaseClass((CompoundType*)0, (AccessKeyword)0, (bool)0));
   case XTOK_OverloadSet: return new OverloadSet();
   case XTOK_STemplateArgument: return new STemplateArgument();
-  case XTOK_TemplateInfo: return new TemplateInfo((SourceLoc)0);
+  case XTOK_TemplateInfo: return new TemplateInfo((SourceLocation)0);
   case XTOK_InheritedTemplateParams: return new InheritedTemplateParams((CompoundType*)0);
 
   // **** Containers
@@ -490,7 +490,7 @@ void XmlTypeReader::registerAttr_DependentSizedArrayType
 bool XmlTypeReader::registerAttr_Variable_super(Variable *obj, int attr, char const *strValue) {
   switch(attr) {
   default: return false; break; // we didn't find it
-  case XTOK_loc: fromXml_SourceLoc(obj->loc, strValue); break;
+  case XTOK_loc: fromXml_SourceLocation(obj->loc, strValue); break;
   case XTOK_name: obj->name = manager->strTable(strValue); break;
   case XTOK_type: ul(type, XTOK_Type); break;
   case XTOK_flags:
@@ -675,7 +675,7 @@ bool XmlTypeReader::registerAttr_Scope_super(Scope *obj, int attr, char const *s
   case XTOK_namespaceVar: ul(namespaceVar, XTOK_Variable); break;
   case XTOK_templateParams: ulEmbed(templateParams, XTOK_List_Scope_templateParams); break;
   case XTOK_curCompound: ul(curCompound, XTOK_CompoundType); break;
-  case XTOK_curLoc: fromXml_SourceLoc(obj->curLoc, strValue); break;
+  case XTOK_curLoc: fromXml_SourceLocation(obj->curLoc, strValue); break;
   }
   return true;                  // found it
 }
@@ -768,7 +768,7 @@ void XmlTypeReader::registerAttr_TemplateInfo(TemplateInfo *obj, int attr, char 
   case XTOK_arguments:
     ulEmbed(arguments, XTOK_List_TemplateInfo_arguments); break;
   case XTOK_instLoc:
-    fromXml_SourceLoc(obj->instLoc, strValue); break;
+    fromXml_SourceLocation(obj->instLoc, strValue); break;
   case XTOK_partialInstantiationOf:
     ul(partialInstantiationOf, XTOK_Variable); break;
   case XTOK_partialInstantiations:

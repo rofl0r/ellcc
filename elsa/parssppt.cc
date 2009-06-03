@@ -5,19 +5,93 @@
 #include "glr.h"          // toplevelParse
 #include "trace.h"        // traceProcessArg
 #include "syserr.h"       // xsyserror
+#include "Preprocessor.h"
+#include "LiteralSupport.h"
+#include "Token.h"
+#include "lexerint.h"     // LexerInterface
 #include <stdlib.h>       // exit
 
 using namespace std;
+using namespace ellcc;
+
+class PPLexer : public LexerInterface {
+public:
+    PPLexer(Preprocessor& PP, StringTable& ST)
+        : PP(PP), ST(ST)
+    {
+        // Prime this lexer with the first token.
+        getTokenFunc()(this);
+    }
+    NextTokenFunc getTokenFunc() const;
+    sm::string tokenDesc() const
+        { return token.getName(); }
+    sm::string tokenKindDesc(int kind) const
+        { return tok::getTokenName((tok::TokenKind)kind); }
+private:
+    Preprocessor& PP;
+    Token token;
+    static void Lex(LexerInterface *li);
+    StringTable& ST;
+};
+
+PPLexer::NextTokenFunc PPLexer::getTokenFunc() const
+{
+    return Lex;
+}
+
+/** The interface to the preprocessor. Fill in the LexerInterface fields.
+ */
+void PPLexer::Lex(LexerInterface *li)
+{
+    PPLexer& LI = *static_cast<PPLexer*>(li);
+    LI.PP.Lex(LI.token);                        // Get the next token.
+    if (LI.token.getKind() == TOK(kw___extension__)) {
+        // Ignore extension.
+        LI.PP.Lex(LI.token);                    // Get the next token.
+    }
+    LI.type = LI.token.getKind();
+    if (LI.token.getKind() == TOK(numeric_constant)) {
+        llvm::SmallString<64> IntegerBuffer;
+        IntegerBuffer.resize(LI.token.getLength());
+        const char *ThisTokBegin = &IntegerBuffer[0];
+        unsigned ActualLength = LI.PP.getSpelling(LI.token, ThisTokBegin);
+        NumericLiteralParser Literal(ThisTokBegin, ThisTokBegin+ActualLength, 
+                                     LI.token.getLocation(), LI.PP);
+        if (!Literal.isFloatingLiteral()) {
+            LI.type = TOK_INT_LITERAL;
+        }
+    }
+    if (   LI.token.getKind() == TOK(wide_string_literal)
+        || LI.token.getKind() == TOK(wide_string_literal)) {
+            // RICH: For now, just call these strings.
+            LI.type = TOK_STRING_LITERAL;
+    }
+    if (LI.token.isLiteral()) {
+        LI.sval = (SemanticValue)LI.ST.add(LI.token.getLiteralData(), LI.token.getLength());
+    } else if (LI.token.isAnnotation()) {
+        LI.sval = (SemanticValue)LI.token.getAnnotationValue();
+    } else {
+        IdentifierInfo* II = LI.token.getIdentifierInfo();
+        if (II) {
+            LI.sval = (SemanticValue)LI.ST.add(II->getName());
+        } else {
+            LI.sval = 0;
+        }
+    }
+    // RICH: Leave loc and endloc for now.
+}
 
 // ---------------------- ParseTree --------------------
-ParseTreeAndTokens::ParseTreeAndTokens(ellcc::Preprocessor& PP, SemanticValue &top,
+ParseTreeAndTokens::ParseTreeAndTokens(Preprocessor& PP, SemanticValue &top,
                                        StringTable &extTable, char const *fname)
   : treeTop(top),
-    lexer(new OLexer(extTable, PP.getLangOptions(), fname)),
+    // RICH: lexer(new OLexer(extTable, PP.getLangOptions(), fname)),
+    lexer(new PPLexer(PP, extTable)),
     userAct(NULL),
     tables(NULL),
     PP(PP)
-{}
+{
+}
 
 ParseTreeAndTokens::~ParseTreeAndTokens()
 {
@@ -99,12 +173,7 @@ UserActions::ReclassifyFunc SimpleActions::getReclassifier()
 
 STATICDEF int SimpleActions::reclassifyToken(UserActions *, int type, SemanticValue)
 {
-  if (type == TOK_NAME) {
-    return TOK_VARIABLE_NAME;
-  }
-  else {
-    return type;
-  }
+  return type;
 }
 
 

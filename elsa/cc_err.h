@@ -6,7 +6,7 @@
 
 #include "macros.h"    // ENUM_BITWISE_OR
 #include "str.h"       // string
-#include "srcloc.h"    // SourceLoc
+#include "srcloc.h"    // SourceLocation
 
 #include <ostream>     // ostream
 
@@ -69,7 +69,7 @@ ENUM_BITWISE_OPS(ErrorFlags, EF_ALL)
 // produces
 class ErrorMsg {
 public:
-  SourceLoc loc;          // where the error happened
+  SourceLocation loc;          // where the error happened
   sm::string msg;             // english explanation
   ErrorFlags flags;       // various
   
@@ -80,9 +80,9 @@ public:
   sm::string instLoc;
 
 public:
-  ErrorMsg(SourceLoc L, rostring m, ErrorFlags f)
+  ErrorMsg(SourceLocation L, rostring m, ErrorFlags f)
     : loc(L), msg(m), flags(f), instLoc() {}
-  ErrorMsg(SourceLoc L, rostring m, ErrorFlags f, rostring i)
+  ErrorMsg(SourceLocation L, rostring m, ErrorFlags f, rostring i)
     : loc(L), msg(m), flags(f), instLoc(i) {}
   ~ErrorMsg();
 

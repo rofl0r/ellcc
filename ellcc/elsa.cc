@@ -9,7 +9,7 @@
 #include "trace.h"        // traceAddSys
 #include "syserr.h"       // xsyserror
 #include "parssppt.h"     // ParseTreeAndTokens, treeMain
-#include "srcloc.h"       // SourceLocManager
+#include "srcloc.h"       // SourceLocationManager
 #include "ckheap.h"       // malloc_stats
 #include "cc_env.h"       // Env
 #include "cc_ast.h"       // C++ AST (r)
@@ -25,10 +25,14 @@
 #include "smregexp.h"     // regexpMatch
 #include "cc_elaborate.h" // ElabVisitor
 #include "integrity.h"    // IntegrityVisitor
+
+#ifdef XML_EXTENSION
 #include "xml_file_writer.h" // XmlFileWriter
 #include "xml_reader.h"   // xmlDanglingPointersAllowed
 #include "xml_do_read.h"  // xmlDoRead()
 #include "xml_type_writer.h" // XmlTypeWriter
+#endif
+
 #include "bpprint.h"      // bppTranslationUnit
 #include "cc2c.h"         // cc_to_c
 #include "cc2llvm.h"      // cc_to_llvm
@@ -134,7 +138,9 @@ void Elsa::setup(bool time)
     traceAddSys("templateParams");
     traceAddSys("templateXfer");
     traceAddSys("prettyPrint");
+#ifdef XML_EXTENSION
     traceAddSys("xmlPrintAST");
+#endif
     traceAddSys("topform");
   }
 
@@ -260,7 +266,7 @@ int Elsa::doit(Preprocessor& PP,
                llvm::Module*& mod, bool parseOnly)
 {
     mod = NULL;
-    SourceLocManager mgr;
+    SourceLocationManager mgr;
     // String table for storing parse tree identifiers.
     StringTable strTable;
     
@@ -274,13 +280,16 @@ int Elsa::doit(Preprocessor& PP,
   ArrayStack<Variable*> builtinVars;
 
   int parseWarnings = 0;
+#ifdef XML_EXTENSION
   if (tracingSys("parseXml")) {
     if (tracingSys("parseXml-no-danglingPointers")) {
       xmlDanglingPointersAllowed = false;
     }
     unit = xmlDoRead(strTable, inputFname);
     if (!unit) return 0;
-  } else {
+  } else
+#endif
+         {
     if (doTime) {
         parseTimer.startTimer();
     }
@@ -288,10 +297,12 @@ int Elsa::doit(Preprocessor& PP,
     SemanticValue treeTop;
     ParseTreeAndTokens tree(PP, treeTop, strTable, inputFname);
 
+#if RICH
     // grab the lexer so we can check it for errors (damn this
     // 'tree' thing is stupid..)
     OLexer *lexer = dynamic_cast<OLexer*>(tree.lexer);
     xassert(lexer);
+#endif
 
     CCParse *parseContext = new CCParse(strTable, PP);
     tree.userAct = parseContext;
@@ -302,6 +313,7 @@ int Elsa::doit(Preprocessor& PP,
 
     maybeUseTrivialActions(tree);
 
+#if RICH
     if (tracingSys("parseTree")) {
       // make some helpful aliases
       LexerInterface *underLexer = tree.lexer;
@@ -313,6 +325,7 @@ int Elsa::doit(Preprocessor& PP,
 
       // 'underLexer' and 'tree.userAct' will be leaked.. oh well
     }
+#endif
 
     if (doTime) {
         parseTimer.stopTimer();
@@ -323,10 +336,10 @@ int Elsa::doit(Preprocessor& PP,
     }
 
     // check for parse errors detected by the context class
-    if (parseContext->errors || lexer->errors) {
+    if (parseContext->errors) { // RICH || lexer->errors) {
       return 2;
     }
-    parseWarnings = lexer->warnings + parseContext->warnings;
+    parseWarnings = /* RICH lexer->warnings + */ parseContext->warnings;
 
     if (tracingSys("parseTree")) {
       // the 'treeTop' is actually a PTreeNode pointer; print the
@@ -565,7 +578,9 @@ int Elsa::doit(Preprocessor& PP,
         // dsw: I don't know if this is right, but printing the xml
         // AST kind of resembles pretty-printing the AST; fix this if
         // it is wrong
+#ifdef XML_EXTENSION
         || tracingSys("xmlPrintAST")
+#endif
         || wantBpprintAfterElab
         ) {
       vis.cloneDefunctChildren = true;
@@ -632,6 +647,7 @@ int Elsa::doit(Preprocessor& PP,
     bppTranslationUnit(std::cout, *unit);
   }
 
+#ifdef XML_EXTENSION
   // dsw: xml printing of the raw ast
   if (tracingSys("xmlPrintAST")) {
     traceProgress() << "dsw xml print...\n";
@@ -671,6 +687,7 @@ int Elsa::doit(Preprocessor& PP,
     std::cout << "---- STOP ----" << std::endl;
     traceProgress() << "dsw xml print... done\n";
   }
+#endif
 
   // test AST cloning
   if (tracingSys("testClone")) {

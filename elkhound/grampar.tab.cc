@@ -171,7 +171,7 @@
   new LocString(SL_UNKNOWN, NULL)
 
 // return a locstring with same location info as something else
-// (passed as a pointer to a SourceLocation)
+// (passed as a pointer to a SourceLocationation)
 #define sameloc(otherLoc, str)                                        \
   new LocString(otherLoc->loc, PARAM->lexer.strtable.add(str))
 
@@ -204,7 +204,7 @@ typedef union YYSTYPE
 {
   int num;
   LocString *str;
-  SourceLoc loc;
+  SourceLocation loc;
 
   ASTList<TopForm> *topFormList;
   TopForm *topForm;

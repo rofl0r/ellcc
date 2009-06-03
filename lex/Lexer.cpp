@@ -1655,6 +1655,9 @@ LexNextToken:
     } else if (Features.Digraphs && Char == '%') {     // '<%' -> '{'
       CurPtr = ConsumeChar(CurPtr, SizeTmp, Result);
       Kind = tok::l_brace;
+    } else if (Features.GNUMode && Char == '?') {
+      CurPtr = ConsumeChar(CurPtr, SizeTmp, Result);
+      Kind = tok::min;
     } else {
       Kind = tok::less;
     }
@@ -1672,6 +1675,9 @@ LexNextToken:
     } else if (Char == '>') {
       CurPtr = ConsumeChar(CurPtr, SizeTmp, Result);
       Kind = tok::greatergreater;
+    } else if (Features.GNUMode && Char == '?') {
+      CurPtr = ConsumeChar(CurPtr, SizeTmp, Result);
+      Kind = tok::max;
     } else {
       Kind = tok::greater;
     }

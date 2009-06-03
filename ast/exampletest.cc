@@ -20,7 +20,7 @@ int main() {
   ASTList<Node> *astl0 = new ASTList<Node>();
   astl0->append(n10);
   astl0->append(n20);
-  LocString *loc0 = new LocString(SourceLocation(FileLocation(200,201), new SourceFile("there0")),
+  LocString *loc0 = new LocString(SourceLocationation(FileLocation(200,201), new SourceFile("there0")),
                                   "somefilename");
   AnotherList *al0 = new AnotherList(astl0, loc0);
 

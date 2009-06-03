@@ -154,7 +154,7 @@ bool isProperSubpath(CompoundType const *LS, CompoundType const *LD,
 // of original candidate functions
 Variable *resolveOverload(
   Env &env,
-  SourceLoc loc,
+  SourceLocation loc,
   ErrorList * /*nullable*/ errors,
   OverloadFlags flags,
   SObjList<Variable> &varList,
@@ -171,7 +171,7 @@ Variable *resolveOverload(
 
 
 OverloadResolver::OverloadResolver
-  (Env &en, SourceLoc L, ErrorList *er,
+  (Env &en, SourceLocation L, ErrorList *er,
    OverloadFlags f,
    PQName *finalName0,
    GrowArray<ArgumentInfo> &a,
@@ -1624,7 +1624,7 @@ bool isCompoundType_orConstRefTo(Type const *t)
 
 ImplicitConversion getConversionOperator(
   Env &env,
-  SourceLoc loc,
+  SourceLocation loc,
   ErrorList * /*nullable*/ errors,
   Type *srcClassType,
   Type *destType
@@ -1802,7 +1802,7 @@ ImplicitConversion getConversionOperator(
 // dmandelin@mozilla.com -- for 3.5.3.1 and Oink ticket #32.
 ImplicitConversion getPointerConversionOperator(
   Env &env,
-  SourceLoc loc,
+  SourceLocation loc,
   ErrorList * /*nullable*/ errors,
   Type *srcClassType
 ) {

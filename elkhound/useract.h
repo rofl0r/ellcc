@@ -13,7 +13,7 @@
 
 #include "glrconfig.h"     // SOURCELOC
 #include "str.h"           // string
-#include "srcloc.h"        // SourceLoc
+#include "srcloc.h"        // SourceLocation
 
 class ParseTables;         // parsetables.h
 
@@ -53,8 +53,8 @@ public:
     UserActions *context,         // parser context class object
     int productionId,             // production being used to reduce
     SemanticValue const *svals    // array of semantic values
-    SOURCELOCARG( SourceLoc loc )
-    ENDSOURCELOCARG( SourceLoc endloc ) );
+    SOURCELOCARG( SourceLocation loc )
+    ENDSOURCELOCARG( SourceLocation endloc ) );
                                                      
   // get the actual function; two-step to avoid virtual call in inner loop
   virtual ReductionActionFunc getReductionAction()=0;
@@ -103,7 +103,7 @@ public:
   // yield-then-merge problem)
   virtual SemanticValue mergeAlternativeParses(
     int ntIndex, SemanticValue left, SemanticValue right
-    SOURCELOCARG( SourceLoc loc )
+    SOURCELOCARG( SourceLocation loc )
   )=0;
 
   // after every reduction, the semantic value is passed to this function,
@@ -153,7 +153,7 @@ public:
                                                                        \
   virtual SemanticValue mergeAlternativeParses(                        \
     int ntIndex, SemanticValue left, SemanticValue right               \
-    SOURCELOCARG( SourceLoc loc )                                      \
+    SOURCELOCARG( SourceLocation loc )                                      \
   );                                                                   \
                                                                        \
   virtual bool keepNontermValue(int nontermId, SemanticValue sval);    \
@@ -175,8 +175,8 @@ public:
   static SemanticValue doReductionAction(
     UserActions *ths,
     int productionId, SemanticValue const *svals
-    SOURCELOCARG( SourceLoc loc ) 
-    ENDSOURCELOCARG( SourceLoc ) );
+    SOURCELOCARG( SourceLocation loc ) 
+    ENDSOURCELOCARG( SourceLocation ) );
 
   static int reclassifyToken(UserActions *ths, 
     int oldTokenType, SemanticValue sval);

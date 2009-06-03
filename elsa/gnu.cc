@@ -1797,7 +1797,7 @@ void S_computedGoto::icfg(CFGEnv &env)
 
 
 // ---------------------- D_attribute -------------------------
-D_attribute::D_attribute(SourceLoc loc, IDeclarator *base,
+D_attribute::D_attribute(SourceLocation loc, IDeclarator *base,
                          AttributeSpecifierList *alist_)
   : D_grouping(loc, base),
     alist(alist_)

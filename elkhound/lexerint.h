@@ -6,7 +6,7 @@
 #define LEXERINT_H
 
 #include "useract.h"      // SemanticValue
-#include "srcloc.h"       // SourceLoc
+#include "srcloc.h"       // SourceLocation
 #include "str.h"          // string
 
 // This 'interface' is a collection of variables describing
@@ -40,8 +40,8 @@ public:     // data
 
   // source location of the token; this will only be used if the
   // parser has been compiled to automatically propagate it
-  SourceLoc loc;
-  SourceLoc endloc;
+  SourceLocation loc;
+  SourceLocation endloc;
 
 public:     // funcs
   LexerInterface()

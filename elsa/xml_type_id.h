@@ -34,7 +34,7 @@ public:
 #define identity_defn(PREFIX, NAME) identity_defn0(PREFIX, NAME, )
 #define identityTempl_defn(PREFIX, NAME) identity_defn0(PREFIX, NAME, template<class T>)
 
-  identity_defn(FI, SourceLocManager::File)
+  identity_defn(FI, SourceLocationManager::File)
   identity_defn(FI, HashLineMap)
   identity_defn(FI, HashLineMap::HashLine)
   identity_defn(FI, unsigned char) // for lineLengths

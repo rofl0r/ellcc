@@ -76,7 +76,7 @@ private:     // data
 
   // track the current source location for the benefit of client
   // analyses
-  SourceLoc loc;
+  SourceLocation loc;
 
   // visit elaborated AST fields such as ctorStatement, etc., but
   // other than instantiated templates
@@ -102,7 +102,7 @@ public:      // funcs
   {}
   virtual ~LoweredASTVisitor() {}
 
-  SourceLoc getLoc() {return loc;}
+  SourceLocation getLoc() {return loc;}
 
   // maintain source loc; those commented out occur also below and so
   // their body is folded in there

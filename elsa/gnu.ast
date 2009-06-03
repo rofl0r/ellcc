@@ -10,7 +10,6 @@ verbatim {
   #define GNU_EXTENSION         // this extension module is active
 
   #include "TargetInfo.h"
-  using namespace ellcc;
   #include <limits.h>           // INT_MIN
 }
 
@@ -178,8 +177,8 @@ class TypeSpecifier {
 
 // ----------- gcc asm -----------
 
-class Constraint(SourceLoc loc, StringRef name, E_stringLit constr, Expression e) {
-    public TargetInfo::ConstraintInfo info = TargetInfo::CI_None;
+class Constraint(SourceLocation loc, StringRef name, E_stringLit constr, Expression e) {
+    public ellcc::TargetInfo::ConstraintInfo info = ellcc::TargetInfo::CI_None;
 }
 
 class Constraints(ASTList<Constraint> outputs = NULL,
@@ -203,7 +202,7 @@ class Initializer {
                    Initializer init);
 }
 
-class Designator (SourceLoc loc) {
+class Designator (SourceLocation loc) {
   // FakeList link; use setNext
   public Designator *next;  ctor next=NULL;
   public void setNext(Designator *newNext);
@@ -297,7 +296,7 @@ class AttributeSpecifier(
 
 // one attribute, somewhere inside __attribute((...)); syntactically,
 // attributes are separated by commas in the parens
-class Attribute(SourceLoc loc) {
+class Attribute(SourceLocation loc) {
   // e.g., __attribute__(( ))
   //                      ^
   // I decided to keep these even though the GNU documentation states
@@ -339,7 +338,7 @@ verbatim {
     AttributeSpecifierList *alist;       // owner
 
   public:
-    D_attribute(SourceLoc loc, IDeclarator *base,
+    D_attribute(SourceLocation loc, IDeclarator *base,
                 AttributeSpecifierList *alist);
     virtual ~D_attribute();
 

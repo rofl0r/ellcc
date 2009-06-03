@@ -1,7 +1,7 @@
 // xml_file_reader.h            see license.txt for copyright and terms of use
 
 // De-serialization of file information for purposes of capturing the
-// state of the SourceLocManager.
+// state of the SourceLocationManager.
 
 #ifndef XML_FILE_READER_H
 #define XML_FILE_READER_H

@@ -358,7 +358,7 @@ void printMyTokenDecls()
 
 
 // ----------------------- Lexer2Token -------------------------------
-Lexer2Token::Lexer2Token(Lexer2TokenType aType, SourceLoc aLoc)
+Lexer2Token::Lexer2Token(Lexer2TokenType aType, SourceLocation aLoc)
   : type(aType),
     intValue(0),     // legal? apparently..
     loc(aLoc),
@@ -640,7 +640,7 @@ Lexer2::~Lexer2()
 }
 
 
-SourceLoc Lexer2::startLoc() const
+SourceLocation Lexer2::startLoc() const
 {
   if (tokens.isNotEmpty()) {
     return tokens.firstC()->loc;
@@ -753,7 +753,7 @@ Lexer2Token const *yylval = NULL;
 
 int main(int argc, char **argv)
 {
-  SourceLocManager mgr;
+  SourceLocationManager mgr;
 
   if (argc > 1 && 0==strcmp(argv[1], "-bison")) {
     printBisonTokenDecls(true /*spellings*/);

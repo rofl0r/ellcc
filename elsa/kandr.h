@@ -6,13 +6,13 @@
 
 #include "cc_ast.h"         // AST
 
-Function *makeKandRdefn(SourceLoc loc, Declaration *rds, IDeclarator *id,
+Function *makeKandRdefn(SourceLocation loc, Declaration *rds, IDeclarator *id,
                         S_compound *ds, S_compound *b);
 void fixUpKandRFunctionDef
   (Declaration *rds, IDeclarator *id, S_compound *ds);
 D_func *new_D_func_kandr
-  (const LangOptions &LO,
-   SourceLoc loc,
+  (const ellcc::LangOptions &LO,
+   SourceLocation loc,
    IDeclarator *base,
    FakeList<ASTTypeId> *params,
    CVFlags cv,

@@ -16,7 +16,7 @@ LocString::LocString(LocString const &obj)
     str(obj.str)
 {}
 
-LocString::LocString(SourceLoc L, StringRef s)
+LocString::LocString(SourceLocation L, StringRef s)
   : loc(L),
     str(s)
 {}

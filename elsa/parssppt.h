@@ -21,11 +21,13 @@
 
 #include "lexer.h"        // Lexer
 #include "useract.h"      // SemanticValue, UserAction
-#include "Preprocessor.h"
 
 class ParseTables;
 class GLR;
 class LexerInterface;
+namespace ellcc {
+    class Preprocessor;
+};
 
 // ----------------- helpers for analysis drivers ---------------
 // a self-contained parse tree (or parse DAG, as the case may be)

@@ -8,17 +8,17 @@
 #include <string.h>      // strlen
 
 #include "strtable.h"    // StringRef
-#include "srcloc.h"      // SourceLoc
+#include "srcloc.h"      // SourceLocation
 
 class LocString {
 public:    // data
-  SourceLoc loc;
+  SourceLocation loc;
   StringRef str;
 
 public:    // funcs
   LocString();
   LocString(LocString const &obj);
-  LocString(SourceLoc loc, StringRef str);
+  LocString(SourceLocation loc, StringRef str);
 
   LocString(Flatten&);
   void xfer(Flatten &flat);

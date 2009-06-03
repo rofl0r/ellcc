@@ -76,7 +76,7 @@ NODE *resolveAmbiguity(
   EXTRA &callerExtra)
 {
   // grab location before checking the alternatives
-  SourceLoc loc = env.loc();
+  SourceLocation loc = env.loc();
 
   // how many alternatives?
   int numAlts = 1;

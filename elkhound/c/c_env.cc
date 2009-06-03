@@ -676,14 +676,14 @@ void Env::warn(char const *str)
 }
 
 
-void Env::errLoc(SourceLoc loc, char const *str)
+void Env::errLoc(SourceLocation loc, char const *str)
 {
   pushLocation(loc);
   err(str);
   popLocation();
 }
 
-void Env::warnLoc(SourceLoc loc, char const *str)
+void Env::warnLoc(SourceLocation loc, char const *str)
 {
   pushLocation(loc);
   warn(str);
@@ -714,13 +714,13 @@ Type const *Env::getCurrentRetType()
 }
 
 
-void Env::pushLocation(SourceLoc loc)
+void Env::pushLocation(SourceLocation loc)
 {
   locationStack.push(loc);
 }
 
 
-SourceLoc Env::currentLoc() const
+SourceLocation Env::currentLoc() const
 {
   if (locationStack.isEmpty()) {
     return SL_UNKNOWN;      // no loc info

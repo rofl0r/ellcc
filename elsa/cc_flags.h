@@ -21,7 +21,6 @@
 #include "str.h"     // string
 #include "macros.h"  // ENUM_BITWISE_OPS
 #include "TargetInfo.h"
-using namespace ellcc;
 
 // ----------------------- TypeIntr ----------------------
 // type introducer keyword
@@ -178,33 +177,33 @@ char const *toString(ScopeKind sk);
 // (like whether a floating-point type is unsigned)
 enum SimpleTypeId {
   // types that exist in C++
-  ST_NO_TYPE = TargetInfo::NoType,
-  ST_BOOL = TargetInfo::Bool,
-  ST_CHAR = TargetInfo::Char,
-  ST_SIGNED_CHAR = TargetInfo::SignedChar,
-  ST_UNSIGNED_CHAR = TargetInfo::UnsignedChar,
-  ST_WCHAR_T = TargetInfo::WChar,
-  ST_SHORT_INT = TargetInfo::Short,
-  ST_UNSIGNED_SHORT_INT = TargetInfo::UnsignedShort,
-  ST_INT = TargetInfo::Int,
-  ST_UNSIGNED_INT = TargetInfo::UnsignedInt,
-  ST_LONG_INT = TargetInfo::Long,
-  ST_UNSIGNED_LONG_INT = TargetInfo::UnsignedLong,
-  ST_LONG_LONG = TargetInfo::LongLong,
-  ST_UNSIGNED_LONG_LONG = TargetInfo::UnsignedLongLong,         // GNU/C99
-  ST_FLOAT = TargetInfo::Float,
-  ST_DOUBLE = TargetInfo::Double,
-  ST_LONG_DOUBLE = TargetInfo::LongDouble,
-  ST_FLOAT_COMPLEX = TargetInfo::FloatComplex,                  // GNU/C99 (see doc/complex.txt)
-  ST_DOUBLE_COMPLEX = TargetInfo::DoubleComplex,                // GNU/C99
-  ST_LONG_DOUBLE_COMPLEX = TargetInfo::LongDoubleComplex,       // GNU/C99
-  ST_FLOAT_IMAGINARY = TargetInfo::FloatImaginary,              // C99
-  ST_DOUBLE_IMAGINARY = TargetInfo::DoubleImaginary,            // C99
-  ST_LONG_DOUBLE_IMAGINARY = TargetInfo::LongDoubleImaginary,   // C99
-  ST_VOID = TargetInfo::Void,                   // last concrete type (see 'isConcreteSimpleType')
+  ST_NO_TYPE = ellcc::TargetInfo::NoType,
+  ST_BOOL = ellcc::TargetInfo::Bool,
+  ST_CHAR = ellcc::TargetInfo::Char,
+  ST_SIGNED_CHAR = ellcc::TargetInfo::SignedChar,
+  ST_UNSIGNED_CHAR = ellcc::TargetInfo::UnsignedChar,
+  ST_WCHAR_T = ellcc::TargetInfo::WChar,
+  ST_SHORT_INT = ellcc::TargetInfo::Short,
+  ST_UNSIGNED_SHORT_INT = ellcc::TargetInfo::UnsignedShort,
+  ST_INT = ellcc::TargetInfo::Int,
+  ST_UNSIGNED_INT = ellcc::TargetInfo::UnsignedInt,
+  ST_LONG_INT = ellcc::TargetInfo::Long,
+  ST_UNSIGNED_LONG_INT = ellcc::TargetInfo::UnsignedLong,
+  ST_LONG_LONG = ellcc::TargetInfo::LongLong,
+  ST_UNSIGNED_LONG_LONG = ellcc::TargetInfo::UnsignedLongLong,         // GNU/C99
+  ST_FLOAT = ellcc::TargetInfo::Float,
+  ST_DOUBLE = ellcc::TargetInfo::Double,
+  ST_LONG_DOUBLE = ellcc::TargetInfo::LongDouble,
+  ST_FLOAT_COMPLEX = ellcc::TargetInfo::FloatComplex,                  // GNU/C99 (see doc/complex.txt)
+  ST_DOUBLE_COMPLEX = ellcc::TargetInfo::DoubleComplex,                // GNU/C99
+  ST_LONG_DOUBLE_COMPLEX = ellcc::TargetInfo::LongDoubleComplex,       // GNU/C99
+  ST_FLOAT_IMAGINARY = ellcc::TargetInfo::FloatImaginary,              // C99
+  ST_DOUBLE_IMAGINARY = ellcc::TargetInfo::DoubleImaginary,            // C99
+  ST_LONG_DOUBLE_IMAGINARY = ellcc::TargetInfo::LongDoubleImaginary,   // C99
+  ST_VOID = ellcc::TargetInfo::Void,                   // last concrete type (see 'isConcreteSimpleType')
 
   // codes I use as a kind of implementation hack
-  ST_ELLIPSIS = TargetInfo::TypeIDCount,        // used to encode vararg functions
+  ST_ELLIPSIS = ellcc::TargetInfo::TypeIDCount, // used to encode vararg functions
   ST_CDTOR,                                     // "return type" for ctors and dtors
   ST_ERROR,                                     // this type is returned for typechecking errors
   ST_DEPENDENT,                                 // depdenent on an uninstantiated template parameter type
@@ -255,24 +254,24 @@ bool isValid(SimpleTypeId id);                          // bounds check
 SimpleTypeInfo const &simpleTypeInfo(SimpleTypeId id);
 
 inline char const *simpleTypeName(SimpleTypeId id)
-    { if (id < (SimpleTypeId)TargetInfo::TypeIDCount)
-          return TargetInfo::getTypeName((TargetInfo::TypeID)id);
+    { if (id < (SimpleTypeId)ellcc::TargetInfo::TypeIDCount)
+          return ellcc::TargetInfo::getTypeName((ellcc::TargetInfo::TypeID)id);
       else return simpleTypeInfo(id).name; }
-inline int simpleTypeSizeInBits(TargetInfo &TI, SimpleTypeId id)
-    { if (id < (SimpleTypeId)TargetInfo::TypeIDCount)
-          return TI.getTypeSizeInBits((TargetInfo::TypeID)id);
+inline int simpleTypeSizeInBits(ellcc::TargetInfo &TI, SimpleTypeId id)
+    { if (id < (SimpleTypeId)ellcc::TargetInfo::TypeIDCount)
+          return TI.getTypeSizeInBits((ellcc::TargetInfo::TypeID)id);
       else return 0; }
-inline int simpleTypeSizeInBytes(TargetInfo &TI, SimpleTypeId id)
-    { if (id < (SimpleTypeId)TargetInfo::TypeIDCount)
-          return TI.getTypeSizeInBytes((TargetInfo::TypeID)id);
+inline int simpleTypeSizeInBytes(ellcc::TargetInfo &TI, SimpleTypeId id)
+    { if (id < (SimpleTypeId)ellcc::TargetInfo::TypeIDCount)
+          return TI.getTypeSizeInBytes((ellcc::TargetInfo::TypeID)id);
       else return 0; }
-inline int simpleTypeAlignInBits(TargetInfo &TI, SimpleTypeId id)
-    { if (id < (SimpleTypeId)TargetInfo::TypeIDCount)
-          return TI.getTypeAlignInBits((TargetInfo::TypeID)id);
+inline int simpleTypeAlignInBits(ellcc::TargetInfo &TI, SimpleTypeId id)
+    { if (id < (SimpleTypeId)ellcc::TargetInfo::TypeIDCount)
+          return TI.getTypeAlignInBits((ellcc::TargetInfo::TypeID)id);
       else return 0; }
-inline int simpleTypeAlignInBytes(TargetInfo &TI, SimpleTypeId id)
-    { if (id < (SimpleTypeId)TargetInfo::TypeIDCount)
-          return TI.getTypeAlignInBytes((TargetInfo::TypeID)id);
+inline int simpleTypeAlignInBytes(ellcc::TargetInfo &TI, SimpleTypeId id)
+    { if (id < (SimpleTypeId)ellcc::TargetInfo::TypeIDCount)
+          return TI.getTypeAlignInBytes((ellcc::TargetInfo::TypeID)id);
       else return 0; }
 inline bool isIntegerType(SimpleTypeId id)
     { return !!(simpleTypeInfo(id).flags & STF_INTEGER); }

@@ -304,10 +304,10 @@ class IncDec {
     printThing0_ne(NAME, ::toXml_int(VALUE));                     \
   } while(0)
 
-#define printXml_SourceLoc(NAME, VALUE)                           \
+#define printXml_SourceLocation(NAME, VALUE)                           \
   do {                                                            \
     newline();                                                    \
-    printThing0(NAME, ::toXml_SourceLoc(VALUE));                  \
+    printThing0(NAME, ::toXml_SourceLocation(VALUE));                  \
   } while(0)
 
 // #define printStrRef(NAME, VALUE) tagPrinter.printStrRef0(#NAME, VALUE)

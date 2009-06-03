@@ -96,7 +96,7 @@ void astParseError(LocString const &failToken, rostring msg)
   THROW(XASTParse(failToken, msg));
 }
 
-void astParseError(SourceLoc loc, rostring msg)
+void astParseError(SourceLocation loc, rostring msg)
 {
   LocString locstr(loc, NULL);
   THROW(XASTParse(locstr, msg));
@@ -419,7 +419,7 @@ void astParseTerminals(Environment &env, TF_terminals const &terms)
 
     // fill in any gaps in the code space; this is required because
     // later analyses assume the terminal code space is dense
-    SourceLoc dummyLoc(HERE_SOURCELOC);
+    SourceLocation dummyLoc(HERE_SOURCELOC);
     for (int i=0; i<maxCode; i++) {
       if (!codeHasTerm[i].b) {
         LocString dummy(dummyLoc, grammarStringTable.add(

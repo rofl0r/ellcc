@@ -17,10 +17,6 @@ TOK_EOF,                 "<EOF>",                     :
 // non-keyword name
 TOK_NAME,                "<name>",                    : m  n
 
-// classified name (for e.g. cdecl2)
-TOK_TYPE_NAME,           "<type name>",               : m  n
-TOK_VARIABLE_NAME,       "<variable name>",           : m  n
-
 // literals
 TOK_INT_LITERAL,         "<int literal>",             : m  n
 TOK_FLOAT_LITERAL,       "<float literal>",           : m  n

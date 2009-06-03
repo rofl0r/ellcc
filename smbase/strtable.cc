@@ -48,6 +48,13 @@ void StringTable::clear()
   }
 }
 
+StringRef StringTable::add(char const *src, int len)
+{
+  char ar[len + 1]; // include null terminator
+  memcpy(ar, src, len);
+  ar[len] = '\0';
+  return add(ar);
+}
 
 StringRef StringTable::add(char const *src)
 {
@@ -57,8 +64,7 @@ StringRef StringTable::add(char const *src)
     return ret;
   }
 
-  int len = strlen(src)+1;     // include null terminator
-
+  int len = strlen(src) + 1;    // include null terminator
   // is it a long string?
   if (len >= longThreshold) {
     char *d = new char[len];

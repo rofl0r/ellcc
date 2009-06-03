@@ -47,15 +47,15 @@ public:
     UserActions *context,
     int productionId,
     SemanticValue const *svals
-    SOURCELOCARG( SourceLoc loc )
-    ENDSOURCELOCARG( SourceLoc )  );
+    SOURCELOCARG( SourceLocation loc )
+    ENDSOURCELOCARG( SourceLocation )  );
 
   virtual ReductionActionFunc getReductionAction()
     { return &ParseTreeActions::reduce; }
 
   virtual SemanticValue mergeAlternativeParses(
     int ntIndex, SemanticValue left, SemanticValue right
-    SOURCELOCARG( SourceLoc loc ) );
+    SOURCELOCARG( SourceLocation loc ) );
 
   virtual char const *terminalName(int termId);
   virtual char const *nonterminalName(int termId);

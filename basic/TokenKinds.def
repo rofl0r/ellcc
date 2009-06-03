@@ -89,8 +89,8 @@ PPKEYWORD(unassert)
 
 // These define members of the tok::* namespace.
 
-TOK(unknown)             // Not a token.
 TOK(eof)                 // End of file.
+TOK(unknown)             // Not a token.
 TOK(eom)                 // End of macro (end of line inside a macro).
 
 // C99 6.4.9: Comments.
@@ -101,7 +101,8 @@ TOK(identifier)          // abcde123
 
 // C99 6.4.4.1: Integer Constants
 // C99 6.4.4.2: Floating Constants
-TOK(numeric_constant)    // 0x123
+TOK(numeric_constant)    // 0x123 or 0.123
+TOK(int_constant)        // 0x123
 
 // C99 6.4.4: Character Constants
 TOK(char_constant)       // 'a'   L'b'
@@ -170,6 +171,9 @@ TOK(coloncolon)          // ::
 // Objective C support.
 TOK(at)                  // @
 
+// GNU Support
+TOK(min)                 // <?
+TOK(max)                 // >?
 
 // C99 6.4.1: Keywords.  These turn into kw_* tokens.
 // Flags allowed:
@@ -287,11 +291,18 @@ KEYWORD(_Decimal64                  , KEYALL)
 KEYWORD(_Decimal128                 , KEYALL)
 KEYWORD(__null                      , KEYCXX)
 KEYWORD(__alignof                   , KEYALL)
+KEYWORD(__offsetof                  , KEYALL)
 KEYWORD(__attribute                 , KEYALL)
 KEYWORD(__builtin_choose_expr       , KEYALL)
 KEYWORD(__builtin_offsetof          , KEYALL)
+KEYWORD(__builtin_constant_p        , KEYALL)
 KEYWORD(__builtin_types_compatible_p, KEYALL)
+KEYWORD(__builtin_va_start          , KEYALL)
+KEYWORD(__builtin_va_copy           , KEYALL)
 KEYWORD(__builtin_va_arg            , KEYALL)
+KEYWORD(__builtin_va_end            , KEYALL)
+KEYWORD(__builtin_alloca            , KEYALL)
+KEYWORD(__builtin_expect            , KEYALL)
 KEYWORD(__extension__               , KEYALL)
 KEYWORD(__imag                      , KEYALL)
 KEYWORD(__label__                   , KEYALL)
@@ -302,6 +313,10 @@ KEYWORD(__PRETTY_FUNCTION__         , KEYALL)
 
 // GNU Extensions (outside impl-reserved namespace)
 KEYWORD(typeof                      , KEYGNU)
+
+// Parser helpers.
+TOK(prefer_reduce)
+TOK(prefer_shift)
 
 // GNU and MS Type Traits
 KEYWORD(__has_nothrow_assign        , KEYCXX)

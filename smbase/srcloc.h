@@ -11,7 +11,7 @@
 // the data structures include caches to make accesses to nearby
 // locations fast.
 //
-// No attempt is made to fold creation of SourceLocs into other
+// No attempt is made to fold creation of SourceLocations into other
 // file-processing activities, such as traditional lexical analysis.
 // The complexity of doing that would be substantial, with little gain
 // in efficiency, due to the large buffer caches in modern OSes.  The
@@ -39,7 +39,7 @@ class HashLineMap;    // hashline.h
 // This is a source location.  It's interpreted as an integer
 // specifying the byte offset within a hypothetical file created by
 // concatenating all the sources together.  Its type is 'enum' so I
-// can overload functions to accept SourceLoc without confusion.
+// can overload functions to accept SourceLocation without confusion.
 // I assume the compiler will use a machine word for this (and check
 // that assumption in the .cc file).
 //
@@ -47,7 +47,7 @@ class HashLineMap;    // hashline.h
 // would not allow variables of this type to be created
 // uninitialized.. that's the one drawback of calling this an 'enum'
 // instead of a 'class': I don't get to write a constructor.
-enum SourceLoc {
+enum SourceLocation {
   // entity is defined within the translator's initialization code
   SL_INIT=-1,
 
@@ -57,10 +57,10 @@ enum SourceLoc {
 
 
 // This class manages all the data associated with creating and
-// interpreting SourceLocs.  It's expected to be a singleton in the
+// interpreting SourceLocations.  It's expected to be a singleton in the
 // program, though within this module that assumption is confined to
 // the 'toString' function at the end.
-class SourceLocManager {
+class SourceLocationManager {
 private:     // types
   // a triple that identifies a line boundary in a file (it's
   // implicit which file it is)
@@ -88,7 +88,7 @@ private:     // types
 public:      // types
 
   // Holds basic data about files for use in initializing the
-  // SourceLocManager when de-serializing it from XML.
+  // SourceLocationManager when de-serializing it from XML.
   class FileData {
     public:
     sm::string name;
@@ -121,8 +121,8 @@ public:      // types
     // see if their names happen to be aliases in the filesystem
     sm::string name;
 
-    // start offset in the SourceLoc space
-    SourceLoc startLoc;
+    // start offset in the SourceLocation space
+    SourceLocation startLoc;
 
     // number of chars in the file (i.e., if you say stat(2), you get
     // this number)
@@ -181,9 +181,9 @@ public:      // types
 
   public:    // funcs
     // this builds both the array and the index
-    File(char const *name, SourceLoc startLoc);
+    File(char const *name, SourceLocation startLoc);
     // used when de-serializing from xml
-    File(FileData *fileData, SourceLoc aStartLoc);
+    File(FileData *fileData, SourceLocation aStartLoc);
     ~File();
 
     // line number to character offset
@@ -196,13 +196,13 @@ public:      // types
     void charToLineCol(int offset, int &line, int &col);
 
     // true if this file contains the specified location
-    bool hasLoc(SourceLoc sl) const
+    bool hasLoc(SourceLocation sl) const
       { return toInt(startLoc) <= sl &&
                                   sl <= toInt(startLoc) + numChars; }
 
     // returns -1 if the range of 'this' is less than sl, 0 if this contains
     // sl (i.e. hasLoc), and +1 if this is greater than sl.
-    int cmpLoc(SourceLoc sl) const
+    int cmpLoc(SourceLocation sl) const
     {
       if (toInt(startLoc) > sl) return +1;
       if (toInt(startLoc) + numChars < sl) return -1;
@@ -224,7 +224,7 @@ public:      // types
     int serializationOnly_get_lineLengthsSize() {return lineLengthsSize;}
   };
 
-  // this is used for SourceLocs where the file isn't reliably
+  // this is used for SourceLocations where the file isn't reliably
   // available, yet we'd like to be able to store some location
   // information anyway; the queries below just return the static
   // information stored, and incremental update is impossible
@@ -243,7 +243,7 @@ public:      // types
   };
 
 public:
-  // type of SourceLocManager::files, so that we don't have to update
+  // type of SourceLocationManager::files, so that we don't have to update
   // everything when the type of this changes.
   typedef ObjArrayStack<File> FileList;
 
@@ -255,21 +255,21 @@ private:     // data
   // most-recently accessed File; this is a cache
   File *recent;                      // (nullable serf)
 
-  // list of StaticLocs; any SourceLoc less than 0 is interpreted
+  // list of StaticLocs; any SourceLocation less than 0 is interpreted
   // as an index into this list
   ObjList<StaticLoc> statics;
 
   // next source location to assign
-  SourceLoc nextLoc;
+  SourceLocation nextLoc;
 
   // next static (negative) location
-  SourceLoc nextStaticLoc;
+  SourceLocation nextStaticLoc;
 
 public:      // data
-  // when true, the SourceLocManager may go to the file system and
+  // when true, the SourceLocationManager may go to the file system and
   // open a file in order to find out something about it.  dsw: I want
   // to turn this off when de-serializing XML for example; whatever
-  // the SourceLocManager wants to kno about a file should be in the
+  // the SourceLocationManager wants to kno about a file should be in the
   // XML.
   bool mayOpenFiles;
 
@@ -301,30 +301,30 @@ public:      // data
 
 private:     // funcs
   // let File know about these functions
-  friend class SourceLocManager::File;
+  friend class SourceLocationManager::File;
 
-  static SourceLoc toLoc(int L) {
-    SourceLoc ret = (SourceLoc)L;
+  static SourceLocation toLoc(int L) {
+    SourceLocation ret = (SourceLocation)L;
 
-    // in debug mode, we verify that SourceLoc is wide enough
+    // in debug mode, we verify that SourceLocation is wide enough
     // to encode this integer
     xassertdb(toInt(ret) == L);
 
     return ret;
   }
-  static int toInt(SourceLoc loc) { return (int)loc; }
+  static int toInt(SourceLocation loc) { return (int)loc; }
 
   void makeFirstStatics();
 
   File *findFile(char const *name);
   File *getFile(char const *name);
 
-  File *findFileWithLoc(SourceLoc loc);
-  StaticLoc const *getStatic(SourceLoc loc);
+  File *findFileWithLoc(SourceLocation loc);
+  StaticLoc const *getStatic(SourceLocation loc);
 
 public:      // funcs
-  SourceLocManager();
-  ~SourceLocManager();
+  SourceLocationManager();
+  ~SourceLocationManager();
 
   // return to state where no files are known
   void reset();
@@ -339,70 +339,70 @@ public:      // funcs
   // 5 characters, then offsets 0,1,2,3,4,5 are legal.
 
   // encode from scratch
-  SourceLoc encodeOffset(char const *filename, int charOffset);
-  SourceLoc encodeBegin(char const *filename)
+  SourceLocation encodeOffset(char const *filename, int charOffset);
+  SourceLocation encodeBegin(char const *filename)
     { return encodeOffset(filename, 0 /*offset*/); }
-  SourceLoc encodeLineCol(char const *filename, int line, int col);
+  SourceLocation encodeLineCol(char const *filename, int line, int col);
 
   // some care is required with 'encodeStatic', since each call makes
   // a new location with a new entry in the static array to back it
   // up, so the caller should ensure a given static location is not
   // encoded more than once, if possible
-  SourceLoc encodeStatic(StaticLoc const &obj);
-  SourceLoc encodeStatic(char const *fname, int offset, int line, int col)
+  SourceLocation encodeStatic(StaticLoc const &obj);
+  SourceLocation encodeStatic(char const *fname, int offset, int line, int col)
     { return encodeStatic(StaticLoc(fname, offset, line, col)); }
-  static bool isStatic(SourceLoc loc) { return toInt(loc) <= 0; }
+  static bool isStatic(SourceLocation loc) { return toInt(loc) <= 0; }
 
   // encode incremental; these are the methods we expect are called
   // the most frequently; this interface is supposed to allow an
   // implementation which uses explicit line/col, even though that
   // is not what is used here
-  static SourceLoc advCol(SourceLoc base, int colOffset)
+  static SourceLocation advCol(SourceLocation base, int colOffset)
     { xassert(!isStatic(base)); return toLoc(toInt(base) + colOffset); }
-  static SourceLoc advLine(SourceLoc base)     // from end of line to beginning of next
+  static SourceLocation advLine(SourceLocation base)     // from end of line to beginning of next
     { xassert(!isStatic(base)); return toLoc(toInt(base) + 1); }
-  static SourceLoc advText(SourceLoc base, char const * /*text*/, int textLen)
+  static SourceLocation advText(SourceLocation base, char const * /*text*/, int textLen)
     { xassert(!isStatic(base)); return toLoc(toInt(base) + textLen); }
 
   // decode
-  void decodeOffset(SourceLoc loc, char const *&filename, int &charOffset);
-  void decodeLineCol(SourceLoc loc, char const *&filename, int &line, int &col);
+  void decodeOffset(SourceLocation loc, char const *&filename, int &charOffset);
+  void decodeLineCol(SourceLocation loc, char const *&filename, int &line, int &col);
 
   // more specialized decode
-  char const *getFile(SourceLoc loc) { return getFile(loc, this->useHashLines); }
-  char const *getFile(SourceLoc loc, bool localUseHashLines);
-  int getOffset(SourceLoc loc);
-  int getOffset_nohashline(SourceLoc loc);
-  int getLine(SourceLoc loc);
-  int getCol(SourceLoc loc);
+  char const *getFile(SourceLocation loc) { return getFile(loc, this->useHashLines); }
+  char const *getFile(SourceLocation loc, bool localUseHashLines);
+  int getOffset(SourceLocation loc);
+  int getOffset_nohashline(SourceLocation loc);
+  int getLine(SourceLocation loc);
+  int getCol(SourceLocation loc);
 
   // get access to the File itself, for adding #line directives
   File *getInternalFile(char const *fname)
     { return getFile(fname); }
 
   // render as string in "file:line:col" format
-  sm::string getString(SourceLoc loc);
+  sm::string getString(SourceLocation loc);
 
   // versions of the decode routine that either use or do not use the
   // hashline map (when available) depending on an explicit flag,
   // rather than using this->useHashLines
-  void decodeOffset_explicitHL(SourceLoc loc, char const *&filename, int &charOffset, bool localUseHashLines);
-  void decodeOffset_nohashline(SourceLoc loc, char const *&filename, int &charOffset)
+  void decodeOffset_explicitHL(SourceLocation loc, char const *&filename, int &charOffset, bool localUseHashLines);
+  void decodeOffset_nohashline(SourceLocation loc, char const *&filename, int &charOffset)
     { decodeOffset_explicitHL(loc, filename, charOffset, false); }
-  void decodeLineCol_explicitHL(SourceLoc loc, char const *&filename, int &line, int &col, bool localUseHashLines);
-  void decodeLineCol_nohashline(SourceLoc loc, char const *&filename, int &line, int &col)
+  void decodeLineCol_explicitHL(SourceLocation loc, char const *&filename, int &line, int &col, bool localUseHashLines);
+  void decodeLineCol_nohashline(SourceLocation loc, char const *&filename, int &line, int &col)
     { decodeLineCol_explicitHL(loc, filename, line, col, false); }
-  sm::string getString_explicitHL(SourceLoc loc, bool localUseHashLines);
-  sm::string getString_nohashline(SourceLoc loc)
+  sm::string getString_explicitHL(SourceLocation loc, bool localUseHashLines);
+  sm::string getString_nohashline(SourceLocation loc)
     { return getString_explicitHL(loc, false); }
 
   // "line:col" format
-  sm::string getLCString(SourceLoc loc);
+  sm::string getLCString(SourceLocation loc);
 
   // dsw: the xml serialization code needs access to this field; the
   // idea is that the method name suggests that people not use it
   FileList &serializationOnly_get_files() {return files;}
-  // for de-serializing from xml a single File and loading it into the SourceLocManager
+  // for de-serializing from xml a single File and loading it into the SourceLocationManager
   void loadFile(FileData *fileData);
   // has this file been loaded?
   bool isLoaded(char const *name) { return findFile(name); }
@@ -410,20 +410,20 @@ public:      // funcs
 
 
 // singleton pointer, set automatically by the constructor
-extern SourceLocManager *sourceLocManager;
+extern SourceLocationManager *sourceLocManager;
 
 // dsw: So that gdb can find it please DO NOT inline this; also the
 // unique public name is intentional: I don't want gdb doing
 // overloading and sometimes getting it wrong, which it does
-sm::string locToStr(SourceLoc sl);
+sm::string locToStr(SourceLocation sl);
 
-inline sm::string toString(SourceLoc sl)
+inline sm::string toString(SourceLocation sl)
   { return locToStr(sl); }
 
-inline stringBuilder& operator<< (stringBuilder &sb, SourceLoc sl)
+inline stringBuilder& operator<< (stringBuilder &sb, SourceLocation sl)
   { return sb << toString(sl); }
 
-inline sm::string toLCString(SourceLoc sl)
+inline sm::string toLCString(SourceLocation sl)
   { return sourceLocManager->getLCString(sl); }
 
 
@@ -433,18 +433,18 @@ inline sm::string toLCString(SourceLoc sl)
   (sourceLocManager->encodeStatic(__FILE__, 0, __LINE__, 1))
 
 
-// it's silly to demand mention of 'SourceLocManager' just to update
-// the locations, esp. since SourceLoc is its own type and therefore
+// it's silly to demand mention of 'SourceLocationManager' just to update
+// the locations, esp. since SourceLocation is its own type and therefore
 // overloading will avoid any possible collisions
-inline SourceLoc advCol(SourceLoc base, int colOffset)
-  { return SourceLocManager::advCol(base, colOffset); }
-inline SourceLoc advLine(SourceLoc base)
-  { return SourceLocManager::advLine(base); }
-inline SourceLoc advText(SourceLoc base, char const *text, int textLen)
-  { return SourceLocManager::advText(base, text, textLen); }
+inline SourceLocation advCol(SourceLocation base, int colOffset)
+  { return SourceLocationManager::advCol(base, colOffset); }
+inline SourceLocation advLine(SourceLocation base)
+  { return SourceLocationManager::advLine(base); }
+inline SourceLocation advText(SourceLocation base, char const *text, int textLen)
+  { return SourceLocationManager::advText(base, text, textLen); }
 
-//  string toXml(SourceLoc index);
-//  void fromXml(SourceLoc &out, string str);
+//  string toXml(SourceLocation index);
+//  void fromXml(SourceLocation &out, string str);
 
 
 #endif // SRCLOC_H

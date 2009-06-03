@@ -83,6 +83,8 @@ const char *tok::getTokenSimpleSpelling(enum TokenKind Kind) {
   case tok::arrowstar:           return "->*";
   case tok::coloncolon:          return "::";
   case tok::at:                  return "@";
+  case tok::min:                 return "<?";
+  case tok::max:                 return ">?";
   default: break;
   }
 

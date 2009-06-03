@@ -70,7 +70,7 @@ istream *BaseLexer::openString(char const *buf, int len)
   return inputStream;
 }
 
-BaseLexer::BaseLexer(StringTable &s, SourceLoc initLoc,
+BaseLexer::BaseLexer(StringTable &s, SourceLocation initLoc,
                      char const *buf, int len)
   : yyFlexLexer(openString(buf, len)),
 

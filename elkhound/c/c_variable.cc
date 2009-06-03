@@ -7,7 +7,7 @@
 using namespace sm;
 
 // ---------------------- Variable --------------------
-Variable::Variable(SourceLoc L, StringRef n, Type const *t, DeclFlags f)
+Variable::Variable(SourceLocation L, StringRef n, Type const *t, DeclFlags f)
   : loc(L),
     name(n),
     type(t),

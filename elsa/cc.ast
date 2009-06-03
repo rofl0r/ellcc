@@ -67,7 +67,7 @@ option gdb;
 class TranslationUnit (ASTList<TopForm> topForms);
 
 // a toplevel form
-class TopForm (SourceLoc loc) {
+class TopForm (SourceLocation loc) {
   // represent ambiguous topforms by forming a linked list of
   // alternatives; the only reason topforms might be ambiguous is
   // because of implicit int (for old-style C)
@@ -134,12 +134,12 @@ class Function (
 
   FakeList<Handler> *handlers   // handlers for ctor "try" block
 ) {
-  public SourceLoc getLoc() const;
+  public SourceLocation getLoc() const;
 }
 
 class MemberInit (
-  SourceLoc loc, 
-  SourceLoc endloc,
+  SourceLocation loc, 
+  SourceLocation endloc,
   PQName name,                    // name of member or base class
   FakeList<ArgExpression> *args   // arguments to its constructor
 ) {
@@ -189,7 +189,7 @@ class ASTTypeId (
 // there was a leading "::" symbol; each level of qualification has a
 // 'loc' because each level is a remote reference to some entity, and
 // that lookup might fail
-class PQName(SourceLoc loc) {
+class PQName(SourceLocation loc) {
   public bool hasQualifiers() const { return isPQ_qualifier(); };
 
   public sm::string qualifierString() const;
@@ -265,7 +265,7 @@ class PQName(SourceLoc loc) {
 // built with type constructors (typedef'd types may have been built
 // with type constructors when the name was defined, but a
 // TypeSpecifier refers only to the name)
-class TypeSpecifier(SourceLoc loc) {
+class TypeSpecifier(SourceLocation loc) {
   public(field,xml) CVFlags cv = CV_UNLOCKED;
   custom clone { ret->cv = cv; }
 
@@ -325,7 +325,7 @@ class BaseClassSpec (
 
 // a binding of a name to a constant value
 class Enumerator (
-  SourceLoc loc,                        // location
+  SourceLocation loc,                        // location
   StringRef name,                       // name of this constant
   Expression /*nullable*/ expr          // constant expr, or NULL for "next"
 ) {
@@ -338,7 +338,7 @@ class Enumerator (
 class MemberList (ASTList<Member> list);
 
 // member of a class
-class Member (SourceLoc loc, SourceLoc endloc) {
+class Member (SourceLocation loc, SourceLocation endloc) {
   -> MR_decl(Declaration d);            // data members or functions w/o bodies
   -> MR_func(Function f);               // function with body
   -> MR_access(AccessKeyword k);        // section header
@@ -379,14 +379,14 @@ class Declarator (
     { return const_cast<PQName*>(getDeclaratorIdC()); };
   public void setDeclaratorId(PQName *n);
 
-  public SourceLoc getLoc() const;
+  public SourceLocation getLoc() const;
 }
 
 
 // inner declarator; things *recursively* buried inside declarators;
 // cannot have initializers; the internal structure can be ignored
 // once typechecking determines what type is denoted
-class IDeclarator(SourceLoc loc) {
+class IDeclarator(SourceLocation loc) {
   // dig down and find the name being declared; may return NULL
   pure_virtual PQName const *getDeclaratorIdC() const;
   public PQName *getDeclaratorId()
@@ -468,7 +468,7 @@ class OperatorName {
 
 
 // ------------------- statements -----------------
-class Statement (SourceLoc loc, SourceLoc endloc) {
+class Statement (SourceLocation loc, SourceLocation endloc) {
   // represent ambiguous statements by forming a linked list of alternatives
   public Statement * ambiguity = NULL;
   public void addAmbiguity(Statement *alt);
@@ -552,7 +552,7 @@ class Handler (
 
 // ----------------- expressions -----------------
 // C expressions
-class Expression(SourceLoc loc, SourceLoc endloc)  {
+class Expression(SourceLocation loc, SourceLocation endloc)  {
   // NOTE: we never make lists of Expressions, only of ArgExpressions
 
   // same as we do for statements
@@ -716,7 +716,7 @@ class Asm(E_stringLit text) {
 }
 
 // things that appear after declarations to assign initial values
-class Initializer (SourceLoc loc) {
+class Initializer (SourceLocation loc) {
   public Initializer *next = NULL;       // FakeList link
 
   // simple initializer, like "int x = 3"
@@ -748,7 +748,7 @@ class TemplateDeclaration (/*fakelist*/TemplateParameter params) {
 }
 
 // one of the parameters to a template declaration
-class TemplateParameter (SourceLoc loc)(TemplateParameter /*nullable*/ next) {
+class TemplateParameter (SourceLocation loc)(TemplateParameter /*nullable*/ next) {
   // true if this parameter has a default arg
   pure_virtual bool hasDefaultArg() const;
 

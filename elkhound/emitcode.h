@@ -5,7 +5,7 @@
 #define EMITCODE_H
 
 #include "str.h"          // stringBuffer
-#include "srcloc.h"       // SourceLoc
+#include "srcloc.h"       // SourceLocation
 #include "ofstreamts.h"   // ofstreamTS
 
 class EmitCode : public stringBuilder {
@@ -29,7 +29,7 @@ public:      // funcs
 
 
 // return a #line directive for the given location
-sm::string lineDirective(SourceLoc loc);
+sm::string lineDirective(SourceLocation loc);
 
 // emit a #line directive to restore reporting to the
 // EmitCode file itself (the 'sb' argument must be an EmitFile object)
