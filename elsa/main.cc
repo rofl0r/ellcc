@@ -8,7 +8,7 @@
 #include "trace.h"        // traceAddSys
 #include "syserr.h"       // xsyserror
 #include "parssppt.h"     // ParseTreeAndTokens, treeMain
-#include "srcloc.h"       // SourceLocationManager
+#include "srcloc.h"       // SourceManager
 #include "ckheap.h"       // malloc_stats
 #include "cc_env.h"       // Env
 #include "cc_ast.h"       // C++ AST (r)
@@ -711,7 +711,7 @@ void doit(int argc, char **argv)
 
   if_malloc_stats();
 
-  SourceLocationManager mgr;
+  SourceManager mgr;
 
   // string table for storing parse tree identifiers
   StringTable strTable;

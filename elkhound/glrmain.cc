@@ -9,7 +9,7 @@
 #include "trace.h"        // traceAddSys
 #include "parssppt.h"     // ParseTreeAndTokens, treeMain
 #include "ckheap.h"       // malloc_stats
-#include "srcloc.h"       // SourceLocationManager
+#include "srcloc.h"       // SourceManager
 #include "cc_lang.h"      // CCLang
 #include "parsetables.h"  // ParseTables
 
@@ -27,7 +27,7 @@ void doit(int argc, char **argv)
   traceAddSys("progress");
   //traceAddSys("parse-tree");
 
-  SourceLocationManager mgr;
+  SourceManager mgr;
   SemanticValue treeTop;
   CCLang lang;
   ParseTreeAndTokens tree(lang, treeTop);

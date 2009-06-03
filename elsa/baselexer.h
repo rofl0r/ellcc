@@ -22,7 +22,7 @@
 class BaseLexer : public yyFlexLexer, public LexerInterface {
 protected:  // data
   std::istream *inputStream;       // (owner) file from which we're reading
-  SourceLocationManager::File *srcFile; // (serf) contains the hash map we update
+  SourceManager::File *srcFile; // (serf) contains the hash map we update
 
   SourceLocation nextLoc;               // location of *next* token
   int curLine;                     // current line number; needed for #line directives

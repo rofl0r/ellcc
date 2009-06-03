@@ -329,7 +329,7 @@ bool isGramlexEmbed(int code);
 
 int main(int argc)
 {
-  SourceLocationManager mgr;
+  SourceManager mgr;
   GrammarLexer lexer(isGramlexEmbed);
   traceAddSys("lex");
 

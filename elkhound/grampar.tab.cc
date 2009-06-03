@@ -224,7 +224,7 @@ typedef union YYSTYPE
   ASTList<RHSElt> *rhsList;
   RHSElt *rhsElt;
 }
-/* Line 187 of yacc.c.  */
+/* Line 193 of yacc.c.  */
 #line 229 "grampar.tab.c"
 	YYSTYPE;
 # define yystype YYSTYPE /* obsolescent; will be withdrawn */

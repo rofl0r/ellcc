@@ -9,7 +9,7 @@
 #include "trace.h"        // traceAddSys
 #include "syserr.h"       // xsyserror
 #include "parssppt.h"     // ParseTreeAndTokens, treeMain
-#include "srcloc.h"       // SourceLocationManager
+#include "srcloc.h"       // SourceManager
 #include "ckheap.h"       // malloc_stats
 #include "cc_env.h"       // Env
 #include "cc_ast.h"       // C++ AST (r)
@@ -266,7 +266,7 @@ int Elsa::doit(Preprocessor& PP,
                llvm::Module*& mod, bool parseOnly)
 {
     mod = NULL;
-    SourceLocationManager mgr;
+    SourceManager mgr;
     // String table for storing parse tree identifiers.
     StringTable strTable;
     

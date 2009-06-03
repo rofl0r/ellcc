@@ -60,7 +60,7 @@ enum SourceLocation {
 // interpreting SourceLocations.  It's expected to be a singleton in the
 // program, though within this module that assumption is confined to
 // the 'toString' function at the end.
-class SourceLocationManager {
+class SourceManager {
 private:     // types
   // a triple that identifies a line boundary in a file (it's
   // implicit which file it is)
@@ -88,7 +88,7 @@ private:     // types
 public:      // types
 
   // Holds basic data about files for use in initializing the
-  // SourceLocationManager when de-serializing it from XML.
+  // SourceManager when de-serializing it from XML.
   class FileData {
     public:
     sm::string name;
@@ -243,7 +243,7 @@ public:      // types
   };
 
 public:
-  // type of SourceLocationManager::files, so that we don't have to update
+  // type of SourceManager::files, so that we don't have to update
   // everything when the type of this changes.
   typedef ObjArrayStack<File> FileList;
 
@@ -266,10 +266,10 @@ private:     // data
   SourceLocation nextStaticLoc;
 
 public:      // data
-  // when true, the SourceLocationManager may go to the file system and
+  // when true, the SourceManager may go to the file system and
   // open a file in order to find out something about it.  dsw: I want
   // to turn this off when de-serializing XML for example; whatever
-  // the SourceLocationManager wants to kno about a file should be in the
+  // the SourceManager wants to kno about a file should be in the
   // XML.
   bool mayOpenFiles;
 
@@ -301,7 +301,7 @@ public:      // data
 
 private:     // funcs
   // let File know about these functions
-  friend class SourceLocationManager::File;
+  friend class SourceManager::File;
 
   static SourceLocation toLoc(int L) {
     SourceLocation ret = (SourceLocation)L;
@@ -323,8 +323,8 @@ private:     // funcs
   StaticLoc const *getStatic(SourceLocation loc);
 
 public:      // funcs
-  SourceLocationManager();
-  ~SourceLocationManager();
+  SourceManager();
+  ~SourceManager();
 
   // return to state where no files are known
   void reset();
@@ -402,7 +402,7 @@ public:      // funcs
   // dsw: the xml serialization code needs access to this field; the
   // idea is that the method name suggests that people not use it
   FileList &serializationOnly_get_files() {return files;}
-  // for de-serializing from xml a single File and loading it into the SourceLocationManager
+  // for de-serializing from xml a single File and loading it into the SourceManager
   void loadFile(FileData *fileData);
   // has this file been loaded?
   bool isLoaded(char const *name) { return findFile(name); }
@@ -410,7 +410,7 @@ public:      // funcs
 
 
 // singleton pointer, set automatically by the constructor
-extern SourceLocationManager *sourceLocManager;
+extern SourceManager *sourceLocManager;
 
 // dsw: So that gdb can find it please DO NOT inline this; also the
 // unique public name is intentional: I don't want gdb doing
@@ -433,15 +433,15 @@ inline sm::string toLCString(SourceLocation sl)
   (sourceLocManager->encodeStatic(__FILE__, 0, __LINE__, 1))
 
 
-// it's silly to demand mention of 'SourceLocationManager' just to update
+// it's silly to demand mention of 'SourceManager' just to update
 // the locations, esp. since SourceLocation is its own type and therefore
 // overloading will avoid any possible collisions
 inline SourceLocation advCol(SourceLocation base, int colOffset)
-  { return SourceLocationManager::advCol(base, colOffset); }
+  { return SourceManager::advCol(base, colOffset); }
 inline SourceLocation advLine(SourceLocation base)
-  { return SourceLocationManager::advLine(base); }
+  { return SourceManager::advLine(base); }
 inline SourceLocation advText(SourceLocation base, char const *text, int textLen)
-  { return SourceLocationManager::advText(base, text, textLen); }
+  { return SourceManager::advText(base, text, textLen); }
 
 //  string toXml(SourceLocation index);
 //  void fromXml(SourceLocation &out, string str);

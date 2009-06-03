@@ -11,7 +11,7 @@ void *XmlFileReader::ctorNodeFromTag(int tag) {
   default: return NULL;
   case 0: xmlUserFatalError("unexpected file termination while looking for an open tag name");
   case XTOK_File:
-    return new SourceLocationManager::FileData();
+    return new SourceManager::FileData();
     break;
   case XTOK_LineLengths:
     // NOTE: This is not technically a list object as it does not
@@ -39,7 +39,7 @@ void *XmlFileReader::ctorNodeFromTag(int tag) {
 
   // **** Containers
   case XTOK_List_files:
-    return new ObjList<SourceLocationManager::FileData>();
+    return new ObjList<SourceManager::FileData>();
     break;
   }
 }
@@ -71,7 +71,7 @@ bool XmlFileReader::registerAttribute(void *target0, int kind, int attr, char co
   default: return false; break;
 
   case XTOK_File: {
-    SourceLocationManager::FileData *obj = (SourceLocationManager::FileData*)target0;
+    SourceManager::FileData *obj = (SourceManager::FileData*)target0;
     switch(attr) {
     default: xmlUserFatalError("illegal attribute for a File tag"); break;
     case XTOK_name: obj->name = strValue; break;

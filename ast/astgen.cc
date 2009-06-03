@@ -9,7 +9,7 @@
 #include "strutil.h"       // replace, translate, localTimeString
 #include "sobjlist.h"      // SObjList
 #include "stringset.h"     // StringSet
-#include "srcloc.h"        // SourceLocationManager
+#include "srcloc.h"        // SourceManager
 #include "strtokp.h"       // StrtokParse
 #include "exc.h"           // xfatal
 #include "strdict.h"       // StringDict
@@ -3220,7 +3220,7 @@ void entry(int argc, char **argv)
 {
   TRACE_ARGS();
   checkHeap();
-  SourceLocationManager mgr;
+  SourceManager mgr;
 
   if (argc < 2) {
     std::cout << "usage: " << argv[0] << " [options] file.ast [extension.ast [...]]\n"

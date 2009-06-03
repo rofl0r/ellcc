@@ -5,7 +5,7 @@
 #include <stdlib.h>       // exit, atoi
 
 #include "parssppt.h"     // ParseTreeAndTokens
-#include "srcloc.h"       // SourceLocationManager
+#include "srcloc.h"       // SourceManager
 #include "cc_env.h"       // Env
 #include "cc_ast.h"       // C++ AST (r)
 #include "parsetables.h"  // ParseTables
@@ -82,7 +82,7 @@ void doit(int argc, char **argv)
 {
   xBase::logExceptions = false;
 
-  SourceLocationManager mgr;
+  SourceManager mgr;
   StringTable strTable;
 
   // parsing language options
