@@ -37,7 +37,7 @@ CC2LLVMEnv::CC2LLVMEnv(StringTable &s, sm::string name, const TranslationUnit& i
   : str(s),
     TI(TI),
     TD(""),
-    targetFolder(TD),
+    targetFolder(&TD),
     input(input),
     mod(new llvm::Module(name.c_str())),
     function(NULL),
