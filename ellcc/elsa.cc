@@ -266,7 +266,7 @@ int Elsa::doit(Preprocessor& PP,
                llvm::Module*& mod, bool parseOnly)
 {
     mod = NULL;
-    SourceManager mgr;
+    ::SourceManager mgr;
     // String table for storing parse tree identifiers.
     StringTable strTable;
     
