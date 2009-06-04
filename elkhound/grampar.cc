@@ -14,8 +14,11 @@
 #include "grampar.tab.h"     // token constant codes, union YYSTYPE
 #include "array.h"           // GrowArray
 #include "mlsstr.h"          // MLSubstrate
+#include "FileManager.h"
+#include "SourceManager.h"
+#include "llvm/Support/MemoryBuffer.h"
 
-#include <fstream>           // std::ifstream
+#include <sstream>           // std::istringstream
 #include <ctype.h>           // isspace, isalnum
 #include <algorithm>         // max
 
@@ -1202,16 +1205,34 @@ GrammarAST *parseGrammarFile(rostring origFname, bool useML)
   #endif // NDEBUG
 
   // open input file
-  Owner<std::ifstream> in;
-  if (fname.empty()) {
-    fname = "<stdin>";
-  }
-  else {
-    in = new std::ifstream(fname.c_str());
-    if (!*in) {
+  ellcc::SourceManager SM;
+  ellcc::FileManager FM;
+  if (fname == NULL) {
+    // Read from stdin.
+    llvm::MemoryBuffer *SB = llvm::MemoryBuffer::getSTDIN();
+
+    // If stdin was empty, SB is null.  Cons up an empty memory
+    // buffer now.
+    if (!SB) {
+      const char *EmptyStr = "";
+      fname = "<stdin>";
+      SB = llvm::MemoryBuffer::getMemBuffer(EmptyStr, EmptyStr, fname.c_str());
+    }
+
+    SM.createMainFileIDForMemBuffer(SB);
+  } else {
+    // Reading from a file.
+    const ellcc::FileEntry *File = FM.getFile(fname.c_str());
+    if (File) SM.createMainFileID(File, ellcc::SourceLocation());
+    if (SM.getMainFileID().isInvalid()) {
       xsyserror("open", stringc << "error opening input file " << fname);
     }
   }
+
+  const llvm::MemoryBuffer *MB = SM.getBuffer(SM.getMainFileID());
+  Owner<std::istringstream> in;
+  in = new std::istringstream();
+  in->str(MB->getBufferStart());
 
   // choose embedded language              
   EmbeddedLang *embed = NULL;

@@ -8,6 +8,8 @@ all: ccsstr astgen libast.a example.o ext1.o
 # directories of other software
 SMBASE := @SMBASE@
 LIBSMBASE := $(SMBASE)/libsmbase.a
+LLVMLDFLAGS := $(shell llvm-config --ldflags) -L$(shell llvm-config --libdir) -lLLVMSupport -lLLVMSystem
+LLVMCCFLAGS := $(shell llvm-config --cxxflags)
 
 # external tools
 PERL := @PERL@
@@ -22,10 +24,10 @@ MYFLEX := $(PERL) $(SMBASE)/run-flex.pl
 CXX := @CXX@
 
 # flags for the C and C++ compilers (and preprocessor)
-CCFLAGS := @CCFLAGS@ -I$(SMBASE)
+CCFLAGS := @CCFLAGS@ -I$(SMBASE) -I../basic $(LLVMCCFLAGS)
 
 # flags for the linker
-LDFLAGS := -g -Wall $(LIBSMBASE)
+LDFLAGS := -g -Wall $(LIBSMBASE) ../basic/libbasic.a $(LLVMLDFLAGS)
 
 
 # some other tools
@@ -101,7 +103,7 @@ ASTGEN_OBJS := \
 
 # ast.ast.cc is a dependency here but not explicitly in the command
 # line because ast.hand.cc #includes it
-astgen: $(ASTGEN_OBJS) ast.ast.cc $(LIBSMBASE) 
+astgen: $(ASTGEN_OBJS) ast.ast.cc $(LIBSMBASE)
 	$(CXX) -o astgen $(ASTGEN_OBJS) $(LDFLAGS)
 
 
@@ -110,7 +112,7 @@ astgen: $(ASTGEN_OBJS) ast.ast.cc $(LIBSMBASE)
 example.cc: astgen example.ast
 	./astgen example.ast
 
-exampletest: exampletest.o example.o asthelp.o locstr.o $(LIBSMBASE)
+exampletest: exampletest.o example.o asthelp.o locstr.o $(LIBSMBASE) ../basic/libbasic.a
 	$(CXX) -o $@ $^
 
 # simple extension

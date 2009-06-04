@@ -9,10 +9,13 @@
 #include "owner.h"           // Owner
 #include "strutil.h"         // trimWhitespace
 #include "strtable.h"        // StringTable
+#include "FileManager.h"
+#include "SourceManager.h"
+#include "llvm/Support/MemoryBuffer.h"
 
 #include <string.h>          // strncmp
 #include <ctype.h>           // isalnum
-#include <fstream>           // ifstream
+#include <sstream>           // istringstream
 
 using namespace sm;
 
@@ -135,21 +138,36 @@ ASTSpecFile *readAbstractGrammar(char const *fname)
     #endif
   }
 
-  Owner<GrammarLexer> lexer;
-  Owner<std::ifstream> in;
+  ellcc::SourceManager SM;
+  ellcc::FileManager FM;
   if (fname == NULL) {
-    // stdin
-    lexer = new GrammarLexer(isAGramlexEmbed, stringTable);
-  }
-  else {
-    // file
-    in = new std::ifstream(fname);
-    if (!*in) {
-      throw_XOpen(fname);
+    // Read from stdin.
+    llvm::MemoryBuffer *SB = llvm::MemoryBuffer::getSTDIN();
+
+    // If stdin was empty, SB is null.  Cons up an empty memory
+    // buffer now.
+    if (!SB) {
+      const char *EmptyStr = "";
+      fname = "<stdin>";
+      SB = llvm::MemoryBuffer::getMemBuffer(EmptyStr, EmptyStr, fname);
     }
-    trace("tmp") << "in is " << in.get() << std::endl;
-    lexer = new GrammarLexer(isAGramlexEmbed, stringTable, fname, in.xfr());
+
+    SM.createMainFileIDForMemBuffer(SB);
+  } else {
+    // Reading from a file.
+    const ellcc::FileEntry *File = FM.getFile(fname);
+    if (File) SM.createMainFileID(File, ellcc::SourceLocation());
+    if (SM.getMainFileID().isInvalid()) {
+      xformat(stringc << "could not read \"" << fname << "\"");
+    }
   }
+
+  const llvm::MemoryBuffer *MB = SM.getBuffer(SM.getMainFileID());
+  Owner<std::istringstream> in;
+  in = new std::istringstream();
+  in->str(MB->getBufferStart());
+  Owner<GrammarLexer> lexer;
+  lexer = new GrammarLexer(isAGramlexEmbed, stringTable, fname, in.xfr());
 
   ASTParseParams params(*lexer);
 
@@ -170,8 +188,6 @@ ASTSpecFile *readAbstractGrammar(char const *fname)
     xformat("parsing finished with an error");
   }
 }
-
-
 
 // ----------------------- test code -----------------------
 #ifdef TEST_AGRAMPAR
