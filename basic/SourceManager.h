@@ -359,7 +359,7 @@ public:
   /// PreallocateID should be non-zero to specify which a pre-allocated, 
   /// lazily computed source location is being filled in by this operation.
   FileID createFileID(const FileEntry *SourceFile, SourceLocation IncludePos,
-                      SrcMgr::CharacteristicKind FileCharacter,
+                      SrcMgr::CharacteristicKind FileCharacter = SrcMgr::C_User,
                       unsigned PreallocatedID = 0,
                       unsigned Offset = 0) {
     const SrcMgr::ContentCache *IR = getOrCreateContentCache(SourceFile);

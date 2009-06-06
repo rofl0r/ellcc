@@ -26,7 +26,6 @@ namespace llvm {
 namespace ellcc {
   
 class SourceManager;
-class FileEntry;
   
 /// FileID - This is an opaque identifier used by SourceManager which refers to
 /// a source file (MemoryBuffer) along with its #include path and #line data.
@@ -259,7 +258,7 @@ public:
   
   /// getFilename - Return the presumed filename of this location.  This can be
   /// affected by #line etc.
-  const char *getFilename() const { return Filename; }
+  const char *getFilename() const { return Filename ? Filename : "<unknown>"; }
 
   /// getLine - Return the presumed line number of this location.  This can be
   /// affected by #line etc.
@@ -300,6 +299,6 @@ namespace llvm {
     static bool isPod() { return true; }
   };
   
-}  // end namespace ellcc
+}
 
 #endif
