@@ -16,6 +16,7 @@
 
 #include "MultipleIncludeOpt.h"
 #include "Token.h"
+#include "FileManager.h"
 #include "llvm/ADT/SmallVector.h"
 #include <string>
 	

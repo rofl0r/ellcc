@@ -11,8 +11,8 @@ THIS := liblex.a
 all: $(THIS)
 
 SMBASE   := ../smbase
-LLVM := /home/ctnetap1/penning/local/Linux
-LLVMCCFLAGS := $(shell llvm-config --cxxflags)
+LLVM := /usr/local
+LLVMCCFLAGS := $(shell llvm-config --cxxflags) -I../basic
 
 # external tools
 PERL := perl
