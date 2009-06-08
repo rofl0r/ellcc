@@ -228,13 +228,11 @@ static void setupMappings()
     emulations["x86"] = "elf_i386";
     emulations["x86_64"] = "elf_x86_64";
     
-    //
-    //
     // The extension to language and language to phase mapping.
-    extToLang["c"] = C;                                 // A C file becomes a preprocessed file.
+    extToLang["c"] = C;
     langToExt[C] = "c";
-    filePhases[C][PREPROCESSING].type = I;
-    filePhases[C][PREPROCESSING].action = PREPROCESS;
+    filePhases[C][TRANSLATION].type = UBC;
+    filePhases[C][TRANSLATION].action = CCOMPILE;
 
     extToLang["i"] = I;                                 // A preprocessed C file becomes a unoptimized bitcode file.
     langToExt[I] = "i";
@@ -248,8 +246,8 @@ static void setupMappings()
 
     extToLang["cc"] = CC;
     langToExt[CC] = "cc";
-    filePhases[CC][PREPROCESSING].type = II;
-    filePhases[CC][PREPROCESSING].action = PREPROCESS;
+    filePhases[CC][TRANSLATION].type = UBC;
+    filePhases[CC][TRANSLATION].action = CCOMPILE;
     extToLang["cp"] = CC;
     extToLang["cxx"] = CC;
     extToLang["cpp"] = CC;
@@ -2825,6 +2823,14 @@ int main(int argc, char **argv)
         
         sys::PrintStackTraceOnErrorSignal();
         PrettyStackTraceProgram X(argc, argv);
+
+        if (FinalPhase == PREPROCESSING) {
+            // Use only the preprocessor.
+            filePhases[CC][PREPROCESSING].type = II;
+            filePhases[CC][PREPROCESSING].action = PREPROCESS;
+            filePhases[C][PREPROCESSING].type = I;
+            filePhases[C][PREPROCESSING].action = PREPROCESS;
+        }
 
         if (Files.empty()) {
             // No input files present.
