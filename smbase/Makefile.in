@@ -138,7 +138,6 @@ OBJS := \
   point.o \
   pprint.o \
   smregexp.o \
-  srcloc.o \
   str.o \
   strdict.o \
   strhash.o \
@@ -173,7 +172,7 @@ $(THIS): $(OBJS)
 TESTS := nonport voidlist tobjlist bit2d growbuf testmalloc mypopen \
          strdict svdict str strutil trdelete bflatten mysig \
          testmalloc mypopen tobjpool strhash cycles tsobjlist crc \
-         srcloc hashline gprintf smregexp vptrmap vdtllist pprint \
+         hashline gprintf smregexp vptrmap vdtllist pprint \
          boxprint tarrayqueue testarray taillist_test autofile \
          bitarray d2vector
 
@@ -263,9 +262,6 @@ cycles$(EXE): cycles.h cycles.c
 crc$(EXE): crc.cpp
 	$(TESTCXX) -o $@ $(CCFLAGS) -DTEST_CRC crc.cpp
 
-srcloc$(EXE): srcloc.cc $(THIS)
-	$(TESTCXX) -o $@ -DTEST_SRCLOC srcloc.cc $(TESTFLAGS)
-
 hashline$(EXE): hashline.cc $(THIS)
 	$(TESTCXX) -o $@ -DTEST_HASHLINE hashline.cc $(TESTFLAGS)
 
@@ -332,7 +328,6 @@ check: $(TESTS)
 	$(RUN)./cycles$(EXE)
 	$(RUN)./tsobjlist$(EXE)
 	$(RUN)./hashline$(EXE)
-	$(RUN)./srcloc$(EXE)
 	$(RUN)./gprintf$(EXE)
 	$(RUN)./smregexp$(EXE)
 	$(RUN)./vptrmap$(EXE)
@@ -371,7 +366,7 @@ gendoc/dependencies.dot:
 	perl ./scan-depends.pl -r -Xxassert.h -Xtest.h -Xtyp.h -Xmacros.h -Xstr.h \
 		-Xbreaker.h \
 		growbuf.h objpool.h strhash.h voidlist.h svdict.h str.h \
-		warn.cpp mysig.h srcloc.cc hashline.cc astlist.h taillist.h \
+		warn.cpp mysig.h hashline.cc astlist.h taillist.h \
 		objstack.h ohashtbl.h okhasharr.h okhashtbl.h sobjlist.h \
 		exc.h >$@
 
@@ -407,7 +402,7 @@ doc: gendoc gendoc/dependencies.png gendoc/configure.txt
 # --------------------- clean --------------------
 # delete compiling/editing byproducts
 clean:
-	rm -f *.o *~ *.d gmon.out srcloc.tmp testcout
+	rm -f *.o *~ *.d gmon.out testcout
 	rm -f $(TESTS)
 	rm -f *.a
 	rm -rf test.dir
