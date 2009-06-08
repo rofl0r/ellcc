@@ -38,28 +38,28 @@
 #ifndef GLR_H
 #define GLR_H
 
-#include "glrconfig.h"     // SOURCELOC
-#include "parsetables.h"   // StateId
-#include "rcptr.h"         // RCPtr
-#include "useract.h"       // UserActions, SemanticValue
-#include "objpool.h"       // ObjectPool, GrowArray
-#include "objlist.h"       // ObjList
-#include "srcloc.h"        // SourceLocation
-#include "sobjlist.h"      // SObjList
+#include "glrconfig.h"          // SOURCELOC
+#include "parsetables.h"        // StateId
+#include "rcptr.h"              // RCPtr
+#include "useract.h"            // UserActions, SemanticValue
+#include "objpool.h"            // ObjectPool, GrowArray
+#include "objlist.h"            // ObjList
+#include "SourceLocation.h"     // SourceLocation
+using ellcc::SourceLocation;
+#include "sobjlist.h"           // SObjList
 
-#include <stdio.h>         // FILE
-#include <iostream>        // ostream
+#include <stdio.h>              // FILE
+#include <iostream>             // ostream
 
 
 // fwds from other files
-class LexerInterface;      // lexerint.h
+class LexerInterface;           // lexerint.h
 
 // forward decls for things declared below
-class StackNode;           // unit of parse state
-class SiblingLink;         // connections between stack nodes
-class PendingShift;        // for postponing shifts.. may remove
-class GLR;                 // main class for GLR parsing
-
+class StackNode;                // unit of parse state
+class SiblingLink;              // connections between stack nodes
+class PendingShift;             // for postponing shifts.. may remove
+class GLR;                      // main class for GLR parsing
 
 // a pointer from a stacknode to one 'below' it (in the LR
 // parse stack sense); also has a link to the parse graph

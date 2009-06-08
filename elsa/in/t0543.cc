@@ -5,14 +5,14 @@ template < typename _Tp >
 class allocator;
 
 template < typename _Tp > 
-struct __is_pod {};
+struct __is__pod {};
 
 template < typename _Val, 
            typename _Compare, 
            typename _Alloc = allocator < _Val > >
 class _Rb_tree {
   template < typename _Key_compare,
-             bool _Is_pod_comparator = __is_pod < _Key_compare >::_M_type >
+             bool _Is__pod_comparator = __is__pod < _Key_compare >::_M_type >
   struct _Rb_tree_impl {};
 
   _Rb_tree_impl < _Compare > _M_impl;
@@ -26,14 +26,14 @@ namespace std {
   class allocator;
 
   template < typename _Tp >
-  struct __is_pod {};
+  struct __is__pod {};
 
   template < typename _Val,
              typename _Compare,
              typename _Alloc = allocator < _Val > >
   class _Rb_tree {
     template < typename _Key_compare,
-               bool _Is_pod_comparator = std::__is_pod < _Key_compare >::_M_type >
+               bool _Is__pod_comparator = std::__is__pod < _Key_compare >::_M_type >
     struct _Rb_tree_impl {};
 
     _Rb_tree_impl < _Compare > _M_impl;

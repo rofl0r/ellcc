@@ -13,7 +13,7 @@
 // C++ class definition.
 context_class Arith : public UserActions {
 public:
-  // there's nothing to put in the context for this example
+  Arith(SourceManager& SM) : UserActions(SM) { }
 };
 
 

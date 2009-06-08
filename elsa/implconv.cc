@@ -1,11 +1,15 @@
 // implconv.cc                       see license.txt for copyright and terms of use
 // code for implconv.h
 
-#include "implconv.h"      // this module
-#include "cc_env.h"        // Env
-#include "variable.h"      // Variable
-#include "overload.h"      // resolveOverload
-#include "trace.h"         // tracingSys
+#include "implconv.h"           // this module
+#include "cc_env.h"             // Env
+#include "variable.h"           // Variable
+#include "overload.h"           // resolveOverload
+#include "trace.h"              // tracingSys
+#include "SourceLocation.h"     // SourceLocation
+#include "SourceManager.h"      // SourceManager
+
+using namespace ellcc;
 
 
 // prototypes
@@ -324,7 +328,9 @@ StandardConversion tryCallCtor
 // ----------------- test_getImplicitConversion ----------------
 int getLine(SourceLocation loc)
 {
-  return sourceLocManager->getLine(loc);
+  SourceManager SM;
+  PresumedLoc ploc = SM.getPresumedLoc(loc);
+  return ploc.getLine();
 }
 
 

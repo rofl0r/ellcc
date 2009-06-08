@@ -3,10 +3,9 @@
 
 // this doesn't include implint.h b/c that's sort of different
 
-#include "cc_ast.h"       // AST
-#include "trace.h"        // trace
-#include "array.h"        // Array
-
+#include "cc_ast.h"             // AST
+#include "trace.h"              // trace
+#include "array.h"              // Array
 
 // Mutate 'params' filtering out any alternatives of the first param
 // (if there is one) that are of type implicit-int.  Return true if
@@ -62,7 +61,7 @@ bool filterOutImplIntFirstParam
     ASTTypeId *atid = tempList[i];
     if (atid->spec->isTS_simple() &&
         atid->spec->asTS_simple()->id == ST_IMPLINT) {
-      trace("cancel") << loc << ": implicit-int function first param\n";
+      // RICH: trace("cancel") << loc << ": implicit-int function first param\n";
       tempList[i] = NULL;
     }
   }

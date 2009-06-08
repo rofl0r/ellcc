@@ -26,16 +26,16 @@ verbatim {
   inline void fromXml(DeclaratorContext &out, sm::string str) {
     out = static_cast<DeclaratorContext>(atoi(str));
   }
-#endif
 
   // defined in cc_ast_aux.cc
   sm::string toXml(DataBlock *&block);
+#endif
 }
 
 impl_verbatim {
   // NOTE: do not include xml_type_id.h in the header, because it needs to
   // include cc.gen.ast.h.
-  #include "xml_type_id.h"   // type system serialization identity
+  // RICH: #include "xml_type_id.h"   // type system serialization identity
 }
 
 // this code goes into the xml serialization class

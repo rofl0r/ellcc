@@ -1093,7 +1093,7 @@ testparse k0027.cc #"reprSize of a sizeless array"
 #failparse k0028.cc "definition of member function declared in another namespace"
 
 testparse k0029.cc #'ambiguous overload "char* const*" vs "char const* const*"'
-testparse k0030.cc #'"and" and "or" keywords'
+testparse_special -std=gnu++98 k0030.cc #'"and" and "or" keywords'
 testparse k0031.cc #"typedef used to declare a member function"
 testparse k0032.cc #"converting <integral>& to integral"
 testparse k0033.cc #"casting function pointer with throw() to/from no throw"
@@ -1122,7 +1122,7 @@ testparse k0046a.cc #"anonymous struct fields in a union"
 testparse_special -std=c++0x k0046b.cc
 testparse k0047.cc #"template<T> operator T*"
 testparse k0048.cc #"re-declaration of template base-class member"
-testparse k0049.cc #"'restrict' as name"
+testparse_special -std=c89 k0049.cc #"'restrict' as name"
 testparse k0050.cc #"definition of a function without 'const' on a basic type"
 testparse k0051.cc #"defining static-member array without array size"
 testparse k0052.cc #"operator& returning other pointer type"
@@ -1532,8 +1532,8 @@ testCparse c/k0003.c #"old-style function decl with parentheses around func name
 testCparse_special -std=K+R c/k0003a.c #"old-style function decl with parentheses around func name, returning a struct-typedef"
 testCparse c/k0004.c #'"merge nonterm MemberDeclaration"
 testCparse c/k0005.c #"multiply defined enum 'option'"
-testCparse_special -std=K+R c/k0006.c #"static inline function implicitly returning int"
-testCparse_special -std=K+R c/k0006a.c #"static inline function implicitly returning int, old-style param decl"
+testCparse c/k0006.c #"static inline function implicitly returning int"
+testCparse c/k0006a.c #"static inline function implicitly returning int, old-style param decl"
 testCparse c/k0011.c #"ambiguous s->z < 1 || 2 > (3)"
 testCparse c/k0007.c #"duplicate modifiers in C as warning, not error (?)"
 testCparse c/k0008.c #"function call vs type-cast ambiguity"
@@ -1613,7 +1613,7 @@ if $use_gnu; then
   testCparse gnu/d0099.c
 
   # asm tests
-  testCparse gnu/asm01.c
+  testCparse_special -std=gnu99 gnu/asm01.c
 
   # gcc C-mode bugs
   testCparse_special -std=gnu99 gnu/bugs/gb0001.c

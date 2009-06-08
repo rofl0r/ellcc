@@ -4270,12 +4270,12 @@ void emitActionCode(GrammarAnalysis const &g, rostring hFname,
   #endif
   out << "\n";
   out << "#include \"" << sm_basename(hFname) << "\"     // " << g.actionClassName << "\n";
-  out << "#include \"parsetables.h\" // ParseTables\n";
-  out << "#include \"srcloc.h\"      // SourceLocation\n";
+  out << "#include \"parsetables.h\"    // ParseTables\n";
+  out << "#include \"SourceLocation.h\" // SourceLocation\n";
   out << "\n";
-  out << "#include <assert.h>      // assert\n";
-  out << "#include <iostream>      // cout\n";
-  out << "#include <stdlib.h>      // abort\n";
+  out << "#include <assert.h>         // assert\n";
+  out << "#include <iostream>         // cout\n";
+  out << "#include <stdlib.h>         // abort\n";
   out << "\n";
 
   NOSOURCELOC(
@@ -4323,7 +4323,7 @@ void emitUserCode(EmitCode &out, LocString const &code, bool braces)
 {
   out << "\n";
   if (code.validLoc()) {
-    out << lineDirective(code.loc);
+    // RICH causes segfault: out << lineDirective(code.loc);
   }
 
   // 7/27/03: swapped so that braces are inside the line directive
@@ -4957,8 +4957,6 @@ int inner_entry(int argc, char **argv)
     // default naming scheme
     prefix = replace(argv[0], ".gr", "");
   }
-
-  SourceManager mgr;
 
   // parse the grammar
   string grammarFname = argv[0];

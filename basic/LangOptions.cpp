@@ -151,8 +151,8 @@ void LangOptions::ANSI_C99()
   ANSI_C99_extensions();
 
   // removed C89 features
-  allowImplicitInt = false;
-  allowImplicitFunctionDecls = b3_FALSE;
+  allowImplicitInt = true;
+  allowImplicitFunctionDecls = b3_WARN;
 }
 
 
@@ -160,6 +160,7 @@ void LangOptions::ANSI_C99()
 void LangOptions::GNU_C_extensions()
 {
   GNUMode = true;
+  DollarIdents = true;
   Trigraphs = false;
   gccFuncBehavior = GFB_string;
   allowDynamicallySizedArrays = true;
@@ -179,6 +180,7 @@ void LangOptions::GNU_C_extensions()
   allowAnonymousStructs = b3_TRUE;
   allowRepeatedTypeSpecifierKeywords = b3_TRUE;
   allowCVAppliedToFunctionTypes = b3_TRUE;
+  gccFuncBehavior = GFB_variable;
 }
 
 void LangOptions::GNU_C99()
@@ -274,7 +276,10 @@ void LangOptions::ANSI_Cplusplus98()
 void LangOptions::GNU_Cplusplus98()
 {
   ANSI_Cplusplus98();
+  ANSI_C99_extensions();
 
+  GNUMode = true;
+  DollarIdents = true;
   HexFloats = true;
   implicitFuncVariable = true;
   gccFuncBehavior = GFB_variable;

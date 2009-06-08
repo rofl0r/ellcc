@@ -4,13 +4,14 @@
 #ifndef CFG_H
 #define CFG_H
 
-#include "array.h"        // ArrayStack<NextPtr>
-#include "sobjlist.h"     // SObjList
-#include "objstack.h"     // ObjStack
-#include "sobjstack.h"    // SObjStack
-#include "strmap.h"       // StringRefMap
-#include "strtable.h"     // StringRef
-#include "srcloc.h"       // SourceLocation
+#include "array.h"              // ArrayStack<NextPtr>
+#include "sobjlist.h"           // SObjList
+#include "objstack.h"           // ObjStack
+#include "sobjstack.h"          // SObjStack
+#include "strmap.h"             // StringRefMap
+#include "strtable.h"           // StringRef
+#include "SourceLocation.h"     // SourceLocation
+using ellcc::SourceLocation;
 
 // can't just #include cc.ast.gen.h b/c that #includes this file
 class Statement;

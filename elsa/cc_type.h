@@ -25,40 +25,41 @@
 #ifndef CC_TYPE_H
 #define CC_TYPE_H
 
-#include "str.h"          // string
-#include "objlist.h"      // ObjList
-#include "sobjlist.h"     // SObjList
-#include "astlist.h"      // ASTList
-#include "cc_flags.h"     // CVFlags, DeclFlags, SimpleTypeId
-#include "strtable.h"     // StringRef
-#include "strobjdict.h"   // StringObjDict
-#include "cc_scope.h"     // Scope
-#include "srcloc.h"       // SourceLocation
-#include "exc.h"          // xBase
-#include "serialno.h"     // INHERIT_SERIAL_BASE
-#include "mflags.h"       // MatchFlags
+#include "str.h"                // string
+#include "objlist.h"            // ObjList
+#include "sobjlist.h"           // SObjList
+#include "astlist.h"            // ASTList
+#include "cc_flags.h"           // CVFlags, DeclFlags, SimpleTypeId
+#include "strtable.h"           // StringRef
+#include "strobjdict.h"         // StringObjDict
+#include "cc_scope.h"           // Scope
+#include "SourceLocation.h"     // SourceLocation
+using ellcc::SourceLocation;
+#include "exc.h"                // xBase
+#include "serialno.h"           // INHERIT_SERIAL_BASE
+#include "mflags.h"             // MatchFlags
 
-class Variable;           // variable.h
-class Env;                // cc_env.h
-class TS_classSpec;       // cc.ast
-class Expression;         // cc.ast
-class TemplateArgument;   // cc.ast
-class D_pointer;          // cc.ast
-class D_reference;        // cc.ast
-class D_func;             // cc.ast
-class D_ptrToMember;      // cc.ast
-class TypeSpecifier;      // cc.ast
-class Declaration;        // cc.ast
-class TypeVariable;       // template.h
-class PseudoInstantiation;// template.h
-class DependentQType;     // template.h
-class DependentSizedArrayType;   // template.h
-class TemplateTypeVariable;      // template.h
-class MType;              // mtype.h
+class Variable;                 // variable.h
+class Env;                      // cc_env.h
+class TS_classSpec;             // cc.ast
+class Expression;               // cc.ast
+class TemplateArgument;         // cc.ast
+class D_pointer;                // cc.ast
+class D_reference;              // cc.ast
+class D_func;                   // cc.ast
+class D_ptrToMember;            // cc.ast
+class TypeSpecifier;            // cc.ast
+class Declaration;              // cc.ast
+class TypeVariable;             // template.h
+class PseudoInstantiation;      // template.h
+class DependentQType;           // template.h
+class DependentSizedArrayType;  // template.h
+class TemplateTypeVariable;     // template.h
+class MType;                    // mtype.h
 class XmlReader;
 
 namespace ellcc {
-class TargetInfo;         // TargetInfo.h
+class TargetInfo;               // TargetInfo.h
 }
 
 // fwd in this file

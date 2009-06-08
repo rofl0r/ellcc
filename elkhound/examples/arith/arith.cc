@@ -1,13 +1,15 @@
 // arith.cc
 // driver program for arithmetic evaluator
 
-#include "arith.h"     // this module
-#include "glr.h"       // GLR parser
-#include "ptreenode.h" // PTreeNode
-#include "ptreeact.h"  // ParseTreeLexer, ParseTreeActions
-#include "trace.h"     // traceAddSys
+#include "arith.h"              // this module
+#include "glr.h"                // GLR parser
+#include "ptreenode.h"          // PTreeNode
+#include "ptreeact.h"           // ParseTreeLexer, ParseTreeActions
+#include "trace.h"              // traceAddSys
+#include "SourceManager.h"      // SourceManager
+using ellcc::SourceManager;
 
-#include <assert.h>    // assert
+#include <assert.h>             // assert
 
 using namespace sm;
 
@@ -64,9 +66,10 @@ int main(int argc, char *argv[])
 {
   // initialize lexer by grabbing first token
   lexer.nextToken(&lexer);
+  SourceManager(SM);
 
   // create parser; actions and tables not dealloc'd but who cares
-  Arith *arith = new Arith;
+  Arith *arith = new Arith();
   ParseTables *tables = arith->makeTables();
 
   // uncomment this to get bison-like shift/reduce reports

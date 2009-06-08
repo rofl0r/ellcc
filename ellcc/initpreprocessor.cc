@@ -236,6 +236,9 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
   
   // These should all be defined in the preprocessor according to the
   // current language configuration.
+
+  if (LangOpts.GNUMode)
+    DefineBuiltinMacro(Buf, "__null=0");
   DefineBuiltinMacro(Buf, "__STDC__=1");
   if (LangOpts.AsmPreprocessor)
     DefineBuiltinMacro(Buf, "__ASSEMBLER__=1");

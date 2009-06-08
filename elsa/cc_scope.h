@@ -7,27 +7,28 @@
 #ifndef CC_SCOPE_H
 #define CC_SCOPE_H
 
-#include "cc_flags.h"     // AccessKeyword
-#include "srcloc.h"       // SourceLocation
-#include "strtable.h"     // StringRef
-#include "sobjlist.h"     // SObjList
-#include "array.h"        // ArrayStack
-#include "serialno.h"     // INHERIT_SERIAL_BASE
-#include "strmap.h"       // StringRefMap
-#include "lookupset.h"    // LookupSet
+#include "cc_flags.h"           // AccessKeyword
+#include "SourceLocation.h"     // SourceLocation
+using ellcc::SourceLocation;
+#include "strtable.h"           // StringRef
+#include "sobjlist.h"           // SObjList
+#include "array.h"              // ArrayStack
+#include "serialno.h"           // INHERIT_SERIAL_BASE
+#include "strmap.h"             // StringRefMap
+#include "lookupset.h"          // LookupSet
 
 // NOTE: We cannot #include cc_type.h b/c cc_type.h #includes cc_scope.h.
 
-class Env;                // cc_env.h
-class Variable;           // variable.h
-class TypeVisitor;        // cc_type.h
-class CompoundType;       // cc_type.h
-class BaseClassSubobj;    // cc_type.h
-class EnumType;           // cc_type.h
-class Function;           // cc.ast
-class TemplateParams;     // cc_type.h
-class PQName;             // cc.ast
-class TranslationUnit;    // cc.ast.gen.h
+class Env;                      // cc_env.h
+class Variable;                 // variable.h
+class TypeVisitor;              // cc_type.h
+class CompoundType;             // cc_type.h
+class BaseClassSubobj;          // cc_type.h
+class EnumType;                 // cc_type.h
+class Function;                 // cc.ast
+class TemplateParams;           // cc_type.h
+class PQName;                   // cc.ast
+class TranslationUnit;          // cc.ast.gen.h
 class XmlReader;
 
 

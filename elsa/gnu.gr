@@ -17,7 +17,7 @@
 // Specifically, the extensions found in this file are:
 //   - gcc statement expression: "({ ... })"
 //   - gcc compound literals: "(struct Foo){ ... }"
-//   - gcc misc: __FUNCTION__, __alignof__, etc.
+//   - gcc misc: __alignof__, etc.
 //   - gcc dangling labels: "{ ... foo: }"
 //   - gcc typeof
 //   - gcc C++ min and max operators ">?" and "<?"
@@ -72,14 +72,6 @@ nonterm(Expression*) PrimaryExpression {
 
 
 // ----------- gcc misc -----------
-// http://gcc.gnu.org/onlinedocs/gcc-3.2.2/gcc/Function-Names.html
-nonterm(StringRef) PreprocString {
-  // slightly subtle: ordinary strings are yielded *with quotes*,
-  // whereas these special guys are not quoted; also note that
-  // yielding of these token codes depends on PP.getLangOptions().gccFuncBehavior
-  -> TOK___FUNCTION__                       { return str("__FUNCTION__"); }
-  -> TOK___PRETTY_FUNCTION__                { return str("__PRETTY_FUNCTION__"); }
-}
 
 // dmandelin@mozilla.com
 // These are like function calls; they should have the same nonterminal
@@ -562,6 +554,7 @@ nonterm(Statement*) Statement {
 // http://gcc.gnu.org/onlinedocs/gcc-3.1/gcc/Complex.html
 // C99 6.2.5p11, 6.7.2, Annex G
 nonterm(UberModifiers) UberTypeKeyword {
+  -> "_Bool"         { return UM_BOOL; }
   -> "_Complex"      { return UM_COMPLEX; }
   -> "_Imaginary"    { return UM_IMAGINARY; }
 }
@@ -823,9 +816,7 @@ nonterm(StringRef) AttributeWord {
   // don't know if I need to allow these; gcc 2.95.3 doesn't like them
   //  // GNU extensions
   //  TOK___ATTRIBUTE__,       "__attribute__",             :    n
-  //  TOK___FUNCTION__,        "__FUNCTION__",              :    n
   //  TOK___LABEL__,           "__label__",                 :    n
-  //  TOK___PRETTY_FUNCTION__, "__PRETTY_FUNCTION__",       :    n
   //  TOK___TYPEOF__,          "__typeof__",                :    n
 }
 

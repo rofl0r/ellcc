@@ -1,10 +1,13 @@
 // cc_ast_aux.cc            see license.txt for copyright and terms of use
 // auxilliary code (debug printing, etc.) for cc.ast
 
-#include "strutil.h"        // plural
-#include "generic_aux.h"    // C++ AST, and genericPrintAmbiguities, etc.
-#include "cc_ast_aux.h"     // class LoweredASTVisitor
+#include "strutil.h"            // plural
+#include "generic_aux.h"        // C++ AST, and genericPrintAmbiguities, etc.
+#include "cc_ast_aux.h"         // class LoweredASTVisitor
+#include "SourceLocation.h"     // SourceLocation
+#include "SourceManager.h"      // SourceManager
 
+using namespace ellcc;
 using namespace sm;
 
 // ---------------------- LoweredASTVisitorHelper ----------------------
@@ -1167,11 +1170,10 @@ void Statement::addAmbiguity(Statement *alt)
 
 string Statement::lineColString() const
 {
-  char const *fname;
-  int line, col;
-  sourceLocManager->decodeLineCol(loc, fname, line, col);
+  SourceManager SM;
+  PresumedLoc ploc = SM.getPresumedLoc(loc);
 
-  return stringc << line << ":" << col;
+  return stringc << ploc.getLine() << ":" << ploc.getColumn();
 }
 
 string Statement::kindLocString() const

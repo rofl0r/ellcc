@@ -118,27 +118,27 @@ class FileManager {
 
   /// UniqueDirs/UniqueFiles - Cache for existing directories/files.
   ///
-  UniqueDirContainer &UniqueDirs;
-  UniqueFileContainer &UniqueFiles;
+  static UniqueDirContainer UniqueDirs;
+  static UniqueFileContainer UniqueFiles;
 
   /// DirEntries/FileEntries - This is a cache of directory/file entries we have
   /// looked up.  The actual Entry is owned by UniqueFiles/UniqueDirs above.
   ///
-  llvm::StringMap<DirectoryEntry*, llvm::BumpPtrAllocator> DirEntries;
-  llvm::StringMap<FileEntry*, llvm::BumpPtrAllocator> FileEntries;
+  static llvm::StringMap<DirectoryEntry*, llvm::BumpPtrAllocator> DirEntries;
+  static llvm::StringMap<FileEntry*, llvm::BumpPtrAllocator> FileEntries;
   
   /// NextFileUID - Each FileEntry we create is assigned a unique ID #.
   ///
-  unsigned NextFileUID;
+  static unsigned NextFileUID;
   
   // Statistics.
-  unsigned NumDirLookups, NumFileLookups;
-  unsigned NumDirCacheMisses, NumFileCacheMisses;
+  static unsigned NumDirLookups, NumFileLookups;
+  static unsigned NumDirCacheMisses, NumFileCacheMisses;
   
   // Caching.
-  llvm::OwningPtr<StatSysCallCache> StatCache;
+  static llvm::OwningPtr<StatSysCallCache> StatCache;
 
-  int stat_cached(const char* path, struct stat* buf) {
+  static int stat_cached(const char* path, struct stat* buf) {
     return StatCache.get() ? StatCache->stat(path, buf) : stat(path, buf);
   }
   
@@ -149,28 +149,28 @@ public:
   /// setStatCache - Installs the provided StatSysCallCache object within
   ///  the FileManager.  Ownership of this object is transferred to the
   ///  FileManager.
-  void setStatCache(StatSysCallCache *statCache) {
+  static void setStatCache(StatSysCallCache *statCache) {
     StatCache.reset(statCache);
   }
   
   /// getDirectory - Lookup, cache, and verify the specified directory.  This
   /// returns null if the directory doesn't exist.
   /// 
-  const DirectoryEntry *getDirectory(const std::string &Filename) {
+  static const DirectoryEntry *getDirectory(const std::string &Filename) {
     return getDirectory(&Filename[0], &Filename[0] + Filename.size());
   }
-  const DirectoryEntry *getDirectory(const char *FileStart,const char *FileEnd);
+  static const DirectoryEntry *getDirectory(const char *FileStart,const char *FileEnd);
   
   /// getFile - Lookup, cache, and verify the specified file.  This returns null
   /// if the file doesn't exist.
   /// 
-  const FileEntry *getFile(const std::string &Filename) {
+  static const FileEntry *getFile(const std::string &Filename) {
     return getFile(&Filename[0], &Filename[0] + Filename.size());
   }
-  const FileEntry *getFile(const char *FilenameStart,
+  static const FileEntry *getFile(const char *FilenameStart,
                            const char *FilenameEnd);
   
-  void PrintStats() const;
+  static void PrintStats();
 };
 
 }  // end namespace ellcc

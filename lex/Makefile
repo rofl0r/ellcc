@@ -12,7 +12,7 @@ all: $(THIS)
 
 SMBASE   := ../smbase
 LLVM := /usr/local
-LLVMCCFLAGS := $(shell llvm-config --cxxflags) -I../basic
+LLVMCCFLAGS := $(shell llvm-config --cxxflags)
 
 # external tools
 PERL := perl
@@ -50,7 +50,7 @@ EXT_OBJS    :=
 CXX := g++
 
 # flags for the C++ compiler (and preprocessor)
-CCFLAGS := -g -Wall -Wno-deprecated -D__UNIX__ -O2 -DNDEBUG -D__LINUX__ -Woverloaded-virtual $(LLVMCCFLAGS)
+CCFLAGS := -g -Wall -Wno-deprecated -D__UNIX__ -O2 -DNDEBUG -D__LINUX__ -Woverloaded-virtual $(LLVMCCFLAGS) -I$(SMBASE) -I../basic
 
 # how to enable coverage
 GCOV_OPTS := -fprofile-arcs -ftest-coverage

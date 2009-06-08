@@ -6,8 +6,9 @@
 #ifndef XMLHELP_H
 #define XMLHELP_H
 
-#include "str.h"         // string
-#include "srcloc.h"      // SourceLocation
+#include "str.h"                // string
+#include "SourceLocation.h"     // SourceLocation
+using ellcc::SourceLocation;
 
 typedef unsigned long xmlUniqueId_t;
 

@@ -17,10 +17,11 @@ LIBELKHOUND := $(ELKHOUND)/libelkhound.a
 # preprocessing flags
 CPPFLAGS := -I$(ELKHOUND) -I$(AST) -I$(SMBASE)
 
-CCFLAGS := @CCFLAGS@ -I$(ELKHOUND) -I$(AST) -I$(SMBASE)
+CCFLAGS := @CCFLAGS@ -I$(ELKHOUND) -I$(AST) -I$(SMBASE) -I../../../basic $(shell llvm-config --cxxflags)
 
 # linking flags
-LDFLAGS := $(LIBELKHOUND) $(SMBASE)/libsmbase.a
+LDFLAGS := $(LIBELKHOUND) $(SMBASE)/libsmbase.a ../../../basic/libbasic.a \
+    $(shell llvm-config --ldflags) -L$(shell llvm-config --libdir) -lLLVMSupport -lLLVMSystem
 
 
 # -------- targets --------

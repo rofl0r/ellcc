@@ -12,6 +12,7 @@
 #include "FileManager.h"
 #include "SourceManager.h"
 #include "llvm/Support/MemoryBuffer.h"
+using namespace ellcc;
 
 #include <string.h>          // strncmp
 #include <ctype.h>           // isalnum
@@ -138,8 +139,9 @@ ASTSpecFile *readAbstractGrammar(char const *fname)
     #endif
   }
 
-  ellcc::SourceManager SM;
-  ellcc::FileManager FM;
+  FileManager FM;
+  SourceManager SM;
+  FileID FID;
   if (fname == NULL) {
     // Read from stdin.
     llvm::MemoryBuffer *SB = llvm::MemoryBuffer::getSTDIN();
@@ -152,26 +154,28 @@ ASTSpecFile *readAbstractGrammar(char const *fname)
       SB = llvm::MemoryBuffer::getMemBuffer(EmptyStr, EmptyStr, fname);
     }
 
-    SM.createMainFileIDForMemBuffer(SB);
+    FID = SM.createFileIDForMemBuffer(SB);
   } else {
     // Reading from a file.
-    const ellcc::FileEntry *File = FM.getFile(fname);
-    if (File) SM.createMainFileID(File, ellcc::SourceLocation());
-    if (SM.getMainFileID().isInvalid()) {
+    const FileEntry *File = FM.getFile(fname);
+    if (File) {
+        FID = SM.createFileID(File, SourceLocation());
+    }
+    if (FID.isInvalid()) {
       xformat(stringc << "could not read \"" << fname << "\"");
     }
   }
 
-  const llvm::MemoryBuffer *MB = SM.getBuffer(SM.getMainFileID());
+  const llvm::MemoryBuffer *MB = SM.getBuffer(FID);
   Owner<std::istringstream> in;
   in = new std::istringstream();
   in->str(MB->getBufferStart());
   Owner<GrammarLexer> lexer;
-  lexer = new GrammarLexer(isAGramlexEmbed, stringTable, fname, in.xfr());
+  lexer = new GrammarLexer(isAGramlexEmbed, stringTable, FM, FID, in.xfr());
 
   ASTParseParams params(*lexer);
 
-  traceProgress() << "parsing grammar source..\n";
+  traceProgress() << "parsing grammar source '" << fname << "'\n";
   int retval;
   try {
     retval = agrampar_yyparse(&params);
@@ -203,6 +207,8 @@ void entry(int argc, char **argv)
     return;
   }
 
+  SourceManager SM;
+  
   // parse the grammar spec
   Owner<ASTSpecFile> ast;
   ast = readAbstractGrammar(argv[1]);

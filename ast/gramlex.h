@@ -15,22 +15,27 @@
 //
 // update: This approach was too problematic.  I've taken to distributing
 // FlexLexer.h myself.
-#include "sm_flexlexer.h"     // yyFlexLexer
+#include "sm_flexlexer.h"       // yyFlexLexer
 
-#include <iostream>           // istream
+#include <iostream>             // istream
 
 // token code definitions
-#define TOK_EOF 0             // better name
-#define TOK_INCLUDE 1         // not seen by parser
+#define TOK_EOF 0               // better name
+#define TOK_INCLUDE 1           // not seen by parser
 
 
 // other includes
-#include "str.h"              // string
-#include "objlist.h"          // ObjList
-#include "srcloc.h"           // SourceLocation
-#include "embedded.h"         // EmbeddedLang
-#include "strtable.h"         // StringTable, StringRef
+#include "str.h"                // string
+#include "objlist.h"            // ObjList
+#include "SourceLocation.h"     // SourceLocation
+using ellcc::SourceLocation;
+#include "embedded.h"           // EmbeddedLang
+#include "strtable.h"           // StringTable, StringRef
 
+namespace ellcc {
+class FileManager;
+}
+using ellcc::FileManager;
 
 // this class just holds the lexer state so it is properly encapsulated
 // (and therefore, among other things, re-entrant)
@@ -61,14 +66,17 @@ public:      // data
   AltReportError altReporter;
 
 private:     // data
+  ellcc::FileManager& FM;
+
   // state of a file we were or are lexing
   struct FileState {
+    ellcc::FileID FID;                  // The file ID
     SourceLocation loc;                 // location in the file
-    std::istream *source;          // (owner?) source stream
-    yy_buffer_state *bufstate;     // (owner?) flex's internal buffer state
+    std::istream *source;               // (owner?) source stream
+    yy_buffer_state *bufstate;          // (owner?) flex's internal buffer state
 
   public:
-    FileState(rostring filename, std::istream *source);
+    FileState(ellcc::FileID FID, std::istream *source);
     ~FileState();
 
     FileState(FileState const &obj);
@@ -115,11 +123,11 @@ private:     // funcs
 
   // called to advance the column count
   void advCol(int n) 
-    { fileState.loc = sourceLocManager->advCol(fileState.loc, n); }
+    { fileState.loc = fileState.loc.getFileLocWithOffset(n); }
 
   // called when a newline is encountered
   void newLine()
-    { fileState.loc = sourceLocManager->advLine(fileState.loc); }
+    { fileState.loc = fileState.loc.getFileLocWithOffset(1); }
   
   // adds a string with only the specified # of chars; writes (but
   // then restores) a null terminator if necessary, so 'str' isn't const
@@ -133,7 +141,8 @@ public:      // funcs
   // or stdin if it is NULL
   GrammarLexer(isEmbedTok embedTokTest,
                StringTable &strtable,
-               char const *fname = "<stdin>",
+               ellcc::FileManager& FM,
+               ellcc::FileID FID,
                std::istream * /*owner*/ source = NULL,
                EmbeddedLang * /*owner*/ embedded = NULL /*i.e. assume C lexics*/);
 
@@ -166,12 +175,6 @@ public:      // funcs
   }
 
   // info about location of current token
-  char const *curFname() const 
-    { return sourceLocManager->getFile(tokenStartLoc); }
-  int curLine() const 
-    { return sourceLocManager->getLine(tokenStartLoc); }
-  int curCol() const 
-    { return sourceLocManager->getCol(tokenStartLoc); }
   SourceLocation curLoc() const { return tokenStartLoc; }
   sm::string curLocStr() const;    // string with file/line/col
 
@@ -185,7 +188,7 @@ public:      // funcs
   void printWarning(SourceLocation loc, rostring msg);
 
   // for processing includes
-  void recursivelyProcess(rostring fname, std::istream * /*owner*/ source);
+  void recursivelyProcess(ellcc::FileID FID, std::istream * /*owner*/ source);
   void popRecursiveFile();
   bool hasPendingFiles() const;
   

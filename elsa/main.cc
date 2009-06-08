@@ -1,5 +1,6 @@
 // main.cc            see license.txt for copyright and terms of use
 // entry-point module for a program that parses C++
+// RICH: deprecated
 
 #include <iostream>       // cout
 #include <stdlib.h>       // exit, getenv, abort
@@ -8,7 +9,8 @@
 #include "trace.h"        // traceAddSys
 #include "syserr.h"       // xsyserror
 #include "parssppt.h"     // ParseTreeAndTokens, treeMain
-#include "srcloc.h"       // SourceManager
+#include "SourceManager.h"      // SourceManager
+using ellcc::SourceManager;
 #include "ckheap.h"       // malloc_stats
 #include "cc_env.h"       // Env
 #include "cc_ast.h"       // C++ AST (r)

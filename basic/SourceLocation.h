@@ -14,8 +14,16 @@
 #ifndef SOURCE_LOCATION_H
 #define SOURCE_LOCATION_H
 
+#include "str.h"
 #include <utility>
 #include <cassert>
+
+#define SL_INIT SourceLocation()        // RICH
+#define SL_UNKNOWN SourceLocation()     // RICH
+#define HERE_SOURCELOC \
+    SourceLocation()
+// RICH was:  (sourceLocManager->encodeStatic(__FILE__, 0, __LINE__, 1))
+
 
 namespace llvm {
   class MemoryBuffer;
@@ -300,5 +308,11 @@ namespace llvm {
   };
   
 }
+/** Convert a source location to a string.
+ */
+sm::string toString(ellcc::SourceLocation loc);
+
+inline stringBuilder& operator<< (stringBuilder& sb, ellcc::SourceLocation loc)
+  { return sb << toString(loc); }
 
 #endif

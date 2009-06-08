@@ -4,13 +4,14 @@
 
 // GLR source location information is enabled
 
-#include "cc_eeb.h"     // EEB
-#include "parsetables.h" // ParseTables
-#include "srcloc.h"      // SourceLoc
+#include "cc_eeb.h"             // EEB
+#include "parsetables.h"        // ParseTables
+#include "SourceLocation.h"     // SourceLocation
+using ellcc::SourceLocation;
 
-#include <assert.h>      // assert
-#include <iostream.h>    // cout
-#include <stdlib.h>      // abort
+#include <assert.h>             // assert
+#include <iostream.h>           // cout
+#include <stdlib.h>             // abort
 
 static char const *termNames[] = {
   "TOK_EOF",  // 0

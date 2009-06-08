@@ -25,6 +25,7 @@
 #define LIT_STR(s) LocString(SL_INIT, grammarStringTable.add(s))
 
 using namespace sm;
+using namespace ellcc;
 
 // ------------------------- Environment ------------------------
 Environment::Environment(Grammar &G)
@@ -422,7 +423,7 @@ void astParseTerminals(Environment &env, TF_terminals const &terms)
 
     // fill in any gaps in the code space; this is required because
     // later analyses assume the terminal code space is dense
-    SourceLocation dummyLoc(HERE_SOURCELOC);
+    SourceLocation dummyLoc;
     for (int i=0; i<maxCode; i++) {
       if (!codeHasTerm[i].b) {
         LocString dummy(dummyLoc, grammarStringTable.add(
@@ -898,9 +899,11 @@ int grampar_yylex(YYSTYPE *lvalp, void *parseParam)
         lvalp->str = new LocString(lexer.curLoc(), lexer.curFuncBody());
         break;
 
-      case TOK_ARROW:
-        lvalp->loc = lexer.curLoc();
+      case TOK_ARROW: {
+        SourceLocation loc = lexer.curLoc();
+        ASSIGN_SOURCE_LOCATION(lvalp->loc, loc);
         break;
+      }
 
       default:
         lvalp->str = NULL;        // any attempt to use will segfault
@@ -1205,8 +1208,8 @@ GrammarAST *parseGrammarFile(rostring origFname, bool useML)
   #endif // NDEBUG
 
   // open input file
-  ellcc::SourceManager SM;
-  ellcc::FileManager FM;
+  SourceManager SM;
+  FileManager FM;
   if (fname == NULL) {
     // Read from stdin.
     llvm::MemoryBuffer *SB = llvm::MemoryBuffer::getSTDIN();
@@ -1222,14 +1225,15 @@ GrammarAST *parseGrammarFile(rostring origFname, bool useML)
     SM.createMainFileIDForMemBuffer(SB);
   } else {
     // Reading from a file.
-    const ellcc::FileEntry *File = FM.getFile(fname.c_str());
-    if (File) SM.createMainFileID(File, ellcc::SourceLocation());
+    const FileEntry *File = FM.getFile(fname.c_str());
+    if (File) SM.createMainFileID(File, SourceLocation());
     if (SM.getMainFileID().isInvalid()) {
       xsyserror("open", stringc << "error opening input file " << fname);
     }
   }
 
-  const llvm::MemoryBuffer *MB = SM.getBuffer(SM.getMainFileID());
+  FileID FID = SM.getMainFileID();
+  const llvm::MemoryBuffer *MB = SM.getBuffer(FID);
   Owner<std::istringstream> in;
   in = new std::istringstream();
   in->str(MB->getBufferStart());
@@ -1243,7 +1247,7 @@ GrammarAST *parseGrammarFile(rostring origFname, bool useML)
   // build lexer
   GrammarLexer lexer(isGramlexEmbed,
                      grammarStringTable,
-                     fname.c_str(),
+                     FM, FID,
                      in.xfr(),
                      embed);
   if (embed) {

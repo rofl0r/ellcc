@@ -108,7 +108,7 @@
 
 #if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
 typedef union YYSTYPE
-#line 69 "agrampar.y"
+#line 70 "agrampar.y"
 {
   ASTSpecFile *file;
   ASTList<ToplevelForm> *formList;

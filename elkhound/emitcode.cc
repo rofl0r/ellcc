@@ -1,11 +1,15 @@
 // emitcode.cc            see license.txt for copyright and terms of use
 // code for emitcode.h
 
-#include "emitcode.h"      // this module
-#include "syserr.h"        // xsyserror
-#include "srcloc.h"        // SourceLocation
-#include "trace.h"         // tracingSys
-#include <string.h>        // memcpy
+#include "emitcode.h"           // this module
+#include "syserr.h"             // xsyserror
+#include "SourceLocation.h"     // SourceLocation
+using ellcc::SourceLocation;
+#include "SourceManager.h"      // SourceManager
+#include "trace.h"              // tracingSys
+#include <string.h>             // memcpy
+
+using namespace ellcc;
 
 EmitCode::EmitCode(rostring f)
   : stringBuilder(),
@@ -90,11 +94,9 @@ char const *hashLine()
 // note that #line must be preceeded by a newline
 sm::string lineDirective(SourceLocation loc)
 {
-  char const *fname;
-  int line, col;
-  sourceLocManager->decodeLineCol(loc, fname, line, col);
-
-  return stringc << hashLine() << line << " \"" << fname << "\"\n";
+  SourceManager SM;
+  PresumedLoc ploc = SM.getPresumedLoc(loc);
+  return stringc << hashLine() << ploc.getLine() << " \"" << ploc.getFilename() << "\"\n";
 }
 
 stringBuilder &restoreLine(stringBuilder &sb)

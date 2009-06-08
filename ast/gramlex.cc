@@ -1,14 +1,20 @@
 // gramlex.cc            see license.txt for copyright and terms of use
 // code for gramlex.h
 
-#include "gramlex.h"     // this module
-#include "trace.h"       // debugging trace()
-#include "ccsstr.h"      // CCSubstrate
-#include "ckheap.h"      // checkHeap
+#include "gramlex.h"            // this module
+#include "trace.h"              // debugging trace()
+#include "ccsstr.h"             // CCSubstrate
+#include "ckheap.h"             // checkHeap
+#include "SourceManager.h"      // SourceManager
+#include "FileManager.h"        // FileManager
+#include "llvm/Support/MemoryBuffer.h"
 
-#include <fstream>       // cout, ifstream
+#include <sstream>              // std::istringstream
+#include <fstream>              // cout, ifstream
+
 
 using namespace sm;
+using namespace ellcc;
 
 // workaround for flex-2.5.31
 #ifdef FLEX_STD    // detect later versions of flex
@@ -36,11 +42,14 @@ void GrammarLexer::AltReportError::reportWarning(rostring msg)
 
 
 // ----------------- GrammarLexer::FileState --------------------
-GrammarLexer::FileState::FileState(rostring filename, std::istream *src)
-  : loc(sourceLocManager->encodeBegin(toCStr(filename))),
+GrammarLexer::FileState::FileState(FileID FID, std::istream *src)
+  : FID(FID),
     source(src),
     bufstate(NULL)
-{}
+{
+    SourceManager SM;
+    loc = SM.getLocForStartOfFile(FID);
+}
 
 
 GrammarLexer::FileState::~FileState()
@@ -71,11 +80,12 @@ GrammarLexer::FileState &GrammarLexer::FileState::
 
 // ---------------------- GrammarLexer --------------------------
 GrammarLexer::GrammarLexer(isEmbedTok test, StringTable &strtbl,
-                           char const *fname, std::istream *source,
+                           FileManager& FM, FileID FID, std::istream *source,
                            EmbeddedLang *userEmb)
   : yyFlexLexer(source),
     altReporter(*this),
-    fileState(fname, source),
+    FM(FM),
+    fileState(FID, source),
     fileStack(),
     tokenStartLoc(SL_UNKNOWN),
     embedStart(0),
@@ -144,14 +154,20 @@ int GrammarLexer::yylexInc()
   if (code == TOK_INCLUDE) {
     string fname = includeFileName;
 
-    // 'in' will be deleted in ~GrammarLexer
-    std::ifstream *in = new std::ifstream(fname.c_str());
-    if (!*in) {
+    SourceManager SM;
+    const ellcc::FileEntry *File = FM.getFile(fname.c_str());
+    FileID id;
+    if (File) id = SM.createFileID(File, fileState.loc);
+    if (id.isInvalid()) {
       err(stringc << "unable to open include file `" << fname << "'");
     }
-    else {
-      recursivelyProcess(fname, in);
-    }
+    const llvm::MemoryBuffer *MB = SM.getBuffer(id);
+
+    // 'in' will be deleted in ~GrammarLexer
+    std::istringstream *in = new std::istringstream();
+    in->str(MB->getBufferStart());
+
+    recursivelyProcess(id, in);
 
     // go to next token (tail recursive)
     return yylexInc();
@@ -252,8 +268,10 @@ void GrammarLexer::printWarning(SourceLocation loc, rostring msg)
 
 void GrammarLexer::errorUnterminatedComment()
 {
-  err(stringc << "unterminated comment, beginning on line " //<< commentStartLine);
-              << sourceLocManager->getLine(tokenStartLoc));
+  SourceManager SM;
+  PresumedLoc ploc = SM.getPresumedLoc(tokenStartLoc);
+  err(stringc << "unterminated comment, beginning on line "
+              << ploc.getLine());
 }
 
 void GrammarLexer::errorMalformedInclude()
@@ -267,10 +285,8 @@ void GrammarLexer::errorIllegalCharacter(char ch)
 }
 
 
-void GrammarLexer::recursivelyProcess(rostring fname, std::istream *source)
+void GrammarLexer::recursivelyProcess(FileID FID, std::istream *source)
 {
-  trace("lex") << "recursively processing " << fname << std::endl;
-                       
   // grab current buffer; this is necessary because when we
   // tried to grab it in the ctor it was NULL
   fileState.bufstate = yy_current_buffer;
@@ -280,7 +296,7 @@ void GrammarLexer::recursivelyProcess(rostring fname, std::istream *source)
   fileStack.prepend(new FileState(fileState));
 
   // reset current state
-  fileState = FileState(fname, source);
+  fileState = FileState(FID, source);
 
   // storing this in 'bufstate' is redundant because of the
   // assignment above, but no big deal
@@ -293,8 +309,11 @@ void GrammarLexer::recursivelyProcess(rostring fname, std::istream *source)
 
 void GrammarLexer::popRecursiveFile()
 {
-  trace("lex") << "done processing " <<     
-    sourceLocManager->getFile(fileState.loc) << std::endl;
+  SourceManager SM;
+  PresumedLoc ploc = SM.getPresumedLoc(tokenStartLoc);
+  trace("lex") << "done processing "
+               <<  ploc.getFilename()
+               << std::endl;
 
   // among other things, this prevents us from accidentally deleting
   // flex's first buffer (which it presumably takes care of) or

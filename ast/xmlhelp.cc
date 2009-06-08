@@ -125,7 +125,7 @@ string toXml_SourceLocation(SourceLocation loc) {
     return "(init)";
   } else {
     // NOTE: the nohashline here is very important; never change it
-    return sourceLocManager->getString_nohashline(loc);
+    return "(unimpl)"; // RICH sourceLocManager->getString_nohashline(loc);
   }
 }
 
@@ -230,7 +230,7 @@ void fromXml_SourceLocation(SourceLocation &loc, const char *str) {
   // the substring (str, end] is the filename.
   SneakySubstring file(str, end);
 
-  loc = sourceLocManager->encodeLineCol(file, line, col);
+  loc = SL_UNKNOWN; // RICH sourceLocManager->encodeLineCol(file, line, col);
 }
 
 // named escape codes

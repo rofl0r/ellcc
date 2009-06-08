@@ -420,7 +420,7 @@ sm::string locToStr(SourceLocation sl);
 inline sm::string toString(SourceLocation sl)
   { return locToStr(sl); }
 
-inline stringBuilder& operator<< (stringBuilder &sb, SourceLocation sl)
+inline sm::stringBuilder& operator<< (sm::stringBuilder &sb, SourceLocation sl)
   { return sb << toString(sl); }
 
 inline sm::string toLCString(SourceLocation sl)

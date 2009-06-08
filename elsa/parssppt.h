@@ -19,8 +19,8 @@
 #ifndef PARSSPPT_H
 #define PARSSPPT_H
 
-#include "lexer.h"        // Lexer
-#include "useract.h"      // SemanticValue, UserAction
+#include "useract.h"            // SemanticValue, UserAction
+#include "strtable.h"           // StringTable
 
 class ParseTables;
 class GLR;

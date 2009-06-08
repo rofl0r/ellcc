@@ -39,7 +39,7 @@
 
 // return a locstring for 'str' with no location information
 #define noloc(str)                                                    \
-  new LocString(SL_UNKNOWN,      /* unknown location */               \
+  new LocString(SL_UNKNOWN,      /* unknown location */         \
                 PARAM->lexer.strtable.add(str))
                 
 // locstring for NULL, with no location
@@ -105,7 +105,7 @@ AssocKind whichKind(LocString * /*owner*/ kind);
 %union {
   int num;
   LocString *str;
-  SourceLocation loc;
+  char loc[sizeof(SourceLocation)];
 
   ASTList<TopForm> *topFormList;
   TopForm *topForm;
@@ -302,9 +302,15 @@ Productions: /* empty */                   { $$ = new ASTList<ProdDecl>; }
            ;
 
 /* yields: ProdDecl */
-Production: TOK_ARROW RHS Action                { $$ = new ProdDecl($1, PDK_NEW, $2, $3); }
-          | "replace" TOK_ARROW RHS Action      { $$ = new ProdDecl($2, PDK_REPLACE,$3, $4); }
-          | "delete" TOK_ARROW RHS ";"          { $$ = new ProdDecl($2, PDK_DELETE, $3, nolocNULL()); }
+Production: TOK_ARROW RHS Action                { SourceLocation loc;
+                                                  ASSIGN_SOURCE_LOCATION(loc, $1);
+                                                  $$ = new ProdDecl(loc, PDK_NEW, $2, $3); }
+          | "replace" TOK_ARROW RHS Action      { SourceLocation loc;
+                                                  ASSIGN_SOURCE_LOCATION(loc, $2);
+                                                  $$ = new ProdDecl(loc, PDK_REPLACE,$3, $4); }
+          | "delete" TOK_ARROW RHS ";"          { SourceLocation loc;
+                                                  ASSIGN_SOURCE_LOCATION(loc, $2);
+                                                  $$ = new ProdDecl(loc, PDK_DELETE, $3, nolocNULL()); }
           ;
 
 /* yields: LocString */
@@ -355,6 +361,6 @@ AssocKind whichKind(LocString * /*owner*/ kind)
   CHECK("assoc_split", AK_SPLIT);
   #undef CHECK
 
-  xbase(stringc << kind->locString()
+  xbase(stringc << toString(kind->loc)
                 << ": invalid associativity kind: " << *kind);
 }

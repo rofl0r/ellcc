@@ -8,7 +8,8 @@
 
 #include "sobjset.h"            // SObjSet
 #include "objlist.h"            // ObjList
-#include "srcloc.h"             // SourceManager
+#include "SourceManager.h"      // SourceManager
+using ellcc::SourceManager;
 #include "xml_writer.h"         // XmlWriter
 #include "hashline.h"           // HashLineMap
 

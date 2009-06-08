@@ -1,41 +1,40 @@
 // elsa.cc            see license.txt for copyright and terms of use
 // The elsa interface.
 
-#include <iostream>       // cout
-#include <stdlib.h>       // exit, getenv, abort
-#include <fstream>        // ofstream
+#include <iostream>             // cout
+#include <stdlib.h>             // exit, getenv, abort
+#include <fstream>              // ofstream
 
-#include "ellcc.h"        // This module.
-#include "trace.h"        // traceAddSys
-#include "syserr.h"       // xsyserror
-#include "parssppt.h"     // ParseTreeAndTokens, treeMain
-#include "srcloc.h"       // SourceManager
-#include "ckheap.h"       // malloc_stats
-#include "cc_env.h"       // Env
-#include "cc_ast.h"       // C++ AST (r)
-#include "cc_ast_aux.h"   // class LoweredASTVisitor
-#include "parsetables.h"  // ParseTables
-#include "cc_print.h"     // PrintEnv
-#include "cc.gr.gen.h"    // CCParse
-#include "nonport.h"      // getMilliseconds
-#include "ptreenode.h"    // PTreeNode
-#include "ptreeact.h"     // ParseTreeLexer, ParseTreeActions
-#include "sprint.h"       // structurePrint
-#include "strtokp.h"      // StrtokParse
-#include "smregexp.h"     // regexpMatch
-#include "cc_elaborate.h" // ElabVisitor
-#include "integrity.h"    // IntegrityVisitor
+#include "ellcc.h"              // This module.
+#include "trace.h"              // traceAddSys
+#include "syserr.h"             // xsyserror
+#include "parssppt.h"           // ParseTreeAndTokens, treeMain
+#include "ckheap.h"             // malloc_stats
+#include "cc_env.h"             // Env
+#include "cc_ast.h"             // C++ AST (r)
+#include "cc_ast_aux.h"         // class LoweredASTVisitor
+#include "parsetables.h"        // ParseTables
+#include "cc_print.h"           // PrintEnv
+#include "cc.gr.gen.h"          // CCParse
+#include "nonport.h"            // getMilliseconds
+#include "ptreenode.h"          // PTreeNode
+#include "ptreeact.h"           // ParseTreeLexer, ParseTreeActions
+#include "sprint.h"             // structurePrint
+#include "strtokp.h"            // StrtokParse
+#include "smregexp.h"           // regexpMatch
+#include "cc_elaborate.h"       // ElabVisitor
+#include "integrity.h"          // IntegrityVisitor
 
 #ifdef XML_EXTENSION
-#include "xml_file_writer.h" // XmlFileWriter
-#include "xml_reader.h"   // xmlDanglingPointersAllowed
-#include "xml_do_read.h"  // xmlDoRead()
-#include "xml_type_writer.h" // XmlTypeWriter
+#include "xml_file_writer.h"    // XmlFileWriter
+#include "xml_reader.h"         // xmlDanglingPointersAllowed
+#include "xml_do_read.h"        // xmlDoRead()
+#include "xml_type_writer.h"    // XmlTypeWriter
 #endif
 
-#include "bpprint.h"      // bppTranslationUnit
-#include "cc2c.h"         // cc_to_c
-#include "cc2llvm.h"      // cc_to_llvm
+#include "bpprint.h"            // bppTranslationUnit
+#include "cc2c.h"               // cc_to_c
+#include "cc2llvm.h"            // cc_to_llvm
 
 // LLVM
 #include <llvm/Module.h>
@@ -109,20 +108,6 @@ void Elsa::setup(bool time)
   doTime = time;
   if (tracingSys("printAsML")) {
     Type::printAsML = true;
-  }
-
-  // FIX: dsw: couldn't we put dashes or something in here to break up
-  // the word?
-  if (tracingSys("nohashline")) {
-    sourceLocManager->useHashLines = false;
-  }
-
-  if (tracingSys("tolerateHashlineErrors")) {
-    sourceLocManager->tolerateHashlineErrors = true;
-  }
-
-  if (tracingSys("no-orig-offset")) {
-    sourceLocManager->useOriginalOffset = false;
   }
 
   if (tracingSys("test_xfatal")) {
@@ -229,7 +214,9 @@ public:
         && !streq("operator=",      v->name) // an implicitly defined member of every class
         && v->name[0]!='~'                   // don't print dtors
         ) {
-      sb << " " << v->name << "=" << sourceLocManager->getLine(v->loc);
+        SourceManager SM;
+        PresumedLoc ploc = SM.getPresumedLoc(v->loc);
+        sb << " " << v->name << "=" << ploc.getLine();
     }
 
     return true;
@@ -266,7 +253,6 @@ int Elsa::doit(Preprocessor& PP,
                llvm::Module*& mod, bool parseOnly)
 {
     mod = NULL;
-    ::SourceManager mgr;
     // String table for storing parse tree identifiers.
     StringTable strTable;
     

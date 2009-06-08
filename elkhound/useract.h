@@ -11,11 +11,12 @@
 #ifndef USERACT_H
 #define USERACT_H
 
-#include "glrconfig.h"     // SOURCELOC
-#include "str.h"           // string
-#include "srcloc.h"        // SourceLocation
+#include "glrconfig.h"          // SOURCELOC
+#include "str.h"                // string
+#include "SourceLocation.h"     // SourceLocation
+using ellcc::SourceLocation;
 
-class ParseTables;         // parsetables.h
+class ParseTables;              // parsetables.h
 
 // user-supplied semantic values:
 //  - Semantic values are an arbitrary word, that the user can then

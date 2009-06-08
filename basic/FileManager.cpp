@@ -130,22 +130,35 @@ public:
 
 #endif
 
+/// UniqueDirs/UniqueFiles - Cache for existing directories/files.
+///
+FileManager::UniqueDirContainer FileManager::UniqueDirs;
+FileManager::UniqueFileContainer FileManager::UniqueFiles;
+
+/// DirEntries/FileEntries - This is a cache of directory/file entries we have
+/// looked up.  The actual Entry is owned by UniqueFiles/UniqueDirs above.
+///
+llvm::StringMap<DirectoryEntry*, llvm::BumpPtrAllocator> FileManager::DirEntries(64);
+llvm::StringMap<FileEntry*, llvm::BumpPtrAllocator> FileManager::FileEntries(64);
+
+/// NextFileUID - Each FileEntry we create is assigned a unique ID #.
+///
+unsigned FileManager::NextFileUID;
+
+// Statistics.
+unsigned FileManager::NumDirLookups, FileManager::NumFileLookups;
+unsigned FileManager::NumDirCacheMisses, FileManager::NumFileCacheMisses;
+
+// Caching.
+llvm::OwningPtr<StatSysCallCache> FileManager::StatCache;
+//
 //===----------------------------------------------------------------------===//
 // Common logic.
 //===----------------------------------------------------------------------===//
 
-FileManager::FileManager()
-  : UniqueDirs(*new UniqueDirContainer),
-    UniqueFiles(*new UniqueFileContainer),
-    DirEntries(64), FileEntries(64), NextFileUID(0) {
-  NumDirLookups = NumFileLookups = 0;
-  NumDirCacheMisses = NumFileCacheMisses = 0;
-}
+FileManager::FileManager() { }
 
-FileManager::~FileManager() {
-  delete &UniqueDirs;
-  delete &UniqueFiles;
-}
+FileManager::~FileManager() { }
 
 /// getDirectory - Lookup, cache, and verify the specified directory.  This
 /// returns null if the directory doesn't exist.
@@ -272,7 +285,8 @@ const FileEntry *FileManager::getFile(const char *NameStart,
   return &UFE;
 }
 
-void FileManager::PrintStats() const {
+void FileManager::PrintStats()
+{
   llvm::cerr << "\n*** File Manager Stats:\n";
   llvm::cerr << UniqueFiles.size() << " files found, "
              << UniqueDirs.size() << " dirs found.\n";

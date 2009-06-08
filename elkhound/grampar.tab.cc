@@ -163,7 +163,7 @@
 
 // return a locstring for 'str' with no location information
 #define noloc(str)                                                    \
-  new LocString(SL_UNKNOWN,      /* unknown location */               \
+  new LocString(SL_UNKNOWN,      /* unknown location */         \
                 PARAM->lexer.strtable.add(str))
                 
 // locstring for NULL, with no location
@@ -204,7 +204,7 @@ typedef union YYSTYPE
 {
   int num;
   LocString *str;
-  SourceLocation loc;
+  char loc[sizeof(SourceLocation)];
 
   ASTList<TopForm> *topFormList;
   TopForm *topForm;
@@ -224,7 +224,7 @@ typedef union YYSTYPE
   ASTList<RHSElt> *rhsList;
   RHSElt *rhsElt;
 }
-/* Line 193 of yacc.c.  */
+/* Line 187 of yacc.c.  */
 #line 229 "grampar.tab.c"
 	YYSTYPE;
 # define yystype YYSTYPE /* obsolescent; will be withdrawn */
@@ -549,8 +549,8 @@ static const yytype_uint16 yyrline[] =
      180,   185,   186,   191,   192,   203,   208,   209,   217,   219,
      224,   225,   229,   230,   234,   236,   241,   242,   247,   248,
      253,   254,   258,   259,   265,   266,   270,   275,   276,   280,
-     281,   292,   295,   300,   301,   305,   306,   307,   311,   312,
-     316,   317,   326,   327,   328,   329,   330,   331,   335,   336
+     281,   292,   295,   300,   301,   305,   308,   311,   317,   318,
+     322,   323,   332,   333,   334,   335,   336,   337,   341,   342
 };
 #endif
 
@@ -1742,82 +1742,88 @@ yyreduce:
 
   case 45:
 #line 305 "grampar.y"
-    { (yyval.prodDecl) = new ProdDecl((yyvsp[(1) - (3)].loc), PDK_NEW, (yyvsp[(2) - (3)].rhsList), (yyvsp[(3) - (3)].str)); ;}
+    { SourceLocation loc;
+                                                  ASSIGN_SOURCE_LOCATION(loc, (yyvsp[(1) - (3)].loc));
+                                                  (yyval.prodDecl) = new ProdDecl(loc, PDK_NEW, (yyvsp[(2) - (3)].rhsList), (yyvsp[(3) - (3)].str)); ;}
     break;
 
   case 46:
-#line 306 "grampar.y"
-    { (yyval.prodDecl) = new ProdDecl((yyvsp[(2) - (4)].loc), PDK_REPLACE,(yyvsp[(3) - (4)].rhsList), (yyvsp[(4) - (4)].str)); ;}
+#line 308 "grampar.y"
+    { SourceLocation loc;
+                                                  ASSIGN_SOURCE_LOCATION(loc, (yyvsp[(2) - (4)].loc));
+                                                  (yyval.prodDecl) = new ProdDecl(loc, PDK_REPLACE,(yyvsp[(3) - (4)].rhsList), (yyvsp[(4) - (4)].str)); ;}
     break;
 
   case 47:
-#line 307 "grampar.y"
-    { (yyval.prodDecl) = new ProdDecl((yyvsp[(2) - (4)].loc), PDK_DELETE, (yyvsp[(3) - (4)].rhsList), nolocNULL()); ;}
+#line 311 "grampar.y"
+    { SourceLocation loc;
+                                                  ASSIGN_SOURCE_LOCATION(loc, (yyvsp[(2) - (4)].loc));
+                                                  (yyval.prodDecl) = new ProdDecl(loc, PDK_DELETE, (yyvsp[(3) - (4)].rhsList), nolocNULL()); ;}
     break;
 
   case 48:
-#line 311 "grampar.y"
+#line 317 "grampar.y"
     { (yyval.str) = (yyvsp[(1) - (1)].str); ;}
     break;
 
   case 49:
-#line 312 "grampar.y"
+#line 318 "grampar.y"
     { (yyval.str) = nolocNULL(); ;}
     break;
 
   case 50:
-#line 316 "grampar.y"
+#line 322 "grampar.y"
     { (yyval.rhsList) = new ASTList<RHSElt>; ;}
     break;
 
   case 51:
-#line 317 "grampar.y"
+#line 323 "grampar.y"
     { ((yyval.rhsList)=(yyvsp[(1) - (2)].rhsList))->append((yyvsp[(2) - (2)].rhsElt)); ;}
     break;
 
   case 52:
-#line 326 "grampar.y"
+#line 332 "grampar.y"
     { (yyval.rhsElt) = new RH_name(sameloc((yyvsp[(1) - (1)].str), ""), (yyvsp[(1) - (1)].str)); ;}
     break;
 
   case 53:
-#line 327 "grampar.y"
+#line 333 "grampar.y"
     { (yyval.rhsElt) = new RH_name((yyvsp[(1) - (3)].str), (yyvsp[(3) - (3)].str)); ;}
     break;
 
   case 54:
-#line 328 "grampar.y"
+#line 334 "grampar.y"
     { (yyval.rhsElt) = new RH_string(sameloc((yyvsp[(1) - (1)].str), ""), (yyvsp[(1) - (1)].str)); ;}
     break;
 
   case 55:
-#line 329 "grampar.y"
+#line 335 "grampar.y"
     { (yyval.rhsElt) = new RH_string((yyvsp[(1) - (3)].str), (yyvsp[(3) - (3)].str)); ;}
     break;
 
   case 56:
-#line 330 "grampar.y"
+#line 336 "grampar.y"
     { (yyval.rhsElt) = new RH_prec((yyvsp[(3) - (4)].str)); ;}
     break;
 
   case 57:
-#line 331 "grampar.y"
+#line 337 "grampar.y"
     { (yyval.rhsElt) = new RH_forbid((yyvsp[(3) - (4)].str)); ;}
     break;
 
   case 58:
-#line 335 "grampar.y"
+#line 341 "grampar.y"
     { (yyval.stringList) = NULL; ;}
     break;
 
   case 59:
-#line 336 "grampar.y"
+#line 342 "grampar.y"
     { (yyval.stringList) = (yyvsp[(2) - (3)].stringList); ;}
     break;
 
 
 /* Line 1267 of yacc.c.  */
-#line 1821 "grampar.tab.c"
+#line 1827 "grampar.tab.c"
       default: break;
     }
   YY_SYMBOL_PRINT ("-> $$ =", yyr1[yyn], &yyval, &yyloc);
@@ -2031,7 +2037,7 @@ yyreturn:
 }
 
 
-#line 340 "grampar.y"
+#line 346 "grampar.y"
 
 /* ------------------ extra C code ------------------ */
 AssocKind whichKind(LocString * /*owner*/ kind)
@@ -2050,7 +2056,7 @@ AssocKind whichKind(LocString * /*owner*/ kind)
   CHECK("assoc_split", AK_SPLIT);
   #undef CHECK
 
-  xbase(stringc << kind->locString()
+  xbase(stringc << toString(kind->loc)
                 << ": invalid associativity kind: " << *kind);
 }
 

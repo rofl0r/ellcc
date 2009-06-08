@@ -5,9 +5,10 @@
 #ifndef LEXERINT_H
 #define LEXERINT_H
 
-#include "useract.h"      // SemanticValue
-#include "srcloc.h"       // SourceLocation
-#include "str.h"          // string
+#include "useract.h"            // SemanticValue
+#include "SourceLocation.h"     // SourceLocation
+using ellcc::SourceLocation;
+#include "str.h"                // string
 
 // This 'interface' is a collection of variables describing
 // the current token.  I don't use a bunch of pure-virtual

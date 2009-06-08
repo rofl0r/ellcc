@@ -1,17 +1,18 @@
 // semgrep.cc
 // example Elsa application: semantic grep
 
-#include <iostream>       // cout
-#include <stdlib.h>       // exit, atoi
+#include <iostream>             // cout
+#include <stdlib.h>             // exit, atoi
 
-#include "parssppt.h"     // ParseTreeAndTokens
-#include "srcloc.h"       // SourceManager
-#include "cc_env.h"       // Env
-#include "cc_ast.h"       // C++ AST (r)
-#include "parsetables.h"  // ParseTables
-#include "cc.gr.gen.h"    // CCParse
-#include "strtokp.h"      // StrtokParse
-#include "LangOptions.h"  // LangOptions
+#include "parssppt.h"           // ParseTreeAndTokens
+#include "SourceManager.h"      // SourceManager
+using ellcc::SourceManager;
+#include "cc_env.h"             // Env
+#include "cc_ast.h"             // C++ AST (r)
+#include "parsetables.h"        // ParseTables
+#include "cc.gr.gen.h"          // CCParse
+#include "strtokp.h"            // StrtokParse
+#include "LangOptions.h"        // LangOptions
 #include "TargetInfo.h"
 #include "llvm/System/Host.h"
 

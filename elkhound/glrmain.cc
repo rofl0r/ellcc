@@ -3,13 +3,15 @@
 // grammars (this file is *not* required for general use of
 // the Elkhound parser)
 
-#include <iostream>       // cout
+#include <iostream>             // cout
 #include <stdlib.h>       // exit
 
 #include "trace.h"        // traceAddSys
 #include "parssppt.h"     // ParseTreeAndTokens, treeMain
 #include "ckheap.h"       // malloc_stats
-#include "srcloc.h"       // SourceManager
+#include "SourceLocation.h"    // SourceLocation
+using ellcc::SourceLocation;
+#include ".h"       // SourceManager
 #include "cc_lang.h"      // CCLang
 #include "parsetables.h"  // ParseTables
 

@@ -4,12 +4,13 @@
 #ifndef CC_ERR_H
 #define CC_ERR_H
 
-#include "macros.h"    // ENUM_BITWISE_OR
-#include "str.h"       // string
-#include "srcloc.h"    // SourceLocation
+#include "macros.h"             // ENUM_BITWISE_OR
+#include "str.h"                // string
+#include "objlist.h"            // ObjList
+#include "SourceLocation.h"     // SourceLocation
+using ellcc::SourceLocation;
 
-#include <ostream>     // ostream
-
+#include <ostream>              // ostream
 
 // flags on errors
 enum ErrorFlags {

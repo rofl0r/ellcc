@@ -10,31 +10,33 @@
 //
 // These references are all marked with the string "cppstd".
 
-#include "cc_ast.h"         // C++ AST
-#include "cc_ast_aux.h"     // class LoweredASTVisitor
-#include "cc_env.h"         // Env
-#include "trace.h"          // trace
-#include "cc_print.h"       // PrintEnv
-#include "strutil.h"        // decodeEscapes
-#include "Preprocessor.h"   // LangOptions
-#include "stdconv.h"        // test_getStandardConversion
-#include "implconv.h"       // test_getImplicitConversion
-#include "overload.h"       // resolveOverload
-#include "generic_amb.h"    // resolveAmbiguity, etc.
-#include "implint.h"        // resolveImplIntAmbig
-#include "ast_build.h"      // makeExprList1, etc.
-#include "strutil.h"        // prefixEquals, pluraln
-#include "macros.h"         // Restorer
-#include "typelistiter.h"   // TypeListIter_FakeList
-#include "owner.h"          // Owner
-#include "mtype.h"          // MType
+#include "cc_ast.h"             // C++ AST
+#include "cc_ast_aux.h"         // class LoweredASTVisitor
+#include "cc_env.h"             // Env
+#include "trace.h"              // trace
+#include "cc_print.h"           // PrintEnv
+#include "strutil.h"            // decodeEscapes
+#include "Preprocessor.h"       // LangOptions
+#include "SourceManager.h"      // SourceManager
+#include "stdconv.h"            // test_getStandardConversion
+#include "implconv.h"           // test_getImplicitConversion
+#include "overload.h"           // resolveOverload
+#include "generic_amb.h"        // resolveAmbiguity, etc.
+#include "implint.h"            // resolveImplIntAmbig
+#include "ast_build.h"          // makeExprList1, etc.
+#include "strutil.h"            // prefixEquals, pluraln
+#include "macros.h"             // Restorer
+#include "typelistiter.h"       // TypeListIter_FakeList
+#include "owner.h"              // Owner
+#include "mtype.h"              // MType
 
+using namespace ellcc;
 // smbase
-#include "datablok.h"       // DataBlock
+#include "datablok.h"           // DataBlock
 
-#include <stdlib.h>         // strtoul, strtod
-#include <ctype.h>          // isdigit
-#include <limits.h>         // INT_MAX, UINT_MAX, LONG_MAX
+#include <stdlib.h>             // strtoul, strtod
+#include <ctype.h>              // isdigit
+#include <limits.h>             // INT_MAX, UINT_MAX, LONG_MAX
 
 #include "exprloc.h"
 
@@ -7076,7 +7078,9 @@ static Type *internalTestingHooks
           hasNamedFunction(args->first()->expr->asE_funCall()->func)) {
         // resolution yielded a function call
         Variable *chosen = getNamedFunction(args->first()->expr->asE_funCall()->func);
-        int actualLine = sourceLocManager->getLine(chosen->loc);
+        SourceManager SM;
+        PresumedLoc ploc = SM.getPresumedLoc(chosen->loc);
+        int actualLine = ploc.getLine();
         if (expectLine != actualLine) {
           env.error(stringc
             << "expected overload to choose function on line "
@@ -7130,7 +7134,9 @@ static Type *internalTestingHooks
           env.error("expected to be calling a defined function");
         }
         else {
-          int actualLine = sourceLocManager->getLine(chosen->funcDefn->getLoc());
+          SourceManager SM;
+          PresumedLoc ploc = SM.getPresumedLoc(chosen->funcDefn->getLoc());
+          int actualLine = ploc.getLine();
           if (expectLine != actualLine) {
             env.error(stringc
               << "expected to call function on line "

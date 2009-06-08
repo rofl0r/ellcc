@@ -4,9 +4,10 @@
 #ifndef CCUNDOLOG_H
 #define CCUNDOLOG_H
 
-#include "taillist.h"       // TailList
-#include "strobjdict.h"     // StringObjDict
-#include "srcloc.h"
+#include "taillist.h"           // TailList
+#include "strobjdict.h"         // StringObjDict
+#include "SourceLocation.h"     // SourceLocation
+using ellcc::SourceLocation;
 #include "taillist.h"
 
 class MacroUndoEntry;

@@ -24,6 +24,9 @@ using namespace ellcc;
 using namespace SrcMgr;
 using llvm::MemoryBuffer;
 
+SourceManager::_SourceManager* SourceManager::SM = NULL;
+unsigned SourceManager::instances = 0;
+
 //===----------------------------------------------------------------------===//
 // SourceManager Helper Classes
 //===----------------------------------------------------------------------===//
@@ -165,7 +168,7 @@ void LineTableInfo::AddEntry(unsigned FID,
 
 /// getLineTableFilenameID - Return the uniqued ID for the specified filename.
 /// 
-unsigned SourceManager::getLineTableFilenameID(const char *Ptr, unsigned Len) {
+unsigned SourceManager::_SourceManager::getLineTableFilenameID(const char *Ptr, unsigned Len) {
   if (LineTable == 0)
     LineTable = new LineTableInfo();
   return LineTable->getLineTableFilenameID(Ptr, Len);
@@ -175,7 +178,7 @@ unsigned SourceManager::getLineTableFilenameID(const char *Ptr, unsigned Len) {
 /// AddLineNote - Add a line note to the line table for the FileID and offset
 /// specified by Loc.  If FilenameID is -1, it is considered to be
 /// unspecified.
-void SourceManager::AddLineNote(SourceLocation Loc, unsigned LineNo,
+void SourceManager::_SourceManager::AddLineNote(SourceLocation Loc, unsigned LineNo,
                                 int FilenameID) {
   std::pair<FileID, unsigned> LocInfo = getDecomposedInstantiationLoc(Loc);
   
@@ -190,7 +193,7 @@ void SourceManager::AddLineNote(SourceLocation Loc, unsigned LineNo,
 }
 
 /// AddLineNote - Add a GNU line marker to the line table.
-void SourceManager::AddLineNote(SourceLocation Loc, unsigned LineNo,
+void SourceManager::_SourceManager::AddLineNote(SourceLocation Loc, unsigned LineNo,
                                 int FilenameID, bool IsFileEntry,
                                 bool IsFileExit, bool IsSystemHeader,
                                 bool IsExternCHeader) {
@@ -229,7 +232,7 @@ void SourceManager::AddLineNote(SourceLocation Loc, unsigned LineNo,
                          EntryExit, FileKind);
 }
 
-LineTableInfo &SourceManager::getLineTable() {
+LineTableInfo &SourceManager::_SourceManager::getLineTable() {
   if (LineTable == 0)
     LineTable = new LineTableInfo();
   return *LineTable;
@@ -239,7 +242,7 @@ LineTableInfo &SourceManager::getLineTable() {
 // Private 'Create' methods.
 //===----------------------------------------------------------------------===//
 
-SourceManager::~SourceManager() {
+SourceManager::_SourceManager::~_SourceManager() {
   delete LineTable;
   
   // Delete FileEntry objects corresponding to content caches.  Since the actual
@@ -256,7 +259,7 @@ SourceManager::~SourceManager() {
   }
 }
 
-void SourceManager::clearIDTables() {
+void SourceManager::_SourceManager::clearIDTables() {
   MainFileID = FileID();
   SLocEntryTable.clear();
   LastLineNoFileIDQuery = FileID();
@@ -274,7 +277,7 @@ void SourceManager::clearIDTables() {
 /// getOrCreateContentCache - Create or return a cached ContentCache for the
 /// specified file.
 const ContentCache *
-SourceManager::getOrCreateContentCache(const FileEntry *FileEnt) {
+SourceManager::_SourceManager::getOrCreateContentCache(const FileEntry *FileEnt) {
   assert(FileEnt && "Didn't specify a file entry to use?");
   
   // Do we already have information about this file?
@@ -295,7 +298,7 @@ SourceManager::getOrCreateContentCache(const FileEntry *FileEnt) {
 /// createMemBufferContentCache - Create a new ContentCache for the specified
 ///  memory buffer.  This does no caching.
 const ContentCache*
-SourceManager::createMemBufferContentCache(const MemoryBuffer *Buffer) {
+SourceManager::_SourceManager::createMemBufferContentCache(const MemoryBuffer *Buffer) {
   // Add a new ContentCache to the MemBufferInfos list and return it.  Make sure
   // it is at least 8-byte aligned so that FileInfo can use the low 3 bits of
   // the pointer for its own nefarious purposes.
@@ -308,7 +311,7 @@ SourceManager::createMemBufferContentCache(const MemoryBuffer *Buffer) {
   return Entry;
 }
 
-void SourceManager::PreallocateSLocEntries(ExternalSLocEntrySource *Source,
+void SourceManager::_SourceManager::PreallocateSLocEntries(ExternalSLocEntrySource *Source,
                                            unsigned NumSLocEntries,
                                            unsigned NextOffset) {
   ExternalSLocEntries = Source;
@@ -318,7 +321,7 @@ void SourceManager::PreallocateSLocEntries(ExternalSLocEntrySource *Source,
   SLocEntryTable.resize(SLocEntryTable.size() + NumSLocEntries);
 }
 
-void SourceManager::ClearPreallocatedSLocEntries() {
+void SourceManager::_SourceManager::ClearPreallocatedSLocEntries() {
   unsigned I = 0;
   for (unsigned N = SLocEntryLoaded.size(); I != N; ++I)
     if (!SLocEntryLoaded[I])
@@ -342,7 +345,7 @@ void SourceManager::ClearPreallocatedSLocEntries() {
 /// createFileID - Create a new fileID for the specified ContentCache and
 /// include position.  This works regardless of whether the ContentCache
 /// corresponds to a file or some other input source.
-FileID SourceManager::createFileID(const ContentCache *File,
+FileID SourceManager::_SourceManager::createFileID(const ContentCache *File,
                                    SourceLocation IncludePos,
                                    SrcMgr::CharacteristicKind FileCharacter,
                                    unsigned PreallocatedID,
@@ -379,7 +382,7 @@ FileID SourceManager::createFileID(const ContentCache *File,
 /// createInstantiationLoc - Return a new SourceLocation that encodes the fact
 /// that a token from SpellingLoc should actually be referenced from
 /// InstantiationLoc.
-SourceLocation SourceManager::createInstantiationLoc(SourceLocation SpellingLoc,
+SourceLocation SourceManager::_SourceManager::createInstantiationLoc(SourceLocation SpellingLoc,
                                                      SourceLocation ILocStart,
                                                      SourceLocation ILocEnd,
                                                      unsigned TokLength,
@@ -407,7 +410,7 @@ SourceLocation SourceManager::createInstantiationLoc(SourceLocation SpellingLoc,
 /// getBufferData - Return a pointer to the start and end of the source buffer
 /// data for the specified FileID.
 std::pair<const char*, const char*>
-SourceManager::getBufferData(FileID FID) const {
+SourceManager::_SourceManager::getBufferData(FileID FID) const {
   const llvm::MemoryBuffer *Buf = getBuffer(FID);
   return std::make_pair(Buf->getBufferStart(), Buf->getBufferEnd());
 }
@@ -418,11 +421,11 @@ SourceManager::getBufferData(FileID FID) const {
 //===----------------------------------------------------------------------===//
 
 /// getFileIDSlow - Return the FileID for a SourceLocation.  This is a very hot
-/// method that is used for all SourceManager queries that start with a
+/// method that is used for all _SourceManager queries that start with a
 /// SourceLocation object.  It is responsible for finding the entry in
 /// SLocEntryTable which contains the specified location.
 ///
-FileID SourceManager::getFileIDSlow(unsigned SLocOffset) const {
+FileID SourceManager::_SourceManager::getFileIDSlow(unsigned SLocOffset) const {
   assert(SLocOffset && "Invalid FileID");
   
   // After the first and second level caches, I see two common sorts of
@@ -517,7 +520,7 @@ FileID SourceManager::getFileIDSlow(unsigned SLocOffset) const {
   }
 }
 
-SourceLocation SourceManager::
+SourceLocation SourceManager::_SourceManager::
 getInstantiationLocSlowCase(SourceLocation Loc) const {
   do {
     std::pair<FileID, unsigned> LocInfo = getDecomposedLoc(Loc);
@@ -529,7 +532,7 @@ getInstantiationLocSlowCase(SourceLocation Loc) const {
   return Loc;
 }
 
-SourceLocation SourceManager::getSpellingLocSlowCase(SourceLocation Loc) const {
+SourceLocation SourceManager::_SourceManager::getSpellingLocSlowCase(SourceLocation Loc) const {
   do {
     std::pair<FileID, unsigned> LocInfo = getDecomposedLoc(Loc);
     Loc = getSLocEntry(LocInfo.first).getInstantiation().getSpellingLoc();
@@ -540,7 +543,7 @@ SourceLocation SourceManager::getSpellingLocSlowCase(SourceLocation Loc) const {
 
 
 std::pair<FileID, unsigned>
-SourceManager::getDecomposedInstantiationLocSlowCase(const SrcMgr::SLocEntry *E,
+SourceManager::_SourceManager::getDecomposedInstantiationLocSlowCase(const SrcMgr::SLocEntry *E,
                                                      unsigned Offset) const {
   // If this is an instantiation record, walk through all the instantiation
   // points.
@@ -558,7 +561,7 @@ SourceManager::getDecomposedInstantiationLocSlowCase(const SrcMgr::SLocEntry *E,
 }
 
 std::pair<FileID, unsigned>
-SourceManager::getDecomposedSpellingLocSlowCase(const SrcMgr::SLocEntry *E,
+SourceManager::_SourceManager::getDecomposedSpellingLocSlowCase(const SrcMgr::SLocEntry *E,
                                                 unsigned Offset) const {
   // If this is an instantiation record, walk through all the instantiation
   // points.
@@ -579,7 +582,7 @@ SourceManager::getDecomposedSpellingLocSlowCase(const SrcMgr::SLocEntry *E,
 /// spelling location referenced by the ID.  This is the first level down
 /// towards the place where the characters that make up the lexed token can be
 /// found.  This should not generally be used by clients.
-SourceLocation SourceManager::getImmediateSpellingLoc(SourceLocation Loc) const{
+SourceLocation SourceManager::_SourceManager::getImmediateSpellingLoc(SourceLocation Loc) const{
   if (Loc.isFileID()) return Loc;
   std::pair<FileID, unsigned> LocInfo = getDecomposedLoc(Loc);
   Loc = getSLocEntry(LocInfo.first).getInstantiation().getSpellingLoc();
@@ -590,7 +593,7 @@ SourceLocation SourceManager::getImmediateSpellingLoc(SourceLocation Loc) const{
 /// getImmediateInstantiationRange - Loc is required to be an instantiation
 /// location.  Return the start/end of the instantiation information.
 std::pair<SourceLocation,SourceLocation>
-SourceManager::getImmediateInstantiationRange(SourceLocation Loc) const {
+SourceManager::_SourceManager::getImmediateInstantiationRange(SourceLocation Loc) const {
   assert(Loc.isMacroID() && "Not an instantiation loc!");
   const InstantiationInfo &II = getSLocEntry(getFileID(Loc)).getInstantiation();
   return II.getInstantiationLocRange();
@@ -599,7 +602,7 @@ SourceManager::getImmediateInstantiationRange(SourceLocation Loc) const {
 /// getInstantiationRange - Given a SourceLocation object, return the
 /// range of tokens covered by the instantiation in the ultimate file.
 std::pair<SourceLocation,SourceLocation>
-SourceManager::getInstantiationRange(SourceLocation Loc) const {
+SourceManager::_SourceManager::getInstantiationRange(SourceLocation Loc) const {
   if (Loc.isFileID()) return std::make_pair(Loc, Loc);
   
   std::pair<SourceLocation,SourceLocation> Res =
@@ -622,7 +625,7 @@ SourceManager::getInstantiationRange(SourceLocation Loc) const {
 
 /// getCharacterData - Return a pointer to the start of the specified location
 /// in the appropriate MemoryBuffer.
-const char *SourceManager::getCharacterData(SourceLocation SL) const {
+const char *SourceManager::_SourceManager::getCharacterData(SourceLocation SL) const {
   // Note that this is a hot function in the getSpelling() path, which is
   // heavily used by -E mode.
   std::pair<FileID, unsigned> LocInfo = getDecomposedSpellingLoc(SL);
@@ -635,7 +638,7 @@ const char *SourceManager::getCharacterData(SourceLocation SL) const {
 
 /// getColumnNumber - Return the column # for the specified file position.
 /// this is significantly cheaper to compute than the line number.
-unsigned SourceManager::getColumnNumber(FileID FID, unsigned FilePos) const {
+unsigned SourceManager::_SourceManager::getColumnNumber(FileID FID, unsigned FilePos) const {
   const char *Buf = getBuffer(FID)->getBufferStart();
   
   unsigned LineStart = FilePos;
@@ -644,13 +647,13 @@ unsigned SourceManager::getColumnNumber(FileID FID, unsigned FilePos) const {
   return FilePos-LineStart+1;
 }
 
-unsigned SourceManager::getSpellingColumnNumber(SourceLocation Loc) const {
+unsigned SourceManager::_SourceManager::getSpellingColumnNumber(SourceLocation Loc) const {
   if (Loc.isInvalid()) return 0;
   std::pair<FileID, unsigned> LocInfo = getDecomposedSpellingLoc(Loc);
   return getColumnNumber(LocInfo.first, LocInfo.second);
 }
 
-unsigned SourceManager::getInstantiationColumnNumber(SourceLocation Loc) const {
+unsigned SourceManager::_SourceManager::getInstantiationColumnNumber(SourceLocation Loc) const {
   if (Loc.isInvalid()) return 0;
   std::pair<FileID, unsigned> LocInfo = getDecomposedInstantiationLoc(Loc);
   return getColumnNumber(LocInfo.first, LocInfo.second);
@@ -708,7 +711,7 @@ static void ComputeLineNumbers(ContentCache* FI, llvm::BumpPtrAllocator &Alloc){
 /// for the position indicated.  This requires building and caching a table of
 /// line offsets for the MemoryBuffer, so this is not cheap: use only when
 /// about to emit a diagnostic.
-unsigned SourceManager::getLineNumber(FileID FID, unsigned FilePos) const {
+unsigned SourceManager::_SourceManager::getLineNumber(FileID FID, unsigned FilePos) const {
   ContentCache *Content;
   if (LastLineNoFileIDQuery == FID)
     Content = LastLineNoContentCache;
@@ -805,12 +808,12 @@ unsigned SourceManager::getLineNumber(FileID FID, unsigned FilePos) const {
   return LineNo;
 }
 
-unsigned SourceManager::getInstantiationLineNumber(SourceLocation Loc) const {
+unsigned SourceManager::_SourceManager::getInstantiationLineNumber(SourceLocation Loc) const {
   if (Loc.isInvalid()) return 0;
   std::pair<FileID, unsigned> LocInfo = getDecomposedInstantiationLoc(Loc);
   return getLineNumber(LocInfo.first, LocInfo.second);
 }
-unsigned SourceManager::getSpellingLineNumber(SourceLocation Loc) const {
+unsigned SourceManager::_SourceManager::getSpellingLineNumber(SourceLocation Loc) const {
   if (Loc.isInvalid()) return 0;
   std::pair<FileID, unsigned> LocInfo = getDecomposedSpellingLoc(Loc);
   return getLineNumber(LocInfo.first, LocInfo.second);
@@ -825,7 +828,7 @@ unsigned SourceManager::getSpellingLineNumber(SourceLocation Loc) const {
 /// which changes all source locations in the current file after that to be
 /// considered to be from a system header.
 SrcMgr::CharacteristicKind 
-SourceManager::getFileCharacteristic(SourceLocation Loc) const {
+SourceManager::_SourceManager::getFileCharacteristic(SourceLocation Loc) const {
   assert(!Loc.isInvalid() && "Can't get file characteristic of invalid loc!");
   std::pair<FileID, unsigned> LocInfo = getDecomposedInstantiationLoc(Loc);
   const SrcMgr::FileInfo &FI = getSLocEntry(LocInfo.first).getFile();
@@ -850,7 +853,7 @@ SourceManager::getFileCharacteristic(SourceLocation Loc) const {
 /// Return the filename or buffer identifier of the buffer the location is in.
 /// Note that this name does not respect #line directives.  Use getPresumedLoc
 /// for normal clients.
-const char *SourceManager::getBufferName(SourceLocation Loc) const {
+const char *SourceManager::_SourceManager::getBufferName(SourceLocation Loc) const {
   if (Loc.isInvalid()) return "<invalid loc>";
   
   return getBuffer(getFileID(Loc))->getBufferIdentifier();
@@ -864,7 +867,7 @@ const char *SourceManager::getBufferName(SourceLocation Loc) const {
 ///
 /// Note that a presumed location is always given as the instantiation point
 /// of an instantiation location, not at the spelling location.
-PresumedLoc SourceManager::getPresumedLoc(SourceLocation Loc) const {
+PresumedLoc SourceManager::_SourceManager::getPresumedLoc(SourceLocation Loc) const {
   if (Loc.isInvalid()) return PresumedLoc();
   
   // Presumed locations are always for instantiation points.
@@ -920,7 +923,7 @@ PresumedLoc SourceManager::getPresumedLoc(SourceLocation Loc) const {
 
 /// PrintStats - Print statistics to stderr.
 ///
-void SourceManager::PrintStats() const {
+void SourceManager::_SourceManager::PrintStats() const {
   llvm::cerr << "\n*** Source Manager Stats:\n";
   llvm::cerr << FileInfos.size() << " files mapped, " << MemBufferInfos.size()
              << " mem buffers mapped.\n";

@@ -5,12 +5,13 @@
 #ifndef OVERLOAD_H
 #define OVERLOAD_H
 
-#include "sobjlist.h"      // SObjList
-#include "array.h"         // ArrayStack
-#include "implconv.h"      // ImplicitConversion, StandardConversion
-#include "srcloc.h"        // SourceLocation
-#include "cc_ast.h"        // PQName, ArgExpression, etc.
-#include "lookupset.h"     // LookupSet
+#include "sobjlist.h"           // SObjList
+#include "array.h"              // ArrayStack
+#include "implconv.h"           // ImplicitConversion, StandardConversion
+#include "SourceLocation.h"     // SourceLocation
+using ellcc::SourceLocation;
+#include "cc_ast.h"             // PQName, ArgExpression, etc.
+#include "lookupset.h"          // LookupSet
 
 // fwds
 class Env;
@@ -18,7 +19,6 @@ class Variable;
 class Type;
 class ErrorList;
 class TemplCandidates;
-
 
 // debugging output support
 extern int overloadNesting;      // overload resolutions ongoing

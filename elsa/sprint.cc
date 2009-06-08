@@ -53,7 +53,7 @@ bool StructurePrinter::visitStatement(Statement *s)
 
     ASTNEXT(S_if, si)
       digStmt(si->thenBranch);
-      if (si->elseBranch->loc > si->loc) {
+      if (si->elseBranch->loc.isValid()) {
         digStmt(si->elseBranch);
       }
       else {

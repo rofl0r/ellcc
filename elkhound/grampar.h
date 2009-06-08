@@ -18,6 +18,7 @@ class TF_nonterm;         // gramast.ast
 class GrammarLexer;       // ../ast/gramlex.h
 class StringTable;        // strtable.h
 
+#define ASSIGN_SOURCE_LOCATION(dst, src) memcpy(&(dst), &(src), sizeof(SourceLocation));
 
 // -------- rest of the program's view of parser ------------
 // name of extra parameter to yyparse (i.e. the context in

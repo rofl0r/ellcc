@@ -1,21 +1,22 @@
 // main.cc            see license.txt for copyright and terms of use
 // toplevel driver for the C parser
 
-#include <iostream>       // cout
-#include <stdlib.h>       // exit
+#include <iostream>             // cout
+#include <stdlib.h>             // exit
 
-#include "trace.h"        // traceAddSys
-#include "parssppt.h"     // ParseTreeAndTokens, treeMain
-#include "srcloc.h"       // SourceManager
-#include "ckheap.h"       // malloc_stats
-#include "c_env.h"        // Env
-#include "c.ast.gen.h"    // C AST (r)
-#include "strutil.h"      // plural
-#include "cc_lang.h"      // CCLang
-#include "treeout.h"      // treeOut
-#include "parsetables.h"  // ParseTables
-#include "c.gr.gen.h"     // CParse
-#include "cyctimer.h"     // CycleTimer
+#include "trace.h"              // traceAddSys
+#include "parssppt.h"           // ParseTreeAndTokens, treeMain
+#include "SourceManager.h"      // SourceManager
+using ellcc::SourceManager;
+#include "ckheap.h"             // malloc_stats
+#include "c_env.h"              // Env
+#include "c.ast.gen.h"          // C AST (r)
+#include "strutil.h"            // plural
+#include "cc_lang.h"            // CCLang
+#include "treeout.h"            // treeOut
+#include "parsetables.h"        // ParseTables
+#include "c.gr.gen.h"           // CParse
+#include "cyctimer.h"           // CycleTimer
 
 using namespace std;
 

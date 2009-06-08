@@ -5,7 +5,10 @@
 #include "template.h"      // Type, TemplateInfo, etc.
 #include "trace.h"         // tracingSys
 #include "mangle.h"        // mangle()
+#include "SourceLocation.h"     // SourceLocation
+#include "SourceManager.h"      // SourceManager
 
+using namespace ellcc;
 using namespace sm;
 
 // dsw: need this for Oink; we'll figure out how to make this non-global later
@@ -632,7 +635,9 @@ string Variable::fullyQualifiedMangledName0() {
   // dsw: prepend with the filename if is global and static; this
   // ensures proper linking
   if (isStaticLinkage()) {
-    fqName << "file:" << sourceLocManager->getFile(loc) << ";";
+      SourceManager SM;
+      PresumedLoc ploc = SM.getPresumedLoc(loc);
+      fqName << "file:" << ploc.getFilename() << ";";
   }
 
   // quarl 2006-07-10

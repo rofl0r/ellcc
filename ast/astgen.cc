@@ -1,23 +1,25 @@
 // astgen.cc            see license.txt for copyright and terms of use
 // program to generate C++ code from an AST specification
 
-#include "agrampar.h"      // readAbstractGrammar
-#include "test.h"          // ARGS_MAIN
-#include "trace.h"         // TRACE_ARGS
-#include "owner.h"         // Owner
-#include "ckheap.h"        // checkHeap
-#include "strutil.h"       // replace, translate, localTimeString
-#include "sobjlist.h"      // SObjList
-#include "stringset.h"     // StringSet
-#include "srcloc.h"        // SourceManager
-#include "strtokp.h"       // StrtokParse
-#include "exc.h"           // xfatal
-#include "strdict.h"       // StringDict
-#include "ofstreamts.h"    // ofstreamTS
+#include "agrampar.h"           // readAbstractGrammar
+#include "test.h"               // ARGS_MAIN
+#include "trace.h"              // TRACE_ARGS
+#include "owner.h"              // Owner
+#include "ckheap.h"             // checkHeap
+#include "strutil.h"            // replace, translate, localTimeString
+#include "sobjlist.h"           // SObjList
+#include "stringset.h"          // StringSet
+#include "objlist.h"            // ObjList
+#include "SourceManager.h"      // SourceManager
+using ellcc::SourceManager;
+#include "strtokp.h"            // StrtokParse
+#include "exc.h"                // xfatal
+#include "strdict.h"            // StringDict
+#include "ofstreamts.h"         // ofstreamTS
 
-#include <string.h>        // strncmp
-#include <fstream>         // ofstream
-#include <ctype.h>         // isalnum
+#include <string.h>             // strncmp
+#include <fstream>              // ofstream
+#include <ctype.h>              // isalnum
 
 using namespace sm;
 
@@ -844,6 +846,7 @@ void HGen::emitUserDecls(ASTList<Annotation> const &decls)
           out << "virtual ";
         }
         out << decl.code;
+        trace("userdecls") << "declaring " << decl.code << std::endl;
 
         if (isFuncDecl(&decl) && !decl.init.empty()) {
           out << " = " << decl.init;     // the "=0" of a pure virtual function
@@ -3220,7 +3223,6 @@ void entry(int argc, char **argv)
 {
   TRACE_ARGS();
   checkHeap();
-  SourceManager mgr;
 
   if (argc < 2) {
     std::cout << "usage: " << argv[0] << " [options] file.ast [extension.ast [...]]\n"
@@ -3236,6 +3238,7 @@ void entry(int argc, char **argv)
 
   char const *basename = NULL;      // nothing set
 
+  SourceManager SM;                 // Create the first source manager.
   argv++;
   while (argv[0][0] == '-') {
     if (argv[0][1] == 'b' ||        // 'b' is for compatibility

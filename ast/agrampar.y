@@ -6,6 +6,7 @@
 %{
 
 #include "agrampar.h"       // agrampar_yylex, etc.
+#include "trace.h"
 
 #include <stdlib.h>         // malloc, free
 #include <iostream>         // cout
@@ -239,9 +240,11 @@ CtorMembersOpt
 /* yields Annotation */
 Annotation
   : AccessMod Embedded
-      { $$ = new UserDecl($1, unbox($2), ""); }
+      { trace("userdecls") << "defining " << *((sm::string*)$2) << std::endl;
+        $$ = new UserDecl($1, unbox($2), ""); }
   | AccessMod TOK_EMBEDDED_CODE "=" TOK_EMBEDDED_CODE ";"
-      { $$ = new UserDecl($1, unbox($2), unbox($4)); }
+      { trace("userdecls") << "defining= " << *((sm::string*)$2) << std::endl;
+        $$ = new UserDecl($1, unbox($2), unbox($4)); }
   | CustomCode
       { $$ = $1; }
   ;

@@ -4,17 +4,18 @@
 #ifndef EMITCODE_H
 #define EMITCODE_H
 
-#include "str.h"          // stringBuffer
-#include "srcloc.h"       // SourceLocation
-#include "ofstreamts.h"   // ofstreamTS
+#include "str.h"                // stringBuffer
+#include "SourceLocation.h"     // SourceLocation
+using ellcc::SourceLocation;
+#include "ofstreamts.h"         // ofstreamTS
 
 class EmitCode : public stringBuilder {
-private:     // data
-  ofstreamTS os;       // stream to write to
-  sm::string fname;        // filename for emitting #line
-  int line;            // current line number
+private:                        // data
+  ofstreamTS os;                // stream to write to
+  sm::string fname;             // filename for emitting #line
+  int line;                     // current line number
 
-public:      // funcs
+public:                         // funcs
   EmitCode(rostring fname);
   ~EmitCode();
 

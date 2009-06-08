@@ -147,12 +147,12 @@ void emitMLActionCode(GrammarAnalysis const &g, rostring mliFname,
     #endif
     out << "\n";
     out << "#include \"" << hFname << "\"     // " << g.actionClassName << "\n";
-    out << "#include \"parsetables.h\" // ParseTables\n";
-    out << "#include \"srcloc.h\"      // SourceLocation\n";
+    out << "#include \"parsetables.h\"          // ParseTables\n";
+    out << "#include \"SourceLocation.h\"       // SourceLocation\n";
     out << "\n";
-    out << "#include <assert.h>      // assert\n";
-    out << "#include <iostream>      // cout\n";
-    out << "#include <stdlib.h>      // abort\n";
+    out << "#include <assert.h>               // assert\n";
+    out << "#include <iostream>               // cout\n";
+    out << "#include <stdlib.h>               // abort\n";
     out << "\n";
 
     NOSOURCELOC(

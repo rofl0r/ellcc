@@ -52,8 +52,8 @@ option visitor ASTVisitor;
 option dvisitor DelegatorASTVisitor;
 
 // these turn on the xml serialization and de-serialization code
-option xmlVisitor XmlAstWriter_AstVisitor;
-option xmlParser xml;
+// RICH: option xmlVisitor XmlAstWriter_AstVisitor;
+// RICH: option xmlParser xml;
 
 option identityManager IdentityManager;
 

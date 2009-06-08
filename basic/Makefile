@@ -11,8 +11,8 @@ THIS := libbasic.a
 all: $(THIS)
 
 SMBASE   := ../smbase
-LLVM := /home/ctnetap1/penning/local/Linux
-LLVMCCFLAGS := $(shell llvm-config --cxxflags)
+LLVM := /usr/local
+LLVMCCFLAGS := $(shell llvm-config --cxxflags) -I../smbase
 
 # external tools
 PERL := perl

@@ -138,6 +138,7 @@
 
 
 #include "agrampar.h"       // agrampar_yylex, etc.
+#include "trace.h"
 
 #include <stdlib.h>         // malloc, free
 #include <iostream>         // cout
@@ -172,7 +173,7 @@
 
 #if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
 typedef union YYSTYPE
-#line 69 "agrampar.y"
+#line 70 "agrampar.y"
 {
   ASTSpecFile *file;
   ASTList<ToplevelForm> *formList;
@@ -194,7 +195,7 @@ typedef union YYSTYPE
   CustomCode *customCode;
 }
 /* Line 187 of yacc.c.  */
-#line 198 "agrampar.tab.c"
+#line 199 "agrampar.tab.c"
 	YYSTYPE;
 # define yystype YYSTYPE /* obsolescent; will be withdrawn */
 # define YYSTYPE_IS_DECLARED 1
@@ -207,7 +208,7 @@ typedef union YYSTYPE
 
 
 /* Line 216 of yacc.c.  */
-#line 211 "agrampar.tab.c"
+#line 212 "agrampar.tab.c"
 
 #ifdef short
 # undef short
@@ -519,14 +520,14 @@ static const yytype_int8 yyrhs[] =
 /* YYRLINE[YYN] -- source line where rule number YYN was defined.  */
 static const yytype_uint16 yyrline[] =
 {
-       0,   116,   116,   122,   123,   124,   125,   126,   127,   128,
-     133,   137,   145,   146,   158,   160,   168,   169,   171,   173,
-     181,   182,   188,   190,   195,   202,   207,   209,   215,   216,
-     217,   218,   219,   220,   221,   225,   227,   234,   235,   241,
-     243,   245,   251,   257,   259,   265,   266,   267,   268,   269,
-     270,   274,   276,   281,   283,   288,   290,   292,   297,   303,
-     304,   309,   311,   316,   318,   323,   329,   330,   335,   337,
-     343,   344,   345,   349
+       0,   117,   117,   123,   124,   125,   126,   127,   128,   129,
+     134,   138,   146,   147,   159,   161,   169,   170,   172,   174,
+     182,   183,   189,   191,   196,   203,   208,   210,   216,   217,
+     218,   219,   220,   221,   222,   226,   228,   235,   236,   242,
+     245,   248,   254,   260,   262,   268,   269,   270,   271,   272,
+     273,   277,   279,   284,   286,   291,   293,   295,   300,   306,
+     307,   312,   314,   319,   321,   326,   332,   333,   338,   340,
+     346,   347,   348,   352
 };
 #endif
 
@@ -1510,54 +1511,54 @@ yyreduce:
   switch (yyn)
     {
         case 2:
-#line 117 "agrampar.y"
+#line 118 "agrampar.y"
     { (yyval.file) = *((ASTSpecFile**)parseParam) = new ASTSpecFile((yyvsp[(1) - (1)].formList)); ;}
     break;
 
   case 3:
-#line 122 "agrampar.y"
+#line 123 "agrampar.y"
     { (yyval.formList) = new ASTList<ToplevelForm>; ;}
     break;
 
   case 4:
-#line 123 "agrampar.y"
+#line 124 "agrampar.y"
     { ((yyval.formList)=(yyvsp[(1) - (2)].formList))->append((yyvsp[(2) - (2)].tfClass)); ;}
     break;
 
   case 5:
-#line 124 "agrampar.y"
+#line 125 "agrampar.y"
     { ((yyval.formList)=(yyvsp[(1) - (2)].formList))->append((yyvsp[(2) - (2)].verbatim)); ;}
     break;
 
   case 6:
-#line 125 "agrampar.y"
+#line 126 "agrampar.y"
     { ((yyval.formList)=(yyvsp[(1) - (2)].formList))->append((yyvsp[(2) - (2)].tfOption)); ;}
     break;
 
   case 7:
-#line 126 "agrampar.y"
+#line 127 "agrampar.y"
     { ((yyval.formList)=(yyvsp[(1) - (2)].formList))->append((yyvsp[(2) - (2)].tfEnum)); ;}
     break;
 
   case 8:
-#line 127 "agrampar.y"
+#line 128 "agrampar.y"
     { ((yyval.formList)=(yyvsp[(1) - (2)].formList))->append(new TF_custom((yyvsp[(2) - (2)].customCode))); ;}
     break;
 
   case 9:
-#line 128 "agrampar.y"
+#line 129 "agrampar.y"
     { (yyval.formList)=(yyvsp[(1) - (2)].formList); ;}
     break;
 
   case 10:
-#line 134 "agrampar.y"
+#line 135 "agrampar.y"
     { ((yyval.tfClass)=(yyvsp[(6) - (6)].tfClass))->super->name = unbox((yyvsp[(3) - (6)].str)); 
            (yyval.tfClass)->super->args.steal((yyvsp[(4) - (6)].ctorArgList)); 
            (yyval.tfClass)->super->bases.steal((yyvsp[(5) - (6)].baseClassList)); ;}
     break;
 
   case 11:
-#line 138 "agrampar.y"
+#line 139 "agrampar.y"
     { ((yyval.tfClass)=(yyvsp[(7) - (7)].tfClass))->super->name = unbox((yyvsp[(3) - (7)].str));
            (yyval.tfClass)->super->args.steal((yyvsp[(4) - (7)].ctorArgList));
            (yyval.tfClass)->super->lastArgs.steal((yyvsp[(5) - (7)].ctorArgList));
@@ -1565,67 +1566,67 @@ yyreduce:
     break;
 
   case 12:
-#line 145 "agrampar.y"
-    {;}
-    break;
-
-  case 13:
 #line 146 "agrampar.y"
     {;}
     break;
 
+  case 13:
+#line 147 "agrampar.y"
+    {;}
+    break;
+
   case 14:
-#line 159 "agrampar.y"
+#line 160 "agrampar.y"
     { (yyval.tfClass)=(yyvsp[(2) - (3)].tfClass); ;}
     break;
 
   case 15:
-#line 161 "agrampar.y"
+#line 162 "agrampar.y"
     { (yyval.tfClass) = new TF_class(new ASTClass("(placeholder)", NULL, NULL, NULL, NULL), NULL); ;}
     break;
 
   case 16:
-#line 168 "agrampar.y"
+#line 169 "agrampar.y"
     { (yyval.tfClass) = new TF_class(new ASTClass("(placeholder)", NULL, NULL, NULL, NULL), NULL); ;}
     break;
 
   case 17:
-#line 170 "agrampar.y"
+#line 171 "agrampar.y"
     { ((yyval.tfClass)=(yyvsp[(1) - (6)].tfClass))->ctors.append(new ASTClass(unbox((yyvsp[(3) - (6)].str)), (yyvsp[(4) - (6)].ctorArgList), NULL, (yyvsp[(5) - (6)].baseClassList), NULL)); ;}
     break;
 
   case 18:
-#line 172 "agrampar.y"
+#line 173 "agrampar.y"
     { ((yyval.tfClass)=(yyvsp[(1) - (8)].tfClass))->ctors.append(new ASTClass(unbox((yyvsp[(3) - (8)].str)), (yyvsp[(4) - (8)].ctorArgList), NULL, (yyvsp[(5) - (8)].baseClassList), (yyvsp[(7) - (8)].userDeclList))); ;}
     break;
 
   case 19:
-#line 174 "agrampar.y"
+#line 175 "agrampar.y"
     { ((yyval.tfClass)=(yyvsp[(1) - (2)].tfClass))->super->decls.append((yyvsp[(2) - (2)].annotation)); ;}
     break;
 
   case 20:
-#line 181 "agrampar.y"
+#line 182 "agrampar.y"
     { (yyval.ctorArgList) = new ASTList<CtorArg>; ;}
     break;
 
   case 21:
-#line 183 "agrampar.y"
+#line 184 "agrampar.y"
     { (yyval.ctorArgList) = (yyvsp[(1) - (1)].ctorArgList); ;}
     break;
 
   case 22:
-#line 189 "agrampar.y"
+#line 190 "agrampar.y"
     { (yyval.ctorArgList) = new ASTList<CtorArg>; ;}
     break;
 
   case 23:
-#line 191 "agrampar.y"
+#line 192 "agrampar.y"
     { (yyval.ctorArgList) = (yyvsp[(2) - (3)].ctorArgList); ;}
     break;
 
   case 24:
-#line 196 "agrampar.y"
+#line 197 "agrampar.y"
     { (yyval.ctorArgList) = new ASTList<CtorArg>;
                  {
                    sm::string tmp = unbox((yyvsp[(1) - (1)].str));
@@ -1635,253 +1636,255 @@ yyreduce:
     break;
 
   case 25:
-#line 203 "agrampar.y"
+#line 204 "agrampar.y"
     { ((yyval.ctorArgList)=(yyvsp[(1) - (3)].ctorArgList))->append(parseCtorArg(unbox((yyvsp[(3) - (3)].str)))); ;}
     break;
 
   case 26:
-#line 208 "agrampar.y"
+#line 209 "agrampar.y"
     { (yyval.str) = (yyvsp[(1) - (1)].str); ;}
     break;
 
   case 27:
-#line 210 "agrampar.y"
+#line 211 "agrampar.y"
     { (yyval.str) = appendStr((yyvsp[(1) - (2)].str), (yyvsp[(2) - (2)].str)); ;}
     break;
 
   case 28:
-#line 215 "agrampar.y"
-    { (yyval.str) = appendStr((yyvsp[(1) - (1)].str), box(" ")); ;}
-    break;
-
-  case 29:
 #line 216 "agrampar.y"
     { (yyval.str) = appendStr((yyvsp[(1) - (1)].str), box(" ")); ;}
     break;
 
-  case 30:
+  case 29:
 #line 217 "agrampar.y"
+    { (yyval.str) = appendStr((yyvsp[(1) - (1)].str), box(" ")); ;}
+    break;
+
+  case 30:
+#line 218 "agrampar.y"
     { (yyval.str) = appendStr(box("<"), appendStr((yyvsp[(2) - (3)].str), box(">"))); ;}
     break;
 
   case 31:
-#line 218 "agrampar.y"
+#line 219 "agrampar.y"
     { (yyval.str) = box("*"); ;}
     break;
 
   case 32:
-#line 219 "agrampar.y"
+#line 220 "agrampar.y"
     { (yyval.str) = box("&"); ;}
     break;
 
   case 33:
-#line 220 "agrampar.y"
+#line 221 "agrampar.y"
     { (yyval.str) = box("="); ;}
     break;
 
   case 34:
-#line 221 "agrampar.y"
+#line 222 "agrampar.y"
     { (yyval.str) = box("class "); ;}
     break;
 
   case 35:
-#line 226 "agrampar.y"
+#line 227 "agrampar.y"
     { (yyval.str) = (yyvsp[(1) - (1)].str); ;}
     break;
 
   case 36:
-#line 228 "agrampar.y"
+#line 229 "agrampar.y"
     { (yyval.str) = appendStr((yyvsp[(1) - (3)].str), appendStr(box(","), (yyvsp[(3) - (3)].str))); ;}
     break;
 
   case 37:
-#line 234 "agrampar.y"
+#line 235 "agrampar.y"
     { (yyval.userDeclList) = new ASTList<Annotation>; ;}
     break;
 
   case 38:
-#line 236 "agrampar.y"
+#line 237 "agrampar.y"
     { ((yyval.userDeclList)=(yyvsp[(1) - (2)].userDeclList))->append((yyvsp[(2) - (2)].annotation)); ;}
     break;
 
   case 39:
-#line 242 "agrampar.y"
-    { (yyval.annotation) = new UserDecl((yyvsp[(1) - (2)].accessMod), unbox((yyvsp[(2) - (2)].str)), ""); ;}
+#line 243 "agrampar.y"
+    { trace("userdecls") << "defining " << *((sm::string*)(yyvsp[(2) - (2)].str)) << std::endl;
+        (yyval.annotation) = new UserDecl((yyvsp[(1) - (2)].accessMod), unbox((yyvsp[(2) - (2)].str)), ""); ;}
     break;
 
   case 40:
-#line 244 "agrampar.y"
-    { (yyval.annotation) = new UserDecl((yyvsp[(1) - (5)].accessMod), unbox((yyvsp[(2) - (5)].str)), unbox((yyvsp[(4) - (5)].str))); ;}
+#line 246 "agrampar.y"
+    { trace("userdecls") << "defining= " << *((sm::string*)(yyvsp[(2) - (5)].str)) << std::endl;
+        (yyval.annotation) = new UserDecl((yyvsp[(1) - (5)].accessMod), unbox((yyvsp[(2) - (5)].str)), unbox((yyvsp[(4) - (5)].str))); ;}
     break;
 
   case 41:
-#line 246 "agrampar.y"
+#line 249 "agrampar.y"
     { (yyval.annotation) = (yyvsp[(1) - (1)].customCode); ;}
     break;
 
   case 42:
-#line 252 "agrampar.y"
+#line 255 "agrampar.y"
     { (yyval.customCode) = new CustomCode(unbox((yyvsp[(2) - (3)].str)), unbox((yyvsp[(3) - (3)].str))); ;}
     break;
 
   case 43:
-#line 258 "agrampar.y"
+#line 261 "agrampar.y"
     { (yyval.str) = (yyvsp[(1) - (2)].str); ;}
     break;
 
   case 44:
-#line 260 "agrampar.y"
+#line 263 "agrampar.y"
     { (yyval.str) = (yyvsp[(2) - (3)].str); ;}
     break;
 
   case 45:
-#line 265 "agrampar.y"
+#line 268 "agrampar.y"
     { (yyval.accessCtl) = AC_PUBLIC; ;}
     break;
 
   case 46:
-#line 266 "agrampar.y"
+#line 269 "agrampar.y"
     { (yyval.accessCtl) = AC_PRIVATE; ;}
     break;
 
   case 47:
-#line 267 "agrampar.y"
+#line 270 "agrampar.y"
     { (yyval.accessCtl) = AC_PROTECTED; ;}
     break;
 
   case 48:
-#line 268 "agrampar.y"
+#line 271 "agrampar.y"
     { (yyval.accessCtl) = AC_CTOR; ;}
     break;
 
   case 49:
-#line 269 "agrampar.y"
+#line 272 "agrampar.y"
     { (yyval.accessCtl) = AC_DTOR; ;}
     break;
 
   case 50:
-#line 270 "agrampar.y"
+#line 273 "agrampar.y"
     { (yyval.accessCtl) = AC_PUREVIRT; ;}
     break;
 
   case 51:
-#line 275 "agrampar.y"
+#line 278 "agrampar.y"
     { (yyval.accessMod) = new AccessMod((yyvsp[(1) - (1)].accessCtl), NULL); ;}
     break;
 
   case 52:
-#line 277 "agrampar.y"
+#line 280 "agrampar.y"
     { (yyval.accessMod) = new AccessMod((yyvsp[(1) - (4)].accessCtl), (yyvsp[(3) - (4)].stringList)); ;}
     break;
 
   case 53:
-#line 282 "agrampar.y"
+#line 285 "agrampar.y"
     { (yyval.stringList) = new ASTList<sm::string>((yyvsp[(1) - (1)].str)); ;}
     break;
 
   case 54:
-#line 284 "agrampar.y"
+#line 287 "agrampar.y"
     { ((yyval.stringList)=(yyvsp[(1) - (3)].stringList))->append((yyvsp[(3) - (3)].str)); ;}
     break;
 
   case 55:
-#line 289 "agrampar.y"
+#line 292 "agrampar.y"
     { (yyval.verbatim) = new TF_verbatim(unbox((yyvsp[(2) - (2)].str))); ;}
     break;
 
   case 56:
-#line 291 "agrampar.y"
+#line 294 "agrampar.y"
     { (yyval.verbatim) = new TF_impl_verbatim(unbox((yyvsp[(2) - (2)].str))); ;}
     break;
 
   case 57:
-#line 293 "agrampar.y"
+#line 296 "agrampar.y"
     { (yyval.verbatim) = new TF_xml_verbatim(unbox((yyvsp[(2) - (2)].str))); ;}
     break;
 
   case 58:
-#line 298 "agrampar.y"
+#line 301 "agrampar.y"
     { (yyval.tfOption) = new TF_option(unbox((yyvsp[(2) - (4)].str)), (yyvsp[(3) - (4)].stringList)); ;}
     break;
 
   case 59:
-#line 303 "agrampar.y"
+#line 306 "agrampar.y"
     { (yyval.stringList) = new ASTList<sm::string>; ;}
     break;
 
   case 60:
-#line 305 "agrampar.y"
+#line 308 "agrampar.y"
     { ((yyval.stringList)=(yyvsp[(1) - (2)].stringList))->append((yyvsp[(2) - (2)].str)); ;}
     break;
 
   case 61:
-#line 310 "agrampar.y"
+#line 313 "agrampar.y"
     { (yyval.tfEnum) = new TF_enum(unbox((yyvsp[(2) - (5)].str)), (yyvsp[(4) - (5)].enumeratorList)); ;}
     break;
 
   case 62:
-#line 312 "agrampar.y"
+#line 315 "agrampar.y"
     { (yyval.tfEnum) = new TF_enum(unbox((yyvsp[(2) - (6)].str)), (yyvsp[(4) - (6)].enumeratorList)); ;}
     break;
 
   case 63:
-#line 317 "agrampar.y"
+#line 320 "agrampar.y"
     { (yyval.enumeratorList) = new ASTList<sm::string>((yyvsp[(1) - (1)].enumerator)); ;}
     break;
 
   case 64:
-#line 319 "agrampar.y"
+#line 322 "agrampar.y"
     { ((yyval.enumeratorList)=(yyvsp[(1) - (3)].enumeratorList))->append((yyvsp[(3) - (3)].enumerator)); ;}
     break;
 
   case 65:
-#line 324 "agrampar.y"
+#line 327 "agrampar.y"
     { (yyval.enumerator) = (yyvsp[(1) - (1)].str); ;}
     break;
 
   case 66:
-#line 329 "agrampar.y"
+#line 332 "agrampar.y"
     { (yyval.baseClassList) = new ASTList<BaseClass>; ;}
     break;
 
   case 67:
-#line 331 "agrampar.y"
+#line 334 "agrampar.y"
     { (yyval.baseClassList) = (yyvsp[(2) - (2)].baseClassList); ;}
     break;
 
   case 68:
-#line 336 "agrampar.y"
+#line 339 "agrampar.y"
     { (yyval.baseClassList) = new ASTList<BaseClass>((yyvsp[(1) - (1)].baseClass)); ;}
     break;
 
   case 69:
-#line 338 "agrampar.y"
+#line 341 "agrampar.y"
     { ((yyval.baseClassList)=(yyvsp[(1) - (3)].baseClassList))->append((yyvsp[(3) - (3)].baseClass)); ;}
     break;
 
   case 70:
-#line 343 "agrampar.y"
+#line 346 "agrampar.y"
     { (yyval.accessCtl) = AC_PUBLIC; ;}
     break;
 
   case 71:
-#line 344 "agrampar.y"
+#line 347 "agrampar.y"
     { (yyval.accessCtl) = AC_PRIVATE; ;}
     break;
 
   case 72:
-#line 345 "agrampar.y"
+#line 348 "agrampar.y"
     { (yyval.accessCtl) = AC_PROTECTED; ;}
     break;
 
   case 73:
-#line 350 "agrampar.y"
+#line 353 "agrampar.y"
     { (yyval.baseClass) = new BaseClass((yyvsp[(1) - (2)].accessCtl), unbox((yyvsp[(2) - (2)].str))); ;}
     break;
 
 
 /* Line 1267 of yacc.c.  */
-#line 1885 "agrampar.tab.c"
+#line 1888 "agrampar.tab.c"
       default: break;
     }
   YY_SYMBOL_PRINT ("-> $$ =", yyr1[yyn], &yyval, &yyloc);
@@ -2095,7 +2098,7 @@ yyreturn:
 }
 
 
-#line 353 "agrampar.y"
+#line 356 "agrampar.y"
 
 
 /* ----------------- extra C code ------------------- */

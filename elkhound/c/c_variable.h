@@ -22,12 +22,13 @@
 #ifndef C_VARIABLE_H
 #define C_VARIABLE_H
 
-#include "srcloc.h"       // SourceLocation
-#include "strtable.h"     // StringRef
-#include "cc_flags.h"     // DeclFlags
-#include "sobjlist.h"     // SObjList
+#include "SourceLocation.h"     // SourceLocation
+using ellcc::SourceLocation;
+#include "strtable.h"           // StringRef
+#include "cc_flags.h"           // DeclFlags
+#include "sobjlist.h"           // SObjList
 
-class Type;               // c_type.h
+class Type;                     // c_type.h
 
 class Variable {
 public:    // data

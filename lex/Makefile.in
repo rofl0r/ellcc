@@ -9,7 +9,7 @@ all: $(THIS)
 
 SMBASE   := @SMBASE@
 LLVM := @LLVM@
-LLVMCCFLAGS := $(shell llvm-config --cxxflags) -I../basic
+LLVMCCFLAGS := $(shell llvm-config --cxxflags)
 
 # external tools
 PERL := @PERL@
@@ -47,7 +47,7 @@ EXT_OBJS    :=
 CXX := @CXX@
 
 # flags for the C++ compiler (and preprocessor)
-CCFLAGS := @CCFLAGS@ -Woverloaded-virtual $(LLVMCCFLAGS)
+CCFLAGS := @CCFLAGS@ -Woverloaded-virtual $(LLVMCCFLAGS) -I$(SMBASE) -I../basic
 
 # how to enable coverage
 GCOV_OPTS := -fprofile-arcs -ftest-coverage

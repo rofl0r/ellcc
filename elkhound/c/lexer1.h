@@ -5,8 +5,9 @@
 #ifndef __LEXER1_H
 #define __LEXER1_H
 
-#include "objlist.h"   // ObjList
-#include "srcloc.h"    // SourceLocation
+#include "objlist.h"            // ObjList
+#include "SourceLocation.h"     // SourceLocation
+using ellcc::SourceLocation;
 
 #include <stdio.h>     // FILE
 

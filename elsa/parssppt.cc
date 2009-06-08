@@ -8,6 +8,7 @@
 #include "Preprocessor.h"
 #include "LiteralSupport.h"
 #include "Token.h"
+#include "cc_tokens.h"
 #include "lexerint.h"     // LexerInterface
 #include <stdlib.h>       // exit
 
@@ -78,7 +79,9 @@ void PPLexer::Lex(LexerInterface *li)
             LI.sval = 0;
         }
     }
-    // RICH: Leave loc and endloc for now.
+
+    LI.loc = LI.token.getLocation();
+    LI.endloc = LI.token.getLocation().getFileLocWithOffset(LI.token.getLength());
 }
 
 // ---------------------- ParseTree --------------------

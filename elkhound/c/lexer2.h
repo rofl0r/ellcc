@@ -4,13 +4,14 @@
 #ifndef __LEXER2_H
 #define __LEXER2_H
 
-#include "lexer1.h"       // Lexer1
-#include "srcloc.h"       // SourceLocation (r)
-#include "strtable.h"     // StringRef, StringTable
-#include "useract.h"      // SemanticValue
-#include "lexerint.h"     // LexerInterface
+#include "lexer1.h"             // Lexer1
+#include "SourceLocation.h"     // SourceLocation
+using ellcc::SourceLocation;
+#include "strtable.h"           // StringRef, StringTable
+#include "useract.h"            // SemanticValue
+#include "lexerint.h"           // LexerInterface
 
-class CCLang;             // cc_lang.h
+class CCLang;                   // cc_lang.h
 
 // this enumeration defines the terminal symbols that the parser
 // deals with

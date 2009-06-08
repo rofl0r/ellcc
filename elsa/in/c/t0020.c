@@ -1,7 +1,7 @@
 // t0020.c
 // ansi C coverage
 
-int     //ERRORIFMISSING(1): required
+int
 foo()
 {
   return 2;

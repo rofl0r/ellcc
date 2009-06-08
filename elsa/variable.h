@@ -33,23 +33,24 @@
 #ifndef VARIABLE_H
 #define VARIABLE_H
 
-#include "srcloc.h"            // SourceLocation
-#include "strtable.h"          // StringRef
-#include "cc_flags.h"          // DeclFlags, ScopeKind
-#include "sobjlist.h"          // SObjList
-#include "sobjset.h"           // SObjSet
-#include "serialno.h"          // INHERIT_SERIAL_BASE
-#include "packedword.h"        // PackedWord
+#include "SourceLocation.h"     // SourceLocation
+using ellcc::SourceLocation;
+#include "strtable.h"           // StringRef
+#include "cc_flags.h"           // DeclFlags, ScopeKind
+#include "sobjlist.h"           // SObjList
+#include "sobjset.h"            // SObjSet
+#include "serialno.h"           // INHERIT_SERIAL_BASE
+#include "packedword.h"         // PackedWord
 
-class Type;                    // cc_type.h
-class TypeVisitor;             // cc_type.h
-class FunctionType;            // cc_type.h
-class OverloadSet;             // below
-class Scope;                   // cc_scope.h
-class Expression;              // cc.ast
-class Function;                // cc.ast
-class BasicTypeFactory;        // cc_type.h
-class TemplateInfo;            // cc_type.h
+class Type;                     // cc_type.h
+class TypeVisitor;              // cc_type.h
+class FunctionType;             // cc_type.h
+class OverloadSet;              // below
+class Scope;                    // cc_scope.h
+class Expression;               // cc.ast
+class Function;                 // cc.ast
+class BasicTypeFactory;         // cc_type.h
+class TemplateInfo;             // cc_type.h
 class XmlReader;
 
 class Variable INHERIT_SERIAL_BASE {

@@ -4,11 +4,12 @@
 #ifndef LOCSTR_H
 #define LOCSTR_H
 
-#include <iostream>      // ostream
-#include <string.h>      // strlen
+#include <iostream>             // ostream
+#include <string.h>             // strlen
 
-#include "strtable.h"    // StringRef
-#include "srcloc.h"      // SourceLocation
+#include "strtable.h"           // StringRef
+#include "SourceLocation.h"     // SourceLocation
+using ellcc::SourceLocation;
 
 class LocString {
 public:    // data

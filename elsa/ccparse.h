@@ -4,14 +4,15 @@
 #ifndef CCPARSE_H
 #define CCPARSE_H
 
-#include "strhash.h"       // StringHash
-#include "strtable.h"      // StringTable
-#include "objlist.h"       // ObjList
-#include "array.h"         // ArrayStack
-#include "cc_flags.h"      // UberModifiers, SimpleTypeId
-#include "cc_ast.h"        // C++ AST classes, needed for the action function signatures
-#include "srcloc.h"        // SourceLocation
-#include "LangOptions.h"   // bool3
+#include "strhash.h"            // StringHash
+#include "strtable.h"           // StringTable
+#include "objlist.h"            // ObjList
+#include "array.h"              // ArrayStack
+#include "cc_flags.h"           // UberModifiers, SimpleTypeId
+#include "cc_ast.h"             // C++ AST classes, needed for the action function signatures
+#include "SourceLocation.h"     // SourceLocation
+using ellcc::SourceLocation;
+#include "LangOptions.h"        // bool3
 
 namespace ellcc {
 class Preprocessor;

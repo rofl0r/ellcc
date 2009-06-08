@@ -19,6 +19,13 @@
 #include <cstdio>
 using namespace ellcc;
 
+sm::string toString(SourceLocation loc)
+{
+    SourceManager SM;
+    PresumedLoc ploc = SM.getPresumedLoc(loc);
+    return stringc << ploc.getFilename() << ":" << ploc.getLine() << ":" << ploc.getColumn();
+}
+
 //===----------------------------------------------------------------------===//
 // PrettyStackTraceLoc
 //===----------------------------------------------------------------------===//

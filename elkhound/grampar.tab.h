@@ -104,7 +104,7 @@ typedef union YYSTYPE
 {
   int num;
   LocString *str;
-  SourceLocation loc;
+  char loc[sizeof(SourceLocation)];
 
   ASTList<TopForm> *topFormList;
   TopForm *topForm;
@@ -124,7 +124,7 @@ typedef union YYSTYPE
   ASTList<RHSElt> *rhsList;
   RHSElt *rhsElt;
 }
-/* Line 1529 of yacc.c.  */
+/* Line 1489 of yacc.c.  */
 #line 129 "grampar.tab.h"
 	YYSTYPE;
 # define yystype YYSTYPE /* obsolescent; will be withdrawn */
