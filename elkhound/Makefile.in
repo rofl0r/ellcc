@@ -48,7 +48,7 @@ LLVMCCFLAGS := $(shell llvm-config --cxxflags)
 #
 # flags for the C and C++ compilers (and preprocessor)
 # "-Ic" is needed for binaries that use $(support-set)
-CCFLAGS := @CCFLAGS@ -I$(SMBASE) -I$(AST) -I../basic -Ic -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS
+CCFLAGS := @CCFLAGS@ -I$(SMBASE) -I$(AST) -I../basic -Ic $(LLVMCCFLAGS)
 
 # flags for the linker
 libraries := $(LIBAST) $(LIBSMBASE) ../basic/libbasic.a
