@@ -6,21 +6,23 @@
   #error set preprocessor symbol GRAMMAR_NAME to the name of the .bin grammar file
 #endif
 
-#include "trivlex.h"   // trivialLexer
-#include "test.h"      // ARGS_MAIN
-#include "trace.h"     // TRACE_ARGS
-#include "useract.h"   // TrivialUserActions
-#include "lexer2.h"    // Lexer2
-#include "glr.h"       // GLR
-#include "useract.h"   // UserActions
-#include "ptreenode.h" // PTreeNode
-#include "cc_lang.h"   // CCLang
-#include "exc.h"       // throw_XOpen
+#include "trivlex.h"        // trivialLexer
+#include "test.h"           // ARGS_MAIN
+#include "trace.h"          // TRACE_ARGS
+#include "useract.h"        // TrivialUserActions
+#include "lexer2.h"         // Lexer2
+#include "glr.h"            // GLR
+#include "useract.h"        // UserActions
+#include "ptreenode.h"      // PTreeNode
+#include "cc_lang.h"        // CCLang
+#include "exc.h"            // throw_XOpen
+#include "SourceManager.h"  // SourceManager
 
-#include <cstring>      // strcmp
-#include <stdlib.h>    // exit
+#include <cstring>          // strcmp
+#include <stdlib.h>         // exit
 
 using namespace std;
+using namespace ellcc;
 
 // no bison-parser present, so need to define this
 Lexer2Token const *yylval = NULL;

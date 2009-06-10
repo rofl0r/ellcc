@@ -1,8 +1,8 @@
 // trivlex.cc            see license.txt for copyright and terms of use
 // trivial lexer (returns each character as a token)
   
-#include "lexer2.h"     // Lexer2
-#include "syserr.h"     // xsyserror
+#include "lexer2.h"         // Lexer2
+#include "syserr.h"         // xsyserror
 
 #include <stdio.h>      // FILE stuff
 
@@ -12,7 +12,7 @@ void trivialLexer(char const *fname, Lexer2 &dest)
   if (!fp) {
     xsyserror("open", fname);
   }                    
-  SourceLocation loc = sourceLocManager->encodeBegin(fname);
+  SourceLocation loc;
 
   int ch;
   while ((ch = fgetc(fp)) != EOF) {
@@ -23,7 +23,7 @@ void trivialLexer(char const *fname, Lexer2 &dest)
     dest.addToken(tok);
                                          
     char aChar = ch;
-    loc = sourceLocManager->advText(loc, &aChar, 1);
+    loc = loc.getFileLocWithOffset(1);
   }
   dest.addEOFToken();
 }

@@ -1339,6 +1339,8 @@ int main(int argc, char **argv)
 
   bool printCode = true;
 
+  SourceManager SM;
+
   // read the file
   Grammar g1;
   readGrammarFile(g1, argv[1]);
