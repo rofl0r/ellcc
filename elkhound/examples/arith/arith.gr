@@ -12,8 +12,6 @@
 // interface, so they inherit it.  Syntactically, the body is a
 // C++ class definition.
 context_class Arith : public UserActions {
-public:
-  Arith(SourceManager& SM) : UserActions(SM) { }
 };
 
 

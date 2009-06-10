@@ -24,12 +24,15 @@ Makefile: Makefile.in
 # C++ preprocessor, compiler and linker
 CXX := @CXX@
 
+LLVMLDFLAGS := $(shell llvm-config --ldflags) -L$(shell llvm-config --libdir) -lLLVMSupport -lLLVMSystem
+LLVMCCFLAGS := $(shell llvm-config --cxxflags)
+
 # flags for the C++ compiler (and preprocessor)
-CCFLAGS := @CCFLAGS@ -I$(SMBASE) -I$(AST) -I$(ELKHOUND)
+CCFLAGS := @CCFLAGS@ -I$(SMBASE) -I$(AST) -I$(ELKHOUND) -I../../basic $(LLVMCCFLAGS)
 
 # flags for the linker
 libraries := $(LIBELKHOUND) $(LIBAST) $(LIBSMBASE)
-LDFLAGS := -g -Wall $(libraries)
+LDFLAGS := -g -Wall $(libraries)  ../../basic/libbasic.a $(LLVMLDFLAGS)
 
 
 # compile .cc in this directory to a .o

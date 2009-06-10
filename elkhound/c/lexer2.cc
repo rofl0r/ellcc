@@ -1,17 +1,20 @@
 // lexer2.cc            see license.txt for copyright and terms of use
 // code for lexer2.h
 
-#include "lexer2.h"      // this module
-#include "trace.h"       // tracingSys
-#include "strutil.h"     // encodeWithEscapes
-#include "exc.h"         // xformat
-#include "cc_lang.h"     // CCLang
-#include "glrconfig.h"   // SOURCELOC
+#include "lexer2.h"         // this module
+#include "trace.h"          // tracingSys
+#include "strutil.h"        // encodeWithEscapes
+#include "exc.h"            // xformat
+#include "cc_lang.h"        // CCLang
+#include "glrconfig.h"      // SOURCELOC
+#include "SourceLocation.h" // SourceLocation
+#include "SourceManager.h"  // SourceManager
 
-#include <stdlib.h>      // strtoul
-#include <string.h>      // strlen, strcmp
+#include <stdlib.h>         // strtoul
+#include <string.h>         // strlen, strcmp
 
 using namespace sm;
+using namespace ellcc;
 
 // ------------------ token type descriptions ----------------------
 struct Lexer2TokenTypeDesc
@@ -432,7 +435,7 @@ string Lexer2Token::unparseString() const
 void Lexer2Token::print() const
 {
   printf("[L2] Token at %s: %s\n",
-         toString(loc).c_str(), toString().c_str());
+         ::toString(loc).c_str(), toString().c_str());
 }
 
 

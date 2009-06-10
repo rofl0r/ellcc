@@ -129,7 +129,7 @@ typedef union YYSTYPE
   BaseClass *baseClass;
   CustomCode *customCode;
 }
-/* Line 1489 of yacc.c.  */
+/* Line 1529 of yacc.c.  */
 #line 134 "agrampar.tab.h"
 	YYSTYPE;
 # define yystype YYSTYPE /* obsolescent; will be withdrawn */

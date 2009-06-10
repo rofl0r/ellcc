@@ -1,14 +1,16 @@
 // lexer1.cc            see license.txt for copyright and terms of use
 // non-parser code for Lexer 1, declared in lexer1.h
 
-#include "lexer1.h"       // this module
-#include "typ.h"          // staticAssert, TABLESIZE
-#include "trace.h"        // tracing stuff
-#include "strutil.h"      // encodeWithEscapes
+#include "lexer1.h"         // this module
+#include "typ.h"            // staticAssert, TABLESIZE
+#include "trace.h"          // tracing stuff
+#include "strutil.h"        // encodeWithEscapes
+#include "SourceManager.h"  // SourceManager
+using namespace ellcc;
 
-#include <stdio.h>        // printf
-#include <assert.h>       // assert
-#include <ctype.h>        // isprint
+#include <stdio.h>          // printf
+#include <assert.h>         // assert
+#include <ctype.h>          // isprint
 
 
 // -------------------- Lexer1Token -----------------------------
@@ -51,12 +53,11 @@ char const *l1Tok2String(Lexer1TokenType tok)
 
 void Lexer1Token::print() const
 {
-  char const *fname;
-  int line, col;
-  sourceLocManager->decodeLineCol(loc, fname, line, col);
+  SourceManager SM;
+  PresumedLoc ploc = SM.getPresumedLoc(loc);
 
   printf("[L1] Token at line %d, col %d: %s \"%s\"\n",
-         line, col, l1Tok2String(type),
+         ploc.getLine(), ploc.getColumn(), l1Tok2String(type),
          encodeWithEscapes(text.c_str(), length).c_str());
 }
 
@@ -64,7 +65,7 @@ void Lexer1Token::print() const
 // -------------------- Lexer1 -----------------------------
 Lexer1::Lexer1(char const *fname)
   : allowMultilineStrings(true),    // GNU extension
-    loc(sourceLocManager->encodeBegin(fname)),
+    loc(SourceLocation()),
     errors(0),
     tokens(),
     tokensMut(tokens)
@@ -79,11 +80,10 @@ Lexer1::~Lexer1()
 // eventually I want this to store the errors in a list of objects...
 void Lexer1::error(char const *msg)
 {
-  char const *fname;
-  int line, col;
-  sourceLocManager->decodeLineCol(loc, fname, line, col);
+  SourceManager SM;
+  PresumedLoc ploc = SM.getPresumedLoc(loc);
 
-  printf("[L1] Error at line %d, col %d: %s\n", line, col, msg);
+  printf("[L1] Error at line %d, col %d: %s\n", ploc.getLine(), ploc.getColumn(), msg);
   errors++;
 }
 
@@ -107,7 +107,7 @@ void Lexer1::emit(Lexer1TokenType toktype, char const *tokenText, int length)
   tokensMut.append(tok);
 
   // update line and column counters
-  loc = sourceLocManager->advText(loc, tokenText, length);
+  loc = loc.getFileLocWithOffset(length);
 }
 
 

@@ -1,16 +1,18 @@
 // cc2main.cc            see license.txt for copyright and terms of use
 // toplevel driver for cc2
 
-#include <iostream>       // cout
-#include <stdlib.h>       // exit
+#include <iostream>         // cout
+#include <stdlib.h>         // exit
 
-#include "trace.h"        // traceAddSys
-#include "parssppt.h"     // ParseTreeAndTokens, treeMain
-#include "cc_lang.h"      // CCLang
-#include "ptreenode.h"    // PTreeNode
-#include "parsetables.h"  // ParseTables
-#include "cc2.gr.gen.h"   // CC2
+#include "trace.h"          // traceAddSys
+#include "parssppt.h"       // ParseTreeAndTokens, treeMain
+#include "cc_lang.h"        // CCLang
+#include "ptreenode.h"      // PTreeNode
+#include "parsetables.h"    // ParseTables
+#include "cc2.gr.gen.h"     // CC2
+#include "SourceManager.h"  // SourceManager
 
+using namespace ellcc;
 
 // no bison-parser present, so need to define this
 Lexer2Token const *yylval = NULL;

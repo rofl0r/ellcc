@@ -8,8 +8,11 @@
 #include "trace.h"          // trace
 #include "paths.h"          // printPaths
 #include "cc_lang.h"        // CCLang
+#include "SourceLocation.h" // SourceLocation
+#include "SourceManager.h"  // SourceManager
 
 using namespace sm;
+using namespace ellcc;
 
 #define IN_PREDICATE(env) Restorer<bool> restorer(env.inPredicate, true)
 
@@ -191,11 +194,10 @@ StringRef varName(Variable const *v)
 
 string stmtLoc(Statement const *s)
 {
-  char const *fname;
-  int line, col;
-  sourceLocManager->decodeLineCol(s->loc, fname, line, col);
+  SourceManager SM;
+  PresumedLoc ploc = SM.getPresumedLoc(s->loc);
 
-  return stringc << line << ":" << col;
+  return stringc << ploc.getLine() << ":" << ploc.getColumn();
 }
 
 
