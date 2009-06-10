@@ -1928,8 +1928,7 @@ static bool InitializeSourceManager(Preprocessor &PP,
 
     SourceMgr.createMainFileIDForMemBuffer(SB);
     if (SourceMgr.getMainFileID().isInvalid()) {
-      PP.getDiagnostics().Report(FullSourceLoc(), 
-                                 diag::err_fe_error_reading_stdin);
+      PP.getDiagnostics().Report(FullSourceLoc(), diag::err_fe_error_reading_stdin);
       return true;
     }
   }
@@ -2314,14 +2313,19 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
                 << " to become " << fileTypes[nextType] << "\n";
         }
 
-        sys::Path to(input.name.getBasename());
-        to.appendSuffix(langToExt[nextType]);
-
-        if(Preprocess(to.toString(), input) != 0) {
-            Exit(1);
+        if (input.name.toString() != "-") {
+            sys::Path to(input.name.getBasename());
+            to.appendSuffix(langToExt[nextType]);
+            if(Preprocess(to.toString(), input) != 0) {
+                Exit(1);
+            }
+            input.setName(to);
+        } else {
+            if(Preprocess(input.name.toString(), input) != 0) {
+                Exit(1);
+            }
         }
 
-        input.setName(to);
         // Mark the file as a temporary file.
         input.temp = true;
 
@@ -2832,11 +2836,6 @@ int main(int argc, char **argv)
             filePhases[C][PREPROCESSING].action = PREPROCESS;
         }
 
-        if (Files.empty()) {
-            // No input files present.
-            Files.push_back("-");
-        }
-
         // Create the diagnostic client for reporting errors or for
         // implementing -verify.
         OwningPtr<DiagnosticClient> DiagClient;
@@ -2928,6 +2927,30 @@ int main(int argc, char **argv)
             }
             else
                 break; // we're done with the list
+        }
+
+        if (Files.empty()) {
+            // No input files present.
+            Files.push_back("-");
+            FileTypes type = CC;
+            std::string name("-");
+            if (Verbose) {
+                cout << "  adding <stdin> as " << fileTypes[type] << "\n";
+            }
+            Input input(name, type);
+            
+            /// Create a SourceManager object.  This tracks and owns all the file
+            /// buffers allocated to a translation unit.
+            if (!SourceMgr)
+                SourceMgr.reset(new SourceManager());
+            else
+                SourceMgr->clearIDTables();
+
+            // Initialize language options, inferring file types from input filenames.
+            DiagClient->setLangOptions(&input.LO);
+            InitializeLangOptions(input.LO, type);
+            InitializeLanguageStandard(input.LO, type, *TI.get(), Features);
+            InpList.push_back(input);
         }
 
         if (   OutputFilename != ""
