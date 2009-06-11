@@ -24,6 +24,15 @@ LIBELKHOUND := $(ELKHOUND)/libelkhound.a
 PERL := @PERL@
 MYFLEX := $(PERL) $(SMBASE)/run-flex.pl -nobackup -copies
 
+LLVMLDFLAGS := $(shell llvm-config --ldflags) -L$(shell llvm-config --libdir) -lLLVMSupport -lLLVMSystem
+LLVMCCFLAGS := $(shell llvm-config --cxxflags)
+
+# flags for the C and C++ compilers (and preprocessor)
+CCFLAGS := @CCFLAGS@ -I$(ELSA) -I$(ELKHOUND) -I$(SMBASE) -I../basic $(LLVMCCFLAGS)
+
+# flags for the linker
+LDFLAGS := -g -Wall $(LIBSMBASE) ../basic/libbasic.a $(LLVMLDFLAGS)
+
 # list of files to clean in 'clean' (etc.) targets
 # (these get added to below)
 TOCLEAN = tmp.txt testcout
@@ -64,9 +73,6 @@ EXT_OBJS      :=
 # ----------------------- compiler configuration -------------------
 # C++ preprocessor, compiler and linker
 CXX := @CXX@
-
-# flags for the C++ compiler (and preprocessor)
-CCFLAGS := @CCFLAGS@ -DXML -Woverloaded-virtual -I$(SMBASE) -I$(AST) -I$(ELKHOUND) -I$(ELSA)
 
 # how to enable coverage
 GCOV_OPTS := -fprofile-arcs -ftest-coverage
