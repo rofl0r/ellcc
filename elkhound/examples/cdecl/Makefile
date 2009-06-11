@@ -9,19 +9,14 @@ ELKHOUND      := ../..
 
 # Elkhound runtime support library
 LIBELKHOUND := $(ELKHOUND)/libelkhound.a
-
+LIBSMBASE := $(SMBASE)/libsmbase.a
+LIBAST := $(AST)/libast.a
 
 # -------- compiler and linker configuration --------
-# preprocessing flags
-CPPFLAGS := -I$(ELKHOUND) -I$(ELKHOUND)/c -I$(AST) -I$(SMBASE)
-
-# C++ compilation flags
-#CCFLAGS := -g -Wall -Wno-deprecated
 CCFLAGS := $(shell $(SMBASE)/config.summary | grep CCFLAGS | sed 's/^.*: *//')
-
-# linking flags
-LDFLAGS := $(LIBELKHOUND) $(AST)/libast.a $(SMBASE)/libsmbase.a
-
+CCFLAGS += -I$(ELKHOUND) -I$(ELKHOUND)/c -I$(SMBASE) -I$(AST) -I../../../basic $(shell llvm-config --cxxflags)
+LDFLAGS := -g -Wall $(LIBELKHOUND) $(LIBAST) ../../../basic/libbasic.a $(LIBSMBASE) \
+    $(shell llvm-config --ldflags) -L$(shell llvm-config --libdir) -lLLVMSupport -lLLVMSystem
 
 # -------- targets --------
 # main target

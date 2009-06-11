@@ -1,26 +1,28 @@
 // gramanl.cc            see license.txt for copyright and terms of use
 // code for gramanl.h
 
-#include "gramanl.h"     // this module
+#include "gramanl.h"            // this module
 
-#include "bit2d.h"       // Bit2d
-#include "bitarray.h"    // BitArray
-#include "strtokp.h"     // StrtokParse
-#include "syserr.h"      // xsyserror
-#include "trace.h"       // tracing system
-#include "nonport.h"     // getMilliseconds
-#include "crc.h"         // crc32
-#include "flatutil.h"    // Flatten, xfer helpers
-#include "grampar.h"     // readGrammarFile
-#include "emitcode.h"    // EmitCode
-#include "strutil.h"     // replace
-#include "ckheap.h"      // numMallocCalls
-#include "genml.h"       // emitMLActionCode
-#include "ofstreamts.h"  // ofstreamTS
+#include "bit2d.h"              // Bit2d
+#include "bitarray.h"           // BitArray
+#include "strtokp.h"            // StrtokParse
+#include "syserr.h"             // xsyserror
+#include "trace.h"              // tracing system
+#include "nonport.h"            // getMilliseconds
+#include "crc.h"                // crc32
+#include "flatutil.h"           // Flatten, xfer helpers
+#include "grampar.h"            // readGrammarFile
+#include "emitcode.h"           // EmitCode
+#include "strutil.h"            // replace
+#include "ckheap.h"             // numMallocCalls
+#include "genml.h"              // emitMLActionCode
+#include "ofstreamts.h"         // ofstreamTS
+#include "SourceManager.h"      // SourceManager
+using ellcc::SourceManager;
 
-#include <fstream>       // std::ofstream
-#include <stdlib.h>      // getenv
-#include <stdio.h>       // printf
+#include <fstream>              // std::ofstream
+#include <stdlib.h>             // getenv
+#include <stdio.h>              // printf
 
 using namespace sm;
 
@@ -4874,6 +4876,8 @@ int inner_entry(int argc, char **argv)
 
   char const *progName = argv[0];
   SHIFT;
+
+  SourceManager SM;
 
   // disable 'Exception thrown' reports
   xBase::logExceptions = false;

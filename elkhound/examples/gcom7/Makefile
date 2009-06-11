@@ -12,8 +12,9 @@ LIBSMBASE   := $(SMBASE)/libsmbase.a
 
 # compilation flags
 CCFLAGS := $(shell $(SMBASE)/config.summary | grep CCFLAGS | sed 's/^.*: *//')
-CCFLAGS += -I$(ELKHOUND) -I$(AST) -I$(SMBASE)
-LDFLAGS := -g -Wall $(LIBELKHOUND) $(LIBAST) $(LIBSMBASE)
+CCFLAGS += -I$(ELKHOUND) -I$(SMBASE) -I$(AST) -I../../../basic $(shell llvm-config --cxxflags)
+LDFLAGS := -g -Wall $(LIBELKHOUND) $(LIBAST) $(LIBSMBASE) ../../../basic/libbasic.a \
+    $(shell llvm-config --ldflags) -L$(shell llvm-config --libdir) -lLLVMSupport -lLLVMSystem
 
 # default make targets
 all: lexer parser

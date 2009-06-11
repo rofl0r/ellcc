@@ -4,18 +4,18 @@
 // the Elkhound parser)
 
 #include <iostream>             // cout
-#include <stdlib.h>       // exit
+#include <stdlib.h>             // exit
 
-#include "trace.h"        // traceAddSys
-#include "parssppt.h"     // ParseTreeAndTokens, treeMain
-#include "ckheap.h"       // malloc_stats
-#include "SourceLocation.h"    // SourceLocation
-using ellcc::SourceLocation;
-#include ".h"       // SourceManager
-#include "cc_lang.h"      // CCLang
-#include "parsetables.h"  // ParseTables
+#include "trace.h"              // traceAddSys
+#include "parssppt.h"           // ParseTreeAndTokens, treeMain
+#include "ckheap.h"             // malloc_stats
+#include "SourceLocation.h"     // SourceLocation
+#include "SourceManager.h"      // SourceManager
+#include "cc_lang.h"            // CCLang
+#include "parsetables.h"        // ParseTables
 
 using namespace std;
+using namespace ellcc;
 
 // no bison-parser present, so define it myself
 Lexer2Token const *yylval = NULL;
