@@ -13,9 +13,10 @@
 #include "exprloc.h"
 #include "Preprocessor.h"  // Language options.
 #include "TargetInfo.h"    // Target information.
+#include "ElsaDiagnostic.h"
 
 using namespace std;
-// forwards in this file
+using namespace ellcc;
 
 // helper functions for elaboration not during elaboration stage, but during
 // type checking.
@@ -301,7 +302,7 @@ int throwClauseSerialNumber = 0; // don't make this a member of Env
 
 int Env::anonCounter = 1;
 
-Env::Env(StringTable &s, ellcc::Preprocessor& PP, TypeFactory &tf,
+Env::Env(StringTable &s, Preprocessor& PP, TypeFactory &tf,
          ArrayStack<Variable*> &madeUpVariables0,
          ArrayStack<Variable*> &builtinVars0,
          TranslationUnit *unit0)
@@ -318,6 +319,8 @@ Env::Env(StringTable &s, ellcc::Preprocessor& PP, TypeFactory &tf,
     secondPassTcheck(false),
     errors(*this),
     hiddenErrors(NULL),
+    diag(PP.getDiagnostics()),
+    SM(PP.getSourceManager()),
     instantiationLocStack(),
 
     str(s),
@@ -548,6 +551,11 @@ Env::Env(StringTable &s, ellcc::Preprocessor& PP, TypeFactory &tf,
   ctorFinished = true;
 }
 
+// Report a diagnostic.
+DiagnosticBuilder Env::report(SourceLocation loc, unsigned DiagID)
+{
+    return diag.Report(FullSourceLoc(loc, SM), DiagID);
+}
 
 // slightly clever: iterate over an array, but look like
 // the contents of the array, not the index
@@ -1615,7 +1623,7 @@ bool Env::addCompound(CompoundType *ct)
 }
 
 
-bool Env::addEnum(EnumType *et)
+bool Env::addEnum(EnumType*et, Variable** previous)
 {
   // like above
   if (disambErrorsSuppressChanges()) {
@@ -1624,11 +1632,11 @@ bool Env::addEnum(EnumType *et)
     return true;
   }
 
-  return typeAcceptingScope()->addEnum(et);
+  return typeAcceptingScope()->addEnum(et, previous);
 }
 
 
-bool Env::addTypeTag(Variable *tag)
+bool Env::addTypeTag(Variable* tag, Variable** previous)
 {
   // like above
   if (disambErrorsSuppressChanges()) {
@@ -1637,7 +1645,7 @@ bool Env::addTypeTag(Variable *tag)
     return true;
   }
 
-  return typeAcceptingScope()->addTypeTag(tag);
+  return typeAcceptingScope()->addTypeTag(tag, previous);
 }
 
 
@@ -1649,8 +1657,13 @@ Type *Env::declareEnum(SourceLocation loc /*...*/, EnumType *et)
     Variable *tv = makeVariable(loc, et->name, ret, DF_TYPEDEF | DF_IMPLICIT);
     et->typedefVar = tv;
 
-    if (!addEnum(et)) {
-      error(stringc << "multiply defined enum `" << et->name << "'");
+    Variable* previous = NULL;
+    if (!addEnum(et, &previous)) {
+        report(loc, diag::err_redefinition_of_identifier) << et->name;
+        if (previous) {
+            report(previous->loc, diag::note_previous_identifier_definition);
+        }
+        error(loc, "deprecated error message");
     }
 
     // TODO: If the enum name is already the name of a typedef,
@@ -6060,12 +6073,12 @@ bool Env::doOperatorOverload() const
 }
 
 
-void Env::diagnose3(ellcc::bool3 b, SourceLocation L, rostring msg, ErrorFlags eflags)
+void Env::diagnose3(bool3 b, SourceLocation L, rostring msg, ErrorFlags eflags)
 {
-  if (b == ellcc::b3_WARN) {
+  if (b == b3_WARN) {
     warning(L, msg);
   }
-  else if (b == ellcc::b3_FALSE) {
+  else if (b == b3_FALSE) {
     error(L, msg, eflags);
   }
 }
@@ -6073,7 +6086,7 @@ void Env::diagnose3(ellcc::bool3 b, SourceLocation L, rostring msg, ErrorFlags e
 
 void Env::diagnose2(bool isError, SourceLocation L, rostring msg, ErrorFlags eflags)
 {
-  diagnose3(isError? ellcc::b3_FALSE : ellcc::b3_WARN, L, msg, eflags);
+  diagnose3(isError? b3_FALSE : b3_WARN, L, msg, eflags);
 }
 
 

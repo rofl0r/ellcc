@@ -1187,7 +1187,10 @@ void EnumType::traverse(TypeVisitor &vis)
 
 EnumType::Value *EnumType::addValue(StringRef name, int value, Variable *decl)
 {
-  xassert(!valueIndex.isMapped(name));
+  if (valueIndex.isMapped(name)) {
+      // Duplicate value.
+      return NULL;
+  }
 
   Value *v = new Value(name, this, value, decl);
   valueIndex.add(name, v);

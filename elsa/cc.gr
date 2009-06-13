@@ -2601,6 +2601,7 @@ nonterm(FakeList<ASTTypeId>*) TypeIdList {
 nonterm(TF_namespaceDefn*) NamespaceDefinition {
   -> "namespace" n:IdentifierOpt "{" unit:TranslationUnit "}"
        {
+         // RICH: I'd like to capture the loc of n here.
          TF_namespaceDefn *ret = new TF_namespaceDefn(loc, n, NULL /*forms*/);
          ret->forms.concat(unit->topForms);     // steal list contents
          delete unit;

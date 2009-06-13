@@ -134,9 +134,14 @@ void Scope::setDelegationPointer(Scope *s)
 // -------- insertion --------
 template <class T>
 bool insertUnique(StringRefMap<T> &table, char const *key, T *value,
-                  int &changeCount, bool forceReplace)
+                  int &changeCount, bool forceReplace, T** where = NULL)
 {
-  if (!forceReplace && table.get(key)) {
+  T* kp;
+  if (!forceReplace && (kp = table.get(key))) {
+    if (where) {
+        // Return the previous definition.
+        *where = kp;
+    }
     return false;
   }
 
@@ -259,7 +264,7 @@ bool Scope::addCompound(CompoundType *ct)
 }
 
 
-bool Scope::addEnum(EnumType *et)
+bool Scope::addEnum(EnumType* et, Variable** previous)
 {
   xassert(canAcceptNames);
   xassert(et->typedefVar);
@@ -267,17 +272,17 @@ bool Scope::addEnum(EnumType *et)
   TRACE("env", "added enum " << et->name);
 
   et->access = curAccess;
-  return addTypeTag(et->typedefVar);
+  return addTypeTag(et->typedefVar, previous);
 }
 
 
-bool Scope::addTypeTag(Variable *tag)
+bool Scope::addTypeTag(Variable* tag, Variable** previous)
 {
   xassert(tag->type->isEnumType() ||
           tag->type->isCompoundType());
 
   tag->setAccess(curAccess);
-  return insertUnique(typeTags, tag->name, tag, changeCount, false /*forceReplace*/);
+  return insertUnique(typeTags, tag->name, tag, changeCount, false /*forceReplace*/, previous);
 }
 
 

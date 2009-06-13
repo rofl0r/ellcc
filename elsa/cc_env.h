@@ -4,35 +4,45 @@
 #ifndef CC_ENV_H
 #define CC_ENV_H
 
-#include "cc_type.h"      // Type, AtomicType, etc. (r)
-#include "strobjdict.h"   // StrObjDict
-#include "owner.h"        // Owner
-#include "exc.h"          // xBase
-#include "sobjlist.h"     // SObjList
-#include "objstack.h"     // ObjStack
-#include "sobjstack.h"    // SObjStack
-#include "cc_ast.h"       // C++ ast components
-#include "variable.h"     // Variable (r)
-#include "cc_scope.h"     // Scope
-#include "cc_err.h"       // ErrorList
-#include "array.h"        // ArrayStack, ArrayStackEmbed
-#include "builtinops.h"   // CandidateSet
-#include "LangOptions.h"  // bool3
-#include "ptrmap.h"       // PtrMap
-#include "mflags.h"       // MatchFlags
-#include "TargetInfo.h"   // Target information.
+#include "cc_type.h"            // Type, AtomicType, etc. (r)
+#include "strobjdict.h"         // StrObjDict
+#include "owner.h"              // Owner
+#include "exc.h"                // xBase
+#include "sobjlist.h"           // SObjList
+#include "objstack.h"           // ObjStack
+#include "sobjstack.h"          // SObjStack
+#include "cc_ast.h"             // C++ ast components
+#include "variable.h"           // Variable (r)
+#include "cc_scope.h"           // Scope
+#include "cc_err.h"             // ErrorList
+#include "array.h"              // ArrayStack, ArrayStackEmbed
+#include "builtinops.h"         // CandidateSet
+#include "LangOptions.h"        // bool3
+#include "ptrmap.h"             // PtrMap
+#include "mflags.h"             // MatchFlags
+#include "TargetInfo.h"         // Target information.
+#include "Diagnostic.h"         // DiagnosticBuilder
+#include "ElsaDiagnostic.h"
 
-class StringTable;        // strtable.h
-class TypeListIter;       // typelistiter.h
-class SavedScopePair;     // fwd in this file
-class MType;              // mtype.h
-class ImplicitConversion; // implconv.h
-class DelayedFuncInst;    // template.h
+class StringTable;              // strtable.h
+class TypeListIter;             // typelistiter.h
+class SavedScopePair;           // fwd in this file
+class MType;                    // mtype.h
+class ImplicitConversion;       // implconv.h
+class DelayedFuncInst;          // template.h
 
 namespace ellcc {
-class TargetInfo;         // TargetInfo.h
-class Preprocessor;       // Preprocessor.h
+class TargetInfo;               // TargetInfo.h
+class Preprocessor;             // Preprocessor.h
+class SourceManager;            // SourceManager.h
 }
+
+using ellcc::bool3;
+using ellcc::TargetInfo;
+using ellcc::Preprocessor;
+using ellcc::Diagnostic;
+using ellcc::DiagnosticBuilder;
+using ellcc::SourceManager;
 
 // type of collection to hold a sequence of scopes
 // for nested qualifiers; it can hold up to 2 scopes
@@ -126,6 +136,13 @@ public:      // data
   // errors, it can still be found here
   ErrorList *hiddenErrors;           // (nullable serf stackptr)
 
+  // Diagnotics.
+  Diagnostic& diag;
+  DiagnosticBuilder report(SourceLocation loc, unsigned DiagID);
+  
+  // Source manager.
+  SourceManager& SM;
+
   // stack of locations at which template instantiation has been
   // initiated but not finished; this information can be used to
   // make error messages more informative, and also to detect
@@ -136,7 +153,7 @@ public:      // data
   StringTable &str;
 
   // Language options in effect.
-  ellcc::Preprocessor& PP;
+  Preprocessor& PP;
 
   // interface for making types
   TypeFactory &tfac;
@@ -324,7 +341,7 @@ private:     // funcs
   void mergeDefaultArguments(SourceLocation loc, Variable *prior, FunctionType *type);
 
 public:      // funcs
-  Env(StringTable& str, ellcc::Preprocessor& PP, TypeFactory& tfac,
+  Env(StringTable& str, Preprocessor& PP, TypeFactory& tfac,
       ArrayStack<Variable*>& madeUpVariables0, ArrayStack<Variable*>& builtinVars0,
       TranslationUnit* unit0);
 
@@ -419,8 +436,8 @@ public:      // funcs
   // want to insert into a specific scope, use Scope::addVariable
   bool addVariable(Variable *v, bool forceReplace=false);
   bool addCompound(CompoundType *ct);
-  bool addEnum(EnumType *et);
-  bool addTypeTag(Variable *tag);
+  bool addEnum(EnumType *et, Variable** previous = NULL);
+  bool addTypeTag(Variable* tag, Variable** previous = NULL);
 
   // like 'addVariable' in that the 'scope' field gets set, but
   // nothing is added to the maps
@@ -523,7 +540,7 @@ public:      // funcs
   Type *warning(SourceLocation L, rostring msg);
   Type *warning(rostring msg);
   Type *unimp(rostring msg);
-  void diagnose3(ellcc::bool3 b, SourceLocation L, rostring msg, ErrorFlags eflags = EF_NONE);
+  void diagnose3(bool3 b, SourceLocation L, rostring msg, ErrorFlags eflags = EF_NONE);
   void diagnose2(bool isError, SourceLocation L, rostring msg, ErrorFlags eflags = EF_NONE);
 
   // this is used when something is nominally an error, but I think
@@ -690,7 +707,7 @@ public:      // funcs
    * @param string The constraint.
    * @return true if the constraint is valid for the target.
    */
-  virtual bool validateAsmConstraint(const char* name, ellcc::TargetInfo::ConstraintInfo& info)
+  virtual bool validateAsmConstraint(const char* name, TargetInfo::ConstraintInfo& info)
       { return true; }
   
   /** Convert an inline assembly constraint.

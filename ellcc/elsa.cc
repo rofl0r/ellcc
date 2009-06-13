@@ -35,6 +35,7 @@
 #include "bpprint.h"            // bppTranslationUnit
 #include "cc2c.h"               // cc_to_c
 #include "cc2llvm.h"            // cc_to_llvm
+#include "ElsaDiagnostic.h"
 
 // LLVM
 #include <llvm/Module.h>
@@ -405,7 +406,8 @@ int Elsa::doit(Preprocessor& PP,
         // this one is I don't want it showing up in the output where
         // Delta might see it.  If I am intending to minimize an assertion
         // failure, it's no good if Delta introduces an error.
-        env.error("confused by earlier errors, bailing out");
+        env.report(SourceLocation(), diag::err_confused);
+        env.error(SourceLocation(), "deprecated error message");
         env.errors.print(std::cout);
         return 4;
       }
@@ -473,7 +475,7 @@ int Elsa::doit(Preprocessor& PP,
             << "  warnings: " << numWarnings << "\n";
     }
 
-    if (numErrors != 0) {
+    if (numErrors != 0 || env.diag.hasErrorOccurred()) {
       return 4;
     }
 

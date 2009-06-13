@@ -29,6 +29,7 @@
 #include "typelistiter.h"       // TypeListIter_FakeList
 #include "owner.h"              // Owner
 #include "mtype.h"              // MType
+#include "ElsaDiagnostic.h"
 
 using namespace ellcc;
 // smbase
@@ -403,9 +404,10 @@ void TF_namespaceDefn::itcheck(Env &env)
 
   // violation of 7.3.1 para 2?
   if (existing && !existing->hasFlag(DF_NAMESPACE)) {
-    env.error(loc, stringc
-      << "attempt to redefine `" << effectiveName << "' as a namespace");
-
+    env.report(loc, diag::err_redefinition_of_identifier) << effectiveName;
+    env.report(existing->loc, diag::note_previous_identifier_definition);
+    // RICH: remove
+    env.error(loc, "deprecated error message");
     // recovery: skip the whole thing
     return;
   }
@@ -902,7 +904,10 @@ void MemberInit::tcheck(Env &env, CompoundType *enclosing)
   }
   else {
     // complain
-    env.error(stringc << "`" << *name << "' does not denote any class");
+    env.report(loc, diag::err_typecheck_no_member)
+               << (*enclosing).name
+               << (*name).getName();
+    env.error(loc, "deprecated error message");
     return;
   }
   CompoundType *baseClass = baseVar->type->asCompoundType();
@@ -2456,7 +2461,9 @@ Type *TS_enumSpec::itcheck(Env &env, DeclFlags dflags, LookupFlags lflags)
       ret = env.makeType(et);
       if (!et->valueIndex.isEmpty()) {
         // if it has values, it's definitely been defined already
-        env.error(stringc << "multiply defined enum `" << name << "'");
+        env.report(loc, diag::err_redefinition_of_identifier) << et->name;
+        env.report(et->typedefVar->loc, diag::note_previous_identifier_definition);
+        env.error(loc, "deprecated error message");
         return ret;      // ignore this defn
       }
     }
@@ -2608,9 +2615,12 @@ void Enumerator::tcheck(Env &env, EnumType *parentEnum, Type *parentType)
   }
 
   if (!env.addVariable(var, forceReplace)) {
-    env.error(stringc
-      << "enumerator " << name << " conflicts with an existing variable "
-      << "or typedef by the same name");
+    env.report(loc, diag::err_redefinition_of_identifier) << name;
+    env.error(loc, "deprecated error message");
+    if (prior) {
+        env.report(prior->loc, diag::note_previous_identifier_definition);
+        env.error(prior->loc, "deprecated error message");
+    }
   }
 }
 
@@ -9490,7 +9500,8 @@ bool Expression::constEval(Env &env, int &result, bool &dependent) const
     return true;
   }
   else {
-    env.error("expected integral-typed constant expression");
+    env.report(loc, diag::err_expr_not_ice) << SourceRange(loc, endloc);
+    env.error(loc, "deprecated error message");
     return false;
   }
 }
@@ -9710,8 +9721,9 @@ void initializeAggregate(Env &env, Type *type,
       // 8.5.1: initialize successive data fields with successive initializers
       SObjListIter<Variable> memberIter(ct->dataMembers);
       if (memberIter.isDone()) {    // no data fields?
-        env.error(stringc << "can't initialize memberless aggregate "
-                          << ct->keywordAndName());
+        env.report(env.loc(), diag::err_memberless_aggregate_initialization)
+                   << ct->keywordAndName().c_str();
+        env.error(env.loc(), "deprecated error message");
         initIter.adv();    // avoid infinite loop possibility
       }
       while (!memberIter.isDone() && !initIter.isDone()) {
@@ -10260,7 +10272,8 @@ void ND_alias::tcheck(Env &env)
 void ND_usingDecl::tcheck(Env &env)
 {
   if (!name->hasQualifiers()) {
-    env.error("a using-declaration requires a qualified name");
+    env.report(name->loc, diag::err_using_needs_qualified_name);
+    env.error(name->loc, "deprecated error message");
     return;
   }
 
@@ -10279,7 +10292,8 @@ void ND_usingDecl::tcheck(Env &env)
   LookupSet set;
   env.lookupPQ(set, name, LF_TEMPL_PRIMARY);
   if (set.isEmpty()) {
-    env.error(stringc << "undeclared identifier: `" << *name << "'");
+    env.report(name->loc, diag::err_undeclared_identifier) << name->getName();
+    env.error(name->loc, "deprecated error message");
     return;
   }
 
@@ -10328,8 +10342,8 @@ void ND_usingDir::tcheck(Env &env)
   // find the namespace we're talking about
   Variable *targetVar = env.lookupPQ_one(name, LF_ONLY_NAMESPACES);
   if (!targetVar) {
-    env.error(stringc
-      << "could not find namespace `" << *name << "'");
+    env.report(name->loc, diag::err_unknown_namespace) << name->getName();
+    env.error(name->loc, "deprecated error message");
     return;
   }
   xassert(targetVar->isNamespace());   // meaning of LF_ONLY_NAMESPACES

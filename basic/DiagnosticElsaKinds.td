@@ -9,6 +9,26 @@
 
 let Component = "Elsa" in {
 
+// RICH: Used diagnostics.
+
+def err_confused : Error<"confused by earlier errors, bailing out">, DefaultFatal;
+
+def err_undeclared_identifier : Error<"undeclared identifier '%0'">;
+def err_redefinition_of_identifier : Error<"redefinition of '%0'">;
+def note_previous_identifier_definition : Note<"previous definition:">;
+
+def err_expr_not_ice : Error<"expression is not an integer constant expression">;
+
+def err_typecheck_no_member : Error<"'%0' has no member named '%1'">;
+
+def err_unknown_namespace : Error<"namespace '%0' does not exist">;
+
+def err_using_needs_qualified_name : Error<"a using declaration requires a qualified name">;
+
+def err_memberless_aggregate_initialization : Error<"can't initialize memberless aggregate '%0'">;
+
+// RICH: End of used diagnostics.
+
 //def note_comma_in_ice : Note<
 //  "C does not permit evaluated commas in an integer constant expression">;
 def note_expr_divide_by_zero : Note<"division by zero">;
@@ -416,8 +436,6 @@ def warn_pragma_unused_expected_punc : Warning<
   "expected ')' or ',' in '#pragma unused'">;
 
 // Constant expressions
-def err_expr_not_ice : Error<
-  "expression is not an integer constant expression">;
 def ext_expr_not_ice : Extension<
   "expression is not integer constant expression "
   "(but is allowed as an extension)">;
@@ -1241,7 +1259,6 @@ def ext_forward_ref_enum : Extension<
   "ISO C forbids forward references to 'enum' types">;
 def err_forward_ref_enum : Error<
   "ISO C++ forbids forward references to 'enum' types">;
-def err_redefinition_of_enumerator : Error<"redefinition of enumerator %0">;
 def err_duplicate_member : Error<"duplicate member %0">;
 def ext_enum_value_not_int : Extension<
   "ISO C restricts enumerator values to range of 'int' (%0 is too large)">;
@@ -1453,7 +1470,6 @@ def note_member_reference_needs_call : Note<
   "perhaps you meant to call this function with '()'?">;
 
 def err_typecheck_incomplete_tag : Error<"incomplete definition of type %0">;
-def err_typecheck_no_member : Error<"no member named %0">;
 def err_member_redeclared : Error<"class member cannot be redeclared">;
 def err_member_def_does_not_match : Error<
   "out-of-line definition does not match any declaration in %0">;

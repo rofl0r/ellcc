@@ -233,8 +233,8 @@ public:      // funcs
   // has a binding (unless 'forceReplace' is true)
   bool addVariable(Variable *v, bool forceReplace=false);
   bool addCompound(CompoundType *ct);
-  bool addEnum(EnumType *et);
-  bool addTypeTag(Variable *tag);
+  bool addEnum(EnumType* et, Variable** previous = NULL);
+  bool addTypeTag(Variable* tag, Variable** previous = NULL);
 
   // mark 'v' as being a member of this scope, by setting its 'scope'
   // and 'scopeKind' members (this is not done by 'addVariable')

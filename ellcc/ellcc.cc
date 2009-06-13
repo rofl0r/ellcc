@@ -2365,8 +2365,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
                                     input.name.c_str(), to.c_str(),
                                     input.module, ParseOnly);
             if (result) {
-                // Report an error for now. Remove when the parser uses Diags.
-                Diags.Report(FullSourceLoc(), diag::err_ellcc_parse_error);
+                Exit(result);
             }
         } else {
             // RICH: Non C sources, e.g. .ll->.ubc
@@ -3061,7 +3060,7 @@ int main(int argc, char **argv)
             delete timers[i];
         }
             
-        status =  Diags.hasErrorOccurred();
+        status =  Diags.hasErrorOccurred() ? 4 : 0;
     } catch (const std::string& msg) {
         cerr << argv0 << ": " << msg << "\n";
         status =  1;

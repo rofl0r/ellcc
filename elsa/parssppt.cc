@@ -81,7 +81,7 @@ void PPLexer::Lex(LexerInterface *li)
     }
 
     LI.loc = LI.token.getLocation();
-    LI.endloc = LI.token.getLocation().getFileLocWithOffset(LI.token.getLength());
+    LI.endloc = LI.token.getLocation().getFileLocWithOffset(LI.token.getLength() - 1);
 }
 
 // ---------------------- ParseTree --------------------
