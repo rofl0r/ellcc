@@ -12,6 +12,8 @@
 
 
 
+
+  
   
   
   
@@ -36,6 +38,9 @@
 
 
 
+
+  
+  
   
   
   
@@ -75,7 +80,9 @@
 
 
 
+
 <table style="text-align: left; width: 100%; height: 100%;" border="0" cellpadding="0" cellspacing="0">
+
 
 
 
@@ -97,7 +104,9 @@
 
 
 
+
     <tr align="center">
+
 
 
 
@@ -119,7 +128,9 @@
       
       
       
+      
       <table style="text-align: left; width: 100%;" border="0" cellpadding="0" cellspacing="0">
+
 
 
 
@@ -131,7 +142,9 @@
 
 
 
+
           <tr>
+
 
 
 
@@ -143,13 +156,16 @@
 
 
 
+
             <td style="text-align: center;">
             
             
             
             
             
-            <h1>ELLCC - The Elkhound/LLVM Compiler Collection</h1>
+            
+            <h1>ELLCC - The Embedded LLVM Compiler Collection</h1>
+
 
 
 
@@ -161,12 +177,15 @@
 
 
 
+
           </tr>
 
 
 
 
 
+
+        
         
         
         
@@ -178,7 +197,9 @@
       
       
       
+      
       </table>
+
 
 
 
@@ -201,7 +222,9 @@
 
 
 
+
     </tr>
+
 
 
 
@@ -223,7 +246,9 @@
 
 
 
+
       <td style="vertical-align: top; background-color: rgb(153, 255, 153); width: 135px;"><a href="index.html">Home</a><br>
+
 
 
 
@@ -234,7 +259,9 @@
       <a href="news.html">News</a><br>
 
 
+
       <a href="wiki/index.php/Documentation">Documentation</a><br>
+
 
 
 
@@ -253,13 +280,16 @@
 
 
 
+
       <a href="bugzilla">Bug Database</a><br>
 
 
 
 
 
+
       <a href="svn/ellcc">Source Repository</a><br>
+
 
 
 
@@ -274,6 +304,7 @@
 
 
 
+
       </td>
 
 
@@ -285,120 +316,164 @@
 
 
 
-      <td style="vertical-align: top;">ELLCC is a project to combine the <a href="http://www.cs.berkeley.edu/%7Esmcpeak/elkhound">Elkhound parser generator</a> and its companion <a href="http://www.cs.berkeley.edu/%7Esmcpeak/elkhound/sources/elsa/index.html">Elsa C/C++ compiler</a> with the <a href="http://llvm.org">LLVM (Low Level Virtual Machine)</a>
-compiler infrastucture. The primary emphasis of the ELLCC project is to
+
+      <td style="vertical-align: top;">ELLCC is a project to combine the <a href="ellcc/elkhound">Elkhound parser generator</a> and its companion <a href="ellcc/elsa/index.html">Elsa C/C++ compiler</a> with the <a href="http://llvm.org">LLVM (Low Level Virtual Machine)</a>
+compiler infrastructure. The primary emphasis of the ELLCC project is to
 create an easy to use multi-target cross compilation environment.<br>
+
 
 
       <span style="text-decoration: underline;"></span>
       
       
+      
       <h2>Project Goals</h2>
 
 
+
+      
       
       
       <h3>Near Term</h3>
 
 
+
+      
       
       
       <ul>
+
 
 
         <li>A functional C/C++ compiler based on <a href="wiki/index.php/Elsa">Elsa</a>.</li>
 
 
+
         <li>Generalized AST (Abstract Syntax Tree) to <a href="wiki/index.php/LLVM_IR">LLVM IR</a> lowering support.</li>
+
 
 
         <li>Multi-target support (Alpha, ARM, C, C++, CellSPU, IA64, Mips, MSIL, Nios2, PIC16, PowerPC, Sparc, X86).</li>
 
+
         <li>A C-only release.</li>
 
 
+
+      
       
       
       </ul>
 
 
+
+      
       
       
       <h3>Long Term</h3>
 
 
+
+      
       
       
       <ul>
 
 
+
         <li>A release with C++ support.</li>
 
+
         <li>Heterogeneous target support in one compilation.</li>
+
 
 
         <li>Language support for message passing/multi-threading.</li>
 
 
+
         
+      
       
       
       </ul>
 
 
+
+      
       
       
       <h2>Project Components</h2>
 
 
+
+      
       
       
       <ul>
+
 
 
         <li><a href="wiki/index.php/ELLCC">ELLCC</a> - The ELLCC compiler driver framework.</li>
 
 
+
         <li><a href="wiki/index.php/Elsa">Elsa</a> - The C/C++ compiler.</li>
+
 
 
         <li><a href="wiki/index.php/LLVM">LLVM</a> - The compiler back end.</li>
 
 
+
         <li><a href="wiki/index.php/Elkhound">Elkhound</a> - The parser generator.</li>
+
 
         <li><a href="wiki/index.php/binutils">binutils</a> - The GNU binutils package.</li>
 
+
         <li><a href="wiki/index.php/newlib">newlib</a> - The C standard library.</li>
+
 
         <li><a href="wiki/index.php/Insight">Insight</a> - The Insight debugger.</li>
 
 
+
+      
       
       
       </ul>
 
 
+
+      
       
       
       <h2>Project Status</h2>
 
 
+
+      
       
       
       <ul>
 
 
+
         <li>C compilation on the X86 architecture targeting Linux functional.</li>
+
 
 
         
         <li>Full program compilation and inter-module optimization supported..</li>
 
 
+
         <li>A new preprocessor almost complete.</li>
 
 
+
+      
       
       
       </ul>
@@ -410,7 +485,9 @@ create an easy to use multi-target cross compilation environment.<br>
 
 
 
+
       </td>
+
 
 
 
@@ -432,6 +509,8 @@ create an easy to use multi-target cross compilation environment.<br>
 
 
 
+
+  
   
   
   
@@ -454,7 +533,9 @@ create an easy to use multi-target cross compilation environment.<br>
 
 
 
+
 <br>
+
 
 
 
