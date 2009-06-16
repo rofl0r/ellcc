@@ -5939,7 +5939,9 @@ Type *E_variable::itcheck_var_set(Env &env, Expression *&replacement,
           // prompted by the need to allow template bodies to call
           // undeclared functions in a "dependent" context [cppstd 14.6
           // para 8].  See the note in TS_name::itcheck.
-          env.report(name->loc, diag::err_undeclared_identifier) << name->getName();
+          /* RICH: causes regression failures:
+           * env.report(name->loc, diag::err_undeclared_identifier) << name->getName();
+           */
           return env.error(name->loc, stringc
                            << "there is no variable called `" << *name << "'",
                            EF_NONE);
