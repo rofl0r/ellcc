@@ -27,6 +27,7 @@
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetMachineRegistry.h"
 #include "llvm/CodeGen/LinkAllCodegenComponents.h"
+#include "llvm/CodeGen/LinkAllAsmWriterComponents.h"
 #include "llvm/CodeGen/FileWriters.h"
 #include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/StringMap.h"
@@ -44,13 +45,14 @@
 #include "llvm/LinkAllVMCore.h"
 #include "llvm/Linker.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/InitializeAllTargets.h"
+#include "llvm/InitializeAllAsmPrinters.h"
 #include <iostream>
 #include <fstream>
 #include <memory>
 #include <algorithm>
 
 #include "ellcc.h"  
-//#include "pwOS.h"
 
 #define xstr(x) #x
 #define str(x) xstr(x)
