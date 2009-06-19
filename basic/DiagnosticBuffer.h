@@ -15,19 +15,24 @@ namespace ellcc {
 class Preprocessor;
 class SourceManager;
 
-class TextDiagnosticBuffer : public DiagnosticClient {
+class DiagnosticBuffer : public DiagnosticClient {
 public:
-  typedef std::vector<DiagnoticInfo*> > DiagList;
-  typedef DiagList::iterator iterator;
+  typedef std::vector<DiagnosticInfo> DiagList;
   typedef DiagList::const_iterator const_iterator;
 private:
+  typedef DiagList::iterator iterator;
   DiagList diags;
 public:
   const_iterator begin() const  { return diags.begin(); }
   const_iterator end() const    { return diags.end(); }
+  ~DiagnosticBuffer()
+  {
+      for (iterator it = diags.begin(); it != diags.end(); ++it) {
+        delete it->getDiags();
+      }
+  }
 
-  virtual void HandleDiagnostic(Diagnostic::Level DiagLevel,
-                                const DiagnosticInfo &Info);
+  virtual void HandleDiagnostic(Diagnostic::Level DiagLevel, const DiagnosticInfo &Info);
 };
 
 } // end namspace ellcc

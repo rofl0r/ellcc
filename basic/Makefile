@@ -11,7 +11,7 @@ THIS := libbasic.a
 all: $(THIS)
 
 SMBASE   := ../smbase
-LLVM := /usr/local
+LLVM := /home/ctnetap1/penning/local/Linux
 LLVMCCFLAGS := $(shell llvm-config --cxxflags) -I../smbase
 
 # external tools
@@ -79,6 +79,7 @@ TOCLEAN += *.o *.d
 # that finds serious compilation problems earliest (it's ok to
 # rearrange as different parts of the code are in flux)
 BASIC_OBJS := \
+  DiagnosticBuffer.o \
   ConvertUTF.o FileManager.o SourceLocation.o TargetInfo.o TokenKinds.o \
   IdentifierTable.o SourceManager.o Targets.o \
   Diagnostic.o LangOptions.o
