@@ -27,6 +27,15 @@ def err_using_needs_qualified_name : Error<"a using declaration requires a quali
 
 def err_memberless_aggregate_initialization : Error<"can't initialize memberless aggregate '%0'">;
 
+def err_rejected_alternative_modified_environment
+    : Error<"a rejected alternative modified this environment">;
+def err_begin_messages_from_ambiguity
+    : Error<"---- BEGIN: messages from an ambiguity ----">;
+def err_separator_messages_from_ambiguity
+    : Error<"---- SEPARATOR: messages from an ambiguity ----">;
+def err_end_messages_from_ambiguity
+    : Error<"---- END: messages from an ambiguity ----">;
+
 // RICH: End of used diagnostics.
 
 //def note_comma_in_ice : Note<
