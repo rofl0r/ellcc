@@ -42,6 +42,8 @@ public:
 
   void take(DiagnosticClient* client, DiagFlags flags = DIAG_ALL);
 
+  int numberOf(DiagFlags flags);
+
   virtual void HandleDiagnostic(Diagnostic::Level DiagLevel, const DiagnosticInfo &Info);
 };
 

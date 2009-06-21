@@ -38,3 +38,16 @@ void DiagnosticBuffer::take(DiagnosticClient* client, DiagFlags flags)
         }
     }
 }
+
+int DiagnosticBuffer::numberOf(DiagFlags flags)
+{
+    int count = 0;
+    for (iterator it = diags.begin(); it != diags.end(); ++it) {
+        if (it->second->getFlags() & flags) {
+            ++count;
+        }
+    }
+
+    return count;
+}
+

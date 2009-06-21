@@ -5189,19 +5189,24 @@ void Expression::tcheck(Env &env, Expression *&replacement)
     // grab errors
     ErrorList existing;
     existing.takeMessages(env.errors);
-    DiagnosticClient* existingClient;     // Saved client.
-    DiagnosticBuffer buffer;              // Buffering client.
+    DiagnosticClient* existingClient;   // Saved client.
+    DiagnosticBuffer buffer;            // Buffering client.
     existingClient = env.diag.getClient();
+    env.diag.setClient(&buffer);
 
     // common case: function call
     TRACE("disamb", toString(loc) << ": considering E_funCall");
     LookupSet candidates;
     call->inner1_itcheck(env, candidates);
-    if (noDisambErrors(env.errors)) {
+    if (noDisambErrors(env.errors) && buffer.numberOf(DIAG_DISAMBIGUATES) == 0) {
       // ok, finish up; it's safe to assume that the E_constructor
       // interpretation would fail if we tried it
       TRACE("disamb", toString(loc) << ": selected E_funCall");
       env.errors.prependMessages(existing);
+      // Restore the old diagnostic client.
+      env.diag.setClient(existingClient);
+      // Grab all the diagnostics.
+      buffer.take(existingClient);
       call->type = call->inner2_itcheck(env, candidates);
       call->ambiguity = NULL;
       replacement = call;
@@ -5211,14 +5216,19 @@ void Expression::tcheck(Env &env, Expression *&replacement)
     // grab the errors from trying E_funCall
     ErrorList funCallErrors;
     funCallErrors.takeMessages(env.errors);
+    buffer.clear();             // Discard diagnostics.
 
     // try the E_constructor interpretation
     TRACE("disamb", toString(loc) << ": considering E_constructor");
     ctor->inner1_itcheck(env);
-    if (noDisambErrors(env.errors)) {
+    if (noDisambErrors(env.errors) && buffer.numberOf(DIAG_DISAMBIGUATES) == 0) {
       // ok, finish up
       TRACE("disamb", toString(loc) << ": selected E_constructor");
       env.errors.prependMessages(existing);
+      // Restore the old diagnostic client.
+      env.diag.setClient(existingClient);
+      // Grab all the diagnostics.
+      buffer.take(existingClient);
 
       // a little tricky because E_constructor::inner2_itcheck is
       // allowed to yield a replacement AST node
@@ -5235,6 +5245,10 @@ void Expression::tcheck(Env &env, Expression *&replacement)
     env.errors.deleteAll();
     env.errors.takeMessages(existing);
     env.errors.takeMessages(funCallErrors);
+    // Restore the old diagnostic client.
+    env.diag.setClient(existingClient);
+    // Grab all the diagnostics.
+    buffer.take(existingClient);
 
     // 10/20/04: Need to give a type anyway.
     this->type = env.errorType();
