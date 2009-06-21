@@ -1138,6 +1138,8 @@ public:      // data
   int origNestingLevel;        // original value of env.disambiguationNestingLevel
   bool origSecondPass;         // original value of env.secondPassTcheck
   ErrorList origErrors;        // errors extant before instantiation
+  DiagnosticClient* existingClient;     // Saved client.
+  DiagnosticBuffer buffer;              // Buffering client.
 
 private:     // disallowed
   InstantiationContextIsolator(InstantiationContextIsolator&);

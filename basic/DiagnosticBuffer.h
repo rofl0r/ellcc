@@ -44,6 +44,8 @@ public:
 
   int numberOf(DiagFlags flags);
 
+  void errorsToWarnings();
+  
   virtual void HandleDiagnostic(Diagnostic::Level DiagLevel, const DiagnosticInfo &Info);
 };
 

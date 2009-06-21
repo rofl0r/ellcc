@@ -5967,15 +5967,7 @@ DisambiguationErrorTrapper::~DisambiguationErrorTrapper()
     }
 
     // Add the new errors.
-    for ( ;; ) {
-        Diagnostic::Level level;
-        DiagnosticInfo info(buffer.take(existingClient, level));
-        if (info.getDiags() == NULL) {
-            break;
-        }
-
-        existingClient->HandleDiagnostic(level, info);
-    }
+    buffer.take(existingClient);
     env.diag.setClient(existingClient);
 
     if (env.hiddenClient == existingClient) {   // I'm the first

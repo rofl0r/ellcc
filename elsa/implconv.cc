@@ -359,67 +359,73 @@ void test_getImplicitConversion(
   Env &env, SpecialExpr special, Type *src, Type *dest,
   int expectedKind, int expectedSCS, int expectedUserLine, int expectedSCS2)
 {
-  // grab existing error messages
-  ErrorList existing;
-  existing.takeMessages(env.errors);
+    // grab existing error messages
+    ErrorList existing;
+    existing.takeMessages(env.errors);
+    DiagnosticClient* existingClient;     // Saved client.
+    DiagnosticBuffer buffer;              // Buffering client.
+    existingClient = env.diag.getClient();
+    env.diag.setClient(&buffer);
 
-  // run our function
-  ImplicitConversion actual = getImplicitConversion(env, special, src, dest);
+    // run our function
+    ImplicitConversion actual = getImplicitConversion(env, special, src, dest);
 
-  // turn any resulting messags into warnings, so I can see their
-  // results without causing the final exit status to be nonzero
-  env.errors.markAllAsWarnings();
+    // turn any resulting messags into warnings, so I can see their
+    // results without causing the final exit status to be nonzero
+    env.errors.markAllAsWarnings();
 
-  // put the old messages back
-  env.errors.takeMessages(existing);
+    // put the old messages back
+    env.errors.takeMessages(existing);
+    // Restore the old diagnostic client.
+    env.diag.setClient(existingClient);
+    buffer.take(existingClient);
 
-  // did it behave as expected?
-  bool matches = matchesExpectation(actual, expectedKind, expectedSCS,
+    // did it behave as expected?
+    bool matches = matchesExpectation(actual, expectedKind, expectedSCS,
                                             expectedUserLine, expectedSCS2);
-  if (!matches || tracingSys("gIC")) {
-    // construct a description of the actual result
-    stringBuilder actualDesc;
-    actualDesc << ImplicitConversion::kindNames[actual.kind];
-    if (actual.kind == ImplicitConversion::IC_STANDARD ||
-        actual.kind == ImplicitConversion::IC_USER_DEFINED) {
-      actualDesc << "(" << toString(actual.scs);
-      if (actual.kind == ImplicitConversion::IC_USER_DEFINED) {
-        actualDesc << ", " << getLine(actual.user->loc)
-                   << ", " << toString(actual.scs2);
-      }
-      actualDesc << ")";
-    }
-
-    // construct a description of the call site
-    stringBuilder callDesc;
-    callDesc << "getImplicitConversion("
-             << toString(special) << ", `"
-             << src->toString() << "', `"
-             << dest->toString() << "')";
-
-    if (!matches) {
-      // construct a description of the expected result
-      stringBuilder expectedDesc;
-      xassert((unsigned)expectedKind <= (unsigned)ImplicitConversion::NUM_KINDS);
-      expectedDesc << ImplicitConversion::kindNames[expectedKind];
-      if (expectedKind == ImplicitConversion::IC_STANDARD ||
-          expectedKind == ImplicitConversion::IC_USER_DEFINED) {
-        expectedDesc << "(" << toString((StandardConversion)expectedSCS);
-        if (expectedKind == ImplicitConversion::IC_USER_DEFINED) {
-          expectedDesc << ", " << expectedUserLine
-                       << ", " << toString((StandardConversion)expectedSCS2);
+    if (!matches || tracingSys("gIC")) {
+        // construct a description of the actual result
+        stringBuilder actualDesc;
+        actualDesc << ImplicitConversion::kindNames[actual.kind];
+        if (actual.kind == ImplicitConversion::IC_STANDARD ||
+            actual.kind == ImplicitConversion::IC_USER_DEFINED) {
+            actualDesc << "(" << toString(actual.scs);
+            if (actual.kind == ImplicitConversion::IC_USER_DEFINED) {
+                actualDesc << ", " << getLine(actual.user->loc)
+                        << ", " << toString(actual.scs2);
+            }
+        actualDesc << ")";
         }
-        expectedDesc << ")";
-      }
 
-      env.error(stringc
-        << callDesc << " yielded " << actualDesc
-        << ", but I expected " << expectedDesc);
+        // construct a description of the call site
+        stringBuilder callDesc;
+        callDesc << "getImplicitConversion("
+                << toString(special) << ", `"
+                << src->toString() << "', `"
+                << dest->toString() << "')";
+
+        if (!matches) {
+            // construct a description of the expected result
+            stringBuilder expectedDesc;
+            xassert((unsigned)expectedKind <= (unsigned)ImplicitConversion::NUM_KINDS);
+            expectedDesc << ImplicitConversion::kindNames[expectedKind];
+            if (expectedKind == ImplicitConversion::IC_STANDARD ||
+                expectedKind == ImplicitConversion::IC_USER_DEFINED) {
+                expectedDesc << "(" << toString((StandardConversion)expectedSCS);
+                if (expectedKind == ImplicitConversion::IC_USER_DEFINED) {
+                    expectedDesc << ", " << expectedUserLine
+                       << ", " << toString((StandardConversion)expectedSCS2);
+                }
+                expectedDesc << ")";
+            }
+
+            env.error(stringc
+                << callDesc << " yielded " << actualDesc
+                << ", but I expected " << expectedDesc);
+        } else {
+            env.warning(stringc << callDesc << " yielded " << actualDesc);
+        }
     }
-    else {
-      env.warning(stringc << callDesc << " yielded " << actualDesc);
-    }
-  }
 }
 
 

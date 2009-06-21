@@ -51,3 +51,13 @@ int DiagnosticBuffer::numberOf(DiagFlags flags)
     return count;
 }
 
+void DiagnosticBuffer::errorsToWarnings()
+{
+    for (DiagnosticBuffer::iterator it = diags.begin(); it != diags.end(); ++it) {
+        if (it->first == Diagnostic::Error) {
+            it->first = Diagnostic::Warning;
+            it->second->addFlags(DIAG_WARNING);
+        }
+    }
+}
+

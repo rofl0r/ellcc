@@ -5469,35 +5469,51 @@ InstantiationContextIsolator::InstantiationContextIsolator(Env &e, SourceLocatio
   : env(e),
     origNestingLevel(e.disambiguationNestingLevel),
     origSecondPass(e.secondPassTcheck),
-    origErrors()
+    origErrors(),
+    existingClient(NULL)
 {
-  env.instantiationLocStack.push(loc);
-  env.disambiguationNestingLevel = 0;
-  env.secondPassTcheck = false;
-  origErrors.takeMessages(env.errors);
+    env.instantiationLocStack.push(loc);
+    env.disambiguationNestingLevel = 0;
+    env.secondPassTcheck = false;
+    origErrors.takeMessages(env.errors);
+    existingClient = env.diag.getClient();
+    env.diag.setClient(&buffer);
 }
 
 InstantiationContextIsolator::~InstantiationContextIsolator()
 {
-  env.setLoc(env.instantiationLocStack.pop());
-  env.disambiguationNestingLevel = origNestingLevel;
-  env.secondPassTcheck = origSecondPass;
+    env.setLoc(env.instantiationLocStack.pop());
+    env.disambiguationNestingLevel = origNestingLevel;
+    env.secondPassTcheck = origSecondPass;
 
-  // where do the newly-added errors, i.e. those from instantiation,
-  // which are sitting in 'env.errors', go?
-  if (env.hiddenErrors) {
-    // shuttle them around to the hidden message list
-    env.hiddenErrors->takeMessages(env.errors);
-  }
-  else {
-    // put them at the end of the original errors, as if we'd never
-    // squirreled away any messages
-    origErrors.takeMessages(env.errors);
-  }
-  xassert(env.errors.isEmpty());
+    // where do the newly-added errors, i.e. those from instantiation,
+    // which are sitting in 'env.errors', go?
+    if (env.hiddenErrors) {
+        // shuttle them around to the hidden message list
+        env.hiddenErrors->takeMessages(env.errors);
+    }
+    else {
+        // put them at the end of the original errors, as if we'd never
+        // squirreled away any messages
+        origErrors.takeMessages(env.errors);
+    }
+    xassert(env.errors.isEmpty());
 
-  // now put originals back into env.errors
-  env.errors.takeMessages(origErrors);
+    // where do the newly-added errors, i.e. those from instantiation,
+    // which are sitting in 'env.errors', go?
+    if (env.hiddenClient) {
+        // shuttle them around to the hidden message list
+        buffer.take(env.hiddenClient);
+    }
+    else {
+        // put them at the end of the original errors, as if we'd never
+        // squirreled away any messages
+        buffer.take(existingClient);
+    }
+    
+    // now put originals back into env.errors
+    env.errors.takeMessages(origErrors);
+    env.diag.setClient(existingClient);
 }
 
 

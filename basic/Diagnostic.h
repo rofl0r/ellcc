@@ -344,6 +344,9 @@ public:
   /** Get the flags associated with the current diagnostic.
    */
   DiagFlags getFlags() { return CurDiagFlags; }
+  /** Add flags to the current diagnostic.
+   */
+  void addFlags(DiagFlags flags) { CurDiagFlags |= flags; }
   
   /// getDescription - Given a diagnostic ID, return a description of the
   /// issue.
