@@ -159,36 +159,36 @@ bool strongMsgFilter(ErrorMsg *msg)
 
 // take the errors, and later put them back after filtering
 class UninstTemplateErrorFilter {
-  Env &env;                  // environment
-  ErrorList existingErrors;  // saved messages
-  bool suppressErrors;
+    Env &env;                  // environment
+    ErrorList existingErrors;  // saved messages
+    bool suppressErrors;
+    DiagnosticClient* existingClient;     // Saved client.
+    DiagnosticBuffer buffer;              // Buffering client.
 
 public:
-  UninstTemplateErrorFilter(Env &e, bool suppressErrorsArg = false)
-    : env(e), existingErrors()
-  {
-    suppressErrors = suppressErrorsArg || 
-      (env.inUninstTemplate() && !env.doReportTemplateErrors);
-    if (suppressErrors) {
-      //    if (1 || env.inUninstTemplate()) {
-      existingErrors.takeMessages(env.errors);
+    UninstTemplateErrorFilter(Env &e, bool suppressErrorsArg = false)
+        : env(e), existingErrors()
+    {
+        suppressErrors = suppressErrorsArg || (env.inUninstTemplate() && !env.doReportTemplateErrors);
+        if (suppressErrors) {
+            existingErrors.takeMessages(env.errors);
+            existingClient = env.diag.getClient();
+            env.diag.setClient(&buffer);
+        }
     }
-  }
 
-  ~UninstTemplateErrorFilter()
-  {
-    if (suppressErrors) {
-      //      if (1 || env.inUninstTemplate()) {
-      //if (1 || !env.doReportTemplateErrors) {
-        // remove all messages that are not 'strong'
-        // (see doc/permissive.txt)
-        env.errors.filter(strongMsgFilter);
-	//}
-
-      // now put back the saved messages
-      //env.errors.prependMessages(existingErrors);
+    ~UninstTemplateErrorFilter()
+    {
+        if (suppressErrors) {
+            env.errors.filter(strongMsgFilter);
+            env.errors.prependMessages(existingErrors);
+            
+            // Restore the old diagnostic client.
+            env.diag.setClient(existingClient);
+            // Grab all the DIAG_STRONG diagnostics.
+            buffer.take(existingClient, DIAG_STRONG);
+        }
     }
-  }
 };
 
 
@@ -1184,6 +1184,7 @@ void tcheckPQName(PQName *&name, Env &env, Scope *scope, LookupFlags lflags)
       // discard errors (other than those saved in 'trapper')
       ErrorList discard;
       discard.takeMessages(env.errors);
+      trapper.discard();
     }
 
     // better not have changed the environment!
@@ -5188,6 +5189,9 @@ void Expression::tcheck(Env &env, Expression *&replacement)
     // grab errors
     ErrorList existing;
     existing.takeMessages(env.errors);
+    DiagnosticClient* existingClient;     // Saved client.
+    DiagnosticBuffer buffer;              // Buffering client.
+    existingClient = env.diag.getClient();
 
     // common case: function call
     TRACE("disamb", toString(loc) << ": considering E_funCall");
@@ -5940,9 +5944,7 @@ Type *E_variable::itcheck_var_set(Env &env, Expression *&replacement,
           // undeclared functions in a "dependent" context [cppstd 14.6
           // para 8].  See the note in TS_name::itcheck.
 
-          /* RICH: causes regression failures:
-           * env.report(name->loc, diag::err_undeclared_identifier) << name->getName();
-           */
+          // RICH: env.report(name->loc, diag::err_undeclared_identifier) << name->getName();
           return env.error(name->loc, stringc
                            << "there is no variable called `" << *name << "'",
                            EF_NONE);

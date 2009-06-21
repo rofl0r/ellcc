@@ -320,6 +320,7 @@ Env::Env(StringTable &s, Preprocessor& PP, TypeFactory &tf,
     errors(*this),
     hiddenErrors(NULL),
     diag(PP.getDiagnostics()),
+    hiddenClient(NULL),
     SM(PP.getSourceManager()),
     instantiationLocStack(),
 
@@ -5931,41 +5932,65 @@ bool DefaultArgumentChecker::visitTypeSpecifier(TypeSpecifier *obj)
 // ----------------- DisambiguationErrorTrapper ---------------------
 DisambiguationErrorTrapper::DisambiguationErrorTrapper(Env &e)
   : env(e),
-    existingErrors()
+    existingErrors(),
+    existingClient(NULL)
 {
-  // grab the existing list of error messages
-  existingErrors.takeMessages(env.errors);
+    // grab the existing list of error messages
+    existingErrors.takeMessages(env.errors);
+    existingClient = env.diag.getClient();
 
-  // tell the environment about this hidden list of errors, so that
-  // if an error needs to be added that has nothing to do with this
-  // disambiguation, it can be
-  if (env.hiddenErrors == NULL) {     // no hidden yet, I'm the first
-    env.hiddenErrors = &existingErrors;
-  }
+    // tell the environment about this hidden list of errors, so that
+    // if an error needs to be added that has nothing to do with this
+    // disambiguation, it can be
+    if (env.hiddenErrors == NULL) {     // no hidden yet, I'm the first
+        env.hiddenErrors = &existingErrors;
+    }
+    if (env.hiddenClient == NULL) {     // no hidden yet, I'm the first
+        env.hiddenClient = existingClient;
+    }
 
-  // having stolen the existing errors, we now tell the environment
-  // we're in a disambiguation pass so it knows that any disambiguating
-  // errors are participating in an active disambiguation
-  env.disambiguationNestingLevel++;
+    env.diag.setClient(&buffer);
+
+    // having stolen the existing errors, we now tell the environment
+    // we're in a disambiguation pass so it knows that any disambiguating
+    // errors are participating in an active disambiguation
+    env.disambiguationNestingLevel++;
 }
 
 DisambiguationErrorTrapper::~DisambiguationErrorTrapper()
 {
-  // we're about to put the pre-existing errors back into env.errors
-  env.disambiguationNestingLevel--;
+    // we're about to put the pre-existing errors back into env.errors
+    env.disambiguationNestingLevel--;
 
-  if (env.hiddenErrors == &existingErrors) {     // I'm the first
-    env.hiddenErrors = NULL;          // no more now
-  }
+    if (env.hiddenErrors == &existingErrors) {     // I'm the first
+        env.hiddenErrors = NULL;          // no more now
+    }
 
-  // put all the original errors in
-  //
-  // 2005-08-08: Since 'existingErrors' are the older ones, I want
-  // them to (semantically) precede the errors in 'env.errors'.
-  // Therefore I am calling 'prependMessages'; previously I had been
-  // calling 'takeMessages', and do not know why.  A test of this
-  // behavior is in/t0521.cc.
-  env.errors.prependMessages(existingErrors);
+    // Add the new errors.
+    for ( ;; ) {
+        Diagnostic::Level level;
+        DiagnosticInfo info(buffer.take(existingClient, level));
+        if (info.getDiags() == NULL) {
+            break;
+        }
+
+        existingClient->HandleDiagnostic(level, info);
+    }
+    env.diag.setClient(existingClient);
+
+    if (env.hiddenClient == existingClient) {   // I'm the first
+        env.hiddenClient = NULL;                // no more now
+    }
+
+    // put all the original errors in
+    //
+    // 2005-08-08: Since 'existingErrors' are the older ones, I want
+    // them to (semantically) precede the errors in 'env.errors'.
+    // Therefore I am calling 'prependMessages'; previously I had been
+    // calling 'takeMessages', and do not know why.  A test of this
+    // behavior is in/t0521.cc.
+    env.errors.prependMessages(existingErrors);
+  
 }
 
 

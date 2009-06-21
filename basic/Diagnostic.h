@@ -15,6 +15,7 @@
 #define DIAGNOSTIC_H
 
 #include "SourceLocation.h"
+#include "macros.h"             // ENUM_BITWISE_OR
 #include <string>
 #include <cassert>
 
@@ -126,6 +127,57 @@ public:
   }
 };
 
+// Flags on diagnostics.
+enum DiagFlags {
+  // ordinary error
+  DIAG_NONE          = 0x00,
+
+  // informative, but not an error; typically, such messages should
+  // have a switch to disable them
+  DIAG_WARNING       = 0x01,
+
+  // This flag means the error will not be supressed in template code.
+  // Most errors inside templates are suppressed since they may be due
+  // to having incomplete information; but an DIAG_STRONG error is one
+  // where we are sure that the code really is invalid.  In theory, as
+  // cppstd does not require diagnosis of errors in uninstantiated
+  // template code, changing an DIAG_STRONG to DIAG_NONE should not cause
+  // Elsa to become nonconformant, merely less convenient.  Nevertheless,
+  // some of our regression tests contain (intentional) errors that are 
+  // diagnosed only because of DIAG_STRONG.
+  //
+  // 2005-08-08: Removed DIAG_STRONG_WARNING, replacing uses of it with
+  // DIAG_STRONG|DIAG_WARNING instead.
+  DIAG_STRONG        = 0x02,
+
+  // when this is true, the error message should be considered
+  // when disambiguation; when it's false, it's not a sufficiently
+  // severe error to warrant discarding an ambiguous alternative;
+  // for the most part, only environment lookup failures are
+  // considered to disambiguate
+  DIAG_DISAMBIGUATES = 0x04,
+
+  // This flag means this error arose during an attempt to tcheck an
+  // alternative that might not be the correct interpretation, and
+  // during that attempt, an x_assert was raised.  Consequently, the
+  // presence of this error message in the error list *cannot* be
+  // used to justify reducing the severity of the x_assert.
+  DIAG_FROM_DISAMB   = 0x08,
+  
+  // This flag means the error arose during type checking of an
+  // uninstantiated template body.  In permissive mode, such messages
+  // are turned into warnings.
+  DIAG_FROM_TEMPLATE = 0x10,
+  
+  // When an error is turned into a warning due to permissive mode,
+  // this flag is set; i.e., it would have been an error in strict
+  // mode.
+  DIAG_STRICT_ERROR  = 0x20,
+
+  DIAG_ALL           = 0x3F
+};
+ENUM_BITWISE_OPS(DiagFlags, DIAG_ALL)
+
 /// Diagnostic - This concrete class is used by the front-end to report
 /// problems and issues.  It massages the diagnostics (e.g. handling things like
 /// "report warnings as errors" and passes them off to the DiagnosticClient for
@@ -174,6 +226,10 @@ private:
   /// fatal error is emitted, and is sticky.
   bool ErrorOccurred;
   bool FatalErrorOccurred;
+  
+  /** Flags associated with the current diagnostic.
+   */
+  DiagFlags CurDiagFlags;
   
   /// LastDiagLevel - This is the level of the last diagnostic emitted.  This is
   /// used to emit continuation diagnostics with the same level as the
@@ -285,6 +341,10 @@ public:
   // Diagnostic classification and reporting interfaces.
   //
 
+  /** Get the flags associated with the current diagnostic.
+   */
+  DiagFlags getFlags() { return CurDiagFlags; }
+  
   /// getDescription - Given a diagnostic ID, return a description of the
   /// issue.
   const char *getDescription(unsigned DiagID) const;
@@ -579,6 +639,7 @@ public:
   
   const Diagnostic *getDiags() const { return DiagObj; }
   unsigned getID() const { return DiagObj->CurDiagID; }
+  DiagFlags getFlags() const { return DiagObj->CurDiagFlags; }
   const FullSourceLoc &getLocation() const { return DiagObj->CurDiagLoc; }
   
   unsigned getNumArgs() const { return DiagObj->NumDiagArgs; }

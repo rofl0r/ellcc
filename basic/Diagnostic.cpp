@@ -192,6 +192,7 @@ Diagnostic::Diagnostic(DiagnosticClient *client) : Client(client) {
   NumErrors = 0;
   CustomDiagInfo = 0;
   CurDiagID = ~0U;
+  CurDiagFlags = DIAG_NONE;
   LastDiagLevel = Ignored;
   
   ArgToStringFn = DummyArgToStringFn;

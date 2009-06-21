@@ -22,6 +22,7 @@
 #include "mflags.h"             // MatchFlags
 #include "TargetInfo.h"         // Target information.
 #include "Diagnostic.h"         // DiagnosticBuilder
+#include "DiagnosticBuffer.h"   // DiagnosticBuffer
 #include "ElsaDiagnostic.h"
 
 class StringTable;              // strtable.h
@@ -42,6 +43,8 @@ using ellcc::TargetInfo;
 using ellcc::Preprocessor;
 using ellcc::Diagnostic;
 using ellcc::DiagnosticBuilder;
+using ellcc::DiagnosticBuffer;
+using ellcc::DiagnosticClient;
 using ellcc::SourceManager;
 
 // type of collection to hold a sequence of scopes
@@ -139,6 +142,7 @@ public:      // data
   // Diagnotics.
   Diagnostic& diag;
   DiagnosticBuilder report(SourceLocation loc, unsigned DiagID);
+  DiagnosticClient* hiddenClient;
   
   // Source manager.
   SourceManager& SM;
@@ -1150,11 +1154,18 @@ class SuppressErrors {
 private:
   Env &env;               // relevant environment
   ErrorList existing;     // errors before the operation
+  DiagnosticClient* existingClient;     // Saved client.
+  DiagnosticBuffer buffer;              // Buffering client.
 
 public:
-  SuppressErrors(Env &e) : env(e) {
+  SuppressErrors(Env &e)
+  : env(e),
+    existingClient(NULL)
+  {
     // squirrel away the good messages
     existing.takeMessages(env.errors);
+    existingClient = env.diag.getClient();
+    env.diag.setClient(&buffer);
   }
 
   ~SuppressErrors() {
@@ -1163,6 +1174,7 @@ public:
 
     // put back the good ones
     env.errors.takeMessages(existing);
+    env.diag.setClient(existingClient);
   }
 };
 
@@ -1186,12 +1198,15 @@ public:
 // disambiguation activities
 class DisambiguationErrorTrapper {
 public:      // data
-  Env &env;
-  ErrorList existingErrors;       // saved messages
+    Env &env;
+    ErrorList existingErrors;       // saved messages
+    DiagnosticClient* existingClient;     // Saved client.
+    DiagnosticBuffer buffer;              // Buffering client.
 
 public:      // funcs
-  DisambiguationErrorTrapper(Env &env);
-  ~DisambiguationErrorTrapper();
+    DisambiguationErrorTrapper(Env &env);
+    ~DisambiguationErrorTrapper();
+    void discard() { buffer.clear(); }
 };
 
 
