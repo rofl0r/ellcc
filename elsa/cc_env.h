@@ -142,7 +142,14 @@ public:      // data
   // Diagnotics.
   Diagnostic& diag;
   DiagnosticBuilder report(SourceLocation loc, unsigned DiagID);
-  DiagnosticClient* hiddenClient;
+  void push()
+    { diag.Push(); }
+  void pop()
+    { diag.Pop(); }
+  void discard()
+    { diag.Discard(); }
+  void filter(ellcc::DiagFlags flags)
+    { diag.Filter(flags); }
   
   // Source manager.
   SourceManager& SM;
@@ -1138,8 +1145,6 @@ public:      // data
   int origNestingLevel;        // original value of env.disambiguationNestingLevel
   bool origSecondPass;         // original value of env.secondPassTcheck
   ErrorList origErrors;        // errors extant before instantiation
-  DiagnosticClient* existingClient;     // Saved client.
-  DiagnosticBuffer buffer;              // Buffering client.
 
 private:     // disallowed
   InstantiationContextIsolator(InstantiationContextIsolator&);
@@ -1156,18 +1161,14 @@ class SuppressErrors {
 private:
   Env &env;               // relevant environment
   ErrorList existing;     // errors before the operation
-  DiagnosticClient* existingClient;     // Saved client.
-  DiagnosticBuffer buffer;              // Buffering client.
 
 public:
   SuppressErrors(Env &e)
-  : env(e),
-    existingClient(NULL)
+  : env(e)
   {
     // squirrel away the good messages
     existing.takeMessages(env.errors);
-    existingClient = env.diag.getClient();
-    env.diag.setClient(&buffer);
+    env.push();
   }
 
   ~SuppressErrors() {
@@ -1176,7 +1177,7 @@ public:
 
     // put back the good ones
     env.errors.takeMessages(existing);
-    env.diag.setClient(existingClient);
+    env.pop();
   }
 };
 
@@ -1202,13 +1203,10 @@ class DisambiguationErrorTrapper {
 public:      // data
     Env &env;
     ErrorList existingErrors;       // saved messages
-    DiagnosticClient* existingClient;     // Saved client.
-    DiagnosticBuffer buffer;              // Buffering client.
 
 public:      // funcs
     DisambiguationErrorTrapper(Env &env);
     ~DisambiguationErrorTrapper();
-    void discard() { buffer.clear(); }
 };
 
 

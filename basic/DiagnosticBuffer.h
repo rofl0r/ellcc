@@ -17,7 +17,7 @@ class SourceManager;
 
 class DiagnosticBuffer : public DiagnosticClient {
 public:
-  typedef std::vector<std::pair<Diagnostic::Level, Diagnostic*> > DiagList;
+  typedef std::vector<std::pair<Diagnostic::Level, DiagnosticData*> > DiagList;
   typedef DiagList::const_iterator const_iterator;
 private:
   typedef DiagList::iterator iterator;
@@ -26,27 +26,23 @@ public:
   const_iterator begin() const  { return diags.begin(); }
   const_iterator end() const    { return diags.end(); }
 
-  ~DiagnosticBuffer()
-  {
-      clear();
-  }
+  DiagnosticBuffer();
+  ~DiagnosticBuffer();
 
-  void clear()
+  void Discard()
   {
       for (iterator it = diags.begin(); it != diags.end(); ++it) {
         delete it->second;
       }
   }
 
-  const DiagnosticInfo take(DiagnosticClient* client, Diagnostic::Level& level);
+  void Filter(DiagFlags flags);
 
-  void take(DiagnosticClient* client, DiagFlags flags = DIAG_ALL);
+  int NumberOf(DiagFlags flags);
 
-  int numberOf(DiagFlags flags);
-
-  void errorsToWarnings();
+  void ErrorsToWarnings();
   
-  virtual void HandleDiagnostic(Diagnostic::Level DiagLevel, const DiagnosticInfo &Info);
+  void HandleDiagnostic(Diagnostic::Level DiagLevel, const DiagnosticInfo &Info);
 };
 
 } // end namspace ellcc

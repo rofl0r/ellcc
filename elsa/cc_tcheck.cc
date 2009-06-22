@@ -162,8 +162,6 @@ class UninstTemplateErrorFilter {
     Env &env;                  // environment
     ErrorList existingErrors;  // saved messages
     bool suppressErrors;
-    DiagnosticClient* existingClient;     // Saved client.
-    DiagnosticBuffer buffer;              // Buffering client.
 
 public:
     UninstTemplateErrorFilter(Env &e, bool suppressErrorsArg = false)
@@ -172,8 +170,7 @@ public:
         suppressErrors = suppressErrorsArg || (env.inUninstTemplate() && !env.doReportTemplateErrors);
         if (suppressErrors) {
             existingErrors.takeMessages(env.errors);
-            existingClient = env.diag.getClient();
-            env.diag.setClient(&buffer);
+            env.push();
         }
     }
 
@@ -183,10 +180,8 @@ public:
             env.errors.filter(strongMsgFilter);
             env.errors.prependMessages(existingErrors);
             
-            // Restore the old diagnostic client.
-            env.diag.setClient(existingClient);
-            // Grab all the DIAG_STRONG diagnostics.
-            buffer.take(existingClient, DIAG_STRONG);
+            env.filter(DIAG_STRONG);
+            env.pop();
         }
     }
 };
@@ -1184,7 +1179,7 @@ void tcheckPQName(PQName *&name, Env &env, Scope *scope, LookupFlags lflags)
       // discard errors (other than those saved in 'trapper')
       ErrorList discard;
       discard.takeMessages(env.errors);
-      trapper.discard();
+      env.discard();
     }
 
     // better not have changed the environment!
@@ -5189,46 +5184,39 @@ void Expression::tcheck(Env &env, Expression *&replacement)
     // grab errors
     ErrorList existing;
     existing.takeMessages(env.errors);
-    DiagnosticClient* existingClient;   // Saved client.
-    DiagnosticBuffer buffer;            // Buffering client.
-    existingClient = env.diag.getClient();
-    env.diag.setClient(&buffer);
+    env.push();
 
     // common case: function call
     TRACE("disamb", toString(loc) << ": considering E_funCall");
     LookupSet candidates;
     call->inner1_itcheck(env, candidates);
-    if (noDisambErrors(env.errors) && buffer.numberOf(DIAG_DISAMBIGUATES) == 0) {
+    if (noDisambErrors(env.errors) && env.diag.NumberOf(DIAG_DISAMBIGUATES) == 0) {
       // ok, finish up; it's safe to assume that the E_constructor
       // interpretation would fail if we tried it
       TRACE("disamb", toString(loc) << ": selected E_funCall");
       env.errors.prependMessages(existing);
-      // Restore the old diagnostic client.
-      env.diag.setClient(existingClient);
-      // Grab all the diagnostics.
-      buffer.take(existingClient);
+      // Restore the old diagnostics.
+      env.pop();
       call->type = call->inner2_itcheck(env, candidates);
       call->ambiguity = NULL;
       replacement = call;
       return;
     }
 
+    env.discard();
     // grab the errors from trying E_funCall
     ErrorList funCallErrors;
     funCallErrors.takeMessages(env.errors);
-    buffer.clear();             // Discard diagnostics.
 
     // try the E_constructor interpretation
     TRACE("disamb", toString(loc) << ": considering E_constructor");
     ctor->inner1_itcheck(env);
-    if (noDisambErrors(env.errors) && buffer.numberOf(DIAG_DISAMBIGUATES) == 0) {
+    if (noDisambErrors(env.errors) && env.diag.NumberOf(DIAG_DISAMBIGUATES) == 0) {
       // ok, finish up
       TRACE("disamb", toString(loc) << ": selected E_constructor");
       env.errors.prependMessages(existing);
-      // Restore the old diagnostic client.
-      env.diag.setClient(existingClient);
-      // Grab all the diagnostics.
-      buffer.take(existingClient);
+      // Restore the old diagnostics.
+      env.pop();
 
       // a little tricky because E_constructor::inner2_itcheck is
       // allowed to yield a replacement AST node
@@ -5245,10 +5233,8 @@ void Expression::tcheck(Env &env, Expression *&replacement)
     env.errors.deleteAll();
     env.errors.takeMessages(existing);
     env.errors.takeMessages(funCallErrors);
-    // Restore the old diagnostic client.
-    env.diag.setClient(existingClient);
-    // Grab all the diagnostics.
-    buffer.take(existingClient);
+    // Restore the old diagnostics.
+    env.pop();
 
     // 10/20/04: Need to give a type anyway.
     this->type = env.errorType();

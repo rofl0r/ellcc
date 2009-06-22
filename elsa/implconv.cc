@@ -362,10 +362,9 @@ void test_getImplicitConversion(
     // grab existing error messages
     ErrorList existing;
     existing.takeMessages(env.errors);
-    DiagnosticClient* existingClient;     // Saved client.
+
     DiagnosticBuffer buffer;              // Buffering client.
-    existingClient = env.diag.getClient();
-    env.diag.setClient(&buffer);
+    env.push();
 
     // run our function
     ImplicitConversion actual = getImplicitConversion(env, special, src, dest);
@@ -376,9 +375,9 @@ void test_getImplicitConversion(
 
     // put the old messages back
     env.errors.takeMessages(existing);
-    // Restore the old diagnostic client.
-    env.diag.setClient(existingClient);
-    buffer.take(existingClient);
+    // Grab all the diagnostics.
+    env.diag.ErrorsToWarnings();
+    env.pop();
 
     // did it behave as expected?
     bool matches = matchesExpectation(actual, expectedKind, expectedSCS,

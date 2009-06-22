@@ -11,6 +11,7 @@
 #include "trace.h"          // TRACE
 
 using namespace sm;
+using namespace ellcc;
 
 // defined in cc_tcheck.cc
 bool noDisambErrors(ErrorList const &list);
@@ -95,12 +96,19 @@ NODE *resolveAmbiguity(
   enum { NOMINAL_MAX_ALT = 3 };
   ErrorList altErrorsArray[NOMINAL_MAX_ALT];
   ErrorList *altErrors = altErrorsArray;
+  DiagnosticBuffer* altBufferArray[NOMINAL_MAX_ALT];
+  DiagnosticBuffer** altBuffers = altBufferArray;
+  
   if (numAlts > NOMINAL_MAX_ALT) {
     // there are too many ambiguities to fit into the stack-allocated
     // array, so use an array on the heap instead; this is very
     // unusual, but not impossible (see e.g. in/t0328.cc)
     altErrors = new ErrorList[numAlts];
+    altBuffers = new DiagnosticBuffer*[numAlts];
   }
+
+  for (int i = 0; i < numAlts; ++i)
+      altBuffers[i] = NULL;
 
   // copy the caller's 'extra' so we can make untainted copies
   // for each iteration
@@ -123,6 +131,7 @@ NODE *resolveAmbiguity(
       TRACE("disamb",
             toString(loc) << ": considering " << ambiguousNodeName(alt));
 
+      env.push();
       // tcheck 'alt'
       EXTRA extra(origExtra);
       try {
@@ -131,6 +140,7 @@ NODE *resolveAmbiguity(
       catch (x_assert &x) {
         HANDLER();
         env.errors.markAllAsFromDisamb();
+        env.pop();
         throw;
       }
 
@@ -138,7 +148,8 @@ NODE *resolveAmbiguity(
       altErrors[altIndex].takeMessages(env.errors);
 
       // did that alternative succeed?
-      if (noDisambErrors(altErrors[altIndex])) {
+      if (   noDisambErrors(altErrors[altIndex])
+          && env.diag.NumberOf(DIAG_DISAMBIGUATES) == 0) {
         // yes; update our success trackers
         numOk++;
         lastOk = alt;
@@ -147,6 +158,8 @@ NODE *resolveAmbiguity(
         // copy that alternative's 'extra' to the caller's
         callerExtra = extra;
 
+        DiagnosticBuffer* buffer = static_cast<DiagnosticBuffer*>(env.diag.Take());
+        altBuffers[altIndex] = buffer;
         if (priority) {
           // the alternatives are listed in priority order, so once an
           // alternative succeeds, stop and select it
@@ -174,10 +187,11 @@ NODE *resolveAmbiguity(
           // one way or another
           altErrors[altIndex].addError(new ErrorMsg(
             loc, "a rejected alternative modified this environment", EF_NONE));
+          env.report(loc, diag::err_rejected_alternative_modified_environment);
         }
 
-        // make sure we don't consider this subtree to be finished
-        //markAsFailed(alt);
+        DiagnosticBuffer* buffer = static_cast<DiagnosticBuffer*>(env.diag.Take());
+        altBuffers[altIndex] = buffer;
       }
     }
     
@@ -193,15 +207,21 @@ NODE *resolveAmbiguity(
     // add a note about the ambiguity
     env.errors.addError(new ErrorMsg(
       loc, "---- BEGIN: messages from an ambiguity ----", EF_NONE));
+    env.report(loc, diag::err_begin_messages_from_ambiguity);
     for (int i=0; i<numAlts; i++) {
       if (i > 0) {
         env.errors.addError(new ErrorMsg(
           loc, "---- SEPARATOR: messages from an ambiguity ----", EF_NONE));
+        env.report(loc, diag::err_separator_messages_from_ambiguity);
       }
       env.errors.takeMessages(altErrors[i]);
+      env.diag.Give(altBuffers[i]);
+      altBuffers[i] = NULL;
+      env.pop();
     }
     env.errors.addError(new ErrorMsg(
       loc, "---- END: messages from an ambiguity ----", EF_NONE));
+    env.report(loc, diag::err_end_messages_from_ambiguity);
   }
 
   else if (numOk == 1) {
@@ -214,6 +234,9 @@ NODE *resolveAmbiguity(
     // and warnings); errors associated with other alternatives will
     // be deleted automatically
     env.errors.takeMessages(altErrors[lastOkIndex]);
+    env.diag.Give(altBuffers[lastOkIndex]);
+    altBuffers[lastOkIndex] = NULL;
+    env.pop();
     
     // select 'lastOk'
     ths = lastOk;
@@ -240,9 +263,13 @@ NODE *resolveAmbiguity(
   // of the ambiguity list
   const_cast<NODE*&>(ths->ambiguity) = NULL;
 
+  // clean up buffers.
+  for (int i = 0; i < numAlts; ++i)
+      delete altBuffers[i];
   // cleanup the array if necessary
   if (numAlts > NOMINAL_MAX_ALT) {
     delete[] altErrors;
+    delete[] altBuffers;
   }
 
   return ths;

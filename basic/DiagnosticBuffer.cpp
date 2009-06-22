@@ -9,37 +9,31 @@
 #include "DiagnosticBuffer.h"
 using namespace ellcc;
 
+DiagnosticBuffer::DiagnosticBuffer() { }
+DiagnosticBuffer::~DiagnosticBuffer()
+{
+    Discard();
+}
+
 /** HandleDiagnostic - Store the diagnostics that are reported.
  */ 
 void DiagnosticBuffer::HandleDiagnostic(Diagnostic::Level level,
                                         const DiagnosticInfo &Info) {
-  Diagnostic* diag = new Diagnostic(this);
+  DiagnosticData* diag = new DiagnosticData();
   *diag = *Info.getDiags();
-  diags.push_back(std::pair<Diagnostic::Level, Diagnostic*>(level, diag));
+  diags.push_back(std::pair<Diagnostic::Level, DiagnosticData*>(level, diag));
 }
 
-const DiagnosticInfo DiagnosticBuffer::take(DiagnosticClient* client, Diagnostic::Level& level)
+void DiagnosticBuffer::Filter(DiagFlags flags)
 {
-    if (diags.size() == 0) return DiagnosticInfo(NULL);
-    level = diags[0].first;
-    Diagnostic* diag = diags[0].second;
-    diags.erase(diags.begin());
-    diag->setClient(client);
-    return DiagnosticInfo(diag);
-}
-
-void DiagnosticBuffer::take(DiagnosticClient* client, DiagFlags flags)
-{
-    for (DiagnosticBuffer::const_iterator it = begin(); it != end(); ++it) {
-        if (it->second->getFlags() & flags) {
-            Diagnostic::Level level;
-            DiagnosticInfo info(take(client, level));
-            client->HandleDiagnostic(level, info);
+    for (DiagnosticBuffer::iterator it = diags.begin(); it != diags.end(); ++it) {
+        if ((it->second->getFlags() & flags) == DIAG_NONE) {
+            it->second->addFlags(DIAG_IGNORE);
         }
     }
 }
 
-int DiagnosticBuffer::numberOf(DiagFlags flags)
+int DiagnosticBuffer::NumberOf(DiagFlags flags)
 {
     int count = 0;
     for (iterator it = diags.begin(); it != diags.end(); ++it) {
@@ -51,7 +45,7 @@ int DiagnosticBuffer::numberOf(DiagFlags flags)
     return count;
 }
 
-void DiagnosticBuffer::errorsToWarnings()
+void DiagnosticBuffer::ErrorsToWarnings()
 {
     for (DiagnosticBuffer::iterator it = diags.begin(); it != diags.end(); ++it) {
         if (it->first == Diagnostic::Error) {

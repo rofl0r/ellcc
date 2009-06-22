@@ -17,6 +17,7 @@
 #include "SourceLocation.h"
 #include "macros.h"             // ENUM_BITWISE_OR
 #include <string>
+#include <vector>
 #include <cassert>
 
 namespace llvm {
@@ -174,15 +175,93 @@ enum DiagFlags {
   // mode.
   DIAG_STRICT_ERROR  = 0x20,
 
-  DIAG_ALL           = 0x3F
+  // Discard this diagnostic when unbuffering.
+  DIAG_IGNORE        = 0x40,
+
+  DIAG_ALL           = 0x7F
 };
 ENUM_BITWISE_OPS(DiagFlags, DIAG_ALL)
+
+/** This class is all the stuff specific to a given diagnostic,
+ * suitable for saving in a buffer for later use.
+ */
+class DiagnosticData {
+public:
+  DiagnosticData()
+  {
+    DiagID = ~0U;
+    Flags = DIAG_NONE;
+  }
+
+  /** Get the flags associated with the current diagnostic.
+   */
+  DiagFlags getFlags() { return Flags; }
+  /** Add flags to the current diagnostic.
+   */
+  void addFlags(DiagFlags flags) { Flags |= flags; }
+  
+protected:
+  /** Flags associated with the current diagnostic.
+   */
+  DiagFlags Flags;
+  
+  /// DiagLoc - This is the location of the current diagnostic that is in
+  /// flight.
+  FullSourceLoc DiagLoc;
+  
+  /// DiagID - This is the ID of the current diagnostic that is in flight.
+  /// This is set to ~0U when there is no diagnostic in flight.
+  unsigned DiagID;
+
+  enum {
+    /// MaxArguments - The maximum number of arguments we can hold. We currently
+    /// only support up to 10 arguments (%0-%9).  A single diagnostic with more
+    /// than that almost certainly has to be simplified anyway.
+    MaxArguments = 10
+  };
+  
+  /// NumDiagArgs - This contains the number of entries in Arguments.
+  signed char NumDiagArgs;
+  /// NumRanges - This is the number of ranges in the DiagRanges array.
+  unsigned char NumDiagRanges;
+  /// \brief The number of code modifications hints in the
+  /// CodeModificationHints array.
+  unsigned char NumCodeModificationHints;
+
+  /// DiagArgumentsKind - This is an array of ArgumentKind::ArgumentKind enum
+  /// values, with one for each argument.  This specifies whether the argument
+  /// is in DiagArgumentsStr or in DiagArguments.
+  unsigned char DiagArgumentsKind[MaxArguments];
+  
+  /// DiagArgumentsStr - This holds the values of each string argument for the
+  /// current diagnostic.  This value is only used when the corresponding
+  /// ArgumentKind is ak_std_string.
+  std::string DiagArgumentsStr[MaxArguments];
+
+  /// DiagArgumentsVal - The values for the various substitution positions. This
+  /// is used when the argument is not an std::string.  The specific value is
+  /// mangled into an intptr_t and the intepretation depends on exactly what
+  /// sort of argument kind it is.
+  intptr_t DiagArgumentsVal[MaxArguments];
+  
+  /// DiagRanges - The list of ranges added to this diagnostic.  It currently
+  /// only support 10 ranges, could easily be extended if needed.
+  const SourceRange *DiagRanges[10];
+  
+  enum { MaxCodeModificationHints = 3 };
+
+  /// CodeModificationHints - If valid, provides a hint with some code
+  /// to insert, remove, or modify at a particular position.
+  CodeModificationHint CodeModificationHints[MaxCodeModificationHints];
+
+  friend class DiagnosticInfo;
+};
 
 /// Diagnostic - This concrete class is used by the front-end to report
 /// problems and issues.  It massages the diagnostics (e.g. handling things like
 /// "report warnings as errors" and passes them off to the DiagnosticClient for
 /// reporting to the user.
-class Diagnostic {
+class Diagnostic : public DiagnosticData {
 public:
   /// Level - The level of the diagnostic, after it has been through mapping.
   enum Level {
@@ -212,7 +291,7 @@ private:
   bool WarningsAsErrors;         // Treat warnings like errors: 
   bool SuppressSystemWarnings;   // Suppress warnings in system headers.
   ExtensionHandling ExtBehavior; // Map extensions onto warnings or errors?
-  DiagnosticClient *Client;
+  std::vector<DiagnosticClient*> Client;
 
   /// DiagMappings - Mapping information for diagnostics.  Mapping info is
   /// packed into four bits per diagnostic.  The low three bits are the mapping
@@ -226,10 +305,6 @@ private:
   /// fatal error is emitted, and is sticky.
   bool ErrorOccurred;
   bool FatalErrorOccurred;
-  
-  /** Flags associated with the current diagnostic.
-   */
-  DiagFlags CurDiagFlags;
   
   /// LastDiagLevel - This is the level of the last diagnostic emitted.  This is
   /// used to emit continuation diagnostics with the same level as the
@@ -261,11 +336,60 @@ public:
   //  Diagnostic characterization methods, used by a client to customize how
   //
   
-  DiagnosticClient *getClient() { return Client; };
-  const DiagnosticClient *getClient() const { return Client; };
+  DiagnosticClient *getClient()
+    { return Client.size() ? Client.back() : NULL; };
+  const DiagnosticClient *getClient() const
+    { return Client.size() ? Client.back() : NULL; };
     
-  void setClient(DiagnosticClient* client) { Client = client; }
+  void setClient(DiagnosticClient* client)
+    { if (Client.size()) Client.back() = client; else Client.push_back(client) ; };
 
+  /** Open a new buffered client.
+   * Diagnostics will be buffered until a subsequent Pop().
+   */
+  void Push();
+
+  /** Close a buffered client.
+   * Any diagnostics in the buffer will be placed in the next level down.
+   *
+   */
+  void Pop();
+
+  /** Take a buffered error list.
+   *
+   */
+  DiagnosticClient* Take()
+  { 
+    assert(Client.size() < 2 && "There are no buffered clients to take.");
+    DiagnosticClient* client = Client.back();
+    Client.pop_back();
+    return client;
+  }
+
+  /** Give a buffered error list.
+   *
+   */
+  void Give(DiagnosticClient* client)
+  { 
+    Client.push_back(client);
+  }
+
+  /** Discard buffered diagnostics.
+   */
+  void Discard();
+      
+  /** Filter buffered diagnostics.
+   */
+  void Filter(DiagFlags flags = DIAG_ALL);
+      
+  /** Turn buffered errors into warnings.
+   */
+  void ErrorsToWarnings();
+      
+  /** The number of buffered errors with these flags.
+   */
+  int NumberOf(DiagFlags flags = DIAG_ALL);
+      
   /// setIgnoreAllWarnings - When set to true, any unmapped warnings are
   /// ignored.  If this and WarningsAsErrors are both set, then this one wins.
   void setIgnoreAllWarnings(bool Val) { IgnoreAllWarnings = Val; }
@@ -341,13 +465,6 @@ public:
   // Diagnostic classification and reporting interfaces.
   //
 
-  /** Get the flags associated with the current diagnostic.
-   */
-  DiagFlags getFlags() { return CurDiagFlags; }
-  /** Add flags to the current diagnostic.
-   */
-  void addFlags(DiagFlags flags) { CurDiagFlags |= flags; }
-  
   /// getDescription - Given a diagnostic ID, return a description of the
   /// issue.
   const char *getDescription(unsigned DiagID) const;
@@ -396,7 +513,7 @@ public:
   inline DiagnosticBuilder Report(FullSourceLoc Pos, unsigned DiagID);
 
   /// \brief Clear out the current diagnostic.
-  void Clear() { CurDiagID = ~0U; }
+  void Clear() { DiagID = ~0U; }
   
 private:
   /// getDiagnosticMappingInfo - Return the mapping info currently set for the
@@ -426,56 +543,6 @@ private:
   // tradeoff to keep these objects small.  Assertions verify that only one
   // diagnostic is in flight at a time.
   friend class DiagnosticBuilder;
-  friend class DiagnosticInfo;
-
-  /// CurDiagLoc - This is the location of the current diagnostic that is in
-  /// flight.
-  FullSourceLoc CurDiagLoc;
-  
-  /// CurDiagID - This is the ID of the current diagnostic that is in flight.
-  /// This is set to ~0U when there is no diagnostic in flight.
-  unsigned CurDiagID;
-
-  enum {
-    /// MaxArguments - The maximum number of arguments we can hold. We currently
-    /// only support up to 10 arguments (%0-%9).  A single diagnostic with more
-    /// than that almost certainly has to be simplified anyway.
-    MaxArguments = 10
-  };
-  
-  /// NumDiagArgs - This contains the number of entries in Arguments.
-  signed char NumDiagArgs;
-  /// NumRanges - This is the number of ranges in the DiagRanges array.
-  unsigned char NumDiagRanges;
-  /// \brief The number of code modifications hints in the
-  /// CodeModificationHints array.
-  unsigned char NumCodeModificationHints;
-
-  /// DiagArgumentsKind - This is an array of ArgumentKind::ArgumentKind enum
-  /// values, with one for each argument.  This specifies whether the argument
-  /// is in DiagArgumentsStr or in DiagArguments.
-  unsigned char DiagArgumentsKind[MaxArguments];
-  
-  /// DiagArgumentsStr - This holds the values of each string argument for the
-  /// current diagnostic.  This value is only used when the corresponding
-  /// ArgumentKind is ak_std_string.
-  std::string DiagArgumentsStr[MaxArguments];
-
-  /// DiagArgumentsVal - The values for the various substitution positions. This
-  /// is used when the argument is not an std::string.  The specific value is
-  /// mangled into an intptr_t and the intepretation depends on exactly what
-  /// sort of argument kind it is.
-  intptr_t DiagArgumentsVal[MaxArguments];
-  
-  /// DiagRanges - The list of ranges added to this diagnostic.  It currently
-  /// only support 10 ranges, could easily be extended if needed.
-  const SourceRange *DiagRanges[10];
-  
-  enum { MaxCodeModificationHints = 3 };
-
-  /// CodeModificationHints - If valid, provides a hint with some code
-  /// to insert, remove, or modify at a particular position.
-  CodeModificationHint CodeModificationHints[MaxCodeModificationHints];
 
   /// ProcessDiag - This is the method used to report a diagnostic that is
   /// finally fully formed.
@@ -651,10 +718,10 @@ inline const DiagnosticBuilder &operator<<(const DiagnosticBuilder &DB,
 /// Report - Issue the message to the client.  DiagID is a member of the
 /// diag::kind enum.  This actually returns a new instance of DiagnosticBuilder
 /// which emits the diagnostics (through ProcessDiag) when it is destroyed.
-inline DiagnosticBuilder Diagnostic::Report(FullSourceLoc Loc, unsigned DiagID){
-  assert(CurDiagID == ~0U && "Multiple diagnostics in flight at once!");
-  CurDiagLoc = Loc;
-  CurDiagID = DiagID;
+inline DiagnosticBuilder Diagnostic::Report(FullSourceLoc Loc, unsigned ID){
+  assert(DiagID == ~0U && "Multiple diagnostics in flight at once!");
+  DiagLoc = Loc;
+  DiagID = ID;
   return DiagnosticBuilder(this);
 }
 
@@ -671,9 +738,9 @@ public:
   explicit DiagnosticInfo(const Diagnostic *DO) : DiagObj(DO) {}
   
   const Diagnostic *getDiags() const { return DiagObj; }
-  unsigned getID() const { return DiagObj->CurDiagID; }
-  DiagFlags getFlags() const { return DiagObj->CurDiagFlags; }
-  const FullSourceLoc &getLocation() const { return DiagObj->CurDiagLoc; }
+  unsigned getID() const { return DiagObj->DiagID; }
+  DiagFlags getFlags() const { return DiagObj->Flags; }
+  const FullSourceLoc &getLocation() const { return DiagObj->DiagLoc; }
   
   unsigned getNumArgs() const { return DiagObj->NumDiagArgs; }
   
@@ -780,6 +847,26 @@ public:
   /// capturing it to a log as needed.
   virtual void HandleDiagnostic(Diagnostic::Level DiagLevel,
                                 const DiagnosticInfo &Info) = 0;
+
+  /** Discard buffered diagnostics.
+   * Assert if no buffering client is active.
+   */
+  virtual void Discard();
+      
+  /** Filter buffered diagnostics.
+   * Assert if no buffering client is active.
+   */
+  virtual void Filter(DiagFlags flags);
+      
+  /** Turn buffered errors into warnings.
+   * Assert if no buffering client is active.
+   */
+  virtual void ErrorsToWarnings();
+
+  /** Number of diagnostics buffered with the given flags.
+   * Assert if no buffering client is active.
+   */
+  virtual int NumberOf(DiagFlags flags = DIAG_ALL);
 };
 
 }  // end namespace ellcc

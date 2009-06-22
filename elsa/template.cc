@@ -5469,15 +5469,14 @@ InstantiationContextIsolator::InstantiationContextIsolator(Env &e, SourceLocatio
   : env(e),
     origNestingLevel(e.disambiguationNestingLevel),
     origSecondPass(e.secondPassTcheck),
-    origErrors(),
-    existingClient(NULL)
+    origErrors()
 {
     env.instantiationLocStack.push(loc);
     env.disambiguationNestingLevel = 0;
     env.secondPassTcheck = false;
     origErrors.takeMessages(env.errors);
-    existingClient = env.diag.getClient();
-    env.diag.setClient(&buffer);
+    // Open a new diagnostic level.
+    env.push();
 }
 
 InstantiationContextIsolator::~InstantiationContextIsolator()
@@ -5499,21 +5498,11 @@ InstantiationContextIsolator::~InstantiationContextIsolator()
     }
     xassert(env.errors.isEmpty());
 
-    // where do the newly-added errors, i.e. those from instantiation,
-    // which are sitting in 'env.errors', go?
-    if (env.hiddenClient) {
-        // shuttle them around to the hidden message list
-        buffer.take(env.hiddenClient);
-    }
-    else {
-        // put them at the end of the original errors, as if we'd never
-        // squirreled away any messages
-        buffer.take(existingClient);
-    }
-    
-    // now put originals back into env.errors
+    // Close the opened diagnostic level.
+    env.pop();
+
+   // now put originals back into env.errors
     env.errors.takeMessages(origErrors);
-    env.diag.setClient(existingClient);
 }
 
 

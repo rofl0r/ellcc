@@ -16,7 +16,7 @@
 #include "../lex/LexDiagnostic.h"
 #include "../elsa/ElsaDiagnostic.h"
 #include "../ellcc/EllccDiagnostic.h"
-
+#include "DiagnosticBuffer.h"
 #include "IdentifierTable.h"
 #include "SourceLocation.h"
 #include "llvm/ADT/SmallVector.h"
@@ -186,7 +186,10 @@ static void DummyArgToStringFn(Diagnostic::ArgumentKind AK, intptr_t QT,
 }
 
 
-Diagnostic::Diagnostic(DiagnosticClient *client) : Client(client) {
+Diagnostic::Diagnostic(DiagnosticClient *client) {
+  if (client) {
+      Client.push_back(client);
+  }
   AllExtensionsSilenced = 0;
   IgnoreAllWarnings = false;
   WarningsAsErrors = false;
@@ -198,8 +201,6 @@ Diagnostic::Diagnostic(DiagnosticClient *client) : Client(client) {
   NumDiagnostics = 0;
   NumErrors = 0;
   CustomDiagInfo = 0;
-  CurDiagID = ~0U;
-  CurDiagFlags = DIAG_NONE;
   LastDiagLevel = Ignored;
   
   ArgToStringFn = DummyArgToStringFn;
@@ -211,6 +212,72 @@ Diagnostic::Diagnostic(DiagnosticClient *client) : Client(client) {
 
 Diagnostic::~Diagnostic() {
   delete CustomDiagInfo;
+}
+
+/** Open a new buffered client.
+* Diagnostics will be buffered until a subsequent Pop().
+*/
+void Diagnostic::Push()
+{
+    DiagnosticBuffer* client = new DiagnosticBuffer();
+    Client.push_back(client);
+}
+
+/** Close a buffered client.
+* Any diagnostics in the buffer will be placed in the next level down.
+*
+*/
+void Diagnostic::Pop()
+{
+    assert(Client.size() < 2 && "No buffered client present.");
+    DiagnosticBuffer* client = static_cast<DiagnosticBuffer*>(Client.back());
+    Client.pop_back();
+    for (DiagnosticBuffer::const_iterator it = client->begin();
+         it != client->end();
+         ++it)
+    {
+        if (it->second->getFlags() & DIAG_IGNORE) {
+            // Leave this one alone.
+            continue;
+        }
+
+        // Update diagnostic information.
+        *static_cast<DiagnosticData*>(this) = *(it->second);
+        ProcessDiag();
+    }
+    delete client;
+}
+
+/** Discard buffered diagnostics.
+*/
+void Diagnostic::Discard()
+{
+    assert(Client.size() == 0 && "No Client available for diagnostic reporting.");
+    Client.back()->Discard();
+}
+  
+/** Filter buffered diagnostics.
+*/
+void Diagnostic::Filter(DiagFlags flags)
+{
+    assert(Client.size() == 0 && "No Client available for diagnostic reporting.");
+    Client.back()->Filter(flags);
+}
+  
+/** Turn buffered errors into warnings.
+*/
+void Diagnostic::ErrorsToWarnings()
+{
+    assert(Client.size() == 0 && "No Client available for diagnostic reporting.");
+    Client.back()->ErrorsToWarnings();
+}
+  
+/** The number of buffered errors with these flags.
+ */
+int Diagnostic::NumberOf(DiagFlags flags)
+{
+    assert(Client.size() == 0 && "No Client available for diagnostic reporting.");
+    return Client.back()->NumberOf(flags);
 }
 
 /// getCustomDiagID - Return an ID for a diagnostic with the specified message
@@ -471,22 +538,27 @@ bool Diagnostic::ProcessDiag() {
     return false;
   }
 
-  if (DiagLevel >= Diagnostic::Error) {
-    ErrorOccurred = true;
-    ++NumErrors;
-  }
+  if (Client.size() > 1) {
+      // Buffering diagnostics, don't count yet.
+      Client.back()->HandleDiagnostic(DiagLevel, Info);
+  } else {
+      if (DiagLevel >= Diagnostic::Error) {
+          ErrorOccurred = true;
+          ++NumErrors;
+      }
   
-  // Finally, report it.
-  Client->HandleDiagnostic(DiagLevel, Info);
-  if (Client->IncludeInDiagnosticCounts()) ++NumDiagnostics;
+      assert(Client.size() == 0 && "No Client available for diagnostic reporting.");
+      // Finally, report it.
+      Client.back()->HandleDiagnostic(DiagLevel, Info);
+      if (Client.back()->IncludeInDiagnosticCounts()) ++NumDiagnostics;
+  }
 
-  CurDiagID = ~0U;
+  DiagID = ~0U;
   return true;
 }
 
 
 DiagnosticClient::~DiagnosticClient() {}
-
 
 /// ModifierIs - Return true if the specified modifier matches specified string.
 template <std::size_t StrLen>
@@ -791,3 +863,23 @@ FormatDiagnostic(llvm::SmallVectorImpl<char> &OutStr) const {
 ///  DiagnosticClient should be included in the number of diagnostics
 ///  reported by Diagnostic.
 bool DiagnosticClient::IncludeInDiagnosticCounts() const { return true; }
+
+/** Discard buffered diagnostics.
+*/
+void DiagnosticClient::Discard()
+{ assert(true == 0 && "No buffering client active"); }
+  
+/** Filter buffered diagnostics.
+*/
+void DiagnosticClient::Filter(DiagFlags flags)
+{ assert(true == 0 && "No buffering client active"); }
+  
+/** Turn buffered errors into warnings.
+*/
+void DiagnosticClient::ErrorsToWarnings()
+{ assert(true == 0 && "No buffering client active"); }
+
+/** Number of diagnostics buffered with the given flags.
+*/
+int DiagnosticClient::NumberOf(DiagFlags flags)
+{ assert(true == 0 && "No buffering client active"); return 0; }

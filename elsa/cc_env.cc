@@ -320,7 +320,6 @@ Env::Env(StringTable &s, Preprocessor& PP, TypeFactory &tf,
     errors(*this),
     hiddenErrors(NULL),
     diag(PP.getDiagnostics()),
-    hiddenClient(NULL),
     SM(PP.getSourceManager()),
     instantiationLocStack(),
 
@@ -5932,12 +5931,10 @@ bool DefaultArgumentChecker::visitTypeSpecifier(TypeSpecifier *obj)
 // ----------------- DisambiguationErrorTrapper ---------------------
 DisambiguationErrorTrapper::DisambiguationErrorTrapper(Env &e)
   : env(e),
-    existingErrors(),
-    existingClient(NULL)
+    existingErrors()
 {
     // grab the existing list of error messages
     existingErrors.takeMessages(env.errors);
-    existingClient = env.diag.getClient();
 
     // tell the environment about this hidden list of errors, so that
     // if an error needs to be added that has nothing to do with this
@@ -5945,11 +5942,6 @@ DisambiguationErrorTrapper::DisambiguationErrorTrapper(Env &e)
     if (env.hiddenErrors == NULL) {     // no hidden yet, I'm the first
         env.hiddenErrors = &existingErrors;
     }
-    if (env.hiddenClient == NULL) {     // no hidden yet, I'm the first
-        env.hiddenClient = existingClient;
-    }
-
-    env.diag.setClient(&buffer);
 
     // having stolen the existing errors, we now tell the environment
     // we're in a disambiguation pass so it knows that any disambiguating
@@ -5966,14 +5958,6 @@ DisambiguationErrorTrapper::~DisambiguationErrorTrapper()
         env.hiddenErrors = NULL;          // no more now
     }
 
-    // Add the new errors.
-    buffer.take(existingClient);
-    env.diag.setClient(existingClient);
-
-    if (env.hiddenClient == existingClient) {   // I'm the first
-        env.hiddenClient = NULL;                // no more now
-    }
-
     // put all the original errors in
     //
     // 2005-08-08: Since 'existingErrors' are the older ones, I want
@@ -5982,7 +5966,6 @@ DisambiguationErrorTrapper::~DisambiguationErrorTrapper()
     // calling 'takeMessages', and do not know why.  A test of this
     // behavior is in/t0521.cc.
     env.errors.prependMessages(existingErrors);
-  
 }
 
 
