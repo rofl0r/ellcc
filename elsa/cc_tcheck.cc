@@ -5944,7 +5944,7 @@ Type *E_variable::itcheck_var_set(Env &env, Expression *&replacement,
           // undeclared functions in a "dependent" context [cppstd 14.6
           // para 8].  See the note in TS_name::itcheck.
 
-          // RICH: env.report(name->loc, diag::err_undeclared_identifier) << name->getName();
+          env.report(name->loc, diag::err_undeclared_identifier) << name->getName();
           return env.error(name->loc, stringc
                            << "there is no variable called `" << *name << "'",
                            EF_NONE);
