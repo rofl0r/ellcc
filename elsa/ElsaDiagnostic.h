@@ -13,7 +13,7 @@
 namespace ellcc {
   namespace diag { 
     enum {
-#define DIAG(ENUM,FLAGS,DEFAULT_MAPPING,DESC,GROUP) ENUM,
+#define DIAG(ENUM,FLAGS,DEFAULT_MAPPING,DESC,GROUP,SFINAE) ENUM,
 #define ELSASTART
 #include "../basic/DiagnosticElsaKinds.inc"
 #undef DIAG
