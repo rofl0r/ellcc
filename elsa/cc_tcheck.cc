@@ -400,7 +400,7 @@ void TF_namespaceDefn::itcheck(Env &env)
   // violation of 7.3.1 para 2?
   if (existing && !existing->hasFlag(DF_NAMESPACE)) {
     env.report(loc, diag::err_redefinition_of_identifier) << effectiveName;
-    env.report(existing->loc, diag::note_previous_identifier_definition);
+    env.report(existing->loc, diag::note_previous_definition);
     // RICH: remove
     env.error(loc, "deprecated error message");
     // recovery: skip the whole thing
@@ -2458,7 +2458,7 @@ Type *TS_enumSpec::itcheck(Env &env, DeclFlags dflags, LookupFlags lflags)
       if (!et->valueIndex.isEmpty()) {
         // if it has values, it's definitely been defined already
         env.report(loc, diag::err_redefinition_of_identifier) << et->name;
-        env.report(et->typedefVar->loc, diag::note_previous_identifier_definition);
+        env.report(et->typedefVar->loc, diag::note_previous_definition);
         env.error(loc, "deprecated error message");
         return ret;      // ignore this defn
       }
@@ -2614,7 +2614,7 @@ void Enumerator::tcheck(Env &env, EnumType *parentEnum, Type *parentType)
     env.report(loc, diag::err_redefinition_of_identifier) << name;
     env.error(loc, "deprecated error message");
     if (prior) {
-        env.report(prior->loc, diag::note_previous_identifier_definition);
+        env.report(prior->loc, diag::note_previous_definition);
         env.error(prior->loc, "deprecated error message");
     }
   }

@@ -15,7 +15,6 @@ def err_confused : Error<"confused by earlier errors, bailing out">, DefaultFata
 
 def err_undeclared_identifier : Error<"undeclared identifier '%0'">;
 def err_redefinition_of_identifier : Error<"redefinition of '%0'">;
-def note_previous_identifier_definition : Note<"previous definition:">;
 
 def err_expr_not_ice : Error<"expression is not an integer constant expression">;
 

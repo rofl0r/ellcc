@@ -1661,7 +1661,7 @@ Type *Env::declareEnum(SourceLocation loc /*...*/, EnumType *et)
     if (!addEnum(et, &previous)) {
         report(loc, diag::err_redefinition_of_identifier) << et->name;
         if (previous) {
-            report(previous->loc, diag::note_previous_identifier_definition);
+            report(previous->loc, diag::note_previous_definition);
         }
         error(loc, "deprecated error message");
     }
