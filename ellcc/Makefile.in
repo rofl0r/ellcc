@@ -113,7 +113,6 @@ $(CCS) $(CXXS): ecc
 TOCLEAN += quicktest
 quicktest: ecc
 	./ecc -S sieve test/sieve.c
-	./sieve
 	@touch quicktest
 	@echo BUILD FINISHED
 

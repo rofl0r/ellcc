@@ -359,6 +359,10 @@ public:      // funcs
   // 'virtual' only to silence stupid warning; destruction is not part of polymorphic contract
   virtual ~Env();
 
+  /** Has errros that don't involve disambiguation.
+   */
+  bool hasFromNonDisambErrors() const;
+
   // this function kicks off type checking for a translation unit;
   // it is not recursive (it should *not* call itself for namespaces)
   virtual void tcheckTranslationUnit(TranslationUnit *tunit);

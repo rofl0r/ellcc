@@ -5945,9 +5945,12 @@ Type *E_variable::itcheck_var_set(Env &env, Expression *&replacement,
           // para 8].  See the note in TS_name::itcheck.
 
           env.report(name->loc, diag::err_undeclared_identifier) << name->getName();
+          return env.getSimpleType(ST_ERROR);
+#if RICH
           return env.error(name->loc, stringc
                            << "there is no variable called `" << *name << "'",
                            EF_NONE);
+#endif
         }
       }
     }

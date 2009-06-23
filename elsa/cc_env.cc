@@ -5968,6 +5968,11 @@ DisambiguationErrorTrapper::~DisambiguationErrorTrapper()
     env.errors.prependMessages(existingErrors);
 }
 
+bool Env::hasFromNonDisambErrors() const
+{
+  return errors.hasFromNonDisambErrors() || diag.hasFromNonDisambErrors();
+}
+
 
 // ------------------------------------------------------------
 //

@@ -311,8 +311,11 @@ private:
   /// diagnostic that they follow.
   Diagnostic::Level LastDiagLevel;
 
-  unsigned NumDiagnostics;    // Number of diagnostics reported
-  unsigned NumErrors;         // Number of diagnostics that are errors
+  unsigned NumDiagnostics;      // Number of diagnostics reported
+  unsigned NumErrors;           // Number of diagnostics that are errors
+  unsigned NumWarnings;         // Number that are warnings.
+  unsigned NumDisambiguates;    // Number that disambiguate.
+  unsigned NumTemplate;         // Number that occur when checking a template.
 
   /// CustomDiagInfo - Information for uniquing and looking up custom diags.
   diag::CustomDiagInfo *CustomDiagInfo;
@@ -332,6 +335,11 @@ public:
   explicit Diagnostic(DiagnosticClient *client = 0);
   ~Diagnostic();
   
+  /** Has errros that don't involve disambiguation.
+   */
+  bool hasFromNonDisambErrors()
+    { return NumWarnings + NumDisambiguates + NumTemplate < NumDiagnostics; }
+
   //===--------------------------------------------------------------------===//
   //  Diagnostic characterization methods, used by a client to customize how
   //

@@ -200,6 +200,9 @@ Diagnostic::Diagnostic(DiagnosticClient *client) {
   FatalErrorOccurred = false;
   NumDiagnostics = 0;
   NumErrors = 0;
+  NumWarnings = 0;
+  NumDisambiguates = 0;
+  NumTemplate = 0;
   CustomDiagInfo = 0;
   LastDiagLevel = Ignored;
   
@@ -545,7 +548,15 @@ bool Diagnostic::ProcessDiag() {
       if (DiagLevel >= Diagnostic::Error) {
           ErrorOccurred = true;
           ++NumErrors;
+      } else if (DiagLevel == Diagnostic::Warning || (Flags & DIAG_WARNING)) {
+          ++NumWarnings;
+          DiagLevel = Diagnostic::Warning;
+          Flags |= DIAG_WARNING;
       }
+      if (Flags & DIAG_DISAMBIGUATES)
+            ++NumDisambiguates;
+      if (Flags & DIAG_FROM_TEMPLATE)
+            ++NumTemplate;
   
       assert(Client.size() == 0 && "No Client available for diagnostic reporting.");
       // Finally, report it.

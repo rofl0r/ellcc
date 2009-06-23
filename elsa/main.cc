@@ -976,7 +976,7 @@ void doit(int argc, char **argv)
     catch (x_assert &x) {
       HANDLER();
 
-      if (env.errors.hasFromNonDisambErrors()) {
+      if (env.hasFromNonDisambErrors()) {
         if (tracingSys("expect_confused_bail")) {
           std::cout << "got the expected confused/bail\n";
           exit(0);
