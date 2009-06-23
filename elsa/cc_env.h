@@ -359,7 +359,7 @@ public:      // funcs
   // 'virtual' only to silence stupid warning; destruction is not part of polymorphic contract
   virtual ~Env();
 
-  /** Has errros that don't involve disambiguation.
+  /** Has errrors that don't involve disambiguation.
    */
   bool hasFromNonDisambErrors() const;
 

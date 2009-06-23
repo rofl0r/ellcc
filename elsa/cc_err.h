@@ -151,7 +151,8 @@ public:
   // number of errors with any flags set in 'flags'
   int countWithAnyFlag(ErrorFlags flags) const;
 
-  // true if any are EF_DISAMBIGUATES
+  /** true if any buffered errors are EF_DISAMBIGUATES.
+   */
   bool hasDisambErrors() const;
   bool isEmpty() const { return list.isEmpty(); }
                                       
