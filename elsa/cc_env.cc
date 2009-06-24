@@ -554,7 +554,12 @@ Env::Env(StringTable &s, Preprocessor& PP, TypeFactory &tf,
 // Report a diagnostic.
 DiagnosticBuilder Env::report(SourceLocation loc, unsigned DiagID)
 {
-    return diag.Report(FullSourceLoc(loc, SM), DiagID);
+    DiagnosticBuilder d = diag.Report(FullSourceLoc(loc, SM), DiagID);
+    if (disambiguateOnly) {
+        d << DIAG_FROM_TEMPLATE;
+    }
+    
+    return d;
 }
 
 // slightly clever: iterate over an array, but look like

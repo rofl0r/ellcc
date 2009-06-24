@@ -140,7 +140,6 @@ inline T *mustBeNonNull(T *ptr)
   return ptr;
 }
 
-
 // ------------------- UninstTemplateErrorFilter ------------------
 // filter that keeps only strong messages
 bool strongMsgFilter(ErrorMsg *msg)
@@ -164,10 +163,9 @@ class UninstTemplateErrorFilter {
     bool suppressErrors;
 
 public:
-    UninstTemplateErrorFilter(Env &e, bool suppressErrorsArg = false)
-        : env(e), existingErrors()
+    UninstTemplateErrorFilter(Env &e, bool suppressErrors = false)
+        : env(e), existingErrors(), suppressErrors(suppressErrors)
     {
-        suppressErrors = suppressErrorsArg || (env.inUninstTemplate() && !env.doReportTemplateErrors);
         if (suppressErrors) {
             existingErrors.takeMessages(env.errors);
             env.push();
@@ -466,7 +464,6 @@ void Function::tcheck(Env &env, Variable *instV)
 
   // only disambiguate, if template
   DisambiguateOnlyTemp disOnly(env, inTemplate /*disOnly*/);
-  UninstTemplateErrorFilter errorFilter(env);
 
   // get return type
   Type *retTypeSpec = retspec->tcheck(env, dflags, LF_NONE);
