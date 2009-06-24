@@ -509,6 +509,16 @@ bool Diagnostic::ProcessDiag() {
     }
   }
 
+  if (   !(Flags & DIAG_WARNING)
+      && !(Flags & DIAG_DISAMBIGUATES)
+      && !(Flags & DIAG_STRONG)
+      && !(Flags & DIAG_REPORT_TEMPLATE)) {
+      // reduce severity to warning, but strong so it doesn't get
+      // tossed once we come out of template checking, and also
+      // mark with EF_STRICT_ERROR so I can tell this happened
+      Flags |= DIAG_WARNING | DIAG_STRONG | DIAG_STRICT_ERROR;
+  }
+
   if (DiagLevel != Diagnostic::Note) {
     // Record that a fatal error occurred only when we see a second
     // non-note diagnostic. This allows notes to be attached to the

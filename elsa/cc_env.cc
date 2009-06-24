@@ -558,6 +558,9 @@ DiagnosticBuilder Env::report(SourceLocation loc, unsigned DiagID)
     DiagnosticBuilder d = diag.Report(FullSourceLoc(loc, SM), DiagID);
     if (disambiguateOnly) {
         d << DIAG_FROM_TEMPLATE;
+        if (doReportTemplateErrors) {
+            d << DIAG_REPORT_TEMPLATE;
+        }
     }
     
     return d;

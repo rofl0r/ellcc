@@ -135,7 +135,7 @@ enum DiagFlags {
 
   // informative, but not an error; typically, such messages should
   // have a switch to disable them
-  DIAG_WARNING       = 0x01,
+  DIAG_WARNING          = 0x01,
 
   // This flag means the error will not be supressed in template code.
   // Most errors inside templates are suppressed since they may be due
@@ -149,36 +149,37 @@ enum DiagFlags {
   //
   // 2005-08-08: Removed DIAG_STRONG_WARNING, replacing uses of it with
   // DIAG_STRONG|DIAG_WARNING instead.
-  DIAG_STRONG        = 0x02,
+  DIAG_STRONG           = 0x02,
 
   // when this is true, the error message should be considered
   // when disambiguation; when it's false, it's not a sufficiently
   // severe error to warrant discarding an ambiguous alternative;
   // for the most part, only environment lookup failures are
   // considered to disambiguate
-  DIAG_DISAMBIGUATES = 0x04,
+  DIAG_DISAMBIGUATES    = 0x04,
 
   // This flag means this error arose during an attempt to tcheck an
   // alternative that might not be the correct interpretation, and
   // during that attempt, an x_assert was raised.  Consequently, the
   // presence of this error message in the error list *cannot* be
   // used to justify reducing the severity of the x_assert.
-  DIAG_FROM_DISAMB   = 0x08,
+  DIAG_FROM_DISAMB      = 0x08,
   
   // This flag means the error arose during type checking of an
   // uninstantiated template body.  In permissive mode, such messages
   // are turned into warnings.
-  DIAG_FROM_TEMPLATE = 0x10,
+  DIAG_FROM_TEMPLATE    = 0x10,
+  DIAG_REPORT_TEMPLATE  = 0x20,
   
   // When an error is turned into a warning due to permissive mode,
   // this flag is set; i.e., it would have been an error in strict
   // mode.
-  DIAG_STRICT_ERROR  = 0x20,
+  DIAG_STRICT_ERROR     = 0x40,
 
   // Discard this diagnostic when unbuffering.
-  DIAG_IGNORE        = 0x40,
+  DIAG_IGNORE           = 0x80,
 
-  DIAG_ALL           = 0x7F
+  DIAG_ALL              = 0xFF
 };
 ENUM_BITWISE_OPS(DiagFlags, DIAG_ALL)
 
