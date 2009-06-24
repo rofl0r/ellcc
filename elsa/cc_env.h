@@ -555,8 +555,7 @@ public:      // funcs
   Type *warning(SourceLocation L, rostring msg);
   Type *warning(rostring msg);
   Type *unimp(rostring msg);
-  void diagnose3(bool3 b, SourceLocation L, rostring msg, ErrorFlags eflags = EF_NONE);
-  void diagnose2(bool isError, SourceLocation L, rostring msg, ErrorFlags eflags = EF_NONE);
+  void diagnose3(bool3 b, SourceLocation L, rostring msg);
 
   // this is used when something is nominally an error, but I think
   // or know that the code that detects the error is itself not yet

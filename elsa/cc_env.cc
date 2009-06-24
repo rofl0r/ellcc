@@ -6077,22 +6077,15 @@ bool Env::doOperatorOverload() const
 }
 
 
-void Env::diagnose3(bool3 b, SourceLocation L, rostring msg, ErrorFlags eflags)
+void Env::diagnose3(bool3 b, SourceLocation L, rostring msg)
 {
   if (b == b3_WARN) {
     warning(L, msg);
   }
   else if (b == b3_FALSE) {
-    error(L, msg, eflags);
+    error(L, msg);
   }
 }
-
-
-void Env::diagnose2(bool isError, SourceLocation L, rostring msg, ErrorFlags eflags)
-{
-  diagnose3(isError? b3_FALSE : b3_WARN, L, msg, eflags);
-}
-
 
 void Env::weakError(SourceLocation L, rostring msg)
 {
