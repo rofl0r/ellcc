@@ -296,12 +296,12 @@ void TF_explicitInst::itcheck(Env &env)
       }
       else {
         // catch "template class C;"
-        env.error("explicit instantiation (without declarator) is only for class instantiations");
+        env.report(loc, diag::err_template_explicit_instantiation);
       }
     }
     else {
       // catch "template C<int>;"
-      env.error("explicit instantiation (without declarator) requires \"class ...\"");
+      env.report(loc, diag::err_template_explicit_instantiation_without_class);
     }
   }
 
@@ -314,7 +314,7 @@ void TF_explicitInst::itcheck(Env &env)
     // other template declarations are limited to one declarator, so I
     // am simply assuming the same is true of explicit instantiations,
     // even though 14.7.2 doesn't say so explicitly...
-    env.error("too many declarators in explicit instantiation");
+    env.report(loc, diag::err_template_explicit_instantiation_too_many_declarators);
   }
 }
 
@@ -900,7 +900,6 @@ void MemberInit::tcheck(Env &env, CompoundType *enclosing)
     env.report(loc, diag::err_typecheck_no_member)
                << (*enclosing).name
                << (*name).getName();
-    env.error(loc, "deprecated error message");
     return;
   }
   CompoundType *baseClass = baseVar->type->asCompoundType();
@@ -2457,7 +2456,6 @@ Type *TS_enumSpec::itcheck(Env &env, DeclFlags dflags, LookupFlags lflags)
         // if it has values, it's definitely been defined already
         env.report(loc, diag::err_redefinition_of_identifier) << et->name;
         env.report(et->typedefVar->loc, diag::note_previous_definition);
-        env.error(loc, "deprecated error message");
         return ret;      // ignore this defn
       }
     }
@@ -2487,8 +2485,7 @@ Type *TS_enumSpec::itcheck(Env &env, DeclFlags dflags, LookupFlags lflags)
 void checkMemberFlags(Env &env, DeclFlags flags)
 {
   if (flags & (DF_AUTO | DF_EXTERN | DF_REGISTER)) {
-    env.error("class members cannot be marked `auto', `extern', "
-              "or `register'");
+    env.report(env.loc(), diag::err_member_storage_class);
   }
 }
 
@@ -2610,10 +2607,8 @@ void Enumerator::tcheck(Env &env, EnumType *parentEnum, Type *parentType)
 
   if (!env.addVariable(var, forceReplace)) {
     env.report(loc, diag::err_redefinition_of_identifier) << name;
-    env.error(loc, "deprecated error message");
     if (prior) {
         env.report(prior->loc, diag::note_previous_definition);
-        env.error(prior->loc, "deprecated error message");
     }
   }
 }
@@ -9508,7 +9503,6 @@ bool Expression::constEval(Env &env, int &result, bool &dependent) const
   }
   else {
     env.report(loc, diag::err_expr_not_ice) << SourceRange(loc, endloc);
-    env.error(loc, "deprecated error message");
     return false;
   }
 }
@@ -9730,7 +9724,6 @@ void initializeAggregate(Env &env, Type *type,
       if (memberIter.isDone()) {    // no data fields?
         env.report(env.loc(), diag::err_memberless_aggregate_initialization)
                    << ct->keywordAndName().c_str();
-        env.error(env.loc(), "deprecated error message");
         initIter.adv();    // avoid infinite loop possibility
       }
       while (!memberIter.isDone() && !initIter.isDone()) {
@@ -10280,7 +10273,6 @@ void ND_usingDecl::tcheck(Env &env)
 {
   if (!name->hasQualifiers()) {
     env.report(name->loc, diag::err_using_needs_qualified_name);
-    env.error(name->loc, "deprecated error message");
     return;
   }
 
@@ -10300,7 +10292,6 @@ void ND_usingDecl::tcheck(Env &env)
   env.lookupPQ(set, name, LF_TEMPL_PRIMARY);
   if (set.isEmpty()) {
     env.report(name->loc, diag::err_undeclared_identifier) << name->getName();
-    env.error(name->loc, "deprecated error message");
     return;
   }
 
@@ -10350,7 +10341,6 @@ void ND_usingDir::tcheck(Env &env)
   Variable *targetVar = env.lookupPQ_one(name, LF_ONLY_NAMESPACES);
   if (!targetVar) {
     env.report(name->loc, diag::err_unknown_namespace) << name->getName();
-    env.error(name->loc, "deprecated error message");
     return;
   }
   xassert(targetVar->isNamespace());   // meaning of LF_ONLY_NAMESPACES

@@ -1663,7 +1663,6 @@ Type *Env::declareEnum(SourceLocation loc /*...*/, EnumType *et)
         if (previous) {
             report(previous->loc, diag::note_previous_definition);
         }
-        error(loc, "deprecated error message");
     }
 
     // TODO: If the enum name is already the name of a typedef,

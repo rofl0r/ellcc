@@ -13,7 +13,12 @@
 
 let Component = "Common" in {
 
+// RICH: start of used
 def note_previous_definition : Note<"previous definition is here">;
+def err_deprecated_error : Error<"deprecated error %0:%1: %2">;
+def err_deprecated_warning : Error<"deprecated warning %0:%1: %2">;
+// RICH: end of used
+
 def note_previous_declaration : Note<"previous declaration is here">;
 def note_previous_implicit_declaration : Note<
   "previous implicit declaration is here">;
