@@ -430,8 +430,8 @@ int Elsa::doit(Preprocessor& PP,
         typeCheckingTimer.stopTimer();
     }
 
-    int numErrors = env.errors.numErrors();
-    int numWarnings = env.errors.numWarnings() + parseWarnings;
+    int numErrors = env.numErrors();
+    int numWarnings = env.numWarnings() + parseWarnings;
 
     // do this now so that 'printTypedAST' will include CFG info
     #ifdef CFG_EXTENSION

@@ -401,8 +401,6 @@ void TF_namespaceDefn::itcheck(Env &env)
   if (existing && !existing->hasFlag(DF_NAMESPACE)) {
     env.report(loc, diag::err_redefinition_of_identifier) << effectiveName;
     env.report(existing->loc, diag::note_previous_definition);
-    // RICH: remove
-    env.error(loc, "deprecated error message");
     // recovery: skip the whole thing
     return;
   }

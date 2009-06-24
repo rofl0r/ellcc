@@ -587,9 +587,16 @@ public:      // funcs
   bool disambErrorsSuppressChanges() const
     { return disambiguationNestingLevel>0 && hasDisambErrors(); }
 
-  // number of errors; intended to be called after type checking,
-  // to see how many errors (if any) resulted
-  int numErrors() const { return errors.numErrors(); }
+  /* Total number of dignostics.
+   */
+  int numBiags() const
+    { return errors.count() + diag.getNumDiagnostics(); }
+  /** How many errors (if any) resulted.
+   */
+  int numErrors() const { return errors.numErrors() + diag.getNumErrors(); }
+  /** How many warnings (if any) resulted.
+   */
+  int numWarnings() const { return errors.numWarnings() + diag.getNumWarnings(); }
 
   // This is the error mode used for errors that I want to be
   // EF_STRONG (reported even in templates) while implementing new

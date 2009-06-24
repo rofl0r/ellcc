@@ -446,6 +446,7 @@ public:
   bool hasFatalErrorOccurred() const { return FatalErrorOccurred; }
 
   unsigned getNumErrors() const { return NumErrors; }
+  unsigned getNumWarnings() const { return NumWarnings; }
   unsigned getNumDiagnostics() const { return NumDiagnostics; }
   
   /// getCustomDiagID - Return an ID for a diagnostic with the specified message
