@@ -597,12 +597,6 @@ public:      // funcs
    */
   int numWarnings() const { return errors.numWarnings() + diag.getNumWarnings(); }
 
-  // This is the error mode used for errors that I want to be
-  // EF_STRONG (reported even in templates) while implementing new
-  // features, but EF_NONE (not reported in templates) when trying to
-  // get big testcases through.
-  ErrorFlags maybeEF_STRONG() const;
-
   // report on unsearched base classes; "" if none
   sm::string unsearchedDependentBases();
 

@@ -308,7 +308,7 @@ testparse t0023.cc
 testparse t0024.cc
 testparse t0025.cc
 testparse t0026.cc
-testparse t0027.cc
+testparse_special -std=c++98 t0027.cc
 testparse t0028.cc
 testparse t0029.cc
 testparse t0030.cc
@@ -728,10 +728,10 @@ testparse t0430.cc
 testparse t0431.cc
 testparse t0432.cc
 testparse t0433.cc
-testparse t0434.cc
+testparse_special -std=c++98 t0434.cc
 testparse t0435.cc #"need for ArrayType with dependent size"
 failparse t0436.cc "pointer-to-member names processed in wrong order"
-testparse t0437.cc
+testparse_special -std=c++98 t0437.cc
 testparse t0438a.cc
 testparse t0438.cc
 failparse t0439.cc "default args in explicit spec"
@@ -744,11 +744,11 @@ testparse t0444.cc
 testparse t0445.cc
 testparse t0446.cc
 testparse t0447.cc
-testparse t0448.cc
+testparse_special -std=c++98 t0448.cc
 testparse t0449.cc
 testparse t0450.cc
 testparse t0451.cc
-testparse t0452.cc
+testparse_special -std=c++98 t0452.cc
 testparse t0453.cc
 testparse t0454.cc
 testparse t0455.cc
@@ -799,7 +799,7 @@ testparse t0498.cc
 testparse t0499.cc
 testparse t0500.cc
 testparse t0501.cc
-testparse t0502.cc
+testparse_special -std=c++98 t0502.cc
 testparse t0503.cc
 testparse t0504.cc
 testparse t0505.cc
@@ -808,7 +808,7 @@ testparse t0507.cc
 testparse t0508.cc
 failparse t0509.cc "const-eval'able variable is actually reference templ arg"
 testparse t0510.cc
-testparse t0511.cc
+testparse_special -std=c++98 t0511.cc
 testparse t0512.cc
 testparse t0513.cc
 testparse t0514.cc
@@ -871,7 +871,7 @@ testparse t0573.cc
 testparse t0574.cc
 testparse t0575.cc
 testparse t0576.cc
-failparse t0577.cc "flawed abstract enumerator value processing"
+failparse_special -std=c++98 t0577.cc "flawed abstract enumerator value processing"
 # t0578.cc is arguably valid code, but nobody can handle it
 failparse t0579.cc "tricky rules about enumerator types"
 testparse t0580.cc
@@ -1146,7 +1146,7 @@ testparse k0065.cc "using incomplete class as default template argument"
 testparse k0066.cc
 failparse k0067.cc "constructor using volatile reference"
 failparse k0068.cc "explicitly named constructor"
-failparse k0008.cc "template parameterized by function pointer"
+failparse_special -std=c++98 k0008.cc "template parameterized by function pointer"
 testparse k0069.cc #"friend class as template parameter"
 testparse k0070.cc #"scoping via template instantiation with all parameters defaulted"
 failparse k0071.cc "compound initializer for struct which was earlier forward-declared as class"

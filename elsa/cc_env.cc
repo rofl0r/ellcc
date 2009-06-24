@@ -388,9 +388,7 @@ Env::Env(StringTable &s, Preprocessor& PP, TypeFactory &tf,
     // have not implemented any of the relaxed C rules)
     doCompareArgsToParams(!tracingSys("doNotCompareArgsToParams") /* RICH: && L.isCplusplus */ ),
 
-    // 2005-03-09: things are finally ready to turn strict checking
-    // on by default (see doc/permissive.txt)
-    doReportTemplateErrors(!tracingSys("permissive")),
+    doReportTemplateErrors(true),
 
     collectLookupResults(""),
 
@@ -533,6 +531,9 @@ Env::Env(StringTable &s, Preprocessor& PP, TypeFactory &tf,
   #ifdef GNU_EXTENSION
     if (PP.getLangOptions().declareGNUBuiltins) {
       addGNUBuiltins();
+    }
+    if (PP.getLangOptions().GNUMode) {
+      doReportTemplateErrors = false;
     }
   #endif // GNU_EXTENSION
 
@@ -3339,7 +3340,7 @@ Variable *Env::createDeclaration(
           << "duplicate definition for `" << name
           << "' of type `" << prior->type->toString()
           << "'; previous at " << toString(prior->loc),
-          maybeEF_STRONG());
+          EF_STRONG);
 
       makeDummyVar:
         // the purpose of this is to allow the caller to have a workable
@@ -3413,7 +3414,7 @@ Variable *Env::createDeclaration(
             << "duplicate member declaration of `" << name
             << "' in " << enclosingClass->keywordAndName()
             << "; previous at " << toString(prior->loc),
-            maybeEF_STRONG());    // weakened for t0266.cc
+            EF_STRONG);
           goto makeDummyVar;
         }
       }
@@ -6049,25 +6050,6 @@ Type *Env::error(Type *t, rostring msg)
 {
   return error(t, loc(), msg);
 }
-
-
-ErrorFlags Env::maybeEF_STRONG() const
-{
-  return EF_STRONG;
-
-  #if 0   // still needed?
-  if (disambiguateOnly && !doReportTemplateErrors) {
-    return EF_STRONG | EF_WARNING;
-  }
-  else {
-    return EF_STRONG;
-  }
-  #endif // 0
-}
-
-
-// 2005-03-11: removed Env::doOverload
-
 
 bool Env::doOperatorOverload() const
 {

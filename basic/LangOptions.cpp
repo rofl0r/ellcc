@@ -40,7 +40,6 @@ void LangOptions::ANSI_C89()
   // just in case I forget to initialize something....
   memset(this, 0, sizeof(*this));
 
-  GNUMode = false;
   Trigraphs = true;
   BCPLComment = DollarIdents = AsmPreprocessor = false;
   GNUMode = Digraphs = false;
