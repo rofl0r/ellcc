@@ -52,5 +52,10 @@ def err_class_initialize_static_data_or_member_function
 def err_class_initialize_non_base_class
     : Error<"'%0' is not a base class%select{|, nor a data member,}1"
             " so it cannot be initialized here">;
+def err_class_direct_and_indirect_base
+    : Error<"'%0' is both a direct non-virtual base, "
+            "and an indirect virtual base; therefore the initializer "
+            "is ambiguous (there's no quick fix--you have to change "
+            "your inheritance hierarchy or forego initialization)">;
 
 }

@@ -933,11 +933,8 @@ void MemberInit::tcheck(Env &env, CompoundType *enclosing)
 
   // check for ambiguity [para 2]
   if (directBase && !directVirtual && indirectVirtual) {
-    env.error(stringc
-              << "`" << *name << "' is both a direct non-virtual base, "
-              << "and an indirect virtual base; therefore the initializer "
-              << "is ambiguous (there's no quick fix--you have to change "
-              << "your inheritance hierarchy or forego initialization)");
+    env.report(loc, diag::err_class_direct_and_indirect_base)
+        << (*name).getName();
     return;
   }
 
