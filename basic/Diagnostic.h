@@ -674,6 +674,12 @@ public:
         DiagObj->CodeModificationHints[NumCodeModificationHints++] = Hint;
     }
   }
+
+  void AddFlags(DiagFlags Flags) const {
+    if (DiagObj) {
+        DiagObj->addFlags(Flags);
+    }
+  }
 };
 
 inline const DiagnosticBuilder &operator<<(const DiagnosticBuilder &DB,
@@ -721,6 +727,12 @@ inline const DiagnosticBuilder &operator<<(const DiagnosticBuilder &DB,
 inline const DiagnosticBuilder &operator<<(const DiagnosticBuilder &DB,
                                            const CodeModificationHint &Hint) {
   DB.AddCodeModificationHint(Hint);
+  return DB;
+}
+
+inline const DiagnosticBuilder &operator<<(const DiagnosticBuilder &DB,
+                                           const DiagFlags &Flag) {
+  DB.AddFlags(Flag);
   return DB;
 }
 

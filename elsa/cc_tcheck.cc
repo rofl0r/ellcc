@@ -756,19 +756,18 @@ CompoundType *Function::verifyIsCtor(Env &env, char const *context)
     enclosing = nameAndParams->var->scope->curCompound;
   }
   if (!enclosing) {
-    env.error(stringc
-      << context << " are only valid for class member "
-      << "functions (constructors in particular)",
-      EF_DISAMBIGUATES);
+    env.report(env.loc(), diag::err_class_not_constructor_or_member)
+        << context
+        << EF_DISAMBIGUATES;
     return NULL;
   }
 
   // make sure this function is a constructor; should already have
   // been mapped to the special name
   if (nameAndParams->var->name != env.constructorSpecialName) {
-    env.error(stringc
-      << context << " are only valid for constructors",
-      EF_DISAMBIGUATES);
+    env.report(env.loc(), diag::err_class_not_constructor)
+        << context
+        << EF_DISAMBIGUATES;
     return NULL;
   }
 
@@ -837,8 +836,7 @@ void MemberInit::tcheck(Env &env, CompoundType *enclosing)
       // only "nonstatic data member"
       if (v->hasFlag(DF_STATIC) ||
           v->type->isFunctionType()) {
-        env.error("you can't initialize static data "
-                  "nor member functions in a ctor member init list");
+        env.report(loc, diag::err_class_initialize_static_data_or_member_function);
         return;
       }
 
@@ -928,10 +926,8 @@ void MemberInit::tcheck(Env &env, CompoundType *enclosing)
   if (!directBase && !indirectVirtual) {
     // if there are qualifiers, then it can't possibly be an
     // attempt to initialize a data member
-    char const *norData = name->hasQualifiers()? "" : ", nor a data member,";
-    env.error(stringc
-              << "`" << *name << "' is not a base class" << norData
-              << " so it cannot be initialized here");
+    env.report(loc, diag::err_class_initialize_non_base_class)
+        << (*name).getName() << name->hasQualifiers();
     return;
   }
 

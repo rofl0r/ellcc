@@ -42,4 +42,15 @@ def err_template_explicit_instantiation_without_class
     : Error<"explicit instantiation (without declarator) requires \"class ...\"">;
 def err_template_explicit_instantiation_too_many_declarators
     : Error<"too many declarators in explicit instantiation">;
+
+def err_class_not_constructor_or_member
+    : Error<"%0 are only valid for class member functions (constructors in particular)">;
+def err_class_not_constructor
+    : Error<"%0 are only valid for class constructors">;
+def err_class_initialize_static_data_or_member_function
+    : Error<"you can't initialize static data nor member functions in a ctor member init list">;
+def err_class_initialize_non_base_class
+    : Error<"'%0' is not a base class%select{|, nor a data member,}1"
+            " so it cannot be initialized here">;
+
 }
