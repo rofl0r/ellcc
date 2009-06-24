@@ -549,12 +549,12 @@ public:      // funcs
   // this is for ErrorList clients
   virtual void addError(ErrorMsg * /*owner*/ obj);
 
-  // diagnostic reports; all return ST_ERROR type
-  Type *error(SourceLocation L, rostring msg, ErrorFlags eflags = EF_NONE);
-  Type *error(rostring msg, ErrorFlags eflags = EF_NONE);
-  Type *warning(SourceLocation L, rostring msg);
-  Type *warning(rostring msg);
-  Type *unimp(rostring msg);
+  // diagnostic reports
+  void error(SourceLocation L, rostring msg, ErrorFlags eflags = EF_NONE);
+  void error(rostring msg, ErrorFlags eflags = EF_NONE);
+  void warning(SourceLocation L, rostring msg);
+  void warning(rostring msg);
+  void unimp(rostring msg);
   void diagnose3(bool3 b, SourceLocation L, rostring msg);
 
   // this is used when something is nominally an error, but I think

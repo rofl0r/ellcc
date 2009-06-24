@@ -2647,7 +2647,8 @@ Type *Env::type_info_const_ref()
              tfac.applyCVToType(loc(), CV_CONST, ti->type, NULL /*syntax*/));
   }
   else {
-    return error("must #include <typeinfo> before using typeid");
+    error("must #include <typeinfo> before using typeid");
+    return env.errorType();
   }
 }
 
@@ -5516,11 +5517,13 @@ Type *Env::sizeofType(Type *t, int &size, Expression * /*nullable*/ expr)
         return env.sizeofType(at->eltType, size, expr);
       }
       else {
-        return env.error(e.why());
+        env.error(e.why());
+        return env.errorType();
       }
     }
     else {
-      return env.error(e.why());
+      env.error(e.why());
+      return env.errorType();
     }
   }
 
@@ -5987,27 +5990,26 @@ Type *Env::dependentType()
   return getSimpleType(ST_DEPENDENT);
 }
 
-Type *Env::error(rostring msg, ErrorFlags eflags)
+void Env::error(rostring msg, ErrorFlags eflags)
 {
-  return error(loc(), msg, eflags);
+  error(loc(), msg, eflags);
 }
 
 
-Type *Env::warning(rostring msg)
+void Env::warning(rostring msg)
 {
   return warning(loc(), msg);
 }
 
-Type *Env::warning(SourceLocation loc, rostring msg)
+void Env::warning(SourceLocation loc, rostring msg)
 {
   sm::string instLoc = instLocStackString();
   TRACE("error", "warning: " << msg << instLoc);
   errors.addError(new ErrorMsg(loc, msg, EF_WARNING, instLoc));
-  return getSimpleType(ST_ERROR);
 }
 
 
-Type *Env::unimp(rostring msg)
+void Env::unimp(rostring msg)
 {
   sm::string instLoc = instLocStackString();
 
@@ -6018,7 +6020,6 @@ Type *Env::unimp(rostring msg)
   breaker();
   errors.addError(new ErrorMsg(
     loc(), stringc << "unimplemented: " << msg, EF_NONE, instLoc));
-  return getSimpleType(ST_ERROR);
 }
 
 
@@ -6035,7 +6036,8 @@ Type *Env::error(Type *t, SourceLocation loc, rostring msg)
   }
 
   // report
-  return error(loc, msg, EF_NONE);
+  error(loc, msg, EF_NONE);
+  return env.errorType();
 }
 
 Type *Env::error(Type *t, rostring msg)
@@ -6125,11 +6127,9 @@ sm::string errorFlagBlock(ErrorFlags eflags)
   }
 }
 
-Type *Env::error(SourceLocation L, rostring msg, ErrorFlags eflags)
+void Env::error(SourceLocation L, rostring msg, ErrorFlags eflags)
 {
   addError(new ErrorMsg(L, msg, eflags));
-
-  return errorType();
 }
 
 

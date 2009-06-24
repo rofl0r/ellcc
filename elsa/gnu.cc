@@ -13,8 +13,6 @@
 using namespace ellcc;
 
 #ifdef LLVM_EXTENSION
-#define __STDC_LIMIT_MACROS 1
-#define __STDC_CONSTANT_MACROS 1
 #include "llvm/Type.h"
 #endif
 
@@ -1397,9 +1395,10 @@ Type *E_fieldAcc::itcheck_complex_selector(Env &env, LookupFlags flags,
   int prec, axis;
   if (!dissectFloatingType(prec, axis, obj->type) ||
       axis != 2/*complex*/) {
-    return env.error(stringc << "can only apply " << fieldName->getName()
+    env.error(stringc << "can only apply " << fieldName->getName()
                              << " to complex types, not `"
                              << obj->type->toString() << "'");
+    return env.errorType();
   }
 
   field = env.complexComponentFields[isImag][prec];
@@ -1413,9 +1412,10 @@ Type *E_binary::itcheck_complex_arith(Env &env)
   int prec2, axis2;
   if (!dissectFloatingType(prec1, axis1, e1->type) ||
       !dissectFloatingType(prec2, axis2, e2->type)) {
-    return env.error(stringc << "invalid complex arithmetic operand types `"
+    env.error(stringc << "invalid complex arithmetic operand types `"
                              << e1->type->toString() << "' and `"
                              << e2->type->toString() << "'");
+    return env.errorType();
   }
 
   // NOTE: The following computations have not been thoroughly tested.

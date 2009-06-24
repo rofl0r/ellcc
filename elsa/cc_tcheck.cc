@@ -1643,8 +1643,9 @@ do_lookup:
     // error message in E_variable::itcheck is not marked as such, it
     // means we prefer to report the error as if the interpretation as
     // "variable" were the only one.
-    return env.error(stringc
+    env.error(stringc
       << "there is no type called `" << *name << "'", eflags);
+    return env.errorType();
   }
 
   if (!v->hasFlag(DF_TYPEDEF)) {
@@ -1660,14 +1661,16 @@ do_lookup:
       }
       else {
         // more informative error message (in/d0111.cc, error 1)
-        return env.error(stringc
+        env.error(stringc
           << "dependent name `" << *name
           << "' used as a type, but the 'typename' keyword was not supplied", eflags);
+        return env.errorType();
       }
     }
     else {
-      return env.error(stringc
+      env.error(stringc
         << "variable name `" << *name << "' used as if it were a type", eflags);
+      return env.errorType();
     }
   }
 
@@ -2120,8 +2123,9 @@ Type *TS_elaborated::itcheck(Env &env, DeclFlags dflags, LookupFlags lflags)
     if (!tag) {
       if (!env.PP.getLangOptions().allowIncompleteEnums ||
           name->hasQualifiers()) {
-        return env.error(stringc << "there is no enum called `" << *name << "'",
+        env.error(stringc << "there is no enum called `" << *name << "'",
                          EF_DISAMBIGUATES);
+        return env.errorType();
       }
       else {
         // make a forward-declared enum (gnu/d0083.c)
@@ -2132,13 +2136,15 @@ Type *TS_elaborated::itcheck(Env &env, DeclFlags dflags, LookupFlags lflags)
     xassert(tag->isType());      // ensured by LF_ONLY_TYPES
 
     if (!tag->type->isEnumType()) {
-      return env.error(stringc << "`" << *name << "' is not an enum");
+      env.error(stringc << "`" << *name << "' is not an enum");
+      return env.errorType();
     }
     if (!tag->hasFlag(DF_IMPLICIT)) {
       // found a user-introduced (not implicit) typedef, which
       // is illegal (3.4.4p2,3)
-      return env.error(stringc << "`" << *name << "' is a typedef-name, "
+      env.error(stringc << "`" << *name << "' is a typedef-name, "
                                << "so cannot be used after 'enum'");
+      return env.errorType();
     }
     EnumType *et = tag->type->asCVAtomicType()->atomic->asEnumType();
 
@@ -5747,7 +5753,8 @@ Type *E_charLit::itcheck_x(Env &env, Expression *&replacement)
   ArrayStack<char> temp;
   quotedUnescape(temp, srcText, '\'', false /*allowNewlines*/);
   if (temp.length() == 0) {
-    return env.error("character literal with no characters");
+    env.error("character literal with no characters");
+    return env.errorType();
   }
   else if (temp.length() > 1) {
     // below I only store the first byte
@@ -5775,7 +5782,8 @@ Type *E_charLit::itcheck_x(Env &env, Expression *&replacement)
     // have to look it up
     Variable *v = env.globalScope()->lookupVariable(env.str("wchar_t"), env);
     if (!v) {
-      return env.error("you must #include <stddef.h> before using wchar_t");
+      env.error("you must #include <stddef.h> before using wchar_t");
+      return env.errorType();
     }
     else {
       return v->type;
@@ -5791,7 +5799,8 @@ Type *E_this::itcheck_x(Env &env, Expression *&replacement)
   // we should be in a method with a receiver parameter
   receiver = env.lookupVariable(env.receiverName);
   if (!receiver) {
-    return env.error("can only use 'this' in a nonstatic method");
+    env.error("can only use 'this' in a nonstatic method");
+    return env.errorType();
   }
 
   // compute type: *pointer* to the thing 'receiverVar' is
@@ -5881,9 +5890,10 @@ Type *E_variable::itcheck_var_set(Env &env, Expression *&replacement,
     }
 
     if (v && v->hasFlag(DF_TYPEDEF)) {
-      return env.error(name->loc, stringc
+      env.error(name->loc, stringc
         << "`" << *name << "' used as a variable, but it's actually a type",
         EF_DISAMBIGUATES);
+      return env.errorType();
     }
 
     // 2005-02-18: cppstd 14.2 para 2: if template arguments are
@@ -6732,12 +6742,12 @@ Type *E_funCall::inner2_itcheck(Env &env, LookupSet &candidates)
     }
 
     if (candidates.isEmpty()) {
-      return fevar->type =
-        env.error(pqname->loc,
+      env.error(pqname->loc,
                   stringc << "there is no function called `"
                           << pqname->getName() << "'"
                           << env.unsearchedDependentBases(),
                   EF_NONE);
+      return fevar->type = env.errorType();
     }
 
     // template args supplied?
@@ -6806,10 +6816,11 @@ Type *E_funCall::inner2_itcheck(Env &env, LookupSet &candidates)
 
     // do we still have any candidates?
     if (candidates.isEmpty()) {
-      return env.error(pqname->loc, stringc
+      env.error(pqname->loc, stringc
                << "call site name lookup for \"" << pqname->toString()
                << "\" failed to yield any candidates; "
                << "last candidate was removed because: " << lastRemovalReason);
+      return env.errorType();
     }
 
     // throw the whole mess at overload resolution
@@ -6882,9 +6893,10 @@ Type *E_funCall::inner2_itcheck(Env &env, LookupSet &candidates)
       }
     }
     else {
-      return env.error(stringc
+      env.error(stringc
         << "object of type `" << t->toString() << "' used as a function, "
         << "but it has no operator() declared");
+      return env.errorType();
     }
   }
 
@@ -7185,21 +7197,25 @@ static Type *internalTestingHooks
   if (funcName == env.special_test_mtype) {
     int nArgs = args->count();
     if (nArgs < 3) {
-      return env.error("__test_mtype requires at least three arguments");
+      env.error("__test_mtype requires at least three arguments");
+      return env.errorType();
     }
 
     Type *conc = args->nth(0)->getType();
     Type *pat = args->nth(1)->getType();
     int flags;
     if (!args->nth(2)->constEval(env, flags)) {
-      return env.error("third argument to __test_mtype must be a constant expression");
+      env.error("third argument to __test_mtype must be a constant expression");
+      return env.errorType();
     }
     if (flags & ~MF_ALL) {
-      return env.error("invalid flags value for __test_mtype");
+      env.error("invalid flags value for __test_mtype");
+      return env.errorType();
     }
     bool expectSuccess = (nArgs != 4);
     if (expectSuccess && (nArgs%2 != 1)) {
-      return env.error("__test_mtype requires either four or an odd number of arguments");
+      env.error("__test_mtype requires either four or an odd number of arguments");
+      return env.errorType();
     }
 
     MType mtype(env);
@@ -7213,47 +7229,53 @@ static Type *internalTestingHooks
 
           // 'name' should be a string literal naming a variable in 'pat'
           if (!name->isE_stringLit()) {
-            return env.error(stringc << "__test_mtype argument " << (i+1)*2+1+1
+            env.error(stringc << "__test_mtype argument " << (i+1)*2+1+1
                                      << " must be a string literal");
+            return env.errorType();
           }
           StringRef nameStr = env.str(parseQuotedString(name->asE_stringLit()->text));
 
           // it should correspond to an existing binding in 'mtype'
           STemplateArgument binding(mtype.getBoundValue(nameStr, env.tfac));
           if (!binding.hasValue()) {
-            return env.error(stringc << "__test_mtype: " << nameStr << " is not bound");
+            env.error(stringc << "__test_mtype: " << nameStr << " is not bound");
+            return env.errorType();
           }
 
           // we interpret 'value' depending on what kind of thing is
           // the 'binding', and hope this won't mask any problems
           switch (binding.kind) {
             default:
-              return env.error(stringc << "unexpected binding kind: "
+              env.error(stringc << "unexpected binding kind: "
                                        << toString(binding.kind));
+              return env.errorType();
 
             case STemplateArgument::STA_TYPE:
               if (!binding.getType()->equals(value->getType())) {
-                return env.error(stringc << "__test_mtype: "
+                env.error(stringc << "__test_mtype: "
                   << "expected " << nameStr
                   << " to be bound to `" << value->getType()->toString()
                   << "' but it was actually bound to `"
                   << binding.getType()->toString() << "'");
+                return env.errorType();
               }
               break;
 
             case STemplateArgument::STA_INT: {
               int valueInt;
               if (!value->constEval(env, valueInt)) {
-                return env.error(stringc << "__test_mtype: "
+                env.error(stringc << "__test_mtype: "
                   << nameStr << " was bound to an int, but the provided "
                   << "expression is not a constant");
+                return env.errorType();
               }
               if (valueInt != binding.getInt()) {
-                return env.error(stringc << "__test_mtype: "
+                env.error(stringc << "__test_mtype: "
                   << "expected " << nameStr
                   << " to be bound to " << valueInt
                   << " but it was actually bound to "
                   << binding.getInt());
+                return env.errorType();
               }
               break;
             }
@@ -7263,18 +7285,21 @@ static Type *internalTestingHooks
         // the user should have supplied as many bindings as there
         // are bindings in 'mtype'
         if (mtype.getNumBindings() != i) {
-          return env.error(stringc << "__test_mtype: "
+          env.error(stringc << "__test_mtype: "
             << "call site supplied " << pluraln(i , "binding")
             << ", but match yielded " << mtype.getNumBindings());
+          return env.errorType();
         }
       }
       else {
-        return env.error("mtype succeeded, but failure was expected");
+        env.error("mtype succeeded, but failure was expected");
+        return env.errorType();
       }
     }
     else {
       if (expectSuccess) {
-        return env.error("mtype failed, but success was expected");
+        env.error("mtype failed, but success was expected");
+        return env.errorType();
       }
       else {
         // failed as expected
@@ -7344,10 +7369,11 @@ Type *E_constructor::inner2_itcheck(Env &env, Expression *&replacement)
     //
     // 2005-05-28: (in/t0495.cc) count the args *after* tchecking them
     if (args->count() > 1) {
-      return env.error(stringc
+      env.error(stringc
         << "function-style cast to `" << type->toString()
         << "' must have zere or one argument (not "
         << args->count() << ")");
+      return env.errorType();
     }
 
     // change it into a cast; this code used to do some 'buildASTTypeId'
@@ -7525,8 +7551,9 @@ Type *E_fieldAcc::itcheck_fieldAcc_set(Env &env, LookupFlags flags,
       xassert(secondLast);
 
       if (secondLast->sargs.isNotEmpty()) {
-        return env.error(fieldName->loc, "cannot have templatized qualifier as "
+        env.error(fieldName->loc, "cannot have templatized qualifier as "
           "second-to-last element of RHS of . or -> when LHS is not a class");
+        return env.errorType();
       }
 
       // these will be set to the lookup results of secondLast and last, resp.
@@ -7564,21 +7591,24 @@ Type *E_fieldAcc::itcheck_fieldAcc_set(Env &env, LookupFlags flags,
 
       if (!secondVar || !secondVar->isType()) {
         PQName *n = getSecondToLast(fieldName->asPQ_qualifier());
-        return env.error(n->loc, stringc
+        env.error(n->loc, stringc
           << "no such type: `" << n->toComponentString() << "'");
+        return env.errorType();
       }
       if (!lastVar || !lastVar->isType()) {
         PQName *n = fieldName->getUnqualifiedName();
-        return env.error(n->loc, stringc
+        env.error(n->loc, stringc
           << "no such type: `" << n->toComponentString() << "'");
+        return env.errorType();
       }
       if (!lastVar->type->equals(secondVar->type)) {
-        return env.error(fieldName->loc, stringc
+        env.error(fieldName->loc, stringc
           << "in . or -> expression, when LHS is non-class type "
           << "(its type is `" << lhsType->toString() << "'), a qualified RHS "
           << "must be of the form Q :: t1 :: ~t2 where t1 and t2 are "
           << "the same type, but t1 is `" << secondVar->type->toString()
           << "' and t2 is `" << lastVar->type->toString() << "'");
+        return env.errorType();
       }
       rhsType = lastVar->type;
     }
@@ -7587,18 +7617,20 @@ Type *E_fieldAcc::itcheck_fieldAcc_set(Env &env, LookupFlags flags,
       // RHS of form ~ type-name
       Variable *v = env.unqualifiedLookup_one(rhsFinalTypeName, flags);
       if (!v || !v->hasFlag(DF_TYPEDEF)) {
-        return env.error(fieldName->loc,
+        env.error(fieldName->loc,
           stringc << "no such type: `" << rhsFinalTypeName << "'");
+        return env.errorType();
       }
       rhsType = v->type;
     }
 
     if (!lhsType->equals(rhsType, MF_IGNORE_TOP_CV)) {
-      return env.error(fieldName->loc, stringc
+      env.error(fieldName->loc, stringc
         << "in . or -> expression, when LHS is non-class type, its type "
         << "must be the same (modulo cv qualifiers) as the RHS; but the "
         << "LHS type is `" << lhsType->toString() << "' and the RHS type is `"
         << rhsType->toString() << "'");
+      return env.errorType();
     }
 
     // pseudo-destructor invocation
@@ -7667,10 +7699,11 @@ Type *E_fieldAcc::itcheck_fieldAcc_set(Env &env, LookupFlags flags,
     if (firstQVar1 &&
         !firstQVar1->isNamespace() &&
         !firstQVar1->isClass()) {
-      return env.error(firstQ->loc, stringc
+      env.error(firstQ->loc, stringc
         << "in " << this->asString() << ", when " << firstQ->qualifier
         << " is found in the current scope, it must be "
         << "a class or namespace, not " << kindAndType(firstQVar1));
+      return env.errorType();
     }
     Scope *firstQScope1 = firstQVar1? firstQVar1->getDenotedScope() : NULL;
 
@@ -7680,22 +7713,24 @@ Type *E_fieldAcc::itcheck_fieldAcc_set(Env &env, LookupFlags flags,
     HANDLE_DEPENDENT(firstQVar2);
     if (firstQVar2 &&
         !firstQVar2->isClass()) {
-      return env.error(firstQ->loc, stringc
+      env.error(firstQ->loc, stringc
         << "in " << this->asString() << ", when " << firstQ->qualifier
         << " is found in the class of " << obj->asString() << ", it must be "
         << "a class, not " << kindAndType(firstQVar2));
+      return env.errorType();
     }
     Scope *firstQScope2 = firstQVar2? firstQVar2->getDenotedScope() : NULL;
 
     // combine the two lookups
     if (firstQScope1) {
       if (firstQScope2 && firstQScope1!=firstQScope2) {
-        return env.error(firstQ->loc, stringc
+        env.error(firstQ->loc, stringc
           << "in " << this->asString() << ", " << firstQ->qualifier
           << " was found in the current scope as "
           << kindAndType(firstQVar1) << ", and also in the class of "
           << obj->asString() << " as "
           << kindAndType(firstQVar2) << ", but they must be the same");
+        return env.errorType();
       }
     }
     else {
@@ -7703,8 +7738,9 @@ Type *E_fieldAcc::itcheck_fieldAcc_set(Env &env, LookupFlags flags,
         firstQScope1 = firstQScope2;     // make 'firstQScope1' the only one
       }
       else {
-        return env.error(firstQ->loc, stringc
+        env.error(firstQ->loc, stringc
           << "no such scope `" << firstQ->qualifier << "'");
+        return env.errorType();
       }
     }
 
@@ -7732,32 +7768,35 @@ Type *E_fieldAcc::itcheck_fieldAcc_set(Env &env, LookupFlags flags,
       Variable *var1 = env.unqualifiedLookup_one(rhsFinalTypeName, flags);
       HANDLE_DEPENDENT(var1);
       if (var1 && !var1->isClass()) {
-        return env.error(fieldName->loc, stringc
+        env.error(fieldName->loc, stringc
           << "in " << this->asString() << ", when " << rhsFinalTypeName
           << " is found in the current scope, it must be "
           << "a class, not " << kindAndType(var1));
+        return env.errorType();
       }
 
       // lookup in class of LHS
       Variable *var2 = ct->lookup_one(rhsFinalTypeName, env, flags);
       HANDLE_DEPENDENT(var2);
       if (var2 && !var2->isClass()) {
-        return env.error(fieldName->loc, stringc
+        env.error(fieldName->loc, stringc
           << "in " << this->asString() << ", when " << rhsFinalTypeName
           << " is found in the class of " << obj->asString()
           << ", it must be a class, not " << kindAndType(var2));
+        return env.errorType();
       }
 
       // combine
       if (var1) {
         if (var2) {
           if (!sameCompounds(var1, var2)) {
-            return env.error(fieldName->loc, stringc
+            env.error(fieldName->loc, stringc
               << "in " << this->asString() << ", " << rhsFinalTypeName
               << " was found in the current scope as "
               << kindAndType(var1) << ", and also in the class of "
               << obj->asString() << " as "
               << kindAndType(var2) << ", but they must be the same");
+            return env.errorType();
           }
           // we will use 'var2' below
         }
@@ -7777,8 +7816,9 @@ Type *E_fieldAcc::itcheck_fieldAcc_set(Env &env, LookupFlags flags,
           // we will use 'var2', so nothing needs to be done
         }
         else {
-          return env.error(fieldName->loc, stringc
+          env.error(fieldName->loc, stringc
             << "no such class `" << rhsFinalTypeName << "'");
+          return env.errorType();
         }
       }
 
@@ -7822,8 +7862,9 @@ Type *E_fieldAcc::itcheck_fieldAcc_set(Env &env, LookupFlags flags,
     }
 
     if (!v->scope || !v->scope->curCompound) {
-      return env.error(fieldName->loc, stringc
+      env.error(fieldName->loc, stringc
         << "field `" << *fieldName << "' is not a class member");
+      return env.errorType();
     }
 
     // 10.1p4: Refine the qualifier scope to a class, if possible.
@@ -7841,11 +7882,12 @@ Type *E_fieldAcc::itcheck_fieldAcc_set(Env &env, LookupFlags flags,
     CompoundType *vClass = v->scope->curCompound;
     int subobjs = ct->countBaseClassSubobjects(vClass, requiredBase);
     if (!subobjs) {
-      return env.error(fieldName->loc, stringc
+      env.error(fieldName->loc, stringc
         << "field `" << *fieldName << "' is a member of "
         << kindAndType(vClass->typedefVar)
         << ", which is not a base class of "
         << kindAndType(ct->typedefVar));
+      return env.errorType();
     }
 
     // 10.2p2: must not ambiguously refer to fields of distinct
@@ -7863,9 +7905,10 @@ Type *E_fieldAcc::itcheck_fieldAcc_set(Env &env, LookupFlags flags,
     // does not take into account the notion of "hiding" defined in
     // 10.2p2.
     if (!v->hasFlag(DF_STATIC) && subobjs>1) {
-      return env.error(fieldName->loc, stringc
+      env.error(fieldName->loc, stringc
         << "field `" << *fieldName << "' ambiguously refers to "
         << "elements of multiple base class subobjects");
+      return env.errorType();
     }
   }
 
@@ -8358,8 +8401,9 @@ Type *E_binary::itcheck_x(Env &env, Expression *&replacement)
     // *call* the function, not compare its address), so I do not
     // intend to replicate their bugs in this case.
     // (in/gnu/bugs/gb0003.cc)
-    return env.error("cannot apply '<' to a function; instead, call it "
+    env.error("cannot apply '<' to a function; instead, call it "
                      "or explicitly take its address", EF_DISAMBIGUATES);
+    return env.errorType();
   }
 
   // gnu/c99 complex arithmetic?
@@ -8468,9 +8512,10 @@ Type *E_binary::itcheck_x(Env &env, Expression *&replacement)
       if (op == BIN_ARROW_STAR) {
         // left side should be a pointer to a class
         if (!lhsType->isPointer()) {
-          return env.error(stringc
+          env.error(stringc
             << "left side of ->* must be a pointer, not `"
             << lhsType->toString() << "'");
+          return env.errorType();
         }
         lhsType = lhsType->asPointerType()->atType;
       }
@@ -8482,14 +8527,16 @@ Type *E_binary::itcheck_x(Env &env, Expression *&replacement)
       // left side should be a class
       CompoundType *lhsClass = lhsType->ifCompoundType();
       if (!lhsClass) {
-        return env.error(op==BIN_DOT_STAR?
+        env.error(op==BIN_DOT_STAR?
           "left side of .* must be a class or reference to a class" :
           "left side of ->* must be a pointer to a class");
+        return env.errorType();
       }
 
       // right side should be a pointer to a member
       if (!rhsType->isPointerToMemberType()) {
-        return env.error("right side of .* or ->* must be a pointer-to-member");
+        env.error("right side of .* or ->* must be a pointer-to-member");
+        return env.errorType();
       }
       PointerToMemberType *ptm = rhsType->asPointerToMemberType();
 
@@ -8497,16 +8544,18 @@ Type *E_binary::itcheck_x(Env &env, Expression *&replacement)
       // class unambiguously derived from it
       int subobjs = lhsClass->countBaseClassSubobjects(ptm->inClass());
       if (subobjs == 0) {
-        return env.error(stringc
+        env.error(stringc
           << "the left side of .* or ->* has type `" << lhsClass->name
           << "', but this is not equal to or derived from `" << ptm->inClass()->name
           << "', the class whose members the right side can point at");
+        return env.errorType();
       }
       else if (subobjs > 1) {
-        return env.error(stringc
+        env.error(stringc
           << "the left side of .* or ->* has type `" << lhsClass->name
           << "', but this is derived from `" << ptm->inClass()->name
           << "' ambiguously (in more than one way)");
+        return env.errorType();
       }
 
       // the return type is essentially the 'atType' of 'ptm'
@@ -8551,11 +8600,13 @@ static Type *makePTMType(Env &env, Variable *var, SourceLocation loc)
 
   // cppstd: 8.3.3 para 3, can't be cv void
   if (var->type->isVoid()) {
-    return env.error(loc, "attempted to make a pointer to member to void");
+    env.error(loc, "attempted to make a pointer to member to void");
+    return env.errorType();
   }
   // cppstd: 8.3.3 para 3, can't be a reference
   if (var->type->isReference()) {
-    return env.error(loc, "attempted to make a pointer to member to a reference");
+    env.error(loc, "attempted to make a pointer to member to a reference");
+    return env.errorType();
   }
 
   CompoundType *inClass0 = var->scope->curCompound;
@@ -8724,7 +8775,8 @@ Type *E_cast::itcheck_x(Env &env, Expression *&replacement)
   if (hasTypeDefn(ctype)) {
     if (env.PP.getLangOptions().CPlusPlus) {
       // 5.4p3: not allowed
-      return env.error(ctype->spec->loc, "cannot define types in a cast");
+      env.error(ctype->spec->loc, "cannot define types in a cast");
+      return env.errorType();
     }
     else {
       // similar to the E_sizeofType case
@@ -8962,12 +9014,14 @@ Type *E_cond::itcheck_x(Env &env, Expression *&replacement)
     Type *elConv = attemptCondConversion(env, ic_elToTh, elType, thType, el->getSpecial(env.PP.getLangOptions()));
 
     if (thConv && elConv) {
-      return env.error("class-valued argument(s) to ?: are ambiguously inter-convertible");
+      env.error("class-valued argument(s) to ?: are ambiguously inter-convertible");
+      return env.errorType();
     }
 
     if (thConv) {
       if (ic_thToEl.isAmbiguous()) {
-        return env.error("in ?:, conversion of second arg to type of third is ambiguous");
+        env.error("in ?:, conversion of second arg to type of third is ambiguous");
+        return env.errorType();
       }
 
       // TODO (elaboration): rewrite AST according to 'ic_thToEl'
@@ -8977,7 +9031,8 @@ Type *E_cond::itcheck_x(Env &env, Expression *&replacement)
 
     if (elConv) {
       if (ic_elToTh.isAmbiguous()) {
-        return env.error("in ?:, conversion of third arg to type of second is ambiguous");
+        env.error("in ?:, conversion of third arg to type of second is ambiguous");
+        return env.errorType();
       }
 
       // TODO (elaboration): rewrite AST according to 'ic_elToTh'
@@ -9082,9 +9137,10 @@ Type *E_cond::itcheck_x(Env &env, Expression *&replacement)
   }
 
 incompatible:
-  return env.error(stringc
+  env.error(stringc
     << "incompatible ?: argument types `" << thRval->toString()
     << "' and `" << elRval->toString() << "'");
+  return env.errorType();
 }
 
 
@@ -9095,8 +9151,9 @@ Type *E_sizeofType::itcheck_x(Env &env, Expression *&replacement)
       // 5.3.3p5: cannot define types in 'sizeof'; the reason Elsa
       // enforces this rule is that if we allow type definitions then
       // there can be bad interactions with disambiguation (in/k0035.cc)
-      return env.error(atype->spec->loc,
+      env.error(atype->spec->loc,
                        "cannot define types in a 'sizeof' expression");
+      return env.errorType();
     }
     else {
       // In C mode, it is legal to define types in a 'sizeof'; but
@@ -9385,8 +9442,9 @@ Type *E_keywordCast::itcheck_x(Env &env, Expression *&replacement)
     // 5.2.9p1: not allowed in static_cast
     // 5.2.10p1: not allowed in reinterpret_cast
     // 5.2.11p1: not allowed in const_cast
-    return env.error(ctype->spec->loc, stringc
+    env.error(ctype->spec->loc, stringc
       << "cannot define types in a " << toString(key));
+    return env.errorType();
   }
 
   ASTTypeId::Tcheck tc(DF_NONE, DC_E_KEYWORDCAST);
