@@ -1380,36 +1380,6 @@ SourceLocation Env::loc() const
   return scopeC()->curLoc;
 }
 
-
-sm::string Env::locationStackString() const
-{
-  stringBuilder sb;
-
-  FOREACH_OBJLIST(Scope, scopes, iter) {
-    sb << "  " << toString(iter.data()->curLoc) << "\n";
-  }
-
-  return sb;
-}
-
-
-sm::string Env::instLocStackString() const
-{
-  // build a string that describes the instantiation context
-  if (instantiationLocStack.isEmpty()) {
-    return "";
-  }
-  else {
-    stringBuilder sb;
-    for (int i = instantiationLocStack.length()-1; i >= 0; i--) {
-      sb << " (inst from " << instantiationLocStack[i] << ")";
-    }
-
-    return sb;
-  }
-}
-
-
 // -------- insertion --------
 Scope *Env::acceptingScope(DeclFlags df)
 {
@@ -6084,6 +6054,34 @@ sm::string errorFlagBlock(ErrorFlags eflags)
       sb << "p";     // suppressed b/c of 'p'assive mode
     }
     sb << "] ";
+    return sb;
+  }
+}
+
+sm::string Env::locationStackString() const
+{
+  stringBuilder sb;
+
+  FOREACH_OBJLIST(Scope, scopes, iter) {
+    sb << "  " << toString(iter.data()->curLoc) << "\n";
+  }
+
+  return sb;
+}
+
+
+sm::string Env::instLocStackString() const
+{
+  // build a string that describes the instantiation context
+  if (instantiationLocStack.isEmpty()) {
+    return "";
+  }
+  else {
+    stringBuilder sb;
+    for (int i = instantiationLocStack.length()-1; i >= 0; i--) {
+      sb << " (inst from " << instantiationLocStack[i] << ")";
+    }
+
     return sb;
   }
 }
