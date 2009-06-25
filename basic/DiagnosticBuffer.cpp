@@ -18,7 +18,8 @@ DiagnosticBuffer::~DiagnosticBuffer()
 /** HandleDiagnostic - Store the diagnostics that are reported.
  */ 
 void DiagnosticBuffer::HandleDiagnostic(Diagnostic::Level level,
-                                        const DiagnosticInfo &Info) {
+                                        const DiagnosticInfo &Info,
+                                        std::vector<SourceLocation>*) {
   DiagnosticData* diag = new DiagnosticData();
   *diag = *Info.getDiags();
   diags.push_back(std::pair<Diagnostic::Level, DiagnosticData*>(level, diag));

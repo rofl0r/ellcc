@@ -451,7 +451,7 @@ private:    // funcs
 
 public:     // funcs
   GLR(UserActions *userAct, ParseTables *tables);
-  ~GLR();
+  virtual ~GLR();
 
   // ------- primary interface -------
   // read the named grammar file (.bin extension, typically)
@@ -461,6 +461,8 @@ public:     // funcs
   // semantic value in 'treeTop'
   bool glrParse(LexerInterface &lexer, SemanticValue &treeTop);
 
+  virtual void parseError(SourceLocation loc, sm::string tokenDesc, int state);
+  virtual void parseInfo(SourceLocation loc, sm::string tokenInfo, int state);
 };
 
 

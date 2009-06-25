@@ -77,7 +77,8 @@ public:
                            unsigned Columns);
   
   virtual void HandleDiagnostic(Diagnostic::Level DiagLevel,
-                                const DiagnosticInfo &Info);
+                                const DiagnosticInfo &Info,
+                                std::vector<SourceLocation>* InstantiationLocStack = NULL);
 };
 
 } // end namspace ellcc

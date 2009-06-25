@@ -2736,7 +2736,7 @@ void Env::instantiateFunctionBody(Variable *instV)
   if (delayFunctionInstantiation) {
     TRACE("template", "delaying instantiating of: " << instV->toQualifiedString());
     delayedFuncInsts.prepend(
-      new DelayedFuncInst(instV, instantiationLocStack, loc()));
+      new DelayedFuncInst(instV, diag.InstantiationLocStack, loc()));
   }
   else {
     instantiateFunctionBodyNow(instV, loc());
@@ -5473,7 +5473,7 @@ InstantiationContextIsolator::InstantiationContextIsolator(Env &e, SourceLocatio
     origSecondPass(e.secondPassTcheck),
     origErrors()
 {
-    env.instantiationLocStack.push(loc);
+    env.diag.InstantiationLocStack.push_back(loc);
     env.disambiguationNestingLevel = 0;
     env.secondPassTcheck = false;
     origErrors.takeMessages(env.errors);
@@ -5483,7 +5483,8 @@ InstantiationContextIsolator::InstantiationContextIsolator(Env &e, SourceLocatio
 
 InstantiationContextIsolator::~InstantiationContextIsolator()
 {
-    env.setLoc(env.instantiationLocStack.pop());
+    env.setLoc(env.diag.InstantiationLocStack.back());
+    env.diag.InstantiationLocStack.pop_back();
     env.disambiguationNestingLevel = origNestingLevel;
     env.secondPassTcheck = origSecondPass;
 
@@ -5525,10 +5526,11 @@ void xTypeDeduction(rostring why)
 
 
 // ---------------------- DelayedFuncInst -----------------------
-DelayedFuncInst::DelayedFuncInst(Variable *v, ArrayStack<SourceLocation> const &s,
+DelayedFuncInst::DelayedFuncInst(Variable *v,
+                                 std::vector<SourceLocation> const &s,
                                  SourceLocation L)
   : instV(v),
-    instLocStack(s),
+    InstantiationLocStack(s),
     loc(L)
 {}
 

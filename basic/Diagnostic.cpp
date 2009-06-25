@@ -509,7 +509,8 @@ bool Diagnostic::ProcessDiag() {
     }
   }
 
-  if (   !(Flags & DIAG_WARNING)
+  if (    (Flags & DIAG_FROM_TEMPLATE)
+      && !(Flags & DIAG_WARNING)
       && !(Flags & DIAG_DISAMBIGUATES)
       && !(Flags & DIAG_STRONG)
       && !(Flags & DIAG_REPORT_TEMPLATE)) {
@@ -570,7 +571,7 @@ bool Diagnostic::ProcessDiag() {
   
       assert(Client.size() == 0 && "No Client available for diagnostic reporting.");
       // Finally, report it.
-      Client.back()->HandleDiagnostic(DiagLevel, Info);
+      Client.back()->HandleDiagnostic(DiagLevel, Info, &InstantiationLocStack);
       if (Client.back()->IncludeInDiagnosticCounts()) ++NumDiagnostics;
   }
 

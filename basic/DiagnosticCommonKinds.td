@@ -14,9 +14,11 @@
 let Component = "Common" in {
 
 // RICH: start of used
-def note_previous_definition : Note<"previous definition is here">;
+def note_previous_definition : Note<"previous definition is here:">;
 def err_deprecated_error : Error<"deprecated error %0:%1: %2">;
-def err_deprecated_warning : Error<"deprecated warning %0:%1: %2">;
+def err_deprecated_warning : Warning<"deprecated warning %0:%1: %2">;
+def err_parse_error : Error<"parse error (state %0) at %1">;
+def info_parse_error_token_info : Note<"expected one of these tokens: %0">;
 // RICH: end of used
 
 def note_previous_declaration : Note<"previous declaration is here">;

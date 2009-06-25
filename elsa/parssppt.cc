@@ -25,9 +25,17 @@ public:
     }
     NextTokenFunc getTokenFunc() const;
     sm::string tokenDesc() const
-        { return token.getName(); }
+        { return tokenKindDesc(token.getKind()); }
     sm::string tokenKindDesc(int kind) const
-        { return tok::getTokenName((tok::TokenKind)kind); }
+        { 
+            const char* name = tok::getTokenSimpleSpelling((tok::TokenKind)kind);
+            if (name == NULL) {
+                name = tok::getTokenName((tok::TokenKind)kind);
+               return name;
+            } else {
+                return stringc << "'" <<  name << "'";
+            }
+        }
 private:
     Preprocessor& PP;
     Token token;
@@ -140,6 +148,25 @@ bool glrParseNamedFile(GLR &glr, LexerInterface &lexer, SemanticValue &treeTop,
   return glr.glrParse(lexer, treeTop);
 }
 
+class EGLR : public GLR {
+    Diagnostic& diag;
+public:
+    EGLR(UserActions *userAct, ParseTables *tables, Diagnostic& diag)
+        : GLR(userAct, tables), diag(diag)
+        { }
+    void parseError(SourceLocation loc, sm::string tokenDesc, int state)
+      {
+          SourceManager SM;
+          diag.Report(FullSourceLoc(loc, SM), diag::err_parse_error)
+            << state << tokenDesc.c_str();
+      }
+    void parseInfo(SourceLocation loc, sm::string tokenInfo, int)
+      {
+          SourceManager SM;
+          diag.Report(FullSourceLoc(loc, SM), diag::info_parse_error_token_info)
+            << tokenInfo.c_str();
+      }
+};
 
 bool toplevelParse(ParseTreeAndTokens &ptree, char const *inputFname)
 {
@@ -147,7 +174,7 @@ bool toplevelParse(ParseTreeAndTokens &ptree, char const *inputFname)
   xassert(ptree.userAct != NULL);    // must have been set by now
   xassert(ptree.tables != NULL);
 
-  GLR glr(ptree.userAct, ptree.tables);
+  EGLR glr(ptree.userAct, ptree.tables, ptree.PP.getDiagnostics());
 
   // parse input
   return glrParseNamedFile(glr, *ptree.lexer, ptree.treeTop, inputFname);

@@ -42,7 +42,8 @@ public:
 
   void ErrorsToWarnings();
   
-  void HandleDiagnostic(Diagnostic::Level DiagLevel, const DiagnosticInfo &Info);
+  void HandleDiagnostic(Diagnostic::Level DiagLevel, const DiagnosticInfo &Info,
+                        std::vector<SourceLocation>* InstantiationLocStack = NULL);
 };
 
 } // end namspace ellcc

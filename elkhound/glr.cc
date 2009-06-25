@@ -1415,6 +1415,19 @@ bool GLR::nondeterministicParseToken()
   }
 }
 
+void GLR::parseError(SourceLocation loc, sm::string tokenDesc, int state)
+{
+  std::cout << toString(loc)
+            << ": Parse error (state " << state << ") at "
+            << tokenDesc
+            << std::endl;
+}
+
+void GLR::parseInfo(SourceLocation loc, sm::string tokenInfo, int state)
+{
+    std::cout << "In state " << state << ", I expected one of these tokens:\n";
+    std::cout << "  " << tokenInfo << "\n";
+}
 
 // pulled out of glrParse() to reduce register pressure
 void GLR::printParseErrorMessage(StateId lastToDie)
@@ -1423,28 +1436,25 @@ void GLR::printParseErrorMessage(StateId lastToDie)
     return;
   }
 
+  parseError(lexerPtr->loc, lexerPtr->tokenDesc(), lastToDie);
+
   // print which tokens could have allowed progress; this isn't
   // perfect because I'm only printing this for one state, but in the
   // nondeterministic algorithm there might have been more than one
   // state that could have made progress..
   if (lastToDie != STATE_INVALID) {
-    std::cout << "In state " << lastToDie << ", I expected one of these tokens:\n";
-    std::cout << "  ";
+    sm::string string;
+    bool needComma = false;
     for (int i=0; i < tables->getNumTerms(); i++) {
       ActionEntry act = tables->getActionEntry(lastToDie, i);
       if (!tables->isErrorAction(act)) {
-        //std::cout << "  [" << i << "] " << lexerPtr->tokenKindDesc(i) << "\n";
-        std::cout << lexerPtr->tokenKindDesc(i) << ", ";
+        if (needComma)
+            string &= ", ";
+        string &= lexerPtr->tokenKindDesc(i);
+        needComma = true;
       }
     }
-    std::cout << "\n";
-  }
-  else {                                                                          
-    // this happens because I lose the dead-parser info while processing
-    // the reduction worklist; to implement this I'd need to remember each
-    // state that died while processing the worklist; for now I'll just let
-    // it be, and only have the right info sometimes
-    std::cout << "(expected-token info not available due to nondeterministic mode)\n";
+    parseInfo(lexerPtr->loc, string, lastToDie);
   }
 
   // failure caused by unprimed lexer?
@@ -1452,11 +1462,6 @@ void GLR::printParseErrorMessage(StateId lastToDie)
       lexerPtr->sval == (SemanticValue)LexerInterface::DEFAULT_UNPRIMED_SVAL) {
     std::cout << "It looks like you forgot to prime the lexer before calling the parser.\n";
   }
-
-  std::cout << toString(lexerPtr->loc)
-            << ": Parse error (state " << lastToDie << ") at "
-            << lexerPtr->tokenDesc()
-            << std::endl;
 
   // removing this for now since keeping it would mean putting
   // sample inputs and left contexts for all states into the

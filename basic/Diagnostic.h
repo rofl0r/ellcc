@@ -450,6 +450,13 @@ public:
   unsigned getNumWarnings() const { return NumWarnings; }
   unsigned getNumDiagnostics() const { return NumDiagnostics; }
   
+  /** Stack of locations at which template instantiation has been
+   * initiated but not finished. This information can be used to
+   * make error messages more informative, and also to detect
+   * infinite looping in template instantiation.
+   */
+  std::vector<SourceLocation> InstantiationLocStack;
+
   /// getCustomDiagID - Return an ID for a diagnostic with the specified message
   /// and level.  If this is the first request for this diagnosic, it is
   /// registered and created, otherwise the existing ID is returned.
@@ -868,7 +875,8 @@ public:
   /// HandleDiagnostic - Handle this diagnostic, reporting it to the user or
   /// capturing it to a log as needed.
   virtual void HandleDiagnostic(Diagnostic::Level DiagLevel,
-                                const DiagnosticInfo &Info) = 0;
+                                const DiagnosticInfo &Info,
+                                std::vector<SourceLocation>* InstantiationLocStack = NULL) = 0;
 
   /** Discard buffered diagnostics.
    * Assert if no buffering client is active.

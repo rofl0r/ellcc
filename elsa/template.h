@@ -15,7 +15,6 @@
 
 #include "cc_type.h"         // non-template parts of type system
 
-
 // used for (abstract) template parameter types
 class TypeVariable : public NamedAtomicType {
 public:
@@ -652,14 +651,14 @@ public:      // data
   Variable *instV;
 
   // instantiation location stack
-  ArrayStack<SourceLocation> instLocStack;
+  std::vector<SourceLocation> InstantiationLocStack;
   
   // most proximal location from which the instantiation was
   // requested; additional context is in the loc stack
   SourceLocation loc;
 
 public:
-  DelayedFuncInst(Variable *v, ArrayStack<SourceLocation> const &s,
+  DelayedFuncInst(Variable *v, std::vector<SourceLocation> const &s,
                   SourceLocation loc);
   ~DelayedFuncInst();
 };

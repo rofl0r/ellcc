@@ -321,7 +321,6 @@ Env::Env(StringTable &s, Preprocessor& PP, TypeFactory &tf,
     hiddenErrors(NULL),
     diag(PP.getDiagnostics()),
     SM(PP.getSourceManager()),
-    instantiationLocStack(),
 
     str(s),
     PP(PP),
@@ -550,20 +549,6 @@ Env::Env(StringTable &s, Preprocessor& PP, TypeFactory &tf,
   setupOperatorOverloading();
 
   ctorFinished = true;
-}
-
-// Report a diagnostic.
-DiagnosticBuilder Env::report(SourceLocation loc, unsigned DiagID)
-{
-    DiagnosticBuilder d = diag.Report(FullSourceLoc(loc, SM), DiagID);
-    if (disambiguateOnly) {
-        d << DIAG_FROM_TEMPLATE;
-        if (doReportTemplateErrors) {
-            d << DIAG_REPORT_TEMPLATE;
-        }
-    }
-    
-    return d;
 }
 
 // slightly clever: iterate over an array, but look like
@@ -1014,13 +999,13 @@ void Env::tcheckTranslationUnit(TranslationUnit *tunit)
 
       // set the instantiation loc stack to how it was when
       // the instantiation was delayed
-      instantiationLocStack = dfi->instLocStack;
+      diag.InstantiationLocStack = dfi->InstantiationLocStack;
 
       // instantiate
       instantiateFunctionBodyNow(dfi->instV, dfi->loc);
     }
 
-    instantiationLocStack.empty();
+    diag.InstantiationLocStack.empty();
     xassert(env.scope()->isGlobalScope());
   }
 }
@@ -6070,16 +6055,30 @@ sm::string Env::locationStackString() const
 }
 
 
+// Report a diagnostic.
+DiagnosticBuilder Env::report(SourceLocation loc, unsigned DiagID)
+{
+    DiagnosticBuilder d = diag.Report(FullSourceLoc(loc, SM), DiagID);
+    if (disambiguateOnly) {
+        d << DIAG_FROM_TEMPLATE;
+        if (doReportTemplateErrors) {
+            d << DIAG_REPORT_TEMPLATE;
+        }
+    }
+    
+    return d;
+}
+
 sm::string Env::instLocStackString() const
 {
   // build a string that describes the instantiation context
-  if (instantiationLocStack.isEmpty()) {
+  if (diag.InstantiationLocStack.size() == 0) {
     return "";
   }
   else {
     stringBuilder sb;
-    for (int i = instantiationLocStack.length()-1; i >= 0; i--) {
-      sb << " (inst from " << instantiationLocStack[i] << ")";
+    for (int i = diag.InstantiationLocStack.size()-1; i >= 0; i--) {
+      sb << " (inst from " << diag.InstantiationLocStack[i] << ")";
     }
 
     return sb;

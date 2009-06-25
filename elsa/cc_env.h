@@ -154,12 +154,6 @@ public:      // data
   // Source manager.
   SourceManager& SM;
 
-  // stack of locations at which template instantiation has been
-  // initiated but not finished; this information can be used to
-  // make error messages more informative, and also to detect
-  // infinite looping in template instantiation
-  ArrayStack<SourceLocation> instantiationLocStack;
-
   // string table for making new strings
   StringTable &str;
 
