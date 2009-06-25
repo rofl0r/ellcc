@@ -6016,28 +6016,6 @@ void Env::warning(rostring msg)
   return warning(loc(), msg);
 }
 
-void Env::warning(SourceLocation loc, rostring msg)
-{
-  sm::string instLoc = instLocStackString();
-  TRACE("error", "warning: " << msg << instLoc);
-  errors.addError(new ErrorMsg(loc, msg, EF_WARNING, instLoc));
-}
-
-
-void Env::unimp(rostring msg)
-{
-  sm::string instLoc = instLocStackString();
-
-  // always print this immediately, because in some cases I will
-  // segfault (typically deref'ing NULL) right after printing this
-  cout << toString(loc()) << ": unimplemented: " << msg << instLoc << endl;
-
-  breaker();
-  errors.addError(new ErrorMsg(
-    loc(), stringc << "unimplemented: " << msg, EF_NONE, instLoc));
-}
-
-
 Type *Env::needError(Type *t)
 {
   if (t->isSimple(ST_DEPENDENT)) {
@@ -6115,6 +6093,25 @@ void Env::error(SourceLocation L, rostring msg, ErrorFlags eflags)
   addError(new ErrorMsg(L, msg, eflags));
 }
 
+void Env::warning(SourceLocation loc, rostring msg)
+{
+  sm::string instLoc = instLocStackString();
+  TRACE("error", "warning: " << msg << instLoc);
+  errors.addError(new ErrorMsg(loc, msg, EF_WARNING, instLoc));
+}
+
+void Env::unimp(rostring msg)
+{
+  sm::string instLoc = instLocStackString();
+
+  // always print this immediately, because in some cases I will
+  // segfault (typically deref'ing NULL) right after printing this
+  cout << toString(loc()) << ": unimplemented: " << msg << instLoc << endl;
+
+  breaker();
+  errors.addError(new ErrorMsg(
+    loc(), stringc << "unimplemented: " << msg, EF_NONE, instLoc));
+}
 
 // I want this function to always be last in this file, so I can easily
 // find it to put a breakpoint in it.
