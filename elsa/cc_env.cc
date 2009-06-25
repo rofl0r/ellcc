@@ -3562,7 +3562,9 @@ Variable *Env::createDeclaration(
       }
       else {
         // usual error message
-        error(type, msg);
+        if (env.needError(type) == NULL) {
+            error(msg);
+        }
         goto makeDummyVar;
       }
     }
@@ -3580,12 +3582,14 @@ Variable *Env::createDeclaration(
       // case, d0097.cc is a testcase.
     }
     else if (!sameScopes(prior->skipAlias()->scope, scope)) {
-      error(type, stringc
-            << "prior declaration of `" << name
-            << "' at " << prior->loc
-            << " refers to a different entity, so it conflicts with "
-            << "the one being declared here");
-      goto makeDummyVar;
+        if (env.needError(type) == NULL) {
+            error(stringc
+                << "prior declaration of `" << name
+                << "' at " << prior->loc
+                << " refers to a different entity, so it conflicts with "
+                << "the one being declared here");
+        }
+        goto makeDummyVar;
     }
 
     // ok, use the prior declaration, but update the 'loc'
@@ -3838,14 +3842,16 @@ void Env::handleTypeOfMain(SourceLocation loc, Variable *prior, Type *&type)
 
   // must be 'type' that ends early
   if (!typeIter.isDone()) {
-    error(type, loc, stringc
-      << "prior declaration of main() at " << prior->loc
-      << " had " << pluraln(priorFt->params.count(), "parameter")
-      << ", but this one has " << pluraln(typeFt->params.count(), "parameter")
-      << "; we do allow the parameter lists of main() to vary, "
-      << "but only when the earliest declaration has the largest "
-      << "number of parameters");
-    return;
+      if (env.needError(type) == NULL) {
+        error(loc, stringc
+            << "prior declaration of main() at " << prior->loc
+            << " had " << pluraln(priorFt->params.count(), "parameter")
+            << ", but this one has " << pluraln(typeFt->params.count(), "parameter")
+            << "; we do allow the parameter lists of main() to vary, "
+            << "but only when the earliest declaration has the largest "
+            << "number of parameters");
+      }
+      return;
   }
 
   // build a new FunctionType that is like 'dt.type' but has the
@@ -6032,7 +6038,7 @@ void Env::unimp(rostring msg)
 }
 
 
-Type *Env::error(Type *t, SourceLocation loc, rostring msg)
+Type *Env::needError(Type *t)
 {
   if (t->isSimple(ST_DEPENDENT)) {
     // no report, propagate dependentness
@@ -6044,14 +6050,8 @@ Type *Env::error(Type *t, SourceLocation loc, rostring msg)
     return getSimpleType(ST_ERROR);
   }
 
-  // report
-  error(loc, msg, EF_NONE);
-  return env.errorType();
-}
-
-Type *Env::error(Type *t, rostring msg)
-{
-  return error(t, loc(), msg);
+  // Need the error.
+  return NULL;
 }
 
 bool Env::doOperatorOverload() const
@@ -6078,13 +6078,6 @@ void Env::diagnose3(bool3 b, SourceLocation L, rostring msg)
     error(L, msg);
   }
 }
-
-void Env::weakError(SourceLocation L, rostring msg)
-{
-  warning(L, stringc << msg <<
-    " (this will be an error when the implementation matures)");
-}
-
 
 sm::string errorFlagBlock(ErrorFlags eflags)
 {

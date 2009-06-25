@@ -1517,8 +1517,13 @@ Type *TypeSpecifier::tcheck(Env &env, DeclFlags dflags, LookupFlags lflags)
       return t;    // ignore the cv-flags
     }
     else {
-      return env.error(t, stringc
-        << "cannot apply const/volatile to type `" << t->toString() << "'");
+        Type* et = env.needError(t);
+        if (et == NULL) {
+            env.error(stringc
+                << "cannot apply const/volatile to type `" << t->toString() << "'");
+            et = env.errorType();
+        }
+        return et;
     }
   }
   return ret;
@@ -1880,9 +1885,11 @@ CompoundType *checkClasskeyAndName(
           return NULL;
         }
         else {
-          env.error(tag->type, stringc
-            << "`" << *name << "' is not a struct/class/union");
-          return NULL;
+            if (env.needError(tag->type) == NULL) {
+                env.error(stringc
+                    << "`" << *name << "' is not a struct/class/union");
+            }
+            return NULL;
         }
       }
     }
@@ -3137,10 +3144,12 @@ realStart:
     if (prior->overload) {
       // only functions can be overloaded
       if (!dt.type->isFunctionType()) {
-        env.error(dt.type, stringc
-          << "the name `" << *name << "' is overloaded, but the type `"
-          << dt.type->toString() << "' isn't even a function; it must "
-          << "be a function and match one of the overloadings");
+        if (env.needError(dt.type) == NULL) {
+            env.error(stringc
+                << "the name `" << *name << "' is overloaded, but the type `"
+                << dt.type->toString() << "' isn't even a function; it must "
+                << "be a function and match one of the overloadings");
+        }
         goto makeDummyVar;
       }
       FunctionType *dtft = dt.type->asFunctionType();
@@ -6436,10 +6445,12 @@ int compareArgsToParams(Env &env, FunctionType *ft, FakeList<ArgExpression> *arg
       if (env.elaborateImplicitConversionArgToParam(param->type, arg->expr)) {
         xassert(arg->ambiguity == NULL);
       } else {
-        env.error(arg->getType(), stringc
-                  << "cannot convert argument type `" << arg->getType()->toString()
-                  << "' to parameter " << paramIndex
-                  << " type `" << param->type->toString() << "'");
+        if (env.needError(arg->getType()) == NULL) {
+            env.error(stringc
+                << "cannot convert argument type `" << arg->getType()->toString()
+                << "' to parameter " << paramIndex
+                << " type `" << param->type->toString() << "'");
+        }
       }
     }
   }
@@ -6926,9 +6937,14 @@ Type *E_funCall::inner2_itcheck(Env &env, LookupSet &candidates)
   }
 
   if (!t->isFunctionType()) {
-    return env.error(t, stringc
-      << "you can't use an expression of type `" << t->toString()
-      << "' as a function");
+    Type* et = env.needError(t);
+    if (et == NULL) {
+        env.error(stringc
+            << "you can't use an expression of type `" << t->toString()
+            << "' as a function");
+        et = env.errorType();
+    }
+    return et;
   }
 
   FunctionType *ft = t->asFunctionType();
@@ -7527,9 +7543,14 @@ Type *E_fieldAcc::itcheck_fieldAcc_set(Env &env, LookupFlags flags,
     // 5.2.4: pseudo-destructor
     if (!isDestructor ||
         !fieldName->getUnqualifiedName()->isPQ_name()) {
-      return env.error(lhsType, fieldName->loc, stringc
-        << "RHS of . or -> must be of the form \"~ identifier\" if the LHS "
-        << "is not a class; the LHS is `" << lhsType->toString() << "'");
+        Type* et = env.needError(lhsType);
+        if (et == NULL) {
+            env.error(fieldName->loc, stringc
+                << "RHS of . or -> must be of the form \"~ identifier\" if the LHS "
+                << "is not a class; the LHS is `" << lhsType->toString() << "'");
+            et = env.errorType();
+        }
+        return et;
     }
 
     // this will be set to the type of the RHS
@@ -7845,9 +7866,14 @@ Type *E_fieldAcc::itcheck_fieldAcc_set(Env &env, LookupFlags flags,
       return env.errorType();
     }
 
-    return env.error(lhsType, stringc
-      << "there is no member called `" << *fieldName
-      << "' in " << lhsType->toString());
+    Type* et = env.needError(lhsType);
+    if (et == NULL) {
+        env.error(stringc
+            << "there is no member called `" << *fieldName
+            << "' in " << lhsType->toString());
+        et = env.errorType();
+    }
+    return et;
   }
 
   // should only get members of 'ct' or base classes
@@ -7915,8 +7941,13 @@ Type *E_fieldAcc::itcheck_fieldAcc_set(Env &env, LookupFlags flags,
 
   // should not be a type (5.2.5p4b4)
   if (f->hasFlag(DF_TYPEDEF)) {
-    return env.error(lhsType, stringc
-      << "member `" << *fieldName << "' is a typedef!");
+    Type* et = env.needError(lhsType);
+    if (et == NULL) {
+        env.error(stringc
+            << "member `" << *fieldName << "' is a typedef!");
+        et = env.errorType();
+    }
+    return et;
   }
 
   // TODO: access control check
@@ -8280,6 +8311,7 @@ Type *E_unary::itcheck_x(Env &env, Expression *&replacement)
   Type *t = expr->type->asRval();
 
   // make sure 'expr' is compatible with given operator
+  Type* et;
   switch (op) {
     default:
       xfailure("bad operator kind");
@@ -8292,26 +8324,38 @@ Type *E_unary::itcheck_x(Env &env, Expression *&replacement)
       if (t->isPointerType()) {
         return t;
       }
-      return env.error(t, stringc
-        << "argument to unary + must be of arithmetic, enumeration, or pointer type, not `"
-        << t->toString() << "'");
+      et = env.needError(t);
+      if (et == NULL) {
+          env.error(stringc
+              << "argument to unary + must be of arithmetic, enumeration, or pointer type, not `"
+              << t->toString() << "'");
+          et = env.errorType();
+      }
+      return et;
 
     case UNY_MINUS:
       // 5.3.1 para 7
       if (isArithmeticOrEnumType(t)) {
         return env.getSimpleType(applyIntegralPromotions(t));
       }
-      return env.error(t, stringc
-        << "argument to unary - must be of arithmetic or enumeration type, not `"
-        << t->toString() << "'");
+      et = env.needError(t);
+      if (et == NULL) {
+          env.error(stringc
+              << "argument to unary - must be of arithmetic or enumeration type, not `"
+              << t->toString() << "'");
+          et = env.errorType();
+      }
+      return et;
 
     case UNY_NOT: {
       // 5.3.1 para 8
       Type *t_bool = env.getSimpleType(ST_BOOL);
       if (!getImplicitConversion(env, expr->getSpecial(env.PP.getLangOptions()), t, t_bool)) {
-        env.error(t, stringc
-          << "argument to unary ! must be convertible to bool; `"
-          << t->toString() << "' is not");
+        if (env.needError(t) == NULL) {
+            env.error(stringc
+                << "argument to unary ! must be convertible to bool; `"
+                << t->toString() << "' is not");
+        }
       }
       return t_bool;
     }
@@ -8321,9 +8365,14 @@ Type *E_unary::itcheck_x(Env &env, Expression *&replacement)
       if (t->isIntegerType() || t->isEnumType()) {
         return env.getSimpleType(applyIntegralPromotions(t));
       }
-      return env.error(t, stringc
-        << "argument to unary ~ must be of integer or enumeration type, not `"
-        << t->toString() << "'");
+      et = env.needError(t);
+      if (et == NULL) {
+          env.error(stringc
+              << "argument to unary ~ must be of integer or enumeration type, not `"
+              << t->toString() << "'");
+          et = env.errorType();
+      }
+      return et;
 
       // 5.3.1 para 9 also mentions an ambiguity with "~X()", which I
       // tried to exercise in in/t0343.cc, but I can't seem to get it;
@@ -8705,9 +8754,14 @@ Type *E_addrOf::itcheck_addrOf_set(Env &env, Expression *&replacement,
   }
 
   if (!expr->type->isLval()) {
-    return env.error(expr->type, stringc
-      << "cannot take address of non-lvalue `"
-      << expr->type->toString() << "'");
+    Type* et = env.needError(expr->type);
+    if (et == NULL) {
+        env.error(stringc
+            << "cannot take address of non-lvalue `"
+            << expr->type->toString() << "'");
+        et = env.errorType();
+    }
+    return et;
   }
   ReferenceType *rt = expr->type->asReferenceType();
 
@@ -8739,7 +8793,12 @@ Type *E_deref::itcheck_x(Env &env, Expression *&replacement)
   if (rt->isPointerType()) {
     PointerType *pt = rt->asPointerType();
     if (pt->atType->isVoid()) {
-      return env.error(rt, stringc << "cannot dereference type `" << rt->toString() << "'");
+        Type* et = env.needError(rt);
+        if (et == NULL) {
+            env.error(stringc << "cannot dereference type `" << rt->toString() << "'");
+            et = env.errorType();
+        }
+        return et;
     }
 
     // dereferencing yields an lvalue
@@ -8753,7 +8812,12 @@ Type *E_deref::itcheck_x(Env &env, Expression *&replacement)
     return rt;
   }
 
-  return env.error(rt, stringc << "cannot dereference non-pointer type `" << rt->toString() << "'");
+  Type* et = env.needError(rt);
+  if (et == NULL) {
+      env.error(stringc << "cannot dereference non-pointer type `" << rt->toString() << "'");
+      et = env.errorType();
+  }
+  return et;
 }
 
 
@@ -8922,9 +8986,12 @@ Type *E_cond::itcheck_x(Env &env, Expression *&replacement)
   // para 1: 'cond' converted to bool
   if (!getImplicitConversion(env, cond->getSpecial(env.PP.getLangOptions()), cond->type,
                              env.getSimpleType(ST_BOOL))) {
-    env.error(cond->type, stringc
-      << "cannot convert `" << cond->type->toString()
-      << "' to bool for conditional of ?:");
+    Type* et = env.needError(cond->type);
+    if (et == NULL) {
+        env.error(stringc
+            << "cannot convert `" << cond->type->toString()
+            << "' to bool for conditional of ?:");
+    }
   }
   // TODO (elaboration): rewrite AST if a user-defined conversion was used
 
@@ -9366,23 +9433,29 @@ Type *E_delete::itcheck_x(Env &env, Expression *&replacement)
           selectedRetType = ft->retType;
         }
         else {
-          env.error(t, stringb(
-            "attempt to apply 'delete' to object of type \"" <<
-            t->toString() << "\", but it has more than one conversion "
-            "operator yielding pointer type: at least \"" <<
-            selected->toString() << "\" and \"" <<
-            conv->toString() << "\""));
-          break;     // do not report more than one pair
+            Type* et = env.needError(t);
+            if (et == NULL) {
+                env.error(stringb(
+                    "attempt to apply 'delete' to object of type \"" <<
+                    t->toString() << "\", but it has more than one conversion "
+                    "operator yielding pointer type: at least \"" <<
+                    selected->toString() << "\" and \"" <<
+                    conv->toString() << "\""));
+            }
+            break;     // do not report more than one pair
         }
       }
     }
 
     // did we find one?
     if (!selected) {
-      env.error(t, stringb(
-        "applied 'delete' to object of type \"" <<
-        t->toString() << "\", but it does not have any conversion "
-        "operators that yield pointer type"));
+      Type* et = env.needError(t);
+      if (et == NULL) {
+        env.error(stringb(
+            "applied 'delete' to object of type \"" <<
+            t->toString() << "\", but it does not have any conversion "
+            "operators that yield pointer type"));
+      }
     }
     else {
       // create a call to the chosen conversion function
@@ -9800,9 +9873,12 @@ void initializeAggregate(Env &env, Type *type,
         type,
         false /*destIsReceiver*/);
       if (!ic) {
-        env.error(arg->getType(), stringc
-          << "cannot convert initializer type `" << arg->getType()->toString()
-          << "' to type `" << type->toString() << "'");
+        Type* et = env.needError(arg->getType());
+        if (et == NULL) {
+            env.error(stringc
+                << "cannot convert initializer type `" << arg->getType()->toString()
+                << "' to type `" << type->toString() << "'");
+        }
       }
     }
   }
@@ -9825,16 +9901,6 @@ void IN_compound::tcheck(Env &env, Type *type)
 
   // we should have consumed them all
   if (!initIter.isDone()) {
-    // This is a weak error because of designated initializers,
-    // e.g., in/gnu/t0130.cc and in/c99/t0133.cc.  Once we get
-    // the compound_init stuff folded into Elsa I should be able
-    // to turn this into a real error.
-    //
-    // 2005-04-15: for the moment it is more annoying than helpful...
-    //env.weakError(loc, stringc
-    //  << "too many initializers (" << inits.count()
-    //  << ") supplied for `" << type->toString() << "'");
-
     // tcheck the extra exprs anyway
     while (!initIter.isDone()) {
       initIter.data()->tcheck(env, type /*wrong but whatever*/);
@@ -9871,9 +9937,12 @@ void IN_ctor::tcheck(Env &env, Type *destType)
         destType,
         false /*destIsReceiver*/);
       if (!ic) {
-        env.error(srcType, stringc
-          << "cannot convert initializer type `" << srcType->toString()
-          << "' to target type `" << destType->toString() << "'");
+        Type* et = env.needError(srcType);
+        if (et == NULL) {
+            env.error(stringc
+                << "cannot convert initializer type `" << srcType->toString()
+                << "' to target type `" << destType->toString() << "'");
+        }
         return;
       }
 

@@ -557,15 +557,9 @@ public:      // funcs
   void unimp(rostring msg);
   void diagnose3(bool3 b, SourceLocation L, rostring msg);
 
-  // this is used when something is nominally an error, but I think
-  // or know that the code that detects the error is itself not yet
-  // trustworthy, so I want to just accept the input with a warning
-  void weakError(SourceLocation L, rostring msg);
-
   // diagnostics involving type clashes; will be suppressed
   // if the type is ST_ERROR
-  Type *error(Type *t, rostring msg);
-  Type *error(Type *t, SourceLocation loc, rostring msg);
+  Type *needError(Type *t);
 
   // just return ST_ERROR
   Type *errorType();

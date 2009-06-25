@@ -3398,10 +3398,12 @@ void Env::setSTemplArgFromExpr(STemplateArgument &sarg, Expression const *expr,
   }
 
   else {
-    env.error(expr->type, stringc
-      << "`" << expr->exprToString() << "' has type `"
-      << expr->type->toString() << "' but that's not an allowable "
-      << "type for a non-type template argument");
+    if (env.needError(expr->type) == NULL) {
+        env.error(stringc
+            << "`" << expr->exprToString() << "' has type `"
+            << expr->type->toString() << "' but that's not an allowable "
+            << "type for a non-type template argument");
+    }
   }
 }
 

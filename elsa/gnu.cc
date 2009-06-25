@@ -731,9 +731,12 @@ void S_computedGoto::itcheck(Env &env)
   // appear to enforce any restrictions on the type (!).
   Type *t = target->type->asRval();
   if (!t->isPointer()) {
-    env.error(t, stringc
-      << "type of expression in computed goto must be a pointer, not `"
-      << t->toString() << "'");
+      Type* et = env.needError(t);
+      if (et == NULL) {
+        env.error(stringc
+            << "type of expression in computed goto must be a pointer, not `"
+            << t->toString() << "'");
+      }
   }
 }
 
