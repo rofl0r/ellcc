@@ -574,8 +574,7 @@ static bool PrintWordWrapped(llvm::raw_ostream &OS,
 }
 
 void TextDiagnosticPrinter::HandleDiagnostic(Diagnostic::Level Level, 
-                                             const DiagnosticInfo &Info,
-                                             std::vector<SourceLocation>* InstantiationLocStack)
+                                             const DiagnosticInfo &Info)
 {
   // Keeps track of the the starting position of the location
   // information (e.g., "foo.c:10:4:") that precedes the error

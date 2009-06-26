@@ -1575,6 +1575,7 @@ Type *TS_name::itcheck(Env &env, DeclFlags dflags, LookupFlags lflags)
   tcheckPQName(name, env, NULL /*scope*/, lflags);
 
   ErrorFlags eflags = EF_NONE;
+  DiagFlags diagflags = DIAG_NONE;
   lflags |= LF_EXPECTING_TYPE;
 
   // should I use 'nondependentVar'?
@@ -1599,6 +1600,7 @@ Type *TS_name::itcheck(Env &env, DeclFlags dflags, LookupFlags lflags)
     // are non-disambiguating, because the syntax is unambiguous;
     // otherwise, they are disambiguating (which is the usual case)
     eflags |= EF_DISAMBIGUATES;
+    diagflags |= DIAG_DISAMBIGUATES;
   }
 
   if (!env.PP.getLangOptions().CPlusPlus) {
@@ -1638,6 +1640,7 @@ do_lookup:
       Variable *primary = env.lookupPQ_one(name, lflags | LF_TEMPL_PRIMARY);
       if (primary && primary->isType() && primary->isTemplate()) {
         eflags &= ~EF_DISAMBIGUATES;
+        diagflags &= ~DIAG_DISAMBIGUATES;
       }
     }
 
@@ -1645,8 +1648,8 @@ do_lookup:
     // error message in E_variable::itcheck is not marked as such, it
     // means we prefer to report the error as if the interpretation as
     // "variable" were the only one.
-    env.error(stringc
-      << "there is no type called `" << *name << "'", eflags);
+
+    env.report(loc, diag::err_unknown_type) << (*name).getName() << diagflags;
     return env.errorType();
   }
 

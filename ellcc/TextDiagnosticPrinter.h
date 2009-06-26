@@ -12,8 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_FRONTEND_TEXT_DIAGNOSTIC_PRINTER_H_
-#define LLVM_CLANG_FRONTEND_TEXT_DIAGNOSTIC_PRINTER_H_
+#ifndef TEXT_DIAGNOSTIC_PRINTER_H
+#define TEXT_DIAGNOSTIC_PRINTER_H
 
 #include "Diagnostic.h"
 #include "SourceLocation.h"
@@ -77,8 +77,7 @@ public:
                            unsigned Columns);
   
   virtual void HandleDiagnostic(Diagnostic::Level DiagLevel,
-                                const DiagnosticInfo &Info,
-                                std::vector<SourceLocation>* InstantiationLocStack = NULL);
+                                const DiagnosticInfo &Info);
 };
 
 } // end namspace ellcc

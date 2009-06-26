@@ -19,8 +19,7 @@ using namespace ellcc;
 /// reported.
 /// 
 void TextDiagnosticBuffer::HandleDiagnostic(Diagnostic::Level Level,
-                                            const DiagnosticInfo &Info,
-                                             std::vector<SourceLocation>*)
+                                            const DiagnosticInfo &Info)
 {
   llvm::SmallString<100> StrC;
   Info.FormatDiagnostic(StrC);

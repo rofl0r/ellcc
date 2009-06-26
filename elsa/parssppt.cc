@@ -163,7 +163,7 @@ public:
     void parseInfo(SourceLocation loc, sm::string tokenInfo, int)
       {
           SourceManager SM;
-          diag.Report(FullSourceLoc(loc, SM), diag::info_parse_error_token_info)
+          diag.Report(FullSourceLoc(loc, SM), diag::note_parse_error_token_info)
             << tokenInfo.c_str();
       }
 };

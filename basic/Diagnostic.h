@@ -875,8 +875,7 @@ public:
   /// HandleDiagnostic - Handle this diagnostic, reporting it to the user or
   /// capturing it to a log as needed.
   virtual void HandleDiagnostic(Diagnostic::Level DiagLevel,
-                                const DiagnosticInfo &Info,
-                                std::vector<SourceLocation>* InstantiationLocStack = NULL) = 0;
+                                const DiagnosticInfo &Info) = 0;
 
   /** Discard buffered diagnostics.
    * Assert if no buffering client is active.

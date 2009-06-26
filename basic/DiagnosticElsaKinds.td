@@ -15,6 +15,8 @@ def err_typecheck_no_member : Error<"'%0' has no member named '%1'">;
 
 def err_unknown_namespace : Error<"namespace '%0' does not exist">;
 
+def err_unknown_type : Error<"there is no type called '%0'">;
+
 def err_using_needs_qualified_name : Error<"a using declaration requires a qualified name">;
 
 def err_memberless_aggregate_initialization : Error<"can't initialize memberless aggregate '%0'">;
@@ -37,6 +39,8 @@ def err_template_explicit_instantiation_without_class
     : Error<"explicit instantiation (without declarator) requires \"class ...\"">;
 def err_template_explicit_instantiation_too_many_declarators
     : Error<"too many declarators in explicit instantiation">;
+def note_template_from_template
+    : Note<"from template; would be suppressed in permissive mode">;
 
 def err_class_not_constructor_or_member
     : Error<"%0 are only valid for class member functions (constructors in particular)">;

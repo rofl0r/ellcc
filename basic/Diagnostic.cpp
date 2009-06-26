@@ -19,6 +19,7 @@
 #include "DiagnosticBuffer.h"
 #include "IdentifierTable.h"
 #include "SourceLocation.h"
+#include "SourceManager.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringExtras.h"
 #include <vector>
@@ -571,11 +572,22 @@ bool Diagnostic::ProcessDiag() {
   
       assert(Client.size() == 0 && "No Client available for diagnostic reporting.");
       // Finally, report it.
-      Client.back()->HandleDiagnostic(DiagLevel, Info, &InstantiationLocStack);
+      Client.back()->HandleDiagnostic(DiagLevel, Info);
       if (Client.back()->IncludeInDiagnosticCounts()) ++NumDiagnostics;
   }
 
   DiagID = ~0U;
+  if (Flags & DIAG_FROM_TEMPLATE) {
+      Flags = DIAG_NONE;
+      Report(Info.getLocation(), diag::note_template_from_template);
+  }
+  if (DiagLevel != Diagnostic::Note && InstantiationLocStack.size()) {
+      SourceManager SM;
+      for (int i = InstantiationLocStack.size() - 1; i >= 0; --i) {
+          SourceLocation loc = InstantiationLocStack[i];
+          Report(FullSourceLoc(loc,SM), diag::note_instantiated_from);
+      }
+  }
   return true;
 }
 

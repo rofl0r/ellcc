@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_FRONTEND_TEXT_DIAGNOSTIC_BUFFER_H_
-#define LLVM_CLANG_FRONTEND_TEXT_DIAGNOSTIC_BUFFER_H_
+#ifndef TEXT_DIAGNOSTIC_BUFFER_H
+#define TEXT_DIAGNOSTIC_BUFFER_H
 
 #include "Diagnostic.h"
 #include <vector>
@@ -40,8 +40,7 @@ public:
   const_iterator note_end() const   { return Notes.end(); }
 
   virtual void HandleDiagnostic(Diagnostic::Level DiagLevel,
-                                const DiagnosticInfo &Info,
-                                std::vector<SourceLocation>* InstantiationLocStack = NULL);
+                                const DiagnosticInfo &Info);
 };
 
 } // end namspace ellcc
