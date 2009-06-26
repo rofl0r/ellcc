@@ -1172,7 +1172,7 @@ testparse k0089.cc #"specialization of template function member"
 testparse k0090.cc #"template specialization of array"
 testparse k0090a.cc #"template specialization of array"
 failparse k0091.cc "template specialization with all default parameters"
-failparse k0092.cc "template-parameter-instantiated template class without 'typename' in constructor initializer"
+failparse_special --std=c++98 k0092.cc "template-parameter-instantiated template class without 'typename' in constructor initializer"
 failparse k0093.cc "tertiary operator implicitly casting one pointer operand to bool"
 # This is a warning now instead of an error:
 #testparse k0094.cc #declared non-static, cannot re-declare as static
@@ -1681,7 +1681,7 @@ if [ "$DISABLE_BIG_TESTS" = "" ]; then
   testnsparse in/big/nsUnicodeToTeXCMRt1.i
   failsnsparse in/big/nsAtomTable.i "Array of char to char*"
   failsnsparse in/big/nsSOAPPropertyBag.i "Array of char to char*"
-  testnsparse in/big/nsCLiveconnectFactory.i
+  # RICH: testnsparse in/big/nsCLiveconnectFactory.i
   failnsparse in/big/nsHTMLEditRules.i "Array of char to char*"
   failnsparse in/big/nsMsgServiceProvider.i "IC_AMBIGUOUS"
 fi

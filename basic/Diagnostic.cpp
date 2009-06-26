@@ -553,17 +553,20 @@ bool Diagnostic::ProcessDiag() {
     return false;
   }
 
+  if (DiagLevel == Diagnostic::Warning || (Flags & DIAG_WARNING)) {
+      DiagLevel = Diagnostic::Warning;
+  }
   if (Client.size() > 1) {
       // Buffering diagnostics, don't count yet.
       Client.back()->HandleDiagnostic(DiagLevel, Info);
   } else {
+      if (DiagLevel == Diagnostic::Warning || (Flags & DIAG_WARNING)) {
+          ++NumWarnings;
+          Flags |= DIAG_WARNING;
+      }
       if (DiagLevel >= Diagnostic::Error) {
           ErrorOccurred = true;
           ++NumErrors;
-      } else if (DiagLevel == Diagnostic::Warning || (Flags & DIAG_WARNING)) {
-          ++NumWarnings;
-          DiagLevel = Diagnostic::Warning;
-          Flags |= DIAG_WARNING;
       }
       if (Flags & DIAG_DISAMBIGUATES)
             ++NumDisambiguates;

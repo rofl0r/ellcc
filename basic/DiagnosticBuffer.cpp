@@ -27,7 +27,7 @@ void DiagnosticBuffer::HandleDiagnostic(Diagnostic::Level level,
 
 void DiagnosticBuffer::Filter(DiagFlags flags)
 {
-    for (DiagnosticBuffer::iterator it = diags.begin(); it != diags.end(); ++it) {
+    for (iterator it = diags.begin(); it != diags.end(); ++it) {
         if ((it->second->getFlags() & flags) == DIAG_NONE) {
             it->second->addFlags(DIAG_IGNORE);
         }
@@ -48,7 +48,7 @@ int DiagnosticBuffer::NumberOf(DiagFlags flags)
 
 void DiagnosticBuffer::ErrorsToWarnings()
 {
-    for (DiagnosticBuffer::iterator it = diags.begin(); it != diags.end(); ++it) {
+    for (iterator it = diags.begin(); it != diags.end(); ++it) {
         if (it->first == Diagnostic::Error) {
             it->first = Diagnostic::Warning;
             it->second->addFlags(DIAG_WARNING);

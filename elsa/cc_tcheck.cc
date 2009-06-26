@@ -1573,7 +1573,6 @@ Type *TS_name::itcheck(Env &env, DeclFlags dflags, LookupFlags lflags)
 {
   tcheckPQName(name, env, NULL /*scope*/, lflags);
 
-  ErrorFlags eflags = EF_NONE;
   DiagFlags diagflags = DIAG_NONE;
   lflags |= LF_EXPECTING_TYPE;
 
@@ -1589,7 +1588,7 @@ Type *TS_name::itcheck(Env &env, DeclFlags dflags, LookupFlags lflags)
       // cppstd 14.6 para 5, excerpt:
       //   "The keyword typename shall only be applied to qualified
       //    names, but those names need not be dependent."
-      env.error("the `typename' keyword can only be used with a qualified name");
+      env.report(loc, diag::err_template_typename_on_qualified_name_only);
     }
 
     lflags |= LF_TYPENAME;
@@ -1598,7 +1597,6 @@ Type *TS_name::itcheck(Env &env, DeclFlags dflags, LookupFlags lflags)
     // if the user uses the keyword "typename", then the lookup errors
     // are non-disambiguating, because the syntax is unambiguous;
     // otherwise, they are disambiguating (which is the usual case)
-    eflags |= EF_DISAMBIGUATES;
     diagflags |= DIAG_DISAMBIGUATES;
   }
 
@@ -1638,7 +1636,6 @@ do_lookup:
     if (name->isPQ_template()) {
       Variable *primary = env.lookupPQ_one(name, lflags | LF_TEMPL_PRIMARY);
       if (primary && primary->isType() && primary->isTemplate()) {
-        eflags &= ~EF_DISAMBIGUATES;
         diagflags &= ~DIAG_DISAMBIGUATES;
       }
     }
@@ -1665,15 +1662,16 @@ do_lookup:
       }
       else {
         // more informative error message (in/d0111.cc, error 1)
-        env.error(stringc
-          << "dependent name `" << *name
-          << "' used as a type, but the 'typename' keyword was not supplied", eflags);
+        env.report(loc, diag::err_template_typename_required_on_qualified_name)
+            << (*name).getName()
+            << diagflags;
         return env.errorType();
       }
     }
     else {
-      env.error(stringc
-        << "variable name `" << *name << "' used as if it were a type", eflags);
+      env.report(loc, diag::err_variable_used_as_type)
+          << (*name).getName()
+          << diagflags;
       return env.errorType();
     }
   }
@@ -1782,7 +1780,7 @@ CompoundType *checkClasskeyAndName(
   if (dflags & DF_FRIEND) {
     if (definition) {
       // 11.4p2
-      env.error("you cannot define a class in a friend definitions");
+      env.report(env.loc(), diag::err_class_define_class_in_friend_definition);
       return NULL;
     }
     forward = false;
@@ -1823,10 +1821,8 @@ CompoundType *checkClasskeyAndName(
 
       // pretend we saw "template <>"
       templateParams = new SObjList<Variable>;    // will be leaked
-    }
-    else {
-      env.error("class specifier name can have template arguments "
-                "only in a templatized definition");
+    } else {
+      env.report(env.loc(), diag::err_class_specifier_name_with_template_arguments);
       return NULL;
     }
   }
