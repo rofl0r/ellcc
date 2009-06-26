@@ -1519,8 +1519,7 @@ Type *TypeSpecifier::tcheck(Env &env, DeclFlags dflags, LookupFlags lflags)
     else {
         Type* et = env.needError(t);
         if (et == NULL) {
-            env.error(stringc
-                << "cannot apply const/volatile to type `" << t->toString() << "'");
+            env.report(loc, diag::err_specifier_invalid) << t->toString();
             et = env.errorType();
         }
         return et;

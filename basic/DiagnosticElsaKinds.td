@@ -19,6 +19,8 @@ def err_undeclared_identifier : Error<"undeclared identifier '%0'">;
 def err_redefinition_of_identifier : Error<"redefinition of '%0'">;
 def err_unknown_type : Error<"there is no type called '%0'">;
 
+def err_specifier_invalid : Error<"cannot apply const/volatile to type '%0'">;
+
 def err_expr_not_ice : Error<"expression is not an integer constant expression">;
 
 def err_namespace_unknown : Error<"namespace '%0' does not exist">;

@@ -697,6 +697,13 @@ inline const DiagnosticBuilder &operator<<(const DiagnosticBuilder &DB,
 }
 
 inline const DiagnosticBuilder &operator<<(const DiagnosticBuilder &DB,
+                                           const sm::string &S) {
+  std::string s(S.c_str());
+  DB.AddString(s);
+  return DB;
+}
+
+inline const DiagnosticBuilder &operator<<(const DiagnosticBuilder &DB,
                                            const char *Str) {
   DB.AddTaggedVal(reinterpret_cast<intptr_t>(Str),
                   Diagnostic::ak_c_string);
