@@ -892,7 +892,7 @@ void MemberInit::tcheck(Env &env, CompoundType *enclosing)
   }
   else {
     // complain
-    env.report(loc, diag::err_typecheck_no_member)
+    env.report(loc, diag::err_class_no_member)
                << (*enclosing).name
                << (*name).getName();
     return;
@@ -2491,7 +2491,7 @@ Type *TS_enumSpec::itcheck(Env &env, DeclFlags dflags, LookupFlags lflags)
 void checkMemberFlags(Env &env, DeclFlags flags)
 {
   if (flags & (DF_AUTO | DF_EXTERN | DF_REGISTER)) {
-    env.report(env.loc(), diag::err_member_storage_class);
+    env.report(env.loc(), diag::err_class_member_storage_class);
   }
 }
 
@@ -9846,7 +9846,7 @@ void initializeAggregate(Env &env, Type *type,
       // 8.5.1: initialize successive data fields with successive initializers
       SObjListIter<Variable> memberIter(ct->dataMembers);
       if (memberIter.isDone()) {    // no data fields?
-        env.report(env.loc(), diag::err_memberless_aggregate_initialization)
+        env.report(env.loc(), diag::err_class_memberless_initialization)
                    << ct->keywordAndName().c_str();
         initIter.adv();    // avoid infinite loop possibility
       }
@@ -10460,7 +10460,7 @@ void ND_usingDir::tcheck(Env &env)
   // find the namespace we're talking about
   Variable *targetVar = env.lookupPQ_one(name, LF_ONLY_NAMESPACES);
   if (!targetVar) {
-    env.report(name->loc, diag::err_unknown_namespace) << name->getName();
+    env.report(name->loc, diag::err_namespace_unknown) << name->getName();
     return;
   }
   xassert(targetVar->isNamespace());   // meaning of LF_ONLY_NAMESPACES

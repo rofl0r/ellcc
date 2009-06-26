@@ -187,7 +187,7 @@ NODE *resolveAmbiguity(
           // one way or another
           altErrors[altIndex].addError(new ErrorMsg(
             loc, "a rejected alternative modified this environment", EF_NONE));
-          env.report(loc, diag::err_rejected_alternative_modified_environment);
+          env.report(loc, diag::err_parse_rejected_alternative_modified_environment);
         }
 
         DiagnosticBuffer* buffer = static_cast<DiagnosticBuffer*>(env.diag.Take());
@@ -207,12 +207,12 @@ NODE *resolveAmbiguity(
     // add a note about the ambiguity
     env.errors.addError(new ErrorMsg(
       loc, "---- BEGIN: messages from an ambiguity ----", EF_NONE));
-    env.report(loc, diag::err_begin_messages_from_ambiguity);
+    env.report(loc, diag::note_parse_begin_messages_from_ambiguity);
     for (int i=0; i<numAlts; i++) {
       if (i > 0) {
         env.errors.addError(new ErrorMsg(
           loc, "---- SEPARATOR: messages from an ambiguity ----", EF_NONE));
-        env.report(loc, diag::err_separator_messages_from_ambiguity);
+        env.report(loc, diag::note_parse_separator_messages_from_ambiguity);
       }
       env.errors.takeMessages(altErrors[i]);
       env.diag.Give(altBuffers[i]);
@@ -221,7 +221,7 @@ NODE *resolveAmbiguity(
     }
     env.errors.addError(new ErrorMsg(
       loc, "---- END: messages from an ambiguity ----", EF_NONE));
-    env.report(loc, diag::err_end_messages_from_ambiguity);
+    env.report(loc, diag::note_parse_end_messages_from_ambiguity);
   }
 
   else if (numOk == 1) {

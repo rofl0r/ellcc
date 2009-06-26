@@ -406,7 +406,7 @@ int Elsa::doit(Preprocessor& PP,
         // this one is I don't want it showing up in the output where
         // Delta might see it.  If I am intending to minimize an assertion
         // failure, it's no good if Delta introduces an error.
-        env.report(SourceLocation(), diag::err_confused);
+        env.report(SourceLocation(), diag::err_parse_confused);
         env.errors.print(std::cout);
         return 4;
       }
