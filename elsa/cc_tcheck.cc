@@ -2632,7 +2632,7 @@ void possiblyConsumeFunctionType(Env &env, Declarator::Tcheck &dt,
 {
   if (dt.funcSyntax) {
     if (dt.funcSyntax->cv != CV_NONE && reportErrors) {
-      env.error("cannot have const/volatile on nonmember functions");
+      env.report(env.loc(), diag::err_function_const_volatile);
     }
     dt.funcSyntax = NULL;
 

@@ -87,4 +87,8 @@ def err_enum_not_defined
     : Error<"there is no enum called '%0'">;
 def err_enum_is_not_an_enum
     : Error<"'%0' is not an enum">;
+
+def err_function_const_volatile
+    : Error<"cannot have const/volatile on nonmember functions">;
+
 }
