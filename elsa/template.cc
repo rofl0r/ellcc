@@ -2809,6 +2809,9 @@ void Env::instantiateFunctionBodyNow(Variable *instV, SourceLocation loc)
 
   unPrepArgScopeForTemlCloneTcheck(poppedScopes, pushedScopes);
   xassert(poppedScopes.isEmpty() && pushedScopes.isEmpty());
+
+  // Add the new function to the topforms in this unit.
+  unit->topForms.prepend(new TF_func(loc, instV->funcDefn));
 }
 
 

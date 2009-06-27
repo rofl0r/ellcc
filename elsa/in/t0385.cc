@@ -19,6 +19,6 @@ void baz(C<int> &c)      // line 17
   c.bar();
 }
 
-asm("collectLookupResults foo=6 bar=11 c=17");
+asm("collectLookupResults foo=6 foo=6 bar=11 c=17");
 
 // EOF

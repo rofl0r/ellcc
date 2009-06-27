@@ -17,4 +17,4 @@ void bar()
   foo(y);
 }
 
-asm("collectLookupResults f=4 foo=7 y=16");
+asm("collectLookupResults f=4 f=4 foo=7 y=16");
