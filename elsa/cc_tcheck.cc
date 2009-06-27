@@ -1765,7 +1765,7 @@ Type *TS_simple::itcheck(Env &env, DeclFlags dflags, LookupFlags lflags)
 CompoundType *checkClasskeyAndName(
   Env &env,
   Scope *scope,              // scope in which decl/defn appears
-  SourceLocation loc,             // location of type specifier
+  SourceLocation loc,        // location of type specifier
   DeclFlags dflags,          // syntactic and semantic declaration modifiers
   TypeIntr keyword,          // keyword used
   PQName *name)              // name, with qualifiers and template args (if any)
@@ -1780,7 +1780,7 @@ CompoundType *checkClasskeyAndName(
   if (dflags & DF_FRIEND) {
     if (definition) {
       // 11.4p2
-      env.report(env.loc(), diag::err_class_define_class_in_friend_definition);
+      env.report(loc, diag::err_class_define_class_in_friend_definition);
       return NULL;
     }
     forward = false;
@@ -1822,16 +1822,16 @@ CompoundType *checkClasskeyAndName(
       // pretend we saw "template <>"
       templateParams = new SObjList<Variable>;    // will be leaked
     } else {
-      env.report(env.loc(), diag::err_class_specifier_name_with_template_arguments);
+      env.report(loc, diag::err_class_specifier_name_with_template_arguments);
       return NULL;
     }
   }
   if (templateParams && templateParams->isEmpty() && !templateArgs) {
-    env.error("complete specialization (\"<>\") requires template args");
+    env.report(loc, diag::err_template_complete_specialization_requires_args);
     return NULL;
   }
   if (keyword==TI_UNION && (templateParams || templateArgs)) {
-    env.error("template unions are not allowed");
+    env.report(loc, diag::err_template_unions_are_not_allowed);
     return NULL;
   }
 
@@ -1872,9 +1872,9 @@ CompoundType *checkClasskeyAndName(
           if (env.PP.getLangOptions().CPlusPlus && !tag->hasAnyFlags(DF_IMPLICIT | DF_SELFNAME)) {
             // found a user-introduced (not implicit) typedef, which
             // is illegal (3.4.4p2,3; 7.1.5.3p2)
-            env.error(stringc << "`" << *name << "' is a typedef-name, "
-                              << "so cannot be used after '"
-                              << toString(keyword) << "'");
+            env.report(loc, diag::err_illegal_use_of_typedef)
+                << (*name).getName()
+                << toString(keyword);
             return NULL;
           }
           ct = tag->type->asCompoundType();
@@ -1884,8 +1884,8 @@ CompoundType *checkClasskeyAndName(
         }
         else {
             if (env.needError(tag->type) == NULL) {
-                env.error(stringc
-                    << "`" << *name << "' is not a struct/class/union");
+                env.report(loc, diag::err_not_struct_class_union)
+                    << (*name).getName();
             }
             return NULL;
         }
@@ -1895,8 +1895,9 @@ CompoundType *checkClasskeyAndName(
     // failed lookup is cause for immediate abort in a couple of cases
     if (!ct &&
         (name->hasQualifiers() || templateArgs)) {
-      env.error(stringc << "no such " << toString(keyword)
-                        << ": `" << *name << "'");
+      env.report(loc, diag::err_no_such)
+        << toString(keyword)
+        << (*name).getName();
       return NULL;
     }
   }
@@ -2144,8 +2145,9 @@ Type *TS_elaborated::itcheck(Env &env, DeclFlags dflags, LookupFlags lflags)
     if (!tag->hasFlag(DF_IMPLICIT)) {
       // found a user-introduced (not implicit) typedef, which
       // is illegal (3.4.4p2,3)
-      env.error(stringc << "`" << *name << "' is a typedef-name, "
-                               << "so cannot be used after 'enum'");
+      env.report(loc, diag::err_illegal_use_of_typedef)
+          << (*name).getName()
+          << "enum";
       return env.errorType();
     }
     EnumType *et = tag->type->asCVAtomicType()->atomic->asEnumType();
@@ -7607,14 +7609,16 @@ Type *E_fieldAcc::itcheck_fieldAcc_set(Env &env, LookupFlags flags,
 
       if (!secondVar || !secondVar->isType()) {
         PQName *n = getSecondToLast(fieldName->asPQ_qualifier());
-        env.error(n->loc, stringc
-          << "no such type: `" << n->toComponentString() << "'");
+        env.report(n->loc, diag::err_no_such)
+            << "type"
+            << n->toComponentString();
         return env.errorType();
       }
       if (!lastVar || !lastVar->isType()) {
         PQName *n = fieldName->getUnqualifiedName();
-        env.error(n->loc, stringc
-          << "no such type: `" << n->toComponentString() << "'");
+        env.report(n->loc, diag::err_no_such)
+            << "type"
+            << n->toComponentString();
         return env.errorType();
       }
       if (!lastVar->type->equals(secondVar->type)) {
@@ -7633,8 +7637,9 @@ Type *E_fieldAcc::itcheck_fieldAcc_set(Env &env, LookupFlags flags,
       // RHS of form ~ type-name
       Variable *v = env.unqualifiedLookup_one(rhsFinalTypeName, flags);
       if (!v || !v->hasFlag(DF_TYPEDEF)) {
-        env.error(fieldName->loc,
-          stringc << "no such type: `" << rhsFinalTypeName << "'");
+        env.report(fieldName->loc, diag::err_no_such)
+            << "type"
+            << rhsFinalTypeName;
         return env.errorType();
       }
       rhsType = v->type;
@@ -7754,8 +7759,9 @@ Type *E_fieldAcc::itcheck_fieldAcc_set(Env &env, LookupFlags flags,
         firstQScope1 = firstQScope2;     // make 'firstQScope1' the only one
       }
       else {
-        env.error(firstQ->loc, stringc
-          << "no such scope `" << firstQ->qualifier << "'");
+        env.report(firstQ->loc, diag::err_no_such)
+            << "scope"
+            << firstQ->qualifier;
         return env.errorType();
       }
     }
@@ -7832,9 +7838,10 @@ Type *E_fieldAcc::itcheck_fieldAcc_set(Env &env, LookupFlags flags,
           // we will use 'var2', so nothing needs to be done
         }
         else {
-          env.error(fieldName->loc, stringc
-            << "no such class `" << rhsFinalTypeName << "'");
-          return env.errorType();
+            env.report(fieldName->loc, diag::err_no_such)
+                << "class"
+                << rhsFinalTypeName;
+            return env.errorType();
         }
       }
 

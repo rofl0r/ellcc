@@ -15,8 +15,10 @@
 #include "pair.h"          // pair
 #include "exprloc.h"
 #include "Preprocessor.h"  // Preprocessor
+#include "ElsaDiagnostic.h"
 
 using namespace sm;
+using namespace ellcc;
 
 void copyTemplateArgs(ObjList<STemplateArgument> &dest,
                       ObjList<STemplateArgument> const &src)
@@ -5274,7 +5276,9 @@ Variable *Env::explicitFunctionInstantiation(PQName *name, Type *type,
   LookupSet set;
   lookupPQ(set, name, LF_TEMPL_PRIMARY);
   if (set.isEmpty() || !set.first()->type->isFunctionType()) {
-    error(stringc << "no such function `" << *name << "'");
+      report(name->loc, diag::err_no_such)
+        << "function"
+        << (*name).getName();
     return NULL;
   }
 

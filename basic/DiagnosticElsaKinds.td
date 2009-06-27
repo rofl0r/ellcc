@@ -18,6 +18,9 @@ def err_undeclared_identifier : Error<"undeclared identifier '%0'">;
 def err_redefinition_of_identifier : Error<"redefinition of '%0'">;
 def err_unknown_type : Error<"there is no type called '%0'">;
 def err_variable_used_as_type : Error<"variable name '%0' used as if it were a type">;
+def err_illegal_use_of_typedef : Error<"'%0' is a typedef-name, so cannot be used after '%1'">;
+def err_not_struct_class_union : Error<"'%0' is not a struct/class/union">;
+def err_no_such : Error<"no such %0: '%1'">;
 
 def err_specifier_invalid : Error<"cannot apply const/volatile to type '%0'">;
 
@@ -39,6 +42,10 @@ def err_template_typename_on_qualified_name_only
     : Error<"the 'typename' keyword can only be used with a qualified name">;
 def err_template_typename_required_on_qualified_name
     : Error<"dependent name '%0' used as a type, but the 'typename' keyword was not supplied">;
+def err_template_complete_specialization_requires_args
+    : Error<"complete specialization ('<>') requires template args">;
+def err_template_unions_are_not_allowed
+    : Error<"template unions are not allowed">;
 
 def err_class_memberless_initialization : Error<"can't initialize memberless aggregate '%0'">;
 def err_class_no_member : Error<"'%0' has no member named '%1'">;

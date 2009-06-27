@@ -4741,8 +4741,9 @@ Type *Env::resolveDQTs_atomic(SourceLocation loc, AtomicType *t)
     Variable *v = set.isEmpty()? NULL : set.first();
 
     if (!v || !v->isType()) {
-      error(loc, stringc << "no such type `" << t->toCString()
-                         << "' (while resolving DQTs)");
+      report(loc, diag::err_no_such)
+        << "type"
+        << t->toCString();
       return NULL;     // just keep using what we already have
     }
 
@@ -5069,8 +5070,9 @@ void Env::lookupPQ_withScope(LookupSet &set, PQName *name, LookupFlags flags,
       if (lookupScope) {
         scopeName = stringc << "in scope `" << lookupScope->fullyQualifiedCName() << "'";
       }
-      env.error(name->loc, stringc
-        << "no such class `" << *name << "'" << scopeName);
+      report(name->loc, diag::err_no_such)
+        << "class"
+        << (sm::string(name->getName()) & scopeName);
     }
     else {
       lookupClassDestructor(set, className->type->asCompoundType(), flags);
