@@ -88,6 +88,17 @@ def err_enum_not_defined
 def err_enum_is_not_an_enum
     : Error<"'%0' is not an enum">;
 
+def err_operator_must_be_function
+    : Error<"operators must be functions">;
+def err_operator_static_member_function
+    : Error<"operator member functions (other than new/delete) cannot be static">;
+def err_operator_must_be_member_function
+    : Error<"%0 must be a member function">;
+def err_operator_parameters
+    : Error<"%0 must have %select{one parameter|two parameters|one or two parameters}1">;
+def note_including_receiver_object
+    : Note<"(including receiver object)">;
+
 def err_function_const_volatile
     : Error<"cannot have const/volatile on nonmember functions">;
 

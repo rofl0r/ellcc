@@ -2688,7 +2688,7 @@ void checkOperatorOverload(Env &env, Declarator::Tcheck &dt,
                            Scope *scope)
 {
   if (!dt.type->isFunctionType()) {
-    env.error(loc, "operators must be functions");
+    env.report(loc, diag::err_operator_must_be_function);
     return;
   }
   FunctionType *ft = dt.type->asFunctionType();
@@ -2709,7 +2709,7 @@ void checkOperatorOverload(Env &env, Declarator::Tcheck &dt,
       //dt.dflags |= DF_STATIC;      // force it to be static
     }
     else if (dt.dflags & DF_STATIC) {
-      env.error(loc, "operator member functions (other than new/delete) cannot be static");
+        env.report(loc, diag::err_operator_static_member_function);
     }
   }
 
@@ -2829,7 +2829,8 @@ void checkOperatorOverload(Env &env, Declarator::Tcheck &dt,
 
   bool isMember = scope->curCompound != NULL;
   if (!isMember && !(desc & NONMEMBER)) {
-    env.error(loc, stringc << strname << " must be a member function");
+    env.report(loc, diag::err_operator_must_be_member_function)
+        << strname;
   }
 
   if (!(desc & ANYPARAMS)) {
@@ -2843,13 +2844,17 @@ void checkOperatorOverload(Env &env, Declarator::Tcheck &dt,
       // ok
     }
     else {
-      char const *howmany =
-        okOneParam && okTwoParams? "one or two parameters" :
-                      okTwoParams? "two parameters" :
-                                   "one parameter" ;
-      char const *extra =
-        ft->isMethod()? " (including receiver object)" : "";
-      env.error(loc, stringc << strname << " must have " << howmany << extra);
+      int index = 0;    // One parameter OK.
+      if (okOneParam && okTwoParams) {
+          index = 2;    // One or two parameters;
+      } else if (okTwoParams) {
+          index = 1;    // Two parameters;
+      }
+        
+      env.report(loc, diag::err_operator_parameters) << strname << index;
+      if (ft->isMethod()) {
+          env.report(loc, diag::note_including_receiver_object);
+      }
     }
 
     if ((desc & INCDEC) && (params==2)) {
