@@ -894,7 +894,7 @@ void MemberInit::tcheck(Env &env, CompoundType *enclosing)
     // complain
     env.report(loc, diag::err_class_no_member)
                << (*enclosing).name
-               << (*name).getName();
+               << name->getName();
     return;
   }
   CompoundType *baseClass = baseVar->type->asCompoundType();
@@ -924,14 +924,14 @@ void MemberInit::tcheck(Env &env, CompoundType *enclosing)
     // if there are qualifiers, then it can't possibly be an
     // attempt to initialize a data member
     env.report(loc, diag::err_class_initialize_non_base_class)
-        << (*name).getName() << name->hasQualifiers();
+        << name->getName() << name->hasQualifiers();
     return;
   }
 
   // check for ambiguity [para 2]
   if (directBase && !directVirtual && indirectVirtual) {
     env.report(loc, diag::err_class_direct_and_indirect_base)
-        << (*name).getName();
+        << name->getName();
     return;
   }
 
@@ -1645,7 +1645,7 @@ do_lookup:
     // means we prefer to report the error as if the interpretation as
     // "variable" were the only one.
 
-    env.report(loc, diag::err_unknown_type) << (*name).getName() << diagflags;
+    env.report(loc, diag::err_unknown_type) << name->getName() << diagflags;
     return env.errorType();
   }
 
@@ -1663,14 +1663,14 @@ do_lookup:
       else {
         // more informative error message (in/d0111.cc, error 1)
         env.report(loc, diag::err_template_typename_required_on_qualified_name)
-            << (*name).getName()
+            << name->getName()
             << diagflags;
         return env.errorType();
       }
     }
     else {
       env.report(loc, diag::err_variable_used_as_type)
-          << (*name).getName()
+          << name->getName()
           << diagflags;
       return env.errorType();
     }
@@ -1873,7 +1873,7 @@ CompoundType *checkClasskeyAndName(
             // found a user-introduced (not implicit) typedef, which
             // is illegal (3.4.4p2,3; 7.1.5.3p2)
             env.report(loc, diag::err_illegal_use_of_typedef)
-                << (*name).getName()
+                << name->getName()
                 << toString(keyword);
             return NULL;
           }
@@ -1885,7 +1885,7 @@ CompoundType *checkClasskeyAndName(
         else {
             if (env.needError(tag->type) == NULL) {
                 env.report(loc, diag::err_not_struct_class_union)
-                    << (*name).getName();
+                    << name->getName();
             }
             return NULL;
         }
@@ -1897,7 +1897,7 @@ CompoundType *checkClasskeyAndName(
         (name->hasQualifiers() || templateArgs)) {
       env.report(loc, diag::err_no_such)
         << toString(keyword)
-        << (*name).getName();
+        << name->getName();
       return NULL;
     }
   }
@@ -2124,8 +2124,9 @@ Type *TS_elaborated::itcheck(Env &env, DeclFlags dflags, LookupFlags lflags)
     if (!tag) {
       if (!env.PP.getLangOptions().allowIncompleteEnums ||
           name->hasQualifiers()) {
-        env.error(stringc << "there is no enum called `" << *name << "'",
-                         EF_DISAMBIGUATES);
+        env.report(loc, diag::err_enum_not_defined)
+            << name->getName()
+            << DIAG_DISAMBIGUATES;
         return env.errorType();
       }
       else {
@@ -2137,7 +2138,8 @@ Type *TS_elaborated::itcheck(Env &env, DeclFlags dflags, LookupFlags lflags)
     xassert(tag->isType());      // ensured by LF_ONLY_TYPES
 
     if (!tag->type->isEnumType()) {
-      env.error(stringc << "`" << *name << "' is not an enum");
+      env.report(loc, diag::err_enum_is_not_an_enum)
+          << name->getName();
       return env.errorType();
     }
     if (!tag->hasFlag(DF_IMPLICIT)) {
@@ -2295,9 +2297,8 @@ void TS_classSpec::tcheckIntoCompound(
       // base class names
       Variable *baseVar = env.lookupPQ_one(iter->name, LF_ONLY_TYPES);
       if (!baseVar) {
-        env.error(stringc
-          << "no class called `" << *(iter->name) << "' was found",
-          EF_NONE);
+        env.report(loc, diag::err_class_not_found)
+            << (iter->name)->getName();
         continue;
       }
       xassert(baseVar->hasFlag(DF_TYPEDEF));    // that's what LF_ONLY_TYPES means
@@ -2317,9 +2318,8 @@ void TS_classSpec::tcheckIntoCompound(
       // cppstd 10, para 1: must be a class type
       CompoundType *base = baseVar->type->ifCompoundType();
       if (!base) {
-        env.error(stringc
-          << "`" << *(iter->name) << "' is not a class or "
-          << "struct or union, so it cannot be used as a base class");
+        env.report(loc, diag::err_class_not_base_class)
+            << (iter->name)->getName();
         continue;
       }
 

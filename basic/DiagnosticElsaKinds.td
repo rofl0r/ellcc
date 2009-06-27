@@ -78,5 +78,13 @@ def err_class_redefinition
     : Error<"there is already a %0, but here you're defining a %1 %2">;
 def err_class_already_defined
     : Error<"%0 has already been defined">;
+def err_class_not_found
+    : Error<"no class called '%0' was found">;
+def err_class_not_base_class
+    : Error<"'%0' is not a class or struct or union, so it cannot be used as a base class">;
 
+def err_enum_not_defined
+    : Error<"there is no enum called '%0'">;
+def err_enum_is_not_an_enum
+    : Error<"'%0' is not an enum">;
 }
