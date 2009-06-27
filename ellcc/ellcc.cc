@@ -26,6 +26,7 @@
 #include "llvm/Target/TargetData.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetMachineRegistry.h"
+#include "llvm/Target/TargetSelect.h"
 #include "llvm/CodeGen/LinkAllCodegenComponents.h"
 #include "llvm/CodeGen/LinkAllAsmWriterComponents.h"
 #include "llvm/CodeGen/FileWriters.h"
@@ -45,8 +46,6 @@
 #include "llvm/LinkAllVMCore.h"
 #include "llvm/Linker.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/InitializeAllTargets.h"
-#include "llvm/InitializeAllAsmPrinters.h"
 #include <iostream>
 #include <fstream>
 #include <memory>
@@ -2811,6 +2810,9 @@ int main(int argc, char **argv)
     llvm_shutdown_obj X;        // Call llvm_shutdown() on exit.
     InputList InpList;
     int status = 0;
+
+    InitializeAllTargets();
+    InitializeAllAsmPrinters();
 
     try {
         // Initial global variable above for convenience printing of program name.
