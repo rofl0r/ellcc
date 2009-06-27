@@ -1909,7 +1909,7 @@ CompoundType *checkClasskeyAndName(
     // this is supposed to be a specialization
     TemplateInfo *primaryTI = primary->templateInfo();
     if (!primaryTI) {
-      env.error("attempt to specialize a non-template");
+      env.report(loc, diag::err_template_specialize_non_template);
       return NULL;
     }
 
@@ -1932,9 +1932,8 @@ CompoundType *checkClasskeyAndName(
         }
         else {
           // cppstd 14.7.3p6
-          env.error(stringc
-            << ct->instName << " has already been implicitly instantiated, "
-            << "so it's too late to provide an explicit specialization");
+          env.report(loc, diag::err_template_already_implicitly_instantiated)
+            << ct->instName;
           return NULL;
         }
       }
@@ -1950,10 +1949,10 @@ CompoundType *checkClasskeyAndName(
     if ((int)ct->keyword != (int)keyword) {
       // it's ok for classes and structs to be confused (7.1.5.3 para 3)
       if ((keyword==TI_UNION) != (ct->keyword==CompoundType::K_UNION)) {
-        env.error(stringc
-          << "there is already a " << ct->keywordAndName()
-          << ", but here you're defining a " << toString(keyword)
-          << " " << *name);
+        env.report(loc, diag::err_class_redefinition)
+            << ct->keywordAndName()
+            << toString(keyword)
+            << name->getName();
         return NULL;
       }
 
@@ -1971,8 +1970,7 @@ CompoundType *checkClasskeyAndName(
     // old declaration was a definition or not (in/k0022.cc)
     if (!templateParams && templateArgs) {
       // this is more like an instantiation than a declaration
-    }
-    else {
+    } else {
       // check correspondence between extant params and params on 'ct'
       env.verifyCompatibleTemplateParameters(scope, dflags, ct);
     }
@@ -1998,9 +1996,9 @@ CompoundType *checkClasskeyAndName(
       if (ct->forward) {
         // now it is no longer a forward declaration
         ct->forward = false;
-      }
-      else {
-        env.error(stringc << ct->keywordAndName() << " has already been defined");
+      } else {
+        env.report(loc, diag::err_class_already_defined)
+            << ct->keywordAndName();
       }
     }
   }

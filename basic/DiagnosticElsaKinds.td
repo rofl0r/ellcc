@@ -46,6 +46,11 @@ def err_template_complete_specialization_requires_args
     : Error<"complete specialization ('<>') requires template args">;
 def err_template_unions_are_not_allowed
     : Error<"template unions are not allowed">;
+def err_template_specialize_non_template
+    : Error<"attempt to specialize a non-template">;
+def err_template_already_implicitly_instantiated
+    : Error<"'%0' has already been implicitly instantiated, "
+            "so it's too late to provide an explicit specialization">;
 
 def err_class_memberless_initialization : Error<"can't initialize memberless aggregate '%0'">;
 def err_class_no_member : Error<"'%0' has no member named '%1'">;
@@ -69,5 +74,9 @@ def err_class_define_class_in_friend_definition
     : Error<"you cannot define a class in a friend definition">;
 def err_class_specifier_name_with_template_arguments
     : Error<"class specifier name can have template arguments only in a templatized definition">;
+def err_class_redefinition
+    : Error<"there is already a %0, but here you're defining a %1 %2">;
+def err_class_already_defined
+    : Error<"%0 has already been defined">;
 
 }
