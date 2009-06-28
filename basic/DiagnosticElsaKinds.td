@@ -72,6 +72,8 @@ def err_class_direct_and_indirect_base
             "your inheritance hierarchy or forego initialization)">;
 def err_class_define_class_in_friend_definition
     : Error<"you cannot define a class in a friend definition">;
+def err_class_friend_declaration_must_appear_in_class_scope
+    : Error<"friend declaration must appear in class scope">;
 def err_class_specifier_name_with_template_arguments
     : Error<"class specifier name can have template arguments only in a templatized definition">;
 def err_class_redefinition

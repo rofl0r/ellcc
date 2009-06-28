@@ -1800,6 +1800,11 @@ CompoundType *checkClasskeyAndName(
     }
   }
 
+  bool inClassBody = !!(scope->curCompound);
+  if (!inClassBody && (dflags & DF_FRIEND) && !(templateParams || templateArgs)) {
+      env.report(loc, diag::err_class_friend_declaration_must_appear_in_class_scope);
+      return NULL;
+  }
   // indicate when a particular gcc-2 hack is being used...
   bool gcc2hack_explicitSpec = false;
 
@@ -3036,7 +3041,7 @@ realStart:
         befriending = scope->curCompound;
       }
       else {
-        env.error("friend declaration must appear in class scope");
+        env.report(loc, diag::err_class_friend_declaration_must_appear_in_class_scope);
       }
 
       // the main effect of 'friend' in my implementation is to
@@ -3131,8 +3136,7 @@ realStart:
     // environment, which will include that scope
     prior = scope->lookupVariable(unqualifiedName, env, LF_INNER_ONLY);
     if (!prior) {
-      env.error(stringc
-        << "undeclared identifier `" << *name << "'");
+      env.report(loc, diag::err_undeclared_identifier) << name->getName();
       goto makeDummyVar;
     }
 
