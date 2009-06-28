@@ -98,6 +98,10 @@ def err_operator_parameters
     : Error<"%0 must have %select{one parameter|two parameters|one or two parameters}1">;
 def note_including_receiver_object
     : Note<"(including receiver object)">;
+def err_operator_incdec_argument_must_be_integer
+    : Error<"%select{second |}0parameter of %1 must have type 'int', not '%2', if it is present">;
+def err_operator_cannot_have_default_arguments
+    : Error<"%0 cannot have default arguments">;
 
 def err_function_const_volatile
     : Error<"cannot have const/volatile on nonmember functions">;

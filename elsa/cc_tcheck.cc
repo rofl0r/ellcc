@@ -2862,18 +2862,15 @@ void checkOperatorOverload(Env &env, Declarator::Tcheck &dt,
       Type *t = ft->params.nth(1)->type;
       if (!t->isSimple(ST_INT) ||
           t->getCVFlags()!=CV_NONE) {
-        env.error(loc, stringc
-          << (isMember? "" : "second ")
-          << "parameter of " << strname
-          << " must have type `int', not `"
-          << t->toString() << "', if it is present");
+        env.report(loc, diag::err_operator_incdec_argument_must_be_integer)
+            << isMember << strname << t->toString();
       }
     }
 
     // cannot have any default arguments
     SFOREACH_OBJLIST(Variable, ft->params, iter) {
       if (iter.data()->value != NULL) {
-        env.error(loc, stringc << strname << " cannot have default arguments");
+        env.report(loc, diag::err_operator_cannot_have_default_arguments) << strname;
       }
     }
   }
