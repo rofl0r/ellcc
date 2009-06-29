@@ -30,6 +30,8 @@ def err_namespace_unknown : Error<"namespace '%0' does not exist">;
 
 def err_using_needs_qualified_name : Error<"a using declaration requires a qualified name">;
 
+def err_initializer_arguments
+    : Error<"expected initializer of '%0' to have 1 argument, not %1">;
 def err_constructor_style_initializer_arguments
     : Error<"expected constructor-style initializer of '%0' to have 1 argument, not %1">;
 

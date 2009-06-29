@@ -806,6 +806,22 @@ void Function::tcheck_memberInits(Env &env)
   }
 }
 
+// Is 't' an object type built in to the language, such that it
+// could not possibly have a user-defined constructor?  It needs
+// to not be a class of course, but also not a dependent type that
+// could be instantiated with a class.
+static bool isPrimitiveObjectType(Type const *t)
+{
+  if (t->isCVAtomicType()) {
+    AtomicType const *at = t->asCVAtomicTypeC()->atomic;
+    return at->isSimpleType() || at->isEnumType();
+  }
+
+  return t->isPointerType() ||
+         t->isReferenceType() ||
+         t->isPointerToMemberType();
+}
+
 void MemberInit::tcheck(Env &env, CompoundType *enclosing)
 {
   // resolve template arguments in 'name'
@@ -837,6 +853,11 @@ void MemberInit::tcheck(Env &env, CompoundType *enclosing)
         return;
       }
 
+      if (args->count() != 1 && isPrimitiveObjectType(v->type)) {
+        env.report(loc, diag::err_initializer_arguments)
+            << v->type->toString() << args->count();
+        return;
+      }
       // annotate the AST
       member = env.storeVar(v);
 
@@ -3471,22 +3492,6 @@ bool checkCompleteTypeRules(Env &env, DeclFlags dflags, DeclaratorContext contex
 
   // check it
   return env.ensureCompleteType(action, type);
-}
-
-// Is 't' an object type built in to the language, such that it
-// could not possibly have a user-defined constructor?  It needs
-// to not be a class of course, but also not a dependent type that
-// could be instantiated with a class.
-bool isPrimitiveObjectType(Type const *t)
-{
-  if (t->isCVAtomicType()) {
-    AtomicType const *at = t->asCVAtomicTypeC()->atomic;
-    return at->isSimpleType() || at->isEnumType();
-  }
-
-  return t->isPointerType() ||
-         t->isReferenceType() ||
-         t->isPointerToMemberType();
 }
 
 void Declarator::mid_tcheck(Env &env, Tcheck &dt)
