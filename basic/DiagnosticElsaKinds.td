@@ -21,6 +21,7 @@ def err_variable_used_as_type : Error<"variable name '%0' used as if it were a t
 def err_illegal_use_of_typedef : Error<"'%0' is a typedef-name, so cannot be used after '%1'">;
 def err_not_struct_class_union : Error<"'%0' is not a struct/class/union">;
 def err_no_such : Error<"no such %0: '%1'">;
+def err_main_implicit_int : Warning<"obsolete use of implicit int in declaration of main()">;
 
 def err_specifier_invalid : Error<"cannot apply const/volatile to type '%0'">;
 
@@ -97,6 +98,10 @@ def err_class_not_base_class
     : Error<"'%0' is not a class or struct or union, so it cannot be used as a base class">;
 def err_class_define_non_static_data_member
     : Error<"cannot define non-static data member '%0'">;
+def err_class_destructor_must_be_class_member
+    : Error<"destructors must be class members">;
+def err_class_destructor_name_must_match_class_name
+    : Error<"destructor name '%0' must match the class name '%1'">;
 
 def err_enum_not_defined
     : Error<"there is no enum called '%0'">;
@@ -127,4 +132,9 @@ def err_overload_not_function
 def err_overload_does_not_match
     : Error<"the name '%0' is overloaded, but the type '%1' doesn't match any of the"
             " %2 declared overloaded instances">;
+
+def err_reference_pointer_to_reference
+    : Error<"cannot create a pointer to a reference ('%0')">;
+def err_reference_to_reference
+    : Error<"cannot create a reference to a reference ('%0')">;
 }

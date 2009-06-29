@@ -4059,7 +4059,8 @@ void D_pointer::tcheck(Env &env, Declarator::Tcheck &dt)
   possiblyConsumeFunctionType(env, dt);
 
   if (dt.type->isReference()) {
-    env.error("cannot create a pointer to a reference");
+    env.report(loc, diag::err_reference_pointer_to_reference)
+        << dt.type->toString();
   }
   else {
     // apply the pointer type constructor
@@ -4079,7 +4080,8 @@ void D_reference::tcheck(Env &env, Declarator::Tcheck &dt)
   possiblyConsumeFunctionType(env, dt);
 
   if (dt.type->isReference()) {
-    env.error("cannot create a reference to a reference");
+    env.report(loc, diag::err_reference_to_reference)
+        << dt.type->toString();
   }
   else {
     // apply the reference type constructor
@@ -4202,12 +4204,11 @@ void D_func::tcheck(Env &env, Declarator::Tcheck &dt)
         // destructor
         if (nameString[0] == '~') {
           if (!inClass) {
-            env.error("destructors must be class members");
+            env.report(loc, diag::err_class_destructor_must_be_class_member);
           }
           else if (!streq(nameString+1, inClass->name)) {
-            env.error(stringc
-              << "destructor name `" << nameString
-              << "' must match the class name `" << inClass->name << "'");
+            env.report(loc, diag::err_class_destructor_name_must_match_class_name)
+                << nameString << inClass->name;
           }
 
           // return type is 'void'
@@ -4222,7 +4223,7 @@ void D_func::tcheck(Env &env, Declarator::Tcheck &dt)
                 env.PP.getLangOptions().allowImplicitIntForMain &&
                 nameString == env.str("main")) {
               // example: g0018.cc
-              env.warning("obsolete use of implicit int in declaration of main()");
+              env.report(loc, diag::err_main_implicit_int);
 
               // change type to 'int'
               dt.type = env.getSimpleType(ST_INT);
