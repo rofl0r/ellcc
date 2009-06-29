@@ -3149,10 +3149,9 @@ realStart:
       // only functions can be overloaded
       if (!dt.type->isFunctionType()) {
         if (env.needError(dt.type) == NULL) {
-            env.error(stringc
-                << "the name `" << *name << "' is overloaded, but the type `"
-                << dt.type->toString() << "' isn't even a function; it must "
-                << "be a function and match one of the overloadings");
+            env.report(loc, diag::err_overload_not_function)
+                << name->getName() << dt.type->toString();
+            env.report(prior->loc, diag::note_previous_declaration);
         }
         goto makeDummyVar;
       }
@@ -3163,16 +3162,17 @@ realStart:
       // nonstatic member; this is determined by finding a function
       // whose signature (ignoring 'this' parameter, if any) matches
       int howMany = prior->overload->set.count();
-      prior = env.findInOverloadSet(prior->overload, dtft, dt.funcSyntax->cv);
-      if (!prior) {
-        env.error(stringc
-          << "the name `" << *name << "' is overloaded, but the type `"
-          << dtft->toString_withCV(dt.funcSyntax->cv)
-          << "' doesn't match any of the "
-          << howMany << " declared overloaded instances",
-          EF_STRONG);
+      Variable* found = env.findInOverloadSet(prior->overload, dtft, dt.funcSyntax->cv);
+      if (!found) {
+        env.report(loc, diag::err_overload_does_not_match)
+            << name->getName() << dtft->toString_withCV(dt.funcSyntax->cv)
+            << howMany << DIAG_STRONG;
+        SFOREACH_OBJLIST_NC(Variable, prior->overload->set, iter) {
+            env.report(iter.data()->loc, diag::note_previous_declaration);
+        }
         goto makeDummyVar;
       }
+      prior = found;
     }
 
     if (prior->hasFlag(DF_MEMBER)) {
@@ -3180,8 +3180,9 @@ realStart:
       // the code doesn't try to define a nonstatic data member
       if (!prior->type->isFunctionType() &&
           !prior->hasFlag(DF_STATIC)) {
-        env.error(stringc
-          << "cannot define nonstatic data member `" << *name << "'");
+        env.report(loc, diag::err_class_define_non_static_data_member)
+            << name->getName();
+        env.report(prior->loc, diag::note_previous_definition);
         goto makeDummyVar;
       }
     }
@@ -3573,26 +3574,25 @@ void Declarator::mid_tcheck(Env &env, Tcheck &dt)
         if (dt.existingVar) {
           enclosingScope->setParameterizedEntity(dt.existingVar);
         }
-      }
-
-      else {
+      } else {
         // either a partial specialization, or a primary; since the
         // former doesn't exist for functions, there had better not
         // be any template arguments on the function name
         if (name->getUnqualifiedName()->isPQ_template()) {
-          env.error("function template partial specialization is not allowed",
-                    EF_STRONG);
+            env.report(decl->loc, diag::err_template_function_partial_specialization)
+                << DIAG_STRONG;
         }
       }
     }
     else {
-      // for class specializations, we should not get here, as the syntax
-      //
-      //   template <>
-      //   class A<int> { ... }  /*declarator goes here*/  ;
-      //
-      // does not have (and cannot have) any declarators
-      env.error("template class declaration must not have declarators", EF_STRONG);
+        // for class specializations, we should not get here, as the syntax
+        //
+        //   template <>
+        //   class A<int> { ... }  /*declarator goes here*/  ;
+        //
+        // does not have (and cannot have) any declarators
+        env.report(decl->loc, diag::err_template_class_declaration_must_not_have_declarators)
+            << DIAG_STRONG;
     }
   }
 
@@ -3783,9 +3783,8 @@ void Declarator::mid_tcheck(Env &env, Tcheck &dt)
       else if (var->templateInfo()->isPrimary()) {           // k0019.cc error 1
         // need to avoid attaching the arguments in this case, because
         // that would create a malformed TemplateInfo object
-        env.error(getLoc(), "template primary cannot have template args");
-      }
-      else {
+        env.report(getLoc(), diag::err_template_primary_cannot_have_template_args);
+      } else {
         copyTemplateArgs(var->templateInfo()->arguments,
                          getDeclaratorId()->asPQ_templateC()->sargs);
       }
@@ -3865,10 +3864,8 @@ void Declarator::mid_tcheck(Env &env, Tcheck &dt)
              init->isIN_ctor()) {
       IN_ctor *inc = init->asIN_ctor();
       if (inc->args->count() != 1) {
-        env.error(getLoc(), stringc
-          << "expected constructor-style initializer of `"
-          << var->type->toString() << "' to have 1 argument, not "
-          << inc->args->count());
+        env.report(getLoc(), diag::err_constructor_style_initializer_arguments)
+            << var->type->toString() << inc->args->count();
       }
       else {
         // substitute IN_expr

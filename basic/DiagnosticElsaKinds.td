@@ -30,6 +30,9 @@ def err_namespace_unknown : Error<"namespace '%0' does not exist">;
 
 def err_using_needs_qualified_name : Error<"a using declaration requires a qualified name">;
 
+def err_constructor_style_initializer_arguments
+    : Error<"expected constructor-style initializer of '%0' to have 1 argument, not %1">;
+
 def err_template_explicit_instantiation
     : Error<"explicit instantiation (without declarator) is only for class instantiations">;
 def err_template_explicit_instantiation_without_class
@@ -51,6 +54,12 @@ def err_template_specialize_non_template
 def err_template_already_implicitly_instantiated
     : Error<"'%0' has already been implicitly instantiated, "
             "so it's too late to provide an explicit specialization">;
+def err_template_function_partial_specialization
+    : Error<"function template partial specialization is not allowed">;
+def err_template_class_declaration_must_not_have_declarators
+    : Error<"template class declaration must not have declarators">;
+def err_template_primary_cannot_have_template_args
+    : Error<"template primary cannot have template args">;
 
 def err_class_memberless_initialization : Error<"can't initialize memberless aggregate '%0'">;
 def err_class_no_member : Error<"'%0' has no member named '%1'">;
@@ -84,6 +93,8 @@ def err_class_not_found
     : Error<"no class called '%0' was found">;
 def err_class_not_base_class
     : Error<"'%0' is not a class or struct or union, so it cannot be used as a base class">;
+def err_class_define_non_static_data_member
+    : Error<"cannot define non-static data member '%0'">;
 
 def err_enum_not_defined
     : Error<"there is no enum called '%0'">;
@@ -108,4 +119,10 @@ def err_operator_cannot_have_default_arguments
 def err_function_const_volatile
     : Error<"cannot have const/volatile on nonmember functions">;
 
+def err_overload_not_function
+    : Error<"the name '%0' is overloaded, but the type '%1' isn't even a function;"
+            " it must be a function and match one of the overloadings">;
+def err_overload_does_not_match
+    : Error<"the name '%0' is overloaded, but the type '%1' doesn't match any of the"
+            " %2 declared overloaded instances">;
 }

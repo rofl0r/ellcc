@@ -22,11 +22,11 @@ def note_parse_error_token_info : Note<"expected one of these tokens: %0">;
 def note_instantiated_from : Note<"instantiated from:">;
 // RICH: end of used
 
-def note_previous_declaration : Note<"previous declaration is here">;
+def note_previous_declaration : Note<"previous declaration is here:">;
 def note_previous_implicit_declaration : Note<
-  "previous implicit declaration is here">;
-def note_previous_use : Note<"previous use is here">;
-def note_duplicate_case_prev : Note<"previous case defined here">;
+  "previous implicit declaration is here:">;
+def note_previous_use : Note<"previous use is here:">;
+def note_duplicate_case_prev : Note<"previous case defined here:">;
 def note_forward_declaration : Note<"forward declaration of %0">;
 def note_type_being_defined : Note<
   "definition of %0 is not complete until the closing '}'">;

@@ -321,6 +321,50 @@ static void setupMappings()
 static llvm::cl::opt<bool>
 EmptyInputOnly("empty-input-only", 
       llvm::cl::desc("Force running on an empty input file"));
+
+//===----------------------------------------------------------------------===//
+// Diagnostic Options
+//===----------------------------------------------------------------------===//
+
+static llvm::cl::opt<bool>
+NoShowColumn("fno-show-column",
+             llvm::cl::desc("Do not include column number on diagnostics"));
+
+static llvm::cl::opt<bool>
+NoShowLocation("fno-show-source-location",
+               llvm::cl::desc("Do not include source location information with"
+                              " diagnostics"));
+
+static llvm::cl::opt<bool>
+NoCaretDiagnostics("fno-caret-diagnostics",
+                   llvm::cl::desc("Do not include source line and caret with"
+                                  " diagnostics"));
+
+static llvm::cl::opt<bool>
+NoDiagnosticsFixIt("fno-diagnostics-fixit-info",
+                   llvm::cl::desc("Do not include fixit information in"
+                                  " diagnostics"));
+
+static llvm::cl::opt<bool>
+PrintSourceRangeInfo("fdiagnostics-print-source-range-info",
+                     llvm::cl::desc("Print source range spans in numeric form"));
+
+static llvm::cl::opt<bool>
+PrintDiagnosticOption("fdiagnostics-show-option",
+             llvm::cl::desc("Print diagnostic name with mappable diagnostics"));
+
+static llvm::cl::opt<unsigned>
+MessageLength("fmessage-length",
+	      llvm::cl::desc("Format message diagnostics so that they fit "
+			     "within N columns or fewer, when possible."),
+	      llvm::cl::value_desc("N"));
+
+static llvm::cl::opt<bool>
+NoColorDiagnostic("fno-color-diagnostics",
+	      llvm::cl::desc("Don't use colors when showing diagnostics "
+                             "(automatically turned off if output is not a "
+                             "terminal)."));
+
 //===----------------------------------------------------------------------===//
 //===          PHASE OPTIONS
 //===----------------------------------------------------------------------===//
@@ -2843,8 +2887,26 @@ int main(int argc, char **argv)
         // implementing -verify.
         OwningPtr<DiagnosticClient> DiagClient;
         
-        // TODO: Add options for line length, etc.
-        DiagClient.reset(new TextDiagnosticPrinter(llvm::errs()));
+
+        // If -fmessage-length=N was not specified, determine whether this
+        // is a terminal and, if so, implicitly define -fmessage-length
+        // appropriately.
+        if (MessageLength.getNumOccurrences() == 0)
+            MessageLength.setValue(llvm::sys::Process::StandardErrColumns());
+
+        if (!NoColorDiagnostic) {
+            NoColorDiagnostic.setValue(!llvm::sys::Process::StandardErrHasColors());
+        }
+
+        DiagClient.reset(new TextDiagnosticPrinter(llvm::errs(),
+                                                   !NoShowColumn,
+                                                   !NoCaretDiagnostics,
+                                                   !NoShowLocation,
+                                                   PrintSourceRangeInfo,
+                                                   PrintDiagnosticOption,
+                                                   !NoDiagnosticsFixIt,
+                                                   MessageLength,
+                                                   !NoColorDiagnostic));
 
         // Configure our handling of diagnostics.
         Diags.setClient(DiagClient.get());
