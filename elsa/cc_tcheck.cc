@@ -4396,6 +4396,7 @@ void D_array::tcheck(Env &env, Declarator::Tcheck &dt)
   if (dt.context == DC_E_NEW) {
     // we're in a new[] (E_new) type-id
     if (!size) {
+      // RICH: The syntax seems to preclude this.
       env.error("new[] must have an array size specified");
       at = env.makeArrayType(dt.type);    // error recovery
     }
