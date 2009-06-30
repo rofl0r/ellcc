@@ -22,6 +22,7 @@ def err_illegal_use_of_typedef : Error<"'%0' is a typedef-name, so cannot be use
 def err_not_struct_class_union : Error<"'%0' is not a struct/class/union">;
 def err_no_such : Error<"no such %0: '%1'">;
 def err_main_implicit_int : Warning<"obsolete use of implicit int in declaration of main()">;
+def err_implicit_return : Error<"obsolete use of implicit int return type">;
 
 def err_specifier_invalid : Error<"cannot apply const/volatile to type '%0'">;
 
@@ -106,11 +107,20 @@ def err_class_destructor_name_must_match_class_name
     : Error<"destructor name '%0' must match the class name '%1'">;
 def err_class_constructor_name_must_match_class_name
     : Error<"constructor name '%0' must match the class name '%1'">;
+def err_class_conversion_operator_arguments
+    : Error<"conversion operator cannot accept arguments">;
 
 def err_enum_not_defined
     : Error<"there is no enum called '%0'">;
 def err_enum_is_not_an_enum
     : Error<"'%0' is not an enum">;
+
+def err_array_of_references
+    : Error<"cannot create an array of references">;
+def err_array_of_void
+    : Error<"cannot create an array of void">;
+def err_array_of_functions
+    : Error<"cannot create an array of functions">;
 
 def err_operator_must_be_function
     : Error<"operators must be functions">;
@@ -129,6 +139,10 @@ def err_operator_cannot_have_default_arguments
 
 def err_function_const_volatile
     : Error<"cannot have const/volatile on nonmember functions">;
+def err_function_void_parameter
+    : Error<"cannot have parameter of type 'void', unless it is "
+            "the only parameter, has no parameter name, and has "
+            "no default value">;
 
 def err_overload_not_function
     : Error<"the name '%0' is overloaded, but the type '%1' isn't even a function;"

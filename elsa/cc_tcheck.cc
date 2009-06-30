@@ -4262,7 +4262,7 @@ void D_func::tcheck(Env &env, Declarator::Tcheck &dt)
         dt.type = env.getSimpleType(ST_INT);
       }
       else {
-        env.error("support for omitted return type is currently off");
+        env.report(loc, diag::err_implicit_return);
       }
     }
   }
@@ -4301,9 +4301,7 @@ void D_func::tcheck(Env &env, Declarator::Tcheck &dt)
         // same as empty param list
         break;
       }
-      env.error("cannot have parameter of type `void', unless it is "
-                "the only parameter, has no parameter name, and has "
-                "no default value");
+      env.report(v->loc, diag::err_function_void_parameter);
       continue;
     }
 
@@ -4336,7 +4334,7 @@ void D_func::tcheck(Env &env, Declarator::Tcheck &dt)
 
   if (specialFunc == FF_CONVERSION) {
     if (ft->params.isNotEmpty() || ft->acceptsVarargs()) {
-      env.error("conversion operator cannot accept arguments");
+        env.report(loc, diag::err_class_conversion_operator_arguments);
     }
   }
 
@@ -4370,15 +4368,15 @@ void D_array::tcheck(Env &env, Declarator::Tcheck &dt)
 
   // check restrictions in cppstd 8.3.4 para 1
   if (dt.type->isReference()) {
-    env.error("cannot create an array of references");
+    env.report(loc, diag::err_array_of_references);
     return;
   }
   if (dt.type->isSimple(ST_VOID)) {
-    env.error("cannot create an array of void");
+    env.report(loc, diag::err_array_of_void);
     return;
   }
   if (dt.type->isFunctionType()) {
-    env.error("cannot create an array of functions");
+    env.report(loc, diag::err_array_of_functions);
     return;
   }
   // TODO: check for abstract classes
