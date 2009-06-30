@@ -100,8 +100,12 @@ def err_class_define_non_static_data_member
     : Error<"cannot define non-static data member '%0'">;
 def err_class_destructor_must_be_class_member
     : Error<"destructors must be class members">;
+def err_class_constructor_must_be_class_member
+    : Error<"constructors must be class members (and implicit int is not supported)">;
 def err_class_destructor_name_must_match_class_name
     : Error<"destructor name '%0' must match the class name '%1'">;
+def err_class_constructor_name_must_match_class_name
+    : Error<"constructor name '%0' must match the class name '%1'">;
 
 def err_enum_not_defined
     : Error<"there is no enum called '%0'">;

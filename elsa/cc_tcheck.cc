@@ -4229,7 +4229,7 @@ void D_func::tcheck(Env &env, Declarator::Tcheck &dt)
               dt.type = env.getSimpleType(ST_INT);
             }
             else {
-              env.error("constructors must be class members (and implicit int is not supported)");
+              env.report(loc, diag::err_class_constructor_must_be_class_member);
 
               // 2005-03-09: At one point I had the following:
               //
@@ -4243,10 +4243,8 @@ void D_func::tcheck(Env &env, Declarator::Tcheck &dt)
           }
           else {
             if (nameString != inClass->name) {
-              // I'm not sure if this can occur...
-              env.error(stringc
-                << "constructor name `" << nameString
-                << "' must match the class name `" << inClass->name << "'");
+                env.report(loc, diag::err_class_destructor_name_must_match_class_name)
+                    << nameString << inClass->name;
             }
 
             // return type is same as class type
@@ -4255,9 +4253,7 @@ void D_func::tcheck(Env &env, Declarator::Tcheck &dt)
           }
         }
       }
-    }
-
-    else {     // C
+    } else {     // C
       if (env.PP.getLangOptions().allowImplicitInt) {
         // surely this is not adequate, as implicit-int applies to
         // all declarations, not just those that appear in function
