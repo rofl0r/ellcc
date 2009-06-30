@@ -150,7 +150,7 @@ void LangOptions::ANSI_C99()
   ANSI_C99_extensions();
 
   // removed C89 features
-  allowImplicitInt = true;
+  allowImplicitInt = false;
   allowImplicitFunctionDecls = b3_WARN;
 }
 
