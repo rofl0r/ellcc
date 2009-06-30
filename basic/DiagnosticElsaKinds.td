@@ -121,6 +121,8 @@ def err_array_of_void
     : Error<"cannot create an array of void">;
 def err_array_of_functions
     : Error<"cannot create an array of functions">;
+def err_array_new_size_required
+    : Error<"new[] must have an array size specified">;
 
 def err_operator_must_be_function
     : Error<"operators must be functions">;
