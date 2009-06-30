@@ -10,6 +10,7 @@
 #include "template.h"       // STemplateArgument
 
 using namespace sm;
+using namespace ellcc;
 
 // ----------------------- CValue ------------------------
 STATICDEF CValue::Kind CValue::classify(SimpleTypeId t)
@@ -112,10 +113,10 @@ void CValue::setFloat(SimpleTypeId t, float v)
 }
 
 
-void CValue::setError(rostring w)
+void CValue::setError(unsigned w)
 {
   type = ST_ERROR;
-  why = new string(w);
+  why = w;
 }
 
 
@@ -228,7 +229,7 @@ void CValue::applyUnary(UnaryOp op)
         default: // silence warning
         case K_SIGNED:    si = ~si;   break;
         case K_UNSIGNED:  ui = ~ui;   break;
-        case K_FLOAT:     setError("cannot apply ~ to float types"); break;
+        case K_FLOAT:     setError(diag::err_constant_expr_tilda_float); break;
       }
   }
 }
@@ -270,8 +271,7 @@ void CValue::applyBinary(BinaryOp op, CValue other)
 
   switch (op) {
     default:
-      setError(stringc << "cannot const-eval binary operator `" 
-                       << toString(op) << "'");
+      setError(diag::err_constant_expr_binary);
       return;
 
     // ---- 5.6 ----
@@ -288,7 +288,7 @@ void CValue::applyBinary(BinaryOp op, CValue other)
     case BIN_DIV:
       applyUsualArithmeticConversions(other);
       if (other.isZero()) {
-        setError("division by zero");
+        setError(diag::err_constant_expr_division_by_zero);
         return;
       }
       switch (kind()) {
@@ -302,14 +302,14 @@ void CValue::applyBinary(BinaryOp op, CValue other)
     case BIN_MOD:
       applyUsualArithmeticConversions(other);
       if (other.isZero()) {
-        setError("mod by zero");
+        setError(diag::err_constant_expr_mod_by_zero);
         return;
       }
       switch (kind()) {
         default: // silence warning
         case K_SIGNED:     si = si % other.si;    break;
         case K_UNSIGNED:   ui = ui % other.ui;    break;
-        case K_FLOAT:      setError("mod applied to floating-point args"); return;
+        case K_FLOAT:      setError(diag::err_constant_expr_mod_float); return;
       }
       break;
 
@@ -364,7 +364,7 @@ void CValue::applyBinary(BinaryOp op, CValue other)
       other.performIntegralPromotions();
 
       if (kind() == K_FLOAT || other.kind() == K_FLOAT) {
-        setError("cannot shift with float types");
+        setError(diag::err_constant_expr_shift_float);
         return;
       }
 
@@ -469,7 +469,7 @@ void CValue::applyBinary(BinaryOp op, CValue other)
         default: // silence warning
         case K_SIGNED:     si = si & other.si;    break;
         case K_UNSIGNED:   ui = ui & other.ui;    break;
-        case K_FLOAT:      setError("cannot apply bitand to float types"); break;
+        case K_FLOAT:      setError(diag::err_constant_expr_and_float); break;
       }
       break;
 
@@ -480,7 +480,7 @@ void CValue::applyBinary(BinaryOp op, CValue other)
         default: // silence warning
         case K_SIGNED:     si = si ^ other.si;    break;
         case K_UNSIGNED:   ui = ui ^ other.ui;    break;
-        case K_FLOAT:      setError("cannot apply bitxor to float types"); break;
+        case K_FLOAT:      setError(diag::err_constant_expr_xor_float); break;
       }
       break;
 
@@ -491,7 +491,7 @@ void CValue::applyBinary(BinaryOp op, CValue other)
         default: // silence warning
         case K_SIGNED:     si = si | other.si;    break;
         case K_UNSIGNED:   ui = ui | other.ui;    break;
-        case K_FLOAT:      setError("cannot apply bitor to float types"); break;
+        case K_FLOAT:      setError(diag::err_constant_expr_or_float); break;
       }
       break;
 
@@ -521,7 +521,7 @@ string CValue::asString() const
     case K_SIGNED:      return stringc << toString(type) << ": " << si;
     case K_UNSIGNED:    return stringc << toString(type) << ": " << ui;
     case K_FLOAT:       return stringc << toString(type) << ": " << f;
-    case K_ERROR:       return stringc << "error: " << *why;
+    case K_ERROR:       return "error";
     default:    // silence warning
     case K_DEPENDENT:   return "dependent";
   }
@@ -563,13 +563,13 @@ CValue Expression::iconstEval(ConstEval &env) const
     // selecting a different interpretation) the user will never see
     // it; but by adding the error, I ensure this interpretation will
     // not part of a successful parse.
-    return CValue(env.TI, "ambiguous expr being const-eval'd (user should not see this)");
+    return CValue(env.TI, diag::err_constant_expr_ambiguous);
   }
 
   if (type->isError()) {
     // don't try to const-eval an expression that failed
     // to typecheck
-    return CValue(env.TI, "failed to tcheck");
+    return CValue(env.TI, diag::err_constant_expr_failed_type_checking);
   }
 
   ASTSWITCHC(Expression, this) {
@@ -618,7 +618,7 @@ CValue Expression::iconstEval(ConstEval &env) const
         return c->args->first()->constEval(env);
       }
       else {
-        return CValue(env.TI, "can only const-eval E_constructors for integer types");
+        return CValue(env.TI, diag::err_constant_expr_constructor_integer_only);
       }
 
     ASTNEXTC(E_sizeof, s)
@@ -664,7 +664,7 @@ CValue Expression::iconstEval(ConstEval &env) const
       
     ASTNEXTC(E_keywordCast, c)
       if (c->key == CK_DYNAMIC) {
-        return CValue(env.TI, "cannot const-eval a keyword_cast");
+        return CValue(env.TI, diag::err_constant_expr_keyword_cast);
       }
       else {
         // assume the other three work like C casts
@@ -708,7 +708,7 @@ CValue Expression::iconstEval(ConstEval &env) const
 // the switch statement above, which is more compact.
 CValue Expression::extConstEval(ConstEval &env) const
 {
-  return CValue(env.TI, stringc << kindName() << " is not constEval'able");
+  return CValue(env.TI, diag::err_constant_expr_can_not_evaluate);
 }
 
 
@@ -741,8 +741,7 @@ CValue ConstEval::evaluateVariable(Variable *var)
     return CValue(TI, ST_DEPENDENT);
   }
 
-  return CValue(TI, stringc
-    << "can't const-eval non-const variable `" << var->name << "'");
+  return CValue(TI, diag::err_constant_expr_non_const_variable);
 }
 
 
@@ -824,7 +823,7 @@ CValue Expression::constEvalAddr(ConstEval &env) const
           xfailure("bad CastKeyword");
 
         case CK_DYNAMIC:
-          return CValue(env.TI, "can't const-eval dynamic_cast");
+          return CValue(env.TI, diag::err_constant_expr_dynamic_cast);
 
         case CK_STATIC:
         case CK_REINTERPRET:
@@ -837,7 +836,7 @@ CValue Expression::constEvalAddr(ConstEval &env) const
       return e->expr->constEvalAddr(env);
 
     ASTDEFAULTC
-      return CValue(env.TI, "unhandled case in constEvalAddr");
+      return CValue(env.TI, diag::err_constant_expr_unhandled);
 
     ASTENDCASEC
   }
@@ -862,9 +861,7 @@ CValue Expression::constEvalCast(ConstEval &env, ASTTypeId const *ctype,
   }
   else {
     // TODO: this is probably not the right rule..
-    return CValue(env.TI, stringc
-      << "in constant expression, can only cast to arithmetic or pointer types, not `"
-      << t->toString() << "'");
+    return CValue(env.TI, diag::err_constant_expr_bad_cast);
   }
 
   return ret;

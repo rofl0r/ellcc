@@ -64,6 +64,8 @@ def err_template_class_declaration_must_not_have_declarators
     : Error<"template class declaration must not have declarators">;
 def err_template_primary_cannot_have_template_args
     : Error<"template primary cannot have template args">;
+def err_template_constant_expression
+    : Error<"cannot evaluate '%0' as a template constant integer argument">;
 
 def err_class_memberless_initialization : Error<"can't initialize memberless aggregate '%0'">;
 def err_class_no_member : Error<"'%0' has no member named '%1'">;
@@ -157,4 +159,41 @@ def err_reference_pointer_to_reference
     : Error<"cannot create a pointer to a reference ('%0')">;
 def err_reference_to_reference
     : Error<"cannot create a reference to a reference ('%0')">;
+
+def err_constant_expr_ambiguous
+    : Error<"ambiguous expression being constant evaluated">;
+def err_constant_expr_failed_type_checking
+    : Error<"constant expression failed type checking">;
+def err_constant_expr_constructor_integer_only
+    : Error<"can only constant evaluate constructors for integer types">;
+def err_constant_expr_keyword_cast
+    : Error<"cannot constant evaluate a keyword_cast">;
+def err_constant_expr_can_not_evaluate
+    : Error<"can not evaluate constant expression">;
+def err_constant_expr_non_const_variable
+    : Error<"can not evaluate non-constant variable">;
+def err_constant_expr_dynamic_cast
+    : Error<"can not evaluate dynamic_cast">;
+def err_constant_expr_unhandled
+    : Error<"can not evaluate unhandled case in constEvalAddr">;
+def err_constant_expr_bad_cast
+    : Error<"in constant expression, can only cast to arithmetic or pointer types">;
+def err_constant_expr_tilda_float
+    : Error<"cannot apply '~' to float types">;
+def err_constant_expr_binary
+    : Error<"can not evaluate binary operator">;
+def err_constant_expr_division_by_zero
+    : Error<"division by zero">;
+def err_constant_expr_mod_by_zero
+    : Error<"mod by zero">;
+def err_constant_expr_mod_float
+    : Error<"cannot apply '%' to float types">;
+def err_constant_expr_shift_float
+    : Error<"cannot shift float types">;
+def err_constant_expr_and_float
+    : Error<"cannot apply '&' to float types">;
+def err_constant_expr_xor_float
+    : Error<"cannot apply '^' to float types">;
+def err_constant_expr_or_float
+    : Error<"cannot apply '|' to float types">;
 }

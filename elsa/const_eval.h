@@ -42,7 +42,7 @@ public:      // data
     long si;                 // K_SIGNED
     unsigned long ui;        // K_UNSIGNED
     float f;                 // K_FLOAT
-    sm::string *why;             // K_ERROR
+    unsigned why;            // K_ERROR
   };
 
 private:
@@ -51,7 +51,7 @@ private:
 public:      // funcs
   explicit CValue(ellcc::TargetInfo& TI, SimpleTypeId t = ST_INT) : TI(TI)
     { type=t; si=0; }
-  explicit CValue(ellcc::TargetInfo& TI, rostring why) : TI(TI)
+  explicit CValue(ellcc::TargetInfo& TI, unsigned why) : TI(TI)
     { setError(why); }
 
   CValue(CValue const &obj) : TI(obj.TI)
@@ -76,7 +76,7 @@ public:      // funcs
   long getSignedValue() const    { xassert(isSigned()); return si; }
   long getUnsignedValue() const  { xassert(isUnsigned()); return ui; }
   float getFloatValue() const    { xassert(isFloat()); return f; }
-  sm::string *getWhy() const         { xassert(isError()); return why; }
+  unsigned getWhy() const         { xassert(isError()); return why; }
 
   bool isZero() const;
   bool isIntegral() const;
@@ -85,7 +85,7 @@ public:      // funcs
   void setSigned(SimpleTypeId t, long v);
   void setUnsigned(SimpleTypeId t, unsigned long v);
   void setFloat(SimpleTypeId t, float v);
-  void setError(rostring why);
+  void setError(unsigned why);
   void setDependent();
 
   void setBool(bool b)

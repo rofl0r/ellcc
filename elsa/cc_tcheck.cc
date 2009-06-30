@@ -4466,9 +4466,9 @@ void D_array::tcheck(Env &env, Declarator::Tcheck &dt)
         }
         else {
           // report the error
-          env.error(*(val.getWhy()));
+          env.report(size->loc, val.getWhy())
+            << SourceRange(size->loc, size->endloc);
         }
-        delete val.getWhy();
       }
       else if (val.isDependent()) {
         dt.type = env.tfac.makeDependentSizedArrayType(dt.type, size);
@@ -9616,8 +9616,8 @@ bool Expression::constEval(Env &env, int &result, bool &dependent) const
 
   CValue val = constEval(cenv);
   if (val.isError()) {
-    env.error(*(val.getWhy()));
-    delete val.getWhy();
+    env.report(loc, val.getWhy())
+        << SourceRange(loc, endloc);
     return false;
   }
   else if (val.isDependent()) {
