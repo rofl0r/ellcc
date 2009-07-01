@@ -174,6 +174,8 @@ def err_reference_pointer_to_member_to_void
 
 def error_pointer_to_member_type
     : Error<"cannot find type '%0' for pointer-to-member">;
+def error_pointer_to_member_type_does_not_refer_to_a_class
+    : Error<"in pointer-to-member, '%0' does not refer to a class nor is a type variable">;
 
 def err_constant_expr_ambiguous
     : Error<"ambiguous expression being constant evaluated">;

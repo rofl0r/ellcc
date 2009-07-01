@@ -4571,9 +4571,10 @@ void D_ptrToMember::tcheck(Env &env, Declarator::Tcheck &dt)
   // *or* a TypeVariable (for templates)
   NamedAtomicType *nat = ctVar->type->ifNamedAtomicType();
   if (!nat) {
-    env.error(stringc
-      << "in ptr-to-member, `" << nestedName->toString()
-      << "' does not refer to a class nor is a type variable");
+    env.report(loc, diag::error_pointer_to_member_type_does_not_refer_to_a_class)
+        << nestedName->toString();
+    env.report(ctVar->loc, diag::note_definition)
+        << nestedName->toString();
     return;
   }
 
