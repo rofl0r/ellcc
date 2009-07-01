@@ -4431,9 +4431,7 @@ void D_array::tcheck(Env &env, Declarator::Tcheck &dt)
         }
       }
     }
-  }
-
-  else {
+  } else {
     // we're not in an E_new, so add the size to the type if it's
     // specified; there are some contexts which require a type (like
     // definitions), but we'll report those errors elsewhere
@@ -4469,29 +4467,30 @@ void D_array::tcheck(Env &env, Declarator::Tcheck &dt)
           env.report(size->loc, val.getWhy())
             << SourceRange(size->loc, size->endloc);
         }
-      }
-      else if (val.isDependent()) {
+      } else if (val.isDependent()) {
         dt.type = env.tfac.makeDependentSizedArrayType(dt.type, size);
         base->tcheck(env, dt);
         return;
-      }
-      else if (val.isIntegral()) {
+      } else if (val.isIntegral()) {
         sz = val.getIntegralValue();
 
         // check restrictions on array size (c.f. cppstd 8.3.4 para 1)
         if (env.PP.getLangOptions().strictArraySizeRequirements) {
           if (sz <= 0) {
-            env.error(loc, stringc << "array size must be positive (it is " << sz << ")");
+            env.report(size->loc, diag::err_array_size_must_be_positive) << sz
+                << SourceRange(size->loc, size->endloc);
           }
         }
         else {
           if (sz < 0) {
-            env.error(loc, stringc << "array size must be nonnegative (it is " << sz << ")");
+            env.report(size->loc, diag::err_array_size_must_be_non_negative) << sz
+                << SourceRange(size->loc, size->endloc);
           }
         }
       }
       else {
-        env.error(loc, "array size must have integral type");
+        env.report(size->loc, diag::err_array_size_must_have_integral_type)
+            << SourceRange(size->loc, size->endloc);
       }
 
       at = env.makeArrayType(dt.type, sz);
@@ -4524,7 +4523,7 @@ void D_bitfield::tcheck(Env &env, Declarator::Tcheck &dt)
   // check that the expression is a compile-time constant
   int n;
   if (!bits->constEval(env, n)) {
-    env.error("bitfield size must be a constant", EF_NONE);
+    env.report(bits->loc, diag::err_class_bitfield_size_must_be_constant);
   }
   else {
     // remember the size of the bit field
@@ -4544,7 +4543,7 @@ void D_ptrToMember::tcheck(Env &env, Declarator::Tcheck &dt)
 
   // enforce [cppstd 8.3.3 para 3]
   if (dt.type->isReference()) {
-    env.error("you can't make a pointer-to-member refer to a reference type");
+    env.report(loc, diag::err_reference_pointer_to_member_to_reference);
     return;
 
     // there used to be some recovery code here, but I decided it was
@@ -4553,7 +4552,7 @@ void D_ptrToMember::tcheck(Env &env, Declarator::Tcheck &dt)
   }
 
   if (dt.type->isVoid()) {
-    env.error("you can't make a pointer-to-member refer to `void'");
+    env.report(loc, diag::err_reference_pointer_to_member_to_void);
     return;
   }
 
@@ -4563,9 +4562,8 @@ void D_ptrToMember::tcheck(Env &env, Declarator::Tcheck &dt)
   // such lookups are done in the variable space (3.4.3))
   Variable *ctVar = env.lookupPQ_one(nestedName, LF_ONLY_TYPES);
   if (!ctVar) {
-    env.error(stringc
-      << "cannot find type `" << nestedName->toString()
-      << "' for pointer-to-member");
+    env.report(nestedName->loc, diag::error_pointer_to_member_type)
+        << nestedName->toString();
     return;
   }
 
@@ -8652,12 +8650,12 @@ static Type *makePTMType(Env &env, Variable *var, SourceLocation loc)
 
   // cppstd: 8.3.3 para 3, can't be cv void
   if (var->type->isVoid()) {
-    env.error(loc, "attempted to make a pointer to member to void");
+    env.report(loc, diag::err_reference_pointer_to_member_to_void);
     return env.errorType();
   }
   // cppstd: 8.3.3 para 3, can't be a reference
   if (var->type->isReference()) {
-    env.error(loc, "attempted to make a pointer to member to a reference");
+    env.report(loc, diag::err_reference_pointer_to_member_to_reference);
     return env.errorType();
   }
 

@@ -111,6 +111,8 @@ def err_class_constructor_name_must_match_class_name
     : Error<"constructor name '%0' must match the class name '%1'">;
 def err_class_conversion_operator_arguments
     : Error<"conversion operator cannot accept arguments">;
+def err_class_bitfield_size_must_be_constant
+    : Error<"bitfield size must be a constant">;
 
 def err_enum_not_defined
     : Error<"there is no enum called '%0'">;
@@ -125,6 +127,12 @@ def err_array_of_functions
     : Error<"cannot create an array of functions">;
 def err_array_new_size_required
     : Error<"new[] must have an array size specified">;
+def err_array_size_must_be_positive
+    : Error<"array size must be positive (it is %0)">;
+def err_array_size_must_be_non_negative
+    : Error<"array size must be non-negative (it is %0)">;
+def err_array_size_must_have_integral_type
+    : Error<"array size must have integral type">;
 
 def err_operator_must_be_function
     : Error<"operators must be functions">;
@@ -159,6 +167,13 @@ def err_reference_pointer_to_reference
     : Error<"cannot create a pointer to a reference ('%0')">;
 def err_reference_to_reference
     : Error<"cannot create a reference to a reference ('%0')">;
+def err_reference_pointer_to_member_to_reference
+    : Error<"cannot create a pointer-to-member to a reference">;
+def err_reference_pointer_to_member_to_void
+    : Error<"cannot create a pointer-to-member to 'void'">;
+
+def error_pointer_to_member_type
+    : Error<"cannot find type '%0' for pointer-to-member">;
 
 def err_constant_expr_ambiguous
     : Error<"ambiguous expression being constant evaluated">;
