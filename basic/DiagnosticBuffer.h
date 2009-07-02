@@ -39,6 +39,8 @@ public:
 
   void Filter(DiagFlags flags);
 
+  void Mark(DiagFlags flags);
+
   int NumberOf(DiagFlags flags);
 
   void ErrorsToWarnings();

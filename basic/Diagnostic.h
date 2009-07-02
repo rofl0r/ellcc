@@ -391,6 +391,10 @@ public:
    */
   void Filter(DiagFlags flags = DIAG_ALL);
       
+  /** Mark buffered diagnostics.
+   */
+  void Mark(DiagFlags flags);
+      
   /** Turn buffered errors into warnings.
    */
   void ErrorsToWarnings();
@@ -895,6 +899,11 @@ public:
    */
   virtual void Filter(DiagFlags flags);
       
+  /** Mark buffered diagnostics.
+   * Assert if no buffering client is active.
+   */
+  virtual void Mark(DiagFlags flags);
+
   /** Turn buffered errors into warnings.
    * Assert if no buffering client is active.
    */

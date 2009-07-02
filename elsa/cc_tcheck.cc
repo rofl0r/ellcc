@@ -755,7 +755,7 @@ CompoundType *Function::verifyIsCtor(Env &env, char const *context)
   if (!enclosing) {
     env.report(env.loc(), diag::err_class_not_constructor_or_member)
         << context
-        << EF_DISAMBIGUATES;
+        << DIAG_DISAMBIGUATES;
     return NULL;
   }
 
@@ -764,7 +764,7 @@ CompoundType *Function::verifyIsCtor(Env &env, char const *context)
   if (nameAndParams->var->name != env.constructorSpecialName) {
     env.report(env.loc(), diag::err_class_not_constructor)
         << context
-        << EF_DISAMBIGUATES;
+        << DIAG_DISAMBIGUATES;
     return NULL;
   }
 
@@ -5218,8 +5218,9 @@ void Expression::tcheck(Env &env, Expression *&replacement)
       return;
     }
 
-    env.discard();
     // grab the errors from trying E_funCall
+    DiagnosticBuffer* buffer = static_cast<DiagnosticBuffer*>(env.diag.Take());
+    env.push();
     ErrorList funCallErrors;
     funCallErrors.takeMessages(env.errors);
 
@@ -5232,6 +5233,7 @@ void Expression::tcheck(Env &env, Expression *&replacement)
       env.errors.prependMessages(existing);
       // Restore the old diagnostics.
       env.pop();
+      delete buffer;
 
       // a little tricky because E_constructor::inner2_itcheck is
       // allowed to yield a replacement AST node
@@ -5245,10 +5247,12 @@ void Expression::tcheck(Env &env, Expression *&replacement)
 
     // both failed.. just leave the errors from the function call
     // interpretation since that's the more likely intent
+    env.discard();
+    env.pop();
     env.errors.deleteAll();
     env.errors.takeMessages(existing);
     env.errors.takeMessages(funCallErrors);
-    // Restore the old diagnostics.
+    env.diag.Give(buffer);
     env.pop();
 
     // 10/20/04: Need to give a type anyway.
@@ -5925,12 +5929,9 @@ Type *E_variable::itcheck_var_set(Env &env, Expression *&replacement,
     }
 
     if (v && v->hasFlag(DF_TYPEDEF)) {
-      env.error(name->loc, stringc
-        << "`" << *name << "' used as a variable, but it's actually a type",
-        EF_DISAMBIGUATES);
-
       env.report(name->loc, diag::err_type_used_as_variable)
         << name->getName() << DIAG_DISAMBIGUATES;
+      env.report(v->loc, diag::note_definition) << name->getName();
       return env.errorType();
     }
 
@@ -5942,12 +5943,6 @@ Type *E_variable::itcheck_var_set(Env &env, Expression *&replacement,
         // would disambiguate use of '<' as less-than
         env.report(name->loc, diag::err_template_arguments_to_non_template_function)
             << name->toString_noTemplArgs() << DIAG_DISAMBIGUATES;
-
-        env.error(name->loc, stringc
-          << "explicit template arguments were provided after `"
-          << name->toString_noTemplArgs()
-          << "', but that is not the name of a template function",
-          EF_DISAMBIGUATES);
       }
     }
 
@@ -5983,11 +5978,6 @@ Type *E_variable::itcheck_var_set(Env &env, Expression *&replacement,
 
           env.report(name->loc, diag::err_undeclared_identifier) << name->getName();
           return env.getSimpleType(ST_ERROR);
-#if RICH
-          return env.error(name->loc, stringc
-                           << "there is no variable called `" << *name << "'",
-                           EF_NONE);
-#endif
         }
       }
     }

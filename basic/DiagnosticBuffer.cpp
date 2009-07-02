@@ -34,6 +34,13 @@ void DiagnosticBuffer::Filter(DiagFlags flags)
     }
 }
 
+void DiagnosticBuffer::Mark(DiagFlags flags)
+{
+    for (iterator it = diags.begin(); it != diags.end(); ++it) {
+        it->second->addFlags(flags);
+    }
+}
+
 int DiagnosticBuffer::NumberOf(DiagFlags flags)
 {
     int count = 0;

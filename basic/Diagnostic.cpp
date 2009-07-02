@@ -268,6 +268,14 @@ void Diagnostic::Filter(DiagFlags flags)
     Client.back()->Filter(flags);
 }
   
+/** Mark buffered diagnostics.
+*/
+void Diagnostic::Mark(DiagFlags flags)
+{
+    assert(Client.size() == 0 && "No Client available for diagnostic reporting.");
+    Client.back()->Mark(flags);
+}
+  
 /** Turn buffered errors into warnings.
 */
 void Diagnostic::ErrorsToWarnings()
@@ -909,6 +917,11 @@ void DiagnosticClient::Discard()
 /** Filter buffered diagnostics.
 */
 void DiagnosticClient::Filter(DiagFlags flags)
+{ assert(true == 0 && "No buffering client active"); }
+  
+/** Mark buffered diagnostics.
+*/
+void DiagnosticClient::Mark(DiagFlags flags)
 { assert(true == 0 && "No buffering client active"); }
   
 /** Turn buffered errors into warnings.

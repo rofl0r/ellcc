@@ -140,6 +140,7 @@ NODE *resolveAmbiguity(
       catch (x_assert &x) {
         HANDLER();
         env.errors.markAllAsFromDisamb();
+        env.mark(DIAG_FROM_DISAMB);
         env.pop();
         throw;
       }
@@ -222,9 +223,7 @@ NODE *resolveAmbiguity(
     env.errors.addError(new ErrorMsg(
       loc, "---- END: messages from an ambiguity ----", EF_NONE));
     env.report(loc, diag::note_parse_end_messages_from_ambiguity);
-  }
-
-  else if (numOk == 1) {
+  } else if (numOk == 1) {
     // one alternative succeeds, which is what we want
     TRACE("disamb",
       toString(loc) << ": ambiguous " << nodeTypeName
@@ -240,9 +239,7 @@ NODE *resolveAmbiguity(
     
     // select 'lastOk'
     ths = lastOk;
-  }
-
-  else {
+  } else {
     // more than one alternative succeeds, not good
     TRACE("disamb",
       toString(loc) << ": ambiguous " << nodeTypeName << ": multiple good!");

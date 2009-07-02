@@ -151,6 +151,8 @@ public:      // data
     { diag.Discard(); }
   void filter(ellcc::DiagFlags flags)
     { diag.Filter(flags); }
+  void mark(ellcc::DiagFlags flags)
+    { diag.Mark(flags); }
   
   // Source manager.
   SourceManager& SM;
