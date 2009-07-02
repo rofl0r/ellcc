@@ -225,4 +225,6 @@ def err_constant_expr_xor_float
     : Error<"cannot apply '^' to float types">;
 def err_constant_expr_or_float
     : Error<"cannot apply '|' to float types">;
+
+def err_asm_wide_string_literal : Error<"wide string literal in 'asm'">;
 }

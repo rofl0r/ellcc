@@ -5007,8 +5007,7 @@ void Asm::itcheck(Env &env, bool module)
 {
   StringRef t = text->text;
   if (t[0] == 'L') {
-    env.error(text->loc, stringc
-      << "wide string literal in ‘asm’");
+    env.report(text->loc, diag::err_asm_wide_string_literal);
     return;
   }
   Expression* dummy;
