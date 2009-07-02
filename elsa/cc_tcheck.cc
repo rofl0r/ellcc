@@ -6116,8 +6116,8 @@ static Variable *outerResolveOverload_explicitSet(
       }
     }
 
-    env.error(stringc << "cannot find conversion operator yielding `"
-                      << namedType->toString() << "'");
+    env.report(loc, diag::err_overload_conversion_operator)
+        << namedType->toString();
     return NULL;
   }
 
@@ -6478,10 +6478,9 @@ int compareArgsToParams(Env &env, FunctionType *ft, FakeList<ArgExpression> *arg
         xassert(arg->ambiguity == NULL);
       } else {
         if (env.needError(arg->getType()) == NULL) {
-            env.error(stringc
-                << "cannot convert argument type `" << arg->getType()->toString()
-                << "' to parameter " << paramIndex
-                << " type `" << param->type->toString() << "'");
+            env.report(arg->expr->loc, diag::err_function_argument_to_parameter_conversion)
+                << arg->getType()->toString() << paramIndex << param->type->toString();
+            env.report(param->loc, diag::note_parameter_declaration);
         }
       }
     }
@@ -6497,8 +6496,8 @@ int compareArgsToParams(Env &env, FunctionType *ft, FakeList<ArgExpression> *arg
     // check that all remaining parameters have default arguments
     for (; !paramIter.isDone(); paramIter.adv(), paramIndex++) {
       if (!paramIter.data()->value) {
-        env.error(stringc
-          << "no argument supplied for parameter " << paramIndex);
+        env.report(env.loc(), diag::err_function_argument_missing) << paramIndex;
+        env.report(paramIter.data()->loc, diag::note_parameter_declaration);
       }
       else {
         // TODO (elaboration): modify the call site to explicitly
@@ -6507,9 +6506,9 @@ int compareArgsToParams(Env &env, FunctionType *ft, FakeList<ArgExpression> *arg
         defaultArgsUsed++;
       }
     }
-  }
-  else if (paramIter.isDone() && !ft->acceptsVarargs()) {
-    env.error("too many arguments supplied");
+  } else if (paramIter.isDone() && !ft->acceptsVarargs()) {
+
+    env.report(env.loc(), diag::err_function_too_many_arguments);
   }
 
   return defaultArgsUsed;

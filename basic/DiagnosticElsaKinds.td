@@ -169,6 +169,12 @@ def warn_function_return_value_in_void_function
     : Warning<"returning a value in a 'void' function">;
 def err_function_no_return_value
     : Error<"no return value for a non-'void' function">;
+def err_function_argument_to_parameter_conversion
+    : Error<"cannot convert argument type '%0' to parameter %1 type '%2'">;
+def err_function_argument_missing
+    : Error<"no argument supplied for parameter %0">;
+def err_function_too_many_arguments
+    : Error<"too many arguments supplied">;
 
 def err_label_duplicate : Error<"'%0' is a duplicate label">;
 def note_label_duplicate : Note<"the duplicated label:">;
@@ -180,6 +186,8 @@ def err_overload_not_function
 def err_overload_does_not_match
     : Error<"the name '%0' is overloaded, but the type '%1' doesn't match any of the"
             " %2 declared overloaded instances">;
+def err_overload_conversion_operator
+    : Error<"cannot find conversion operator yielding '%0'">;
 
 def err_reference_pointer_to_reference
     : Error<"cannot create a pointer to a reference ('%0')">;

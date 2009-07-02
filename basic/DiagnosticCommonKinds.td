@@ -24,6 +24,7 @@ def note_instantiated_from : Note<"instantiated from:">;
 // RICH: end of used
 
 def note_previous_declaration : Note<"previous declaration is here:">;
+def note_parameter_declaration : Note<"parameter declaration is here:">;
 def note_previous_implicit_declaration : Note<
   "previous implicit declaration is here:">;
 def note_previous_use : Note<"previous use is here:">;
