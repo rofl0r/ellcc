@@ -32,8 +32,9 @@ public:
   void Discard()
   {
       for (iterator it = diags.begin(); it != diags.end(); ++it) {
-        delete it->second;
+          delete it->second;
       }
+      diags.clear();
   }
 
   void Filter(DiagFlags flags);

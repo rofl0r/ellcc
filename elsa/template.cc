@@ -3334,7 +3334,7 @@ void Env::setSTemplArgFromExpr(STemplateArgument &sarg, Expression const *expr,
           << "cannot evaluate `" << expr->exprToString()
           << "' as a template integer argument");
 #else
-        // This causes a pop failure.
+        // RICH: This causes a pop failure.
         env.report(expr->loc, diag::err_template_constant_expression)
             << expr->exprToString()
             << SourceRange(expr->loc, expr->endloc);

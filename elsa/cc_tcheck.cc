@@ -5928,6 +5928,9 @@ Type *E_variable::itcheck_var_set(Env &env, Expression *&replacement,
       env.error(name->loc, stringc
         << "`" << *name << "' used as a variable, but it's actually a type",
         EF_DISAMBIGUATES);
+
+      env.report(name->loc, diag::err_type_used_as_variable)
+        << name->getName() << DIAG_DISAMBIGUATES;
       return env.errorType();
     }
 
@@ -5937,6 +5940,9 @@ Type *E_variable::itcheck_var_set(Env &env, Expression *&replacement,
         name->getUnqualifiedName()->isPQ_template()) {
       if (!v || !v->namesTemplateFunction()) {
         // would disambiguate use of '<' as less-than
+        env.report(name->loc, diag::err_template_arguments_to_non_template_function)
+            << name->toString_noTemplArgs() << DIAG_DISAMBIGUATES;
+
         env.error(name->loc, stringc
           << "explicit template arguments were provided after `"
           << name->toString_noTemplArgs()

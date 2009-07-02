@@ -18,6 +18,7 @@ def err_undeclared_identifier : Error<"undeclared identifier '%0'">;
 def err_redefinition_of_identifier : Error<"redefinition of '%0'">;
 def err_unknown_type : Error<"there is no type called '%0'">;
 def err_variable_used_as_type : Error<"variable name '%0' used as if it were a type">;
+def err_type_used_as_variable : Error<"type name '%0' used as if it were a variable">;
 def err_illegal_use_of_typedef : Error<"'%0' is a typedef-name, so cannot be used after '%1'">;
 def err_not_struct_class_union : Error<"'%0' is not a struct/class/union">;
 def err_no_such : Error<"no such %0: '%1'">;
@@ -68,6 +69,9 @@ def err_template_primary_cannot_have_template_args
     : Error<"template primary cannot have template args">;
 def err_template_constant_expression
     : Error<"cannot evaluate '%0' as a template constant integer argument">;
+def err_template_arguments_to_non_template_function
+    : Error<"explicit template arguments were provided after '%0'. "
+            "but that is not the name of a template function">;
 
 def err_class_memberless_initialization : Error<"can't initialize memberless aggregate '%0'">;
 def err_class_no_member : Error<"'%0' has no member named '%1'">;
