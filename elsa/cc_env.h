@@ -24,6 +24,7 @@
 #include "Diagnostic.h"         // DiagnosticBuilder
 #include "DiagnosticBuffer.h"   // DiagnosticBuffer
 #include "ElsaDiagnostic.h"
+#include <map>
 
 class StringTable;              // strtable.h
 class TypeListIter;             // typelistiter.h
@@ -278,6 +279,10 @@ public:      // data
   /** true if a break is valid.
    */
   bool canBreak;
+  /** Goto labels.
+   */
+  typedef std::map<StringRef, SourceLocation> labelmap;
+  labelmap labels;
 private:     // funcs
   // old
   //CompoundType *instantiateClass(

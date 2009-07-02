@@ -23,6 +23,8 @@ def err_not_struct_class_union : Error<"'%0' is not a struct/class/union">;
 def err_no_such : Error<"no such %0: '%1'">;
 def err_main_implicit_int : Warning<"obsolete use of implicit int in declaration of main()">;
 def err_implicit_return : Error<"obsolete use of implicit int return type">;
+def err_break : Error<"'break' not in a 'switch', 'while', 'do', or 'for' statement">;
+def err_continue : Error<"'continue' not in a 'while', 'do', or 'for' statement">;
 
 def err_specifier_invalid : Error<"cannot apply const/volatile to type '%0'">;
 
@@ -155,6 +157,16 @@ def err_function_void_parameter
     : Error<"cannot have parameter of type 'void', unless it is "
             "the only parameter, has no parameter name, and has "
             "no default value">;
+def err_function_return_value_in_void_function
+    : Error<"returning a value in a 'void' function">;
+def warn_function_return_value_in_void_function
+    : Warning<"returning a value in a 'void' function">;
+def err_function_no_return_value
+    : Error<"no return value for a non-'void' function">;
+
+def err_label_duplicate : Error<"'%0' is a duplicate label">;
+def note_label_duplicate : Note<"the duplicated label:">;
+def err_label_not_found : Error<"label '%0' does not exist">;
 
 def err_overload_not_function
     : Error<"the name '%0' is overloaded, but the type '%1' isn't even a function;"

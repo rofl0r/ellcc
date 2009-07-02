@@ -446,6 +446,7 @@ void Function::tcheck(Env &env, Variable *instV)
   env.canBreak = false;
   bool oldCanContinue = env.canContinue;
   env.canContinue = false;
+  env.labels.clear();
 
   if (env.secondPassTcheck) {
     // for the second pass, just force the use of the
@@ -4749,12 +4750,21 @@ void S_skip::itcheck(Env &env)
 
 void S_label::itcheck(Env &env)
 {
+  // Check that the label is not a duplicate
+  Env::labelmap::iterator it;
+  it = env.labels.find(name);
+  if (it == env.labels.end()) {
+      // Not a duplicate.
+      env.labels.insert(std::pair<StringRef, SourceLocation>(name, loc));
+  } else {
+      env.report(loc, diag::err_label_duplicate) << name;
+      env.report(it->second, diag::note_label_duplicate);
+  }
+ 
   // this is a prototypical instance of typechecking a
   // potentially-ambiguous subtree; we have to change the
   // pointer to whatever is returned by the tcheck call
   s = s->tcheck(env);
-
-  // TODO: check that the label is not a duplicate
 }
 
 
@@ -4917,7 +4927,7 @@ void S_for::itcheck(Env &env)
 void S_break::itcheck(Env &env)
 {
   if (!env.canBreak) {
-    env.error("'break' not in a 'switch', 'while', 'do', or 'for' statement");
+    env.report(loc, diag::err_break);
   }
 }
 
@@ -4925,7 +4935,7 @@ void S_break::itcheck(Env &env)
 void S_continue::itcheck(Env &env)
 {
   if (!env.canContinue) {
-    env.error("'continue' not in a 'while', 'do', or 'for' statement");
+    env.report(loc, diag::err_continue);
   }
 }
 
@@ -4938,9 +4948,11 @@ void S_return::itcheck(Env &env)
       expr->tcheck(env);
       if (!expr->expr->type->isVoid()) {
           if (!env.PP.getLangOptions().CPlusPlus) {
-              env.warning("returning a value in a 'void' function");
+              env.report(expr->expr->loc, diag::warn_function_return_value_in_void_function)
+                << SourceRange(expr->expr->loc, expr->expr->endloc);
           } else {
-              env.error("returning a value in a 'void' function");
+              env.report(expr->expr->loc, diag::err_function_return_value_in_void_function)
+                << SourceRange(expr->expr->loc, expr->expr->endloc);
           }
       }
     } else {
@@ -4951,7 +4963,7 @@ void S_return::itcheck(Env &env)
     }
   } else {
     if (!returnType->isVoid()) {
-      env.error("no return value for a non-'void' function");
+      env.report(loc, diag::err_function_no_return_value);
     }
   }
 }
@@ -4959,7 +4971,14 @@ void S_return::itcheck(Env &env)
 
 void S_goto::itcheck(Env &env)
 {
-  // TODO: verify the target is an existing label
+  // Check that the label exists.
+  Env::labelmap::iterator it;
+  it = env.labels.find(target);
+  if (it == env.labels.end()) {
+      // Not found.
+      env.report(loc, diag::err_label_not_found)
+        << target << SourceRange(loc, endloc);
+  }
 }
 
 
