@@ -5210,7 +5210,7 @@ void Expression::tcheck(Env &env, Expression *&replacement)
       // interpretation would fail if we tried it
       TRACE("disamb", toString(loc) << ": selected E_funCall");
       env.errors.prependMessages(existing);
-      // Restore the old diagnostics.
+      // Restore the old diagnostics and use the newly generated ones.
       env.pop();
       call->type = call->inner2_itcheck(env, candidates);
       call->ambiguity = NULL;
@@ -5218,9 +5218,10 @@ void Expression::tcheck(Env &env, Expression *&replacement)
       return;
     }
 
-    // grab the errors from trying E_funCall
-    DiagnosticBuffer* buffer = static_cast<DiagnosticBuffer*>(env.diag.Take());
+    // Create a new error environment, saveing the E_funCall errors.
     env.push();
+
+    // grab the errors from trying E_funCall
     ErrorList funCallErrors;
     funCallErrors.takeMessages(env.errors);
 
@@ -5231,9 +5232,11 @@ void Expression::tcheck(Env &env, Expression *&replacement)
       // ok, finish up
       TRACE("disamb", toString(loc) << ": selected E_constructor");
       env.errors.prependMessages(existing);
-      // Restore the old diagnostics.
+      // Restore the old diagnostics and use the newly generated ones.
       env.pop();
-      delete buffer;
+      // Get rid of the E_funCall errors.
+      env.discard();
+      env.pop();
 
       // a little tricky because E_constructor::inner2_itcheck is
       // allowed to yield a replacement AST node
@@ -5247,13 +5250,17 @@ void Expression::tcheck(Env &env, Expression *&replacement)
 
     // both failed.. just leave the errors from the function call
     // interpretation since that's the more likely intent
+
+    // Discard the E_constructor errors.
     env.discard();
     env.pop();
+
+    // Get the E_funCall errors.
+    env.pop();
+
     env.errors.deleteAll();
     env.errors.takeMessages(existing);
     env.errors.takeMessages(funCallErrors);
-    env.diag.Give(buffer);
-    env.pop();
 
     // 10/20/04: Need to give a type anyway.
     this->type = env.errorType();

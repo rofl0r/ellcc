@@ -70,7 +70,7 @@ def err_template_primary_cannot_have_template_args
 def err_template_constant_expression
     : Error<"cannot evaluate '%0' as a template constant integer argument">;
 def err_template_arguments_to_non_template_function
-    : Error<"explicit template arguments were provided after '%0'. "
+    : Error<"explicit template arguments were provided after '%0', "
             "but that is not the name of a template function">;
 
 def err_class_memberless_initialization : Error<"can't initialize memberless aggregate '%0'">;
