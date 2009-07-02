@@ -589,7 +589,7 @@ class DiagnosticBuilder {
   friend class Diagnostic;
   explicit DiagnosticBuilder(Diagnostic *diagObj)
     : DiagObj(diagObj), NumArgs(0), NumRanges(0), 
-      NumCodeModificationHints(0) {}
+      NumCodeModificationHints(0) { }
 
 public:  
   /// Copy constructor.  When copied, this "takes" the diagnostic info from the
@@ -758,6 +758,7 @@ inline DiagnosticBuilder Diagnostic::Report(FullSourceLoc Loc, unsigned ID){
   assert(DiagID == ~0U && "Multiple diagnostics in flight at once!");
   DiagLoc = Loc;
   DiagID = ID;
+  Flags = DIAG_NONE;
   return DiagnosticBuilder(this);
 }
 

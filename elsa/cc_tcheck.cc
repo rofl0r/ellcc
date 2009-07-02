@@ -15,7 +15,6 @@
 #include "cc_env.h"             // Env
 #include "trace.h"              // trace
 #include "cc_print.h"           // PrintEnv
-#include "strutil.h"            // decodeEscapes
 #include "Preprocessor.h"       // LangOptions
 #include "SourceManager.h"      // SourceManager
 #include "stdconv.h"            // test_getStandardConversion
@@ -5750,18 +5749,10 @@ Type *E_stringLit::itcheck_x(Env &env, Expression *&replacement)
 }
 
 
-void quotedUnescape(ArrayStack<char> &dest, char const *src,
-                    char delim, bool allowNewlines)
-{
-  // strip quotes or ticks
-  decodeEscapes(dest, substring(src+1, strlen(src)-2),
-                delim, allowNewlines);
-}
-
 Type *E_charLit::itcheck_x(Env &env, Expression *&replacement)
 {
   // cppstd 2.13.2 paras 1 and 2
-
+  env.setLoc(loc);
   SimpleTypeId id = ST_CHAR;
 
   if (!env.PP.getLangOptions().CPlusPlus) {
@@ -5775,16 +5766,31 @@ Type *E_charLit::itcheck_x(Env &env, Expression *&replacement)
     srcText++;
   }
 
-  // TODO: Change this code to use 'decodeEscape', the same function
-  // that E_stringLit uses to do decoding.
+  // allocate block to hold contents; will expand it as necessary; the
+  // initial allocation estimate assumes no continuations and no
+  // escape characters
+  DataBlock* data = new DataBlock((strlen(srcText) + 1/*NUL*/ - 2/*quotes*/) *
+                                  simpleTypeSizeInBytes(env.PP.getTargetInfo(), id));
 
-  ArrayStack<char> temp;
-  quotedUnescape(temp, srcText, '\'', false /*allowNewlines*/);
-  if (temp.length() == 0) {
-    env.error("character literal with no characters");
-    return env.errorType();
+  char quote = *srcText++;      // Skip the "'".
+
+  // iterate over characters
+  while (*srcText != quote) {
+      if (*srcText == '\\') {
+        unsigned int ch = decodeEscape(env, srcText);
+        appendCharacter(env.PP.getTargetInfo(), data, ch, id);
+      } else {
+        appendCharacter(env.PP.getTargetInfo(), data, *srcText, id);
+        srcText++;
+      }
   }
-  else if (temp.length() > 1) {
+
+  data->setAllocated(data->getDataLen());
+  
+  if (data->getDataLen() == 0) {
+    env.report(loc, diag::err_char_literal_with_no_characters);
+    return env.errorType();
+  } else if (data->getDataLen() > 1) {
     // below I only store the first byte
     //
     // technically, this is ok, since multicharacter literal values
@@ -5792,7 +5798,7 @@ Type *E_charLit::itcheck_x(Env &env, Expression *&replacement)
     // implementation as an approximation of some nominal "real"
     // compiler, which will no doubt do something smarter, so Elsa
     // should too
-    env.warning("multicharacter literals not properly implemented");
+    env.report(loc, diag::warn_char_literal_multi_character);
     if (id == ST_CHAR) {
       // multicharacter non-wide character literal has type int
       id = ST_INT;
@@ -5803,14 +5809,15 @@ Type *E_charLit::itcheck_x(Env &env, Expression *&replacement)
   // negative chars (which come from things like '\xFF') get stored as
   // small positive ints in [128,255].  This is far from perfect, but
   // will do for now.
-  c = (unsigned int)(unsigned char)temp[0];
+  c = (unsigned int)(unsigned char)*data->getDataC();
+  delete data;
 
   if (!env.PP.getLangOptions().CPlusPlus && id == ST_WCHAR_T) {
     // in C, 'wchar_t' is not built-in, it is defined; so we
     // have to look it up
     Variable *v = env.globalScope()->lookupVariable(env.str("wchar_t"), env);
     if (!v) {
-      env.error("you must #include <stddef.h> before using wchar_t");
+      env.report(loc, diag::err_char_literal_no_wchar_t);
       return env.errorType();
     }
     else {
@@ -5827,7 +5834,7 @@ Type *E_this::itcheck_x(Env &env, Expression *&replacement)
   // we should be in a method with a receiver parameter
   receiver = env.lookupVariable(env.receiverName);
   if (!receiver) {
-    env.error("can only use 'this' in a nonstatic method");
+    env.report(loc, diag::err_class_this_only_in_non_static_method);
     return env.errorType();
   }
 

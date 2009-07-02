@@ -115,6 +115,8 @@ def err_class_conversion_operator_arguments
     : Error<"conversion operator cannot accept arguments">;
 def err_class_bitfield_size_must_be_constant
     : Error<"bitfield size must be a constant">;
+def err_class_this_only_in_non_static_method
+    : Error<"can only use 'this' in a nonstatic method">;
 
 def err_enum_not_defined
     : Error<"there is no enum called '%0'">;
@@ -234,4 +236,11 @@ def err_escape_universal_escape_sequence
     : Error<"universal escape sequence must have %0 hex digits">;
 def warn_escape_unknown
     : Warning<"unrecognized escape sequence: '\\%0' treating as same as '%0'">;
+
+def err_char_literal_with_no_characters
+    : Error<"character literal with no characters">;
+def warn_char_literal_multi_character
+    : Warning<"multi-character literals not properly implemented">;
+def err_char_literal_no_wchar_t
+    : Error<"you must #include <stddef.h> before using wchar_t">;
 }

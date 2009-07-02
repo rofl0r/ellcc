@@ -719,7 +719,9 @@ void Lexer::LexCharConstant(Token &Result, const char *CurPtr) {
   if (C == '\'') {
     if (!isLexingRawMode() && !Features.AsmPreprocessor)
       Diag(BufferPtr, diag::err_empty_character);
-    FormTokenWithChars(Result, CurPtr, tok::unknown);
+    const char *TokStart = BufferPtr;
+    FormTokenWithChars(Result, CurPtr, tok::char_constant);
+    Result.setLiteralData(TokStart);
     return;
   } else if (C == '\\') {
     // Skip the escaped character.
