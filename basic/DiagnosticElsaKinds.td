@@ -227,4 +227,11 @@ def err_constant_expr_or_float
     : Error<"cannot apply '|' to float types">;
 
 def err_asm_wide_string_literal : Error<"wide string literal in 'asm'">;
+
+def err_escape_hex_escape_sequence
+    : Error<"hex escape sequence must begin with hex digit">;
+def err_escape_universal_escape_sequence
+    : Error<"universal escape sequence must have %0 hex digits">;
+def warn_escape_unknown
+    : Warning<"unrecognized escape sequence: '\\%0' treating as same as '%0'">;
 }

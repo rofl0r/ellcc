@@ -5599,7 +5599,7 @@ static unsigned int decodeEscape(Env &env, char const *&p)
     // hex escape sequence
     case 'x': {
       if (!isHexDigit(*p)) {
-        env.error("hex escape sequence must begin with hex digit");
+        env.report(env.loc(), diag::err_escape_hex_escape_sequence);
       }
       unsigned int ret = 0;
       while (isHexDigit(*p)) {
@@ -5616,8 +5616,9 @@ static unsigned int decodeEscape(Env &env, char const *&p)
       unsigned int ret = 0;
       for (int i=0; i<nDigits; i++) {
         if (!isHexDigit(*p)) {
-          env.error(stringb("universal char escape sequence must have " <<
-                            nDigits << " hex digits"));
+          env.report(env.loc(), diag::err_escape_universal_escape_sequence)
+            << nDigits;
+          break;
         }
         ret = (ret << 4) + decodeHexDigit(*p);
         p++;
@@ -5627,8 +5628,10 @@ static unsigned int decodeEscape(Env &env, char const *&p)
 
     // unrecognized; technically invalid C++
     default:
-      env.warning(stringb("unrecognized escape sequence: '\\" << p[-1] <<
-                          "'; treating as same as '" << p[-1] << "'"));
+      char buf[2];
+      buf[0] = p[-1];
+      buf[1] = '\0';
+      env.report(env.loc(), diag::warn_escape_unknown) << buf;
       return p[-1];
   }
 }
@@ -5692,6 +5695,7 @@ Type *E_stringLit::itcheck_x(Env &env, Expression *&replacement)
   // iterate over continuation segments
   E_stringLit *segment = this;
   while (segment) {
+    env.setLoc(segment->loc);
     char const *p = segment->text;
     if (*p == 'L') { p++; }
     int l = strlen(p);
