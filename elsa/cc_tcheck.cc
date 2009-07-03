@@ -6795,7 +6795,7 @@ Type *E_funCall::inner2_itcheck(Env &env, LookupSet &candidates)
     }
 
     // refine candidates by instantiating templates, etc.
-    char const *lastRemovalReason = "(none removed yet)";
+    unsigned lastRemovalReason = 0;
     SObjListMutator<Variable> mut(candidates);
     while (!mut.isDone()) {
       Variable *v = mut.data();
@@ -6805,7 +6805,7 @@ Type *E_funCall::inner2_itcheck(Env &env, LookupSet &candidates)
       // filter out non-templates if we have template arguments
       if (targs && !v->isTemplate(considerInherited)) {
         mut.remove();
-        lastRemovalReason = "non-template given template arguments";
+        lastRemovalReason = diag::note_function_non_template_given_template_arguments;
         continue;
       }
 
@@ -6816,7 +6816,7 @@ Type *E_funCall::inner2_itcheck(Env &env, LookupSet &candidates)
         if (targs) {
           if (!env.loadBindingsWithExplTemplArgs(v, targs->sargs, match, iflags)) {
             mut.remove();
-            lastRemovalReason = "incompatible explicit template args";
+            lastRemovalReason = diag::note_function_incompatible_explicit_template_arguments;
             continue;
           }
         }
@@ -6825,7 +6825,7 @@ Type *E_funCall::inner2_itcheck(Env &env, LookupSet &candidates)
         TypeListIter_FakeList argsIter(args);
         if (!env.inferTemplArgsFromFuncArgs(v, argsIter, match, iflags)) {
           mut.remove();
-          lastRemovalReason = "incompatible call site args";
+          lastRemovalReason = diag::note_function_incompatible_call_site_arguments;
           continue;
         }
 
@@ -6841,7 +6841,7 @@ Type *E_funCall::inner2_itcheck(Env &env, LookupSet &candidates)
           }
 
           mut.remove();
-          lastRemovalReason = "could not deduce all template params";
+          lastRemovalReason = diag::note_function_could_not_deduce_template_parameters;
           continue;
         }
 
@@ -6854,10 +6854,11 @@ Type *E_funCall::inner2_itcheck(Env &env, LookupSet &candidates)
 
     // do we still have any candidates?
     if (candidates.isEmpty()) {
-      env.error(pqname->loc, stringc
-               << "call site name lookup for \"" << pqname->toString()
-               << "\" failed to yield any candidates; "
-               << "last candidate was removed because: " << lastRemovalReason);
+      env.report(pqname->loc, diag::err_function_call_site_lookup)
+        << pqname->toString();
+      if (lastRemovalReason) {
+          env.report(pqname->loc, lastRemovalReason);
+      }
       return env.errorType();
     }
 

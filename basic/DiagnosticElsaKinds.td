@@ -181,6 +181,16 @@ def err_function_no_function
     : Error<"there is no function called '%0'">;
 def note_function_dependent_lookup
     : Note<"due to nondependent lookup, did not search bases: %0">;
+def err_function_call_site_lookup
+    : Error<"call site name lookup for '%0' failed to yield any candidates">;
+def note_function_non_template_given_template_arguments
+    : Note<"non-template given template arguments">;
+def note_function_incompatible_explicit_template_arguments
+    : Note<"incompatible explicit template arguments">;
+def note_function_incompatible_call_site_arguments
+    : Note<"incompatible call site arguments">;
+def note_function_could_not_deduce_template_parameters
+    : Note<"could not deduce all template parameters">;
 
 def err_label_duplicate : Error<"'%0' is a duplicate label">;
 def note_label_duplicate : Note<"the duplicated label:">;
