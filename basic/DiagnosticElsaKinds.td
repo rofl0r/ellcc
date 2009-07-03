@@ -124,7 +124,9 @@ def err_class_this_only_in_non_static_method
 def err_class_destructor_arguments
     : Error<"call to destructor must have no arguments">;
 def err_class_used_as_function
-    : Error<"object of type '%0'  used as a function, but it has no operator() declared">;
+    : Error<"object of type '%0' used as a function, but it has no operator() declared">;
+def err_class_receiver_argument
+    : Error<"cannot convert argument type '%0' to receiver parameter type '%1'">;
 
 def err_enum_not_defined
     : Error<"there is no enum called '%0'">;
@@ -161,6 +163,8 @@ def err_operator_incdec_argument_must_be_integer
 def err_operator_cannot_have_default_arguments
     : Error<"%0 cannot have default arguments">;
 
+def err_function_wrong_type
+    : Error<"you can't use an expression of type '%0' as a function">;
 def err_function_const_volatile
     : Error<"cannot have const/volatile on nonmember functions">;
 def err_function_void_parameter
@@ -273,4 +277,9 @@ def warn_char_literal_multi_character
     : Warning<"multi-character literals not properly implemented">;
 def err_char_literal_no_wchar_t
     : Error<"you must #include <stddef.h> before using wchar_t">;
+
+def err_test_checktype
+    : Error<"checkType: '%0' != '%1'">;
+def err_test_invalid
+    : Error<"invalid call to '%0'">;
 }

@@ -6969,9 +6969,8 @@ Type *E_funCall::inner2_itcheck(Env &env, LookupSet &candidates)
   if (!t->isFunctionType()) {
     Type* et = env.needError(t);
     if (et == NULL) {
-        env.error(stringc
-            << "you can't use an expression of type `" << t->toString()
-            << "' as a function");
+        env.report(loc, diag::err_function_wrong_type)
+            << t->toString();
         et = env.errorType();
     }
     return et;
@@ -7031,13 +7030,10 @@ Type *E_funCall::inner2_itcheck(Env &env, LookupSet &candidates)
              receiverType,
              ft->getReceiver()->type,
              true /*destIsReceiver*/)) {
-        env.error(stringc
-          << "cannot convert argument type `" << receiverType->toString()
-          << "' to receiver parameter type `" << ft->getReceiver()->type->toString()
-          << "'");
+        env.report(loc, diag::err_class_receiver_argument)
+            << receiverType->toString() << ft->getReceiver()->type->toString();
       }
-    }
-    else {
+    } else {
       // error already reported
     }
   }
@@ -7079,12 +7075,12 @@ static Type *internalTestingHooks
         // ok
       }
       else {
-        env.error(stringc << "checkType: `" << t1->toString()
-                          << "' != `" << t2->toString() << "'");
+        env.report(env.loc(), diag::err_test_checktype)
+            << t1->toString() << t2->toString();
       }
     }
     else {
-      env.error("invalid call to __elsa_checkType");
+      env.report(env.loc(), diag::err_test_invalid) << "__elsa_checkType";
     }
   }
 
@@ -7101,7 +7097,7 @@ static Type *internalTestingHooks
          expect);                                // expected result
     }
     else {
-      env.error("invalid call to __getStandardConversion");
+      env.report(env.loc(), diag::err_test_invalid) << "__getStandardConversion";
     }
   }
 
@@ -7124,7 +7120,7 @@ static Type *internalTestingHooks
          expectKind, expectSCS, expectUserLine, expectSCS2);   // expected result
     }
     else {
-      env.error("invalid call to __getImplicitConversion");
+      env.report(env.loc(), diag::err_test_invalid) << "__getImplicitConversion";
     }
   }
 
@@ -7158,7 +7154,7 @@ static Type *internalTestingHooks
       return args->first()->getType();
     }
     else {
-      env.error("invalid call to __testOverload");
+      env.report(env.loc(), diag::err_test_invalid) << "__testOverload";
     }
   }
 
@@ -7175,7 +7171,7 @@ static Type *internalTestingHooks
          expect);                        // expected result
     }
     else {
-      env.error("invalid call to __computeLUB");
+      env.report(env.loc(), diag::err_test_invalid) << "__computeLUB";
     }
   }
 
@@ -7192,8 +7188,7 @@ static Type *internalTestingHooks
         Variable *chosen = getNamedFunction(args->first()->expr->asE_funCall()->func);
         if (!chosen->funcDefn) {
           env.error("expected to be calling a defined function");
-        }
-        else {
+        } else {
           SourceManager SM;
           PresumedLoc ploc = SM.getPresumedLoc(chosen->funcDefn->getLoc());
           int actualLine = ploc.getLine();
@@ -7203,8 +7198,7 @@ static Type *internalTestingHooks
               << expectLine << ", but it chose line " << actualLine);
           }
         }
-      }
-      else if (expectLine != 0) {
+      } else if (expectLine != 0) {
         // resolution yielded something else
         env.error("expected overload to choose a function, but it "
                   "chose a non-function");
@@ -7212,12 +7206,10 @@ static Type *internalTestingHooks
 
       // propagate return type
       return args->first()->getType();
-    }
-    else {
-      env.error("invalid call to __checkCalleeDefnLine");
+    } else {
+      env.report(env.loc(), diag::err_test_invalid) << "__checkCalleeDefnLine";
     }
   }
-
 
   // syntax of calls to __test_mtype:
   //
@@ -7338,8 +7330,7 @@ static Type *internalTestingHooks
         env.error("mtype succeeded, but failure was expected");
         return env.errorType();
       }
-    }
-    else {
+    } else {
       if (expectSuccess) {
         env.error("mtype failed, but success was expected");
         return env.errorType();
