@@ -13,6 +13,7 @@
 #include "TextDiagnosticPrinter.h"
 #include "LangOptions.h"
 #include "TargetInfo.h"
+#include "llvm/LLVMContext.h"
 #include "llvm/Module.h"
 #include "llvm/ModuleProvider.h"
 #include "llvm/PassManager.h"
@@ -2207,7 +2208,8 @@ static int Assemble(const std::string &OutputFilename,
 //===----------------------------------------------------------------------===//
 //===          doMulti - Handle a phase acting on multiple files.
 //===----------------------------------------------------------------------===//
-static void doMulti(Phases phase, std::vector<Input*>& files, InputList& result, TimerGroup& timerGroup)
+static void doMulti(Phases phase, std::vector<Input*>& files, InputList& result, TimerGroup& timerGroup,
+                    llvm::LLVMContext& context)
 {
     switch (phase) {
     case BCLINKING: {
@@ -2223,7 +2225,7 @@ static void doMulti(Phases phase, std::vector<Input*>& files, InputList& result,
              outputName =  OutputFilename;
         }
         // Construct a Linker.
-        Linker TheLinker(progname, outputName.toString(), Verbose);
+        Linker TheLinker(progname, outputName.toString(), context, Verbose);
 
         // Keep track of the native link items (versus the bitcode items)
         Linker::ItemList NativeLinkItems;
@@ -2342,7 +2344,8 @@ static void doMulti(Phases phase, std::vector<Input*>& files, InputList& result,
 //===----------------------------------------------------------------------===//
 //===          doSingle - Handle a phase acting on a single file.
 //===----------------------------------------------------------------------===//
-static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes thisType)
+static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes thisType,
+                          llvm::LLVMContext& context)
 {
     FileTypes nextType = filePhases[thisType][phase].type;
 
@@ -2408,7 +2411,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
             (*PP.get()).EnterMainSourceFile();
             int result = elsa.parse(*PP.get(),
                                     input.name.c_str(), to.c_str(),
-                                    input.module, ParseOnly);
+                                    input.module, ParseOnly, context);
             if (result) {
                 Exit(result);
             }
@@ -2435,7 +2438,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         if (input.module == NULL) {
             // Load the input module...
             if (MemoryBuffer *Buffer = MemoryBuffer::getFileOrSTDIN(to.toString(), &ErrorMessage)) {
-                input.module = ParseBitcodeFile(Buffer, &ErrorMessage);
+                input.module = ParseBitcodeFile(Buffer, context, &ErrorMessage);
                 delete Buffer;
             }
         }
@@ -2565,7 +2568,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         if (input.module == NULL) {
             // Load the input module...
             if (MemoryBuffer *Buffer = MemoryBuffer::getFileOrSTDIN(input.name.toString(), &ErrorMessage)) {
-                input.module = ParseBitcodeFile(Buffer, &ErrorMessage);
+                input.module = ParseBitcodeFile(Buffer, context, &ErrorMessage);
                 delete Buffer;
             }
         }
@@ -2869,6 +2872,8 @@ int main(int argc, char **argv)
             timers[i] = new Timer(phases[i].name, timerGroup);
         }
 
+        llvm::LLVMContext context;
+        
         // Parse the command line options.
         cl::ParseCommandLineOptions(argc, argv, "C/C++ compiler\n");
         
@@ -3062,7 +3067,7 @@ int main(int argc, char **argv)
 
                 if (files.size()) {
                     // Perform the phase on the files.
-                    doMulti(phase, files, InpList, timerGroup);
+                    doMulti(phase, files, InpList, timerGroup, context);
                 }
             } else {
                 for (it = InpList.begin(); it != InpList.end(); ++it) {
@@ -3071,7 +3076,7 @@ int main(int argc, char **argv)
                     }
                     if (filePhases[it->type][phase].type != NONE) {
                         // Perform the phase on the file.
-                        it->type = doSingle(phase, *it, elsa, it->type);
+                        it->type = doSingle(phase, *it, elsa, it->type, context);
                     } else {
                         if (Verbose) {
                             cout << "  " << it->name << " is ignored during this phase\n";

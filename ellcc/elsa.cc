@@ -38,6 +38,7 @@
 #include "ElsaDiagnostic.h"
 
 // LLVM
+#include <llvm/LLVMContext.h>
 #include <llvm/Module.h>
 #include <llvm/Support/Timer.h>
 
@@ -251,7 +252,7 @@ static void handle_xBase(Env &env, xBase &x)
 
 int Elsa::doit(Preprocessor& PP,
                const char* inputFname, const char* outputFname,
-               llvm::Module*& mod, bool parseOnly)
+               llvm::Module*& mod, bool parseOnly, llvm::LLVMContext& context)
 {
     mod = NULL;
     // String table for storing parse tree identifiers.
@@ -736,7 +737,7 @@ int Elsa::doit(Preprocessor& PP,
       if (doTime) {
           llvmGenerationTimer.startTimer();
       }
-      mod = cc_to_llvm(outputFname, strTable, *unit, PP.getTargetInfo());
+      mod = cc_to_llvm(outputFname, strTable, *unit, PP.getTargetInfo(), context);
 
       if (doTime) {
           llvmGenerationTimer.stopTimer();
@@ -761,10 +762,10 @@ int Elsa::doit(Preprocessor& PP,
 
 int Elsa::parse(Preprocessor& PP,
                 const char* inputFname, const char* outputFname, llvm::Module*& mod,
-                bool parseOnly)
+                bool parseOnly, llvm::LLVMContext& context)
 {
   try {
-    return doit(PP, inputFname, outputFname, mod, parseOnly);
+    return doit(PP, inputFname, outputFname, mod, parseOnly, context);
   } catch (XUnimp &x) {
     HANDLER();
     std::cout << x << std::endl;

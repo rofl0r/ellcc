@@ -2,6 +2,7 @@
 #define _Elsa_h_
 
 namespace llvm {
+    class LLVMContext;
     class Module;
 };
 
@@ -46,7 +47,7 @@ public:
      */
     int parse(Preprocessor& PP,
               const char* inputFname, const char* outputFname, llvm::Module*& mod,
-              bool parseOnly);
+              bool parseOnly, llvm::LLVMContext& context);
 
 private:
     /** The default constructor (not implemented or used).
@@ -54,7 +55,7 @@ private:
     Elsa();
     int doit(Preprocessor& PP,
              const char* inputFname, const char* outputFname, llvm::Module*& mod,
-             bool parseOnly);
+             bool parseOnly, llvm::LLVMContext& context);
     /** true if phases should be timed.
      */
     bool doTime;

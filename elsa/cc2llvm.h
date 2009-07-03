@@ -10,6 +10,7 @@
 
 // LLVM
 namespace llvm {
+    class Context;
     class Module;
     class Type;
     class Function;
@@ -33,7 +34,7 @@ class Env;
 /** The main translator entry point.
  */
 llvm::Module* cc_to_llvm(sm::string name, StringTable &str, TranslationUnit const &input,
-                         ellcc::TargetInfo& TI);
+                         ellcc::TargetInfo& TI, llvm::LLVMContext& context);
 
 
 /** The translation environment.
@@ -50,7 +51,7 @@ public:      // funcs
     /** Construct an LLVM converter.
      */
     CC2LLVMEnv(StringTable &str, sm::string name, const TranslationUnit& input,
-               ellcc::TargetInfo& TI);
+               ellcc::TargetInfo& TI, llvm::LLVMContext& context);
     /** Destruct an LLVM convertor.
      */
     ~CC2LLVMEnv();

@@ -5,6 +5,7 @@
 #include "exprloc.h"
 
 // LLVM
+#include <llvm/LLVMContext.h>
 #include <llvm/Module.h>
 #include <llvm/DerivedTypes.h>
 #include <llvm/Constants.h>
@@ -33,13 +34,13 @@ using namespace ellcc;
 
 // -------------------- CC2LLVMEnv ---------------------
 CC2LLVMEnv::CC2LLVMEnv(StringTable &s, sm::string name, const TranslationUnit& input,
-                       TargetInfo& TI)
+                       TargetInfo& TI, llvm::LLVMContext& context)
   : str(s),
     TI(TI),
     TD(""),
     targetFolder(&TD),
     input(input),
-    mod(new llvm::Module(name.c_str())),
+    mod(new llvm::Module(name.c_str(), context)),
     function(NULL),
     functionAST(NULL),
     entryBlock(NULL),
@@ -3183,9 +3184,9 @@ llvm::Module* CC2LLVMEnv::doit()
 
 // ------------------- entry point -------------------
 llvm::Module* cc_to_llvm(sm::string name, StringTable &str, TranslationUnit const &input,
-                         TargetInfo& TI)
+                         TargetInfo& TI, llvm::LLVMContext& context)
 {
-    CC2LLVMEnv env(str, name, input, TI);
+    CC2LLVMEnv env(str, name, input, TI, context);
     return env.doit();
 }
 
