@@ -7314,12 +7314,12 @@ static Type *internalTestingHooks
         }
       }
       else {
-        env.error("mtype succeeded, but failure was expected");
+        env.report(env.loc(), diag::err_test_mtype_succeeded);
         return env.errorType();
       }
     } else {
       if (expectSuccess) {
-        env.error("mtype failed, but success was expected");
+        env.report(env.loc(), diag::err_test_mtype_failed);
         return env.errorType();
       }
       else {

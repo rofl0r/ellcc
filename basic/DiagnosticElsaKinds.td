@@ -318,4 +318,8 @@ def err_test_mtype_int_binding
 def err_test_mtype_bindings
     : Error<"__test_mtype: call site supplied %0 bindings%select{|s}1, "
             " but match yielded %2">;
+def err_test_mtype_succeeded
+    : Error<"__test_mtype: succeeded, but failure was expected">;
+def err_test_mtype_failed
+    : Error<"__test_mtype: failed, but success was expected">;
 }
