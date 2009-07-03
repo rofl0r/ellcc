@@ -295,4 +295,27 @@ def err_test_function_not_defined
     : Error<"expected to be calling a defined function">;
 def err_test_function_line
     : Error<"expected to call the function on line %0 , but it chose line %1">;
+def err_test_mtype_arguments
+    : Error<"__test_mtype requires at least three arguments">;
+def err_test_mtype_third_argument_non_constant
+    : Error<"the third argument to __test_mtype must be a constant expression">;
+def err_test_mtype_flags
+    : Error<"invalid flags value for __test_mtype">;
+def err_test_mtype_argument_count
+    : Error<"__test_mtype requires either four or an odd number of arguments">;
+def err_test_mtype_argument_string
+    : Error<"__test_mtype argument %0 must be a string literal">;
+def err_test_mtype_not_bound
+    : Error<"__test_mtype: '%0' is not bound">;
+def err_test_mtype_unexpected_binding_kind
+    : Error<"__test_mtype: unexpected binding kind '%0'">;
+def err_test_mtype_unexpected_binding
+    : Error<"__test_mtype: expected '%0' to be bound to '%1'"
+            " but it was actually bound to '%2'">;
+def err_test_mtype_int_binding
+    : Error<"__test_mtype: '%0' was bound to an int, but the provided "
+            "expression is not a constant">;
+def err_test_mtype_bindings
+    : Error<"__test_mtype: call site supplied %0 bindings%select{|s}1, "
+            " but match yielded %2">;
 }

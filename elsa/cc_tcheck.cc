@@ -7223,7 +7223,7 @@ static Type *internalTestingHooks
   if (funcName == env.special_test_mtype) {
     int nArgs = args->count();
     if (nArgs < 3) {
-      env.error("__test_mtype requires at least three arguments");
+      env.report(env.loc(), diag::err_test_mtype_arguments);
       return env.errorType();
     }
 
@@ -7231,16 +7231,16 @@ static Type *internalTestingHooks
     Type *pat = args->nth(1)->getType();
     int flags;
     if (!args->nth(2)->constEval(env, flags)) {
-      env.error("third argument to __test_mtype must be a constant expression");
+      env.report(env.loc(), diag::err_test_mtype_third_argument_non_constant);
       return env.errorType();
     }
     if (flags & ~MF_ALL) {
-      env.error("invalid flags value for __test_mtype");
+      env.report(env.loc(), diag::err_test_mtype_flags);
       return env.errorType();
     }
     bool expectSuccess = (nArgs != 4);
     if (expectSuccess && (nArgs%2 != 1)) {
-      env.error("__test_mtype requires either four or an odd number of arguments");
+      env.report(env.loc(), diag::err_test_mtype_argument_count);
       return env.errorType();
     }
 
@@ -7255,8 +7255,8 @@ static Type *internalTestingHooks
 
           // 'name' should be a string literal naming a variable in 'pat'
           if (!name->isE_stringLit()) {
-            env.error(stringc << "__test_mtype argument " << (i+1)*2+1+1
-                                     << " must be a string literal");
+            env.report(env.loc(), diag::err_test_mtype_argument_string)
+                << (i+1)*2+1+1;
             return env.errorType();
           }
           StringRef nameStr = env.str(parseQuotedString(name->asE_stringLit()->text));
@@ -7264,25 +7264,24 @@ static Type *internalTestingHooks
           // it should correspond to an existing binding in 'mtype'
           STemplateArgument binding(mtype.getBoundValue(nameStr, env.tfac));
           if (!binding.hasValue()) {
-            env.error(stringc << "__test_mtype: " << nameStr << " is not bound");
+            env.report(env.loc(), diag::err_test_mtype_not_bound) << nameStr;
             return env.errorType();
           }
 
           // we interpret 'value' depending on what kind of thing is
           // the 'binding', and hope this won't mask any problems
           switch (binding.kind) {
-            default:
-              env.error(stringc << "unexpected binding kind: "
-                                       << toString(binding.kind));
-              return env.errorType();
+          default:
+            env.report(env.loc(), diag::err_test_mtype_unexpected_binding_kind)
+                << toString(binding.kind);
+            return env.errorType();
 
-            case STemplateArgument::STA_TYPE:
+          case STemplateArgument::STA_TYPE:
               if (!binding.getType()->equals(value->getType())) {
-                env.error(stringc << "__test_mtype: "
-                  << "expected " << nameStr
-                  << " to be bound to `" << value->getType()->toString()
-                  << "' but it was actually bound to `"
-                  << binding.getType()->toString() << "'");
+                env.report(env.loc(), diag::err_test_mtype_unexpected_binding)
+                    << nameStr
+                    << value->getType()->toString()
+                    << binding.getType()->toString();
                 return env.errorType();
               }
               break;
@@ -7290,17 +7289,15 @@ static Type *internalTestingHooks
             case STemplateArgument::STA_INT: {
               int valueInt;
               if (!value->constEval(env, valueInt)) {
-                env.error(stringc << "__test_mtype: "
-                  << nameStr << " was bound to an int, but the provided "
-                  << "expression is not a constant");
+                env.report(env.loc(), diag::err_test_mtype_int_binding)
+                    << nameStr;
                 return env.errorType();
               }
               if (valueInt != binding.getInt()) {
-                env.error(stringc << "__test_mtype: "
-                  << "expected " << nameStr
-                  << " to be bound to " << valueInt
-                  << " but it was actually bound to "
-                  << binding.getInt());
+                env.report(env.loc(), diag::err_test_mtype_unexpected_binding)
+                    << nameStr
+                    << valueInt
+                    << binding.getInt();
                 return env.errorType();
               }
               break;
@@ -7311,9 +7308,8 @@ static Type *internalTestingHooks
         // the user should have supplied as many bindings as there
         // are bindings in 'mtype'
         if (mtype.getNumBindings() != i) {
-          env.error(stringc << "__test_mtype: "
-            << "call site supplied " << pluraln(i , "binding")
-            << ", but match yielded " << mtype.getNumBindings());
+          env.report(env.loc(), diag::err_test_mtype_bindings)
+            << i << i != 1 << mtype.getNumBindings();
           return env.errorType();
         }
       }
