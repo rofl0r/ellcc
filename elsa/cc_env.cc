@@ -4838,18 +4838,11 @@ sm::string Env::unsearchedDependentBases()
 
     // list unsearched bases
     SFOREACH_OBJLIST(Type, scopeTI->dependentBases, baseIter) {
-      if (ct++ == 0) {
-        sb << " (due to nondependent lookup, did not search bases: ";
-      }
-      else {
+      if (ct++ != 0) {
         sb << ", ";
       }
       sb << baseIter.data()->toString();
     }
-  }
-
-  if (ct) {
-    sb << ")";
   }
 
   return sb;

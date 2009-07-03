@@ -121,6 +121,8 @@ def err_class_bitfield_size_must_be_constant
     : Error<"bitfield size must be a constant">;
 def err_class_this_only_in_non_static_method
     : Error<"can only use 'this' in a nonstatic method">;
+def err_class_destructor_arguments
+    : Error<"call to destructor must have no arguments">;
 
 def err_enum_not_defined
     : Error<"there is no enum called '%0'">;
@@ -175,6 +177,10 @@ def err_function_argument_missing
     : Error<"no argument supplied for parameter %0">;
 def err_function_too_many_arguments
     : Error<"too many arguments supplied">;
+def err_function_no_function
+    : Error<"there is no function called '%0'">;
+def note_function_dependent_lookup
+    : Note<"due to nondependent lookup, did not search bases: %0">;
 
 def err_label_duplicate : Error<"'%0' is a duplicate label">;
 def note_label_duplicate : Note<"the duplicated label:">;

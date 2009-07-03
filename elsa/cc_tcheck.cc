@@ -6600,7 +6600,7 @@ Type *E_funCall::itcheck_x(Env &env, Expression *&replacement)
     if (fa->fieldName->getName()[0] == '~' &&
         hasNoopDtor(fa->obj->type->asRval())) {
       if (args->isNotEmpty()) {
-        env.error("call to dtor must have no arguments");
+        env.report(loc, diag::err_class_destructor_arguments);
       }
       ASTTypeId *voidId =
         new ASTTypeId(new TS_simple(env.loc(), ST_VOID),
@@ -6781,11 +6781,10 @@ Type *E_funCall::inner2_itcheck(Env &env, LookupSet &candidates)
     }
 
     if (candidates.isEmpty()) {
-      env.error(pqname->loc,
-                  stringc << "there is no function called `"
-                          << pqname->getName() << "'"
-                          << env.unsearchedDependentBases(),
-                  EF_NONE);
+      env.report(pqname->loc, diag::err_function_no_function)
+        << pqname->getName();
+      env.report(pqname->loc, diag::note_function_dependent_lookup)
+        << env.unsearchedDependentBases();
       return fevar->type = env.errorType();
     }
 
