@@ -3088,12 +3088,8 @@ realStart:
     Variable *v = env.lookupPQ_one(name, LF_NONE);
     if (v && v->hasFlag(DF_TYPEDEF)) {
       TRACE("disamb", "discarding grouped param declarator of type name");
-      env.error(stringc
-        << "`" << *name << "' is the name of a type, but was used as "
-        << "a grouped parameter declarator; ambiguity resolution should "
-        << "pick a different interpretation, so if the end user ever "
-        << "sees this message then there's a bug in my typechecker",
-        EF_DISAMBIGUATES);
+      env.report(loc, diag::err_parse_discard_grouped_parameter_declarator_of_type_name)
+        << DIAG_DISAMBIGUATES;
       goto makeDummyVar;
     }
   }
@@ -7138,16 +7134,13 @@ static Type *internalTestingHooks
         PresumedLoc ploc = SM.getPresumedLoc(chosen->loc);
         int actualLine = ploc.getLine();
         if (expectLine != actualLine) {
-          env.error(stringc
-            << "expected overload to choose function on line "
-            << expectLine << ", but it chose line " << actualLine,
-            EF_STRONG);
+          env.report(env.loc(), diag::err_test_overload_line)
+            << expectLine << actualLine << EF_STRONG;
         }
       }
       else if (expectLine != 0) {
         // resolution yielded something else
-        env.error("expected overload to choose a function, but it "
-                  "chose a non-function");
+        env.report(env.loc(), diag::err_test_overload_not_function);
       }
 
       // propagate return type
@@ -7187,21 +7180,19 @@ static Type *internalTestingHooks
         // resolution yielded a function call
         Variable *chosen = getNamedFunction(args->first()->expr->asE_funCall()->func);
         if (!chosen->funcDefn) {
-          env.error("expected to be calling a defined function");
+          env.report(env.loc(), diag::err_test_function_not_defined);
         } else {
           SourceManager SM;
           PresumedLoc ploc = SM.getPresumedLoc(chosen->funcDefn->getLoc());
           int actualLine = ploc.getLine();
           if (expectLine != actualLine) {
-            env.error(stringc
-              << "expected to call function on line "
-              << expectLine << ", but it chose line " << actualLine);
+            env.report(env.loc(), diag::err_test_function_line)
+                << expectLine << actualLine;
           }
         }
       } else if (expectLine != 0) {
         // resolution yielded something else
-        env.error("expected overload to choose a function, but it "
-                  "chose a non-function");
+        env.report(env.loc(), diag::err_test_overload_not_function);
       }
 
       // propagate return type

@@ -13,6 +13,11 @@ def note_parse_separator_messages_from_ambiguity
     : Note<"---- SEPARATOR: messages from an ambiguity ----">;
 def note_parse_end_messages_from_ambiguity
     : Note<"---- END: messages from an ambiguity ----">;
+def err_parse_discard_grouped_parameter_declarator_of_type_name
+    : Error<"'%0' is the name of a type, but was used as "
+            "a grouped parameter declarator; ambiguity resolution should "
+            "pick a different interpretation, so if the end user ever "
+            "sees this message then there's a bug in my typechecker">;
 
 def err_undeclared_identifier : Error<"undeclared identifier '%0'">;
 def err_redefinition_of_identifier : Error<"redefinition of '%0'">;
@@ -282,4 +287,12 @@ def err_test_checktype
     : Error<"checkType: '%0' != '%1'">;
 def err_test_invalid
     : Error<"invalid call to '%0'">;
+def err_test_overload_line
+    : Error<"expected overload to choose the function on line %0 , but it chose line %1">;
+def err_test_overload_not_function
+    : Error<"expected overload to choose a function, but it chose a non-function">;
+def err_test_function_not_defined
+    : Error<"expected to be calling a defined function">;
+def err_test_function_line
+    : Error<"expected to call the function on line %0 , but it chose line %1">;
 }
