@@ -123,6 +123,8 @@ def err_class_this_only_in_non_static_method
     : Error<"can only use 'this' in a nonstatic method">;
 def err_class_destructor_arguments
     : Error<"call to destructor must have no arguments">;
+def err_class_used_as_function
+    : Error<"object of type '%0'  used as a function, but it has no operator() declared">;
 
 def err_enum_not_defined
     : Error<"there is no enum called '%0'">;

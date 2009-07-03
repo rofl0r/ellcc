@@ -6932,9 +6932,8 @@ Type *E_funCall::inner2_itcheck(Env &env, LookupSet &candidates)
       }
     }
     else {
-      env.error(stringc
-        << "object of type `" << t->toString() << "' used as a function, "
-        << "but it has no operator() declared");
+      env.report(loc, diag::err_class_used_as_function)
+        << t->toString();
       return env.errorType();
     }
   }
