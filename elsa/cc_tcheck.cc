@@ -8540,9 +8540,8 @@ Type *E_binary::itcheck_x(Env &env, Expression *&replacement)
       if (op == BIN_ARROW_STAR) {
         // left side should be a pointer to a class
         if (!lhsType->isPointer()) {
-          env.error(stringc
-            << "left side of ->* must be a pointer, not `"
-            << lhsType->toString() << "'");
+          env.report(loc, diag::err_expr_lhs_arrow_star_not_pointer)
+            << lhsType->toString() << SourceRange(loc, endloc);
           return env.errorType();
         }
         lhsType = lhsType->asPointerType()->atType;

@@ -47,6 +47,8 @@ def err_expr_update_overloaded
     : Error<"cannot use overloaded function name with '%0'">;
 def err_expr_less_than_function
     : Error<"cannot apply '<' to a function; instead, call it or explicitly take its address">;
+def err_expr_lhs_arrow_star_not_pointer
+    : Error<"the left hand side of '->*' must be a pointer, not '%0'">;
 
 def err_namespace_unknown : Error<"namespace '%0' does not exist">;
 
