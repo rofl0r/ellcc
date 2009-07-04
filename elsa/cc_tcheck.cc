@@ -1052,6 +1052,7 @@ void Declaration::tcheck(Env &env, DeclaratorContext context)
     }
   }
 
+#if 0
   // give warning for anonymous struct
   //    TODO: this seems to be dead code since cs->name is assigned above if NULL
   if (decllist->isEmpty() &&
@@ -1068,6 +1069,7 @@ void Declaration::tcheck(Env &env, DeclaratorContext context)
       env.warning(spec->loc, "useless declaration");
     }
   }
+#endif
 
   // check the specifier in the prevailing environment
   Type *specType = spec->tcheck(env, dflags, LF_NONE);
@@ -5960,7 +5962,8 @@ Type *E_variable::itcheck_var_set(Env &env, Expression *&replacement,
           (flags & LF_FUNCTION_NAME) &&
           name->isPQ_name()) {
         if (env.PP.getLangOptions().allowImplicitFunctionDecls == ellcc::b3_WARN) {
-          env.warning(name->loc, stringc << "implicit declaration of `" << *name << "'");
+            env.report(name->loc, diag::warn_expr_implicit_function)
+                << name->getName();
         }
 
         v = env.makeImplicitDeclFuncVar(name->asPQ_name()->name);
@@ -9957,7 +9960,8 @@ void TemplateDeclaration::tcheck(Env &env)
 {
   // disallow templates inside functions
   if (env.enclosingKindScope(SK_FUNCTION)) {
-    env.error("template declaration in function or local class");
+    // rdp: I don't think this error can occur.
+    env.report(env.loc(), diag::err_template_in_function_or_local_class);
     return;
   }
 
@@ -10018,7 +10022,7 @@ void TD_decl::itcheck(Env &env)
   // cppstd 14 para 3: there can be at most one declarator
   // in a template declaration
   if (d->decllist->count() > 1) {
-    env.error("there can be at most one declarator in a template declaration");
+    env.report(env.loc(), diag::err_template_more_than_one_declarator);
   }
 
   // is this like the old TD_class?
@@ -10116,9 +10120,7 @@ void TP_type::itcheck(Env &env, int&)
 
   // introduce 'name' into the environment
   if (!env.addVariable(var)) {
-    env.error(stringc
-      << "duplicate template parameter `" << name << "'",
-      EF_NONE);
+    env.report(loc, diag::err_template_duplicate_parameter) << name;
   }
 }
 
@@ -10184,9 +10186,7 @@ void TP_template::itcheck(Env &env, int&)
 
   // introduce 'name' into the environment
   if (!env.addVariable(var)) {
-    env.error(stringc
-      << "duplicate template parameter `" << name << "'",
-      EF_NONE);
+    env.report(loc, diag::err_template_duplicate_parameter) << name;
   }
 }
 
@@ -10276,8 +10276,7 @@ void ND_alias::tcheck(Env &env)
   // find the namespace we're talking about
   Variable *origVar = env.lookupPQ_one(original, LF_ONLY_NAMESPACES);
   if (!origVar) {
-    env.error(stringc
-      << "could not find namespace `" << *original << "'");
+    env.report(env.loc(), diag::err_namespace_unknown) << original->getName();
     return;
   }
   xassert(origVar->isNamespace());   // meaning of LF_ONLY_NAMESPACES
@@ -10292,9 +10291,8 @@ void ND_alias::tcheck(Env &env)
       return;     // ok; nothing needs to be done
     }
     else {
-      env.error(stringc
-        << "redefinition of namespace alias `" << alias
-        << "' not allowed because the new definition isn't the same as the old");
+      env.report(env.loc(), diag::err_namespace_alias_redefinition) << alias;
+      env.report(existing->loc, diag::note_previous_definition);
       return;
     }
   }
@@ -10321,8 +10319,7 @@ void ND_usingDecl::tcheck(Env &env)
 
   if (name->getUnqualifiedName()->isPQ_template()) {
     // cppstd 7.3.3 para 5
-    env.error("you can't use a template-id (template name + template arguments) "
-              "in a using-declaration");
+    env.report(env.loc(), diag::err_using_template);
     return;
   }
 

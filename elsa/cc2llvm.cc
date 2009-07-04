@@ -584,13 +584,7 @@ void TopForm::cc2llvm(CC2LLVMEnv &env) const
         env.mod->appendModuleInlineAsm((const char*)a->def->text->data->getDataC());
     }
 
-    ASTNEXTC(TF_template, t) {
-        // RICH: t->td->cc2llvm(env);
-    }
-
     ASTDEFAULTC {
-        std::cerr << toString(loc) << ": ";
-        xunimp("TopForm");
     }
     
     ASTENDCASE

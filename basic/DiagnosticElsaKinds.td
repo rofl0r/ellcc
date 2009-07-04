@@ -85,16 +85,30 @@ def err_expr_sizeof_type_definition
     : Error<"cannot define types in a 'sizeof' expression">;
 def err_expr_assignment_to_non_lvalue
     : Error<"the left operand of an assignment must be an lvalue">;
+def warn_expr_implicit_function
+    : Warning<"implicit declaration of '%0'">;
 
 def err_namespace_unknown : Error<"namespace '%0' does not exist">;
+def err_namespace_alias_redefinition
+    : Error<"redefinition of namespace alias '%0' is not allowed "
+            "because the new definition isn't the same as the old">;
 
 def err_using_needs_qualified_name : Error<"a using declaration requires a qualified name">;
+def err_using_template
+    : Error<"you can't use a template-id (template name + template arguments) "
+            "in a using-declaration">;
 
 def err_initializer_arguments
     : Error<"expected initializer of '%0' to have 1 argument, not %1">;
 def err_constructor_style_initializer_arguments
     : Error<"expected constructor-style initializer of '%0' to have 1 argument, not %1">;
 
+def err_template_in_function_or_local_class
+    : Error<"template declaration in a function or local class">;
+def err_template_more_than_one_declarator
+    : Error<"there can be at most one declarator in a template declaration">;
+def err_template_duplicate_parameter
+    : Error<"duplicate template parameter '%0'">;
 def err_template_explicit_instantiation
     : Error<"explicit instantiation (without declarator) is only for class instantiations">;
 def err_template_explicit_instantiation_without_class

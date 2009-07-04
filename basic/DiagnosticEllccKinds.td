@@ -13,5 +13,6 @@ def err_fe_unknown_triple : Error<
   "unknown target triple '%0', please use -triple or -arch">;
 def err_fe_error_reading : Error<"error reading '%0'">;
 def err_fe_error_reading_stdin : Error<"error reading stdin">;
+def err_pp_I_dash_not_supported : Error<"-I- not supported, please use -iquote instead">;
 
 }
