@@ -4239,7 +4239,7 @@ void D_func::tcheck(Env &env, Declarator::Tcheck &dt)
           }
           else {
             if (nameString != inClass->name) {
-                env.report(loc, diag::err_class_destructor_name_must_match_class_name)
+                env.report(loc, diag::err_class_constructor_name_must_match_class_name)
                     << nameString << inClass->name;
             }
 
@@ -5932,8 +5932,9 @@ Type *E_variable::itcheck_var_set(Env &env, Expression *&replacement,
     }
 
     if (v && v->hasFlag(DF_TYPEDEF)) {
-      env.report(name->loc, diag::err_type_used_as_variable)
-        << name->getName() << DIAG_DISAMBIGUATES;
+      env.report(loc, diag::err_type_used_as_variable)
+        << name->getName() << DIAG_DISAMBIGUATES
+        << SourceRange(loc, endloc);
       env.report(v->loc, diag::note_definition) << name->getName();
       return env.errorType();
     }
@@ -8826,7 +8827,7 @@ Type *E_cast::itcheck_x(Env &env, Expression *&replacement)
   if (hasTypeDefn(ctype)) {
     if (env.PP.getLangOptions().CPlusPlus) {
       // 5.4p3: not allowed
-      env.error(ctype->spec->loc, "cannot define types in a cast");
+      env.report(loc, diag::err_cast_type_definition) << SourceRange(loc, endloc);
       return env.errorType();
     } else {
       // similar to the E_sizeofType case
@@ -8838,9 +8839,7 @@ Type *E_cast::itcheck_x(Env &env, Expression *&replacement)
         ctype = ctype->tcheck(env, tc);
       }
     }
-  }
-
-  else {
+  } else {
     // usual behavior
     ASTTypeId::Tcheck tc(DF_NONE, DC_E_CAST);
     ctype = ctype->tcheck(env, tc);
@@ -8977,9 +8976,9 @@ Type *E_cond::itcheck_x(Env &env, Expression *&replacement)
                              env.getSimpleType(ST_BOOL))) {
     Type* et = env.needError(cond->type);
     if (et == NULL) {
-        env.error(stringc
-            << "cannot convert `" << cond->type->toString()
-            << "' to bool for conditional of ?:");
+        env.report(loc, diag::err_expr_conditional_bool_conversion)
+            << cond->type->toString()
+            << SourceRange(loc, endloc);
     }
   }
   // TODO (elaboration): rewrite AST if a user-defined conversion was used
@@ -9043,13 +9042,15 @@ Type *E_cond::itcheck_x(Env &env, Expression *&replacement)
       // no..), and the whole ?: has the non-void type
       if (thVoid) {
         if (!th->isE_throw()) {
-          env.error("void-typed expression in ?: must be a throw-expression");
+            env.report(th->loc, diag::err_expr_conditional_bool_conversion)
+                << SourceRange(th->loc, th->endloc);
         }
         return arrAndFuncToPtr(env, elRval);
       }
       if (elVoid) {
         if (!el->isE_throw()) {
-          env.error("void-typed expression in ?: must be a throw-expression");
+          env.report(el->loc, diag::err_expr_conditional_bool_conversion)
+              << SourceRange(el->loc, el->endloc);
         }
         return arrAndFuncToPtr(env, thRval);
       }
@@ -9067,13 +9068,15 @@ Type *E_cond::itcheck_x(Env &env, Expression *&replacement)
     Type *elConv = attemptCondConversion(env, ic_elToTh, elType, thType, el->getSpecial(env.PP.getLangOptions()));
 
     if (thConv && elConv) {
-      env.error("class-valued argument(s) to ?: are ambiguously inter-convertible");
+      env.report(loc, diag::err_expr_conditional_class_conversion_ambiguous)
+          << SourceRange(loc, endloc);
       return env.errorType();
     }
 
     if (thConv) {
       if (ic_thToEl.isAmbiguous()) {
-        env.error("in ?:, conversion of second arg to type of third is ambiguous");
+        env.report(loc, diag::err_expr_conditional_class_conversion_second_to_third_ambiguous)
+            << SourceRange(loc, endloc);
         return env.errorType();
       }
 
@@ -9084,7 +9087,8 @@ Type *E_cond::itcheck_x(Env &env, Expression *&replacement)
 
     if (elConv) {
       if (ic_elToTh.isAmbiguous()) {
-        env.error("in ?:, conversion of third arg to type of second is ambiguous");
+        env.report(loc, diag::err_expr_conditional_class_conversion_third_to_second_ambiguous)
+            << SourceRange(loc, endloc);
         return env.errorType();
       }
 
@@ -9190,9 +9194,9 @@ Type *E_cond::itcheck_x(Env &env, Expression *&replacement)
   }
 
 incompatible:
-  env.error(stringc
-    << "incompatible ?: argument types `" << thRval->toString()
-    << "' and `" << elRval->toString() << "'");
+   env.report(loc, diag::err_expr_conditional_class_incompatable_arguments)
+      << thRval->toString() << elRval->toString()
+      << SourceRange(loc, endloc);
   return env.errorType();
 }
 
@@ -9204,11 +9208,10 @@ Type *E_sizeofType::itcheck_x(Env &env, Expression *&replacement)
       // 5.3.3p5: cannot define types in 'sizeof'; the reason Elsa
       // enforces this rule is that if we allow type definitions then
       // there can be bad interactions with disambiguation (in/k0035.cc)
-      env.error(atype->spec->loc,
-                       "cannot define types in a 'sizeof' expression");
+      env.report(loc, diag::err_expr_sizeof_type_definition)
+          << SourceRange(loc, endloc);
       return env.errorType();
-    }
-    else {
+    } else {
       // In C mode, it is legal to define types in a 'sizeof'; but
       // there are far fewer things that can go wrong during
       // disambiguation, so use a simple idempotency trick
@@ -9221,9 +9224,7 @@ Type *E_sizeofType::itcheck_x(Env &env, Expression *&replacement)
         atype = atype->tcheck(env, tc);
       }
     }
-  }
-
-  else {
+  } else {
     // usual behavior
     ASTTypeId::Tcheck tc(DF_NONE, DC_E_SIZEOFTYPE);
     atype = atype->tcheck(env, tc);
@@ -9253,7 +9254,8 @@ Type *E_assign::itcheck_x(Env &env, Expression *&replacement)
 
   if (!env.onlyDisambiguating() && !target->type->isLval()) {
       // The target of an assignment must be an lvalue.
-      env.error(target->loc, "the left operand of an assignment must be an lvalue");
+      env.report(loc, diag::err_expr_assignment_to_non_lvalue)
+          << SourceRange(target->loc, target->endloc);
   }
   // check for operator overloading
   {
@@ -9290,48 +9292,8 @@ Type *E_assign::itcheck_x(Env &env, Expression *&replacement)
   // the RHS type before performing the arithmetic
   if (op == BIN_ASSIGN || isArithmeticOrEnumType(target->type->asRval())) {
     // simple assignment, compute standard conversion
-#if RICH
-    string errorMsg;
-    StandardConversion sc = getStandardConversion(env, &errorMsg,
-      argInfo[1].special, src->type, operationResultType);
-    if (sc == SC_ERROR) {
-      env.error(errorMsg);
-    }
-    else if (sc == SC_IDENTITY) {
-      // no conversion necessary
-    }
-    else  {
-      // insert the conversion between 'this' and 'src'
-      if (sc & SC_GROUP_1_MASK) {
-        switch (sc & SC_GROUP_1_MASK) {
-        case SC_LVAL_TO_RVAL:
-          // TODO
-          break;
-        case SC_ARRAY_TO_PTR:
-	  // TODO
-          break;
-        case SC_FUNC_TO_PTR: {
-          E_addrOf *conv = new E_addrOf(loc, src);
-          conv->type = env.tfac.makePointerType(CV_CONST, src->type);
-	  src = conv;
-          break;
-	}
-        default:
-          // only 3 kinds in SC_GROUP_1_MASK
-          xfailure("shouldn't reach here");
-          break;
-        }
-      }
-      if (sc & SC_GROUP_2_MASK) {
-        E_stdConv *conv = new E_stdConv(loc, src, sc);
-        conv->type = operationResultType;
-        src = conv;
-      }
-    }
-#else
     // rdp: This needs converstions that a parameter would need. Different name for function?
     env.elaborateImplicitConversionArgToParam(operationResultType, src);
-#endif
   }
   else {
     // compound pointer assignment; there is no conversion for the RHS
@@ -9413,6 +9375,7 @@ Type *E_delete::itcheck_x(Env &env, Expression *&replacement)
     // a pointer type
     Variable *selected = NULL;      // must be non-const to put in PQ_variable
     Type *selectedRetType = NULL;
+    bool haveError = false;
     SFOREACH_OBJLIST_NC(Variable, ct->conversionOperators, iter) {
       Variable *conv = iter.data();
       FunctionType const *ft = conv->type->asFunctionTypeC();
@@ -9420,18 +9383,18 @@ Type *E_delete::itcheck_x(Env &env, Expression *&replacement)
         if (!selected) {
           selected = conv;
           selectedRetType = ft->retType;
-        }
-        else {
+        } else {
             Type* et = env.needError(t);
             if (et == NULL) {
-                env.error(stringb(
-                    "attempt to apply 'delete' to object of type \"" <<
-                    t->toString() << "\", but it has more than one conversion "
-                    "operator yielding pointer type: at least \"" <<
-                    selected->toString() << "\" and \"" <<
-                    conv->toString() << "\""));
+                if (!haveError) {
+                    env.report(loc, diag::err_delete_ambiguous)
+                        << t->toString()
+                        << SourceRange(loc, endloc);
+                    env.report(loc, diag::note_candidate) << selected->toString();
+                    haveError = true;
+                }
+                env.report(loc, diag::note_candidate) << conv->toString();
             }
-            break;     // do not report more than one pair
         }
       }
     }
@@ -9440,10 +9403,9 @@ Type *E_delete::itcheck_x(Env &env, Expression *&replacement)
     if (!selected) {
       Type* et = env.needError(t);
       if (et == NULL) {
-        env.error(stringb(
-            "applied 'delete' to object of type \"" <<
-            t->toString() << "\", but it does not have any conversion "
-            "operators that yield pointer type"));
+          env.report(loc, diag::err_delete_no_pointer_conversion)
+              << t->toString()
+              << SourceRange(loc, endloc);
       }
     }
     else {
@@ -9459,24 +9421,6 @@ Type *E_delete::itcheck_x(Env &env, Expression *&replacement)
       expr = call;
     }
   }
-#if 0
-  // dmandelin@mozilla.com -- commenting out for now. seems a little
-  // different, but hopefully can delete my code
-  else if (!t->isPointer()) {
-    // dmandelin@mozilla.com -- 3.5.3.1 and Oink ticket #32
-    // based on Env::elaborateImplicitConversionArgToParam
-    ImplicitConversion ic = 
-      getPointerConversionOperator(env, expr->loc, NULL, t);
-    if (ic) {
-      expr = env.makeConvertedArg(expr, ic);
-      env.instantiateTemplatesInConversion(ic);
-    } else {
-      env.error(t, stringc
-	<< "can only delete pointers, not `" << t->toString() << "'");
-    }
-  }
-#endif
-
   return env.getSimpleType(ST_VOID);
 }
 
@@ -9501,8 +9445,8 @@ Type *E_keywordCast::itcheck_x(Env &env, Expression *&replacement)
     // 5.2.9p1: not allowed in static_cast
     // 5.2.10p1: not allowed in reinterpret_cast
     // 5.2.11p1: not allowed in const_cast
-    env.error(ctype->spec->loc, stringc
-      << "cannot define types in a " << toString(key));
+    env.report(loc, diag::err_cast_type_definition_keyword)
+        << toString(key) << SourceRange(loc, endloc);
     return env.errorType();
   }
 
@@ -9823,9 +9767,7 @@ void initializeAggregate(Env &env, Type *type,
       initializeAggregate(env, at->eltType, initIter);
       limit--;
     }
-  }
-
-  else if (type->isCompoundType()) {
+  } else if (type->isCompoundType()) {
     CompoundType *ct = type->asCompoundType();
 
     if (ct->isAggregate()) {
@@ -9840,8 +9782,7 @@ void initializeAggregate(Env &env, Type *type,
         initializeAggregate(env, memberIter.data()->type, initIter);
         memberIter.adv();
       }
-    }
-    else {
+    } else {
       Initializer *init = initIter.data();
       initIter.adv();
 
@@ -9864,15 +9805,12 @@ void initializeAggregate(Env &env, Type *type,
       if (!ic) {
         Type* et = env.needError(arg->getType());
         if (et == NULL) {
-            env.error(stringc
-                << "cannot convert initializer type `" << arg->getType()->toString()
-                << "' to type `" << type->toString() << "'");
+            env.report(env.loc(), diag::err_initializer_conversion)
+                << arg->getType()->toString() << type->toString();
         }
       }
     }
-  }
-
-  else {
+  } else {
     // down to an element type
     initIter.data()->tcheck(env, type);
     initIter.adv();
@@ -9928,9 +9866,8 @@ void IN_ctor::tcheck(Env &env, Type *destType)
       if (!ic) {
         Type* et = env.needError(srcType);
         if (et == NULL) {
-            env.error(stringc
-                << "cannot convert initializer type `" << srcType->toString()
-                << "' to target type `" << destType->toString() << "'");
+            env.report(env.loc(), diag::err_initializer_conversion)
+                << srcType->toString() << destType->toString();
         }
         return;
       }

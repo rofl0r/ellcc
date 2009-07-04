@@ -69,6 +69,22 @@ def err_expr_dereference_void_star
     : Error<"cannot dereference type '%0'">;
 def err_expr_dereference_non_pointer
     : Error<"cannot dereference non-pointer type '%0'">;
+def err_expr_conditional_bool_conversion
+    : Error<"cannot convert '%0' to bool for conditional of '?:'">;
+def err_expr_conditional_void_throw
+    : Error<"void-typed expression in '?:' must be a throw-expression">;
+def err_expr_conditional_class_conversion_ambiguous
+    : Error<"class-valued arguments to '?:' are ambiguously inter-convertible">;
+def err_expr_conditional_class_conversion_second_to_third_ambiguous
+    : Error<"in '?:', conversion of the second argument to type of the third is ambiguous">;
+def err_expr_conditional_class_conversion_third_to_second_ambiguous
+    : Error<"in '?:', conversion of the third argument to type of the second is ambiguous">;
+def err_expr_conditional_class_incompatable_arguments
+    : Error<"incompatible '?:' argument types '%0' and '%1'">;
+def err_expr_sizeof_type_definition
+    : Error<"cannot define types in a 'sizeof' expression">;
+def err_expr_assignment_to_non_lvalue
+    : Error<"the left operand of an assignment must be an lvalue">;
 
 def err_namespace_unknown : Error<"namespace '%0' does not exist">;
 
@@ -351,6 +367,21 @@ def err_char_literal_no_wchar_t
 
 def err_cast_argument_count
     : Error<"function-style cast to '%0' must have zere or one argument (not %1)">;
+def err_cast_type_definition
+    : Error<"cannot define types in a cast">;
+def err_cast_type_definition_keyword
+    : Error<"cannot define types in a '%0'">;
+
+def err_delete_ambiguous
+    : Error<"attempt to apply 'delete' to object of type '%0'"
+            ", but it has more than one conversion "
+            "operator yielding a pointer type">;
+def err_delete_no_pointer_conversion
+    : Error<"attempt to apply 'delete' to object of type '%0'"
+            ", but it has no conversion operator yielding a pointer type">;
+
+def err_initializer_conversion
+    : Error<"cannot convert initializer type '%0' to type '%1'">;
 
 def err_test_checktype
     : Error<"checkType: '%0' != '%1'">;
