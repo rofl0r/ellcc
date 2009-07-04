@@ -141,6 +141,16 @@ def err_template_constant_expression
 def err_template_arguments_to_non_template_function
     : Error<"explicit template arguments were provided after '%0', "
             "but that is not the name of a template function">;
+def err_template_parameter_inferred_argument
+    : Error<"for parameter '%0', inferred argument '%1'"
+            " does not match supplied argument '%2'">;
+def err_template_parameter_incompatable_with_argument
+    : Error<"during function template argument deduction: "
+            "argument '%0' is incompatible with parameter '%1'">;
+def err_template_arguments_do_not_bind_parameter
+    : Error<"arguments do not bind template parameter '%0'">;
+def err_template_too_many_arguments
+    : Error<"too many template arguments to '%0'">;
 
 def err_class_memberless_initialization : Error<"can't initialize memberless aggregate '%0'">;
 def err_class_no_member : Error<"'%0' has no member named '%1'">;

@@ -1364,10 +1364,8 @@ bool Env::loadBindingsWithExplTemplArgs(Variable *var, ObjList<STemplateArgument
     if (existing.hasValue()) {
       if (!existing.equals(*arg)) {
         if (iflags & IA_REPORT_ERRORS) {
-          error(stringc << "for parameter `" << param->name
-                        << "', inferred argument `" << existing.toString()
-                        << "' does not match supplied argument `" << arg->toString()
-                        << "'");
+          report(loc(), diag::err_template_parameter_inferred_argument)
+            << param->name << existing.toString() << arg->toString();
         }
         return false;
       }
@@ -1389,12 +1387,14 @@ bool Env::loadBindingsWithExplTemplArgs(Variable *var, ObjList<STemplateArgument
 
   if (!argIter.isDone()) {
     // in/t0607.cc: extra arguments; that is no good
+#if 0
     if (iflags & IA_REPORT_ERRORS) {
       // I think this code is unreachable...
       error(stringc << "too many template arguments for `"
                     << var->toString() << "'; first excess argument: \""
                     << argIter.data()->toString() << "\"");
     }
+#endif
     return false;
   }
 
@@ -1508,17 +1508,14 @@ bool Env::inferTemplArgsFromFuncArgs
           // those paths.
           xunimp("deducing template arguments from an argument that is the "
                  "name of an overloaded function");
-        }
-        else {
+        } else {
           // Since the parameter type is not a pointer to a function,
           // we can safely assume that no template argument bindings
           // would make it match any of the overloaded functions
           // arguments, so just yield failure.
           if (iflags & IA_REPORT_ERRORS) {
-            error(stringc << "during function template argument deduction: "
-                  << "argument `" << argType->toString() << "'"
-                  << " is incompatible with parameter `"
-                  << paramType->toString() << "'");
+            report(loc(), diag::err_template_parameter_incompatable_with_argument)
+                << argType->toString() << paramType->toString();
           }
           return false;
         }
@@ -1616,10 +1613,8 @@ bool Env::inferTemplArgsFromFuncArgs
             // TODO: Somehow propagate this up to the user even during
             // overload resolution (where IA_REPORT_ERRORS is not set)
             // if resolution ultimately fails.
-            error(stringc << "during function template argument deduction: "
-                  << "argument `" << argType->toString() << "'"
-                  << " is incompatible with parameter `"
-                  << paramType->toString() << "'");
+            report(loc(), diag::err_template_parameter_incompatable_with_argument)
+                << argType->toString() << paramType->toString();
           }
           return false;
         }
@@ -1699,8 +1694,8 @@ void Env::getFuncTemplArgs_oneParamList
 
     if (!sta.hasValue()) {
       if (iflags & IA_REPORT_ERRORS) {
-        error(stringc << "arguments do not bind template parameter `"
-                      << templPIter.data()->name << "'");
+          report(loc(), diag::err_template_arguments_do_not_bind_parameter)
+              << templPIter.data()->name;
       }
       haveAllArgs = false;
     }
@@ -1814,8 +1809,8 @@ void Env::insertTemplateArgBindings
   insertTemplateArgBindings_oneParamList(argScope, baseV, argIter, baseVTI->params);
 
   if (!argIter.isDone()) {
-    error(stringc
-          << "too many template arguments to `" << baseV->name << "'", EF_STRONG);
+    report(loc(), diag::err_template_too_many_arguments)
+        << baseV->name << DIAG_STRONG;
   }
 }
 
