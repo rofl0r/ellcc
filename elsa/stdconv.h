@@ -101,10 +101,10 @@ SCRank getRank(StandardConversion scs);
 // if any, that will convert 'src' into 'dest'
 StandardConversion getStandardConversion(
   Env& env,            // The compilation environment.
-  sm::string *errorMsg,// if non-null, failed conversion sets error message
   SpecialExpr special, // properties of the source expression
   Type const *src,     // source type
   Type const *dest,    // destination type
+  bool errorMsg,       // If true, report an error.
   
   // when the dest type is a method receiver ('this') parameter,
   // it's allowable to bind an rvalue to a non-const reference

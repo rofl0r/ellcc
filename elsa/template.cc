@@ -1948,13 +1948,12 @@ bool Env::insertTemplateArgBindings_oneParamList
       else {
         // check that this argument is compatible with the parameter
         // (TODO: this isn't exactly what 14.3.2p5 says)
-        string errorMsg;
-        if (SC_ERROR == getStandardConversion(*this, &errorMsg,
+        if (SC_ERROR == getStandardConversion(*this,
                                               binding->value->getSpecial(PP.getLangOptions()),
                                               binding->value->type,
                                               param->type,
+                                              true,
                                               false /*destIsReceiver*/)) {
-          error(errorMsg);
         }
       }
 

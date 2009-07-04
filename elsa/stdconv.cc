@@ -6,7 +6,9 @@
 #include "Preprocessor.h" // LangOptions and TargetInfo
 #include "cc_env.h"       // Env
 #include "trace.h"        // tracingSys
+#include "Diagnostic.h"
 
+using namespace ellcc;
 
 /*
  * 2005-04-03: ARR_QUAL_CONV:
@@ -206,7 +208,7 @@ public:
   // The compilation environment.
   Env& env;
   // original parameters to 'getStandardConversion'
-  sm::string *errorMsg;
+  bool errorMsg;
   SpecialExpr srcSpecial;
   Type const *src;
   Type const *dest;
@@ -224,7 +226,7 @@ public:
   int ptrCtorsStripped;
 
 public:
-  Conversion(Env& env, sm::string *e, SpecialExpr sp, Type const *s, Type const *d, bool dir)
+  Conversion(Env& env, SpecialExpr sp, Type const *s, Type const *d, bool e, bool dir)
     : env(env),
       errorMsg(e),
       srcSpecial(sp),
@@ -237,13 +239,13 @@ public:
       ptrCtorsStripped(0)
   {}
 
-  StandardConversion error(char const *why);
+  StandardConversion error(unsigned why);
 
   bool stripPtrCtor(CVFlags scv, CVFlags dcv, bool isReference=false);
 };
 
 
-StandardConversion Conversion::error(char const *why)
+StandardConversion Conversion::error(unsigned why)
 {
   // 10/02/04: This is probably not the best way to handle this, but one
   // problem with 'getStandardConversion' is if the source and destination
@@ -256,15 +258,12 @@ StandardConversion Conversion::error(char const *why)
   // dest of just 'T'.
   if (dest->isReference() &&
       dest->getAtType()->isConst()) {
-    return getStandardConversion(env, errorMsg, srcSpecial, src, dest->getAtType(),
-                                 destIsReceiver);
+    return getStandardConversion(env, srcSpecial, src, dest->getAtType(),
+                                 errorMsg, destIsReceiver);
   }
 
   if (errorMsg) {
-    *errorMsg = stringc
-      << "cannot convert `" << src->toString()
-      << "' to `" << dest->toString()
-      << "': " << why;
+    env.report(env.loc(), why) << src->toString() << dest->toString();
   }
   return ret = SC_ERROR;
 }
@@ -304,12 +303,12 @@ bool Conversion::stripPtrCtor(CVFlags scv, CVFlags dcv, bool isReference)
   }
 
   if (scv & ~dcv) {
-    error("the source has some cv flag that the dest does not");
+    error(diag::err_stdconv_cv_flag_mismatch);
     return true;
   }
 
   if (!destConst && (scv != dcv)) {
-    error("changed cv flags below non-const pointer");
+    error(diag::err_stdconv_cv_flag_changed_below_pointer);
     return true;
   }
 
@@ -422,10 +421,10 @@ bool couldBeAnything(Type const *t)
 // without allocating, and if I can then that avoids interaction
 // problems with Type annotation systems
 StandardConversion getStandardConversion
-  (Env& env, sm::string *errorMsg, SpecialExpr srcSpecial, Type const *src, Type const *dest,
-   bool destIsReceiver)
+  (Env& env, SpecialExpr srcSpecial, Type const *src, Type const *dest,
+   bool errorMsg, bool destIsReceiver)
 {
-  Conversion conv(env, errorMsg, srcSpecial, src, dest, destIsReceiver);
+  Conversion conv(env, srcSpecial, src, dest, errorMsg, destIsReceiver);
 
   // --------------- group 1 ----------------
   if (src->isReference() &&
@@ -439,7 +438,7 @@ StandardConversion getStandardConversion
     // the src type must be complete for this conversion
     if (src->isCompoundType() &&
         src->asCompoundTypeC()->forward) {
-      return conv.error("type must be complete to strip '&'");
+      return conv.error(diag::err_stdconv_type_incomplete);
     }
 
     // am I supposed to check cv flags?
@@ -453,7 +452,7 @@ StandardConversion getStandardConversion
       ReferenceType const *destPT = dest->asReferenceTypeC();
       if (!destPT->atType->isConst()) {
         // can't form the conversion
-        return conv.error("attempt to bind an rvalue to a non-const reference");
+        return conv.error(diag::err_stdconv_rvalue_to_non_const_reference);
       }
     }
 
@@ -548,10 +547,10 @@ StandardConversion getStandardConversion
       // when PointerType and ReferenceType were unified, I had
       // a slightly more informative message for one case
       if (src->isPointerType() && dest->isReferenceType()) {
-        return conv.error("cannot convert rvalue to lvalue");
+        return conv.error(diag::err_stdconv_rvalue_to_lvalue);
       }
       else {
-        return conv.error("different type constructors");
+        return conv.error(diag::err_stdconv_different_type_constructors);
       }
     }
 
@@ -605,7 +604,7 @@ StandardConversion getStandardConversion
           return conv.ret;
         }
         else {
-          return conv.error("unequal function types");
+          return conv.error(diag::err_stdconv_unequal_function_types);
         }
       }
 
@@ -624,7 +623,7 @@ StandardConversion getStandardConversion
           return conv.ret;
         }
         else {
-          return conv.error("unequal array types");
+          return conv.error(diag::err_stdconv_unequal_array_types);
         }
       }
 
@@ -636,12 +635,10 @@ StandardConversion getStandardConversion
           if (conv.ptrCtorsStripped == 0) {
             // opposite to first ptr ctor, we allow Base -> Derived
             if (!d->inClass()->hasUnambiguousBaseClass(s->inClass())) {
-              return conv.error("src member's class is not an unambiguous "
-                                "base of dest member's class");
+                return conv.error(diag::err_stdconv_not_unambiguous_base);
             }
             else if (d->inClass()->hasVirtualBase(s->inClass())) {
-              return conv.error("src member's class is a virtual base of "
-                                "dest member's class");
+                return conv.error(diag::err_stdconv_virtual_base);
             }
             else {
               // TODO: check accessibility.. this depends on the access privileges
@@ -653,8 +650,7 @@ StandardConversion getStandardConversion
           }
           else {
             // after the first ctor, variance is not allowed
-            return conv.error("unequal member classes in ptr-to-member that "
-                              "is not the topmost type");
+            return conv.error(diag::err_stdconv_variance_not_allowed);
           }
         }
 
@@ -676,7 +672,7 @@ StandardConversion getStandardConversion
             return conv.ret;
           }
           else {
-            return conv.error("unequal function types");
+            return conv.error(diag::err_stdconv_unequal_function_types);
           }
         }
 
@@ -729,20 +725,20 @@ StandardConversion getStandardConversion
     }
 
     if (errorMsg) {
-      // if reporting, I go out of my way a bit here since I expect
-      // this to be a relatively common error and I'd like to provide
-      // as much information as will be useful
-      if (dest->isReference()) {
-        return conv.error("cannot convert rvalue to lvalue");
-      }
+        // if reporting, I go out of my way a bit here since I expect
+        // this to be a relatively common error and I'd like to provide
+        // as much information as will be useful
+        if (dest->isReference()) {
+            return conv.error(diag::err_stdconv_rvalue_to_lvalue);
+        }
 
-      return conv.error(stringc
-        << "different type constructors, "
-        << ctorName(src->getTag()) << " vs. "
-        << ctorName(dest->getTag()));
-    }
-    else {
-      return SC_ERROR;     // for performance, don't make the string at all
+        env.report(env.loc(), diag::err_stdconv_different_type_constructors_vs)
+            << src->toString() << dest->toString()
+            << ctorName(src->getTag())
+            << ctorName(dest->getTag());
+        return SC_ERROR;
+    } else {
+        return SC_ERROR;     // for performance, don't make the string at all
     }
   }
 
@@ -757,7 +753,7 @@ StandardConversion getStandardConversion
       bool ambig = false;
       if (canConvertToBaseClass(src, dest, ambig)) {
         if (ambig) {
-          return conv.error("base class is ambiguous");
+          return conv.error(diag::err_stdconv_ambiguous_base);
         }
         // TODO: check accessibility.. this depends on the access privileges
         // of the code we're in now..
@@ -785,11 +781,11 @@ StandardConversion getStandardConversion
         // just strip the reference part of the dest; this is like binding
         // the (const) reference, which is not an explicit part of the
         // "conversion"
-        return getStandardConversion(env, errorMsg, srcSpecial, conv.src, 
-                                     conv.dest->asRvalC(), destIsReceiver);
+        return getStandardConversion(env, srcSpecial, conv.src, 
+                                     conv.dest->asRvalC(), errorMsg, destIsReceiver);
       }
 
-      return conv.error("incompatible atomic types");
+      return conv.error(diag::err_stdconv_incompatable_atomic_types);
     }
   }
   else {
@@ -858,7 +854,7 @@ StandardConversion getStandardConversion
   // atomic kinds, because the error is based on more than just
   // the kinds; moreover, since I already know I didn't strip
   // any ptr ctors, the full types should be easy to read
-  return conv.error("incompatible atomic types");
+  return conv.error(diag::err_stdconv_incompatable_atomic_types);
 }
 
 
@@ -1146,34 +1142,30 @@ void test_getStandardConversion(
   int expected)
 {
   // run our function
-  sm::string errorMsg;
-  StandardConversion actual = getStandardConversion(env, &errorMsg, special, src, dest);
+  env.push();
+  StandardConversion actual = getStandardConversion(env, special, src, dest, true);
 
   // turn any resulting messags into warnings, so I can see their
   // results without causing the final exit status to be nonzero
-  if (actual == SC_ERROR) {
-    env.warning(errorMsg);
-  }
+  env.mark(DIAG_WARNING);
+  env.pop();
 
   // did the function do what we expected?
   if (actual != expected) {
     // no, explain the situation
-    env.error(stringc
-      << "getStandardConversion("
-      << toString(special) << ", `"
-      << src->toString() << "', `"
-      << dest->toString() << "') yielded "
-      << toString(actual) << ", but I expected "
-      << toString((StandardConversion)expected));
-  }
-  else if (tracingSys("gSC")) {
+    env.report(env.loc(), diag::err_test_stdconv_getstandardconversion_error)
+      << toString(special)
+      << src->toString()
+      << dest->toString()
+      << toString(actual)
+      << toString((StandardConversion)expected);
+  } else if (tracingSys("gSC")) {
     // make a warning to show what happened anyway
-    env.warning(stringc
-      << "getStandardConversion("
-      << toString(special) << ", `"
-      << src->toString() << "', `"
-      << dest->toString() << "') yielded "
-      << toString(actual));
+    env.report(env.loc(), diag::err_test_stdconv_getstandardconversion_warning)
+      << toString(special)
+      << src->toString()
+      << dest->toString()
+      << toString(actual);
   }
 }
 

@@ -6394,8 +6394,8 @@ int compareArgsToParams(Env &env, FunctionType *ft, FakeList<ArgExpression> *arg
         SFOREACH_OBJLIST(Variable, ct->dataMembers, memberIter) {
           Variable const *memb = memberIter.data();
 
-          StandardConversion sc = getStandardConversion(env, NULL /*errorMsg*/,
-            SE_NONE, arg->expr->type, memb->type);
+          StandardConversion sc = getStandardConversion(env,
+            SE_NONE, arg->expr->type, memb->type, false);
           if (sc != SC_ERROR) {
             // success
             TRACE("transparent_union", env.locStr() <<

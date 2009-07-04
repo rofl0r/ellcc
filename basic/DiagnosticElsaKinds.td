@@ -152,6 +152,38 @@ def err_template_arguments_do_not_bind_parameter
 def err_template_too_many_arguments
     : Error<"too many template arguments to '%0'">;
 
+def err_stdconv_cv_flag_mismatch
+    : Error<"cannot convert '%0' to '%1': the source has some cv flag that the destination does not">;
+def err_stdconv_cv_flag_changed_below_pointer
+    : Error<"cannot convert '%0' to '%1': changed cv flags below non-const pointer">;
+def err_stdconv_type_incomplete
+    : Error<"cannot convert '%0' to '%1': type must be complete to strip '&'">;
+def err_stdconv_rvalue_to_non_const_reference
+    : Error<"cannot convert '%0' to '%1': attempt to bind an rvalue to a non-const reference">;
+def err_stdconv_rvalue_to_lvalue
+    : Error<"cannot convert '%0' to '%1': cannot convert rvalue to lvalue">;
+def err_stdconv_different_type_constructors
+    : Error<"cannot convert '%0' to '%1': different type constructors">;
+def err_stdconv_unequal_function_types
+    : Error<"cannot convert '%0' to '%1': unequal function types">;
+def err_stdconv_unequal_array_types
+    : Error<"cannot convert '%0' to '%1': unequal array types">;
+def err_stdconv_not_unambiguous_base
+    : Error<"cannot convert '%0' to '%1': source member's class is not an unambiguous "
+            "base of destination member's class">;
+def err_stdconv_virtual_base
+    : Error<"cannot convert '%0' to '%1': source member's class is a virtual "
+            "base of destination member's class">;
+def err_stdconv_variance_not_allowed
+    : Error<"cannot convert '%0' to '%1': unequal member classes in pointer-to-member that "
+            "is not the topmost type">;
+def err_stdconv_different_type_constructors_vs
+    : Error<"cannot convert '%0' to '%1': different type constructors, %2 versus %3">;
+def err_stdconv_ambiguous_base
+    : Error<"cannot convert '%0' to '%1': base class is ambiguous">;
+def err_stdconv_incompatable_atomic_types
+    : Error<"cannot convert '%0' to '%1': incompatible atomic types">;
+
 def err_class_memberless_initialization : Error<"can't initialize memberless aggregate '%0'">;
 def err_class_no_member : Error<"'%0' has no member named '%1'">;
 def err_class_member_storage_class
@@ -446,4 +478,8 @@ def err_test_mtype_succeeded
     : Error<"__test_mtype: succeeded, but failure was expected">;
 def err_test_mtype_failed
     : Error<"__test_mtype: failed, but success was expected">;
+def err_test_stdconv_getstandardconversion_error
+    : Error<"getStandardConversion(%0, %1, %2) yielded '%3', but I expected '%4'">;
+def err_test_stdconv_getstandardconversion_warning
+    : Error<"getStandardConversion(%0, %1, %2) yielded '%3'">;
 }
