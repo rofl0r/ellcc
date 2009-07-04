@@ -8554,16 +8554,21 @@ Type *E_binary::itcheck_x(Env &env, Expression *&replacement)
       // left side should be a class
       CompoundType *lhsClass = lhsType->ifCompoundType();
       if (!lhsClass) {
-        env.error(op==BIN_DOT_STAR?
-          "left side of .* must be a class or reference to a class" :
-          "left side of ->* must be a pointer to a class");
+        if (op == BIN_DOT_STAR) {
+          env.report(loc, diag::err_expr_lhs_dot_star_not_class)
+            << lhsType->toString() << SourceRange(loc, endloc);
+        } else {
+          env.report(loc, diag::err_expr_lhs_arrow_star_not_pointer_to_class)
+            << lhsType->toString() << SourceRange(loc, endloc);
+        }
         return env.errorType();
       }
 
       // right side should be a pointer to a member
       if (!rhsType->isPointerToMemberType()) {
-        env.error("right side of .* or ->* must be a pointer-to-member");
-        return env.errorType();
+          env.report(loc, diag::err_expr_rhs_dot_star_not_pointer_to_member)
+            << rhsType->toString() << SourceRange(loc, endloc);
+          return env.errorType();
       }
       PointerToMemberType *ptm = rhsType->asPointerToMemberType();
 
@@ -8571,18 +8576,18 @@ Type *E_binary::itcheck_x(Env &env, Expression *&replacement)
       // class unambiguously derived from it
       int subobjs = lhsClass->countBaseClassSubobjects(ptm->inClass());
       if (subobjs == 0) {
-        env.error(stringc
-          << "the left side of .* or ->* has type `" << lhsClass->name
-          << "', but this is not equal to or derived from `" << ptm->inClass()->name
-          << "', the class whose members the right side can point at");
-        return env.errorType();
+          env.report(loc, diag::err_expr_lhs_dot_arrow__star_not_correct_class)
+            << (op == BIN_DOT_STAR)
+            << lhsClass->name << ptm->inClass()->name
+            << SourceRange(loc, endloc);
+          return env.errorType();
       }
       else if (subobjs > 1) {
-        env.error(stringc
-          << "the left side of .* or ->* has type `" << lhsClass->name
-          << "', but this is derived from `" << ptm->inClass()->name
-          << "' ambiguously (in more than one way)");
-        return env.errorType();
+          env.report(loc, diag::err_expr_lhs_dot_arrow__star_ambiguous)
+            << (op == BIN_DOT_STAR)
+            << lhsClass->name << ptm->inClass()->name
+            << SourceRange(loc, endloc);
+          return env.errorType();
       }
 
       // the return type is essentially the 'atType' of 'ptm'
@@ -8737,9 +8742,9 @@ Type *E_addrOf::itcheck_addrOf_set(Env &env, Expression *&replacement,
   if (!expr->type->isLval()) {
     Type* et = env.needError(expr->type);
     if (et == NULL) {
-        env.error(stringc
-            << "cannot take address of non-lvalue `"
-            << expr->type->toString() << "'");
+        env.report(loc, diag::err_expr_address_of_non_lvalue)
+            << expr->type->toString()
+            << SourceRange(loc, endloc);
         et = env.errorType();
     }
     return et;
@@ -8776,7 +8781,9 @@ Type *E_deref::itcheck_x(Env &env, Expression *&replacement)
     if (pt->atType->isVoid()) {
         Type* et = env.needError(rt);
         if (et == NULL) {
-            env.error(stringc << "cannot dereference type `" << rt->toString() << "'");
+            env.report(loc, diag::err_expr_dereference_void_star)
+                << rt->toString()
+                << SourceRange(loc, endloc);
             et = env.errorType();
         }
         return et;
@@ -8795,7 +8802,9 @@ Type *E_deref::itcheck_x(Env &env, Expression *&replacement)
 
   Type* et = env.needError(rt);
   if (et == NULL) {
-      env.error(stringc << "cannot dereference non-pointer type `" << rt->toString() << "'");
+      env.report(loc, diag::err_expr_dereference_non_pointer)
+          << rt->toString()
+          << SourceRange(loc, endloc);
       et = env.errorType();
   }
   return et;
@@ -8819,8 +8828,7 @@ Type *E_cast::itcheck_x(Env &env, Expression *&replacement)
       // 5.4p3: not allowed
       env.error(ctype->spec->loc, "cannot define types in a cast");
       return env.errorType();
-    }
-    else {
+    } else {
       // similar to the E_sizeofType case
       if (!tcheckedType) {
         InstantiationContextIsolator isolate(env, env.loc());

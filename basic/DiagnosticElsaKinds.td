@@ -49,6 +49,26 @@ def err_expr_less_than_function
     : Error<"cannot apply '<' to a function; instead, call it or explicitly take its address">;
 def err_expr_lhs_arrow_star_not_pointer
     : Error<"the left hand side of '->*' must be a pointer, not '%0'">;
+def err_expr_lhs_arrow_star_not_pointer_to_class
+    : Error<"the left hand side of '->*' must be a pointer to a class, not '%0'">;
+def err_expr_lhs_dot_star_not_class
+    : Error<"the left hand side of '.*' must be a class or reference to a class, not '%0'">;
+def err_expr_rhs_dot_star_not_pointer_to_member
+    : Error<"the right hand side of '.*' must be a pointer-to-member, not '%0'">;
+def err_expr_lhs_dot_arrow__star_not_correct_class
+    : Error<"the left hand side of %select{'->*'|'.*'}0 has type '%1'"
+            ", but this is not equal to or derived from '%2'"
+            ", the class whose members the right side can point at">;
+def err_expr_lhs_dot_arrow__star_ambiguous
+    : Error<"the left hand side of %select{'->*'|'.*'}0 has type '%1'"
+            ", but this is derived from '%2'"
+            " ambiguously (in more than one way)">;
+def err_expr_address_of_non_lvalue
+    : Error<"cannot take address of non-lvalue '%0'">;
+def err_expr_dereference_void_star
+    : Error<"cannot dereference type '%0'">;
+def err_expr_dereference_non_pointer
+    : Error<"cannot dereference non-pointer type '%0'">;
 
 def err_namespace_unknown : Error<"namespace '%0' does not exist">;
 
