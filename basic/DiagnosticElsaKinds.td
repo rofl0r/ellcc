@@ -35,6 +35,14 @@ def err_continue : Error<"'continue' not in a 'while', 'do', or 'for' statement"
 def err_specifier_invalid : Error<"cannot apply const/volatile to type '%0'">;
 
 def err_expr_not_ice : Error<"expression is not an integer constant expression">;
+def err_expr_unary_plus
+    : Error<"argument to unary + must be of arithmetic, enumeration, or pointer type, not '%0'">;
+def err_expr_unary_minus
+    : Error<"argument to unary - must be of arithmetic or enumeration type, not '%0'">;
+def err_expr_unary_bang
+    : Error<"argument to unary ! must be convertible to bool; '%0' is not">;
+def err_expr_unary_complement
+    : Error<"argument to unary ~ must be of integer or enumeration type, not '%0'">;
 
 def err_namespace_unknown : Error<"namespace '%0' does not exist">;
 
@@ -132,6 +140,23 @@ def err_class_used_as_function
     : Error<"object of type '%0' used as a function, but it has no operator() declared">;
 def err_class_receiver_argument
     : Error<"cannot convert argument type '%0' to receiver parameter type '%1'">;
+def err_class_field_qualifier_class_or_namespace
+    : Error<"in '%0', when '%1' is found in the current scope, it must be a class or namespace, not '%2'">;
+def err_class_field_qualifier_class
+    : Error<"in '%0', when '%1' is found in the class of '%2', it must be a class, not '%3'">;
+def err_class_field_qualifier_class_two_lookups
+    : Error<"in '%0', '%1' was found in the current scope as '%2', and also in the class of '%3'"
+            " as '%4', but they must be the same">;
+def err_class_field_unqualified_lookup
+    : Error<"in '%0', when '%1' is found in the current scope, it must be a class, not '%3'">;
+def error_class_field_not_member
+    : Error<"field '%0' is not a class member">;
+def error_class_field_wrong_member
+    : Error<"field '%0' is a member of '%1', which is not a base class of '%2'">;
+def error_class_field_ambiguous
+    : Error<"field '%0' ambiguously refers to elements of multiple base class sub-objects">;
+def error_class_field_typedef
+    : Error<"field '%0' is a typedef">;
 
 def err_enum_not_defined
     : Error<"there is no enum called '%0'">;

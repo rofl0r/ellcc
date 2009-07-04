@@ -7309,7 +7309,7 @@ static Type *internalTestingHooks
         // are bindings in 'mtype'
         if (mtype.getNumBindings() != i) {
           env.report(env.loc(), diag::err_test_mtype_bindings)
-            << i << i != 1 << mtype.getNumBindings();
+            << i << (i != 1) << mtype.getNumBindings();
           return env.errorType();
         }
       }
@@ -7722,10 +7722,8 @@ Type *E_fieldAcc::itcheck_fieldAcc_set(Env &env, LookupFlags flags,
     if (firstQVar1 &&
         !firstQVar1->isNamespace() &&
         !firstQVar1->isClass()) {
-      env.error(firstQ->loc, stringc
-        << "in " << this->asString() << ", when " << firstQ->qualifier
-        << " is found in the current scope, it must be "
-        << "a class or namespace, not " << kindAndType(firstQVar1));
+      env.report(firstQ->loc, diag::err_class_field_qualifier_class_or_namespace)
+        << this->asString() << firstQ->qualifier << kindAndType(firstQVar1);
       return env.errorType();
     }
     Scope *firstQScope1 = firstQVar1? firstQVar1->getDenotedScope() : NULL;
@@ -7736,10 +7734,8 @@ Type *E_fieldAcc::itcheck_fieldAcc_set(Env &env, LookupFlags flags,
     HANDLE_DEPENDENT(firstQVar2);
     if (firstQVar2 &&
         !firstQVar2->isClass()) {
-      env.error(firstQ->loc, stringc
-        << "in " << this->asString() << ", when " << firstQ->qualifier
-        << " is found in the class of " << obj->asString() << ", it must be "
-        << "a class, not " << kindAndType(firstQVar2));
+      env.report(firstQ->loc, diag::err_class_field_qualifier_class)
+        << this->asString() << firstQ->qualifier << obj->asString() << kindAndType(firstQVar2);
       return env.errorType();
     }
     Scope *firstQScope2 = firstQVar2? firstQVar2->getDenotedScope() : NULL;
@@ -7747,12 +7743,10 @@ Type *E_fieldAcc::itcheck_fieldAcc_set(Env &env, LookupFlags flags,
     // combine the two lookups
     if (firstQScope1) {
       if (firstQScope2 && firstQScope1!=firstQScope2) {
-        env.error(firstQ->loc, stringc
-          << "in " << this->asString() << ", " << firstQ->qualifier
-          << " was found in the current scope as "
-          << kindAndType(firstQVar1) << ", and also in the class of "
-          << obj->asString() << " as "
-          << kindAndType(firstQVar2) << ", but they must be the same");
+        env.report(firstQ->loc, diag::err_class_field_qualifier_class_two_lookups)
+            << this->asString() << firstQ->qualifier
+            << kindAndType(firstQVar1) << obj->asString()
+            << kindAndType(firstQVar2);
         return env.errorType();
       }
     }
@@ -7792,10 +7786,8 @@ Type *E_fieldAcc::itcheck_fieldAcc_set(Env &env, LookupFlags flags,
       Variable *var1 = env.unqualifiedLookup_one(rhsFinalTypeName, flags);
       HANDLE_DEPENDENT(var1);
       if (var1 && !var1->isClass()) {
-        env.error(fieldName->loc, stringc
-          << "in " << this->asString() << ", when " << rhsFinalTypeName
-          << " is found in the current scope, it must be "
-          << "a class, not " << kindAndType(var1));
+        env.report(fieldName->loc, diag::err_class_field_unqualified_lookup)
+            << this->asString()  << rhsFinalTypeName << kindAndType(var1);
         return env.errorType();
       }
 
@@ -7803,10 +7795,9 @@ Type *E_fieldAcc::itcheck_fieldAcc_set(Env &env, LookupFlags flags,
       Variable *var2 = ct->lookup_one(rhsFinalTypeName, env, flags);
       HANDLE_DEPENDENT(var2);
       if (var2 && !var2->isClass()) {
-        env.error(fieldName->loc, stringc
-          << "in " << this->asString() << ", when " << rhsFinalTypeName
-          << " is found in the class of " << obj->asString()
-          << ", it must be a class, not " << kindAndType(var2));
+        env.report(fieldName->loc, diag::err_class_field_qualifier_class)
+            << this->asString() << rhsFinalTypeName
+            << obj->asString() << kindAndType(var2);
         return env.errorType();
       }
 
@@ -7814,12 +7805,10 @@ Type *E_fieldAcc::itcheck_fieldAcc_set(Env &env, LookupFlags flags,
       if (var1) {
         if (var2) {
           if (!sameCompounds(var1, var2)) {
-            env.error(fieldName->loc, stringc
-              << "in " << this->asString() << ", " << rhsFinalTypeName
-              << " was found in the current scope as "
-              << kindAndType(var1) << ", and also in the class of "
-              << obj->asString() << " as "
-              << kindAndType(var2) << ", but they must be the same");
+            env.report(fieldName->loc, diag::err_class_field_qualifier_class_two_lookups)
+                << this->asString() << rhsFinalTypeName
+                << kindAndType(var1) << obj->asString()
+                << kindAndType(var2);
             return env.errorType();
           }
           // we will use 'var2' below
@@ -7841,8 +7830,7 @@ Type *E_fieldAcc::itcheck_fieldAcc_set(Env &env, LookupFlags flags,
         }
         else {
             env.report(fieldName->loc, diag::err_no_such)
-                << "class"
-                << rhsFinalTypeName;
+                << "class" << rhsFinalTypeName;
             return env.errorType();
         }
       }
@@ -7875,9 +7863,8 @@ Type *E_fieldAcc::itcheck_fieldAcc_set(Env &env, LookupFlags flags,
 
     Type* et = env.needError(lhsType);
     if (et == NULL) {
-        env.error(stringc
-            << "there is no member called `" << *fieldName
-            << "' in " << lhsType->toString());
+        env.report(fieldName->loc, diag::err_class_no_member)
+            << lhsType->toString() << fieldName->getName();
         et = env.errorType();
     }
     return et;
@@ -7892,8 +7879,8 @@ Type *E_fieldAcc::itcheck_fieldAcc_set(Env &env, LookupFlags flags,
     }
 
     if (!v->scope || !v->scope->curCompound) {
-      env.error(fieldName->loc, stringc
-        << "field `" << *fieldName << "' is not a class member");
+      env.report(fieldName->loc, diag::error_class_field_not_member)
+        << fieldName->getName();
       return env.errorType();
     }
 
@@ -7912,11 +7899,9 @@ Type *E_fieldAcc::itcheck_fieldAcc_set(Env &env, LookupFlags flags,
     CompoundType *vClass = v->scope->curCompound;
     int subobjs = ct->countBaseClassSubobjects(vClass, requiredBase);
     if (!subobjs) {
-      env.error(fieldName->loc, stringc
-        << "field `" << *fieldName << "' is a member of "
-        << kindAndType(vClass->typedefVar)
-        << ", which is not a base class of "
-        << kindAndType(ct->typedefVar));
+      env.report(fieldName->loc, diag::error_class_field_wrong_member)
+        << fieldName->getName() << kindAndType(vClass->typedefVar)
+        << kindAndType(ct->typedefVar);
       return env.errorType();
     }
 
@@ -7935,9 +7920,8 @@ Type *E_fieldAcc::itcheck_fieldAcc_set(Env &env, LookupFlags flags,
     // does not take into account the notion of "hiding" defined in
     // 10.2p2.
     if (!v->hasFlag(DF_STATIC) && subobjs>1) {
-      env.error(fieldName->loc, stringc
-        << "field `" << *fieldName << "' ambiguously refers to "
-        << "elements of multiple base class subobjects");
+      env.report(fieldName->loc, diag::error_class_field_ambiguous)
+        << fieldName->getName();
       return env.errorType();
     }
   }
@@ -7950,8 +7934,8 @@ Type *E_fieldAcc::itcheck_fieldAcc_set(Env &env, LookupFlags flags,
   if (f->hasFlag(DF_TYPEDEF)) {
     Type* et = env.needError(lhsType);
     if (et == NULL) {
-        env.error(stringc
-            << "member `" << *fieldName << "' is a typedef!");
+        env.report(fieldName->loc, diag::error_class_field_typedef)
+            << fieldName->getName();
         et = env.errorType();
     }
     return et;
@@ -8333,9 +8317,7 @@ Type *E_unary::itcheck_x(Env &env, Expression *&replacement)
       }
       et = env.needError(t);
       if (et == NULL) {
-          env.error(stringc
-              << "argument to unary + must be of arithmetic, enumeration, or pointer type, not `"
-              << t->toString() << "'");
+          env.report(loc, diag::err_expr_unary_plus) << t->toString();
           et = env.errorType();
       }
       return et;
@@ -8347,9 +8329,7 @@ Type *E_unary::itcheck_x(Env &env, Expression *&replacement)
       }
       et = env.needError(t);
       if (et == NULL) {
-          env.error(stringc
-              << "argument to unary - must be of arithmetic or enumeration type, not `"
-              << t->toString() << "'");
+          env.report(loc, diag::err_expr_unary_minus) << t->toString();
           et = env.errorType();
       }
       return et;
@@ -8359,9 +8339,7 @@ Type *E_unary::itcheck_x(Env &env, Expression *&replacement)
       Type *t_bool = env.getSimpleType(ST_BOOL);
       if (!getImplicitConversion(env, expr->getSpecial(env.PP.getLangOptions()), t, t_bool)) {
         if (env.needError(t) == NULL) {
-            env.error(stringc
-                << "argument to unary ! must be convertible to bool; `"
-                << t->toString() << "' is not");
+            env.report(loc, diag::err_expr_unary_bang) << t->toString();
         }
       }
       return t_bool;
@@ -8374,9 +8352,7 @@ Type *E_unary::itcheck_x(Env &env, Expression *&replacement)
       }
       et = env.needError(t);
       if (et == NULL) {
-          env.error(stringc
-              << "argument to unary ~ must be of integer or enumeration type, not `"
-              << t->toString() << "'");
+          env.report(loc, diag::err_expr_unary_complement) << t->toString();
           et = env.errorType();
       }
       return et;
