@@ -43,6 +43,10 @@ def err_expr_unary_bang
     : Error<"argument to unary ! must be convertible to bool; '%0' is not">;
 def err_expr_unary_complement
     : Error<"argument to unary ~ must be of integer or enumeration type, not '%0'">;
+def err_expr_update_overloaded
+    : Error<"cannot use overloaded function name with '%0'">;
+def err_expr_less_than_function
+    : Error<"cannot apply '<' to a function; instead, call it or explicitly take its address">;
 
 def err_namespace_unknown : Error<"namespace '%0' does not exist">;
 

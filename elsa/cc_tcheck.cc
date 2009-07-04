@@ -8371,7 +8371,7 @@ Type *E_effect::itcheck_x(Env &env, Expression *&replacement)
   tcheckArgumentExpression(env, expr, argInfo[0]);
 
   if (argInfo[0].overloadSet.isNotEmpty()) {
-    env.error(stringc << "cannot use overloaded function name with " << toString(op));
+    env.report(loc, diag::err_expr_update_overloaded) << toString(op);
   }
 
   // consider the possibility of operator overloading
@@ -8430,8 +8430,7 @@ Type *E_binary::itcheck_x(Env &env, Expression *&replacement)
     // *call* the function, not compare its address), so I do not
     // intend to replicate their bugs in this case.
     // (in/gnu/bugs/gb0003.cc)
-    env.error("cannot apply '<' to a function; instead, call it "
-                     "or explicitly take its address", EF_DISAMBIGUATES);
+    env.report(loc, diag::err_expr_less_than_function) << DIAG_DISAMBIGUATES;
     return env.errorType();
   }
 
