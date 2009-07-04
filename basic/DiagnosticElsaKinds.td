@@ -167,6 +167,21 @@ def err_operator_incdec_argument_must_be_integer
     : Error<"%select{second |}0parameter of %1 must have type 'int', not '%2', if it is present">;
 def err_operator_cannot_have_default_arguments
     : Error<"%0 cannot have default arguments">;
+def err_operator_pseudo_destructor
+    : Error<"the right hand side of '.' or '->' must be of the form '~ identifier'"
+            " if the left hand side is not a class">;
+def note_operator_left_type : Note<"the type of the left hand side is '%0'">;
+def err_operator_pseudo_destructor_templatized_qualifier
+    : Error<"cannot have templatized qualifier as the second-to-last element "
+            " of the right hand side of '.' or '->' when the left hand side is not a class">;
+def err_operator_pseudo_destructor_qualified
+    : Error<"in a '.' or '->' expression, when the left hand side is not a class, "
+            " a qualified right hand side must be of the form Q :: t1 :: ~t2 where "
+            " t1 and t2 are the same type, but t1 is '%0' and t2 is '%1'">;
+def err_operator_pseudo_destructor_type_mismatch
+    : Error<"in a '.' or '->' expression, when the left hand side is not a class, "
+            "its type must be the same (modulo cv qualifiers) as the right hand side "
+            "but the right hasnd side type is %0">;
 
 def err_function_wrong_type
     : Error<"you can't use an expression of type '%0' as a function">;
@@ -282,6 +297,9 @@ def warn_char_literal_multi_character
     : Warning<"multi-character literals not properly implemented">;
 def err_char_literal_no_wchar_t
     : Error<"you must #include <stddef.h> before using wchar_t">;
+
+def err_cast_argument_count
+    : Error<"function-style cast to '%0' must have zere or one argument (not %1)">;
 
 def err_test_checktype
     : Error<"checkType: '%0' != '%1'">;

@@ -7390,10 +7390,8 @@ Type *E_constructor::inner2_itcheck(Env &env, Expression *&replacement)
     //
     // 2005-05-28: (in/t0495.cc) count the args *after* tchecking them
     if (args->count() > 1) {
-      env.error(stringc
-        << "function-style cast to `" << type->toString()
-        << "' must have zere or one argument (not "
-        << args->count() << ")");
+      env.report(loc, diag::err_cast_argument_count)
+        << type->toString() << args->count();
       return env.errorType();
     }
 
@@ -7553,9 +7551,9 @@ Type *E_fieldAcc::itcheck_fieldAcc_set(Env &env, LookupFlags flags,
         !fieldName->getUnqualifiedName()->isPQ_name()) {
         Type* et = env.needError(lhsType);
         if (et == NULL) {
-            env.error(fieldName->loc, stringc
-                << "RHS of . or -> must be of the form \"~ identifier\" if the LHS "
-                << "is not a class; the LHS is `" << lhsType->toString() << "'");
+            env.report(fieldName->loc, diag::err_operator_pseudo_destructor);
+            env.report(fieldName->loc, diag::note_operator_left_type)
+                << lhsType->toString();
             et = env.errorType();
         }
         return et;
@@ -7577,8 +7575,9 @@ Type *E_fieldAcc::itcheck_fieldAcc_set(Env &env, LookupFlags flags,
       xassert(secondLast);
 
       if (secondLast->sargs.isNotEmpty()) {
-        env.error(fieldName->loc, "cannot have templatized qualifier as "
-          "second-to-last element of RHS of . or -> when LHS is not a class");
+        env.report(fieldName->loc, diag::err_operator_pseudo_destructor_templatized_qualifier);
+        env.report(fieldName->loc, diag::note_operator_left_type)
+            << lhsType->toString();
         return env.errorType();
       }
 
@@ -7618,24 +7617,20 @@ Type *E_fieldAcc::itcheck_fieldAcc_set(Env &env, LookupFlags flags,
       if (!secondVar || !secondVar->isType()) {
         PQName *n = getSecondToLast(fieldName->asPQ_qualifier());
         env.report(n->loc, diag::err_no_such)
-            << "type"
-            << n->toComponentString();
+            << "type" << n->toComponentString();
         return env.errorType();
       }
       if (!lastVar || !lastVar->isType()) {
         PQName *n = fieldName->getUnqualifiedName();
         env.report(n->loc, diag::err_no_such)
-            << "type"
-            << n->toComponentString();
+            << "type" << n->toComponentString();
         return env.errorType();
       }
       if (!lastVar->type->equals(secondVar->type)) {
-        env.error(fieldName->loc, stringc
-          << "in . or -> expression, when LHS is non-class type "
-          << "(its type is `" << lhsType->toString() << "'), a qualified RHS "
-          << "must be of the form Q :: t1 :: ~t2 where t1 and t2 are "
-          << "the same type, but t1 is `" << secondVar->type->toString()
-          << "' and t2 is `" << lastVar->type->toString() << "'");
+        env.report(fieldName->loc, diag::err_operator_pseudo_destructor_qualified)
+            << secondVar->type->toString() << lastVar->type->toString();
+        env.report(fieldName->loc, diag::note_operator_left_type)
+            << lhsType->toString();
         return env.errorType();
       }
       rhsType = lastVar->type;
@@ -7654,11 +7649,10 @@ Type *E_fieldAcc::itcheck_fieldAcc_set(Env &env, LookupFlags flags,
     }
 
     if (!lhsType->equals(rhsType, MF_IGNORE_TOP_CV)) {
-      env.error(fieldName->loc, stringc
-        << "in . or -> expression, when LHS is non-class type, its type "
-        << "must be the same (modulo cv qualifiers) as the RHS; but the "
-        << "LHS type is `" << lhsType->toString() << "' and the RHS type is `"
-        << rhsType->toString() << "'");
+      env.report(fieldName->loc, diag::err_operator_pseudo_destructor_type_mismatch)
+        << rhsType->toString() << "'";
+      env.report(fieldName->loc, diag::note_operator_left_type)
+          << lhsType->toString();
       return env.errorType();
     }
 
