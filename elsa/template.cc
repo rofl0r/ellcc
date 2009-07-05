@@ -4885,8 +4885,7 @@ Variable *Env::makeExplicitFunctionSpecialization
   LookupSet set;
   lookupPQ(set, name, LF_TEMPL_PRIMARY);
   if (set.isEmpty()) {
-    error(stringc << "cannot find primary `" << name->toString()
-                  << "' to specialize");
+    report(loc, diag::err_template_cannot_find_primary);
     return NULL;
   }
 
@@ -5004,11 +5003,9 @@ Variable *Env::makeExplicitFunctionSpecialization
 
       // ok, found a suitable candidate
       if (best) {
-        error(stringc << "ambiguous specialization, could specialize `"
-                      << best->type->toString() << "' or `"
-                      << primary->type->toString()
-                      << "'; use explicit template arguments to disambiguate",
-                      EF_STRONG);
+        report(loc, diag::err_template_ambiguous_specialization)
+            << best->type->toString() << primary->type->toString()
+            << DIAG_STRONG;
         // error recovery: use 'best' anyway
         break;
       }
@@ -5047,7 +5044,8 @@ Variable *Env::makeExplicitFunctionSpecialization
   } // candidate loop
 
   if (!ret) {
-    error("specialization does not match any function template", EF_STRONG);
+    report(loc, diag::err_template_specialization_does_not_match)
+        << DIAG_STRONG;
     return NULL;
   }
 
@@ -5203,7 +5201,7 @@ Variable *Env::explicitFunctionInstantiation(PQName *name, Type *type,
                                              DeclFlags instFlags)
 {
   if (!type->isFunctionType()) {
-    error("explicit instantiation of non-function type");
+    report(loc(), diag::err_template_explicit_instantiation_of_non_function);
     return NULL;
   }
 
@@ -5283,8 +5281,8 @@ Variable *Env::explicitFunctionInstantiation(PQName *name, Type *type,
 
   // did we find any candidates?
   if (resolver.candidates.isEmpty()) {
-    error(stringc << "type `" << type->toString()
-                  << "' does not match any template function `" << *name << "'");
+    report(loc(), diag::err_template_type_does_not_match)
+        << type->toString() << name->getName();
     return NULL;
   }
 
@@ -5292,7 +5290,7 @@ Variable *Env::explicitFunctionInstantiation(PQName *name, Type *type,
   InstCandidate *best = resolver.selectBestCandidate();
   if (!best) {
     // TODO: make this error message more informative
-    error("ambiguous function template instantiation");
+    report(loc(), diag::err_template_ambiguous_function_template_instantiation);
     best = resolver.candidates[0];       // error recovery; pick arbitrarily
   }
 

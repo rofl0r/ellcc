@@ -203,6 +203,19 @@ def err_template_parameter_occurs_more_than_once
     : Error<"template parameter '%0' occurs more than once">;
 def err_template_no_argument_supplied_for_parameter
     : Error<"no template argument supplied for parameter '%0'">;
+def err_template_cannot_find_primary
+    : Error<"cannot find primary '%0' to specialize">;
+def err_template_ambiguous_specialization
+    : Error<"ambiguous specialization, could specialize '%0', or '%1'; "
+            "; use explicit template arguments to disambiguate">;
+def err_template_specialization_does_not_match
+    : Error<"specialization does not match any function template">;
+def err_template_explicit_instantiation_of_non_function
+    : Error<"explicit instantiation of non-function type">;
+def err_template_type_does_not_match
+    : Error<"type '%0' does not match any template function '%1'">;
+def err_template_ambiguous_function_template_instantiation
+    : Error<"ambiguous function template instantiation">;
 
 def err_stdconv_cv_flag_mismatch
     : Error<"cannot convert '%0' to '%1': the source has some cv flag that the destination does not">;
