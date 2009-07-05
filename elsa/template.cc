@@ -1958,16 +1958,13 @@ bool Env::insertTemplateArgBindings_oneParamList
       }
 
       addVariableToScope(scope, binding);
-    }
-    else {
+    } else {
       // mismatch between argument kind and parameter kind
-      char const *paramKind = param->hasFlag(DF_TYPEDEF)? "type" : "non-type";
       // FIX: make a provision for template template parameters here
-      char const *argKind = sarg->isType()? "type" : "non-type";
-      error(stringc
-            << "`" << param->name << "' is a " << paramKind
-            << " parameter, but `" << sarg->toString() << "' is a "
-            << argKind << " argument", EF_STRONG);
+      report(loc(), diag::err_template_argument_parameter_mismatch)
+        << param->name << param->hasFlag(DF_TYPEDEF)
+        << sarg->toString() << sarg->isType()
+        << DIAG_STRONG;
     }
 
     paramIter.adv();
@@ -2069,9 +2066,8 @@ void Env::mapPrimaryArgsToSpecArgs_oneParamList(
 
     STemplateArgument arg = match.getBoundValue(param->name, tfac);
     if (!arg.hasValue()) {
-      error(stringc
-            << "during partial specialization parameter `" << param->name
-            << "' not bound in inferred bindings", EF_STRONG);
+      report(loc(), diag::err_template_parameter_not_bound)
+        << param->name << DIAG_STRONG;
       return;
     }
 
@@ -2134,7 +2130,7 @@ Variable *Env::findMostSpecific
   // we should deal with that error
   if (!bestV) {
     // TODO: expand this error message
-    error(stringc << "ambiguous attempt to instantiate template", EF_STRONG);
+    report(loc(), diag::err_template_ambiguous) << DIAG_STRONG;
     return baseV;      // recovery: use the primary
   }
 
@@ -3084,9 +3080,8 @@ void Env::instantiateClassTemplateDefn(Variable *inst, bool suppressErrors)
   }
 
   if (!instCT->syntax) {
-    error(stringc << "attempt to instantiate `" << instTI->templateName()
-                  << "', but no definition has been provided for `"
-                  << specTI->templateName() << "'");
+    report(loc(), diag::err_template_intantiate_with_no_definition)
+        << instTI->templateName() << specTI->templateName();
     return;
   }
   xassert(defnScope);
@@ -3248,9 +3243,8 @@ bool Env::supplyDefaultTemplateArguments
     }
 
     if (!arg) {
-      error(stringc << "no argument supplied for template parameter `"
-                    << param->name << "' of template `"
-                    << primaryTI->templateName() << "'");
+      report(loc(), diag::err_template_missing_argument)
+        << param->name << primaryTI->templateName();
       return false;
     }
 
@@ -3264,8 +3258,8 @@ bool Env::supplyDefaultTemplateArguments
   }
 
   if (!argIter.isDone()) {
-    error(stringc << "too many arguments supplied to template `"
-                  << primaryTI->templateName() << "'");
+    report(loc(), diag::err_template_too_many_arguments)
+        << primaryTI->templateName();
     return false;
   }
 
@@ -3314,93 +3308,70 @@ void Env::setSTemplArgFromExpr(STemplateArgument &sarg, Expression const *expr,
     CValue val = expr->constEval(cenv);
     if (val.isDependent()) {
       sarg.setDepExpr(expr);
-    }
-    else if (val.isIntegral()) {
+    } else if (val.isIntegral()) {
       sarg.setInt(val.getIntegralValue());
-    }
-    else if (val.isError()) {
+    } else if (val.isError()) {
       if (expr->type->isReference()) {
         goto handle_reference;         // second chance
-      }
-      else {
-        env.report(expr->loc, diag::err_template_constant_expression)
+      } else {
+        report(expr->loc, diag::err_template_constant_expression)
             << expr->exprToString()
             << SourceRange(expr->loc, expr->endloc);
       }
-    }
-    else {
+    } else {
       xassert(val.isFloat());
-      env.error("cannot use float type as template argument");
+      report(loc(), diag::err_template_float_argument);
     }
-  }
-
-  else if (expr->type->isReference()) {
+  } else if (expr->type->isReference()) {
   handle_reference:
     if (expr->isE_variable()) {
       // TODO: 14.3.2p1 says you can only use variables with
       // external linkage
       sarg.setReference(expr->asE_variableC()->var);
+    } else {
+      report(loc(), diag::err_template_reference_must_be_simple_variable)
+        << expr->exprToString();
     }
-    else {
-      env.error(stringc
-        << "`" << expr->exprToString() << "' must be a simple variable "
-        << "for it to be a template reference argument");
-    }
-  }
-
-  else if (expr->type->isPointer()) {
+  } else if (expr->type->isPointer()) {
     if (expr->isE_addrOf() &&
         expr->asE_addrOfC()->expr->isE_variable()) {
       // TODO: 14.3.2p1 says you can only use variables with
       // external linkage
       sarg.setPointer(expr->asE_addrOfC()->expr->asE_variable()->var);
-    }
-    else if (expr->isE_variable() &&
+    } else if (expr->isE_variable() &&
              expr->asE_variableC()->var->isTemplateParam()) {
       sarg.setPointer(expr->asE_variableC()->var);
-    }
-    else {
+    } else {
       // TODO: This is wrong; the '&' is optional for arrays.
-      env.error(stringc
-        << "`" << expr->exprToString() << " must be the address of a "
-        << "simple variable for it to be a template pointer argument");
+      report(loc(), diag::err_template_pointer_must_be_simple_variable_address)
+        << expr->exprToString();
     }
-  }
-
-  else if (expr->type->isFunctionType()) {
+  } else if (expr->type->isFunctionType()) {
     // implicitly take its address [14.3.2p5b4] (in/t0561.cc)
     if (expr->isE_variable()) {
       // TODO: 14.3.2p1 says you can only use functions with
       // external linkage
       sarg.setPointer(expr->asE_variableC()->var);
+    } else {
+      report(loc(), diag::err_template_pointer_must_be_a_function_name)
+        << expr->exprToString();
     }
-    else {
-      env.error(stringc
-        << "`" << expr->exprToString() << " must be the name of a "
-        << "function for it to be a template pointer argument");
-    }
-  }
-
-  else if (expr->type->isPointerToMemberType()) {
+  } else if (expr->type->isPointerToMemberType()) {
     // this check is identical to the case above, but combined with
     // the inferred type it checks for a different syntax
     if (expr->isE_addrOf() &&
         expr->asE_addrOfC()->expr->isE_variable()) {
       sarg.setMember(expr->asE_addrOfC()->expr->asE_variable()->var);
-    }
-    else {
+    } else {
       env.error(stringc
         << "`" << expr->exprToString() << " must be the address of a "
         << "class member for it to be a template pointer argument");
     }
-  }
-
-  else {
+  } else {
     if (env.needError(expr->type) == NULL) {
-        env.error(stringc
-            << "`" << expr->exprToString() << "' has type `"
-            << expr->type->toString() << "' but that's not an allowable "
-            << "type for a non-type template argument");
+        report(loc(), diag::err_template_argument_type_not_allowed)
+            << expr->exprToString()
+            << expr->type->toString();
     }
   }
 }

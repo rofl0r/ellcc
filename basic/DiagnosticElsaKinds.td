@@ -149,8 +149,32 @@ def err_template_parameter_incompatable_with_argument
             "argument '%0' is incompatible with parameter '%1'">;
 def err_template_arguments_do_not_bind_parameter
     : Error<"arguments do not bind template parameter '%0'">;
+def err_template_argument_parameter_mismatch
+    : Error<"'%0' is a %select{non-type|type}1 parameter, "
+            "but '%2' is a %select{non-type|type}3 argument">;
+def err_template_parameter_not_bound
+    : Error<"during partial specialization parameter '%0'"
+            " is not bound in inferred bindings">;
+def err_template_ambiguous
+    : Error<"ambiguous attempt to instantiate template">;
+def err_template_intantiate_with_no_definition
+    : Error<"attempt to instantiate '%0'"
+            ", but no definition has been provided for '%1'">;
+def err_template_missing_argument
+    : Error<"no argument supplied for template parameter '%0'"
+            " of template '%1'">;
 def err_template_too_many_arguments
-    : Error<"too many template arguments to '%0'">;
+    : Error<"too many arguments supplied to template '%0'">;
+def err_template_float_argument
+    : Error<"cannot use float type as template argument">;
+def err_template_reference_must_be_simple_variable
+    : Error<"'%0' must be a simple variable for it to be a template reference argument">;
+def err_template_pointer_must_be_simple_variable_address
+    : Error<"'%0' must be the address of a simple variable for it to be a template pointer argument">;
+def err_template_pointer_must_be_a_function_name
+    : Error<"'%0' must be the name of a function for it to be a template pointer argument">;
+def err_template_argument_type_not_allowed
+    : Error<"'%0' has type '%1', but that's not an allowable type for a non-type template argument">;
 
 def err_stdconv_cv_flag_mismatch
     : Error<"cannot convert '%0' to '%1': the source has some cv flag that the destination does not">;
