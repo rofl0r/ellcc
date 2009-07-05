@@ -173,6 +173,9 @@ def err_template_pointer_must_be_simple_variable_address
     : Error<"'%0' must be the address of a simple variable for it to be a template pointer argument">;
 def err_template_pointer_must_be_a_function_name
     : Error<"'%0' must be the name of a function for it to be a template pointer argument">;
+def err_template_pointer_must_be_the_address_of_a_class_member
+    : Error<"'%0' must be the must be the address of a class member "
+            "for it to be a template pointer argument">;
 def err_template_argument_type_not_allowed
     : Error<"'%0' has type '%1', but that's not an allowable type for a non-type template argument">;
 

@@ -3363,9 +3363,8 @@ void Env::setSTemplArgFromExpr(STemplateArgument &sarg, Expression const *expr,
         expr->asE_addrOfC()->expr->isE_variable()) {
       sarg.setMember(expr->asE_addrOfC()->expr->asE_variable()->var);
     } else {
-      env.error(stringc
-        << "`" << expr->exprToString() << " must be the address of a "
-        << "class member for it to be a template pointer argument");
+      report(loc(), diag::err_template_pointer_must_be_the_address_of_a_class_member)
+        << expr->exprToString();
     }
   } else {
     if (env.needError(expr->type) == NULL) {
@@ -3481,9 +3480,7 @@ void Env::transferTemplateMemberInfo
         }
       }
       xassert(srcDeclarators->isEmpty() && destDeclarators->isEmpty());
-    }
-
-    else if (srcIter.data()->isMR_func()) {
+    } else if (srcIter.data()->isMR_func()) {
       if (srcIter.data()->asMR_func()->f->dflags & DF_FRIEND) {
         // skip these.. apparently I do not have TemplateInfos on
         // them, which might itself be a mistake, but since that's the
@@ -3508,16 +3505,13 @@ void Env::transferTemplateMemberInfo
         // arg.. I keep pushing this around.. maybe new strategy:
         // set defnScope and funcDefn at same time?
         destVar->funcDefn = destIter.data()->asMR_func()->f;
-      }
-      else {
+      } else {
         // this happens when 'destVar' is actually a partial instantiation,
         // so the scope was set by transferTemplateMemberInfo_membert
         // when ..._one delegated to it
         xassert(destTI->isPartialInstantiation());
       }
-    }
-
-    else if (srcIter.data()->isMR_template()) {
+    } else if (srcIter.data()->isMR_template()) {
       TemplateDeclaration *srcTDecl = srcIter.data()->asMR_template()->d;
       TemplateDeclaration *destTDecl = destIter.data()->asMR_template()->d;
 
@@ -3537,43 +3531,33 @@ void Env::transferTemplateMemberInfo
           transferTemplateMemberInfo_typeSpec(instLoc,
             srcSpec, source->ctype,
             destTDecl->asTD_decl()->d->spec, sargs);
-        }
-        else if (srcTDecl->asTD_decl()->d->dflags & DF_FRIEND) {
+        } else if (srcTDecl->asTD_decl()->d->dflags & DF_FRIEND) {
           // (k0056.cc) source declaration is a friend... I *think* I
           // just want to ignore it here... if I don't, then the
           // member transfer logic gets confused by the fact that the
           // presence and checkedness of the definition is independent
           // of this template class's state (because the friend is not
           // actually a memebr)
-        }
-        else {
+        } else {
           // old TD_proto behavior
           Variable *srcVar = srcTDecl->asTD_decl()->d->decllist->first()->var;
           Variable *destVar = destTDecl->asTD_decl()->d->decllist->first()->var;
 
           transferTemplateMemberInfo_membert(instLoc, srcVar, destVar, sargs);
         }
-      }
-
-      else if (srcTDecl->isTD_func()) {
+      } else if (srcTDecl->isTD_func()) {
         Variable *srcVar = srcTDecl->asTD_func()->f->nameAndParams->var;
         Variable *destVar = destTDecl->asTD_func()->f->nameAndParams->var;
 
         transferTemplateMemberInfo_membert(instLoc, srcVar, destVar, sargs);
-      }
-
-      else if (srcTDecl->isTD_tmember()) {
+      } else if (srcTDecl->isTD_tmember()) {
         // not sure if this would even parse... if it does I don't
         // know what it might mean
         error("more than one template <...> declaration inside a class body?");
-      }
-
-      else {
+      } else {
         xfailure("unknown TemplateDeclaration kind");
       }
-    }
-
-    else {
+    } else {
       // other kinds of member decls: don't need to do anything
     }
   }
