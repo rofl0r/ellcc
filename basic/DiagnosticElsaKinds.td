@@ -192,11 +192,17 @@ def err_template_declaration_parameter_not_match_prior
     : Error<"ithe prior declaration of '%0' was templatized with parameter '%1' of type "
             "'%2', but the this one has parameter '%3' of type '%4', "
             "and these are not equivalent">;
-def err_template_defauly_value_given_more_than_once
+def err_template_default_value_given_more_than_once
     : Error<"cannot specify default value of template parameter more than once">;
 def err_template_declaration_parameter_count_not_match_prior
     : Error<"the prior declaration of '%0' was templatized with "
             "%1 parameter%select{s|}2, but this one has %3 parameter%select{s|}4">;
+def err_template_differing_number_of_parameter_lists
+    : Error<"differing number of template parameter lists">;
+def err_template_parameter_occurs_more_than_once
+    : Error<"template parameter '%0' occurs more than once">;
+def err_template_no_argument_supplied_for_parameter
+    : Error<"no template argument supplied for parameter '%0'">;
 
 def err_stdconv_cv_flag_mismatch
     : Error<"cannot convert '%0' to '%1': the source has some cv flag that the destination does not">;

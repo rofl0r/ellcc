@@ -3903,7 +3903,7 @@ bool Env::mergeParameterLists(Variable *prior,
     // what's up with their default arguments?
     if (dest->value && src->value) {
       // this message could be expanded...
-      report(loc(), diag::err_template_defauly_value_given_more_than_once);
+      report(loc(), diag::err_template_default_value_given_more_than_once);
       return false;
     }
 
@@ -3993,7 +3993,7 @@ bool Env::mergeTemplateInfos(Variable *prior, TemplateInfo *dest,
 
   if (!destIter.isDone() || !srcIter.isDone()) {
     // TODO: expand this error message
-    error("differing number of template parameter lists");
+    report(loc(), diag::err_template_differing_number_of_parameter_lists);
     ok = false;
   }
 
@@ -4789,8 +4789,8 @@ void Env::bindParametersInMap(MType &map, TemplateInfo *tinfo,
   bindParametersInMap(map, tinfo->params, argIter);
 
   if (!argIter.isDone()) {
-    error(stringc << "too many template arguments supplied for "
-                  << tinfo->var->name);
+    report(loc(), diag::err_template_too_many_arguments)
+        << tinfo->var->name;;
   }
 }
 
@@ -4802,12 +4802,11 @@ void Env::bindParametersInMap(MType &map,
     Variable const *param = iter.data();
 
     if (map.getBoundValue(param->name, tfac).hasValue()) {
-      error(stringc << "template parameter `" << param->name <<
-                       "' occurs more than once");
-    }
-    else if (argIter.isDone()) {
-      error(stringc << "no template argument supplied for parameter `" <<
-                       param->name << "'");
+      report(loc(), diag::err_template_parameter_occurs_more_than_once)
+        << param->name;
+    } else if (argIter.isDone()) {
+      report(loc(), diag::err_template_no_argument_supplied_for_parameter)
+        << param->name;
     }
     else {
       map.setBoundValue(param->name, *argIter.data());
