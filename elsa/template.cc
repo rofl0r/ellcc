@@ -3553,7 +3553,7 @@ void Env::transferTemplateMemberInfo
       } else if (srcTDecl->isTD_tmember()) {
         // not sure if this would even parse... if it does I don't
         // know what it might mean
-        error("more than one template <...> declaration inside a class body?");
+        report(loc(), diag::err_template_multiple_declarations);
       } else {
         xfailure("unknown TemplateDeclaration kind");
       }
@@ -3565,7 +3565,6 @@ void Env::transferTemplateMemberInfo
   // one is clone of the other, so same length lists
   xassert(srcIter.isDone() && destIter.isDone());
 }
-
 
 // transfer specifier info, particularly for nested class or
 // member template classes
@@ -3761,13 +3760,10 @@ bool Env::verifyCompatibleTemplateParameters
   }
 
   if (!hasParams && prior->isTemplate()) {
-    error(stringc
-      << "prior declaration of " << prior->keywordAndName()
-      << " at " << prior->typedefVar->loc
-      << " was templatized with parameters "
-      << prior->templateInfo()->paramsToCString()
-      << " but the this one is not templatized",
-      EF_DISAMBIGUATES);
+    report(loc(), diag::err_template_declaration_not_match_prior)
+        << prior->keywordAndName() << prior->templateInfo()->paramsToCString()
+        << DIAG_DISAMBIGUATES;
+    report(prior->typedefVar->loc, diag::note_previous_declaration);
     return false;
   }
 
@@ -3778,14 +3774,11 @@ bool Env::verifyCompatibleTemplateParameters
       // in/t0510.cc: 'prior' is an instantiation, so the parameters
       // were referring to the template primary
       prior = prior->templateInfo()->getPrimary()->getCompoundType();
-    }
-    else {
-      error(stringc
-        << "prior declaration of " << prior->keywordAndName()
-        << " at " << prior->typedefVar->loc
-        << " was not templatized, but this one is, with parameters "
-        << paramsToCString(scope->templateParams),
-        EF_DISAMBIGUATES);
+    } else {
+        report(loc(), diag::err_template_declaration_not_match_prior_non_templatized)
+            << prior->keywordAndName() << paramsToCString(scope->templateParams)
+            << DIAG_DISAMBIGUATES;
+        report(prior->typedefVar->loc, diag::note_previous_declaration);
       return false;
     }
   }
@@ -3827,8 +3820,7 @@ bool Env::verifyCompatibleTemplateParameters
     for (; !scopeIter.isDone(); scopeIter.adv()) {
       if (scopeIter.data()->isTemplateParamScope()) {
         paramScopes.prepend(scopeIter.data());
-      }
-      else if (dflags & DF_FRIEND) {
+      } else if (dflags & DF_FRIEND) {
         // in/t0623.cc: If the decl we are looking at is a 'friend'
         // decl, then stop gathering inherited parameters as soon as
         // we see the first non-template-param scope, since the
@@ -3854,8 +3846,8 @@ bool Env::verifyCompatibleTemplateParameters
   // should end at same time
   if (!inhParamIter.isDone() || !scopeIter.isDone()) {
     // TODO: expand this message
-    env.error(stringc << "wrong # of template param lists in declaration of "
-                      << prior->name);
+    report(loc(), diag::err_template_wrong_number_of_parameter_lists)
+        << prior->name;
   }
 
   return true;
@@ -3899,22 +3891,19 @@ bool Env::mergeParameterLists(Variable *prior,
 
     // are the types equivalent?
     if (!equalOrIsomorphic(dest->type, src->type)) {
-      error(stringc
-        << "prior declaration of " << prior->toString()
-        << " at " << prior->loc
-        << " was templatized with parameter `"
-        << dest->name << "' of type `" << dest->type->toString()
-        << "' but this one has parameter `"
-        << src->name << "' of type `" << src->type->toString()
-        << "', and these are not equivalent",
-        EF_DISAMBIGUATES);
+        report(loc(), diag::err_template_declaration_parameter_not_match_prior)
+            << prior->toString()
+            << dest->name << dest->type->toString()
+            << src->name << src->type->toString()
+            << DIAG_DISAMBIGUATES;
+        report(prior->loc, diag::note_previous_declaration);
       return false;
     }
 
     // what's up with their default arguments?
     if (dest->value && src->value) {
       // this message could be expanded...
-      error("cannot specify default value of template parameter more than once");
+      report(loc(), diag::err_template_defauly_value_given_more_than_once);
       return false;
     }
 
@@ -3969,14 +3958,12 @@ bool Env::mergeParameterLists(Variable *prior,
     return true;   // ok
   }
   else {
-    error(stringc
-      << "prior declaration of " << prior->toString()
-      << " at " << prior->loc
-      << " was templatized with "
-      << pluraln(destParams.count(), "parameter")
-      << ", but this one has "
-      << pluraln(srcParams.count(), "parameter"),
-      EF_DISAMBIGUATES);
+    report(loc(), diag::err_template_declaration_parameter_count_not_match_prior)
+        << prior->toString() 
+        << destParams.count() << (destParams.count() == 1)
+        << srcParams.count() << (srcParams.count() == 1)
+        << DIAG_DISAMBIGUATES;
+    report(prior->loc, diag::note_previous_declaration);
     return false;
   }
 }

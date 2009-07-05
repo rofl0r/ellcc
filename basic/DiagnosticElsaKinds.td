@@ -178,6 +178,25 @@ def err_template_pointer_must_be_the_address_of_a_class_member
             "for it to be a template pointer argument">;
 def err_template_argument_type_not_allowed
     : Error<"'%0' has type '%1', but that's not an allowable type for a non-type template argument">;
+def err_template_multiple_declarations
+    : Error<"more than one template <...> declaration inside a class body">;
+def err_template_declaration_not_match_prior
+    : Error<"ithe prior declaration of '%0' was templatized with parameters "
+            "'%1', but the this one is not templatized">;
+def err_template_declaration_not_match_prior_non_templatized
+    : Error<"ithe prior declaration of '%0' was not templatized "
+            ", but the this one is, with parameters '%1'">;
+def err_template_wrong_number_of_parameter_lists
+    : Error<"wrong # of template param lists in the declaration of '%0'">;
+def err_template_declaration_parameter_not_match_prior
+    : Error<"ithe prior declaration of '%0' was templatized with parameter '%1' of type "
+            "'%2', but the this one has parameter '%3' of type '%4', "
+            "and these are not equivalent">;
+def err_template_defauly_value_given_more_than_once
+    : Error<"cannot specify default value of template parameter more than once">;
+def err_template_declaration_parameter_count_not_match_prior
+    : Error<"the prior declaration of '%0' was templatized with "
+            "%1 parameter%select{s|}2, but this one has %3 parameter%select{s|}4">;
 
 def err_stdconv_cv_flag_mismatch
     : Error<"cannot convert '%0' to '%1': the source has some cv flag that the destination does not">;
