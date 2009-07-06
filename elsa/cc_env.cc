@@ -1419,12 +1419,6 @@ Scope *Env::enclosingScope()
   xassert(s->canAcceptNames);
 
   s = scopes.nth(1);
-  if (!s->canAcceptNames) {
-    error("did you try to make a templatized anonymous union (!), "
-          "or am I confused?");
-    return scopes.nth(2);   // error recovery..
-  }
-
   return s;
 }
 
@@ -1781,9 +1775,8 @@ Variable *Env::lookupOneQualifier_bareName(
       //
       // alternatively, I could just re-traverse the original name;
       // I'm lazy for now
-      error(stringc
-        << "cannot find scope name `" << qual << "'",
-        EF_DISAMBIGUATES);
+        report(loc(), diag::err_cannot_find_scope_name)
+            << qual << DIAG_DISAMBIGUATES;
     }
     return NULL;
   }
@@ -1824,9 +1817,7 @@ Scope *Env::lookupOneQualifier_useArgs(
     }
 
     if (!qualVar->type->isCompoundType()) {
-      error(stringc
-        << "typedef'd name `" << qual << "' doesn't refer to a class, "
-        << "so it can't be used as a scope qualifier");
+        report(loc(), diag::err_bad_scope_qualifier) << qual;
       return NULL;
     }
     CompoundType *ct = qualVar->type->asCompoundType();
@@ -1857,8 +1848,7 @@ Scope *Env::lookupOneQualifier_useArgs(
         }
       } else if (!ct->isTemplate()) {
         if (sargs.isNotEmpty()) {
-          error(stringc
-                << "class `" << qual << "' isn't a template");
+            report(loc(), diag::err_template_not_a_template) << qual;
           // recovery: use the scope anyway
         }
       }
@@ -1897,9 +1887,8 @@ Scope *Env::lookupOneQualifier_useArgs(
             //
             // 8/07/04: I think the test above, 'containsVariables',
             // has resolved this issue.
-            error(stringc << "cannot find template primary or specialization `"
-                          << qual << sargsToString(sargs) << "'",
-                  EF_DISAMBIGUATES);
+            report(loc(), diag::err_template_cannot_find_template_primary_or_specialization)
+                 << qual << sargsToString(sargs) << DIAG_DISAMBIGUATES;
             return ct;     // recovery: use the primary
           }
 
@@ -1955,7 +1944,8 @@ Scope *Env::lookupOneQualifier_useArgs(
   // case 2: qualifier refers to a namespace
   else /*DF_NAMESPACE*/ {
     if (sargs.isNotEmpty()) {
-      error(stringc << "namespace `" << qual << "' can't accept template args");
+        report(loc(), diag::err_namespace_cannot_accept_template_arguments)
+            << qual;
     }
 
     // the namespace becomes the active scope
@@ -2609,8 +2599,7 @@ Type *Env::type_info_const_ref()
     // make a const reference
     return makeReferenceType(
              tfac.applyCVToType(loc(), CV_CONST, ti->type, NULL /*syntax*/));
-  }
-  else {
+  } else {
     error("must #include <typeinfo> before using typeid");
     return env.errorType();
   }

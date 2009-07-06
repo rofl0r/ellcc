@@ -64,6 +64,11 @@ def err_cannot_declare_operator_with_no_return_type
 def err_repeated_int_type_specifier
     : Error<"repeated 'int' type specifier">;
 
+def err_cannot_find_scope_name
+    : Error<"cannot find scope name '%0'">;
+def err_bad_scope_qualifier
+    : Error<"typedef'd name '%0' doesn't refer to a class, "
+            "so it can't be used as a scope qualifier">;
 def err_specifier_invalid : Error<"cannot apply const/volatile to type '%0'">;
 
 def err_expr_not_ice : Error<"expression is not an integer constant expression">;
@@ -124,6 +129,8 @@ def err_namespace_unknown : Error<"namespace '%0' does not exist">;
 def err_namespace_alias_redefinition
     : Error<"redefinition of namespace alias '%0' is not allowed "
             "because the new definition isn't the same as the old">;
+def err_namespace_cannot_accept_template_arguments
+    : Error<"namespace '%0' can't accept template arguments">;
 
 def err_using_needs_qualified_name : Error<"a using declaration requires a qualified name">;
 def err_using_template
@@ -135,6 +142,10 @@ def err_initializer_arguments
 def err_constructor_style_initializer_arguments
     : Error<"expected constructor-style initializer of '%0' to have 1 argument, not %1">;
 
+def err_template_not_a_template
+    : Error<"class '%0' isn't a template">;
+def err_template_cannot_find_template_primary_or_specialization
+    : Error<"cannot find template primary or specialization '%0%1'">;
 def err_template_in_function_or_local_class
     : Error<"template declaration in a function or local class">;
 def err_template_more_than_one_declarator

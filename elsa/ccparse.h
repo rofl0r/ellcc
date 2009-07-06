@@ -56,9 +56,6 @@ public:
   Diagnostic& diag;
   DiagnosticBuilder report(SourceLocation loc, unsigned DiagID);
   void diagnose3(bool3 b, SourceLocation L, unsigned DiagID, unsigned NoteID = 0);
-  // report an error or warning
-  void error(SourceLocation loc, char const *msg);
-  void warning(SourceLocation loc, char const *msg);
 };
 
 
