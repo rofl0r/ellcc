@@ -2099,10 +2099,8 @@ Variable *Env::applyPQNameTemplateArguments
       //   new Foo< 3 > +4 > +5;
       // which could absorb the '3' as a template argument or not,
       // depending on whether Foo is a template
-      error(stringc
-        << "`" << var->name << "' is a class template, but template "
-        << "arguments were not supplied",
-        EF_DISAMBIGUATES);
+      report(loc(), diag::err_template_arguments_were_not_supplied)
+        << var->name << DIAG_DISAMBIGUATES;
       return lookupErrorObject(flags);
     }
 
@@ -2149,10 +2147,9 @@ Variable *Env::applyPQNameTemplateArguments
            final->isPQ_template()) {
     // disambiguates the same example as above, but selects
     // the opposite interpretation
-    error(stringc
-      << "`" << var->name << "' is not a template, but template arguments were supplied",
-      EF_DISAMBIGUATES);
-    return NULL;
+      report(loc(), diag::err_template_arguments_supplied)
+        << var->name << DIAG_DISAMBIGUATES;
+      return NULL;
   }
 
   return var;
@@ -2344,7 +2341,7 @@ TemplateInfo * /*owner*/ Env::takeCTemplateInfo(bool allowInherited)
       if (!s->parameterizedEntity) {
         if (ret->params.isNotEmpty()) {
           // there was already one unassociated, and now we see another
-          error("too many template <...> declarations");
+          report(loc(), diag::err_template_too_many_declarations);
         }
         else {
           ret->params.appendAll(s->templateParams);
@@ -2600,7 +2597,7 @@ Type *Env::type_info_const_ref()
     return makeReferenceType(
              tfac.applyCVToType(loc(), CV_CONST, ti->type, NULL /*syntax*/));
   } else {
-    error("must #include <typeinfo> before using typeid");
+    report(loc(), diag::err_typeinfo_not_included);
     return env.errorType();
   }
 }
@@ -2780,8 +2777,7 @@ Variable *Env::makeUsingAliasFor(SourceLocation loc, Variable *origVar)
   // be class members or neither is class member
   if (scope->isClassScope() !=
       (origVar->scope? origVar->scope->isClassScope() : false)) {
-    error(stringc << "bad alias `" << name
-                  << "': alias and original must both be class members or both not members");
+    report(loc, diag::err_namespace_bad_alias) << name;
     return NULL;
   }
 
@@ -2815,9 +2811,8 @@ Variable *Env::makeUsingAliasFor(SourceLocation loc, Variable *origVar)
     // 7.3.3 para 4: the original member must be in a base class of
     // the class where the alias is put
     if (!enclosingClass->hasBaseClass(origVar->scope->curCompound)) {
-      error(stringc << "bad alias `" << name
-                    << "': original must be in a base class of alias' scope");
-      return NULL;
+        report(loc, diag::err_namespace_bad_alias_scope) << name;
+        return NULL;
     }
   }
 
@@ -2860,8 +2855,8 @@ Variable *Env::makeUsingAliasFor(SourceLocation loc, Variable *origVar)
     // we are *not* trying to create another alias
     else if (enclosingClass) {
       // this error message could be more informative...
-      error(stringc << "alias `" << name << "' conflicts with another alias");
-      return NULL;
+        report(loc, diag::err_namespace_alias_name_conflict) << name;
+        return NULL;
     }
   }
 
@@ -3207,14 +3202,14 @@ static bool compatibleEnumAndIntegerTypes(Type *t1, Type *t2)
 //   - re-use existing declaration 'prior'
 // caller shouldn't have to distinguish first two
 Variable *Env::createDeclaration(
-  SourceLocation loc,            // location of new declaration
-  StringRef name,           // name of new declared variable
-  Type *type,               // type of that variable
-  DeclFlags dflags,         // declaration flags for new variable
-  Scope *scope,             // scope into which to insert it
-  CompoundType *enclosingClass,   // scope->curCompound, or NULL for a hack that is actually wrong anyway (!)
-  Variable *prior,          // pre-existing variable with same name and type, if any
-  OverloadSet *overloadSet  // set into which to insert it, if that's what to do
+  SourceLocation loc,           // location of new declaration
+  StringRef name,               // name of new declared variable
+  Type *type,                   // type of that variable
+  DeclFlags dflags,             // declaration flags for new variable
+  Scope *scope,                 // scope into which to insert it
+  CompoundType *enclosingClass, // scope->curCompound, or NULL for a hack that is actually wrong anyway (!)
+  Variable *prior,              // pre-existing variable with same name and type, if any
+  OverloadSet *overloadSet      // set into which to insert it, if that's what to do
 ) {
   // if this gets set, we'll replace a conflicting variable
   // when we go to do the insertion
@@ -3280,11 +3275,9 @@ Variable *Env::createDeclaration(
         // 2); I think the right soln is to remove the
         // type-vars-suppress-errors thing altogether, but I want to
         // minimize churn for the moment
-        error(/*prior->type,*/ stringc
-          << "duplicate definition for `" << name
-          << "' of type `" << prior->type->toString()
-          << "'; previous at " << toString(prior->loc),
-          EF_STRONG);
+        report(loc, diag::err_duplicate_definition)
+            << name << prior->type->toString() << DIAG_STRONG;
+        report(prior->loc, diag::note_previous_definition);
 
       makeDummyVar:
         // the purpose of this is to allow the caller to have a workable
@@ -3354,11 +3347,9 @@ Variable *Env::createDeclaration(
           goto noPriorDeclaration;
         }
         else {
-          error(stringc
-            << "duplicate member declaration of `" << name
-            << "' in " << enclosingClass->keywordAndName()
-            << "; previous at " << toString(prior->loc),
-            EF_STRONG);
+          report(loc, diag::error_class_duplicate_member_declaration)
+            << name << enclosingClass->keywordAndName() << DIAG_STRONG;
+          report(prior->loc, diag::note_previous_declaration);
           goto makeDummyVar;
         }
       }
@@ -3395,11 +3386,10 @@ Variable *Env::createDeclaration(
         goto noPriorDeclaration;
       }
 
-      error(loc, stringc
-        << "prior declaration of " << prior->name << ", at " << prior->loc
-        << ", was " << (prior->flags&DF_TYPEDEF? "a" : "not a")
-        << " type, but this one " << (dflags&DF_TYPEDEF? "is" : "is not")
-        << " a type");
+      report(loc, diag::err_not_match_prior)
+        << prior->name << !!(prior->flags & DF_TYPEDEF)
+        << !!(dflags & DF_TYPEDEF);
+      report(prior->loc, diag::note_previous_declaration);
       goto makeDummyVar;
     }
     else if (almostEqualTypes(prior->type, type, MF_COMPARE_EXN_SPEC)) {

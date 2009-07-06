@@ -24,6 +24,8 @@ def err_parse_too_many_longs : Error<"too many 'long's">;
 
 def err_undeclared_identifier : Error<"undeclared identifier '%0'">;
 def err_redefinition_of_identifier : Error<"redefinition of '%0'">;
+def err_duplicate_definition
+    : Error<"duplicate definition for '%0' of type '%1'">;
 def err_unknown_type : Error<"there is no type called '%0'">;
 def err_variable_used_as_type : Error<"variable name '%0' used as if it were a type">;
 def err_type_used_as_variable : Error<"type name '%0' used as if it were a variable">;
@@ -34,6 +36,9 @@ def err_main_implicit_int : Warning<"obsolete use of implicit int in declaration
 def err_implicit_return : Error<"obsolete use of implicit int return type">;
 def err_break : Error<"'break' not in a 'switch', 'while', 'do', or 'for' statement">;
 def err_continue : Error<"'continue' not in a 'while', 'do', or 'for' statement">;
+def err_not_match_prior
+    : Error<"prior declaration of '%0', was %select{not a|a}1 type, "
+            "but this one %select{is not|is}2 a type">;
 
 // Compatability messages.
 def note_gcc_bug_allows : Note<"gcc bug allows it">;
@@ -124,11 +129,19 @@ def err_expr_assignment_to_non_lvalue
     : Error<"the left operand of an assignment must be an lvalue">;
 def warn_expr_implicit_function
     : Warning<"implicit declaration of '%0'">;
+def err_typeinfo_not_included
+    : Error<"must '#include <typeinfo>' before using 'typeid'">;
 
 def err_namespace_unknown : Error<"namespace '%0' does not exist">;
 def err_namespace_alias_redefinition
     : Error<"redefinition of namespace alias '%0' is not allowed "
             "because the new definition isn't the same as the old">;
+def err_namespace_bad_alias
+    : Error<"bad alias '%0': alias and original must both be class members or both not members">;
+def err_namespace_alias_name_conflict
+    : Error<"alias '%0' conflicts with another alias">;
+def err_namespace_bad_alias_scope
+    : Error<"bad alias '%0': original must be in a base class of alias' scope">;
 def err_namespace_cannot_accept_template_arguments
     : Error<"namespace '%0' can't accept template arguments">;
 
@@ -144,6 +157,14 @@ def err_constructor_style_initializer_arguments
 
 def err_template_not_a_template
     : Error<"class '%0' isn't a template">;
+def err_template_arguments_were_not_supplied
+    : Error<"'%0' is a class template, but template "
+            "arguments were not supplied">;
+def err_template_arguments_supplied
+    : Error<"'%0' is not a template, but template "
+            "arguments were supplied">;
+def err_template_too_many_declarations
+    : Error<"too many 'template <...>' declarations">;
 def err_template_cannot_find_template_primary_or_specialization
     : Error<"cannot find template primary or specialization '%0%1'">;
 def err_template_in_function_or_local_class
@@ -363,6 +384,8 @@ def error_class_field_ambiguous
     : Error<"field '%0' ambiguously refers to elements of multiple base class sub-objects">;
 def error_class_field_typedef
     : Error<"field '%0' is a typedef">;
+def error_class_duplicate_member_declaration
+    : Error<"duplicate member declaration of '%0' in '%1'">;
 
 def err_enum_not_defined
     : Error<"there is no enum called '%0'">;
