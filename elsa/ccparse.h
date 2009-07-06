@@ -10,13 +10,13 @@
 #include "array.h"              // ArrayStack
 #include "cc_flags.h"           // UberModifiers, SimpleTypeId
 #include "cc_ast.h"             // C++ AST classes, needed for the action function signatures
+#include "ElsaDiagnostic.h"
+#include "Preprocessor.h"       // Preprocessor
 #include "SourceLocation.h"     // SourceLocation
-using ellcc::SourceLocation;
 #include "LangOptions.h"        // bool3
 
-namespace ellcc {
-class Preprocessor;
-}
+using namespace ellcc;
+
 // parsing action state
 class ParseEnv {
 private:
@@ -24,8 +24,6 @@ private:
 
 public:
   StringTable &str;                       // string table
-  int errors;                             // parse errors
-  int warnings;                           // and warnings
   StringRef strRefAttr;                   // "attr"
   ellcc::Preprocessor& PP;                // The preprocessor.
 
@@ -33,10 +31,9 @@ public:
   ParseEnv(StringTable &table, ellcc::Preprocessor& PP)
     : classNameStack(),
       str(table),
-      errors(0),
-      warnings(0),
       strRefAttr(table.add("attr")),
-      PP(PP)
+      PP(PP),
+      diag(PP.getDiagnostics())
    {}
   ~ParseEnv() {}
 
@@ -55,12 +52,13 @@ public:
   // generate a LocString suitable for use during parsing
   LocString * /*owner*/ ls(SourceLocation loc, char const *name);
 
+  // Diagnotics.
+  Diagnostic& diag;
+  DiagnosticBuilder report(SourceLocation loc, unsigned DiagID);
+  void diagnose3(bool3 b, SourceLocation L, unsigned DiagID, unsigned NoteID = 0);
   // report an error or warning
   void error(SourceLocation loc, char const *msg);
   void warning(SourceLocation loc, char const *msg);
-  
-  // depending on 'b', accept, accept with warning, or reject
-  void diagnose3(ellcc::bool3 b, SourceLocation loc, char const *msg);
 };
 
 

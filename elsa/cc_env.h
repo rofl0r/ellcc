@@ -143,6 +143,21 @@ public:      // data
   // Diagnotics.
   Diagnostic& diag;
   DiagnosticBuilder report(SourceLocation loc, unsigned DiagID);
+  void diagnose3(bool3 b, SourceLocation L, unsigned DiagID, unsigned NoteID = 0);
+#define DIAGNOSE3(_b, _L, _DiagID, _L2, _NoteID, ...)                           \
+    do {                                                                        \
+            if (_b != b3_TRUE) {                                                \
+                {                                                               \
+                    DiagnosticBuilder _d = env.report(_L, _DiagID) __VA_ARGS__; \
+                    if (_b == b3_WARN) {                                        \
+                        _d << DIAG_WARNING;                                     \
+                    }                                                           \
+                }                                                               \
+                if (_NoteID) {                                                  \
+                    env.report(_L2, _NoteID);                                   \
+                }                                                               \
+            }                                                                   \
+        } while(0)
   void push()
     { diag.Push(); }
   void pop()
@@ -556,7 +571,6 @@ public:      // funcs
   void warning(SourceLocation L, rostring msg);
   void warning(rostring msg);
   void unimp(rostring msg);
-  void diagnose3(bool3 b, SourceLocation L, rostring msg);
 
   // diagnostics involving type clashes; will be suppressed
   // if the type is ST_ERROR

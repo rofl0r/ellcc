@@ -504,8 +504,7 @@ nonterm(Declaration*) DeclSpecifier {
   -> n:PQTypeName BuggyGccTypeModifier/*ignored*/ m2:UberModifierSeqOpt
      {
        diagnose3(PP.getLangOptions().allowModifiersWithTypedefNames, loc,
-                 "typedef and type keyword in a single type "
-                 "specifier (gcc2 bug accepts it)");
+                 diag::err_typedef_and_type, diag::note_gcc2_bug_allows);
        return new Declaration(uberDeclFlags(m2),
          new_TS_name(loc, uberCVFlags(m2), n, false /*typename*/), NULL);
      }
@@ -513,8 +512,7 @@ nonterm(Declaration*) DeclSpecifier {
   -> m1:UberModifierSeq n:PQTypeName BuggyGccTypeModifier/*ignored*/ m2:UberModifierSeqOpt
      {
        diagnose3(PP.getLangOptions().allowModifiersWithTypedefNames, loc,
-                 "typedef and type keyword in a single type "
-                 "specifier (gcc2 bug accepts it)");
+                 diag::err_typedef_and_type, diag::note_gcc2_bug_allows);
        UberModifiers m = uberCombine(loc, m1, m2);
        return new Declaration(uberDeclFlags(m),
          new_TS_name(loc, uberCVFlags(m), n, false /*typename*/), NULL);

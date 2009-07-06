@@ -3265,19 +3265,16 @@ Variable *Env::createDeclaration(
     if (prior->hasFlag(DF_TYPEDEF) &&
         (dflags & DF_TYPEDEF)) {
       // let it go; the check below will ensure the types match
-    }
-
-    else {
+    } else {
       // check for violation of the One Definition Rule
       if (prior->hasFlag(DF_DEFINITION) &&
           (dflags & DF_DEFINITION) &&
           !multipleDefinitionsOK(*this, prior, dflags)) {
         if (scope->isParameterScope()) {
-          env.diagnose3(env.PP.getLangOptions().allowDuplicateParameterNames, loc, stringc
-            << "parameter `" << type->toCString(name)
-            << "' conflicts with previous parameter `"
-            << prior->toCStringAsParameter() << "' (gcc bug allows it [gcc PR 13717])");
-
+          DIAGNOSE3(env.PP.getLangOptions().allowDuplicateParameterNames,
+                    loc, diag::err_multiple_parameter_definition,
+                    loc, diag::note_gcc_bug_allows_PR_13717,
+                    << type->toCString(name) << prior->toCStringAsParameter());
           // I will recover by removing the name
           return makeVariable(loc, NULL /*name*/, type, dflags);
         }
@@ -3586,10 +3583,10 @@ Variable *Env::createDeclaration(
             //    implicit from an inline definition.
             prior->setFlag(DF_STATIC);
           } else {
-            env.diagnose3(PP.getLangOptions().allowStaticAfterNonStatic, loc, stringc
-                          << "prior declaration of `" << name
-                          << "' at " << prior->loc
-                          << " declared non-static, cannot re-declare as static");
+            DIAGNOSE3(env.PP.getLangOptions().allowStaticAfterNonStatic,
+                      loc, diag::err_multiple_parameter_definition,
+                      prior->loc, diag::note_previous_declaration,
+                      << name);
           }
         }
       }
@@ -4067,8 +4064,9 @@ Scope *Env::findParameterizingScope(Variable *bareQualifierVar,
                     << bareQualifierVar->name << "'");
     }
     else {
-      diagnose3(PP.getLangOptions().allowExplicitSpecWithoutParams, loc(), stringc
-        << "explicit specialization missing \"template <>\" (gcc bug allows it)");
+      diagnose3(PP.getLangOptions().allowExplicitSpecWithoutParams, loc(),
+                diag::err_explicit_specialization_missing_template,
+                diag::note_gcc_bug_allows);
     }
   }
 
@@ -5311,8 +5309,9 @@ void Env::checkTemplateKeyword(PQName *name)
         name->isPQ_qualifier() &&
         name->asPQ_qualifier()->qualifier == env.str("rebind") &&
         name->getName() == env.str("other")) {
-      env.diagnose3(PP.getLangOptions().allowGcc2HeaderSyntax, name->loc,
-                    "dependent template scope name requires 'template' keyword (gcc-2 bug allows it)");
+      diagnose3(PP.getLangOptions().allowGcc2HeaderSyntax, name->loc,
+                diag::err_dependent_template_scope_name_requires_template_keyword,
+                diag::note_gcc2_bug_allows);
     }
     else {
       // without the "template" keyword, the dependent context may give
@@ -5370,8 +5369,8 @@ void Env::checkForQualifiedMemberDeclarator(Declarator *decl)
 
   // complain
   diagnose3(PP.getLangOptions().allowQualifiedMemberDeclarations, name->loc,
-            "qualified name is not allowed in member declaration "
-            "(gcc bug accepts it)");
+            diag::err_qualified_name_is_not_allowed_in_member_declaration,
+            diag::note_gcc_bug_allows);
 
   // skip the qualifiers
   do {
@@ -5997,14 +5996,22 @@ bool Env::doOperatorOverload() const
 }
 
 
-void Env::diagnose3(bool3 b, SourceLocation L, rostring msg)
+void Env::diagnose3(bool3 b, SourceLocation L,
+                    unsigned DiagID, unsigned NoteID)
 {
-  if (b == b3_WARN) {
-    warning(L, msg);
-  }
-  else if (b == b3_FALSE) {
-    error(L, msg);
-  }
+    if (b == b3_TRUE) {
+        return;
+    } else {
+        // Limit the scope of 'd'.
+        DiagnosticBuilder d = report(L, DiagID);
+        if (b == b3_WARN) {
+            d << DIAG_WARNING;
+        }
+    }
+
+    if(NoteID) {
+        report(L, NoteID);
+    }
 }
 
 sm::string errorFlagBlock(ErrorFlags eflags)
@@ -6048,7 +6055,6 @@ sm::string Env::locationStackString() const
 
   return sb;
 }
-
 
 // Report a diagnostic.
 DiagnosticBuilder Env::report(SourceLocation loc, unsigned DiagID)

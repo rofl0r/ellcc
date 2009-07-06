@@ -577,10 +577,10 @@ void Function::tcheckBody(Env &env)
           // suppressing the error in this case
         }
         else {
-          env.diagnose3(env.PP.getLangOptions().allowDefinitionsInWrongScopes, env.loc(), stringc
-            << "function definition of `" << *(nameAndParams->getDeclaratorId())
-            << "' must appear in a namespace that encloses the original declaration"
-            << " (gcc bug allows it)");
+          DIAGNOSE3(env.PP.getLangOptions().allowDefinitionsInWrongScopes,
+                    env.loc(), diag::err_function_definition_must_appear_in_a_namespace_that_encloses_it,
+                    env.loc(), diag::note_gcc_bug_allows,
+                    << nameAndParams->getDeclaratorId()->getName());
         }
       }
 
@@ -1536,7 +1536,8 @@ Type *TypeSpecifier::tcheck(Env &env, DeclFlags dflags, LookupFlags lflags)
   if (!ret) {
     if (t->isFunctionType() && env.PP.getLangOptions().allowCVAppliedToFunctionTypes) {
       env.diagnose3(env.PP.getLangOptions().allowCVAppliedToFunctionTypes, loc,
-                    "cannot apply const/volatile to function types (gcc bug allows it)");
+                    diag::err_cannot_apply_const_volatile_to_function_types,
+                    diag::note_gcc_bug_allows);
       return t;    // ignore the cv-flags
     }
     else {
@@ -1677,11 +1678,12 @@ do_lookup:
       // is this a gcc-2 header bug? (in/gnu/g0024.cc)
       if (env.PP.getLangOptions().allowGcc2HeaderSyntax &&
           isBuggyGcc2HeaderDQT(env, name)) {
-        env.diagnose3(env.PP.getLangOptions().allowGcc2HeaderSyntax, name->loc,
-                      stringc << "dependent type name `" << *name
-                              << "' requires 'typename' keyword (gcc-2 bug allows it)");
-        lflags |= LF_TYPENAME;
-        goto do_lookup;
+            DIAGNOSE3(env.PP.getLangOptions().allowGcc2HeaderSyntax,
+                      name->loc, diag::err_dependent_type_name_requires_typename_keyword,
+                      name->loc, diag::note_gcc2_bug_allows,
+                      << name->getName());
+            lflags |= LF_TYPENAME;
+            goto do_lookup;
       }
       else {
         // more informative error message (in/d0111.cc, error 1)
@@ -1844,7 +1846,8 @@ CompoundType *checkClasskeyAndName(
     if (env.PP.getLangOptions().allowGcc2HeaderSyntax &&
         name->getName() == env.str("string_char_traits")) {
       env.diagnose3(env.PP.getLangOptions().allowGcc2HeaderSyntax, name->loc,
-                    "explicit class specialization requires \"template <>\" (gcc-2 bug allows it)");
+                    diag::err_explicit_class_specialization_requires_template,
+                    diag::note_gcc2_bug_allows);
       gcc2hack_explicitSpec = true;
 
       // pretend we saw "template <>"
@@ -4187,9 +4190,10 @@ void D_func::tcheck(Env &env, Declarator::Tcheck &dt)
           specialFunc = FF_CONVERSION;
         }
         else {
-          env.diagnose3(env.PP.getLangOptions().allowImplicitIntForOperators, name->loc,
-                        stringc << "cannot declare `" << name->toString()
-                                << "' with no return type (MSVC bug accepts it)");
+          DIAGNOSE3(env.PP.getLangOptions().allowImplicitIntForOperators,
+                    name->loc, diag::err_cannot_declare_operator_with_no_return_type,
+                    name->loc, diag::note_msvc_bug_allows,
+                    << name->toString());
           dt.type = env.getSimpleType(ST_INT);     // recovery
         }
       }

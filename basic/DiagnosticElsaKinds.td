@@ -18,6 +18,9 @@ def err_parse_discard_grouped_parameter_declarator_of_type_name
             "a grouped parameter declarator; ambiguity resolution should "
             "pick a different interpretation, so if the end user ever "
             "sees this message then there's a bug in my typechecker">;
+def err_parse_duplicate_modifier : Error<"duplicate modifier: '%0'">;
+def err_parse_malformed_type : Error<"malformed type: '%0'">;
+def err_parse_too_many_longs : Error<"too many 'long's">;
 
 def err_undeclared_identifier : Error<"undeclared identifier '%0'">;
 def err_redefinition_of_identifier : Error<"redefinition of '%0'">;
@@ -31,6 +34,35 @@ def err_main_implicit_int : Warning<"obsolete use of implicit int in declaration
 def err_implicit_return : Error<"obsolete use of implicit int return type">;
 def err_break : Error<"'break' not in a 'switch', 'while', 'do', or 'for' statement">;
 def err_continue : Error<"'continue' not in a 'while', 'do', or 'for' statement">;
+
+// Compatability messages.
+def note_gcc_bug_allows : Note<"gcc bug allows it">;
+def note_gcc2_bug_allows : Note<"gcc2 bug allows it">;
+def note_gcc_bug_allows_PR_13717 : Note<"gcc bug allows it (gcc PR 13717)">;
+def note_msvc_bug_allows : Note<"MSVC bug allows it">;
+def err_typedef_and_type : Error<"typedef and type keyword in a single type specifier">;
+def err_multiple_parameter_definition
+    : Error<"parameter '%0' conflicts with previous parameter '%1'">;
+def err_static_after_non_static
+    : Error<"prior declaration of '%0' declared non-static, cannot re-declare as static">;
+def err_explicit_specialization_missing_template
+    : Error<"explicit specialization missing 'template <>'">;
+def err_dependent_template_scope_name_requires_template_keyword
+    : Error<"dependent template scope name requires 'template' keyword">;
+def err_qualified_name_is_not_allowed_in_member_declaration
+    : Error<"qualified name is not allowed in member declaration">;
+def err_function_definition_must_appear_in_a_namespace_that_encloses_it
+    : Error<"function definition must appear in a namespace that encloses the original declaration">;
+def err_cannot_apply_const_volatile_to_function_types
+    : Error<"cannot apply const/volatile to function types">;
+def err_dependent_type_name_requires_typename_keyword
+    : Error<"dependent type name '%0' requires 'typename' keyword">;
+def err_explicit_class_specialization_requires_template
+    : Error<"explicit class specialization requires 'template <>'">;
+def err_cannot_declare_operator_with_no_return_type
+    : Error<"cannot declare %0 with no return type">;
+def err_repeated_int_type_specifier
+    : Error<"repeated 'int' type specifier">;
 
 def err_specifier_invalid : Error<"cannot apply const/volatile to type '%0'">;
 

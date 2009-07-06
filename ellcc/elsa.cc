@@ -267,7 +267,6 @@ int Elsa::doit(Preprocessor& PP,
   ArrayStack<Variable*> madeUpVariables;
   ArrayStack<Variable*> builtinVars;
 
-  int parseWarnings = 0;
 #ifdef XML_EXTENSION
   if (tracingSys("parseXml")) {
     if (tracingSys("parseXml-no-danglingPointers")) {
@@ -324,10 +323,9 @@ int Elsa::doit(Preprocessor& PP,
     }
 
     // check for parse errors detected by the context class
-    if (parseContext->errors) { // RICH || lexer->errors) {
+    if (PP.getDiagnostics().hasErrorOccurred()) {
       return 2;
     }
-    parseWarnings = /* RICH lexer->warnings + */ parseContext->warnings;
 
     if (tracingSys("parseTree")) {
       // the 'treeTop' is actually a PTreeNode pointer; print the
@@ -431,7 +429,7 @@ int Elsa::doit(Preprocessor& PP,
     }
 
     int numErrors = env.numErrors();
-    int numWarnings = env.numWarnings() + parseWarnings;
+    int numWarnings = env.numWarnings();
 
     // do this now so that 'printTypedAST' will include CFG info
     #ifdef CFG_EXTENSION

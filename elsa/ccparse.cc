@@ -5,8 +5,8 @@
 #include "astvisit.h"     // ASTVisitorEx
 #include "trace.h"        // TRACE
 #include "Preprocessor.h"
+#include "Diagnostic.h"
 #include <iostream>       // cout
-
 
 // ----------------------- ParseEnv -----------------------
 char const *maybeNull(StringRef n)
@@ -85,8 +85,8 @@ SimpleTypeId ParseEnv::uberSimpleType(SourceLocation loc, UberModifiers m)
     case UM_LONG | UM_DOUBLE | UM_IMAGINARY:   return ST_LONG_DOUBLE_IMAGINARY;
 
     default:
-      error(loc, stringc << "malformed type: " << toString(m));
-      return ST_ERROR;
+        report(loc, diag::err_parse_malformed_type) << toString(m);
+        return ST_ERROR;
   }
 }
 
@@ -98,7 +98,7 @@ UberModifiers ParseEnv
   if (m1 & m2 & UM_LONG) {
     // were there already two 'long's?
     if ((m1 | m2) & UM_LONG_LONG) {
-      error(loc, "too many `long's");
+        report(loc, diag::err_parse_too_many_longs);
     }
 
     // make it look like only m1 had 'long long' and neither had 'long'
@@ -115,12 +115,12 @@ UberModifiers ParseEnv
   if (dups) {
     if (dups == UM_INT && PP.getLangOptions().allowRepeatedTypeSpecifierKeywords) {
       // in/c/dC0024.c
-      diagnose3(PP.getLangOptions().allowRepeatedTypeSpecifierKeywords, loc, 
-                "repeated 'int' type specifier (gcc bug allows it)");
-    }
-    else {
+      diagnose3(PP.getLangOptions().allowRepeatedTypeSpecifierKeywords, loc,
+                diag::err_repeated_int_type_specifier,
+                diag::note_gcc_bug_allows);
+    } else {
       // C++ 7.1.5p1
-      error(loc, stringc << "duplicate modifier: " << toString(dups));
+        report(loc, diag::err_parse_duplicate_modifier) << toString(dups);
     }
   }
 
@@ -133,31 +133,30 @@ LocString * /*owner*/ ParseEnv::ls(SourceLocation loc, char const *name)
   return new LocString(loc, str(name));
 }
 
-
-void ParseEnv::error(SourceLocation loc, char const *msg)
+void ParseEnv::diagnose3(bool3 b, SourceLocation L,
+                    unsigned DiagID, unsigned NoteID)
 {
-  std::cout << toString(loc) << ": error: " << msg << std::endl;
-  errors++;
+    if (b == b3_TRUE) {
+        return;
+    } else {
+        // Limit the scope of 'd'.
+        DiagnosticBuilder d = report(L, DiagID);
+        if (b == b3_WARN) {
+            d << DIAG_WARNING;
+        }
+    }
+
+    if(NoteID) {
+        report(L, NoteID);
+    }
 }
 
-
-void ParseEnv::warning(SourceLocation loc, char const *msg)
+// Report a diagnostic.
+DiagnosticBuilder ParseEnv::report(SourceLocation loc, unsigned DiagID)
 {
-  std::cout << toString(loc) << ": warning: " << msg << std::endl;
-  warnings++;
+    SourceManager SM;
+    return diag.Report(FullSourceLoc(loc, SM), DiagID);
 }
-
-
-void ParseEnv::diagnose3(ellcc::bool3 b, SourceLocation loc, char const *msg)
-{
-  if (!b) {
-    error(loc, msg);
-  }
-  else if (b == ellcc::b3_WARN) {
-    warning(loc, msg);
-  }
-}
-
 
 // ---------------------- AmbiguityCounter -----------------
 // check for ambiguities
