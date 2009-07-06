@@ -3443,12 +3443,6 @@ Variable *Env::createDeclaration(
       // name, but their types are different; we only jump here *after*
       // ruling out the possibility of function overloading
 
-      sm::string msg = stringc
-        << "prior declaration of `" << name
-        << "' at " << prior->loc
-        << " had type `" << prior->type->toString()
-        << "', but this one uses `" << type->toString() << "'";
-
       if (!PP.getLangOptions().CPlusPlus &&
           prior->type->isFunctionType() &&
           type->isFunctionType() &&
@@ -3483,18 +3477,24 @@ Variable *Env::createDeclaration(
         //
         // TODO: tighten all this down; I don't like leaving such big
         // holes in what is being checked....
-        msg = stringc << msg << " (allowed due to C func param compatibility)";
-        warning(msg);
+        report(loc, diag::err_type_not_match_prior)
+            << name << prior->type->toString() << type->toString() << DIAG_WARNING;
+        report(loc, diag::note_c_function_parameter_compatability);
+        report(prior->loc, diag::note_previous_declaration);
       }
       else if (!PP.getLangOptions().CPlusPlus &&
                compatibleEnumAndIntegerTypes(prior->type, type)) {
-        msg = stringc << msg << " (allowed due to C enum/int compatibility)";
-        warning(msg);
+        report(loc, diag::err_type_not_match_prior)
+            << name << prior->type->toString() << type->toString() << DIAG_WARNING;
+        report(loc, diag::note_c_enum_int_compatability);
+        report(prior->loc, diag::note_previous_declaration);
       }
       else {
         // usual error message
         if (env.needError(type) == NULL) {
-            error(msg);
+            report(loc, diag::err_type_not_match_prior)
+                << name << prior->type->toString() << type->toString();
+            report(prior->loc, diag::note_previous_declaration);
         }
         goto makeDummyVar;
       }
@@ -3514,11 +3514,8 @@ Variable *Env::createDeclaration(
     }
     else if (!sameScopes(prior->skipAlias()->scope, scope)) {
         if (env.needError(type) == NULL) {
-            error(stringc
-                << "prior declaration of `" << name
-                << "' at " << prior->loc
-                << " refers to a different entity, so it conflicts with "
-                << "the one being declared here");
+            report(loc, diag::err_prior_declaration_conflicts) << name;
+            report(prior->loc, diag::note_previous_declaration);
         }
         goto makeDummyVar;
     }
@@ -3678,10 +3675,9 @@ void Env::mergeDefaultArguments(SourceLocation loc, Variable *prior, FunctionTyp
       seenSomeDefaults = true;
 
       if (p->value) {
-        error(loc, stringc
-          << "declaration of `" << prior->name
-          << "' supplies a redundant default argument for parameter "
-          << paramCt);
+          report(loc, diag::err_declaration_supplies_redundant_default_argument)
+            << prior->name << paramCt;
+          report(prior->loc, diag::note_previous_declaration);
       }
       else {
         // augment 'p' with 'n->value'
@@ -3692,10 +3688,9 @@ void Env::mergeDefaultArguments(SourceLocation loc, Variable *prior, FunctionTyp
       }
     }
     else if (!p->value && seenSomeDefaults) {
-      error(loc, stringc
-        << "declaration of `" << prior->name
-        << "' supplies some default arguments, but no default for later parameter "
-        << paramCt << " has been supplied");
+        report(loc, diag::err_declaration_missing_default_argument)
+          << prior->name << paramCt;
+        report(prior->loc, diag::note_previous_declaration);
     }
   }
 
@@ -3724,9 +3719,7 @@ void Env::handleTypeOfMain(SourceLocation loc, Variable *prior, Type *&type)
   // number of parameters as the first, if possible.
 
   if (!type->isFunctionType()) {
-    env.error(loc, stringc
-      << "global name `main' must be a function, not `"
-      << type->toString() << "'");
+    report(loc, diag::err_main_not_function) << type->toString();
     return;
   }
 
@@ -3754,10 +3747,9 @@ void Env::handleTypeOfMain(SourceLocation loc, Variable *prior, Type *&type)
   while (!priorIter.isDone() && !typeIter.isDone()) {
     MatchFlags mflags = MF_IGNORE_TOP_CV;
     if (!priorIter.data()->type->equals(typeIter.data()->type, mflags)) {
-      env.error(loc, stringc
-        << "prior declaration of main() at " << prior->loc
-        << " had type `" << prior->type->toString()
-        << "', but this one uses `" << type->toString() << "'");
+        report(loc, diag::err_main_type_not_match_prior)
+            << prior->type->toString() << type->toString();
+        report(prior->loc, diag::note_previous_declaration);
       return;
     }
     priorIter.adv();

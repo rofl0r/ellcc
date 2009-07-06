@@ -33,18 +33,35 @@ def err_illegal_use_of_typedef : Error<"'%0' is a typedef-name, so cannot be use
 def err_not_struct_class_union : Error<"'%0' is not a struct/class/union">;
 def err_no_such : Error<"no such %0: '%1'">;
 def err_main_implicit_int : Warning<"obsolete use of implicit int in declaration of main()">;
+def err_main_not_function : Error<"global name 'main' must be a function, not '%0'">;
+def err_main_type_not_match_prior
+    : Error<"prior declaration of 'main()', had type '%0', but this one uses '%1'">;
 def err_implicit_return : Error<"obsolete use of implicit int return type">;
 def err_break : Error<"'break' not in a 'switch', 'while', 'do', or 'for' statement">;
 def err_continue : Error<"'continue' not in a 'while', 'do', or 'for' statement">;
 def err_not_match_prior
     : Error<"prior declaration of '%0', was %select{not a|a}1 type, "
             "but this one %select{is not|is}2 a type">;
+def err_type_not_match_prior
+    : Error<"prior declaration of '%0', had type '%1', but this one uses '%2'">;
+def err_prior_declaration_conflicts
+    : Error<"prior declaration of '%0' refers to a different entity, so it conflicts with "
+            "the one being declared here">;
+def err_declaration_supplies_redundant_default_argument
+    : Error<"declaration of '%0' supplies a redundant default argument for parameter %1">;
+def err_declaration_missing_default_argument
+    : Error<"declaration of '%0' supplies some default arguments, but no default "
+            "for later parameter %1 has been supplied">;
 
 // Compatability messages.
 def note_gcc_bug_allows : Note<"gcc bug allows it">;
 def note_gcc2_bug_allows : Note<"gcc2 bug allows it">;
 def note_gcc_bug_allows_PR_13717 : Note<"gcc bug allows it (gcc PR 13717)">;
 def note_msvc_bug_allows : Note<"MSVC bug allows it">;
+def note_c_enum_int_compatability
+    : Note<"allowed due to C enum/int compatibility">;
+def note_c_function_parameter_compatability
+    : Note<"allowed due to C function parameter compatibility">;
 def err_typedef_and_type : Error<"typedef and type keyword in a single type specifier">;
 def err_multiple_parameter_definition
     : Error<"parameter '%0' conflicts with previous parameter '%1'">;
@@ -245,15 +262,15 @@ def err_template_argument_type_not_allowed
 def err_template_multiple_declarations
     : Error<"more than one template <...> declaration inside a class body">;
 def err_template_declaration_not_match_prior
-    : Error<"ithe prior declaration of '%0' was templatized with parameters "
+    : Error<"the prior declaration of '%0' was templatized with parameters "
             "'%1', but the this one is not templatized">;
 def err_template_declaration_not_match_prior_non_templatized
-    : Error<"ithe prior declaration of '%0' was not templatized "
+    : Error<"the prior declaration of '%0' was not templatized "
             ", but the this one is, with parameters '%1'">;
 def err_template_wrong_number_of_parameter_lists
     : Error<"wrong # of template param lists in the declaration of '%0'">;
 def err_template_declaration_parameter_not_match_prior
-    : Error<"ithe prior declaration of '%0' was templatized with parameter '%1' of type "
+    : Error<"the prior declaration of '%0' was templatized with parameter '%1' of type "
             "'%2', but the this one has parameter '%3' of type '%4', "
             "and these are not equivalent">;
 def err_template_default_value_given_more_than_once
