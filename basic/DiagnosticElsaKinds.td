@@ -32,10 +32,17 @@ def err_type_used_as_variable : Error<"type name '%0' used as if it were a varia
 def err_illegal_use_of_typedef : Error<"'%0' is a typedef-name, so cannot be used after '%1'">;
 def err_not_struct_class_union : Error<"'%0' is not a struct/class/union">;
 def err_no_such : Error<"no such %0: '%1'">;
-def err_main_implicit_int : Warning<"obsolete use of implicit int in declaration of main()">;
+def warn_main_implicit_int : Warning<"obsolete use of implicit int in declaration of main()">;
 def err_main_not_function : Error<"global name 'main' must be a function, not '%0'">;
 def err_main_type_not_match_prior
     : Error<"prior declaration of 'main()', had type '%0', but this one uses '%1'">;
+def err_main_parameter_count_greater_than_prior
+    : Error<"prior declaration of 'main()', had %0 parameter%select{|s}1, "
+            "but this one has %2 parameter%select{|s}3">;
+def note_main_variable_parameters
+    : Note<"the parameter lists of 'main()' may vary, "
+           "but only when the earliest declaration has the largest "
+           "number of parameters">;
 def err_implicit_return : Error<"obsolete use of implicit int return type">;
 def err_break : Error<"'break' not in a 'switch', 'while', 'do', or 'for' statement">;
 def err_continue : Error<"'continue' not in a 'while', 'do', or 'for' statement">;
@@ -297,6 +304,8 @@ def err_template_type_does_not_match
     : Error<"type '%0' does not match any template function '%1'">;
 def err_template_ambiguous_function_template_instantiation
     : Error<"ambiguous function template instantiation">;
+def err_template_no_template_parameter_list_supplied
+    : Error<"no template parameter list supplied for '%0'">;
 
 def err_stdconv_cv_flag_mismatch
     : Error<"cannot convert '%0' to '%1': the source has some cv flag that the destination does not">;
@@ -620,7 +629,7 @@ def err_test_mtype_int_binding
     : Error<"__test_mtype: '%0' was bound to an int, but the provided "
             "expression is not a constant">;
 def err_test_mtype_bindings
-    : Error<"__test_mtype: call site supplied %0 bindings%select{|s}1, "
+    : Error<"__test_mtype: call site supplied %0 binding%select{|s}1, "
             " but match yielded %2">;
 def err_test_mtype_succeeded
     : Error<"__test_mtype: succeeded, but failure was expected">;

@@ -3749,7 +3749,6 @@ void Env::handleTypeOfMain(SourceLocation loc, Variable *prior, Type *&type)
     if (!priorIter.data()->type->equals(typeIter.data()->type, mflags)) {
         report(loc, diag::err_main_type_not_match_prior)
             << prior->type->toString() << type->toString();
-        report(prior->loc, diag::note_previous_declaration);
       return;
     }
     priorIter.adv();
@@ -3766,13 +3765,10 @@ void Env::handleTypeOfMain(SourceLocation loc, Variable *prior, Type *&type)
   // must be 'type' that ends early
   if (!typeIter.isDone()) {
       if (env.needError(type) == NULL) {
-        error(loc, stringc
-            << "prior declaration of main() at " << prior->loc
-            << " had " << pluraln(priorFt->params.count(), "parameter")
-            << ", but this one has " << pluraln(typeFt->params.count(), "parameter")
-            << "; we do allow the parameter lists of main() to vary, "
-            << "but only when the earliest declaration has the largest "
-            << "number of parameters");
+        report(loc, diag::err_main_parameter_count_greater_than_prior)
+            << priorFt->params.count() << (priorFt->params.count() != 1)
+            << typeFt->params.count() << (typeFt->params.count() != 1);
+        report(loc, diag::note_main_variable_parameters);
       }
       return;
   }
@@ -4007,17 +4003,14 @@ Scope *Env::findParameterizingScope(Variable *bareQualifierVar,
     if (s->isTemplateScope()) {
       if (!s->parameterizedEntity) {
         lastUnassoc = s;
-      }
-      else if (getParameterizedPrimary(s) == bareQualifierVar) {
+      } else if (getParameterizedPrimary(s) == bareQualifierVar) {
         // found it!  this scope is already marked as being associated
         // with this variable
         return s;
       }
-    }
-    else if (s->isClassScope()) {
+    } else if (s->isClassScope()) {
       // keep searching..
-    }
-    else {
+    } else {
       // some kind of scope other than a template or class scope; I don't
       // think I should look any higher
       break;
@@ -4031,13 +4024,12 @@ Scope *Env::findParameterizingScope(Variable *bareQualifierVar,
 
   if (!lastUnassoc) {
     if (argsHaveVariables) {
-      error(stringc << "no template parameter list supplied for `"
-                    << bareQualifierVar->name << "'");
-    }
-    else {
-      diagnose3(PP.getLangOptions().allowExplicitSpecWithoutParams, loc(),
-                diag::err_explicit_specialization_missing_template,
-                diag::note_gcc_bug_allows);
+        report(loc(), diag::err_template_no_template_parameter_list_supplied)
+            << bareQualifierVar->name;
+    } else {
+        diagnose3(PP.getLangOptions().allowExplicitSpecWithoutParams, loc(),
+                  diag::err_explicit_specialization_missing_template,
+                  diag::note_gcc_bug_allows);
     }
   }
 

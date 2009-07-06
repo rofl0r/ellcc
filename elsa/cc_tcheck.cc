@@ -3044,8 +3044,7 @@ realStart:
       // when the template is instantiated (11.4, 14.5.3, in/t0470.cc)
       possiblyConsumeFunctionType(env, dt, false /*reportErrors*/);
       return env.makeVariable(loc, unqualifiedName, dt.type, dt.dflags);
-    }
-    else if (name->isPQ_template()) {
+    } else if (name->isPQ_template()) {
       // (e.g., in/t0474.cc) We are befriending a template.  Friends
       // and templates don't get along very well yet.  The most
       // immediate problem is that I need to look at the set of types
@@ -3059,14 +3058,12 @@ realStart:
       // However, for right now, I think I can get away with ignoring
       // the friendship declaration altogether.
       goto makeDummyVar;
-    }
-    else {
+    } else {
       // 2005-08-15: record the befriending class so it can
       // participate in arg-dep lookup
       if (scope->curCompound) {
         befriending = scope->curCompound;
-      }
-      else {
+      } else {
         env.report(loc, diag::err_class_friend_declaration_must_appear_in_class_scope);
       }
 
@@ -3208,8 +3205,7 @@ realStart:
         goto makeDummyVar;
       }
     }
-  }
-  else {
+  } else {
     // has this name already been declared in the innermost scope?
     prior = env.lookupVariableForDeclaration(scope, unqualifiedName, dt.type,
       dt.funcSyntax? dt.funcSyntax->cv : CV_NONE);
@@ -3242,8 +3238,7 @@ realStart:
 
       // add the implicit 'this' parameter
       makeMemberFunctionType(env, dt, scope->curCompound, loc);
-    }
-    else {
+    } else {
       TRACE("memberFunc", "static or non-member function: " << *name);
       possiblyConsumeFunctionType(env, dt);
     }
@@ -4225,7 +4220,7 @@ void D_func::tcheck(Env &env, Declarator::Tcheck &dt)
                 env.PP.getLangOptions().allowImplicitIntForMain &&
                 nameString == env.str("main")) {
               // example: g0018.cc
-              env.report(loc, diag::err_main_implicit_int);
+              env.report(loc, diag::warn_main_implicit_int);
 
               // change type to 'int'
               dt.type = env.getSimpleType(ST_INT);
