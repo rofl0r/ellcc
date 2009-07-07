@@ -21,6 +21,8 @@ def err_parse_discard_grouped_parameter_declarator_of_type_name
 def err_parse_duplicate_modifier : Error<"duplicate modifier: '%0'">;
 def err_parse_malformed_type : Error<"malformed type: '%0'">;
 def err_parse_too_many_longs : Error<"too many 'long's">;
+def err_parse_more_than_one_ambiguous_alternative_succeeds
+    : Error<"more than one ambiguous alternative succeeds">;
 
 def err_undeclared_identifier : Error<"undeclared identifier '%0'">;
 def err_redefinition_of_identifier : Error<"redefinition of '%0'">;
@@ -617,6 +619,12 @@ def err_overload_conversion_operator
 def err_overload_failed_to_resolve_address_of_function
     : Error<"failed to resolve address of of overloaded function "
             "'%0' assigned to type '%1'">;
+def err_overload_no_viable_candidate
+    : Error<"no viable candidate for %select{function call|operator}0; '%1'">;
+def err_overload_ambiguous
+    : Error<"ambiguous overload call to '%0'">;
+def err_overload_or_conversion_ambiguous
+    : Error<"ambiguous overload or ambiguous conversion">;
 
 def err_reference_pointer_to_reference
     : Error<"cannot create a pointer to a reference ('%0')">;
