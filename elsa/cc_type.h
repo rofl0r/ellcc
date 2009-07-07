@@ -242,8 +242,10 @@ public:     // funcs
 
   // size this type's representation occupies in memory; this
   // might throw XReprSize, see below
-  int sizeInBytes(ellcc::TargetInfo& TI) const { int size, align; sizeInfoInBytes(TI, size, align); return size; }
-  int sizeInBits(ellcc::TargetInfo& TI) const { int size, align; sizeInfoInBits(TI, size, align); return size; }
+  int sizeInBytes(ellcc::TargetInfo& TI) const
+     { int size, align; sizeInfoInBytes(TI, size, align); return size; }
+  int sizeInBits(ellcc::TargetInfo& TI) const
+     { int size, align; sizeInfoInBits(TI, size, align); return size; }
 
   // dmandelin@mozilla.com
   // size and alignment of this type.
