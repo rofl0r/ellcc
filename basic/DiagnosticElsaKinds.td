@@ -59,6 +59,12 @@ def err_declaration_supplies_redundant_default_argument
 def err_declaration_missing_default_argument
     : Error<"declaration of '%0' supplies some default arguments, but no default "
             "for later parameter %1 has been supplied">;
+def err_argument_dependent_lookup_found_non_function
+    : Error<"during argument-dependent lookup of '%0'"
+            ", found non-function of type '%1' in '%2'">;
+def err_not_allowed_as_a_pointer_to_member_qualifier
+    : Error<"'%0' is '%1', but that"
+            "is not allowed as a pointer to member qualifier">;
 
 // Compatability messages.
 def note_gcc_bug_allows : Note<"gcc bug allows it">;

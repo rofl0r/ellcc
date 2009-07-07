@@ -4506,18 +4506,14 @@ void Env::associatedScopeLookup(LookupSet &candidates, StringRef name,
         // The standard doesn't say anything about this.  GCC rejects
         // if non-function found, while ICC seems to just ignore
         // non-functions.  Oy.
-        env.error(loc(), stringc
-          << "during argument-dependent lookup of `" << name
-          << "', found non-function of type `" << v->type->toString()
-          << "' in " << s->scopeName());
-      }
-      else {
+        report(loc(), diag::err_argument_dependent_lookup_found_non_function)
+            << name << v->type->toString() << s->scopeName();
+      } else {
         addCandidates(candidates, v);
       }
     }
   }
 }
-
 
 // some lookup yielded 'var'; add its candidates to 'candidates'
 void Env::addCandidates(LookupSet &candidates, Variable *var)
@@ -4606,14 +4602,12 @@ Type *Env::resolveDQTs(SourceLocation loc, Type *t)
         NamedAtomicType *nat;
         if (!resolvedNAT) {
           nat = ptm->inClassNAT;
-        }
-        else {
+        } else {
           breaker();      // need to test
           if (!resolvedNAT->isCVAtomicType() ||
               !resolvedNAT->asCVAtomicType()->atomic->isNamedAtomicType()) {
-            error(loc, stringc << "`" << t->toString() << "' is `"
-                               << resolvedNAT->toString() << "', but that "
-                               << "is not allowed as a ptm-qualifier");
+            report(loc, diag::err_not_allowed_as_a_pointer_to_member_qualifier)
+                << t->toString() << resolvedNAT->toString();
             return NULL;
           }
           nat = resolvedNAT->asCVAtomicType()->atomic->asNamedAtomicType();
@@ -4854,9 +4848,7 @@ void Env::lookupPQ_withScope(LookupSet &set, PQName *name, LookupFlags flags,
     if (!qual->qualifier) {
       scope = globalScope();
       qual->qualifierVar = globalScopeVar;
-    }
-
-    else {
+    } else {
       // lookup this qualifier in 'scope'
       Variable *svar = lookupScopeVar(scope, qual->qualifier, flags);
       qual->qualifierVar = svar;
@@ -4873,8 +4865,7 @@ void Env::lookupPQ_withScope(LookupSet &set, PQName *name, LookupFlags flags,
             if (ct->templateInfo()) {
               svar = ct->templateInfo()->getPrimary()->var;
             }
-          }
-          else if (svar->type->isPseudoInstantiation()) {
+          } else if (svar->type->isPseudoInstantiation()) {
             PseudoInstantiation *pi = svar->type->asPseudoInstantiation();
 
             // (in/t0433.cc) if the template arguments match those of
@@ -4890,9 +4881,7 @@ void Env::lookupPQ_withScope(LookupSet &set, PQName *name, LookupFlags flags,
             svar = svar->type->asCVAtomicType()->atomic->
                      asPseudoInstantiation()->primary->typedefVar;
           }
-        }
-
-        else {
+        } else {
           // 2005-05-24: (in/t0476.cc) self-name and not passing args:
           // just like we were passing args that matched the primary
           scope = svar->scope;        // selfname -> container
@@ -4914,9 +4903,7 @@ void Env::lookupPQ_withScope(LookupSet &set, PQName *name, LookupFlags flags,
         if (!( flags & (LF_TYPENAME | LF_ONLY_TYPES) )) {
           set.add(dependentVar);    // user makes no claim, so it's a variable
           dqt = NULL;               // don't need a DQT
-        }
-
-        else if (svar->type->isCompoundType()) {
+        } else if (svar->type->isCompoundType()) {
           // in/t0603.cc: I'm adopting a solution where sometimes I
           // make a PseudoInstantiation even if the explicitly
           // provided template arguments are concrete, because we are
@@ -4931,13 +4918,11 @@ void Env::lookupPQ_withScope(LookupSet &set, PQName *name, LookupFlags flags,
           ct = ct->templateInfo()->getPrimary()->getCompoundType();
 
           dqt = new DependentQType(createPseudoInstantiation(ct, qual->sargs));
-        }
-
-        else if (svar->type->isNamedAtomicType()) {
+        } else if (svar->type->isNamedAtomicType()) {
           if (qual->sargs.isNotEmpty()) {
-            error(name->loc, stringc     // t0265.cc error 1
-              << "cannot apply template arguments to `" << qual->qualifier << "'",
-              EF_STRONG);
+            // t0265.cc error 1
+            report(name->loc, diag::err_template_arguments_supplied)
+                << qual->qualifier << DIAG_STRONG;
             return;
           }
 
