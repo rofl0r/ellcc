@@ -239,13 +239,13 @@ public:
       ptrCtorsStripped(0)
   {}
 
-  StandardConversion error(unsigned why);
+  StandardConversion report(unsigned why);
 
   bool stripPtrCtor(CVFlags scv, CVFlags dcv, bool isReference=false);
 };
 
 
-StandardConversion Conversion::error(unsigned why)
+StandardConversion Conversion::report(unsigned why)
 {
   // 10/02/04: This is probably not the best way to handle this, but one
   // problem with 'getStandardConversion' is if the source and destination
@@ -303,12 +303,12 @@ bool Conversion::stripPtrCtor(CVFlags scv, CVFlags dcv, bool isReference)
   }
 
   if (scv & ~dcv) {
-    error(diag::err_stdconv_cv_flag_mismatch);
+    report(diag::err_stdconv_cv_flag_mismatch);
     return true;
   }
 
   if (!destConst && (scv != dcv)) {
-    error(diag::err_stdconv_cv_flag_changed_below_pointer);
+    report(diag::err_stdconv_cv_flag_changed_below_pointer);
     return true;
   }
 
@@ -438,7 +438,7 @@ StandardConversion getStandardConversion
     // the src type must be complete for this conversion
     if (src->isCompoundType() &&
         src->asCompoundTypeC()->forward) {
-      return conv.error(diag::err_stdconv_type_incomplete);
+      return conv.report(diag::err_stdconv_type_incomplete);
     }
 
     // am I supposed to check cv flags?
@@ -452,7 +452,7 @@ StandardConversion getStandardConversion
       ReferenceType const *destPT = dest->asReferenceTypeC();
       if (!destPT->atType->isConst()) {
         // can't form the conversion
-        return conv.error(diag::err_stdconv_rvalue_to_non_const_reference);
+        return conv.report(diag::err_stdconv_rvalue_to_non_const_reference);
       }
     }
 
@@ -547,10 +547,10 @@ StandardConversion getStandardConversion
       // when PointerType and ReferenceType were unified, I had
       // a slightly more informative message for one case
       if (src->isPointerType() && dest->isReferenceType()) {
-        return conv.error(diag::err_stdconv_rvalue_to_lvalue);
+        return conv.report(diag::err_stdconv_rvalue_to_lvalue);
       }
       else {
-        return conv.error(diag::err_stdconv_different_type_constructors);
+        return conv.report(diag::err_stdconv_different_type_constructors);
       }
     }
 
@@ -604,7 +604,7 @@ StandardConversion getStandardConversion
           return conv.ret;
         }
         else {
-          return conv.error(diag::err_stdconv_unequal_function_types);
+          return conv.report(diag::err_stdconv_unequal_function_types);
         }
       }
 
@@ -623,7 +623,7 @@ StandardConversion getStandardConversion
           return conv.ret;
         }
         else {
-          return conv.error(diag::err_stdconv_unequal_array_types);
+          return conv.report(diag::err_stdconv_unequal_array_types);
         }
       }
 
@@ -635,10 +635,10 @@ StandardConversion getStandardConversion
           if (conv.ptrCtorsStripped == 0) {
             // opposite to first ptr ctor, we allow Base -> Derived
             if (!d->inClass()->hasUnambiguousBaseClass(s->inClass())) {
-                return conv.error(diag::err_stdconv_not_unambiguous_base);
+                return conv.report(diag::err_stdconv_not_unambiguous_base);
             }
             else if (d->inClass()->hasVirtualBase(s->inClass())) {
-                return conv.error(diag::err_stdconv_virtual_base);
+                return conv.report(diag::err_stdconv_virtual_base);
             }
             else {
               // TODO: check accessibility.. this depends on the access privileges
@@ -650,7 +650,7 @@ StandardConversion getStandardConversion
           }
           else {
             // after the first ctor, variance is not allowed
-            return conv.error(diag::err_stdconv_variance_not_allowed);
+            return conv.report(diag::err_stdconv_variance_not_allowed);
           }
         }
 
@@ -672,7 +672,7 @@ StandardConversion getStandardConversion
             return conv.ret;
           }
           else {
-            return conv.error(diag::err_stdconv_unequal_function_types);
+            return conv.report(diag::err_stdconv_unequal_function_types);
           }
         }
 
@@ -729,7 +729,7 @@ StandardConversion getStandardConversion
         // this to be a relatively common error and I'd like to provide
         // as much information as will be useful
         if (dest->isReference()) {
-            return conv.error(diag::err_stdconv_rvalue_to_lvalue);
+            return conv.report(diag::err_stdconv_rvalue_to_lvalue);
         }
 
         env.report(env.loc(), diag::err_stdconv_different_type_constructors_vs)
@@ -753,7 +753,7 @@ StandardConversion getStandardConversion
       bool ambig = false;
       if (canConvertToBaseClass(src, dest, ambig)) {
         if (ambig) {
-          return conv.error(diag::err_stdconv_ambiguous_base);
+          return conv.report(diag::err_stdconv_ambiguous_base);
         }
         // TODO: check accessibility.. this depends on the access privileges
         // of the code we're in now..
@@ -785,7 +785,7 @@ StandardConversion getStandardConversion
                                      conv.dest->asRvalC(), errorMsg, destIsReceiver);
       }
 
-      return conv.error(diag::err_stdconv_incompatable_atomic_types);
+      return conv.report(diag::err_stdconv_incompatable_atomic_types);
     }
   }
   else {
@@ -805,7 +805,7 @@ StandardConversion getStandardConversion
     }
 
     if (scv != dcv) {
-      return conv.error("different cv flags (is this right?)");
+      return conv.report("different cv flags (is this right?)");
     }
     #endif // 0
   }
@@ -854,7 +854,7 @@ StandardConversion getStandardConversion
   // atomic kinds, because the error is based on more than just
   // the kinds; moreover, since I already know I didn't strip
   // any ptr ctors, the full types should be easy to read
-  return conv.error(diag::err_stdconv_incompatable_atomic_types);
+  return conv.report(diag::err_stdconv_incompatable_atomic_types);
 }
 
 

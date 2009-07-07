@@ -65,6 +65,12 @@ def err_argument_dependent_lookup_found_non_function
 def err_not_allowed_as_a_pointer_to_member_qualifier
     : Error<"'%0' is '%1', but that"
             "is not allowed as a pointer to member qualifier">;
+def err_goto_type
+    : Error<"the type of expression in a computed goto must be a pointer, not '%0'">;
+def err_not_complex
+    : Error<"can only apply '%0' to complex types, not '%1'">;
+def err_invalid_complex_operands
+    : Error<"invalid complex arithmetic operand types '%0' and '%1'">;
 
 // Compatability messages.
 def note_gcc_bug_allows : Note<"gcc bug allows it">;
@@ -610,6 +616,48 @@ def err_constant_expr_or_float
     : Error<"cannot apply '|' to float types">;
 
 def err_asm_wide_string_literal : Error<"wide string literal in 'asm'">;
+def err_asm_module_level_output_constraint
+    : Error<"a module level 'asm' may not contain an output constraint">;
+def err_asm_output_constraint_start
+    : Error<"an 'asm' output constraint must start with a '=' or '+'">;
+def err_asm_output_constraint_invalid
+    : Error<"the 'asm' output constraint '%0' is invalid">;
+def err_asm_output_constraint_must_be_an_lvalue
+    : Error<"an 'asm' output constraint must be an lvalue">;
+def err_asm_output_constraint_must_have_an_expression
+    : Error<"an 'asm' output constraint must have an expression">;
+def err_asm_module_level_input_constraint
+    : Error<"a module level 'asm' may not contain an input constraint">;
+def err_asm_matching_constraint_too_large
+    : Error<"the 'asm' matching constraint '%0' is larger than the number of output constraints">;
+def err_asm_matching_constraint_different
+    : Error<"the 'asm' matching constraint '%0' is different than the previous matching constraint '%1'">;
+def err_asm_matching_constraint_io
+    : Error<"the 'asm' matched constraint '%0' is defined as '+' and should be '='">;
+def err_asm_input_constraint_invalid
+    : Error<"the 'asm' input constraint '%0' is invalid">;
+def err_asm_input_constraint_missing_rbracket
+    : Error<"the 'asm' constraint name is missing a ']'">;
+def err_asm_input_invalid_constraint_name
+    : Error<"the 'asm' constraint '%0' is not defined in the output constraints">;
+def err_asm_last_constraint_commutative
+    : Error<"the last 'asm' input constraint is marked commutative with '%'">;
+def err_asm_input_constraint_must_have_an_expression
+    : Error<"an 'asm' input constraint must have an expression">;
+def err_asm_module_level_clobber_constraint
+    : Error<"a module level 'asm' may not contain an clobber constraint">;
+def err_asm_clobber_constraint_with_expression
+    : Error<"an 'asm' clobber constraint cannot have an expression">;
+def err_asm_end_in_percent
+    : Error<"'%%' at the end of an 'asm'">;
+def err_asm_index_has_no_matching_constraint
+    : Error<"the 'asm' constraint index '%0' has no matching constraint">;
+def err_asm_string__missing_rbracket
+    : Error<"the 'asm' string name is missing a ']'">;
+def err_asm_name_has_no_matching_constraint
+    : Error<"the 'asm' constraint name '%0' has no matching named constraint">;
+def err_asm_unrecognized_percent
+    : Error<"unrecognized '%%' construct in 'asm'">;
 
 def err_escape_hex_escape_sequence
     : Error<"hex escape sequence must begin with hex digit">;

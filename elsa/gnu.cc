@@ -733,9 +733,7 @@ void S_computedGoto::itcheck(Env &env)
   if (!t->isPointer()) {
       Type* et = env.needError(t);
       if (et == NULL) {
-        env.error(stringc
-            << "type of expression in computed goto must be a pointer, not `"
-            << t->toString() << "'");
+        env.report(target->loc, diag::err_goto_type) << t->toString();
       }
   }
 }
@@ -760,16 +758,15 @@ void Asm::itcheck_constraints(Env &env, bool module)
             E_stringLit* constr = constraint->constr;
             Expression*& expr = constraint->e;
             if (module && (constr || expr)) {
-                env.error(constr->loc, "a module level asm may not contain an output constraint");
+                env.report(constr->loc, diag::err_asm_module_level_output_constraint);
                 return;
             }
 
             if (constr) {
                 StringRef t = constr->text;
                 if (t[0] == 'L') {
-                  env.error(text->loc, stringc
-                    << "wide string literal in asm output constraint");
-                  return;
+                    env.report(text->loc, diag::err_asm_wide_string_literal);
+                    return;
                 }
                 Expression* dummy;
                 constr->itcheck_x(env, dummy);
@@ -777,7 +774,7 @@ void Asm::itcheck_constraints(Env &env, bool module)
                 constraint->info = TargetInfo::CI_None;
                 const char* cp = (const char*)constr->data->getDataC();
                 if (*cp != '=' && *cp != '+') {
-                    env.error(constr->loc, "an inline asm output constraint must start with a '=' or '+'");
+                    env.report(constr->loc, diag::err_asm_output_constraint_start);
                 } else {
 #ifdef LLVM_EXTENSION
                     if (*cp == '+') {
@@ -795,8 +792,11 @@ void Asm::itcheck_constraints(Env &env, bool module)
                     default: // Check for a target specific constraint.
                         if (!env.validateAsmConstraint(cp, constraint->info)) {
                             good = false;
-                            env.error(constraint->loc, stringc << "the output constraint '"
-                                      << *cp << "' is invalid");
+                            char buf[2];
+                            buf[0] = *cp;
+                            buf[1] = '\0';
+                            env.report(constraint->loc, diag::err_asm_output_constraint_invalid)
+                                << buf;
                         }
                         break;
                     case '&': // Early clobber.
@@ -830,10 +830,10 @@ void Asm::itcheck_constraints(Env &env, bool module)
                 expr->tcheck(env, expr);
                 if (!env.onlyDisambiguating() && !expr->type->isLval()) {
                     // The target of an assignment must be an lvalue.
-                    env.error(expr->loc, "an inline asm output constraint must be an lvalue");
+                    env.report(expr->loc, diag::err_asm_output_constraint_must_be_an_lvalue);
                 }
             } else {
-                env.error(constraint->loc, "an inline asm output constraint must have an expression");
+                env.report(constraint->loc, diag::err_asm_output_constraint_must_have_an_expression);
             }
 
             constraint->string = constring;
@@ -857,15 +857,14 @@ void Asm::itcheck_constraints(Env &env, bool module)
             E_stringLit* constr = constraint->constr;
             Expression*& expr = constraint->e;
             if (module && (constr || expr)) {
-                env.error(constr->loc, "a module level asm may not contain an input constraint");
+                env.report(constr->loc, diag::err_asm_module_level_input_constraint);
                 return;
             }
 
             if (constr) {
                 StringRef t = constr->text;
                 if (t[0] == 'L') {
-                  env.error(text->loc, stringc
-                    << "wide string literal in asm input constraint");
+                  env.report(text->loc, diag::err_asm_wide_string_literal);
                   return;
                 }
                 Expression* dummy;
@@ -886,22 +885,23 @@ void Asm::itcheck_constraints(Env &env, bool module)
                                 ++cp;
                             }
                             if (index >= numOutputs) {
-                                env.error(constraint->loc, stringc << "the matching constraint '"
-                                          << index << "' exceeds the number of output constrints");
+                                env.report(constraint->loc,
+                                           diag::err_asm_matching_constraint_too_large)
+                                    << index;
                                 good = false;
                                 continue;
                             }
                             if (matches > 0 && (signed)index != matches) {
-                                env.error(constraint->loc, stringc << "the matching constraint '"
-                                          << index << "' is different than the previous matching constraint");
+                                env.report(constraint->loc, diag::err_asm_matching_constraint_different)
+                                    << index << matches;
                                 good = false;
                                 continue;
                             }
                             result = stringc << index;
                             matches = index;
                             if (*constraints->outputs.nth(index)->constr->data->getDataC() == '+') {
-                                env.error(constraint->loc, stringc << "the matched constraint '"
-                                          << index << "' is defined as '+' and should be '='");
+                                env.report(constraint->loc, diag::err_asm_matching_constraint_io)
+                                    << index;
                                 good = false;
                                 continue;
                             }
@@ -911,8 +911,11 @@ void Asm::itcheck_constraints(Env &env, bool module)
                             // Check for a target specific constraint.
                             if (!env.validateAsmConstraint(cp, constraint->info)) {
                                 good = false;
-                                env.error(constraint->loc, stringc << "the input constraint '"
-                                          << *cp << "' is invalid");
+                                char buf[2];
+                                buf[0] = *cp;
+                                buf[1] = '\0';
+                                env.report(constraint->loc, diag::err_asm_input_constraint_invalid)
+                                    << buf;
                             }
                             result = env.convertConstraint(*cp);
                         }
@@ -921,7 +924,7 @@ void Asm::itcheck_constraints(Env &env, bool module)
                         const char* p = strchr(++cp, ']');
                         if (p == NULL) {
                             good = false;
-                            env.error(constraint->loc, "constraint name is missing a ']'");
+                            env.report(constraint->loc, diag::err_asm_input_constraint_missing_rbracket);
                             break;
                         } 
                         unsigned index = 0;
@@ -933,21 +936,21 @@ void Asm::itcheck_constraints(Env &env, bool module)
                             ++index;
                         }
                         if (index >= numOutputs) {
-                            env.error(constraint->loc, stringc << "the named input constraint '"
-                                      << name.c_str() << "' is not defined in the output constraints");
+                            env.report(constraint->loc, diag::err_asm_input_invalid_constraint_name)
+                                << name;
                             good = false;
                             break;
                         }
                         // Change the symbolic reference to a numeric one.
                         if (matches > 0 && (signed)index != matches) {
-                            env.error(constraint->loc, stringc << "the matching constraint '"
-                                      << name.c_str() << "' is different than the previous matching constraint");
+                            env.report(constraint->loc, diag::err_asm_matching_constraint_different)
+                                << name << matches;
                             good = false;
                             break;
                         }
                         if (*constraints->outputs.nth(index)->constr->data->getDataC() == '+') {
-                            env.error(constraint->loc, stringc << "the matched constraint '"
-                                      << name.c_str() << "' is defined as '+' and should be '='");
+                            env.report(constraint->loc, diag::err_asm_matching_constraint_io)
+                                << name;
                             good = false;
                             break;
                         }
@@ -963,7 +966,7 @@ void Asm::itcheck_constraints(Env &env, bool module)
                     }
                     case '%': // Commutative.
                         if (constraint == last) {
-                           env.error(constraint->loc, "the last input constraint is marked commutative");
+                           env.report(constraint->loc, diag::err_asm_last_constraint_commutative);
                         }
                         break;
                     case 'i': // Immediate integer.
@@ -1001,7 +1004,7 @@ void Asm::itcheck_constraints(Env &env, bool module)
             if (expr) {
                 expr->tcheck(env, expr);
             } else {
-                env.error(constraint->loc, "an inline asm input constraint must have an expression");
+                env.report(constraint->loc, diag::err_asm_input_constraint_must_have_an_expression);
             }
 
             constraint->string = constring;
@@ -1015,15 +1018,14 @@ void Asm::itcheck_constraints(Env &env, bool module)
             E_stringLit* constr = constraint->constr;
             Expression*& expr = constraint->e;
             if (module && (constr || expr)) {
-                env.error(constr->loc, "a module level asm may not contain a clobber constraint");
+                env.report(constr->loc, diag::err_asm_module_level_clobber_constraint);
                 return;
             }
 
             if (constr) {
                 StringRef t = constr->text;
                 if (t[0] == 'L') {
-                  env.error(text->loc, stringc
-                    << "wide string literal in asm clobber constraint");
+                  env.report(text->loc, diag::err_asm_wide_string_literal);
                   return;
                 }
                 Expression* dummy;
@@ -1033,7 +1035,7 @@ void Asm::itcheck_constraints(Env &env, bool module)
             }
 
             if (expr) {
-                env.error(expr->loc, "an inline asm clobber constraint cannot have an expression");
+                env.report(expr->loc, diag::err_asm_clobber_constraint_with_expression);
             }
             constraint->string = constring;
         }
@@ -1059,7 +1061,7 @@ void Asm::itcheck_constraints(Env &env, bool module)
         // '%'
         ++cp;
         if (*cp == '\0') {
-            env.error(text->loc, "'%' at the end of an inline asm");
+            env.report(text->loc, diag::err_asm_end_in_percent);
             continue;
         }
 
@@ -1099,9 +1101,8 @@ void Asm::itcheck_constraints(Env &env, bool module)
                     asmstr << '$' << index;
                 }
             } else if (constraints == NULL || index > constraints->inputs.count() + numOutputs) {
-                env.error(text->loc, stringc << "inline asm constraint index '"
-                                             << index
-                                             << "' has no matching constraint");
+                env.report(text->loc, diag::err_asm_index_has_no_matching_constraint)
+                    << index;
             } else {
                 // Adjust for '+' output constraints.
                 if (modifier) {
@@ -1117,7 +1118,7 @@ void Asm::itcheck_constraints(Env &env, bool module)
             // Translate a position by name.
             const char* p = strchr(++cp, ']') ;
             if (p == NULL) {
-                env.error(text->loc, "inline asm string is missing a ']'");
+                env.report(text->loc, diag::err_asm_string__missing_rbracket);
                 continue;
             } 
             unsigned index = 0;
@@ -1154,9 +1155,8 @@ void Asm::itcheck_constraints(Env &env, bool module)
                         asmstr << '$' << index - numOutputs + rwConstraints;
                     }
                 } else {
-                    env.error(text->loc, stringc << "constraint name '"
-                                                 << name.c_str()
-                                                 << "' does not match any named constraint");
+                    env.report(text->loc, diag::err_asm_name_has_no_matching_constraint)
+                        << name;
                 }
             }
 
@@ -1398,9 +1398,8 @@ Type *E_fieldAcc::itcheck_complex_selector(Env &env, LookupFlags flags,
   int prec, axis;
   if (!dissectFloatingType(prec, axis, obj->type) ||
       axis != 2/*complex*/) {
-    env.error(stringc << "can only apply " << fieldName->getName()
-                             << " to complex types, not `"
-                             << obj->type->toString() << "'");
+    env.report(loc, diag::err_not_complex)
+        << fieldName->getName() << obj->type->toString();
     return env.errorType();
   }
 
@@ -1415,9 +1414,9 @@ Type *E_binary::itcheck_complex_arith(Env &env)
   int prec2, axis2;
   if (!dissectFloatingType(prec1, axis1, e1->type) ||
       !dissectFloatingType(prec2, axis2, e2->type)) {
-    env.error(stringc << "invalid complex arithmetic operand types `"
-                             << e1->type->toString() << "' and `"
-                             << e2->type->toString() << "'");
+    env.report(loc, diag::err_invalid_complex_operands)
+        << e1->type->toString() << e2->type->toString()
+        << SourceRange(loc, endloc);
     return env.errorType();
   }
 
