@@ -1153,7 +1153,7 @@ void test_getStandardConversion(
   // did the function do what we expected?
   if (actual != expected) {
     // no, explain the situation
-    env.report(env.loc(), diag::err_test_stdconv_getstandardconversion_error)
+    env.report(env.loc(), diag::err_test_stdconv_getstandardconversion)
       << toString(special)
       << src->toString()
       << dest->toString()
@@ -1161,7 +1161,7 @@ void test_getStandardConversion(
       << toString((StandardConversion)expected);
   } else if (tracingSys("gSC")) {
     // make a warning to show what happened anyway
-    env.report(env.loc(), diag::err_test_stdconv_getstandardconversion_warning)
+    env.report(env.loc(), diag::warn_test_stdconv_getstandardconversion)
       << toString(special)
       << src->toString()
       << dest->toString()

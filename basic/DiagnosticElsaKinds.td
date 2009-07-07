@@ -65,12 +65,66 @@ def err_argument_dependent_lookup_found_non_function
 def err_not_allowed_as_a_pointer_to_member_qualifier
     : Error<"'%0' is '%1', but that"
             "is not allowed as a pointer to member qualifier">;
-def err_goto_type
-    : Error<"the type of expression in a computed goto must be a pointer, not '%0'">;
 def err_not_complex
     : Error<"can only apply '%0' to complex types, not '%1'">;
 def err_invalid_complex_operands
     : Error<"invalid complex arithmetic operand types '%0' and '%1'">;
+def err_compile_time_computation_of_range_start
+    : Error<"compile-time computation of range start designator array index fails">;
+def err_compile_time_computation_of_range_end
+    : Error<"compile-time computation of range end designator array index fails">;
+
+// GNU extensions.
+def err_goto_type
+    : Error<"the type of expression in a computed goto must be a pointer, not '%0'">;
+def err_attribute_more_than_one_alias
+    : Error<"more than one attribute alias">;
+def err_attribute_too_many_arguments
+    : Error<"too many arguments to attribute alias">;
+def err_attribute_illegal_argument
+    : Error<"illegal argument to attribute alias">;
+def err_asm_module_level_output_constraint
+    : Error<"a module level 'asm' may not contain an output constraint">;
+def err_asm_output_constraint_start
+    : Error<"an 'asm' output constraint must start with a '=' or '+'">;
+def err_asm_output_constraint_invalid
+    : Error<"the 'asm' output constraint '%0' is invalid">;
+def err_asm_output_constraint_must_be_an_lvalue
+    : Error<"an 'asm' output constraint must be an lvalue">;
+def err_asm_output_constraint_must_have_an_expression
+    : Error<"an 'asm' output constraint must have an expression">;
+def err_asm_module_level_input_constraint
+    : Error<"a module level 'asm' may not contain an input constraint">;
+def err_asm_matching_constraint_too_large
+    : Error<"the 'asm' matching constraint '%0' is larger than the number of output constraints">;
+def err_asm_matching_constraint_different
+    : Error<"the 'asm' matching constraint '%0' is different than the previous matching constraint '%1'">;
+def err_asm_matching_constraint_io
+    : Error<"the 'asm' matched constraint '%0' is defined as '+' and should be '='">;
+def err_asm_input_constraint_invalid
+    : Error<"the 'asm' input constraint '%0' is invalid">;
+def err_asm_input_constraint_missing_rbracket
+    : Error<"the 'asm' constraint name is missing a ']'">;
+def err_asm_input_invalid_constraint_name
+    : Error<"the 'asm' constraint '%0' is not defined in the output constraints">;
+def err_asm_last_constraint_commutative
+    : Error<"the last 'asm' input constraint is marked commutative with '%'">;
+def err_asm_input_constraint_must_have_an_expression
+    : Error<"an 'asm' input constraint must have an expression">;
+def err_asm_module_level_clobber_constraint
+    : Error<"a module level 'asm' may not contain an clobber constraint">;
+def err_asm_clobber_constraint_with_expression
+    : Error<"an 'asm' clobber constraint cannot have an expression">;
+def err_asm_end_in_percent
+    : Error<"'%%' at the end of an 'asm'">;
+def err_asm_index_has_no_matching_constraint
+    : Error<"the 'asm' constraint index '%0' has no matching constraint">;
+def err_asm_string_missing_rbracket
+    : Error<"the 'asm' string name is missing a ']'">;
+def err_asm_name_has_no_matching_constraint
+    : Error<"the 'asm' constraint name '%0' has no matching named constraint">;
+def err_asm_unrecognized_percent
+    : Error<"unrecognized '%%' construct in 'asm'">;
 
 // Compatability messages.
 def note_gcc_bug_allows : Note<"gcc bug allows it">;
@@ -133,11 +187,11 @@ def err_expr_lhs_dot_star_not_class
     : Error<"the left hand side of '.*' must be a class or reference to a class, not '%0'">;
 def err_expr_rhs_dot_star_not_pointer_to_member
     : Error<"the right hand side of '.*' must be a pointer-to-member, not '%0'">;
-def err_expr_lhs_dot_arrow__star_not_correct_class
+def err_expr_lhs_dot_arrow_star_not_correct_class
     : Error<"the left hand side of %select{'->*'|'.*'}0 has type '%1'"
             ", but this is not equal to or derived from '%2'"
             ", the class whose members the right side can point at">;
-def err_expr_lhs_dot_arrow__star_ambiguous
+def err_expr_lhs_dot_arrow_star_ambiguous
     : Error<"the left hand side of %select{'->*'|'.*'}0 has type '%1'"
             ", but this is derived from '%2'"
             " ambiguously (in more than one way)">;
@@ -616,48 +670,6 @@ def err_constant_expr_or_float
     : Error<"cannot apply '|' to float types">;
 
 def err_asm_wide_string_literal : Error<"wide string literal in 'asm'">;
-def err_asm_module_level_output_constraint
-    : Error<"a module level 'asm' may not contain an output constraint">;
-def err_asm_output_constraint_start
-    : Error<"an 'asm' output constraint must start with a '=' or '+'">;
-def err_asm_output_constraint_invalid
-    : Error<"the 'asm' output constraint '%0' is invalid">;
-def err_asm_output_constraint_must_be_an_lvalue
-    : Error<"an 'asm' output constraint must be an lvalue">;
-def err_asm_output_constraint_must_have_an_expression
-    : Error<"an 'asm' output constraint must have an expression">;
-def err_asm_module_level_input_constraint
-    : Error<"a module level 'asm' may not contain an input constraint">;
-def err_asm_matching_constraint_too_large
-    : Error<"the 'asm' matching constraint '%0' is larger than the number of output constraints">;
-def err_asm_matching_constraint_different
-    : Error<"the 'asm' matching constraint '%0' is different than the previous matching constraint '%1'">;
-def err_asm_matching_constraint_io
-    : Error<"the 'asm' matched constraint '%0' is defined as '+' and should be '='">;
-def err_asm_input_constraint_invalid
-    : Error<"the 'asm' input constraint '%0' is invalid">;
-def err_asm_input_constraint_missing_rbracket
-    : Error<"the 'asm' constraint name is missing a ']'">;
-def err_asm_input_invalid_constraint_name
-    : Error<"the 'asm' constraint '%0' is not defined in the output constraints">;
-def err_asm_last_constraint_commutative
-    : Error<"the last 'asm' input constraint is marked commutative with '%'">;
-def err_asm_input_constraint_must_have_an_expression
-    : Error<"an 'asm' input constraint must have an expression">;
-def err_asm_module_level_clobber_constraint
-    : Error<"a module level 'asm' may not contain an clobber constraint">;
-def err_asm_clobber_constraint_with_expression
-    : Error<"an 'asm' clobber constraint cannot have an expression">;
-def err_asm_end_in_percent
-    : Error<"'%%' at the end of an 'asm'">;
-def err_asm_index_has_no_matching_constraint
-    : Error<"the 'asm' constraint index '%0' has no matching constraint">;
-def err_asm_string__missing_rbracket
-    : Error<"the 'asm' string name is missing a ']'">;
-def err_asm_name_has_no_matching_constraint
-    : Error<"the 'asm' constraint name '%0' has no matching named constraint">;
-def err_asm_unrecognized_percent
-    : Error<"unrecognized '%%' construct in 'asm'">;
 
 def err_escape_hex_escape_sequence
     : Error<"hex escape sequence must begin with hex digit">;
@@ -690,6 +702,18 @@ def err_delete_no_pointer_conversion
 
 def err_initializer_conversion
     : Error<"cannot convert initializer type '%0' to type '%1'">;
+
+def err_scope_ambiguous
+    : Error<"reference to '%0' is ambiguous, because it could "
+            "either refer to '%1::%2' or '%3::4'">;
+def err_scope_not_compound
+    : Error<"'%0' is not a struct/class/union">;
+def err_scope_not_enum
+    : Error<"'%0' is not an enum">;
+def err_scope_ambiguous_type_tag
+    : Error<"ambiguous type tag: '%0' versus '%1'">;
+def err_scope_ambiguous_lookup
+    : Error<"ambiguous lookup: '%0' versus '%1'">;
 
 def err_test_checktype
     : Error<"checkType: '%0' != '%1'">;
@@ -730,8 +754,17 @@ def err_test_mtype_succeeded
     : Error<"__test_mtype: succeeded, but failure was expected">;
 def err_test_mtype_failed
     : Error<"__test_mtype: failed, but success was expected">;
-def err_test_stdconv_getstandardconversion_error
+def err_test_stdconv_getstandardconversion
     : Error<"getStandardConversion(%0, %1, %2) yielded '%3', but I expected '%4'">;
-def err_test_stdconv_getstandardconversion_warning
-    : Error<"getStandardConversion(%0, %1, %2) yielded '%3'">;
+def warn_test_stdconv_getstandardconversion
+    : Warning<"getStandardConversion(%0, %1, %2) yielded '%3'">;
+def err_test_implconv_getimplicitconversion
+    : Error<"%0 yielded '%1', but I expected '%2'">;
+def warn_test_implconv_getimplicitconversion
+    : Warning<"%0 yielded '%1'">;
+def err_test_overload_compute_lub_code
+    : Error<"bad computeLUB code %0">;
+def err_test_overload_compute_lub_result
+    : Error<"expected %0 to %1, but instead it %2">;
+
 }

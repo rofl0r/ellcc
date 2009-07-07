@@ -1118,7 +1118,7 @@ void Asm::itcheck_constraints(Env &env, bool module)
             // Translate a position by name.
             const char* p = strchr(++cp, ']') ;
             if (p == NULL) {
-                env.report(text->loc, diag::err_asm_string__missing_rbracket);
+                env.report(text->loc, diag::err_asm_string_missing_rbracket);
                 continue;
             } 
             unsigned index = 0;
@@ -1165,7 +1165,7 @@ void Asm::itcheck_constraints(Env &env, bool module)
         }
     
         // Bad asm construct.
-        env.error(text->loc, "unrecognized '%' construct in inline asm");
+        env.report(text->loc, diag::err_asm_unrecognized_percent);
         ++cp;
     }
 
@@ -1466,9 +1466,9 @@ Type *E_binary::itcheck_complex_arith(Env &env)
 // invokes the type checker, which (due to disambiguation) may need to
 // change it to a different value, which in turn must be propagated to
 // the caller
-static void compile_time_compute_int_expr(Env &env, Expression *&e, int &x, const char *error_msg) {
+static void compile_time_compute_int_expr(Env &env, Expression *&e, int &x, unsigned error_msg) {
   e->tcheck(env, e);
-  if (!e->constEval(env, x)) env.error(error_msg);
+  if (!e->constEval(env, x)) env.report(env.loc(), error_msg);
 }
 
 static void check_designator_list(Env &env, FakeList<Designator> *dl)
@@ -1477,10 +1477,10 @@ static void check_designator_list(Env &env, FakeList<Designator> *dl)
   FAKELIST_FOREACH_NC(Designator, dl, d) {
     if (SubscriptDesignator *sd = dynamic_cast<SubscriptDesignator*>(d)) {
       compile_time_compute_int_expr(env, sd->idx_expr, sd->idx_computed,
-                                    "compile-time computation of range start designator array index fails");
+                                    diag::err_compile_time_computation_of_range_start);
       if (sd->idx_expr2) {
         compile_time_compute_int_expr(env, sd->idx_expr2, sd->idx_computed2,
-                                      "compile-time computation of range end designator array index fails");
+                                     diag::err_compile_time_computation_of_range_end);
       }
     }
     // nothing to do for FieldDesignator-s
@@ -1953,16 +1953,16 @@ StringRef D_attribute::tcheck_getAlias(Env *penv) const
         if (streq(f->f, "alias")) {
           if (foundAlias) {
             xassert(penv);
-            penv->error(loc, "more than one attribute alias");
+            penv->report(loc, diag::err_attribute_more_than_one_alias);
           }
           if (f->args->count() != 1) {
             xassert(penv);
-            penv->error(loc, "too many arguments to attribute alias");
+            penv->report(loc, diag::err_attribute_too_many_arguments);
           }
           Expression *&expr = f->args->first()->expr;
           if (!expr->isE_stringLit()) {
             xassert(penv);
-            penv->error(loc, "illegal argument to attribute alias");
+            penv->report(loc, diag::err_attribute_illegal_argument);
           }
           if (penv) {
             expr->tcheck(*penv, expr);

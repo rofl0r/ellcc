@@ -8579,14 +8579,14 @@ Type *E_binary::itcheck_x(Env &env, Expression *&replacement)
       // class unambiguously derived from it
       int subobjs = lhsClass->countBaseClassSubobjects(ptm->inClass());
       if (subobjs == 0) {
-          env.report(loc, diag::err_expr_lhs_dot_arrow__star_not_correct_class)
+          env.report(loc, diag::err_expr_lhs_dot_arrow_star_not_correct_class)
             << (op == BIN_DOT_STAR)
             << lhsClass->name << ptm->inClass()->name
             << SourceRange(loc, endloc);
           return env.errorType();
       }
       else if (subobjs > 1) {
-          env.report(loc, diag::err_expr_lhs_dot_arrow__star_ambiguous)
+          env.report(loc, diag::err_expr_lhs_dot_arrow_star_ambiguous)
             << (op == BIN_DOT_STAR)
             << lhsClass->name << ptm->inClass()->name
             << SourceRange(loc, endloc);

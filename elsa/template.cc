@@ -1387,15 +1387,7 @@ bool Env::loadBindingsWithExplTemplArgs(Variable *var, ObjList<STemplateArgument
 
   if (!argIter.isDone()) {
     // in/t0607.cc: extra arguments; that is no good
-#if 0
-    if (iflags & IA_REPORT_ERRORS) {
-      // I think this code is unreachable...
-      error(stringc << "too many template arguments for `"
-                    << var->toString() << "'; first excess argument: \""
-                    << argIter.data()->toString() << "\"");
-    }
-#endif
-    return false;
+        return false;
   }
 
   return true;

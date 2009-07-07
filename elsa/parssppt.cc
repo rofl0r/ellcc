@@ -115,35 +115,6 @@ ParseTreeAndTokens::~ParseTreeAndTokens()
 bool glrParseNamedFile(GLR &glr, LexerInterface &lexer, SemanticValue &treeTop,
                        char const *inputFname)
 {
-  #if 0    // old
-  // do first phase lexer
-  traceProgress() << "lexical analysis...\n";
-  traceProgress(2) << "lexical analysis stage 1...\n";
-  Lexer1 lexer1(inputFname);
-  {
-    FILE *input = fopen(inputFname, "r");
-    if (!input) {
-      xsyserror("fopen", inputFname);
-    }
-
-    lexer1_lex(lexer1, input);
-    fclose(input);
-
-    if (lexer1.errors > 0) {
-      printf("L1: %d error(s)\n", lexer1.errors);
-      return false;
-    }
-  }
-
-  // do second phase lexer
-  traceProgress(2) << "lexical analysis stage 2...\n";
-  lexer2_lex(lexer2, lexer1, inputFname);
-
-  // parsing itself
-  lexer2.beginReading();
-  return glr.glrParse(lexer2, treeTop);
-  #endif // 0
-
   PRETEND_USED(inputFname);     // stupid module..
   return glr.glrParse(lexer, treeTop);
 }

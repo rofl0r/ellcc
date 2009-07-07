@@ -10,6 +10,7 @@
 #include "exc.h"          // unwinding
 
 using namespace sm;
+using namespace ellcc;
 
 Scope::Scope(ScopeKind sk, int cc, SourceLocation initLoc)
   : variables(),
@@ -455,21 +456,18 @@ void Scope::lookupVariable_considerBase
       if (hasAncestor(v2Subobj, v1Subobj)) {
         // ok, just go ahead and let 'v2' replace 'v1'
         TRACE("lookup", "DAG ancestor conflict suppressed (v2 is lower)");
-      }
-      else if (hasAncestor(v1Subobj, v2Subobj)) {
+      } else if (hasAncestor(v1Subobj, v2Subobj)) {
         // it could also be the other way around
         TRACE("lookup", "DAG ancestor conflict suppressed (v1 is lower)");
 
         // in this case, 'v1' is already the right one
         return;
-      }
-      else {
+      } else {
         // ambiguity
-        env.error(stringc
-          << "reference to `" << name << "' is ambiguous, because "
-          << "it could either refer to "
-          << v1Subobj->ct->name << "::" << name << " or "
-          << v2Base->name << "::" << name);
+        env.report(env.loc(), diag::err_scope_ambiguous)
+            << name
+            << v1Subobj->ct->name << name
+            << v2Base->name << name;
         return;
       }
     }
@@ -549,7 +547,7 @@ CompoundType const *Scope::lookupCompoundC(StringRef name, Env &env,
   else if (!v->type->isCompoundType()) {
     // TODO: further distinguish between struct/class and union
     if (!(flags & LF_SUPPRESS_ERROR)) {
-      env.error(stringc << "`" << name << "' is not a struct/class/union");
+      env.report(env.loc(), diag::err_scope_not_compound) << name;
     }
     return NULL;
   }
@@ -568,7 +566,7 @@ EnumType const *Scope::lookupEnumC(StringRef name, Env &env,
   }
   else if (!v->type->isEnumType()) {
     if (!(flags & LF_SUPPRESS_ERROR)) {
-      env.error(stringc << "`" << name << "' is not an enum");
+      env.report(env.loc(), diag::err_scope_not_enum) << name;
     }
     return NULL;
   }
@@ -594,8 +592,8 @@ Variable *Scope::lookupTypeTag(StringRef name, Env &env, LookupFlags flags) cons
           v = v2;
         }
         else if (v != v2) {
-          env.error(stringc << "ambiguous type tag: `" << v->fullyQualifiedName0()
-                            << "' vs. `" << v2->fullyQualifiedName0() << "'");
+          env.report(env.loc(), diag::err_scope_ambiguous_type_tag) 
+            << v->fullyQualifiedName0() << v2->fullyQualifiedName0();
         }
       }
     }
@@ -728,11 +726,10 @@ void Scope::lookup(LookupSet &set, StringRef name, Env *env, LookupFlags flags)
         else {
           // ambiguity
           if (env) {
-            env->error(stringc
-              << "reference to `" << name << "' is ambiguous, because "
-              << "it could either refer to "
-              << vObj->ct->name << "::" << name << " or "
-              << v2Obj->ct->name << "::" << name);
+            env->report(env->loc(), diag::err_scope_ambiguous)
+              << name 
+              << vObj->ct->name << "::" << name
+              << v2Obj->ct->name << "::" << name;
             break;
           }
           else {
@@ -1035,9 +1032,8 @@ bool Scope::foundViaUsingEdge(LookupSet &candidates, Env &env, LookupFlags flags
         // ok; essentially they form an overload set
       }
       else {
-        env.error(stringc
-          << "ambiguous lookup: `" << vfound->fullyQualifiedName0()
-          << "' vs. `" << v->fullyQualifiedName0() << "'");
+        env.report(env.loc(), diag::err_scope_ambiguous_lookup)
+            << vfound->fullyQualifiedName0() << v->fullyQualifiedName0();
 
         // originally I kept going in hopes of reporting more
         // interesting things, but now that the same scope can

@@ -16,6 +16,7 @@
 #include "mtype.h"         // MType
 
 using namespace sm;
+using namespace ellcc;
 
 // ------------------- Candidate -------------------------
 Candidate::Candidate(Variable *v, Variable *instFrom0, int numArgs)
@@ -2060,7 +2061,7 @@ void test_computeLUB(Env &env, Type *t1, Type *t2, Type *answer, int code)
   bool ok = false;
   switch (code) {
     default:
-      env.error("bad computeLUB code");
+      env.report(env.loc(), diag::err_test_overload_compute_lub_code) << code;
       return;
 
     case 0:
@@ -2117,10 +2118,8 @@ void test_computeLUB(Env &env, Type *t1, Type *t2, Type *answer, int code)
 
   if (!ok) {
     // synthesize complete message
-    env.error(stringc
-      << "I expected " << call
-      << " to " << expect
-      << ", but instead it " << actual);
+    env.report(env.loc(), diag::err_test_overload_compute_lub_result)
+        << call << expect << actual;
   }
 }
 

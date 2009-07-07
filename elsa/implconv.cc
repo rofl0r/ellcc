@@ -418,11 +418,11 @@ void test_getImplicitConversion(
                 expectedDesc << ")";
             }
 
-            env.error(stringc
-                << callDesc << " yielded " << actualDesc
-                << ", but I expected " << expectedDesc);
+            env.report(env.loc(), diag::err_test_implconv_getimplicitconversion)
+                << callDesc << actualDesc << expectedDesc;
         } else {
-            env.warning(stringc << callDesc << " yielded " << actualDesc);
+            env.report(env.loc(), diag::warn_test_implconv_getimplicitconversion)
+                << callDesc << actualDesc;
         }
     }
 }

@@ -11,7 +11,6 @@
   #error This module must be compiled with optimization turned off
 #endif
 
-
 // This is the main one that initially caused the problem.  With
 // -O2, an XTypeDeduction just flies right by the 'catch' as if
 // it weren't there.
