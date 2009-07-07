@@ -33,5 +33,6 @@ def warn_integer_too_large_for_signed : Warning<
   "integer constant is so large that it is unsigned">;
 def err_expected_colon : Error<"expected ':'">;
 def note_parameter_declaration : Note<"parameter declaration is here:">;
+def note_further_errors : Note<"this may be the cause of further errors below">;
 
 }

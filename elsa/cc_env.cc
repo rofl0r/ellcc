@@ -5038,9 +5038,8 @@ void Env::unqualifiedFinalNameLookup(LookupSet &set, Scope *scope,
     set.removeNonTemplates();
 
     if (set.isEmpty()) {           // t0460.cc
-      env.error(name->loc, stringc
-        << "cannot apply template args to non-template `"
-        << name->getName() << "'", EF_DISAMBIGUATES);
+      report(name->loc, diag::err_template_arguments_supplied)
+        << name->getName() << DIAG_DISAMBIGUATES;
       return;
     }
   }
@@ -5254,12 +5253,11 @@ void Env::checkTemplateKeyword(PQName *name)
       diagnose3(PP.getLangOptions().allowGcc2HeaderSyntax, name->loc,
                 diag::err_dependent_template_scope_name_requires_template_keyword,
                 diag::note_gcc2_bug_allows);
-    }
-    else {
+    } else {
       // without the "template" keyword, the dependent context may give
       // rise to ambiguity, so reject it
-      env.error("dependent template scope name requires 'template' keyword",
-                EF_DISAMBIGUATES | EF_STRONG);
+      report(loc(), diag::err_template_dependent_template_scope_name_requires_template_keyword)
+        << DIAG_DISAMBIGUATES << DIAG_STRONG;
     }
   }
 }
@@ -5414,20 +5412,17 @@ Type *Env::sizeofType(Type *t, int &size, Expression * /*nullable*/ expr)
       env.warning("sizeof dynamically-sized array not fully implemented, size assumed to be 0");
       TRACE("sizeof", "sizeof(" << (expr? expr->exprToString() : t->toString()) <<
                       ") is dynamic..");
-    }
-    else if (t->isArrayType()) {
+    } else if (t->isArrayType()) {
       ArrayType *at = t->asArrayType();
       if (at->size == ArrayType::NO_SIZE &&
           env.PP.getLangOptions().assumeNoSizeArrayHasSizeOne) {
         // just hacking this for now
         return env.sizeofType(at->eltType, size, expr);
-      }
-      else {
+      } else {
         env.error(e.why());
         return env.errorType();
       }
-    }
-    else {
+    } else {
       env.error(e.why());
       return env.errorType();
     }
@@ -5543,17 +5538,13 @@ void Env::checkNewSpecialization_one(TemplateInfo *existingTI, TemplateInfo *spe
       // *could* proceed despite this failure, but see the comments
       // above, for 'checkNewSpecialization'.  Removing this error
       // just leads to much harder-to-diagnose errors later.
-      error(stringb(
-        "The explicit specialization \"" << specTI->templateName() << 
-        "\" is defined here, but the " <<
-        (existingTI->isPrimary()? "template primary" : "explicit specialization") <<
-        " \"" << existingTI->templateName() << "\", defined at " <<
-        toString(existingTI->var->loc) << ", has already been "
-        "instantiated at " << toString(inst->instLoc) << 
-        " to produce \"" << inst->templateName() << "\".  This is a "
-        "violation of the C++ Standard, section 14.7.3p6, which "
-        "requires that a specialization be declared before anything "
-        "that uses it.  This may be the cause of further errors below."));
+      report(loc(), diag::err_template_specialization_not_declared_before_use)
+        << specTI->templateName() << existingTI->isPrimary()
+        << inst->templateName();
+      report(loc(), diag::note_template_specialization_not_declared_before_use);
+      report(loc(), diag::note_further_errors);
+      report(existingTI->var->loc, diag::note_definition);
+      report(inst->instLoc, diag::note_template_previous_instantiation);
     }
   }
 }

@@ -312,6 +312,18 @@ def err_template_ambiguous_function_template_instantiation
     : Error<"ambiguous function template instantiation">;
 def err_template_no_template_parameter_list_supplied
     : Error<"no template parameter list supplied for '%0'">;
+def err_template_dependent_template_scope_name_requires_template_keyword
+    : Error<"dependent template scope name requires 'template' keyword">;
+def err_template_specialization_not_declared_before_use
+    : Error<"the explicit specialization '%0' is defined here, but the "
+            "%select{explicit specialization|template primary}1, "
+            "has already been instantiated to produce '%2'">;
+def note_template_specialization_not_declared_before_use
+    : Note<"this is a violation of the C++ Standard, section 14.7.3p6, which "
+           "requires that a specialization be declared before anything "
+           "that uses it">;
+def note_template_previous_instantiation
+    : Note<"previous instantiation:">;
 
 def err_incomplete_type_compute_size_of
     : Error<"attempt to compute size of incomplete type '%0'">;
