@@ -4,10 +4,13 @@
 #ifndef LOOKUPSET_H
 #define LOOKUPSET_H
 
-#include "sobjlist.h"        // SObjList
-#include "str.h"             // string
+#include "SourceLocation.h"     // SourceLocation
+#include "sobjlist.h"           // SObjList
+#include "str.h"                // string
 
-class Variable;              // variable.h
+class Env;                      // cc_env.h
+class Variable;                 // variable.h
+using ellcc::SourceLocation;
 
 
 // variable lookup sometimes has complicated exceptions or
@@ -95,6 +98,8 @@ public:
   
   // construct a candidate list, one per line, indented
   sm::string asString() const;
+  // report a candidate list
+  void candidates(Env& env, SourceLocation loc) const;
   void gdb() const;
 };
 

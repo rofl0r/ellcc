@@ -5150,7 +5150,7 @@ void Env::explicitlyInstantiate(Variable *var, DeclFlags instFlags)
   // class instantiation
   xassert(var->type->isCompoundType());
   CompoundType *ct = var->type->asCompoundType();
-  if (!ensureCompleteType("instantiate", var->type)) {
+  if (!ensureCompleteType(diag::err_incomplete_class_instantiate, var->type)) {
     return;    // recovery
   }
 

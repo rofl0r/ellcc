@@ -1928,7 +1928,7 @@ Scope *Env::lookupOneQualifier_useArgs(
         }
 
         // instantiate the body too, since we want to look inside it
-        ensureCompleteType("use as qualifier", inst->type);
+        ensureCompleteType(diag::err_incomplete_type_use_as_qualifier, inst->type);
 
         ct = inst->type->asCompoundType();
       }
@@ -4061,7 +4061,7 @@ void Env::restoreScopesInside(ObjList<Scope> &src, Scope *bound)
 }
 
 
-bool Env::ensureCompleteType(char const *action, Type *type)
+bool Env::ensureCompleteType(unsigned action, Type *type)
 {
   if (type->isCompoundType()) {
     CompoundType *ct = type->asCompoundType();
@@ -4083,8 +4083,7 @@ bool Env::ensureCompleteType(char const *action, Type *type)
       return true;
     } else {
       // 8.3.4 para 1: this is an incomplete type
-      error(stringc << "attempt to " << action <<
-            " incomplete type `" << type->toString() << "'");
+      report(loc(), action) << type->toString();
       return false;
     }
   }
@@ -4093,7 +4092,7 @@ bool Env::ensureCompleteType(char const *action, Type *type)
 }
 
 
-bool Env::ensureCompleteCompound(char const *action, CompoundType *ct)
+bool Env::ensureCompleteCompound(unsigned action, CompoundType *ct)
 {
   // maybe it's a template we can instantiate?
   if (!ct->isComplete() && ct->isInstantiation()) {
@@ -4101,8 +4100,7 @@ bool Env::ensureCompleteCompound(char const *action, CompoundType *ct)
   }
 
   if (!ct->isComplete()) {
-    error(stringc << "attempt to " << action <<
-                     " incomplete class `" << ct->name << "'");
+    report(loc(), action) << ct->name;
     return false;
   }
 
@@ -4308,18 +4306,14 @@ void Env::possiblySetOverloadedFunctionVar(Expression *expr, Type *paramType,
   if (ovlVar) {
     // modify 'arg' accordingly
     env.setOverloadedFunctionVar(expr, ovlVar);
-  }
-  else {
+  } else {
     if (set.count() == 1) {
       // it wasn't overloaded in the first place, so the error message
       // here is not appropriate; we should report the error elsewhere
-    }
-    else {
-      env.error(getExprNameLoc(expr), stringc
-        << "failed to resolve address-of of overloaded function `"
-        << *(getExprName(expr)) << "' assigned to type `"
-        << paramType->toString() << "'; candidates:\n"
-        << chomp(set.asString()));
+    } else {
+      env.report(getExprNameLoc(expr), diag::err_overload_failed_to_resolve_address_of_function)
+        << getExprName(expr)->getName() << paramType->toString();
+      set.candidates(env, getExprNameLoc(expr));
     }
   }
 }
@@ -4970,7 +4964,7 @@ void Env::lookupPQ_withScope(LookupSet &set, PQName *name, LookupFlags flags,
       // find anyplace in the standard that explicitly requires this,
       // though it seems to be clearly true (t0245.cc)
       if (scope->curCompound) {
-        env.ensureCompleteCompound("use as qualifier", scope->curCompound);
+        ensureCompleteCompound(diag::err_incomplete_class_use_as_qualifier, scope->curCompound);
       }
     }
 
@@ -5406,7 +5400,7 @@ Type *Env::sizeofType(Type *t, int &size, Expression * /*nullable*/ expr)
   t = t->asRval();
 
   // 5.3.3p1: must be complete
-  env.ensureCompleteType("compute size of", t);
+  ensureCompleteType(diag::err_incomplete_type_compute_size_of, t);
 
   try {
     size = t->sizeInBytes(PP.getTargetInfo());

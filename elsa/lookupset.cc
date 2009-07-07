@@ -1,12 +1,15 @@
 // lookupset.cc
 // code for lookupset.h
 
-#include "lookupset.h"        // this module
-#include "variable.h"         // Variable, sameEntity
-#include "template.h"         // TemplateInfo
-#include "cc_flags.h"         // bitmapString
+#include "lookupset.h"          // this module
+#include "variable.h"           // Variable, sameEntity
+#include "template.h"           // TemplateInfo
+#include "cc_flags.h"           // bitmapString
+#include "cc_env.h"             // Env
+#include "Diagnostic.h"
 
 using namespace sm;
+using namespace ellcc;
 
 char const * const lookupFlagNames[NUM_LOOKUPFLAGS] = {
   "LF_INNER_ONLY",
@@ -243,9 +246,8 @@ string LookupSet::asString() const
 
     sb << "  " << v->loc << ": ";
     if (scope) {
-      sb << v->toString();      // all same scope, no need to prin it
-    }
-    else {
+      sb << v->toString();      // all same scope, no need to print it
+    } else {
       sb << v->toQualifiedString();
     }
     sb << "\n";
@@ -254,6 +256,33 @@ string LookupSet::asString() const
   return sb;
 }
 
+void LookupSet::candidates(Env& env, SourceLocation loc) const
+{
+  if (isEmpty()) {
+    return;
+  }
+
+  // are all the names in the same scope?
+  Scope *scope = firstC()->scope;
+  SFOREACH_OBJLIST(Variable, *this, iter1) {
+    Variable const *v = iter1.data();
+
+    if (v->scope != scope) {
+      scope = NULL;
+    }
+  }
+
+  SFOREACH_OBJLIST(Variable, *this, iter2) {
+    Variable const *v = iter2.data();
+
+    if (scope) {
+      // All same scope, no need to print it.
+      env.report(loc, diag::note_candidate) << v->toString();
+    } else {
+      env.report(loc, diag::note_candidate) << v->toQualifiedString();
+    }
+  }
+}
 
 void LookupSet::gdb() const
 {

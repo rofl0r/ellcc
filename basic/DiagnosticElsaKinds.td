@@ -307,6 +307,32 @@ def err_template_ambiguous_function_template_instantiation
 def err_template_no_template_parameter_list_supplied
     : Error<"no template parameter list supplied for '%0'">;
 
+def err_incomplete_type_compute_size_of
+    : Error<"attempt to compute size of incomplete type '%0'">;
+def err_incomplete_type_cast_to
+    : Error<"attempt to cast to incomplete type '%0'">;
+def err_incomplete_type_use_as_qualifier
+    : Error<"attempt to use incomplete type '%0' as a qualifier">;
+def err_incomplete_type_use_as_function_object
+    : Error<"attempt to use incomplete type '%0' as a function object">;
+def err_incomplete_type_use_as_return_type
+    : Error<"attempt to use incomplete type '%0' as the return type of a function">;
+def err_incomplete_type_use_as_parameter_type
+    : Error<"attempt to use incomplete type '%0' as a function parameter type">;
+def err_incomplete_type_name_in_exception_spec
+    : Error<"attempt to name incomplete type '%0' in an exception specifier">;
+def err_incomplete_type_construct
+    : Error<"attempt to construct incomplete type '%0'">;
+def err_incomplete_type_access_a_member_of
+    : Error<"attempt to access a member of incomplete type '%0'">;
+
+def err_incomplete_class_instantiate
+    : Error<"attempt to instantiate incomplete class '%0'">;
+def err_incomplete_class_use_as_qualifier
+    : Error<"attempt to use incomplete class '%0' as a qualifier">;
+def err_incomplete_class_use_as_base_class
+    : Error<"attempt to use incomplete class '%0' as a base class">;
+
 def err_stdconv_cv_flag_mismatch
     : Error<"cannot convert '%0' to '%1': the source has some cv flag that the destination does not">;
 def err_stdconv_cv_flag_changed_below_pointer
@@ -510,6 +536,9 @@ def err_overload_does_not_match
             " %2 declared overloaded instances">;
 def err_overload_conversion_operator
     : Error<"cannot find conversion operator yielding '%0'">;
+def err_overload_failed_to_resolve_address_of_function
+    : Error<"failed to resolve address of of overloaded function "
+            "'%0' assigned to type '%1'">;
 
 def err_reference_pointer_to_reference
     : Error<"cannot create a pointer to a reference ('%0')">;

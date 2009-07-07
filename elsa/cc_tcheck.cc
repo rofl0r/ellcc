@@ -514,9 +514,9 @@ void Function::tcheck(Env &env, Variable *instV)
 
   if (checkBody) {      // so this is a definition and not just a declaration
     // force the parameter and return types to be complete (8.3.5 para 6)
-    env.ensureCompleteType("use as return type", funcType->retType);
+    env.ensureCompleteType(diag::err_incomplete_type_use_as_return_type, funcType->retType);
     SFOREACH_OBJLIST(Variable, funcType->params, iter) {
-      env.ensureCompleteType("use as parameter type", iter.data()->type);
+      env.ensureCompleteType(diag::err_incomplete_type_use_as_parameter_type, iter.data()->type);
     }
   }
 
@@ -1406,7 +1406,7 @@ void PQ_qualifier::tcheck_pq(Env &env, Scope *scope, LookupFlags lflags)
 
   if (denotedScope && denotedScope->curCompound) {
     // must be a complete type [ref?] (t0245.cc)
-    env.ensureCompleteType("use as qualifier",
+    env.ensureCompleteType(diag::err_incomplete_type_use_as_qualifier,
       denotedScope->curCompound->typedefVar->type);
 
     if (hasParamsForMe) {
@@ -2355,7 +2355,7 @@ void TS_classSpec::tcheckIntoCompound(
       }
 
       // also 10 para 1: must be complete type
-      if (!env.ensureCompleteType("use as base class", baseVar->type)) {
+      if (!env.ensureCompleteType(diag::err_incomplete_class_use_as_base_class, baseVar->type)) {
         continue;
       }
 
@@ -3477,13 +3477,13 @@ bool checkCompleteTypeRules(Env &env, DeclFlags dflags, DeclaratorContext contex
 
   // ok, we're not in an exceptional circumstance, so the type
   // must be complete; if we have an error, what will we say?
-  char const *action = 0;
+  unsigned action = 0;
   switch (context) {
-    default /*catch-all*/:     action = "create an object of"; break;
-    case DC_EXCEPTIONSPEC:     action = "name in exception spec"; break;
+    default /*catch-all*/:     action = diag::err_incomplete_type_construct; break;
+    case DC_EXCEPTIONSPEC:     action = diag::err_incomplete_type_name_in_exception_spec; break;
     case DC_E_KEYWORDCAST:     // fallthru
-    case DC_E_CAST:            action = "cast to"; break;
-    case DC_E_SIZEOFTYPE:      action = "compute size of"; break;
+    case DC_E_CAST:            action = diag::err_incomplete_type_cast_to; break;
+    case DC_E_SIZEOFTYPE:      action = diag::err_incomplete_type_compute_size_of; break;
   }
 
   // check it
@@ -6162,7 +6162,7 @@ static Variable *outerResolveOverload_ctor
   // since we should not be treating the construction of a reference
   // the same as the construction of an object
   if (type->isCompoundType()) {
-    env.ensureCompleteType("construct", type);
+    env.ensureCompleteType(diag::err_incomplete_type_construct, type);
     CompoundType *ct = type->asCompoundType();
     Variable *ctor = ct->getNamedField(env.constructorSpecialName, env, LF_INNER_ONLY);
     xassert(ctor);
@@ -6908,7 +6908,7 @@ Type *E_funCall::inner2_itcheck(Env &env, LookupSet &candidates)
     // so do it here too
     possiblyWrapWithImplicitThis(env, func, fevar, feacc);
 
-    env.ensureCompleteType("use as function object", t);
+    env.ensureCompleteType(diag::err_incomplete_type_use_as_function_object, t);
     Variable *funcVar = ct->getNamedField(env.functionOperatorName, env);
     if (funcVar) {
       // resolve overloading
@@ -6977,7 +6977,7 @@ Type *E_funCall::inner2_itcheck(Env &env, LookupSet &candidates)
 
   FunctionType *ft = t->asFunctionType();
   env.instantiateTemplatesInParams(ft);
-  env.ensureCompleteType("use as return type in invoked function", ft->retType);
+  env.ensureCompleteType(diag::err_incomplete_type_use_as_return_type, ft->retType);
 
   // receiver object?
   if (env.doCompareArgsToParams && ft->isMethod()) {
@@ -7369,7 +7369,7 @@ Type *E_constructor::inner2_itcheck(Env &env, Expression *&replacement)
   ArgumentInfoArray argInfo(args->count() + 1);
   args = tcheckArgExprList(args, env, argInfo);
 
-  if (!env.ensureCompleteType("construct", type)) {
+  if (!env.ensureCompleteType(diag::err_incomplete_type_construct, type)) {
     return type;     // recovery: skip what follows
   }
 
@@ -7671,7 +7671,7 @@ Type *E_fieldAcc::itcheck_fieldAcc_set(Env &env, LookupFlags flags,
   }
 
   // make sure the type has been completed
-  if (!env.ensureCompleteType("access a member of", lhsType)) {
+  if (!env.ensureCompleteType(diag::err_incomplete_type_access_a_member_of, lhsType)) {
     return env.errorType();
   }
 
