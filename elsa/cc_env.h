@@ -578,7 +578,8 @@ public:      // funcs
 
   // return true if the given list of errors contain any which
   // are disambiguating errors
-  bool hasDisambErrors() const { return errors.hasDisambErrors(); }
+  bool hasDisambErrors() const
+    { return errors.hasDisambErrors() || diag.NumberOf(ellcc::DIAG_DISAMBIGUATES) > 0; }
 
   // return true if environment modifications should be suppressed
   // because of disambiguating errors

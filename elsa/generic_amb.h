@@ -141,7 +141,7 @@ NODE *resolveAmbiguity(
       // move that run's errors into a per-alternative list
 
       // did that alternative succeed?
-      if (env.diag.NumberOf(DIAG_DISAMBIGUATES) == 0) {
+      if (!env.hasDisambErrors()) {
         // yes; update our success trackers
         numOk++;
         lastOk = alt;
