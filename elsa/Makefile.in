@@ -335,7 +335,6 @@ CCPARSE_OBJS := \
   cfg.o \
   sprint.o \
   mangle.o \
-  cc_err.o \
   cc_type.o \
   stdconv.o \
   implconv.o \

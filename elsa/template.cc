@@ -5401,13 +5401,11 @@ bool TemplateInfo::isMoreSpecificThan(TemplateInfo const *other) const
 InstantiationContextIsolator::InstantiationContextIsolator(Env &e, SourceLocation loc)
   : env(e),
     origNestingLevel(e.disambiguationNestingLevel),
-    origSecondPass(e.secondPassTcheck),
-    origErrors()
+    origSecondPass(e.secondPassTcheck)
 {
     env.diag.InstantiationLocStack.push_back(loc);
     env.disambiguationNestingLevel = 0;
     env.secondPassTcheck = false;
-    origErrors.takeMessages(env.errors);
     // Open a new diagnostic level.
     env.push();
 }
@@ -5419,24 +5417,8 @@ InstantiationContextIsolator::~InstantiationContextIsolator()
     env.disambiguationNestingLevel = origNestingLevel;
     env.secondPassTcheck = origSecondPass;
 
-    // where do the newly-added errors, i.e. those from instantiation,
-    // which are sitting in 'env.errors', go?
-    if (env.hiddenErrors) {
-        // shuttle them around to the hidden message list
-        env.hiddenErrors->takeMessages(env.errors);
-    }
-    else {
-        // put them at the end of the original errors, as if we'd never
-        // squirreled away any messages
-        origErrors.takeMessages(env.errors);
-    }
-    xassert(env.errors.isEmpty());
-
     // Close the opened diagnostic level.
     env.pop();
-
-   // now put originals back into env.errors
-    env.errors.takeMessages(origErrors);
 }
 
 

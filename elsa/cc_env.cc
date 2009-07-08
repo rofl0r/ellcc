@@ -306,9 +306,7 @@ Env::Env(StringTable &s, Preprocessor& PP, TypeFactory &tf,
          ArrayStack<Variable*> &madeUpVariables0,
          ArrayStack<Variable*> &builtinVars0,
          TranslationUnit *unit0)
-  : ErrorList(),
-
-    env(*this),
+  : env(*this),
     unit(unit0),
     scopes(),
     disambiguateOnly(false),
@@ -317,8 +315,6 @@ Env::Env(StringTable &s, Preprocessor& PP, TypeFactory &tf,
     disambiguationNestingLevel(0),
     checkFunctionBodies(true),
     secondPassTcheck(false),
-    errors(*this),
-    hiddenErrors(NULL),
     diag(PP.getDiagnostics()),
     SM(PP.getSourceManager()),
 
@@ -5825,18 +5821,9 @@ bool DefaultArgumentChecker::visitTypeSpecifier(TypeSpecifier *obj)
 
 // ----------------- DisambiguationErrorTrapper ---------------------
 DisambiguationErrorTrapper::DisambiguationErrorTrapper(Env &e)
-  : env(e),
-    existingErrors()
+  : env(e)
 {
     // grab the existing list of error messages
-    existingErrors.takeMessages(env.errors);
-
-    // tell the environment about this hidden list of errors, so that
-    // if an error needs to be added that has nothing to do with this
-    // disambiguation, it can be
-    if (env.hiddenErrors == NULL) {     // no hidden yet, I'm the first
-        env.hiddenErrors = &existingErrors;
-    }
 
     // having stolen the existing errors, we now tell the environment
     // we're in a disambiguation pass so it knows that any disambiguating
@@ -5849,23 +5836,11 @@ DisambiguationErrorTrapper::~DisambiguationErrorTrapper()
     // we're about to put the pre-existing errors back into env.errors
     env.disambiguationNestingLevel--;
 
-    if (env.hiddenErrors == &existingErrors) {     // I'm the first
-        env.hiddenErrors = NULL;          // no more now
-    }
-
-    // put all the original errors in
-    //
-    // 2005-08-08: Since 'existingErrors' are the older ones, I want
-    // them to (semantically) precede the errors in 'env.errors'.
-    // Therefore I am calling 'prependMessages'; previously I had been
-    // calling 'takeMessages', and do not know why.  A test of this
-    // behavior is in/t0521.cc.
-    env.errors.prependMessages(existingErrors);
 }
 
 bool Env::hasFromNonDisambErrors() const
 {
-  return errors.hasFromNonDisambErrors() || diag.hasFromNonDisambErrors();
+  return diag.hasFromNonDisambErrors();
 }
 
 
@@ -5930,37 +5905,6 @@ void Env::diagnose3(bool3 b, SourceLocation L,
     if(NoteID) {
         report(L, NoteID);
     }
-}
-
-sm::string errorFlagBlock(ErrorFlags eflags)
-{
-  if (eflags == EF_NONE) {
-    return "";
-  }
-  else {
-    stringBuilder sb;
-    sb << "[";
-    if (eflags & EF_WARNING) {
-      sb << "w";
-    }
-    if (eflags & EF_STRONG) {
-      sb << "s";
-    }
-    if (eflags & EF_DISAMBIGUATES) {
-      sb << "d";
-    }
-    if (eflags & EF_FROM_DISAMB) {
-      sb << "f";
-    }
-    if (eflags & EF_FROM_TEMPLATE) {
-      sb << "t";
-    }
-    if (eflags & EF_STRICT_ERROR) {
-      sb << "p";     // suppressed b/c of 'p'assive mode
-    }
-    sb << "] ";
-    return sb;
-  }
 }
 
 sm::string Env::locationStackString() const

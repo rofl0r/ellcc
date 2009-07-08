@@ -14,7 +14,6 @@
 #include "cc_ast.h"             // C++ ast components
 #include "variable.h"           // Variable (r)
 #include "cc_scope.h"           // Scope
-#include "cc_err.h"             // ErrorList
 #include "array.h"              // ArrayStack, ArrayStackEmbed
 #include "builtinops.h"         // CandidateSet
 #include "LangOptions.h"        // bool3
@@ -81,7 +80,7 @@ ENUM_BITWISE_OPS(MakeNewCompoundFlags, MNC_ALL)
 
 
 // the entire semantic analysis state
-class Env : protected ErrorList {
+class Env {
 protected:   // data
   // bound to '*this'; facilitates moving code into and out of Env
   Env &env;
@@ -130,15 +129,6 @@ public:      // data
   // when true, we are re-typechecking part of a class definition,
   // hence the names encountered should already be declared, etc.
   bool secondPassTcheck;
-
-  // list of error messages; during disambiguation, the existing
-  // list is set aside, so 'errors' only has errors from the
-  // disambiguation we're doing now (if any)
-  ErrorList &errors;                 // reference to '*this'
-
-  // if the disambiguator has temporarily hidden the "real" list of
-  // errors, it can still be found here
-  ErrorList *hiddenErrors;           // (nullable serf stackptr)
 
   // Diagnotics.
   Diagnostic& diag;
@@ -579,23 +569,23 @@ public:      // funcs
   // return true if the given list of errors contain any which
   // are disambiguating errors
   bool hasDisambErrors() const
-    { return errors.hasDisambErrors() || diag.NumberOf(ellcc::DIAG_DISAMBIGUATES) > 0; }
+    { return diag.NumberOf(ellcc::DIAG_DISAMBIGUATES) > 0; }
 
   // return true if environment modifications should be suppressed
   // because of disambiguating errors
   bool disambErrorsSuppressChanges() const
-    { return disambiguationNestingLevel>0 && hasDisambErrors(); }
+    { return disambiguationNestingLevel > 0 && hasDisambErrors(); }
 
   /* Total number of dignostics.
    */
   int numBiags() const
-    { return errors.count() + diag.getNumDiagnostics(); }
+    { return diag.getNumDiagnostics(); }
   /** How many errors (if any) resulted.
    */
-  int numErrors() const { return errors.numErrors() + diag.getNumErrors(); }
+  int numErrors() const { return diag.getNumErrors(); }
   /** How many warnings (if any) resulted.
    */
-  int numWarnings() const { return errors.numWarnings() + diag.getNumWarnings(); }
+  int numWarnings() const { return diag.getNumWarnings(); }
 
   // report on unsearched base classes; "" if none
   sm::string unsearchedDependentBases();
@@ -1148,7 +1138,6 @@ public:      // data
   Env &env;                    // tcheck env
   int origNestingLevel;        // original value of env.disambiguationNestingLevel
   bool origSecondPass;         // original value of env.secondPassTcheck
-  ErrorList origErrors;        // errors extant before instantiation
 
 private:     // disallowed
   InstantiationContextIsolator(InstantiationContextIsolator&);
@@ -1164,23 +1153,18 @@ public:      // funcs
 class SuppressErrors {
 private:
   Env &env;               // relevant environment
-  ErrorList existing;     // errors before the operation
 
 public:
   SuppressErrors(Env &e)
   : env(e)
   {
     // squirrel away the good messages
-    existing.takeMessages(env.errors);
     env.push();
   }
 
   ~SuppressErrors() {
     // get rid of any messages added in the meantime
-    env.errors.deleteAll();
-
     // put back the good ones
-    env.errors.takeMessages(existing);
     env.pop();
   }
 };
@@ -1206,7 +1190,6 @@ public:
 class DisambiguationErrorTrapper {
 public:      // data
     Env &env;
-    ErrorList existingErrors;       // saved messages
 
 public:      // funcs
     DisambiguationErrorTrapper(Env &env);

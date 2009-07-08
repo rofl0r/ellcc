@@ -229,7 +229,6 @@ static void handle_xBase(Env &env, xBase &x)
 {
   // typically an assertion failure from the tchecker; catch it here
   // so we can print the errors, and something about the location
-  env.errors.print(std::cout);
   std::cout << x << std::endl;
   std::cout << "Failure probably related to code near " << env.locStr() << std::endl;
 
@@ -406,7 +405,6 @@ int Elsa::doit(Preprocessor& PP,
         // Delta might see it.  If I am intending to minimize an assertion
         // failure, it's no good if Delta introduces an error.
         env.report(SourceLocation(), diag::err_parse_confused);
-        env.errors.print(std::cout);
         return 4;
       }
 
@@ -429,7 +427,6 @@ int Elsa::doit(Preprocessor& PP,
     }
 
     int numErrors = env.numErrors();
-    int numWarnings = env.numWarnings();
 
     // do this now so that 'printTypedAST' will include CFG info
     #ifdef CFG_EXTENSION
@@ -455,22 +452,13 @@ int Elsa::doit(Preprocessor& PP,
       structurePrint(unit);
     }
 
-    if (numErrors==0 && tracingSys("secondTcheck")) {
+    if (numErrors == 0 && tracingSys("secondTcheck")) {
       // this is useful to measure the cost of disambiguation, since
       // now the tree is entirely free of ambiguities
       traceProgress() << "beginning second tcheck...\n";
       EllccEnv env2(PP, strTable, tfac, madeUpVariables, builtinVars, unit);
       unit->tcheck(env2);
       traceProgress() << "end of second tcheck\n";
-    }
-
-    // print errors and warnings
-    env.errors.print(std::cout);
-
-    if (numErrors || numWarnings) {
-        std::cout << "typechecking results:\n"
-            << "  errors:   " << numErrors << "\n"
-            << "  warnings: " << numWarnings << "\n";
     }
 
     if (numErrors != 0 || env.diag.hasErrorOccurred()) {

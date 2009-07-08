@@ -132,7 +132,6 @@ NODE *resolveAmbiguity(
       }
       catch (x_assert &x) {
         HANDLER();
-        env.errors.markAllAsFromDisamb();
         env.mark(DIAG_FROM_DISAMB);
         env.pop();
         throw;

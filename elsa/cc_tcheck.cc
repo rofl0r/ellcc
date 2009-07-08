@@ -131,33 +131,17 @@ inline T *mustBeNonNull(T *ptr)
 }
 
 // ------------------- UninstTemplateErrorFilter ------------------
-// filter that keeps only strong messages
-bool strongMsgFilter(ErrorMsg *msg)
-{
-  if (msg->flags & EF_STRONG) {
-    // keep it
-    return true;
-  }
-  else {
-    // drop it
-    TRACE("error", "dropping error arising from uninst template: " << msg->msg);
-    return false;
-  }
-}
-
 
 // take the errors, and later put them back after filtering
 class UninstTemplateErrorFilter {
     Env &env;                  // environment
-    ErrorList existingErrors;  // saved messages
     bool suppressErrors;
 
 public:
     UninstTemplateErrorFilter(Env &e, bool suppressErrors = false)
-        : env(e), existingErrors(), suppressErrors(suppressErrors)
+        : env(e), suppressErrors(suppressErrors)
     {
         if (suppressErrors) {
-            existingErrors.takeMessages(env.errors);
             env.push();
         }
     }
@@ -165,9 +149,6 @@ public:
     ~UninstTemplateErrorFilter()
     {
         if (suppressErrors) {
-            env.errors.filter(strongMsgFilter);
-            env.errors.prependMessages(existingErrors);
-            
             env.filter(DIAG_STRONG);
             env.pop();
         }
@@ -1178,8 +1159,6 @@ void tcheckPQName(PQName *&name, Env &env, Scope *scope, LookupFlags lflags)
       qual->templArgs->tcheck(env, sarg);
 
       // discard errors (other than those saved in 'trapper')
-      ErrorList discard;
-      discard.takeMessages(env.errors);
       env.discard();
     }
 
@@ -5184,9 +5163,7 @@ void Expression::tcheck(Env &env, Expression *&replacement)
     IFDEBUG( SourceLocation loc = env.loc(); )
     TRACE("disamb", toString(loc) << ": ambiguous: E_funCall vs. E_constructor");
 
-    // grab errors
-    ErrorList existing;
-    existing.takeMessages(env.errors);
+    // Create a new error context.
     env.push();
 
     // common case: function call
@@ -5197,7 +5174,6 @@ void Expression::tcheck(Env &env, Expression *&replacement)
       // ok, finish up; it's safe to assume that the E_constructor
       // interpretation would fail if we tried it
       TRACE("disamb", toString(loc) << ": selected E_funCall");
-      env.errors.prependMessages(existing);
       // Restore the old diagnostics and use the newly generated ones.
       env.pop();
       call->type = call->inner2_itcheck(env, candidates);
@@ -5209,17 +5185,12 @@ void Expression::tcheck(Env &env, Expression *&replacement)
     // Create a new error environment, saveing the E_funCall errors.
     env.push();
 
-    // grab the errors from trying E_funCall
-    ErrorList funCallErrors;
-    funCallErrors.takeMessages(env.errors);
-
     // try the E_constructor interpretation
     TRACE("disamb", toString(loc) << ": considering E_constructor");
     ctor->inner1_itcheck(env);
     if (!env.hasDisambErrors()) {
       // ok, finish up
       TRACE("disamb", toString(loc) << ": selected E_constructor");
-      env.errors.prependMessages(existing);
       // Restore the old diagnostics and use the newly generated ones.
       env.pop();
       // Get rid of the E_funCall errors.
@@ -5245,10 +5216,6 @@ void Expression::tcheck(Env &env, Expression *&replacement)
 
     // Get the E_funCall errors.
     env.pop();
-
-    env.errors.deleteAll();
-    env.errors.takeMessages(existing);
-    env.errors.takeMessages(funCallErrors);
 
     // 10/20/04: Need to give a type anyway.
     this->type = env.errorType();
@@ -6125,7 +6092,7 @@ static Variable *outerResolveOverload_explicitSet(
 
   // resolve overloading
   bool wasAmbig;     // ignored, since error will be reported
-  return resolveOverload(env, loc, &env.errors,
+  return resolveOverload(env, loc, true,
                          OF_METHODS,    // TODO: always assume OF_METHODS in 'resolveOverload'
                          candidates, finalName, argInfo, wasAmbig,
                          varName);
@@ -7129,7 +7096,7 @@ static Type *internalTestingHooks
         int actualLine = ploc.getLine();
         if (expectLine != actualLine) {
           env.report(env.loc(), diag::err_test_overload_line)
-            << expectLine << actualLine << EF_STRONG;
+            << expectLine << actualLine << DIAG_STRONG;
         }
       }
       else if (expectLine != 0) {
@@ -8054,7 +8021,7 @@ Type *resolveOverloadedUnaryOperator(
     getArgumentInfo(env, args[0], expr);
 
     // prepare resolver
-    OverloadResolver resolver(env, env.loc(), &env.errors,
+    OverloadResolver resolver(env, env.loc(), true,
                               OF_OPERATOR,
                               NULL, // I assume operators can't have explicit template arguments
                               args, opName);
@@ -8165,7 +8132,7 @@ Type *resolveOverloadedBinaryOperator(
     }
 
     // prepare the overload resolver
-    OverloadResolver resolver(env, env.loc(), &env.errors,
+    OverloadResolver resolver(env, env.loc(), true,
                               OF_OPERATOR,
                               NULL, // I assume operators can't have explicit template arguments
                               argInfo, opName, 10 /*numCand*/);
@@ -9109,7 +9076,7 @@ Type *E_cond::itcheck_x(Env &env, Expression *&replacement)
     args[1].type = elType;
 
     // prepare the overload resolver
-    OverloadResolver resolver(env, env.loc(), &env.errors,
+    OverloadResolver resolver(env, env.loc(), true,
                               OF_NONE,
                               NULL, // no template arguments
                               args, "operator?:", 2 /*numCand*/);

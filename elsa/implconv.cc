@@ -244,7 +244,7 @@ ImplicitConversion getImplicitConversion
         argTypes[0] = ArgumentInfo(special, src);
         OVERLOADINDTRACE("overloaded call to constructor " << ct->name);
         bool wasAmbig;
-        ctor = resolveOverload(env, env.loc(), NULL /*errors*/,
+        ctor = resolveOverload(env, env.loc(), false /*errors*/,
                                OF_NO_USER | OF_NO_EXPLICIT,
                                ctor->overload->set, NULL /*finalName*/,
                                argTypes, wasAmbig, ct->name);
@@ -275,7 +275,7 @@ ImplicitConversion getImplicitConversion
   // check for a conversion function
   if (src->asRval()->isCompoundType()) {
     ImplicitConversion conv = getConversionOperator(
-      env, env.loc(), NULL /*errors*/,
+      env, env.loc(), false /*errors*/,
       src, dest);
     if (conv) {
       if (ret) {
@@ -359,11 +359,6 @@ void test_getImplicitConversion(
   Env &env, SpecialExpr special, Type *src, Type *dest,
   int expectedKind, int expectedSCS, int expectedUserLine, int expectedSCS2)
 {
-    // grab existing error messages
-    ErrorList existing;
-    existing.takeMessages(env.errors);
-
-    DiagnosticBuffer buffer;              // Buffering client.
     env.push();
 
     // run our function
@@ -371,10 +366,6 @@ void test_getImplicitConversion(
 
     // turn any resulting messags into warnings, so I can see their
     // results without causing the final exit status to be nonzero
-    env.errors.markAllAsWarnings();
-
-    // put the old messages back
-    env.errors.takeMessages(existing);
     // Grab all the diagnostics.
     env.diag.ErrorsToWarnings();
     env.pop();
