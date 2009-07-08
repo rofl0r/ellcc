@@ -1,4 +1,3 @@
-#
 # 
 # Name the project
 PROJECT(ELLCC)
