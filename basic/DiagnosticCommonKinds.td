@@ -21,6 +21,7 @@ def err_parse_error : Error<"parse error (state %0) at %1">;
 def note_parse_error_token_info : Note<"expected one of these tokens: %0">;
 def note_instantiated_from : Note<"instantiated from:">;
 def note_previous_declaration : Note<"previous declaration is here:">;
+def note_conflicting_declaration : Note<"conflicting declaration is here:">;
 /// note_matching - this is used as a continuation of a previous diagnostic,
 /// e.g. to specify the '(' when we expected a ')'.
 def note_matching : Note<"to match this '%0'">;

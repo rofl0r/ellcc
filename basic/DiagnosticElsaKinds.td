@@ -78,6 +78,20 @@ def err_compile_time_computation_of_range_start
     : Error<"compile-time computation of range start designator array index fails">;
 def err_compile_time_computation_of_range_end
     : Error<"compile-time computation of range end designator array index fails">;
+def warn_nonstandard_variation_in_exception_specs
+    : Warning<"allowing nonstandard variation in exception specifiers "
+              "due to 'extern \"C\"'">;
+def warn_prior_declaration_of_function_mismatch
+    : Warning<"prior declaration of function '%0' had type '%1' but this one uses '%2'">;
+def note_prior_declaration_of_function_mismatch
+    : Note<"this is most likely due to the prior declaration being implied "
+           "by a call to a function before it was declared">;
+def note_prior_declaration_of_function_mismatch_keeping
+    : Note<"keeping the implied, weaker declaration">;
+def warn_array_of_no_size_assumed_to_be_a_complete_type
+    : Warning<"array of no size assumed to be a complete type">;
+def warn_array_sizeof_dynamically_sized_array_not_fully_implemented
+    : Warning<"sizeof dynamically-sized array not fully implemented, size assumed to be 0">;
 
 // GNU extensions.
 def err_goto_type

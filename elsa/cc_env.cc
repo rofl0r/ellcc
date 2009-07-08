@@ -3409,9 +3409,8 @@ Variable *Env::createDeclaration(
       // exn spec will be ignored in favor of the first, which will be
       // unsound if the second allows more exceptions and the function
       // really can throw an exception.
-      warning(stringc << "allowing nonstandard variation in exception specs "
-                      << "(conflicting decl at " << prior->loc
-                      << ") due to extern-C");
+      report(loc, diag::warn_nonstandard_variation_in_exception_specs);
+      report(prior->loc, diag::note_conflicting_declaration);
     }
     else if (PP.getLangOptions().allowImplicitFunctionDecls &&
              prior->hasFlag(DF_FORWARD) &&
@@ -3424,14 +3423,11 @@ Variable *Env::createDeclaration(
       // try to back-patch and do anything clever or sound, we just
       // turn the error into a warning so that the file can go
       // through; this is an unsoundness
-      warning(stringc
-              << "prior declaration of function `" << name
-              << "' at " << prior->loc
-              << " had type `" << prior->type->toString()
-              << "', but this one uses `" << type->toString() << "'."
-              << " This is most likely due to the prior declaration being implied "
-              << "by a call to a function before it was declared.  "
-              << "Keeping the implied, weaker declaration; THIS IS UNSOUND.");
+      report(loc, diag::warn_prior_declaration_of_function_mismatch)
+        << name << prior->type->toString() << type->toString();
+      report(loc, diag::note_prior_declaration_of_function_mismatch);
+      report(loc, diag::note_prior_declaration_of_function_mismatch_keeping);
+      report(prior->loc, diag::note_previous_declaration);
     }
     else if (name == string_main &&
              scope->isGlobalScope()) {
@@ -4079,7 +4075,7 @@ bool Env::ensureCompleteType(unsigned action, Type *type)
   if (type->isArrayType() &&
       type->asArrayType()->size == ArrayType::NO_SIZE) {
     if (PP.getLangOptions().assumeNoSizeArrayHasSizeOne) {
-      warning(stringc << "array of no size assumed to be a complete type");
+      report(loc(), diag::warn_array_of_no_size_assumed_to_be_a_complete_type);
       return true;
     } else {
       // 8.3.4 para 1: this is an incomplete type
@@ -5409,7 +5405,7 @@ Type *Env::sizeofType(Type *t, int &size, Expression * /*nullable*/ expr)
       // symbolic expression...
       size = 0;
 
-      warning("sizeof dynamically-sized array not fully implemented, size assumed to be 0");
+      report(loc(), diag::warn_array_sizeof_dynamically_sized_array_not_fully_implemented);
       TRACE("sizeof", "sizeof(" << (expr? expr->exprToString() : t->toString()) <<
                       ") is dynamic..");
     } else if (t->isArrayType()) {
@@ -5887,11 +5883,6 @@ Type *Env::dependentType()
   return getSimpleType(ST_DEPENDENT);
 }
 
-void Env::warning(rostring msg)
-{
-  return warning(loc(), msg);
-}
-
 Type *Env::needError(Type *t)
 {
   if (t->isSimple(ST_DEPENDENT)) {
@@ -6012,59 +6003,3 @@ sm::string Env::instLocStackString() const
     return sb;
   }
 }
-
-void Env::warning(SourceLocation loc, rostring msg)
-{
-  sm::string instLoc = instLocStackString();
-  TRACE("error", "warning: " << msg << instLoc);
-  errors.addError(new ErrorMsg(loc, msg, EF_WARNING, instLoc));
-}
-
-void Env::unimp(rostring msg)
-{
-  sm::string instLoc = instLocStackString();
-
-  // always print this immediately, because in some cases I will
-  // segfault (typically deref'ing NULL) right after printing this
-  cout << toString(loc()) << ": unimplemented: " << msg << instLoc << endl;
-
-  breaker();
-  errors.addError(new ErrorMsg(
-    loc(), stringc << "unimplemented: " << msg, EF_NONE, instLoc));
-}
-
-// I want this function to always be last in this file, so I can easily
-// find it to put a breakpoint in it.
-void Env::addError(ErrorMsg * /*owner*/ e)
-{
-  sm::string instLoc = instLocStackString();
-  if (instLoc.length()) {
-    e->instLoc = instLoc;
-  }
-
-  if (disambiguateOnly) {
-    e->flags |= EF_FROM_TEMPLATE;
-
-    if (!(e->flags & EF_WARNING) &&
-        !(e->flags & EF_DISAMBIGUATES) &&
-        !(e->flags & EF_STRONG) &&
-        !env.doReportTemplateErrors) {
-      // reduce severity to warning, but strong so it doesn't get
-      // tossed once we come out of template checking, and also
-      // mark with EF_STRICT_ERROR so I can tell this happened
-      e->flags |= EF_WARNING | EF_STRONG | EF_STRICT_ERROR;
-    }
-  }
-
-  TRACE("error", errorFlagBlock(e->flags)
-              << toString(e->loc) << ": " << e->msg << instLoc);
-
-  // breakpoint typically goes on the next line
-  ErrorList::addError(e);
-}
-
-
-// Don't add any more functions below 'Env::error'.  Instead, put them
-// above the divider line that says "diagnostics".
-
-// EOF

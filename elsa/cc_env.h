@@ -562,14 +562,6 @@ public:      // funcs
                         TypeIntr keyword, MakeNewCompoundFlags flags);
 
 
-  // this is for ErrorList clients
-  virtual void addError(ErrorMsg * /*owner*/ obj);
-
-  // diagnostic reports
-  void warning(SourceLocation L, rostring msg);
-  void warning(rostring msg);
-  void unimp(rostring msg);
-
   // diagnostics involving type clashes; will be suppressed
   // if the type is ST_ERROR
   Type *needError(Type *t);
