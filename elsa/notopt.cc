@@ -4,6 +4,9 @@
 
 #include "cc_env.h"    // Env
 #include "trace.h"     // TRACE
+#include "Diagnostic.h"
+
+using namespace ellcc;
 
 // I am certain it is broken on gcc-2.95.3 on x86; maybe it
 // is ok on gcc-3, maybe not ...
@@ -43,9 +46,8 @@ STemplateArgument *Env::makeDefaultTemplateArgument
     }
     catch (XTypeDeduction &x) {
       HANDLER();
-      error(stringc << "could not evaluate default argument `"
-                    << param->defaultParamType->toString() 
-                    << "': " << x.why());
+      report(loc(), diag::err_template_could_not_evaluate_default_argument)
+          << param->defaultParamType->toString() << x.why();
       return NULL;
     }
   }
@@ -60,9 +62,8 @@ STemplateArgument *Env::makeDefaultTemplateArgument
     }
     catch (XTypeDeduction &x) {
       HANDLER();
-      error(stringc << "could not evaluate default argument `"
-                    << param->value->exprToString() 
-                    << "': " << x.why());
+      report(loc(), diag::err_template_could_not_evaluate_default_argument)
+          << param->value->exprToString() << x.why();
       return NULL;
     }
   }

@@ -4,6 +4,9 @@
 
 let Component = "Elsa" in {
 
+// RICH: A thrown error string. Needs to go for i18n.
+def err_thrown : Error<"%0">;
+
 def err_parse_confused : Error<"confused by earlier errors, bailing out">, DefaultFatal;
 def err_parse_rejected_alternative_modified_environment
     : Error<"a rejected alternative modified this environment">;
@@ -386,6 +389,8 @@ def note_template_specialization_not_declared_before_use
            "that uses it">;
 def note_template_previous_instantiation
     : Note<"previous instantiation:">;
+def err_template_could_not_evaluate_default_argument
+    : Error<"could not evaluate default argument '%0': %1">;
 
 def err_incomplete_type_compute_size_of
     : Error<"attempt to compute size of incomplete type '%0'">;

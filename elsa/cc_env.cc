@@ -5409,29 +5409,29 @@ Type *Env::sizeofType(Type *t, int &size, Expression * /*nullable*/ expr)
       // symbolic expression...
       size = 0;
 
-      env.warning("sizeof dynamically-sized array not fully implemented, size assumed to be 0");
+      warning("sizeof dynamically-sized array not fully implemented, size assumed to be 0");
       TRACE("sizeof", "sizeof(" << (expr? expr->exprToString() : t->toString()) <<
                       ") is dynamic..");
     } else if (t->isArrayType()) {
       ArrayType *at = t->asArrayType();
       if (at->size == ArrayType::NO_SIZE &&
-          env.PP.getLangOptions().assumeNoSizeArrayHasSizeOne) {
+          PP.getLangOptions().assumeNoSizeArrayHasSizeOne) {
         // just hacking this for now
-        return env.sizeofType(at->eltType, size, expr);
+        return sizeofType(at->eltType, size, expr);
       } else {
-        env.error(e.why());
-        return env.errorType();
+        report(loc(), diag::err_thrown) << e.why();
+        return errorType();
       }
     } else {
-      env.error(e.why());
-      return env.errorType();
+      report(loc(), diag::err_thrown) << e.why();
+      return errorType();
     }
   }
 
   // 5.3.3p6: result is of type 'size_t'; most systems (including my
   // elsa/include/stddef.h header) make that the same as 'unsigned';
   // in any case, it must be an unsigned integer type (c99, 7.17p2)
-  return t->isError()? t : env.getSimpleType(ST_UNSIGNED_INT);
+  return t->isError()? t : getSimpleType(ST_UNSIGNED_INT);
 }
 
 
@@ -5887,12 +5887,6 @@ Type *Env::dependentType()
   return getSimpleType(ST_DEPENDENT);
 }
 
-void Env::error(rostring msg, ErrorFlags eflags)
-{
-  error(loc(), msg, eflags);
-}
-
-
 void Env::warning(rostring msg)
 {
   return warning(loc(), msg);
@@ -6017,11 +6011,6 @@ sm::string Env::instLocStackString() const
 
     return sb;
   }
-}
-
-void Env::error(SourceLocation L, rostring msg, ErrorFlags eflags)
-{
-  addError(new ErrorMsg(L, msg, eflags));
 }
 
 void Env::warning(SourceLocation loc, rostring msg)

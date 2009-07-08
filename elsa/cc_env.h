@@ -566,8 +566,6 @@ public:      // funcs
   virtual void addError(ErrorMsg * /*owner*/ obj);
 
   // diagnostic reports
-  void error(SourceLocation L, rostring msg, ErrorFlags eflags = EF_NONE);
-  void error(rostring msg, ErrorFlags eflags = EF_NONE);
   void warning(SourceLocation L, rostring msg);
   void warning(rostring msg);
   void unimp(rostring msg);
