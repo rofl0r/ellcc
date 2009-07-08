@@ -639,7 +639,15 @@ def err_overload_failed_to_resolve_address_of_function
     : Error<"failed to resolve address of of overloaded function "
             "'%0' assigned to type '%1'">;
 def err_overload_no_viable_candidate
-    : Error<"no viable candidate for %select{function call|operator}0; '%1'">;
+    : Error<"no viable candidate for %select{function call|operator}0">;
+def note_overload_argument
+    : Note<"argument %0: '%1'">;
+def note_overload_argument_special
+    : Note<"argument %0: '%1' (%2)">;
+def note_overload_argument_overload
+    : Note<"overloaded argument %0: '%1'">;
+def note_overload_argument_overload_special
+    : Note<"overloaded argument %0: '%1' (%2)">;
 def err_overload_ambiguous
     : Error<"ambiguous overload call to '%0'">;
 def err_overload_or_conversion_ambiguous

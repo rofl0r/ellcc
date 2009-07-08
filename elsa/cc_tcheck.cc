@@ -79,15 +79,6 @@ void compareCtorArgsToParams(Env &env, Variable *ctor,
                              FakeList<ArgExpression> *args,
                              ArgumentInfoArray &argInfo);
 
-
-
-// return true if the list contains no disambiguating errors
-bool noDisambErrors(ErrorList const &list)
-{
-  return !list.hasDisambErrors();
-}
-
-
 // 'ambiguousNodeName' is a template function in generic_amb.h, but
 // declarators are special, since there's only one node type; the
 // difference lies in the values of the fields (ah, the beauty of C++
@@ -5202,7 +5193,7 @@ void Expression::tcheck(Env &env, Expression *&replacement)
     TRACE("disamb", toString(loc) << ": considering E_funCall");
     LookupSet candidates;
     call->inner1_itcheck(env, candidates);
-    if (noDisambErrors(env.errors) && env.diag.NumberOf(DIAG_DISAMBIGUATES) == 0) {
+    if (!env.hasDisambErrors()) {
       // ok, finish up; it's safe to assume that the E_constructor
       // interpretation would fail if we tried it
       TRACE("disamb", toString(loc) << ": selected E_funCall");
@@ -5225,7 +5216,7 @@ void Expression::tcheck(Env &env, Expression *&replacement)
     // try the E_constructor interpretation
     TRACE("disamb", toString(loc) << ": considering E_constructor");
     ctor->inner1_itcheck(env);
-    if (noDisambErrors(env.errors) && env.diag.NumberOf(DIAG_DISAMBIGUATES) == 0) {
+    if (!env.hasDisambErrors()) {
       // ok, finish up
       TRACE("disamb", toString(loc) << ": selected E_constructor");
       env.errors.prependMessages(existing);

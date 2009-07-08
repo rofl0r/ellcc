@@ -725,7 +725,35 @@ Candidate const *OverloadResolver::resolveCandidate(bool &wasAmbig)
                 // Try to construct a meaningful error message.
       
                 env.report(env.loc(), diag::err_overload_no_viable_candidate)
-                    << !!(flags & OF_OPERATOR) << argInfoString();
+                    << !!(flags & OF_OPERATOR);
+                for (int i=0; i < args.size(); i++) {
+                    if (args[i].overloadSet.isEmpty() &&
+                        !args[i].type) {
+                        continue;      // don't print anything
+                    }
+
+                    if (args[i].overloadSet.isNotEmpty()) {
+                        SFOREACH_OBJLIST_NC(Variable, args[i].overloadSet, iter) {
+                            if (args[i].special) {
+                                env.report(env.loc(), diag::note_overload_argument_overload_special)
+                                    << i << iter.data()->type->toString()
+                                    << toString(args[i].special);
+                            } else {
+                                env.report(env.loc(), diag::note_overload_argument_overload)
+                                    << i << iter.data()->type->toString();
+                            }
+                        }
+                    } else {
+                        if (args[i].special) {
+                            env.report(env.loc(), diag::note_overload_argument_special)
+                                << i << args[i].type->toString()
+                                << toString(args[i].special);
+                        } else {
+                            env.report(env.loc(), diag::note_overload_argument)
+                                << i << args[i].type->toString();
+                        }
+                    }
+                }
 
                 if (origCandidates.length()) {
                     for (int i=0; i<origCandidates.length(); i++) {
