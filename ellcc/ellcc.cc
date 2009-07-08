@@ -2531,7 +2531,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
             }
           
             if (PrintEachXForm)
-                Passes.add(createPrintModulePass(&errs()));
+                Passes.add(createPrintModulePass(&outs()));
         }
     
         // Check that the module is well formed on completion of optimization
@@ -2903,7 +2903,7 @@ int main(int argc, char **argv)
             NoColorDiagnostic.setValue(!llvm::sys::Process::StandardErrHasColors());
         }
 
-        DiagClient.reset(new TextDiagnosticPrinter(llvm::errs(),
+        DiagClient.reset(new TextDiagnosticPrinter(llvm::outs(),
                                                    !NoShowColumn,
                                                    !NoCaretDiagnostics,
                                                    !NoShowLocation,

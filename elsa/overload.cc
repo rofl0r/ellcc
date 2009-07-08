@@ -156,7 +156,7 @@ bool isProperSubpath(CompoundType const *LS, CompoundType const *LD,
 Variable *resolveOverload(
   Env &env,
   SourceLocation loc,
-  ErrorList * /*nullable*/ errors,
+  bool errors,
   OverloadFlags flags,
   SObjList<Variable> &varList,
   PQName *finalName,
@@ -172,7 +172,7 @@ Variable *resolveOverload(
 
 
 OverloadResolver::OverloadResolver
-  (Env &en, SourceLocation L, ErrorList *er,
+  (Env &en, SourceLocation L, bool er,
    OverloadFlags f,
    PQName *finalName0,
    GrowArray<ArgumentInfo> &a,
@@ -710,104 +710,93 @@ bool OverloadResolver::argsContainError() const
 
 Candidate const *OverloadResolver::resolveCandidate(bool &wasAmbig)
 {
-  wasAmbig = false;
+    wasAmbig = false;
 
-  if (candidates.isEmpty()) {
-    if (emptyCandidatesIsOk) {
-      return NULL;      // caller is prepared to deal with this
-    }
-
-    if (errors) {
-      // try to construct a meaningful error message; it does not
-      // end with a newline since the usual error reporting mechanism
-      // adds one
-      stringBuilder sb;
-      sb << "no viable candidate for "
-         << ((flags & OF_OPERATOR)? "operator; " : "function call; ")
-         << argInfoString();
-      if (origCandidates.length()) {
-        sb << " original candidates:";
-        for (int i=0; i<origCandidates.length(); i++) {
-          Variable *v = origCandidates[i];
-
-          // it might be nice to go further and explain why this
-          // candidate was not viable ...
-          sb << "\n  " << v->loc << ": " << v->toQualifiedString();
+    if (candidates.isEmpty()) {
+        if (emptyCandidatesIsOk) {
+            return NULL;      // caller is prepared to deal with this
         }
-      }
-      else {
-        sb << " (no original candidates)";
-      }
 
-      if (argsContainError()) {
-        OVERLOADTRACE("suppressing error msg b/c args have error type");
-      }
-      else {
-        errors->addError(new ErrorMsg(loc, sb, EF_NONE));
-      }
-    }
-    OVERLOADTRACE("no viable candidates");
-    return NULL;
-  }
+        if (errors) {
+            if (argsContainError()) {
+                OVERLOADTRACE("suppressing error msg b/c args have error type");
+            } else {
 
-  if (finalDestType) {
-    // include this in the diagnostic output so that I can tell
-    // when it will play a role in candidate comparison
-    OVERLOADTRACE("finalDestType: " << finalDestType->toString());
-  }
+                // Try to construct a meaningful error message.
+      
+                env.report(env.loc(), diag::err_overload_no_viable_candidate)
+                    << !!(flags & OF_OPERATOR) << argInfoString();
 
-  // use a tournament to select a candidate that is not worse
-  // than any of those it faced
-  Candidate const *winner = selectBestCandidate(*this, (Candidate const*)NULL);
-  if (!winner) {
-    // if any of the candidates contain variables, then this
-    // conclusion of ambiguity is suspect (in/t0573.cc)
-    for (int i=0; i<candidates.length(); i++) {
-      Variable *v = candidates[i]->var;
-      if (v->type->containsVariables()) {
-        goto ambig_bail;
-      }
+                if (origCandidates.length()) {
+                    for (int i=0; i<origCandidates.length(); i++) {
+                        Variable *v = origCandidates[i];
+
+                        // It might be nice to go further and explain why this
+                        // candidate was not viable ...
+                        env.report(v->loc, diag::note_candidate) <<  v->toQualifiedString();
+                    }
+                }
+            }
+        }
+
+        OVERLOADTRACE("no viable candidates");
+        return NULL;
     }
 
-    if (errors) {
-      stringBuilder sb;
-      sb << "ambiguous overload call to \"" << overloadedVarName
-         << "\"; " << argInfoString() << " candidates:";
-      for (int i=0; i<candidates.length(); i++) {
-        Variable *v = candidates[i]->var;
-        sb << "\n  " << v->loc << ": " << v->toQualifiedString();
-      }
-      errors->addError(new ErrorMsg(loc, sb, EF_NONE));
+    if (finalDestType) {
+        // include this in the diagnostic output so that I can tell
+        // when it will play a role in candidate comparison
+        OVERLOADTRACE("finalDestType: " << finalDestType->toString());
     }
 
-  ambig_bail:
-    OVERLOADTRACE("ambiguous overload");
-    wasAmbig = true;
-    return NULL;
-  }
+    // use a tournament to select a candidate that is not worse
+    // than any of those it faced
+    Candidate const *winner = selectBestCandidate(*this, (Candidate const*)NULL);
+    if (!winner) {
+        // if any of the candidates contain variables, then this
+        // conclusion of ambiguity is suspect (in/t0573.cc)
+        for (int i=0; i<candidates.length(); i++) {
+            Variable *v = candidates[i]->var;
+            if (v->type->containsVariables()) {
+                goto ambig_bail;
+            }
+        }
 
-  OVERLOADTRACE(toString(loc)
-    << ": selected " << winner->var->toString()
-    << " at " << toString(winner->var->loc));
+        if (errors) {
+            env.report(env.loc(), diag::err_overload_ambiguous) << overloadedVarName;
+            for (int i=0; i<candidates.length(); i++) {
+                Variable *v = candidates[i]->var;
+                env.report(v->loc, diag::note_candidate) <<  v->toQualifiedString();
+            }
+        }
 
-  if (winner->hasAmbigConv()) {
-    // At least one of the conversions required for the winning candidate
-    // is ambiguous.  This might actually mean, had we run the algorithm
-    // as specified in the spec, that there's an ambiguity among the
-    // candidates, since I fold some of that into the selection of the
-    // conversion, for polymorphic built-in operator candidates.  Therefore,
-    // this situation should appear to the caller the same as when we
-    // definitely do have ambiguity among the candidates.
-    if (errors) {
-      errors->addError(new ErrorMsg(
-        loc, "ambiguous overload or ambiguous conversion", EF_NONE));
+    ambig_bail:
+        OVERLOADTRACE("ambiguous overload");
+        wasAmbig = true;
+        return NULL;
     }
-    OVERLOADTRACE("ambiguous overload or ambiguous conversion");
-    wasAmbig = true;
-    return NULL;
-  }
 
-  return winner;
+    OVERLOADTRACE(toString(loc)
+        << ": selected " << winner->var->toString()
+        << " at " << toString(winner->var->loc));
+
+    if (winner->hasAmbigConv()) {
+        // At least one of the conversions required for the winning candidate
+        // is ambiguous.  This might actually mean, had we run the algorithm
+        // as specified in the spec, that there's an ambiguity among the
+        // candidates, since I fold some of that into the selection of the
+        // conversion, for polymorphic built-in operator candidates.  Therefore,
+        // this situation should appear to the caller the same as when we
+        // definitely do have ambiguity among the candidates.
+        if (errors) {
+            env.report(env.loc(), diag::err_overload_or_conversion_ambiguous);
+        }
+        OVERLOADTRACE("ambiguous overload or ambiguous conversion");
+        wasAmbig = true;
+        return NULL;
+    }
+
+    return winner;
 }
 
 
@@ -1626,7 +1615,7 @@ bool isCompoundType_orConstRefTo(Type const *t)
 ImplicitConversion getConversionOperator(
   Env &env,
   SourceLocation loc,
-  ErrorList * /*nullable*/ errors,
+  bool errors,
   Type *srcClassType,
   Type *destType
 ) {
@@ -1803,7 +1792,7 @@ ImplicitConversion getConversionOperator(
 ImplicitConversion getPointerConversionOperator(
   Env &env,
   SourceLocation loc,
-  ErrorList * /*nullable*/ errors,
+  bool errors,
   Type *srcClassType
 ) {
   CompoundType *srcClass = srcClassType->asRval()->asCompoundType();

@@ -144,7 +144,7 @@ public:      // data
   // same meaning as corresponding arguments to 'resolveOverload'
   Env &env;
   SourceLocation loc;
-  ErrorList * /*nullable*/ errors;
+  bool errors;
   OverloadFlags flags;
   PQName * /*nullable*/ finalName;
   ArgumentInfoArray &args;
@@ -177,7 +177,7 @@ public:      // funcs
   // the ctor parameters mean the same as in 'resolveOverload'
   OverloadResolver(Env &env, 
                    SourceLocation loc,
-                   ErrorList * /*nullable*/ errors,
+                   bool errors,
                    OverloadFlags flags,
                    PQName * /*nullable*/ finalName,
                    ArgumentInfoArray &args,
@@ -238,8 +238,8 @@ Variable *selectBestCandidate_templCompoundType(TemplCandidates &resolver);
 // NULL
 Variable *resolveOverload(
   Env &env,                        // environment in which to perform lookups
-  SourceLocation loc,                   // location for error reports
-  ErrorList * /*nullable*/ errors, // where to insert errors; if NULL, don't
+  SourceLocation loc,              // location for error reports
+  bool errors,                     // false if no errors.
   OverloadFlags flags,             // various options
   SObjList<Variable> &list,        // list of overloaded possibilities
   PQName * /*nullable*/ finalName, // for any explicit template arguments; NULL for ctors
@@ -266,7 +266,7 @@ Variable *resolveOverload(
 ImplicitConversion getConversionOperator(
   Env &env,
   SourceLocation loc,
-  ErrorList * /*nullable*/ errors,
+  bool errors,
   Type *srcClassType,      // must be a compound (or reference to one)
   Type *destType
 );
@@ -277,7 +277,7 @@ ImplicitConversion getConversionOperator(
 ImplicitConversion getPointerConversionOperator(
   Env &env,
   SourceLocation loc,
-  ErrorList * /*nullable*/ errors,
+  bool  errors,
   Type *srcClassType      // must be a compound (or reference to one)
 );
 
