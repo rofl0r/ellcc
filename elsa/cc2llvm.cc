@@ -38,7 +38,7 @@ CC2LLVMEnv::CC2LLVMEnv(StringTable &s, sm::string name, const TranslationUnit& i
   : str(s),
     TI(TI),
     TD(""),
-    targetFolder(&TD),
+    targetFolder(&TD, &context),
     input(input),
     mod(new llvm::Module(name.c_str(), context)),
     function(NULL),
@@ -51,7 +51,8 @@ CC2LLVMEnv::CC2LLVMEnv(StringTable &s, sm::string name, const TranslationUnit& i
     nextBlock(NULL),
     switchInst(NULL),
     switchType(NULL),
-    builder(targetFolder)
+    builder(context, targetFolder),
+    context(context)
 { 
     std::string str;
     TI.getTargetDescription(str);
@@ -478,8 +479,8 @@ llvm::Value* CC2LLVMEnv::declaration(const Variable* var, llvm::Value* init, int
             VDEBUG("global initializer", var->loc, init->print(std::cerr));
         }
         if (gv == NULL) {
-            gv = new llvm::GlobalVariable(type, false,	// RICH: isConstant
-                    getLinkage(var->flags), (llvm::Constant*)init, makeName(var)->name, mod);	// RICH: cast
+            gv = new llvm::GlobalVariable(*mod, type, false,	// RICH: isConstant
+                    getLinkage(var->flags), (llvm::Constant*)init, makeName(var)->name);	// RICH: cast
             variables.add(var, gv);
         } else {
             if (init) {
@@ -1326,7 +1327,9 @@ llvm::Value *E_stringLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
     const llvm::Type* at = env.makeTypeSpecifier(loc, type->asReferenceType()->atType);
     VDEBUG("E_stringLit", loc, at->print(std::cerr));
     // RICH: Non-constant strings?
-    llvm::Value* result = new llvm::GlobalVariable(at, true, llvm::GlobalValue::InternalLinkage, c, ".str", env.mod);
+    llvm::Value* result = new llvm::GlobalVariable(*env.mod, at, true,
+                                                   llvm::GlobalValue::InternalLinkage,
+                                                   c, ".str");
 
 #if RICH
     // Get the address of the string as an open array.

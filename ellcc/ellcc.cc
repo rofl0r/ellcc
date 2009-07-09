@@ -2718,7 +2718,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
 #endif
 
             // Ask the target to add backend passes as necessary.
-            MachineCodeEmitter *MCE = 0;
+            ObjectCodeEmitter *OCE = 0;
 
             switch (Target.addPassesToEmitFile(Passes, *Out, FileType, getCodeGenOpt())) {
                 default:
@@ -2736,14 +2736,14 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
                 case FileModel::AsmFile:
                     break;
                 case FileModel::MachOFile:
-                    MCE = AddMachOWriter(Passes, *Out, Target);
+                    OCE = AddMachOWriter(Passes, *Out, Target);
                     break;
                 case FileModel::ElfFile:
-                    MCE = AddELFWriter(Passes, *Out, Target);
+                    OCE = AddELFWriter(Passes, *Out, Target);
                     break;
             }
 
-            if (Target.addPassesToEmitFileFinish(Passes, MCE, getCodeGenOpt())) {
+            if (Target.addPassesToEmitFileFinish(Passes, OCE, getCodeGenOpt())) {
                 std::cerr << progname << ": target does not support generation of this"
                     << " file type!\n";
                 if (Out != &outs()) delete Out;

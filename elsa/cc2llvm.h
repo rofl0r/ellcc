@@ -244,6 +244,9 @@ public:      // funcs
     /** The LLVM Builder.
      */
     llvm::IRBuilder<true, llvm::TargetFolder> builder;
+    /** The LLVM context.
+     */
+    llvm::LLVMContext& context;
 };
 
 #endif // CC2LLVM_H
