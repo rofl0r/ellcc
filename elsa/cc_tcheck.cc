@@ -418,6 +418,7 @@ void Function::tcheck(Env &env, Variable *instV)
   bool oldCanContinue = env.canContinue;
   env.canContinue = false;
   env.labels.clear();
+  env.forwardLabels.clear();
 
   if (env.secondPassTcheck) {
     // for the second pass, just force the use of the
@@ -505,6 +506,12 @@ void Function::tcheck(Env &env, Variable *instV)
 
   if (checkBody) {
     tcheckBody(env);
+  }
+
+  Env::labelmap::iterator it;
+  for(it = env.forwardLabels.begin(); it != env.forwardLabels.end(); ++it) {
+      env.report(it->second, diag::err_label_not_found)
+        << it->first;
   }
 
   env.canBreak = oldCanBreak;
@@ -4727,6 +4734,12 @@ void S_label::itcheck(Env &env)
       env.report(it->second, diag::note_label_duplicate);
   }
  
+  // Check for forward references.
+  it = env.forwardLabels.find(name);
+  if (it != env.forwardLabels.end()) {
+      env.forwardLabels.erase(it);
+  }
+ 
   // this is a prototypical instance of typechecking a
   // potentially-ambiguous subtree; we have to change the
   // pointer to whatever is returned by the tcheck call
@@ -4934,7 +4947,6 @@ void S_return::itcheck(Env &env)
   }
 }
 
-
 void S_goto::itcheck(Env &env)
 {
   // Check that the label exists.
@@ -4942,17 +4954,14 @@ void S_goto::itcheck(Env &env)
   it = env.labels.find(target);
   if (it == env.labels.end()) {
       // Not found.
-      env.report(loc, diag::err_label_not_found)
-        << target << SourceRange(loc, endloc);
+      env.forwardLabels.insert(std::pair<StringRef, SourceLocation>(target, loc));
   }
 }
-
 
 void S_decl::itcheck(Env &env)
 {
   decl->tcheck(env, DC_S_DECL);
 }
-
 
 void S_try::itcheck(Env &env)
 {
@@ -5752,11 +5761,12 @@ Type *E_charLit::itcheck_x(Env &env, Expression *&replacement)
   }
 
   data->setAllocated(data->getDataLen());
+  int len = data->getDataLen() / simpleTypeSizeInBytes(env.PP.getTargetInfo(), id);
   
-  if (data->getDataLen() == 0) {
+  if (len == 0) {
     env.report(loc, diag::err_char_literal_with_no_characters);
     return env.errorType();
-  } else if (data->getDataLen() > 1) {
+  } else if (len > 1) {
     // below I only store the first byte
     //
     // technically, this is ok, since multicharacter literal values

@@ -290,6 +290,7 @@ public:      // data
    */
   typedef std::map<StringRef, SourceLocation> labelmap;
   labelmap labels;
+  labelmap forwardLabels;
 private:     // funcs
   // old
   //CompoundType *instantiateClass(
