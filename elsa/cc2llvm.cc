@@ -3,24 +3,27 @@
 
 #include "datablok.h"
 #include "exprloc.h"
+#include "cc2llvm.h"            // this module
+#include "TargetInfo.h"         // TargetInfo
+#include "SourceManager.h"      // SourceManager
+#include "ElsaDiagnostic.h"
 
 // LLVM
-#include <llvm/LLVMContext.h>
-#include <llvm/Module.h>
-#include <llvm/DerivedTypes.h>
-#include <llvm/Constants.h>
-#include <llvm/GlobalVariable.h>
-#include <llvm/Function.h>
-#include <llvm/CallingConv.h>
-#include <llvm/BasicBlock.h>
-#include <llvm/Instructions.h>
-#include <llvm/InlineAsm.h>
-#include <llvm/Intrinsics.h>
-#include <llvm/Support/MathExtras.h>
-#include <llvm/Analysis/Verifier.h>
+#include "llvm/LLVMContext.h"
+#include "llvm/Module.h"
+#include "llvm/DerivedTypes.h"
+#include "llvm/Constants.h"
+#include "llvm/GlobalVariable.h"
+#include "llvm/Function.h"
+#include "llvm/CallingConv.h"
+#include "llvm/BasicBlock.h"
+#include "llvm/Instructions.h"
+#include "llvm/InlineAsm.h"
+#include "llvm/Intrinsics.h"
+#include "llvm/Support/MathExtras.h"
+#include "llvm/Analysis/Verifier.h"
+#include "llvm/Type.h"
 
-#include "cc2llvm.h"         // this module
-#include "TargetInfo.h"
 using namespace ellcc;
 
 #define SRET 1
@@ -34,9 +37,10 @@ using namespace ellcc;
 
 // -------------------- CC2LLVMEnv ---------------------
 CC2LLVMEnv::CC2LLVMEnv(StringTable &s, sm::string name, const TranslationUnit& input,
-                       TargetInfo& TI, llvm::LLVMContext& context)
+                       TargetInfo& TI, Diagnostic& diags, llvm::LLVMContext& context)
   : str(s),
     TI(TI),
+    diags(diags),
     TD(""),
     targetFolder(&TD, &context),
     input(input),
@@ -63,6 +67,14 @@ CC2LLVMEnv::CC2LLVMEnv(StringTable &s, sm::string name, const TranslationUnit& i
 
 CC2LLVMEnv::~CC2LLVMEnv()
 {
+}
+
+/** Send a diagnostic message.
+ */
+DiagnosticBuilder CC2LLVMEnv::report(SourceLocation loc, unsigned DiagID)
+{
+    SourceManager SM;
+    return diags.Report(FullSourceLoc(loc, SM), DiagID);
 }
 
 static llvm::GlobalValue::LinkageTypes getLinkage(DeclFlags flags)
@@ -1148,10 +1160,11 @@ void S_asm::cc2llvm(CC2LLVMEnv &env) const
     std::vector<const llvm::Type*> rwargTypes;
     stringBuilder constraints;
     bool first = true;
+    Asm& d = *def;
 
-    if (def->constraints) {
+    if (d.constraints) {
         // Go through the constraints and gather the arguments and types.
-        FOREACH_ASTLIST_NC(Constraint, def->constraints->outputs, c) {
+        FOREACH_ASTLIST_NC(Constraint, d.constraints->outputs, c) {
             Constraint* constraint = c.data();
             Expression*& expr = constraint->e;
             int deref;
@@ -1186,17 +1199,17 @@ void S_asm::cc2llvm(CC2LLVMEnv &env) const
                 rwargTypes.push_back(value->getType());
             }
         }
-        if (def->rwInputs.length()) {
+        if (d.rwInputs.length()) {
            if (!first) {
                 constraints << ',';
             } else {
                 first = false;
             }
-            constraints << def->rwInputs.c_str();
+            constraints << d.rwInputs.c_str();
         }
         args.insert(args.end(), rwargs.begin(), rwargs.end());
         argTypes.insert(argTypes.end(), rwargTypes.begin(), rwargTypes.end());
-        FOREACH_ASTLIST_NC(Constraint, def->constraints->inputs, c) {
+        FOREACH_ASTLIST_NC(Constraint, d.constraints->inputs, c) {
             Constraint* constraint = c.data();
             Expression*& expr = constraint->e;
             int deref;
@@ -1222,11 +1235,137 @@ void S_asm::cc2llvm(CC2LLVMEnv &env) const
         }
     }
 
+    stringBuilder asmstr;       // The built-up asm string.
+    const char* cp = (const char*)d.text->data->getDataC();
+    // Now we can walk through the assembly language string translating it.
+    while (*cp) {
+        if (*cp == '$') {
+            asmstr << "$$";
+            ++cp;
+            continue;
+        }
+
+        if (*cp != '%') {
+            // Anything but '%'.
+            asmstr << *cp++;
+            continue;
+        }
+            
+        // '%'
+        ++cp;
+        if (*cp == '\0') {
+            env.report(d.text->loc, diag::err_asm_end_in_percent);
+            continue;
+        }
+
+        if (*cp == '%') {
+            asmstr << '%';              // Escaped '%' ('%%') becomes '%'.
+            ++cp;
+            continue;
+        }
+
+        if (*cp == '@') {
+            asmstr << '@';             // Escaped '@' ('%@') becomes '@', the start of an ARM comment.
+            ++cp;
+            continue;
+        }
+        if (*cp == '=') {
+            asmstr << "${:uid}";        // Generate a unique ID.
+            ++cp;
+            continue;
+        }
+
+        char modifier = '\0';
+        if (isalpha(*cp)) {
+            modifier = *cp++;
+        }
+
+        if (isdigit(*cp)) {
+            unsigned index = 0;
+            while (isdigit(*cp)) {
+                index = index * 10 + (*cp - '0');
+                ++cp;
+            }
+
+            if (index < d.numOutputs) {
+                if (modifier) {
+                    asmstr << "${" << index << ':' << modifier << "}";
+                } else {
+                    asmstr << '$' << index;
+                }
+            } else if (d.constraints == NULL || index > d.constraints->inputs.count() + d.numOutputs) {
+                env.report(d.text->loc, diag::err_asm_index_has_no_matching_constraint)
+                    << index;
+            } else {
+                // Adjust for '+' output constraints.
+                if (modifier) {
+                    asmstr << "${" << index + d.rwConstraints - d.numOutputs << ':' << modifier << "}";
+                } else {
+                    asmstr << '$' << index + d.rwConstraints - d.numOutputs ;
+                }
+            }
+            continue;
+        }
+
+        if (*cp == '[') {
+            // Translate a position by name.
+            const char* p = strchr(++cp, ']') ;
+            if (p == NULL) {
+                env.report(d.text->loc, diag::err_asm_string_missing_rbracket);
+                continue;
+            } 
+            unsigned index = 0;
+            std::string name(cp, p - cp);
+            if (d.constraints) {
+                FOREACH_ASTLIST_NC(Constraint, d.constraints->outputs, oc) {
+                    if (oc.data()->name && name == oc.data()->name) {
+                        break;
+                    }
+                    ++index;
+                }
+            }
+            if (index < d.numOutputs) {
+                // An output constraint matched.
+                if (modifier) {
+                    asmstr << "${" << index << ':' << modifier << "}";
+                } else {
+                    asmstr << '$' << index;
+                }
+            } else {
+                index = 0;
+                if (d.constraints) {
+                    FOREACH_ASTLIST_NC(Constraint, d.constraints->inputs, ic) {
+                        if (ic.data()->name && name == ic.data()->name) {
+                            break;
+                        }
+                        ++index;
+                    }
+                }
+                if (d.constraints && index < d.constraints->inputs.count() + d.numOutputs) {
+                    if (modifier) {
+                        asmstr << "${" << index - d.numOutputs + d.rwConstraints << ':' << modifier << "}";
+                    } else {
+                        asmstr << '$' << index - d.numOutputs + d.rwConstraints;
+                    }
+                } else {
+                    env.report(d.text->loc, diag::err_asm_name_has_no_matching_constraint)
+                        << name;
+                }
+            }
+
+            cp = p + 1;
+            continue;
+        }
+    
+        // Bad asm construct.
+        env.report(d.text->loc, diag::err_asm_unrecognized_percent);
+        ++cp;
+    }
 
     llvm::FunctionType* type = llvm::FunctionType::get(returnType, argTypes, false);
     VDEBUG("S_asm function type", loc, type->print(std::cerr));
     llvm::InlineAsm* function = llvm::InlineAsm::get(type,
-                                                     (const char*)def->text->data->getDataC(),
+                                                     asmstr.c_str(),
                                                      constraints.c_str(),
                                                      false);
     VDEBUG("S_asm CreateCall call", loc, function->print(std::cerr));
@@ -3181,9 +3320,9 @@ llvm::Module* CC2LLVMEnv::doit()
 
 // ------------------- entry point -------------------
 llvm::Module* cc_to_llvm(sm::string name, StringTable &str, TranslationUnit const &input,
-                         TargetInfo& TI, llvm::LLVMContext& context)
+                         TargetInfo& TI, Diagnostic& diags, llvm::LLVMContext& context)
 {
-    CC2LLVMEnv env(str, name, input, TI, context);
+    CC2LLVMEnv env(str, name, input, TI, diags, context);
     return env.doit();
 }
 

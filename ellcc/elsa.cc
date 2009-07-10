@@ -723,7 +723,10 @@ int Elsa::doit(Preprocessor& PP,
       if (doTime) {
           llvmGenerationTimer.startTimer();
       }
-      mod = cc_to_llvm(outputFname, strTable, *unit, PP.getTargetInfo(), context);
+      mod = cc_to_llvm(outputFname, strTable, *unit,
+                       PP.getTargetInfo(), 
+                       PP.getDiagnostics(),
+                       context);
 
       if (doTime) {
           llvmGenerationTimer.stopTimer();

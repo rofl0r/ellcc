@@ -4,6 +4,7 @@
 #ifndef CC2LLVM_H
 #define CC2LLVM_H
 
+#include "Diagnostic.h"
 #include <llvm/Support/IRBuilder.h>
 #include <llvm/Target/TargetData.h>
 #include <llvm/Support/TargetFolder.h>
@@ -17,12 +18,10 @@ namespace llvm {
     class BasicBlock;
     class Value;
     class SwitchInst;
-};
+}
 
 // Elsa
 #include "cc_ast.h"          // C++ AST
-
-class Env;
 
 // smbase
 #include "ptrmap.h"          // PtrMap
@@ -34,7 +33,8 @@ class Env;
 /** The main translator entry point.
  */
 llvm::Module* cc_to_llvm(sm::string name, StringTable &str, TranslationUnit const &input,
-                         ellcc::TargetInfo& TI, llvm::LLVMContext& context);
+                         ellcc::TargetInfo& TI, ellcc::Diagnostic& diags,
+                         llvm::LLVMContext& context);
 
 
 /** The translation environment.
@@ -51,7 +51,7 @@ public:      // funcs
     /** Construct an LLVM converter.
      */
     CC2LLVMEnv(StringTable &str, sm::string name, const TranslationUnit& input,
-               ellcc::TargetInfo& TI, llvm::LLVMContext& context);
+               ellcc::TargetInfo& TI, ellcc::Diagnostic& diags, llvm::LLVMContext& context);
     /** Destruct an LLVM convertor.
      */
     ~CC2LLVMEnv();
@@ -59,6 +59,12 @@ public:      // funcs
     /** Information about the build environment.
      */
     ellcc::TargetInfo& TI;
+    /** Diagnostic messages.
+     */
+    ellcc::Diagnostic& diags;
+    /** Send a diagnostic message.
+     */
+    ellcc::DiagnosticBuilder report(ellcc::SourceLocation loc, unsigned DiagID);
     /** LLVM information about the target.
      */
     llvm::TargetData TD;

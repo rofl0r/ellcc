@@ -132,6 +132,8 @@ public:      // data
 
   // Diagnotics.
   Diagnostic& diag;
+  /** Send a diagnostic message.
+   */
   DiagnosticBuilder report(SourceLocation loc, unsigned DiagID);
   void diagnose3(bool3 b, SourceLocation L, unsigned DiagID, unsigned NoteID = 0);
 #define DIAGNOSE3(_b, _L, _DiagID, _L2, _NoteID, ...)                           \

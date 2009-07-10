@@ -10,13 +10,10 @@
 #include <string.h>           // strcmp
 #include "datablok.h"
 #include "TargetInfo.h"
+
 using namespace ellcc;
-
-#ifdef LLVM_EXTENSION
-#include "llvm/Type.h"
-#endif
-
 using namespace std;
+
 // fwd in this file
 SimpleTypeId constructFloatingType(int prec, int axis);
 
@@ -740,19 +737,14 @@ void S_computedGoto::itcheck(Env &env)
 
 void Asm::itcheck_constraints(Env &env, bool module)
 {
-#ifdef LLVM_EXTENSION
     stringBuilder inputs;       // The input constraints from '+' constraints.
-    unsigned rwConstraints = 0; // Keep track of the number of '+' constraints.
-    unsigned numInputs = 0;     // The number of input constraints.
-#endif
-    unsigned numOutputs = 0;    // The number of output constraints.
+    rwConstraints = 0;          // Keep track of the number of '+' constraints.
+    numOutputs = 0;             // The number of output constraints.
 
     if (constraints) {
         // Process the output constraints.
         FOREACH_ASTLIST_NC(Constraint, constraints->outputs, c) {
-#ifdef LLVM_EXTENSION
             stringBuilder constring;    // The built-up contraint.
-#endif
             ++numOutputs;
             Constraint* constraint = c.data();
             E_stringLit* constr = constraint->constr;
@@ -776,13 +768,11 @@ void Asm::itcheck_constraints(Env &env, bool module)
                 if (*cp != '=' && *cp != '+') {
                     env.report(constr->loc, diag::err_asm_output_constraint_start);
                 } else {
-#ifdef LLVM_EXTENSION
                     if (*cp == '+') {
                         inputs << ',' << (char)((numOutputs - 1) + '0');
                         ++rwConstraints;
                         constraint->info = TargetInfo::CI_ReadWrite;
                     }
-#endif
                     ++cp;
                 }
 
@@ -819,9 +809,7 @@ void Asm::itcheck_constraints(Env &env, bool module)
                     }
 
 
-#ifdef LLVM_EXTENSION
                     constring << env.convertConstraint(*cp).c_str();
-#endif
                     ++cp;
                 }
             }
@@ -839,9 +827,7 @@ void Asm::itcheck_constraints(Env &env, bool module)
             constraint->string = constring;
         }
 
-#ifdef LLVM_EXTENSION
         rwInputs = inputs;
-#endif
         // Process the input constraints.
         Constraint* last = NULL;
         if (constraints && constraints->inputs.isNotEmpty()) {
@@ -849,10 +835,7 @@ void Asm::itcheck_constraints(Env &env, bool module)
         }
 
         FOREACH_ASTLIST_NC(Constraint, constraints->inputs, c) {
-#ifdef LLVM_EXTENSION
-            ++numInputs;
             stringBuilder constring;    // The built-up contraint list.
-#endif
             Constraint* constraint = c.data();
             E_stringLit* constr = constraint->constr;
             Expression*& expr = constraint->e;
@@ -994,9 +977,7 @@ void Asm::itcheck_constraints(Env &env, bool module)
                         break;
                     }
 
-#ifdef LLVM_EXTENSION
                     constring << result.c_str();
-#endif
                     ++cp;
                 }
             }
@@ -1011,9 +992,7 @@ void Asm::itcheck_constraints(Env &env, bool module)
         }
 
         FOREACH_ASTLIST_NC(Constraint, constraints->clobbers, c) {
-#ifdef LLVM_EXTENSION
             stringBuilder constring;    // The built-up contraint list.
-#endif
             Constraint* constraint = c.data();
             E_stringLit* constr = constraint->constr;
             Expression*& expr = constraint->e;
@@ -1040,139 +1019,6 @@ void Asm::itcheck_constraints(Env &env, bool module)
             constraint->string = constring;
         }
     }
-
-#ifdef LLVM_EXTENSION
-    stringBuilder asmstr;       // The built-up asm string.
-    const char* cp = (const char*)text->data->getDataC();
-    // Now we can walk through the assembly language string translating it.
-    while (*cp) {
-        if (*cp == '$') {
-            asmstr << "$$";
-            ++cp;
-            continue;
-        }
-
-        if (*cp != '%') {
-            // Anything but '%'.
-            asmstr << *cp++;
-            continue;
-        }
-            
-        // '%'
-        ++cp;
-        if (*cp == '\0') {
-            env.report(text->loc, diag::err_asm_end_in_percent);
-            continue;
-        }
-
-        if (*cp == '%') {
-            asmstr << '%';              // Escaped '%' ('%%') becomes '%'.
-            ++cp;
-            continue;
-        }
-
-        if (*cp == '@') {
-            asmstr << '@';             // Escaped '@' ('%@') becomes '@', the start of an ARM comment.
-            ++cp;
-            continue;
-        }
-        if (*cp == '=') {
-            asmstr << "${:uid}";        // Generate a unique ID.
-            ++cp;
-            continue;
-        }
-
-        char modifier = '\0';
-        if (isalpha(*cp)) {
-            modifier = *cp++;
-        }
-
-        if (isdigit(*cp)) {
-            unsigned index = 0;
-            while (isdigit(*cp)) {
-                index = index * 10 + (*cp - '0');
-                ++cp;
-            }
-
-            if (index < numOutputs) {
-                if (modifier) {
-                    asmstr << "${" << index << ':' << modifier << "}";
-                } else {
-                    asmstr << '$' << index;
-                }
-            } else if (constraints == NULL || index > constraints->inputs.count() + numOutputs) {
-                env.report(text->loc, diag::err_asm_index_has_no_matching_constraint)
-                    << index;
-            } else {
-                // Adjust for '+' output constraints.
-                if (modifier) {
-                    asmstr << "${" << index + rwConstraints - numOutputs << ':' << modifier << "}";
-                } else {
-                    asmstr << '$' << index + rwConstraints - numOutputs ;
-                }
-            }
-            continue;
-        }
-
-        if (*cp == '[') {
-            // Translate a position by name.
-            const char* p = strchr(++cp, ']') ;
-            if (p == NULL) {
-                env.report(text->loc, diag::err_asm_string_missing_rbracket);
-                continue;
-            } 
-            unsigned index = 0;
-            std::string name(cp, p - cp);
-            if (constraints) {
-                FOREACH_ASTLIST_NC(Constraint, constraints->outputs, oc) {
-                    if (oc.data()->name && name == oc.data()->name) {
-                        break;
-                    }
-                    ++index;
-                }
-            }
-            if (index < numOutputs) {
-                // An output constraint matched.
-                if (modifier) {
-                    asmstr << "${" << index << ':' << modifier << "}";
-                } else {
-                    asmstr << '$' << index;
-                }
-            } else {
-                index = 0;
-                if (constraints) {
-                    FOREACH_ASTLIST_NC(Constraint, constraints->inputs, ic) {
-                        if (ic.data()->name && name == ic.data()->name) {
-                            break;
-                        }
-                        ++index;
-                    }
-                }
-                if (constraints && index < constraints->inputs.count() + numOutputs) {
-                    if (modifier) {
-                        asmstr << "${" << index - numOutputs + rwConstraints << ':' << modifier << "}";
-                    } else {
-                        asmstr << '$' << index - numOutputs + rwConstraints;
-                    }
-                } else {
-                    env.report(text->loc, diag::err_asm_name_has_no_matching_constraint)
-                        << name;
-                }
-            }
-
-            cp = p + 1;
-            continue;
-        }
-    
-        // Bad asm construct.
-        env.report(text->loc, diag::err_asm_unrecognized_percent);
-        ++cp;
-    }
-
-    // Replace the original asm string.
-    delete text->data;
-    text->data = new DataBlock(asmstr.c_str());
-#endif
 }
 
 Type *E_compoundLit::itcheck_x(Env &env, Expression *&replacement)
