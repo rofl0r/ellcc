@@ -102,18 +102,9 @@ public:      // funcs
      */
     llvm::Value* access(llvm::Value* value, bool isVolatile, int& deref, int level = 0);
 
-     /** Get a name for a variable.
-      * Employs the name mangler.
-      */
-    StringRef getVariableName(Variable const *v);
-
-    /** Make a PQ_name for a variable.
+    /** Get a variable's name.
      */
-    PQ_name *makeName(Variable const *v);
-
-    /** Create a PQ_name.  Just encapsulates an allocation.
-     */
-    PQ_name *makePQ_name(StringRef name);
+    const char* variableName(Variable const *v);
 
     /** Create a list of parameters suitable for inclusion in a llvm::FunctionType.
      */

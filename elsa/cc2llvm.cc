@@ -409,20 +409,9 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLocation loc, Atomic
     return type;
 }
 
-StringRef CC2LLVMEnv::getVariableName(Variable const *v)
+const char* CC2LLVMEnv::variableName(Variable const *v)
 {
-    // for now
-    return str(v->name);
-}
-
-PQ_name *CC2LLVMEnv::makeName(Variable const *v)
-{
-    return makePQ_name(getVariableName(v));
-}
-
-PQ_name *CC2LLVMEnv::makePQ_name(StringRef name)
-{
-    return new PQ_name(SL_UNKNOWN, name);		// RICH: Source location.
+    return v->name;
 }
 
 const llvm::Type* CC2LLVMEnv::makeParameterTypes(FunctionType *ft,
@@ -466,7 +455,10 @@ llvm::Value* CC2LLVMEnv::declaration(const Variable* var, llvm::Value* init, int
         }
         llvm::GlobalVariable* gv = (llvm::GlobalVariable*)variables.get(var);   // RICH: cast
         if (gv == NULL) {
-            llvm::Function* gf = llvm::Function::Create((llvm::FunctionType*)type, linkage, makeName(var)->name, mod);
+            llvm::Function* gf = llvm::Function::Create((llvm::FunctionType*)type,
+                                                        linkage,
+                                                        variableName(var),
+                                                        mod);
             gf->setCallingConv(llvm::CallingConv::C); // RICH: Calling convention.
             gf->setDoesNotThrow();                  // RICH: When known.
             variables.add(var, gf);
@@ -492,7 +484,7 @@ llvm::Value* CC2LLVMEnv::declaration(const Variable* var, llvm::Value* init, int
         }
         if (gv == NULL) {
             gv = new llvm::GlobalVariable(*mod, type, false,	// RICH: isConstant
-                    getLinkage(var->flags), (llvm::Constant*)init, makeName(var)->name);	// RICH: cast
+                    getLinkage(var->flags), (llvm::Constant*)init, variableName(var));	// RICH: cast
             variables.add(var, gv);
         } else {
             if (init) {
@@ -507,9 +499,9 @@ llvm::Value* CC2LLVMEnv::declaration(const Variable* var, llvm::Value* init, int
         xassert(entryBlock);
         llvm::AllocaInst* lv;
         if (entryBlock == currentBlock) {
-            lv = new llvm::AllocaInst(type, makeName(var)->name, entryBlock);
+            lv = new llvm::AllocaInst(type, variableName(var), entryBlock);
         } else {
-            lv = new llvm::AllocaInst(type, makeName(var)->name, entryBlock->getTerminator());
+            lv = new llvm::AllocaInst(type, variableName(var), entryBlock->getTerminator());
         }
 
         if (init) {
@@ -1185,6 +1177,7 @@ void S_asm::cc2llvm(CC2LLVMEnv &env) const
                 // Use this first output constraint as the return type.
                 returnTarget = value;
                 returnType = llvm::cast<llvm::PointerType>(value->getType())->getElementType();
+                --d.numOutputs;
                 constraints << "=" << constraint->string.c_str();
             } else {
                 args.push_back(value);
