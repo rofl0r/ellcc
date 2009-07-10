@@ -3467,7 +3467,7 @@ bool checkCompleteTypeRules(Env &env, DeclFlags dflags, DeclaratorContext contex
   return env.ensureCompleteType(action, type);
 }
 
-// rdp: I moved this function to noopt.cc because of a wierd compiler problem.
+// rdp: I moved this function to noopt.cc because of a wierd compiler problem (gcc 4.3.2).
 void checkAsmLabel(Env& env, SourceLocation loc, Variable* var, Declarator::Tcheck&dt);
 
 void Declarator::mid_tcheck(Env &env, Tcheck &dt)
