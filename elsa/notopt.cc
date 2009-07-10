@@ -8,6 +8,26 @@
 
 using namespace ellcc;
 
+void checkAsmLabel(Env& env, SourceLocation loc, Variable* var, Declarator::Tcheck&dt)
+{
+    if (dt.asmname) {
+        // Have an asm label, check some things.
+        if (!var->isSemanticallyGlobal() && !(var->flags & DF_REGISTER)) {
+            env.report(loc, diag::err_asm_label_on_a_non_static_local_variable)
+                << dt.asmname;
+            return;
+        }
+        if (var->asmname && var->asmname != dt.asmname) {
+            env.report(loc, diag::err_asm_label_does_not_match_previous)
+                << dt.asmname << var->asmname;
+            return;
+        }
+
+        // Set the asm label.
+        var->asmname = dt.asmname;
+    }
+}
+
 // I am certain it is broken on gcc-2.95.3 on x86; maybe it
 // is ok on gcc-3, maybe not ...
 #if defined(__GNUC__) && __GNUC__<3 && defined(__OPTIMIZE__)

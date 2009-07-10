@@ -3467,6 +3467,9 @@ bool checkCompleteTypeRules(Env &env, DeclFlags dflags, DeclaratorContext contex
   return env.ensureCompleteType(action, type);
 }
 
+// rdp: I moved this function to noopt.cc because of a wierd compiler problem.
+void checkAsmLabel(Env& env, SourceLocation loc, Variable* var, Declarator::Tcheck&dt);
+
 void Declarator::mid_tcheck(Env &env, Tcheck &dt)
 {
   // true if we're immediately in a class body
@@ -3967,24 +3970,8 @@ void Declarator::mid_tcheck(Env &env, Tcheck &dt)
     }
   }
 
-#if RICH
-    if (dt.asmname) {
-        // Have an asm label, check some things.
-        if (!var->isSemanticallyGlobal() && !(var->flags & DF_REGISTER)) {
-            env.report(decl->loc, diag::err_asm_label_on_a_non_static_local_variable)
-                << dt.asmname;
-            return;
-        }
-        if (var->asmname && var->asmname != dt.asmname) {
-            env.report(decl->loc, diag::err_asm_label_does_not_match_previous)
-                << dt.asmname << var->asmname;
-            return;
-        }
-
-        // Set the asm label.
-        var->asmname = dt.asmname;
-    }
-#endif
+    // Check an asm label.
+    checkAsmLabel(env, decl->loc, var, dt);
 }
 
 
