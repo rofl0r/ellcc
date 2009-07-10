@@ -64,6 +64,9 @@ public:    // data
   // name introduced (possibly NULL for abstract declarators)
   StringRef name;
 
+  // assembly name (usually NULL).
+  StringRef asmname;
+
   // type of the variable (NULL iff flags has DF_NAMESPACE)
   Type *type;
 

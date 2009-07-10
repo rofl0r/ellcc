@@ -65,6 +65,7 @@ size_t Variable::numVariables = 0;
 Variable::Variable(SourceLocation L, StringRef n, Type *t, DeclFlags f)
   : loc(L),
     name(n),
+    asmname(NULL),
     type(t),
     flags(f),
     value(NULL),
@@ -115,6 +116,7 @@ Variable::Variable(SourceLocation L, StringRef n, Type *t, DeclFlags f)
 Variable::Variable(XmlReader&)
   : loc(SL_UNKNOWN),
     name(NULL),
+    asmname(NULL),
     type(NULL),
     flags(DF_NONE),
     value(NULL),
