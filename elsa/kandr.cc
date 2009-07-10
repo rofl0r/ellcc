@@ -26,6 +26,9 @@ D_func *D_func::getD_func() {
   else return this;
 }
 D_func *D_array::getD_func() {return base->getD_func();}
+#ifdef GNU_EXTENSION
+D_func *D_asmlabel::getD_func() {return base->getD_func();}
+#endif
 D_func *D_bitfield::getD_func() {return NULL;}
 D_func *D_ptrToMember::getD_func() {return base->getD_func();}
 D_func *D_grouping::getD_func() {return base->getD_func();}

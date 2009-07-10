@@ -660,6 +660,17 @@ void D_array::print(BPEnv &bp) const
   }
 }
 
+#ifdef GNU_EXTENSION
+void D_asmlabel::print(BPEnv &bp) const
+{
+  SEQ {
+    base->print(bp);
+    bp << " asm(\"";
+    label->print(bp);
+    bp << "\")";
+  }
+}
+#endif
 
 void D_bitfield::print(BPEnv &bp) const
 {

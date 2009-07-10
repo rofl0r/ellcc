@@ -4481,6 +4481,25 @@ void D_array::tcheck(Env &env, Declarator::Tcheck &dt)
   base->tcheck(env, dt);
 }
 
+#ifdef GNU_EXTENSION
+void D_asmlabel::tcheck(Env &env, Declarator::Tcheck &dt)
+{
+    env.setLoc(loc);
+    possiblyConsumeFunctionType(env, dt);
+    base->tcheck(env, dt);
+    StringRef t = label->text;
+    if (t[0] == 'L') {
+        env.report(label->loc, diag::err_asm_wide_string_literal);
+        return;
+    }
+    Expression* dummy;
+    label->itcheck_x(env, dummy);
+
+    if (label->data->getDataLen()) {
+        dt.asmname = (const char*)label->data->getDataC();
+    }
+}
+#endif
 
 void D_bitfield::tcheck(Env &env, Declarator::Tcheck &dt)
 {

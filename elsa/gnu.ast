@@ -193,8 +193,10 @@ class Asm(Constraints constraints = NULL) {
 }
 
 // ----------- gcc asm labels -----------
-// (no AST extension b/c extra info dropped on floor)
-
+class IDeclarator() {
+  // An asm label.
+  -> D_asmlabel(IDeclarator base, E_stringLit label);
+}
 
 // ----------- C99 designated initializers -----------
 class Initializer {
@@ -318,7 +320,6 @@ class Attribute(SourceLocation loc) {
   // is still different from AT_word)
   -> AT_func(StringRef f, FakeList<ArgExpression> *args);
 }
-
 
 // Here's a clever idea: rather than making a completely new node to
 // carry the attributes, I will inherit from D_grouping!  Then

@@ -395,6 +395,9 @@ class Declarator {
     // syntactic context
     DeclaratorContext context;
 
+    // Assembler label.
+    StringRef asmname;
+
   public:
     Tcheck(Type *t, DeclFlags d, DeclaratorContext dc)
       : existingVar (NULL)
@@ -403,6 +406,7 @@ class Declarator {
       , size_E_new  (NULL)
       , funcSyntax  (NULL)
       , context     (dc)
+      , asmname     (NULL)
     {}
     Tcheck(Tcheck const &obj)
       : existingVar (obj.existingVar)
@@ -411,6 +415,7 @@ class Declarator {
       , size_E_new  (obj.size_E_new)
       , funcSyntax  (obj.funcSyntax)
       , context     (obj.context)
+      , asmname     (obj.asmname)
     {}
     Tcheck& operator= (Tcheck const &obj) {
       existingVar = obj.existingVar;
@@ -419,6 +424,7 @@ class Declarator {
       size_E_new  = obj.size_E_new;
       funcSyntax  = obj.funcSyntax;
       context     = obj.context;
+      asmname     = obj.asmname;
       return *this;
     }
 

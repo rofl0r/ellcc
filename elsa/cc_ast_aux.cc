@@ -1086,6 +1086,13 @@ PQName const *D_array::getDeclaratorIdC() const
   return base->getDeclaratorIdC();
 }
 
+#ifdef GNU_EXTENSION
+PQName const *D_asmlabel::getDeclaratorIdC() const
+{
+  return base->getDeclaratorIdC();
+}
+#endif
+
 PQName const *D_bitfield::getDeclaratorIdC() const
 {
   // the ability to simply return 'name' here is why bitfields contain
@@ -1141,6 +1148,9 @@ IDeclarator const *D_pointer::getBaseC() const         { return base; }
 IDeclarator const *D_reference::getBaseC() const       { return base; }
 IDeclarator const *D_func::getBaseC() const            { return base; }
 IDeclarator const *D_array::getBaseC() const           { return base; }
+#ifdef GNU_EXTENSION
+IDeclarator const *D_asmlabel::getBaseC() const        { return base; }
+#endif
 IDeclarator const *D_bitfield::getBaseC() const        { return NULL; }
 IDeclarator const *D_ptrToMember::getBaseC() const     { return base; }
 IDeclarator const *D_grouping::getBaseC() const        { return base; }
