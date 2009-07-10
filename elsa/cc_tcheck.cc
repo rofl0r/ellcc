@@ -6750,8 +6750,10 @@ Type *E_funCall::inner2_itcheck(Env &env, LookupSet &candidates)
     if (candidates.isEmpty()) {
       env.report(pqname->loc, diag::err_function_no_function)
         << pqname->getName();
-      env.report(pqname->loc, diag::note_function_dependent_lookup)
-        << env.unsearchedDependentBases();
+      sm::string b = env.unsearchedDependentBases();
+      if (b.length()) {
+          env.report(pqname->loc, diag::note_function_dependent_lookup) << b;
+      }
       return fevar->type = env.errorType();
     }
 

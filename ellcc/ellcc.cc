@@ -1671,7 +1671,7 @@ TokenCache("token-cache", llvm::cl::value_desc("path"),
 
 // This tool exports a large number of command line options to control how the
 // preprocessor searches for header files.  At root, however, the Preprocessor
-// object takes a very simple interface: a list of directories to search for
+// object takes a very simple interface: a list of directories to search for.
 // 
 // FIXME: -nostdinc++
 // FIXME: -imultilib
@@ -2771,6 +2771,8 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         input.setName(to);
         // Mark the file as a temporary file.
         input.temp = true;
+        delete input.module;
+        input.module = NULL;
 
         if (TimeActions) {
 	    timers[phase]->stopTimer();
@@ -3101,29 +3103,28 @@ int main(int argc, char **argv)
         }
 
         // Check to see if any module files should be generated
-        if (FinalPhase != phase) {
-            for (InputList::iterator it = InpList.begin(); it != InpList.end(); ++it) {
-                if (it->module && !it->temp) {
-                    // Output the module.
-                    // RICH: .ll vs. .bc.
-                    llvm::PassManager PM;
-                    std::ostream *out = new std::ofstream(it->name.c_str());
-                    if (!out) {
-                        std::cerr << progname << ": can't open " << it->name << " for writing\n";
-                        Exit(1);
-                    }
-                    if (Verbose) {
-                        cout << "  creating temporary file " << it->name << "\n";
-                    }
-#if RICH
-                    llvm::OStream L(*out);
-                    PM.add(new llvm::PrintModulePass(&L));
-#endif
-                    PM.add(llvm::CreateBitcodeWriterPass(*out));
-                    PM.run(*it->module);
-                    delete out;
-                    delete it->module;
+        for (InputList::iterator it = InpList.begin(); it != InpList.end(); ++it) {
+            if (it->module && !it->temp) {
+                // Output the module.
+                // RICH: .ll vs. .bc.
+                llvm::PassManager PM;
+                std::ostream *out = new std::ofstream(it->name.c_str());
+                if (!out) {
+                    std::cerr << progname << ": can't open " << it->name << " for writing\n";
+                    Exit(1);
                 }
+                if (Verbose) {
+                    const char* ftype = (FinalPhase != phase) ? "temporary " : "";
+                    cout << "  creating " << ftype << "file " << it->name << "\n";
+                }
+#if RICH
+                llvm::OStream L(*out);
+                PM.add(new llvm::PrintModulePass(&L));
+#endif
+                PM.add(llvm::CreateBitcodeWriterPass(*out));
+                PM.run(*it->module);
+                delete out;
+                delete it->module;
             }
         }
 
