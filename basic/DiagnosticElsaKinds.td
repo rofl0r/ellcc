@@ -142,6 +142,10 @@ def err_asm_string_missing_rbracket
     : Error<"the 'asm' string name is missing a ']'">;
 def err_asm_name_has_no_matching_constraint
     : Error<"the 'asm' constraint name '%0' has no matching named constraint">;
+def err_asm_label_on_a_non_static_local_variable
+    : Error<"the 'asm' label '%0' is invalid on a non-static local variable">;
+def err_asm_label_does_not_match_previous
+    : Error<"the 'asm' label '%0' does not match the previous rename '%1'">;
 def err_asm_unrecognized_percent
     : Error<"unrecognized '%%' construct in 'asm'">;
 

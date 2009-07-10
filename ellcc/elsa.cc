@@ -731,6 +731,11 @@ int Elsa::doit(Preprocessor& PP,
       if (doTime) {
           llvmGenerationTimer.stopTimer();
       }
+      
+      // Catch additional diagnostics.
+      if (PP.getDiagnostics().hasErrorOccurred()) {
+        return 2;
+      }
   }
 
   //traceProgress() << "cleaning up...\n";
