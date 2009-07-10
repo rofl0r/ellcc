@@ -409,19 +409,17 @@ nonterm(Asm*) AsmDefinition {
        { return new Asm(s, ocs); }
 }
 
-
 // ----------- gcc asm labels -----------
 // http://gcc.gnu.org/onlinedocs/gcc-3.2.2/gcc/Asm-Labels.html
 nonterm(IDeclarator*) Declarator {
   // Asm Labels after declarators; see in/gnu/asm01.c
-  -> d:DirectDeclarator "asm" "(" StringLiteral ")"
-       { return d; }
+  -> d:DirectDeclarator "asm" "(" s:StringLiteral ")"
+       { return new D_asmlabel(loc, d, s); }
 
   // asm label + attributes ...
-  -> d:DirectDeclarator "asm" "(" StringLiteral ")" /*DROPPED*/AttributeSpecifierList
-       { return d; }
+  -> d:DirectDeclarator "asm" "(" s:StringLiteral ")" /*DROPPED*/AttributeSpecifierList
+       { return new D_asmlabel(loc, d, s); }
 }
-
 
 // ----------- C99 designated initializers -----------
 // Designated Initializers
