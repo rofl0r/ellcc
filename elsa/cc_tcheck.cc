@@ -333,15 +333,15 @@ string collectContinuations(E_stringLit *strLit)
 
 void TF_asm::itcheck(Env &env)
 {
-  env.setLoc(loc);
-  StringRef t = def->text->text;
-  if (prefixEquals(t, "\"collectLookupResults")) {
-    // this activates an internal diagnostic that will collect
-    // the E_variable lookup results as warnings, then at the
-    // end of the program, compare them to this string
-    env.collectLookupResults = collectContinuations(def->text);
-  }
-  def->itcheck(env, true);
+    env.setLoc(loc);
+    StringRef t = def->text->text;
+    if (prefixEquals(t, "\"collectLookupResults")) {
+        // this activates an internal diagnostic that will collect
+        // the E_variable lookup results as warnings, then at the
+        // end of the program, compare them to this string
+        env.collectLookupResults = collectContinuations(def->text);
+    }
+    def->itcheck(env, true);
 }
 
 void TF_namespaceDefn::itcheck(Env &env)
@@ -3561,8 +3561,7 @@ void Declarator::mid_tcheck(Env &env, Tcheck &dt)
                 << DIAG_STRONG;
         }
       }
-    }
-    else {
+    } else {
         // for class specializations, we should not get here, as the syntax
         //
         //   template <>
@@ -3642,8 +3641,7 @@ void Declarator::mid_tcheck(Env &env, Tcheck &dt)
         var->isGlobal()) {
       env.handleTypeOfMain(decl->loc, var, dt.type);
     }
-  }
-  else {
+  } else {
     // caller already gave me a Variable to use
     var = dt.existingVar;
     callerPassedInstV = true;
@@ -3658,8 +3656,7 @@ void Declarator::mid_tcheck(Env &env, Tcheck &dt)
       // add the implicit 'this' parameter
       makeMemberFunctionType(env, dt,
         var->type->asFunctionType()->getNATOfMember(), decl->loc);
-    }
-    else {
+    } else {
       TRACE("memberFunc", "static or non-member function: " << var->name);
       possiblyConsumeFunctionType(env, dt);
     }
@@ -3969,6 +3966,25 @@ void Declarator::mid_tcheck(Env &env, Tcheck &dt)
       }
     }
   }
+
+#if RICH
+    if (dt.asmname) {
+        // Have an asm label, check some things.
+        if (!var->isSemanticallyGlobal() && !(var->flags & DF_REGISTER)) {
+            env.report(decl->loc, diag::err_asm_label_on_a_non_static_local_variable)
+                << dt.asmname;
+            return;
+        }
+        if (var->asmname && var->asmname != dt.asmname) {
+            env.report(decl->loc, diag::err_asm_label_does_not_match_previous)
+                << dt.asmname << var->asmname;
+            return;
+        }
+
+        // Set the asm label.
+        var->asmname = dt.asmname;
+    }
+#endif
 }
 
 
@@ -5006,9 +5022,9 @@ void Asm::itcheck(Env &env, bool module)
   }
   Expression* dummy;
   text->itcheck_x(env, dummy);
-  #ifdef GNU_EXTENSION
+#ifdef GNU_EXTENSION
   itcheck_constraints(env, module);
-  #endif
+#endif
 }
 
 void S_asm::itcheck(Env &env)
