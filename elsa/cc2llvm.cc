@@ -411,6 +411,9 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLocation loc, Atomic
 
 const char* CC2LLVMEnv::variableName(Variable const *v)
 {
+    if (v->asmname) {
+        return v->asmname;
+    }
     return v->name;
 }
 
@@ -611,7 +614,8 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
         // Make the old one anonymous.
         env.function->setName("");
     }
-    llvm::Function* function = llvm::Function::Create(ft, linkage, nameAndParams->var->name, env.mod);
+    llvm::Function* function = llvm::Function::Create(ft, linkage,
+                                                      env.variableName(nameAndParams->var), env.mod);
     function->setCallingConv(llvm::CallingConv::C); // RICH: Calling convention.
     function->setDoesNotThrow();                  // RICH: When known.
     if (env.function && env.function->getType() != (llvm::Type*)ft) {
@@ -656,7 +660,7 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
         VDEBUG("Function arg", param->loc, type->print(std::cerr));
         if (first && receiver && param != receiver) {
             // Yuck! The receiver is not explicit. I think it should be.
-            llvm::AllocaInst* addr = env.builder.CreateAlloca(type, NULL, receiver->name);
+            llvm::AllocaInst* addr = env.builder.CreateAlloca(type, NULL, env.variableName(receiver));
             // Remember where the argument can be retrieved.
             env.variables.add(receiver, addr);
             // Store the argument for later use.
@@ -672,7 +676,7 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
         first = false;
 	// type will be NULL for "...".
 	if (type) {
-	    llvm::AllocaInst* addr = env.builder.CreateAlloca(type, NULL, param->name);
+	    llvm::AllocaInst* addr = env.builder.CreateAlloca(type, NULL, env.variableName(param));
 	    // Remember where the argument can be retrieved.
             env.variables.add(param, addr);
 	    // Store the argument for later use.
