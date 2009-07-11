@@ -33,7 +33,6 @@ class ImplicitConversion;       // implconv.h
 class DelayedFuncInst;          // template.h
 
 namespace ellcc {
-class TargetInfo;               // TargetInfo.h
 class Preprocessor;             // Preprocessor.h
 class SourceManager;            // SourceManager.h
 }
@@ -169,6 +168,10 @@ public:      // data
 
   // Language options in effect.
   Preprocessor& PP;
+
+  /** Target specific information.
+   */
+  TargetInfo& TI;
 
   // interface for making types
   TypeFactory &tfac;

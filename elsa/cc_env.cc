@@ -320,6 +320,7 @@ Env::Env(StringTable &s, Preprocessor& PP, TypeFactory &tf,
 
     str(s),
     PP(PP),
+    TI(env.PP.getTargetInfo()),
     tfac(tf),
     madeUpVariables(madeUpVariables0),
     builtinVars(builtinVars0),
@@ -5378,7 +5379,7 @@ Type *Env::sizeofType(Type *t, int &size, Expression * /*nullable*/ expr)
   ensureCompleteType(diag::err_incomplete_type_compute_size_of, t);
 
   try {
-    size = t->sizeInBytes(PP.getTargetInfo());
+    size = t->sizeInBytes(TI);
     TRACE("sizeof", "sizeof(" << (expr? expr->exprToString() : t->toString()) <<
                     ") is " << size);
   }

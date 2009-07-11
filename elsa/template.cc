@@ -3296,7 +3296,7 @@ void Env::setSTemplArgFromExpr(STemplateArgument &sarg, Expression const *expr,
       rvalType->isEnumType() ||
       rvalType->containsGeneralizedDependent()) {    // hope const-eval can work it out
     // attempt to const-eval this expression
-    ConstEval cenv(env.PP.getTargetInfo(), env.dependentVar, map);
+    ConstEval cenv(env.TI, env.dependentVar, map);
     CValue val = expr->constEval(cenv);
     if (val.isDependent()) {
       sarg.setDepExpr(expr);
@@ -3376,7 +3376,7 @@ STemplateArgument Env::variableToSTemplateArgument(Variable *var)
   STemplateArgument ret;
 
   // try to evaluate to an integer
-  ConstEval cenv(env.PP.getTargetInfo(), env.dependentVar);
+  ConstEval cenv(env.TI, env.dependentVar);
   CValue val = cenv.evaluateVariable(var);
   if (val.isIntegral()) {
     ret.setInt(val.getIntegralValue());

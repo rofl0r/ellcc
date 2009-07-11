@@ -28,7 +28,13 @@ void checkAsmLabel(Env& env, SourceLocation loc, Variable* var, Declarator::Tche
                 << dt.asmname << var->name << var->asmname;
             return;
         }
-
+        if ((var->flags & DF_REGISTER) && !env.TI.isValidGCCRegisterName(dt.asmname)) {
+            env.report(loc, diag::err_asm_label_is_not_a_valid_register)
+                << dt.asmname << var->name
+                << env.TI.getTargetPrefix();
+            return;
+        }
+ 
         // Set the asm label.
         var->asmname = dt.asmname;
     }

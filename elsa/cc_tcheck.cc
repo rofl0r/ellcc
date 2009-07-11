@@ -4415,7 +4415,7 @@ void D_array::tcheck(Env &env, Declarator::Tcheck &dt)
     if (size) {
       // try to evaluate the size to a constant
       int sz = 1;
-      ConstEval cenv(env.PP.getTargetInfo(), env.dependentVar);
+      ConstEval cenv(env.TI, env.dependentVar);
       CValue val = size->constEval(cenv);
       if (val.isError()) {
         // size didn't evaluate to a constant
@@ -5686,7 +5686,7 @@ Type *E_stringLit::itcheck_x(Env &env, Expression *&replacement)
   // initial allocation estimate assumes no continuations and no
   // escape characters
   data = new DataBlock((strlen(text) + 1/*NUL*/ - 2/*quotes*/) *
-                       simpleTypeSizeInBytes(env.PP.getTargetInfo(), id));
+                       simpleTypeSizeInBytes(env.TI, id));
 
   // iterate over continuation segments
   E_stringLit *segment = this;
@@ -5708,10 +5708,10 @@ Type *E_stringLit::itcheck_x(Env &env, Expression *&replacement)
     while (l-- && *p != '"') {
       if (*p == '\\') {
         unsigned int c = decodeEscape(env, p);
-        appendCharacter(env.PP.getTargetInfo(), data, c, id);
+        appendCharacter(env.TI, data, c, id);
       }
       else {
-        appendCharacter(env.PP.getTargetInfo(), data, *p, id);
+        appendCharacter(env.TI, data, *p, id);
         p++;
       }
     }
@@ -5720,11 +5720,11 @@ Type *E_stringLit::itcheck_x(Env &env, Expression *&replacement)
   }
   
   // final NUL character
-  appendCharacter(env.PP.getTargetInfo(), data, 0, id);
+  appendCharacter(env.TI, data, 0, id);
 
   // consolidate
   data->setAllocated(data->getDataLen());
-  int len = data->getDataLen() / simpleTypeSizeInBytes(env.PP.getTargetInfo(), id);
+  int len = data->getDataLen() / simpleTypeSizeInBytes(env.TI, id);
 
   // set type
   CVFlags stringLitCharCVFlags = CV_NONE;
@@ -5767,7 +5767,7 @@ Type *E_charLit::itcheck_x(Env &env, Expression *&replacement)
   // initial allocation estimate assumes no continuations and no
   // escape characters
   DataBlock* data = new DataBlock((strlen(srcText) + 1/*NUL*/ - 2/*quotes*/) *
-                                  simpleTypeSizeInBytes(env.PP.getTargetInfo(), id));
+                                  simpleTypeSizeInBytes(env.TI, id));
 
   char quote = *srcText++;      // Skip the "'".
 
@@ -5775,15 +5775,15 @@ Type *E_charLit::itcheck_x(Env &env, Expression *&replacement)
   while (*srcText != quote) {
       if (*srcText == '\\') {
         unsigned int ch = decodeEscape(env, srcText);
-        appendCharacter(env.PP.getTargetInfo(), data, ch, id);
+        appendCharacter(env.TI, data, ch, id);
       } else {
-        appendCharacter(env.PP.getTargetInfo(), data, *srcText, id);
+        appendCharacter(env.TI, data, *srcText, id);
         srcText++;
       }
   }
 
   data->setAllocated(data->getDataLen());
-  int len = data->getDataLen() / simpleTypeSizeInBytes(env.PP.getTargetInfo(), id);
+  int len = data->getDataLen() / simpleTypeSizeInBytes(env.TI, id);
   
   if (len == 0) {
     env.report(loc, diag::err_char_literal_with_no_characters);
@@ -9533,7 +9533,7 @@ bool Expression::constEval(Env &env, int &result, bool &dependent) const
 {
   dependent = false;
 
-  ConstEval cenv(env.PP.getTargetInfo(), env.dependentVar);
+  ConstEval cenv(env.TI, env.dependentVar);
 
   CValue val = constEval(cenv);
   if (val.isError()) {
