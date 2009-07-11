@@ -145,7 +145,7 @@ def err_asm_name_has_no_matching_constraint
 def err_asm_label_on_a_non_static_local_variable
     : Error<"the 'asm' label '%0' is invalid on a non-static local variable">;
 def err_asm_label_does_not_match_previous
-    : Error<"the 'asm' label '%0' does not match the previous rename '%1'">;
+    : Error<"the 'asm' label '%0' for '%1' does not match the previous label '%2'">;
 def err_asm_unrecognized_percent
     : Error<"unrecognized '%%' construct in 'asm'">;
 

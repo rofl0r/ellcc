@@ -8,6 +8,12 @@
 
 using namespace ellcc;
 
+// I am certain it is broken on gcc-2.95.3 on x86; maybe it
+// is ok on gcc-3, maybe not ...
+#if defined(__GNUC__) && __GNUC__<3 && defined(__OPTIMIZE__)
+  #error This module must be compiled with optimization turned off
+#endif
+
 void checkAsmLabel(Env& env, SourceLocation loc, Variable* var, Declarator::Tcheck&dt)
 {
     if (dt.asmname) {
@@ -19,7 +25,7 @@ void checkAsmLabel(Env& env, SourceLocation loc, Variable* var, Declarator::Tche
         }
         if (var->asmname && var->asmname != dt.asmname) {
             env.report(loc, diag::err_asm_label_does_not_match_previous)
-                << dt.asmname << var->asmname;
+                << dt.asmname << var->name << var->asmname;
             return;
         }
 
@@ -27,12 +33,6 @@ void checkAsmLabel(Env& env, SourceLocation loc, Variable* var, Declarator::Tche
         var->asmname = dt.asmname;
     }
 }
-
-// I am certain it is broken on gcc-2.95.3 on x86; maybe it
-// is ok on gcc-3, maybe not ...
-#if defined(__GNUC__) && __GNUC__<3 && defined(__OPTIMIZE__)
-  #error This module must be compiled with optimization turned off
-#endif
 
 // This is the main one that initially caused the problem.  With
 // -O2, an XTypeDeduction just flies right by the 'catch' as if
