@@ -902,6 +902,8 @@ public:
 
 namespace {
 class ARMTargetInfo : public TargetInfo {
+  static const TargetInfo::GCCRegAlias GCCRegAliases[];
+  static const char * const GCCRegNames[];
 public:
   ARMTargetInfo(const std::string& triple) : TargetInfo(triple) {
   }
@@ -932,17 +934,9 @@ public:
     return "arm";
   }
   virtual void getGCCRegNames(const char * const *&Names, 
-                              unsigned &NumNames) const {
-    // FIXME: Implement.
-    Names = 0;
-    NumNames = 0;
-  }
+                              unsigned &NumNames) const;
   virtual void getGCCRegAliases(const GCCRegAlias *&Aliases, 
-                                unsigned &NumAliases) const {
-    // FIXME: Implement.
-    Aliases = 0;
-    NumAliases = 0;
-  }
+                                unsigned &NumAliases) const;
   virtual bool validateAsmConstraint(const char *&Name,
                                      TargetInfo::ConstraintInfo &info) const {
     // FIXME: Check if this is complete
@@ -962,6 +956,28 @@ public:
     return "";
   }
 };
+
+const char * const ARMTargetInfo::GCCRegNames[] = {
+  "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
+  "r8", "r9", "r10", "r11", "r12", 
+  "sp", "lr", "pc",
+};
+
+void ARMTargetInfo::getGCCRegNames(const char * const *&Names, 
+                                   unsigned &NumNames) const {
+  Names = GCCRegNames;
+  NumNames = llvm::array_lengthof(GCCRegNames);
+}
+
+const TargetInfo::GCCRegAlias ARMTargetInfo::GCCRegAliases[] = {
+    // FIXME
+};
+void ARMTargetInfo::getGCCRegAliases(const GCCRegAlias *&Aliases, 
+                                     unsigned &NumAliases) const {
+  Aliases = GCCRegAliases;
+  NumAliases = 0;
+  // RICH: NumAliases = llvm::array_lengthof(GCCRegAliases);
+}
 } // end anonymous namespace.
 
 
