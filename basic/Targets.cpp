@@ -959,8 +959,7 @@ public:
 
 const char * const ARMTargetInfo::GCCRegNames[] = {
   "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
-  "r8", "r9", "r10", "r11", "r12", 
-  "sp", "lr", "pc",
+  "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15"
 };
 
 void ARMTargetInfo::getGCCRegNames(const char * const *&Names, 
@@ -970,13 +969,27 @@ void ARMTargetInfo::getGCCRegNames(const char * const *&Names,
 }
 
 const TargetInfo::GCCRegAlias ARMTargetInfo::GCCRegAliases[] = {
-    // FIXME
+  { { "a0" }, "r0" }, 
+  { { "a1" }, "r1" }, 
+  { { "a2" }, "r2" }, 
+  { { "a3" }, "r3" }, 
+  { { "v1" }, "r4" }, 
+  { { "v2" }, "r5" }, 
+  { { "v3" }, "r6" }, 
+  { { "v4" }, "r7" }, 
+  { { "v5" }, "r8" }, 
+  { { "v6", "sb" }, "r9" }, 
+  { { "v7", "sl" }, "r10" }, 
+  { { "v8", "fp" }, "r11" }, 
+  { { "ip" }, "r12" }, 
+  { { "sp" }, "r13" }, 
+  { { "lr" }, "r14" }, 
+  { { "pc" }, "r15" }, 
 };
 void ARMTargetInfo::getGCCRegAliases(const GCCRegAlias *&Aliases, 
                                      unsigned &NumAliases) const {
   Aliases = GCCRegAliases;
-  NumAliases = 0;
-  // RICH: NumAliases = llvm::array_lengthof(GCCRegAliases);
+  NumAliases = llvm::array_lengthof(GCCRegAliases);
 }
 } // end anonymous namespace.
 
