@@ -152,7 +152,7 @@ inline bool operator<(const SourceLocation &LHS, const SourceLocation &RHS) {
   return LHS.getRawEncoding() < RHS.getRawEncoding();
 }
 
-/// SourceRange - a trival tuple used to represent a source range.
+/// SourceRange - a trivial tuple used to represent a source range.
 class SourceRange {
   SourceLocation B;
   SourceLocation E;
