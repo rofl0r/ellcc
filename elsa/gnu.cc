@@ -765,6 +765,10 @@ void Asm::itcheck_constraints(Env &env, bool module)
             }
             const char* asmname = expr->isE_variable() ? expr->asE_variable()->var->asmname : NULL;
 
+            if (asmname) {
+                asmname = env.TI.getNormalizedGCCRegisterName(asmname);
+            }
+
             if (constr) {
                 StringRef t = constr->text;
                 if (t[0] == 'L') {
@@ -859,6 +863,8 @@ void Asm::itcheck_constraints(Env &env, bool module)
                 env.report(constraint->loc, diag::err_asm_input_constraint_must_have_an_expression);
             }
             const char* asmname = expr->isE_variable() ? expr->asE_variable()->var->asmname : NULL;
+            if (asmname)
+                asmname = env.TI.getNormalizedGCCRegisterName(asmname);
 
             if (constr) {
                 StringRef t = constr->text;
@@ -1036,7 +1042,7 @@ void Asm::itcheck_constraints(Env &env, bool module)
                     env.report(constr->loc, diag::err_asm_register_is_not_valid)
                         << cp << env.TI.getTargetPrefix();
                 }
-                constring << "~{" << env.getNormalizedGCCRegisterName(cp) << "}";
+                constring << "~{" << env.TI.getNormalizedGCCRegisterName(cp) << "}";
             }
 
             if (expr) {

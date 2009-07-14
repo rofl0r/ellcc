@@ -727,12 +727,6 @@ public:      // funcs
    */
   virtual std::string convertConstraint(char ch) { return std::string(1, ch); }
 
-  /** Normalize an inline assembly register name.
-   * @param string The register name.
-   * @return A string with the register name normalized for the target backend.
-   */
-  const char* getNormalizedGCCRegisterName(const char* name) { return name; }
-
   // search in an overload set for an element, given its type
   Variable *findInOverloadSet(OverloadSet *oset,
                               FunctionType *ft, CVFlags receiverCV);
