@@ -754,6 +754,17 @@ void Asm::itcheck_constraints(Env &env, bool module)
                 return;
             }
 
+            if (expr) {
+                expr->tcheck(env, expr);
+                if (!env.onlyDisambiguating() && !expr->type->isLval()) {
+                    // The target of an assignment must be an lvalue.
+                    env.report(expr->loc, diag::err_asm_output_constraint_must_be_an_lvalue);
+                }
+            } else {
+                env.report(constraint->loc, diag::err_asm_output_constraint_must_have_an_expression);
+            }
+            const char* asmname = expr->isE_variable() ? expr->asE_variable()->var->asmname : NULL;
+
             if (constr) {
                 StringRef t = constr->text;
                 if (t[0] == 'L') {
@@ -814,16 +825,6 @@ void Asm::itcheck_constraints(Env &env, bool module)
                 }
             }
 
-            if (expr) {
-                expr->tcheck(env, expr);
-                if (!env.onlyDisambiguating() && !expr->type->isLval()) {
-                    // The target of an assignment must be an lvalue.
-                    env.report(expr->loc, diag::err_asm_output_constraint_must_be_an_lvalue);
-                }
-            } else {
-                env.report(constraint->loc, diag::err_asm_output_constraint_must_have_an_expression);
-            }
-
             constraint->string = constring;
         }
 
@@ -843,6 +844,13 @@ void Asm::itcheck_constraints(Env &env, bool module)
                 env.report(constr->loc, diag::err_asm_module_level_input_constraint);
                 return;
             }
+
+            if (expr) {
+                expr->tcheck(env, expr);
+            } else {
+                env.report(constraint->loc, diag::err_asm_input_constraint_must_have_an_expression);
+            }
+            const char* asmname = expr->isE_variable() ? expr->asE_variable()->var->asmname : NULL;
 
             if (constr) {
                 StringRef t = constr->text;
@@ -982,12 +990,6 @@ void Asm::itcheck_constraints(Env &env, bool module)
                 }
             }
 
-            if (expr) {
-                expr->tcheck(env, expr);
-            } else {
-                env.report(constraint->loc, diag::err_asm_input_constraint_must_have_an_expression);
-            }
-
             constraint->string = constring;
         }
 
@@ -1020,6 +1022,7 @@ void Asm::itcheck_constraints(Env &env, bool module)
             if (expr) {
                 env.report(expr->loc, diag::err_asm_clobber_constraint_with_expression);
             }
+
             constraint->string = constring;
         }
     }
