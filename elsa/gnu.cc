@@ -744,7 +744,7 @@ void Asm::itcheck_constraints(Env &env, bool module)
     if (constraints) {
         // Process the output constraints.
         FOREACH_ASTLIST_NC(Constraint, constraints->outputs, c) {
-            stringBuilder constring;    // The built-up contraint.
+            stringBuilder constring;    // The built-up contsraint list.
             ++numOutputs;
             Constraint* constraint = c.data();
             E_stringLit* constr = constraint->constr;
@@ -788,6 +788,7 @@ void Asm::itcheck_constraints(Env &env, bool module)
                 }
 
                 bool good = true;
+                bool useAsmname = false;
                 while (good && *cp) {
                     switch (*cp) {
                     default: // Check for a target specific constraint.
@@ -805,6 +806,7 @@ void Asm::itcheck_constraints(Env &env, bool module)
                     case 'r': // General register.
                         constraint->info = (TargetInfo::ConstraintInfo)(constraint->info
                                                                         |TargetInfo::CI_AllowsRegister);
+                        useAsmname = true;
                         break;
                     case 'm': // Memory operand.
                         constraint->info = (TargetInfo::ConstraintInfo)(constraint->info
@@ -816,11 +818,17 @@ void Asm::itcheck_constraints(Env &env, bool module)
                             (TargetInfo::ConstraintInfo)(constraint->info
                                                          |TargetInfo::CI_AllowsMemory
                                                          |TargetInfo::CI_AllowsRegister);
+                        useAsmname = true;
                         break;
                     }
 
 
-                    constring << env.convertConstraint(*cp).c_str();
+                    if (useAsmname && asmname) {
+                        // Use the 'asm' label.
+                        constring << "{" << asmname << "}";
+                    } else {
+                        constring << env.convertConstraint(*cp).c_str();
+                    }
                     ++cp;
                 }
             }
@@ -836,7 +844,7 @@ void Asm::itcheck_constraints(Env &env, bool module)
         }
 
         FOREACH_ASTLIST_NC(Constraint, constraints->inputs, c) {
-            stringBuilder constring;    // The built-up contraint list.
+            stringBuilder constring;    // The built-up contsraint list.
             Constraint* constraint = c.data();
             E_stringLit* constr = constraint->constr;
             Expression*& expr = constraint->e;
@@ -966,7 +974,13 @@ void Asm::itcheck_constraints(Env &env, bool module)
                         result = *cp;
                         break;
                     case 'r': // General register.
-                        result = *cp;
+                        if (asmname) {
+                            result = "{";
+                            result +=  asmname;
+                            result += "}";
+                        } else {
+                            result = *cp;
+                        }
                         constraint->info = (TargetInfo::ConstraintInfo)(constraint->info
                                                                         |TargetInfo::CI_AllowsRegister);
                         break;
@@ -977,7 +991,13 @@ void Asm::itcheck_constraints(Env &env, bool module)
                         break;
                     case 'g': // General register, memory operand, or immediate integer.
                     case 'X': // Any operand.
-                        result = "imr";
+                        if (asmname) {
+                            result = "{";
+                            result +=  asmname;
+                            result += "}";
+                        } else {
+                            result = "imr";
+                        }
                         constraint->info =
                             (TargetInfo::ConstraintInfo)(constraint->info
                                                          |TargetInfo::CI_AllowsMemory
@@ -994,7 +1014,7 @@ void Asm::itcheck_constraints(Env &env, bool module)
         }
 
         FOREACH_ASTLIST_NC(Constraint, constraints->clobbers, c) {
-            stringBuilder constring;    // The built-up contraint list.
+            stringBuilder constring;    // The built-up contsraint list.
             Constraint* constraint = c.data();
             E_stringLit* constr = constraint->constr;
             Expression*& expr = constraint->e;
