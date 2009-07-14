@@ -68,7 +68,7 @@ extern inline void read_lock2(rwlock_t *rw)
 
 void triple() {
   // three-colons now works also!
-  asm ("asdfasd" ::: "a" );
+  asm ("asdfasd" ::: "0" );
 }
 
 //  /home/dsw/oink_extra/ballAruns/tmpfiles/./arts-1.1-7/gsldatahandle-mad-04hG.i:2145:107: Parse error (state 222) at <string literal>: "fpatan"

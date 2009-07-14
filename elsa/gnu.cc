@@ -1010,6 +1010,10 @@ void Asm::itcheck_constraints(Env &env, bool module)
                 Expression* dummy;
                 constr->itcheck_x(env, dummy);
                 const char* cp = (const char*)constr->data->getDataC();
+                if (!env.TI.isValidGCCRegisterName(cp)) {
+                    env.report(constr->loc, diag::err_asm_register_is_not_valid)
+                        << cp << env.TI.getTargetPrefix();
+                }
                 constring << "~{" << env.getNormalizedGCCRegisterName(cp) << "}";
             }
 

@@ -148,6 +148,8 @@ def err_asm_label_does_not_match_previous
     : Error<"the 'asm' label '%0' for '%1' does not match the previous label '%2'">;
 def err_asm_label_is_not_a_valid_register
     : Error<"the 'asm' label '%0' for '%1' is not a valid register for the '%2' processor">;
+def err_asm_register_is_not_valid
+    : Error<"the 'asm' register '%0' is not a valid register for the '%1' processor">;
 def err_asm_unrecognized_percent
     : Error<"unrecognized '%%' construct in 'asm'">;
 
