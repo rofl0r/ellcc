@@ -68,6 +68,12 @@ using namespace llvm;
 using namespace ellcc;
 
 static std::string progname;    // The program name.        
+static OwningPtr<SourceManager> SourceMgr;
+// Create a file manager object to provide access to and cache the filesystem.
+static FileManager FileMgr;
+static Diagnostic Diags;
+static OwningPtr<TargetInfo> TI;
+static const char* argv0;
  
 /** File types.
  */
@@ -83,7 +89,6 @@ enum FileTypes {
   LLX,                          ///< An LLVM assembly file that needs preprocessing.
   UBC,                          ///< An unoptimized LLVM bitcode file.
   BC,                           ///< An LLVM bitcode file.
-  LBC,                          ///< A linked LLVM bitcode file.
   S,                            ///< A native assembly source file.
   SX,                           ///< A native assembly file that needs preprocessing.
   O,                            ///< Other: An object file, linker command file, etc.
@@ -107,7 +112,6 @@ static const char* fileTypes[] = {
   "an LLVM assembly file that needs preprocessing",
   "an unoptimized LLVM bitcode file",
   "an LLVM bitcode file",
-  "a linked LLVM bitcode file",
   "an assembly source file",
   "an assembly file that needs preprocessing",
   "an object file",
@@ -125,7 +129,7 @@ enum Phases {
     TRANSLATION,                ///< Translate source -> LLVM bitcode/assembly
     OPTIMIZATION,               ///< Optimize translation result
     BCLINKING,                  ///< Link and optimize bitcode files. 
-    GENERATION,                 ///< Convert .bc to ...
+    GENERATION,                 ///< Convert .bc to .s
     ASSEMBLY,                   ///< Convert .s to .o
     LINKING,                    ///< Link and create executable
     NUM_PHASES                  ///< Always last!
@@ -283,7 +287,7 @@ static void setupMappings()
 
     extToLang["ubc"] = UBC;
     langToExt[UBC] = "ubc";
-    filePhases[UBC][OPTIMIZATION].type = BC;
+    filePhases[UBC][OPTIMIZATION].type = O;
     filePhases[UBC][OPTIMIZATION].action = OPTIMIZE;
 
     extToLang["bc"] = BC;
@@ -306,11 +310,17 @@ static void setupMappings()
 
     extToLang["o"] = O;
     langToExt[O] = "o";
+    filePhases[O][BCLINKING].type = LINKED;
+    filePhases[O][BCLINKING].action = BCLINK;
     filePhases[O][LINKING].type = LINKED;
     filePhases[O][LINKING].action = LINK;
+    filePhases[O][GENERATION].type = S;
+    filePhases[O][GENERATION].action = GENERATE;
 
     extToLang["a"] = A;
     langToExt[A] = "a";
+    filePhases[A][BCLINKING].type = LINKED;
+    filePhases[A][BCLINKING].action = BCLINK;
     filePhases[A][LINKING].type = A;
     filePhases[A][LINKING].action = LINK;
 }
@@ -378,14 +388,12 @@ static cl::opt<Phases> FinalPhase(cl::Optional,
             "Stop translation after pre-processing phase"),
         clEnumValN(TRANSLATION, "t",
             "Stop translation after translation phase"),
-        clEnumValN(OPTIMIZATION,"obc",
+        clEnumValN(OPTIMIZATION,"c",
             "Stop translation after optimization phase"),
         clEnumValN(BCLINKING,"lbc",
             "Stop translation after bitcode linking phase"),
         clEnumValN(GENERATION,"S",
             "Stop translation after generation phase"),
-        clEnumValN(ASSEMBLY,"c",
-            "Stop translation after assembly phase"),
         clEnumValEnd
     )
 );
@@ -1189,6 +1197,84 @@ static std::string CreateTargetTriple()
     return Triple;
 }
 
+/** Check to see if a given file exists in the standard places.
+ */
+static void findFiles(std::vector<std::string>& found, std::string what)
+{
+    llvm::sys::Path MainPath = 
+        llvm::sys::Path::GetMainExecutable(argv0, (void*)(intptr_t)findFiles);
+    llvm::sys::Path path;
+    if (!MainPath.isEmpty()) {
+        MainPath.eraseComponent();  // Remove prog   from foo/bin/prog
+        MainPath.eraseComponent();  // Remove /bin   from foo/bin
+
+        // Stuff will be in, e.g. /usr/local/libecc.
+        MainPath.appendComponent("libecc");
+
+        // Get foo/libecc/<version>/<triple>/<what>
+        path = MainPath;
+        path.appendComponent(ELLCC_VERSION_STRING);
+        path.appendComponent(TargetTriple);
+        path.appendComponent(what);
+        if (path.exists()) {
+            found.push_back(path.c_str());
+        }
+
+        if (Arch.size()) {
+            // Get foo/libecc/<version>/<arch>/<what>
+            path = MainPath;
+            path.appendComponent(ELLCC_VERSION_STRING);
+            path.appendComponent(Arch);
+            path.appendComponent(what);
+            if (path.exists()) {
+                found.push_back(path.c_str());
+            }
+        }
+
+        // Get foo/libecc/<triple>/<what>
+        path = MainPath;
+        path.appendComponent(TargetTriple);
+        path.appendComponent(what);
+        if (path.exists()) {
+            found.push_back(path.c_str());
+        }
+
+        if (Arch.size()) {
+            // Get foo/libecc/<arch>/<what>
+            path = MainPath;
+            path.appendComponent(Arch);
+            path.appendComponent(what);
+            if (path.exists()) {
+                found.push_back(path.c_str());
+            }
+        }
+    
+        // Get foo/libecc/<version>/<what>
+        path = MainPath;
+        path.appendComponent(ELLCC_VERSION_STRING);
+        path.appendComponent(what);
+        if (path.exists()) {
+            found.push_back(path.c_str());
+        }
+
+        // Get foo/libecc/<what>
+        path = MainPath;
+        path.appendComponent(what);
+        if (path.exists()) {
+            found.push_back(path.c_str());
+        }
+    }
+
+    if (!Arch.size()) {
+        // HACK! Temporary host hack.
+        path = "/usr/local/i686-pc-linux-gnu";
+        path.appendComponent(what);
+        if (path.exists()) {
+            found.push_back(path.c_str());
+        }
+    }
+}
+
 // ---------- Define Printers for module and function passes ------------
 namespace {
 
@@ -1639,7 +1725,7 @@ isysroot("isysroot", llvm::cl::value_desc("dir"), llvm::cl::init("/"),
 
 /// InitializeIncludePaths - Process the -I options and set them in the
 /// HeaderSearch object.
-void InitializeIncludePaths(const char *Argv0, HeaderSearch &Headers,
+void InitializeIncludePaths(HeaderSearch &Headers,
                             FileManager &FM, const LangOptions &Lang) {
   InitHeaderSearch Init(Headers, Verbose, isysroot);
 
@@ -1717,22 +1803,13 @@ void InitializeIncludePaths(const char *Argv0, HeaderSearch &Headers,
   Init.AddDefaultEnvVarPaths(Lang);
 
   // Add the ellcc headers, which are relative to the ellcc binary.
-  llvm::sys::Path MainExecutablePath = 
-     llvm::sys::Path::GetMainExecutable(Argv0, (void*)(intptr_t)InitializeIncludePaths);
-  if (!MainExecutablePath.isEmpty()) {
-    MainExecutablePath.eraseComponent();  // Remove prog   from foo/bin/prog
-    MainExecutablePath.eraseComponent();  // Remove /bin   from foo/bin
-
-    // Get foo/lib/ellcc/<version>/include    
-    MainExecutablePath.appendComponent("libecc");
-    MainExecutablePath.appendComponent(ELLCC_VERSION_STRING);
-    MainExecutablePath.appendComponent(Arch);
-    MainExecutablePath.appendComponent("include");
-    
-    // We pass true to ignore sysroot so that we *always* look for clang headers
-    // relative to our executable, never relative to -isysroot.
-    Init.AddPath(MainExecutablePath.c_str(), InitHeaderSearch::System,
-                 false, false, false, true /*ignore sysroot*/);
+  std::vector<std::string> found;
+  findFiles(found, "include");
+  for (size_t i = 0; i < found.size(); ++i) {
+      // We pass true to ignore sysroot so that we *always* look for ecc headers
+      // relative to our executable, never relative to -isysroot.
+      Init.AddPath(found[i], InitHeaderSearch::System,
+                   false, false, false, true /*ignore sysroot*/);
   }
   
   if (!nostdinc) 
@@ -1915,18 +1992,11 @@ static bool InitializeSourceManager(Preprocessor &PP,
 ///
 /// Returns non-zero value on error.
 ///
-static OwningPtr<SourceManager> SourceMgr;
-// Create a file manager object to provide access to and cache the filesystem.
-static FileManager FileMgr;
-static Diagnostic Diags;
-static OwningPtr<TargetInfo> TI;
-static const char* argv0;
-
 static int Preprocess(const std::string &OutputFilename, Input& input)
 {
     // Process the -I options and set them in the HeaderInfo.
     HeaderSearch HeaderInfo(FileMgr);
-    InitializeIncludePaths(argv0, HeaderInfo, FileMgr, input.LO);
+    InitializeIncludePaths(HeaderInfo, FileMgr, input.LO);
     // Set up the preprocessor with these options.
     DriverPreprocessorFactory PPFactory(Diags, input.LO, *TI,
                                         *SourceMgr.get(), HeaderInfo);
@@ -1946,9 +2016,8 @@ static int Preprocess(const std::string &OutputFilename, Input& input)
 /// specified bitcode file.
 ///
 /// Inputs:
-///  InputFilename   - The name of the input bitcode file.
 ///  OutputFilename  - The name of the file to generate.
-///  NativeLinkItems - The native libraries, files, code with which to link
+///  InputFilenames  - The name of the input files.
 ///  LibPaths        - The list of directories in which to find libraries.
 ///
 /// Outputs:
@@ -1958,7 +2027,6 @@ static int Preprocess(const std::string &OutputFilename, Input& input)
 ///
 static int Link(const std::string& OutputFilename,
                 std::vector<Input*>& InputFilenames,
-                const Linker::ItemList& LinkItems,
                 std::string& ErrMsg)
 {
   // Determine the location of the ld program.
@@ -1977,7 +2045,13 @@ static int Link(const std::string& OutputFilename,
   } 
   args.push_back("-static");
   args.push_back("--hash-style=gnu");
-  args.push_back("/usr/local/i686-pc-linux-gnu/lib/crt0.o");
+  // Add the ellcc crt0.o, which is relative to the ellcc binary.
+  std::vector<std::string> found;
+  findFiles(found, "lib/crt0.o");
+  if (found.size()) {
+      args.push_back(found[0]);
+  }
+
   args.push_back("-o");
   args.push_back(OutputFilename);
   for (unsigned i = 0; i < InputFilenames.size(); ++i ) {
@@ -2004,18 +2078,15 @@ static int Link(const std::string& OutputFilename,
           args.push_back("-l" + InputFilenames[i]->name.toString());
       }
   }
-  for (unsigned index = 0; index < LinkItems.size(); index++)
-    if (LinkItems[index].first != "crtend") {
-      if (LinkItems[index].second)
-        args.push_back("-l" + LinkItems[index].first);
-      else
-        args.push_back(LinkItems[index].first);
-    }
 
-  // args.push_back("-L/usr/lib");
-  // args.push_back("-L/usr/lib/gcc/i386-redhat-linux/4.3.2");
-  args.push_back("-L/usr/local/i686-pc-linux-gnu/lib");
-  // args.push_back("-L/home/rich/local/x86-elf/lib");
+  // Add the ellcc library paths, which are relative to the ellcc binary.
+  found.clear();
+  findFiles(found, "lib");
+  for (size_t i = 0; i < found.size(); ++i) {
+      args.push_back(std::string("-L") + found[i]);
+  }
+
+  // RICH: -lstdc++
   args.push_back("-lc");
   args.push_back("-lgcc");
   // Now that "args" owns all the std::strings for the arguments, call the c_str
@@ -2103,8 +2174,10 @@ static int Assemble(const std::string &OutputFilename,
 //===----------------------------------------------------------------------===//
 //===          doMulti - Handle a phase acting on multiple files.
 //===----------------------------------------------------------------------===//
-static void doMulti(Phases phase, std::vector<Input*>& files, InputList& result, TimerGroup& timerGroup,
-                    llvm::LLVMContext& context)
+static void doMulti(Phases phase, std::vector<Input*>& files,
+                    InputList& result, TimerGroup& timerGroup,
+                    llvm::LLVMContext& context,
+                    FileTypes consumedType)
 {
     switch (phase) {
     case BCLINKING: {
@@ -2122,9 +2195,6 @@ static void doMulti(Phases phase, std::vector<Input*>& files, InputList& result,
         // Construct a Linker.
         Linker TheLinker(progname, outputName.toString(), context, Verbose);
 
-        // Keep track of the native link items (versus the bitcode items)
-        Linker::ItemList NativeLinkItems;
-
         // Add library paths to the linker
         TheLinker.addPaths(LibPaths);
         TheLinker.addSystemPaths();
@@ -2133,7 +2203,6 @@ static void doMulti(Phases phase, std::vector<Input*>& files, InputList& result,
         Libraries.erase(std::unique(Libraries.begin(), Libraries.end()),
                 Libraries.end());
 
-        std::vector<sys::Path> Files;
         for (unsigned i = 0; i < files.size(); ++i) {
             if (files[i]->module) {
                 // We have this module.
@@ -2146,14 +2215,24 @@ static void doMulti(Phases phase, std::vector<Input*>& files, InputList& result,
                 }
                 files[i]->module = NULL;         // The module has been consumed.
                 files[i]->name.clear();
+                files[i]->type = consumedType;
             } else {
-                Files.push_back(sys::Path(files[i]->name));
+                bool isNative;
+                if(TheLinker.LinkInFile(files[i]->name, isNative)) {
+                    Exit(1);
+                }
+                if (Verbose) {
+                    if (isNative) {
+                        cout << "  " << files[i]->name << ", a native file, was ignored by the bitcode linker\n";
+                    } else {
+                        cout << "  " << files[i]->name << " was sent to the bitcode linker\n";
+                        
+                        files[i]->type = consumedType;
+                    }
+                }
             }
         }
             
-        if (Files.size() && TheLinker.LinkInFiles(Files))
-            PrintAndExit(TheLinker.getLastError());
-
         if (LinkAsLibrary) {
             // The libraries aren't linked in but are noted as "dependent" in the
             // module.
@@ -2173,6 +2252,7 @@ static void doMulti(Phases phase, std::vector<Input*>& files, InputList& result,
 
             // Link all the items together
             Linker::ItemList Items;
+            Linker::ItemList NativeLinkItems;
             if (TheLinker.LinkInItems(Items, NativeLinkItems) )
                 PrintAndExit(TheLinker.getLastError());
         }
@@ -2209,10 +2289,13 @@ static void doMulti(Phases phase, std::vector<Input*>& files, InputList& result,
         } else {
              outputName =  OutputFilename;
         }
-        // Keep track of the native link items (versus the bitcode items)
-        Linker::ItemList NativeLinkItems;      // RICH
-        if (Link(outputName, files, NativeLinkItems, ErrMsg) != 0) {
-            PrintAndExit(ErrMsg);
+
+        if (Link(outputName, files, ErrMsg) != 0) {
+            if (ErrMsg.size()) {
+                PrintAndExit(ErrMsg);
+            } else {
+                Exit(1);
+            }
         }
 
         if (TimeActions) {
@@ -2291,7 +2374,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         if (filePhases[thisType][phase].action == CCOMPILE) {
             // Process the -I options and set them in the HeaderInfo.
             HeaderSearch HeaderInfo(FileMgr);
-            InitializeIncludePaths(argv0, HeaderInfo, FileMgr, input.LO);
+            InitializeIncludePaths(HeaderInfo, FileMgr, input.LO);
             // Set up the preprocessor with these options.
             DriverPreprocessorFactory PPFactory(Diags, input.LO, *TI,
                                                 *SourceMgr.get(), HeaderInfo);
@@ -2456,7 +2539,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
     }
     case GENERATION: {               // Convert .bc to ...
         if (TimeActions) {
-	    timers[phase]->startTimer();
+	        timers[phase]->startTimer();
         }
 
         std::string ErrorMessage;
@@ -2469,11 +2552,9 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         }
 
         if (input.module == NULL) {
-            if (ErrorMessage.size()) {
-                PrintAndExit(ErrorMessage);
-            } else {
-                PrintAndExit("bitcode didn't read correctly.");
-            }
+            // Assume we have an object file.
+            nextType = O;
+            break;
         }
 
         // Allocate target machine.  First, check whether the user has
@@ -2775,6 +2856,9 @@ int main(int argc, char **argv)
         // Parse the command line options.
         cl::ParseCommandLineOptions(argc, argv, "C/C++ compiler\n");
         
+        if (FinalPhase == OPTIMIZATION && Native)
+            FinalPhase = ASSEMBLY;
+
         sys::PrintStackTraceOnErrorSignal();
         PrettyStackTraceProgram X(argc, argv);
 
@@ -2826,11 +2910,11 @@ int main(int argc, char **argv)
         }
 
         // Get information about the target being compiled for.
-        std::string Triple = CreateTargetTriple();
-        TI.reset(TargetInfo::CreateTargetInfo(Triple));
+        TargetTriple = CreateTargetTriple();
+        TI.reset(TargetInfo::CreateTargetInfo(TargetTriple));
   
         if (TI == 0) {
-            Diags.Report(FullSourceLoc(), diag::err_fe_unknown_triple) << Triple.c_str();
+            Diags.Report(FullSourceLoc(), diag::err_fe_unknown_triple) << TargetTriple.c_str();
             Exit(1);
         }
   
@@ -2942,11 +3026,12 @@ int main(int argc, char **argv)
             if (phases[phase].result != NONE) {
                 // This phase deals with muiltple files.
                 std::vector<Input*> files;
+                FileTypes nextType = NONE;
                 for (it = InpList.begin(); it != InpList.end(); ++it) {
                     if (it->name.isEmpty()) {
                         continue;
                     }
-                    FileTypes nextType = filePhases[it->type][phase].type;
+                    nextType = filePhases[it->type][phase].type;
                     if (nextType != NONE) {
                         if (Verbose) {
                             // This file needs processing during this phase.
@@ -2955,7 +3040,6 @@ int main(int argc, char **argv)
                         }
                         
                         files.push_back(&*it);
-                        it->type = nextType;
                     } else {
                         if (Verbose) {
                             cout << "  " << it->name << " is ignored during this phase\n";
@@ -2965,7 +3049,7 @@ int main(int argc, char **argv)
 
                 if (files.size()) {
                     // Perform the phase on the files.
-                    doMulti(phase, files, InpList, timerGroup, context);
+                    doMulti(phase, files, InpList, timerGroup, context, nextType);
                 }
             } else {
                 for (it = InpList.begin(); it != InpList.end(); ++it) {
