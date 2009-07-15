@@ -1553,84 +1553,6 @@ static void PrintCommand(const std::vector<const char*> &args) {
   cout << "\n" << std::flush;
 }
 
-/// CopyEnv - This function takes an array of environment variables and makes a
-/// copy of it.  This copy can then be manipulated any way the caller likes
-/// without affecting the process's real environment.
-///
-/// Inputs:
-///  envp - An array of C strings containing an environment.
-///
-/// Return value:
-///  NULL - An error occurred.
-///
-///  Otherwise, a pointer to a new array of C strings is returned.  Every string
-///  in the array is a duplicate of the one in the original array (i.e. we do
-///  not copy the char *'s from one array to another).
-///
-static char ** CopyEnv(char ** const envp) {
-  // Count the number of entries in the old list;
-  unsigned entries;   // The number of entries in the old environment list
-  for (entries = 0; envp[entries] != NULL; entries++)
-    /*empty*/;
-
-  // Add one more entry for the NULL pointer that ends the list.
-  ++entries;
-
-  // If there are no entries at all, just return NULL.
-  if (entries == 0)
-    return NULL;
-
-  // Allocate a new environment list.
-  char **newenv = new char* [entries];
-  if ((newenv = new char* [entries]) == NULL)
-    return NULL;
-
-  // Make a copy of the list.  Don't forget the NULL that ends the list.
-  entries = 0;
-  while (envp[entries] != NULL) {
-    newenv[entries] = new char[strlen (envp[entries]) + 1];
-    strcpy (newenv[entries], envp[entries]);
-    ++entries;
-  }
-  newenv[entries] = NULL;
-
-  return newenv;
-}
-
-
-/// RemoveEnv - Remove the specified environment variable from the environment
-/// array.
-///
-/// Inputs:
-///  name - The name of the variable to remove.  It cannot be NULL.
-///  envp - The array of environment variables.  It cannot be NULL.
-///
-/// Notes:
-///  This is mainly done because functions to remove items from the environment
-///  are not available across all platforms.  In particular, Solaris does not
-///  seem to have an unsetenv() function or a setenv() function (or they are
-///  undocumented if they do exist).
-///
-static void RemoveEnv(const char * name, char ** const envp) {
-  for (unsigned index=0; envp[index] != NULL; index++) {
-    // Find the first equals sign in the array and make it an EOS character.
-    char *p = strchr (envp[index], '=');
-    if (p == NULL)
-      continue;
-    else
-      *p = '\0';
-
-    // Compare the two strings.  If they are equal, zap this string.
-    // Otherwise, restore it.
-    if (!strcmp(name, envp[index]))
-      *envp[index] = '\0';
-    else
-      *p = '=';
-  }
-
-  return;
-}
-
 //===----------------------------------------------------------------------===//
 // Preprocessor Initialization
 //===----------------------------------------------------------------------===//
@@ -2055,24 +1977,6 @@ static int Link(const std::string& OutputFilename,
   // Mark the output files for removal if we get an interrupt.
   sys::RemoveFileOnSignal(sys::Path(OutputFilename));
 
-  extern char **environ;
-  char ** clean_env = CopyEnv(environ);
-  if (clean_env == NULL)
-    return 1;
-  RemoveEnv("LIBRARY_PATH", clean_env);
-  RemoveEnv("COLLECT_GCC_OPTIONS", clean_env);
-  RemoveEnv("GCC_EXEC_PREFIX", clean_env);
-  RemoveEnv("COMPILER_PATH", clean_env);
-  RemoveEnv("COLLECT_GCC", clean_env);
-
-
-  // RICH:
-  // Run GCC to assemble and link the program into native code.
-  //
-  // Note:
-  //  We can't just assemble and link the file with the system assembler
-  //  and linker because we don't know where to put the _start symbol.
-  //  GCC mysteriously knows how to do it.
   std::vector<std::string> args;
   args.push_back(ld.c_str());
   args.push_back("--build-id");
@@ -2135,10 +2039,9 @@ static int Link(const std::string& OutputFilename,
     PrintCommand(Args);
   }
 
-  // Run the compiler to assembly and link together the program.
+  // Link the program.
   int R = sys::Program::ExecuteAndWait(
-    ld, &Args[0], (const char**)clean_env, 0, 0, 0, &ErrMsg);
-  delete [] clean_env;
+    ld, &Args[0], (const char**)environ, 0, 0, 0, &ErrMsg);
   return R;
 }
 
