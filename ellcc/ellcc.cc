@@ -46,7 +46,7 @@
 #include "llvm/LinkAllPasses.h"
 #include "llvm/LinkAllVMCore.h"
 #include "llvm/Linker.h"
-#include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/FormattedStream.h"
 #include <iostream>
 #include <fstream>
 #include <memory>
@@ -1961,14 +1961,6 @@ static int Link(const std::string& OutputFilename,
                 const Linker::ItemList& LinkItems,
                 std::string& ErrMsg)
 {
-  // Remove these environment variables from the environment of the
-  // programs that we will execute.  It appears that GCC sets these
-  // environment variables so that the programs it uses can configure
-  // themselves identically.
-  //
-  // However, when we invoke GCC below, we want it to use its normal
-  // configuration.  Hence, we must sanitize its environment.
-        
   // Determine the location of the ld program.
   sys::Path ld = FindExecutable("ecc-ld", progname);
   if (ld.isEmpty())
@@ -2584,12 +2576,13 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         sys::RemoveFileOnSignal(to);
 
         std::string error;
-        raw_ostream *Out = new raw_fd_ostream(to.c_str(), isBinary, error);
+        raw_ostream *os = new raw_fd_ostream(to.c_str(), isBinary, error);
         if (!error.empty()) {
           std::cerr << error << '\n';
-          delete Out;
+          delete os;
           Exit(1);
         }
+        formatted_raw_ostream *Out = new formatted_raw_ostream(*os, isBinary);
 
         // If this target requires addPassesToEmitWholeFile, do it now.  This is
         // used by strange things like the C backend.
