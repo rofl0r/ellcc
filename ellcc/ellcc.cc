@@ -74,6 +74,7 @@ static FileManager FileMgr;
 static Diagnostic Diags;
 static OwningPtr<TargetInfo> TI;
 static const char* argv0;
+static std::vector<const char *> exportList;   // Externals to preserve.
  
 /** File types.
  */
@@ -1537,7 +1538,7 @@ static void Optimize(Module* M)
     // for a main function.  If main is defined, mark all other functions
     // internal.
     if (!DisableInternalize)
-      addPass(Passes, createInternalizePass(true));
+      addPass(Passes, createInternalizePass(exportList));
 
     // Propagate constants at call sites into the functions they call.  This
     // opens opportunities for globalopt (and inlining) by substituting function
@@ -2044,19 +2045,10 @@ static int Link(const std::string& OutputFilename,
   } 
   args.push_back("-static");
   args.push_back("--hash-style=gnu");
-  // Add the ellcc crt0.o, which is relative to the ellcc binary.
-  std::vector<std::string> found;
-  findFiles(found, "lib/crt0.o");
-  if (found.size()) {
-      args.push_back(found[0]);
-  }
-
   args.push_back("-o");
   args.push_back(OutputFilename);
   for (unsigned i = 0; i < InputFilenames.size(); ++i ) {
-      if (InputFilenames[i]->type != A) {
-          args.push_back(InputFilenames[i]->name.toString());
-      }
+      args.push_back(InputFilenames[i]->name.toString());
   }
             
   // Add in the library paths
@@ -2071,23 +2063,13 @@ static int Link(const std::string& OutputFilename,
     args.push_back(Libraries[index]);
   }
 
-  // Add in the libraries to link.
-  for (unsigned i = 0; i < InputFilenames.size(); ++i ) {
-      if (InputFilenames[i]->type == A) {
-          args.push_back("-l" + InputFilenames[i]->name.toString());
-      }
-  }
-
   // Add the ellcc library paths, which are relative to the ellcc binary.
-  found.clear();
+  std::vector<std::string> found;
   findFiles(found, "lib");
   for (size_t i = 0; i < found.size(); ++i) {
       args.push_back(std::string("-L") + found[i]);
   }
 
-  // RICH: -lstdc++
-  args.push_back("-lc");
-  args.push_back("-lgcc");
   // Now that "args" owns all the std::strings for the arguments, call the c_str
   // method to get the underlying string array.  We do this game so that the
   // std::string array is guaranteed to outlive the const char* array.
@@ -2269,7 +2251,7 @@ static void doMulti(Phases phase, std::vector<Input*>& files,
             cout << "  " << fileActions[filePhases[BC][phase].action].name
                 << " " << outputName << " added to the file list\n";
         }
-        result.push_back(input);
+        result.insert(result.begin(), input);
 
         if (TimeActions) {
 	    timers[phase]->stopTimer();
@@ -2868,6 +2850,9 @@ int main(int argc, char **argv)
         // Parse the command line options.
         cl::ParseCommandLineOptions(argc, argv, "C/C++ compiler\n");
         
+        exportList.push_back("_start");
+        exportList.push_back("main");
+
         if (FinalPhase == OPTIMIZATION && Native)
             FinalPhase = ASSEMBLY;
 
@@ -2924,7 +2909,6 @@ int main(int argc, char **argv)
         // Get information about the target being compiled for.
         TargetTriple = CreateTargetTriple();
         TI.reset(TargetInfo::CreateTargetInfo(TargetTriple));
-  
         if (TI == 0) {
             Diags.Report(FullSourceLoc(), diag::err_fe_unknown_triple) << TargetTriple.c_str();
             Exit(1);
@@ -2944,11 +2928,19 @@ int main(int argc, char **argv)
             elsa.addTrace((*traceIt).c_str());
         }
 
+        if (FinalPhase == BCLINKING || FinalPhase == LINKING) {
+            // Add the ellcc crt0.o, which is relative to the ellcc binary.
+            std::vector<std::string> found;
+            findFiles(found, "lib/crt0.o");
+            if (found.size()) {
+                Files.insert(Files.begin(), found[0]);
+            }
+        }
+        
         // Gather the input files and determine their types.
         std::vector<std::string>::iterator fileIt = Files.begin();
         std::vector<std::string>::iterator libIt  = Libraries.begin();
         unsigned libPos = 0, filePos = 0;
-        
         for ( ;; )  {
             if (libIt != Libraries.end())
                 libPos = Libraries.getPosition( libIt - Libraries.begin() );
@@ -3015,6 +3007,16 @@ int main(int argc, char **argv)
             InitializeLangOptions(input.LO, type);
             InitializeLanguageStandard(input.LO, type, *TI.get(), Features);
             InpList.push_back(input);
+        }
+
+        if (FinalPhase == BCLINKING || FinalPhase == LINKING) {
+            // Add the ellcc libecc.a, which is relative to the ellcc binary.
+            std::vector<std::string> found;
+            findFiles(found, "lib/libecc.a");
+            if (found.size()) {
+                Input input(found[0], A);
+                InpList.push_back(input);
+            }
         }
 
         if (   OutputFilename != ""
