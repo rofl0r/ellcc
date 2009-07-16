@@ -424,7 +424,8 @@ void ellcc::DoPrintPreprocessedInput(Preprocessor &PP,
   // Open the output buffer using "Binary" mode. On Windows, this distinction
   // is important (to surpress automatic LF->CFLF conversion).
   std::string Err;
-  llvm::raw_fd_ostream OS(OutFile.empty() || OutFile == "-" ? "-" : OutFile.c_str(), true, Err);
+  llvm::raw_fd_ostream OS(OutFile.empty() || OutFile == "-" ? "-" : OutFile.c_str(), true,
+                          /* force */ true, Err);
   if (!Err.empty()) {
     fprintf(stderr, "%s\n", Err.c_str());
     exit(1);

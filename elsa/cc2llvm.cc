@@ -502,9 +502,9 @@ llvm::Value* CC2LLVMEnv::declaration(const Variable* var, llvm::Value* init, int
         xassert(entryBlock);
         llvm::AllocaInst* lv;
         if (entryBlock == currentBlock) {
-            lv = new llvm::AllocaInst(context, type, variableName(var), entryBlock);
+            lv = new llvm::AllocaInst(type, variableName(var), entryBlock);
         } else {
-            lv = new llvm::AllocaInst(context, type, variableName(var), entryBlock->getTerminator());
+            lv = new llvm::AllocaInst(type, variableName(var), entryBlock->getTerminator());
         }
 
         if (init) {
@@ -1582,9 +1582,9 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, int& deref) const
         const llvm::Type *type = env.makeTypeSpecifier(loc, ft->retType);
         VDEBUG("E_funCall sret type", loc, type->print(std::cerr));
         if (env.entryBlock == env.currentBlock) {
-            sret = new llvm::AllocaInst(env.context, type, "sret", env.entryBlock);
+            sret = new llvm::AllocaInst(type, "sret", env.entryBlock);
         } else {
-            sret = new llvm::AllocaInst(env.context, type, "sret", env.entryBlock->getTerminator());
+            sret = new llvm::AllocaInst(type, "sret", env.entryBlock->getTerminator());
         }
         VDEBUG("E_funCall sret", loc, sret->print(std::cerr));
         parameters.push_back(sret);
@@ -3258,9 +3258,9 @@ llvm::Value *E___builtin_alloca::cc2llvm(CC2LLVMEnv &env, int& deref) const
     env.checkCurrentBlock();
     llvm::AllocaInst* lv;
     if (env.entryBlock == env.currentBlock) {
-        lv = new llvm::AllocaInst(env.context, type, value, "alloca", env.entryBlock);
+        lv = new llvm::AllocaInst(type, value, "alloca", env.entryBlock);
     } else {
-        lv = new llvm::AllocaInst(env.context, type, value, "alloca", env.entryBlock->getTerminator());
+        lv = new llvm::AllocaInst(type, value, "alloca", env.entryBlock->getTerminator());
     }
 
     return lv;

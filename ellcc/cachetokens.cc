@@ -538,7 +538,7 @@ public:
 void ellcc::CacheTokens(Preprocessor &PP, const std::string &OutFile) {
   // Open up the PTH file.
   std::string ErrMsg;
-  llvm::raw_fd_ostream Out(OutFile.c_str(), true, ErrMsg);
+  llvm::raw_fd_ostream Out(OutFile.c_str(), true, /* force */ true, ErrMsg);
   
   if (!ErrMsg.empty()) {
     llvm::errs() << "PTH error: " << ErrMsg << "\n";

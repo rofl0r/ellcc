@@ -95,7 +95,8 @@ bool ellcc::CreateDependencyFileGen(Preprocessor *PP,
   if (DependencyFile == "-") {
     OS = new llvm::raw_stdout_ostream();
   } else {
-    OS = new llvm::raw_fd_ostream(DependencyFile.c_str(), false, ErrStr);
+    OS = new llvm::raw_fd_ostream(DependencyFile.c_str(), false,
+                                  /* force */ true, ErrStr);
     if (!ErrMsg.empty()) {
       ErrStr = "unable to open dependency file: " + ErrMsg;
       return false;

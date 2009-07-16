@@ -666,8 +666,7 @@ static cl::opt<bool> CO8("end-group", cl::Hidden,
 //===          TARGET CODE GENERATOR OPTIONS
 //===----------------------------------------------------------------------===//
 
-static cl::opt<const TargetMachineRegistry::entry*, false,
-               RegistryParser<TargetMachine> >
+static cl::opt<std::string>
 MArch("march", cl::desc("Architecture to generate code for:"));
 
 static cl::opt<std::string>
@@ -2559,14 +2558,27 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
 
         // Allocate target machine.  First, check whether the user has
         // explicitly specified an architecture to compile for.
-        if (MArch == NULL) {
+        const Target *TheTarget = 0;
+        if (!MArch.empty()) {
+            for (TargetRegistry::iterator it = TargetRegistry::begin(),
+                ie = TargetRegistry::end(); it != ie; ++it) {
+                if (MArch == it->getName()) {
+                    TheTarget = &*it;
+                    break;
+                }
+            }
+
+            if (!TheTarget) {
+                errs() << progname << ": error: invalid target '" << MArch << "'.\n";
+                Exit(1);
+            }        
+        } else {
             std::string Err;
-            MArch = TargetMachineRegistry::getClosestStaticTargetForModule(*input.module, Err);
-            if (MArch == NULL) {
-                // RICH: PrintAndExitN?
-                std::cerr << progname << ": error auto-selecting target for module '"
-                    << Err << "'.  Please use the -march option to explicitly "
-                    << "pick a target.\n";
+            TheTarget = TargetRegistry::getClosestStaticTargetForModule(*input.module, Err);
+            if (TheTarget == 0) {
+                errs() << progname << ": error auto-selecting target for module '"
+                       << Err << "'.  Please use the -march option to explicitly "
+                       << "pick a target.\n";
                 Exit(1);
             }
         }
@@ -2581,7 +2593,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
             FeaturesStr = Features.getString();
         }
 
-        std::auto_ptr<TargetMachine> target(MArch->CtorFn(*input.module, FeaturesStr));
+        std::auto_ptr<TargetMachine> target(TheTarget->createTargetMachine(*input.module, FeaturesStr));
         assert(target.get() && "Could not allocate target machine!");
         TargetMachine &Target = *target.get();
 
@@ -2618,7 +2630,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         bool isBinary = true;
         switch (FileType) {
         case TargetMachine::AssemblyFile:
-            if (MArch->Name[0] != 'c' || MArch->Name[1] != 0) { // not CBE
+            if (MArch[0] != 'c' || MArch[1] != 0) { // not CBE
                 if (to.getSuffix() == "") {
                     to.appendSuffix("s");
                 }
@@ -2657,7 +2669,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         sys::RemoveFileOnSignal(to);
 
         std::string error;
-        raw_ostream *os = new raw_fd_ostream(to.c_str(), isBinary, error);
+        raw_ostream *os = new raw_fd_ostream(to.c_str(), isBinary, /* force */ true, error);
         if (!error.empty()) {
           std::cerr << error << '\n';
           delete os;
