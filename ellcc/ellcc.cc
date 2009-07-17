@@ -51,6 +51,7 @@
 #include <fstream>
 #include <memory>
 #include <algorithm>
+#include <unistd.h>
 
 #include "ellcc.h"  
 
