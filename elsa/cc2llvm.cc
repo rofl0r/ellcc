@@ -56,7 +56,8 @@ CC2LLVMEnv::CC2LLVMEnv(StringTable &s, sm::string name, const TranslationUnit& i
     switchInst(NULL),
     switchType(NULL),
     builder(context, targetFolder),
-    context(context)
+    context(context),
+    string_main(str("main"))
 { 
     std::string str;
     TI.getTargetDescription(str);
@@ -608,8 +609,9 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
     returnType = env.makeTypeSpecifier(nameAndParams->var->loc, funcType->retType);
     std::vector<const llvm::Type*>args;
     returnType = env.makeParameterTypes(funcType, returnType, args);
+    bool isMain = env.string_main == nameAndParams->var->name;
     llvm::FunctionType* ft = llvm::FunctionType::get(returnType, args,
-                                                     funcType->acceptsVarargs() || (funcType->flags & FF_NO_PARAM_INFO));
+        isMain || funcType->acceptsVarargs() || (funcType->flags & FF_NO_PARAM_INFO));
     if (env.function && env.function->getType() != (llvm::Type*)ft) {
         // Make the old one anonymous.
         env.function->setName("");
@@ -756,11 +758,13 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
 	
         env.returnValue = env.builder.CreateAlloca(returnType, NULL, "retval");
 
-        // RICH: This should happen in main() only: Default return value.
-        llvm::Constant* nullInt = env.context.getNullValue(returnType);
-        VDEBUG("Store4 source", nameAndParams->var->loc, nullInt->print(std::cerr));
-        VDEBUG("Store4 destination", nameAndParams->var->loc, env.returnValue->print(std::cerr));
-        env.builder.CreateStore(nullInt, env.returnValue, false);	// RICH: main() only.
+        if (isMain) {
+            // Default return value.
+            llvm::Constant* nullInt = env.context.getNullValue(returnType);
+            VDEBUG("Store4 source", nameAndParams->var->loc, nullInt->print(std::cerr));
+            VDEBUG("Store4 destination", nameAndParams->var->loc, env.returnValue->print(std::cerr));
+            env.builder.CreateStore(nullInt, env.returnValue, false);
+        }
 
         // Generate the function return.
         llvm::LoadInst* rv = new llvm::LoadInst(env.returnValue, "", false, env.returnBlock);	// RICH: Volatile

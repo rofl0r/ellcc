@@ -2249,10 +2249,12 @@ static void doMulti(Phases phase, std::vector<Input*>& files,
                     } else {
                         cout << "  " << files[i]->name << " was sent to the bitcode linker\n";
                         
-                        if (files[i]->type != A) {
-                            // Send libraries to the linker also.
-                            files[i]->type = consumedType;
-                        }
+                    }
+                }
+                if (!isNative) {
+                    if (files[i]->type != A) {
+                        // Send libraries to the linker also, mark others as consumed.
+                        files[i]->type = consumedType;
                     }
                 }
             }

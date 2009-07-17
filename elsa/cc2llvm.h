@@ -244,6 +244,9 @@ public:      // funcs
     /** The LLVM context.
      */
     llvm::LLVMContext& context;
+    /** "main"
+     */
+    StringRef string_main;
 };
 
 #endif // CC2LLVM_H
