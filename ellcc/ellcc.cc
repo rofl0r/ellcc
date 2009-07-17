@@ -106,7 +106,7 @@ static const char* fileTypes[] = {
   "a C file",
   "a preprocessed C file",
   "a header file file",
-  "a C++",
+  "a C++ file",
   "a preprocessed C++ file",
   "a C++ header",
   "an LLVM assembly file",
@@ -895,6 +895,21 @@ enum LangStds {
   lang_cxx0x, lang_gnucxx0x
 };
 
+static const char* LangStdsNames[] =
+{
+    "unspecified",
+    "K&R C",
+    "C89",
+    "C99",
+    "GNU2 K&R C",
+    "GNU3 K&R C",
+    "GNUC99",
+    "C++98",
+    "GNUC++98",
+    "C++0X",
+    "GNUC++0X"
+};
+
 static llvm::cl::opt<LangStds>
 LangStd("std", llvm::cl::desc("Language standard to compile for"),
         llvm::cl::init(lang_unspecified),
@@ -1027,6 +1042,8 @@ static void InitializeLanguageStandard(LangOptions &LO, FileTypes FT,
     switch (FT) {
     case NONE: assert(0 && "Unknown base language");
     default:
+      // Object files, etc.
+      return;
     case C:
     case SX:
     case I:
@@ -1039,6 +1056,9 @@ static void InitializeLanguageStandard(LangOptions &LO, FileTypes FT,
     }
   }
   
+  if (Verbose) {
+      cout << "  language standard:" << LangStdsNames[LangStd] << "\n";
+  }
   switch (LangStd) {
   default: assert(0 && "Unknown language standard!");
   case lang_gnucxx0x:
@@ -1218,6 +1238,9 @@ static void findFiles(std::vector<std::string>& found, std::string what)
         path.appendComponent(what);
         if (path.exists()) {
             found.push_back(path.c_str());
+            if (Verbose) {
+                cout << "  found:" << path.c_str() << "\n";
+            }
         }
 
         if (Arch.size()) {
@@ -1228,6 +1251,9 @@ static void findFiles(std::vector<std::string>& found, std::string what)
             path.appendComponent(what);
             if (path.exists()) {
                 found.push_back(path.c_str());
+                if (Verbose) {
+                    cout << "  found:" << path.c_str() << "\n";
+                }
             }
         }
 
@@ -1237,6 +1263,9 @@ static void findFiles(std::vector<std::string>& found, std::string what)
         path.appendComponent(what);
         if (path.exists()) {
             found.push_back(path.c_str());
+            if (Verbose) {
+                cout << "  found:" << path.c_str() << "\n";
+            }
         }
 
         if (Arch.size()) {
@@ -1246,6 +1275,9 @@ static void findFiles(std::vector<std::string>& found, std::string what)
             path.appendComponent(what);
             if (path.exists()) {
                 found.push_back(path.c_str());
+                if (Verbose) {
+                    cout << "  found:" << path.c_str() << "\n";
+                }
             }
         }
     
@@ -1255,6 +1287,9 @@ static void findFiles(std::vector<std::string>& found, std::string what)
         path.appendComponent(what);
         if (path.exists()) {
             found.push_back(path.c_str());
+            if (Verbose) {
+                cout << "  found:" << path.c_str() << "\n";
+            }
         }
 
         // Get foo/libecc/<what>
@@ -1262,6 +1297,9 @@ static void findFiles(std::vector<std::string>& found, std::string what)
         path.appendComponent(what);
         if (path.exists()) {
             found.push_back(path.c_str());
+            if (Verbose) {
+                cout << "  found:" << path.c_str() << "\n";
+            }
         }
     }
 
@@ -1271,6 +1309,9 @@ static void findFiles(std::vector<std::string>& found, std::string what)
         path.appendComponent(what);
         if (path.exists()) {
             found.push_back(path.c_str());
+            if (Verbose) {
+                cout << "  found:" << path.c_str() << "\n";
+            }
         }
     }
 }
@@ -2208,7 +2249,10 @@ static void doMulti(Phases phase, std::vector<Input*>& files,
                     } else {
                         cout << "  " << files[i]->name << " was sent to the bitcode linker\n";
                         
-                        files[i]->type = consumedType;
+                        if (files[i]->type != A) {
+                            // Send libraries to the linker also.
+                            files[i]->type = consumedType;
+                        }
                     }
                 }
             }
@@ -3013,6 +3057,20 @@ int main(int argc, char **argv)
             // Add the ellcc libecc.a, which is relative to the ellcc binary.
             std::vector<std::string> found;
             findFiles(found, "lib/libecc.a");
+            if (found.size()) {
+                Input input(found[0], A);
+                InpList.push_back(input);
+            }
+            // HACK! Add the system C library.
+            found.clear();
+            findFiles(found, "lib/libc.a");
+            if (found.size()) {
+                Input input(found[0], A);
+                InpList.push_back(input);
+            }
+            // HACK! Add the system C library.
+            found.clear();
+            findFiles(found, "lib/libgcc.a");
             if (found.size()) {
                 Input input(found[0], A);
                 InpList.push_back(input);
