@@ -2194,6 +2194,46 @@ static int Assemble(const std::string &OutputFilename,
   return R;
 }
 
+/// LinkFile - check for a valid bitcode file.
+///
+/// Inputs:
+///  File - The pathname of the bitcode file.
+///
+/// Outputs:
+///  true if valid
+///
+///
+static bool LinkFile(const sys::Path &File)
+{
+    // Make sure we can at least read the file
+    if (!File.canRead())
+        return false;
+
+    // If its an archive, try to link it in
+    std::string Magic;
+    File.getMagicNumber(Magic, 64);
+    switch (sys::IdentifyFileType(Magic.c_str(), 64))
+    {
+    default: llvm_unreachable("Bad file type identification");
+    case sys::Unknown_FileType:
+        return false;
+    case sys::Bitcode_FileType:
+    case sys::Archive_FileType:
+        return true;
+
+    case sys::ELF_Relocatable_FileType:
+    case sys::ELF_SharedObject_FileType:
+    case sys::Mach_O_Object_FileType:
+    case sys::Mach_O_FixedVirtualMemorySharedLib_FileType:
+    case sys::Mach_O_DynamicallyLinkedSharedLib_FileType:
+    case sys::Mach_O_DynamicallyLinkedSharedLibStub_FileType:
+    case sys::COFF_FileType:
+        return false;
+    }
+
+    return false;
+}
+
 //===----------------------------------------------------------------------===//
 //===          doMulti - Handle a phase acting on multiple files.
 //===----------------------------------------------------------------------===//
@@ -2234,28 +2274,30 @@ static void doMulti(Phases phase, std::vector<Input*>& files,
                     PrintAndExit(ErrorMessage);
                 }
                 if (Verbose) {
-                    cout << "  " << files[i]->name << " was consumed by the bitcode linker\n";
+                    cout << "  " << files[i]->name << " was sent to the bitcode linker\n";
                 }
                 files[i]->module = NULL;         // The module has been consumed.
                 files[i]->name.clear();
                 files[i]->type = consumedType;
             } else {
-                bool isNative;
-                if(TheLinker.LinkInFile(files[i]->name, isNative)) {
-                    Exit(1);
-                }
-                if (Verbose) {
-                    if (isNative) {
-                        cout << "  " << files[i]->name << ", a native file, was ignored by the bitcode linker\n";
-                    } else {
-                        cout << "  " << files[i]->name << " was sent to the bitcode linker\n";
-                        
+                if (LinkFile(files[i]->name)) {
+                    bool isNative;
+                    if(TheLinker.LinkInFile(files[i]->name, isNative)) {
+                        Exit(1);
                     }
-                }
-                if (!isNative) {
-                    if (files[i]->type != A) {
-                        // Send libraries to the linker also, mark others as consumed.
-                        files[i]->type = consumedType;
+                    if (Verbose) {
+                        cout << "  " << files[i]->name << " was sent to the bitcode linker\n";
+                    }
+                    if (!isNative) {
+                        if (files[i]->type != A) {
+                            // Send libraries to the linker also, mark others as consumed.
+                            files[i]->type = consumedType;
+                        }
+                    }
+                } else {
+                    if (Verbose) {
+                        cout << "  " << files[i]->name
+                             << ", is not a bitcode file and is ignored by the bitcode linker\n";
                     }
                 }
             }
