@@ -1458,7 +1458,7 @@ llvm::Value *E_floatLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
         xunimp("floating point type");
         break;
     }
-    return llvm::ConstantFP::get(llvm::APFloat(*semantics, text));
+    return env.context.getConstantFP(llvm::APFloat(*semantics, text));
 }
 
 llvm::Value *E_stringLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
