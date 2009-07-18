@@ -240,6 +240,7 @@ void AlphaTargetInfo::getGCCRegNames(const char * const *&Names,
 void AlphaTargetInfo::getTargetDefines(const LangOptions &Opts,
                                        std::vector<char> &Defs) const {
   // Target identification.
+  DefineStd(Defs, "__alpha__", Opts);
   DefineStd(Defs, "alpha", Opts);
   
   // Target properties. FIXME: Big or little.
@@ -627,6 +628,7 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
     Define(Defs, "__x86_64__");
     Define(Defs, "__SSE3__");
   } else {
+    DefineStd(Defs, "__x86__", Opts);
     DefineStd(Defs, "i386", Opts);
   }
   
@@ -910,8 +912,8 @@ public:
   virtual void getTargetDefines(const LangOptions &Opts,
                                 std::vector<char> &Defs) const {
     // Target identification.
-    Define(Defs, "__arm");
     Define(Defs, "__arm__");
+    Define(Defs, "__arm");
     
     // Target properties.
     Define(Defs, "__LITTLE_ENDIAN__");
@@ -1031,8 +1033,8 @@ public:
                                 std::vector<char> &Defines) const {
     // FIXME: This is missing a lot of important defines; some of the
     // missing stuff is likely to break system headers.
-    Define(Defines, "__sparc");
     Define(Defines, "__sparc__");
+    Define(Defines, "__sparc");
     Define(Defines, "__sparcv8");
   }
   virtual void getTargetBuiltins(const Builtin::Info *&Records,
@@ -1152,6 +1154,7 @@ namespace {
     virtual uint64_t getPointerAlignV(unsigned AddrSpace) const { return 8; }
     virtual void getTargetDefines(const LangOptions &Opts,
                                   std::vector<char> &Defines) const {
+      Define(Defines, "__pic16__");
       Define(Defines, "__pic16");
     }
     virtual void getTargetBuiltins(const Builtin::Info *&Records,
@@ -1232,6 +1235,7 @@ void Nios2TargetInfo::getGCCRegNames(const char * const *&Names,
 void Nios2TargetInfo::getTargetDefines(const LangOptions &Opts,
                                        std::vector<char> &Defs) const {
   // Target identification.
+  DefineStd(Defs, "__nios2__", Opts);
   DefineStd(Defs, "nios2", Opts);
   
   // Target properties. FIXME: Big or little.
@@ -1352,6 +1356,7 @@ void CellSPUTargetInfo::getGCCRegNames(const char * const *&Names,
 void CellSPUTargetInfo::getTargetDefines(const LangOptions &Opts,
                                        std::vector<char> &Defs) const {
   // Target identification.
+  DefineStd(Defs, "__cellspu__", Opts);
   DefineStd(Defs, "cellspu", Opts);
   
   // Target properties. FIXME: Big or little.
@@ -1472,6 +1477,7 @@ void MipsTargetInfo::getGCCRegNames(const char * const *&Names,
 void MipsTargetInfo::getTargetDefines(const LangOptions &Opts,
                                        std::vector<char> &Defs) const {
   // Target identification.
+  DefineStd(Defs, "__mips__", Opts);
   DefineStd(Defs, "mips", Opts);
   
   // Target properties. FIXME: Big or little.
@@ -1581,6 +1587,7 @@ void Msp430TargetInfo::getGCCRegNames(const char * const *&Names,
 void Msp430TargetInfo::getTargetDefines(const LangOptions &Opts,
                                        std::vector<char> &Defs) const {
   // Target identification.
+  DefineStd(Defs, "__msp430__", Opts);
   DefineStd(Defs, "msp430", Opts);
   
   // Target properties. FIXME: Big or little.

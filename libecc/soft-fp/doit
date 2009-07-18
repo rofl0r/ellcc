@@ -1,5 +1,5 @@
 #!/bin/sh
-CC=~/ell/ellcc/ellcc/$1-elf-ecc
+CC=~/ellcc/ellcc/$1-elf-ecc
 CFLAGS="-DHAVE_OPENDIR -I. -I../soft-int"
 #CC=gcc
 #CFLAGS="-DHAVE_OPENDIR -nostdinc -I. -I../soft-int"
