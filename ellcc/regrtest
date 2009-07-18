@@ -338,7 +338,7 @@ testCparse t0033.c
 testCparse t0034.c
 testCparse t0035.c
 testCparse t0036.c
-failCparse_march mips t0037.c "Return of a double"
+testCparse_special_march mips -S t0037.c
 testCparse_special_march spu -S t0038.c
 failCparse_march ia64 t0039.c "Function pointers?"
 testCparse t0040.c
@@ -366,7 +366,7 @@ testCparse_special_march x86 -S t0061.c
 testCparse_special -S t0062.c
 testCparse_special_march arm -c t0063.S
 testCparse_special_march arm -S t0064.c 
-failCparse_march mips t0065.c "mips code generation failure"
+testCparse_special_march arm -S t0065.c 
 testCparse_special -S t0066.c 
 testCparse_special -S t0067.c 
 testCparse_special -S t0068.c 

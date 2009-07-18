@@ -2746,7 +2746,8 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
           delete os;
           Exit(1);
         }
-        formatted_raw_ostream *Out = new formatted_raw_ostream(*os, isBinary);
+        formatted_raw_ostream *Out = new formatted_raw_ostream(*os,
+            formatted_raw_ostream::DELETE_STREAM);
 
         // If this target requires addPassesToEmitWholeFile, do it now.  This is
         // used by strange things like the C backend.
@@ -2761,7 +2762,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
                 // RICH:
                 std::cerr << progname << ": target does not support generation of this"
                     << " file type!\n";
-                if (Out != &outs()) delete Out;
+                if (Out != &fouts()) delete Out;
                 // And the Out file is empty and useless, so remove it now.
                 sys::Path(OutputFilename).eraseFromDisk();
                 Exit(1);
@@ -2788,7 +2789,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
                 case FileModel::Error:
                     std::cerr << progname << ": target does not support generation of this"
                         << " file type!\n";
-                    if (Out != &outs()) delete Out;
+                    if (Out != &fouts()) delete Out;
                     // And the Out file is empty and useless, so remove it now.
                     sys::Path(OutputFilename).eraseFromDisk();
                     Exit(1);
@@ -2806,7 +2807,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
             if (Target.addPassesToEmitFileFinish(Passes, OCE, getCodeGenOpt())) {
                 std::cerr << progname << ": target does not support generation of this"
                     << " file type!\n";
-                if (Out != &outs()) delete Out;
+                if (Out != &fouts()) delete Out;
                 // And the Out file is empty and useless, so remove it now.
                 sys::Path(OutputFilename).eraseFromDisk();
                 Exit(1);
@@ -2825,8 +2826,10 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
             Passes.doFinalization();
         }
 
+        Out->flush();
+
         // Delete the ostream if it's not a stdout stream
-        if (Out != &outs()) delete Out;
+        if (Out != &fouts()) delete Out;
 
         input.setName(to);
         // Mark the file as a temporary file.
