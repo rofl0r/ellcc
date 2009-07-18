@@ -363,15 +363,16 @@ const Builtin::Info PPCTargetInfo::BuiltinInfo[] = {
 void PPCTargetInfo::getTargetDefines(const LangOptions &Opts,
                                      std::vector<char> &Defs) const {
   // Target identification.
-  Define(Defs, "__ppc__");
   Define(Defs, "_ARCH_PPC");
   Define(Defs, "__POWERPC__");
   if (PointerWidth() == 64) {
+    Define(Defs, "__powerpc64__");
     Define(Defs, "_ARCH_PPC64");
     Define(Defs, "_LP64");
     Define(Defs, "__LP64__");
     Define(Defs, "__ppc64__");
   } else {
+    Define(Defs, "__powerpc__");
     Define(Defs, "__ppc__");
   }
   
