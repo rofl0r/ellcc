@@ -3207,15 +3207,22 @@ int main(int argc, char **argv)
             if (it->module && !it->temp) {
                 // Output the module.
                 // RICH: .ll vs. .bc.
+                const char* to;
+                if (phase == FinalPhase && OutputFilename != "") {
+                    // Override the generated name.
+                    to = sys::Path(OutputFilename).c_str();
+                } else {
+                    to = it->name.c_str();
+                }
                 llvm::PassManager PM;
-                std::ostream *out = new std::ofstream(it->name.c_str());
+                std::ostream *out = new std::ofstream(to);
                 if (!out) {
-                    std::cerr << progname << ": can't open " << it->name << " for writing\n";
+                    std::cerr << progname << ": can't open " << to << " for writing\n";
                     Exit(1);
                 }
                 if (Verbose) {
                     const char* ftype = (FinalPhase != phase) ? "temporary " : "";
-                    cout << "  creating " << ftype << "file " << it->name << "\n";
+                    cout << "  creating " << ftype << "file " << to << "\n";
                 }
 #if RICH
                 llvm::OStream L(*out);

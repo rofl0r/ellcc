@@ -5568,6 +5568,7 @@ static unsigned int decodeEscape(Env &env, char const *&p)
     case 'b': return '\b';
     case 'r': return '\r';
     case 'a': return '\a';
+    case 'f': return '\f';
     case '\\': return '\\';
     case '?': return '?';
     case '\'': return '\'';
