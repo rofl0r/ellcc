@@ -1,6 +1,6 @@
 # 
 # Name the project
-PROJECT(LIBECC)
+PROJECT(LIBC)
 
 cmake_minimum_required(VERSION 2.6)
 
