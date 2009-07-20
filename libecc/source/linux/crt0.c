@@ -1,5 +1,5 @@
-#include <stdlib.h>             // memset()
-#include <string.h>             // exit()
+#include <stdlib.h>             // exit()
+#include <string.h>             // memset()
 
 extern char **environ;
 extern int main(int argc,char **argv,char **envp);
@@ -14,5 +14,6 @@ void _start(int arguments)
     char **argv = (char **)(p + 1);
     environ = argv + argc + 1;
     memset(&_bss, 0, &_end - &_bss);
-    exit(main(argc, argv, environ));
+    int status = main(argc, argv, environ);
+    exit(status);
 }

@@ -1,3 +1,4 @@
+#define MALLOC_PROVIDED
 #ifndef MALLOC_PROVIDED
 /* malign.c -- a wrapper for memalign_r.  */
 

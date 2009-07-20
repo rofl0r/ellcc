@@ -5,4 +5,6 @@ add_library(ctype # SHARED
     isascii.c  isprint.c  iswalpha.c  iswgraph.c  iswupper.c   _tolower.c  towlower.c
     isblank.c  ispunct.c  iswblank.c  iswlower.c  iswxdigit.c  tolower.c   towupper.c)
 
+add_custom_command(TARGET ctype POST_BUILD
+    COMMAND llvm-ar r ${LIBECC_DIR}/../../lib/libecc.a $(ctype_OBJECTS))
 #install_targets(/lib basic)

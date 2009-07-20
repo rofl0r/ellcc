@@ -1,3 +1,4 @@
+#define MALLOC_PROVIDED
 #ifdef MALLOC_PROVIDED
 #else
 /*

@@ -2289,10 +2289,10 @@ static void doMulti(Phases phase, std::vector<Input*>& files,
                         cout << "  " << files[i]->name << " was sent to the bitcode linker\n";
                     }
                     if (!isNative) {
-                        if (files[i]->type != A) {
+         // RICH               if (files[i]->type != A) {
                             // Send libraries to the linker also, mark others as consumed.
                             files[i]->type = consumedType;
-                        }
+               // RICH         }
                     }
                 } else {
                     if (Verbose) {
@@ -2943,7 +2943,7 @@ int main(int argc, char **argv)
         cl::ParseCommandLineOptions(argc, argv, "C/C++ compiler\n");
         
         exportList.push_back("_start");
-        exportList.push_back("main");
+        // exportList.push_back("main");
 
         if (FinalPhase == OPTIMIZATION && Native)
             FinalPhase = ASSEMBLY;

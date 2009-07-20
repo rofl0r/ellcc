@@ -2,6 +2,7 @@
    one because VxWorks does not provide sbrk.  So we have a hook to
    not compile this code.  */
 
+#define MALLOC_PROVIDED
 #ifdef MALLOC_PROVIDED
 
 #else

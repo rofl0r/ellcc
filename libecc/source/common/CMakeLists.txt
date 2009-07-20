@@ -4,6 +4,7 @@ PROJECT(LIBECC)
 
 cmake_minimum_required(VERSION 2.6)
 
+SET(LIBECC_DIR ${PROJECT_SOURCE_DIR})
 # Tell CMake to process the sub-directories
 add_subdirectory(libc)
 add_subdirectory(libm)
