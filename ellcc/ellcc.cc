@@ -36,6 +36,7 @@
 #include "llvm/Support/PassNameParser.h"
 #include "llvm/System/Signals.h"
 #include "llvm/System/Host.h"
+#include "llvm/Support/StandardPasses.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/PluginLoader.h"
@@ -411,12 +412,12 @@ ParseOnly("PO",
 /** Optimization levels.
  */
 enum OptimizationLevels {
+    OPT_NONE,                   ///< No optimizations.
     OPT_FAST_COMPILE,           ///< Optimize to make >compile< go faster
     OPT_SIMPLE,                 ///< Standard/simple optimizations
     OPT_AGGRESSIVE,             ///< Aggressive optimizations
     OPT_LINK_TIME,              ///< Aggressive + LinkTime optimizations
-    OPT_AGGRESSIVE_LINK_TIME,   ///< Make it go way fast!
-    OPT_NONE                    ///< No optimizations. Keep this at the end!
+    OPT_AGGRESSIVE_LINK_TIME    ///< Make it go way fast!
 };
 
 static cl::opt<OptimizationLevels> OptLevel(cl::ZeroOrMore,
@@ -1472,61 +1473,28 @@ void AddStandardCompilePasses(PassManager &PM) {
 
   if (OptLevel == OPT_NONE) return;
 
-  addPass(PM, createRaiseAllocationsPass());     // call %malloc -> malloc inst
-  addPass(PM, createCFGSimplificationPass());    // Clean up disgusting code
-  addPass(PM, createPromoteMemoryToRegisterPass());// Kill useless allocas
-  addPass(PM, createGlobalOptimizerPass());      // Optimize out global vars
-  addPass(PM, createGlobalDCEPass());            // Remove unused fns and globs
-  addPass(PM, createIPConstantPropagationPass());// IP Constant Propagation
-  addPass(PM, createDeadArgEliminationPass());   // Dead argument elimination
-  addPass(PM, createInstructionCombiningPass()); // Clean up after IPCP & DAE
-  addPass(PM, createCFGSimplificationPass());    // Clean up after IPCP & DAE
+  llvm::Pass *InliningPass = !DisableInline ? createFunctionInliningPass() : 0;
+  createStandardModulePasses(&PM, OptLevel,
+                             /*OptimizeSize=*/ false,
+                             /*UnitAtATime=*/ true,
+                             /*UnrollLoops=*/ true,
+                             /*SimplifyLibCalls=*/ true,
+                             /*HaveExceptions=*/ true,
+                             InliningPass);
+}
 
-  addPass(PM, createPruneEHPass());              // Remove dead EH info
+void AddStandardLinkPasses(PassManager &PM) {
+  PM.add(createVerifierPass());                  // Verify that input is correct
 
-  // RICH: If we inline here, an externally referenced function could be optimized out (bzip2).
-  if (0 && !DisableInline)
-    addPass(PM, createFunctionInliningPass());   // Inline small functions
+  // If the -strip-debug command line option was specified, do it.
+  if (StripDebug)
+    addPass(PM, createStripSymbolsPass(true));
 
-  addPass(PM, createArgumentPromotionPass());    // Scalarize uninlined fn args
+  if (OptLevel == OPT_NONE) return;
 
-  addPass(PM, createTailDuplicationPass());      // Simplify cfg by copying code
-  addPass(PM, createSimplifyLibCallsPass());     // Library Call Optimizations
-  addPass(PM, createInstructionCombiningPass()); // Cleanup for scalarrepl.
-  addPass(PM, createJumpThreadingPass());        // Thread jumps.
-  addPass(PM, createCFGSimplificationPass());    // Merge & remove BBs
-  addPass(PM, createScalarReplAggregatesPass()); // Break up aggregate allocas
-  addPass(PM, createInstructionCombiningPass()); // Combine silly seq's
-  addPass(PM, createCondPropagationPass());      // Propagate conditionals
-
-  addPass(PM, createTailCallEliminationPass());  // Eliminate tail calls
-  addPass(PM, createCFGSimplificationPass());    // Merge & remove BBs
-  addPass(PM, createReassociatePass());          // Reassociate expressions
-  addPass(PM, createLoopRotatePass());
-  addPass(PM, createLICMPass());                 // Hoist loop invariants
-  addPass(PM, createLoopUnswitchPass());         // Unswitch loops.
-  addPass(PM, createLoopIndexSplitPass());       // Index split loops.
-  addPass(PM, createInstructionCombiningPass()); 
-  addPass(PM, createIndVarSimplifyPass());       // Canonicalize indvars
-  addPass(PM, createLoopDeletionPass());         // Delete dead loops
-  addPass(PM, createLoopUnrollPass());           // Unroll small loops
-  addPass(PM, createInstructionCombiningPass()); // Clean up after the unroller
-  addPass(PM, createGVNPass());                  // Remove redundancies
-  addPass(PM, createMemCpyOptPass());            // Remove memcpy / form memset
-  addPass(PM, createSCCPPass());                 // Constant prop with SCCP
-
-  // Run instcombine after redundancy elimination to exploit opportunities
-  // opened up by them.
-  addPass(PM, createInstructionCombiningPass());
-  addPass(PM, createCondPropagationPass());      // Propagate conditionals
-
-  addPass(PM, createDeadStoreEliminationPass()); // Delete dead stores
-  addPass(PM, createAggressiveDCEPass());        // SSA based 'Aggressive DCE'
-
-  addPass(PM, createCFGSimplificationPass());    // Merge & remove BBs
-  addPass(PM, createStripDeadPrototypesPass());  // Get rid of dead prototypes
-  addPass(PM, createDeadTypeEliminationPass());  // Eliminate dead types
-  addPass(PM, createConstantMergePass());        // Merge dup global constants
+  createStandardLTOPasses(&PM, /*Internalize=*/ !DisableInternalize,
+                          /*RunInliner=*/ !DisableInline,
+                          /*VerifyEach=*/ VerifyEach);
 }
 
 } // anonymous namespace
@@ -1568,77 +1536,11 @@ static void Optimize(Module* M)
   // Instantiate the pass manager to organize the passes.
   PassManager Passes;
 
-  // If we're verifying, start off with a verification pass.
-  if (VerifyEach)
-    Passes.add(createVerifierPass());
-
   // Add an appropriate TargetData instance for this module...
   addPass(Passes, new TargetData(M));
 
-  if (OptLevel != OPT_NONE) {
-    // Now that composite has been compiled, scan through the module, looking
-    // for a main function.  If main is defined, mark all other functions
-    // internal.
-    if (!DisableInternalize)
-      addPass(Passes, createInternalizePass(exportList));
-
-    // Propagate constants at call sites into the functions they call.  This
-    // opens opportunities for globalopt (and inlining) by substituting function
-    // pointers passed as arguments to direct uses of functions.  
-    addPass(Passes, createIPSCCPPass());
-
-    // Now that we internalized some globals, see if we can hack on them!
-    addPass(Passes, createGlobalOptimizerPass());
-
-    // Linking modules together can lead to duplicated global constants, only
-    // keep one copy of each constant...
-    addPass(Passes, createConstantMergePass());
-
-    // Remove unused arguments from functions...
-    addPass(Passes, createDeadArgEliminationPass());
-
-    // Reduce the code after globalopt and ipsccp.  Both can open up significant
-    // simplification opportunities, and both can propagate functions through
-    // function pointers.  When this happens, we often have to resolve varargs
-    // calls, etc, so let instcombine do this.
-    addPass(Passes, createInstructionCombiningPass());
-
-    if (!DisableInline)
-      addPass(Passes, createFunctionInliningPass()); // Inline small functions
-
-    addPass(Passes, createPruneEHPass());            // Remove dead EH info
-    addPass(Passes, createGlobalOptimizerPass());    // Optimize globals again.
-    addPass(Passes, createGlobalDCEPass());          // Remove dead functions
-
-    // If we didn't decide to inline a function, check to see if we can
-    // transform it to pass arguments by value instead of by reference.
-    addPass(Passes, createArgumentPromotionPass());
-
-    // The IPO passes may leave cruft around.  Clean up after them.
-    addPass(Passes, createInstructionCombiningPass());
-    addPass(Passes, createJumpThreadingPass());        // Thread jumps.
-    addPass(Passes, createScalarReplAggregatesPass()); // Break up allocas
-
-    // Run a few AA driven optimizations here and now, to cleanup the code.
-    addPass(Passes, createGlobalsModRefPass());      // IP alias analysis
-
-    addPass(Passes, createLICMPass());               // Hoist loop invariants
-    addPass(Passes, createGVNPass());                  // Remove redundancies
-    addPass(Passes, createMemCpyOptPass());          // Remove dead memcpy's
-    addPass(Passes, createDeadStoreEliminationPass()); // Nuke dead stores
-
-    // Cleanup and simplify the code after the scalar optimizations.
-    addPass(Passes, createInstructionCombiningPass());
-
-    addPass(Passes, createJumpThreadingPass());        // Thread jumps.
-    addPass(Passes, createPromoteMemoryToRegisterPass()); // Cleanup jumpthread.
-
-    // Delete basic blocks, which optimization passes may have killed...
-    addPass(Passes, createCFGSimplificationPass());
-
-    // Now that we have optimized the program, discard unreachable functions...
-    addPass(Passes, createGlobalDCEPass());
-  }
+  // Add the standard passes.
+  AddStandardLinkPasses(Passes);
 
   // If the -s or -S command line options were specified, strip the symbols out
   // of the resulting program to make it smaller.  -s and -S are GNU ld options
@@ -1652,7 +1554,7 @@ static void Optimize(Module* M)
     if (Opt->getNormalCtor())
       addPass(Passes, Opt->getNormalCtor()());
     else
-      std::cerr << "llvm-ld: cannot create pass: " << Opt->getPassName() 
+      std::cerr << progname << ": cannot create optimization pass: " << Opt->getPassName() 
                 << "\n";
   }
 
@@ -2543,10 +2445,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         // Add an appropriate TargetData instance for this module...
         Passes.add(new TargetData(input.module));
 
-        // If -std-compile-opts is given, add in all the standard compilation 
-        // optimizations first. This will handle -strip-debug, -disable-inline,
-        // and -disable-opt as well.
-        if (OptLevel > OPT_FAST_COMPILE && OptLevel < OPT_NONE)
+        if (OptLevel > OPT_FAST_COMPILE)
             AddStandardCompilePasses(Passes);
 
         // otherwise if the -strip-debug command line option was specified, add it.
