@@ -1,5 +1,6 @@
+include(${ELLCC_SOURCE_DIR}/cmake/ellcc_components.cmake)
 
-add_library(smbase # SHARED
+add_library(smbase ${ELLCC_LIBRARY_TYPE}
     autofile.cc bflatten.cc bit2d.cc bitarray.cc boxprint.cc breaker.cpp
     crc.cpp cycles.c d2vector.c datablok.cpp exc.cpp flatten.cc gprintf.c
     growbuf.cc hashline.cc hashtbl.cc malloc.c malloc_stub.c missing.cpp mypopen.c
