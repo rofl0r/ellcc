@@ -1,6 +1,6 @@
 # Make libraries for all the targets.
-foreach(dir ${ELLCC_TARGETS})
-    add_subdirectory(${dir})
-endforeach(dir)
+foreach(ELLCC_TARGET ${ELLCC_TARGETS})
+    add_subdirectory(${ELLCC_TARGET})
+endforeach(ELLCC_TARGET)
 
 add_subdirectory(source)
