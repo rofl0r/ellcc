@@ -1405,9 +1405,9 @@ llvm::Value *E_boolLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     deref = 0;
     if (b)
-        return env.context.getConstantIntTrue();
+        return env.context.getTrue();
     else
-        return env.context.getConstantIntFalse();
+        return env.context.getFalse();
 }
 
 llvm::Value *E_intLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
@@ -2217,7 +2217,8 @@ llvm::Value* CC2LLVMEnv::initializer(const Initializer* init, Type* type, int& d
                 for (int i = 0; i < size; ++i) {
                     elements.push_back(context.getConstantInt(elttype, i < s->data->getDataLen() ? s->data->getData()[i] : 0));
                 }
-	        value = llvm::ConstantArray::get((llvm::ArrayType*)makeTypeSpecifier(init->loc, type), elements);
+	        value = context.getConstantArray((llvm::ArrayType*)makeTypeSpecifier(init->loc, type),
+                                                 elements);
                 break;
             } else {
                 xunimp("initializing an array with an expression");
@@ -2260,7 +2261,7 @@ llvm::Value* CC2LLVMEnv::initializer(const Initializer* init, Type* type, int& d
             
             const llvm::Type* artype = makeTypeSpecifier(init->loc, type);
             VDEBUG("Init type", init->loc, artype->print(std::cerr));
-	    value = llvm::ConstantArray::get((llvm::ArrayType*)artype, elements);
+	    value = context.getConstantArray((llvm::ArrayType*)artype, elements);
 	    break;
 	} else if (type->isCompoundType()) {
             CompoundType *ct = type->asCompoundType();
@@ -2800,12 +2801,12 @@ llvm::Value* CC2LLVMEnv::binop(SourceLocation loc, BinaryOp op, Expression* e1, 
         currentBlock = NULL;
 
         setCurrentBlock(ifTrue);
-        llvm::Value* tValue = llvm::ConstantInt::getTrue();
+        llvm::Value* tValue = context.getTrue();
 	builder.CreateBr(next);
         currentBlock = NULL;
 
         setCurrentBlock(ifFalse);
-        llvm::Value* fValue = llvm::ConstantInt::getFalse();
+        llvm::Value* fValue = context.getFalse();
 
         setCurrentBlock(next);
         llvm::PHINode* phi = builder.CreatePHI(tValue->getType());
@@ -2832,12 +2833,12 @@ llvm::Value* CC2LLVMEnv::binop(SourceLocation loc, BinaryOp op, Expression* e1, 
         currentBlock = NULL;
 
         setCurrentBlock(ifTrue);
-        llvm::Value* tValue = llvm::ConstantInt::getTrue();
+        llvm::Value* tValue = context.getTrue();
 	builder.CreateBr(next);
         currentBlock = NULL;
 
         setCurrentBlock(ifFalse);
-        llvm::Value* fValue = llvm::ConstantInt::getFalse();
+        llvm::Value* fValue = context.getFalse();
 
         setCurrentBlock(next);
         llvm::PHINode* phi = builder.CreatePHI(tValue->getType());
