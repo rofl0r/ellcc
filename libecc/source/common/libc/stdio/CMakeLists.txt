@@ -15,6 +15,4 @@ add_library(stdio # SHARED
     fgetc.c       freopen.c      getdelim.c   puts.c            sniprintf.c   vfscanf.c
     fgetpos.c     fscanf.c       getline.c    putw.c            snprintf.c    viprintf.c)
 
-add_custom_command(TARGET stdio POST_BUILD
-    COMMAND llvm-ar r ${LIBECC_DIR}/../../lib/libecc.a $(stdio_OBJECTS))
 #install_targets(/lib basic)

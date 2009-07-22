@@ -15,6 +15,4 @@ add_library(stdlib # SHARED
     __call_atexit.c  _Exit.c         lldiv.c         mlock.c       setenv.c    wcstol.c
     calloc.c         __exp10.c       lrand48.c       mprec.c       setenv_r.c  wcstoll.c)
 
-add_custom_command(TARGET stdlib POST_BUILD
-    COMMAND llvm-ar r ${LIBECC_DIR}/../../lib/libecc.a $(stdlib_OBJECTS))
 #install_targets(/lib basic)

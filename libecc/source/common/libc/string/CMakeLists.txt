@@ -10,6 +10,4 @@ add_library(string # SHARED
     memmem.c   strchr.c      strlcpy.c     strpbrk.c      u_strerr.c  wcslcpy.c  wcswidth.c
     memmove.c  strcmp.c      strlen.c      strrchr.c      wcpcpy.c    wcslen.c   wcsxfrm.c)
 
-add_custom_command(TARGET string POST_BUILD
-    COMMAND llvm-ar r ${LIBECC_DIR}/../../lib/libecc.a $(string_OBJECTS))
 #install_targets(/lib basic)

@@ -4,6 +4,4 @@ add_library(posix # SHARED
     creat.c     execlp.c  execvp.c   opendir.c  readdir_r.c  seekdir.c  usleep.c
     execl.c     execv.c   _isatty.c  popen.c    rewinddir.c  sleep.c)
 
-add_custom_command(TARGET posix POST_BUILD
-    COMMAND llvm-ar r ${LIBECC_DIR}/../../lib/libecc.a $(posix_OBJECTS))
 #install_targets(/lib basic)
