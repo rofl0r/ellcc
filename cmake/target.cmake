@@ -11,7 +11,7 @@ CMAKE_FORCE_C_COMPILER(${ELLCC_SOURCE_DIR}/ellcc/${ELLCC_TARGET}${sep}ecc GNU)
 CMAKE_FORCE_CXX_COMPILER(${ELLCC_SOURCE_DIR}/ellcc/${ELLCC_TARGET}${sep}e++ GNU)
 
 # here is the target environment is located
-SET(CMAKE_FIND_ROOT_PATH  ${ELLCC_SOURCE_DIR})
+SET(CMAKE_FIND_ROOT_PATH  ${PROJECT_SOURCE_DIR})
 
 # adjust the default behaviour of the FIND_XXX() commands:
 # search headers and libraries in the target environment, search 
