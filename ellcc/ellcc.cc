@@ -2836,7 +2836,9 @@ int main(int argc, char **argv)
             timers[i] = new Timer(phases[i].name, timerGroup);
         }
 
-        llvm::LLVMContext context;
+        // RICH: Temporary work around.
+        llvm::LLVMContext& context = llvm::getGlobalContext();
+        // llvm::LLVMContext context;
         
         // Parse the command line options.
         cl::ParseCommandLineOptions(argc, argv, "C/C++ compiler\n");
