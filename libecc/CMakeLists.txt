@@ -5,8 +5,9 @@ foreach(ELLCC_TARGET ${ELLCC_TARGETS})
                                   -DELLCC_TARGET=${ELLCC_TARGET}
                                   ${CMAKE_CURRENT_SOURCE_DIR}/source
                     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/${ELLCC_TARGET})
-    add_custom_target(${ELLCC_TARGET} ALL make WORKING_DIRECTORY
-               ${CMAKE_CURRENT_BINARY_DIR}/${ELLCC_TARGET})
+    add_custom_target(${ELLCC_TARGET} ALL make
+                      COMMENT "Building libraries for ${ELLCC_TARGET}"
+                      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/${ELLCC_TARGET})
 endforeach(ELLCC_TARGET)
 
 #add_subdirectory(source)
