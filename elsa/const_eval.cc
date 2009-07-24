@@ -626,7 +626,7 @@ CValue Expression::iconstEval(ConstEval &env) const
       // elsa/include/stddef.h header) make that the same as 'unsigned';
       // in any case, it must be an unsigned integer type (c99, 7.17p2)
       CValue ret(env.TI);
-      ret.setUnsigned(ST_UNSIGNED_INT, s->size);
+      ret.setUnsigned((SimpleTypeId)env.TI.getSizeType(), s->size);
       return ret;
 
     ASTNEXTC(E_unary, u)
@@ -689,7 +689,7 @@ CValue Expression::iconstEval(ConstEval &env) const
         return CValue(env.TI, ST_DEPENDENT);
       }
       CValue ret(env.TI);
-      ret.setUnsigned(ST_UNSIGNED_INT, s->size);
+      ret.setUnsigned((SimpleTypeId)env.TI.getSizeType(), s->size);
       return ret;
 
     ASTNEXTC(E_grouping, e)

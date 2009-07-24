@@ -592,7 +592,7 @@ class Expression {
   custom debugPrint { printExtras(os, indent); }
 
   // interpretations of literals
-  -> E_intLit      { public(xml) unsigned long i = 0; }
+  -> E_intLit      { public(xml) unsigned long long i = 0; }
   -> E_floatLit    { public(xml) double d = 0; }
 
   -> E_stringLit   {

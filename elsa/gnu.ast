@@ -235,6 +235,7 @@ class Designator (SourceLocation loc) {
   -> SubscriptDesignator(Expression idx_expr, // taken from D_array
                          Expression /*nullable*/ idx_expr2)
   {
+    // RICH: This needs to come from TargetInfo.
     public(xml) int idx_computed  = INT_MIN; // index computed at compile time
     public(xml) int idx_computed2 = INT_MIN; // index range end computed at compile time
   }

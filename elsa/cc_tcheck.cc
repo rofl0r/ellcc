@@ -5315,31 +5315,35 @@ Type *E_boolLit::itcheck_x(Env &env, Expression *&replacement)
 }
 
 
-// return true if type 'id' can represent value 'i'
-bool canRepresent(SimpleTypeId id, unsigned long i)
+// return true if 'i' can fit in 'width' bits.
+static bool fitsIn(unsigned width, unsigned long long i, bool isSigned)
 {
-  // I arbitrarily choose to make this determination according to the
-  // representations available under the compiler that compiles Elsa,
-  // since that's convenient and likely to correspond with what
-  // happens when the source code in question is "really" compiled.
+    if (isSigned) {
+        long long MaxVal;
+        long long MinVal;
+        MaxVal = (1LL << (width - 1)) - 1;
+        MinVal = -(1LL << (width - 1));
+        return (long long)i >= MinVal && (long long)i <= MaxVal;
+    } else {
+        unsigned long long MaxVal;
+        MaxVal = ~0ULL >> (64 - width);
+        return (unsigned long long)i <= MaxVal;
+    }
+}
 
-  switch (id) {
+// return true if type 'id' can represent value 'i'
+bool canRepresent(Env& env, SimpleTypeId id, unsigned long long i)
+{
+    switch (id) {
     default: xfailure("bad type id");
-
-    case ST_INT:                 return i <= INT_MAX;
-    case ST_UNSIGNED_INT:        return i <= UINT_MAX;
-    case ST_LONG_INT:            return i <= LONG_MAX;
-
-    case ST_UNSIGNED_LONG_INT:
-    case ST_LONG_LONG:
-    case ST_UNSIGNED_LONG_LONG:
-      // I don't want to force the host compiler to have 'long long',
-      // so I'm just going to claim that every value is representable
-      // by these three types.  Also, given that I passed 'i' in as
-      // 'unsigned long', it's pretty much a given that it will be
-      // representable.
-      return true;
-  }
+    case ST_INT:                return fitsIn(env.TI.IntWidth(), i, true);
+    case ST_UNSIGNED_INT:       return fitsIn(env.TI.IntWidth(), i, false);
+    case ST_LONG_INT:           return fitsIn(env.TI.LongWidth(), i, true);
+    case ST_UNSIGNED_LONG_INT:  return fitsIn(env.TI.LongWidth(), i, false);
+    case ST_LONG_LONG:          return fitsIn(env.TI.LongLongWidth(), i, true);
+    case ST_UNSIGNED_LONG_LONG: return fitsIn(env.TI.LongLongWidth(), i, false);
+    }
+    return false;
 }
 
 Type *E_intLit::itcheck_x(Env &env, Expression *&replacement)
@@ -5363,7 +5367,7 @@ Type *E_intLit::itcheck_x(Env &env, Expression *&replacement)
 
   // what value? (tacit assumption: host compiler's 'unsigned long'
   // is big enough to make these distinctions)
-  i = strtoul(p, NULL /*endp*/, radix);
+  i = strtoull(p, NULL /*endp*/, radix);
 
   // what suffix?
   while (isdigit(*p)) {
@@ -5460,7 +5464,7 @@ Type *E_intLit::itcheck_x(Env &env, Expression *&replacement)
   // that can represent the value.
   SimpleTypeId id = *seq;
   while (*(seq+1) != ST_VOID &&
-         !canRepresent(id, i)) {
+         !canRepresent(env, id, i)) {
     seq++;
     id = *seq;
   }

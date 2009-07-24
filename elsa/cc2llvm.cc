@@ -28,7 +28,7 @@ using namespace ellcc;
 
 #define SRET 1
 
-#if 1
+#if 0
 // Really verbose debugging.
 #define VDEBUG(who, where, what) std::cerr << toString(where) << ": " << who << " "; what; std::cerr << "\n"
 #else
@@ -343,7 +343,8 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLocation loc, Atomic
         SFOREACH_OBJLIST(Variable, ct->dataMembers, iter) {
             Variable const *v = iter.data();
             VDEBUG("member", v->loc, std::cerr << v->toString());
-            members.add(v, context.getConstantInt(TD.getIntPtrType(), i++));
+            const llvm::IntegerType* itype = llvm::IntegerType::get(TI.IntWidth());
+            members.add(v, context.getConstantInt(itype, i++));
 	    fields.push_back(makeTypeSpecifier(v->loc, v->type));
         }
 

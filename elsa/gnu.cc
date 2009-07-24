@@ -1388,7 +1388,7 @@ void IN_designated::tcheck(Env &env, Type *type)
 CValue E_alignofType::extConstEval(ConstEval &env) const
 {
   CValue ret(env.TI);
-  ret.setUnsigned(ST_UNSIGNED_INT, alignment);
+  ret.setUnsigned((SimpleTypeId)env.TI.getSizeType(), alignment);
   return ret;
 }
 
@@ -1396,7 +1396,7 @@ CValue E_alignofType::extConstEval(ConstEval &env) const
 CValue E_alignofExpr::extConstEval(ConstEval &env) const
 {
   CValue ret(env.TI);
-  ret.setUnsigned(ST_UNSIGNED_INT, alignment);
+  ret.setUnsigned((SimpleTypeId)env.TI.getSizeType(), alignment);
   return ret;
 }
 
