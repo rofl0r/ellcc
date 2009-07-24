@@ -813,6 +813,10 @@ void Asm::itcheck_constraints(Env &env, bool module)
                         useAsmname = true;
                         break;
                     case 'm': // Memory operand.
+                    case 'o': // Offsetable memory operand.
+                    case 'V': // Non-offsetable memory operand.
+                    case '<': // Memory operand with autoincrement addressing.
+                    case '>': // Memory operand with autodecrement addressing.
                         constraint->info = (TargetInfo::ConstraintInfo)(constraint->info
                                                                         |TargetInfo::CI_AllowsMemory);
                         break;
@@ -975,8 +979,11 @@ void Asm::itcheck_constraints(Env &env, bool module)
                         }
                         break;
                     case 'i': // Immediate integer.
-                    case 'I':
                     case 'n': // Immediate integer with a known value.
+                        result = *cp;
+                        break;
+                    case 'E': // Immediate float.
+                    case 'F':
                         result = *cp;
                         break;
                     case 'r': // General register.
@@ -991,6 +998,10 @@ void Asm::itcheck_constraints(Env &env, bool module)
                                                                         |TargetInfo::CI_AllowsRegister);
                         break;
                     case 'm': // Memory operand.
+                    case 'o': // Offsetable memory operand.
+                    case 'V': // Non-offsetable memory operand.
+                    case '<': // Memory operand with autoincrement addressing.
+                    case '>': // Memory operand with autodecrement addressing.
                         result = *cp;
                         constraint->info = (TargetInfo::ConstraintInfo)(constraint->info
                                                                         |TargetInfo::CI_AllowsMemory);

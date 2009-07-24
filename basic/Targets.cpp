@@ -253,33 +253,12 @@ void AlphaTargetInfo::getTargetDefines(const LangOptions &Opts,
 // FIXME
 bool
 AlphaTargetInfo::validateAsmConstraint(const char *&Name,
-                                       TargetInfo::ConstraintInfo &info) const {
-  switch (*Name) {
-  default: return false;
-  case 'a': // r24 - input to divide.
-  case 'b': // r25 - input to divide.
-  case 'c': // r27 - function call address.
-  case 'f': // Any floating point register.
-  case 'v': // r0 - function return value.
-  case 'I': // An unsigned 8 bit constant.
-  case 'J': // The constant zero.
-  case 'K': // A signed 16 bit integer constant.
-  case 'L': // A shifted signed 16 bit constant for LDAH.
-  case 'M': // A ZAP instruction operand.
-  case 'N': // A complemented 8 bit unsigned constant.
-  case 'O': // A negated 8 bit unsigned constant.
-  case 'P': // 1, 2, or 3..
-  case 'H': // A ZAP instruction operand.
-  case 'G': // The floating point constant zero.
-  case 'Q': // A memory operand.
-  case 'R': // A direct call operand.
-  case 'S': // An unsigned 6 bit constant.
-  case 'T': // A high part symbol.
-  case 'U': // A UNICOSMK symbol.
-  case 'W': // A vector zero constant.
-    info = (TargetInfo::ConstraintInfo)(info|TargetInfo::CI_AllowsRegister);
-    return true;
-  }
+                                       TargetInfo::ConstraintInfo &info) const
+{
+    switch (*Name)
+    {
+    default: return false;
+    }
 }
 
 // FIXME
@@ -335,17 +314,7 @@ public:
   virtual void getGCCRegAliases(const GCCRegAlias *&Aliases, 
                                 unsigned &NumAliases) const;
   virtual bool validateAsmConstraint(const char *&Name,
-                                     TargetInfo::ConstraintInfo &info) const {
-    switch (*Name) {
-    default: return false;
-    case 'O': // Zero
-      return true;
-    case 'b': // Base register
-    case 'f': // Floating point register
-      info = (TargetInfo::ConstraintInfo)(info|TargetInfo::CI_AllowsRegister);
-      return true;
-    }
-  }
+                                     TargetInfo::ConstraintInfo &info) const;
   virtual const char *getClobbers() const {
     return "";
   }
@@ -387,7 +356,6 @@ void PPCTargetInfo::getTargetDefines(const LangOptions &Opts,
   // FIXME: Should be controlled by command line option.
   Define(Defs, "__LONG_DOUBLE_128__");
 }
-
 
 const char * const PPCTargetInfo::GCCRegNames[] = {
   "0", "1", "2", "3", "4", "5", "6", "7",
@@ -458,6 +426,21 @@ void PPCTargetInfo::getGCCRegAliases(const GCCRegAlias *&Aliases,
   Aliases = GCCRegAliases;
   NumAliases = llvm::array_lengthof(GCCRegAliases);
 }
+
+bool PPCTargetInfo::validateAsmConstraint(const char *&Name,
+                                          TargetInfo::ConstraintInfo &info) const
+{
+    switch (*Name) {
+    default: return false;
+    case 'O': // Zero
+        return true;
+    case 'b': // Base register
+    case 'f': // Floating point register
+        info = (TargetInfo::ConstraintInfo)(info|TargetInfo::CI_AllowsRegister);
+        return true;
+    }
+}
+
 } // end anonymous namespace.
 
 namespace {
@@ -668,31 +651,32 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
   
 bool
 X86TargetInfo::validateAsmConstraint(const char *&Name,
-                                     TargetInfo::ConstraintInfo &info) const {
-  switch (*Name) {
-  default: return false;
-  case 'a': // eax.
-  case 'b': // ebx.
-  case 'c': // ecx.
-  case 'd': // edx.
-  case 'S': // esi.
-  case 'D': // edi.
-  case 'A': // edx:eax.
-  case 't': // top of floating point stack.
-  case 'u': // second from top of floating point stack.
-  case 'q': // Any register accessible as [r]l: a, b, c, and d.
-  case 'y': // Any MMX register.
-  case 'x': // Any SSE register.
-  case 'Q': // Any register accessible as [r]h: a, b, c, and d.
-  case 'e': // 32-bit signed integer constant for use with zero-extending 
-            // x86_64 instructions.
-  case 'Z': // 32-bit unsigned integer constant for use with zero-extending 
-            // x86_64 instructions.
-  case 'N': // unsigned 8-bit integer constant for use with in and out
-            // instructions.
-    info = (TargetInfo::ConstraintInfo)(info|TargetInfo::CI_AllowsRegister);
-    return true;
-  }
+                                     TargetInfo::ConstraintInfo &info) const
+{
+    switch (*Name) {
+    default: return false;
+    case 'a': // eax.
+    case 'b': // ebx.
+    case 'c': // ecx.
+    case 'd': // edx.
+    case 'S': // esi.
+    case 'D': // edi.
+    case 'A': // edx:eax.
+    case 't': // top of floating point stack.
+    case 'u': // second from top of floating point stack.
+    case 'q': // Any register accessible as [r]l: a, b, c, and d.
+    case 'y': // Any MMX register.
+    case 'x': // Any SSE register.
+    case 'Q': // Any register accessible as [r]h: a, b, c, and d.
+    case 'e': // 32-bit signed integer constant for use with zero-extending 
+              // x86_64 instructions.
+    case 'Z': // 32-bit unsigned integer constant for use with zero-extending 
+              // x86_64 instructions.
+    case 'N': // unsigned 8-bit integer constant for use with in and out
+              // instructions.
+        info = (TargetInfo::ConstraintInfo)(info|TargetInfo::CI_AllowsRegister);
+        return true;
+    }
 }
 
 std::string
@@ -941,19 +925,7 @@ public:
   virtual void getGCCRegAliases(const GCCRegAlias *&Aliases, 
                                 unsigned &NumAliases) const;
   virtual bool validateAsmConstraint(const char *&Name,
-                                     TargetInfo::ConstraintInfo &info) const {
-    // FIXME: Check if this is complete
-    switch (*Name) {
-    default: return false;
-    case 'l': // r0-r7
-    case 'h': // r8-r15
-    case 'w': // VFP Floating point register single precision
-    case 'P': // VFP Floating point register double precision
-        info = (TargetInfo::ConstraintInfo)(info|TargetInfo::CI_AllowsRegister);
-        return true;
-    }
-    return false;
-  }
+                                     TargetInfo::ConstraintInfo &info) const;
   virtual const char *getClobbers() const {
     // FIXME: Is this really right?
     return "";
@@ -994,6 +966,31 @@ void ARMTargetInfo::getGCCRegAliases(const GCCRegAlias *&Aliases,
   Aliases = GCCRegAliases;
   NumAliases = llvm::array_lengthof(GCCRegAliases);
 }
+
+bool ARMTargetInfo::validateAsmConstraint(const char *&Name,
+                                          TargetInfo::ConstraintInfo &info) const
+{
+    switch (*Name) {
+    default: return false;
+    case 'l': // r0-r7
+    case 'h': // r8-r15
+    case 'f': // Floating point register.
+    case 'w': // VFP Floating point register single precision
+    case 'P': // VFP Floating point register double precision
+        info = (TargetInfo::ConstraintInfo)(info|TargetInfo::CI_AllowsRegister);
+        return true;
+    case 'I': // Integer in the range 0 to 255 rotated by a multiple of 2.
+    case 'J': // Integer constant in the range -4095 to 4096.
+    case 'K': // Like 'I', but one's complement.
+    case 'L': // Like 'I', but two's complement.
+    case 'M': // Integer in the range 0 to 32.
+    case 'F': // 0.0, 0.5, 1.0, 2.0, 3.0, 4.0, 5.0, or 10.0.
+    case 'G': // Same as 'F', negated.
+        return true;
+    }
+    return false;
+}
+
 } // end anonymous namespace.
 
 
@@ -1053,10 +1050,7 @@ public:
   virtual void getGCCRegAliases(const GCCRegAlias *&Aliases, 
                                 unsigned &NumAliases) const;
   virtual bool validateAsmConstraint(const char *&Name,
-                                     TargetInfo::ConstraintInfo &info) const {
-    // FIXME: Implement!
-    return false;
-  }
+                                     TargetInfo::ConstraintInfo &info) const;
   virtual const char *getClobbers() const {
     // FIXME: Implement!
     return "";
@@ -1133,6 +1127,40 @@ public:
     getSolarisDefines(Defines);
   }
 };
+
+bool SparcV8TargetInfo::validateAsmConstraint(const char *&Name,
+                                              TargetInfo::ConstraintInfo &info) const
+{
+    switch (*Name) {
+    default: return false;
+    case 'f': // Floating point register.
+    case 'e': // Floating point register.
+    case 'c': // Floating point condition code register.
+    case 'h': // 64-bit global or out register.
+    case 'U': // An even register.
+        info = (TargetInfo::ConstraintInfo)(info|TargetInfo::CI_AllowsRegister);
+        return true;
+    case 'D': // A vector constant.
+    case 'I': // A signed 13 bit constant.
+    case 'J': // Zero.
+    case 'K': // A 32-bit constant with the low 12 bits clear.
+    case 'L': // A constant for movcc.
+    case 'M': // A constant for movrcc.
+    case 'N': // Same as 'K' but bits above 0..31 must be zero.
+    case 'O': // 4096.
+    case 'G': // Floating point zero.
+    case 'H': // A signed 13 bit constant, sign extended to 32 or 64 bits.
+    case 'Q': // A floating point constant whose integer representation can be loaded with sethi.
+    case 'R': // A floating point constant whose integer representation can be loaded with mov.
+    case 'S': // A floating point constant whose integer representation can be loaded with hi/lo_sum.
+    case 'T': // 8-byte aligned memory address.
+    case 'W': // A memory address for 'e' constraint registers.
+    case 'Y': // Vector zero.
+        return true;
+    }
+    return false;
+}
+
 } // end anonymous namespace.
 
 namespace {
@@ -1166,13 +1194,20 @@ namespace {
     virtual void getGCCRegNames(const char * const *&Names, 
                                 unsigned &NumNames) const {} 
     virtual bool validateAsmConstraint(const char *&Name, 
-                                       TargetInfo::ConstraintInfo &info) const {
-      return true;
-    }
+                                       TargetInfo::ConstraintInfo &info) const;
     virtual void getGCCRegAliases(const GCCRegAlias *&Aliases, 
                                   unsigned &NumAliases) const {}
     virtual bool useGlobalsForAutomaticVariables() const {return true;}
   };
+
+bool PIC16TargetInfo::validateAsmConstraint(const char *&Name, 
+                                            TargetInfo::ConstraintInfo &info) const
+{
+    switch (*Name) {
+    default: return false;
+    }
+}
+
 }
 
 namespace {
@@ -1249,31 +1284,11 @@ void Nios2TargetInfo::getTargetDefines(const LangOptions &Opts,
 // FIXME
 bool
 Nios2TargetInfo::validateAsmConstraint(const char *&Name,
-                                       TargetInfo::ConstraintInfo &info) const {
-  switch (*Name) {
-  default: return false;
-  case 'a': // eax.
-  case 'b': // ebx.
-  case 'c': // ecx.
-  case 'd': // edx.
-  case 'S': // esi.
-  case 'D': // edi.
-  case 'A': // edx:eax.
-  case 't': // top of floating point stack.
-  case 'u': // second from top of floating point stack.
-  case 'q': // Any register accessible as [r]l: a, b, c, and d.
-  case 'y': // Any MMX register.
-  case 'x': // Any SSE register.
-  case 'Q': // Any register accessible as [r]h: a, b, c, and d.
-  case 'e': // 32-bit signed integer constant for use with zero-extending 
-            // x86_64 instructions.
-  case 'Z': // 32-bit unsigned integer constant for use with zero-extending 
-            // x86_64 instructions.
-  case 'N': // unsigned 8-bit integer constant for use with in and out
-            // instructions.
-    info = (TargetInfo::ConstraintInfo)(info|TargetInfo::CI_AllowsRegister);
-    return true;
-  }
+                                       TargetInfo::ConstraintInfo &info) const
+{
+    switch (*Name) {
+    default: return false;
+    }
 }
 
 // FIXME
@@ -1367,7 +1382,6 @@ void CellSPUTargetInfo::getTargetDefines(const LangOptions &Opts,
   Define(Defs, "__REGISTER_PREFIX__", "");
 }
   
-// FIXME
 bool
 CellSPUTargetInfo::validateAsmConstraint(const char *&Name,
                                        TargetInfo::ConstraintInfo &info) const {
