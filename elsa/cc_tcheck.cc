@@ -8500,7 +8500,7 @@ Type *E_binary::itcheck_x(Env &env, Expression *&replacement)
     case BIN_MINUS:               // -
       // case: p - p
       if (lhsType->isPointerType() && rhsType->isPointerType() ) {
-        return env.getSimpleType(ST_INT);
+        return env.getSimpleType((SimpleTypeId)env.TI.getPtrDiffType(0)); // RICH: Address space
       }
 
       // case: p - n

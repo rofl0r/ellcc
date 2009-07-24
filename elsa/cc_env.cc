@@ -588,7 +588,7 @@ void Env::setupOperatorOverloading()
   // the environment by FF_BUILTINOP
 
   // this has to match the typedef in include/stddef.h
-  SimpleTypeId ptrdiff_t_id = ST_INT;
+  SimpleTypeId ptrdiff_t_id = (SimpleTypeId)TI.getPtrDiffType(0);    // RICH: Address space.
   Type *t_ptrdiff_t = getSimpleType(ptrdiff_t_id);
 
   // some other useful types

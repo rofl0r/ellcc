@@ -478,6 +478,8 @@ class PPC64TargetInfo : public PPCTargetInfo {
 public:
   PPC64TargetInfo(const std::string& triple) : PPCTargetInfo(triple) {
     LongWidth(64); LongAlign(64); PointerWidth(64); PointerAlign(64);
+    SizeType = UnsignedLong;
+    PtrDiffType = Long;
     LongDoubleFormat = &llvm::APFloat::PPCDoubleDouble;
   }
 };
@@ -845,6 +847,8 @@ public:
     LongDoubleAlign(128);
     IntMaxType = Long;
     UIntMaxType = UnsignedLong;
+    SizeType = UnsignedLong;
+    PtrDiffType = Long;
   }
   virtual const char *getVAListDeclaration() const {
     return "typedef struct __va_list_tag {"
