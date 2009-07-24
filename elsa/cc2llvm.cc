@@ -28,7 +28,7 @@ using namespace ellcc;
 
 #define SRET 1
 
-#if 0
+#if 1
 // Really verbose debugging.
 #define VDEBUG(who, where, what) std::cerr << toString(where) << ": " << who << " "; what; std::cerr << "\n"
 #else
@@ -280,7 +280,11 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLocation loc, Atomic
 	case ST_WCHAR_T:
 	case ST_BOOL:
 	    // Define an integer  or boolean type.
-            type = llvm::IntegerType::get(simpleTypeSizeInBits(TI, id));
+            VDEBUG("makeAtomicTypeSpecifier int", loc, std::cerr << "size "
+                                                                 << at->sizeInBits(TI)
+                                                                 << " type "
+                                                                 << at->toString());
+            type = llvm::IntegerType::get(at->sizeInBits(TI));
             break;
 	case ST_FLOAT:
 	    type = llvm::Type::FloatTy;
@@ -2072,8 +2076,11 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLocation loc, Type* leftTyp
 	} else {
             if (target->llvmType) {
                 type = target->llvmType;
+                VDEBUG("makeCast has type", loc, type->print(std::cerr));
 	    } else {
+                VDEBUG("makeCast making type", loc, std::cerr << target->type->toString());
 	        type = makeTypeSpecifier(loc, target->type);
+                VDEBUG("makeCast made type", loc, type->print(std::cerr));
 	    }
 	}
 
@@ -2616,7 +2623,9 @@ llvm::Value* CC2LLVMEnv::binop(SourceLocation loc, BinaryOp op, Expression* e1, 
                     // The pointer is bigger, check for signed vs. unsigned.
                     if (   right->getType()->getPrimitiveSizeInBits() == 1
                         || te2->type->isBool()
-                        || ::isExplicitlyUnsigned(te2->type->asReferenceTypeC()->getAtType()->asSimpleTypeC()->type)) {
+                        || (   te2->type->isReference()
+                            && ::isExplicitlyUnsigned(te2->type->asReferenceTypeC()
+                                    ->getAtType()->asSimpleTypeC()->type))) {
                         right = builder.CreateZExt(right, TD.getIntPtrType());
                     } else {
                         VDEBUG("SExt2 source", loc, right->print(std::cerr));

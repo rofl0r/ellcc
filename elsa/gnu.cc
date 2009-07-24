@@ -802,7 +802,7 @@ void Asm::itcheck_constraints(Env &env, bool module)
                             buf[0] = *cp;
                             buf[1] = '\0';
                             env.report(constraint->loc, diag::err_asm_output_constraint_invalid)
-                                << buf;
+                                << buf << env.TI.getTargetPrefix();
                         }
                         break;
                     case '&': // Early clobber.
@@ -924,7 +924,7 @@ void Asm::itcheck_constraints(Env &env, bool module)
                                 buf[0] = *cp;
                                 buf[1] = '\0';
                                 env.report(constraint->loc, diag::err_asm_input_constraint_invalid)
-                                    << buf;
+                                    << buf << env.TI.getTargetPrefix();
                             }
                             result = env.convertConstraint(*cp);
                         }

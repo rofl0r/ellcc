@@ -107,7 +107,7 @@ def err_asm_module_level_output_constraint
 def err_asm_output_constraint_start
     : Error<"an 'asm' output constraint must start with a '=' or '+'">;
 def err_asm_output_constraint_invalid
-    : Error<"the 'asm' output constraint '%0' is invalid">;
+    : Error<"the 'asm' output constraint '%0' is invalid for the '%1' processor">;
 def err_asm_output_constraint_must_be_an_lvalue
     : Error<"an 'asm' output constraint must be an lvalue">;
 def err_asm_output_constraint_must_have_an_expression
@@ -121,7 +121,7 @@ def err_asm_matching_constraint_different
 def err_asm_matching_constraint_io
     : Error<"the 'asm' matched constraint '%0' is defined as '+' and should be '='">;
 def err_asm_input_constraint_invalid
-    : Error<"the 'asm' input constraint '%0' is invalid">;
+    : Error<"the 'asm' input constraint '%0' is invalid for the '%1' processor">;
 def err_asm_input_constraint_missing_rbracket
     : Error<"the 'asm' constraint name is missing a ']'">;
 def err_asm_input_invalid_constraint_name

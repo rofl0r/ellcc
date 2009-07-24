@@ -432,11 +432,32 @@ bool PPCTargetInfo::validateAsmConstraint(const char *&Name,
 {
     switch (*Name) {
     default: return false;
-    case 'O': // Zero
-        return true;
-    case 'b': // Base register
-    case 'f': // Floating point register
+    case 'b': // Base register.
+    case 'f': // Floating point register.
+    case 'v': // Vector register.
+    case 'h': // mq, ctr, or link register.
+    case 'q': // mq register.
+    case 'c': // ctr register.
+    case 'l': // link register.
+    case 'x': // cr register 0.
+    case 'y': // cr register.
+    case 'z': // fpmem register.
         info = (TargetInfo::ConstraintInfo)(info|TargetInfo::CI_AllowsRegister);
+        return true;
+    case 'I': // Signed 16-bit constant.
+    case 'J': // Unsigned 16-bit constant.
+    case 'K': // Unsigned 16-bit constant shifted left 16 bits.
+    case 'L': // Signed 16-bit constant shifted left 16 bits.
+    case 'M': // Constant larger than 31.
+    case 'N': // An exact power of two.
+    case 'O': // Zero
+    case 'P': // Signed 16-bit negated constant.
+    case 'G': // Floating point constant that can be loaded with one instruction.
+    case 'H': // Integer or Floating point constant that can be loaded with three instructions.
+    case 'S': // 64-bit mask operand.
+    case 'T': // 64-bit mask operand.
+    case 't': // AND masks for two rldic[lr] instructions..
+    case 'W': // Non-memory vector constant..
         return true;
     }
 }
