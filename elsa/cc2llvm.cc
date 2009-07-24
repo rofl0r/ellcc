@@ -28,7 +28,7 @@ using namespace ellcc;
 
 #define SRET 1
 
-#if 0
+#if 1
 // Really verbose debugging.
 #define VDEBUG(who, where, what) std::cerr << toString(where) << ": " << who << " "; what; std::cerr << "\n"
 #else
@@ -1704,7 +1704,7 @@ llvm::Value *E_fieldAcc::cc2llvm(CC2LLVMEnv &env, int& deref) const
             }
         }
 
-    return value;
+        return value;
     }
 
     VDEBUG("E_field object", loc, std::cerr << "ID " << object->getType()->getContainedType(0)->getTypeID() << " ";
