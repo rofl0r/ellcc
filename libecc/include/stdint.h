@@ -13,24 +13,15 @@
 #ifndef _STDINT_H
 #define _STDINT_H
 
-#if defined(__GNUC__) && \
-  ( (__GNUC__ >= 4) || \
-    ( (__GNUC__ >= 3) && defined(__GNUC_MINOR__) && (__GNUC_MINOR__ > 2) ) )
-/* gcc > 3.2 implicitly defines the values we are interested */
+// ecc implicitly defines the values that we are interested in.
 #define __STDINT_EXP(x) __##x##__
-#else
-#define __STDINT_EXP(x) x
-#include <limits.h>
-#endif
 
-/* Check if "long long" is 64bit wide */
-/* Modern GCCs provide __LONG_LONG_MAX__, SUSv3 wants LLONG_MAX */
-#if ( defined(__LONG_LONG_MAX__) && (__LONG_LONG_MAX__ > 0x7fffffff) ) \
-  || ( defined(LLONG_MAX) && (LLONG_MAX > 0x7fffffff) )
+// Check if "long long" is 64-bits wide.
+#if (defined(LLONG_MAX) && (LLONG_MAX > 0x7fffffff))
 #define __have_longlong64 1
 #endif
 
-/* Check if "long" is 64bit or 32bit wide */
+// Check if "long" is 64bits or 32-bits wide.
 #if __STDINT_EXP(LONG_MAX) > 0x7fffffff
 #define __have_long64 1
 #elif __STDINT_EXP(LONG_MAX) == 0x7fffffff && !defined(__SPU__)
@@ -216,40 +207,12 @@ typedef uint64_t  	uint_least32_t;
 #endif
 #endif
 
-/* Greatest-width integer types */
-/* Modern GCCs provide __INTMAX_TYPE__ */
-#if defined(__INTMAX_TYPE__)
-  typedef __INTMAX_TYPE__ intmax_t;
-#elif __have_longlong64
-  typedef signed long long intmax_t;
-#else
-  typedef signed long intmax_t;
-#endif
+// Greatest-width integer types.
+typedef __INTMAX_TYPE__ intmax_t;
+typedef __UINTMAX_TYPE__ uintmax_t;
 
-/* Modern GCCs provide __UINTMAX_TYPE__ */
-#if defined(__UINTMAX_TYPE__)
-  typedef __UINTMAX_TYPE__ uintmax_t;
-#elif __have_longlong64
-  typedef unsigned long long uintmax_t;
-#else
-  typedef unsigned long uintmax_t;
-#endif
-
-/*
- * GCC doesn't provide an appropriate macro for [u]intptr_t
- * For now, use __PTRDIFF_TYPE__
- */
-#if defined(__PTRDIFF_TYPE__)
-typedef signed __PTRDIFF_TYPE__ intptr_t;
-typedef unsigned __PTRDIFF_TYPE__ uintptr_t;
-#else
-/*
- * Fallback to hardcoded values, 
- * should be valid on cpu's with 32bit int/32bit void*
- */
-typedef signed long intptr_t;
-typedef unsigned long uintptr_t;
-#endif
+typedef __INTPTR_TYPE__ intptr_t;
+typedef __UINTPTR_TYPE__ uintptr_t;
 
 /* Limits of Specified-Width Integer Types */
 

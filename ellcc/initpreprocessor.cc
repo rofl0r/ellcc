@@ -334,6 +334,7 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
   DefineBuiltinMacro(Buf, "__WINT_TYPE__=int");
 
   DefineType("__INTPTR_TYPE__", TI.getIntPtrType(), Buf);
+  DefineType("__UINTPTR_TYPE__", TI.getUIntPtrType(), Buf);
  
   // Wide char type. Used in <wchar.h>.
   DefineTypeSize("__WCHAR", TI.WCharWidth(), "", true, Buf);

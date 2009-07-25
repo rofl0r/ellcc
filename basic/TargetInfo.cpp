@@ -68,7 +68,8 @@ TargetInfo::TargetInfo(const std::string &T) : Triple(T) {
   PtrDiffType = Long;
   IntMaxType = LongLong;
   UIntMaxType = UnsignedLongLong;
-  IntPtrType = UnsignedInt;
+  IntPtrType = Int;
+  UIntPtrType = UnsignedInt;
   WCharType = Int;
 
   UserLabelPrefix = "_";

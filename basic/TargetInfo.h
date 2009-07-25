@@ -104,7 +104,7 @@ private:
  static const char* typeNames[TypeIDCount];
 
 protected:
-  TypeID SizeType, IntMaxType, UIntMaxType, PtrDiffType, IntPtrType, WCharType;
+  TypeID SizeType, IntMaxType, UIntMaxType, PtrDiffType, IntPtrType, UIntPtrType, WCharType;
 public:
   // Define the simple type access functions.
   // e.g.:
@@ -169,6 +169,7 @@ public:
     return AddrSpace == 0 ? PtrDiffType : getPtrDiffTypeV(AddrSpace);
   }
   TypeID getIntPtrType() const { return IntPtrType; }
+  TypeID getUIntPtrType() const { return UIntPtrType; }
   TypeID getWCharType() const { return WCharType; }
   unsigned char getTypeSizeInBits(TypeID id) { return typeInfo[id].Width; }
   unsigned char getTypeSizeInBytes(TypeID id)
