@@ -196,21 +196,24 @@ static void DefineFloatMacros(std::vector<char> &Buf, const char *Prefix,
 /// 'TypeWidth' a signedness of 'isSigned' and with a value suffix of 'ValSuffix' (e.g. LL).
 static void DefineTypeSize(const char *MacroName, unsigned TypeWidth,
                            const char *ValSuffix, bool isSigned,
-                           std::vector<char> &Buf) {
+                           std::vector<char> &Buf,
+                           bool force = false)
+{
     char MacroBuf[60];
-    long long MaxVal;
-    long long MinVal;
+    long long MaxVal = 0;
+    long long MinVal = 0;
     if (isSigned) {
         MaxVal = (1LL << (TypeWidth - 1)) - 1;
         MinVal = -(1LL << (TypeWidth - 1));
     } else {
         MaxVal = ~0ULL >> (64-TypeWidth);
-        MinVal = 0;
     }
   
     sprintf(MacroBuf, "%s_MAX__=%llu%s", MacroName, MaxVal, ValSuffix);
     DefineBuiltinMacro(Buf, MacroBuf);
-    sprintf(MacroBuf, "%s_MIN__=%lld%s", MacroName, MinVal, ValSuffix);
+    if (isSigned || force) {
+        sprintf(MacroBuf, "%s_MIN__=%lld%s", MacroName, MinVal, ValSuffix);
+    }
     DefineBuiltinMacro(Buf, MacroBuf);
 }
 
@@ -315,11 +318,11 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
   DefineBuiltinMacro(Buf, MacroBuf);
   DefineTypeSize("__SCHAR", TI.CharWidth(), "", true, Buf);
   DefineTypeSize("__UCHAR", TI.CharWidth(), "", false, Buf);
-  DefineTypeSize("__CHAR", TI.CharWidth(), "", TI.isCharSigned(), Buf);
+  DefineTypeSize("__CHAR", TI.CharWidth(), "", TI.isCharSigned(), Buf, true);
   DefineTypeSize("__SHRT", TI.ShortWidth(), "", true, Buf);
   DefineTypeSize("__USHRT", TI.ShortWidth(), "", false, Buf);
   DefineTypeSize("__INT", TI.IntWidth(), "", true, Buf);
-  DefineTypeSize("__UINT", TI.IntWidth(), "", false, Buf);
+  DefineTypeSize("__UINT", TI.IntWidth(), "U", false, Buf);
   DefineTypeSize("__LONG", TI.LongWidth(), "L", true, Buf);
   DefineTypeSize("__ULONG", TI.LongWidth(), "UL", false, Buf);
   DefineTypeSize("__LLONG", TI.LongLongWidth(), "LL", true, Buf);
