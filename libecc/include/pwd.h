@@ -35,7 +35,6 @@
 
 #ifndef _PWD_H_
 #define	_PWD_H_
-#include <_ansi.h>
 _BEGIN_STD_C
 
 #include <sys/types.h>

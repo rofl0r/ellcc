@@ -1,9 +1,9 @@
 #ifndef __F_MATH_H__
 #define __F_MATH_H__
 
-#include <_ansi.h>
 #include "fdlibm.h"
 
+_BEGIN_STD_C
 __inline__
 static 
 int 
@@ -26,4 +26,5 @@ _DEFUN (check_finitef, (x),
   return  (int)((__uint32_t)((ix&0x7fffffff)-0x7f800000)>>31);
 }
 
+_END_STD_C
 #endif /* __F_MATH_H__ */

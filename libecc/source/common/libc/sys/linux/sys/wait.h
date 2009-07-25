@@ -21,9 +21,9 @@
 
 /* --- redundant stuff below --- */
 
-#include <_ansi.h>
 #include <sys/types.h>
 
+_BEGIN_STD_C
 pid_t wait (int *);
 pid_t waitpid (pid_t, int *, int);
 
@@ -37,4 +37,5 @@ pid_t wait3(int *status,int options,struct rusage *rusage);
 pid_t wait4(pid_t pid,int *status,int options,struct rusage *rusage);
 #endif
 
+_END_STD_C
 #endif

@@ -58,7 +58,6 @@ specified by POSIX, and not all implementations follow POSIX rules.
 No supporting OS subroutines are required.
 */
 
-#include <_ansi.h>
 #include <stdio.h>
 #include <errno.h>
 #include "local.h"

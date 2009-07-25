@@ -21,7 +21,6 @@
 #ifndef __PTHREAD_h
 #define __PTHREAD_h
 
-#include <_ansi.h>
 _BEGIN_STD_C
 #include <unistd.h>
 

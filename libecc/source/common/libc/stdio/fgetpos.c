@@ -71,7 +71,6 @@ conforming C implementations may return a different result from
 No supporting OS subroutines are required.
 */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <stdio.h>
 

@@ -52,7 +52,6 @@ ANSI C requires <<clearerr>>.
 No supporting OS subroutines are required.
 */
 
-#include <_ansi.h>
 #include <stdio.h>
 #include "local.h"
 

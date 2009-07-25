@@ -85,7 +85,6 @@ gpietsch@comcast.net
 #ifndef _GETOPT_H_
 #define _GETOPT_H_
 
-#include <_ansi.h>
 _BEGIN_STD_C
 
 /* include files needed by this include file */

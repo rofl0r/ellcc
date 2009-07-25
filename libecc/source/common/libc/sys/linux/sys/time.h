@@ -83,7 +83,7 @@
   } while (0)
 /* --- redundant stuff below --- */
 
-#include <_ansi.h>
+_BEGIN_STD_C
 
 int _EXFUN(gettimeofday, (struct timeval *__p, struct timezone *__z));
 int _EXFUN(settimeofday, (const struct timeval *, const struct timezone *));
@@ -91,4 +91,5 @@ int _EXFUN(utimes, (const char *__path, const struct timeval __tvp[2]));
 int _EXFUN(getitimer, (int __which, struct itimerval *__value));
 int _EXFUN(setitimer, (int __which, const struct itimerval *__value,
                                         struct itimerval *__ovalue));
+_END_STD_C
 #endif

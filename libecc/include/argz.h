@@ -8,7 +8,6 @@
 #define _ARGZ_H_
 
 #include <errno.h>
-#include "_ansi.h"
 _BEGIN_STD_C
 #include <sys/types.h>
 

@@ -11,7 +11,7 @@
 
 /* --- redundant stuff below --- */
 
-#include <_ansi.h>
+_BEGIN_STD_C
 
 extern int creat _PARAMS ((const char *, mode_t));
 extern int _open _PARAMS ((const char *, int, ...));
@@ -26,4 +26,5 @@ extern int fcntl _PARAMS ((int, int, ...));
 
 extern int _fcntl _PARAMS ((int, int, ...));
 
+_END_STD_C
 #endif

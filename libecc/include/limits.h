@@ -1,8 +1,6 @@
 #ifndef _LIBC_LIMITS_H_
 # define _LIBC_LIMITS_H_	1
 
-#include <newlib.h>
-
 # ifdef _MB_LEN_MAX
 #  define MB_LEN_MAX	_MB_LEN_MAX
 # else

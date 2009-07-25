@@ -38,7 +38,6 @@ This set of functions is an integer-only extension, and is not portable.
 Supporting OS subroutines required: <<sbrk>>, <<write>>.
 */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <stdio.h>
 #include <unistd.h>

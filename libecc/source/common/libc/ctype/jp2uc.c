@@ -29,11 +29,8 @@
    SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include <newlib.h>
-
 #ifdef _MB_CAPABLE
 
-#include <_ansi.h>
 #include <wctype.h>
 #include "local.h"
 #include "jp2uc.h"

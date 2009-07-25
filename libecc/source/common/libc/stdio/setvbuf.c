@@ -107,7 +107,7 @@ int setvbuf(register FILE * fp, char *buf, register int mode, register size_t si
    * particular implementation.
    */
 
-  if ((mode != _IOFBF && mode != _IOLBF && mode != _IONBF) || (int)(_POINTER_INT) size < 0)
+  if ((mode != _IOFBF && mode != _IOLBF && mode != _IONBF) || (int)(ssize_t) size < 0)
     {
       _funlockfile (fp);
       return (EOF);

@@ -86,7 +86,6 @@ No supporting OS subroutines are required.
  *                         (Only "C" or null supported).
  */
 
-#include <newlib.h>
 #include <locale.h>
 #include <string.h>
 #include <limits.h>

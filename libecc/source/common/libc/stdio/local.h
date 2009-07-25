@@ -22,7 +22,6 @@
  * in particular, macros and private variables.
  */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -32,6 +31,7 @@
 # include <io.h>
 #endif
 
+_BEGIN_STD_C
 
 extern int    __svfscanf_r(struct _reent *,FILE *, const char *,va_list);
 extern int    __ssvfscanf_r(struct _reent *,FILE *, const char *,va_list);
@@ -145,4 +145,5 @@ void __sfp_lock_acquire(void);
 void __sfp_lock_release(void);
 void __sinit_lock_acquire(void);
 void __sinit_lock_release(void);
+_END_STD_C
 #endif

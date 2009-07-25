@@ -114,7 +114,6 @@ specified in the AltiVec Programming Interface Manual.
 
 Supporting OS subroutines required: <<sbrk>>.  */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <stdlib.h>
 #include <malloc.h>

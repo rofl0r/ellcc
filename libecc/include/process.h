@@ -1,7 +1,6 @@
 #ifndef __PROCESS_H_
 #define __PROCESS_H_
 
-#include <_ansi.h>
 _BEGIN_STD_C
 
 int execl(const char *path, const char *argv1, ...);

@@ -155,7 +155,6 @@ static char *rcsid = "$Id: vfprintf.c,v 1.14 2008/02/12 18:07:55 jjohnstn Exp $"
 #endif
 #endif
 
-#include <_ansi.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -166,13 +165,7 @@ static char *rcsid = "$Id: vfprintf.c,v 1.14 2008/02/12 18:07:55 jjohnstn Exp $"
 #ifdef __ALTIVEC__
 #include <altivec.h>
 #endif
-
-#ifdef _HAVE_STDC
 #include <stdarg.h>
-#else
-#include <varargs.h>
-#endif
-
 #include "local.h"
 #include "fvwrite.h"
 #include "vfieeefp.h"

@@ -7,13 +7,13 @@
 #define _SYS_STAT_H
 
 #include <asm/stat.h>
-#include <_ansi.h>
 #include <sys/types.h>
 #include <linux/time.h>
 #define __KERNEL__
 #include <linux/stat.h>
 #undef __KERNEL__
 
+_BEGIN_STD_C
 /* --- redundant stuff below --- */
 
 
@@ -30,4 +30,5 @@ int	_EXFUN(lstat64,( const char *file_name, struct stat64 *buf));
 int     _EXFUN(stat64,( const char *__path, struct stat64 *__sbuf ));
 #endif /* _POSIX_SOURCE */
 
+_END_STD_C
 #endif /* _SYS_STAT_H */

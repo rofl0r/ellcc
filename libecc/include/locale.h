@@ -7,7 +7,6 @@
 #ifndef _LOCALE_H_
 #define _LOCALE_H_
 
-#include "_ansi.h"
 _BEGIN_STD_C
 
 #ifndef NULL

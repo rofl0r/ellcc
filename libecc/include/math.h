@@ -1,7 +1,6 @@
 #ifndef  _MATH_H_
 #define  _MATH_H_
 
-#include "_ansi.h"
 _BEGIN_STD_C
 #include <sys/reent.h>
 #include <machine/ieeefp.h>

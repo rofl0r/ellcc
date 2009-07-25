@@ -28,9 +28,7 @@
 #if defined (ICONV_TO_UCS_CES_TABLE) \
  || defined (ICONV_FROM_UCS_CES_TABLE)
  
-#include <_ansi.h>
 #include <reent.h>
-#include <newlib.h>
 #include <sys/types.h>
 #include <string.h>
 #include <stdlib.h>

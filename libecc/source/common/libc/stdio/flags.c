@@ -16,7 +16,6 @@
  */
 /* No user fns here. Pesch 15apr92 */
 
-#include <_ansi.h>
 #include <stdio.h>
 #include <time.h>
 #include <fcntl.h>

@@ -1,26 +1,38 @@
+/** Wide character definitions.
+ *      wchar_t         wint_t          WCHAR_MAX
+ *      size_t          struct tm       WCHAR_MIN
+ *      mbstate_t       NULL            WEOF
+ */
+
 #ifndef _WCHAR_H_
 #define _WCHAR_H_
 
-#include <_ansi.h>
 _BEGIN_STD_C
 
 #include <sys/reent.h>
 
-#define __need_size_t
-#define __need_wchar_t
-#define __need_wint_t
-#include <stddef.h>
+/** A type to represent a wide character.
+ * __WCHAR_TYPE__ is defined by the compiler.
+ */
+typedef __WCHAR_TYPE__ wchar_t;
+/** A type to represent a wide character as a parameter.
+ * __WINT_TYPE__ is defined by the compiler.
+ */
+typedef __WINT_TYPE__ wint_t;
+/** A type to represent the size of an object.
+ * __SIZE_TYPE__ is defined by the compiler.
+ */
+typedef __SIZE_TYPE__ size_t;                   
 
 /* For _mbstate_t definition. */
 #include <sys/_types.h>
 
-#ifndef NULL
-#define NULL	0
-#endif
-
-#ifndef WEOF
-# define WEOF ((wint_t)-1)
-#endif
+/** A pointer to nothing.
+ */
+#define NULL 0
+/** A wide character representing end of file.
+ */
+#define WEOF ((wint_t)-1)
 
 #ifndef WCHAR_MIN
 #define WCHAR_MIN 0

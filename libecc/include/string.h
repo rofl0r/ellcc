@@ -7,7 +7,6 @@
 #ifndef _STRING_H_
 #define	_STRING_H_
 
-#include "_ansi.h"
 _BEGIN_STD_C
 
 #include <sys/reent.h>

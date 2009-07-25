@@ -59,8 +59,7 @@ typedef long _ssize_t;
 #endif
 #endif
 
-#define __need_wint_t
-#include <stddef.h>
+typedef __WINT_TYPE__ wint_t;
 
 #ifndef __mbstate_t_defined
 /* Conversion state information.  */

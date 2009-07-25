@@ -47,7 +47,6 @@
 #undef UINT_MAX
 #define INT_MAX __INT_MAX__
 #define UINT_MAX (__INT_MAX__ * 2U + 1)
-#define _POINTER_INT short
 #endif
 
 #if defined(__mc68hc11__) || defined(__mc68hc12__) || defined(__mc68hc1x__)
@@ -55,7 +54,6 @@
 #undef UINT_MAX
 #define INT_MAX __INT_MAX__
 #define UINT_MAX (__INT_MAX__ * 2U + 1)
-#define _POINTER_INT short
 #endif
 
 #ifdef ___AM29K__
@@ -72,7 +70,6 @@
 #define __DYNAMIC_REENT__
 #define HAVE_GETDATE
 #define _HAVE_SYSTYPES
-#define _READ_WRITE_RETURN_TYPE _ssize_t
 #define __LARGE64_FILES 1
 /* we use some glibc header files so turn on glibc large file feature */
 #define _LARGEFILE64_SOURCE 1
@@ -85,7 +82,6 @@
 
 #ifdef __AVR__
 #define __SMALL_BITFIELDS
-#define _POINTER_INT short
 #endif
 
 #ifdef __v850
@@ -113,7 +109,6 @@
 #define INT_MAX __INT_MAX__
 #define UINT_MAX (__INT_MAX__ * 2U + 1)
 #define MALLOC_ALIGNMENT 8
-#define _POINTER_INT short
 #define __BUFSIZ__ 16
 #define _REENT_SMALL
 #endif
@@ -124,11 +119,6 @@
 #define INT_MAX __INT_MAX__
 #define UINT_MAX (__INT_MAX__ * 2U + 1)
 #define MALLOC_ALIGNMENT 8
-#if defined(__r8c_cpu__) || defined(__m16c_cpu__)
-#define _POINTER_INT short
-#else
-#define _POINTER_INT long
-#endif
 #define __BUFSIZ__ 16
 #define _REENT_SMALL
 #endif /* __m32c__ */
@@ -170,10 +160,6 @@
 #endif
 /* End of block that should be kept in sync with GCC's limits.h.  */
 
-#ifndef _POINTER_INT
-#define _POINTER_INT long
-#endif
-
 #ifdef __frv__
 #define __ATTRIBUTE_IMPURE_PTR__ __attribute__((__section__(".sdata")))
 #endif
@@ -190,18 +176,10 @@
 
 #if defined(__rtems__)
 #define __FILENAME_MAX__ 255
-#define _READ_WRITE_RETURN_TYPE _ssize_t
 #endif
 
 #ifndef __IMPORT
 #define __IMPORT
-#endif
-
-/* Define return type of read/write routines.  In POSIX, the return type
-   for read()/write() is "ssize_t" but legacy newlib code has been using
-   "int" for some time.  If not specified, "int" is defaulted.  */
-#ifndef _READ_WRITE_RETURN_TYPE
-#define _READ_WRITE_RETURN_TYPE int
 #endif
 
 #ifndef __WCHAR_MAX__

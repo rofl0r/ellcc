@@ -26,7 +26,6 @@ PORTABILITY
 
 No supporting OS subroutines are required.
 */
-#include <_ansi.h>
 #include <wctype.h>
 
 int iswxdigit(wint_t c)

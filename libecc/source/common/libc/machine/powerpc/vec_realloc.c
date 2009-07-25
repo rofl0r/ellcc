@@ -1,6 +1,5 @@
 /* vec_realloc.c -- a wrapper for _vec_realloc_r.  */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <stdlib.h>
 

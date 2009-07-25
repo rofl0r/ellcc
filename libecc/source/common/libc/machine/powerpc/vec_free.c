@@ -1,5 +1,4 @@
 /* vec_free.c - a wrapper for _free_r */
-#include <_ansi.h>
 #include <reent.h>
 #include <stdlib.h>
 

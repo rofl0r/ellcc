@@ -107,7 +107,6 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
  *
  * This code is large and complicated...
  */
-#include <newlib.h>
 
 #ifdef INTEGER_ONLY
 # define VFPRINTF vfiprintf

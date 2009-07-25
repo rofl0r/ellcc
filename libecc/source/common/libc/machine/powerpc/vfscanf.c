@@ -102,20 +102,14 @@ Supporting OS subroutines required:
  * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 
-#include <_ansi.h>
 #include <reent.h>
-#include <newlib.h>
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <limits.h>
 #include <wchar.h>
 #include <string.h>
-#ifdef _HAVE_STDC
 #include <stdarg.h>
-#else
-#include <varargs.h>
-#endif
 #include "local.h"
 
 #ifndef	NO_FLOATING_POINT

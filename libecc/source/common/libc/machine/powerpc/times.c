@@ -3,7 +3,6 @@
  * Written by Aldy Hernandez.
  */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <sys/time.h>
 #include <sys/times.h>

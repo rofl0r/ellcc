@@ -7,7 +7,6 @@
 #ifndef _STDLIB_H_
 #define _STDLIB_H_
 
-#include "_ansi.h"
 _END_STD_C
 
 #define __need_size_t

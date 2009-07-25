@@ -3,7 +3,6 @@
 #else
 /* realloc.c -- a wrapper for realloc_r.  */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <stdlib.h>
 #include <malloc.h>

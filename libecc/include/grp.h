@@ -43,7 +43,6 @@
 #ifndef _GRP_H_
 #define	_GRP_H_
 
-#include <_ansi.h>
 _BEGIN_STD_C
 
 #include <sys/types.h>

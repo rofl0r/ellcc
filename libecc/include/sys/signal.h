@@ -2,7 +2,6 @@
 
 #ifndef _SYS_SIGNAL_H
 #define _SYS_SIGNAL_H
-#include "_ansi.h"
 _BEGIN_STD_C
 
 #include <sys/features.h>

@@ -26,11 +26,11 @@
 #ifndef __ICONV_CONVERSION_H__
 #define __ICONV_CONVERSION_H__
 
-#include <_ansi.h>
 #include <reent.h>
 #include <sys/types.h>
 #include <wchar.h>
 
+_BEGIN_STD_C
 /* Bits for 'flags' parameter of 'convert' call */
 #define ICONV_DONT_SAVE_BIT 1
 #define ICONV_FAIL_BIT      2
@@ -217,5 +217,5 @@ _iconv_ucs_conversion_handlers;
 extern _CONST iconv_conversion_handlers_t
 _iconv_null_conversion_handlers;
 
+_END_STD_C
 #endif /* !__ICONV_CONVERSION_H__ */
-

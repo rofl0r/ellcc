@@ -1,7 +1,6 @@
 #ifndef _SIGNAL_H_
 #define _SIGNAL_H_
 
-#include "_ansi.h"
 _BEGIN_STD_C
 
 #include <sys/signal.h>

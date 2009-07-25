@@ -26,7 +26,6 @@
 #ifndef _ICONV_H_
 #define _ICONV_H_
 
-#include <_ansi.h>
 _BEGIN_STD_C
 #include <reent.h>
 #include <sys/types.h>

@@ -26,12 +26,12 @@
 #ifndef __ICONV_UCS_CONVERSION_H__
 #define __ICONV_UCS_CONVERSION_H__
 
-#include <_ansi.h>
 #include <reent.h>
 #include <sys/types.h>
 #include <wchar.h>
 #include "local.h"
 
+_BEGIN_STD_C
 /* No enough space in output buffer */
 #define ICONV_CES_NOSPACE 0
 /* Invalid input character */
@@ -323,5 +323,6 @@ _iconv_to_ucs_ces[];
 extern _CONST iconv_from_ucs_ces_t
 _iconv_from_ucs_ces[];
 
+_END_STD_C
 #endif /* !__ICONV_UCS_CONVERSION_H__ */
 

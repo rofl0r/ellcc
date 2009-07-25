@@ -171,7 +171,6 @@ behave differently when <[nbytes]> is zero.
 
 Supporting OS subroutines required: <<sbrk>>.  */
 
-#include <_ansi.h>
 #include <reent.h>
 #include <stdlib.h>
 #include <malloc.h>

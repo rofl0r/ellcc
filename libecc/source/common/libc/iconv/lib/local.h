@@ -25,11 +25,11 @@
 #ifndef __ICONV_LIB_LOCAL_H__
 #define __ICONV_LIB_LOCAL_H__
 
-#include <_ansi.h>
 #include <reent.h>
 #include <sys/types.h>
 #include <limits.h>
 
+_BEGIN_STD_C
 /* void* type for K&R compilers compatibility */
 #define _VOID_PTR _PTR
 
@@ -61,5 +61,6 @@ typedef __uint32_t ucs4_t;
 extern _CONST char *
 _iconv_aliases;
 
+_END_STD_C
 #endif /* !__ICONV_LIB_LOCAL_H__ */
 

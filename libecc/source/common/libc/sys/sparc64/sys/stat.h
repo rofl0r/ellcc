@@ -1,13 +1,9 @@
 #ifndef	_SYS_STAT_H
 #define	_SYS_STAT_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-#include <_ansi.h>
 #include <sys/types.h>
 
+_BEGIN_STD_C
 #ifdef __svr4__
 
 #include <sys/time.h>
@@ -125,7 +121,5 @@ int	_EXFUN(mkfifo,( char *_path, mode_t _mode ));
 int	_EXFUN(stat,( const char *_path, struct stat *_sbuf ));
 mode_t	_EXFUN(umask,( mode_t _mask ));
 
-#ifdef __cplusplus
-}
-#endif
+_END_STD_C
 #endif /* _SYS_STAT_H */

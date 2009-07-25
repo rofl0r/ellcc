@@ -1,6 +1,5 @@
+_BEGIN_STD_C
 /* wctrans constants */
-
-#include <_ansi.h>
 
 /* valid values for wctrans_t */
 #define WCT_TOLOWER 1
@@ -29,4 +28,4 @@ extern char __lc_ctype[12];
 
 /* internal function to translate JP to Unicode */
 wint_t __jp2uc(wint_t, int);
-
+_END_STD_C

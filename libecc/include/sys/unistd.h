@@ -5,7 +5,6 @@
 extern "C" {
 #endif
 
-#include <_ansi.h>
 _BEGIN_STD_C
 
 #include <sys/types.h>
@@ -129,7 +128,7 @@ int	pthread_atfork(void (*)(void), void (*)(void), void (*)(void));
 int     pipe(int __fildes[2] );
 ssize_t pread(int __fd, void *__buf, size_t __nbytes, off_t __offset);
 ssize_t pwrite(int __fd, const void *__buf, size_t __nbytes, off_t __offset);
-_READ_WRITE_RETURN_TYPE read(int __fd, void *__buf, size_t __nbyte );
+ssize_t read(int __fd, void *__buf, size_t __nbyte );
 #if defined(__CYGWIN__)
 int	rresvport(int *__alport);
 int	revoke(char *__path);
@@ -174,7 +173,7 @@ int     ttyname_r(int, char *, size_t);
 int     unlink(const char *__path );
 int 	usleep(useconds_t __useconds);
 int     vhangup(void );
-_READ_WRITE_RETURN_TYPE write(int __fd, const void *__buf, size_t __nbyte );
+ssize_t write(int __fd, const void *__buf, size_t __nbyte );
 
 #ifdef __CYGWIN__
 # define __UNISTD_GETOPT__

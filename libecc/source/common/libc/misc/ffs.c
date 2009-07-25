@@ -24,8 +24,6 @@ PORTABILITY
 
 No supporting OS subroutines are required.  */
 
-#include <_ansi.h>
-
 int ffs(int word)
 {
   int i;

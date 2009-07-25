@@ -192,20 +192,26 @@ static void DefineFloatMacros(std::vector<char> &Buf, const char *Prefix,
 
 
 /// DefineTypeSize - Emit a macro to the predefines buffer that declares a macro
-/// named MacroName with the max value for a type with width 'TypeWidth' a
-/// signedness of 'isSigned' and with a value suffix of 'ValSuffix' (e.g. LL).
+/// prefixed MacroName with the maximum and minimum value for a type with width
+/// 'TypeWidth' a signedness of 'isSigned' and with a value suffix of 'ValSuffix' (e.g. LL).
 static void DefineTypeSize(const char *MacroName, unsigned TypeWidth,
                            const char *ValSuffix, bool isSigned,
                            std::vector<char> &Buf) {
-  char MacroBuf[60];
-  long long MaxVal;
-  if (isSigned)
-    MaxVal = (1LL << (TypeWidth - 1)) - 1;
-  else
-    MaxVal = ~0LL >> (64-TypeWidth);
+    char MacroBuf[60];
+    long long MaxVal;
+    long long MinVal;
+    if (isSigned) {
+        MaxVal = (1LL << (TypeWidth - 1)) - 1;
+        MinVal = -(1LL << (TypeWidth - 1));
+    } else {
+        MaxVal = ~0LL >> (64-TypeWidth);
+        MinVal = 0;
+    }
   
-  sprintf(MacroBuf, "%s=%llu%s", MacroName, MaxVal, ValSuffix);
-  DefineBuiltinMacro(Buf, MacroBuf);
+    sprintf(MacroBuf, "%s_MAX__=%llu%s", MacroName, MaxVal, ValSuffix);
+    DefineBuiltinMacro(Buf, MacroBuf);
+    sprintf(MacroBuf, "%s_MIN__=%llu%s", MacroName, MinVal, ValSuffix);
+    DefineBuiltinMacro(Buf, MacroBuf);
 }
 
 static void DefineType(const char *MacroName, TargetInfo::TypeID Ty, std::vector<char> &Buf) {
@@ -223,13 +229,13 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
   DefineBuiltinMacro(Buf, "__llvm__=1");   // LLVM Backend
   DefineBuiltinMacro(Buf, "__ellcc__=1");  // ELLCC Frontend
   
-  // Currently claim to be compatible with GCC 4.2.1-5621.
+  // Currently claim to be compatible with GCC 4.3.2
   DefineBuiltinMacro(Buf, "__APPLE_CC__=5621");
-  DefineBuiltinMacro(Buf, "__GNUC_MINOR__=2");
-  DefineBuiltinMacro(Buf, "__GNUC_PATCHLEVEL__=1");
+  DefineBuiltinMacro(Buf, "__GNUC_MINOR__=3");
+  DefineBuiltinMacro(Buf, "__GNUC_PATCHLEVEL__=2");
   DefineBuiltinMacro(Buf, "__GNUC__=4");
   DefineBuiltinMacro(Buf, "__GXX_ABI_VERSION=1002");
-  DefineBuiltinMacro(Buf, "__VERSION__=\"4.2.1 Compatible Clang Compiler\"");
+  DefineBuiltinMacro(Buf, "__VERSION__=\"4.3.2 Compatible Ecc Compiler\"");
   
   
   // Initialize language-specific preprocessor defines.
@@ -269,12 +275,17 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
   }
   
   if (LangOpts.CPlusPlus) {
+    DefineBuiltinMacro(Buf, "__cplusplus=1");
     DefineBuiltinMacro(Buf, "__DEPRECATED=1");
     DefineBuiltinMacro(Buf, "__EXCEPTIONS=1");
     DefineBuiltinMacro(Buf, "__GNUG__=4");
     DefineBuiltinMacro(Buf, "__GXX_WEAK__=1");
-    DefineBuiltinMacro(Buf, "__cplusplus=1");
     DefineBuiltinMacro(Buf, "__private_extern__=extern");
+    DefineBuiltinMacro(Buf, "_BEGIN_STD_C=extern \"C\" {");
+    DefineBuiltinMacro(Buf, "_END_STD_C=}");
+  } else {
+    DefineBuiltinMacro(Buf, "_BEGIN_STD_C=");
+    DefineBuiltinMacro(Buf, "_END_STD_C=");
   }
   
   if (LangOpts.Optimize)
@@ -285,7 +296,7 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
   // Initialize target-specific preprocessor defines.
   
   // Define type sizing macros based on the target properties.
-  assert(TI.getCharWidth() == 8 && "Only support 8-bit char so far");
+  assert(TI.CharWidth() == 8 && "Only support 8-bit char so far");
   DefineBuiltinMacro(Buf, "__CHAR_BIT__=8");
 
   unsigned IntMaxWidth;
@@ -302,13 +313,13 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
     IntMaxSuffix = "";
   }
   
-  DefineTypeSize("__SCHAR_MAX__", TI.CharWidth(), "", true, Buf);
-  DefineTypeSize("__SHRT_MAX__", TI.ShortWidth(), "", true, Buf);
-  DefineTypeSize("__INT_MAX__", TI.IntWidth(), "", true, Buf);
-  DefineTypeSize("__LONG_MAX__", TI.LongWidth(), "L", true, Buf);
-  DefineTypeSize("__LONG_LONG_MAX__", TI.LongLongWidth(), "LL", true, Buf);
-  DefineTypeSize("__WCHAR_MAX__", TI.WCharWidth(), "", true, Buf);
-  DefineTypeSize("__INTMAX_MAX__", IntMaxWidth, IntMaxSuffix, true, Buf);
+  DefineTypeSize("__SCHAR", TI.CharWidth(), "", true, Buf);
+  DefineTypeSize("__SHRT", TI.ShortWidth(), "", true, Buf);
+  DefineTypeSize("__INT", TI.IntWidth(), "", true, Buf);
+  DefineTypeSize("__LONG", TI.LongWidth(), "L", true, Buf);
+  DefineTypeSize("__LONG_LONG", TI.LongLongWidth(), "LL", true, Buf);
+  DefineTypeSize("__WCHAR", TI.WCharWidth(), "", true, Buf);
+  DefineTypeSize("__INTMAX", IntMaxWidth, IntMaxSuffix, true, Buf);
 
   DefineType("__INTMAX_TYPE__", TI.getIntMaxType(), Buf);
   DefineType("__UINTMAX_TYPE__", TI.getUIntMaxType(), Buf);

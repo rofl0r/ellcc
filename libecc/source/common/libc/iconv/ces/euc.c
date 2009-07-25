@@ -28,9 +28,7 @@
 #if defined (ICONV_TO_UCS_CES_EUC) \
  || defined (ICONV_FROM_UCS_CES_EUC)
 
-#include <_ansi.h>
 #include <reent.h>
-#include <newlib.h>
 #include <string.h>
 #include <stdlib.h>
 #include <limits.h>

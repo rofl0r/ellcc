@@ -5,10 +5,9 @@
 #ifndef __CCSBI_H__
 #define __CCSBI_H__
 
-#include <newlib.h>
-#include <_ansi.h>
 #include "ccs.h"
 
+_BEGIN_STD_C
 /*
  * Enable CCS tables if encoding needs them.
  * Defining ICONV_TO_UCS_CCS_XXX macro or ICONV_FROM_UCS_CCS_XXX
@@ -516,6 +515,7 @@ _iconv_ccs_win_1258;
 
 #endif /* !_ICONV_ENABLE_EXTERNAL_CCS */
 
+_END_STD_C
 
 #endif /* __CCSBI_H__ */
 

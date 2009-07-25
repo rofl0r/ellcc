@@ -103,7 +103,6 @@ Supporting OS subroutines required:
 */
 
 #include <reent.h>
-#include <newlib.h>
 #include <ctype.h>
 #include <wctype.h>
 #include <stdio.h>

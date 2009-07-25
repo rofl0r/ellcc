@@ -29,7 +29,6 @@
 #ifndef _LANGINFO_H_
 #define	_LANGINFO_H_
 
-#include <_ansi.h>
 _BEGIN_STD_C
 
 typedef int nl_item;

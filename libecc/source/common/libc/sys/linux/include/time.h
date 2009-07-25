@@ -6,14 +6,10 @@
 
 #ifndef _TIME_H_
 
-#include "_ansi.h"
 #include <sys/reent.h>
 #include <sys/linux_time.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
+_BEGIN_STD_C
 #ifndef NULL
 #define	NULL	0
 #endif
@@ -244,5 +240,6 @@ int _EXFUN(clock_getenable_attr, (clockid_t clock_id, int *attr));
 
 #undef __need_timespec
 
+_END_STD_C
 #endif /* _TIME_H_ */
 

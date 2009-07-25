@@ -7,7 +7,6 @@
 #ifndef _ENVZ_H_
 #define _ENVZ_H_
 
-#include <_ansi.h>
 _BEGIN_STD_C
 #include <errno.h>
 #include <sys/types.h>

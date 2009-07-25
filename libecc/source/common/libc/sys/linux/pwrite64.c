@@ -32,7 +32,6 @@ PORTABILITY
 Supporting OS subroutine required: <<write>>, <<lseek64>>.
 */
 
-#include <_ansi.h>
 #include <unistd.h>
 #include <reent.h>
 #include <machine/weakalias.h>

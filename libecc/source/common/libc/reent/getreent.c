@@ -1,6 +1,5 @@
 /* default reentrant pointer when multithread enabled */
 
-#include <_ansi.h>
 #include <reent.h>
 
 #ifdef __getreent

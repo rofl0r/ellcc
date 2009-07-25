@@ -1,6 +1,5 @@
 #ifdef __SPE__
 
-#include <_ansi.h>
 #include <limits.h>
 #include <errno.h>
 #include <stdlib.h>

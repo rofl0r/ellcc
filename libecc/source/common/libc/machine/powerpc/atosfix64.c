@@ -5,7 +5,6 @@
 #ifdef __SPE__ 
 
 #include <stdlib.h>
-#include <_ansi.h>
 
 __int64_t
 _DEFUN (_atosfix64_r, (reent, s),

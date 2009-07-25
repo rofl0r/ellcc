@@ -7,7 +7,6 @@
 #ifndef _SYS_REENT_H_
 #define _SYS_REENT_H_
 
-#include <_ansi.h>
 _BEGIN_STD_C
 #include <sys/_types.h>
 

@@ -2,8 +2,6 @@
  * compute 10**x by successive squaring.
  */
 
-#include <_ansi.h>
-
 double __exp10(unsigned x)
 {
   static const double powtab[] =

@@ -32,7 +32,6 @@ QUICKREF
         memcpy ansi pure
 	*/
 
-#include <_ansi.h>
 #include <stddef.h>
 #include <limits.h>
 

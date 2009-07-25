@@ -55,7 +55,6 @@ PORTABILITY
 
 No supporting OS subroutines are required.
 */
-#include <newlib.h>
 #include <wctype.h>
 #include <ctype.h>
 #include <string.h>

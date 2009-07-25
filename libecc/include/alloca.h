@@ -7,7 +7,6 @@
 #ifndef _ALLOCA_H_
 #define _ALLOCA_H_
 
-#include "_ansi.h"
 #include <sys/reent.h>
 
 #undef alloca

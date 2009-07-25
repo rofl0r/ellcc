@@ -26,7 +26,6 @@
 #ifndef _STDIO_H_
 #define	_STDIO_H_
 
-#include "_ansi.h"
 _BEGIN_STD_C
 
 #define	_FSTDIO			/* ``function stdio'' */

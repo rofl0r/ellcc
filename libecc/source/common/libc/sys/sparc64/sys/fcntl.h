@@ -7,12 +7,7 @@
 #ifndef	_SYS_FCNTL_H_
 #define	_SYS_FCNTL_H_
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-#include <_ansi.h>
-
+_BEGIN_STD_C
 #define	_FOPEN		(-1)	/* from sys/file.h, kernel use only */
 #define	_FREAD		0x0001	/* read enabled */
 #define	_FWRITE		0x0002	/* write enabled */
@@ -171,8 +166,5 @@ extern int open _PARAMS ((const char *, int, ...));
 extern int creat _PARAMS ((const char *, mode_t));
 extern int fcntl _PARAMS ((int, int, ...));
 
-#ifdef __cplusplus
-}
-#endif
-
+_END_STD_C
 #endif	/* !_SYS_FCNTL_H_ */

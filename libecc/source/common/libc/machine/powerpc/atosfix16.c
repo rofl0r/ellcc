@@ -82,7 +82,6 @@ PORTABILITY
 #ifdef __SPE__
 
 #include <stdlib.h>
-#include <_ansi.h>
 
 __int16_t
 _DEFUN (_atosfix16_r, (reent, s),

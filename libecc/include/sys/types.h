@@ -17,8 +17,6 @@
 
 #ifndef _SYS_TYPES_H
 
-#include <_ansi.h>
-
 #ifndef __INTTYPES_DEFINED__
 #define __INTTYPES_DEFINED__
 

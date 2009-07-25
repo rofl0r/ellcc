@@ -74,7 +74,6 @@ PORTABILITY
  * SUCH DAMAGE.
  */
 
-#include <_ansi.h>
 #include <stdlib.h>
 
 #ifndef __GNUC__

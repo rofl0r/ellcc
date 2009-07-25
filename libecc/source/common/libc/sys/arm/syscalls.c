@@ -2,7 +2,6 @@
    Files in the C namespace (ie those that do not start with an
    underscore) go in .c.  */
 
-#include <_ansi.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/fcntl.h>

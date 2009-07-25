@@ -1,6 +1,5 @@
 /* Linux version of pwrite so we can have a weak alias */
 
-#include <_ansi.h>
 #include <unistd.h>
 #include <reent.h>
 #include <machine/weakalias.h>

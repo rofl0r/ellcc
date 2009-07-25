@@ -5,11 +5,10 @@
 #ifndef __CESBI_H__
 #define __CESBI_H__
 
-#include <newlib.h>
-#include <_ansi.h>
 #include "../lib/encnames.h"
 #include "../lib/ucsconv.h"
 
+_BEGIN_STD_C
 /*
  * Enable CES converter if correspondent encoding is requested.
  * Defining ICONV_TO_UCS_CES_XXX macro or ICONV_FROM_UCS_CES_XXX
@@ -272,5 +271,6 @@ extern _CONST iconv_from_ucs_ces_handlers_t
 _iconv_from_ucs_ces_handlers_utf_8;
 #endif
 
+_END_STD_C
 #endif /* !__CESBI_H__ */
 

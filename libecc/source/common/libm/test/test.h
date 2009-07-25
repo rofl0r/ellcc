@@ -1,12 +1,12 @@
 #define HAVE_FLOAT 1
 #define X(x) (char *)x
 
-#include <_ansi.h>
 #include <math.h>
 #include <float.h>
 #include <ieeefp.h>
 #include <stdio.h>
 
+_BEGIN_STD_C
 void checkf();
 void enter();
 
@@ -143,3 +143,4 @@ void _EXFUN(test_eok, (int, int));
 void _EXFUN(test_sok, (char *, char*));
 void _EXFUN(test_scok, (char *, char*, int));
 void _EXFUN(newfunc,(_CONST char *));
+_END_STD_C

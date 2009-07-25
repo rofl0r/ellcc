@@ -4,15 +4,12 @@
 */
 
 #ifndef _SETJMP_H_
-#ifdef __cplusplus
-extern "C" {
-#endif
 #define _SETJMP_H_
 
-#include "_ansi.h"
 #include <machine/setjmp.h>
 #include <signal.h> /* for sigset_t and sigprocmask */
 
+_BEGIN_STD_C
 typedef struct __sigjmpbuf
 {
   __jmp_buf __buf;
@@ -34,8 +31,6 @@ int	_EXFUN(sigsetjmp,(sigjmp_buf __jmpb, int __savemask));
                    (sigprocmask (SIG_BLOCK, NULL, &__jmpb.__saved_mask) == 0), \
                     setjmp (__jmpb.__buf) )
 
-#ifdef __cplusplus
-}
-#endif
+_END_STD_C
 #endif /* _SETJMP_H_ */
 

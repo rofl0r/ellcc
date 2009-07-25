@@ -1,7 +1,6 @@
 #ifndef _WCTYPE_H_
 #define _WCTYPE_H_
 
-#include <_ansi.h>
 _BEGIN_STD_C
 #include <sys/_types.h>
 

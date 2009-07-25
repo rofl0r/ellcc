@@ -3,17 +3,13 @@
 
 #include <features.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-#include <_ansi.h>
 #include <sys/types.h>
 #include <sys/_types.h>
 #define __need_size_t
 #define __need_ptrdiff_t
 #include <stddef.h>
 
+_BEGIN_STD_C
 extern char **environ;
 
 void	_EXFUN(_exit, (int __status ) _ATTRIBUTE ((noreturn)));
@@ -142,7 +138,5 @@ int     _EXFUN(_execve, (const char *__path, char * const __argv[], char * const
 
 # define        MAXPATHLEN      1024
 
-#ifdef __cplusplus
-}
-#endif
+_END_STD_C
 #endif /* _SYS_UNISTD_H */

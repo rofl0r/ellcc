@@ -4,7 +4,6 @@
 extern "C" {
 #endif
 #define	_SYS__DEFAULT_FCNTL_H_
-#include <_ansi.h>
 #define	_FOPEN		(-1)	/* from sys/file.h, kernel use only */
 #define	_FREAD		0x0001	/* read enabled */
 #define	_FWRITE		0x0002	/* write enabled */

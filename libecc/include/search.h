@@ -9,7 +9,6 @@
 #ifndef _SEARCH_H_
 #define _SEARCH_H_
 
-#include <_ansi.h>
 _BEGIN_STD_C
 #include <sys/cdefs.h>
 #include <machine/ansi.h>

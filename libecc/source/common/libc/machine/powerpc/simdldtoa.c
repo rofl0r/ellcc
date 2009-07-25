@@ -5,7 +5,6 @@
 
 #ifdef __SPE__
 
-#include <_ansi.h>
 #include <reent.h>
 #include <string.h>
 #include <stdlib.h>

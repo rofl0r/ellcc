@@ -1,7 +1,6 @@
 #ifndef _CTYPE_H_
 #define _CTYPE_H_
 
-#include "_ansi.h"
 _BEGIN_STD_C
 
 int isalnum(int __c);

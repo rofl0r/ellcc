@@ -1,8 +1,6 @@
 /* assert.h
  */
 
-#include "_ansi.h"
-
 _BEGIN_STD_C
 
 #undef assert

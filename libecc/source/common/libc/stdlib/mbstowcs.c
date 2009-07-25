@@ -49,7 +49,6 @@ effects vary with the locale.
 
 #ifndef _REENT_ONLY
 
-#include <newlib.h>
 #include <stdlib.h>
 #include <wchar.h>
 

@@ -25,10 +25,10 @@
 #ifndef __CCS_H__
 #define __CCS_H__
 
-#include <_ansi.h>
 #include <sys/types.h>
 #include <sys/param.h>
 
+_BEGIN_STD_C
 /*
  * Size-optimized tables will be linked instead of speed-optimized if
  * TABLE_USE_SIZE_OPTIMISATION macro is defined.
@@ -154,5 +154,5 @@ typedef struct
 extern _CONST iconv_ccs_t *
 _iconv_ccs[];
 
+_END_STD_C
 #endif /* __CCS_H__ */
-

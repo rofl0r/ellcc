@@ -5,7 +5,6 @@
 extern "C" {
 #endif
 
-#include <_ansi.h>
 #include <time.h>
 #include <sys/types.h>
 

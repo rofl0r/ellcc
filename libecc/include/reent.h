@@ -86,7 +86,6 @@
 
 #ifndef _REENT_H_
 #define _REENT_H_
-#include <_ansi.h>
 _BEGIN_STD_C
 
 #include <sys/reent.h>

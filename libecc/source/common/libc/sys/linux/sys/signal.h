@@ -34,7 +34,7 @@ typedef _sig_func_ptr __sighandler_t;
 
 /* --- redundant stuff below --- */
 
-#include <_ansi.h>
+_BEGIN_STD_C
 
 int 	_EXFUN(kill, (int, int));
 _VOID 	_EXFUN(psignal, (int, const char *));
@@ -53,4 +53,5 @@ extern const char *const sys_siglist[];
 typedef __sighandler_t sig_t; /* BSDism */
 #endif
 
+_END_STD_C
 #endif

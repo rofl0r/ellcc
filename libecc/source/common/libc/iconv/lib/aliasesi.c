@@ -22,9 +22,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
-#include <_ansi.h>
 #include <reent.h>
-#include <newlib.h>
 #include <sys/types.h>
 #include <string.h>
 #include <stdlib.h>
