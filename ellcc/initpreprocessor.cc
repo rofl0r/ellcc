@@ -296,9 +296,6 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
   // Initialize target-specific preprocessor defines.
   
   // Define type sizing macros based on the target properties.
-  assert(TI.CharWidth() == 8 && "Only support 8-bit char so far");
-  DefineBuiltinMacro(Buf, "__CHAR_BIT__=8");
-
   unsigned IntMaxWidth;
   const char *IntMaxSuffix;
   if (TI.getIntMaxType() == TargetInfo::LongLong) {
