@@ -207,7 +207,7 @@ const llvm::Type* CC2LLVMEnv::makeTypeSpecifier(SourceLocation loc, Type *t)
 	     *  treat this as a void*.
 	     * LLVM doesn't understand void*. Make it into MAUBits*.
 	     */
-            type = llvm::IntegerType::get(TI.getMAUBits());
+            type = llvm::IntegerType::get(TI.CharWidth());
 	}
 
         VDEBUG("makeTypeSpecifier pointer", loc, type->print(std::cerr));
@@ -3205,7 +3205,7 @@ llvm::Value *E___builtin_va_start::cc2llvm(CC2LLVMEnv &env, int& deref) const
     llvm::Value* value = expr->cc2llvm(env, deref);
     value = env.access(value, false, deref, 1);                 // RICH: Volatile.
     deref = 0;
-    const llvm::Type* type = llvm::IntegerType::get(env.TI.getMAUBits());
+    const llvm::Type* type = llvm::IntegerType::get(env.TI.CharWidth());
     type =  llvm::PointerType::get(type, 0);	// RICH: address space.
     env.checkCurrentBlock();
     value = env.builder.CreateBitCast(value, type);
@@ -3238,7 +3238,7 @@ llvm::Value *E___builtin_va_end::cc2llvm(CC2LLVMEnv &env, int& deref) const
     llvm::Value* value = expr->cc2llvm(env, deref);
     value = env.access(value, false, deref, 1);                 // RICH: Volatile.
     deref = 0;
-    const llvm::Type* type = llvm::IntegerType::get(env.TI.getMAUBits());
+    const llvm::Type* type = llvm::IntegerType::get(env.TI.CharWidth());
     type =  llvm::PointerType::get(type, 0);	// RICH: address space.
     env.checkCurrentBlock();
     value = env.builder.CreateBitCast(value, type);
@@ -3269,7 +3269,7 @@ llvm::Value *E___builtin_alloca::cc2llvm(CC2LLVMEnv &env, int& deref) const
     VDEBUG("E_builtin_alloca", loc, std::cerr << "value "; value->getType()->print(std::cerr));
     deref = 0;
     xassert(env.entryBlock);
-    const llvm::Type* type = llvm::IntegerType::get(env.TI.getMAUBits());
+    const llvm::Type* type = llvm::IntegerType::get(env.TI.CharWidth());
     env.checkCurrentBlock();
     llvm::AllocaInst* lv;
     if (env.entryBlock == env.currentBlock) {

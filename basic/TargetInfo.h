@@ -42,7 +42,6 @@ protected:
   // values are specified by the TargetInfo constructor.
   bool BigEndian;
   bool CharIsSigned;
-  unsigned char MAUBits;                ///< Bits in the minimum addressable unit.
   unsigned char IntMaxTWidth;
   const char *UserLabelPrefix;
   const llvm::fltSemantics *FloatFormat, *DoubleFormat, *LongDoubleFormat;
@@ -173,10 +172,10 @@ public:
   TypeID getWCharType() const { return WCharType; }
   unsigned char getTypeSizeInBits(TypeID id) { return typeInfo[id].Width; }
   unsigned char getTypeSizeInBytes(TypeID id)
-    { unsigned size = typeInfo[id].Width / MAUBits; return size ? size : 1; }
+    { unsigned size = typeInfo[id].Width / CharWidth(); return size ? size : 1; }
   unsigned char getTypeAlignInBits(TypeID id) { return typeInfo[id].Align; }
   unsigned char getTypeAlignInBytes(TypeID id)
-    { unsigned align = typeInfo[id].Align / MAUBits; return align ? align : 1; }
+    { unsigned align = typeInfo[id].Align / CharWidth(); return align ? align : 1; }
 
 
   /// isCharSigned - Return true if 'char' is 'signed char' or false if it is
@@ -184,10 +183,6 @@ public:
   /// C99 6.2.5p15.  In our implementation, this is target-specific.
   bool isCharSigned() const { return CharIsSigned; }
   
-  /** Get the size of the minimum addressable unit.
-   */
-  unsigned char getMAUBits() { return MAUBits; }
-
   /// getCharWidth - Return the width a char or wide char.
   uint64_t getCharWidth(bool isWide) const {
     return isWide ? typeInfo[WChar].Width : typeInfo[Char].Width;

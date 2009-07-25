@@ -63,7 +63,6 @@ TargetInfo::TargetInfo(const std::string &T) : Triple(T) {
   AggregatePrefAlign(0);
 
   IntMaxTWidth = 64;
-  MAUBits = 8;
   SizeType = UnsignedLong;
   PtrDiffType = Long;
   IntMaxType = LongLong;

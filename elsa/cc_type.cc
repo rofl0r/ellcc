@@ -539,18 +539,18 @@ sm::string CompoundType::toCString() const
 void CompoundType::sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const
 {
   sizeInfoInBits(TI, size, align);
-  if (size && size < TI.getMAUBits())
-      size = TI.getMAUBits();
-  if (align && align < TI.getMAUBits())
-      align = TI.getMAUBits();
-  size /= TI.getMAUBits();
-  align /= TI.getMAUBits();
+  if (size && size < TI.CharWidth())
+      size = TI.CharWidth();
+  if (align && align < TI.CharWidth())
+      align = TI.CharWidth();
+  size /= TI.CharWidth();
+  align /= TI.CharWidth();
 }  
 
 void CompoundType::sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const
 {
   size = 0;
-  align = TI.getMAUBits();
+  align = TI.CharWidth();
 
   if (hasVirtualFns()) {
     size = TI.getTypeSizeInBits(ellcc::TargetInfo::Pointer);
@@ -574,7 +574,7 @@ static void sizeInfoAddData(int &size, int &align, int memSize, int memAlign)
 static void sizeInfoAddBitfield(ellcc::TargetInfo& TI, int &size, int &align, int &bits)
 {
   if (bits) {
-    int bfSize = TI.getMAUBits();
+    int bfSize = TI.CharWidth();
     while (bfSize < bits) bfSize *= 2;
     sizeInfoAddData(size, align, bfSize, bfSize);
     bits = 0;
@@ -597,7 +597,7 @@ void CompoundType::memSizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &alig
         // skip my own subobject, as that will be accounted for below
       }
       else {
-	int baseSize = 0, baseAlign = TI.getMAUBits();
+	int baseSize = 0, baseAlign = TI.CharWidth();
 	iter.data()->ct->memSizeInfoInBits(TI, baseSize, baseAlign);
 	sizeInfoAddData(size, align, baseSize, baseAlign);
       }
@@ -2343,7 +2343,7 @@ void FunctionType::sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) 
   // thinking here about how this works when we're summing
   // the fields of a class with member functions ..
   size = 0;
-  align = TI.getMAUBits();
+  align = TI.CharWidth();
 }
 
 bool parameterListCtorSatisfies(TypePred &pred,
