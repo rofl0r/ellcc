@@ -37,8 +37,8 @@ _DEFUN (_strtosfix64_r, (rptr, nptr, endptr),
 	}
       rptr->_errno = ERANGE;
       if (word0(ldbl) & Sign_bit)
-	return LONG_LONG_MIN;
-      return LONG_LONG_MAX;
+	return LLONG_MIN;
+      return LLONG_MAX;
     }
 
   /* strip off sign and exponent */
@@ -64,7 +64,7 @@ _DEFUN (_strtosfix64_r, (rptr, nptr, endptr),
       if (exp > 0 || (exp == 0 && tmp != 0x8000000000000000LL))
 	{
 	  rptr->_errno = ERANGE;
-	  return LONG_LONG_MIN;
+	  return LLONG_MIN;
 	}
     }
   else
@@ -72,7 +72,7 @@ _DEFUN (_strtosfix64_r, (rptr, nptr, endptr),
       if (exp >= 0)
 	{
 	  rptr->_errno = ERANGE;
-	  return LONG_LONG_MAX;
+	  return LLONG_MAX;
 	}
     }
 
@@ -89,13 +89,13 @@ _DEFUN (_strtosfix64_r, (rptr, nptr, endptr),
       if (!sign && result < 0)
 	{
 	  rptr->_errno = ERANGE;
-	  return LONG_LONG_MAX;
+	  return LLONG_MAX;
 	}
     }
   else
     {
       /* we have -1.0, no rounding necessary */
-      return LONG_LONG_MIN;
+      return LLONG_MIN;
     }
 
   return sign ? -result : result;

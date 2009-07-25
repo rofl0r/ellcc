@@ -9,6 +9,7 @@
 
 _END_STD_C
 
+#include <sys/config.h> // RICH: RAND_MAX
 #define __need_size_t
 #define __need_wchar_t
 #include <stddef.h>

@@ -168,7 +168,7 @@ char *_tempnam_r(struct _reent *p, const char *dir, const char *pfx)
   if (filename)
     {
       if (! worker (p, filename, dir, prefix,
-		    _getpid_r (p) ^ (int) (_POINTER_INT) p, &p->_inc))
+		    _getpid_r (p) ^ (int) (__INTPTR_TYPE__) p, &p->_inc))
 	return NULL;
     }
   return filename;

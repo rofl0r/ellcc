@@ -101,7 +101,7 @@ long long _strtoll_r(struct _reent *rptr, const char *nptr, char **endptr, int b
 	 * Set any if any `digits' consumed; make it negative to indicate
 	 * overflow.
 	 */
-	cutoff = neg ? -(unsigned long long)LONG_LONG_MIN : LONG_LONG_MAX;
+	cutoff = neg ? -(unsigned long long)LLONG_MIN : LLONG_MAX;
 	cutlim = cutoff % (unsigned long long)base;
 	cutoff /= (unsigned long long)base;
 	for (acc = 0, any = 0;; c = *s++) {
@@ -122,7 +122,7 @@ long long _strtoll_r(struct _reent *rptr, const char *nptr, char **endptr, int b
 		}
 	}
 	if (any < 0) {
-		acc = neg ? LONG_LONG_MIN : LONG_LONG_MAX;
+		acc = neg ? LLONG_MIN : LLONG_MAX;
 		rptr->_errno = ERANGE;
 	} else if (neg)
 		acc = -acc;

@@ -987,7 +987,7 @@ fixed_nosign:
 			  }
 			else
 #endif /* __ALTIVEC__ */
-		          _uquad = (u_long)(unsigned _POINTER_INT)va_arg(ap, void *);
+		          _uquad = (u_long)(__INTPTR_TYPE__)va_arg(ap, void *);
 			base = HEX;
 			xdigs = "0123456789abcdef";
 			flags |= HEXPREFIX;

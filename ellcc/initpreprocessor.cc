@@ -204,13 +204,13 @@ static void DefineTypeSize(const char *MacroName, unsigned TypeWidth,
         MaxVal = (1LL << (TypeWidth - 1)) - 1;
         MinVal = -(1LL << (TypeWidth - 1));
     } else {
-        MaxVal = ~0LL >> (64-TypeWidth);
+        MaxVal = ~0ULL >> (64-TypeWidth);
         MinVal = 0;
     }
   
     sprintf(MacroBuf, "%s_MAX__=%llu%s", MacroName, MaxVal, ValSuffix);
     DefineBuiltinMacro(Buf, MacroBuf);
-    sprintf(MacroBuf, "%s_MIN__=%llu%s", MacroName, MinVal, ValSuffix);
+    sprintf(MacroBuf, "%s_MIN__=%lld%s", MacroName, MinVal, ValSuffix);
     DefineBuiltinMacro(Buf, MacroBuf);
 }
 
@@ -313,22 +313,38 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
     IntMaxSuffix = "";
   }
   
+  // Define type sizes. Used in <limits.h>.
+  sprintf(MacroBuf, "__CHAR_BIT__=%d", (int)TI.CharWidth());
+  DefineBuiltinMacro(Buf, MacroBuf);
   DefineTypeSize("__SCHAR", TI.CharWidth(), "", true, Buf);
+  DefineTypeSize("__UCHAR", TI.CharWidth(), "", false, Buf);
+  DefineTypeSize("__CHAR", TI.CharWidth(), "", TI.isCharSigned(), Buf);
   DefineTypeSize("__SHRT", TI.ShortWidth(), "", true, Buf);
+  DefineTypeSize("__USHRT", TI.ShortWidth(), "", false, Buf);
   DefineTypeSize("__INT", TI.IntWidth(), "", true, Buf);
+  DefineTypeSize("__UINT", TI.IntWidth(), "", false, Buf);
   DefineTypeSize("__LONG", TI.LongWidth(), "L", true, Buf);
-  DefineTypeSize("__LONG_LONG", TI.LongLongWidth(), "LL", true, Buf);
-  DefineTypeSize("__WCHAR", TI.WCharWidth(), "", true, Buf);
-  DefineTypeSize("__INTMAX", IntMaxWidth, IntMaxSuffix, true, Buf);
+  DefineTypeSize("__ULONG", TI.LongWidth(), "UL", false, Buf);
+  DefineTypeSize("__LLONG", TI.LongLongWidth(), "LL", true, Buf);
+  DefineTypeSize("__ULLONG", TI.LongLongWidth(), "ULL", false, Buf);
 
-  DefineType("__INTMAX_TYPE__", TI.getIntMaxType(), Buf);
-  DefineType("__UINTMAX_TYPE__", TI.getUIntMaxType(), Buf);
-  DefineType("__PTRDIFF_TYPE__", TI.getPtrDiffType(0), Buf);
-  DefineType("__INTPTR_TYPE__", TI.getIntPtrType(), Buf);
-  DefineType("__SIZE_TYPE__", TI.getSizeType(), Buf);
+  // Various types. Used in <stddef.h>.
   DefineType("__WCHAR_TYPE__", TI.getWCharType(), Buf);
+  DefineType("__SIZE_TYPE__", TI.getSizeType(), Buf);
+  DefineType("__PTRDIFF_TYPE__", TI.getPtrDiffType(0), Buf);
+
   // FIXME: TargetInfo hookize __WINT_TYPE__.
   DefineBuiltinMacro(Buf, "__WINT_TYPE__=int");
+
+  DefineType("__INTPTR_TYPE__", TI.getIntPtrType(), Buf);
+ 
+  // Wide char type. Used in <wchar.h>.
+  DefineTypeSize("__WCHAR", TI.WCharWidth(), "", true, Buf);
+
+  DefineTypeSize("__INTMAX", IntMaxWidth, IntMaxSuffix, true, Buf);
+  DefineType("__INTMAX_TYPE__", TI.getIntMaxType(), Buf);
+  DefineType("__UINTMAX_TYPE__", TI.getUIntMaxType(), Buf);
+
   
   DefineFloatMacros(Buf, "FLT", &TI.getFloatFormat());
   DefineFloatMacros(Buf, "DBL", &TI.getDoubleFormat());

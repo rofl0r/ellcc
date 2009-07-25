@@ -5462,11 +5462,17 @@ Type *E_intLit::itcheck_x(Env &env, Expression *&replacement)
 
   // At this point, we pick the type that is the first type in 'seq'
   // that can represent the value.
-  SimpleTypeId id = *seq;
-  while (*(seq+1) != ST_VOID &&
-         !canRepresent(env, id, i)) {
-    seq++;
-    id = *seq;
+  SimpleTypeId id = ST_VOID;
+  while (*seq != ST_VOID) {
+    id = *seq++;
+    if (canRepresent(env, id, i)) {
+        break;
+    }
+  }
+  if (id == ST_VOID) {
+      env.report(loc, diag::warn_constant_too_large) << text;
+      env.report(loc, diag::note_constant_too_large) << toString(ST_UNSIGNED_LONG_LONG);
+      id = ST_UNSIGNED_LONG_LONG;
   }
 
   return env.getSimpleType(id);

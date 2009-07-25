@@ -193,6 +193,10 @@ def err_bad_scope_qualifier
             "so it can't be used as a scope qualifier">;
 def err_specifier_invalid : Error<"cannot apply const/volatile to type '%0'">;
 
+def warn_constant_too_large
+    : Warning<"constant '%0' is too large to be represented">;
+def note_constant_too_large
+    : Note<"interpreting as '%0'">;
 def err_expr_not_ice : Error<"expression is not an integer constant expression">;
 def err_expr_unary_plus
     : Error<"argument to unary + must be of arithmetic, enumeration, or pointer type, not '%0'">;

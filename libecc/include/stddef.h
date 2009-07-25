@@ -28,7 +28,7 @@ typedef __WCHAR_TYPE__ wchar_t;
  * @param member The member desired.
  * @return The offset to the member.
  */
-#define offsetof(type, member) ((size_t)&((type*)NULL)->field)
+#define offsetof(type, member) ((size_t)&((type*)NULL)->member)
 
 _END_STD_C
 

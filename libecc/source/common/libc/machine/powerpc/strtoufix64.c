@@ -37,7 +37,7 @@ _DEFUN (_strtoufix64_r, (rptr, nptr, endptr),
       rptr->_errno = ERANGE;
       if (word0(ldbl) & Sign_bit)
 	return 0;
-      return ULONG_LONG_MAX;
+      return ULLONG_MAX;
     }
 
   /* strip off sign and exponent */
@@ -68,7 +68,7 @@ _DEFUN (_strtoufix64_r, (rptr, nptr, endptr),
       if (exp > 0 || (exp == 0 && tmp >= 0x8000000000000000LL))
 	{
 	  rptr->_errno = ERANGE;
-	  return ULONG_LONG_MAX;
+	  return ULLONG_MAX;
 	}
     }
 
@@ -90,7 +90,7 @@ _DEFUN (_strtoufix64_r, (rptr, nptr, endptr),
 	  if (result < tmp)
 	    {
 	      rptr->_errno = ERANGE;
-	      return ULONG_LONG_MAX;
+	      return ULLONG_MAX;
 	    }
 	}
       else

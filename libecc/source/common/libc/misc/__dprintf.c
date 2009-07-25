@@ -191,7 +191,7 @@ void __dprintf (char *fmt, ...)
 	      write_string (unctrl (c));
 	      break;
 	    case 'p' :
-	      l = (_POINTER_INT) va_arg (args, char *);
+	      l = (__INTPTR_TYPE__) va_arg (args, char *);
 	      print_number (16, 1, l);
 	      break;
 	    case 'd' :

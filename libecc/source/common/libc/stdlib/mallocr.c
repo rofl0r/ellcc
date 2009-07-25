@@ -297,7 +297,6 @@ extern "C" {
 
 #include <reent.h>
 
-#define POINTER_UINT unsigned _POINTER_INT
 #define SEPARATE_OBJECTS
 #define HAVE_MMAP 0
 #define MORECORE(size) _sbrk_r(reent_ptr, (size))
@@ -341,7 +340,6 @@ extern void __malloc_unlock();
 
 #else /* ! INTERNAL_NEWLIB */
 
-#define POINTER_UINT unsigned long
 #define RARG
 #define RONEARG
 #define RDECL
@@ -2167,7 +2165,7 @@ static void malloc_extend_top(RARG nb) RDECL INTERNAL_SIZE_T nb;
 
   if (brk == old_end /* can just add bytes to current top, unless
 			previous correction failed */
-      && ((POINTER_UINT)old_end & (pagesz - 1)) == 0)
+      && ((__INTPTR_TYPE__)old_end & (pagesz - 1)) == 0)
   {
     top_size = sbrk_size + old_top_size;
     set_head(top, top_size | PREV_INUSE);
@@ -2180,7 +2178,7 @@ static void malloc_extend_top(RARG nb) RDECL INTERNAL_SIZE_T nb;
       sbrked_mem += brk - (char*)old_end;
 
     /* Guarantee alignment of first new chunk made from this space */
-    front_misalign = (POINTER_UINT)chunk2mem(brk) & MALLOC_ALIGN_MASK;
+    front_misalign = (__INTPTR_TYPE__)chunk2mem(brk) & MALLOC_ALIGN_MASK;
     if (front_misalign > 0) 
     {
       correction = (MALLOC_ALIGNMENT) - front_misalign;
@@ -2190,7 +2188,7 @@ static void malloc_extend_top(RARG nb) RDECL INTERNAL_SIZE_T nb;
       correction = 0;
 
     /* Guarantee the next brk will be at a page boundary */
-    correction += pagesz - ((POINTER_UINT)(brk + sbrk_size) & (pagesz - 1));
+    correction += pagesz - ((__INTPTR_TYPE__)(brk + sbrk_size) & (pagesz - 1));
 
     /* Allocate correction */
     new_brk = (char*)(MORECORE (correction));

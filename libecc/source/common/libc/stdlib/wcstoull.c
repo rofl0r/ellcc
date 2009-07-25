@@ -76,7 +76,7 @@ RETURNS
 <<wcstoull>> returns the converted value, if any. If no conversion was
 made, <<0>> is returned.
 
-<<wcstoull>> returns <<ULONG_LONG_MAX>> if the magnitude of the converted
+<<wcstoull>> returns <<ULLONG_MAX>> if the magnitude of the converted
 value is too large, and sets <<errno>> to <<ERANGE>>.
 
 PORTABILITY

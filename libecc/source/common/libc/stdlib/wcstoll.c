@@ -74,7 +74,7 @@ RETURNS
 <<wcstoll>> returns the converted value, if any. If no conversion was
 made, 0 is returned.
 
-<<wcstoll>> returns <<LONG_LONG_MAX>> or <<LONG_LONG_MIN>> if the magnitude of
+<<wcstoll>> returns <<LLONG_MAX>> or <<LLONG_MIN>> if the magnitude of
 the converted value is too large, and sets <<errno>> to <<ERANGE>>.
 
 PORTABILITY

@@ -481,6 +481,7 @@ public:
     SizeType = UnsignedLong;
     PtrDiffType = Long;
     LongDoubleFormat = &llvm::APFloat::PPCDoubleDouble;
+    IntPtrType = UnsignedLong;
   }
 };
 } // end anonymous namespace.
@@ -801,7 +802,7 @@ public:
     UserLabelPrefix = "";
     SizeType = UnsignedInt;
     PtrDiffType = Int;
-    IntPtrType = Int;
+    IntPtrType = UnsignedInt;
   }
   virtual void getTargetDefines(const LangOptions &Opts,
                                 std::vector<char> &Defines) const {
@@ -849,6 +850,7 @@ public:
     UIntMaxType = UnsignedLong;
     SizeType = UnsignedLong;
     PtrDiffType = Long;
+    IntPtrType = UnsignedLong;
   }
   virtual const char *getVAListDeclaration() const {
     return "typedef struct __va_list_tag {"
