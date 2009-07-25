@@ -418,6 +418,7 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
   // Macros to control C99 numerics and <float.h>
   DefineBuiltinMacro(Buf, "__FLT_EVAL_METHOD__=0");
   DefineBuiltinMacro(Buf, "__FLT_RADIX__=2");
+  DefineBuiltinMacro(Buf, "__FLT_ROUNDS__=1");
   sprintf(MacroBuf, "__DECIMAL_DIG__=%d",
           PickFP(&TI.getLongDoubleFormat(), -1/*FIXME*/, 17, 21, 33));
   DefineBuiltinMacro(Buf, MacroBuf);
