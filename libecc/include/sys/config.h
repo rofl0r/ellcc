@@ -1,5 +1,5 @@
-#ifndef __SYS_CONFIG_H__
-#define __SYS_CONFIG_H__
+#ifndef _SYS_CONFIG_H_
+#define _SYS_CONFIG_H_
 
 #include <machine/ieeefp.h>  /* floating point macros */
 
@@ -196,4 +196,4 @@
 #endif
 #endif
 
-#endif /* __SYS_CONFIG_H__ */
+#endif

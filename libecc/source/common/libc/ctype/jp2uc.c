@@ -29,14 +29,14 @@
    SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+#include <config.h>
 #ifdef _MB_CAPABLE
 
 #include <wctype.h>
 #include "local.h"
 #include "jp2uc.h"
 
-wint_t
-_DEFUN (__jp2uc, (c, type), wint_t c _AND int type)
+wint_t __jp2uc( wint_t c, int type)
 {
   int index, adj;
   unsigned char byte1, byte2;
