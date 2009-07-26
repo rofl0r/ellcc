@@ -1221,7 +1221,7 @@ static std::string CreateTargetTriple()
 
 /** Check to see if a given file exists in the standard places.
  */
-static void findFiles(std::vector<std::string>& found, std::string what)
+static void findFiles(std::vector<std::string>& found, std::string what, std::string where = "")
 {
     llvm::sys::Path MainPath = 
         llvm::sys::Path::GetMainExecutable(argv0, (void*)(intptr_t)findFiles);
@@ -1233,9 +1233,12 @@ static void findFiles(std::vector<std::string>& found, std::string what)
         // Stuff will be in, e.g. /usr/local/libecc.
         MainPath.appendComponent("libecc");
 
-        // Get foo/libecc/<version>/<triple>/<what>
+        // Get foo/libecc/<version>[/<where>]/<triple>/<what>
         path = MainPath;
         path.appendComponent(ELLCC_VERSION_STRING);
+        if (where.size()) {
+            path.appendComponent(where);
+        }
         path.appendComponent(TargetTriple);
         path.appendComponent(what);
         if (path.exists()) {
@@ -1246,9 +1249,12 @@ static void findFiles(std::vector<std::string>& found, std::string what)
         }
 
         if (Arch.size()) {
-            // Get foo/libecc/<version>/<arch>/<what>
+            // Get foo/libecc/<version>[/<where>]/<arch>/<what>
             path = MainPath;
             path.appendComponent(ELLCC_VERSION_STRING);
+            if (where.size()) {
+                path.appendComponent(where);
+            }
             path.appendComponent(Arch);
             path.appendComponent(what);
             if (path.exists()) {
@@ -1259,8 +1265,11 @@ static void findFiles(std::vector<std::string>& found, std::string what)
             }
         }
 
-        // Get foo/libecc/<triple>/<what>
+        // Get foo/libecc[/<where>]/<triple>/<what>
         path = MainPath;
+        if (where.size()) {
+            path.appendComponent(where);
+        }
         path.appendComponent(TargetTriple);
         path.appendComponent(what);
         if (path.exists()) {
@@ -1270,22 +1279,12 @@ static void findFiles(std::vector<std::string>& found, std::string what)
             }
         }
 
-        if (Arch.size()) {
-            // Get foo/libecc/<arch>/<what>
-            path = MainPath;
-            path.appendComponent(Arch);
-            path.appendComponent(what);
-            if (path.exists()) {
-                found.push_back(path.c_str());
-                if (Verbose) {
-                    cout << "  found:" << path.c_str() << "\n";
-                }
-            }
-        }
-    
-        // Get foo/libecc/<version>/<what>
+        // Get foo/libecc/<version>[/<where>]/<what>
         path = MainPath;
         path.appendComponent(ELLCC_VERSION_STRING);
+        if (where.size()) {
+            path.appendComponent(where);
+        }
         path.appendComponent(what);
         if (path.exists()) {
             found.push_back(path.c_str());
@@ -1294,8 +1293,11 @@ static void findFiles(std::vector<std::string>& found, std::string what)
             }
         }
 
-        // Get foo/libecc/<what>
+        // Get foo/libecc[/<where>]/<what>
         path = MainPath;
+        if (where.size()) {
+            path.appendComponent(where);
+        }
         path.appendComponent(what);
         if (path.exists()) {
             found.push_back(path.c_str());
@@ -2924,7 +2926,7 @@ int main(int argc, char **argv)
         if (FinalPhase == BCLINKING || FinalPhase == LINKING) {
             // Add the ellcc crt0.o, which is relative to the ellcc binary.
             std::vector<std::string> found;
-            findFiles(found, "lib/crt0.o");
+            findFiles(found, "crt0.o", "lib");
             if (found.size()) {
                 Files.insert(Files.begin(), found[0]);
             }
@@ -3005,7 +3007,7 @@ int main(int argc, char **argv)
         if (FinalPhase == BCLINKING || FinalPhase == LINKING) {
             // Add the ellcc libecc.a, which is relative to the ellcc binary.
             std::vector<std::string> found;
-            findFiles(found, "lib/libecc.a");
+            findFiles(found, "libecc.a", "lib");
             if (found.size()) {
                 Input input(found[0], A);
                 InpList.push_back(input);
