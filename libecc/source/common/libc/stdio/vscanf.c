@@ -22,15 +22,11 @@
 #include <stdarg.h>
 #include "local.h"
 
-#ifndef _REENT_ONLY
-
 int vscanf(const char *fmt, va_list ap)
 {
   _REENT_SMALL_CHECK_INIT (_REENT);
   return __svfscanf_r (_REENT, _stdin_r (_REENT), fmt, ap);
 }
-
-#endif /* !_REENT_ONLY */
 
 int _vscanf_r(struct _reent *ptr, const char *fmt  , va_list ap)
 {

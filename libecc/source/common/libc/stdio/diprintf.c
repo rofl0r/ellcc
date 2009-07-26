@@ -54,8 +54,6 @@ int _diprintf_r(struct _reent *ptr, int fd, const char *format, ...)
   return n;
 }
 
-#ifndef _REENT_ONLY
-
 int diprintf(int fd, const char *format, ...)
 {
   va_list ap;
@@ -66,5 +64,3 @@ int diprintf(int fd, const char *format, ...)
   va_end (ap);
   return n;
 }
-
-#endif /* ! _REENT_ONLY */

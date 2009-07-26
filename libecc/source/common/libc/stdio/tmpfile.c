@@ -82,11 +82,7 @@ FILE *_tmpfile_r(struct _reent *ptr)
   return fp;
 }
 
-#ifndef _REENT_ONLY
-
 FILE *tmpfile(void)
 {
   return _tmpfile_r (_REENT);
 }
-
-#endif

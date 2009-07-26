@@ -1,5 +1,6 @@
 /* Reentrant version of sbrk system call. */
 
+#include <config.h>
 #include <reent.h>
 #include <unistd.h>
 #include <_syslist.h>
@@ -7,19 +8,7 @@
 /* Some targets provides their own versions of these functions.  Those
    targets should define REENTRANT_SYSCALLS_PROVIDED in TARGET_CFLAGS.  */
 
-#ifdef _REENT_ONLY
 #ifndef REENTRANT_SYSCALLS_PROVIDED
-#define REENTRANT_SYSCALLS_PROVIDED
-#endif
-#endif
-
-/* If MALLOC_PROVIDED is defined, we don't need this function.  */
-
-#if defined (REENTRANT_SYSCALLS_PROVIDED) || defined (MALLOC_PROVIDED)
-
-int _dummy_sbrk_syscalls = 1;
-
-#else
 
 /* We use the errno variable used by the system dependent layer.  */
 #undef errno

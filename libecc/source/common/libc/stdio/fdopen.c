@@ -66,15 +66,12 @@ FILE *_fdopen_r(struct _reent *ptr, int fd, const char *mode)
 {
   register FILE *fp;
   int flags, oflags;
-#ifdef HAVE_FCNTL
   int fdflags, fdmode;
-#endif
 
   if ((flags = __sflags (ptr, mode, &oflags)) == 0)
     return 0;
 
   /* make sure the mode the user wants is a subset of the actual mode */
-#ifdef HAVE_FCNTL
   if ((fdflags = _fcntl_r (ptr, fd, F_GETFL, 0)) < 0)
     return 0;
   fdmode = fdflags & O_ACCMODE;
@@ -83,7 +80,6 @@ FILE *_fdopen_r(struct _reent *ptr, int fd, const char *mode)
       ptr->_errno = EBADF;
       return 0;
     }
-#endif
 
   if ((fp = __sfp (ptr)) == 0)
     return 0;
@@ -95,10 +91,8 @@ FILE *_fdopen_r(struct _reent *ptr, int fd, const char *mode)
      streams.  Someone may later clear O_APPEND on fileno(fp), but the
      stream must still remain in append mode.  Rely on __sflags
      setting __SAPP properly.  */
-#ifdef HAVE_FCNTL
   if ((oflags & O_APPEND) && !(fdflags & O_APPEND))
     _fcntl_r (ptr, fd, F_SETFL, fdflags | O_APPEND);
-#endif
   fp->_file = fd;
   fp->_cookie = (void *) fp;
 
@@ -126,11 +120,7 @@ FILE *_fdopen_r(struct _reent *ptr, int fd, const char *mode)
   return fp;
 }
 
-#ifndef _REENT_ONLY
-
 FILE *fdopen(int fd, const char *mode)
 {
   return _fdopen_r(_REENT, fd, mode);
 }
-
-#endif

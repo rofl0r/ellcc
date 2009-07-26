@@ -72,6 +72,7 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 <<lseek>>, <<open>>, <<read>>, <<sbrk>>, <<write>>.
 */
 
+#include <config.h>
 #include <reent.h>
 #include <time.h>
 #include <stdio.h>
@@ -139,7 +140,6 @@ FILE *_freopen_r(struct _reent *ptr, const char *file, const char *mode, registe
     }
   else
     {
-#ifdef HAVE_FCNTL
       int oldflags;
       /*
        * Reuse the file descriptor, but only if the new access mode is
@@ -152,10 +152,6 @@ FILE *_freopen_r(struct _reent *ptr, const char *file, const char *mode, registe
 		|| ((oldflags ^ oflags) & O_ACCMODE) == 0)
 	  || _fcntl_r (ptr, f, F_SETFL, oflags) == -1)
 	f = -1;
-#else
-      /* We cannot modify without fcntl support.  */
-      f = -1;
-#endif
 
 #ifdef __SCLE
       /*
@@ -226,11 +222,7 @@ FILE *_freopen_r(struct _reent *ptr, const char *file, const char *mode, registe
   return fp;
 }
 
-#ifndef _REENT_ONLY
-
 FILE *freopen(const char *file, const char *mode, register FILE *fp)
 {
   return _freopen_r (_REENT, file, mode, fp);
 }
-
-#endif /*!_REENT_ONLY */

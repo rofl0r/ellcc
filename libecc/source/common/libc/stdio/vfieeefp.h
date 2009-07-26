@@ -130,7 +130,7 @@ struct ldieee
   unsigned manh:32;
   unsigned manl:32;
   unsigned manl2:32;
-  unsigned manl3;16;
+  unsigned manl3:16;
 };
 #endif /* LDBL_MANT_DIG */
 #endif /* !IEEE_8087 */

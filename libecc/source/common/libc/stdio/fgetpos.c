@@ -85,11 +85,7 @@ int _fgetpos_r(struct _reent * ptr, FILE * fp, _fpos_t * pos)
   return 1;
 }
 
-#ifndef _REENT_ONLY
-
 int fgetpos(FILE * fp, _fpos_t * pos)
 {
   return _fgetpos_r (_REENT, fp, pos);
 }
-
-#endif /* !_REENT_ONLY */

@@ -1,3 +1,4 @@
+#include <config.h>
 #include <reent.h>
 #include <wchar.h>
 #include <stdlib.h>
@@ -32,9 +33,7 @@ size_t _wcrtomb_r(struct _reent *ptr, char *s, wchar_t wc, mbstate_t *ps)
     return (size_t)retval;
 }
 
-#ifndef _REENT_ONLY
 size_t wcrtomb(char *s, wchar_t wc, mbstate_t *ps)
 {
   return _wcrtomb_r (_REENT, s, wc, ps);
 }
-#endif /* !_REENT_ONLY */

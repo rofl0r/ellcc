@@ -109,6 +109,7 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 <<lseek>>, <<open>>, <<read>>, <<sbrk>>, <<write>>.
 */
 
+#include <config.h>
 #include <reent.h>
 #include <stdio.h>
 #include <errno.h>
@@ -162,11 +163,7 @@ FILE *_fopen_r(struct _reent *ptr, const char *file, const char *mode)
   return fp;
 }
 
-#ifndef _REENT_ONLY
-
 FILE *fopen(const char *file, const char *mode)
 {
   return _fopen_r (_REENT, file, mode);
 }
-
-#endif

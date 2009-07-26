@@ -174,8 +174,6 @@ char *_tempnam_r(struct _reent *p, const char *dir, const char *pfx)
   return filename;
 }
 
-#ifndef _REENT_ONLY
-
 char *tempnam(const char *dir, const char *pfx)
 {
   return _tempnam_r (_REENT, dir, pfx);
@@ -185,5 +183,3 @@ char *tmpnam(char *s)
 {
   return _tmpnam_r (_REENT, s);
 }
-
-#endif

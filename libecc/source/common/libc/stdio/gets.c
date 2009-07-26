@@ -87,11 +87,7 @@ char *_gets_r(struct _reent *ptr, char *buf)
   return buf;
 }
 
-#ifndef _REENT_ONLY
-
 char *gets(char *buf)
 {
   return _gets_r (_REENT, buf);
 }
-
-#endif

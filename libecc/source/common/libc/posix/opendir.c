@@ -1,5 +1,3 @@
-#ifndef HAVE_OPENDIR
-
 /*
  * Copyright (c) 1983 Regents of the University of California.
  * All rights reserved.
@@ -33,10 +31,8 @@
  * SUCH DAMAGE.
  */
 
-#if defined(LIBC_SCCS) && !defined(lint)
-static char sccsid[] = "@(#)opendir.c	5.11 (Berkeley) 2/23/91";
-#endif /* LIBC_SCCS and not lint */
-
+#include <config.h>
+#ifndef HAVE_OPENDIR
 #include <dirent.h>
 #include <fcntl.h>
 #include <stdlib.h>
@@ -56,9 +52,7 @@ _DEFUN(opendir, (name),
 
 	if ((fd = open(name, 0)) == -1)
 		return NULL;
-#ifdef HAVE_FCNTL
 	rc = fcntl(fd, F_SETFD, 1);
-#endif
 	if (rc == -1 ||
 	    (dirp = (DIR *)malloc(sizeof(DIR))) == NULL) {
 		close (fd);

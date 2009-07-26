@@ -86,12 +86,6 @@ without an operating system that can actually raise exceptions.
 /* _init_signal initialises the signal handlers for each signal. This function
    is called by crt0 at program startup.  */
 
-#ifdef SIGNAL_PROVIDED
-
-int _dummy_simulated_signal;
-
-#else
-
 #include <errno.h>
 #include <signal.h>
 #include <stddef.h>
@@ -194,8 +188,6 @@ int __sigtramp_r(struct _reent *ptr, int sig)
     }
 }
 
-#ifndef _REENT_ONLY
-
 int raise(int sig)
 {
   return _raise_r (_REENT, sig);
@@ -215,7 +207,3 @@ int __sigtramp(int sig)
 {
   return __sigtramp_r (_REENT, sig);
 }
-
-#endif
-
-#endif /* !SIGNAL_PROVIDED */

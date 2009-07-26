@@ -1,3 +1,4 @@
+#include <config.h>
 #include <reent.h>
 #include <wchar.h>
 #include <stdlib.h>
@@ -60,9 +61,7 @@ size_t _mbsrtowcs_r(struct _reent *r, wchar_t *dst, const char **src, size_t n, 
   return (size_t)max;
 }
 
-#ifndef _REENT_ONLY
 size_t mbsrtowcs(wchar_t *dst, const char **src, size_t len, mbstate_t *ps)
 {
   return _mbsrtowcs_r (_REENT, dst, src, len, ps);
 }
-#endif /* !_REENT_ONLY */

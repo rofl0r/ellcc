@@ -80,6 +80,7 @@ It is not portable.  See also the <<fopencookie>> interface from Linux.
 Supporting OS subroutines required: <<sbrk>>.
 */
 
+#include <config.h>
 #include <stdio.h>
 #include <errno.h>
 #include <sys/lock.h>
@@ -87,11 +88,7 @@ Supporting OS subroutines required: <<sbrk>>.
 
 typedef int (*funread)(void *_cookie, char *_buf, int _n);
 typedef int (*funwrite)(void *_cookie, const char *_buf, int _n);
-#ifdef __LARGE64_FILES
-typedef _fpos64_t (*funseek)(void *_cookie, _fpos64_t _off, int _whence);
-#else
 typedef fpos_t (*funseek)(void *_cookie, fpos_t _off, int _whence);
-#endif
 typedef int (*funclose)(void *_cookie);
 
 typedef struct funcookie {
@@ -125,36 +122,12 @@ static int funwriter(struct _reent *ptr, void *cookie, const char *buf, int n)
 static _fpos_t funseeker(struct _reent *ptr, void *cookie, _fpos_t off, int whence)
 {
   funcookie *c = (funcookie *) cookie;
-#ifndef __LARGE64_FILES
   fpos_t result;
   errno = 0;
   if ((result = c->seekfn (c->cookie, (fpos_t) off, whence)) < 0 && errno)
     ptr->_errno = errno;
-#else /* __LARGE64_FILES */
-  _fpos64_t result;
-  errno = 0;
-  if ((result = c->seekfn (c->cookie, (_fpos64_t) off, whence)) < 0 && errno)
-    ptr->_errno = errno;
-  else if ((_fpos_t)result != result)
-    {
-      ptr->_errno = EOVERFLOW;
-      result = -1;
-    }
-#endif /* __LARGE64_FILES */
   return result;
 }
-
-#ifdef __LARGE64_FILES
-static _fpos64_t funseeker64(struct _reent *ptr, void *cookie, _fpos64_t off, int whence)
-{
-  _fpos64_t result;
-  funcookie *c = (funcookie *) cookie;
-  errno = 0;
-  if ((result = c->seekfn (c->cookie, off, whence)) < 0 && errno)
-    ptr->_errno = errno;
-  return result;
-}
-#endif /* __LARGE64_FILES */
 
 static int funcloser(struct _reent *ptr, void *cookie)
 {
@@ -225,19 +198,13 @@ FILE * _funopen_r(struct _reent *ptr, const void *cookie,
     }
   c->seekfn = seekfn;
   fp->_seek = seekfn ? funseeker : NULL;
-#ifdef __LARGE64_FILES
-  fp->_seek64 = seekfn ? funseeker64 : NULL;
-  fp->_flags |= __SL64;
-#endif
   c->closefn = closefn;
   fp->_close = funcloser;
   _funlockfile (fp);
   return fp;
 }
 
-#ifndef _REENT_ONLY
 FILE * funopen(const void *cookie, funread readfn, funwrite writefn, funseek seekfn, funclose closefn)
 {
   return _funopen_r (_REENT, cookie, readfn, writefn, seekfn, closefn);
 }
-#endif /* !_REENT_ONLY */

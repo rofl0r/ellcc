@@ -24,11 +24,7 @@ _off_t _ftello_r(struct _reent * ptr, register FILE * fp)
   return (_off_t)_ftell_r (ptr, fp);
 }
 
-#ifndef _REENT_ONLY
-
 _off_t ftello(register FILE * fp)
 {
   return (_off_t)_ftell_r (_REENT, fp);
 }
-
-#endif /* !_REENT_ONLY */

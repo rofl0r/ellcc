@@ -36,14 +36,6 @@
  * SUCH DAMAGE.
  */
 
-#if defined(LIBC_SCCS) && !defined(lint)
-#if 0
-static char sccsid[] = "@(#)popen.c	8.1 (Berkeley) 6/4/93";
-#else
-static char rcsid[] = "$NetBSD: popen.c,v 1.11 1995/06/16 07:05:33 jtc Exp $";
-#endif
-#endif /* LIBC_SCCS and not lint */
-
 #include <sys/param.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -129,11 +121,9 @@ FILE *popen(const char *program, const char *type)
 		(void)close(pdes[0]);
 	}
 
-#ifdef HAVE_FCNTL
 	/* Hide pipe from future popens; assume fcntl can't fail.  */
 	fcntl (fileno (iop), F_SETFD,
 	       fcntl (fileno (iop), F_GETFD, 0) | FD_CLOEXEC);
-#endif /* HAVE_FCNTL */
 
 	/* Link into list of file descriptors. */
 	cur->fp = iop;

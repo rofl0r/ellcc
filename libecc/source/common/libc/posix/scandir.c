@@ -1,5 +1,3 @@
-#ifndef HAVE_OPENDIR
-
 /*
  * Copyright (c) 1983 Regents of the University of California.
  * All rights reserved.
@@ -33,10 +31,6 @@
  * SUCH DAMAGE.
  */
 
-#if defined(LIBC_SCCS) && !defined(lint)
-static char sccsid[] = "@(#)scandir.c	5.10 (Berkeley) 2/23/91";
-#endif /* LIBC_SCCS and not lint */
-
 /*
  * Scan the directory dirname calling select to make a list of selected
  * directory entries then sort using qsort and compare routine dcomp.
@@ -44,6 +38,8 @@ static char sccsid[] = "@(#)scandir.c	5.10 (Berkeley) 2/23/91";
  * struct dirent (through namelist). Returns -1 if there were any errors.
  */
 
+#include <config.h>
+#ifndef HAVE_OPENDIR
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <dirent.h>
@@ -66,16 +62,9 @@ static char sccsid[] = "@(#)scandir.c	5.10 (Berkeley) 2/23/91";
     ((sizeof (struct dirent) - (MAXNAMLEN+1)) + ((strlen((dp)->d_name)+1 + 3) &~ 3))
 #endif
 
-#ifndef __P
-#define __P(args) ()
-#endif
-
-int
-_DEFUN(scandir, (dirname, namelist, select, dcomp),
-	const char *dirname _AND
-	struct dirent ***namelist _AND
-	int (*select) __P((const struct dirent *)) _AND
-	int (*dcomp) __P((const struct dirent **, const struct dirent **)))
+int scandir(const char *dirname, struct dirent ***namelist, 
+	    int (*select)(const struct dirent *),
+            int (*dcomp)(const struct dirent **, const struct dirent **))
 {
 	register struct dirent *d, *p, **names;
 	register size_t nitems;
@@ -166,10 +155,7 @@ _DEFUN(scandir, (dirname, namelist, select, dcomp),
 /*
  * Alphabetic order comparison routine for those who want it.
  */
-int
-_DEFUN(alphasort, (d1, d2),
-       const struct dirent **d1 _AND
-       const struct dirent **d2)
+int alphasort(const struct dirent **d1, const struct dirent **d2)
 {
        return(strcmp((*d1)->d_name, (*d2)->d_name));
 }

@@ -62,6 +62,7 @@ This function is being added to POSIX 200x, but is not in POSIX 2001.
 Supporting OS subroutines required: <<sbrk>>.
 */
 
+#include <config.h>
 #include <stdio.h>
 #include <errno.h>
 #include <string.h>
@@ -151,11 +152,7 @@ static int fmemwriter(struct _reent *ptr, void *cookie, const char *buf, int n)
 static _fpos_t fmemseeker(struct _reent *ptr, void *cookie, _fpos_t pos, int whence)
 {
   fmemcookie *c = (fmemcookie *) cookie;
-#ifndef __LARGE64_FILES
   off_t offset = (off_t) pos;
-#else /* __LARGE64_FILES */
-  _off64_t offset = (_off64_t) pos;
-#endif /* __LARGE64_FILES */
 
   if (whence == SEEK_CUR)
     offset += c->pos;
@@ -171,13 +168,6 @@ static _fpos_t fmemseeker(struct _reent *ptr, void *cookie, _fpos_t pos, int whe
       ptr->_errno = ENOSPC;
       offset = -1;
     }
-#ifdef __LARGE64_FILES
-  else if ((_fpos_t) offset != offset)
-    {
-      ptr->_errno = EOVERFLOW;
-      offset = -1;
-    }
-#endif /* __LARGE64_FILES */
   else
     {
       if (c->writeonly && c->pos < c->eof)
@@ -197,42 +187,6 @@ static _fpos_t fmemseeker(struct _reent *ptr, void *cookie, _fpos_t pos, int whe
 
 /* Seek to position POS relative to WHENCE within stream described by
    COOKIE; return resulting position or fail with EOF.  */
-#ifdef __LARGE64_FILES
-static _fpos64_t fmemseeker64(struct _reent *ptr, void *cookie, _fpos64_t pos, int whence)
-{
-  _off64_t offset = (_off64_t) pos;
-  fmemcookie *c = (fmemcookie *) cookie;
-  if (whence == SEEK_CUR)
-    offset += c->pos;
-  else if (whence == SEEK_END)
-    offset += c->eof;
-  if (offset < 0)
-    {
-      ptr->_errno = EINVAL;
-      offset = -1;
-    }
-  else if (offset > c->max)
-    {
-      ptr->_errno = ENOSPC;
-      offset = -1;
-    }
-  else
-    {
-      if (c->writeonly && c->pos < c->eof)
-	{
-	  c->buf[c->pos] = c->saved;
-	  c->saved = '\0';
-	}
-      c->pos = offset;
-      if (c->writeonly && c->pos < c->eof)
-	{
-	  c->saved = c->buf[c->pos];
-	  c->buf[c->pos] = '\0';
-	}
-    }
-  return (_fpos64_t) offset;
-}
-#endif /* __LARGE64_FILES */
 
 /* Reclaim resources used by stream described by COOKIE.  */
 static int fmemcloser(struct _reent *ptr, void *cookie)
@@ -322,18 +276,12 @@ FILE *_fmemopen_r(struct _reent *ptr, void *buf, size_t size, const char *mode)
   fp->_read = flags & (__SRD | __SRW) ? fmemreader : NULL;
   fp->_write = flags & (__SWR | __SRW) ? fmemwriter : NULL;
   fp->_seek = fmemseeker;
-#ifdef __LARGE64_FILES
-  fp->_seek64 = fmemseeker64;
-  fp->_flags |= __SL64;
-#endif
   fp->_close = fmemcloser;
   _funlockfile (fp);
   return fp;
 }
 
-#ifndef _REENT_ONLY
 FILE *fmemopen(void *buf, size_t size, const char *mode)
 {
   return _fmemopen_r (_REENT, buf, size, mode);
 }
-#endif /* !_REENT_ONLY */

@@ -62,7 +62,6 @@ PORTABILITY
 No supporting OS subroutines are required.
 */
 
-#include <config.h>
 #include <string.h>
 #include <reent.h>
 #include <wctype.h>
@@ -124,9 +123,7 @@ wctype_t _wctype_r(struct _reent *r, const char *c)
   return 0;
 }
 
-#ifndef _REENT_ONLY
 wctype_t wctype(const char *c)
 {
   return _wctype_r (_REENT, c);
 }
-#endif /* !_REENT_ONLY */

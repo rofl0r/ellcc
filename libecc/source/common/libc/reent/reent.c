@@ -10,14 +10,9 @@ DESCRIPTION
 	non-reentrant functions, such as strtok.
 */
 
+#include <config.h>
 #include <stdlib.h>
 #include <reent.h>
-
-#ifdef _REENT_ONLY
-#ifndef REENTRANT_SYSCALLS_PROVIDED
-#define REENTRANT_SYSCALLS_PROVIDED
-#endif
-#endif
 
 #ifndef REENTRANT_SYSCALLS_PROVIDED
 

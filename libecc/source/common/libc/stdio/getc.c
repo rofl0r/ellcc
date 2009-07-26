@@ -71,10 +71,6 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 <<lseek>>, <<read>>, <<sbrk>>, <<write>>.
 */
 
-#if defined(LIBC_SCCS) && !defined(lint)
-static char sccsid[] = "%W% (Berkeley) %G%";
-#endif /* LIBC_SCCS and not lint */
-
 #include <stdio.h>
 #include "local.h"
 
@@ -94,8 +90,6 @@ int _getc_r(struct _reent *ptr, register FILE *fp)
   return result;
 }
 
-#ifndef _REENT_ONLY
-
 int getc(register FILE *fp)
 {
   int result;
@@ -105,5 +99,3 @@ int getc(register FILE *fp)
   _funlockfile (fp);
   return result;
 }
-
-#endif /* !_REENT_ONLY */

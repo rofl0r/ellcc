@@ -1,5 +1,6 @@
 /* connector for isatty */
 
+#include <config.h>
 #include <reent.h>
 #include <unistd.h>
 

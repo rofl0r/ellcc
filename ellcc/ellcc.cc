@@ -1140,8 +1140,10 @@ static void InitializeLanguageStandard(LangOptions &LO, FileTypes FT,
   LO.OptimizeSize = false;
   
   // -Os implies -O2
-  if (OptSize || OptLevel)
+  if (OptSize || OptLevel) {
     LO.Optimize = true;
+    LO.OptimizeSize = true;
+  }
 
   assert(PICLevel <= 2 && "Invalid value for -pic-level");
   LO.PICLevel = PICLevel;
@@ -1477,7 +1479,7 @@ void AddStandardCompilePasses(PassManager &PM) {
 
   llvm::Pass *InliningPass = !DisableInline ? createFunctionInliningPass() : 0;
   createStandardModulePasses(&PM, OptLevel,
-                             /*OptimizeSize=*/ false,
+                             OptSize,
                              /*UnitAtATime=*/ true,
                              /*UnrollLoops=*/ true,
                              /*SimplifyLibCalls=*/ true,

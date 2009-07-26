@@ -81,6 +81,7 @@ It is not portable.  See also the <<funopen>> interface from BSD.
 Supporting OS subroutines required: <<sbrk>>.
 */
 
+#include <config.h>
 #include <stdio.h>
 #include <errno.h>
 #include <sys/lock.h>
@@ -111,11 +112,7 @@ static int fcwriter(struct _reent *ptr, void *cookie, const char *buf, int n)
   fccookie *c = (fccookie *) cookie;
   if (c->fp->_flags & __SAPP && c->fp->_seek)
     {
-#ifdef __LARGE64_FILES
-      c->fp->_seek64 (ptr, cookie, 0, SEEK_END);
-#else
       c->fp->_seek (ptr, cookie, 0, SEEK_END);
-#endif
     }
   errno = 0;
   if ((result = c->writefn (c->cookie, buf, n)) < 0 && errno)
@@ -126,36 +123,13 @@ static int fcwriter(struct _reent *ptr, void *cookie, const char *buf, int n)
 static _fpos_t fcseeker(struct _reent *ptr, void *cookie, _fpos_t pos, int whence)
 {
   fccookie *c = (fccookie *) cookie;
-#ifndef __LARGE64_FILES
   off_t offset = (off_t) pos;
-#else /* __LARGE64_FILES */
-  _off64_t offset = (_off64_t) pos;
-#endif /* __LARGE64_FILES */
 
   errno = 0;
   if (c->seekfn (c->cookie, &offset, whence) < 0 && errno)
     ptr->_errno = errno;
-#ifdef __LARGE64_FILES
-  else if ((_fpos_t)offset != offset)
-    {
-      ptr->_errno = EOVERFLOW;
-      offset = -1;
-    }
-#endif /* __LARGE64_FILES */
   return (_fpos_t) offset;
 }
-
-#ifdef __LARGE64_FILES
-static _fpos64_t fcseeker64(struct _reent *ptr, void *cookie, _fpos64_t pos, int whence)
-{
-  _off64_t offset;
-  fccookie *c = (fccookie *) cookie;
-  errno = 0;
-  if (c->seekfn (c->cookie, &offset, whence) < 0 && errno)
-    ptr->_errno = errno;
-  return (_fpos64_t) offset;
-}
-#endif /* __LARGE64_FILES */
 
 static int fccloser(struct _reent *ptr, void *cookie)
 {
@@ -211,19 +185,13 @@ FILE *_fopencookie_r(struct _reent *ptr, void *cookie, const char *mode, cookie_
   fp->_write = fcwriter;
   c->seekfn = functions.seek;
   fp->_seek = functions.seek ? fcseeker : NULL;
-#ifdef __LARGE64_FILES
-  fp->_seek64 = functions.seek ? fcseeker64 : NULL;
-  fp->_flags |= __SL64;
-#endif
   c->closefn = functions.close;
   fp->_close = fccloser;
   _funlockfile (fp);
   return fp;
 }
 
-#ifndef _REENT_ONLY
 FILE *fopencookie(void *cookie, const char *mode, cookie_io_functions_t functions)
 {
   return _fopencookie_r (_REENT, cookie, mode, functions);
 }
-#endif /* !_REENT_ONLY */

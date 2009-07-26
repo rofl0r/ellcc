@@ -31,6 +31,7 @@ a call <<__tz_lock>> will always lock all subsequent <<__tz_lock>> calls
 until the corresponding <<__tz_unlock>> call on the same thread is made.
 */
 
+#include <config.h>
 #include "local.h"
 #include <sys/lock.h>
 
@@ -38,8 +39,7 @@ until the corresponding <<__tz_unlock>> call on the same thread is made.
 __LOCK_INIT(static, __tz_lock_object);
 #endif
 
-void
-_DEFUNvoid (__tz_lock)
+void __tz_lock(void)
 {
 #ifndef __SINGLE_THREAD__
   __lock_acquire(__tz_lock_object);

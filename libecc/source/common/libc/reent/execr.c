@@ -1,6 +1,7 @@
 /* Reentrant versions of execution system calls.  These
    implementations just call the usual system calls.  */
 
+#include <config.h>
 #include <reent.h>
 #include <unistd.h>
 #include <sys/wait.h>
@@ -9,19 +10,7 @@
 /* Some targets provides their own versions of these functions.  Those
    targets should define REENTRANT_SYSCALLS_PROVIDED in TARGET_CFLAGS.  */
 
-#ifdef _REENT_ONLY
 #ifndef REENTRANT_SYSCALLS_PROVIDED
-#define REENTRANT_SYSCALLS_PROVIDED
-#endif
-#endif
-
-/* If NO_EXEC is defined, we don't need these functions.  */
-
-#if defined (REENTRANT_SYSCALLS_PROVIDED) || defined (NO_EXEC)
-
-int _dummy_exec_syscalls = 1;
-
-#else
 
 /* We use the errno variable used by the system dependent layer.  */
 #undef errno
@@ -85,8 +74,6 @@ DESCRIPTION
 	<<errno>>.
 */
 
-#ifndef NO_FORK
-
 int _fork_r(struct _reent *ptr)
 {
   int ret;
@@ -96,8 +83,6 @@ int _fork_r(struct _reent *ptr)
     ptr->_errno = errno;
   return ret;
 }
-
-#endif
 
 /*
 FUNCTION

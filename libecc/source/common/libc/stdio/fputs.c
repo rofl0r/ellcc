@@ -89,9 +89,7 @@ int _fputs_r(struct _reent * ptr, char const * s, FILE * fp)
   return result;
 }
 
-#ifndef _REENT_ONLY
 int fputs(char const * s, FILE * fp)
 {
   return _fputs_r(_REENT, s, fp);
 }
-#endif /* !_REENT_ONLY */

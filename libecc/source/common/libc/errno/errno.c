@@ -5,12 +5,7 @@
 #include <errno.h>
 #include <reent.h>
 
-#ifndef _REENT_ONLY
-
-int *
-__errno ()
+int * __errno()
 {
   return &_REENT->_errno;
 }
-
-#endif

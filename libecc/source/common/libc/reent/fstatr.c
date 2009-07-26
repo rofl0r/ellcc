@@ -1,6 +1,7 @@
 /* Reentrant versions of fstat system call.  This implementation just
    calls the fstat system call.  */
 
+#include <config.h>
 #include <reent.h>
 #include <unistd.h>
 #include <sys/stat.h>
@@ -9,17 +10,7 @@
 /* Some targets provides their own versions of these functions.  Those
    targets should define REENTRANT_SYSCALLS_PROVIDED in TARGET_CFLAGS.  */
 
-#ifdef _REENT_ONLY
 #ifndef REENTRANT_SYSCALLS_PROVIDED
-#define REENTRANT_SYSCALLS_PROVIDED
-#endif
-#endif
-
-#ifdef REENTRANT_SYSCALLS_PROVIDED
-
-int _dummy_fstat_syscalls = 1;
-
-#else
 
 /* We use the errno variable used by the system dependent layer.  */
 #undef errno

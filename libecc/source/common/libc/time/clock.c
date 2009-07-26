@@ -1,12 +1,3 @@
-/* NetWare can not use this implementation of clock, since it does not
-   have times or any similar function.  It provides its own version of
-   clock in clib.nlm.  If we can not use clib.nlm, then we must write
-   clock in sys/netware.  */
-
-#ifdef CLOCK_PROVIDED
-
-#else
-
 /*
  * clock.c
  * Original Author:	G. Haley
@@ -62,5 +53,3 @@ clock_t clock()
 
   return res;
 }
-
-#endif /* CLOCK_PROVIDED */

@@ -1,5 +1,3 @@
-#ifndef HAVE_OPENDIR
-
 /*
  * Copyright (c) 1983 Regents of the University of California.
  * All rights reserved.
@@ -33,10 +31,8 @@
  * SUCH DAMAGE.
  */
 
-#if defined(LIBC_SCCS) && !defined(lint)
-static char sccsid[] = "@(#)seekdir.c	5.7 (Berkeley) 6/1/90";
-#endif /* LIBC_SCCS and not lint */
-
+#include <config.h>
+#ifndef HAVE_OPENDIR
 #include <sys/param.h>
 #include <dirent.h>
 #include <sys/lock.h>

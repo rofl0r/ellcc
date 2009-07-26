@@ -33,8 +33,6 @@ int _printf_r(struct _reent *ptr, const char *fmt, ...)
   return ret;
 }
 
-#ifndef _REENT_ONLY
-
 int printf(const char *fmt, ...)
 {
   int ret;
@@ -47,5 +45,3 @@ int printf(const char *fmt, ...)
   va_end (ap);
   return ret;
 }
-
-#endif /* ! _REENT_ONLY */

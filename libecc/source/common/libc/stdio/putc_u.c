@@ -71,11 +71,9 @@ int _putc_unlocked_r(struct _reent *ptr, int c, register FILE *fp)
   return __sputc_r (ptr, c, fp);
 }
 
-#ifndef _REENT_ONLY
 int putc_unlocked(int c, register FILE *fp)
 {
   /* CHECK_INIT is (eventually) called by __swbuf.  */
 
   return __sputc_r (_REENT, c, fp);
 }
-#endif /* !_REENT_ONLY */

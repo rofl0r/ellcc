@@ -49,10 +49,6 @@ ANSI C requires <<ferror>>.
 No supporting OS subroutines are required.
 */
 
-#if defined(LIBC_SCCS) && !defined(lint)
-static char sccsid[] = "%W% (Berkeley) %G%";
-#endif /* LIBC_SCCS and not lint */
-
 #include <stdio.h>
 #include "local.h"
 

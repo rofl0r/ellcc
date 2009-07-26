@@ -21,15 +21,11 @@
 #include <stdarg.h>
 #include "local.h"
 
-#ifndef _REENT_ONLY
-
 int vprintf(const char *fmt, va_list ap)
 {
   _REENT_SMALL_CHECK_INIT (_REENT);
   return _vfprintf_r (_REENT, _stdout_r (_REENT), fmt, ap);
 }
-
-#endif /* !_REENT_ONLY */
 
 int _vprintf_r(struct _reent *ptr, const char *fmt, va_list ap)
 {

@@ -51,8 +51,6 @@ char *_asniprintf_r(struct _reent *ptr, char *buf, size_t *lenp, const char *fmt
   return (char *) f._bf._base;
 }
 
-#ifndef _REENT_ONLY
-
 char *asniprintf(char *buf, size_t *lenp, const char *fmt, ...)
 {
   int ret;
@@ -93,5 +91,3 @@ char *asniprintf(char *buf, size_t *lenp, const char *fmt, ...)
   *f._p = '\0';
   return (char *) f._bf._base;
 }
-
-#endif /* ! _REENT_ONLY */

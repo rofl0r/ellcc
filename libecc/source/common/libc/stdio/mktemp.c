@@ -103,11 +103,7 @@ Supporting OS subroutines required: <<getpid>>, <<open>>, <<stat>>.
 static int _gettemp(struct _reent *ptr, char *path        , register int *doopen)
 {
   register char *start, *trv;
-#ifdef __USE_INTERNAL_STAT64
-  struct stat64 sbuf;
-#else
   struct stat sbuf;
-#endif
   unsigned int pid;
 
   pid = _getpid_r (ptr);
@@ -131,11 +127,7 @@ static int _gettemp(struct _reent *ptr, char *path        , register int *doopen
       if (*trv == '/')
 	{
 	  *trv = '\0';
-#ifdef __USE_INTERNAL_STAT64
-	  if (_stat64_r (ptr, path, &sbuf))
-#else
 	  if (_stat_r (ptr, path, &sbuf))
-#endif
 	    return (0);
 	  if (!(sbuf.st_mode & S_IFDIR))
 	    {
@@ -161,11 +153,7 @@ static int _gettemp(struct _reent *ptr, char *path        , register int *doopen
 #endif
 	    return 0;
 	}
-#ifdef __USE_INTERNAL_STAT64
-      else if (_stat64_r (ptr, path, &sbuf))
-#else
       else if (_stat_r (ptr, path, &sbuf))
-#endif
 	return (ptr->_errno == ENOENT ? 1 : 0);
 
       /* tricky little algorithm for backward compatibility */
@@ -200,8 +188,6 @@ char *_mktemp_r(struct _reent *ptr, char *path)
   return (_gettemp (ptr, path, (int *) NULL) ? path : (char *) NULL);
 }
 
-#ifndef _REENT_ONLY
-
 int mkstemp(char *path)
 {
   int fd;
@@ -213,5 +199,3 @@ char * mktemp(char *path)
 {
   return (_gettemp (_REENT, path, (int *) NULL) ? path : (char *) NULL);
 }
-
-#endif /* ! defined (_REENT_ONLY) */

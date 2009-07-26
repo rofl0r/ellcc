@@ -67,11 +67,7 @@ int _fcloseall_r(struct _reent *ptr)
   return _fwalk_reent (ptr, _fclose_r);
 }
 
-#ifndef _REENT_ONLY
-
 int fcloseall(void)
 {
   return _fcloseall_r(_GLOBAL_REENT);
 }
-
-#endif

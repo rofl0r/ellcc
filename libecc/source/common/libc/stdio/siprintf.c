@@ -104,8 +104,6 @@ int _siprintf_r(struct _reent *ptr, char *str         , const char *fmt, ...)
   return (ret);
 }
 
-#ifndef _REENT_ONLY
-
 int siprintf(char *str, const char *fmt, ...)
 {
   int ret;
@@ -122,5 +120,3 @@ int siprintf(char *str, const char *fmt, ...)
   *f._p = 0;
   return (ret);
 }
-
-#endif

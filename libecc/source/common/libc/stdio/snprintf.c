@@ -49,8 +49,6 @@ int _snprintf_r(struct _reent *ptr, char *str, size_t size, const char *fmt, ...
   return (ret);
 }
 
-#ifndef _REENT_ONLY
-
 int snprintf(char *str, size_t size, const char *fmt, ...)
 {
   int ret;
@@ -76,5 +74,3 @@ int snprintf(char *str, size_t size, const char *fmt, ...)
     *f._p = 0;
   return (ret);
 }
-
-#endif

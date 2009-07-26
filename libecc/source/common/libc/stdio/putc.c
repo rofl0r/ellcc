@@ -94,10 +94,9 @@ int _putc_r(struct _reent *ptr, int c, register FILE *fp)
   return result;
 }
 
-#ifndef _REENT_ONLY
 int putc(int c, register FILE *fp)
 {
-#if !defined(PREFER_SIZE_OVER_SPEED) && !defined(__OPTIMIZE_SIZE__)
+#ifndef __OPTIMIZE_SIZE__
   int result;
   CHECK_INIT (_REENT, fp);
   _flockfile (fp);
@@ -108,5 +107,3 @@ int putc(int c, register FILE *fp)
   return _putc_r (_REENT, c, fp);
 #endif
 }
-#endif /* !_REENT_ONLY */
-

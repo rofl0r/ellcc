@@ -20,8 +20,6 @@
 #include <stdarg.h>
 #include "local.h"
 
-#ifndef _REENT_ONLY
-
 int fscanf(FILE *fp, const char *fmt, ...)
 {
   int ret;
@@ -32,8 +30,6 @@ int fscanf(FILE *fp, const char *fmt, ...)
   va_end (ap);
   return ret;
 }
-
-#endif /* !_REENT_ONLY */
 
 int _fscanf_r(struct _reent *ptr, FILE *fp, const char *fmt, ...)
 {

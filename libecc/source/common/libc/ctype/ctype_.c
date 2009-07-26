@@ -70,7 +70,7 @@
 	0,	0,	0,	0,	0,	0,	0,	0, \
 	0,	0,	0,	0,	0,	0,	0,	0
 
-#if defined(__GNUC__) && !defined(__CHAR_UNSIGNED__) && !defined(COMPACT_CTYPE)
+#if !defined(__CHAR_UNSIGNED__) && !defined(COMPACT_CTYPE)
 #define ALLOW_NEGATIVE_CTYPE_INDEX
 #endif
 

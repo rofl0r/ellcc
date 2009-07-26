@@ -86,11 +86,7 @@ int _puts_r(struct _reent *ptr, const char * s)
   return (__sfvwrite_r (ptr, _stdout_r (ptr), &uio) ? EOF : '\n');
 }
 
-#ifndef _REENT_ONLY
-
 int puts(char const * s)
 {
   return _puts_r (_REENT, s);
 }
-
-#endif

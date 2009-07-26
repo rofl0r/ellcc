@@ -22,14 +22,10 @@
 #include <stdarg.h>
 #include <errno.h>
 
-#ifndef _REENT_ONLY
-
 int vsniprintf(char *str, size_t size, const char *fmt, va_list ap)
 {
   return _vsniprintf_r (_REENT, str, size, fmt, ap);
 }
-
-#endif /* !_REENT_ONLY */
 
 int _vsniprintf_r(struct _reent *ptr, char *str, size_t size, const char *fmt, va_list ap)
 {

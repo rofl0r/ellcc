@@ -1,5 +1,6 @@
 /* Reentrant version of rename system call.  */
 
+#include <config.h>
 #include <reent.h>
 #include <unistd.h>
 #include <sys/stat.h>
@@ -7,12 +8,6 @@
 
 /* Some targets provides their own versions of these functions.  Those
    targets should define REENTRANT_SYSCALLS_PROVIDED in TARGET_CFLAGS.  */
-
-#ifdef _REENT_ONLY
-#ifndef REENTRANT_SYSCALLS_PROVIDED
-#define REENTRANT_SYSCALLS_PROVIDED
-#endif
-#endif
 
 #ifndef REENTRANT_SYSCALLS_PROVIDED
 
@@ -50,20 +45,9 @@ int _rename_r(struct _reent *ptr, const char *old, const char *new)
 {
   int ret = 0;
 
-#ifdef HAVE_RENAME
   errno = 0;
   if ((ret = _rename (old, new)) == -1 && errno != 0)
     ptr->_errno = errno;
-#else
-  if (_link_r (ptr, old, new) == -1)
-    return -1;
-
-  if (_unlink_r (ptr, old) == -1)
-    {
-      /* ??? Should we unlink new? (rhetorical question) */
-      return -1;
-    }
-#endif
   return ret;
 }
 

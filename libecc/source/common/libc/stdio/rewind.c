@@ -61,11 +61,7 @@ void _rewind_r(struct _reent * ptr, register FILE * fp)
   clearerr (fp);
 }
 
-#ifndef _REENT_ONLY
-
 void rewind(register FILE * fp)
 {
   _rewind_r (_REENT, fp);
 }
-
-#endif /* !_REENT_ONLY */

@@ -21,8 +21,6 @@
 #include <stdarg.h>
 #include "local.h"
 
-#ifndef _REENT_ONLY
-
 int iprintf(const char *fmt, ...)
 {
   int ret;
@@ -35,8 +33,6 @@ int iprintf(const char *fmt, ...)
   va_end (ap);
   return ret;
 }
-
-#endif /* ! _REENT_ONLY */
 
 int _iprintf_r(struct _reent *ptr, const char *fmt, ...)
 {

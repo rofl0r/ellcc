@@ -113,9 +113,7 @@ size_t _fwrite_r(struct _reent * ptr, const void * buf, size_t size, size_t coun
   return (n - uio.uio_resid) / size;
 }
 
-#ifndef _REENT_ONLY
 size_t fwrite(const void * buf, size_t size, size_t count, FILE * fp)
 {
   return _fwrite_r (_REENT, buf, size, count, fp);
 }
-#endif

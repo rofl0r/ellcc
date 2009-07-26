@@ -124,11 +124,7 @@ PORTABILITY
 #include <stdlib.h>
 #include <reent.h>
 
-#ifndef _REENT_ONLY
-
 unsigned long long strtoull(const char *s, char **ptr, int base)
 {
 	return _strtoull_r (_REENT, s, ptr, base);
 }
-
-#endif

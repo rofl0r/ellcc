@@ -87,15 +87,11 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 #include <stdarg.h>
 #include "local.h"
 
-#ifndef _REENT_ONLY
-
 int viprintf(const char *fmt, va_list ap)
 {
   _REENT_SMALL_CHECK_INIT (_REENT);
   return _vfiprintf_r (_REENT, _stdout_r (_REENT), fmt, ap);
 }
-
-#endif /* !_REENT_ONLY */
 
 int _viprintf_r(struct _reent *ptr, const char *fmt, va_list ap)
 {

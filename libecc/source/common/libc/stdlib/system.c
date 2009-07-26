@@ -53,6 +53,7 @@ Supporting OS subroutines required: <<_exit>>, <<_execve>>, <<_fork_r>>,
 <<_wait_r>>.
 */
 
+#include <config.h>
 #include <errno.h>
 #include <stddef.h>
 #include <stdlib.h>

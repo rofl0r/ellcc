@@ -57,6 +57,7 @@ Required OS subroutines: <<close>>, <<fstat>>, <<isatty>>, <<lseek>>,
 <<read>>, <<sbrk>>, <<write>>.
 */
 
+#include <config.h>
 #include <reent.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -105,11 +106,7 @@ int _fclose_r(struct _reent *rptr, register FILE * fp)
   return (r);
 }
 
-#ifndef _REENT_ONLY
-
 int fclose(register FILE * fp)
 {
   return _fclose_r(_REENT, fp);
 }
-
-#endif

@@ -98,6 +98,7 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 <<lseek>>, <<read>>, <<sbrk>>, <<write>>.
 */
 
+#include <config.h>
 #include <reent.h>
 #include <stdio.h>
 #include <time.h>
@@ -120,11 +121,7 @@ int _fseek_r(struct _reent *ptr, register FILE *fp , long offset, int whence)
   _fpos_t target;
   _fpos_t curoff = 0;
   size_t n;
-#ifdef __USE_INTERNAL_STAT64
-  struct stat64 st;
-#else
   struct stat st;
-#endif
   int havepos;
 
   /* Make sure stdio is set up.  */
@@ -218,11 +215,7 @@ int _fseek_r(struct _reent *ptr, register FILE *fp , long offset, int whence)
     {
       if (seekfn != __sseek
 	  || fp->_file < 0
-#ifdef __USE_INTERNAL_STAT64
-	  || _fstat64_r (ptr, fp->_file, &st)
-#else
 	  || _fstat_r (ptr, fp->_file, &st)
-#endif
 	  || (st.st_mode & S_IFMT) != S_IFREG)
 	{
 	  fp->_flags |= __SNPT;
@@ -245,11 +238,7 @@ int _fseek_r(struct _reent *ptr, register FILE *fp , long offset, int whence)
     target = offset;
   else
     {
-#ifdef __USE_INTERNAL_STAT64
-      if (_fstat64_r(ptr, fp->_file, &st))
-#else
       if (_fstat_r(ptr, fp->_file, &st))
-#endif
 	goto dumb;
       target = st.st_size + offset;
     }
@@ -374,11 +363,7 @@ dumb:
   return 0;
 }
 
-#ifndef _REENT_ONLY
-
 int fseek(register FILE *fp, long offset, int whence)
 {
   return _fseek_r(_REENT, fp, offset, whence);
 }
-
-#endif /* !_REENT_ONLY */

@@ -27,11 +27,7 @@ int _vdiprintf_r(struct _reent *ptr, int fd, const char *format, va_list ap)
   return n;
 }
 
-#ifndef _REENT_ONLY
-
 int vdiprintf(int fd, const char *format, va_list ap)
 {
   return _vdiprintf_r (_REENT, fd, format, ap);
 }
-
-#endif /* ! _REENT_ONLY */

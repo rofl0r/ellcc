@@ -83,11 +83,7 @@ void _perror_r(struct _reent *ptr, const char *s)
   fputc ('\n', _stderr_r (ptr));
 }
 
-#ifndef _REENT_ONLY
-
 void perror(const char *s)
 {
   _perror_r (_REENT, s);
 }
-
-#endif

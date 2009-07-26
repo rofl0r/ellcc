@@ -86,16 +86,13 @@ No supporting OS subroutines are required.
  *                         (Only "C" or null supported).
  */
 
+#include <config.h>
 #include <locale.h>
 #include <string.h>
 #include <limits.h>
 #include <reent.h>
 
-#ifdef __CYGWIN__
-int __declspec(dllexport) __mb_cur_max = 1;
-#else
 int __mb_cur_max = 1;
-#endif
 
 int __nlocale_changed = 0;
 int __mlocale_changed = 0;
@@ -274,8 +271,6 @@ struct lconv * _localeconv_r(struct _reent *data)
   return (struct lconv *) &lconv;
 }
 
-#ifndef _REENT_ONLY
-
 char *setlocale(int category, const char *locale)
 {
   return _setlocale_r (_REENT, category, locale);
@@ -286,5 +281,3 @@ struct lconv *localeconv(void)
 {
   return _localeconv_r (_REENT);
 }
-
-#endif

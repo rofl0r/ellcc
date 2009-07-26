@@ -16,6 +16,7 @@
  */
 /* No user fns here.  Pesch 15apr92. */
 
+#include <config.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h>
@@ -37,11 +38,7 @@ void __smakebuf_r(struct _reent *ptr, register FILE *fp)
 {
   register size_t size, couldbetty;
   register void * p;
-#ifdef __USE_INTERNAL_STAT64
-  struct stat64 st;
-#else
   struct stat st;
-#endif
 
   if (fp->_flags & __SNBF)
     {
@@ -49,11 +46,7 @@ void __smakebuf_r(struct _reent *ptr, register FILE *fp)
       fp->_bf._size = 1;
       return;
     }
-#ifdef __USE_INTERNAL_STAT64
-  if (fp->_file < 0 || _fstat64_r (ptr, fp->_file, &st) < 0)
-#else
   if (fp->_file < 0 || _fstat_r (ptr, fp->_file, &st) < 0)
-#endif
     {
       couldbetty = 0;
       /* Check if we are be called by asprintf family for initial buffer.  */

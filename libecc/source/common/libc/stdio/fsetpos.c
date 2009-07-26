@@ -77,11 +77,7 @@ int _fsetpos_r(struct _reent * ptr, FILE * iop, const _fpos_t * pos)
   return 0;
 }
 
-#ifndef _REENT_ONLY
-
 int fsetpos(FILE * iop, const _fpos_t * pos)
 {
   return _fsetpos_r (_REENT, iop, pos);
 }
-
-#endif /* !_REENT_ONLY */

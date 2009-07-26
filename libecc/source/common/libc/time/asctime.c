@@ -50,12 +50,8 @@ ANSI C requires <<asctime>>.
 #include <time.h>
 #include <reent.h>
 
-#ifndef _REENT_ONLY
-
 char *asctime(const struct tm *tim_p)
 {
   _REENT_CHECK_ASCTIME_BUF(_REENT);
   return asctime_r (tim_p, _REENT_ASCTIME_BUF(_REENT));
 }
-
-#endif

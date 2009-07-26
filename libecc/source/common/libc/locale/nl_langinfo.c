@@ -45,9 +45,6 @@ char *nl_langinfo(nl_item item)
 {
    char *ret, *s, *cs;
    static char *csym = NULL;
-#ifdef TRANSITION_PERIOD_HACK
-   static char *cset = NULL;
-#endif /* TRANSITION_PERIOD_HACK */
    char *nptr;
 
    switch (item) {
@@ -56,37 +53,8 @@ char *nl_langinfo(nl_item item)
 		if ((s = setlocale(LC_CTYPE, NULL)) != NULL) {
 			if ((cs = strchr(s, '.')) != NULL) {
 				ret = cs + 1;
-#ifdef TRANSITION_PERIOD_HACK
-				if (strncmp(ret, "ISO_", 4) == 0) {
-					int slen = strlen(ret);
-
-                                        nptr = realloc(cset, slen);
-
-                                        if (!nptr && cset)
-                                          free (cset);
-
-                                        cset = nptr;
-					if (cset != NULL) {
-						strcpy(cset, "ISO");
-						strcat(cset, ret + 4);
-						ret = cset;
-					} else
-						ret = "";
-				} else if (strcmp(ret, "EUC") == 0) {
-					if (strncmp(s, "ja_JP", 5) == 0)
-						ret = "eucJP";
-					else if (strncmp(s, "ko_KR", 5) == 0)
-						ret = "eucKR";
-					else if (strncmp(s, "zh_CN", 5) == 0)
-						ret = "eucCN";
-				} else if (strcmp(ret, "ASCII") == 0)
-					ret = "US-ASCII";
-#endif /* TRANSITION_PERIOD_HACK */
 			} else if (strcmp(s, "C") == 0 ||
 				   strcmp(s, "POSIX") == 0
-#ifdef TRANSITION_PERIOD_HACK
-				   || strstr(s, "ASCII") != NULL
-#endif /* TRANSITION_PERIOD_HACK */
 				  )
 				ret = "US-ASCII";
 		}

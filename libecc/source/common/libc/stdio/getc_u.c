@@ -70,11 +70,7 @@ int _getc_unlocked_r(struct _reent *ptr, register FILE *fp)
   return __sgetc_r (ptr, fp);
 }
 
-#ifndef _REENT_ONLY
-
 int getc_unlocked(register FILE *fp)
 {
   return __sgetc_r (_REENT, fp);
 }
-
-#endif /* !_REENT_ONLY */

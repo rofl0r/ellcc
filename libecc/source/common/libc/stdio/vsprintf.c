@@ -21,14 +21,10 @@
 #include <limits.h>
 #include <stdarg.h>
 
-#ifndef _REENT_ONLY
-
 int vsprintf(char *str, const char *fmt, va_list ap)
 {
   return _vsprintf_r(_REENT, str, fmt, ap);
 }
-
-#endif /* !_REENT_ONLY */
 
 int _vsprintf_r(struct _reent *ptr, char *str, const char *fmt, va_list ap)
 {

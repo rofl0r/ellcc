@@ -192,9 +192,7 @@ int _ungetc_r(struct _reent *rptr, int c, register FILE *fp)
   return c;
 }
 
-#ifndef _REENT_ONLY
 int ungetc(int c, register FILE *fp)
 {
   return _ungetc_r (_REENT, c, fp);
 }
-#endif /* !_REENT_ONLY */

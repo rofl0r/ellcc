@@ -72,11 +72,7 @@ int _remove_r(struct _reent *ptr, const char *filename)
   return 0;
 }
 
-#ifndef _REENT_ONLY
-
 int remove(const char *filename)
 {
   return _remove_r (_REENT, filename);
 }
-
-#endif

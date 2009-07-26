@@ -31,8 +31,6 @@ int _fiprintf_r(struct _reent *ptr, FILE * fp, const char *fmt, ...)
   return ret;
 }
 
-#ifndef _REENT_ONLY
-
 int fiprintf(FILE * fp, const char *fmt, ...)
 {
   int ret;
@@ -43,5 +41,3 @@ int fiprintf(FILE * fp, const char *fmt, ...)
   va_end (ap);
   return ret;
 }
-
-#endif /* ! _REENT_ONLY */

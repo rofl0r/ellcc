@@ -32,14 +32,10 @@ static int eofread1(struct _reent *_ptr, void * cookie, char *buf, int len)
  * vsscanf
  */
 
-#ifndef _REENT_ONLY
-
 int vsscanf(const char *str, const char *fmt, va_list ap)
 {
   return _vsscanf_r (_REENT, str, fmt, ap);
 }
-
-#endif /* !_REENT_ONLY */
 
 int _vsscanf_r(struct _reent *ptr, const char *str, const char *fmt, va_list ap)
 {

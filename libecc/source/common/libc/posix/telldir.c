@@ -1,5 +1,3 @@
-#ifndef HAVE_OPENDIR
-
 /*
  * Copyright (c) 1983 Regents of the University of California.
  * All rights reserved.
@@ -33,10 +31,8 @@
  * SUCH DAMAGE.
  */
 
-#if defined(LIBC_SCCS) && !defined(lint)
-static char sccsid[] = "@(#)telldir.c	5.9 (Berkeley) 2/23/91";
-#endif /* LIBC_SCCS and not lint */
-
+#include <config.h>
+#ifndef HAVE_OPENDIR
 #include <sys/param.h>
 #include <dirent.h>
 #include <stdlib.h>
@@ -75,8 +71,6 @@ __LOCK_INIT(static, dd_hash_lock);
  * return a pointer into a directory
  */
 
-#ifndef _ELIX_LEVEL || _ELIX_LEVEL >= 2
-
 long
 _DEFUN(telldir, (dirp),
        DIR *dirp)
@@ -104,8 +98,6 @@ _DEFUN(telldir, (dirp),
 #endif
 	return (index);
 }
-
-#endif /* !_ELIX_LEVEL || _ELIX_LEVEL >= 2 */
 
 /*
  * seek to an entry in a directory.

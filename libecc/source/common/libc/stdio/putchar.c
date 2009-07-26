@@ -76,12 +76,8 @@ int _putchar_r(struct _reent *ptr, int c)
   return _putc_r (ptr, c, _stdout_r (ptr));
 }
 
-#ifndef _REENT_ONLY
-
 int putchar(int c)
 {
   _REENT_SMALL_CHECK_INIT (_REENT);
   return _putc_r (_REENT, c, _stdout_r (_REENT));
 }
-
-#endif

@@ -92,23 +92,12 @@ u_char *__sccl(register char *tab, register u_char *fmt)
 	      tab[++c] = v;
 	    }
 	  while (c < n);
-#if 1			/* XXX another disgusting compatibility hack */
 	  /*
 	   * Alas, the V7 Unix scanf also treats formats such
 	   * as [a-c-e] as `the letters a through e'. This too
 	   * is permitted by the standard....
 	   */
 	  goto doswitch;
-#else
-	  c = *fmt++;
-	  if (c == 0)
-	    return fmt - 1;
-	  if (c == ']')
-	    return fmt;
-#endif
-
-	  break;
-
 
 	case ']':		/* end of scanset */
 	  return fmt;

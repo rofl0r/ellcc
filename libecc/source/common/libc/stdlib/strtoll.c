@@ -123,11 +123,7 @@ No supporting OS subroutines are required.
 #include <stdlib.h>
 #include <reent.h>
 
-#ifndef _REENT_ONLY
-
 long long strtoll(const char *s, char **ptr, int base)
 {
 	return _strtoll_r (_REENT, s, ptr, base);
 }
-
-#endif

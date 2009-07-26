@@ -1,5 +1,3 @@
-#ifndef HAVE_OPENDIR
-
 /*
  * Copyright (c) 1983 Regents of the University of California.
  * All rights reserved.
@@ -35,10 +33,8 @@
 
 /* this code is modified from readdir.c by Jeff Johnston, June 5, 2002 */
 
-#if defined(LIBC_SCCS) && !defined(lint)
-static char sccsid[] = "@(#)readdir.c	5.7 (Berkeley) 6/1/90";
-#endif /* LIBC_SCCS and not lint */
-
+#include <config.h>
+#ifndef HAVE_OPENDIR
 #include <dirent.h>
 #include <errno.h>
 #include <string.h>

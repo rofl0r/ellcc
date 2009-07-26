@@ -80,11 +80,9 @@ int _fgetc_r(struct _reent * ptr, FILE * fp)
   return result;
 }
 
-#ifndef _REENT_ONLY
-
 int fgetc(FILE * fp)
 {
-#if !defined(PREFER_SIZE_OVER_SPEED) && !defined(__OPTIMIZE_SIZE__)
+#ifndef __OPTIMIZE_SIZE__
   int result;
   CHECK_INIT(_REENT, fp);
   _flockfile (fp);
@@ -95,6 +93,3 @@ int fgetc(FILE * fp)
   return _fgetc_r (_REENT, fp);
 #endif
 }
-
-#endif /* !_REENT_ONLY */
-

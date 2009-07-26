@@ -84,10 +84,6 @@ conforming C implementations may return a different result from
 No supporting OS subroutines are required.
 */
 
-#if defined(LIBC_SCCS) && !defined(lint)
-static char sccsid[] = "%W% (Berkeley) %G%";
-#endif /* LIBC_SCCS and not lint */
-
 /*
  * ftell: return current offset.
  */
@@ -161,11 +157,7 @@ long _ftell_r(struct _reent *ptr, register FILE * fp)
   return pos;
 }
 
-#ifndef _REENT_ONLY
-
 long ftell(register FILE * fp)
 {
   return _ftell_r (_REENT, fp);
 }
-
-#endif /* !_REENT_ONLY */

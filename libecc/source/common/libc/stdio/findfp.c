@@ -16,6 +16,7 @@
  */
 /* No user fns here.  Pesch 15apr92. */
 
+#include <config.h>
 #include <reent.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -46,13 +47,7 @@ static void std(FILE *ptr, int flags, int file , struct _reent *data)
   ptr->_lbfsize = 0;
   ptr->_cookie = ptr;
   ptr->_read = __sread;
-#ifndef __LARGE64_FILES
   ptr->_write = __swrite;
-#else /* __LARGE64_FILES */
-  ptr->_write = __swrite64;
-  ptr->_seek64 = __sseek64;
-  ptr->_flags |= __SL64;
-#endif /* __LARGE64_FILES */
   ptr->_seek = __sseek;
   ptr->_close = __sclose;
 #if !defined(__SINGLE_THREAD__) && !defined(_REENT_SMALL)
@@ -149,12 +144,10 @@ void _cleanup_r(struct _reent *ptr)
   /* _(void)_fwalk (ptr, fflush); */	/* `cheating' */
 }
 
-#ifndef _REENT_ONLY
 void _cleanup(void)
 {
   _cleanup_r(_GLOBAL_REENT);
 }
-#endif
 
 /*
  * __sinit() is called whenever stdio's internal variables must be set up.
@@ -194,21 +187,7 @@ void __sinit(struct _reent *s)
      we will default to line buffered mode here.  Technically, POSIX
      requires both stdin and stdout to be line-buffered, but tradition
      leaves stdin alone on systems without fcntl.  */
-#ifdef HAVE_FCNTL
- #ifdef __NIOS2__
-  /* NIOS2: Change to have no buffering on stdout */
-  std (s->_stdout, __SWR | __SNBF, 1, s);
- #else
   std (s->_stdout, __SWR, 1, s);
- #endif
-#else
- #ifdef __NIOS2__
-  /* NIOS2: Change to have no buffering on stdout */
-  std (s->_stdout, __SWR | __SNBF, 1, s);
- #else
-  std (s->_stdout, __SWR | __SLBF, 1, s);
- #endif
-#endif
 
   /* POSIX requires stderr to be opened for reading and writing, even
      when the underlying fd 2 is write-only.  */

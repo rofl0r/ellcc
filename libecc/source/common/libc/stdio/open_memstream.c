@@ -51,17 +51,14 @@ This function is being added to POSIX 200x, but is not in POSIX 2001.
 Supporting OS subroutines required: <<sbrk>>.
 */
 
+#include <config.h>
 #include <stdio.h>
 #include <errno.h>
 #include <string.h>
 #include <sys/lock.h>
 #include "local.h"
 
-#ifndef __LARGE64_FILES
 # define OFF_T off_t
-#else
-# define OFF_T _off64_t
-#endif
 
 /* Describe details of an open memstream.  */
 typedef struct memstream {
@@ -142,13 +139,6 @@ static _fpos_t memseeker(struct _reent *ptr, void *cookie, _fpos_t pos, int when
       ptr->_errno = ENOSPC;
       offset = -1;
     }
-#ifdef __LARGE64_FILES
-  else if ((_fpos_t) offset != offset)
-    {
-      ptr->_errno = EOVERFLOW;
-      offset = -1;
-    }
-#endif /* __LARGE64_FILES */
   else
     {
       if (c->pos < c->eof)
@@ -171,46 +161,6 @@ static _fpos_t memseeker(struct _reent *ptr, void *cookie, _fpos_t pos, int when
 
 /* Seek to position POS relative to WHENCE within stream described by
    COOKIE; return resulting position or fail with EOF.  */
-#ifdef __LARGE64_FILES
-static _fpos64_t memseeker64(struct _reent *ptr, void *cookie, _fpos64_t pos, int whence)
-{
-  _off64_t offset = (_off64_t) pos;
-  memstream *c = (memstream *) cookie;
-
-  if (whence == SEEK_CUR)
-    offset += c->pos;
-  else if (whence == SEEK_END)
-    offset += c->eof;
-  if (offset < 0)
-    {
-      ptr->_errno = EINVAL;
-      offset = -1;
-    }
-  else if ((size_t) offset != offset)
-    {
-      ptr->_errno = ENOSPC;
-      offset = -1;
-    }
-  else
-    {
-      if (c->pos < c->eof)
-	{
-	  (*c->pbuf)[c->pos] = c->saved;
-	  c->saved = '\0';
-	}
-      c->pos = offset;
-      if (c->pos < c->eof)
-	{
-	  c->saved = (*c->pbuf)[c->pos];
-	  (*c->pbuf)[c->pos] = '\0';
-	  *c->psize = c->pos;
-	}
-      else
-	*c->psize = c->eof;
-    }
-  return (_fpos64_t) offset;
-}
-#endif /* __LARGE64_FILES */
 
 /* Reclaim resources used by stream described by COOKIE.  */
 static int memcloser(struct _reent *ptr, void *cookie)
@@ -288,18 +238,12 @@ FILE * _open_memstream_r(struct _reent *ptr, char **buf, size_t *size)
   fp->_read = NULL;
   fp->_write = memwriter;
   fp->_seek = memseeker;
-#ifdef __LARGE64_FILES
-  fp->_seek64 = memseeker64;
-  fp->_flags |= __SL64;
-#endif
   fp->_close = memcloser;
   _funlockfile (fp);
   return fp;
 }
 
-#ifndef _REENT_ONLY
 FILE *open_memstream(char **buf, size_t *size)
 {
   return _open_memstream_r (_REENT, buf, size);
 }
-#endif /* !_REENT_ONLY */

@@ -167,11 +167,7 @@ char *_fgets_r(struct _reent * ptr, char *buf, int n, FILE * fp)
   return buf;
 }
 
-#ifndef _REENT_ONLY
-
 char *fgets(char *buf, int n, FILE * fp)
 {
   return _fgets_r (_REENT, buf, n, fp);
 }
-
-#endif /* !_REENT_ONLY */

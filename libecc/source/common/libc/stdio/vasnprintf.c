@@ -48,11 +48,7 @@ char *_vasnprintf_r(struct _reent *ptr, char *buf, size_t *lenp, const char *fmt
   return (char *) f._bf._base;
 }
 
-#ifndef _REENT_ONLY
-
 char *vasnprintf(char *buf, size_t *lenp, const char *fmt, va_list ap)
 {
   return _vasnprintf_r (_REENT, buf, lenp, fmt, ap);
 }
-
-#endif /* ! _REENT_ONLY */

@@ -146,7 +146,7 @@ size_t _fread_r(struct _reent * ptr, void * buf, size_t size, size_t count, FILE
   total = resid;
   p = buf;
 
-#if !defined(PREFER_SIZE_OVER_SPEED) && !defined(__OPTIMIZE_SIZE__)
+#ifndef __OPTIMIZE_SIZE__
 
   /* Optimize unbuffered I/O.  */
   if (fp->_flags & __SNBF)
@@ -238,9 +238,7 @@ size_t _fread_r(struct _reent * ptr, void * buf, size_t size, size_t count, FILE
   return count;
 }
 
-#ifndef _REENT_ONLY
 size_t fread(void * buf, size_t size, size_t count, FILE * fp)
 {
    return _fread_r (_REENT, buf, size, count, fp);
 }
-#endif

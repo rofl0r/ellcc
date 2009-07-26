@@ -58,6 +58,7 @@ specified by POSIX, and not all implementations follow POSIX rules.
 No supporting OS subroutines are required.
 */
 
+#include <config.h>
 #include <stdio.h>
 #include <errno.h>
 #include "local.h"
@@ -107,11 +108,7 @@ int _fflush_r(struct _reent *ptr, register FILE * fp)
       if ((fp->_r > 0 || fp->_ur > 0) && fp->_seek != NULL)
 	{
 	  int tmp;
-#ifdef __LARGE64_FILES
-	  _fpos64_t curoff;
-#else
 	  _fpos_t curoff;
-#endif
 
 	  /* Get the physical position we are at in the file.  */
 	  if (fp->_flags & __SOFF)
@@ -120,11 +117,6 @@ int _fflush_r(struct _reent *ptr, register FILE * fp)
 	    {
 	      /* We don't know current physical offset, so ask for it.
 		 Only ESPIPE is ignorable.  */
-#ifdef __LARGE64_FILES
-	      if (fp->_flags & __SL64)
-		curoff = fp->_seek64 (ptr, fp->_cookie, 0, SEEK_CUR);
-	      else
-#endif
 		curoff = fp->_seek (ptr, fp->_cookie, 0, SEEK_CUR);
 	      if (curoff == -1L)
 		{
@@ -146,12 +138,7 @@ int _fflush_r(struct _reent *ptr, register FILE * fp)
                 curoff -= fp->_ur;
             }
 	  /* Now physically seek to after byte last read.  */
-#ifdef __LARGE64_FILES
-	  if (fp->_flags & __SL64)
-	    tmp = (fp->_seek64 (ptr, fp->_cookie, curoff, SEEK_SET) == curoff);
-	  else
-#endif
-	    tmp = (fp->_seek (ptr, fp->_cookie, curoff, SEEK_SET) == curoff);
+	  tmp = (fp->_seek (ptr, fp->_cookie, curoff, SEEK_SET) == curoff);
 	  if (tmp)
 	    {
 	      /* Seek successful.  We can clear read buffer now.  */
@@ -205,8 +192,6 @@ int _fflush_r(struct _reent *ptr, register FILE * fp)
   return 0;
 }
 
-#ifndef _REENT_ONLY
-
 int fflush(register FILE * fp)
 {
   if (fp == NULL)
@@ -214,5 +199,3 @@ int fflush(register FILE * fp)
 
   return _fflush_r (_REENT, fp);
 }
-
-#endif /* _REENT_ONLY */

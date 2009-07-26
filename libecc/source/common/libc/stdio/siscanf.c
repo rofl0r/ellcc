@@ -111,8 +111,6 @@ static int eofread(struct _reent *ptr, void * cookie, char *buf, int len)
   return 0;
 }
 
-#ifndef _REENT_ONLY 
-
 int siscanf(const char *str, const char *fmt, ...)
 {
   int ret;
@@ -131,8 +129,6 @@ int siscanf(const char *str, const char *fmt, ...)
   va_end (ap);
   return ret;
 }
-
-#endif /* !_REENT_ONLY */
 
 int _siscanf_r(struct _reent *ptr, const char *str  , const char *fmt, ...)
 {

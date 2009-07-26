@@ -102,6 +102,7 @@ These are GNU extensions.
 Supporting OS subroutines required:
 */
 
+#include <config.h>
 #include <reent.h>
 #include <ctype.h>
 #include <wctype.h>
@@ -158,9 +159,9 @@ Supporting OS subroutines required:
 #define _NO_LONGDBL
 #if defined _WANT_IO_LONG_DOUBLE && (LDBL_MANT_DIG > DBL_MANT_DIG)
 #undef _NO_LONGDBL
-extern _LONG_DOUBLE _strtold(char *s, char **sptr);
 #ifndef _LONG_DOUBLE
 #define _LONG_DOUBLE long double
+extern _LONG_DOUBLE _strtold(char *s, char **sptr);
 #endif
 #else
 #ifndef _LONG_DOUBLE
@@ -184,8 +185,7 @@ extern _LONG_DOUBLE _strtold(char *s, char **sptr);
 #endif
 
 #define _NO_LONGLONG
-#if defined _WANT_IO_LONG_LONG \
-	&& (defined __GNUC__ || __STDC_VERSION__ >= 199901L)
+#if defined _WANT_IO_LONG_LONG
 # undef _NO_LONGLONG
 #endif
 
@@ -239,13 +239,11 @@ static void * get_arg (int, va_list *, int *, void **);
 #define	CT_INT		3	/* integer, i.e., strtol or strtoul */
 #define	CT_FLOAT	4	/* floating, i.e., strtod */
 
-#if 0
-#define u_char unsigned char
-#endif
 #define u_char char
 #define u_long unsigned long
 
 #ifndef _NO_LONGLONG
+typedef long long long_long;
 typedef unsigned long long u_long_long;
 #endif
 
@@ -259,8 +257,6 @@ typedef unsigned long long u_long_long;
 
 #ifndef STRING_ONLY
 
-#ifndef _REENT_ONLY
-
 int VFSCANF(register FILE *fp, const char *fmt, va_list ap)
 {
   CHECK_INIT(_REENT, fp);
@@ -271,8 +267,6 @@ int __SVFSCANF(register FILE *fp, char const *fmt0, va_list ap)
 {
   return __SVFSCANF_R (_REENT, fp, fmt0, ap);
 }
-
-#endif /* !_REENT_ONLY */
 
 int _VFSCANF_R(struct _reent *data, register FILE *fp, const char *fmt, va_list ap)
 {
@@ -436,7 +430,7 @@ int __SVFSCANF_R(struct _reent *rptr, register FILE *fp, char const *fmt0, va_li
 #endif
   long *lp;
 #ifndef _NO_LONGLONG
-  long long *llp;
+  long_long *llp;
 #endif
 
   /* `basefix' is used to avoid `if' tests in the integer scanner */
@@ -731,7 +725,7 @@ int __SVFSCANF_R(struct _reent *rptr, register FILE *fp, char const *fmt0, va_li
 #ifndef _NO_LONGLONG
 	  else if (flags & LONGDBL)
 	    {
-	      llp = GET_ARG (N, ap, long long*);
+	      llp = GET_ARG (N, ap, long_long*);
 	      *llp = nread;
 	    }
 #endif
@@ -1202,7 +1196,7 @@ int __SVFSCANF_R(struct _reent *rptr, register FILE *fp, char const *fmt0, va_li
 		    resll = _strtoull_r (rptr, buf, (char **) NULL, base);
 		  else
 		    resll = _strtoll_r (rptr, buf, (char **) NULL, base);
-		  llp = GET_ARG (N, ap, long long*);
+		  llp = GET_ARG (N, ap, long_long*);
 		  *llp = resll;
 		}
 #endif

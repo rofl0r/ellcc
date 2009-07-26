@@ -1929,11 +1929,11 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLocation loc, Type* leftTyp
         std::vector<llvm::Value*> indices;
         indices.push_back(context.getNullValue(TD.getIntPtrType()));
         leftValue = builder.CreateGEP(leftValue, indices.begin(), indices.end(), "");
-        VDEBUG("makeCast array type", loc, std::cerr << "left "; leftValue->print(std::cerr));
+        VDEBUG("makeCast array type left ", loc, leftValue->print(std::cerr));
         llvmType = leftValue->getType();
     } else if (leftType->isFunctionType()) {
         // A function becomes a pointer to the function.
-        VDEBUG("makeCast function type", loc, std::cerr << "left "; leftValue->print(std::cerr));
+        VDEBUG("makeCast function type left ", loc, leftValue->print(std::cerr));
         llvmType = leftValue->getType();
         llvmType = llvm::PointerType::get(leftValue->getType(), 0);       // RICH: Address space.
     }
@@ -1946,7 +1946,7 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLocation loc, Type* leftTyp
             std::vector<llvm::Value*> indices;
             indices.push_back(context.getNullValue(TD.getIntPtrType()));
             *rightValue = builder.CreateGEP(*rightValue, indices.begin(), indices.end(), "");
-            VDEBUG("makeCast array type", loc, std::cerr << "right "; (*rightValue)->print(std::cerr));
+            VDEBUG("makeCast array type right ", loc, (*rightValue)->print(std::cerr));
             llvmType = (*rightValue)->getType();
         } else {
             // Build the type as pointer to element type.
@@ -1957,7 +1957,7 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLocation loc, Type* leftTyp
     } else if (rightType->isFunctionType()) {
         // A function becomes a pointer to the function.
         if (rightValue) {
-            VDEBUG("makeCast function type", loc, std::cerr << "left "; (*rightValue)->print(std::cerr));
+            VDEBUG("makeCast function type right ", loc, (*rightValue)->print(std::cerr));
             llvmType = (*rightValue)->getType();
             llvmType = llvm::PointerType::get((*rightValue)->getType(), 0);       // RICH: Address space.
          } else {
@@ -1971,9 +1971,7 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLocation loc, Type* leftTyp
     VDEBUG("makeCast types", loc, std::cerr << "left " << left.type->toString() << " right " << right.type->toString());
     VDEBUG("makeCast left value", loc, if (left.value) (*left.value)->print(std::cerr); else std::cerr << "NULL");
     VDEBUG("makeCast right value", loc, if (right.value) (*right.value)->print(std::cerr); else std::cerr << "NULL");
-    if (0 && Type::equalTypes(left.type, right.type)) { // RICH
-        // Types identical. Do nothing.
-    } else if (right.value == NULL) {
+    if (right.value == NULL) {
         // This is a cast of the left value to the right type.
         target = &right;
         source = &left;
@@ -2002,9 +2000,13 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLocation loc, Type* leftTyp
 	if (right.isPointer) {
 	    // Check type, may need a bit cast.
 	    if (right.type != left.type) {
-		// Doesn't matter which way we go.
-	        source = &left;
-		target = &right;
+                if (left.llvmType) {
+	            source = &left;
+		    target = &right;
+                } else {
+	            source = &right;
+		    target = &left;
+                }
 	    }
 	} else {
 	    // The right side is an integer.
@@ -2328,7 +2330,7 @@ static bool isInt(Type* type)
     if (type->isReference()) {
         type = type->getAtType();
     }
-    return type->isIntegerType() || type->isBool();
+    return type->isIntegerType() || type->isBool() || type->isEnumType();
 }
 
 llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, int& deref) const
@@ -2624,9 +2626,11 @@ llvm::Value* CC2LLVMEnv::binop(SourceLocation loc, BinaryOp op, Expression* e1, 
                     // The pointer is bigger, check for signed vs. unsigned.
                     if (   right->getType()->getPrimitiveSizeInBits() == 1
                         || te2->type->isBool()
+                        || te2->type->isEnumType()
                         || (   te2->type->isReference()
-                            && ::isExplicitlyUnsigned(te2->type->asReferenceTypeC()
-                                    ->getAtType()->asSimpleTypeC()->type))) {
+                            && (   te2->type->asReferenceTypeC()->getAtType()->isEnumType()
+                                || ::isExplicitlyUnsigned(te2->type->asReferenceTypeC()
+                                        ->getAtType()->asSimpleTypeC()->type)))) {
                         right = builder.CreateZExt(right, TD.getIntPtrType());
                     } else {
                         VDEBUG("SExt2 source", loc, right->print(std::cerr));

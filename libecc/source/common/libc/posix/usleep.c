@@ -2,8 +2,8 @@
 
 /* Written 2002 by Jeff Johnston */
 
+#include <config.h>
 #ifdef HAVE_NANOSLEEP
-
 #include <errno.h>
 #include <time.h>
 #include <unistd.h>

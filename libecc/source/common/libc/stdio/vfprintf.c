@@ -102,6 +102,8 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 <<lseek>>, <<read>>, <<sbrk>>, <<write>>.
 */
 
+#include <config.h>
+
 /*
  * Actual printf innards.
  *
@@ -132,6 +134,7 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 # undef _NO_POS_ARGS
 #endif
 
+#include <config.h>
 #include <reent.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -161,8 +164,7 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 #endif
 
 #define _NO_LONGLONG
-#if defined _WANT_IO_LONG_LONG \
-	&& (defined __GNUC__ || __STDC_VERSION__ >= 199901L)
+#ifdef  _WANT_IO_LONG_LONG
 # undef _NO_LONGLONG
 #endif
 
@@ -335,7 +337,7 @@ extern char *_dtoa_r(struct _reent *, double, int, int, int *, int *, char **);
 
 extern char *_ldtoa_r(struct _reent *, _LONG_DOUBLE, int, int, int *, int *, char **);
 
-extern int _EXFUN(_ldcheck,(_LONG_DOUBLE *));
+extern int _ldcheck(_LONG_DOUBLE *);
 
 #  define _PRINTF_FLOAT_TYPE _LONG_DOUBLE
 #  define _DTOA_R _ldtoa_r

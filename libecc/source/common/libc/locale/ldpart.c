@@ -98,11 +98,7 @@ __part_load_locale(const char *name,
 	fd = open(filename, O_RDONLY);
 	if (fd < 0)
 		goto no_locale;
-#ifdef __USE_INTERNAL_STAT64
-	if (fstat64(fd, &st) != 0)
-#else
 	if (fstat(fd, &st) != 0)
-#endif
 		goto bad_locale;
 	if (st.st_size <= 0)
 		goto bad_locale;

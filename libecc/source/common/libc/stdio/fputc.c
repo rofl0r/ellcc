@@ -84,10 +84,9 @@ int _fputc_r(struct _reent *ptr, int ch, FILE * file)
   return result;
 }
 
-#ifndef _REENT_ONLY
 int fputc(int ch, FILE * file)
 {
-#if !defined(__OPTIMIZE_SIZE__) && !defined(PREFER_SIZE_OVER_SPEED)
+#ifndef __OPTIMIZE_SIZE__
   int result;
   CHECK_INIT(_REENT, file);
    _flockfile (file);
@@ -98,4 +97,3 @@ int fputc(int ch, FILE * file)
   return _fputc_r (_REENT, ch, file);
 #endif
 }
-#endif /* !_REENT_ONLY */

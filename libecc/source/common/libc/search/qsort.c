@@ -76,10 +76,6 @@ PORTABILITY
 
 #include <stdlib.h>
 
-#ifndef __GNUC__
-#define inline
-#endif
-
 static inline char	*med3(char *, char *, char *, int (*)());
 static inline void	 swapfunc(char *, char *, int, int);
 

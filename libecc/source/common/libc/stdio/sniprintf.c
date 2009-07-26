@@ -50,8 +50,6 @@ int _sniprintf_r(struct _reent *ptr, char *str, size_t size, const char *fmt, ..
   return (ret);
 }
 
-#ifndef _REENT_ONLY
-
 int sniprintf(char *str, size_t size, const char *fmt, ...)
 {
   int ret;
@@ -77,5 +75,3 @@ int sniprintf(char *str, size_t size, const char *fmt, ...)
     *f._p = 0;
   return (ret);
 }
-
-#endif

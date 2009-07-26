@@ -23,12 +23,8 @@ int _fseeko_r(struct _reent *ptr, register FILE *fp , _off_t offset, int whence)
   return _fseek_r (ptr, fp, (long)offset, whence);
 }
 
-#ifndef _REENT_ONLY
-
 int fseeko(register FILE *fp, _off_t offset, int whence)
 {
   /* for now we simply cast since off_t should be long */
   return _fseek_r (_REENT, fp, (long)offset, whence);
 }
-
-#endif /* !_REENT_ONLY */

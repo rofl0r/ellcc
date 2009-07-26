@@ -45,8 +45,6 @@ int _asprintf_r(struct _reent *ptr, char **strp       , const char *fmt, ...)
   return (ret);
 }
 
-#ifndef _REENT_ONLY
-
 int asprintf(char **strp, const char *fmt, ...)
 {
   int ret;
@@ -68,5 +66,3 @@ int asprintf(char **strp, const char *fmt, ...)
     }
   return (ret);
 }
-
-#endif /* ! _REENT_ONLY */
