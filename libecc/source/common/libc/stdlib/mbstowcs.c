@@ -47,8 +47,7 @@ effects vary with the locale.
 <<mbstowcs>> requires no supporting OS subroutines.
 */
 
-#ifndef _REENT_ONLY
-
+#include <config.h>
 #include <stdlib.h>
 #include <wchar.h>
 
@@ -74,5 +73,3 @@ size_t mbstowcs(wchar_t *pwcs, const char *s, size_t n)
   return count;
 #endif /* not _MB_CAPABLE */
 }
-
-#endif /* !_REENT_ONLY */

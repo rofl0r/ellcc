@@ -64,8 +64,6 @@ on two different systems.
 <<rand>> requires no supporting OS subroutines.
 */
 
-#ifndef _REENT_ONLY
-
 #include <stdlib.h>
 #include <reent.h>
 
@@ -85,5 +83,3 @@ int rand(void)
      _REENT_RAND_NEXT(_REENT) * __extension__ 6364136223846793005LL + 1;
   return (int)((_REENT_RAND_NEXT(_REENT) >> 32) & RAND_MAX);
 }
-
-#endif /* _REENT_ONLY */

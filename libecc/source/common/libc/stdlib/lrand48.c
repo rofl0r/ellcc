@@ -21,9 +21,7 @@ long _lrand48_r(struct _reent *r)
     ((unsigned long) __rand48_seed[1] >> 1);
 }
 
-#ifndef _REENT_ONLY
 long lrand48(void)
 {
   return _lrand48_r (_REENT);
 }
-#endif /* !_REENT_ONLY */

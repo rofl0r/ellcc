@@ -39,7 +39,7 @@ QUICKREF
 
 #include <string.h>
 
-#if !defined(PREFER_SIZE_OVER_SPEED) && !defined(__OPTIMIZE_SIZE__)
+#ifndef __OPTIMIZE_SIZE__
 # define RETURN_TYPE void *
 # define AVAILABLE(h, h_l, j, n_l) ((j) <= (h_l) - (n_l))
 # include "str-two-way.h"
@@ -57,7 +57,7 @@ void *memmem(const void *haystack_start, size_t haystack_len, const void *needle
        the beginning of the string.  */
     return (void *) haystack;
 
-#if defined(PREFER_SIZE_OVER_SPEED) || defined(__OPTIMIZE_SIZE__)
+#ifdef __OPTIMIZE_SIZE__
 
   /* Less code size, but quadratic performance in the worst case.  */
   while (needle_len <= haystack_len)

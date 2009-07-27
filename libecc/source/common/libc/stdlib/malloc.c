@@ -1,9 +1,8 @@
 /* The routines here are simple cover fns to the routines that do the real
    work (the reentrant versions).  */
 
-#define MALLOC_PROVIDED
-#ifdef MALLOC_PROVIDED
-#else
+#include <config.h>
+#ifndef MALLOC_PROVIDED
 
 /*
 FUNCTION

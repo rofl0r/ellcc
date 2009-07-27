@@ -61,7 +61,7 @@ QUICKREF
 
 char *strcat(char *s1, const char *s2)
 {
-#if defined(PREFER_SIZE_OVER_SPEED) || defined(__OPTIMIZE_SIZE__)
+#ifdef __OPTIMIZE_SIZE__
   char *s = s1;
 
   while (*s1)

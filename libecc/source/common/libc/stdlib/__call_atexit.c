@@ -2,6 +2,7 @@
  * Common routine to call call registered atexit-like routines.
  */
 
+#include <config.h>
 #include <stdlib.h>
 #include <reent.h>
 #include "atexit.h"

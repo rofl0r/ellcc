@@ -110,6 +110,7 @@ THIS SOFTWARE.
 
 /* Original file gdtoa-strtod.c Modified 06-21-2006 by Jeff Johnston to work within newlib.  */
 
+#include <config.h>
 #include <errno.h>
 #include <string.h>
 #include "mprec.h"

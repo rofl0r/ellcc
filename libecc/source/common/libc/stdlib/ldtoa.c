@@ -12,9 +12,6 @@
 long double _strtold (char *, char **);
 char * _ldtoa_r (struct _reent *, long double, int, int, int *, int *, char **);
 int    _ldcheck (long double *);
-#if 0
-void _IO_ldtostr(long double *, char *, int, int, char);
-#endif
 
  /* Number of 16 bit words in external x type format */
  #define NE 10

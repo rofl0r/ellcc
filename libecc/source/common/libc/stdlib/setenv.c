@@ -17,8 +17,6 @@
  * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 
-#ifndef _REENT_ONLY
-
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
@@ -44,5 +42,3 @@ void unsetenv(const char *name)
 {
   _unsetenv_r (_REENT, name);
 }
-
-#endif /* !_REENT_ONLY */

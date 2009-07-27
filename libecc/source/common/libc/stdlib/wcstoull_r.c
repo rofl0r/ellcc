@@ -40,8 +40,6 @@
  * SUCH DAMAGE.
  */
 
-#ifdef __GNUC__
-
 #define _GNU_SOURCE
 #include <limits.h>
 #include <wctype.h>
@@ -110,5 +108,3 @@ unsigned long long _wcstoull_r(struct _reent *rptr, const wchar_t *nptr, wchar_t
 		*endptr = (wchar_t *) (any ? s - 1 : nptr);
 	return (acc);
 }
-
-#endif /* __GNUC__ */

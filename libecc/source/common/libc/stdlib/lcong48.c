@@ -25,9 +25,7 @@ void _lcong48_r(struct _reent *r, unsigned short p[7])
   __rand48_add = p[6];
 }
 
-#ifndef _REENT_ONLY
 void lcong48(unsigned short p[7])
 {
   _lcong48_r (_REENT, p);
 }
-#endif /* !_REENT_ONLY */

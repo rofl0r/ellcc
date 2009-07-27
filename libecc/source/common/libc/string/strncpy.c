@@ -66,7 +66,7 @@ QUICKREF
 
 char *strncpy(char *dst0, const char *src0, size_t count)
 {
-#if defined(PREFER_SIZE_OVER_SPEED) || defined(__OPTIMIZE_SIZE__)
+#ifdef __OPTIMIZE_SIZE__
   char *dscan;
   const char *sscan;
 

@@ -77,7 +77,7 @@ QUICKREF
 #include <ctype.h>
 #include <string.h>
 
-#if !defined(PREFER_SIZE_OVER_SPEED) && !defined(__OPTIMIZE_SIZE__)
+#ifdef __OPTIMIZE_SIZE__
 # define RETURN_TYPE char *
 # define AVAILABLE(h, h_l, j, n_l)			\
   (!memchr ((h) + (h_l), '\0', (j) + (n_l) - (h_l))	\
@@ -92,7 +92,7 @@ QUICKREF
  */
 char *strcasestr(const char *s, const char *find)
 {
-#if defined(PREFER_SIZE_OVER_SPEED) || defined(__OPTIMIZE_SIZE__)
+#ifdef __OPTIMIZE_SIZE__
 
   /* Less code size, but quadratic performance in the worst case.  */
 	char c, sc;

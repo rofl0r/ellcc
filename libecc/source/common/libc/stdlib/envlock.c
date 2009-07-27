@@ -35,6 +35,7 @@ routines must be careful to avoid causing a thread to wait for a lock
 that it already holds.
 */
 
+#include <config.h>
 #include "envlock.h"
 #include <sys/lock.h>
 

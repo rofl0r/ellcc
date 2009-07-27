@@ -204,8 +204,6 @@ static void print_e(struct _reent *ptr, char *buf, double invalue, int width, ch
   *buf++ = 0;
 }
 
-#ifndef _REENT_ONLY
-
 /* Undocumented behaviour: when given NULL as a buffer, return a
    pointer to static space in the rent structure.  This is only to
    support ecvt and fcvt, which aren't ANSI anyway.  */
@@ -301,8 +299,6 @@ char *ecvtbuf(double invalue, int ndigit, int *decpt, int *sign, char *fcvt_buf)
   *fcvt_buf++ = 0;
   return save;
 }
-
-#endif
 
 char *_gcvt(struct _reent *ptr, double invalue, int ndigit, char *buf, char type, int dot)
 {

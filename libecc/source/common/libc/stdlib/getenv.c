@@ -52,8 +52,6 @@ variables vary from one system to another.
  * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 
-#ifndef _REENT_ONLY
-
 #include <stdlib.h>
 #include <stddef.h>
 #include <string.h>
@@ -85,5 +83,3 @@ char *getenv(const char *name)
 
   return _findenv_r (_REENT, name, &offset);
 }
-
-#endif /* !_REENT_ONLY */

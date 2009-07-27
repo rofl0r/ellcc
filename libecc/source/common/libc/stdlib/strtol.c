@@ -210,11 +210,7 @@ long _strtol_r(
 	return (acc);
 }
 
-#ifndef _REENT_ONLY
-
 long strtol(const char *s, char **ptr, int base)
 {
 	return _strtol_r (_REENT, s, ptr, base);
 }
-
-#endif

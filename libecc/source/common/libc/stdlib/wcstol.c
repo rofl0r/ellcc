@@ -206,11 +206,7 @@ long _wcstol_r(struct _reent *rptr, const wchar_t *nptr, wchar_t **endptr, int b
 	return (acc);
 }
 
-#ifndef _REENT_ONLY
-
 long wcstol(const wchar_t *s, wchar_t **ptr, int base)
 {
 	return _wcstol_r (_REENT, s, ptr, base);
 }
-
-#endif

@@ -48,8 +48,7 @@ effects vary with the locale.
 <<wcstombs>> requires no supporting OS subroutines.
 */
 
-#ifndef _REENT_ONLY
-
+#include <config.h>
 #include <stdlib.h>
 #include <wchar.h>
 
@@ -74,5 +73,3 @@ size_t wcstombs(char          *s, const wchar_t *pwcs, size_t         n)
   return count;
 #endif /* not _MB_CAPABLE */
 }
-
-#endif /* !_REENT_ONLY */

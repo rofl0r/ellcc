@@ -60,7 +60,7 @@ QUICKREF
 
 char*stpcpy(char *dst, const char *src)
 {
-#if !defined(PREFER_SIZE_OVER_SPEED) && !defined(__OPTIMIZE_SIZE__)
+#ifdef __OPTIMIZE_SIZE__
   long *aligned_dst;
   const long *aligned_src;
 

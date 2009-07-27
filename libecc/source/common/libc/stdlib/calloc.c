@@ -1,6 +1,3 @@
-#define MALLOC_PROVIDED
-#ifdef MALLOC_PROVIDED
-#else
 /*
 FUNCTION
 <<calloc>>---allocate space for arrays
@@ -52,15 +49,14 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 <<lseek>>, <<read>>, <<sbrk>>, <<write>>.
 */
 
+#include <config.h>
+#ifndef MALLOC_PROVIDED
 #include <string.h>
 #include <stdlib.h>
-
-#ifndef _REENT_ONLY
 
 void *calloc(size_t n, size_t size)
 {
   return _calloc_r (_REENT, n, size);
 }
 
-#endif
 #endif /* MALLOC_PROVIDED */

@@ -123,11 +123,7 @@ No supporting OS subroutines are required.
 #include <wchar.h>
 #include <reent.h>
 
-#ifndef _REENT_ONLY
-
 long long wcstoll(const wchar_t *s, wchar_t **ptr, int base)
 {
 	return _wcstoll_r (_REENT, s, ptr, base);
 }
-
-#endif

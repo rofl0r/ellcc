@@ -50,7 +50,7 @@ QUICKREF
 
 void *memcpy(void * dst0, const void * src0, size_t len0)
 {
-#if defined(PREFER_SIZE_OVER_SPEED) || defined(__OPTIMIZE_SIZE__)
+#ifdef __OPTIMIZE_SIZE__
   char *dst = (char *) dst0;
   char *src = (char *) src0;
 

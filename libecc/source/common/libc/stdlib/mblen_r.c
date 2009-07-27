@@ -43,6 +43,7 @@ effects vary with the locale.
 <<_mblen_r>> requires no supporting OS subroutines.
 */
 
+#include <config.h>
 #include <stdlib.h>
 #include <wchar.h>
 

@@ -20,9 +20,7 @@ long _mrand48_r(struct _reent *r)
   return ((long) __rand48_seed[2] << 16) + (long) __rand48_seed[1];
 }
 
-#ifndef _REENT_ONLY
 long mrand48(void)
 {
   return _mrand48_r(_REENT);
 }
-#endif /* !_REENT_ONLY */

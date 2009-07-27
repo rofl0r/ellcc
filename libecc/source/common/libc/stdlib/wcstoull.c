@@ -124,11 +124,7 @@ PORTABILITY
 #include <stdlib.h>
 #include <reent.h>
 
-#ifndef _REENT_ONLY
-
 unsigned long long wcstoull(const wchar_t *s, wchar_t **ptr, int base)
 {
 	return _wcstoull_r (_REENT, s, ptr, base);
 }
-
-#endif

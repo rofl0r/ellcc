@@ -31,9 +31,7 @@ unsigned short *_seed48_r(struct _reent *r, unsigned short xseed[3])
   return sseed;
 }
 
-#ifndef _REENT_ONLY
 unsigned short *seed48(unsigned short xseed[3])
 {
   return _seed48_r (_REENT, xseed);
 }
-#endif /* !_REENT_ONLY */

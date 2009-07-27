@@ -17,8 +17,6 @@
  * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 
-#ifndef _REENT_ONLY
-
 #include <stdlib.h>
 #include <string.h>
 
@@ -26,5 +24,3 @@ int putenv(char *str)
 {
   return _putenv_r (_REENT, str);
 }
-
-#endif /* !_REENT_ONLY */

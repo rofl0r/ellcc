@@ -186,11 +186,7 @@ unsigned long _wcstoul_r(struct _reent *rptr, const wchar_t *nptr, wchar_t **end
 	return (acc);
 }
 
-#ifndef _REENT_ONLY
-
 unsigned long wcstoul(const wchar_t *s, wchar_t **ptr, int base)
 {
 	return _wcstoul_r (_REENT, s, ptr, base);
 }
-
-#endif

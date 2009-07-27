@@ -1,3 +1,4 @@
+#include <config.h>
 #include <reent.h>
 #include <wchar.h>
 #include <stdlib.h>
@@ -67,9 +68,7 @@ size_t _wcsrtombs_r(struct _reent *r, char *dst, const wchar_t **src, size_t len
   return n;
 } 
 
-#ifndef _REENT_ONLY
 size_t wcsrtombs(char *dst, const wchar_t **src, size_t len, mbstate_t *ps)
 {
   return _wcsrtombs_r (_REENT, dst, src, len, ps);
 }
-#endif /* !_REENT_ONLY */

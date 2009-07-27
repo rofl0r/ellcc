@@ -96,15 +96,11 @@ int _system_r(struct _reent *ptr, const char *s)
 #endif
 }
 
-#ifndef _REENT_ONLY
-
 int system(const char *s)
 {
   return _system_r (_REENT, s);
 }
 
-#endif
-
 #if defined (unix) && !defined (__CYGWIN__) && !defined(__rtems__)
 extern char **environ;
 

@@ -20,9 +20,7 @@ long _nrand48_r(struct _reent *r, unsigned short xseed[3])
     ((unsigned long) xseed[1] >> 1);
 }
 
-#ifndef _REENT_ONLY
 long nrand48(unsigned short xseed[3])
 {
   return _nrand48_r (_REENT, xseed);
 }
-#endif /* !_REENT_ONLY */

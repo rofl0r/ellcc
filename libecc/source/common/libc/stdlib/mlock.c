@@ -1,4 +1,3 @@
-#ifndef MALLOC_PROVIDED
 /*
 FUNCTION
 <<__malloc_lock>>, <<__malloc_unlock>>---lock malloc pool
@@ -36,6 +35,8 @@ routines must be careful to avoid causing a thread to wait for a lock
 that it already holds.
 */
 
+#include <config.h>
+#ifndef MALLOC_PROVIDED
 #include <malloc.h>
 #include <sys/lock.h>
 

@@ -39,7 +39,18 @@
 /** Define if the nanosleep function exists.
  */
 #define HAVE_NANOSLEEP
-
+/** Define if _system exists elsewhere.
+ */
+// #define HAVE_SYSTEM
+/** Define if exec does not exist.
+ */
+// #define NO_EXEC
+/** Define if getopt exists elsewhere.
+ */
+// #define HAVE_GETOPT
+/** Define atexit idata should be freed on exit.
+ */
+// #define _ATEXIT_DYNAMIC_ALLOC
 /** Define if malloc does not exist or exists elsewhere.
  */
 // #define MALLOC_PROVIDED
@@ -47,6 +58,9 @@
 /** Define if opendir does not exist or exists elsewhere.
  */
 #define HAVE_OPENDIR
+/** Define if locale should be used.
+ */
+#define USE_LOCALE
 /** Define if dirent contains d_namelen.
  */
 // #define _DIRENT_HAVE_D_NAMLEN

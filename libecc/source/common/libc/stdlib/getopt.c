@@ -83,9 +83,8 @@ Gregory Pietsch's current e-mail address:
 gpietsch@comcast.net
 ****************************************************************************/
 
+#include <config.h>
 #ifndef HAVE_GETOPT
-
-/* include files */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

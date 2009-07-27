@@ -42,7 +42,6 @@ THIS SOFTWARE.
 #include "mprec.h"
 #include "gdtoa.h"
 
-#ifdef INFNAN_CHECK
 static void L_shift(__ULong *x, __ULong *x1, int i)
 {
 	int j;
@@ -130,4 +129,3 @@ int hexnan(const char **sp, FPI *fpi, __ULong *x0)
 		}
 	return STRTOG_NaNbits;
 }
-#endif /* INFNAN_CHECK */

@@ -21,9 +21,7 @@ double _erand48_r(struct _reent *r, unsigned short xseed[3])
     ldexp((double) xseed[2], -16);
 }
 
-#ifndef _REENT_ONLY
 double erand48(unsigned short xseed[3])
 {
   return _erand48_r (_REENT, xseed);
 }
-#endif /* !_REENT_ONLY */

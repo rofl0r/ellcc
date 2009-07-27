@@ -60,7 +60,7 @@ QUICKREF
 
 int strncmp(const char *s1, const char *s2, size_t n)
 {
-#if defined(PREFER_SIZE_OVER_SPEED) || defined(__OPTIMIZE_SIZE__)
+#ifdef __OPTIMIZE_SIZE__
   if (n == 0)
     return 0;
 

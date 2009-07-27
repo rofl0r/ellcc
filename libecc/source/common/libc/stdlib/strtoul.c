@@ -186,11 +186,7 @@ unsigned long _strtoul_r(struct _reent *rptr, const char *nptr, char **endptr, i
 	return (acc);
 }
 
-#ifndef _REENT_ONLY
-
 unsigned long strtoul(const char *s, char **ptr, int base)
 {
 	return _strtoul_r(_REENT, s, ptr, base);
 }
-
-#endif

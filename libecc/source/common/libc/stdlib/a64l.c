@@ -86,7 +86,7 @@ long a64l(const char *input)
     {
       ch = *(--ptr);
 
-#if defined(PREFER_SIZE_OVER_SPEED) || defined(__OPTIMIZE_SIZE__)
+#if defined(__OPTIMIZE_SIZE__)
       if (ch >= 'a')
 	digit = (ch - 'a') + 38;
       else if (ch >= 'A')

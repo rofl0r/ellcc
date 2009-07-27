@@ -40,8 +40,6 @@
  * SUCH DAMAGE.
  */
 
-#ifdef __GNUC__
-
 #define _GNU_SOURCE
 #include <limits.h>
 #include <ctype.h>
@@ -110,5 +108,3 @@ unsigned long long _strtoull_r(struct _reent *rptr, const char *nptr, char **end
 		*endptr = (char *) (any ? s - 1 : nptr);
 	return (acc);
 }
-
-#endif /* __GNUC__ */

@@ -1,12 +1,6 @@
 /* VxWorks provides its own version of malloc, and we can't use this
    one because VxWorks does not provide sbrk.  So we have a hook to
    not compile this code.  */
-
-#define MALLOC_PROVIDED
-#ifdef MALLOC_PROVIDED
-
-#else
-
 /*
 FUNCTION
 <<mallinfo>>, <<malloc_stats>>, <<mallopt>>---malloc support
@@ -95,19 +89,18 @@ not portable.
 
 */
 
+#include <config.h>
+#ifndef MALLOC_PROVIDED
 #include <reent.h>
 #include <stdlib.h>
 #include <malloc.h>
 #include <stdio.h>
-
-#ifndef _REENT_ONLY
 
 struct mallinfo mallinfo(void)
 {
   return _mallinfo_r(_REENT);
 }
 
-#if !defined (_ELIX_LEVEL) || _ELIX_LEVEL >= 2
 void malloc_stats(void)
 {
   _malloc_stats_r(_REENT);
@@ -117,12 +110,6 @@ int mallopt(int p, int v)
 {
   return _mallopt_r(_REENT, p, v);
 }
-
-#endif /* !_ELIX_LEVEL || _ELIX_LEVEL >= 2 */
-
-#endif
-
-#if !defined (_ELIX_LEVEL) || _ELIX_LEVEL >= 2
 
 /* mstats is now compatibility code.  It used to be real, for a
    previous version of the malloc routines.  It now just calls
@@ -135,14 +122,9 @@ void _mstats_r(struct _reent *ptr, char *s)
   _malloc_stats_r (ptr);
 }
 
-#ifndef _REENT_ONLY
 void mstats(char *s)
 {
   _mstats_r (_REENT, s);
 }
-
-#endif
-
-#endif /* !_ELIX_LEVEL || _ELIX_LEVEL >= 2 */
 
 #endif /* ! defined (MALLOC_PROVIDED) */

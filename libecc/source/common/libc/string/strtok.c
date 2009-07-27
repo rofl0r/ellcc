@@ -85,8 +85,6 @@ QUICKREF
 #include <string.h>
 #include <reent.h>
 
-#ifndef _REENT_ONLY
-
 extern char *__strtok_r (char *, const char *, char **, int);
 
 char *strtok(register char *s, register const char *delim)
@@ -94,4 +92,3 @@ char *strtok(register char *s, register const char *delim)
 	_REENT_CHECK_MISC(_REENT);
 	return __strtok_r (s, delim, &(_REENT_STRTOK_LAST(_REENT)), 1);
 }
-#endif

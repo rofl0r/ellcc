@@ -4,12 +4,10 @@
 
 #include <stdlib.h>
 
-#ifndef _REENT_ONLY
 long atol(const char *s)
 {
   return strtol (s, NULL, 10);
 }
-#endif /* !_REENT_ONLY */
 
 long _atol_r(struct _reent *ptr, const char *s)
 {

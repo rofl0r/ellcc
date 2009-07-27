@@ -1,3 +1,4 @@
+#include <config.h>
 #include <reent.h>
 #include <wchar.h>
 #include <stdlib.h>
@@ -32,9 +33,7 @@ size_t _mbrtowc_r(struct _reent *ptr, wchar_t *pwc, const char *s, size_t n, mbs
     return (size_t)retval;
 }
 
-#ifndef _REENT_ONLY
 size_t mbrtowc(wchar_t *pwc, const char *s, size_t n, mbstate_t *ps)
 {
   return _mbrtowc_r (_REENT, pwc, s, n, ps);
 }
-#endif /* !_REENT_ONLY */

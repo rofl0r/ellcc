@@ -49,8 +49,7 @@ effects vary with the locale.
 <<mbtowc>> requires no supporting OS subroutines.
 */
 
-#ifndef _REENT_ONLY
-
+#include <config.h>
 #include <stdlib.h>
 #include <wchar.h>
 
@@ -81,9 +80,3 @@ int mbtowc(wchar_t *pwc, const char *s, size_t n)
   return (*s != '\0');
 #endif /* not _MB_CAPABLE */
 }
-
-#endif /* !_REENT_ONLY */
-
-
-
-

@@ -72,7 +72,7 @@ void *memchr(const void * src_void, int c, size_t length)
   const unsigned char *src = (const unsigned char *) src_void;
   unsigned char d = c;
 
-#if !defined(PREFER_SIZE_OVER_SPEED) && !defined(__OPTIMIZE_SIZE__)
+#ifdef __OPTIMIZE_SIZE__
   unsigned long *asrc;
   unsigned long  mask;
   int i;

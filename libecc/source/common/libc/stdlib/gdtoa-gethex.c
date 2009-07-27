@@ -29,12 +29,12 @@ THIS SOFTWARE.
 /* Please send bug reports to David M. Gay (dmg at acm dot org,
  * with " at " changed at "@" and " dot " changed to ".").	*/
 
+#include <config.h>
 #include <reent.h>
 #include <string.h>
 #include "mprec.h"
 #include "gdtoa.h"
 #include "gd_qnan.h"
-
 #ifdef USE_LOCALE
 #include "locale.h"
 #endif
