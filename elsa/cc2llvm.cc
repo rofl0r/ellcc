@@ -344,7 +344,7 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLocation loc, Atomic
             Variable const *v = iter.data();
             VDEBUG("member", v->loc, std::cerr << v->toString());
             const llvm::IntegerType* itype = llvm::IntegerType::get(TI.IntWidth());
-            members.add(v, context.getConstantInt(itype, i++));
+            members.add(v, llvm::ConstantInt::get(itype, i++));
 	    fields.push_back(makeTypeSpecifier(v->loc, v->type));
         }
 
@@ -1434,7 +1434,8 @@ llvm::Value *E_intLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
     while (isxdigit(*endp)) ++endp;
 
     VDEBUG("IntLit", loc, std::cerr << text << " radix " << radix);
-    return env.context.getConstantInt(llvm::APInt(type->sizeInBits(env.TI), p, endp - p, radix));
+    return llvm::ConstantInt::get(env.context,
+                                  llvm::APInt(type->sizeInBits(env.TI), p, endp - p, radix));
 }
 
 llvm::Value *E_floatLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
@@ -1495,7 +1496,7 @@ llvm::Value *E_stringLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
 llvm::Value *E_charLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     deref = 0;
-    return env.context.getConstantInt(llvm::APInt(type->sizeInBits(env.TI), c));
+    return llvm::ConstantInt::get(env.context, llvm::APInt(type->sizeInBits(env.TI), c));
 }
 
 llvm::Value *E_this::cc2llvm(CC2LLVMEnv &env, int& deref) const
@@ -1514,7 +1515,8 @@ llvm::Value *E_variable::cc2llvm(CC2LLVMEnv &env, int& deref) const
     if (var->isEnumerator()) {
         // This is an enumerator constant. Return it's value.
         deref = 0;
-        return env.context.getConstantInt(llvm::APInt(type->sizeInBits(env.TI), var->getEnumeratorValue()));
+        return llvm::ConstantInt::get(env.context, llvm::APInt(type->sizeInBits(env.TI),
+                                      var->getEnumeratorValue()));
     }
 
     // The variable will have been previously seen in a declaration.
@@ -1747,7 +1749,7 @@ llvm::Value *E_sizeof::cc2llvm(CC2LLVMEnv &env, int& deref) const
     const llvm::Type* ptype = llvm::PointerType::get(etype, 0);       // RICH: Address space.
     llvm::Value* value = env.builder.CreateGEP(
         env.context.getNullValue(ptype),
-        env.context.getConstantInt(env.TD.getIntPtrType(), 1));
+        llvm::ConstantInt::get(env.TD.getIntPtrType(), 1));
     value = env.builder.CreatePtrToInt(value, env.TD.getIntPtrType());
     const llvm::Type* rtype = env.makeTypeSpecifier(loc, type);
     value = env.builder.CreateIntCast(value, rtype, false);
@@ -1821,10 +1823,12 @@ llvm::Value *E_effect::cc2llvm(CC2LLVMEnv &env, int& deref) const
 	llvm::Value* one;
 	if (op == EFF_POSTDEC || op == EFF_PREDEC) {
 	    // Get a negative one.
-            one = env.context.getConstantInt(llvm::APInt(env.TD.getTypeSizeInBits(temp->getType()), -1));
+        one = llvm::ConstantInt::get(env.context,
+                                     llvm::APInt(env.TD.getTypeSizeInBits(temp->getType()), -1));
 	} else {
 	    // Get a positive one.
-            one = env.context.getConstantInt(llvm::APInt(env.TD.getTypeSizeInBits(temp->getType()), 1));
+        one = llvm::ConstantInt::get(env.context,
+                                     llvm::APInt(env.TD.getTypeSizeInBits(temp->getType()), 1));
 	}
 	index.push_back(one);
         VDEBUG("GEP1", loc, temp->print(std::cerr); );
@@ -1833,7 +1837,8 @@ llvm::Value *E_effect::cc2llvm(CC2LLVMEnv &env, int& deref) const
         VDEBUG("Store7 destination", loc, value->print(std::cerr));
         env.builder.CreateStore(temp, value, false);	// RICH: Volatile
     } else if (temp->getType()->isInteger()) {
-        llvm::ConstantInt* one = env.context.getConstantInt(llvm::APInt(env.TD.getTypeSizeInBits(temp->getType()), 1));
+        llvm::ConstantInt* one = llvm::ConstantInt::get(env.context,
+                                        llvm::APInt(env.TD.getTypeSizeInBits(temp->getType()), 1));
 	if (op == EFF_POSTDEC || op == EFF_PREDEC) {
 	    temp = env.builder.CreateSub(temp, one);
 	} else {
@@ -2225,7 +2230,7 @@ llvm::Value* CC2LLVMEnv::initializer(const Initializer* init, Type* type, int& d
 
 	        std::vector<llvm::Constant*> elements;
                 for (int i = 0; i < size; ++i) {
-                    elements.push_back(context.getConstantInt(elttype, i < s->data->getDataLen() ? s->data->getData()[i] : 0));
+                    elements.push_back(llvm::ConstantInt::get(elttype, i < s->data->getDataLen() ? s->data->getData()[i] : 0));
                 }
 	        value = context.getConstantArray((llvm::ArrayType*)makeTypeSpecifier(init->loc, type),
                                                  elements);
@@ -2291,8 +2296,8 @@ llvm::Value* CC2LLVMEnv::initializer(const Initializer* init, Type* type, int& d
                 }
             }
             const llvm::Type* sttype = makeTypeSpecifier(init->loc, type);
-            value = llvm::ConstantStruct::get((llvm::StructType*)sttype, members);
-	}
+            value = context.getConstantStruct((llvm::StructType*)sttype, members);
+	    }
     }
 
     ASTNEXTC(IN_ctor, c) {
@@ -2684,7 +2689,7 @@ llvm::Value* CC2LLVMEnv::binop(SourceLocation loc, BinaryOp op, Expression* e1, 
             const llvm::Type* ptype = llvm::PointerType::get(left->getType()->getContainedType(0), 0);       // RICH: Address space.
             llvm::Value* size = builder.CreateGEP(
                 context.getNullValue(ptype),
-                context.getConstantInt(TD.getIntPtrType(), 1));
+                llvm::ConstantInt::get(TD.getIntPtrType(), 1));
             size = builder.CreatePtrToInt(size, TD.getIntPtrType());
 	    left = builder.CreatePtrToInt(left, TD.getIntPtrType());
 	    right = builder.CreatePtrToInt(right, TD.getIntPtrType());
@@ -3039,7 +3044,7 @@ llvm::Value *E_sizeofType::cc2llvm(CC2LLVMEnv &env, int& deref) const
     const llvm::Type* ptype = llvm::PointerType::get(etype, 0);       // RICH: Address space.
     llvm::Value* value = env.builder.CreateGEP(
         env.context.getNullValue(ptype),
-        env.context.getConstantInt(env.TD.getIntPtrType(), 1));
+        llvm::ConstantInt::get(env.TD.getIntPtrType(), 1));
     value = env.builder.CreatePtrToInt(value, env.TD.getIntPtrType());
     deref = 0;
     return value;
@@ -3257,9 +3262,9 @@ llvm::Value *E___builtin_constant_p::cc2llvm(CC2LLVMEnv &env, int& deref) const
     llvm::Value* value = expr->cc2llvm(env, deref);
     bool isConstantExpr = llvm::isa<llvm::ConstantExpr>(value);
     if (isConstantExpr) {
-        value = env.context.getConstantInt(llvm::APInt(expr->type->sizeInBits(env.TI), 1));
+        value = llvm::ConstantInt::get(env.context, llvm::APInt(expr->type->sizeInBits(env.TI), 1));
     } else {
-        value = env.context.getConstantInt(llvm::APInt(expr->type->sizeInBits(env.TI), 0));
+        value = llvm::ConstantInt::get(env.context, llvm::APInt(expr->type->sizeInBits(env.TI), 0));
     }
     env.makeCast(loc, expr->type, value, type);
     deref = 0;

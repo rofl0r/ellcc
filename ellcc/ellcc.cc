@@ -26,7 +26,7 @@
 #include "llvm/Target/SubtargetFeature.h"
 #include "llvm/Target/TargetData.h"
 #include "llvm/Target/TargetMachine.h"
-#include "llvm/Target/TargetMachineRegistry.h"
+#include "llvm/Target/TargetRegistry.h"
 #include "llvm/Target/TargetSelect.h"
 #include "llvm/CodeGen/LinkAllCodegenComponents.h"
 #include "llvm/CodeGen/LinkAllAsmWriterComponents.h"
@@ -1388,8 +1388,8 @@ struct FunctionPassPrinter : public FunctionPass {
 
   virtual bool runOnFunction(Function &F) {
     if (!Quiet) { 
-      cout << "Printing analysis '" << PassToPrint->getPassName()
-           << "' for function '" << F.getName() << "':\n";
+      outs() << "Printing analysis '" << PassToPrint->getPassName()
+             << "' for function '" << F.getName() << "':\n";
     }
     // Get and print pass...
     getAnalysisID<Pass>(PassToPrint).print(cout, F.getParent());
@@ -1440,8 +1440,8 @@ struct BasicBlockPassPrinter : public BasicBlockPass {
 
   virtual bool runOnBasicBlock(BasicBlock &BB) {
     if (!Quiet) {
-      cout << "Printing Analysis info for BasicBlock '" << BB.getName()
-           << "': Pass " << PassToPrint->getPassName() << ":\n";
+      outs() << "Printing Analysis info for BasicBlock '" << BB.getName()
+             << "': Pass " << PassToPrint->getPassName() << ":\n";
     }
 
     // Get and print pass...
@@ -2548,7 +2548,10 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
             }        
         } else {
             std::string Err;
-            TheTarget = TargetRegistry::getClosestStaticTargetForModule(*input.module, Err);
+            TheTarget = TargetRegistry::lookupTarget(input.module->getTargetTriple(),
+                                                     /*FallbackToHost=*/ false,
+                                                     /*RequireJIT=*/ false,
+                                                     Err);
             if (TheTarget == 0) {
                 errs() << progname << ": error auto-selecting target for module '"
                        << Err << "'.  Please use the -march option to explicitly "
