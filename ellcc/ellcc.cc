@@ -211,7 +211,6 @@ static void setupMappings()
 {
     machines["alpha"] = "alpha";
     machines["arm"] = "arm";
-    machines["ia64"] = "ia64";
     machines["mips"] = "mips";
     machines["msp430"] = "msp430";
     machines["nios2"] = "nios2";
@@ -221,12 +220,11 @@ static void setupMappings()
     machines["ppc64"] = "powerpc64";
     machines["sparc"] = "sparc";
     machines["spu"] = "cellspu";
-    machines["x86"] = "i686";
+    machines["x86"] = "x86";
     machines["x86_64"] = "x86_64";
 
     emulations["alpha"] = "elf64alpha";
     emulations["arm"] = "armelf";
-    emulations["ia64"] = "elf64_ia64";
     emulations["mips"] = "elf32ebmip";
     emulations["msp430"] = "msp430";
     emulations["nios2"] = "nios2elf";
