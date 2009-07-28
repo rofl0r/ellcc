@@ -174,7 +174,6 @@ public:
   virtual void setFlagsTo(DeclFlags f);
 
   // some convenient interpretations of 'flags'
-  bool hasAddrTaken() const { return hasFlag(DF_ADDRTAKEN); }
   bool isGlobal() const { return hasFlag(DF_GLOBAL); }
 
   // persists as a global; not on stack or heap

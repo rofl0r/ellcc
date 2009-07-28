@@ -98,15 +98,18 @@ enum DeclFlags {
   DF_FRIEND      = 0x00000100,
   DF_TYPEDEF     = 0x00000200,
 
-  DF_NAMESPACE   = 0x04000000,    // names of namespaces
-  DF_SOURCEFLAGS = 0x040003FF,    // all flags that come from keywords in the source
+  DF_NAMESPACE   = 0x00000400,    // names of namespaces
+  DF_SOURCEFLAGS = 0x000007FF,    // all flags that come from keywords in the source
 
   // semantic flags on Variables
-  DF_ENUMERATOR  = 0x00000400,    // true for values in an 'enum' (enumerators in the terminology of the C++ standard)
   DF_GLOBAL      = 0x00000800,    // set for globals, unset for locals
   DF_INITIALIZED = 0x00001000,    // true if has been declared with an initializer (or, for functions, with code)
   DF_BUILTIN     = 0x00002000,    // true for e.g. __builtin_constant_p -- don't emit later
+  DF_ENUMERATOR  = 0x00004000,    // true for values in an 'enum' (enumerators in the terminology of the C++ standard)
+  DF_REFERENCED  = 0x00008000,    // true if it's been referenced
   DF_PARAMETER   = 0x00010000,    // true if this is a function parameter or a handler "parameter"
+  DF_UNUSED1     = 0x00020000,    // Unused
+  DF_UNUSED2     = 0x00040000,    // Unused
   DF_MEMBER      = 0x00080000,    // true for members of classes (data, static data, functions); *not* true for namespace members
   DF_DEFINITION  = 0x00100000,    // set once we've seen this Variable's definition
   DF_INLINE_DEFN = 0x00200000,    // set for inline function definitions on second pass of tcheck
@@ -114,23 +117,14 @@ enum DeclFlags {
                                   // and implicit compiler-supplied member decls (if not DF_TYPEDEF)
   DF_FORWARD     = 0x00800000,    // for syntax which only provides a forward declaration
   DF_TEMPORARY   = 0x01000000,    // temporary variable introduced by elaboration
-  DF_EXTERN_C    = 0x08000000,    // name is marked extern "C"
-  DF_SELFNAME    = 0x10000000,    // section 9 para 2: name of class inside its own scope
-  DF_BOUND_TPARAM= 0x00004000,    // template parameter bound to a concrete argument
-  DF_TEMPL_PARAM = 0x20000000,    // template parameter; bound iff also DF_BOUND_TPARAM
-  DF_USING_ALIAS = 0x40000000,    // this is a 'using' alias
-  DF_BITFIELD    = 0x80000000,    // this is a bitfield
+  DF_EXTERN_C    = 0x02000000,    // name is marked extern "C"
+  DF_SELFNAME    = 0x04000000,    // section 9 para 2: name of class inside its own scope
+  DF_BOUND_TPARAM= 0x08000000,    // template parameter bound to a concrete argument
+  DF_TEMPL_PARAM = 0x10000000,    // template parameter; bound iff also DF_BOUND_TPARAM
+  DF_USING_ALIAS = 0x20000000,    // this is a 'using' alias
+  DF_BITFIELD    = 0x40000000,    // this is a bitfield
   DF_GNU_EXTERN_INLINE            // dsw: was extern inline (record since might be changed to static inline)
-                 = 0x02000000,
-
-  // These flags are used by the old (direct C -> VC) verifier client
-  // analysis; I will remove them once I finish transitioning to the
-  // VML-based verifier.  In a pinch, one of these values could be
-  // re-used for something that only occurs in C++ code, since the old
-  // verifier only works with C code.
-  DF_ADDRTAKEN   = 0x00008000,    // true if it's address has been (or can be) taken
-  DF_UNIVERSAL   = 0x00020000,    // universally-quantified variable
-  DF_EXISTENTIAL = 0x00040000,    // existentially-quantified
+                 = 0x80000000,
 
   ALL_DECLFLAGS  = 0xFFFFFFFF,
   NUM_DECLFLAGS  = 32             // # bits set to 1 in ALL_DECLFLAGS
