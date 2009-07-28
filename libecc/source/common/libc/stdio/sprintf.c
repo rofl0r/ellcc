@@ -584,3 +584,6 @@ int sprintf(char *str, const char *fmt, ...)
   *f._p = 0;
   return (ret);
 }
+
+#define STRING_ONLY
+#include "vfprintf.c"

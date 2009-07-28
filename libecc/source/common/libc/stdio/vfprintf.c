@@ -102,14 +102,14 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 <<lseek>>, <<read>>, <<sbrk>>, <<write>>.
 */
 
-#include <config.h>
-
 /*
  * Actual printf innards.
  *
  * This code is large and complicated...
  */
 
+// This defines do integer only and string versions of *printf.
+// See iprintf.c, sprintf.c, and siprintf.c.
 #ifdef INTEGER_ONLY
 # define VFPRINTF vfiprintf
 # ifdef STRING_ONLY

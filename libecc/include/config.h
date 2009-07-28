@@ -12,15 +12,6 @@
 /** Enable multi-byte characters.
  */
 #define _MB_CAPABLE
-/** Define for integer only formatting.
- */
-// #define INTEGER_ONLY
-/** Define for no floating point formatting.
- */
-// #define NO_FLOATING_POINT
-/** Define for string (no file) only formatting.
- */
-// #define STRING_ONLY
 /** Define for formatting with positional arguments.
  */
 #define _WANT_IO_POS_ARGS

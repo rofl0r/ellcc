@@ -120,3 +120,7 @@ int siprintf(char *str, const char *fmt, ...)
   *f._p = 0;
   return (ret);
 }
+
+#define INTEGER_ONLY
+#define STRING_ONLY
+#include "vfprintf.c"

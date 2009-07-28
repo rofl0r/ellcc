@@ -45,3 +45,6 @@ int _iprintf_r(struct _reent *ptr, const char *fmt, ...)
   va_end (ap);
   return ret;
 }
+
+#define INTEGER_ONLY
+#include "vfprintf.c"
