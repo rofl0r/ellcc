@@ -1240,7 +1240,9 @@ static void findFiles(std::vector<std::string>& found, std::string what, std::st
             path.appendComponent(where);
         }
         path.appendComponent(TargetTriple);
-        path.appendComponent(what);
+        if (what.size()) {
+            path.appendComponent(what);
+        }
         if (path.exists()) {
             found.push_back(path.c_str());
             if (Verbose) {
@@ -1256,7 +1258,9 @@ static void findFiles(std::vector<std::string>& found, std::string what, std::st
                 path.appendComponent(where);
             }
             path.appendComponent(Arch);
-            path.appendComponent(what);
+            if (what.size()) {
+                path.appendComponent(what);
+            }
             if (path.exists()) {
                 found.push_back(path.c_str());
                 if (Verbose) {
@@ -1271,7 +1275,25 @@ static void findFiles(std::vector<std::string>& found, std::string what, std::st
             path.appendComponent(where);
         }
         path.appendComponent(TargetTriple);
-        path.appendComponent(what);
+        if (what.size()) {
+            path.appendComponent(what);
+        }
+        if (path.exists()) {
+            found.push_back(path.c_str());
+            if (Verbose) {
+                cout << "  found:" << path.c_str() << "\n";
+            }
+        }
+
+        // Get foo/libecc[/<where>]/<arch>/<what>
+        path = MainPath;
+        if (where.size()) {
+            path.appendComponent(where);
+        }
+        path.appendComponent(Arch);
+        if (what.size()) {
+            path.appendComponent(what);
+        }
         if (path.exists()) {
             found.push_back(path.c_str());
             if (Verbose) {
@@ -1285,7 +1307,9 @@ static void findFiles(std::vector<std::string>& found, std::string what, std::st
         if (where.size()) {
             path.appendComponent(where);
         }
-        path.appendComponent(what);
+        if (what.size()) {
+            path.appendComponent(what);
+        }
         if (path.exists()) {
             found.push_back(path.c_str());
             if (Verbose) {
@@ -1298,7 +1322,9 @@ static void findFiles(std::vector<std::string>& found, std::string what, std::st
         if (where.size()) {
             path.appendComponent(where);
         }
-        path.appendComponent(what);
+        if (what.size()) {
+            path.appendComponent(what);
+        }
         if (path.exists()) {
             found.push_back(path.c_str());
             if (Verbose) {
@@ -1750,7 +1776,7 @@ void InitializeIncludePaths(HeaderSearch &Headers,
 
   // Add the ellcc headers, which are relative to the ellcc binary.
   std::vector<std::string> found;
-  findFiles(found, "include");
+  findFiles(found, "", "include");
   for (size_t i = 0; i < found.size(); ++i) {
       // We pass true to ignore sysroot so that we *always* look for ecc headers
       // relative to our executable, never relative to -isysroot.
@@ -3011,6 +3037,11 @@ int main(int argc, char **argv)
             // Add the ellcc libecc.a, which is relative to the ellcc binary.
             std::vector<std::string> found;
             findFiles(found, "libecc.a", "lib");
+            if (found.size()) {
+                Input input(found[0], A);
+                InpList.push_back(input);
+            }
+            findFiles(found, "libtarget.a", "lib");
             if (found.size()) {
                 Input input(found[0], A);
                 InpList.push_back(input);

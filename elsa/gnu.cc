@@ -866,7 +866,9 @@ void Asm::itcheck_constraints(Env &env, bool module)
             } else {
                 env.report(constraint->loc, diag::err_asm_input_constraint_must_have_an_expression);
             }
-            const char* asmname = expr->isE_variable() ? expr->asE_variable()->var->asmname : NULL;
+            E_variable* evar = expr->isE_variable() ? expr->asE_variable() : NULL;
+            Variable* var = evar ? evar->var : NULL;
+            const char* asmname = var ? var->asmname : NULL;
             if (asmname)
                 asmname = env.TI.getNormalizedGCCRegisterName(asmname);
 

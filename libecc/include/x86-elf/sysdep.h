@@ -22,12 +22,12 @@
 #define _LINUX_I386_SYSDEP_H 1
 
 /* There is some commonality.  */
-#include <sysdeps/unix/i386/sysdep.h>
+#include <x86/sysdep.h>
 #include <bp-sym.h>
 #include <bp-asm.h>
 /* Defines RTLD_PRIVATE_ERRNO and USE_DL_SYSINFO.  */
 #include <dl-sysdep.h>
-#include <tls.h>
+//#include <tls.h>
 
 
 /* For Linux we can use the system call table in the header file

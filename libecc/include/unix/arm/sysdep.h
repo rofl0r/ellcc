@@ -17,8 +17,8 @@
    Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
    02111-1307 USA.  */
 
-#include <sysdeps/unix/sysdep.h>
-#include <sysdeps/arm/sysdep.h>
+#include <unix/sysdep.h>
+//#include <arm/sysdep.h>
 
 /* Some definitions to allow the assembler in sysdeps/unix/ to build
    without needing ARM-specific versions of all the files.  */

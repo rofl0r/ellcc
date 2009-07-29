@@ -1,4 +1,3 @@
-SET(LIBECC_DIR ${PROJECT_SOURCE_DIR})
 # Tell CMake to process the sub-directories
 add_subdirectory(libc)
 add_subdirectory(libm)
