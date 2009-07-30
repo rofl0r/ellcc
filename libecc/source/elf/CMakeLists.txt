@@ -1,9 +1,9 @@
-add_library(elf # SHARED
+add_library(target # SHARED
     _exit.c)
 
-add_custom_command(TARGET elf POST_BUILD
+add_custom_command(TARGET target POST_BUILD
     COMMAND mkdir -p ${LIBECC_DIR}/../lib/${ELLCC_TARGET}
-    COMMAND llvm-ar r ${LIBECC_DIR}/../lib/${ELLCC_TARGET}/libtarget.a $(stdio_OBJECTS))
+    COMMAND cp libtarget.a ${LIBECC_DIR}/../lib/${ELLCC_TARGET})
 
 add_subdirectory(crt)
 #install_targets(/lib basic)

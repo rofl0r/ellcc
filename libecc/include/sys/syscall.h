@@ -1,5 +1,4 @@
-/* Copyright (C) 1997, 1998, 2005, 2006
-   Free Software Foundation, Inc.
+/* Copyright (C) 1995, 1996, 1997 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
    The GNU C Library is free software; you can redistribute it and/or
@@ -17,15 +16,20 @@
    Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
    02111-1307 USA.  */
 
-#include_next <unix/sysdep.h>
-// #include <sysdeps/arm/sysdep.h>
+#ifndef _SYSCALL_H
+#define _SYSCALL_H	1
 
-/* Some definitions to allow the assembler in sysdeps/unix/ to build
-   without needing ARM-specific versions of all the files.  */
+/* This file should list the numbers of the system the system knows.
+   But instead of duplicating this we use the information available
+   from the kernel sources.  */
+#include <asm/unistd.h>
 
-#ifdef __ASSEMBLER__
-
-#define ret		DO_RET (r14)
-#define MOVE(a,b)	mov b,a
+#ifndef _LIBC
+/* The Linux kernel header file defines macros `__NR_<name>', but some
+   programs expect the traditional form `SYS_<name>'.  So in building libc
+   we scan the kernel's list and produce <bits/syscall.h> with macros for
+   all the `SYS_' names.  */
+# include <bits/syscall.h>
+#endif
 
 #endif

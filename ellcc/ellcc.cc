@@ -1520,7 +1520,10 @@ void AddStandardLinkPasses(PassManager &PM) {
 
   if (OptLevel == OPT_NONE) return;
 
-  createStandardLTOPasses(&PM, /*Internalize=*/ !DisableInternalize,
+  if (!DisableInternalize)
+    addPass(PM, createInternalizePass(exportList));
+
+  createStandardLTOPasses(&PM, /*Internalize=*/ false,
                           /*RunInliner=*/ !DisableInline,
                           /*VerifyEach=*/ VerifyEach);
 }
@@ -2009,8 +2012,16 @@ static int Link(const std::string& OutputFilename,
   // Mark the output files for removal if we get an interrupt.
   sys::RemoveFileOnSignal(sys::Path(OutputFilename));
 
+  // Build the linker command line arguments.
   std::vector<std::string> args;
   args.push_back(ld.c_str());
+  // Add the ellcc crt0.o, which is relative to the ellcc binary.
+  std::vector<std::string> found;
+  findFiles(found, "target.ld", "linker");
+  if (found.size()) {
+     args.push_back("-T");
+     args.push_back(found[0]);
+  }
   args.push_back("--build-id");
   if (Arch.size()) {
       args.push_back("-m" + emulations[Arch]);
@@ -2036,7 +2047,7 @@ static int Link(const std::string& OutputFilename,
   }
 
   // Add the ellcc library paths, which are relative to the ellcc binary.
-  std::vector<std::string> found;
+  found.clear();
   findFiles(found, "lib");
   for (size_t i = 0; i < found.size(); ++i) {
       args.push_back(std::string("-L") + found[i]);
@@ -2952,7 +2963,7 @@ int main(int argc, char **argv)
             elsa.addTrace((*traceIt).c_str());
         }
 
-        if (FinalPhase == BCLINKING || FinalPhase == LINKING) {
+        if (FinalPhase >= BCLINKING) {
             // Add the ellcc crt0.o, which is relative to the ellcc binary.
             std::vector<std::string> found;
             findFiles(found, "crt0.o", "lib");
@@ -3033,7 +3044,7 @@ int main(int argc, char **argv)
             InpList.push_back(input);
         }
 
-        if (FinalPhase == BCLINKING || FinalPhase == LINKING) {
+        if (FinalPhase >= BCLINKING) {
             // Add the ellcc libecc.a, which is relative to the ellcc binary.
             std::vector<std::string> found;
             findFiles(found, "libecc.a", "lib");
@@ -3041,6 +3052,7 @@ int main(int argc, char **argv)
                 Input input(found[0], A);
                 InpList.push_back(input);
             }
+            found.clear();
             findFiles(found, "libtarget.a", "lib");
             if (found.size()) {
                 Input input(found[0], A);
@@ -3072,10 +3084,6 @@ int main(int argc, char **argv)
         InputList::iterator it;
         Phases phase;
         for(phase = PREPROCESSING; phase != NUM_PHASES; phase = (Phases)(phase + 1)) {
-            if (phase == BCLINKING && (FinalPhase == GENERATION || FinalPhase == ASSEMBLY)) {
-                // Don't link bitcode if assembly language or object files are wanted.
-                continue;
-            }
             if (Verbose) {
                 cout << "Phase: " << phases[phase].name << "\n";
             }

@@ -23,10 +23,12 @@
 
 /* There is some commonality.  */
 #include <x86/sysdep.h>
+#include <unix/sysdep.h>
 #include <bp-sym.h>
 #include <bp-asm.h>
 /* Defines RTLD_PRIVATE_ERRNO and USE_DL_SYSINFO.  */
 #include <dl-sysdep.h>
+#include <sys/errno.h>
 //#include <tls.h>
 
 

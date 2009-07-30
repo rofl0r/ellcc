@@ -18,7 +18,6 @@
    02111-1307 USA.  */
 
 #include <unix/sysdep.h>
-//#include <arm/sysdep.h>
 
 /* Some definitions to allow the assembler in sysdeps/unix/ to build
    without needing ARM-specific versions of all the files.  */

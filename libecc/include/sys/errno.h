@@ -9,10 +9,8 @@ _BEGIN_STD_C
 
 #include <sys/reent.h>
 
-#ifndef _REENT_ONLY
 #define errno (*__errno())
 extern int *__errno(void);
-#endif
 
 /* Please don't use these variables directly.
    Use strerror instead. */
@@ -24,6 +22,7 @@ extern int sys_nerr;
 #endif
 
 #define __errno_r(ptr) ((ptr)->_errno)
+#define __set_errno(x) (errno = (x))
 
 #define	EPERM 1		/* Not super-user */
 #define	ENOENT 2	/* No such file or directory */
