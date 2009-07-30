@@ -457,7 +457,14 @@ llvm::Value* CC2LLVMEnv::declaration(const Variable* var, llvm::Value* init, int
     const llvm::Type* type = makeTypeSpecifier(var->loc, var->type);
     VDEBUG("declaration", var->loc, std::cerr << toString(var->flags) << " " << var->toString());
     if (var->type->getTag() == Type::T_FUNCTION) {
+#if RICH
+        if (!var->hasFlag(DF_REFERENCED)) {
+            // Never referenced.
+            return NULL;
+        }
+#endif
         llvm::GlobalValue::LinkageTypes linkage = getLinkage(var->flags);
+
         if (linkage == llvm::GlobalValue::InternalLinkage && var->funcDefn == NULL) {
             // No definition exists for this static function.
             return NULL;

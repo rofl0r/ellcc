@@ -6884,6 +6884,7 @@ Type *E_funCall::inner2_itcheck(Env &env, LookupSet &candidates)
       // the function, and in all other respects the function
       // remains a member of the base class."
       chosen = env.storeVar(chosen);
+      chosen->setFlag(DF_REFERENCED);
       if (fevar) {
         fevar->var = chosen;
         maybeNondependent(env, pqname->loc, fevar->nondependentVar, chosen);   // in/t0385.cc
