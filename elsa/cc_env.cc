@@ -2,6 +2,7 @@
 // code for cc_env.h
 
 #include "cc_env.h"        // this module
+#include "datablok.h"
 #include "trace.h"         // tracingSys
 #include "ckheap.h"        // heapCheck
 #include "strtable.h"      // StringTable
@@ -5378,47 +5379,52 @@ Type *Env::sizeofType(Type *t, int &size, Expression * /*nullable*/ expr)
   // 5.3.3p1: must be complete
   ensureCompleteType(diag::err_incomplete_type_compute_size_of, t);
 
-  try {
-    size = t->sizeInBytes(TI);
-    TRACE("sizeof", "sizeof(" << (expr? expr->exprToString() : t->toString()) <<
-                    ") is " << size);
-  }
-  catch (XReprSize &e) {
-    HANDLER();
-    if (e.isDynamic) {
-      // There are at least two reasonable approaches to handling
-      // dynamically-sized arrays.  One is to just make sure that
-      // an analysis can recognize them and handle them specially
-      // if necessary.  That is what Elsa is doing.  (An analysis
-      // can recognize ArrayType::DYN_SIZE.)
-      //
-      // The other approach would be to translate them away, using
-      // lower-level concepts.  However, this would (IMO) make more
-      // of a mess than is beneficial (using alloca, or perhaps even
-      // malloc), so we don't.
-      //
-      // A third approach, mentioned near declaration of
-      // XReprSize::isDynamic, is for reprSize to possibly return a
-      // symbolic expression...
-      size = 0;
-
-      report(loc(), diag::warn_array_sizeof_dynamically_sized_array_not_fully_implemented);
-      TRACE("sizeof", "sizeof(" << (expr? expr->exprToString() : t->toString()) <<
-                      ") is dynamic..");
-    } else if (t->isArrayType()) {
-      ArrayType *at = t->asArrayType();
-      if (at->size == ArrayType::NO_SIZE &&
-          PP.getLangOptions().assumeNoSizeArrayHasSizeOne) {
-        // just hacking this for now
-        return sizeofType(at->eltType, size, expr);
-      } else {
-        report(loc(), diag::err_thrown) << e.why();
-        return errorType();
+  if (expr && expr->isE_stringLit()) {
+      E_stringLit* str = expr->asE_stringLit();
+      size = str->data->getDataLen();           // RICH: wchar_t?
+  } else {
+      try {
+        size = t->sizeInBytes(TI);
+        TRACE("sizeof", "sizeof(" << (expr? expr->exprToString() : t->toString()) <<
+                        ") is " << size);
       }
-    } else {
-      report(loc(), diag::err_thrown) << e.why();
-      return errorType();
-    }
+      catch (XReprSize &e) {
+        HANDLER();
+        if (e.isDynamic) {
+          // There are at least two reasonable approaches to handling
+          // dynamically-sized arrays.  One is to just make sure that
+          // an analysis can recognize them and handle them specially
+          // if necessary.  That is what Elsa is doing.  (An analysis
+          // can recognize ArrayType::DYN_SIZE.)
+          //
+          // The other approach would be to translate them away, using
+          // lower-level concepts.  However, this would (IMO) make more
+          // of a mess than is beneficial (using alloca, or perhaps even
+          // malloc), so we don't.
+          //
+          // A third approach, mentioned near declaration of
+          // XReprSize::isDynamic, is for reprSize to possibly return a
+          // symbolic expression...
+          size = 0;
+
+          report(loc(), diag::warn_array_sizeof_dynamically_sized_array_not_fully_implemented);
+          TRACE("sizeof", "sizeof(" << (expr? expr->exprToString() : t->toString()) <<
+                          ") is dynamic..");
+        } else if (t->isArrayType()) {
+          ArrayType *at = t->asArrayType();
+          if (at->size == ArrayType::NO_SIZE &&
+              PP.getLangOptions().assumeNoSizeArrayHasSizeOne) {
+            // just hacking this for now
+            return sizeofType(at->eltType, size, expr);
+          } else {
+            report(loc(), diag::err_thrown) << e.why();
+            return errorType();
+          }
+        } else {
+          report(loc(), diag::err_thrown) << e.why();
+          return errorType();
+        }
+      }
   }
 
   // 5.3.3p6: result is of type 'size_t'; most systems (including my

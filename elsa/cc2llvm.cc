@@ -1743,14 +1743,18 @@ llvm::Value *E_fieldAcc::cc2llvm(CC2LLVMEnv &env, int& deref) const
 
 llvm::Value *E_sizeof::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
-    const llvm::Type* etype = env.makeTypeSpecifier(expr->loc, expr->type);
 
     VDEBUG("GEP6", loc, etype->print(std::cerr));
+#if RICH
+    const llvm::Type* etype = env.makeTypeSpecifier(expr->loc, expr->type);
     const llvm::Type* ptype = llvm::PointerType::get(etype, 0);       // RICH: Address space.
     llvm::Value* value = env.builder.CreateGEP(
         env.context.getNullValue(ptype),
         llvm::ConstantInt::get(env.TD.getIntPtrType(), 1));
     value = env.builder.CreatePtrToInt(value, env.TD.getIntPtrType());
+#endif
+
+    llvm::Value* value = llvm::ConstantInt::get(env.TD.getIntPtrType(), size);
     const llvm::Type* rtype = env.makeTypeSpecifier(loc, type);
     value = env.builder.CreateIntCast(value, rtype, false);
     deref = 0;
