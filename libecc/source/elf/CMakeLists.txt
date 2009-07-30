@@ -1,5 +1,5 @@
 add_library(target # SHARED
-    _exit.c)
+    _exit.c _write.c)
 
 add_custom_command(TARGET target POST_BUILD
     COMMAND mkdir -p ${LIBECC_DIR}/../lib/${ELLCC_TARGET}
