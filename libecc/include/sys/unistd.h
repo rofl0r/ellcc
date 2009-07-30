@@ -1,10 +1,6 @@
 #ifndef _SYS_UNISTD_H
 #define _SYS_UNISTD_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 _BEGIN_STD_C
 
 #include <sys/types.h>
