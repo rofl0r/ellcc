@@ -311,35 +311,6 @@
 
 #else	/* !__ASSEMBLER__ */
 
-/* We need some help from the assembler to generate optimal code.  We
-   define some macros here which later will be used.  */
-asm (".L__X'%ebx = 1\n\t"
-     ".L__X'%ecx = 2\n\t"
-     ".L__X'%edx = 2\n\t"
-     ".L__X'%eax = 3\n\t"
-     ".L__X'%esi = 3\n\t"
-     ".L__X'%edi = 3\n\t"
-     ".L__X'%ebp = 3\n\t"
-     ".L__X'%esp = 3\n\t"
-     ".macro bpushl name reg\n\t"
-     ".if 1 - \\name\n\t"
-     ".if 2 - \\name\n\t"
-     "error\n\t"
-     ".else\n\t"
-     "xchgl \\reg, %ebx\n\t"
-     ".endif\n\t"
-     ".endif\n\t"
-     ".endm\n\t"
-     ".macro bpopl name reg\n\t"
-     ".if 1 - \\name\n\t"
-     ".if 2 - \\name\n\t"
-     "error\n\t"
-     ".else\n\t"
-     "xchgl \\reg, %ebx\n\t"
-     ".endif\n\t"
-     ".endif\n\t"
-     ".endm\n\t");
-
 /* Define a macro which expands inline into the wrapper code for a system
    call.  */
 #undef INLINE_SYSCALL
@@ -453,13 +424,13 @@ asm (".L__X'%ebx = 1\n\t"
 #ifdef __PIC__
 # if defined I386_USE_SYSENTER && defined SHARED
 #  define LOADARGS_1 \
-    "bpushl .L__X'%k3, %k3\n\t"
+    "xchgl %k3, %ebx\n\t"
 #  define LOADARGS_5 \
     "movl %%ebx, %4\n\t"						      \
     "movl %3, %%ebx\n\t"
 # else
 #  define LOADARGS_1 \
-    "bpushl .L__X'%k2, %k2\n\t"
+    "xchgl %k2, %ebx\n\t"
 #  define LOADARGS_5 \
     "movl %%ebx, %3\n\t"						      \
     "movl %2, %%ebx\n\t"
@@ -480,12 +451,12 @@ asm (".L__X'%ebx = 1\n\t"
 #ifdef __PIC__
 # if defined I386_USE_SYSENTER && defined SHARED
 #  define RESTOREARGS_1 \
-    "bpopl .L__X'%k3, %k3\n\t"
+    "xchgl %k3, %ebx\n\t"
 #  define RESTOREARGS_5 \
     "movl %4, %%ebx"
 # else
 #  define RESTOREARGS_1 \
-    "bpopl .L__X'%k2, %k2\n\t"
+    "xchgl %k2, %ebx\n\t"
 #  define RESTOREARGS_5 \
     "movl %3, %%ebx"
 # endif
