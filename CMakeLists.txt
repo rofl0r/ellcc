@@ -20,3 +20,6 @@ add_subdirectory(smbase)
 
 # Now we can build the runtime libraries.
 add_subdirectory(libecc)
+
+# Now (finally!) we can test programs.
+add_subdirectory(test EXCLUDE_FROM_ALL)
