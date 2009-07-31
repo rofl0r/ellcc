@@ -1,5 +1,8 @@
+alpha-elf
 arm-elf
 mips-elf
+msp430-elf
+nios2-elf
 powerpc-elf
 powerpc64-elf
 sparc-elf

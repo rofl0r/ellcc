@@ -13,6 +13,7 @@ set(ELLCC_LIBRARY_TYPE ) # SHARED)
 file(READ ${ELLCC_SOURCE_DIR}/targets ELLCC_TARGETS)
 # Turn the targets into a cmake list.
 string(REGEX REPLACE [^a-zA-Z0-9_-]+ ";" ELLCC_TARGETS ${ELLCC_TARGETS})
+set(LINUX_TARGETS arm-elf mips-elf powerpc-elf powerpc64-elf sparc-elf x86-elf x86_64-elf)
 
 # Tell CMake to process the sub-directories
 add_subdirectory(basic)
