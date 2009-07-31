@@ -13,7 +13,7 @@
 #ifndef __ASM_ARM_UNISTD_H
 #define __ASM_ARM_UNISTD_H
 
-#define __NR_SYSCALL_BASE	0
+#define __NR_SYSCALL_BASE	0x900000
 
 /*
  * This file contains the system call numbers.

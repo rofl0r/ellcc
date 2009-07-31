@@ -972,10 +972,10 @@ void ARMTargetInfo::getGCCRegNames(const char * const *&Names,
 }
 
 const TargetInfo::GCCRegAlias ARMTargetInfo::GCCRegAliases[] = {
-  { { "a0" }, "r0" }, 
-  { { "a1" }, "r1" }, 
-  { { "a2" }, "r2" }, 
-  { { "a3" }, "r3" }, 
+  { { "a1" }, "r0" }, 
+  { { "a2" }, "r1" }, 
+  { { "a3" }, "r2" }, 
+  { { "a4" }, "r3" }, 
   { { "v1" }, "r4" }, 
   { { "v2" }, "r5" }, 
   { { "v3" }, "r6" }, 
