@@ -19,7 +19,7 @@
    02111-1307 USA.  */
 
 #include <sgidefs.h>
-#include <sysdeps/unix/sysdep.h>
+#include <unix/sysdep.h>
 
 #ifdef __ASSEMBLER__
 

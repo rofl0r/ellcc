@@ -1,5 +1,5 @@
 /*
- *  arch/arm/include/asm/unistd.h
+ *  asm/unistd.h
  *
  *  Copyright (C) 2001-2005 Russell King
  *

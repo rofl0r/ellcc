@@ -177,7 +177,8 @@ const char*  TargetInfo::typeNames[TypeIDCount] =
 //===----------------------------------------------------------------------===//
 
 static void removeGCCRegisterPrefix(const char *&Name) {
-  if (Name[0] == '%' || Name[0] == '#')
+  // RICH: Fix based on processor.
+  if (Name[0] == '%' || Name[0] == '#' || Name[0] == '$')
     Name++;
 }
 
@@ -190,7 +191,6 @@ bool TargetInfo::isValidGCCRegisterName(const char *Name) const {
   
   // Get rid of any register prefix.
   removeGCCRegisterPrefix(Name);
-
   
   if (strcmp(Name, "memory") == 0 ||
       strcmp(Name, "cc") == 0)

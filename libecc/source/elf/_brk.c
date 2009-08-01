@@ -11,9 +11,10 @@ int _brk(void* addr)
 void* _sbrk(intptr_t increment)
 {
     static void* end = &_end;
+    void* next = end;
     end += increment;
     if (!_brk(end)) {
-        return NULL;
+        return (void*)-1;
     }
-    return end;
+    return next;
 }

@@ -1469,6 +1469,7 @@ namespace {
 class MipsTargetInfo : public TargetInfo {
   static const Builtin::Info BuiltinInfo[];
   static const char * const GCCRegNames[];
+  static const GCCRegAlias GCCRegAliases[];
 public:
   MipsTargetInfo(const std::string& triple) 
     : TargetInfo(triple) {
@@ -1493,11 +1494,7 @@ public:
     return "typedef char* __builtin_va_list;";
   }
   virtual void getGCCRegAliases(const GCCRegAlias *&Aliases, 
-                                unsigned &NumAliases) const {
-    // FIXME: Implement.
-    Aliases = 0;
-    NumAliases = 0;
-  }
+                                unsigned &NumAliases) const;
 };
 
 const Builtin::Info MipsTargetInfo::BuiltinInfo[] = {
@@ -1507,10 +1504,10 @@ const Builtin::Info MipsTargetInfo::BuiltinInfo[] = {
 };
   
 const char * const MipsTargetInfo::GCCRegNames[] = {
-  "zero", "at", "r2", "r3", "r4", "r5", "r6", "r7", "r8",
-  "r9", "r10", "r11", "r12", "r13", "r14", "r15", "r16",
-  "r17", "r18", "r19", "r20", "r21", "r22", "r23", "et",
-  "bt", "gp", "sp", "fp", "ea", "ba", "ra"
+  "0", "1", "2", "3", "4", "5", "6", "7", "8",
+  "9", "10", "11", "12", "13", "14", "15", "16",
+  "17", "18", "19", "20", "21", "22", "23", "24",
+  "25", "26", "27", "28", "29", "30", "31"
 };
 
 void MipsTargetInfo::getGCCRegNames(const char * const *&Names, 
@@ -1518,6 +1515,46 @@ void MipsTargetInfo::getGCCRegNames(const char * const *&Names,
 {
   Names = GCCRegNames;
   NumNames = llvm::array_lengthof(GCCRegNames);
+}
+
+const TargetInfo::GCCRegAlias MipsTargetInfo::GCCRegAliases[] = {
+  { { "zero" }, "0" }, 
+  { { "at" }, "1" }, 
+  { { "v0" }, "2" }, 
+  { { "v1" }, "3" }, 
+  { { "a0" }, "4" }, 
+  { { "a1" }, "5" }, 
+  { { "a2" }, "6" }, 
+  { { "a3" }, "7" }, 
+  { { "t0" }, "8" }, 
+  { { "t1" }, "9" }, 
+  { { "t2" }, "10" }, 
+  { { "t3" }, "11" }, 
+  { { "t4" }, "12" }, 
+  { { "t5" }, "13" }, 
+  { { "t6" }, "14" }, 
+  { { "t7" }, "15" }, 
+  { { "s0" }, "16" }, 
+  { { "s1" }, "17" }, 
+  { { "s2" }, "18" }, 
+  { { "s3" }, "19" }, 
+  { { "s4" }, "20" }, 
+  { { "s5" }, "21" }, 
+  { { "s6" }, "22" }, 
+  { { "s7" }, "23" }, 
+  { { "t8" }, "24" }, 
+  { { "t9" }, "25" }, 
+  { { "k0" }, "26" }, 
+  { { "k1" }, "27" }, 
+  { { "gp" }, "28" }, 
+  { { "sp" }, "29" }, 
+  { { "fp", "s8" }, "29" }, 
+  { { "ra" }, "31" }, 
+};
+void MipsTargetInfo::getGCCRegAliases(const GCCRegAlias *&Aliases, 
+                                     unsigned &NumAliases) const {
+  Aliases = GCCRegAliases;
+  NumAliases = llvm::array_lengthof(GCCRegAliases);
 }
 
 /// MipsTargetInfo::getTargetDefines - Return a set of the Mips-specific #defines
