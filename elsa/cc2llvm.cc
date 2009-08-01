@@ -149,7 +149,7 @@ llvm::Value* CC2LLVMEnv::checkCondition(SourceLocation loc, llvm::Value* value, 
     {
         // Not a boolean, check for non-zero.
         checkCurrentBlock();
-        llvm::Value* zero = context.getNullValue(value->getType());
+        llvm::Value* zero = llvm::Constant::getNullValue(value->getType());
 	if (ctype->isInteger() || ctype->getTypeID() == llvm::Type::PointerTyID) {
             if (neg) {
                 value = builder.CreateICmpEQ(value, zero);
@@ -169,7 +169,7 @@ llvm::Value* CC2LLVMEnv::checkCondition(SourceLocation loc, llvm::Value* value, 
 	}
     } else if (neg) {
         // Complement the result.
-        llvm::Value* ones = context.getAllOnesValue(ctype);
+        llvm::Value* ones = llvm::Constant::getAllOnesValue(ctype);
         value = builder.CreateXor(value, ones);
     }
     return value;
@@ -491,7 +491,7 @@ llvm::Value* CC2LLVMEnv::declaration(const Variable* var, llvm::Value* init, int
     } else if (var->flags & (DF_STATIC|DF_GLOBAL|DF_EXTERN)) {
         // A global variable.
         if (!(var->flags & DF_EXTERN) && init == NULL) {
-            init = context.getNullValue(type);
+            init = llvm::Constant::getNullValue(type);
         }
         llvm::GlobalVariable* gv = (llvm::GlobalVariable*)variables.get(var);   // RICH: cast
         VDEBUG("global type", var->loc, type->print(std::cerr));
@@ -772,7 +772,7 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
 
         if (isMain) {
             // Default return value.
-            llvm::Constant* nullInt = env.context.getNullValue(returnType);
+            llvm::Constant* nullInt = llvm::Constant::getNullValue(returnType);
             VDEBUG("Store4 source", nameAndParams->var->loc, nullInt->print(std::cerr));
             VDEBUG("Store4 destination", nameAndParams->var->loc, env.returnValue->print(std::cerr));
             env.builder.CreateStore(nullInt, env.returnValue, false);
@@ -1419,9 +1419,9 @@ llvm::Value *E_boolLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     deref = 0;
     if (b)
-        return env.context.getTrue();
+        return llvm::ConstantInt::getTrue(env.context);
     else
-        return env.context.getFalse();
+        return llvm::ConstantInt::getFalse(env.context);
 }
 
 llvm::Value *E_intLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
@@ -1473,14 +1473,14 @@ llvm::Value *E_floatLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
         xunimp("floating point type");
         break;
     }
-    return env.context.getConstantFP(llvm::APFloat(*semantics, text));
+    return llvm::ConstantFP::get(env.context, llvm::APFloat(*semantics, text));
 }
 
 llvm::Value *E_stringLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     deref = 0;
     std::string value((const char*)data->getDataC(), data->getDataLen());	// RICH: cast
-    llvm::Constant* c = env.context.getConstantArray(value, false);	// Don't add a nul character.
+    llvm::Constant* c = llvm::ConstantArray::get(value, false);	// Don't add a nul character.
     // RICH: Sizeof char.
     const llvm::Type* at = env.makeTypeSpecifier(loc, type->asReferenceType()->atType);
     VDEBUG("E_stringLit", loc, at->print(std::cerr));
@@ -1493,8 +1493,8 @@ llvm::Value *E_stringLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
     // Get the address of the string as an open array.
     env.checkCurrentBlock();
     std::vector<llvm::Value*> indices;
-    indices.push_back(context.getNullValue(env.TD.getIntPtrType()));
-    indices.push_back(context.getNullValue(env.TD.getIntPtrType()));
+    indices.push_back(llvm::Constant::getNullValue(env.TD.getIntPtrType()));
+    indices.push_back(llvm::Constant::getNullValue(env.TD.getIntPtrType()));
     VDEBUG("GEP3", loc, );
     result = env.builder.CreateGEP(result, indices.begin(), indices.end(), "");
     VDEBUG("GEP3", loc, result->print(std::cerr));
@@ -1725,7 +1725,7 @@ llvm::Value *E_fieldAcc::cc2llvm(CC2LLVMEnv &env, int& deref) const
     std::vector<llvm::Value*> index;
     if (   object->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID
         || object->getType()->getContainedType(0)->getTypeID() == llvm::Type::StructTyID) {
-        index.push_back(env.context.getNullValue(value->getType()));
+        index.push_back(llvm::Constant::getNullValue(value->getType()));
     }
     index.push_back(value);
     env.checkCurrentBlock();
@@ -1758,7 +1758,7 @@ llvm::Value *E_sizeof::cc2llvm(CC2LLVMEnv &env, int& deref) const
     VDEBUG("GEP6", loc, etype->print(std::cerr));
     const llvm::Type* ptype = llvm::PointerType::get(etype, 0);       // RICH: Address space.
     llvm::Value* value = env.builder.CreateGEP(
-        env.context.getNullValue(ptype),
+        llvm::Constant::getNullValue(ptype),
         llvm::ConstantInt::get(env.TD.getIntPtrType(), 1));
     value = env.builder.CreatePtrToInt(value, env.TD.getIntPtrType());
 #endif
@@ -1783,7 +1783,7 @@ llvm::Value *E_unary::cc2llvm(CC2LLVMEnv &env, int& deref) const
     case UNY_MINUS: {   // -
 	// Negate the value.
 	env.checkCurrentBlock();
-        llvm::Value* zero = env.context.getNullValue(value->getType());
+        llvm::Value* zero = llvm::Constant::getNullValue(value->getType());
 	value = env.builder.CreateSub(zero, value);
         break;
     }
@@ -1796,7 +1796,7 @@ llvm::Value *E_unary::cc2llvm(CC2LLVMEnv &env, int& deref) const
     case UNY_BITNOT: {  // ~
         // Negate the integer value.
 	env.checkCurrentBlock();
-        llvm::Value* ones = env.context.getAllOnesValue(value->getType());
+        llvm::Value* ones = llvm::Constant::getAllOnesValue(value->getType());
         value = env.builder.CreateXor(value, ones);
 	break;
     }
@@ -1945,7 +1945,7 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLocation loc, Type* leftTyp
     if (leftType->isArrayType()) {
         // An array becomes a pointer to the first element.
         std::vector<llvm::Value*> indices;
-        indices.push_back(context.getNullValue(TD.getIntPtrType()));
+        indices.push_back(llvm::Constant::getNullValue(TD.getIntPtrType()));
         leftValue = builder.CreateGEP(leftValue, indices.begin(), indices.end(), "");
         VDEBUG("makeCast array type left ", loc, leftValue->print(std::cerr));
         llvmType = leftValue->getType();
@@ -1962,7 +1962,7 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLocation loc, Type* leftTyp
         if (rightValue) {
             // An array becomes a pointer to the first element.
             std::vector<llvm::Value*> indices;
-            indices.push_back(context.getNullValue(TD.getIntPtrType()));
+            indices.push_back(llvm::Constant::getNullValue(TD.getIntPtrType()));
             *rightValue = builder.CreateGEP(*rightValue, indices.begin(), indices.end(), "");
             VDEBUG("makeCast array type right ", loc, (*rightValue)->print(std::cerr));
             llvmType = (*rightValue)->getType();
@@ -2245,7 +2245,7 @@ llvm::Value* CC2LLVMEnv::initializer(const Initializer* init, Type* type, int& d
                 for (int i = 0; i < size; ++i) {
                     elements.push_back(llvm::ConstantInt::get(elttype, i < s->data->getDataLen() ? s->data->getData()[i] : 0));
                 }
-	        value = context.getConstantArray((llvm::ArrayType*)makeTypeSpecifier(init->loc, type),
+	        value = llvm::ConstantArray::get((llvm::ArrayType*)makeTypeSpecifier(init->loc, type),
                                                  elements);
                 break;
             } else {
@@ -2283,13 +2283,13 @@ llvm::Value* CC2LLVMEnv::initializer(const Initializer* init, Type* type, int& d
                 ++count;
             }
             while (count < size) {
-                elements.push_back(context.getNullValue(etype));
+                elements.push_back(llvm::Constant::getNullValue(etype));
                 ++count;
             }
             
             const llvm::Type* artype = makeTypeSpecifier(init->loc, type);
             VDEBUG("Init type", init->loc, artype->print(std::cerr));
-	    value = context.getConstantArray((llvm::ArrayType*)artype, elements);
+	    value = llvm::ConstantArray::get((llvm::ArrayType*)artype, elements);
 	    break;
 	} else if (type->isCompoundType()) {
             CompoundType *ct = type->asCompoundType();
@@ -2305,11 +2305,11 @@ llvm::Value* CC2LLVMEnv::initializer(const Initializer* init, Type* type, int& d
                 } else {
                     // No initializer present.
                     const llvm::Type* type = makeTypeSpecifier(v->loc, v->type);
-                    members.push_back(context.getNullValue(type));
+                    members.push_back(llvm::Constant::getNullValue(type));
                 }
             }
             const llvm::Type* sttype = makeTypeSpecifier(init->loc, type);
-            value = context.getConstantStruct((llvm::StructType*)sttype, members);
+            value = llvm::ConstantStruct::get((llvm::StructType*)sttype, members);
 	    }
     }
 
@@ -2632,7 +2632,7 @@ llvm::Value* CC2LLVMEnv::binop(SourceLocation loc, BinaryOp op, Expression* e1, 
                 // Negate the integer value.
                 right = access(right, false, deref2);                 // RICH: Volatile.
                 VDEBUG("BIN_MINUS right", loc, right->getType()->print(std::cerr); std::cerr << " "; right->print(std::cerr));
-                llvm::Value* zero = context.getNullValue(right->getType());
+                llvm::Value* zero = llvm::Constant::getNullValue(right->getType());
                 right = builder.CreateSub(zero, right);
             }
 
@@ -2666,7 +2666,7 @@ llvm::Value* CC2LLVMEnv::binop(SourceLocation loc, BinaryOp op, Expression* e1, 
                 if (   left->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID
                     || left->getType()->getContainedType(0)->getTypeID() == llvm::Type::StructTyID) {
                     VDEBUG("NullValue2", loc, right->getType()->print(std::cerr));
-                    index.push_back(context.getNullValue(right->getType()));
+                    index.push_back(llvm::Constant::getNullValue(right->getType()));
                 }
             }
             index.push_back(right);
@@ -2701,7 +2701,7 @@ llvm::Value* CC2LLVMEnv::binop(SourceLocation loc, BinaryOp op, Expression* e1, 
             // the size of the (matching) dereference types.
             const llvm::Type* ptype = llvm::PointerType::get(left->getType()->getContainedType(0), 0);       // RICH: Address space.
             llvm::Value* size = builder.CreateGEP(
-                context.getNullValue(ptype),
+                llvm::Constant::getNullValue(ptype),
                 llvm::ConstantInt::get(TD.getIntPtrType(), 1));
             size = builder.CreatePtrToInt(size, TD.getIntPtrType());
 	    left = builder.CreatePtrToInt(left, TD.getIntPtrType());
@@ -2833,12 +2833,12 @@ llvm::Value* CC2LLVMEnv::binop(SourceLocation loc, BinaryOp op, Expression* e1, 
         currentBlock = NULL;
 
         setCurrentBlock(ifTrue);
-        llvm::Value* tValue = context.getTrue();
+        llvm::Value* tValue = llvm::ConstantInt::getTrue(context);
 	builder.CreateBr(next);
         currentBlock = NULL;
 
         setCurrentBlock(ifFalse);
-        llvm::Value* fValue = context.getFalse();
+        llvm::Value* fValue = llvm::ConstantInt::getFalse(context);
 
         setCurrentBlock(next);
         llvm::PHINode* phi = builder.CreatePHI(tValue->getType());
@@ -2865,12 +2865,12 @@ llvm::Value* CC2LLVMEnv::binop(SourceLocation loc, BinaryOp op, Expression* e1, 
         currentBlock = NULL;
 
         setCurrentBlock(ifTrue);
-        llvm::Value* tValue = context.getTrue();
+        llvm::Value* tValue = llvm::ConstantInt::getTrue(context);
 	builder.CreateBr(next);
         currentBlock = NULL;
 
         setCurrentBlock(ifFalse);
-        llvm::Value* fValue = context.getFalse();
+        llvm::Value* fValue = llvm::ConstantInt::getFalse(context);
 
         setCurrentBlock(next);
         llvm::PHINode* phi = builder.CreatePHI(tValue->getType());
@@ -2955,8 +2955,8 @@ llvm::Value *E_deref::cc2llvm(CC2LLVMEnv &env, int& deref) const
      */
     if (source->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID) {
         std::vector<llvm::Value*> indices;
-        indices.push_back(env.context.getNullValue(env.TD.getIntPtrType()));
-        indices.push_back(env.context.getNullValue(env.TD.getIntPtrType()));
+        indices.push_back(llvm::Constant::getNullValue(env.TD.getIntPtrType()));
+        indices.push_back(llvm::Constant::getNullValue(env.TD.getIntPtrType()));
         source = env.builder.CreateGEP(source, indices.begin(), indices.end(), "");
         VDEBUG("E_deref GEP", loc, source->print(std::cerr));
     }
@@ -3056,7 +3056,7 @@ llvm::Value *E_sizeofType::cc2llvm(CC2LLVMEnv &env, int& deref) const
     VDEBUG("GEP5", loc, etype->print(std::cerr));
     const llvm::Type* ptype = llvm::PointerType::get(etype, 0);       // RICH: Address space.
     llvm::Value* value = env.builder.CreateGEP(
-        env.context.getNullValue(ptype),
+        llvm::Constant::getNullValue(ptype),
         llvm::ConstantInt::get(env.TD.getIntPtrType(), 1));
     value = env.builder.CreatePtrToInt(value, env.TD.getIntPtrType());
     deref = 0;

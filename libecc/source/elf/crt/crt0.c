@@ -1,17 +1,20 @@
 #include <stdlib.h>             // exit()
 #include <string.h>             // memset()
+#include <stdarg.h>
 
 extern char **environ;
-extern int main(int argc,char **argv,char **envp);
+extern int main();
 
 extern char __bss_end__;
 extern char __bss_start__;
 
-void _start(int arguments)
+void _start(char* first, ...)
 {
-    int *p = &arguments-1;
-    int argc = *p;
-    char **argv = (char **)(p + 1);
+    va_list ap;
+    va_start(ap, first);
+    int argc = *(int*)((char*)ap - sizeof(char*) - sizeof(int));
+    char **argv = (char*)ap - sizeof(char*);
+    va_end(ap);
     environ = argv + argc + 1;
     memset(&__bss_start__, 0, &__bss_end__ - &__bss_start__);
     int status = main(argc, argv, environ);
