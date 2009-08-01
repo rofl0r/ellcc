@@ -176,9 +176,8 @@ const char*  TargetInfo::typeNames[TypeIDCount] =
 
 //===----------------------------------------------------------------------===//
 
-static void removeGCCRegisterPrefix(const char *&Name) {
-  // RICH: Fix based on processor.
-  if (Name[0] == '%' || Name[0] == '#' || Name[0] == '$')
+void TargetInfo::removeGCCRegisterPrefix(const char *&Name) const {
+  if (Name[0] == getGCCRegPrefix())
     Name++;
 }
 

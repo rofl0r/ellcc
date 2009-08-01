@@ -186,7 +186,7 @@ class Constraints(ASTList<Constraint> outputs = NULL,
                   ASTList<Constraint> clobbers = NULL) {
 }
 
-class Asm(Constraints constraints = NULL) {
+class Asm(CVFlags qualifiers = CV_NONE, Constraints constraints = NULL) {
     public void itcheck_constraints(Env &env, bool module);
     public unsigned rwConstraints;      // Keep track of the number of '+' constraints.
     public unsigned numOutputs;         // The number of output constraints.

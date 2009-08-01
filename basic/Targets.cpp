@@ -1495,6 +1495,7 @@ public:
   }
   virtual void getGCCRegAliases(const GCCRegAlias *&Aliases, 
                                 unsigned &NumAliases) const;
+  char getGCCRegPrefix() const { return '$'; };
 };
 
 const Builtin::Info MipsTargetInfo::BuiltinInfo[] = {

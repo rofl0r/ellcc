@@ -418,7 +418,7 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLocation loc, Atomic
 const char* CC2LLVMEnv::variableName(Variable const *v)
 {
     if (v->asmname) {
-        return v->asmname;
+        return TI.getNormalizedGCCRegisterName(v->asmname);
     }
     return v->name;
 }
@@ -1191,26 +1191,28 @@ void S_asm::cc2llvm(CC2LLVMEnv &env) const
                 constraints << ',';
             }
             VDEBUG("S_asm output", loc, value->print(std::cerr));
-            if (   first
-                && !(constraint->info & TargetInfo::CI_AllowsMemory)
-                && value->getType()->isSingleValueType()) {
-                // Use this first output constraint as the return type.
-                returnTarget = value;
-                returnType = llvm::cast<llvm::PointerType>(value->getType())->getElementType();
-                --d.numOutputs;
-                constraints << "=" << constraint->string.c_str();
-            } else {
-                args.push_back(value);
-                argTypes.push_back(value->getType());
-                constraints << "=*" << constraint->string.c_str();
-            }
-            first = false;
-            if (constraint->info & TargetInfo::CI_ReadWrite) {
-                value = env.access(value, false, deref);                 // RICH: Volatile.
-                VDEBUG("S_asm rw", loc, value->print(std::cerr));
-                rwargs.push_back(value);
-                rwargTypes.push_back(value->getType());
-            }
+            // if (!(constraint->info & TargetInfo::CI_IsRegister)) {
+                if (   first
+                    && !(constraint->info & TargetInfo::CI_AllowsMemory)
+                    && value->getType()->isSingleValueType()) {
+                    // Use this first output constraint as the return type.
+                    returnTarget = value;
+                    returnType = llvm::cast<llvm::PointerType>(value->getType())->getElementType();
+                    --d.numOutputs;
+                    constraints << "=" << constraint->string.c_str();
+                } else {
+                    args.push_back(value);
+                    argTypes.push_back(value->getType());
+                    constraints << "=*" << constraint->string.c_str();
+                }
+                if (constraint->info & TargetInfo::CI_ReadWrite) {
+                    value = env.access(value, false, deref);                 // RICH: Volatile.
+                    VDEBUG("S_asm rw", loc, value->print(std::cerr));
+                    rwargs.push_back(value);
+                    rwargTypes.push_back(value->getType());
+                }
+                first = false;
+            //}
         }
         if (d.rwInputs.length()) {
            if (!first) {
@@ -1380,7 +1382,7 @@ void S_asm::cc2llvm(CC2LLVMEnv &env) const
     llvm::InlineAsm* function = llvm::InlineAsm::get(type,
                                                      asmstr.c_str(),
                                                      constraints.c_str(),
-                                                     false);
+                                                     !!(d.qualifiers & CV_VOLATILE));
     VDEBUG("S_asm CreateCall call", loc, function->print(std::cerr));
     llvm::CallInst *result = env.builder.CreateCall(function, args.begin(), args.end());
     result->addAttribute(~0, llvm::Attribute::NoUnwind);
@@ -1751,9 +1753,9 @@ llvm::Value *E_fieldAcc::cc2llvm(CC2LLVMEnv &env, int& deref) const
 llvm::Value *E_sizeof::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
 
-    VDEBUG("GEP6", loc, etype->print(std::cerr));
 #if RICH
     const llvm::Type* etype = env.makeTypeSpecifier(expr->loc, expr->type);
+    VDEBUG("GEP6", loc, etype->print(std::cerr));
     const llvm::Type* ptype = llvm::PointerType::get(etype, 0);       // RICH: Address space.
     llvm::Value* value = env.builder.CreateGEP(
         env.context.getNullValue(ptype),

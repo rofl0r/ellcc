@@ -254,10 +254,11 @@ public:
   const char *getNormalizedGCCRegisterName(const char *Name) const;
   
   enum ConstraintInfo {
-    CI_None = 0x00,
-    CI_AllowsMemory = 0x01,
-    CI_AllowsRegister = 0x02,
-    CI_ReadWrite = 0x04
+    CI_None             = 0x00,
+    CI_AllowsMemory     = 0x01,
+    CI_AllowsRegister   = 0x02,
+    CI_ReadWrite        = 0x04,
+    CI_IsRegister       = 0x08
   };
 
   // validateOutputConstraint, validateInputConstraint - Checks that
@@ -340,7 +341,9 @@ protected:
                               unsigned &NumNames) const = 0;
   virtual void getGCCRegAliases(const GCCRegAlias *&Aliases, 
                                 unsigned &NumAliases) const = 0;
+  void removeGCCRegisterPrefix(const char *&Name) const;
 public:
+  virtual char getGCCRegPrefix() const { return '%'; };
   virtual bool validateAsmConstraint(const char *&Name, 
                                      TargetInfo::ConstraintInfo &info) const= 0;
 };

@@ -834,6 +834,8 @@ void Asm::itcheck_constraints(Env &env, bool module)
                     if (useAsmname && asmname) {
                         // Use the 'asm' label.
                         constring << "{" << asmname << "}";
+                        constraint->info = (TargetInfo::ConstraintInfo)(constraint->info
+                                                                        |TargetInfo::CI_IsRegister);
                     } else {
                         constring << env.convertConstraint(*cp).c_str();
                     }

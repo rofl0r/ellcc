@@ -396,17 +396,16 @@ nonterm(Asm*) AsmDefinition {
   // Recently we found some code that used "const" after "asm".  What
   // is that?  Where is it documented?
 
-  // NOTE: CVQualifierSeqOpt is simply discarded here
   -> "asm" q:CVQualifierSeq "(" s:StringLiteral ")" ";"
-       { return new Asm(s); }
+       { return new Asm(s, q); }
 
   // I write two rules, exposing the optionality of CVQualifierSeq at
   // this level instead of pushing it down into CVQualifierSeqOpt, to
   // avoid an S/R conflict.
   -> "asm" q:CVQualifierSeq "(" s:StringLiteral ocs:OpConstraints ")" ";"
-       { return new Asm(s, ocs); }
+       { return new Asm(s, q, ocs); }
   -> "asm" "(" s:StringLiteral ocs:OpConstraints ")" ";"
-       { return new Asm(s, ocs); }
+       { return new Asm(s, CV_NONE, ocs); }
 }
 
 // ----------- gcc asm labels -----------
