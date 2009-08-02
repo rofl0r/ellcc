@@ -400,9 +400,11 @@ static cl::opt<Phases> FinalPhase(cl::Optional,
 );
 
 static llvm::cl::opt<bool>
-ParseOnly("PO", 
-      llvm::cl::desc("Parse only, do not translate"));
+ParseOnly("PO", llvm::cl::desc("Parse only, do not translate"));
 
+static llvm::cl::opt<bool>
+NoLink("no-link", llvm::cl::desc("Do not link bitcode files (for -c and -S)"));
+//
 //===----------------------------------------------------------------------===//
 //===          OPTIMIZATION OPTIONS
 //===----------------------------------------------------------------------===//
@@ -2885,8 +2887,9 @@ int main(int argc, char **argv)
         // Parse the command line options.
         cl::ParseCommandLineOptions(argc, argv, "C/C++ compiler\n");
         
-        exportList.push_back("_start");
-        // exportList.push_back("main");
+        exportList.push_back("_start");         // The initial entry point.
+        exportList.push_back("_estart");        // The program entry point.
+        exportList.push_back("main");           // Needed for debugging (break @ main).
 
         if (FinalPhase == OPTIMIZATION && Native)
             FinalPhase = ASSEMBLY;
@@ -3090,6 +3093,15 @@ int main(int argc, char **argv)
 
             if (phases[phase].result != NONE) {
                 // This phase deals with muiltple files.
+                if (NoLink) {
+                    if(phase == BCLINKING || phase == LINKING)
+                    // We want individual files.
+                    if (Verbose) {
+                        cout << "Phase: " << phases[phase].name << " has been supressed\n";
+                    }
+                    continue;
+                }
+
                 std::vector<Input*> files;
                 FileTypes nextType = NONE;
                 for (it = InpList.begin(); it != InpList.end(); ++it) {
