@@ -2966,7 +2966,7 @@ int main(int argc, char **argv)
             elsa.addTrace((*traceIt).c_str());
         }
 
-        if (FinalPhase >= BCLINKING) {
+        if (FinalPhase >= BCLINKING && !NoLink) {
             // Add the ellcc crt0.o, which is relative to the ellcc binary.
             std::vector<std::string> found;
             findFiles(found, "crt0.o", "lib");
@@ -3047,7 +3047,7 @@ int main(int argc, char **argv)
             InpList.push_back(input);
         }
 
-        if (FinalPhase >= BCLINKING) {
+        if (FinalPhase >= BCLINKING && !NoLink) {
             // Add the ellcc libecc.a, which is relative to the ellcc binary.
             std::vector<std::string> found;
             findFiles(found, "libecc.a", "lib");
