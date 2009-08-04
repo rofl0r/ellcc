@@ -118,6 +118,8 @@ def err_asm_matching_constraint_too_large
     : Error<"the 'asm' matching constraint '%0' is larger than the number of output constraints">;
 def err_asm_matching_constraint_different
     : Error<"the 'asm' matching constraint '%0' is different than the previous matching constraint '%1'">;
+def err_asm_matching_constraint_size_mismatch
+    : Error<"the 'asm' matching constraint '%0' with type '%1' is different in size from '%2'">;
 def err_asm_matching_constraint_io
     : Error<"the 'asm' matched constraint '%0' is defined as '+' and should be '='">;
 def err_asm_input_constraint_invalid

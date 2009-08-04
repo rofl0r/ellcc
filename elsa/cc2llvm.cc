@@ -1164,9 +1164,11 @@ void S_try::cc2llvm(CC2LLVMEnv &env) const
 
 void S_asm::cc2llvm(CC2LLVMEnv &env) const
 {
-    llvm::Value* returnTarget = NULL;
+    llvm::Value* returnTarget = NULL;           // The return type, if any.
     const llvm::Type* returnType = llvm::Type::VoidTy;
-    std::vector<llvm::Value*> args;
+    std::vector<llvm::Value*> args;             // Asm arguments.
+    std::vector<llvm::Value*> matchArgs;        // All arguments (including return, if any).
+    std::vector<llvm::Value*> matches;          // Input constraints that match.
     std::vector<const llvm::Type*> argTypes;
     std::vector<llvm::Value*> rwargs;
     std::vector<const llvm::Type*> rwargTypes;
@@ -1191,28 +1193,27 @@ void S_asm::cc2llvm(CC2LLVMEnv &env) const
                 constraints << ',';
             }
             VDEBUG("S_asm output", loc, value->print(std::cerr));
-            // if (!(constraint->info & TargetInfo::CI_IsRegister)) {
-                if (   first
-                    && !(constraint->info & TargetInfo::CI_AllowsMemory)
-                    && value->getType()->isSingleValueType()) {
-                    // Use this first output constraint as the return type.
-                    returnTarget = value;
-                    returnType = llvm::cast<llvm::PointerType>(value->getType())->getElementType();
-                    --d.numOutputs;
-                    constraints << "=" << constraint->string.c_str();
-                } else {
-                    args.push_back(value);
-                    argTypes.push_back(value->getType());
-                    constraints << "=*" << constraint->string.c_str();
-                }
-                if (constraint->info & TargetInfo::CI_ReadWrite) {
-                    value = env.access(value, false, deref);                 // RICH: Volatile.
-                    VDEBUG("S_asm rw", loc, value->print(std::cerr));
-                    rwargs.push_back(value);
-                    rwargTypes.push_back(value->getType());
-                }
-                first = false;
-            //}
+            matchArgs.push_back(value);
+            if (   first
+                && !(constraint->info & TargetInfo::CI_AllowsMemory)
+                && value->getType()->isSingleValueType()) {
+                // Use this first output constraint as the return type.
+                returnTarget = value;
+                returnType = llvm::cast<llvm::PointerType>(value->getType())->getElementType();
+                --d.numOutputs;
+                constraints << "=" << constraint->string.c_str();
+            } else {
+                args.push_back(value);
+                argTypes.push_back(value->getType());
+                constraints << "=*" << constraint->string.c_str();
+            }
+            if (constraint->info & TargetInfo::CI_ReadWrite) {
+                value = env.access(value, false, deref);                 // RICH: Volatile.
+                VDEBUG("S_asm rw", loc, value->print(std::cerr));
+                rwargs.push_back(value);
+                rwargTypes.push_back(value->getType());
+            }
+            first = false;
         }
         if (d.rwInputs.length()) {
            if (!first) {
@@ -1233,6 +1234,11 @@ void S_asm::cc2llvm(CC2LLVMEnv &env) const
             VDEBUG("S_asm input", loc, value->print(std::cerr));
             args.push_back(value);
             argTypes.push_back(value->getType());
+            if (constraint->matches >= 0) {
+                // Record this matching constraint.
+                matches.push_back(value);
+                // Check for size differences.
+            }
             if (!first) {
                 constraints << ',';
             } else {

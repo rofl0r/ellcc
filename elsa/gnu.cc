@@ -737,9 +737,10 @@ void S_computedGoto::itcheck(Env &env)
 
 void Asm::itcheck_constraints(Env &env, bool module)
 {
-    stringBuilder inputs;       // The input constraints from '+' constraints.
-    rwConstraints = 0;          // Keep track of the number of '+' constraints.
-    numOutputs = 0;             // The number of output constraints.
+    stringBuilder inputs;                       // The input constraints from '+' constraints.
+    rwConstraints = 0;                          // Keep track of the number of '+' constraints.
+    numOutputs = 0;                             // The number of output constraints.
+    std::vector<const Type*> outputTypes;       // Types of the output operands.
 
     if (constraints) {
         // Process the output constraints.
@@ -763,6 +764,7 @@ void Asm::itcheck_constraints(Env &env, bool module)
             } else {
                 env.report(constraint->loc, diag::err_asm_output_constraint_must_have_an_expression);
             }
+            outputTypes.push_back(expr->type->asRvalC());
             const char* asmname = expr->isE_variable() ? expr->asE_variable()->var->asmname : NULL;
 
             if (asmname) {
@@ -784,7 +786,7 @@ void Asm::itcheck_constraints(Env &env, bool module)
                     env.report(constr->loc, diag::err_asm_output_constraint_start);
                 } else {
                     if (*cp == '+') {
-                        inputs << ',' << (char)((numOutputs - 1) + '0');
+                        inputs << ',' << (numOutputs - 1);
                         ++rwConstraints;
                         constraint->info = TargetInfo::CI_ReadWrite;
                     }
@@ -917,6 +919,20 @@ void Asm::itcheck_constraints(Env &env, bool module)
                                     << index;
                                 good = false;
                                 continue;
+                            }
+                            if (expr->type->sizeInBits(env.TI)
+                                    != outputTypes[matches]->sizeInBits(env.TI)) {
+                                // Record the mismatched matching constraint for code generation.
+                                constraint->matches = matches;
+                                if (   !expr->type->isIntegerType()
+                                    || !outputTypes[matches]->isIntegerType()) {
+                                    // Can only have mis-matched integer types.
+                                    env.report(constraint->loc,
+                                               diag::err_asm_matching_constraint_size_mismatch)
+                                        << index
+                                        << expr->type->toString()
+                                        << outputTypes[matches]->toString();
+                                }
                             }
                             constring << result.c_str();
                             continue;

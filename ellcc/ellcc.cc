@@ -43,6 +43,7 @@
 #include "llvm/Support/RegistryParser.h"
 #include "llvm/Support/Streams.h"
 #include "llvm/Support/SystemUtils.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Timer.h"
 #include "llvm/LinkAllPasses.h"
 #include "llvm/LinkAllVMCore.h"
@@ -2856,6 +2857,13 @@ static void ComputeFeatureMap(TargetInfo& TI, llvm::StringMap<bool> &Features)
   }
 }
 
+// Catch LLVM errors.
+static void handleLLVMErrors(const std::string& reason)
+{
+    Diags.Report(FullSourceLoc(), diag::err_fe_internal_error) << reason;
+    llvm_shutdown();
+    Exit(1);
+}
 
 //===----------------------------------------------------------------------===//
 // main for ellcc
@@ -2868,6 +2876,10 @@ int main(int argc, char **argv)
 
     InitializeAllTargets();
     InitializeAllAsmPrinters();
+    // Create the diagnostic client for reporting errors or for
+    // implementing -verify.
+    OwningPtr<DiagnosticClient> DiagClient;
+    llvm::llvm_install_error_handler(handleLLVMErrors);
 
     try {
         // Initial global variable above for convenience printing of program name.
@@ -2905,9 +2917,6 @@ int main(int argc, char **argv)
             filePhases[C][PREPROCESSING].action = PREPROCESS;
         }
 
-        // Create the diagnostic client for reporting errors or for
-        // implementing -verify.
-        OwningPtr<DiagnosticClient> DiagClient;
         
 
         // If -fmessage-length=N was not specified, determine whether this
@@ -3196,15 +3205,16 @@ int main(int argc, char **argv)
             delete timers[i];
         }
             
-        status =  Diags.hasErrorOccurred() ? 4 : 0;
     } catch (const std::string& msg) {
-        cerr << argv0 << ": " << msg << "\n";
+        Diags.Report(FullSourceLoc(), diag::err_fe_internal_error) << msg;
         status =  1;
     } catch (...) {
-        cerr << argv0 << ": Unexpected unknown exception occurred.\n";
+        Diags.Report(FullSourceLoc(), diag::err_fe_internal_error)
+            << "unexpected unknown exception occurred.";
         status =  1;
     }
 
+    status =  Diags.hasErrorOccurred() ? 4 : status;
     llvm_shutdown();
     return status;
 }
