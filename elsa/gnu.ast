@@ -179,7 +179,6 @@ class TypeSpecifier {
 
 class Constraint(SourceLocation loc, StringRef name, E_stringLit constr, Expression e) {
     public ellcc::TargetInfo::ConstraintInfo info = ellcc::TargetInfo::CI_None;
-    public int matches = -1;    // >= 0: The matching constraint number.
 }
 
 class Constraints(ASTList<Constraint> outputs = NULL,

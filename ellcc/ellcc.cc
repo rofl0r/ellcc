@@ -3208,6 +3208,9 @@ int main(int argc, char **argv)
     } catch (const std::string& msg) {
         Diags.Report(FullSourceLoc(), diag::err_fe_internal_error) << msg;
         status =  1;
+    } catch (const char* msg) {
+        Diags.Report(FullSourceLoc(), diag::err_fe_internal_error) << msg;
+        status =  1;
     } catch (...) {
         Diags.Report(FullSourceLoc(), diag::err_fe_internal_error)
             << "unexpected unknown exception occurred.";

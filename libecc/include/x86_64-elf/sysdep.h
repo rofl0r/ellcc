@@ -23,6 +23,7 @@
 #include <unix/x86_64/sysdep.h>
 #include <bp-sym.h>
 #include <bp-asm.h>
+#include <sys/errno.h>
 // RICH: #include <tls.h>
 
 #ifdef IS_IN_rtld

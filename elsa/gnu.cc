@@ -740,7 +740,7 @@ void Asm::itcheck_constraints(Env &env, bool module)
     stringBuilder inputs;                       // The input constraints from '+' constraints.
     rwConstraints = 0;                          // Keep track of the number of '+' constraints.
     numOutputs = 0;                             // The number of output constraints.
-    std::vector<const Type*> outputTypes;       // Types of the output operands.
+    std::vector<Type*> outputTypes;             // Types of the output operands.
 
     if (constraints) {
         // Process the output constraints.
@@ -764,7 +764,7 @@ void Asm::itcheck_constraints(Env &env, bool module)
             } else {
                 env.report(constraint->loc, diag::err_asm_output_constraint_must_have_an_expression);
             }
-            outputTypes.push_back(expr->type->asRvalC());
+            outputTypes.push_back(expr->type->asRval());
             const char* asmname = expr->isE_variable() ? expr->asE_variable()->var->asmname : NULL;
 
             if (asmname) {
@@ -923,10 +923,19 @@ void Asm::itcheck_constraints(Env &env, bool module)
                             if (expr->type->sizeInBits(env.TI)
                                     != outputTypes[matches]->sizeInBits(env.TI)) {
                                 // Record the mismatched matching constraint for code generation.
-                                constraint->matches = matches;
-                                if (   !expr->type->isIntegerType()
-                                    || !outputTypes[matches]->isIntegerType()) {
-                                    // Can only have mis-matched integer types.
+                                if (   expr->type->isIntegerType()
+                                    && outputTypes[matches]->isIntegerType()) {
+                                    // In the case of two integer types,
+                                    // the input constraint is casted to the
+                                    // type of the output constraint.
+                                    ASTTypeId *newType
+                                        = new ASTTypeId(new TS_type(expr->loc, outputTypes[matches]),
+                                                        new Declarator(new D_name(expr->loc,
+                                                                                  NULL /*name*/),
+                                                                                  NULL /*init*/));
+                                    expr = new E_cast(expr->loc, SL_UNKNOWN, newType, expr);
+                                    expr->tcheck(env, expr);
+                                } else {
                                     env.report(constraint->loc,
                                                diag::err_asm_matching_constraint_size_mismatch)
                                         << index

@@ -55,7 +55,9 @@ void LoweredASTVisitorHelper::oneContainer(Variable *container)
 
 void LoweredASTVisitorHelper::oneVariable(Variable *tinfoVar)
 {
-  xassert(tinfoVar);
+  if (tinfoVar == NULL) {
+      throw "missing tinfoVar in LoweredASTVisitorHelper::oneVariable";
+  }
 
   TemplateInfo *tinfo = tinfoVar->templateInfo();
 

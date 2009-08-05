@@ -1167,8 +1167,6 @@ void S_asm::cc2llvm(CC2LLVMEnv &env) const
     llvm::Value* returnTarget = NULL;           // The return type, if any.
     const llvm::Type* returnType = llvm::Type::VoidTy;
     std::vector<llvm::Value*> args;             // Asm arguments.
-    std::vector<llvm::Value*> matchArgs;        // All arguments (including return, if any).
-    std::vector<llvm::Value*> matches;          // Input constraints that match.
     std::vector<const llvm::Type*> argTypes;
     std::vector<llvm::Value*> rwargs;
     std::vector<const llvm::Type*> rwargTypes;
@@ -1193,7 +1191,6 @@ void S_asm::cc2llvm(CC2LLVMEnv &env) const
                 constraints << ',';
             }
             VDEBUG("S_asm output", loc, value->print(std::cerr));
-            matchArgs.push_back(value);
             if (   first
                 && !(constraint->info & TargetInfo::CI_AllowsMemory)
                 && value->getType()->isSingleValueType()) {
@@ -1234,11 +1231,6 @@ void S_asm::cc2llvm(CC2LLVMEnv &env) const
             VDEBUG("S_asm input", loc, value->print(std::cerr));
             args.push_back(value);
             argTypes.push_back(value->getType());
-            if (constraint->matches >= 0) {
-                // Record this matching constraint.
-                matches.push_back(value);
-                // Check for size differences.
-            }
             if (!first) {
                 constraints << ',';
             } else {
