@@ -1239,6 +1239,17 @@ void S_asm::cc2llvm(CC2LLVMEnv &env) const
             constraints << constraint->string.c_str();
         }
 
+        FOREACH_ASTLIST_NC(Constraint, d.constraints->clobbers, c) {
+            Constraint* constraint = c.data();
+            VDEBUG("S_asm clobber", loc, value->print(std::cerr));
+            if (!first) {
+                constraints << ',';
+            } else {
+                first = false;
+            }
+            constraints << constraint->string.c_str();
+        }
+
         std::string machineClobbers = env.TI.getClobbers();
         if (!machineClobbers.empty()) {
             if (!first) {
