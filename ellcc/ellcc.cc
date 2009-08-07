@@ -1194,6 +1194,7 @@ static std::string CreateTargetTriple()
                 Triple = progname.substr(0, dash);
             }
         } else {
+            // Match the host for a simple program name, e.g. "ecc".
             Triple = sys::getHostTriple();
             dash = progname.find('-');
             if (dash != std::string::npos) {
