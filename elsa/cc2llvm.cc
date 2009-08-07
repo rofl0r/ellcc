@@ -348,7 +348,7 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLocation loc, Atomic
 	    fields.push_back(makeTypeSpecifier(v->loc, v->type));
         }
 
-	llvm::StructType* st = llvm::StructType::get(fields, false);	// RICH: isPacked
+	llvm::StructType* st = llvm::StructType::get(context, fields, false);	// RICH: isPacked
         llvm::cast<llvm::OpaqueType>(fwd.get())->refineAbstractTypeTo(st);
 	type = llvm::cast<llvm::Type>(fwd.get());
         VDEBUG("makeAtomicTypeSpecifier compound done", loc, type->print(std::cerr));
