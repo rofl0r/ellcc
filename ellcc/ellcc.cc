@@ -45,10 +45,10 @@
 #include "llvm/Support/SystemUtils.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Timer.h"
+#include "llvm/Support/FormattedStream.h"
 #include "llvm/LinkAllPasses.h"
 #include "llvm/LinkAllVMCore.h"
 #include "llvm/Linker.h"
-#include "llvm/Support/FormattedStream.h"
 #include <iostream>
 #include <fstream>
 #include <memory>
@@ -70,13 +70,13 @@
 using namespace llvm;
 using namespace ellcc;
 
-static std::string progname;    // The program name.        
+static std::string progname;                    // The program name.        
+static const char* argv0;                       // argv[0]
 static OwningPtr<SourceManager> SourceMgr;
 // Create a file manager object to provide access to and cache the filesystem.
 static FileManager FileMgr;
 static Diagnostic Diags;
 static OwningPtr<TargetInfo> TI;
-static const char* argv0;
 static std::vector<const char *> exportList;   // Externals to preserve.
  
 /** File types.
@@ -2008,7 +2008,7 @@ static int Link(const std::string& OutputFilename,
                 std::string& ErrMsg)
 {
   // Determine the location of the ld program.
-  sys::Path ld = FindExecutable("ecc-ld", progname);
+  sys::Path ld = sys::Program::FindProgramByName("ecc-ld");
   if (ld.isEmpty())
     PrintAndExit("Failed to find " + ld.toString());
 
@@ -2100,7 +2100,7 @@ static int Assemble(const std::string &OutputFilename,
       assm = Arch + "-elf-as";
   }
   
-  sys::Path as = FindExecutable(assm, progname);
+  sys::Path as = sys::Program::FindProgramByName(assm);
   if (as.isEmpty())
     PrintAndExit("Failed to find " + assm);
 
@@ -2587,8 +2587,6 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         } else {
             std::string Err;
             TheTarget = TargetRegistry::lookupTarget(input.module->getTargetTriple(),
-                                                     /*FallbackToHost=*/ false,
-                                                     /*RequireJIT=*/ false,
                                                      Err);
             if (TheTarget == 0) {
                 errs() << progname << ": error auto-selecting target for module '"
@@ -2608,7 +2606,8 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
             FeaturesStr = Features.getString();
         }
 
-        std::auto_ptr<TargetMachine> target(TheTarget->createTargetMachine(*input.module, FeaturesStr));
+        std::auto_ptr<TargetMachine> target(TheTarget->createTargetMachine(input.module->getTargetTriple(),
+                                                                           FeaturesStr));
         assert(target.get() && "Could not allocate target machine!");
         TargetMachine &Target = *target.get();
 
