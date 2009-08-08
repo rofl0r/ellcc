@@ -9,8 +9,4 @@ add_library(softfp # SHARED
     eqsf2.c   fixtfdi.c      floatdisf.c   floatunsisf.c  mulsf3.c  subsf3.c
     eqtf2.c   fixtfsi.c      floatditf.c   floatunsitf.c  multf3.c  subtf3.c)
 
-add_custom_command(TARGET softfp POST_BUILD
-    COMMAND mkdir -p ${LIBECC_DIR}/../lib/${ELLCC_TARGET}
-    COMMAND llvm-ar r ${LIBECC_DIR}/../lib/${ELLCC_TARGET}/libecc.a $(softfp_OBJECTS))
-
-#install_targets(/lib basic)
+ELLCC_SETUP_TARGET(softfp)

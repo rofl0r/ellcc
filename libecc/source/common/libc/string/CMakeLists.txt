@@ -1,4 +1,4 @@
-add_library(string # SHARED
+add_library(string
     bcmp.c     mempcpy.c     strcoll.c     strlwr.c       strsep.c    wcpncpy.c  wcsncat.c   wcwidth.c
     bcopy.c    memset.c      strcpy.c      strncasecmp.c  strspn.c    wcscat.c   wcsncmp.c   wmemchr.c
     bzero.c    rindex.c      strcspn.c     strncat.c      strstr.c    wcschr.c   wcsncpy.c   wmemcmp.c
@@ -10,8 +10,4 @@ add_library(string # SHARED
     memmem.c   strchr.c      strlcpy.c     strpbrk.c      u_strerr.c  wcslcpy.c  wcswidth.c
     memmove.c  strcmp.c      strlen.c      strrchr.c      wcpcpy.c    wcslen.c   wcsxfrm.c)
 
-add_custom_command(TARGET string POST_BUILD
-    COMMAND mkdir -p ${LIBECC_DIR}/../lib/${ELLCC_TARGET}
-    COMMAND llvm-ar r ${LIBECC_DIR}/../lib/${ELLCC_TARGET}/libecc.a $(string_OBJECTS))
-
-#install_targets(/lib basic)
+ELLCC_SETUP_TARGET(string)

@@ -1523,17 +1523,17 @@ void AddStandardLinkPasses(PassManager &PM) {
   if (StripDebug)
     addPass(PM, createStripSymbolsPass(true));
 
-#if RICH
+#if 1
   static struct RaiseInstructionsList changes[] = {
-    { llvm::Instruction::Add, "addll" },
-    { llvm::Instruction::Add, "addl" },
+    { llvm::Instruction::UDiv, "__udivdi3" },
+    { llvm::Instruction::URem, "__umoddi3" },
   };
 
   llvm::FunctionType* FT;
   const llvm::Type* RT;
   std::vector<const llvm::Type*>args;
 
-  RT = llvm::IntegerType::get(32);
+  RT = llvm::IntegerType::get(64);
   args.push_back(RT);
   args.push_back(RT);
   FT = llvm::FunctionType::get(RT, args, false);

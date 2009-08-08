@@ -1,8 +1,4 @@
-add_library(signal # SHARED
+add_library(signal
     signal.c)
 
-add_custom_command(TARGET signal POST_BUILD
-    COMMAND mkdir -p ${LIBECC_DIR}/../lib/${ELLCC_TARGET}
-    COMMAND llvm-ar r ${LIBECC_DIR}/../lib/${ELLCC_TARGET}/libecc.a $(signal_OBJECTS))
-
-#install_targets(/lib basic)
+ELLCC_SETUP_TARGET(signal)

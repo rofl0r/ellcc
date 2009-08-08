@@ -1,4 +1,4 @@
-add_library(stdlib # SHARED
+add_library(stdlib
     a64l.c           cxa_atexit.c    gdtoa-gethex.c  malign.c      mrand48.c   srand48.c     wcstoll_r.c
     abort.c          cxa_finalize.c  gdtoa-hexnan.c  malloc.c      msize.c     strtod.c      wcstombs.c
     abs.c            div.c           getenv.c        mallocr.c     mstats.c    strtol.c      wcstombs_r.c
@@ -15,8 +15,4 @@ add_library(stdlib # SHARED
     __call_atexit.c  _Exit.c         lldiv.c         mlock.c       setenv.c    wcstol.c
     calloc.c         __exp10.c       lrand48.c       mprec.c       setenv_r.c  wcstoll.c)
 
-add_custom_command(TARGET stdlib POST_BUILD
-    COMMAND mkdir -p ${LIBECC_DIR}/../lib/${ELLCC_TARGET}
-    COMMAND llvm-ar r ${LIBECC_DIR}/../lib/${ELLCC_TARGET}/libecc.a $(stdlib_OBJECTS))
-
-#install_targets(/lib basic)
+ELLCC_SETUP_TARGET(stdlib)

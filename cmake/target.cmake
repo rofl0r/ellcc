@@ -6,6 +6,12 @@ SET(CMAKE_SYSTEM_NAME Generic)
 #add_definitions(-native)
 #set(ELLCC_TARGET_SUBDIR /native/)
 
+macro(ELLCC_SETUP_TARGET target)
+  add_custom_command(TARGET ${target} POST_BUILD
+      COMMAND mkdir -p ${LIBECC_DIR}/../lib/${ELLCC_TARGET}
+      COMMAND llvm-ar r ${LIBECC_DIR}/../lib/${ELLCC_TARGET}/libecc.a ${${target}_OBJECTS})
+endmacro(ELLCC_SETUP_TARGET)
+
 if(ELLCC_TARGET)
     set(sep "-")
 endif(ELLCC_TARGET)

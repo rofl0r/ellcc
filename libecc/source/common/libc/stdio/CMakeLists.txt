@@ -1,4 +1,4 @@
-add_library(stdio # SHARED
+add_library(stdio
     asiprintf.c   fgets.c        fseek.c      gets.c            refill.c      sprintf.c      viscanf.c
     asniprintf.c  fileno.c       fseeko.c     getw.c            remove.c      sscanf.c       vprintf.c
     asnprintf.c   findfp.c       fsetpos.c    iprintf.c         rename.c      stdio.c        vscanf.c
@@ -15,8 +15,4 @@ add_library(stdio # SHARED
     fgetc.c       freopen.c      getdelim.c   puts.c            sniprintf.c   vfscanf.c
     fgetpos.c     fscanf.c       getline.c    putw.c            snprintf.c    viprintf.c)
 
-add_custom_command(TARGET stdio POST_BUILD
-    COMMAND mkdir -p ${LIBECC_DIR}/../lib/${ELLCC_TARGET}
-    COMMAND llvm-ar r ${LIBECC_DIR}/../lib/${ELLCC_TARGET}/libecc.a $(stdio_OBJECTS))
-
-#install_targets(/lib basic)
+ELLCC_SETUP_TARGET(stdio)
