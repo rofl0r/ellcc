@@ -3,7 +3,8 @@ INCLUDE(CMakeForceCompiler)
 # the name of the target operating system
 SET(CMAKE_SYSTEM_NAME Generic)
 
-add_definitions(-native)
+#add_definitions(-native)
+#set(ELLCC_TARGET_SUBDIR /native/)
 
 if(ELLCC_TARGET)
     set(sep "-")
