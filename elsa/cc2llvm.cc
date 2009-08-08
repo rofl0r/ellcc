@@ -3030,7 +3030,9 @@ llvm::Value *E_cond::cc2llvm(CC2LLVMEnv &env, int& deref) const
     llvm::Value* trueValue = th->cc2llvm(env, deref);
     trueValue = env.access(trueValue, false, deref);                 // RICH: Volatile.
     VDEBUG("E_conv true", loc, trueValue->print(std::cerr); std::cerr << " is " << th->type->toString());
-    env.makeCast(loc, th->type, trueValue, type);
+    if (!type->isVoid()) {
+        env.makeCast(loc, th->type, trueValue, type);
+    }
     ifTrue = env.currentBlock;
     if (env.currentBlock) {
         // Close the current block.
@@ -3042,7 +3044,9 @@ llvm::Value *E_cond::cc2llvm(CC2LLVMEnv &env, int& deref) const
     llvm::Value* falseValue = el->cc2llvm(env, deref);
     falseValue = env.access(falseValue, false, deref);                 // RICH: Volatile.
     VDEBUG("E_conv false", loc, falseValue->print(std::cerr); std::cerr << " is " << el->type->toString());
-    env.makeCast(loc, el->type, falseValue, type);
+    if (!type->isVoid()) {
+        env.makeCast(loc, el->type, falseValue, type);
+    }
     ifFalse = env.currentBlock;
 
     env.setCurrentBlock(next);
@@ -3052,6 +3056,8 @@ llvm::Value *E_cond::cc2llvm(CC2LLVMEnv &env, int& deref) const
 	phi->addIncoming(trueValue, ifTrue);
 	phi->addIncoming(falseValue, ifFalse);
         result = phi;
+    } else if (type->isVoid()) {
+        // Do nothing.
     } else {
         std::cerr << toString(loc) << ": ";
         xunimp("?:");
