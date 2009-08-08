@@ -18,6 +18,7 @@
 #include "llvm/ModuleProvider.h"
 #include "llvm/PassManager.h"
 #include "llvm/CallGraphSCCPass.h"
+#include "llvm/Instruction.h"
 #include "llvm/Bitcode/ReaderWriter.h"
 #include "llvm/Assembly/PrintModulePass.h"
 #include "llvm/Analysis/Verifier.h"
@@ -1522,10 +1523,37 @@ void AddStandardLinkPasses(PassManager &PM) {
   if (StripDebug)
     addPass(PM, createStripSymbolsPass(true));
 
+#if RICH
+  static struct RaiseInstructionsList changes[] = {
+    { llvm::Instruction::Add, "addll" },
+    { llvm::Instruction::Add, "addl" },
+  };
+
+  llvm::FunctionType* FT;
+  const llvm::Type* RT;
+  std::vector<const llvm::Type*>args;
+
+  RT = llvm::IntegerType::get(32);
+  args.push_back(RT);
+  args.push_back(RT);
+  FT = llvm::FunctionType::get(RT, args, false);
+  changes[1].FuncType = FT;
+
+  args.clear();
+  RT = llvm::IntegerType::get(64);
+  args.push_back(RT);
+  args.push_back(RT);
+  FT = llvm::FunctionType::get(RT, args, false);
+  changes[0].FuncType = FT;
+
+  addPass(PM, createRaiseInstructionsPass(changes, sizeof(changes)/sizeof(struct RaiseInstructionsList)));
+#endif
+
   if (OptLevel == OPT_NONE) return;
 
   if (!DisableInternalize)
     addPass(PM, createInternalizePass(exportList));
+
 
   createStandardLTOPasses(&PM, /*Internalize=*/ false,
                           /*RunInliner=*/ !DisableInline,
