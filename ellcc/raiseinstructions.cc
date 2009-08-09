@@ -98,7 +98,7 @@ Pass *ellcc::createRaiseInstructionsPass(const TargetInfo::RaiseInstructionsList
 //
 bool RaiseInstructions::doInitialization(Module &Mod) {
   for (int Index = 0; Index < Size; ++Index) {
-    Map.insert(MapType::value_type(List->Instruction, &List[Index]));
+    Map.insert(MapType::value_type(List[Index].Instruction, &List[Index]));
   }
 
   M = &Mod;
@@ -161,7 +161,6 @@ bool RaiseInstructions::runOnBasicBlock(BasicBlock &BB) {
       }
       // Insert a call to the function...
       CallInst* Call = CallInst::Create(Func, Args.begin(), Args.end(), "", I);
-      Call->setTailCall();
       I->replaceAllUsesWith(Call);
       // Delete the old instruction.
       I = --BBIL.erase(I);

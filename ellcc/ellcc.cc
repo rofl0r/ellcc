@@ -333,50 +333,50 @@ static void setupMappings()
 // Global options.
 //===----------------------------------------------------------------------===//
 
-static llvm::cl::opt<bool>
+static cl::opt<bool>
 EmptyInputOnly("empty-input-only", 
-      llvm::cl::desc("Force running on an empty input file"));
+      cl::desc("Force running on an empty input file"));
 
 //===----------------------------------------------------------------------===//
 // Diagnostic Options
 //===----------------------------------------------------------------------===//
 
-static llvm::cl::opt<bool>
+static cl::opt<bool>
 NoShowColumn("fno-show-column",
-             llvm::cl::desc("Do not include column number on diagnostics"));
+             cl::desc("Do not include column number on diagnostics"));
 
-static llvm::cl::opt<bool>
+static cl::opt<bool>
 NoShowLocation("fno-show-source-location",
-               llvm::cl::desc("Do not include source location information with"
+               cl::desc("Do not include source location information with"
                               " diagnostics"));
 
-static llvm::cl::opt<bool>
+static cl::opt<bool>
 NoCaretDiagnostics("fno-caret-diagnostics",
-                   llvm::cl::desc("Do not include source line and caret with"
+                   cl::desc("Do not include source line and caret with"
                                   " diagnostics"));
 
-static llvm::cl::opt<bool>
+static cl::opt<bool>
 NoDiagnosticsFixIt("fno-diagnostics-fixit-info",
-                   llvm::cl::desc("Do not include fixit information in"
+                   cl::desc("Do not include fixit information in"
                                   " diagnostics"));
 
-static llvm::cl::opt<bool>
+static cl::opt<bool>
 PrintSourceRangeInfo("fdiagnostics-print-source-range-info",
-                     llvm::cl::desc("Print source range spans in numeric form"));
+                     cl::desc("Print source range spans in numeric form"));
 
-static llvm::cl::opt<bool>
+static cl::opt<bool>
 PrintDiagnosticOption("fdiagnostics-show-option",
-             llvm::cl::desc("Print diagnostic name with mappable diagnostics"));
+             cl::desc("Print diagnostic name with mappable diagnostics"));
 
-static llvm::cl::opt<unsigned>
+static cl::opt<unsigned>
 MessageLength("fmessage-length",
-	      llvm::cl::desc("Format message diagnostics so that they fit "
+	      cl::desc("Format message diagnostics so that they fit "
 			     "within N columns or fewer, when possible."),
-	      llvm::cl::value_desc("N"));
+	      cl::value_desc("N"));
 
-static llvm::cl::opt<bool>
+static cl::opt<bool>
 NoColorDiagnostic("fno-color-diagnostics",
-	      llvm::cl::desc("Don't use colors when showing diagnostics "
+	      cl::desc("Don't use colors when showing diagnostics "
                              "(automatically turned off if output is not a "
                              "terminal)."));
 
@@ -402,11 +402,11 @@ static cl::opt<Phases> FinalPhase(cl::Optional,
     )
 );
 
-static llvm::cl::opt<bool>
-ParseOnly("PO", llvm::cl::desc("Parse only, do not translate"));
+static cl::opt<bool>
+ParseOnly("PO", cl::desc("Parse only, do not translate"));
 
-static llvm::cl::opt<bool>
-NoLink("no-link", llvm::cl::desc("Do not link bitcode files (for -c and -S)"));
+static cl::opt<bool>
+NoLink("no-link", cl::desc("Do not link bitcode files (for -c and -S)"));
 //
 //===----------------------------------------------------------------------===//
 //===          OPTIMIZATION OPTIONS
@@ -681,8 +681,8 @@ MCPU("mcpu",
      cl::value_desc("cpu-name"),
      cl::init(""));
 
-static llvm::cl::list<std::string>
-TargetFeatures("target-feature", llvm::cl::desc("Target specific attributes"));
+static cl::list<std::string>
+TargetFeatures("target-feature", cl::desc("Target specific attributes"));
 
 static cl::list<std::string>
 MAttrs("mattr", 
@@ -812,24 +812,24 @@ static void Exit(int errcode = 1)
 // Builtin Options
 //===----------------------------------------------------------------------===//
 
-static llvm::cl::opt<bool>
+static cl::opt<bool>
 TimeReport("ftime-report",
-           llvm::cl::desc("Print the amount of time each "
+           cl::desc("Print the amount of time each "
                           "phase of compilation takes"));
 
-static llvm::cl::opt<bool>
+static cl::opt<bool>
 Freestanding("ffreestanding",
-             llvm::cl::desc("Assert that the compilation takes place in a "
+             cl::desc("Assert that the compilation takes place in a "
                             "freestanding environment"));
 
-static llvm::cl::opt<bool>
-AllowBuiltins("fbuiltin", llvm::cl::init(true),
-             llvm::cl::desc("Disable implicit builtin knowledge of functions"));
+static cl::opt<bool>
+AllowBuiltins("fbuiltin", cl::init(true),
+             cl::desc("Disable implicit builtin knowledge of functions"));
 
 
-static llvm::cl::opt<bool>
-MathErrno("fmath-errno", llvm::cl::init(true),
-          llvm::cl::desc("Require math functions to respect errno"));
+static cl::opt<bool>
+MathErrno("fmath-errno", cl::init(true),
+          cl::desc("Require math functions to respect errno"));
 
 //===----------------------------------------------------------------------===//
 // Language Options
@@ -853,10 +853,10 @@ static cl::list<FileTypes> Languages("x", cl::ZeroOrMore,
         clEnumValN(O, "other", "An object file, linker command file, etc"),
         clEnumValEnd));
 
-static llvm::cl::opt<bool>
+static cl::opt<bool>
 OverflowChecking("ftrapv",
-                 llvm::cl::desc("Trap on integer overflow"),
-                 llvm::cl::init(false));
+                 cl::desc("Trap on integer overflow"),
+                 cl::init(false));
 
 static void InitializeCOptions(LangOptions &Options) {
     // Do nothing.
@@ -915,10 +915,10 @@ static const char* LangStdsNames[] =
     "GNUC++0X"
 };
 
-static llvm::cl::opt<LangStds>
-LangStd("std", llvm::cl::desc("Language standard to compile for"),
-        llvm::cl::init(lang_unspecified),
-  llvm::cl::values(clEnumValN(lang_KandR_C,     "K+R",            "Kerninghan & Ritchie C"),
+static cl::opt<LangStds>
+LangStd("std", cl::desc("Language standard to compile for"),
+        cl::init(lang_unspecified),
+  cl::values(clEnumValN(lang_KandR_C,     "K+R",            "Kerninghan & Ritchie C"),
                    clEnumValN(lang_c89,         "c89",            "ISO C 1990"),
                    clEnumValN(lang_c89,         "c90",            "ISO C 1990"),
                    clEnumValN(lang_c89,         "iso9899:1990",   "ISO C 1990"),
@@ -946,95 +946,95 @@ LangStd("std", llvm::cl::desc("Language standard to compile for"),
                               "extensions"),
                    clEnumValEnd));
 
-static llvm::cl::opt<bool>
+static cl::opt<bool>
 NoOperatorNames("fno-operator-names",
-                llvm::cl::desc("Do not treat C++ operator name keywords as "
+                cl::desc("Do not treat C++ operator name keywords as "
                                "synonyms for operators"));
 
-static llvm::cl::opt<bool>
+static cl::opt<bool>
 WritableStrings("fwritable-strings",
-              llvm::cl::desc("Store string literals as writable data"));
+              cl::desc("Store string literals as writable data"));
 
-static llvm::cl::opt<bool>
+static cl::opt<bool>
 NoLaxVectorConversions("fno-lax-vector-conversions",
-                       llvm::cl::desc("Disallow implicit conversions between "
+                       cl::desc("Disallow implicit conversions between "
                                       "vectors with a different number of "
                                       "elements or different element types"));
 
-static llvm::cl::opt<bool>
-EnableBlocks("fblocks", llvm::cl::desc("enable the 'blocks' language feature"));
+static cl::opt<bool>
+EnableBlocks("fblocks", cl::desc("enable the 'blocks' language feature"));
 
-static llvm::cl::opt<bool>
+static cl::opt<bool>
 EnableHeinousExtensions("fheinous-gnu-extensions",
-   llvm::cl::desc("enable GNU extensions that you really really shouldn't use"),
-                        llvm::cl::ValueDisallowed, llvm::cl::Hidden);
+   cl::desc("enable GNU extensions that you really really shouldn't use"),
+                        cl::ValueDisallowed, cl::Hidden);
 
-static llvm::cl::opt<bool>
+static cl::opt<bool>
 ObjCNonFragileABI("fobjc-nonfragile-abi",
-                  llvm::cl::desc("enable objective-c's nonfragile abi"));
+                  cl::desc("enable objective-c's nonfragile abi"));
 
 
-static llvm::cl::opt<bool>
+static cl::opt<bool>
 EmitAllDecls("femit-all-decls",
-              llvm::cl::desc("Emit all declarations, even if unused"));
+              cl::desc("Emit all declarations, even if unused"));
 
-static llvm::cl::opt<bool>
+static cl::opt<bool>
 Exceptions("fexceptions",
-           llvm::cl::desc("Enable support for exception handling"));
+           cl::desc("Enable support for exception handling"));
 
-static llvm::cl::opt<bool>
+static cl::opt<bool>
 GNURuntime("fgnu-runtime",
-            llvm::cl::desc("Generate output compatible with the standard GNU "
+            cl::desc("Generate output compatible with the standard GNU "
                            "Objective-C runtime"));
 
-static llvm::cl::opt<bool>
+static cl::opt<bool>
 NeXTRuntime("fnext-runtime",
-            llvm::cl::desc("Generate output compatible with the NeXT "
+            cl::desc("Generate output compatible with the NeXT "
                            "runtime"));
 
 
 
-static llvm::cl::opt<bool>
-Trigraphs("trigraphs", llvm::cl::desc("Process trigraph sequences"));
+static cl::opt<bool>
+Trigraphs("trigraphs", cl::desc("Process trigraph sequences"));
 
-static llvm::cl::opt<unsigned>
-TemplateDepth("ftemplate-depth", llvm::cl::init(99),
-              llvm::cl::desc("Maximum depth of recursive template "
+static cl::opt<unsigned>
+TemplateDepth("ftemplate-depth", cl::init(99),
+              cl::desc("Maximum depth of recursive template "
                              "instantiation"));
-static llvm::cl::opt<bool>
+static cl::opt<bool>
 DollarsInIdents("fdollars-in-identifiers",
-                llvm::cl::desc("Allow '$' in identifiers"));
+                cl::desc("Allow '$' in identifiers"));
 
 
-static llvm::cl::opt<bool>
-OptSize("Os", llvm::cl::desc("Optimize for size"));
+static cl::opt<bool>
+OptSize("Os", cl::desc("Optimize for size"));
 
-static llvm::cl::opt<bool>
+static cl::opt<bool>
 NoCommon("fno-common",
-         llvm::cl::desc("Compile common globals like normal definitions"),
-         llvm::cl::ValueDisallowed);
+         cl::desc("Compile common globals like normal definitions"),
+         cl::ValueDisallowed);
 
-static llvm::cl::opt<std::string>
+static cl::opt<std::string>
 MainFileName("main-file-name",
-             llvm::cl::desc("Main file name to use for debug info"));
+             cl::desc("Main file name to use for debug info"));
 
 // FIXME: Also add an "-fno-access-control" option.
-static llvm::cl::opt<bool>
+static cl::opt<bool>
 AccessControl("faccess-control", 
-              llvm::cl::desc("Enable C++ access control"));
+              cl::desc("Enable C++ access control"));
 
-static llvm::cl::opt<unsigned>
-PICLevel("pic-level", llvm::cl::desc("Value for __PIC__"));
+static cl::opt<unsigned>
+PICLevel("pic-level", cl::desc("Value for __PIC__"));
 
-static llvm::cl::opt<bool>
-StaticDefine("static-define", llvm::cl::desc("Should __STATIC__ be defined"));
+static cl::opt<bool>
+StaticDefine("static-define", cl::desc("Should __STATIC__ be defined"));
 
-static llvm::cl::opt<bool>
-MSVCCompat("msvc", llvm::cl::desc("Microsoft Visual C/C++ compatability"));
+static cl::opt<bool>
+MSVCCompat("msvc", cl::desc("Microsoft Visual C/C++ compatability"));
 
 static void InitializeLanguageStandard(LangOptions &LO, FileTypes FT,
                                        TargetInfo& TI,
-                                       const llvm::StringMap<bool> &Features) {
+                                       const StringMap<bool> &Features) {
   // Allow the target to set the default the langauge options as it sees fit.
   TI.getDefaultLangOptions(LO);
 
@@ -1170,12 +1170,12 @@ static void InitializeLanguageStandard(LangOptions &LO, FileTypes FT,
 // Target Triple Processing.
 //===----------------------------------------------------------------------===//
 
-static llvm::cl::opt<std::string>
+static cl::opt<std::string>
 TargetTriple("triple",
-  llvm::cl::desc("Specify target triple (e.g. mips-unknown-elf)"));
+  cl::desc("Specify target triple (e.g. mips-unknown-elf)"));
 
-static llvm::cl::opt<std::string>
-Arch("arch", llvm::cl::desc("Specify target architecture (e.g. nios2)"));
+static cl::opt<std::string>
+Arch("arch", cl::desc("Specify target architecture (e.g. nios2)"));
 
 /// CreateTargetTriple - Process the various options that affect the target
 /// triple and build a final aggregate triple that we are compiling for.
@@ -1229,9 +1229,9 @@ static std::string CreateTargetTriple()
  */
 static void findFiles(std::vector<std::string>& found, std::string what, std::string where = "")
 {
-    llvm::sys::Path MainPath = 
-        llvm::sys::Path::GetMainExecutable(argv0, (void*)(intptr_t)findFiles);
-    llvm::sys::Path path;
+    sys::Path MainPath = 
+        sys::Path::GetMainExecutable(argv0, (void*)(intptr_t)findFiles);
+    sys::Path path;
     if (!MainPath.isEmpty()) {
         MainPath.eraseComponent();  // Remove prog   from foo/bin/prog
         MainPath.eraseComponent();  // Remove /bin   from foo/bin
@@ -1507,7 +1507,7 @@ void AddStandardCompilePasses(PassManager &PM) {
 
   if (OptLevel == OPT_NONE) return;
 
-  llvm::Pass *InliningPass = !DisableInline ? createFunctionInliningPass() : 0;
+  Pass *InliningPass = !DisableInline ? createFunctionInliningPass() : 0;
   createStandardModulePasses(&PM, OptLevel,
                              OptSize,
                              /*UnitAtATime=*/ true,
@@ -1517,48 +1517,47 @@ void AddStandardCompilePasses(PassManager &PM) {
                              InliningPass);
 }
 
-void AddStandardLinkPasses(PassManager &PM) {
-  PM.add(createVerifierPass());                  // Verify that input is correct
+static TargetInfo::RaiseInstructionsList* RaiseList;
+static unsigned NumRaises;
+static void InitializeRaiseList(Module* M)
+{
+    TI->getRaiseInstructionsList(RaiseList, NumRaises);
+    for (unsigned index = 0; index < NumRaises; ++index) {
+        if (RaiseList[index].FuncType == NULL) {
+            assert(RaiseList[index].Types[0]);      // Must have a return type, at least.
+            const Type* RT = (const Type*)RaiseList[index].Types[0];
+            std::vector<const Type*>args;
+            for (unsigned type = 1; RaiseList[index].Types[type]; ++type) {
+                args.push_back((const Type*)RaiseList[index].Types[type]);
+            }
+            RaiseList[index].FuncType = FunctionType::get(RT, args, false);
+        }
 
-  // If the -strip-debug command line option was specified, do it.
-  if (StripDebug)
-    addPass(PM, createStripSymbolsPass(true));
+        // Create a reference to the function for linking.
+        M->getOrInsertFunction(RaiseList[index].Name, RaiseList[index].FuncType);
+    }
+}
 
-#if 0
-  static struct RaiseInstructionsList changes[] = {
-    { llvm::Instruction::UDiv, "__udivdi3" },
-    { llvm::Instruction::URem, "__umoddi3" },
-  };
+static void AddStandardLinkPasses(PassManager &PM)
+{
+    PM.add(createVerifierPass());               // Verify that input is correct
 
-  llvm::FunctionType* FT;
-  const llvm::Type* RT;
-  std::vector<const llvm::Type*>args;
+    // If the -strip-debug command line option was specified, do it.
+    if (StripDebug)
+        addPass(PM, createStripSymbolsPass(true));
 
-  RT = llvm::IntegerType::get(64);
-  args.push_back(RT);
-  args.push_back(RT);
-  FT = llvm::FunctionType::get(RT, args, false);
-  changes[1].FuncType = FT;
+    if (NumRaises) {
+        addPass(PM, createRaiseInstructionsPass(RaiseList, NumRaises));
+    }
 
-  args.clear();
-  RT = llvm::IntegerType::get(64);
-  args.push_back(RT);
-  args.push_back(RT);
-  FT = llvm::FunctionType::get(RT, args, false);
-  changes[0].FuncType = FT;
+    if (OptLevel == OPT_NONE) return;
 
-  addPass(PM, createRaiseInstructionsPass(changes, sizeof(changes)/sizeof(struct RaiseInstructionsList)));
-#endif
+    if (!DisableInternalize)
+        addPass(PM, createInternalizePass(exportList));
 
-  if (OptLevel == OPT_NONE) return;
-
-  if (!DisableInternalize)
-    addPass(PM, createInternalizePass(exportList));
-
-
-  createStandardLTOPasses(&PM, /*Internalize=*/ false,
-                          /*RunInliner=*/ !DisableInline,
-                          /*VerifyEach=*/ VerifyEach);
+    createStandardLTOPasses(&PM, /*Internalize=*/ false,
+                            /*RunInliner=*/ !DisableInline,
+                            /*VerifyEach=*/ VerifyEach);
 }
 
 } // anonymous namespace
@@ -1655,31 +1654,31 @@ static void PrintCommand(const std::vector<const char*> &args) {
 //   -A...    - Play with #assertions
 //   -undef   - Undefine all predefined macros
 
-static llvm::cl::list<std::string>
-D_macros("D", llvm::cl::value_desc("macro"), llvm::cl::Prefix,
-       llvm::cl::desc("Predefine the specified macro"));
-static llvm::cl::list<std::string>
-U_macros("U", llvm::cl::value_desc("macro"), llvm::cl::Prefix,
-         llvm::cl::desc("Undefine the specified macro"));
+static cl::list<std::string>
+D_macros("D", cl::value_desc("macro"), cl::Prefix,
+       cl::desc("Predefine the specified macro"));
+static cl::list<std::string>
+U_macros("U", cl::value_desc("macro"), cl::Prefix,
+         cl::desc("Undefine the specified macro"));
 
-static llvm::cl::list<std::string>
-ImplicitIncludes("include", llvm::cl::value_desc("file"),
-                 llvm::cl::desc("Include file before parsing"));
-static llvm::cl::list<std::string>
-ImplicitMacroIncludes("imacros", llvm::cl::value_desc("file"),
-                      llvm::cl::desc("Include macros from file before parsing"));
+static cl::list<std::string>
+ImplicitIncludes("include", cl::value_desc("file"),
+                 cl::desc("Include file before parsing"));
+static cl::list<std::string>
+ImplicitMacroIncludes("imacros", cl::value_desc("file"),
+                      cl::desc("Include macros from file before parsing"));
 
-static llvm::cl::opt<std::string>
-ImplicitIncludePTH("include-pth", llvm::cl::value_desc("file"),
-                   llvm::cl::desc("Include file before parsing"));
+static cl::opt<std::string>
+ImplicitIncludePTH("include-pth", cl::value_desc("file"),
+                   cl::desc("Include file before parsing"));
 
 //===----------------------------------------------------------------------===//
 // PTH.
 //===----------------------------------------------------------------------===//
 
-static llvm::cl::opt<std::string>
-TokenCache("token-cache", llvm::cl::value_desc("path"),
-           llvm::cl::desc("Use specified token cache file"));
+static cl::opt<std::string>
+TokenCache("token-cache", cl::value_desc("path"),
+           cl::desc("Use specified token cache file"));
 
 //===----------------------------------------------------------------------===//
 // Preprocessor include path information.
@@ -1693,41 +1692,41 @@ TokenCache("token-cache", llvm::cl::value_desc("path"),
 // FIXME: -imultilib
 //
 
-static llvm::cl::opt<bool>
-nostdinc("nostdinc", llvm::cl::desc("Disable standard #include directories"));
+static cl::opt<bool>
+nostdinc("nostdinc", cl::desc("Disable standard #include directories"));
 
 // Various command line options.  These four add directories to each chain.
-static llvm::cl::list<std::string>
-F_dirs("F", llvm::cl::value_desc("directory"), llvm::cl::Prefix,
-       llvm::cl::desc("Add directory to framework include search path"));
-static llvm::cl::list<std::string>
-I_dirs("I", llvm::cl::value_desc("directory"), llvm::cl::Prefix,
-       llvm::cl::desc("Add directory to include search path"));
-static llvm::cl::list<std::string>
-idirafter_dirs("idirafter", llvm::cl::value_desc("directory"), llvm::cl::Prefix,
-               llvm::cl::desc("Add directory to AFTER include search path"));
-static llvm::cl::list<std::string>
-iquote_dirs("iquote", llvm::cl::value_desc("directory"), llvm::cl::Prefix,
-               llvm::cl::desc("Add directory to QUOTE include search path"));
-static llvm::cl::list<std::string>
-isystem_dirs("isystem", llvm::cl::value_desc("directory"), llvm::cl::Prefix,
-            llvm::cl::desc("Add directory to SYSTEM include search path"));
+static cl::list<std::string>
+F_dirs("F", cl::value_desc("directory"), cl::Prefix,
+       cl::desc("Add directory to framework include search path"));
+static cl::list<std::string>
+I_dirs("I", cl::value_desc("directory"), cl::Prefix,
+       cl::desc("Add directory to include search path"));
+static cl::list<std::string>
+idirafter_dirs("idirafter", cl::value_desc("directory"), cl::Prefix,
+               cl::desc("Add directory to AFTER include search path"));
+static cl::list<std::string>
+iquote_dirs("iquote", cl::value_desc("directory"), cl::Prefix,
+               cl::desc("Add directory to QUOTE include search path"));
+static cl::list<std::string>
+isystem_dirs("isystem", cl::value_desc("directory"), cl::Prefix,
+            cl::desc("Add directory to SYSTEM include search path"));
 
 // These handle -iprefix/-iwithprefix/-iwithprefixbefore.
-static llvm::cl::list<std::string>
-iprefix_vals("iprefix", llvm::cl::value_desc("prefix"), llvm::cl::Prefix,
-             llvm::cl::desc("Set the -iwithprefix/-iwithprefixbefore prefix"));
-static llvm::cl::list<std::string>
-iwithprefix_vals("iwithprefix", llvm::cl::value_desc("dir"), llvm::cl::Prefix,
-     llvm::cl::desc("Set directory to SYSTEM include search path with prefix"));
-static llvm::cl::list<std::string>
-iwithprefixbefore_vals("iwithprefixbefore", llvm::cl::value_desc("dir"),
-                       llvm::cl::Prefix,
-            llvm::cl::desc("Set directory to include search path with prefix"));
+static cl::list<std::string>
+iprefix_vals("iprefix", cl::value_desc("prefix"), cl::Prefix,
+             cl::desc("Set the -iwithprefix/-iwithprefixbefore prefix"));
+static cl::list<std::string>
+iwithprefix_vals("iwithprefix", cl::value_desc("dir"), cl::Prefix,
+     cl::desc("Set directory to SYSTEM include search path with prefix"));
+static cl::list<std::string>
+iwithprefixbefore_vals("iwithprefixbefore", cl::value_desc("dir"),
+                       cl::Prefix,
+            cl::desc("Set directory to include search path with prefix"));
 
-static llvm::cl::opt<std::string>
-isysroot("isysroot", llvm::cl::value_desc("dir"), llvm::cl::init("/"),
-         llvm::cl::desc("Set the system root directory (usually /)"));
+static cl::opt<std::string>
+isysroot("isysroot", cl::value_desc("dir"), cl::init("/"),
+         cl::desc("Set the system root directory (usually /)"));
 
 // Finally, implement the code that groks the options above.
 
@@ -1849,7 +1848,7 @@ void InitializePreprocessorInitOptions(PreprocessorInitOptions &InitOpts)
   if (!ImplicitIncludePTH.empty() || !ImplicitIncludes.empty()) {
     // We want to add these paths to the predefines buffer in order, make a
     // temporary vector to sort by their occurrence.
-    llvm::SmallVector<std::pair<unsigned, std::string*>, 8> OrderedPaths;
+    SmallVector<std::pair<unsigned, std::string*>, 8> OrderedPaths;
 
     if (!ImplicitIncludePTH.empty())
       OrderedPaths.push_back(std::make_pair(ImplicitIncludePTH.getPosition(),
@@ -1857,7 +1856,7 @@ void InitializePreprocessorInitOptions(PreprocessorInitOptions &InitOpts)
     for (unsigned i = 0, e = ImplicitIncludes.size(); i != e; ++i)
       OrderedPaths.push_back(std::make_pair(ImplicitIncludes.getPosition(i),
                                             &ImplicitIncludes[i]));
-    llvm::array_pod_sort(OrderedPaths.begin(), OrderedPaths.end());
+    array_pod_sort(OrderedPaths.begin(), OrderedPaths.end());
 
 
     // Now that they are ordered by position, add to the predefines buffer.
@@ -1897,7 +1896,7 @@ public:
   virtual ~DriverPreprocessorFactory() {}
   
   virtual Preprocessor* CreatePreprocessor() {
-    llvm::OwningPtr<PTHManager> PTHMgr;
+    OwningPtr<PTHManager> PTHMgr;
 
     if (!TokenCache.empty() && !ImplicitIncludePTH.empty()) {
       fprintf(stderr, "error: cannot use both -token-cache and -include-pth "
@@ -1917,7 +1916,7 @@ public:
       Exit(1);
     
     // Create the Preprocessor.
-    llvm::OwningPtr<Preprocessor> PP(new Preprocessor(Diags, LO, TI,
+    OwningPtr<Preprocessor> PP(new Preprocessor(Diags, LO, TI,
                                                       SourceMgr, HeaderInfo,
                                                       PTHMgr.get()));
     
@@ -1958,8 +1957,8 @@ static bool InitializeSourceManager(Preprocessor &PP,
 
   if (EmptyInputOnly) {
     const char *EmptyStr = "";
-    llvm::MemoryBuffer *SB = 
-      llvm::MemoryBuffer::getMemBuffer(EmptyStr, EmptyStr, "<empty input>");
+    MemoryBuffer *SB = 
+      MemoryBuffer::getMemBuffer(EmptyStr, EmptyStr, "<empty input>");
     SourceMgr.createMainFileIDForMemBuffer(SB);
   } else if (InFile != "-") {
     const FileEntry *File = FileMgr.getFile(InFile);
@@ -1970,13 +1969,13 @@ static bool InitializeSourceManager(Preprocessor &PP,
       return true;
     }
   } else {
-    llvm::MemoryBuffer *SB = llvm::MemoryBuffer::getSTDIN();
+    MemoryBuffer *SB = MemoryBuffer::getSTDIN();
 
     // If stdin was empty, SB is null.  Cons up an empty memory
     // buffer now.
     if (!SB) {
       const char *EmptyStr = "";
-      SB = llvm::MemoryBuffer::getMemBuffer(EmptyStr, EmptyStr, "<stdin>");
+      SB = MemoryBuffer::getMemBuffer(EmptyStr, EmptyStr, "<stdin>");
     }
 
     SourceMgr.createMainFileIDForMemBuffer(SB);
@@ -2213,7 +2212,7 @@ static bool LinkFile(const sys::Path &File)
 //===----------------------------------------------------------------------===//
 static void doMulti(Phases phase, std::vector<Input*>& files,
                     InputList& result, TimerGroup& timerGroup,
-                    llvm::LLVMContext& context,
+                    LLVMContext& context,
                     FileTypes consumedType)
 {
     switch (phase) {
@@ -2240,10 +2239,16 @@ static void doMulti(Phases phase, std::vector<Input*>& files,
         Libraries.erase(std::unique(Libraries.begin(), Libraries.end()),
                 Libraries.end());
 
+        bool raisesDone = false;
         for (unsigned i = 0; i < files.size(); ++i) {
             if (files[i]->module) {
                 // We have this module.
                 std::string ErrorMessage;
+                if (!raisesDone) {
+                    // Initialize the support function raise list.
+                    InitializeRaiseList(files[i]->module);
+                    raisesDone = true;
+                }
                 if (TheLinker.LinkInModule(files[i]->module, &ErrorMessage)) {
                     PrintAndExit(ErrorMessage);
                 }
@@ -2263,10 +2268,7 @@ static void doMulti(Phases phase, std::vector<Input*>& files,
                         cout << "  " << files[i]->name << " was sent to the bitcode linker\n";
                     }
                     if (!isNative) {
-         // RICH               if (files[i]->type != A) {
-                            // Send libraries to the linker also, mark others as consumed.
-                            files[i]->type = consumedType;
-               // RICH         }
+                        files[i]->type = consumedType;
                     }
                 } else {
                     if (Verbose) {
@@ -2367,7 +2369,7 @@ static void doMulti(Phases phase, std::vector<Input*>& files,
 //===          doSingle - Handle a phase acting on a single file.
 //===----------------------------------------------------------------------===//
 static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes thisType,
-                          llvm::LLVMContext& context)
+                          LLVMContext& context)
 {
     FileTypes nextType = filePhases[thisType][phase].type;
 
@@ -2862,7 +2864,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
 /// ComputeTargetFeatures - Recompute the target feature list to only
 /// be the list of things that are enabled, based on the target cpu
 /// and feature list.
-static void ComputeFeatureMap(TargetInfo& TI, llvm::StringMap<bool> &Features)
+static void ComputeFeatureMap(TargetInfo& TI, StringMap<bool> &Features)
 {
     assert(Features.empty() && "invalid map"); 
 
@@ -2870,7 +2872,7 @@ static void ComputeFeatureMap(TargetInfo& TI, llvm::StringMap<bool> &Features)
     TI.getDefaultFeatures(MCPU, Features);
 
     // Apply the user specified deltas.
-    for (llvm::cl::list<std::string>::iterator it = TargetFeatures.begin(), 
+    for (cl::list<std::string>::iterator it = TargetFeatures.begin(), 
          ie = TargetFeatures.end(); it != ie; ++it) {
         const char *Name = it->c_str();
     
@@ -2908,7 +2910,7 @@ int main(int argc, char **argv)
     // Create the diagnostic client for reporting errors or for
     // implementing -verify.
     OwningPtr<DiagnosticClient> DiagClient;
-    llvm::llvm_install_error_handler(handleLLVMErrors);
+    llvm_install_error_handler(handleLLVMErrors);
 
     try {
         // Initial global variable above for convenience printing of program name.
@@ -2922,8 +2924,8 @@ int main(int argc, char **argv)
         }
 
         // RICH: Temporary work around.
-        llvm::LLVMContext& context = llvm::getGlobalContext();
-        // llvm::LLVMContext context;
+        LLVMContext& context = getGlobalContext();
+        // LLVMContext context;
         
         // Parse the command line options.
         cl::ParseCommandLineOptions(argc, argv, "C/C++ compiler\n");
@@ -2952,13 +2954,13 @@ int main(int argc, char **argv)
         // is a terminal and, if so, implicitly define -fmessage-length
         // appropriately.
         if (MessageLength.getNumOccurrences() == 0)
-            MessageLength.setValue(llvm::sys::Process::StandardErrColumns());
+            MessageLength.setValue(sys::Process::StandardErrColumns());
 
         if (!NoColorDiagnostic) {
-            NoColorDiagnostic.setValue(!llvm::sys::Process::StandardErrHasColors());
+            NoColorDiagnostic.setValue(!sys::Process::StandardErrHasColors());
         }
 
-        DiagClient.reset(new TextDiagnosticPrinter(llvm::outs(),
+        DiagClient.reset(new TextDiagnosticPrinter(outs(),
                                                    !NoShowColumn,
                                                    !NoCaretDiagnostics,
                                                    !NoShowLocation,
@@ -2991,7 +2993,7 @@ int main(int argc, char **argv)
         }
   
         // Compute the feature set, unfortunately this effects the language!
-        llvm::StringMap<bool> Features;
+        StringMap<bool> Features;
         ComputeFeatureMap(*TI.get(), Features);
 
         // Initialize Elsa.
@@ -3209,7 +3211,7 @@ int main(int argc, char **argv)
                 } else {
                     to = it->name.c_str();
                 }
-                llvm::PassManager PM;
+                PassManager PM;
                 std::ostream *out = new std::ofstream(to);
                 if (!out) {
                     std::cerr << progname << ": can't open " << to << " for writing\n";
@@ -3220,10 +3222,10 @@ int main(int argc, char **argv)
                     cout << "  creating " << ftype << "file " << to << "\n";
                 }
 #if RICH
-                llvm::OStream L(*out);
-                PM.add(new llvm::PrintModulePass(&L));
+                OStream L(*out);
+                PM.add(new PrintModulePass(&L));
 #endif
-                PM.add(llvm::CreateBitcodeWriterPass(*out));
+                PM.add(CreateBitcodeWriterPass(*out));
                 PM.run(*it->module);
                 delete out;
                 delete it->module;

@@ -324,7 +324,8 @@ public:
   struct RaiseInstructionsList {
     short Instruction;                  // The instruction to match.
     const char* Name;                   // The function that replaces the instruction.
-    llvm::FunctionType* FuncType;       // The function signature to match.
+    const void* Types[5];               // The types of the return value and arguments.
+    llvm::FunctionType* FuncType;       // The calculated function type.
   };
  
   virtual bool useGlobalsForAutomaticVariables() const { return false; }
@@ -353,10 +354,10 @@ protected:
   virtual void getGCCRegAliases(const GCCRegAlias *&Aliases, 
                                 unsigned &NumAliases) const = 0;
   void removeGCCRegisterPrefix(const char *&Name) const;
-  virtual void getRaiseInstructionsList(const RaiseInstructionsList*& List, 
+public:
+  virtual void getRaiseInstructionsList(RaiseInstructionsList*& List, 
                                         unsigned &NumRaises) const
     { List = NULL; NumRaises = 0; }
-public:
   virtual char getGCCRegPrefix() const { return '%'; };
   virtual bool validateAsmConstraint(const char *&Name, 
                                      TargetInfo::ConstraintInfo &info) const= 0;

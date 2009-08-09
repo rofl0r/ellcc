@@ -17,9 +17,11 @@
 #include "TargetInfo.h"
 #include "LangOptions.h"
 #include "llvm/Instruction.h"
+#include "llvm/Type.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/SmallString.h"
+using namespace llvm;
 using namespace ellcc;
 
 //===----------------------------------------------------------------------===//
@@ -49,7 +51,7 @@ static void DefineStd(std::vector<char> &Buf, const char *MacroName,
     Define(Buf, MacroName);
   
   // Define __unix.
-  llvm::SmallString<20> TmpStr;
+  SmallString<20> TmpStr;
   TmpStr = "__";
   TmpStr += MacroName;
   Define(Buf, TmpStr.c_str());
@@ -232,7 +234,7 @@ void AlphaTargetInfo::getGCCRegNames(const char * const *&Names,
                                      unsigned &NumNames) const
 {
   Names = GCCRegNames;
-  NumNames = llvm::array_lengthof(GCCRegNames);
+  NumNames = array_lengthof(GCCRegNames);
 }
 
 /// AlphaTargetInfo::getTargetDefines - Return a set of the Alpha-specific #defines
@@ -381,7 +383,7 @@ const char * const PPCTargetInfo::GCCRegNames[] = {
 void PPCTargetInfo::getGCCRegNames(const char * const *&Names, 
                                    unsigned &NumNames) const {
   Names = GCCRegNames;
-  NumNames = llvm::array_lengthof(GCCRegNames);
+  NumNames = array_lengthof(GCCRegNames);
 }
 
 const TargetInfo::GCCRegAlias PPCTargetInfo::GCCRegAliases[] = {
@@ -424,7 +426,7 @@ const TargetInfo::GCCRegAlias PPCTargetInfo::GCCRegAliases[] = {
 void PPCTargetInfo::getGCCRegAliases(const GCCRegAlias *&Aliases, 
                                      unsigned &NumAliases) const {
   Aliases = GCCRegAliases;
-  NumAliases = llvm::array_lengthof(GCCRegAliases);
+  NumAliases = array_lengthof(GCCRegAliases);
 }
 
 bool PPCTargetInfo::validateAsmConstraint(const char *&Name,
@@ -468,7 +470,7 @@ namespace {
 class PPC32TargetInfo : public PPCTargetInfo {
 public:
   PPC32TargetInfo(const std::string& triple) : PPCTargetInfo(triple) {
-    LongDoubleFormat = &llvm::APFloat::PPCDoubleDouble;
+    LongDoubleFormat = &APFloat::PPCDoubleDouble;
   }
 };
 } // end anonymous namespace.
@@ -480,7 +482,7 @@ public:
     LongWidth(64); LongAlign(64); PointerWidth(64); PointerAlign(64);
     SizeType = UnsignedLong;
     PtrDiffType = Long;
-    LongDoubleFormat = &llvm::APFloat::PPCDoubleDouble;
+    LongDoubleFormat = &APFloat::PPCDoubleDouble;
     IntPtrType = Long;
     UIntPtrType = UnsignedLong;
   }
@@ -567,7 +569,7 @@ public:
       // FIXME: hard coding to SSE2 for now.  This should change to NoMMXSSE so
       // that the driver controls this.
       SSELevel(SSE2) {
-    LongDoubleFormat = &llvm::APFloat::x87DoubleExtended;
+    LongDoubleFormat = &APFloat::x87DoubleExtended;
   }
   virtual void getTargetBuiltins(const Builtin::Info *&Records,
                                  unsigned &NumRecords) const {
@@ -580,12 +582,12 @@ public:
   virtual void getGCCRegNames(const char * const *&Names, 
                               unsigned &NumNames) const {
     Names = GCCRegNames;
-    NumNames = llvm::array_lengthof(GCCRegNames);
+    NumNames = array_lengthof(GCCRegNames);
   }
   virtual void getGCCRegAliases(const GCCRegAlias *&Aliases, 
                                 unsigned &NumAliases) const {
     Aliases = GCCRegAliases;
-    NumAliases = llvm::array_lengthof(GCCRegAliases);
+    NumAliases = array_lengthof(GCCRegAliases);
   }
   virtual bool validateAsmConstraint(const char *&Name,
                                      TargetInfo::ConstraintInfo &info) const;
@@ -596,7 +598,7 @@ public:
   virtual void getTargetDefines(const LangOptions &Opts,
                                 std::vector<char> &Defines) const;
   
-  virtual void HandleTargetFeatures(const llvm::StringMap<bool> &Features);
+  virtual void HandleTargetFeatures(const StringMap<bool> &Features);
 };
 
 /// HandleTargetOptions - Handle target-specific options like -msse2 and
@@ -605,7 +607,7 @@ public:
 /// invalid argument should be returned along with an optional error string.
 /// HandleTargetOptions - Perform initialization based on the user
 /// configured set of features.
-void X86TargetInfo::HandleTargetFeatures(const llvm::StringMap<bool>&Features) {
+void X86TargetInfo::HandleTargetFeatures(const StringMap<bool>&Features) {
   if (Features.lookup("sse42"))
     SSELevel = SSE42;
   else if (Features.lookup("sse41"))
@@ -735,21 +737,21 @@ public:
   virtual const char *getVAListDeclaration() const {
     return "typedef char* __builtin_va_list;";
   }
-  virtual void getRaiseInstructionsList(const RaiseInstructionsList*& List, 
+  virtual void getRaiseInstructionsList(RaiseInstructionsList*& List, 
                                         unsigned &NumRaises) const;
   static RaiseInstructionsList raiseInstructionsList[];
 };
 
 TargetInfo::RaiseInstructionsList X86_32TargetInfo::raiseInstructionsList[] = {
-    { llvm::Instruction::UDiv, "__udivdi3" },
-    { llvm::Instruction::URem, "__umoddi3" },
+    { Instruction::URem,        "__umoddi3",   { Type::Int64Ty, Type::Int64Ty, Type::Int64Ty } },
+    { Instruction::UDiv,        "__udivdi3",   { Type::Int64Ty, Type::Int64Ty, Type::Int64Ty } },
 };
 
-void X86_32TargetInfo::getRaiseInstructionsList(const RaiseInstructionsList*& List, 
+void X86_32TargetInfo::getRaiseInstructionsList(RaiseInstructionsList*& List, 
                                                 unsigned &NumRaises) const
 {
   List = raiseInstructionsList;
-  NumRaises = llvm::array_lengthof(raiseInstructionsList);
+  NumRaises = array_lengthof(raiseInstructionsList);
 }
 
 } // end anonymous namespace
@@ -984,7 +986,7 @@ const char * const ARMTargetInfo::GCCRegNames[] = {
 void ARMTargetInfo::getGCCRegNames(const char * const *&Names, 
                                    unsigned &NumNames) const {
   Names = GCCRegNames;
-  NumNames = llvm::array_lengthof(GCCRegNames);
+  NumNames = array_lengthof(GCCRegNames);
 }
 
 const TargetInfo::GCCRegAlias ARMTargetInfo::GCCRegAliases[] = {
@@ -1008,7 +1010,7 @@ const TargetInfo::GCCRegAlias ARMTargetInfo::GCCRegAliases[] = {
 void ARMTargetInfo::getGCCRegAliases(const GCCRegAlias *&Aliases, 
                                      unsigned &NumAliases) const {
   Aliases = GCCRegAliases;
-  NumAliases = llvm::array_lengthof(GCCRegAliases);
+  NumAliases = array_lengthof(GCCRegAliases);
 }
 
 bool ARMTargetInfo::validateAsmConstraint(const char *&Name,
@@ -1115,7 +1117,7 @@ const char * const SparcV8TargetInfo::GCCRegNames[] = {
 void SparcV8TargetInfo::getGCCRegNames(const char * const *&Names, 
                                        unsigned &NumNames) const {
   Names = GCCRegNames;
-  NumNames = llvm::array_lengthof(GCCRegNames);
+  NumNames = array_lengthof(GCCRegNames);
 }
 
 const TargetInfo::GCCRegAlias SparcV8TargetInfo::GCCRegAliases[] = {
@@ -1156,7 +1158,7 @@ const TargetInfo::GCCRegAlias SparcV8TargetInfo::GCCRegAliases[] = {
 void SparcV8TargetInfo::getGCCRegAliases(const GCCRegAlias *&Aliases, 
                                          unsigned &NumAliases) const {
   Aliases = GCCRegAliases;
-  NumAliases = llvm::array_lengthof(GCCRegAliases);
+  NumAliases = array_lengthof(GCCRegAliases);
 }
 } // end anonymous namespace.
 
@@ -1312,7 +1314,7 @@ void Nios2TargetInfo::getGCCRegNames(const char * const *&Names,
                                      unsigned &NumNames) const
 {
   Names = GCCRegNames;
-  NumNames = llvm::array_lengthof(GCCRegNames);
+  NumNames = array_lengthof(GCCRegNames);
 }
 
 /// Nios2TargetInfo::getTargetDefines - Return a set of the Nios2-specific #defines
@@ -1413,7 +1415,7 @@ void CellSPUTargetInfo::getGCCRegNames(const char * const *&Names,
                                      unsigned &NumNames) const
 {
   Names = GCCRegNames;
-  NumNames = llvm::array_lengthof(GCCRegNames);
+  NumNames = array_lengthof(GCCRegNames);
 }
 
 /// CellSPUTargetInfo::getTargetDefines - Return a set of the CellSPU-specific #defines
@@ -1531,7 +1533,7 @@ void MipsTargetInfo::getGCCRegNames(const char * const *&Names,
                                      unsigned &NumNames) const
 {
   Names = GCCRegNames;
-  NumNames = llvm::array_lengthof(GCCRegNames);
+  NumNames = array_lengthof(GCCRegNames);
 }
 
 const TargetInfo::GCCRegAlias MipsTargetInfo::GCCRegAliases[] = {
@@ -1571,7 +1573,7 @@ const TargetInfo::GCCRegAlias MipsTargetInfo::GCCRegAliases[] = {
 void MipsTargetInfo::getGCCRegAliases(const GCCRegAlias *&Aliases, 
                                      unsigned &NumAliases) const {
   Aliases = GCCRegAliases;
-  NumAliases = llvm::array_lengthof(GCCRegAliases);
+  NumAliases = array_lengthof(GCCRegAliases);
 }
 
 /// MipsTargetInfo::getTargetDefines - Return a set of the Mips-specific #defines
@@ -1681,7 +1683,7 @@ void Msp430TargetInfo::getGCCRegNames(const char * const *&Names,
                                      unsigned &NumNames) const
 {
   Names = GCCRegNames;
-  NumNames = llvm::array_lengthof(GCCRegNames);
+  NumNames = array_lengthof(GCCRegNames);
 }
 
 /// Msp430TargetInfo::getTargetDefines - Return a set of the Msp430-specific #defines
