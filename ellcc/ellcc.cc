@@ -12,6 +12,7 @@
 #include "FileManager.h"
 #include "TextDiagnosticPrinter.h"
 #include "LangOptions.h"
+#include "raiseinstructions.h"
 #include "TargetInfo.h"
 #include "llvm/LLVMContext.h"
 #include "llvm/Module.h"
@@ -1523,7 +1524,7 @@ void AddStandardLinkPasses(PassManager &PM) {
   if (StripDebug)
     addPass(PM, createStripSymbolsPass(true));
 
-#if 1
+#if 0
   static struct RaiseInstructionsList changes[] = {
     { llvm::Instruction::UDiv, "__udivdi3" },
     { llvm::Instruction::URem, "__umoddi3" },

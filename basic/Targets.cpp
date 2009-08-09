@@ -12,11 +12,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-// FIXME: Layering violation
 #include "Builtins.h"
 #include "TargetBuiltins.h"
 #include "TargetInfo.h"
 #include "LangOptions.h"
+#include "llvm/Instruction.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/SmallString.h"
@@ -735,7 +735,23 @@ public:
   virtual const char *getVAListDeclaration() const {
     return "typedef char* __builtin_va_list;";
   }
+  virtual void getRaiseInstructionsList(const RaiseInstructionsList*& List, 
+                                        unsigned &NumRaises) const;
+  static RaiseInstructionsList raiseInstructionsList[];
 };
+
+TargetInfo::RaiseInstructionsList X86_32TargetInfo::raiseInstructionsList[] = {
+    { llvm::Instruction::UDiv, "__udivdi3" },
+    { llvm::Instruction::URem, "__umoddi3" },
+};
+
+void X86_32TargetInfo::getRaiseInstructionsList(const RaiseInstructionsList*& List, 
+                                                unsigned &NumRaises) const
+{
+  List = raiseInstructionsList;
+  NumRaises = llvm::array_lengthof(raiseInstructionsList);
+}
+
 } // end anonymous namespace
 
 namespace {

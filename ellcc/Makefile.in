@@ -61,7 +61,7 @@ ifneq ("$(LLVM)","disabled")
   LLVMLDFLAGS := $(shell llvm-config --ldflags --libs $(LLVMTARGETS) bitreader bitwriter instrumentation scalaropts ipo linker)
   LLVMCCFLAGS := $(shell llvm-config --cxxflags)
   CC_AST_MODS += cc2llvm.ast
-  EXT_OBJS    += cc2llvm.o
+  EXT_OBJS    += cc2llvm.o raiseinstructions.o
 else
   LLVMLDFLAGS :=
   LLVMCCFLAGS :=
@@ -94,6 +94,7 @@ TOCLEAN += *.o *.d
 # that finds serious compilation problems earliest (it's ok to
 # rearrange as different parts of the code are in flux)
 ECC_OBJS := \
+  raiseinstructions.o \
   ellcc.o elsa.o \
   ppoutput.o textdiagnosticbuffer.o textdiagnosticprinter.o warnings.o dependencyfile.o \
   diagchecker.o cachetokens.o initpreprocessor.o initheadersearch.o

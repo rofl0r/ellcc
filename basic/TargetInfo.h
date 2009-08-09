@@ -23,7 +23,10 @@
 #include <vector>
 #include <string>
 
-namespace llvm { struct fltSemantics; }
+namespace llvm {
+struct fltSemantics;
+class FunctionType;
+}
 
 namespace ellcc {
 
@@ -316,6 +319,14 @@ public:
     const char * const Register;
   };
 
+  /** A list of instructions to raise to function calls.
+   */
+  struct RaiseInstructionsList {
+    short Instruction;                  // The instruction to match.
+    const char* Name;                   // The function that replaces the instruction.
+    llvm::FunctionType* FuncType;       // The function signature to match.
+  };
+ 
   virtual bool useGlobalsForAutomaticVariables() const { return false; }
 
   /// getDefaultLangOptions - Allow the target to specify default settings for
@@ -342,6 +353,9 @@ protected:
   virtual void getGCCRegAliases(const GCCRegAlias *&Aliases, 
                                 unsigned &NumAliases) const = 0;
   void removeGCCRegisterPrefix(const char *&Name) const;
+  virtual void getRaiseInstructionsList(const RaiseInstructionsList*& List, 
+                                        unsigned &NumRaises) const
+    { List = NULL; NumRaises = 0; }
 public:
   virtual char getGCCRegPrefix() const { return '%'; };
   virtual bool validateAsmConstraint(const char *&Name, 
