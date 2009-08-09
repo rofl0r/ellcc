@@ -47,4 +47,4 @@ int _iprintf_r(struct _reent *ptr, const char *fmt, ...)
 }
 
 #define INTEGER_ONLY
-#include "vfprintf.c"
+#include "_vfprintf.c"

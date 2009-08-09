@@ -13,7 +13,8 @@ add_library(stdio
     ferror.c      fputs.c        getchar_u.c  putchar_u.c       siprintf.c    vdprintf.c
     fflush.c      fread.c        getc_u.c     putc_u.c          siscanf.c     vfprintf.c
     fgetc.c       freopen.c      getdelim.c   puts.c            sniprintf.c   vfscanf.c
-    fgetpos.c     fscanf.c       getline.c    putw.c            snprintf.c    viprintf.c)
+    fgetpos.c     fscanf.c       getline.c    putw.c            snprintf.c    viprintf.c
+    _vfprintf.c)
 
 add_custom_command(TARGET stdio POST_BUILD
     COMMAND mkdir -p ${LIBECC_DIR}/../lib/${ELLCC_TARGET}
