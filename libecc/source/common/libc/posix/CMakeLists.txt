@@ -3,4 +3,7 @@ add_library(posix
     creat.c     execlp.c  execvp.c   opendir.c  readdir_r.c  seekdir.c  usleep.c
     execl.c     execv.c   _isatty.c  popen.c    rewinddir.c  sleep.c)
 
-ELLCC_SETUP_TARGET(posix)
+add_custom_command(TARGET posix POST_BUILD
+    COMMAND mkdir -p ${LIBECC_DIR}/../lib/${ELLCC_TARGET}
+            COMMAND llvm-ar r ${LIBECC_DIR}/../lib/${ELLCC_TARGET}/libecc.a
+                    $(posix_OBJECTS))

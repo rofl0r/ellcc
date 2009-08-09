@@ -5,4 +5,7 @@ add_library(ctype
     isascii.c  isprint.c  iswalpha.c  iswgraph.c  iswupper.c   _tolower.c  towlower.c
     isblank.c  ispunct.c  iswblank.c  iswlower.c  iswxdigit.c  tolower.c   towupper.c)
 
-ELLCC_SETUP_TARGET(ctype)
+add_custom_command(TARGET ctype POST_BUILD
+    COMMAND mkdir -p ${LIBECC_DIR}/../lib/${ELLCC_TARGET}
+            COMMAND llvm-ar r ${LIBECC_DIR}/../lib/${ELLCC_TARGET}/libecc.a
+                    $(ctype_OBJECTS))

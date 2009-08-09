@@ -3,4 +3,7 @@ add_library(time
     asctime_r.c  ctime_r.c   gmtime.c     lcltime_r.c  mktm_r.c    time.c      tzset.c
     clock.c      difftime.c  gmtime_r.c   local.h      strftime.c  time.tex    tzset_r.c)
 
-ELLCC_SETUP_TARGET(time)
+add_custom_command(TARGET time POST_BUILD
+    COMMAND mkdir -p ${LIBECC_DIR}/../lib/${ELLCC_TARGET}
+            COMMAND llvm-ar r ${LIBECC_DIR}/../lib/${ELLCC_TARGET}/libecc.a
+                    $(time_OBJECTS))

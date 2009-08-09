@@ -10,4 +10,7 @@ add_library(string
     memmem.c   strchr.c      strlcpy.c     strpbrk.c      u_strerr.c  wcslcpy.c  wcswidth.c
     memmove.c  strcmp.c      strlen.c      strrchr.c      wcpcpy.c    wcslen.c   wcsxfrm.c)
 
-ELLCC_SETUP_TARGET(string)
+add_custom_command(TARGET string POST_BUILD
+    COMMAND mkdir -p ${LIBECC_DIR}/../lib/${ELLCC_TARGET}
+            COMMAND llvm-ar r ${LIBECC_DIR}/../lib/${ELLCC_TARGET}/libecc.a
+                    $(string_OBJECTS))
