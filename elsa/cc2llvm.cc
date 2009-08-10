@@ -28,7 +28,7 @@ using namespace ellcc;
 
 #define SRET 1
 
-#if 0
+#if 1
 // Really verbose debugging.
 #define VDEBUG(who, where, what) std::cerr << toString(where) << ": " << who << " "; what; std::cerr << "\n"
 #else
@@ -337,15 +337,51 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLocation loc, Atomic
 	// Add this to the compound map now so we don't recurse.
         compounds.add(ct, type);
 
-	// Get the non-static data members.
 	std::vector<const llvm::Type*>fields;
-        int i = 0;
-        SFOREACH_OBJLIST(Variable, ct->dataMembers, iter) {
-            Variable const *v = iter.data();
-            VDEBUG("member", v->loc, std::cerr << v->toString());
-            const llvm::IntegerType* itype = llvm::IntegerType::get(TI.IntWidth());
-            members.add(v, llvm::ConstantInt::get(itype, i++));
-	    fields.push_back(makeTypeSpecifier(v->loc, v->type));
+        if (ct->keyword == CompoundType::K_UNION) {
+	    // Have a union, the first member is used, but
+            // the second (unused) member is used to pad
+            // to the size of the largest member.
+            uint64_t size = 0;
+            const llvm::Type* type = NULL;
+            SFOREACH_OBJLIST(Variable, ct->dataMembers, iter) {
+                Variable const *v = iter.data();
+                VDEBUG("union member", v->loc, std::cerr << v->toString());
+	        const llvm::Type* mtype = makeTypeSpecifier(v->loc, v->type);
+                uint64_t msize = TD.getTypeSizeInBits(mtype);
+                if (msize > size) {
+                    size = msize;
+                }
+                const llvm::IntegerType* itype = llvm::IntegerType::get(TI.IntWidth());
+                members.add(v, llvm::ConstantInt::get(itype, 0));
+                if (type == NULL) {
+                    // Remember the first type.
+                    type = mtype;
+                }
+            }
+
+            if (type) {
+                // Have the first member.
+	        fields.push_back(type);
+                size -= TD.getTypeSizeInBits(type);
+                if (size) {
+                    // Pad for the largest member with a char array.
+                    size /= TI.CharWidth();             // Size in bytes.
+                    const llvm::Type* etype = llvm::IntegerType::get(TI.CharWidth());
+                    const llvm::Type* ptype = llvm::ArrayType::get(etype, size);
+	            fields.push_back(ptype);
+                }
+            }
+        } else {
+	    // Get the non-static data members.
+            int i = 0;
+            SFOREACH_OBJLIST(Variable, ct->dataMembers, iter) {
+                Variable const *v = iter.data();
+                VDEBUG("member", v->loc, std::cerr << v->toString());
+                const llvm::IntegerType* itype = llvm::IntegerType::get(TI.IntWidth());
+                members.add(v, llvm::ConstantInt::get(itype, i++));
+	        fields.push_back(makeTypeSpecifier(v->loc, v->type));
+            }
         }
 
 	llvm::StructType* st = llvm::StructType::get(context, fields, false);	// RICH: isPacked
@@ -1490,24 +1526,12 @@ llvm::Value *E_stringLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
     deref = 0;
     std::string value((const char*)data->getDataC(), data->getDataLen());	// RICH: cast
     llvm::Constant* c = llvm::ConstantArray::get(value, false);	// Don't add a nul character.
-    // RICH: Sizeof char.
     const llvm::Type* at = env.makeTypeSpecifier(loc, type->asReferenceType()->atType);
     VDEBUG("E_stringLit", loc, at->print(std::cerr));
     // RICH: Non-constant strings?
     llvm::Value* result = new llvm::GlobalVariable(*env.mod, at, true,
                                                    llvm::GlobalValue::InternalLinkage,
                                                    c, ".str");
-
-#if RICH
-    // Get the address of the string as an open array.
-    env.checkCurrentBlock();
-    std::vector<llvm::Value*> indices;
-    indices.push_back(llvm::Constant::getNullValue(env.TD.getIntPtrType()));
-    indices.push_back(llvm::Constant::getNullValue(env.TD.getIntPtrType()));
-    VDEBUG("GEP3", loc, );
-    result = env.builder.CreateGEP(result, indices.begin(), indices.end(), "");
-    VDEBUG("GEP3", loc, result->print(std::cerr));
-#endif
     return result;
 }
 
@@ -1753,6 +1777,14 @@ llvm::Value *E_fieldAcc::cc2llvm(CC2LLVMEnv &env, int& deref) const
             // Need one dereference to get the actual object.
             deref = 1;
         }
+    }
+
+    const llvm::Type* rtype = env.makeTypeSpecifier(loc, type);
+    if (result->getType()->getContainedType(0) != rtype) {
+        // This is a union, cast appropriately.
+        VDEBUG("E_field mismatch", loc, std::cerr << "result "; result->print(std::cerr));
+        rtype = llvm::PointerType::get(rtype, 0);	// RICH: Address space.
+	result = env.builder.CreateBitCast(result, rtype);
     }
 
     VDEBUG("E_field deref", loc, std::cerr << "deref " << deref << " "; result->print(std::cerr));
@@ -2223,7 +2255,8 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLocation loc, Type* leftTyp
 
 /** Create a value from an initializer.
  */
-llvm::Value* CC2LLVMEnv::initializer(const Initializer* init, Type* type, int& deref, bool top)
+llvm::Value* CC2LLVMEnv::initializer(const Initializer* init, Type* type,
+                                     int& deref, bool top)
 {
     deref = 0;
     if (init == NULL) {
@@ -2302,24 +2335,47 @@ llvm::Value* CC2LLVMEnv::initializer(const Initializer* init, Type* type, int& d
 	    break;
 	} else if (type->isCompoundType()) {
             CompoundType *ct = type->asCompoundType();
-            ASTListIter<Initializer> iiter(c->inits);
+            const llvm::Type* sttype = makeTypeSpecifier(init->loc, type);
 	    std::vector<llvm::Constant*> members;
-            SFOREACH_OBJLIST(Variable, ct->dataMembers, iter) {
-                Variable const *v = iter.data();
-                if (!iiter.isDone()) {
-                    // Have an initializer for this.
+            if (ct->keyword == CompoundType::K_UNION) {
+                // Initialize the first member.
+                unsigned elements = 0;
+                ASTListIter<Initializer> iiter(c->inits);
+                SFOREACH_OBJLIST(Variable, ct->dataMembers, iter) {
+                    Variable const *v = iter.data();
                     value = initializer(iiter.data(), v->type, deref);
-                    members.push_back((llvm::Constant*)value);
-                    iiter.adv();
-                } else {
-                    // No initializer present.
-                    const llvm::Type* type = makeTypeSpecifier(v->loc, v->type);
+                    members.push_back(llvm::cast<llvm::Constant>(value));
+                    ++elements;
+                    // This loop should run exactly once for a union.
+                    break;
+                }
+                const llvm::StructType* stype = llvm::cast<llvm::StructType>(sttype);
+                while (elements < stype->getNumElements()) {
+                    // Null values for the first member (if missing)
+                    // and the pad (if present).
+                    const llvm::Type* type = stype->getTypeAtIndex(elements);
                     members.push_back(llvm::Constant::getNullValue(type));
+                    ++elements;
+                }
+            } else {
+                ASTListIter<Initializer> iiter(c->inits);
+                SFOREACH_OBJLIST(Variable, ct->dataMembers, iter) {
+                    Variable const *v = iter.data();
+                    if (!iiter.isDone()) {
+                        // Have an initializer for this.
+                        value = initializer(iiter.data(), v->type, deref);
+                        members.push_back(llvm::cast<llvm::Constant>(value));
+                        iiter.adv();
+                    } else {
+                        // No initializer present.
+                        const llvm::Type* type = makeTypeSpecifier(v->loc, v->type);
+                        members.push_back(llvm::Constant::getNullValue(type));
+                    }
                 }
             }
-            const llvm::Type* sttype = makeTypeSpecifier(init->loc, type);
+
             value = llvm::ConstantStruct::get((llvm::StructType*)sttype, members);
-	    }
+	}
     }
 
     ASTNEXTC(IN_ctor, c) {

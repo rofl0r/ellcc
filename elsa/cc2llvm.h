@@ -160,7 +160,8 @@ public:      // funcs
     /** Create a value from an initializer.
      * @return The LLVM value representing the initializer.
      */
-    llvm::Value* initializer(const Initializer* init, Type* type, int& deref, bool top = false);
+    llvm::Value* initializer(const Initializer* init, Type* type,
+                             int& deref, bool top = false);
 
     /** Handle a binary operator.
      * @param loc The source location.
