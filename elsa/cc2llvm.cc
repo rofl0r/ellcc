@@ -1780,11 +1780,16 @@ llvm::Value *E_fieldAcc::cc2llvm(CC2LLVMEnv &env, int& deref) const
     }
 
     const llvm::Type* rtype = env.makeTypeSpecifier(loc, type);
-    if (result->getType()->getContainedType(0) != rtype) {
+    if (   object->getType()->getContainedType(0)->getTypeID() == llvm::Type::StructTyID
+        && result->getType() != rtype) {
         // This is a union, cast appropriately.
-        VDEBUG("E_field mismatch", loc, std::cerr << "result "; result->print(std::cerr));
-        rtype = llvm::PointerType::get(rtype, 0);	// RICH: Address space.
-	result = env.builder.CreateBitCast(result, rtype);
+        VDEBUG("E_field mismatch", loc, std::cerr << "result "; result->print(std::cerr);
+                                        std::cerr << "rtype "; rtype->print(std::cerr));
+
+        if (!llvm::isa<llvm::PointerType>(rtype)) {
+            rtype = llvm::PointerType::get(rtype, 0);	// RICH: Address space.
+        }
+	    result = env.builder.CreateBitCast(result, rtype);
     }
 
     VDEBUG("E_field deref", loc, std::cerr << "deref " << deref << " "; result->print(std::cerr));
