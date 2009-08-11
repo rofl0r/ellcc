@@ -2889,7 +2889,7 @@ static void ComputeFeatureMap(TargetInfo& TI, StringMap<bool> &Features)
 }
 
 // Catch LLVM errors.
-static void handleLLVMErrors(const std::string& reason)
+static void handleLLVMErrors(void* user_data, const std::string& reason)
 {
     Diags.Report(FullSourceLoc(), diag::err_fe_internal_error) << reason;
     llvm_shutdown();
@@ -2910,7 +2910,7 @@ int main(int argc, char **argv)
     // Create the diagnostic client for reporting errors or for
     // implementing -verify.
     OwningPtr<DiagnosticClient> DiagClient;
-    llvm_install_error_handler(handleLLVMErrors);
+    llvm_install_error_handler(handleLLVMErrors, /* user_data */ NULL);
 
     try {
         // Initial global variable above for convenience printing of program name.

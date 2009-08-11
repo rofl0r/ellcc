@@ -28,7 +28,8 @@ using namespace ellcc;
 
 #define SRET 1
 
-#if 1
+//#define E_FIELDACC_DEBUG
+#if 0
 // Really verbose debugging.
 #define VDEBUG(who, where, what) std::cerr << toString(where) << ": " << who << " "; what; std::cerr << "\n"
 #else
@@ -1717,11 +1718,25 @@ llvm::Value *E_constructor::cc2llvm(CC2LLVMEnv &env, int& deref) const
     return object;
 }
 
+#ifdef E_FIELDACC_DEBUG
+#undef VDEBUG
+#define VDEBUG(who, where, what) std::cerr << toString(where) << ": " << who << " "; what; std::cerr << "\n"
+#endif
 llvm::Value *E_fieldAcc::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     // 'field' is the member variable.
     // The member will have been previously seen in a declaration.
+    bool isPointer = false;
+    bool isUnion = false;
+    isPointer = obj->type->isPtrOrRef();
+    if (isPointer) {
+        isUnion = obj->type->getAtType()->isUnionType();
+    } else {
+        isUnion = obj->type->isUnionType();
+    }
+
     VDEBUG("E_field obj", loc, std::cerr << obj->asString());
+    VDEBUG("E_field obj type ", loc, std::cerr << obj->type->toString(); std::cerr << "isUnion = " << isUnion);
     llvm::Value* object = obj->cc2llvm(env, deref);
     object = env.access(object, false, deref, 1);                 // RICH: Volatile.
     VDEBUG("E_field field", loc, std::cerr << field->toString());
@@ -1752,63 +1767,68 @@ llvm::Value *E_fieldAcc::cc2llvm(CC2LLVMEnv &env, int& deref) const
         return value;
     }
 
-    VDEBUG("E_field object", loc, std::cerr << "ID " << object->getType()->getContainedType(0)->getTypeID() << " ";
-        object->print(std::cerr));
-    VDEBUG("E_field value", loc, value->print(std::cerr));
-    std::vector<llvm::Value*> index;
-    if (   object->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID
-        || object->getType()->getContainedType(0)->getTypeID() == llvm::Type::StructTyID) {
-        index.push_back(llvm::Constant::getNullValue(value->getType()));
-    }
-    index.push_back(value);
-    env.checkCurrentBlock();
-    llvm::Value *result = env.builder.CreateGEP(object, index.begin(), index.end());
-    VDEBUG("E_field  after GEP", loc, result->print(std::cerr));
+    llvm::Value* result;
+    if (!isUnion) {
+        VDEBUG("E_field object", loc, std::cerr << "ID " << object->getType()->getContainedType(0)->getTypeID() << " ";
+            object->print(std::cerr));
+        VDEBUG("E_field value", loc, value->print(std::cerr));
+        std::vector<llvm::Value*> index;
+        if (   object->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID
+            || object->getType()->getContainedType(0)->getTypeID() == llvm::Type::StructTyID) {
+            index.push_back(llvm::Constant::getNullValue(value->getType()));
+        }
+        index.push_back(value);
+        env.checkCurrentBlock();
+        result = env.builder.CreateGEP(object, index.begin(), index.end());
+        VDEBUG("E_field  after GEP", loc, result->print(std::cerr));
 
-    bool first = result->getType()->getContainedType(0)->isFirstClassType();
-    deref = 0;
-    if (!first) {
-        // The object is not a first class object.
+        bool first = result->getType()->getContainedType(0)->isFirstClassType();
         deref = 0;
-    } else {
-        if (result->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID) {
+        if (!first) {
+            // The object is not a first class object.
             deref = 0;
         } else {
-            // Need one dereference to get the actual object.
-            deref = 1;
+            if (llvm::isa<llvm::ArrayType>(result->getType()->getContainedType(0))) {
+                deref = 0;
+            } else {
+                // Need one dereference to get the actual object.
+                deref = 1;
+            }
         }
-    }
-
-    const llvm::Type* rtype = env.makeTypeSpecifier(loc, type);
-    if (   object->getType()->getContainedType(0)->getTypeID() == llvm::Type::StructTyID
-        && result->getType() != rtype) {
-        // This is a union, cast appropriately.
-        VDEBUG("E_field mismatch", loc, std::cerr << "result "; result->print(std::cerr);
-                                        std::cerr << "rtype "; rtype->print(std::cerr));
-
+    } else {
+        const llvm::Type* rtype = env.makeTypeSpecifier(loc, type);
+        const llvm::Type* ftype = env.makeTypeSpecifier(loc, field->type);
+        bool first = ftype->isFirstClassType();
+        if (!first) {
+            // The object is not a first class object.
+            deref = 0;
+        } else {
+            if (llvm::isa<llvm::ArrayType>(ftype)) {
+                deref = 0;
+            } else {
+                // Need one dereference to get the actual object.
+                deref = 1;
+            }
+        }
         if (!llvm::isa<llvm::PointerType>(rtype)) {
+            // RICH: ++deref;
             rtype = llvm::PointerType::get(rtype, 0);	// RICH: Address space.
         }
-	    result = env.builder.CreateBitCast(result, rtype);
+        VDEBUG("E_field  rtype", loc, rtype->print(std::cerr));
+        VDEBUG("E_field  object", loc, object->print(std::cerr));
+        result = env.builder.CreateBitCast(object, rtype);
     }
 
     VDEBUG("E_field deref", loc, std::cerr << "deref " << deref << " "; result->print(std::cerr));
     return result;
 }
+#ifdef E_FIELDACC_DEBUG
+#undef VDEBUG
+#define VDEBUG(who, where, what)
+#endif
 
 llvm::Value *E_sizeof::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
-
-#if RICH
-    const llvm::Type* etype = env.makeTypeSpecifier(expr->loc, expr->type);
-    VDEBUG("GEP6", loc, etype->print(std::cerr));
-    const llvm::Type* ptype = llvm::PointerType::get(etype, 0);       // RICH: Address space.
-    llvm::Value* value = env.builder.CreateGEP(
-        llvm::Constant::getNullValue(ptype),
-        llvm::ConstantInt::get(env.TD.getIntPtrType(), 1));
-    value = env.builder.CreatePtrToInt(value, env.TD.getIntPtrType());
-#endif
-
     llvm::Value* value = llvm::ConstantInt::get(env.TD.getIntPtrType(), size);
     const llvm::Type* rtype = env.makeTypeSpecifier(loc, type);
     value = env.builder.CreateIntCast(value, rtype, false);
