@@ -6,6 +6,7 @@
 #include "cc2llvm.h"            // this module
 #include "TargetInfo.h"         // TargetInfo
 #include "SourceManager.h"      // SourceManager
+#include "LangOptions.h"
 #include "ElsaDiagnostic.h"
 
 // LLVM
@@ -38,7 +39,8 @@ using namespace ellcc;
 
 // -------------------- CC2LLVMEnv ---------------------
 CC2LLVMEnv::CC2LLVMEnv(StringTable &s, sm::string name, const TranslationUnit& input,
-                       TargetInfo& TI, Diagnostic& diags, llvm::LLVMContext& context)
+                       TargetInfo& TI, Diagnostic& diags, llvm::LLVMContext& context,
+                       LangOptions& LO)
   : str(s),
     TI(TI),
     diags(diags),
@@ -58,6 +60,7 @@ CC2LLVMEnv::CC2LLVMEnv(StringTable &s, sm::string name, const TranslationUnit& i
     switchType(NULL),
     builder(context, targetFolder),
     context(context),
+    LO(LO),
     string_main(str("main"))
 { 
     std::string str;
@@ -3453,9 +3456,10 @@ llvm::Module* CC2LLVMEnv::doit()
 
 // ------------------- entry point -------------------
 llvm::Module* cc_to_llvm(sm::string name, StringTable &str, TranslationUnit const &input,
-                         TargetInfo& TI, Diagnostic& diags, llvm::LLVMContext& context)
+                         TargetInfo& TI, Diagnostic& diags,
+                         llvm::LLVMContext& context, LangOptions& LO)
 {
-    CC2LLVMEnv env(str, name, input, TI, diags, context);
+    CC2LLVMEnv env(str, name, input, TI, diags, context, LO);
     return env.doit();
 }
 

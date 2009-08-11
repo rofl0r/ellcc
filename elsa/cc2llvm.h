@@ -20,6 +20,10 @@ namespace llvm {
     class SwitchInst;
 }
 
+namespace ellcc {
+    class LangOptions;
+}
+
 // Elsa
 #include "cc_ast.h"          // C++ AST
 
@@ -30,11 +34,16 @@ namespace llvm {
 // System
 #include <vector>
 
+namespace ellcc {
+    class LangOptions;
+}
+
 /** The main translator entry point.
  */
 llvm::Module* cc_to_llvm(sm::string name, StringTable &str, TranslationUnit const &input,
                          ellcc::TargetInfo& TI, ellcc::Diagnostic& diags,
-                         llvm::LLVMContext& context);
+                         llvm::LLVMContext& context,
+                         ellcc::LangOptions& LO);
 
 
 /** The translation environment.
@@ -51,7 +60,8 @@ public:      // funcs
     /** Construct an LLVM converter.
      */
     CC2LLVMEnv(StringTable &str, sm::string name, const TranslationUnit& input,
-               ellcc::TargetInfo& TI, ellcc::Diagnostic& diags, llvm::LLVMContext& context);
+               ellcc::TargetInfo& TI, ellcc::Diagnostic& diags, llvm::LLVMContext& context,
+               ellcc::LangOptions& LO);
     /** Destruct an LLVM convertor.
      */
     ~CC2LLVMEnv();
@@ -245,6 +255,9 @@ public:      // funcs
     /** The LLVM context.
      */
     llvm::LLVMContext& context;
+    /** The language options.
+     */
+    ellcc::LangOptions& LO;
     /** "main"
      */
     StringRef string_main;

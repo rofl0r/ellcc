@@ -2435,7 +2435,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
             (*PP.get()).EnterMainSourceFile();
             int result = elsa.parse(*PP.get(),
                                     input.name.c_str(), to.c_str(),
-                                    input.module, ParseOnly, context);
+                                    input.module, ParseOnly, context, input.LO);
             if (result) {
                 Exit(result);
             }
