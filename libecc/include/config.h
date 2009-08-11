@@ -23,7 +23,7 @@
 #define _WANT_IO_LONG_DOUBLE
 /** Define for formatting with C99 semantics.
  */
-#define _WANT_IO_LONG_DOUBLE
+#define _WANT_IO_C99_FORMATS
 /** Build a compact version of ctype.
  */
 // #define COMPACT_CTYPE
