@@ -15,6 +15,7 @@
 #define _DEBUG_INFO_H
 
 #include "cc_type.h"
+#include "cc2llvm.h"
 #include "SourceLocation.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/Analysis/DebugInfo.h"
@@ -25,11 +26,6 @@
 
 namespace ellcc {
   // RICH: class VarDecl;
-  // RICH: class ObjCInterfaceDecl;
-
-namespace CodeGen {
-  class CodeGenModule;
-};
 
 #ifdef NDEBUG
 typedef llvm::IRBuilder<false> BuilderTy;
@@ -41,7 +37,7 @@ typedef llvm::IRBuilder<> BuilderTy;
 /// and is responsible for emitting to llvm globals or pass directly to 
 /// the backend.
 class DebugInfo {
-  CodeGen::CodeGenModule *M;
+  CC2LLVMEnv& env;                  
   bool isMainCompileUnitCreated;
   llvm::DIFactory DebugFactory;
   
@@ -64,19 +60,17 @@ class DebugInfo {
   // RICH: llvm::DIType CreateType(const ComplexType *Ty, llvm::DICompileUnit U);
   llvm::DIType CreateCVRType(CVAtomicType Ty, llvm::DICompileUnit U);
   // RICH: llvm::DIType CreateType(const TypedefType *Ty, llvm::DICompileUnit U);
-  // RICH: llvm::DIType CreateType(const ObjCObjectPointerType *Ty, 
   // RICH:                         llvm::DICompileUnit Unit);
   llvm::DIType CreateType(const PointerType *Ty, llvm::DICompileUnit U);
   // RICH: llvm::DIType CreateType(const BlockPointerType *Ty, llvm::DICompileUnit U);
   llvm::DIType CreateType(const FunctionType *Ty, llvm::DICompileUnit U);
   // RICH: llvm::DIType CreateType(const TagType *Ty, llvm::DICompileUnit U);
   llvm::DIType CreateType(const CompoundType *Ty, llvm::DICompileUnit U);
-  // RICH: llvm::DIType CreateType(const ObjCInterfaceType *Ty, llvm::DICompileUnit U);
   llvm::DIType CreateType(const EnumType *Ty, llvm::DICompileUnit U);
   llvm::DIType CreateType(const ArrayType *Ty, llvm::DICompileUnit U);
 
 public:
-  DebugInfo(CodeGen::CodeGenModule *m);
+  DebugInfo(CC2LLVMEnv& env);
   ~DebugInfo();
 
   /// setLocation - Update the current source location. If \arg loc is
@@ -100,6 +94,7 @@ public:
   /// block.
   void EmitRegionEnd(llvm::Function *Fn, BuilderTy &Builder);
 
+#if RICH
   /// EmitDeclareOfAutoVariable - Emit call to llvm.dbg.declare for an automatic
   /// variable declaration.
   void EmitDeclareOfAutoVariable(const VarDecl *Decl, llvm::Value *AI,
@@ -112,14 +107,14 @@ public:
   
   /// EmitGlobalVariable - Emit information about a global variable.
   void EmitGlobalVariable(llvm::GlobalVariable *GV, const VarDecl *Decl);
+#endif
 
-  /// EmitGlobalVariable - Emit information about an objective-c interface.
-  void EmitGlobalVariable(llvm::GlobalVariable *GV, ObjCInterfaceDecl *Decl);
-   
 private:
+#if RICH
   /// EmitDeclare - Emit call to llvm.dbg.declare for a variable declaration.
   void EmitDeclare(const VarDecl *decl, unsigned Tag, llvm::Value *AI,
                    BuilderTy &Builder);
+#endif
   
   
   /// getOrCreateCompileUnit - Get the compile unit from the cache or create a
