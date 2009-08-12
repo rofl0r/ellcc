@@ -271,13 +271,13 @@ sm::string SimpleType::toCString() const
 }
 
 
-void SimpleType::sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const
+void SimpleType::sizeInfoInBytes(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const
 {
   size = simpleTypeSizeInBytes(TI, type);
   align = simpleTypeAlignInBytes(TI, type);
 }
 
-void SimpleType::sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const
+void SimpleType::sizeInfoInBits(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const
 {
   size = simpleTypeSizeInBits(TI, type);
   align = simpleTypeAlignInBits(TI, type);
@@ -536,7 +536,7 @@ sm::string CompoundType::toCString() const
 
 
 // dmandelin@mozilla.com
-void CompoundType::sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const
+void CompoundType::sizeInfoInBytes(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const
 {
   sizeInfoInBits(TI, size, align);
   if (size && size < TI.CharWidth())
@@ -547,7 +547,7 @@ void CompoundType::sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align)
   align /= TI.CharWidth();
 }  
 
-void CompoundType::sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const
+void CompoundType::sizeInfoInBits(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const
 {
   size = 0;
   align = TI.CharWidth();
@@ -562,7 +562,7 @@ void CompoundType::sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) 
 
 // dmandelin@mozilla.com
 // Helper for memSizeInfo. Add one data item to the given size/align pair.
-static void sizeInfoAddData(int &size, int &align, int memSize, int memAlign)
+static void sizeInfoAddData(uint64_t &size, uint64_t &align, uint64_t memSize, uint64_t memAlign)
 {
   //  cout << "SIAD " << size << " " << align << " " << memSize << " " << memAlign << endl;
   size = (size + memAlign - 1) / memAlign * memAlign + memSize;
@@ -571,10 +571,10 @@ static void sizeInfoAddData(int &size, int &align, int memSize, int memAlign)
 
 // dmandelin@mozilla.com
 // Helper for memSizeInfo. Add a bitfield group to the given size/align pair.
-static void sizeInfoAddBitfield(ellcc::TargetInfo& TI, int &size, int &align, int &bits)
+static void sizeInfoAddBitfield(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align, unsigned &bits)
 {
   if (bits) {
-    int bfSize = TI.CharWidth();
+    uint64_t bfSize = TI.CharWidth();
     while (bfSize < bits) bfSize *= 2;
     sizeInfoAddData(size, align, bfSize, bfSize);
     bits = 0;
@@ -586,7 +586,7 @@ static void sizeInfoAddBitfield(ellcc::TargetInfo& TI, int &size, int &align, in
 // Compute the size of everything except the vptr. Note that size and
 // align must be initialized on entry.
 // We need this separate from sizeInfo so that we can add the vptr only once.
-void CompoundType::memSizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const
+void CompoundType::memSizeInfoInBits(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const
 {
   // base classes
   {
@@ -597,7 +597,7 @@ void CompoundType::memSizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &alig
         // skip my own subobject, as that will be accounted for below
       }
       else {
-	int baseSize = 0, baseAlign = TI.CharWidth();
+	uint64_t baseSize = 0, baseAlign = TI.CharWidth();
 	iter.data()->ct->memSizeInfoInBits(TI, baseSize, baseAlign);
 	sizeInfoAddData(size, align, baseSize, baseAlign);
       }
@@ -605,12 +605,12 @@ void CompoundType::memSizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &alig
   }
 
   // Number of bits in current bitfield group.
-  int bits = 0;
+  unsigned bits = 0;
 
   // data members
   SFOREACH_OBJLIST(Variable, dataMembers, iter) {
     Variable const *v = iter.data();
-    int memSize, memAlign;
+    uint64_t memSize, memAlign;
 
     if (keyword == K_UNION) {
       v->type->sizeInfoInBits(TI, memSize, memAlign);
@@ -1162,7 +1162,7 @@ sm::string EnumType::toCString() const
 }
 
 
-void EnumType::sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const
+void EnumType::sizeInfoInBytes(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const
 {
   // RICH: Optimize?
   // this is the usual choice
@@ -1170,7 +1170,7 @@ void EnumType::sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) con
   align = TI.getTypeAlignInBytes(ellcc::TargetInfo::Int);
 }
 
-void EnumType::sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const
+void EnumType::sizeInfoInBits(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const
 {
   size = TI.getTypeSizeInBits(ellcc::TargetInfo::Int);
   align = TI.getTypeAlignInBits(ellcc::TargetInfo::Int);
@@ -1804,12 +1804,12 @@ sm::string CVAtomicType::leftString(bool /*innerParen*/) const
 }
 
 
-void CVAtomicType::sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const
+void CVAtomicType::sizeInfoInBytes(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const
 {
   atomic->sizeInfoInBytes(TI, size, align);
 }
 
-void CVAtomicType::sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const
+void CVAtomicType::sizeInfoInBits(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const
 {
   atomic->sizeInfoInBits(TI, size, align);
 }
@@ -1909,13 +1909,13 @@ sm::string PointerType::rightString(bool /*innerParen*/) const
 }
 
 
-void PointerType::sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const
+void PointerType::sizeInfoInBytes(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const
 {
   size = TI.getTypeSizeInBytes(ellcc::TargetInfo::Pointer);
   align = TI.getTypeAlignInBytes(ellcc::TargetInfo::Pointer);
 }
 
-void PointerType::sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const
+void PointerType::sizeInfoInBits(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const
 {
   size = TI.getTypeSizeInBits(ellcc::TargetInfo::Pointer);
   align = TI.getTypeAlignInBits(ellcc::TargetInfo::Pointer);
@@ -1997,13 +1997,13 @@ sm::string ReferenceType::rightString(bool /*innerParen*/) const
   return s;
 }
 
-void ReferenceType::sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const
+void ReferenceType::sizeInfoInBytes(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const
 {
   size = TI.getTypeSizeInBytes(ellcc::TargetInfo::Pointer);
   align = TI.getTypeAlignInBytes(ellcc::TargetInfo::Pointer);
 }
 
-void ReferenceType::sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const
+void ReferenceType::sizeInfoInBits(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const
 {
   size = TI.getTypeSizeInBits(ellcc::TargetInfo::Pointer);
   align = TI.getTypeAlignInBits(ellcc::TargetInfo::Pointer);
@@ -2330,7 +2330,7 @@ bool FunctionType::usesPostfixTypeConstructorSyntax() const
 }
 
 
-void FunctionType::sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const
+void FunctionType::sizeInfoInBytes(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const
 {
   // thinking here about how this works when we're summing
   // the fields of a class with member functions ..
@@ -2338,7 +2338,7 @@ void FunctionType::sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align)
   align = 1;
 }
 
-void FunctionType::sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const
+void FunctionType::sizeInfoInBits(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const
 {
   // thinking here about how this works when we're summing
   // the fields of a class with member functions ..
@@ -2498,7 +2498,7 @@ unsigned ArrayType::innerHashValue() const
 }
 
 
-void ArrayType::sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const
+void ArrayType::sizeInfoInBytes(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const
 {
   if (!hasSize()) {
     throw_XReprSize(this->size == DYN_SIZE /*isDynamic*/);
@@ -2507,7 +2507,7 @@ void ArrayType::sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) co
   size *= this->size;
 }
 
-void ArrayType::sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const
+void ArrayType::sizeInfoInBits(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const
 {
   if (!hasSize()) {
     throw_XReprSize(this->size == DYN_SIZE /*isDynamic*/);
@@ -2577,13 +2577,13 @@ sm::string PointerToMemberType::rightString(bool /*innerParen*/) const
 }
 
 // RICH: Are pointers to members two pointers?
-void PointerToMemberType::sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const
+void PointerToMemberType::sizeInfoInBytes(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const
 {
   size = TI.getTypeSizeInBytes(ellcc::TargetInfo::Pointer);
   align = TI.getTypeAlignInBytes(ellcc::TargetInfo::Pointer);
 }
 
-void PointerToMemberType::sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const
+void PointerToMemberType::sizeInfoInBits(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const
 {
   size = TI.getTypeSizeInBits(ellcc::TargetInfo::Pointer);
   align = TI.getTypeAlignInBits(ellcc::TargetInfo::Pointer);

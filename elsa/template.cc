@@ -87,7 +87,7 @@ string TypeVariable::toCString() const
                  << name;
 }
 
-void TypeVariable::sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const
+void TypeVariable::sizeInfoInBytes(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const
 {
   //xfailure("you can't ask a type variable for its size");
 
@@ -97,7 +97,7 @@ void TypeVariable::sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align)
   size = align = 4;
 }
 
-void TypeVariable::sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const
+void TypeVariable::sizeInfoInBits(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const
 {
   //xfailure("you can't ask a type variable for its size");
 
@@ -145,7 +145,7 @@ string PseudoInstantiation::toCString() const
   return stringc << name << sargsToString(args);
 }
 
-void PseudoInstantiation::sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const
+void PseudoInstantiation::sizeInfoInBytes(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const
 {
   // it shouldn't matter what we say here, since the query will only
   // be made in the context of checking (but not instantiating) a
@@ -153,7 +153,7 @@ void PseudoInstantiation::sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int 
   size = align = 4;
 }
 
-void PseudoInstantiation::sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const
+void PseudoInstantiation::sizeInfoInBits(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const
 {
   // it shouldn't matter what we say here, since the query will only
   // be made in the context of checking (but not instantiating) a
@@ -219,12 +219,12 @@ string DependentQType::toMLString() const
   return stringc << "dependentqtype-" << toCString();
 }
 
-void DependentQType::sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const
+void DependentQType::sizeInfoInBytes(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const
 {
   size = align = 4;
 }
 
-void DependentQType::sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const
+void DependentQType::sizeInfoInBits(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const
 {
   size = align = 4 * 8;
 }
@@ -304,7 +304,7 @@ string DependentSizedArrayType::toMLString() const
 }
 
 
-void DependentSizedArrayType::sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const
+void DependentSizedArrayType::sizeInfoInBytes(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const
 {
   // dmandelin@mozilla.com  bug 416182
   // This represents the result of sizeof inside the template definition.
@@ -316,7 +316,7 @@ void DependentSizedArrayType::sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, 
   align = 1;
 }
 
-void DependentSizedArrayType::sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const
+void DependentSizedArrayType::sizeInfoInBits(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const
 {
   // dmandelin@mozilla.com  bug 416182
   // This represents the result of sizeof inside the template definition.
@@ -5482,12 +5482,12 @@ string TemplateTypeVariable::toMLString() const
 }
 
 
-void TemplateTypeVariable::sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const
+void TemplateTypeVariable::sizeInfoInBytes(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const
 {
   throw XReprSize();
 }
 
-void TemplateTypeVariable::sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const
+void TemplateTypeVariable::sizeInfoInBits(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const
 {
   throw XReprSize();
 }

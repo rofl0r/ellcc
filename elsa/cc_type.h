@@ -243,17 +243,17 @@ public:     // funcs
   // size this type's representation occupies in memory; this
   // might throw XReprSize, see below
   int sizeInBytes(ellcc::TargetInfo& TI) const
-     { int size, align; sizeInfoInBytes(TI, size, align); return size; }
+     { uint64_t size, align; sizeInfoInBytes(TI, size, align); return size; }
   int sizeInBits(ellcc::TargetInfo& TI) const
-     { int size, align; sizeInfoInBits(TI, size, align); return size; }
+     { uint64_t size, align; sizeInfoInBits(TI, size, align); return size; }
 
   // dmandelin@mozilla.com
   // size and alignment of this type.
   // This has replaced sizeInBytes as the primary size computation
   // function because it is necessary to compute alignments as
   // well in order to compute sizes correctly.
-  virtual void sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const = 0;
-  virtual void sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const = 0;
+  virtual void sizeInfoInBytes(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const = 0;
+  virtual void sizeInfoInBits(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const = 0;
 
   // invoke 'vis.visitAtomicType(this)', and then traverse subtrees
   virtual void traverse(TypeVisitor &vis) = 0;
@@ -287,8 +287,8 @@ public:     // funcs
   virtual Tag getTag() const { return T_SIMPLE; }
   virtual sm::string toCString() const;
   virtual sm::string toMLString() const;
-  virtual void sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const;
-  virtual void sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBytes(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const;
+  virtual void sizeInfoInBits(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const;
   virtual void traverse(TypeVisitor &vis);
 };
 
@@ -489,14 +489,14 @@ public:      // funcs
   virtual Tag getTag() const { return T_COMPOUND; }
   virtual sm::string toCString() const;
   virtual sm::string toMLString() const;
-  virtual void sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const;
-  virtual void sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBytes(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const;
+  virtual void sizeInfoInBits(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const;
   virtual void traverse(TypeVisitor &vis);
 
   // Return the sizeInfo not counting any vptr -- we need this
   // because when we have base classes we don't include vptr twice
-  void memSizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const;
-  void memSizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const;
+  void memSizeInfoInBytes(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const;
+  void memSizeInfoInBits(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const;
 
   sm::string toStringWithFields() const;
   sm::string keywordAndName() const { return toCString(); }
@@ -616,8 +616,8 @@ public:     // funcs
   virtual Tag getTag() const { return T_ENUM; }
   virtual sm::string toCString() const;
   virtual sm::string toMLString() const;
-  virtual void sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const;
-  virtual void sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBytes(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const;
+  virtual void sizeInfoInBits(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const;
   virtual void traverse(TypeVisitor &vis);
 
   Value *addValue(StringRef name, int value, /*nullable*/ Variable *d);
@@ -762,11 +762,13 @@ public:     // funcs
   virtual bool usesPostfixTypeConstructorSyntax() const;
 
   // size of representation at run-time.
-  int sizeInBytes(ellcc::TargetInfo& TI) const { int size, align; sizeInfoInBytes(TI, size, align); return size; }
-  int sizeInBits(ellcc::TargetInfo& TI) const { int size, align; sizeInfoInBits(TI, size, align); return size; }
+  uint64_t sizeInBytes(ellcc::TargetInfo& TI) const
+    { uint64_t size, align; sizeInfoInBytes(TI, size, align); return size; }
+  uint64_t sizeInBits(ellcc::TargetInfo& TI) const
+    { uint64_t size, align; sizeInfoInBits(TI, size, align); return size; }
 
-  virtual void sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const = 0;
-  virtual void sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const = 0;
+  virtual void sizeInfoInBytes(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const = 0;
+  virtual void sizeInfoInBits(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const = 0;
 
   // filter on all constructed types that appear in the type,
   // *including* parameter types; return true if any constructor
@@ -940,22 +942,23 @@ protected:
   CVAtomicType(AtomicType *a, CVFlags c)
     : atomic(a), cv(c) {}
 
+  CVAtomicType() : atomic(0), cv(CV_NONE) {}
+public:
   // need this to make a static array of them
   CVAtomicType(CVAtomicType const &obj)
     : atomic(obj.atomic), cv(obj.cv) {}
 
-  CVAtomicType() : atomic(0), cv(CV_NONE) {}
-public:
   bool isConst() const { return !!(cv & CV_CONST); }
   bool isVolatile() const { return !!(cv & CV_VOLATILE); }
+  bool isRestrict() const { return !!(cv & CV_RESTRICT); }
 
   // Type interface
   virtual Tag getTag() const { return T_ATOMIC; }
   unsigned innerHashValue() const;
   virtual sm::string toMLString() const;
   virtual sm::string leftString(bool innerParen=true) const;
-  virtual void sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const;
-  virtual void sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBytes(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const;
+  virtual void sizeInfoInBits(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const;
   virtual bool anyCtorSatisfies(TypePred &pred) const;
   virtual CVFlags getCVFlags() const;
   virtual void traverse(TypeVisitor &vis);
@@ -983,8 +986,8 @@ public:
   virtual sm::string toMLString() const;
   virtual sm::string leftString(bool innerParen=true) const;
   virtual sm::string rightString(bool innerParen=true) const;
-  virtual void sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const;
-  virtual void sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBytes(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const;
+  virtual void sizeInfoInBits(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const;
   virtual bool anyCtorSatisfies(TypePred &pred) const;
   virtual CVFlags getCVFlags() const;
   virtual void traverse(TypeVisitor &vis);
@@ -1012,8 +1015,8 @@ public:
   virtual sm::string toMLString() const;
   virtual sm::string leftString(bool innerParen=true) const;
   virtual sm::string rightString(bool innerParen=true) const;
-  virtual void sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const;
-  virtual void sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBytes(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const;
+  virtual void sizeInfoInBits(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const;
   virtual bool anyCtorSatisfies(TypePred &pred) const;
   virtual CVFlags getCVFlags() const;
   virtual void traverse(TypeVisitor &vis);
@@ -1136,8 +1139,8 @@ public:
   virtual sm::string leftString(bool innerParen=true) const;
   virtual sm::string rightString(bool innerParen=true) const;
   virtual bool usesPostfixTypeConstructorSyntax() const;
-  virtual void sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const;
-  virtual void sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBytes(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const;
+  virtual void sizeInfoInBits(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const;
   virtual bool anyCtorSatisfies(TypePred &pred) const;
   virtual void traverse(TypeVisitor &vis);
 };
@@ -1217,8 +1220,8 @@ public:
   virtual Tag getTag() const { return T_ARRAY; }
   unsigned innerHashValue() const;
   virtual sm::string toMLString() const;
-  virtual void sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const;
-  virtual void sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBytes(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const;
+  virtual void sizeInfoInBits(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const;
 };
 
 
@@ -1255,8 +1258,8 @@ public:
   virtual sm::string toMLString() const;
   virtual sm::string leftString(bool innerParen=true) const;
   virtual sm::string rightString(bool innerParen=true) const;
-  virtual void sizeInfoInBytes(ellcc::TargetInfo& TI, int &size, int &align) const;
-  virtual void sizeInfoInBits(ellcc::TargetInfo& TI, int &size, int &align) const;
+  virtual void sizeInfoInBytes(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const;
+  virtual void sizeInfoInBits(ellcc::TargetInfo& TI, uint64_t &size, uint64_t &align) const;
   virtual bool anyCtorSatisfies(TypePred &pred) const;
   virtual CVFlags getCVFlags() const;
   virtual void traverse(TypeVisitor &vis);

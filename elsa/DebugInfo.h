@@ -38,6 +38,7 @@ typedef llvm::IRBuilder<> BuilderTy;
 /// the backend.
 class DebugInfo {
   CC2LLVMEnv& env;                  
+  LangOptions& LO;
   bool isMainCompileUnitCreated;
   llvm::DIFactory DebugFactory;
   
@@ -70,7 +71,7 @@ class DebugInfo {
   llvm::DIType CreateType(const ArrayType *Ty, llvm::DICompileUnit U);
 
 public:
-  DebugInfo(CC2LLVMEnv& env);
+  DebugInfo(CC2LLVMEnv& env, LangOptions& LO);
   ~DebugInfo();
 
   /// setLocation - Update the current source location. If \arg loc is

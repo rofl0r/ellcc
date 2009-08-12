@@ -13,10 +13,10 @@
 
 #include "DebugInfo.h"
 // RICH: #include "clang/AST/ASTContext.h"
-// RICH: #include "clang/AST/DeclObjC.h"
 // RICH: #include "clang/AST/Expr.h"
 // RICH: #include "clang/AST/RecordLayout.h"
 // RICH: #include "clang/Frontend/CompileOptions.h"
+#include "LangOptions.h"
 #include "SourceManager.h"
 #include "FileManager.h"
 #include "llvm/Constants.h"
@@ -31,8 +31,9 @@
 #include "llvm/Target/TargetMachine.h"
 using namespace ellcc;
 
-DebugInfo::DebugInfo(CC2LLVMEnv& env)
-  : env(env), isMainCompileUnitCreated(false), DebugFactory(*env.mod),
+DebugInfo::DebugInfo(CC2LLVMEnv& env, LangOptions& LO)
+  : env(env), LO(LO),
+    isMainCompileUnitCreated(false), DebugFactory(*env.mod),
     BlockLiteralGenericSet(false)
 {
 }
@@ -79,7 +80,6 @@ llvm::DICompileUnit DebugInfo::getOrCreateCompileUnit(SourceLocation Loc)
     // file has corresponding compile unit. There is only one main source
     // file at a time.
     bool isMain = false;
-    const LangOptions &LO = M->getLangOptions();
     const char *MainFileName = LO.getMainFileName();
     if (isMainCompileUnitCreated == false) {
         if (MainFileName) {
@@ -95,12 +95,7 @@ llvm::DICompileUnit DebugInfo::getOrCreateCompileUnit(SourceLocation Loc)
 
     unsigned LangTag;
     if (LO.CPlusPlus) {
-        if (LO.ObjC1)
-            LangTag = llvm::dwarf::DW_LANG_ObjC_plus_plus;
-        else
-            LangTag = llvm::dwarf::DW_LANG_C_plus_plus;
-    } else if (LO.ObjC1) {
-        LangTag = llvm::dwarf::DW_LANG_ObjC;
+        LangTag = llvm::dwarf::DW_LANG_C_plus_plus;
     } else if (LO.C99) {
         LangTag = llvm::dwarf::DW_LANG_C99;
     } else {
@@ -111,50 +106,57 @@ llvm::DICompileUnit DebugInfo::getOrCreateCompileUnit(SourceLocation Loc)
     bool isOptimized = LO.Optimize;
     const char *Flags = "";   // FIXME: Encode command line options.
 
-    // Figure out which version of the ObjC runtime we have.
-    unsigned RuntimeVers = 0;
-    if (LO.ObjC1)
-        RuntimeVers = LO.ObjCNonFragileABI ? 2 : 1;
-  
     // Create new compile unit.
     return Unit = DebugFactory.CreateCompileUnit(LangTag, AbsFileName.getLast(),
                                                  AbsFileName.getDirname(), 
                                                  Producer, isMain, isOptimized,
-                                                 Flags, RuntimeVers);
+                                                 Flags, /* RuntimeVers */ 0);
 }
 
 /// CreateType - Get the Basic type from the cache or create a new
 /// one if necessary.
-llvm::DIType DebugInfo::CreateType(const BuiltinType *BT,
-                                     llvm::DICompileUnit Unit) {
-  unsigned Encoding = 0;
-  switch (BT->getKind()) {
-  default:
-  case BuiltinType::Void:
-    return llvm::DIType();
-  case BuiltinType::UChar:
-  case BuiltinType::Char_U: Encoding = llvm::dwarf::DW_ATE_unsigned_char; break;
-  case BuiltinType::Char_S:
-  case BuiltinType::SChar: Encoding = llvm::dwarf::DW_ATE_signed_char; break;
-  case BuiltinType::UShort:
-  case BuiltinType::UInt:
-  case BuiltinType::ULong:
-  case BuiltinType::ULongLong: Encoding = llvm::dwarf::DW_ATE_unsigned; break;
-  case BuiltinType::Short:
-  case BuiltinType::Int:
-  case BuiltinType::Long:
-  case BuiltinType::LongLong:  Encoding = llvm::dwarf::DW_ATE_signed; break;
-  case BuiltinType::Bool:      Encoding = llvm::dwarf::DW_ATE_boolean; break;
-  case BuiltinType::Float:
-  case BuiltinType::Double:    Encoding = llvm::dwarf::DW_ATE_float; break;
+llvm::DIType DebugInfo::CreateType(const SimpleType *ST,
+                                   llvm::DICompileUnit Unit) {
+    unsigned Encoding = 0;
+    switch (ST->type) {
+    default:
+    case ST_VOID:
+        return llvm::DIType();
+    case ST_CHAR:
+        if (env.TI.isCharSigned()) {
+            Encoding = llvm::dwarf::DW_ATE_signed_char;
+        } else {
+            Encoding = llvm::dwarf::DW_ATE_unsigned_char;
+        }
+        break;
+    case ST_UNSIGNED_CHAR:                Encoding = llvm::dwarf::DW_ATE_unsigned_char; break;
+    case ST_SIGNED_CHAR:                  Encoding = llvm::dwarf::DW_ATE_signed_char; break;
+    case ST_UNSIGNED_SHORT_INT:
+    case ST_UNSIGNED_INT:
+    case ST_UNSIGNED_LONG_INT:
+    case ST_UNSIGNED_LONG_LONG:           Encoding = llvm::dwarf::DW_ATE_unsigned; break;
+    case ST_SHORT_INT:
+    case ST_INT:
+    case ST_LONG_INT:
+    case ST_LONG_LONG:                    Encoding = llvm::dwarf::DW_ATE_signed; break;
+    case ST_BOOL:                         Encoding = llvm::dwarf::DW_ATE_boolean; break;
+    case ST_FLOAT:
+    case ST_DOUBLE:
+    case ST_LONG_DOUBLE:                  Encoding = llvm::dwarf::DW_ATE_float; break;
+    case ST_FLOAT_COMPLEX:
+    case ST_DOUBLE_COMPLEX:
+    case ST_LONG_DOUBLE_COMPLEX:          Encoding = llvm::dwarf::DW_ATE_complex_float; break;
+    case ST_FLOAT_IMAGINARY:
+    case ST_DOUBLE_IMAGINARY:
+    case ST_LONG_DOUBLE_IMAGINARY:        Encoding = llvm::dwarf::DW_ATE_imaginary_float; break;
   } 
   // Bit size, align and offset of the type.
-  uint64_t Size = M->getContext().getTypeSize(BT);
-  uint64_t Align = M->getContext().getTypeAlign(BT);
+  uint64_t Size, Align;
+  ST->sizeInfoInBytes(env.TI, Size, Align);
   uint64_t Offset = 0;
   
   return DebugFactory.CreateBasicType(Unit, 
-                                  BT->getName(M->getContext().getLangOptions()),
+                                      env.TI.getTypeName((TargetInfo::TypeID)ST->type),
                                       Unit, 0, Size, Align,
                                       Offset, /*flags*/ 0, Encoding);
 }
@@ -167,8 +169,8 @@ llvm::DIType DebugInfo::CreateType(const ComplexType *Ty,
   if (Ty->isComplexIntegerType())
     Encoding = llvm::dwarf::DW_ATE_lo_user;
   
-  uint64_t Size = M->getContext().getTypeSize(Ty);
-  uint64_t Align = M->getContext().getTypeAlign(Ty);
+  uint64_t Size, Align;
+  ST->sizeInfoInBytes(env.TI, Size, Align);
   uint64_t Offset = 0;
   
   return DebugFactory.CreateBasicType(Unit, "complex",
@@ -184,18 +186,18 @@ llvm::DIType DebugInfo::CreateCVRType(CVAtomicType Ty, llvm::DICompileUnit Unit)
   // additional ones.
   llvm::DIType FromTy;
   unsigned Tag;
-  if (Ty.isConstQualified()) {
+  if (Ty.isConst()) {
     Tag = llvm::dwarf::DW_TAG_const_type;
-    Ty.removeConst(); 
+    Ty.cv &= ~CV_CONST; 
     FromTy = getOrCreateType(Ty, Unit);
-  } else if (Ty.isVolatileQualified()) {
+  } else if (Ty.isVolatile()) {
     Tag = llvm::dwarf::DW_TAG_volatile_type;
-    Ty.removeVolatile(); 
+    Ty.cv &= ~CV_VOLATILE; 
     FromTy = getOrCreateType(Ty, Unit);
   } else {
-    assert(Ty.isRestrictQualified() && "Unknown type qualifier for debug info");
+    assert(Ty.isRestrict() && "Unknown type qualifier for debug info");
     Tag = llvm::dwarf::DW_TAG_restrict_type;
-    Ty.removeRestrict(); 
+    Ty.cv &= ~CV_RESTRICT; 
     FromTy = getOrCreateType(Ty, Unit);
   }
   
@@ -207,11 +209,11 @@ llvm::DIType DebugInfo::CreateCVRType(CVAtomicType Ty, llvm::DICompileUnit Unit)
 
 llvm::DIType DebugInfo::CreateType(const PointerType *Ty,
                                      llvm::DICompileUnit Unit) {
-  llvm::DIType EltTy = getOrCreateType(Ty->getPointeeType(), Unit);
+  llvm::DIType EltTy = getOrCreateType(Ty->getAtType(), Unit);
  
   // Bit size, align and offset of the type.
-  uint64_t Size = M->getContext().getTypeSize(Ty);
-  uint64_t Align = M->getContext().getTypeAlign(Ty);
+  uint64_t Size, Align;
+  Ty->sizeInfoInBytes(env.TI, Size, Align);
                                                                                
   return DebugFactory.CreateDerivedType(llvm::dwarf::DW_TAG_pointer_type, Unit,
                                         "", llvm::DICompileUnit(),
