@@ -39,7 +39,7 @@ DebugInfo::DebugInfo(CC2LLVMEnv& env, LangOptions& LO)
 }
 
 DebugInfo::~DebugInfo() {
-  assert(RegionStack.empty() && "Region stack mismatch, stack not empty!");
+    assert(RegionStack.empty() && "Region stack mismatch, stack not empty!");
 }
 
 void DebugInfo::setLocation(SourceLocation Loc)
@@ -116,7 +116,8 @@ llvm::DICompileUnit DebugInfo::getOrCreateCompileUnit(SourceLocation Loc)
 /// CreateType - Get the Basic type from the cache or create a new
 /// one if necessary.
 llvm::DIType DebugInfo::CreateType(const SimpleType *ST,
-                                   llvm::DICompileUnit Unit) {
+                                   llvm::DICompileUnit Unit)
+{
     unsigned Encoding = 0;
     switch (ST->type) {
     default:
@@ -163,7 +164,8 @@ llvm::DIType DebugInfo::CreateType(const SimpleType *ST,
 
 #if RICH
 llvm::DIType DebugInfo::CreateType(const ComplexType *Ty,
-                                     llvm::DICompileUnit Unit) {
+                                     llvm::DICompileUnit Unit)
+{
   // Bit size, align and offset of the type.
   unsigned Encoding = llvm::dwarf::DW_ATE_complex_float;
   if (Ty->isComplexIntegerType())
@@ -181,34 +183,37 @@ llvm::DIType DebugInfo::CreateType(const ComplexType *Ty,
 
 /// getOrCreateCVRType - Get the CVR qualified type from the cache or create 
 /// a new one if necessary.
-llvm::DIType DebugInfo::CreateCVRType(CVAtomicType Ty, llvm::DICompileUnit Unit) {
-  // We will create one Derived type for one qualifier and recurse to handle any
-  // additional ones.
-  llvm::DIType FromTy;
-  unsigned Tag;
-  if (Ty.isConst()) {
-    Tag = llvm::dwarf::DW_TAG_const_type;
-    Ty.cv &= ~CV_CONST; 
-    FromTy = getOrCreateType(Ty, Unit);
-  } else if (Ty.isVolatile()) {
-    Tag = llvm::dwarf::DW_TAG_volatile_type;
-    Ty.cv &= ~CV_VOLATILE; 
-    FromTy = getOrCreateType(Ty, Unit);
-  } else {
-    assert(Ty.isRestrict() && "Unknown type qualifier for debug info");
-    Tag = llvm::dwarf::DW_TAG_restrict_type;
-    Ty.cv &= ~CV_RESTRICT; 
-    FromTy = getOrCreateType(Ty, Unit);
-  }
+llvm::DIType DebugInfo::CreateCVRType(CVAtomicType* Ty, llvm::DICompileUnit Unit)
+{
+    llvm::DIType FromTy;
+    CVFlags cv = Ty->cv & (CV_CONST | CV_VOLATILE | CV_RESTRICT);
+    unsigned Tag;
+    while(cv) {
+        if (Ty->isConst()) {
+            Tag = llvm::dwarf::DW_TAG_const_type;
+            cv &= ~CV_CONST; 
+            FromTy = getOrCreateType(Ty, Unit);
+        } else if (Ty->isVolatile()) {
+            Tag = llvm::dwarf::DW_TAG_volatile_type;
+            cv &= ~CV_VOLATILE; 
+            FromTy = getOrCreateType(Ty, Unit);
+        } else {
+            assert(Ty->isRestrict() && "Unknown type qualifier for debug info");
+            Tag = llvm::dwarf::DW_TAG_restrict_type;
+            cv &= ~CV_RESTRICT; 
+            FromTy = getOrCreateType(Ty, Unit);
+        }
+    }
   
-  // No need to fill in the Name, Line, Size, Alignment, Offset in case of
-  // CVR derived types.
-  return DebugFactory.CreateDerivedType(Tag, Unit, "", llvm::DICompileUnit(),
-                                        0, 0, 0, 0, 0, FromTy);
+    // No need to fill in the Name, Line, Size, Alignment, Offset in case of
+    // CVR derived types.
+    return DebugFactory.CreateDerivedType(Tag, Unit, "", llvm::DICompileUnit(),
+                                          0, 0, 0, 0, 0, FromTy);
 }
 
 llvm::DIType DebugInfo::CreateType(const PointerType *Ty,
-                                     llvm::DICompileUnit Unit) {
+                                     llvm::DICompileUnit Unit)
+{
   llvm::DIType EltTy = getOrCreateType(Ty->getAtType(), Unit);
  
   // Bit size, align and offset of the type.
@@ -220,8 +225,10 @@ llvm::DIType DebugInfo::CreateType(const PointerType *Ty,
                                         0, Size, Align, 0, 0, EltTy);
 }
 
+#if RICH
 llvm::DIType DebugInfo::CreateType(const BlockPointerType *Ty,
-                                     llvm::DICompileUnit Unit) {
+                                     llvm::DICompileUnit Unit)
+{
   if (BlockLiteralGenericSet)
     return BlockLiteralGeneric;
 
@@ -346,10 +353,12 @@ llvm::DIType DebugInfo::CreateType(const BlockPointerType *Ty,
                                      0, Size, Align, 0, 0, EltTy);
   return BlockLiteralGeneric;
 }
+#endif
 
 #if RICH
 llvm::DIType DebugInfo::CreateType(const TypedefType *Ty,
-                                     llvm::DICompileUnit Unit) {
+                                     llvm::DICompileUnit Unit)
+{
   // Typedefs are derived from some other type.  If we have a typedef of a
   // typedef, make sure to emit the whole chain.
   llvm::DIType Src = getOrCreateType(Ty->getDecl()->getUnderlyingType(), Unit);
@@ -370,28 +379,38 @@ llvm::DIType DebugInfo::CreateType(const TypedefType *Ty,
 #endif
 
 llvm::DIType DebugInfo::CreateType(const FunctionType *Ty,
-                                     llvm::DICompileUnit Unit) {
-  llvm::SmallVector<llvm::DIDescriptor, 16> EltTys;
+                                     llvm::DICompileUnit Unit)
+{
+    llvm::SmallVector<llvm::DIDescriptor, 16> EltTys;
 
-  // Add the result type at least.
-  EltTys.push_back(getOrCreateType(Ty->getResultType(), Unit));
+    // Add the result type at least.
+    EltTys.push_back(getOrCreateType(Ty->retType, Unit));
   
-  // Set up remainder of arguments if there is a prototype.
-  // FIXME: IF NOT, HOW IS THIS REPRESENTED?  llvm-gcc doesn't represent '...'!
-  if (const FunctionProtoType *FTP = dyn_cast<FunctionProtoType>(Ty)) {
-    for (unsigned i = 0, e = FTP->getNumArgs(); i != e; ++i)
-      EltTys.push_back(getOrCreateType(FTP->getArgType(i), Unit));
-  } else {
-    // FIXME: Handle () case in C.  llvm-gcc doesn't do it either.
-  }
+    // Set up remainder of arguments if there is a prototype.
+    // FIXME: IF NOT, HOW IS THIS REPRESENTED?  llvm-gcc doesn't represent '...'!
+    if (const FunctionProtoType *FTP = dyn_cast<FunctionProtoType>(Ty)) {
+        for (unsigned i = 0, e = FTP->getNumArgs(); i != e; ++i)
+            EltTys.push_back(getOrCreateType(FTP->getArgType(i), Unit));
+    } else {
+        // FIXME: Handle () case in C.  llvm-gcc doesn't do it either.
+    }
 
-  llvm::DIArray EltTypeArray =
-    DebugFactory.GetOrCreateArray(EltTys.data(), EltTys.size());
+    SFOREACH_OBJLIST(Variable, ft->params, iter) {
+        Variable const *param = iter.data();
+
+	    const llvm::Type* type = makeTypeSpecifier(param->loc, param->type);
+	    // type will be NULL if a "..." is encountered in the parameter list.
+	    if (type) {
+            VDEBUG("makeParameters", param->loc, type->print(std::cerr));
+            args.push_back(type);
+        }
+    }
+    llvm::DIArray EltTypeArray = DebugFactory.GetOrCreateArray(EltTys.data(), EltTys.size());
   
-  return DebugFactory.CreateCompositeType(llvm::dwarf::DW_TAG_subroutine_type,
-                                          Unit, "", llvm::DICompileUnit(),
-                                          0, 0, 0, 0, 0,
-                                          llvm::DIType(), EltTypeArray);
+    return DebugFactory.CreateCompositeType(llvm::dwarf::DW_TAG_subroutine_type,
+                                            Unit, "", llvm::DICompileUnit(),
+                                            0, 0, 0, 0, 0,
+                                            llvm::DIType(), EltTypeArray);
 }
 
 /// CreateType - get structure or union type.
@@ -614,7 +633,7 @@ llvm::DIType DebugInfo::CreateType(const ArrayType *Ty,
 
 /// getOrCreateType - Get the type from the cache or create a new
 /// one if necessary.
-llvm::DIType DebugInfo::getOrCreateType(QualType Ty,
+llvm::DIType DebugInfo::getOrCreateType(Type Ty,
                                           llvm::DICompileUnit Unit) {
   if (Ty.isNull())
     return llvm::DIType();

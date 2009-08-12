@@ -108,7 +108,7 @@ ifneq ("$(LLVM)","disabled")
   LLVMLDFLAGS := $(shell llvm-config --ldflags --libs core target analysis)
   LLVMCCFLAGS := $(shell llvm-config --cxxflags)
   CC_AST_MODS += cc2llvm.ast
-  EXT_OBJS    += cc2llvm.o # DebugInfo.o
+  EXT_OBJS    += cc2llvm.o DebugInfo.o
 else
   LLVMLDFLAGS :=
   LLVMCCFLAGS :=
