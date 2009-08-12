@@ -387,26 +387,13 @@ llvm::DIType DebugInfo::CreateType(const FunctionType *Ty,
     EltTys.push_back(getOrCreateType(Ty->retType, Unit));
   
     // Set up remainder of arguments if there is a prototype.
-    // FIXME: IF NOT, HOW IS THIS REPRESENTED?  llvm-gcc doesn't represent '...'!
-    if (const FunctionProtoType *FTP = dyn_cast<FunctionProtoType>(Ty)) {
-        for (unsigned i = 0, e = FTP->getNumArgs(); i != e; ++i)
-            EltTys.push_back(getOrCreateType(FTP->getArgType(i), Unit));
-    } else {
-        // FIXME: Handle () case in C.  llvm-gcc doesn't do it either.
-    }
-
-    SFOREACH_OBJLIST(Variable, ft->params, iter) {
+    SFOREACH_OBJLIST(Variable, Ty->params, iter) {
         Variable const *param = iter.data();
 
-	    const llvm::Type* type = makeTypeSpecifier(param->loc, param->type);
-	    // type will be NULL if a "..." is encountered in the parameter list.
-	    if (type) {
-            VDEBUG("makeParameters", param->loc, type->print(std::cerr));
-            args.push_back(type);
-        }
+        EltTys.push_back(getOrCreateType(param->type, Unit));
     }
+
     llvm::DIArray EltTypeArray = DebugFactory.GetOrCreateArray(EltTys.data(), EltTys.size());
-  
     return DebugFactory.CreateCompositeType(llvm::dwarf::DW_TAG_subroutine_type,
                                             Unit, "", llvm::DICompileUnit(),
                                             0, 0, 0, 0, 0,
@@ -415,23 +402,24 @@ llvm::DIType DebugInfo::CreateType(const FunctionType *Ty,
 
 /// CreateType - get structure or union type.
 llvm::DIType DebugInfo::CreateType(const CompoundType *Ty,
-                                     llvm::DICompileUnit Unit) {
-  RecordDecl *Decl = Ty->getDecl();
+                                     llvm::DICompileUnit Unit)
+{
+    const CompoundType *ct = Ty->asCompoundTypeC();
   
-  unsigned Tag;
-  if (Decl->isStruct())
+    unsigned Tag;
+  if (ct->keyword == CompoundType::K_STRUCT) {
     Tag = llvm::dwarf::DW_TAG_structure_type;
-  else if (Decl->isUnion())
+  } else if (ct->keyword == CompoundType::K_UNION) {
     Tag = llvm::dwarf::DW_TAG_union_type;
-  else {
-    assert(Decl->isClass() && "Unknown CompoundType!");
+  } else {
+    assert(ct->keyword == CompoundType::K_CLASS && "Unknown CompoundType!");
     Tag = llvm::dwarf::DW_TAG_class_type;
   }
 
-  SourceManager &SM = M->getContext().getSourceManager();
+  SourceManager SM;
 
   // Get overall information about the record type for the debug info.
-  std::string Name = Decl->getNameAsString();
+  std::string Name = ct->name;
 
   PresumedLoc PLoc = SM.getPresumedLoc(Decl->getLocation());
   llvm::DICompileUnit DefUnit;
