@@ -187,7 +187,7 @@ llvm::DIType DebugInfo::CreateCVRType(CVAtomicType* Ty, llvm::DICompileUnit Unit
 {
     llvm::DIType FromTy;
     CVFlags cv = Ty->cv & (CV_CONST | CV_VOLATILE | CV_RESTRICT);
-    unsigned Tag;
+    unsigned Tag = 0;
     while(cv) {
         if (Ty->isConst()) {
             Tag = llvm::dwarf::DW_TAG_const_type;
@@ -400,6 +400,7 @@ llvm::DIType DebugInfo::CreateType(const FunctionType *Ty,
                                             llvm::DIType(), EltTypeArray);
 }
 
+#if RICH
 /// CreateType - get structure or union type.
 llvm::DIType DebugInfo::CreateType(const CompoundType *Ty,
                                      llvm::DICompileUnit Unit)
@@ -618,11 +619,13 @@ llvm::DIType DebugInfo::CreateType(const ArrayType *Ty,
                                           SubscriptArray);
 }
 
-
+#endif
 /// getOrCreateType - Get the type from the cache or create a new
 /// one if necessary.
-llvm::DIType DebugInfo::getOrCreateType(Type Ty,
-                                          llvm::DICompileUnit Unit) {
+llvm::DIType DebugInfo::getOrCreateType(Type* Ty, llvm::DICompileUnit Unit) {
+    return llvm::DIType();      // RICH
+
+#if RICH
   if (Ty.isNull())
     return llvm::DIType();
   
@@ -685,13 +688,15 @@ llvm::DIType DebugInfo::getOrCreateType(Type Ty,
   }
   
   return Slot;
+#endif
 }
 
+#if RICH
 /// EmitFunctionStart - Constructs the debug code for entering a function -
 /// "llvm.dbg.func.start.".
-void DebugInfo::EmitFunctionStart(const char *Name, QualType ReturnType,
+void DebugInfo::EmitFunctionStart(const char *Name, CVAtomicType* ReturnType,
                                     llvm::Function *Fn,
-                                    CGBuilderTy &Builder) {
+                                    BuilderTy &Builder) {
   const char *LinkageName = Name;
   
   // Skip the asm prefix if it exists.
@@ -702,7 +707,7 @@ void DebugInfo::EmitFunctionStart(const char *Name, QualType ReturnType,
   
   // FIXME: Why is this using CurLoc???
   llvm::DICompileUnit Unit = getOrCreateCompileUnit(CurLoc);
-  SourceManager &SM = M->getContext().getSourceManager();
+  SourceManager SM;
   unsigned LineNo = SM.getPresumedLoc(CurLoc).getLine();
   
   llvm::DISubprogram SP =
@@ -715,13 +720,14 @@ void DebugInfo::EmitFunctionStart(const char *Name, QualType ReturnType,
   // Push function on region stack.
   RegionStack.push_back(SP);
 }
+#endif
 
 
-void DebugInfo::EmitStopPoint(llvm::Function *Fn, CGBuilderTy &Builder) {
+void DebugInfo::EmitStopPoint(llvm::Function *Fn, BuilderTy &Builder) {
   if (CurLoc.isInvalid() || CurLoc.isMacroID()) return;
   
   // Don't bother if things are the same as last time.
-  SourceManager &SM = M->getContext().getSourceManager();
+  SourceManager SM;
   if (CurLoc == PrevLoc 
        || (SM.getInstantiationLineNumber(CurLoc) ==
            SM.getInstantiationLineNumber(PrevLoc)
@@ -738,9 +744,10 @@ void DebugInfo::EmitStopPoint(llvm::Function *Fn, CGBuilderTy &Builder) {
                                Builder.GetInsertBlock()); 
 }
 
+#if RICH
 /// EmitRegionStart- Constructs the debug code for entering a declarative
 /// region - "llvm.dbg.region.start.".
-void DebugInfo::EmitRegionStart(llvm::Function *Fn, CGBuilderTy &Builder) {
+void DebugInfo::EmitRegionStart(llvm::Function *Fn, BuilderTy &Builder) {
   llvm::DIDescriptor D;
   if (!RegionStack.empty())
     D = RegionStack.back();
@@ -751,7 +758,7 @@ void DebugInfo::EmitRegionStart(llvm::Function *Fn, CGBuilderTy &Builder) {
 
 /// EmitRegionEnd - Constructs the debug code for exiting a declarative
 /// region - "llvm.dbg.region.end."
-void DebugInfo::EmitRegionEnd(llvm::Function *Fn, CGBuilderTy &Builder) {
+void DebugInfo::EmitRegionEnd(llvm::Function *Fn, BuilderTy &Builder) {
   assert(!RegionStack.empty() && "Region stack mismatch, stack empty!");
 
   // Provide an region stop point.
@@ -763,7 +770,7 @@ void DebugInfo::EmitRegionEnd(llvm::Function *Fn, CGBuilderTy &Builder) {
 
 /// EmitDeclare - Emit local variable declaration debug info.
 void DebugInfo::EmitDeclare(const VarDecl *Decl, unsigned Tag,
-                              llvm::Value *Storage, CGBuilderTy &Builder) {
+                              llvm::Value *Storage, BuilderTy &Builder) {
   assert(!RegionStack.empty() && "Region stack mismatch, stack empty!");
 
   // Do not emit variable debug information while generating optimized code.
@@ -796,14 +803,14 @@ void DebugInfo::EmitDeclare(const VarDecl *Decl, unsigned Tag,
 
 void DebugInfo::EmitDeclareOfAutoVariable(const VarDecl *Decl,
                                             llvm::Value *Storage,
-                                            CGBuilderTy &Builder) {
+                                            BuilderTy &Builder) {
   EmitDeclare(Decl, llvm::dwarf::DW_TAG_auto_variable, Storage, Builder);
 }
 
 /// EmitDeclareOfArgVariable - Emit call to llvm.dbg.declare for an argument
 /// variable declaration.
 void DebugInfo::EmitDeclareOfArgVariable(const VarDecl *Decl, llvm::Value *AI,
-                                           CGBuilderTy &Builder) {
+                                           BuilderTy &Builder) {
   EmitDeclare(Decl, llvm::dwarf::DW_TAG_arg_variable, AI, Builder);
 }
 
@@ -846,3 +853,4 @@ void DebugInfo::EmitGlobalVariable(llvm::GlobalVariable *Var,
                                     Var->hasInternalLinkage(),
                                     true/*definition*/, Var);
 }
+#endif

@@ -68,6 +68,9 @@ CC2LLVMEnv::CC2LLVMEnv(StringTable &s, sm::string name, const TranslationUnit& i
     TD.init(str);
     mod->setDataLayout(str);
     mod->setTargetTriple(TI.getTargetTriple());
+    // If debug info generation is enabled, create the CGDebugInfo object.
+    // RICH: DebugInfo = CompileOpts.DebugInfo ? new CGDebugInfo(this) : 0;
+    DI = new DebugInfo(*this, LO);
 }
 
 CC2LLVMEnv::~CC2LLVMEnv()

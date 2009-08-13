@@ -24,8 +24,8 @@
 
 // RICH: #include "CGBuilder.h"
 
+class CC2LLVMEnv;
 namespace ellcc {
-  // RICH: class VarDecl;
 
 #ifdef NDEBUG
 typedef llvm::IRBuilder<false> BuilderTy;

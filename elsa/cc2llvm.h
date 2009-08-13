@@ -5,6 +5,7 @@
 #define CC2LLVM_H
 
 #include "Diagnostic.h"
+#include "DebugInfo.h"
 #include <llvm/Support/IRBuilder.h>
 #include <llvm/Target/TargetData.h>
 #include <llvm/Support/TargetFolder.h>
@@ -20,10 +21,6 @@ namespace llvm {
     class SwitchInst;
 }
 
-namespace ellcc {
-    class LangOptions;
-}
-
 // Elsa
 #include "cc_ast.h"          // C++ AST
 
@@ -36,6 +33,7 @@ namespace ellcc {
 
 namespace ellcc {
     class LangOptions;
+    class DebugInfo;
 }
 
 /** The main translator entry point.
@@ -258,6 +256,9 @@ public:      // funcs
     /** The language options.
      */
     ellcc::LangOptions& LO;
+    /** The debug information pointer.
+     */
+    ellcc::DebugInfo* DI;
     /** "main"
      */
     StringRef string_main;
