@@ -312,6 +312,14 @@ bool NamedAtomicType::isNamedAtomicType() const
   return true;
 }
 
+SourceLocation NamedAtomicType::getLocation() const
+{
+    if (typedefVar) {
+        return typedefVar->loc;
+    } else {
+        return SourceLocation();
+    }
+}
 
 // ---------------- BaseClassSubobj ----------------
 void BaseClass::traverse(TypeVisitor &vis)

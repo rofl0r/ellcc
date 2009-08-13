@@ -305,6 +305,7 @@ public:
   ~NamedAtomicType();
 
   virtual bool isNamedAtomicType() const;       // returns true
+  virtual SourceLocation getLocation() const;
 };
 
 
@@ -713,6 +714,8 @@ public:     // funcs
   DOWNCAST_FN(PointerToMemberType)
   DOWNCAST_FN(DependentSizedArrayType)
 
+  // Get the definition source location, if any.
+  virtual SourceLocation getLocation() const { return SourceLocation(); }
   // map a tag to the tag's name
   static char const *getNameOfTag(Tag t);
 

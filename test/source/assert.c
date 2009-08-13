@@ -1,5 +1,5 @@
 #include <assert.h>
 int main(int argc, char** argv)
 {
-    assert(1);
+    assert(0 && "have assert");
 }

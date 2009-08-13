@@ -421,11 +421,11 @@ llvm::DIType DebugInfo::CreateType(const CompoundType *Ty,
   // Get overall information about the record type for the debug info.
   std::string Name = ct->name;
 
-  PresumedLoc PLoc = SM.getPresumedLoc(Decl->getLocation());
+  PresumedLoc PLoc = SM.getPresumedLoc(Ty->getLocation());
   llvm::DICompileUnit DefUnit;
   unsigned Line = 0;
   if (!PLoc.isInvalid()) {
-    DefUnit = getOrCreateCompileUnit(Decl->getLocation());
+    DefUnit = getOrCreateCompileUnit(Ty->getLocation());
     Line = PLoc.getLine();
   }
   
