@@ -75,6 +75,7 @@ CC2LLVMEnv::CC2LLVMEnv(StringTable &s, sm::string name, const TranslationUnit& i
 
 CC2LLVMEnv::~CC2LLVMEnv()
 {
+    delete DI;
 }
 
 /** Send a diagnostic message.
@@ -83,6 +84,15 @@ DiagnosticBuilder CC2LLVMEnv::report(SourceLocation loc, unsigned DiagID)
 {
     SourceManager SM;
     return diags.Report(FullSourceLoc(loc, SM), DiagID);
+}
+
+void CC2LLVMEnv::EmitStopPoint(const Statement *S)
+{
+    if (DI) {
+        checkCurrentBlock();
+        DI->setLocation(S->loc);
+        DI->EmitStopPoint(function, builder);
+    }
 }
 
 static llvm::GlobalValue::LinkageTypes getLinkage(DeclFlags flags)
@@ -940,7 +950,8 @@ void S_expr::cc2llvm(CC2LLVMEnv &env) const
 void S_compound::cc2llvm(CC2LLVMEnv &env) const
 {
     FOREACH_ASTLIST(Statement, stmts, iter) {
-      iter.data()->cc2llvm(env);
+        env.EmitStopPoint(iter.data());
+        iter.data()->cc2llvm(env);
     }
 }
 

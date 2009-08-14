@@ -20,6 +20,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/Analysis/DebugInfo.h"
 #include "llvm/Support/IRBuilder.h"
+#include <llvm/Support/TargetFolder.h>
 #include <map>
 
 // RICH: #include "CGBuilder.h"
@@ -27,11 +28,7 @@
 class CC2LLVMEnv;
 namespace ellcc {
 
-#ifdef NDEBUG
-typedef llvm::IRBuilder<false> BuilderTy;
-#else
-typedef llvm::IRBuilder<> BuilderTy;
-#endif
+typedef llvm::IRBuilder<true, llvm::TargetFolder> BuilderTy;
 
 /// DebugInfo - This class gathers all debug information during compilation 
 /// and is responsible for emitting to llvm globals or pass directly to 

@@ -691,7 +691,6 @@ llvm::DIType DebugInfo::getOrCreateType(Type* Ty, llvm::DICompileUnit Unit) {
 #endif
 }
 
-#if RICH
 /// EmitFunctionStart - Constructs the debug code for entering a function -
 /// "llvm.dbg.func.start.".
 void DebugInfo::EmitFunctionStart(const char *Name, CVAtomicType* ReturnType,
@@ -720,7 +719,6 @@ void DebugInfo::EmitFunctionStart(const char *Name, CVAtomicType* ReturnType,
   // Push function on region stack.
   RegionStack.push_back(SP);
 }
-#endif
 
 
 void DebugInfo::EmitStopPoint(llvm::Function *Fn, BuilderTy &Builder) {

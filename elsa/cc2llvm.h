@@ -53,17 +53,6 @@ public:      // data
     /** StringTable for storing generated strings.
      */ 
     StringTable &str;
-
-public:      // funcs
-    /** Construct an LLVM converter.
-     */
-    CC2LLVMEnv(StringTable &str, sm::string name, const TranslationUnit& input,
-               ellcc::TargetInfo& TI, ellcc::Diagnostic& diags, llvm::LLVMContext& context,
-               ellcc::LangOptions& LO);
-    /** Destruct an LLVM convertor.
-     */
-    ~CC2LLVMEnv();
-
     /** Information about the build environment.
      */
     ellcc::TargetInfo& TI;
@@ -79,6 +68,82 @@ public:      // funcs
     /** The target aware folder.
      */
     llvm::TargetFolder targetFolder;
+    /** The input AST.
+     */
+    const TranslationUnit& input;
+    /** The LLVM module created.
+     */
+    llvm::Module* mod;
+    /** The current function.
+     */
+    llvm::Function* function;
+    /** The AST of the currrent function.
+     */
+    const Function* functionAST;
+    /** The current function entry block.
+     */
+    llvm::BasicBlock* entryBlock;
+    /** The current function return block.
+     */
+    llvm::BasicBlock* returnBlock;
+    /** The return value.
+     */
+    llvm::Value* returnValue;
+    /** The current block being processed.
+     */
+    llvm::BasicBlock* currentBlock;
+    /** The continuation point of the current loop.
+     */
+    llvm::BasicBlock* continueBlock;
+    /** The block following current loop or switch.
+     */
+    llvm::BasicBlock* nextBlock;
+    /** The currently active switch instruction.
+     */
+    llvm::SwitchInst* switchInst;
+    /** The type of the currently active switch expression.
+     */
+    Type* switchType;
+    /** Map AST variables to LLVM variables.
+     */
+    PtrMap<const Variable, llvm::Value> variables;
+    /** Map AST compound types to LLVM compound types.
+     */
+    PtrMap<CompoundType, const llvm::Type> compounds;
+    /** Map AST compound members types to LLVM indices.
+     */
+    PtrMap<const Variable, llvm::Value> members;
+    /** Map labels to LLVM blocks.
+     */
+    PtrMap<const char, llvm::BasicBlock> labels;
+    /** The LLVM Builder.
+     */
+    llvm::IRBuilder<true, llvm::TargetFolder> builder;
+    /** The LLVM context.
+     */
+    llvm::LLVMContext& context;
+    /** The language options.
+     */
+    ellcc::LangOptions& LO;
+    /** The debug information pointer.
+     */
+    ellcc::DebugInfo* DI;
+    /** "main"
+     */
+    StringRef string_main;
+public:      // funcs
+    /** Construct an LLVM converter.
+     */
+    CC2LLVMEnv(StringTable &str, sm::string name, const TranslationUnit& input,
+               ellcc::TargetInfo& TI, ellcc::Diagnostic& diags, llvm::LLVMContext& context,
+               ellcc::LangOptions& LO);
+    /** Destruct an LLVM convertor.
+     */
+    ~CC2LLVMEnv();
+
+    /** Emit a debug stop point.
+     */
+    void EmitStopPoint(const Statement *S);
 
     /** Convert an AST type specifier into an LLVM type specifier.
      */
@@ -198,70 +263,6 @@ public:      // funcs
      * @return The LLVM module.
      */
     llvm::Module* doit();
-
-    /** The input AST.
-     */
-    const TranslationUnit& input;
-    /** The LLVM module created.
-     */
-    llvm::Module* mod;
-    /** The current function.
-     */
-    llvm::Function* function;
-    /** The AST of the currrent function.
-     */
-    const Function* functionAST;
-    /** The current function entry block.
-     */
-    llvm::BasicBlock* entryBlock;
-    /** The current function return block.
-     */
-    llvm::BasicBlock* returnBlock;
-    /** The return value.
-     */
-    llvm::Value* returnValue;
-    /** The current block being processed.
-     */
-    llvm::BasicBlock* currentBlock;
-    /** The continuation point of the current loop.
-     */
-    llvm::BasicBlock* continueBlock;
-    /** The block following current loop or switch.
-     */
-    llvm::BasicBlock* nextBlock;
-    /** The currently active switch instruction.
-     */
-    llvm::SwitchInst* switchInst;
-    /** The type of the currently active switch expression.
-     */
-    Type* switchType;
-    /** Map AST variables to LLVM variables.
-     */
-    PtrMap<const Variable, llvm::Value> variables;
-    /** Map AST compound types to LLVM compound types.
-     */
-    PtrMap<CompoundType, const llvm::Type> compounds;
-    /** Map AST compound members types to LLVM indices.
-     */
-    PtrMap<const Variable, llvm::Value> members;
-    /** Map labels to LLVM blocks.
-     */
-    PtrMap<const char, llvm::BasicBlock> labels;
-    /** The LLVM Builder.
-     */
-    llvm::IRBuilder<true, llvm::TargetFolder> builder;
-    /** The LLVM context.
-     */
-    llvm::LLVMContext& context;
-    /** The language options.
-     */
-    ellcc::LangOptions& LO;
-    /** The debug information pointer.
-     */
-    ellcc::DebugInfo* DI;
-    /** "main"
-     */
-    StringRef string_main;
 };
 
 #endif // CC2LLVM_H
