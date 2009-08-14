@@ -758,7 +758,7 @@ void DebugInfo::EmitRegionStart(llvm::Function *Fn, BuilderTy &Builder) {
 void DebugInfo::EmitRegionEnd(llvm::Function *Fn, BuilderTy &Builder) {
   assert(!RegionStack.empty() && "Region stack mismatch, stack empty!");
 
-  // Provide an region stop point.
+  // Provide a region stop point.
   EmitStopPoint(Fn, Builder);
   
   DebugFactory.InsertRegionEnd(RegionStack.back(), Builder.GetInsertBlock());

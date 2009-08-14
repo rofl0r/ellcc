@@ -840,10 +840,8 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
     // Set up the return block.
     env.returnBlock = llvm::BasicBlock::Create("return", env.function, 0);
     // Set up the return value.
-    if (returnType == llvm::Type::VoidTy) {
-        // A void function.
-        llvm::ReturnInst::Create(env.returnBlock);
-    } else {
+    llvm::LoadInst* rv = NULL;
+    if (returnType != llvm::Type::VoidTy) {
         // Create the return value holder.
 	
         env.returnValue = env.createTempAlloca(returnType, "retval");
@@ -857,14 +855,8 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
         }
 
         // Generate the function return.
-        llvm::LoadInst* rv = new llvm::LoadInst(env.returnValue, "", false, env.returnBlock);	// RICH: Volatile
-        llvm::ReturnInst::Create(rv, env.returnBlock);
+        rv = new llvm::LoadInst(env.returnValue, "", false, env.returnBlock);	// RICH: Volatile
     }
-
-    // Remove the allocaInsertPt instruction, which is just a convenience for us.
-    llvm::Instruction *Ptr = env.allocaInsertPt;
-    env.allocaInsertPt = NULL;
-    Ptr->eraseFromParent();
 
     // Clear function specific data.
     env.labels.empty();
@@ -877,6 +869,23 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
       env.builder.CreateBr(env.returnBlock);
       env.currentBlock = NULL;
     }
+
+    // Emit debug descriptor for function end.
+    if (env.DI) {
+        env.DI->setLocation(body->endloc);
+        env.builder.SetInsertPoint(env.returnBlock, env.returnBlock->end());
+        env.DI->EmitRegionEnd(function, env.builder);
+    }
+    if (rv == NULL) {
+        llvm::ReturnInst::Create(env.returnBlock);
+    } else {
+        llvm::ReturnInst::Create(rv, env.returnBlock);
+    }
+
+    // Remove the allocaInsertPt instruction, which is just a convenience for us.
+    llvm::Instruction *Ptr = env.allocaInsertPt;
+    env.allocaInsertPt = NULL;
+    Ptr->eraseFromParent();
 
     env.function = NULL;
     env.functionAST = oldFunctionAST;	// Restore any old function context.
@@ -3468,9 +3477,11 @@ llvm::Value *E_statement::cc2llvm(CC2LLVMEnv &env, int& deref) const
       if (iter.data() == last) {
           break;
       }
+      env.EmitStopPoint(iter.data());
       iter.data()->cc2llvm(env);
     }
 
+    env.EmitStopPoint(last);
     Expression* expr = last->asS_expr()->expr->expr;
     VDEBUG("E_statement expr", loc, std::cerr << expr->asString());
     return expr->cc2llvm(env, deref);
