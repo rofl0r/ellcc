@@ -78,6 +78,15 @@ CC2LLVMEnv::~CC2LLVMEnv()
     delete DI;
 }
 
+/// createTempAlloca - This creates a alloca and inserts it into the entry
+/// block.
+llvm::AllocaInst *CC2LLVMEnv::createTempAlloca(const llvm::Type *Ty, const char *Name)
+{
+  if (!builder.isNamePreserving())
+    Name = "";
+  return new llvm::AllocaInst(Ty, 0, Name, allocaInsertPt);
+}
+
 /** Send a diagnostic message.
  */
 DiagnosticBuilder CC2LLVMEnv::report(SourceLocation loc, unsigned DiagID)
@@ -700,8 +709,24 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
     env.functionAST = this;
     env.entryBlock = llvm::BasicBlock::Create("entry", env.function, NULL);
 
+    // Create a marker to make it easy to insert allocas into the entryblock
+    // later.  Don't create this with the builder, because we don't want it
+    // folded.
+    llvm::Value *Undef = llvm::UndefValue::get(llvm::Type::Int32Ty);
+    env.allocaInsertPt = new llvm::BitCastInst(Undef, llvm::Type::Int32Ty, "",
+                                               env.entryBlock);
+    if (env.builder.isNamePreserving())
+        env.allocaInsertPt->setName("allocapt");
+
     // Set the initial current block.
     env.setCurrentBlock(env.entryBlock);
+
+    // Emit subprogram debug descriptor.
+    if (env.DI) {
+        env.DI->setLocation(nameAndParams->var->loc);
+        env.DI->EmitFunctionStart(env.variableName(nameAndParams->var),
+                                  funcType->retType, function, env.builder);
+    }
 
     llvm::Function::arg_iterator llargs = env.function->arg_begin();
     env.returnValue = NULL;
@@ -711,7 +736,7 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
         const llvm::Type *ptr = llvm::PointerType::get(env.makeTypeSpecifier(nameAndParams->var->loc, funcType->retType),
                                                        0);        // RICH: address space.
         llvm::Value* arg = llargs++;
-	llvm::AllocaInst* addr = env.builder.CreateAlloca(ptr, NULL, "sret");
+	llvm::AllocaInst* addr = env.createTempAlloca(ptr, "sret");
         env.builder.CreateStore(arg, addr, false);	// RICH: IsVolatile.
         env.returnValue = addr;
     }
@@ -727,7 +752,7 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
         VDEBUG("Function arg", param->loc, type->print(std::cerr));
         if (first && receiver && param != receiver) {
             // Yuck! The receiver is not explicit. I think it should be.
-            llvm::AllocaInst* addr = env.builder.CreateAlloca(type, NULL, env.variableName(receiver));
+            llvm::AllocaInst* addr = env.createTempAlloca(type, env.variableName(receiver));
             // Remember where the argument can be retrieved.
             env.variables.add(receiver, addr);
             // Store the argument for later use.
@@ -743,7 +768,7 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
         first = false;
 	// type will be NULL for "...".
 	if (type) {
-	    llvm::AllocaInst* addr = env.builder.CreateAlloca(type, NULL, env.variableName(param));
+	    llvm::AllocaInst* addr = env.createTempAlloca(type, env.variableName(param));
 	    // Remember where the argument can be retrieved.
             env.variables.add(param, addr);
 	    // Store the argument for later use.
@@ -821,7 +846,7 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
     } else {
         // Create the return value holder.
 	
-        env.returnValue = env.builder.CreateAlloca(returnType, NULL, "retval");
+        env.returnValue = env.createTempAlloca(returnType, "retval");
 
         if (isMain) {
             // Default return value.
@@ -835,6 +860,11 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
         llvm::LoadInst* rv = new llvm::LoadInst(env.returnValue, "", false, env.returnBlock);	// RICH: Volatile
         llvm::ReturnInst::Create(rv, env.returnBlock);
     }
+
+    // Remove the allocaInsertPt instruction, which is just a convenience for us.
+    llvm::Instruction *Ptr = env.allocaInsertPt;
+    env.allocaInsertPt = NULL;
+    Ptr->eraseFromParent();
 
     // Clear function specific data.
     env.labels.empty();

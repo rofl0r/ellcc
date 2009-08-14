@@ -693,7 +693,7 @@ llvm::DIType DebugInfo::getOrCreateType(Type* Ty, llvm::DICompileUnit Unit) {
 
 /// EmitFunctionStart - Constructs the debug code for entering a function -
 /// "llvm.dbg.func.start.".
-void DebugInfo::EmitFunctionStart(const char *Name, CVAtomicType* ReturnType,
+void DebugInfo::EmitFunctionStart(const char *Name, Type* ReturnType,
                                     llvm::Function *Fn,
                                     BuilderTy &Builder) {
   const char *LinkageName = Name;
@@ -742,7 +742,6 @@ void DebugInfo::EmitStopPoint(llvm::Function *Fn, BuilderTy &Builder) {
                                Builder.GetInsertBlock()); 
 }
 
-#if RICH
 /// EmitRegionStart- Constructs the debug code for entering a declarative
 /// region - "llvm.dbg.region.start.".
 void DebugInfo::EmitRegionStart(llvm::Function *Fn, BuilderTy &Builder) {
@@ -766,6 +765,7 @@ void DebugInfo::EmitRegionEnd(llvm::Function *Fn, BuilderTy &Builder) {
   RegionStack.pop_back();
 }
 
+#if RICH
 /// EmitDeclare - Emit local variable declaration debug info.
 void DebugInfo::EmitDeclare(const VarDecl *Decl, unsigned Tag,
                               llvm::Value *Storage, BuilderTy &Builder) {

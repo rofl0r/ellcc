@@ -83,6 +83,9 @@ public:      // data
     /** The current function entry block.
      */
     llvm::BasicBlock* entryBlock;
+    /** The alloca instruction insertion point.
+     */
+    llvm::Instruction* allocaInsertPt;
     /** The current function return block.
      */
     llvm::BasicBlock* returnBlock;
@@ -144,6 +147,9 @@ public:      // funcs
     /** Emit a debug stop point.
      */
     void EmitStopPoint(const Statement *S);
+    /** Create an alloca.
+     */
+    llvm::AllocaInst *createTempAlloca(const llvm::Type *Ty, const char *Name);
 
     /** Convert an AST type specifier into an LLVM type specifier.
      */
