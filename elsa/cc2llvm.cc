@@ -1541,9 +1541,15 @@ llvm::Value *E_intLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
 	    radix = 8;
         }
     }
+    const char* endp = p;
+    while(isxdigit(*endp)) {
+        ++endp;
+    }
 
+    std::string n(p, endp - p);
+    /// RICH: Handle 'L', etc.
     VDEBUG("IntLit", loc, std::cerr << text << " radix " << radix);
-    return llvm::ConstantInt::get(env.C, llvm::APInt(type->sizeInBits(env.TI), p, radix));
+    return llvm::ConstantInt::get(env.C, llvm::APInt(type->sizeInBits(env.TI), n, radix));
 }
 
 llvm::Value *E_floatLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
