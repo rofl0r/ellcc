@@ -26,6 +26,7 @@
 namespace llvm {
 struct fltSemantics;
 class FunctionType;
+class LLVMContext;
 }
 
 namespace ellcc {
@@ -325,6 +326,7 @@ public:
     short Instruction;                  // The instruction to match.
     const char* Name;                   // The function that replaces the instruction.
     const void* Types[5];               // The types of the return value and arguments.
+    const unsigned NumBits[5];          // != 0 if an integer type.
     llvm::FunctionType* FuncType;       // The calculated function type.
   };
  
@@ -355,7 +357,7 @@ protected:
                                 unsigned &NumAliases) const = 0;
   void removeGCCRegisterPrefix(const char *&Name) const;
 public:
-  virtual void getRaiseInstructionsList(RaiseInstructionsList*& List, 
+  virtual void getRaiseInstructionsList(llvm::LLVMContext& C, RaiseInstructionsList*& List, 
                                         unsigned &NumRaises) const
     { List = NULL; NumRaises = 0; }
   virtual char getGCCRegPrefix() const { return '%'; };

@@ -1521,7 +1521,7 @@ static TargetInfo::RaiseInstructionsList* RaiseList;
 static unsigned NumRaises;
 static void InitializeRaiseList(Module* M)
 {
-    TI->getRaiseInstructionsList(RaiseList, NumRaises);
+    TI->getRaiseInstructionsList(M->getContext(), RaiseList, NumRaises);
     for (unsigned index = 0; index < NumRaises; ++index) {
         if (RaiseList[index].FuncType == NULL) {
             assert(RaiseList[index].Types[0]);      // Must have a return type, at least.
