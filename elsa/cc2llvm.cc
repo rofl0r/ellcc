@@ -95,11 +95,11 @@ DiagnosticBuilder CC2LLVMEnv::report(SourceLocation loc, unsigned DiagID)
     return diags.Report(FullSourceLoc(loc, SM), DiagID);
 }
 
-void CC2LLVMEnv::EmitStopPoint(const Statement *S)
+void CC2LLVMEnv::EmitStopPoint(SourceLocation loc)
 {
     if (DI) {
         checkCurrentBlock();
-        DI->setLocation(S->loc);
+        DI->setLocation(loc);
         DI->EmitStopPoint(function, builder);
     }
 }
@@ -944,9 +944,11 @@ void S_label::cc2llvm(CC2LLVMEnv &env) const
         // Create the basic block here.
         block = llvm::BasicBlock::Create(env.C, label, env.function, env.returnBlock);
         // Remember the label.
+        env.EmitStopPoint(loc);
         env.labels.add(label, block);
     } else {
         // This was forward referenced.
+        env.EmitStopPoint(loc);
         block->moveBefore(env.returnBlock);
     }
 
@@ -959,6 +961,7 @@ void S_case::cc2llvm(CC2LLVMEnv &env) const
     xassert(env.switchInst);
     llvm::BasicBlock* block = llvm::BasicBlock::Create(env.C, "case", env.function, env.returnBlock);
     env.setCurrentBlock(block);
+    env.EmitStopPoint(loc);
     int deref;
     llvm::Value* value = expr->cc2llvm(env, deref);
     value = env.access(value, false, deref);                 // RICH: Volatile.
@@ -975,6 +978,7 @@ void S_default::cc2llvm(CC2LLVMEnv &env) const
     xassert(env.switchInst);
     llvm::BasicBlock* block = llvm::BasicBlock::Create(env.C, "default", env.function, env.returnBlock);
     env.setCurrentBlock(block);
+    env.EmitStopPoint(loc);
     env.switchInst->setSuccessor(0, block);
     s->cc2llvm(env);
 }
@@ -983,6 +987,7 @@ void S_expr::cc2llvm(CC2LLVMEnv &env) const
 {
     VDEBUG("Expr", loc, std::cerr << expr->expr->asString());
     int deref;
+    env.EmitStopPoint(loc);
     expr->cc2llvm(env, deref);
     // RICH: deref? volatile?
 }
@@ -990,7 +995,7 @@ void S_expr::cc2llvm(CC2LLVMEnv &env) const
 void S_compound::cc2llvm(CC2LLVMEnv &env) const
 {
     FOREACH_ASTLIST(Statement, stmts, iter) {
-        env.EmitStopPoint(iter.data());
+        env.EmitStopPoint(iter.data()->loc);
         iter.data()->cc2llvm(env);
     }
 }
@@ -1004,6 +1009,7 @@ void S_if::cc2llvm(CC2LLVMEnv &env) const
     llvm::BasicBlock* next = llvm::BasicBlock::Create(env.C, "next", env.function, env.returnBlock);
 
     env.checkCurrentBlock();
+    env.EmitStopPoint(loc);
     env.builder.CreateCondBr(value, ifTrue, ifFalse);
     env.currentBlock = NULL;
 
@@ -1031,6 +1037,7 @@ void S_switch::cc2llvm(CC2LLVMEnv &env) const
     // Create a block to follow the switch statement.
     env.nextBlock = llvm::BasicBlock::Create(env.C, "next", env.function, env.returnBlock);
     // Generate the condition.
+    env.EmitStopPoint(loc);
     const CN_expr* condition = cond->asCN_exprC();
     int deref;
     llvm::Value* value = condition->expr->expr->cc2llvm(env, deref);
@@ -1071,6 +1078,7 @@ void S_while::cc2llvm(CC2LLVMEnv &env) const
 
     // Set the current block.
     env.setCurrentBlock(env.continueBlock);
+    env.EmitStopPoint(loc);
 
     // Generate the test.
     const CN_expr* condition = cond->asCN_exprC();
@@ -1108,6 +1116,7 @@ void S_doWhile::cc2llvm(CC2LLVMEnv &env) const
 
     // Set the current block.
     env.setCurrentBlock(bodyBlock);
+    env.EmitStopPoint(loc);
     body->cc2llvm(env);
 
     // Generate the test.
@@ -1135,6 +1144,7 @@ void S_for::cc2llvm(CC2LLVMEnv &env) const
     env.nextBlock = llvm::BasicBlock::Create(env.C, "next", env.function, env.returnBlock);
 
     env.checkCurrentBlock();
+    env.EmitStopPoint(loc);
     // Handle the for() initialization.
     init->cc2llvm(env);
 
@@ -1170,6 +1180,7 @@ void S_break::cc2llvm(CC2LLVMEnv &env) const
 {
     xassert(env.nextBlock && "break not in a loop or switch");
     env.checkCurrentBlock();
+    env.EmitStopPoint(loc);
     env.builder.CreateBr(env.nextBlock);
     env.currentBlock = NULL;
 }
@@ -1178,6 +1189,7 @@ void S_continue::cc2llvm(CC2LLVMEnv &env) const
 {
     xassert(env.continueBlock && "continue not in a loop");
     env.checkCurrentBlock();
+    env.EmitStopPoint(loc);
     env.builder.CreateBr(env.continueBlock);
     env.currentBlock = NULL;
 }
@@ -1185,6 +1197,7 @@ void S_continue::cc2llvm(CC2LLVMEnv &env) const
 void S_return::cc2llvm(CC2LLVMEnv &env) const
 {
     env.checkCurrentBlock();
+    env.EmitStopPoint(loc);
     if (expr) {
         // A return value is specified.
         VDEBUG("Return", loc, std::cerr << expr->expr->asString());
@@ -1232,6 +1245,7 @@ void S_goto::cc2llvm(CC2LLVMEnv &env) const
     StringRef label = env.str(target);
 
     env.checkCurrentBlock();
+    env.EmitStopPoint(loc);
     llvm::BasicBlock* block = env.labels.get(label);
     if (block == NULL) {
         // The label has not been encountered, yet.
@@ -1487,6 +1501,7 @@ void S_asm::cc2llvm(CC2LLVMEnv &env) const
                                                      constraints.c_str(),
                                                      !!(d.qualifiers & CV_VOLATILE));
     VDEBUG("S_asm CreateCall call", loc, function->print(std::cerr));
+    env.EmitStopPoint(loc);
     llvm::CallInst *result = env.builder.CreateCall(function, args.begin(), args.end());
     result->addAttribute(~0, llvm::Attribute::NoUnwind);
     if (returnTarget) {
@@ -3480,11 +3495,10 @@ llvm::Value *E_statement::cc2llvm(CC2LLVMEnv &env, int& deref) const
       if (iter.data() == last) {
           break;
       }
-      env.EmitStopPoint(iter.data());
       iter.data()->cc2llvm(env);
     }
 
-    env.EmitStopPoint(last);
+    env.EmitStopPoint(last->loc);
     Expression* expr = last->asS_expr()->expr->expr;
     VDEBUG("E_statement expr", loc, std::cerr << expr->asString());
     return expr->cc2llvm(env, deref);

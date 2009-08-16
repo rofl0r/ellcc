@@ -12,10 +12,13 @@
 //===----------------------------------------------------------------------===//
 
 #include "TargetInfo.h"
+#include "llvm/LLVMContext.h"
+#include "llvm/DerivedTypes.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/STLExtras.h"
 #include <cstdlib>
 #include <sstream>
+using namespace llvm;
 using namespace ellcc;
 
 // TargetInfo Constructor.
@@ -41,15 +44,15 @@ TargetInfo::TargetInfo(const std::string &T) : Triple(T) {
   LongLongPrefAlign(0);
   FloatWidth(32); FloatAlign(32);
   FloatPrefAlign(0);
-  FloatFormat = &llvm::APFloat::IEEEsingle;
+  FloatFormat = &APFloat::IEEEsingle;
 
   DoubleWidth(64); DoubleAlign(64);
   DoublePrefAlign(0);
-  DoubleFormat = &llvm::APFloat::IEEEdouble;
+  DoubleFormat = &APFloat::IEEEdouble;
 
   LongDoubleWidth(128); LongDoubleAlign(128);
   LongDoublePrefAlign(0);
-  LongDoubleFormat = &llvm::APFloat::IEEEquad;
+  LongDoubleFormat = &APFloat::IEEEquad;
 
   PointerWidth(32); PointerAlign(32);
   PointerPrefAlign(0);
@@ -217,7 +220,7 @@ bool TargetInfo::isValidGCCRegisterName(const char *Name) const {
   
   getGCCRegAliases(Aliases, NumAliases);
   for (unsigned i = 0; i < NumAliases; i++) {
-    for (unsigned j = 0 ; j < llvm::array_lengthof(Aliases[i].Aliases); j++) {
+    for (unsigned j = 0 ; j < array_lengthof(Aliases[i].Aliases); j++) {
       if (!Aliases[i].Aliases[j])
         break;
       if (strcmp(Aliases[i].Aliases[j], Name) == 0)
@@ -255,7 +258,7 @@ const char *TargetInfo::getNormalizedGCCRegisterName(const char *Name) const {
   
   getGCCRegAliases(Aliases, NumAliases);
   for (unsigned i = 0; i < NumAliases; i++) {
-    for (unsigned j = 0 ; j < llvm::array_lengthof(Aliases[i].Aliases); j++) {
+    for (unsigned j = 0 ; j < array_lengthof(Aliases[i].Aliases); j++) {
       if (!Aliases[i].Aliases[j])
         break;
       if (strcmp(Aliases[i].Aliases[j], Name) == 0)
@@ -400,3 +403,17 @@ bool TargetInfo::validateInputConstraint(const char *Name,
   
   return true;
 }
+
+void TargetInfo::getRaiseInstructionsList(LLVMContext& C, RaiseInstructionsList*& List, 
+                                          unsigned &NumRaises) const
+{
+  getRaiseInstructionsList(List, NumRaises);
+  for (unsigned index = 0; index < NumRaises; ++index) {
+    for (unsigned type = 0; type < NumRaiseTypes; ++type) {
+      if (List[index].NumBits[type] && List[index].Types[type] == NULL) {
+        List[index].Types[type] = IntegerType::get(C, List[index].NumBits[type]);
+      }
+    }
+  }
+}
+

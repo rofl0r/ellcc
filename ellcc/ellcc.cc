@@ -407,6 +407,9 @@ ParseOnly("PO", cl::desc("Parse only, do not translate"));
 
 static cl::opt<bool>
 NoLink("no-link", cl::desc("Do not link bitcode files (for -c and -S)"));
+
+static cl::opt<bool>
+NoCrt0("no-crt0", cl::desc("Do not link the startup code (for _start) files"));
 //
 //===----------------------------------------------------------------------===//
 //===          OPTIMIZATION OPTIONS
@@ -1488,22 +1491,15 @@ struct BasicBlockPassPrinter : public BasicBlockPass {
 };
 
 char BasicBlockPassPrinter::ID = 0;
-inline void addPass(PassManager &PM, Pass *P) {
-  // Add the pass to the pass manager...
-  PM.add(P);
-
-  // If we are verifying all of the intermediate steps, add the verifier...
-  if (VerifyEach) PM.add(createVerifierPass());
-}
 
 void AddStandardCompilePasses(PassManager &PM) {
   PM.add(createVerifierPass());                  // Verify that input is correct
 
-  addPass(PM, createLowerSetJmpPass());          // Lower llvm.setjmp/.longjmp
+  addOnePass(&PM, createLowerSetJmpPass(), VerifyEach);          // Lower llvm.setjmp/.longjmp
 
   // If the -strip-debug command line option was specified, do it.
   if (StripDebug)
-    addPass(PM, createStripSymbolsPass(true));
+    addOnePass(&PM, createStripSymbolsPass(true), VerifyEach);
 
   if (OptLevel == OPT_NONE) return;
 
@@ -1544,16 +1540,22 @@ static void AddStandardLinkPasses(PassManager &PM)
 
     // If the -strip-debug command line option was specified, do it.
     if (StripDebug)
-        addPass(PM, createStripSymbolsPass(true));
+        addOnePass(&PM, createStripSymbolsPass(true), VerifyEach);
 
     if (NumRaises) {
-        addPass(PM, createRaiseInstructionsPass(RaiseList, NumRaises));
+        addOnePass(&PM, createRaiseInstructionsPass(RaiseList, NumRaises), VerifyEach);
     }
 
-    if (OptLevel == OPT_NONE) return;
+    if (!DisableInternalize)
+        addOnePass(&PM, createInternalizePass(exportList), VerifyEach);
+
+    if (OptLevel <= OPT_FAST_COMPILE) {
+        addOnePass(&PM, createGlobalDCEPass(), VerifyEach); // Remove dead functions.
+        return;
+    }
 
     if (!DisableInternalize)
-        addPass(PM, createInternalizePass(exportList));
+        addOnePass(&PM, createInternalizePass(exportList), VerifyEach);
 
     createStandardLTOPasses(&PM, /*Internalize=*/ false,
                             /*RunInliner=*/ !DisableInline,
@@ -1597,25 +1599,25 @@ static const FileTypes GetFileType(const std::string& fname, unsigned pos) {
 static void Optimize(Module* M)
 {
   // Instantiate the pass manager to organize the passes.
-  PassManager Passes;
+  PassManager PM;
 
   // Add an appropriate TargetData instance for this module...
-  addPass(Passes, new TargetData(M));
+  addOnePass(&PM, new TargetData(M), VerifyEach);
 
   // Add the standard passes.
-  AddStandardLinkPasses(Passes);
+  AddStandardLinkPasses(PM);
 
   // If the -s or -S command line options were specified, strip the symbols out
   // of the resulting program to make it smaller.  -s and -S are GNU ld options
   // that we are supporting; they alias -strip-all and -strip-debug.
   if (Strip || StripDebug)
-    addPass(Passes, createStripSymbolsPass(StripDebug && !Strip));
+    addOnePass(&PM, createStripSymbolsPass(StripDebug && !Strip), VerifyEach);
 
   // Create a new optimization pass for each one specified on the command line
   for (unsigned i = 0; i < OptimizationList.size(); ++i) {
     const PassInfo *Opt = OptimizationList[i];
     if (Opt->getNormalCtor())
-      addPass(Passes, Opt->getNormalCtor()());
+      addOnePass(&PM, Opt->getNormalCtor()(), VerifyEach);
     else
       std::cerr << progname << ": cannot create optimization pass: " << Opt->getPassName() 
                 << "\n";
@@ -1624,18 +1626,18 @@ static void Optimize(Module* M)
   // The user's passes may leave cruft around. Clean up after them them but
   // only if we haven't got optimizations enabled
   if (OptLevel != OPT_NONE) {
-    addPass(Passes, createInstructionCombiningPass());
-    addPass(Passes, createCFGSimplificationPass());
-    addPass(Passes, createDeadCodeEliminationPass());
-    addPass(Passes, createGlobalDCEPass());
+    addOnePass(&PM, createInstructionCombiningPass(), VerifyEach);
+    addOnePass(&PM, createCFGSimplificationPass(), VerifyEach);
+    addOnePass(&PM, createDeadCodeEliminationPass(), VerifyEach);
+    addOnePass(&PM, createGlobalDCEPass(), VerifyEach);
   }
 
   // Make sure everything is still good.
   if (VerifyEach)
-      Passes.add(createVerifierPass());
+      PM.add(createVerifierPass());
 
   // Run our queue of passes all at once now, efficiently.
-  Passes.run(*M);
+  PM.run(*M);
 }
 
 static void PrintCommand(const std::vector<const char*> &args) {
@@ -2047,7 +2049,7 @@ static int Link(const std::string& OutputFilename,
   // Build the linker command line arguments.
   std::vector<std::string> args;
   args.push_back(ld.c_str());
-  // Add the ellcc crt0.o, which is relative to the ellcc binary.
+  // Add the ellcc linker script target.ld, which is relative to the ellcc binary.
   std::vector<std::string> found;
   findFiles(found, "target.ld", "linker");
   if (found.size()) {
@@ -2514,17 +2516,21 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         // Create a PassManager to hold and optimize the collection of passes we are
         // about to build...
         //
-        PassManager Passes;
+        PassManager PM;
 
         // Add an appropriate TargetData instance for this module...
-        Passes.add(new TargetData(input.module));
+        PM.add(new TargetData(input.module));
 
-        if (OptLevel > OPT_FAST_COMPILE)
-            AddStandardCompilePasses(Passes);
-
-        // otherwise if the -strip-debug command line option was specified, add it.
-        else if (StripDebug)
-            addPass(Passes, createStripSymbolsPass(true));
+        if (OptLevel > OPT_FAST_COMPILE) {
+            AddStandardCompilePasses(PM);
+        } else {
+            // Do the minimum necessary.
+            addOnePass(&PM, createStripDeadPrototypesPass(), VerifyEach); // Get rid of dead prototypes
+            addOnePass(&PM, createDeadTypeEliminationPass(), VerifyEach); // Eliminate dead types
+            if (StripDebug) {
+                addOnePass(&PM, createStripSymbolsPass(true), VerifyEach);
+            }
+        }
     
         // Create a new optimization pass for each one specified on the command line
         for (unsigned i = 0; i < OptimizationList.size(); ++i) {
@@ -2535,38 +2541,38 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
             else
               PrintAndExit(std::string("cannot create pass: ") + PassInf->getPassName());
             if (P) {
-                addPass(Passes, P);
+                addOnePass(&PM, P, VerifyEach);
             
                 if (AnalyzeOnly) {
                     if (dynamic_cast<BasicBlockPass*>(P))
-                        Passes.add(new BasicBlockPassPrinter(PassInf));
+                        PM.add(new BasicBlockPassPrinter(PassInf));
                     else if (dynamic_cast<LoopPass*>(P))
-                        Passes.add(new  LoopPassPrinter(PassInf));
+                        PM.add(new  LoopPassPrinter(PassInf));
                     else if (dynamic_cast<FunctionPass*>(P))
-                        Passes.add(new FunctionPassPrinter(PassInf));
+                        PM.add(new FunctionPassPrinter(PassInf));
                     else if (dynamic_cast<CallGraphSCCPass*>(P))
-                        Passes.add(new CallGraphSCCPassPrinter(PassInf));
+                        PM.add(new CallGraphSCCPassPrinter(PassInf));
                     else
-                        Passes.add(new ModulePassPrinter(PassInf));
+                        PM.add(new ModulePassPrinter(PassInf));
                 }
             }
           
             if (PrintEachXForm)
-                Passes.add(createPrintModulePass(&outs()));
+                PM.add(createPrintModulePass(&outs()));
         }
     
         // Check that the module is well formed on completion of optimization
         if (!NoVerify && !VerifyEach)
-            Passes.add(createVerifierPass());
+            PM.add(createVerifierPass());
 
 #if RICH
         // Write bitcode out to disk or cout as the last step...
         if (!NoOutput && !AnalyzeOnly)
-            Passes.add(CreateBitcodeWriterPass(*Out));
+            PM.add(CreateBitcodeWriterPass(*Out));
 #endif
     
         // Now that we have all of the passes ready, run them.
-        Passes.run(*input.module);
+        PM.run(*input.module);
 
 #if RICH
         // Delete the ofstream.
@@ -2745,18 +2751,18 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
             PM.run(*input.module);
         } else {
             // Build up all of the passes that we want to do to the module.
-            FunctionPassManager Passes(new ExistingModuleProvider(input.module));
-            Passes.add(new TargetData(*Target.getTargetData()));
+            FunctionPassManager PM(new ExistingModuleProvider(input.module));
+            PM.add(new TargetData(*Target.getTargetData()));
 
 #ifndef NDEBUG
             if (!NoVerify)
-                Passes.add(createVerifierPass());
+                PM.add(createVerifierPass());
 #endif
 
             // Ask the target to add backend passes as necessary.
             ObjectCodeEmitter *OCE = 0;
 
-            switch (Target.addPassesToEmitFile(Passes, *Out, FileType, getCodeGenOpt())) {
+            switch (Target.addPassesToEmitFile(PM, *Out, FileType, getCodeGenOpt())) {
                 default:
                     assert(0 && "Invalid file model!");
                     Exit(1);
@@ -2772,14 +2778,14 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
                 case FileModel::AsmFile:
                     break;
                 case FileModel::MachOFile:
-                    OCE = AddMachOWriter(Passes, *Out, Target);
+                    OCE = AddMachOWriter(PM, *Out, Target);
                     break;
                 case FileModel::ElfFile:
-                    OCE = AddELFWriter(Passes, *Out, Target);
+                    OCE = AddELFWriter(PM, *Out, Target);
                     break;
             }
 
-            if (Target.addPassesToEmitFileFinish(Passes, OCE, getCodeGenOpt())) {
+            if (Target.addPassesToEmitFileFinish(PM, OCE, getCodeGenOpt())) {
                 std::cerr << progname << ": target does not support generation of this"
                     << " file type!\n";
                 if (Out != &fouts()) delete Out;
@@ -2788,17 +2794,17 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
                 Exit(1);
             }
 
-            Passes.doInitialization();
+            PM.doInitialization();
 
             // Run our queue of passes all at once now, efficiently.
             // TODO: this could lazily stream functions out of the module.
             for (Module::iterator I = input.module->begin(), E = input.module->end(); I != E; ++I) {
                 if (!I->isDeclaration()) {
-                    Passes.run(*I);
+                    PM.run(*I);
                 }
             }
 
-            Passes.doFinalization();
+            PM.doFinalization();
         }
 
         Out->flush();
@@ -3006,7 +3012,7 @@ int main(int argc, char **argv)
             elsa.addTrace((*traceIt).c_str());
         }
 
-        if (FinalPhase >= BCLINKING && !NoLink) {
+        if (FinalPhase >= BCLINKING && !NoLink && !NoCrt0) {
             // Add the ellcc crt0.o, which is relative to the ellcc binary.
             std::vector<std::string> found;
             findFiles(found, "crt0.o", "lib");

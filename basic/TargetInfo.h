@@ -322,12 +322,13 @@ public:
 
   /** A list of instructions to raise to function calls.
    */
+  static const unsigned NumRaiseTypes = 5;
   struct RaiseInstructionsList {
-    short Instruction;                  // The instruction to match.
-    const char* Name;                   // The function that replaces the instruction.
-    const void* Types[5];               // The types of the return value and arguments.
-    const unsigned NumBits[5];          // != 0 if an integer type.
-    llvm::FunctionType* FuncType;       // The calculated function type.
+    short Instruction;                          // The instruction to match.
+    const char* Name;                           // The function that replaces the instruction.
+    const void* Types[NumRaiseTypes];           // The types of the return value and arguments.
+    const unsigned NumBits[NumRaiseTypes];      // != 0 if an integer type.
+    llvm::FunctionType* FuncType;               // The calculated function type.
   };
  
   virtual bool useGlobalsForAutomaticVariables() const { return false; }
@@ -356,10 +357,15 @@ protected:
   virtual void getGCCRegAliases(const GCCRegAlias *&Aliases, 
                                 unsigned &NumAliases) const = 0;
   void removeGCCRegisterPrefix(const char *&Name) const;
+  virtual void getRaiseInstructionsList(RaiseInstructionsList*& List, 
+                                unsigned &NumRaises) const {
+    List = NULL;
+    NumRaises = 0;
+  }
+
 public:
-  virtual void getRaiseInstructionsList(llvm::LLVMContext& C, RaiseInstructionsList*& List, 
-                                        unsigned &NumRaises) const
-    { List = NULL; NumRaises = 0; }
+  void getRaiseInstructionsList(llvm::LLVMContext& C, RaiseInstructionsList*& List, 
+                                unsigned &NumRaises) const;
   virtual char getGCCRegPrefix() const { return '%'; };
   virtual bool validateAsmConstraint(const char *&Name, 
                                      TargetInfo::ConstraintInfo &info) const= 0;

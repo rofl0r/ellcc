@@ -146,7 +146,7 @@ public:      // funcs
 
     /** Emit a debug stop point.
      */
-    void EmitStopPoint(const Statement *S);
+    void EmitStopPoint(SourceLocation loc);
     /** Create an alloca.
      */
     llvm::AllocaInst *createTempAlloca(const llvm::Type *Ty, const char *Name);

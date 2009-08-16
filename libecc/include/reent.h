@@ -88,7 +88,40 @@
 #define _REENT_H_
 _BEGIN_STD_C
 
+#include <config.h>
 #include <sys/reent.h>
+
+#if defined(REENTRANT_SYSCALLS_PROVIDED)
+
+#define _close_r(__reent, __fd)                   _close(__fd)
+#define _execve_r(__reent, __f, __arg, __env)     _execve(__f, __arg, __env)
+#define _fcntl_r(__reent, __fd, __cmd, __arg)     _fcntl(__fd, __cmd, __arg)
+#define _fork_r(__reent)                          _fork()
+#define _fstat_r(__reent, __fdes, __stat)         _fstat(__fdes, __stat)
+#define _getpid_r(__reent)                        _getpid()
+#define _isatty_r(__reent, __desc)                _isatty(__desc)
+#define _kill_r(__reent, __pid, __signal)         _kill(__pid, __signal)
+#define _link_r(__reent, __oldpath, __newpath)    _link(__oldpath, __newpath)
+#define _lseek_r(__reent, __fdes, __off, __w)     _lseek(__fdes, __off, __w)
+#define _open_r(__reent, __path, __flag, __m)     _open(__path, __flag, __m)
+#define _read_r(__reent, __fd, __buff, __cnt)     _read(__fd, __buff, __cnt)
+#define _sbrk_r(__reent, __incr)                  _sbrk(__incr)
+#define _stat_r(__reent, __path, __buff)          _stat(__path, __buff)
+#define _times_r(__reent, __time)                 _times(__time)
+#define _unlink_r(__reent, __path)                _unlink(__path)
+#define _wait_r(__reent, __status)                _wait(__status)
+#define _write_r(__reent, __fd, __buff, __cnt)    _write(__fd, __buff, __cnt)
+#define _gettimeofday_r(__reent, __tp, __tzp)     _gettimeofday(__tp, __tzp)
+
+#ifdef __LARGE64_FILES
+#define _lseek64_r(__reent, __fd, __off, __w)     _lseek64(__fd, __off, __w)
+#define _fstat64_r(__reent, __fd, __buff)         _fstat64(__fd, __buff)
+#define _open64_r(__reent, __path, __flag, __m)   _open64(__path, __flag, __m)
+#endif
+
+#else
+/* Reentrant versions of system calls.  */
+
 #include <sys/_types.h>
 #include <machine/types.h>
 #include <sys/stat.h>
@@ -101,37 +134,6 @@ _BEGIN_STD_C
 struct tms;
 struct timeval;
 struct timezone;
-
-#if defined(REENTRANT_SYSCALLS_PROVIDED) && defined(MISSING_SYSCALL_NAMES)
-
-#define _close_r(__reent, __fd)                   close(__fd)
-#define _execve_r(__reent, __f, __arg, __env)     execve(__f, __arg, __env)
-#define _fcntl_r(__reent, __fd, __cmd, __arg)     fcntl(__fd, __cmd, __arg)
-#define _fork_r(__reent)                          fork()
-#define _fstat_r(__reent, __fdes, __stat)         fstat(__fdes, __stat)
-#define _getpid_r(__reent)                        getpid()
-#define _isatty_r(__reent, __desc)                isatty(__desc)
-#define _kill_r(__reent, __pid, __signal)         kill(__pid, __signal)
-#define _link_r(__reent, __oldpath, __newpath)    link(__oldpath, __newpath)
-#define _lseek_r(__reent, __fdes, __off, __w)     lseek(__fdes, __off, __w)
-#define _open_r(__reent, __path, __flag, __m)     open(__path, __flag, __m)
-#define _read_r(__reent, __fd, __buff, __cnt)     read(__fd, __buff, __cnt)
-#define _sbrk_r(__reent, __incr)                  sbrk(__incr)
-#define _stat_r(__reent, __path, __buff)          stat(__path, __buff)
-#define _times_r(__reent, __time)                 times(__time)
-#define _unlink_r(__reent, __path)                unlink(__path)
-#define _wait_r(__reent, __status)                wait(__status)
-#define _write_r(__reent, __fd, __buff, __cnt)    write(__fd, __buff, __cnt)
-#define _gettimeofday_r(__reent, __tp, __tzp)     gettimeofday(__tp, __tzp)
-
-#ifdef __LARGE64_FILES
-#define _lseek64_r(__reent, __fd, __off, __w)     lseek64(__fd, __off, __w)
-#define _fstat64_r(__reent, __fd, __buff)         fstat64(__fd, __buff)
-#define _open64_r(__reent, __path, __flag, __m)   open64(__path, __flag, __m)
-#endif
-
-#else
-/* Reentrant versions of system calls.  */
 
 extern int _close_r(struct _reent *, int);
 extern int _execve_r(struct _reent *, char *, char **, char **);

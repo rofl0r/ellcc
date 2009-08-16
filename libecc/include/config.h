@@ -1,7 +1,11 @@
 #ifndef _CONFIG_H_
 
-/** libecc configuration parameters.
+/* libecc configuration parameters.
  */
+
+/* Define if reentrant system calls are provided.
+ */
+#define REENTRANT_SYSCALLS_PROVIDED
 
 /** Define for a single threaded environment.
  */

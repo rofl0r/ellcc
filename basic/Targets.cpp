@@ -18,7 +18,6 @@
 #include "LangOptions.h"
 #include "llvm/Instruction.h"
 #include "llvm/Type.h"
-#include "llvm/DerivedTypes.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/SmallString.h"
@@ -738,7 +737,7 @@ public:
   virtual const char *getVAListDeclaration() const {
     return "typedef char* __builtin_va_list;";
   }
-  virtual void getRaiseInstructionsList(LLVMContext& C, RaiseInstructionsList*& List, 
+  virtual void getRaiseInstructionsList(RaiseInstructionsList*& List, 
                                         unsigned &NumRaises) const;
   static RaiseInstructionsList raiseInstructionsList[];
 };
@@ -748,18 +747,11 @@ TargetInfo::RaiseInstructionsList X86_32TargetInfo::raiseInstructionsList[] = {
     { Instruction::UDiv,        "__udivdi3",   { }, { 64, 64, 64 } },
 };
 
-void X86_32TargetInfo::getRaiseInstructionsList(LLVMContext& C, RaiseInstructionsList*& List, 
+void X86_32TargetInfo::getRaiseInstructionsList(RaiseInstructionsList*& List, 
                                                 unsigned &NumRaises) const
 {
   List = raiseInstructionsList;
   NumRaises = array_lengthof(raiseInstructionsList);
-  for (unsigned index = 0; index < NumRaises; ++index) {
-    for (unsigned type = 0; type < NumRaises; ++type) {
-      if (List[index].NumBits[type] && List[index].Types[type] == NULL) {
-        List[index].Types[type] = IntegerType::get(C, List[index].NumBits[type]);
-      }
-    }
-  }
 }
 
 } // end anonymous namespace
