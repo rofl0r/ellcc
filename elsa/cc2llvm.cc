@@ -1843,6 +1843,15 @@ llvm::Value *E_fieldAcc::cc2llvm(CC2LLVMEnv &env, int& deref) const
     object = env.access(object, false, deref, 1);                 // RICH: Volatile.
     VDEBUG("E_field field", loc, std::cerr << field->toString());
     llvm::Value* value = env.members.get(field);
+    if (value == NULL && obj->type->isSimple()) {
+        SimpleType *st = obj->type->asSimpleType();
+        if (   st->type == ST_FLOAT_COMPLEX
+            || st->type == ST_DOUBLE_COMPLEX
+            || st->type == ST_LONG_DOUBLE_COMPLEX) {
+            // This is a complex value.
+            
+        }
+    }
     if (value == NULL) {
         // Check for a static member.
         value = env.variables.get(field);
