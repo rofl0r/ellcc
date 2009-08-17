@@ -9,12 +9,7 @@ set(CMAKE_BUILD_TYPE Debug)
 # Define the library type
 set(ELLCC_LIBRARY_TYPE ) # SHARED)
 # Define the runtime library source directory.
-SET(COMPILER_RT_DIRECTORY /home/rich/compiler-rt)
-execute_process(COMMAND create_symlink ${COMPILER_RT_DIRECTORY}/lib lib
-                WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
-add_custom_target(compiler-rt ALL make
-                  COMMENT "Building compiler-rt for ${ELLCC_TARGET}"
-                  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/compiler-rt)
+set(COMPILER_RT_DIR  ${ELLCC_SOURCE_DIR}/../compiler-rt)
 # Define the target processors.
 file(READ ${ELLCC_SOURCE_DIR}/targets ELLCC_TARGETS)
 # Turn the targets into a cmake list.

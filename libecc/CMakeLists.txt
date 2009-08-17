@@ -3,6 +3,7 @@ foreach(ELLCC_TARGET ${ELLCC_TARGETS})
     file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/${ELLCC_TARGET})
     list(FIND LINUX_TARGETS ${ELLCC_TARGET} index)
     execute_process(COMMAND ${CMAKE_COMMAND}
+                        -DCOMPILER_RT_DIR=${COMPILER_RT_DIR}
                         -DELLCC_SOURCE_DIR=${ELLCC_SOURCE_DIR}
                         -DELLCC_TARGET=${ELLCC_TARGET}
                         -DLINUX_TARGET=${index}

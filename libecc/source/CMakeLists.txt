@@ -4,13 +4,12 @@ cmake_minimum_required(VERSION 2.6)
 include(${ELLCC_SOURCE_DIR}/cmake/target.cmake)
 add_subdirectory(common)
 
-SET(COMPILER_RT_DIRECTORY /home/rich/compiler-rt)
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/compiler-rt)
 execute_process(COMMAND ${CMAKE_COMMAND}
                     -DELLCC_SOURCE_DIR=${ELLCC_SOURCE_DIR}
                     -DELLCC_TARGET=${ELLCC_TARGET}
                     -DCMAKE_TOOLCHAIN_FILE=${ELLCC_SOURCE_DIR}/cmake/target.cmake
-                    ${COMPILER_RT_DIRECTORY}
+                    ${COMPILER_RT_DIR}
                 WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/compiler-rt)
 
 add_custom_target(compiler-rt ALL make
