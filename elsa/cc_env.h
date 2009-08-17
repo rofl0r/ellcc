@@ -334,6 +334,7 @@ private:     // funcs
                                 FunctionFlags flags,
                                 Type * /*nullable*/ exnType);
 
+  void initializeComplexComponents();
   void addGNUBuiltins();
 
   void setupOperatorOverloading();

@@ -88,6 +88,7 @@ extern double modf(double, double *);
 extern double ceil(double);
 extern double fabs(double);
 extern double floor(double);
+extern double logb(double);
 
 /* Non reentrant ANSI C functions.  */
 
@@ -253,6 +254,7 @@ extern float modff(float, float *);
 extern float ceilf(float);
 extern float fabsf(float);
 extern float floorf(float);
+extern float logbf(float);
 
 #ifndef _REENT_ONLY
 extern float acosf(float);
@@ -325,6 +327,7 @@ extern float hypotf (float, float);
 extern long double rintl(long double);
 extern long int lrintl(long double);
 extern long long llrintl(long double);
+extern long double logbl(long double);
 
 #endif /* !defined (__STRICT_ANSI__) || defined(__cplusplus) || __STDC_VERSION__ >= 199901L */
 

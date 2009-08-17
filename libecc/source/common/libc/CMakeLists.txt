@@ -1,7 +1,6 @@
 # Tell CMake to process the sub-directories
 add_subdirectory(argz)
 add_subdirectory(ctype)
-add_subdirectory(errno)
 add_subdirectory(iconv)
 add_subdirectory(locale)
 add_subdirectory(misc)

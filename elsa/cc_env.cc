@@ -532,6 +532,8 @@ Env::Env(StringTable &s, Preprocessor& PP, TypeFactory &tf,
     if (PP.getLangOptions().GNUMode) {
       doReportTemplateErrors = false;
     }
+
+    initializeComplexComponents();
   #endif // GNU_EXTENSION
 
   // for testing various modules

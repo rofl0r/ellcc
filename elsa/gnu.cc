@@ -18,6 +18,21 @@ using namespace std;
 SimpleTypeId constructFloatingType(int prec, int axis);
 
 
+/** Initialize the complex component fields.
+ */
+void Env::initializeComplexComponents()
+{
+    // initialize 'complexComponentFields'
+    for (int axis=0; axis<=1; axis++) {
+        for (int prec=0; prec<=2; prec++) {
+            StringRef n = axis==0? string_realSelector : string_imagSelector;
+            Type *t = env.getSimpleType(constructFloatingType(prec, axis));
+            Variable *v = makeVariable(SL_INIT, n, t, DF_BUILTIN | DF_MEMBER);
+            complexComponentFields[axis][prec] = v;
+        }
+    }
+}
+
 // --------------------------- Env ---------------------------------
 // Caveat: All of the uses of GNU builtin functions arise from
 // preprocessing with the gcc compiler's headers.  Strictly speaking,
@@ -638,16 +653,6 @@ void Env::addGNUBuiltins()
   for (int i=0; i < TABLESIZE(arr); i++) {
     Variable *v = makeImplicitDeclFuncVar(str(stringc << "__builtin_" << arr[i]));
     env.builtinVars.push(v);
-  }
-
-  // initialize 'complexComponentFields'
-  for (int axis=0; axis<=1; axis++) {
-    for (int prec=0; prec<=2; prec++) {
-      StringRef n = axis==0? string_realSelector : string_imagSelector;
-      Type *t = env.getSimpleType(constructFloatingType(prec, axis));
-      Variable *v = makeVariable(SL_INIT, n, t, DF_BUILTIN | DF_MEMBER);
-      complexComponentFields[axis][prec] = v;
-    }
   }
 }
 

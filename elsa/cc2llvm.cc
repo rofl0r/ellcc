@@ -211,6 +211,22 @@ llvm::Value* CC2LLVMEnv::checkCondition(Expression* cond)
     return checkCondition(cond->loc, value, deref);
 }
 
+static const llvm::Type* getTypeForFormat(llvm::LLVMContext &VMContext,
+                                          const llvm::fltSemantics &format) {
+  if (&format == &llvm::APFloat::IEEEsingle)
+    return llvm::Type::getFloatTy(VMContext);
+  if (&format == &llvm::APFloat::IEEEdouble)
+    return llvm::Type::getDoubleTy(VMContext);
+  if (&format == &llvm::APFloat::IEEEquad)
+    return llvm::Type::getFP128Ty(VMContext);
+  if (&format == &llvm::APFloat::PPCDoubleDouble)
+    return llvm::Type::getPPC_FP128Ty(VMContext);
+  if (&format == &llvm::APFloat::x87DoubleExtended)
+    return llvm::Type::getX86_FP80Ty(VMContext);
+  assert(0 && "Unknown float format!");
+  return 0;
+}
+
 const llvm::Type* CC2LLVMEnv::makeTypeSpecifier(SourceLocation loc, Type *t)
 {
     const llvm::Type* type = NULL;
@@ -313,15 +329,14 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLocation loc, Atomic
             type = llvm::IntegerType::get(C, at->sizeInBits(TI));
             break;
 	case ST_FLOAT:
-	    type = llvm::Type::getFloatTy(C);
+            VDEBUG("makeAtomicTypeSpecifier complex", loc, at->toString());
+            type = getTypeForFormat(C, TI.getFloatFormat());
 	    break;
 	case ST_DOUBLE:
-	    type = llvm::Type::getDoubleTy(C);
+            type = getTypeForFormat(C, TI.getDoubleFormat());
 	    break;
         case ST_LONG_DOUBLE:
-	    // RICH: Is this right? This depends on the target processor.
-	    type = llvm::Type::getFP128Ty(C);
-	    type = llvm::Type::getDoubleTy(C); // RICH: Treat as double for now.
+            type = getTypeForFormat(C, TI.getLongDoubleFormat());
 	    break;
         case ST_VOID:
             type = llvm::Type::getVoidTy(C);
@@ -334,8 +349,21 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLocation loc, Atomic
 
 	default:
 	case ST_FLOAT_COMPLEX:          // GNU/C99 (see doc/complex.txt)
+            VDEBUG("makeAtomicTypeSpecifier complex", loc, at->toString());
+            type = getTypeForFormat(C, TI.getFloatFormat());
+            type = llvm::StructType::get(C, type, type, NULL);
+            break;
         case ST_DOUBLE_COMPLEX:         // GNU/C99
+            VDEBUG("makeAtomicTypeSpecifier complex", loc, at->toString());
+            type = getTypeForFormat(C, TI.getDoubleFormat());
+            type = llvm::StructType::get(C, type, type, NULL);
+            break;
         case ST_LONG_DOUBLE_COMPLEX:    // GNU/C99
+            VDEBUG("makeAtomicTypeSpecifier complex", loc, at->toString());
+            type = getTypeForFormat(C, TI.getLongDoubleFormat());
+            type = llvm::StructType::get(C, type, type, NULL);
+            break;
+
         case ST_FLOAT_IMAGINARY:        // C99
 	case ST_DOUBLE_IMAGINARY:       // C99
         case ST_LONG_DOUBLE_IMAGINARY:  // C99
@@ -2816,7 +2844,7 @@ llvm::Value* CC2LLVMEnv::binop(SourceLocation loc, BinaryOp op, Expression* e1, 
                         right = builder.CreateZExt(right, TD.getIntPtrType(C));
                     } else {
                         VDEBUG("SExt2 source", loc, right->print(std::cerr));
-                        VDEBUG("SExt2 destination ", loc, TD.getIntPtrType()->print(std::cerr));
+                        VDEBUG("SExt2 destination ", loc, TD.getIntPtrType(C)->print(std::cerr));
                         right = builder.CreateSExt(right, TD.getIntPtrType(C));
                     }
                 } else {
