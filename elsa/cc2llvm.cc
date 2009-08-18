@@ -30,7 +30,7 @@ using namespace ellcc;
 #define SRET 1
 
 //#define E_FIELDACC_DEBUG
-#if 0
+#if 1
 // Really verbose debugging.
 #define VDEBUG(who, where, what) std::cerr << toString(where) << ": " << who << " "; what; std::cerr << "\n"
 #else
@@ -78,6 +78,15 @@ CC2LLVMEnv::~CC2LLVMEnv()
     delete DI;
 }
 
+static bool isComplex(Type* type)
+{
+    if (   type->isSimple(ST_FLOAT_COMPLEX)
+        || type->isSimple(ST_DOUBLE_COMPLEX)
+        || type->isSimple(ST_LONG_DOUBLE_COMPLEX)) {
+        return true;
+    }
+    return false;
+}
 /// createTempAlloca - This creates a alloca and inserts it into the entry
 /// block.
 llvm::AllocaInst *CC2LLVMEnv::createTempAlloca(const llvm::Type *Ty, const char *Name)
@@ -328,15 +337,19 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLocation loc, Atomic
                                                                  << at->toString());
             type = llvm::IntegerType::get(C, at->sizeInBits(TI));
             break;
+        case ST_FLOAT_IMAGINARY:        // C99
 	case ST_FLOAT:
             VDEBUG("makeAtomicTypeSpecifier complex", loc, at->toString());
             type = getTypeForFormat(C, TI.getFloatFormat());
 	    break;
+	case ST_DOUBLE_IMAGINARY:       // C99
 	case ST_DOUBLE:
             type = getTypeForFormat(C, TI.getDoubleFormat());
 	    break;
+        case ST_LONG_DOUBLE_IMAGINARY:  // C99
         case ST_LONG_DOUBLE:
-            type = getTypeForFormat(C, TI.getLongDoubleFormat());
+            type = getTypeForFormat(C, TI.getDoubleFormat());
+            // RICH: type = getTypeForFormat(C, TI.getLongDoubleFormat());
 	    break;
         case ST_VOID:
             type = llvm::Type::getVoidTy(C);
@@ -347,7 +360,6 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLocation loc, Atomic
 	     */
             break;
 
-	default:
 	case ST_FLOAT_COMPLEX:          // GNU/C99 (see doc/complex.txt)
             VDEBUG("makeAtomicTypeSpecifier complex", loc, at->toString());
             type = getTypeForFormat(C, TI.getFloatFormat());
@@ -360,13 +372,12 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLocation loc, Atomic
             break;
         case ST_LONG_DOUBLE_COMPLEX:    // GNU/C99
             VDEBUG("makeAtomicTypeSpecifier complex", loc, at->toString());
-            type = getTypeForFormat(C, TI.getLongDoubleFormat());
+            type = getTypeForFormat(C, TI.getDoubleFormat());
+            // RICH: type = getTypeForFormat(C, TI.getLongDoubleFormat());
             type = llvm::StructType::get(C, type, type, NULL);
             break;
 
-        case ST_FLOAT_IMAGINARY:        // C99
-	case ST_DOUBLE_IMAGINARY:       // C99
-        case ST_LONG_DOUBLE_IMAGINARY:  // C99
+	default:
             std::cerr << toString(loc) << ": ";
             xunimp("simple type");
 	    break;
@@ -761,7 +772,7 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
     env.returnValue = NULL;
 
 #if SRET
-    if (funcType->retType->isCompoundType()) {
+    if (isComplex(funcType->retType) || funcType->retType->isCompoundType()) {
         const llvm::Type *ptr = llvm::PointerType::get(env.makeTypeSpecifier(nameAndParams->var->loc, funcType->retType),
                                                        0);        // RICH: address space.
         llvm::Value* arg = llargs++;
@@ -1254,7 +1265,8 @@ void S_return::cc2llvm(CC2LLVMEnv &env) const
         }
         llvm::Value* where = env.returnValue;
 #if SRET
-        if (env.functionAST->funcType->retType->isCompoundType()) {
+        if (   isComplex(env.functionAST->funcType->retType)
+            || env.functionAST->funcType->retType->isCompoundType()) {
             where = env.builder.CreateLoad(where, false);     // RICH: Is volatile.
         }
 #endif
@@ -1733,7 +1745,7 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, int& deref) const
 
 #if SRET
     llvm::Value* sret = NULL;			// Non-NULL if a structure return.
-    if (ft->retType->isCompoundType()) {
+    if (isComplex(ft->retType) || ft->retType->isCompoundType()) {
         // We need an implicit first parameter that points to the return value area.
         const llvm::Type *type = env.makeTypeSpecifier(loc, ft->retType);
         VDEBUG("E_funCall sret type", loc, type->print(std::cerr));
@@ -1831,26 +1843,34 @@ llvm::Value *E_fieldAcc::cc2llvm(CC2LLVMEnv &env, int& deref) const
     bool isPointer = false;
     bool isUnion = false;
     isPointer = obj->type->isPtrOrRef();
+    Type* baseType;
     if (isPointer) {
-        isUnion = obj->type->getAtType()->isUnionType();
+        baseType = obj->type->getAtType();
+        isUnion = baseType->isUnionType();
     } else {
         isUnion = obj->type->isUnionType();
+        baseType = obj->type;
     }
 
     VDEBUG("E_field obj", loc, std::cerr << obj->asString());
-    VDEBUG("E_field obj type ", loc, std::cerr << obj->type->toString(); std::cerr << "isUnion = " << isUnion);
+    VDEBUG("E_field obj type ", loc, std::cerr << obj->type->toString();
+            std::cerr << " isUnion = " << isUnion;
+            std::cerr << " simple = " << baseType->isSimpleType();
+            if (baseType->isSimpleType()) {
+                const SimpleType* st = baseType->asSimpleTypeC();
+                std::cerr << " type = " << st->type;
+            } );
     llvm::Value* object = obj->cc2llvm(env, deref);
     object = env.access(object, false, deref, 1);                 // RICH: Volatile.
     VDEBUG("E_field field", loc, std::cerr << field->toString());
     llvm::Value* value = env.members.get(field);
-    if (value == NULL && obj->type->isSimple()) {
-        SimpleType *st = obj->type->asSimpleType();
-        if (   st->type == ST_FLOAT_COMPLEX
-            || st->type == ST_DOUBLE_COMPLEX
-            || st->type == ST_LONG_DOUBLE_COMPLEX) {
-            // This is a complex value.
-            
-        }
+    bool isC = isComplex(baseType);
+    if (value == NULL && isC) {
+        // This is a complex value. Implicitly define it.
+        int isImag = fieldName->getName()[2] == 'i';
+        const llvm::IntegerType* itype = llvm::IntegerType::get(env.C, env.TI.IntWidth());
+        value = llvm::ConstantInt::get(itype, isImag);
+        env.members.add(field, value);
     }
     if (value == NULL) {
         // Check for a static member.
@@ -1884,7 +1904,8 @@ llvm::Value *E_fieldAcc::cc2llvm(CC2LLVMEnv &env, int& deref) const
             object->print(std::cerr));
         VDEBUG("E_field value", loc, value->print(std::cerr));
         std::vector<llvm::Value*> index;
-        if (   object->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID
+        if (   isC
+            || object->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID
             || object->getType()->getContainedType(0)->getTypeID() == llvm::Type::StructTyID) {
             index.push_back(llvm::Constant::getNullValue(value->getType()));
         }
