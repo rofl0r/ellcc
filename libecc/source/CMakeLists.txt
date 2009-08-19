@@ -13,6 +13,9 @@ execute_process(COMMAND ${CMAKE_COMMAND}
                 WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/compiler-rt)
 
 add_custom_target(compiler-rt ALL make
+                  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    lib/libCompilerRT-Common.a
+                    ${LIBECC_DIR}/../lib/${ELLCC_TARGET}/librt.a
                   COMMENT "Building compiler-rt for ${ELLCC_TARGET}"
                   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/compiler-rt)
 if(LINUX_TARGET GREATER -1)

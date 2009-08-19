@@ -54,6 +54,16 @@ TargetInfo::TargetInfo(const std::string &T) : Triple(T) {
   LongDoublePrefAlign(0);
   LongDoubleFormat = &APFloat::IEEEquad;
 
+  FloatImaginaryWidth(FloatWidth());
+  FloatImaginaryAlign(FloatAlign());
+  FloatImaginaryPrefAlign(FloatPrefAlign());
+  DoubleImaginaryWidth(DoubleWidth());
+  DoubleImaginaryAlign(DoubleAlign());
+  DoubleImaginaryPrefAlign(DoublePrefAlign());
+  LongDoubleImaginaryWidth(LongDoubleWidth());
+  LongDoubleImaginaryAlign(LongDoubleAlign());
+  LongDoubleImaginaryPrefAlign(LongDoublePrefAlign());
+
   PointerWidth(32); PointerAlign(32);
   PointerPrefAlign(0);
   VectorWidth(64); VectorAlign(64);
@@ -168,7 +178,7 @@ const char*  TargetInfo::typeNames[TypeIDCount] =
   "double _Complex",
   "long double _Complex",
   "float _Imaginary",
-  "float _Imaginary",
+  "double _Imaginary",
   "long double _Imaginary",
   "vector",
   "long vector",

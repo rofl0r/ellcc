@@ -30,7 +30,7 @@ using namespace ellcc;
 #define SRET 1
 
 //#define E_FIELDACC_DEBUG
-#if 1
+#if 0
 // Really verbose debugging.
 #define VDEBUG(who, where, what) std::cerr << toString(where) << ": " << who << " "; what; std::cerr << "\n"
 #else
@@ -339,7 +339,6 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLocation loc, Atomic
             break;
         case ST_FLOAT_IMAGINARY:        // C99
 	case ST_FLOAT:
-            VDEBUG("makeAtomicTypeSpecifier complex", loc, at->toString());
             type = getTypeForFormat(C, TI.getFloatFormat());
 	    break;
 	case ST_DOUBLE_IMAGINARY:       // C99
@@ -2387,6 +2386,8 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLocation loc, Type* leftTyp
 	        *source->value = builder.CreateUIToFP(*source->value, type);
 	    } else if (source->isFloat) {
 	        // Convert Float to Float.
+                VDEBUG("makeCast float from size", loc,
+                       std::cerr << source->size << " target size " << target->size);
 		if (source->size == target->size) {
 		    // Do nothing.
 		} else if (source->size > target->size) {

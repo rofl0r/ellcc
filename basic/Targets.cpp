@@ -65,13 +65,13 @@ static void DefineStd(std::vector<char> &Buf, const char *MacroName,
 // Defines specific to certain operating systems.
 //===----------------------------------------------------------------------===//
 
-static void getSolarisDefines(std::vector<char> &Defs) {
-  Define(Defs, "__SUN__");
-  Define(Defs, "__SOLARIS__");
+static void getSolarisDefines(std::vector<char> &Defines) {
+  Define(Defines, "__SUN__");
+  Define(Defines, "__SOLARIS__");
 }
 
 static void getFreeBSDDefines(const LangOptions &Opts, bool is64Bit,
-                              const char *Triple, std::vector<char> &Defs) {
+                              const char *Triple, std::vector<char> &Defines) {
   // FreeBSD defines; list based off of gcc output
 
   const char *FreeBSD = strstr(Triple, "-freebsd");
@@ -81,33 +81,33 @@ static void getFreeBSDDefines(const LangOptions &Opts, bool is64Bit,
   char version[] = "X00001";
   version[0] = FreeBSD[0];
 
-  Define(Defs, "__FreeBSD__", release);
-  Define(Defs, "__FreeBSD_cc_version", version);
-  Define(Defs, "__KPRINTF_ATTRIBUTE__");
-  DefineStd(Defs, "unix", Opts);
-  Define(Defs, "__ELF__", "1");
+  Define(Defines, "__FreeBSD__", release);
+  Define(Defines, "__FreeBSD_cc_version", version);
+  Define(Defines, "__KPRINTF_ATTRIBUTE__");
+  DefineStd(Defines, "unix", Opts);
+  Define(Defines, "__ELF__", "1");
   if (is64Bit) {
-    Define(Defs, "__LP64__");
+    Define(Defines, "__LP64__");
   }
 }
 
 static void getDragonFlyDefines(const LangOptions &Opts,
-                                std::vector<char> &Defs) {
+                                std::vector<char> &Defines) {
   // DragonFly defines; list based off of gcc output
-  Define(Defs, "__DragonFly__");
-  Define(Defs, "__DragonFly_cc_version", "100001");
-  Define(Defs, "__ELF__");
-  Define(Defs, "__KPRINTF_ATTRIBUTE__");
-  Define(Defs, "__tune_i386__");
-  DefineStd(Defs, "unix", Opts);
+  Define(Defines, "__DragonFly__");
+  Define(Defines, "__DragonFly_cc_version", "100001");
+  Define(Defines, "__ELF__");
+  Define(Defines, "__KPRINTF_ATTRIBUTE__");
+  Define(Defines, "__tune_i386__");
+  DefineStd(Defines, "unix", Opts);
 }
 
-static void getLinuxDefines(const LangOptions &Opts, std::vector<char> &Defs) {
+static void getLinuxDefines(const LangOptions &Opts, std::vector<char> &Defines) {
   // Linux defines; list based off of gcc output
-  DefineStd(Defs, "unix", Opts);
-  DefineStd(Defs, "linux", Opts);
-  Define(Defs, "__gnu_linux__");
-  Define(Defs, "__ELF__", "1");
+  DefineStd(Defines, "unix", Opts);
+  DefineStd(Defines, "linux", Opts);
+  Define(Defines, "__gnu_linux__");
+  Define(Defines, "__ELF__", "1");
 }
 
 /// getDarwinNumber - Parse the 'darwin number' out of the specific targe
@@ -140,9 +140,9 @@ static bool getDarwinNumber(const char *Triple, unsigned &Maj, unsigned &Min) {
   return true;
 }
 
-static void getDarwinDefines(std::vector<char> &Defs, const char *Triple) {
-  Define(Defs, "__APPLE__");
-  Define(Defs, "__MACH__");
+static void getDarwinDefines(std::vector<char> &Defines, const char *Triple) {
+  Define(Defines, "__APPLE__");
+  Define(Defines, "__MACH__");
   
   // Figure out which "darwin number" the target triple is.  "darwin9" -> 10.5.
   unsigned Maj, Min;
@@ -155,7 +155,7 @@ static void getDarwinDefines(std::vector<char> &Defs, const char *Triple) {
       
     // Handle minor version: 10.4.9 -> darwin8.9 -> "1049"
     DarwinStr[3] = Min+'0';
-    Define(Defs, "__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__", DarwinStr);
+    Define(Defines, "__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__", DarwinStr);
   }
 }
 
@@ -240,16 +240,16 @@ void AlphaTargetInfo::getGCCRegNames(const char * const *&Names,
 /// AlphaTargetInfo::getTargetDefines - Return a set of the Alpha-specific #defines
 /// that are not tied to a specific subtarget.
 void AlphaTargetInfo::getTargetDefines(const LangOptions &Opts,
-                                       std::vector<char> &Defs) const {
+                                       std::vector<char> &Defines) const {
   // Target identification.
-  DefineStd(Defs, "__alpha__", Opts);
-  DefineStd(Defs, "alpha", Opts);
+  DefineStd(Defines, "__alpha__", Opts);
+  DefineStd(Defines, "alpha", Opts);
   
   // Target properties. FIXME: Big or little.
-  Define(Defs, "__LITTLE_ENDIAN__");
+  Define(Defines, "__LITTLE_ENDIAN__");
   
   // Subtarget options.
-  Define(Defs, "__REGISTER_PREFIX__", "");
+  Define(Defines, "__REGISTER_PREFIX__", "");
 }
   
 // FIXME
@@ -332,31 +332,31 @@ const Builtin::Info PPCTargetInfo::BuiltinInfo[] = {
 /// PPCTargetInfo::getTargetDefines - Return a set of the PowerPC-specific
 /// #defines that are not tied to a specific subtarget.
 void PPCTargetInfo::getTargetDefines(const LangOptions &Opts,
-                                     std::vector<char> &Defs) const {
+                                     std::vector<char> &Defines) const {
   // Target identification.
-  Define(Defs, "_ARCH_PPC");
-  Define(Defs, "__POWERPC__");
+  Define(Defines, "_ARCH_PPC");
+  Define(Defines, "__POWERPC__");
   if (PointerWidth() == 64) {
-    Define(Defs, "__powerpc64__");
-    Define(Defs, "_ARCH_PPC64");
-    Define(Defs, "_LP64");
-    Define(Defs, "__LP64__");
-    Define(Defs, "__ppc64__");
+    Define(Defines, "__powerpc64__");
+    Define(Defines, "_ARCH_PPC64");
+    Define(Defines, "_LP64");
+    Define(Defines, "__LP64__");
+    Define(Defines, "__ppc64__");
   } else {
-    Define(Defs, "__powerpc__");
-    Define(Defs, "__ppc__");
+    Define(Defines, "__powerpc__");
+    Define(Defines, "__ppc__");
   }
   
   // Target properties.
-  Define(Defs, "_BIG_ENDIAN");
-  Define(Defs, "__BIG_ENDIAN__");
+  Define(Defines, "_BIG_ENDIAN");
+  Define(Defines, "__BIG_ENDIAN__");
   
   // Subtarget options.
-  Define(Defs, "__NATURAL_ALIGNMENT__");
-  Define(Defs, "__REGISTER_PREFIX__", "");
+  Define(Defines, "__NATURAL_ALIGNMENT__");
+  Define(Defines, "__REGISTER_PREFIX__", "");
   
   // FIXME: Should be controlled by command line option.
-  Define(Defs, "__LONG_DOUBLE_128__");
+  Define(Defines, "__LONG_DOUBLE_128__");
 }
 
 const char * const PPCTargetInfo::GCCRegNames[] = {
@@ -628,48 +628,48 @@ void X86TargetInfo::HandleTargetFeatures(const StringMap<bool>&Features) {
 /// X86TargetInfo::getTargetDefines - Return a set of the X86-specific #defines
 /// that are not tied to a specific subtarget.
 void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
-                                     std::vector<char> &Defs) const {
+                                     std::vector<char> &Defines) const {
   // Target identification.
   if (PointerWidth() == 64) {
-    Define(Defs, "_LP64");
-    Define(Defs, "__LP64__");
-    Define(Defs, "__amd64__");
-    Define(Defs, "__amd64");
-    Define(Defs, "__x86_64");
-    Define(Defs, "__x86_64__");
-    Define(Defs, "__SSE3__");
+    Define(Defines, "_LP64");
+    Define(Defines, "__LP64__");
+    Define(Defines, "__amd64__");
+    Define(Defines, "__amd64");
+    Define(Defines, "__x86_64");
+    Define(Defines, "__x86_64__");
+    Define(Defines, "__SSE3__");
   } else {
-    DefineStd(Defs, "__x86__", Opts);
-    DefineStd(Defs, "i386", Opts);
+    DefineStd(Defines, "__x86__", Opts);
+    DefineStd(Defines, "i386", Opts);
   }
   
   // Target properties.
-  Define(Defs, "__LITTLE_ENDIAN__");
+  Define(Defines, "__LITTLE_ENDIAN__");
   
   // Subtarget options.
-  Define(Defs, "__nocona");
-  Define(Defs, "__nocona__");
-  Define(Defs, "__tune_nocona__");
-  Define(Defs, "__REGISTER_PREFIX__", "");
+  Define(Defines, "__nocona");
+  Define(Defines, "__nocona__");
+  Define(Defines, "__tune_nocona__");
+  Define(Defines, "__REGISTER_PREFIX__", "");
 
   // Each case falls through to the previous one here.
   switch (SSELevel) {
   case SSE42:
-    Define(Defs, "__SSE4_2__");
+    Define(Defines, "__SSE4_2__");
   case SSE41:
-    Define(Defs, "__SSE4_1__");
+    Define(Defines, "__SSE4_1__");
   case SSSE3:
-    Define(Defs, "__SSSE3__");
+    Define(Defines, "__SSSE3__");
   case SSE3:
-    Define(Defs, "__SSE3__");
+    Define(Defines, "__SSE3__");
   case SSE2:
-    Define(Defs, "__SSE2__");
-    Define(Defs, "__SSE2_MATH__");  // -mfp-math=sse always implied.
+    Define(Defines, "__SSE2__");
+    Define(Defines, "__SSE2_MATH__");  // -mfp-math=sse always implied.
   case SSE1:
-    Define(Defs, "__SSE__");
-    Define(Defs, "__SSE_MATH__");   // -mfp-math=sse always implied.
+    Define(Defines, "__SSE__");
+    Define(Defines, "__SSE_MATH__");   // -mfp-math=sse always implied.
   case MMX:
-    Define(Defs, "__MMX__");
+    Define(Defines, "__MMX__");
   case NoMMXSSE:
     break;
   }
@@ -941,18 +941,18 @@ public:
   ARMTargetInfo(const std::string& triple) : TargetInfo(triple) {
   }
   virtual void getTargetDefines(const LangOptions &Opts,
-                                std::vector<char> &Defs) const {
+                                std::vector<char> &Defines) const {
     // Target identification.
-    Define(Defs, "__arm__");
-    Define(Defs, "__arm");
+    Define(Defines, "__arm__");
+    Define(Defines, "__arm");
     
     // Target properties.
-    Define(Defs, "__LITTLE_ENDIAN__");
+    Define(Defines, "__LITTLE_ENDIAN__");
     
     // Subtarget options.  [hard coded to v6 for now]
-    Define(Defs, "__ARM_ARCH_6K__");
-    Define(Defs, "__ARMEL__");
-    Define(Defs, "__ENVIRONMENT_IPHONE_OS_VERSION_MIN_REQUIRED__", "20000");
+    Define(Defines, "__ARM_ARCH_6K__");
+    Define(Defines, "__ARMEL__");
+    Define(Defines, "__ENVIRONMENT_IPHONE_OS_VERSION_MIN_REQUIRED__", "20000");
   }
   virtual void getTargetBuiltins(const Builtin::Info *&Records,
                                  unsigned &NumRecords) const {
@@ -1080,6 +1080,10 @@ public:
     Define(Defines, "__sparc__");
     Define(Defines, "__sparc");
     Define(Defines, "__sparcv8");
+ 
+    // Target properties.
+    Define(Defines, "_BIG_ENDIAN");
+    Define(Defines, "__BIG_ENDIAN__");
   }
   virtual void getTargetBuiltins(const Builtin::Info *&Records,
                                  unsigned &NumRecords) const {
@@ -1320,16 +1324,16 @@ void Nios2TargetInfo::getGCCRegNames(const char * const *&Names,
 /// Nios2TargetInfo::getTargetDefines - Return a set of the Nios2-specific #defines
 /// that are not tied to a specific subtarget.
 void Nios2TargetInfo::getTargetDefines(const LangOptions &Opts,
-                                       std::vector<char> &Defs) const {
+                                       std::vector<char> &Defines) const {
   // Target identification.
-  DefineStd(Defs, "__nios2__", Opts);
-  DefineStd(Defs, "nios2", Opts);
+  DefineStd(Defines, "__nios2__", Opts);
+  DefineStd(Defines, "nios2", Opts);
   
   // Target properties. FIXME: Big or little.
-  Define(Defs, "__LITTLE_ENDIAN__");
+  Define(Defines, "__LITTLE_ENDIAN__");
   
   // Subtarget options.
-  Define(Defs, "__REGISTER_PREFIX__", "");
+  Define(Defines, "__REGISTER_PREFIX__", "");
 }
   
 // FIXME
@@ -1421,16 +1425,16 @@ void CellSPUTargetInfo::getGCCRegNames(const char * const *&Names,
 /// CellSPUTargetInfo::getTargetDefines - Return a set of the CellSPU-specific #defines
 /// that are not tied to a specific subtarget.
 void CellSPUTargetInfo::getTargetDefines(const LangOptions &Opts,
-                                       std::vector<char> &Defs) const {
+                                       std::vector<char> &Defines) const {
   // Target identification.
-  DefineStd(Defs, "__cellspu__", Opts);
-  DefineStd(Defs, "cellspu", Opts);
+  DefineStd(Defines, "__cellspu__", Opts);
+  DefineStd(Defines, "cellspu", Opts);
   
   // Target properties. FIXME: Big or little.
-  Define(Defs, "__LITTLE_ENDIAN__");
+  Define(Defines, "__LITTLE_ENDIAN__");
   
   // Subtarget options.
-  Define(Defs, "__REGISTER_PREFIX__", "");
+  Define(Defines, "__REGISTER_PREFIX__", "");
 }
   
 bool
@@ -1579,16 +1583,16 @@ void MipsTargetInfo::getGCCRegAliases(const GCCRegAlias *&Aliases,
 /// MipsTargetInfo::getTargetDefines - Return a set of the Mips-specific #defines
 /// that are not tied to a specific subtarget.
 void MipsTargetInfo::getTargetDefines(const LangOptions &Opts,
-                                       std::vector<char> &Defs) const {
+                                       std::vector<char> &Defines) const {
   // Target identification.
-  DefineStd(Defs, "__mips__", Opts);
-  DefineStd(Defs, "mips", Opts);
+  DefineStd(Defines, "__mips__", Opts);
+  DefineStd(Defines, "mips", Opts);
   
   // Target properties. FIXME: Big or little.
-  Define(Defs, "__LITTLE_ENDIAN__");
+  Define(Defines, "__LITTLE_ENDIAN__");
   
   // Subtarget options.
-  Define(Defs, "__REGISTER_PREFIX__", "");
+  Define(Defines, "__REGISTER_PREFIX__", "");
 }
   
 // FIXME
@@ -1689,16 +1693,16 @@ void Msp430TargetInfo::getGCCRegNames(const char * const *&Names,
 /// Msp430TargetInfo::getTargetDefines - Return a set of the Msp430-specific #defines
 /// that are not tied to a specific subtarget.
 void Msp430TargetInfo::getTargetDefines(const LangOptions &Opts,
-                                       std::vector<char> &Defs) const {
+                                       std::vector<char> &Defines) const {
   // Target identification.
-  DefineStd(Defs, "__msp430__", Opts);
-  DefineStd(Defs, "msp430", Opts);
+  DefineStd(Defines, "__msp430__", Opts);
+  DefineStd(Defines, "msp430", Opts);
   
   // Target properties. FIXME: Big or little.
-  Define(Defs, "__LITTLE_ENDIAN__");
+  Define(Defines, "__LITTLE_ENDIAN__");
   
   // Subtarget options.
-  Define(Defs, "__REGISTER_PREFIX__", "");
+  Define(Defines, "__REGISTER_PREFIX__", "");
 }
   
 // FIXME

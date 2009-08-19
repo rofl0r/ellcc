@@ -3107,6 +3107,12 @@ int main(int argc, char **argv)
                 Input input(found[0], A);
                 InpList.push_back(input);
             }
+            found.clear();
+            findFiles(found, "librt.a", "lib");
+            if (found.size()) {
+                Input input(found[0], A);
+                InpList.push_back(input);
+            }
             // HACK! Add the system C library.
             found.clear();
             findFiles(found, "lib/libc.a");

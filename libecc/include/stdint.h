@@ -17,7 +17,7 @@
 #define __STDINT_EXP(x) __##x##__
 
 // Check if "long long" is 64-bits wide.
-#if (defined(LLONG_MAX) && (LLONG_MAX > 0x7fffffff))
+#if (defined(__LLONG_MAX__) && (__LLONG_MAX__ > 0x7fffffff))
 #define __have_longlong64 1
 #endif
 

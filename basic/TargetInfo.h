@@ -160,6 +160,9 @@ public:
   TYPE_FUNCS(Vector)
   TYPE_FUNCS(LongVector)
   TYPE_FUNCS(Aggregate)
+  TYPE_FUNCS(FloatImaginary)
+  TYPE_FUNCS(DoubleImaginary)
+  TYPE_FUNCS(LongDoubleImaginary)
 #undef TYPE_FUNC
 #undef TYPE_FUNCS
 #undef TYPE_FUNCU
