@@ -526,7 +526,7 @@ Env::Env(StringTable &s, Preprocessor& PP, TypeFactory &tf,
   memset(complexComponentFields, 0, sizeof(complexComponentFields));
 
   #ifdef GNU_EXTENSION
-    if (PP.getLangOptions().declareGNUBuiltins) {
+    if (!PP.getLangOptions().NoBuiltin) {
       addGNUBuiltins();
     }
     if (PP.getLangOptions().GNUMode) {

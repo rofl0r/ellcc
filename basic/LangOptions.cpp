@@ -46,7 +46,7 @@ void LangOptions::ANSI_C89()
   HexFloats = false;
   C99 = CPlusPlus = CPlusPlus0x = NoExtensions = false;
   CXXOperatorNames = Boolean = WritableStrings = false;
-  Exceptions = Freestanding = NoBuiltin = false;
+  Exceptions = Freestanding = false;
   LaxVectorConversions = true;
   HeinousExtensions = false;
     
@@ -75,7 +75,7 @@ void LangOptions::ANSI_C89()
 
   MainFileName = NULL;
 
-  declareGNUBuiltins = false;
+  NoBuiltin = true;
 
   tagsAreTypes = false;
   recognizeCppKeywords = false;
@@ -165,7 +165,7 @@ void LangOptions::GNU_C_extensions()
   allowDynamicallySizedArrays = true;
   assumeNoSizeArrayHasSizeOne = true;
   handleExternInlineSpecially = true;
-  declareGNUBuiltins = true;
+  NoBuiltin = false;
 
   // http://gcc.gnu.org/onlinedocs/gcc-3.1/gcc/Lvalues.html
   lvalueFlowsThroughCast = true;
@@ -221,7 +221,7 @@ void LangOptions::ANSI_Cplusplus98()
   BCPLComment = true;
   CPlusPlus = true;
   CXXOperatorNames = true;
-  declareGNUBuiltins = false;
+  NoBuiltin = true;
 
   tagsAreTypes = true;
   recognizeCppKeywords = true;
@@ -291,7 +291,7 @@ void LangOptions::GNU_Cplusplus98()
   allowExternCThrowMismatch = true;
   allowImplicitIntForMain = true;
 
-  declareGNUBuiltins = true;
+  NoBuiltin = false;
 
   allowQualifiedMemberDeclarations = b3_TRUE;
   allowAnonymousStructs = b3_TRUE;

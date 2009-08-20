@@ -29,10 +29,6 @@ enum bool3 {
 /// enabled, which controls the dialect of C that is accepted.
 class LangOptions {
 public:
-  // declare the various GNU __builtin functions; see
-  // Env::addGNUBuiltins in gnu.cc
-  bool declareGNUBuiltins;
-
   // when this is true, and the parser sees "struct Foo { ... }",
   // it will pretend it also saw "typedef struct Foo Foo;" -- i.e.,
   // the structure (or class) tag name is treated as a type name
