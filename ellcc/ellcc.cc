@@ -2017,6 +2017,9 @@ static int Preprocess(const std::string &OutputFilename, Input& input)
     if (InitializeSourceManager(*PP.get(), input.name.toString()))
         Exit(1);
 
+    // Initialize builtin info.
+    PP->getBuiltinInfo().InitializeBuiltins(PP->getIdentifierTable(),
+                                            PP->getLangOptions().NoBuiltin);
     DoPrintPreprocessedInput(*PP.get(), OutputFilename);
     return Diags.getNumErrors() != 0;
 }
@@ -2434,6 +2437,10 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
             if (InitializeSourceManager(*PP.get(), input.name.toString()))
                 Exit(1);
 
+            // Initialize builtin info.
+            PP->getBuiltinInfo().InitializeBuiltins(PP->getIdentifierTable(),
+                                                    PP->getLangOptions().NoBuiltin);
+ 
             (*PP.get()).EnterMainSourceFile();
             int result = elsa.parse(*PP.get(),
                                     input.name.c_str(), to.c_str(),

@@ -76,6 +76,7 @@ TOCLEAN += *.o *.d
 # that finds serious compilation problems earliest (it's ok to
 # rearrange as different parts of the code are in flux)
 BASIC_OBJS := \
+  Builtins.o \
   DiagnosticBuffer.o \
   ConvertUTF.o FileManager.o SourceLocation.o TargetInfo.o TokenKinds.o \
   IdentifierTable.o SourceManager.o Targets.o \

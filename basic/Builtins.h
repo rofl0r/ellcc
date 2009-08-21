@@ -18,6 +18,10 @@
 #include <cstring>
 #include <string>
 
+namespace llvm {
+  template <typename T> class SmallVectorImpl;
+}
+
 namespace ellcc {
   class TargetInfo;
   class IdentifierTable;
@@ -50,14 +54,17 @@ class Context {
   const Info *TSRecords;
   unsigned NumTSRecords;
 public:
-  Context() : TSRecords(0), NumTSRecords(0) {}
+  Context(const TargetInfo &Target);
   
   /// InitializeBuiltins - Mark the identifiers for all the builtins with their
   /// appropriate builtin ID # and mark any non-portable builtin identifiers as
   /// such.
-  void InitializeBuiltins(IdentifierTable &Table, const TargetInfo &Target,
-                          bool NoBuiltins = false);
+  void InitializeBuiltins(IdentifierTable &Table, bool NoBuiltins = false);
   
+  /// \brief Popular the vector with the names of all of the builtins.
+  void GetBuiltinNames(llvm::SmallVectorImpl<const char *> &Names,
+                       bool NoBuiltins);
+
   /// Builtin::GetName - Return the identifier name for the specified builtin,
   /// e.g. "__builtin_abs".
   const char *GetName(unsigned ID) const {

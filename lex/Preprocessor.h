@@ -19,9 +19,10 @@
 #include "PPCallbacks.h"
 #include "TokenLexer.h"
 #include "PTHManager.h"
-#include "../basic/Diagnostic.h"
-#include "../basic/IdentifierTable.h"
-#include "../basic/SourceLocation.h"
+#include "Builtins.h"
+#include "Diagnostic.h"
+#include "IdentifierTable.h"
+#include "SourceLocation.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/OwningPtr.h"
 #include "llvm/Support/Allocator.h"
@@ -98,6 +99,9 @@ class Preprocessor {
   /// FIXME: Make sure the lifetime of Identifiers/Selectors *isn't* tied to
   /// the lifetime fo the preprocessor.
   SelectorTable Selectors;
+
+  /// BuiltinInfo - Information about builtins.
+  Builtin::Context BuiltinInfo;
 
   /// PragmaHandlers - This tracks all of the pragmas that the client registered
   /// with this preprocessor.
@@ -210,6 +214,7 @@ public:
 
   IdentifierTable &getIdentifierTable() { return Identifiers; }
   SelectorTable &getSelectorTable() { return Selectors; }
+  Builtin::Context &getBuiltinInfo() { return BuiltinInfo; }
   llvm::BumpPtrAllocator &getPreprocessorAllocator() { return BP; }
     
   void setPTHManager(PTHManager* pm);
