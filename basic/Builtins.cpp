@@ -20,7 +20,7 @@ static const Builtin::Info BuiltinInfo[] = {
   { "not a builtin function", 0, 0, 0, false },
 #define BUILTIN(ID, TYPE, ATTRS) { #ID, TYPE, ATTRS, 0, false },
 #define LIBBUILTIN(ID, TYPE, ATTRS, HEADER) { #ID, TYPE, ATTRS, HEADER, false },
-#include "clang/Basic/Builtins.def"
+#include "Builtins.def"
 };
 
 const Builtin::Info &Builtin::Context::GetRecord(unsigned ID) const {
