@@ -71,6 +71,11 @@ public:
     return GetRecord(ID).Name;
   }
   
+  /// GetTypeString - Get the type descriptor string for the specified builtin.
+  const char *GetTypeString(unsigned ID) const {
+    return GetRecord(ID).Type;
+  }
+
   /// isConst - Return true if this function has no side effects and doesn't
   /// read memory.
   bool isConst(unsigned ID) const {

@@ -1092,6 +1092,18 @@ public:      // template funcs
 
   // private helper
   void checkNewSpecialization_one(TemplateInfo *existingTI, TemplateInfo *specTI);
+
+  /** Builtin errors.
+   */
+  enum GetBuiltinTypeError {
+    GE_None,              //< No error
+    GE_Missing_stdio,     //< Missing a type from <stdio.h>
+    GE_Missing_setjmp     //< Missing a type from <setjmp.h>
+  };
+
+  /** Return the type for the specified builtin.
+   */
+  Type* GetBuiltinType(unsigned id, GetBuiltinTypeError &Error);
 };
 
 
