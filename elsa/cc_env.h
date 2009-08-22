@@ -35,10 +35,12 @@ class DelayedFuncInst;          // template.h
 namespace ellcc {
 class Preprocessor;             // Preprocessor.h
 class SourceManager;            // SourceManager.h
+namespace Builtin { class Context; }
 }
 
 using ellcc::bool3;
 using ellcc::TargetInfo;
+using ellcc::Builtin::Context;
 using ellcc::Preprocessor;
 using ellcc::Diagnostic;
 using ellcc::DiagnosticBuilder;
@@ -166,12 +168,17 @@ public:      // data
   // string table for making new strings
   StringTable &str;
 
-  // Language options in effect.
+  /** The preprocessor.
+   */
   Preprocessor& PP;
 
   /** Target specific information.
    */
   TargetInfo& TI;
+
+  /** Builtin function information.
+   */
+  ellcc::Builtin::Context &BuiltinInfo;
 
   // interface for making types
   TypeFactory &tfac;

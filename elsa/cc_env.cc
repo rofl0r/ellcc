@@ -1,19 +1,20 @@
 // cc_env.cc            see license.txt for copyright and terms of use
 // code for cc_env.h
 
-#include "cc_env.h"        // this module
+#include "cc_env.h"             // this module
 #include "datablok.h"
-#include "trace.h"         // tracingSys
-#include "ckheap.h"        // heapCheck
-#include "strtable.h"      // StringTable
-#include "strutil.h"       // suffixEquals, prefixEquals
-#include "overload.h"      // OVERLOADTRACE
-#include "mtype.h"         // MType
-#include "implconv.h"      // ImplicitConversion
-#include "typelistiter.h"  // TypeListIter_GrowArray
+#include "trace.h"              // tracingSys
+#include "ckheap.h"             // heapCheck
+#include "strtable.h"           // StringTable
+#include "strutil.h"            // suffixEquals, prefixEquals
+#include "overload.h"           // OVERLOADTRACE
+#include "mtype.h"              // MType
+#include "implconv.h"           // ImplicitConversion
+#include "typelistiter.h"       // TypeListIter_GrowArray
 #include "exprloc.h"
-#include "Preprocessor.h"  // Language options.
-#include "TargetInfo.h"    // Target information.
+#include "Preprocessor.h"       // Language options.
+#include "TargetInfo.h"         // Target information.
+#include "Builtins.h"           // Builtin function information.
 #include "ElsaDiagnostic.h"
 
 using namespace std;
@@ -322,6 +323,7 @@ Env::Env(StringTable &s, Preprocessor& PP, TypeFactory &tf,
     str(s),
     PP(PP),
     TI(env.PP.getTargetInfo()),
+    BuiltinInfo(PP.getBuiltinInfo()),
     tfac(tf),
     madeUpVariables(madeUpVariables0),
     builtinVars(builtinVars0),
