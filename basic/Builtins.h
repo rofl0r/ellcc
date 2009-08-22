@@ -31,7 +31,7 @@ namespace ellcc {
 namespace Builtin {
 enum ID {
   NotBuiltin  = 0,      // This is not a builtin function.
-#define BUILTIN(ID, TYPE, ATTRS) BI##ID,
+#define BUILTIN(ID, ...) BI##ID,
 #include "Builtins.def"
   FirstTSBuiltin
 };
@@ -39,6 +39,7 @@ enum ID {
 struct Info {
   const char *Name, *Type, *Attributes, *HeaderName;
   bool Suppressed;
+  const char* const ArgNames[8];
 
   bool operator==(const Info &RHS) const {
     return !strcmp(Name, RHS.Name) &&

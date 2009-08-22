@@ -1093,9 +1093,19 @@ public:      // template funcs
   // private helper
   void checkNewSpecialization_one(TemplateInfo *existingTI, TemplateInfo *specTI);
 
+  /** Return the properly qualified result of decaying the
+   * specified array type to a pointer.
+   *  This operation is non-trivial when handling typedefs etc.
+   *  The canonical type of "T" must be an array type,
+   * this returns a pointer to a properly qualified element of the array.
+   *
+   * See C99 6.7.5.3p7 and C99 6.3.2.1p3.
+   */
+  Type* getArrayDecayedType(Type* Ty);
+
   /** Builtin errors.
    */
-  enum GetBuiltinTypeError {
+  enum CreateBuiltinError {
     GE_None,              //< No error
     GE_Missing_stdio,     //< Missing a type from <stdio.h>
     GE_Missing_setjmp     //< Missing a type from <setjmp.h>
@@ -1103,7 +1113,7 @@ public:      // template funcs
 
   /** Return the type for the specified builtin.
    */
-  Type* GetBuiltinType(unsigned id, GetBuiltinTypeError &Error);
+  Type* CreateBuiltin(unsigned id, CreateBuiltinError &Error);
 };
 
 

@@ -5964,7 +5964,7 @@ sm::string Env::instLocStackString() const
  * pointer over the consumed characters.  This returns the resultant type.
  */
 static Type* DecodeTypeFromStr(const char *&Str, Env &env, 
-                                  Env::GetBuiltinTypeError &Error,
+                                  Env::CreateBuiltinError &Error,
                                   bool AllowTypeModifiers = true)
 {
 #if 0
@@ -6130,9 +6130,30 @@ static Type* DecodeTypeFromStr(const char *&Str, Env &env,
 #endif
 }
 
+/** Return the properly qualified result of decaying the
+ * specified array type to a pointer.
+ *  This operation is non-trivial when handling typedefs etc.
+ *  The canonical type of "T" must be an array type,
+ * this returns a pointer to a properly qualified element of the array.
+ *
+ * See C99 6.7.5.3p7 and C99 6.3.2.1p3.
+ */
+Type* Env::getArrayDecayedType(Type* Ty)
+{
+  // Get the element type with 'getAsArrayType' so that we don't lose any
+  // typedefs in the element type of the array.  This also handles propagation
+  // of type qualifiers from the array type into the element type if present
+  // (C99 6.7.3p8).
+  assert(Ty->isPDSArrayType() && "Not an array type!");
+  while (Ty->isPDSArrayType()) {
+    Ty = makePtrType(Ty->getAtType());
+  }
+  return Ty;
+}
+
 /** Return the type for the specified builtin.
  */
-Type* Env::GetBuiltinType(unsigned id, GetBuiltinTypeError &Error)
+Type* Env::CreateBuiltin(unsigned id, CreateBuiltinError &Error)
 {
   const char *TypeStr = BuiltinInfo.GetTypeString(id);
 
@@ -6147,11 +6168,9 @@ Type* Env::GetBuiltinType(unsigned id, GetBuiltinTypeError &Error)
     if (Error != GE_None)
       return getSimpleType(ST_ERROR);
 
-#if RICH
     // Do array -> pointer decay.  The builtin should use the decayed type.
     if (Ty->isArrayType())
       Ty = getArrayDecayedType(Ty);
-#endif
 
     ArgTypes.push_back(Ty);
   }
@@ -6165,5 +6184,10 @@ Type* Env::GetBuiltinType(unsigned id, GetBuiltinTypeError &Error)
     return getFunctionNoProtoType(ResType);
   return getFunctionType(ResType, ArgTypes.data(), ArgTypes.size(),
                          TypeStr[0] == '.', 0);
+Variable *Env::declareFunctionNargs(
+  Type *retType, char const *funcName,
+  Type **argTypes, char const **argNames, int numArgs,
+  FunctionFlags flags,
+  Type * /*nullable*/ exnType)
 #endif
 }

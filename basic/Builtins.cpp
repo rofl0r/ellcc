@@ -17,9 +17,9 @@
 using namespace ellcc;
 
 static const Builtin::Info BuiltinInfo[] = {
-  { "not a builtin function", 0, 0, 0, false },
-#define BUILTIN(ID, TYPE, ATTRS) { #ID, TYPE, ATTRS, 0, false },
-#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER) { #ID, TYPE, ATTRS, HEADER, false },
+  { "not a builtin function", 0, 0, 0, false, { } },
+#define BUILTIN(ID, TYPE, ATTRS, ...) { #ID, TYPE, ATTRS, 0, false, { __VA_ARGS__ } },
+#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER, ...) { #ID, TYPE, ATTRS, HEADER, false, { __VA_ARGS__ } },
 #include "Builtins.def"
 };
 

@@ -214,8 +214,8 @@ public:
 };
 
 const Builtin::Info AlphaTargetInfo::BuiltinInfo[] = {
-#define BUILTIN(ID, TYPE, ATTRS) { #ID, TYPE, ATTRS, 0, false },
-#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER) { #ID, TYPE, ATTRS, HEADER, false },
+#define BUILTIN(ID, TYPE, ATTRS, ...) { #ID, TYPE, ATTRS, 0, false, { __VA_ARGS__ } },
+#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER, ...) { #ID, TYPE, ATTRS, HEADER, false, { __VA_ARGS__ } },
 #include "AlphaBuiltins.def"
 };
   
@@ -323,8 +323,8 @@ public:
 };
 
 const Builtin::Info PPCTargetInfo::BuiltinInfo[] = {
-#define BUILTIN(ID, TYPE, ATTRS) { #ID, TYPE, ATTRS, 0, false },
-#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER) { #ID, TYPE, ATTRS, HEADER, false },
+#define BUILTIN(ID, TYPE, ATTRS, ...) { #ID, TYPE, ATTRS, 0, false, { __VA_ARGS__ } },
+#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER, ...) { #ID, TYPE, ATTRS, HEADER, false, { __VA_ARGS__ } },
 #include "PPCBuiltins.def"
 };
   
@@ -531,8 +531,8 @@ public:
 namespace {
 // Namespace for x86 abstract base class
 const Builtin::Info BuiltinInfo[] = {
-#define BUILTIN(ID, TYPE, ATTRS) { #ID, TYPE, ATTRS, 0, false },
-#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER) { #ID, TYPE, ATTRS, HEADER, false },
+#define BUILTIN(ID, TYPE, ATTRS, ...) { #ID, TYPE, ATTRS, 0, false, { __VA_ARGS__ } },
+#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER, ...) { #ID, TYPE, ATTRS, HEADER, false, { __VA_ARGS__ } },
 #include "X86Builtins.def"
 };
 
@@ -1302,8 +1302,8 @@ public:
 };
 
 const Builtin::Info Nios2TargetInfo::BuiltinInfo[] = {
-#define BUILTIN(ID, TYPE, ATTRS) { #ID, TYPE, ATTRS, 0, false },
-#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER) { #ID, TYPE, ATTRS, HEADER, false },
+#define BUILTIN(ID, TYPE, ATTRS, ...) { #ID, TYPE, ATTRS, 0, false, { __VA_ARGS__ } },
+#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER, ...) { #ID, TYPE, ATTRS, HEADER, false, { __VA_ARGS__ } },
 #include "Nios2Builtins.def"
 };
   
@@ -1403,8 +1403,8 @@ public:
 };
 
 const Builtin::Info CellSPUTargetInfo::BuiltinInfo[] = {
-#define BUILTIN(ID, TYPE, ATTRS) { #ID, TYPE, ATTRS, 0, false },
-#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER) { #ID, TYPE, ATTRS, HEADER, false },
+#define BUILTIN(ID, TYPE, ATTRS, ...) { #ID, TYPE, ATTRS, 0, false, { __VA_ARGS__ } },
+#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER, ...) { #ID, TYPE, ATTRS, HEADER, false, { __VA_ARGS__ } },
 #include "CellSPUBuiltins.def"
 };
   
@@ -1521,8 +1521,8 @@ public:
 };
 
 const Builtin::Info MipsTargetInfo::BuiltinInfo[] = {
-#define BUILTIN(ID, TYPE, ATTRS) { #ID, TYPE, ATTRS, 0, false },
-#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER) { #ID, TYPE, ATTRS, HEADER, false },
+#define BUILTIN(ID, TYPE, ATTRS, ...) { #ID, TYPE, ATTRS, 0, false, { __VA_ARGS__ } },
+#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER, ...) { #ID, TYPE, ATTRS, HEADER, false, { __VA_ARGS__ } },
 #include "MipsBuiltins.def"
 };
   
@@ -1671,8 +1671,8 @@ public:
 };
 
 const Builtin::Info Msp430TargetInfo::BuiltinInfo[] = {
-#define BUILTIN(ID, TYPE, ATTRS) { #ID, TYPE, ATTRS, 0, false },
-#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER) { #ID, TYPE, ATTRS, HEADER, false },
+#define BUILTIN(ID, TYPE, ATTRS, ...) { #ID, TYPE, ATTRS, 0, false, { __VA_ARGS__ } },
+#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER, ...) { #ID, TYPE, ATTRS, HEADER, false, { __VA_ARGS__ } },
 #include "Msp430Builtins.def"
 };
   
