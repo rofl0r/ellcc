@@ -146,7 +146,7 @@ public:
       TRACE("cancel", loc << ": function returning a function");
       return NULL;
     }
-    if (PP.getLangOptions().allowImplicitInt
+    if (LO.allowImplicitInt
         && !filterOutImplIntFirstParam(loc, base, params)) {
       return NULL;
     }
@@ -1959,7 +1959,7 @@ nonterm(Member*) MemberDeclaration {
   // destructive action on 'spec'
   // member fn decl, or data member
   -> spec:DeclSpecifier list:MemberDeclaratorList ";"
-       { if (PP.getLangOptions().CPlusPlus &&        // 10/20/04: e.g. in/c/t0017.c
+       { if (LO.CPlusPlus &&        // 10/20/04: e.g. in/c/t0017.c
              list->firstC()->decl->skipGroups()->isD_name() &&
              !(spec->dflags & (DF_TYPEDEF | DF_STATIC)) &&
              spec->spec->isTS_name()) {
@@ -2018,7 +2018,7 @@ nonterm(Member*) MemberDeclaration {
   // operator function
   -> d:CDtorProtoDecl
        {
-         if (PP.getLangOptions().allowImplicitInt) {
+         if (LO.allowImplicitInt) {
            // in/c/k0004.c: ambiguity between constructor and implicit-int
            TRACE("cancel", loc << ": constructor decl in implicit-int language");
            return NULL;

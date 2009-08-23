@@ -23,17 +23,17 @@ private:
   ArrayStack<StringRef> classNameStack;   // stack of class names
 
 public:
-  StringTable &str;                       // string table
-  StringRef strRefAttr;                   // "attr"
-  ellcc::Preprocessor& PP;                // The preprocessor.
+  StringTable &str;             // string table
+  StringRef strRefAttr;         // "attr"
+  ellcc::Preprocessor& PP;      // The preprocessor.
+  const ellcc::LangOptions& LO; // Language options.
 
 public:
   ParseEnv(StringTable &table, ellcc::Preprocessor& PP)
     : classNameStack(),
       str(table),
       strRefAttr(table.add("attr")),
-      PP(PP),
-      diag(PP.getDiagnostics())
+      PP(PP), LO(PP.getLangOptions()), diag(PP.getDiagnostics())
    {}
   ~ParseEnv() {}
 

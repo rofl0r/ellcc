@@ -622,6 +622,9 @@ def err_function_argument_missing
     : Error<"no argument supplied for parameter %0">;
 def err_function_too_many_arguments
     : Error<"too many arguments supplied">;
+def note_parameter_declaration : Note<"parameter declaration is here:">;
+def note_function_type : Note<"function type is '%0'">;
+def err_builtin_not_implemented : Error<"builtin function '%0' is not implemented">;
 def err_function_no_function
     : Error<"there is no function called '%0'">;
 def note_function_dependent_lookup

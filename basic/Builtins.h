@@ -39,7 +39,7 @@ enum ID {
 struct Info {
   const char *Name, *Type, *Attributes, *HeaderName;
   bool Suppressed;
-  const char* const ArgNames[8];
+  const char* ArgNames[8];
 
   bool operator==(const Info &RHS) const {
     return !strcmp(Name, RHS.Name) &&
@@ -75,6 +75,11 @@ public:
   /// GetTypeString - Get the type descriptor string for the specified builtin.
   const char *GetTypeString(unsigned ID) const {
     return GetRecord(ID).Type;
+  }
+
+  /// GetArgNames - Get the type descriptor string for the specified builtin.
+  const char* const * GetArgNames(unsigned ID) const {
+    return GetRecord(ID).ArgNames;
   }
 
   /// isConst - Return true if this function has no side effects and doesn't

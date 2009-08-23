@@ -1941,7 +1941,7 @@ bool Env::insertTemplateArgBindings_oneParamList
         // check that this argument is compatible with the parameter
         // (TODO: this isn't exactly what 14.3.2p5 says)
         if (SC_ERROR == getStandardConversion(*this,
-                                              binding->value->getSpecial(PP.getLangOptions()),
+                                              binding->value->getSpecial(LO),
                                               binding->value->type,
                                               param->type,
                                               true,
@@ -2931,7 +2931,7 @@ Variable *Env::instantiateClassTemplateDecl
 
   // also make the self-name, which *does* go into the scope
   // (testcase: t0167.cc)
-  if (PP.getLangOptions().compoundSelfName) {
+  if (LO.compoundSelfName) {
     Variable *self = makeVariable(loc, instCT->name, instType,
                                   DF_TYPEDEF | DF_SELFNAME);
     instCT->addUniqueVariable(self);

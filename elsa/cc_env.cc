@@ -151,7 +151,7 @@ bool testAmongOverloadSet(MemberFnTest test, Variable *v, CompoundType *ct)
 void addCompilerSuppliedDecls(Env &env, SourceLocation loc, CompoundType *ct)
 {
   // we shouldn't even be here if the language isn't C++.
-  xassert(env.PP.getLangOptions().CPlusPlus);
+  xassert(env.LO.CPlusPlus);
 
   // the caller should already have arranged so that 'ct' is the
   // innermost scope
@@ -313,16 +313,15 @@ Env::Env(StringTable &s, Preprocessor& PP, TypeFactory &tf,
     scopes(),
     disambiguateOnly(false),
     ctorFinished(false),
-
     disambiguationNestingLevel(0),
     checkFunctionBodies(true),
     secondPassTcheck(false),
-    diag(PP.getDiagnostics()),
-    SM(PP.getSourceManager()),
-
+    diag(PP.getDiagnostics()), SM(PP.getSourceManager()),
     str(s),
     PP(PP),
-    TI(env.PP.getTargetInfo()),
+    LO(PP.getLangOptions()),
+    IT(PP.getIdentifierTable()),
+    TI(PP.getTargetInfo()),
     BuiltinInfo(PP.getBuiltinInfo()),
     tfac(tf),
     madeUpVariables(madeUpVariables0),
@@ -445,7 +444,7 @@ Env::Env(StringTable &s, Preprocessor& PP, TypeFactory &tf,
   // 'int' directly here instead of size_t
   Type *t_size_t = getSimpleType(ST_INT);
 
-  if (PP.getLangOptions().CPlusPlus) {
+  if (LO.CPlusPlus) {
     // must predefine this to be able to define bad_alloc
     Scope *std_scope = createNamespace(SL_INIT, str("std"), false /*isAnonymous*/);
 
@@ -464,7 +463,7 @@ Env::Env(StringTable &s, Preprocessor& PP, TypeFactory &tf,
     Type *t_bad_alloc =
       makeNewCompound(bad_alloc_ct, std_scope, str("bad_alloc"), SL_INIT,
                       TI_CLASS, mncFlags);
-    if (PP.getLangOptions().gcc2StdEqualsGlobalHacks) {
+    if (LO.gcc2StdEqualsGlobalHacks) {
       // using std::bad_alloc;
       Variable *using_bad_alloc_ct = makeUsingAliasFor(SL_INIT, bad_alloc_ct->typedefVar);
       env.builtinVars.push(using_bad_alloc_ct);
@@ -514,7 +513,7 @@ Env::Env(StringTable &s, Preprocessor& PP, TypeFactory &tf,
   declareFunction1arg(t_voidptr, "__builtin_next_arg",
                       getSimpleType(ST_ANY_TYPE), "p");
 
-  if (PP.getLangOptions().predefined_Bool) {
+  if (LO.predefined_Bool) {
     // sm: I found this; it's a C99 feature: 6.2.5, para 2.  It's
     // actually a keyword, so should be lexed specially, but I'll
     // leave it alone for now.
@@ -528,10 +527,10 @@ Env::Env(StringTable &s, Preprocessor& PP, TypeFactory &tf,
   memset(complexComponentFields, 0, sizeof(complexComponentFields));
 
   #ifdef GNU_EXTENSION
-    if (!PP.getLangOptions().NoBuiltin) {
+    if (!LO.NoBuiltin) {
       addGNUBuiltins();
     }
-    if (PP.getLangOptions().GNUMode) {
+    if (LO.GNUMode) {
       doReportTemplateErrors = false;
     }
 
@@ -838,7 +837,7 @@ void Env::setupOperatorOverloading()
       OP_MINUSEQ       // VQ L& operator-= (VQ L&, R);
     };
     FOREACH_OPERATOR(op, ops) {
-      if (PP.getLangOptions().nonstandardAssignmentOperator && op==OP_ASSIGN) {
+      if (LO.nonstandardAssignmentOperator && op==OP_ASSIGN) {
         // do not add this variant; see below
         continue;
       }
@@ -862,7 +861,7 @@ void Env::setupOperatorOverloading()
   // T VQ & operator= (T VQ &, T);
   {
     Type* (*filter)(Type *t, bool) = para19_20filter;
-    if (PP.getLangOptions().nonstandardAssignmentOperator) {
+    if (LO.nonstandardAssignmentOperator) {
       // 9/25/04: as best I can tell, what is usually implemented is the
       //   T* VQ & operator= (T* VQ &, T*);
       // pattern where T can be pointer (para 19), enumeration (para 20),
@@ -1037,7 +1036,7 @@ Variable *Env::makeVariable(SourceLocation L, StringRef n, Type *t, DeclFlags f)
 
 Variable *Env::declareFunctionNargs(
   Type *retType, char const *funcName,
-  Type **argTypes, char const **argNames, int numArgs,
+  Type **argTypes, char const * const *argNames, int numArgs,
   FunctionFlags flags,
   Type * /*nullable*/ exnType)
 {
@@ -1045,7 +1044,9 @@ Variable *Env::declareFunctionNargs(
   ft->flags |= flags;
 
   for (int i=0; i < numArgs; i++) {
-    Variable *p = makeVariable(SL_INIT, str(argNames[i]), argTypes[i], DF_PARAMETER);
+    Variable *p = makeVariable(SL_INIT,
+                               argNames[i] ? str(argNames[i]) : NULL,
+                               argTypes[i], DF_PARAMETER);
     ft->addParam(p);
   }
 
@@ -1370,7 +1371,7 @@ SourceLocation Env::loc() const
 // -------- insertion --------
 Scope *Env::acceptingScope(DeclFlags df)
 {
-  if (PP.getLangOptions().noInnerClasses &&
+  if (LO.noInnerClasses &&
       (df & (DF_TYPEDEF | DF_ENUMERATOR))) {
     // C mode: typedefs and enumerators go into the outer scope
     return outerScope();
@@ -1628,7 +1629,7 @@ Type *Env::declareEnum(SourceLocation loc /*...*/, EnumType *et)
     // TODO: If the enum name is already the name of a typedef,
     // then that is an error in C++.
 
-    if (PP.getLangOptions().tagsAreTypes && !addVariable(tv)) {
+    if (LO.tagsAreTypes && !addVariable(tv)) {
       // this isn't really an error, because in C it would have
       // been allowed, so C++ does too [ref?]
       //return env.error(stringc
@@ -2455,7 +2456,7 @@ Type *Env::makeNewCompound(CompoundType *&ct, Scope * /*nullable*/ scope,
 
   if (name && scope) {
     scope->registerVariable(tv);
-    if (PP.getLangOptions().tagsAreTypes) {
+    if (LO.tagsAreTypes) {
       if (!scope->addVariable(tv)) {
         // this isn't really an error, because in C it would have
         // been allowed, so C++ does too [ref?]
@@ -2478,7 +2479,7 @@ Type *Env::makeNewCompound(CompoundType *&ct, Scope * /*nullable*/ scope,
   }
 
   // also add the typedef to the class' scope
-  if (name && PP.getLangOptions().compoundSelfName) {
+  if (name && LO.compoundSelfName) {
     if (tv->templateInfo() && tv->templateInfo()->hasParameters()) {
       // the self type should be a PseudoInstantiation, not the raw template
       //
@@ -2724,7 +2725,7 @@ bool multipleDefinitionsOK(Env &env, Variable *prior, DeclFlags dflags)
     return true;
   }
 
-  if (!env.PP.getLangOptions().uninitializedGlobalDataIsCommon) {
+  if (!env.LO.uninitializedGlobalDataIsCommon) {
     return false;
   }
 
@@ -3059,7 +3060,7 @@ static bool equivalentTemplateParameters(
 // and nullify 'prior'; otherwise return NULL
 OverloadSet *Env::getOverloadForDeclaration(Variable *&prior, Type *type)
 {
-  if (PP.getLangOptions().allowOverloading &&
+  if (LO.allowOverloading &&
       prior &&
       !(prior->name == string_main && prior->isGlobal()) &&   // cannot overload main()
       prior->type->isFunctionType() &&
@@ -3231,9 +3232,9 @@ Variable *Env::createDeclaration(
       //    where inlineImpliesStaticLinkage, so we check for that combination
       //    in isStaticLinkage().  It would be nice to factor DF_STATIC into
       //    DF_STATIC_LINKAGE and DF_STATIC_MEMBER.
-      xassert(env.PP.getLangOptions().inlineImpliesStaticLinkage);
+      xassert(env.LO.inlineImpliesStaticLinkage);
     } else {
-      if (env.PP.getLangOptions().inlineImpliesStaticLinkage) {
+      if (env.LO.inlineImpliesStaticLinkage) {
         if (!(dflags & DF_STATIC)) {
           dflags |= DF_STATIC;
           staticBecauseInline = true;
@@ -3257,7 +3258,7 @@ Variable *Env::createDeclaration(
           (dflags & DF_DEFINITION) &&
           !multipleDefinitionsOK(*this, prior, dflags)) {
         if (scope->isParameterScope()) {
-          DIAGNOSE3(env.PP.getLangOptions().allowDuplicateParameterNames,
+          DIAGNOSE3(env.LO.allowDuplicateParameterNames,
                     loc, diag::err_multiple_parameter_definition,
                     loc, diag::note_gcc_bug_allows_PR_13717,
                     << type->toCString(name) << prior->toCStringAsParameter());
@@ -3339,7 +3340,7 @@ Variable *Env::createDeclaration(
           scope->registerVariable(prior);
           return prior;
         }
-        else if (PP.getLangOptions().allowMemberWithClassName &&
+        else if (LO.allowMemberWithClassName &&
                  prior->hasAllFlags(DF_SELFNAME | DF_TYPEDEF)) {
           // 9/22/04: Special case for 'struct ip_opts': allow the member
           // to replace the class name, despite 9.2 para 13.
@@ -3398,7 +3399,7 @@ Variable *Env::createDeclaration(
       // same types, same typedef disposition, so they refer
       // to the same thing
     }
-    else if (PP.getLangOptions().allowExternCThrowMismatch &&
+    else if (LO.allowExternCThrowMismatch &&
              prior->hasFlag(DF_EXTERN_C) &&
              (prior->flags & DF_TYPEDEF) == (dflags & DF_TYPEDEF) &&
              prior->type->isFunctionType() &&
@@ -3414,7 +3415,7 @@ Variable *Env::createDeclaration(
       report(loc, diag::warn_nonstandard_variation_in_exception_specs);
       report(prior->loc, diag::note_conflicting_declaration);
     }
-    else if (PP.getLangOptions().allowImplicitFunctionDecls &&
+    else if (LO.allowImplicitFunctionDecls &&
              prior->hasFlag(DF_FORWARD) &&
              prior->type->isFunctionType() &&
              isImplicitKandRFuncType(prior->type->asFunctionType())) {
@@ -3441,7 +3442,7 @@ Variable *Env::createDeclaration(
       // name, but their types are different; we only jump here *after*
       // ruling out the possibility of function overloading
 
-      if (!PP.getLangOptions().CPlusPlus &&
+      if (!LO.CPlusPlus &&
           prior->type->isFunctionType() &&
           type->isFunctionType() &&
           compatibleParamCounts(prior->type->asFunctionType(),
@@ -3480,7 +3481,7 @@ Variable *Env::createDeclaration(
         report(loc, diag::note_c_function_parameter_compatability);
         report(prior->loc, diag::note_previous_declaration);
       }
-      else if (!PP.getLangOptions().CPlusPlus &&
+      else if (!LO.CPlusPlus &&
                compatibleEnumAndIntegerTypes(prior->type, type)) {
         report(loc, diag::err_type_not_match_prior)
             << name << prior->type->toString() << type->toString() << DIAG_WARNING;
@@ -3557,7 +3558,7 @@ Variable *Env::createDeclaration(
             //    implicit from an inline definition.
             prior->setFlag(DF_STATIC);
           } else {
-            DIAGNOSE3(env.PP.getLangOptions().allowStaticAfterNonStatic,
+            DIAGNOSE3(env.LO.allowStaticAfterNonStatic,
                       loc, diag::err_multiple_parameter_definition,
                       prior->loc, diag::note_previous_declaration,
                       << name);
@@ -3588,7 +3589,7 @@ Variable *Env::createDeclaration(
     // can have the FF_NO_PARAM_INFO flag even if we are in C++;
     // therefore we have to check for that and avoid it or we can get
     // a mismatch on the number of parameters
-    if (PP.getLangOptions().CPlusPlus && type->isFunctionType()
+    if (LO.CPlusPlus && type->isFunctionType()
         && !(prior->type->asFunctionType()->flags & FF_NO_PARAM_INFO)
         && !(type->asFunctionType()->flags & FF_NO_PARAM_INFO)
         ) {
@@ -4025,7 +4026,7 @@ Scope *Env::findParameterizingScope(Variable *bareQualifierVar,
         report(loc(), diag::err_template_no_template_parameter_list_supplied)
             << bareQualifierVar->name;
     } else {
-        diagnose3(PP.getLangOptions().allowExplicitSpecWithoutParams, loc(),
+        diagnose3(LO.allowExplicitSpecWithoutParams, loc(),
                   diag::err_explicit_specialization_missing_template,
                   diag::note_gcc_bug_allows);
     }
@@ -4076,7 +4077,7 @@ bool Env::ensureCompleteType(unsigned action, Type *type)
 
   if (type->isArrayType() &&
       type->asArrayType()->size == ArrayType::NO_SIZE) {
-    if (PP.getLangOptions().assumeNoSizeArrayHasSizeOne) {
+    if (LO.assumeNoSizeArrayHasSizeOne) {
       report(loc(), diag::warn_array_of_no_size_assumed_to_be_a_complete_type);
       return true;
     } else {
@@ -5244,11 +5245,11 @@ void Env::checkTemplateKeyword(PQName *name)
   // other kind is rejected by the parser
   if (!templateUsed && hasTemplArgs) {
     // specific gcc-2 bug? (in/d0112.cc)
-    if (PP.getLangOptions().allowGcc2HeaderSyntax &&
+    if (LO.allowGcc2HeaderSyntax &&
         name->isPQ_qualifier() &&
         name->asPQ_qualifier()->qualifier == env.str("rebind") &&
         name->getName() == env.str("other")) {
-      diagnose3(PP.getLangOptions().allowGcc2HeaderSyntax, name->loc,
+      diagnose3(LO.allowGcc2HeaderSyntax, name->loc,
                 diag::err_dependent_template_scope_name_requires_template_keyword,
                 diag::note_gcc2_bug_allows);
     } else {
@@ -5306,7 +5307,7 @@ void Env::checkForQualifiedMemberDeclarator(Declarator *decl)
   //    its class, ..." (emphasis mine)
 
   // complain
-  diagnose3(PP.getLangOptions().allowQualifiedMemberDeclarations, name->loc,
+  diagnose3(LO.allowQualifiedMemberDeclarations, name->loc,
             diag::err_qualified_name_is_not_allowed_in_member_declaration,
             diag::note_gcc_bug_allows);
 
@@ -5417,7 +5418,7 @@ Type *Env::sizeofType(Type *t, int &size, Expression * /*nullable*/ expr)
         } else if (t->isArrayType()) {
           ArrayType *at = t->asArrayType();
           if (at->size == ArrayType::NO_SIZE &&
-              PP.getLangOptions().assumeNoSizeArrayHasSizeOne) {
+              LO.assumeNoSizeArrayHasSizeOne) {
             // just hacking this for now
             return sizeofType(at->eltType, size, expr);
           } else {
@@ -5740,7 +5741,7 @@ bool Env::elaborateImplicitConversionArgToParam(Type *paramType, Expression *&ar
   Type *src = arg->getType();
   ImplicitConversion ic =
     getImplicitConversion(env,
-                          arg->getSpecial(env.PP.getLangOptions()),
+                          arg->getSpecial(env.LO),
                           src,
                           paramType,
                           false /*destIsReceiver*/);
@@ -5890,7 +5891,7 @@ bool Env::doOperatorOverload() const
   static bool disabled = tracingSys("doNotOperatorOverload");
   if (disabled) { return false; }
 
-  if (!PP.getLangOptions().allowOverloading) { return false; }
+  if (!LO.allowOverloading) { return false; }
 
   // 10/09/04: *Do* overload resolution even in template bodies, as
   // long as the arguments are not dependent (checked elsewhere).
@@ -5963,11 +5964,8 @@ sm::string Env::instLocStackString() const
  * This decodes one type descriptor from Str, advancing the
  * pointer over the consumed characters.  This returns the resultant type.
  */
-static Type* DecodeTypeFromStr(const char *&Str, Env &env, 
-                                  Env::CreateBuiltinError &Error,
-                                  bool AllowTypeModifiers = true)
+Type* Env::DecodeTypeFromStr(const char *&Str, CreateBuiltinError &Error, bool AllowTypeModifiers)
 {
-#if 0
   // Modifiers.
   int HowLong = 0;
   bool Signed = false, Unsigned = false;
@@ -5994,7 +5992,7 @@ static Type* DecodeTypeFromStr(const char *&Str, Env &env,
     }
   }
 
-  QualType Type;
+  Type* Ty = NULL;
   
   // Read the base type.
   switch (*Str++) {
@@ -6002,61 +6000,63 @@ static Type* DecodeTypeFromStr(const char *&Str, Env &env,
   case 'v':
     assert(HowLong == 0 && !Signed && !Unsigned &&
            "Bad modifiers used with 'v'!");
-    Type = Context.VoidTy;
+    Ty = getSimpleType(ST_VOID);
     break;
   case 'f':
     assert(HowLong == 0 && !Signed && !Unsigned &&
            "Bad modifiers used with 'f'!");
-    Type = Context.FloatTy;
+    Ty = getSimpleType(ST_FLOAT);
     break;
   case 'd':
     assert(HowLong < 2 && !Signed && !Unsigned &&
            "Bad modifiers used with 'd'!");
     if (HowLong)
-      Type = Context.LongDoubleTy;
+      Ty = getSimpleType(ST_LONG_DOUBLE);
     else
-      Type = Context.DoubleTy;
+      Ty = getSimpleType(ST_DOUBLE);
     break;
   case 's':
     assert(HowLong == 0 && "Bad modifiers used with 's'!");
     if (Unsigned)
-      Type = Context.UnsignedShortTy;
+      Ty = getSimpleType(ST_UNSIGNED_SHORT_INT);
     else
-      Type = Context.ShortTy;
+      Ty = getSimpleType(ST_SHORT_INT);
     break;
   case 'i':
-    if (HowLong == 3)
-      Type = Unsigned ? Context.UnsignedInt128Ty : Context.Int128Ty;
-    else if (HowLong == 2)
-      Type = Unsigned ? Context.UnsignedLongLongTy : Context.LongLongTy;
+    if (HowLong == 3) {
+      assert(0 && "int128_t not implemented");
+      Ty = getSimpleType(ST_ERROR);
+    } else if (HowLong == 2)
+      Ty = Unsigned ? getSimpleType(ST_UNSIGNED_LONG_LONG) : getSimpleType(ST_LONG_LONG);
     else if (HowLong == 1)
-      Type = Unsigned ? Context.UnsignedLongTy : Context.LongTy;
+      Ty = Unsigned ? getSimpleType(ST_UNSIGNED_LONG_INT) : getSimpleType(ST_LONG_INT);
     else
-      Type = Unsigned ? Context.UnsignedIntTy : Context.IntTy;
+      Ty = Unsigned ? getSimpleType(ST_UNSIGNED_INT) : getSimpleType(ST_INT);
     break;
   case 'c':
     assert(HowLong == 0 && "Bad modifiers used with 'c'!");
     if (Signed)
-      Type = Context.SignedCharTy;
+      Ty = getSimpleType(ST_SIGNED_CHAR);
     else if (Unsigned)
-      Type = Context.UnsignedCharTy;
+      Ty = getSimpleType(ST_UNSIGNED_CHAR);
     else
-      Type = Context.CharTy;
+      Ty = getSimpleType(ST_CHAR);
     break;
   case 'b': // boolean
     assert(HowLong == 0 && !Signed && !Unsigned && "Bad modifiers for 'b'!");
-    Type = Context.BoolTy;
+    Ty = getSimpleType(ST_BOOL);
     break;
   case 'z':  // size_t.
     assert(HowLong == 0 && !Signed && !Unsigned && "Bad modifiers for 'z'!");
-    Type = Context.getSizeType();
+    Ty = getSimpleType(TI.getSizeType());
     break;
   case 'F':
-    Type = Context.getCFConstantStringType();
+    assert(0 && "constant CFString not implemented");
+    Ty = getSimpleType(ST_ERROR);
     break;
   case 'a':
-    Type = Context.getBuiltinVaListType();
-    assert(!Type.isNull() && "builtin va list type not initialized!");
+    assert(0 && "builtin va_list not implemented");
+    Ty = getSimpleType(ST_ERROR);
     break;
   case 'A':
     // This is a "reference" to a va_list; however, what exactly
@@ -6067,67 +6067,89 @@ static Type* DecodeTypeFromStr(const char *&Str, Env &env,
     // is x86-64, where va_list is a __va_list_tag[1]. For x86,
     // we want this argument to be a char*&; for x86-64, we want
     // it to be a __va_list_tag*.
-    Type = Context.getBuiltinVaListType();
-    assert(!Type.isNull() && "builtin va list type not initialized!");
-    if (Type->isArrayType()) {
-      Type = Context.getArrayDecayedType(Type);
+    assert(0 && "reference to builtin va_list not implemented");
+#if RICH
+    Ty = Context.getBuiltinVaListType();
+    assert(!Ty.isNull() && "builtin va list type not initialized!");
+    if (Ty->isArrayType()) {
+      Ty = Context.getArrayDecayedType(Ty);
     } else {
-      Type = Context.getLValueReferenceType(Type);
+      Ty = Context.getLValueReferenceType(Ty);
     }
+#endif
     break;
   case 'V': {
+    assert(0 && "builtin vector not implemented");
+    Ty = getSimpleType(ST_ERROR);
+#if RICH
     char *End;
     unsigned NumElements = strtoul(Str, &End, 10);
     assert(End != Str && "Missing vector size");
     
     Str = End;
     
-    QualType ElementType = DecodeTypeFromStr(Str, Context, Error, false);
-    Type = Context.getVectorType(ElementType, NumElements);
+    Type* ElementType = DecodeTypeFromStr(Str, Error, false);
+    Ty = Context.getVectorType(ElementType, NumElements);
+#endif
     break;
   }
   case 'P':
-    Type = Context.getFILEType();
-    if (Type.isNull()) {
+    assert(0 && "builtin FILE not implemented");
+    Ty = getSimpleType(ST_ERROR);
+#if RICH
+    Ty = Context.getFILEType();
+    if (Ty.isNull()) {
       Error = ASTContext::GE_Missing_stdio;
-      return QualType();
+      return SimpleType(ST_ERROR);
     }
+#endif
     break;
   case 'J':
+    assert(0 && "builtin jmp_buf not implemented");
+    Ty = getSimpleType(ST_ERROR);
+#if RICH
     if (Signed)
-      Type = Context.getsigjmp_bufType();
+      Ty = Context.getsigjmp_bufType();
     else
-      Type = Context.getjmp_bufType();
+      Ty = Context.getjmp_bufType();
 
-    if (Type.isNull()) {
+    if (Ty.isNull()) {
       Error = ASTContext::GE_Missing_setjmp;
-      return QualType();
+      return SimpleType(ST_ERROR);
     }
+#endif
     break;
   }
   
   if (!AllowTypeModifiers)
-    return Type;
+    return Ty;
   
   Done = false;
   while (!Done) {
     switch (*Str++) {
       default: Done = true; --Str; break;
       case '*':
-        Type = Context.getPointerType(Type);
+        Ty = makePtrType(Ty);
         break;
       case '&':
-        Type = Context.getLValueReferenceType(Type);
+        assert(0 && "builtin lvalue reference not implemented");
+        Ty = getSimpleType(ST_ERROR);
+#if RICH
+        Ty = Context.getLValueReferenceType(Ty);
+#endif
         break;
       // FIXME: There's no way to have a built-in with an rvalue ref arg.
       case 'C':
-        Type = Type.getQualifiedType(QualType::Const);
+        assert(0 && "builtin const modifier not implemented");
+        Ty = getSimpleType(ST_ERROR);
+#if RICH
+        Ty = Ty.getQualifiedType(QualType::Const);
+#endif
         break;
     }
   }
   
-  return Type;
-#endif
+  return Ty;
 }
 
 /** Return the properly qualified result of decaying the
@@ -6151,22 +6173,22 @@ Type* Env::getArrayDecayedType(Type* Ty)
   return Ty;
 }
 
-/** Return the type for the specified builtin.
+/** Create the specified builtin.
  */
-Type* Env::CreateBuiltin(unsigned id, CreateBuiltinError &Error)
+Variable* Env::CreateBuiltin(const char* Name, unsigned id, CreateBuiltinError &Error)
 {
   const char *TypeStr = BuiltinInfo.GetTypeString(id);
 
   llvm::SmallVector<Type*, 8> ArgTypes;
 
   Error = GE_None;
-  Type* ResType = DecodeTypeFromStr(TypeStr, *this, Error);
+  Type* ResType = DecodeTypeFromStr(TypeStr, Error);
   if (Error != GE_None)
-    return getSimpleType(ST_ERROR);
+    return declareFunction0arg(getSimpleType(ST_ERROR), Name, FF_NONE, NULL);
   while (TypeStr[0] && TypeStr[0] != '.') {
-    Type* Ty = DecodeTypeFromStr(TypeStr, *this, Error);
+    Type* Ty = DecodeTypeFromStr(TypeStr, Error);
     if (Error != GE_None)
-      return getSimpleType(ST_ERROR);
+      return declareFunction0arg(getSimpleType(ST_ERROR), Name, FF_NONE, NULL);
 
     // Do array -> pointer decay.  The builtin should use the decayed type.
     if (Ty->isArrayType())
@@ -6178,14 +6200,16 @@ Type* Env::CreateBuiltin(unsigned id, CreateBuiltinError &Error)
   assert((TypeStr[0] != '.' || TypeStr[1] == 0) &&
          "'.' should only occur at end of builtin type list!");
 
+  return declareFunctionNargs(ResType, Name, &ArgTypes[0],
+                              BuiltinInfo.GetArgNames(id), ArgTypes.size(),
+                              FF_NONE, NULL);
 #if RICH
   // handle untyped/variadic arguments "T c99Style();" or "T cppStyle(...);".
   if (ArgTypes.size() == 0 && TypeStr[0] == '.')
     return getFunctionNoProtoType(ResType);
   return getFunctionType(ResType, ArgTypes.data(), ArgTypes.size(),
                          TypeStr[0] == '.', 0);
-Variable *Env::declareFunctionNargs(
-  Type *retType, char const *funcName,
+  Type *ResType, char const *Name,
   Type **argTypes, char const **argNames, int numArgs,
   FunctionFlags flags,
   Type * /*nullable*/ exnType)

@@ -17,6 +17,7 @@
 
 #include "OperatorKinds.h"
 #include "TokenKinds.h"
+#include "str.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/OwningPtr.h"
@@ -529,5 +530,5 @@ public:
   enum { NumLowBitsAvailable = 1 };
 };
 
-}  // end namespace llvm
+}  // end namespace ellcc
 #endif

@@ -5,6 +5,7 @@
 verbatim {
   class PrintEnv;               // cc_print.h
   class CodeOutStream;          // cc_print.h
+  inline sm::string toString(const ellcc::IdentifierInfo*) { return ""; }  // RICH: Need better?
 }
 
 

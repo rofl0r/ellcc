@@ -572,14 +572,14 @@ StandardConversion getStandardConversion
         CVFlags destCV = getDestCVFlags(dest, srcCV);
         
         // rdp: Is this only for C++?
-        if (env.PP.getLangOptions().CPlusPlus && conv.stripPtrCtor(srcCV, destCV, isReference))
+        if (env.LO.CPlusPlus && conv.stripPtrCtor(srcCV, destCV, isReference))
           { return conv.ret; }
 
 	if (dest->isVoid()) {
 	    // any pointer can be converted to void* .
 	    return conv.ret | SC_PTR_CONV;
 	}
-	if (src->isVoid() && !env.PP.getLangOptions().CPlusPlus) {
+	if (src->isVoid() && !env.LO.CPlusPlus) {
 	    // void* to any pointer type in C.
 	    return conv.ret | SC_PTR_CONV;
 	}
@@ -766,7 +766,7 @@ StandardConversion getStandardConversion
       return conv.ret;
     }
     else {
-      if (   !env.PP.getLangOptions().CPlusPlus
+      if (   !env.LO.CPlusPlus
           && src->isIntegerType()
           && dest->isIntegerType()
           && src->sizeInBytes(env.TI) == dest->sizeInBytes(env.TI)) {

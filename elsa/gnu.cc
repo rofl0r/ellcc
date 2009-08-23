@@ -634,7 +634,7 @@ void Env::addGNUBuiltins()
     "nansl",
     //"ffs",
     "clz",
-    "ctz",
+    // "ctz",
     "popcount",
     "parity",
     //"ffsl",

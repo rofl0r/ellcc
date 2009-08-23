@@ -43,7 +43,8 @@ verbatim {
   #include "cc_flags.h"         // CVFlags, DeclFlags, etc. (r)
 
   namespace ellcc {
-  class LangOptions;            // LangOptions.h
+    class LangOptions;          // LangOptions.h
+    class IdentifierInfo;       // IdentifierTable.h
   }
 }
 
@@ -248,7 +249,7 @@ class PQName(SourceLocation loc) {
   // final name, when it's an ordinary identifier
   // NOTE: 'name' here is *never* NULL--instead, I use NULL
   // PQName pointers in abstract declarators
-  -> PQ_name(StringRef name);
+  -> PQ_name(StringRef name, ellcc::IdentifierInfo* II = NULL);
 
   // "operator" names; 'o' has the full info, while 'fakeName' is
   // for getName(), which is sometimes used for sm::string maps

@@ -269,6 +269,16 @@ public:      // funcs
      * @return The LLVM module.
      */
     llvm::Module* doit();
+
+    /** Emit a builtin expression.
+     * @param loc The source location.
+     * @param Name The name of the intrinsic.
+     * @param BuiltinID The builtin ID.
+     * @param parameters Parameters to pass to the builtin.
+     */
+    llvm::Value* EmitBuiltin(SourceLocation loc, const char* Name, unsigned BuiltinID,
+                             const llvm::Type* ResType,
+                             std::vector<llvm::Value*>& Parameters);
 };
 
 #endif // CC2LLVM_H

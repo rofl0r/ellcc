@@ -5,9 +5,11 @@
 #include "exprloc.h"
 #include "cc2llvm.h"            // this module
 #include "TargetInfo.h"         // TargetInfo
+#include "IdentifierTable.h"    // IdentifierInfo
 #include "SourceManager.h"      // SourceManager
 #include "LangOptions.h"
 #include "ElsaDiagnostic.h"
+#include "TargetBuiltins.h"
 
 // LLVM
 #include "llvm/LLVMContext.h"
@@ -1632,7 +1634,11 @@ llvm::Value *E_floatLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
         xunimp("floating point type");
         break;
     }
-    return llvm::ConstantFP::get(env.C, llvm::APFloat(*semantics, text));
+    const char* endp = text + strlen(text);
+    while (--endp > text && !isdigit(*endp) && tolower(*endp) != 'e' && *endp != '.')
+        continue;       // Skip trailing 'F', etc.
+    llvm::StringRef f(text, endp - text + 1);
+    return llvm::ConstantFP::get(env.C, llvm::APFloat(*semantics, f));
 }
 
 llvm::Value *E_stringLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
@@ -1807,6 +1813,18 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, int& deref) const
     }
     function = env.access(function, false, deref);                 // RICH: Volatile.
     VDEBUG("CreateCall call", loc, function->print(std::cerr));
+    if (func->isE_variable() && func->asE_variable()->name->isPQ_name()) {
+        PQ_name* name = func->asE_variable()->name->asPQ_name();
+        if (name->II) {
+            // A potential builtin function.
+            if (unsigned BuiltinID = name->II->getBuiltinID()) {
+                // Is builtin.
+                return env.EmitBuiltin(loc, name->name, BuiltinID,
+                                       llvm::cast<llvm::FunctionType>(function->getType())->getReturnType(),
+                                       parameters);
+            }
+        }
+    }
     llvm::Value* result = env.builder.CreateCall(function, parameters.begin(), parameters.end());
 #if SRET
     // RICH: sret
@@ -3563,7 +3581,28 @@ llvm::Value *E_statement::cc2llvm(CC2LLVMEnv &env, int& deref) const
     return expr->cc2llvm(env, deref);
 }
 
-
+llvm::Value* CC2LLVMEnv::EmitBuiltin(SourceLocation loc, const char* Name,
+                                     unsigned BuiltinID,
+                                     const llvm::Type* ResType,
+                                     std::vector<llvm::Value*>& Parameters)
+{
+    switch (BuiltinID)
+    {
+    default:
+        report(loc, diag::err_builtin_not_implemented) << Name;
+        return llvm::Constant::getNullValue(ResType);
+        case Builtin::BI__builtin_ctz:
+        case Builtin::BI__builtin_ctzl:
+        case Builtin::BI__builtin_ctzll: {
+            llvm::Value* ArgValue = Parameters[0];
+            const llvm::Type *ArgType = ArgValue->getType();
+            llvm::Function* F = llvm::Intrinsic::getDeclaration(mod,
+                                                                llvm::Intrinsic::cttz,
+                                                                &ArgType, 1);
+            return builder.CreateCall(F, ArgValue);
+        }
+    }
+}
 
 // ------------------ FullExpression -----------------
 llvm::Value *FullExpression::cc2llvm(CC2LLVMEnv &env, int& deref) const

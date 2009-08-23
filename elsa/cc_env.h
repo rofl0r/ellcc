@@ -35,10 +35,13 @@ class DelayedFuncInst;          // template.h
 namespace ellcc {
 class Preprocessor;             // Preprocessor.h
 class SourceManager;            // SourceManager.h
+class IdentifierTable;          // IdentifierTable.h
 namespace Builtin { class Context; }
 }
 
 using ellcc::bool3;
+using ellcc::LangOptions;
+using ellcc::IdentifierTable;
 using ellcc::TargetInfo;
 using ellcc::Builtin::Context;
 using ellcc::Preprocessor;
@@ -171,6 +174,14 @@ public:      // data
   /** The preprocessor.
    */
   Preprocessor& PP;
+
+  /** The language options.
+   */
+  const LangOptions& LO;
+
+  /** The identifier table.
+   */
+  IdentifierTable& IT;
 
   /** Target specific information.
    */
@@ -312,7 +323,7 @@ private:     // funcs
   // not build functions that result from the user's input syntax
   Variable *declareFunctionNargs(
     Type *retType, char const *funcName,
-    Type **argTypes, char const **argNames, int numArgs,
+    Type **argTypes, char const * const *argNames, int numArgs,
     FunctionFlags flags,
     Type * /*nullable*/ exnType);
 
@@ -638,6 +649,8 @@ public:      // funcs
 
   CVAtomicType *getSimpleType(SimpleTypeId st, CVFlags cv = CV_NONE)
     { return tfac.getSimpleType(st, cv); }
+  CVAtomicType *getSimpleType(TargetInfo::TypeID st, CVFlags cv = CV_NONE)
+    { return getSimpleType((SimpleTypeId)st, cv); }
   CVAtomicType *makeType(AtomicType *atomic)
     { return tfac.makeType(atomic); }
   Type *makePtrType(Type *type)
@@ -1093,6 +1106,22 @@ public:      // template funcs
   // private helper
   void checkNewSpecialization_one(TemplateInfo *existingTI, TemplateInfo *specTI);
 
+  /** Builtin errors.
+   */
+  enum CreateBuiltinError {
+    GE_None,              //< No error
+    GE_Missing_stdio,     //< Missing a type from <stdio.h>
+    GE_Missing_setjmp     //< Missing a type from <setjmp.h>
+  };
+
+  /** Define a builtin.
+   */
+  Variable* CreateBuiltin(const char* Name, unsigned id, CreateBuiltinError &Error);
+
+private:
+  Type* DecodeTypeFromStr(const char *&Str,
+                          CreateBuiltinError &Error,
+                          bool AllowTypeModifiers = true);
   /** Return the properly qualified result of decaying the
    * specified array type to a pointer.
    *  This operation is non-trivial when handling typedefs etc.
@@ -1103,17 +1132,6 @@ public:      // template funcs
    */
   Type* getArrayDecayedType(Type* Ty);
 
-  /** Builtin errors.
-   */
-  enum CreateBuiltinError {
-    GE_None,              //< No error
-    GE_Missing_stdio,     //< Missing a type from <stdio.h>
-    GE_Missing_setjmp     //< Missing a type from <setjmp.h>
-  };
-
-  /** Return the type for the specified builtin.
-   */
-  Type* CreateBuiltin(unsigned id, CreateBuiltinError &Error);
 };
 
 

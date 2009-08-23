@@ -36,6 +36,7 @@
 //  A -> "reference" to __builtin_va_list
 //  V -> Vector, following num elements and a base type.
 //  P -> FILE
+//  J -> jmp_buf
 //  . -> "...".  This may only occur at the end of the function list.
 //
 // Types maybe prefixed with the following modifiers:
@@ -107,9 +108,9 @@ BUILTIN(__builtin_clz  , "iUi"  , "nc")
 BUILTIN(__builtin_clzl , "iULi" , "nc")
 BUILTIN(__builtin_clzll, "iULLi", "nc")
 // TODO: int clzimax(uintmax_t)
-BUILTIN(__builtin_ctz  , "iUi"  , "nc")
-BUILTIN(__builtin_ctzl , "iULi" , "nc")
-BUILTIN(__builtin_ctzll, "iULLi", "nc")
+BUILTIN(__builtin_ctz  , "iUi"  , "nc", "value" )
+BUILTIN(__builtin_ctzl , "iULi" , "nc", "value" )
+BUILTIN(__builtin_ctzll, "iULLi", "nc", "value" )
 // TODO: int ctzimax(uintmax_t)
 BUILTIN(__builtin_ffs  , "iUi"  , "nc")
 BUILTIN(__builtin_ffsl , "iULi" , "nc")

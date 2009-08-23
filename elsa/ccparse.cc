@@ -108,14 +108,14 @@ UberModifiers ParseEnv
 
   // any duplicate flags?
   UberModifiers dups = (UberModifiers)(m1 & m2);
-  if (!PP.getLangOptions().CPlusPlus) {
+  if (!LO.CPlusPlus) {
     // C99 6.7.3p4: const/volatile/restrict can be redundantly combined
     dups = (UberModifiers)(dups & ~UM_CVFLAGS);
   }
   if (dups) {
-    if (dups == UM_INT && PP.getLangOptions().allowRepeatedTypeSpecifierKeywords) {
+    if (dups == UM_INT && LO.allowRepeatedTypeSpecifierKeywords) {
       // in/c/dC0024.c
-      diagnose3(PP.getLangOptions().allowRepeatedTypeSpecifierKeywords, loc,
+      diagnose3(LO.allowRepeatedTypeSpecifierKeywords, loc,
                 diag::err_repeated_int_type_specifier,
                 diag::note_gcc_bug_allows);
     } else {
