@@ -104,9 +104,9 @@ BUILTIN(__builtin_islessgreater , "i.", "nc")
 BUILTIN(__builtin_isunordered   , "i.", "nc")
 
 // Builtins for arithmetic.
-BUILTIN(__builtin_clz  , "iUi"  , "nc")
-BUILTIN(__builtin_clzl , "iULi" , "nc")
-BUILTIN(__builtin_clzll, "iULLi", "nc")
+BUILTIN(__builtin_clz  , "iUi"  , "nc", "value" )
+BUILTIN(__builtin_clzl , "iULi" , "nc", "value" )
+BUILTIN(__builtin_clzll, "iULLi", "nc", "value" )
 // TODO: int clzimax(uintmax_t)
 BUILTIN(__builtin_ctz  , "iUi"  , "nc", "value" )
 BUILTIN(__builtin_ctzl , "iULi" , "nc", "value" )

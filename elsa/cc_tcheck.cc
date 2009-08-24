@@ -5952,14 +5952,20 @@ Type *E_variable::itcheck_var_set(Env &env, Expression *&replacement,
       }
     }
 
-    if (!env.LO.NoBuiltin && !v && name->isPQ_name()) {
+    if (!env.LO.NoBuiltin && name->isPQ_name()) {
         // Check for a builtin function.
         IdentifierInfo& II = env.IT.get(name->getName());
-        if (unsigned BuiltinID = II.getBuiltinID()) {
-            Env::CreateBuiltinError E;
-            v = env.CreateBuiltin(name->getName(), BuiltinID, E);
-            // RICH: Handle errors.
-            name->asPQ_name()->II = &II;
+        unsigned BuiltinID = II.getBuiltinID();
+        // RICH: Library builtins?
+        if (BuiltinID) {
+            if (!env.BuiltinInfo.getHeaderName(BuiltinID)) {
+                if (!v) {
+                    Env::CreateBuiltinError E;
+                    v = env.CreateBuiltin(name->getName(), BuiltinID, E);
+                    // RICH: Handle errors.
+                } 
+                name->asPQ_name()->II = &II;
+            }
         }
     }
 
@@ -6349,8 +6355,8 @@ void ArgExpression::mid_tcheck(Env &env, ArgumentInfo &info)
 }
 
 
-int compareArgsToParams(Env &env, FunctionType *ft, FakeList<ArgExpression> *args,
-                        ArgumentInfoArray &argInfo)
+static int compareArgsToParams(Env &env, FunctionType *ft, FakeList<ArgExpression> *args,
+                               ArgumentInfoArray &argInfo)
 {
   int defaultArgsUsed = 0;
 
@@ -6701,6 +6707,7 @@ void possiblyWrapWithImplicitThis(Env &env, Expression *&func,
 
 Type *E_funCall::inner2_itcheck(Env &env, LookupSet &candidates)
 {
+  env.setLoc(loc);
   // inner1 skipped E_groupings already
   xassert(!func->isE_grouping());
 

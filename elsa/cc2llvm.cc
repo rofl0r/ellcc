@@ -1742,12 +1742,6 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, int& deref) const
         }
     }
 
-    deref = 0;
-    if (!function) {
-        // This is not a method call.
-        function = func->cc2llvm(env, deref);
-    }
-
 #if SRET
     llvm::Value* sret = NULL;			// Non-NULL if a structure return.
     if (isComplex(ft->retType) || ft->retType->isCompoundType()) {
@@ -1808,11 +1802,7 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, int& deref) const
         VDEBUG("Param", loc, param->print(std::cerr));
     }
 
-    if (function->getType()->getContainedType(0)->getTypeID() == llvm::Type::PointerTyID && deref == 0) {
-        ++deref;
-    }
-    function = env.access(function, false, deref);                 // RICH: Volatile.
-    VDEBUG("CreateCall call", loc, function->print(std::cerr));
+    deref = 0;
     if (func->isE_variable() && func->asE_variable()->name->isPQ_name()) {
         PQ_name* name = func->asE_variable()->name->asPQ_name();
         if (name->II) {
@@ -1820,11 +1810,23 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, int& deref) const
             if (unsigned BuiltinID = name->II->getBuiltinID()) {
                 // Is builtin.
                 return env.EmitBuiltin(loc, name->name, BuiltinID,
-                                       llvm::cast<llvm::FunctionType>(function->getType())->getReturnType(),
+                                       env.makeTypeSpecifier(loc, ft->retType),
+                                       !ft->retType->isSimpleType() 
+                                       && isExplicitlyUnsigned(ft->retType->asSimpleTypeC()->type),
                                        parameters);
             }
         }
     }
+    if (!function) {
+        // This is not a method call.
+        function = func->cc2llvm(env, deref);
+    }
+
+    VDEBUG("CreateCall call", loc, function->print(std::cerr));
+    if (function->getType()->getContainedType(0)->getTypeID() == llvm::Type::PointerTyID && deref == 0) {
+        ++deref;
+    }
+    function = env.access(function, false, deref);                 // RICH: Volatile.
     llvm::Value* result = env.builder.CreateCall(function, parameters.begin(), parameters.end());
 #if SRET
     // RICH: sret
@@ -3584,23 +3586,43 @@ llvm::Value *E_statement::cc2llvm(CC2LLVMEnv &env, int& deref) const
 llvm::Value* CC2LLVMEnv::EmitBuiltin(SourceLocation loc, const char* Name,
                                      unsigned BuiltinID,
                                      const llvm::Type* ResType,
+                                     bool isSigned,
                                      std::vector<llvm::Value*>& Parameters)
 {
     switch (BuiltinID)
     {
     default:
         report(loc, diag::err_builtin_not_implemented) << Name;
-        return llvm::Constant::getNullValue(ResType);
-        case Builtin::BI__builtin_ctz:
-        case Builtin::BI__builtin_ctzl:
-        case Builtin::BI__builtin_ctzll: {
-            llvm::Value* ArgValue = Parameters[0];
-            const llvm::Type *ArgType = ArgValue->getType();
-            llvm::Function* F = llvm::Intrinsic::getDeclaration(mod,
-                                                                llvm::Intrinsic::cttz,
-                                                                &ArgType, 1);
-            return builder.CreateCall(F, ArgValue);
+    return llvm::Constant::getNullValue(ResType);
+    case Builtin::BI__builtin_ctz:
+    case Builtin::BI__builtin_ctzl:
+    case Builtin::BI__builtin_ctzll: {
+        llvm::Value* ArgValue = Parameters[0];
+        const llvm::Type *ArgType = ArgValue->getType();
+        llvm::Function* F = llvm::Intrinsic::getDeclaration(mod,
+                                                            llvm::Intrinsic::cttz,
+                                                            &ArgType, 1);
+        llvm::Value* Result= builder.CreateCall(F, ArgValue);
+        if (Result->getType() != ResType)
+            Result = builder.CreateIntCast(Result, ResType, isSigned);
+        return Result;
+    }
+    case Builtin::BI__builtin_clz:
+    case Builtin::BI__builtin_clzl:
+    case Builtin::BI__builtin_clzll: {
+        llvm::Value* ArgValue = Parameters[0];
+        const llvm::Type *ArgType = ArgValue->getType();
+        llvm::Function* F = llvm::Intrinsic::getDeclaration(mod,
+                                                            llvm::Intrinsic::ctlz,
+                                                            &ArgType, 1);
+        llvm::Value* Result= builder.CreateCall(F, ArgValue);
+        if (Result->getType() != ResType) {
+            VDEBUG("EmitBuiltin cast ", loc, std::cerr << "from "; Result->getType()->print(std::cerr);
+                                             std::cerr << " to "; ResType->print(std::cerr));
+            Result = builder.CreateIntCast(Result, ResType, false);
         }
+        return Result;
+    }
     }
 }
 

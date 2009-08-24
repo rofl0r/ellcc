@@ -3115,7 +3115,7 @@ int main(int argc, char **argv)
                 InpList.push_back(input);
             }
             found.clear();
-            findFiles(found, "librt.a", "lib");
+            findFiles(found, "libcompiler-rt.a", "lib");
             if (found.size()) {
                 Input input(found[0], A);
                 InpList.push_back(input);

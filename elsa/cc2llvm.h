@@ -274,10 +274,13 @@ public:      // funcs
      * @param loc The source location.
      * @param Name The name of the intrinsic.
      * @param BuiltinID The builtin ID.
+     * @param ResType The result type.
+     * @param isSigned true if the result is signed.
      * @param parameters Parameters to pass to the builtin.
      */
     llvm::Value* EmitBuiltin(SourceLocation loc, const char* Name, unsigned BuiltinID,
                              const llvm::Type* ResType,
+                             bool isSigned,
                              std::vector<llvm::Value*>& Parameters);
 };
 

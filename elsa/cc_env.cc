@@ -6200,9 +6200,10 @@ Variable* Env::CreateBuiltin(const char* Name, unsigned id, CreateBuiltinError &
   assert((TypeStr[0] != '.' || TypeStr[1] == 0) &&
          "'.' should only occur at end of builtin type list!");
 
+  bool varArgs = TypeStr[0] == '.';     // va_args?
   return declareFunctionNargs(ResType, Name, &ArgTypes[0],
                               BuiltinInfo.GetArgNames(id), ArgTypes.size(),
-                              FF_NONE, NULL);
+                              varArgs ? FF_VARARGS : FF_NONE, NULL);
 #if RICH
   // handle untyped/variadic arguments "T c99Style();" or "T cppStyle(...);".
   if (ArgTypes.size() == 0 && TypeStr[0] == '.')
