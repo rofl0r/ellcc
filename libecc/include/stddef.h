@@ -16,10 +16,12 @@ typedef __SIZE_TYPE__ size_t;
  * __PTRDIFF_TYPE__ is defined by the compiler.
  */
 typedef __PTRDIFF_TYPE__ ptrdiff_t;
+#ifndef __cplusplus     // wchar_t is a C++ keyword.
 /** A type to represent a wide character.
  * __WCHAR_TYPE__ is defined by the compiler.
  */
 typedef __WCHAR_TYPE__ wchar_t;
+#endif
 /** A pointer to nothing.
  */
 #define NULL 0
