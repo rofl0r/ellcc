@@ -249,7 +249,7 @@ class PQName(SourceLocation loc) {
   // final name, when it's an ordinary identifier
   // NOTE: 'name' here is *never* NULL--instead, I use NULL
   // PQName pointers in abstract declarators
-  -> PQ_name(StringRef name, ellcc::IdentifierInfo* II = NULL);
+  -> PQ_name(StringRef name);
 
   // "operator" names; 'o' has the full info, while 'fakeName' is
   // for getName(), which is sometimes used for sm::string maps

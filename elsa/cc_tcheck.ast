@@ -592,8 +592,8 @@ class Expression {
   custom debugPrint { printExtras(os, indent); }
 
   // interpretations of literals
-  -> E_intLit      { public(xml) unsigned long long i = 0; }
-  -> E_floatLit    { public(xml) double d = 0; }
+  -> E_intLit      { public unsigned long long i = 0; }
+  -> E_floatLit    { public double d = 0; }
 
   -> E_stringLit   {
        // The decoded string contents, including the contents from
@@ -604,10 +604,10 @@ class Expression {
        // ArrayType attached to this Expression.
        //
        // This is NULL only until it has been type checked.
-       public /* RICH: (xml) */ DataBlock *data = NULL;
+       public DataBlock *data = NULL;
      }
 
-  -> E_charLit     { public(xml) unsigned int c = 0; }
+  -> E_charLit     { public unsigned int c = 0; }
 
   -> E_this {
        // the receiver parameter to which this 'this' refers; NOTE

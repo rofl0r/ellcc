@@ -67,6 +67,10 @@ public:    // data
   // assembly name (usually NULL).
   StringRef asmname;
 
+  /** If non-zero, this is a builtin.
+   */
+  unsigned BuiltinID;
+
   // type of the variable (NULL iff flags has DF_NAMESPACE)
   Type *type;
 

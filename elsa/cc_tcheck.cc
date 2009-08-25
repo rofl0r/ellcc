@@ -5136,6 +5136,34 @@ Type *makeFieldLvalType(Env &env, Variable *var, CVFlags cv)
 }
 
 
+static void checkForBuiltin(Env& env, SourceLocation loc, SourceLocation endloc,
+                             E_funCall* func, Expression*& replacement)
+{
+    Expression* f = func->func;
+    const Variable* v = f->isE_variable() ? f->asE_variable()->var : NULL;
+    if (v && v->BuiltinID) {
+        // A builtin function.
+        switch (v->BuiltinID) {
+        default:
+            break;              // This may be handled at the LLVM or code generator level.
+        case Builtin::BI__builtin_huge_val:
+        case Builtin::BI__builtin_huge_valf:
+        case Builtin::BI__builtin_huge_vall:
+        case Builtin::BI__builtin_inf:
+        case Builtin::BI__builtin_inff:
+        case Builtin::BI__builtin_infl: {
+            // Get a really big number.
+            E_floatLit* f = new E_floatLit(loc, endloc, NULL);
+            // RICH: d needs to become APFloat.
+            f->d = 1;
+            f->type = func->type;
+            replacement = f;
+            break;
+        }
+        }
+    }
+}
+
 // There are several things going on with the replacement pointer.
 //
 // First, since Expressions can be ambiguous, when we select among
@@ -5210,6 +5238,7 @@ void Expression::tcheck(Env &env, Expression *&replacement)
       call->type = call->inner2_itcheck(env, candidates);
       call->ambiguity = NULL;
       replacement = call;
+      checkForBuiltin(env, loc, endloc, call, replacement);
       return;
     }
 
@@ -5952,19 +5981,19 @@ Type *E_variable::itcheck_var_set(Env &env, Expression *&replacement,
       }
     }
 
-    if (!env.LO.NoBuiltin && name->isPQ_name()) {
+    if (!v && !env.LO.NoBuiltin && name->isPQ_name()) {
         // Check for a builtin function.
         IdentifierInfo& II = env.IT.get(name->getName());
         unsigned BuiltinID = II.getBuiltinID();
         // RICH: Library builtins?
         if (BuiltinID) {
             if (!env.BuiltinInfo.getHeaderName(BuiltinID)) {
-                if (!v) {
+                // RICH: if (!v) {
                     Env::CreateBuiltinError E;
                     v = env.CreateBuiltin(name->getName(), BuiltinID, E);
                     // RICH: Handle errors.
-                } 
-                name->asPQ_name()->II = &II;
+                // RICH: } 
+                v->BuiltinID = BuiltinID;
             }
         }
     }
@@ -6611,35 +6640,36 @@ static bool hasNoopDtor(Type *t)
 
 Type *E_funCall::itcheck_x(Env &env, Expression *&replacement)
 {
-  LookupSet candidates;
-  inner1_itcheck(env, candidates);
+    LookupSet candidates;
+    inner1_itcheck(env, candidates);
 
-  // special case: if someone explicitly called the destructor
-  // of a non-class type, e.g.:
-  //   typedef unsigned uint;
-  //   uint x;
-  //   x.~uint();
-  // then change it into a void-typed simple evaluation:
-  //   (void)x;
-  // since the call itself is a no-op
-  if (func->isE_fieldAcc()) {
-    E_fieldAcc *fa = func->asE_fieldAcc();
-    if (fa->fieldName->getName()[0] == '~' &&
-        hasNoopDtor(fa->obj->type->asRval())) {
-      if (args->isNotEmpty()) {
-        env.report(loc, diag::err_class_destructor_arguments);
-      }
-      ASTTypeId *voidId =
-        new ASTTypeId(new TS_simple(env.loc(), ST_VOID),
-                      new Declarator(new D_name(env.loc(), NULL /*name*/),
-                                     NULL /*init*/));
-      replacement = new E_cast(EXPR_LOC(SL_UNKNOWN ENDLOCARG(SL_UNKNOWN)) voidId, fa->obj);
-      replacement->tcheck(env, replacement);
-      return replacement->type;
+    // special case: if someone explicitly called the destructor
+    // of a non-class type, e.g.:
+    //   typedef unsigned uint;
+    //   uint x;
+    //   x.~uint();
+    // then change it into a void-typed simple evaluation:
+    //   (void)x;
+    // since the call itself is a no-op
+    if (func->isE_fieldAcc()) {
+        E_fieldAcc *fa = func->asE_fieldAcc();
+        if (fa->fieldName->getName()[0] == '~' &&
+            hasNoopDtor(fa->obj->type->asRval())) {
+        if (args->isNotEmpty()) {
+            env.report(loc, diag::err_class_destructor_arguments);
+        }
+        ASTTypeId *voidId =
+            new ASTTypeId(new TS_simple(env.loc(), ST_VOID),
+                          new Declarator(new D_name(env.loc(), NULL /*name*/), NULL /*init*/));
+        replacement = new E_cast(EXPR_LOC(SL_UNKNOWN ENDLOCARG(SL_UNKNOWN)) voidId, fa->obj);
+        replacement->tcheck(env, replacement);
+        return replacement->type;
+        }
     }
-  }
 
-  return inner2_itcheck(env, candidates);
+    Type* t = inner2_itcheck(env, candidates);
+    checkForBuiltin(env, loc, endloc, this, replacement);
+    return t;
 }
 
 void E_funCall::inner1_itcheck(Env &env, LookupSet &candidates)

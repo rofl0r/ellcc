@@ -375,15 +375,12 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
   if (TI.LongLongWidth() == 64)
     DefineBuiltinMacro(Buf, "__INT64_TYPE__=long long");
   
-#if RICH
-  // Why would this be needed?
   // Add __builtin_va_list typedef.
   {
     const char *VAList = TI.getVAListDeclaration();
     Buf.insert(Buf.end(), VAList, VAList+strlen(VAList));
     Buf.push_back('\n');
   }
-#endif
   
   if (const char *Prefix = TI.getUserLabelPrefix()) {
     sprintf(MacroBuf, "__USER_LABEL_PREFIX__=%s", Prefix);

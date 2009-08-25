@@ -1,12 +1,13 @@
 // variable.cc            see license.txt for copyright and terms of use
 // code for variable.h
 
-#include "variable.h"      // this module
-#include "template.h"      // Type, TemplateInfo, etc.
-#include "trace.h"         // tracingSys
-#include "mangle.h"        // mangle()
+#include "variable.h"           // this module
+#include "template.h"           // Type, TemplateInfo, etc.
+#include "trace.h"              // tracingSys
+#include "mangle.h"             // mangle()
 #include "SourceLocation.h"     // SourceLocation
 #include "SourceManager.h"      // SourceManager
+#include "Builtins.h"
 
 using namespace ellcc;
 using namespace sm;
@@ -66,6 +67,7 @@ Variable::Variable(SourceLocation L, StringRef n, Type *t, DeclFlags f)
   : loc(L),
     name(n),
     asmname(NULL),
+    BuiltinID(Builtin::NotBuiltin),
     type(t),
     flags(f),
     value(NULL),
@@ -117,6 +119,7 @@ Variable::Variable(XmlReader&)
   : loc(SL_UNKNOWN),
     name(NULL),
     asmname(NULL),
+    BuiltinID(Builtin::NotBuiltin),
     type(NULL),
     flags(DF_NONE),
     value(NULL),
@@ -195,7 +198,7 @@ bool Variable::linkerVisibleName(bool evenIfStaticLinkage) const {
   if (hasFlag(DF_NAMESPACE)) return false;
 
   // dsw: nothing starting with __builtin_va is linker-visible
-  static char *builtin_va_prefix = "__builtin_va";
+  static const char *builtin_va_prefix = "__builtin_va";
   static int builtin_va_prefix_len = strlen(builtin_va_prefix);
   if (name && 0==strncmp(name, builtin_va_prefix, builtin_va_prefix_len)) return false;
 

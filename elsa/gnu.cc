@@ -50,6 +50,7 @@ void Env::initializeComplexComponents()
 // also http://gcc.gnu.org/onlinedocs/gcc-3.4.3/gcc/Other-Builtins.html
 void Env::addGNUBuiltins()
 {
+#if RICH        // All of this will go away...
   Type *t_void = getSimpleType(ST_VOID);
   Type *t_ellipsis_ptr = makePtrType(getSimpleType(ST_ELLIPSIS));
 //    Type *t_voidconst = getSimpleType(SL_INIT, ST_VOID, CV_CONST);
@@ -654,6 +655,7 @@ void Env::addGNUBuiltins()
     Variable *v = makeImplicitDeclFuncVar(str(stringc << "__builtin_" << arr[i]));
     env.builtinVars.push(v);
   }
+#endif
 }
 
 

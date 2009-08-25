@@ -1803,19 +1803,14 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, int& deref) const
     }
 
     deref = 0;
-    if (func->isE_variable() && func->asE_variable()->name->isPQ_name()) {
-        PQ_name* name = func->asE_variable()->name->asPQ_name();
-        if (name->II) {
-            // A potential builtin function.
-            if (unsigned BuiltinID = name->II->getBuiltinID()) {
-                // Is builtin.
-                return env.EmitBuiltin(loc, name->name, BuiltinID,
-                                       env.makeTypeSpecifier(loc, ft->retType),
-                                       !ft->retType->isSimpleType() 
-                                       && isExplicitlyUnsigned(ft->retType->asSimpleTypeC()->type),
-                                       parameters);
-            }
-        }
+    const Variable* v = func->isE_variable() ? func->asE_variable()->var : NULL;
+    if (v && v->BuiltinID) {
+        // A builtin function.
+        return env.EmitBuiltin(loc, env.variableName(v), v->BuiltinID,
+                               env.makeTypeSpecifier(loc, ft->retType),
+                               !ft->retType->isSimpleType() 
+                               && isExplicitlyUnsigned(ft->retType->asSimpleTypeC()->type),
+                               parameters);
     }
     if (!function) {
         // This is not a method call.
