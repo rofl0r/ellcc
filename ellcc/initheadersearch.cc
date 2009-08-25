@@ -106,6 +106,7 @@ void InitHeaderSearch::AddDefaultSystemIncludePaths(const LangOptions &Lang) {
   // FIXME: temporary hack: hard-coded paths.
   // FIXME: get these from the target?
 
+#if RICH
 #ifdef LLVM_ON_WIN32
   if (Lang.CPlusPlus) {
     // Mingw32 GCC version 4
@@ -185,6 +186,7 @@ void InitHeaderSearch::AddDefaultSystemIncludePaths(const LangOptions &Lang) {
   AddPath("/usr/local/include", System, false, false, false);
 
   AddPath("/usr/include", System, false, false, false);
+#endif
 #endif
 }
 

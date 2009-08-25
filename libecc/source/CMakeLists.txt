@@ -5,6 +5,7 @@ include(${ELLCC_SOURCE_DIR}/cmake/target.cmake)
 add_subdirectory(common)
 
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/compiler-rt)
+#add_subdirectory(${COMPILER_RT_DIR} ${CMAKE_CURRENT_BINARY_DIR}/compiler-rt)
 execute_process(COMMAND ${CMAKE_COMMAND}
                     -DELLCC_SOURCE_DIR=${ELLCC_SOURCE_DIR}
                     -DELLCC_TARGET=${ELLCC_TARGET}
