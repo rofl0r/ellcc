@@ -12,6 +12,9 @@
 using namespace sm;
 using namespace ellcc;
 
+#define RM llvm::APFloat::rmNearestTiesToEven   // RICH: Float rounding mode.
+#define ST(t) ((TargetInfo::TypeID)t)
+
 // ----------------------- CValue ------------------------
 STATICDEF CValue::Kind CValue::classify(SimpleTypeId t)
 {
@@ -66,7 +69,7 @@ bool CValue::isZero() const
     default: // silence warning
     case K_SIGNED:    return si == 0;
     case K_UNSIGNED:  return ui == 0;
-    case K_FLOAT:     return f == 0.0;
+    case K_FLOAT:     return f.isZero();
   }
 }
 
@@ -105,7 +108,7 @@ void CValue::setUnsigned(SimpleTypeId t, unsigned long v)
 }
 
 
-void CValue::setFloat(SimpleTypeId t, float v)
+void CValue::setFloat(SimpleTypeId t, llvm::APFloat v)
 {
   type = t;
   xassert(isFloat());
@@ -153,24 +156,42 @@ void CValue::convertToType(SimpleTypeId newType)
         si = (long)ui;           // convert unsigned to signed
         break;
 
-      case K_SIGNED*8 + K_FLOAT:
-        si = (long)f;
+      case K_SIGNED*8 + K_FLOAT: {
+        llvm::integerPart i;
+        bool exact;
+        f.convertToInteger(&i, TI.getTypeSizeInBits(ST(newType)), true, RM, &exact);
+        // RICH: check status, exact?
+        si = i;
+        }
         break;
 
       case K_UNSIGNED*8 + K_SIGNED:
         ui = (unsigned long)si;
         break;
 
-      case K_UNSIGNED*8 + K_FLOAT:
-        ui = (unsigned long)f;
+      case K_UNSIGNED*8 + K_FLOAT: {
+        llvm::integerPart i;
+        bool exact;
+        f.convertToInteger(&i, TI.getTypeSizeInBits(ST(newType)), false, RM, &exact);
+        // RICH: check status, exact?
+        ui = i;
+        }
         break;
 
-      case K_FLOAT*8 + K_SIGNED:
-        f = (float)si;
+      case K_FLOAT*8 + K_SIGNED: {
+        llvm::integerPart i;
+        i = si;
+        f.convertFromSignExtendedInteger(&i, TI.getTypeSizeInBits(ST(type)), true, RM);
+        // RICH: check status, exact?
+        }
         break;
 
-      case K_FLOAT*8 + K_UNSIGNED:
-        f = (float)ui;
+      case K_FLOAT*8 + K_UNSIGNED: {
+        llvm::integerPart i;
+        i = ui;
+        f.convertFromZeroExtendedInteger(&i, TI.getTypeSizeInBits(ST(type)), false, RM);
+        // RICH: check status, exact?
+        }
         break;
     }
   }
@@ -210,9 +231,9 @@ void CValue::applyUnary(UnaryOp op)
       performIntegralPromotions();
       switch (kind()) {
         default: // silence warning
-        case K_SIGNED:    si = -si;   break;
-        case K_UNSIGNED:  ui = -ui;   break;
-        case K_FLOAT:     f = -f;     break;
+        case K_SIGNED:    si = -si;             break;
+        case K_UNSIGNED:  ui = -ui;             break;
+        case K_FLOAT:     f.changeSign();       break;
       }
       break;
 
@@ -252,7 +273,8 @@ void CValue::addOffset(int offset)
     ui += (unsigned long)offset;
   }
   else if (isFloat()) {
-    f += (float)offset;     // questionable...
+    llvm::APFloat o((double)offset);
+    f.add(o, RM);       // questionable...
   }
   else {
     // other cases: leave as-is
@@ -281,7 +303,7 @@ void CValue::applyBinary(BinaryOp op, CValue other)
         default: // silence warning
         case K_SIGNED:     si = si * other.si;    break;
         case K_UNSIGNED:   ui = ui * other.ui;    break;
-        case K_FLOAT:      f = f * other.f;       break;
+        case K_FLOAT:      f.multiply(other.f, RM);       break;
       }
       break;
 
@@ -295,7 +317,7 @@ void CValue::applyBinary(BinaryOp op, CValue other)
         default: // silence warning
         case K_SIGNED:     si = si / other.si;    break;
         case K_UNSIGNED:   ui = ui / other.ui;    break;
-        case K_FLOAT:      f = f / other.f;       break;
+        case K_FLOAT:      f.divide(other.f, RM);       break;
       }
       break;
 
@@ -320,7 +342,7 @@ void CValue::applyBinary(BinaryOp op, CValue other)
         default: // silence warning
         case K_SIGNED:     si = si + other.si;    break;
         case K_UNSIGNED:   ui = ui + other.ui;    break;
-        case K_FLOAT:      f = f + other.f;       break;
+        case K_FLOAT:      f.add(other.f, RM);       break;
       }
       break;
 
@@ -330,7 +352,7 @@ void CValue::applyBinary(BinaryOp op, CValue other)
         default: // silence warning
         case K_SIGNED:     si = si - other.si;    break;
         case K_UNSIGNED:   ui = ui - other.ui;    break;
-        case K_FLOAT:      f = f - other.f;       break;
+        case K_FLOAT:      f.subtract(other.f, RM);       break;
       }
       break;
 
@@ -343,7 +365,9 @@ void CValue::applyBinary(BinaryOp op, CValue other)
         default: // silence warning
         case CValue::K_SIGNED:     si = ((si < other.si) ? si : other.si);   break;
         case CValue::K_UNSIGNED:   ui = ((ui < other.ui) ? ui : other.ui);   break;
-        case CValue::K_FLOAT:      f = ((f < other.f) ? f : other.f);        break;
+        case CValue::K_FLOAT:
+            f = (f.compare(other.f) == llvm::APFloat::cmpLessThan) ? f : other.f;
+            break;
       }
       break;
 
@@ -353,7 +377,9 @@ void CValue::applyBinary(BinaryOp op, CValue other)
         default: // silence warning
         case CValue::K_SIGNED:     si = ((si > other.si) ? si : other.si);   break;
         case CValue::K_UNSIGNED:   ui = ((ui > other.ui) ? ui : other.ui);   break;
-        case CValue::K_FLOAT:      f = ((f > other.f) ? f : other.f);        break;
+        case CValue::K_FLOAT:
+            f = (f.compare(other.f) == llvm::APFloat::cmpGreaterThan) ? f : other.f;
+            break;
       }
       break;
 
@@ -401,7 +427,9 @@ void CValue::applyBinary(BinaryOp op, CValue other)
         default: // silence warning
         case K_SIGNED:     ui = si < other.si;    break;
         case K_UNSIGNED:   ui = ui < other.ui;    break;
-        case K_FLOAT:      ui = f < other.f;       break;
+        case K_FLOAT:
+            ui = f.compare(other.f) == llvm::APFloat::cmpLessThan;
+            break;
       }
       type = ST_BOOL;
       break;
@@ -412,7 +440,9 @@ void CValue::applyBinary(BinaryOp op, CValue other)
         default: // silence warning
         case K_SIGNED:     ui = si > other.si;    break;
         case K_UNSIGNED:   ui = ui > other.ui;    break;
-        case K_FLOAT:      ui = f > other.f;       break;
+        case K_FLOAT:
+            ui = f.compare(other.f) == llvm::APFloat::cmpGreaterThan;
+            break;
       }
       type = ST_BOOL;
       break;
@@ -423,7 +453,10 @@ void CValue::applyBinary(BinaryOp op, CValue other)
         default: // silence warning
         case K_SIGNED:     ui = si <= other.si;    break;
         case K_UNSIGNED:   ui = ui <= other.ui;    break;
-        case K_FLOAT:      ui = f <= other.f;       break;
+        case K_FLOAT:
+            llvm::APFloat::cmpResult r = f.compare(other.f);
+            ui = r == llvm::APFloat::cmpLessThan || r == llvm::APFloat::cmpEqual;
+            break;
       }
       type = ST_BOOL;
       break;
@@ -434,7 +467,10 @@ void CValue::applyBinary(BinaryOp op, CValue other)
         default: // silence warning
         case K_SIGNED:     ui = si >= other.si;    break;
         case K_UNSIGNED:   ui = ui >= other.ui;    break;
-        case K_FLOAT:      ui = f >= other.f;       break;
+        case K_FLOAT:
+            llvm::APFloat::cmpResult r = f.compare(other.f);
+            ui = r == llvm::APFloat::cmpGreaterThan || r == llvm::APFloat::cmpEqual;
+            break;
       }
       type = ST_BOOL;
       break;
@@ -446,7 +482,9 @@ void CValue::applyBinary(BinaryOp op, CValue other)
         default: // silence warning
         case K_SIGNED:     ui = si == other.si;    break;
         case K_UNSIGNED:   ui = ui == other.ui;    break;
-        case K_FLOAT:      ui = f == other.f;       break;
+        case K_FLOAT:
+            ui = f.compare(other.f) == llvm::APFloat::cmpEqual;
+            break;
       }
       type = ST_BOOL;
       break;
@@ -457,7 +495,9 @@ void CValue::applyBinary(BinaryOp op, CValue other)
         default: // silence warning
         case K_SIGNED:     ui = si != other.si;    break;
         case K_UNSIGNED:   ui = ui != other.ui;    break;
-        case K_FLOAT:      ui = f != other.f;       break;
+        case K_FLOAT:
+            ui = f.compare(other.f) != llvm::APFloat::cmpEqual;
+            break;
       }
       type = ST_BOOL;
       break;
@@ -520,7 +560,7 @@ string CValue::asString() const
   switch (kind()) {
     case K_SIGNED:      return stringc << toString(type) << ": " << si;
     case K_UNSIGNED:    return stringc << toString(type) << ": " << ui;
-    case K_FLOAT:       return stringc << toString(type) << ": " << f;
+    case K_FLOAT:       return stringc << toString(type) << ": " << f.convertToDouble();
     case K_ERROR:       return "error";
     default:    // silence warning
     case K_DEPENDENT:   return "dependent";
@@ -596,7 +636,7 @@ CValue Expression::iconstEval(ConstEval &env) const
     ASTNEXTC(E_floatLit, f)
       CValue ret(env.TI);
       SimpleTypeId id = type->asSimpleTypeC()->type;
-      ret.setFloat(id, (float)f->d);
+      ret.setFloat(id, f->v);
       return ret;
 
     ASTNEXTC(E_charLit, c)

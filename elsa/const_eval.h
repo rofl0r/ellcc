@@ -4,16 +4,18 @@
 #ifndef CONST_EVAL_H
 #define CONST_EVAL_H
 
-#include "str.h"         // string
-#include "cc_flags.h"    // SimpleTypeId
-#include "xassert.h"     // xassert
+#include "str.h"                // string
+#include "cc_flags.h"           // SimpleTypeId
+#include "xassert.h"            // xassert
+#include "TargetInfo.h"
+#include "llvm/ADT/APFloat.h"   // APFloat
 
-class Variable;          // variable.h
-class MType;             // mtype.h
-class E_variable;        // cc_ast.h
+class Variable;                 // variable.h
+class MType;                    // mtype.h
+class E_variable;               // cc_ast.h
 
 namespace ellcc {
-class TargetInfo;        // TargetInfo.h
+class TargetInfo;               // TargetInfo.h
 }
 
 
@@ -38,23 +40,22 @@ public:      // data
     K_DEPENDENT              // ST_DEPENDENT
   };
 
-  union {
-    long si;                 // K_SIGNED
-    unsigned long ui;        // K_UNSIGNED
-    float f;                 // K_FLOAT
-    unsigned why;            // K_ERROR
-  };
+  // This used to be a union.
+  long si;                 // K_SIGNED
+  unsigned long ui;        // K_UNSIGNED
+  llvm::APFloat f;         // K_FLOAT
+  unsigned why;            // K_ERROR
 
 private:
   void dup(CValue const &obj);
 
 public:      // funcs
-  explicit CValue(ellcc::TargetInfo& TI, SimpleTypeId t = ST_INT) : TI(TI)
+  explicit CValue(ellcc::TargetInfo& TI, SimpleTypeId t = ST_INT) : f(0.0), TI(TI)
     { type=t; si=0; }
-  explicit CValue(ellcc::TargetInfo& TI, unsigned why) : TI(TI)
+  explicit CValue(ellcc::TargetInfo& TI, unsigned why) : f(0.0), TI(TI)
     { setError(why); }
 
-  CValue(CValue const &obj) : TI(obj.TI)
+  CValue(CValue const &obj) : f(0.0), TI(obj.TI)
     { dup(obj); }
 
   CValue& operator= (CValue const &obj)
@@ -75,7 +76,7 @@ public:      // funcs
 
   long getSignedValue() const    { xassert(isSigned()); return si; }
   long getUnsignedValue() const  { xassert(isUnsigned()); return ui; }
-  float getFloatValue() const    { xassert(isFloat()); return f; }
+  llvm::APFloat getFloatValue() const    { xassert(isFloat()); return f; }
   unsigned getWhy() const         { xassert(isError()); return why; }
 
   bool isZero() const;
@@ -84,7 +85,7 @@ public:      // funcs
 
   void setSigned(SimpleTypeId t, long v);
   void setUnsigned(SimpleTypeId t, unsigned long v);
-  void setFloat(SimpleTypeId t, float v);
+  void setFloat(SimpleTypeId t, llvm::APFloat v);
   void setError(unsigned why);
   void setDependent();
 

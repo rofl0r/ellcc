@@ -11,16 +11,17 @@
 // the initial verbatims from the base, but before any
 // of the classes from the base
 verbatim {
-  #include "variable.h"      // Variable
-  #include "cc_type.h"       // Type, FunctonType, CompoundType
-  #include "template.h"      // STemplateArgument
-  #include "const_eval.h"    // ConstEval
-  #include "macros.h"        // Restorer
-  #include "stdconv.h"       // StandardConversion
+  #include "variable.h"                 // Variable
+  #include "cc_type.h"                  // Type, FunctonType, CompoundType
+  #include "template.h"                 // STemplateArgument
+  #include "const_eval.h"               // ConstEval
+  #include "macros.h"                   // Restorer
+  #include "stdconv.h"                  // StandardConversion
+  #include "llvm/ADT/APFloat.h"         // APFloat
 
-  class Env;                 // cc_env.h
-  class ArgumentInfo;        // overload.h
-  class DataBlock;           // smbase/datablok.h
+  class Env;                            // cc_env.h
+  class ArgumentInfo;                   // overload.h
+  class DataBlock;                      // smbase/datablok.h
                       
 #if RICH
   inline void fromXml(DeclaratorContext &out, sm::string str) {
@@ -593,7 +594,7 @@ class Expression {
 
   // interpretations of literals
   -> E_intLit      { public unsigned long long i = 0; }
-  -> E_floatLit    { public double d = 0; }
+  -> E_floatLit    { public llvm::APFloat v = 0.0; }
 
   -> E_stringLit   {
        // The decoded string contents, including the contents from

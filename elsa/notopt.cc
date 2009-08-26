@@ -2,8 +2,8 @@
 // little routines that GCC's optimizer barfs on (produces incorrect
 // code), so I separate them from the rest of the code (very annoying)
 
-#include "cc_env.h"    // Env
-#include "trace.h"     // TRACE
+#include "cc_env.h"                     // Env
+#include "trace.h"                      // TRACE
 #include "Diagnostic.h"
 
 using namespace ellcc;

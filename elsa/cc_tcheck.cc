@@ -29,6 +29,7 @@
 #include "owner.h"              // Owner
 #include "mtype.h"              // MType
 #include "ElsaDiagnostic.h"
+#include "llvm/Constants.h"
 
 using namespace ellcc;
 // smbase
@@ -5154,8 +5155,8 @@ static void checkForBuiltin(Env& env, SourceLocation loc, SourceLocation endloc,
         case Builtin::BI__builtin_infl: {
             // Get a really big number.
             E_floatLit* f = new E_floatLit(loc, endloc, NULL);
-            // RICH: d needs to become APFloat.
-            f->d = 1;
+            const llvm::fltSemantics &Sem = env.getFloatTypeSemantics(func->type);
+            f->v = llvm::APFloat::getInf(Sem);
             f->type = func->type;
             replacement = f;
             break;
@@ -5510,18 +5511,23 @@ Type *E_intLit::itcheck_x(Env &env, Expression *&replacement)
 
 Type *E_floatLit::itcheck_x(Env &env, Expression *&replacement)
 {
-  d = strtod(text, NULL /*endp*/);
+    // what is the final character?
+    const char* final = &text[strlen(text)-1];
+    Type* t;
+    if (*final == 'f' || *final == 'F') {
+        --final;
+        t = env.getSimpleType(ST_FLOAT);
+    } else if (*final == 'l' || *final == 'L') {
+        --final;
+        t = env.getSimpleType(ST_LONG_DOUBLE);
+    } else {
+        t = env.getSimpleType(ST_DOUBLE);
+    }
 
-  // what is the final character?
-  char final = text[strlen(text)-1];
-  if (final == 'f' || final == 'F') {
-    return env.getSimpleType(ST_FLOAT);
-  }
-  if (final == 'l' || final == 'L') {
-    return env.getSimpleType(ST_LONG_DOUBLE);
-  }
-
-  return env.getSimpleType(ST_DOUBLE);
+    llvm::StringRef f(text, final - text + 1);
+    const llvm::fltSemantics &Sem = env.getFloatTypeSemantics(t);
+    v = llvm::APFloat(Sem, f);
+    return t;
 }
 
 static void appendCharacter(ellcc::TargetInfo &TI, DataBlock *block, unsigned int c, SimpleTypeId charType)

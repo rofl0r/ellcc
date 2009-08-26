@@ -1610,35 +1610,7 @@ llvm::Value *E_intLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
 
 llvm::Value *E_floatLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
-    const llvm::Type* ftype = env.makeTypeSpecifier(loc, type);
-    const llvm::fltSemantics* semantics;
-    deref = 0;
-    switch (ftype->getTypeID()) {
-    case llvm::Type::FloatTyID:
-        semantics = &llvm::APFloat::IEEEsingle;
-        break;
-    case llvm::Type::DoubleTyID:
-        semantics = &llvm::APFloat::IEEEdouble;
-        break;
-    case llvm::Type::X86_FP80TyID:
-        semantics = &llvm::APFloat::x87DoubleExtended;
-        break;
-    case llvm::Type::FP128TyID:
-        semantics = &llvm::APFloat::IEEEquad;
-        break;
-    case llvm::Type::PPC_FP128TyID:
-        semantics = &llvm::APFloat::PPCDoubleDouble;
-        break;
-    default:
-        std::cerr << toString(loc) << ": ";
-        xunimp("floating point type");
-        break;
-    }
-    const char* endp = text + strlen(text);
-    while (--endp > text && !isdigit(*endp) && tolower(*endp) != 'e' && *endp != '.')
-        continue;       // Skip trailing 'F', etc.
-    llvm::StringRef f(text, endp - text + 1);
-    return llvm::ConstantFP::get(env.C, llvm::APFloat(*semantics, f));
+    return llvm::ConstantFP::get(env.C, v);
 }
 
 llvm::Value *E_stringLit::cc2llvm(CC2LLVMEnv &env, int& deref) const

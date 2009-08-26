@@ -175,6 +175,10 @@ public:      // data
    */
   Preprocessor& PP;
 
+  /** The LLVM context.
+   */
+  llvm::LLVMContext& C;
+
   /** The language options.
    */
   const LangOptions& LO;
@@ -383,7 +387,7 @@ private:     // funcs
   void mergeDefaultArguments(SourceLocation loc, Variable *prior, FunctionType *type);
 
 public:      // funcs
-  Env(StringTable& str, Preprocessor& PP, TypeFactory& tfac,
+  Env(StringTable& str, Preprocessor& PP, llvm::LLVMContext& C, TypeFactory& tfac,
       ArrayStack<Variable*>& madeUpVariables0, ArrayStack<Variable*>& builtinVars0,
       TranslationUnit* unit0);
 
@@ -1118,6 +1122,11 @@ public:      // template funcs
    */
   Variable* CreateBuiltin(const char* Name, unsigned id, CreateBuiltinError &Error);
 
+  /** Get the semantics of a float type.
+   * @param t The type.
+   * @return The semantics.
+   */
+  const llvm::fltSemantics& getFloatTypeSemantics(Type* t);
 private:
   Type* DecodeTypeFromStr(const char *&Str,
                           CreateBuiltinError &Error,

@@ -304,7 +304,7 @@ int throwClauseSerialNumber = 0; // don't make this a member of Env
 
 int Env::anonCounter = 1;
 
-Env::Env(StringTable &s, Preprocessor& PP, TypeFactory &tf,
+Env::Env(StringTable &s, Preprocessor& PP, llvm::LLVMContext& C, TypeFactory &tf,
          ArrayStack<Variable*> &madeUpVariables0,
          ArrayStack<Variable*> &builtinVars0,
          TranslationUnit *unit0)
@@ -319,6 +319,7 @@ Env::Env(StringTable &s, Preprocessor& PP, TypeFactory &tf,
     diag(PP.getDiagnostics()), SM(PP.getSourceManager()),
     str(s),
     PP(PP),
+    C(C),
     LO(PP.getLangOptions()),
     IT(PP.getIdentifierTable()),
     TI(PP.getTargetInfo()),
@@ -550,6 +551,27 @@ Env::Env(StringTable &s, Preprocessor& PP, TypeFactory &tf,
   setupOperatorOverloading();
 
   ctorFinished = true;
+}
+
+const llvm::fltSemantics& Env::getFloatTypeSemantics(Type* t)
+{
+    xassert(t->isSimpleType() && isFloatType(t->asSimpleTypeC()->type));
+    
+    switch (t->asSimpleTypeC()->type) {
+    case ST_FLOAT:
+    case ST_FLOAT_IMAGINARY:
+        return TI.getFloatFormat();
+    case ST_DOUBLE:
+    case ST_DOUBLE_IMAGINARY:
+        return TI.getDoubleFormat();
+    case ST_LONG_DOUBLE:
+    case ST_LONG_DOUBLE_IMAGINARY:
+        return TI.getLongDoubleFormat();
+    default:
+        xassert("floating point type");
+        break;
+    }
+    return llvm::APFloat::Bogus;
 }
 
 // slightly clever: iterate over an array, but look like

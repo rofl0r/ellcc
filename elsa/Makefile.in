@@ -141,7 +141,7 @@ TOCLEAN += *.o *.d
 
 # compile a special module; -O0 will override any earlier setting
 notopt.o: notopt.cc
-	$(CXX) -c -o $@ $< $(CCFLAGS) -O0
+	$(CXX) -c -o $@ $< $(CCFLAGS) -O0 $(LLVMCCFLAGS)
 	@$(DEP)   -o $@ $< $(CCFLAGS) -O0 >$*.d
 
 # ------------------------ tlexer -------------------

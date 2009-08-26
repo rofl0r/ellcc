@@ -1283,7 +1283,7 @@ void Expression::printExtras(std::ostream &os, int indent) const
     }
 
     ASTNEXTC(E_floatLit, f) {
-      ind(os, indent) << "f: " << f->d << "\n";
+      ind(os, indent) << "f: " << f->v.convertToDouble() << "\n";
     }
 
     ASTNEXTC(E_stringLit, s) {

@@ -48,10 +48,10 @@ using namespace ellcc;
  */
 class EllccEnv : public Env {
 public:
-    EllccEnv(Preprocessor& PP, StringTable &str, TypeFactory &tfac,
+    EllccEnv(Preprocessor& PP, llvm::LLVMContext& C, StringTable &str, TypeFactory &tfac,
              ArrayStack<Variable*> &madeUpVariables0, ArrayStack<Variable*> &builtinVars0,
              TranslationUnit *unit0)
-             : Env(str, PP, tfac, madeUpVariables0, builtinVars0, unit0) { }
+             : Env(str, PP, C, tfac, madeUpVariables0, builtinVars0, unit0) { }
 
     bool validateAsmConstraint(const char* name, TargetInfo::ConstraintInfo& info)
         { return PP.getTargetInfo().validateAsmConstraint(name, info); }
@@ -369,7 +369,7 @@ int Elsa::doit(Preprocessor& PP,
         typeCheckingTimer.startTimer();
     }
 
-    EllccEnv env(PP, strTable, tfac, madeUpVariables, builtinVars, unit);
+    EllccEnv env(PP, context, strTable, tfac, madeUpVariables, builtinVars, unit);
     try {
       env.tcheckTranslationUnit(unit);
     }
@@ -457,7 +457,7 @@ int Elsa::doit(Preprocessor& PP,
       // this is useful to measure the cost of disambiguation, since
       // now the tree is entirely free of ambiguities
       traceProgress() << "beginning second tcheck...\n";
-      EllccEnv env2(PP, strTable, tfac, madeUpVariables, builtinVars, unit);
+      EllccEnv env2(PP, context, strTable, tfac, madeUpVariables, builtinVars, unit);
       unit->tcheck(env2);
       traceProgress() << "end of second tcheck\n";
     }
@@ -677,7 +677,7 @@ int Elsa::doit(Preprocessor& PP,
       ArrayStack<Variable*> madeUpVariables2;
       ArrayStack<Variable*> builtinVars2;
       // dsw: I hope you intend that I should use the cloned TranslationUnit
-      EllccEnv env3(PP, strTable, tfac, madeUpVariables2, builtinVars2, u2);
+      EllccEnv env3(PP, context, strTable, tfac, madeUpVariables2, builtinVars2, u2);
       u2->tcheck(env3);
 
       if (tracingSys("cloneTypedAST")) {
