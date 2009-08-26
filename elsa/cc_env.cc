@@ -345,6 +345,7 @@ Env::Env(StringTable &s, Preprocessor& PP, llvm::LLVMContext& C, TypeFactory &tf
     string__FUNCTION__(str("__FUNCTION__")),
     string__PRETTY_FUNCTION__(str("__PRETTY_FUNCTION__")),
     string_main(str("main")),
+    string___builtin_va_list(str("__builtin_va_list")),
 
     // these are done below because they have to be declared as functions too
     special_checkType(NULL),
@@ -370,6 +371,7 @@ Env::Env(StringTable &s, Preprocessor& PP, llvm::LLVMContext& C, TypeFactory &tf
     globalScopeVar(NULL),
 
     var__builtin_constant_p(NULL),
+    var__builtin_va_list(NULL),
 
     // operatorName[] initialized below
 
@@ -5998,17 +6000,17 @@ Type* Env::DecodeTypeFromStr(const char *&Str, CreateBuiltinError &Error, bool A
     switch (*Str++) {
     default: Done = true; --Str; break; 
     case 'S':
-      assert(!Unsigned && "Can't use both 'S' and 'U' modifiers!");
-      assert(!Signed && "Can't use 'S' modifier multiple times!");
+      xassert(!Unsigned && "Can't use both 'S' and 'U' modifiers!");
+      xassert(!Signed && "Can't use 'S' modifier multiple times!");
       Signed = true;
       break;
     case 'U':
-      assert(!Signed && "Can't use both 'S' and 'U' modifiers!");
-      assert(!Unsigned && "Can't use 'S' modifier multiple times!");
+      xassert(!Signed && "Can't use both 'S' and 'U' modifiers!");
+      xassert(!Unsigned && "Can't use 'S' modifier multiple times!");
       Unsigned = true;
       break;
     case 'L':
-      assert(HowLong <= 2 && "Can't have LLLL modifier");
+      xassert(HowLong <= 2 && "Can't have LLLL modifier");
       ++HowLong;
       break;
     }
@@ -6018,19 +6020,19 @@ Type* Env::DecodeTypeFromStr(const char *&Str, CreateBuiltinError &Error, bool A
   
   // Read the base type.
   switch (*Str++) {
-  default: assert(0 && "Unknown builtin type letter!");
+  default: xassert(0 && "Unknown builtin type letter!");
   case 'v':
-    assert(HowLong == 0 && !Signed && !Unsigned &&
+    xassert(HowLong == 0 && !Signed && !Unsigned &&
            "Bad modifiers used with 'v'!");
     Ty = getSimpleType(ST_VOID);
     break;
   case 'f':
-    assert(HowLong == 0 && !Signed && !Unsigned &&
+    xassert(HowLong == 0 && !Signed && !Unsigned &&
            "Bad modifiers used with 'f'!");
     Ty = getSimpleType(ST_FLOAT);
     break;
   case 'd':
-    assert(HowLong < 2 && !Signed && !Unsigned &&
+    xassert(HowLong < 2 && !Signed && !Unsigned &&
            "Bad modifiers used with 'd'!");
     if (HowLong)
       Ty = getSimpleType(ST_LONG_DOUBLE);
@@ -6038,7 +6040,7 @@ Type* Env::DecodeTypeFromStr(const char *&Str, CreateBuiltinError &Error, bool A
       Ty = getSimpleType(ST_DOUBLE);
     break;
   case 's':
-    assert(HowLong == 0 && "Bad modifiers used with 's'!");
+    xassert(HowLong == 0 && "Bad modifiers used with 's'!");
     if (Unsigned)
       Ty = getSimpleType(ST_UNSIGNED_SHORT_INT);
     else
@@ -6046,7 +6048,7 @@ Type* Env::DecodeTypeFromStr(const char *&Str, CreateBuiltinError &Error, bool A
     break;
   case 'i':
     if (HowLong == 3) {
-      assert(0 && "int128_t not implemented");
+      xassert(0 && "int128_t not implemented");
       Ty = getSimpleType(ST_ERROR);
     } else if (HowLong == 2)
       Ty = Unsigned ? getSimpleType(ST_UNSIGNED_LONG_LONG) : getSimpleType(ST_LONG_LONG);
@@ -6056,7 +6058,7 @@ Type* Env::DecodeTypeFromStr(const char *&Str, CreateBuiltinError &Error, bool A
       Ty = Unsigned ? getSimpleType(ST_UNSIGNED_INT) : getSimpleType(ST_INT);
     break;
   case 'c':
-    assert(HowLong == 0 && "Bad modifiers used with 'c'!");
+    xassert(HowLong == 0 && "Bad modifiers used with 'c'!");
     if (Signed)
       Ty = getSimpleType(ST_SIGNED_CHAR);
     else if (Unsigned)
@@ -6065,19 +6067,19 @@ Type* Env::DecodeTypeFromStr(const char *&Str, CreateBuiltinError &Error, bool A
       Ty = getSimpleType(ST_CHAR);
     break;
   case 'b': // boolean
-    assert(HowLong == 0 && !Signed && !Unsigned && "Bad modifiers for 'b'!");
+    xassert(HowLong == 0 && !Signed && !Unsigned && "Bad modifiers for 'b'!");
     Ty = getSimpleType(ST_BOOL);
     break;
   case 'z':  // size_t.
-    assert(HowLong == 0 && !Signed && !Unsigned && "Bad modifiers for 'z'!");
+    xassert(HowLong == 0 && !Signed && !Unsigned && "Bad modifiers for 'z'!");
     Ty = getSimpleType(TI.getSizeType());
     break;
   case 'F':
-    assert(0 && "constant CFString not implemented");
+    xassert(0 && "constant CFString not implemented");
     Ty = getSimpleType(ST_ERROR);
     break;
   case 'a':
-    assert(0 && "builtin va_list not implemented");
+    xassert(0 && "builtin va_list not implemented");
     Ty = getSimpleType(ST_ERROR);
     break;
   case 'A':
@@ -6089,24 +6091,24 @@ Type* Env::DecodeTypeFromStr(const char *&Str, CreateBuiltinError &Error, bool A
     // is x86-64, where va_list is a __va_list_tag[1]. For x86,
     // we want this argument to be a char*&; for x86-64, we want
     // it to be a __va_list_tag*.
-    assert(0 && "reference to builtin va_list not implemented");
-#if RICH
-    Ty = Context.getBuiltinVaListType();
-    assert(!Ty.isNull() && "builtin va list type not initialized!");
+    xassert(var__builtin_va_list && var__builtin_va_list->type
+            && "builtin va list type not initialized!");
+    Ty = var__builtin_va_list->type;
     if (Ty->isArrayType()) {
-      Ty = Context.getArrayDecayedType(Ty);
+      Ty = getArrayDecayedType(Ty);
+#if RICH
     } else {
-      Ty = Context.getLValueReferenceType(Ty);
-    }
+      Ty = getLValueReferenceType(Ty);
 #endif
+    }
     break;
   case 'V': {
-    assert(0 && "builtin vector not implemented");
+    xassert(0 && "builtin vector not implemented");
     Ty = getSimpleType(ST_ERROR);
 #if RICH
     char *End;
     unsigned NumElements = strtoul(Str, &End, 10);
-    assert(End != Str && "Missing vector size");
+    xassert(End != Str && "Missing vector size");
     
     Str = End;
     
@@ -6116,7 +6118,7 @@ Type* Env::DecodeTypeFromStr(const char *&Str, CreateBuiltinError &Error, bool A
     break;
   }
   case 'P':
-    assert(0 && "builtin FILE not implemented");
+    xassert(0 && "builtin FILE not implemented");
     Ty = getSimpleType(ST_ERROR);
 #if RICH
     Ty = Context.getFILEType();
@@ -6127,7 +6129,7 @@ Type* Env::DecodeTypeFromStr(const char *&Str, CreateBuiltinError &Error, bool A
 #endif
     break;
   case 'J':
-    assert(0 && "builtin jmp_buf not implemented");
+    xassert(0 && "builtin jmp_buf not implemented");
     Ty = getSimpleType(ST_ERROR);
 #if RICH
     if (Signed)
@@ -6154,7 +6156,7 @@ Type* Env::DecodeTypeFromStr(const char *&Str, CreateBuiltinError &Error, bool A
         Ty = makePtrType(Ty);
         break;
       case '&':
-        assert(0 && "builtin lvalue reference not implemented");
+        xassert(0 && "builtin lvalue reference not implemented");
         Ty = getSimpleType(ST_ERROR);
 #if RICH
         Ty = Context.getLValueReferenceType(Ty);
@@ -6162,7 +6164,7 @@ Type* Env::DecodeTypeFromStr(const char *&Str, CreateBuiltinError &Error, bool A
         break;
       // FIXME: There's no way to have a built-in with an rvalue ref arg.
       case 'C':
-        assert(0 && "builtin const modifier not implemented");
+        xassert(0 && "builtin const modifier not implemented");
         Ty = getSimpleType(ST_ERROR);
 #if RICH
         Ty = Ty.getQualifiedType(QualType::Const);
@@ -6188,7 +6190,7 @@ Type* Env::getArrayDecayedType(Type* Ty)
   // typedefs in the element type of the array.  This also handles propagation
   // of type qualifiers from the array type into the element type if present
   // (C99 6.7.3p8).
-  assert(Ty->isPDSArrayType() && "Not an array type!");
+  xassert(Ty->isPDSArrayType() && "Not an array type!");
   while (Ty->isPDSArrayType()) {
     Ty = makePtrType(Ty->getAtType());
   }
@@ -6219,7 +6221,7 @@ Variable* Env::CreateBuiltin(const char* Name, unsigned id, CreateBuiltinError &
     ArgTypes.push_back(Ty);
   }
 
-  assert((TypeStr[0] != '.' || TypeStr[1] == 0) &&
+  xassert((TypeStr[0] != '.' || TypeStr[1] == 0) &&
          "'.' should only occur at end of builtin type list!");
 
   bool varArgs = TypeStr[0] == '.';     // va_args?

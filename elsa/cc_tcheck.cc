@@ -5987,19 +5987,26 @@ Type *E_variable::itcheck_var_set(Env &env, Expression *&replacement,
       }
     }
 
-    if (!v && !env.LO.NoBuiltin && name->isPQ_name()) {
-        // Check for a builtin function.
-        IdentifierInfo& II = env.IT.get(name->getName());
-        unsigned BuiltinID = II.getBuiltinID();
-        // RICH: Library builtins?
-        if (BuiltinID) {
-            if (!env.BuiltinInfo.getHeaderName(BuiltinID)) {
-                // RICH: if (!v) {
-                    Env::CreateBuiltinError E;
-                    v = env.CreateBuiltin(name->getName(), BuiltinID, E);
-                    // RICH: Handle errors.
-                // RICH: } 
-                v->BuiltinID = BuiltinID;
+        if (v && name->getName() == env.string___builtin_va_list) {
+fprintf(stderr, "found __builtin_va_list!\n");
+            env.var__builtin_va_list = v;
+        }
+    if (!env.LO.NoBuiltin && name->isPQ_name()) {
+        // Check for __builtin_va_list.
+        if (!v) {
+            // Check for a builtin function.
+            IdentifierInfo& II = env.IT.get(name->getName());
+            unsigned BuiltinID = II.getBuiltinID();
+            // RICH: Library builtins?
+            if (BuiltinID) {
+                if (!env.BuiltinInfo.getHeaderName(BuiltinID)) {
+                    // RICH: if (!v) {
+                        Env::CreateBuiltinError E;
+                        v = env.CreateBuiltin(name->getName(), BuiltinID, E);
+                        // RICH: Handle errors.
+                    // RICH: } 
+                    v->BuiltinID = BuiltinID;
+                }
             }
         }
     }

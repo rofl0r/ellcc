@@ -241,6 +241,7 @@ public:      // data
   StringRef string__FUNCTION__;
   StringRef string__PRETTY_FUNCTION__;
   StringRef string_main;
+  StringRef string___builtin_va_list;
 
   StringRef special_checkType;
   StringRef special_getStandardConversion;
@@ -274,6 +275,9 @@ public:      // data
   // dsw: Can't think of a better way to do this, sorry.
   // sm: Do what?  Who uses this?  I don't see any uses in Elsa.
   Variable *var__builtin_constant_p;
+  /** Save the __builtin_va_list definition.
+   */
+  Variable* var__builtin_va_list;
 
   // operator function names, indexed by the operators they overload
   StringRef operatorName[NUM_OVERLOADABLE_OPS];
