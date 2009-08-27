@@ -3632,6 +3632,10 @@ noPriorDeclaration:
   // into the environment (see comments in Declarator::tcheck
   // regarding point of declaration)
   Variable *newVar = makeVariable(loc, name, type, dflags);
+  // Check for __builtin_va_list.
+  if (!LO.NoBuiltin && name == string___builtin_va_list) {
+      var__builtin_va_list = newVar;
+  }
 
   // set up the variable's 'scope' field
   scope->registerVariable(newVar);
@@ -6164,11 +6168,7 @@ Type* Env::DecodeTypeFromStr(const char *&Str, CreateBuiltinError &Error, bool A
         break;
       // FIXME: There's no way to have a built-in with an rvalue ref arg.
       case 'C':
-        xassert(0 && "builtin const modifier not implemented");
-        Ty = getSimpleType(ST_ERROR);
-#if RICH
-        Ty = Ty.getQualifiedType(QualType::Const);
-#endif
+        Ty = tfac.setQualifiers(loc(), CV_CONST, Ty, NULL /*syntax*/);
         break;
     }
   }

@@ -5987,12 +5987,7 @@ Type *E_variable::itcheck_var_set(Env &env, Expression *&replacement,
       }
     }
 
-        if (v && name->getName() == env.string___builtin_va_list) {
-fprintf(stderr, "found __builtin_va_list!\n");
-            env.var__builtin_va_list = v;
-        }
     if (!env.LO.NoBuiltin && name->isPQ_name()) {
-        // Check for __builtin_va_list.
         if (!v) {
             // Check for a builtin function.
             IdentifierInfo& II = env.IT.get(name->getName());
@@ -6006,6 +6001,7 @@ fprintf(stderr, "found __builtin_va_list!\n");
                         // RICH: Handle errors.
                     // RICH: } 
                     v->BuiltinID = BuiltinID;
+                    candidates.add(v);
                 }
             }
         }

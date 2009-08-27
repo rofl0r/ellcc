@@ -40,11 +40,14 @@ public:      // data
     K_DEPENDENT              // ST_DEPENDENT
   };
 
-  // This used to be a union.
-  long si;                 // K_SIGNED
-  unsigned long ui;        // K_UNSIGNED
-  llvm::APFloat f;         // K_FLOAT
-  unsigned why;            // K_ERROR
+  // RICH: This union will go away with APInt.
+  // When it does, check casts si<->ui: they depend on the union.
+  union {
+    long si;                 // K_SIGNED
+    unsigned long ui;        // K_UNSIGNED
+    unsigned why;            // K_ERROR
+  };
+  llvm::APFloat f;           // K_FLOAT
 
 private:
   void dup(CValue const &obj);
