@@ -1348,7 +1348,7 @@ if $use_gnu; then
   testparse gnu/k0005.cc #"comparing long long to enum value"
   testparse gnu/k0006.cc #"__offsetof__"
   testparse gnu/k0006a.cc #"__builtin_offsetof"
-  failparse gnu/k0007.cc "__builtin_frame_address"
+  testparse gnu/k0007.cc #"__builtin_frame_address"
   testparse gnu/k0008.c
   failparse gnu/k0009.cc "namespace attribute strong"
   failparse gnu/k0010.c "nested K&R function"

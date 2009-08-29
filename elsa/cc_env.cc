@@ -5997,6 +5997,7 @@ Type* Env::DecodeTypeFromStr(const char *&Str, CreateBuiltinError &Error, bool A
   // Modifiers.
   int HowLong = 0;
   bool Signed = false, Unsigned = false;
+  bool Complex = false;
   
   // Read the modifiers first.
   bool Done = false;
@@ -6017,6 +6018,10 @@ Type* Env::DecodeTypeFromStr(const char *&Str, CreateBuiltinError &Error, bool A
       xassert(HowLong <= 2 && "Can't have LLLL modifier");
       ++HowLong;
       break;
+    case 'X':
+      xassert(!Complex && "Can't use 'X' modifier multiple times");
+      Complex = true;
+      break;
     }
   }
 
@@ -6026,31 +6031,32 @@ Type* Env::DecodeTypeFromStr(const char *&Str, CreateBuiltinError &Error, bool A
   switch (*Str++) {
   default: xassert(0 && "Unknown builtin type letter!");
   case 'v':
-    xassert(HowLong == 0 && !Signed && !Unsigned &&
+    xassert(HowLong == 0 && !Signed && !Unsigned && !Complex &&
            "Bad modifiers used with 'v'!");
     Ty = getSimpleType(ST_VOID);
     break;
   case 'f':
     xassert(HowLong == 0 && !Signed && !Unsigned &&
            "Bad modifiers used with 'f'!");
-    Ty = getSimpleType(ST_FLOAT);
+    Ty = getSimpleType(!Complex ? ST_FLOAT : ST_FLOAT_COMPLEX);
     break;
   case 'd':
     xassert(HowLong < 2 && !Signed && !Unsigned &&
            "Bad modifiers used with 'd'!");
     if (HowLong)
-      Ty = getSimpleType(ST_LONG_DOUBLE);
+      Ty = getSimpleType(!Complex ? ST_LONG_DOUBLE : ST_LONG_DOUBLE_COMPLEX);
     else
-      Ty = getSimpleType(ST_DOUBLE);
+      Ty = getSimpleType(!Complex ? ST_DOUBLE : ST_DOUBLE_COMPLEX);
     break;
   case 's':
-    xassert(HowLong == 0 && "Bad modifiers used with 's'!");
+    xassert(HowLong == 0 && !Complex && "Bad modifiers used with 's'!");
     if (Unsigned)
       Ty = getSimpleType(ST_UNSIGNED_SHORT_INT);
     else
       Ty = getSimpleType(ST_SHORT_INT);
     break;
   case 'i':
+    xassert(!Complex && "Bad modifiers used with 'i'!");
     if (HowLong == 3) {
       xassert(0 && "int128_t not implemented");
       Ty = getSimpleType(ST_ERROR);
@@ -6062,7 +6068,7 @@ Type* Env::DecodeTypeFromStr(const char *&Str, CreateBuiltinError &Error, bool A
       Ty = Unsigned ? getSimpleType(ST_UNSIGNED_INT) : getSimpleType(ST_INT);
     break;
   case 'c':
-    xassert(HowLong == 0 && "Bad modifiers used with 'c'!");
+    xassert(HowLong == 0 && !Complex && "Bad modifiers used with 'c'!");
     if (Signed)
       Ty = getSimpleType(ST_SIGNED_CHAR);
     else if (Unsigned)
@@ -6071,11 +6077,11 @@ Type* Env::DecodeTypeFromStr(const char *&Str, CreateBuiltinError &Error, bool A
       Ty = getSimpleType(ST_CHAR);
     break;
   case 'b': // boolean
-    xassert(HowLong == 0 && !Signed && !Unsigned && "Bad modifiers for 'b'!");
+    xassert(HowLong == 0 && !Signed && !Unsigned && !Complex && "Bad modifiers for 'b'!");
     Ty = getSimpleType(ST_BOOL);
     break;
   case 'z':  // size_t.
-    xassert(HowLong == 0 && !Signed && !Unsigned && "Bad modifiers for 'z'!");
+    xassert(HowLong == 0 && !Signed && !Unsigned && !Complex && "Bad modifiers for 'z'!");
     Ty = getSimpleType(TI.getSizeType());
     break;
   case 'F':
