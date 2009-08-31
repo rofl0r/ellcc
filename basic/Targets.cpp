@@ -938,6 +938,7 @@ public:
 
 namespace {
 class ARMTargetInfo : public TargetInfo {
+  static const Builtin::Info BuiltinInfo[];
   static const TargetInfo::GCCRegAlias GCCRegAliases[];
   static const char * const GCCRegNames[];
 public:
@@ -959,9 +960,8 @@ public:
   }
   virtual void getTargetBuiltins(const Builtin::Info *&Records,
                                  unsigned &NumRecords) const {
-    // FIXME: Implement.
-    Records = 0;
-    NumRecords = 0;
+    Records = 0; // RICH BuiltinInfo;
+    NumRecords = 0; // RICH ellcc::ARM::LastTSBuiltin-Builtin::FirstTSBuiltin;
   }
   virtual const char *getVAListDeclaration() const {
     return "typedef char* __builtin_va_list;";
@@ -979,8 +979,32 @@ public:
     // FIXME: Is this really right?
     return "";
   }
+  virtual void getRaiseInstructionsList(RaiseInstructionsList*& List, 
+                                        unsigned &NumRaises) const;
+  static RaiseInstructionsList raiseInstructionsList[];
 };
 
+TargetInfo::RaiseInstructionsList ARMTargetInfo::raiseInstructionsList[] = {
+    { Instruction::URem,        "__umoddi3",   { }, { 64, 64, 64 } },
+    { Instruction::UDiv,        "__udivdi3",   { }, { 64, 64, 64 } },
+    { Instruction::AShr,        "__ashrdi3",   { }, { 64, 64, 64 } },
+    { Instruction::URem,        "__umodsi3",   { }, { 32, 32, 32 } },
+    { Instruction::UDiv,        "__udivsi3",   { }, { 32, 32, 32 } },
+};
+void ARMTargetInfo::getRaiseInstructionsList(RaiseInstructionsList*& List, 
+                                                unsigned &NumRaises) const
+{
+  List = raiseInstructionsList;
+  NumRaises = array_lengthof(raiseInstructionsList);
+}
+
+#if RICH
+const Builtin::Info BuiltinInfo[] = {
+#define BUILTIN(ID, TYPE, ATTRS, ...) { #ID, TYPE, ATTRS, 0, false, { __VA_ARGS__ } },
+#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER, ...) { #ID, TYPE, ATTRS, HEADER, false, { __VA_ARGS__ } },
+#include "ARMBuiltins.def"
+};
+#endif
 const char * const ARMTargetInfo::GCCRegNames[] = {
   "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
   "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15"
