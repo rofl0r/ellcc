@@ -5155,6 +5155,7 @@ static void checkForBuiltin(Env& env, SourceLocation loc, SourceLocation endloc,
         case Builtin::BI__builtin_infl: {
             // Get a really big number.
             E_floatLit* f = new E_floatLit(loc, endloc, NULL);
+            f->text = env.str("Inf");
             const llvm::fltSemantics &Sem = env.getFloatTypeSemantics(func->type);
             f->v = llvm::APFloat::getInf(Sem);
             f->type = func->type;

@@ -1610,6 +1610,7 @@ llvm::Value *E_intLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
 
 llvm::Value *E_floatLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
+    deref = 0;
     return llvm::ConstantFP::get(env.C, v);
 }
 
