@@ -872,12 +872,15 @@ public:
     UIntPtrType = UnsignedLong;
   }
   virtual const char *getVAListDeclaration() const {
+    return "typedef char* __builtin_va_list;";
+#if RICH
     return "typedef struct __va_list_tag {"
            "  unsigned gp_offset;"
            "  unsigned fp_offset;"
            "  void* overflow_arg_area;"
            "  void* reg_save_area;"
            "} __builtin_va_list[1];";
+#endif
   }
 };
 } // end anonymous namespace
