@@ -805,6 +805,7 @@ public:     // funcs
   bool isEnumType() const;
   bool isUnionType() const { return isCompoundTypeOf(CompoundType::K_UNION); }
   bool isStructType() const { return isCompoundTypeOf(CompoundType::K_STRUCT); }
+  bool isClassType() const { return isCompoundTypeOf(CompoundType::K_CLASS); }
   bool isCompoundTypeOf(CompoundType::Keyword keyword) const;
   bool isVoid() const { return isSimple(ST_VOID); }
   bool isBool() const { return isSimple(ST_BOOL); }

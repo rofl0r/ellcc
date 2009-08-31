@@ -29,6 +29,7 @@
 #include "owner.h"              // Owner
 #include "mtype.h"              // MType
 #include "ElsaDiagnostic.h"
+#include "typeclass.h"          // __builtin_classify_type
 #include "llvm/Constants.h"
 
 using namespace ellcc;
@@ -5162,6 +5163,72 @@ static void checkForBuiltin(Env& env, SourceLocation loc, SourceLocation endloc,
             replacement = f;
             break;
         }
+        case Builtin::BI__builtin_classify_type:
+            // Interesting cruft.
+            E_intLit*  i;
+            if (func->args->count() < 1) {
+                env.report(loc, diag::err_function_argument_missing) << 0;
+                i = env.build_E_intLit(0);
+            } else {
+                if (func->args->count() > 1) {
+                    env.report(loc, diag::err_function_too_many_arguments);
+                }
+                ArgExpression* Arg = func->args->first();
+                Type* t = Arg->expr->type;
+                xassert(t && "Argument not type checked");
+                type_class tclass = no_type_class;
+                if (t->isVoid()) {
+                    tclass = void_type_class;
+                } else if (t->isIntegerType()) {
+                    tclass = integer_type_class;
+                } else if (t->isSimpleCharType()) {
+                    tclass = char_type_class;
+                } else if (t->isEnumType()) {
+                    tclass = enumeral_type_class;
+                } else if (t->isBool()) {
+                    tclass = boolean_type_class;
+                } else if (t->isPointer()) {
+                    tclass = pointer_type_class;
+                } else if (t->isReference()) {
+                    tclass = reference_type_class;
+#if RICH
+                } else if (t->isOffset()) {
+                    tclass = offset_type_class;
+#endif
+                } else if (   t->isSimple(ST_FLOAT)
+                           || t->isSimple(ST_DOUBLE)
+                           || t->isSimple(ST_LONG_DOUBLE)) {
+                    tclass = real_type_class;
+                } else if (   t->isSimple(ST_FLOAT_COMPLEX)
+                           || t->isSimple(ST_DOUBLE_COMPLEX)
+                           || t->isSimple(ST_LONG_DOUBLE_COMPLEX)) {
+                    tclass = complex_type_class;
+                } else if (t->isFunctionType()) {
+                    tclass = function_type_class;
+#if RICH
+                } else if (t->isMethodType()) {
+                    tclass = method_type_class;
+#endif
+                } else if (t->isStructType() || t->isClassType()) {
+                    tclass = record_type_class;
+                } else if (t->isUnionType()) {
+                    tclass = union_type_class;
+                } else if (t->isArrayType()) {
+                    tclass = array_type_class;
+#if RICH
+                } else if (t->isStringType()) {
+                    tclass = string_type_class;
+#endif
+#if RICH
+                } else if (t->isLangType()) {
+                    tclass = lang_type_class;
+#endif
+                }
+
+                i = env.build_E_intLit(tclass);
+            }
+            replacement = i;
+            break;
         }
     }
 }
