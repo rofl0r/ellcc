@@ -38,8 +38,10 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Streams.h"
+#include "llvm/Support/raw_ostream.h"
 #include <cstdio>
 using namespace ellcc;
+using llvm::errs;
 
 //===----------------------------------------------------------------------===//
 
@@ -126,27 +128,27 @@ void Preprocessor::setPTHManager(PTHManager* pm) {
 }
 
 void Preprocessor::DumpToken(const Token &Tok, bool DumpFlags) const {
-  llvm::cerr << tok::getTokenName(Tok.getKind()) << " '"
+  errs() << tok::getTokenName(Tok.getKind()) << " '"
              << getSpelling(Tok) << "'";
   
   if (!DumpFlags) return;
   
-  llvm::cerr << "\t";
+  errs() << "\t";
   if (Tok.isAtStartOfLine())
-    llvm::cerr << " [StartOfLine]";
+    errs() << " [StartOfLine]";
   if (Tok.hasLeadingSpace())
-    llvm::cerr << " [LeadingSpace]";
+    errs() << " [LeadingSpace]";
   if (Tok.isExpandDisabled())
-    llvm::cerr << " [ExpandDisabled]";
+    errs() << " [ExpandDisabled]";
   if (Tok.needsCleaning()) {
     const char *Start = SourceMgr.getCharacterData(Tok.getLocation());
-    llvm::cerr << " [UnClean='" << std::string(Start, Start+Tok.getLength())
+    errs() << " [UnClean='" << std::string(Start, Start+Tok.getLength())
                << "']";
   }
   
-  llvm::cerr << "\tLoc=<";
+  errs() << "\tLoc=<";
   DumpLocation(Tok.getLocation());
-  llvm::cerr << ">";
+  errs() << ">";
 }
 
 void Preprocessor::DumpLocation(SourceLocation Loc) const {
@@ -154,32 +156,32 @@ void Preprocessor::DumpLocation(SourceLocation Loc) const {
 }
 
 void Preprocessor::DumpMacro(const MacroInfo &MI) const {
-  llvm::cerr << "MACRO: ";
+  errs() << "MACRO: ";
   for (unsigned i = 0, e = MI.getNumTokens(); i != e; ++i) {
     DumpToken(MI.getReplacementToken(i));
-    llvm::cerr << "  ";
+    errs() << "  ";
   }
-  llvm::cerr << "\n";
+  errs() << "\n";
 }
 
 void Preprocessor::PrintStats() {
-  llvm::cerr << "\n*** Preprocessor Stats:\n";
-  llvm::cerr << NumDirectives << " directives found:\n";
-  llvm::cerr << "  " << NumDefined << " #define.\n";
-  llvm::cerr << "  " << NumUndefined << " #undef.\n";
-  llvm::cerr << "  #include/#include_next/#import:\n";
-  llvm::cerr << "    " << NumEnteredSourceFiles << " source files entered.\n";
-  llvm::cerr << "    " << MaxIncludeStackDepth << " max include stack depth\n";
-  llvm::cerr << "  " << NumIf << " #if/#ifndef/#ifdef.\n";
-  llvm::cerr << "  " << NumElse << " #else/#elif.\n";
-  llvm::cerr << "  " << NumEndif << " #endif.\n";
-  llvm::cerr << "  " << NumPragma << " #pragma.\n";
-  llvm::cerr << NumSkipped << " #if/#ifndef#ifdef regions skipped\n";
+  errs() << "\n*** Preprocessor Stats:\n";
+  errs() << NumDirectives << " directives found:\n";
+  errs() << "  " << NumDefined << " #define.\n";
+  errs() << "  " << NumUndefined << " #undef.\n";
+  errs() << "  #include/#include_next/#import:\n";
+  errs() << "    " << NumEnteredSourceFiles << " source files entered.\n";
+  errs() << "    " << MaxIncludeStackDepth << " max include stack depth\n";
+  errs() << "  " << NumIf << " #if/#ifndef/#ifdef.\n";
+  errs() << "  " << NumElse << " #else/#elif.\n";
+  errs() << "  " << NumEndif << " #endif.\n";
+  errs() << "  " << NumPragma << " #pragma.\n";
+  errs() << NumSkipped << " #if/#ifndef#ifdef regions skipped\n";
 
-  llvm::cerr << NumMacroExpanded << "/" << NumFnMacroExpanded << "/"
+  errs() << NumMacroExpanded << "/" << NumFnMacroExpanded << "/"
              << NumBuiltinMacroExpanded << " obj/fn/builtin macros expanded, "
              << NumFastMacroExpanded << " on the fast path.\n";
-  llvm::cerr << (NumFastTokenPaste+NumTokenPaste)
+  errs() << (NumFastTokenPaste+NumTokenPaste)
              << " token paste (##) operations performed, "
              << NumFastTokenPaste << " on the fast path.\n";
 }

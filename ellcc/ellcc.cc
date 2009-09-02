@@ -59,13 +59,13 @@
 
 #include "ellcc.h"  
 
-#define xstr(x) #x
-#define str(x) xstr(x)
+#define xxstr(x) #x
+#define xstr(x) xxstr(x)
 
 #define ELLCC 0
 #define ELLCC_MINOR 1
 #define ELLCC_PATCHLEVEL 0
-#define ELLCC_VERSION_STRING str(ELLCC) "." str(ELLCC_MINOR) "." str(ELLCC_PATCHLEVEL)
+#define ELLCC_VERSION_STRING xstr(ELLCC) "." xstr(ELLCC_MINOR) "." xstr(ELLCC_PATCHLEVEL)
 #define ELLCC_VERSION_MODIFIER "ALPHA"
 #define ELLCC_VERSION ELLCC_VERSION_STRING " " ELLCC_VERSION_MODIFIER " " __DATE__
 
@@ -774,7 +774,7 @@ struct Input {
     {
         if (temp && !KeepTemps) {
             if (!name.eraseFromDisk() && Verbose) {
-                cout << "  " << name << " has been deleted\n";
+                outs() << "  " << name.str() << " has been deleted\n";
             }
         }
     }
@@ -782,7 +782,7 @@ struct Input {
     {
         if (temp && !KeepTemps) {
             if (!name.eraseFromDisk() && Verbose) {
-                cout << "  " << name << " has been deleted\n";
+                outs() << "  " << name.str() << " has been deleted\n";
             }
         }
         temp = false;
@@ -798,7 +798,7 @@ typedef std::vector<Input> InputList;
 ///
 static void PrintAndExit(const std::string &Message, int errcode = 1)
 {
-    cerr << progname << ": " << Message << "\n";
+    errs() << progname << ": " << Message << "\n";
     llvm_shutdown();
     exit(errcode);
 }
@@ -1065,7 +1065,7 @@ static void InitializeLanguageStandard(LangOptions &LO, FileTypes FT,
   }
   
   if (Verbose) {
-      cout << "  language standard:" << LangStdsNames[LangStd] << "\n";
+      outs() << "  language standard:" << LangStdsNames[LangStd] << "\n";
   }
   switch (LangStd) {
   default: assert(0 && "Unknown language standard!");
@@ -1255,7 +1255,7 @@ static void findFiles(std::vector<std::string>& found, std::string what, std::st
         if (path.exists()) {
             found.push_back(path.c_str());
             if (Verbose) {
-                cout << "  found:" << path.c_str() << "\n";
+                outs() << "  found:" << path.c_str() << "\n";
             }
         }
 
@@ -1273,7 +1273,7 @@ static void findFiles(std::vector<std::string>& found, std::string what, std::st
             if (path.exists()) {
                 found.push_back(path.c_str());
                 if (Verbose) {
-                    cout << "  found:" << path.c_str() << "\n";
+                    outs() << "  found:" << path.c_str() << "\n";
                 }
             }
         }
@@ -1290,7 +1290,7 @@ static void findFiles(std::vector<std::string>& found, std::string what, std::st
         if (path.exists()) {
             found.push_back(path.c_str());
             if (Verbose) {
-                cout << "  found:" << path.c_str() << "\n";
+                outs() << "  found:" << path.c_str() << "\n";
             }
         }
 
@@ -1306,7 +1306,7 @@ static void findFiles(std::vector<std::string>& found, std::string what, std::st
         if (path.exists()) {
             found.push_back(path.c_str());
             if (Verbose) {
-                cout << "  found:" << path.c_str() << "\n";
+                outs() << "  found:" << path.c_str() << "\n";
             }
         }
 
@@ -1322,7 +1322,7 @@ static void findFiles(std::vector<std::string>& found, std::string what, std::st
         if (path.exists()) {
             found.push_back(path.c_str());
             if (Verbose) {
-                cout << "  found:" << path.c_str() << "\n";
+                outs() << "  found:" << path.c_str() << "\n";
             }
         }
 
@@ -1337,7 +1337,7 @@ static void findFiles(std::vector<std::string>& found, std::string what, std::st
         if (path.exists()) {
             found.push_back(path.c_str());
             if (Verbose) {
-                cout << "  found:" << path.c_str() << "\n";
+                outs() << "  found:" << path.c_str() << "\n";
             }
         }
     }
@@ -1349,7 +1349,7 @@ static void findFiles(std::vector<std::string>& found, std::string what, std::st
         if (path.exists()) {
             found.push_back(path.c_str());
             if (Verbose) {
-                cout << "  found:" << path.c_str() << "\n";
+                outs() << "  found:" << path.c_str() << "\n";
             }
         }
     }
@@ -1364,14 +1364,14 @@ struct CallGraphSCCPassPrinter : public CallGraphSCCPass {
   CallGraphSCCPassPrinter(const PassInfo *PI) : 
     CallGraphSCCPass((intptr_t)&ID), PassToPrint(PI) {}
 
-  virtual bool runOnSCC(const std::vector<CallGraphNode *>&SCC) {
+  virtual bool runOnSCC(std::vector<CallGraphNode *>&SCC) {
     if (!Quiet) {
-      cout << "Printing analysis '" << PassToPrint->getPassName() << "':\n";
+      outs() << "Printing analysis '" << PassToPrint->getPassName() << "':\n";
 
       for (unsigned i = 0, e = SCC.size(); i != e; ++i) {
         Function *F = SCC[i]->getFunction();
         if (F) 
-          getAnalysisID<Pass>(PassToPrint).print(cout, F->getParent());
+          getAnalysisID<Pass>(PassToPrint).print(outs(), F->getParent());
       }
     }
     // Get and print pass...
@@ -1396,8 +1396,8 @@ struct ModulePassPrinter : public ModulePass {
 
   virtual bool runOnModule(Module &M) {
     if (!Quiet) {
-      cout << "Printing analysis '" << PassToPrint->getPassName() << "':\n";
-      getAnalysisID<Pass>(PassToPrint).print(cout, &M);
+      outs() << "Printing analysis '" << PassToPrint->getPassName() << "':\n";
+      getAnalysisID<Pass>(PassToPrint).print(outs(), &M);
     }
 
     // Get and print pass...
@@ -1425,7 +1425,7 @@ struct FunctionPassPrinter : public FunctionPass {
              << "' for function '" << F.getName() << "':\n";
     }
     // Get and print pass...
-    getAnalysisID<Pass>(PassToPrint).print(cout, F.getParent());
+    getAnalysisID<Pass>(PassToPrint).print(outs(), F.getParent());
     return false;
   }
 
@@ -1447,8 +1447,8 @@ struct LoopPassPrinter : public LoopPass {
 
   virtual bool runOnLoop(Loop *L, LPPassManager &LPM) {
     if (!Quiet) {
-      cout << "Printing analysis '" << PassToPrint->getPassName() << "':\n";
-      getAnalysisID<Pass>(PassToPrint).print(cout, 
+      outs() << "Printing analysis '" << PassToPrint->getPassName() << "':\n";
+      getAnalysisID<Pass>(PassToPrint).print(outs(), 
                                   L->getHeader()->getParent()->getParent());
     }
     // Get and print pass...
@@ -1478,7 +1478,7 @@ struct BasicBlockPassPrinter : public BasicBlockPass {
     }
 
     // Get and print pass...
-    getAnalysisID<Pass>(PassToPrint).print(cout, BB.getParent()->getParent());
+    getAnalysisID<Pass>(PassToPrint).print(outs(), BB.getParent()->getParent());
     return false;
   }
 
@@ -1619,7 +1619,7 @@ static void Optimize(Module* M)
     if (Opt->getNormalCtor())
       addOnePass(&PM, Opt->getNormalCtor()(), VerifyEach);
     else
-      std::cerr << progname << ": cannot create optimization pass: " << Opt->getPassName() 
+      errs() << progname << ": cannot create optimization pass: " << Opt->getPassName() 
                 << "\n";
   }
 
@@ -1644,8 +1644,8 @@ static void PrintCommand(const std::vector<const char*> &args) {
   std::vector<const char*>::const_iterator I = args.begin(), E = args.end(); 
   for (; I != E; ++I)
     if (*I)
-      cout << *I << " ";
-  cout << "\n" << std::flush;
+      outs() << *I << " ";
+  outs() << "\n";
 }
 
 //===----------------------------------------------------------------------===//
@@ -2014,7 +2014,7 @@ static int Preprocess(const std::string &OutputFilename, Input& input)
     if (!PP)
         PrintAndExit("Can't create a preprocessor");
     
-    if (InitializeSourceManager(*PP.get(), input.name.toString()))
+    if (InitializeSourceManager(*PP.get(), input.name.str()))
         Exit(1);
 
     // Initialize builtin info.
@@ -2044,7 +2044,7 @@ static int Link(const std::string& OutputFilename,
   // Determine the location of the ld program.
   sys::Path ld = sys::Program::FindProgramByName("ecc-ld");
   if (ld.isEmpty())
-    PrintAndExit("Failed to find " + ld.toString());
+    PrintAndExit("Failed to find " + ld.str());
 
   // Mark the output files for removal if we get an interrupt.
   sys::RemoveFileOnSignal(sys::Path(OutputFilename));
@@ -2068,7 +2068,7 @@ static int Link(const std::string& OutputFilename,
   args.push_back("-o");
   args.push_back(OutputFilename);
   for (unsigned i = 0; i < InputFilenames.size(); ++i ) {
-      args.push_back(InputFilenames[i]->name.toString());
+      args.push_back(InputFilenames[i]->name.str());
   }
             
   // Add in the library paths
@@ -2099,7 +2099,7 @@ static int Link(const std::string& OutputFilename,
   Args.push_back(0);
 
   if (Verbose) {
-    cout << "    ";
+    outs() << "    ";
     PrintCommand(Args);
   }
 
@@ -2162,7 +2162,7 @@ static int Assemble(const std::string &OutputFilename,
     Args.push_back(args[i].c_str());
   Args.push_back(0);
   if (Verbose) {
-    cout << "    ";
+    outs() << "    ";
     PrintCommand(Args);
   }
 
@@ -2234,7 +2234,7 @@ static void doMulti(Phases phase, std::vector<Input*>& files,
              outputName =  OutputFilename;
         }
         // Construct a Linker.
-        Linker TheLinker(progname, outputName.toString(), context, Verbose);
+        Linker TheLinker(progname, outputName.str(), context, Verbose);
 
         // Add library paths to the linker
         TheLinker.addPaths(LibPaths);
@@ -2258,7 +2258,7 @@ static void doMulti(Phases phase, std::vector<Input*>& files,
                     PrintAndExit(ErrorMessage);
                 }
                 if (Verbose) {
-                    cout << "  " << files[i]->name << " was sent to the bitcode linker\n";
+                    outs() << "  " << files[i]->name.str() << " was sent to the bitcode linker\n";
                 }
                 files[i]->module = NULL;         // The module has been consumed.
                 files[i]->name.clear();
@@ -2270,14 +2270,14 @@ static void doMulti(Phases phase, std::vector<Input*>& files,
                         Exit(1);
                     }
                     if (Verbose) {
-                        cout << "  " << files[i]->name << " was sent to the bitcode linker\n";
+                        outs() << "  " << files[i]->name.str() << " was sent to the bitcode linker\n";
                     }
                     if (!isNative) {
                         files[i]->type = consumedType;
                     }
                 } else {
                     if (Verbose) {
-                        cout << "  " << files[i]->name
+                        outs() << "  " << files[i]->name.str()
                              << ", is not a bitcode file and is ignored by the bitcode linker\n";
                     }
                 }
@@ -2314,12 +2314,12 @@ static void doMulti(Phases phase, std::vector<Input*>& files,
         Optimize(module);
 
         // Add the linked bitcode to the input list.
-        std::string name(outputName.toString());
+        std::string name(outputName.str());
         Input input(name, BC, module);
         input.temp = true;
         if (Verbose) {
-            cout << "  " << fileActions[filePhases[BC][phase].action].name
-                << " " << outputName << " added to the file list\n";
+            outs() << "  " << fileActions[filePhases[BC][phase].action].name
+                << " " << outputName.str() << " added to the file list\n";
         }
         result.insert(result.begin(), input);
 
@@ -2363,7 +2363,7 @@ static void doMulti(Phases phase, std::vector<Input*>& files,
     for (unsigned i = 0; i < files.size(); ++i ) {
         if (files[i]->temp) {
             if (!files[i]->name.eraseFromDisk() && Verbose) {
-                cout << "  " << files[i]->name << " has been deleted\n";
+                outs() << "  " << files[i]->name.str() << " has been deleted\n";
                 files[i]->name.clear();
             }
         }
@@ -2386,19 +2386,19 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
 
         if (Verbose) {
             // This file needs processing during this phase.
-            cout << "  " << fileActions[filePhases[thisType][phase].action].name << " " << input.name
+            outs() << "  " << fileActions[filePhases[thisType][phase].action].name << " " << input.name.str()
                 << " to become " << fileTypes[nextType] << "\n";
         }
 
-        if (input.name.toString() != "-") {
+        if (input.name.str() != "-") {
             sys::Path to(input.name.getBasename());
             to.appendSuffix(langToExt[nextType]);
-            if(Preprocess(to.toString(), input) != 0) {
+            if(Preprocess(to.str(), input) != 0) {
                 Exit(1);
             }
             input.setName(to);
         } else {
-            if(Preprocess(input.name.toString(), input) != 0) {
+            if(Preprocess(input.name.str(), input) != 0) {
                 Exit(1);
             }
         }
@@ -2416,7 +2416,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
 
         if (Verbose) {
             // This file needs processing during this phase.
-            cout << "  " << fileActions[filePhases[thisType][phase].action].name << " " << input.name
+            outs() << "  " << fileActions[filePhases[thisType][phase].action].name << " " << input.name.str()
                 << " to become " << fileTypes[nextType] << "\n";
         }
 
@@ -2434,7 +2434,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
             if (!PP)
                 PrintAndExit("Can't create a preprocessor");
     
-            if (InitializeSourceManager(*PP.get(), input.name.toString()))
+            if (InitializeSourceManager(*PP.get(), input.name.str()))
                 Exit(1);
 
             // Initialize builtin info.
@@ -2461,7 +2461,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
 
         if (Verbose) {
             // This file needs processing during this phase.
-            cout << "  " << fileActions[filePhases[thisType][phase].action].name << " " << input.name
+            outs() << "  " << fileActions[filePhases[thisType][phase].action].name << " " << input.name.str()
                 << " to become " << fileTypes[nextType] << "\n";
         }
 
@@ -2470,7 +2470,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         std::string ErrorMessage;
         if (input.module == NULL) {
             // Load the input module...
-            if (MemoryBuffer *Buffer = MemoryBuffer::getFileOrSTDIN(to.toString(), &ErrorMessage)) {
+            if (MemoryBuffer *Buffer = MemoryBuffer::getFileOrSTDIN(to.str(), &ErrorMessage)) {
                 input.module = ParseBitcodeFile(Buffer, context, &ErrorMessage);
                 delete Buffer;
             }
@@ -2488,23 +2488,16 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
 
 #if RICH
         // Figure out what stream we are supposed to write to...
-        // FIXME: cout is not binary!
+        // FIXME: outs() is not binary!
         std::ostream *Out = &std::cout;  // Default to printing to stdout...
         if (OutputFilename != "-") {
-            if (!Force && std::ifstream(OutputFilename.c_str())) {
-                // If force is not specified, make sure not to overwrite a file!
-                cerr << argv[0] << ": error opening '" << OutputFilename
-                     << "': file exists!\n"
-                     << "Use -f command line argument to force output\n";
+            Out = new raw_fd_ostream(OutputFilename.c_str(), ErrorInfo,
+                                     raw_fd_ostream::F_Binary);
+            if (!ErrorInfo.empty()) {
+                errs() << ErrorInfo << '\n';
+
+                delete Out;
                 return 1;
-            }
-            std::ios::openmode io_mode = std::ios::out | std::ios::trunc |
-                                       std::ios::binary;
-            Out = new std::ofstream(OutputFilename.c_str(), io_mode);
-    
-            if (!Out->good()) {
-                cerr << argv[0] << ": error opening " << OutputFilename << "!\n";
-              return 1;
             }
 
             // Make sure that the Output file gets unlinked from the disk if we get a
@@ -2515,7 +2508,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         // If the output is set to be emitted to standard out, and standard out is a
         // console, print out a warning message and refuse to do it.  We don't
         // impress anyone by spewing tons of binary goo to a terminal.
-        if (!Force && !NoOutput && CheckBitcodeOutputToConsole(Out,!Quiet)) {
+        if (!Force && !NoOutput && CheckBitcodeOutputToConsole(*Out,!Quiet)) {
             NoOutput = true;
         }
 #endif
@@ -2601,7 +2594,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         std::string ErrorMessage;
         if (input.module == NULL) {
             // Load the input module...
-            if (MemoryBuffer *Buffer = MemoryBuffer::getFileOrSTDIN(input.name.toString(), &ErrorMessage)) {
+            if (MemoryBuffer *Buffer = MemoryBuffer::getFileOrSTDIN(input.name.str(), &ErrorMessage)) {
                 input.module = ParseBitcodeFile(Buffer, context, &ErrorMessage);
                 delete Buffer;
             }
@@ -2719,7 +2712,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
 
         if (Verbose) {
             // This file needs processing during this phase.
-            cout << "  " << fileActions[filePhases[thisType][phase].action].name << " " << input.name
+            outs() << "  " << fileActions[filePhases[thisType][phase].action].name << " " << input.name.str()
                 << " to become " << fileTypes[nextType] << "\n";
         }
 
@@ -2728,9 +2721,11 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         sys::RemoveFileOnSignal(to);
 
         std::string error;
-        raw_ostream *os = new raw_fd_ostream(to.c_str(), isBinary, /* force */ true, error);
+        raw_ostream *os = new raw_fd_ostream(to.c_str(), error,
+                                             isBinary ? raw_fd_ostream::F_Binary
+                                                      : 0);
         if (!error.empty()) {
-          std::cerr << error << '\n';
+          errs() << error << '\n';
           delete os;
           Exit(1);
         }
@@ -2748,7 +2743,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
             // Ask the target to add backend passes as necessary.
             if (Target.addPassesToEmitWholeFile(PM, *Out, FileType, getCodeGenOpt())) {
                 // RICH:
-                std::cerr << progname << ": target does not support generation of this"
+                errs() << progname << ": target does not support generation of this"
                     << " file type!\n";
                 if (Out != &fouts()) delete Out;
                 // And the Out file is empty and useless, so remove it now.
@@ -2775,7 +2770,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
                     Exit(1);
                     break;
                 case FileModel::Error:
-                    std::cerr << progname << ": target does not support generation of this"
+                    errs() << progname << ": target does not support generation of this"
                         << " file type!\n";
                     if (Out != &fouts()) delete Out;
                     // And the Out file is empty and useless, so remove it now.
@@ -2793,7 +2788,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
             }
 
             if (Target.addPassesToEmitFileFinish(PM, OCE, getCodeGenOpt())) {
-                std::cerr << progname << ": target does not support generation of this"
+                errs() << progname << ": target does not support generation of this"
                     << " file type!\n";
                 if (Out != &fouts()) delete Out;
                 // And the Out file is empty and useless, so remove it now.
@@ -2838,7 +2833,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
 
         if (Verbose) {
             // This file needs processing during this phase.
-            cout << "  " << fileActions[filePhases[thisType][phase].action].name << " " << input.name
+            outs() << "  " << fileActions[filePhases[thisType][phase].action].name << " " << input.name.str()
                 << " to become " << fileTypes[nextType] << "\n";
         }
 
@@ -2852,7 +2847,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
 
 
         std::string ErrMsg;  
-        if(Assemble(to.toString(), input.name.toString(), ErrMsg) != 0) {
+        if(Assemble(to.str(), input.name.str(), ErrMsg) != 0) {
             PrintAndExit(ErrMsg);
         }
 
@@ -3046,7 +3041,7 @@ int main(int argc, char **argv)
                 // Add a source file
                 FileTypes type = GetFileType(*fileIt, filePos);
                 if (Verbose) {
-                    cout << "  adding " << *fileIt << " as " << fileTypes[type] << "\n";
+                    outs() << "  adding " << *fileIt << " as " << fileTypes[type] << "\n";
                 }
                 Input input(*fileIt, type);
     
@@ -3066,7 +3061,7 @@ int main(int argc, char **argv)
             } else if ( libPos != 0 && (filePos == 0 || libPos < filePos) ) {
                 // Add a library
                 if (Verbose) {
-                    cout << "  adding " << *libIt << " as an input library\n";
+                    outs() << "  adding " << *libIt << " as an input library\n";
                 }
                 Input input(*libIt, A);
                 InpList.push_back(input);
@@ -3082,7 +3077,7 @@ int main(int argc, char **argv)
             FileTypes type = CC;
             std::string name("-");
             if (Verbose) {
-                cout << "  adding <stdin> as " << fileTypes[type] << "\n";
+                outs() << "  adding <stdin> as " << fileTypes[type] << "\n";
             }
             Input input(name, type);
             
@@ -3147,7 +3142,7 @@ int main(int argc, char **argv)
         Phases phase;
         for(phase = PREPROCESSING; phase != NUM_PHASES; phase = (Phases)(phase + 1)) {
             if (Verbose) {
-                cout << "Phase: " << phases[phase].name << "\n";
+                outs() << "Phase: " << phases[phase].name << "\n";
             }
 
             if (phases[phase].result != NONE) {
@@ -3156,7 +3151,7 @@ int main(int argc, char **argv)
                     if(phase == BCLINKING || phase == LINKING)
                     // We want individual files.
                     if (Verbose) {
-                        cout << "Phase: " << phases[phase].name << " has been supressed\n";
+                        outs() << "Phase: " << phases[phase].name << " has been supressed\n";
                     }
                     continue;
                 }
@@ -3171,14 +3166,14 @@ int main(int argc, char **argv)
                     if (nextType != NONE) {
                         if (Verbose) {
                             // This file needs processing during this phase.
-                            cout << "  " << fileActions[filePhases[it->type][phase].action].name
-                                << " " << it->name << " to become " << fileTypes[nextType] << "\n";
+                            outs() << "  " << fileActions[filePhases[it->type][phase].action].name
+                                << " " << it->name.str() << " to become " << fileTypes[nextType] << "\n";
                         }
                         
                         files.push_back(&*it);
                     } else {
                         if (Verbose) {
-                            cout << "  " << it->name << " is ignored during this phase\n";
+                            outs() << "  " << it->name.str() << " is ignored during this phase\n";
                         }
                     }
                 }
@@ -3197,7 +3192,7 @@ int main(int argc, char **argv)
                         it->type = doSingle(phase, *it, elsa, it->type, context);
                     } else {
                         if (Verbose) {
-                            cout << "  " << it->name << " is ignored during this phase\n";
+                            outs() << "  " << it->name.str() << " is ignored during this phase\n";
                         }
                     }
                 }
@@ -3231,20 +3226,22 @@ int main(int argc, char **argv)
                     to = it->name.c_str();
                 }
                 PassManager PM;
-                std::ostream *out = new std::ofstream(to);
-                if (!out) {
-                    std::cerr << progname << ": can't open " << to << " for writing\n";
+                std::string ErrorInfo;
+                raw_ostream* out = new raw_fd_ostream(to, ErrorInfo, raw_fd_ostream::F_Binary);
+                if (!ErrorInfo.empty()) {
+                    errs() << progname << ": can't open " << to << " for writing\n";
+                    delete out;
                     Exit(1);
                 }
                 if (Verbose) {
                     const char* ftype = (FinalPhase != phase) ? "temporary " : "";
-                    cout << "  creating " << ftype << "file " << to << "\n";
+                    outs() << "  creating " << ftype << "file " << to << "\n";
                 }
 #if RICH
                 OStream L(*out);
                 PM.add(new PrintModulePass(&L));
 #endif
-                PM.add(CreateBitcodeWriterPass(*out));
+                PM.add(createBitcodeWriterPass(*out));
                 PM.run(*it->module);
                 delete out;
                 delete it->module;

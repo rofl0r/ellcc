@@ -538,7 +538,7 @@ public:
 void ellcc::CacheTokens(Preprocessor &PP, const std::string &OutFile) {
   // Open up the PTH file.
   std::string ErrMsg;
-  llvm::raw_fd_ostream Out(OutFile.c_str(), true, /* force */ true, ErrMsg);
+  llvm::raw_fd_ostream Out(OutFile.c_str(), ErrMsg);
   
   if (!ErrMsg.empty()) {
     llvm::errs() << "PTH error: " << ErrMsg << "\n";
@@ -553,10 +553,10 @@ void ellcc::CacheTokens(Preprocessor &PP, const std::string &OutFile) {
   
   if (!MainFilePath.isAbsolute()) {
     llvm::sys::Path P = llvm::sys::Path::GetCurrentDirectory();
-    P.appendComponent(MainFilePath.toString());
-    MainFileName = P.toString();
+    P.appendComponent(MainFilePath.str());
+    MainFileName = P.str();
   } else {
-    MainFileName = MainFilePath.toString();
+    MainFileName = MainFilePath.str();
   }
 
   // Create the PTHWriter.

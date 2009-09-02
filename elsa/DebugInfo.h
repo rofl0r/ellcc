@@ -11,12 +11,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef _CGDEBUG_INFO_H_
-#define _CGDEBUG_INFO_H_
+#ifndef _DEBUG_INFO_H_
+#define _DEBUG_INFO_H_
 
 #include "cc_type.h"
 #include "cc2llvm.h"
 #include "SourceLocation.h"
+#include "LangOptions.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/Analysis/DebugInfo.h"
 #include "llvm/Support/IRBuilder.h"

@@ -224,19 +224,6 @@ llvm::DIType DebugInfo::CreateType(const PointerType *Ty,
                                         0, Size, Align, 0, 0, EltTy);
 }
 
-llvm::DIType DebugInfo::CreateType(const PointerType *Ty,
-                                     llvm::DICompileUnit Unit) {
-  llvm::DIType EltTy = getOrCreateType(Ty->getPointeeType(), Unit);
- 
-  // Bit size, align and offset of the type.
-  uint64_t Size = M->getContext().getTypeSize(Ty);
-  uint64_t Align = M->getContext().getTypeAlign(Ty);
-                                                                               
-  return DebugFactory.CreateDerivedType(llvm::dwarf::DW_TAG_pointer_type, Unit,
-                                        "", llvm::DICompileUnit(),
-                                        0, Size, Align, 0, 0, EltTy);
-}
-
 #if RICH
 llvm::DIType DebugInfo::CreateType(const BlockPointerType *Ty,
                                      llvm::DICompileUnit Unit)
@@ -765,7 +752,7 @@ void DebugInfo::EmitRegionStart(llvm::Function *Fn, BuilderTy &Builder)
   llvm::DIDescriptor D;
   if (!RegionStack.empty())
     D = RegionStack.back();
-  D = DebugFactory.CreateBlock(D);
+  D = DebugFactory.CreateLexicalBlock(D);
   RegionStack.push_back(D);
   DebugFactory.InsertRegionStart(D, Builder.GetInsertBlock());
 }
