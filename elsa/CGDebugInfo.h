@@ -1,4 +1,4 @@
-//===--- DebugInfo.h - DebugInfo for LLVM CodeGen ---------------*- C++ -*-===//
+//===--- DebugInfo.h - DebugInfo for LLVM CodeGen -------------*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef _DEBUG_INFO_H
-#define _DEBUG_INFO_H
+#ifndef _CGDEBUG_INFO_H_
+#define _CGDEBUG_INFO_H_
 
 #include "cc_type.h"
 #include "cc2llvm.h"
@@ -22,8 +22,6 @@
 #include "llvm/Support/IRBuilder.h"
 #include <llvm/Support/TargetFolder.h>
 #include <map>
-
-// RICH: #include "CGBuilder.h"
 
 class CC2LLVMEnv;
 namespace ellcc {
@@ -105,15 +103,15 @@ public:
   
   /// EmitGlobalVariable - Emit information about a global variable.
   void EmitGlobalVariable(llvm::GlobalVariable *GV, const VarDecl *Decl);
-#endif
 
+#endif
+   
 private:
 #if RICH
   /// EmitDeclare - Emit call to llvm.dbg.declare for a variable declaration.
   void EmitDeclare(const VarDecl *decl, unsigned Tag, llvm::Value *AI,
                    BuilderTy &Builder);
 #endif
-  
   
   /// getOrCreateCompileUnit - Get the compile unit from the cache or create a
   /// new one if necessary.

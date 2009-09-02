@@ -13,10 +13,9 @@
 
 #include "DebugInfo.h"
 // RICH: #include "clang/AST/ASTContext.h"
+// RICH: #include "clang/AST/DeclObjC.h"
 // RICH: #include "clang/AST/Expr.h"
 // RICH: #include "clang/AST/RecordLayout.h"
-// RICH: #include "clang/Frontend/CompileOptions.h"
-#include "LangOptions.h"
 #include "SourceManager.h"
 #include "FileManager.h"
 #include "llvm/Constants.h"
@@ -39,7 +38,7 @@ DebugInfo::DebugInfo(CC2LLVMEnv& env, LangOptions& LO)
 }
 
 DebugInfo::~DebugInfo() {
-    assert(RegionStack.empty() && "Region stack mismatch, stack not empty!");
+  xassert(RegionStack.empty() && "Region stack mismatch, stack not empty!");
 }
 
 void DebugInfo::setLocation(SourceLocation Loc)
@@ -171,8 +170,8 @@ llvm::DIType DebugInfo::CreateType(const ComplexType *Ty,
   if (Ty->isComplexIntegerType())
     Encoding = llvm::dwarf::DW_ATE_lo_user;
   
-  uint64_t Size, Align;
-  ST->sizeInfoInBytes(env.TI, Size, Align);
+  uint64_t Size = M->getContext().getTypeSize(Ty);
+  uint64_t Align = M->getContext().getTypeAlign(Ty);
   uint64_t Offset = 0;
   
   return DebugFactory.CreateBasicType(Unit, "complex",
@@ -219,6 +218,19 @@ llvm::DIType DebugInfo::CreateType(const PointerType *Ty,
   // Bit size, align and offset of the type.
   uint64_t Size, Align;
   Ty->sizeInfoInBytes(env.TI, Size, Align);
+                                                                               
+  return DebugFactory.CreateDerivedType(llvm::dwarf::DW_TAG_pointer_type, Unit,
+                                        "", llvm::DICompileUnit(),
+                                        0, Size, Align, 0, 0, EltTy);
+}
+
+llvm::DIType DebugInfo::CreateType(const PointerType *Ty,
+                                     llvm::DICompileUnit Unit) {
+  llvm::DIType EltTy = getOrCreateType(Ty->getPointeeType(), Unit);
+ 
+  // Bit size, align and offset of the type.
+  uint64_t Size = M->getContext().getTypeSize(Ty);
+  uint64_t Align = M->getContext().getTypeAlign(Ty);
                                                                                
   return DebugFactory.CreateDerivedType(llvm::dwarf::DW_TAG_pointer_type, Unit,
                                         "", llvm::DICompileUnit(),
@@ -353,9 +365,7 @@ llvm::DIType DebugInfo::CreateType(const BlockPointerType *Ty,
                                      0, Size, Align, 0, 0, EltTy);
   return BlockLiteralGeneric;
 }
-#endif
 
-#if RICH
 llvm::DIType DebugInfo::CreateType(const TypedefType *Ty,
                                      llvm::DICompileUnit Unit)
 {
@@ -399,6 +409,7 @@ llvm::DIType DebugInfo::CreateType(const FunctionType *Ty,
                                             0, 0, 0, 0, 0,
                                             llvm::DIType(), EltTypeArray);
 }
+
 
 #if RICH
 /// CreateType - get structure or union type.
@@ -563,17 +574,15 @@ llvm::DIType DebugInfo::CreateType(const EnumType *Ty,
                                           llvm::DIType(), EltArray);
 }
 
-#if RICH
 llvm::DIType DebugInfo::CreateType(const TagType *Ty,
                                      llvm::DICompileUnit Unit) {
-  if (const CompoundType *RT = dyn_cast<CompoundType>(Ty))
+  if (const RecordType *RT = dyn_cast<RecordType>(Ty))
     return CreateType(RT, Unit);
   else if (const EnumType *ET = dyn_cast<EnumType>(Ty))
     return CreateType(ET, Unit);
   
   return llvm::DIType();
 }
-#endif
 
 llvm::DIType DebugInfo::CreateType(const ArrayType *Ty,
                                      llvm::DICompileUnit Unit) {
@@ -602,8 +611,9 @@ llvm::DIType DebugInfo::CreateType(const ArrayType *Ty,
   QualType EltTy(Ty, 0);
   while ((Ty = dyn_cast<ArrayType>(EltTy))) {
     uint64_t Upper = 0;
-    if (const ConstantArrayType *CAT = dyn_cast<ConstantArrayType>(Ty))
-      Upper = CAT->getSize().getZExtValue() - 1;
+    if (const ConstantArrayType *CAT = dyn_cast<ConstantArrayType>(Ty)) 
+      if (CAT->getSize().getZExtValue())
+	Upper = CAT->getSize().getZExtValue() - 1;
     // FIXME: Verify this is right for VLAs.
     Subscripts.push_back(DebugFactory.GetOrCreateSubrange(0, Upper));
     EltTy = Ty->getElementType();
@@ -620,9 +630,11 @@ llvm::DIType DebugInfo::CreateType(const ArrayType *Ty,
 }
 
 #endif
+
 /// getOrCreateType - Get the type from the cache or create a new
 /// one if necessary.
-llvm::DIType DebugInfo::getOrCreateType(Type* Ty, llvm::DICompileUnit Unit) {
+llvm::DIType DebugInfo::getOrCreateType(Type* Ty, llvm::DICompileUnit Unit)
+{
     return llvm::DIType();      // RICH
 
 #if RICH
@@ -693,9 +705,12 @@ llvm::DIType DebugInfo::getOrCreateType(Type* Ty, llvm::DICompileUnit Unit) {
 
 /// EmitFunctionStart - Constructs the debug code for entering a function -
 /// "llvm.dbg.func.start.".
+/// EmitFunctionStart - Constructs the debug code for entering a function -
+/// "llvm.dbg.func.start.".
 void DebugInfo::EmitFunctionStart(const char *Name, Type* ReturnType,
                                     llvm::Function *Fn,
-                                    BuilderTy &Builder) {
+                                    BuilderTy &Builder)
+{
   const char *LinkageName = Name;
   
   // Skip the asm prefix if it exists.
@@ -721,7 +736,8 @@ void DebugInfo::EmitFunctionStart(const char *Name, Type* ReturnType,
 }
 
 
-void DebugInfo::EmitStopPoint(llvm::Function *Fn, BuilderTy &Builder) {
+void DebugInfo::EmitStopPoint(llvm::Function *Fn, BuilderTy &Builder)
+{
   if (CurLoc.isInvalid() || CurLoc.isMacroID()) return;
   
   // Don't bother if things are the same as last time.
@@ -744,7 +760,8 @@ void DebugInfo::EmitStopPoint(llvm::Function *Fn, BuilderTy &Builder) {
 
 /// EmitRegionStart- Constructs the debug code for entering a declarative
 /// region - "llvm.dbg.region.start.".
-void DebugInfo::EmitRegionStart(llvm::Function *Fn, BuilderTy &Builder) {
+void DebugInfo::EmitRegionStart(llvm::Function *Fn, BuilderTy &Builder)
+{
   llvm::DIDescriptor D;
   if (!RegionStack.empty())
     D = RegionStack.back();
@@ -755,7 +772,8 @@ void DebugInfo::EmitRegionStart(llvm::Function *Fn, BuilderTy &Builder) {
 
 /// EmitRegionEnd - Constructs the debug code for exiting a declarative
 /// region - "llvm.dbg.region.end."
-void DebugInfo::EmitRegionEnd(llvm::Function *Fn, BuilderTy &Builder) {
+void DebugInfo::EmitRegionEnd(llvm::Function *Fn, BuilderTy &Builder)
+{
   assert(!RegionStack.empty() && "Region stack mismatch, stack empty!");
 
   // Provide a region stop point.
@@ -768,7 +786,8 @@ void DebugInfo::EmitRegionEnd(llvm::Function *Fn, BuilderTy &Builder) {
 #if RICH
 /// EmitDeclare - Emit local variable declaration debug info.
 void DebugInfo::EmitDeclare(const VarDecl *Decl, unsigned Tag,
-                              llvm::Value *Storage, BuilderTy &Builder) {
+                              llvm::Value *Storage, CGBuilderTy &Builder)
+{
   assert(!RegionStack.empty() && "Region stack mismatch, stack empty!");
 
   // Do not emit variable debug information while generating optimized code.
@@ -801,14 +820,14 @@ void DebugInfo::EmitDeclare(const VarDecl *Decl, unsigned Tag,
 
 void DebugInfo::EmitDeclareOfAutoVariable(const VarDecl *Decl,
                                             llvm::Value *Storage,
-                                            BuilderTy &Builder) {
+                                            CGBuilderTy &Builder) {
   EmitDeclare(Decl, llvm::dwarf::DW_TAG_auto_variable, Storage, Builder);
 }
 
 /// EmitDeclareOfArgVariable - Emit call to llvm.dbg.declare for an argument
 /// variable declaration.
 void DebugInfo::EmitDeclareOfArgVariable(const VarDecl *Decl, llvm::Value *AI,
-                                           BuilderTy &Builder) {
+                                           CGBuilderTy &Builder) {
   EmitDeclare(Decl, llvm::dwarf::DW_TAG_arg_variable, AI, Builder);
 }
 
@@ -834,6 +853,36 @@ void DebugInfo::EmitGlobalVariable(llvm::GlobalVariable *Var,
   std::string Name = Decl->getNameAsString();
 
   QualType T = Decl->getType();
+  if (T->isIncompleteArrayType()) {
+    
+    // CodeGen turns int[] into int[1] so we'll do the same here.
+    llvm::APSInt ConstVal(32);
+    
+    ConstVal = 1;
+    QualType ET = M->getContext().getAsArrayType(T)->getElementType();
+    
+    T = M->getContext().getConstantArrayType(ET, ConstVal, 
+                                           ArrayType::Normal, 0);
+  }
+
+  DebugFactory.CreateGlobalVariable(Unit, Name, Name, "", Unit, LineNo,
+                                    getOrCreateType(T, Unit),
+                                    Var->hasInternalLinkage(),
+                                    true/*definition*/, Var);
+}
+
+/// EmitGlobalVariable - Emit information about an objective-c interface.
+void DebugInfo::EmitGlobalVariable(llvm::GlobalVariable *Var, 
+                                     ObjCInterfaceDecl *Decl) {
+  // Create global variable debug descriptor.
+  llvm::DICompileUnit Unit = getOrCreateCompileUnit(Decl->getLocation());
+  SourceManager &SM = M->getContext().getSourceManager();
+  PresumedLoc PLoc = SM.getPresumedLoc(Decl->getLocation());
+  unsigned LineNo = PLoc.isInvalid() ? 0 : PLoc.getLine();
+
+  std::string Name = Decl->getNameAsString();
+
+  QualType T = M->getContext().getObjCInterfaceType(Decl);
   if (T->isIncompleteArrayType()) {
     
     // CodeGen turns int[] into int[1] so we'll do the same here.
