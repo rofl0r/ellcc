@@ -252,7 +252,7 @@ static void handle_xBase(Env &env, xBase &x)
 int Elsa::doit(Preprocessor& PP,
                const char* inputFname, const char* outputFname,
                llvm::Module*& mod, bool parseOnly, llvm::LLVMContext& context,
-               LangOptions& LO)
+               LangOptions& LO, bool debug)
 {
     mod = NULL;
     // String table for storing parse tree identifiers.
@@ -726,7 +726,7 @@ int Elsa::doit(Preprocessor& PP,
       }
       mod = cc_to_llvm(outputFname, strTable, *unit,
                        PP.getTargetInfo(), PP.getDiagnostics(),
-                       context, LO);
+                       context, LO, debug);
 
       if (doTime) {
           llvmGenerationTimer.stopTimer();
@@ -757,10 +757,10 @@ int Elsa::doit(Preprocessor& PP,
 int Elsa::parse(Preprocessor& PP,
                 const char* inputFname, const char* outputFname, llvm::Module*& mod,
                 bool parseOnly, llvm::LLVMContext& context,
-                LangOptions& LO)
+                LangOptions& LO, bool debug)
 {
   try {
-    return doit(PP, inputFname, outputFname, mod, parseOnly, context, LO);
+    return doit(PP, inputFname, outputFname, mod, parseOnly, context, LO, debug);
   } catch (XUnimp &x) {
     HANDLER();
     std::cout << x << std::endl;

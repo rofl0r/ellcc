@@ -42,7 +42,7 @@ using namespace ellcc;
 // -------------------- CC2LLVMEnv ---------------------
 CC2LLVMEnv::CC2LLVMEnv(StringTable &s, sm::string name, const TranslationUnit& input,
                        TargetInfo& TI, Diagnostic& diags, llvm::LLVMContext& C,
-                       LangOptions& LO)
+                       LangOptions& LO, bool debug)
   : str(s),
     TI(TI),
     diags(diags),
@@ -70,9 +70,7 @@ CC2LLVMEnv::CC2LLVMEnv(StringTable &s, sm::string name, const TranslationUnit& i
     TD.init(str);
     mod->setDataLayout(str);
     mod->setTargetTriple(TI.getTargetTriple());
-    // If debug info generation is enabled, create the DebugInfo object.
-    // RICH: DebugInfo = CompileOpts.DebugInfo ? new DebugInfo(this) : 0;
-    DI = new DebugInfo(*this, LO);
+    DI = debug ? new DebugInfo(*this, LO) : 0;
 }
 
 CC2LLVMEnv::~CC2LLVMEnv()
@@ -3617,9 +3615,9 @@ llvm::Module* CC2LLVMEnv::doit()
 // ------------------- entry point -------------------
 llvm::Module* cc_to_llvm(sm::string name, StringTable &str, TranslationUnit const &input,
                          TargetInfo& TI, Diagnostic& diags,
-                         llvm::LLVMContext& C, LangOptions& LO)
+                         llvm::LLVMContext& C, LangOptions& LO, bool debug)
 {
-    CC2LLVMEnv env(str, name, input, TI, diags, C, LO);
+    CC2LLVMEnv env(str, name, input, TI, diags, C, LO, debug);
     return env.doit();
 }
 

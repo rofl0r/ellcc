@@ -47,7 +47,7 @@ public:
      */
     int parse(Preprocessor& PP,
               const char* inputFname, const char* outputFname, llvm::Module*& mod,
-              bool parseOnly, llvm::LLVMContext& context, LangOptions& LO);
+              bool parseOnly, llvm::LLVMContext& context, LangOptions& LO, bool debug);
 
 private:
     /** The default constructor (not implemented or used).
@@ -55,7 +55,7 @@ private:
     Elsa();
     int doit(Preprocessor& PP,
              const char* inputFname, const char* outputFname, llvm::Module*& mod,
-             bool parseOnly, llvm::LLVMContext& context, LangOptions& LO);
+             bool parseOnly, llvm::LLVMContext& context, LangOptions& LO, bool debug);
     /** true if phases should be timed.
      */
     bool doTime;

@@ -41,7 +41,7 @@ namespace ellcc {
 llvm::Module* cc_to_llvm(sm::string name, StringTable &str, TranslationUnit const &input,
                          ellcc::TargetInfo& TI, ellcc::Diagnostic& diags,
                          llvm::LLVMContext& C,
-                         ellcc::LangOptions& LO);
+                         ellcc::LangOptions& LO, bool debug);
 
 
 /** The translation environment.
@@ -139,7 +139,7 @@ public:      // funcs
      */
     CC2LLVMEnv(StringTable &str, sm::string name, const TranslationUnit& input,
                ellcc::TargetInfo& TI, ellcc::Diagnostic& diags, llvm::LLVMContext& C,
-               ellcc::LangOptions& LO);
+               ellcc::LangOptions& LO, bool debug);
     /** Destruct an LLVM convertor.
      */
     ~CC2LLVMEnv();
