@@ -588,14 +588,6 @@ static cl::opt<bool> Verbose("verbose", cl::Optional, cl::init(false),
 static cl::alias VerboseAlias("v", cl::Optional,
     cl::desc("Alias for -verbose"), cl::aliasopt(Verbose));
 
-#if RICH
-static cl::opt<bool> Debug("debug", cl::Optional, cl::init(false),
-    cl::Hidden, cl::desc("Print out debugging information"));
-
-static cl::alias DebugAlias("d", cl::Optional,
-    cl::desc("Alias for -debug"), cl::aliasopt(Debug));
-#endif
-
 static cl::opt<bool> TimeActions("time-actions", cl::Optional, cl::init(false),
     cl::desc("Print execution time for each action taken"));
 
@@ -2445,7 +2437,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
             int result = elsa.parse(*PP.get(),
                                     input.name.c_str(), to.c_str(),
                                     input.module, ParseOnly, context, input.LO,
-                                    DebugOutput);
+                                    true); // RICH: DebugOutput);
             if (result) {
                 Exit(result);
             }

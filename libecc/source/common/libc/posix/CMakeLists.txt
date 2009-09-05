@@ -5,5 +5,5 @@ add_library(posix
 
 add_custom_command(TARGET posix POST_BUILD
     COMMAND mkdir -p ${LIBECC_DIR}/../lib/${ELLCC_TARGET}
-            COMMAND llvm-ar r ${LIBECC_DIR}/../lib/${ELLCC_TARGET}/libecc.a
+            COMMAND ${TARGET_AR} ${LIBECC_DIR}/../lib/${ELLCC_TARGET}/libecc.a
                     $(posix_OBJECTS))

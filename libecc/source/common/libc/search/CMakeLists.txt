@@ -4,5 +4,5 @@ add_library(search
 
 add_custom_command(TARGET search POST_BUILD
     COMMAND mkdir -p ${LIBECC_DIR}/../lib/${ELLCC_TARGET}
-            COMMAND llvm-ar r ${LIBECC_DIR}/../lib/${ELLCC_TARGET}/libecc.a
+            COMMAND ${TARGET_AR} ${LIBECC_DIR}/../lib/${ELLCC_TARGET}/libecc.a
                     $(search_OBJECTS))

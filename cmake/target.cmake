@@ -1,7 +1,10 @@
 INCLUDE(CMakeForceCompiler)
 
 # the name of the target operating system
-SET(CMAKE_SYSTEM_NAME Generic)
+set(CMAKE_SYSTEM_NAME Generic)
+
+# Define the archiving command
+set(TARGET_AR llvm-ar rf)
 
 #add_definitions(-native)
 #set(ELLCC_TARGET_SUBDIR /native/)
