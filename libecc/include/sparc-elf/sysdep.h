@@ -21,6 +21,7 @@
 #ifndef _LINUX_SPARC32_SYSDEP_H
 #define _LINUX_SPARC32_SYSDEP_H 1
 
+#include <sys/errno.h>
 #include <unix/sparc/sysdep.h>
 
 #ifdef IS_IN_rtld
@@ -92,9 +93,9 @@ ENTRY(name);					\
 
 #if defined SHARED && defined DO_VERSIONING && defined PIC \
     && !defined NO_HIDDEN && !defined NOT_IN_libc
-# define CALL_ERRNO_LOCATION "call   __GI___errno_location;"
+# define CALL_ERRNO_LOCATION // RICH: "call   __GI___errno;"
 #else
-# define CALL_ERRNO_LOCATION "call   __errno_location;"
+# define CALL_ERRNO_LOCATION // RICH: "call   __errno;"
 #endif
 
 #define __SYSCALL_STRING						\
@@ -143,18 +144,18 @@ ENTRY(name);					\
 
 #undef INLINE_SYSCALL
 #define INLINE_SYSCALL(name, nr, args...) \
-  inline_syscall##nr(__SYSCALL_STRING, __NR_##name, args)
+  __set_errno(inline_syscall##nr(__SYSCALL_STRING, __NR_##name, args))
 
 #undef INTERNAL_SYSCALL_DECL
 #define INTERNAL_SYSCALL_DECL(err) do { } while (0)
 
 #undef INTERNAL_SYSCALL
 #define INTERNAL_SYSCALL(name, err, nr, args...) \
-  inline_syscall##nr(__INTERNAL_SYSCALL_STRING, __NR_##name, args)
+  __set_errno(inline_syscall##nr(__INTERNAL_SYSCALL_STRING, __NR_##name, args))
 
 #undef INTERNAL_SYSCALL_NCS
 #define INTERNAL_SYSCALL_NCS(name, err, nr, args...) \
-  inline_syscall##nr(__INTERNAL_SYSCALL_STRING, name, args)
+  __set_errno(inline_syscall##nr(__INTERNAL_SYSCALL_STRING, name, args)
 
 #undef INTERNAL_SYSCALL_ERROR_P
 #define INTERNAL_SYSCALL_ERROR_P(val, err) \
