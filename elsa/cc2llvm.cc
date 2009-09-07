@@ -601,6 +601,12 @@ llvm::Value* CC2LLVMEnv::declaration(const Variable* var, llvm::Value* init, int
             }
         }
         value = gv;
+        // Emit global variable debug information.
+        if (DI) {
+            DI->setLocation(var->loc);
+            DI->EmitGlobalVariable(gv, var);
+        }
+
     } else if (var->flags & DF_TYPEDEF) {
         // Nothing.
     } else if (var->flags & (DF_DEFINITION|DF_TEMPORARY)) {

@@ -216,7 +216,7 @@ llvm::DIType DebugInfo::CreateType(const TypedefType *Ty,
   // We don't set size information, but do specify where the typedef was
   // declared.
   std::string TyName = Ty->getDecl()->getNameAsString();
-  SourceLocation DefLoc = Ty->getDecl()->getLocation();
+  SourceLocation DefLoc = Ty->getDecl()->loc;
   llvm::DICompileUnit DefUnit = getOrCreateCompileUnit(DefLoc);
 
   SourceManager &SM = M->getContext().getSourceManager();
@@ -273,11 +273,11 @@ llvm::DIType DebugInfo::CreateType(const CompoundType *Ty,
   // Get overall information about the record type for the debug info.
   std::string Name = ct->name;
 
-  PresumedLoc PLoc = SM.getPresumedLoc(Ty->getLocation());
+  PresumedLoc PLoc = SM.getPresumedLoc(Ty->loc);
   llvm::DICompileUnit DefUnit;
   unsigned Line = 0;
   if (!PLoc.isInvalid()) {
-    DefUnit = getOrCreateCompileUnit(Ty->getLocation());
+    DefUnit = getOrCreateCompileUnit(Ty->loc);
     Line = PLoc.getLine();
   }
   
@@ -318,7 +318,7 @@ llvm::DIType DebugInfo::CreateType(const CompoundType *Ty,
       continue;
 
     // Get the location for the field.
-    SourceLocation FieldDefLoc = Field->getLocation();
+    SourceLocation FieldDefLoc = Field->loc;
     PresumedLoc PLoc = SM.getPresumedLoc(FieldDefLoc);
     llvm::DICompileUnit FieldDefUnit;
     unsigned FieldLine = 0;
@@ -393,7 +393,7 @@ llvm::DIType DebugInfo::CreateType(const EnumType *Ty,
     DebugFactory.GetOrCreateArray(Enumerators.data(), Enumerators.size());
 
   std::string EnumName = Decl->getNameAsString();
-  SourceLocation DefLoc = Decl->getLocation();
+  SourceLocation DefLoc = Decl->loc;
   llvm::DICompileUnit DefUnit = getOrCreateCompileUnit(DefLoc);
   SourceManager &SM = M->getContext().getSourceManager();
   PresumedLoc PLoc = SM.getPresumedLoc(DefLoc);
@@ -674,72 +674,46 @@ void DebugInfo::EmitDeclareOfArgVariable(const Variable *Decl, llvm::Value *AI,
   EmitDeclare(Decl, llvm::dwarf::DW_TAG_arg_variable, AI, Builder);
 }
 
-#if RICH
 /// EmitGlobalVariable - Emit information about a global variable.
 void DebugInfo::EmitGlobalVariable(llvm::GlobalVariable *Var, 
-                                     const VarDecl *Decl) {
+                                     const Variable *Decl) {
 
+#if RICH
   // Do not emit variable debug information while generating optimized code.
   // The llvm optimizer and code generator are not yet ready to support
   // optimized code debugging.
   const CompileOptions &CO = M->getCompileOpts();
   if (CO.OptimizationLevel)
     return;
-
-  // Create global variable debug descriptor.
-  llvm::DICompileUnit Unit = getOrCreateCompileUnit(Decl->getLocation());
-  SourceManager &SM = M->getContext().getSourceManager();
-  PresumedLoc PLoc = SM.getPresumedLoc(Decl->getLocation());
-  unsigned LineNo = PLoc.isInvalid() ? 0 : PLoc.getLine();
-
-  std::string Name = Decl->getNameAsString();
-
-  QualType T = Decl->getType();
-  if (T->isIncompleteArrayType()) {
-    
-    // CodeGen turns int[] into int[1] so we'll do the same here.
-    llvm::APSInt ConstVal(32);
-    
-    ConstVal = 1;
-    QualType ET = M->getContext().getAsArrayType(T)->getElementType();
-    
-    T = M->getContext().getConstantArrayType(ET, ConstVal, 
-                                           ArrayType::Normal, 0);
-  }
-
-  DebugFactory.CreateGlobalVariable(Unit, Name, Name, "", Unit, LineNo,
-                                    getOrCreateType(T, Unit),
-                                    Var->hasInternalLinkage(),
-                                    true/*definition*/, Var);
-}
-
-/// EmitGlobalVariable - Emit information about an objective-c interface.
-void DebugInfo::EmitGlobalVariable(llvm::GlobalVariable *Var, 
-                                     ObjCInterfaceDecl *Decl) {
-  // Create global variable debug descriptor.
-  llvm::DICompileUnit Unit = getOrCreateCompileUnit(Decl->getLocation());
-  SourceManager &SM = M->getContext().getSourceManager();
-  PresumedLoc PLoc = SM.getPresumedLoc(Decl->getLocation());
-  unsigned LineNo = PLoc.isInvalid() ? 0 : PLoc.getLine();
-
-  std::string Name = Decl->getNameAsString();
-
-  QualType T = M->getContext().getObjCInterfaceType(Decl);
-  if (T->isIncompleteArrayType()) {
-    
-    // CodeGen turns int[] into int[1] so we'll do the same here.
-    llvm::APSInt ConstVal(32);
-    
-    ConstVal = 1;
-    QualType ET = M->getContext().getAsArrayType(T)->getElementType();
-    
-    T = M->getContext().getConstantArrayType(ET, ConstVal, 
-                                           ArrayType::Normal, 0);
-  }
-
-  DebugFactory.CreateGlobalVariable(Unit, Name, Name, "", Unit, LineNo,
-                                    getOrCreateType(T, Unit),
-                                    Var->hasInternalLinkage(),
-                                    true/*definition*/, Var);
-}
 #endif
+
+  // Create global variable debug descriptor.
+  llvm::DICompileUnit Unit = getOrCreateCompileUnit(Decl->loc);
+  SourceManager SM;
+  PresumedLoc PLoc = SM.getPresumedLoc(Decl->loc);
+  unsigned LineNo = PLoc.isInvalid() ? 0 : PLoc.getLine();
+
+  const Type* T = Decl->getTypeC();
+#if RICH
+  if (T->isIncompleteArrayType()) {
+    
+    // CodeGen turns int[] into int[1] so we'll do the same here.
+    llvm::APSInt ConstVal(32);
+    
+    ConstVal = 1;
+    QualType ET = M->getContext().getAsArrayType(T)->getElementType();
+    
+    T = M->getContext().getConstantArrayType(ET, ConstVal, 
+                                           ArrayType::Normal, 0);
+  }
+#endif
+
+    llvm::DIType Ty = getOrCreateType(T, Unit);;
+    if (0 && !Ty.isNull()) {    // RICH
+        std::string Name = Decl->Name(env.TI);
+        DebugFactory.CreateGlobalVariable(Unit, Name, Name, "", Unit, LineNo,
+                                          Ty,
+                                          Var->hasInternalLinkage(),
+                                          true/*definition*/, Var);
+    }
+}

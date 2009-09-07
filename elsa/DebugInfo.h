@@ -97,12 +97,9 @@ public:
   void EmitDeclareOfArgVariable(const Variable *Decl, llvm::Value *AI,
                                 BuilderTy &Builder);
   
-#if RICH
   /// EmitGlobalVariable - Emit information about a global variable.
-  void EmitGlobalVariable(llvm::GlobalVariable *GV, const VarDecl *Decl);
+  void EmitGlobalVariable(llvm::GlobalVariable *GV, const Variable *Decl);
 
-#endif
-   
 private:
   /// EmitDeclare - Emit call to llvm.dbg.declare for a variable declaration.
   void EmitDeclare(const Variable *decl, unsigned Tag, llvm::Value *AI,
