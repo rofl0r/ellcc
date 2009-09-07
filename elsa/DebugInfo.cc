@@ -152,7 +152,7 @@ llvm::DIType DebugInfo::CreateType(const SimpleType *ST,
   } 
   // Bit size, align and offset of the type.
   uint64_t Size, Align;
-  ST->sizeInfoInBytes(env.TI, Size, Align);
+  ST->sizeInfoInBits(env.TI, Size, Align);
   uint64_t Offset = 0;
   
   return DebugFactory.CreateBasicType(Unit, 
@@ -161,26 +161,7 @@ llvm::DIType DebugInfo::CreateType(const SimpleType *ST,
                                       Offset, /*flags*/ 0, Encoding);
 }
 
-#if RICH
-llvm::DIType DebugInfo::CreateType(const ComplexType *Ty,
-                                     llvm::DICompileUnit Unit)
-{
-  // Bit size, align and offset of the type.
-  unsigned Encoding = llvm::dwarf::DW_ATE_complex_float;
-  if (Ty->isComplexIntegerType())
-    Encoding = llvm::dwarf::DW_ATE_lo_user;
-  
-  uint64_t Size = M->getContext().getTypeSize(Ty);
-  uint64_t Align = M->getContext().getTypeAlign(Ty);
-  uint64_t Offset = 0;
-  
-  return DebugFactory.CreateBasicType(Unit, "complex",
-                                      Unit, 0, Size, Align,
-                                      Offset, /*flags*/ 0, Encoding);
-}
-#endif
-
-/// getOrCreateCVRType - Get the CVR qualified type from the cache or create 
+/// CreateCVRType - Get the CVR qualified type from the cache or create 
 /// a new one if necessary.
 llvm::DIType DebugInfo::CreateCVRType(CVAtomicType* Ty, llvm::DICompileUnit Unit)
 {
@@ -217,7 +198,7 @@ llvm::DIType DebugInfo::CreateType(const PointerType *Ty,
  
   // Bit size, align and offset of the type.
   uint64_t Size, Align;
-  Ty->sizeInfoInBytes(env.TI, Size, Align);
+  Ty->sizeInfoInBits(env.TI, Size, Align);
                                                                                
   return DebugFactory.CreateDerivedType(llvm::dwarf::DW_TAG_pointer_type, Unit,
                                         "", llvm::DICompileUnit(),
@@ -225,134 +206,6 @@ llvm::DIType DebugInfo::CreateType(const PointerType *Ty,
 }
 
 #if RICH
-llvm::DIType DebugInfo::CreateType(const BlockPointerType *Ty,
-                                     llvm::DICompileUnit Unit)
-{
-  if (BlockLiteralGenericSet)
-    return BlockLiteralGeneric;
-
-  llvm::DICompileUnit DefUnit;
-  unsigned Tag = llvm::dwarf::DW_TAG_structure_type;
-
-  llvm::SmallVector<llvm::DIDescriptor, 5> EltTys;
-
-  llvm::DIType FieldTy;
-
-  QualType FType;
-  uint64_t FieldSize, FieldOffset;
-  unsigned FieldAlign;
-
-  llvm::DIArray Elements;
-  llvm::DIType EltTy, DescTy;
-
-  FieldOffset = 0;
-  FType = M->getContext().UnsignedLongTy;
-  FieldTy = DebugInfo::getOrCreateType(FType, Unit);
-  FieldSize = M->getContext().getTypeSize(FType);
-  FieldAlign = M->getContext().getTypeAlign(FType);
-  FieldTy = DebugFactory.CreateDerivedType(llvm::dwarf::DW_TAG_member, Unit,
-                                           "reserved", DefUnit,
-                                           0, FieldSize, FieldAlign,
-                                           FieldOffset, 0, FieldTy);
-  EltTys.push_back(FieldTy);
-
-  FieldOffset += FieldSize;
-  FType = M->getContext().UnsignedLongTy;
-  FieldTy = DebugInfo::getOrCreateType(FType, Unit);
-  FieldSize = M->getContext().getTypeSize(FType);
-  FieldAlign = M->getContext().getTypeAlign(FType);
-  FieldTy = DebugFactory.CreateDerivedType(llvm::dwarf::DW_TAG_member, Unit,
-                                           "Size", DefUnit,
-                                           0, FieldSize, FieldAlign,
-                                           FieldOffset, 0, FieldTy);
-  EltTys.push_back(FieldTy);
-
-  FieldOffset += FieldSize;
-  Elements = DebugFactory.GetOrCreateArray(EltTys.data(), EltTys.size());
-  EltTys.clear();
-
-  EltTy = DebugFactory.CreateCompositeType(Tag, Unit, "__block_descriptor",
-                                           DefUnit, 0, FieldOffset, 0, 0, 0,
-                                           llvm::DIType(), Elements);
-  
-  // Bit size, align and offset of the type.
-  uint64_t Size = M->getContext().getTypeSize(Ty);
-  uint64_t Align = M->getContext().getTypeAlign(Ty);
-                                                                               
-  DescTy = DebugFactory.CreateDerivedType(llvm::dwarf::DW_TAG_pointer_type,
-                                          Unit, "", llvm::DICompileUnit(),
-                                          0, Size, Align, 0, 0, EltTy);
-
-  FieldOffset = 0;
-  FType = M->getContext().getPointerType(M->getContext().VoidTy);
-  FieldTy = DebugInfo::getOrCreateType(FType, Unit);
-  FieldSize = M->getContext().getTypeSize(FType);
-  FieldAlign = M->getContext().getTypeAlign(FType);
-  FieldTy = DebugFactory.CreateDerivedType(llvm::dwarf::DW_TAG_member, Unit,
-                                           "__isa", DefUnit,
-                                           0, FieldSize, FieldAlign,
-                                           FieldOffset, 0, FieldTy);
-  EltTys.push_back(FieldTy);
-
-  FieldOffset += FieldSize;
-  FType = M->getContext().IntTy;
-  FieldTy = DebugInfo::getOrCreateType(FType, Unit);
-  FieldSize = M->getContext().getTypeSize(FType);
-  FieldAlign = M->getContext().getTypeAlign(FType);
-  FieldTy = DebugFactory.CreateDerivedType(llvm::dwarf::DW_TAG_member, Unit,
-                                           "__flags", DefUnit,
-                                           0, FieldSize, FieldAlign,
-                                           FieldOffset, 0, FieldTy);
-  EltTys.push_back(FieldTy);
-
-  FieldOffset += FieldSize;
-  FType = M->getContext().IntTy;
-  FieldTy = DebugInfo::getOrCreateType(FType, Unit);
-  FieldSize = M->getContext().getTypeSize(FType);
-  FieldAlign = M->getContext().getTypeAlign(FType);
-  FieldTy = DebugFactory.CreateDerivedType(llvm::dwarf::DW_TAG_member, Unit,
-                                           "__reserved", DefUnit,
-                                           0, FieldSize, FieldAlign,
-                                           FieldOffset, 0, FieldTy);
-  EltTys.push_back(FieldTy);
-
-  FieldOffset += FieldSize;
-  FType = M->getContext().getPointerType(M->getContext().VoidTy);
-  FieldTy = DebugInfo::getOrCreateType(FType, Unit);
-  FieldSize = M->getContext().getTypeSize(FType);
-  FieldAlign = M->getContext().getTypeAlign(FType);
-  FieldTy = DebugFactory.CreateDerivedType(llvm::dwarf::DW_TAG_member, Unit,
-                                           "__FuncPtr", DefUnit,
-                                           0, FieldSize, FieldAlign,
-                                           FieldOffset, 0, FieldTy);
-  EltTys.push_back(FieldTy);
-
-  FieldOffset += FieldSize;
-  FType = M->getContext().getPointerType(M->getContext().VoidTy);
-  FieldTy = DescTy;
-  FieldSize = M->getContext().getTypeSize(Ty);
-  FieldAlign = M->getContext().getTypeAlign(Ty);
-  FieldTy = DebugFactory.CreateDerivedType(llvm::dwarf::DW_TAG_member, Unit,
-                                           "__descriptor", DefUnit,
-                                           0, FieldSize, FieldAlign,
-                                           FieldOffset, 0, FieldTy);
-  EltTys.push_back(FieldTy);
-
-  FieldOffset += FieldSize;
-  Elements = DebugFactory.GetOrCreateArray(EltTys.data(), EltTys.size());
-
-  EltTy = DebugFactory.CreateCompositeType(Tag, Unit, "__block_literal_generic",
-                                           DefUnit, 0, FieldOffset, 0, 0, 0,
-                                           llvm::DIType(), Elements);
-  
-  BlockLiteralGenericSet = true;
-  BlockLiteralGeneric
-    = DebugFactory.CreateDerivedType(llvm::dwarf::DW_TAG_pointer_type, Unit,
-                                     "", llvm::DICompileUnit(),
-                                     0, Size, Align, 0, 0, EltTy);
-  return BlockLiteralGeneric;
-}
-
 llvm::DIType DebugInfo::CreateType(const TypedefType *Ty,
                                      llvm::DICompileUnit Unit)
 {
@@ -622,29 +475,39 @@ llvm::DIType DebugInfo::CreateType(const ArrayType *Ty,
 /// one if necessary.
 llvm::DIType DebugInfo::getOrCreateType(Type* Ty, llvm::DICompileUnit Unit)
 {
-    return llvm::DIType();      // RICH
 
-#if RICH
-  if (Ty.isNull())
-    return llvm::DIType();
+    if (Ty == NULL)
+        return llvm::DIType();
   
-  // Check TypeCache first.
-  llvm::DIType &Slot = TypeCache[Ty.getAsOpaquePtr()];
-  if (!Slot.isNull()) return Slot;
+    // Check TypeCache first.
+    llvm::DIType &Slot = TypeCache[Ty];
+    if (!Slot.isNull()) return Slot;
 
-  // Handle CVR qualifiers, which recursively handles what they refer to.
-  if (Ty.getCVRQualifiers())
-    return Slot = CreateCVRType(Ty, Unit);
+    // Handle CVR qualifiers, which recursively handles what they refer to.
+    if (Ty->isCVAtomicType()) {
+        CVAtomicType* cvt = Ty->asCVAtomicType();
+        if (cvt->cv & (CV_CONST | CV_VOLATILE | CV_RESTRICT)) {
+            return Slot = CreateCVRType(cvt, Unit);
+        }
+    }
 
-  // Work out details of type.
-  switch (Ty->getTypeClass()) {
-#define TYPE(Class, Base)
-#define ABSTRACT_TYPE(Class, Base)
-#define NON_CANONICAL_TYPE(Class, Base)
-#define DEPENDENT_TYPE(Class, Base) case Type::Class:
-// RICH: #include "ellcc/AST/TypeNodes.def"
-    assert(false && "Dependent types cannot show up in debug information");
-    
+    // Work out details of type.
+    if (Ty->isSimpleType()) {
+        return Slot = CreateType(Ty->asSimpleTypeC(), Unit);
+    }
+    if (Ty->isPointerType()) {
+        return Slot = CreateType(Ty->asPointerTypeC(), Unit);
+    }
+    if (Ty->isFunctionType()) {
+        return Slot = CreateType(Ty->asFunctionTypeC(), Unit);
+    }
+
+    return llvm::DIType();      // RICH
+#if RICH
+    switch (Ty->getTag()) {
+    default:
+        return llvm::DIType();      // RICH
+    case BaseType::T_ATOMIC: return Slot = CreateType(cast<AtomicType>(Ty), Unit);
   case Type::LValueReference:
   case Type::RValueReference:
   case Type::Vector:
@@ -658,17 +521,10 @@ llvm::DIType DebugInfo::getOrCreateType(Type* Ty, llvm::DICompileUnit Unit)
     return llvm::DIType();
   case Type::Builtin: return Slot = CreateType(cast<BuiltinType>(Ty), Unit);
   case Type::Complex: return Slot = CreateType(cast<ComplexType>(Ty), Unit);
-  case Type::Pointer: return Slot = CreateType(cast<PointerType>(Ty), Unit);
-  case Type::BlockPointer:
-    return Slot = CreateType(cast<BlockPointerType>(Ty), Unit);
   case Type::Typedef: return Slot = CreateType(cast<TypedefType>(Ty), Unit);
   case Type::Record:
   case Type::Enum:
     return Slot = CreateType(cast<TagType>(Ty), Unit); 
-  case Type::FunctionProto:
-  case Type::FunctionNoProto:
-    return Slot = CreateType(cast<FunctionType>(Ty), Unit);
-    
   case Type::ConstantArray:
   case Type::ConstantArrayWithExpr:
   case Type::ConstantArrayWithoutExpr:
@@ -817,8 +673,6 @@ void DebugInfo::EmitDeclareOfArgVariable(const VarDecl *Decl, llvm::Value *AI,
                                            CGBuilderTy &Builder) {
   EmitDeclare(Decl, llvm::dwarf::DW_TAG_arg_variable, AI, Builder);
 }
-
-
 
 /// EmitGlobalVariable - Emit information about a global variable.
 void DebugInfo::EmitGlobalVariable(llvm::GlobalVariable *Var, 

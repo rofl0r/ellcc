@@ -54,12 +54,8 @@ class DebugInfo {
 
   /// Helper functions for getOrCreateType.
   llvm::DIType CreateType(const SimpleType *Ty, llvm::DICompileUnit U);
-  // RICH: llvm::DIType CreateType(const ComplexType *Ty, llvm::DICompileUnit U);
   llvm::DIType CreateCVRType(CVAtomicType* Ty, llvm::DICompileUnit U);
-  // RICH: llvm::DIType CreateType(const TypedefType *Ty, llvm::DICompileUnit U);
-  // RICH:                         llvm::DICompileUnit Unit);
   llvm::DIType CreateType(const PointerType *Ty, llvm::DICompileUnit U);
-  // RICH: llvm::DIType CreateType(const BlockPointerType *Ty, llvm::DICompileUnit U);
   llvm::DIType CreateType(const FunctionType *Ty, llvm::DICompileUnit U);
   // RICH: llvm::DIType CreateType(const TagType *Ty, llvm::DICompileUnit U);
   llvm::DIType CreateType(const CompoundType *Ty, llvm::DICompileUnit U);

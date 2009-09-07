@@ -7,6 +7,9 @@
 # See includes/DefaultSettings.php for all configurable settings
 # and their default values, but don't forget to make changes in _this_
 # file, not there.
+#
+# Further documentation for configuration settings may be found at:
+# http://www.mediawiki.org/wiki/Manual:Configuration_settings
 
 # If you customize your file layout, set $IP to the directory that contains
 # the other MediaWiki files. It will be used as a base to locate files.
@@ -19,7 +22,7 @@ if( defined( 'MW_INSTALL_PATH' ) ) {
 $path = array( $IP, "$IP/includes", "$IP/languages" );
 set_include_path( implode( PATH_SEPARATOR, $path ) . PATH_SEPARATOR . get_include_path() );
 
-require_once( "includes/DefaultSettings.php" );
+require_once( "$IP/includes/DefaultSettings.php" );
 
 # If PHP's memory limit is very low, some operations may fail.
 # ini_set( 'memory_limit', '20M' );
@@ -32,47 +35,42 @@ if ( $wgCommandLineMode ) {
 ## Uncomment this to disable output compression
 # $wgDisableOutputCompression = true;
 
-$wgSitename         = "ELLCC";
+$wgSitename         = "Ellccwiki";
 
 ## The URL base path to the directory containing the wiki;
 ## defaults for all runtime URL paths are based off of this.
-$wgScriptPath       = "/wiki";
-
 ## For more information on customizing the URLs please see:
 ## http://www.mediawiki.org/wiki/Manual:Short_URL
+$wgScriptPath       = "/wiki";
+$wgScriptExtension  = ".php";
+
+## UPO means: this is also a user preference option
 
 $wgEnableEmail      = true;
-$wgEnableUserEmail  = true;
+$wgEnableUserEmail  = true; # UPO
 
 $wgEmergencyContact = "webmaster@pennware.com";
 $wgPasswordSender = "webmaster@pennware.com";
 
-## For a detailed description of the following switches see
-## http://meta.wikimedia.org/Enotif and http://meta.wikimedia.org/Eauthent
-## There are many more options for fine tuning available see
-## /includes/DefaultSettings.php
-## UPO means: this is also a user preference option
 $wgEnotifUserTalk = true; # UPO
 $wgEnotifWatchlist = true; # UPO
 $wgEmailAuthentication = true;
 
+## Database settings
 $wgDBtype           = "mysql";
 $wgDBserver         = "localhost";
 $wgDBname           = "ellccwiki";
-$wgDBuser           = "ellccwikiuser";
+$wgDBuser           = "Rich";
 $wgDBpassword       = "1957root";
-$wgDBport           = "5432";
+
+# MySQL specific settings
 $wgDBprefix         = "ew_";
 
 # MySQL table options to use during installation or update
-$wgDBTableOptions   = "TYPE=InnoDB";
-
-# Schemas for Postgres
-$wgDBmwschema       = "mediawiki";
-$wgDBts2schema      = "public";
+$wgDBTableOptions   = "ENGINE=InnoDB, DEFAULT CHARSET=binary";
 
 # Experimental charset support for MySQL 4.1/5.0.
-$wgDBmysql5 = false;
+$wgDBmysql5 = true;
 
 ## Shared memory settings
 $wgMainCacheType = CACHE_NONE;
@@ -83,6 +81,11 @@ $wgMemCachedServers = array();
 $wgEnableUploads       = false;
 $wgUseImageMagick = true;
 $wgImageMagickConvertCommand = "/usr/bin/convert";
+
+## If you use ImageMagick (or any other shell command) on a
+## Linux server, this will need to be set to the name of an
+## available UTF-8 locale
+$wgShellLocale = "en_US.utf8";
 
 ## If you want to use image uploads under safe mode,
 ## create the directories images/archive, images/thumb and
@@ -98,7 +101,7 @@ $wgLocalInterwiki   = $wgSitename;
 
 $wgLanguageCode = "en";
 
-$wgProxyKey = "5b120e9ff0ee3a03d69c8633809b07f5a9ab3fbe16fd28e4dcbdec3f14db690f";
+$wgProxyKey = "4889fd56f988494e7f2e74576cff880c0c6586d94fc93d97e6b3419b6cecb017";
 
 ## Default skin: you can change the default skin. Use the internal symbolic
 ## names, ie 'standard', 'nostalgia', 'cologneblue', 'monobook':
@@ -118,8 +121,6 @@ $wgDiff3 = "/usr/bin/diff3";
 
 # When you make changes to this configuration file, this will make
 # sure that cached pages are cleared.
-$configdate = gmdate( 'YmdHis', @filemtime( __FILE__ ) );
-$wgCacheEpoch = max( $wgCacheEpoch, $configdate );
-	
-$wgLogo = "/images/ellcc.png";
+$wgCacheEpoch = max( $wgCacheEpoch, gmdate( 'YmdHis', @filemtime( __FILE__ ) ) );
 
+$wgLogo = "/images/ellcc.png";

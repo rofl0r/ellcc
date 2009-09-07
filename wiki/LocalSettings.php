@@ -16,7 +16,7 @@
 if( defined( 'MW_INSTALL_PATH' ) ) {
 	$IP = MW_INSTALL_PATH;
 } else {
-	$IP = '/usr/share/mediawiki';
+	$IP = dirname( __FILE__ );
 }
 
 $path = array( $IP, "$IP/includes", "$IP/languages" );
@@ -35,7 +35,7 @@ if ( $wgCommandLineMode ) {
 ## Uncomment this to disable output compression
 # $wgDisableOutputCompression = true;
 
-$wgSitename         = "Ellccwiki";
+$wgSitename         = "Ellcc";
 
 ## The URL base path to the directory containing the wiki;
 ## defaults for all runtime URL paths are based off of this.
@@ -49,8 +49,8 @@ $wgScriptExtension  = ".php";
 $wgEnableEmail      = true;
 $wgEnableUserEmail  = true; # UPO
 
-$wgEmergencyContact = "webmaster@pennware.com";
-$wgPasswordSender = "webmaster@pennware.com";
+$wgEmergencyContact = "rich@pennware.com";
+$wgPasswordSender = "rich@pennware.com";
 
 $wgEnotifUserTalk = true; # UPO
 $wgEnotifWatchlist = true; # UPO
@@ -60,7 +60,7 @@ $wgEmailAuthentication = true;
 $wgDBtype           = "mysql";
 $wgDBserver         = "localhost";
 $wgDBname           = "ellccwiki";
-$wgDBuser           = "Rich";
+$wgDBuser           = "wikiuser";
 $wgDBpassword       = "1957root";
 
 # MySQL specific settings
@@ -97,11 +97,11 @@ $wgShellLocale = "en_US.utf8";
 ## you can enable inline LaTeX equations:
 $wgUseTeX           = false;
 
-$wgLocalInterwiki   = $wgSitename;
+$wgLocalInterwiki   = strtolower( $wgSitename );
 
 $wgLanguageCode = "en";
 
-$wgProxyKey = "4889fd56f988494e7f2e74576cff880c0c6586d94fc93d97e6b3419b6cecb017";
+$wgSecretKey = "a58ad84d63b3af7aa5828b45ba26ab2574ea6efd657c7a424babf64e7a38d741";
 
 ## Default skin: you can change the default skin. Use the internal symbolic
 ## names, ie 'standard', 'nostalgia', 'cologneblue', 'monobook':
