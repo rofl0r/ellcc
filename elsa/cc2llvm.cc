@@ -516,14 +516,6 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLocation loc, Atomic
     return type;
 }
 
-const char* CC2LLVMEnv::variableName(Variable const *v)
-{
-    if (v->asmname) {
-        return TI.getNormalizedGCCRegisterName(v->asmname);
-    }
-    return v->name;
-}
-
 const llvm::Type* CC2LLVMEnv::makeParameterTypes(FunctionType *ft,
                                                  const llvm::Type* returnType,
                                                  std::vector<const llvm::Type*>& args)
@@ -574,7 +566,7 @@ llvm::Value* CC2LLVMEnv::declaration(const Variable* var, llvm::Value* init, int
         if (gv == NULL) {
             llvm::Function* gf = llvm::Function::Create((llvm::FunctionType*)type,
                                                         linkage,
-                                                        variableName(var),
+                                                        var->Name(TI),
                                                         mod);
             gf->setCallingConv(llvm::CallingConv::C); // RICH: Calling convention.
             gf->setDoesNotThrow();                  // RICH: When known.
@@ -601,7 +593,7 @@ llvm::Value* CC2LLVMEnv::declaration(const Variable* var, llvm::Value* init, int
         }
         if (gv == NULL) {
             gv = new llvm::GlobalVariable(*mod, type, false,	// RICH: isConstant
-                    getLinkage(var->flags), (llvm::Constant*)init, variableName(var));	// RICH: cast
+                    getLinkage(var->flags), (llvm::Constant*)init, var->Name(TI));	// RICH: cast
             variables.add(var, gv);
         } else {
             if (init) {
@@ -616,9 +608,9 @@ llvm::Value* CC2LLVMEnv::declaration(const Variable* var, llvm::Value* init, int
         xassert(entryBlock);
         llvm::AllocaInst* lv;
         if (entryBlock == currentBlock) {
-            lv = new llvm::AllocaInst(type, variableName(var), entryBlock);
+            lv = new llvm::AllocaInst(type, var->Name(TI), entryBlock);
         } else {
-            lv = new llvm::AllocaInst(type, variableName(var), entryBlock->getTerminator());
+            lv = new llvm::AllocaInst(type, var->Name(TI), entryBlock->getTerminator());
         }
 
         if (init) {
@@ -626,6 +618,10 @@ llvm::Value* CC2LLVMEnv::declaration(const Variable* var, llvm::Value* init, int
         }
         variables.add(var, lv);
         value = lv;
+        if (DI) {
+            DI->setLocation(var->loc);
+            DI->EmitDeclareOfAutoVariable(var, lv, builder);
+        }
     } else {
         xunimp("declaration type");
     }
@@ -730,7 +726,7 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
         env.function->setName("");
     }
     llvm::Function* function = llvm::Function::Create(ft, linkage,
-                                                      env.variableName(nameAndParams->var), env.mod);
+                                                      nameAndParams->var->Name(env.TI), env.mod);
     function->setCallingConv(llvm::CallingConv::C); // RICH: Calling convention.
     function->setDoesNotThrow();                  // RICH: When known.
     if (env.function && env.function->getType() != (llvm::Type*)ft) {
@@ -763,7 +759,7 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
     // Emit subprogram debug descriptor.
     if (env.DI) {
         env.DI->setLocation(nameAndParams->var->loc);
-        env.DI->EmitFunctionStart(env.variableName(nameAndParams->var),
+        env.DI->EmitFunctionStart(nameAndParams->var->Name(env.TI),
                                   funcType->retType, function, env.builder);
     }
 
@@ -791,14 +787,13 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
         VDEBUG("Function arg", param->loc, type->print(std::cerr));
         if (first && receiver && param != receiver) {
             // Yuck! The receiver is not explicit. I think it should be.
-            llvm::AllocaInst* addr = env.createTempAlloca(type, env.variableName(receiver));
+            llvm::AllocaInst* addr = env.createTempAlloca(type, receiver->Name(env.TI));
             // Remember where the argument can be retrieved.
             env.variables.add(receiver, addr);
             // Store the argument for later use.
             VDEBUG("Function receiver source", receiver->loc, arg->print(std::cerr));
             VDEBUG("Function receiver destination", receiver->loc, addr->print(std::cerr));
             env.builder.CreateStore(arg, addr, false);	// RICH: IsVolatile.
-
             // Do the next argument.
             arg = llargs++;
             type = arg->getType();
@@ -807,13 +802,17 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
         first = false;
 	// type will be NULL for "...".
 	if (type) {
-	    llvm::AllocaInst* addr = env.createTempAlloca(type, env.variableName(param));
+	    llvm::AllocaInst* addr = env.createTempAlloca(type, param->Name(env.TI));
 	    // Remember where the argument can be retrieved.
             env.variables.add(param, addr);
 	    // Store the argument for later use.
             VDEBUG("Function arg source", param->loc, arg->print(std::cerr));
             VDEBUG("Function arg destination", param->loc, addr->print(std::cerr));
 	    env.builder.CreateStore(arg, addr, false);	// RICH: IsVolatile.
+            if (env.DI) {
+                env.DI->setLocation(param->loc);
+                env.DI->EmitDeclareOfArgVariable(param, addr, env.builder);
+            }
         }
     }
 
@@ -1777,7 +1776,7 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, int& deref) const
     const Variable* v = func->isE_variable() ? func->asE_variable()->var : NULL;
     if (v && v->BuiltinID) {
         // A builtin function.
-        return env.EmitBuiltin(loc, env.variableName(v), v->BuiltinID,
+        return env.EmitBuiltin(loc, v->Name(env.TI), v->BuiltinID,
                                env.makeTypeSpecifier(loc, ft->retType),
                                !ft->retType->isSimpleType() 
                                && isExplicitlyUnsigned(ft->retType->asSimpleTypeC()->type),

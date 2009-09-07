@@ -163,7 +163,7 @@ llvm::DIType DebugInfo::CreateType(const SimpleType *ST,
 
 /// CreateCVRType - Get the CVR qualified type from the cache or create 
 /// a new one if necessary.
-llvm::DIType DebugInfo::CreateCVRType(CVAtomicType* Ty, llvm::DICompileUnit Unit)
+llvm::DIType DebugInfo::CreateCVRType(const CVAtomicType* Ty, llvm::DICompileUnit Unit)
 {
     llvm::DIType FromTy;
     CVFlags cv = Ty->cv & (CV_CONST | CV_VOLATILE | CV_RESTRICT);
@@ -473,7 +473,7 @@ llvm::DIType DebugInfo::CreateType(const ArrayType *Ty,
 
 /// getOrCreateType - Get the type from the cache or create a new
 /// one if necessary.
-llvm::DIType DebugInfo::getOrCreateType(Type* Ty, llvm::DICompileUnit Unit)
+llvm::DIType DebugInfo::getOrCreateType(const Type* Ty, llvm::DICompileUnit Unit)
 {
 
     if (Ty == NULL)
@@ -485,7 +485,7 @@ llvm::DIType DebugInfo::getOrCreateType(Type* Ty, llvm::DICompileUnit Unit)
 
     // Handle CVR qualifiers, which recursively handles what they refer to.
     if (Ty->isCVAtomicType()) {
-        CVAtomicType* cvt = Ty->asCVAtomicType();
+        const CVAtomicType* cvt = Ty->asCVAtomicTypeC();
         if (cvt->cv & (CV_CONST | CV_VOLATILE | CV_RESTRICT)) {
             return Slot = CreateCVRType(cvt, Unit);
         }
@@ -554,126 +554,127 @@ void DebugInfo::EmitFunctionStart(const char *Name, Type* ReturnType,
                                     llvm::Function *Fn,
                                     BuilderTy &Builder)
 {
-  const char *LinkageName = Name;
+    const char *LinkageName = Name;
   
-  // Skip the asm prefix if it exists.
-  //
-  // FIXME: This should probably be the unmangled name?
-  if (Name[0] == '\01')
-    ++Name;
+    // Skip the asm prefix if it exists.
+    //
+    // FIXME: This should probably be the unmangled name?
+    if (Name[0] == '\01')
+        ++Name;
   
-  // FIXME: Why is this using CurLoc???
-  llvm::DICompileUnit Unit = getOrCreateCompileUnit(CurLoc);
-  SourceManager SM;
-  unsigned LineNo = SM.getPresumedLoc(CurLoc).getLine();
+    // FIXME: Why is this using CurLoc???
+    llvm::DICompileUnit Unit = getOrCreateCompileUnit(CurLoc);
+    SourceManager SM;
+    unsigned LineNo = SM.getPresumedLoc(CurLoc).getLine();
   
-  llvm::DISubprogram SP =
-    DebugFactory.CreateSubprogram(Unit, Name, Name, LinkageName, Unit, LineNo,
-                                  getOrCreateType(ReturnType, Unit),
+    llvm::DISubprogram SP =
+        DebugFactory.CreateSubprogram(Unit, Name, Name, LinkageName, Unit, LineNo,
+                                      getOrCreateType(ReturnType, Unit),
                                   Fn->hasInternalLinkage(), true/*definition*/);
   
-  DebugFactory.InsertSubprogramStart(SP, Builder.GetInsertBlock());
+    DebugFactory.InsertSubprogramStart(SP, Builder.GetInsertBlock());
                                                         
-  // Push function on region stack.
-  RegionStack.push_back(SP);
+    // Push function on region stack.
+    RegionStack.push_back(SP);
 }
 
 
 void DebugInfo::EmitStopPoint(llvm::Function *Fn, BuilderTy &Builder)
 {
-  if (CurLoc.isInvalid() || CurLoc.isMacroID()) return;
+    if (CurLoc.isInvalid() || CurLoc.isMacroID()) return;
   
-  // Don't bother if things are the same as last time.
-  SourceManager SM;
-  if (CurLoc == PrevLoc 
-       || (SM.getInstantiationLineNumber(CurLoc) ==
-           SM.getInstantiationLineNumber(PrevLoc)
-           && SM.isFromSameFile(CurLoc, PrevLoc)))
+    // Don't bother if things are the same as last time.
+    SourceManager SM;
+    if (   CurLoc == PrevLoc 
+        || (SM.getInstantiationLineNumber(CurLoc)
+            == SM.getInstantiationLineNumber(PrevLoc)
+        && SM.isFromSameFile(CurLoc, PrevLoc)))
     return;
 
-  // Update last state.
-  PrevLoc = CurLoc;
+    // Update last state.
+    PrevLoc = CurLoc;
 
-  // Get the appropriate compile unit.
-  llvm::DICompileUnit Unit = getOrCreateCompileUnit(CurLoc);
-  PresumedLoc PLoc = SM.getPresumedLoc(CurLoc);
-  DebugFactory.InsertStopPoint(Unit, PLoc.getLine(), PLoc.getColumn(),
-                               Builder.GetInsertBlock()); 
+    // Get the appropriate compile unit.
+    llvm::DICompileUnit Unit = getOrCreateCompileUnit(CurLoc);
+    PresumedLoc PLoc = SM.getPresumedLoc(CurLoc);
+    DebugFactory.InsertStopPoint(Unit, PLoc.getLine(), PLoc.getColumn(),
+                                 Builder.GetInsertBlock()); 
 }
 
 /// EmitRegionStart- Constructs the debug code for entering a declarative
 /// region - "llvm.dbg.region.start.".
 void DebugInfo::EmitRegionStart(llvm::Function *Fn, BuilderTy &Builder)
 {
-  llvm::DIDescriptor D;
-  if (!RegionStack.empty())
-    D = RegionStack.back();
-  D = DebugFactory.CreateLexicalBlock(D);
-  RegionStack.push_back(D);
-  DebugFactory.InsertRegionStart(D, Builder.GetInsertBlock());
+    llvm::DIDescriptor D;
+    if (!RegionStack.empty())
+        D = RegionStack.back();
+    D = DebugFactory.CreateLexicalBlock(D);
+    RegionStack.push_back(D);
+    DebugFactory.InsertRegionStart(D, Builder.GetInsertBlock());
 }
 
 /// EmitRegionEnd - Constructs the debug code for exiting a declarative
 /// region - "llvm.dbg.region.end."
 void DebugInfo::EmitRegionEnd(llvm::Function *Fn, BuilderTy &Builder)
 {
-  assert(!RegionStack.empty() && "Region stack mismatch, stack empty!");
+    assert(!RegionStack.empty() && "Region stack mismatch, stack empty!");
 
-  // Provide a region stop point.
-  EmitStopPoint(Fn, Builder);
+    // Provide a region stop point.
+    EmitStopPoint(Fn, Builder);
   
-  DebugFactory.InsertRegionEnd(RegionStack.back(), Builder.GetInsertBlock());
-  RegionStack.pop_back();
+    DebugFactory.InsertRegionEnd(RegionStack.back(), Builder.GetInsertBlock());
+    RegionStack.pop_back();
 }
+
+/// EmitDeclare - Emit local variable declaration debug info.
+void DebugInfo::EmitDeclare(const Variable *Decl, unsigned Tag,
+                            llvm::Value *Storage, BuilderTy &Builder)
+{
+    assert(!RegionStack.empty() && "Region stack mismatch, stack empty!");
 
 #if RICH
-/// EmitDeclare - Emit local variable declaration debug info.
-void DebugInfo::EmitDeclare(const VarDecl *Decl, unsigned Tag,
-                              llvm::Value *Storage, CGBuilderTy &Builder)
-{
-  assert(!RegionStack.empty() && "Region stack mismatch, stack empty!");
+    // Do not emit variable debug information while generating optimized code.
+    // The llvm optimizer and code generator are not yet ready to support
+    // optimized code debugging.
+    const CompileOptions &CO = M->getCompileOpts();
+    if (CO.OptimizationLevel)
+        return;
+#endif
 
-  // Do not emit variable debug information while generating optimized code.
-  // The llvm optimizer and code generator are not yet ready to support
-  // optimized code debugging.
-  const CompileOptions &CO = M->getCompileOpts();
-  if (CO.OptimizationLevel)
-    return;
+    llvm::DICompileUnit Unit = getOrCreateCompileUnit(Decl->loc);
+    llvm::DIType Ty = getOrCreateType(Decl->getTypeC(), Unit);
 
-  llvm::DICompileUnit Unit = getOrCreateCompileUnit(Decl->getLocation());
-  llvm::DIType Ty = getOrCreateType(Decl->getType(), Unit);
-
-  // Get location information.
-  SourceManager &SM = M->getContext().getSourceManager();
-  PresumedLoc PLoc = SM.getPresumedLoc(Decl->getLocation());
-  unsigned Line = 0;
-  if (!PLoc.isInvalid())
-    Line = PLoc.getLine();
-  else
-    Unit = llvm::DICompileUnit();
-
+    // Get location information.
+    SourceManager SM;
+    PresumedLoc PLoc = SM.getPresumedLoc(Decl->loc);
+    unsigned Line = 0;
+    if (!PLoc.isInvalid())
+        Line = PLoc.getLine();
+    else
+        Unit = llvm::DICompileUnit();
   
-  // Create the descriptor for the variable.
-  llvm::DIVariable D = 
-    DebugFactory.CreateVariable(Tag, RegionStack.back(),Decl->getNameAsString(),
-                                Unit, Line, Ty);
-  // Insert an llvm.dbg.declare into the current block.
-  DebugFactory.InsertDeclare(Storage, D, Builder.GetInsertBlock());
+    // Create the descriptor for the variable.
+    llvm::DIVariable D = 
+        DebugFactory.CreateVariable(Tag, RegionStack.back(), Decl->Name(env.TI),
+                                    Unit, Line, Ty);
+    // Insert an llvm.dbg.declare into the current block .
+    DebugFactory.InsertDeclare(Storage, D, Builder.GetInsertBlock());
 }
 
-void DebugInfo::EmitDeclareOfAutoVariable(const VarDecl *Decl,
-                                            llvm::Value *Storage,
-                                            CGBuilderTy &Builder) {
+void DebugInfo::EmitDeclareOfAutoVariable(const Variable *Decl,
+                                          llvm::Value *Storage,
+                                          BuilderTy &Builder) {
   EmitDeclare(Decl, llvm::dwarf::DW_TAG_auto_variable, Storage, Builder);
 }
 
 /// EmitDeclareOfArgVariable - Emit call to llvm.dbg.declare for an argument
 /// variable declaration.
-void DebugInfo::EmitDeclareOfArgVariable(const VarDecl *Decl, llvm::Value *AI,
-                                           CGBuilderTy &Builder) {
+void DebugInfo::EmitDeclareOfArgVariable(const Variable *Decl, llvm::Value *AI,
+                                         BuilderTy &Builder) {
   EmitDeclare(Decl, llvm::dwarf::DW_TAG_arg_variable, AI, Builder);
 }
 
+#if RICH
 /// EmitGlobalVariable - Emit information about a global variable.
 void DebugInfo::EmitGlobalVariable(llvm::GlobalVariable *Var, 
                                      const VarDecl *Decl) {

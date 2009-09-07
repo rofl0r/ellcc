@@ -45,7 +45,7 @@ class DebugInfo {
 
   /// TypeCache - Cache of previously constructed Types.
   // FIXME: Eliminate this map.  Be careful of iterator invalidation.
-  std::map<void *, llvm::DIType> TypeCache;
+  std::map<const void *, llvm::DIType> TypeCache;
   
   bool BlockLiteralGenericSet;
   llvm::DIType BlockLiteralGeneric;
@@ -54,7 +54,7 @@ class DebugInfo {
 
   /// Helper functions for getOrCreateType.
   llvm::DIType CreateType(const SimpleType *Ty, llvm::DICompileUnit U);
-  llvm::DIType CreateCVRType(CVAtomicType* Ty, llvm::DICompileUnit U);
+  llvm::DIType CreateCVRType(const CVAtomicType* Ty, llvm::DICompileUnit U);
   llvm::DIType CreateType(const PointerType *Ty, llvm::DICompileUnit U);
   llvm::DIType CreateType(const FunctionType *Ty, llvm::DICompileUnit U);
   // RICH: llvm::DIType CreateType(const TagType *Ty, llvm::DICompileUnit U);
@@ -87,28 +87,26 @@ public:
   /// block.
   void EmitRegionEnd(llvm::Function *Fn, BuilderTy &Builder);
 
-#if RICH
   /// EmitDeclareOfAutoVariable - Emit call to llvm.dbg.declare for an automatic
   /// variable declaration.
-  void EmitDeclareOfAutoVariable(const VarDecl *Decl, llvm::Value *AI,
+  void EmitDeclareOfAutoVariable(const Variable *Decl, llvm::Value *AI,
                                  BuilderTy &Builder);
 
   /// EmitDeclareOfArgVariable - Emit call to llvm.dbg.declare for an argument
   /// variable declaration.
-  void EmitDeclareOfArgVariable(const VarDecl *Decl, llvm::Value *AI,
+  void EmitDeclareOfArgVariable(const Variable *Decl, llvm::Value *AI,
                                 BuilderTy &Builder);
   
+#if RICH
   /// EmitGlobalVariable - Emit information about a global variable.
   void EmitGlobalVariable(llvm::GlobalVariable *GV, const VarDecl *Decl);
 
 #endif
    
 private:
-#if RICH
   /// EmitDeclare - Emit call to llvm.dbg.declare for a variable declaration.
-  void EmitDeclare(const VarDecl *decl, unsigned Tag, llvm::Value *AI,
+  void EmitDeclare(const Variable *decl, unsigned Tag, llvm::Value *AI,
                    BuilderTy &Builder);
-#endif
   
   /// getOrCreateCompileUnit - Get the compile unit from the cache or create a
   /// new one if necessary.
@@ -116,7 +114,7 @@ private:
 
   /// getOrCreateType - Get the type from the cache or create a new type if
   /// necessary.
-  llvm::DIType getOrCreateType(Type* Ty, llvm::DICompileUnit Unit);
+  llvm::DIType getOrCreateType(const Type* Ty, llvm::DICompileUnit Unit);
 };
 } // namespace ellcc
 

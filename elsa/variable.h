@@ -34,13 +34,16 @@
 #define VARIABLE_H
 
 #include "SourceLocation.h"     // SourceLocation
-using ellcc::SourceLocation;
+#include "TargetInfo.h"         // TargetInfo
 #include "strtable.h"           // StringRef
 #include "cc_flags.h"           // DeclFlags, ScopeKind
 #include "sobjlist.h"           // SObjList
 #include "sobjset.h"            // SObjSet
 #include "serialno.h"           // INHERIT_SERIAL_BASE
 #include "packedword.h"         // PackedWord
+
+using ellcc::SourceLocation;
+using ellcc::TargetInfo;
 
 class Type;                     // cc_type.h
 class TypeVisitor;              // cc_type.h
@@ -165,6 +168,10 @@ protected:    // funcs
 public:
   virtual ~Variable();
 
+  /** Return the real name of the variable.
+   */
+  StringRef Name(TargetInfo& TI) const
+    { if (asmname) { return TI.getNormalizedGCCRegisterName(asmname); } return name; }
   bool hasFlag(DeclFlags f) const { return (flags & f) != 0; }
   bool hasAnyFlags(DeclFlags /*union*/ f) const { return (flags & f) != 0; }
   bool hasAllFlags(DeclFlags /*union*/ f) const { return (flags & f) == f; }
