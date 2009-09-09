@@ -54,7 +54,7 @@ class DebugInfo {
 
   /// Helper functions for getOrCreateType.
   llvm::DIType CreateType(const SimpleType *Ty, llvm::DICompileUnit U);
-  llvm::DIType CreateCVRType(const CVAtomicType* Ty, llvm::DICompileUnit U);
+  llvm::DIType CreateCVRType(const CVAtomicType* Ty, CVFlags cv, llvm::DICompileUnit U);
   llvm::DIType CreateType(const PointerType *Ty, llvm::DICompileUnit U);
   llvm::DIType CreateType(const FunctionType *Ty, llvm::DICompileUnit U);
   // RICH: llvm::DIType CreateType(const TagType *Ty, llvm::DICompileUnit U);
@@ -111,7 +111,7 @@ private:
 
   /// getOrCreateType - Get the type from the cache or create a new type if
   /// necessary.
-  llvm::DIType getOrCreateType(const Type* Ty, llvm::DICompileUnit Unit);
+  llvm::DIType getOrCreateType(const Type* Ty, llvm::DICompileUnit Unit, bool cvDone = false);
 };
 } // namespace ellcc
 

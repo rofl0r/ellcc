@@ -163,28 +163,30 @@ llvm::DIType DebugInfo::CreateType(const SimpleType *ST,
 
 /// CreateCVRType - Get the CVR qualified type from the cache or create 
 /// a new one if necessary.
-llvm::DIType DebugInfo::CreateCVRType(const CVAtomicType* Ty, llvm::DICompileUnit Unit)
+llvm::DIType DebugInfo::CreateCVRType(const CVAtomicType* Ty, CVFlags cv, llvm::DICompileUnit Unit)
 {
-    llvm::DIType FromTy;
-    CVFlags cv = Ty->cv & (CV_CONST | CV_VOLATILE | CV_RESTRICT);
+    cv = Ty->cv & (CV_CONST | CV_VOLATILE | CV_RESTRICT);
     unsigned Tag = 0;
-    while(cv) {
-        if (Ty->isConst()) {
-            Tag = llvm::dwarf::DW_TAG_const_type;
-            cv &= ~CV_CONST; 
-            FromTy = getOrCreateType(Ty, Unit);
-        } else if (Ty->isVolatile()) {
-            Tag = llvm::dwarf::DW_TAG_volatile_type;
-            cv &= ~CV_VOLATILE; 
-            FromTy = getOrCreateType(Ty, Unit);
-        } else {
-            assert(Ty->isRestrict() && "Unknown type qualifier for debug info");
-            Tag = llvm::dwarf::DW_TAG_restrict_type;
-            cv &= ~CV_RESTRICT; 
-            FromTy = getOrCreateType(Ty, Unit);
-        }
+    if (Ty->isConst()) {
+        Tag = llvm::dwarf::DW_TAG_const_type;
+        cv &= ~CV_CONST; 
+    } else if (Ty->isVolatile()) {
+        Tag = llvm::dwarf::DW_TAG_volatile_type;
+        cv &= ~CV_VOLATILE; 
+    } else {
+        assert(Ty->isRestrict() && "Unknown type qualifier for debug info");
+        Tag = llvm::dwarf::DW_TAG_restrict_type;
+        cv &= ~CV_RESTRICT; 
     }
   
+    llvm::DIType FromTy;
+    if (cv) {
+        // More qualifiers.
+        FromTy = CreateCVRType(Ty, cv, Unit);
+    } else {
+        FromTy = getOrCreateType(Ty, Unit, true);
+    }
+ 
     // No need to fill in the Name, Line, Size, Alignment, Offset in case of
     // CVR derived types.
     return DebugFactory.CreateDerivedType(Tag, Unit, "", llvm::DICompileUnit(),
@@ -473,7 +475,7 @@ llvm::DIType DebugInfo::CreateType(const ArrayType *Ty,
 
 /// getOrCreateType - Get the type from the cache or create a new
 /// one if necessary.
-llvm::DIType DebugInfo::getOrCreateType(const Type* Ty, llvm::DICompileUnit Unit)
+llvm::DIType DebugInfo::getOrCreateType(const Type* Ty, llvm::DICompileUnit Unit, bool cvDone)
 {
 
     if (Ty == NULL)
@@ -484,10 +486,10 @@ llvm::DIType DebugInfo::getOrCreateType(const Type* Ty, llvm::DICompileUnit Unit
     if (!Slot.isNull()) return Slot;
 
     // Handle CVR qualifiers, which recursively handles what they refer to.
-    if (Ty->isCVAtomicType()) {
+    if (!cvDone && Ty->isCVAtomicType()) {
         const CVAtomicType* cvt = Ty->asCVAtomicTypeC();
         if (cvt->cv & (CV_CONST | CV_VOLATILE | CV_RESTRICT)) {
-            return Slot = CreateCVRType(cvt, Unit);
+            return Slot = CreateCVRType(cvt, cvt->cv, Unit);
         }
     }
 
