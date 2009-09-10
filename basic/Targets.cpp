@@ -743,8 +743,8 @@ public:
 };
 
 TargetInfo::RaiseInstructionsList X86_32TargetInfo::raiseInstructionsList[] = {
-    { Instruction::URem,        "__umoddi3",   { }, { 64, 64, 64 } },
-    { Instruction::UDiv,        "__udivdi3",   { }, { 64, 64, 64 } },
+    { Instruction::URem,        "__umoddi3",   2, { }, { 64, 64, 64 } },
+    { Instruction::UDiv,        "__udivdi3",   2, { }, { 64, 64, 64 } },
 };
 
 void X86_32TargetInfo::getRaiseInstructionsList(RaiseInstructionsList*& List, 
@@ -985,11 +985,11 @@ public:
 };
 
 TargetInfo::RaiseInstructionsList ARMTargetInfo::raiseInstructionsList[] = {
-    { Instruction::URem,        "__umoddi3",   { }, { 64, 64, 64 } },
-    { Instruction::UDiv,        "__udivdi3",   { }, { 64, 64, 64 } },
-    { Instruction::AShr,        "__ashrdi3",   { }, { 64, 64, 64 } },
-    { Instruction::URem,        "__umodsi3",   { }, { 32, 32, 32 } },
-    { Instruction::UDiv,        "__udivsi3",   { }, { 32, 32, 32 } },
+    { Instruction::URem,        "__umoddi3",   2, { }, { 64, 64, 64 } },
+    { Instruction::UDiv,        "__udivdi3",   2, { }, { 64, 64, 64 } },
+    { Instruction::AShr,        "__ashrdi3",   2, { }, { 64, 64, 64 } },
+    { Instruction::URem,        "__umodsi3",   2, { }, { 32, 32, 32 } },
+    { Instruction::UDiv,        "__udivsi3",   2, { }, { 32, 32, 32 } },
 };
 void ARMTargetInfo::getRaiseInstructionsList(RaiseInstructionsList*& List, 
                                                 unsigned &NumRaises) const

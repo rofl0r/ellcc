@@ -15,16 +15,16 @@
 #define HAVE_BLKSIZE
 /** Enable multi-byte characters.
  */
-#define _MB_CAPABLE
+// #define _MB_CAPABLE
 /** Define for formatting with positional arguments.
  */
-#define _WANT_IO_POS_ARGS
+// #define _WANT_IO_POS_ARGS
 /** Define for formatting with long longs.
  */
 #define _WANT_IO_LONG_LONG
 /** Define for formatting with long doubles.
  */
-#define _WANT_IO_LONG_DOUBLE
+// #define _WANT_IO_LONG_DOUBLE
 /** Define for formatting with C99 semantics.
  */
 #define _WANT_IO_C99_FORMATS

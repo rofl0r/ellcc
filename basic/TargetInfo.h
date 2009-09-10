@@ -18,6 +18,7 @@
 #define __STDC_LIMIT_MACROS 1
 #define __STDC_CONSTANT_MACROS 1
 #endif
+#include "llvm/Type.h"
 #include "llvm/Support/DataTypes.h"
 #include "llvm/ADT/StringMap.h"
 #include <vector>
@@ -327,11 +328,12 @@ public:
    */
   static const unsigned NumRaiseTypes = 5;
   struct RaiseInstructionsList {
-    short Instruction;                          // The instruction to match.
-    const char* Name;                           // The function that replaces the instruction.
-    const void* Types[NumRaiseTypes];           // The types of the return value and arguments.
-    const unsigned NumBits[NumRaiseTypes];      // != 0 if an integer type.
-    llvm::FunctionType* FuncType;               // The calculated function type.
+    short Instruction;                                  // The instruction to match.
+    const char* Name;                                   // The function that replaces the instruction.
+    short Args;                                         // The number of arguments.
+    const llvm::Type::TypeID TypeID[NumRaiseTypes];     // The TypeIDs of the return value and arguments.
+    const unsigned NumBits[NumRaiseTypes];              // != 0 if an integer type.
+    llvm::FunctionType* FuncType;                       // The calculated function type.
   };
  
   virtual bool useGlobalsForAutomaticVariables() const { return false; }

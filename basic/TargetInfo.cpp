@@ -417,13 +417,25 @@ bool TargetInfo::validateInputConstraint(const char *Name,
 void TargetInfo::getRaiseInstructionsList(LLVMContext& C, RaiseInstructionsList*& List, 
                                           unsigned &NumRaises) const
 {
-  getRaiseInstructionsList(List, NumRaises);
-  for (unsigned index = 0; index < NumRaises; ++index) {
-    for (unsigned type = 0; type < NumRaiseTypes; ++type) {
-      if (List[index].NumBits[type] && List[index].Types[type] == NULL) {
-        List[index].Types[type] = IntegerType::get(C, List[index].NumBits[type]);
-      }
+    getRaiseInstructionsList(List, NumRaises);
+    for (unsigned index = 0; index < NumRaises; ++index) {
+        const Type* RT = NULL;
+        std::vector<const Type*>args;
+        for (unsigned type = 0; type < List[index].Args + 1; ++type) {
+            const Type* Ty;
+            if (List[index].NumBits[type]) {
+                Ty = IntegerType::get(C, List[index].NumBits[type]);
+            } else {
+                Ty = Type::getPrimitiveType(C, List[index].TypeID[type]);
+            }
+            if (type == 0) {
+                // The return type.
+                RT = Ty;
+            } else {
+                args.push_back(Ty);
+            }
+        }
+        List[index].FuncType = FunctionType::get(RT, args, false);
     }
-  }
 }
 

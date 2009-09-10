@@ -1511,16 +1511,6 @@ static void InitializeRaiseList(Module* M)
 {
     TI->getRaiseInstructionsList(M->getContext(), RaiseList, NumRaises);
     for (unsigned index = 0; index < NumRaises; ++index) {
-        if (RaiseList[index].FuncType == NULL) {
-            assert(RaiseList[index].Types[0]);      // Must have a return type, at least.
-            const Type* RT = (const Type*)RaiseList[index].Types[0];
-            std::vector<const Type*>args;
-            for (unsigned type = 1; RaiseList[index].Types[type]; ++type) {
-                args.push_back((const Type*)RaiseList[index].Types[type]);
-            }
-            RaiseList[index].FuncType = FunctionType::get(RT, args, false);
-        }
-
         // Create a reference to the function for linking.
         M->getOrInsertFunction(RaiseList[index].Name, RaiseList[index].FuncType);
     }
