@@ -1,12 +1,12 @@
 /* Default linker script, for normal executables */
-OUTPUT_FORMAT("elf32-sparc", "elf32-sparc",
-	      "elf32-sparc")
-OUTPUT_ARCH(sparc)
+OUTPUT_FORMAT("elf64-powerpc", "elf64-powerpc",
+	      "elf64-powerpc")
+OUTPUT_ARCH(powerpc:common64)
 ENTRY(_start)
 SECTIONS
 {
   /* Read-only sections, merged into text segment: */
-  PROVIDE (__executable_start = 0x10000); . = 0x10000 + SIZEOF_HEADERS;
+  PROVIDE (__executable_start = 0x10000000); . = 0x10000000 + SIZEOF_HEADERS;
   .interp         : { *(.interp) }
   .note.gnu.build-id : { *(.note.gnu.build-id) }
   .hash           : { *(.hash) }
@@ -38,30 +38,46 @@ SECTIONS
   .rela.dtors     : { *(.rela.dtors) }
   .rel.got        : { *(.rel.got) }
   .rela.got       : { *(.rela.got) }
+  .rela.toc	  : { *(.rela.toc) }
+  .rel.sdata      : { *(.rel.sdata .rel.sdata.* .rel.gnu.linkonce.s.*) }
+  .rela.sdata     : { *(.rela.sdata .rela.sdata.* .rela.gnu.linkonce.s.*) }
+  .rel.sbss       : { *(.rel.sbss .rel.sbss.* .rel.gnu.linkonce.sb.*) }
+  .rela.sbss      : { *(.rela.sbss .rela.sbss.* .rela.gnu.linkonce.sb.*) }
+  .rel.sdata2     : { *(.rel.sdata2 .rel.sdata2.* .rel.gnu.linkonce.s2.*) }
+  .rela.sdata2    : { *(.rela.sdata2 .rela.sdata2.* .rela.gnu.linkonce.s2.*) }
+  .rel.sbss2      : { *(.rel.sbss2 .rel.sbss2.* .rel.gnu.linkonce.sb2.*) }
+  .rela.sbss2     : { *(.rela.sbss2 .rela.sbss2.* .rela.gnu.linkonce.sb2.*) }
   .rel.bss        : { *(.rel.bss .rel.bss.* .rel.gnu.linkonce.b.*) }
   .rela.bss       : { *(.rela.bss .rela.bss.* .rela.gnu.linkonce.b.*) }
   .rel.plt        : { *(.rel.plt) }
   .rela.plt       : { *(.rela.plt) }
+  .rela.tocbss	  : { *(.rela.tocbss) }
   .init           :
   {
     KEEP (*(.init))
-  } =0
+  } =0x60000000
   .text           :
   {
     *(.text .stub .text.* .gnu.linkonce.t.*)
     KEEP (*(.text.*personality*))
     /* .gnu.warning sections are handled specially by elf32.em.  */
     *(.gnu.warning)
-  } =0
+    *(.sfpr .glink)
+  } =0x60000000
   .fini           :
   {
     KEEP (*(.fini))
-  } =0
+  } =0x60000000
   PROVIDE (__etext = .);
   PROVIDE (_etext = .);
   PROVIDE (etext = .);
   .rodata         : { *(.rodata .rodata.* .gnu.linkonce.r.*) }
   .rodata1        : { *(.rodata1) }
+  .sdata2         :
+  {
+    *(.sdata2 .sdata2.* .gnu.linkonce.s2.*)
+  }
+  .sbss2          : { *(.sbss2 .sbss2.* .gnu.linkonce.sb2.*) }
   .eh_frame_hdr : { *(.eh_frame_hdr) }
   .eh_frame       : ONLY_IF_RO { KEEP (*(.eh_frame)) }
   .gcc_except_table   : ONLY_IF_RO { *(.gcc_except_table .gcc_except_table.*) }
@@ -127,8 +143,6 @@ SECTIONS
   .data.rel.ro : { *(.data.rel.ro.local* .gnu.linkonce.d.rel.ro.local.*) *(.data.rel.ro* .gnu.linkonce.d.rel.ro.*) }
   .dynamic        : { *(.dynamic) }
   . = DATA_SEGMENT_RELRO_END (0, .);
-  .got            : { *(.got.plt) *(.got) }
-  .plt            : { *(.plt) }
   .data           :
   {
     *(.data .data.* .gnu.linkonce.d.*)
@@ -136,9 +150,28 @@ SECTIONS
     SORT(CONSTRUCTORS)
   }
   .data1          : { *(.data1) }
+  .toc1		  : ALIGN(8) { *(.toc1) }
+  .opd		  : ALIGN(8) { KEEP (*(.opd)) }
+  .branch_lt	  : ALIGN(8) { *(.branch_lt) }
+  .got		: ALIGN(8) { *(.got .toc) }
+  /* We want the small data sections together, so single-instruction offsets
+     can access them all, and initialized data all before uninitialized, so
+     we can shorten the on-disk segment size.  */
+  .sdata          :
+  {
+    *(.sdata .sdata.* .gnu.linkonce.s.*)
+  }
   _edata = .; PROVIDE (edata = .);
   __bss_start = .;
   __bss_start__ = .;
+  .tocbss	  : ALIGN(8) { *(.tocbss)}
+  .sbss           :
+  {
+    *(.dynsbss)
+    *(.sbss .sbss.* .gnu.linkonce.sb.*)
+    *(.scommon)
+  }
+  .plt            : { *(.plt) }
   .bss            :
   {
    *(.dynbss)
@@ -149,11 +182,11 @@ SECTIONS
       .bss section disappears because there are no input sections.
       FIXME: Why do we need it? When there is no .bss section, we don't
       pad the .data section.  */
-   . = ALIGN(. != 0 ? 8 : 1);
+   . = ALIGN(. != 0 ? 64 / 8 : 1);
   }
   _bss_end__ = . ; __bss_end__ = . ;
-  . = ALIGN(8);
-  . = ALIGN(8);
+  . = ALIGN(64 / 8);
+  . = ALIGN(64 / 8);
   _end = .; PROVIDE (end = .);
   . = DATA_SEGMENT_END (.);
   /* Stabs debugging sections.  */
