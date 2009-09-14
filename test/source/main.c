@@ -1,7 +1,4 @@
-void _exit(int status)
-{
-    for ( ;; ) ;
-}
+#include <unistd.h>
 void exit(int status)
 {
     _exit(status);
