@@ -3116,7 +3116,10 @@ int main(int argc, char **argv)
 
         if (   OutputFilename != ""
             && InpList.size() > 1
-            && (FinalPhase != GENERATION && FinalPhase != ASSEMBLY && FinalPhase != LINKING)) {
+            && (   FinalPhase != GENERATION
+                && FinalPhase != ASSEMBLY
+                && FinalPhase != BCLINKING
+                && FinalPhase != LINKING)) {
                 PrintAndExit("an output file name was specified with multiple input files");
         }
 

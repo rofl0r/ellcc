@@ -3,7 +3,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
-int _fstat(int fd, const void* buf, size_t count)
+int _fstat(int fd, struct stat* buf)
 {
-    return INLINE_SYSCALL(fstat, 3, fd, buf, count);
+    return INLINE_SYSCALL(fstat, 2, fd, buf);
 }
