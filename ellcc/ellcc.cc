@@ -103,6 +103,7 @@ enum FileTypes {
   LINKED,                       ///< A file that has been linked.
   DLL,                          ///< A dynamic library.
   CBE,                          ///< A C backend output file.
+  AA,                           ///< A library specified with -l
   NUM_FILE_TYPES                ///< Always last!
 };
 
@@ -126,6 +127,7 @@ static const char* fileTypes[] = {
   "a file that has been linked",
   "a dynamic library", 
   "a C backend output file",
+  "a library specified with -l",
 };
 
 /** Translation phases.
@@ -327,6 +329,11 @@ static void setupMappings()
     filePhases[A][BCLINKING].action = BCLINK;
     filePhases[A][LINKING].type = A;
     filePhases[A][LINKING].action = LINK;
+
+    filePhases[AA][BCLINKING].type = LINKED;
+    filePhases[AA][BCLINKING].action = BCLINK;
+    filePhases[AA][LINKING].type = AA;
+    filePhases[AA][LINKING].action = LINK;
 }
 
 //===----------------------------------------------------------------------===//
@@ -2049,20 +2056,28 @@ static int Link(const std::string& OutputFilename,
   args.push_back("--hash-style=gnu");
   args.push_back("-o");
   args.push_back(OutputFilename);
-  for (unsigned i = 0; i < InputFilenames.size(); ++i ) {
-      args.push_back(InputFilenames[i]->name.str());
-  }
-            
-  // Add in the library paths
-  for (unsigned index = 0; index < LibPaths.size(); index++) {
-    args.push_back("-L");
-    args.push_back(LibPaths[index]);
+  if (Native) {
+    // Add in the library paths
+    for (unsigned index = 0; index < LibPaths.size(); index++) {
+        args.push_back("-L");
+        args.push_back(LibPaths[index]);
+    }
   }
 
-  // Add the requested options
+  for (unsigned i = 0; i < InputFilenames.size(); ++i ) {
+      if (InputFilenames[i]->type == AA) {
+          if (Native) {
+              args.push_back("-l");
+              args.push_back(InputFilenames[i]->name.str());
+          }
+      } else {
+          args.push_back(InputFilenames[i]->name.str());
+      }
+  }
+            
+    // Add the requested options
   for (unsigned index = 0; index < XLinker.size(); index++) {
-    args.push_back(XLinker[index]);
-    args.push_back(Libraries[index]);
+      args.push_back(XLinker[index]);
   }
 
   // Add the ellcc library paths, which are relative to the ellcc binary.
@@ -2222,10 +2237,6 @@ static void doMulti(Phases phase, std::vector<Input*>& files,
         TheLinker.addPaths(LibPaths);
         TheLinker.addSystemPaths();
 
-        // Remove any consecutive duplicates of the same library...
-        Libraries.erase(std::unique(Libraries.begin(), Libraries.end()),
-                Libraries.end());
-
         bool raisesDone = false;
         for (unsigned i = 0; i < files.size(); ++i) {
             if (files[i]->module) {
@@ -2246,7 +2257,23 @@ static void doMulti(Phases phase, std::vector<Input*>& files,
                 files[i]->name.clear();
                 files[i]->type = consumedType;
             } else {
-                if (LinkFile(files[i]->name)) {
+                if (files[i]->type == AA) {
+                    // A -l library.
+                    if (!Native) {
+                        if (Verbose) {
+                            outs() << "  library " << files[i]->name.str()
+                                << " was sent to the bitcode linker\n";
+                        }
+                        if (LinkAsLibrary) {
+                            TheLinker.getModule()->addLibrary(files[i]->name.str());
+                        } else {
+                            bool isNative;  // RICH?
+                            if (TheLinker.LinkInLibrary(files[i]->name.str(), isNative)) {
+                                PrintAndExit(TheLinker.getLastError());
+                            }
+                        }
+                    }
+                } else if (LinkFile(files[i]->name)) {
                     bool isNative;
                     if(TheLinker.LinkInFile(files[i]->name, isNative)) {
                         Exit(1);
@@ -2260,36 +2287,17 @@ static void doMulti(Phases phase, std::vector<Input*>& files,
                 } else {
                     if (Verbose) {
                         outs() << "  " << files[i]->name.str()
-                             << ", is not a bitcode file and is ignored by the bitcode linker\n";
+                             << " is not a bitcode file and is ignored by the bitcode linker\n";
                     }
                 }
             }
         }
             
-        if (LinkAsLibrary) {
-            // The libraries aren't linked in but are noted as "dependent" in the
-            // module.
-            for (cl::list<std::string>::const_iterator I = Libraries.begin(),
-                    E = Libraries.end(); I != E ; ++I) {
-                TheLinker.getModule()->addLibrary(*I);
-            }
-        } else {
-            // Add the libraries.
-            for (cl::list<std::string>::const_iterator I = Libraries.begin(),
-                    E = Libraries.end(); I != E ; ++I) {
-                bool isNative;  // RICH?
-                if (TheLinker.LinkInLibrary(*I, isNative)) {
-                    PrintAndExit(TheLinker.getLastError());
-                }
-            }
-
-            // Link all the items together
-            Linker::ItemList Items;
-            Linker::ItemList NativeLinkItems;
-            if (TheLinker.LinkInItems(Items, NativeLinkItems) )
-                PrintAndExit(TheLinker.getLastError());
-        }
-
+        // Link all the items together
+        Linker::ItemList Items;
+        Linker::ItemList NativeLinkItems;
+        if (TheLinker.LinkInItems(Items, NativeLinkItems) )
+            PrintAndExit(TheLinker.getLastError());
         Module* module = TheLinker.releaseModule();
 
         // Optimize the module.
@@ -2638,7 +2646,6 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         } else {
             to = sys::Path(input.name.getBasename());
         }
-
 #if RICH
         // Figure out where we are going to send the output...
         std::ostream *Out = NULL;
@@ -2697,6 +2704,11 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
             // This file needs processing during this phase.
             outs() << "  " << fileActions[filePhases[thisType][phase].action].name << " " << input.name.str()
                 << " to become " << fileTypes[nextType] << "\n";
+        }
+
+        std::string ErrMsg;
+        if(to.createTemporaryFileOnDisk(true, &ErrMsg)) {
+            PrintAndExit(ErrMsg);
         }
 
         // Make sure that the Out file gets unlinked from the disk if we get a
@@ -2830,6 +2842,10 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
 
 
         std::string ErrMsg;  
+        if(to.createTemporaryFileOnDisk(true, &ErrMsg)) {
+            PrintAndExit(ErrMsg);
+        }
+
         if(Assemble(to.str(), input.name.str(), ErrMsg) != 0) {
             PrintAndExit(ErrMsg);
         }
@@ -3002,7 +3018,8 @@ int main(int argc, char **argv)
             std::vector<std::string> found;
             findFiles(found, "crt0.o", "lib");
             if (found.size()) {
-                Files.insert(Files.begin(), found[0]);
+                Input input(found[0], O);
+                InpList.push_back(input);
             }
         }
         
@@ -3020,6 +3037,7 @@ int main(int argc, char **argv)
             else
                 filePos = 0;
 
+fprintf(stderr, "filePos = %u, libPos = %u\n", filePos, libPos);
             if (filePos != 0 && (libPos == 0 || filePos < libPos)) {
                 // Add a source file
                 FileTypes type = GetFileType(*fileIt, filePos);
@@ -3046,7 +3064,7 @@ int main(int argc, char **argv)
                 if (Verbose) {
                     outs() << "  adding " << *libIt << " as an input library\n";
                 }
-                Input input(*libIt, A);
+                Input input(*libIt, AA);
                 InpList.push_back(input);
                 ++libIt;
             }
