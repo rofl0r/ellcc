@@ -3037,7 +3037,6 @@ int main(int argc, char **argv)
             else
                 filePos = 0;
 
-fprintf(stderr, "filePos = %u, libPos = %u\n", filePos, libPos);
             if (filePos != 0 && (libPos == 0 || filePos < libPos)) {
                 // Add a source file
                 FileTypes type = GetFileType(*fileIt, filePos);
