@@ -3,7 +3,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-int _lstat(const char* path, struct stat* buf)
+int lstat(const char* path, struct stat* buf)
 {
     return INLINE_SYSCALL(lstat, 2, path, buf);
 }
