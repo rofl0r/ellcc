@@ -1254,7 +1254,7 @@ static void findFiles(std::vector<std::string>& found, std::string what, std::st
         if (path.exists()) {
             found.push_back(path.c_str());
             if (Verbose) {
-                outs() << "  found:" << path.c_str() << "\n";
+                outs() << "  found: " << path.c_str() << "\n";
             }
         }
 
@@ -1272,7 +1272,7 @@ static void findFiles(std::vector<std::string>& found, std::string what, std::st
             if (path.exists()) {
                 found.push_back(path.c_str());
                 if (Verbose) {
-                    outs() << "  found:" << path.c_str() << "\n";
+                    outs() << "  found: " << path.c_str() << "\n";
                 }
             }
         }
@@ -1289,7 +1289,7 @@ static void findFiles(std::vector<std::string>& found, std::string what, std::st
         if (path.exists()) {
             found.push_back(path.c_str());
             if (Verbose) {
-                outs() << "  found:" << path.c_str() << "\n";
+                outs() << "  found: " << path.c_str() << "\n";
             }
         }
 
@@ -1305,7 +1305,7 @@ static void findFiles(std::vector<std::string>& found, std::string what, std::st
         if (path.exists()) {
             found.push_back(path.c_str());
             if (Verbose) {
-                outs() << "  found:" << path.c_str() << "\n";
+                outs() << "  found: " << path.c_str() << "\n";
             }
         }
 
@@ -1321,7 +1321,7 @@ static void findFiles(std::vector<std::string>& found, std::string what, std::st
         if (path.exists()) {
             found.push_back(path.c_str());
             if (Verbose) {
-                outs() << "  found:" << path.c_str() << "\n";
+                outs() << "  found: " << path.c_str() << "\n";
             }
         }
 
@@ -1336,7 +1336,7 @@ static void findFiles(std::vector<std::string>& found, std::string what, std::st
         if (path.exists()) {
             found.push_back(path.c_str());
             if (Verbose) {
-                outs() << "  found:" << path.c_str() << "\n";
+                outs() << "  found: " << path.c_str() << "\n";
             }
         }
     }
@@ -1348,7 +1348,7 @@ static void findFiles(std::vector<std::string>& found, std::string what, std::st
         if (path.exists()) {
             found.push_back(path.c_str());
             if (Verbose) {
-                outs() << "  found:" << path.c_str() << "\n";
+                outs() << "  found: " << path.c_str() << "\n";
             }
         }
     }

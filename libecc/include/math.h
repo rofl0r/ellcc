@@ -3,7 +3,7 @@
 
 _BEGIN_STD_C
 #include <sys/reent.h>
-#include <machine/ieeefp.h>
+#include <ieeefp.h>
 
 union __dmath
 {
@@ -140,10 +140,12 @@ typedef double double_t;
 # define math_errhandling MATH_ERRNO
 #endif
 
+#if RICH
 extern int __isinff(float x);
 extern int __isinfd(double x);
 extern int __isnanf(float x);
 extern int __isnand(double x);
+#endif
 extern int __fpclassifyf(float x);
 extern int __fpclassifyd(double x);
 extern int __signbitf(float x);
@@ -291,6 +293,7 @@ extern float fmaf(float, float, float);
 
 extern float infinityf(void);
 extern float nanf(const char *);
+#if RICH
 #ifndef isnanf
 extern int isnanf(float);
 #endif
@@ -299,6 +302,7 @@ extern int isinff(float);
 #endif
 #ifndef finitef
 extern int finitef(float);
+#endif
 #endif
 extern float copysignf(float, float);
 extern int ilogbf(float);

@@ -208,13 +208,13 @@ int finitef(float);
 #define __ieeefp_isnanf(x) (((*(long *)&(x) & 0x7f800000L)==0x7f800000L) && \
 			    ((*(long *)&(x) & 0x007fffffL)!=0000000000L))
 #endif
-#define isnanf(x)	__ieeefp_isnanf(x)
+#define __isnanf(x)	__ieeefp_isnanf(x)
 
 #ifndef __ieeefp_isinff
 #define __ieeefp_isinff(x) (((*(long *)&(x) & 0x7f800000L)==0x7f800000L) && \
 			    ((*(long *)&(x) & 0x007fffffL)==0000000000L))
 #endif
-#define isinff(x)	__ieeefp_isinff(x)
+#define __isinff(x)	__ieeefp_isinff(x)
 
 #ifndef __ieeefp_finitef
 #define __ieeefp_finitef(x) (((*(long *)&(x) & 0x7f800000L)!=0x7f800000L))
@@ -239,6 +239,25 @@ int finitef(float);
 
 #undef __ieee_double_shape_type
 #define __ieee_double_shape_type __ieee_float_shape_type
+
+#else
+
+#ifndef __ieeefp_isnand
+#define __ieeefp_isnand(x) (((*(long long *)&(x) & 0x7ff0000000000000LL)==0x7ff0000000000000LL) && \
+			    ((*(long long *)&(x) & 0x000fffffffffffffLL)!=000000000000000000LL))
+#endif
+#define __isnand(x)	__ieeefp_isnand(x)
+
+#ifndef __ieeefp_isinfd
+#define __ieeefp_isinfd(x) (((*(long long *)&(x) & 0x7ff0000000000000LL)==0x7ff0000000000000LL) && \
+			    ((*(long long *)&(x) & 0x000fffffffffffffLL)==000000000000000000LL))
+#endif
+#define __isinfd(x)	__ieeefp_isinfd(x)
+
+#ifndef __ieeefp_finited
+#define __ieeefp_finited(x) (((*(long long *)&(x) & 0x7ff0000000000000LL)!=0x7ff0000000000000LL))
+#endif
+#define finited(x)	__ieeefp_finited(x)
 
 #endif /* _DOUBLE_IS_32BITS */
 
