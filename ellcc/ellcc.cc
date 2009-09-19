@@ -2236,17 +2236,11 @@ static void doMulti(Phases phase, std::vector<Input*>& files,
         // Add library paths to the linker
         TheLinker.addPaths(LibPaths);
         TheLinker.addSystemPaths();
-
-        bool raisesDone = false;
+        InitializeRaiseList(TheLinker.getModule());
         for (unsigned i = 0; i < files.size(); ++i) {
             if (files[i]->module) {
                 // We have this module.
                 std::string ErrorMessage;
-                if (!raisesDone) {
-                    // Initialize the support function raise list.
-                    InitializeRaiseList(files[i]->module);
-                    raisesDone = true;
-                }
                 if (TheLinker.LinkInModule(files[i]->module, &ErrorMessage)) {
                     PrintAndExit(ErrorMessage);
                 }
@@ -2700,15 +2694,17 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
             break;
         }
 
+        if (phase != FinalPhase) {
+            std::string ErrMsg;
+            if(to.createTemporaryFileOnDisk(false, &ErrMsg)) {
+                PrintAndExit(ErrMsg);
+            }
+        }
+
         if (Verbose) {
             // This file needs processing during this phase.
             outs() << "  " << fileActions[filePhases[thisType][phase].action].name << " " << input.name.str()
-                << " to become " << fileTypes[nextType] << "\n";
-        }
-
-        std::string ErrMsg;
-        if(to.createTemporaryFileOnDisk(true, &ErrMsg)) {
-            PrintAndExit(ErrMsg);
+                << " to become " << to.c_str() << ", " << fileTypes[nextType] << "\n";
         }
 
         // Make sure that the Out file gets unlinked from the disk if we get a
@@ -2841,9 +2837,11 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         }
 
 
-        std::string ErrMsg;  
-        if(to.createTemporaryFileOnDisk(true, &ErrMsg)) {
-            PrintAndExit(ErrMsg);
+        std::string ErrMsg;
+        if (phase != FinalPhase) {
+            if(to.createTemporaryFileOnDisk(false, &ErrMsg)) {
+                PrintAndExit(ErrMsg);
+            }
         }
 
         if(Assemble(to.str(), input.name.str(), ErrMsg) != 0) {
@@ -2888,10 +2886,10 @@ static void ComputeFeatureMap(TargetInfo& TI, StringMap<bool> &Features)
             PrintAndExit(std::string("error: ") + progname + ": invalid target feature string: " + Name);
         }
         if (!TI.setFeatureEnabled(Features, Name + 1, (Name[0] == '+'))) {
-      fprintf(stderr, "error: clang-cc: invalid target feature name: %s\n", 
-              Name + 1);
-      Exit(1);
-    }
+            fprintf(stderr, "error: clang-cc: invalid target feature name: %s\n", 
+                    Name + 1);
+            Exit(1);
+        }
   }
 }
 
