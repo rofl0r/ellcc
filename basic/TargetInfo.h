@@ -330,7 +330,7 @@ public:
   struct RaiseInstructionsList {
     short Instruction;                                  // The instruction to match.
     const char* Name;                                   // The function that replaces the instruction.
-    short Args;                                         // The number of arguments.
+    unsigned Args;                                      // The number of arguments.
     const llvm::Type::TypeID TypeID[NumRaiseTypes];     // The TypeIDs of the return value and arguments.
     const unsigned NumBits[NumRaiseTypes];              // != 0 if an integer type.
     llvm::FunctionType* FuncType;                       // The calculated function type.

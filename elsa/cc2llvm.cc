@@ -1475,9 +1475,9 @@ void S_asm::cc2llvm(CC2LLVMEnv &env) const
             } else {
                 // Adjust for '+' output constraints.
                 if (modifier) {
-                    asmstr << "${" << index + d.rwConstraints - d.numOutputs << ':' << modifier << "}";
+                    asmstr << "${" << index + d.rwConstraints /* RICH - d.numOutputs */ << ':' << modifier << "}";
                 } else {
-                    asmstr << '$' << index + d.rwConstraints - d.numOutputs ;
+                    asmstr << '$' << index + d.rwConstraints /* RICH - d.numOutputs */ ;
                 }
             }
             continue;

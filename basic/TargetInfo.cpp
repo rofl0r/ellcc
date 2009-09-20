@@ -419,6 +419,8 @@ void TargetInfo::getRaiseInstructionsList(LLVMContext& C, RaiseInstructionsList*
 {
     getRaiseInstructionsList(List, NumRaises);
     for (unsigned index = 0; index < NumRaises; ++index) {
+        if (List[index].FuncType) continue;     // Already done.
+
         const Type* RT = NULL;
         std::vector<const Type*>args;
         for (unsigned type = 0; type < List[index].Args + 1; ++type) {

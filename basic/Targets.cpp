@@ -1023,7 +1023,23 @@ TargetInfo::RaiseInstructionsList ARMTargetInfo::raiseInstructionsList[] = {
     { Instruction::AShr,        "__ashrdi3",   2, { }, { 64, 64, 64 } },
     { Instruction::URem,        "__umodsi3",   2, { }, { 32, 32, 32 } },
     { Instruction::UDiv,        "__udivsi3",   2, { }, { 32, 32, 32 } },
+
+    { Instruction::FAdd,        "__adddf3",
+                                2, { Type::DoubleTyID, Type::DoubleTyID, Type::DoubleTyID }, { } },
+    { Instruction::FDiv,        "__divdf3",
+                                2, { Type::DoubleTyID, Type::DoubleTyID, Type::DoubleTyID }, { } },
+    { Instruction::FMul,        "__muldf3",
+                                2, { Type::DoubleTyID, Type::DoubleTyID, Type::DoubleTyID }, { } },
+    { Instruction::FSub,        "__subdf3",
+                                2, { Type::DoubleTyID, Type::DoubleTyID, Type::DoubleTyID }, { } },
+
+    { Instruction::SIToFP,      "__floatsidf",
+                                1, { Type::DoubleTyID }, { 0, 32 } },
+    { Instruction::FPToSI,      "__fixdfsi",
+                                1, { Type::VoidTyID, Type::DoubleTyID }, { 32 } },
+
 };
+
 void ARMTargetInfo::getRaiseInstructionsList(RaiseInstructionsList*& List, 
                                                 unsigned &NumRaises) const
 {
