@@ -333,6 +333,7 @@ public:
     unsigned Args;                                      // The number of arguments.
     const llvm::Type::TypeID TypeID[NumRaiseTypes];     // The TypeIDs of the return value and arguments.
     const unsigned NumBits[NumRaiseTypes];              // != 0 if an integer type.
+    unsigned short SubclassData;                        // != 0 if SubclassData should me matched.
     llvm::FunctionType* FuncType;                       // The calculated function type.
   };
  

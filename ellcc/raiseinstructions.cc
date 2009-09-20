@@ -127,6 +127,17 @@ bool RaiseInstructions::runOnBasicBlock(BasicBlock &BB) {
     std::pair<MapType::iterator, MapType::iterator> Matches
         = Map.equal_range(I->getOpcode());
     for ( ; Matches.first != Matches.second; ++Matches.first) {
+      // Check for a match of SubclassData.
+      if (isa<CmpInst>(I)) {
+        // SubclassData is the comparison predicate.
+        CmpInst* C = cast<CmpInst>(I);
+        unsigned short SubclassData = (*Matches.first).second->SubclassData;
+        if (SubclassData && SubclassData != C->getPredicate()) {
+            // Predicate must match, if given.
+            continue;
+        }
+      }
+
       // Have a match, compare the result type to the function return type.
       assert((*Matches.first).second->FuncType
              && "RaiseInstructions entry missing FuncType!");
