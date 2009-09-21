@@ -48,7 +48,7 @@ CMPtype __eqdf2(DFtype a, DFtype b)
   return r == 0;
 }
 
-CMPtype __eqdf2(DFtype a, DFtype b)
+CMPtype __nedf2(DFtype a, DFtype b)
 {
   FP_DECL_EX;
   FP_DECL_D(A); FP_DECL_D(B);
