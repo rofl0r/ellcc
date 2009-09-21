@@ -7,7 +7,8 @@ add_library(softfp
     divtf3.c  fixsfdi.c      fixunstfsi.c  floatunditf.c  letf2.c   sqrttf2.c  unordtf2.c
     eqdf2.c   fixsfsi.c      floatdidf.c   floatunsidf.c  muldf3.c  subdf3.c
     eqsf2.c   fixtfdi.c      floatdisf.c   floatunsisf.c  mulsf3.c  subsf3.c
-    eqtf2.c   fixtfsi.c      floatditf.c   floatunsitf.c  multf3.c  subtf3.c)
+    eqtf2.c   fixtfsi.c      floatditf.c   floatunsitf.c  multf3.c  subtf3.c
+    sfp-exceptions.c)
 
 add_custom_command(TARGET softfp POST_BUILD
     COMMAND mkdir -p ${LIBECC_DIR}/../lib/${ELLCC_TARGET}

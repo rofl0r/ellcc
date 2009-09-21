@@ -67,4 +67,4 @@ extern int __sim_exceptions;
 extern int __sim_disabled_exceptions;
 extern int __sim_round_mode;
 
-extern void __simulate_exceptions (int x);
+extern void __simulate_exceptions(int fex);
