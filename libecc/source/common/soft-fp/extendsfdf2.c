@@ -1,5 +1,5 @@
 /* Software floating-point emulation.
-   Return a converted to IEEE double
+   Return a IEEE single converted to IEEE double
    Copyright (C) 1997,1999,2006 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
    Contributed by Richard Henderson (rth@cygnus.com) and

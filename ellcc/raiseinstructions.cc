@@ -128,6 +128,7 @@ bool RaiseInstructions::runOnBasicBlock(BasicBlock &BB) {
         = Map.equal_range(I->getOpcode());
     for ( ; Matches.first != Matches.second; ++Matches.first) {
       // Check for a match of SubclassData.
+      bool cmp = false;
       if (isa<CmpInst>(I)) {
         // SubclassData is the comparison predicate.
         CmpInst* C = cast<CmpInst>(I);
@@ -136,6 +137,8 @@ bool RaiseInstructions::runOnBasicBlock(BasicBlock &BB) {
             // Predicate must match, if given.
             continue;
         }
+        cmp = true;
+        fprintf(stderr, "matched %s\n", (*Matches.first).second->Name);
       }
 
       // Have a match, compare the result type to the function return type.
@@ -143,10 +146,12 @@ bool RaiseInstructions::runOnBasicBlock(BasicBlock &BB) {
              && "RaiseInstructions entry missing FuncType!");
       FunctionType* FT = (*Matches.first).second->FuncType;
       if (FT->getReturnType() != I->getType()) {
+        if (cmp) fprintf(stderr, "matched %s not return type\n", (*Matches.first).second->Name);
         continue;
       }
       // OK, now compare the number of operands to parameters.
       if (FT->getNumParams() != I->getNumOperands()) {
+        if (cmp) fprintf(stderr, "matched %s not operands\n", (*Matches.first).second->Name);
         continue;
       }
       // Finally, all the operand types must match the parameter types.
@@ -159,6 +164,7 @@ bool RaiseInstructions::runOnBasicBlock(BasicBlock &BB) {
       }
       if (NoMatch) {
         // We had a parameter mismatch.
+        if (cmp) fprintf(stderr, "matched %s not parameters\n", (*Matches.first).second->Name);
         continue;
       }
 

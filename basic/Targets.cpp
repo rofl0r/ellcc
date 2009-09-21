@@ -17,6 +17,7 @@
 #include "TargetInfo.h"
 #include "LangOptions.h"
 #include "llvm/Instruction.h"
+#include "llvm/InstrTypes.h"
 #include "llvm/Type.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/APFloat.h"
@@ -1018,11 +1019,24 @@ public:
 };
 
 TargetInfo::RaiseInstructionsList ARMTargetInfo::raiseInstructionsList[] = {
+    { Instruction::SRem,        "__moddi3",   2, { }, { 64, 64, 64 } },
+    { Instruction::SDiv,        "__divdi3",   2, { }, { 64, 64, 64 } },
     { Instruction::URem,        "__umoddi3",   2, { }, { 64, 64, 64 } },
     { Instruction::UDiv,        "__udivdi3",   2, { }, { 64, 64, 64 } },
     { Instruction::AShr,        "__ashrdi3",   2, { }, { 64, 64, 64 } },
+    { Instruction::SRem,        "__modsi3",   2, { }, { 32, 32, 32 } },
+    { Instruction::SDiv,        "__divsi3",   2, { }, { 32, 32, 32 } },
     { Instruction::URem,        "__umodsi3",   2, { }, { 32, 32, 32 } },
     { Instruction::UDiv,        "__udivsi3",   2, { }, { 32, 32, 32 } },
+
+    { Instruction::FAdd,        "__addsf3",
+                                2, { Type::FloatTyID, Type::FloatTyID, Type::FloatTyID }, { } },
+    { Instruction::FDiv,        "__divsf3",
+                                2, { Type::FloatTyID, Type::FloatTyID, Type::FloatTyID }, { } },
+    { Instruction::FMul,        "__mulsf3",
+                                2, { Type::FloatTyID, Type::FloatTyID, Type::FloatTyID }, { } },
+    { Instruction::FSub,        "__subsf3",
+                                2, { Type::FloatTyID, Type::FloatTyID, Type::FloatTyID }, { } },
 
     { Instruction::FAdd,        "__adddf3",
                                 2, { Type::DoubleTyID, Type::DoubleTyID, Type::DoubleTyID }, { } },
@@ -1033,10 +1047,40 @@ TargetInfo::RaiseInstructionsList ARMTargetInfo::raiseInstructionsList[] = {
     { Instruction::FSub,        "__subdf3",
                                 2, { Type::DoubleTyID, Type::DoubleTyID, Type::DoubleTyID }, { } },
 
+    { Instruction::SIToFP,      "__floatsisf",
+                                1, { Type::FloatTyID }, { 0, 32 } },
+    { Instruction::FPToSI,      "__fixsfsi",
+                                1, { Type::VoidTyID, Type::FloatTyID }, { 32 } },
+    { Instruction::UIToFP,      "__floatunsisf",
+                                1, { Type::FloatTyID }, { 0, 32 } },
+
     { Instruction::SIToFP,      "__floatsidf",
                                 1, { Type::DoubleTyID }, { 0, 32 } },
     { Instruction::FPToSI,      "__fixdfsi",
                                 1, { Type::VoidTyID, Type::DoubleTyID }, { 32 } },
+    { Instruction::UIToFP,      "__floatunsidf",
+                                1, { Type::DoubleTyID }, { 0, 32 } },
+
+    { Instruction::FPExt,      "__extendsfdf2",
+                                1, { Type::DoubleTyID, Type::FloatTyID }, { } },
+    { Instruction::FPTrunc,     "__truncdfsf2",
+                                1, { Type::FloatTyID, Type::DoubleTyID }, { } },
+
+    { Instruction::FCmp,        "__eqdf2",
+                                2, { Type::VoidTyID, Type::DoubleTyID, Type::DoubleTyID }, { 1 },
+                                    CmpInst::FCMP_OEQ },
+    { Instruction::FCmp,        "__gedf2",
+                                2, { Type::VoidTyID, Type::DoubleTyID, Type::DoubleTyID }, { 1 },
+                                    CmpInst::FCMP_OGE },
+    { Instruction::FCmp,        "__gtdf2",
+                                2, { Type::VoidTyID, Type::DoubleTyID, Type::DoubleTyID }, { 1 },
+                                    CmpInst::FCMP_OGT },
+    { Instruction::FCmp,        "__ledf2",
+                                2, { Type::VoidTyID, Type::DoubleTyID, Type::DoubleTyID }, { 1 },
+                                    CmpInst::FCMP_OLE },
+    { Instruction::FCmp,        "__ltdf2",
+                                2, { Type::VoidTyID, Type::DoubleTyID, Type::DoubleTyID }, { 1 },
+                                    CmpInst::FCMP_OLT },
 
 };
 
