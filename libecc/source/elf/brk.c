@@ -1,5 +1,6 @@
 #include <sysdep.h>
 #include <unistd.h>
+#include <errno.h>
 
 static void* current;  // The current break pointer.
 
