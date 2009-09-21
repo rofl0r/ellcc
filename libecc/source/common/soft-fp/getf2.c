@@ -45,7 +45,23 @@ CMPtype __getf2(TFtype a, TFtype b)
     FP_SET_EXCEPTION(FP_EX_INVALID);
   FP_HANDLE_EXCEPTIONS;
 
-  return r;
+  return r >= 0;
 }
 
-strong_alias(__getf2, __gttf2);
+CMPtype __gttf2(TFtype a, TFtype b)
+{
+  FP_DECL_EX;
+  FP_DECL_Q(A); FP_DECL_Q(B);
+  CMPtype r;
+
+  FP_UNPACK_RAW_Q(A, a);
+  FP_UNPACK_RAW_Q(B, b);
+  FP_CMP_Q(r, A, B, -2);
+  if (r == -2 && (FP_ISSIGNAN_Q(A) || FP_ISSIGNAN_Q(B)))
+    FP_SET_EXCEPTION(FP_EX_INVALID);
+  FP_HANDLE_EXCEPTIONS;
+
+  return r > 0;
+}
+
+// RICH: strong_alias(__getf2, __gttf2);

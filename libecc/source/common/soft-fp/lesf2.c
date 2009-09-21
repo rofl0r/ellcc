@@ -45,7 +45,23 @@ CMPtype __lesf2(SFtype a, SFtype b)
     FP_SET_EXCEPTION(FP_EX_INVALID);
   FP_HANDLE_EXCEPTIONS;
 
-  return r;
+  return r <= 0;
 }
 
-strong_alias(__lesf2, __ltsf2);
+CMPtype __ltsf2(SFtype a, SFtype b)
+{
+  FP_DECL_EX;
+  FP_DECL_S(A); FP_DECL_S(B);
+  CMPtype r;
+
+  FP_UNPACK_RAW_S(A, a);
+  FP_UNPACK_RAW_S(B, b);
+  FP_CMP_S(r, A, B, 2);
+  if (r == 2 && (FP_ISSIGNAN_S(A) || FP_ISSIGNAN_S(B)))
+    FP_SET_EXCEPTION(FP_EX_INVALID);
+  FP_HANDLE_EXCEPTIONS;
+
+  return r <= 0;
+}
+
+// RICH: strong_alias(__lesf2, __ltsf2);
