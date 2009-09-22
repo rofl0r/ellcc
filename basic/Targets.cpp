@@ -777,8 +777,10 @@ public:
 };
 
 TargetInfo::RaiseInstructionsList X86_32TargetInfo::raiseInstructionsList[] = {
-    { Instruction::URem,        "__umoddi3",   2, { }, { 64, 64, 64 } },
+    { Instruction::SDiv,        "__divdi3",   2, { }, { 64, 64, 64 } },
+    { Instruction::SRem,        "__moddi3",   2, { }, { 64, 64, 64 } },
     { Instruction::UDiv,        "__udivdi3",   2, { }, { 64, 64, 64 } },
+    { Instruction::URem,        "__umoddi3",   2, { }, { 64, 64, 64 } },
 };
 
 void X86_32TargetInfo::getRaiseInstructionsList(RaiseInstructionsList*& List, 
@@ -1023,6 +1025,7 @@ TargetInfo::RaiseInstructionsList ARMTargetInfo::raiseInstructionsList[] = {
     { Instruction::SDiv,        "__divdi3",   2, { }, { 64, 64, 64 } },
     { Instruction::URem,        "__umoddi3",   2, { }, { 64, 64, 64 } },
     { Instruction::UDiv,        "__udivdi3",   2, { }, { 64, 64, 64 } },
+    { Instruction::AShr,        "__ashldi3",   2, { }, { 64, 64, 64 } },
     { Instruction::AShr,        "__ashrdi3",   2, { }, { 64, 64, 64 } },
     { Instruction::SRem,        "__modsi3",   2, { }, { 32, 32, 32 } },
     { Instruction::SDiv,        "__divsi3",   2, { }, { 32, 32, 32 } },
