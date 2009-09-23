@@ -1,3 +1,4 @@
+extern unsigned int __udivsi3(unsigned int, unsigned int);
 #define OPS(t1, t2, type)                       \
 {                                               \
     t1 o1;                                      \
@@ -14,10 +15,15 @@
     o2 = 255;                                   \
     o1 *= o2;                                   \
     if (o1 != 510) { printf("failed %d %d\n", type, 3); exit(type + 3); } \
-    o1 = 255;                                   \
+    o1 = 4;                                   \
     o2 = 2;                                     \
+    o1 = __udivsi3(o1, o2);                     \
+    /* o1 /= o2;  */                                  \
+    if (o1 != 127) { printf("failed %d %d %d\n", type+255, 4, o1); exit(type + 4); } \
+    o1 = 255;                                   \
+    o2 = 7;                                     \
     o1 /= o2;                                   \
-    if (o1 != 127) { printf("failed %d %d\n", type, 4); exit(type + 4); } \
+    if (o1 != 36) { printf("failed %d %d %d\n", type, 4, o1); exit(type + 4); } \
     o1 = 255;                                   \
     o2 = 7;                                     \
     o1 %= o2;                                   \
