@@ -8662,8 +8662,10 @@ Type *E_binary::itcheck_x(Env &env, Expression *&replacement)
       // in/t0533.cc
       return usualArithmeticConversions(env.tfac, lhsType, rhsType);
 
-    case BIN_LSHIFT:              // <<
     case BIN_RSHIFT:              // >>
+        env.elaborateImplicitConversionArgToParam(lhsType->asRval(), e2);
+        break;      // Return the left side type.
+    case BIN_LSHIFT:              // <<
     case BIN_BITAND:              // &
     case BIN_BITXOR:              // ^
     case BIN_BITOR:               // |

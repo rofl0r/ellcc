@@ -19,7 +19,7 @@ extern unsigned int __udivsi3(unsigned int, unsigned int);
     o2 = 2;                                     \
     o1 = __udivsi3(o1, o2);                     \
     /* o1 /= o2;  */                                  \
-    if (o1 != 127) { printf("failed %d %d %d\n", type+255, 4, o1); exit(type + 4); } \
+    if (o1 != 2) { printf("failed %d %d %d\n", type+255, 4, o1); exit(type + 4); } \
     o1 = 255;                                   \
     o2 = 7;                                     \
     o1 /= o2;                                   \
