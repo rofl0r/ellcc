@@ -1,5 +1,5 @@
 /* Software floating-point emulation.
-   Convert a to 32bit unsigned integer
+   Convert a double to 32bit unsigned integer
    Copyright (C) 1997,1999,2006 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
    Contributed by Richard Henderson (rth@cygnus.com) and
