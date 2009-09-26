@@ -1,3 +1,7 @@
+/* NOTE: The following files should all be identical either as copies
+ * or as symbolic links:
+ *      _vfiprintf.c _vfprintf.c _vfsiprintf.c _vsprintf.c
+ */
 /*
  * Copyright (c) 1990 The Regents of the University of California.
  * All rights reserved.

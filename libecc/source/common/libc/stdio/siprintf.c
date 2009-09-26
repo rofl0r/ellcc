@@ -123,4 +123,4 @@ int siprintf(char *str, const char *fmt, ...)
 
 #define INTEGER_ONLY
 #define STRING_ONLY
-#include "_vfprintf.c"
+#include "_vfsiprintf.c"

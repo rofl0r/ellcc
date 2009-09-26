@@ -586,4 +586,4 @@ int sprintf(char *str, const char *fmt, ...)
 }
 
 #define STRING_ONLY
-#include "_vfprintf.c"
+#include "_vsprintf.c"
