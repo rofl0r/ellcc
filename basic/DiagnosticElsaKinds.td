@@ -230,6 +230,8 @@ def err_expr_lhs_dot_arrow_star_ambiguous
             " ambiguously (in more than one way)">;
 def err_expr_address_of_non_lvalue
     : Error<"cannot take address of non-lvalue '%0'">;
+def err_expr_void
+    : Error<"cannot convert 'void' expression to '%0'">;
 def err_expr_dereference_void_star
     : Error<"cannot dereference type '%0'">;
 def err_expr_dereference_non_pointer

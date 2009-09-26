@@ -1244,38 +1244,40 @@ void S_return::cc2llvm(CC2LLVMEnv &env) const
     if (expr) {
         // A return value is specified.
         VDEBUG("Return", loc, std::cerr << expr->expr->asString());
-        xassert(env.returnValue && "return a value in a function returning void");
         int deref;
         llvm::Value* value = expr->cc2llvm(env, deref);
-        VDEBUG("Return type", loc, std::cerr << expr->expr->type->toString() << " deref " << deref);
-        if (   !expr->expr->type->isPointer()
-            && value->getType()->getTypeID() == llvm::Type::PointerTyID
-            && (   value->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID
-                || value->getType()->getContainedType(0)->getTypeID() == llvm::Type::StructTyID)) {
-            if (!llvm::Constant::classof(value)) {
-                ++deref;
+        if (env.returnValue) {
+            // This is a non-void function. Return the value.
+            VDEBUG("Return type", loc, std::cerr << expr->expr->type->toString() << " deref " << deref);
+            if (   !expr->expr->type->isPointer()
+                && value->getType()->getTypeID() == llvm::Type::PointerTyID
+                && (   value->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID
+                    || value->getType()->getContainedType(0)->getTypeID() == llvm::Type::StructTyID)) {
+                if (!llvm::Constant::classof(value)) {
+                    ++deref;
+                }
+                value = env.access(value, false, deref, 0); // RICH: Volatile.
             }
-            value = env.access(value, false, deref, 0); // RICH: Volatile.
-        }
-        if (deref >= 2 && expr->expr->type->isReference()) {
-            // Return a reference as a pointer.
-            value = env.access(value, false, deref, 1); // RICH: Volatile.
-        } else {
-            value = env.access(value, false, deref, 0); // RICH: Volatile.
-        }
-        VDEBUG("S_return source", loc, value->print(std::cerr));
-        if (value->getType()->getTypeID() != llvm::Type::StructTyID) {
-            env.makeCast(loc, expr->expr->type, value, env.functionAST->funcType->retType);
-        }
-        llvm::Value* where = env.returnValue;
+            if (deref >= 2 && expr->expr->type->isReference()) {
+                // Return a reference as a pointer.
+                value = env.access(value, false, deref, 1); // RICH: Volatile.
+            } else {
+                value = env.access(value, false, deref, 0); // RICH: Volatile.
+            }
+            VDEBUG("S_return source", loc, value->print(std::cerr));
+            if (value->getType()->getTypeID() != llvm::Type::StructTyID) {
+                env.makeCast(loc, expr->expr->type, value, env.functionAST->funcType->retType);
+            }
+            llvm::Value* where = env.returnValue;
 #if SRET
-        if (   isComplex(env.functionAST->funcType->retType)
-            || env.functionAST->funcType->retType->isCompoundType()) {
-            where = env.builder.CreateLoad(where, false);     // RICH: Is volatile.
-        }
+            if (   isComplex(env.functionAST->funcType->retType)
+                || env.functionAST->funcType->retType->isCompoundType()) {
+                where = env.builder.CreateLoad(where, false);     // RICH: Is volatile.
+            }
 #endif
-        VDEBUG("S_return destination", loc, where->print(std::cerr));
-        env.builder.CreateStore(value, where, false);	// RICH: isVolatile
+            VDEBUG("S_return destination", loc, where->print(std::cerr));
+            env.builder.CreateStore(value, where, false);	// RICH: isVolatile
+        }
     } else {
         xassert(env.returnValue == NULL && "no return value in a function not returning void");
     }

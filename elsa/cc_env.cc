@@ -5767,6 +5767,11 @@ bool Env::elaborateImplicitConversionArgToParam(Type *paramType, Expression *&ar
 {
   // try to convert the argument to the parameter
   Type *src = arg->getType();
+  if (src->isVoid()) {
+      // The source is void type.
+      env.report(arg->loc, diag::err_expr_void) << paramType->toString();
+      return false;
+  }
   ImplicitConversion ic =
     getImplicitConversion(env,
                           arg->getSpecial(env.LO),
