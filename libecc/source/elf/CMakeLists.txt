@@ -1,7 +1,7 @@
 add_library(target # SHARED
     brk.c chmod.c chown.c close.c errno.c exit.c fchmod.c fchown.c fcntl.c
     fstat.c getpid.c impure.c kill.c lseek.c lstat.c open.c read.c stat.c
-    unlink.c utime.c write.c)
+    unlink.c utime.c utimes.c write.c)
 
 add_custom_command(TARGET target POST_BUILD
     COMMAND mkdir -p ${LIBECC_DIR}/../lib/${ELLCC_TARGET}

@@ -183,6 +183,7 @@ namespace {
 class AlphaTargetInfo : public TargetInfo {
   static const Builtin::Info BuiltinInfo[];
   static const char * const GCCRegNames[];
+  static const TargetInfo::GCCRegAlias GCCRegAliases[];
 public:
   AlphaTargetInfo(const std::string& triple) 
     : TargetInfo(triple) {
@@ -207,11 +208,8 @@ public:
     return "typedef char* __builtin_va_list;";
   }
   virtual void getGCCRegAliases(const GCCRegAlias *&Aliases, 
-                                unsigned &NumAliases) const {
-    // FIXME: Implement.
-    Aliases = 0;
-    NumAliases = 0;
-  }
+                                unsigned &NumAliases) const;
+  virtual char getGCCRegPrefix() const { return '$'; };
 };
 
 const Builtin::Info AlphaTargetInfo::BuiltinInfo[] = {
@@ -238,6 +236,82 @@ void AlphaTargetInfo::getGCCRegNames(const char * const *&Names,
   NumNames = array_lengthof(GCCRegNames);
 }
 
+const TargetInfo::GCCRegAlias AlphaTargetInfo::GCCRegAliases[] = {
+  // While some of these aliases do map to different registers
+  // they still share the same register name.
+  { { "0" }, "r0" }, 
+  { { "1"}, "r1" }, 
+  { { "2" }, "r2" }, 
+  { { "3" }, "r3" }, 
+  { { "4" }, "r4" }, 
+  { { "5" }, "r5" }, 
+  { { "6" }, "r6" }, 
+  { { "7" }, "r7" }, 
+  { { "8" }, "r8" }, 
+  { { "9" }, "r9" }, 
+  { { "10" }, "r10" }, 
+  { { "11" }, "r11" }, 
+  { { "12" }, "r12" }, 
+  { { "13" }, "r13" }, 
+  { { "14" }, "r14" }, 
+  { { "15" }, "r15" }, 
+  { { "16" }, "r16" }, 
+  { { "17" }, "r17" }, 
+  { { "18" }, "r18" }, 
+  { { "19" }, "r19" }, 
+  { { "20" }, "r20" }, 
+  { { "21" }, "r21" }, 
+  { { "22" }, "r22" }, 
+  { { "23" }, "r23" }, 
+  { { "24" }, "r24" }, 
+  { { "25" }, "r25" }, 
+  { { "26" }, "r26" }, 
+  { { "27" }, "r27" }, 
+  { { "28" }, "r28" }, 
+  { { "29" }, "r29" }, 
+  { { "30" }, "r30" }, 
+  { { "31" }, "r31" }, 
+  { { "32" }, "r32" }, 
+  { { "33" }, "r33" }, 
+  { { "34" }, "r34" }, 
+  { { "35" }, "r35" }, 
+  { { "36" }, "r36" }, 
+  { { "37" }, "r37" }, 
+  { { "38" }, "r38" }, 
+  { { "39" }, "r39" }, 
+  { { "40" }, "r40" }, 
+  { { "41" }, "r41" }, 
+  { { "42" }, "r42" }, 
+  { { "43" }, "r43" }, 
+  { { "44" }, "r44" }, 
+  { { "45" }, "r45" }, 
+  { { "46" }, "r46" }, 
+  { { "47" }, "r47" }, 
+  { { "48" }, "r48" }, 
+  { { "49" }, "r49" }, 
+  { { "50" }, "r50" }, 
+  { { "51" }, "r51" }, 
+  { { "52" }, "r52" }, 
+  { { "53" }, "r53" }, 
+  { { "54" }, "r54" }, 
+  { { "55" }, "r55" }, 
+  { { "56" }, "r56" }, 
+  { { "57" }, "r57" }, 
+  { { "58" }, "r58" }, 
+  { { "59" }, "r59" }, 
+  { { "60" }, "r60" }, 
+  { { "61" }, "r61" }, 
+  { { "62" }, "r62" }, 
+  { { "63" }, "r63" }, 
+  { { "64" }, "r64" }, 
+};
+
+void AlphaTargetInfo::getGCCRegAliases(const GCCRegAlias *&Aliases, 
+                                     unsigned &NumAliases) const {
+  Aliases = GCCRegAliases;
+  NumAliases = array_lengthof(GCCRegAliases);
+}
+//
 /// AlphaTargetInfo::getTargetDefines - Return a set of the Alpha-specific #defines
 /// that are not tied to a specific subtarget.
 void AlphaTargetInfo::getTargetDefines(const LangOptions &Opts,
