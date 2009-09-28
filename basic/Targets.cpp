@@ -210,7 +210,29 @@ public:
   virtual void getGCCRegAliases(const GCCRegAlias *&Aliases, 
                                 unsigned &NumAliases) const;
   virtual char getGCCRegPrefix() const { return '$'; };
+
+  virtual void getRaiseInstructionsList(RaiseInstructionsList*& List, 
+                                        unsigned &NumRaises) const;
+  static RaiseInstructionsList raiseInstructionsList[];
 };
+
+TargetInfo::RaiseInstructionsList AlphaTargetInfo::raiseInstructionsList[] = {
+    { Instruction::SDiv,        "__divdi3",   2, { }, { 64, 64, 64 } },
+    { Instruction::SRem,        "__moddi3",   2, { }, { 64, 64, 64 } },
+    { Instruction::UDiv,        "__udivdi3",   2, { }, { 64, 64, 64 } },
+    { Instruction::URem,        "__umoddi3",   2, { }, { 64, 64, 64 } },
+    { Instruction::SRem,        "__modsi3",   2, { }, { 32, 32, 32 } },
+    { Instruction::SDiv,        "__divsi3",   2, { }, { 32, 32, 32 } },
+    { Instruction::URem,        "__umodsi3",   2, { }, { 32, 32, 32 } },
+    { Instruction::UDiv,        "__udivsi3",   2, { }, { 32, 32, 32 } },
+};
+
+void AlphaTargetInfo::getRaiseInstructionsList(RaiseInstructionsList*& List, 
+                                                unsigned &NumRaises) const
+{
+  List = raiseInstructionsList;
+  NumRaises = array_lengthof(raiseInstructionsList);
+}
 
 const Builtin::Info AlphaTargetInfo::BuiltinInfo[] = {
 #define BUILTIN(ID, TYPE, ATTRS, ...) { #ID, TYPE, ATTRS, 0, false, { __VA_ARGS__ } },
