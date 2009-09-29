@@ -16,7 +16,7 @@ asm(
 "       ldl     $16, 16($30)\n"         // Get argc ...
 "       lda     $17, 24($30)\n"         // ... and argv.
 // RICH: Calculate environ.
-"       ldq     $27,_estart($29)\n"
+"       ldq     $27,_estart($29) !literal\n"
 "       jsr     $26,($27),0\n"
 "       br      .\n"                    // Never gets here.
 "       .end     _start\n"
