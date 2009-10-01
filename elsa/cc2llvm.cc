@@ -1415,6 +1415,59 @@ void S_asm::cc2llvm(CC2LLVMEnv &env) const
 
     stringBuilder asmstr;       // The built-up asm string.
     const char* cp = (const char*)d.text->data->getDataC();
+    const char* ap = strchr(cp, '{');
+    const char* nap = cp;
+    stringBuilder altString;
+    while (ap) {
+        /* Select between syntax alternatives.
+         * Used to support different assembly language syntax options
+         * for a target. Options are numbered 0..N.
+         * An option is of the form {opt0|opt1|...|optN}.
+         */
+
+        // Add the leading substring.
+        altString.append(nap, ap - cp);
+        ++ap;
+        int syntax = env.TI.getTargetSyntax();
+        while (syntax && *ap && *ap != '}') {
+            // Find the appropriate alternative.
+            if (*ap == '|') {
+                // A new syntax alternative.
+                --syntax;
+            }
+            ++ap;
+        }
+        // ap points to the syntax alternative.
+        while (*ap && *ap != '|' && *ap != '}') {
+            // Gather the alternative.
+            altString << *ap++;
+        }
+
+        // Get to the end of the alternatives.
+        while (*ap && *ap != '}') {
+            ++ap;
+        }
+
+        // A simple syntax check.
+        if (*ap != '}') {
+            // RICH: error message.
+            ap = NULL;
+        } else {
+            ++ap;
+            // Any more?
+            nap = ap;
+            ap = strchr(ap, '{');
+            if (ap == NULL) {
+                // Add the trailing substring.
+                altString << nap;
+            }
+        }
+        
+        // Point to the alternative string.
+        cp = altString.c_str();
+    }
+    fprintf(stderr, "asm = %s\n", cp);
+    
     // Now we can walk through the assembly language string translating it.
     while (*cp) {
         if (*cp == '$') {

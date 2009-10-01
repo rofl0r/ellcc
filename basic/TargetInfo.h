@@ -295,6 +295,10 @@ public:
   /// llvm intrinsics.
   virtual const char *getTargetPrefix() const = 0;
     
+  /// getTargetSyntax - Return an integer specifying the syntax
+  /// used by the target assembler.
+  virtual const int getTargetSyntax() { return 0; }
+  
   /// getTargetTriple - Return the target triple of the primary target.
   const char *getTargetTriple() const {
     return Triple.c_str();
