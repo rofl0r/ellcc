@@ -1426,7 +1426,7 @@ void S_asm::cc2llvm(CC2LLVMEnv &env) const
          */
 
         // Add the leading substring.
-        altString.append(nap, ap - cp);
+        altString.append(nap, ap - nap);
         ++ap;
         int syntax = env.TI.getTargetSyntax();
         while (syntax && *ap && *ap != '}') {
