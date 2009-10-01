@@ -1466,7 +1466,6 @@ void S_asm::cc2llvm(CC2LLVMEnv &env) const
         // Point to the alternative string.
         cp = altString.c_str();
     }
-    fprintf(stderr, "asm = %s\n", cp);
     
     // Now we can walk through the assembly language string translating it.
     while (*cp) {
