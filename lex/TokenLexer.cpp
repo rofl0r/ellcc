@@ -382,6 +382,7 @@ void TokenLexer::Lex(Token &Tok) {
 bool TokenLexer::PasteTokens(Token &Tok) {
   llvm::SmallVector<char, 128> Buffer;
   const char *ResultTokStrPtr = 0;
+  SourceLocation ResultLocation = Tokens[CurToken].getLocation();
   do {
     // Consume the ## operator.
     SourceLocation PasteOpLoc = Tokens[CurToken].getLocation();
@@ -494,6 +495,7 @@ bool TokenLexer::PasteTokens(Token &Tok) {
     Tok = Result;
   } while (!isAtEnd() && Tokens[CurToken].is(tok::hashhash));
   
+  Tok.setLocation(ResultLocation);
   // Now that we got the result token, it will be subject to expansion.  Since
   // token pasting re-lexes the result token in raw mode, identifier information
   // isn't looked up.  As such, if the result is an identifier, look up id info.
