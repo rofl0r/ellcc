@@ -110,11 +110,6 @@ void CC2LLVMEnv::EmitStopPoint(SourceLocation loc)
         SourceManager SM;
         checkCurrentBlock();
         SourceLocation sloc = SM.getSpellingLoc(loc);
-        if (loc != sloc) {
-            // Add a stoppoint to the original source location.
-            DI->setLocation(loc);
-            DI->EmitStopPoint(function, builder);
-        }
         DI->setLocation(sloc);
         DI->EmitStopPoint(function, builder);
     }

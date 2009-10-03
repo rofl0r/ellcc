@@ -2929,8 +2929,7 @@ int main(int argc, char **argv)
         }
 
         // RICH: Temporary work around.
-        LLVMContext& context = getGlobalContext();
-        // LLVMContext context;
+        LLVMContext context;
         
         // Parse the command line options.
         cl::ParseCommandLineOptions(argc, argv, "C/C++ compiler\n");
