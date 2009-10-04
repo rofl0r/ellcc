@@ -1,9 +1,9 @@
 #!/bin/sh
 cd www.$1
 DIR=`pwd`
-FILES=`echo *.html`
+FILES=`echo *`
 cd ..
 cd ../web/$1
 for file in $FILES; do
-    ln -sf $DIR/$file $file
+    ln -sfT $DIR/$file $file
 done
