@@ -1201,7 +1201,7 @@ failparse k0115.cc "using own member function"
 failparse k0116.cc "template parameter default instantiating template class"
 failparse k0117.cc "class templatized on int, copy constructor"
 testparse k0118.cc "typedef struct { } *foo"
-testparse k0119.cc "64-bit stuff"
+failparse k0119.cc "64-bit stuff"
 failparse k0120.cc "confusion between function template decl and return type"
 
 ### </quarl-testcases-c++>
