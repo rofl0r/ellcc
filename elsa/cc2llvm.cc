@@ -23,20 +23,24 @@
 #include "llvm/Instructions.h"
 #include "llvm/InlineAsm.h"
 #include "llvm/Intrinsics.h"
-#include "llvm/Support/MathExtras.h"
-#include "llvm/Analysis/Verifier.h"
 #include "llvm/Type.h"
+#include "llvm/Analysis/Verifier.h"
+#include "llvm/Support/MathExtras.h"
+#include "llvm/Support/raw_ostream.h"
 
 using namespace ellcc;
 
 #define SRET 1
 
 //#define E_FIELDACC_DEBUG
-#if 0
+#if 1
 // Really verbose debugging.
-#define VDEBUG(who, where, what) std::cerr << toString(where) << ": " << who << " "; what; std::cerr << "\n"
+// #define VDEBUG(who, where, what) std::cerr << toString(where) << ": " << who << " "; what; std::cerr << "\n"
+#define VDEBUG(who, where, what)
+#define EDEBUG(who, where, what) llvm::errs() << toString(where).c_str() << ": " << who << " "; what; llvm::errs() << "\n"
 #else
 #define VDEBUG(who, where, what)
+#define EDEBUG(who, where, what)
 #endif
 
 // -------------------- CC2LLVMEnv ---------------------
@@ -1761,8 +1765,8 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, int& deref) const
     std::vector<llvm::Value*> parameters;
 
     // RICH: env.EmitStopPoint(loc);
-    VDEBUG("E_funCall function", loc, std::cerr << func->asString());
-    VDEBUG("E_funCall func type", loc, std::cerr << func->type->toString());
+    EDEBUG("E_funCall function", loc, llvm::errs() << func->asString().c_str());
+    EDEBUG("E_funCall func type", loc, llvm::errs() << func->type->toString().c_str());
     FunctionType *ft;
     if (func->type->isPtrOrRef()) {
         ft = func->type->getAtType()->getAtType()->asFunctionType();
@@ -1820,7 +1824,7 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, int& deref) const
         bool ref = parameter && parameter->type && parameter->type->isReference();
         int deref = 0;
         llvm::Value* param = arg->expr->cc2llvm(env, deref);
-        VDEBUG("Param", loc, std::cerr << (arg->expr->type->isReference() ? "&" : "") << arg->expr->asString() << " "; param->print(std::cerr));
+        EDEBUG("Param", loc, llvm::errs() << (arg->expr->type->isReference() ? "&" : "") << arg->expr->asString().c_str() << " "; param->print(llvm::errs()));
         if (accessValue(param) || arg->expr->isE_fieldAcc()) {
             param = env.access(param, false, deref, ref ? 1 : 0);                 // RICH: Volatile.
         }
