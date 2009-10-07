@@ -1828,7 +1828,7 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, int& deref) const
         if (accessValue(param) || arg->expr->isE_fieldAcc()) {
             param = env.access(param, false, deref, ref ? 1 : 0);                 // RICH: Volatile.
         }
-        VDEBUG("Param after", loc, param->print(std::cerr));
+        EDEBUG("Param after", loc, param->print(llvm::errs()));
         if (   param->getType()->getTypeID() == llvm::Type::ArrayTyID
             || (   param->getType()->getTypeID() == llvm::Type::PointerTyID
                 && param->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID)) {
@@ -1843,7 +1843,7 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, int& deref) const
             VDEBUG("Param struct", loc, param->print(std::cerr));
         }
         parameters.push_back(param);
-        VDEBUG("Param", loc, param->print(std::cerr));
+        EDEBUG("Param sent", loc, param->print(llvm::errs()));
     }
 
     deref = 0;
