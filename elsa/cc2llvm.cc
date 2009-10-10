@@ -1866,6 +1866,7 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, int& deref) const
         ++deref;
     }
     function = env.access(function, false, deref);                 // RICH: Volatile.
+    EDEBUG("E_funCall llvm function", loc, function->getType()->print(llvm::errs()));
     llvm::Value* result = env.builder.CreateCall(function, parameters.begin(), parameters.end());
 #if SRET
     // RICH: sret
