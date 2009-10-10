@@ -2428,8 +2428,8 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
             (*PP.get()).EnterMainSourceFile();
             int result = elsa.parse(*PP.get(),
                                     input.name.c_str(), to.c_str(),
-                                    input.module, ParseOnly, context, input.LO,
-                                    true); // RICH: DebugOutput);
+                                    input.module, ParseOnly, *new llvm::LLVMContext, input.LO,
+                                    DebugOutput);
             if (result) {
                 Exit(result);
             }
@@ -2456,7 +2456,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         if (input.module == NULL) {
             // Load the input module...
             if (MemoryBuffer *Buffer = MemoryBuffer::getFileOrSTDIN(to.str(), &ErrorMessage)) {
-                input.module = ParseBitcodeFile(Buffer, context, &ErrorMessage);
+                input.module = ParseBitcodeFile(Buffer, *new llvm::LLVMContext, &ErrorMessage);
                 delete Buffer;
             }
         }
