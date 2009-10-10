@@ -35,11 +35,9 @@ using namespace ellcc;
 //#define E_FIELDACC_DEBUG
 #if 1
 // Really verbose debugging.
-// #define VDEBUG(who, where, what) std::cerr << toString(where) << ": " << who << " "; what; std::cerr << "\n"
-#define VDEBUG(who, where, what)
+// #define EDEBUG(who, where, what) std::cerr << toString(where) << ": " << who << " "; what; std::cerr << "\n"
 #define EDEBUG(who, where, what) llvm::errs() << toString(where).c_str() << ": " << who << " "; what; llvm::errs() << "\n"
 #else
-#define VDEBUG(who, where, what)
 #define EDEBUG(who, where, what)
 #endif
 
@@ -185,7 +183,7 @@ llvm::Value* CC2LLVMEnv::checkCondition(SourceLocation loc, llvm::Value* value, 
     value = access(value, false, deref);                 // RICH: Volatile.
 
     const llvm::Type* ctype = value->getType();
-    VDEBUG("checkCondition", loc, ctype->print(std::cerr); std::cerr << " "; value->print(std::cerr));
+    EDEBUG("checkCondition", loc, ctype->print(llvm::errs()); std::cerr << " "; value->print(llvm::errs()));
     if (ctype != llvm::Type::getInt1Ty(C))
     {
         // Not a boolean, check for non-zero.
@@ -221,7 +219,7 @@ llvm::Value* CC2LLVMEnv::checkCondition(SourceLocation loc, llvm::Value* value, 
 llvm::Value* CC2LLVMEnv::checkCondition(Expression* cond)
 {
     int deref;
-    VDEBUG("checkCondition", cond->loc, std::cerr << cond->asString() << "\n");
+    EDEBUG("checkCondition", cond->loc, std::cerr << cond->asString() << "\n");
     llvm::Value* value = cond->cc2llvm(*this, deref);
     return checkCondition(cond->loc, value, deref);
 }
@@ -267,7 +265,7 @@ const llvm::Type* CC2LLVMEnv::makeTypeSpecifier(SourceLocation loc, Type *t)
             type = llvm::IntegerType::get(C, TI.CharWidth());
 	}
 
-        VDEBUG("makeTypeSpecifier pointer", loc, type->print(std::cerr));
+        EDEBUG("makeTypeSpecifier pointer", loc, type->print(llvm::errs()));
 	xassert(type != NULL && "A NULL type encountered");
         type = llvm::PointerType::get(type, 0);	// RICH: Address space.
         break;
@@ -311,7 +309,7 @@ const llvm::Type* CC2LLVMEnv::makeTypeSpecifier(SourceLocation loc, Type *t)
         break;
     }
 
-    VDEBUG("makeTypeSpecifier done", loc, type->print(std::cerr));
+    EDEBUG("makeTypeSpecifier done", loc, type->print(llvm::errs()));
     return type;
 }
 
@@ -337,7 +335,7 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLocation loc, Atomic
 	case ST_WCHAR_T:
 	case ST_BOOL:
 	    // Define an integer  or boolean type.
-            VDEBUG("makeAtomicTypeSpecifier int", loc, std::cerr << "size "
+            EDEBUG("makeAtomicTypeSpecifier int", loc, std::cerr << "size "
                                                                  << at->sizeInBits(TI)
                                                                  << " type "
                                                                  << at->toString());
@@ -366,17 +364,17 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLocation loc, Atomic
             break;
 
 	case ST_FLOAT_COMPLEX:          // GNU/C99 (see doc/complex.txt)
-            VDEBUG("makeAtomicTypeSpecifier complex", loc, at->toString());
+            EDEBUG("makeAtomicTypeSpecifier complex", loc, at->toString());
             type = getTypeForFormat(C, TI.getFloatFormat());
             type = llvm::StructType::get(C, type, type, NULL);
             break;
         case ST_DOUBLE_COMPLEX:         // GNU/C99
-            VDEBUG("makeAtomicTypeSpecifier complex", loc, at->toString());
+            EDEBUG("makeAtomicTypeSpecifier complex", loc, at->toString());
             type = getTypeForFormat(C, TI.getDoubleFormat());
             type = llvm::StructType::get(C, type, type, NULL);
             break;
         case ST_LONG_DOUBLE_COMPLEX:    // GNU/C99
-            VDEBUG("makeAtomicTypeSpecifier complex", loc, at->toString());
+            EDEBUG("makeAtomicTypeSpecifier complex", loc, at->toString());
             type = getTypeForFormat(C, TI.getDoubleFormat());
             // RICH: type = getTypeForFormat(C, TI.getLongDoubleFormat());
             type = llvm::StructType::get(C, type, type, NULL);
@@ -394,7 +392,7 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLocation loc, Atomic
     case AtomicType::T_COMPOUND: {
         CompoundType *ct = at->asCompoundType();
 	type = compounds.get(ct);
-        VDEBUG("makeAtomicTypeSpecifier compound", loc, type->print(std::cerr));
+        EDEBUG("makeAtomicTypeSpecifier compound", loc, type->print(llvm::errs()));
 	if (type) {
 	    // We already have this one.
 	    break;
@@ -417,7 +415,7 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLocation loc, Atomic
             const llvm::Type* type = NULL;
             SFOREACH_OBJLIST(Variable, ct->dataMembers, iter) {
                 Variable const *v = iter.data();
-                VDEBUG("union member", v->loc, std::cerr << v->toString());
+                EDEBUG("union member", v->loc, std::cerr << v->toString());
 	        const llvm::Type* mtype = makeTypeSpecifier(v->loc, v->type);
                 uint64_t msize = TD.getTypeSizeInBits(mtype);
                 if (msize > size) {
@@ -448,7 +446,7 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLocation loc, Atomic
             int i = 0;
             SFOREACH_OBJLIST(Variable, ct->dataMembers, iter) {
                 Variable const *v = iter.data();
-                VDEBUG("member", v->loc, std::cerr << v->toString());
+                EDEBUG("member", v->loc, std::cerr << v->toString());
                 const llvm::IntegerType* itype = llvm::IntegerType::get(C, TI.IntWidth());
                 members.add(v, llvm::ConstantInt::get(itype, i++));
 	        fields.push_back(makeTypeSpecifier(v->loc, v->type));
@@ -458,7 +456,7 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLocation loc, Atomic
 	llvm::StructType* st = llvm::StructType::get(C, fields, false);	// RICH: isPacked
         llvm::cast<llvm::OpaqueType>(fwd.get())->refineAbstractTypeTo(st);
 	type = llvm::cast<llvm::Type>(fwd.get());
-        VDEBUG("makeAtomicTypeSpecifier compound done", loc, type->print(std::cerr));
+        EDEBUG("makeAtomicTypeSpecifier compound done", loc, type->print(llvm::errs()));
         compounds.add(ct, type);
 
         // Now, look for static members and methods.
@@ -518,7 +516,7 @@ const llvm::Type* CC2LLVMEnv::makeAtomicTypeSpecifier(SourceLocation loc, Atomic
         break;
     }
 
-    VDEBUG("makeAtomicTypeSpecifier done", loc, type->print(std::cerr));
+    EDEBUG("makeAtomicTypeSpecifier done", loc, type->print(llvm::errs()));
     return type;
 }
 
@@ -541,7 +539,7 @@ const llvm::Type* CC2LLVMEnv::makeParameterTypes(FunctionType *ft,
 	const llvm::Type* type = makeTypeSpecifier(param->loc, param->type);
 	// type will be NULL if a "..." is encountered in the parameter list.
 	if (type) {
-            VDEBUG("makeParameters", param->loc, type->print(std::cerr));
+            EDEBUG("makeParameters", param->loc, type->print(llvm::errs()));
             args.push_back(type);
         }
     }
@@ -554,7 +552,7 @@ llvm::Value* CC2LLVMEnv::declaration(const Variable* var, llvm::Value* init, int
     llvm::Value* value = NULL;
     // Create the full generated declaration.
     const llvm::Type* type = makeTypeSpecifier(var->loc, var->type);
-    VDEBUG("declaration", var->loc, std::cerr << toString(var->flags) << " " << var->toString());
+    EDEBUG("declaration", var->loc, std::cerr << toString(var->flags) << " " << var->toString());
     if (var->type->getTag() == Type::T_FUNCTION) {
 #if RICH
         if (!var->hasFlag(DF_REFERENCED)) {
@@ -593,9 +591,9 @@ llvm::Value* CC2LLVMEnv::declaration(const Variable* var, llvm::Value* init, int
             init = llvm::Constant::getNullValue(type);
         }
         llvm::GlobalVariable* gv = (llvm::GlobalVariable*)variables.get(var);   // RICH: cast
-        VDEBUG("global type", var->loc, type->print(std::cerr));
+        EDEBUG("global type", var->loc, type->print(llvm::errs()));
         if (init) {
-            VDEBUG("global initializer", var->loc, init->print(std::cerr));
+            EDEBUG("global initializer", var->loc, init->print(llvm::errs()));
         }
         if (gv == NULL) {
             gv = new llvm::GlobalVariable(*mod, type, false,	// RICH: isConstant
@@ -653,8 +651,8 @@ void CC2LLVMEnv::constructor(llvm::Value* object, Statement* ctorStatement)
       
 void CC2LLVMEnv::constructor(llvm::Value* object, const E_constructor* cons)
 {
-    VDEBUG("constructor", cons->loc, std::cerr << cons->asString() << " " << cons->ctorVar->toString());
-    VDEBUG("constructor retObj", cons->loc, std::cerr << cons->retObj->asString());
+    EDEBUG("constructor", cons->loc, std::cerr << cons->asString() << " " << cons->ctorVar->toString());
+    EDEBUG("constructor retObj", cons->loc, std::cerr << cons->retObj->asString());
     std::vector<llvm::Value*> parameters;
     // RICH: int deref = 0;
     // RICH: object = access(object, false, deref);                 // RICH: Volatile.
@@ -662,11 +660,11 @@ void CC2LLVMEnv::constructor(llvm::Value* object, const E_constructor* cons)
     FAKELIST_FOREACH(ArgExpression, cons->args, arg) {
         int deref;
         llvm::Value* param = arg->expr->cc2llvm(*this, deref);
-        VDEBUG("Constructor", arg->expr->loc, param->print(std::cerr));
+        EDEBUG("Constructor", arg->expr->loc, param->print(llvm::errs()));
         if (accessValue(param)) {
             param = access(param, false, deref);                 // RICH: Volatile.
         }
-        VDEBUG("Constructor after", arg->expr->loc, param->print(std::cerr));
+        EDEBUG("Constructor after", arg->expr->loc, param->print(llvm::errs()));
         if (   param->getType()->getTypeID() == llvm::Type::ArrayTyID
                 || (   param->getType()->getTypeID() == llvm::Type::PointerTyID
                     && param->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID)) {
@@ -676,14 +674,14 @@ void CC2LLVMEnv::constructor(llvm::Value* object, const E_constructor* cons)
             param = builder.CreateBitCast(param, type);
         }
         parameters.push_back(param);
-        VDEBUG("Param", arg->expr->loc, param->print(std::cerr));
+        EDEBUG("Param", arg->expr->loc, param->print(llvm::errs()));
     }
 
     llvm::Value* function = variables.get(cons->ctorVar);
     xassert(function && "An undeclared constructor has been referenced");
     // RICH: deref = 0;
     // RICH: function = access(function, false, deref);                 // RICH: Volatile.
-    VDEBUG("CreateCall constructor", cons->ctorVar->loc, function->print(std::cerr));
+    EDEBUG("CreateCall constructor", cons->ctorVar->loc, function->print(llvm::errs()));
     builder.CreateCall(function, parameters.begin(), parameters.end());
 }
 
@@ -751,7 +749,7 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
     env.function->setCallingConv(llvm::CallingConv::C); // RICH: Calling convention.
     env.variables.add(nameAndParams->var, env.function);
 
-    VDEBUG("Function", nameAndParams->var->loc, std::cerr << nameAndParams->var->toString() << " "; returnType->print(std::cerr));
+    EDEBUG("Function", nameAndParams->var->loc, std::cerr << nameAndParams->var->toString() << " "; returnType->print(llvm::errs()));
     const Function* oldFunctionAST = env.functionAST;	// Handle nested functions.
     env.functionAST = this;
     env.entryBlock = llvm::BasicBlock::Create(env.C, "entry", env.function, NULL);
@@ -796,15 +794,15 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
         llvm::Value* arg = llargs++;
         // Make space for the argument.
         const llvm::Type* type = arg->getType();
-        VDEBUG("Function arg", param->loc, type->print(std::cerr));
+        EDEBUG("Function arg", param->loc, type->print(llvm::errs()));
         if (first && receiver && param != receiver) {
             // Yuck! The receiver is not explicit. I think it should be.
             llvm::AllocaInst* addr = env.createTempAlloca(type, receiver->Name(env.TI));
             // Remember where the argument can be retrieved.
             env.variables.add(receiver, addr);
             // Store the argument for later use.
-            VDEBUG("Function receiver source", receiver->loc, arg->print(std::cerr));
-            VDEBUG("Function receiver destination", receiver->loc, addr->print(std::cerr));
+            EDEBUG("Function receiver source", receiver->loc, arg->print(llvm::errs()));
+            EDEBUG("Function receiver destination", receiver->loc, addr->print(llvm::errs()));
             env.builder.CreateStore(arg, addr, false);	// RICH: IsVolatile.
             // Do the next argument.
             arg = llargs++;
@@ -818,8 +816,8 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
 	    // Remember where the argument can be retrieved.
             env.variables.add(param, addr);
 	    // Store the argument for later use.
-            VDEBUG("Function arg source", param->loc, arg->print(std::cerr));
-            VDEBUG("Function arg destination", param->loc, addr->print(std::cerr));
+            EDEBUG("Function arg source", param->loc, arg->print(llvm::errs()));
+            EDEBUG("Function arg destination", param->loc, addr->print(llvm::errs()));
 	    env.builder.CreateStore(arg, addr, false);	// RICH: IsVolatile.
             if (env.DI) {
                 env.DI->setLocation(param->loc);
@@ -829,18 +827,18 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
     }
 
     if (inits->isNotEmpty()) {
-        VDEBUG("member init for", nameAndParams->var->loc, std::cerr << nameAndParams->var->toString());
+        EDEBUG("member init for", nameAndParams->var->loc, std::cerr << nameAndParams->var->toString());
         FAKELIST_FOREACH(MemberInit, inits, init) {
             if (init->member) {
-                VDEBUG("member init", init->member->loc, std::cerr << init->member->toString());
+                EDEBUG("member init", init->member->loc, std::cerr << init->member->toString());
             }
             if(init->base) {
-                VDEBUG("base init", nameAndParams->var->loc, std::cerr << init->base->toString());
+                EDEBUG("base init", nameAndParams->var->loc, std::cerr << init->base->toString());
             }
 
             Expression *expr = NULL;
             FAKELIST_FOREACH(ArgExpression, init->args, arg) {
-                VDEBUG("member init arg", arg->expr->loc, std::cerr << arg->expr->asString());
+                EDEBUG("member init arg", arg->expr->loc, std::cerr << arg->expr->asString());
                 expr = arg->expr;
             }
 
@@ -899,8 +897,8 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
         if (isMain) {
             // Default return value.
             llvm::Constant* nullInt = llvm::Constant::getNullValue(returnType);
-            VDEBUG("Store4 source", nameAndParams->var->loc, nullInt->print(std::cerr));
-            VDEBUG("Store4 destination", nameAndParams->var->loc, env.returnValue->print(std::cerr));
+            EDEBUG("Store4 source", nameAndParams->var->loc, nullInt->print(llvm::errs()));
+            EDEBUG("Store4 destination", nameAndParams->var->loc, env.returnValue->print(llvm::errs()));
             env.builder.CreateStore(nullInt, env.returnValue, false);
         }
 
@@ -1034,7 +1032,7 @@ void S_default::cc2llvm(CC2LLVMEnv &env) const
 
 void S_expr::cc2llvm(CC2LLVMEnv &env) const
 {
-    VDEBUG("Expr", loc, std::cerr << expr->expr->asString());
+    EDEBUG("Expr", loc, std::cerr << expr->expr->asString());
     int deref;
     env.EmitStopPoint(loc);
     expr->cc2llvm(env, deref);
@@ -1202,7 +1200,7 @@ void S_for::cc2llvm(CC2LLVMEnv &env) const
 
     // Generate the test.
     const CN_expr* condition = cond->asCN_exprC();
-    VDEBUG("S_for cond", loc, std::cerr << condition->expr->expr->asString());
+    EDEBUG("S_for cond", loc, std::cerr << condition->expr->expr->asString());
     llvm::Value* value = env.checkCondition(condition->expr->expr);
     env.builder.CreateCondBr(value, bodyBlock, env.nextBlock);
     env.currentBlock = NULL;
@@ -1249,12 +1247,12 @@ void S_return::cc2llvm(CC2LLVMEnv &env) const
     env.EmitStopPoint(loc);
     if (expr) {
         // A return value is specified.
-        VDEBUG("Return", loc, std::cerr << expr->expr->asString());
+        EDEBUG("Return", loc, std::cerr << expr->expr->asString());
         int deref;
         llvm::Value* value = expr->cc2llvm(env, deref);
         if (env.returnValue) {
             // This is a non-void function. Return the value.
-            VDEBUG("Return type", loc, std::cerr << expr->expr->type->toString() << " deref " << deref);
+            EDEBUG("Return type", loc, std::cerr << expr->expr->type->toString() << " deref " << deref);
             if (   !expr->expr->type->isPointer()
                 && value->getType()->getTypeID() == llvm::Type::PointerTyID
                 && (   value->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID
@@ -1270,7 +1268,7 @@ void S_return::cc2llvm(CC2LLVMEnv &env) const
             } else {
                 value = env.access(value, false, deref, 0); // RICH: Volatile.
             }
-            VDEBUG("S_return source", loc, value->print(std::cerr));
+            EDEBUG("S_return source", loc, value->print(llvm::errs()));
             if (value->getType()->getTypeID() != llvm::Type::StructTyID) {
                 env.makeCast(loc, expr->expr->type, value, env.functionAST->funcType->retType);
             }
@@ -1281,7 +1279,7 @@ void S_return::cc2llvm(CC2LLVMEnv &env) const
                 where = env.builder.CreateLoad(where, false);     // RICH: Is volatile.
             }
 #endif
-            VDEBUG("S_return destination", loc, where->print(std::cerr));
+            EDEBUG("S_return destination", loc, where->print(llvm::errs()));
             env.builder.CreateStore(value, where, false);	// RICH: isVolatile
         }
     } else {
@@ -1350,7 +1348,7 @@ void S_asm::cc2llvm(CC2LLVMEnv &env) const
             if (!first) {
                 constraints << ',';
             }
-            VDEBUG("S_asm output", loc, value->print(std::cerr));
+            EDEBUG("S_asm output", loc, value->print(llvm::errs()));
             if (   first
                 && !(constraint->info & TargetInfo::CI_AllowsMemory)
                 && value->getType()->isSingleValueType()) {
@@ -1366,7 +1364,7 @@ void S_asm::cc2llvm(CC2LLVMEnv &env) const
             }
             if (constraint->info & TargetInfo::CI_ReadWrite) {
                 value = env.access(value, false, deref);                 // RICH: Volatile.
-                VDEBUG("S_asm rw", loc, value->print(std::cerr));
+                EDEBUG("S_asm rw", loc, value->print(llvm::errs()));
                 rwargs.push_back(value);
                 rwargTypes.push_back(value->getType());
             }
@@ -1388,7 +1386,7 @@ void S_asm::cc2llvm(CC2LLVMEnv &env) const
             int deref;
             llvm::Value* value = expr->cc2llvm(env, deref);
             value = env.access(value, false, deref);                 // RICH: Volatile.
-            VDEBUG("S_asm input", loc, value->print(std::cerr));
+            EDEBUG("S_asm input", loc, value->print(llvm::errs()));
             args.push_back(value);
             argTypes.push_back(value->getType());
             if (!first) {
@@ -1401,7 +1399,7 @@ void S_asm::cc2llvm(CC2LLVMEnv &env) const
 
         FOREACH_ASTLIST_NC(Constraint, d.constraints->clobbers, c) {
             Constraint* constraint = c.data();
-            VDEBUG("S_asm clobber", loc, std::cerr << constraint->string.c_str());
+            EDEBUG("S_asm clobber", loc, std::cerr << constraint->string.c_str());
             if (!first) {
                 constraints << ',';
             } else {
@@ -1599,12 +1597,12 @@ void S_asm::cc2llvm(CC2LLVMEnv &env) const
     }
 
     llvm::FunctionType* type = llvm::FunctionType::get(returnType, argTypes, false);
-    VDEBUG("S_asm function type", loc, type->print(std::cerr));
+    EDEBUG("S_asm function type", loc, type->print(llvm::errs()));
     llvm::InlineAsm* function = llvm::InlineAsm::get(type,
                                                      asmstr.c_str(),
                                                      constraints.c_str(),
                                                      !!(d.qualifiers & CV_VOLATILE));
-    VDEBUG("S_asm CreateCall call", loc, function->print(std::cerr));
+    EDEBUG("S_asm CreateCall call", loc, function->print(llvm::errs()));
     env.EmitStopPoint(loc);
     llvm::CallInst *result = env.builder.CreateCall(function, args.begin(), args.end());
     result->addAttribute(~0, llvm::Attribute::NoUnwind);
@@ -1669,7 +1667,7 @@ llvm::Value *E_intLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
 
     std::string n(p, endp - p);
     /// RICH: Handle 'L', etc.
-    VDEBUG("IntLit", loc, std::cerr << text << " radix " << radix);
+    EDEBUG("IntLit", loc, std::cerr << text << " radix " << radix);
     return llvm::ConstantInt::get(env.C, llvm::APInt(type->sizeInBits(env.TI), n, radix));
 }
 
@@ -1687,7 +1685,7 @@ llvm::Value *E_stringLit::cc2llvm(CC2LLVMEnv &env, int& deref) const
     std::string value((const char*)data->getDataC(), data->getDataLen());	// RICH: cast
     llvm::Constant* c = llvm::ConstantArray::get(env.C, value, false);	// Don't add a nul character.
     const llvm::Type* at = env.makeTypeSpecifier(loc, type->asReferenceType()->atType);
-    VDEBUG("E_stringLit", loc, at->print(std::cerr));
+    EDEBUG("E_stringLit", loc, at->print(llvm::errs()));
     // RICH: Non-constant strings?
     llvm::Value* result = new llvm::GlobalVariable(*env.mod, at, true,
                                                    llvm::GlobalValue::InternalLinkage,
@@ -1708,7 +1706,7 @@ llvm::Value *E_this::cc2llvm(CC2LLVMEnv &env, int& deref) const
     deref = 1;
     llvm::Value* value = env.variables.get(receiver);
     xassert(value && "'this' was not defined");
-    VDEBUG("E_this", loc, value->getType()->print(std::cerr));
+    EDEBUG("E_this", loc, value->getType()->print(llvm::errs()));
     return value;
 }
 
@@ -1735,7 +1733,7 @@ llvm::Value *E_variable::cc2llvm(CC2LLVMEnv &env, int& deref) const
     xassert(value->getType()->getTypeID() == llvm::Type::PointerTyID && "expected pointer type");
     bool first = value->getType()->getContainedType(0)->isFirstClassType();
 
-    VDEBUG("E_variable ID", loc, std::cerr << value->getType()->getContainedType(0)->getTypeID());
+    EDEBUG("E_variable ID", loc, std::cerr << value->getType()->getContainedType(0)->getTypeID());
 
     deref = 0;
     if (!first) {
@@ -1755,7 +1753,7 @@ llvm::Value *E_variable::cc2llvm(CC2LLVMEnv &env, int& deref) const
     if (var->type->isReference() && (var->flags & DF_PARAMETER)) {
         ++deref;
     }
-    VDEBUG("E_variable deref", loc, std::cerr << deref << " " << var->getType()->toString());
+    EDEBUG("E_variable deref", loc, std::cerr << deref << " " << var->getType()->toString());
     return value;
 }
 
@@ -1778,7 +1776,7 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, int& deref) const
     // Check for a method call.
     llvm::Value* function = NULL;
     if (func->kind() == E_FIELDACC) {
-        VDEBUG("E_funCall method", loc, std::cerr << func->asString());
+        EDEBUG("E_funCall method", loc, std::cerr << func->asString());
         E_fieldAcc* fa = func->asE_fieldAcc();
         function = env.variables.get(fa->field);
         if (function) {
@@ -1791,13 +1789,13 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, int& deref) const
     if (isComplex(ft->retType) || ft->retType->isCompoundType()) {
         // We need an implicit first parameter that points to the return value area.
         const llvm::Type *type = env.makeTypeSpecifier(loc, ft->retType);
-        VDEBUG("E_funCall sret type", loc, type->print(std::cerr));
+        EDEBUG("E_funCall sret type", loc, type->print(llvm::errs()));
         if (env.entryBlock == env.currentBlock) {
             sret = new llvm::AllocaInst(type, "sret", env.entryBlock);
         } else {
             sret = new llvm::AllocaInst(type, "sret", env.entryBlock->getTerminator());
         }
-        VDEBUG("E_funCall sret", loc, sret->print(std::cerr));
+        EDEBUG("E_funCall sret", loc, sret->print(llvm::errs()));
         parameters.push_back(sret);
     }
 #endif
@@ -1840,7 +1838,7 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, int& deref) const
                    && param->getType()->getTypeID() == llvm::Type::PointerTyID
                    && param->getType()->getContainedType(0)->getTypeID() == llvm::Type::StructTyID) {
             param = env.builder.CreateLoad(param, false);     // RICH: Is volatile.
-            VDEBUG("Param struct", loc, param->print(std::cerr));
+            EDEBUG("Param struct", loc, param->print(llvm::errs()));
         }
         parameters.push_back(param);
         EDEBUG("Param sent", loc, param->print(llvm::errs()));
@@ -1861,7 +1859,7 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, int& deref) const
         function = func->cc2llvm(env, deref);
     }
 
-    VDEBUG("CreateCall call", loc, function->print(std::cerr));
+    EDEBUG("CreateCall call", loc, function->print(llvm::errs()));
     if (function->getType()->getContainedType(0)->getTypeID() == llvm::Type::PointerTyID && deref == 0) {
         ++deref;
     }
@@ -1880,10 +1878,10 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, int& deref) const
 
 llvm::Value *E_constructor::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
-    VDEBUG("E_constructor", loc, std::cerr << ctorVar->toString());
-    VDEBUG("E_constructor retObj", loc, std::cerr << retObj->asString());
+    EDEBUG("E_constructor", loc, std::cerr << ctorVar->toString());
+    EDEBUG("E_constructor retObj", loc, std::cerr << retObj->asString());
     FAKELIST_FOREACH(ArgExpression, args, arg) {
-        VDEBUG("E_constructor arg", arg->expr->loc, std::cerr << arg->expr->asString());
+        EDEBUG("E_constructor arg", arg->expr->loc, std::cerr << arg->expr->asString());
     }
     
     llvm::Value* object = retObj->cc2llvm(env, deref);
@@ -1892,8 +1890,8 @@ llvm::Value *E_constructor::cc2llvm(CC2LLVMEnv &env, int& deref) const
 }
 
 #ifdef E_FIELDACC_DEBUG
-#undef VDEBUG
-#define VDEBUG(who, where, what) std::cerr << toString(where) << ": " << who << " "; what; std::cerr << "\n"
+#undef EDEBUG
+#define EDEBUG(who, where, what) std::cerr << toString(where) << ": " << who << " "; what; std::cerr << "\n"
 #endif
 llvm::Value *E_fieldAcc::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
@@ -1912,8 +1910,8 @@ llvm::Value *E_fieldAcc::cc2llvm(CC2LLVMEnv &env, int& deref) const
         baseType = obj->type;
     }
 
-    VDEBUG("E_field obj", loc, std::cerr << obj->asString());
-    VDEBUG("E_field obj type ", loc, std::cerr << obj->type->toString();
+    EDEBUG("E_field obj", loc, std::cerr << obj->asString());
+    EDEBUG("E_field obj type ", loc, std::cerr << obj->type->toString();
             std::cerr << " isUnion = " << isUnion;
             std::cerr << " simple = " << baseType->isSimpleType();
             if (baseType->isSimpleType()) {
@@ -1922,7 +1920,7 @@ llvm::Value *E_fieldAcc::cc2llvm(CC2LLVMEnv &env, int& deref) const
             } );
     llvm::Value* object = obj->cc2llvm(env, deref);
     object = env.access(object, false, deref, 1);                 // RICH: Volatile.
-    VDEBUG("E_field field", loc, std::cerr << field->toString());
+    EDEBUG("E_field field", loc, std::cerr << field->toString());
     llvm::Value* value = env.members.get(field);
     bool isC = isComplex(baseType);
     if (value == NULL && isC) {
@@ -1939,7 +1937,7 @@ llvm::Value *E_fieldAcc::cc2llvm(CC2LLVMEnv &env, int& deref) const
         xassert(value->getType()->getTypeID() == llvm::Type::PointerTyID && "expected pointer type");
         bool first = value->getType()->getContainedType(0)->isFirstClassType();
 
-        VDEBUG("E_fieldAcc ID", loc, std::cerr << value->getType()->getContainedType(0)->getTypeID());
+        EDEBUG("E_fieldAcc ID", loc, std::cerr << value->getType()->getContainedType(0)->getTypeID());
 
         deref = 0;
         if (!first) {
@@ -1960,9 +1958,9 @@ llvm::Value *E_fieldAcc::cc2llvm(CC2LLVMEnv &env, int& deref) const
 
     llvm::Value* result;
     if (!isUnion) {
-        VDEBUG("E_field object", loc, std::cerr << "ID " << object->getType()->getContainedType(0)->getTypeID() << " ";
-            object->print(std::cerr));
-        VDEBUG("E_field value", loc, value->print(std::cerr));
+        EDEBUG("E_field object", loc, std::cerr << "ID " << object->getType()->getContainedType(0)->getTypeID() << " ";
+            object->print(llvm::errs()));
+        EDEBUG("E_field value", loc, value->print(llvm::errs()));
         std::vector<llvm::Value*> index;
         if (   isC
             || object->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID
@@ -1972,7 +1970,7 @@ llvm::Value *E_fieldAcc::cc2llvm(CC2LLVMEnv &env, int& deref) const
         index.push_back(value);
         env.checkCurrentBlock();
         result = env.builder.CreateGEP(object, index.begin(), index.end());
-        VDEBUG("E_field  after GEP", loc, result->print(std::cerr));
+        EDEBUG("E_field  after GEP", loc, result->print(llvm::errs()));
 
         bool first = result->getType()->getContainedType(0)->isFirstClassType();
         deref = 0;
@@ -2006,17 +2004,17 @@ llvm::Value *E_fieldAcc::cc2llvm(CC2LLVMEnv &env, int& deref) const
             // RICH: ++deref;
             rtype = llvm::PointerType::get(rtype, 0);	// RICH: Address space.
         }
-        VDEBUG("E_field  rtype", loc, rtype->print(std::cerr));
-        VDEBUG("E_field  object", loc, object->print(std::cerr));
+        EDEBUG("E_field  rtype", loc, rtype->print(llvm::errs()));
+        EDEBUG("E_field  object", loc, object->print(llvm::errs()));
         result = env.builder.CreateBitCast(object, rtype);
     }
 
-    VDEBUG("E_field deref", loc, std::cerr << "deref " << deref << " "; result->print(std::cerr));
+    EDEBUG("E_field deref", loc, std::cerr << "deref " << deref << " "; result->print(llvm::errs()));
     return result;
 }
 #ifdef E_FIELDACC_DEBUG
-#undef VDEBUG
-#define VDEBUG(who, where, what)
+#undef EDEBUG
+#define EDEBUG(who, where, what)
 #endif
 
 llvm::Value *E_sizeof::cc2llvm(CC2LLVMEnv &env, int& deref) const
@@ -2079,7 +2077,7 @@ llvm::Value *E_effect::cc2llvm(CC2LLVMEnv &env, int& deref) const
     
     // Make sure we have the address.
     value = env.access(value, false, deref, 1);                 // RICH: Volatile.
-    VDEBUG("E_effect value", loc, std::cerr << "deref " << deref; value->print(std::cerr));
+    EDEBUG("E_effect value", loc, std::cerr << "deref " << deref; value->print(llvm::errs()));
 
     if (isPostfix(op)) {
         // A postfix operator: return the result from before the operation.
@@ -2090,7 +2088,7 @@ llvm::Value *E_effect::cc2llvm(CC2LLVMEnv &env, int& deref) const
         temp = env.access(value, false, deref);                 // RICH: Volatile.
     }
 
-    VDEBUG("E_effect temp", loc, std::cerr << "deref " << deref; temp->print(std::cerr));
+    EDEBUG("E_effect temp", loc, std::cerr << "deref " << deref; temp->print(llvm::errs()));
     if (temp->getType()->getTypeID() == llvm::Type::PointerTyID) {
         // This is a pointer increment/decrement.
 	std::vector<llvm::Value*> index;
@@ -2105,10 +2103,10 @@ llvm::Value *E_effect::cc2llvm(CC2LLVMEnv &env, int& deref) const
                                      llvm::APInt(env.TD.getTypeSizeInBits(temp->getType()), 1));
 	}
 	index.push_back(one);
-        VDEBUG("GEP1", loc, temp->print(std::cerr); );
+        EDEBUG("GEP1", loc, temp->print(llvm::errs()); );
 	temp = env.builder.CreateGEP(temp, index.begin(), index.end());
-        VDEBUG("Store7 source", loc, temp->print(std::cerr));
-        VDEBUG("Store7 destination", loc, value->print(std::cerr));
+        EDEBUG("Store7 source", loc, temp->print(llvm::errs()));
+        EDEBUG("Store7 destination", loc, value->print(llvm::errs()));
         env.builder.CreateStore(temp, value, false);	// RICH: Volatile
     } else if (temp->getType()->isInteger()) {
         llvm::ConstantInt* one = llvm::ConstantInt::get(env.C,
@@ -2118,8 +2116,8 @@ llvm::Value *E_effect::cc2llvm(CC2LLVMEnv &env, int& deref) const
 	} else {
 	    temp = env.builder.CreateAdd(temp, one);
 	}
-        VDEBUG("Store8 source", loc, temp->print(std::cerr));
-        VDEBUG("Store8 destination", loc, value->print(std::cerr));
+        EDEBUG("Store8 source", loc, temp->print(llvm::errs()));
+        EDEBUG("Store8 destination", loc, value->print(llvm::errs()));
         env.builder.CreateStore(temp, value, false);	// RICH: Volatile
     } else {
         std::cerr << toString(loc) << ": ";
@@ -2208,11 +2206,11 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLocation loc, Type* leftTyp
         std::vector<llvm::Value*> indices;
         indices.push_back(llvm::Constant::getNullValue(TD.getIntPtrType(C)));
         leftValue = builder.CreateGEP(leftValue, indices.begin(), indices.end(), "");
-        VDEBUG("makeCast array type left ", loc, leftValue->print(std::cerr));
+        EDEBUG("makeCast array type left ", loc, leftValue->print(llvm::errs()));
         llvmType = leftValue->getType();
     } else if (leftType->isFunctionType()) {
         // A function becomes a pointer to the function.
-        VDEBUG("makeCast function type left ", loc, leftValue->print(std::cerr));
+        EDEBUG("makeCast function type left ", loc, leftValue->print(llvm::errs()));
         llvmType = leftValue->getType();
         llvmType = llvm::PointerType::get(leftValue->getType(), 0);       // RICH: Address space.
     }
@@ -2225,7 +2223,7 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLocation loc, Type* leftTyp
             std::vector<llvm::Value*> indices;
             indices.push_back(llvm::Constant::getNullValue(TD.getIntPtrType(C)));
             *rightValue = builder.CreateGEP(*rightValue, indices.begin(), indices.end(), "");
-            VDEBUG("makeCast array type right ", loc, (*rightValue)->print(std::cerr));
+            EDEBUG("makeCast array type right ", loc, (*rightValue)->print(llvm::errs()));
             llvmType = (*rightValue)->getType();
         } else {
             // Build the type as pointer to element type.
@@ -2236,7 +2234,7 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLocation loc, Type* leftTyp
     } else if (rightType->isFunctionType()) {
         // A function becomes a pointer to the function.
         if (rightValue) {
-            VDEBUG("makeCast function type right ", loc, (*rightValue)->print(std::cerr));
+            EDEBUG("makeCast function type right ", loc, (*rightValue)->print(llvm::errs()));
             llvmType = (*rightValue)->getType();
             llvmType = llvm::PointerType::get((*rightValue)->getType(), 0);       // RICH: Address space.
          } else {
@@ -2247,9 +2245,9 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLocation loc, Type* leftTyp
     Data* source = NULL;	// This will remain NULL if no cast is needed.
     Data* target = &right;
 
-    VDEBUG("makeCast types", loc, std::cerr << "left " << left.type->toString() << " right " << right.type->toString());
-    VDEBUG("makeCast left value", loc, if (left.value) (*left.value)->print(std::cerr); else std::cerr << "NULL");
-    VDEBUG("makeCast right value", loc, if (right.value) (*right.value)->print(std::cerr); else std::cerr << "NULL");
+    EDEBUG("makeCast types", loc, std::cerr << "left " << left.type->toString() << " right " << right.type->toString());
+    EDEBUG("makeCast left value", loc, if (left.value) (*left.value)->print(llvm::errs()); else std::cerr << "NULL");
+    EDEBUG("makeCast right value", loc, if (right.value) (*right.value)->print(llvm::errs()); else std::cerr << "NULL");
     if (right.value == NULL) {
         // This is a cast of the left value to the right type.
         target = &right;
@@ -2275,7 +2273,7 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLocation loc, Type* leftTyp
 	source = &left;
 	target = &right;
     } else if (left.isPointer) {
-        VDEBUG("makeCast ptr types", loc, std::cerr << "left " << left.type->toString() << " right " << right.type->toString());
+        EDEBUG("makeCast ptr types", loc, std::cerr << "left " << left.type->toString() << " right " << right.type->toString());
 	if (right.isPointer) {
 	    // Check type, may need a bit cast.
 	    if (right.type != left.type) {
@@ -2300,8 +2298,8 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLocation loc, Type* leftTyp
         // Do nothing.
     } else {
         // Both sides are integers.
-        VDEBUG("makeCast int size", loc, std::cerr << "left " << left.size << " right " << right.size);
-        VDEBUG("makeCast int isUnsigned", loc, std::cerr << "left " << left.isUnsigned << " right " << right.isUnsigned);
+        EDEBUG("makeCast int size", loc, std::cerr << "left " << left.size << " right " << right.size);
+        EDEBUG("makeCast int isUnsigned", loc, std::cerr << "left " << left.isUnsigned << " right " << right.isUnsigned);
 	if (left.size > right.size) {
 	    // Promote the right side.
 	    source = &right;
@@ -2358,16 +2356,16 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLocation loc, Type* leftTyp
 	} else {
             if (target->llvmType) {
                 type = target->llvmType;
-                VDEBUG("makeCast has type", loc, type->print(std::cerr));
+                EDEBUG("makeCast has type", loc, type->print(llvm::errs()));
 	    } else {
-                VDEBUG("makeCast making type", loc, std::cerr << target->type->toString());
+                EDEBUG("makeCast making type", loc, std::cerr << target->type->toString());
 	        type = makeTypeSpecifier(loc, target->type);
-                VDEBUG("makeCast made type", loc, type->print(std::cerr));
+                EDEBUG("makeCast made type", loc, type->print(llvm::errs()));
 	    }
 	}
 
-        VDEBUG("makeCast from type", loc, (*source->value)->getType()->print(std::cerr));
-        VDEBUG("makeCast to type", loc, type->print(std::cerr));
+        EDEBUG("makeCast from type", loc, (*source->value)->getType()->print(llvm::errs()));
+        EDEBUG("makeCast to type", loc, type->print(llvm::errs()));
 
 	switch (c)
 	{
@@ -2388,8 +2386,8 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLocation loc, Type* leftTyp
 		} else {
 		    // Sign extend the source value.
 	            checkCurrentBlock();
-                    VDEBUG("SExt1 source", loc, std::cerr << "size " << source->size << " "; (*source->value)->print(std::cerr));
-                    VDEBUG("SExt1 destination", loc, std::cerr << "size " << target->size << " "; type->print(std::cerr));
+                    EDEBUG("SExt1 source", loc, std::cerr << "size " << source->size << " "; (*source->value)->print(llvm::errs()));
+                    EDEBUG("SExt1 destination", loc, std::cerr << "size " << target->size << " "; type->print(llvm::errs()));
 	            *source->value = builder.CreateSExt(*source->value, type);
 		}
 	    } else if (source->isPointer) {
@@ -2450,7 +2448,7 @@ CC2LLVMEnv::OperatorClass CC2LLVMEnv::makeCast(SourceLocation loc, Type* leftTyp
 	        *source->value = builder.CreateUIToFP(*source->value, type);
 	    } else if (source->isFloat) {
 	        // Convert Float to Float.
-                VDEBUG("makeCast float from size", loc,
+                EDEBUG("makeCast float from size", loc,
                        std::cerr << source->size << " target size " << target->size);
 		if (source->size == target->size) {
 		    // Do nothing.
@@ -2542,7 +2540,7 @@ llvm::Value* CC2LLVMEnv::initializer(const Initializer* init, Type* type,
             const llvm::Type* etype = makeTypeSpecifier(init->loc, at->eltType);
             FOREACH_ASTLIST(Initializer, c->inits, iter) {
                 llvm::Value* value = initializer(iter.data(), at->eltType, deref);
-                VDEBUG("Init element", init->loc, value->print(std::cerr));
+                EDEBUG("Init element", init->loc, value->print(llvm::errs()));
                 elements.push_back((llvm::Constant*)value);
                 ++count;
             }
@@ -2552,7 +2550,7 @@ llvm::Value* CC2LLVMEnv::initializer(const Initializer* init, Type* type,
             }
             
             const llvm::Type* artype = makeTypeSpecifier(init->loc, type);
-            VDEBUG("Init type", init->loc, artype->print(std::cerr));
+            EDEBUG("Init type", init->loc, artype->print(llvm::errs()));
 	    value = llvm::ConstantArray::get((llvm::ArrayType*)artype, elements);
 	    break;
 	} else if (type->isCompoundType()) {
@@ -2651,9 +2649,9 @@ llvm::Value *E_binary::cc2llvm(CC2LLVMEnv &env, int& deref) const
         right = NULL;
     } else {
         left = e1->cc2llvm(env, deref1);
-        VDEBUG("E_binary left", e1->loc, std::cerr <<  " deref " << deref1 << " "; left->print(std::cerr));
+        EDEBUG("E_binary left", e1->loc, std::cerr <<  " deref " << deref1 << " "; left->print(llvm::errs()));
         right = e2->cc2llvm(env, deref2);
-        VDEBUG("E_binary right", e1->loc, right->print(std::cerr));
+        EDEBUG("E_binary right", e1->loc, right->print(llvm::errs()));
     }
     llvm::Value* result = env.binop(loc, op, e1, left, deref1, e2, right, deref2);
     deref = 0;
@@ -2876,14 +2874,14 @@ llvm::Value* CC2LLVMEnv::binop(SourceLocation loc, BinaryOp op, Expression* e1, 
 
     case BIN_PLUS:      // +
     case BIN_MINUS: {    // -
-        VDEBUG("Plus left", loc, std::cerr << e1->type->toString());
-        VDEBUG("Plus right", loc, std::cerr << e2->type->toString());
+        EDEBUG("Plus left", loc, std::cerr << e1->type->toString());
+        EDEBUG("Plus right", loc, std::cerr << e2->type->toString());
         Expression* te1 = e1;
         Expression* te2 = e2;
 	if (op == BIN_PLUS) {
             if ((isPtr(e1->type) && isInt(e2->type)) || (isInt(e1->type) && isPtr(e2->type))) {
                 // This could be an array reference *(a + i).
-                VDEBUG("+/- checking",  loc, std::cerr << e1->type->toString() << " " << e2->type->toString());
+                EDEBUG("+/- checking",  loc, std::cerr << e1->type->toString() << " " << e2->type->toString());
                 if (isInt(e1->type) && isPtr(e2->type)) {
                     // Place the integer on the right.
                     te1 = e2;
@@ -2892,12 +2890,12 @@ llvm::Value* CC2LLVMEnv::binop(SourceLocation loc, BinaryOp op, Expression* e1, 
                     llvm::Value* temp = left;
                     left = right;
                     right = temp;
-                    VDEBUG("swapping i + p", loc, );
+                    EDEBUG("swapping i + p", loc, );
                 
                     right = access(right, false, deref1);                 // RICH: Volatile.
 
-                    VDEBUG("after swapping left", loc, left->print(std::cerr));
-                    VDEBUG("after swapping right", loc, right->print(std::cerr));
+                    EDEBUG("after swapping left", loc, left->print(llvm::errs()));
+                    EDEBUG("after swapping right", loc, right->print(llvm::errs()));
                     deref1 = deref2;
                     deref2 = 0;
                 } else {
@@ -2911,7 +2909,7 @@ llvm::Value* CC2LLVMEnv::binop(SourceLocation loc, BinaryOp op, Expression* e1, 
 
             // Get the value of the left side.
             const llvm::Value* before = left;
-            VDEBUG("before left", loc, left->print(std::cerr));
+            EDEBUG("before left", loc, left->print(llvm::errs()));
             if (accessValue(left) && !isArray(te1->type)) {
                 left = access(left, false, deref1);                 // RICH: Volatile.
             }
@@ -2919,7 +2917,7 @@ llvm::Value* CC2LLVMEnv::binop(SourceLocation loc, BinaryOp op, Expression* e1, 
             if (op == BIN_MINUS) {
                 // Negate the integer value.
                 right = access(right, false, deref2);                 // RICH: Volatile.
-                VDEBUG("BIN_MINUS right", loc, right->getType()->print(std::cerr); std::cerr << " "; right->print(std::cerr));
+                EDEBUG("BIN_MINUS right", loc, right->getType()->print(llvm::errs()); std::cerr << " "; right->print(llvm::errs()));
                 llvm::Value* zero = llvm::Constant::getNullValue(right->getType());
                 right = builder.CreateSub(zero, right);
             }
@@ -2939,8 +2937,8 @@ llvm::Value* CC2LLVMEnv::binop(SourceLocation loc, BinaryOp op, Expression* e1, 
                                         ->getAtType()->asSimpleTypeC()->type)))) {
                         right = builder.CreateZExt(right, TD.getIntPtrType(C));
                     } else {
-                        VDEBUG("SExt2 source", loc, right->print(std::cerr));
-                        VDEBUG("SExt2 destination ", loc, TD.getIntPtrType(C)->print(std::cerr));
+                        EDEBUG("SExt2 source", loc, right->print(llvm::errs()));
+                        EDEBUG("SExt2 destination ", loc, TD.getIntPtrType(C)->print(llvm::errs()));
                         right = builder.CreateSExt(right, TD.getIntPtrType(C));
                     }
                 } else {
@@ -2953,25 +2951,25 @@ llvm::Value* CC2LLVMEnv::binop(SourceLocation loc, BinaryOp op, Expression* e1, 
             if (before == left) {
                 if (   left->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID
                     || left->getType()->getContainedType(0)->getTypeID() == llvm::Type::StructTyID) {
-                    VDEBUG("NullValue2", loc, right->getType()->print(std::cerr));
+                    EDEBUG("NullValue2", loc, right->getType()->print(llvm::errs()));
                     index.push_back(llvm::Constant::getNullValue(right->getType()));
                 }
             }
             index.push_back(right);
-            VDEBUG("GEP2 left", loc, left->print(std::cerr));
-            VDEBUG("GEP2 right", loc, right->print(std::cerr));
+            EDEBUG("GEP2 left", loc, left->print(llvm::errs()));
+            EDEBUG("GEP2 right", loc, right->print(llvm::errs()));
             result = builder.CreateGEP(left, index.begin(), index.end());
-            VDEBUG("GEP2 result", loc, result->print(std::cerr));
+            EDEBUG("GEP2 result", loc, result->print(llvm::errs()));
             return result;
         }
 
         left = access(left, false, deref1);                 // RICH: Volatile.
         right = access(right, false, deref2);                 // RICH: Volatile.
-        VDEBUG("makeCast left", loc, std::cerr << te1->type->toString() << " "; left->print(std::cerr));
-        VDEBUG("makeCast right", loc, std::cerr << te2->type->toString() << " "; right->print(std::cerr));
+        EDEBUG("makeCast left", loc, std::cerr << te1->type->toString() << " "; left->print(llvm::errs()));
+        EDEBUG("makeCast right", loc, std::cerr << te2->type->toString() << " "; right->print(llvm::errs()));
 	c = makeCast(loc, te1->type, left, te2->type, &right);
-        VDEBUG("PlusOrMinus left", loc, left->print(std::cerr));
-        VDEBUG("PlusOrMinus right", loc, right->print(std::cerr));
+        EDEBUG("PlusOrMinus left", loc, left->print(llvm::errs()));
+        EDEBUG("PlusOrMinus right", loc, right->print(llvm::errs()));
 	switch (c) {
 	case CC2LLVMEnv::OC_SINT:
 	case CC2LLVMEnv::OC_UINT:
@@ -3239,8 +3237,8 @@ llvm::Value *E_deref::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     // RICH: env.EmitStopPoint(loc);
     llvm::Value* source = ptr->cc2llvm(env, deref);
-    VDEBUG("E_deref", loc, std::cerr << "deref " << deref << " "; source->print(std::cerr));
-    VDEBUG("E_deref", loc, std::cerr << "deref " << deref << " "; source->getType()->getContainedType(0)->print(std::cerr));
+    EDEBUG("E_deref", loc, std::cerr << "deref " << deref << " "; source->print(llvm::errs()));
+    EDEBUG("E_deref", loc, std::cerr << "deref " << deref << " "; source->getType()->getContainedType(0)->print(llvm::errs()));
     /** @TODO I'm not pleased with this mess. The parser should help us more here.
      */
     if (source->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID) {
@@ -3248,7 +3246,7 @@ llvm::Value *E_deref::cc2llvm(CC2LLVMEnv &env, int& deref) const
         indices.push_back(llvm::Constant::getNullValue(env.TD.getIntPtrType(env.C)));
         indices.push_back(llvm::Constant::getNullValue(env.TD.getIntPtrType(env.C)));
         source = env.builder.CreateGEP(source, indices.begin(), indices.end(), "");
-        VDEBUG("E_deref GEP", loc, source->print(std::cerr));
+        EDEBUG("E_deref GEP", loc, source->print(llvm::errs()));
     }
     bool first = source->getType()->getContainedType(0)->isFirstClassType();
     if (   first
@@ -3259,7 +3257,7 @@ llvm::Value *E_deref::cc2llvm(CC2LLVMEnv &env, int& deref) const
             ++deref;
         }
     }
-    VDEBUG("E_deref", loc, std::cerr << "deref " << deref << " "; source->print(std::cerr));
+    EDEBUG("E_deref", loc, std::cerr << "deref " << deref << " "; source->print(llvm::errs()));
     return source;
 }
 
@@ -3268,7 +3266,7 @@ llvm::Value *E_cast::cc2llvm(CC2LLVMEnv &env, int& deref) const
     // RICH: env.EmitStopPoint(loc);
     llvm::Value* result = expr->cc2llvm(env, deref);
     result = env.access(result, false, deref);                 // RICH: Volatile.
-    VDEBUG("cast from", loc, result->print(std::cerr); std::cerr << " to " << type->toString());
+    EDEBUG("cast from", loc, result->print(llvm::errs()); std::cerr << " to " << type->toString());
     env.makeCast(loc, expr->type, result, type);
     deref = 0;
     return result;
@@ -3279,7 +3277,7 @@ llvm::Value *E_stdConv::cc2llvm(CC2LLVMEnv &env, int& deref) const
     // RICH: env.EmitStopPoint(loc);
     llvm::Value* result = expr->cc2llvm(env, deref);
     result = env.access(result, false, deref);                 // RICH: Volatile.
-    VDEBUG("stdConv from", loc, result->print(std::cerr); std::cerr << " to " << type->toString());
+    EDEBUG("stdConv from", loc, result->print(llvm::errs()); std::cerr << " to " << type->toString());
     env.makeCast(loc, expr->type, result, type);
     deref = 0;
     return result;
@@ -3312,7 +3310,7 @@ llvm::Value *E_cond::cc2llvm(CC2LLVMEnv &env, int& deref) const
     env.setCurrentBlock(ifTrue);
     llvm::Value* trueValue = th->cc2llvm(env, deref);
     trueValue = env.access(trueValue, false, deref);                 // RICH: Volatile.
-    VDEBUG("E_conv true", loc, trueValue->print(std::cerr); std::cerr << " is " << th->type->toString());
+    EDEBUG("E_conv true", loc, trueValue->print(llvm::errs()); std::cerr << " is " << th->type->toString());
     if (!type->isVoid()) {
         env.makeCast(loc, th->type, trueValue, type);
     }
@@ -3326,7 +3324,7 @@ llvm::Value *E_cond::cc2llvm(CC2LLVMEnv &env, int& deref) const
     env.setCurrentBlock(ifFalse);
     llvm::Value* falseValue = el->cc2llvm(env, deref);
     falseValue = env.access(falseValue, false, deref);                 // RICH: Volatile.
-    VDEBUG("E_conv false", loc, falseValue->print(std::cerr); std::cerr << " is " << el->type->toString());
+    EDEBUG("E_conv false", loc, falseValue->print(llvm::errs()); std::cerr << " is " << el->type->toString());
     if (!type->isVoid()) {
         env.makeCast(loc, el->type, falseValue, type);
     }
@@ -3352,7 +3350,7 @@ llvm::Value *E_sizeofType::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     // RICH: env.EmitStopPoint(loc);
     const llvm::Type* etype = env.makeTypeSpecifier(loc, atype->getType());
-    VDEBUG("GEP5", loc, etype->print(std::cerr));
+    EDEBUG("GEP5", loc, etype->print(llvm::errs()));
     const llvm::Type* ptype = llvm::PointerType::get(etype, 0);       // RICH: Address space.
     llvm::Value* value = env.builder.CreateGEP(
         llvm::Constant::getNullValue(ptype),
@@ -3370,22 +3368,22 @@ llvm::Value* CC2LLVMEnv::doassign(SourceLocation loc, llvm::Value* destination, 
         --deref2;
     }
 
-    VDEBUG("doassign", loc, source->print(std::cerr));
+    EDEBUG("doassign", loc, source->print(llvm::errs()));
     source = access(source, false, deref2);                 // RICH: Volatile.
 
-    VDEBUG("doassign get", loc, destination->print(std::cerr));
+    EDEBUG("doassign get", loc, destination->print(llvm::errs()));
     destination = access(destination, false, deref1, 1);                 // RICH: Volatile.
-    VDEBUG("doassign cast", loc, std::cerr <<  stype->toString() << " -> " << dtype->toString());
+    EDEBUG("doassign cast", loc, std::cerr <<  stype->toString() << " -> " << dtype->toString());
     if (   destination->getType()->getContainedType(0)->getTypeID() != llvm::Type::ArrayTyID
         && destination->getType()->getContainedType(0)->getTypeID() != llvm::Type::StructTyID) {
         makeCast(loc, stype, source, dtype);
     } else if (   destination->getType()->getContainedType(0)->getTypeID() == llvm::Type::StructTyID
                && source->getType()->getTypeID() != llvm::Type::StructTyID) {
-        VDEBUG("doassign struct source", loc, std::cerr << " deref2 " << deref2; source->print(std::cerr));
+        EDEBUG("doassign struct source", loc, std::cerr << " deref2 " << deref2; source->print(llvm::errs()));
         source = builder.CreateLoad(source, false);     // RICH: Is volatile.
     }
-    VDEBUG("doassign source", loc, source->print(std::cerr));
-    VDEBUG("doassign destination", loc, destination->print(std::cerr));
+    EDEBUG("doassign source", loc, source->print(llvm::errs()));
+    EDEBUG("doassign destination", loc, destination->print(llvm::errs()));
     new llvm::StoreInst(source, destination, false, currentBlock);	// RICH: isVolatile
     return source;
 }
@@ -3411,14 +3409,14 @@ llvm::Value* E_assign::cc2llvm(CC2LLVMEnv &env, int& deref) const
     llvm::Value* temp = NULL;					// A place to store the temporary.
     temp = env.binop(loc, op, target, destination, deref1, src, source, deref2);
 
-    VDEBUG("E_assign", loc, std::cerr << "result "; temp->getType()->print(std::cerr);
-                            std::cerr << " destination "; destination->getType()->getContainedType(0)->print(std::cerr));
+    EDEBUG("E_assign", loc, std::cerr << "result "; temp->getType()->print(llvm::errs());
+                            std::cerr << " destination "; destination->getType()->getContainedType(0)->print(llvm::errs()));
     if (temp->getType() != destination->getType()->getContainedType(0)) {
         // Cast the result to the destination type.
         env.makeCast(loc, src->type, temp, target->type);
     }
-    VDEBUG("Store2 source", loc, temp->print(std::cerr));
-    VDEBUG("Store2 destination", loc, destination->print(std::cerr));
+    EDEBUG("Store2 source", loc, temp->print(llvm::errs()));
+    EDEBUG("Store2 destination", loc, destination->print(llvm::errs()));
     deref = deref1;
     new llvm::StoreInst(temp, destination, false, env.currentBlock);	// RICH: Volatile
     return destination;
@@ -3605,7 +3603,7 @@ llvm::Value *E___builtin_alloca::cc2llvm(CC2LLVMEnv &env, int& deref) const
     // RICH: env.EmitStopPoint(loc);
     llvm::Value* value = expr->cc2llvm(env, deref);
     value = env.access(value, false, deref);                 // RICH: Volatile.
-    VDEBUG("E_builtin_alloca", loc, std::cerr << "value "; value->getType()->print(std::cerr));
+    EDEBUG("E_builtin_alloca", loc, std::cerr << "value "; value->getType()->print(llvm::errs()));
     deref = 0;
     xassert(env.entryBlock);
     const llvm::Type* type = llvm::IntegerType::get(env.C, env.TI.CharWidth());
@@ -3639,7 +3637,7 @@ llvm::Value *E_statement::cc2llvm(CC2LLVMEnv &env, int& deref) const
     // Generate all but the last statement.
     Statement* last = s->stmts.last();
     FOREACH_ASTLIST(Statement, s->stmts, iter) {
-      VDEBUG("E_statement statement", loc, s->debugPrint(std::cerr, 0));
+      EDEBUG("E_statement statement", loc, s->debugPrint(std::cerr, 0));
       
       if (iter.data() == last) {
           break;
@@ -3649,7 +3647,7 @@ llvm::Value *E_statement::cc2llvm(CC2LLVMEnv &env, int& deref) const
 
     // RICH: env.EmitStopPoint(last->loc);
     Expression* expr = last->asS_expr()->expr->expr;
-    VDEBUG("E_statement expr", loc, std::cerr << expr->asString());
+    EDEBUG("E_statement expr", loc, std::cerr << expr->asString());
     return expr->cc2llvm(env, deref);
 }
 
@@ -3688,8 +3686,8 @@ llvm::Value* CC2LLVMEnv::EmitBuiltin(SourceLocation loc, const char* Name,
                                                             &ArgType, 1);
         llvm::Value* Result= builder.CreateCall(F, ArgValue);
         if (Result->getType() != ResType) {
-            VDEBUG("EmitBuiltin cast ", loc, std::cerr << "from "; Result->getType()->print(std::cerr);
-                                             std::cerr << " to "; ResType->print(std::cerr));
+            EDEBUG("EmitBuiltin cast ", loc, std::cerr << "from "; Result->getType()->print(llvm::errs());
+                                             std::cerr << " to "; ResType->print(llvm::errs()));
             Result = builder.CreateIntCast(Result, ResType, false);
         }
         return Result;
