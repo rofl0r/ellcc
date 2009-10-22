@@ -2019,7 +2019,7 @@ static int Link(const std::string& OutputFilename,
                 std::string& ErrMsg)
 {
   // Choose the appropriate linker.
-  std::string linker = "cc";    // RICH: C vs. C++.
+  std::string linker = progname == "e++" ? "c++" : "cc";
   bool hosted = true;
   if (Arch.size()) {
       hosted = false;
