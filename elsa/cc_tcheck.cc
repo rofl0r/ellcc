@@ -196,6 +196,29 @@ void TranslationUnit::tcheck(Env &env)
                      " --------");
     iter.setDataLink( iter.data()->tcheck(env) );
   }
+
+  // Check for undefined predeclared static functions.
+  FOREACH_ASTLIST_NC(TopForm, topForms, iter) {
+    if (!iter.data()->isTF_decl()) {
+        continue;
+    }
+
+    TF_decl* decl = iter.data()->asTF_decl();
+    if (!(decl->decl->dflags & DF_STATIC)) {
+        // Not static.
+        continue;
+    }
+    FAKELIST_FOREACH(Declarator, decl->decl->decllist, declarator) {
+        Variable *var = declarator->var;
+        if (var->type->getTag() != Type::T_FUNCTION) {
+            continue;
+        }
+        if (var->funcDefn == NULL && var->hasFlag(DF_REFERENCED)) {
+            env.report(iter.data()->loc, diag::err_static_not_defined)
+                << var->name;
+        }
+    }
+  }
 }
 
 
@@ -6820,6 +6843,9 @@ Type *E_funCall::inner2_itcheck(Env &env, LookupSet &candidates)
 
   // is 'func' an E_variable?  a number of special cases kick in if so
   E_variable *fevar = func->isE_variable()? func->asE_variable() : NULL;
+  if (fevar) {
+    fevar->var->setFlag(DF_REFERENCED);
+  }
 
   // similarly for E_fieldAcc
   E_fieldAcc *feacc = func->isE_fieldAcc()? func->asE_fieldAcc() : NULL;

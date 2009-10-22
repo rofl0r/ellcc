@@ -169,6 +169,8 @@ def err_multiple_parameter_definition
     : Error<"parameter '%0' conflicts with previous parameter '%1'">;
 def err_static_after_non_static
     : Error<"prior declaration of '%0' declared non-static, cannot re-declare as static">;
+def err_static_not_defined
+    : Error<"declaration of static function '%0' was used but never defined">;
 def err_explicit_specialization_missing_template
     : Error<"explicit specialization missing 'template <>'">;
 def err_dependent_template_scope_name_requires_template_keyword
