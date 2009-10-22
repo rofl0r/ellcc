@@ -1790,7 +1790,13 @@ void InitializeIncludePaths(HeaderSearch &Headers,
 
   // Add the ellcc headers, which are relative to the ellcc binary.
   std::vector<std::string> found;
-  findFiles(found, "", "include");
+  findFiles(found, "include", "lib");
+  if (Arch.size()) {
+    findFiles(found, "", "include");
+  } else {
+      found.push_back("/usr/include");
+  }
+
   for (size_t i = 0; i < found.size(); ++i) {
       // We pass true to ignore sysroot so that we *always* look for ecc headers
       // relative to our executable, never relative to -isysroot.
@@ -3006,13 +3012,15 @@ int main(int argc, char **argv)
             elsa.addTrace((*traceIt).c_str());
         }
 
-        if (FinalPhase >= BCLINKING && !NoLink && !NoCrt0) {
-            // Add the ellcc crt0.o, which is relative to the ellcc binary.
-            std::vector<std::string> found;
-            findFiles(found, "crt0.o", "lib");
-            if (found.size()) {
-                Input input(found[0], O);
-                InpList.push_back(input);
+        if (Arch.size()) {
+            if (FinalPhase >= BCLINKING && !NoLink && !NoCrt0) {
+                // Add the ellcc crt0.o, which is relative to the ellcc binary.
+                std::vector<std::string> found;
+                findFiles(found, "crt0.o", "lib");
+                if (found.size()) {
+                    Input input(found[0], O);
+                    InpList.push_back(input);
+                }
             }
         }
         
@@ -3088,39 +3096,27 @@ int main(int argc, char **argv)
             InpList.push_back(input);
         }
 
-        if (FinalPhase >= BCLINKING && !NoLink) {
-            // Add the ellcc libecc.a, which is relative to the ellcc binary.
-            std::vector<std::string> found;
-            findFiles(found, "libecc.a", "lib");
-            if (found.size()) {
-                Input input(found[0], A);
-                InpList.push_back(input);
-            }
-            found.clear();
-            findFiles(found, "libtarget.a", "lib");
-            if (found.size()) {
-                Input input(found[0], A);
-                InpList.push_back(input);
-            }
-            found.clear();
-            findFiles(found, "libcompiler-rt.a", "lib");
-            if (found.size()) {
-                Input input(found[0], A);
-                InpList.push_back(input);
-            }
-            // HACK! Add the system C library.
-            found.clear();
-            findFiles(found, "lib/libc.a");
-            if (found.size()) {
-                Input input(found[0], A);
-                InpList.push_back(input);
-            }
-            // HACK! Add the system C library.
-            found.clear();
-            findFiles(found, "lib/libgcc.a");
-            if (found.size()) {
-                Input input(found[0], A);
-                InpList.push_back(input);
+        if (Arch.size()) {
+            if (FinalPhase >= BCLINKING && !NoLink) {
+                // Add the ellcc libecc.a, which is relative to the ellcc binary.
+                std::vector<std::string> found;
+                findFiles(found, "libecc.a", "lib");
+                if (found.size()) {
+                    Input input(found[0], A);
+                    InpList.push_back(input);
+                }
+                found.clear();
+                findFiles(found, "libtarget.a", "lib");
+                if (found.size()) {
+                    Input input(found[0], A);
+                    InpList.push_back(input);
+                }
+                found.clear();
+                findFiles(found, "libcompiler-rt.a", "lib");
+                if (found.size()) {
+                    Input input(found[0], A);
+                    InpList.push_back(input);
+                }
             }
         }
 
