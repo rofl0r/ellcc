@@ -1340,18 +1340,6 @@ static void findFiles(std::vector<std::string>& found, std::string what, std::st
             }
         }
     }
-
-    if (!Arch.size()) {
-        // HACK! Temporary host hack.
-        path = "/usr/local/i686-pc-linux-gnu";
-        path.appendComponent(what);
-        if (path.exists()) {
-            found.push_back(path.c_str());
-            if (Verbose) {
-                outs() << "  found: " << path.c_str() << "\n";
-            }
-        }
-    }
 }
 
 // ---------- Define Printers for module and function passes ------------
@@ -2030,8 +2018,15 @@ static int Link(const std::string& OutputFilename,
                 std::vector<Input*>& InputFilenames,
                 std::string& ErrMsg)
 {
+  // Choose the appropriate linker.
+  std::string linker = "cc";    // RICH: C vs. C++.
+  bool hosted = true;
+  if (Arch.size()) {
+      hosted = false;
+      linker = "elf-ld";
+  }
   // Determine the location of the ld program.
-  sys::Path ld = sys::Program::FindProgramByName("ecc-ld");
+  sys::Path ld = sys::Program::FindProgramByName(linker);
   if (ld.isEmpty())
     PrintAndExit("Failed to find " + ld.str());
 
@@ -2041,21 +2036,24 @@ static int Link(const std::string& OutputFilename,
   // Build the linker command line arguments.
   std::vector<std::string> args;
   args.push_back(ld.c_str());
-  // Add the ellcc linker script target.ld, which is relative to the ellcc binary.
   std::vector<std::string> found;
-  findFiles(found, "target.ld", "linker");
-  if (found.size()) {
-     args.push_back("-T");
-     args.push_back(found[0]);
+  if (!hosted) {
+    // Add the ellcc linker script target.ld, which is relative to the ellcc binary.
+    findFiles(found, "target.ld", "linker");
+    if (found.size()) {
+        args.push_back("-T");
+        args.push_back(found[0]);
+    }
+    args.push_back("--build-id");
+    if (Arch.size()) {
+        args.push_back("-m" + emulations[Arch]);
+    } 
+    args.push_back("-static");
+    args.push_back("--hash-style=gnu");
+    args.push_back("-o");
+    args.push_back(OutputFilename);
   }
-  args.push_back("--build-id");
-  if (Arch.size()) {
-      args.push_back("-m" + emulations[Arch]);
-  } 
-  args.push_back("-static");
-  args.push_back("--hash-style=gnu");
-  args.push_back("-o");
-  args.push_back(OutputFilename);
+
   if (Native) {
     // Add in the library paths
     for (unsigned index = 0; index < LibPaths.size(); index++) {
@@ -2080,11 +2078,13 @@ static int Link(const std::string& OutputFilename,
       args.push_back(XLinker[index]);
   }
 
-  // Add the ellcc library paths, which are relative to the ellcc binary.
-  found.clear();
-  findFiles(found, "lib");
-  for (size_t i = 0; i < found.size(); ++i) {
-      args.push_back(std::string("-L") + found[i]);
+  if (!hosted) {
+    // Add the ellcc library paths, which are relative to the ellcc binary.
+    found.clear();
+    findFiles(found, "lib");
+    for (size_t i = 0; i < found.size(); ++i) {
+        args.push_back(std::string("-L") + found[i]);
+    }
   }
 
   // Now that "args" owns all the std::strings for the arguments, call the c_str
@@ -2121,12 +2121,8 @@ static int Assemble(const std::string &OutputFilename,
                       const std::string &InputFilename,
                       std::string& ErrMsg)
 {
-  // Remove these environment variables from the environment of the
-  // programs that we will execute.  It appears that GCC sets these
-  // environment variables so that the programs it uses can configure
-  // themselves identically.
-  // RICH: Choose the appropriate assembler.
-  std::string assm = "ecc-as";
+  // Choose the appropriate assembler.
+  std::string assm = "as";
   if (Arch.size()) {
       assm = Arch + "-elf-as";
   }
