@@ -1790,12 +1790,12 @@ void InitializeIncludePaths(HeaderSearch &Headers,
 
   // Add the ellcc headers, which are relative to the ellcc binary.
   std::vector<std::string> found;
-  findFiles(found, "include", "lib");
   if (Arch.size()) {
     findFiles(found, "", "include");
   } else {
       found.push_back("/usr/include");
   }
+  findFiles(found, "include", "lib");   // For stddef.h, stdarg.h, etc.
 
   for (size_t i = 0; i < found.size(); ++i) {
       // We pass true to ignore sysroot so that we *always* look for ecc headers
@@ -2056,9 +2056,10 @@ static int Link(const std::string& OutputFilename,
     } 
     args.push_back("-static");
     args.push_back("--hash-style=gnu");
-    args.push_back("-o");
-    args.push_back(OutputFilename);
   }
+
+  args.push_back("-o");
+  args.push_back(OutputFilename);
 
   if (Native) {
     // Add in the library paths
@@ -2431,7 +2432,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
             int result = elsa.parse(*PP.get(),
                                     input.name.c_str(), to.c_str(),
                                     input.module, ParseOnly, *new llvm::LLVMContext, input.LO,
-                                    DebugOutput);
+                                    false); // RICH: DebugOutput);
             if (result) {
                 Exit(result);
             }

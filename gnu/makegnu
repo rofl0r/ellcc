@@ -4,8 +4,10 @@ prefix=/usr/local
 targets=`cat ../targets`
 targetlist=`echo $targets | sed -e "s/ /,/g"`
 ellcc=`cd ../ellcc; pwd`
-cc=$ellcc/x86-elf-ecc
-cxx=$ellcc/x86-elf-e++
+#cc=$ellcc/x86-elf-ecc
+#cxx=$ellcc/x86-elf-e++
+cc=$ellcc/ecc
+cxx=$ellcc/e++
 #cc=$CC
 #cxx=$CXX
 
