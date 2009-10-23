@@ -615,14 +615,7 @@ llvm::Value* CC2LLVMEnv::declaration(const Variable* var, llvm::Value* init, int
         // Nothing.
     } else if (var->flags & (DF_DEFINITION|DF_TEMPORARY)) {
         // A local variable.
-        xassert(entryBlock);
-        llvm::AllocaInst* lv;
-        if (entryBlock == currentBlock) {
-            lv = new llvm::AllocaInst(type, var->Name(TI), entryBlock);
-        } else {
-            lv = new llvm::AllocaInst(type, var->Name(TI), entryBlock->getTerminator());
-        }
-
+        llvm::AllocaInst* lv = createTempAlloca(type, var->Name(TI));
         if (init) {
             doassign(var->loc, lv, 1, var->type, init, deref, var->type);
         }
@@ -1790,11 +1783,7 @@ llvm::Value *E_funCall::cc2llvm(CC2LLVMEnv &env, int& deref) const
         // We need an implicit first parameter that points to the return value area.
         const llvm::Type *type = env.makeTypeSpecifier(loc, ft->retType);
         EDEBUG("E_funCall sret type", loc, type->print(llvm::errs()));
-        if (env.entryBlock == env.currentBlock) {
-            sret = new llvm::AllocaInst(type, "sret", env.entryBlock);
-        } else {
-            sret = new llvm::AllocaInst(type, "sret", env.entryBlock->getTerminator());
-        }
+        sret = env.createTempAlloca(type, "sret");
         EDEBUG("E_funCall sret", loc, sret->print(llvm::errs()));
         parameters.push_back(sret);
     }
@@ -3391,12 +3380,12 @@ llvm::Value* CC2LLVMEnv::doassign(SourceLocation loc, llvm::Value* destination, 
 llvm::Value* E_assign::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     // RICH: env.EmitStopPoint(loc);
+    env.checkCurrentBlock();
     int deref1;
     llvm::Value* destination = target->cc2llvm(env, deref1);
     int deref2;
     llvm::Value* source = src->cc2llvm(env, deref2);		// Evaluate the source expression as an rvalue.
 
-    env.checkCurrentBlock();
     if (op == BIN_ASSIGN) {
 	// Assign is simple. Get it out of the way.
         source = env.doassign(loc, destination, deref1, target->type, source, deref2, src->type);
@@ -3498,6 +3487,7 @@ llvm::Value *E_arrow::cc2llvm(CC2LLVMEnv &env, int& deref) const
 llvm::Value *E_addrOfLabel::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     // RICH: env.EmitStopPoint(loc);
+    env.checkCurrentBlock();
     deref = 0;
     std::cerr << toString(loc) << ": ";
     xunimp("label address");
@@ -3507,6 +3497,7 @@ llvm::Value *E_addrOfLabel::cc2llvm(CC2LLVMEnv &env, int& deref) const
 llvm::Value *E_gnuCond::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     // RICH: env.EmitStopPoint(loc);
+    env.checkCurrentBlock();
     deref = 0;
     std::cerr << toString(loc) << ": ";
     xunimp("gnu conditional");
@@ -3516,6 +3507,7 @@ llvm::Value *E_gnuCond::cc2llvm(CC2LLVMEnv &env, int& deref) const
 llvm::Value *E_alignofExpr::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     // RICH: env.EmitStopPoint(loc);
+    env.checkCurrentBlock();
     deref = 0;
     std::cerr << toString(loc) << ": ";
     xunimp("alignof");
@@ -3525,6 +3517,7 @@ llvm::Value *E_alignofExpr::cc2llvm(CC2LLVMEnv &env, int& deref) const
 llvm::Value *E_alignofType::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     // RICH: env.EmitStopPoint(loc);
+    env.checkCurrentBlock();
     deref = 0;
     std::cerr << toString(loc) << ": ";
     xunimp("alignof");
@@ -3534,12 +3527,12 @@ llvm::Value *E_alignofType::cc2llvm(CC2LLVMEnv &env, int& deref) const
 llvm::Value *E___builtin_va_start::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     // RICH: env.EmitStopPoint(loc);
+    env.checkCurrentBlock();
     llvm::Value* value = expr->cc2llvm(env, deref);
     value = env.access(value, false, deref, 1);                 // RICH: Volatile.
     deref = 0;
     const llvm::Type* type = llvm::IntegerType::get(env.C, env.TI.CharWidth());
     type =  llvm::PointerType::get(type, 0);	// RICH: address space.
-    env.checkCurrentBlock();
     value = env.builder.CreateBitCast(value, type);
     llvm::Function* function = llvm::Intrinsic::getDeclaration(env.mod, llvm::Intrinsic::vastart);
     std::vector<llvm::Value*> parameters;
@@ -3550,6 +3543,7 @@ llvm::Value *E___builtin_va_start::cc2llvm(CC2LLVMEnv &env, int& deref) const
 llvm::Value *E___builtin_va_copy::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     // RICH: env.EmitStopPoint(loc);
+    env.checkCurrentBlock();
     deref = 0;
     std::cerr << toString(loc) << ": ";
     xunimp("__builtin_va_copy");
@@ -3559,6 +3553,7 @@ llvm::Value *E___builtin_va_copy::cc2llvm(CC2LLVMEnv &env, int& deref) const
 llvm::Value *E___builtin_va_arg::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     // RICH: env.EmitStopPoint(loc);
+    env.checkCurrentBlock();
     llvm::Value* value = expr->cc2llvm(env, deref);
     value = env.access(value, false, deref, 1);                 // RICH: Volatile.
     deref = 0;
@@ -3570,12 +3565,12 @@ llvm::Value *E___builtin_va_arg::cc2llvm(CC2LLVMEnv &env, int& deref) const
 llvm::Value *E___builtin_va_end::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     // RICH: env.EmitStopPoint(loc);
+    env.checkCurrentBlock();
     llvm::Value* value = expr->cc2llvm(env, deref);
     value = env.access(value, false, deref, 1);                 // RICH: Volatile.
     deref = 0;
     const llvm::Type* type = llvm::IntegerType::get(env.C, env.TI.CharWidth());
     type =  llvm::PointerType::get(type, 0);	// RICH: address space.
-    env.checkCurrentBlock();
     value = env.builder.CreateBitCast(value, type);
     llvm::Function* function = llvm::Intrinsic::getDeclaration(env.mod, llvm::Intrinsic::vaend);
     std::vector<llvm::Value*> parameters;
@@ -3586,6 +3581,7 @@ llvm::Value *E___builtin_va_end::cc2llvm(CC2LLVMEnv &env, int& deref) const
 llvm::Value *E___builtin_constant_p::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     // RICH: env.EmitStopPoint(loc);
+    env.checkCurrentBlock();
     llvm::Value* value = expr->cc2llvm(env, deref);
     bool isConstantExpr = llvm::isa<llvm::ConstantExpr>(value);
     if (isConstantExpr) {
@@ -3601,20 +3597,14 @@ llvm::Value *E___builtin_constant_p::cc2llvm(CC2LLVMEnv &env, int& deref) const
 llvm::Value *E___builtin_alloca::cc2llvm(CC2LLVMEnv &env, int& deref) const
 {
     // RICH: env.EmitStopPoint(loc);
+    env.checkCurrentBlock();
     llvm::Value* value = expr->cc2llvm(env, deref);
     value = env.access(value, false, deref);                 // RICH: Volatile.
     EDEBUG("E_builtin_alloca", loc, std::cerr << "value "; value->getType()->print(llvm::errs()));
     deref = 0;
     xassert(env.entryBlock);
     const llvm::Type* type = llvm::IntegerType::get(env.C, env.TI.CharWidth());
-    env.checkCurrentBlock();
-    llvm::AllocaInst* lv;
-    if (env.entryBlock == env.currentBlock) {
-        lv = new llvm::AllocaInst(type, value, "alloca", env.entryBlock);
-    } else {
-        lv = new llvm::AllocaInst(type, value, "alloca", env.entryBlock->getTerminator());
-    }
-
+    llvm::AllocaInst* lv = env.builder.CreateAlloca(type, 0, "alloca");
     return lv;
 }
 

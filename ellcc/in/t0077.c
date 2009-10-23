@@ -3,5 +3,5 @@ static int g();
 
 int main()
 {
-    f();
+    //ERROR(1): f();
 }

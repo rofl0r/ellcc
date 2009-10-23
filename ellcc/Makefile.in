@@ -162,8 +162,12 @@ distclean: clean
 toolclean: clean
 	rm -f $(TOTOOLCLEAN)
 
-check: all
-	cd $(ELSA) && MAKE=$(MAKE) ./regrtest
-	MAKE=$(MAKE) ./regrtest
+check: all elsacheck ellcccheck
 	@echo ""
 	@echo "Regression tests passed."
+
+elsacheck:
+	cd $(ELSA) && MAKE=$(MAKE) ./regrtest
+
+ellcccheck:
+	MAKE=$(MAKE) ./regrtest

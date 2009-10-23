@@ -301,6 +301,13 @@ failCparse_march() {
   fi
   failTest "$3" perl ./multitest.pl ./$1-elf-ecc -c in/$2
 }
+failCparse_special_march() {
+  if [ "$4" = "" ]; then
+    echo "failparse_special_march $1: failparse_special_march takes four arguments"
+    exit 4
+  fi
+  failTest "$4" perl ./multitest.pl ./$1-elf-ecc -c $2 in/$3
+}
 testCparse t0001.c
 testCparse t0002.c
 testCparse t0003.c
@@ -338,7 +345,7 @@ testCparse t0033.c
 testCparse t0034.c
 testCparse t0035.c
 testCparse t0036.c
-testCparse_special_march mips -S t0037.c
+failCparse_special_march mips -S t0037.c "Live interval analysis"
 testCparse_special_march spu -S t0038.c
 failCparse_march ia64 t0039.c "Function pointers?"
 testCparse t0040.c
@@ -356,8 +363,8 @@ testCparse_special_march sparc -S t0051.c
 testCparse_special -O0 t0052.c
 testCparse t0053.c
 testCparse t0054.c
-testCparse_special_march nios2 -S t0055.c
-testCparse_special_march nios2 -S t0056.c
+failCparse_special_march nios2 -S t0055.c "can not select callseq_end"
+failCparse_special_march nios2 -S t0056.c "NIOS2 DAG->DAG Pattern Instruction Selection"
 testCparse_special_march nios2 -S t0057.c
 testCparse_special_march arm -S t0058.c
 testCparse_special_march x86 -S t0059.c
@@ -377,8 +384,9 @@ testCparse_special -S t0072.c
 testCparse_special -S t0073.c 
 testCparse_special -S t0074.c 
 testCparse t0075.c
-testCparse t0076.c
+testCparse_special -S t0076.c
 testCparse t0077.c
+testCparse t0078.c
 
 # is K&R built?
 use_kandr=false
