@@ -6843,7 +6843,7 @@ Type *E_funCall::inner2_itcheck(Env &env, LookupSet &candidates)
 
   // is 'func' an E_variable?  a number of special cases kick in if so
   E_variable *fevar = func->isE_variable()? func->asE_variable() : NULL;
-  if (fevar) {
+  if (fevar && fevar->var) {
     fevar->var->setFlag(DF_REFERENCED);
   }
 
