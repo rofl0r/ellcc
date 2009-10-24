@@ -1,15 +1,21 @@
 #!/bin/sh
 
-prefix=/usr/local
+# Install in the ELLCC staging directory.
+prefix=`cd ..; pwd`
 targets=`cat ../targets`
 targetlist=`echo $targets | sed -e "s/ /,/g"`
-ellcc=`cd ../ellcc; pwd`
-#cc=$ellcc/x86-elf-ecc
-#cxx=$ellcc/x86-elf-e++
-cc=$ellcc/ecc
-cxx=$ellcc/e++
-#cc=$CC
-#cxx=$CXX
+bin=`cd ../bin; pwd`
+# To build for the x86 with libecc:
+#cc=$bin/x86-elf-ecc
+#cxx=$bin/x86-elf-e++
+
+# To build with the hosted ecc and host libraries:
+#cc=$bin/ecc
+#cxx=$bin/e++
+
+# To build with the host compiler:
+cc=$CC
+cxx=$CXX
 
 
 # Parse options.
