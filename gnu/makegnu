@@ -43,7 +43,8 @@ linklist="addr2line ar ld nm objcopy objdump ranlib readelf size strings strip"
 
 if [ $install -eq 0 ] ; then
   echo Making tools for $targets
-  ../src/configure CC=$cc CXX=$cxx --enable-64-bit-bfd --enable-targets=$targetlist --program-prefix=ecc- --prefix=$prefix
+  ../src/configure CC=$cc CXX=$cxx --enable-64-bit-bfd --enable-targets=$targetlist \
+    --program-prefix=ecc- --prefix=$prefix/libecc --bindir=$prefix/bin --datadir=$prefix/libecc/share
   if [ $? -ne 0 ] ; then
     echo configure for tools failed
     exit 1
@@ -83,7 +84,8 @@ for t in $targets; do
     mkdir $t
     cd $t
     echo Making the assembler for $t
-    ../../src/gas/configure CC=$cc CXX=$cxx --target=$t --program-prefix=${t}- --prefix=$prefix
+    ../../src/gas/configure CC=$cc CXX=$cxx --target=$t --program-prefix=${t}- \
+        --prefix=$prefix/libecc --bindir=$prefix/bin --datadir=$prefix/libecc/share
     if [ $? -ne 0 ] ; then
       echo configure for $t failed
       exit 1

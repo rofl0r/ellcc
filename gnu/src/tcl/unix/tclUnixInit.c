@@ -260,8 +260,8 @@ CONST char *path;		/* Path to the executable in native
      * executable is run from a develpment directory.
      */
      
-    /* REDHAT LOCAL */
-    sprintf(installLib, "share/tcl%s", TCL_VERSION);
+    /* ELLCC LOCAL */
+    sprintf(installLib, "libecc/share/tcl%s", TCL_VERSION);
     /* sprintf(installLib, "lib/tcl%s", TCL_VERSION); */
     /* END REDHAT LOCAL */
 

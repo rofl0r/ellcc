@@ -68,7 +68,7 @@ proc initialize_paths {} {\n\
   }\n\
   cd [file dirname $exec_name]\n\
   # Handle build with --exec-prefix and build without.\n\
-  set d [file join [file dirname [pwd]] usr share]\n\
+  set d [file join [file dirname [pwd]] libecc share]\n\
   lappend prefdirs $d\n\
   lappend guidirs [file join $d redhat gui]\n\
   set d [file join [file dirname [pwd]] share]\n\

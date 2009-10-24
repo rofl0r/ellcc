@@ -105,7 +105,7 @@ ECC_OBJS := \
 TOCLEAN += ecc
 ecc: $(ECC_OBJS) $(libraries)
 	$(CXX) -o $@ $(ECC_OBJS) $(LDFLAGS) $(LLVMLDFLAGS)
-	@cd ../bin; ln -fs ../ellcc/ecc ecc
+	@cp ecc ../bin
 
 $(CCS) $(CXXS): ecc
 	@cd ../bin; ln -fs ecc $@
