@@ -1,4 +1,10 @@
-// cc2llvm.ast
+//===- cc2llvm.ast - Elsa AST to LLVM Lowering -----------------------------===//
+//
+// Copyright (c) 2009, Richard Pennington
+// All rights reserved.
+//
+//===----------------------------------------------------------------------===//
+
 // extension of cc.ast: additional entry points for cc2llvm
 
 verbatim {

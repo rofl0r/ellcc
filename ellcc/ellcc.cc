@@ -1,4 +1,7 @@
-//===- ellcc.cpp - The Elsa<->LLVM driver -------------------------------===//
+//===- ellcc.cc - The Elsa<->LLVM driver ----------------------------------===//
+//
+// Copyright (c) 2009, Richard Pennington
+// All rights reserved.
 //
 //===----------------------------------------------------------------------===//
 

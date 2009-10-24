@@ -1,5 +1,9 @@
-// cc2llvm.h
-// Given a C++ TranslationUnit, produce LLVM code.
+//===- cc2llvm.h - Elsa AST to LLVM Lowering ------------------------------===//
+//
+// Copyright (c) 2009, Richard Pennington
+// All rights reserved.
+//
+//===----------------------------------------------------------------------===//
 
 #ifndef CC2LLVM_H
 #define CC2LLVM_H

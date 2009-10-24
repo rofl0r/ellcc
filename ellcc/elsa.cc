@@ -1,5 +1,9 @@
-// elsa.cc            see license.txt for copyright and terms of use
-// The elsa interface.
+//===- ellcc.cc - The ELLCC<->Elsa Interface ------------------------------===//
+//
+// Copyright (c) 2009, Richard Pennington
+// All rights reserved.
+//
+//===----------------------------------------------------------------------===//
 
 #include <iostream>             // cout
 #include <stdlib.h>             // exit, getenv, abort

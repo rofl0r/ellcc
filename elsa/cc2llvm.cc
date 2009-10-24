@@ -1,5 +1,9 @@
-// cc2llvm.cc
-// code for cc2llvm.h
+//===- cc2llvm.cc - Elsa AST to LLVM Lowering -----------------------------===//
+//
+// Copyright (c) 2009, Richard Pennington
+// All rights reserved.
+//
+//===----------------------------------------------------------------------===//
 
 #include "datablok.h"
 #include "exprloc.h"

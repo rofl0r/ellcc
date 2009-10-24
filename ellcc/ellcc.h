@@ -1,3 +1,10 @@
+//===- ellcc.h - The Elsa<->LLVM driver -----------------------------------===//
+//
+// Copyright (c) 2009, Richard Pennington
+// All rights reserved.
+//
+//===----------------------------------------------------------------------===//
+
 #ifndef _Elsa_h_
 #define _Elsa_h_
 
