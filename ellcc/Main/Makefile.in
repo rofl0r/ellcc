@@ -105,10 +105,10 @@ ECC_OBJS := \
 TOCLEAN += ecc
 ecc: $(ECC_OBJS) $(libraries)
 	$(CXX) -o $@ $(ECC_OBJS) $(LDFLAGS) $(LLVMLDFLAGS)
-	@cp ecc ../bin
+	@cp ecc ../../bin
 
 $(CCS) $(CXXS): ecc
-	@cd ../bin; ln -fs ecc $@
+	@cd ../../bin; ln -fs ecc $@
 
 #
 # run the binary; the 'quicktest' file is so we don't run it if

@@ -275,10 +275,10 @@ testCrun() {
   runTest ./a.out from t0005.c
 }
 testCparse_march() {
-  runTest perl ./multitest.pl ../bin/$1-elf-ecc in/$2
+  runTest perl ./multitest.pl ../../bin/$1-elf-ecc in/$2
 }
 testCparse_special_march() {
-  runTest perl ./multitest.pl ../bin/$1-elf-ecc $2 in/$3
+  runTest perl ./multitest.pl ../../bin/$1-elf-ecc $2 in/$3
 }
 failCparse() {
   if [ "$2" = "" ]; then
@@ -292,21 +292,21 @@ failCparse_special() {
     echo "failparse $1: failparse takes three arguments"
     exit 4
   fi
-  failTest "$3" perl ./multitest.pl ../bin/ecc $1 in/$2
+  failTest "$3" perl ./multitest.pl ../../bin/ecc $1 in/$2
 }
 failCparse_march() {
   if [ "$3" = "" ]; then
     echo "failparse_march $1: failparse_march takes three arguments"
     exit 4
   fi
-  failTest "$3" perl ./multitest.pl ../bin/$1-elf-ecc -c in/$2
+  failTest "$3" perl ./multitest.pl ../../bin/$1-elf-ecc -c in/$2
 }
 failCparse_special_march() {
   if [ "$4" = "" ]; then
     echo "failparse_special_march $1: failparse_special_march takes four arguments"
     exit 4
   fi
-  failTest "$4" perl ./multitest.pl ../bin/$1-elf-ecc -c $2 in/$3
+  failTest "$4" perl ./multitest.pl ../../bin/$1-elf-ecc -c $2 in/$3
 }
 testCparse t0001.c
 testCparse t0002.c

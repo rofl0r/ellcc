@@ -10,7 +10,7 @@
 THIS := liblex.a
 all: $(THIS)
 
-SMBASE   := ../smbase
+SMBASE   := ../SMBase
 LLVM := /usr/local
 LLVMCCFLAGS := $(shell llvm-config --cxxflags)
 
