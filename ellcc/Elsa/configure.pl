@@ -4,7 +4,7 @@
 use strict 'subs';
 
 # default location of smbase relative to this package
-$SMBASE = "../smbase";
+$SMBASE = "../SMBase";
 $req_smcv = 1.03;            # required sm_config version number
 $thisPackage = "elsa";
 
@@ -41,10 +41,10 @@ if ($smcv < $req_smcv) {
 
 # defaults
 @LDFLAGS = ("-g -Wall");
-$AST = "../ast";
-$BASIC = "../basic";
-$LEX = "../lex";
-$ELKHOUND = "../elkhound";
+$AST = "../Ast";
+$BASIC = "../Basic";
+$LEX = "../Lex";
+$ELKHOUND = "../Elkhound";
 $LLVM = "/usr/local";
 $USE_GNU = "1";
 $USE_KANDR = "1";

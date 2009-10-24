@@ -1,14 +1,8 @@
 #!/bin/sh
-# toplevel elsa distribution configure
+# toplevel ELLCC distribution configure
 
 # for now, just fire off default configurations
 # in each of the subdirs; users can then go customize
 # as desired
 
-(cd smbase && ./configure "$@") || exit 1
-(cd basic && ./configure "$@") || exit 1
-(cd lex && ./configure "$@") || exit 1
-(cd ast && ./configure "$@") || exit 1
-(cd elkhound && ./configure "$@") || exit 1
-(cd elsa && ./configure "$@") || exit 1
 (cd ellcc && ./configure "$@") || exit 1

@@ -4,7 +4,7 @@
 use strict 'subs';
 
 # default location of smbase relative to this package
-$SMBASE = "../smbase";
+$SMBASE = "../SMBase";
 $req_smcv = 1.03;            # required sm_config version number
 $thisPackage = "elkhound";
 
@@ -51,7 +51,7 @@ if ($smcv < $req_smcv) {
 
   "subconfigure" => 1
 );
-$AST = "../ast";
+$AST = "../Ast";
 
 # arguments to pass to sub-configures
 @c_args = ();

@@ -4,7 +4,7 @@
 use strict 'subs';
 
 # default location of smbase relative to this package
-$SMBASE = "../smbase";
+$SMBASE = "../SMBase";
 $req_smcv = 1.03;            # required sm_config version number
 $thisPackage = "ellcc";
 
@@ -41,12 +41,11 @@ if ($smcv < $req_smcv) {
 
 # defaults
 @LDFLAGS = ("-g -Wall");
-$BASIC = "../basic";
-$LEX = "../lex";
-$PW = "../pw";
-$AST = "../ast";
-$ELKHOUND = "../elkhound";
-$ELSA = "../elsa";
+$BASIC = "../Basic";
+$LEX = "../Lex";
+$AST = "../Ast";
+$ELKHOUND = "../Elkhound";
+$ELSA = "../Elsa";
 $LLVM = "/usr/local";
 $USE_GNU = "1";
 $USE_KANDR = "1";
@@ -66,7 +65,6 @@ package options:
   -kandr=[0/1]       enable K&R extensions? [$USE_KANDR]
   -basic=<dir>:      specify where the basic library is [$BASIC]
   -lex=<dir>:        specify where the lex library is [$LEX]
-  -pw=<dir>:         specify where the pw library is [$PW]
   -ast=<dir>:        specify where the ast system is [$AST]
   -elkhound=<dir>:   specify where the elkhound system is [$ELKHOUND]
   -elsa=<dir>:       specify where the elsa system is [$ELSA]
@@ -114,10 +112,6 @@ foreach $optionAndValue (@ARGV) {
 
   elsif ($arg eq "lex") {
     $LEX = getOptArg();
-  }
-
-  elsif ($arg eq "pw") {
-    $PW = getOptArg();
   }
 
   elsif ($arg eq "ast") {
@@ -174,13 +168,6 @@ if (! -f "$LEX/Token.h") {
       "If it's in a different location, use the -lex=<dir> option.\n";
 }
 
-# pw
-if (! -f "$PW/pwPP.h") {
-  die "I cannot find pwPP.h in `$PW'.\n" .
-      "The pw library is required for ellcc.\n" .
-      "If it's in a different location, use the -pw=<dir> option.\n";
-}
-
 # ast
 if (! -f "$AST/asthelp.h") {
   die "I cannot find asthelp.h in `$AST'.\n" .
@@ -221,7 +208,6 @@ cat <<EOF
   SMBASE:      $SMBASE
   BASIC:       $BASIC
   LEX:         $LEX
-  PW:          $PW
   AST:         $AST
   ELKHOUND:    $ELKHOUND
   ELSA:        $ELSA
@@ -243,7 +229,6 @@ writeConfigStatus("LDFLAGS" => "@LDFLAGS",
                   "SMBASE" => "$SMBASE",
                   "BASIC" => "$BASIC",
                   "LEX" => "$LEX",
-                  "PW" => "$PW",
                   "AST" => "$AST",
                   "ELKHOUND" => "$ELKHOUND",
                   "ELSA" => "$ELSA",
