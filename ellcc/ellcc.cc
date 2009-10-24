@@ -2029,7 +2029,7 @@ static int Link(const std::string& OutputFilename,
   bool hosted = true;
   if (Arch.size()) {
       hosted = false;
-      linker = "elf-ld";
+      linker = "ecc-ld";
   }
   // Determine the location of the ld program.
   sys::Path ld = sys::Program::FindProgramByName(linker);

@@ -7,7 +7,7 @@ CXXS=$(foreach target, $(shell cat ../targets),$(target)-e++)
 CXXS+=e++
 
 # main target is 'ecc', a C/C++ parser.
-all: ecc $(CCS) $(CXXS) quicktest
+all: ecc quicktest $(CCS) $(CXXS)
 
 # directories of other software
 SMBASE   := @SMBASE@
@@ -105,9 +105,11 @@ ECC_OBJS := \
 TOCLEAN += ecc
 ecc: $(ECC_OBJS) $(libraries)
 	$(CXX) -o $@ $(ECC_OBJS) $(LDFLAGS) $(LLVMLDFLAGS)
+	@cd ../bin; ln -fs ../ellcc/ecc ecc
 
 $(CCS) $(CXXS): ecc
-	ln -s ecc $@
+	@cd ../bin; ln -fs ecc $@
+
 #
 # run the binary; the 'quicktest' file is so we don't run it if
 # 'ecc' hasn't recently changed
