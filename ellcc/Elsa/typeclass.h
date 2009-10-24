@@ -1,1 +1,1 @@
-../libecc/include/typeclass.h
+../../libecc/lib/include/typeclass.h

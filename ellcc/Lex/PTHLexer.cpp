@@ -11,10 +11,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "../basic/TokenKinds.h"
-#include "../basic/FileManager.h"
-#include "../basic/IdentifierTable.h"
-#include "../basic/OnDiskHashTable.h"
+#include "TokenKinds.h"
+#include "FileManager.h"
+#include "IdentifierTable.h"
+#include "OnDiskHashTable.h"
 #include "PTHLexer.h"
 #include "Preprocessor.h"
 #include "PTHManager.h"

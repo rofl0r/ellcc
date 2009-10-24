@@ -16,8 +16,8 @@
 #include "MacroArgs.h"
 #include "MacroInfo.h"
 #include "LexDiagnostic.h"
-#include "../basic/SourceManager.h"
-#include "../basic/FileManager.h"
+#include "SourceManager.h"
+#include "FileManager.h"
 #include <cstdio>
 #include <ctime>
 using namespace ellcc;

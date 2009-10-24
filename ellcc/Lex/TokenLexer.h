@@ -14,7 +14,7 @@
 #ifndef LLVM_CLANG_TOKENLEXER_H
 #define LLVM_CLANG_TOKENLEXER_H
 
-#include "../basic/SourceLocation.h"
+#include "SourceLocation.h"
 
 namespace ellcc {
   class MacroInfo;

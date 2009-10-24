@@ -13,8 +13,8 @@
 
 #include "HeaderSearch.h"
 #include "HeaderMap.h"
-#include "../basic/FileManager.h"
-#include "../basic/IdentifierTable.h"
+#include "FileManager.h"
+#include "IdentifierTable.h"
 #include "llvm/System/Path.h"
 #include "llvm/ADT/SmallString.h"
 #include <cstdio>

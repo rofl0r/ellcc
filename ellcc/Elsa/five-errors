@@ -1,7 +1,7 @@
 #!/bin/sh
 # hack for in/t0151.cc
 
-parser="../ellcc/ecc -PO"
+parser="../../bin/ecc -PO"
 if $parser "$@" | grep -v "left hand side of '->" | grep 'error:'; then
   # an error remained after removing the known ones
   false

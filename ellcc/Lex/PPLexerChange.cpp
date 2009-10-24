@@ -16,7 +16,7 @@
 #include "HeaderSearch.h"
 #include "MacroInfo.h"
 #include "LexDiagnostic.h"
-#include "../basic/SourceManager.h"
+#include "SourceManager.h"
 #include "llvm/Support/MemoryBuffer.h"
 using namespace ellcc;
 

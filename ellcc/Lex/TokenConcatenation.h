@@ -14,7 +14,7 @@
 #ifndef TOKEN_CONCATENATION_H
 #define TOKEN_CONCATENATION_H
 
-#include "../basic/TokenKinds.h"
+#include "TokenKinds.h"
 
 namespace ellcc {
   class Preprocessor;

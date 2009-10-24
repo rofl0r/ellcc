@@ -50,7 +50,7 @@ EXT_OBJS    :=
 CXX := g++
 
 # flags for the C++ compiler (and preprocessor)
-CCFLAGS := -g -Wall -Wno-deprecated -D__UNIX__ -O2 -DNDEBUG -D__LINUX__ -Woverloaded-virtual $(LLVMCCFLAGS) -I$(SMBASE) -I../basic
+CCFLAGS := -g -Wall -Wno-deprecated -D__UNIX__ -O2 -DNDEBUG -D__LINUX__ -Woverloaded-virtual $(LLVMCCFLAGS) -I$(SMBASE) -I../Basic
 
 # how to enable coverage
 GCOV_OPTS := -fprofile-arcs -ftest-coverage

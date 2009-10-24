@@ -27,7 +27,7 @@
 #include "Lexer.h"
 #include "Preprocessor.h"
 #include "LexDiagnostic.h"
-#include "../basic/SourceManager.h"
+#include "SourceManager.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include <cctype>

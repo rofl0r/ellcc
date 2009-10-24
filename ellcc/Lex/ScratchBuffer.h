@@ -14,7 +14,7 @@
 #ifndef SCRATCHBUFFER_H
 #define SCRATCHBUFFER_H
 
-#include "../basic/SourceLocation.h"
+#include "SourceLocation.h"
 
 namespace ellcc {
   class SourceManager;

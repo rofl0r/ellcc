@@ -24,10 +24,10 @@ MYFLEX := $(PERL) $(SMBASE)/run-flex.pl
 CXX := @CXX@
 
 # flags for the C and C++ compilers (and preprocessor)
-CCFLAGS := @CCFLAGS@ -I$(SMBASE) -I../basic $(LLVMCCFLAGS)
+CCFLAGS := @CCFLAGS@ -I$(SMBASE) -I../Basic $(LLVMCCFLAGS)
 
 # flags for the linker
-LDFLAGS := -g -Wall $(LIBSMBASE) ../basic/libbasic.a $(LLVMLDFLAGS)
+LDFLAGS := -g -Wall $(LIBSMBASE) ../Basic/libbasic.a $(LLVMLDFLAGS)
 
 
 # some other tools
@@ -112,7 +112,7 @@ astgen: $(ASTGEN_OBJS) ast.ast.cc $(LIBSMBASE)
 example.cc: astgen example.ast
 	./astgen example.ast
 
-exampletest: exampletest.o example.o asthelp.o locstr.o $(LIBSMBASE) ../basic/libbasic.a
+exampletest: exampletest.o example.o asthelp.o locstr.o $(LIBSMBASE) ../Basic/libbasic.a
 	$(CXX) -o $@ $^
 
 # simple extension

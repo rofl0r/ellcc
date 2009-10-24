@@ -12,7 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "ScratchBuffer.h"
-#include "../basic/SourceManager.h"
+#include "SourceManager.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include <cstring>
 using namespace ellcc;

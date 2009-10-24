@@ -16,7 +16,7 @@
 #include "MacroInfo.h"
 #include "Preprocessor.h"
 #include "LexDiagnostic.h"
-#include "../basic/SourceManager.h"
+#include "SourceManager.h"
 #include "llvm/ADT/SmallVector.h"
 using namespace ellcc;
 

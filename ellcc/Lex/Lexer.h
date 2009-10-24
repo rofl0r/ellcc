@@ -15,7 +15,7 @@
 #define LEXER_H
 
 #include "PreprocessorLexer.h"
-#include "../basic/LangOptions.h"
+#include "LangOptions.h"
 #include "llvm/ADT/SmallVector.h"
 #include <string>
 #include <vector>

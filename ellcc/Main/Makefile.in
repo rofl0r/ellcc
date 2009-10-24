@@ -2,8 +2,8 @@
 # this is the Makefile for ecc, the Elsa/LLVM C/C++ Parser
 
 # Get the target compiler names.
-CCS=$(foreach target, $(shell cat ../targets),$(target)-ecc)
-CXXS=$(foreach target, $(shell cat ../targets),$(target)-e++)
+CCS=$(foreach target, $(shell cat ../../targets),$(target)-ecc)
+CXXS=$(foreach target, $(shell cat ../../targets),$(target)-e++)
 CXXS+=e++
 
 # main target is 'ecc', a C/C++ parser.
@@ -115,7 +115,7 @@ $(CCS) $(CXXS): ecc
 # 'ecc' hasn't recently changed
 TOCLEAN += quicktest
 quicktest: ecc
-	./ecc test/sieve.c
+	../../bin/ecc test/sieve.c
 	./a.out
 	@touch quicktest
 	@echo BUILD FINISHED

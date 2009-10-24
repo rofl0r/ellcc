@@ -15,7 +15,7 @@
 #define PPCALLBACKS_H
 
 #include "DirectoryLookup.h"
-#include "../basic/SourceLocation.h"
+#include "SourceLocation.h"
 #include <string>
 
 namespace ellcc {

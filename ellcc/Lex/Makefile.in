@@ -47,7 +47,7 @@ EXT_OBJS    :=
 CXX := @CXX@
 
 # flags for the C++ compiler (and preprocessor)
-CCFLAGS := @CCFLAGS@ -Woverloaded-virtual $(LLVMCCFLAGS) -I$(SMBASE) -I../basic
+CCFLAGS := @CCFLAGS@ -Woverloaded-virtual $(LLVMCCFLAGS) -I$(SMBASE) -I../Basic
 
 # how to enable coverage
 GCOV_OPTS := -fprofile-arcs -ftest-coverage

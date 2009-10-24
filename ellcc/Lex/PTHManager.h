@@ -15,9 +15,9 @@
 #define PTHMANAGER_H
 
 #include "PTHLexer.h"
-#include "../basic/LangOptions.h"
-#include "../basic/IdentifierTable.h"
-#include "../basic/Diagnostic.h"
+#include "LangOptions.h"
+#include "IdentifierTable.h"
+#include "Diagnostic.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/Support/Allocator.h"
 #include <string>

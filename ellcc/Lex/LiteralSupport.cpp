@@ -15,7 +15,7 @@
 #include "LiteralSupport.h"
 #include "Preprocessor.h"
 #include "LexDiagnostic.h"
-#include "../basic/TargetInfo.h"
+#include "TargetInfo.h"
 #include "llvm/ADT/StringExtras.h"
 using namespace ellcc;
 

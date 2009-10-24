@@ -2,10 +2,10 @@
 # regression tests
 
 # This file contains a list of tests that should be run in ELLCC (via
-# ./ecc or ./e++) before each commit.  With the exception of a few stored
-# in the ellcc/in/big directory, they should be short tests that can be
+# ../../bin/ecc or ../../bin/e++) before each commit.  With the exception of a few stored
+# in the Main/in/big directory, they should be short tests that can be
 # parsed and typechecked quickly.  When a big test fails (either one
-# that is in ellcc/in/big, or some other external package), the failing
+# that is in Main/in/big, or some other external package), the failing
 # syntax should be isolated and added to this file.
 #
 # The basic procedure for adding tests is to find the section that has
@@ -266,10 +266,10 @@ list=`echo "
 
 # test the parser in C mode
 testCparse() {
-  runTest perl ./multitest.pl ./ecc in/$1
+  runTest perl ./multitest.pl ../../bin/ecc in/$1
 }
 testCparse_special() {
-  runTest perl ./multitest.pl ./ecc $1 in/$2
+  runTest perl ./multitest.pl ../../bin/ecc $1 in/$2
 }
 testCrun() {
   runTest ./a.out from t0005.c
@@ -285,7 +285,7 @@ failCparse() {
     echo "failparse $1: failparse takes two arguments"
     exit 4
   fi
-  failTest "$2" perl ./multitest.pl ./ecc in/$1
+  failTest "$2" perl ./multitest.pl ../../bin/ecc in/$1
 }
 failCparse_special() {
   if [ "$3" = "" ]; then
@@ -401,7 +401,7 @@ fi
 if $use_kandr; then
   # test the parser in C + K&R mode
   testKANDRparse() {
-    runTest perl ./multitest.pl ./ecc -std=kandr in/$1
+    runTest perl ./multitest.pl ../../bin/ecc -std=kandr in/$1
   }
   # testKANDRparse kandr/t0001.c
 fi

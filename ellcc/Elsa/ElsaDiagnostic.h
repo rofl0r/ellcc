@@ -8,14 +8,14 @@
 #ifndef ELSA_DIAGNOSTIC_H
 #define ELSA_DIAGNOSTIC_H
 
-#include "../basic/Diagnostic.h"
+#include "Diagnostic.h"
 
 namespace ellcc {
   namespace diag { 
     enum {
 #define DIAG(ENUM,FLAGS,DEFAULT_MAPPING,DESC,GROUP,SFINAE) ENUM,
 #define ELSASTART
-#include "../basic/DiagnosticElsaKinds.inc"
+#include "DiagnosticElsaKinds.inc"
 #undef DIAG
       NUM_BUILTIN_ELSA_DIAGNOSTICS
     };

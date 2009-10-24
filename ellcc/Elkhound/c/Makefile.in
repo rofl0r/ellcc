@@ -28,11 +28,11 @@ LLVMLDFLAGS := $(shell llvm-config --ldflags) -L$(shell llvm-config --libdir) -l
 LLVMCCFLAGS := $(shell llvm-config --cxxflags)
 
 # flags for the C++ compiler (and preprocessor)
-CCFLAGS := @CCFLAGS@ -I$(SMBASE) -I$(AST) -I$(ELKHOUND) -I../../basic $(LLVMCCFLAGS)
+CCFLAGS := @CCFLAGS@ -I$(SMBASE) -I$(AST) -I$(ELKHOUND) -I../../Basic $(LLVMCCFLAGS)
 
 # flags for the linker
 libraries := $(LIBELKHOUND) $(LIBAST) $(LIBSMBASE)
-LDFLAGS := -g -Wall $(libraries)  ../../basic/libbasic.a $(LLVMLDFLAGS)
+LDFLAGS := -g -Wall $(libraries)  ../../Basic/libbasic.a $(LLVMLDFLAGS)
 
 
 # compile .cc in this directory to a .o

@@ -14,7 +14,7 @@
 #ifndef DIRECTORYLOOKUP_H
 #define DIRECTORYLOOKUP_H
 
-#include "../basic/SourceManager.h"
+#include "SourceManager.h"
 
 namespace ellcc {
 class HeaderMap;

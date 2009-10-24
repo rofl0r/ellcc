@@ -14,9 +14,9 @@
 #ifndef TOKEN_H
 #define TOKEN_H
 
-#include "../basic/TemplateKinds.h"
-#include "../basic/TokenKinds.h"
-#include "../basic/SourceLocation.h"
+#include "TemplateKinds.h"
+#include "TokenKinds.h"
+#include "SourceLocation.h"
 #include <cstdlib>
 
 namespace ellcc {

@@ -17,8 +17,8 @@
 #include "LiteralSupport.h"
 #include "Preprocessor.h"
 #include "LexDiagnostic.h"
-#include "../basic/FileManager.h"
-#include "../basic/SourceManager.h"
+#include "FileManager.h"
+#include "SourceManager.h"
 using namespace ellcc;
 
 // Out-of-line destructor to provide a home for the class.

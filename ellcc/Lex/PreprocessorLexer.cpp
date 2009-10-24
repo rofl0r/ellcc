@@ -14,7 +14,7 @@
 #include "PreprocessorLexer.h"
 #include "Preprocessor.h"
 #include "LexDiagnostic.h"
-#include "../basic/SourceManager.h"
+#include "SourceManager.h"
 using namespace ellcc;
 
 /// LexIncludeFilename - After the preprocessor has parsed a #include, lex and

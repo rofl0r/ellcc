@@ -12,7 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "HeaderMap.h"
-#include "../basic/FileManager.h"
+#include "FileManager.h"
 #include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/Support/DataTypes.h"

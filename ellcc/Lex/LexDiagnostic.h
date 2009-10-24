@@ -10,14 +10,14 @@
 #ifndef DIAGNOSTICLEX_H
 #define DIAGNOSTICLEX_H
 
-#include "../basic/Diagnostic.h"
+#include "Diagnostic.h"
 
 namespace ellcc {
   namespace diag { 
     enum {
 #define DIAG(ENUM,FLAGS,DEFAULT_MAPPING,DESC,GROUP,SFINAE) ENUM,
 #define LEXSTART
-#include "../basic/DiagnosticLexKinds.inc"
+#include "DiagnosticLexKinds.inc"
 #undef DIAG
       NUM_BUILTIN_LEX_DIAGNOSTICS
     };

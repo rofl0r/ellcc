@@ -20,7 +20,7 @@
 #include "MacroInfo.h"
 #include "LiteralSupport.h"
 #include "LexDiagnostic.h"
-#include "../basic/TargetInfo.h"
+#include "TargetInfo.h"
 #include "llvm/ADT/APSInt.h"
 using namespace ellcc;
 
