@@ -2,8 +2,8 @@
 
 # directories
 ELKHOUND := ../..
-SMBASE   := ../../../smbase
-AST   := ../../../ast
+SMBASE   := ../../../SMBase
+AST   := ../../../Ast
 
 # libraries
 LIBELKHOUND := $(ELKHOUND)/libelkhound.a
@@ -12,8 +12,8 @@ LIBAST := $(AST)/libast.a
 
 # compilation flags
 CCFLAGS := $(shell $(SMBASE)/config.summary | grep CCFLAGS | sed 's/^.*: *//')
-CCFLAGS += -I$(ELKHOUND) -I$(ELKHOUND)/c -I$(SMBASE) -I$(AST) -I../../../basic $(shell llvm-config --cxxflags)
-LDFLAGS := -g -Wall $(LIBELKHOUND) $(LIBAST) ../../../basic/libbasic.a $(LIBSMBASE) \
+CCFLAGS += -I$(ELKHOUND) -I$(ELKHOUND)/c -I$(SMBASE) -I$(AST) -I../../../Basic $(shell llvm-config --cxxflags)
+LDFLAGS := -g -Wall $(LIBELKHOUND) $(LIBAST) ../../../Basic/libbasic.a $(LIBSMBASE) \
     $(shell llvm-config --ldflags) -L$(shell llvm-config --libdir) -lLLVMSupport -lLLVMSystem
 
 # default make targets

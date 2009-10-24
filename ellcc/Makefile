@@ -11,14 +11,14 @@ all:
 	$(MAKE) -C Main
 
 check:
-	$(MAKE) -C smbase check
+	$(MAKE) -C SMBase check
 	$(MAKE) -C Ast check
 	$(MAKE) -C Elkhound check
 	$(MAKE) -C Elsa check
 	$(MAKE) -C Main check
 
 clean:
-	$(MAKE) -C smbase clean
+	$(MAKE) -C SMBase clean
 	$(MAKE) -C Basic clean
 	$(MAKE) -C Lex clean
 	$(MAKE) -C Ast clean
@@ -27,7 +27,7 @@ clean:
 	$(MAKE) -C Main clean
 
 distclean:
-	$(MAKE) -C smbase distclean
+	$(MAKE) -C SMBase distclean
 	$(MAKE) -C Basic distclean
 	$(MAKE) -C Lex distclean
 	$(MAKE) -C Ast distclean
@@ -36,7 +36,7 @@ distclean:
 	$(MAKE) -C Main distclean
 
 doc:
-	$(MAKE) -C smbase doc
+	$(MAKE) -C SMBase doc
 	$(MAKE) -C Basic doc
 	$(MAKE) -C Lex doc
 	$(MAKE) -C Ast doc
