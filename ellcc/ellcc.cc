@@ -74,6 +74,7 @@ using namespace ellcc;
 
 static std::string progname;                    // The program name.        
 static const char* argv0;                       // argv[0]
+sys::Path PrefixPath;                             // The "prefix" path.
 static OwningPtr<SourceManager> SourceMgr;
 // Create a file manager object to provide access to and cache the filesystem.
 static FileManager FileMgr;
@@ -1231,18 +1232,14 @@ static std::string CreateTargetTriple()
  */
 static void findFiles(std::vector<std::string>& found, std::string what, std::string where = "")
 {
-    sys::Path MainPath = 
-        sys::Path::GetMainExecutable(argv0, (void*)(intptr_t)findFiles);
-    sys::Path path;
-    if (!MainPath.isEmpty()) {
-        MainPath.eraseComponent();  // Remove prog   from foo/bin/prog
-        MainPath.eraseComponent();  // Remove /bin   from foo/bin
-
-        // Stuff will be in, e.g. /usr/local/libecc.
+    if (!PrefixPath.isEmpty()) {
+        
+        // Stuff will be in, e.g. ${prefix}/libecc.
+        sys::Path MainPath = PrefixPath;
         MainPath.appendComponent("libecc");
 
         // Get foo/libecc/<version>[/<where>]/<triple>/<what>
-        path = MainPath;
+        sys::Path path = MainPath;
         path.appendComponent(ELLCC_VERSION_STRING);
         if (where.size()) {
             path.appendComponent(where);
@@ -2032,9 +2029,16 @@ static int Link(const std::string& OutputFilename,
       linker = "ecc-ld";
   }
   // Determine the location of the ld program.
-  sys::Path ld = sys::Program::FindProgramByName(linker);
+  // Look relative to the compiler binary.
+  sys::Path ld = PrefixPath;
+  ld.appendComponent("bin");
+  ld.appendComponent(linker);
+  if (!ld.canExecute()) {
+    // Look in the path.
+    ld = sys::Program::FindProgramByName(linker);
+  }
   if (ld.isEmpty())
-    PrintAndExit("Failed to find " + ld.str());
+    PrintAndExit("Failed to find " + linker);
 
   // Mark the output files for removal if we get an interrupt.
   sys::RemoveFileOnSignal(sys::Path(OutputFilename));
@@ -2133,8 +2137,14 @@ static int Assemble(const std::string &OutputFilename,
   if (Arch.size()) {
       assm = Arch + "-elf-as";
   }
-  
-  sys::Path as = sys::Program::FindProgramByName(assm);
+  // Look relative to the compiler binary.
+  sys::Path as = PrefixPath;
+  as.appendComponent("bin");
+  as.appendComponent(assm);
+  if (!as.canExecute()) {
+    // Look in the path.
+    as = sys::Program::FindProgramByName(assm);
+  }
   if (as.isEmpty())
     PrintAndExit("Failed to find " + assm);
 
@@ -2924,6 +2934,9 @@ int main(int argc, char **argv)
         // Initial global variable above for convenience printing of program name.
         argv0 = argv[0];            // Save the name for later.
         progname = sys::Path(argv0).getBasename();
+        PrefixPath = sys::Path::GetMainExecutable(argv0, (void*)(intptr_t)main);
+        PrefixPath.eraseComponent();  // Remove prog   from foo/bin/prog
+        PrefixPath.eraseComponent();  // Remove /bin   from foo/bin
         setupMappings();
 
         TimerGroup timerGroup("... Ellcc action timing report ...");
