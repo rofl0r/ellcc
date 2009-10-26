@@ -13,9 +13,9 @@
 
 #include "Diagnostic.h"
 
-#include "../lex/LexDiagnostic.h"
-#include "../elsa/ElsaDiagnostic.h"
-#include "../ellcc/EllccDiagnostic.h"
+#include "LexDiagnostic.h"
+#include "ElsaDiagnostic.h"
+#include "EllccDiagnostic.h"
 #include "DiagnosticBuffer.h"
 #include "IdentifierTable.h"
 #include "SourceLocation.h"
