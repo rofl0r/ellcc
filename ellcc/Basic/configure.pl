@@ -11,7 +11,7 @@ $thisPackage = "libbasic";
 # -------------- BEGIN common block ---------------
 # do an initial argument scan to find if smbase is somewhere else
 for (my $i=0; $i < @ARGV; $i++) {
-  my ($d) = ($ARGV[$i] =~ m/-*smbase=(.*)/);
+  my ($d) = ($ARGV[$i] =~ m/-*SMBase=(.*)/);
   if (defined($d)) {
     $SMBASE = $d;
   }
@@ -25,9 +25,9 @@ eval {
 if ($@) {
   die("$@" .     # ends with newline, usually
       "\n" .
-      "I looked for smbase in \"$SMBASE\".\n" .
+      "I looked for SMBase in \"$SMBASE\".\n" .
       "\n" .
-      "You can explicitly specify the location of smbase with the -smbase=<dir>\n" .
+      "You can explicitly specify the location of SMBase with the -smbase=<dir>\n" .
       "command-line argument.\n");
 }
 

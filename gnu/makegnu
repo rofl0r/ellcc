@@ -39,7 +39,7 @@ fi
 cd obj
 
 # Symbolic links to create.
-linklist="addr2line ar ld nm objcopy objdump ranlib readelf size strings strip"
+linklist= # "addr2line ar ld nm objcopy objdump ranlib readelf size strings strip"
 
 if [ $install -eq 0 ] ; then
   echo Making tools for $targets
