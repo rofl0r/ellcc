@@ -1,24 +1,23 @@
-/* A Bison parser, made by GNU Bison 2.3.  */
+
+/* A Bison parser, made by GNU Bison 2.4.1.  */
 
 /* Skeleton interface for Bison's Yacc-like parsers in C
-
-   Copyright (C) 1984, 1989, 1990, 2000, 2001, 2002, 2003, 2004, 2005, 2006
+   
+      Copyright (C) 1984, 1989, 1990, 2000, 2001, 2002, 2003, 2004, 2005, 2006
    Free Software Foundation, Inc.
-
-   This program is free software; you can redistribute it and/or modify
+   
+   This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2, or (at your option)
-   any later version.
-
+   the Free Software Foundation, either version 3 of the License, or
+   (at your option) any later version.
+   
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-
+   
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin Street, Fifth Floor,
-   Boston, MA 02110-1301, USA.  */
+   along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
 /* As a special exception, you may create a larger work that contains
    part or all of the Bison parser skeleton and distribute that work
@@ -29,9 +28,10 @@
    special exception, which will cause the skeleton and the resulting
    Bison output files to be licensed under the GNU General Public
    License without this special exception.
-
+   
    This special exception was added by the Free Software Foundation in
    version 2.2 of Bison.  */
+
 
 /* Tokens.  */
 #ifndef YYTOKENTYPE
@@ -67,41 +67,16 @@
      TOK_FORBID_NEXT = 283
    };
 #endif
-/* Tokens.  */
-#define TOK_INTEGER 258
-#define TOK_NAME 259
-#define TOK_STRING 260
-#define TOK_LIT_CODE 261
-#define TOK_LBRACE 262
-#define TOK_RBRACE 263
-#define TOK_COLON 264
-#define TOK_SEMICOLON 265
-#define TOK_ARROW 266
-#define TOK_LPAREN 267
-#define TOK_RPAREN 268
-#define TOK_COMMA 269
-#define TOK_TERMINALS 270
-#define TOK_TOKEN 271
-#define TOK_NONTERM 272
-#define TOK_FUN 273
-#define TOK_VERBATIM 274
-#define TOK_IMPL_VERBATIM 275
-#define TOK_PRECEDENCE 276
-#define TOK_OPTION 277
-#define TOK_EXPECT 278
-#define TOK_CONTEXT_CLASS 279
-#define TOK_SUBSETS 280
-#define TOK_DELETE 281
-#define TOK_REPLACE 282
-#define TOK_FORBID_NEXT 283
-
 
 
 
 #if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
 typedef union YYSTYPE
-#line 105 "grampar.y"
 {
+
+/* Line 1676 of yacc.c  */
+#line 105 "grampar.y"
+
   int num;
   LocString *str;
   char loc[sizeof(SourceLocation)];
@@ -123,14 +98,17 @@ typedef union YYSTYPE
   ProdDecl *prodDecl;
   ASTList<RHSElt> *rhsList;
   RHSElt *rhsElt;
-}
-/* Line 1529 of yacc.c.  */
-#line 129 "grampar.tab.h"
-	YYSTYPE;
+
+
+
+/* Line 1676 of yacc.c  */
+#line 106 "grampar.tab.h"
+} YYSTYPE;
+# define YYSTYPE_IS_TRIVIAL 1
 # define yystype YYSTYPE /* obsolescent; will be withdrawn */
 # define YYSTYPE_IS_DECLARED 1
-# define YYSTYPE_IS_TRIVIAL 1
 #endif
+
 
 
 

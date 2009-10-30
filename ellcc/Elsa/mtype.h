@@ -260,6 +260,8 @@ public:      // funcs
 
   // set a binding; 'value' must not be STA_NONE
   void setBoundValue(StringRef name, STemplateArgument const &value);
+
+  friend class IMType;
 };
 
 

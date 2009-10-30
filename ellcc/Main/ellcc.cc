@@ -58,7 +58,6 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/PluginLoader.h"
 #include "llvm/Support/RegistryParser.h"
-#include "llvm/Support/Streams.h"
 #include "llvm/Support/SystemUtils.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Timer.h"

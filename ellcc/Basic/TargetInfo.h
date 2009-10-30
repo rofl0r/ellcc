@@ -19,7 +19,7 @@
 #define __STDC_CONSTANT_MACROS 1
 #endif
 #include "llvm/Type.h"
-#include "llvm/Support/DataTypes.h"
+#include "llvm/System/DataTypes.h"
 #include "llvm/ADT/StringMap.h"
 #include <vector>
 #include <string>

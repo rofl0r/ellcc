@@ -25,7 +25,6 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/System/Path.h"
 #include "llvm/Support/Compiler.h"
-#include "llvm/Support/Streams.h"
 
 // FIXME: put this somewhere else?
 #ifndef S_ISDIR

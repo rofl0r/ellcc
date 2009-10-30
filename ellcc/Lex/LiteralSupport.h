@@ -15,6 +15,7 @@
 #ifndef LITERALSUPPORT_H
 #define LITERALSUPPORT_H
 
+#include <stdint.h>
 #include <string>
 #include "llvm/ADT/SmallString.h"
 

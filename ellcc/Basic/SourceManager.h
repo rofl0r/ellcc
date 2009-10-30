@@ -17,7 +17,7 @@
 #include "SourceLocation.h"
 #include "str.h"
 #include "llvm/Support/Allocator.h"
-#include "llvm/Support/DataTypes.h"
+#include "llvm/System/DataTypes.h"
 #include "llvm/ADT/DenseMap.h"
 #include <vector>
 #include <cassert>

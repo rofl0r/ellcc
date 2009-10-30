@@ -15,6 +15,7 @@
 #include "TextDiagnosticBuffer.h"
 #include "SourceManager.h"
 #include "Preprocessor.h"
+#include <stdio.h>
 using namespace ellcc;
 
 typedef TextDiagnosticBuffer::DiagList DiagList;
