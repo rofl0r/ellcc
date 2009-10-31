@@ -3,16 +3,21 @@
 <head>
 
 
+
+  
   
   
   <meta content="text/html;charset=ISO-8859-1" http-equiv="Content-Type">
 
 
+
   
   
   
   
-  <title>ELLCC Installation</title>
+  
+  
+  <title>Setting Up Target Support</title>
   <meta content="Richard Pennington" name="author">
 </head>
 
@@ -20,152 +25,207 @@
 <body>
 
 
+
 <table style="text-align: left; width: 100%; height: 100%;" border="0" cellpadding="0" cellspacing="0">
+
 
 
   <tbody>
 
 
+
     <tr align="center">
+
 
 
       <th style="text-align: center; vertical-align: middle; background-color: rgb(192, 192, 192); height: 135px;" colspan="2" rowspan="1">
       
       
+      
       <table style="text-align: left; width: 100%;" border="0" cellpadding="0" cellspacing="0">
+
 
 
         <tbody>
 
 
+
           <tr>
+
 
 
             <td style="height: 135px; width: 135px;"><img style="width: 135px; height: 135px;" alt="ELLCC" src="images/ellcc.png"></td>
 
 
+
             <td style="text-align: center;">
             
             
-            <h1>ELLCC Installation</h1>
+            
+            <h1>Setting Up Target Support</h1>
+
 
 
             </td>
 
 
+
           </tr>
 
 
+
+        
         
         
         </tbody>
       
       
+      
       </table>
+
 
 
       </th>
 
 
+
     </tr>
+
 
 
     <tr>
 
 
+
       <td style="vertical-align: top; background-color: rgb(153, 255, 153); width: 135px;"><a href="index.html">Home</a><br>
+
 
 
       <a href="news.html">News</a><br>
 
 
+
       <a href="ellcc/libecc/share/doc">Documentation</a><br>
 
+
       <a href="installation.html">Installation</a><br>
+
 
 
       <a href="wiki">Wiki</a><br>
 
 
+
       <a href="bugzilla">Bug Database</a><br>
+
 
 
       <a href="svn/ellcc">Source Repository</a><br>
 
 
+
       <a href="mailto:rich@pennware.com">Contact</a><br>
 
 
+
       </td>
 
 
-      <td style="vertical-align: top;">The installation procedure
-for ELLCC is a bit complicated at the moment. There are currently no
-binary downloads available, you have to build from source. Having said
-that, here are step by step instructions that describe how to build
-ELLCC under Linux. These instructions also work under Cygwin.<br>
-      <br>
-It takes a long time to build ELLCC. It helps to have a system with at least 3GB of RAM to speed up the LLVM build.<br>
-      <h2>Prerequisites</h2>
-&nbsp;An ELLCC build requires the following packages to be installed:<br>
-      <ul>
-        <li>A C/C++ compiler</li>
-        <li>Subversion</li>
-        <li>Perl</li>
-        <li>Flex</li>
-        <li>Bison</li>
-      </ul>
-Flex is used to build tools that are used to build ELLCC. The is currently a bug in some of the tools that use <code>/usr/include/FlexLexer.h</code>. The current work-around is edit <code>/usr/include/FlexLexer.h</code> (as superuser) and change the line
-      <h2>Create the Build Directory</h2>
-Create a directory to build in. In the examples below, I use "<code>ecc</code>". Make the directory and get the ELLCC sources:<code><br>
-      <br>
+
+      <td style="vertical-align: top;">Setting up target support
+means building the appropriate tools (e.g. assemblers, linkers, etc.)
+and libraries to support cross compilation of programs using ELLCC. You
+should have completed the ELLCC <a href="installation.html">Installation</a> steps before you try to setup target support as the <span style="font-family: monospace;">ecc</span> compiler is required at this point.<br>
+      <h2>Building the GNU Tools</h2>
+ELLCC uses the GNU assemblers, linker, &nbsp;debugger, and binutils as the back end for <span style="font-family: monospace;">ecc</span>.
+A complete set of these tools configured for use in ELLCC are supplied
+in the gnu directory under ellcc. Change into the directory, build and
+install the GNU components now:<br>
+      <code><br>
       </code>
-      <div style="margin-left: 40px;"><code>[~] main% mkdir ecc</code><br>
-      <code>[~] main% cd ecc<br>
-[~/ecc] main% svn co http://ellcc.org/svn/ellcc/trunk ellcc<br>
-      </code></div>
-      <h2>Building LLVM</h2>
-Get the ELLCC version of LLVM:<br>
+      <div style="margin-left: 40px;"><code>[~/ecc/ellcc] main% cd gnu</code><br>
+      <code>[~/ecc/ellcc/gnu] main% ./makegnu</code> <br>
+      <code>[~/ecc/ellcc/gnu] main% ./makegnu install</code><br>
+      </div>
       <br>
-      <div style="margin-left: 40px;"><code>[~/ecc] main% svn co http://ellcc.org/svn/llvm/trunk llvm</code><br>
-      <code>[~/ecc] main% mkdir llvm-build</code><br>
-      <code>[~/ecc] main% cd llvm-build</code><br>
-      <code>[~/ecc/llvm-build] main% ../llvm/configure --prefix=`pwd`/../ellcc<br>
+This will place the GNU executables in the same <span style="font-family: monospace;">bin</span> directory in which <span style="font-family: monospace;">ecc</span> resides. Your bin directory should now look something like this:<br>
       <br>
-      </code></div>
-The<code><span style="font-weight: bold;"> </span>--prefix</code> option sets the installation directory of this build of LLVM to the directory <code>ellcc</code>.<br>
-      <br>
-Next, build and install LLVM:<br>
-      <br>
-      <div style="margin-left: 40px;"><code>[~/ecc/llvm-build] main% make</code><br>
-      <code>[~/ecc/llvm-build] main% make install<br>
-[~/ecc/llvm-build] main% cd ..<br>
-[~/ecc] main%<br>
-      <br>
-      </code></div>
+      <div style="margin-left: 40px;"><code>[~/ecc/ellcc/gnu] main% cd ..</code><br>
+      <code>[~/ecc/ellcc] main% ls bin</code><br>
+      <code>alpha-elf-as*&nbsp;&nbsp; ecc-embedspu*&nbsp;&nbsp;
+ecc-strings*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-nm*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+opt*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+tblgen*</code><br>
+      <code>alpha-elf-e++@&nbsp;
+ecc-gdb*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+ecc-strip*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-prof*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+powerpc64-elf-as*&nbsp;&nbsp; tclsh8.4*</code><br>
+      <code>alpha-elf-ecc@&nbsp; ecc-gdbserver*&nbsp;
+llc*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-ranlib*&nbsp;&nbsp;&nbsp;&nbsp; powerpc64-elf-e++@&nbsp; wish8.4*</code><br>
+      <code>arm-elf-as*&nbsp;&nbsp;&nbsp;&nbsp;
+ecc-gdbtui*&nbsp;&nbsp;&nbsp;&nbsp;
+lli*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-stub*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; powerpc64-elf-ecc@&nbsp;
+x86_64-elf-as*</code><br>
+      <code>arm-elf-e++@&nbsp;&nbsp;&nbsp;
+ecc-gprof*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-ar*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+mips-elf-as*&nbsp;&nbsp;&nbsp;&nbsp;
+powerpc-elf-as*&nbsp;&nbsp;&nbsp;&nbsp; x86_64-elf-e++@</code><br>
+      <code>arm-elf-ecc@&nbsp;&nbsp;&nbsp;
+ecc-insight*&nbsp;&nbsp;&nbsp;
+llvm-as*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+mips-elf-e++@&nbsp;&nbsp;&nbsp; powerpc-elf-e++@&nbsp;&nbsp;&nbsp;
+x86_64-elf-ecc@</code><br>
+      <code>bugpoint*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+ecc-ld*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-bcanalyzer*&nbsp; mips-elf-ecc@&nbsp;&nbsp;&nbsp;
+powerpc-elf-ecc@&nbsp;&nbsp;&nbsp; x86-elf-as*</code><br>
+      <code>e++@&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+ecc-nm*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvmc*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+msp430-elf-as*&nbsp;&nbsp;
+sparc-elf-as*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; x86-elf-e++@</code><br>
+      <code>ecc*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+ecc-objcopy*&nbsp;&nbsp;&nbsp;
+llvm-config*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; msp430-elf-e++@&nbsp;
+sparc-elf-e++@&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; x86-elf-ecc@</code><br>
+      <code>ecc-addr2line*&nbsp; ecc-objdump*&nbsp;&nbsp;&nbsp;
+llvm-dis*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+msp430-elf-ecc@&nbsp; sparc-elf-ecc@&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+x86-pe-as*</code><br>
+      <code>ecc-ar*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+ecc-ranlib*&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-extract*&nbsp;&nbsp;&nbsp;&nbsp; nios2-elf-as*&nbsp;&nbsp;&nbsp;
+spu-elf-as*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; x86-pe-e++@</code><br>
+      <code>ecc-as*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+ecc-readelf*&nbsp;&nbsp;&nbsp;
+llvm-ld*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+nios2-elf-e++@&nbsp;&nbsp;
+spu-elf-e++@&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; x86-pe-ecc@</code><br>
+      <code>ecc-c++filt*&nbsp;&nbsp;&nbsp;
+ecc-size*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-link*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+nios2-elf-ecc@&nbsp;&nbsp; spu-elf-ecc@</code><br>
+      </div>
       <code></code>
-      <h2>Building ecc</h2>
-The next step is to build the <span style="font-family: monospace;">ecc</span> compiler. Build the ELLCC sources:<br>
-      <br>
-      <div style="margin-left: 40px;"><span style="font-family: monospace;">[~/ecc] main% cd ellcc<br>
-[~/ecc/ellcc] main%<br>
-      </span><code></code><span style="font-family: monospace;">[~/ecc/ellcc] main% ./configure<br>
-[~/ecc/ellcc] main% make</span><code></code></div>
-
-
-      </td>
-
-
+      <div style="margin-left: 40px;"><code><br>
+      </code></div>
+Notice that the GNU tools are either named <span style="font-family: monospace;">ecc-*</span> or <span style="font-family: monospace;">*-as</span>. The <span style="font-family: monospace;">ecc-*</span> executables are configured to support all the processors that ELLCC supports.<br>
+      <h2>Building the Runtime Libraries</h2>
+ELLCC uses runtime libraries based on source code from several sources.
+The C standard library is based on newlib. Software floating point
+support for processors that need it is based of the soft-flt component
+of &nbsp;libgcc. Support for operations, such as 64 bit additions, that
+a target does not support directly are provided by compiler-rt.<code></code><span style="font-weight: bold;"></span><span style="font-weight: bold;"></span><span style="font-weight: bold;"></span></td>
     </tr>
-
-
-  
-  
   </tbody>
 </table>
-
-
 <br>
+
 
 
 </body>

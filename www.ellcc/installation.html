@@ -2,171 +2,257 @@
 <html>
 <head>
 
-
-  
-  
   <meta content="text/html;charset=ISO-8859-1" http-equiv="Content-Type">
-
-
-  
-  
-  
-  
   <title>ELLCC Installation</title>
+
+
   <meta content="Richard Pennington" name="author">
+
 </head>
 
 
 <body>
 
-
 <table style="text-align: left; width: 100%; height: 100%;" border="0" cellpadding="0" cellspacing="0">
-
 
   <tbody>
 
-
     <tr align="center">
 
-
       <th style="text-align: center; vertical-align: middle; background-color: rgb(192, 192, 192); height: 135px;" colspan="2" rowspan="1">
-      
-      
       <table style="text-align: left; width: 100%;" border="0" cellpadding="0" cellspacing="0">
-
 
         <tbody>
 
-
           <tr>
-
 
             <td style="height: 135px; width: 135px;"><img style="width: 135px; height: 135px;" alt="ELLCC" src="images/ellcc.png"></td>
 
-
             <td style="text-align: center;">
-            
-            
             <h1>ELLCC Installation</h1>
-
 
             </td>
 
-
           </tr>
 
-
-        
-        
         </tbody>
-      
-      
       </table>
-
 
       </th>
 
-
     </tr>
-
 
     <tr>
 
-
       <td style="vertical-align: top; background-color: rgb(153, 255, 153); width: 135px;"><a href="index.html">Home</a><br>
 
-
       <a href="news.html">News</a><br>
-
 
       <a href="ellcc/libecc/share/doc">Documentation</a><br>
 
       <a href="installation.html">Installation</a><br>
 
-
       <a href="wiki">Wiki</a><br>
-
 
       <a href="bugzilla">Bug Database</a><br>
 
-
       <a href="svn/ellcc">Source Repository</a><br>
-
 
       <a href="mailto:rich@pennware.com">Contact</a><br>
 
-
       </td>
 
+      <td style="vertical-align: top;">The installation
+procedure for ELLCC is a bit complicated at the moment. There are
+currently no binary downloads available, you have to build from source.
+Having said that, here are step by step instructions that describe how
+to build ELLCC under Linux. These instructions also work under Cygwin.<br>
 
-      <td style="vertical-align: top;">The installation procedure
-for ELLCC is a bit complicated at the moment. There are currently no
-binary downloads available, you have to build from source. Having said
-that, here are step by step instructions that describe how to build
-ELLCC under Linux. These instructions also work under Cygwin.<br>
       <br>
-It takes a long time to build ELLCC. It helps to have a system with at least 3GB of RAM to speed up the LLVM build.<br>
+
+It takes a long time to build ELLCC. It helps to have a system with at
+least 3GB of RAM to speed up the LLVM build.<br>
+
       <h2>Prerequisites</h2>
-&nbsp;An ELLCC build requires the following packages to be installed:<br>
+
+&nbsp;An ELLCC build requires the following packages to be
+installed:<br>
+
       <ul>
+
         <li>A C/C++ compiler</li>
+
         <li>Subversion</li>
+
         <li>Perl</li>
+
         <li>Flex</li>
+
         <li>Bison</li>
+
       </ul>
-Flex is used to build tools that are used to build ELLCC. The is currently a bug in some of the tools that use <code>/usr/include/FlexLexer.h</code>. The current work-around is edit <code>/usr/include/FlexLexer.h</code> (as superuser) and change the line
+
+Flex is used to build tools that are used to build ELLCC. The is
+currently a bug in some of the tools that use <code>/usr/include/FlexLexer.h</code>.
+The current work-around is edit <code>/usr/include/FlexLexer.h</code>
+(as superuser) and change the line
       <h2>Create the Build Directory</h2>
-Create a directory to build in. In the examples below, I use "<code>ecc</code>". Make the directory and get the ELLCC sources:<code><br>
+
+Create a directory to build in. In the examples below, I use "<code>ecc</code>".
+Make the directory and get the ELLCC sources:<code><br>
+
       <br>
+
       </code>
-      <div style="margin-left: 40px;"><code>[~] main% mkdir ecc</code><br>
+      <div style="margin-left: 40px;"><code>[~]
+main% mkdir ecc</code><br>
+
       <code>[~] main% cd ecc<br>
+
 [~/ecc] main% svn co http://ellcc.org/svn/ellcc/trunk ellcc<br>
+
       </code></div>
+
       <h2>Building LLVM</h2>
+
 Get the ELLCC version of LLVM:<br>
+
       <br>
-      <div style="margin-left: 40px;"><code>[~/ecc] main% svn co http://ellcc.org/svn/llvm/trunk llvm</code><br>
+
+      <div style="margin-left: 40px;"><code>[~/ecc]
+main% svn co http://ellcc.org/svn/llvm/trunk llvm</code><br>
+
       <code>[~/ecc] main% mkdir llvm-build</code><br>
+
       <code>[~/ecc] main% cd llvm-build</code><br>
-      <code>[~/ecc/llvm-build] main% ../llvm/configure --prefix=`pwd`/../ellcc<br>
+
+      <code>[~/ecc/llvm-build] main% ../llvm/configure
+--prefix=`pwd`/../ellcc<br>
+
       <br>
+
       </code></div>
-The<code><span style="font-weight: bold;"> </span>--prefix</code> option sets the installation directory of this build of LLVM to the directory <code>ellcc</code>.<br>
+
+The<code><span style="font-weight: bold;"> </span>--prefix</code>
+option sets the installation directory of this build of LLVM to the
+directory <code>ellcc</code>.<br>
+
       <br>
+
 Next, build and install LLVM:<br>
+
       <br>
-      <div style="margin-left: 40px;"><code>[~/ecc/llvm-build] main% make</code><br>
-      <code>[~/ecc/llvm-build] main% make install<br>
-[~/ecc/llvm-build] main% cd ..<br>
-[~/ecc] main%<br>
+
+      <div style="margin-left: 40px;"><code>[~/ecc/llvm-build]
+main% make</code><br>
+      <code>[~/ecc/llvm-build] main% make install</code><br>
+      <code>
+[~/ecc/llvm-build] main% cd ..</code><br>
+      <code>
+[~/ecc] main%</code><br>
+      </div>
+
+      <code></code>
+      <div style="margin-left: 40px;"><code>
       <br>
+
       </code></div>
+
       <code></code>
       <h2>Building ecc</h2>
-The next step is to build the <span style="font-family: monospace;">ecc</span> compiler. Build the ELLCC sources:<br>
+
+The next step is to build the <span style="font-family: monospace;">ecc</span>
+compiler. Build the ELLCC sources:<br>
+
       <br>
-      <div style="margin-left: 40px;"><span style="font-family: monospace;">[~/ecc] main% cd ellcc<br>
-[~/ecc/ellcc] main%<br>
-      </span><code></code><span style="font-family: monospace;">[~/ecc/ellcc] main% ./configure<br>
-[~/ecc/ellcc] main% make</span><code></code></div>
+
+      <div style="margin-left: 40px;"><code><span style="font-family: monospace;">[~/ecc] main% cd ellcc</span></code><br>
+      <code><span style="font-family: monospace;">
+[~/ecc/ellcc] main%</span></code><br>
+      <code><span style="font-family: monospace;">
+      </span></code><code><span style="font-family: monospace;">[~/ecc/ellcc] main%
+./configure</span></code><br>
+      <code><span style="font-family: monospace;">
+[~/ecc/ellcc] main% make</span></code><br>
+      <code><span style="font-family: monospace;">
+      </span><span style="font-family: monospace;"></span></code><code></code><br>
+      </div>
 
 
+If everything has been successful up to this point, you have built <span style="font-family: monospace;">ecc</span>. It, and
+the binaries created by the LLVM build are in the <span style="font-family: monospace;">bin</span>
+subdirectory of the build directory, i.e. in <span style="font-family: monospace;">~/ecc/bin</span> in my
+example. The bin directory should look something like this:<br>
+
+      <br>
+
+      <div style="margin-left: 40px;"><code><span style="font-family: monospace;">[~/ecc/ellcc] main% ls bin</span></code><br style="font-family: monospace;">
+      <code><span style="font-family: monospace;">alpha-elf-e++@&nbsp;
+lli*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-ld*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+msp430-elf-e++@&nbsp;&nbsp;&nbsp;&nbsp;
+powerpc-elf-ecc@&nbsp; x86-elf-e++@</span></code><br style="font-family: monospace;">
+      <code><span style="font-family: monospace;">alpha-elf-ecc@&nbsp;
+llvm-ar*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-link*&nbsp;&nbsp;&nbsp;&nbsp;
+msp430-elf-ecc@&nbsp;&nbsp;&nbsp;&nbsp;
+sparc-elf-e++@&nbsp;&nbsp;&nbsp; x86-elf-ecc@</span></code><br style="font-family: monospace;">
+      <code><span style="font-family: monospace;">arm-elf-e++@&nbsp;&nbsp;&nbsp;
+llvm-as*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-nm*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+nios2-elf-e++@&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+sparc-elf-ecc@&nbsp;&nbsp;&nbsp; x86-pe-e++@</span></code><br style="font-family: monospace;">
+      <code><span style="font-family: monospace;">arm-elf-ecc@&nbsp;&nbsp;&nbsp;
+llvm-bcanalyzer*&nbsp;
+llvm-prof*&nbsp;&nbsp;&nbsp;&nbsp;
+nios2-elf-ecc@&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+spu-elf-e++@&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+x86-pe-ecc@</span></code><br style="font-family: monospace;">
+      <code><span style="font-family: monospace;">bugpoint*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvmc*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-ranlib*&nbsp;&nbsp;
+opt*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+spu-elf-ecc@</span></code><br style="font-family: monospace;">
+      <code><span style="font-family: monospace;">e++@&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-config*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-stub*&nbsp;&nbsp;&nbsp;&nbsp;
+powerpc64-elf-e++@&nbsp; tblgen*</span></code><br style="font-family: monospace;">
+      <code><span style="font-family: monospace;">ecc*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-dis*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+mips-elf-e++@&nbsp; powerpc64-elf-ecc@&nbsp; x86_64-elf-e++@</span></code><br style="font-family: monospace;">
+      <code></code><span style="font-family: monospace;"><code>llc*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-extract*&nbsp;&nbsp;&nbsp;&nbsp;
+mips-elf-ecc@&nbsp; powerpc-elf-e++@&nbsp;&nbsp;&nbsp;
+x86_64-elf-ecc@</code></span><br>
+      </div>
+
+
+
+
+
+
+
+
+
+      <span style="font-family: monospace;"><br>
+      </span>Some of the executables are as a result of building LLVM, but building <span style="font-family: monospace;">ecc</span> created the <span style="font-family: monospace;">ecc</span> executable and many symbolic links to it. You may when to put the <span style="font-family: monospace;">bin</span> directory in your PATH, but it is not required at this point. <span style="font-family: monospace;">ecc</span> and <span style="font-family: monospace;">e++</span> are the hosted C and C++ compilers: They use the system header files in <span style="font-family: monospace;">/usr/include</span>&nbsp; and use the system <span style="font-family: monospace;">cc</span> and <span style="font-family: monospace;">c++</span>
+compilers to do the final program link so that the system startup code
+and libraries are used. This means you can use ecc and e++ to compile
+programs that run natively on your system.<br>
+      <br>
+The symbolic links to ecc set up defaults that cause it to target a
+specific processor and target environment. We'll see how to use them in
+      <a href="targetsupport.html">Setting Up&nbsp;Target Support</a>.<br clear="all">
+      <span style="font-family: monospace;">
+      </span>
       </td>
-
 
     </tr>
 
-
-  
-  
   </tbody>
 </table>
 
-
 <br>
-
 
 </body>
 </html>
