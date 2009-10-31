@@ -57,7 +57,7 @@ AR     := ar
 RANLIB := ranlib
 CMP    := cmp
 CP     := cp
-TBLGEN := tblgen
+TBLGEN := ../../bin/tblgen
 ECHO   := echo
 
 # compile .cpp in this directory to a .o
