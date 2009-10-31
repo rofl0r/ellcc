@@ -1,0 +1,171 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+
+
+  
+  
+  <meta content="text/html;charset=ISO-8859-1" http-equiv="Content-Type">
+
+
+  
+  
+  
+  
+  <title>ELLCC Installation</title>
+  <meta content="Richard Pennington" name="author">
+</head>
+
+
+<body>
+
+
+<table style="text-align: left; width: 100%; height: 100%;" border="0" cellpadding="0" cellspacing="0">
+
+
+  <tbody>
+
+
+    <tr align="center">
+
+
+      <th style="text-align: center; vertical-align: middle; background-color: rgb(192, 192, 192); height: 135px;" colspan="2" rowspan="1">
+      
+      
+      <table style="text-align: left; width: 100%;" border="0" cellpadding="0" cellspacing="0">
+
+
+        <tbody>
+
+
+          <tr>
+
+
+            <td style="height: 135px; width: 135px;"><img style="width: 135px; height: 135px;" alt="ELLCC" src="images/ellcc.png"></td>
+
+
+            <td style="text-align: center;">
+            
+            
+            <h1>ELLCC Installation</h1>
+
+
+            </td>
+
+
+          </tr>
+
+
+        
+        
+        </tbody>
+      
+      
+      </table>
+
+
+      </th>
+
+
+    </tr>
+
+
+    <tr>
+
+
+      <td style="vertical-align: top; background-color: rgb(153, 255, 153); width: 135px;"><a href="index.html">Home</a><br>
+
+
+      <a href="news.html">News</a><br>
+
+
+      <a href="ellcc/libecc/share/doc">Documentation</a><br>
+
+      <a href="installation.html">Installation</a><br>
+
+
+      <a href="wiki">Wiki</a><br>
+
+
+      <a href="bugzilla">Bug Database</a><br>
+
+
+      <a href="svn/ellcc">Source Repository</a><br>
+
+
+      <a href="mailto:rich@pennware.com">Contact</a><br>
+
+
+      </td>
+
+
+      <td style="vertical-align: top;">The installation procedure
+for ELLCC is a bit complicated at the moment. There are currently no
+binary downloads available, you have to build from source. Having said
+that, here are step by step instructions that describe how to build
+ELLCC under Linux. These instructions also work under Cygwin.<br>
+      <br>
+It takes a long time to build ELLCC. It helps to have a system with at least 3GB of RAM to speed up the LLVM build.<br>
+      <h2>Prerequisites</h2>
+&nbsp;An ELLCC build requires the following packages to be installed:<br>
+      <ul>
+        <li>A C/C++ compiler</li>
+        <li>Subversion</li>
+        <li>Perl</li>
+        <li>Flex</li>
+        <li>Bison</li>
+      </ul>
+Flex is used to build tools that are used to build ELLCC. The is currently a bug in some of the tools that use <code>/usr/include/FlexLexer.h</code>. The current work-around is edit <code>/usr/include/FlexLexer.h</code> (as superuser) and change the line
+      <h2>Create the Build Directory</h2>
+Create a directory to build in. In the examples below, I use "<code>ecc</code>". Make the directory and get the ELLCC sources:<code><br>
+      <br>
+      </code>
+      <div style="margin-left: 40px;"><code>[~] main% mkdir ecc</code><br>
+      <code>[~] main% cd ecc<br>
+[~/ecc] main% svn co http://ellcc.org/svn/ellcc/trunk ellcc<br>
+      </code></div>
+      <h2>Building LLVM</h2>
+Get the ELLCC version of LLVM:<br>
+      <br>
+      <div style="margin-left: 40px;"><code>[~/ecc] main% svn co http://ellcc.org/svn/llvm/trunk llvm</code><br>
+      <code>[~/ecc] main% mkdir llvm-build</code><br>
+      <code>[~/ecc] main% cd llvm-build</code><br>
+      <code>[~/ecc/llvm-build] main% ../llvm/configure --prefix=`pwd`/../ellcc<br>
+      <br>
+      </code></div>
+The<code><span style="font-weight: bold;"> </span>--prefix</code> option sets the installation directory of this build of LLVM to the directory <code>ellcc</code>.<br>
+      <br>
+Next, build and install LLVM:<br>
+      <br>
+      <div style="margin-left: 40px;"><code>[~/ecc/llvm-build] main% make</code><br>
+      <code>[~/ecc/llvm-build] main% make install<br>
+[~/ecc/llvm-build] main% cd ..<br>
+[~/ecc] main%<br>
+      <br>
+      </code></div>
+      <code></code>
+      <h2>Building ecc</h2>
+The next step is to build the <span style="font-family: monospace;">ecc</span> compiler. Build the ELLCC sources:<br>
+      <br>
+      <div style="margin-left: 40px;"><span style="font-family: monospace;">[~/ecc] main% cd ellcc<br>
+[~/ecc/ellcc] main%<br>
+      </span><code></code><span style="font-family: monospace;">[~/ecc/ellcc] main% ./configure</span><code></code></div>
+
+
+      </td>
+
+
+    </tr>
+
+
+  
+  
+  </tbody>
+</table>
+
+
+<br>
+
+
+</body>
+</html>
