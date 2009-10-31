@@ -24,8 +24,8 @@ LIBELKHOUND := $(ELKHOUND)/libelkhound.a
 PERL := @PERL@
 MYFLEX := $(PERL) $(SMBASE)/run-flex.pl -nobackup -copies
 
-LLVMLDFLAGS := $(shell llvm-config --ldflags) -L$(shell llvm-config --libdir) -lLLVMSupport -lLLVMSystem
-LLVMCCFLAGS := $(shell llvm-config --cxxflags)
+LLVMLDFLAGS := $(shell ../../bin/llvm-config --ldflags) -L$(shell ../../bin/llvm-config --libdir) -lLLVMSupport -lLLVMSystem
+LLVMCCFLAGS := $(shell ../../bin/llvm-config --cxxflags)
 
 # flags for the C and C++ compilers (and preprocessor)
 CCFLAGS := @CCFLAGS@ -I$(ELSA) -I$(ELKHOUND) -I$(SMBASE) -I../basic $(LLVMCCFLAGS)

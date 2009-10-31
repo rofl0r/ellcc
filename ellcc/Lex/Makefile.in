@@ -9,7 +9,7 @@ all: $(THIS)
 
 SMBASE   := @SMBASE@
 LLVM := @LLVM@
-LLVMCCFLAGS := $(shell llvm-config --cxxflags)
+LLVMCCFLAGS := $(shell ../../bin/llvm-config --cxxflags)
 
 # external tools
 PERL := @PERL@

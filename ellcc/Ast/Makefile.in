@@ -8,8 +8,8 @@ all: ccsstr astgen libast.a example.o ext1.o
 # directories of other software
 SMBASE := @SMBASE@
 LIBSMBASE := $(SMBASE)/libsmbase.a
-LLVMLDFLAGS := $(shell llvm-config --ldflags) -L$(shell llvm-config --libdir) -lLLVMSupport -lLLVMSystem
-LLVMCCFLAGS := $(shell llvm-config --cxxflags)
+LLVMLDFLAGS := $(shell ../../bin/llvm-config --ldflags) -L$(shell ../../bin/llvm-config --libdir) -lLLVMSupport -lLLVMSystem
+LLVMCCFLAGS := $(shell ../../bin/llvm-config --cxxflags)
 
 # external tools
 PERL := @PERL@

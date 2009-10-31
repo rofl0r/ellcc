@@ -11,8 +11,8 @@ THIS := liblex.a
 all: $(THIS)
 
 SMBASE   := ../SMBase
-LLVM := /usr/local
-LLVMCCFLAGS := $(shell llvm-config --cxxflags)
+LLVM := ../..
+LLVMCCFLAGS := $(shell ../../bin/llvm-config --cxxflags)
 
 # external tools
 PERL := perl

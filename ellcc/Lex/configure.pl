@@ -41,7 +41,7 @@ if ($smcv < $req_smcv) {
 
 # defaults
 @LDFLAGS = ("-g -Wall");
-$LLVM = "/usr/local";
+$LLVM = "../..";
 $GCOV_MODS = "";
 
 
