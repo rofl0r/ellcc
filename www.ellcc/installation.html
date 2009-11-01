@@ -29,7 +29,7 @@
             <td style="height: 135px; width: 135px;"><img style="width: 135px; height: 135px;" alt="ELLCC" src="images/ellcc.png"></td>
 
             <td style="text-align: center;">
-            <h1>ELLCC Installation</h1>
+            <h1><a class="mozTocH1" name="mozTocId15539"></a>ELLCC Installation</h1>
 
             </td>
 
@@ -62,7 +62,18 @@
 
       </td>
 
-      <td style="vertical-align: top;">The installation
+      <td style="vertical-align: top;">
+      <ol id="mozToc">
+<!--mozToc h1 1 h2 2 h3 3 h4 4 h5 5 h6 6--><li><a href="#mozTocId15539">ELLCC Installation</a>
+          <ol>
+            <li><a href="#mozTocId792290">Prerequisites</a></li>
+            <li><a href="#mozTocId116071">Create the Build Directory</a></li>
+            <li><a href="#mozTocId231222">Building LLVM</a></li>
+            <li><a href="#mozTocId38233">Building ecc</a></li>
+          </ol>
+        </li>
+      </ol>
+The installation
 procedure for ELLCC is a bit complicated at the moment. There are
 currently no binary downloads available, you have to build from source.
 Having said that, here are step by step instructions that describe how
@@ -73,7 +84,7 @@ to build ELLCC under Linux. These instructions also work under Cygwin.<br>
 It takes a long time to build ELLCC. It helps to have a system with at
 least 3GB of RAM to speed up the LLVM build.<br>
 
-      <h2>Prerequisites</h2>
+      <h2><a class="mozTocH2" name="mozTocId792290"></a>Prerequisites</h2>
 
 &nbsp;An ELLCC build requires the following packages to be
 installed:<br>
@@ -96,7 +107,7 @@ Flex is used to build tools that are used to build ELLCC. The is
 currently a bug in some of the tools that use <code>/usr/include/FlexLexer.h</code>.
 The current work-around is edit <code>/usr/include/FlexLexer.h</code>
 (as superuser) and change the line
-      <h2>Create the Build Directory</h2>
+      <h2><a class="mozTocH2" name="mozTocId116071"></a>Create the Build Directory</h2>
 
 Create a directory to build in. In the examples below, I use "<code>ecc</code>".
 Make the directory and get the ELLCC sources:<code><br>
@@ -113,7 +124,7 @@ main% mkdir ecc</code><br>
 
       </code></div>
 
-      <h2>Building LLVM</h2>
+      <h2><a class="mozTocH2" name="mozTocId231222"></a>Building LLVM</h2>
 
 Get the ELLCC version of LLVM:<br>
 
@@ -159,7 +170,7 @@ main% make</code><br>
       </code></div>
 
       <code></code>
-      <h2>Building ecc</h2>
+      <h2><a class="mozTocH2" name="mozTocId38233"></a>Building ecc</h2>
 
 The next step is to build the <span style="font-family: monospace;">ecc</span>
 compiler. Build the ELLCC sources:<br>

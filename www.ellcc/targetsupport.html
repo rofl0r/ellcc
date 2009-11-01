@@ -62,7 +62,7 @@
             
             
             
-            <h1>Setting Up Target Support</h1>
+            <h1><a class="mozTocH1" name="mozTocId679816"></a>Setting Up Target Support</h1>
 
 
 
@@ -132,11 +132,20 @@
 
 
 
-      <td style="vertical-align: top;">Setting up target support
-means building the appropriate tools (e.g. assemblers, linkers, etc.)
-and libraries to support cross compilation of programs using ELLCC. You
-should have completed the ELLCC <a href="installation.html">Installation</a> steps before you try to setup target support as the <span style="font-family: monospace;">ecc</span> compiler is required at this point.<br>
-      <h2>Building the GNU Tools</h2>
+      <td style="vertical-align: top;">
+      <ol id="mozToc">
+<!--mozToc h1 1 h2 2 h3 3 h4 4 h5 5 h6 6--><li><a href="#mozTocId679816">Setting Up Target Support</a>
+          <ol>
+            <li><a href="#mozTocId258788">Building the GNU Tools</a></li>
+            <li><a href="#mozTocId834743">Building the Runtime Libraries</a></li>
+          </ol>
+        </li>
+      </ol>
+      <br>
+Setting up target support means building the appropriate tools (e.g.
+assemblers, linkers, etc.) and libraries to support cross compilation
+of programs using ELLCC. You should have completed the ELLCC <a href="installation.html">Installation</a> steps before you try to setup target support as the <span style="font-family: monospace;">ecc</span> compiler is required at this point.<br>
+      <h2><a class="mozTocH2" name="mozTocId258788"></a>Building the GNU Tools</h2>
 ELLCC uses the GNU assemblers, linker, &nbsp;debugger, and binutils as the back end for <span style="font-family: monospace;">ecc</span>. A complete set of these tools configured for use in ELLCC are supplied in the <span style="font-family: monospace;">gnu</span> directory under ellcc. Change into the directory, build and install the GNU components now:<br>
       <code><br>
       </code>
@@ -212,12 +221,8 @@ nios2-elf-ecc@&nbsp;&nbsp; spu-elf-ecc@</code><br>
       <div style="margin-left: 40px;"><code><br>
       </code></div>
 Notice that the GNU tools are either named <span style="font-family: monospace;">ecc-*</span> or <span style="font-family: monospace;">*-as</span>. The <span style="font-family: monospace;">ecc-*</span> executables are configured to support all the processors that ELLCC supports.<br>
-      <h2>Building the Runtime Libraries</h2>
-ELLCC uses runtime libraries based on source code from several sources.
-The C standard library is based on newlib. Software floating point
-support for processors that need it is based of the soft-flt component
-of &nbsp;libgcc. Support for operations, such as 64 bit additions, that
-a target does not support directly are provided by compiler-rt.<code></code><span style="font-weight: bold;"></span><span style="font-weight: bold;"></span><span style="font-weight: bold;"></span></td>
+      <h2><a class="mozTocH2" name="mozTocId834743"></a>Building the Runtime Libraries</h2>
+The ELLCC C runtime library, <span style="font-family: monospace;">libecc</span>, is based on source code from several sources. The C standard library is based on <a href="http://sourceware.org/newlib/">newlib</a>. Software floating point support for processors that need it is based of the <a href="http://gcc.gnu.org/wiki/Software_floating_point">soft-fp</a> component of &nbsp;<a href="http://www.gnu.org/software/libc/">glibc</a>. Support for operations, such as 64 bit additions, that a target does not support directly are provided by <a href="http://compiler-rt.llvm.org/">compiler-rt</a>.<code></code><span style="font-weight: bold;"></span><span style="font-weight: bold;"></span><span style="font-weight: bold;"></span></td>
     </tr>
   </tbody>
 </table>
