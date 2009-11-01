@@ -5,4 +5,4 @@
 # in each of the subdirs; users can then go customize
 # as desired
 
-(cd ellcc && ./configure "$@") || exit 1
+(cd ecc && ./configure "$@") || exit 1

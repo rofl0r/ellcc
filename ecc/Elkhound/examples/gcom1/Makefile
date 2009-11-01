@@ -10,9 +10,9 @@ LIBSMBASE   := $(SMBASE)/libsmbase.a
 
 # compilation flags
 CCFLAGS := $(shell $(SMBASE)/config.summary | grep CCFLAGS | sed 's/^.*: *//')
-CCFLAGS += -I$(ELKHOUND) -I$(SMBASE) -I../../../Basic $(shell llvm-config --cxxflags)
+CCFLAGS += -I$(ELKHOUND) -I$(SMBASE) -I../../../Basic $(shell ../../../../bin/llvm-config --cxxflags)
 LDFLAGS := -g -Wall $(LIBELKHOUND) $(LIBSMBASE) ../../../Basic/libbasic.a \
-    $(shell llvm-config --ldflags) -L$(shell llvm-config --libdir) -lLLVMSupport -lLLVMSystem
+    $(shell ../../../../bin/llvm-config --ldflags) -L$(shell ../../../../bin/llvm-config --libdir) -lLLVMSupport -lLLVMSystem
 
 # default make targets
 all: lexer parser
@@ -37,9 +37,8 @@ parser: $(PARSER_OBJS)
 	g++ -o $@ $(PARSER_OBJS) $(LDFLAGS)
 
 check:
-	echo "x := 2 + 3 + 4; print x" | ./lexer
-	echo "x := 2 + 3 + 4; print x" | ./parser
-	echo "x := 2 + 3 + 4; print x" | ./parser -tree
+	echo "2 + 3" | ./lexer
+	echo "2 + 3" | ./parser
 
 clean:
 	rm -f lexer parser *.o tokens.tok gcom.h gcom.cc gmon.out

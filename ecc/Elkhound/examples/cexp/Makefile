@@ -15,9 +15,9 @@ LIBAST := $(AST)/libast.a
 
 # -------- compiler and linker configuration --------
 CCFLAGS := $(shell $(SMBASE)/config.summary | grep CCFLAGS | sed 's/^.*: *//')
-CCFLAGS += -I$(ELKHOUND) -I$(ELKHOUND)/c -I$(SMBASE) -I$(AST) -I../../../Basic $(shell llvm-config --cxxflags)
+CCFLAGS += -I$(ELKHOUND) -I$(ELKHOUND)/c -I$(SMBASE) -I$(AST) -I../../../Basic $(shell ../../../../bin/llvm-config --cxxflags)
 LDFLAGS := -g -Wall $(LIBELKHOUND) $(LIBAST) ../../../Basic/libbasic.a $(LIBSMBASE) \
-    $(shell llvm-config --ldflags) -L$(shell llvm-config --libdir) -lLLVMSupport -lLLVMSystem
+    $(shell ../../../../bin/llvm-config --ldflags) -L$(shell ../../../../bin/llvm-config --libdir) -lLLVMSupport -lLLVMSystem
 
 #
 # -------- generic rules --------

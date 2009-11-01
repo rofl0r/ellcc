@@ -2,16 +2,16 @@
 
 # just do the obvious recursive thing
 all:
-	$(MAKE) -C ellcc
+	$(MAKE) -C ecc
 
 check:
-	$(MAKE) -C ellcc check
+	$(MAKE) -C ecc check
 
 clean:
-	$(MAKE) -C ellcc clean
+	$(MAKE) -C ecc clean
 
 distclean:
-	$(MAKE) -C ellcc distclean
+	$(MAKE) -C ecc distclean
 
 doc:
-	$(MAKE) -C ellcc doc
+	$(MAKE) -C ecc doc
