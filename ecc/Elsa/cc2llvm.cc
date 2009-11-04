@@ -1050,10 +1050,14 @@ void S_expr::cc2llvm(CC2LLVMEnv &env) const
 
 void S_compound::cc2llvm(CC2LLVMEnv &env) const
 {
+    // RICH: env.DI->setLocation(loc);
+    // RICH: env.DI->EmitRegionStart(env.function, env.builder);
     FOREACH_ASTLIST(Statement, stmts, iter) {
         env.EmitStopPoint(iter.data()->loc);
         iter.data()->cc2llvm(env);
     }
+    // RICH: env.DI->setLocation(endloc);
+    // RICH: env.DI->EmitRegionEnd(env.function, env.builder);
 }
 
 void S_if::cc2llvm(CC2LLVMEnv &env) const

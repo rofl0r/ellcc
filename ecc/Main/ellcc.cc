@@ -2074,6 +2074,10 @@ static int Link(const std::string& OutputFilename,
     } 
     args.push_back("-static");
     args.push_back("--hash-style=gnu");
+  } else {
+      if (DebugOutput) {
+        args.push_back("-g");
+      }
   }
 
   args.push_back("-o");
@@ -2456,7 +2460,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
             int result = elsa.parse(*PP.get(),
                                     input.name.c_str(), to.c_str(),
                                     input.module, ParseOnly, *new llvm::LLVMContext, input.LO,
-                                    false); // RICH: DebugOutput);
+                                    DebugOutput);
             if (result) {
                 Exit(result);
             }

@@ -574,8 +574,6 @@ void DebugInfo::EmitFunctionStart(const char *Name, Type* ReturnType,
                                       getOrCreateType(ReturnType, Unit),
                                   Fn->hasInternalLinkage(), true/*definition*/);
   
-    DebugFactory.InsertSubprogramStart(SP, Builder.GetInsertBlock());
-                                                        
     // Push function on region stack.
     RegionStack.push_back(SP);
 }
@@ -599,8 +597,12 @@ void DebugInfo::EmitStopPoint(llvm::Function *Fn, BuilderTy &Builder)
     // Get the appropriate compile unit.
     llvm::DICompileUnit Unit = getOrCreateCompileUnit(CurLoc);
     PresumedLoc PLoc = SM.getPresumedLoc(CurLoc);
-    DebugFactory.InsertStopPoint(Unit, PLoc.getLine(), PLoc.getColumn(),
-                                 Builder.GetInsertBlock()); 
+    llvm::DIDescriptor DR = RegionStack.back();
+    llvm::DIScope DS = llvm::DIScope(DR.getNode());
+    llvm::DILocation DO(NULL);
+    llvm::DILocation DL = DebugFactory.CreateLocation(PLoc.getLine(), PLoc.getColumn(),
+                                                      DS, DO);
+    Builder.SetCurrentDebugLocation(DL.getNode());
 }
 
 /// EmitRegionStart- Constructs the debug code for entering a declarative
@@ -612,7 +614,6 @@ void DebugInfo::EmitRegionStart(llvm::Function *Fn, BuilderTy &Builder)
         D = RegionStack.back();
     D = DebugFactory.CreateLexicalBlock(D);
     RegionStack.push_back(D);
-    DebugFactory.InsertRegionStart(D, Builder.GetInsertBlock());
 }
 
 /// EmitRegionEnd - Constructs the debug code for exiting a declarative
@@ -623,8 +624,6 @@ void DebugInfo::EmitRegionEnd(llvm::Function *Fn, BuilderTy &Builder)
 
     // Provide a region stop point.
     EmitStopPoint(Fn, Builder);
-  
-    DebugFactory.InsertRegionEnd(RegionStack.back(), Builder.GetInsertBlock());
     RegionStack.pop_back();
 }
 
