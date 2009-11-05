@@ -2613,8 +2613,8 @@ llvm::Value* CC2LLVMEnv::initializer(const Initializer* init, Type* type,
     }
 
     ASTNEXTC(IN_designated, d) {
-        std::cerr << toString(init->loc) << ": ";
-        xunimp("designated initializer");
+        report(init->loc, diag::err_not_implemented) << "designated initializer";
+        throw "aborting";
     }
 
     ASTENDCASED
@@ -3671,7 +3671,7 @@ llvm::Value* CC2LLVMEnv::EmitBuiltin(SourceLocation loc, const char* Name,
     switch (BuiltinID)
     {
     default:
-        report(loc, diag::err_builtin_not_implemented) << Name;
+        report(loc, diag::err_not_implemented) << std::string("builtin function '") + Name + "'";
     return llvm::Constant::getNullValue(ResType);
     case Builtin::BI__builtin_ctz:
     case Builtin::BI__builtin_ctzl:
