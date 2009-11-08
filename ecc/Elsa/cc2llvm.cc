@@ -65,7 +65,7 @@ CC2LLVMEnv::CC2LLVMEnv(StringTable &s, sm::string name, const TranslationUnit& i
     TI(TI),
     diags(diags),
     TD(""),
-    targetFolder(&TD, C),
+    targetFolder(&TD),
     input(input),
     mod(new llvm::Module(name.c_str(), C)),
     function(NULL),
