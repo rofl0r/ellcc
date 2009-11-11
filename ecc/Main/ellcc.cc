@@ -83,6 +83,11 @@
 #define ELLCC_VERSION_MODIFIER "ALPHA"
 #define ELLCC_VERSION ELLCC_VERSION_STRING " " ELLCC_VERSION_MODIFIER " " __DATE__
 
+#define GCC 4
+#define GCC_MINOR 4
+#define GCC_PATCHLEVEL 0
+#define GCC_VERSION_STRING xstr(GCC) "." xstr(GCC_MINOR) "." xstr(GCC_PATCHLEVEL)
+
 using namespace llvm;
 using namespace ellcc;
 
@@ -358,6 +363,14 @@ static void setupMappings()
 static cl::opt<bool>
 EmptyInputOnly("empty-input-only", 
       cl::desc("Force running on an empty input file"));
+
+static cl::opt<bool>
+Version("eccversion", 
+      cl::desc("Dump the ecc compatability version"));
+
+static cl::opt<bool>
+DumpVersion("dumpversion", 
+      cl::desc("Dump the gcc compatability version"));
 
 //===----------------------------------------------------------------------===//
 // Diagnostic Options
@@ -2968,6 +2981,18 @@ int main(int argc, char **argv)
         // Parse the command line options.
         cl::ParseCommandLineOptions(argc, argv, "C/C++ compiler\n");
         
+        if (Version || DumpVersion) {
+            if (Version) {
+                // Dump the compatability version.
+                printf("%s\n", ELLCC_VERSION_STRING);
+            }
+            if (DumpVersion) {
+                // Dump the GCC compatability version.
+                printf("%s\n", GCC_VERSION_STRING);
+            }
+            exit(0);
+        }
+
         exportList.push_back("_start");         // The initial entry point.
         exportList.push_back("_estart");        // The program entry point.
         exportList.push_back("main");           // Needed for debugging (break @ main).
