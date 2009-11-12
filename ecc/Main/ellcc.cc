@@ -1691,12 +1691,14 @@ TokenCache("token-cache", cl::value_desc("path"),
 // preprocessor searches for header files.  At root, however, the Preprocessor
 // object takes a very simple interface: a list of directories to search for.
 // 
-// FIXME: -nostdinc++
 // FIXME: -imultilib
 //
 
 static cl::opt<bool>
 nostdinc("nostdinc", cl::desc("Disable standard #include directories"));
+
+static cl::opt<bool>
+nostdincxx("nostdinc++", cl::desc("Disable standard C++ #include directories"));
 
 // Various command line options.  These four add directories to each chain.
 static cl::list<std::string>
@@ -1814,12 +1816,21 @@ void InitializeIncludePaths(HeaderSearch &Headers,
 
   // Add the ellcc headers, which are relative to the ellcc binary.
   std::vector<std::string> found;
-  if (Arch.size()) {
-    findFiles(found, "", "include");
-  } else {
-      found.push_back("/usr/include");
+  if (!nostdinc) {
+    if (Arch.size()) {
+        findFiles(found, "", "include");
+    } else {
+        found.push_back("/usr/include");
+    }
+    findFiles(found, "include", "lib");   // For stddef.h, stdarg.h, etc.
   }
-  findFiles(found, "include", "lib");   // For stddef.h, stdarg.h, etc.
+  if (Lang.CPlusPlus && !nostdincxx) {
+    if (Arch.size()) {
+        findFiles(found, "", "include/c++");
+    } else {
+        found.push_back("/usr/include/c++");
+    }
+  }
 
   for (size_t i = 0; i < found.size(); ++i) {
       // We pass true to ignore sysroot so that we *always* look for ecc headers
@@ -1828,9 +1839,6 @@ void InitializeIncludePaths(HeaderSearch &Headers,
                    false, false, false, true /*ignore sysroot*/);
   }
   
-  if (!nostdinc) 
-    Init.AddDefaultSystemIncludePaths(Lang);
-
   // Now that we have collected all of the include paths, merge them all
   // together and tell the preprocessor about them.
   

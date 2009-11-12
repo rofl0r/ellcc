@@ -60,10 +60,6 @@ public:
   ///  variables such as CPATH.
   void AddDefaultEnvVarPaths(const LangOptions &Lang);
 
-  /// AddDefaultSystemIncludePaths - Adds the default system include paths so
-  ///  that e.g. stdio.h is found.
-  void AddDefaultSystemIncludePaths(const LangOptions &Lang);
-
   /// Realize - Merges all search path lists into one list and send it to
   /// HeaderSearch.
   void Realize();
