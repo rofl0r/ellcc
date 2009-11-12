@@ -642,6 +642,7 @@ static cl::opt<bool> ElsaPrettyPrint("bpprint", cl::Optional, cl::init(false),
     cl::desc("Output pretty printed source"));
 static cl::opt<bool> ElsaPrettyPrintAfterElab("bpprintAfterElab", cl::Optional, cl::init(false),
     cl::desc("Output pretty printed source after elaboration"));
+
 static cl::opt<bool> Fno_builtin("fno-builtin", cl::Optional, cl::init(false),   // RICH
     cl::desc("gcc compatability option"));
 static cl::opt<bool> Fshort_enums("fshort-enums", cl::Optional, cl::init(false), // RICH
@@ -655,6 +656,8 @@ static cl::opt<bool> Mno_eabi("mno-eabi", cl::Optional, cl::init(false),     // 
 static cl::opt<bool> Mstrict_align("mstrict-align", cl::Optional, cl::init(false),     // RICH
     cl::desc("gcc compatability option"));
 static cl::opt<bool> Mrelocatable_lib("mrelocatable-lib", cl::Optional, cl::init(false),     // RICH
+    cl::desc("gcc compatability option"));
+static cl::opt<bool> Pthreads("pthread", cl::Optional, cl::init(false),     // RICH
     cl::desc("gcc compatability option"));
 
 //===----------------------------------------------------------------------===//
