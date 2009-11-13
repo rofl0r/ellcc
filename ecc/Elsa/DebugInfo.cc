@@ -12,10 +12,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "DebugInfo.h"
-// RICH: #include "clang/AST/ASTContext.h"
-// RICH: #include "clang/AST/DeclObjC.h"
-// RICH: #include "clang/AST/Expr.h"
-// RICH: #include "clang/AST/RecordLayout.h"
 #include "SourceManager.h"
 #include "FileManager.h"
 #include "llvm/Constants.h"
@@ -39,6 +35,25 @@ DebugInfo::DebugInfo(CC2LLVMEnv& env, LangOptions& LO)
 
 DebugInfo::~DebugInfo() {
   xassert(RegionStack.empty() && "Region stack mismatch, stack not empty!");
+}
+
+/// getContext - Get context info for the decl.
+llvm::DIDescriptor DebugInfo::getContext(const Variable *Decl,
+                                         llvm::DIDescriptor &CompileUnit)
+{
+#if RICH
+  if (Decl->isFileVarDecl())
+    return CompileUnit;
+  if (Decl->getDeclContext()->isFunctionOrMethod()) {
+    // Find the last subprogram in region stack.
+    for (unsigned RI = RegionStack.size(), RE = 0; RI != RE; --RI) {
+      llvm::DIDescriptor R = RegionStack[RI - 1];
+      if (R.isSubprogram())
+        return R;
+    }
+  }
+#endif
+    return CompileUnit;
 }
 
 void DebugInfo::setLocation(SourceLocation Loc)
@@ -101,14 +116,13 @@ llvm::DICompileUnit DebugInfo::getOrCreateCompileUnit(SourceLocation Loc)
         LangTag = llvm::dwarf::DW_LANG_C89;
     }
 
-    std::string Producer = "ellcc 0.1.0";// FIXME: ellcc version.
     bool isOptimized = LO.Optimize;
     const char *Flags = "";   // FIXME: Encode command line options.
 
     // Create new compile unit.
-    return Unit = DebugFactory.CreateCompileUnit(LangTag, AbsFileName.getLast(),
-                                                 AbsFileName.getDirname(), 
-                                                 Producer, isMain, isOptimized,
+    return Unit = DebugFactory.CreateCompileUnit(LangTag, AbsFileName.getLast().c_str(),
+                                                 AbsFileName.getDirname().c_str(), 
+                                                 LO.getProducer(), isMain, isOptimized,
                                                  Flags, /* RuntimeVers */ 0);
 }
 
@@ -711,9 +725,9 @@ void DebugInfo::EmitGlobalVariable(llvm::GlobalVariable *Var,
 
     llvm::DIType Ty = getOrCreateType(T, Unit);;
     if (0 && !Ty.isNull()) {    // RICH
-        std::string Name = Decl->Name(env.TI);
-        DebugFactory.CreateGlobalVariable(Unit, Name, Name, "", Unit, LineNo,
-                                          Ty,
+        const char* Name = Decl->Name(env.TI);
+        DebugFactory.CreateGlobalVariable(getContext(Decl, Unit), Name, Name, NULL,
+                                          Unit, LineNo, Ty,
                                           Var->hasInternalLinkage(),
                                           true/*definition*/, Var);
     }

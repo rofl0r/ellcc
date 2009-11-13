@@ -29,7 +29,6 @@
 #include "LangOptions.h"
 #include "raiseinstructions.h"
 #include "TargetInfo.h"
-#include "StandardPasses.h"
 #include "llvm/LLVMContext.h"
 #include "llvm/Module.h"
 #include "llvm/ModuleProvider.h"
@@ -62,6 +61,7 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Timer.h"
 #include "llvm/Support/FormattedStream.h"
+#include "llvm/Support/StandardPasses.h"
 #include "llvm/LinkAllPasses.h"
 #include "llvm/LinkAllVMCore.h"
 #include "llvm/Linker.h"
@@ -82,6 +82,7 @@
 #define ELLCC_VERSION_STRING xstr(ELLCC) "." xstr(ELLCC_MINOR) "." xstr(ELLCC_PATCHLEVEL)
 #define ELLCC_VERSION_MODIFIER "ALPHA"
 #define ELLCC_VERSION ELLCC_VERSION_STRING " " ELLCC_VERSION_MODIFIER " " __DATE__
+#define ELLCC_PRODUCER "ecc " ELLCC_VERSION_STRING
 
 #define GCC 4
 #define GCC_MINOR 4
@@ -1197,6 +1198,7 @@ static void InitializeLanguageStandard(LangOptions &LO, FileTypes FT,
   if (MainFileName.getPosition())
     LO.setMainFileName(MainFileName.c_str());
 
+  LO.setProducer(ELLCC_PRODUCER);
 }
 
 //===----------------------------------------------------------------------===//

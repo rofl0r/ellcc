@@ -74,6 +74,7 @@ void LangOptions::ANSI_C89()
   Microsoft = false;
 
   MainFileName = NULL;
+  Producer = NULL;
 
   NoBuiltin = true;
 

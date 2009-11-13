@@ -66,6 +66,7 @@ public:
   DebugInfo(CC2LLVMEnv& env, LangOptions& LO);
   ~DebugInfo();
 
+  llvm::DIDescriptor getContext(const Variable *Decl, llvm::DIDescriptor &CompileUnit);
   /// setLocation - Update the current source location. If \arg loc is
   /// invalid it is ignored.
   void setLocation(SourceLocation Loc);

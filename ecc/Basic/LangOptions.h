@@ -278,6 +278,9 @@ private:
   /// the original input file, for example with -save-temps.
   const char *MainFileName;
   void setAllWarnings(bool enable);
+  /** The name and version of the producer.
+   */
+  const char* Producer;
 
 public:  
   unsigned InstantiationDepth;    // Maximum template instantiation depth.
@@ -322,6 +325,8 @@ public:
 
   const char *getMainFileName() const { return MainFileName; }
   void setMainFileName(const char *Name) { MainFileName = Name; }
+  const char *getProducer() const { return Producer; }
+  void setProducer(const char *Name) { Producer = Name; }
 };
 
 }  // end namespace ellcc
