@@ -7,7 +7,9 @@
 #ifndef _STDLIB_H_
 #define _STDLIB_H_
 
-_END_STD_C
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #include <sys/config.h> // RICH: RAND_MAX
 #define __need_size_t
@@ -187,6 +189,8 @@ int	_system_r(struct _reent *, const char *);
 
 void	__eprintf(const char *, const char *, unsigned int, const char *);
 
-_END_STD_C
+#ifdef __cplusplus
+}
+#endif
 
 #endif

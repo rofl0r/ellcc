@@ -7,7 +7,9 @@
 #ifndef _ENVZ_H_
 #define _ENVZ_H_
 
-_BEGIN_STD_C
+#ifdef __cplusplus
+extern "C" {
+#endif
 #include <errno.h>
 #include <sys/types.h>
 
@@ -17,6 +19,8 @@ error_t envz_add (char **envz, size_t *envz_len, const char *name, const char *v
 error_t envz_merge (char **envz, size_t *envz_len, const char *envz2, size_t envz2_len, int override);
 void envz_remove(char **envz, size_t *envz_len, const char *name);
 void envz_strip (char **envz, size_t *envz_len);
-_END_STD_C
+#ifdef __cplusplus
+}
+#endif
 
 #endif

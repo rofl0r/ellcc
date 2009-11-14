@@ -7,7 +7,9 @@
 #ifndef _WCHAR_H_
 #define _WCHAR_H_
 
-_BEGIN_STD_C
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #include <sys/reent.h>
 #include <sys/_types.h> // _mbstate_t
@@ -92,6 +94,8 @@ long long _wcstoll_r(struct _reent *, const wchar_t *, wchar_t **, int);
 unsigned long _wcstoul_r(struct _reent *, const wchar_t *, wchar_t **, int);
 unsigned long long _wcstoull_r(struct _reent *, const wchar_t *, wchar_t **, int);
 
-_END_STD_C
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* _WCHAR_H_ */

@@ -7,7 +7,9 @@
 #ifndef _LOCALE_H_
 #define _LOCALE_H_
 
-_BEGIN_STD_C
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #ifndef NULL
 #define NULL    0
@@ -51,6 +53,8 @@ struct lconv *localeconv(void);
 struct _reent;
 char *_setlocale_r(struct _reent *, int category, const char *locale);
 struct lconv *_localeconv_r(struct _reent *);
-_END_STD_C
+#ifdef __cplusplus
+}
+#endif
 
 #endif

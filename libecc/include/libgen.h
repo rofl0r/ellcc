@@ -5,12 +5,16 @@
 #ifndef _LIBGEN_H_
 #define _LIBGEN_H_
 
-_BEGIN_STD_C
+#ifdef __cplusplus
+extern "C" {
+#endif
 #include <sys/reent.h>
 
 char *basename(char *);
 char *dirname(char *);
-_END_STD_C
+#ifdef __cplusplus
+}
+#endif
 
 #endif
 

@@ -7,7 +7,9 @@
 #ifndef _TIME_H_
 #define _TIME_H_
 
-_BEGIN_STD_C
+#ifdef __cplusplus
+extern "C" {
+#endif
 #include <sys/reent.h>
 
 #ifndef NULL
@@ -214,7 +216,9 @@ int clock_getenable_attr(clockid_t clock_id, int *attr);
 
 #endif /* _POSIX_CPUTIME or _POSIX_THREAD_CPUTIME */
 
-_END_STD_C
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* _TIME_H_ */
 

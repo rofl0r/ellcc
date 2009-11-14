@@ -1,7 +1,9 @@
 #ifndef _IEEEFP_H_
 #define _IEEEFP_H_
 
-_BEGIN_STD_C
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #include <machine/ieeefp.h>
 
@@ -261,6 +263,8 @@ int finitef(float);
 
 #endif /* _DOUBLE_IS_32BITS */
 
-_END_STD_C
+#ifdef __cplusplus
+}
+#endif
 
 #endif

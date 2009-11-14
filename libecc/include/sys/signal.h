@@ -2,7 +2,9 @@
 
 #ifndef _SYS_SIGNAL_H
 #define _SYS_SIGNAL_H
-_BEGIN_STD_C
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #include <sys/features.h>
 
@@ -299,7 +301,9 @@ int sigqueue(pid_t pid, int signo, const union sigval value);
 #endif
 #endif
 
-_END_STD_C
+#ifdef __cplusplus
+}
+#endif
 
 #ifndef _SIGNAL_H_
 /* Some applications take advantage of the fact that <sys/signal.h>

@@ -29,7 +29,9 @@
 #ifndef _LANGINFO_H_
 #define	_LANGINFO_H_
 
-_BEGIN_STD_C
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 typedef int nl_item;
 
@@ -134,6 +136,8 @@ typedef int nl_item;
 #define _NL_CTYPE_EXTRA_MAP_14 83
 
 char	*nl_langinfo(nl_item);
-_BEGIN_STD_C
+#ifdef __cplusplus
+}
+#endif
 
 #endif

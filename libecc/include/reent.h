@@ -86,7 +86,9 @@
 
 #ifndef _REENT_H_
 #define _REENT_H_
-_BEGIN_STD_C
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #include <config.h>
 #include <sys/reent.h>
@@ -166,6 +168,8 @@ extern int _open64_r(struct _reent *, const char *, int, int);
 
 #endif
 
-_END_STD_C
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* _REENT_H_ */

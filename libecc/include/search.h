@@ -9,7 +9,9 @@
 #ifndef _SEARCH_H_
 #define _SEARCH_H_
 
-_BEGIN_STD_C
+#ifdef __cplusplus
+extern "C" {
+#endif
 #include <sys/cdefs.h>
 #include <machine/ansi.h>
 #include <sys/types.h>
@@ -54,6 +56,8 @@ void tdestroy (void *, void (*)(void *));
 void *tfind(const void *, void **, int (*)(const void *, const void *));
 void *tsearch(const void *, void **, int (*)(const void *, const void *));
 void twalk(const void *, void (*)(const void *, VISIT, int));
-_END_STD_C
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* !_SEARCH_H_ */

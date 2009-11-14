@@ -35,7 +35,9 @@
 
 #ifndef _PWD_H_
 #define	_PWD_H_
-_BEGIN_STD_C
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #include <sys/types.h>
 
@@ -66,6 +68,8 @@ void setpwent(void);
 void endpwent(void);
 #endif
 
-_END_STD_C
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* _PWD_H_ */

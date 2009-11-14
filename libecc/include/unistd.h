@@ -1,9 +1,13 @@
 #ifndef _UNISTD_H_
 #define _UNISTD_H_
 
-_BEGIN_STD_C
+#ifdef __cplusplus
+extern "C" {
+#endif
 #include <sys/unistd.h>
 #include <stdint.h>
-_END_STD_C
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* _UNISTD_H_ */

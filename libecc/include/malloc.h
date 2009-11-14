@@ -3,7 +3,9 @@
 #ifndef _MALLOC_H_
 #define _MALLOC_H_
 
-_BEGIN_STD_C
+#ifdef __cplusplus
+extern "C" {
+#endif
 #include <sys/reent.h>
 
 #define __need_size_t
@@ -91,6 +93,8 @@ extern void _mstats_r(struct _reent *, char *);
 /* Some systems provide this, so do too for compatibility.  */
 extern void cfree (void *);
 
-_END_STD_C
+#ifdef __cplusplus
+}
+#endif
 
 #endif

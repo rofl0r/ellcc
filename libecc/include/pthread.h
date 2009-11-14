@@ -21,7 +21,9 @@
 #ifndef __PTHREAD_h
 #define __PTHREAD_h
 
-_BEGIN_STD_C
+#ifdef __cplusplus
+extern "C" {
+#endif
 #include <unistd.h>
 
 #if defined(_POSIX_THREADS)
@@ -297,6 +299,8 @@ int pthread_rwlock_timedwrlock(pthread_rwlock_t *__rwlock, const struct timespec
 
 #endif /* defined(_POSIX_READER_WRITER_LOCKS) */
 
-_END_STD_C
+#ifdef __cplusplus
+}
+#endif
 
 #endif

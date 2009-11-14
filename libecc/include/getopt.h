@@ -85,7 +85,9 @@ gpietsch@comcast.net
 #ifndef _GETOPT_H_
 #define _GETOPT_H_
 
-_BEGIN_STD_C
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* include files needed by this include file */
 
@@ -152,6 +154,8 @@ int __getopt_long_only_r(int __argc, char *const __argv[], const char *__shortop
 	                   const struct option * __longopts, int *__longind,
 	                   struct getopt_data * __data);
 
-_END_STD_C
+#ifdef __cplusplus
+}
+#endif
 
 #endif

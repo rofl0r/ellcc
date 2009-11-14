@@ -1,7 +1,9 @@
 #ifndef _WCTYPE_H_
 #define _WCTYPE_H_
 
-_BEGIN_STD_C
+#ifdef __cplusplus
+extern "C" {
+#endif
 #include <sys/_types.h>
 
 #define __need_wint_t
@@ -40,6 +42,8 @@ wint_t	towlower(wint_t);
 wctrans_t wctrans(const char *);
 wctype_t wctype(const char *);
 
-_END_STD_C
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* _WCTYPE_H_ */

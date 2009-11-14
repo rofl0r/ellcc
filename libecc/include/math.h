@@ -1,7 +1,9 @@
 #ifndef  _MATH_H_
 #define  _MATH_H_
 
-_BEGIN_STD_C
+#ifdef __cplusplus
+extern "C" {
+#endif
 #include <sys/reent.h>
 #include <ieeefp.h>
 
@@ -470,7 +472,9 @@ extern _LIB_VERSION_TYPE _LIB_VERSION;
 
 #endif /* ! defined (__STRICT_ANSI__) */
 
-_END_STD_C
+#ifdef __cplusplus
+}
+#endif
 
 #ifdef __FAST_MATH__
 #include <machine/fastmath.h>

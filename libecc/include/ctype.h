@@ -1,7 +1,9 @@
 #ifndef _CTYPE_H_
 #define _CTYPE_H_
 
-_BEGIN_STD_C
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 int isalnum(int __c);
 int isalpha(int __c);
@@ -61,6 +63,8 @@ extern	const char	_ctype_[];  /* For backward compatibility.  */
 #define toascii(c)	((c)&0177)
 #endif
 
-_END_STD_C
+#ifdef __cplusplus
+}
+#endif
 
 #endif

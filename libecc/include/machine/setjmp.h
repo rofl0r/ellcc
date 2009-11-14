@@ -1,5 +1,7 @@
 
-_BEGIN_STD_C
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #ifdef __NIOS2__
 #define _JBLEN 40
@@ -254,7 +256,9 @@ typedef	int jmp_buf[_JBLEN];
 #endif
 #endif
 
-_END_STD_C
+#ifdef __cplusplus
+}
+#endif
 
 #if defined(__CYGWIN__) || defined(__rtems__)
 #include <signal.h>

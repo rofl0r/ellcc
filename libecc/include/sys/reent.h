@@ -7,7 +7,10 @@
 #ifndef _SYS_REENT_H_
 #define _SYS_REENT_H_
 
-_BEGIN_STD_C
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <sys/_types.h>
 
 #define _NULL 0
@@ -817,4 +820,5 @@ void _reclaim_reent(struct _reent *);
 #ifdef __cplusplus
 }
 #endif
+
 #endif /* _SYS_REENT_H_ */

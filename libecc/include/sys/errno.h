@@ -5,7 +5,9 @@
 #ifndef _SYS_ERRNO_H_
 #define _SYS_ERRNO_H_
 
-_BEGIN_STD_C
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #include <sys/reent.h>
 
@@ -153,5 +155,7 @@ extern int sys_nerr;
 
 #define __ELASTERROR 2000	/* Users can add values starting here */
 
-_END_STD_C
+#ifdef __cplusplus
+}
+#endif
 #endif /* _SYS_ERRNO_H */

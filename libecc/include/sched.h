@@ -1,8 +1,12 @@
 #ifndef _SCHED_H_
 #define _SCHED_H_
 
-_BEGIN_STD_C
+#ifdef __cplusplus
+extern "C" {
+#endif
 #include <sys/sched.h>
-_END_STD_C
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* _SCHED_H_ */

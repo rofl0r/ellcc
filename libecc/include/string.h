@@ -7,7 +7,9 @@
 #ifndef _STRING_H_
 #define	_STRING_H_
 
-_BEGIN_STD_C
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #include <sys/reent.h>
 
@@ -98,6 +100,8 @@ int     strtosigno(const char *__name);
 
 #include <sys/string.h>
 
-_END_STD_C
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* _STRING_H_ */

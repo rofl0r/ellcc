@@ -1,7 +1,9 @@
 #ifndef _SYS_UNISTD_H
 #define _SYS_UNISTD_H
 
-_BEGIN_STD_C
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #include <sys/types.h>
 #include <sys/_types.h>
@@ -457,6 +459,8 @@ int     symlink(const char *__name1, const char *__name2);
 # define	MAXPATHLEN	1024
 #endif
 
-_END_STD_C
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -1,7 +1,9 @@
 /* assert.h
  */
 
-_BEGIN_STD_C
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #undef assert
 
@@ -30,4 +32,6 @@ _BEGIN_STD_C
 void __assert(const char *, int, const char *) __attribute__ ((__noreturn__));
 void __assert_func(const char *, int, const char *, const char *) __attribute__ ((__noreturn__));
 
-_END_STD_C
+#ifdef __cplusplus
+}
+#endif

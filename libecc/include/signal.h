@@ -1,7 +1,9 @@
 #ifndef _SIGNAL_H_
 #define _SIGNAL_H_
 
-_BEGIN_STD_C
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #include <sys/signal.h>
 
@@ -21,6 +23,8 @@ _sig_func_ptr signal(int, _sig_func_ptr);
 int raise(int);
 #endif
 
-_END_STD_C
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -8,7 +8,9 @@
 #define _ARGZ_H_
 
 #include <errno.h>
-_BEGIN_STD_C
+#ifdef __cplusplus
+extern "C" {
+#endif
 #include <sys/types.h>
 
 /* The newlib implementation of these functions assumes that sizeof(char) == 1. */
@@ -25,6 +27,8 @@ error_t argz_insert (char **argz, size_t *argz_len, char *before, const char *en
 char * argz_next (char *argz, size_t argz_len, const char *entry);
 error_t argz_replace (char **argz, size_t *argz_len, const char *str, const char *with, unsigned *replace_count);
 
-_END_STD_C
+#ifdef __cplusplus
+}
+#endif
 
 #endif

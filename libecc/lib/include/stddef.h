@@ -6,7 +6,9 @@
 #ifndef _STDDEF_H_
 #define _STDDEF_H_
 
-_BEGIN_STD_C
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /** A type to represent the size of an object.
  * __SIZE_TYPE__ is defined by the compiler.
@@ -32,6 +34,8 @@ typedef __WCHAR_TYPE__ wchar_t;
  */
 #define offsetof(type, member) ((size_t)&((type*)NULL)->member)
 
-_END_STD_C
+#ifdef __cplusplus
+}
+#endif
 
 #endif

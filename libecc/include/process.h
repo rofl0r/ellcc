@@ -1,7 +1,9 @@
 #ifndef __PROCESS_H_
 #define __PROCESS_H_
 
-_BEGIN_STD_C
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 int execl(const char *path, const char *argv1, ...);
 int execle(const char *path, const char *argv1, ... /*, char * const *envp */);
@@ -31,6 +33,8 @@ int cwait(int *, int, int);
 
 #define WAIT_CHILD 1
 
-_END_STD_C
+#ifdef __cplusplus
+}
+#endif
 
 #endif

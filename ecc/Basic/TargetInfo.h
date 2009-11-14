@@ -178,11 +178,11 @@ public:
   TypeID getIntPtrType() const { return IntPtrType; }
   TypeID getUIntPtrType() const { return UIntPtrType; }
   TypeID getWCharType() const { return WCharType; }
-  unsigned char getTypeSizeInBits(TypeID id) { return typeInfo[id].Width; }
-  unsigned char getTypeSizeInBytes(TypeID id)
+  unsigned char getTypeSizeInBits(TypeID id) const { return typeInfo[id].Width; }
+  unsigned char getTypeSizeInBytes(TypeID id) const
     { unsigned size = typeInfo[id].Width / CharWidth(); return size ? size : 1; }
-  unsigned char getTypeAlignInBits(TypeID id) { return typeInfo[id].Align; }
-  unsigned char getTypeAlignInBytes(TypeID id)
+  unsigned char getTypeAlignInBits(TypeID id) const { return typeInfo[id].Align; }
+  unsigned char getTypeAlignInBytes(TypeID id) const
     { unsigned align = typeInfo[id].Align / CharWidth(); return align ? align : 1; }
 
 

@@ -43,7 +43,9 @@
 #ifndef _GRP_H_
 #define	_GRP_H_
 
-_BEGIN_STD_C
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #include <sys/types.h>
 
@@ -75,6 +77,8 @@ int		 setgroupent (int);
 int		 initgroups (const char *, gid_t);
 #endif /* !_XOPEN_SOURCE */
 #endif /* !_POSIX_SOURCE */
-_END_STD_C
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -212,7 +212,9 @@ typedef __INTMAX_TYPE__ intmax_t;
 typedef __UINTMAX_TYPE__ uintmax_t;
 
 typedef __INTPTR_TYPE__ intptr_t;
+#define INTPTR_MAX __INTPTR_MAX__
 typedef __UINTPTR_TYPE__ uintptr_t;
+#define UINTPTR_MAX __UINTPTR_MAX__
 
 /* Limits of Specified-Width Integer Types */
 

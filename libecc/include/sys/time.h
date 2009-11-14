@@ -5,7 +5,9 @@
 #ifndef _SYS_TIME_H_
 #define _SYS_TIME_H_
 
-_BEGIN_STD_C
+#ifdef __cplusplus
+extern "C" {
+#endif
 #include <sys/types.h>
 
 #ifndef _WINSOCK_H
@@ -71,6 +73,8 @@ int settimeofday(const struct timeval *, const struct timezone *);
 int utimes(const char *__path, const struct timeval *__tvp);
 int getitimer(int __which, struct itimerval *__value);
 int setitimer(int __which, const struct itimerval *__value, struct itimerval *__ovalue);
-_END_STD_C
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* _SYS_TIME_H_ */

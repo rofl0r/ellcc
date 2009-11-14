@@ -26,7 +26,9 @@
 #ifndef _STDIO_H_
 #define	_STDIO_H_
 
-_BEGIN_STD_C
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #define	_FSTDIO			/* ``function stdio'' */
 
@@ -649,6 +651,8 @@ _ELIDABLE_INLINE int __sputc_r(struct _reent *_ptr, int _c, FILE *_p) {
 #define	getchar()	getc(stdin)
 #define	putchar(x)	putc(x, stdout)
 
-_END_STD_C
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* _STDIO_H_ */

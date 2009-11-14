@@ -26,7 +26,9 @@
 #ifndef _ICONV_H_
 #define _ICONV_H_
 
-_BEGIN_STD_C
+#ifdef __cplusplus
+extern "C" {
+#endif
 #include <reent.h>
 #include <sys/types.h>
 #include <sys/_types.h>
@@ -47,6 +49,8 @@ size_t _iconv_r(struct _reent *, iconv_t, _CONST char **,
                 size_t *, char **, size_t *);
 int _iconv_close_r, (struct _reent *, iconv_t);
 
-_END_STD_C
+#ifdef __cplusplus
+}
+#endif
 
 #endif
