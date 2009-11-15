@@ -1,0 +1,50 @@
+/** @file
+ * This header defines the base class for all standard exceptions thrown by the
+ * elements of the standard library: exception. It also defines the special
+ * exception bad_exception.
+ *
+ * It also provides elements to access the unexpected and terminatehandlers.
+ *
+ * When an exception is thrown, its type is checked twice:
+ * - First, if the function has an exception-specification (a throw specifier at
+ *   the function signature), the type is checked against these. If the type does
+ *   not match, unexpected is called.
+ * - Second, the exception type is checked against the exception handlers
+ *   (catch blocks). If it does not match at any nesting level, terminate is
+ *   called.
+ *
+ * This header defines both unexpected and terminate along with functions to
+ * override their default behavior.
+ *
+ * It also defines a function, uncaught_exception that returns whether an
+ * exception has been thrown and not yet handled.
+ */
+
+#ifndef _EXCEPTION_
+#define _EXCEPTION_
+
+namespace std {
+
+/** Base class for standard exceptions.
+ *
+ * All objects thrown by components of the standard library are derived
+ * from this class. Therefore, all standard exceptions can be caught by
+ * catching this type.
+ */
+class exception {
+public:
+  exception () throw();
+  exception (const exception&) throw();
+  exception& operator= (const exception&) throw();
+  virtual ~exception() throw();
+  /** Returns a null terminated character sequence containing a generic
+   * description of the exception.
+   * Both the wording of such description and the character width are
+   *  implementation-defined.
+   */
+  virtual const char* what() const throw();
+};
+
+} // namespace std
+
+#endif
