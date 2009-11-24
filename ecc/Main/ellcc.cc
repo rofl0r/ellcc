@@ -2485,7 +2485,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
             (*PP.get()).EnterMainSourceFile();
             int result = elsa.parse(*PP.get(),
                                     input.name.c_str(), to.c_str(),
-                                    input.module, ParseOnly, *new llvm::LLVMContext, input.LO,
+                                    input.module, ParseOnly, context, /* RICH: *new llvm::LLVMContext, */ input.LO,
                                     DebugOutput);
             if (result) {
                 Exit(result);

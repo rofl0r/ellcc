@@ -49,7 +49,7 @@ using namespace ellcc;
 #define SRET 1
 
 //#define E_FIELDACC_DEBUG
-#if 1
+#if 0
 // Really verbose debugging.
 // #define EDEBUG(who, where, what) std::cerr << toString(where) << ": " << who << " "; what; std::cerr << "\n"
 #define EDEBUG(who, where, what) llvm::errs() << toString(where).c_str() << ": " << who << " "; what; llvm::errs() << "\n"

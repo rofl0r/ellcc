@@ -17,7 +17,7 @@ string(REGEX REPLACE [^a-zA-Z0-9_-]+ ";" ELLCC_TARGETS ${ELLCC_TARGETS})
 set(LINUX_TARGETS alpha-elf arm-elf mips-elf powerpc-elf powerpc64-elf sparc-elf x86-elf x86_64-elf)
 
 # Build ELLCC
-add_subdirectory(ellcc)
+add_subdirectory(ecc)
 
 # Now we can build the runtime libraries.
 add_subdirectory(libecc)

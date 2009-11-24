@@ -1,4 +1,7 @@
-_BEGIN_STD_C
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* wctrans constants */
 
 /* valid values for wctrans_t */
@@ -28,4 +31,7 @@ extern char __lc_ctype[12];
 
 /* internal function to translate JP to Unicode */
 wint_t __jp2uc(wint_t, int);
-_END_STD_C
+
+#ifdef __cplusplus
+}
+#endif

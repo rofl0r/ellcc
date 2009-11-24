@@ -17,7 +17,10 @@
 
 /* %W% (Berkeley) %G% */
 
-_BEGIN_STD_C
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*
  * I/O descriptors for __sfvwrite_r().
  */
@@ -34,4 +37,7 @@ struct __suio {
 
 extern int __sfvwrite_r(struct _reent *, FILE *, struct __suio *);
 extern int __swsetup_r(struct _reent *, FILE *);
-_END_STD_C
+
+#ifdef __cplusplus
+}
+#endif
