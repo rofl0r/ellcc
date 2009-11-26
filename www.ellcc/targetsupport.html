@@ -4,6 +4,8 @@
 
 
 
+
+  
   
   
   
@@ -11,6 +13,9 @@
 
 
 
+
+  
+  
   
   
   
@@ -26,7 +31,9 @@
 
 
 
+
 <table style="text-align: left; width: 100%; height: 100%;" border="0" cellpadding="0" cellspacing="0">
+
 
 
 
@@ -34,7 +41,9 @@
 
 
 
+
     <tr align="center">
+
 
 
 
@@ -42,7 +51,9 @@
       
       
       
+      
       <table style="text-align: left; width: 100%;" border="0" cellpadding="0" cellspacing="0">
+
 
 
 
@@ -50,7 +61,9 @@
 
 
 
+
           <tr>
+
 
 
 
@@ -58,7 +71,9 @@
 
 
 
+
             <td style="text-align: center;">
+            
             
             
             
@@ -66,7 +81,9 @@
 
 
 
+
             </td>
+
 
 
 
@@ -74,6 +91,8 @@
 
 
 
+
+        
         
         
         
@@ -81,7 +100,9 @@
       
       
       
+      
       </table>
+
 
 
 
@@ -89,7 +110,9 @@
 
 
 
+
     </tr>
+
 
 
 
@@ -97,7 +120,9 @@
 
 
 
+
       <td style="vertical-align: top; background-color: rgb(153, 255, 153); width: 135px;"><a href="index.html">Home</a><br>
+
 
 
 
@@ -105,10 +130,13 @@
 
 
 
+
       <a href="ellcc/libecc/share/doc">Documentation</a><br>
 
 
+
       <a href="installation.html">Installation</a><br>
+
 
 
 
@@ -116,7 +144,9 @@
 
 
 
+
       <a href="bugzilla">Bug Database</a><br>
+
 
 
 
@@ -124,7 +154,9 @@
 
 
 
+
       <a href="mailto:rich@pennware.com">Contact</a><br>
+
 
 
 
@@ -132,114 +164,195 @@
 
 
 
+
       <td style="vertical-align: top;">
+      
       <ol id="mozToc">
+
 <!--mozToc h1 1 h2 2 h3 3 h4 4 h5 5 h6 6--><li><a href="#mozTocId679816">Setting Up Target Support</a>
+          
           <ol>
+
             <li><a href="#mozTocId258788">Building the GNU Tools</a></li>
+
             <li><a href="#mozTocId834743">Building the Runtime Libraries</a></li>
+
+          
           </ol>
+
         </li>
+
+      
       </ol>
+
       <br>
+
 Setting up target support means building the appropriate tools (e.g.
 assemblers, linkers, etc.) and libraries to support cross compilation
 of programs using ELLCC. You should have completed the ELLCC <a href="installation.html">Installation</a> steps before you try to setup target support as the <span style="font-family: monospace;">ecc</span> compiler is required at this point.<br>
+
+      
       <h2><a class="mozTocH2" name="mozTocId258788"></a>Building the GNU Tools</h2>
+
 ELLCC uses the GNU assemblers, linker, &nbsp;debugger, and binutils as the back end for <span style="font-family: monospace;">ecc</span>. A complete set of these tools configured for use in ELLCC are supplied in the <span style="font-family: monospace;">gnu</span> directory under <span style="font-family: monospace;">ellcc</span>. Change into the directory, build and install the GNU components now:<br>
+
       <code><br>
+
       </code>
+      
       <div style="margin-left: 40px;"><code>[~/ecc/ellcc] main% cd gnu</code><br>
+
       <code>[~/ecc/ellcc/gnu] main% ./makegnu</code> <br>
+
       <code>[~/ecc/ellcc/gnu] main% ./makegnu install</code><br>
+
       </div>
+
       <br>
+
 This will place the GNU executables in the same <span style="font-family: monospace;">bin</span> directory in which <span style="font-family: monospace;">ecc</span> resides. Your <span style="font-family: monospace;">bin</span> directory should now look something like this:<br>
+
       <br>
+
+      
       <div style="margin-left: 40px;"><code>[~/ecc/ellcc/gnu] main% cd ..</code><br>
+
       <code>[~/ecc/ellcc] main% ls bin</code><br>
+
       <code>alpha-elf-as*&nbsp;&nbsp; ecc-embedspu*&nbsp;&nbsp;
 ecc-strings*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 llvm-nm*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 opt*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 tblgen*</code><br>
+
       <code>alpha-elf-e++@&nbsp;
 ecc-gdb*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 ecc-strip*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 llvm-prof*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 powerpc64-elf-as*&nbsp;&nbsp; tclsh8.4*</code><br>
+
       <code>alpha-elf-ecc@&nbsp; ecc-gdbserver*&nbsp;
 llc*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 llvm-ranlib*&nbsp;&nbsp;&nbsp;&nbsp; powerpc64-elf-e++@&nbsp; wish8.4*</code><br>
+
       <code>arm-elf-as*&nbsp;&nbsp;&nbsp;&nbsp;
 ecc-gdbtui*&nbsp;&nbsp;&nbsp;&nbsp;
 lli*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 llvm-stub*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; powerpc64-elf-ecc@&nbsp;
 x86_64-elf-as*</code><br>
+
       <code>arm-elf-e++@&nbsp;&nbsp;&nbsp;
 ecc-gprof*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 llvm-ar*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 mips-elf-as*&nbsp;&nbsp;&nbsp;&nbsp;
 powerpc-elf-as*&nbsp;&nbsp;&nbsp;&nbsp; x86_64-elf-e++@</code><br>
+
       <code>arm-elf-ecc@&nbsp;&nbsp;&nbsp;
 ecc-insight*&nbsp;&nbsp;&nbsp;
 llvm-as*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 mips-elf-e++@&nbsp;&nbsp;&nbsp; powerpc-elf-e++@&nbsp;&nbsp;&nbsp;
 x86_64-elf-ecc@</code><br>
+
       <code>bugpoint*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 ecc-ld*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 llvm-bcanalyzer*&nbsp; mips-elf-ecc@&nbsp;&nbsp;&nbsp;
 powerpc-elf-ecc@&nbsp;&nbsp;&nbsp; x86-elf-as*</code><br>
+
       <code>e++@&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 ecc-nm*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 llvmc*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 msp430-elf-as*&nbsp;&nbsp;
 sparc-elf-as*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; x86-elf-e++@</code><br>
+
       <code>ecc*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 ecc-objcopy*&nbsp;&nbsp;&nbsp;
 llvm-config*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; msp430-elf-e++@&nbsp;
 sparc-elf-e++@&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; x86-elf-ecc@</code><br>
+
       <code>ecc-addr2line*&nbsp; ecc-objdump*&nbsp;&nbsp;&nbsp;
 llvm-dis*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 msp430-elf-ecc@&nbsp; sparc-elf-ecc@&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 x86-pe-as*</code><br>
+
       <code>ecc-ar*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 ecc-ranlib*&nbsp;&nbsp;&nbsp;&nbsp;
 llvm-extract*&nbsp;&nbsp;&nbsp;&nbsp; nios2-elf-as*&nbsp;&nbsp;&nbsp;
 spu-elf-as*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; x86-pe-e++@</code><br>
+
       <code>ecc-as*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 ecc-readelf*&nbsp;&nbsp;&nbsp;
 llvm-ld*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 nios2-elf-e++@&nbsp;&nbsp;
 spu-elf-e++@&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; x86-pe-ecc@</code><br>
+
       <code>ecc-c++filt*&nbsp;&nbsp;&nbsp;
 ecc-size*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 llvm-link*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 nios2-elf-ecc@&nbsp;&nbsp; spu-elf-ecc@</code><br>
+
       </div>
+
       <code></code>
+      
       <div style="margin-left: 40px;"><code><br>
+
       </code></div>
+
 Notice that the GNU tools are either named <span style="font-family: monospace;">ecc-*</span> or <span style="font-family: monospace;">*-as</span>. The <span style="font-family: monospace;">ecc-*</span> executables are configured to support all the processors that ELLCC supports.<br>
+
+      
       <h2><a class="mozTocH2" name="mozTocId834743"></a>Building the Runtime Libraries</h2>
+
 The ELLCC C runtime library, <span style="font-family: monospace;">libecc</span>, is based on source code from several sources. The C standard library is based on <a href="http://sourceware.org/newlib/">newlib</a>. Software floating point support for processors that need it is based of the <a href="http://gcc.gnu.org/wiki/Software_floating_point">soft-fp</a> component of &nbsp;<a href="http://www.gnu.org/software/libc/">glibc</a>. Support for operations, such as 64 bit additions, that a target does not support directly are provided by <a href="http://compiler-rt.llvm.org/">compiler-rt</a>. Get the source code for compiler-rt in the top level build directory and make a new directory to build it in:<br>
+
       <br>
+
+      
       <div style="margin-left: 40px;"><code>[~/ecc] main% svn co http://llvm.org/svn/llvm-project/compiler-rt/trunk compiler-rt<br>
+
 [~/ecc] main% mkdir ellcc-build</code></div>
+
       <code></code><br>
+
 Now build the libraries:<br>
+
       <br>
+
+      
       <div style="margin-left: 40px;"><code>[~/ecc] main% cd ellcc-build/</code><br>
+
       <code>[~/ecc/ellcc-build] main% cmake ../ellcc<br>
+
 [~/ecc/ellcc-build] main% make<br>
+
       </code></div>
+
       <br>
+NOTE: At this time this does not work out of the box. I run with a stripped down version of compiler-rt. Fixes soon.<br>
+      <h2>Building QEMU</h2>
+QEMU can be used for running code for non-native targets. <code><br>
       <br>
+      </code>
+      <div style="margin-left: 40px;"><span style="font-family: monospace;">[~/ecc] main% git clone git://git.savannah.nongnu.org/qemu.git<br>
+[~/ecc] main% cd qemu<br>
+[~/ecc/qemu] main%<br>
+[~/ecc/qemu] main% ./configure --prefix=`cd ../ellcc; pwd`<br>
+[~/ecc/qemu] main% make<br>
+[~/ecc/qemu] main% make install<br>
+      </span></div>
+      <code></code>
+      <br>
+
       <code></code><code></code><span style="font-weight: bold;"></span><span style="font-weight: bold;"></span><span style="font-weight: bold;"></span></td>
+
     </tr>
+
+  
   </tbody>
 </table>
+
 <br>
+
 
 
 
