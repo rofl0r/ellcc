@@ -2958,8 +2958,8 @@ llvm::Value* CC2LLVMEnv::binop(SourceLocation loc, BinaryOp op, Expression* e1, 
 
             std::vector<llvm::Value*> index;
             if (before == left) {
-                if (   left->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID
-                    || left->getType()->getContainedType(0)->getTypeID() == llvm::Type::StructTyID) {
+                if (   left->getType()->getContainedType(0)->getTypeID() == llvm::Type::ArrayTyID) {
+                    // RICH: || left->getType()->getContainedType(0)->getTypeID() == llvm::Type::StructTyID) {
                     EDEBUG("NullValue2", loc, right->getType()->print(llvm::errs()));
                     index.push_back(llvm::Constant::getNullValue(right->getType()));
                 }

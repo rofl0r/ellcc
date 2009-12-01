@@ -3,13 +3,14 @@ struct info
     char c;
 };
 
-static const struct info ar[1] =
+static struct info ar[1] =
 {
 };
 
-void
-d_substitution ()
+void main()
 {
     &ar[0] + 1;
-    ar[0] + 1;
+    struct info b;
+    b+1;
+    //ERROR(1): ar[0] + 1;
 }
