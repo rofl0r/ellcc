@@ -8636,6 +8636,12 @@ Type *E_binary::itcheck_x(Env &env, Expression *&replacement)
   Type *lhsType = env.operandRval(e1->type);
   Type *rhsType = env.operandRval(e2->type);
 
+  if (!lhsType->isSimpleType()) {
+      fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
+  }
+  if (!rhsType->isSimpleType()) {
+      fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
+  }
   switch (op) {
     default: xfailure("illegal op code"); break;
 
