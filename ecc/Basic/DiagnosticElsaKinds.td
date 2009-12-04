@@ -202,6 +202,9 @@ def warn_constant_too_large
 def note_constant_too_large
     : Note<"interpreting as '%0'">;
 def err_expr_not_ice : Error<"expression is not an integer constant expression">;
+def err_expr_binary_operand_not_scalar
+    : Error<"%select{left|right}0 argument to binary %1 must be of "
+            "arithmetic, enumeration, or pointer type, not '%2'">;
 def err_expr_unary_plus
     : Error<"argument to unary + must be of arithmetic, enumeration, or pointer type, not '%0'">;
 def err_expr_unary_minus

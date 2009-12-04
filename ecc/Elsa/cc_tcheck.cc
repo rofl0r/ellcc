@@ -8636,11 +8636,21 @@ Type *E_binary::itcheck_x(Env &env, Expression *&replacement)
   Type *lhsType = env.operandRval(e1->type);
   Type *rhsType = env.operandRval(e2->type);
 
-  if (!lhsType->isSimpleType()) {
-      fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
-  }
-  if (!rhsType->isSimpleType()) {
-      fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
+  if (op != BIN_COMMA && op != BIN_DOT_STAR && op != BIN_ARROW_STAR) {
+      if (!isArithmeticOrEnumType(lhsType) && !lhsType->isPointerType()) {
+          env.report(e1->loc, diag::err_expr_binary_operand_not_scalar)
+              << SourceRange(e1->loc, e1->endloc)
+              << 0  // Left
+              << binaryOpNames[op]
+              << lhsType->toString();
+      }
+      if (!isArithmeticOrEnumType(rhsType) && !rhsType->isPointerType()) {
+          env.report(e2->loc, diag::err_expr_binary_operand_not_scalar)
+              << SourceRange(e2->loc, e2->endloc)
+              << 1  // Right
+              << binaryOpNames[op]
+              << rhsType->toString();
+      }
   }
   switch (op) {
     default: xfailure("illegal op code"); break;

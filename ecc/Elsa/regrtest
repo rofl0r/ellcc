@@ -4,9 +4,9 @@
 parser="../../bin/ecc -PO"
 # This file contains a list of tests that should be run in Elsa (via
 # $parser before each commit.  With the exception of a few stored
-# in the elsa/in/big directory, they should be short tests that can be
+# in the Elsa/in/big directory, they should be short tests that can be
 # parsed and typechecked quickly.  When a big test fails (either one
-# that is in elsa/in/big, or some other external package), the failing
+# that is in Elsa/in/big, or some other external package), the failing
 # syntax should be isolated and added to this file.
 #
 # The basic procedure for adding tests is to find the section that has

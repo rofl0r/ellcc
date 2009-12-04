@@ -391,7 +391,7 @@ testCparse t0079.c
 
 # is K&R built?
 use_kandr=false
-if egrep "USE_KANDR: +1" ../elsa/config.summary >/dev/null; then
+if egrep "USE_KANDR: +1" ../Elsa/config.summary >/dev/null; then
   use_kandr=true
   echo "K&R extensions are enabled"
 else
@@ -410,7 +410,7 @@ fi
 # test GNU C
 # is the gnu extension built?
 use_gnu=false
-if egrep "USE_GNU: +1" ../elsa/config.summary >/dev/null; then
+if egrep "USE_GNU: +1" ../Elsa/config.summary >/dev/null; then
   use_gnu=true
   echo "gnu extensions are enabled"
 else
