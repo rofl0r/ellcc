@@ -43,6 +43,7 @@ void LangOptions::ANSI_C89()
   Trigraphs = true;
   BCPLComment = DollarIdents = AsmPreprocessor = false;
   GNUMode = Digraphs = false;
+  StateMode = false;            // STATE_EXTENSION
   HexFloats = false;
   C99 = CPlusPlus = CPlusPlus0x = NoExtensions = false;
   CXXOperatorNames = Boolean = WritableStrings = false;
@@ -160,6 +161,7 @@ void LangOptions::ANSI_C99()
 void LangOptions::GNU_C_extensions()
 {
   GNUMode = true;
+  StateMode = true;             // STATE_EXTENSION
   DollarIdents = true;
   Trigraphs = false;
   gccFuncBehavior = GFB_string;
@@ -219,6 +221,7 @@ void LangOptions::ANSI_Cplusplus98()
   HexFloats = false;
   C99 = false;
   GNUMode = false;
+  StateMode = false;            // STATE_EXTENSION
   BCPLComment = true;
   CPlusPlus = true;
   CXXOperatorNames = true;
@@ -279,6 +282,7 @@ void LangOptions::GNU_Cplusplus98()
   ANSI_C99_extensions();
 
   GNUMode = true;
+  StateMode = true;             // STATE_EXTENSION
   DollarIdents = true;
   HexFloats = true;
   implicitFuncVariable = true;

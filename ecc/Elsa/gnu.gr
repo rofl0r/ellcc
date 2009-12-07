@@ -748,7 +748,6 @@ nonterm(StringRef) AttributeWord {
   -> "bool"             { return str("bool"); }
   -> "case"             { return str("case"); }
   -> "catch"            { return str("catch"); }
-  -> "__cdecl"          { return str("cdecl"); }
   -> "char"             { return str("char"); }
   -> "class"            { return str("class"); }
   -> "const"            { return str("const"); }
@@ -777,7 +776,6 @@ nonterm(StringRef) AttributeWord {
   -> "namespace"        { return str("namespace"); }
   -> "new"              { return str("new"); }
   -> "operator"         { return str("operator"); }
-  -> "__pascal"           { return str("pascal"); }
   -> "private"          { return str("private"); }
   -> "protected"        { return str("protected"); }
   -> "public"           { return str("public"); }

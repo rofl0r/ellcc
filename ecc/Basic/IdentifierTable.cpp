@@ -61,11 +61,14 @@ IdentifierTable::IdentifierTable(const LangOptions &LangOpts,
 // Constants for TokenKinds.def
 namespace {
   enum {
-    KEYALL = 1,
-    KEYC99 = 2,
-    KEYCXX = 4,
-    KEYCXX0X = 8,
-    KEYGNU = 16,
+    KEYALL   = 0x01,
+    KEYC99   = 0x02,
+    KEYCXX   = 0x04,
+    KEYCXX0X = 0x08,
+    KEYGNU   = 0x10,
+// RICH: #ifdef STATE_EXTENSION
+    KEYSTATE = 0x20,
+// RICH: #endif
   };
 }
 
@@ -86,6 +89,9 @@ static void AddKeyword(const char *Keyword, unsigned KWLen,
   else if (LangOpts.CPlusPlus0x && (Flags & KEYCXX0X)) AddResult = 2;
   else if (LangOpts.C99 && (Flags & KEYC99)) AddResult = 2;
   else if (LangOpts.GNUMode && (Flags & KEYGNU)) AddResult = 1;
+// RICH: #ifdef STATE_EXTENSION
+  else if (LangOpts.StateMode && (Flags & KEYSTATE)) AddResult = 1;
+// RICH: #endif
 
   // Don't add this keyword if disabled in this language.
   if (AddResult == 0) return;

@@ -185,6 +185,7 @@ TOK(max)                 // >?
 //              implementation namespace
 //   KEYCXX0X - This is a C++ keyword introduced to C++ in C++0x
 //   KEYGNU   - This is a keyword if GNU extensions are enabled
+//   KEYSTATE - This is a keyword if state machine extensions are enabled
 //
 KEYWORD(auto                        , KEYALL)
 KEYWORD(break                       , KEYALL)
@@ -315,36 +316,17 @@ KEYWORD(typeof                      , KEYGNU)
 TOK(prefer_reduce)
 TOK(prefer_shift)
 
-// GNU and MS Type Traits
-KEYWORD(__has_nothrow_assign        , KEYCXX)
-KEYWORD(__has_nothrow_copy          , KEYCXX)
-KEYWORD(__has_nothrow_constructor   , KEYCXX)
-KEYWORD(__has_trivial_assign        , KEYCXX)
-KEYWORD(__has_trivial_copy          , KEYCXX)
-KEYWORD(__has_trivial_constructor   , KEYCXX)
-KEYWORD(__has_trivial_destructor    , KEYCXX)
-KEYWORD(__has_virtual_destructor    , KEYCXX)
-KEYWORD(__is_abstract               , KEYCXX)
-KEYWORD(__is_base_of                , KEYCXX)
-KEYWORD(__is_class                  , KEYCXX)
-KEYWORD(__is_empty                  , KEYCXX)
-KEYWORD(__is_enum                   , KEYCXX)
-KEYWORD(__is_pod                    , KEYCXX)
-KEYWORD(__is_polymorphic            , KEYCXX)
-KEYWORD(__is_union                  , KEYCXX)
-// FIXME: Add MS's traits, too.
-
-// Apple Extension.
-KEYWORD(__private_extern__          , KEYALL)
-
-// Microsoft Extension.
-KEYWORD(__declspec                  , KEYALL)
-KEYWORD(__cdecl                     , KEYALL)
-KEYWORD(__stdcall                   , KEYALL)
-KEYWORD(__fastcall                  , KEYALL)
-KEYWORD(__ptr64                     , KEYALL)
-KEYWORD(__w64                       , KEYALL)
-KEYWORD(__forceinline               , KEYALL)
+// RICH: #ifdef STATE_EXTENSION
+// State machine extensions.
+KEYWORD(__active__                  , KEYSTATE)
+KEYWORD(__onentry__                 , KEYSTATE)
+KEYWORD(__event__                   , KEYSTATE)
+KEYWORD(__onexit__                  , KEYSTATE)
+KEYWORD(__initial__                 , KEYSTATE)
+KEYWORD(__state__                   , KEYSTATE)
+KEYWORD(__timeout__                 , KEYSTATE)
+KEYWORD(__timer__                   , KEYSTATE)
+// RICH: #endif
 
 // Alternate spelling for various tokens.  There are GCC extensions in all
 // languages, but should not be disabled in strict conformance mode.
@@ -369,40 +351,6 @@ ALIAS("__typeof"     , typeof     , KEYALL)
 ALIAS("__typeof__"   , typeof     , KEYALL)
 ALIAS("__volatile"   , volatile   , KEYALL)
 ALIAS("__volatile__" , volatile   , KEYALL)
-
-
-//===----------------------------------------------------------------------===//
-// Objective-C @-preceeded keywords.
-//===----------------------------------------------------------------------===//
-
-// These have meaning after an '@' in Objective-C mode. These define enums in
-// the tok::objc_* namespace.
-
-OBJC1_AT_KEYWORD(not_keyword)
-OBJC1_AT_KEYWORD(class)
-OBJC1_AT_KEYWORD(compatibility_alias)
-OBJC1_AT_KEYWORD(defs)
-OBJC1_AT_KEYWORD(encode)
-OBJC1_AT_KEYWORD(end)
-OBJC1_AT_KEYWORD(implementation)
-OBJC1_AT_KEYWORD(interface)
-OBJC1_AT_KEYWORD(private)
-OBJC1_AT_KEYWORD(protected)
-OBJC1_AT_KEYWORD(protocol)
-OBJC1_AT_KEYWORD(public)
-OBJC1_AT_KEYWORD(selector)
-OBJC1_AT_KEYWORD(throw)
-OBJC1_AT_KEYWORD(try)
-OBJC1_AT_KEYWORD(catch)
-OBJC1_AT_KEYWORD(finally)
-OBJC1_AT_KEYWORD(synchronized)
-
-OBJC2_AT_KEYWORD(property)
-OBJC2_AT_KEYWORD(package)
-OBJC2_AT_KEYWORD(required)
-OBJC2_AT_KEYWORD(optional)
-OBJC2_AT_KEYWORD(synthesize)
-OBJC2_AT_KEYWORD(dynamic)
 
 // TODO: What to do about context-sensitive keywords like:
 //       bycopy/byref/in/inout/oneway/out?

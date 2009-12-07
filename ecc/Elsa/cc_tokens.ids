@@ -1,5 +1,7 @@
 // cc_tokens.ids
-// There is a pathological connection between this and ../basic/TokenKinds.def.
+// There is a pathological connection between this and ../Basic/TokenKinds.def.
+// Until this is fixed anything added there has to be added here. Be careful
+// to maintain the same order.
 
 // form:
 //   <code> : <name> [<alias>] ;
@@ -183,6 +185,12 @@
   169 : TOK_PREFER_REDUCE              "<prefer reduce>";
   170 : TOK_PREFER_SHIFT               "<prefer shift>";
 
-  // RICH: More needed.
-  171 : TOK_CDECL                      "__cdecl";
-  172 : TOK_PASCAL                     "__pascal";
+  // STATE_EXTENSION
+  171 : TOK___ACTIVE__                 "__active__";
+  172 : TOK___ONENTRY__                "__onentry__";
+  173 : TOK___EVENT__                  "__event__";
+  174 : TOK___ONEXIT__                 "__onexit__";
+  175 : TOK___INITIAL__                "__initial__";
+  176 : TOK___STATE__                  "__state__";
+  177 : TOK___TIMEOUT__                "__timeout__";
+  178 : TOK___TIMER__                  "__timer__";

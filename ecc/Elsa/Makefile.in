@@ -102,6 +102,14 @@ ifeq ($(USE_KANDR),1)
   EXT_OBJS    += kandr.o
 endif
 
+# optional: State machine language extension
+USE_STATE := @USE_STATE@
+ifeq ($(USE_STATE),1)
+  CC_AST_MODS += state.ast
+  CC_GR_MODS  += state.gr
+  EXT_OBJS    += state.o
+endif
+
 # optional: LLVM generation
 LLVM := @LLVM@
 ifneq ("$(LLVM)","disabled")

@@ -234,6 +234,7 @@ public:
   bool DollarIdents;      // '$' allowed in identifiers.
   bool AsmPreprocessor;   // Preprocessor in asm mode.
   bool GNUMode;           // True in gnu99 mode false in c99 mode (etc)
+  bool StateMode;         // True in state machine mode false in c99 mode (etc)
   bool Digraphs;          // C94, C99 and C++
   bool HexFloats;         // C99 Hexadecimal float constants.
   bool C99;               // C99 Support

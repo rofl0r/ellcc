@@ -48,6 +48,7 @@ $ELKHOUND = "../Elkhound";
 $LLVM = "../..";
 $USE_GNU = "1";
 $USE_KANDR = "1";
+$USE_STATE = "1";
 $GCOV_MODS = "";
 
 
@@ -62,6 +63,7 @@ package options:
   -llvm=<dir>:       specify where the LLVM system is [$LLVM]
   -gnu=[0/1]         enable GNU extensions? [$USE_GNU]
   -kandr=[0/1]       enable K&R extensions? [$USE_KANDR]
+  -state=[0/1]       enable state machine extensions? [$USE_STATE]
   -basic=<dir>:      specify where the basic library is [$BASIC]
   -lex=<dir>:        specify where the lex library is [$BASIC]
   -ast=<dir>:        specify where the ast system is [$AST]
@@ -129,6 +131,9 @@ foreach $optionAndValue (@ARGV) {
   }
   elsif ($arg eq "kandr") {
     $USE_KANDR = getBoolArg();
+  }
+  elsif ($arg eq "state") {
+    $USE_STATE = getBoolArg();
   }
 
   elsif ($arg eq "useSerialNumbers") {
@@ -200,6 +205,7 @@ cat <<EOF
   LLVM:        $LLVM
   USE_GNU:     $USE_GNU
   USE_KANDR:   $USE_KANDR
+  USE_STATE:   $USE_STATE
 EOF
 OUTER_EOF
 
@@ -221,6 +227,7 @@ writeConfigStatus("LDFLAGS" => "@LDFLAGS",
                   "LLVM" => "$LLVM",
                   "USE_GNU" => "$USE_GNU",
                   "USE_KANDR" => "$USE_KANDR",
+                  "USE_STATE" => "$USE_STATE",
                   "GCOV_MODS" => "$GCOV_MODS");
 
 
