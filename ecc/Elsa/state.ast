@@ -1,0 +1,11 @@
+// state.ast
+// extension to cc.ast to support state machine language extensions
+
+verbatim {
+  #define STATE_EXTENSION       // this extension module is active
+}
+
+
+// The AST extensions in this file are organized in parallel with the
+// syntactic extensions in state.gr.
+
