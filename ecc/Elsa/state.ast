@@ -9,3 +9,10 @@ verbatim {
 // The AST extensions in this file are organized in parallel with the
 // syntactic extensions in state.gr.
 
+// An addition class member.
+class Member () {
+    -> MR_state(State s);       // A state definition.
+}
+
+class State (SourceLocation loc, SourceLocation endloc) {
+}
