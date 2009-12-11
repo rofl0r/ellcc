@@ -3997,6 +3997,36 @@ void Declarator::mid_tcheck(Env &env, Tcheck &dt)
 
     // Check an asm label.
     checkAsmLabel(env, decl->loc, var, dt);
+
+    if (!var->type->isFunctionType()) {
+        // Check for modifiers that are illegal for non-functions.
+        if (var->hasFlag(DF_INLINE)) {
+            env.report(decl->loc, diag::err_illegal_declaration_modifier_for_non_function)
+                << "inline" << var->name;
+        }
+        if (var->hasFlag(DF_VIRTUAL)) {
+            env.report(decl->loc, diag::err_illegal_declaration_modifier_for_non_function)
+                << "virtual" << var->name;
+        }
+        if (var->hasFlag(DF_EXPLICIT)) {
+            env.report(decl->loc, diag::err_illegal_declaration_modifier_for_non_function)
+                << "virtual" << var->name;
+        }
+        if (var->hasFlag(DF_EVENT)) {
+            env.report(decl->loc, diag::err_illegal_declaration_modifier_for_non_function)
+                << "__event__" << var->name;
+        }
+    } else {
+        // Check for modifiers that are illegal for functions.
+        if (var->hasFlag(DF_AUTO)) {
+            env.report(decl->loc, diag::err_illegal_declaration_modifier_for_function)
+                << "auto" << var->name;
+        }
+        if (var->hasFlag(DF_REGISTER)) {
+            env.report(decl->loc, diag::err_illegal_declaration_modifier_for_function)
+                << "register" << var->name;
+        }
+    }
 }
 
 
@@ -4161,6 +4191,13 @@ void D_func::tcheck(Env &env, Declarator::Tcheck &dt)
 
   // handle "fake" return type ST_CDTOR
   if (dt.type->isSimple(ST_CDTOR)) {
+#ifdef STATE_EXTENSION
+    if (dt.hasFlag(DF_EVENT)) {
+        // This is an event declaration.
+        specialFunc |= FF_EVENT;
+        fprintf(stderr, "Event!\n");
+    } else
+#endif
     if (env.LO.CPlusPlus) {
       // get the name being declared
       D_name *dname;

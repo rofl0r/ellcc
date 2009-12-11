@@ -1039,7 +1039,8 @@ enum FunctionFlags {
   FF_NO_PARAM_INFO = 0x0040,  // C parameter list "()" (C99 6.7.5.3 para 14)
   FF_DEFAULT_ALLOC = 0x0080,  // is a default [de]alloc function from 3.7.3p2
   FF_KANDR_DEFN    = 0x0100,  // derived from a K&R-style function definition
-  FF_ALL           = 0x01FF,  // all flags set to 1
+  FF_EVENT         = 0x0200,  // EVENT_EXTENSION: this is an event declaration.
+  FF_ALL           = 0x03FF,  // all flags set to 1
 };
 ENUM_BITWISE_OPS(FunctionFlags, FF_ALL);
 

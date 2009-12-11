@@ -185,40 +185,39 @@ void fromXml(CVFlags &out, char const *str)
 
 // ------------------- DeclFlags --------------
 char const * const declFlagNames[NUM_DECLFLAGS] = {
-  "auto",           // 0
+  "auto",               // 0
   "register",
   "static",
   "extern",
-  "mutable",        // 4
+  "mutable",       
   "inline",
   "virtual",
   "explicit",
   "friend",
-  "typedef",        // 9
+  "typedef",        
+  "__event__",
+  "namespace",          // 10
 
-  "(enumerator)",
   "(global)",
-  "(initialized)",
   "(builtin)",
-  "(bound tparam)", // 14
-  "(addrtaken)",
+  "(enumerator)",
+  "(referenced)",
   "(parameter)",
-  "(universal)",
-  "(existential)",
-  "(member)",       // 19
-  "(definition)",
+  "(initialized)",
+  "(unused1)",
+  "(member)",
+  "(definition)",       // 20
   "(inline_defn)",
   "(implicit)",
   "(forward)",
-  "(temporary)",    // 24
-
-  "(unused)",
-  "namespace",
+  "(temporary)",
   "(extern \"C\")",
   "(selfname)",
-  "(templ param)",  // 29
+  "(bound tparam)",
+  "(templ param)",
   "(using alias)",
-  "(bitfield)",
+  "(bitfield)",         // 30
+  "(GNU extern inline)",
 };
 
 
