@@ -723,35 +723,43 @@ OverloadableOp toOverloadableOp(BinaryOp op, bool isAssignment)
 
 // ------------------------ UberModifiers ---------------------
 char const * const uberModifierNames[UM_NUM_FLAGS] = {
-  "auto",            // 0x00000001
+  "auto",               // 0x00000001
   "register",
   "static",
   "extern",
-  "mutable",         // 0x00000010
+  "mutable",            // 0x00000010
   "inline",
   "virtual",
   "explicit",
-  "friend",          // 0x00000100
+  "friend",             // 0x00000100
   "typedef",
+  "__event__",
 
-  "const",
-  "volatile",
-  "restrict",        // 0x00001000
+  "UM_UNUSED1",
+  "UM_UNUSED2",         // 0x00001000
 
   "wchar_t",
   "bool",
   "short",
-  "int",             // 0x00010000
+  "int",                // 0x00010000
   "long",
   "signed",
   "unsigned",
-  "float",           // 0x00100000
+  "float",              // 0x00100000
   "double",
   "void",
   "long long",
-  "char",            // 0x01000000
+  "char",               // 0x01000000
   "complex",
-  "imaginary"
+  "imaginary",
+
+  "UM_UNUSED3",
+
+  "const",              // 0x1000000
+  "volatile",
+  "restrict",
+
+  "UM_UNUSED3",
 };
 
 string toString(UberModifiers m)

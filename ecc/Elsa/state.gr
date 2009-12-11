@@ -2,8 +2,13 @@
 // extension to cc.gr for state machine language extensions
 
 /* Specifically, the extensions found in this file are:
- * 1. A state definition.
+ * 1. An event declaration.
+ * 2. A state definition.
  */
+
+nonterm(UberModifiers) UberModifier {
+    -> "__event__" { return UM_EVENT; }
+}
 
 nonterm(Member*) MemberDeclaration {
     -> s:StateDeclaration

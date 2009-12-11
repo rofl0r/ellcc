@@ -49,8 +49,7 @@ enum CVFlags {
   CV_CONST    = 0x0400,
   CV_VOLATILE = 0x0800,
   CV_RESTRICT = 0x1000,     // C99
-  CV_OWNER    = 0x2000,     // experimental extension
-  CV_ALL      = 0x3C00,
+  CV_ALL      = 0x2C00,
 
   CV_SHIFT_AMOUNT = 10,     // shift right this many bits before counting for cvFlagNames
   NUM_CVFLAGS = 4,          // # bits set to 1 in CV_ALL
@@ -531,16 +530,13 @@ enum UberModifiers {
 
   UM_FRIEND       = 0x00000100,
   UM_TYPEDEF      = 0x00000200,
+  UM_EVENT        = 0x00000400,   // STATE_EXTENSION
 
-  UM_DECLFLAGS    = 0x000003FF,
+  UM_DECLFLAGS    = 0x000007FF,
 
-  // cv-qualifier
-  UM_CONST        = 0x00000400,
-  UM_VOLATILE     = 0x00000800,
-  UM_RESTRICT     = 0x00001000,    // C99
-
-  UM_CVFLAGS      = 0x00001C00,
-
+  UM_UNUSED1      = 0x00000800,
+  UM_UNUSED2      = 0x00001000,
+ 
   // type keywords
   UM_WCHAR_T      = 0x00002000,
   UM_BOOL         = 0x00004000,
@@ -559,8 +555,20 @@ enum UberModifiers {
 
   UM_TYPEKEYS     = 0x07FFE000,
 
-  UM_ALL_FLAGS    = 0x07FFFFFF,
-  UM_NUM_FLAGS    = 27             // # bits set in UM_ALL_FLAGS
+  UM_UNUSED3      = 0x08000000,
+ 
+  // cv-qualifier
+  UM_CONST        = 0x10000000,
+  UM_VOLATILE     = 0x20000000,
+  UM_RESTRICT     = 0x40000000,    // C99
+
+  UM_CVFLAGS      = 0x70000000,
+  UM_CV_SHIFT_AMOUNT = 28,
+
+  UM_UNUSED4      = 0x80000000,
+
+  UM_ALL_FLAGS    = 0xFFFFFFFF,
+  UM_NUM_FLAGS    = 32             // # bits set in UM_ALL_FLAGS
 };
 
 // string repr.
@@ -571,7 +579,7 @@ sm::string toString(UberModifiers m);
 inline DeclFlags uberDeclFlags(UberModifiers m)
   { return (DeclFlags)(m & UM_DECLFLAGS); }
 inline CVFlags uberCVFlags(UberModifiers m)
-  { return (CVFlags)(m & UM_CVFLAGS); }
+  { return (CVFlags)(((m & UM_CVFLAGS) >> UM_CV_SHIFT_AMOUNT) << CV_SHIFT_AMOUNT); }
 
 // two more related functions, uberSimpleType and uberCombine,
 // are declared in ccparse.h

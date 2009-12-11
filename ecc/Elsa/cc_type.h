@@ -812,7 +812,6 @@ public:     // funcs
   bool isEllipsis() const { return isSimple(ST_ELLIPSIS); }
   bool isError() const { return isSimple(ST_ERROR); }
   bool isDependent() const;    // TODO: this should be ST_DEPENDENT only
-  bool isOwnerPtr() const;
   bool isMethod() const;                       // function and method
 
   // ST_DEPENDENT or TypeVariable or PseudoInstantiation or DependentQType
