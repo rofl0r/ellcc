@@ -67,6 +67,10 @@ nonterm(FakeList<StateEntry>*) StateEntryList {
 }
 
 nonterm(StateEntry*) StateEntry {
-    -> "__timer__" ";"
-        { return NULL; }
+    -> "__timer__" e:Expression ";"
+        { return new StateEntry(loc, endloc); }
+    -> "case" d:MemberDeclarator ":" s:Statement
+        { return new StateEntry(loc, endloc); }
+    -> s:StateDefinition
+        { return new StateEntry(loc, endloc); }
 }
