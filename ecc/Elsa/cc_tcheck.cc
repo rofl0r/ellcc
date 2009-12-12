@@ -4184,17 +4184,24 @@ static Type *normalizeParameterType(Env &env, SourceLocation loc, Type *t)
 
 void D_func::tcheck(Env &env, Declarator::Tcheck &dt)
 {
-  env.setLoc(loc);
-  possiblyConsumeFunctionType(env, dt);
+    env.setLoc(loc);
+    possiblyConsumeFunctionType(env, dt);
 
-  FunctionFlags specialFunc = FF_NONE;
+    FunctionFlags specialFunc = FF_NONE;
 
+#ifdef STATE_EXTENSION
+    if (dt.hasFlag(DF_EVENT)) {
+        // This is an event declaration.
+        specialFunc |= FF_EVENT;
+        fprintf(stderr, "Event1!\n");
+    }
+#endif
+ 
   // handle "fake" return type ST_CDTOR
   if (dt.type->isSimple(ST_CDTOR)) {
 #ifdef STATE_EXTENSION
     if (dt.hasFlag(DF_EVENT)) {
         // This is an event declaration.
-        specialFunc |= FF_EVENT;
         fprintf(stderr, "Event!\n");
     } else
 #endif
