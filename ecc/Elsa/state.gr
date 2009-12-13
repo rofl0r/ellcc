@@ -45,17 +45,30 @@ nonterm(Member*) MemberDeclaration {
 }
 
 nonterm(State*) StateDefinition {
-    -> "__state__" d:Declarator ";"
+    -> i:InitialState "__state__" d:Declarator ";"
         { return new State(loc, endloc, NULL); }
-    -> "__state__" d:Declarator "{" l:StateEntryListOpt "}"
+    -> i:InitialState "__state__" d:Declarator l:AndStateList
         { return new State(loc, endloc, l); }
 }
 
-nonterm(FakeList<StateEntry>*) StateEntryListOpt {
+nonterm(bool) InitialState {
+  -> empty      { return false; }
+  -> "__initial__"  { return true; }
+}
+
+nonterm(FakeList<StateEntryList>*) AndStateList {
+    -> "{" h:StateEntryListOpt "}"
+        { return FakeList<StateEntryList>::makeList(h); }
+    -> "{" h:StateEntryListOpt "}" "&&" t:AndStateList
+       { h->next = t->first();
+         return FakeList<StateEntryList>::makeList(h); }
+}
+
+nonterm(StateEntryList*) StateEntryListOpt {
     -> empty
-        { return FakeList<StateEntry>::emptyList(); }
+        { return new StateEntryList(loc, endloc, FakeList<StateEntry>::emptyList()); }
     -> l:StateEntryList
-        { return l; }
+        { return new StateEntryList(loc, endloc, l); }
 }
 
 nonterm(FakeList<StateEntry>*) StateEntryList {
@@ -69,8 +82,16 @@ nonterm(FakeList<StateEntry>*) StateEntryList {
 nonterm(StateEntry*) StateEntry {
     -> "__timer__" e:Expression ";"
         { return new StateEntry(loc, endloc); }
+    -> "__onentry__" s:Statement
+        { return new StateEntry(loc, endloc); }
     -> "case" d:MemberDeclarator ":" s:Statement
         { return new StateEntry(loc, endloc); }
+    -> "__timeout__" s:Statement
+        { return new StateEntry(loc, endloc); }
+    -> "default" s:Statement
+        { return new StateEntry(loc, endloc); }
     -> s:StateDefinition
+        { return new StateEntry(loc, endloc); }
+    -> "__onexit__" s:Statement
         { return new StateEntry(loc, endloc); }
 }

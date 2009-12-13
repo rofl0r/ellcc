@@ -2,8 +2,7 @@
 cd www.$1
 DIR=`pwd`
 FILES=`echo *`
-cd ..
-cd ../web/$1
+cd ~/web/$1
 for file in $FILES; do
     ln -sfT $DIR/$file $file
 done

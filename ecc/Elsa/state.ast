@@ -32,11 +32,16 @@ class Member () {
 
 // An entry of a state.
 class StateEntry (SourceLocation loc, SourceLocation endloc) {
-    public StateEntry *next=NULL;   // FakeList link
+    public StateEntry *next=NULL;       // FakeList link
+}
+
+// An list of a state entries.
+class StateEntryList (SourceLocation loc, SourceLocation endloc, FakeList<StateEntry>* entries) {
+    public StateEntryList *next=NULL;   // FakeList link
 }
 
 // a state definition (toplevel or class member)
-class State (SourceLocation loc, SourceLocation endloc, FakeList<StateEntry>* entries) {
+class State (SourceLocation loc, SourceLocation endloc, FakeList<StateEntryList>* states) {
 }
 
 class TopForm () {
