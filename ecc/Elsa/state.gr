@@ -86,9 +86,9 @@ nonterm(StateEntry*) StateEntry {
         { return new StateEntry(loc, endloc); }
     -> "case" d:MemberDeclarator ":" s:Statement
         { return new StateEntry(loc, endloc); }
-    -> "__timeout__" s:Statement
+    -> "__timeout__" ":" s:Statement
         { return new StateEntry(loc, endloc); }
-    -> "default" s:Statement
+    -> "default" ":" s:Statement
         { return new StateEntry(loc, endloc); }
     -> s:StateDefinition
         { return new StateEntry(loc, endloc); }
