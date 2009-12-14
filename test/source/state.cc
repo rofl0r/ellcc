@@ -52,4 +52,6 @@ int main(int argc, char** argv)
 }
 
 __state__ Init {
+    __onentry__ evCall(1, 2, 3);
+    case evCallResult(int result): { answer = result; return; }
 }
