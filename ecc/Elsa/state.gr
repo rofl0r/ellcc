@@ -22,6 +22,9 @@
  * 2. A state definition.
  */
 
+/* Allow the definition of an event where ever a
+ * SimpleDeclaration is allowed.
+ */
 nonterm(Declaration*) SimpleDeclaration {
     // An event is syntactically similar to a constructor.
     -> "__event__" d:MemberDeclarator ";"
@@ -34,10 +37,15 @@ nonterm(Declaration*) SimpleDeclaration {
         }
 }
 
+/* A state can be defined globally.
+ */
 nonterm(TopForm*) Declaration {
-    -> s:StateDefinition      { return new TF_state(loc, s); }
+    -> s:StateDefinition
+        { return new TF_state(loc, s); }
 }
 
+/* A state can be defined as a class member.
+ */
 nonterm(Member*) MemberDeclaration {
     // a state definition
     -> s:StateDefinition
@@ -45,17 +53,24 @@ nonterm(Member*) MemberDeclaration {
 }
 
 nonterm(State*) StateDefinition {
+    // A state declaration or reference.
     -> i:InitialState "__state__" d:Declarator ";"
         { return new State(loc, endloc, NULL); }
+
+    // A state definition. Multiple states may be "and"ed.
     -> i:InitialState "__state__" d:Declarator l:AndStateList
         { return new State(loc, endloc, l); }
 }
 
+/* One state in a state machine can be the initial state.
+ */
 nonterm(bool) InitialState {
   -> empty      { return false; }
   -> "__initial__"  { return true; }
 }
 
+/* Either a single state or two or more "and"ed states.
+ */
 nonterm(FakeList<StateEntryList>*) AndStateList {
     -> "{" h:StateEntryListOpt "}"
         { return FakeList<StateEntryList>::makeList(h); }
@@ -64,6 +79,8 @@ nonterm(FakeList<StateEntryList>*) AndStateList {
          return FakeList<StateEntryList>::makeList(h); }
 }
 
+/* A state may be empty.
+ */
 nonterm(StateEntryList*) StateEntryListOpt {
     -> empty
         { return new StateEntryList(loc, endloc, FakeList<StateEntry>::emptyList()); }
@@ -71,6 +88,8 @@ nonterm(StateEntryList*) StateEntryListOpt {
         { return new StateEntryList(loc, endloc, l); }
 }
 
+/* A state is made of of a series of entries.
+ */
 nonterm(FakeList<StateEntry>*) StateEntryList {
     -> e:StateEntry
         { return FakeList<StateEntry>::makeList(e); }
@@ -79,19 +98,40 @@ nonterm(FakeList<StateEntry>*) StateEntryList {
          return FakeList<StateEntry>::makeList(e); }
 }
 
+/* State entries.
+ * The order of state entries has no effect on the definition of the state.
+ * There is no notion of execution "falling through" from one entry to
+ * the next. Note that this is different than a switch statement
+ * and its cases.
+ */
 nonterm(StateEntry*) StateEntry {
-    -> "__timer__" e:Expression ";"
+    // Start a timer. One timer per state.
+    -> "__timeout__" "(" e:Expression ")" s:Statement
         { return new StateEntry(loc, endloc); }
+
+    // Actions on state entry.
     -> "__onentry__" s:Statement
         { return new StateEntry(loc, endloc); }
+
+    // Actions triggered by events.
     -> "case" d:MemberDeclarator ":" s:Statement
         { return new StateEntry(loc, endloc); }
-    -> "__timeout__" ":" s:Statement
-        { return new StateEntry(loc, endloc); }
+
+    // Actions triggered by events not handled elsewhere.
     -> "default" ":" s:Statement
         { return new StateEntry(loc, endloc); }
+
+    // Define or reference a nested substate.
     -> s:StateDefinition
         { return new StateEntry(loc, endloc); }
+
+    // Actions on state exit.
     -> "__onexit__" s:Statement
         { return new StateEntry(loc, endloc); }
+}
+
+/* Add the active modifier.
+ */
+nonterm(UberModifiers) UberModifier {
+    -> "__active__" { return UM_ACTIVE; }
 }

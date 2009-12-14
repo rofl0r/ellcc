@@ -96,10 +96,9 @@ enum DeclFlags {
   DF_EXPLICIT    = 0x00000080,
   DF_FRIEND      = 0x00000100,
   DF_TYPEDEF     = 0x00000200,
-  DF_EVENT       = 0x00000400,
-  DF_SOURCEFLAGS = 0x000007FF,    // all flags that come from keywords in the source
-
-  DF_NAMESPACE   = 0x00000800,    // names of namespaces
+  DF_EVENT       = 0x00000400,    // STATE_EXTENSION
+  DF_ACTIVE      = 0x00000800,    // STATE_EXTENSION
+  DF_SOURCEFLAGS = 0x00000FFF,    // all flags that come from keywords in the source
 
   // semantic flags on Variables
   DF_GLOBAL      = 0x00001000,    // set for globals, unset for locals
@@ -108,7 +107,8 @@ enum DeclFlags {
   DF_REFERENCED  = 0x00008000,    // true if it's been referenced
   DF_PARAMETER   = 0x00010000,    // true if this is a function parameter or a handler "parameter"
   DF_INITIALIZED = 0x00020000,    // true if has been declared with an initializer (or, for functions, with code)
-  DF_UNUSED1     = 0x00040000,    // Unused
+  DF_NAMESPACE   = 0x00040000,    // names of namespaces
+
   DF_MEMBER      = 0x00080000,    // true for members of classes (data, static data, functions); *not* true for namespace members
   DF_DEFINITION  = 0x00100000,    // set once we've seen this Variable's definition
   DF_INLINE_DEFN = 0x00200000,    // set for inline function definitions on second pass of tcheck
@@ -529,10 +529,10 @@ enum UberModifiers {
   UM_FRIEND       = 0x00000100,
   UM_TYPEDEF      = 0x00000200,
   UM_EVENT        = 0x00000400,   // STATE_EXTENSION
-  UM_DECLFLAGS    = 0x000007FF,
+  UM_ACTIVE       = 0x00000800,   // STATE_EXTENSION
+  UM_DECLFLAGS    = 0x00000FFF,
 
-  UM_UNUSED1      = 0x00000800,
-  UM_UNUSED2      = 0x00001000,
+  UM_UNUSED1      = 0x00001000,
  
   // type keywords
   UM_WCHAR_T      = 0x00002000,

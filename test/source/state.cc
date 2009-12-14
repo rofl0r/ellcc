@@ -1,8 +1,7 @@
 bool EStop = false;                             // A global condition.
 __event__ evEStop();                            // A global event declaration.
 
-//__active__
- class Switch {
+__active__ class Switch {
    __initial__ __state__ Off {
        __onentry__ power = false;
        case evOn(): if (!EStop) { turnOn(); goto On; }
@@ -18,21 +17,19 @@ __event__ evEStop();                            // A global event declaration.
        // __state__ DoBlink;
        // which could contain these states and could be defined elsewhere.
        __initial__ __state__ BlinkOn {
-           __timer__ 500;                      // Set a .5 second timeout.
+           __timeout__ (500) goto BlinkOff;    // Set a .5 second timeout.
            __onentry__ indicator = true;
-           __timeout__: goto BlinkOff;
        }
        __state__ BlinkOff {
-           __timer__ 500;
+           __timeout__ (500) goto BlinkOn;
            __onentry__ indicator = false;
-           __timeout__: goto BlinkOn;
        }
        __onexit__ indicator = false;           // Exit action.
    } and {                                     // The ever favourite and state.
-       __timer__ 1000;                         // Count power on time.
-       __timeout__: ++timer;                   // Internal transition, use
-                                               // __timeout__: ++timer; goto On;
-                                               // for an external transition.
+       __timeout__ (1000) ++timer;             /* Count power on time, internal transition.
+                                                * Use __timeout__: { ++timer; goto On; }
+                                                * for an external transition.
+                                                */
    }
    Switch() { power = false; indicator = false; timer = 0; }
 private:
@@ -54,3 +51,5 @@ int main(int argc, char** argv)
                                // sw is destroyed here, including its thread.
 }
 
+__state__ Init {
+}

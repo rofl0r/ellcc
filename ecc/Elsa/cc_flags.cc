@@ -196,7 +196,7 @@ char const * const declFlagNames[NUM_DECLFLAGS] = {
   "friend",
   "typedef",        
   "__event__",
-  "namespace",          // 10
+  "__active__",         // 10
 
   "(global)",
   "(builtin)",
@@ -204,10 +204,10 @@ char const * const declFlagNames[NUM_DECLFLAGS] = {
   "(referenced)",
   "(parameter)",
   "(initialized)",
-  "(unused1)",
+  "namespace", 
   "(member)",
-  "(definition)",       // 20
-  "(inline_defn)",
+  "(definition)",
+  "(inline_defn)",      // 20
   "(implicit)",
   "(forward)",
   "(temporary)",
@@ -216,8 +216,8 @@ char const * const declFlagNames[NUM_DECLFLAGS] = {
   "(bound tparam)",
   "(templ param)",
   "(using alias)",
-  "(bitfield)",         // 30
-  "(GNU extern inline)",
+  "(bitfield)",
+  "(GNU extern inline)",// 30
 };
 
 
@@ -733,9 +733,9 @@ char const * const uberModifierNames[UM_NUM_FLAGS] = {
   "friend",             // 0x00000100
   "typedef",
   "__event__",
+  "__active__",
 
-  "UM_UNUSED1",
-  "UM_UNUSED2",         // 0x00001000
+  "UM_UNUSED1",         // 0x00001000
 
   "wchar_t",
   "bool",
