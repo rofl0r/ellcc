@@ -97,7 +97,7 @@ llvm::DICompileUnit DebugInfo::getOrCreateCompileUnit(SourceLocation Loc)
     const char *MainFileName = LO.getMainFileName();
     if (isMainCompileUnitCreated == false) {
         if (MainFileName) {
-            if (!strcmp(AbsFileName.getLast().c_str(), MainFileName))
+            if (AbsFileName.getLast().str() == MainFileName)
                 isMain = true;
         } else {
             if (Loc.isValid() && SM.isFromMainFile(Loc))
@@ -120,8 +120,8 @@ llvm::DICompileUnit DebugInfo::getOrCreateCompileUnit(SourceLocation Loc)
     const char *Flags = "";   // FIXME: Encode command line options.
 
     // Create new compile unit.
-    return Unit = DebugFactory.CreateCompileUnit(LangTag, AbsFileName.getLast().c_str(),
-                                                 AbsFileName.getDirname().c_str(), 
+    return Unit = DebugFactory.CreateCompileUnit(LangTag, AbsFileName.getLast().str(),
+                                                 AbsFileName.getDirname().str(), 
                                                  LO.getProducer(), isMain, isOptimized,
                                                  Flags, /* RuntimeVers */ 0);
 }

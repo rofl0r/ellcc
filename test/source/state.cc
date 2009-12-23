@@ -26,10 +26,12 @@ __active__ class Switch {
        }
        __onexit__ indicator = false;           // Exit action.
    } and {                                     // The ever favourite and state.
-       __timeout__ (1000) ++timer;             /* Count power on time, internal transition.
-                                                * Use __timeout__: { ++timer; goto On; }
+       __state__ Timer {
+           __timeout__ (1000) ++timer;         /* Count power on time, internal transition.
+                                                * Use __timeout__: { ++timer; goto Timer; }
                                                 * for an external transition.
                                                 */
+       }
    }
    Switch() { power = false; indicator = false; timer = 0; }
 private:
