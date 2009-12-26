@@ -187,10 +187,5 @@
 
   // STATE_EXTENSION
   171 : TOK___ACTIVE__                 "__active__";
-  172 : TOK___ONENTRY__                "__onentry__";
-  173 : TOK___EVENT__                  "__event__";
-  174 : TOK___ONEXIT__                 "__onexit__";
-  175 : TOK___INITIAL__                "__initial__";
-  176 : TOK___STATE__                  "__state__";
-  177 : TOK___TIMEOUT__                "__timeout__";
-  178 : TOK___TIMER__                  "__timer__";
+  172 : TOK___EVENT__                  "__event__";
+  174 : TOK___STATE__                  "__state__";

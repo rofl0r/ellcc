@@ -319,13 +319,8 @@ TOK(prefer_shift)
 // RICH: #ifdef STATE_EXTENSION
 // State machine extensions.
 KEYWORD(__active__                  , KEYSTATE)
-KEYWORD(__onentry__                 , KEYSTATE)
 KEYWORD(__event__                   , KEYSTATE)
-KEYWORD(__onexit__                  , KEYSTATE)
-KEYWORD(__initial__                 , KEYSTATE)
 KEYWORD(__state__                   , KEYSTATE)
-KEYWORD(__timeout__                 , KEYSTATE)
-KEYWORD(__timer__                   , KEYSTATE)
 // RICH: #endif
 
 // Alternate spelling for various tokens.  There are GCC extensions in all

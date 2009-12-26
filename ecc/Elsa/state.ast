@@ -48,3 +48,9 @@ class TopForm () {
   // states
   -> TF_state(State s);
 }
+
+class Statement {
+  // A state transition.
+  -> S_transition(Statement what);
+}
+

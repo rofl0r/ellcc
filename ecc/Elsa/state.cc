@@ -40,3 +40,10 @@ void MR_state::print(BPEnv &bp) const { }
 void TF_state::itcheck(Env &env) { }
 void TF_state::print(PrintEnv &env) { }
 void TF_state::print(BPEnv &bp) const { }
+
+void S_transition::itcheck(Env &env) { }
+void S_transition::iprint(PrintEnv &env) { }
+void S_transition::iprint(BPEnv &env) const { }
+void S_transition::icfg(CFGEnv &bp) { }
+void S_transition::cc2c(CC2CEnv &env) const { }
+void S_transition::cc2llvm(CC2LLVMEnv &env) const { }

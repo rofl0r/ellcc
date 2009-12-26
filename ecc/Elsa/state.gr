@@ -65,8 +65,8 @@ nonterm(State*) StateDefinition {
 /* One state in a state machine can be the initial state.
  */
 nonterm(bool) InitialState {
-  -> empty      { return false; }
-  -> "__initial__"  { return true; }
+  -> empty { return false; }
+  -> "->"  { return true; }
 }
 
 /* Either a single state or two or more "and"ed states.
@@ -106,11 +106,11 @@ nonterm(FakeList<StateEntry>*) StateEntryList {
  */
 nonterm(StateEntry*) StateEntry {
     // Start a timer. One timer per state.
-    -> "__timeout__" "(" e:Expression ")" s:Statement
+    -> "->" "[" e:Expression "]" s:Statement
         { return new StateEntry(loc, endloc); }
 
     // Actions on state entry.
-    -> "__onentry__" s:Statement
+    -> "->" s:Statement
         { return new StateEntry(loc, endloc); }
 
     // Actions triggered by events.
@@ -126,7 +126,7 @@ nonterm(StateEntry*) StateEntry {
         { return new StateEntry(loc, endloc); }
 
     // Actions on state exit.
-    -> "__onexit__" s:Statement
+    -> "->*" s:Statement
         { return new StateEntry(loc, endloc); }
 }
 
@@ -135,3 +135,10 @@ nonterm(StateEntry*) StateEntry {
 nonterm(UberModifiers) UberModifier {
     -> "__active__" { return UM_ACTIVE; }
 }
+
+// A state transition.
+nonterm(Statement*) Statement {
+  -> "->" s:Statement
+       { return new S_transition(loc ENDLOCARG(endloc), s); }
+}
+
