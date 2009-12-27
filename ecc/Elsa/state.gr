@@ -55,11 +55,11 @@ nonterm(Member*) MemberDeclaration {
 nonterm(State*) StateDefinition {
     // A state declaration or reference.
     -> i:InitialState "__state__" d:Declarator ";"
-        { return new State(loc, endloc, NULL); }
+        { return new State(loc, endloc, i, d, NULL); }
 
     // A state definition. Multiple states may be "and"ed.
     -> i:InitialState "__state__" d:Declarator l:AndStateList
-        { return new State(loc, endloc, l); }
+        { return new State(loc, endloc, i, d, l); }
 }
 
 /* One state in a state machine can be the initial state.
@@ -107,27 +107,27 @@ nonterm(FakeList<StateEntry>*) StateEntryList {
 nonterm(StateEntry*) StateEntry {
     // Start a timer. One timer per state.
     -> "->" "[" e:Expression "]" s:Statement
-        { return new StateEntry(loc, endloc); }
+        { return new SE_timer(loc, endloc, e, s); }
 
     // Actions on state entry.
     -> "->" s:Statement
-        { return new StateEntry(loc, endloc); }
+        { return new SE_entry(loc, endloc, s); }
 
     // Actions triggered by events.
     -> "case" d:MemberDeclarator ":" s:Statement
-        { return new StateEntry(loc, endloc); }
+        { return new SE_event(loc, endloc, d, s); }
 
     // Actions triggered by events not handled elsewhere.
     -> "default" ":" s:Statement
-        { return new StateEntry(loc, endloc); }
+        { return new SE_default(loc, endloc, s); }
 
     // Define or reference a nested substate.
     -> s:StateDefinition
-        { return new StateEntry(loc, endloc); }
+        { return new SE_reference(loc, endloc, s); }
 
     // Actions on state exit.
     -> "->*" s:Statement
-        { return new StateEntry(loc, endloc); }
+        { return new SE_exit(loc, endloc, s); }
 }
 
 /* Add the active modifier.
@@ -138,7 +138,7 @@ nonterm(UberModifiers) UberModifier {
 
 // A state transition.
 nonterm(Statement*) Statement {
-  -> "->" s:Statement
-       { return new S_transition(loc ENDLOCARG(endloc), s); }
+  -> "->" d:Declarator ";"
+       { return new S_transition(loc ENDLOCARG(endloc), d); }
 }
 

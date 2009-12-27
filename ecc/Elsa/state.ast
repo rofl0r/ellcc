@@ -32,7 +32,13 @@ class Member () {
 
 // An entry of a state.
 class StateEntry (SourceLocation loc, SourceLocation endloc) {
-    public StateEntry *next=NULL;       // FakeList link
+    public StateEntry *next=NULL;                       // FakeList link
+    -> SE_timer(Expression e, Statement s);             // A timed statement.
+    -> SE_entry(Statement s);                           // An entry action.
+    -> SE_event(Declarator d, Statement s);             // An event handler.
+    -> SE_default(Statement s);                         // A default event handler.
+    -> SE_reference(State s);                           // A referenced or nested state.
+    -> SE_exit(Statement s);                            // An exit action.
 }
 
 // An list of a state entries.
@@ -41,7 +47,8 @@ class StateEntryList (SourceLocation loc, SourceLocation endloc, FakeList<StateE
 }
 
 // a state definition (toplevel or class member)
-class State (SourceLocation loc, SourceLocation endloc, FakeList<StateEntryList>* states) {
+class State (SourceLocation loc, SourceLocation endloc,
+             bool initial, IDeclarator d, FakeList<StateEntryList>* states) {
 }
 
 class TopForm () {
@@ -51,6 +58,6 @@ class TopForm () {
 
 class Statement {
   // A state transition.
-  -> S_transition(Statement what);
+  -> S_transition(IDeclarator what);
 }
 
