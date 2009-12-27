@@ -47,3 +47,10 @@ void S_transition::iprint(BPEnv &env) const { }
 void S_transition::icfg(CFGEnv &bp) { }
 void S_transition::cc2c(CC2CEnv &env) const { }
 void S_transition::cc2llvm(CC2LLVMEnv &env) const { }
+
+void SE_exit::tcheck(Env &env) { }
+void SE_reference::tcheck(Env &env) { }
+void SE_default::tcheck(Env &env) { }
+void SE_event::tcheck(Env &env) { }
+void SE_entry::tcheck(Env &env) { }
+void SE_timer::tcheck(Env &env) { }

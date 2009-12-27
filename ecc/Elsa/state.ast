@@ -33,6 +33,7 @@ class Member () {
 // An entry of a state.
 class StateEntry (SourceLocation loc, SourceLocation endloc) {
     public StateEntry *next=NULL;                       // FakeList link
+    pure_virtual void tcheck(Env &env);                 // Type check the node.
     -> SE_timer(Expression e, Statement s);             // A timed statement.
     -> SE_entry(Statement s);                           // An entry action.
     -> SE_event(Declarator d, Statement s);             // An event handler.
