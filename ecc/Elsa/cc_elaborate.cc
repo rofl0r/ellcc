@@ -98,9 +98,10 @@ StringRef ElabVisitor::makeCatchClauseVarName()
 }
 
 
-Variable *ElabVisitor::makeVariable(SourceLocation loc, StringRef name, Type *type, DeclFlags dflags)
+Variable *ElabVisitor::makeVariable(SourceLocation loc, SourceLocation endloc,
+                                    StringRef name, Type *type, DeclFlags dflags)
 {
-  return tfac.makeVariable(loc, name, type, dflags);
+  return tfac.makeVariable(loc, endloc, name, type, dflags);
 }
 
 
@@ -116,7 +117,7 @@ Variable *ElabVisitor::makeVariable(SourceLocation loc, StringRef name, Type *ty
 // Variable -> D_name
 D_name *ElabVisitor::makeD_name(SourceLocation loc, Variable *var)
 {
-  D_name *ret = new D_name(loc, new PQ_variable(loc, var));
+  D_name *ret = new D_name(loc, SL_UNKNOWN, new PQ_variable(loc, SL_UNKNOWN, var));
   return ret;
 }
 
@@ -142,7 +143,7 @@ Declaration *ElabVisitor::makeDeclaration(SourceLocation loc, Variable *var, Dec
 {
   Declarator *declarator = makeDeclarator(loc, var, context);
   Declaration *declaration =
-    new Declaration(DF_NONE, new TS_type(loc, var->type),
+    new Declaration(DF_NONE, new TS_type(loc, SL_UNKNOWN, var->type),
       FakeList<Declarator>::makeList(declarator));
   return declaration;
 }
@@ -165,7 +166,7 @@ Declarator *ElabVisitor::makeFuncDeclarator(SourceLocation loc, Variable *var, D
     for (; !iter.isDone(); iter.adv()) {
       Variable *param = iter.data();
 
-      ASTTypeId *typeId = new ASTTypeId(new TS_type(loc, param->type),
+      ASTTypeId *typeId = new ASTTypeId(new TS_type(loc, SL_UNKNOWN, param->type),
                                         makeDeclarator(loc, param, DC_D_FUNC));
       params = params->prepend(typeId);
     }
@@ -173,7 +174,7 @@ Declarator *ElabVisitor::makeFuncDeclarator(SourceLocation loc, Variable *var, D
   }
 
   // build D_func
-  IDeclarator *funcIDecl = new D_func(loc,
+  IDeclarator *funcIDecl = new D_func(loc, SL_UNKNOWN,
                                       makeD_name(loc, var),
                                       params,
                                       CV_NONE,
@@ -201,7 +202,7 @@ Function *ElabVisitor::makeFunction(SourceLocation loc, Variable *var,
   Function *f = new Function(
     var->flags        // this is too many (I only want syntactic); but won't hurt
       | DF_INLINE,    // pacify pretty-printing idempotency
-    new TS_type(loc, ft->retType),
+    new TS_type(loc, SL_UNKNOWN, ft->retType),
     funcDecl,
     inits,
     body,
@@ -227,7 +228,7 @@ Function *ElabVisitor::makeFunction(SourceLocation loc, Variable *var,
 // given a Variable, make an E_variable referring to it
 E_variable *ElabVisitor::makeE_variable(SourceLocation loc, Variable *var)
 {
-  E_variable *evar = new E_variable(EXPR_LOC(loc ENDLOCARG(SL_UNKNOWN)) new PQ_variable(loc, var));
+  E_variable *evar = new E_variable(loc, SL_UNKNOWN, new PQ_variable(loc, SL_UNKNOWN, var));
   evar->type = makeLvalType(tfac, var->type);
   evar->var = var;
   return evar;
@@ -236,7 +237,7 @@ E_variable *ElabVisitor::makeE_variable(SourceLocation loc, Variable *var)
 E_fieldAcc *ElabVisitor::makeE_fieldAcc
   (SourceLocation loc, Expression *obj, Variable *field)
 {
-  E_fieldAcc *efieldacc = new E_fieldAcc(EXPR_LOC(loc ENDLOCARG(SL_UNKNOWN)) obj, new PQ_variable(loc, field));
+  E_fieldAcc *efieldacc = new E_fieldAcc(loc, SL_UNKNOWN, obj, new PQ_variable(loc, SL_UNKNOWN, field));
   efieldacc->type = makeLvalType(tfac, field->type);
   efieldacc->field = field;
   return efieldacc;
@@ -310,7 +311,7 @@ E_constructor *ElabVisitor::makeCtorExpr(
 {
   xassert(target->type->isReference());
 
-  E_constructor *ector0 = new E_constructor(EXPR_LOC(loc ENDLOCARG(SL_UNKNOWN)) new TS_type(loc, type), args);
+  E_constructor *ector0 = new E_constructor(loc, SL_UNKNOWN, new TS_type(loc, SL_UNKNOWN, type), args);
   ector0->type = type;
   ector0->ctorVar = ctor;
   ector0->artificial = true;
@@ -599,7 +600,7 @@ Declaration *ElabVisitor::makeTempDeclaration
   xassert(retType->isCompoundType());
 
   // make up a Variable
-  var = makeVariable(loc, makeTempName(), retType, DF_TEMPORARY);
+  var = makeVariable(loc, SL_UNKNOWN, makeTempName(), retType, DF_TEMPORARY);
 
   // make a decl for it
   Declaration *decl = makeDeclaration(loc, var, context);
@@ -765,7 +766,7 @@ void ElabVisitor::elaborateFunctionStart(Function *f)
     Type *retValType =
       env.tfac.makeReferenceType(ft->retType);
     StringRef retValName = env.str("<retVar>");
-    f->retVar = env.makeVariable(loc, retValName, retValType, DF_PARAMETER);
+    f->retVar = env.makeVariable(loc, f->nameAndParams->decl->endloc, retValName, retValType, DF_PARAMETER);
 
     // sm: This seemed like a good idea, because an analysis would get
     // to see the declaration and not just the magical appearance of a
@@ -875,7 +876,7 @@ void ElabVisitor::completeNoArgMemberInits(Function *ctor, CompoundType *ct)
     if (!ct->hasVirtualBase(base->ct)) {
       MemberInit *mi = findMemberInitSuperclass(oldInits, base->ct);
       if (!mi) {
-        PQName *name = new PQ_variable(loc, base->ct->typedefVar);
+        PQName *name = new PQ_variable(loc, SL_UNKNOWN, base->ct->typedefVar);
         mi = new MemberInit(EXPR_LOC(loc ENDLOCARG(SL_UNKNOWN)) name, emptyArgs());
         mi->base = base->ct;
         mi->ctorVar = getDefaultCtor(base->ct);
@@ -907,7 +908,7 @@ void ElabVisitor::completeNoArgMemberInits(Function *ctor, CompoundType *ct)
     // class, the entity is default-initialized (8.5). ....
     // -- Otherwise, the entity is not initialized. ....
     if (!mi && var->type->isCompoundType()) {
-      mi = new MemberInit(EXPR_LOC(loc ENDLOCARG(SL_UNKNOWN)) new PQ_name(loc, var->name), emptyArgs());
+      mi = new MemberInit(loc, SL_UNKNOWN, new PQ_name(loc, SL_UNKNOWN, var->name), emptyArgs());
       mi->member = var;
       mi->ctorVar = getDefaultCtor(var->type->asCompoundType());
     }
@@ -932,7 +933,7 @@ void ElabVisitor::completeNoArgMemberInits(Function *ctor, CompoundType *ct)
 Variable *ElabVisitor::makeCtorReceiver(SourceLocation loc, CompoundType *ct)
 {
   Type *recType = tfac.makeTypeOf_receiver(loc, ct, CV_NONE, NULL /*syntax*/);
-  return makeVariable(loc, receiverName, recType, DF_PARAMETER);
+  return makeVariable(loc, SL_UNKNOWN, receiverName, recType, DF_PARAMETER);
 }
 
 // for EA_IMPLICIT_MEMBER_DEFN
@@ -985,7 +986,7 @@ MemberInit *ElabVisitor::makeCopyCtorMemberInit(
   //         PQ_name:
 
   //       MemberInit:
-  MemberInit *mi = new MemberInit(EXPR_LOC(loc ENDLOCARG(SL_UNKNOWN)) new PQ_variable(loc, target), args);
+  MemberInit *mi = new MemberInit(loc, SL_UNKNOWN, new PQ_variable(loc, SL_UNKNOWN, target), args);
   push(mi->getAnnot());
   if (isMember) {
     mi->member = target;
@@ -1423,7 +1424,7 @@ void Handler::elaborate(ElabVisitor &env)
   Type *typeIdType = typeId->getType();
   if (typeIdType->asRval()->isCompoundType()) {
     if (!globalVar) {
-      globalVar = env.makeVariable(loc, env.makeCatchClauseVarName(),
+      globalVar = env.makeVariable(loc, SL_UNKNOWN, env.makeCatchClauseVarName(),
                                    typeIdType->asRval(),
                                    DF_STATIC // I think it is a static global
                                    | DF_GLOBAL);
@@ -1486,7 +1487,7 @@ bool E_throw::elaborate(ElabVisitor &env)
   Type *exprType = expr->getType()->asRval();
   if (exprType->isCompoundType()) {
     if (!globalVar) {
-      globalVar = env.makeVariable(loc, env.makeThrowClauseVarName(),
+      globalVar = env.makeVariable(loc, SL_UNKNOWN, env.makeThrowClauseVarName(),
                                    exprType,
                                    DF_STATIC // I think it is a static global
                                    | DF_GLOBAL);
@@ -1527,7 +1528,7 @@ bool E_new::elaborate(ElabVisitor &env)
   Type *t = atype->getType();
 
   if (t->isCompoundType()) {
-    heapVar = env.makeVariable(loc, env.makeE_newVarName(), t, DF_NONE);
+    heapVar = env.makeVariable(loc, endloc, env.makeE_newVarName(), t, DF_NONE);
 
     FakeList<ArgExpression> *args0 = env.emptyArgs();
     if (ctorArgs) {

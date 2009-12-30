@@ -100,10 +100,10 @@ nonterm(Expression*) PostfixExpression {
          // Otherwise, the mod can get run more than once when in an ambiguous
 	 // context, which would make t be pointer-to-pointer-to-t.
          t = t->clone();
-         t->decl->decl = new D_pointer(loc, CV_NONE, t->decl->decl);
+         t->decl->decl = new D_pointer(loc, endloc, CV_NONE, t->decl->decl);
 
-         ASTTypeId *ulong = new ASTTypeId(new TS_simple(loc, ST_UNSIGNED_INT),
-                                          new Declarator(new D_name(loc, NULL), NULL));
+         ASTTypeId *ulong = new ASTTypeId(new TS_simple(loc, endloc, ST_UNSIGNED_INT),
+                                          new Declarator(new D_name(loc, endloc, NULL), NULL));
 
 
 	 // dmandelin@mozilla.com   bug 416051
@@ -256,9 +256,10 @@ nonterm(Statement*) LabeledEmptyStatementListOpt {
 
 verbatim {
   // make a TS_typeof, and supply CV flags
-  inline static TS_typeof *new_TS_typeof(SourceLocation loc, CVFlags cv, ASTTypeof *atype)
+  inline static TS_typeof *new_TS_typeof(SourceLocation loc, SourceLocation endloc,
+                                         CVFlags cv, ASTTypeof *atype)
   {
-    TS_typeof *ret = new TS_typeof(loc, atype);
+    TS_typeof *ret = new TS_typeof(loc, endloc, atype);
     ret->cv = cv;
     return ret;
   }
@@ -269,23 +270,23 @@ nonterm(Declaration*) DeclSpecifier {
   // TS_typeof: triggered by TypeTypeSpecifier
   -> te:TypeofTypeSpecifier m2:UberModifierSeqOpt
        { return new Declaration(uberDeclFlags(m2),
-           new_TS_typeof(loc, uberCVFlags(m2), te), NULL); }
+           new_TS_typeof(loc, endloc, uberCVFlags(m2), te), NULL); }
 
   -> m1:UberModifierSeq te:TypeofTypeSpecifier m2:UberModifierSeqOpt
        { UberModifiers m = uberCombine(loc, m1, m2);
          return new Declaration(uberDeclFlags(m),
-           new_TS_typeof(loc, uberCVFlags(m), te), NULL); }
+           new_TS_typeof(loc, endloc, uberCVFlags(m), te), NULL); }
 }
 
 
 nonterm(TypeSpecifier*) TypeSpecifier {
   // TS_typeof
   -> te:TypeofTypeSpecifier cv2:UberCVQualifierSeqOpt
-       { return new_TS_typeof(loc, uberCVFlags(cv2), te); }
+       { return new_TS_typeof(loc, endloc, uberCVFlags(cv2), te); }
 
   -> cv1:UberCVQualifierSeq te:TypeofTypeSpecifier cv2:UberCVQualifierSeqOpt
        { UberModifiers cv = uberCombine(loc, cv1, cv2);
-         return new_TS_typeof(loc, uberCVFlags(cv), te); }
+         return new_TS_typeof(loc, endloc, uberCVFlags(cv), te); }
 }
 
 
@@ -413,11 +414,11 @@ nonterm(Asm*) AsmDefinition {
 nonterm(IDeclarator*) Declarator {
   // Asm Labels after declarators; see in/gnu/asm01.c
   -> d:DirectDeclarator "asm" "(" s:StringLiteral ")"
-       { return new D_asmlabel(loc, d, s); }
+       { return new D_asmlabel(loc, endloc, d, s); }
 
   // asm label + attributes ...
   -> d:DirectDeclarator "asm" "(" s:StringLiteral ")" /*DROPPED*/AttributeSpecifierList
-       { return new D_asmlabel(loc, d, s); }
+       { return new D_asmlabel(loc, endloc, d, s); }
 }
 
 // ----------- C99 designated initializers -----------
@@ -477,7 +478,7 @@ nonterm(IDeclarator*) DirectDeclarator {
   -> d:DirectDeclarator "[" q:CVQualifierSeq "]"
     {
       // FIX: CVQualifierSeq goes on the array
-      return new D_array(loc, d, NULL /*size*/);
+      return new D_array(loc, endloc, d, NULL /*size*/);
     }
 }
 
@@ -487,7 +488,7 @@ nonterm(IDeclarator*) DirectAbstractDeclarator {
     {
       // FIX: Ben says the CVQualifierSeq goes on the array itself,
       // just as if the array were a pointer and it was on the pointer
-      return new D_array(loc, d, NULL /*size*/);
+      return new D_array(loc, endloc, d, NULL /*size*/);
     }
 }
 
@@ -503,7 +504,7 @@ nonterm(Declaration*) DeclSpecifier {
        diagnose3(LO.allowModifiersWithTypedefNames, loc,
                  diag::err_typedef_and_type, diag::note_gcc2_bug_allows);
        return new Declaration(uberDeclFlags(m2),
-         new_TS_name(loc, uberCVFlags(m2), n, false /*typename*/), NULL);
+         new_TS_name(loc, endloc, uberCVFlags(m2), n, false /*typename*/), NULL);
      }
 
   -> m1:UberModifierSeq n:PQTypeName BuggyGccTypeModifier/*ignored*/ m2:UberModifierSeqOpt
@@ -512,7 +513,7 @@ nonterm(Declaration*) DeclSpecifier {
                  diag::err_typedef_and_type, diag::note_gcc2_bug_allows);
        UberModifiers m = uberCombine(loc, m1, m2);
        return new Declaration(uberDeclFlags(m),
-         new_TS_name(loc, uberCVFlags(m), n, false /*typename*/), NULL);
+         new_TS_name(loc, endloc, uberCVFlags(m), n, false /*typename*/), NULL);
      }
 }
 
@@ -563,9 +564,9 @@ nonterm(UberModifiers) UberTypeKeyword {
 // in that these are component accesses.
 nonterm(Expression*) PrimaryExpression {
   -> "__real__" e:PrimaryExpression
-     { return new E_fieldAcc(loc ENDLOCARG(endloc), e, new PQ_name(loc, str("__real__"))); }
+     { return new E_fieldAcc(loc, endloc, e, new PQ_name(loc, endloc, str("__real__"))); }
   -> "__imag__" e:PrimaryExpression
-     { return new E_fieldAcc(loc ENDLOCARG(endloc), e, new PQ_name(loc, str("__imag__"))); }
+     { return new E_fieldAcc(loc, endloc, e, new PQ_name(loc, endloc, str("__imag__"))); }
 }
 
 
@@ -587,14 +588,14 @@ nonterm(enum TypeIntr) ClassKey {
 */
 
 nonterm(TypeSpecifier*) ElaboratedTypeSpecifier {
-  -> k:ClassKey /*DROPPED*/AttributeSpecifier n:PQTypeName    { return new TS_elaborated(loc, k, n); }
+  -> k:ClassKey /*DROPPED*/AttributeSpecifier n:PQTypeName    { return new TS_elaborated(loc, endloc, k, n); }
 }
 
 nonterm(TS_classSpec*) ClassSpecifier {
   -> k:ClassKey as:AttributeSpecifierList n:ClassHeadNameOpt b:BaseClauseOpt "{" memb:MemberDeclarationSeqOpt "}"
     { 
       popClassName();
-      TS_classSpec *ts = new TS_classSpec(loc, k, n, b, memb);
+      TS_classSpec *ts = new TS_classSpec(loc, endloc, k, n, b, memb);
       ts->alist = as;
       return ts;
     }
@@ -603,18 +604,18 @@ nonterm(TS_classSpec*) ClassSpecifier {
 // attributes after "enum"
 nonterm(TypeSpecifier*) ElaboratedTypeSpecifier {
   -> "enum" /*DROPPED*/AttributeSpecifierList n:PQTypeName
-       { return new TS_elaborated(loc, TI_ENUM, n); }
+       { return new TS_elaborated(loc, endloc, TI_ENUM, n); }
 }
 
 nonterm(TS_enumSpec*) EnumSpecifier {
   -> "enum" /*DROPPED*/AttributeSpecifierList "{" list:EnumeratorListOpt "}"
-       { return new TS_enumSpec(loc, NULL /*name*/, list); }
+       { return new TS_enumSpec(loc, endloc, NULL /*name*/, list); }
 
   // Adding this adds one S/R conflict... it was 3 until I changed
   // Identifier to PQTypeName.  I think cc.gr should similarly use
   // PQName instead of Identifier, and catch qualifiers in tcheck...
   -> "enum" /*DROPPED*/AttributeSpecifierList n:PQTypeName "{" list:EnumeratorListOpt "}"
-       { return new TS_enumSpec(loc, n->getName(), list); }
+       { return new TS_enumSpec(loc, endloc, n->getName(), list); }
 }
 
 
@@ -671,7 +672,7 @@ nonterm(IDeclarator*) Declarator {
   // "*", then some cv, then *one* __attribute__, which causes the
   // parser to commit to this production, then cv+attr seq
   -> "*" cv:CVQualifierSeqOpt /*DROPPED*/AttributeSpecifier cv2:CVQualAttrSeqOpt d:Declarator
-       { return new D_pointer(loc, cv | cv2, d); }
+       { return new D_pointer(loc, endloc, cv | cv2, d); }
 
   // perhaps attributes should be allowed after "&" and "C::*"?
 
@@ -691,7 +692,7 @@ nonterm(IDeclarator*) DirectDeclarator {
 
 nonterm(IDeclarator*) AbstractDeclarator {
   -> "*" cv:CVQualifierSeqOpt attrspec:AttributeSpecifier cv2:CVQualAttrSeqOpt d:AbstractDeclaratorOpt
-       { return new D_pointer(loc, cv | cv2, d); }
+       { return new D_pointer(loc, endloc, cv | cv2, d); }
 
   -> d:DirectAbstractDeclarator attr:AttributeSpecifierList
        { return new D_attribute(loc, d, attr); }
@@ -699,7 +700,7 @@ nonterm(IDeclarator*) AbstractDeclarator {
 
 nonterm(IDeclarator*) DirectAbstractDeclarator {
   -> "(" /*DROPPED*/AttributeSpecifierList d:AbstractDeclarator ")"
-       { return new D_grouping(loc, d); }
+       { return new D_grouping(loc, endloc, d); }
 }
 
 // dsw: attributes after bitfields; from the kernel:
@@ -711,7 +712,7 @@ nonterm(IDeclarator*) DirectAbstractDeclarator {
 nonterm(Declarator*) MemberDeclarator {
   -> n:IdentifierOpt ":" e:ConstantExpression /*DROPPED*/AttributeSpecifierList    // bitfield
        // this body is an exact copy of the cc.gr one without attributes
-       { return new Declarator(new D_bitfield(loc, n? new PQ_name(loc, n) : NULL, e),
+       { return new Declarator(new D_bitfield(loc, endloc, n? new PQ_name(loc, endloc, n) : NULL, e),
                                NULL /*init*/); }
 }
 

@@ -31,7 +31,7 @@ nonterm(Declaration*) SimpleDeclaration {
         {
          return new Declaration(
             DF_EVENT,
-            new TS_simple(loc, ST_VOID),
+            new TS_simple(loc, endloc, ST_VOID),
             FakeList<Declarator>::makeList(d)
             );
         }

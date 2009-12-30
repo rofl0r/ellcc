@@ -170,7 +170,7 @@ public:      // funcs
   StringRef makeCatchClauseVarName();
 
   // similar to a function in Env
-  Variable *makeVariable(SourceLocation loc, StringRef name,
+  Variable *makeVariable(SourceLocation loc, SourceLocation endloc, StringRef name,
                          Type *type, DeclFlags dflags);
 
   // syntactic convenience

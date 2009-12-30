@@ -861,7 +861,9 @@ void Function::cc2llvm(CC2LLVMEnv &env) const
             E_deref *deref = new E_deref(EXPR_LOC(nameAndParams->var->loc ENDLOCARG(SL_UNKNOWN)) ths);
             deref->type = receiver->type;
             // "(*this).member
-            E_fieldAcc *efieldacc = new E_fieldAcc(EXPR_LOC(nameAndParams->var->loc ENDLOCARG(SL_UNKNOWN)) deref, new PQ_variable(nameAndParams->var->loc, init->member));
+            E_fieldAcc *efieldacc = new E_fieldAcc(nameAndParams->var->loc, SL_UNKNOWN, deref,
+                                                   new PQ_variable(nameAndParams->var->loc, SL_UNKNOWN,
+                                                                   init->member));
             efieldacc->type = init->member->type;
             efieldacc->field = init->member;
 

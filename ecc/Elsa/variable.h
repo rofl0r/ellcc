@@ -63,6 +63,7 @@ public:    // data
   // are significant advantages to storing *two* locations (first
   // declaration, and definition), but I haven't done that yet
   SourceLocation loc;          // location of the name in the source text
+  SourceLocation endloc;       // location of the name in the source text
 
   // name introduced (possibly NULL for abstract declarators)
   StringRef name;
@@ -162,7 +163,7 @@ private:      // data
 
 protected:    // funcs
   friend class BasicTypeFactory;
-  Variable(SourceLocation L, StringRef n, Type *t, DeclFlags f);
+  Variable(SourceLocation L, SourceLocation E, StringRef n, Type *t, DeclFlags f);
   Variable(XmlReader&);         // ctor for de-serialization
 
 public:

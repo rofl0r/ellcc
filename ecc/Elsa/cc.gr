@@ -109,25 +109,25 @@ public:
   ASTTypeId *ellipsisTypeId(SourceLocation loc)
   {
     ASTTypeId *tid =
-      new ASTTypeId(new TS_simple(loc, ST_ELLIPSIS),
-                    new Declarator(new D_name(loc, NULL /*name*/),
+      new ASTTypeId(new TS_simple(loc, SL_UNKNOWN, ST_ELLIPSIS),
+                    new Declarator(new D_name(loc, SL_UNKNOWN, NULL /*name*/),
                                    NULL /*init*/));
     return tid;
   }
 
   // make a TS_name, and supply CV flags
-  TS_name *new_TS_name(SourceLocation loc, CVFlags cv, PQName *n,
+  TS_name *new_TS_name(SourceLocation loc, SourceLocation endloc, CVFlags cv, PQName *n,
                        bool typenameUsed)
   {
-    TS_name *ret = new TS_name(loc, n, typenameUsed);
+    TS_name *ret = new TS_name(loc, endloc, n, typenameUsed);
     ret->cv = cv;
     return ret;
   }
 
   // make a TS_simple, and supply CV flags
-  TS_simple *new_TS_simple(SourceLocation loc, CVFlags cv, SimpleTypeId id)
+  TS_simple *new_TS_simple(SourceLocation loc, SourceLocation endloc, CVFlags cv, SimpleTypeId id)
   {
-    TS_simple *ret = new TS_simple(loc, id);
+    TS_simple *ret = new TS_simple(loc, endloc, id);
     ret->cv = cv;
     return ret;
   }
@@ -136,7 +136,7 @@ public:
   // another function (this helps resolve an ambiguity in the presence
   // of implicit int.. is it needed even without implicit int?)
   D_func *new_D_func
-    (SourceLocation loc,
+    (SourceLocation loc, SourceLocation endloc,
      IDeclarator *base,
      FakeList<ASTTypeId> *params,
      CVFlags cv,
@@ -150,17 +150,17 @@ public:
         && !filterOutImplIntFirstParam(loc, base, params)) {
       return NULL;
     }
-    return new D_func(loc, base, params, cv, exnSpec);
+    return new D_func(loc, endloc, base, params, cv, exnSpec);
   }
 
   D_array *new_D_array
-    (SourceLocation loc, IDeclarator *base, Expression * /*nullable*/ size)
+    (SourceLocation loc, SourceLocation endloc, IDeclarator *base, Expression * /*nullable*/ size)
   {
     if (base->isD_func()) {
       TRACE("cancel", loc << ": function returning an array");
       return NULL;
     }
-    return new D_array(loc, base, size);
+    return new D_array(loc, endloc, base, size);
   }
 
   TemplateArgument *templateUsed(TemplateArgument *list)
@@ -324,16 +324,16 @@ nonterm(PQName*) IdExpression {
   // sequence; I'm enforcing it a little bit differently than the std
   // does
   -> "::" id:PQualifiedId
-       { return new PQ_qualifier(loc, NULL /*qualifier*/, NULL /*targs*/, id); }
+       { return new PQ_qualifier(loc, endloc, NULL /*qualifier*/, NULL /*targs*/, id); }
 }
 
 // names that are not qualified
 nonterm(PQName*) UnqualifiedId {
   fun merge(L,R) { return L->mergeAmbiguous(R); }
 
-  -> id:Identifier                { return new PQ_name(loc, id); }
-  -> on:OperatorFunctionId        { return new PQ_operator(loc, on, str(on->getOperatorName())); }
-  -> on:ConversionFunctionId      { return new PQ_operator(loc, on, str(on->getOperatorName())); }
+  -> id:Identifier                { return new PQ_name(loc, endloc, id); }
+  -> on:OperatorFunctionId        { return new PQ_operator(loc, endloc, on, str(on->getOperatorName())); }
+  -> on:ConversionFunctionId      { return new PQ_operator(loc, endloc, on, str(on->getOperatorName())); }
 
   // std has `"~" ClassName' here, but I've chosen to separate out the
   // places that a destructor name can occur, since it avoids an
@@ -352,14 +352,14 @@ nonterm(PQName*) PQualifiedId {
        { return id; }
 
   -> n:Identifier "::" id:PQualifiedId
-       { return new PQ_qualifier(loc, n, NULL /*targs*/, id); }
+       { return new PQ_qualifier(loc, endloc, n, NULL /*targs*/, id); }
 
   // quarl 2006-06-14
   //    changed targs:TemplateArgumentList to targs:TemplateArgumentListOpt;
   //    see in/k0112.cc
 
   -> n:Identifier "<" targs:TemplateArgumentListOpt ">" "::" id:PQualifiedId
-       { return new PQ_qualifier(loc, n, targs, id); }
+       { return new PQ_qualifier(loc, endloc, n, targs, id); }
 
   // versions with "template" in front (it's not clear to me that this
   // is equivalent to the standard grammar.. I'm hacking it for now);
@@ -370,9 +370,9 @@ nonterm(PQName*) PQualifiedId {
   // here, as below, I now realize that the first alternative (using
   // "template" but not supplying template arguments) is illegal
   //-> "template" n:Identifier "::" id:PQualifiedId
-  //     { return new PQ_qualifier(loc, n, NULL /*targs*/, id); }
+  //     { return new PQ_qualifier(loc, endloc, n, NULL /*targs*/, id); }
   -> "template" n:Identifier "<" targs:TemplateArgumentListOpt ">" "::" id:PQualifiedId
-       { return new PQ_qualifier(loc, n, templateUsed(targs), id); }
+       { return new PQ_qualifier(loc, endloc, n, templateUsed(targs), id); }
 }
 
 
@@ -423,7 +423,7 @@ nonterm(Expression*) PostfixExpression {
   // "typename" can only be used with a qualified name, whereas I
   // enforce that in the type checker (more informative message).
   -> "typename" t:IdExpression a:ArgumentList
-       { return new E_constructor(EXPR_LOC(loc ENDLOCARG(endloc)) new TS_name(loc, t, true /*typenameUsed*/),
+       { return new E_constructor(loc, endloc, new TS_name(loc, endloc, t, true /*typenameUsed*/),
                                   a); }
 
   // function-style cast, or (equivalently) call to constructor; will
@@ -460,22 +460,22 @@ nonterm(Expression*) PostfixExpression {
 nonterm(TypeSpecifier*) CtorExpressionType {
   //-> ColonColonOpt NestedNameSpecifier "template" TemplateId;
 
-  -> n:PQTypeName        { return new TS_name(loc, n, false /*typename*/); }
-  -> "char"              { return new TS_simple(loc, ST_CHAR); }
-  -> "wchar_t"           { return new TS_simple(loc, ST_WCHAR_T); }
-  -> "bool"              { return new TS_simple(loc, ST_BOOL); }
-  -> "short"             { return new TS_simple(loc, ST_SHORT_INT); }
-  -> "int"               { return new TS_simple(loc, ST_INT); }
-  -> "long"              { return new TS_simple(loc, ST_LONG_INT); }
-  -> "signed"            { return new TS_simple(loc, ST_INT); }
-  -> "unsigned"          { return new TS_simple(loc, ST_UNSIGNED_INT); }
-  -> "float"             { return new TS_simple(loc, ST_FLOAT); }
-  -> "double"            { return new TS_simple(loc, ST_DOUBLE); }
+  -> n:PQTypeName        { return new TS_name(loc, endloc, n, false /*typename*/); }
+  -> "char"              { return new TS_simple(loc, endloc, ST_CHAR); }
+  -> "wchar_t"           { return new TS_simple(loc, endloc, ST_WCHAR_T); }
+  -> "bool"              { return new TS_simple(loc, endloc, ST_BOOL); }
+  -> "short"             { return new TS_simple(loc, endloc, ST_SHORT_INT); }
+  -> "int"               { return new TS_simple(loc, endloc, ST_INT); }
+  -> "long"              { return new TS_simple(loc, endloc, ST_LONG_INT); }
+  -> "signed"            { return new TS_simple(loc, endloc, ST_INT); }
+  -> "unsigned"          { return new TS_simple(loc, endloc, ST_UNSIGNED_INT); }
+  -> "float"             { return new TS_simple(loc, endloc, ST_FLOAT); }
+  -> "double"            { return new TS_simple(loc, endloc, ST_DOUBLE); }
 
   // std has this, but I don't think it makes sense
   //
   // 2005-04-16: but it is used in real code, e.g., in/k0043.cc
-  -> "void"              { return new TS_simple(loc, ST_VOID); }
+  -> "void"              { return new TS_simple(loc, endloc, ST_VOID); }
 }
 
 nonterm(CastKeyword) CastKeyword {
@@ -581,13 +581,13 @@ nonterm(ASTTypeId*) NewTypeId {
 // it (so I'll see the counterexample syntax if it exists)
 nonterm(IDeclarator*) NewDeclaratorOpt {
   -> empty
-       { return new D_name(loc, NULL); }
+       { return new D_name(loc, endloc, NULL); }
 
   // pointers
   -> "*" cv:CVQualifierSeqOpt d:NewDeclaratorOpt
-       { return new D_pointer(loc, cv, d); }
+       { return new D_pointer(loc, endloc, cv, d); }
   -> n:PtrToMemberName "*" cv:CVQualifierSeqOpt d:NewDeclaratorOpt
-       { return new D_ptrToMember(loc, n, cv, d); }
+       { return new D_ptrToMember(loc, endloc, n, cv, d); }
 
   // commit to at least one "[" ... "]"
   -> d:DirectNewDeclarator               { return d; }
@@ -596,9 +596,9 @@ nonterm(IDeclarator*) DirectNewDeclarator {
   fun keep(x) { return x!=NULL; }
 
   -> /*abstract declarator*/ "[" sz:Expression "]"
-       { return new_D_array(loc, new D_name(loc, NULL), sz); }
+       { return new_D_array(loc, endloc, new D_name(loc, endloc, NULL), sz); }
   -> d:DirectNewDeclarator "[" sz:ConstantExpression "]"
-       { return new_D_array(loc, d, sz); }
+       { return new_D_array(loc, endloc, d, sz); }
 }
 
 nonterm(ArgExpressionListOpt*) NewInitializerOpt {
@@ -632,7 +632,7 @@ nonterm(PQName*) NameAfterDot {
 
   // cannot say ":: ~", nor ":: template"
   -> "::" n:NAD2
-       { return new PQ_qualifier(loc, NULL /*qualifier*/, NULL /*targs*/, n); }
+       { return new PQ_qualifier(loc, endloc, NULL /*qualifier*/, NULL /*targs*/, n); }
 }
 
 // can begin with "~" or "template" or Identifier or "operator"
@@ -644,17 +644,17 @@ nonterm(PQName*) NAD1 {
 
   // final names
   -> "template" n:Identifier "<" list:TemplateArgumentListOpt ">"
-       { return new PQ_template(loc, n, templateUsed(list)); }
+       { return new PQ_template(loc, endloc, n, templateUsed(list)); }
   -> "~" n:Identifier
-       { return new PQ_name(loc, str(stringc << "~" << n)); }
+       { return new PQ_name(loc, endloc, str(stringc << "~" << n)); }
   -> "~" n:Identifier "<" list:TemplateArgumentListOpt ">"
-       { return new PQ_template(loc, str(stringc << "~" << n), list); }
+       { return new PQ_template(loc, endloc, str(stringc << "~" << n), list); }
   -> on:ConversionFunctionId
-       { return new PQ_operator(loc, on, str(on->getOperatorName())); }
+       { return new PQ_operator(loc, endloc, on, str(on->getOperatorName())); }
 
   // qualifier name
   -> "template" n:Identifier "<" list:TemplateArgumentListOpt ">" "::" rest:NAD1
-       { return new PQ_qualifier(loc, n, templateUsed(list), rest); }
+       { return new PQ_qualifier(loc, endloc, n, templateUsed(list), rest); }
 }
 
 // can only begin with Identifier or "operator"; this is essentially
@@ -664,11 +664,11 @@ nonterm(PQName*) NAD2 {
 
   // final names
   -> n:Identifier "<" list:TemplateArgumentListOpt ">"
-       { return new PQ_template(loc, n, list); }
+       { return new PQ_template(loc, endloc, n, list); }
   -> n:Identifier
-       { return new PQ_name(loc, n); }
+       { return new PQ_name(loc, endloc, n); }
   -> on:OperatorFunctionId
-       { return new PQ_operator(loc, on, str(on->getOperatorName())); }
+       { return new PQ_operator(loc, endloc, on, str(on->getOperatorName())); }
   -> on:OperatorFunctionId "<" list:TemplateArgumentListOpt ">"
        { xunimp(stringc << loc << " templatized operator (fc042c37-50e2-4596-8460-c095e7ac892b)"); }
   -> "template" on:OperatorFunctionId "<" list:TemplateArgumentListOpt ">"
@@ -676,9 +676,9 @@ nonterm(PQName*) NAD2 {
 
   // qualifier names
   -> n:Identifier "<" list:TemplateArgumentListOpt ">" "::" rest:NAD1
-       { return new PQ_qualifier(loc, n, list, rest); }
+       { return new PQ_qualifier(loc, endloc, n, list, rest); }
   -> n:Identifier "::" rest:NAD1
-       { return new PQ_qualifier(loc, n, NULL /*targs*/, rest); }
+       { return new PQ_qualifier(loc, endloc, n, NULL /*targs*/, rest); }
 }
 // -------------- END: syntax after "." or "->" -------------------
 
@@ -1093,24 +1093,24 @@ nonterm(Declaration*) DeclSpecifier {
   // TS_name: triggered by PQTypeName
   -> n:PQTypeName m2:UberModifierSeqOpt
        { return new Declaration(uberDeclFlags(m2),
-           new_TS_name(loc, uberCVFlags(m2), n, false /*typename*/), NULL); }
+           new_TS_name(loc, endloc, uberCVFlags(m2), n, false /*typename*/), NULL); }
 
   -> m1:UberModifierSeq n:PQTypeName m2:UberModifierSeqOpt
        { UberModifiers m = uberCombine(loc, m1, m2);
          return new Declaration(uberDeclFlags(m),
-           new_TS_name(loc, uberCVFlags(m), n, false /*typename*/), NULL); }
+           new_TS_name(loc, endloc, uberCVFlags(m), n, false /*typename*/), NULL); }
 
   // TS_simple: triggered by UberTypeKeyword
   -> k1:UberTypeKeyword m2:UberTypeAndModifierSeqOpt
        { UberModifiers k = uberCombine(loc, k1, m2);
          return new Declaration(uberDeclFlags(m2),
-           new_TS_simple(loc, uberCVFlags(m2), uberSimpleType(loc, k)), NULL); }
+           new_TS_simple(loc, endloc, uberCVFlags(m2), uberSimpleType(loc, k)), NULL); }
 
   -> m1:UberModifierSeq k1:UberTypeKeyword m2:UberTypeAndModifierSeqOpt
        { UberModifiers m = uberCombine(loc, m1, m2);
          UberModifiers k = uberCombine(loc, k1, m2);
          return new Declaration(uberDeclFlags(m),
-           new_TS_simple(loc, uberCVFlags(m), uberSimpleType(loc, k)), NULL); }
+           new_TS_simple(loc, endloc, uberCVFlags(m), uberSimpleType(loc, k)), NULL); }
 
   // TS_elaborated, TS_classSpec, TS_enumSpec:
   // triggered by one of "class", "struct", "union", "enum", "typename",
@@ -1222,12 +1222,12 @@ nonterm(UberModifiers) UberTypeKeyword {
 
 
 nonterm(TypeSpecifier*) ElaboratedTypeSpecifier {
-  -> k:ClassKey n:PQTypeName    { return new TS_elaborated(loc, k, n); }
-  -> "enum" n:PQTypeName        { return new TS_elaborated(loc, TI_ENUM, n); }
+  -> k:ClassKey n:PQTypeName    { return new TS_elaborated(loc, endloc, k, n); }
+  -> "enum" n:PQTypeName        { return new TS_elaborated(loc, endloc, TI_ENUM, n); }
 
   // cppstd grammar ensures "typename" is only applied to qualified
   // names, but I find that more natural to enforce during typechecking
-  -> "typename" n:PQTypeName    { return new TS_name(loc, n, true /*typename*/); }
+  -> "typename" n:PQTypeName    { return new TS_name(loc, endloc, n, true /*typename*/); }
 }
 
 
@@ -1237,21 +1237,21 @@ nonterm(TypeSpecifier*) ElaboratedTypeSpecifier {
 nonterm(TypeSpecifier*) TypeSpecifier {
   // TS_name
   -> n:PQTypeName cv2:UberCVQualifierSeqOpt
-       { return new_TS_name(loc, uberCVFlags(cv2), n, false /*typename*/); }
+       { return new_TS_name(loc, endloc, uberCVFlags(cv2), n, false /*typename*/); }
 
   -> cv1:UberCVQualifierSeq n:PQTypeName cv2:UberCVQualifierSeqOpt
        { UberModifiers cv = uberCombine(loc, cv1, cv2);
-         return new_TS_name(loc, uberCVFlags(cv), n, false /*typename*/); }
+         return new_TS_name(loc, endloc, uberCVFlags(cv), n, false /*typename*/); }
 
   // TS_simple
   -> k1:UberTypeKeyword m2:UberTypeAndCVQualifierSeqOpt
        { UberModifiers k = uberCombine(loc, k1, m2);
-         return new_TS_simple(loc, uberCVFlags(m2), uberSimpleType(loc, k)); }
+         return new_TS_simple(loc, endloc, uberCVFlags(m2), uberSimpleType(loc, k)); }
 
   -> m1:UberCVQualifierSeq k1:UberTypeKeyword m2:UberTypeAndCVQualifierSeqOpt
        { UberModifiers m = uberCombine(loc, m1, m2);
          UberModifiers k = uberCombine(loc, k1, m2);
-         return new_TS_simple(loc, uberCVFlags(m), uberSimpleType(loc, k)); }
+         return new_TS_simple(loc, endloc, uberCVFlags(m), uberSimpleType(loc, k)); }
 
   // TS_elaborated, TS_classSpec, TS_enumSpec
   -> e:ElaboratedOrSpecifier m2:UberCVQualifierSeqOpt
@@ -1274,7 +1274,7 @@ nonterm(PQName*) PQTypeName {
   -> n:PQTypeName_ncc
        { return n; }
   -> "::" n:PQTypeName_ncc
-       { return new PQ_qualifier(loc, NULL /*qualifier*/, NULL /*targs*/, n); }
+       { return new PQ_qualifier(loc, endloc, NULL /*qualifier*/, NULL /*targs*/, n); }
 }
 
 // no-colon-colon
@@ -1282,14 +1282,14 @@ nonterm(PQName*) PQTypeName_ncc {
   fun merge(L,R) { return L->mergeAmbiguous(R); }
 
   -> n:Identifier                  precedence("::")
-       { return new PQ_name(loc, n); }
+       { return new PQ_name(loc, endloc, n); }
   -> id:TemplateId                 precedence("::")
        { return id; }
 
   -> q:Identifier "::" n:PQTypeName_notfirst
-       { return new PQ_qualifier(loc, q, NULL /*targs*/, n); }
+       { return new PQ_qualifier(loc, endloc, q, NULL /*targs*/, n); }
   -> q:Identifier "<" targs:TemplateArgumentListOpt ">" "::" n:PQTypeName_notfirst
-       { return new PQ_qualifier(loc, q, targs, n); }
+       { return new PQ_qualifier(loc, endloc, q, targs, n); }
 }
 
 // after at least one qualifier other than "::"; 'template' has to be
@@ -1308,17 +1308,17 @@ nonterm(PQName*) PQTypeName_notfirst {
 
   // TEMPLATE_QUALIFIER_HACK
   //-> "template" q:Identifier "::" n:PQTypeName_notfirst
-  //     { return new PQ_qualifier(loc, q, NULL /*targs*/, n); }
+  //     { return new PQ_qualifier(loc, endloc, q, NULL /*targs*/, n); }
   -> "template" q:Identifier "<" targs:TemplateArgumentListOpt ">" "::" n:PQTypeName_notfirst
-       { return new PQ_qualifier(loc, q, templateUsed(targs), n); }
+       { return new PQ_qualifier(loc, endloc, q, templateUsed(targs), n); }
 }
 
 
 nonterm(TS_enumSpec*) EnumSpecifier {
   -> "enum" "{" list:EnumeratorListOpt "}"
-       { return new TS_enumSpec(loc, NULL /*name*/, list); }
+       { return new TS_enumSpec(loc, endloc, NULL /*name*/, list); }
   -> "enum" n:Identifier "{" list:EnumeratorListOpt "}"
-       { return new TS_enumSpec(loc, n, list); }
+       { return new TS_enumSpec(loc, endloc, n, list); }
 }
 
 
@@ -1337,9 +1337,9 @@ nonterm(FakeList<Enumerator>*) EnumeratorListOpt {
 
 nonterm(Enumerator*) EnumeratorDefinition {
   -> name:Identifier
-       { return new Enumerator(loc, name, NULL /*expr*/); }
+       { return new Enumerator(loc, endloc, name, NULL /*expr*/); }
   -> name:Identifier "=" expr:ConstantExpression
-       { return new Enumerator(loc, name, expr); }
+       { return new Enumerator(loc, endloc, name, expr); }
 }
 
 
@@ -1471,16 +1471,16 @@ nonterm(IN_compound*) InitializerList {
 // regex for this nonterm: (PtrOperator)* DirectDeclarator
 nonterm(IDeclarator*) Declarator {
   -> "*" cv:CVQualifierSeqOpt d:Declarator
-       { return new D_pointer(loc, cv, d); }
+       { return new D_pointer(loc, endloc, cv, d); }
   // dsw: I could have just allowed 'restrict' here instead of
   // allowing any CVQualifierSeqOpt after a "&" but it would mean
   // duplicating the parsing rule three times (there are three
   // occurances of "&" with this meaning in the grammar) and moving it
   // to gnu.gr; perhaps Scott will prefer that more specific solution.
   -> "&" cv:CVQualifierSeqOpt /*dsw: discarded; can be 'restrict' */ d:Declarator
-       { return new D_reference(loc, d); }
+       { return new D_reference(loc, endloc, d); }
   -> n:PtrToMemberName "*" cv:CVQualifierSeqOpt d:Declarator
-       { return new D_ptrToMember(loc, n, cv, d); }
+       { return new D_ptrToMember(loc, endloc, n, cv, d); }
   -> d:DirectDeclarator
        { return d; }
 }
@@ -1493,11 +1493,11 @@ nonterm(IDeclarator*) DirectDeclarator {
   // note: this rule handles constructor names!
   // note: this also handles operator names!
   -> n:IdExpression//_no_colon_colon
-       { return new D_name(loc, n); }
+       { return new D_name(loc, endloc, n); }
 
   // dtor
   -> n:PQDtorName
-       { return new D_name(loc, n); }
+       { return new D_name(loc, endloc, n); }
 
   // function declarator; the return type comes from the type
   // specifier that precedes this
@@ -1505,15 +1505,15 @@ nonterm(IDeclarator*) DirectDeclarator {
      "(" params:ParameterDeclarationClause ")" // parameters
      cv:CVQualifierSeqOpt                      // optional "const"
      e:ExceptionSpecificationOpt               // optional "throw" clause
-       { return new_D_func(loc, d, params, cv, e); }
+       { return new_D_func(loc, endloc, d, params, cv, e); }
 
   // array with optional size
   -> d:DirectDeclarator "[" sz:ConstantExpressionOpt "]"
-       { return new_D_array(loc, d, sz); }
+       { return new_D_array(loc, endloc, d, sz); }
 
   // precedence grouping; must be recorded in the AST for disambiguation
   -> "(" d:Declarator ")"
-       { return new D_grouping(loc, d); }
+       { return new D_grouping(loc, endloc, d); }
 }
 
 // I choose to encode ctor and dtor names as ordinary PQNames, because
@@ -1528,24 +1528,24 @@ nonterm(PQName*) PQDtorName {
   fun merge(L,R) { return L->mergeAmbiguous(R); }
 
   -> "~" n:Identifier
-       { return new PQ_name(loc, str(stringc << "~" << n)); }
+       { return new PQ_name(loc, endloc, str(stringc << "~" << n)); }
   -> "~" n:Identifier "<" list:TemplateArgumentListOpt ">"
-       { return new PQ_template(loc, str(stringc << "~" << n), list); }
+       { return new PQ_template(loc, endloc, str(stringc << "~" << n), list); }
 
   // as above for PQName_no_colon_colon, I'm temporarily removing an
   // ambiguity that relates to namespaces (e.g. "::F::~F()")
   //-> q:Qualifier rhs:PQDtorName  { return new PQ_qualifier(q, rhs); }
   -> q:Identifier "::" rhs:PQDtorName
-       { return new PQ_qualifier(loc, q, NULL /*targs*/, rhs); }
+       { return new PQ_qualifier(loc, endloc, q, NULL /*targs*/, rhs); }
 
   -> q:Identifier "<" targs:TemplateArgumentListOpt ">" "::" rhs:PQDtorName
-       { return new PQ_qualifier(loc, q, targs, rhs); }
+       { return new PQ_qualifier(loc, endloc, q, targs, rhs); }
 
   // TEMPLATE_QUALIFIER_HACK
   //-> "template" q:Identifier "::" rhs:PQDtorName
-  //     { return new PQ_qualifier(loc, q, NULL /*targs*/, rhs); }
+  //     { return new PQ_qualifier(loc, endloc, q, NULL /*targs*/, rhs); }
   -> "template" q:Identifier "<" targs:TemplateArgumentListOpt ">" "::" rhs:PQDtorName
-       { return new PQ_qualifier(loc, q, templateUsed(targs), rhs); }
+       { return new PQ_qualifier(loc, endloc, q, templateUsed(targs), rhs); }
 
   // this rule from cppstd is partially subsumed by the "template" hack
   //-> ColonColonOpt NestedNameSpecifier "template" TemplateId "::" "~" TypeName;
@@ -1598,24 +1598,24 @@ nonterm(ASTTypeId*) TypeId {
 }
 
 nonterm(IDeclarator*) AbstractDeclaratorOpt {
-  -> empty                 { return new D_name(loc, NULL); }
+  -> empty                 { return new D_name(loc, endloc, NULL); }
   -> d:AbstractDeclarator  { return d; }
 }
 
 // an abstract declarator (not opt) must have *some* ground syntax in it
 nonterm(IDeclarator*) AbstractDeclarator {
   -> "*" cv:CVQualifierSeqOpt d:AbstractDeclaratorOpt
-       { return new D_pointer(loc, cv, d); }
+       { return new D_pointer(loc, endloc, cv, d); }
   -> "&" cv:CVQualifierSeqOpt /*dsw: discarded; can be 'restrict' */ d:AbstractDeclaratorOpt
-       { return new D_reference(loc, d); }
+       { return new D_reference(loc, endloc, d); }
   -> n:PtrToMemberName "*" cv:CVQualifierSeqOpt d:AbstractDeclaratorOpt
-       { return new D_ptrToMember(loc, n, cv, d); }
+       { return new D_ptrToMember(loc, endloc, n, cv, d); }
   -> d:DirectAbstractDeclarator
        { return d; }
 }
 
 nonterm(IDeclarator*) DirectAbstractDeclaratorOpt {
-  -> empty                       { return new D_name(loc, NULL /*name*/); }
+  -> empty                       { return new D_name(loc, endloc, NULL /*name*/); }
   -> d:DirectAbstractDeclarator  { return d; }
 }
 
@@ -1638,16 +1638,16 @@ nonterm(IDeclarator*) DirectAbstractDeclarator {
      "(" args:ParameterDeclarationClause ")"
      cv:CVQualifierSeqOpt
      e:ExceptionSpecificationOpt
-       { return new_D_func(loc, d, args, cv, e); }
+       { return new_D_func(loc, endloc, d, args, cv, e); }
 
   // array with optional size
   -> d:DirectAbstractDeclaratorOpt "[" sz:ConstantExpressionOpt "]"
-       { return new_D_array(loc, d, sz); }
+       { return new_D_array(loc, endloc, d, sz); }
 
   // precedence grouping; shouldn't need to record this in AST, but
   // I will for consistency with Declarator
   -> "(" d:AbstractDeclarator ")"
-       { return new D_grouping(loc, d); }
+       { return new D_grouping(loc, endloc, d); }
 }
 
 
@@ -1807,7 +1807,7 @@ nonterm(Function*) FunctionDefinition {
        {
          return new Function(
            m,                             // decl flags: explicit, virtual, or none
-           new TS_simple(loc, ST_CDTOR),  // type specifier: ctor or dtor
+           new TS_simple(loc, endloc, ST_CDTOR),  // type specifier: ctor or dtor
            new Declarator(d, NULL),       // declarator with fn name, params
            c,                             // ctor member inits
            b,                             // function body statement
@@ -1818,7 +1818,7 @@ nonterm(Function*) FunctionDefinition {
        {
          return new Function(
            DF_NONE,
-           new TS_simple(loc, ST_CDTOR),
+           new TS_simple(loc, endloc, ST_CDTOR),
            new Declarator(d, NULL),
            c,
            b,
@@ -1832,7 +1832,7 @@ nonterm(Function*) FunctionDefinition {
        {
          return new Function(
            e,                        // decl flags: explicit is only possibility
-           new TS_simple(loc, ST_CDTOR),
+           new TS_simple(loc, endloc, ST_CDTOR),
            new Declarator(d, NULL),
            c,
            b,
@@ -1843,7 +1843,7 @@ nonterm(Function*) FunctionDefinition {
        {
          return new Function(
            DF_NONE,
-           new TS_simple(loc, ST_CDTOR),
+           new TS_simple(loc, endloc, ST_CDTOR),
            new Declarator(d, NULL),
            c,
            b,
@@ -1882,7 +1882,7 @@ nonterm(FakeList<MemberInit>*) CtorInitializerOpt {
 // ------ A.8 Classes ------
 nonterm(TS_classSpec*) ClassSpecifier {
   -> k:ClassKey n:ClassHeadNameOpt b:BaseClauseOpt "{" memb:MemberDeclarationSeqOpt "}"
-       { popClassName(); return new TS_classSpec(loc, k, n, b, memb); }
+       { popClassName(); return new TS_classSpec(loc, endloc, k, n, b, memb); }
 }
 
 // this is the name portion of what the standard calls "ClassHead"
@@ -1898,20 +1898,20 @@ nonterm(PQName*) ClassHeadName {
   fun merge(L,R) { return L->mergeAmbiguous(R); }
 
   -> n:Identifier             precedence("::")
-       { return new PQ_name(loc, n); }
+       { return new PQ_name(loc, endloc, n); }
   -> t:TemplateId             precedence("::")
        { return t; }
 
   -> n:Identifier "::" rest:ClassHeadName
-       { return new PQ_qualifier(loc, n, NULL /*targs*/, rest); }
+       { return new PQ_qualifier(loc, endloc, n, NULL /*targs*/, rest); }
   -> n:Identifier "<" targs:TemplateArgumentListOpt ">" "::" rest:ClassHeadName
-       { return new PQ_qualifier(loc, n, targs, rest); }
+       { return new PQ_qualifier(loc, endloc, n, targs, rest); }
 
   // TEMPLATE_QUALIFIER_HACK
   //-> "template" n:Identifier "::" rest:ClassHeadName
-  //     { return new PQ_qualifier(loc, n, NULL /*targs*/, rest); }
+  //     { return new PQ_qualifier(loc, endloc, n, NULL /*targs*/, rest); }
   -> "template" n:Identifier "<" targs:TemplateArgumentListOpt ">" "::" rest:ClassHeadName
-       { return new PQ_qualifier(loc, n, templateUsed(targs), rest); }
+       { return new PQ_qualifier(loc, endloc, n, templateUsed(targs), rest); }
 }
 
 nonterm(enum TypeIntr) ClassKey {
@@ -2046,7 +2046,7 @@ nonterm(Declaration*) CDtorProtoDecl {
        { // 'd' is a Declarator
          return new Declaration(
            flags,
-           new TS_simple(loc, ST_CDTOR),
+           new TS_simple(loc, endloc, ST_CDTOR),
            FakeList<Declarator>::makeList(d)
          );
        }
@@ -2062,7 +2062,7 @@ nonterm(Declaration*) CDtorProtoDecl {
 
          return new Declaration(
            DF_NONE,
-           new TS_simple(loc, ST_CDTOR),
+           new TS_simple(loc, endloc, ST_CDTOR),
            FakeList<Declarator>::makeList(d)
          );
        }
@@ -2093,7 +2093,7 @@ nonterm(Declarator*) MemberDeclarator {
        { return new Declarator(d, new IN_expr(loc, e)); }
 
   -> n:IdentifierOpt ":" e:ConstantExpression    // bitfield
-       { return new Declarator(new D_bitfield(loc, n? new PQ_name(loc, n) : NULL, e),
+       { return new Declarator(new D_bitfield(loc, endloc, n? new PQ_name(loc, endloc, n) : NULL, e),
                                NULL /*init*/); }
 }
 
@@ -2194,14 +2194,14 @@ nonterm(IDeclarator*) ConversionDeclaratorOpt {
   // there is still an S/R conflict for "::" and I'm not sure how
   // to resolve that one...
   -> empty                             precedence(TOK_PREFER_SHIFT)
-       { return new D_name(loc, NULL /*name*/); }
+       { return new D_name(loc, endloc, NULL /*name*/); }
 
   -> "*" cv:CVQualifierSeqOpt d:ConversionDeclaratorOpt
-       { return new D_pointer(loc, cv, d); }
+       { return new D_pointer(loc, endloc, cv, d); }
   -> "&" cv:CVQualifierSeqOpt /*dsw: discarded; can be 'restrict' */ d:ConversionDeclaratorOpt
-       { return new D_reference(loc, d); }
+       { return new D_reference(loc, endloc, d); }
   -> n:PtrToMemberName "*" cv:CVQualifierSeqOpt d:ConversionDeclaratorOpt
-       { return new D_ptrToMember(loc, n, cv, d); }
+       { return new D_ptrToMember(loc, endloc, n, cv, d); }
 }
 
 
@@ -2384,7 +2384,7 @@ nonterm(/*fakelist*/TemplateParameter*) TemplateParameterList {
 
   // non-template type parameter
   -> ClassOrTypename i:IdentifierOpt t:DefaultTypeOpt next:TemplateParameterListContinuation
-     { return new TP_type(loc, i, t, next); }
+     { return new TP_type(loc, endloc, i, t, next); }
 
   // non-type parameter
   -> p:ParameterDeclaration next:TemplateParameterListContinuation
@@ -2397,7 +2397,7 @@ nonterm(/*fakelist*/TemplateParameter*) TemplateParameterList {
          return NULL;   // don't keep this, it's really a TP_type
        }
        else {
-         return new TP_nontype(loc, p, next);
+         return new TP_nontype(loc, endloc, p, next);
        }
      }
 
@@ -2405,7 +2405,7 @@ nonterm(/*fakelist*/TemplateParameter*) TemplateParameterList {
   -> "template" "<" pl:TemplateParameterList ">" "class" i:IdentifierOpt
        t:DefaultTemplateOpt next:TemplateParameterListContinuation
      {
-       return new TP_template(loc, FakeList<TemplateParameter>::makeList(pl), 
+       return new TP_template(loc, endloc, FakeList<TemplateParameter>::makeList(pl), 
                               i, t, next);
      }
 }
@@ -2442,13 +2442,13 @@ nonterm(/*fakelist*/TemplateArgument*) TemplateArgumentListOpt {
 
 nonterm(PQ_template*) TemplateId {
   -> n:Identifier "<" list:TemplateArgumentListOpt ">"
-       { return new PQ_template(loc, n, list); }
+       { return new PQ_template(loc, endloc, n, list); }
 
   // 9/21/04: Added this possibility (e.g. d0103.cc).
   -> on:OperatorFunctionId "<" list:TemplateArgumentListOpt ">"
        // Note: This leaks 'on', and isn't quite as operator-like
        // as PQ_operator, so I'm not convinced it behaves perfectly...
-       { return new PQ_template(loc, str(on->getOperatorName()), list); }
+       { return new PQ_template(loc, endloc, str(on->getOperatorName()), list); }
 
   // I suspect this one is needed too, but the problem is that
   // 'getOperatorName' loses information for conversion operators
@@ -2456,7 +2456,7 @@ nonterm(PQ_template*) TemplateId {
   // One solution would be to make a PQ_operatorTemplate with an
   // OperatorName first argument...
   //-> on:ConversionFunctionId "<" list:TemplateArgumentListOpt ">"
-  //     { return new PQ_template(loc, str(on->getOperatorName()), list); }
+  //     { return new PQ_template(loc, endloc, str(on->getOperatorName()), list); }
 
 
   // version with the word "template" in front
@@ -2464,7 +2464,7 @@ nonterm(PQ_template*) TemplateId {
   // arg.. this causes some extra ambiguities, see t0255.cc.  since I
   // don't have a testcase that requires this yet, I'll just remove it
   //-> "template" n:Identifier "<" list:TemplateArgumentListOpt ">"
-  //     { return new PQ_template(loc, n, templateUsed(list)); }
+  //     { return new PQ_template(loc, endloc, n, templateUsed(list)); }
 }
 
 nonterm(/*fakelist*/TemplateArgument*) TemplateArgumentList {
@@ -2539,8 +2539,8 @@ nonterm(Handler*) Handler {
 
   -> "catch" "(" "..." ")" s:CompoundStatement
        { return new Handler(
-           new ASTTypeId(new TS_simple(loc, ST_ELLIPSIS),
-                         new Declarator(new D_name(loc, NULL /*name*/),
+           new ASTTypeId(new TS_simple(loc, endloc, ST_ELLIPSIS),
+                         new Declarator(new D_name(loc, endloc, NULL /*name*/),
                                         NULL /*init*/)),
            s); }
 }

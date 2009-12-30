@@ -1835,7 +1835,7 @@ bool Env::insertTemplateArgBindings_oneParamList
     if (param->hasFlag(DF_TYPEDEF) && sarg->isType()) {
       // bind the type parameter to the type argument
       Type *t = sarg->getType();
-      Variable *binding = makeVariable(param->loc, param->name, t,
+      Variable *binding = makeVariable(param->loc, param->endloc, param->name, t,
                                        DF_TYPEDEF | DF_TEMPL_PARAM | DF_BOUND_TPARAM);
       addVariableToScope(scope, binding);
 
@@ -1845,7 +1845,7 @@ bool Env::insertTemplateArgBindings_oneParamList
     else if (param->isTemplateTypeVariable() && sarg->isTemplate()) {
       // very similar to the above case
       Type *t = sarg->getTemplate()->typedefVar->type;
-      Variable *binding = makeVariable(param->loc, param->name, t,
+      Variable *binding = makeVariable(param->loc, param->endloc, param->name, t,
                                        DF_TYPEDEF | DF_TEMPL_PARAM | DF_BOUND_TPARAM);
       addVariableToScope(scope, binding);
 
@@ -1865,7 +1865,7 @@ bool Env::insertTemplateArgBindings_oneParamList
         tfac.applyCVToType(param->loc, CV_CONST,    // non-reference: apply 'const'
                            param->type, NULL /*syntax*/);
       bindType = applyArgumentMapToType(typeBindings, bindType);  // in/t0505.cc
-      Variable *binding = makeVariable(param->loc, param->name,
+      Variable *binding = makeVariable(param->loc, param->endloc, param->name,
                                        bindType, DF_TEMPL_PARAM | DF_BOUND_TPARAM);
 
       // set 'bindings->value', in some cases creating AST
@@ -2932,7 +2932,7 @@ Variable *Env::instantiateClassTemplateDecl
   // also make the self-name, which *does* go into the scope
   // (testcase: t0167.cc)
   if (LO.compoundSelfName) {
-    Variable *self = makeVariable(loc, instCT->name, instType,
+    Variable *self = makeVariable(loc, SL_UNKNOWN, instCT->name, instType,
                                   DF_TYPEDEF | DF_SELFNAME);
     instCT->addUniqueVariable(self);
     addedNewVariable(instCT, self);
@@ -3933,7 +3933,7 @@ bool Env::mergeParameterLists(Variable *prior,
       // Perhaps it's ok to make a few copies of template parameter
       // Variables, as they are somehow less concrete than the other
       // named entities...
-      Variable *v = makeVariable(dest->loc, src->name, src->type, dest->flags);
+      Variable *v = makeVariable(dest->loc, dest->endloc, src->name, src->type, dest->flags);
 
       // copy a few other fields, including default value
       v->setValue(dest->value);
@@ -4052,7 +4052,7 @@ Type *Env::applyArgumentMapToType(MType &map, Type *origSrc)
           rpt = applyArgumentMapToType(map, sp->type);
         }
 
-        Variable *rp = makeVariable(sp->loc, sp->name, rpt, sp->flags);
+        Variable *rp = makeVariable(sp->loc, sp->endloc, sp->name, rpt, sp->flags);
 
         if (sp->value) {
           // TODO: I should be substituting the template parameters
@@ -4759,7 +4759,7 @@ Variable *Env::findInstantiation(TemplateInfo *tinfo,
 // of 'templ'
 Variable *Env::makeInstantiationVariable(Variable *templ, Type *instType)
 {
-  Variable *inst = makeVariable(templ->loc, templ->name, instType, templ->flags);
+  Variable *inst = makeVariable(templ->loc, templ->endloc, templ->name, instType, templ->flags);
   inst->setAccess(templ->getAccess());
   inst->scope = templ->scope;
   inst->setScopeKind(templ->getScopeKind());
@@ -4842,7 +4842,7 @@ Type *Env::pseudoSelfInstantiation(CompoundType *ct, CVFlags cv)
         case TPK_NON_TYPE: {
           // perhaps there should be an STemplateArgument variant that
           // is like STA_DEPEXPR but can only hold a single Variable?
-          PQ_name *name = new PQ_name(param->loc, param->name);
+          PQ_name *name = new PQ_name(param->loc, param->endloc, param->name);
           E_variable *evar = new E_variable(EXPR_LOC(param->loc ENDLOCARG(SL_UNKNOWN)) name);
           evar->var = param;
           sta->setDepExpr(evar);
@@ -5082,7 +5082,7 @@ Variable *Env::makeSpecializationVariable
   }
 
   // make the Variable
-  Variable *spec = makeVariable(loc, templ->name, type, dflags);
+  Variable *spec = makeVariable(loc, SL_UNKNOWN, templ->name, type, dflags);
   spec->setAccess(templ->getAccess());
   spec->scope = templ->scope;
   spec->setScopeKind(templ->getScopeKind());

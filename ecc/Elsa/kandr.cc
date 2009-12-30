@@ -56,13 +56,13 @@ FakeList<ASTTypeId>* kAndR_makeParamList
   // if it has no declaration then it is an int
   if (!d) {
     d = new ASTTypeId
-      (new TS_simple(pqName->loc, ST_INT),
+      (new TS_simple(pqName->loc, pqName->endloc, ST_INT),
        new Declarator
        (new D_name
-        (pqName->loc,
+        (pqName->loc, pqName->endloc,
          // I'll make a new PQ_name to be safe that we have no
          // aliasing problems
-         new PQ_name(pqName->loc, pqName->name)),
+         new PQ_name(pqName->loc, pqName->endloc, pqName->name)),
         NULL /*_init*/));
   } else {
     // mutate the location of the declaration to match that of the
@@ -145,7 +145,7 @@ D_func *new_D_func_kandr
   if (LO.allowImplicitInt && !filterOutImplIntFirstParam(loc, base, params)) {
     return NULL;
   }
-  return new D_func(loc, base, params, cv, exnSpec, kAndR_params);
+  return new D_func(loc, SL_UNKNOWN, base, params, cv, exnSpec, kAndR_params);
 }
 
 

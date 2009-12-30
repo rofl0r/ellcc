@@ -113,7 +113,7 @@ StringRef CC2CEnv::getTypeName(Type *t)
   IDeclarator *decl = NULL;
 
   // 'decl' will always be built on top of this.
-  D_name *baseName = new D_name(SL_GENERATED, makePQ_name(entry->name));
+  D_name *baseName = new D_name(SL_GENERATED, SL_GENERATED, makePQ_name(entry->name));
 
   switch (t->getTag()) {
     case Type::T_ATOMIC: {
@@ -126,7 +126,7 @@ StringRef CC2CEnv::getTypeName(Type *t)
     case Type::T_REFERENCE:
       // reference and pointer both become pointer
       typeSpec = makeTypeSpecifier(t->getAtType());
-      decl = new D_pointer(SL_GENERATED, t->getCVFlags(), baseName);
+      decl = new D_pointer(SL_GENERATED, SL_GENERATED, t->getCVFlags(), baseName);
       break;
 
     case Type::T_FUNCTION: {
@@ -212,7 +212,7 @@ TypeSpecifier *CC2CEnv::makeTypeSpecifier(Type *t)
   else {
     // need a declarator; circumvent by using a typedef
     return new TS_name(
-      SL_GENERATED, 
+      SL_GENERATED, SL_GENERATED, 
       makePQ_name(getTypeName(t)),
       false /*typenameUsed*/
     );
@@ -234,13 +234,13 @@ TypeSpecifier *CC2CEnv::makeAtomicTypeSpecifier(AtomicType *at)
         id = ST_CHAR;
       }
 
-      return new TS_simple(SL_GENERATED, id);
+      return new TS_simple(SL_GENERATED, SL_GENERATED, id);
     }
 
     case AtomicType::T_COMPOUND: {
       CompoundType *ct = at->asCompoundType();
       return new TS_elaborated(
-        SL_GENERATED,
+        SL_GENERATED, SL_GENERATED,
         ct->keyword == CompoundType::K_UNION? TI_UNION : TI_STRUCT,
         makePQ_name(getCompoundTypeName(ct))
       );
@@ -281,7 +281,7 @@ PQ_name *CC2CEnv::makeName(Variable const *v)
 
 PQ_name *CC2CEnv::makePQ_name(StringRef name)
 {
-  return new PQ_name(SL_GENERATED, name);
+  return new PQ_name(SL_GENERATED, SL_GENERATED, name);
 }
 
 
@@ -293,9 +293,9 @@ FakeList<ASTTypeId> *CC2CEnv::makeParameterTypes(FunctionType *ft)
   if (ft->acceptsVarargs()) {
     dest = dest->prepend(
       new ASTTypeId(
-        new TS_simple(SL_GENERATED, ST_ELLIPSIS),
+        new TS_simple(SL_GENERATED, SL_GENERATED, ST_ELLIPSIS),
         new Declarator(
-          new D_name(SL_GENERATED, NULL /*name*/),
+          new D_name(SL_GENERATED, SL_GENERATED, NULL /*name*/),
           NULL /*init*/
         )
       )
@@ -309,7 +309,7 @@ FakeList<ASTTypeId> *CC2CEnv::makeParameterTypes(FunctionType *ft)
       new ASTTypeId(
         makeTypeSpecifier(param->type),
         new Declarator(
-          new D_name(SL_GENERATED, makeName(param)),
+          new D_name(SL_GENERATED, SL_GENERATED, makeName(param)),
           NULL /*init*/
         )
       )
@@ -384,8 +384,8 @@ Function *Function::cc2c(CC2CEnv &env) const
     env.makeTypeSpecifier(funcType->retType),
     new Declarator(
       new D_func(
-        SL_GENERATED,
-        new D_name(SL_GENERATED, env.makeName(nameAndParams->var)),
+        SL_GENERATED, SL_GENERATED,
+        new D_name(SL_GENERATED, SL_GENERATED, env.makeName(nameAndParams->var)),
         env.makeParameterTypes(funcType),
         CV_NONE,
         NULL /*exnSpec*/
@@ -464,7 +464,7 @@ void Declaration::cc2c(CC2CEnv &env) const
         env.makeTypeSpecifier(var->type),
         FakeList<Declarator>::makeList(
           new Declarator(
-            new D_name(SL_GENERATED, env.makeName(var)),
+            new D_name(SL_GENERATED, SL_GENERATED, env.makeName(var)),
             genInit
           )
         )

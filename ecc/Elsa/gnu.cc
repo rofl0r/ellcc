@@ -27,7 +27,7 @@ void Env::initializeComplexComponents()
         for (int prec=0; prec<=2; prec++) {
             StringRef n = axis==0? string_realSelector : string_imagSelector;
             Type *t = env.getSimpleType(constructFloatingType(prec, axis));
-            Variable *v = makeVariable(SL_INIT, n, t, DF_BUILTIN | DF_MEMBER);
+            Variable *v = makeVariable(SL_INIT, SL_INIT, n, t, DF_BUILTIN | DF_MEMBER);
             complexComponentFields[axis][prec] = v;
         }
     }
@@ -936,8 +936,9 @@ void Asm::itcheck_constraints(Env &env, bool module)
                                     // the input constraint is casted to the
                                     // type of the output constraint.
                                     ASTTypeId *newType
-                                        = new ASTTypeId(new TS_type(expr->loc, outputTypes[matches]),
-                                                        new Declarator(new D_name(expr->loc,
+                                        = new ASTTypeId(new TS_type(expr->loc, expr->endloc,
+                                                                    outputTypes[matches]),
+                                                        new Declarator(new D_name(expr->loc, expr->endloc,
                                                                                   NULL /*name*/),
                                                                                   NULL /*init*/));
                                     expr = new E_cast(expr->loc, SL_UNKNOWN, newType, expr);
@@ -1727,7 +1728,7 @@ void S_computedGoto::icfg(CFGEnv &env)
 // ---------------------- D_attribute -------------------------
 D_attribute::D_attribute(SourceLocation loc, IDeclarator *base,
                          AttributeSpecifierList *alist_)
-  : D_grouping(loc, base),
+  : D_grouping(loc, SL_UNKNOWN, base),
     alist(alist_)
 {}
 

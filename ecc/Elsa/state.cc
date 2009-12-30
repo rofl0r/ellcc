@@ -18,8 +18,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "generic_aux.h"        // C++ AST, and genericPrintAmbiguities, etc.
-#if RICH
 #include "cc_env.h"             // Env
+#if RICH
 #include "cc_print.h"           // olayer, PrintEnv
 #include "generic_amb.h"        // resolveAmbiguity, etc.
 #include "stdconv.h"            // usualArithmeticConversions
@@ -37,7 +37,20 @@ void MR_state::tcheck(Env &env) { }
 void MR_state::print(PrintEnv &env) { }
 void MR_state::print(BPEnv &bp) const { }
 
-void TF_state::itcheck(Env &env) { }
+/** A state defined at the outermost level.
+ * The syntax allows a global state to be marked as an initial state,
+ * but this is just for error checking. It makes no sense for a global
+ * state to be marked as an initial state: It must be done where the
+ * machine is defined, in a struct/class.
+ */
+void TF_state::itcheck(Env &env)
+{
+    if (s->initial) {
+        env.report(s->loc, diag::err_state_global_initial_state)
+            << s->d->getDeclaratorId()->getName()
+            << SourceRange(s->loc, s->d->endloc);
+    }
+}
 void TF_state::print(PrintEnv &env) { }
 void TF_state::print(BPEnv &bp) const { }
 

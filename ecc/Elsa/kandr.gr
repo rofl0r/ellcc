@@ -53,7 +53,7 @@ nonterm(Function*) KandRFunctionDefinition_implInt {
       xassert(LO.allowImplicitInt);
 
       // the return type defaults to int
-      Declaration *rds = new Declaration(DF_NONE, new TS_simple(loc, ST_IMPLINT), NULL);
+      Declaration *rds = new Declaration(DF_NONE, new TS_simple(loc, endloc, ST_IMPLINT), NULL);
       return makeKandRdefn(loc, rds, id, ds, b);
     }
 
@@ -63,7 +63,7 @@ nonterm(Function*) KandRFunctionDefinition_implInt {
       xassert(LO.allowImplicitInt);
       DeclFlags df = uberDeclFlags(m);
       CVFlags cv = uberCVFlags(m);
-      Declaration *rds = new Declaration(df, new_TS_simple(loc, cv, ST_IMPLINT), NULL);
+      Declaration *rds = new Declaration(df, new_TS_simple(loc, endloc, cv, ST_IMPLINT), NULL);
       return makeKandRdefn(loc, rds, id, ds, b);
     }
 }
@@ -128,7 +128,7 @@ nonterm(Declarator*) KandRInitDeclarator {
 // for K&R function definitions
 nonterm(IDeclarator*) KandRDeclarator {
   -> "*" cv:CVQualifierSeqOpt d:KandRDeclarator
-       { return new D_pointer(loc, cv, d); }
+       { return new D_pointer(loc, endloc, cv, d); }
   -> d:KandRDirectDeclarator
        { return d; }
 }
@@ -140,7 +140,7 @@ nonterm(IDeclarator*) KandRDirectDeclarator {
   // FIX: not sure I'm not ruling out something in the grammar that
   // should be legal here
 //    -> n:IdExpression_no_colon_colon
-//         { return new D_name(loc, n); }
+//         { return new D_name(loc, endloc, n); }
 
   // function declarator; the return type comes from the type
   // specifier that precedes this
@@ -201,18 +201,18 @@ nonterm(IDeclarator*) KandRDirectDeclarator {
 
   // sm: for in/c/k0009.c
   -> d:KandRDirectDeclarator "[" sz:ConstantExpressionOpt "]"
-       { return new_D_array(loc, d, sz); }
+       { return new_D_array(loc, endloc, d, sz); }
 
   // precedence grouping; must be recorded in the AST for disambiguation
   -> "(" d:KandRDeclarator ")"
-       { return new D_grouping(loc, d); }
+       { return new D_grouping(loc, endloc, d); }
 }
 
 // FIX: see note above; not sure this is necessary nor that it is not
 // too strict
 nonterm(IDeclarator*) KandRIdExpression {
   -> n:KandRIdentifier
-       { return new D_name(loc, n); }
+       { return new D_name(loc, endloc, n); }
 }
 
 //  nonterm(FakeList<StringRef>*) IdentifierListOpt {
@@ -231,7 +231,7 @@ nonterm(FakeList<PQ_name>*) KandRIdentifierList {
 
 
 nonterm(PQ_name*) KandRIdentifier {
-  -> i:Identifier { return new PQ_name(loc, i); }
+  -> i:Identifier { return new PQ_name(loc, endloc, i); }
 }
 
 // implicit-int ****************
@@ -274,7 +274,7 @@ nonterm(Function*) ImplIntFunctionDefinition {
          CVFlags cv = uberCVFlags(m);
          return new Function(
            df,                                // decl flags
-           new_TS_simple(loc, cv, ST_CDTOR),  // type specifier: ctor or dtor
+           new_TS_simple(loc, endloc, cv, ST_CDTOR),  // type specifier: ctor or dtor
            new Declarator(d, NULL),           // declarator with fn name, params
            NULL,                              // ctor member inits
            b,                                 // function body statement
@@ -291,7 +291,7 @@ nonterm(Function*) ImplIntFunctionDefinition {
          CVFlags cv = uberCVFlags(m);
          return new Function(
            df,                                // decl flags
-           new_TS_simple(loc, cv, ST_CDTOR),  // type specifier: ctor or dtor
+           new_TS_simple(loc, endloc, cv, ST_CDTOR),  // type specifier: ctor or dtor
            new Declarator(d, NULL),           // declarator with fn name, params
            NULL,                              // ctor member inits
            b,                                 // function body statement
@@ -311,7 +311,7 @@ nonterm(Function*) ImplIntFunctionDefinition {
          CVFlags cv = uberCVFlags(m);
          return new Function(
            df,                                // decl flags
-           new_TS_simple(loc, cv, ST_CDTOR),  // type specifier: ctor or dtor
+           new_TS_simple(loc, endloc, cv, ST_CDTOR),  // type specifier: ctor or dtor
            new Declarator(d, NULL),           // declarator with fn name, params
            NULL,                              // ctor member inits
            b,                                 // function body statement
@@ -338,7 +338,7 @@ nonterm(TopForm*) Declaration {
       }
       return new TF_decl
         (loc,
-         new Declaration(uberDeclFlags(m1), new TS_simple(loc, ST_IMPLINT), list));
+         new Declaration(uberDeclFlags(m1), new TS_simple(loc, endloc, ST_IMPLINT), list));
     }
 }
 
@@ -358,7 +358,7 @@ nonterm(Declaration*) KandRSimpleDeclaration {
          return NULL;
        }
        return new Declaration(DF_REGISTER,
-                              new TS_simple(loc, ST_IMPLINT),
+                              new TS_simple(loc, endloc, ST_IMPLINT),
                               list);
      }
 }
@@ -374,7 +374,7 @@ nonterm(Statement*) Statement {
         return NULL;
       }
       return new S_decl (loc ENDLOCARG(endloc),
-        new Declaration(uberDeclFlags(m1), new TS_simple(loc, ST_IMPLINT), list));
+        new Declaration(uberDeclFlags(m1), new TS_simple(loc, endloc, ST_IMPLINT), list));
     }
 }
 
@@ -390,7 +390,7 @@ nonterm(ASTTypeId*) ParameterDeclaration {
         return NULL;
       }
       return new ASTTypeId
-        (new TS_simple(loc, ST_IMPLINT),
+        (new TS_simple(loc, endloc, ST_IMPLINT),
          new Declarator(d, NULL /*init*/));
     }
 
@@ -403,7 +403,7 @@ nonterm(ASTTypeId*) ParameterDeclaration {
         return NULL;
       }
       return new ASTTypeId
-        (new TS_simple(loc, ST_IMPLINT),
+        (new TS_simple(loc, endloc, ST_IMPLINT),
          new Declarator(d, NULL /*init*/));
     }
 }
@@ -418,12 +418,12 @@ nonterm(Expression*) CastExpression {
 nonterm(TypeSpecifier*) ImplicitIntTypeSpecifier {
   -> m:UberCVQualifierSeq
        { UberModifiers k = uberCombine(loc, UM_INT, m);
-         return new_TS_simple(loc, uberCVFlags(m), uberSimpleType(loc, k)); }
+         return new_TS_simple(loc, endloc, uberCVFlags(m), uberSimpleType(loc, k)); }
 }
 
 nonterm(ASTTypeId*) ImplicitIntTypeId {
   -> spec:ImplicitIntTypeSpecifier
-       { return new ASTTypeId(spec, new Declarator(new D_name(loc, NULL), NULL)); }
+       { return new ASTTypeId(spec, new Declarator(new D_name(loc, endloc, NULL), NULL)); }
 }
 
 

@@ -3160,7 +3160,7 @@ DependentSizedArrayType *BasicTypeFactory::makeDependentSizedArrayType
 
 
 Variable *BasicTypeFactory::makeVariable
-  (SourceLocation L, StringRef n, Type *t, DeclFlags f)
+  (SourceLocation L, SourceLocation E, StringRef n, Type *t, DeclFlags f)
 {
   // I will turn this on from time to time as a way to check that
   // Types are always capable of printing themselves.  It should never
@@ -3173,7 +3173,7 @@ Variable *BasicTypeFactory::makeVariable
 
   // the TranslationUnit parameter is ignored by default; it is passed
   // only for the possible benefit of an extension analysis
-  Variable *var = new Variable(L, n, t, f);
+  Variable *var = new Variable(L, E, n, t, f);
   return var;
 }
 

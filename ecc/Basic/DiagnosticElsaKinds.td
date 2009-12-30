@@ -830,4 +830,6 @@ def err_test_overload_compute_lub_code
 def err_test_overload_compute_lub_result
     : Error<"expected %0 to %1, but instead it %2">;
 
+def err_state_global_initial_state
+    : Error<"Global state '%0' cannot be declared an initial state">;
 }

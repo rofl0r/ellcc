@@ -174,7 +174,7 @@ void addCompilerSuppliedDecls(Env &env, SourceLocation loc, CompoundType *ct)
     // below.
     FunctionType *ft = env.beginConstructorFunctionType(loc, ct);
     env.doneParams(ft);
-    Variable *v = env.makeVariable(loc, env.constructorSpecialName, ft,
+    Variable *v = env.makeVariable(loc, SL_UNKNOWN, env.constructorSpecialName, ft,
                   DF_MEMBER | DF_IMPLICIT);
     // NOTE: we don't use env.addVariableWithOload() because this is
     // a special case: we only insert if there are no ctors AT ALL.
@@ -211,14 +211,14 @@ void addCompilerSuppliedDecls(Env &env, SourceLocation loc, CompoundType *ct)
     // a body; add a copy ctor declaration: Class(Class const &__other);
     FunctionType *ft = env.beginConstructorFunctionType(loc, ct);
     Variable *refToSelfParam =
-      env.makeVariable(loc,
+      env.makeVariable(loc, SL_UNKNOWN,
                        env.otherName,
                        env.makeReferenceType(
                          env.makeCVAtomicType(ct, CV_CONST)),
                        DF_PARAMETER);
     ft->addParam(refToSelfParam);
     env.doneParams(ft);
-    Variable *v = env.makeVariable(loc, env.constructorSpecialName, ft,
+    Variable *v = env.makeVariable(loc, SL_UNKNOWN, env.constructorSpecialName, ft,
                                    DF_MEMBER | DF_IMPLICIT);
     env.addVariableWithOload(ctor0, v);     // always overloaded; ctor0!=NULL
     env.madeUpVariables.push(v);
@@ -261,19 +261,19 @@ void addCompilerSuppliedDecls(Env &env, SourceLocation loc, CompoundType *ct)
     FunctionType *ft = env.makeFunctionType(refToSelfType);
 
     // receiver object
-    ft->addReceiver(env.makeVariable(loc, env.receiverName,
+    ft->addReceiver(env.makeVariable(loc, SL_UNKNOWN, env.receiverName,
                                      refToSelfType,
                                      DF_PARAMETER));
 
     // source object parameter
-    ft->addParam(env.makeVariable(loc,
+    ft->addParam(env.makeVariable(loc, SL_UNKNOWN,
                                   env.otherName,
                                   refToConstSelfType,
                                   DF_PARAMETER));
 
     env.doneParams(ft);
 
-    Variable *v = env.makeVariable(loc, env.operatorName[OP_ASSIGN], ft,
+    Variable *v = env.makeVariable(loc, SL_UNKNOWN, env.operatorName[OP_ASSIGN], ft,
                                    DF_MEMBER | DF_IMPLICIT);
     env.addVariableWithOload(assign_op0, v);
     env.madeUpVariables.push(v);
@@ -286,7 +286,7 @@ void addCompilerSuppliedDecls(Env &env, SourceLocation loc, CompoundType *ct)
   if (!ct->lookupVariable(dtorName, env, LF_INNER_ONLY)) {
     // add a dtor declaration: ~Class();
     FunctionType *ft = env.makeDestructorFunctionType(loc, ct);
-    Variable *v = env.makeVariable(loc, dtorName, ft,
+    Variable *v = env.makeVariable(loc, SL_UNKNOWN, dtorName, ft,
                                    DF_MEMBER | DF_IMPLICIT);
     env.addVariable(v);       // cannot be overloaded
 
@@ -415,24 +415,24 @@ Env::Env(StringTable &s, Preprocessor& PP, llvm::LLVMContext& C, TypeFactory &tf
     s->openedScope(*this);
 
     // make a Variable for it
-    globalScopeVar = makeVariable(SL_INIT, str("<globalScope>"),
+    globalScopeVar = makeVariable(SL_INIT, SL_INIT, str("<globalScope>"),
                                   NULL /*type*/, DF_NAMESPACE);
     globalScopeVar->scope = s;
     s->namespaceVar = globalScopeVar;
   }
 
-  dependentTypeVar = makeVariable(SL_INIT, str("<dependentTypeVar>"),
+  dependentTypeVar = makeVariable(SL_INIT, SL_INIT, str("<dependentTypeVar>"),
                                   getSimpleType(ST_DEPENDENT), DF_TYPEDEF);
 
-  dependentVar = makeVariable(SL_INIT, str("<dependentVar>"),
+  dependentVar = makeVariable(SL_INIT, SL_INIT, str("<dependentVar>"),
                               getSimpleType(ST_DEPENDENT), DF_NONE);
 
-  errorTypeVar = makeVariable(SL_INIT, str("<errorTypeVar>"),
+  errorTypeVar = makeVariable(SL_INIT, SL_INIT, str("<errorTypeVar>"),
                               getSimpleType(ST_ERROR), DF_TYPEDEF);
 
   // this is *not* a typedef, because I use it in places that I
   // want something to be treated as a variable, not a type
-  errorVar = makeVariable(SL_INIT, str("<errorVar>"),
+  errorVar = makeVariable(SL_INIT, SL_INIT, str("<errorVar>"),
                           getSimpleType(ST_ERROR), DF_NONE);
 
   errorCompoundType = tfac.makeCompoundType(CompoundType::K_CLASS, str("<errorCompoundType>"));
@@ -523,7 +523,7 @@ Env::Env(StringTable &s, Preprocessor& PP, llvm::LLVMContext& C, TypeFactory &tf
     //
     // typedef bool _Bool;
     Type *t_bool = getSimpleType(ST_BOOL);
-    addVariable(makeVariable(SL_INIT, str("_Bool"),
+    addVariable(makeVariable(SL_INIT, SL_INIT, str("_Bool"),
                              t_bool, DF_TYPEDEF | DF_BUILTIN | DF_GLOBAL));
   }
 
@@ -1036,10 +1036,10 @@ void Env::tcheckTranslationUnit(TranslationUnit *tunit)
 }
 
 
-Variable *Env::makeVariable(SourceLocation L, StringRef n, Type *t, DeclFlags f)
+Variable *Env::makeVariable(SourceLocation L, SourceLocation E, StringRef n, Type *t, DeclFlags f)
 {
   if (!ctorFinished) {
-    Variable *v = tfac.makeVariable(L, n, t, f);
+    Variable *v = tfac.makeVariable(L, E, n, t, f);
 
     // such variables are entered into a special list, as long as
     // they're not function parameters (since parameters are reachable
@@ -1053,7 +1053,7 @@ Variable *Env::makeVariable(SourceLocation L, StringRef n, Type *t, DeclFlags f)
 
   else {
     // usual case
-    return tfac.makeVariable(L, n, t, f);
+    return tfac.makeVariable(L, E, n, t, f);
   }
 }
 
@@ -1068,7 +1068,7 @@ Variable *Env::declareFunctionNargs(
   ft->flags |= flags;
 
   for (int i=0; i < numArgs; i++) {
-    Variable *p = makeVariable(SL_INIT,
+    Variable *p = makeVariable(SL_INIT, SL_INIT,
                                argNames[i] ? str(argNames[i]) : NULL,
                                argTypes[i], DF_PARAMETER);
     ft->addParam(p);
@@ -1085,7 +1085,7 @@ Variable *Env::declareFunctionNargs(
 
   doneParams(ft);
 
-  Variable *var = makeVariable(SL_INIT, str(funcName), ft, DF_NONE);
+  Variable *var = makeVariable(SL_INIT, SL_INIT, str(funcName), ft, DF_NONE);
   if (flags & FF_BUILTINOP) {
     // don't add built-in operator functions to the environment
   }
@@ -1639,7 +1639,7 @@ Type *Env::declareEnum(SourceLocation loc /*...*/, EnumType *et)
   Type *ret = makeType(et);
   if (et->name) {
     // make the implicit typedef
-    Variable *tv = makeVariable(loc, et->name, ret, DF_TYPEDEF | DF_IMPLICIT);
+    Variable *tv = makeVariable(loc, SL_UNKNOWN, et->name, ret, DF_TYPEDEF | DF_IMPLICIT);
     et->typedefVar = tv;
 
     Variable* previous = NULL;
@@ -2434,7 +2434,7 @@ Type *Env::makeNewCompound(CompoundType *&ct, Scope * /*nullable*/ scope,
 
   // make the implicit typedef
   Type *ret = makeType(ct);
-  Variable *tv = makeVariable(loc, name, ret, DF_TYPEDEF | DF_IMPLICIT);
+  Variable *tv = makeVariable(loc, SL_UNKNOWN, name, ret, DF_TYPEDEF | DF_IMPLICIT);
   if (builtin) env.builtinVars.push(tv);
   ct->typedefVar = tv;
 
@@ -2516,7 +2516,7 @@ Type *Env::makeNewCompound(CompoundType *&ct, Scope * /*nullable*/ scope,
       // just the class' type
       ct->selfType = ret;
     }
-    Variable *selfVar = makeVariable(loc, name, ct->selfType,
+    Variable *selfVar = makeVariable(loc, SL_UNKNOWN, name, ct->selfType,
                                      DF_TYPEDEF | DF_SELFNAME);
     ct->addUniqueVariable(selfVar);
     addedNewVariable(ct, selfVar);
@@ -2575,7 +2575,7 @@ Variable *Env::receiverParameter(SourceLocation loc, NamedAtomicType *nat, CVFla
     recType = tfac.makeTypeOf_receiver(loc, nat, cv, syntax);
   }
 
-  return makeVariable(loc, receiverName, recType, DF_PARAMETER);
+  return makeVariable(loc, SL_UNKNOWN, receiverName, recType, DF_PARAMETER);
 }
 
 
@@ -3287,7 +3287,7 @@ Variable *Env::createDeclaration(
                     loc, diag::note_gcc_bug_allows_PR_13717,
                     << type->toCString(name) << prior->toCStringAsParameter());
           // I will recover by removing the name
-          return makeVariable(loc, NULL /*name*/, type, dflags);
+          return makeVariable(loc, SL_UNKNOWN, NULL /*name*/, type, dflags);
         }
 
         // HACK: if the type refers to type variables, then let it slide
@@ -3311,7 +3311,7 @@ Variable *Env::createDeclaration(
         // object, so we can continue making progress diagnosing errors
         // in the program; this won't be entered in the environment, even
         // though the 'name' is not NULL
-        Variable *ret = makeVariable(loc, name, type, dflags);
+        Variable *ret = makeVariable(loc, SL_UNKNOWN, name, type, dflags);
 
         // set up the variable's 'scope' field as if it were properly
         // entered into the scope; this is for error recovery, in particular
@@ -3631,7 +3631,7 @@ noPriorDeclaration:
   // no prior declaration, make a new variable and put it
   // into the environment (see comments in Declarator::tcheck
   // regarding point of declaration)
-  Variable *newVar = makeVariable(loc, name, type, dflags);
+  Variable *newVar = makeVariable(loc, SL_UNKNOWN, name, type, dflags);
   // Check for __builtin_va_list.
   if (!LO.NoBuiltin && name == string___builtin_va_list) {
       var__builtin_va_list = newVar;
@@ -3883,7 +3883,7 @@ Type *makeLvalType(TypeFactory &tfac, Type *underlying);
 
 E_variable *Env::build_E_variable(Variable *var)
 {
-  E_variable *ret = new E_variable(EXPR_LOC(SL_UNKNOWN ENDLOCARG(SL_UNKNOWN)) new PQ_variable(SL_UNKNOWN, var));
+  E_variable *ret = new E_variable(SL_UNKNOWN, SL_UNKNOWN, new PQ_variable(SL_UNKNOWN, SL_UNKNOWN, var));
   ret->var = var;
 
   // Wrap with ReferenceType?  (similar to E_variable::itcheck)
@@ -3957,7 +3957,7 @@ PseudoInstantiation *Env::createPseudoInstantiation
   }
 
   // make the typedef var; do *not* add it to the environment
-  pi->typedefVar = makeVariable(loc(), nat->name, makeType(pi),
+  pi->typedefVar = makeVariable(loc(), SL_UNKNOWN, nat->name, makeType(pi),
                                 DF_TYPEDEF | DF_IMPLICIT);
 
   return pi;
@@ -5254,7 +5254,7 @@ void Env::finishDependentQType(LookupSet &set, DependentQType * /*nullable*/ dqt
 
     // slap a typedefVar on 'dqt' so we can put it into 'set'
     dqt->name = name->getName();
-    dqt->typedefVar = makeVariable(name->loc, dqt->name,
+    dqt->typedefVar = makeVariable(name->loc, name->endloc, dqt->name,
                                    makeType(dqt),
                                    DF_TYPEDEF | DF_IMPLICIT);
     set.add(dqt->typedefVar);
@@ -5365,7 +5365,7 @@ Scope *Env::createNamespace(SourceLocation loc, StringRef name, bool isAnonymous
   xassert(name != NULL);
 
   // make an entry in the surrounding scope to refer to the new namespace
-  Variable *v = makeVariable(loc, name, NULL /*type*/, DF_NAMESPACE);
+  Variable *v = makeVariable(loc, SL_UNKNOWN, name, NULL /*type*/, DF_NAMESPACE);
   addVariable(v);
 
   // make new scope
@@ -5588,7 +5588,7 @@ PQName *Env::makeFullyQualifiedName(Scope *s, PQName *name)
 {
   if (!s || s->scopeKind == SK_GLOBAL) {
     // cons the global-scope qualifier on front
-    return new PQ_qualifier(loc(), NULL /*qualifier*/,
+    return new PQ_qualifier(loc(), SL_UNKNOWN, NULL /*qualifier*/,
                             NULL /*targs*/, name);
   }
 
@@ -5616,11 +5616,11 @@ PQName *Env::makeQualifiedName(Scope *s, PQName *name)
     /*fakelist*/TemplateArgument *targs = makeTemplateArgs(ti);
 
     // cons a template-id qualifier on to the front
-    return new PQ_qualifier(loc(), typedefVar->name, targs, name);
+    return new PQ_qualifier(loc(), SL_UNKNOWN, typedefVar->name, targs, name);
   }
   else {
     // cons an ordinary qualifier in from
-    return new PQ_qualifier(loc(), typedefVar->name, NULL /*targs*/, name);
+    return new PQ_qualifier(loc(), SL_UNKNOWN, typedefVar->name, NULL /*targs*/, name);
   }
 }
 
@@ -5677,8 +5677,8 @@ ASTTypeId *Env::buildASTTypeId(Type *type)
 {
   // there used to be a big function here that built the full syntax
   // of a type, but I am going to try to use TS_type instead
-  return new ASTTypeId(new TS_type(loc(), type),
-                       new Declarator(new D_name(loc(), NULL /*name*/),
+  return new ASTTypeId(new TS_type(loc(), loc(), type),
+                       new Declarator(new D_name(loc(), loc(), NULL /*name*/),
                                       NULL /*init*/));
 }
 

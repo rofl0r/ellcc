@@ -190,7 +190,7 @@ class ASTTypeId (
 // there was a leading "::" symbol; each level of qualification has a
 // 'loc' because each level is a remote reference to some entity, and
 // that lookup might fail
-class PQName(SourceLocation loc) {
+class PQName(SourceLocation loc, SourceLocation endloc) {
   public bool hasQualifiers() const { return isPQ_qualifier(); };
 
   public sm::string qualifierString() const;
@@ -266,7 +266,7 @@ class PQName(SourceLocation loc) {
 // built with type constructors (typedef'd types may have been built
 // with type constructors when the name was defined, but a
 // TypeSpecifier refers only to the name)
-class TypeSpecifier(SourceLocation loc) {
+class TypeSpecifier(SourceLocation loc, SourceLocation endloc) {
   public(field,xml) CVFlags cv = CV_UNLOCKED;
   custom clone { ret->cv = cv; }
 
@@ -327,6 +327,7 @@ class BaseClassSpec (
 // a binding of a name to a constant value
 class Enumerator (
   SourceLocation loc,                        // location
+  SourceLocation endloc,
   StringRef name,                       // name of this constant
   Expression /*nullable*/ expr          // constant expr, or NULL for "next"
 ) {
@@ -387,7 +388,7 @@ class Declarator (
 // inner declarator; things *recursively* buried inside declarators;
 // cannot have initializers; the internal structure can be ignored
 // once typechecking determines what type is denoted
-class IDeclarator(SourceLocation loc) {
+class IDeclarator(SourceLocation loc, SourceLocation endloc) {
   // dig down and find the name being declared; may return NULL
   pure_virtual PQName const *getDeclaratorIdC() const;
   public PQName *getDeclaratorId()
@@ -749,7 +750,7 @@ class TemplateDeclaration (/*fakelist*/TemplateParameter params) {
 }
 
 // one of the parameters to a template declaration
-class TemplateParameter (SourceLocation loc)(TemplateParameter /*nullable*/ next) {
+class TemplateParameter (SourceLocation loc, SourceLocation endloc)(TemplateParameter /*nullable*/ next) {
   // true if this parameter has a default arg
   pure_virtual bool hasDefaultArg() const;
 

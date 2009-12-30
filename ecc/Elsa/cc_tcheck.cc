@@ -658,7 +658,7 @@ void Function::tcheckBody(Env &env)
     Type *charConstArr = env.makeArrayType(charConst);
 
     if (env.LO.implicitFuncVariable) {
-      Variable *funcVar = env.makeVariable(loc, env.string__func__,
+      Variable *funcVar = env.makeVariable(loc, body->endloc, env.string__func__,
                                            charConstArr, DF_STATIC);
 
       // I'm not going to add the initializer, because I'd need to make
@@ -672,9 +672,9 @@ void Function::tcheckBody(Env &env)
     // dsw: these two are also gcc; see
     // http://gcc.gnu.org/onlinedocs/gcc-3.4.1/gcc/Function-Names.html#Function%20Names
     if (env.LO.gccFuncBehavior == ellcc::LangOptions::GFB_variable) {
-      env.addVariable(env.makeVariable(loc, env.string__FUNCTION__,
+      env.addVariable(env.makeVariable(loc, body->endloc, env.string__FUNCTION__,
                                        charConstArr, DF_STATIC));
-      env.addVariable(env.makeVariable(loc, env.string__PRETTY_FUNCTION__,
+      env.addVariable(env.makeVariable(loc, body->endloc, env.string__PRETTY_FUNCTION__,
                                        charConstArr, DF_STATIC));
     }
   }
@@ -1036,7 +1036,7 @@ void Declaration::tcheck(Env &env, DeclaratorContext context)
           relName = decl->getDeclaratorId()->getName();
         }
 
-        cs->name = new PQ_name(env.loc(), env.getAnonName(cs->keyword, relName));
+        cs->name = new PQ_name(env.loc(), SL_UNKNOWN, env.getAnonName(cs->keyword, relName));
       }
     }
 
@@ -1130,7 +1130,7 @@ void ASTTypeId::mid_tcheck(Env &env, Tcheck &tc)
     // does not do anonymous union or struct scope promotion, even in
     // C++ mode; so make up a name
     StringRef fakeName = env.getAnonName(spec->asTS_classSpec()->keyword, NULL);
-    spec->asTS_classSpec()->name = new PQ_name(env.loc(), fakeName);
+    spec->asTS_classSpec()->name = new PQ_name(env.loc(), SL_UNKNOWN, fakeName);
     TRACE("env", "substituted name " << fakeName <<
                  " in anon type at " << decl->getLoc());
   }
@@ -2608,7 +2608,7 @@ void MR_template::tcheck(Env &env)
 // -------------------- Enumerator --------------------
 void Enumerator::tcheck(Env &env, EnumType *parentEnum, Type *parentType)
 {
-  var = env.makeVariable(loc, name, parentType, DF_ENUMERATOR);
+  var = env.makeVariable(loc, endloc, name, parentType, DF_ENUMERATOR);
 
   enumValue = parentEnum->nextValue;
   if (expr) {
@@ -2998,7 +2998,7 @@ static Variable *declareNewVariable(
     // object, so we can continue making progress diagnosing errors
     // in the program; this won't be entered in the environment, even
     // though the 'name' is not NULL
-    Variable *ret = env.makeVariable(loc, unqualifiedName, dt.type, dt.dflags);
+    Variable *ret = env.makeVariable(loc, SL_UNKNOWN, unqualifiedName, dt.type, dt.dflags);
 
     // set up the variable's 'scope' field as if it were properly
     // entered into the scope; this is for error recovery, in particular
@@ -3012,7 +3012,7 @@ realStart:
   if (!name) {
     // no name, nothing to enter into environment
     possiblyConsumeFunctionType(env, dt);
-    return env.makeVariable(loc, NULL, dt.type, dt.dflags);
+    return env.makeVariable(loc, SL_UNKNOWN, NULL, dt.type, dt.dflags);
   }
 
   #if 0    // problematic since applies to too many things
@@ -3045,7 +3045,7 @@ realStart:
       // the friend declaration is ignored; it will be processed
       // when the template is instantiated (11.4, 14.5.3, in/t0470.cc)
       possiblyConsumeFunctionType(env, dt, false /*reportErrors*/);
-      return env.makeVariable(loc, unqualifiedName, dt.type, dt.dflags);
+      return env.makeVariable(loc, SL_UNKNOWN, unqualifiedName, dt.type, dt.dflags);
     } else if (name->isPQ_template()) {
       // (e.g., in/t0474.cc) We are befriending a template.  Friends
       // and templates don't get along very well yet.  The most
@@ -3528,7 +3528,7 @@ void Declarator::mid_tcheck(Env &env, Tcheck &dt)
   if (!name && (dt.dflags & DF_TEMPL_PARAM)) {
     // give names to all template params, because we need to refer
     // to them in the self-name (in/t0493.cc)
-    name = new PQ_name(this->getLoc(), env.getAnonName("tparam", NULL));
+    name = new PQ_name(this->getLoc(), SL_UNKNOWN, env.getAnonName("tparam", NULL));
     this->setDeclaratorId(name);
   }
 
@@ -6803,8 +6803,8 @@ Type *E_funCall::itcheck_x(Env &env, Expression *&replacement)
             env.report(loc, diag::err_class_destructor_arguments);
         }
         ASTTypeId *voidId =
-            new ASTTypeId(new TS_simple(env.loc(), ST_VOID),
-                          new Declarator(new D_name(env.loc(), NULL /*name*/), NULL /*init*/));
+            new ASTTypeId(new TS_simple(env.loc(), env.loc(), ST_VOID),
+                          new Declarator(new D_name(env.loc(), env.loc(), NULL /*name*/), NULL /*init*/));
         replacement = new E_cast(EXPR_LOC(SL_UNKNOWN ENDLOCARG(SL_UNKNOWN)) voidId, fa->obj);
         replacement->tcheck(env, replacement);
         return replacement->type;
@@ -7128,7 +7128,7 @@ Type *E_funCall::inner2_itcheck(Env &env, LookupSet &candidates)
         // rewrite AST to reflect use of 'operator()'
         Expression *object = func;
         E_fieldAcc *fa = new E_fieldAcc(EXPR_LOC(SL_UNKNOWN ENDLOCARG(SL_UNKNOWN)) object,
-   	    new PQ_operator(env.loc(), new ON_operator(OP_PARENS), env.functionOperatorName));
+   	    new PQ_operator(env.loc(), SL_UNKNOWN, new ON_operator(OP_PARENS), env.functionOperatorName));
         fa->field = funcVar;
         fa->type = funcVar->type;
         func = fa;
@@ -7612,7 +7612,7 @@ Type *E_constructor::inner2_itcheck(Env &env, Expression *&replacement)
     // carries a perfectly good type specifier ('this->spec'), and so
     // all we need to do is add an empty declarator
     ASTTypeId *typeSyntax = new ASTTypeId(this->spec,
-      new Declarator(new D_name(this->spec->loc, NULL /*name*/), NULL /*init*/));
+      new Declarator(new D_name(this->spec->loc, this->spec->endloc, NULL /*name*/), NULL /*init*/));
     if (args->count() == 1) {
       replacement =
         new E_cast(EXPR_LOC(this->spec->loc ENDLOCARG(SL_UNKNOWN)) typeSyntax, args->first()->expr);
@@ -7813,7 +7813,7 @@ Type *E_fieldAcc::itcheck_fieldAcc_set(Env &env, LookupFlags flags,
         // 'thirdLast' to construct the needed names
 
         // fieldName := Q :: type-name1
-        PQ_name fakeLast(secondLast->loc, secondLast->qualifier);
+        PQ_name fakeLast(secondLast->loc, secondLast->endloc, secondLast->qualifier);
         thirdLast->rest = &fakeLast;
         secondVar = env.lookupPQ_one(fieldName, flags | LF_QUALIFIER_LOOKUP);
 
@@ -8296,7 +8296,7 @@ Type *resolveOverloadedUnaryOperator(
 
       if (!winner->hasFlag(DF_BUILTIN)) {
         OperatorName *oname = new ON_operator(op);
-        PQ_operator *pqo = new PQ_operator(env.loc(), oname, opName);
+        PQ_operator *pqo = new PQ_operator(env.loc(), SL_UNKNOWN, oname, opName);
 
         if (winner->hasFlag(DF_MEMBER)) {
           // replace '~a' with 'a.operator~()'
@@ -8417,7 +8417,7 @@ Type *resolveOverloadedBinaryOperator(
                                            argInfo[1].overloadSet);
 
       if (!winner->hasFlag(DF_BUILTIN)) {
-        PQ_operator *pqo = new PQ_operator(env.loc(), new ON_operator(op), opName);
+        PQ_operator *pqo = new PQ_operator(env.loc(), SL_UNKNOWN, new ON_operator(op), opName);
         if (winner->hasFlag(DF_MEMBER)) {
           // replace 'a+b' with 'a.operator+(b)'
           replacement = new E_funCall(EXPR_LOC(e1->loc ENDLOCARG(e2->endloc)) 
@@ -9640,7 +9640,7 @@ Type *E_delete::itcheck_x(Env &env, Expression *&replacement)
     else {
       // create a call to the chosen conversion function
       E_fieldAcc *acc = new E_fieldAcc(expr->loc, expr->endloc, expr,
-          new PQ_variable(env.loc(), selected));
+          new PQ_variable(env.loc(), SL_UNKNOWN, selected));
       acc->field = selected;
       acc->type = selected->type;
       E_funCall *call = new E_funCall(expr->loc, expr->endloc, acc, NULL /*args*/);
@@ -10106,7 +10106,7 @@ void IN_ctor::tcheck(Env &env, Type *destType)
       if (ic.kind == ImplicitConversion::IC_USER_DEFINED) {
         if (ic.user->type->asFunctionType()->isConstructor()) {
           // wrap 'args' in an E_constructor
-          TypeSpecifier *destTS = new TS_type(loc, destType);
+          TypeSpecifier *destTS = new TS_type(loc, SL_UNKNOWN, destType);
           E_constructor *ector = new E_constructor(EXPR_LOC(loc ENDLOCARG(SL_UNKNOWN)) destTS, args);
           ector->type = destType;
           ector->ctorVar = ic.user;
@@ -10118,7 +10118,8 @@ void IN_ctor::tcheck(Env &env, Type *destType)
         }
         else {
           // wrap 'args' in an E_funCall of a conversion function
-          E_fieldAcc *efacc = new E_fieldAcc(EXPR_LOC(loc ENDLOCARG(SL_UNKNOWN)) src, new PQ_variable(loc, ic.user));
+          E_fieldAcc *efacc = new E_fieldAcc(loc, SL_UNKNOWN, src,
+                                             new PQ_variable(loc, SL_UNKNOWN, ic.user));
           efacc->type = ic.user->type;
           efacc->field = ic.user;
           E_funCall *efc = new E_funCall(EXPR_LOC(loc ENDLOCARG(SL_UNKNOWN)) efacc, FakeList<ArgExpression>::emptyList());
@@ -10327,7 +10328,7 @@ void TP_type::itcheck(Env &env, int&)
   CVAtomicType *fullType = env.makeType(tvar);
 
   // make a typedef variable for this type
-  this->var = env.makeVariable(loc, name, fullType,
+  this->var = env.makeVariable(loc, endloc, name, fullType,
                                DF_TYPEDEF | DF_TEMPL_PARAM);
   tvar->typedefVar = var;
   if (defaultType) {
@@ -10402,7 +10403,7 @@ void TP_template::itcheck(Env &env, int&)
 
   // make a typedef variable for this type
   CVAtomicType *fullType = env.makeType(ttvar);
-  this->var = env.makeVariable(loc, name, fullType,
+  this->var = env.makeVariable(loc, endloc, name, fullType,
                                DF_TYPEDEF | DF_TEMPL_PARAM);
   ttvar->typedefVar = var;
 
@@ -10524,7 +10525,7 @@ void ND_alias::tcheck(Env &env)
   }
 
   // make a new namespace variable entry
-  Variable *v = env.makeVariable(env.loc(), alias, NULL /*type*/, DF_NAMESPACE);
+  Variable *v = env.makeVariable(env.loc(), SL_UNKNOWN, alias, NULL /*type*/, DF_NAMESPACE);
   env.addVariable(v);
 
   // make it refer to the same namespace as the original one
@@ -10565,7 +10566,7 @@ void ND_usingDecl::tcheck(Env &env)
   if (origVar == env.dependentVar) {
     // if the lookup was dependent, add the name with dependent type
     // (k0048.cc, t0468.cc)
-    Variable *v = env.makeVariable(name->loc, name->getName(), origVar->type, DF_NONE);
+    Variable *v = env.makeVariable(name->loc, name->endloc, name->getName(), origVar->type, DF_NONE);
 
     // add with replacement; if the name already exists, then presumably
     // we are trying to make an overload set, but without a real function

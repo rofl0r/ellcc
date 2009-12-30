@@ -63,8 +63,8 @@ bool SomeTypeVarNotInTemplParams_Pred::operator() (Type const *t)
 size_t Variable::numVariables = 0;
 
 // ---------------------- Variable --------------------
-Variable::Variable(SourceLocation L, StringRef n, Type *t, DeclFlags f)
-  : loc(L),
+Variable::Variable(SourceLocation L, SourceLocation E, StringRef n, Type *t, DeclFlags f)
+  : loc(L), endloc(E),
     name(n),
     asmname(NULL),
     BuiltinID(Builtin::NotBuiltin),
@@ -116,7 +116,7 @@ Variable::Variable(SourceLocation L, StringRef n, Type *t, DeclFlags f)
 
 // ctor for de-serialization
 Variable::Variable(XmlReader&)
-  : loc(SL_UNKNOWN),
+  : loc(SL_UNKNOWN), endloc(SL_UNKNOWN),
     name(NULL),
     asmname(NULL),
     BuiltinID(Builtin::NotBuiltin),

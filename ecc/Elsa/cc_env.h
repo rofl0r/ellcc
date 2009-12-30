@@ -653,7 +653,7 @@ public:      // funcs
     { return tfac.makeArrayType(eltType, size); }
 
   // (this does the work of the old 'makeMadeUpVariable')
-  Variable *makeVariable(SourceLocation L, StringRef n, Type *t, DeclFlags f);
+  Variable *makeVariable(SourceLocation L, SourceLocation E, StringRef n, Type *t, DeclFlags f);
 
   CVAtomicType *getSimpleType(SimpleTypeId st, CVFlags cv = CV_NONE)
     { return tfac.getSimpleType(st, cv); }

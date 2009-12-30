@@ -1411,7 +1411,7 @@ public:
   //     or neither.
   //   - Variable is used by Type and vice-versa.. they could have
   //     both been defined in cc_type.h
-  virtual Variable *makeVariable(SourceLocation L, StringRef n, Type *t, DeclFlags f)=0;
+  virtual Variable *makeVariable(SourceLocation L, SourceLocation E, StringRef n, Type *t, DeclFlags f)=0;
 
 
   // ---- convenience functions ----
@@ -1465,7 +1465,7 @@ public:    // funcs
   virtual DependentSizedArrayType *makeDependentSizedArrayType
     (Type *eltType, Expression *sizeExpr);
 
-  virtual Variable *makeVariable(SourceLocation L, StringRef n, Type *t, DeclFlags f);
+  virtual Variable *makeVariable(SourceLocation L, SourceLocation E, StringRef n, Type *t, DeclFlags f);
 };
 
 
