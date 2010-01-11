@@ -49,7 +49,7 @@ using namespace ellcc;
 #define SRET 1
 
 //#define E_FIELDACC_DEBUG
-#if 0
+#if 1
 // Really verbose debugging.
 // #define EDEBUG(who, where, what) std::cerr << toString(where) << ": " << who << " "; what; std::cerr << "\n"
 #define EDEBUG(who, where, what) llvm::errs() << toString(where).c_str() << ": " << who << " "; what; llvm::errs() << "\n"
@@ -109,7 +109,7 @@ static bool isComplex(Type* type)
 /// block.
 llvm::AllocaInst *CC2LLVMEnv::createTempAlloca(const llvm::Type *Ty, const char *Name)
 {
-  if (!builder.isNamePreserving())
+  if (Name == NULL || !builder.isNamePreserving())
     Name = "";
   return new llvm::AllocaInst(Ty, 0, Name, allocaInsertPt);
 }
@@ -629,7 +629,7 @@ llvm::Value* CC2LLVMEnv::declaration(const Variable* var, llvm::Value* init, int
 
     } else if (var->flags & DF_TYPEDEF) {
         // Nothing.
-    } else if (var->flags & (DF_DEFINITION|DF_TEMPORARY)) {
+    } else if (var->flags & (DF_DEFINITION|DF_TEMPORARY|DF_BOUND_TPARAM)) {
         // A local variable.
         llvm::AllocaInst* lv = createTempAlloca(type, var->Name(TI));
         if (init) {
