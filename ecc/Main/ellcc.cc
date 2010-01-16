@@ -2828,7 +2828,6 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
                 case FileModel::AsmFile:
                     break;
                 case FileModel::MachOFile:
-                    OCE = AddMachOWriter(PM, *Out, Target);
                     break;
                 case FileModel::ElfFile:
                     OCE = AddELFWriter(PM, *Out, Target);
