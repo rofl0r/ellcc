@@ -92,15 +92,34 @@
 using namespace llvm;
 using namespace ellcc;
 
+/** The name of the program.
+ * This name is in the form [<target>[-<os>][-format]-]<prog>
+ * Where:
+ *      <target> is one of the supported target processors, e.g.
+ *              alpha, arm, mips, msp430, nios2, powerpc, powerpc64,
+ *              sparc, spu, x86, x86_64, ...
+ *      <os> is one of the supported operating system environments, e.g.
+ *              sa (standalone), linux, vxworks, ecos, ...
+ *      <format> is one of the supported object file formats, e.g.
+ *              elf, pe, ...
+ *      <prog> is the default behavior of the compiler, e.g.
+ *              ecc - default to C.
+ *              e++ - default to C++.
+ *
+ * If only <prog> is given, the host system target processor, #include files,
+ * and libraries will be used to compile and or link files and programs.
+ * Otherwise, <target> and <os> will determine which target processor, #include files,
+ * and libraries will be used.
+ */
 static std::string progname;                    // The program name.        
 static const char* argv0;                       // argv[0]
-sys::Path PrefixPath;                             // The "prefix" path.
+sys::Path PrefixPath;                           // The "prefix" path.
 static OwningPtr<SourceManager> SourceMgr;
 // Create a file manager object to provide access to and cache the filesystem.
 static FileManager FileMgr;
 static Diagnostic Diags;
 static OwningPtr<TargetInfo> TI;
-static std::vector<const char *> exportList;   // Externals to preserve.
+static std::vector<const char *> exportList;    // Externals to preserve.
  
 /** File types.
  */
