@@ -857,7 +857,6 @@ static void readBuffer(struct SSD *SSD, int fd)
     ssize_t rsize = read(fd, buffer, size);
     if (rsize <= 0) {
         // Either an error occured or the connection closed.
-        // RICH: TODO
         OS_MUTEX_LOCK(SSD->qmutex);
         checkHighest(SSD, fd);
         OS_MUTEX_UNLOCK(SSD->qmutex);
