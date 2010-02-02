@@ -1,11 +1,11 @@
 /** @file
- * This file handles sending and receiving events.
+ * This file handles sending and receiving messages.
  *
  * @author Richard Pennington
  * @date January 28, 2009
  */
 
-#include "event.h"
+#include "message.h"
 
 #if defined(__linux__)
   #include <sys/un.h>
@@ -14,7 +14,7 @@
   #define LOCAL_DOMAIN_SOCKETS
   /** The name space in which to create local domain sockets.
    */
-  #define LOCAL_SOCKET_PATH "/tmp/event_sockets"
+  #define LOCAL_SOCKET_PATH "/tmp/message_sockets"
 
   // Use the protocol local namespace.
   #define PROTOCOL_LOCAL_NAMESPACE
@@ -512,7 +512,7 @@ static void consumeBuffer(unsigned char *data, size_t size)
 }
 
 /********************************************************************************************
- * Event handling.
+ * Message handling.
  */
 static OS_THREAD_ONCE_T once = OS_THREAD_ONCE_INIT;     // Initialize once.
 
@@ -520,13 +520,15 @@ struct SSD {                            // Service specific data.
     struct SSD *next;                   // The next service in the service list.
     const char *name;                   // The name of the service.
     OS_THREAD_T id;                     // The thread id, if any.
-    OS_SEM_T sem;                       // The event semaphore.
+    OS_SEM_T sem;                       // The message semaphore.
     OS_MUTEX_T qmutex;                  // The input queue mutex.
     unsigned char *queue;               // The input queue.
-    unsigned char *last;                // The last event in the input queue.
+    unsigned char *last;                // The last message in the input queue.
     fd_set wrfds;                       // Active write file descriptors.
     fd_set rdfds;                       // Active read file descriptors.
     int highest;                        // The highest active file descriptor.
+    int localFd;                        // The local listen file descriptor.
+    int tcpFd;                          // The tcp listen file descriptor.
     OS_THREAD_T fdid;                   // The file descriptor handling thread.
 };
 static pthread_key_t key;               // The key for thread specific data.
@@ -541,18 +543,26 @@ static struct fd {                      // Per file descriptor information.
     OS_MUTEX_T qmutex;                  // The output queue mutex.
     unsigned char *queue;               // The next buffer to write.
     unsigned char *last;                // The last buffer in the list.
+    unsigned char *read;                // The current read buffer.
+    size_t bytesRead;                   // The number of bytes read.
+    size_t bytesNeeded;                 // The number of bytes needed.
+    union {
+        uint32_t size;                  // The size buffer.
+        unsigned char array[sizeof(uint32_t)];
+    } u;
 } *fds[FD_SETSIZE];                     // The array of file descriptor information.
 
 /** The thread cleanup function.
  */
 static void onexit(void *data)
 {
-    struct SSD *SSD = data;             // Get the thread specific data.
-    // Mark the thread as inactive.
+    struct SSD *SSD = data;             // Get the service specific data.
+    // Mark the service as inactive.
     SSD->id = 0;
 
-#if RICH        // Keep defunct thread info around. Remove this code.
-    // Remove the thread from the thread list.
+#if RICH        // Keep defunct service info around. Remove this code.
+    // RICH: Should there be a removeService() function?
+    // Remove the service from the service list.
     OS_MUTEX_LOCK(SSDMutex);
     struct SSD *lSSD, *nSSD;
     int found = 0;
@@ -568,9 +578,9 @@ static void onexit(void *data)
         }
     }
     OS_MUTEX_UNLOCK(SSDMutex);
-    assert(found && "Thread specific data not found on thread exit");
+    assert(found && "Service specific data not found");
 
-    // Clean up thread specific data.
+    // Clean up service specific data.
     releaseStr(SSD->name);
     // Deallocate the input queue.
     unsigned char *p;
@@ -582,7 +592,7 @@ static void onexit(void *data)
 #endif
 }
 
-/** Initialize the event manager.
+/** Initialize the message manager.
  */
 static void init(void)
 {
@@ -596,7 +606,7 @@ static void init(void)
     }
 }
 
-void initEvent(void)
+void initMessage(void)
 {
     OS_THREAD_ONCE(&once, init);
 }
@@ -611,18 +621,21 @@ static struct SSD *newSSD(const char *name)
     SSD->id = 0;
     OS_SEM_INIT(SSD->sem, 0);
     OS_MUTEX_INIT(SSD->qmutex);
-    SSD->queue = NULL;          // No input events.
-    SSD->last = NULL;           // No input events.
+    SSD->queue = NULL;          // No input messages.
+    SSD->last = NULL;           // No input messages.
     FD_ZERO(&SSD->wrfds);
     FD_ZERO(&SSD->rdfds);
     SSD->highest = 0;
+    SSD->localFd = -1;
+    SSD->tcpFd = -1;
     SSD->fdid = 0;
     return SSD;
 }
 
 /** Register a local service.
  * This function gives a thread a name and creates the
- * thread specific data needed to manage events for the thread.
+ * thread specific data needed to manage messages for the thread,
+ * if necessary.
  */
 CONNECTION registerService(const char *name, int me)
 {
@@ -631,7 +644,7 @@ CONNECTION registerService(const char *name, int me)
     struct SSD *SSD;
     for (SSD = services; SSD; SSD = SSD->next) {
         if (SSD->name == name) {
-            // This thread is already registered.
+            // This service is already registered.
             break;
         }
     }
@@ -645,17 +658,20 @@ CONNECTION registerService(const char *name, int me)
     OS_MUTEX_UNLOCK(SSDMutex);
 
     if (me) {
+        // Take ownership of the service.
         pthread_setspecific(key, SSD);
         SSD->id = OS_THREAD_SELF();
     }
     return SSD;
 }
 
-/** Wait for the next event.
+/** Wait for the next message.
  */
-unsigned char *getEvent(void)
+unsigned char *getMessage(void)
 {
     struct SSD *SSD = (struct SSD*)pthread_getspecific(key);
+    assert(SSD != NULL && "getMessage() called by an unregistered thread");
+
     // Wait for activity.
     OS_SEM_WAIT(SSD->sem);
     OS_MUTEX_LOCK(SSD->qmutex);
@@ -701,28 +717,206 @@ static void setHighest(struct SSD *SSD, int fd)
     SSD->highest = fd + 1;
 }
 
+/** Closed a fd, check if highest needs a change.
+ */
+static void checkHighest(struct SSD *SSD, int fd)
+{
+    FD_CLR(fd, &SSD->wrfds);
+    FD_CLR(fd, &SSD->rdfds);
+    if (fd < SSD->highest - 1) {
+        return;
+    }
+
+    for (fd = SSD->highest; fd; --fd) {
+        if (FD_ISSET(fd, &SSD->rdfds) || FD_ISSET(fd, &SSD->wrfds)) {
+            SSD->highest = fd + 1;
+            return;
+        }
+    }
+    assert(1 && "Closed the last file descriptor held by this service");
+}
+
 /** Write a buffer to an active write file descriptor.
  */
 static void writeBuffer(struct SSD *SSD, int fd)
 {
-    // RICH: TODO Check for buffers to send, clear fd if not.
     // Send as much of the buffer as possible.
+    OS_MUTEX_LOCK(fds[fd]->qmutex);
+    if (fds[fd]->queue) {
+        // There is more data to write.
+        // RICH: TODO Check send result, adjust buffer.
+        char *buffer = fds[fd]->queue;
+        fds[fd]->queue = getNext(fds[fd]->queue);
+        size_t size;
+        char *rest = queryBuffer(buffer, &size);
+        size_t sent = write(fd, &size, sizeof(uint32_t));
+        assert(sent == sizeof(uint32_t) && "Short write");
+        sent = write(fd, rest, size);
+        assert(sent == size && "Short write");
+        releaseBuffer(buffer);
+    }
+    
+    if (fds[fd]->queue == NULL) {
+        // There is no more data to write.
+        OS_MUTEX_LOCK(fds[fd]->from->qmutex);
+        FD_CLR(fd, &fds[fd]->from->wrfds);
+        OS_MUTEX_UNLOCK(fds[fd]->from->qmutex);
+    } 
+    OS_MUTEX_UNLOCK(fds[fd]->qmutex);
+}
+
+static void *fdHandler(void *arg);
+
+/** Create or wake up the fd thread.
+ */
+static void fdThread(struct SSD *SSD)
+{
+    if (SSD->fdid) {
+        // The thread has been created, signal it.
+        pthread_kill(SSD->fdid, WAKEUP_SIGNAL);
+    } else {
+        OS_THREAD_CREATE(0, /* No create */
+                         &SSD->fdid, 
+                         0, /* RICH: Better choice? priority */
+                         4096, /* stack */
+                         fdHandler,
+                         SSD,
+                         1);    /* detach */
+    }
+}
+
+/** Set up a file descriptor.
+ */
+static void fdSetup(struct SSD *SSD, const char *to, int fd)
+{
+    if (fds[fd] == NULL) {
+        fds[fd] = malloc(sizeof(*fds[fd]));
+        assert(fds[fd] != NULL && "Can't allocate a new connection");
+    }
+
+    fds[fd]->from = SSD;
+    fds[fd]->to = to;
+    OS_MUTEX_INIT(fds[fd]->qmutex);
+    fds[fd]->queue = NULL;
+    fds[fd]->last = NULL;
+    fds[fd]->read = NULL;               // No read buffer.
+    fds[fd]->bytesRead = 0;             // No bytes read.
+    fds[fd]->bytesNeeded = sizeof(uint32_t);
+    fds[fd]->u.size = 0;
+    OS_MUTEX_LOCK(fds[fd]->qmutex);
+    // Set the appropriate file descriptors.
+    OS_MUTEX_LOCK(SSD->qmutex);
+    FD_SET(fd, &SSD->rdfds);
+    setHighest(SSD, fd);
+    // Create or wake up the fd thread.
+    fdThread(SSD);
+    OS_MUTEX_UNLOCK(SSD->qmutex);
+    OS_MUTEX_UNLOCK(fds[fd]->qmutex);
 }
 
 /** Read a buffer from an active read file descriptor.
  */
 static void readBuffer(struct SSD *SSD, int fd)
 {
-    // RICH: TODO Read data from the file descriptor,
-    // send a complete buffer to the service.
+    // Read data from the file descriptor, send a complete buffer to the service.
     // check for a closed connection, discard partially written buffers.
+    if (fd == SSD->localFd || fd == SSD->tcpFd) {
+        // Someone is making a connection, accept it.
+        struct sockaddr_in address;
+        OS_SOCKLEN_T addrlen = sizeof(address);
+        int newFd = accept(fd, (struct sockaddr *)&address, &addrlen);
+        assert(newFd >= 0 && "Accept of connection failed");
+        in_addr_t addr = ntohl(address.sin_addr.s_addr);
+
+        int arg;
+        arg = 1;
+        arg = ioctl(newFd, FIONBIO, OS_IOCTL_CAST&arg);
+        assert (arg != -1 && "can't set connecting socket FIONBIO");
+        // Set up the new file descriptor.
+        fdSetup(SSD, NULL, newFd);
+
+        // Turn off the Nagle algorithm.
+        int flag = 1;
+        setsockopt(newFd, IPPROTO_TCP, TCP_NODELAY, OS_SOCKOPT_CAST&flag, sizeof(int));
+        return;
+    }
+
+    struct fd *fp = fds[fd];
+    size_t size;
+    unsigned char *buffer;
+    if (fp->read == NULL) {
+        // Reading the size.
+        size = sizeof(uint32_t) - fp->bytesRead;
+        buffer =  &fp->u.array[fp->bytesRead];
+    } else {
+        size = fp->bytesNeeded - fp->bytesRead;
+        buffer = &fp->read[fp->bytesRead];
+    }
+
+    // Get the next data available.
+    ssize_t rsize = read(fd, buffer, size);
+    if (rsize <= 0) {
+        // Either an error occured or the connection closed.
+        // RICH: TODO
+        OS_MUTEX_LOCK(SSD->qmutex);
+        checkHighest(SSD, fd);
+        OS_MUTEX_UNLOCK(SSD->qmutex);
+
+        // Break the connection.
+        OS_MUTEX_LOCK(fp->qmutex);
+        fp->from = NULL;
+        fp->to = NULL;
+        // Get ready for the next message.
+        if (fp->read) {
+            // Release a partially filled buffer.
+            releaseBuffer(fp->read);
+        }
+        // Release any queued output.
+        while (fp->queue) {
+            unsigned char *buffer = fp->queue;
+            fp->queue = getNext(fp->queue);
+        }
+        fp->last = NULL;
+        fp->bytesRead = 0;
+        fp->bytesNeeded = sizeof(uint32_t);
+        fp->read = NULL;
+        OS_MUTEX_UNLOCK(fp->qmutex);
+        close(fd);
+        return;
+    }
+
+    fp->bytesRead += size;
+    if (fp->bytesRead >= fp->bytesNeeded) {
+        if (fp->read == NULL) {
+            // We have a size, get a buffer for the body.
+            fp->read = getBuffer(fp->u.size);
+            fp->bytesRead = 0;
+            fp->bytesNeeded = fp->u.size;
+            return;
+        }
+        
+        // The buffer is filled, pass it on.
+        OS_MUTEX_LOCK(SSD->qmutex);
+        if (SSD->last) {
+            setNext(SSD->last, buffer);
+        } else {
+            SSD->queue = buffer;
+        }
+        SSD->last = buffer;
+        OS_MUTEX_UNLOCK(SSD->qmutex);
+        OS_SEM_POST(SSD->sem);
+        
+        // Get ready for the next message.
+        fp->bytesRead = 0;
+        fp->bytesNeeded = sizeof(uint32_t);
+        fp->read = NULL;
+    }
 }
 
 /** The file descriptor handling thread.
  */
 static void *fdHandler(void *arg)
 {
-    catchWakeup();                      // Catch the wakeup signal.
     struct SSD *SSD = arg;              // Get the thread specific data.
 
     // RICH: TODO Find any writeable file descriptors and start writing.
@@ -735,7 +929,7 @@ static void *fdHandler(void *arg)
         fd_set rfds = SSD->rdfds;
         OS_MUTEX_UNLOCK(SSD->qmutex);
 
-        assert(highest > 0 && "no active file descriptors for select()");
+        assert(highest > 0 && "No active file descriptors for select()");
         // Wait for a file descriptor or signal.
         int active = select(highest, &rfds, &wfds, NULL, NULL);
         if (active < 0) {
@@ -766,24 +960,6 @@ static void *fdHandler(void *arg)
     }
 }
 
-/** Create or wake up the fd thread.
- */
-static void fdThread(struct SSD *SSD)
-{
-    if (SSD->fdid) {
-        // The thread has been created, signal it.
-        pthread_kill(SSD->fdid, WAKEUP_SIGNAL);
-    } else {
-        OS_THREAD_CREATE(0, /* No create */
-                         &SSD->fdid, 
-                         0, /* RICH: Better choice? priority */
-                         4096, /* stack */
-                         fdHandler,
-                         SSD,
-                         1);    /* detach */
-    }
-}
-
 /** Send a buffer to a connection.
  */
 CONNECTION sendBuffer(CONNECTION c, unsigned char *buffer)
@@ -799,7 +975,7 @@ CONNECTION sendBuffer(CONNECTION c, unsigned char *buffer)
         // Send to a remote service.
         OS_MUTEX_LOCK(fd->qmutex);
         if (fd->last) {
-        setNext(fd->last, buffer);
+            setNext(fd->last, buffer);
         } else {
             fd->queue = buffer;
         }
@@ -870,7 +1046,7 @@ static int localConnect(const char *name)
 
     // Set to non-blocking mode.
     int arg = 1;
-    if (ioctl(fd, FIONBIO, &arg) == -1) {
+    if (ioctl(fd, FIONBIO, OS_IOCTL_CAST&arg) == -1) {
         return -1; 
     }
 
@@ -916,6 +1092,7 @@ CONNECTION connectTo(const char *to)
     
     // Check for an existing connection.
     struct SSD *SSD = (struct SSD*)pthread_getspecific(key);
+    assert(SSD != NULL && "A non-service is attempting to make a connection");
     for (int i = 0; i < FD_SETSIZE; ++i) {
         if (   fds[i] != NULL
             && fds[i]->to == to
@@ -935,22 +1112,7 @@ CONNECTION connectTo(const char *to)
 
     if (fd >= 0) {
         // Set up the connection.
-        fds[fd] = malloc(sizeof(*fds[fd]));
-        assert(fds[fd] != NULL && "can't allocate a new connection");
-        fds[fd]->from = SSD;
-        fds[fd]->to = to;
-        OS_MUTEX_INIT(fds[fd]->qmutex);
-        fds[fd]->queue = NULL;
-        fds[fd]->last = NULL;
-        OS_MUTEX_LOCK(fds[fd]->qmutex);
-        // Set the appropriate file descriptors.
-        OS_MUTEX_LOCK(SSD->qmutex);
-        FD_SET(fd, &SSD->rdfds);
-        setHighest(SSD, fd);
-        fdThread(SSD);
-        OS_MUTEX_UNLOCK(SSD->qmutex);
-        // Create or wake up the fd thread.
-        OS_MUTEX_UNLOCK(fds[fd]->qmutex);
+        fdSetup(SSD, to, fd);
         return &fds[fd];
     }
 
@@ -960,9 +1122,16 @@ CONNECTION connectTo(const char *to)
 
 /** Set up a local domain listen socket for future connections.
  */
-int localListen(const char *name)
+void localListen(void)
 {
 #ifdef LOCAL_DOMAIN_SOCKETS
+    struct SSD *SSD = (struct SSD*)pthread_getspecific(key);
+
+    if (SSD->localFd > 0) {
+        // Already listening.
+        return;
+    }
+
     struct sockaddr_un address;
     int bindResult;
     int count;
@@ -970,18 +1139,14 @@ int localListen(const char *name)
 
     // Create a LOCAL domain listen socket.
     fd = socket(PF_LOCAL, SOCK_STREAM, 0);
-    if (fd < 0)
-    {
-        // Socket creation failed.
-        return fd;
-    }
+    assert (fd >= 0 && "can't create a local domain socket");
 
     /* Bind listen socket to listen port.  First set various fields in
      * the address structure, then call bind().
      */
     memset(&address, 0, sizeof(address));
     address.sun_family = AF_LOCAL;
-    makeSocketName(address.sun_path, name /* , protocol */);
+    makeSocketName(address.sun_path, SSD->name /* , protocol */);
 
     // Set the reuse address socket option
     count = 1;
@@ -993,35 +1158,89 @@ int localListen(const char *name)
     {
         int arg;
         arg = 1;
-        if (ioctl(fd, FIONBIO, &arg) == -1)
-        {
-            return -1;
-        }
+        arg = ioctl(fd, FIONBIO, OS_IOCTL_CAST&arg);
+        assert (arg != -1 && "can't set listen socket FIONBIO");
 
         // Listen for connections.
         listen(fd, 5);
 
         // Wake up on new connections.
-        // RICH: TODO Add to fds.
+        fdSetup(SSD, NULL, fd);
+        SSD->localFd = fd;
     }
     else
     {
+        // If the address is already in use, we can still use it.
+        assert(errno == EADDRINUSE && "Error opening local listen socket");
         // No local domain socket available, this is a noop.
-        return 0;
     }
 
-    return fd;
 #else
     // No local domain sockets available, this is a noop.
-    return 0;
 #endif
 }
 
 /** Set up a TCP/IP listen socket for future connections.
  */
-int tcpListen(const char *name, int port)
+void tcpListen(int port)
 {
-    return 0;           // RICH: TODO
+    struct SSD *SSD = (struct SSD*)pthread_getspecific(key);
+
+    if (SSD->localFd > 0) {
+        // Already listening.
+        return;
+    }
+
+    struct sockaddr_in address;
+    int bindResult;
+    int count;
+    int fd;		// The listen socket.
+
+    // Create a TCP listen socket.
+    fd = socket(AF_INET, SOCK_STREAM, 0);
+    assert (fd >= 0 && "can't create a TCP/IP socket");
+
+    /* Bind listen socket to listen port.  First set various fields in
+     * the address structure, then call bind().
+     */
+    memset(&address, 0, sizeof(address));
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_ANY);
+    address.sin_port = htons(port);
+#if defined(__ECOS) || defined(_VXWORKS_)
+    address.sin_len = sizeof(address);
+#endif
+
+    // Set the reuse address socket option
+    count = 1;
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, OS_SOCKOPT_CAST&count, sizeof(count));
+
+    // Wait forever to get a connection socket.
+    for (count = 0; ; ++count)
+    {
+        bindResult = bind(fd, (struct sockaddr *) &address, sizeof(address));
+
+        if (bindResult >= 0)
+        {
+            int arg;
+            arg = 1;
+            arg = ioctl(fd, FIONBIO, OS_IOCTL_CAST&arg);
+            assert (arg != -1 && "can't set listen socket FIONBIO");
+
+            // Listen for connections.
+            listen(fd, 5);
+
+            // Wake up on new connections.
+            fdSetup(SSD, NULL, fd);
+            SSD->localFd = fd;
+            break;
+        }
+        else
+        {
+            printf("bind failure on TCP port %d, attempt %d: %s\n", port, count, strerror(errno));
+            sleep(1);
+        }
+    }
 }
 
 /** Send a buffer to a named service.
@@ -1050,26 +1269,45 @@ CONNECTION sendBufferTo(const char *to, unsigned char *buffer)
     OS_MUTEX_UNLOCK(SSDMutex);
 
     // Search for services in other processes or remote systems.
-    CONNECTION *c = connectTo(to);
+    CONNECTION c = connectTo(to);
     if (c) {
         // We have a connection, send the message.
-        return sendBuffer(c, buffer);
+        c = sendBuffer(c, buffer);
+    }
+    if (c == 0) {
+        // The send failed. Release the buffer.
+        releaseBuffer(buffer);
     }
         
-    return NULL;                // Not found.
+    return c;
 }
 
-/** Send an event to a named service.
+/** Send an message to a named service.
  */
-CONNECTION sendEventTo(const char *to, unsigned char *event, size_t size)
+CONNECTION sendMessageTo(const char *to, unsigned char *message, size_t size)
 {
     unsigned char *buffer = getBuffer(size);
-    memcpy(buffer, event, size);
+    memcpy(buffer, message, size);
     CONNECTION c = sendBufferTo(to, buffer);
     if (c == 0) {
         // The send failed. Release the buffer.
         releaseBuffer(buffer);
     }
+    return c;
+}
+
+/** Send an message to connection.
+ */
+CONNECTION sendMessage(CONNECTION c, unsigned char *message, size_t size)
+{
+    unsigned char *buffer = getBuffer(size);
+    memcpy(buffer, message, size);
+    c = sendBuffer(c, buffer);
+    if (c == 0) {
+        // The send failed. Release the buffer.
+        releaseBuffer(buffer);
+    }
+    return c;
 }
 
 /********************************************************************************************
@@ -1080,6 +1318,8 @@ CONNECTION sendEventTo(const char *to, unsigned char *event, size_t size)
 static void *thread(void *data)
 {
     registerService(data, 1);
+    const char *me = getStr(data);
+    localListen();
     unsigned char *buffer = getBuffer(strlen("Hello world") + 1);
     strcpy(buffer, "Hello world");
     size_t count;
@@ -1115,41 +1355,70 @@ static void *thread(void *data)
         p = getNext(p);
     }
 
-    printf("%s waiting\n", data);
-    char* event = getEvent();
-    printf("%s got %p\n", data, event);
-    releaseBuffer(event);
-    if (strcmp(data, "thread1") == 0) {
-        printf("%s sending\n", data);
-        sendBufferTo("thread2", getBuffer(30));
+    printf("%s waiting\n", me);
+    char* message = getMessage();
+    printf("%s got %p\n", me, message);
+    releaseBuffer(message);
+    if (me[strlen(me) - 1] == '1') {
+        char name[100];
+        strcpy(name, me);
+        name[strlen(name) - 1] = '2';
+        printf("%s sending to %s\n", me, name);
+        sendBufferTo(name, getBuffer(30));
     }
 }
 
-int main(int argc, char *argv)
+int main(int argc, char **argv)
 {
-    initEvent();
-    registerService("main", 1);
+    catchWakeup();                      // Catch the wakeup signal.
+    initMessage();
+    char *p = strrchr(argv[0], '/');
+    if (p == NULL) {
+        p = argv[0];
+    } else {
+        ++p;
+    }
+
+    char name[100];
+    strcpy(name, p);
+    char *e = name + strlen(name);
+
+    registerService(name, 1);
     struct SSD *SSD = (struct SSD*)pthread_getspecific(key);
     assert(SSD != NULL && "The SSD of main is not set");
+    localListen();
+    if (strcmp(name, "main") != 0) {
+        // Not main, send a message to it.
+        sendMessageTo("main", "this is a message", strlen("this is a message") + 1);
+    } else {
+        char *buffer = getMessage();
+        size_t size;
+        queryBuffer(buffer, &size);
+        printf("got: '%s'\n", buffer);
+        releaseBuffer(buffer);
+        exit(0);
+    }
     int i = 0;
     do {
         OS_THREAD_T id1;
+        strcpy(e, "thread1");
         OS_THREAD_CREATE(0, /* No create */
                          &id1, 
                          0, /* priority */
                          10000, /* stack */
                          thread,
-                         "thread1",
+                         name,
                          0);    /* detach */
+        sendBufferTo(name, getBuffer(100));
         OS_THREAD_T id2;
+        strcpy(e, "thread2");
         OS_THREAD_CREATE(0, /* No create */
                          &id2, 
                          0, /* priority */
                          10000, /* stack */
                          thread,
-                         "thread2",
+                         name,
                          0);    /* detach */
-        sendBufferTo("thread1", getBuffer(100));
         void *data;
         pthread_join(id1, &data);
         pthread_join(id2, &data);
