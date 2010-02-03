@@ -10,6 +10,10 @@
 
 #include <sys/types.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /** The (qpaque) connection type.
  */
 typedef void* CONNECTION;
@@ -83,5 +87,9 @@ CONNECTION sendMessage(CONNECTION c, unsigned char *message, size_t size);
 /** Register a named non-local service.
  */
 int registerRemoteService(const char *name);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

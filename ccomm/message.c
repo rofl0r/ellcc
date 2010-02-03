@@ -409,6 +409,7 @@ static void initBuffers()
  */
 unsigned char *getBuffer(size_t size)
 {
+fprintf(stderr, "asking for %u bytes\n", size);
     size_t actual = size;
     int bin = findBin(&size);
 
@@ -1406,7 +1407,7 @@ int main(int argc, char **argv)
                          0, /* priority */
                          10000, /* stack */
                          thread,
-                         name,
+                         (OS_THREAD_DATA_T)getStr(name),
                          0);    /* detach */
         sendBufferTo(name, getBuffer(100));
         OS_THREAD_T id2;
@@ -1416,7 +1417,7 @@ int main(int argc, char **argv)
                          0, /* priority */
                          10000, /* stack */
                          thread,
-                         name,
+                         (OS_THREAD_DATA_T)getStr(name),
                          0);    /* detach */
         void *data;
         pthread_join(id1, &data);
