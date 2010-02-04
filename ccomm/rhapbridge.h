@@ -10,9 +10,14 @@
 
 #include "message.h"
 #include "OMEvent.h"
+#include "PCLEvent.h"
 
 unsigned char *rhapToMsg(OMEvent *event, size_t size, uint32_t& code, size_t& psize);
 
 OMEvent *msgToRhap(unsigned char *message, size_t size, uint32_t code);
+
+unsigned char *pclToMsg(PCLEvent *event, size_t size, uint32_t& code, size_t& psize);
+
+PCLEvent *msgToPCL(unsigned char *message, size_t size, uint32_t code);
 
 #endif

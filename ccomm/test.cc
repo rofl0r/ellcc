@@ -21,6 +21,14 @@ public:
     float f;
 };
 
+class EvTest : public PCLEvent {
+public:
+    EvTest(int i, float f) : i(i), f(f), PCLEvent(0x1234) {}
+
+    int i;
+    float f;
+};
+
 int main(int argc, char **argv)
 {
     char *p = strrchr(argv[0], '/');
@@ -45,9 +53,12 @@ int main(int argc, char **argv)
     unsigned char *message = rhapToMsg(ev, sizeof(*ev), id, size);
     delete ev;
     ev = static_cast<evTest*>(msgToRhap(message, size, id));
-    printf("i = %d, f = %g, id = 0x%x\n", ev->i, ev->f, ev->getId());
+    printf("OMEvent i = %d, f = %g, id = 0x%x\n", ev->i, ev->f, ev->getId());
+    EvTest *pev = static_cast<EvTest*>(msgToPCL(message, size, id));
+    printf("PCLEvent i = %d, f = %g, id = 0x%x\n", pev->i, pev->f, pev->getId());
     releaseBuffer(message);
     delete ev;
+    delete pev;
 }
 
 #else
