@@ -9,7 +9,7 @@ all: ccsstr astgen libast.a example.o ext1.o
 SMBASE := @SMBASE@
 LIBSMBASE := $(SMBASE)/libsmbase.a
 LLVMLDFLAGS := $(shell ../../bin/llvm-config --ldflags) -L$(shell ../../bin/llvm-config --libdir) -lLLVMSupport -lLLVMSystem
-LLVMCCFLAGS := $(shell ../../bin/llvm-config --cxxflags)
+LLVMCCFLAGS := $(shell ../../bin/llvm-config --cxxflags) -fexceptions -frtti
 
 # external tools
 PERL := @PERL@

@@ -114,7 +114,7 @@ endif
 LLVM := @LLVM@
 ifneq ("$(LLVM)","disabled")
   LLVMLDFLAGS := $(shell ../../bin/llvm-config --ldflags --libs core target analysis)
-  LLVMCCFLAGS := $(shell ../../bin/llvm-config --cxxflags)
+  LLVMCCFLAGS := $(shell ../../bin/llvm-config --cxxflags) -fexceptions -frtti
   CC_AST_MODS += cc2llvm.ast
   EXT_OBJS    += cc2llvm.o DebugInfo.o
 else

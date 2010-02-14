@@ -59,7 +59,7 @@ LLVM := @LLVM@
 ifneq ("$(LLVM)","disabled")
   LLVMTARGETS := $(shell ../../bin/llvm-config --targets-built)
   LLVMLDFLAGS := $(shell ../../bin/llvm-config --ldflags --libs $(LLVMTARGETS) bitreader bitwriter instrumentation scalaropts ipo linker)
-  LLVMCCFLAGS := $(shell ../../bin/llvm-config --cxxflags)
+  LLVMCCFLAGS := $(shell ../../bin/llvm-config --cxxflags) -fexceptions
   CC_AST_MODS += cc2llvm.ast
   EXT_OBJS    += cc2llvm.o raiseinstructions.o
 else

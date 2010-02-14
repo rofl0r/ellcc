@@ -744,16 +744,15 @@ MAttrs("mattr",
   cl::value_desc("a1,+a2,-a3,..."));
 
 cl::opt<TargetMachine::CodeGenFileType>
-FileType("filetype", cl::init(TargetMachine::AssemblyFile),
+FileType("filetype", cl::init(TargetMachine::CGFT_AssemblyFile),
   cl::desc("Choose a file type (not all types are supported by all targets):"),
   cl::values(
-       clEnumValN(TargetMachine::AssemblyFile,    "asm",
-                  "  Emit an assembly ('.s') file"),
-       clEnumValN(TargetMachine::ObjectFile,    "obj",
-                  "  Emit a native object ('.o') file [experimental]"),
-       clEnumValN(TargetMachine::DynamicLibrary, "dynlib",
-                  "  Emit a native dynamic library ('.so') file"
-                  " [experimental]"),
+       clEnumValN(TargetMachine::CGFT_AssemblyFile, "asm",
+                  "Emit an assembly ('.s') file"),
+       clEnumValN(TargetMachine::CGFT_ObjectFile, "obj",
+                  "Emit a native object ('.o') file [experimental]"),
+       clEnumValN(TargetMachine::CGFT_Null, "null",
+                  "Emit nothing, for performance testing"),
        clEnumValEnd));
 
 //===----------------------------------------------------------------------===//
@@ -2605,16 +2604,23 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
                 addOnePass(&PM, P, VerifyEach);
             
                 if (AnalyzeOnly) {
-                    if (dynamic_cast<BasicBlockPass*>(P))
-                        PM.add(new BasicBlockPassPrinter(PassInf));
-                    else if (dynamic_cast<LoopPass*>(P))
-                        PM.add(new  LoopPassPrinter(PassInf));
-                    else if (dynamic_cast<FunctionPass*>(P))
-                        PM.add(new FunctionPassPrinter(PassInf));
-                    else if (dynamic_cast<CallGraphSCCPass*>(P))
-                        PM.add(new CallGraphSCCPassPrinter(PassInf));
-                    else
-                        PM.add(new ModulePassPrinter(PassInf));
+                    switch (P->getPassKind()) {
+                    case PT_BasicBlock:
+                      PM.add(new BasicBlockPassPrinter(PassInf));
+                      break;
+                    case PT_Loop:
+                      PM.add(new LoopPassPrinter(PassInf));
+                      break;
+                    case PT_Function:
+                      PM.add(new FunctionPassPrinter(PassInf));
+                      break;
+                    case PT_CallGraphSCC:
+                      PM.add(new CallGraphSCCPassPrinter(PassInf));
+                      break;
+                    default:
+                      PM.add(new ModulePassPrinter(PassInf));
+                      break;
+                    }
                 }
             }
           
@@ -2741,7 +2747,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
 
         bool isBinary = true;
         switch (FileType) {
-        case TargetMachine::AssemblyFile:
+        case TargetMachine::CGFT_AssemblyFile:
             if (MArch[0] != 'c' || MArch[1] != 0) { // not CBE
                 if (to.getSuffix() == "") {
                     to.appendSuffix("s");
@@ -2756,17 +2762,17 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
                 nextType = CBE;
             }
             break;
-        case TargetMachine::ObjectFile:
+        case TargetMachine::CGFT_ObjectFile:
             if (to.getSuffix() == "") {
                 to.appendSuffix("o");
             }
             nextType = O;
             break;
-        case TargetMachine::DynamicLibrary:
+        case TargetMachine::CGFT_Null:
             if (to.getSuffix() == "") {
-                to.appendSuffix("dll");
+                to.appendSuffix("null");
             }
-            nextType = DLL;
+            nextType = O;
             break;
         }
 
@@ -2820,7 +2826,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
             PM.run(*input.module);
         } else {
             // Build up all of the passes that we want to do to the module.
-            FunctionPassManager PM(new ExistingModuleProvider(input.module));
+            FunctionPassManager PM(input.module);
             PM.add(new TargetData(*Target.getTargetData()));
 
 #ifndef NDEBUG
@@ -2828,38 +2834,15 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
                 PM.add(createVerifierPass());
 #endif
 
-            // Ask the target to add backend passes as necessary.
-            ObjectCodeEmitter *OCE = 0;
+            Target.setAsmVerbosityDefault(true);
 
-            switch (Target.addPassesToEmitFile(PM, *Out, FileType, getCodeGenOpt())) {
-                default:
-                    assert(0 && "Invalid file model!");
-                    Exit(1);
-                    break;
-                case FileModel::Error:
-                    errs() << progname << ": target does not support generation of this"
-                        << " file type!\n";
-                    if (Out != &fouts()) delete Out;
-                    // And the Out file is empty and useless, so remove it now.
-                    sys::Path(OutputFilename).eraseFromDisk();
-                    Exit(1);
-                    break;
-                case FileModel::AsmFile:
-                    break;
-                case FileModel::MachOFile:
-                    break;
-                case FileModel::ElfFile:
-                    OCE = AddELFWriter(PM, *Out, Target);
-                    break;
-            }
-
-            if (Target.addPassesToEmitFileFinish(PM, OCE, getCodeGenOpt())) {
-                errs() << progname << ": target does not support generation of this"
-                    << " file type!\n";
-                if (Out != &fouts()) delete Out;
-                // And the Out file is empty and useless, so remove it now.
-                sys::Path(OutputFilename).eraseFromDisk();
-                Exit(1);
+            if (Target.addPassesToEmitFile(PM, *Out, FileType, getCodeGenOpt())) {
+              errs() << argv0 << ": target does not support generation of this"
+                     << " file type!\n";
+              if (Out != &fouts()) delete Out;
+              // And the Out file is empty and useless, so remove it now.
+              sys::Path(OutputFilename).eraseFromDisk();
+              Exit(1);
             }
 
             PM.doInitialization();

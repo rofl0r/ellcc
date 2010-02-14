@@ -25,7 +25,7 @@ Makefile: Makefile.in
 CXX := @CXX@
 
 LLVMLDFLAGS := $(shell ../../../bin/llvm-config --ldflags) -L$(shell ../../../bin/llvm-config --libdir) -lLLVMSupport -lLLVMSystem
-LLVMCCFLAGS := $(shell ../../../bin/llvm-config --cxxflags)
+LLVMCCFLAGS := $(shell ../../../bin/llvm-config --cxxflags) -fexceptions
 
 # flags for the C++ compiler (and preprocessor)
 CCFLAGS := @CCFLAGS@ -I$(SMBASE) -I$(AST) -I$(ELKHOUND) -I../../Basic $(LLVMCCFLAGS)
