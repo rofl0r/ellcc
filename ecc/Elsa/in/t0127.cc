@@ -72,7 +72,7 @@ void f()
   __testOverload(d+1, BUILTIN);
   __testOverload(1+d, BUILTIN);
 
-  //ERROR(1): __testOverload(e+1, BUILTIN);    // ambiguous
+  //EROR(1): __testOverload(e+1, BUILTIN);    // ambiguous RICH: Not on a 64 bit machine.
 
   // BIN_MINUS
   __testOverload(e-a1, 33);

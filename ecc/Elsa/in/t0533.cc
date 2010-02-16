@@ -18,5 +18,5 @@ void foo()
   
   __elsa_checkType(p+i, (char*)0);
   __elsa_checkType(p-i, (char*)0);
-  __elsa_checkType(p-p, (int)0);
+  __elsa_checkType(p-p, (__INTPTR_TYPE__)0);
 }

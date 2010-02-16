@@ -29,9 +29,9 @@ int foo() {
     { typedef int F[1 - 2 * !(sizeof(lzo_uint) >= sizeof(unsigned))]; };
     { typedef int F[1 - 2 * !(sizeof(short) == 2)]; };
     { typedef int F[1 - 2 * !(sizeof(int) == 4)]; };
-    { typedef int F[1 - 2 * !(sizeof(long) == 4)]; };
+    // { typedef int F[1 - 2 * !(sizeof(long) == 4)]; }; RICH: Not in 64 bit.
     { typedef int F[1 - 2 * !(4 == sizeof(unsigned))]; };
-    { typedef int F[1 - 2 * !(4 == sizeof(unsigned long))]; };
+    // { typedef int F[1 - 2 * !(4 == sizeof(unsigned long))]; }; RICH: Not in 64 bit.
     { typedef int F[1 - 2 * !(2 == sizeof(unsigned short))]; };
     { typedef int F[1 - 2 * !(4 == sizeof(size_t))]; };
     { typedef int F[1 - 2 * !((((unsigned char) (-1)) > ((unsigned char) 0)))]; };
@@ -47,8 +47,8 @@ int foo() {
     { typedef int F[1 - 2 * !((((lzo_int) (-1)) < ((lzo_int) 0)))]; };
     { typedef int F[1 - 2 * !(2147483647 == (((1l << (8*(sizeof(int))-2)) - 1l) + (1l << (8*(sizeof(int))-2))))]; };
     { typedef int F[1 - 2 * !((2147483647 * 2U + 1U) == (((1ul << (8*(sizeof(unsigned))-1)) - 1ul) + (1ul << (8*(sizeof(unsigned))-1))))]; };
-    { typedef int F[1 - 2 * !(2147483647L == (((1l << (8*(sizeof(long))-2)) - 1l) + (1l << (8*(sizeof(long))-2))))]; };
-    { typedef int F[1 - 2 * !((2147483647L * 2UL + 1UL) == (((1ul << (8*(sizeof(unsigned long))-1)) - 1ul) + (1ul << (8*(sizeof(unsigned long))-1))))]; };
+    // { typedef int F[1 - 2 * !(2147483647L == (((1l << (8*(sizeof(long))-2)) - 1l) + (1l << (8*(sizeof(long))-2))))]; }; RICH: Not in 64 bit.
+    // { typedef int F[1 - 2 * !((2147483647L * 2UL + 1UL) == (((1ul << (8*(sizeof(unsigned long))-1)) - 1ul) + (1ul << (8*(sizeof(unsigned long))-1))))]; }; RICH: Not in 64 bit.
     { typedef int F[1 - 2 * !(32767 == (((1l << (8*(sizeof(short))-2)) - 1l) + (1l << (8*(sizeof(short))-2))))]; };
     { typedef int F[1 - 2 * !((32767 * 2 + 1) == (((1ul << (8*(sizeof(unsigned short))-1)) - 1ul) + (1ul << (8*(sizeof(unsigned short))-1))))]; };
     { typedef int F[1 - 2 * !((2147483647 * 2U + 1U) == (((1ul << (8*(sizeof(lzo_uint32))-1)) - 1ul) + (1ul << (8*(sizeof(lzo_uint32))-1))))]; };
@@ -67,7 +67,7 @@ int foo() {
     { typedef int F[1 - 2 * !(sizeof(lzo_ptrdiff_t) >= sizeof(ptrdiff_t))]; };
     { typedef int F[1 - 2 * !(sizeof(ptrdiff_t) >= sizeof(size_t))]; };
     { typedef int F[1 - 2 * !(sizeof(lzo_ptrdiff_t) >= sizeof(lzo_uint))]; };
-    { typedef int F[1 - 2 * !(4 == sizeof(char *))]; };
+    // { typedef int F[1 - 2 * !(4 == sizeof(char *))]; }; RICH: Not in 64 bit.
     { typedef int F[1 - 2 * !(4 == sizeof(ptrdiff_t))]; };
     { typedef int F[1 - 2 * !((((ptrdiff_t) (-1)) < ((ptrdiff_t) 0)))]; };
     { typedef int F[1 - 2 * !((((size_t) (-1)) > ((size_t) 0)))]; };
