@@ -205,13 +205,13 @@ llvm::Value* CC2LLVMEnv::checkCondition(SourceLocation loc, llvm::Value* value, 
         // Not a boolean, check for non-zero.
         checkCurrentBlock();
         llvm::Value* zero = llvm::Constant::getNullValue(value->getType());
-	if (ctype->isInteger() || ctype->getTypeID() == llvm::Type::PointerTyID) {
+	if (ctype->isIntegerTy() || ctype->getTypeID() == llvm::Type::PointerTyID) {
             if (neg) {
                 value = builder.CreateICmpEQ(value, zero);
             } else {
                 value = builder.CreateICmpNE(value, zero);
             }
-	} else if (ctype->isFloatingPoint()) {
+	} else if (ctype->isFloatingPointTy()) {
 	    // RICH: ordered vs. unordered.
             if (neg) {
 	        value = builder.CreateFCmpOEQ(value, zero);
@@ -2119,7 +2119,7 @@ llvm::Value *E_effect::cc2llvm(CC2LLVMEnv &env, int& deref) const
         EDEBUG("Store7 source", loc, temp->print(llvm::errs()));
         EDEBUG("Store7 destination", loc, value->print(llvm::errs()));
         env.builder.CreateStore(temp, value, false);	// RICH: Volatile
-    } else if (temp->getType()->isInteger()) {
+    } else if (temp->getType()->isIntegerTy()) {
         llvm::ConstantInt* one = llvm::ConstantInt::get(env.C,
                                         llvm::APInt(env.TD.getTypeSizeInBits(temp->getType()), 1));
 	if (op == EFF_POSTDEC || op == EFF_PREDEC) {
