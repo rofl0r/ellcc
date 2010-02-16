@@ -36,5 +36,5 @@ int main() {
 //    int *s = 1 + p;
   __getStandardConversion((int*)0, 1 + p, SC_IDENTITY);
 //    int i = p - q;
-  __getStandardConversion((int)0, p - q, SC_IDENTITY);
+  __getStandardConversion((long)0, p - q, SC_IDENTITY);
 }

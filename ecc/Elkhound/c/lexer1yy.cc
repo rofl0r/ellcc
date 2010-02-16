@@ -726,7 +726,7 @@ static int input (void );
 /* This used to be an fputs(), but since the string might contain NUL's,
  * we now use fwrite().
  */
-#define ECHO fwrite( lexer1_text, lexer1_leng, 1, lexer1_out )
+#define ECHO do { if (fwrite( lexer1_text, lexer1_leng, 1, lexer1_out )) {} } while (0)
 #endif
 
 /* Gets input and stuffs it into "buf".  number of characters read, or YY_NULL,

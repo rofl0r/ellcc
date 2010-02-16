@@ -1210,7 +1210,7 @@ GrammarAST *parseGrammarFile(rostring origFname, bool useML)
   // open input file
   SourceManager SM;
   FileManager FM;
-  if (fname == NULL) {
+  if (fname == (int)NULL) {
     // Read from stdin.
     llvm::MemoryBuffer *SB = llvm::MemoryBuffer::getSTDIN();
 
