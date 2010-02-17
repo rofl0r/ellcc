@@ -2635,8 +2635,8 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         std::string ErrorMessage;
         if (input.module == NULL) {
             // Load the input module...
-            if (MemoryBuffer *Buffer = MemoryBuffer::getFileOrSTDIN(to.str(), &ErrorMessage)) {
-                input.module = ParseBitcodeFile(Buffer, *new llvm::LLVMContext, &ErrorMessage);
+            if (MemoryBuffer *Buffer = MemoryBuffer::getFileOrSTDIN(input.name.str(), &ErrorMessage)) {
+                input.module = ParseBitcodeFile(Buffer, context /* RICH: *new llvm::LLVMContext */, &ErrorMessage);
                 delete Buffer;
             }
         }
