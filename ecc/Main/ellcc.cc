@@ -550,6 +550,9 @@ static cl::opt<bool> KeepInlineFunctions("fkeep-inline-functions",
 //===          TOOL OPTIONS
 //===----------------------------------------------------------------------===//
 
+static cl::opt<bool> clang("clang", cl::Optional, cl::init(false),
+    cl::desc("Use clang to produce bitcode files"));
+
 static cl::list<std::string> PreprocessorToolOpts("Tpre", cl::ZeroOrMore,
     cl::desc("Pass specific options to the pre-processor"),
     cl::value_desc("option"));
@@ -2193,27 +2196,27 @@ static int Assemble(const std::string &OutputFilename,
                       std::string& ErrMsg)
 {
   // Choose the appropriate assembler.
-  std::string assm = "as";
+  std::string prog = "as";
   if (Arch.size()) {
-      assm = Arch + "-elf-as";
+      prog = Arch + "-elf-as";
   }
   // Look relative to the compiler binary.
-  sys::Path as = PrefixPath;
-  as.appendComponent("bin");
-  as.appendComponent(assm);
-  if (!as.canExecute()) {
+  sys::Path program = PrefixPath;
+  program.appendComponent("bin");
+  program.appendComponent(prog);
+  if (!program.canExecute()) {
     // Look in the path.
-    as = sys::Program::FindProgramByName(assm);
+    program = sys::Program::FindProgramByName(prog);
   }
-  if (as.isEmpty())
-    PrintAndExit("Failed to find " + assm);
+  if (program.isEmpty())
+    PrintAndExit("Failed to find " + prog);
 
   // Mark the output files for removal if we get an interrupt.
   sys::RemoveFileOnSignal(sys::Path(OutputFilename));
 
-  // Run as to preprocess the file..
+  // Run program to preprocess the file..
   std::vector<std::string> args;
-  args.push_back(as.c_str());
+  args.push_back(program.c_str());
   args.push_back("-o");
   args.push_back(OutputFilename);
   args.push_back(InputFilename);
@@ -2236,9 +2239,71 @@ static int Assemble(const std::string &OutputFilename,
     PrintCommand(Args);
   }
 
-  // Run as to assemble the file.
+  // Run program to assemble the file.
   int R = sys::Program::ExecuteAndWait(
-    as, &Args[0], NULL, 0, 0, 0, &ErrMsg);
+    program, &Args[0], NULL, 0, 0, 0, &ErrMsg);
+  return R;
+}
+
+/// Compile - Compile the given file with clang.
+///
+/// Inputs:
+///  InputFilename   - The name of the input source file.
+///  OutputFilename  - The name of the file to generate.
+///
+/// Outputs:
+///  None.
+///
+/// Returns non-zero value on error.
+///
+static int Compile(const std::string &OutputFilename,
+                   const std::string &InputFilename,
+                   std::string& ErrMsg)
+{
+  std::string prog = "clang";
+  // Look relative to the compiler binary.
+  sys::Path program = PrefixPath;
+  program.appendComponent("bin");
+  program.appendComponent(prog);
+  if (!program.canExecute()) {
+    // Look in the path.
+    program = sys::Program::FindProgramByName(prog);
+  }
+  if (program.isEmpty())
+    PrintAndExit("Failed to find " + prog);
+
+  // Mark the output files for removal if we get an interrupt.
+  sys::RemoveFileOnSignal(sys::Path(OutputFilename));
+
+  // Run program to preprocess the file..
+  std::vector<std::string> args;
+  args.push_back(program.c_str());
+  args.push_back("-emit-llvm");
+  args.push_back("-c");
+  args.push_back("-o");
+  args.push_back(OutputFilename);
+  args.push_back(InputFilename);
+
+  if (Arch.size()) {
+      args.push_back("-arch");
+      args.push_back(Arch);
+  }
+  
+  // Now that "args" owns all the std::strings for the arguments, call the c_str
+  // method to get the underlying string array.  We do this game so that the
+  // std::string array is guaranteed to outlive the const char* array.
+  std::vector<const char *> Args;
+  for (unsigned i = 0, e = args.size(); i != e; ++i)
+    Args.push_back(args[i].c_str());
+  Args.push_back(0);
+  if (Verbose) {
+    outs() << "    ";
+    PrintCommand(Args);
+  }
+
+  // Run program to compile the file.
+  int R = sys::Program::ExecuteAndWait(
+    program, &Args[0], NULL, 0, 0, 0, &ErrMsg);
   return R;
 }
 
@@ -2469,8 +2534,50 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         break;
     }
     case TRANSLATION: {              // Translate source -> LLVM bitcode/assembly
-        // Elsa does its own timing.
+        if (clang) {
+            // Use clang as the parser.
+            if (TimeActions) {
+                timers[phase]->startTimer();
+            }
 
+            if (Verbose) {
+                // This file needs processing during this phase.
+                outs() << "  " << fileActions[filePhases[thisType][phase].action].name << " " << input.name.str()
+                    << " to become " << fileTypes[nextType] << "\n";
+            }
+
+            sys::Path to;
+            if (phase == FinalPhase && OutputFilename != "") {
+                to = sys::Path(OutputFilename);
+            } else {
+                to = sys::Path(input.name.getBasename());
+                to.appendSuffix(langToExt[nextType]);
+            }
+
+
+            std::string ErrMsg;
+            if (phase != FinalPhase) {
+                if(to.createTemporaryFileOnDisk(false, &ErrMsg)) {
+                    PrintAndExit(ErrMsg);
+                }
+            }
+
+            if(Compile(to.str(), input.name.str(), ErrMsg) != 0) {
+                PrintAndExit(ErrMsg);
+            }
+
+            input.setName(to);
+            // Mark the file as a temporary file.
+            input.temp = true;
+
+            if (TimeActions) {
+                timers[phase]->stopTimer();
+            }
+
+            break;
+        }
+        
+        // Elsa does its own timing.
         if (Verbose) {
             // This file needs processing during this phase.
             outs() << "  " << fileActions[filePhases[thisType][phase].action].name << " " << input.name.str()
