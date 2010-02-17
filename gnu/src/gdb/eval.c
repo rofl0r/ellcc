@@ -1641,7 +1641,7 @@ evaluate_subexp_standard (struct type *expect_type,
 
     multi_f77_subscript:
       {
-	int subscript_array[MAX_FORTRAN_DIMS];
+	int subscript_array[MAX_FORTRAN_DIMS] = {};
 	int array_size_array[MAX_FORTRAN_DIMS];
 	int ndimensions = 1, i;
 	struct type *tmp_type;
