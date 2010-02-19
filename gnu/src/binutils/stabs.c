@@ -536,7 +536,7 @@ parse_stab (void *dhandle, void *handle, int type, int desc, bfd_vma value,
 	    info->so_string = xstrdup (string);
 	  else
 	    info->so_string = concat (info->so_string, string,
-				      (const char *) NULL);
+				      (void *) 0);
 	  free (f);
 	}
 
@@ -2316,7 +2316,7 @@ parse_stab_cpp_abbrev (void *dhandle, struct stab_handle *info,
 	  warn_stab (orig, _("unnamed $vb type"));
 	  typename = "FOO";
 	}
-      name = concat ("_vb$", typename, (const char *) NULL);
+      name = concat ("_vb$", typename, (void *) 0);
       break;
     default:
       warn_stab (orig, _("unrecognized C++ abbreviation"));
@@ -4339,7 +4339,7 @@ stab_demangle_template (struct stab_demangle_info *minfo, const char **pp,
 
       s1 = savestring (orig, *pp - orig);
 
-      s2 = concat ("NoSuchStrinG__", s1, (const char *) NULL);
+      s2 = concat ("NoSuchStrinG__", s1, (void *) 0);
 
       free (s1);
 

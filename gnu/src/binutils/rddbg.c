@@ -210,7 +210,7 @@ read_section_stabs_debugging_info (bfd *abfd, asymbol **syms, long symcount,
 				  ((char *) strings
 				   + stroff
 				   + bfd_get_32 (abfd, stab)),
-				  (const char *) NULL);
+				  (void *) 0);
 
 		      /* We have to restore the backslash, because, if
 			 the linker is hashing stabs strings, we may
@@ -296,7 +296,7 @@ read_symbol_stabs_debugging_info (bfd *abfd, asymbol **syms, long symcount,
 	      ++ps;
 	      sc = xstrdup (s);
 	      sc[strlen (sc) - 1] = '\0';
-	      n = concat (sc, bfd_asymbol_name (*ps), (const char *) NULL);
+	      n = concat (sc, bfd_asymbol_name (*ps), (void *) 0);
 	      free (sc);
 	      if (f != NULL)
 		free (f);

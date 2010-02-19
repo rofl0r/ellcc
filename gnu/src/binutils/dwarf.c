@@ -1337,7 +1337,7 @@ read_and_display_attr_value (unsigned long attribute,
     case DW_AT_ordering:
       switch (uvalue)
 	{
-	case -1: printf ("(undefined)"); break;
+	case (unsigned long)-1: printf ("(undefined)"); break;
 	case 0:  printf ("(row major)"); break;
 	case 1:  printf ("(column major)"); break;
 	}

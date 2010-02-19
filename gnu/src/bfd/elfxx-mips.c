@@ -6234,19 +6234,19 @@ _bfd_mips_elf_create_dynamic_sections (bfd *abfd, struct bfd_link_info *info)
       /* Change alignments of some sections.  */
       s = bfd_get_section_by_name (abfd, ".hash");
       if (s != NULL)
-	bfd_set_section_alignment (abfd, s, MIPS_ELF_LOG_FILE_ALIGN (abfd));
+	(void)bfd_set_section_alignment (abfd, s, MIPS_ELF_LOG_FILE_ALIGN (abfd));
       s = bfd_get_section_by_name (abfd, ".dynsym");
       if (s != NULL)
-	bfd_set_section_alignment (abfd, s, MIPS_ELF_LOG_FILE_ALIGN (abfd));
+	(void)bfd_set_section_alignment (abfd, s, MIPS_ELF_LOG_FILE_ALIGN (abfd));
       s = bfd_get_section_by_name (abfd, ".dynstr");
       if (s != NULL)
-	bfd_set_section_alignment (abfd, s, MIPS_ELF_LOG_FILE_ALIGN (abfd));
+	(void)bfd_set_section_alignment (abfd, s, MIPS_ELF_LOG_FILE_ALIGN (abfd));
       s = bfd_get_section_by_name (abfd, ".reginfo");
       if (s != NULL)
-	bfd_set_section_alignment (abfd, s, MIPS_ELF_LOG_FILE_ALIGN (abfd));
+	(void)bfd_set_section_alignment (abfd, s, MIPS_ELF_LOG_FILE_ALIGN (abfd));
       s = bfd_get_section_by_name (abfd, ".dynamic");
       if (s != NULL)
-	bfd_set_section_alignment (abfd, s, MIPS_ELF_LOG_FILE_ALIGN (abfd));
+	(void)bfd_set_section_alignment (abfd, s, MIPS_ELF_LOG_FILE_ALIGN (abfd));
     }
 
   if (!info->shared)

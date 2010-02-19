@@ -166,8 +166,8 @@ static int used_prefixes;
    to ADDR (exclusive) are valid.  Returns 1 for success, longjmps
    on error.  */
 #define FETCH_DATA(info, addr) \
-  ((addr) <= ((struct dis_private *) (info->private_data))->max_fetched \
-   ? 1 : fetch_data ((info), (addr)))
+  ((void)((addr) <= ((struct dis_private *) (info->private_data))->max_fetched \
+   ? 1 : fetch_data ((info), (addr))))
 
 static int
 fetch_data (struct disassemble_info *info, bfd_byte *addr)

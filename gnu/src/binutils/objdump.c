@@ -1112,7 +1112,7 @@ update_source_path (const char *filename)
      so that show_line knows about it.  */
   for (i = 0; i < include_path_count; i++)
     {
-      char *modname = concat (include_paths[i], "/", fname, (const char *) 0);
+      char *modname = concat (include_paths[i], "/", fname, (void *) 0);
 
       p = try_print_file_open (filename, modname);
       if (p)

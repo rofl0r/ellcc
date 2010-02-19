@@ -499,7 +499,7 @@ parse_args (int * pargc, char *** pargv)
   /* Construct the option lists from the standard list and the target
      dependent list.  Include space for an extra NULL option and
      always NULL terminate.  */
-  shortopts = concat (std_shortopts, md_shortopts, (char *) NULL);
+  shortopts = concat (std_shortopts, md_shortopts, (void *) 0);
   longopts = xmalloc (sizeof (std_longopts) + md_longopts_size + sizeof (struct option));
   memcpy (longopts, std_longopts, sizeof (std_longopts));
   memcpy (((char *) longopts) + sizeof (std_longopts), md_longopts, md_longopts_size);

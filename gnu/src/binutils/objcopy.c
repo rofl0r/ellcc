@@ -1542,7 +1542,7 @@ copy_object (bfd *ibfd, bfd *obfd)
 	    /* Umm, not sure what to do in this case.  */
 	    debuglink_vma = 0x1000;
 
-	  bfd_set_section_vma (obfd, gnu_debuglink_section, debuglink_vma);
+	  (void)bfd_set_section_vma (obfd, gnu_debuglink_section, debuglink_vma);
 	}
     }
 
@@ -1841,7 +1841,7 @@ copy_archive (bfd *ibfd, bfd *obfd, const char *output_target,
 
       /* Create an output file for this member.  */
       output_name = concat (dir, "/",
-			    bfd_get_filename (this_element), (char *) 0);
+			    bfd_get_filename (this_element), (void *) 0);
 
       /* If the file already exists, make another temp dir.  */
       if (stat (output_name, &buf) >= 0)
@@ -1857,7 +1857,7 @@ copy_archive (bfd *ibfd, bfd *obfd, const char *output_target,
 	  l->obfd = NULL;
 	  list = l;
 	  output_name = concat (output_name, "/",
-				bfd_get_filename (this_element), (char *) 0);
+				bfd_get_filename (this_element), (void *) 0);
 	}
 
       if (preserve_dates)

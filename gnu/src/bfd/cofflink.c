@@ -1926,7 +1926,7 @@ _bfd_coff_link_input_bfd (struct coff_final_link_info *finfo, bfd *input_bfd)
                  will have aux entries.  */
 	      BFD_ASSERT (isymp->n_numaux == 0
 			  || h->numaux == 0
-			  || h->numaux == isymp->n_numaux);
+			  || (char)h->numaux == (char)isymp->n_numaux);
 	    }
 
 	  esym += isymesz;

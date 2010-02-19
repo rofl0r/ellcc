@@ -350,7 +350,7 @@ msp430_doubleoperand (disassemble_info *info,
 	      dst = msp430dis_opcode (addr + 2, info);
 	      /* If the 'src' field is not the same as the dst
 		 then this is not an rla instruction.  */
-	      if (dst != msp430dis_opcode (addr + 4, info))
+	      if (dst != (short)msp430dis_opcode (addr + 4, info))
 		return 0;
 	      cmd_len += 4;
 	      *cycles = 6;
