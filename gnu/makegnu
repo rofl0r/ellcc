@@ -13,9 +13,13 @@ bin=`cd ../bin; pwd`
 #cc=$bin/ecc
 #cxx=$bin/e++
 
+# To build with the clang and host libraries:
+cc=$bin/clang
+cxx=$bin/clang++
+
 # To build with the host compiler:
-cc=$CC
-cxx=$CXX
+#cc=$CC
+#cxx=$CXX
 
 
 # Parse options.
@@ -32,8 +36,8 @@ while [ $# -gt 0 ] ; do
 done
 
 if [ $install -eq 0 ] ; then
-  rm -fr obj
-  mkdir obj
+echo  rm -fr obj
+echo  mkdir obj
 fi
 
 cd obj
