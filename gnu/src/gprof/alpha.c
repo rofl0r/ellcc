@@ -134,7 +134,7 @@ alpha_find_call (Sym *parent, bfd_vma p_lowpc, bfd_vma p_highpc)
 	    }
 	  break;
 
-	case OP_BSR << 26:
+	case (unsigned int)OP_BSR << 26:
 	  DBG (CALLDEBUG,
 	       printf (_("[find_call] 0x%lx: bsr"), (unsigned long) pc));
 	  /*

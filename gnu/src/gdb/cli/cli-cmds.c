@@ -376,10 +376,10 @@ cd_command (char *dir, int from_tty)
   else
     {
       if (IS_DIR_SEPARATOR (current_directory[strlen (current_directory) - 1]))
-	current_directory = concat (current_directory, dir, (char *)NULL);
+	current_directory = concat (current_directory, dir, (void *)0);
       else
 	current_directory = concat (current_directory, SLASH_STRING,
-				    dir, (char *)NULL);
+				    dir, (void *)0);
       xfree (dir);
     }
 

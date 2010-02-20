@@ -1945,7 +1945,7 @@ copy_symbol_attributes (symbolS *dest, symbolS *src)
   dest->bsym->flags |= src->bsym->flags & COPIED_SYMFLAGS;
 
 #ifdef OBJ_COPY_SYMBOL_ATTRIBUTES
-  OBJ_COPY_SYMBOL_ATTRIBUTES (dest, src);
+  (void)OBJ_COPY_SYMBOL_ATTRIBUTES (dest, src);
 #endif
 
 #ifdef TC_COPY_SYMBOL_ATTRIBUTES

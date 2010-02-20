@@ -2653,6 +2653,18 @@ m68k-parse.c: $(srcdir)/config/m68k-parse.y
 m68k-parse.o: m68k-parse.c $(srcdir)/config/m68k-parse.h
 	$(COMPILE) -c $< $(NO_WERROR)
 
+tc-alpha.o: $(srcdir)/config/tc-alpha.c
+	$(COMPILE) -c $< $(NO_WERROR)
+
+tc-arm.o: $(srcdir)/config/tc-arm.c
+	$(COMPILE) -c $< $(NO_WERROR)
+
+tc-mips.o: $(srcdir)/config/tc-mips.c
+	$(COMPILE) -c $< $(NO_WERROR)
+
+tc-ppc.o: $(srcdir)/config/tc-ppc.c
+	$(COMPILE) -c $< $(NO_WERROR)
+
 # Don't let the .y.h rule clobber m68k-parse.h.
 m68k-parse.h: ; @true
 $(srcdir)/config/m68k-parse.h: ; @true

@@ -1065,7 +1065,7 @@ styp_to_sec_flags (bfd *abfd,
 	case IMAGE_SCN_MEM_EXECUTE:
 	  sec_flags |= SEC_CODE;
 	  break;
-	case IMAGE_SCN_MEM_WRITE:
+	case (long)IMAGE_SCN_MEM_WRITE:
 	  sec_flags &= ~ SEC_READONLY;
 	  break;
 	case IMAGE_SCN_MEM_DISCARDABLE:

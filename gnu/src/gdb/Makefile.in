@@ -1633,6 +1633,9 @@ main.o: main.c
 monitor.o: $(srcdir)/monitor.c
 	$(CC) -c $(INTERNAL_WARN_CFLAGS) $(srcdir)/monitor.c
 
+complaints.o: $(srcdir)/complaints.c
+	$(CC) -c $(INTERNAL_WARN_CFLAGS) $(srcdir)/complaints.c
+#
 # Do not try to build "printcmd.c" with -Wformat-nonliteral.  It manually
 # checks format strings.
 printcmd.o: $(srcdir)/printcmd.c

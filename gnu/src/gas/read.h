@@ -30,9 +30,9 @@ extern char *input_line_pointer;	/* -> char we are parsing now.  */
 
 #ifdef PERMIT_WHITESPACE
 #define SKIP_WHITESPACE()			\
-  ((*input_line_pointer == ' ') ? ++input_line_pointer : 0)
+  (void)((*input_line_pointer == ' ') ? ++input_line_pointer : 0)
 #else
-#define SKIP_WHITESPACE() know(*input_line_pointer != ' ' )
+#define SKIP_WHITESPACE() (void)know(*input_line_pointer != ' ' )
 #endif
 
 #define	LEX_NAME	(1)	/* may continue a name */

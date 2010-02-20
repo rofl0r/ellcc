@@ -2979,9 +2979,9 @@ xfullpath (const char *filename)
      directory separator, avoid doubling it.  */
   real_path = gdb_realpath (dir_name);
   if (IS_DIR_SEPARATOR (real_path[strlen (real_path) - 1]))
-    result = concat (real_path, base_name, (char *)NULL);
+    result = concat (real_path, base_name, (void *)0);
   else
-    result = concat (real_path, SLASH_STRING, base_name, (char *)NULL);
+    result = concat (real_path, SLASH_STRING, base_name, (void *)0);
 
   xfree (real_path);
   return result;

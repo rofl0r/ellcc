@@ -651,7 +651,7 @@ gdbtk_find_main";
   if (gdbtk_source_filename != NULL)
     {
       char *s = "after idle source ";
-      char *script = concat (s, gdbtk_source_filename, (char *) NULL);
+      char *script = concat (s, gdbtk_source_filename, (void *) 0);
       Tcl_Eval (gdbtk_interp, script);
       free (gdbtk_source_filename);
       free (script);

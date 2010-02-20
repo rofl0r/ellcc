@@ -274,7 +274,7 @@ core_open (char *filename, int from_tty)
   filename = tilde_expand (filename);
   if (!IS_ABSOLUTE_PATH(filename))
     {
-      temp = concat (current_directory, "/", filename, (char *)NULL);
+      temp = concat (current_directory, "/", filename, (void *)0);
       xfree (filename);
       filename = temp;
     }

@@ -1466,10 +1466,10 @@ init_history (void)
 #ifdef __MSDOS__
       /* No leading dots in file names are allowed on MSDOS.  */
       history_filename = concat (current_directory, "/_gdb_history",
-				 (char *)NULL);
+				 (void *)0);
 #else
       history_filename = concat (current_directory, "/.gdb_history",
-				 (char *)NULL);
+				 (void *)0);
 #endif
     }
   read_history (history_filename);

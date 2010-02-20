@@ -2564,7 +2564,7 @@ read_member_functions (struct field_info *fip, char **pp, struct type *type,
 	  else if (has_destructor && new_fnlist->fn_fieldlist.name[0] != '~')
 	    {
 	      new_fnlist->fn_fieldlist.name =
-		concat ("~", main_fn_name, (char *)NULL);
+		concat ("~", main_fn_name, (void *)0);
 	      xfree (main_fn_name);
 	    }
 	  else if (!has_stub)

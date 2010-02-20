@@ -311,7 +311,7 @@ ldfile_open_file_search (const char *arch,
       if (entry->sysrooted && IS_ABSOLUTE_PATH (entry->filename))
 	{
 	  char *name = concat (ld_sysroot, entry->filename,
-			       (const char *) NULL);
+			       (void *) 0);
 	  if (ldfile_try_open_bfd (name, entry))
 	    {
 	      entry->filename = name;

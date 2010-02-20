@@ -518,7 +518,7 @@ add_path (char *dirname, char **which_path, int parse_separators)
 	name = concat (name, ".", (char *)NULL);
 #endif
       else if (!IS_ABSOLUTE_PATH (name) && name[0] != '$')
-	name = concat (current_directory, SLASH_STRING, name, (char *)NULL);
+	name = concat (current_directory, SLASH_STRING, name, (void *)0);
       else
 	name = savestring (name, p - name);
       make_cleanup (xfree, name);
@@ -591,16 +591,16 @@ add_path (char *dirname, char **which_path, int parse_separators)
 
 		c = old[prefix];
 		old[prefix] = '\0';
-		temp = concat (old, tinybuf, name, (char *)NULL);
+		temp = concat (old, tinybuf, name, (void *)0);
 		old[prefix] = c;
-		*which_path = concat (temp, "", &old[prefix], (char *)NULL);
+		*which_path = concat (temp, "", &old[prefix], (void *)0);
 		prefix = strlen (temp);
 		xfree (temp);
 	      }
 	    else
 	      {
 		*which_path = concat (name, (old[0] ? tinybuf : old),
-				      old, (char *)NULL);
+				      old, (void *)0);
 		prefix = strlen (name);
 	      }
 	    xfree (old);
@@ -800,7 +800,7 @@ done:
 	  char *f = concat (current_directory,
 			    IS_DIR_SEPARATOR (current_directory[strlen (current_directory) - 1])
 			    ? "" : SLASH_STRING,
-			    filename, (char *)NULL);
+			    filename, (void *)0);
 	  *filename_opened = xfullpath (f);
 	  xfree (f);
 	}

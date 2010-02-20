@@ -7072,14 +7072,14 @@ dwarf_decode_lines (struct line_header *lh, char *comp_dir, bfd *abfd,
             if (!IS_ABSOLUTE_PATH (include_name) && dir_name != NULL)
               {
                 include_name = concat (dir_name, SLASH_STRING,
-				       include_name, (char *)NULL);
+				       include_name, (void *)0);
                 make_cleanup (xfree, include_name);
               }
 
             if (!IS_ABSOLUTE_PATH (pst_filename) && pst->dirname != NULL)
               {
                 pst_filename = concat (pst->dirname, SLASH_STRING,
-				       pst_filename, (char *)NULL);
+				       pst_filename, (void *)0);
                 make_cleanup (xfree, pst_filename);
               }
 
@@ -7158,7 +7158,7 @@ dwarf2_start_subfile (char *filename, char *dirname, char *comp_dir)
      `else' branch below isn't an issue.  */
 
   if (!IS_ABSOLUTE_PATH (filename) && dirname != NULL)
-    fullname = concat (dirname, SLASH_STRING, filename, (char *)NULL);
+    fullname = concat (dirname, SLASH_STRING, filename, (void *)0);
   else
     fullname = filename;
 

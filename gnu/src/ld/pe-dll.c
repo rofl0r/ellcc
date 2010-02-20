@@ -1599,7 +1599,7 @@ quick_section (bfd *abfd, const char *name, int flags, int align)
 
   sec = bfd_make_section_old_way (abfd, name);
   bfd_set_section_flags (abfd, sec, flags | SEC_ALLOC | SEC_LOAD | SEC_KEEP);
-  bfd_set_section_alignment (abfd, sec, align);
+  (void)bfd_set_section_alignment (abfd, sec, align);
   /* Remember to undo this before trying to link internally!  */
   sec->output_section = sec;
 

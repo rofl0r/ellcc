@@ -766,7 +766,7 @@ create_internalvar (char *name)
 {
   struct internalvar *var;
   var = (struct internalvar *) xmalloc (sizeof (struct internalvar));
-  var->name = concat (name, (char *)NULL);
+  var->name = concat (name, (void *)0);
   var->value = allocate_value (builtin_type_void);
   var->endian = gdbarch_byte_order (current_gdbarch);
   release_value (var->value);
