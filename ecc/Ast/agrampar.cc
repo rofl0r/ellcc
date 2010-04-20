@@ -149,9 +149,8 @@ ASTSpecFile *readAbstractGrammar(char const *fname)
     // If stdin was empty, SB is null.  Cons up an empty memory
     // buffer now.
     if (!SB) {
-      const char *EmptyStr = "";
       fname = "<stdin>";
-      SB = llvm::MemoryBuffer::getMemBuffer(EmptyStr, EmptyStr, fname);
+      SB = llvm::MemoryBuffer::getMemBuffer("", fname);
     }
 
     FID = SM.createFileIDForMemBuffer(SB);

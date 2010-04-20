@@ -1217,9 +1217,8 @@ GrammarAST *parseGrammarFile(rostring origFname, bool useML)
     // If stdin was empty, SB is null.  Cons up an empty memory
     // buffer now.
     if (!SB) {
-      const char *EmptyStr = "";
       fname = "<stdin>";
-      SB = llvm::MemoryBuffer::getMemBuffer(EmptyStr, EmptyStr, fname.c_str());
+      SB = llvm::MemoryBuffer::getMemBuffer("", fname.c_str());
     }
 
     SM.createMainFileIDForMemBuffer(SB);
