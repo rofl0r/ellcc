@@ -1393,36 +1393,6 @@ static void findFiles(std::vector<std::string>& found, std::string what, std::st
 // ---------- Define Printers for module and function passes ------------
 namespace {
 
-struct CallGraphSCCPassPrinter : public CallGraphSCCPass {
-  static char ID;
-  const PassInfo *PassToPrint;
-  CallGraphSCCPassPrinter(const PassInfo *PI) : 
-    CallGraphSCCPass((intptr_t)&ID), PassToPrint(PI) {}
-
-  virtual bool runOnSCC(std::vector<CallGraphNode *>&SCC) {
-    if (!Quiet) {
-      outs() << "Printing analysis '" << PassToPrint->getPassName() << "':\n";
-
-      for (unsigned i = 0, e = SCC.size(); i != e; ++i) {
-        Function *F = SCC[i]->getFunction();
-        if (F) 
-          getAnalysisID<Pass>(PassToPrint).print(outs(), F->getParent());
-      }
-    }
-    // Get and print pass...
-    return false;
-  }
-  
-  virtual const char *getPassName() const { return "'Pass' Printer"; }
-
-  virtual void getAnalysisUsage(AnalysisUsage &AU) const {
-    AU.addRequiredID(PassToPrint);
-    AU.setPreservesAll();
-  }
-};
-
-char CallGraphSCCPassPrinter::ID = 0;
-
 struct ModulePassPrinter : public ModulePass {
   static char ID;
   const PassInfo *PassToPrint;
@@ -1999,7 +1969,7 @@ static bool InitializeSourceManager(Preprocessor &PP,
   if (EmptyInputOnly) {
     const char *EmptyStr = "";
     MemoryBuffer *SB = 
-      MemoryBuffer::getMemBuffer(EmptyStr, EmptyStr, "<empty input>");
+      MemoryBuffer::getMemBuffer(EmptyStr, "<empty input>");
     SourceMgr.createMainFileIDForMemBuffer(SB);
   } else if (InFile != "-") {
     const FileEntry *File = FileMgr.getFile(InFile);
@@ -2016,7 +1986,7 @@ static bool InitializeSourceManager(Preprocessor &PP,
     // buffer now.
     if (!SB) {
       const char *EmptyStr = "";
-      SB = MemoryBuffer::getMemBuffer(EmptyStr, EmptyStr, "<stdin>");
+      SB = MemoryBuffer::getMemBuffer(EmptyStr, "<stdin>");
     }
 
     SourceMgr.createMainFileIDForMemBuffer(SB);
@@ -2719,9 +2689,6 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
                     case PT_Function:
                       PM.add(new FunctionPassPrinter(PassInf));
                       break;
-                    case PT_CallGraphSCC:
-                      PM.add(new CallGraphSCCPassPrinter(PassInf));
-                      break;
                     default:
                       PM.add(new ModulePassPrinter(PassInf));
                       break;
@@ -3078,7 +3045,7 @@ int main(int argc, char **argv)
     // Create the diagnostic client for reporting errors or for
     // implementing -verify.
     OwningPtr<DiagnosticClient> DiagClient;
-    llvm_install_error_handler(handleLLVMErrors, /* user_data */ NULL);
+    llvm::install_fatal_error_handler(handleLLVMErrors, /* user_data */ NULL);
 
     try {
         // Initial global variable above for convenience printing of program name.
