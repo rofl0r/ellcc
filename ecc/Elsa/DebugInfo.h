@@ -22,6 +22,8 @@
 #include "llvm/Analysis/DebugInfo.h"
 #include "llvm/Support/IRBuilder.h"
 #include <llvm/Support/TargetFolder.h>
+#include "llvm/Support/ValueHandle.h"
+#include "llvm/Support/Allocator.h"
 #include <map>
 
 class CC2LLVMEnv;
@@ -37,30 +39,32 @@ class DebugInfo {
   LangOptions& LO;
   bool isMainCompileUnitCreated;
   llvm::DIFactory DebugFactory;
-  
+  llvm::DICompileUnit TheCU;
   SourceLocation CurLoc, PrevLoc;
 
   /// CompileUnitCache - Cache of previously constructed CompileUnits.
-  llvm::DenseMap<unsigned, llvm::DICompileUnit> CompileUnitCache;
+  llvm::DenseMap<unsigned, llvm::DIFile> CompileUnitCache;
 
   /// TypeCache - Cache of previously constructed Types.
-  // FIXME: Eliminate this map.  Be careful of iterator invalidation.
-  std::map<const void *, llvm::DIType> TypeCache;
+  llvm::DenseMap<void *, llvm::WeakVH> TypeCache;
   
   bool BlockLiteralGenericSet;
   llvm::DIType BlockLiteralGeneric;
 
-  std::vector<llvm::DIDescriptor> RegionStack;
+  std::vector<llvm::TrackingVH<llvm::MDNode> > RegionStack;
+  llvm::DenseMap<const void *, llvm::WeakVH> RegionMap;
+
+  llvm::DenseMap<const char *, llvm::WeakVH> DIFileCache;
 
   /// Helper functions for getOrCreateType.
-  llvm::DIType CreateType(const SimpleType *Ty, llvm::DICompileUnit U);
-  llvm::DIType CreateCVRType(const CVAtomicType* Ty, CVFlags cv, llvm::DICompileUnit U);
-  llvm::DIType CreateType(const PointerType *Ty, llvm::DICompileUnit U);
-  llvm::DIType CreateType(const FunctionType *Ty, llvm::DICompileUnit U);
-  // RICH: llvm::DIType CreateType(const TagType *Ty, llvm::DICompileUnit U);
-  llvm::DIType CreateType(const CompoundType *Ty, llvm::DICompileUnit U);
-  llvm::DIType CreateType(const EnumType *Ty, llvm::DICompileUnit U);
-  llvm::DIType CreateType(const ArrayType *Ty, llvm::DICompileUnit U);
+  llvm::DIType CreateType(const SimpleType *Ty, llvm::DIFile U);
+  llvm::DIType CreateCVRType(const CVAtomicType* Ty, CVFlags cv, llvm::DIFile U);
+  llvm::DIType CreateType(const PointerType *Ty, llvm::DIFile U);
+  llvm::DIType CreateType(const FunctionType *Ty, llvm::DIFile U);
+  // RICH: llvm::DIType CreateType(const TagType *Ty, llvm::DIFile U);
+  llvm::DIType CreateType(const CompoundType *Ty, llvm::DIFile U);
+  llvm::DIType CreateType(const EnumType *Ty, llvm::DIFile U);
+  llvm::DIType CreateType(const ArrayType *Ty, llvm::DIFile U);
 
 public:
   DebugInfo(CC2LLVMEnv& env, LangOptions& LO);
@@ -106,13 +110,14 @@ private:
   void EmitDeclare(const Variable *decl, unsigned Tag, llvm::Value *AI,
                    BuilderTy &Builder);
   
-  /// getOrCreateCompileUnit - Get the compile unit from the cache or create a
+  /// getOrCreateFile - Get the compile unit from the cache or create a
   /// new one if necessary.
-  llvm::DICompileUnit getOrCreateCompileUnit(SourceLocation Loc);
+  llvm::DIFile getOrCreateFile(SourceLocation Loc);
+  void CreateCompileUnit();
 
   /// getOrCreateType - Get the type from the cache or create a new type if
   /// necessary.
-  llvm::DIType getOrCreateType(const Type* Ty, llvm::DICompileUnit Unit, bool cvDone = false);
+  llvm::DIType getOrCreateType(const Type* Ty, llvm::DIFile Unit, bool cvDone = false);
 };
 } // namespace ellcc
 

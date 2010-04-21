@@ -31,10 +31,11 @@ DebugInfo::DebugInfo(CC2LLVMEnv& env, LangOptions& LO)
     isMainCompileUnitCreated(false), DebugFactory(*env.mod),
     BlockLiteralGenericSet(false)
 {
+    CreateCompileUnit();
 }
 
 DebugInfo::~DebugInfo() {
-  xassert(RegionStack.empty() && "Region stack mismatch, stack not empty!");
+  assert(RegionStack.empty() && "Region stack mismatch, stack not empty!");
 }
 
 /// getContext - Get context info for the decl.
@@ -64,10 +65,11 @@ void DebugInfo::setLocation(SourceLocation Loc)
     }
 }
 
-/// getOrCreateCompileUnit - Get the compile unit from the cache or create a new
+/// getOrCreateFile - Get the compile unit from the cache or create a new
 /// one if necessary. This returns null for invalid source locations.
-llvm::DICompileUnit DebugInfo::getOrCreateCompileUnit(SourceLocation Loc)
+llvm::DIFile DebugInfo::getOrCreateFile(SourceLocation Loc)
 {
+#if RICH
     // Get source file information.
     const char *FileName =  "<unknown>";
     SourceManager SM;
@@ -79,7 +81,7 @@ llvm::DICompileUnit DebugInfo::getOrCreateCompileUnit(SourceLocation Loc)
     }
    
     // See if this compile unit has been used before.
-    llvm::DICompileUnit &Unit = CompileUnitCache[FID];
+    llvm::DIFile &Unit = CompileUnitCache[FID];
     if (!Unit.isNull()) return Unit;
 
     // Get absolute path name.
@@ -124,12 +126,81 @@ llvm::DICompileUnit DebugInfo::getOrCreateCompileUnit(SourceLocation Loc)
                                                  AbsFileName.getDirname().str(), 
                                                  LO.getProducer(), isMain, isOptimized,
                                                  Flags, /* RuntimeVers */ 0);
+#else
+ if (!Loc.isValid())
+    // If Location is not valid then use main input file.
+    return DebugFactory.CreateFile(TheCU.getFilename(), TheCU.getDirectory(),
+                                   TheCU);
+  SourceManager SM;
+  PresumedLoc PLoc = SM.getPresumedLoc(Loc);
+
+  // Cache the results.
+  const char *fname = PLoc.getFilename();
+  llvm::DenseMap<const char *, llvm::WeakVH>::iterator it =
+    DIFileCache.find(fname);
+
+  if (it != DIFileCache.end()) {
+    // Verify that the information still exists.
+    if (&*it->second)
+      return llvm::DIFile(llvm::cast<llvm::MDNode>(it->second));
+  }
+
+  // FIXME: We shouldn't even need to call 'makeAbsolute()' in the cases
+  // where we can consult the FileEntry.
+  llvm::sys::Path AbsFileName(PLoc.getFilename());
+  AbsFileName.makeAbsolute();
+
+  llvm::DIFile F = DebugFactory.CreateFile(AbsFileName.getLast(),
+                                           AbsFileName.getDirname(), TheCU);
+
+  DIFileCache[fname] = F.getNode();
+  return F;
+#endif
+}
+
+/// CreateCompileUnit - Create new compile unit.
+void DebugInfo::CreateCompileUnit() {
+
+  // Get absolute path name.
+  SourceManager SM;
+  std::string MainFileName = LO.getMainFileName();
+  if (MainFileName.empty())
+    MainFileName = "<unknown>";
+
+  llvm::sys::Path AbsFileName(MainFileName);
+  AbsFileName.makeAbsolute();
+
+  // The main file name provided via the "-main-file-name" option contains just
+  // the file name itself with no path information. This file name may have had
+  // a relative path, so we look into the actual file entry for the main
+  // file to determine the real absolute path for the file.
+  std::string MainFileDir;
+  if (const FileEntry *MainFile = SM.getFileEntryForID(SM.getMainFileID()))
+    MainFileDir = MainFile->getDir()->getName();
+  else
+    MainFileDir = AbsFileName.getDirname();
+
+  unsigned LangTag;
+  if (LO.CPlusPlus) {
+      LangTag = llvm::dwarf::DW_LANG_C_plus_plus;
+  } else if (LO.C99) {
+      LangTag = llvm::dwarf::DW_LANG_C99;
+  } else {
+      LangTag = llvm::dwarf::DW_LANG_C89;
+  }
+
+  const char *Flags = "";   // FIXME: Encode command line options.
+
+  // Create new compile unit.
+  TheCU = DebugFactory.CreateCompileUnit(
+    LangTag, AbsFileName.getLast(), MainFileDir, LO.getProducer(), true,
+    LO.Optimize, Flags, 0);
 }
 
 /// CreateType - Get the Basic type from the cache or create a new
 /// one if necessary.
 llvm::DIType DebugInfo::CreateType(const SimpleType *ST,
-                                   llvm::DICompileUnit Unit)
+                                   llvm::DIFile Unit)
 {
     unsigned Encoding = 0;
     switch (ST->type) {
@@ -177,7 +248,7 @@ llvm::DIType DebugInfo::CreateType(const SimpleType *ST,
 
 /// CreateCVRType - Get the CVR qualified type from the cache or create 
 /// a new one if necessary.
-llvm::DIType DebugInfo::CreateCVRType(const CVAtomicType* Ty, CVFlags cv, llvm::DICompileUnit Unit)
+llvm::DIType DebugInfo::CreateCVRType(const CVAtomicType* Ty, CVFlags cv, llvm::DIFile Unit)
 {
     cv = Ty->cv & (CV_CONST | CV_VOLATILE | CV_RESTRICT);
     unsigned Tag = 0;
@@ -203,12 +274,12 @@ llvm::DIType DebugInfo::CreateCVRType(const CVAtomicType* Ty, CVFlags cv, llvm::
  
     // No need to fill in the Name, Line, Size, Alignment, Offset in case of
     // CVR derived types.
-    return DebugFactory.CreateDerivedType(Tag, Unit, "", llvm::DICompileUnit(),
+    return DebugFactory.CreateDerivedType(Tag, Unit, "", llvm::DIFile(),
                                           0, 0, 0, 0, 0, FromTy);
 }
 
 llvm::DIType DebugInfo::CreateType(const PointerType *Ty,
-                                     llvm::DICompileUnit Unit)
+                                     llvm::DIFile Unit)
 {
   llvm::DIType EltTy = getOrCreateType(Ty->getAtType(), Unit);
  
@@ -217,13 +288,13 @@ llvm::DIType DebugInfo::CreateType(const PointerType *Ty,
   Ty->sizeInfoInBits(env.TI, Size, Align);
                                                                                
   return DebugFactory.CreateDerivedType(llvm::dwarf::DW_TAG_pointer_type, Unit,
-                                        "", llvm::DICompileUnit(),
+                                        "", llvm::DIFile(),
                                         0, Size, Align, 0, 0, EltTy);
 }
 
 #if RICH
 llvm::DIType DebugInfo::CreateType(const TypedefType *Ty,
-                                     llvm::DICompileUnit Unit)
+                                     llvm::DIFile Unit)
 {
   // Typedefs are derived from some other type.  If we have a typedef of a
   // typedef, make sure to emit the whole chain.
@@ -233,7 +304,7 @@ llvm::DIType DebugInfo::CreateType(const TypedefType *Ty,
   // declared.
   std::string TyName = Ty->getDecl()->getNameAsString();
   SourceLocation DefLoc = Ty->getDecl()->loc;
-  llvm::DICompileUnit DefUnit = getOrCreateCompileUnit(DefLoc);
+  llvm::DIFile DefUnit = getOrCreateFile(DefLoc);
 
   SourceManager &SM = M->getContext().getSourceManager();
   PresumedLoc PLoc = SM.getPresumedLoc(DefLoc);
@@ -245,7 +316,7 @@ llvm::DIType DebugInfo::CreateType(const TypedefType *Ty,
 #endif
 
 llvm::DIType DebugInfo::CreateType(const FunctionType *Ty,
-                                     llvm::DICompileUnit Unit)
+                                     llvm::DIFile Unit)
 {
     llvm::SmallVector<llvm::DIDescriptor, 16> EltTys;
 
@@ -261,7 +332,7 @@ llvm::DIType DebugInfo::CreateType(const FunctionType *Ty,
 
     llvm::DIArray EltTypeArray = DebugFactory.GetOrCreateArray(EltTys.data(), EltTys.size());
     return DebugFactory.CreateCompositeType(llvm::dwarf::DW_TAG_subroutine_type,
-                                            Unit, "", llvm::DICompileUnit(),
+                                            Unit, "", llvm::DIFile(),
                                             0, 0, 0, 0, 0,
                                             llvm::DIType(), EltTypeArray);
 }
@@ -270,7 +341,7 @@ llvm::DIType DebugInfo::CreateType(const FunctionType *Ty,
 #if RICH
 /// CreateType - get structure or union type.
 llvm::DIType DebugInfo::CreateType(const CompoundType *Ty,
-                                     llvm::DICompileUnit Unit)
+                                     llvm::DIFile Unit)
 {
     const CompoundType *ct = Ty->asCompoundTypeC();
   
@@ -290,10 +361,10 @@ llvm::DIType DebugInfo::CreateType(const CompoundType *Ty,
   std::string Name = ct->name;
 
   PresumedLoc PLoc = SM.getPresumedLoc(Ty->loc);
-  llvm::DICompileUnit DefUnit;
+  llvm::DIFile DefUnit;
   unsigned Line = 0;
   if (!PLoc.isInvalid()) {
-    DefUnit = getOrCreateCompileUnit(Ty->loc);
+    DefUnit = getOrCreateFile(Ty->loc);
     Line = PLoc.getLine();
   }
   
@@ -336,11 +407,11 @@ llvm::DIType DebugInfo::CreateType(const CompoundType *Ty,
     // Get the location for the field.
     SourceLocation FieldDefLoc = Field->loc;
     PresumedLoc PLoc = SM.getPresumedLoc(FieldDefLoc);
-    llvm::DICompileUnit FieldDefUnit;
+    llvm::DIFile FieldDefUnit;
     unsigned FieldLine = 0;
     
     if (!PLoc.isInvalid()) {
-      FieldDefUnit = getOrCreateCompileUnit(FieldDefLoc);
+      FieldDefUnit = getOrCreateFile(FieldDefLoc);
       FieldLine = PLoc.getLine();
     }
 
@@ -391,7 +462,7 @@ llvm::DIType DebugInfo::CreateType(const CompoundType *Ty,
 }
 
 llvm::DIType DebugInfo::CreateType(const EnumType *Ty,
-                                     llvm::DICompileUnit Unit) {
+                                     llvm::DIFile Unit) {
   EnumDecl *Decl = Ty->getDecl();
 
   llvm::SmallVector<llvm::DIDescriptor, 32> Enumerators;
@@ -410,7 +481,7 @@ llvm::DIType DebugInfo::CreateType(const EnumType *Ty,
 
   std::string EnumName = Decl->getNameAsString();
   SourceLocation DefLoc = Decl->loc;
-  llvm::DICompileUnit DefUnit = getOrCreateCompileUnit(DefLoc);
+  llvm::DIFile DefUnit = getOrCreateFile(DefLoc);
   SourceManager &SM = M->getContext().getSourceManager();
   PresumedLoc PLoc = SM.getPresumedLoc(DefLoc);
   unsigned Line = PLoc.isInvalid() ? 0 : PLoc.getLine();
@@ -431,7 +502,7 @@ llvm::DIType DebugInfo::CreateType(const EnumType *Ty,
 }
 
 llvm::DIType DebugInfo::CreateType(const TagType *Ty,
-                                     llvm::DICompileUnit Unit) {
+                                     llvm::DIFile Unit) {
   if (const RecordType *RT = dyn_cast<RecordType>(Ty))
     return CreateType(RT, Unit);
   else if (const EnumType *ET = dyn_cast<EnumType>(Ty))
@@ -441,7 +512,7 @@ llvm::DIType DebugInfo::CreateType(const TagType *Ty,
 }
 
 llvm::DIType DebugInfo::CreateType(const ArrayType *Ty,
-                                     llvm::DICompileUnit Unit) {
+                                     llvm::DIFile Unit) {
   uint64_t Size;
   uint64_t Align;
   
@@ -479,7 +550,7 @@ llvm::DIType DebugInfo::CreateType(const ArrayType *Ty,
     DebugFactory.GetOrCreateArray(Subscripts.data(), Subscripts.size());
 
   return DebugFactory.CreateCompositeType(llvm::dwarf::DW_TAG_array_type,
-                                          Unit, "", llvm::DICompileUnit(),
+                                          Unit, "", llvm::DIFile(),
                                           0, Size, Align, 0, 0,
                                           getOrCreateType(EltTy, Unit),
                                           SubscriptArray);
@@ -489,33 +560,38 @@ llvm::DIType DebugInfo::CreateType(const ArrayType *Ty,
 
 /// getOrCreateType - Get the type from the cache or create a new
 /// one if necessary.
-llvm::DIType DebugInfo::getOrCreateType(const Type* Ty, llvm::DICompileUnit Unit, bool cvDone)
+llvm::DIType DebugInfo::getOrCreateType(const Type* Ty, llvm::DIFile Unit, bool cvDone)
 {
 
     if (Ty == NULL)
         return llvm::DIType();
   
-    // Check TypeCache first.
-    llvm::DIType &Slot = TypeCache[Ty];
-    if (!Slot.isNull()) return Slot;
+    // Check for existing entry.
+    llvm::DenseMap<void *, llvm::WeakVH>::iterator it =
+      TypeCache.find((void*)Ty);
+    if (it != TypeCache.end()) {
+      // Verify that the debug info still exists.
+      if (&*it->second)
+        return llvm::DIType(llvm::cast<llvm::MDNode>(it->second));
+    }
 
     // Handle CVR qualifiers, which recursively handles what they refer to.
     if (!cvDone && Ty->isCVAtomicType()) {
         const CVAtomicType* cvt = Ty->asCVAtomicTypeC();
         if (cvt->cv & (CV_CONST | CV_VOLATILE | CV_RESTRICT)) {
-            return Slot = CreateCVRType(cvt, cvt->cv, Unit);
+            return CreateCVRType(cvt, cvt->cv, Unit);
         }
     }
 
     // Work out details of type.
     if (Ty->isSimpleType()) {
-        return Slot = CreateType(Ty->asSimpleTypeC(), Unit);
+        return CreateType(Ty->asSimpleTypeC(), Unit);
     }
     if (Ty->isPointerType()) {
-        return Slot = CreateType(Ty->asPointerTypeC(), Unit);
+        return CreateType(Ty->asPointerTypeC(), Unit);
     }
     if (Ty->isFunctionType()) {
-        return Slot = CreateType(Ty->asFunctionTypeC(), Unit);
+        return CreateType(Ty->asFunctionTypeC(), Unit);
     }
 
     return llvm::DIType();      // RICH
@@ -579,7 +655,7 @@ void DebugInfo::EmitFunctionStart(const char *Name, Type* ReturnType,
         ++Name;
   
     // FIXME: Why is this using CurLoc???
-    llvm::DICompileUnit Unit = getOrCreateCompileUnit(CurLoc);
+    llvm::DIFile Unit = getOrCreateFile(CurLoc);
     SourceManager SM;
     unsigned LineNo = SM.getPresumedLoc(CurLoc).getLine();
   
@@ -589,7 +665,8 @@ void DebugInfo::EmitFunctionStart(const char *Name, Type* ReturnType,
                                   Fn->hasInternalLinkage(), true/*definition*/);
   
     // Push function on region stack.
-    RegionStack.push_back(SP);
+    RegionStack.push_back(SP.getNode());
+    RegionMap[Fn] = llvm::WeakVH(SP.getNode());
 }
 
 
@@ -609,25 +686,27 @@ void DebugInfo::EmitStopPoint(llvm::Function *Fn, BuilderTy &Builder)
     PrevLoc = CurLoc;
 
     // Get the appropriate compile unit.
-    llvm::DICompileUnit Unit = getOrCreateCompileUnit(CurLoc);
+    llvm::DIFile Unit = getOrCreateFile(CurLoc);
     PresumedLoc PLoc = SM.getPresumedLoc(CurLoc);
-    llvm::DIDescriptor DR = RegionStack.back();
-    llvm::DIScope DS = llvm::DIScope(DR.getNode());
-    llvm::DILocation DO(NULL);
-    llvm::DILocation DL = DebugFactory.CreateLocation(PLoc.getLine(), PLoc.getColumn(),
-                                                      DS, DO);
-    Builder.SetCurrentDebugLocation(DL.getNode());
+
+    llvm::MDNode *Scope = RegionStack.back();
+    Builder.SetCurrentDebugLocation(llvm::DebugLoc::get(PLoc.getLine(),
+                                                        PLoc.getColumn(),
+                                                        Scope));
 }
 
 /// EmitRegionStart- Constructs the debug code for entering a declarative
 /// region - "llvm.dbg.region.start.".
 void DebugInfo::EmitRegionStart(llvm::Function *Fn, BuilderTy &Builder)
 {
-    llvm::DIDescriptor D;
-    if (!RegionStack.empty())
-        D = RegionStack.back();
-    D = DebugFactory.CreateLexicalBlock(D);
-    RegionStack.push_back(D);
+    SourceManager SM;
+  PresumedLoc PLoc = SM.getPresumedLoc(CurLoc);
+  llvm::DIDescriptor D =
+    DebugFactory.CreateLexicalBlock(RegionStack.empty() ?
+                                    llvm::DIDescriptor() :
+                                    llvm::DIDescriptor(RegionStack.back()),
+                                    PLoc.getLine(), PLoc.getColumn());
+  RegionStack.push_back(D.getNode());
 }
 
 /// EmitRegionEnd - Constructs the debug code for exiting a declarative
@@ -656,7 +735,7 @@ void DebugInfo::EmitDeclare(const Variable *Decl, unsigned Tag,
         return;
 #endif
 
-    llvm::DICompileUnit Unit = getOrCreateCompileUnit(Decl->loc);
+    llvm::DIFile Unit = getOrCreateFile(Decl->loc);
     llvm::DIType Ty = getOrCreateType(Decl->getTypeC(), Unit);
 
     // Get location information.
@@ -666,11 +745,12 @@ void DebugInfo::EmitDeclare(const Variable *Decl, unsigned Tag,
     if (!PLoc.isInvalid())
         Line = PLoc.getLine();
     else
-        Unit = llvm::DICompileUnit();
+        Unit = llvm::DIFile();
   
     // Create the descriptor for the variable.
     llvm::DIVariable D = 
-        DebugFactory.CreateVariable(Tag, RegionStack.back(), Decl->Name(env.TI),
+        DebugFactory.CreateVariable(Tag, llvm::DIDescriptor(RegionStack.back()),
+                                 Decl->Name(env.TI),
                                     Unit, Line, Ty);
     // Insert an llvm.dbg.declare into the current block .
     DebugFactory.InsertDeclare(Storage, D, Builder.GetInsertBlock());
@@ -703,7 +783,7 @@ void DebugInfo::EmitGlobalVariable(llvm::GlobalVariable *Var,
 #endif
 
   // Create global variable debug descriptor.
-  llvm::DICompileUnit Unit = getOrCreateCompileUnit(Decl->loc);
+  llvm::DIFile Unit = getOrCreateFile(Decl->loc);
   SourceManager SM;
   PresumedLoc PLoc = SM.getPresumedLoc(Decl->loc);
   unsigned LineNo = PLoc.isInvalid() ? 0 : PLoc.getLine();
@@ -724,6 +804,7 @@ void DebugInfo::EmitGlobalVariable(llvm::GlobalVariable *Var,
 #endif
 
     llvm::DIType Ty = getOrCreateType(T, Unit);;
+#if RICH
     if (0 && !Ty.isNull()) {    // RICH
         const char* Name = Decl->Name(env.TI);
         DebugFactory.CreateGlobalVariable(getContext(Decl, Unit), Name, Name, NULL,
@@ -731,4 +812,5 @@ void DebugInfo::EmitGlobalVariable(llvm::GlobalVariable *Var,
                                           Var->hasInternalLinkage(),
                                           true/*definition*/, Var);
     }
+#endif
 }
