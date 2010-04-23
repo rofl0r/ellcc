@@ -668,10 +668,6 @@ static cl::opt<bool> Fno_builtin("fno-builtin", cl::Optional, cl::init(false),  
     cl::desc("gcc compatability option"));
 static cl::opt<bool> Fshort_enums("fshort-enums", cl::Optional, cl::init(false), // RICH
     cl::desc("gcc compatability option"));
-static cl::opt<bool> Ffunction_sections("ffunction-sections", cl::Optional, cl::init(false),     // RICH
-    cl::desc("gcc compatability option"));
-static cl::opt<bool> Fdata_sections("fdata-sections", cl::Optional, cl::init(false),     // RICH
-    cl::desc("gcc compatability option"));
 static cl::opt<bool> Mno_eabi("mno-eabi", cl::Optional, cl::init(false),     // RICH
     cl::desc("gcc compatability option"));
 static cl::opt<bool> Mstrict_align("mstrict-align", cl::Optional, cl::init(false),     // RICH
