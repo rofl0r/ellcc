@@ -1998,7 +1998,6 @@ static bool InitializeSourceManager(Preprocessor &PP,
 /// Preprocess - Preprocess the given file.
 ///
 /// Inputs:
-///  InputFilename   - The name of the input source file.
 ///  OutputFilename  - The name of the file to generate.
 ///
 /// Outputs:
@@ -2214,7 +2213,6 @@ static int Assemble(const std::string &OutputFilename,
 /// Compile - Compile the given file with clang.
 ///
 /// Inputs:
-///  InputFilename   - The name of the input source file.
 ///  OutputFilename  - The name of the file to generate.
 ///
 /// Outputs:
@@ -2223,7 +2221,7 @@ static int Assemble(const std::string &OutputFilename,
 /// Returns non-zero value on error.
 ///
 static int Compile(const std::string &OutputFilename,
-                   const std::string &InputFilename,
+                   Input& input,
                    std::string& ErrMsg)
 {
   std::string prog = "clang";
@@ -2248,7 +2246,7 @@ static int Compile(const std::string &OutputFilename,
   args.push_back("-c");
   args.push_back("-o");
   args.push_back(OutputFilename);
-  args.push_back(InputFilename);
+  args.push_back(input.name.str());
 
   if (Arch.size()) {
       args.push_back("-arch");
@@ -2268,8 +2266,10 @@ static int Compile(const std::string &OutputFilename,
   }
 
   // Run program to compile the file.
-  int R = sys::Program::ExecuteAndWait(
-    program, &Args[0], NULL, 0, 0, 0, &ErrMsg);
+  int R = sys::Program::ExecuteAndWait(program, &Args[0],
+                                       NULL, 0, 0, 0, &ErrMsg);
+  // Mark the file as a temporary file.
+  input.temp = true;
   return R;
 }
 
@@ -2528,13 +2528,11 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
                 }
             }
 
-            if(Compile(to.str(), input.name.str(), ErrMsg) != 0) {
+            if(Compile(to.str(), input, ErrMsg) != 0) {
                 PrintAndExit(ErrMsg);
             }
 
             input.setName(to);
-            // Mark the file as a temporary file.
-            input.temp = true;
 
             if (TimeActions) {
                 timers[phase]->stopTimer();
