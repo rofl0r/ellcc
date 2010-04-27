@@ -2220,7 +2220,8 @@ static int Assemble(const std::string &OutputFilename,
 ///
 /// Returns non-zero value on error.
 ///
-static int Compile(const std::string &OutputFilename,
+static int Compile(LLVMContext& context,
+                   const std::string &OutputFilename,
                    Input& input,
                    std::string& ErrMsg)
 {
@@ -2268,8 +2269,19 @@ static int Compile(const std::string &OutputFilename,
   // Run program to compile the file.
   int R = sys::Program::ExecuteAndWait(program, &Args[0],
                                        NULL, 0, 0, 0, &ErrMsg);
+  input.setName(sys::Path(OutputFilename));
+ 
   // Mark the file as a temporary file.
   input.temp = true;
+
+  std::string ErrorMessage;
+  if (input.module == NULL) {
+      // Load the input module...
+      if (MemoryBuffer *Buffer = MemoryBuffer::getFileOrSTDIN(OutputFilename, &ErrorMessage)) {
+          input.module = ParseBitcodeFile(Buffer, context /* RICH: *new llvm::LLVMContext */, &ErrorMessage);
+          delete Buffer;
+      }
+  }
   return R;
 }
 
@@ -2528,11 +2540,9 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
                 }
             }
 
-            if(Compile(to.str(), input, ErrMsg) != 0) {
+            if(Compile(context, to.str(), input, ErrMsg) != 0) {
                 PrintAndExit(ErrMsg);
             }
-
-            input.setName(to);
 
             if (TimeActions) {
                 timers[phase]->stopTimer();
