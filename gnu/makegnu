@@ -36,8 +36,9 @@ while [ $# -gt 0 ] ; do
 done
 
 if [ $install -eq 0 ] ; then
- rm -fr obj
- mkdir obj
+  echo removed
+# rm -fr obj
+# mkdir obj
 fi
 
 cd obj
