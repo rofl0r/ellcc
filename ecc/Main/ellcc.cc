@@ -63,6 +63,7 @@
 #include "llvm/LinkAllPasses.h"
 #include "llvm/LinkAllVMCore.h"
 #include "llvm/Linker.h"
+#include "clang/Frontend/CompilerInstance.h"
 #include <iostream>
 #include <fstream>
 #include <memory>
@@ -550,7 +551,7 @@ static cl::opt<bool> KeepInlineFunctions("fkeep-inline-functions",
 //===          TOOL OPTIONS
 //===----------------------------------------------------------------------===//
 
-static cl::opt<bool> clang("clang", cl::Optional, cl::init(false),
+static cl::opt<bool> Clang("clang", cl::Optional, cl::init(false),
     cl::desc("Use clang to produce bitcode files"));
 
 static cl::list<std::string> PreprocessorToolOpts("Tpre", cl::ZeroOrMore,
@@ -2225,6 +2226,7 @@ static int Compile(LLVMContext& context,
                    Input& input,
                    std::string& ErrMsg)
 {
+#if 0
   std::string prog = "clang";
   // Look relative to the compiler binary.
   sys::Path program = PrefixPath;
@@ -2269,11 +2271,14 @@ static int Compile(LLVMContext& context,
   // Run program to compile the file.
   int R = sys::Program::ExecuteAndWait(program, &Args[0],
                                        NULL, 0, 0, 0, &ErrMsg);
-  input.setName(sys::Path(OutputFilename));
+#endif
  
+  clang::CompilerInstance Clang;
+  input.setName(sys::Path(OutputFilename));
   // Mark the file as a temporary file.
   input.temp = true;
 
+#if 0
   std::string ErrorMessage;
   if (input.module == NULL) {
       // Load the input module...
@@ -2283,6 +2288,7 @@ static int Compile(LLVMContext& context,
       }
   }
   return R;
+#endif
 }
 
 /// LinkFile - check for a valid bitcode file.
@@ -2512,7 +2518,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         break;
     }
     case TRANSLATION: {              // Translate source -> LLVM bitcode/assembly
-        if (clang) {
+        if (Clang) {
             // Use clang as the parser.
             if (TimeActions) {
                 timers[phase]->startTimer();
