@@ -1,6 +1,6 @@
 # Makefile for toplevel ELLCC distribution
 
-# just do the obvious recursive thing
+# Just do the obvious recursive thing.
 all:
 	$(MAKE) -C ecc
 
