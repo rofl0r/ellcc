@@ -1886,7 +1886,7 @@ void InitializePreprocessorInitOptions(PreprocessorInitOptions &InitOpts)
 //===----------------------------------------------------------------------===//
 
 namespace {
-class VISIBILITY_HIDDEN DriverPreprocessorFactory : public PreprocessorFactory {
+class DriverPreprocessorFactory : public PreprocessorFactory {
   Diagnostic        &Diags;
   const LangOptions &LO;
   TargetInfo        &TI;
@@ -2466,11 +2466,12 @@ static void doMulti(Phases phase, std::vector<Input*>& files,
     }
 
     // Delete any consumed files.
-    for (unsigned i = 0; i < files.size(); ++i ) {
-        if (files[i]->temp) {
-            if (!files[i]->name.eraseFromDisk() && Verbose) {
-                outs() << "  " << files[i]->name.str() << " has been deleted\n";
-                files[i]->name.clear();
+    if (!KeepTemps) {
+        for (unsigned i = 0; i < files.size(); ++i ) { if (files[i]->temp) {
+                if (!files[i]->name.eraseFromDisk() && Verbose) {
+                    outs() << "  " << files[i]->name.str() << " has been deleted\n";
+                    files[i]->name.clear();
+                }
             }
         }
     }
@@ -2887,58 +2888,37 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         formatted_raw_ostream *Out = new formatted_raw_ostream(*os,
             formatted_raw_ostream::DELETE_STREAM);
 
-        // If this target requires addPassesToEmitWholeFile, do it now.  This is
-        // used by strange things like the C backend.
-        if (Target.WantsWholeFile()) {
-            PassManager PM;
-            PM.add(new TargetData(*Target.getTargetData()));
-            if (!NoVerify)
-                PM.add(createVerifierPass());
-
-            // Ask the target to add backend passes as necessary.
-            if (Target.addPassesToEmitWholeFile(PM, *Out, FileType, getCodeGenOpt())) {
-                // RICH:
-                errs() << progname << ": target does not support generation of this"
-                    << " file type!\n";
-                if (Out != &fouts()) delete Out;
-                // And the Out file is empty and useless, so remove it now.
-                sys::Path(OutputFilename).eraseFromDisk();
-                Exit(1);
-            }
-            PM.run(*input.module);
-        } else {
-            // Build up all of the passes that we want to do to the module.
-            FunctionPassManager PM(input.module);
-            PM.add(new TargetData(*Target.getTargetData()));
+        // Build up all of the passes that we want to do to the module.
+        FunctionPassManager PM(input.module);
+        PM.add(new TargetData(*Target.getTargetData()));
 
 #ifndef NDEBUG
-            if (!NoVerify)
-                PM.add(createVerifierPass());
+        if (!NoVerify)
+            PM.add(createVerifierPass());
 #endif
 
-            Target.setAsmVerbosityDefault(true);
+        Target.setAsmVerbosityDefault(true);
 
-            if (Target.addPassesToEmitFile(PM, *Out, FileType, getCodeGenOpt())) {
-              errs() << argv0 << ": target does not support generation of this"
-                     << " file type!\n";
-              if (Out != &fouts()) delete Out;
-              // And the Out file is empty and useless, so remove it now.
-              sys::Path(OutputFilename).eraseFromDisk();
-              Exit(1);
-            }
-
-            PM.doInitialization();
-
-            // Run our queue of passes all at once now, efficiently.
-            // TODO: this could lazily stream functions out of the module.
-            for (Module::iterator I = input.module->begin(), E = input.module->end(); I != E; ++I) {
-                if (!I->isDeclaration()) {
-                    PM.run(*I);
-                }
-            }
-
-            PM.doFinalization();
+        if (Target.addPassesToEmitFile(PM, *Out, FileType, getCodeGenOpt())) {
+          errs() << argv0 << ": target does not support generation of this"
+                 << " file type!\n";
+          if (Out != &fouts()) delete Out;
+          // And the Out file is empty and useless, so remove it now.
+          sys::Path(OutputFilename).eraseFromDisk();
+          Exit(1);
         }
+
+        PM.doInitialization();
+
+        // Run our queue of passes all at once now, efficiently.
+        // TODO: this could lazily stream functions out of the module.
+        for (Module::iterator I = input.module->begin(), E = input.module->end(); I != E; ++I) {
+            if (!I->isDeclaration()) {
+                PM.run(*I);
+            }
+        }
+
+        PM.doFinalization();
 
         Out->flush();
 

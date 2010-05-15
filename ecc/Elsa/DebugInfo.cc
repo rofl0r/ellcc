@@ -153,7 +153,7 @@ llvm::DIFile DebugInfo::getOrCreateFile(SourceLocation Loc)
   llvm::DIFile F = DebugFactory.CreateFile(AbsFileName.getLast(),
                                            AbsFileName.getDirname(), TheCU);
 
-  DIFileCache[fname] = F.getNode();
+  DIFileCache[fname] = F;
   return F;
 #endif
 }
@@ -665,8 +665,9 @@ void DebugInfo::EmitFunctionStart(const char *Name, Type* ReturnType,
                                   Fn->hasInternalLinkage(), true/*definition*/);
   
     // Push function on region stack.
-    RegionStack.push_back(SP.getNode());
-    RegionMap[Fn] = llvm::WeakVH(SP.getNode());
+    llvm::MDNode *SPN = SP;
+    RegionStack.push_back(SPN);
+    RegionMap[Fn] = llvm::WeakVH(SP);
 }
 
 
@@ -706,7 +707,8 @@ void DebugInfo::EmitRegionStart(llvm::Function *Fn, BuilderTy &Builder)
                                     llvm::DIDescriptor() :
                                     llvm::DIDescriptor(RegionStack.back()),
                                     PLoc.getLine(), PLoc.getColumn());
-  RegionStack.push_back(D.getNode());
+  llvm::MDNode *DN = D;
+  RegionStack.push_back(DN);
 }
 
 /// EmitRegionEnd - Constructs the debug code for exiting a declarative

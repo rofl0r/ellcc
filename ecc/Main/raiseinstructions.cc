@@ -39,7 +39,7 @@ STATISTIC(NumRaised, "Number of instructions raised");
 namespace {
   /// RaiseInstructions - Turn unsupported insts into library calls.
   ///
-  class VISIBILITY_HIDDEN RaiseInstructions : public BasicBlockPass {
+  class RaiseInstructions : public BasicBlockPass {
     const TargetInfo::RaiseInstructionsList* List;      // The input list.
     int Size;                                           // Length of the list.
     typedef std::multimap<short, const TargetInfo::RaiseInstructionsList*> MapType;

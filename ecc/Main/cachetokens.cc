@@ -39,7 +39,7 @@ using namespace ellcc::io;
 //===----------------------------------------------------------------------===//
 
 namespace {
-class VISIBILITY_HIDDEN PTHEntry {
+class PTHEntry {
   Offset TokenData, PPCondData;  
 
 public:  
@@ -53,7 +53,7 @@ public:
 };
   
   
-class VISIBILITY_HIDDEN PTHEntryKeyVariant {
+class PTHEntryKeyVariant {
   union { const FileEntry* FE; const char* Path; };
   enum { IsFE = 0x1, IsDE = 0x2, IsNoExist = 0x0 } Kind;
   struct stat *StatBuf;
@@ -104,7 +104,7 @@ public:
   }
 };
   
-class VISIBILITY_HIDDEN FileEntryPTHEntryInfo {
+class FileEntryPTHEntryInfo {
 public:
   typedef PTHEntryKeyVariant key_type;
   typedef key_type key_type_ref;
@@ -168,7 +168,7 @@ typedef llvm::DenseMap<const IdentifierInfo*,uint32_t> IDMap;
 typedef llvm::StringMap<OffsetOpt, llvm::BumpPtrAllocator> CachedStrsTy;
 
 namespace {
-class VISIBILITY_HIDDEN PTHWriter {
+class PTHWriter {
   IDMap IM;
   llvm::raw_fd_ostream& Out;
   Preprocessor& PP;
@@ -584,7 +584,7 @@ public:
 };
 
 namespace {
-class VISIBILITY_HIDDEN PTHIdentifierTableTrait {
+class PTHIdentifierTableTrait {
 public:
   typedef PTHIdKey* key_type;
   typedef key_type  key_type_ref;

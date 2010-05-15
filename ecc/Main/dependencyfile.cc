@@ -28,7 +28,7 @@
 using namespace ellcc;
 
 namespace {
-class VISIBILITY_HIDDEN DependencyFileCallback : public PPCallbacks {
+class DependencyFileCallback : public PPCallbacks {
   std::vector<std::string> Files;
   llvm::StringSet<> FilesSet;
   const Preprocessor *PP;

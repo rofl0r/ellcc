@@ -291,7 +291,7 @@ SourceLocation PTHLexer::getSourceLocation() {
 ///  to map from FileEntry objects managed by FileManager to offsets within
 ///  the PTH file.
 namespace {
-class VISIBILITY_HIDDEN PTHFileData {
+class PTHFileData {
   const uint32_t TokenOff;
   const uint32_t PPCondOff;
 public:
@@ -303,7 +303,7 @@ public:
 };
   
   
-class VISIBILITY_HIDDEN PTHFileLookupCommonTrait {
+class PTHFileLookupCommonTrait {
 public:
   typedef std::pair<unsigned char, const char*> internal_key_type;
 
@@ -324,7 +324,7 @@ public:
   }
 };
   
-class VISIBILITY_HIDDEN PTHFileLookupTrait : public PTHFileLookupCommonTrait {
+class PTHFileLookupTrait : public PTHFileLookupCommonTrait {
 public:
   typedef const FileEntry* external_key_type;
   typedef PTHFileData      data_type;
@@ -346,7 +346,7 @@ public:
   }
 };
 
-class VISIBILITY_HIDDEN PTHStringLookupTrait {
+class PTHStringLookupTrait {
 public:
   typedef uint32_t 
           data_type;
@@ -614,7 +614,7 @@ PTHLexer *PTHManager::CreateLexer(FileID FID) {
 //===----------------------------------------------------------------------===//
 
 namespace {
-class VISIBILITY_HIDDEN PTHStatData {
+class PTHStatData {
 public:
   const bool hasStat;
   const ino_t ino;
@@ -630,7 +630,7 @@ public:
     : hasStat(false), ino(0), dev(0), mode(0), mtime(0), size(0) {}
 };
   
-class VISIBILITY_HIDDEN PTHStatLookupTrait : public PTHFileLookupCommonTrait {
+class PTHStatLookupTrait : public PTHFileLookupCommonTrait {
 public:
   typedef const char* external_key_type;  // const char*
   typedef PTHStatData data_type;
@@ -663,7 +663,7 @@ public:
   }
 };
 
-class VISIBILITY_HIDDEN PTHStatCache : public StatSysCallCache {
+class PTHStatCache : public StatSysCallCache {
   typedef OnDiskChainedHashTable<PTHStatLookupTrait> CacheTy;
   CacheTy Cache;
 

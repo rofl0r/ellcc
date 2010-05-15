@@ -44,6 +44,8 @@ struct StaticDiagInfoRec {
   unsigned Mapping : 3;
   unsigned Class : 3;
   bool SFINAE : 1;
+  unsigned Category : 5;
+
   const char *Description;
   const char *OptionGroup;
   
@@ -59,8 +61,8 @@ struct StaticDiagInfoRec {
  * smallest error number to largest as defined in Diagnostic.h.
  */
 static const StaticDiagInfoRec StaticDiagInfo[] = {
-#define DIAG(ENUM,CLASS,DEFAULT_MAPPING,DESC,GROUP,SFINAE) \
-  { diag::ENUM, DEFAULT_MAPPING, CLASS, SFINAE, DESC, GROUP },
+#define DIAG(ENUM,CLASS,DEFAULT_MAPPING,DESC,GROUP,SFINAE, CATEGORY)    \
+  { diag::ENUM, DEFAULT_MAPPING, CLASS, SFINAE, CATEGORY, DESC, GROUP },
 #include "DiagnosticCommonKinds.inc"
 #include "DiagnosticEllccKinds.inc"
 #include "DiagnosticLexKinds.inc"
@@ -425,7 +427,7 @@ Diagnostic::getDiagnosticLevel(unsigned DiagID, unsigned DiagClass) const {
 struct WarningOption {
   const char  *Name;
   const short *Members;
-  const char  *SubGroups;
+  const short  *SubGroups;
 };
 
 #define GET_DIAG_ARRAYS
@@ -455,9 +457,9 @@ static void MapGroupMembers(const WarningOption *Group, diag::Mapping Mapping,
   }
   
   // Enable/disable all subgroups along with this one.
-  if (const char *SubGroups = Group->SubGroups) {
-    for (; *SubGroups != (char)-1; ++SubGroups)
-      MapGroupMembers(&OptionTable[(unsigned char)*SubGroups], Mapping, Diags);
+  if (const short *SubGroups = Group->SubGroups) {
+    for (; *SubGroups != (short)-1; ++SubGroups)
+      MapGroupMembers(&OptionTable[(short)*SubGroups], Mapping, Diags);
   }
 }
 
