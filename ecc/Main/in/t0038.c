@@ -1,4 +1,0 @@
-// SPU fails.
-int main()
-{
-}
