@@ -1,0 +1,123 @@
+#!/bin/sh
+
+# Install in the ELLCC staging directory.
+prefix=`cd ..; pwd`
+targets=`cat ../targets`
+targetlist=`echo $targets | sed -e "s/ /,/g"`
+bin=`cd ../bin; pwd`
+# To build for the x86 with libecc:
+#cc=$bin/x86-elf-ecc
+#cxx=$bin/x86-elf-e++
+
+# To build with the hosted ecc and host libraries:
+#cc=$bin/ecc
+#cxx=$bin/e++
+
+# To build with the clang and host libraries:
+#cc=$bin/clang
+#cxx=$bin/clang++
+
+# To build with the host compiler:
+cc=$CC
+cxx=$CXX
+
+
+# Parse options.
+install=0
+while [ $# -gt 0 ] ; do
+  case $1 in
+    install)
+      install=1 ;;
+    *)
+      echo "illegal option '$1'"
+      exit ;;
+  esac
+  shift
+done
+
+if [ $install -eq 0 ] ; then
+#  echo removed
+ rm -fr obj
+ mkdir obj
+fi
+
+cd obj
+
+# Symbolic links to create.
+linklist= # "addr2line ar ld nm objcopy objdump ranlib readelf size strings strip"
+
+packages="gdb binutils"
+for p in $packages; do
+if [ $install -eq 0 ] ; then
+  echo Making package $p for $targets
+  mkdir $p
+  cd $p
+  ../../src/$p/configure CC=$cc CXX=$cxx --enable-64-bit-bfd --enable-targets=$targetlist \
+    --program-prefix=ecc- --prefix=$prefix/libecc --bindir=$prefix/bin --datadir=$prefix/libecc/share
+  if [ $? -ne 0 ] ; then
+    echo configure for tools failed
+    exit 1
+  fi
+
+  sed -e "s:/.*/gnu/src/missing ::g" Makefile > tmp$$
+  mv tmp$$ Makefile
+
+  make
+  if [ $? -ne 0 ] ; then
+    echo make for tools failed
+    exit 1
+  fi
+  cd ..
+else
+  cd $p
+  make install
+  if [ $? -ne 0 ] ; then
+    echo make install failed
+    exit 1
+  fi
+  make install-html
+  if [ $? -ne 0 ] ; then
+    echo make install-html failed
+    exit 1
+  fi
+  for target in $targets ; do
+    for tool in $linklist ; do
+      (cd $prefix/bin; ln -sf ecc-$tool $target-$tool)
+    done
+  done
+  cd ..
+fi
+done
+
+cd ..
+
+cd obj
+cd binutils
+for t in $targets; do
+  if [ $install -eq 0 ] ; then
+    mkdir $t
+    cd $t
+    echo Making the assembler for $t
+    ../../../src/binutils/gas/configure CC=$cc CXX=$cxx --target=$t --program-prefix=${t}- \
+        --prefix=$prefix/libecc --bindir=$prefix/bin --datadir=$prefix/libecc/share
+    if [ $? -ne 0 ] ; then
+      echo configure for $t failed
+      exit 1
+    fi
+    make
+    if [ $? -ne 0 ] ; then
+      echo make for $t failed
+      exit 1
+    fi
+    cd ..
+  else
+    cd $t
+    make install
+    if [ $? -ne 0 ] ; then
+      echo make install for $t failed
+      exit 1
+    fi
+    cd ..
+  fi
+done
+cd ../..
