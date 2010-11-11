@@ -1,14 +1,4 @@
-#!/bin/sh
-# ELLCC distribution configure
+#! /bin/sh
+# thunk
 
-# for now, just fire off default configurations
-# in each of the subdirs; users can then go customize
-# as desired
-
-(cd SMBase && ./configure "$@") || exit 1
-(cd Basic && ./configure "$@") || exit 1
-(cd Lex && ./configure "$@") || exit 1
-(cd Ast && ./configure "$@") || exit 1
-(cd Elkhound && ./configure "$@") || exit 1
-(cd Elsa && ./configure "$@") || exit 1
-(cd Main && ./configure "$@") || exit 1
+exec perl -wS ./configure.pl ${1+"$@"}
