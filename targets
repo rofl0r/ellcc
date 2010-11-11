@@ -1,12 +1,6 @@
-alpha-elf
 arm-elf
 mips-elf
-msp430-elf
-nios2-elf
 powerpc-elf
-powerpc64-elf
-sparc-elf
-spu-elf
-x86-elf
+microblaze-elf
+i686-elf
 x86_64-elf
-x86-pe
