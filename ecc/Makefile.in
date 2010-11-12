@@ -1,5 +1,5 @@
 # Makefile.in
-# this is the Makefile for ecc, the Elsa/LLVM C/C++ Parser
+# this is the Makefile for ecc, the Embedded Compiler Collection driver
 
 # Get the target compiler names.
 CCS=$(foreach target, $(shell cat ../../targets),$(target)-ecc)
@@ -8,27 +8,6 @@ CXXS+=e++
 
 # main target is 'ecc', a C/C++ parser.
 all: ecc quicktest $(CCS) $(CXXS)
-
-# directories of other software
-SMBASE   := @SMBASE@
-BASIC    := @BASIC@
-LEX      := @LEX@
-AST      := @AST@
-ELKHOUND := @ELKHOUND@
-ELSA     := @ELSA@
-
-# stuff inside those other directories
-LIBSMBASE   := $(SMBASE)/libsmbase.a
-LIBBASIC     := $(BASIC)/libbasic.a
-LIBLEX     := $(LEX)/liblex.a
-LIBAST      := $(AST)/libast.a
-LIBELKHOUND := $(ELKHOUND)/libelkhound.a
-LIBELSA     := $(ELSA)/libelsa.a
-
-# external tools
-PERL := @PERL@
-MYFLEX := $(PERL) $(SMBASE)/run-flex.pl -nobackup -copies
-DEP := $(PERL) $(SMBASE)/depend.pl
 
 # list of files to clean in 'clean' (etc.) targets
 # (these get added to below)
@@ -42,7 +21,7 @@ Makefile: Makefile.in config.status
 	./config.status
 
 # reconfigure if the configure script has changed
-config.status: configure.pl $(SMBASE)/sm_config.pm
+config.status: configure.pl
 	./config.status -reconfigure
 
 # modules to compile with coverage info; I do not build them
@@ -88,7 +67,7 @@ LDFLAGS := @LDFLAGS@ $(libraries)
 
 # compile .cc in this directory to a .o
 TOCLEAN += *.o *.d
-%.o: %.cc
+%.o: %.cxx
 	$(CXX) -c -o $@ $< $(if $(findstring $*,$(GCOV_MODS)),$(GCOV_OPTS) )$(CCFLAGS) $(LLVMCCFLAGS)
 	@$(DEP)   -o $@ $< $(if $(findstring $*,$(GCOV_MODS)),$(GCOV_OPTS) )$(CCFLAGS) $(LLVMCCFLAGS) >$*.d
 
@@ -97,11 +76,7 @@ TOCLEAN += *.o *.d
 # list of modules needed for the parser; ideally they're in an order
 # that finds serious compilation problems earliest (it's ok to
 # rearrange as different parts of the code are in flux)
-ECC_OBJS := \
-  raiseinstructions.o \
-  ellcc.o elsa.o \
-  ppoutput.o textdiagnosticbuffer.o textdiagnosticprinter.o warnings.o dependencyfile.o \
-  diagchecker.o cachetokens.o initpreprocessor.o initheadersearch.o
+ECC_OBJS := ecc.o
 
 -include $(ECC_OBJS:.o=.d)
 

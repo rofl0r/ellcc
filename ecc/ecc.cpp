@@ -1,6 +1,6 @@
-//===- ellcc.cc - The Elsa<->LLVM driver ----------------------------------===//
+//===- ecc.cc - The Embedded Compiler Collection driver -------------------===//
 //
-// Copyright (c) 2009, Richard Pennington
+// Copyright (c) 2009, 2010 Richard Pennington
 // All rights reserved.
 //
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
@@ -17,6 +17,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#if RICH
 #include "EllccDiagnostic.h"
 #include "ElsaDiagnostic.h"
 #include "LexDiagnostic.h"
@@ -29,6 +30,7 @@
 #include "LangOptions.h"
 #include "raiseinstructions.h"
 #include "TargetInfo.h"
+#endif
 #include "llvm/LLVMContext.h"
 #include "llvm/Module.h"
 #include "llvm/PassManager.h"
@@ -70,7 +72,7 @@
 #include <algorithm>
 #include <unistd.h>
 
-#include "ellcc.h"  
+#include "ecc.h"  
 
 #define xxstr(x) #x
 #define xstr(x) xxstr(x)
@@ -89,7 +91,7 @@
 #define GCC_VERSION_STRING xstr(GCC) "." xstr(GCC_MINOR) "." xstr(GCC_PATCHLEVEL)
 
 using namespace llvm;
-using namespace ellcc;
+using namespace ecc;
 
 /** The name of the program.
  * This name is in the form [<target>[-<os>][-format]-]<prog>
@@ -113,12 +115,14 @@ using namespace ellcc;
 static std::string progname;                    // The program name.        
 static const char* argv0;                       // argv[0]
 sys::Path PrefixPath;                           // The "prefix" path.
+static std::vector<const char *> exportList;    // Externals to preserve.
+#if RICH
 static OwningPtr<SourceManager> SourceMgr;
 // Create a file manager object to provide access to and cache the filesystem.
 static FileManager FileMgr;
 static Diagnostic Diags;
 static OwningPtr<TargetInfo> TI;
-static std::vector<const char *> exportList;    // Externals to preserve.
+#endif
  
 /** File types.
  */
@@ -812,7 +816,7 @@ struct Input {
     FileTypes type;             ///< The input's type.
     Module* module;             ///< The module associated with the input, if any.
     bool temp;                  ///< true if this is contained in a temporary file.
-    LangOptions LO;             ///< Information about the language.
+    // RICH: LangOptions LO;             ///< Information about the language.
     Input() : type(NONE), module(NULL), temp(false) {}
     Input(std::string& name, FileTypes type = NONE,
           Module* module = NULL, bool temp = false)
@@ -897,7 +901,7 @@ static cl::list<FileTypes> Languages("x", cl::ZeroOrMore,
         clEnumValN(LL, "llvm-as", "An LLVM assembly file"),
         clEnumValN(LLX, "llvm-as-with-cpp", "An LLVM assembly file that must be preprocessed"),
         clEnumValN(BC, "llvm-bc", "An LLVM bitcode file"),
-        clEnumValN(UBC, "llvm-bc", "An unoptimized LLVM bitcode file"),
+        clEnumValN(UBC, "llvm-ubc", "An unoptimized LLVM bitcode file"),
         clEnumValN(S, "assembly", "An assembly file"),
         clEnumValN(SX, "assembly-with-cpp", "An assembly file that must be preprocessed"),
         clEnumValN(O, "other", "An object file, linker command file, etc"),
@@ -908,6 +912,7 @@ OverflowChecking("ftrapv",
                  cl::desc("Trap on integer overflow"),
                  cl::init(false));
 
+#if RICH
 static void InitializeCOptions(LangOptions &Options) {
     // Do nothing.
 }
@@ -938,6 +943,7 @@ static void InitializeLangOptions(LangOptions &Options, FileTypes FT)
   
   Options.OverflowChecking = OverflowChecking;
 }
+#endif
 
 enum LangStds {
   lang_unspecified,  
@@ -1082,6 +1088,7 @@ StaticDefine("static-define", cl::desc("Should __STATIC__ be defined"));
 static cl::opt<bool>
 MSVCCompat("msvc", cl::desc("Microsoft Visual C/C++ compatability"));
 
+#if RICH
 static void InitializeLanguageStandard(LangOptions &LO, FileTypes FT,
                                        TargetInfo& TI,
                                        const StringMap<bool> &Features) {
@@ -1216,6 +1223,7 @@ static void InitializeLanguageStandard(LangOptions &LO, FileTypes FT,
 
   LO.setProducer(ELLCC_PRODUCER);
 }
+#endif
 
 //===----------------------------------------------------------------------===//
 // Target Triple Processing.
@@ -1393,8 +1401,10 @@ namespace {
 struct ModulePassPrinter : public ModulePass {
   static char ID;
   const PassInfo *PassToPrint;
+#if RICH
   ModulePassPrinter(const PassInfo *PI) : ModulePass((intptr_t)&ID),
                                           PassToPrint(PI) {}
+#endif
 
   virtual bool runOnModule(Module &M) {
     if (!Quiet) {
@@ -1418,8 +1428,10 @@ char ModulePassPrinter::ID = 0;
 struct FunctionPassPrinter : public FunctionPass {
   const PassInfo *PassToPrint;
   static char ID;
+#if RICH
   FunctionPassPrinter(const PassInfo *PI) : FunctionPass((intptr_t)&ID),
                                             PassToPrint(PI) {}
+#endif
 
   virtual bool runOnFunction(Function &F) {
     if (!Quiet) { 
@@ -1444,8 +1456,10 @@ char FunctionPassPrinter::ID = 0;
 struct LoopPassPrinter : public LoopPass {
   static char ID;
   const PassInfo *PassToPrint;
+#if RICH
   LoopPassPrinter(const PassInfo *PI) : 
     LoopPass((intptr_t)&ID), PassToPrint(PI) {}
+#endif
 
   virtual bool runOnLoop(Loop *L, LPPassManager &LPM) {
     if (!Quiet) {
@@ -1470,8 +1484,10 @@ char LoopPassPrinter::ID = 0;
 struct BasicBlockPassPrinter : public BasicBlockPass {
   const PassInfo *PassToPrint;
   static char ID;
+#if RICH
   BasicBlockPassPrinter(const PassInfo *PI) 
     : BasicBlockPass((intptr_t)&ID), PassToPrint(PI) {}
+#endif
 
   virtual bool runOnBasicBlock(BasicBlock &BB) {
     if (!Quiet) {
@@ -1515,17 +1531,6 @@ void AddStandardCompilePasses(PassManager &PM) {
                              InliningPass);
 }
 
-static TargetInfo::RaiseInstructionsList* RaiseList;
-static unsigned NumRaises;
-static void InitializeRaiseList(Module* M)
-{
-    TI->getRaiseInstructionsList(M->getContext(), RaiseList, NumRaises);
-    for (unsigned index = 0; index < NumRaises; ++index) {
-        // Create a reference to the function for linking.
-        M->getOrInsertFunction(RaiseList[index].Name, RaiseList[index].FuncType);
-    }
-}
-
 static void AddStandardLinkPasses(PassManager &PM)
 {
     PM.add(createVerifierPass());               // Verify that input is correct
@@ -1533,10 +1538,6 @@ static void AddStandardLinkPasses(PassManager &PM)
     // If the -strip-debug command line option was specified, do it.
     if (StripDebug)
         addOnePass(&PM, createStripSymbolsPass(true), VerifyEach);
-
-    if (NumRaises) {
-        addOnePass(&PM, createRaiseInstructionsPass(RaiseList, NumRaises), VerifyEach);
-    }
 
     if (!DisableInternalize)
         addOnePass(&PM, createInternalizePass(exportList), VerifyEach);
@@ -1726,6 +1727,7 @@ isysroot("isysroot", cl::value_desc("dir"), cl::init("/"),
 
 // Finally, implement the code that groks the options above.
 
+#if RICH
 /// InitializeIncludePaths - Process the -I options and set them in the
 /// HeaderSearch object.
 void InitializeIncludePaths(HeaderSearch &Headers,
@@ -1835,7 +1837,9 @@ void InitializeIncludePaths(HeaderSearch &Headers,
   
   Init.Realize();
 }
+#endif
 
+#if RICH
 void InitializePreprocessorInitOptions(PreprocessorInitOptions &InitOpts)
 {
   // Add macros from the command line.
@@ -1996,6 +2000,8 @@ static bool InitializeSourceManager(Preprocessor &PP,
   return false;
 }
 
+#endif
+
 /// Preprocess - Preprocess the given file.
 ///
 /// Inputs:
@@ -2008,6 +2014,7 @@ static bool InitializeSourceManager(Preprocessor &PP,
 ///
 static int Preprocess(const std::string &OutputFilename, Input& input)
 {
+#if RICH
     // Process the -I options and set them in the HeaderInfo.
     HeaderSearch HeaderInfo(FileMgr);
     InitializeIncludePaths(HeaderInfo, FileMgr, input.LO);
@@ -2027,6 +2034,7 @@ static int Preprocess(const std::string &OutputFilename, Input& input)
                                             PP->getLangOptions().NoBuiltin);
     DoPrintPreprocessedInput(*PP.get(), OutputFilename);
     return Diags.getNumErrors() != 0;
+#endif
 }
 
 /// Link - generates a native object file from the
@@ -2119,7 +2127,7 @@ static int Link(const std::string& OutputFilename,
   }
 
   if (!hosted) {
-    // Add the ellcc library paths, which are relative to the ellcc binary.
+    // Add the ecc library paths, which are relative to the ecc binary.
     found.clear();
     findFiles(found, "lib");
     for (size_t i = 0; i < found.size(); ++i) {
@@ -2358,7 +2366,7 @@ static void doMulti(Phases phase, std::vector<Input*>& files,
         // Add library paths to the linker
         TheLinker.addPaths(LibPaths);
         TheLinker.addSystemPaths();
-        InitializeRaiseList(TheLinker.getModule());
+        // RICH: InitializeRaiseList(TheLinker.getModule());
         for (unsigned i = 0; i < files.size(); ++i) {
             if (files[i]->module) {
                 // We have this module.
@@ -2480,7 +2488,7 @@ static void doMulti(Phases phase, std::vector<Input*>& files,
 //===----------------------------------------------------------------------===//
 //===          doSingle - Handle a phase acting on a single file.
 //===----------------------------------------------------------------------===//
-static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes thisType,
+static FileTypes doSingle(Phases phase, Input& input, /* RICH Elsa& elsa, */ FileTypes thisType,
                           LLVMContext& context)
 {
     FileTypes nextType = filePhases[thisType][phase].type;
@@ -2568,6 +2576,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
         sys::Path to(input.name.getBasename());
         to.appendSuffix(langToExt[nextType]);
         if (filePhases[thisType][phase].action == CCOMPILE) {
+#if RICH
             // Process the -I options and set them in the HeaderInfo.
             HeaderSearch HeaderInfo(FileMgr);
             InitializeIncludePaths(HeaderInfo, FileMgr, input.LO);
@@ -2594,6 +2603,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
             if (result) {
                 Exit(result);
             }
+#endif
         } else {
             // RICH: Non C sources, e.g. .ll->.ubc
         }
@@ -2689,6 +2699,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
             if (P) {
                 addOnePass(&PM, P, VerifyEach);
             
+#if RICH
                 if (AnalyzeOnly) {
                     switch (P->getPassKind()) {
                     case PT_BasicBlock:
@@ -2705,6 +2716,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
                       break;
                     }
                 }
+#endif
             }
           
             if (PrintEachXForm)
@@ -2986,6 +2998,7 @@ static FileTypes doSingle(Phases phase, Input& input, Elsa& elsa, FileTypes this
     return nextType;
 }
 
+#if RICH
 /// ComputeTargetFeatures - Recompute the target feature list to only
 /// be the list of things that are enabled, based on the target cpu
 /// and feature list.
@@ -3012,17 +3025,18 @@ static void ComputeFeatureMap(TargetInfo& TI, StringMap<bool> &Features)
         }
   }
 }
+#endif
 
 // Catch LLVM errors.
 static void handleLLVMErrors(void* user_data, const std::string& reason)
 {
-    Diags.Report(FullSourceLoc(), diag::err_fe_internal_error) << reason;
+    // RICH: Diags.Report(FullSourceLoc(), diag::err_fe_internal_error) << reason;
     llvm_shutdown();
     Exit(1);
 }
 
 //===----------------------------------------------------------------------===//
-// main for ellcc
+// main for ecc
 //
 int main(int argc, char **argv)
 {
@@ -3034,7 +3048,7 @@ int main(int argc, char **argv)
     InitializeAllAsmPrinters();
     // Create the diagnostic client for reporting errors or for
     // implementing -verify.
-    OwningPtr<DiagnosticClient> DiagClient;
+    // RICH: OwningPtr<DiagnosticClient> DiagClient;
     llvm::install_fatal_error_handler(handleLLVMErrors, /* user_data */ NULL);
 
     try {
@@ -3099,6 +3113,7 @@ int main(int argc, char **argv)
             NoColorDiagnostic.setValue(!sys::Process::StandardErrHasColors());
         }
 
+#if RICH
         DiagClient.reset(new TextDiagnosticPrinter(outs(),
                                                    !NoShowColumn,
                                                    !NoCaretDiagnostics,
@@ -3144,10 +3159,11 @@ int main(int argc, char **argv)
         for ( ; traceIt != ElsaTraceOpts.end(); ++traceIt) {
             elsa.addTrace((*traceIt).c_str());
         }
+#endif
 
         if (Arch.size()) {
             if (FinalPhase >= BCLINKING && !NoLink && !NoCrt0) {
-                // Add the ellcc crt0.o, which is relative to the ellcc binary.
+                // Add the ecc crt0.o, which is relative to the ecc binary.
                 std::vector<std::string> found;
                 findFiles(found, "crt0.o", "lib");
                 if (found.size()) {
@@ -3179,6 +3195,7 @@ int main(int argc, char **argv)
                 }
                 Input input(*fileIt, type);
     
+#if RICH
                 /// Create a SourceManager object.  This tracks and owns all the file
                 /// buffers allocated to a translation unit.
                 if (!SourceMgr)
@@ -3190,6 +3207,7 @@ int main(int argc, char **argv)
                 DiagClient->setLangOptions(&input.LO);
                 InitializeLangOptions(input.LO, type);
                 InitializeLanguageStandard(input.LO, type, *TI.get(), Features);
+#endif
                 InpList.push_back(input);
                 ++fileIt;
             } else if ( libPos != 0 && (filePos == 0 || libPos < filePos) ) {
@@ -3215,6 +3233,7 @@ int main(int argc, char **argv)
             }
             Input input(name, type);
             
+#if RICH
             /// Create a SourceManager object.  This tracks and owns all the file
             /// buffers allocated to a translation unit.
             if (!SourceMgr)
@@ -3226,12 +3245,13 @@ int main(int argc, char **argv)
             DiagClient->setLangOptions(&input.LO);
             InitializeLangOptions(input.LO, type);
             InitializeLanguageStandard(input.LO, type, *TI.get(), Features);
+#endif
             InpList.push_back(input);
         }
 
         if (Arch.size()) {
             if (FinalPhase >= BCLINKING && !NoLink) {
-                // Add the ellcc libecc.a, which is relative to the ellcc binary.
+                // Add the ecc libecc.a, which is relative to the ecc binary.
                 std::vector<std::string> found;
                 findFiles(found, "libecc.a", "lib");
                 if (found.size()) {
@@ -3314,7 +3334,7 @@ int main(int argc, char **argv)
                     }
                     if (filePhases[it->type][phase].type != NONE) {
                         // Perform the phase on the file.
-                        it->type = doSingle(phase, *it, elsa, it->type, context);
+                        it->type = doSingle(phase, *it, /* RICH: elsa, */ it->type, context);
                     } else {
                         if (Verbose) {
                             outs() << "  " << it->name.str() << " is ignored during this phase\n";
@@ -3332,7 +3352,7 @@ int main(int argc, char **argv)
                     it->temp = false;
                 }
             }
-            if (FinalPhase == phase || Diags.hasErrorOccurred()) {
+            if (FinalPhase == phase) { // RICH:  || Diags.hasErrorOccurred()) {
                 break;
             }
 
@@ -3378,18 +3398,20 @@ int main(int argc, char **argv)
         }
             
     } catch (const std::string& msg) {
-        Diags.Report(FullSourceLoc(), diag::err_fe_internal_error) << msg;
+        // RICH: Diags.Report(FullSourceLoc(), diag::err_fe_internal_error) << msg;
         status =  1;
     } catch (const char* msg) {
-        Diags.Report(FullSourceLoc(), diag::err_fe_internal_error) << msg;
+        // RICH: Diags.Report(FullSourceLoc(), diag::err_fe_internal_error) << msg;
         status =  1;
     } catch (...) {
+#if RICH
         Diags.Report(FullSourceLoc(), diag::err_fe_internal_error)
             << "unexpected unknown exception occurred.";
+#endif
         status =  1;
     }
 
-    status =  Diags.hasErrorOccurred() ? 4 : status;
+    // RICH: status =  Diags.hasErrorOccurred() ? 4 : status;
     llvm_shutdown();
     return status;
 }
