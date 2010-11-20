@@ -2,5 +2,5 @@ arm-elf
 mips-elf
 powerpc-elf
 microblaze-elf
-i686-elf
+i386-elf
 x86_64-elf
