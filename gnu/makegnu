@@ -46,12 +46,20 @@ cd obj
 # Symbolic links to create.
 linklist= # "addr2line ar ld nm objcopy objdump ranlib readelf size strings strip"
 
+qemu_target_list="i386-softmmu x86_64-softmmu arm-softmmu microblaze-softmmu mips-softmmu mipsel-softmmu \
+    ppc-softmmu ppc64-softmmu"
+
+qemu_target_list="$qemu_target_list i386-linux-user x86_64-linux-user arm-linux-user armeb-linux-user \
+    microblaze-linux-user mips-linux-user mipsel-linux-user \
+    ppc-linux-user ppc64-linux-user ppc64abi32-linux-user"
+
 p=qemu
 if [ $install -eq 0 ] ; then
   echo Making package $p for $targets
   mkdir $p
   cd $p
-  ../../src/$p/configure --cc=$cc --host-cc=$cc --prefix=$prefix
+  ../../src/$p/configure --cc=$cc --host-cc=$cc --prefix=$prefix \
+    --target-list="$qemu_target_list"
   if [ $? -ne 0 ] ; then
     echo configure for $p failed
     exit 1
@@ -105,11 +113,12 @@ else
     echo make install failed
     exit 1
   fi
-  make install-html
-  if [ $? -ne 0 ] ; then
-    echo make install-html failed
-    exit 1
-  fi
+# RICH: gnu-oids.texi is missing. FIXME
+#  make install-html
+#  if [ $? -ne 0 ] ; then
+#    echo make install-html failed
+#    exit 1
+#  fi
   for target in $targets ; do
     for tool in $linklist ; do
       (cd $prefix/bin; ln -sf ecc-$tool $target-$tool)
