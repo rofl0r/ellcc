@@ -1310,6 +1310,10 @@ const HostInfo *Driver::GetHostInfo(const char *TripleStr) const {
   if (Triple.getArchName() == "tce")
     return createTCEHostInfo(*this, Triple);
 
+  // ELLCC is a cross development environment.
+  if (Triple.getVendor() == llvm::Triple::ELLCC)
+    return createELLCCHostInfo(*this, Triple);
+
   switch (Triple.getOS()) {
   case llvm::Triple::AuroraUX:
     return createAuroraUXHostInfo(*this, Triple);

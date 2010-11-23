@@ -1500,6 +1500,44 @@ Tool &DragonFly::SelectTool(const Compilation &C, const JobAction &JA) const {
   return *T;
 }
 
+/// ELLCC - ELLCC tool chain which can call as(1) and ld(1) directly.
+
+ELLCC::ELLCC(const HostInfo &Host, const llvm::Triple& Triple)
+  : Generic_ELF(Host, Triple) {
+  getFilePaths().push_back(getDriver().Dir + "/../lib");
+}
+
+Tool &ELLCC::SelectTool(const Compilation &C, const JobAction &JA) const {
+  Action::ActionClass Key;
+  if (getDriver().ShouldUseClangCompiler(C, JA, getTriple()))
+    Key = Action::AnalyzeJobClass;
+  else
+    Key = JA.getKind();
+
+  bool UseIntegratedAs = C.getArgs().hasFlag(options::OPT_integrated_as,
+                                             options::OPT_no_integrated_as,
+                                             IsIntegratedAssemblerDefault());
+
+  Tool *&T = Tools[Key];
+  if (!T) {
+    switch (Key) {
+    case Action::AssembleJobClass: {
+      if (UseIntegratedAs)
+        T = new tools::ClangAs(*this);
+      else
+        T = new tools::ellcc::Assemble(*this);
+      break;
+    }
+    case Action::LinkJobClass:
+      T = new tools::ellcc::Link(*this); break;
+    default:
+      T = &Generic_GCC::SelectTool(C, JA);
+    }
+  }
+
+  return *T;
+}
+
 Windows::Windows(const HostInfo &Host, const llvm::Triple& Triple)
   : ToolChain(Host, Triple) {
 }

@@ -41,7 +41,7 @@ const char *Triple::getArchTypeName(ArchType Kind) {
   case x86:     return "i386";
   case x86_64:  return "x86_64";
   case xcore:   return "xcore";
-  case mblaze:  return "mblaze";
+  case mblaze:  return "microblaze";
   case ptx:     return "ptx";
   }
 
@@ -85,6 +85,7 @@ const char *Triple::getVendorTypeName(VendorType Kind) {
 
   case Apple: return "apple";
   case PC: return "pc";
+  case ELLCC: return "ellcc";
   }
 
   return "<invalid>";
@@ -214,28 +215,53 @@ const char *Triple::getArchNameForAssembler() {
     return NULL;
 
   StringRef Str = getArchName();
-  if (Str == "i386")
-    return "i386";
-  if (Str == "x86_64")
-    return "x86_64";
-  if (Str == "powerpc")
-    return "ppc";
-  if (Str == "powerpc64")
-    return "ppc64";
-  if (Str == "mblaze" || Str == "microblaze")
-    return "mblaze";
-  if (Str == "arm")
-    return "arm";
-  if (Str == "armv4t" || Str == "thumbv4t")
-    return "armv4t";
-  if (Str == "armv5" || Str == "armv5e" || Str == "thumbv5" || Str == "thumbv5e")
-    return "armv5";
-  if (Str == "armv6" || Str == "thumbv6")
-    return "armv6";
-  if (Str == "armv7" || Str == "thumbv7")
-    return "armv7";
-  if (Str == "ptx")
-    return "ptx";
+  if (getOS() == Triple::Darwin || getVendor() == Triple::Apple) {
+    if (Str == "i386")
+      return "i386";
+    if (Str == "x86_64")
+      return "x86_64";
+    if (Str == "powerpc")
+      return "ppc";
+    if (Str == "powerpc64")
+      return "ppc64";
+    if (Str == "mblaze" || Str == "microblaze")
+      return "mblaze";
+    if (Str == "arm")
+      return "arm";
+    if (Str == "armv4t" || Str == "thumbv4t")
+      return "armv4t";
+    if (Str == "armv5" || Str == "armv5e" || Str == "thumbv5" || Str == "thumbv5e")
+      return "armv5";
+    if (Str == "armv6" || Str == "thumbv6")
+      return "armv6";
+    if (Str == "armv7" || Str == "thumbv7")
+      return "armv7";
+    if (Str == "ptx")
+      return "ptx";
+  } else if (getVendor() == Triple::ELLCC) {
+    if (Str == "i386")
+      return "i386";
+    if (Str == "x86_64")
+      return "x86_64";
+    if (Str == "powerpc")
+      return "ppc";
+    if (Str == "powerpc64")
+      return "ppc64";
+    if (Str == "mblaze" || Str == "microblaze")
+      return "mblaze";
+    if (Str == "arm")
+      return "arm";
+    if (Str == "armv4t" || Str == "thumbv4t")
+      return "armv4t";
+    if (Str == "armv5" || Str == "armv5e" || Str == "thumbv5" || Str == "thumbv5e")
+      return "armv5";
+    if (Str == "armv6" || Str == "thumbv6")
+      return "armv6";
+    if (Str == "armv7" || Str == "thumbv7")
+      return "armv7";
+    if (Str == "mips")
+      return "mips";
+  }
   return NULL;
 }
 
@@ -252,11 +278,11 @@ Triple::ArchType Triple::ParseArch(StringRef ArchName) {
     return bfin;
   else if (ArchName == "pic16")
     return pic16;
-  else if (ArchName == "powerpc")
+  else if (ArchName == "powerpc" || ArchName == "ppc")
     return ppc;
   else if ((ArchName == "powerpc64") || (ArchName == "ppu"))
     return ppc64;
-  else if (ArchName == "mblaze")
+  else if (ArchName == "mblaze" || ArchName == "microblaze")
     return mblaze;
   else if (ArchName == "arm" ||
            ArchName.startswith("armv") ||
@@ -297,6 +323,8 @@ Triple::VendorType Triple::ParseVendor(StringRef VendorName) {
     return Apple;
   else if (VendorName == "pc")
     return PC;
+  else if (VendorName == "ellcc")
+    return ELLCC;
   else
     return UnknownVendor;
 }

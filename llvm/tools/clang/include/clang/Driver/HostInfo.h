@@ -79,6 +79,8 @@ const HostInfo *createLinuxHostInfo(const Driver &D,
                                     const llvm::Triple& Triple);
 const HostInfo *createTCEHostInfo(const Driver &D, 
                                   const llvm::Triple& Triple);
+const HostInfo *createELLCCHostInfo(const Driver &D,
+                                    const llvm::Triple& Triple);
 const HostInfo *createWindowsHostInfo(const Driver &D,
                                       const llvm::Triple &Triple);
 const HostInfo *createMinGWHostInfo(const Driver &D,

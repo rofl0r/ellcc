@@ -2711,8 +2711,8 @@ void darwin::Link::ConstructJob(Compilation &C, const JobAction &JA,
         Args.hasArg(options::OPT_shared_libgcc) &&
         getDarwinToolChain().isMacosxVersionLT(10, 5)) {
       const char *Str =
-        Args.MakeArgString(getToolChain().GetFilePath("crt3.o"));
-      CmdArgs.push_back(Str);
+            Args.MakeArgString(getToolChain().GetFilePath("crt3.o"));
+          CmdArgs.push_back(Str);
     }
   }
 
@@ -3625,6 +3625,141 @@ void dragonfly::Link::ConstructJob(Compilation &C, const JobAction &JA,
 
   const char *Exec =
     Args.MakeArgString(getToolChain().GetProgramPath("ld"));
+  C.addCommand(new Command(JA, *this, Exec, CmdArgs));
+}
+
+void ellcc::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
+                                     const InputInfo &Output,
+                                     const InputInfoList &Inputs,
+                                     const ArgList &Args,
+                                     const char *LinkingOutput) const {
+  ArgStringList CmdArgs;
+
+  Args.AddAllArgValues(CmdArgs, options::OPT_Wa_COMMA,
+                       options::OPT_Xassembler);
+
+  CmdArgs.push_back("-o");
+  CmdArgs.push_back(Output.getFilename());
+
+  for (InputInfoList::const_iterator
+         it = Inputs.begin(), ie = Inputs.end(); it != ie; ++it) {
+    const InputInfo &II = *it;
+    CmdArgs.push_back(II.getFilename());
+  }
+
+  llvm::Triple Triple = getToolChain().getTriple();
+  std::string As = Triple.getArchTypeName(Triple.getArch());
+  As += "-elf-as";
+  const char *Exec =
+    Args.MakeArgString(getToolChain().GetProgramPath(As.c_str()));
+  C.addCommand(new Command(JA, *this, Exec, CmdArgs));
+}
+
+void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
+                                 const InputInfo &Output,
+                                 const InputInfoList &Inputs,
+                                 const ArgList &Args,
+                                 const char *LinkingOutput) const {
+  const Driver &D = getToolChain().getDriver();
+  ArgStringList CmdArgs;
+
+  if ((!Args.hasArg(options::OPT_nostdlib)) &&
+      (!Args.hasArg(options::OPT_shared))) {
+    CmdArgs.push_back("-e");
+    CmdArgs.push_back("_start");
+  }
+
+#if RICH
+  if (Args.hasArg(options::OPT_static)) {
+    CmdArgs.push_back("-Bstatic");
+  } else {
+    if (Args.hasArg(options::OPT_rdynamic))
+      CmdArgs.push_back("-export-dynamic");
+    CmdArgs.push_back("--eh-frame-hdr");
+    CmdArgs.push_back("-Bdynamic");
+    if (Args.hasArg(options::OPT_shared)) {
+      CmdArgs.push_back("-shared");
+    } else {
+      CmdArgs.push_back("-dynamic-linker");
+      CmdArgs.push_back("/usr/libexec/ld.so");
+    }
+  }
+#endif
+
+  if (Output.isFilename()) {
+    CmdArgs.push_back("-o");
+    CmdArgs.push_back(Output.getFilename());
+  } else {
+    assert(Output.isNothing() && "Invalid output.");
+  }
+
+  llvm::Triple Triple = getToolChain().getTriple();
+
+  if (!Args.hasArg(options::OPT_nostdlib) &&
+      !Args.hasArg(options::OPT_nostartfiles)) {
+    if (!Args.hasArg(options::OPT_shared)) {
+      CmdArgs.push_back(Args.MakeArgString(D.Dir + "/../libecc/lib/"
+        + Triple.getArchTypeName(Triple.getArch()) + "/"
+        + Triple.getOSTypeName(Triple.getOS()) + "/crt0.o"));
+#if RICH
+      CmdArgs.push_back(Args.MakeArgString(
+                              getToolChain().GetFilePath("crtbegin.o")));
+#endif
+    } else {
+#if RICH
+      CmdArgs.push_back(Args.MakeArgString(
+                              getToolChain().GetFilePath("crtbeginS.o")));
+#endif
+    }
+  }
+
+  // Find the relative path to the libraries:
+  // <bindir>/../lib/<arch>-<os>
+  // <bindir>/../lib/<arch>
+  CmdArgs.push_back(Args.MakeArgString("-L" + D.Dir + "/../libecc/lib/"
+    + Triple.getArchTypeName(Triple.getArch()) + "/"
+    + Triple.getOSTypeName(Triple.getOS())));
+  CmdArgs.push_back(Args.MakeArgString("-L" + D.Dir + "/../libecc/lib/"
+    + Triple.getArchTypeName(Triple.getArch())));
+
+
+  Args.AddAllArgs(CmdArgs, options::OPT_L);
+  Args.AddAllArgs(CmdArgs, options::OPT_T_Group);
+  Args.AddAllArgs(CmdArgs, options::OPT_e);
+
+  AddLinkerInputs(getToolChain(), Inputs, Args, CmdArgs);
+
+  if (!Args.hasArg(options::OPT_T))
+    CmdArgs.push_back("-Ttarget.ld");
+
+  if (!Args.hasArg(options::OPT_nostdlib) &&
+      !Args.hasArg(options::OPT_nodefaultlibs)) {
+    if (D.CCCIsCXX) {
+      getToolChain().AddCXXStdlibLibArgs(Args, CmdArgs);
+      CmdArgs.push_back("-lm");
+    }
+
+    if (Args.hasArg(options::OPT_pthread))
+      CmdArgs.push_back("-pthread");
+    if (!Args.hasArg(options::OPT_shared))
+      CmdArgs.push_back("-lc");
+    CmdArgs.push_back("-lcompiler-rt");
+  }
+
+#if RICH
+  if (!Args.hasArg(options::OPT_nostdlib) &&
+      !Args.hasArg(options::OPT_nostartfiles)) {
+    if (!Args.hasArg(options::OPT_shared))
+      CmdArgs.push_back(Args.MakeArgString(
+                              getToolChain().GetFilePath("crtend.o")));
+    else
+      CmdArgs.push_back(Args.MakeArgString(
+                              getToolChain().GetFilePath("crtendS.o")));
+  }
+#endif
+
+  const char *Exec =
+    Args.MakeArgString(getToolChain().GetProgramPath("ecc-ld"));
   C.addCommand(new Command(JA, *this, Exec, CmdArgs));
 }
 

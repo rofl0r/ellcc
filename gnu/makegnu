@@ -91,7 +91,7 @@ if [ $install -eq 0 ] ; then
   mkdir $p
   cd $p
   ../../src/$p/configure CC=$cc CXX=$cxx --enable-64-bit-bfd --enable-targets=$targetlist \
-    --program-prefix=ecc- --prefix=$prefix/libecc --bindir=$prefix/bin --datadir=$prefix/libecc/share
+    --program-prefix=ecc- --prefix=$prefix/lib --bindir=$prefix/bin --datadir=$prefix/lib/share
   if [ $? -ne 0 ] ; then
     echo configure for $p failed
     exit 1
@@ -138,7 +138,7 @@ for t in $targets; do
     cd $t
     echo Making the assembler for $t
     ../../../src/binutils/gas/configure CC=$cc CXX=$cxx --target=$t --program-prefix=${t}- \
-        --prefix=$prefix/libecc --bindir=$prefix/bin --datadir=$prefix/libecc/share
+        --prefix=$prefix/lib --bindir=$prefix/bin --datadir=$prefix/lib/share
     if [ $? -ne 0 ] ; then
       echo configure for $t failed
       exit 1

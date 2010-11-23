@@ -526,6 +526,53 @@ ToolChain *LinuxHostInfo::CreateToolChain(const ArgList &Args,
   return TC;
 }
 
+// ELLCC Host Info
+
+/// ELLCCHostInfo -  ELLCC host information implementation (see http://ellcc.org).
+class ELLCCHostInfo : public HostInfo {
+  /// Cache of tool chains we have created.
+  mutable llvm::StringMap<ToolChain*> ToolChains;
+
+public:
+  ELLCCHostInfo(const Driver &D, const llvm::Triple& Triple)
+    : HostInfo(D, Triple) {}
+  ~ELLCCHostInfo();
+
+  virtual bool useDriverDriver() const;
+
+  virtual ToolChain *CreateToolChain(const ArgList &Args,
+                                     const char *ArchName) const;
+};
+
+ELLCCHostInfo::~ELLCCHostInfo() {
+  for (llvm::StringMap<ToolChain*>::iterator
+         it = ToolChains.begin(), ie = ToolChains.end(); it != ie; ++it)
+    delete it->second;
+}
+
+bool ELLCCHostInfo::useDriverDriver() const {
+  return false;
+}
+
+ToolChain *ELLCCHostInfo::CreateToolChain(const ArgList &Args,
+                                            const char *ArchName) const {
+  assert(!ArchName &&
+         "Unexpected arch name on platform without driver driver support.");
+
+  std::string Arch = getArchName();
+  ArchName = Arch.c_str();
+
+  ToolChain *&TC = ToolChains[ArchName];
+  if (!TC) {
+    llvm::Triple TCTriple(getTriple());
+    TCTriple.setArchName(ArchName);
+
+    TC = new toolchains::ELLCC(*this, TCTriple);
+  }
+
+  return TC;
+}
+
 // Windows Host Info
 
 /// WindowsHostInfo - Host information to use on Microsoft Windows.
@@ -645,6 +692,12 @@ const HostInfo *
 clang::driver::createTCEHostInfo(const Driver &D,
                                    const llvm::Triple& Triple) {
   return new TCEHostInfo(D, Triple);
+}
+
+const HostInfo *
+clang::driver::createELLCCHostInfo(const Driver &D,
+                                     const llvm::Triple& Triple) {
+  return new ELLCCHostInfo(D, Triple);
 }
 
 const HostInfo *

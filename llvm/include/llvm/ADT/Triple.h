@@ -73,7 +73,8 @@ public:
     UnknownVendor,
 
     Apple,
-    PC
+    PC,
+    ELLCC
   };
   enum OSType {
     UnknownOS,

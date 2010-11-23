@@ -421,17 +421,18 @@ static bool getWindowsSDKDir(std::string &path) {
 
 void InitHeaderSearch::AddDefaultCIncludePaths(const llvm::Triple &triple,
                                             const HeaderSearchOptions &HSOpts) {
-  // FIXME: temporary hack: hard-coded paths.
-  AddPath("/usr/local/include", System, true, false, false);
-
-  // Builtin includes use #include_next directives and should be positioned
-  // just prior C include dirs.
-  if (HSOpts.UseBuiltinIncludes) {
-    // Ignore the sys root, we *always* look for clang headers relative to
-    // supplied path.
-    llvm::sys::Path P(HSOpts.ResourceDir);
-    P.appendComponent("include");
-    AddPath(P.str(), System, false, false, false, /*IgnoreSysRoot=*/ true);
+  if (triple.getVendor() != llvm::Triple::ELLCC) {
+    // FIXME: temporary hack: hard-coded paths.
+    AddPath("/usr/local/include", System, true, false, false);
+    // Builtin includes use #include_next directives and should be positioned
+    // just prior C include dirs.
+    if (HSOpts.UseBuiltinIncludes) {
+      // Ignore the sys root, we *always* look for clang headers relative to
+      // supplied path.
+      llvm::sys::Path P(HSOpts.ResourceDir);
+      P.appendComponent("include");
+      AddPath(P.str(), System, false, false, false, /*IgnoreSysRoot=*/ true);
+    }
   }
 
   // Add dirs specified via 'configure --with-c-include-dirs'.
@@ -534,7 +535,30 @@ void InitHeaderSearch::AddDefaultCIncludePaths(const llvm::Triple &triple,
     break;
   }
 
-  AddPath("/usr/include", System, false, false, false);
+  if (triple.getVendor() != llvm::Triple::ELLCC) {
+    // FIXME: temporary hack: hard-coded paths.
+    AddPath("/usr/include", System, false, false, false);
+  } else {
+      // Set up ELLCC specific include paths.
+      // include/<arch>/<os>
+      // include/<arch>
+      // include
+      // RICH: This seems like a hack. May need to revisit.
+      llvm::sys::Path P0(HSOpts.ResourceDir);
+      P0.appendComponent("include");
+      P0.appendComponent(triple.getArchTypeName(triple.getArch()));
+      P0.appendComponent(triple.getOSTypeName(triple.getOS()));
+      AddPath(P0.str(), System, false, false, false, /*IgnoreSysRoot=*/ true);
+
+      llvm::sys::Path P1(HSOpts.ResourceDir);
+      P1.appendComponent("include");
+      P1.appendComponent(triple.getArchTypeName(triple.getArch()));
+      AddPath(P1.str(), System, false, false, false, /*IgnoreSysRoot=*/ true);
+
+      llvm::sys::Path P2(HSOpts.ResourceDir);
+      P2.appendComponent("include");
+      AddPath(P2.str(), System, false, false, false, /*IgnoreSysRoot=*/ true);
+  }
 }
 
 void InitHeaderSearch::

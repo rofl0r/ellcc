@@ -344,6 +344,13 @@ private:
 
 };
 
+class LLVM_LIBRARY_VISIBILITY ELLCC : public Generic_ELF {
+public:
+  ELLCC(const HostInfo &Host, const llvm::Triple& Triple);
+
+  virtual Tool &SelectTool(const Compilation &C, const JobAction &JA) const;
+};
+
 class LLVM_LIBRARY_VISIBILITY Windows : public ToolChain {
   mutable llvm::DenseMap<unsigned, Tool*> Tools;
 
