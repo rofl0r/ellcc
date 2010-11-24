@@ -322,8 +322,8 @@ int main(int argc_, const char **argv_) {
   // Check to see if the name starts with a valid triple:
   // e.g. arm-linux-*
   llvm::Triple triple(ProgName);
-  llvm::StringRef OS = triple.getVendorName();
   if (triple.getArch() != llvm::Triple::UnknownArch) {
+    llvm::StringRef OS = triple.getVendorName();
     triple.setOSName(OS);
     if (triple.getOS() != llvm::Triple::UnknownOS) {
       // We have a valid arch and OS.
@@ -361,7 +361,7 @@ int main(int argc_, const char **argv_) {
     ExtraArgs.push_back("-ccc-clang-archs");
     ExtraArgs.push_back("");
     ExtraArgs.push_back("-ccc-host-triple");
-    std::string et(triple.getArchName().str() + "-ellcc-" + OS.str());
+    std::string et(triple.getArchName().str() + "-ellcc-" + triple.getOSName().str());
     ExtraArgs.push_back(SaveStringInSet(SavedStrings,
                                         et.c_str()));
     argv.insert(&argv[1], ExtraArgs.begin(), ExtraArgs.end());
