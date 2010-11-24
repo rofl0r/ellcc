@@ -1,0 +1,3 @@
+SRCS = brk.c fcntl.c stat.c chmod.c errno.c fstat.c lseek.c unlink.c \
+       chown.c exit.c getpid.c lstat.c utime.c close.c fchmod.c impure.c \
+       open.c utimes.c fchown.c kill.c read.c write.c

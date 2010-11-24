@@ -22,7 +22,7 @@
 #define _LINUX_I386_SYSDEP_H 1
 
 /* There is some commonality.  */
-#include <x86/sysdep.h>
+#include <i386/sysdep.h>
 #include <unix/sysdep.h>
 #include <bp-sym.h>
 #include <bp-asm.h>

@@ -6,7 +6,7 @@ static void* current;  // The current break pointer.
 
 int _brk(void* addr)
 {
-    current = INLINE_SYSCALL(brk, 1, addr);
+    current = (void *)INLINE_SYSCALL(brk, 1, addr);
     if (current < addr) {
         __set_errno(ENOMEM);
         return -1;
