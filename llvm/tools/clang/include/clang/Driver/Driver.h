@@ -151,7 +151,8 @@ public:
          llvm::StringRef _DefaultHostTriple,
          llvm::StringRef _DefaultImageName,
          bool IsProduction, bool CXXIsProduction,
-         Diagnostic &_Diags);
+         Diagnostic &_Diags,
+         bool CCCIsELLCC = false);
   ~Driver();
 
   /// @name Accessors

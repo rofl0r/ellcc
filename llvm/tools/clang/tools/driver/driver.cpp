@@ -302,9 +302,42 @@ int main(int argc_, const char **argv_) {
   const bool IsProduction = false;
   const bool CXXIsProduction = false;
 #endif
+  bool CCCIsCXX = false;
+  bool CCCIsELLCC = false;
+
+  // Check for ".*++" or ".*++-[^-]*" to determine if we are a C++
+  // compiler. This matches things like "c++", "clang++", and "clang++-1.1".
+  //
+  // Note that we intentionally want to use argv[0] here, to support "clang++"
+  // being a symlink.
+  //
+  // We use *argv instead of argv[0] to work around a bogus g++ warning.
+  const char *progname = argv_[0];
+  std::string ProgName(llvm::sys::Path(progname).getBasename());
+  if (llvm::StringRef(ProgName).endswith("++") ||
+      llvm::StringRef(ProgName).rsplit('-').first.endswith("++")) {
+    CCCIsCXX = true;
+  }
+
+  // Check to see if the name starts with a valid triple:
+  // e.g. arm-linux-*
+  llvm::Triple triple(ProgName);
+  llvm::StringRef OS = triple.getVendorName();
+  if (triple.getArch() != llvm::Triple::UnknownArch) {
+    triple.setOSName(OS);
+    if (triple.getOS() != llvm::Triple::UnknownOS) {
+      // We have a valid arch and OS.
+      // Use this to create the ELLCC triple.
+      // The name looks like <arch>-<os>-*
+      CCCIsELLCC = true;
+    }
+  }
+
   Driver TheDriver(Path.str(), llvm::sys::getHostTriple(),
                    "a.out", IsProduction, CXXIsProduction,
-                   Diags);
+                   Diags,
+                   CCCIsELLCC);
+  TheDriver.CCCIsCXX = CCCIsCXX;
 
   // Attempt to find the original path used to invoke the driver, to determine
   // the installed path. We do this manually, because we want to support that
@@ -323,39 +356,15 @@ int main(int argc_, const char **argv_) {
   if (InstalledPath.exists())
     TheDriver.setInstalledDir(InstalledPath.str());
 
-  // Check for ".*++" or ".*++-[^-]*" to determine if we are a C++
-  // compiler. This matches things like "c++", "clang++", and "clang++-1.1".
-  //
-  // Note that we intentionally want to use argv[0] here, to support "clang++"
-  // being a symlink.
-  //
-  // We use *argv instead of argv[0] to work around a bogus g++ warning.
-  const char *progname = argv_[0];
-  std::string ProgName(llvm::sys::Path(progname).getBasename());
-  if (llvm::StringRef(ProgName).endswith("++") ||
-      llvm::StringRef(ProgName).rsplit('-').first.endswith("++")) {
-    TheDriver.CCCIsCXX = true;
-  }
-
-  // Check to see if the name starts with a valid triple:
-  // e.g. arm-linux-*
-  llvm::Triple triple(ProgName);
-  if (triple.getArch() != llvm::Triple::UnknownArch) {
-    llvm::StringRef OS = triple.getVendorName();
-    triple.setOSName(OS);
-    if (triple.getOS() != llvm::Triple::UnknownOS) {
-      // We have a valid arch and OS.
-      // Use this to create the ELLCC triple.
-      // The name looks like <arch>-<os>-*
-      std::vector<const char*> ExtraArgs;
-      ExtraArgs.push_back("-ccc-clang-archs");
-      ExtraArgs.push_back("");
-      ExtraArgs.push_back("-ccc-host-triple");
-      std::string et(triple.getArchName().str() + "-ellcc-" + OS.str());
-      ExtraArgs.push_back(SaveStringInSet(SavedStrings,
-                                          et.c_str()));
-      argv.insert(&argv[1], ExtraArgs.begin(), ExtraArgs.end());
-    }
+  if (CCCIsELLCC) {
+    std::vector<const char*> ExtraArgs;
+    ExtraArgs.push_back("-ccc-clang-archs");
+    ExtraArgs.push_back("");
+    ExtraArgs.push_back("-ccc-host-triple");
+    std::string et(triple.getArchName().str() + "-ellcc-" + OS.str());
+    ExtraArgs.push_back(SaveStringInSet(SavedStrings,
+                                        et.c_str()));
+    argv.insert(&argv[1], ExtraArgs.begin(), ExtraArgs.end());
   }
 
   // Handle CC_PRINT_OPTIONS and CC_PRINT_OPTIONS_FILE.

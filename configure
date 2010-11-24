@@ -7,4 +7,4 @@
 
 mkdir -p llvm-build
 cd llvm-build
-../llvm/configure --prefix=`pwd`/.. --with-clang-resource-dir=../libecc
+../llvm/configure --prefix=`pwd`/..

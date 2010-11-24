@@ -8,12 +8,12 @@
 ##===----------------------------------------------------------------------===##
 CLANG_LEVEL := ../..
 
-TOOLNAME = clang
+TOOLNAME = ecc
 ifndef CLANG_IS_PRODUCTION
-TOOLALIAS = clang++
+TOOLALIAS = ecc++
 else
   ifdef CLANGXX_IS_PRODUCTION
-    TOOLALIAS = clang++
+    TOOLALIAS = ecc++
   endif
 endif
 

@@ -51,7 +51,8 @@ Driver::Driver(llvm::StringRef _ClangExecutable,
                llvm::StringRef _DefaultHostTriple,
                llvm::StringRef _DefaultImageName,
                bool IsProduction, bool CXXIsProduction,
-               Diagnostic &_Diags)
+               Diagnostic &_Diags,
+               bool CCCIsELLCC)
   : Opts(createDriverOptTable()), Diags(_Diags),
     ClangExecutable(_ClangExecutable), DefaultHostTriple(_DefaultHostTriple),
     DefaultImageName(_DefaultImageName),
@@ -85,6 +86,9 @@ Driver::Driver(llvm::StringRef _ClangExecutable,
   llvm::sys::Path P(Dir);
   if (ClangResourceDir != "") {
     P.appendComponent(ClangResourceDir);
+  } else if (CCCIsELLCC) {
+    P.appendComponent(".."); // Walk up from a 'bin' subdirectory.
+    P.appendComponent("libecc");
   } else {
     P.appendComponent(".."); // Walk up from a 'bin' subdirectory.
     P.appendComponent("lib");
