@@ -1,17 +1,17 @@
-# Build rules for an OS specific library.
-
-# The target library.
-LIBNAME = libos.a
+# Build rules for an non-OS specific library.
 
 # The target processor.
 TARGET = $(shell basename `cd ..; pwd`)
-OS = $(shell basename `pwd`)
+LIB = $(shell basename `pwd`)
+
+# The target library.
+LIBNAME = lib$(LIB).a
 
 # The target library directory.
-LIBDIR  = ../../../lib/$(TARGET)/$(OS)
+LIBDIR  = ../../../lib/$(TARGET)
 
 # The build compiler.
-CC = ../../../../bin/$(TARGET)-$(OS)-ecc
+CC = ../../../../bin/$(TARGET)-linux-ecc
 # The archiver.
 AR = ../../../../bin/ecc-ar
 
@@ -21,29 +21,26 @@ CFLAGS = -Werror -MD -MP
 .c.o:
 	${CC} -c ${CFLAGS} $<
 
-VPATH := ../../../src/$(OS)
+VPATH := ../../../src/$(LIB)
 
 include $(VPATH)/sources
 
 BASENAMES := $(basename $(filter %.c, $(SRCS)))
 OBJS := $(BASENAMES:%=%.o)
 
-CRTBASENAMES := $(basename $(filter %.c, $(CRTSRCS)))
-CRTOBJS := $(CRTBASENAMES:%=%.o)
-
-DEPENDSRCS := $(basename $(filter %.c, $(SRCS) $(CRTSRCS)))
+DEPENDSRCS := $(basename $(filter %.c, $(SRCS)))
 DEPENDFILES := $(DEPENDSRCS:%=%.d)
 
-lib: $(LIBNAME) $(CRTOBJS)
+lib: $(LIBNAME)
 
 $(LIBNAME): $(OBJS)
 	$(AR) cr $(LIBNAME) $(OBJS)
 
 install: lib
-	cp $(LIBNAME) $(CRTOBJS) $(LIBDIR)
+	cp $(LIBNAME) $(LIBDIR)
 
 clean:
-	rm -f $(OBJS) $(CRTOBJS) $(DEPENDFILES)
+	rm -f $(OBJS) $(DEPENDFILES)
 
 veryclean: clean
 	rm -f $(LIBNAME)
