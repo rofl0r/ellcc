@@ -16,9 +16,10 @@
    Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
    02111-1307 USA.  */
 
-#include <generic/sysdep.h>
+// RICH #include <generic/sysdep.h>
 
 #include <sys/syscall.h>
+#if RICH
 #define	HAVE_SYSCALLS
 
 /* Note that using a `PASTE' macro loses.  */
@@ -57,3 +58,4 @@
 /* Wrappers around system calls should normally inline the system call code.
    But sometimes it is not possible or implemented and we use this code.  */
 #define INLINE_SYSCALL(name, nr, args...) __syscall_##name (args)
+#endif
