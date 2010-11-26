@@ -26,64 +26,10 @@ if [ $install -eq 0 ] ; then
 fi
 
 #
-# qemu
+# binutils
 #
 
 cd obj
-
-# To build for the x86 with libecc:
-#cc=$bin/i386-elf-ecc
-#cxx=$bin/i386-elf-e++
-
-# To build with the hosted ecc and host libraries:
-#cc=$bin/ecc
-#cxx=$bin/e++
-
-# To build with the host compiler:
-cc=gcc
-cxx=g++
-
-qemu_target_list="i386-softmmu x86_64-softmmu arm-softmmu microblaze-softmmu mips-softmmu mipsel-softmmu \
-    ppc-softmmu ppc64-softmmu"
-
-qemu_target_list="$qemu_target_list i386-linux-user x86_64-linux-user arm-linux-user armeb-linux-user \
-    microblaze-linux-user mips-linux-user mipsel-linux-user \
-    ppc-linux-user ppc64-linux-user ppc64abi32-linux-user"
-
-p=qemu
-if [ $install -eq 0 ] ; then
-  echo Making package $p for $targets
-  mkdir $p
-  cd $p
-  ../../src/$p/configure --cc=$cc --host-cc=$cc --prefix=$prefix \
-    --target-list="$qemu_target_list"
-  if [ $? -ne 0 ] ; then
-    echo configure for $p failed
-    exit 1
-  fi
-
-  sed -e "s:/.*/gnu/src/missing ::g" Makefile > tmp$$
-  mv tmp$$ Makefile
-
-  make
-  if [ $? -ne 0 ] ; then
-    echo make for $p failed
-    exit 1
-  fi
-  cd ..
-else
-  cd $p
-  make install
-  if [ $? -ne 0 ] ; then
-    echo make install for $p failed
-    exit 1
-  fi
-  cd ..
-fi
-
-#
-# binutils
-#
 
 # To build for the x86 with libecc:
 #cc=$bin/i386-elf-ecc
@@ -243,3 +189,60 @@ for t in $targets; do
   fi
 done
 cd ../..
+
+#
+# qemu
+#
+
+cd obj
+
+# To build for the x86 with libecc:
+#cc=$bin/i386-elf-ecc
+#cxx=$bin/i386-elf-e++
+
+# To build with the hosted ecc and host libraries:
+#cc=$bin/ecc
+#cxx=$bin/e++
+
+# To build with the host compiler:
+cc=gcc
+cxx=g++
+
+qemu_target_list="i386-softmmu x86_64-softmmu arm-softmmu microblaze-softmmu mips-softmmu mipsel-softmmu \
+    ppc-softmmu ppc64-softmmu"
+
+qemu_target_list="$qemu_target_list i386-linux-user x86_64-linux-user arm-linux-user armeb-linux-user \
+    microblaze-linux-user mips-linux-user mipsel-linux-user \
+    ppc-linux-user ppc64-linux-user ppc64abi32-linux-user"
+
+p=qemu
+if [ $install -eq 0 ] ; then
+  echo Making package $p for $targets
+  mkdir $p
+  cd $p
+  ../../src/$p/configure --cc=$cc --host-cc=$cc --prefix=$prefix \
+    --target-list="$qemu_target_list"
+  if [ $? -ne 0 ] ; then
+    echo configure for $p failed
+    exit 1
+  fi
+
+  sed -e "s:/.*/gnu/src/missing ::g" Makefile > tmp$$
+  mv tmp$$ Makefile
+
+  make
+  if [ $? -ne 0 ] ; then
+    echo make for $p failed
+    exit 1
+  fi
+  cd ..
+else
+  cd $p
+  make install
+  if [ $? -ne 0 ] ; then
+    echo make install for $p failed
+    exit 1
+  fi
+  cd ..
+fi
+
