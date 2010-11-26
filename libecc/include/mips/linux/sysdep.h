@@ -61,17 +61,52 @@
     ({                                                                  \
     unsigned int result, err;					        \
     asm volatile (".set noreorder\n\t"                                  \
-                  "li $2, %1       # syscall " #name "\n\t"             \
+                  "addu $4, %3, $0\n\t"                                 \
+                  "li $2, %2       # syscall " #name "\n\t"             \
 	          "syscall\n\t"                                         \
-                   : "=$2" (result) /* , "=$7" (err) */                       \
-                   : "i" (SYS_CONSTANT(name)) /* , "g" (arg0) */             \
+                  "addu %0, $2, $0\n\t"                                 \
+                  "addu %1, $7, $0"                                     \
+                   : "=r" (result), "=r" (err)                          \
+                   : "i" (SYS_CONSTANT(name)),                          \
+                     "r" (arg0)                                         \
                    : __CLOBBERS);                                       \
-    if (IS_SYSCALL_ERROR(err)) {                                     \
-        __set_errno(SYSCALL_ERRNO(err));                             \
+    if (IS_SYSCALL_ERROR(err)) {                                        \
+        __set_errno(SYSCALL_ERRNO(err));                                \
         result = -1;                                                    \
     }                                                                   \
     (int) result;                                                       \
     })
+
+/** A three argument system call.
+ * @param name The name of the system call.
+ * @param arg0 The first argument.
+ * @param arg1 The second argument.
+ * @param arg2 The third argument.
+ */
+#define INLINE_SYSCALL_3(name, arg0, arg1, arg2)                        \
+    ({                                                                  \
+    unsigned int result, err;					        \
+    asm volatile (".set noreorder\n\t"                                  \
+                  "addu $6, %5, $0\n\t"                                 \
+                  "addu $5, %4, $0\n\t"                                 \
+                  "addu $4, %3, $0\n\t"                                 \
+                  "li $2, %2       # syscall " #name "\n\t"             \
+	          "syscall\n\t"                                         \
+                  "addu %0, $2, $0\n\t"                                 \
+                  "addu %1, $7, $0"                                     \
+                   : "=r" (result), "=r" (err)                          \
+                   : "i" (SYS_CONSTANT(name)),                          \
+                     "r" (arg0),                                        \
+                     "r" (arg1),                                        \
+                     "r" (arg2)                                         \
+                   : __CLOBBERS);                                       \
+    if (IS_SYSCALL_ERROR(err)) {                                        \
+        __set_errno(SYSCALL_ERRNO(err));                                \
+        result = -1;                                                    \
+    }                                                                   \
+    (int) result;                                                       \
+    })
+
 
 #define internal_syscall1(ncs_init, cs_init, input, err, arg1)		\
 ({									\
