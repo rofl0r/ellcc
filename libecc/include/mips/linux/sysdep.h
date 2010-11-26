@@ -16,27 +16,86 @@
    Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
    02111-1307 USA.  */
 
-#ifndef _LINUX_MIPS_MIPS32_SYSDEP_H
-#define _LINUX_MIPS_MIPS32_SYSDEP_H 1
+#ifndef _MIPS_LINUX_SYSDEP_H_
+#define _MIPS_LINUX_SYSDEP_H_
 
-/* There is some commonality.  */
-#include <unix/mips/sysdep.h>
+#include <asm/unistd.h>
+#include <sys/errno.h>
 
-// RICH: #include <tls.h>
+/** Convert a system call name into the proper constant name.
+ * @param name The system call name.
+ * @return The name if the constant representind the system call.
+ *
+ * System calls are defined in include/arm/linux/asm/unistd.h.
+ */
+#define SYS_CONSTANT(name) (__NR_##name)
 
-/* For Linux we can use the system call table in the header file
-	/usr/include/asm/unistd.h
-   of the kernel.  But these symbols do not follow the SYS_* syntax
-   so we have to redefine the `SYS_ify' macro here.  */
-#undef SYS_ify
-#ifdef __STDC__
-# define SYS_ify(syscall_name)	__NR_##syscall_name
-#else
-# define SYS_ify(syscall_name)	__NR_/**/syscall_name
-#endif
+/** Check the result of a system call for an error.
+ * @param result The error return of the system call.
+ * @return != 0 if the system call resulted in an error.
+ */
+#define IS_SYSCALL_ERROR(result) (result)
 
-#ifndef __ASSEMBLER__
+/** Convert a system call result to a valid error number.
+ * @param result A system call result indicating an error.
+ * @return A valid errno value.
+ */
+#define SYSCALL_ERRNO(result) (result)
 
+/** A system call.
+ * @param name The system call name.
+ * @param argcount The number of arguments.
+ * @ return -1 if error or the result of the call.
+ */
+#define INLINE_SYSCALL(name, argcount, ...)                             \
+   INLINE_SYSCALL_ ## argcount(name, __VA_ARGS__)
+
+#define __CLOBBERS "$1", "$3", "$8", "$9", "$10", "$11", "$12", \
+                   "$13", "$14", "$15", "$24", "$25", "memory"
+
+/** A single argument system call.
+ * @param name The name of the system call.
+ * @param arg0 The first argument.
+ */
+#define INLINE_SYSCALL_1(name, arg0)                                    \
+    ({                                                                  \
+    unsigned int result, err;					        \
+    asm volatile (".set noreorder\n\t"                                  \
+                  "li $2, %1       # syscall " #name "\n\t"             \
+	          "syscall\n\t"                                         \
+                   : "=$2" (result) /* , "=$7" (err) */                       \
+                   : "i" (SYS_CONSTANT(name)) /* , "g" (arg0) */             \
+                   : __CLOBBERS);                                       \
+    if (IS_SYSCALL_ERROR(err)) {                                     \
+        __set_errno(SYSCALL_ERRNO(err));                             \
+        result = -1;                                                    \
+    }                                                                   \
+    (int) result;                                                       \
+    })
+
+#define internal_syscall1(ncs_init, cs_init, input, err, arg1)		\
+({									\
+	long _sys_result;						\
+									\
+	{								\
+	register long __v0 asm("$2") ncs_init;				\
+	register long __a0 asm("$4") = (long) arg1;			\
+	register long __a3 asm("$7");					\
+	__asm__ volatile (						\
+	".set\tnoreorder\n\t"						\
+	cs_init								\
+	"syscall\n\t"							\
+	".set reorder"							\
+	: "=r" (__v0), "=r" (__a3)					\
+	: "i" (SYS_CONSTANT (name)), "r" (__a0)						\
+	: __SYSCALL_CLOBBERS);						\
+	err = __a3;							\
+	_sys_result = __v0;						\
+	}								\
+	_sys_result;							\
+})
+
+#if RICH
 /* Define a macro which expands into the inline wrapper code for a system
    call.  */
 #undef INLINE_SYSCALL
@@ -58,11 +117,12 @@
 
 #undef INTERNAL_SYSCALL_ERRNO
 #define INTERNAL_SYSCALL_ERRNO(val, err)     (val)
+#endif
 
 #undef INTERNAL_SYSCALL
 #define INTERNAL_SYSCALL(name, err, nr, args...) \
 	internal_syscall##nr (, "li\t$2, %2\t\t\t# " #name "\n\t",	\
-			      "i" (SYS_ify (name)), err, args)
+			      "i" (SYS_CONSTANT (name)), err, args)
 
 #undef INTERNAL_SYSCALL_NCS
 #define INTERNAL_SYSCALL_NCS(number, err, nr, args...) \
@@ -281,10 +341,4 @@
 #define __SYSCALL_CLOBBERS "$1", "$3", "$8", "$9", "$10", "$11", "$12", "$13", \
 	"$14", "$15", "$24", "$25", "memory"
 
-#endif /* __ASSEMBLER__ */
-
-/* Pointer mangling is not yet supported for MIPS.  */
-#define PTR_MANGLE(var) (void) (var)
-#define PTR_DEMANGLE(var) (void) (var)
-
-#endif /* linux/mips/mips32/sysdep.h */
+#endif

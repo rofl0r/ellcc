@@ -14,7 +14,7 @@
 
 /** Check the result of a system call for an error.
  * @param result The result of the system call.
- * @return 1 if the system call resulted in an error.
+ * @return != 0 if the system call resulted in an error.
  *
  * Return values of -1 .. -4095 indicate error return values.
  */
@@ -39,8 +39,8 @@
  */
 #define INLINE_SYSCALL_0(name, ...)                                     \
     ({                                                                  \
-    unsigned int result;					        \
-    asm volatile ("swi	%1	@ syscall " #name                       \
+    unsigned int result;                                                \
+    asm volatile ("swi %1       @ syscall " #name                       \
                    : "={r0}" (result)                                   \
                    : "i" (SYS_CONSTANT(name))                           \
                    : "memory");                                         \
@@ -57,8 +57,8 @@
  */
 #define INLINE_SYSCALL_1(name, arg0)                                    \
     ({                                                                  \
-    unsigned int result;					        \
-    asm volatile ("swi	%2	@ syscall " #name                       \
+    unsigned int result;                                                \
+    asm volatile ("swi %2       @ syscall " #name                       \
                    : "={r0}" (result)                                   \
                    : "0" (arg0), "i" (SYS_CONSTANT(name))               \
                    : "memory");                                         \
@@ -76,9 +76,9 @@
  */
 #define INLINE_SYSCALL_2(name, arg0, arg1)                              \
     ({                                                                  \
-    unsigned int result;					        \
+    unsigned int result;                                                \
     asm volatile ("ldr r1,%2\n\t"                                       \
-                  "swi	%3	@ syscall " #name                       \
+                  "swi %3       @ syscall " #name                       \
                    : "={r0}" (result)                                   \
                    : "0" (arg0), "g" (arg1),                            \
                      "i" (SYS_CONSTANT(name))                           \
@@ -98,10 +98,10 @@
  */
 #define INLINE_SYSCALL_3(name, arg0, arg1, arg2)                        \
     ({                                                                  \
-    unsigned int result;					        \
+    unsigned int result;                                                \
     asm volatile ("ldr r2,%3\n\t"                                       \
                   "ldr r1,%2\n\t"                                       \
-                  "swi	%4	@ syscall " #name                       \
+                  "swi %4       @ syscall " #name                       \
                    : "={r0}" (result)                                   \
                    : "0" (arg0), "g" (arg1), "g" (arg2),                \
                      "i" (SYS_CONSTANT(name))                           \
