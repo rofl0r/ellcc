@@ -11,7 +11,10 @@ LIBNAME = lib$(LIB).a
 LIBDIR  = ../../../lib/$(TARGET)
 
 # The build compiler.
-CC = ../../../../bin/$(TARGET)-linux-ecc
+CC = ../../../../bin/$(TARGET)-elf-ecc
+# The base compiler.
+ECC = ../../../../bin/ecc
+
 # The archiver.
 AR = ../../../../bin/ecc-ar
 
@@ -31,7 +34,10 @@ OBJS := $(BASENAMES:%=%.o)
 DEPENDSRCS := $(basename $(filter %.c, $(SRCS)))
 DEPENDFILES := $(DEPENDSRCS:%=%.d)
 
-lib: $(LIBNAME)
+lib: $(CC) $(LIBNAME)
+
+$(CC): $(ECC)
+	ln -sf ecc $(CC)
 
 $(LIBNAME): $(OBJS)
 	$(AR) cr $(LIBNAME) $(OBJS)

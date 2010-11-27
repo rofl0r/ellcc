@@ -10,8 +10,11 @@ OS = $(shell basename `pwd`)
 # The target library directory.
 LIBDIR  = ../../../lib/$(TARGET)/$(OS)
 
-# The build compiler.
+# The build compiler for this OS.
 CC = ../../../../bin/$(TARGET)-$(OS)-ecc
+# The base compiler.
+ECC = ../../../../bin/ecc
+
 # The archiver.
 AR = ../../../../bin/ecc-ar
 
@@ -34,7 +37,10 @@ CRTOBJS := $(CRTBASENAMES:%=%.o)
 DEPENDSRCS := $(basename $(filter %.c, $(SRCS) $(CRTSRCS)))
 DEPENDFILES := $(DEPENDSRCS:%=%.d)
 
-lib: $(LIBNAME) $(CRTOBJS)
+lib: $(CC) $(LIBNAME) $(CRTOBJS)
+
+$(CC): $(ECC)
+	ln -sf ecc $(CC)
 
 $(LIBNAME): $(OBJS)
 	$(AR) cr $(LIBNAME) $(OBJS)

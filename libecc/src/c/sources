@@ -1,2 +1,3 @@
 VPATH := $(VPATH):$(VPATH)/stdlib:$(VPATH)/string:$(VPATH)/stdio
 SRCS = environ.c exit.c __call_atexit.c memset.c strlen.c
+#       puts.c fvwrite.c wsetup.c memmove.c malloc.c mallocr.c memcpy.c memchr.c
