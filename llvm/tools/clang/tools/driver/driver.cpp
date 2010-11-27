@@ -325,10 +325,14 @@ int main(int argc_, const char **argv_) {
   if (triple.getArch() != llvm::Triple::UnknownArch) {
     llvm::StringRef OS = triple.getVendorName();
     triple.setOSName(OS);
-    if (triple.getOS() != llvm::Triple::UnknownOS) {
+    if (OS == "elf" || triple.getOS() != llvm::Triple::UnknownOS) {
       // We have a valid arch and OS.
+      // "elf" is used for OS neutural builds.
       // Use this to create the ELLCC triple.
       // The name looks like <arch>-<os>-*
+      if (OS == "elf") {
+          triple.setOSName("unknown");
+      }
       CCCIsELLCC = true;
     }
   }

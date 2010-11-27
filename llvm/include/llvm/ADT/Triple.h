@@ -65,6 +65,7 @@ public:
     x86_64,  // X86-64: amd64, x86_64
     xcore,   // XCore: xcore
     mblaze,  // MBlaze: mblaze
+    nios2,   // Nios2: nios2
     ptx,     // PTX: ptx
 
     InvalidArch
@@ -94,7 +95,10 @@ public:
     Solaris,
     Win32,
     Haiku,
-    Minix
+    Minix,
+    RTOS,       // ELLCC: Free-, Open-, Safe-RTOS
+    Partikle,   // ELLCC: Partikle
+    SA          // ELLCC: Stand Alone
   };
   enum EnvironmentType {
     UnknownEnvironment

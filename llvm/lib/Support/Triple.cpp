@@ -42,6 +42,7 @@ const char *Triple::getArchTypeName(ArchType Kind) {
   case x86_64:  return "x86_64";
   case xcore:   return "xcore";
   case mblaze:  return "microblaze";
+  case nios2:   return "nios2";
   case ptx:     return "ptx";
   }
 
@@ -66,6 +67,8 @@ const char *Triple::getArchTypePrefix(ArchType Kind) {
   case ppc:     return "ppc";
 
   case mblaze:  return "mblaze";
+
+  case nios2:   return "nios2";
 
   case sparcv9:
   case sparc:   return "sparc";
@@ -111,6 +114,9 @@ const char *Triple::getOSTypeName(OSType Kind) {
   case Win32: return "win32";
   case Haiku: return "haiku";
   case Minix: return "minix";
+  case RTOS: return "rtos";
+  case Partikle: return "partikle";
+  case SA: return "sa";
   }
 
   return "<invalid>";
@@ -147,6 +153,8 @@ Triple::ArchType Triple::getArchTypeForLLVMName(StringRef Name) {
     return ppc;
   if (Name == "mblaze")
     return mblaze;
+  if (Name == "nios2")
+    return nios2;
   if (Name == "sparc")
     return sparc;
   if (Name == "sparcv9")
@@ -226,6 +234,8 @@ const char *Triple::getArchNameForAssembler() {
       return "ppc64";
     if (Str == "mblaze" || Str == "microblaze")
       return "mblaze";
+    if (Str == "nios2")
+      return "nios2";
     if (Str == "arm")
       return "arm";
     if (Str == "armv4t" || Str == "thumbv4t")
@@ -249,6 +259,8 @@ const char *Triple::getArchNameForAssembler() {
       return "ppc64";
     if (Str == "mblaze" || Str == "microblaze")
       return "mblaze";
+    if (Str == "nios2")
+      return "nios2";
     if (Str == "arm")
       return "arm";
     if (Str == "armv4t" || Str == "thumbv4t")
@@ -284,6 +296,8 @@ Triple::ArchType Triple::ParseArch(StringRef ArchName) {
     return ppc64;
   else if (ArchName == "mblaze" || ArchName == "microblaze")
     return mblaze;
+  else if (ArchName == "nios2")
+    return nios2;
   else if (ArchName == "arm" ||
            ArchName.startswith("armv") ||
            ArchName == "xscale")
@@ -362,6 +376,12 @@ Triple::OSType Triple::ParseOS(StringRef OSName) {
     return Haiku;
   else if (OSName.startswith("minix"))
     return Minix;
+  else if (OSName.startswith("rtos"))
+    return RTOS;
+  else if (OSName.startswith("partikle"))
+    return Partikle;
+  else if (OSName.startswith("sa"))
+    return SA;
   else
     return UnknownOS;
 }
