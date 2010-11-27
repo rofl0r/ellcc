@@ -18,4 +18,4 @@
    02111-1307 USA.  */
 
 #include <unix/sysdep.h>
-#include <powerpc/sysdep.h>
+#include <ppc/sysdep.h>

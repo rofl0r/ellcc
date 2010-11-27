@@ -31,8 +31,8 @@ const char *Triple::getArchTypeName(ArchType Kind) {
   case mipsel:  return "mipsel";
   case msp430:  return "msp430";
   case pic16:   return "pic16";
-  case ppc64:   return "powerpc64";
-  case ppc:     return "powerpc";
+  case ppc64:   return "ppc64";
+  case ppc:     return "ppc";
   case sparc:   return "sparc";
   case sparcv9: return "sparcv9";
   case systemz: return "s390x";
