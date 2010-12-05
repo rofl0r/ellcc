@@ -18,7 +18,7 @@ ECC = ../../../../bin/ecc
 # The archiver.
 AR = ../../../../bin/ecc-ar
 
-CFLAGS = -Werror -MD -MP
+CFLAGS = -g -Werror -MD -MP
 
 .SUFFIXES: .c .o
 .c.o:
@@ -46,7 +46,7 @@ install: lib
 	cp $(LIBNAME) $(LIBDIR)
 
 clean:
-	rm -f $(OBJS) $(DEPENDFILES)
+	rm -f *.o *.d
 
 veryclean: clean
 	rm -f $(LIBNAME)

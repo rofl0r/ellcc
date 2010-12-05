@@ -18,23 +18,25 @@ ECC = ../../../../bin/ecc
 # The archiver.
 AR = ../../../../bin/ecc-ar
 
-CFLAGS = -Werror -MD -MP
+CFLAGS = -g -Werror -MD -MP
 
-.SUFFIXES: .c .o
+.SUFFIXES: .c .S .o
 .c.o:
+	${CC} -c ${CFLAGS} $<
+.S.o:
 	${CC} -c ${CFLAGS} $<
 
 VPATH := ../../../src/$(OS)
 
 include $(VPATH)/sources
 
-BASENAMES := $(basename $(filter %.c, $(SRCS)))
+BASENAMES := $(basename $(filter %.c %.s %.S, $(SRCS)))
 OBJS := $(BASENAMES:%=%.o)
 
 CRTBASENAMES := $(basename $(filter %.c, $(CRTSRCS)))
 CRTOBJS := $(CRTBASENAMES:%=%.o)
 
-DEPENDSRCS := $(basename $(filter %.c, $(SRCS) $(CRTSRCS)))
+DEPENDSRCS := $(basename $(filter %.c %.S, $(SRCS) $(CRTSRCS)))
 DEPENDFILES := $(DEPENDSRCS:%=%.d)
 
 lib: $(CC) $(LIBNAME) $(CRTOBJS)
@@ -49,7 +51,7 @@ install: lib
 	cp $(LIBNAME) $(CRTOBJS) $(LIBDIR)
 
 clean:
-	rm -f $(OBJS) $(CRTOBJS) $(DEPENDFILES)
+	rm -f *.o *.d
 
 veryclean: clean
 	rm -f $(LIBNAME)

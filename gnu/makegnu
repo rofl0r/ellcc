@@ -20,9 +20,9 @@ while [ $# -gt 0 ] ; do
 done
 
 if [ $install -eq 0 ] ; then
-#  echo removed
- rm -fr obj
- mkdir obj
+  echo removed
+# rm -fr obj
+# mkdir obj
 fi
 
 #
@@ -108,7 +108,8 @@ if [ $install -eq 0 ] ; then
   echo Making package $p for $targets
   mkdir $p
   cd $p
-  ../../src/$p/configure CC=$cc CXX=$cxx --enable-64-bit-bfd --enable-targets=$targetlist \
+  # RICH: --enable-targets=all makes a very big debugger. Should this be trimmed?
+  ../../src/$p/configure CC=$cc CXX=$cxx --enable-64-bit-bfd --enable-targets=all \
     --program-prefix=ecc- --prefix=$prefix/lib --bindir=$prefix/bin --datadir=$prefix/lib/share
   if [ $? -ne 0 ] ; then
     echo configure for $p failed

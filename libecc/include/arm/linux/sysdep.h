@@ -6,9 +6,7 @@
 
 /** Convert a system call name into the proper constant name.
  * @param name The system call name.
- * @return The name if the constant representind the system call.
- *
- * System calls are defined in include/arm/linux/asm/unistd.h.
+ * @return The name of the constant representing the system call.
  */
 #define SYS_CONSTANT(name) (__NR_##name)
 
