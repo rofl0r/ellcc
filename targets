@@ -5,4 +5,5 @@ ppc-elf
 ppc64-elf
 microblaze-elf
 i386-elf
+sparc-elf
 x86_64-elf

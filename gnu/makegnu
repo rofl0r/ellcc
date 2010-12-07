@@ -210,11 +210,11 @@ cc=gcc
 cxx=g++
 
 qemu_target_list="i386-softmmu x86_64-softmmu arm-softmmu microblaze-softmmu mips-softmmu mipsel-softmmu \
-    ppc-softmmu ppc64-softmmu"
+    ppc-softmmu ppc64-softmmu sparc-softmmu"
 
 qemu_target_list="$qemu_target_list i386-linux-user x86_64-linux-user arm-linux-user armeb-linux-user \
     microblaze-linux-user mips-linux-user mipsel-linux-user \
-    ppc-linux-user ppc64-linux-user ppc64abi32-linux-user"
+    ppc-linux-user ppc64-linux-user ppc64abi32-linux-user sparc-linux-user"
 
 p=qemu
 if [ $install -eq 0 ] ; then
