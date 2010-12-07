@@ -1,9 +1,9 @@
 #include <sysdep.h>
 #include <abort-instr.h>
-#include <libc-symbols.h>
 
 void _exit(int status)
 {
+    // Get rid of the compiler warning about noreturn functions returning.
     for ( ;; ) {
 #ifdef __NR_exit_group
         (void)INLINE_SYSCALL(exit_group, 1, status);

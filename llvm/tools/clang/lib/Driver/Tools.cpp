@@ -3668,11 +3668,12 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
   CmdArgs.push_back("--build-id");
   CmdArgs.push_back("-m");
   const char* emulation;
+  bool hash = true;
   switch (Triple.getArch()) {
    case llvm::Triple::alpha: emulation = "elf64alpha"; break;
    case llvm::Triple::arm: emulation = "armelf"; break;
-   case llvm::Triple::mips: emulation = "elf32ebmip"; break;
-   case llvm::Triple::mipsel: emulation = "elf32elmip"; break;
+   case llvm::Triple::mips: emulation = "elf32ebmip"; hash = false; break;
+   case llvm::Triple::mipsel: emulation = "elf32elmip"; hash = false; break;
    case llvm::Triple::msp430: emulation = "msp430"; break;
    // RICH: case llvm::Triple::nios2": emulation = "nios2elf"; break;
    case llvm::Triple::ppc: emulation = "elf32ppc"; break;
@@ -3686,7 +3687,9 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
   }
 
   CmdArgs.push_back(emulation);
-  CmdArgs.push_back("--hash-style=gnu");
+  if (hash) {
+    CmdArgs.push_back("--hash-style=gnu");
+  }
 
   if ((!Args.hasArg(options::OPT_nostdlib)) &&
       (!Args.hasArg(options::OPT_shared))) {

@@ -53,6 +53,27 @@
 #define __CLOBBERS "$1", "$3", "$8", "$9", "$10", "$11", "$12", \
                    "$13", "$14", "$15", "$24", "$25", "memory"
 
+/** A no argument system call.
+ * @param name The name of the system call.
+ */
+#define INLINE_SYSCALL_0(name, ...)                                     \
+    ({                                                                  \
+    unsigned int result, err;					        \
+    asm volatile (".set noreorder\n\t"                                  \
+                  "li $2, %2       # syscall " #name "\n\t"             \
+	          "syscall\n\t"                                         \
+                  "addu %0, $2, $0\n\t"                                 \
+                  "addu %1, $7, $0"                                     \
+                   : "=r" (result), "=r" (err)                          \
+                   : "i" (SYS_CONSTANT(name))                           \
+                   : __CLOBBERS);                                       \
+    if (IS_SYSCALL_ERROR(err)) {                                        \
+        __set_errno(SYSCALL_ERRNO(err));                                \
+        result = -1;                                                    \
+    }                                                                   \
+    (int) result;                                                       \
+    })
+
 /** A single argument system call.
  * @param name The name of the system call.
  * @param arg0 The first argument.
@@ -69,6 +90,33 @@
                    : "=r" (result), "=r" (err)                          \
                    : "i" (SYS_CONSTANT(name)),                          \
                      "r" (arg0)                                         \
+                   : __CLOBBERS);                                       \
+    if (IS_SYSCALL_ERROR(err)) {                                        \
+        __set_errno(SYSCALL_ERRNO(err));                                \
+        result = -1;                                                    \
+    }                                                                   \
+    (int) result;                                                       \
+    })
+
+/** A two argument system call.
+ * @param name The name of the system call.
+ * @param arg0 The first argument.
+ * @param arg1 The second argument.
+ */
+#define INLINE_SYSCALL_2(name, arg0, arg1)                              \
+    ({                                                                  \
+    unsigned int result, err;					        \
+    asm volatile (".set noreorder\n\t"                                  \
+                  "addu $5, %4, $0\n\t"                                 \
+                  "addu $4, %3, $0\n\t"                                 \
+                  "li $2, %2       # syscall " #name "\n\t"             \
+	          "syscall\n\t"                                         \
+                  "addu %0, $2, $0\n\t"                                 \
+                  "addu %1, $7, $0"                                     \
+                   : "=r" (result), "=r" (err)                          \
+                   : "i" (SYS_CONSTANT(name)),                          \
+                     "r" (arg0),                                        \
+                     "r" (arg1)                                         \
                    : __CLOBBERS);                                       \
     if (IS_SYSCALL_ERROR(err)) {                                        \
         __set_errno(SYSCALL_ERRNO(err));                                \

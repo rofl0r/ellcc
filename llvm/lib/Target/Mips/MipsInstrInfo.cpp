@@ -436,7 +436,6 @@ InsertBranch(MachineBasicBlock &MBB, MachineBasicBlock *TBB,
       else
         BuildMI(&MBB, DL, TID).addReg(Cond[1].getReg())
                           .addMBB(TBB);
-
     }                             
     return 1;
   }

@@ -107,6 +107,9 @@ MipsTargetLowering(MipsTargetMachine &TM)
   setOperationAction(ISD::OR,               MVT::i32,   Custom);
 
   // Operations not directly supported by Mips.
+  setOperationAction(ISD::VAARG,              MVT::Other, Expand);
+  setOperationAction(ISD::VACOPY,             MVT::Other, Expand);
+  setOperationAction(ISD::VAEND,              MVT::Other, Expand);
   setOperationAction(ISD::BR_JT,             MVT::Other, Expand);
   setOperationAction(ISD::BR_CC,             MVT::Other, Expand);
   setOperationAction(ISD::SELECT_CC,         MVT::Other, Expand);
