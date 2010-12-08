@@ -55,7 +55,7 @@ Supporting OS subroutines required: <<_exit>>.
 
 void exit(int code)
 {
-  __call_exitprocs (code, NULL);
+  __call_exitprocs(code, NULL);
 
-  _exit (code);
+  _exit(code);
 }
