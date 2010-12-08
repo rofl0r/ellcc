@@ -3,9 +3,10 @@
    errno.h.  */
 
 #include <errno.h>
-#include <reent.h>
+
+static int _errno;      // RICH: threads.
 
 int * __errno()
 {
-  return &_REENT->_errno;
+  return &_errno;
 }

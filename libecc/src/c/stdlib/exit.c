@@ -47,7 +47,6 @@ Supporting OS subroutines required: <<_exit>>.
 
 #include <stdlib.h>
 #include <unistd.h>	/* for _exit() declaration */
-#include <reent.h>
 #include "atexit.h"
 
 /*
@@ -58,7 +57,5 @@ void exit(int code)
 {
   __call_exitprocs (code, NULL);
 
-  if (_GLOBAL_REENT->__cleanup)
-    (*_GLOBAL_REENT->__cleanup) (_GLOBAL_REENT);
   _exit (code);
 }

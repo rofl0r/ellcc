@@ -1,4 +1,4 @@
-#include <sysdep.h>
+#include <syscall.h>
 #include <abort-instr.h>
 
 void _exit(int status)

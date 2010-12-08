@@ -1,4 +1,4 @@
-#include <sysdep.h>
+#include <syscall.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>

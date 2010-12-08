@@ -1,6 +1,5 @@
-#include <sysdep.h>
+#include <syscall.h>
 #include <sys/types.h>
-#include <libc-symbols.h>
 
 pid_t _getpid(void)
 {

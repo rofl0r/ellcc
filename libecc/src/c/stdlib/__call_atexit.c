@@ -2,10 +2,10 @@
  * Common routine to call call registered atexit-like routines.
  */
 
-#include <config.h>
 #include <stdlib.h>
-#include <reent.h>
 #include "atexit.h"
+
+static struct _atexit *_atexit;         // RICH: reentrant.
 
 /*
  * Call registered exit handlers.  If D is null then all handlers are called,
@@ -23,8 +23,8 @@ void __call_exitprocs(int code, void * d)
 
  restart:
 
-  p = _GLOBAL_REENT->_atexit;
-  lastp = &_GLOBAL_REENT->_atexit;
+  p = _atexit;
+  lastp = &_atexit;
   while (p)
     {
 #ifdef _REENT_SMALL

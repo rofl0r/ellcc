@@ -1,7 +1,6 @@
-#include <sysdep.h>
+#include <syscall.h>
 #include <sys/types.h>
 #include <signal.h>
-#include <libc-symbols.h>
 
 int _kill(pid_t pid, int sig)
 {

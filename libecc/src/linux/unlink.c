@@ -1,4 +1,4 @@
-#include <sysdep.h>
+#include <syscall.h>
 #include <unistd.h>
 
 int _unlink(const char* path)
