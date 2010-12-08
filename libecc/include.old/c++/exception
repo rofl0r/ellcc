@@ -1,0 +1,123 @@
+/** @file
+ * This header defines the base class for all standard exceptions thrown by the
+ * elements of the standard library: exception. It also defines the special
+ * exception bad_exception.
+ *
+ * It also provides elements to access the unexpected and terminatehandlers.
+ *
+ * When an exception is thrown, its type is checked twice:
+ * - First, if the function has an exception-specification (a throw specifier at
+ *   the function signature), the type is checked against these. If the type does
+ *   not match, unexpected is called.
+ * - Second, the exception type is checked against the exception handlers
+ *   (catch blocks). If it does not match at any nesting level, terminate is
+ *   called.
+ *
+ * This header defines both unexpected and terminate along with functions to
+ * override their default behavior.
+ *
+ * It also defines a function, uncaught_exception that returns whether an
+ * exception has been thrown and not yet handled.
+ */
+
+#ifndef _EXCEPTION_
+#define _EXCEPTION_
+
+namespace std {
+
+/** Base class for standard exceptions.
+ *
+ * All objects thrown by components of the standard library are derived
+ * from this class. Therefore, all standard exceptions can be caught by
+ * catching this type.
+ */
+class exception {
+public:
+  exception () throw();
+  exception (const exception&) throw();
+  exception& operator= (const exception&) throw();
+  virtual ~exception() throw();
+  /** Returns a null terminated character sequence containing a generic
+   * description of the exception.
+   * Both the wording of such description and the character width are
+   *  implementation-defined.
+   */
+  virtual const char* what() const throw();
+};
+
+/** This is a special type of exception specifically designed to be listed
+ * in the exception-specification of a function (i.e., in its throw specifier).
+ *
+ * If a function with bad_exception listed in its exception-specification
+ * throws an exception not listed in it and unexpected rethrows it (or throws
+ * any other exception also not in the exception-specification), a bad_exception
+ * is automatically thrown.
+ *
+ * Its member what returns a null-terminated character sequence identifying the
+ * exception.
+ */
+class bad_exception : exception {
+public:
+    const char* what() { return "bad exception"; }
+};
+
+/** The type of an unexpected exception handler function.
+ */
+typedef void (*unexpected_handler) ();
+
+/** Set a new unexpected exception handler.
+ * @return the old handler function.
+ */
+unexpected_handler set_unexpected(unexpected_handler) throw();
+
+/** Function handling unexpected exceptions.
+ * This function automatically called when a function throws an exception that is
+ * not listed in its exception-specification (i.e., in its throw specifier).
+ *
+ * The function calls the current unexpected handler function (either the one by
+ * default or the one set by a call to set_unexpected).
+ *
+ * The unexpected handler by default simply calls terminate.
+ *
+ * This function is provided so that it can be explicitly called by a program.
+ */
+void unexpected() __attribute__ ((__noreturn__));
+
+/** The type of an terminate handler function.
+ */
+typedef void (*terminate_handler) ();
+
+/** Set a new terminate handler.
+ * @return the old handler function.
+ */
+terminate_handler set_terminate(terminate_handler) throw();
+
+/** Function handling termination on exception.
+ * Function automatically called when the exception handling process has to be
+ * abandoned for some circumstance that makes impossible to continue with it.
+ *
+ * The function calls the current terminate handler function (either the one by
+ * default or the one set by a call to set_terminate).
+ *
+ * The terminate handler by default simply calls abort.
+ *
+ * This function is provided so that it can be explicitly called by a program.
+ */
+void terminate() __attribute__ ((__noreturn__));
+
+/** Return exception status.
+ * Returns true if an exception has been thrown but the initialization of the
+ * exception declaration in the matching handler (or unexpected) is not yet
+ * complete.
+ *
+ * Returns false in all other cases, including when entering terminate for any
+ * reason other than a explicit call from the program.
+ *
+ * Throwing another exception while this function returns true may result in the
+ * termination of the exception handling proccess (a call to terminate).
+ */
+bool uncaught_exception() throw();
+
+} // namespace std
+
+#endif

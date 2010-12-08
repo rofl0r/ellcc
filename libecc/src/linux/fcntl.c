@@ -1,4 +1,4 @@
-#include <sysdep.h>
+#include <syscall.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <stdarg.h>
