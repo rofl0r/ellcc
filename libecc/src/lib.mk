@@ -34,7 +34,7 @@ OBJS := $(BASENAMES:%=%.o)
 DEPENDSRCS := $(basename $(filter %.c, $(SRCS)))
 DEPENDFILES := $(DEPENDSRCS:%=%.d)
 
-lib: $(CC) $(LIBNAME)
+all: $(CC) $(LIBNAME)
 
 $(CC): $(ECC)
 	ln -sf ecc $(CC)
@@ -42,7 +42,7 @@ $(CC): $(ECC)
 $(LIBNAME): $(OBJS)
 	$(AR) cr $(LIBNAME) $(OBJS)
 
-install: lib
+install: all
 	cp $(LIBNAME) $(LIBDIR)
 
 clean:

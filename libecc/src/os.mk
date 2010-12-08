@@ -39,7 +39,7 @@ CRTOBJS := $(CRTBASENAMES:%=%.o)
 DEPENDSRCS := $(basename $(filter %.c %.S, $(SRCS) $(CRTSRCS)))
 DEPENDFILES := $(DEPENDSRCS:%=%.d)
 
-lib: $(CC) $(LIBNAME) $(CRTOBJS)
+all: $(CC) $(LIBNAME) $(CRTOBJS)
 
 $(CC): $(ECC)
 	ln -sf ecc $(CC)
@@ -47,7 +47,7 @@ $(CC): $(ECC)
 $(LIBNAME): $(OBJS)
 	$(AR) cr $(LIBNAME) $(OBJS)
 
-install: lib
+install: all
 	cp $(LIBNAME) $(CRTOBJS) $(LIBDIR)
 
 clean:
