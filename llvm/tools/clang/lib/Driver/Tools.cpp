@@ -564,6 +564,38 @@ void Clang::AddARMTargetArgs(const ArgList &Args,
   }
 }
 
+void Clang::AddMBlazeTargetArgs(const ArgList &Args,
+                                ArgStringList &CmdArgs) const {
+  const Driver &D = getToolChain().getDriver();
+
+  // Select the float ABI as determined by -msoft-float, -mhard-float, and
+  llvm::StringRef FloatABI;
+  if (Arg *A = Args.getLastArg(options::OPT_msoft_float,
+                               options::OPT_mhard_float)) {
+    if (A->getOption().matches(options::OPT_msoft_float))
+      FloatABI = "soft";
+    else if (A->getOption().matches(options::OPT_mhard_float))
+      FloatABI = "hard";
+  }
+
+  // If unspecified, choose the default based on the platform.
+  if (FloatABI.empty()) {
+    // Assume "soft", but warn the user we are guessing.
+    FloatABI = "soft";
+    D.Diag(clang::diag::warn_drv_assuming_mfloat_abi_is) << "soft";
+  }
+
+  if (FloatABI == "soft") {
+    // Floating point operations and argument passing are soft.
+    //
+    // FIXME: This changes CPP defines, we need -target-soft-float.
+    CmdArgs.push_back("-msoft-float");
+  } else {
+    assert(FloatABI == "hard" && "Invalid float abi!");
+    CmdArgs.push_back("-mhard-float");
+  }
+}
+
 void Clang::AddMIPSTargetArgs(const ArgList &Args,
                              ArgStringList &CmdArgs) const {
   const Driver &D = getToolChain().getDriver();
@@ -590,6 +622,70 @@ void Clang::AddMIPSTargetArgs(const ArgList &Args,
     else
       CmdArgs.push_back(MArch.str().c_str());
   }
+
+  // Select the float ABI as determined by -msoft-float, -mhard-float, and
+  llvm::StringRef FloatABI;
+  if (Arg *A = Args.getLastArg(options::OPT_msoft_float,
+                               options::OPT_mhard_float)) {
+    if (A->getOption().matches(options::OPT_msoft_float))
+      FloatABI = "soft";
+    else if (A->getOption().matches(options::OPT_mhard_float))
+      FloatABI = "hard";
+  }
+
+  // If unspecified, choose the default based on the platform.
+  if (FloatABI.empty()) {
+    // Assume "soft", but warn the user we are guessing.
+    FloatABI = "soft";
+    D.Diag(clang::diag::warn_drv_assuming_mfloat_abi_is) << "soft";
+  }
+
+  if (FloatABI == "soft") {
+    // Floating point operations and argument passing are soft.
+    //
+    // FIXME: This changes CPP defines, we need -target-soft-float.
+    CmdArgs.push_back("-msoft-float");
+  } else {
+    assert(FloatABI == "hard" && "Invalid float abi!");
+    CmdArgs.push_back("-mhard-float");
+  }
+}
+
+void Clang::AddNios2TargetArgs(const ArgList &Args,
+                                ArgStringList &CmdArgs) const {
+  const Driver &D = getToolChain().getDriver();
+
+  // Select the float ABI as determined by -msoft-float, -mhard-float, and
+  llvm::StringRef FloatABI;
+  if (Arg *A = Args.getLastArg(options::OPT_msoft_float,
+                               options::OPT_mhard_float)) {
+    if (A->getOption().matches(options::OPT_msoft_float))
+      FloatABI = "soft";
+    else if (A->getOption().matches(options::OPT_mhard_float))
+      FloatABI = "hard";
+  }
+
+  // If unspecified, choose the default based on the platform.
+  if (FloatABI.empty()) {
+    // Assume "soft", but warn the user we are guessing.
+    FloatABI = "soft";
+    D.Diag(clang::diag::warn_drv_assuming_mfloat_abi_is) << "soft";
+  }
+
+  if (FloatABI == "soft") {
+    // Floating point operations and argument passing are soft.
+    //
+    // FIXME: This changes CPP defines, we need -target-soft-float.
+    CmdArgs.push_back("-msoft-float");
+  } else {
+    assert(FloatABI == "hard" && "Invalid float abi!");
+    CmdArgs.push_back("-mhard-float");
+  }
+}
+
+void Clang::AddPPCTargetArgs(const ArgList &Args,
+                                ArgStringList &CmdArgs) const {
+  const Driver &D = getToolChain().getDriver();
 
   // Select the float ABI as determined by -msoft-float, -mhard-float, and
   llvm::StringRef FloatABI;
@@ -1049,9 +1145,22 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     AddARMTargetArgs(Args, CmdArgs);
     break;
 
+  case llvm::Triple::mblaze:
+    AddMBlazeTargetArgs(Args, CmdArgs);
+    break;
+
   case llvm::Triple::mips:
   case llvm::Triple::mipsel:
     AddMIPSTargetArgs(Args, CmdArgs);
+    break;
+
+  case llvm::Triple::nios2:
+    AddNios2TargetArgs(Args, CmdArgs);
+    break;
+
+  case llvm::Triple::ppc:
+  case llvm::Triple::ppc64:
+    AddPPCTargetArgs(Args, CmdArgs);
     break;
 
   case llvm::Triple::sparc:
@@ -3679,7 +3788,7 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
       hash = false;
       break;
     case llvm::Triple::msp430: emulation = "msp430"; break;
-    // RICH: case llvm::Triple::nios2": emulation = "nios2elf"; break;
+    case llvm::Triple::nios2: emulation = "nios2elf"; break;
     case llvm::Triple::ppc: emulation = "elf32ppc"; break;
     case llvm::Triple::ppc64: emulation = "elf64ppc"; break;
     case llvm::Triple::sparc: emulation = "elf32_sparc"; break;

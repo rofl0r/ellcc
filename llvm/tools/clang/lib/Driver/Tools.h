@@ -35,7 +35,10 @@ namespace tools {
                                  const InputInfoList &Inputs) const;
 
     void AddARMTargetArgs(const ArgList &Args, ArgStringList &CmdArgs) const;
+    void AddMBlazeTargetArgs(const ArgList &Args, ArgStringList &CmdArgs) const;
     void AddMIPSTargetArgs(const ArgList &Args, ArgStringList &CmdArgs) const;
+    void AddNios2TargetArgs(const ArgList &Args, ArgStringList &CmdArgs) const;
+    void AddPPCTargetArgs(const ArgList &Args, ArgStringList &CmdArgs) const;
     void AddSparcTargetArgs(const ArgList &Args, ArgStringList &CmdArgs) const;
     void AddX86TargetArgs(const ArgList &Args, ArgStringList &CmdArgs) const;
 
