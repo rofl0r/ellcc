@@ -292,7 +292,7 @@ Triple::ArchType Triple::ParseArch(StringRef ArchName) {
     return pic16;
   else if (ArchName == "powerpc" || ArchName == "ppc")
     return ppc;
-  else if ((ArchName == "powerpc64") || (ArchName == "ppu"))
+  else if ((ArchName == "powerpc64") || (ArchName == "ppu") || (ArchName == "ppc64"))
     return ppc64;
   else if (ArchName == "mblaze" || ArchName == "microblaze")
     return mblaze;

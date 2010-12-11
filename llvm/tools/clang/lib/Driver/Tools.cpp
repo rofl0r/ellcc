@@ -3665,28 +3665,38 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
 
   llvm::Triple Triple = getToolChain().getTriple();
 
-  CmdArgs.push_back("--build-id");
   CmdArgs.push_back("-m");
   const char* emulation;
   bool hash = true;
+  bool buildID = true;
   switch (Triple.getArch()) {
-   case llvm::Triple::alpha: emulation = "elf64alpha"; break;
-   case llvm::Triple::arm: emulation = "armelf"; break;
-   case llvm::Triple::mips: emulation = "elf32ebmip"; hash = false; break;
-   case llvm::Triple::mipsel: emulation = "elf32elmip"; hash = false; break;
-   case llvm::Triple::msp430: emulation = "msp430"; break;
-   // RICH: case llvm::Triple::nios2": emulation = "nios2elf"; break;
-   case llvm::Triple::ppc: emulation = "elf32ppc"; break;
-   case llvm::Triple::ppc64: emulation = "elf64ppc"; break;
-   case llvm::Triple::sparc: emulation = "elf32_sparc"; break;
-   case llvm::Triple::cellspu: emulation = "elf32_spu"; break;
-   case llvm::Triple::x86: emulation = "elf_i386"; break;
-   case llvm::Triple::x86_64: emulation = "elf_x86_64"; break;
-   case llvm::Triple::mblaze: emulation = "elf32microblaze"; break;
-   default: emulation = "unknown";
+    case llvm::Triple::alpha: emulation = "elf64alpha"; break;
+    case llvm::Triple::arm: emulation = "armelf"; break;
+    case llvm::Triple::mips: emulation = "elf32ebmip";
+      hash = false;
+      break;
+    case llvm::Triple::mipsel: emulation = "elf32elmip";
+      hash = false;
+      break;
+    case llvm::Triple::msp430: emulation = "msp430"; break;
+    // RICH: case llvm::Triple::nios2": emulation = "nios2elf"; break;
+    case llvm::Triple::ppc: emulation = "elf32ppc"; break;
+    case llvm::Triple::ppc64: emulation = "elf64ppc"; break;
+    case llvm::Triple::sparc: emulation = "elf32_sparc"; break;
+    case llvm::Triple::cellspu: emulation = "elf32_spu"; break;
+    case llvm::Triple::x86: emulation = "elf_i386"; break;
+    case llvm::Triple::x86_64: emulation = "elf_x86_64"; break;
+    case llvm::Triple::mblaze: emulation = "elf32microblaze";
+      hash = false;
+      buildID = false;
+      break;
+    default: emulation = "unknown";
   }
-
   CmdArgs.push_back(emulation);
+
+  if (buildID) {
+      CmdArgs.push_back("--build-id");
+  }
   if (hash) {
     CmdArgs.push_back("--hash-style=gnu");
   }
