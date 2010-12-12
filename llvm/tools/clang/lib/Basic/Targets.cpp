@@ -828,7 +828,7 @@ public:
   virtual bool validateAsmConstraint(const char *&Name,
                                      TargetInfo::ConstraintInfo &Info) const {
     switch (*Name) {
-    default: return false;
+    default: return true;
     case 'O': // Zero
       return true;
     case 'b': // Base register

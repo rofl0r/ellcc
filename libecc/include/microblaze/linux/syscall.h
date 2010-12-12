@@ -26,7 +26,7 @@
 
 /** What's clobbered by a system call?
  */
-#define SYSCALL_CLOBBERS "memory"
+#define SYSCALL_CLOBBERS "memory", "cc", "r4", "r14"
 
 /** A system call.
  * @param name The system call name.
@@ -42,8 +42,9 @@
 #define INLINE_SYSCALL_0(name, ...)                                     \
     ({                                                                  \
     unsigned int result;                                                \
-    asm volatile ("swi %1       @ syscall " #name                       \
-                   : "={r0}" (result)                                   \
+    asm volatile ("addi r12, r0, %1\n\t"                                \
+                  "brki r14, 0x8        # syscall " #name               \
+                   : "={r3}" (result)                                   \
                    : "i" (SYS_CONSTANT(name))                           \
                    : SYSCALL_CLOBBERS);                                 \
     if (IS_SYSCALL_ERROR(result)) {                                     \
@@ -60,9 +61,12 @@
 #define INLINE_SYSCALL_1(name, arg0)                                    \
     ({                                                                  \
     unsigned int result;                                                \
-    asm volatile ("swi %2       @ syscall " #name                       \
-                   : "={r0}" (result)                                   \
-                   : "0" (arg0), "i" (SYS_CONSTANT(name))               \
+    asm volatile ("addi r12, r0, %1\t\n"                                \
+                  "add r5, r0, %2\n\t"                                  \
+                  "brki r14, 0x8        # syscall " #name               \
+                   : "={r3}" (result)                                   \
+                   : "i" (SYS_CONSTANT(name)),                          \
+                     "r" (arg0)                                         \
                    : SYSCALL_CLOBBERS);                                 \
     if (IS_SYSCALL_ERROR(result)) {                                     \
         __set_errno(SYSCALL_ERRNO(result));                             \
@@ -79,11 +83,13 @@
 #define INLINE_SYSCALL_2(name, arg0, arg1)                              \
     ({                                                                  \
     unsigned int result;                                                \
-    asm volatile ("ldr r1,%2\n\t"                                       \
-                  "swi %3       @ syscall " #name                       \
-                   : "={r0}" (result)                                   \
-                   : "0" (arg0), "g" (arg1),                            \
-                     "i" (SYS_CONSTANT(name))                           \
+    asm volatile ("addi r12, r0, %1\t\n"                                \
+                  "add r5, r0, %2\n\t"                                  \
+                  "add r6, r0, %3\n\t"                                  \
+                  "brki r14, 0x8        # syscall " #name               \
+                   : "={r3}" (result)                                   \
+                   : "i" (SYS_CONSTANT(name)),                          \
+                     "r" (arg0), "r" (arg1)                             \
                    : SYSCALL_CLOBBERS);                                 \
     if (IS_SYSCALL_ERROR(result)) {                                     \
         __set_errno(SYSCALL_ERRNO(result));                             \
@@ -101,12 +107,14 @@
 #define INLINE_SYSCALL_3(name, arg0, arg1, arg2)                        \
     ({                                                                  \
     unsigned int result;                                                \
-    asm volatile ("ldr r2,%3\n\t"                                       \
-                  "ldr r1,%2\n\t"                                       \
-                  "swi %4       @ syscall " #name                       \
-                   : "={r0}" (result)                                   \
-                   : "0" (arg0), "g" (arg1), "g" (arg2),                \
-                     "i" (SYS_CONSTANT(name))                           \
+    asm volatile ("addi r12, r0, %1\t\n"                                \
+                  "add r5, r0, %2\n\t"                                  \
+                  "add r6, r0, %3\n\t"                                  \
+                  "add r6, r0, %4\n\t"                                  \
+                  "brki r14, 0x8        # syscall " #name               \
+                   : "={r3}" (result)                                   \
+                   : "i" (SYS_CONSTANT(name)),                          \
+                     "r" (arg0), "r" (arg1), "r" (arg2)                 \
                    : SYSCALL_CLOBBERS);                                 \
     if (IS_SYSCALL_ERROR(result)) {                                     \
         __set_errno(SYSCALL_ERRNO(result));                             \
@@ -125,14 +133,16 @@
 #define INLINE_SYSCALL_4(name, arg0, arg1, arg2, arg3)                  \
     ({                                                                  \
     unsigned int result;                                                \
-    asm volatile ("ldr r3,%4\n\t"                                       \
-                  "ldr r2,%3\n\t"                                       \
-                  "ldr r1,%2\n\t"                                       \
-                  "swi %5       @ syscall " #name                       \
-                   : "={r0}" (result)                                   \
-                   : "0" (arg0), "g" (arg1), "g" (arg2),                \
-                                 "g" (arg3)                             \
-                     "i" (SYS_CONSTANT(name))                           \
+    asm volatile ("addi r12, r0, %1\t\n"                                \
+                  "add r5, r0, %2\n\t"                                  \
+                  "add r6, r0, %3\n\t"                                  \
+                  "add r6, r0, %4\n\t"                                  \
+                  "add r7, r0, %5\n\t"                                  \
+                  "brki r14, 0x8        # syscall " #name               \
+                   : "={r3}" (result)                                   \
+                   : "i" (SYS_CONSTANT(name)),                          \
+                     "r" (arg0), "r" (arg1), "r" (arg2)                 \
+                     "r" (arg3)                                         \
                    : SYSCALL_CLOBBERS);                                 \
     if (IS_SYSCALL_ERROR(result)) {                                     \
         __set_errno(SYSCALL_ERRNO(result));                             \
@@ -152,15 +162,17 @@
 #define INLINE_SYSCALL_5(name, arg0, arg1, arg2, arg3, arg4)            \
     ({                                                                  \
     unsigned int result;                                                \
-    asm volatile ("ldr r4,%5\n\t"                                       \
-                  "ldr r3,%4\n\t"                                       \
-                  "ldr r2,%3\n\t"                                       \
-                  "ldr r1,%2\n\t"                                       \
-                  "swi %6       @ syscall " #name                       \
-                   : "={r0}" (result)                                   \
-                   : "0" (arg0), "g" (arg1), "g" (arg2),                \
-                                 "g" (arg3), "g" (arg4)                 \
-                     "i" (SYS_CONSTANT(name))                           \
+    asm volatile ("addi r12, r0, %1\t\n"                                \
+                  "add r5, r0, %2\n\t"                                  \
+                  "add r6, r0, %3\n\t"                                  \
+                  "add r6, r0, %4\n\t"                                  \
+                  "add r7, r0, %5\n\t"                                  \
+                  "add r8, r0, %6\n\t"                                  \
+                  "brki r14, 0x8        # syscall " #name               \
+                   : "={r3}" (result)                                   \
+                   : "i" (SYS_CONSTANT(name)),                          \
+                     "r" (arg0), "r" (arg1), "r" (arg2)                 \
+                     "r" (arg3), "r" (arg4)                             \
                    : SYSCALL_CLOBBERS);                                 \
     if (IS_SYSCALL_ERROR(result)) {                                     \
         __set_errno(SYSCALL_ERRNO(result));                             \

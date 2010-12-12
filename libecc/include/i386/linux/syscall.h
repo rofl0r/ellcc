@@ -1,25 +1,5 @@
-/* Copyright (C) 1992,1993,1995-2000,2002-2006,2007
-   	Free Software Foundation, Inc.
-   This file is part of the GNU C Library.
-   Contributed by Ulrich Drepper, <drepper@gnu.org>, August 1995.
-
-   The GNU C Library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Lesser General Public
-   License as published by the Free Software Foundation; either
-   version 2.1 of the License, or (at your option) any later version.
-
-   The GNU C Library is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Lesser General Public License for more details.
-
-   You should have received a copy of the GNU Lesser General Public
-   License along with the GNU C Library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
-   02111-1307 USA.  */
-
-#ifndef _I386_LINUX_SYSDEP_H_
-#define _I386_LINUX_SYSDEP_H_
+#ifndef _I386_LINUX_SYSCALL_H_
+#define _I386_LINUX_SYSCALL_H_
 
 #include <asm/unistd.h>
 #include <sys/errno.h>
@@ -46,6 +26,10 @@
  */
 #define SYSCALL_ERRNO(result) (-(result))
 
+/** What's clobbered by a system call?
+ */
+#define SYSCALL_CLOBBERS "memory", "cc"
+
 /** A system call.
  * @param name The system call name.
  * @param argcount The number of arguments.
@@ -64,7 +48,7 @@
                   "int $0x80    # syscall " #name "\n\t"                \
                   : "=a" (result)                                       \
                   : "i" (__NR_##name)                                   \
-                  : "memory", "cc");                                    \
+                  : SYSCALL_CLOBBERS);                                  \
     if (IS_SYSCALL_ERROR(result)) {                                     \
         __set_errno(SYSCALL_ERRNO(result));                             \
         result = -1;                                                    \
@@ -83,7 +67,7 @@
                   "int $0x80    # syscall " #name "\n\t"                \
                   : "=a" (result)                                       \
                   : "i" (__NR_##name), "b" (arg0)                       \
-                  : "memory", "cc");                                    \
+                  : SYSCALL_CLOBBERS);                                  \
     if (IS_SYSCALL_ERROR(result)) {                                     \
         __set_errno(SYSCALL_ERRNO(result));                             \
         result = -1;                                                    \
@@ -103,7 +87,7 @@
                   "int $0x80    # syscall " #name "\n\t"                \
                   : "=a" (result)                                       \
                   : "i" (__NR_##name), "b" (arg0), "c" (arg1)           \
-                  : "memory", "cc");                                    \
+                  : SYSCALL_CLOBBERS);                                  \
     if (IS_SYSCALL_ERROR(result)) {                                     \
         __set_errno(SYSCALL_ERRNO(result));                             \
         result = -1;                                                    \
@@ -125,7 +109,7 @@
                   : "=a" (result)                                       \
                   : "i" (__NR_##name), "b" (arg0), "c" (arg1),          \
                                        "d" (arg2)                       \
-                  : "memory", "cc");                                    \
+                  : SYSCALL_CLOBBERS);                                  \
     if (IS_SYSCALL_ERROR(result)) {                                     \
         __set_errno(SYSCALL_ERRNO(result));                             \
         result = -1;                                                    \
@@ -144,11 +128,11 @@
     ({                                                                  \
     unsigned int result;					        \
     asm volatile ("movl %1, %%eax\n\t"                                  \
-                  "int $0x80    # syscall " #name "\n\t"                \
+                  "int $0x80    # syscall " #name                       \
                   : "=a" (result)                                       \
                   : "i" (__NR_##name), "b" (arg0), "c" (arg1),          \
                                        "d" (arg2), "S" (arg3)           \
-                  : "memory", "cc");                                    \
+                  : SYSCALL_CLOBBERS);                                  \
     if (IS_SYSCALL_ERROR(result)) {                                     \
         __set_errno(SYSCALL_ERRNO(result));                             \
         result = -1;                                                    \
@@ -173,7 +157,7 @@
                   : "i" (__NR_##name), "b" (arg0), "c" (arg1),          \
                                        "d" (arg2), "S" (arg3),          \
                                        "D" (arg4)                       \
-                  : "memory", "cc");                                    \
+                  : SYSCALL_CLOBBERS);                                  \
     if (IS_SYSCALL_ERROR(result)) {                                     \
         __set_errno(SYSCALL_ERRNO(result));                             \
         result = -1;                                                    \

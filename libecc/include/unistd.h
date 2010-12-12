@@ -10,4 +10,4 @@ extern "C" {
 }
 #endif
 
-#endif /* _UNISTD_H_ */
+#endif // _UNISTD_H_

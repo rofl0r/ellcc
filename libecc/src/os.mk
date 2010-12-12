@@ -18,7 +18,7 @@ ECC = ../../../../bin/ecc
 # The archiver.
 AR = ../../../../bin/ecc-ar
 
-CFLAGS = -g -Werror -MD -MP
+CFLAGS = -g -Werror -MD -MP -O2
 
 .SUFFIXES: .c .S .o
 .c.o:
