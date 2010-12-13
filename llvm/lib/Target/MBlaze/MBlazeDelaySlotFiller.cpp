@@ -131,7 +131,7 @@ findDelayInstr(MachineBasicBlock &MBB,MachineBasicBlock::iterator &slot) {
   for (MachineBasicBlock::iterator I = MBB.begin(); I != slot; ++I) {
       TargetInstrDesc desc = I->getDesc();
       if (desc.hasDelaySlot() || desc.isBranch() ||
-          desc.mayLoad() || desc.    mayStore() ||
+          desc.mayLoad() || desc.mayStore() ||
           hasImmInstruction(I) || delayHasHazard(I,slot) ||
           usedBeforeDelaySlot(I,slot)) continue;
 
