@@ -28,7 +28,7 @@ public:
 };
 }
 
-void GRExprEngine::EvalArguments(ConstExprIterator AI, ConstExprIterator AE,
+void GRExprEngine::evalArguments(ConstExprIterator AI, ConstExprIterator AE,
                                  const FunctionProtoType *FnType, 
                                  ExplodedNode *Pred, ExplodedNodeSet &Dst,
                                  bool FstArgAsLValue) {
@@ -74,7 +74,13 @@ const CXXThisRegion *GRExprEngine::getCXXThisRegion(const CXXRecordDecl *D,
                                                  const StackFrameContext *SFC) {
   Type *T = D->getTypeForDecl();
   QualType PT = getContext().getPointerType(QualType(T, 0));
-  return ValMgr.getRegionManager().getCXXThisRegion(PT, SFC);
+  return svalBuilder.getRegionManager().getCXXThisRegion(PT, SFC);
+}
+
+const CXXThisRegion *GRExprEngine::getCXXThisRegion(const CXXMethodDecl *decl,
+                                            const StackFrameContext *frameCtx) {
+  return svalBuilder.getRegionManager().
+                    getCXXThisRegion(decl->getThisType(getContext()), frameCtx);
 }
 
 void GRExprEngine::CreateCXXTemporaryObject(const Expr *Ex, ExplodedNode *Pred,
@@ -89,7 +95,7 @@ void GRExprEngine::CreateCXXTemporaryObject(const Expr *Ex, ExplodedNode *Pred,
     SVal V = state->getSVal(Ex);
 
     const MemRegion *R =
-      ValMgr.getRegionManager().getCXXObjectRegion(Ex,
+      svalBuilder.getRegionManager().getCXXTempObjectRegion(Ex,
                                                    Pred->getLocationContext());
 
     state = state->bindLoc(loc::MemRegionVal(R), V);
@@ -100,9 +106,9 @@ void GRExprEngine::CreateCXXTemporaryObject(const Expr *Ex, ExplodedNode *Pred,
 void GRExprEngine::VisitCXXConstructExpr(const CXXConstructExpr *E, 
                                          const MemRegion *Dest,
                                          ExplodedNode *Pred,
-                                         ExplodedNodeSet &Dst) {
+                                         ExplodedNodeSet &Dst, bool asLValue) {
   if (!Dest)
-    Dest = ValMgr.getRegionManager().getCXXObjectRegion(E,
+    Dest = svalBuilder.getRegionManager().getCXXTempObjectRegion(E,
                                                     Pred->getLocationContext());
 
   if (E->isElidable()) {
@@ -119,20 +125,20 @@ void GRExprEngine::VisitCXXConstructExpr(const CXXConstructExpr *E,
 
   
   // Evaluate other arguments.
-  ExplodedNodeSet ArgsEvaluated;
+  ExplodedNodeSet argsEvaluated;
   const FunctionProtoType *FnType = CD->getType()->getAs<FunctionProtoType>();
-  EvalArguments(E->arg_begin(), E->arg_end(), FnType, Pred, ArgsEvaluated);
+  evalArguments(E->arg_begin(), E->arg_end(), FnType, Pred, argsEvaluated);
   // The callee stack frame context used to create the 'this' parameter region.
   const StackFrameContext *SFC = AMgr.getStackFrame(CD, 
                                                     Pred->getLocationContext(),
-                                   E, Builder->getBlock(), Builder->getIndex());
+                        E, asLValue, Builder->getBlock(), Builder->getIndex());
 
   const CXXThisRegion *ThisR =getCXXThisRegion(E->getConstructor()->getParent(),
                                                SFC);
 
-  CallEnter Loc(E, SFC->getAnalysisContext(), Pred->getLocationContext());
-  for (ExplodedNodeSet::iterator NI = ArgsEvaluated.begin(),
-                                 NE = ArgsEvaluated.end(); NI != NE; ++NI) {
+  CallEnter Loc(E, SFC, Pred->getLocationContext());
+  for (ExplodedNodeSet::iterator NI = argsEvaluated.begin(),
+                                 NE = argsEvaluated.end(); NI != NE; ++NI) {
     const GRState *state = GetState(*NI);
     // Setup 'this' region, so that the ctor is evaluated on the object pointed
     // by 'Dest'.
@@ -153,12 +159,12 @@ void GRExprEngine::VisitCXXDestructor(const CXXDestructorDecl *DD,
   // Create the context for 'this' region.
   const StackFrameContext *SFC = AMgr.getStackFrame(DD,
                                                     Pred->getLocationContext(),
-                                                    S, Builder->getBlock(),
+                                                 S, false, Builder->getBlock(),
                                                     Builder->getIndex());
 
   const CXXThisRegion *ThisR = getCXXThisRegion(DD->getParent(), SFC);
 
-  CallEnter PP(S, SFC->getAnalysisContext(), Pred->getLocationContext());
+  CallEnter PP(S, SFC, Pred->getLocationContext());
 
   const GRState *state = Pred->getState();
   state = state->bindLoc(loc::MemRegionVal(ThisR), loc::MemRegionVal(Dest));
@@ -176,27 +182,27 @@ void GRExprEngine::VisitCXXMemberCallExpr(const CXXMemberCallExpr *MCE,
   assert(FnType && "Method type not available");
 
   // Evaluate explicit arguments with a worklist.
-  ExplodedNodeSet ArgsEvaluated;
-  EvalArguments(MCE->arg_begin(), MCE->arg_end(), FnType, Pred, ArgsEvaluated);
+  ExplodedNodeSet argsEvaluated;
+  evalArguments(MCE->arg_begin(), MCE->arg_end(), FnType, Pred, argsEvaluated);
  
   // Evaluate the implicit object argument.
-  ExplodedNodeSet AllArgsEvaluated;
+  ExplodedNodeSet AllargsEvaluated;
   const MemberExpr *ME = dyn_cast<MemberExpr>(MCE->getCallee()->IgnoreParens());
   if (!ME)
     return;
   Expr *ObjArgExpr = ME->getBase();
-  for (ExplodedNodeSet::iterator I = ArgsEvaluated.begin(), 
-                                 E = ArgsEvaluated.end(); I != E; ++I) {
+  for (ExplodedNodeSet::iterator I = argsEvaluated.begin(), 
+                                 E = argsEvaluated.end(); I != E; ++I) {
     if (ME->isArrow())
-      Visit(ObjArgExpr, *I, AllArgsEvaluated);
+      Visit(ObjArgExpr, *I, AllargsEvaluated);
     else
-      VisitLValue(ObjArgExpr, *I, AllArgsEvaluated);
+      VisitLValue(ObjArgExpr, *I, AllargsEvaluated);
   }
 
   // Now evaluate the call itself.
   const CXXMethodDecl *MD = cast<CXXMethodDecl>(ME->getMemberDecl());
   assert(MD && "not a CXXMethodDecl?");
-  EvalMethodCall(MCE, MD, ObjArgExpr, Pred, AllArgsEvaluated, Dst);
+  evalMethodCall(MCE, MD, ObjArgExpr, Pred, AllargsEvaluated, Dst);
 }
 
 void GRExprEngine::VisitCXXOperatorCallExpr(const CXXOperatorCallExpr *C,
@@ -217,14 +223,14 @@ void GRExprEngine::VisitCXXOperatorCallExpr(const CXXOperatorCallExpr *C,
 
   // Evaluate arguments treating the first one (object method is called on)
   // as alvalue.
-  ExplodedNodeSet ArgsEvaluated;
-  EvalArguments(C->arg_begin(), C->arg_end(), Proto, Pred, ArgsEvaluated, true);
+  ExplodedNodeSet argsEvaluated;
+  evalArguments(C->arg_begin(), C->arg_end(), Proto, Pred, argsEvaluated, true);
 
   // Now evaluate the call itself.
-  EvalMethodCall(C, MD, C->getArg(0), Pred, ArgsEvaluated, Dst);
+  evalMethodCall(C, MD, C->getArg(0), Pred, argsEvaluated, Dst);
 }
 
-void GRExprEngine::EvalMethodCall(const CallExpr *MCE, const CXXMethodDecl *MD,
+void GRExprEngine::evalMethodCall(const CallExpr *MCE, const CXXMethodDecl *MD,
                                   const Expr *ThisExpr, ExplodedNode *Pred,
                                   ExplodedNodeSet &Src, ExplodedNodeSet &Dst) {
   // Allow checkers to pre-visit the member call.
@@ -239,11 +245,11 @@ void GRExprEngine::EvalMethodCall(const CallExpr *MCE, const CXXMethodDecl *MD,
 
   const StackFrameContext *SFC = AMgr.getStackFrame(MD, 
                                                     Pred->getLocationContext(),
-                                                    MCE, 
+                                                    MCE, false,
                                                     Builder->getBlock(), 
                                                     Builder->getIndex());
-  const CXXThisRegion *ThisR = getCXXThisRegion(MD->getParent(), SFC);
-  CallEnter Loc(MCE, SFC->getAnalysisContext(), Pred->getLocationContext());
+  const CXXThisRegion *ThisR = getCXXThisRegion(MD, SFC);
+  CallEnter Loc(MCE, SFC, Pred->getLocationContext());
   for (ExplodedNodeSet::iterator I = PreVisitChecks.begin(),
          E = PreVisitChecks.end(); I != E; ++I) {
     // Set up 'this' region.
@@ -261,9 +267,9 @@ void GRExprEngine::VisitCXXNewExpr(const CXXNewExpr *CNE, ExplodedNode *Pred,
   }
 
   unsigned Count = Builder->getCurrentBlockCount();
-  DefinedOrUnknownSVal SymVal = getValueManager().getConjuredSymbolVal(NULL,CNE,
-                                                         CNE->getType(), Count);
-  const MemRegion *NewReg = cast<loc::MemRegionVal>(SymVal).getRegion();
+  DefinedOrUnknownSVal symVal =
+    svalBuilder.getConjuredSymbolVal(NULL, CNE, CNE->getType(), Count);
+  const MemRegion *NewReg = cast<loc::MemRegionVal>(symVal).getRegion();
 
   QualType ObjTy = CNE->getType()->getAs<PointerType>()->getPointeeType();
 
@@ -275,13 +281,13 @@ void GRExprEngine::VisitCXXNewExpr(const CXXNewExpr *CNE, ExplodedNode *Pred,
   const CXXConstructorDecl *CD = CNE->getConstructor();
   if (CD)
     FnType = CD->getType()->getAs<FunctionProtoType>();
-  ExplodedNodeSet ArgsEvaluated;
-  EvalArguments(CNE->constructor_arg_begin(), CNE->constructor_arg_end(),
-                FnType, Pred, ArgsEvaluated);
+  ExplodedNodeSet argsEvaluated;
+  evalArguments(CNE->constructor_arg_begin(), CNE->constructor_arg_end(),
+                FnType, Pred, argsEvaluated);
 
   // Initialize the object region and bind the 'new' expression.
-  for (ExplodedNodeSet::iterator I = ArgsEvaluated.begin(), 
-                                 E = ArgsEvaluated.end(); I != E; ++I) {
+  for (ExplodedNodeSet::iterator I = argsEvaluated.begin(), 
+                                 E = argsEvaluated.end(); I != E; ++I) {
     const GRState *state = GetState(*I);
 
     if (ObjTy->isRecordType()) {
@@ -304,10 +310,10 @@ void GRExprEngine::VisitCXXNewExpr(const CXXNewExpr *CNE, ExplodedNode *Pred,
 void GRExprEngine::VisitCXXDeleteExpr(const CXXDeleteExpr *CDE, 
                                       ExplodedNode *Pred,ExplodedNodeSet &Dst) {
   // Should do more checking.
-  ExplodedNodeSet ArgEvaluated;
-  Visit(CDE->getArgument(), Pred, ArgEvaluated);
-  for (ExplodedNodeSet::iterator I = ArgEvaluated.begin(), 
-                                 E = ArgEvaluated.end(); I != E; ++I) {
+  ExplodedNodeSet Argevaluated;
+  Visit(CDE->getArgument(), Pred, Argevaluated);
+  for (ExplodedNodeSet::iterator I = Argevaluated.begin(), 
+                                 E = Argevaluated.end(); I != E; ++I) {
     const GRState *state = GetState(*I);
     MakeNode(Dst, CDE, *I, state);
   }
@@ -317,7 +323,7 @@ void GRExprEngine::VisitCXXThisExpr(const CXXThisExpr *TE, ExplodedNode *Pred,
                                     ExplodedNodeSet &Dst) {
   // Get the this object region from StoreManager.
   const MemRegion *R =
-    ValMgr.getRegionManager().getCXXThisRegion(
+    svalBuilder.getRegionManager().getCXXThisRegion(
                                   getContext().getCanonicalType(TE->getType()),
                                                Pred->getLocationContext());
 

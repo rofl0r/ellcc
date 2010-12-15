@@ -1248,13 +1248,7 @@ static bool DisassembleThumb2LdStDual(MCInst &MI, unsigned Opcode,
   return true;
 }
 
-// PC-based defined for Codegen, which do not get decoded by design:
-//
-// t2TBB, t2TBH: Rm immDontCare immDontCare
-//
-// Generic version defined for disassembly:
-//
-// t2TBBgen, t2TBHgen: Rn Rm Pred-Imm Pred-CCR
+// t2TBB, t2TBH: Rn Rm Pred-Imm Pred-CCR
 static bool DisassembleThumb2TB(MCInst &MI, unsigned Opcode,
     uint32_t insn, unsigned short NumOps, unsigned &NumOpsAdded, BO B) {
 
@@ -1717,11 +1711,11 @@ static inline bool Thumb2PreloadOpcode(unsigned Opcode) {
   switch (Opcode) {
   default:
     return false;
-  case ARM::t2PLDi12:   case ARM::t2PLDi8:   case ARM::t2PLDpci:
+  case ARM::t2PLDi12:   case ARM::t2PLDi8:
   case ARM::t2PLDs:
-  case ARM::t2PLDWi12:  case ARM::t2PLDWi8:  case ARM::t2PLDWpci:
+  case ARM::t2PLDWi12:  case ARM::t2PLDWi8:
   case ARM::t2PLDWs:
-  case ARM::t2PLIi12:   case ARM::t2PLIi8:   case ARM::t2PLIpci:
+  case ARM::t2PLIi12:   case ARM::t2PLIi8:
   case ARM::t2PLIs:
     return true;
   }
@@ -1758,8 +1752,7 @@ static bool DisassembleThumb2PreLoad(MCInst &MI, unsigned Opcode, uint32_t insn,
            && !OpInfo[OpIdx].isOptionalDef()
            && "Pure imm operand expected");
     int Offset = 0;
-    if (Opcode == ARM::t2PLDpci || Opcode == ARM::t2PLDWpci ||
-             Opcode == ARM::t2PLIpci) {
+    if (slice(insn, 19, 16) == 0xFF) {
       bool Negative = slice(insn, 23, 23) == 0;
       unsigned Imm12 = getImm12(insn);
       Offset = Negative ? -1 - Imm12 : 1 * Imm12;      
@@ -1780,37 +1773,6 @@ static bool DisassembleThumb2PreLoad(MCInst &MI, unsigned Opcode, uint32_t insn,
     MI.addOperand(MCOperand::CreateImm(slice(insn, 5, 4)));
     ++OpIdx;
   }
-
-  return true;
-}
-
-// A8.6.63 LDRB (literal)
-// A8.6.79 LDRSB (literal)
-// A8.6.75 LDRH (literal)
-// A8.6.83 LDRSH (literal)
-// A8.6.59 LDR (literal)
-//
-// These instrs calculate an address from the PC value and an immediate offset.
-// Rd Rn=PC (+/-)imm12 (+ if Inst{23} == 0b1)
-static bool DisassembleThumb2Ldpci(MCInst &MI, unsigned Opcode,
-    uint32_t insn, unsigned short NumOps, unsigned &NumOpsAdded, BO B) {
-
-  const TargetOperandInfo *OpInfo = ARMInsts[Opcode].OpInfo;
-  if (!OpInfo) return false;
-
-  assert(NumOps >= 2 &&
-         OpInfo[0].RegClass == ARM::GPRRegClassID &&
-         OpInfo[1].RegClass < 0 &&
-         "Expect >= 2 operands, first as reg, and second as imm operand");
-
-  // Build the register operand, followed by the (+/-)imm12 immediate.
-
-  MI.addOperand(MCOperand::CreateReg(getRegisterEnum(B, ARM::GPRRegClassID,
-                                                     decodeRd(insn))));
-
-  MI.addOperand(MCOperand::CreateImm(decodeImm12(insn)));
-
-  NumOpsAdded = 2;
 
   return true;
 }
@@ -1849,10 +1811,6 @@ static bool DisassembleThumb2LdSt(bool Load, MCInst &MI, unsigned Opcode,
 
   if (Thumb2PreloadOpcode(Opcode))
     return DisassembleThumb2PreLoad(MI, Opcode, insn, NumOps, NumOpsAdded, B);
-
-  // See, for example, A6.3.7 Load word: Table A6-18 Load word.
-  if (Load && Rn == 15)
-    return DisassembleThumb2Ldpci(MI, Opcode, insn, NumOps, NumOpsAdded, B);
 
   const TargetInstrDesc &TID = ARMInsts[Opcode];
   const TargetOperandInfo *OpInfo = TID.OpInfo;
@@ -2125,7 +2083,7 @@ static bool DisassembleThumb2(uint16_t op1, uint16_t op2, uint16_t op,
         return DisassembleThumb2LdStDual(MI, Opcode, insn, NumOps, NumOpsAdded,
                                          B);
       }
-      if (Opcode == ARM::t2TBBgen || Opcode == ARM::t2TBHgen) {
+      if (Opcode == ARM::t2TBB || Opcode == ARM::t2TBH) {
         // Table branch.
         return DisassembleThumb2TB(MI, Opcode, insn, NumOps, NumOpsAdded, B);
       }

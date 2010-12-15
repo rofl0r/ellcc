@@ -23,7 +23,7 @@
 #include "clang/Lex/Preprocessor.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/System/Path.h"
+#include "llvm/Support/Path.h"
 
 using namespace clang;
 
@@ -77,7 +77,7 @@ HTMLDiagnostics::HTMLDiagnostics(const std::string& prefix,
 }
 
 PathDiagnosticClient*
-clang::CreateHTMLDiagnosticClient(const std::string& prefix,
+clang::createHTMLDiagnosticClient(const std::string& prefix,
                                   const Preprocessor &PP) {
   return new HTMLDiagnostics(prefix, PP);
 }

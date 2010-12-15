@@ -172,14 +172,14 @@ public:
                                                     const TypedRegion *region);
 
   llvm::ImmutableList<SVal> getEmptySValList() {
-    return SValListFactory.GetEmptyList();
+    return SValListFactory.getEmptyList();
   }
 
   llvm::ImmutableList<SVal> consVals(SVal X, llvm::ImmutableList<SVal> L) {
-    return SValListFactory.Add(X, L);
+    return SValListFactory.add(X, L);
   }
 
-  const llvm::APSInt* EvaluateAPSInt(BinaryOperator::Opcode Op,
+  const llvm::APSInt* evalAPSInt(BinaryOperator::Opcode Op,
                                      const llvm::APSInt& V1,
                                      const llvm::APSInt& V2);
 

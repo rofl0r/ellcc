@@ -1488,11 +1488,11 @@ bool FilterChooser::emit(raw_ostream &o, unsigned &Indentation) {
 
 class ARMDecoderEmitter::ARMDEBackend {
 public:
-  ARMDEBackend(ARMDecoderEmitter &frontend) :
+  ARMDEBackend(ARMDecoderEmitter &frontend, RecordKeeper &Records) :
     NumberedInstructions(),
     Opcodes(),
     Frontend(frontend),
-    Target(),
+    Target(Records),
     FC(NULL)
   {
     if (Target.getName() == "ARM")
@@ -1543,8 +1543,9 @@ protected:
   TARGET_NAME_t TargetName;
 };
 
-bool ARMDecoderEmitter::ARMDEBackend::populateInstruction(
-    const CodeGenInstruction &CGI, TARGET_NAME_t TN) {
+bool ARMDecoderEmitter::
+ARMDEBackend::populateInstruction(const CodeGenInstruction &CGI,
+                                  TARGET_NAME_t TN) {
   const Record &Def = *CGI.TheDef;
   const StringRef Name = Def.getName();
   uint8_t Form = getByteField(Def, "Form");
@@ -1566,13 +1567,6 @@ bool ARMDecoderEmitter::ARMDEBackend::populateInstruction(
       return false;
     if (thumbInstruction(Form))
       return false;
-    if (Name.find("CMPz") != std::string::npos /* ||
-        Name.find("CMNz") != std::string::npos */)
-      return false;
-
-    // Ignore pseudo instructions.
-    if (Name == "BXr9" || Name == "BMOVPCRX" || Name == "BMOVPCRXr9")
-      return false;
 
     // Tail calls are other patterns that generate existing instructions.
     if (Name == "TCRETURNdi" || Name == "TCRETURNdiND" ||
@@ -1581,11 +1575,6 @@ bool ARMDecoderEmitter::ARMDEBackend::populateInstruction(
         Name == "TAILJMPdND" || Name == "TAILJMPdNDt" ||
         Name == "TAILJMPr"  || Name == "TAILJMPrND" ||
         Name == "MOVr_TC")
-      return false;
-
-    // VLDMQ/VSTMQ can be handled with the more generic VLDMD/VSTMD.
-    if (Name == "VLDMQ" || Name == "VLDMQ_UPD" ||
-        Name == "VSTMQ" || Name == "VSTMQ_UPD")
       return false;
 
     //
@@ -1623,11 +1612,6 @@ bool ARMDecoderEmitter::ARMDEBackend::populateInstruction(
     if (Name == "VMOVDcc" || Name == "VMOVScc" || Name == "VNEGDcc" ||
         Name == "VNEGScc")
       return false;
-
-    // Ignore the *_sfp instructions when decoding.  They are used by the
-    // compiler to implement scalar floating point operations using vector
-    // operations in order to work around some performance issues.
-    if (Name.find("_sfp") != std::string::npos) return false;
 
     // LDMIA_RET is a special case of LDM (Load Multiple) where the registers
     // loaded include the PC, causing a branch to a loaded address.  Ignore
@@ -1695,12 +1679,8 @@ bool ARMDecoderEmitter::ARMDEBackend::populateInstruction(
     if (Name == "tTPsoft" || Name == "t2TPsoft")
       return false;
 
-    // Ignore tLEApcrel and tLEApcrelJT, prefer tADDrPCi.
-    if (Name == "tLEApcrel" || Name == "tLEApcrelJT")
-      return false;
-
-    // Ignore t2LEApcrel, prefer the generic t2ADD* for disassembly printing.
-    if (Name == "t2LEApcrel")
+    // Ignore tADR, prefer tADDrPCi.
+    if (Name == "tADR")
       return false;
 
     // Ignore tADDrSP, tADDspr, and tPICADD, prefer the generic tADDhirr.
@@ -1718,43 +1698,33 @@ bool ARMDecoderEmitter::ARMDEBackend::populateInstruction(
     if (Name == "t2LDRDpci")
       return false;
 
-    // Ignore t2TBB, t2TBH and prefer the generic t2TBBgen, t2TBHgen.
-    if (Name == "t2TBB" || Name == "t2TBH")
-      return false;
-
     // Resolve conflicts:
     //
     //   tBfar conflicts with tBLr9
-    //   tCMNz conflicts with tCMN (with assembly format strings being equal)
     //   tPOP_RET/t2LDMIA_RET conflict with tPOP/t2LDM (ditto)
     //   tMOVCCi conflicts with tMOVi8
     //   tMOVCCr conflicts with tMOVgpr2gpr
-    //   tBR_JTr conflicts with tBRIND
     //   tSpill conflicts with tSTRspi
     //   tLDRcp conflicts with tLDRspi
     //   tRestore conflicts with tLDRspi
-    //   t2LEApcrelJT conflicts with t2LEApcrel
     //   t2MOVCCi16 conflicts with tMOVi16
     if (Name == "tBfar" ||
-        /* Name == "tCMNz" || */ Name == "tCMPzi8" || Name == "tCMPzr" ||
-        Name == "tCMPzhir" || /* Name == "t2CMNzrr" || Name == "t2CMNzrs" ||
-        Name == "t2CMNzri" || */ Name == "t2CMPzrr" || Name == "t2CMPzrs" ||
-        Name == "t2CMPzri" || Name == "tPOP_RET" || Name == "t2LDMIA_RET" ||
-        Name == "tMOVCCi" || Name == "tMOVCCr" || Name == "tBR_JTr" ||
+        Name == "tPOP_RET" || Name == "t2LDMIA_RET" ||
+        Name == "tMOVCCi" || Name == "tMOVCCr" ||
         Name == "tSpill" || Name == "tLDRcp" || Name == "tRestore" ||
-        Name == "t2LEApcrelJT" || Name == "t2MOVCCi16")
+        Name == "t2MOVCCi16")
       return false;
   }
 
-  // Dumps the instruction encoding format.
-  switch (TargetName) {
-  case TARGET_ARM:
-  case TARGET_THUMB:
-    DEBUG(errs() << Name << " " << stringForARMFormat((ARMFormat)Form));
-    break;
-  }
-
   DEBUG({
+      // Dumps the instruction encoding format.
+      switch (TargetName) {
+      case TARGET_ARM:
+      case TARGET_THUMB:
+        errs() << Name << " " << stringForARMFormat((ARMFormat)Form);
+        break;
+      }
+
       errs() << " ";
 
       // Dumps the instruction encoding bits.
@@ -1826,7 +1796,7 @@ void ARMDecoderEmitter::ARMDEBackend::emit(raw_ostream &o) {
     assert(0 && "Unreachable code!");
   }
 
-  o << "#include \"llvm/System/DataTypes.h\"\n";
+  o << "#include \"llvm/Support/DataTypes.h\"\n";
   o << "#include <assert.h>\n";
   o << '\n';
   o << "namespace llvm {\n\n";
@@ -1863,7 +1833,7 @@ void ARMDecoderEmitter::ARMDEBackend::emit(raw_ostream &o) {
 
 void ARMDecoderEmitter::initBackend()
 {
-    Backend = new ARMDEBackend(*this);
+  Backend = new ARMDEBackend(*this, Records);
 }
 
 void ARMDecoderEmitter::run(raw_ostream &o)

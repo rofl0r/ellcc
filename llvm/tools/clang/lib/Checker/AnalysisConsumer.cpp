@@ -35,8 +35,8 @@
 #include "clang/Frontend/AnalyzerOptions.h"
 #include "clang/Lex/Preprocessor.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/System/Path.h"
-#include "llvm/System/Program.h"
+#include "llvm/Support/Path.h"
+#include "llvm/Support/Program.h"
 #include "llvm/ADT/OwningPtr.h"
 
 using namespace clang;
@@ -48,11 +48,11 @@ static ExplodedNode::Auditor* CreateUbiViz();
 //===----------------------------------------------------------------------===//
 
 static PathDiagnosticClient*
-CreatePlistHTMLDiagnosticClient(const std::string& prefix,
+createPlistHTMLDiagnosticClient(const std::string& prefix,
                                 const Preprocessor &PP) {
   llvm::sys::Path F(prefix);
-  PathDiagnosticClient *PD = CreateHTMLDiagnosticClient(F.getDirname(), PP);
-  return CreatePlistDiagnosticClient(prefix, PP, PD);
+  PathDiagnosticClient *PD = createHTMLDiagnosticClient(F.getDirname(), PP);
+  return createPlistDiagnosticClient(prefix, PP, PD);
 }
 
 //===----------------------------------------------------------------------===//
@@ -108,6 +108,10 @@ public:
         case PD_##NAME: PD = CREATEFN(OutDir, PP); break;
 #include "clang/Frontend/Analyses.def"
       }
+    } else if (Opts.AnalysisDiagOpt == PD_TEXT) {
+      // Create the text client even without a specified output file since
+      // it just uses diagnostic notes.
+      PD = createTextPathDiagnosticClient("", PP);
     }
 
     // Create the analyzer component creators.

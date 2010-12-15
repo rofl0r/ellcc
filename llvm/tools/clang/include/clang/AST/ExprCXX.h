@@ -577,12 +577,14 @@ class CXXDefaultArgExpr : public Expr {
            param->hasUnparsedDefaultArg()
              ? param->getType().getNonReferenceType()
              : param->getDefaultArg()->getType(),
-           getValueKindForType(param->getType()), OK_Ordinary, false, false),
+           param->getDefaultArg()->getValueKind(),
+           param->getDefaultArg()->getObjectKind(), false, false),
       Param(param, false), Loc(Loc) { }
 
   CXXDefaultArgExpr(StmtClass SC, SourceLocation Loc, ParmVarDecl *param, 
                     Expr *SubExpr)
-    : Expr(SC, SubExpr->getType(), SubExpr->getValueKind(), OK_Ordinary,
+    : Expr(SC, SubExpr->getType(),
+           SubExpr->getValueKind(), SubExpr->getObjectKind(),
            false, false), Param(param, true), Loc(Loc) {
     *reinterpret_cast<Expr **>(this + 1) = SubExpr;
   }
@@ -1276,22 +1278,7 @@ public:
                           TypeSourceInfo *ScopeType,
                           SourceLocation ColonColonLoc,
                           SourceLocation TildeLoc,
-                          PseudoDestructorTypeStorage DestroyedType)
-    : Expr(CXXPseudoDestructorExprClass,
-           Context.getPointerType(Context.getFunctionType(Context.VoidTy, 0, 0,
-                                                          false, 0, false, 
-                                                          false, 0, 0,
-                                                      FunctionType::ExtInfo())),
-           VK_RValue, OK_Ordinary,
-           /*isTypeDependent=*/(Base->isTypeDependent() ||
-            (DestroyedType.getTypeSourceInfo() &&
-              DestroyedType.getTypeSourceInfo()->getType()->isDependentType())),
-           /*isValueDependent=*/Base->isValueDependent()),
-      Base(static_cast<Stmt *>(Base)), IsArrow(isArrow),
-      OperatorLoc(OperatorLoc), Qualifier(Qualifier),
-      QualifierRange(QualifierRange), 
-      ScopeType(ScopeType), ColonColonLoc(ColonColonLoc), TildeLoc(TildeLoc),
-      DestroyedType(DestroyedType) { }
+                          PseudoDestructorTypeStorage DestroyedType);
 
   explicit CXXPseudoDestructorExpr(EmptyShell Shell)
     : Expr(CXXPseudoDestructorExprClass, Shell),
@@ -1442,6 +1429,72 @@ public:
     return T->getStmtClass() == UnaryTypeTraitExprClass;
   }
   static bool classof(const UnaryTypeTraitExpr *) { return true; }
+
+  // Iterators
+  virtual child_iterator child_begin();
+  virtual child_iterator child_end();
+
+  friend class ASTStmtReader;
+};
+
+/// BinaryTypeTraitExpr - A GCC or MS binary type trait, as used in the
+/// implementation of TR1/C++0x type trait templates.
+/// Example:
+/// __is_base_of(Base, Derived) == true
+class BinaryTypeTraitExpr : public Expr {
+  /// BTT - The trait. A BinaryTypeTrait enum in MSVC compat unsigned.
+  unsigned BTT : 8;
+
+  /// The value of the type trait. Unspecified if dependent.
+  bool Value : 1;
+
+  /// Loc - The location of the type trait keyword.
+  SourceLocation Loc;
+
+  /// RParen - The location of the closing paren.
+  SourceLocation RParen;
+
+  /// The lhs type being queried.
+  TypeSourceInfo *LhsType;
+
+  /// The rhs type being queried.
+  TypeSourceInfo *RhsType;
+
+public:
+  BinaryTypeTraitExpr(SourceLocation loc, BinaryTypeTrait btt, 
+                     TypeSourceInfo *lhsType, TypeSourceInfo *rhsType, 
+                     bool value, SourceLocation rparen, QualType ty)
+    : Expr(BinaryTypeTraitExprClass, ty, VK_RValue, OK_Ordinary, false, 
+           lhsType->getType()->isDependentType() ||
+           rhsType->getType()->isDependentType()),
+      BTT(btt), Value(value), Loc(loc), RParen(rparen),
+      LhsType(lhsType), RhsType(rhsType) { }
+
+
+  explicit BinaryTypeTraitExpr(EmptyShell Empty)
+    : Expr(BinaryTypeTraitExprClass, Empty), BTT(0), Value(false),
+      LhsType(), RhsType() { }
+
+  virtual SourceRange getSourceRange() const {
+    return SourceRange(Loc, RParen);
+  }
+
+  BinaryTypeTrait getTrait() const {
+    return static_cast<BinaryTypeTrait>(BTT);
+  }
+
+  QualType getLhsType() const { return LhsType->getType(); }
+  QualType getRhsType() const { return RhsType->getType(); }
+
+  TypeSourceInfo *getLhsTypeSourceInfo() const { return LhsType; }
+  TypeSourceInfo *getRhsTypeSourceInfo() const { return RhsType; }
+  
+  bool getValue() const { assert(!isTypeDependent()); return Value; }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == BinaryTypeTraitExprClass;
+  }
+  static bool classof(const BinaryTypeTraitExpr *) { return true; }
 
   // Iterators
   virtual child_iterator child_begin();
@@ -1877,21 +1930,26 @@ public:
   friend class ASTStmtWriter;
 };
 
-class CXXExprWithTemporaries : public Expr {
+/// Represents an expression --- generally a full-expression --- which
+/// introduces cleanups to be run at the end of the sub-expression's
+/// evaluation.  The most common source of expression-introduced
+/// cleanups is temporary objects in C++, but several other C++
+/// expressions can create cleanups.
+class ExprWithCleanups : public Expr {
   Stmt *SubExpr;
 
   CXXTemporary **Temps;
   unsigned NumTemps;
 
-  CXXExprWithTemporaries(ASTContext &C, Expr *SubExpr, CXXTemporary **Temps,
-                         unsigned NumTemps);
-
+  ExprWithCleanups(ASTContext &C, Expr *SubExpr,
+                   CXXTemporary **Temps, unsigned NumTemps);
+  
 public:
-  CXXExprWithTemporaries(EmptyShell Empty)
-    : Expr(CXXExprWithTemporariesClass, Empty),
+  ExprWithCleanups(EmptyShell Empty)
+    : Expr(ExprWithCleanupsClass, Empty),
       SubExpr(0), Temps(0), NumTemps(0) {}
                          
-  static CXXExprWithTemporaries *Create(ASTContext &C, Expr *SubExpr,
+  static ExprWithCleanups *Create(ASTContext &C, Expr *SubExpr,
                                         CXXTemporary **Temps, 
                                         unsigned NumTemps);
 
@@ -1903,7 +1961,7 @@ public:
     return Temps[i];
   }
   const CXXTemporary *getTemporary(unsigned i) const {
-    return const_cast<CXXExprWithTemporaries*>(this)->getTemporary(i);
+    return const_cast<ExprWithCleanups*>(this)->getTemporary(i);
   }
   void setTemporary(unsigned i, CXXTemporary *T) {
     assert(i < NumTemps && "Index out of range");
@@ -1920,9 +1978,9 @@ public:
 
   // Implement isa/cast/dyncast/etc.
   static bool classof(const Stmt *T) {
-    return T->getStmtClass() == CXXExprWithTemporariesClass;
+    return T->getStmtClass() == ExprWithCleanupsClass;
   }
-  static bool classof(const CXXExprWithTemporaries *) { return true; }
+  static bool classof(const ExprWithCleanups *) { return true; }
 
   // Iterators
   virtual child_iterator child_begin();

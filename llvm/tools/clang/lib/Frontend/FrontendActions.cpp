@@ -59,6 +59,17 @@ ASTConsumer *ASTDumpAction::CreateASTConsumer(CompilerInstance &CI,
   return CreateASTDumper();
 }
 
+ASTConsumer *ASTDumpXMLAction::CreateASTConsumer(CompilerInstance &CI,
+                                                 llvm::StringRef InFile) {
+  llvm::raw_ostream *OS;
+  if (CI.getFrontendOpts().OutputFile.empty())
+    OS = &llvm::outs();
+  else
+    OS = CI.createDefaultOutputFile(false, InFile);
+  if (!OS) return 0;
+  return CreateASTDumperXML(*OS);
+}
+
 ASTConsumer *ASTViewAction::CreateASTConsumer(CompilerInstance &CI,
                                               llvm::StringRef InFile) {
   return CreateASTViewer();
@@ -193,6 +204,7 @@ void PrintPreambleAction::ExecuteAction() {
   case IK_ObjC:
   case IK_ObjCXX:
   case IK_OpenCL:
+  case IK_CUDA:
     break;
       
   case IK_None:
@@ -209,8 +221,7 @@ void PrintPreambleAction::ExecuteAction() {
   
   CompilerInstance &CI = getCompilerInstance();
   llvm::MemoryBuffer *Buffer
-      = CI.getFileManager().getBufferForFile(getCurrentFile(),
-                                             CI.getFileSystemOpts());
+      = CI.getFileManager().getBufferForFile(getCurrentFile());
   if (Buffer) {
     unsigned Preamble = Lexer::ComputePreamble(Buffer).first;
     llvm::outs().write(Buffer->getBufferStart(), Preamble);

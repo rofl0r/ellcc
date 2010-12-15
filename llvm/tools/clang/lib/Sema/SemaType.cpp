@@ -521,6 +521,11 @@ QualType Sema::BuildQualifiedType(QualType T, SourceLocation Loc,
   return Context.getQualifiedType(T, Qs);
 }
 
+/// \brief Build a paren type including \p T.
+QualType Sema::BuildParenType(QualType T) {
+  return Context.getParenType(T);
+}
+
 /// \brief Build a pointer type.
 ///
 /// \param T The type to which we'll be building a pointer.
@@ -824,7 +829,7 @@ QualType Sema::BuildFunctionType(QualType T,
                                  unsigned NumParamTypes,
                                  bool Variadic, unsigned Quals,
                                  SourceLocation Loc, DeclarationName Entity,
-                                 const FunctionType::ExtInfo &Info) {
+                                 FunctionType::ExtInfo Info) {
   if (T->isArrayType() || T->isFunctionType()) {
     Diag(Loc, diag::err_func_returning_array_function) 
       << T->isFunctionType() << T;
@@ -845,8 +850,12 @@ QualType Sema::BuildFunctionType(QualType T,
   if (Invalid)
     return QualType();
 
-  return Context.getFunctionType(T, ParamTypes, NumParamTypes, Variadic,
-                                 Quals, false, false, 0, 0, Info);
+  FunctionProtoType::ExtProtoInfo EPI;
+  EPI.Variadic = Variadic;
+  EPI.TypeQuals = Quals;
+  EPI.ExtInfo = Info;
+
+  return Context.getFunctionType(T, ParamTypes, NumParamTypes, EPI);
 }
 
 /// \brief Build a member pointer type \c T Class::*.
@@ -1002,7 +1011,7 @@ TypeSourceInfo *Sema::GetTypeForDeclarator(Declarator &D, Scope *S,
   // Check for auto functions and trailing return type and adjust the
   // return type accordingly.
   if (getLangOptions().CPlusPlus0x && D.isFunctionDeclarator()) {
-    const DeclaratorChunk::FunctionTypeInfo &FTI = D.getTypeObject(0).Fun;
+    const DeclaratorChunk::FunctionTypeInfo &FTI = D.getFunctionTypeInfo();
     if (T == Context.UndeducedAutoTy) {
       if (FTI.TrailingReturnType) {
           T = GetTypeFromParser(ParsedType::getFromOpaquePtr(FTI.TrailingReturnType),
@@ -1082,6 +1091,9 @@ TypeSourceInfo *Sema::GetTypeForDeclarator(Declarator &D, Scope *S,
     DeclaratorChunk &DeclType = D.getTypeObject(e-i-1);
     switch (DeclType.Kind) {
     default: assert(0 && "Unknown decltype!");
+    case DeclaratorChunk::Paren:
+      T = BuildParenType(T);
+      break;
     case DeclaratorChunk::BlockPointer:
       // If blocks are disabled, emit an error.
       if (!LangOpts.Blocks)
@@ -1257,6 +1269,10 @@ TypeSourceInfo *Sema::GetTypeForDeclarator(Declarator &D, Scope *S,
           break;
         }
 
+        FunctionProtoType::ExtProtoInfo EPI;
+        EPI.Variadic = FTI.isVariadic;
+        EPI.TypeQuals = FTI.TypeQuals;
+
         // Otherwise, we have a function with an argument list that is
         // potentially variadic.
         llvm::SmallVector<QualType, 16> ArgTys;
@@ -1308,22 +1324,23 @@ TypeSourceInfo *Sema::GetTypeForDeclarator(Declarator &D, Scope *S,
         }
 
         llvm::SmallVector<QualType, 4> Exceptions;
-        Exceptions.reserve(FTI.NumExceptions);
-        for (unsigned ei = 0, ee = FTI.NumExceptions; ei != ee; ++ei) {
-          // FIXME: Preserve type source info.
-          QualType ET = GetTypeFromParser(FTI.Exceptions[ei].Ty);
-          // Check that the type is valid for an exception spec, and drop it if
-          // not.
-          if (!CheckSpecifiedExceptionType(ET, FTI.Exceptions[ei].Range))
-            Exceptions.push_back(ET);
+        if (FTI.hasExceptionSpec) {
+          EPI.HasExceptionSpec = FTI.hasExceptionSpec;
+          EPI.HasAnyExceptionSpec = FTI.hasAnyExceptionSpec;
+          Exceptions.reserve(FTI.NumExceptions);
+          for (unsigned ei = 0, ee = FTI.NumExceptions; ei != ee; ++ei) {
+            // FIXME: Preserve type source info.
+            QualType ET = GetTypeFromParser(FTI.Exceptions[ei].Ty);
+            // Check that the type is valid for an exception spec, and
+            // drop it if not.
+            if (!CheckSpecifiedExceptionType(ET, FTI.Exceptions[ei].Range))
+              Exceptions.push_back(ET);
+          }
+          EPI.NumExceptions = Exceptions.size();
+          EPI.Exceptions = Exceptions.data();
         }
 
-        T = Context.getFunctionType(T, ArgTys.data(), ArgTys.size(),
-                                    FTI.isVariadic, FTI.TypeQuals,
-                                    FTI.hasExceptionSpec,
-                                    FTI.hasAnyExceptionSpec,
-                                    Exceptions.size(), Exceptions.data(),
-                                    FunctionType::ExtInfo());
+        T = Context.getFunctionType(T, ArgTys.data(), ArgTys.size(), EPI);
       }
 
       // For GCC compatibility, we allow attributes that apply only to
@@ -1429,9 +1446,11 @@ TypeSourceInfo *Sema::GetTypeForDeclarator(Declarator &D, Scope *S,
           << FreeFunction;
 
       // Strip the cv-quals from the type.
+      FunctionProtoType::ExtProtoInfo EPI = FnTy->getExtProtoInfo();
+      EPI.TypeQuals = 0;
+
       T = Context.getFunctionType(FnTy->getResultType(), FnTy->arg_type_begin(),
-                                  FnTy->getNumArgs(), FnTy->isVariadic(), 0, 
-                                  false, false, 0, 0, FunctionType::ExtInfo());
+                                  FnTy->getNumArgs(), EPI);
     }
   }
 
@@ -1558,7 +1577,7 @@ namespace {
     void VisitElaboratedTypeLoc(ElaboratedTypeLoc TL) {
       ElaboratedTypeKeyword Keyword
         = TypeWithKeyword::getKeywordForTypeSpec(DS.getTypeSpecType());
-      if (Keyword == ETK_Typename) {
+      if (DS.getTypeSpecType() == TST_typename) {
         TypeSourceInfo *TInfo = 0;
         Sema::GetTypeFromParser(DS.getRepAsType(), &TInfo);
         if (TInfo) {
@@ -1576,7 +1595,7 @@ namespace {
     void VisitDependentNameTypeLoc(DependentNameTypeLoc TL) {
       ElaboratedTypeKeyword Keyword
         = TypeWithKeyword::getKeywordForTypeSpec(DS.getTypeSpecType());
-      if (Keyword == ETK_Typename) {
+      if (DS.getTypeSpecType() == TST_typename) {
         TypeSourceInfo *TInfo = 0;
         Sema::GetTypeFromParser(DS.getRepAsType(), &TInfo);
         if (TInfo) {
@@ -1678,6 +1697,11 @@ namespace {
       }
       // FIXME: exception specs
     }
+    void VisitParenTypeLoc(ParenTypeLoc TL) {
+      assert(Chunk.Kind == DeclaratorChunk::Paren);
+      TL.setLParenLoc(Chunk.Loc);
+      TL.setRParenLoc(Chunk.EndLoc);
+    }
 
     void VisitTypeLoc(TypeLoc TL) {
       llvm_unreachable("unsupported TypeLoc kind in declarator!");
@@ -1722,7 +1746,8 @@ ParsedType Sema::CreateParsedType(QualType T, TypeSourceInfo *TInfo) {
   // FIXME: LocInfoTypes are "transient", only needed for passing to/from Parser
   // and Sema during declaration parsing. Try deallocating/caching them when
   // it's appropriate, instead of allocating them and keeping them around.
-  LocInfoType *LocT = (LocInfoType*)BumpAlloc.Allocate(sizeof(LocInfoType), 8);
+  LocInfoType *LocT = (LocInfoType*)BumpAlloc.Allocate(sizeof(LocInfoType), 
+                                                       TypeAlignment);
   new (LocT) LocInfoType(T, TInfo);
   assert(LocT->getTypeClass() != T->getTypeClass() &&
          "LocInfoType's TypeClass conflicts with an existing Type class");

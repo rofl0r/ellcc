@@ -24,11 +24,12 @@
 #include "clang/Sema/CodeCompleteConsumer.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/Support/Atomic.h"
 #include "llvm/Support/CrashRecoveryContext.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Timer.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/System/Program.h"
+#include "llvm/Support/Program.h"
 #include <cstdlib>
 #include <cstdio>
 
@@ -234,11 +235,11 @@ struct AllocatedCXCodeCompleteResults : public CXCodeCompleteResults {
   
   /// \brief Language options used to adjust source locations.
   LangOptions LangOpts;
-  
-  /// \brief File manager, used for diagnostics.
-  FileManager FileMgr;
 
   FileSystemOptions FileSystemOpts;
+
+  /// \brief File manager, used for diagnostics.
+  FileManager FileMgr;
 
   /// \brief Source manager, used for diagnostics.
   SourceManager SourceMgr;
@@ -247,7 +248,8 @@ struct AllocatedCXCodeCompleteResults : public CXCodeCompleteResults {
   /// with the code-completion results.
   std::vector<llvm::sys::Path> TemporaryFiles;
 
-  /// \brief Temporary buffers that will be deleted once we have finished with the code-completion results.
+  /// \brief Temporary buffers that will be deleted once we have finished with
+  /// the code-completion results.
   llvm::SmallVector<const llvm::MemoryBuffer *, 1> TemporaryBuffers;
 };
 
@@ -255,15 +257,16 @@ struct AllocatedCXCodeCompleteResults : public CXCodeCompleteResults {
 /// currently active.
 ///
 /// Used for debugging purposes only.
-static unsigned CodeCompletionResultObjects;
+static llvm::sys::cas_flag CodeCompletionResultObjects;
   
 AllocatedCXCodeCompleteResults::AllocatedCXCodeCompleteResults() 
   : CXCodeCompleteResults(),
     Diag(new Diagnostic(
                    llvm::IntrusiveRefCntPtr<DiagnosticIDs>(new DiagnosticIDs))),
-    SourceMgr(*Diag, FileMgr, FileSystemOpts) { 
+    FileMgr(FileSystemOpts),
+    SourceMgr(*Diag, FileMgr) { 
   if (getenv("LIBCLANG_OBJTRACKING")) {
-    ++CodeCompletionResultObjects;
+    llvm::sys::AtomicIncrement(&CodeCompletionResultObjects);
     fprintf(stderr, "+++ %d completion results\n", CodeCompletionResultObjects);
   }    
 }
@@ -279,7 +282,7 @@ AllocatedCXCodeCompleteResults::~AllocatedCXCodeCompleteResults() {
     delete TemporaryBuffers[I];
 
   if (getenv("LIBCLANG_OBJTRACKING")) {
-    --CodeCompletionResultObjects;
+    llvm::sys::AtomicDecrement(&CodeCompletionResultObjects);
     fprintf(stderr, "--- %d completion results\n", CodeCompletionResultObjects);
   }    
 }

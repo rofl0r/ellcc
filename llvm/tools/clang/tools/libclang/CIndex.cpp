@@ -40,10 +40,10 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/Timer.h"
-#include "llvm/System/Mutex.h"
-#include "llvm/System/Program.h"
-#include "llvm/System/Signals.h"
-#include "llvm/System/Threading.h"
+#include "llvm/Support/Mutex.h"
+#include "llvm/Support/Program.h"
+#include "llvm/Support/Signals.h"
+#include "llvm/Support/Threading.h"
 #include "llvm/Support/Compiler.h"
 
 using namespace clang;
@@ -326,6 +326,7 @@ public:
   bool VisitObjCInterfaceTypeLoc(ObjCInterfaceTypeLoc TL);
   bool VisitObjCObjectTypeLoc(ObjCObjectTypeLoc TL);
   bool VisitObjCObjectPointerTypeLoc(ObjCObjectPointerTypeLoc TL);
+  bool VisitParenTypeLoc(ParenTypeLoc TL);
   bool VisitPointerTypeLoc(PointerTypeLoc TL);
   bool VisitBlockPointerTypeLoc(BlockPointerTypeLoc TL);
   bool VisitMemberPointerTypeLoc(MemberPointerTypeLoc TL);
@@ -410,10 +411,18 @@ CursorVisitor::getPreprocessedEntities() {
   bool OnlyLocalDecls
     = !AU->isMainFileAST() && AU->getOnlyLocalDecls();
   
+  PreprocessingRecord::iterator StartEntity, EndEntity;
+  if (OnlyLocalDecls) {
+    StartEntity = AU->pp_entity_begin();
+    EndEntity = AU->pp_entity_end();
+  } else {
+    StartEntity = PPRec.begin();
+    EndEntity = PPRec.end();
+  }
+  
   // There is no region of interest; we have to walk everything.
   if (RegionOfInterest.isInvalid())
-    return std::make_pair(PPRec.begin(OnlyLocalDecls),
-                          PPRec.end(OnlyLocalDecls));
+    return std::make_pair(StartEntity, EndEntity);
 
   // Find the file in which the region of interest lands.
   SourceManager &SM = AU->getSourceManager();
@@ -424,18 +433,16 @@ CursorVisitor::getPreprocessedEntities() {
   
   // The region of interest spans files; we have to walk everything.
   if (Begin.first != End.first)
-    return std::make_pair(PPRec.begin(OnlyLocalDecls),
-                          PPRec.end(OnlyLocalDecls));
+    return std::make_pair(StartEntity, EndEntity);
     
   ASTUnit::PreprocessedEntitiesByFileMap &ByFileMap
     = AU->getPreprocessedEntitiesByFile();
   if (ByFileMap.empty()) {
     // Build the mapping from files to sets of preprocessed entities.
-    for (PreprocessingRecord::iterator E = PPRec.begin(OnlyLocalDecls),
-                                    EEnd = PPRec.end(OnlyLocalDecls);
-         E != EEnd; ++E) {
+    for (PreprocessingRecord::iterator E = StartEntity; E != EndEntity; ++E) {
       std::pair<FileID, unsigned> P
         = SM.getDecomposedInstantiationLoc((*E)->getSourceRange().getBegin());
+      
       ByFileMap[P.first].push_back(*E);
     }
   }
@@ -686,7 +693,7 @@ bool CursorVisitor::VisitFunctionDecl(FunctionDecl *ND) {
   if (TypeSourceInfo *TSInfo = ND->getTypeSourceInfo()) {
     // Visit the function declaration's syntactic components in the order
     // written. This requires a bit of work.
-    TypeLoc TL = TSInfo->getTypeLoc();
+    TypeLoc TL = TSInfo->getTypeLoc().IgnoreParens();
     FunctionTypeLoc *FTL = dyn_cast<FunctionTypeLoc>(&TL);
     
     // If we have a function declared directly (without the use of a typedef),
@@ -734,8 +741,8 @@ bool CursorVisitor::VisitFunctionDecl(FunctionDecl *ND) {
       // Visit the initializers in source order
       for (unsigned I = 0, N = WrittenInits.size(); I != N; ++I) {
         CXXBaseOrMemberInitializer *Init = WrittenInits[I];
-        if (Init->isMemberInitializer()) {
-          if (Visit(MakeCursorMemberRef(Init->getMember(), 
+        if (Init->isAnyMemberInitializer()) {
+          if (Visit(MakeCursorMemberRef(Init->getAnyMember(),
                                         Init->getMemberLocation(), TU)))
             return true;
         } else if (TypeSourceInfo *BaseInfo = Init->getBaseClassInfo()) {
@@ -1355,6 +1362,10 @@ bool CursorVisitor::VisitObjCObjectPointerTypeLoc(ObjCObjectPointerTypeLoc TL) {
   return Visit(TL.getPointeeLoc());
 }
 
+bool CursorVisitor::VisitParenTypeLoc(ParenTypeLoc TL) {
+  return Visit(TL.getInnerLoc());
+}
+
 bool CursorVisitor::VisitPointerTypeLoc(PointerTypeLoc TL) {
   return Visit(TL.getPointeeLoc());
 }
@@ -1599,9 +1610,9 @@ public:
   void VisitSizeOfAlignOfExpr(SizeOfAlignOfExpr *E);
   void VisitStmt(Stmt *S);
   void VisitSwitchStmt(SwitchStmt *S);
-  void VisitTypesCompatibleExpr(TypesCompatibleExpr *E);
   void VisitWhileStmt(WhileStmt *W);
   void VisitUnaryTypeTraitExpr(UnaryTypeTraitExpr *E);
+  void VisitBinaryTypeTraitExpr(BinaryTypeTraitExpr *E);
   void VisitUnresolvedMemberExpr(UnresolvedMemberExpr *U);
   void VisitVAArgExpr(VAArgExpr *E);
 
@@ -1871,10 +1882,6 @@ void EnqueueVisitor::VisitSwitchStmt(SwitchStmt *S) {
   AddStmt(S->getCond());
   AddDecl(S->getConditionVariable());
 }
-void EnqueueVisitor::VisitTypesCompatibleExpr(TypesCompatibleExpr *E) {
-  AddTypeLoc(E->getArgTInfo2());
-  AddTypeLoc(E->getArgTInfo1());
-}
 
 void EnqueueVisitor::VisitWhileStmt(WhileStmt *W) {
   AddStmt(W->getBody());
@@ -1884,6 +1891,12 @@ void EnqueueVisitor::VisitWhileStmt(WhileStmt *W) {
 void EnqueueVisitor::VisitUnaryTypeTraitExpr(UnaryTypeTraitExpr *E) {
   AddTypeLoc(E->getQueriedTypeSourceInfo());
 }
+
+void EnqueueVisitor::VisitBinaryTypeTraitExpr(BinaryTypeTraitExpr *E) {
+  AddTypeLoc(E->getRhsTypeSourceInfo());
+  AddTypeLoc(E->getLhsTypeSourceInfo());
+}
+
 void EnqueueVisitor::VisitUnresolvedMemberExpr(UnresolvedMemberExpr *U) {
   VisitOverloadExpr(U);
   if (!U->isImplicitAccess())
@@ -2584,9 +2597,7 @@ CXFile clang_getFile(CXTranslationUnit tu, const char *file_name) {
   ASTUnit *CXXUnit = static_cast<ASTUnit *>(tu->TUData);
 
   FileManager &FMgr = CXXUnit->getFileManager();
-  const FileEntry *File = FMgr.getFile(file_name, file_name+strlen(file_name),
-                                       CXXUnit->getFileSystemOpts());
-  return const_cast<FileEntry *>(File);
+  return const_cast<FileEntry *>(FMgr.getFile(file_name));
 }
 
 } // end: extern "C"
@@ -2608,7 +2619,7 @@ static Decl *getDeclFromExpr(Stmt *E) {
   if (ObjCIvarRefExpr *RE = dyn_cast<ObjCIvarRefExpr>(E))
     return RE->getDecl();
   if (ObjCPropertyRefExpr *PRE = dyn_cast<ObjCPropertyRefExpr>(E))
-    return PRE->getProperty();
+    return PRE->isExplicitProperty() ? PRE->getExplicitProperty() : 0;
       
   if (CallExpr *CE = dyn_cast<CallExpr>(E))
     return getDeclFromExpr(CE->getCallee());
@@ -3063,6 +3074,12 @@ enum CXChildVisitResult GetCursorVisitor(CXCursor cursor,
       cursor.kind == CXCursor_TypeRef)
     return CXChildVisit_Recurse;
   
+  // Don't override a preprocessing cursor with another preprocessing
+  // cursor; we want the outermost preprocessing cursor.
+  if (clang_isPreprocessing(cursor.kind) &&
+      clang_isPreprocessing(BestCursor->kind))
+    return CXChildVisit_Recurse;
+  
   *BestCursor = cursor;
   return CXChildVisit_Recurse;
 }
@@ -3124,6 +3141,24 @@ CXCursor clang_getCursor(CXTranslationUnit TU, CXSourceLocation Loc) {
     clang_disposeString(ResultFileName);
     clang_disposeString(KindSpelling);
     clang_disposeString(USR);
+    
+    CXCursor Definition = clang_getCursorDefinition(Result);
+    if (!clang_equalCursors(Definition, clang_getNullCursor())) {
+      CXSourceLocation DefinitionLoc = clang_getCursorLocation(Definition);
+      CXString DefinitionKindSpelling
+                                = clang_getCursorKindSpelling(Definition.kind);
+      CXFile DefinitionFile;
+      unsigned DefinitionLine, DefinitionColumn;
+      clang_getInstantiationLocation(DefinitionLoc, &DefinitionFile, 
+                                     &DefinitionLine, &DefinitionColumn, 0);
+      CXString DefinitionFileName = clang_getFileName(DefinitionFile);
+      fprintf(stderr, "  -> %s(%s:%d:%d)\n",
+              clang_getCString(DefinitionKindSpelling),
+              clang_getCString(DefinitionFileName),
+              DefinitionLine, DefinitionColumn);
+      clang_disposeString(DefinitionFileName);
+      clang_disposeString(DefinitionKindSpelling);
+    }
   }
 
   return Result;
@@ -3556,6 +3591,7 @@ CXCursor clang_getCursorDefinition(CXCursor C) {
   case Decl::TemplateTypeParm:
   case Decl::EnumConstant:
   case Decl::Field:
+  case Decl::IndirectField:
   case Decl::ObjCIvar:
   case Decl::ObjCAtDefsField:
   case Decl::ImplicitParam:

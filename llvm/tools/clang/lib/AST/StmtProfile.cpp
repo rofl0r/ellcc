@@ -359,12 +359,6 @@ void StmtProfiler::VisitStmtExpr(StmtExpr *S) {
   VisitExpr(S);
 }
 
-void StmtProfiler::VisitTypesCompatibleExpr(TypesCompatibleExpr *S) {
-  VisitExpr(S);
-  VisitType(S->getArgType1());
-  VisitType(S->getArgType2());
-}
-
 void StmtProfiler::VisitShuffleVectorExpr(ShuffleVectorExpr *S) {
   VisitExpr(S);
 }
@@ -780,6 +774,13 @@ void StmtProfiler::VisitUnaryTypeTraitExpr(UnaryTypeTraitExpr *S) {
   VisitType(S->getQueriedType());
 }
 
+void StmtProfiler::VisitBinaryTypeTraitExpr(BinaryTypeTraitExpr *S) {
+  VisitExpr(S);
+  ID.AddInteger(S->getTrait());
+  VisitType(S->getLhsType());
+  VisitType(S->getRhsType());
+}
+
 void
 StmtProfiler::VisitDependentScopeDeclRefExpr(DependentScopeDeclRefExpr *S) {
   VisitExpr(S);
@@ -790,11 +791,8 @@ StmtProfiler::VisitDependentScopeDeclRefExpr(DependentScopeDeclRefExpr *S) {
     VisitTemplateArguments(S->getTemplateArgs(), S->getNumTemplateArgs());
 }
 
-void StmtProfiler::VisitCXXExprWithTemporaries(CXXExprWithTemporaries *S) {
+void StmtProfiler::VisitExprWithCleanups(ExprWithCleanups *S) {
   VisitExpr(S);
-  for (unsigned I = 0, N = S->getNumTemporaries(); I != N; ++I)
-    VisitDecl(
-      const_cast<CXXDestructorDecl *>(S->getTemporary(I)->getDestructor()));
 }
 
 void
@@ -866,22 +864,15 @@ void StmtProfiler::VisitObjCIvarRefExpr(ObjCIvarRefExpr *S) {
 
 void StmtProfiler::VisitObjCPropertyRefExpr(ObjCPropertyRefExpr *S) {
   VisitExpr(S);
-  VisitDecl(S->getProperty());
-  if (S->isSuperReceiver()) {
-    ID.AddBoolean(S->isSuperReceiver());
-    VisitType(S->getSuperType());
+  if (S->isImplicitProperty()) {
+    VisitDecl(S->getImplicitPropertyGetter());
+    VisitDecl(S->getImplicitPropertySetter());
+  } else {
+    VisitDecl(S->getExplicitProperty());
   }
-}
-
-void StmtProfiler::VisitObjCImplicitSetterGetterRefExpr(
-                                  ObjCImplicitSetterGetterRefExpr *S) {
-  VisitExpr(S);
-  VisitDecl(S->getGetterMethod());
-  VisitDecl(S->getSetterMethod());
-  VisitDecl(S->getInterfaceDecl());
   if (S->isSuperReceiver()) {
     ID.AddBoolean(S->isSuperReceiver());
-    VisitType(S->getSuperType());
+    VisitType(S->getSuperReceiverType());
   }
 }
 

@@ -99,18 +99,18 @@ static void CheckOpen(CheckerContext &C, UnixAPIChecker &UC,
   }
   NonLoc oflags = cast<NonLoc>(V);
   NonLoc ocreateFlag =
-    cast<NonLoc>(C.getValueManager().makeIntVal(UC.Val_O_CREAT.getValue(),
+    cast<NonLoc>(C.getSValBuilder().makeIntVal(UC.Val_O_CREAT.getValue(),
                                                 oflagsEx->getType()));
-  SVal maskedFlagsUC = C.getSValuator().EvalBinOpNN(state, BO_And,
-                                                    oflags, ocreateFlag,
-                                                    oflagsEx->getType());
+  SVal maskedFlagsUC = C.getSValBuilder().evalBinOpNN(state, BO_And,
+                                                      oflags, ocreateFlag,
+                                                      oflagsEx->getType());
   if (maskedFlagsUC.isUnknownOrUndef())
     return;
   DefinedSVal maskedFlags = cast<DefinedSVal>(maskedFlagsUC);
 
   // Check if maskedFlags is non-zero.
   const GRState *trueState, *falseState;
-  llvm::tie(trueState, falseState) = state->Assume(maskedFlags);
+  llvm::tie(trueState, falseState) = state->assume(maskedFlags);
 
   // Only emit an error if the value of 'maskedFlags' is properly
   // constrained;
@@ -195,7 +195,7 @@ static void CheckMallocZero(CheckerContext &C, UnixAPIChecker &UC,
     return;
   
   const GRState *trueState, *falseState;
-  llvm::tie(trueState, falseState) = state->Assume(cast<DefinedSVal>(argVal));
+  llvm::tie(trueState, falseState) = state->assume(cast<DefinedSVal>(argVal));
   
   // Is the value perfectly constrained to zero?
   if (falseState && !trueState) {

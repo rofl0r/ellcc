@@ -1354,8 +1354,8 @@ Sema::MatchTemplateParametersToScopeSpecifier(SourceLocation DeclStartLoc,
     //
     // Following the existing practice of GNU and EDG, we allow a typedef of a
     // template specialization type.
-    if (const TypedefType *TT = dyn_cast<TypedefType>(T))
-      T = TT->LookThroughTypedefs().getTypePtr();
+    while (const TypedefType *TT = dyn_cast<TypedefType>(T))
+      T = TT->getDecl()->getUnderlyingType().getTypePtr();
 
     if (const TemplateSpecializationType *SpecType
                                   = dyn_cast<TemplateSpecializationType>(T)) {
@@ -2110,9 +2110,12 @@ bool Sema::CheckTemplateArgument(NamedDecl *Param,
   // Check non-type template parameters.
   if (NonTypeTemplateParmDecl *NTTP =dyn_cast<NonTypeTemplateParmDecl>(Param)) {    
     // Do substitution on the type of the non-type template parameter
-    // with the template arguments we've seen thus far.
+    // with the template arguments we've seen thus far.  But if the
+    // template has a dependent context then we cannot substitute yet.
     QualType NTTPType = NTTP->getType();
-    if (NTTPType->isDependentType()) {
+    if (NTTPType->isDependentType() &&
+        !isa<TemplateTemplateParmDecl>(Template) &&
+        !Template->getDeclContext()->isDependentContext()) {
       // Do substitution on the type of the non-type template parameter.
       InstantiatingTemplate Inst(*this, TemplateLoc, Template,
                                  NTTP, Converted.data(), Converted.size(),
@@ -3120,7 +3123,7 @@ bool Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
       // based on the template parameter's type.
       unsigned AllowedBits = Context.getTypeSize(IntegerType);
       if (Value.getBitWidth() != AllowedBits)
-        Value.extOrTrunc(AllowedBits);
+        Value = Value.extOrTrunc(AllowedBits);
       Value.setIsSigned(IntegerType->isSignedIntegerType());
 
       // Complain if an unsigned parameter received a negative value.
@@ -3365,9 +3368,17 @@ Sema::BuildExpressionFromDeclTemplateArgument(const TemplateArgument &Arg,
                                       ClassType.getTypePtr());
       CXXScopeSpec SS;
       SS.setScopeRep(Qualifier);
+
+      // The actual value-ness of this is unimportant, but for
+      // internal consistency's sake, references to instance methods
+      // are r-values.
+      ExprValueKind VK = VK_LValue;
+      if (isa<CXXMethodDecl>(VD) && cast<CXXMethodDecl>(VD)->isInstance())
+        VK = VK_RValue;
+
       ExprResult RefExpr = BuildDeclRefExpr(VD, 
                                             VD->getType().getNonReferenceType(),
-                                            VK_LValue,
+                                            VK,
                                             Loc,
                                             &SS);
       if (RefExpr.isInvalid())
@@ -4328,9 +4339,7 @@ Decl *Sema::ActOnStartOfFunctionTemplateDef(Scope *FnBodyScope,
                                MultiTemplateParamsArg TemplateParameterLists,
                                             Declarator &D) {
   assert(getCurFunctionDecl() == 0 && "Function parsing confused");
-  assert(D.getTypeObject(0).Kind == DeclaratorChunk::Function &&
-         "Not a function declarator!");
-  DeclaratorChunk::FunctionTypeInfo &FTI = D.getTypeObject(0).Fun;
+  DeclaratorChunk::FunctionTypeInfo &FTI = D.getFunctionTypeInfo();
 
   if (FTI.hasPrototype) {
     // FIXME: Diagnose arguments without names in C.
@@ -5164,7 +5173,7 @@ Sema::ActOnExplicitInstantiation(Scope *S,
   Decl *TagD = ActOnTag(S, TagSpec, Sema::TUK_Reference,
                         KWLoc, SS, Name, NameLoc, Attr, AS_none,
                         MultiTemplateParamsArg(*this, 0, 0),
-                        Owned, IsDependent, false,
+                        Owned, IsDependent, false, false,
                         TypeResult());
   assert(!IsDependent && "explicit instantiation of dependent name not yet handled");
 
@@ -5691,6 +5700,23 @@ Sema::CheckTypenameType(ElaboratedTypeKeyword Keyword,
   case LookupResult::NotFound:
     DiagID = diag::err_typename_nested_not_found;
     break;
+
+  case LookupResult::FoundUnresolvedValue: {
+    // We found a using declaration that is a value. Most likely, the using
+    // declaration itself is meant to have the 'typename' keyword.
+    SourceRange FullRange(KeywordLoc.isValid() ? KeywordLoc : NNSRange.getBegin(),
+                          IILoc);
+    Diag(IILoc, diag::err_typename_refers_to_using_value_decl)
+      << Name << Ctx << FullRange;
+    if (UnresolvedUsingValueDecl *Using
+          = dyn_cast<UnresolvedUsingValueDecl>(Result.getRepresentativeDecl())){
+      SourceLocation Loc = Using->getTargetNestedNameRange().getBegin();
+      Diag(Loc, diag::note_using_value_decl_missing_typename)
+        << FixItHint::CreateInsertion(Loc, "typename ");
+    }
+  }
+  // Fall through to create a dependent typename type, from which we can recover
+  // better.
       
   case LookupResult::NotFoundInCurrentInstantiation:
     // Okay, it's a member of an unknown instantiation.
@@ -5708,7 +5734,7 @@ Sema::CheckTypenameType(ElaboratedTypeKeyword Keyword,
     Referenced = Result.getFoundDecl();
     break;
 
-  case LookupResult::FoundUnresolvedValue:
+    
     llvm_unreachable("unresolved using decl in non-dependent context");
     return QualType();
 
@@ -5928,3 +5954,33 @@ Sema::getTemplateArgumentBindingsText(const TemplateParameterList *Params,
   Result += ']';
   return Result;
 }
+
+bool Sema::DiagnoseUnexpandedParameterPack(SourceLocation Loc, 
+                                           TypeSourceInfo *T,
+                                         UnexpandedParameterPackContext UPPC) {
+  // C++0x [temp.variadic]p5:
+  //   An appearance of a name of a parameter pack that is not expanded is 
+  //   ill-formed.
+  if (!T->getType()->containsUnexpandedParameterPack())
+    return false;
+
+  // FIXME: Provide the names and locations of the unexpanded parameter packs.
+  Diag(Loc, diag::err_unexpanded_parameter_pack)
+    << (int)UPPC << T->getTypeLoc().getSourceRange();
+  return true;
+}
+
+bool Sema::DiagnoseUnexpandedParameterPack(Expr *E,
+                                           UnexpandedParameterPackContext UPPC) {
+  // C++0x [temp.variadic]p5:
+  //   An appearance of a name of a parameter pack that is not expanded is 
+  //   ill-formed.
+  if (!E->containsUnexpandedParameterPack())
+    return false;
+
+  // FIXME: Provide the names and locations of the unexpanded parameter packs.
+  Diag(E->getSourceRange().getBegin(), diag::err_unexpanded_parameter_pack)
+    << (int)UPPC << E->getSourceRange();
+  return true;
+}
+

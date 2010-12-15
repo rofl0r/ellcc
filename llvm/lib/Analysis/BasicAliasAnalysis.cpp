@@ -206,14 +206,14 @@ static Value *GetLinearExpression(Value *V, APInt &Scale, APInt &Offset,
     Value *CastOp = cast<CastInst>(V)->getOperand(0);
     unsigned OldWidth = Scale.getBitWidth();
     unsigned SmallWidth = CastOp->getType()->getPrimitiveSizeInBits();
-    Scale.trunc(SmallWidth);
-    Offset.trunc(SmallWidth);
+    Scale = Scale.trunc(SmallWidth);
+    Offset = Offset.trunc(SmallWidth);
     Extension = isa<SExtInst>(V) ? EK_SignExt : EK_ZeroExt;
 
     Value *Result = GetLinearExpression(CastOp, Scale, Offset, Extension,
                                         TD, Depth+1);
-    Scale.zext(OldWidth);
-    Offset.zext(OldWidth);
+    Scale = Scale.zext(OldWidth);
+    Offset = Offset.zext(OldWidth);
     
     return Result;
   }
@@ -687,10 +687,15 @@ BasicAliasAnalysis::getModRefInfo(ImmutableCallSite CS,
         Len = LenCI->getZExtValue();
       Value *Dest = II->getArgOperand(0);
       Value *Src = II->getArgOperand(1);
+      // If it can't overlap the source dest, then it doesn't modref the loc.
       if (isNoAlias(Location(Dest, Len), Loc)) {
         if (isNoAlias(Location(Src, Len), Loc))
           return NoModRef;
+        // If it can't overlap the dest, then worst case it reads the loc.
         Min = Ref;
+      } else if (isNoAlias(Location(Src, Len), Loc)) {
+        // If it can't overlap the source, then worst case it mutates the loc.
+        Min = Mod;
       }
       break;
     }
@@ -703,6 +708,8 @@ BasicAliasAnalysis::getModRefInfo(ImmutableCallSite CS,
         if (isNoAlias(Location(Dest, Len), Loc))
           return NoModRef;
       }
+      // We know that memset doesn't load anything.
+      Min = Mod;
       break;
     case Intrinsic::atomic_cmp_swap:
     case Intrinsic::atomic_swap:
@@ -849,6 +856,17 @@ BasicAliasAnalysis::aliasGEP(const GEPOperator *GEP1, uint64_t V1Size,
   // must aliases the GEP, the end result is a must alias also.
   if (GEP1BaseOffset == 0 && GEP1VariableIndices.empty())
     return MustAlias;
+
+  // If there is a difference betwen the pointers, but the difference is
+  // less than the size of the associated memory object, then we know
+  // that the objects are partially overlapping.
+  if (GEP1BaseOffset != 0 && GEP1VariableIndices.empty()) {
+    if (GEP1BaseOffset >= 0 ?
+        (V2Size != UnknownSize && (uint64_t)GEP1BaseOffset < V2Size) :
+        (V1Size != UnknownSize && -(uint64_t)GEP1BaseOffset < V1Size &&
+         GEP1BaseOffset != INT64_MIN))
+      return PartialAlias;
+  }
 
   // If we have a known constant offset, see if this offset is larger than the
   // access size being queried.  If so, and if no variable indices can remove

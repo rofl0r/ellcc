@@ -12,7 +12,7 @@
 
 #include "llvm/ADT/Triple.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/System/DataTypes.h"
+#include "llvm/Support/DataTypes.h"
 #include <cassert>
 
 namespace llvm {
@@ -62,7 +62,8 @@ public:
   ///
   /// This routine is called by the assembler after layout and relaxation is
   /// complete.
-  virtual void ExecutePostLayoutBinding(MCAssembler &Asm) = 0;
+  virtual void ExecutePostLayoutBinding(MCAssembler &Asm,
+                                        const MCAsmLayout &Layout) = 0;
 
   /// Record a relocation entry.
   ///

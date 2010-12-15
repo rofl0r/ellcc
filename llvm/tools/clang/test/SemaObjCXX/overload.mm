@@ -31,8 +31,8 @@ int& f(A*); // expected-note {{candidate}}
 float& f(B*); // expected-note {{candidate}}
 void g(A*);
 
-int& h(A*);
-float& h(id);
+int& h(A*); // expected-note{{candidate}}
+float& h(id); // expected-note{{candidate}}
 
 void test0(A* a, B* b, id val) {
   int& i1 = f(a);
@@ -46,17 +46,18 @@ void test0(A* a, B* b, id val) {
   g(val);
   int& i2 = h(a);
   float& f3 = h(val);
-  //  int& i3 = h(b); FIXME: we match GCC here, but shouldn't this work?
+
+  // FIXME: we match GCC here, but shouldn't this work?
+  int& i3 = h(b); // expected-error{{call to 'h' is ambiguous}}
 }
 
-// We make these errors instead of warnings.  Is that okay?
 void test1(A* a) {
-  B* b = a; // expected-error{{cannot initialize a variable of type 'B *' with an lvalue of type 'A *'}}
-  B *c; c = a; // expected-error{{assigning to 'B *' from incompatible type 'A *'}}
+  B* b = a; // expected-warning{{incompatible pointer types initializing 'A *' with an expression of type 'B *'}}
+  B *c; c = a; // expected-warning{{incompatible pointer types assigning to 'A *' from 'B *'}}
 }
 
 void test2(A** ap) {
-  B** bp = ap; // expected-warning{{incompatible pointer types converting 'A **' to type 'B **'}}
+  B** bp = ap; // expected-warning{{incompatible pointer types initializing 'A **' with an expression of type 'B **'}}
   bp = ap; // expected-warning{{incompatible pointer types assigning to 'A **' from 'B **'}}
 }
 
@@ -64,18 +65,16 @@ void test2(A** ap) {
 int& cv(A*); // expected-note {{previous declaration}} expected-note 2 {{not viable}}
 float& cv(const A*); // expected-error {{cannot be overloaded}}
 
-int& cv2(void*); // expected-note 2 {{candidate}}
-float& cv2(const void*); // expected-note 2 {{candidate}}
+int& cv2(void*);
+float& cv2(const void*);
 
 void cv_test(A* a, B* b, const A* ac, const B* bc) {
   int &i1 = cv(a);
   int &i2 = cv(b);
   float &f1 = cv(ac); // expected-error {{no matching function}}
   float &f2 = cv(bc); // expected-error {{no matching function}}
-
-  // FIXME: these should not be ambiguous
-  int& i3 = cv2(a); // expected-error {{ambiguous}}
-  float& f3 = cv2(ac); // expected-error {{ambiguous}}
+  int& i3 = cv2(a);
+  float& f3 = cv2(ac);
 }
 
 // We agree with GCC that these can't be overloaded.
@@ -102,7 +101,7 @@ objc_exception_functions_t;
 
 void (*_NSExceptionRaiser(void))(NSException *) {
     objc_exception_functions_t exc_funcs;
-    return exc_funcs.throw_exc; // expected-warning{{incompatible pointer types converting 'void (*)(id)' to type 'void (*)(NSException *)'}}
+    return exc_funcs.throw_exc; // expected-warning{{incompatible pointer types returning 'void (*)(id)' from a function with result type 'void (*)(NSException *)'}}
 }
 
 namespace test5 {
@@ -122,5 +121,33 @@ namespace test6 {
 
   void test(B *b) {
     foo(b); // expected-error {{call to 'foo' is ambiguous}}
+  }
+}
+
+namespace rdar8714395 {
+  int &f(const void*);
+  float &f(const Foo*);
+
+  int &f2(const void*);
+  float &f2(Foo const* const *);
+
+  int &f3(const void*);
+  float &f3(Foo const**);
+
+  void g(Foo *p) {
+    float &fr = f(p);
+    float &fr2 = f2(&p);
+    int &ir = f3(&p);
+  }
+
+  
+}
+
+namespace rdar8734046 {
+  void f1(id);
+  void f2(id<P0>);
+  void g(const A *a) {
+    f1(a);
+    f2(a);
   }
 }

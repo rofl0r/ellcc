@@ -188,11 +188,6 @@ public:
   Value *VisitGNUNullExpr(const GNUNullExpr *E) {
     return EmitNullValue(E->getType());
   }
-  Value *VisitTypesCompatibleExpr(const TypesCompatibleExpr *E) {
-    return llvm::ConstantInt::get(ConvertType(E->getType()),
-                                  CGF.getContext().typesAreCompatible(
-                                    E->getArgType1(), E->getArgType2()));
-  }
   Value *VisitOffsetOfExpr(OffsetOfExpr *E);
   Value *VisitSizeOfAlignOfExpr(const SizeOfAlignOfExpr *E);
   Value *VisitAddrLabelExpr(const AddrLabelExpr *E) {
@@ -237,10 +232,8 @@ public:
     return EmitLoadOfLValue(E);
   }
   Value *VisitObjCPropertyRefExpr(ObjCPropertyRefExpr *E) {
-    return EmitLoadOfLValue(E);
-  }
-  Value *VisitObjCImplicitSetterGetterRefExpr(
-                        ObjCImplicitSetterGetterRefExpr *E) {
+    assert(E->getObjectKind() == OK_Ordinary &&
+           "reached property reference without lvalue-to-rvalue");
     return EmitLoadOfLValue(E);
   }
   Value *VisitObjCMessageExpr(ObjCMessageExpr *E) {
@@ -314,7 +307,11 @@ public:
     // value as the "address".
     return EmitLValue(E->getSubExpr()).getAddress();
   }
-  Value *VisitUnaryDeref(const Expr *E) { return EmitLoadOfLValue(E); }
+  Value *VisitUnaryDeref(const UnaryOperator *E) {
+    if (E->getType()->isVoidType())
+      return Visit(E->getSubExpr()); // the actual value should be unused
+    return EmitLoadOfLValue(E);
+  }
   Value *VisitUnaryPlus(const UnaryOperator *E) {
     // This differs from gcc, though, most likely due to a bug in gcc.
     TestAndClearIgnoreResultAssign();
@@ -337,8 +334,8 @@ public:
     return CGF.LoadCXXThis();
   }
 
-  Value *VisitCXXExprWithTemporaries(CXXExprWithTemporaries *E) {
-    return CGF.EmitCXXExprWithTemporaries(E).getScalarVal();
+  Value *VisitExprWithCleanups(ExprWithCleanups *E) {
+    return CGF.EmitExprWithCleanups(E).getScalarVal();
   }
   Value *VisitCXXNewExpr(const CXXNewExpr *E) {
     return CGF.EmitCXXNewExpr(E);
@@ -349,6 +346,10 @@ public:
   }
   Value *VisitUnaryTypeTraitExpr(const UnaryTypeTraitExpr *E) {
     return llvm::ConstantInt::get(Builder.getInt1Ty(), E->getValue());
+  }
+
+  Value *VisitBinaryTypeTraitExpr(const BinaryTypeTraitExpr *E) {
+    return llvm::ConstantInt::get(ConvertType(E->getType()), E->getValue());
   }
 
   Value *VisitCXXPseudoDestructorExpr(const CXXPseudoDestructorExpr *E) {
@@ -1102,6 +1103,19 @@ Value *ScalarExprEmitter::EmitCastExpr(CastExpr *CE) {
     llvm_unreachable("scalar cast to non-scalar value");
     break;
 
+  case CK_GetObjCProperty: {
+    assert(CGF.getContext().hasSameUnqualifiedType(E->getType(), DestTy));
+    assert(E->isLValue() && E->getObjectKind() == OK_ObjCProperty &&
+           "CK_GetObjCProperty for non-lvalue or non-ObjCProperty");
+    RValue RV = CGF.EmitLoadOfLValue(CGF.EmitLValue(E), E->getType());
+    return RV.getScalarVal();
+  }
+      
+  case CK_LValueToRValue:
+    assert(CGF.getContext().hasSameUnqualifiedType(E->getType(), DestTy));
+    assert(E->isGLValue() && "lvalue-to-rvalue applied to r-value!");
+    return Visit(const_cast<Expr*>(E));
+
   case CK_IntegralToPointer: {
     Value *Src = Visit(const_cast<Expr*>(E));
 
@@ -1124,15 +1138,7 @@ Value *ScalarExprEmitter::EmitCastExpr(CastExpr *CE) {
     return Builder.CreatePtrToInt(Src, ConvertType(DestTy));
   }
   case CK_ToVoid: {
-    if (E->Classify(CGF.getContext()).isGLValue()) {
-      LValue LV = CGF.EmitLValue(E);
-      if (LV.isPropertyRef())
-        CGF.EmitLoadOfPropertyRefLValue(LV, E->getType());
-      else if (LV.isKVCRef())
-        CGF.EmitLoadOfKVCRefLValue(LV, E->getType());
-    }
-    else
-      CGF.EmitAnyExpr(E, AggValueSlot::ignored(), true);
+    CGF.EmitIgnoredExpr(E);
     return 0;
   }
   case CK_VectorSplat: {
@@ -1454,7 +1460,7 @@ ScalarExprEmitter::VisitSizeOfAlignOfExpr(const SizeOfAlignOfExpr *E) {
       } else {
         // C99 6.5.3.4p2: If the argument is an expression of type
         // VLA, it is evaluated.
-        CGF.EmitAnyExpr(E->getArgumentExpr());
+        CGF.EmitIgnoredExpr(E->getArgumentExpr());
       }
 
       return CGF.GetVLASize(VAT);
@@ -1474,7 +1480,7 @@ Value *ScalarExprEmitter::VisitUnaryReal(const UnaryOperator *E) {
     // If it's an l-value, load through the appropriate subobject l-value.
     // Note that we have to ask E because Op might be an l-value that
     // this won't work for, e.g. an Obj-C property.
-    if (E->isLvalue(CGF.getContext()) == Expr::LV_Valid)
+    if (E->isGLValue())
       return CGF.EmitLoadOfLValue(CGF.EmitLValue(E), E->getType())
                 .getScalarVal();
 
@@ -1491,7 +1497,7 @@ Value *ScalarExprEmitter::VisitUnaryImag(const UnaryOperator *E) {
     // If it's an l-value, load through the appropriate subobject l-value.
     // Note that we have to ask E because Op might be an l-value that
     // this won't work for, e.g. an Obj-C property.
-    if (Op->isLvalue(CGF.getContext()) == Expr::LV_Valid)
+    if (Op->isGLValue())
       return CGF.EmitLoadOfLValue(CGF.EmitLValue(E), E->getType())
                 .getScalarVal();
 
@@ -1583,7 +1589,7 @@ Value *ScalarExprEmitter::EmitCompoundAssign(const CompoundAssignOperator *E,
     return RHS;
 
   // Objective-C property assignment never reloads the value following a store.
-  if (LHS.isPropertyRef() || LHS.isKVCRef())
+  if (LHS.isPropertyRef())
     return RHS;
 
   // If the lvalue is non-volatile, return the computed value of the assignment.
@@ -2183,7 +2189,7 @@ Value *ScalarExprEmitter::VisitBinAssign(const BinaryOperator *E) {
     return RHS;
 
   // Objective-C property assignment never reloads the value following a store.
-  if (LHS.isPropertyRef() || LHS.isKVCRef())
+  if (LHS.isPropertyRef())
     return RHS;
 
   // If the lvalue is non-volatile, return the computed value of the assignment.
@@ -2298,7 +2304,7 @@ Value *ScalarExprEmitter::VisitBinLOr(const BinaryOperator *E) {
 }
 
 Value *ScalarExprEmitter::VisitBinComma(const BinaryOperator *E) {
-  CGF.EmitStmt(E->getLHS());
+  CGF.EmitIgnoredExpr(E->getLHS());
   CGF.EnsureInsertPoint();
   return Visit(E->getRHS());
 }
@@ -2548,7 +2554,7 @@ LValue CodeGenFunction::EmitObjCIsaExpr(const ObjCIsaExpr *E) {
   const llvm::Type *ClassPtrTy = ConvertType(E->getType());
 
   Expr *BaseExpr = E->getBase();
-  if (BaseExpr->isLvalue(getContext()) != Expr::LV_Valid) {
+  if (BaseExpr->isRValue()) {
     V = CreateTempAlloca(ClassPtrTy, "resval");
     llvm::Value *Src = EmitScalarExpr(BaseExpr);
     Builder.CreateStore(Src, V);
@@ -2568,7 +2574,7 @@ LValue CodeGenFunction::EmitObjCIsaExpr(const ObjCIsaExpr *E) {
 }
 
 
-LValue CodeGenFunction::EmitCompoundAssignOperatorLValue(
+LValue CodeGenFunction::EmitCompoundAssignmentLValue(
                                             const CompoundAssignOperator *E) {
   ScalarExprEmitter Scalar(*this);
   Value *Result = 0;

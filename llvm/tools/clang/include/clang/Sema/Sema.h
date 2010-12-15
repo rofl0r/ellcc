@@ -78,7 +78,6 @@ namespace clang {
   class ExternalSemaSource;
   class FormatAttr;
   class FriendDecl;
-  class FullExpr;
   class FunctionDecl;
   class FunctionProtoType;
   class FunctionTemplateDecl;
@@ -139,7 +138,8 @@ namespace clang {
   class VarDecl;
   class VisibilityAttr;
   class VisibleDeclConsumer;
-
+  class IndirectFieldDecl;
+  
 namespace sema {
   class AccessedEntity;
   class BlockScopeInfo;
@@ -165,7 +165,9 @@ class LocInfoType : public Type {
 
   LocInfoType(QualType ty, TypeSourceInfo *TInfo)
     : Type((TypeClass)LocInfo, ty, ty->isDependentType(), 
-           ty->isVariablyModifiedType()), DeclInfo(TInfo) {
+           ty->isVariablyModifiedType(),
+           ty->containsUnexpandedParameterPack()), 
+      DeclInfo(TInfo) {
     assert(getTypeClass() == (TypeClass)LocInfo && "LocInfo didn't fit in TC?");
   }
   friend class Sema;
@@ -613,12 +615,14 @@ public:
                              QualType *ParamTypes, unsigned NumParamTypes,
                              bool Variadic, unsigned Quals,
                              SourceLocation Loc, DeclarationName Entity,
-                             const FunctionType::ExtInfo &Info);
+                             FunctionType::ExtInfo Info);
   QualType BuildMemberPointerType(QualType T, QualType Class,
                                   SourceLocation Loc,
                                   DeclarationName Entity);
   QualType BuildBlockPointerType(QualType T,
                                  SourceLocation Loc, DeclarationName Entity);
+  QualType BuildParenType(QualType T);
+
   TypeSourceInfo *GetTypeForDeclarator(Declarator &D, Scope *S,
                                        TagDecl **OwnedDecl = 0);
   TypeSourceInfo *GetTypeSourceInfoForDeclarator(Declarator &D, QualType T,
@@ -786,6 +790,9 @@ public:
                                     AccessSpecifier AS,
                                     RecordDecl *Record);
 
+  Decl *BuildMicrosoftCAnonymousStruct(Scope *S, DeclSpec &DS, 
+                                       RecordDecl *Record);
+
   bool isAcceptableTagRedeclaration(const TagDecl *Previous,
                                     TagTypeKind NewTag,
                                     SourceLocation NewTagLoc,
@@ -804,7 +811,7 @@ public:
                  AttributeList *Attr, AccessSpecifier AS,
                  MultiTemplateParamsArg TemplateParameterLists,
                  bool &OwnedDecl, bool &IsDependent, bool ScopedEnum,
-                 TypeResult UnderlyingType);
+                 bool ScopedEnumUsesClassTag, TypeResult UnderlyingType);
 
   Decl *ActOnTemplatedFriendTag(Scope *S, SourceLocation FriendLoc,
                                 unsigned TagSpec, SourceLocation TagLoc,
@@ -1552,7 +1559,7 @@ public:
 
   private:
     // FIXME: No need to make the entire Sema class a friend when it's just
-    // Sema::FullExpr that needs access to the constructor below.
+    // Sema::MakeFullExpr that needs access to the constructor below.
     friend class Sema;
 
     explicit FullExprArg(Expr *expr) : E(expr) {}
@@ -1575,6 +1582,7 @@ public:
                                    SourceLocation StartLoc,
                                    SourceLocation EndLoc);
   void ActOnForEachDeclStmt(DeclGroupPtrTy Decl);
+  StmtResult ActOnForEachLValueExpr(Expr *E);
   StmtResult ActOnCaseStmt(SourceLocation CaseLoc, Expr *LHSVal,
                                    SourceLocation DotDotDotLoc, Expr *RHSVal,
                                    SourceLocation ColonLoc);
@@ -1590,17 +1598,17 @@ public:
                             SourceLocation ColonLoc, Stmt *SubStmt,
                             bool HasUnusedAttr);
   StmtResult ActOnIfStmt(SourceLocation IfLoc,
-                                 FullExprArg CondVal, Decl *CondVar,
-                                 Stmt *ThenVal,
-                                 SourceLocation ElseLoc, Stmt *ElseVal);
+                         FullExprArg CondVal, Decl *CondVar,
+                         Stmt *ThenVal,
+                         SourceLocation ElseLoc, Stmt *ElseVal);
   StmtResult ActOnStartOfSwitchStmt(SourceLocation SwitchLoc,
                                             Expr *Cond,
                                             Decl *CondVar);
   StmtResult ActOnFinishSwitchStmt(SourceLocation SwitchLoc,
                                            Stmt *Switch, Stmt *Body);
   StmtResult ActOnWhileStmt(SourceLocation WhileLoc,
-                                    FullExprArg Cond,
-                                    Decl *CondVar, Stmt *Body);
+                            FullExprArg Cond,
+                            Decl *CondVar, Stmt *Body);
   StmtResult ActOnDoStmt(SourceLocation DoLoc, Stmt *Body,
                                  SourceLocation WhileLoc,
                                  SourceLocation CondLParen, Expr *Cond,
@@ -1739,11 +1747,9 @@ public:
                               ExprValueKind VK,
                               const DeclarationNameInfo &NameInfo,
                               const CXXScopeSpec *SS = 0);
-  VarDecl *BuildAnonymousStructUnionMemberPath(FieldDecl *Field,
-                                    llvm::SmallVectorImpl<FieldDecl *> &Path);
   ExprResult
   BuildAnonymousStructUnionMemberReference(SourceLocation Loc,
-                                           FieldDecl *Field,
+                                           IndirectFieldDecl *IndirectField,
                                            Expr *BaseObjectExpr = 0,
                                       SourceLocation OpLoc = SourceLocation());
   ExprResult BuildPossibleImplicitMemberExpr(const CXXScopeSpec &SS,
@@ -1950,16 +1956,6 @@ public:
                                   OffsetOfComponent *CompPtr,
                                   unsigned NumComponents,
                                   SourceLocation RParenLoc);
-
-  // __builtin_types_compatible_p(type1, type2)
-  ExprResult ActOnTypesCompatibleExpr(SourceLocation BuiltinLoc,
-                                      ParsedType arg1,
-                                      ParsedType arg2,
-                                      SourceLocation RPLoc);
-  ExprResult BuildTypesCompatibleExpr(SourceLocation BuiltinLoc,
-                                      TypeSourceInfo *argTInfo1,
-                                      TypeSourceInfo *argTInfo2,
-                                      SourceLocation RPLoc);
 
   // __builtin_choose_expr(constExpr, expr1, expr2)
   ExprResult ActOnChooseExpr(SourceLocation BuiltinLoc,
@@ -2327,6 +2323,20 @@ public:
                                  TypeSourceInfo *T,
                                  SourceLocation RParen);
 
+  /// ActOnBinaryTypeTrait - Parsed one of the bianry type trait support
+  /// pseudo-functions.
+  ExprResult ActOnBinaryTypeTrait(BinaryTypeTrait OTT,
+                                  SourceLocation KWLoc,
+                                  ParsedType LhsTy,
+                                  ParsedType RhsTy,
+                                  SourceLocation RParen);
+
+  ExprResult BuildBinaryTypeTrait(BinaryTypeTrait BTT,
+                                  SourceLocation KWLoc,
+                                  TypeSourceInfo *LhsT,
+                                  TypeSourceInfo *RhsT,
+                                  SourceLocation RParen);
+
   ExprResult ActOnStartCXXMemberReference(Scope *S,
                                           Expr *Base,
                                           SourceLocation OpLoc,
@@ -2356,13 +2366,12 @@ public:
                                        UnqualifiedId &SecondTypeName,
                                        bool HasTrailingLParen);
 
-  /// MaybeCreateCXXExprWithTemporaries - If the list of temporaries is
-  /// non-empty, will create a new CXXExprWithTemporaries expression.
-  /// Otherwise, just returs the passed in expression.
-  Expr *MaybeCreateCXXExprWithTemporaries(Expr *SubExpr);
-  Stmt *MaybeCreateCXXStmtWithTemporaries(Stmt *SubStmt);
-  ExprResult MaybeCreateCXXExprWithTemporaries(ExprResult SubExpr);
-  FullExpr CreateFullExpr(Expr *SubExpr);
+  /// MaybeCreateExprWithCleanups - If the current full-expression
+  /// requires any cleanups, surround it with a ExprWithCleanups node.
+  /// Otherwise, just returns the passed-in expression.
+  Expr *MaybeCreateExprWithCleanups(Expr *SubExpr);
+  Stmt *MaybeCreateStmtWithCleanups(Stmt *SubStmt);
+  ExprResult MaybeCreateExprWithCleanups(ExprResult SubExpr);
 
   ExprResult ActOnFinishFullExpr(Expr *Expr);
   StmtResult ActOnFinishFullStmt(Stmt *Stmt);
@@ -2527,7 +2536,7 @@ public:
                                     Expr **Args, unsigned NumArgs,
                                     SourceLocation RParenLoc);
 
-  MemInitResult BuildMemberInitializer(FieldDecl *Member, Expr **Args,
+  MemInitResult BuildMemberInitializer(ValueDecl *Member, Expr **Args,
                                        unsigned NumArgs, SourceLocation IdLoc,
                                        SourceLocation LParenLoc,
                                        SourceLocation RParenLoc);
@@ -2555,8 +2564,11 @@ public:
   /// \brief The list of classes whose vtables have been used within
   /// this translation unit, and the source locations at which the
   /// first use occurred.
-  llvm::SmallVector<std::pair<CXXRecordDecl *, SourceLocation>, 16> 
-    VTableUses;
+  typedef std::pair<CXXRecordDecl*, SourceLocation> VTableUse;
+
+  /// \brief The list of vtables that are required but have not yet been
+  /// materialized.
+  llvm::SmallVector<VTableUse, 16> VTableUses;
 
   /// \brief The set of classes whose vtables have been used within
   /// this translation unit, and a bit that will be true if the vtable is
@@ -3116,6 +3128,40 @@ public:
   getTemplateArgumentBindingsText(const TemplateParameterList *Params,
                                   const TemplateArgument *Args,
                                   unsigned NumArgs);
+
+  /// \brief The context in which an unexpanded parameter pack is
+  /// being diagnosed.
+  ///
+  /// Note that the values of this enumeration line up with the first
+  /// argument to the \c err_unexpanded_parameter_pack diagnostic.
+  enum UnexpandedParameterPackContext {
+    UPPC_Expression = 0,
+    UPPC_BaseType,
+    UPPC_DeclarationType,
+    UPPC_TemplateArgument
+  };
+
+  /// \brief If the given type contains an unexpanded parameter pack,
+  /// diagnose the error.
+  ///
+  /// \param Loc The source location where a diagnostc should be emitted.
+  ///
+  /// \param T The type that is being checked for unexpanded parameter
+  /// packs.
+  ///
+  /// \returns true if an error ocurred, false otherwise.
+  bool DiagnoseUnexpandedParameterPack(SourceLocation Loc, TypeSourceInfo *T,
+                                       UnexpandedParameterPackContext UPPC);
+
+  /// \brief If the given expression contains an unexpanded parameter
+  /// pack, diagnose the error.
+  ///
+  /// \param E The expression that is being checked for unexpanded
+  /// parameter packs.
+  ///
+  /// \returns true if an error ocurred, false otherwise.
+  bool DiagnoseUnexpandedParameterPack(Expr *E,
+                       UnexpandedParameterPackContext UPPC = UPPC_Expression);
 
   /// \brief Describes the result of template argument deduction.
   ///
@@ -3858,6 +3904,7 @@ public:
                                Selector Sel,
                                ObjCMethodDecl *Method,
                                SourceLocation LBracLoc,
+                               SourceLocation SelectorLoc,
                                SourceLocation RBracLoc,
                                MultiExprArg Args);
 
@@ -3875,6 +3922,7 @@ public:
                                   Selector Sel,
                                   ObjCMethodDecl *Method,
                                   SourceLocation LBracLoc,
+                                  SourceLocation SelectorLoc,
                                   SourceLocation RBracLoc,
                                   MultiExprArg Args);
 
@@ -3949,9 +3997,9 @@ public:
   /// FreePackedContext - Deallocate and null out PackContext.
   void FreePackedContext();
 
-  /// PushVisibilityAttr - Note that we've entered a context with a
-  /// visibility attribute.
-  void PushVisibilityAttr(const VisibilityAttr *Attr);
+  /// PushNamespaceVisibilityAttr - Note that we've entered a
+  /// namespace with a visibility attribute.
+  void PushNamespaceVisibilityAttr(const VisibilityAttr *Attr);
 
   /// AddPushedVisibilityAttribute - If '#pragma GCC visibility' was used,
   /// add an appropriate visibility attribute.
@@ -3979,6 +4027,11 @@ public:
                          ExprValueKind VK = VK_RValue,
                          const CXXCastPath *BasePath = 0);
 
+  /// IgnoredValueConversions - Given that an expression's result is
+  /// syntactically ignored, perform any conversions that are
+  /// required.
+  void IgnoredValueConversions(Expr *&expr);
+
   // UsualUnaryConversions - promotes integers (C99 6.3.1.1p2) and converts
   // functions and arrays to their respective pointers (C99 6.3.2.1).
   Expr *UsualUnaryConversions(Expr *&expr);
@@ -3991,6 +4044,12 @@ public:
   // arrays to their respective pointers and performs the
   // lvalue-to-rvalue conversion.
   void DefaultFunctionArrayLvalueConversion(Expr *&expr);
+
+  // DefaultLvalueConversion - performs lvalue-to-rvalue conversion on
+  // the operand.  This is DefaultFunctionArrayLvalueConversion,
+  // except that it assumes the operand isn't of function or array
+  // type.
+  void DefaultLvalueConversion(Expr *&expr);
 
   // DefaultArgumentPromotion (C99 6.5.2.2p6). Used for function calls that
   // do not have a prototype. Integer promotions are performed on each
@@ -4185,7 +4244,8 @@ public:
   QualType CheckAssignmentOperands( // C99 6.5.16.[1,2]
     Expr *lex, Expr *&rex, SourceLocation OpLoc, QualType convertedType);
   
-  void ConvertPropertyAssignment(Expr *LHS, Expr *&RHS, QualType& LHSTy);
+  void ConvertPropertyForRValue(Expr *&E);
+  void ConvertPropertyForLValue(Expr *&LHS, Expr *&RHS, QualType& LHSTy);
                                    
   QualType CheckConditionalOperands( // C99 6.5.15
     Expr *&cond, Expr *&lhs, Expr *&rhs, Expr *&save,

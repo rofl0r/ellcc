@@ -543,7 +543,7 @@ bool IdempotentOperationChecker::isTruncationExtensionAssignment(
   if (VD != RHS_DR->getDecl())
      return false;
 
-  return dyn_cast<DeclRefExpr>(RHS->IgnoreParens()) == NULL;
+  return dyn_cast<DeclRefExpr>(RHS->IgnoreParenLValueCasts()) == NULL;
 }
 
 // Returns false if a path to this block was not completely analyzed, or true
@@ -646,7 +646,7 @@ bool IdempotentOperationChecker::CanVary(const Expr *Ex,
   case Stmt::OffsetOfExprClass:
   case Stmt::CompoundLiteralExprClass:
   case Stmt::AddrLabelExprClass:
-  case Stmt::TypesCompatibleExprClass:
+  case Stmt::BinaryTypeTraitExprClass:
   case Stmt::GNUNullExprClass:
   case Stmt::InitListExprClass:
   case Stmt::DesignatedInitExprClass:

@@ -19,11 +19,11 @@ add_clang_library(clangAST
   DeclObjC.cpp
   DeclPrinter.cpp
   DeclTemplate.cpp
+  DumpXML.cpp
   Expr.cpp
   ExprClassification.cpp
   ExprConstant.cpp
   ExprCXX.cpp
-  FullExpr.cpp
   InheritViz.cpp
   ItaniumCXXABI.cpp
   MicrosoftCXXABI.cpp

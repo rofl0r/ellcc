@@ -1021,8 +1021,9 @@ declare signext i8 @returns_signed_char()
       registers).  Use of this attribute is target-specific.</dd>
 
   <dt><tt><b><a name="byval">byval</a></b></tt></dt>
-  <dd>This indicates that the pointer parameter should really be passed by value
-      to the function.  The attribute implies that a hidden copy of the pointee
+  <dd><p>This indicates that the pointer parameter should really be passed by
+      value to the function.  The attribute implies that a hidden copy of the
+      pointee
       is made between the caller and the callee, so the callee is unable to
       modify the value in the callee.  This attribute is only valid on LLVM
       pointer arguments.  It is generally used to pass structs and arrays by
@@ -1030,10 +1031,13 @@ declare signext i8 @returns_signed_char()
       to belong to the caller not the callee (for example,
       <tt><a href="#readonly">readonly</a></tt> functions should not write to
       <tt>byval</tt> parameters). This is not a valid attribute for return
-      values.  The byval attribute also supports specifying an alignment with
-      the align attribute.  This has a target-specific effect on the code
-      generator that usually indicates a desired alignment for the synthesized
-      stack slot.</dd>
+      values.</p>
+      
+      <p>The byval attribute also supports specifying an alignment with
+      the align attribute.  It indicates the alignment of the stack slot to
+      form and the known alignment of the pointer specified to the call site. If
+      the alignment is not specified, then the code generator makes a
+      target-specific assumption.</p></dd>
 
   <dt><tt><b><a name="sret">sret</a></b></tt></dt>
   <dd>This indicates that the pointer parameter specifies the address of a
@@ -4127,6 +4131,14 @@ Instruction</a> </div>
    <a href="#t_array">array</a> type.  The operands are constant indices to
    specify which value to extract in a similar manner as indices in a
    '<tt><a href="#i_getelementptr">getelementptr</a></tt>' instruction.</p>
+   <p>The major differences to <tt>getelementptr</tt> indexing are:</p>
+     <ul>
+       <li>Since the value being indexed is not a pointer, the first index is
+           omitted and assumed to be zero.</li>
+       <li>At least one index must be specified.</li>
+       <li>Not only struct indices but also array indices must be in
+           bounds.</li>
+     </ul>
 
 <h5>Semantics:</h5>
 <p>The result is the value at the position in the aggregate specified by the
@@ -4161,7 +4173,7 @@ Instruction</a> </div>
    <a href="#t_array">array</a> type.  The second operand is a first-class
    value to insert.  The following operands are constant indices indicating
    the position at which to insert the value in a similar manner as indices in a
-   '<tt><a href="#i_getelementptr">getelementptr</a></tt>' instruction.  The
+   '<tt><a href="#i_extractvalue">extractvalue</a></tt>' instruction.  The
    value to insert must have the same type as the value identified by the
    indices.</p>
 
@@ -7502,7 +7514,7 @@ LLVM</a>.</p>
 
 <h5>Syntax:</h5>
 <pre>
-  declare {}* @llvm.invariant.start(i64 &lt;size&gt;, i8* nocapture &lt;ptr&gt;) readonly
+  declare {}* @llvm.invariant.start(i64 &lt;size&gt;, i8* nocapture &lt;ptr&gt;)
 </pre>
 
 <h5>Overview:</h5>
@@ -7728,7 +7740,7 @@ LLVM</a>.</p>
 
   <a href="mailto:sabre@nondot.org">Chris Lattner</a><br>
   <a href="http://llvm.org">The LLVM Compiler Infrastructure</a><br>
-  Last modified: $Date: 2010-11-17 02:20:42 -0600 (Wed, 17 Nov 2010) $
+  Last modified: $Date: 2010-12-05 14:54:38 -0600 (Sun, 05 Dec 2010) $
 </address>
 
 </body>

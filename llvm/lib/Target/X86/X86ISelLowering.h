@@ -200,9 +200,11 @@ namespace llvm {
       PCMPEQB, PCMPEQW, PCMPEQD, PCMPEQQ,
       PCMPGTB, PCMPGTW, PCMPGTD, PCMPGTQ,
 
-      // ADD, SUB, SMUL, UMUL, etc. - Arithmetic operations with FLAGS results.
-      ADD, SUB, SMUL, UMUL,
+      // ADD, SUB, SMUL, etc. - Arithmetic operations with FLAGS results.
+      ADD, SUB, SMUL,
       INC, DEC, OR, XOR, AND,
+      
+      UMUL, // LOW, HI, FLAGS = umul LHS, RHS
 
       // MUL_IMM - X86 specific multiply by immediate.
       MUL_IMM,
@@ -740,7 +742,7 @@ namespace llvm {
     SDValue LowerShift(SDValue Op, SelectionDAG &DAG) const;
     SDValue BuildFILD(SDValue Op, EVT SrcVT, SDValue Chain, SDValue StackSlot,
                       SelectionDAG &DAG) const;
-    SDValue LowerBIT_CONVERT(SDValue op, SelectionDAG &DAG) const;
+    SDValue LowerBITCAST(SDValue op, SelectionDAG &DAG) const;
     SDValue LowerSINT_TO_FP(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerUINT_TO_FP(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerUINT_TO_FP_i64(SDValue Op, SelectionDAG &DAG) const;
@@ -805,6 +807,8 @@ namespace llvm {
                   const SmallVectorImpl<SDValue> &OutVals,
                   DebugLoc dl, SelectionDAG &DAG) const;
 
+    virtual bool isUsedByReturnOnly(SDNode *N) const;
+
     virtual bool
       CanLowerReturn(CallingConv::ID CallConv, bool isVarArg,
                      const SmallVectorImpl<ISD::OutputArg> &Outs,
@@ -820,6 +824,13 @@ namespace llvm {
     /// in memory or not.
     MachineBasicBlock *EmitPCMP(MachineInstr *BInstr, MachineBasicBlock *BB,
                                 unsigned argNum, bool inMem) const;
+
+    /// Utility functions to emit monitor and mwait instructions. These
+    /// need to make sure that the arguments to the intrinsic are in the
+    /// correct registers.
+    MachineBasicBlock *EmitMonitor(MachineInstr *MI,
+                                   MachineBasicBlock *BB) const;
+    MachineBasicBlock *EmitMwait(MachineInstr *MI, MachineBasicBlock *BB) const;
 
     /// Utility function to emit atomic bitwise operations (and, or, xor).
     /// It takes the bitwise instruction to expand, the associated machine basic
@@ -869,6 +880,9 @@ namespace llvm {
                                               MachineBasicBlock *BB) const;
 
     MachineBasicBlock *EmitLoweredTLSCall(MachineInstr *MI,
+                                          MachineBasicBlock *BB) const;
+
+    MachineBasicBlock *emitLoweredTLSAddr(MachineInstr *MI,
                                           MachineBasicBlock *BB) const;
 
     /// Emit nodes that will be selected as "test Op0,Op0", or something

@@ -938,16 +938,6 @@ The expression should optimize to something like
 
 //===---------------------------------------------------------------------===//
 
-void a(int variable)
-{
- if (variable == 4 || variable == 6)
-   bar();
-}
-This should optimize to "if ((variable | 2) == 6)".  Currently not
-optimized with "clang -emit-llvm-bc | opt -std-compile-opts | llc".
-
-//===---------------------------------------------------------------------===//
-
 unsigned int f(unsigned int i, unsigned int n) {++i; if (i == n) ++i; return
 i;}
 unsigned int f2(unsigned int i, unsigned int n) {++i; i += i == n; return i;}
@@ -1061,18 +1051,6 @@ Should combine to x | 8.  Currently not optimized with "clang
 
 int a(int x) {return x ^ ((x & 8) ^ 8);}
 Should also combine to x | 8.  Currently not optimized with "clang
--emit-llvm-bc | opt -std-compile-opts".
-
-//===---------------------------------------------------------------------===//
-
-int a(int x) {return (x & 8) == 0 ? -1 : -9;}
-Should combine to (x | -9) ^ 8.  Currently not optimized with "clang
--emit-llvm-bc | opt -std-compile-opts".
-
-//===---------------------------------------------------------------------===//
-
-int a(int x) {return (x & 8) == 0 ? -9 : -1;}
-Should combine to x | -9.  Currently not optimized with "clang
 -emit-llvm-bc | opt -std-compile-opts".
 
 //===---------------------------------------------------------------------===//
@@ -1535,22 +1513,6 @@ the float directly.
 
 //===---------------------------------------------------------------------===//
 
-#include <math.h>
-double foo(double a) {    return sin(a); }
-
-This compiles into this on x86-64 Linux:
-foo:
-	subq	$8, %rsp
-	call	sin
-	addq	$8, %rsp
-	ret
-vs:
-
-foo:
-        jmp sin
-
-//===---------------------------------------------------------------------===//
-
 The arg promotion pass should make use of nocapture to make its alias analysis
 stuff much more precise.
 
@@ -1715,14 +1677,6 @@ This should be optimized to a single compare.  Testcase derived from gcc.
 
 //===---------------------------------------------------------------------===//
 
-Missed instcombine transformation:
-void b();
-void a(int x) { if (((1<<x)&8)==0) b(); }
-
-The shift should be optimized out.  Testcase derived from gcc.
-
-//===---------------------------------------------------------------------===//
-
 Missed instcombine or reassociate transformation:
 int a(int a, int b) { return (a==12)&(b>47)&(b<58); }
 
@@ -1732,28 +1686,35 @@ from gcc.
 //===---------------------------------------------------------------------===//
 
 Missed instcombine transformation:
-define i32 @a(i32 %x) nounwind readnone {
-entry:
-  %rem = srem i32 %x, 32
-  %shl = shl i32 1, %rem
-  ret i32 %shl
-}
 
-The srem can be transformed to an and because if x is negative, the shift is
-undefined. Testcase derived from gcc.
+  %382 = srem i32 %tmp14.i, 64                    ; [#uses=1]
+  %383 = zext i32 %382 to i64                     ; [#uses=1]
+  %384 = shl i64 %381, %383                       ; [#uses=1]
+  %385 = icmp slt i32 %tmp14.i, 64                ; [#uses=1]
+
+The srem can be transformed to an and because if %tmp14.i is negative, the
+shift is undefined.  Testcase derived from 403.gcc.
 
 //===---------------------------------------------------------------------===//
 
-Missed instcombine/dagcombine transformation:
-define i32 @a(i32 %x, i32 %y) nounwind readnone {
-entry:
-  %mul = mul i32 %y, -8
-  %sub = sub i32 %x, %mul
-  ret i32 %sub
-}
+This is a range comparison on a divided result (from 403.gcc):
 
-Should compile to something like x+y*8, but currently compiles to an
-inefficient result.  Testcase derived from gcc.
+  %1337 = sdiv i32 %1336, 8                       ; [#uses=1]
+  %.off.i208 = add i32 %1336, 7                   ; [#uses=1]
+  %1338 = icmp ult i32 %.off.i208, 15             ; [#uses=1]
+  
+We already catch this (removing the sdiv) if there isn't an add, we should
+handle the 'add' as well.  This is a common idiom with it's builtin_alloca code.
+C testcase:
+
+int a(int x) { return (unsigned)(x/16+7) < 15; }
+
+Another similar case involves truncations on 64-bit targets:
+
+  %361 = sdiv i64 %.046, 8                        ; [#uses=1]
+  %362 = trunc i64 %361 to i32                    ; [#uses=2]
+...
+  %367 = icmp eq i32 %362, 0                      ; [#uses=1]
 
 //===---------------------------------------------------------------------===//
 
@@ -2012,3 +1973,39 @@ _foo:                                   ## @foo
 
 //===---------------------------------------------------------------------===//
 
+This code (from GCC PR28685):
+
+int test(int a, int b) {
+  int lt = a < b;
+  int eq = a == b;
+  if (lt)
+    return 1;
+  return eq;
+}
+
+Is compiled to:
+
+define i32 @test(i32 %a, i32 %b) nounwind readnone ssp {
+entry:
+  %cmp = icmp slt i32 %a, %b
+  br i1 %cmp, label %return, label %if.end
+
+if.end:                                           ; preds = %entry
+  %cmp5 = icmp eq i32 %a, %b
+  %conv6 = zext i1 %cmp5 to i32
+  ret i32 %conv6
+
+return:                                           ; preds = %entry
+  ret i32 1
+}
+
+it could be:
+
+define i32 @test__(i32 %a, i32 %b) nounwind readnone ssp {
+entry:
+  %0 = icmp sle i32 %a, %b
+  %retval = zext i1 %0 to i32
+  ret i32 %retval
+}
+
+//===---------------------------------------------------------------------===//

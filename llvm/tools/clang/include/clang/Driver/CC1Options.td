@@ -330,6 +330,8 @@ def ast_print_xml : Flag<"-ast-print-xml">,
   HelpText<"Build ASTs and then print them in XML format">;
 def ast_dump : Flag<"-ast-dump">,
   HelpText<"Build ASTs and then debug dump them">;
+def ast_dump_xml : Flag<"-ast-dump-xml">,
+  HelpText<"Build ASTs and then debug dump them in a verbose XML format">;
 def ast_view : Flag<"-ast-view">,
   HelpText<"Build ASTs and view them with GraphViz">;
 def boostcon : Flag<"-boostcon">,
@@ -590,3 +592,22 @@ def dD : Flag<"-dD">,
   HelpText<"Print macro definitions in -E mode in addition to normal output">;
 def H : Flag<"-H">,
   HelpText<"Show header includes and nesting depth">;
+
+//===----------------------------------------------------------------------===//
+// OpenCL Options
+//===----------------------------------------------------------------------===//
+
+def cl_opt_disable : Flag<"-cl-opt-disable">,
+  HelpText<"OpenCL only. This option disables all optimizations. The default is optimizations are enabled.">;
+def cl_single_precision_constant : Flag<"-cl-single-precision-constant">,
+  HelpText<"OpenCL only. Treat double precision floating-point constant as single precision constant.">;
+def cl_finite_math_only : Flag<"-cl-finite-math-only">,
+  HelpText<"OpenCL only. Allow floating-point optimizations that assume arguments and results are not NaNs or +-Inf.">;
+def cl_unsafe_math_optimizations : Flag<"-cl-unsafe-math-optimizations">,
+  HelpText<"OpenCL only. Allow unsafe floating-point optimizations.  Also implies -cl-no-signed-zeros and -cl-mad-enable">;
+def cl_fast_relaxed_math : Flag<"-cl-fast-relaxed-math">,
+  HelpText<"OpenCL only. Sets -cl-finite-math-only and -cl-unsafe-math-optimizations, and defines __FAST_RELAXED_MATH__">;
+def cl_mad_enable : Flag<"-cl-mad-enable">,
+  HelpText<"OpenCL only. Enable less precise MAD instructions to be generated.">;
+def cl_std_EQ : Joined<"-cl-std=">,
+  HelpText<"OpenCL language standard to compile for">;

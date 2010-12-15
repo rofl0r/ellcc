@@ -205,7 +205,7 @@ ifdef LLVMC_BASED_DRIVER
 TOOLNAME = $(LLVMC_BASED_DRIVER)
 
 LLVMLIBS = CompilerDriver.a
-LINK_COMPONENTS = support system
+LINK_COMPONENTS = support
 
 endif # LLVMC_BASED_DRIVER
 
@@ -392,6 +392,17 @@ endif
   LD.Flags += -Wl,--no-relax
 endif
 
+# GNU ld/PECOFF accepts but ignores them below;
+#   --version-script
+#   --export-dynamic
+#   --rpath
+# FIXME: autoconf should be aware of them.
+ifneq (,$(filter $(HOST_OS),Cygwin MingW))
+  HAVE_LINK_VERSION_SCRIPT := 0
+  RPATH :=
+  RDYNAMIC := -Wl,--export-all-symbols
+endif
+
 #--------------------------------------------------------------------
 # Directory locations
 #--------------------------------------------------------------------
@@ -496,8 +507,8 @@ ifeq ($(HOST_OS),Darwin)
   # Get "4" out of 10.4 for later pieces in the makefile.
   DARWIN_MAJVERS := $(shell echo $(DARWIN_VERSION)| sed -E 's/10.([0-9]).*/\1/')
 
-  SharedLinkOptions=-Wl,-flat_namespace -Wl,-undefined,suppress \
-                    -dynamiclib
+  LoadableModuleOptions := -Wl,-flat_namespace -Wl,-undefined,suppress
+  SharedLinkOptions := -dynamiclib
   ifneq ($(ARCH),ARM)
     SharedLinkOptions += -mmacosx-version-min=$(DARWIN_VERSION)
   endif
@@ -515,10 +526,6 @@ ifdef SHARED_LIBRARY
 ifneq ($(HOST_OS), $(filter $(HOST_OS), Cygwin MingW))
 ifneq ($(HOST_OS),Darwin)
   LD.Flags += $(RPATH) -Wl,'$$ORIGIN'
-else
-ifneq ($(DARWIN_MAJVERS),4)
-  LD.Flags += $(RPATH) -Wl,$(SharedLibDir)
-endif
 endif
 endif
 endif
@@ -623,11 +630,11 @@ else
 endif
 
 ifeq ($(HOST_OS),SunOS)
-CPP.BaseFlags += -include llvm/System/Solaris.h
+CPP.BaseFlags += -include llvm/Support/Solaris.h
 endif
 
 ifeq ($(HOST_OS),AuroraUX)
-CPP.BaseFlags += -include llvm/System/Solaris.h
+CPP.BaseFlags += -include llvm/Support/Solaris.h
 endif # !HOST_OS - AuroraUX.
 
 LD.Flags      += -L$(LibDir) -L$(LLVMLibDir)
@@ -949,11 +956,6 @@ ifdef EXPORTED_SYMBOL_FILE
 # First, set up the native export file, which may differ from the source
 # export file.
 
-# The option --version-script is not effective on GNU ld win32.
-ifneq (,$(filter $(HOST_OS),Cygwin MingW))
-  HAVE_LINK_VERSION_SCRIPT := 0
-endif
-
 ifeq ($(HOST_OS),Darwin)
 # Darwin convention prefixes symbols with underscores.
 NativeExportsFile := $(ObjDir)/$(notdir $(EXPORTED_SYMBOL_FILE)).sed
@@ -1107,6 +1109,7 @@ endif
 ifdef LINK_LIBS_IN_SHARED
 ifdef LOADABLE_MODULE
 SharedLibKindMessage := "Loadable Module"
+SharedLinkOptions := $(LoadableModuleOptions) $(SharedLinkOptions)
 else
 SharedLibKindMessage := "Shared Library"
 endif
@@ -1501,31 +1504,31 @@ BC_DEPEND_MOVEFILE = then $(MV) -f "$(ObjDir)/$*.bc.d.tmp" "$(ObjDir)/$*.bc.d"; 
 $(ObjDir)/%.ll: %.cpp $(ObjDir)/.dir $(BUILT_SOURCES) $(LLVMCXX)
 	$(Echo) "Compiling $*.cpp for $(BuildMode) build (bytecode)"
 	$(Verb) if $(BCCompile.CXX) $(BC_DEPEND_OPTIONS) \
-                              $< -o $(ObjDir)/$*.ll -S -emit-llvm ; \
+			$< -o $(ObjDir)/$*.ll -S -$(LLVMCC_EMITIR_FLAG) ; \
 	        $(BC_DEPEND_MOVEFILE)
 
 $(ObjDir)/%.ll: %.mm $(ObjDir)/.dir $(BUILT_SOURCES) $(LLVMCXX)
 	$(Echo) "Compiling $*.mm for $(BuildMode) build (bytecode)"
 	$(Verb) if $(BCCompile.CXX) $(BC_DEPEND_OPTIONS) \
-                              $< -o $(ObjDir)/$*.ll -S -emit-llvm ; \
+			$< -o $(ObjDir)/$*.ll -S -$(LLVMCC_EMITIR_FLAG) ; \
 	        $(BC_DEPEND_MOVEFILE)
 
 $(ObjDir)/%.ll: %.cc $(ObjDir)/.dir $(BUILT_SOURCES) $(LLVMCXX)
 	$(Echo) "Compiling $*.cc for $(BuildMode) build (bytecode)"
 	$(Verb) if $(BCCompile.CXX) $(BC_DEPEND_OPTIONS) \
-                              $< -o $(ObjDir)/$*.ll -S -emit-llvm ; \
+			$< -o $(ObjDir)/$*.ll -S -$(LLVMCC_EMITIR_FLAG) ; \
 	        $(BC_DEPEND_MOVEFILE)
 
 $(ObjDir)/%.ll: %.c $(ObjDir)/.dir $(BUILT_SOURCES) $(LLVMCC)
 	$(Echo) "Compiling $*.c for $(BuildMode) build (bytecode)"
 	$(Verb) if $(BCCompile.C) $(BC_DEPEND_OPTIONS) \
-                              $< -o $(ObjDir)/$*.ll -S -emit-llvm ; \
+			$< -o $(ObjDir)/$*.ll -S -$(LLVMCC_EMITIR_FLAG) ; \
 	        $(BC_DEPEND_MOVEFILE)
 
 $(ObjDir)/%.ll: %.m $(ObjDir)/.dir $(BUILT_SOURCES) $(LLVMCC)
 	$(Echo) "Compiling $*.m for $(BuildMode) build (bytecode)"
 	$(Verb) if $(BCCompile.C) $(BC_DEPEND_OPTIONS) \
-                              $< -o $(ObjDir)/$*.ll -S -emit-llvm ; \
+			$< -o $(ObjDir)/$*.ll -S -$(LLVMCC_EMITIR_FLAG) ; \
 	        $(BC_DEPEND_MOVEFILE)
 
 # Provide alternate rule sets if dependencies are disabled
@@ -1553,23 +1556,23 @@ $(ObjDir)/%.o: %.m $(ObjDir)/.dir $(BUILT_SOURCES)
 
 $(ObjDir)/%.ll: %.cpp $(ObjDir)/.dir $(BUILT_SOURCES) $(LLVMCXX)
 	$(Echo) "Compiling $*.cpp for $(BuildMode) build (bytecode)"
-	$(BCCompile.CXX) $< -o $@ -S -emit-llvm
+	$(BCCompile.CXX) $< -o $@ -S -$(LLVMCC_EMITIR_FLAG)
 
 $(ObjDir)/%.ll: %.mm $(ObjDir)/.dir $(BUILT_SOURCES) $(LLVMCXX)
 	$(Echo) "Compiling $*.mm for $(BuildMode) build (bytecode)"
-	$(BCCompile.CXX) $< -o $@ -S -emit-llvm
+	$(BCCompile.CXX) $< -o $@ -S -$(LLVMCC_EMITIR_FLAG)
 
 $(ObjDir)/%.ll: %.cc $(ObjDir)/.dir $(BUILT_SOURCES) $(LLVMCXX)
 	$(Echo) "Compiling $*.cc for $(BuildMode) build (bytecode)"
-	$(BCCompile.CXX) $< -o $@ -S -emit-llvm
+	$(BCCompile.CXX) $< -o $@ -S -$(LLVMCC_EMITIR_FLAG)
 
 $(ObjDir)/%.ll: %.c $(ObjDir)/.dir $(BUILT_SOURCES) $(LLVMCC)
 	$(Echo) "Compiling $*.c for $(BuildMode) build (bytecode)"
-	$(BCCompile.C) $< -o $@ -S -emit-llvm
+	$(BCCompile.C) $< -o $@ -S -$(LLVMCC_EMITIR_FLAG)
 
 $(ObjDir)/%.ll: %.m $(ObjDir)/.dir $(BUILT_SOURCES) $(LLVMCC)
 	$(Echo) "Compiling $*.m for $(BuildMode) build (bytecode)"
-	$(BCCompile.C) $< -o $@ -S -emit-llvm
+	$(BCCompile.C) $< -o $@ -S -$(LLVMCC_EMITIR_FLAG)
 
 endif
 

@@ -185,6 +185,25 @@ PseudoDestructorTypeStorage::PseudoDestructorTypeStorage(TypeSourceInfo *Info)
   Location = Info->getTypeLoc().getLocalSourceRange().getBegin();
 }
 
+CXXPseudoDestructorExpr::CXXPseudoDestructorExpr(ASTContext &Context,
+    Expr *Base, bool isArrow, SourceLocation OperatorLoc,
+    NestedNameSpecifier *Qualifier, SourceRange QualifierRange,
+    TypeSourceInfo *ScopeType, SourceLocation ColonColonLoc,
+    SourceLocation TildeLoc, PseudoDestructorTypeStorage DestroyedType)
+  : Expr(CXXPseudoDestructorExprClass,
+         Context.getPointerType(Context.getFunctionType(Context.VoidTy, 0, 0,
+                                         FunctionProtoType::ExtProtoInfo())),
+         VK_RValue, OK_Ordinary,
+         /*isTypeDependent=*/(Base->isTypeDependent() ||
+           (DestroyedType.getTypeSourceInfo() &&
+            DestroyedType.getTypeSourceInfo()->getType()->isDependentType())),
+         /*isValueDependent=*/Base->isValueDependent()),
+    Base(static_cast<Stmt *>(Base)), IsArrow(isArrow),
+    OperatorLoc(OperatorLoc), Qualifier(Qualifier),
+    QualifierRange(QualifierRange), 
+    ScopeType(ScopeType), ColonColonLoc(ColonColonLoc), TildeLoc(TildeLoc),
+    DestroyedType(DestroyedType) { }
+
 QualType CXXPseudoDestructorExpr::getDestroyedType() const {
   if (TypeSourceInfo *TInfo = DestroyedType.getTypeSourceInfo())
     return TInfo->getType();
@@ -301,6 +320,14 @@ Stmt::child_iterator UnaryTypeTraitExpr::child_begin() {
   return child_iterator();
 }
 Stmt::child_iterator UnaryTypeTraitExpr::child_end() {
+  return child_iterator();
+}
+
+//BinaryTypeTraitExpr
+Stmt::child_iterator BinaryTypeTraitExpr::child_begin() {
+  return child_iterator();
+}
+Stmt::child_iterator BinaryTypeTraitExpr::child_end() {
   return child_iterator();
 }
 
@@ -615,11 +642,11 @@ CXXConstructExpr::CXXConstructExpr(ASTContext &C, StmtClass SC, QualType T,
   }
 }
 
-CXXExprWithTemporaries::CXXExprWithTemporaries(ASTContext &C,
-                                               Expr *subexpr,
-                                               CXXTemporary **temps,
-                                               unsigned numtemps)
-  : Expr(CXXExprWithTemporariesClass, subexpr->getType(),
+ExprWithCleanups::ExprWithCleanups(ASTContext &C,
+                                   Expr *subexpr,
+                                   CXXTemporary **temps,
+                                   unsigned numtemps)
+  : Expr(ExprWithCleanupsClass, subexpr->getType(),
          subexpr->getValueKind(), subexpr->getObjectKind(),
          subexpr->isTypeDependent(), subexpr->isValueDependent()),
     SubExpr(subexpr), Temps(0), NumTemps(0) {
@@ -630,18 +657,18 @@ CXXExprWithTemporaries::CXXExprWithTemporaries(ASTContext &C,
   }
 }
 
-void CXXExprWithTemporaries::setNumTemporaries(ASTContext &C, unsigned N) {
+void ExprWithCleanups::setNumTemporaries(ASTContext &C, unsigned N) {
   assert(Temps == 0 && "Cannot resize with this");
   NumTemps = N;
   Temps = new (C) CXXTemporary*[NumTemps];
 }
 
 
-CXXExprWithTemporaries *CXXExprWithTemporaries::Create(ASTContext &C,
-                                                       Expr *SubExpr,
-                                                       CXXTemporary **Temps,
-                                                       unsigned NumTemps) {
-  return new (C) CXXExprWithTemporaries(C, SubExpr, Temps, NumTemps);
+ExprWithCleanups *ExprWithCleanups::Create(ASTContext &C,
+                                           Expr *SubExpr,
+                                           CXXTemporary **Temps,
+                                           unsigned NumTemps) {
+  return new (C) ExprWithCleanups(C, SubExpr, Temps, NumTemps);
 }
 
 // CXXBindTemporaryExpr
@@ -661,12 +688,12 @@ Stmt::child_iterator CXXConstructExpr::child_end() {
   return &Args[0]+NumArgs;
 }
 
-// CXXExprWithTemporaries
-Stmt::child_iterator CXXExprWithTemporaries::child_begin() {
+// ExprWithCleanups
+Stmt::child_iterator ExprWithCleanups::child_begin() {
   return &SubExpr;
 }
 
-Stmt::child_iterator CXXExprWithTemporaries::child_end() {
+Stmt::child_iterator ExprWithCleanups::child_end() {
   return &SubExpr + 1;
 }
 

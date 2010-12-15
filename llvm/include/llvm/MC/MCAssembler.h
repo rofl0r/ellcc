@@ -11,13 +11,14 @@
 #define LLVM_MC_MCASSEMBLER_H
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/ilist.h"
 #include "llvm/ADT/ilist_node.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/MC/MCFixup.h"
 #include "llvm/MC/MCInst.h"
-#include "llvm/System/DataTypes.h"
+#include "llvm/Support/DataTypes.h"
 #include <vector> // FIXME: Shouldn't be needed.
 
 namespace llvm {
@@ -78,8 +79,7 @@ private:
   /// initialized.
   uint64_t EffectiveSize;
 
-  /// LayoutOrder - The global layout order of this fragment. This is the index
-  /// across all fragments in the file, not just within the section.
+  /// LayoutOrder - The layout order of this fragment.
   unsigned LayoutOrder;
 
   /// @}
@@ -236,19 +236,12 @@ class MCAlignFragment : public MCFragment {
   /// target dependent.
   bool EmitNops : 1;
 
-  /// OnlyAlignAddress - Flag to indicate that this align is only used to adjust
-  /// the address space size of a section and that it should not be included as
-  /// part of the section size. This flag can only be used on the last fragment
-  /// in a section.
-  bool OnlyAlignAddress : 1;
-
 public:
   MCAlignFragment(unsigned _Alignment, int64_t _Value, unsigned _ValueSize,
                   unsigned _MaxBytesToEmit, MCSectionData *SD = 0)
     : MCFragment(FT_Align, SD), Alignment(_Alignment),
       Value(_Value),ValueSize(_ValueSize),
-      MaxBytesToEmit(_MaxBytesToEmit), EmitNops(false),
-      OnlyAlignAddress(false) {}
+      MaxBytesToEmit(_MaxBytesToEmit), EmitNops(false) {}
 
   /// @name Accessors
   /// @{
@@ -263,9 +256,6 @@ public:
 
   bool hasEmitNops() const { return EmitNops; }
   void setEmitNops(bool Value) { EmitNops = Value; }
-
-  bool hasOnlyAlignAddress() const { return OnlyAlignAddress; }
-  void setOnlyAlignAddress(bool Value) { OnlyAlignAddress = Value; }
 
   /// @}
 
@@ -352,13 +342,11 @@ class MCLEBFragment : public MCFragment {
   /// IsSigned - True if this is a sleb128, false if uleb128.
   bool IsSigned;
 
-  /// Size - The current size estimate.
-  uint64_t Size;
-
+  SmallString<8> Contents;
 public:
   MCLEBFragment(const MCExpr &Value_, bool IsSigned_, MCSectionData *SD)
     : MCFragment(FT_LEB, SD),
-      Value(&Value_), IsSigned(IsSigned_), Size(1) {}
+      Value(&Value_), IsSigned(IsSigned_) { Contents.push_back(0); }
 
   /// @name Accessors
   /// @{
@@ -367,9 +355,8 @@ public:
 
   bool isSigned() const { return IsSigned; }
 
-  uint64_t getSize() const { return Size; }
-
-  void setSize(uint64_t Size_) { Size = Size_; }
+  SmallString<8> &getContents() { return Contents; }
+  const SmallString<8> &getContents() const { return Contents; }
 
   /// @}
 
@@ -388,14 +375,13 @@ class MCDwarfLineAddrFragment : public MCFragment {
   /// make up the address delta between two .loc dwarf directives.
   const MCExpr *AddrDelta;
 
-  /// Size - The current size estimate.
-  uint64_t Size;
+  SmallString<8> Contents;
 
 public:
   MCDwarfLineAddrFragment(int64_t _LineDelta, const MCExpr &_AddrDelta,
                       MCSectionData *SD = 0)
     : MCFragment(FT_Dwarf, SD),
-      LineDelta(_LineDelta), AddrDelta(&_AddrDelta), Size(1) {}
+      LineDelta(_LineDelta), AddrDelta(&_AddrDelta) { Contents.push_back(0); }
 
   /// @name Accessors
   /// @{
@@ -404,9 +390,8 @@ public:
 
   const MCExpr &getAddrDelta() const { return *AddrDelta; }
 
-  uint64_t getSize() const { return Size; }
-
-  void setSize(uint64_t Size_) { Size = Size_; }
+  SmallString<8> &getContents() { return Contents; }
+  const SmallString<8> &getContents() const { return Contents; }
 
   /// @}
 
@@ -451,10 +436,6 @@ private:
   /// @{
   //
   // FIXME: This could all be kept private to the assembler implementation.
-
-  /// Address - The computed address of this section. This is ~0 until
-  /// initialized.
-  uint64_t Address;
 
   /// HasInstructions - Whether this section has had instructions emitted into
   /// it.
@@ -682,9 +663,17 @@ private:
 
   std::vector<IndirectSymbolData> IndirectSymbols;
 
+  /// The set of function symbols for which a .thumb_func directive has
+  /// been seen.
+  //
+  // FIXME: We really would like this in target specific code rather than
+  // here. Maybe when the relocation stuff moves to target specific,
+  // this can go with it? The streamer would need some target specific
+  // refactoring too.
+  SmallPtrSet<const MCSymbol*, 64> ThumbFuncs;
+
   unsigned RelaxAll : 1;
   unsigned SubsectionsViaSymbols : 1;
-  unsigned PadSectionToAlignment : 1;
 
 private:
   /// Evaluate a fixup to a relocatable expression and the value which should be
@@ -717,8 +706,7 @@ private:
 
   /// Compute the effective fragment size assuming it is layed out at the given
   /// \arg SectionAddress and \arg FragmentOffset.
-  uint64_t ComputeFragmentSize(MCAsmLayout &Layout, const MCFragment &F,
-                               uint64_t SectionAddress,
+  uint64_t ComputeFragmentSize(const MCFragment &F,
                                uint64_t FragmentOffset) const;
 
   /// LayoutOnce - Perform one layout iteration and return true if any offsets
@@ -740,6 +728,9 @@ private:
   /// FinishLayout - Finalize a layout, including fragment lowering.
   void FinishLayout(MCAsmLayout &Layout);
 
+  uint64_t HandleFixup(MCObjectWriter &Writer, const MCAsmLayout &Layout,
+                       MCFragment &F, const MCFixup &Fixup);
+
 public:
   /// Find the symbol which defines the atom containing the given symbol, or
   /// null if there is no such symbol.
@@ -757,8 +748,13 @@ public:
   void WriteSectionData(const MCSectionData *Section, const MCAsmLayout &Layout,
                         MCObjectWriter *OW) const;
 
-  void AddSectionToTheEnd(const MCObjectWriter &Writer, MCSectionData &SD,
-                          MCAsmLayout &Layout);
+  /// Check whether a given symbol has been flagged with .thumb_func.
+  bool isThumbFunc(const MCSymbol *Func) const {
+    return ThumbFuncs.count(Func);
+  }
+
+  /// Flag a function symbol as the target of a .thumb_func directive.
+  void setIsThumbFunc(const MCSymbol *Func) { ThumbFuncs.insert(Func); }
 
 public:
   /// Construct a new assembler instance.
@@ -770,8 +766,7 @@ public:
   // option is to make this abstract, and have targets provide concrete
   // implementations as we do with AsmParser.
   MCAssembler(MCContext &_Context, TargetAsmBackend &_Backend,
-              MCCodeEmitter &_Emitter, bool _PadSectionToAlignment,
-              raw_ostream &OS);
+              MCCodeEmitter &_Emitter, raw_ostream &OS);
   ~MCAssembler();
 
   MCContext &getContext() const { return Context; }

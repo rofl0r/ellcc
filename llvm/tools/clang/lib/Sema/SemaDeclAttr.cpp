@@ -197,7 +197,7 @@ static void HandleExtVectorTypeAttr(Scope *scope, Decl *d,
       S.Diag(Attr.getLoc(), diag::err_attribute_wrong_number_arguments) << 1;
       return;
     }
-    sizeExpr = static_cast<Expr *>(Attr.getArg(0));
+    sizeExpr = Attr.getArg(0);
   }
 
   // Instantiate/Install the vector type, and let Sema build the type for us.
@@ -342,7 +342,7 @@ static void HandleNonNullAttr(Decl *d, const AttributeList &Attr, Sema &S) {
 
 
     // The argument must be an integer constant expression.
-    Expr *Ex = static_cast<Expr *>(*I);
+    Expr *Ex = *I;
     llvm::APSInt ArgNum(32);
     if (Ex->isTypeDependent() || Ex->isValueDependent() ||
         !Ex->isIntegerConstantExpr(ArgNum, S.Context)) {
@@ -488,7 +488,7 @@ static void HandleOwnershipAttr(Decl *d, const AttributeList &AL, Sema &S) {
   for (AttributeList::arg_iterator I = AL.arg_begin(), E = AL.arg_end(); I != E;
        ++I) {
 
-    Expr *IdxExpr = static_cast<Expr *>(*I);
+    Expr *IdxExpr = *I;
     llvm::APSInt ArgNum(32);
     if (IdxExpr->isTypeDependent() || IdxExpr->isValueDependent()
         || !IdxExpr->isIntegerConstantExpr(ArgNum, S.Context)) {
@@ -532,7 +532,7 @@ static void HandleOwnershipAttr(Decl *d, const AttributeList &AL, Sema &S) {
     case OwnershipAttr::Returns: {
       if (AL.getNumArgs() > 1) {
           // Is the function argument an integer type?
-          Expr *IdxExpr = static_cast<Expr *>(AL.getArg(0));
+          Expr *IdxExpr = AL.getArg(0);
           llvm::APSInt ArgNum(32);
           if (IdxExpr->isTypeDependent() || IdxExpr->isValueDependent()
               || !IdxExpr->isIntegerConstantExpr(ArgNum, S.Context)) {
@@ -640,7 +640,7 @@ static void HandleWeakRefAttr(Decl *d, const AttributeList &Attr, Sema &S) {
   // Should we? How to check that weakref is before or after alias?
 
   if (Attr.getNumArgs() == 1) {
-    Expr *Arg = static_cast<Expr*>(Attr.getArg(0));
+    Expr *Arg = Attr.getArg(0);
     Arg = Arg->IgnoreParenCasts();
     StringLiteral *Str = dyn_cast<StringLiteral>(Arg);
 
@@ -651,7 +651,8 @@ static void HandleWeakRefAttr(Decl *d, const AttributeList &Attr, Sema &S) {
     }
     // GCC will accept anything as the argument of weakref. Should we
     // check for an existing decl?
-    d->addAttr(::new (S.Context) AliasAttr(Attr.getLoc(), S.Context, Str->getString()));
+    d->addAttr(::new (S.Context) AliasAttr(Attr.getLoc(), S.Context,
+                                           Str->getString()));
   }
 
   d->addAttr(::new (S.Context) WeakRefAttr(Attr.getLoc(), S.Context));
@@ -664,7 +665,7 @@ static void HandleAliasAttr(Decl *d, const AttributeList &Attr, Sema &S) {
     return;
   }
 
-  Expr *Arg = static_cast<Expr*>(Attr.getArg(0));
+  Expr *Arg = Attr.getArg(0);
   Arg = Arg->IgnoreParenCasts();
   StringLiteral *Str = dyn_cast<StringLiteral>(Arg);
 
@@ -674,9 +675,15 @@ static void HandleAliasAttr(Decl *d, const AttributeList &Attr, Sema &S) {
     return;
   }
 
+  if (S.Context.Target.getTriple().getOS() == llvm::Triple::Darwin) {
+    S.Diag(Attr.getLoc(), diag::err_alias_not_supported_on_darwin);
+    return;
+  }
+
   // FIXME: check if target symbol exists in current file
 
-  d->addAttr(::new (S.Context) AliasAttr(Attr.getLoc(), S.Context, Str->getString()));
+  d->addAttr(::new (S.Context) AliasAttr(Attr.getLoc(), S.Context,
+                                         Str->getString()));
 }
 
 static void HandleNakedAttr(Decl *d, const AttributeList &Attr,
@@ -741,6 +748,24 @@ static void HandleMayAliasAttr(Decl *d, const AttributeList &Attr, Sema &S) {
   d->addAttr(::new (S.Context) MayAliasAttr(Attr.getLoc(), S.Context));
 }
 
+static void HandleNoCommonAttr(Decl *d, const AttributeList &Attr, Sema &S) {
+  assert(Attr.isInvalid() == false);
+  if (isa<VarDecl>(d))
+    d->addAttr(::new (S.Context) NoCommonAttr(Attr.getLoc(), S.Context));
+  else
+    S.Diag(Attr.getLoc(), diag::warn_attribute_wrong_decl_type)
+      << Attr.getName() << 12 /* variable */;
+}
+
+static void HandleCommonAttr(Decl *d, const AttributeList &Attr, Sema &S) {
+  assert(Attr.isInvalid() == false);
+  if (isa<VarDecl>(d))
+    d->addAttr(::new (S.Context) CommonAttr(Attr.getLoc(), S.Context));
+  else
+    S.Diag(Attr.getLoc(), diag::warn_attribute_wrong_decl_type)
+      << Attr.getName() << 12 /* variable */;
+}
+
 static void HandleNoReturnAttr(Decl *d, const AttributeList &Attr, Sema &S) {
   /* Diagnostics (if any) was emitted by Sema::ProcessFnAttr(). */
   assert(Attr.isInvalid() == false);
@@ -779,10 +804,11 @@ static void HandleVecReturnAttr(Decl *d, const AttributeList &Attr,
 /*
   Returning a Vector Class in Registers
   
-  According to the PPU ABI specifications, a class with a single member of vector type is returned in
-  memory when used as the return value of a function. This results in inefficient code when implementing
-  vector classes. To return the value in a single vector register, add the vecreturn attribute to the class
-  definition. This attribute is also applicable to struct types.
+  According to the PPU ABI specifications, a class with a single member of 
+  vector type is returned in memory when used as the return value of a function.
+  This results in inefficient code when implementing vector classes. To return
+  the value in a single vector register, add the vecreturn attribute to the
+  class definition. This attribute is also applicable to struct types.
   
   Example:
   
@@ -822,7 +848,8 @@ static void HandleVecReturnAttr(Decl *d, const AttributeList &Attr,
     return;
   }
 
-  for (RecordDecl::field_iterator iter = record->field_begin(); iter != record->field_end(); iter++) {
+  for (RecordDecl::field_iterator iter = record->field_begin();
+       iter != record->field_end(); iter++) {
     if ((count == 1) || !iter->getType()->isVectorType()) {
       S.Diag(Attr.getLoc(), diag::err_attribute_vecreturn_only_vector_member);
       return;
@@ -890,7 +917,7 @@ static void HandleConstructorAttr(Decl *d, const AttributeList &Attr, Sema &S) {
 
   int priority = 65535; // FIXME: Do not hardcode such constants.
   if (Attr.getNumArgs() > 0) {
-    Expr *E = static_cast<Expr *>(Attr.getArg(0));
+    Expr *E = Attr.getArg(0);
     llvm::APSInt Idx(32);
     if (E->isTypeDependent() || E->isValueDependent() ||
         !E->isIntegerConstantExpr(Idx, S.Context)) {
@@ -907,7 +934,8 @@ static void HandleConstructorAttr(Decl *d, const AttributeList &Attr, Sema &S) {
     return;
   }
 
-  d->addAttr(::new (S.Context) ConstructorAttr(Attr.getLoc(), S.Context, priority));
+  d->addAttr(::new (S.Context) ConstructorAttr(Attr.getLoc(), S.Context,
+                                               priority));
 }
 
 static void HandleDestructorAttr(Decl *d, const AttributeList &Attr, Sema &S) {
@@ -920,7 +948,7 @@ static void HandleDestructorAttr(Decl *d, const AttributeList &Attr, Sema &S) {
 
   int priority = 65535; // FIXME: Do not hardcode such constants.
   if (Attr.getNumArgs() > 0) {
-    Expr *E = static_cast<Expr *>(Attr.getArg(0));
+    Expr *E = Attr.getArg(0);
     llvm::APSInt Idx(32);
     if (E->isTypeDependent() || E->isValueDependent() ||
         !E->isIntegerConstantExpr(Idx, S.Context)) {
@@ -937,7 +965,8 @@ static void HandleDestructorAttr(Decl *d, const AttributeList &Attr, Sema &S) {
     return;
   }
 
-  d->addAttr(::new (S.Context) DestructorAttr(Attr.getLoc(), S.Context, priority));
+  d->addAttr(::new (S.Context) DestructorAttr(Attr.getLoc(), S.Context,
+                                              priority));
 }
 
 static void HandleDeprecatedAttr(Decl *d, const AttributeList &Attr, Sema &S) {
@@ -951,7 +980,7 @@ static void HandleDeprecatedAttr(Decl *d, const AttributeList &Attr, Sema &S) {
   // Handle the case where deprecated attribute has a text message.
   StringLiteral *SE;
   if (noArgs == 1) {
-    Expr *ArgExpr = static_cast<Expr *>(Attr.getArg(0));
+    Expr *ArgExpr = Attr.getArg(0);
     SE = dyn_cast<StringLiteral>(ArgExpr);
     if (!SE) {
       S.Diag(ArgExpr->getLocStart(), 
@@ -970,13 +999,14 @@ static void HandleUnavailableAttr(Decl *d, const AttributeList &Attr, Sema &S) {
   // check the attribute arguments.
   int noArgs = Attr.getNumArgs();
   if (noArgs > 1) {
-    S.Diag(Attr.getLoc(), diag::err_attribute_wrong_number_arguments) << "0 or 1";
+    S.Diag(Attr.getLoc(),
+           diag::err_attribute_wrong_number_arguments) << "0 or 1";
     return;
   }
   // Handle the case where unavailable attribute has a text message.
   StringLiteral *SE;
   if (noArgs == 1) {
-    Expr *ArgExpr = static_cast<Expr *>(Attr.getArg(0));
+    Expr *ArgExpr = Attr.getArg(0);
     SE = dyn_cast<StringLiteral>(ArgExpr);
     if (!SE) {
       S.Diag(ArgExpr->getLocStart(), 
@@ -997,7 +1027,7 @@ static void HandleVisibilityAttr(Decl *d, const AttributeList &Attr, Sema &S) {
     return;
   }
 
-  Expr *Arg = static_cast<Expr*>(Attr.getArg(0));
+  Expr *Arg = Attr.getArg(0);
   Arg = Arg->IgnoreParenCasts();
   StringLiteral *Str = dyn_cast<StringLiteral>(Arg);
 
@@ -1107,7 +1137,7 @@ static void HandleSentinelAttr(Decl *d, const AttributeList &Attr, Sema &S) {
 
   int sentinel = 0;
   if (Attr.getNumArgs() > 0) {
-    Expr *E = static_cast<Expr *>(Attr.getArg(0));
+    Expr *E = Attr.getArg(0);
     llvm::APSInt Idx(32);
     if (E->isTypeDependent() || E->isValueDependent() ||
         !E->isIntegerConstantExpr(Idx, S.Context)) {
@@ -1126,7 +1156,7 @@ static void HandleSentinelAttr(Decl *d, const AttributeList &Attr, Sema &S) {
 
   int nullPos = 0;
   if (Attr.getNumArgs() > 1) {
-    Expr *E = static_cast<Expr *>(Attr.getArg(1));
+    Expr *E = Attr.getArg(1);
     llvm::APSInt Idx(32);
     if (E->isTypeDependent() || E->isValueDependent() ||
         !E->isIntegerConstantExpr(Idx, S.Context)) {
@@ -1171,7 +1201,7 @@ static void HandleSentinelAttr(Decl *d, const AttributeList &Attr, Sema &S) {
     QualType Ty = V->getType();
     if (Ty->isBlockPointerType() || Ty->isFunctionPointerType()) {
       const FunctionType *FT = Ty->isFunctionPointerType() ? getFunctionType(d)
-        : Ty->getAs<BlockPointerType>()->getPointeeType()->getAs<FunctionType>();
+       : Ty->getAs<BlockPointerType>()->getPointeeType()->getAs<FunctionType>();
       if (!cast<FunctionProtoType>(FT)->isVariadic()) {
         int m = Ty->isFunctionPointerType() ? 0 : 1;
         S.Diag(Attr.getLoc(), diag::warn_attribute_sentinel_not_variadic) << m;
@@ -1187,7 +1217,8 @@ static void HandleSentinelAttr(Decl *d, const AttributeList &Attr, Sema &S) {
       << Attr.getName() << 6 /*function, method or block */;
     return;
   }
-  d->addAttr(::new (S.Context) SentinelAttr(Attr.getLoc(), S.Context, sentinel, nullPos));
+  d->addAttr(::new (S.Context) SentinelAttr(Attr.getLoc(), S.Context, sentinel,
+                                            nullPos));
 }
 
 static void HandleWarnUnusedResult(Decl *D, const AttributeList &Attr, Sema &S) {
@@ -1288,7 +1319,7 @@ static void HandleReqdWorkGroupSize(Decl *D, const AttributeList &Attr,
 
   unsigned WGSize[3];
   for (unsigned i = 0; i < 3; ++i) {
-    Expr *E = static_cast<Expr *>(Attr.getArg(i));
+    Expr *E = Attr.getArg(i);
     llvm::APSInt ArgNum(32);
     if (E->isTypeDependent() || E->isValueDependent() ||
         !E->isIntegerConstantExpr(ArgNum, S.Context)) {
@@ -1312,7 +1343,7 @@ static void HandleSectionAttr(Decl *D, const AttributeList &Attr, Sema &S) {
 
   // Make sure that there is a string literal as the sections's single
   // argument.
-  Expr *ArgExpr = static_cast<Expr *>(Attr.getArg(0));
+  Expr *ArgExpr = Attr.getArg(0);
   StringLiteral *SE = dyn_cast<StringLiteral>(ArgExpr);
   if (!SE) {
     S.Diag(ArgExpr->getLocStart(), diag::err_attribute_not_string) << "section";
@@ -1333,7 +1364,8 @@ static void HandleSectionAttr(Decl *D, const AttributeList &Attr, Sema &S) {
     return;
   }
   
-  D->addAttr(::new (S.Context) SectionAttr(Attr.getLoc(), S.Context, SE->getString()));
+  D->addAttr(::new (S.Context) SectionAttr(Attr.getLoc(), S.Context,
+                                           SE->getString()));
 }
 
 
@@ -1387,27 +1419,27 @@ static void HandleCleanupAttr(Decl *d, const AttributeList &Attr, Sema &S) {
 
   // Look up the function
   // FIXME: Lookup probably isn't looking in the right place
-  // FIXME: The lookup source location should be in the attribute, not the
-  // start of the attribute.
   NamedDecl *CleanupDecl
-    = S.LookupSingleName(S.TUScope, Attr.getParameterName(), Attr.getLoc(),
-                         Sema::LookupOrdinaryName);
+    = S.LookupSingleName(S.TUScope, Attr.getParameterName(),
+                         Attr.getParameterLoc(), Sema::LookupOrdinaryName);
   if (!CleanupDecl) {
-    S.Diag(Attr.getLoc(), diag::err_attribute_cleanup_arg_not_found) <<
+    S.Diag(Attr.getParameterLoc(), diag::err_attribute_cleanup_arg_not_found) <<
       Attr.getParameterName();
     return;
   }
 
   FunctionDecl *FD = dyn_cast<FunctionDecl>(CleanupDecl);
   if (!FD) {
-    S.Diag(Attr.getLoc(), diag::err_attribute_cleanup_arg_not_function) <<
-      Attr.getParameterName();
+    S.Diag(Attr.getParameterLoc(),
+           diag::err_attribute_cleanup_arg_not_function)
+      << Attr.getParameterName();
     return;
   }
 
   if (FD->getNumParams() != 1) {
-    S.Diag(Attr.getLoc(), diag::err_attribute_cleanup_func_must_take_one_arg) <<
-      Attr.getParameterName();
+    S.Diag(Attr.getParameterLoc(),
+           diag::err_attribute_cleanup_func_must_take_one_arg)
+      << Attr.getParameterName();
     return;
   }
 
@@ -1416,13 +1448,14 @@ static void HandleCleanupAttr(Decl *d, const AttributeList &Attr, Sema &S) {
   QualType Ty = S.Context.getPointerType(VD->getType());
   QualType ParamTy = FD->getParamDecl(0)->getType();
   if (S.CheckAssignmentConstraints(ParamTy, Ty) != Sema::Compatible) {
-    S.Diag(Attr.getLoc(),
+    S.Diag(Attr.getParameterLoc(),
            diag::err_attribute_cleanup_func_arg_incompatible_type) <<
       Attr.getParameterName() << ParamTy << Ty;
     return;
   }
 
   d->addAttr(::new (S.Context) CleanupAttr(Attr.getLoc(), S.Context, FD));
+  S.MarkDeclarationReferenced(Attr.getParameterLoc(), FD);
 }
 
 /// Handle __attribute__((format_arg((idx)))) attribute based on
@@ -1445,7 +1478,7 @@ static void HandleFormatArgAttr(Decl *d, const AttributeList &Attr, Sema &S) {
   unsigned FirstIdx = 1;
 
   // checks for the 2nd argument
-  Expr *IdxExpr = static_cast<Expr *>(Attr.getArg(0));
+  Expr *IdxExpr = Attr.getArg(0);
   llvm::APSInt Idx(32);
   if (IdxExpr->isTypeDependent() || IdxExpr->isValueDependent() ||
       !IdxExpr->isIntegerConstantExpr(Idx, S.Context)) {
@@ -1563,7 +1596,7 @@ static void HandleInitPriorityAttr(Decl *d, const AttributeList &Attr,
     Attr.setInvalid();
     return;
   }
-  Expr *priorityExpr = static_cast<Expr *>(Attr.getArg(0));
+  Expr *priorityExpr = Attr.getArg(0);
   
   llvm::APSInt priority(32);
   if (priorityExpr->isTypeDependent() || priorityExpr->isValueDependent() ||
@@ -1580,7 +1613,8 @@ static void HandleInitPriorityAttr(Decl *d, const AttributeList &Attr,
     Attr.setInvalid();
     return;
   }
-  d->addAttr(::new (S.Context) InitPriorityAttr(Attr.getLoc(), S.Context, prioritynum));
+  d->addAttr(::new (S.Context) InitPriorityAttr(Attr.getLoc(), S.Context,
+                                                prioritynum));
 }
 
 /// Handle __attribute__((format(type,idx,firstarg))) attributes based on
@@ -1629,7 +1663,7 @@ static void HandleFormatAttr(Decl *d, const AttributeList &Attr, Sema &S) {
   }
 
   // checks for the 2nd argument
-  Expr *IdxExpr = static_cast<Expr *>(Attr.getArg(0));
+  Expr *IdxExpr = Attr.getArg(0);
   llvm::APSInt Idx(32);
   if (IdxExpr->isTypeDependent() || IdxExpr->isValueDependent() ||
       !IdxExpr->isIntegerConstantExpr(Idx, S.Context)) {
@@ -1684,7 +1718,7 @@ static void HandleFormatAttr(Decl *d, const AttributeList &Attr, Sema &S) {
   }
 
   // check the 3rd argument
-  Expr *FirstArgExpr = static_cast<Expr *>(Attr.getArg(1));
+  Expr *FirstArgExpr = Attr.getArg(1);
   llvm::APSInt FirstArg(32);
   if (FirstArgExpr->isTypeDependent() || FirstArgExpr->isValueDependent() ||
       !FirstArgExpr->isIntegerConstantExpr(FirstArg, S.Context)) {
@@ -1797,7 +1831,7 @@ static void HandleAnnotateAttr(Decl *d, const AttributeList &Attr, Sema &S) {
     S.Diag(Attr.getLoc(), diag::err_attribute_wrong_number_arguments) << 1;
     return;
   }
-  Expr *ArgExpr = static_cast<Expr *>(Attr.getArg(0));
+  Expr *ArgExpr = Attr.getArg(0);
   StringLiteral *SE = dyn_cast<StringLiteral>(ArgExpr);
 
   // Make sure that there is a string literal as the annotation's single
@@ -1806,7 +1840,8 @@ static void HandleAnnotateAttr(Decl *d, const AttributeList &Attr, Sema &S) {
     S.Diag(ArgExpr->getLocStart(), diag::err_attribute_not_string) <<"annotate";
     return;
   }
-  d->addAttr(::new (S.Context) AnnotateAttr(Attr.getLoc(), S.Context, SE->getString()));
+  d->addAttr(::new (S.Context) AnnotateAttr(Attr.getLoc(), S.Context,
+                                            SE->getString()));
 }
 
 static void HandleAlignedAttr(Decl *D, const AttributeList &Attr, Sema &S) {
@@ -1825,7 +1860,7 @@ static void HandleAlignedAttr(Decl *D, const AttributeList &Attr, Sema &S) {
     return;
   }
 
-  S.AddAlignedAttr(Attr.getLoc(), D, static_cast<Expr *>(Attr.getArg(0)));
+  S.AddAlignedAttr(Attr.getLoc(), D, Attr.getArg(0));
 }
 
 void Sema::AddAlignedAttr(SourceLocation AttrLoc, Decl *D, Expr *E) {
@@ -2075,7 +2110,123 @@ static void HandleNoInstrumentFunctionAttr(Decl *d, const AttributeList &Attr,
     return;
   }
 
-  d->addAttr(::new (S.Context) NoInstrumentFunctionAttr(Attr.getLoc(), S.Context));
+  d->addAttr(::new (S.Context) NoInstrumentFunctionAttr(Attr.getLoc(),
+                                                        S.Context));
+}
+
+static void HandleConstantAttr(Decl *d, const AttributeList &Attr, Sema &S) {
+  if (S.LangOpts.CUDA) {
+    // check the attribute arguments.
+    if (Attr.getNumArgs() != 0) {
+      S.Diag(Attr.getLoc(), diag::err_attribute_wrong_number_arguments) << 0;
+      return;
+    }
+
+    if (!isa<VarDecl>(d)) {
+      S.Diag(Attr.getLoc(), diag::warn_attribute_wrong_decl_type)
+        << Attr.getName() << 12 /*variable*/;
+      return;
+    }
+
+    d->addAttr(::new (S.Context) CUDAConstantAttr(Attr.getLoc(), S.Context));
+  } else {
+    S.Diag(Attr.getLoc(), diag::warn_attribute_ignored) << "constant";
+  }
+}
+
+static void HandleDeviceAttr(Decl *d, const AttributeList &Attr, Sema &S) {
+  if (S.LangOpts.CUDA) {
+    // check the attribute arguments.
+    if (Attr.getNumArgs() != 0) {
+      S.Diag(Attr.getLoc(), diag::err_attribute_wrong_number_arguments) << 0;
+      return;
+    }
+
+    if (!isa<FunctionDecl>(d) && !isa<VarDecl>(d)) {
+      S.Diag(Attr.getLoc(), diag::warn_attribute_wrong_decl_type)
+        << Attr.getName() << 2 /*variable and function*/;
+      return;
+    }
+
+    d->addAttr(::new (S.Context) CUDADeviceAttr(Attr.getLoc(), S.Context));
+  } else {
+    S.Diag(Attr.getLoc(), diag::warn_attribute_ignored) << "device";
+  }
+}
+
+static void HandleGlobalAttr(Decl *d, const AttributeList &Attr, Sema &S) {
+  if (S.LangOpts.CUDA) {
+    // check the attribute arguments.
+    if (Attr.getNumArgs() != 0) {
+      S.Diag(Attr.getLoc(), diag::err_attribute_wrong_number_arguments) << 0;
+      return;
+    }
+
+    if (!isa<FunctionDecl>(d)) {
+      S.Diag(Attr.getLoc(), diag::warn_attribute_wrong_decl_type)
+        << Attr.getName() << 0 /*function*/;
+      return;
+    }
+
+    FunctionDecl *FD = cast<FunctionDecl>(d);
+    if (!FD->getResultType()->isVoidType()) {
+      TypeLoc TL = FD->getTypeSourceInfo()->getTypeLoc().IgnoreParens();
+      if (FunctionTypeLoc* FTL = dyn_cast<FunctionTypeLoc>(&TL)) {
+        S.Diag(FD->getTypeSpecStartLoc(), diag::err_kern_type_not_void_return)
+          << FD->getType()
+          << FixItHint::CreateReplacement(FTL->getResultLoc().getSourceRange(),
+                                          "void");
+      } else {
+        S.Diag(FD->getTypeSpecStartLoc(), diag::err_kern_type_not_void_return)
+          << FD->getType();
+      }
+      return;
+    }
+
+    d->addAttr(::new (S.Context) CUDAGlobalAttr(Attr.getLoc(), S.Context));
+  } else {
+    S.Diag(Attr.getLoc(), diag::warn_attribute_ignored) << "global";
+  }
+}
+
+static void HandleHostAttr(Decl *d, const AttributeList &Attr, Sema &S) {
+  if (S.LangOpts.CUDA) {
+    // check the attribute arguments.
+    if (Attr.getNumArgs() != 0) {
+      S.Diag(Attr.getLoc(), diag::err_attribute_wrong_number_arguments) << 0;
+      return;
+    }
+
+    if (!isa<FunctionDecl>(d)) {
+      S.Diag(Attr.getLoc(), diag::warn_attribute_wrong_decl_type)
+        << Attr.getName() << 0 /*function*/;
+      return;
+    }
+
+    d->addAttr(::new (S.Context) CUDAHostAttr(Attr.getLoc(), S.Context));
+  } else {
+    S.Diag(Attr.getLoc(), diag::warn_attribute_ignored) << "host";
+  }
+}
+
+static void HandleSharedAttr(Decl *d, const AttributeList &Attr, Sema &S) {
+  if (S.LangOpts.CUDA) {
+    // check the attribute arguments.
+    if (Attr.getNumArgs() != 0) {
+      S.Diag(Attr.getLoc(), diag::err_attribute_wrong_number_arguments) << 0;
+      return;
+    }
+
+    if (!isa<VarDecl>(d)) {
+      S.Diag(Attr.getLoc(), diag::warn_attribute_wrong_decl_type)
+        << Attr.getName() << 12 /*variable*/;
+      return;
+    }
+
+    d->addAttr(::new (S.Context) CUDASharedAttr(Attr.getLoc(), S.Context));
+  } else {
+    S.Diag(Attr.getLoc(), diag::warn_attribute_ignored) << "shared";
+  }
 }
 
 static void HandleGNUInlineAttr(Decl *d, const AttributeList &Attr, Sema &S) {
@@ -2140,7 +2291,7 @@ static void HandleRegparmAttr(Decl *d, const AttributeList &Attr, Sema &S) {
     return;
   }
 
-  Expr *NumParamsExpr = static_cast<Expr *>(Attr.getArg(0));
+  Expr *NumParamsExpr = Attr.getArg(0);
   llvm::APSInt NumParams(32);
   if (NumParamsExpr->isTypeDependent() || NumParamsExpr->isValueDependent() ||
       !NumParamsExpr->isIntegerConstantExpr(NumParams, S.Context)) {
@@ -2163,6 +2314,51 @@ static void HandleRegparmAttr(Decl *d, const AttributeList &Attr, Sema &S) {
 
   d->addAttr(::new (S.Context) RegparmAttr(Attr.getLoc(), S.Context,
                                            NumParams.getZExtValue()));
+}
+
+static void HandleLaunchBoundsAttr(Decl *d, const AttributeList &Attr, Sema &S){
+  if (S.LangOpts.CUDA) {
+    // check the attribute arguments.
+    if (Attr.getNumArgs() != 1 && Attr.getNumArgs() != 2) {
+      S.Diag(Attr.getLoc(), diag::err_attribute_wrong_number_arguments)
+        << "1 or 2";
+      return;
+    }
+
+    if (!isFunctionOrMethod(d)) {
+      S.Diag(Attr.getLoc(), diag::warn_attribute_wrong_decl_type)
+      << Attr.getName() << 0 /*function*/;
+      return;
+    }
+
+    Expr *MaxThreadsExpr = Attr.getArg(0);
+    llvm::APSInt MaxThreads(32);
+    if (MaxThreadsExpr->isTypeDependent() ||
+        MaxThreadsExpr->isValueDependent() ||
+        !MaxThreadsExpr->isIntegerConstantExpr(MaxThreads, S.Context)) {
+      S.Diag(Attr.getLoc(), diag::err_attribute_argument_n_not_int)
+        << "launch_bounds" << 1 << MaxThreadsExpr->getSourceRange();
+      return;
+    }
+
+    llvm::APSInt MinBlocks(32);
+    if (Attr.getNumArgs() > 1) {
+      Expr *MinBlocksExpr = Attr.getArg(1);
+      if (MinBlocksExpr->isTypeDependent() ||
+          MinBlocksExpr->isValueDependent() ||
+          !MinBlocksExpr->isIntegerConstantExpr(MinBlocks, S.Context)) {
+        S.Diag(Attr.getLoc(), diag::err_attribute_argument_n_not_int)
+          << "launch_bounds" << 2 << MinBlocksExpr->getSourceRange();
+        return;
+      }
+    }
+
+    d->addAttr(::new (S.Context) CUDALaunchBoundsAttr(Attr.getLoc(), S.Context,
+                                                      MaxThreads.getZExtValue(),
+                                                     MinBlocks.getZExtValue()));
+  } else {
+    S.Diag(Attr.getLoc(), diag::warn_attribute_ignored) << "launch_bounds";
+  }
 }
 
 static void HandleFinalAttr(Decl *d, const AttributeList &Attr, Sema &S) {
@@ -2300,16 +2496,20 @@ static void HandleNSReturnsRetainedAttr(Decl *d, const AttributeList &Attr,
       assert(0 && "invalid ownership attribute");
       return;
     case AttributeList::AT_cf_returns_not_retained:
-      d->addAttr(::new (S.Context) CFReturnsNotRetainedAttr(Attr.getLoc(), S.Context));
+      d->addAttr(::new (S.Context) CFReturnsNotRetainedAttr(Attr.getLoc(),
+                                                            S.Context));
       return;
     case AttributeList::AT_ns_returns_not_retained:
-      d->addAttr(::new (S.Context) NSReturnsNotRetainedAttr(Attr.getLoc(), S.Context));
+      d->addAttr(::new (S.Context) NSReturnsNotRetainedAttr(Attr.getLoc(),
+                                                            S.Context));
       return;
     case AttributeList::AT_cf_returns_retained:
-      d->addAttr(::new (S.Context) CFReturnsRetainedAttr(Attr.getLoc(), S.Context));
+      d->addAttr(::new (S.Context) CFReturnsRetainedAttr(Attr.getLoc(),
+                                                         S.Context));
       return;
     case AttributeList::AT_ns_returns_retained:
-      d->addAttr(::new (S.Context) NSReturnsRetainedAttr(Attr.getLoc(), S.Context));
+      d->addAttr(::new (S.Context) NSReturnsRetainedAttr(Attr.getLoc(),
+                                                         S.Context));
       return;
   };
 }
@@ -2358,20 +2558,29 @@ static void ProcessDeclAttribute(Scope *scope, Decl *D,
   case AttributeList::AT_base_check:  HandleBaseCheckAttr   (D, Attr, S); break;
   case AttributeList::AT_carries_dependency:
                                       HandleDependencyAttr  (D, Attr, S); break;
+  case AttributeList::AT_common:      HandleCommonAttr      (D, Attr, S); break;
+  case AttributeList::AT_constant:    HandleConstantAttr    (D, Attr, S); break;
   case AttributeList::AT_constructor: HandleConstructorAttr (D, Attr, S); break;
   case AttributeList::AT_deprecated:  HandleDeprecatedAttr  (D, Attr, S); break;
   case AttributeList::AT_destructor:  HandleDestructorAttr  (D, Attr, S); break;
+  case AttributeList::AT_device:      HandleDeviceAttr      (D, Attr, S); break;
   case AttributeList::AT_ext_vector_type:
     HandleExtVectorTypeAttr(scope, D, Attr, S);
     break;
   case AttributeList::AT_final:       HandleFinalAttr       (D, Attr, S); break;
   case AttributeList::AT_format:      HandleFormatAttr      (D, Attr, S); break;
   case AttributeList::AT_format_arg:  HandleFormatArgAttr   (D, Attr, S); break;
+  case AttributeList::AT_global:      HandleGlobalAttr      (D, Attr, S); break;
   case AttributeList::AT_gnu_inline:  HandleGNUInlineAttr   (D, Attr, S); break;
   case AttributeList::AT_hiding:      HandleHidingAttr      (D, Attr, S); break;
+  case AttributeList::AT_host:        HandleHostAttr        (D, Attr, S); break;
+  case AttributeList::AT_launch_bounds:
+    HandleLaunchBoundsAttr(D, Attr, S);
+    break;
   case AttributeList::AT_mode:        HandleModeAttr        (D, Attr, S); break;
   case AttributeList::AT_malloc:      HandleMallocAttr      (D, Attr, S); break;
   case AttributeList::AT_may_alias:   HandleMayAliasAttr    (D, Attr, S); break;
+  case AttributeList::AT_nocommon:    HandleNoCommonAttr    (D, Attr, S); break;
   case AttributeList::AT_nonnull:     HandleNonNullAttr     (D, Attr, S); break;
   case AttributeList::AT_ownership_returns:
   case AttributeList::AT_ownership_takes:
@@ -2381,6 +2590,7 @@ static void ProcessDeclAttribute(Scope *scope, Decl *D,
   case AttributeList::AT_noreturn:    HandleNoReturnAttr    (D, Attr, S); break;
   case AttributeList::AT_nothrow:     HandleNothrowAttr     (D, Attr, S); break;
   case AttributeList::AT_override:    HandleOverrideAttr    (D, Attr, S); break;
+  case AttributeList::AT_shared:      HandleSharedAttr      (D, Attr, S); break;
   case AttributeList::AT_vecreturn:   HandleVecReturnAttr   (D, Attr, S); break;
 
   // Checker-specific.
@@ -2448,7 +2658,8 @@ static void ProcessDeclAttribute(Scope *scope, Decl *D,
 
 /// ProcessDeclAttributeList - Apply all the decl attributes in the specified
 /// attribute list to the specified decl, ignoring any type attributes.
-void Sema::ProcessDeclAttributeList(Scope *S, Decl *D, const AttributeList *AttrList) {
+void Sema::ProcessDeclAttributeList(Scope *S, Decl *D,
+                                    const AttributeList *AttrList) {
   for (const AttributeList* l = AttrList; l; l = l->getNext()) {
     ProcessDeclAttribute(S, D, *l, *this);
   }

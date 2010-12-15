@@ -24,7 +24,7 @@
 #include "llvm/Module.h"
 #include "llvm/Support/Timer.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/System/Path.h"
+#include "llvm/Support/Path.h"
 using namespace clang;
 
 //===----------------------------------------------------------------------===//
@@ -448,4 +448,24 @@ public:
 
 ASTConsumer *clang::CreateInheritanceViewer(const std::string& clsname) {
   return new InheritanceViewer(clsname);
+}
+
+//===----------------------------------------------------------------------===//
+/// ASTDumperXML - In-depth XML dumping.
+
+namespace {
+class ASTDumpXML : public ASTConsumer {
+  llvm::raw_ostream &OS;
+
+public:
+  ASTDumpXML(llvm::raw_ostream &OS) : OS(OS) {}
+
+  void HandleTranslationUnit(ASTContext &C) {
+    C.getTranslationUnitDecl()->dumpXML(OS);
+  }  
+};
+}
+
+ASTConsumer *clang::CreateASTDumperXML(llvm::raw_ostream &OS) {
+  return new ASTDumpXML(OS);
 }

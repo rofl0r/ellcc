@@ -822,6 +822,10 @@ const char *CastExpr::getCastKindName() const {
     return "BitCast";
   case CK_LValueBitCast:
     return "LValueBitCast";
+  case CK_LValueToRValue:
+    return "LValueToRValue";
+  case CK_GetObjCProperty:
+    return "GetObjCProperty";
   case CK_NoOp:
     return "NoOp";
   case CK_BaseToDerived:
@@ -1336,21 +1340,11 @@ bool Expr::isUnusedResultAWarning(SourceLocation &Loc, SourceRange &R1,
     return false;
   }
 
-  case ObjCImplicitSetterGetterRefExprClass: {   // Dot syntax for message send.
-#if 0
-    const ObjCImplicitSetterGetterRefExpr *Ref =
-      cast<ObjCImplicitSetterGetterRefExpr>(this);
-    // FIXME: We really want the location of the '.' here.
-    Loc = Ref->getLocation();
-    R1 = SourceRange(Ref->getLocation(), Ref->getLocation());
-    if (Ref->getBase())
-      R2 = Ref->getBase()->getSourceRange();
-#else
+  case ObjCPropertyRefExprClass:
     Loc = getExprLoc();
     R1 = getSourceRange();
-#endif
     return true;
-  }
+
   case StmtExprClass: {
     // Statement exprs don't logically have side effects themselves, but are
     // sometimes used in macros in ways that give them a type that is unused.
@@ -1413,8 +1407,8 @@ bool Expr::isUnusedResultAWarning(SourceLocation &Loc, SourceRange &R1,
   case CXXBindTemporaryExprClass:
     return (cast<CXXBindTemporaryExpr>(this)
             ->getSubExpr()->isUnusedResultAWarning(Loc, R1, R2, Ctx));
-  case CXXExprWithTemporariesClass:
-    return (cast<CXXExprWithTemporaries>(this)
+  case ExprWithCleanupsClass:
+    return (cast<ExprWithCleanups>(this)
             ->getSubExpr()->isUnusedResultAWarning(Loc, R1, R2, Ctx));
   }
 }
@@ -1460,7 +1454,7 @@ bool Expr::isOBJCGCCandidate(ASTContext &Ctx) const {
 bool Expr::isBoundMemberFunction(ASTContext &Ctx) const {
   if (isTypeDependent())
     return false;
-  return isLvalue(Ctx) == Expr::LV_MemberFunction;
+  return ClassifyLValue(Ctx) == Expr::LV_MemberFunction;
 }
 
 static Expr::CanThrowResult MergeCanThrow(Expr::CanThrowResult CT1,
@@ -1633,7 +1627,6 @@ Expr::CanThrowResult Expr::CanThrow(ASTContext &C) const {
     // specs.
   case ObjCMessageExprClass:
   case ObjCPropertyRefExprClass:
-  case ObjCImplicitSetterGetterRefExprClass:
     return CT_Can;
 
     // Many other things have subexpressions, so we have to test those.
@@ -1650,7 +1643,7 @@ Expr::CanThrowResult Expr::CanThrow(ASTContext &C) const {
   case ParenListExprClass:
   case VAArgExprClass:
   case CXXDefaultArgExprClass:
-  case CXXExprWithTemporariesClass:
+  case ExprWithCleanupsClass:
   case ObjCIvarRefExprClass:
   case ObjCIsaExprClass:
   case ShuffleVectorExprClass:
@@ -1731,6 +1724,32 @@ Expr *Expr::IgnoreParenCasts() {
   }
 }
 
+/// IgnoreParenLValueCasts - Ignore parentheses and lvalue-to-rvalue
+/// casts.  This is intended purely as a temporary workaround for code
+/// that hasn't yet been rewritten to do the right thing about those
+/// casts, and may disappear along with the last internal use.
+Expr *Expr::IgnoreParenLValueCasts() {
+  Expr *E = this;
+  while (true) {
+    if (ParenExpr *P = dyn_cast<ParenExpr>(E)) {
+      E = P->getSubExpr();
+      continue;
+    } else if (CastExpr *P = dyn_cast<CastExpr>(E)) {
+      if (P->getCastKind() == CK_LValueToRValue) {
+        E = P->getSubExpr();
+        continue;
+      }
+    } else if (UnaryOperator* P = dyn_cast<UnaryOperator>(E)) {
+      if (P->getOpcode() == UO_Extension) {
+        E = P->getSubExpr();
+        continue;
+      }
+    }
+    break;
+  }
+  return E;
+}
+  
 Expr *Expr::IgnoreParenImpCasts() {
   Expr *E = this;
   while (true) {
@@ -1804,7 +1823,7 @@ bool Expr::isDefaultArgument() const {
 
 /// \brief Skip over any no-op casts and any temporary-binding
 /// expressions.
-static const Expr *skipTemporaryBindingsAndNoOpCasts(const Expr *E) {
+static const Expr *skipTemporaryBindingsNoOpCastsAndParens(const Expr *E) {
   while (const ImplicitCastExpr *ICE = dyn_cast<ImplicitCastExpr>(E)) {
     if (ICE->getCastKind() == CK_NoOp)
       E = ICE->getSubExpr();
@@ -1821,8 +1840,8 @@ static const Expr *skipTemporaryBindingsAndNoOpCasts(const Expr *E) {
     else
       break;
   }
-  
-  return E;
+
+  return E->IgnoreParens();
 }
 
 /// isTemporaryObject - Determines if this expression produces a
@@ -1831,13 +1850,12 @@ bool Expr::isTemporaryObject(ASTContext &C, const CXXRecordDecl *TempTy) const {
   if (!C.hasSameUnqualifiedType(getType(), C.getTypeDeclType(TempTy)))
     return false;
 
-  const Expr *E = skipTemporaryBindingsAndNoOpCasts(this);
+  const Expr *E = skipTemporaryBindingsNoOpCastsAndParens(this);
 
   // Temporaries are by definition pr-values of class type.
   if (!E->Classify(C).isPRValue()) {
     // In this context, property reference is a message call and is pr-value.
-    if (!isa<ObjCPropertyRefExpr>(E) && 
-        !isa<ObjCImplicitSetterGetterRefExpr>(E))
+    if (!isa<ObjCPropertyRefExpr>(E))
       return false;
   }
 
@@ -2053,12 +2071,34 @@ bool Expr::isNullPointerConstant(ASTContext &Ctx,
   return isIntegerConstantExpr(Result, Ctx) && Result == 0;
 }
 
+/// \brief If this expression is an l-value for an Objective C
+/// property, find the underlying property reference expression.
+const ObjCPropertyRefExpr *Expr::getObjCProperty() const {
+  const Expr *E = this;
+  while (true) {
+    assert((E->getValueKind() == VK_LValue &&
+            E->getObjectKind() == OK_ObjCProperty) &&
+           "expression is not a property reference");
+    E = E->IgnoreParenCasts();
+    if (const BinaryOperator *BO = dyn_cast<BinaryOperator>(E)) {
+      if (BO->getOpcode() == BO_Comma) {
+        E = BO->getRHS();
+        continue;
+      }
+    }
+
+    break;
+  }
+
+  return cast<ObjCPropertyRefExpr>(E);
+}
+
 FieldDecl *Expr::getBitField() {
   Expr *E = this->IgnoreParens();
 
   while (ImplicitCastExpr *ICE = dyn_cast<ImplicitCastExpr>(E)) {
-    if (ICE->getValueKind() != VK_RValue &&
-        ICE->getCastKind() == CK_NoOp)
+    if (ICE->getCastKind() == CK_LValueToRValue ||
+        (ICE->getValueKind() != VK_RValue && ICE->getCastKind() == CK_NoOp))
       E = ICE->getSubExpr()->IgnoreParens();
     else
       break;
@@ -2171,6 +2211,7 @@ ObjCMessageExpr::ObjCMessageExpr(QualType T,
                                  bool IsInstanceSuper,
                                  QualType SuperType,
                                  Selector Sel, 
+                                 SourceLocation SelLoc,
                                  ObjCMethodDecl *Method,
                                  Expr **Args, unsigned NumArgs,
                                  SourceLocation RBracLoc)
@@ -2180,7 +2221,7 @@ ObjCMessageExpr::ObjCMessageExpr(QualType T,
     HasMethod(Method != 0), SuperLoc(SuperLoc),
     SelectorOrMethod(reinterpret_cast<uintptr_t>(Method? Method
                                                        : Sel.getAsOpaquePtr())),
-    LBracLoc(LBracLoc), RBracLoc(RBracLoc) 
+    SelectorLoc(SelLoc), LBracLoc(LBracLoc), RBracLoc(RBracLoc) 
 {
   setReceiverPointer(SuperType.getAsOpaquePtr());
   if (NumArgs)
@@ -2191,7 +2232,8 @@ ObjCMessageExpr::ObjCMessageExpr(QualType T,
                                  ExprValueKind VK,
                                  SourceLocation LBracLoc,
                                  TypeSourceInfo *Receiver,
-                                 Selector Sel, 
+                                 Selector Sel,
+                                 SourceLocation SelLoc,
                                  ObjCMethodDecl *Method,
                                  Expr **Args, unsigned NumArgs,
                                  SourceLocation RBracLoc)
@@ -2201,7 +2243,7 @@ ObjCMessageExpr::ObjCMessageExpr(QualType T,
     NumArgs(NumArgs), Kind(Class), HasMethod(Method != 0),
     SelectorOrMethod(reinterpret_cast<uintptr_t>(Method? Method
                                                        : Sel.getAsOpaquePtr())),
-    LBracLoc(LBracLoc), RBracLoc(RBracLoc) 
+    SelectorLoc(SelLoc), LBracLoc(LBracLoc), RBracLoc(RBracLoc) 
 {
   setReceiverPointer(Receiver);
   if (NumArgs)
@@ -2213,6 +2255,7 @@ ObjCMessageExpr::ObjCMessageExpr(QualType T,
                                  SourceLocation LBracLoc,
                                  Expr *Receiver,
                                  Selector Sel, 
+                                 SourceLocation SelLoc,
                                  ObjCMethodDecl *Method,
                                  Expr **Args, unsigned NumArgs,
                                  SourceLocation RBracLoc)
@@ -2222,7 +2265,7 @@ ObjCMessageExpr::ObjCMessageExpr(QualType T,
     NumArgs(NumArgs), Kind(Instance), HasMethod(Method != 0),
     SelectorOrMethod(reinterpret_cast<uintptr_t>(Method? Method
                                                        : Sel.getAsOpaquePtr())),
-    LBracLoc(LBracLoc), RBracLoc(RBracLoc) 
+    SelectorLoc(SelLoc), LBracLoc(LBracLoc), RBracLoc(RBracLoc) 
 {
   setReceiverPointer(Receiver);
   if (NumArgs)
@@ -2236,6 +2279,7 @@ ObjCMessageExpr *ObjCMessageExpr::Create(ASTContext &Context, QualType T,
                                          bool IsInstanceSuper,
                                          QualType SuperType,
                                          Selector Sel, 
+                                         SourceLocation SelLoc,
                                          ObjCMethodDecl *Method,
                                          Expr **Args, unsigned NumArgs,
                                          SourceLocation RBracLoc) {
@@ -2243,7 +2287,7 @@ ObjCMessageExpr *ObjCMessageExpr::Create(ASTContext &Context, QualType T,
     NumArgs * sizeof(Expr *);
   void *Mem = Context.Allocate(Size, llvm::AlignOf<ObjCMessageExpr>::Alignment);
   return new (Mem) ObjCMessageExpr(T, VK, LBracLoc, SuperLoc, IsInstanceSuper,
-                                   SuperType, Sel, Method, Args, NumArgs, 
+                                   SuperType, Sel, SelLoc, Method, Args,NumArgs, 
                                    RBracLoc);
 }
 
@@ -2252,29 +2296,31 @@ ObjCMessageExpr *ObjCMessageExpr::Create(ASTContext &Context, QualType T,
                                          SourceLocation LBracLoc,
                                          TypeSourceInfo *Receiver,
                                          Selector Sel, 
+                                         SourceLocation SelLoc,
                                          ObjCMethodDecl *Method,
                                          Expr **Args, unsigned NumArgs,
                                          SourceLocation RBracLoc) {
   unsigned Size = sizeof(ObjCMessageExpr) + sizeof(void *) + 
     NumArgs * sizeof(Expr *);
   void *Mem = Context.Allocate(Size, llvm::AlignOf<ObjCMessageExpr>::Alignment);
-  return new (Mem) ObjCMessageExpr(T, VK, LBracLoc, Receiver, Sel, Method, Args,
-                                   NumArgs, RBracLoc);
+  return new (Mem) ObjCMessageExpr(T, VK, LBracLoc, Receiver, Sel, SelLoc,
+                                   Method, Args, NumArgs, RBracLoc);
 }
 
 ObjCMessageExpr *ObjCMessageExpr::Create(ASTContext &Context, QualType T,
                                          ExprValueKind VK,
                                          SourceLocation LBracLoc,
                                          Expr *Receiver,
-                                         Selector Sel, 
+                                         Selector Sel,
+                                         SourceLocation SelLoc,
                                          ObjCMethodDecl *Method,
                                          Expr **Args, unsigned NumArgs,
                                          SourceLocation RBracLoc) {
   unsigned Size = sizeof(ObjCMessageExpr) + sizeof(void *) + 
     NumArgs * sizeof(Expr *);
   void *Mem = Context.Allocate(Size, llvm::AlignOf<ObjCMessageExpr>::Alignment);
-  return new (Mem) ObjCMessageExpr(T, VK, LBracLoc, Receiver, Sel, Method, Args, 
-                                   NumArgs, RBracLoc);
+  return new (Mem) ObjCMessageExpr(T, VK, LBracLoc, Receiver, Sel, SelLoc,
+                                   Method, Args, NumArgs, RBracLoc);
 }
 
 ObjCMessageExpr *ObjCMessageExpr::CreateEmpty(ASTContext &Context, 
@@ -2284,7 +2330,23 @@ ObjCMessageExpr *ObjCMessageExpr::CreateEmpty(ASTContext &Context,
   void *Mem = Context.Allocate(Size, llvm::AlignOf<ObjCMessageExpr>::Alignment);
   return new (Mem) ObjCMessageExpr(EmptyShell(), NumArgs);
 }
-         
+
+SourceRange ObjCMessageExpr::getReceiverRange() const {
+  switch (getReceiverKind()) {
+  case Instance:
+    return getInstanceReceiver()->getSourceRange();
+
+  case Class:
+    return getClassReceiverTypeInfo()->getTypeLoc().getSourceRange();
+
+  case SuperInstance:
+  case SuperClass:
+    return getSuperLoc();
+  }
+
+  return SourceLocation();
+}
+
 Selector ObjCMessageExpr::getSelector() const {
   if (HasMethod)
     return reinterpret_cast<const ObjCMethodDecl *>(SelectorOrMethod)
@@ -2535,31 +2597,17 @@ Stmt::child_iterator ObjCIvarRefExpr::child_end() { return &Base+1; }
 // ObjCPropertyRefExpr
 Stmt::child_iterator ObjCPropertyRefExpr::child_begin()
 { 
-  if (BaseExprOrSuperType.is<Stmt*>()) {
+  if (Receiver.is<Stmt*>()) {
     // Hack alert!
-    return reinterpret_cast<Stmt**> (&BaseExprOrSuperType);
+    return reinterpret_cast<Stmt**> (&Receiver);
   }
   return child_iterator(); 
 }
 
 Stmt::child_iterator ObjCPropertyRefExpr::child_end()
-{ return BaseExprOrSuperType.is<Stmt*>() ? 
-          reinterpret_cast<Stmt**> (&BaseExprOrSuperType)+1 : 
+{ return Receiver.is<Stmt*>() ? 
+          reinterpret_cast<Stmt**> (&Receiver)+1 : 
           child_iterator(); 
-}
-
-// ObjCImplicitSetterGetterRefExpr
-Stmt::child_iterator ObjCImplicitSetterGetterRefExpr::child_begin() {
-  // If this is accessing a class member or super, skip that entry.
-  // Technically, 2nd condition is sufficient. But I want to be verbose
-  if (isSuperReceiver() || !Base)
-    return child_iterator();
-  return &Base;
-}
-Stmt::child_iterator ObjCImplicitSetterGetterRefExpr::child_end() {
-  if (isSuperReceiver() || !Base)
-    return child_iterator();
-  return &Base+1;
 }
 
 // ObjCIsaExpr
@@ -2682,14 +2730,6 @@ Stmt::child_iterator AddrLabelExpr::child_end() { return child_iterator(); }
 Stmt::child_iterator StmtExpr::child_begin() { return &SubStmt; }
 Stmt::child_iterator StmtExpr::child_end() { return &SubStmt+1; }
 
-// TypesCompatibleExpr
-Stmt::child_iterator TypesCompatibleExpr::child_begin() {
-  return child_iterator();
-}
-
-Stmt::child_iterator TypesCompatibleExpr::child_end() {
-  return child_iterator();
-}
 
 // ChooseExpr
 Stmt::child_iterator ChooseExpr::child_begin() { return &SubExprs[0]; }

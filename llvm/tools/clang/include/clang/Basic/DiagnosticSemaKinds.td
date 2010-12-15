@@ -425,7 +425,7 @@ def error_ivar_in_superclass_use : Error<
 def error_weak_property : Error<
   "existing ivar %1 for __weak property %0 must be __weak">;
 def error_strong_property : Error<
-  "existing ivar %1 for a __strong property %0 must be garbage collectable">;
+  "property %0 must be declared __weak to match existing ivar %1 with __weak attribute">;
 def error_dynamic_property_ivar_decl : Error<
   "dynamic property can not have ivar specification">;
 def error_duplicate_ivar_use : Error<
@@ -879,7 +879,7 @@ def ext_enumerator_too_large : ExtWarn<
 def err_enumerator_wrapped : Error<
   "enumerator value %0 is not representable in the underlying type %1">;
 def err_enum_redeclare_type_mismatch : Error<
-  "enumeration redeclared with different underlying type">;
+  "enumeration redeclared with different underlying type %0 (was %1)">;
 def err_enum_redeclare_fixed_mismatch : Error<
   "enumeration previously declared with %select{non|}0fixed underlying type">;
 def err_enum_redeclare_scoped_mismatch : Error<
@@ -1001,18 +1001,20 @@ def err_attribute_weakref_not_global_context : Error<
   "weakref declaration of '%0' must be in a global context">;
 def err_attribute_weakref_without_alias : Error<
   "weakref declaration of '%0' must also have an alias attribute">;
+def err_alias_not_supported_on_darwin : Error <
+  "only weak aliases are supported on darwin">;
 def warn_attribute_wrong_decl_type : Warning<
   "%0 attribute only applies to %select{function|union|"
   "variable and function|function or method|parameter|"
   "parameter or Objective-C method |function, method or block|"
   "virtual method or class|function, method, or parameter|class|virtual method"
-  "|member}1 types">;
+  "|member|variable}1 types">;
 def err_attribute_wrong_decl_type : Error<
   "%0 attribute only applies to %select{function|union|"
   "variable and function|function or method|parameter|"
   "parameter or Objective-C method |function, method or block|"
   "virtual method or class|function, method, or parameter|class|virtual method"
-  "|member}1 types">;
+  "|member|variable}1 types">;
 def warn_function_attribute_wrong_type : Warning<
   "%0 only applies to function types; type here is %1">;
 def warn_gnu_inline_attribute_requires_inline : Warning<
@@ -1779,7 +1781,12 @@ def note_typename_refers_here : Note<
 def err_typename_missing : Error<
   "missing 'typename' prior to dependent type name '%0%1'">;
 def ext_typename_outside_of_template : ExtWarn<
-  "'typename' occurs outside of a template">;
+  "'typename' occurs outside of a template">, InGroup<CXX0x>;
+def err_typename_refers_to_using_value_decl : Error<
+  "typename specifier refers to a dependent using declaration for a value "
+  "%0 in %1">;
+def note_using_value_decl_missing_typename : Note<
+  "add 'typename' to treat this using declaration as a type">;
 
 def err_template_kw_refers_to_non_template : Error<
     "%0 following the 'template' keyword does not refer to a template">;
@@ -1792,7 +1799,7 @@ def note_referenced_class_template : Error<
 def err_template_kw_missing : Error<
   "missing 'template' keyword prior to dependent template name '%0%1'">;
 def ext_template_outside_of_template : ExtWarn<
-  "'template' keyword outside of a template">;
+  "'template' keyword outside of a template">, InGroup<CXX0x>;
 
 // C++0x Variadic Templates
 def err_variadic_templates_unsupported : Error<
@@ -1814,6 +1821,10 @@ def note_template_parameter_pack_here : Note<
   "previous template %select{type|non-type|template}0 "
   "parameter%select{| pack}1 declared here">;
   
+def err_unexpanded_parameter_pack : Error<
+  "%select{expression|base type|declaration type|template argument}0 contains "
+  "unexpanded parameter pack">;
+
 def err_unexpected_typedef : Error<
   "unexpected type name %0: expected expression">;
 def err_unexpected_namespace : Error<
@@ -2295,7 +2306,7 @@ def err_typecheck_unary_expr : Error<
 def err_typecheck_indirection_requires_pointer : Error<
   "indirection requires pointer operand (%0 invalid)">;
 def warn_indirection_through_null : Warning<
-  "indirection of non-volatile null pointer will be deleted, not trap">;
+  "indirection of non-volatile null pointer will be deleted, not trap">, InGroup<NullDereference>;
 def note_indirection_through_null : Note<
   "consider using __builtin_trap() or qualifying pointer with 'volatile'">;
 
@@ -2852,8 +2863,11 @@ def err_atomic_builtin_pointer_size : Error<
   "first argument to atomic builtin must be a pointer to 1,2,4,8 or 16 byte "
   "type (%0 invalid)">;
 
-  
 def err_deleted_function_use : Error<"attempt to use a deleted function">;
+
+def err_kern_type_not_void_return : Error<
+  "kernel function type %0 must have void return type">;
+
 
 def err_cannot_pass_objc_interface_to_vararg : Error<
   "cannot pass object with interface type %0 by-value through variadic "
@@ -3030,6 +3044,8 @@ def err_anonymous_record_bad_member : Error<
 def err_anonymous_record_nonpublic_member : Error<
   "anonymous %select{struct|union}0 cannot contain a "
   "%select{private|protected}1 data member">;
+def ext_ms_anonymous_struct : ExtWarn<
+  "anonymous structs are a Microsoft extension">, InGroup<Microsoft>;
 
 // C++ local classes
 def err_reference_to_local_var_in_enclosing_function : Error<
@@ -3228,10 +3244,16 @@ def warn_ret_stack_addr : Warning<
   "address of stack memory associated with local variable %0 returned">;
 def warn_ret_stack_ref : Warning<
   "reference to stack memory associated with local variable %0 returned">;
+def warn_ret_local_temp_addr : Warning<
+  "returning address of local temporary object">;
+def warn_ret_local_temp_ref : Warning<
+  "returning reference to local temporary object">;
 def warn_ret_addr_label : Warning<
   "returning address of label, which is local">;
 def err_ret_local_block : Error<
   "returning block that lives on the local stack">;
+def note_ref_var_local_bind : Note<
+  "binding reference variable %0 here">;
 
 
 // For non-floating point, expressions of the form x == x or x != x

@@ -125,5 +125,13 @@ AttributeList::Kind AttributeList::getKind(const IdentifierInfo *Name) {
     .Case("__fastcall", AT_fastcall)
     .Case("__thiscall", AT_thiscall)
     .Case("__pascal", AT_pascal)
+    .Case("constant", AT_constant)
+    .Case("device", AT_device)
+    .Case("global", AT_global)
+    .Case("host", AT_host)
+    .Case("shared", AT_shared)
+    .Case("launch_bounds", AT_launch_bounds)
+    .Case("common", AT_common)
+    .Case("nocommon", AT_nocommon)
     .Default(UnknownAttribute);
 }

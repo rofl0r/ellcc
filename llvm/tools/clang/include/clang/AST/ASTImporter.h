@@ -28,7 +28,6 @@ namespace clang {
   class Diagnostic;
   class Expr;
   class FileManager;
-  class FileSystemOptions;
   class IdentifierInfo;
   class NestedNameSpecifier;
   class Stmt;
@@ -47,8 +46,6 @@ namespace clang {
     /// \brief The file managers we're importing to and from.
     FileManager &ToFileManager, &FromFileManager;
 
-    const FileSystemOptions &ToFileSystemOpts, &FromFileSystemOpts;
-    
     /// \brief Mapping from the already-imported types in the "from" context
     /// to the corresponding types in the "to" context.
     llvm::DenseMap<Type *, Type *> ImportedTypes;
@@ -75,9 +72,7 @@ namespace clang {
     
   public:
     ASTImporter(ASTContext &ToContext, FileManager &ToFileManager,
-                const FileSystemOptions &ToFileSystemOpts,
-                ASTContext &FromContext, FileManager &FromFileManager,
-                const FileSystemOptions &FromFileSystemOpts);
+                ASTContext &FromContext, FileManager &FromFileManager);
     
     virtual ~ASTImporter();
     
@@ -130,6 +125,10 @@ namespace clang {
     /// context, or NULL if an error occurred.
     NestedNameSpecifier *Import(NestedNameSpecifier *FromNNS);
     
+    /// \brief Import the goven template name from the "from" context into the
+    /// "to" context.
+    TemplateName Import(TemplateName From);
+    
     /// \brief Import the given source location from the "from" context into
     /// the "to" context.
     ///
@@ -155,7 +154,7 @@ namespace clang {
     /// into the "to" context.
     ///
     /// \returns the equivalent identifier in the "to" context.
-    IdentifierInfo *Import(IdentifierInfo *FromId);
+    IdentifierInfo *Import(const IdentifierInfo *FromId);
 
     /// \brief Import the given Objective-C selector from the "from"
     /// context into the "to" context.

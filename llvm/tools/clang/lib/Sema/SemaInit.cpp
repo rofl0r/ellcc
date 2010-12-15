@@ -698,6 +698,7 @@ void InitListChecker::CheckSubElementType(const InitializedEntity &Entity,
       //   that of the expression.
       if ((ElemType->isRecordType() || ElemType->isVectorType()) &&
           SemaRef.Context.hasSameUnqualifiedType(expr->getType(), ElemType)) {
+        SemaRef.DefaultFunctionArrayLvalueConversion(expr);
         UpdateStructuredListElement(StructuredList, StructuredIndex, expr);
         ++Index;
         return;
@@ -971,7 +972,7 @@ void InitListChecker::CheckArrayType(const InitializedEntity &Entity,
   if (const ConstantArrayType *CAT =
         SemaRef.Context.getAsConstantArrayType(DeclType)) {
     maxElements = CAT->getSize();
-    elementIndex.extOrTrunc(maxElements.getBitWidth());
+    elementIndex = elementIndex.extOrTrunc(maxElements.getBitWidth());
     elementIndex.setIsUnsigned(maxElements.isUnsigned());
     maxElementsKnown = true;
   }
@@ -998,9 +999,9 @@ void InitListChecker::CheckArrayType(const InitializedEntity &Entity,
       }
 
       if (elementIndex.getBitWidth() > maxElements.getBitWidth())
-        maxElements.extend(elementIndex.getBitWidth());
+        maxElements = maxElements.extend(elementIndex.getBitWidth());
       else if (elementIndex.getBitWidth() < maxElements.getBitWidth())
-        elementIndex.extend(maxElements.getBitWidth());
+        elementIndex = elementIndex.extend(maxElements.getBitWidth());
       elementIndex.setIsUnsigned(maxElements.isUnsigned());
 
       // If the array is of incomplete type, keep track of the number of
@@ -1429,6 +1430,11 @@ InitListChecker::CheckDesignatedInitializer(const InitializedEntity &Entity,
       } else if (!KnownField) {
         // Determine whether we found a field at all.
         ReplacementField = dyn_cast<FieldDecl>(*Lookup.first);
+        
+        // Check if ReplacementField is an anonymous field. 
+        if (!ReplacementField)
+          if (IndirectFieldDecl* IField = dyn_cast<IndirectFieldDecl>(*Lookup.first))
+            ReplacementField = IField->getAnonField();
       }
 
       if (!ReplacementField) {
@@ -1635,9 +1641,11 @@ InitListChecker::CheckDesignatedInitializer(const InitializedEntity &Entity,
 
   if (isa<ConstantArrayType>(AT)) {
     llvm::APSInt MaxElements(cast<ConstantArrayType>(AT)->getSize(), false);
-    DesignatedStartIndex.extOrTrunc(MaxElements.getBitWidth());
+    DesignatedStartIndex
+      = DesignatedStartIndex.extOrTrunc(MaxElements.getBitWidth());
     DesignatedStartIndex.setIsUnsigned(MaxElements.isUnsigned());
-    DesignatedEndIndex.extOrTrunc(MaxElements.getBitWidth());
+    DesignatedEndIndex
+      = DesignatedEndIndex.extOrTrunc(MaxElements.getBitWidth());
     DesignatedEndIndex.setIsUnsigned(MaxElements.isUnsigned());
     if (DesignatedEndIndex >= MaxElements) {
       SemaRef.Diag(IndexExpr->getSourceRange().getBegin(),
@@ -1650,10 +1658,12 @@ InitListChecker::CheckDesignatedInitializer(const InitializedEntity &Entity,
   } else {
     // Make sure the bit-widths and signedness match.
     if (DesignatedStartIndex.getBitWidth() > DesignatedEndIndex.getBitWidth())
-      DesignatedEndIndex.extend(DesignatedStartIndex.getBitWidth());
+      DesignatedEndIndex
+        = DesignatedEndIndex.extend(DesignatedStartIndex.getBitWidth());
     else if (DesignatedStartIndex.getBitWidth() <
              DesignatedEndIndex.getBitWidth())
-      DesignatedStartIndex.extend(DesignatedEndIndex.getBitWidth());
+      DesignatedStartIndex
+        = DesignatedStartIndex.extend(DesignatedEndIndex.getBitWidth());
     DesignatedStartIndex.setIsUnsigned(true);
     DesignatedEndIndex.setIsUnsigned(true);
   }
@@ -1905,9 +1915,9 @@ ExprResult Sema::ActOnDesignatedInitializer(Designation &Desig,
         if (StartDependent || EndDependent) {
           // Nothing to compute.
         } else if (StartValue.getBitWidth() > EndValue.getBitWidth())
-          EndValue.extend(StartValue.getBitWidth());
+          EndValue = EndValue.extend(StartValue.getBitWidth());
         else if (StartValue.getBitWidth() < EndValue.getBitWidth())
-          StartValue.extend(EndValue.getBitWidth());
+          StartValue = StartValue.extend(EndValue.getBitWidth());
 
         if (!StartDependent && !EndDependent && EndValue < StartValue) {
           Diag(D.getEllipsisLoc(), diag::err_array_designator_empty_range)
@@ -3090,6 +3100,10 @@ InitializationSequence::InitializationSequence(Sema &S,
     return;
   }
 
+  for (unsigned I = 0; I != NumArgs; ++I)
+    if (Args[I]->getObjectKind() == OK_ObjCProperty)
+      S.ConvertPropertyForRValue(Args[I]);
+
   QualType SourceType;
   Expr *Initializer = 0;
   if (NumArgs == 1) {
@@ -3204,7 +3218,7 @@ InitializationSequence::InitializationSequence(Sema &S,
                               /*AllowExplicitConversions*/ false,
                               /*InOverloadResolution*/ false))
   {
-    if (Initializer->getType() == Context.OverloadTy )
+    if (Initializer->getType() == Context.OverloadTy)
       SetFailed(InitializationSequence::FK_AddressOfOverloadFailed);
     else
       SetFailed(InitializationSequence::FK_ConversionFailed);
@@ -3228,6 +3242,8 @@ getAssignmentAction(const InitializedEntity &Entity) {
   switch(Entity.getKind()) {
   case InitializedEntity::EK_Variable:
   case InitializedEntity::EK_New:
+  case InitializedEntity::EK_Exception:
+  case InitializedEntity::EK_Base:
     return Sema::AA_Initializing;
 
   case InitializedEntity::EK_Parameter:
@@ -3239,11 +3255,6 @@ getAssignmentAction(const InitializedEntity &Entity) {
 
   case InitializedEntity::EK_Result:
     return Sema::AA_Returning;
-
-  case InitializedEntity::EK_Exception:
-  case InitializedEntity::EK_Base:
-    llvm_unreachable("No assignment action for C++-specific initialization");
-    break;
 
   case InitializedEntity::EK_Temporary:
     // FIXME: Can we tell apart casting vs. converting?
@@ -3625,12 +3636,18 @@ InitializationSequence::Perform(Sema &S,
   case SK_ListInitialization:
   case SK_CAssignment:
   case SK_StringInit:
-  case SK_ObjCObjectConversion:
+  case SK_ObjCObjectConversion: {
     assert(Args.size() == 1);
-    CurInit = ExprResult(Args.get()[0]);
-    if (CurInit.isInvalid())
-      return ExprError();
+    Expr *CurInitExpr = Args.get()[0];
+    if (!CurInitExpr) return ExprError();
+
+    // Read from a property when initializing something with it.
+    if (CurInitExpr->getObjectKind() == OK_ObjCProperty)
+      S.ConvertPropertyForRValue(CurInitExpr);
+
+    CurInit = ExprResult(CurInitExpr);
     break;
+  }
     
   case SK_ConstructorInitialization:
   case SK_ZeroInitialization:
@@ -3645,7 +3662,7 @@ InitializationSequence::Perform(Sema &S,
     if (CurInit.isInvalid())
       return ExprError();
     
-    Expr *CurInitExpr = (Expr *)CurInit.get();
+    Expr *CurInitExpr = CurInit.get();
     QualType SourceType = CurInitExpr? CurInitExpr->getType() : QualType();
     
     switch (Step->Kind) {
@@ -3863,7 +3880,8 @@ InitializationSequence::Perform(Sema &S,
       bool IgnoreBaseAccess = Kind.isCStyleOrFunctionalCast();
 
       if (S.PerformImplicitConversion(CurInitExpr, Step->Type, *Step->ICS,
-                                      Sema::AA_Converting, IgnoreBaseAccess))
+                                      getAssignmentAction(Entity),
+                                      IgnoreBaseAccess))
         return ExprError();
         
       CurInit.release();
@@ -4168,7 +4186,7 @@ bool InitializationSequence::Diagnose(Sema &S,
   case FK_ReferenceInitFailed:
     S.Diag(Kind.getLocation(), diag::err_reference_bind_failed)
       << DestType.getNonReferenceType()
-      << (Args[0]->isLvalue(S.Context) == Expr::LV_Valid)
+      << Args[0]->isLValue()
       << Args[0]->getType()
       << Args[0]->getSourceRange();
     break;
@@ -4177,7 +4195,7 @@ bool InitializationSequence::Diagnose(Sema &S,
     S.Diag(Kind.getLocation(), diag::err_init_conversion_failed)
       << (int)Entity.getKind()
       << DestType
-      << (Args[0]->isLvalue(S.Context) == Expr::LV_Valid)
+      << Args[0]->isLValue()
       << Args[0]->getType()
       << Args[0]->getSourceRange();
     break;

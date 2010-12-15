@@ -516,20 +516,10 @@ void StmtPrinter::VisitObjCPropertyRefExpr(ObjCPropertyRefExpr *Node) {
     OS << ".";
   }
 
-  OS << Node->getProperty()->getName();
-}
-
-void StmtPrinter::VisitObjCImplicitSetterGetterRefExpr(
-                                        ObjCImplicitSetterGetterRefExpr *Node) {
-  if (Node->isSuperReceiver())
-    OS << "super.";
-  else if (Node->getBase()) {
-    PrintExpr(Node->getBase());
-    OS << ".";
-  }
-  if (Node->getGetterMethod())
-    OS << Node->getGetterMethod();
-
+  if (Node->isImplicitProperty())
+    OS << Node->getImplicitPropertyGetter()->getSelector().getAsString();
+  else
+    OS << Node->getExplicitProperty()->getName();
 }
 
 void StmtPrinter::VisitPredefinedExpr(PredefinedExpr *Node) {
@@ -822,12 +812,6 @@ void StmtPrinter::VisitStmtExpr(StmtExpr *E) {
   OS << "(";
   PrintRawCompoundStmt(E->getSubStmt());
   OS << ")";
-}
-
-void StmtPrinter::VisitTypesCompatibleExpr(TypesCompatibleExpr *Node) {
-  OS << "__builtin_types_compatible_p(";
-  OS << Node->getArgType1().getAsString(Policy) << ",";
-  OS << Node->getArgType2().getAsString(Policy) << ")";
 }
 
 void StmtPrinter::VisitChooseExpr(ChooseExpr *Node) {
@@ -1152,7 +1136,7 @@ void StmtPrinter::VisitCXXConstructExpr(CXXConstructExpr *E) {
   // Nothing to print.
 }
 
-void StmtPrinter::VisitCXXExprWithTemporaries(CXXExprWithTemporaries *E) {
+void StmtPrinter::VisitExprWithCleanups(ExprWithCleanups *E) {
   // Just forward to the sub expression.
   PrintExpr(E->getSubExpr());
 }
@@ -1216,7 +1200,7 @@ void StmtPrinter::VisitUnresolvedMemberExpr(UnresolvedMemberExpr *Node) {
 
 static const char *getTypeTraitName(UnaryTypeTrait UTT) {
   switch (UTT) {
-  default: assert(false && "Unknown type trait");
+  default: llvm_unreachable("Unknown unary type trait");
   case UTT_HasNothrowAssign:      return "__has_nothrow_assign";
   case UTT_HasNothrowCopy:        return "__has_nothrow_copy";
   case UTT_HasNothrowConstructor: return "__has_nothrow_constructor";
@@ -1233,11 +1217,27 @@ static const char *getTypeTraitName(UnaryTypeTrait UTT) {
   case UTT_IsPolymorphic:         return "__is_polymorphic";
   case UTT_IsUnion:               return "__is_union";
   }
+  return "";
+}
+
+static const char *getTypeTraitName(BinaryTypeTrait BTT) {
+  switch (BTT) {
+  default: llvm_unreachable("Unknown binary type trait");
+  case BTT_IsBaseOf:         return "__is_base_of";
+  case BTT_TypeCompatible:   return "__builtin_types_compatible_p";
+  }
+  return "";
 }
 
 void StmtPrinter::VisitUnaryTypeTraitExpr(UnaryTypeTraitExpr *E) {
   OS << getTypeTraitName(E->getTrait()) << "("
      << E->getQueriedType().getAsString(Policy) << ")";
+}
+
+void StmtPrinter::VisitBinaryTypeTraitExpr(BinaryTypeTraitExpr *E) {
+  OS << getTypeTraitName(E->getTrait()) << "("
+     << E->getLhsType().getAsString(Policy) << ","
+     << E->getRhsType().getAsString(Policy) << ")";
 }
 
 void StmtPrinter::VisitCXXNoexceptExpr(CXXNoexceptExpr *E) {

@@ -36,20 +36,52 @@ static SourceLocation GetEndLoc(Decl* D) {
   return D->getLocation();
 }
 
+/// The CFG builder uses a recursive algorithm to build the CFG.  When
+///  we process an expression, sometimes we know that we must add the
+///  subexpressions as block-level expressions.  For example:
+///
+///    exp1 || exp2
+///
+///  When processing the '||' expression, we know that exp1 and exp2
+///  need to be added as block-level expressions, even though they
+///  might not normally need to be.  AddStmtChoice records this
+///  contextual information.  If AddStmtChoice is 'NotAlwaysAdd', then
+///  the builder has an option not to add a subexpression as a
+///  block-level expression.
+///
+///  The lvalue bit captures whether or not a subexpression needs to
+///  be processed as an lvalue.  That information needs to be recorded
+///  in the CFG for block-level expressions so that analyses do the
+///  right thing when traversing the CFG (since such subexpressions
+///  will be seen before their parent expression is processed).
 class AddStmtChoice {
 public:
   enum Kind { NotAlwaysAdd = 0,
               AlwaysAdd = 1,
               AsLValueNotAlwaysAdd = 2,
-              AlwaysAddAsLValue = 3 };
+              AsLValueAlwaysAdd = 3 };
 
-  AddStmtChoice(Kind kind) : k(kind) {}
+  AddStmtChoice(Kind a_kind = NotAlwaysAdd) : kind(a_kind) {}
 
-  bool alwaysAdd() const { return (unsigned)k & 0x1; }
-  bool asLValue() const { return k >= AsLValueNotAlwaysAdd; }
+  bool alwaysAdd() const { return kind & AlwaysAdd; }
+  bool asLValue() const { return kind >= AsLValueNotAlwaysAdd; }
+
+  /// Return a copy of this object, except with the 'always-add' bit
+  ///  set as specified.
+  AddStmtChoice withAlwaysAdd(bool alwaysAdd) const {
+    return AddStmtChoice(alwaysAdd ? Kind(kind | AlwaysAdd) :
+                                     Kind(kind & ~AlwaysAdd));
+  }
+
+  /// Return a copy of this object, except with the 'as-lvalue' bit
+  ///  set as specified.
+  AddStmtChoice withAsLValue(bool asLVal) const {
+    return AddStmtChoice(asLVal ? Kind(kind | AsLValueNotAlwaysAdd) :
+                                  Kind(kind & ~AsLValueNotAlwaysAdd));
+  }
 
 private:
-  Kind k;
+  Kind kind;
 };
 
 /// LocalScope - Node in tree of local scopes created for C++ implicit
@@ -258,7 +290,7 @@ private:
   CFGBlock *VisitBlockExpr(BlockExpr* E, AddStmtChoice asc);
   CFGBlock *VisitBreakStmt(BreakStmt *B);
   CFGBlock *VisitCXXCatchStmt(CXXCatchStmt *S);
-  CFGBlock *VisitCXXExprWithTemporaries(CXXExprWithTemporaries *E,
+  CFGBlock *VisitExprWithCleanups(ExprWithCleanups *E,
       AddStmtChoice asc);
   CFGBlock *VisitCXXThrowExpr(CXXThrowExpr *T);
   CFGBlock *VisitCXXTryStmt(CXXTryStmt *S);
@@ -296,6 +328,7 @@ private:
   CFGBlock *VisitSizeOfAlignOfExpr(SizeOfAlignOfExpr *E, AddStmtChoice asc);
   CFGBlock *VisitStmtExpr(StmtExpr *S, AddStmtChoice asc);
   CFGBlock *VisitSwitchStmt(SwitchStmt *S);
+  CFGBlock *VisitUnaryOperator(UnaryOperator *U, AddStmtChoice asc);
   CFGBlock *VisitWhileStmt(WhileStmt *W);
 
   CFGBlock *Visit(Stmt *S, AddStmtChoice asc = AddStmtChoice::NotAlwaysAdd);
@@ -520,13 +553,13 @@ CFGBlock *CFGBuilder::addInitializer(CXXBaseOrMemberInitializer *I) {
   // after initialization finishes.
   Expr *Init = I->getInit();
   if (Init) {
-    if (FieldDecl *FD = I->getMember())
+    if (FieldDecl *FD = I->getAnyMember())
       IsReference = FD->getType()->isReferenceType();
-    HasTemporaries = isa<CXXExprWithTemporaries>(Init);
+    HasTemporaries = isa<ExprWithCleanups>(Init);
 
     if (BuildOpts.AddImplicitDtors && HasTemporaries) {
       // Generate destructors for temporaries in initialization expression.
-      VisitForTemporaryDtors(cast<CXXExprWithTemporaries>(Init)->getSubExpr(),
+      VisitForTemporaryDtors(cast<ExprWithCleanups>(Init)->getSubExpr(),
           IsReference);
     }
   }
@@ -535,13 +568,11 @@ CFGBlock *CFGBuilder::addInitializer(CXXBaseOrMemberInitializer *I) {
   appendInitializer(Block, I);
 
   if (Init) {
-    AddStmtChoice asc = IsReference
-        ? AddStmtChoice::AsLValueNotAlwaysAdd
-        : AddStmtChoice::NotAlwaysAdd;
+    AddStmtChoice asc = AddStmtChoice().withAsLValue(IsReference);
     if (HasTemporaries)
       // For expression with temporaries go directly to subexpression to omit
       // generating destructors for the second time.
-      return Visit(cast<CXXExprWithTemporaries>(Init)->getSubExpr(), asc);
+      return Visit(cast<ExprWithCleanups>(Init)->getSubExpr(), asc);
     return Visit(Init, asc);
   }
 
@@ -794,12 +825,22 @@ tryAgain:
 
     case Stmt::ContinueStmtClass:
       return VisitContinueStmt(cast<ContinueStmt>(S));
+    
+    case Stmt::CStyleCastExprClass: {
+      CastExpr *castExpr = cast<CastExpr>(S);
+      if (castExpr->getCastKind() == CK_LValueToRValue) {
+        // temporary workaround
+        S = castExpr->getSubExpr();
+        goto tryAgain;
+      }
+      return VisitStmt(S, asc);
+    }
 
     case Stmt::CXXCatchStmtClass:
       return VisitCXXCatchStmt(cast<CXXCatchStmt>(S));
 
-    case Stmt::CXXExprWithTemporariesClass:
-      return VisitCXXExprWithTemporaries(cast<CXXExprWithTemporaries>(S), asc);
+    case Stmt::ExprWithCleanupsClass:
+      return VisitExprWithCleanups(cast<ExprWithCleanups>(S), asc);
 
     case Stmt::CXXBindTemporaryExprClass:
       return VisitCXXBindTemporaryExpr(cast<CXXBindTemporaryExpr>(S), asc);
@@ -840,8 +881,15 @@ tryAgain:
     case Stmt::IfStmtClass:
       return VisitIfStmt(cast<IfStmt>(S));
 
-    case Stmt::ImplicitCastExprClass:
-      return VisitImplicitCastExpr(cast<ImplicitCastExpr>(S), asc);
+    case Stmt::ImplicitCastExprClass: {
+      ImplicitCastExpr *castExpr = cast<ImplicitCastExpr>(S);
+      if (castExpr->getCastKind() == CK_LValueToRValue) {
+        // temporary workaround
+        S = castExpr->getSubExpr();
+        goto tryAgain;
+      }
+      return VisitImplicitCastExpr(castExpr, asc);
+    }
 
     case Stmt::IndirectGotoStmtClass:
       return VisitIndirectGotoStmt(cast<IndirectGotoStmt>(S));
@@ -886,6 +934,9 @@ tryAgain:
     case Stmt::SwitchStmtClass:
       return VisitSwitchStmt(cast<SwitchStmt>(S));
 
+    case Stmt::UnaryOperatorClass:
+      return VisitUnaryOperator(cast<UnaryOperator>(S), asc);
+
     case Stmt::WhileStmtClass:
       return VisitWhileStmt(cast<WhileStmt>(S));
   }
@@ -922,6 +973,17 @@ CFGBlock *CFGBuilder::VisitAddrLabelExpr(AddrLabelExpr *A,
   return Block;
 }
 
+CFGBlock *CFGBuilder::VisitUnaryOperator(UnaryOperator *U,
+					 AddStmtChoice asc) {
+  if (asc.alwaysAdd()) {
+    autoCreateBlock();
+    AppendStmt(Block, U, asc);
+  }
+
+  bool asLVal = U->isIncrementDecrementOp();
+  return Visit(U->getSubExpr(), AddStmtChoice().withAsLValue(asLVal));
+}
+
 CFGBlock *CFGBuilder::VisitBinaryOperator(BinaryOperator *B,
                                           AddStmtChoice asc) {
   if (B->isLogicalOp()) { // && or ||
@@ -943,8 +1005,7 @@ CFGBlock *CFGBuilder::VisitBinaryOperator(BinaryOperator *B,
     if (RHSBlock) {
       if (badCFG)
         return 0;
-    }
-    else {
+    } else {
       // Create an empty block for cases where the RHS doesn't require
       // any explicit statements in the CFG.
       RHSBlock = createBlock();
@@ -969,13 +1030,15 @@ CFGBlock *CFGBuilder::VisitBinaryOperator(BinaryOperator *B,
     Block = LHSBlock;
     return addStmt(B->getLHS());
   }
-  else if (B->getOpcode() == BO_Comma) { // ,
+
+  if (B->getOpcode() == BO_Comma) { // ,
     autoCreateBlock();
     AppendStmt(Block, B, asc);
     addStmt(B->getRHS());
     return addStmt(B->getLHS());
   }
-  else if (B->isAssignmentOp()) {
+
+  if (B->isAssignmentOp()) {
     if (asc.alwaysAdd()) {
       autoCreateBlock();
       AppendStmt(Block, B, asc);
@@ -1069,12 +1132,8 @@ CFGBlock *CFGBuilder::VisitCallExpr(CallExpr *C, AddStmtChoice asc) {
   if (!CanThrow(C->getCallee()))
     AddEHEdge = false;
 
-  if (!NoReturn && !AddEHEdge) {
-    if (asc.asLValue())
-      return VisitStmt(C, AddStmtChoice::AlwaysAddAsLValue);
-    else
-      return VisitStmt(C, AddStmtChoice::AlwaysAdd);
-  }
+  if (!NoReturn && !AddEHEdge)
+    return VisitStmt(C, asc.withAlwaysAdd(true));
 
   if (Block) {
     Succ = Block;
@@ -1107,18 +1166,16 @@ CFGBlock *CFGBuilder::VisitChooseExpr(ChooseExpr *C,
   if (badCFG)
     return 0;
 
-  asc = asc.asLValue() ? AddStmtChoice::AlwaysAddAsLValue
-                       : AddStmtChoice::AlwaysAdd;
-
+  AddStmtChoice alwaysAdd = asc.withAlwaysAdd(true);
   Succ = ConfluenceBlock;
   Block = NULL;
-  CFGBlock* LHSBlock = Visit(C->getLHS(), asc);
+  CFGBlock* LHSBlock = Visit(C->getLHS(), alwaysAdd);
   if (badCFG)
     return 0;
 
   Succ = ConfluenceBlock;
   Block = NULL;
-  CFGBlock* RHSBlock = Visit(C->getRHS(), asc);
+  CFGBlock* RHSBlock = Visit(C->getRHS(), alwaysAdd);
   if (badCFG)
     return 0;
 
@@ -1159,8 +1216,7 @@ CFGBlock *CFGBuilder::VisitConditionalOperator(ConditionalOperator *C,
   if (badCFG)
     return 0;
 
-  asc = asc.asLValue() ? AddStmtChoice::AlwaysAddAsLValue
-                       : AddStmtChoice::AlwaysAdd;
+  AddStmtChoice alwaysAdd = asc.withAlwaysAdd(true);
 
   // Create a block for the LHS expression if there is an LHS expression.  A
   // GCC extension allows LHS to be NULL, causing the condition to be the
@@ -1170,7 +1226,7 @@ CFGBlock *CFGBuilder::VisitConditionalOperator(ConditionalOperator *C,
   Block = NULL;
   CFGBlock* LHSBlock = NULL;
   if (C->getLHS()) {
-    LHSBlock = Visit(C->getLHS(), asc);
+    LHSBlock = Visit(C->getLHS(), alwaysAdd);
     if (badCFG)
       return 0;
     Block = NULL;
@@ -1178,7 +1234,7 @@ CFGBlock *CFGBuilder::VisitConditionalOperator(ConditionalOperator *C,
 
   // Create the block for the RHS expression.
   Succ = ConfluenceBlock;
-  CFGBlock* RHSBlock = Visit(C->getRHS(), asc);
+  CFGBlock* RHSBlock = Visit(C->getRHS(), alwaysAdd);
   if (badCFG)
     return 0;
 
@@ -1266,11 +1322,11 @@ CFGBlock *CFGBuilder::VisitDeclSubExpr(DeclStmt* DS) {
   Expr *Init = VD->getInit();
   if (Init) {
     IsReference = VD->getType()->isReferenceType();
-    HasTemporaries = isa<CXXExprWithTemporaries>(Init);
+    HasTemporaries = isa<ExprWithCleanups>(Init);
 
     if (BuildOpts.AddImplicitDtors && HasTemporaries) {
       // Generate destructors for temporaries in initialization expression.
-      VisitForTemporaryDtors(cast<CXXExprWithTemporaries>(Init)->getSubExpr(),
+      VisitForTemporaryDtors(cast<ExprWithCleanups>(Init)->getSubExpr(),
           IsReference);
     }
   }
@@ -1279,13 +1335,11 @@ CFGBlock *CFGBuilder::VisitDeclSubExpr(DeclStmt* DS) {
   AppendStmt(Block, DS);
 
   if (Init) {
-    AddStmtChoice asc = IsReference
-          ? AddStmtChoice::AsLValueNotAlwaysAdd
-          : AddStmtChoice::NotAlwaysAdd;
+    AddStmtChoice asc = AddStmtChoice().withAsLValue(IsReference);
     if (HasTemporaries)
       // For expression with temporaries go directly to subexpression to omit
       // generating destructors for the second time.
-      Visit(cast<CXXExprWithTemporaries>(Init)->getSubExpr(), asc);
+      Visit(cast<ExprWithCleanups>(Init)->getSubExpr(), asc);
     else
       Visit(Init, asc);
   }
@@ -1628,13 +1682,13 @@ CFGBlock* CFGBuilder::VisitForStmt(ForStmt* F) {
   if (Stmt* I = F->getInit()) {
     Block = createBlock();
     return addStmt(I);
-  } else {
-    // There is no loop initialization.  We are thus basically a while loop.
-    // NULL out Block to force lazy block construction.
-    Block = NULL;
-    Succ = EntryConditionBlock;
-    return EntryConditionBlock;
   }
+
+  // There is no loop initialization.  We are thus basically a while loop.
+  // NULL out Block to force lazy block construction.
+  Block = NULL;
+  Succ = EntryConditionBlock;
+  return EntryConditionBlock;
 }
 
 CFGBlock *CFGBuilder::VisitMemberExpr(MemberExpr *M, AddStmtChoice asc) {
@@ -1643,8 +1697,7 @@ CFGBlock *CFGBuilder::VisitMemberExpr(MemberExpr *M, AddStmtChoice asc) {
     AppendStmt(Block, M, asc);
   }
   return Visit(M->getBase(),
-               M->isArrow() ? AddStmtChoice::NotAlwaysAdd
-                            : AddStmtChoice::AsLValueNotAlwaysAdd);
+               AddStmtChoice().withAsLValue(!M->isArrow()));
 }
 
 CFGBlock* CFGBuilder::VisitObjCForCollectionStmt(ObjCForCollectionStmt* S) {
@@ -2231,8 +2284,7 @@ CFGBlock* CFGBuilder::VisitCaseStmt(CaseStmt* CS) {
   if (TopBlock) {
     AddSuccessor(LastBlock, CaseBlock);
     Succ = TopBlock;
-  }
-  else {
+  } else {
     // This block is now the implicit successor of other blocks.
     Succ = CaseBlock;
   }
@@ -2359,7 +2411,7 @@ CFGBlock* CFGBuilder::VisitCXXCatchStmt(CXXCatchStmt* CS) {
   return CatchBlock;
 }
 
-CFGBlock *CFGBuilder::VisitCXXExprWithTemporaries(CXXExprWithTemporaries *E,
+CFGBlock *CFGBuilder::VisitExprWithCleanups(ExprWithCleanups *E,
     AddStmtChoice asc) {
   if (BuildOpts.AddImplicitDtors) {
     // If adding implicit destructors visit the full expression for adding
@@ -2368,9 +2420,7 @@ CFGBlock *CFGBuilder::VisitCXXExprWithTemporaries(CXXExprWithTemporaries *E,
 
     // Full expression has to be added as CFGStmt so it will be sequenced
     // before destructors of it's temporaries.
-    asc = asc.asLValue()
-        ? AddStmtChoice::AlwaysAddAsLValue
-        : AddStmtChoice::AlwaysAdd;
+    asc = asc.withAlwaysAdd(true);
   }
   return Visit(E->getSubExpr(), asc);
 }
@@ -2382,19 +2432,17 @@ CFGBlock *CFGBuilder::VisitCXXBindTemporaryExpr(CXXBindTemporaryExpr *E,
     AppendStmt(Block, E, asc);
 
     // We do not want to propagate the AlwaysAdd property.
-    asc = AddStmtChoice(asc.asLValue() ? AddStmtChoice::AsLValueNotAlwaysAdd
-                                       : AddStmtChoice::NotAlwaysAdd);
+    asc = asc.withAlwaysAdd(false);
   }
   return Visit(E->getSubExpr(), asc);
 }
 
 CFGBlock *CFGBuilder::VisitCXXConstructExpr(CXXConstructExpr *C,
                                             AddStmtChoice asc) {
-  AddStmtChoice::Kind K = asc.asLValue() ? AddStmtChoice::AlwaysAddAsLValue
-                                         : AddStmtChoice::AlwaysAdd;
   autoCreateBlock();
   if (!C->isElidable())
-    AppendStmt(Block, C, AddStmtChoice(K));
+    AppendStmt(Block, C, asc.withAlwaysAdd(true));
+
   return VisitChildren(C);
 }
 
@@ -2404,27 +2452,22 @@ CFGBlock *CFGBuilder::VisitCXXFunctionalCastExpr(CXXFunctionalCastExpr *E,
     autoCreateBlock();
     AppendStmt(Block, E, asc);
     // We do not want to propagate the AlwaysAdd property.
-    asc = AddStmtChoice(asc.asLValue() ? AddStmtChoice::AsLValueNotAlwaysAdd
-                                       : AddStmtChoice::NotAlwaysAdd);
+    asc = asc.withAlwaysAdd(false);
   }
   return Visit(E->getSubExpr(), asc);
 }
 
 CFGBlock *CFGBuilder::VisitCXXTemporaryObjectExpr(CXXTemporaryObjectExpr *C,
                                                   AddStmtChoice asc) {
-  AddStmtChoice::Kind K = asc.asLValue() ? AddStmtChoice::AlwaysAddAsLValue
-                                         : AddStmtChoice::AlwaysAdd;
   autoCreateBlock();
-  AppendStmt(Block, C, AddStmtChoice(K));
+  AppendStmt(Block, C, asc.withAlwaysAdd(true));
   return VisitChildren(C);
 }
 
 CFGBlock *CFGBuilder::VisitCXXMemberCallExpr(CXXMemberCallExpr *C,
                                              AddStmtChoice asc) {
-  AddStmtChoice::Kind K = asc.asLValue() ? AddStmtChoice::AlwaysAddAsLValue
-                                         : AddStmtChoice::AlwaysAdd;
   autoCreateBlock();
-  AppendStmt(Block, C, AddStmtChoice(K));
+  AppendStmt(Block, C, asc.withAlwaysAdd(true));
   return VisitChildren(C);
 }
 
@@ -2434,8 +2477,7 @@ CFGBlock *CFGBuilder::VisitImplicitCastExpr(ImplicitCastExpr *E,
     autoCreateBlock();
     AppendStmt(Block, E, asc);
     // We do not want to propagate the AlwaysAdd property.
-    asc = AddStmtChoice(asc.asLValue() ? AddStmtChoice::AsLValueNotAlwaysAdd
-                                       : AddStmtChoice::NotAlwaysAdd);
+    asc = asc.withAlwaysAdd(false);
   }
   return Visit(E->getSubExpr(), asc);
 }
@@ -2564,7 +2606,7 @@ CFGBlock *CFGBuilder::VisitBinaryOperatorForTemporaryDtors(BinaryOperator *E) {
     return ConfluenceBlock;
   }
 
-  else if (E->isAssignmentOp()) {
+  if (E->isAssignmentOp()) {
     // For assignment operator (=) LHS expression is visited
     // before RHS expression. For destructors visit them in reverse order.
     CFGBlock *RHSBlock = VisitForTemporaryDtors(E->getRHS());
@@ -2775,12 +2817,11 @@ CFG::BlkExprNumTy CFG::getBlkExprNum(const Stmt* S) {
 unsigned CFG::getNumBlkExprs() {
   if (const BlkExprMapTy* M = reinterpret_cast<const BlkExprMapTy*>(BlkExprMap))
     return M->size();
-  else {
-    // We assume callers interested in the number of BlkExprs will want
-    // the map constructed if it doesn't already exist.
-    BlkExprMap = (void*) PopulateBlkExprMap(*this);
-    return reinterpret_cast<BlkExprMapTy*>(BlkExprMap)->size();
-  }
+
+  // We assume callers interested in the number of BlkExprs will want
+  // the map constructed if it doesn't already exist.
+  BlkExprMap = (void*) PopulateBlkExprMap(*this);
+  return reinterpret_cast<BlkExprMapTy*>(BlkExprMap)->size();
 }
 
 //===----------------------------------------------------------------------===//
@@ -2842,7 +2883,7 @@ public:
 
           if (DeclStmt* DS = dyn_cast<DeclStmt>(SE.getStmt())) {
               DeclMap[DS->getSingleDecl()] = P;
-            
+
           } else if (IfStmt* IS = dyn_cast<IfStmt>(SE.getStmt())) {
             if (VarDecl* VD = IS->getConditionVariable())
               DeclMap[VD] = P;
@@ -3036,11 +3077,13 @@ static void print_elem(llvm::raw_ostream &OS, StmtPrinterHelper* Helper,
     S->printPretty(OS, Helper, PrintingPolicy(Helper->getLangOpts()));
 
     if (isa<CXXOperatorCallExpr>(S)) {
-      OS << " (OperatorCall)";    
+      OS << " (OperatorCall)";
+    } else if (isa<CXXBindTemporaryExpr>(S)) {
+      OS << " (BindTemporary)";
     }
-    else if (isa<CXXBindTemporaryExpr>(S)) {
-      OS << " (BindTemporary)";    
-    }
+
+    if (CS.asLValue())
+        OS << " (asLValue)";
 
     // Expressions need a newline.
     if (isa<Expr>(S))
@@ -3050,7 +3093,7 @@ static void print_elem(llvm::raw_ostream &OS, StmtPrinterHelper* Helper,
     CXXBaseOrMemberInitializer* I = IE;
     if (I->isBaseInitializer())
       OS << I->getBaseClass()->getAsCXXRecordDecl()->getName();
-    else OS << I->getMember()->getName();
+    else OS << I->getAnyMember()->getName();
 
     OS << "(";
     if (Expr* IE = I->getInit())

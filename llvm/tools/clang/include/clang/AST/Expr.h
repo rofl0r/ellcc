@@ -39,6 +39,7 @@ namespace clang {
   class CXXBaseSpecifier;
   class CXXOperatorCallExpr;
   class CXXMemberCallExpr;
+  class ObjCPropertyRefExpr;
   class TemplateArgumentLoc;
   class TemplateArgumentListInfo;
 
@@ -61,6 +62,8 @@ protected:
     ExprBits.ValueDependent = VD;
     ExprBits.ValueKind = VK;
     ExprBits.ObjectKind = OK;
+    // FIXME: Variadic templates.
+    ExprBits.ContainsUnexpandedParameterPack = false;
     setType(T);
   }
 
@@ -111,6 +114,24 @@ public:
   /// \brief Set whether this expression is type-dependent or not.
   void setTypeDependent(bool TD) { ExprBits.TypeDependent = TD; }
 
+  /// \brief Whether this expression contains an unexpanded parameter
+  /// pack (for C++0x variadic templates).
+  ///
+  /// Given the following function template:
+  ///
+  /// \code
+  /// template<typename F, typename ...Types>
+  /// void forward(const F &f, Types &&...args) {
+  ///   f(static_cast<Types&&>(args)...);
+  /// }
+  /// \endcode
+  ///
+  /// The expressions \c args and \c static_cast<Types&&>(args) both
+  /// contain parameter packs.
+  bool containsUnexpandedParameterPack() const { 
+    return ExprBits.ContainsUnexpandedParameterPack; 
+  }
+
   /// SourceLocation tokens are not useful in isolation - they are low level
   /// value objects created/interpreted by SourceManager. We assume AST
   /// clients will have a pointer to the respective SourceManager.
@@ -127,19 +148,25 @@ public:
   bool isUnusedResultAWarning(SourceLocation &Loc, SourceRange &R1,
                               SourceRange &R2, ASTContext &Ctx) const;
 
-  /// isLvalue - C99 6.3.2.1: an lvalue is an expression with an object type or
-  /// incomplete type other than void. Nonarray expressions that can be lvalues:
-  ///  - name, where name must be a variable
-  ///  - e[i]
-  ///  - (e), where e must be an lvalue
-  ///  - e.name, where e must be an lvalue
-  ///  - e->name
-  ///  - *e, the type of e cannot be a function type
-  ///  - string-constant
-  ///  - reference type [C++ [expr]]
-  ///  - b ? x : y, where x and y are lvalues of suitable types [C++]
+  /// isLValue - True if this expression is an "l-value" according to
+  /// the rules of the current language.  C and C++ give somewhat
+  /// different rules for this concept, but in general, the result of
+  /// an l-value expression identifies a specific object whereas the
+  /// result of an r-value expression is a value detached from any
+  /// specific storage.
   ///
-  enum isLvalueResult {
+  /// C++0x divides the concept of "r-value" into pure r-values
+  /// ("pr-values") and so-called expiring values ("x-values"), which
+  /// identify specific objects that can be safely cannibalized for
+  /// their resources.  This is an unfortunate abuse of terminology on
+  /// the part of the C++ committee.  In Clang, when we say "r-value",
+  /// we generally mean a pr-value.
+  bool isLValue() const { return getValueKind() == VK_LValue; }
+  bool isRValue() const { return getValueKind() == VK_RValue; }
+  bool isXValue() const { return getValueKind() == VK_XValue; }
+  bool isGLValue() const { return getValueKind() != VK_RValue; }
+
+  enum LValueClassification {
     LV_Valid,
     LV_NotObjectType,
     LV_IncompleteVoidType,
@@ -149,7 +176,8 @@ public:
     LV_SubObjCPropertySetting,
     LV_ClassTemporary
   };
-  isLvalueResult isLvalue(ASTContext &Ctx) const;
+  /// Reasons why an expression might not be an l-value.
+  LValueClassification ClassifyLValue(ASTContext &Ctx) const;
 
   /// isModifiableLvalue - C99 6.3.2.1: an lvalue that does not have array type,
   /// does not have an incomplete type, does not have a const-qualified type,
@@ -305,6 +333,10 @@ public:
     return const_cast<Expr*>(this)->getBitField();
   }
 
+  /// \brief If this expression is an l-value for an Objective C
+  /// property, find the underlying property reference expression.
+  const ObjCPropertyRefExpr *getObjCProperty() const;
+
   /// \brief Returns whether this expression refers to a vector element.
   bool refersToVectorElement() const;
   
@@ -448,6 +480,14 @@ public:
 
   const Expr *IgnoreParenImpCasts() const {
     return const_cast<Expr*>(this)->IgnoreParenImpCasts();
+  }
+  
+  /// Ignore parentheses and lvalue casts.  Strip off any ParenExpr and
+  /// CastExprs that represent lvalue casts, returning their operand.
+  Expr *IgnoreParenLValueCasts();
+  
+  const Expr *IgnoreParenLValueCasts() const {
+    return const_cast<Expr*>(this)->IgnoreParenLValueCasts();
   }
 
   /// IgnoreParenNoopCasts - Ignore parentheses and casts that do not change the
@@ -1178,7 +1218,7 @@ public:
     return Op == UO_PostInc || Op == UO_PostDec;
   }
 
-  /// isPostfix - Return true if this is a prefix operation, like --x.
+  /// isPrefix - Return true if this is a prefix operation, like --x.
   static bool isPrefix(Opcode Op) {
     return Op == UO_PreInc || Op == UO_PreDec;
   }
@@ -2048,6 +2088,8 @@ private:
       // fallthrough to check for null base path
 
     case CK_Dependent:
+    case CK_LValueToRValue:
+    case CK_GetObjCProperty:
     case CK_NoOp:
     case CK_PointerToBoolean:
     case CK_IntegralToBoolean:
@@ -2373,12 +2415,23 @@ public:
   static bool isLogicalOp(Opcode Opc) { return Opc == BO_LAnd || Opc==BO_LOr; }
   bool isLogicalOp() const { return isLogicalOp(getOpcode()); }
 
-  bool isAssignmentOp() const { return Opc >= BO_Assign && Opc <= BO_OrAssign; }
-  bool isCompoundAssignmentOp() const {
+  static bool isAssignmentOp(Opcode Opc) {
+    return Opc >= BO_Assign && Opc <= BO_OrAssign;
+  }
+  bool isAssignmentOp() const { return isAssignmentOp(getOpcode()); }
+
+  static bool isCompoundAssignmentOp(Opcode Opc) {
     return Opc > BO_Assign && Opc <= BO_OrAssign;
   }
-  bool isShiftAssignOp() const {
+  bool isCompoundAssignmentOp() const {
+    return isCompoundAssignmentOp(getOpcode());
+  }
+
+  static bool isShiftAssignOp(Opcode Opc) {
     return Opc == BO_ShlAssign || Opc == BO_ShrAssign;
+  }
+  bool isShiftAssignOp() const {
+    return isShiftAssignOp(getOpcode());
   }
 
   static bool classof(const Stmt *S) {
@@ -2608,52 +2661,6 @@ public:
   virtual child_iterator child_end();
 };
 
-/// TypesCompatibleExpr - GNU builtin-in function __builtin_types_compatible_p.
-/// This AST node represents a function that returns 1 if two *types* (not
-/// expressions) are compatible. The result of this built-in function can be
-/// used in integer constant expressions.
-class TypesCompatibleExpr : public Expr {
-  TypeSourceInfo *TInfo1;
-  TypeSourceInfo *TInfo2;
-  SourceLocation BuiltinLoc, RParenLoc;
-public:
-  TypesCompatibleExpr(QualType ReturnType, SourceLocation BLoc,
-                      TypeSourceInfo *tinfo1, TypeSourceInfo *tinfo2,
-                      SourceLocation RP) :
-    Expr(TypesCompatibleExprClass, ReturnType, VK_RValue, OK_Ordinary,
-         false, false),
-    TInfo1(tinfo1), TInfo2(tinfo2), BuiltinLoc(BLoc), RParenLoc(RP) {}
-
-  /// \brief Build an empty __builtin_type_compatible_p expression.
-  explicit TypesCompatibleExpr(EmptyShell Empty)
-    : Expr(TypesCompatibleExprClass, Empty) { }
-
-  TypeSourceInfo *getArgTInfo1() const { return TInfo1; }
-  void setArgTInfo1(TypeSourceInfo *TInfo) { TInfo1 = TInfo; }
-  TypeSourceInfo *getArgTInfo2() const { return TInfo2; }
-  void setArgTInfo2(TypeSourceInfo *TInfo) { TInfo2 = TInfo; }
-
-  QualType getArgType1() const { return TInfo1->getType(); }
-  QualType getArgType2() const { return TInfo2->getType(); }
-
-  SourceLocation getBuiltinLoc() const { return BuiltinLoc; }
-  void setBuiltinLoc(SourceLocation L) { BuiltinLoc = L; }
-
-  SourceLocation getRParenLoc() const { return RParenLoc; }
-  void setRParenLoc(SourceLocation L) { RParenLoc = L; }
-
-  virtual SourceRange getSourceRange() const {
-    return SourceRange(BuiltinLoc, RParenLoc);
-  }
-  static bool classof(const Stmt *T) {
-    return T->getStmtClass() == TypesCompatibleExprClass;
-  }
-  static bool classof(const TypesCompatibleExpr *) { return true; }
-
-  // Iterators
-  virtual child_iterator child_begin();
-  virtual child_iterator child_end();
-};
 
 /// ShuffleVectorExpr - clang-specific builtin-in function
 /// __builtin_shufflevector.

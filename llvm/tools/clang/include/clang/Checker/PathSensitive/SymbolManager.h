@@ -18,7 +18,7 @@
 #include "clang/AST/Decl.h"
 #include "clang/AST/Expr.h"
 #include "clang/Analysis/AnalysisContext.h"
-#include "llvm/System/DataTypes.h"
+#include "llvm/Support/DataTypes.h"
 #include "llvm/ADT/FoldingSet.h"
 #include "llvm/ADT/DenseSet.h"
 
@@ -458,7 +458,7 @@ public:
 
   /// isDead - Returns whether or not a symbol has been confirmed dead. This
   ///  should only be called once all marking of dead symbols has completed.
-  ///  (For checkers, this means only in the EvalDeadSymbols callback.)
+  ///  (For checkers, this means only in the evalDeadSymbols callback.)
   bool isDead(SymbolRef sym) const {
     return TheDead.count(sym);
   }

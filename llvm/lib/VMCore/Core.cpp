@@ -28,6 +28,7 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/system_error.h"
 #include <cassert>
 #include <cstdlib>
 #include <cstring>
@@ -135,6 +136,12 @@ void LLVMDumpModule(LLVMModuleRef M) {
 /*--.. Operations on inline assembler ......................................--*/
 void LLVMSetModuleInlineAsm(LLVMModuleRef M, const char *Asm) {
   unwrap(M)->setModuleInlineAsm(StringRef(Asm));
+}
+
+
+/*--.. Operations on module contexts ......................................--*/
+LLVMContextRef LLVMGetModuleContext(LLVMModuleRef M) {
+  return wrap(&unwrap(M)->getContext());
 }
 
 
@@ -545,6 +552,14 @@ LLVMValueRef LLVMMDNode(LLVMValueRef *Vals, unsigned Count) {
 LLVMValueRef LLVMConstInt(LLVMTypeRef IntTy, unsigned long long N,
                           LLVMBool SignExtend) {
   return wrap(ConstantInt::get(unwrap<IntegerType>(IntTy), N, SignExtend != 0));
+}
+
+LLVMValueRef LLVMConstIntOfArbitraryPrecision(LLVMTypeRef IntTy,
+                                              unsigned NumWords,
+                                              const uint64_t Words[]) {
+    IntegerType *Ty = unwrap<IntegerType>(IntTy);
+    return wrap(ConstantInt::get(Ty->getContext(),
+                                 APInt(Ty->getBitWidth(), NumWords, Words)));
 }
 
 LLVMValueRef LLVMConstIntOfString(LLVMTypeRef IntTy, const char Str[],
@@ -2206,25 +2221,25 @@ LLVMBool LLVMCreateMemoryBufferWithContentsOfFile(
     LLVMMemoryBufferRef *OutMemBuf,
     char **OutMessage) {
 
-  std::string Error;
-  if (MemoryBuffer *MB = MemoryBuffer::getFile(Path, &Error)) {
+  error_code ec;
+  if (MemoryBuffer *MB = MemoryBuffer::getFile(Path, ec)) {
     *OutMemBuf = wrap(MB);
     return 0;
   }
-  
-  *OutMessage = strdup(Error.c_str());
+
+  *OutMessage = strdup(ec.message().c_str());
   return 1;
 }
 
 LLVMBool LLVMCreateMemoryBufferWithSTDIN(LLVMMemoryBufferRef *OutMemBuf,
                                          char **OutMessage) {
-  std::string Error;
-  if (MemoryBuffer *MB = MemoryBuffer::getSTDIN(&Error)) {
+  error_code ec;
+  if (MemoryBuffer *MB = MemoryBuffer::getSTDIN(ec)) {
     *OutMemBuf = wrap(MB);
     return 0;
   }
 
-  *OutMessage = strdup(Error.c_str());
+  *OutMessage = strdup(ec.message().c_str());
   return 1;
 }
 

@@ -187,8 +187,10 @@ void WalkAST::CheckLoopConditionForFloat(const ForStmt *FS) {
     return;
 
   // Are we comparing variables?
-  const DeclRefExpr *drLHS = dyn_cast<DeclRefExpr>(B->getLHS()->IgnoreParens());
-  const DeclRefExpr *drRHS = dyn_cast<DeclRefExpr>(B->getRHS()->IgnoreParens());
+  const DeclRefExpr *drLHS =
+    dyn_cast<DeclRefExpr>(B->getLHS()->IgnoreParenLValueCasts());
+  const DeclRefExpr *drRHS =
+    dyn_cast<DeclRefExpr>(B->getRHS()->IgnoreParenLValueCasts());
 
   // Does at least one of the variables have a floating point type?
   drLHS = drLHS && drLHS->getType()->isRealFloatingType() ? drLHS : NULL;
@@ -240,7 +242,8 @@ void WalkAST::CheckCall_gets(const CallExpr *CE, const FunctionDecl *FD) {
   if (FD->getIdentifier() != GetIdentifier(II_gets, "gets"))
     return;
 
-  const FunctionProtoType *FPT = dyn_cast<FunctionProtoType>(FD->getType());
+  const FunctionProtoType *FPT
+    = dyn_cast<FunctionProtoType>(FD->getType().IgnoreParens());
   if (!FPT)
     return;
 
@@ -274,7 +277,8 @@ void WalkAST::CheckCall_getpw(const CallExpr *CE, const FunctionDecl *FD) {
   if (FD->getIdentifier() != GetIdentifier(II_getpw, "getpw"))
     return;
 
-  const FunctionProtoType *FPT = dyn_cast<FunctionProtoType>(FD->getType());
+  const FunctionProtoType *FPT
+    = dyn_cast<FunctionProtoType>(FD->getType().IgnoreParens());
   if (!FPT)
     return;
 
@@ -312,7 +316,8 @@ void WalkAST::CheckCall_mktemp(const CallExpr *CE, const FunctionDecl *FD) {
   if (FD->getIdentifier() != GetIdentifier(II_mktemp, "mktemp"))
     return;
 
-  const FunctionProtoType *FPT = dyn_cast<FunctionProtoType>(FD->getType());
+  const FunctionProtoType *FPT
+    = dyn_cast<FunctionProtoType>(FD->getType().IgnoreParens());
   if(!FPT)
     return;
 
@@ -367,7 +372,8 @@ void WalkAST::CheckCall_rand(const CallExpr *CE, const FunctionDecl *FD) {
   if (identifierid >= num_rands)
     return;
 
-  const FunctionProtoType *FTP = dyn_cast<FunctionProtoType>(FD->getType());
+  const FunctionProtoType *FTP
+    = dyn_cast<FunctionProtoType>(FD->getType().IgnoreParens());
   if (!FTP)
     return;
 
@@ -408,7 +414,8 @@ void WalkAST::CheckCall_random(const CallExpr *CE, const FunctionDecl *FD) {
   if (FD->getIdentifier() != GetIdentifier(II_random, "random"))
     return;
 
-  const FunctionProtoType *FTP = dyn_cast<FunctionProtoType>(FD->getType());
+  const FunctionProtoType *FTP
+    = dyn_cast<FunctionProtoType>(FD->getType().IgnoreParens());
   if (!FTP)
     return;
 
@@ -455,7 +462,8 @@ void WalkAST::CheckUncheckedReturnValue(CallExpr *CE) {
   if (identifierid >= num_setids)
     return;
 
-  const FunctionProtoType *FTP = dyn_cast<FunctionProtoType>(FD->getType());
+  const FunctionProtoType *FTP
+    = dyn_cast<FunctionProtoType>(FD->getType().IgnoreParens());
   if (!FTP)
     return;
 

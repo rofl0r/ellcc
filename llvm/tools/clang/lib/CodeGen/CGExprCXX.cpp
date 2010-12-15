@@ -122,18 +122,8 @@ RValue CodeGenFunction::EmitCXXMemberCallExpr(const CXXMemberCallExpr *CE,
   llvm::Value *This;
   if (ME->isArrow())
     This = EmitScalarExpr(ME->getBase());
-  else {
-    LValue BaseLV = EmitLValue(ME->getBase());
-    if (BaseLV.isPropertyRef() || BaseLV.isKVCRef()) {
-      QualType QT = ME->getBase()->getType();
-      RValue RV = 
-        BaseLV.isPropertyRef() ? EmitLoadOfPropertyRefLValue(BaseLV, QT)
-          : EmitLoadOfKVCRefLValue(BaseLV, QT);
-      This = RV.isScalar() ? RV.getScalarVal() : RV.getAggregateAddr();
-    }
-    else
-      This = BaseLV.getAddress();
-  }
+  else
+    This = EmitLValue(ME->getBase()).getAddress();
 
   if (MD->isTrivial()) {
     if (isa<CXXDestructorDecl>(MD)) return RValue::get(0);
@@ -235,25 +225,14 @@ CodeGenFunction::EmitCXXOperatorMemberCallExpr(const CXXOperatorCallExpr *E,
                                                ReturnValueSlot ReturnValue) {
   assert(MD->isInstance() &&
          "Trying to emit a member call expr on a static method!");
+  LValue LV = EmitLValue(E->getArg(0));
+  llvm::Value *This = LV.getAddress();
+
   if (MD->isCopyAssignmentOperator()) {
     const CXXRecordDecl *ClassDecl = cast<CXXRecordDecl>(MD->getDeclContext());
     if (ClassDecl->hasTrivialCopyAssignment()) {
       assert(!ClassDecl->hasUserDeclaredCopyAssignment() &&
              "EmitCXXOperatorMemberCallExpr - user declared copy assignment");
-      LValue LV = EmitLValue(E->getArg(0));
-      llvm::Value *This;
-      if (LV.isPropertyRef() || LV.isKVCRef()) {
-        AggValueSlot Slot = CreateAggTemp(E->getArg(1)->getType());
-        EmitAggExpr(E->getArg(1), Slot);
-        if (LV.isPropertyRef())
-          EmitObjCPropertySet(LV.getPropertyRefExpr(), Slot.asRValue());
-        else
-          EmitObjCPropertySet(LV.getKVCRefExpr(), Slot.asRValue());
-        return RValue::getAggregate(0, false);
-      }
-      else
-        This = LV.getAddress();
-      
       llvm::Value *Src = EmitLValue(E->getArg(1)).getAddress();
       QualType Ty = E->getType();
       EmitAggregateCopy(This, Src, Ty);
@@ -265,19 +244,6 @@ CodeGenFunction::EmitCXXOperatorMemberCallExpr(const CXXOperatorCallExpr *E,
   const llvm::Type *Ty =
     CGM.getTypes().GetFunctionType(CGM.getTypes().getFunctionInfo(MD),
                                    FPT->isVariadic());
-  LValue LV = EmitLValue(E->getArg(0));
-  llvm::Value *This;
-  if (LV.isPropertyRef() || LV.isKVCRef()) {
-    QualType QT = E->getArg(0)->getType();
-    RValue RV = 
-      LV.isPropertyRef() ? EmitLoadOfPropertyRefLValue(LV, QT)
-                         : EmitLoadOfKVCRefLValue(LV, QT);
-    assert (!RV.isScalar() && "EmitCXXOperatorMemberCallExpr");
-    This = RV.getAggregateAddr();
-  }
-  else
-    This = LV.getAddress();
-
   llvm::Value *Callee;
   if (MD->isVirtual() && !canDevirtualizeMemberFunctionCalls(E->getArg(0), MD))
     Callee = BuildVirtualCall(MD, This, Ty);
@@ -344,9 +310,8 @@ CodeGenFunction::EmitCXXConstructExpr(const CXXConstructExpr *E,
 void
 CodeGenFunction::EmitSynthesizedCXXCopyCtor(llvm::Value *Dest, 
                                             llvm::Value *Src,
-                                            const BlockDeclRefExpr *BDRE) {
-  const Expr *Exp = BDRE->getCopyConstructorExpr();
-  if (const CXXExprWithTemporaries *E = dyn_cast<CXXExprWithTemporaries>(Exp))
+                                            const Expr *Exp) {
+  if (const ExprWithCleanups *E = dyn_cast<ExprWithCleanups>(Exp))
     Exp = E->getSubExpr();
   assert(isa<CXXConstructExpr>(Exp) && 
          "EmitSynthesizedCXXCopyCtor - unknown copy ctor expr");
@@ -442,7 +407,7 @@ static llvm::Value *EmitCXXNewAllocSize(ASTContext &Context,
     unsigned SizeWidth = NEC.getBitWidth();
 
     // Determine if there is an overflow here by doing an extended multiply.
-    NEC.zext(SizeWidth*2);
+    NEC = NEC.zext(SizeWidth*2);
     llvm::APInt SC(SizeWidth*2, TypeSize.getQuantity());
     SC *= NEC;
 
@@ -451,8 +416,7 @@ static llvm::Value *EmitCXXNewAllocSize(ASTContext &Context,
       // overflow's already happened because SizeWithoutCookie isn't
       // used if the allocator returns null or throws, as it should
       // always do on an overflow.
-      llvm::APInt SWC = SC;
-      SWC.trunc(SizeWidth);
+      llvm::APInt SWC = SC.trunc(SizeWidth);
       SizeWithoutCookie = llvm::ConstantInt::get(SizeTy, SWC);
 
       // Add the cookie size.
@@ -460,7 +424,7 @@ static llvm::Value *EmitCXXNewAllocSize(ASTContext &Context,
     }
     
     if (SC.countLeadingZeros() >= SizeWidth) {
-      SC.trunc(SizeWidth);
+      SC = SC.trunc(SizeWidth);
       Size = llvm::ConstantInt::get(SizeTy, SC);
     } else {
       // On overflow, produce a -1 so operator new throws.

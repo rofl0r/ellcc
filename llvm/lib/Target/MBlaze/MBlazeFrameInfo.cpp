@@ -14,6 +14,7 @@
 #include "MBlazeFrameInfo.h"
 #include "MBlazeInstrInfo.h"
 #include "MBlazeMachineFunction.h"
+#include "InstPrinter/MBlazeInstPrinter.h"
 #include "llvm/Function.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
@@ -26,6 +27,13 @@
 
 using namespace llvm;
 
+namespace llvm {
+  cl::opt<bool> DisableStackAdjust(
+    "disable-mblaze-stack-adjust",
+    cl::init(false),
+    cl::desc("Disable MBlaze stack layout adjustment."),
+    cl::Hidden);
+}
 
 //===----------------------------------------------------------------------===//
 //
@@ -40,26 +48,93 @@ using namespace llvm;
 //
 //===----------------------------------------------------------------------===//
 
-// hasFP - Return true if the specified function should have a dedicated frame
-// pointer register.  This is true if the function has variable sized allocas or
-// if frame pointer elimination is disabled.
-bool MBlazeFrameInfo::hasFP(const MachineFunction &MF) const {
-  const MachineFrameInfo *MFI = MF.getFrameInfo();
-  return DisableFramePointerElim(MF) || MFI->hasVarSizedObjects();
-}
+static void analyzeFrameIndexes(MachineFunction &MF) {
+  if (DisableStackAdjust) return;
 
-void MBlazeFrameInfo::adjustMBlazeStackFrame(MachineFunction &MF) const {
   MachineFrameInfo *MFI = MF.getFrameInfo();
   MBlazeFunctionInfo *MBlazeFI = MF.getInfo<MBlazeFunctionInfo>();
+  const MachineRegisterInfo &MRI = MF.getRegInfo();
 
-  // See the description at MicroBlazeMachineFunction.h
-  int TopCPUSavedRegOff = -1;
+  MachineRegisterInfo::livein_iterator LII = MRI.livein_begin();
+  MachineRegisterInfo::livein_iterator LIE = MRI.livein_end();
+  const SmallVector<int, 16> &LiveInFI = MBlazeFI->getLiveIn();
+  SmallVector<MachineInstr*, 16> EraseInstr;
 
-  // Adjust CPU Callee Saved Registers Area. Registers RA and FP must
-  // be saved in this CPU Area there is the need. This whole Area must
-  // be aligned to the default Stack Alignment requirements.
-  unsigned StackOffset = MFI->getStackSize();
-  unsigned RegSize = 4;
+  MachineBasicBlock *MBB = MF.getBlockNumbered(0);
+  MachineBasicBlock::iterator MIB = MBB->begin();
+  MachineBasicBlock::iterator MIE = MBB->end();
+
+  int StackAdjust = 0;
+  int StackOffset = -28;
+  for (unsigned i = 0, e = LiveInFI.size(); i < e; ++i) {
+    for (MachineBasicBlock::iterator I=MIB; I != MIE; ++I) {
+      if (I->getOpcode() != MBlaze::LWI || I->getNumOperands() != 3 ||
+          !I->getOperand(1).isFI() || !I->getOperand(0).isReg() ||
+          I->getOperand(1).getIndex() != LiveInFI[i]) continue;
+
+      unsigned FIReg = I->getOperand(0).getReg();
+      MachineBasicBlock::iterator SI = I;
+      for (SI++; SI != MIE; ++SI) {
+        if (!SI->getOperand(0).isReg()) continue;
+        if (!SI->getOperand(1).isFI()) continue;
+        if (SI->getOpcode() != MBlaze::SWI) continue;
+
+        int FI = SI->getOperand(1).getIndex();
+        if (SI->getOperand(0).getReg() != FIReg) continue;
+        if (MFI->isFixedObjectIndex(FI)) continue;
+        if (MFI->getObjectSize(FI) != 4) continue;
+        if (SI->getOperand(0).isDef()) break;
+
+        if (SI->getOperand(0).isKill())
+          EraseInstr.push_back(I);
+        EraseInstr.push_back(SI);
+        MBlazeFI->recordLoadArgsFI(FI, StackOffset);
+        StackOffset -= 4;
+        StackAdjust += 4;
+        break;
+      }
+    }
+  }
+
+  for (MachineBasicBlock::iterator I=MBB->begin(), E=MBB->end(); I != E; ++I) {
+    if (I->getOpcode() != MBlaze::SWI || I->getNumOperands() != 3 ||
+        !I->getOperand(1).isFI() || !I->getOperand(0).isReg() ||
+        I->getOperand(1).getIndex() < 0) continue;
+
+    unsigned FIReg = 0;
+    for (MachineRegisterInfo::livein_iterator LI = LII; LI != LIE; ++LI) {
+      if (I->getOperand(0).getReg() == LI->first) {
+        FIReg = LI->first;
+        break;
+      }
+    }
+
+    if (FIReg) {
+      int FI = I->getOperand(1).getIndex();
+      MBlazeFI->recordLiveIn(FI);
+
+      StackAdjust += 4;
+      switch (FIReg) {
+      default: llvm_unreachable("invalid incoming parameter!");
+      case MBlaze::R5:  MBlazeFI->recordLoadArgsFI(FI, -4); break;
+      case MBlaze::R6:  MBlazeFI->recordLoadArgsFI(FI, -8); break;
+      case MBlaze::R7:  MBlazeFI->recordLoadArgsFI(FI, -12); break;
+      case MBlaze::R8:  MBlazeFI->recordLoadArgsFI(FI, -16); break;
+      case MBlaze::R9:  MBlazeFI->recordLoadArgsFI(FI, -20); break;
+      case MBlaze::R10: MBlazeFI->recordLoadArgsFI(FI, -24); break;
+      }
+    }
+  }
+
+  for (int i = 0, e = EraseInstr.size(); i < e; ++i)
+    MBB->erase(EraseInstr[i]);
+
+  MBlazeFI->setStackAdjust(StackAdjust);
+}
+
+static void determineFrameLayout(MachineFunction &MF) {
+  MachineFrameInfo *MFI = MF.getFrameInfo();
+  MBlazeFunctionInfo *MBlazeFI = MF.getInfo<MBlazeFunctionInfo>();
 
   // Replace the dummy '0' SPOffset by the negative offsets, as explained on
   // LowerFORMAL_ARGUMENTS. Leaving '0' for while is necessary to avoid
@@ -67,30 +142,27 @@ void MBlazeFrameInfo::adjustMBlazeStackFrame(MachineFunction &MF) const {
   MBlazeFI->adjustLoadArgsFI(MFI);
   MBlazeFI->adjustStoreVarArgsFI(MFI);
 
-  if (hasFP(MF)) {
-    MFI->setObjectOffset(MFI->CreateStackObject(RegSize, RegSize, true),
-                         StackOffset);
-    MBlazeFI->setFPStackOffset(StackOffset);
-    TopCPUSavedRegOff = StackOffset;
-    StackOffset += RegSize;
-  }
+  // Get the number of bytes to allocate from the FrameInfo
+  unsigned FrameSize = MFI->getStackSize();
+  FrameSize -= MBlazeFI->getStackAdjust();
 
-  if (MFI->adjustsStack()) {
-    MBlazeFI->setRAStackOffset(0);
-    MFI->setObjectOffset(MFI->CreateStackObject(RegSize, RegSize, true),
-                         StackOffset);
-    TopCPUSavedRegOff = StackOffset;
-    StackOffset += RegSize;
-  }
+  // Get the alignments provided by the target, and the maximum alignment
+  // (if any) of the fixed frame objects.
+  // unsigned MaxAlign = MFI->getMaxAlignment();
+  unsigned TargetAlign = MF.getTarget().getFrameInfo()->getStackAlignment();
+  unsigned AlignMask = TargetAlign - 1;
 
-  // Update frame info
-  MFI->setStackSize(StackOffset);
+  // Make sure the frame is aligned.
+  FrameSize = (FrameSize + AlignMask) & ~AlignMask;
+  MFI->setStackSize(FrameSize);
+}
 
-  // Recalculate the final tops offset. The final values must be '0'
-  // if there isn't a callee saved register for CPU or FPU, otherwise
-  // a negative offset is needed.
-  if (TopCPUSavedRegOff >= 0)
-    MBlazeFI->setCPUTopSavedRegOff(TopCPUSavedRegOff-StackOffset);
+// hasFP - Return true if the specified function should have a dedicated frame
+// pointer register.  This is true if the function has variable sized allocas or
+// if frame pointer elimination is disabled.
+bool MBlazeFrameInfo::hasFP(const MachineFunction &MF) const {
+  const MachineFrameInfo *MFI = MF.getFrameInfo();
+  return DisableFramePointerElim(MF) || MFI->hasVarSizedObjects();
 }
 
 void MBlazeFrameInfo::emitPrologue(MachineFunction &MF) const {
@@ -102,32 +174,28 @@ void MBlazeFrameInfo::emitPrologue(MachineFunction &MF) const {
   MachineBasicBlock::iterator MBBI = MBB.begin();
   DebugLoc DL = MBBI != MBB.end() ? MBBI->getDebugLoc() : DebugLoc();
 
-  // Get the right frame order for MBlaze.
-  adjustMBlazeStackFrame(MF);
+  // Determine the correct frame layout
+  determineFrameLayout(MF);
 
   // Get the number of bytes to allocate from the FrameInfo.
   unsigned StackSize = MFI->getStackSize();
 
   // No need to allocate space on the stack.
   if (StackSize == 0 && !MFI->adjustsStack()) return;
-  if (StackSize < 28 && MFI->adjustsStack()) StackSize = 28;
 
   int FPOffset = MBlazeFI->getFPStackOffset();
   int RAOffset = MBlazeFI->getRAStackOffset();
 
   // Adjust stack : addi R1, R1, -imm
-  BuildMI(MBB, MBBI, DL, TII.get(MBlaze::ADDI), MBlaze::R1)
+  BuildMI(MBB, MBBI, DL, TII.get(MBlaze::ADDIK), MBlaze::R1)
       .addReg(MBlaze::R1).addImm(-StackSize);
 
-  // Save the return address only if the function isnt a leaf one.
   // swi  R15, R1, stack_loc
   if (MFI->adjustsStack()) {
     BuildMI(MBB, MBBI, DL, TII.get(MBlaze::SWI))
         .addReg(MBlaze::R15).addReg(MBlaze::R1).addImm(RAOffset);
   }
 
-  // if framepointer enabled, save it and set it
-  // to point to the stack pointer
   if (hasFP(MF)) {
     // swi  R19, R1, stack_loc
     BuildMI(MBB, MBBI, DL, TII.get(MBlaze::SWI))
@@ -153,8 +221,6 @@ void MBlazeFrameInfo::emitEpilogue(MachineFunction &MF,
   int FPOffset = MBlazeFI->getFPStackOffset();
   int RAOffset = MBlazeFI->getRAStackOffset();
 
-  // if framepointer enabled, restore it and restore the
-  // stack pointer
   if (hasFP(MF)) {
     // add R1, R19, R0
     BuildMI(MBB, MBBI, dl, TII.get(MBlaze::ADD), MBlaze::R1)
@@ -165,7 +231,6 @@ void MBlazeFrameInfo::emitEpilogue(MachineFunction &MF,
       .addReg(MBlaze::R1).addImm(FPOffset);
   }
 
-  // Restore the return address only if the function isnt a leaf one.
   // lwi R15, R1, stack_loc
   if (MFI->adjustsStack()) {
     BuildMI(MBB, MBBI, dl, TII.get(MBlaze::LWI), MBlaze::R15)
@@ -174,12 +239,28 @@ void MBlazeFrameInfo::emitEpilogue(MachineFunction &MF,
 
   // Get the number of bytes from FrameInfo
   int StackSize = (int) MFI->getStackSize();
-  if (StackSize < 28 && MFI->adjustsStack()) StackSize = 28;
 
-  // adjust stack.
   // addi R1, R1, imm
   if (StackSize) {
-    BuildMI(MBB, MBBI, dl, TII.get(MBlaze::ADDI), MBlaze::R1)
+    BuildMI(MBB, MBBI, dl, TII.get(MBlaze::ADDIK), MBlaze::R1)
       .addReg(MBlaze::R1).addImm(StackSize);
   }
+}
+
+void MBlazeFrameInfo::processFunctionBeforeCalleeSavedScan(MachineFunction &MF,                                                            RegScavenger *RS)
+                                                           const {
+  MachineFrameInfo *MFI = MF.getFrameInfo();
+  MBlazeFunctionInfo *MBlazeFI = MF.getInfo<MBlazeFunctionInfo>();
+
+  if (MFI->adjustsStack()) {
+    MBlazeFI->setRAStackOffset(0);
+    MFI->CreateFixedObject(4,0,true);
+  }
+
+  if (hasFP(MF)) {
+    MBlazeFI->setFPStackOffset(4);
+    MFI->CreateFixedObject(4,4,true);
+  }
+
+  analyzeFrameIndexes(MF);
 }

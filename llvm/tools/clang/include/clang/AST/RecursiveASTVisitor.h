@@ -393,7 +393,7 @@ bool RecursiveASTVisitor<Derived>::TraverseStmt(Stmt *S) {
   if (BinaryOperator *BinOp = dyn_cast<BinaryOperator>(S)) {
     switch (BinOp->getOpcode()) {
 #define OPERATOR(NAME) \
-    case BO_##NAME: DISPATCH(Bin##PtrMemD, BinaryOperator, S);
+    case BO_##NAME: DISPATCH(Bin##NAME, BinaryOperator, S);
 
     BINOP_LIST()
 #undef OPERATOR
@@ -718,6 +718,10 @@ DEF_TRAVERSE_TYPE(TemplateSpecializationType, {
 
 DEF_TRAVERSE_TYPE(InjectedClassNameType, { })
 
+DEF_TRAVERSE_TYPE(ParenType, {
+    TRY_TO(TraverseType(T->getInnerType()));
+  })
+
 DEF_TRAVERSE_TYPE(ElaboratedType, {
     if (T->getQualifier()) {
       TRY_TO(TraverseNestedNameSpecifier(T->getQualifier()));
@@ -915,6 +919,10 @@ DEF_TRAVERSE_TYPELOC(TemplateSpecializationType, {
 
 DEF_TRAVERSE_TYPELOC(InjectedClassNameType, { })
 
+DEF_TRAVERSE_TYPELOC(ParenType, {
+    TRY_TO(TraverseTypeLoc(TL.getInnerLoc()));
+  })
+
 // FIXME: use the sourceloc on qualifier?
 DEF_TRAVERSE_TYPELOC(ElaboratedType, {
     if (TL.getTypePtr()->getQualifier()) {
@@ -1083,7 +1091,9 @@ DEF_TRAVERSE_DECL(ObjCProtocolDecl, {
   })
 
 DEF_TRAVERSE_DECL(ObjCMethodDecl, {
-    // FIXME: implement
+    // We don't traverse nodes in param_begin()/param_end(), as they
+    // appear in decls_begin()/decls_end() and thus are handled.
+    TRY_TO(TraverseStmt(D->getBody()));
   })
 
 DEF_TRAVERSE_DECL(ObjCPropertyDecl, {
@@ -1380,6 +1390,8 @@ DEF_TRAVERSE_DECL(UnresolvedUsingValueDecl, {
     //    template <class T> Class A : public Base<T> { using Base<T>::foo; };
     TRY_TO(TraverseNestedNameSpecifier(D->getTargetNestedNameSpecifier()));
   })
+
+DEF_TRAVERSE_DECL(IndirectFieldDecl, {})
 
 template<typename Derived>
 bool RecursiveASTVisitor<Derived>::TraverseDeclaratorHelper(DeclaratorDecl *D) {
@@ -1724,13 +1736,13 @@ DEF_TRAVERSE_STMT(CXXUuidofExpr, {
       TRY_TO(TraverseTypeLoc(S->getTypeOperandSourceInfo()->getTypeLoc()));
   })
 
-DEF_TRAVERSE_STMT(TypesCompatibleExpr, {
-    TRY_TO(TraverseTypeLoc(S->getArgTInfo1()->getTypeLoc()));
-    TRY_TO(TraverseTypeLoc(S->getArgTInfo2()->getTypeLoc()));
-  })
-
 DEF_TRAVERSE_STMT(UnaryTypeTraitExpr, {
     TRY_TO(TraverseTypeLoc(S->getQueriedTypeSourceInfo()->getTypeLoc()));
+  })
+
+DEF_TRAVERSE_STMT(BinaryTypeTraitExpr, {
+    TRY_TO(TraverseTypeLoc(S->getLhsTypeSourceInfo()->getTypeLoc()));
+    TRY_TO(TraverseTypeLoc(S->getRhsTypeSourceInfo()->getTypeLoc()));
   })
 
 DEF_TRAVERSE_STMT(VAArgExpr, {
@@ -1766,7 +1778,7 @@ DEF_TRAVERSE_STMT(CXXBindTemporaryExpr, { })
 DEF_TRAVERSE_STMT(CXXBoolLiteralExpr, { })
 DEF_TRAVERSE_STMT(CXXDefaultArgExpr, { })
 DEF_TRAVERSE_STMT(CXXDeleteExpr, { })
-DEF_TRAVERSE_STMT(CXXExprWithTemporaries, { })
+DEF_TRAVERSE_STMT(ExprWithCleanups, { })
 DEF_TRAVERSE_STMT(CXXNullPtrLiteralExpr, { })
 DEF_TRAVERSE_STMT(CXXPseudoDestructorExpr, { })
 DEF_TRAVERSE_STMT(CXXThisExpr, { })
@@ -1776,7 +1788,6 @@ DEF_TRAVERSE_STMT(ExtVectorElementExpr, { })
 DEF_TRAVERSE_STMT(GNUNullExpr, { })
 DEF_TRAVERSE_STMT(ImplicitValueInitExpr, { })
 DEF_TRAVERSE_STMT(ObjCEncodeExpr, { })
-DEF_TRAVERSE_STMT(ObjCImplicitSetterGetterRefExpr, { })
 DEF_TRAVERSE_STMT(ObjCIsaExpr, { })
 DEF_TRAVERSE_STMT(ObjCIvarRefExpr, { })
 DEF_TRAVERSE_STMT(ObjCMessageExpr, { })

@@ -86,7 +86,6 @@ namespace clang {
     void VisitVAArgExpr(VAArgExpr *E);
     void VisitAddrLabelExpr(AddrLabelExpr *E);
     void VisitStmtExpr(StmtExpr *E);
-    void VisitTypesCompatibleExpr(TypesCompatibleExpr *E);
     void VisitChooseExpr(ChooseExpr *E);
     void VisitGNUNullExpr(GNUNullExpr *E);
     void VisitShuffleVectorExpr(ShuffleVectorExpr *E);
@@ -100,8 +99,6 @@ namespace clang {
     void VisitObjCProtocolExpr(ObjCProtocolExpr *E);
     void VisitObjCIvarRefExpr(ObjCIvarRefExpr *E);
     void VisitObjCPropertyRefExpr(ObjCPropertyRefExpr *E);
-    void VisitObjCImplicitSetterGetterRefExpr(
-                        ObjCImplicitSetterGetterRefExpr *E);
     void VisitObjCMessageExpr(ObjCMessageExpr *E);
     void VisitObjCIsaExpr(ObjCIsaExpr *E);
 
@@ -141,7 +138,7 @@ namespace clang {
     void VisitCXXDeleteExpr(CXXDeleteExpr *E);
     void VisitCXXPseudoDestructorExpr(CXXPseudoDestructorExpr *E);
 
-    void VisitCXXExprWithTemporaries(CXXExprWithTemporaries *E);
+    void VisitExprWithCleanups(ExprWithCleanups *E);
     void VisitCXXDependentScopeMemberExpr(CXXDependentScopeMemberExpr *E);
     void VisitDependentScopeDeclRefExpr(DependentScopeDeclRefExpr *E);
     void VisitCXXUnresolvedConstructExpr(CXXUnresolvedConstructExpr *E);
@@ -151,6 +148,7 @@ namespace clang {
     void VisitUnresolvedLookupExpr(UnresolvedLookupExpr *E);
 
     void VisitUnaryTypeTraitExpr(UnaryTypeTraitExpr *E);
+    void VisitBinaryTypeTraitExpr(BinaryTypeTraitExpr *E);
     void VisitCXXNoexceptExpr(CXXNoexceptExpr *E);
 
     void VisitOpaqueValueExpr(OpaqueValueExpr *E);
@@ -361,6 +359,7 @@ void ASTStmtWriter::VisitExpr(Expr *E) {
   Writer.AddTypeRef(E->getType(), Record);
   Record.push_back(E->isTypeDependent());
   Record.push_back(E->isValueDependent());
+  Record.push_back(E->containsUnexpandedParameterPack());
   Record.push_back(E->getValueKind());
   Record.push_back(E->getObjectKind());
 }
@@ -729,15 +728,6 @@ void ASTStmtWriter::VisitStmtExpr(StmtExpr *E) {
   Code = serialization::EXPR_STMT;
 }
 
-void ASTStmtWriter::VisitTypesCompatibleExpr(TypesCompatibleExpr *E) {
-  VisitExpr(E);
-  Writer.AddTypeSourceInfo(E->getArgTInfo1(), Record);
-  Writer.AddTypeSourceInfo(E->getArgTInfo2(), Record);
-  Writer.AddSourceLocation(E->getBuiltinLoc(), Record);
-  Writer.AddSourceLocation(E->getRParenLoc(), Record);
-  Code = serialization::EXPR_TYPES_COMPATIBLE;
-}
-
 void ASTStmtWriter::VisitChooseExpr(ChooseExpr *E) {
   VisitExpr(E);
   Writer.AddStmt(E->getCond());
@@ -828,31 +818,27 @@ void ASTStmtWriter::VisitObjCIvarRefExpr(ObjCIvarRefExpr *E) {
 
 void ASTStmtWriter::VisitObjCPropertyRefExpr(ObjCPropertyRefExpr *E) {
   VisitExpr(E);
-  Writer.AddDeclRef(E->getProperty(), Record);
+  Record.push_back(E->isImplicitProperty());
+  if (E->isImplicitProperty()) {
+    Writer.AddDeclRef(E->getImplicitPropertyGetter(), Record);
+    Writer.AddDeclRef(E->getImplicitPropertySetter(), Record);
+  } else {
+    Writer.AddDeclRef(E->getExplicitProperty(), Record);
+  }
   Writer.AddSourceLocation(E->getLocation(), Record);
-  Writer.AddSourceLocation(E->getSuperLocation(), Record);
-  if (E->isSuperReceiver())
-    Writer.AddTypeRef(E->getSuperType(), Record);
-  else
+  Writer.AddSourceLocation(E->getReceiverLocation(), Record);
+  if (E->isObjectReceiver()) {
+    Record.push_back(0);
     Writer.AddStmt(E->getBase());
+  } else if (E->isSuperReceiver()) {
+    Record.push_back(1);
+    Writer.AddTypeRef(E->getSuperReceiverType(), Record);
+  } else {
+    Record.push_back(2);
+    Writer.AddDeclRef(E->getClassReceiver(), Record);
+  }
   
   Code = serialization::EXPR_OBJC_PROPERTY_REF_EXPR;
-}
-
-void ASTStmtWriter::VisitObjCImplicitSetterGetterRefExpr(
-                                  ObjCImplicitSetterGetterRefExpr *E) {
-  VisitExpr(E);
-  Writer.AddDeclRef(E->getGetterMethod(), Record);
-  Writer.AddDeclRef(E->getSetterMethod(), Record);
-
-  // NOTE: InterfaceDecl and Base are mutually exclusive.
-  Writer.AddDeclRef(E->getInterfaceDecl(), Record);
-  Writer.AddStmt(E->getBase());
-  Writer.AddSourceLocation(E->getLocation(), Record);
-  Writer.AddSourceLocation(E->getClassLoc(), Record);
-  Writer.AddSourceLocation(E->getSuperLocation(), Record);
-  Writer.AddTypeRef(E->getSuperType(), Record);
-  Code = serialization::EXPR_OBJC_KVC_REF_EXPR;
 }
 
 void ASTStmtWriter::VisitObjCMessageExpr(ObjCMessageExpr *E) {
@@ -885,6 +871,7 @@ void ASTStmtWriter::VisitObjCMessageExpr(ObjCMessageExpr *E) {
     
   Writer.AddSourceLocation(E->getLeftLoc(), Record);
   Writer.AddSourceLocation(E->getRightLoc(), Record);
+  Writer.AddSourceLocation(E->getSelectorLoc(), Record);
 
   for (CallExpr::arg_iterator Arg = E->arg_begin(), ArgEnd = E->arg_end();
        Arg != ArgEnd; ++Arg)
@@ -1162,14 +1149,14 @@ void ASTStmtWriter::VisitCXXPseudoDestructorExpr(CXXPseudoDestructorExpr *E) {
   Code = serialization::EXPR_CXX_PSEUDO_DESTRUCTOR;
 }
 
-void ASTStmtWriter::VisitCXXExprWithTemporaries(CXXExprWithTemporaries *E) {
+void ASTStmtWriter::VisitExprWithCleanups(ExprWithCleanups *E) {
   VisitExpr(E);
   Record.push_back(E->getNumTemporaries());
   for (unsigned i = 0, e = E->getNumTemporaries(); i != e; ++i)
     Writer.AddCXXTemporary(E->getTemporary(i), Record);
   
   Writer.AddStmt(E->getSubExpr());
-  Code = serialization::EXPR_CXX_EXPR_WITH_TEMPORARIES;
+  Code = serialization::EXPR_EXPR_WITH_CLEANUPS;
 }
 
 void
@@ -1289,6 +1276,16 @@ void ASTStmtWriter::VisitUnaryTypeTraitExpr(UnaryTypeTraitExpr *E) {
   Writer.AddSourceRange(E->getSourceRange(), Record);
   Writer.AddTypeSourceInfo(E->getQueriedTypeSourceInfo(), Record);
   Code = serialization::EXPR_CXX_UNARY_TYPE_TRAIT;
+}
+
+void ASTStmtWriter::VisitBinaryTypeTraitExpr(BinaryTypeTraitExpr *E) {
+  VisitExpr(E);
+  Record.push_back(E->getTrait());
+  Record.push_back(E->getValue());
+  Writer.AddSourceRange(E->getSourceRange(), Record);
+  Writer.AddTypeSourceInfo(E->getLhsTypeSourceInfo(), Record);
+  Writer.AddTypeSourceInfo(E->getRhsTypeSourceInfo(), Record);
+  Code = serialization::EXPR_BINARY_TYPE_TRAIT;
 }
 
 void ASTStmtWriter::VisitCXXNoexceptExpr(CXXNoexceptExpr *E) {

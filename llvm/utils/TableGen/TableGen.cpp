@@ -41,7 +41,8 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/ToolOutputFile.h"
-#include "llvm/System/Signals.h"
+#include "llvm/Support/Signals.h"
+#include "llvm/Support/system_error.h"
 #include <algorithm>
 #include <cstdio>
 using namespace llvm;
@@ -172,9 +173,6 @@ namespace {
 }
 
 
-// FIXME: Eliminate globals from tblgen.
-RecordKeeper llvm::Records;
-
 static SourceMgr SrcMgr;
 
 void llvm::PrintError(SMLoc ErrorLoc, const Twine &Msg) {
@@ -187,12 +185,13 @@ void llvm::PrintError(SMLoc ErrorLoc, const Twine &Msg) {
 /// file.
 static bool ParseFile(const std::string &Filename,
                       const std::vector<std::string> &IncludeDirs,
-                      SourceMgr &SrcMgr) {
-  std::string ErrorStr;
-  MemoryBuffer *F = MemoryBuffer::getFileOrSTDIN(Filename.c_str(), &ErrorStr);
+                      SourceMgr &SrcMgr,
+                      RecordKeeper& Records) {
+  error_code ec;
+  MemoryBuffer *F = MemoryBuffer::getFileOrSTDIN(Filename.c_str(), ec);
   if (F == 0) {
     errs() << "Could not open input file '" << Filename << "': "
-           << ErrorStr <<"\n";
+           << ec.message() <<"\n";
     return true;
   }
 
@@ -203,19 +202,21 @@ static bool ParseFile(const std::string &Filename,
   // it later.
   SrcMgr.setIncludeDirs(IncludeDirs);
 
-  TGParser Parser(SrcMgr);
+  TGParser Parser(SrcMgr, Records);
 
   return Parser.ParseFile();
 }
 
 int main(int argc, char **argv) {
+  RecordKeeper Records;
+
   sys::PrintStackTraceOnErrorSignal();
   PrettyStackTraceProgram X(argc, argv);
   cl::ParseCommandLineOptions(argc, argv);
 
 
   // Parse the input file.
-  if (ParseFile(InputFilename, IncludeDirs, SrcMgr))
+  if (ParseFile(InputFilename, IncludeDirs, SrcMgr, Records))
     return 1;
 
   std::string Error;

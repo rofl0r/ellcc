@@ -64,7 +64,7 @@ const GRState *GRStateManager::MarshalState(const GRState *state,
   GRState State(this,
                 EnvMgr.getInitialEnvironment(),
                 StoreMgr->getInitialStore(InitLoc),
-                GDMFactory.GetEmptyMap());
+                GDMFactory.getEmptyMap());
 
   return getPersistentState(State);
 }
@@ -230,7 +230,7 @@ const GRState *GRState::bindExprAndLocation(const Stmt *S, SVal location,
   return getStateManager().getPersistentState(NewSt);
 }
 
-const GRState *GRState::AssumeInBound(DefinedOrUnknownSVal Idx,
+const GRState *GRState::assumeInBound(DefinedOrUnknownSVal Idx,
                                       DefinedOrUnknownSVal UpperBound,
                                       bool Assumption) const {
   if (Idx.isUnknown() || UpperBound.isUnknown())
@@ -238,47 +238,48 @@ const GRState *GRState::AssumeInBound(DefinedOrUnknownSVal Idx,
 
   // Build an expression for 0 <= Idx < UpperBound.
   // This is the same as Idx + MIN < UpperBound + MIN, if overflow is allowed.
-  // FIXME: This should probably be part of SValuator.
+  // FIXME: This should probably be part of SValBuilder.
   GRStateManager &SM = getStateManager();
-  ValueManager &VM = SM.getValueManager();
-  SValuator &SV = VM.getSValuator();
-  ASTContext &Ctx = VM.getContext();
+  SValBuilder &svalBuilder = SM.getSValBuilder();
+  ASTContext &Ctx = svalBuilder.getContext();
 
   // Get the offset: the minimum value of the array index type.
-  BasicValueFactory &BVF = VM.getBasicValueFactory();
-  // FIXME: This should be using ValueManager::ArrayIndexTy...somehow.
-  QualType IndexTy = Ctx.IntTy;
-  nonloc::ConcreteInt Min = BVF.getMinValue(IndexTy);
+  BasicValueFactory &BVF = svalBuilder.getBasicValueFactory();
+  // FIXME: This should be using ValueManager::ArrayindexTy...somehow.
+  QualType indexTy = Ctx.IntTy;
+  nonloc::ConcreteInt Min(BVF.getMinValue(indexTy));
 
   // Adjust the index.
-  SVal NewIdx = SV.EvalBinOpNN(this, BO_Add,
-                               cast<NonLoc>(Idx), Min, IndexTy);
-  if (NewIdx.isUnknownOrUndef())
+  SVal newIdx = svalBuilder.evalBinOpNN(this, BO_Add,
+                                        cast<NonLoc>(Idx), Min, indexTy);
+  if (newIdx.isUnknownOrUndef())
     return this;
 
   // Adjust the upper bound.
-  SVal NewBound = SV.EvalBinOpNN(this, BO_Add,
-                                 cast<NonLoc>(UpperBound), Min, IndexTy);
-  if (NewBound.isUnknownOrUndef())
+  SVal newBound =
+    svalBuilder.evalBinOpNN(this, BO_Add, cast<NonLoc>(UpperBound),
+                            Min, indexTy);
+
+  if (newBound.isUnknownOrUndef())
     return this;
 
   // Build the actual comparison.
-  SVal InBound = SV.EvalBinOpNN(this, BO_LT,
-                                cast<NonLoc>(NewIdx), cast<NonLoc>(NewBound),
+  SVal inBound = svalBuilder.evalBinOpNN(this, BO_LT,
+                                cast<NonLoc>(newIdx), cast<NonLoc>(newBound),
                                 Ctx.IntTy);
-  if (InBound.isUnknownOrUndef())
+  if (inBound.isUnknownOrUndef())
     return this;
 
   // Finally, let the constraint manager take care of it.
   ConstraintManager &CM = SM.getConstraintManager();
-  return CM.Assume(this, cast<DefinedSVal>(InBound), Assumption);
+  return CM.assume(this, cast<DefinedSVal>(inBound), Assumption);
 }
 
 const GRState* GRStateManager::getInitialState(const LocationContext *InitLoc) {
   GRState State(this,
                 EnvMgr.getInitialEnvironment(),
                 StoreMgr->getInitialStore(InitLoc),
-                GDMFactory.GetEmptyMap());
+                GDMFactory.getEmptyMap());
 
   return getPersistentState(State);
 }
@@ -420,7 +421,7 @@ GRStateManager::FindGDMContext(void* K,
 
 const GRState* GRStateManager::addGDM(const GRState* St, void* Key, void* Data){
   GRState::GenericDataMap M1 = St->getGDM();
-  GRState::GenericDataMap M2 = GDMFactory.Add(M1, Key, Data);
+  GRState::GenericDataMap M2 = GDMFactory.add(M1, Key, Data);
 
   if (M1 == M2)
     return St;
@@ -432,7 +433,7 @@ const GRState* GRStateManager::addGDM(const GRState* St, void* Key, void* Data){
 
 const GRState *GRStateManager::removeGDM(const GRState *state, void *Key) {
   GRState::GenericDataMap OldM = state->getGDM();
-  GRState::GenericDataMap NewM = GDMFactory.Remove(OldM, Key);
+  GRState::GenericDataMap NewM = GDMFactory.remove(OldM, Key);
 
   if (NewM == OldM)
     return state;

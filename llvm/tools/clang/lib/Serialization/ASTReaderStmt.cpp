@@ -59,7 +59,7 @@ namespace clang {
 
     /// \brief The number of record fields required for the Expr class
     /// itself.
-    static const unsigned NumExprFields = NumStmtFields + 5;
+    static const unsigned NumExprFields = NumStmtFields + 6;
     
     /// \brief Read and initialize a ExplicitTemplateArgumentList structure.
     void ReadExplicitTemplateArgumentList(ExplicitTemplateArgumentList &ArgList,
@@ -115,7 +115,6 @@ namespace clang {
     void VisitVAArgExpr(VAArgExpr *E);
     void VisitAddrLabelExpr(AddrLabelExpr *E);
     void VisitStmtExpr(StmtExpr *E);
-    void VisitTypesCompatibleExpr(TypesCompatibleExpr *E);
     void VisitChooseExpr(ChooseExpr *E);
     void VisitGNUNullExpr(GNUNullExpr *E);
     void VisitShuffleVectorExpr(ShuffleVectorExpr *E);
@@ -127,8 +126,6 @@ namespace clang {
     void VisitObjCProtocolExpr(ObjCProtocolExpr *E);
     void VisitObjCIvarRefExpr(ObjCIvarRefExpr *E);
     void VisitObjCPropertyRefExpr(ObjCPropertyRefExpr *E);
-    void VisitObjCImplicitSetterGetterRefExpr(
-                            ObjCImplicitSetterGetterRefExpr *E);
     void VisitObjCMessageExpr(ObjCMessageExpr *E);
     void VisitObjCIsaExpr(ObjCIsaExpr *E);
 
@@ -166,7 +163,7 @@ namespace clang {
     void VisitCXXDeleteExpr(CXXDeleteExpr *E);
     void VisitCXXPseudoDestructorExpr(CXXPseudoDestructorExpr *E);
     
-    void VisitCXXExprWithTemporaries(CXXExprWithTemporaries *E);
+    void VisitExprWithCleanups(ExprWithCleanups *E);
     
     void VisitCXXDependentScopeMemberExpr(CXXDependentScopeMemberExpr *E);
     void VisitDependentScopeDeclRefExpr(DependentScopeDeclRefExpr *E);
@@ -177,6 +174,7 @@ namespace clang {
     void VisitUnresolvedLookupExpr(UnresolvedLookupExpr *E);
 
     void VisitUnaryTypeTraitExpr(UnaryTypeTraitExpr *E);
+    void VisitBinaryTypeTraitExpr(BinaryTypeTraitExpr *E);
     void VisitCXXNoexceptExpr(CXXNoexceptExpr *E);
 
     void VisitOpaqueValueExpr(OpaqueValueExpr *E);
@@ -401,6 +399,7 @@ void ASTStmtReader::VisitExpr(Expr *E) {
   E->setType(Reader.GetType(Record[Idx++]));
   E->setTypeDependent(Record[Idx++]);
   E->setValueDependent(Record[Idx++]);
+  E->ExprBits.ContainsUnexpandedParameterPack = Record[Idx++];
   E->setValueKind(static_cast<ExprValueKind>(Record[Idx++]));
   E->setObjectKind(static_cast<ExprObjectKind>(Record[Idx++]));
   assert(Idx == NumExprFields && "Incorrect expression field count");
@@ -760,14 +759,6 @@ void ASTStmtReader::VisitStmtExpr(StmtExpr *E) {
   E->setSubStmt(cast_or_null<CompoundStmt>(Reader.ReadSubStmt()));
 }
 
-void ASTStmtReader::VisitTypesCompatibleExpr(TypesCompatibleExpr *E) {
-  VisitExpr(E);
-  E->setArgTInfo1(GetTypeSourceInfo(Record, Idx));
-  E->setArgTInfo2(GetTypeSourceInfo(Record, Idx));
-  E->setBuiltinLoc(ReadSourceLocation(Record, Idx));
-  E->setRParenLoc(ReadSourceLocation(Record, Idx));
-}
-
 void ASTStmtReader::VisitChooseExpr(ChooseExpr *E) {
   VisitExpr(E);
   E->setCond(Reader.ReadSubExpr());
@@ -849,31 +840,31 @@ void ASTStmtReader::VisitObjCIvarRefExpr(ObjCIvarRefExpr *E) {
 
 void ASTStmtReader::VisitObjCPropertyRefExpr(ObjCPropertyRefExpr *E) {
   VisitExpr(E);
-  E->setProperty(cast<ObjCPropertyDecl>(Reader.GetDecl(Record[Idx++])));
-  E->setLocation(ReadSourceLocation(Record, Idx));
-  E->SuperLoc = ReadSourceLocation(Record, Idx);
-  if (E->isSuperReceiver()) {
-    QualType T = Reader.GetType(Record[Idx++]);
-    E->BaseExprOrSuperType = T.getTypePtr();
+  bool Implicit = Record[Idx++] != 0;
+  if (Implicit) {
+    ObjCMethodDecl *Getter =
+      cast<ObjCMethodDecl>(Reader.GetDecl(Record[Idx++]));
+    ObjCMethodDecl *Setter =
+      cast<ObjCMethodDecl>(Reader.GetDecl(Record[Idx++]));
+    E->setImplicitProperty(Getter, Setter);
+  } else {
+    E->setExplicitProperty(
+                      cast<ObjCPropertyDecl>(Reader.GetDecl(Record[Idx++])));
   }
-  else
-    E->setBase(Reader.ReadSubExpr());
-}
-
-void ASTStmtReader::VisitObjCImplicitSetterGetterRefExpr(
-                                      ObjCImplicitSetterGetterRefExpr *E) {
-  VisitExpr(E);
-  E->setGetterMethod(
-                 cast_or_null<ObjCMethodDecl>(Reader.GetDecl(Record[Idx++])));
-  E->setSetterMethod(
-                 cast_or_null<ObjCMethodDecl>(Reader.GetDecl(Record[Idx++])));
-  E->setInterfaceDecl(
-              cast_or_null<ObjCInterfaceDecl>(Reader.GetDecl(Record[Idx++])));
-  E->setBase(Reader.ReadSubExpr());
   E->setLocation(ReadSourceLocation(Record, Idx));
-  E->setClassLoc(ReadSourceLocation(Record, Idx));
-  E->SuperLoc = ReadSourceLocation(Record, Idx);
-  E->SuperTy = Reader.GetType(Record[Idx++]);
+  E->setReceiverLocation(ReadSourceLocation(Record, Idx));
+  switch (Record[Idx++]) {
+  case 0:
+    E->setBase(Reader.ReadSubExpr());
+    break;
+  case 1:
+    E->setSuperReceiver(Reader.GetType(Record[Idx++]));
+    break;
+  case 2:
+    E->setClassReceiver(
+                     cast<ObjCInterfaceDecl>(Reader.GetDecl(Record[Idx++])));
+    break;
+  }
 }
 
 void ASTStmtReader::VisitObjCMessageExpr(ObjCMessageExpr *E) {
@@ -907,8 +898,9 @@ void ASTStmtReader::VisitObjCMessageExpr(ObjCMessageExpr *E) {
   else
     E->setSelector(Reader.GetSelector(Record, Idx));
 
-  E->setLeftLoc(ReadSourceLocation(Record, Idx));
-  E->setRightLoc(ReadSourceLocation(Record, Idx));
+  E->LBracLoc = ReadSourceLocation(Record, Idx);
+  E->RBracLoc = ReadSourceLocation(Record, Idx);
+  E->SelectorLoc = ReadSourceLocation(Record, Idx);
 
   for (unsigned I = 0, N = E->getNumArgs(); I != N; ++I)
     E->setArg(I, Reader.ReadSubExpr());
@@ -1166,7 +1158,7 @@ void ASTStmtReader::VisitCXXPseudoDestructorExpr(CXXPseudoDestructorExpr *E) {
     E->setDestroyedType(GetTypeSourceInfo(Record, Idx));
 }
 
-void ASTStmtReader::VisitCXXExprWithTemporaries(CXXExprWithTemporaries *E) {
+void ASTStmtReader::VisitExprWithCleanups(ExprWithCleanups *E) {
   VisitExpr(E);
   unsigned NumTemps = Record[Idx++];
   if (NumTemps) {
@@ -1275,6 +1267,17 @@ void ASTStmtReader::VisitUnaryTypeTraitExpr(UnaryTypeTraitExpr *E) {
   E->Loc = Range.getBegin();
   E->RParen = Range.getEnd();
   E->QueriedType = GetTypeSourceInfo(Record, Idx);
+}
+
+void ASTStmtReader::VisitBinaryTypeTraitExpr(BinaryTypeTraitExpr *E) {
+  VisitExpr(E);
+  E->BTT = (BinaryTypeTrait)Record[Idx++];
+  E->Value = (bool)Record[Idx++];
+  SourceRange Range = ReadSourceRange(Record, Idx);
+  E->Loc = Range.getBegin();
+  E->RParen = Range.getEnd();
+  E->LhsType = GetTypeSourceInfo(Record, Idx);
+  E->RhsType = GetTypeSourceInfo(Record, Idx);
 }
 
 void ASTStmtReader::VisitCXXNoexceptExpr(CXXNoexceptExpr *E) {
@@ -1596,10 +1599,6 @@ Stmt *ASTReader::ReadStmtFromStream(PerFileData &F) {
       S = new (Context) StmtExpr(Empty);
       break;
 
-    case EXPR_TYPES_COMPATIBLE:
-      S = new (Context) TypesCompatibleExpr(Empty);
-      break;
-
     case EXPR_CHOOSE:
       S = new (Context) ChooseExpr(Empty);
       break;
@@ -1639,7 +1638,7 @@ Stmt *ASTReader::ReadStmtFromStream(PerFileData &F) {
       S = new (Context) ObjCPropertyRefExpr(Empty);
       break;
     case EXPR_OBJC_KVC_REF_EXPR:
-      S = new (Context) ObjCImplicitSetterGetterRefExpr(Empty);
+      llvm_unreachable("mismatching AST file");
       break;
     case EXPR_OBJC_MESSAGE_EXPR:
       S = ObjCMessageExpr::CreateEmpty(*Context,
@@ -1769,8 +1768,8 @@ Stmt *ASTReader::ReadStmtFromStream(PerFileData &F) {
       S = new (Context) CXXPseudoDestructorExpr(Empty);
       break;
         
-    case EXPR_CXX_EXPR_WITH_TEMPORARIES:
-      S = new (Context) CXXExprWithTemporaries(Empty);
+    case EXPR_EXPR_WITH_CLEANUPS:
+      S = new (Context) ExprWithCleanups(Empty);
       break;
       
     case EXPR_CXX_DEPENDENT_SCOPE_MEMBER:
@@ -1800,6 +1799,10 @@ Stmt *ASTReader::ReadStmtFromStream(PerFileData &F) {
       
     case EXPR_CXX_UNARY_TYPE_TRAIT:
       S = new (Context) UnaryTypeTraitExpr(Empty);
+      break;
+
+    case EXPR_BINARY_TYPE_TRAIT:
+      S = new (Context) BinaryTypeTraitExpr(Empty);
       break;
 
     case EXPR_CXX_NOEXCEPT:

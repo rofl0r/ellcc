@@ -53,27 +53,27 @@ public:
     : SimpleConstraintManager(subengine), 
       ISetFactory(statemgr.getAllocator()) {}
 
-  const GRState* AssumeSymNE(const GRState* state, SymbolRef sym,
+  const GRState *assumeSymNE(const GRState* state, SymbolRef sym,
                              const llvm::APSInt& V,
                              const llvm::APSInt& Adjustment);
 
-  const GRState* AssumeSymEQ(const GRState* state, SymbolRef sym,
+  const GRState *assumeSymEQ(const GRState* state, SymbolRef sym,
                              const llvm::APSInt& V,
                              const llvm::APSInt& Adjustment);
 
-  const GRState* AssumeSymLT(const GRState* state, SymbolRef sym,
+  const GRState *assumeSymLT(const GRState* state, SymbolRef sym,
                              const llvm::APSInt& V,
                              const llvm::APSInt& Adjustment);
 
-  const GRState* AssumeSymGT(const GRState* state, SymbolRef sym,
+  const GRState *assumeSymGT(const GRState* state, SymbolRef sym,
                              const llvm::APSInt& V,
                              const llvm::APSInt& Adjustment);
 
-  const GRState* AssumeSymGE(const GRState* state, SymbolRef sym,
+  const GRState *assumeSymGE(const GRState* state, SymbolRef sym,
                              const llvm::APSInt& V,
                              const llvm::APSInt& Adjustment);
 
-  const GRState* AssumeSymLE(const GRState* state, SymbolRef sym,
+  const GRState *assumeSymLE(const GRState* state, SymbolRef sym,
                              const llvm::APSInt& V,
                              const llvm::APSInt& Adjustment);
 
@@ -102,7 +102,7 @@ ConstraintManager* clang::CreateBasicConstraintManager(GRStateManager& statemgr,
 
 
 const GRState*
-BasicConstraintManager::AssumeSymNE(const GRState *state, SymbolRef sym,
+BasicConstraintManager::assumeSymNE(const GRState *state, SymbolRef sym,
                                     const llvm::APSInt &V,
                                     const llvm::APSInt &Adjustment) {
   // First, determine if sym == X, where X+Adjustment != V.
@@ -122,7 +122,7 @@ BasicConstraintManager::AssumeSymNE(const GRState *state, SymbolRef sym,
 }
 
 const GRState*
-BasicConstraintManager::AssumeSymEQ(const GRState *state, SymbolRef sym,
+BasicConstraintManager::assumeSymEQ(const GRState *state, SymbolRef sym,
                                     const llvm::APSInt &V,
                                     const llvm::APSInt &Adjustment) {
   // First, determine if sym == X, where X+Adjustment != V.
@@ -143,7 +143,7 @@ BasicConstraintManager::AssumeSymEQ(const GRState *state, SymbolRef sym,
 
 // The logic for these will be handled in another ConstraintManager.
 const GRState*
-BasicConstraintManager::AssumeSymLT(const GRState *state, SymbolRef sym,
+BasicConstraintManager::assumeSymLT(const GRState *state, SymbolRef sym,
                                     const llvm::APSInt &V,
                                     const llvm::APSInt &Adjustment) {
   // Is 'V' the smallest possible value?
@@ -153,11 +153,11 @@ BasicConstraintManager::AssumeSymLT(const GRState *state, SymbolRef sym,
   }
 
   // FIXME: For now have assuming x < y be the same as assuming sym != V;
-  return AssumeSymNE(state, sym, V, Adjustment);
+  return assumeSymNE(state, sym, V, Adjustment);
 }
 
 const GRState*
-BasicConstraintManager::AssumeSymGT(const GRState *state, SymbolRef sym,
+BasicConstraintManager::assumeSymGT(const GRState *state, SymbolRef sym,
                                     const llvm::APSInt &V,
                                     const llvm::APSInt &Adjustment) {
   // Is 'V' the largest possible value?
@@ -167,11 +167,11 @@ BasicConstraintManager::AssumeSymGT(const GRState *state, SymbolRef sym,
   }
 
   // FIXME: For now have assuming x > y be the same as assuming sym != V;
-  return AssumeSymNE(state, sym, V, Adjustment);
+  return assumeSymNE(state, sym, V, Adjustment);
 }
 
 const GRState*
-BasicConstraintManager::AssumeSymGE(const GRState *state, SymbolRef sym,
+BasicConstraintManager::assumeSymGE(const GRState *state, SymbolRef sym,
                                     const llvm::APSInt &V,
                                     const llvm::APSInt &Adjustment) {
   // Reject a path if the value of sym is a constant X and !(X+Adj >= V).
@@ -199,7 +199,7 @@ BasicConstraintManager::AssumeSymGE(const GRState *state, SymbolRef sym,
 }
 
 const GRState*
-BasicConstraintManager::AssumeSymLE(const GRState *state, SymbolRef sym,
+BasicConstraintManager::assumeSymLE(const GRState *state, SymbolRef sym,
                                     const llvm::APSInt &V,
                                     const llvm::APSInt &Adjustment) {
   // Reject a path if the value of sym is a constant X and !(X+Adj <= V).
@@ -237,10 +237,10 @@ const GRState* BasicConstraintManager::AddNE(const GRState* state, SymbolRef sym
 
   // First, retrieve the NE-set associated with the given symbol.
   ConstNotEqTy::data_type* T = state->get<ConstNotEq>(sym);
-  GRState::IntSetTy S = T ? *T : ISetFactory.GetEmptySet();
+  GRState::IntSetTy S = T ? *T : ISetFactory.getEmptySet();
 
   // Now add V to the NE set.
-  S = ISetFactory.Add(S, &state->getBasicVals().getValue(V));
+  S = ISetFactory.add(S, &state->getBasicVals().getValue(V));
 
   // Create a new state with the old binding replaced.
   return state->set<ConstNotEq>(sym, S);
@@ -281,7 +281,8 @@ BasicConstraintManager::RemoveDeadBindings(const GRState* state,
 
   for (ConstEqTy::iterator I = CE.begin(), E = CE.end(); I!=E; ++I) {
     SymbolRef sym = I.getKey();
-    if (SymReaper.maybeDead(sym)) CE = CEFactory.Remove(CE, sym);
+    if (SymReaper.maybeDead(sym))
+      CE = CEFactory.remove(CE, sym);
   }
   state = state->set<ConstEq>(CE);
 
@@ -290,7 +291,8 @@ BasicConstraintManager::RemoveDeadBindings(const GRState* state,
 
   for (ConstNotEqTy::iterator I = CNE.begin(), E = CNE.end(); I != E; ++I) {
     SymbolRef sym = I.getKey();
-    if (SymReaper.maybeDead(sym)) CNE = CNEFactory.Remove(CNE, sym);
+    if (SymReaper.maybeDead(sym))
+      CNE = CNEFactory.remove(CNE, sym);
   }
 
   return state->set<ConstNotEq>(CNE);

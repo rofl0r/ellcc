@@ -8,6 +8,10 @@
 @ CHECK: encoding: [0x00,0xf0,0x20,0x03]
         nopeq
 
+@ CHECK: trap
+@ CHECK: encoding: [0xfe,0xde,0xff,0xe7]
+        trap
+
 @ CHECK: bx	lr
 @ CHECK: encoding: [0x1e,0xff,0x2f,0xe1]
         bx lr
@@ -51,3 +55,12 @@
         stmib     r2!, {r1,r3-r6,sp}
         stmda     r2!, {r1,r3-r6,sp}
         stmdb     r2!, {r1,r3-r6,sp}
+
+@ CHECK: and r1, r2, r3 @ encoding: [0x03,0x10,0x02,0xe0]
+        and r1, r2, r3
+@ CHECK: ands r1, r2, r3 @ encoding: [0x03,0x10,0x12,0xe0]
+        ands r1, r2, r3
+@ CHECK: eor r1, r2, r3 @ encoding: [0x03,0x10,0x22,0xe0]
+        eor r1, r2, r3
+@ CHECK: eors r1, r2, r3 @ encoding: [0x03,0x10,0x32,0xe0]
+        eors r1, r2, r3

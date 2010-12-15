@@ -525,12 +525,38 @@ Parser::DeclGroupPtrTy Parser::ParseExternalDeclaration(CXX0XAttributeList Attr,
       return ParseDeclaration(Stmts, Declarator::FileContext, DeclEnd, Attr);
     }
 
-  case tok::kw_inline:
-    if (getLang().CPlusPlus && NextToken().is(tok::kw_namespace)) {
-      // Inline namespaces. Allowed as an extension even in C++03.
+  case tok::kw_static:
+    // Parse (then ignore) 'static' prior to a template instantiation. This is
+    // a GCC extension that we intentionally do not support.
+    if (getLang().CPlusPlus && NextToken().is(tok::kw_template)) {
+      Diag(ConsumeToken(), diag::warn_static_inline_explicit_inst_ignored)
+        << 0;
       SourceLocation DeclEnd;
       StmtVector Stmts(Actions);
-      return ParseDeclaration(Stmts, Declarator::FileContext, DeclEnd, Attr);
+      return ParseDeclaration(Stmts, Declarator::FileContext, DeclEnd, Attr);  
+    }
+    goto dont_know;
+      
+  case tok::kw_inline:
+    if (getLang().CPlusPlus) {
+      tok::TokenKind NextKind = NextToken().getKind();
+      
+      // Inline namespaces. Allowed as an extension even in C++03.
+      if (NextKind == tok::kw_namespace) {
+        SourceLocation DeclEnd;
+        StmtVector Stmts(Actions);
+        return ParseDeclaration(Stmts, Declarator::FileContext, DeclEnd, Attr);
+      }
+      
+      // Parse (then ignore) 'inline' prior to a template instantiation. This is
+      // a GCC extension that we intentionally do not support.
+      if (NextKind == tok::kw_template) {
+        Diag(ConsumeToken(), diag::warn_static_inline_explicit_inst_ignored)
+          << 1;
+        SourceLocation DeclEnd;
+        StmtVector Stmts(Actions);
+        return ParseDeclaration(Stmts, Declarator::FileContext, DeclEnd, Attr);  
+      }
     }
     goto dont_know;
 
@@ -575,14 +601,13 @@ bool Parser::isDeclarationAfterDeclarator() const {
 /// \brief Determine whether the current token, if it occurs after a
 /// declarator, indicates the start of a function definition.
 bool Parser::isStartOfFunctionDefinition(const ParsingDeclarator &Declarator) {
-  assert(Declarator.getTypeObject(0).Kind == DeclaratorChunk::Function &&
-         "Isn't a function declarator");
+  assert(Declarator.isFunctionDeclarator() && "Isn't a function declarator");
   if (Tok.is(tok::l_brace))   // int X() {}
     return true;
   
   // Handle K&R C argument lists: int X(f) int f; {}
   if (!getLang().CPlusPlus &&
-      Declarator.getTypeObject(0).Fun.isKNRPrototype()) 
+      Declarator.getFunctionTypeInfo().isKNRPrototype()) 
     return isDeclarationSpecifier();
   
   return Tok.is(tok::colon) ||         // X() : Base() {} (used for ctors)
@@ -686,11 +711,8 @@ Parser::ParseDeclarationOrFunctionDefinition(AttributeList *Attr,
 ///         decl-specifier-seq[opt] declarator function-try-block
 ///
 Decl *Parser::ParseFunctionDefinition(ParsingDeclarator &D,
-                                     const ParsedTemplateInfo &TemplateInfo) {
-  const DeclaratorChunk &FnTypeInfo = D.getTypeObject(0);
-  assert(FnTypeInfo.Kind == DeclaratorChunk::Function &&
-         "This isn't a function declarator!");
-  const DeclaratorChunk::FunctionTypeInfo &FTI = FnTypeInfo.Fun;
+                                      const ParsedTemplateInfo &TemplateInfo) {
+  const DeclaratorChunk::FunctionTypeInfo &FTI = D.getFunctionTypeInfo();
 
   // If this is C90 and the declspecs were completely missing, fudge in an
   // implicit int.  We do this here because this is the only place where
@@ -767,7 +789,7 @@ Decl *Parser::ParseFunctionDefinition(ParsingDeclarator &D,
 /// types for a function with a K&R-style identifier list for arguments.
 void Parser::ParseKNRParamDeclarations(Declarator &D) {
   // We know that the top-level of this declarator is a function.
-  DeclaratorChunk::FunctionTypeInfo &FTI = D.getTypeObject(0).Fun;
+  DeclaratorChunk::FunctionTypeInfo &FTI = D.getFunctionTypeInfo();
 
   // Enter function-declaration scope, limiting any declarators to the
   // function prototype scope, including parameter declarators.

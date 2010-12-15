@@ -47,7 +47,7 @@
 #include "llvm/Support/GetElementPtrTypeIterator.h"
 #include "llvm/Support/InstVisitor.h"
 #include "llvm/Support/MathExtras.h"
-#include "llvm/System/Host.h"
+#include "llvm/Support/Host.h"
 #include "llvm/Config/config.h"
 #include <algorithm>
 // Some ms header decided to define setjmp as _setjmp, undo this for this file.
@@ -1755,7 +1755,7 @@ bool CWriter::doInitialization(Module &M) {
     TAsm = Match->createAsmInfo(Triple);
 #endif
   TAsm = new CBEMCAsmInfo();
-  TCtx = new MCContext(*TAsm);
+  TCtx = new MCContext(*TAsm, NULL);
   Mang = new Mangler(*TCtx, *TD);
 
   // Keep track of which functions are static ctors/dtors so they can have

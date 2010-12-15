@@ -90,13 +90,14 @@ namespace  {
     }
 
     void DumpType(QualType T) {
-      OS << "'" << T.getAsString() << "'";
+      SplitQualType T_split = T.split();
+      OS << "'" << QualType::getAsString(T_split) << "'";
 
       if (!T.isNull()) {
         // If the type is sugared, also dump a (shallow) desugared type.
-        QualType Simplified = T.getDesugaredType();
-        if (Simplified != T)
-          OS << ":'" << Simplified.getAsString() << "'";
+        SplitQualType D_split = T.getSplitDesugaredType();
+        if (T_split != D_split)
+          OS << ":'" << QualType::getAsString(D_split) << "'";
       }
     }
     void DumpStmt(const Stmt *Node) {
@@ -152,7 +153,6 @@ namespace  {
     void VisitBinaryOperator(BinaryOperator *Node);
     void VisitCompoundAssignOperator(CompoundAssignOperator *Node);
     void VisitAddrLabelExpr(AddrLabelExpr *Node);
-    void VisitTypesCompatibleExpr(TypesCompatibleExpr *Node);
 
     // C++
     void VisitCXXNamedCastExpr(CXXNamedCastExpr *Node);
@@ -161,7 +161,7 @@ namespace  {
     void VisitCXXFunctionalCastExpr(CXXFunctionalCastExpr *Node);
     void VisitCXXConstructExpr(CXXConstructExpr *Node);
     void VisitCXXBindTemporaryExpr(CXXBindTemporaryExpr *Node);
-    void VisitCXXExprWithTemporaries(CXXExprWithTemporaries *Node);
+    void VisitExprWithCleanups(ExprWithCleanups *Node);
     void VisitUnresolvedLookupExpr(UnresolvedLookupExpr *Node);
     void DumpCXXTemporary(CXXTemporary *Temporary);
 
@@ -172,8 +172,6 @@ namespace  {
     void VisitObjCSelectorExpr(ObjCSelectorExpr *Node);
     void VisitObjCProtocolExpr(ObjCProtocolExpr *Node);
     void VisitObjCPropertyRefExpr(ObjCPropertyRefExpr *Node);
-    void VisitObjCImplicitSetterGetterRefExpr(
-                                          ObjCImplicitSetterGetterRefExpr *Node);
     void VisitObjCIvarRefExpr(ObjCIvarRefExpr *Node);
   };
 }
@@ -484,14 +482,6 @@ void StmtDumper::VisitAddrLabelExpr(AddrLabelExpr *Node) {
      << " " << (void*)Node->getLabel();
 }
 
-void StmtDumper::VisitTypesCompatibleExpr(TypesCompatibleExpr *Node) {
-  DumpExpr(Node);
-  OS << " ";
-  DumpType(Node->getArgType1());
-  OS << " ";
-  DumpType(Node->getArgType2());
-}
-
 //===----------------------------------------------------------------------===//
 // C++ Expressions
 //===----------------------------------------------------------------------===//
@@ -536,7 +526,7 @@ void StmtDumper::VisitCXXBindTemporaryExpr(CXXBindTemporaryExpr *Node) {
   DumpCXXTemporary(Node->getTemporary());
 }
 
-void StmtDumper::VisitCXXExprWithTemporaries(CXXExprWithTemporaries *Node) {
+void StmtDumper::VisitExprWithCleanups(ExprWithCleanups *Node) {
   DumpExpr(Node);
   ++IndentLevel;
   for (unsigned i = 0, e = Node->getNumTemporaries(); i != e; ++i) {
@@ -607,27 +597,19 @@ void StmtDumper::VisitObjCProtocolExpr(ObjCProtocolExpr *Node) {
 
 void StmtDumper::VisitObjCPropertyRefExpr(ObjCPropertyRefExpr *Node) {
   DumpExpr(Node);
-  if (Node->isSuperReceiver())
-    OS << " Kind=PropertyRef Property=\"" << Node->getProperty() << '"'
-    << " super";
-  else
-    OS << " Kind=PropertyRef Property=\"" << Node->getProperty() << '"';
-}
+  if (Node->isImplicitProperty()) {
+    OS << " Kind=MethodRef Getter=\""
+       << Node->getImplicitPropertyGetter()->getSelector().getAsString()
+       << "\" Setter=\"";
+    if (ObjCMethodDecl *Setter = Node->getImplicitPropertySetter())
+      OS << Setter->getSelector().getAsString();
+    else
+      OS << "(null)";
+    OS << "\"";
+  } else {
+    OS << " Kind=PropertyRef Property=\"" << Node->getExplicitProperty() << '"';
+  }
 
-void StmtDumper::VisitObjCImplicitSetterGetterRefExpr(
-                                        ObjCImplicitSetterGetterRefExpr *Node) {
-  DumpExpr(Node);
-
-  ObjCMethodDecl *Getter = Node->getGetterMethod();
-  ObjCMethodDecl *Setter = Node->getSetterMethod();
-  OS << " Kind=MethodRef Getter=\""
-     << Getter->getSelector().getAsString()
-     << "\" Setter=\"";
-  if (Setter)
-    OS << Setter->getSelector().getAsString();
-  else
-    OS << "(null)";
-  OS << "\"";
   if (Node->isSuperReceiver())
     OS << " super";
 }

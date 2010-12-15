@@ -72,9 +72,9 @@ public:
     return &x;
   }
 
-  virtual bool EvalCallExpr(CheckerContext &C, const CallExpr *CE);
-  void EvalDeadSymbols(CheckerContext &C, SymbolReaper &SymReaper);
-  void EvalEndPath(GREndPathNodeBuilder &B, void *tag, GRExprEngine &Eng);
+  virtual bool evalCallExpr(CheckerContext &C, const CallExpr *CE);
+  void evalDeadSymbols(CheckerContext &C, SymbolReaper &SymReaper);
+  void evalEndPath(GREndPathNodeBuilder &B, void *tag, GRExprEngine &Eng);
   void PreVisitReturnStmt(CheckerContext &C, const ReturnStmt *S);
 
 private:
@@ -115,7 +115,7 @@ void clang::RegisterStreamChecker(GRExprEngine &Eng) {
   Eng.registerCheck(new StreamChecker());
 }
 
-bool StreamChecker::EvalCallExpr(CheckerContext &C, const CallExpr *CE) {
+bool StreamChecker::evalCallExpr(CheckerContext &C, const CallExpr *CE) {
   const GRState *state = C.getState();
   const Expr *Callee = CE->getCallee();
   SVal L = state->getSVal(Callee);
@@ -224,16 +224,16 @@ void StreamChecker::Tmpfile(CheckerContext &C, const CallExpr *CE) {
 void StreamChecker::OpenFileAux(CheckerContext &C, const CallExpr *CE) {
   const GRState *state = C.getState();
   unsigned Count = C.getNodeBuilder().getCurrentBlockCount();
-  ValueManager &ValMgr = C.getValueManager();
-  DefinedSVal RetVal = cast<DefinedSVal>(ValMgr.getConjuredSymbolVal(0, CE, 
-                                                                     Count));
+  SValBuilder &svalBuilder = C.getSValBuilder();
+  DefinedSVal RetVal =
+    cast<DefinedSVal>(svalBuilder.getConjuredSymbolVal(0, CE, Count));
   state = state->BindExpr(CE, RetVal);
   
   ConstraintManager &CM = C.getConstraintManager();
   // Bifurcate the state into two: one with a valid FILE* pointer, the other
   // with a NULL.
   const GRState *stateNotNull, *stateNull;
-  llvm::tie(stateNotNull, stateNull) = CM.AssumeDual(state, RetVal);
+  llvm::tie(stateNotNull, stateNull) = CM.assumeDual(state, RetVal);
   
   if (SymbolRef Sym = RetVal.getAsSymbol()) {
     // if RetVal is not NULL, set the symbol's state to Opened.
@@ -347,7 +347,7 @@ const GRState *StreamChecker::CheckNullStream(SVal SV, const GRState *state,
 
   ConstraintManager &CM = C.getConstraintManager();
   const GRState *stateNotNull, *stateNull;
-  llvm::tie(stateNotNull, stateNull) = CM.AssumeDual(state, *DV);
+  llvm::tie(stateNotNull, stateNull) = CM.assumeDual(state, *DV);
 
   if (!stateNotNull && stateNull) {
     if (ExplodedNode *N = C.GenerateSink(stateNull)) {
@@ -395,7 +395,7 @@ const GRState *StreamChecker::CheckDoubleClose(const CallExpr *CE,
   return state->set<StreamState>(Sym, StreamState::getClosed(CE));
 }
 
-void StreamChecker::EvalDeadSymbols(CheckerContext &C,SymbolReaper &SymReaper) {
+void StreamChecker::evalDeadSymbols(CheckerContext &C,SymbolReaper &SymReaper) {
   for (SymbolReaper::dead_iterator I = SymReaper.dead_begin(),
          E = SymReaper.dead_end(); I != E; ++I) {
     SymbolRef Sym = *I;
@@ -418,7 +418,7 @@ void StreamChecker::EvalDeadSymbols(CheckerContext &C,SymbolReaper &SymReaper) {
   }
 }
 
-void StreamChecker::EvalEndPath(GREndPathNodeBuilder &B, void *tag,
+void StreamChecker::evalEndPath(GREndPathNodeBuilder &B, void *tag,
                                 GRExprEngine &Eng) {
   SaveAndRestore<bool> OldHasGen(B.HasGeneratedNode);
   const GRState *state = B.getState();

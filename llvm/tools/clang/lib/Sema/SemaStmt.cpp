@@ -89,13 +89,10 @@ void Sema::DiagnoseUnusedExprResult(const Stmt *S) {
   // we might want to make a more specific diagnostic.  Check for one of these
   // cases now.
   unsigned DiagID = diag::warn_unused_expr;
-  E = E->IgnoreParens();
-  if (isa<ObjCImplicitSetterGetterRefExpr>(E))
-    DiagID = diag::warn_unused_property_expr;
-  
-  if (const CXXExprWithTemporaries *Temps = dyn_cast<CXXExprWithTemporaries>(E))
+  if (const ExprWithCleanups *Temps = dyn_cast<ExprWithCleanups>(E))
     E = Temps->getSubExpr();
-      
+
+  E = E->IgnoreParenImpCasts();
   if (const CallExpr *CE = dyn_cast<CallExpr>(E)) {
     if (E->getType()->isVoidType())
       return;
@@ -116,13 +113,14 @@ void Sema::DiagnoseUnusedExprResult(const Stmt *S) {
         return;
       }
     }        
-  }
-  else if (const ObjCMessageExpr *ME = dyn_cast<ObjCMessageExpr>(E)) {
+  } else if (const ObjCMessageExpr *ME = dyn_cast<ObjCMessageExpr>(E)) {
     const ObjCMethodDecl *MD = ME->getMethodDecl();
     if (MD && MD->getAttr<WarnUnusedResultAttr>()) {
       Diag(Loc, diag::warn_unused_call) << R1 << R2 << "warn_unused_result";
       return;
     }
+  } else if (isa<ObjCPropertyRefExpr>(E)) {
+    DiagID = diag::warn_unused_property_expr;
   } else if (const CXXFunctionalCastExpr *FC
                                        = dyn_cast<CXXFunctionalCastExpr>(E)) {
     if (isa<CXXConstructExpr>(FC->getSubExpr()) ||
@@ -332,7 +330,7 @@ void Sema::ConvertIntegerToTypeWarnOnOverflow(llvm::APSInt &Val,
   // Perform a conversion to the promoted condition type if needed.
   if (NewWidth > Val.getBitWidth()) {
     // If this is an extension, just do it.
-    Val.extend(NewWidth);
+    Val = Val.extend(NewWidth);
     Val.setIsSigned(NewSign);
 
     // If the input was signed and negative and the output is
@@ -342,16 +340,16 @@ void Sema::ConvertIntegerToTypeWarnOnOverflow(llvm::APSInt &Val,
   } else if (NewWidth < Val.getBitWidth()) {
     // If this is a truncation, check for overflow.
     llvm::APSInt ConvVal(Val);
-    ConvVal.trunc(NewWidth);
+    ConvVal = ConvVal.trunc(NewWidth);
     ConvVal.setIsSigned(NewSign);
-    ConvVal.extend(Val.getBitWidth());
+    ConvVal = ConvVal.extend(Val.getBitWidth());
     ConvVal.setIsSigned(Val.isSigned());
     if (ConvVal != Val)
       Diag(Loc, DiagID) << Val.toString(10) << ConvVal.toString(10);
 
     // Regardless of whether a diagnostic was emitted, really do the
     // truncation.
-    Val.trunc(NewWidth);
+    Val = Val.trunc(NewWidth);
     Val.setIsSigned(NewSign);
   } else if (NewSign != Val.isSigned()) {
     // Convert the sign to match the sign of the condition.  This can cause
@@ -457,7 +455,7 @@ Sema::ActOnStartOfSwitchStmt(SourceLocation SwitchLoc, Expr *Cond,
   
   if (!CondVar) {
     CheckImplicitConversions(Cond, SwitchLoc);
-    CondResult = MaybeCreateCXXExprWithTemporaries(Cond);
+    CondResult = MaybeCreateExprWithCleanups(Cond);
     if (CondResult.isInvalid())
       return StmtError();
     Cond = CondResult.take();
@@ -472,9 +470,9 @@ Sema::ActOnStartOfSwitchStmt(SourceLocation SwitchLoc, Expr *Cond,
 
 static void AdjustAPSInt(llvm::APSInt &Val, unsigned BitWidth, bool IsSigned) {
   if (Val.getBitWidth() < BitWidth)
-    Val.extend(BitWidth);
+    Val = Val.extend(BitWidth);
   else if (Val.getBitWidth() > BitWidth)
-    Val.trunc(BitWidth);
+    Val = Val.trunc(BitWidth);
   Val.setIsSigned(IsSigned);
 }
 
@@ -901,7 +899,7 @@ Sema::ActOnDoStmt(SourceLocation DoLoc, Stmt *Body,
     return StmtError();
 
   CheckImplicitConversions(Cond, DoLoc);
-  ExprResult CondResult = MaybeCreateCXXExprWithTemporaries(Cond);
+  ExprResult CondResult = MaybeCreateExprWithCleanups(Cond);
   if (CondResult.isInvalid())
     return StmtError();
   Cond = CondResult.take();
@@ -954,6 +952,17 @@ Sema::ActOnForStmt(SourceLocation ForLoc, SourceLocation LParenLoc,
                                      RParenLoc));
 }
 
+/// In an Objective C collection iteration statement:
+///   for (x in y)
+/// x can be an arbitrary l-value expression.  Bind it up as a
+/// full-expression.
+StmtResult Sema::ActOnForEachLValueExpr(Expr *E) {
+  CheckImplicitConversions(E);
+  ExprResult Result = MaybeCreateExprWithCleanups(E);
+  if (Result.isInvalid()) return StmtError();
+  return Owned(static_cast<Stmt*>(Result.get()));
+}
+
 StmtResult
 Sema::ActOnObjCForCollectionStmt(SourceLocation ForLoc,
                                  SourceLocation LParenLoc,
@@ -977,8 +986,7 @@ Sema::ActOnObjCForCollectionStmt(SourceLocation ForLoc,
                               diag::err_non_variable_decl_in_for));
     } else {
       Expr *FirstE = cast<Expr>(First);
-      if (!FirstE->isTypeDependent() &&
-          FirstE->isLvalue(Context) != Expr::LV_Valid)
+      if (!FirstE->isTypeDependent() && !FirstE->isLValue())
         return StmtError(Diag(First->getLocStart(),
                    diag::err_selector_element_not_lvalue)
           << First->getSourceRange());
@@ -1136,7 +1144,7 @@ Sema::ActOnBlockReturnStmt(SourceLocation ReturnLoc, Expr *RetValExp) {
         // part of the implementation spec. and not the actual qualifier for
         // the variable.
         if (CDRE->isConstQualAdded())
-           CurBlock->ReturnType.removeConst();
+          CurBlock->ReturnType.removeLocalConst(); // FIXME: local???
       }
     } else
       CurBlock->ReturnType = Context.VoidTy;
@@ -1187,7 +1195,7 @@ Sema::ActOnBlockReturnStmt(SourceLocation ReturnLoc, Expr *RetValExp) {
       
       if (RetValExp) {
         CheckImplicitConversions(RetValExp, ReturnLoc);
-        RetValExp = MaybeCreateCXXExprWithTemporaries(RetValExp);
+        RetValExp = MaybeCreateExprWithCleanups(RetValExp);
       }
 
       RetValExp = Res.takeAs<Expr>();
@@ -1231,6 +1239,10 @@ Sema::ActOnReturnStmt(SourceLocation ReturnLoc, Expr *RetValExp) {
       unsigned D = diag::ext_return_has_expr;
       if (RetValExp->getType()->isVoidType())
         D = diag::ext_return_has_void_expr;
+      else {
+        IgnoredValueConversions(RetValExp);
+        ImpCastExprToType(RetValExp, Context.VoidTy, CK_ToVoid);
+      }
 
       // return (some void expression); is legal in C++.
       if (D != diag::ext_return_has_void_expr ||
@@ -1242,7 +1254,7 @@ Sema::ActOnReturnStmt(SourceLocation ReturnLoc, Expr *RetValExp) {
       }
 
       CheckImplicitConversions(RetValExp, ReturnLoc);
-      RetValExp = MaybeCreateCXXExprWithTemporaries(RetValExp);
+      RetValExp = MaybeCreateExprWithCleanups(RetValExp);
     }
     
     Result = new (Context) ReturnStmt(ReturnLoc, RetValExp, 0);
@@ -1286,7 +1298,7 @@ Sema::ActOnReturnStmt(SourceLocation ReturnLoc, Expr *RetValExp) {
     
     if (RetValExp) {
       CheckImplicitConversions(RetValExp, ReturnLoc);
-      RetValExp = MaybeCreateCXXExprWithTemporaries(RetValExp);
+      RetValExp = MaybeCreateExprWithCleanups(RetValExp);
     }
     Result = new (Context) ReturnStmt(ReturnLoc, RetValExp, NRVOCandidate);
   }
@@ -1312,13 +1324,13 @@ static bool CheckAsmLValue(const Expr *E, Sema &S) {
   if (E->isTypeDependent())
     return false;
   
-  if (E->isLvalue(S.Context) == Expr::LV_Valid)
+  if (E->isLValue())
     return false;  // Cool, this is an lvalue.
 
   // Okay, this is not an lvalue, but perhaps it is the result of a cast that we
   // are supposed to allow.
   const Expr *E2 = E->IgnoreParenNoopCasts(S.Context);
-  if (E != E2 && E2->isLvalue(S.Context) == Expr::LV_Valid) {
+  if (E != E2 && E2->isLValue()) {
     if (!S.getLangOptions().HeinousExtensions)
       S.Diag(E2->getLocStart(), diag::err_invalid_asm_cast_lvalue)
         << E->getSourceRange();

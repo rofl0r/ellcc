@@ -62,7 +62,7 @@ protected:
   std::string ShortDescription;
   std::string Description;
   const ExplodedNode *ErrorNode;
-  SourceRange R;
+  mutable SourceRange R;
 
 protected:
   friend class BugReporter;
@@ -126,8 +126,10 @@ public:
   ///  This location is used by clients rendering diagnostics.
   virtual SourceLocation getLocation() const;
 
+  typedef const SourceRange *ranges_iterator;
+
   /// getRanges - Returns the source ranges associated with this bug.
-  virtual void getRanges(const SourceRange*& beg, const SourceRange*& end);
+  virtual std::pair<ranges_iterator, ranges_iterator> getRanges() const;
 
   virtual PathDiagnosticPiece* VisitNode(const ExplodedNode* N,
                                          const ExplodedNode* PrevN,
@@ -192,7 +194,7 @@ public:
 
 // FIXME: Collapse this with the default BugReport class.
 class RangedBugReport : public BugReport {
-  std::vector<SourceRange> Ranges;
+  llvm::SmallVector<SourceRange, 4> Ranges;
 public:
   RangedBugReport(BugType& D, llvm::StringRef description,
                   ExplodedNode *errornode)
@@ -210,17 +212,8 @@ public:
     Ranges.push_back(R);
   }
 
-  // FIXME: Move this out of line.
-  void getRanges(const SourceRange*& beg, const SourceRange*& end) {
-
-    if (Ranges.empty()) {
-      beg = NULL;
-      end = NULL;
-    }
-    else {
-      beg = &Ranges[0];
-      end = beg + Ranges.size();
-    }
+  virtual std::pair<ranges_iterator, ranges_iterator> getRanges() const {
+    return std::make_pair(Ranges.begin(), Ranges.end());
   }
 };
 
@@ -282,11 +275,11 @@ private:
   void FlushReport(BugReportEquivClass& EQ);
 
 protected:
-  BugReporter(BugReporterData& d, Kind k) : BugTypes(F.GetEmptySet()), kind(k),
+  BugReporter(BugReporterData& d, Kind k) : BugTypes(F.getEmptySet()), kind(k),
                                             D(d) {}
 
 public:
-  BugReporter(BugReporterData& d) : BugTypes(F.GetEmptySet()), kind(BaseBRKind),
+  BugReporter(BugReporterData& d) : BugTypes(F.getEmptySet()), kind(BaseBRKind),
                                     D(d) {}
   virtual ~BugReporter();
 
@@ -310,9 +303,8 @@ public:
 
   SourceManager& getSourceManager() { return D.getSourceManager(); }
 
-  virtual void GeneratePathDiagnostic(PathDiagnostic& PD,
-                                      BugReportEquivClass& EQ,
-               llvm::SmallVectorImpl<const ExplodedNode*> &Nodes) {}
+  virtual void GeneratePathDiagnostic(PathDiagnostic& pathDiagnostic,
+        llvm::SmallVectorImpl<BugReport *> &bugReports) {}
 
   void Register(BugType *BT);
 
@@ -373,9 +365,8 @@ public:
   ///  engine.
   GRStateManager &getStateManager();
 
-  virtual void GeneratePathDiagnostic(PathDiagnostic& PD,
-                                      BugReportEquivClass& R,
-                     llvm::SmallVectorImpl<const ExplodedNode*> &Nodes);
+  virtual void GeneratePathDiagnostic(PathDiagnostic &pathDiagnostic,
+                     llvm::SmallVectorImpl<BugReport*> &bugReports);
 
   void addNotableSymbol(SymbolRef Sym) {
     NotableSymbols.insert(Sym);
@@ -399,7 +390,7 @@ class BugReporterContext {
   llvm::ImmutableList<BugReporterVisitor*> Callbacks;
   llvm::FoldingSet<BugReporterVisitor> CallbacksSet;
 public:
-  BugReporterContext(GRBugReporter& br) : BR(br), Callbacks(F.GetEmptyList()) {}
+  BugReporterContext(GRBugReporter& br) : BR(br), Callbacks(F.getEmptyList()) {}
   virtual ~BugReporterContext();
 
   void addVisitor(BugReporterVisitor* visitor);
@@ -426,8 +417,8 @@ public:
     return BR.getStateManager();
   }
 
-  ValueManager& getValueManager() {
-    return getStateManager().getValueManager();
+  SValBuilder& getSValBuilder() {
+    return getStateManager().getSValBuilder();
   }
 
   ASTContext& getASTContext() {

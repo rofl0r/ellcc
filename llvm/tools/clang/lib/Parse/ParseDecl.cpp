@@ -1020,7 +1020,8 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
         ConsumeToken(); // The C++ scope.
         if (Tok.getAnnotationValue()) {
           ParsedType T = getTypeAnnotation(Tok);
-          isInvalid = DS.SetTypeSpecType(DeclSpec::TST_typename, Loc, 
+          isInvalid = DS.SetTypeSpecType(DeclSpec::TST_typename,
+                                         Tok.getAnnotationEndLoc(), 
                                          PrevSpec, DiagID, T);
         }
         else
@@ -1545,7 +1546,8 @@ bool Parser::ParseOptionalTypeSpecifier(DeclSpec &DS, bool& isInvalid,
   // simple-type-specifier:
   case tok::annot_typename: {
     if (ParsedType T = getTypeAnnotation(Tok)) {
-      isInvalid = DS.SetTypeSpecType(DeclSpec::TST_typename, Loc, PrevSpec,
+      isInvalid = DS.SetTypeSpecType(DeclSpec::TST_typename,
+                                     Tok.getAnnotationEndLoc(), PrevSpec,
                                      DiagID, T);
     } else
       DS.SetTypeSpecError();
@@ -1919,7 +1921,6 @@ void Parser::ParseStructUnionBody(SourceLocation RecordLoc,
   Actions.ActOnTagFinishDefinition(getCurScope(), TagDecl, RBraceLoc);
 }
 
-
 /// ParseEnumSpecifier
 ///       enum-specifier: [C99 6.7.2.2]
 ///         'enum' identifier[opt] '{' enumerator-list '}'
@@ -1979,11 +1980,13 @@ void Parser::ParseEnumSpecifier(SourceLocation StartLoc, DeclSpec &DS,
   }
 
   bool IsScopedEnum = false;
+  bool IsScopedUsingClassTag = false;
 
-  if (getLang().CPlusPlus0x && (Tok.is(tok::kw_class)
-                                || Tok.is(tok::kw_struct))) {
-    ConsumeToken();
+  if (getLang().CPlusPlus0x &&
+      (Tok.is(tok::kw_class) || Tok.is(tok::kw_struct))) {
     IsScopedEnum = true;
+    IsScopedUsingClassTag = Tok.is(tok::kw_class);
+    ConsumeToken();
   }
 
   // Must have either 'enum name' or 'enum {...}'.
@@ -2008,14 +2011,62 @@ void Parser::ParseEnumSpecifier(SourceLocation StartLoc, DeclSpec &DS,
     // declaration of a scoped enumeration.
     Diag(Tok, diag::err_scoped_enum_missing_identifier);
     IsScopedEnum = false;
+    IsScopedUsingClassTag = false;
   }
 
   TypeResult BaseType;
 
+  // Parse the fixed underlying type.
   if (getLang().CPlusPlus0x && Tok.is(tok::colon)) {
-    ConsumeToken();
-    SourceRange Range;
-    BaseType = ParseTypeName(&Range);
+    bool PossibleBitfield = false;
+    if (getCurScope()->getFlags() & Scope::ClassScope) {
+      // If we're in class scope, this can either be an enum declaration with
+      // an underlying type, or a declaration of a bitfield member. We try to
+      // use a simple disambiguation scheme first to catch the common cases
+      // (integer literal, sizeof); if it's still ambiguous, we then consider 
+      // anything that's a simple-type-specifier followed by '(' as an 
+      // expression. This suffices because function types are not valid 
+      // underlying types anyway.
+      TPResult TPR = isExpressionOrTypeSpecifierSimple(NextToken().getKind());
+      // If the next token starts an expression, we know we're parsing a 
+      // bit-field. This is the common case.
+      if (TPR == TPResult::True())
+        PossibleBitfield = true;
+      // If the next token starts a type-specifier-seq, it may be either a
+      // a fixed underlying type or the start of a function-style cast in C++;
+      // lookahead one more token to see if it's obvious that we have a 
+      // fixed underlying type.
+      else if (TPR == TPResult::False() && 
+               GetLookAheadToken(2).getKind() == tok::semi) {
+        // Consume the ':'.
+        ConsumeToken();
+      } else {
+        // We have the start of a type-specifier-seq, so we have to perform
+        // tentative parsing to determine whether we have an expression or a
+        // type.
+        TentativeParsingAction TPA(*this);
+
+        // Consume the ':'.
+        ConsumeToken();
+      
+        if (isCXXDeclarationSpecifier() != TPResult::True()) {
+          // We'll parse this as a bitfield later.
+          PossibleBitfield = true;
+          TPA.Revert();
+        } else {
+          // We have a type-specifier-seq.
+          TPA.Commit();
+        }
+      }
+    } else {
+      // Consume the ':'.
+      ConsumeToken();
+    }
+
+    if (!PossibleBitfield) {
+      SourceRange Range;
+      BaseType = ParseTypeName(&Range);
+    }
   }
 
   // There are three options here.  If we have 'enum foo;', then this is a
@@ -2055,7 +2106,7 @@ void Parser::ParseEnumSpecifier(SourceLocation StartLoc, DeclSpec &DS,
                                    AS,
                                    MultiTemplateParamsArg(Actions),
                                    Owned, IsDependent, IsScopedEnum,
-                                   BaseType);
+                                   IsScopedUsingClassTag, BaseType);
 
   if (IsDependent) {
     // This enum has a dependent nested-name-specifier. Handle it as a 
@@ -2986,10 +3037,10 @@ void Parser::ParseParenDeclarator(Declarator &D) {
 
     ParseDeclaratorInternal(D, &Parser::ParseDirectDeclarator);
     // Match the ')'.
-    SourceLocation Loc = MatchRHSPunctuation(tok::r_paren, StartLoc);
+    SourceLocation EndLoc = MatchRHSPunctuation(tok::r_paren, StartLoc);
+    D.AddTypeInfo(DeclaratorChunk::getParen(StartLoc, EndLoc), EndLoc);
 
     D.setGroupingParens(hadGroupingParens);
-    D.SetRangeEnd(Loc);
     return;
   }
 

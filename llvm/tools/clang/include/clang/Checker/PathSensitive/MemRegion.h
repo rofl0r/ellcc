@@ -35,7 +35,7 @@ class MemRegionManager;
 class MemSpaceRegion;
 class LocationContext;
 class StackFrameContext;
-class ValueManager;
+class SValBuilder;
 class VarRegion;
 class CodeTextRegion;
 
@@ -93,9 +93,10 @@ public:
     VarRegionKind = BEG_DECL_REGIONS,
     FieldRegionKind,
     ObjCIvarRegionKind,
-    CXXObjectRegionKind,
-    END_DECL_REGIONS = CXXObjectRegionKind,
-    END_TYPED_REGIONS = END_DECL_REGIONS
+    END_DECL_REGIONS = ObjCIvarRegionKind,
+    CXXTempObjectRegionKind,
+    CXXBaseObjectRegionKind,
+    END_TYPED_REGIONS = CXXBaseObjectRegionKind
   };
     
 private:
@@ -294,7 +295,7 @@ public:
   }
 
   /// getExtent - Returns the size of the region in bytes.
-  virtual DefinedOrUnknownSVal getExtent(ValueManager& ValMgr) const {
+  virtual DefinedOrUnknownSVal getExtent(SValBuilder &svalBuilder) const {
     return UnknownVal();
   }
 
@@ -329,7 +330,7 @@ public:
 
   bool isBoundable() const { return true; }
 
-  DefinedOrUnknownSVal getExtent(ValueManager& ValMgr) const;
+  DefinedOrUnknownSVal getExtent(SValBuilder &svalBuilder) const;
 
   void Profile(llvm::FoldingSetNodeID& ID) const;
 
@@ -356,13 +357,13 @@ public:
     return getContext().getPointerType(getValueType());
   }
 
-  QualType getDesugaredValueType() const {
+  QualType getDesugaredValueType(ASTContext &Context) const {
     QualType T = getValueType();
-    return T.getTypePtr() ? T.getDesugaredType() : T;
+    return T.getTypePtrOrNull() ? T.getDesugaredType(Context) : T;
   }
 
-  QualType getDesugaredLocationType() const {
-    return getLocationType().getDesugaredType();
+  QualType getDesugaredLocationType(ASTContext &Context) const {
+    return getLocationType().getDesugaredType(Context);
   }
 
   bool isBoundable() const { return true; }
@@ -542,7 +543,7 @@ public:
 
   bool isBoundable() const { return true; }
 
-  DefinedOrUnknownSVal getExtent(ValueManager& ValMgr) const;
+  DefinedOrUnknownSVal getExtent(SValBuilder &svalBuilder) const;
 
   void Profile(llvm::FoldingSetNodeID& ID) const;
 
@@ -578,7 +579,7 @@ public:
     return Str->getType();
   }
 
-  DefinedOrUnknownSVal getExtent(ValueManager& ValMgr) const;
+  DefinedOrUnknownSVal getExtent(SValBuilder &svalBuilder) const;
 
   bool isBoundable() const { return false; }
 
@@ -639,7 +640,7 @@ public:
   const Decl* getDecl() const { return D; }
   void Profile(llvm::FoldingSetNodeID& ID) const;
 
-  DefinedOrUnknownSVal getExtent(ValueManager& ValMgr) const;
+  DefinedOrUnknownSVal getExtent(SValBuilder &svalBuilder) const;
 
   static bool classof(const MemRegion* R) {
     unsigned k = R->getKind();
@@ -725,7 +726,7 @@ public:
     return getDecl()->getType();
   }
 
-  DefinedOrUnknownSVal getExtent(ValueManager& ValMgr) const;
+  DefinedOrUnknownSVal getExtent(SValBuilder &svalBuilder) const;
 
   static void ProfileRegion(llvm::FoldingSetNodeID& ID, const FieldDecl* FD,
                             const MemRegion* superRegion) {
@@ -825,13 +826,13 @@ public:
 };
 
 // C++ temporary object associated with an expression.
-class CXXObjectRegion : public TypedRegion {
+class CXXTempObjectRegion : public TypedRegion {
   friend class MemRegionManager;
 
   Expr const *Ex;
 
-  CXXObjectRegion(Expr const *E, MemRegion const *sReg) 
-    : TypedRegion(sReg, CXXObjectRegionKind), Ex(E) {}
+  CXXTempObjectRegion(Expr const *E, MemRegion const *sReg) 
+    : TypedRegion(sReg, CXXTempObjectRegionKind), Ex(E) {}
 
   static void ProfileRegion(llvm::FoldingSetNodeID &ID,
                             Expr const *E, const MemRegion *sReg);
@@ -841,10 +842,37 @@ public:
     return Ex->getType();
   }
 
+  void dumpToStream(llvm::raw_ostream& os) const;
+
   void Profile(llvm::FoldingSetNodeID &ID) const;
 
   static bool classof(const MemRegion* R) {
-    return R->getKind() == CXXObjectRegionKind;
+    return R->getKind() == CXXTempObjectRegionKind;
+  }
+};
+
+// CXXBaseObjectRegion represents a base object within a C++ object. It is 
+// identified by the base class declaration and the region of its parent object.
+class CXXBaseObjectRegion : public TypedRegion {
+  friend class MemRegionManager;
+
+  const CXXRecordDecl *decl;
+
+  CXXBaseObjectRegion(const CXXRecordDecl *d, const MemRegion *sReg)
+    : TypedRegion(sReg, CXXBaseObjectRegionKind), decl(d) {}
+
+  static void ProfileRegion(llvm::FoldingSetNodeID &ID,
+                            const CXXRecordDecl *decl, const MemRegion *sReg);
+
+public:
+  QualType getValueType() const;
+
+  void dumpToStream(llvm::raw_ostream& os) const;
+
+  void Profile(llvm::FoldingSetNodeID &ID) const;
+
+  static bool classof(const MemRegion *region) {
+    return region->getKind() == CXXBaseObjectRegionKind;
   }
 };
 
@@ -971,8 +999,11 @@ public:
   const ObjCIvarRegion *getObjCIvarRegion(const ObjCIvarDecl* ivd,
                                           const MemRegion* superRegion);
 
-  const CXXObjectRegion *getCXXObjectRegion(Expr const *Ex,
-                                            LocationContext const *LC);
+  const CXXTempObjectRegion *getCXXTempObjectRegion(Expr const *Ex,
+                                                    LocationContext const *LC);
+
+  const CXXBaseObjectRegion *getCXXBaseObjectRegion(const CXXRecordDecl *decl,
+                                                  const MemRegion *superRegion);
 
   const FunctionTextRegion *getFunctionTextRegion(const FunctionDecl *FD);
   const BlockTextRegion *getBlockTextRegion(const BlockDecl *BD,

@@ -15,6 +15,7 @@
 #include "ARM.h"
 #include "ARMAddressingModes.h"
 #include "ARMConstantPoolValue.h"
+#include "ARMHazardRecognizer.h"
 #include "ARMMachineFunctionInfo.h"
 #include "ARMRegisterInfo.h"
 #include "ARMGenInstrInfo.inc"
@@ -40,9 +41,56 @@ static cl::opt<bool>
 EnableARM3Addr("enable-arm-3-addr-conv", cl::Hidden,
                cl::desc("Enable ARM 2-addr to 3-addr conv"));
 
+
+/// ARM_MLxEntry - Record information about MLA / MLS instructions.
+struct ARM_MLxEntry {
+  unsigned MLxOpc;     // MLA / MLS opcode
+  unsigned MulOpc;     // Expanded multiplication opcode
+  unsigned AddSubOpc;  // Expanded add / sub opcode
+  bool NegAcc;         // True if the acc is negated before the add / sub.
+  bool HasLane;        // True if instruction has an extra "lane" operand.
+};
+
+static const ARM_MLxEntry ARM_MLxTable[] = {
+  // MLxOpc,          MulOpc,           AddSubOpc,       NegAcc, HasLane
+  // fp scalar ops
+  { ARM::VMLAS,       ARM::VMULS,       ARM::VADDS,      false,  false },
+  { ARM::VMLSS,       ARM::VMULS,       ARM::VSUBS,      false,  false },
+  { ARM::VMLAD,       ARM::VMULD,       ARM::VADDD,      false,  false },
+  { ARM::VMLSD,       ARM::VMULD,       ARM::VSUBD,      false,  false },
+  { ARM::VNMLAS,      ARM::VNMULS,      ARM::VSUBS,      true,   false },
+  { ARM::VNMLSS,      ARM::VMULS,       ARM::VSUBS,      true,   false },
+  { ARM::VNMLAD,      ARM::VNMULD,      ARM::VSUBD,      true,   false },
+  { ARM::VNMLSD,      ARM::VMULD,       ARM::VSUBD,      true,   false },
+
+  // fp SIMD ops
+  { ARM::VMLAfd,      ARM::VMULfd,      ARM::VADDfd,     false,  false },
+  { ARM::VMLSfd,      ARM::VMULfd,      ARM::VSUBfd,     false,  false },
+  { ARM::VMLAfq,      ARM::VMULfq,      ARM::VADDfq,     false,  false },
+  { ARM::VMLSfq,      ARM::VMULfq,      ARM::VSUBfq,     false,  false },
+  { ARM::VMLAslfd,    ARM::VMULslfd,    ARM::VADDfd,     false,  true  },
+  { ARM::VMLSslfd,    ARM::VMULslfd,    ARM::VSUBfd,     false,  true  },
+  { ARM::VMLAslfq,    ARM::VMULslfq,    ARM::VADDfq,     false,  true  },
+  { ARM::VMLSslfq,    ARM::VMULslfq,    ARM::VSUBfq,     false,  true  },
+};
+
 ARMBaseInstrInfo::ARMBaseInstrInfo(const ARMSubtarget& STI)
   : TargetInstrInfoImpl(ARMInsts, array_lengthof(ARMInsts)),
     Subtarget(STI) {
+  for (unsigned i = 0, e = array_lengthof(ARM_MLxTable); i != e; ++i) {
+    if (!MLxEntryMap.insert(std::make_pair(ARM_MLxTable[i].MLxOpc, i)).second)
+      assert(false && "Duplicated entries?");
+    MLxHazardOpcodes.insert(ARM_MLxTable[i].AddSubOpc);
+    MLxHazardOpcodes.insert(ARM_MLxTable[i].MulOpc);
+  }
+}
+
+ScheduleHazardRecognizer *ARMBaseInstrInfo::
+CreateTargetPostRAHazardRecognizer(const InstrItineraryData *II) const {
+  if (Subtarget.isThumb2() || Subtarget.hasVFP2())
+    return (ScheduleHazardRecognizer *)
+      new ARMHazardRecognizer(II, *this, getRegisterInfo(), Subtarget);
+  return TargetInstrInfoImpl::CreateTargetPostRAHazardRecognizer(II);
 }
 
 MachineInstr *
@@ -196,129 +244,6 @@ ARMBaseInstrInfo::convertToThreeAddress(MachineFunction::iterator &MFI,
   MFI->insert(MBBI, NewMIs[0]);
   return NewMIs[0];
 }
-
-void
-ARMBaseInstrInfo::emitPushInst(MachineBasicBlock &MBB, 
-                MachineBasicBlock::iterator MI,
-                const std::vector<CalleeSavedInfo> &CSI, unsigned Opc,
-                bool(*Func)(unsigned, bool)) const {
-  MachineFunction &MF = *MBB.getParent();
-  DebugLoc DL;
-  if (MI != MBB.end()) DL = MI->getDebugLoc();
-
-  MachineInstrBuilder MIB = BuildMI(MF, DL, get(Opc));
-  MIB.addReg(ARM::SP, getDefRegState(true));
-  MIB.addReg(ARM::SP);
-  AddDefaultPred(MIB);
-  bool NumRegs = false;
-  for (unsigned i = CSI.size(); i != 0; --i) {
-    unsigned Reg = CSI[i-1].getReg();
-    if (!(Func)(Reg, Subtarget.isTargetDarwin())) continue;
-    
-    // Add the callee-saved register as live-in unless it's LR and
-    // @llvm.returnaddress is called. If LR is returned for @llvm.returnaddress
-    // then it's already added to the function and entry block live-in sets.
-    bool isKill = true;
-    if (Reg == ARM::LR) {
-      if (MF.getFrameInfo()->isReturnAddressTaken() &&
-          MF.getRegInfo().isLiveIn(Reg))
-        isKill = false;
-    }
-
-    if (isKill)
-      MBB.addLiveIn(Reg);
-    
-    NumRegs = true;
-    MIB.addReg(Reg, getKillRegState(isKill));
-  }
-  
-  // It's illegal to emit push instruction without operands.
-  if (NumRegs)
-    MBB.insert(MI, &*MIB);
-  else
-    MF.DeleteMachineInstr(MIB);        
-}
-
-bool
-ARMBaseInstrInfo::spillCalleeSavedRegisters(MachineBasicBlock &MBB,
-                                        MachineBasicBlock::iterator MI,
-                                        const std::vector<CalleeSavedInfo> &CSI,
-                                        const TargetRegisterInfo *TRI) const {
-  if (CSI.empty())
-    return false;
-
-  MachineFunction &MF = *MBB.getParent();
-  ARMFunctionInfo *AFI = MF.getInfo<ARMFunctionInfo>();
-  DebugLoc DL = MI->getDebugLoc();
-  
-  unsigned PushOpc = AFI->isThumbFunction() ? ARM::t2STMDB_UPD : ARM::STMDB_UPD;
-  unsigned FltOpc = ARM::VSTMDDB_UPD;
-  emitPushInst(MBB, MI, CSI, PushOpc, &isARMArea1Register);
-  emitPushInst(MBB, MI, CSI, PushOpc, &isARMArea2Register);
-  emitPushInst(MBB, MI, CSI, FltOpc, &isARMArea3Register);
-
-  return true;
-}
-
-void
-ARMBaseInstrInfo::emitPopInst(MachineBasicBlock &MBB, 
-                MachineBasicBlock::iterator MI,
-                const std::vector<CalleeSavedInfo> &CSI, unsigned Opc,
-                bool isVarArg, bool(*Func)(unsigned, bool)) const {
-  
-  MachineFunction &MF = *MBB.getParent();
-  ARMFunctionInfo *AFI = MF.getInfo<ARMFunctionInfo>();
-  DebugLoc DL = MI->getDebugLoc();
-  
-  MachineInstrBuilder MIB = BuildMI(MF, DL, get(Opc));
-  MIB.addReg(ARM::SP, getDefRegState(true));
-  MIB.addReg(ARM::SP);
-  AddDefaultPred(MIB);
-  bool NumRegs = false;
-  for (unsigned i = CSI.size(); i != 0; --i) {
-    unsigned Reg = CSI[i-1].getReg();
-    if (!(Func)(Reg, Subtarget.isTargetDarwin())) continue;
-
-    if (Reg == ARM::LR && !isVarArg) {
-      Reg = ARM::PC;
-      unsigned Opc = AFI->isThumbFunction() ? ARM::t2LDMIA_RET : ARM::LDMIA_RET;
-      (*MIB).setDesc(get(Opc));
-      MI = MBB.erase(MI);
-    }
-
-    MIB.addReg(Reg, RegState::Define);
-    NumRegs = true;
-  }
-    
-  // It's illegal to emit pop instruction without operands.
-  if (NumRegs)
-    MBB.insert(MI, &*MIB);
-  else
-    MF.DeleteMachineInstr(MIB);
-}
-
-bool
-ARMBaseInstrInfo::restoreCalleeSavedRegisters(MachineBasicBlock &MBB,
-                                        MachineBasicBlock::iterator MI,
-                                        const std::vector<CalleeSavedInfo> &CSI,
-                                        const TargetRegisterInfo *TRI) const {
-  if (CSI.empty())
-    return false;
-  
-  MachineFunction &MF = *MBB.getParent();
-  ARMFunctionInfo *AFI = MF.getInfo<ARMFunctionInfo>();
-  bool isVarArg = AFI->getVarArgsRegSaveSize() > 0;
-  DebugLoc DL = MI->getDebugLoc();
-  
-  unsigned PopOpc = AFI->isThumbFunction() ? ARM::t2LDMIA_UPD : ARM::LDMIA_UPD;
-  unsigned FltOpc = ARM::VLDMDIA_UPD;
-  emitPopInst(MBB, MI, CSI, FltOpc, isVarArg, &isARMArea3Register);
-  emitPopInst(MBB, MI, CSI, PopOpc, isVarArg, &isARMArea2Register);
-  emitPopInst(MBB, MI, CSI, PopOpc, isVarArg, &isARMArea1Register);
-
-  return true;
-}
-
 
 // Branch analysis.
 bool
@@ -640,13 +565,13 @@ unsigned ARMBaseInstrInfo::GetInstSizeInBytes(const MachineInstr *MI) const {
     case ARM::BR_JTadd:
     case ARM::tBR_JTr:
     case ARM::t2BR_JT:
-    case ARM::t2TBB:
-    case ARM::t2TBH: {
+    case ARM::t2TBB_JT:
+    case ARM::t2TBH_JT: {
       // These are jumptable branches, i.e. a branch followed by an inlined
       // jumptable. The size is 4 + 4 * number of entries. For TBB, each
       // entry is one byte; TBH two byte each.
-      unsigned EntrySize = (Opc == ARM::t2TBB)
-        ? 1 : ((Opc == ARM::t2TBH) ? 2 : 4);
+      unsigned EntrySize = (Opc == ARM::t2TBB_JT)
+        ? 1 : ((Opc == ARM::t2TBH_JT) ? 2 : 4);
       unsigned NumOps = TID.getNumOperands();
       MachineOperand JTOP =
         MI->getOperand(NumOps - (TID.isPredicable() ? 3 : 2));
@@ -664,7 +589,7 @@ unsigned ARMBaseInstrInfo::GetInstSizeInBytes(const MachineInstr *MI) const {
       // alignment issue.
       unsigned InstSize = (Opc == ARM::tBR_JTr || Opc == ARM::t2BR_JT) ? 2 : 4;
       unsigned NumEntries = getNumJTEntries(JT, JTI);
-      if (Opc == ARM::t2TBB && (NumEntries & 1))
+      if (Opc == ARM::t2TBB_JT && (NumEntries & 1))
         // Make sure the instruction that follows TBB is 2-byte aligned.
         // FIXME: Constant island pass should insert an "ALIGN" instruction
         // instead.
@@ -1512,9 +1437,7 @@ AnalyzeCompare(const MachineInstr *MI, unsigned &SrcReg, int &CmpMask,
   switch (MI->getOpcode()) {
   default: break;
   case ARM::CMPri:
-  case ARM::CMPzri:
   case ARM::t2CMPri:
-  case ARM::t2CMPzri:
     SrcReg = MI->getOperand(0).getReg();
     CmpMask = ~0;
     CmpValue = MI->getOperand(1).getImm();
@@ -2317,4 +2240,20 @@ hasLowDefLatency(const InstrItineraryData *ItinData,
     return (DefCycle != -1 && DefCycle <= 2);
   }
   return false;
+}
+
+bool
+ARMBaseInstrInfo::isFpMLxInstruction(unsigned Opcode, unsigned &MulOpc,
+                                     unsigned &AddSubOpc,
+                                     bool &NegAcc, bool &HasLane) const {
+  DenseMap<unsigned, unsigned>::const_iterator I = MLxEntryMap.find(Opcode);
+  if (I == MLxEntryMap.end())
+    return false;
+
+  const ARM_MLxEntry &Entry = ARM_MLxTable[I->second];
+  MulOpc = Entry.MulOpc;
+  AddSubOpc = Entry.AddSubOpc;
+  NegAcc = Entry.NegAcc;
+  HasLane = Entry.HasLane;
+  return true;
 }

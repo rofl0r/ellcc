@@ -26,8 +26,8 @@
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/Triple.h"
 #include "llvm/Support/ErrorHandling.h"
-#include "llvm/System/Host.h"
-#include "llvm/System/Path.h"
+#include "llvm/Support/Host.h"
+#include "llvm/Support/Path.h"
 using namespace clang;
 
 static const char *getAnalysisName(Analyses Kind) {
@@ -302,6 +302,7 @@ static const char *getInputKindName(InputKind Kind) {
   case IK_ObjC:              return "objective-c";
   case IK_ObjCXX:            return "objective-c++";
   case IK_OpenCL:            return "cl";
+  case IK_CUDA:              return "cuda";
   case IK_PreprocessedC:     return "cpp-output";
   case IK_PreprocessedCXX:   return "c++-cpp-output";
   case IK_PreprocessedObjC:  return "objective-c-cpp-output";
@@ -319,6 +320,7 @@ static const char *getActionName(frontend::ActionKind Kind) {
     llvm_unreachable("Invalid kind!");
 
   case frontend::ASTDump:                return "-ast-dump";
+  case frontend::ASTDumpXML:             return "-ast-dump-xml";
   case frontend::ASTPrint:               return "-ast-print";
   case frontend::ASTPrintXML:            return "-ast-print-xml";
   case frontend::ASTView:                return "-ast-view";
@@ -770,6 +772,16 @@ using namespace clang::driver::cc1options;
 
 //
 
+static unsigned getOptimizationLevel(ArgList &Args, InputKind IK,
+                                     Diagnostic &Diags) {
+  unsigned DefaultOpt = 0;
+  if (IK == IK_OpenCL && !Args.hasArg(OPT_cl_opt_disable))
+    DefaultOpt = 2;
+  // -Os implies -O2
+  return Args.hasArg(OPT_Os) ? 2 :
+    Args.getLastArgIntValue(OPT_O, DefaultOpt, Diags);
+}
+
 static void ParseAnalyzerArgs(AnalyzerOptions &Opts, ArgList &Args,
                               Diagnostic &Diags) {
   using namespace cc1options;
@@ -847,19 +859,15 @@ static void ParseAnalyzerArgs(AnalyzerOptions &Opts, ArgList &Args,
   Opts.IdempotentOps = Args.hasArg(OPT_analysis_WarnIdempotentOps);
 }
 
-static void ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args,
+static void ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
                              Diagnostic &Diags) {
   using namespace cc1options;
-  // -Os implies -O2
-  if (Args.hasArg(OPT_Os))
-    Opts.OptimizationLevel = 2;
-  else {
-    Opts.OptimizationLevel = Args.getLastArgIntValue(OPT_O, 0, Diags);
-    if (Opts.OptimizationLevel > 3) {
-      Diags.Report(diag::err_drv_invalid_value)
-        << Args.getLastArg(OPT_O)->getAsString(Args) << Opts.OptimizationLevel;
-      Opts.OptimizationLevel = 3;
-    }
+
+  Opts.OptimizationLevel = getOptimizationLevel(Args, IK, Diags);
+  if (Opts.OptimizationLevel > 3) {
+    Diags.Report(diag::err_drv_invalid_value)
+      << Args.getLastArg(OPT_O)->getAsString(Args) << Opts.OptimizationLevel;
+    Opts.OptimizationLevel = 3;
   }
 
   // We must always run at least the always inlining pass.
@@ -889,11 +897,16 @@ static void ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args,
   Opts.DisableFPElim = Args.hasArg(OPT_mdisable_fp_elim);
   Opts.FloatABI = Args.getLastArgValue(OPT_mfloat_abi);
   Opts.HiddenWeakVTables = Args.hasArg(OPT_fhidden_weak_vtables);
+  Opts.LessPreciseFPMAD = Args.hasArg(OPT_cl_mad_enable);
   Opts.LimitFloatPrecision = Args.getLastArgValue(OPT_mlimit_float_precision);
+  Opts.NoInfsFPMath = Opts.NoNaNsFPMath = Args.hasArg(OPT_cl_finite_math_only)||
+                                          Args.hasArg(OPT_cl_fast_relaxed_math);
   Opts.NoZeroInitializedInBSS = Args.hasArg(OPT_mno_zero_initialized_in_bss);
   Opts.RelaxAll = Args.hasArg(OPT_mrelax_all);
   Opts.OmitLeafFramePointer = Args.hasArg(OPT_momit_leaf_frame_pointer);
   Opts.SoftFloat = Args.hasArg(OPT_msoft_float);
+  Opts.UnsafeFPMath = Args.hasArg(OPT_cl_unsafe_math_optimizations) ||
+                      Args.hasArg(OPT_cl_fast_relaxed_math);
   Opts.UnwindTables = Args.hasArg(OPT_munwind_tables);
   Opts.RelocationModel = Args.getLastArgValue(OPT_mrelocation_model, "pic");
 
@@ -1003,6 +1016,8 @@ static InputKind ParseFrontendArgs(FrontendOptions &Opts, ArgList &Args,
       assert(0 && "Invalid option in group!");
     case OPT_ast_dump:
       Opts.ProgramAction = frontend::ASTDump; break;
+    case OPT_ast_dump_xml:
+      Opts.ProgramAction = frontend::ASTDumpXML; break;
     case OPT_ast_print:
       Opts.ProgramAction = frontend::ASTPrint; break;
     case OPT_ast_print_xml:
@@ -1110,6 +1125,7 @@ static InputKind ParseFrontendArgs(FrontendOptions &Opts, ArgList &Args,
       .Case("cl", IK_OpenCL)
       .Case("c", IK_C)
       .Case("cl", IK_OpenCL)
+      .Case("cuda", IK_CUDA)
       .Case("c++", IK_CXX)
       .Case("objective-c", IK_ObjC)
       .Case("objective-c++", IK_ObjCXX)
@@ -1213,10 +1229,8 @@ static void ParseHeaderSearchArgs(HeaderSearchOptions &Opts, ArgList &Args) {
   // FIXME: Need options for the various environment variables!
 }
 
-static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
-                          Diagnostic &Diags) {
-  // FIXME: Cleanup per-file based stuff.
-
+void CompilerInvocation::setLangDefaults(LangOptions &Opts, InputKind IK,
+                                         LangStandard::Kind LangStd) {
   // Set some properties which depend soley on the input kind; it would be nice
   // to move these to the language standard, and have the driver resolve the
   // input kind + language standard.
@@ -1229,18 +1243,6 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
     Opts.ObjC1 = Opts.ObjC2 = 1;
   }
 
-  LangStandard::Kind LangStd = LangStandard::lang_unspecified;
-  if (const Arg *A = Args.getLastArg(OPT_std_EQ)) {
-    LangStd = llvm::StringSwitch<LangStandard::Kind>(A->getValue(Args))
-#define LANGSTANDARD(id, name, desc, features) \
-      .Case(name, LangStandard::lang_##id)
-#include "clang/Frontend/LangStandards.def"
-      .Default(LangStandard::lang_unspecified);
-    if (LangStd == LangStandard::lang_unspecified)
-      Diags.Report(diag::err_drv_invalid_value)
-        << A->getAsString(Args) << A->getValue(Args);
-  }
-
   if (LangStd == LangStandard::lang_unspecified) {
     // Based on the base language, pick one.
     switch (IK) {
@@ -1250,6 +1252,9 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
       assert(0 && "Invalid input kind!");
     case IK_OpenCL:
       LangStd = LangStandard::lang_opencl;
+      break;
+    case IK_CUDA:
+      LangStd = LangStandard::lang_cuda;
       break;
     case IK_Asm:
     case IK_C:
@@ -1286,8 +1291,45 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
     Opts.LaxVectorConversions = 1;
   }
 
+  if (LangStd == LangStandard::lang_cuda)
+    Opts.CUDA = 1;
+
   // OpenCL and C++ both have bool, true, false keywords.
   Opts.Bool = Opts.OpenCL || Opts.CPlusPlus;
+
+  Opts.GNUKeywords = Opts.GNUMode;
+  Opts.CXXOperatorNames = Opts.CPlusPlus;
+
+  // Mimicing gcc's behavior, trigraphs are only enabled if -trigraphs
+  // is specified, or -std is set to a conforming mode.
+  Opts.Trigraphs = !Opts.GNUMode;
+
+  Opts.DollarIdents = !Opts.AsmPreprocessor;
+}
+
+static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
+                          Diagnostic &Diags) {
+  // FIXME: Cleanup per-file based stuff.
+  LangStandard::Kind LangStd = LangStandard::lang_unspecified;
+  if (const Arg *A = Args.getLastArg(OPT_std_EQ)) {
+    LangStd = llvm::StringSwitch<LangStandard::Kind>(A->getValue(Args))
+#define LANGSTANDARD(id, name, desc, features) \
+      .Case(name, LangStandard::lang_##id)
+#include "clang/Frontend/LangStandards.def"
+      .Default(LangStandard::lang_unspecified);
+    if (LangStd == LangStandard::lang_unspecified)
+      Diags.Report(diag::err_drv_invalid_value)
+        << A->getAsString(Args) << A->getValue(Args);
+  }
+
+  if (const Arg *A = Args.getLastArg(OPT_cl_std_EQ)) {
+    if (strcmp(A->getValue(Args), "CL1.1") != 0) {
+      Diags.Report(diag::err_drv_invalid_value)
+        << A->getAsString(Args) << A->getValue(Args);
+    }
+  }
+
+  CompilerInvocation::setLangDefaults(Opts, IK, LangStd);
 
   // We abuse '-f[no-]gnu-keywords' to force overriding all GNU-extension
   // keywords. This behavior is provided by GCC's poorly named '-fasm' flag,
@@ -1295,10 +1337,10 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   // '-fgnu-keywords'. Clang conflates the two for simplicity under the single
   // name, as it doesn't seem a useful distinction.
   Opts.GNUKeywords = Args.hasFlag(OPT_fgnu_keywords, OPT_fno_gnu_keywords,
-                                  Opts.GNUMode);
+                                  Opts.GNUKeywords);
 
-  if (Opts.CPlusPlus)
-    Opts.CXXOperatorNames = !Args.hasArg(OPT_fno_operator_names);
+  if (Args.hasArg(OPT_fno_operator_names))
+    Opts.CXXOperatorNames = 0;
 
   if (Args.hasArg(OPT_fobjc_gc_only))
     Opts.setGCMode(LangOptions::GCOnly);
@@ -1339,15 +1381,12 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   else if (Args.hasArg(OPT_fwrapv))
     Opts.setSignedOverflowBehavior(LangOptions::SOB_Defined);
 
-  // Mimicing gcc's behavior, trigraphs are only enabled if -trigraphs
-  // is specified, or -std is set to a conforming mode.
-  Opts.Trigraphs = !Opts.GNUMode;
   if (Args.hasArg(OPT_trigraphs))
     Opts.Trigraphs = 1;
 
   Opts.DollarIdents = Args.hasFlag(OPT_fdollars_in_identifiers,
                                    OPT_fno_dollars_in_identifiers,
-                                   !Opts.AsmPreprocessor);
+                                   Opts.DollarIdents);
   Opts.PascalStrings = Args.hasArg(OPT_fpascal_strings);
   Opts.Microsoft = Args.hasArg(OPT_fms_extensions);
   Opts.MSCVersion = Args.getLastArgIntValue(OPT_fmsc_version, 0, Diags);
@@ -1391,11 +1430,12 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   Opts.DumpVTableLayouts = Args.hasArg(OPT_fdump_vtable_layouts);
   Opts.SpellChecking = !Args.hasArg(OPT_fno_spell_checking);
   Opts.NoBitFieldTypeAlign = Args.hasArg(OPT_fno_bitfield_type_align);
+  Opts.SinglePrecisionConstants = Args.hasArg(OPT_cl_single_precision_constant);
+  Opts.FastRelaxedMath = Args.hasArg(OPT_cl_fast_relaxed_math);
   Opts.OptimizeSize = 0;
 
   // FIXME: Eliminate this dependency.
-  unsigned Opt =
-    Args.hasArg(OPT_Os) ? 2 : Args.getLastArgIntValue(OPT_O, 0, Diags);
+  unsigned Opt = getOptimizationLevel(Args, IK, Diags);
   Opts.Optimize = Opt != 0;
 
   // This is the __NO_INLINE__ define, which just depends on things like the
@@ -1419,7 +1459,6 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
 
 static void ParsePreprocessorArgs(PreprocessorOptions &Opts, ArgList &Args,
                                   FileManager &FileMgr,
-                                  const FileSystemOptions &FSOpts,
                                   Diagnostic &Diags) {
   using namespace cc1options;
   Opts.ImplicitPCHInclude = Args.getLastArgValue(OPT_include_pch);
@@ -1474,8 +1513,7 @@ static void ParsePreprocessorArgs(PreprocessorOptions &Opts, ArgList &Args,
     // PCH is handled specially, we need to extra the original include path.
     if (A->getOption().matches(OPT_include_pch)) {
       std::string OriginalFile =
-        ASTReader::getOriginalSourceFile(A->getValue(Args), FileMgr, FSOpts,
-                                         Diags);
+        ASTReader::getOriginalSourceFile(A->getValue(Args), FileMgr, Diags);
       if (OriginalFile.empty())
         continue;
 
@@ -1531,8 +1569,8 @@ static void ParseTargetArgs(TargetOptions &Opts, ArgList &Args) {
 //
 
 void CompilerInvocation::CreateFromArgs(CompilerInvocation &Res,
-                                        const char* const *ArgBegin,
-                                        const char* const *ArgEnd,
+                                        const char *const *ArgBegin,
+                                        const char *const *ArgEnd,
                                         Diagnostic &Diags) {
   // Parse the arguments.
   llvm::OwningPtr<OptTable> Opts(createCC1OptTable());
@@ -1551,21 +1589,21 @@ void CompilerInvocation::CreateFromArgs(CompilerInvocation &Res,
     Diags.Report(diag::err_drv_unknown_argument) << (*it)->getAsString(*Args);
 
   ParseAnalyzerArgs(Res.getAnalyzerOpts(), *Args, Diags);
-  ParseCodeGenArgs(Res.getCodeGenOpts(), *Args, Diags);
   ParseDependencyOutputArgs(Res.getDependencyOutputOpts(), *Args);
   ParseDiagnosticArgs(Res.getDiagnosticOpts(), *Args, Diags);
   ParseFileSystemArgs(Res.getFileSystemOpts(), *Args);
+  // FIXME: We shouldn't have to pass the DashX option around here
   InputKind DashX = ParseFrontendArgs(Res.getFrontendOpts(), *Args, Diags);
+  ParseCodeGenArgs(Res.getCodeGenOpts(), *Args, DashX, Diags);
   ParseHeaderSearchArgs(Res.getHeaderSearchOpts(), *Args);
   if (DashX != IK_AST && DashX != IK_LLVM_IR)
     ParseLangArgs(Res.getLangOpts(), *Args, DashX, Diags);
   // FIXME: ParsePreprocessorArgs uses the FileManager to read the contents of
   // PCH file and find the original header name. Remove the need to do that in
-  // ParsePreprocessorArgs and remove the FileManager & FileSystemOptions
+  // ParsePreprocessorArgs and remove the FileManager 
   // parameters from the function and the "FileManager.h" #include.
-  FileManager FileMgr;
-  ParsePreprocessorArgs(Res.getPreprocessorOpts(), *Args,
-                        FileMgr, Res.getFileSystemOpts(), Diags);
+  FileManager FileMgr(Res.getFileSystemOpts());
+  ParsePreprocessorArgs(Res.getPreprocessorOpts(), *Args, FileMgr, Diags);
   ParsePreprocessorOutputArgs(Res.getPreprocessorOutputOpts(), *Args);
   ParseTargetArgs(Res.getTargetOpts(), *Args);
 }

@@ -17,32 +17,34 @@
 
 using namespace clang;
 
-SVal Environment::GetSVal(const Stmt *E, ValueManager& ValMgr) const {
+SVal Environment::lookupExpr(const Stmt* E) const {
+  const SVal* X = ExprBindings.lookup(E);
+  if (X) {
+    SVal V = *X;
+    return V;
+  }
+  return UnknownVal();
+}
 
+SVal Environment::getSVal(const Stmt *E, SValBuilder& svalBuilder) const {
   for (;;) {
-
     switch (E->getStmtClass()) {
-
       case Stmt::AddrLabelExprClass:
-        return ValMgr.makeLoc(cast<AddrLabelExpr>(E));
-
-        // ParenExprs are no-ops.
-
+        return svalBuilder.makeLoc(cast<AddrLabelExpr>(E));
       case Stmt::ParenExprClass:
+        // ParenExprs are no-ops.
         E = cast<ParenExpr>(E)->getSubExpr();
         continue;
-
       case Stmt::CharacterLiteralClass: {
         const CharacterLiteral* C = cast<CharacterLiteral>(E);
-        return ValMgr.makeIntVal(C->getValue(), C->getType());
+        return svalBuilder.makeIntVal(C->getValue(), C->getType());
       }
-
       case Stmt::CXXBoolLiteralExprClass: {
         const SVal *X = ExprBindings.lookup(E);
         if (X) 
           return *X;
         else 
-          return ValMgr.makeIntVal(cast<CXXBoolLiteralExpr>(E));
+          return svalBuilder.makeIntVal(cast<CXXBoolLiteralExpr>(E));
       }
       case Stmt::IntegerLiteralClass: {
         // In C++, this expression may have been bound to a temporary object.
@@ -50,34 +52,39 @@ SVal Environment::GetSVal(const Stmt *E, ValueManager& ValMgr) const {
         if (X)
           return *X;
         else
-          return ValMgr.makeIntVal(cast<IntegerLiteral>(E));
+          return svalBuilder.makeIntVal(cast<IntegerLiteral>(E));
       }
-
-      // Casts where the source and target type are the same
-      // are no-ops.  We blast through these to get the descendant
-      // subexpression that has a value.
-
       case Stmt::ImplicitCastExprClass:
       case Stmt::CStyleCastExprClass: {
+        // We blast through no-op casts to get the descendant
+        // subexpression that has a value.
         const CastExpr* C = cast<CastExpr>(E);
         QualType CT = C->getType();
-
         if (CT->isVoidType())
           return UnknownVal();
-
+        if (C->getCastKind() == CK_NoOp ||
+            C->getCastKind() == CK_LValueToRValue) { // temporary workaround
+          E = C->getSubExpr();
+          continue;
+        }
         break;
       }
-
-        // Handle all other Stmt* using a lookup.
-
+      case Stmt::ExprWithCleanupsClass:
+        E = cast<ExprWithCleanups>(E)->getSubExpr();
+        continue;
+      case Stmt::CXXBindTemporaryExprClass:
+        E = cast<CXXBindTemporaryExpr>(E)->getSubExpr();
+        continue;
+      case Stmt::CXXFunctionalCastExprClass:
+        E = cast<CXXFunctionalCastExpr>(E)->getSubExpr();
+        continue;        
+      // Handle all other Stmt* using a lookup.
       default:
         break;
     };
-
     break;
   }
-
-  return LookupExpr(E);
+  return lookupExpr(E);
 }
 
 Environment EnvironmentManager::bindExpr(Environment Env, const Stmt *S,
@@ -86,12 +93,12 @@ Environment EnvironmentManager::bindExpr(Environment Env, const Stmt *S,
 
   if (V.isUnknown()) {
     if (Invalidate)
-      return Environment(F.Remove(Env.ExprBindings, S));
+      return Environment(F.remove(Env.ExprBindings, S));
     else
       return Env;
   }
 
-  return Environment(F.Add(Env.ExprBindings, S, V));
+  return Environment(F.add(Env.ExprBindings, S, V));
 }
 
 static inline const Stmt *MakeLocation(const Stmt *S) {
@@ -101,7 +108,7 @@ static inline const Stmt *MakeLocation(const Stmt *S) {
 Environment EnvironmentManager::bindExprAndLocation(Environment Env,
                                                     const Stmt *S,
                                                     SVal location, SVal V) {
-  return Environment(F.Add(F.Add(Env.ExprBindings, MakeLocation(S), location),
+  return Environment(F.add(F.add(Env.ExprBindings, MakeLocation(S), location),
                            S, V));
 }
 
@@ -175,7 +182,7 @@ EnvironmentManager::RemoveDeadBindings(Environment Env,
 
     // Block-level expressions in callers are assumed always live.
     if (isBlockExprInCallers(BlkExpr, SymReaper.getLocationContext())) {
-      NewEnv.ExprBindings = F.Add(NewEnv.ExprBindings, BlkExpr, X);
+      NewEnv.ExprBindings = F.add(NewEnv.ExprBindings, BlkExpr, X);
 
       if (isa<loc::MemRegionVal>(X)) {
         const MemRegion* R = cast<loc::MemRegionVal>(X).getRegion();
@@ -194,7 +201,7 @@ EnvironmentManager::RemoveDeadBindings(Environment Env,
 
     if (SymReaper.isLive(BlkExpr)) {
       // Copy the binding to the new map.
-      NewEnv.ExprBindings = F.Add(NewEnv.ExprBindings, BlkExpr, X);
+      NewEnv.ExprBindings = F.add(NewEnv.ExprBindings, BlkExpr, X);
 
       // If the block expr's value is a memory region, then mark that region.
       if (isa<loc::MemRegionVal>(X)) {
@@ -213,7 +220,7 @@ EnvironmentManager::RemoveDeadBindings(Environment Env,
     // beginning of itself, but we need its UndefinedVal to determine its
     // SVal.
     if (X.isUndef() && cast<UndefinedVal>(X).getData())
-      NewEnv.ExprBindings = F.Add(NewEnv.ExprBindings, BlkExpr, X);
+      NewEnv.ExprBindings = F.add(NewEnv.ExprBindings, BlkExpr, X);
   }
   
   // Go through he deferred locations and add them to the new environment if
@@ -222,7 +229,7 @@ EnvironmentManager::RemoveDeadBindings(Environment Env,
       I = deferredLocations.begin(), E = deferredLocations.end(); I != E; ++I) {
     const Stmt *S = (Stmt*) (((uintptr_t) I->first) & (uintptr_t) ~0x1);
     if (NewEnv.ExprBindings.lookup(S))
-      NewEnv.ExprBindings = F.Add(NewEnv.ExprBindings, I->first, I->second);
+      NewEnv.ExprBindings = F.add(NewEnv.ExprBindings, I->first, I->second);
   }
 
   return NewEnv;

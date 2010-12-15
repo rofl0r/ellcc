@@ -25,11 +25,11 @@
 #include "clang/AST/Stmt.h"
 #include "clang/AST/StmtCXX.h"
 #include "clang/AST/StmtObjC.h"
-#include "clang/AST/TypeLocBuilder.h"
 #include "clang/Sema/Ownership.h"
 #include "clang/Sema/Designator.h"
 #include "clang/Lex/Preprocessor.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "TypeLocBuilder.h"
 #include <algorithm>
 
 namespace clang {
@@ -518,6 +518,14 @@ public:
   QualType RebuildTemplateSpecializationType(TemplateName Template,
                                              SourceLocation TemplateLoc,
                                        const TemplateArgumentListInfo &Args);
+
+  /// \brief Build a new parenthesized type.
+  ///
+  /// By default, builds a new ParenType type from the inner type.
+  /// Subclasses may override this routine to provide different behavior.
+  QualType RebuildParenType(QualType InnerType) {
+    return SemaRef.Context.getParenType(InnerType);
+  }
 
   /// \brief Build a new qualified name type.
   ///
@@ -1348,19 +1356,6 @@ public:
     return getSema().ActOnStmtExpr(LParenLoc, SubStmt, RParenLoc);
   }
 
-  /// \brief Build a new __builtin_types_compatible_p expression.
-  ///
-  /// By default, performs semantic analysis to build the new expression.
-  /// Subclasses may override this routine to provide different behavior.
-  ExprResult RebuildTypesCompatibleExpr(SourceLocation BuiltinLoc,
-                                              TypeSourceInfo *TInfo1,
-                                              TypeSourceInfo *TInfo2,
-                                              SourceLocation RParenLoc) {
-    return getSema().BuildTypesCompatibleExpr(BuiltinLoc,
-                                              TInfo1, TInfo2,
-                                              RParenLoc);
-  }
-
   /// \brief Build a new __builtin_choose_expr expression.
   ///
   /// By default, performs semantic analysis to build the new expression.
@@ -1657,6 +1652,18 @@ public:
     return getSema().BuildUnaryTypeTrait(Trait, StartLoc, T, RParenLoc);
   }
 
+  /// \brief Build a new binary type trait expression.
+  ///
+  /// By default, performs semantic analysis to build the new expression.
+  /// Subclasses may override this routine to provide different behavior.
+  ExprResult RebuildBinaryTypeTrait(BinaryTypeTrait Trait,
+                                    SourceLocation StartLoc,
+                                    TypeSourceInfo *LhsT,
+                                    TypeSourceInfo *RhsT,
+                                    SourceLocation RParenLoc) {
+    return getSema().BuildBinaryTypeTrait(Trait, StartLoc, LhsT, RhsT, RParenLoc);
+  }
+
   /// \brief Build a new (previously unresolved) declaration reference
   /// expression.
   ///
@@ -1808,6 +1815,7 @@ public:
   /// \brief Build a new Objective-C class message.
   ExprResult RebuildObjCMessageExpr(TypeSourceInfo *ReceiverTypeInfo,
                                           Selector Sel,
+                                          SourceLocation SelectorLoc,
                                           ObjCMethodDecl *Method,
                                           SourceLocation LBracLoc, 
                                           MultiExprArg Args,
@@ -1815,13 +1823,14 @@ public:
     return SemaRef.BuildClassMessage(ReceiverTypeInfo,
                                      ReceiverTypeInfo->getType(),
                                      /*SuperLoc=*/SourceLocation(),
-                                     Sel, Method, LBracLoc, RBracLoc,
-                                     move(Args));
+                                     Sel, Method, LBracLoc, SelectorLoc,
+                                     RBracLoc, move(Args));
   }
 
   /// \brief Build a new Objective-C instance message.
   ExprResult RebuildObjCMessageExpr(Expr *Receiver,
                                           Selector Sel,
+                                          SourceLocation SelectorLoc,
                                           ObjCMethodDecl *Method,
                                           SourceLocation LBracLoc, 
                                           MultiExprArg Args,
@@ -1829,8 +1838,8 @@ public:
     return SemaRef.BuildInstanceMessage(Receiver,
                                         Receiver->getType(),
                                         /*SuperLoc=*/SourceLocation(),
-                                        Sel, Method, LBracLoc, RBracLoc,
-                                        move(Args));
+                                        Sel, Method, LBracLoc, SelectorLoc,
+                                        RBracLoc, move(Args));
   }
 
   /// \brief Build a new Objective-C ivar reference expression.
@@ -1891,39 +1900,20 @@ public:
                                               /*TemplateArgs=*/0);
   }
   
-  /// \brief Build a new Objective-C implicit setter/getter reference 
-  /// expression.
+  /// \brief Build a new Objective-C property reference expression.
   ///
   /// By default, performs semantic analysis to build the new expression.
-  /// Subclasses may override this routine to provide different behavior.  
-  ExprResult RebuildObjCImplicitSetterGetterRefExpr(
-                                                        ObjCMethodDecl *Getter,
-                                                        QualType T,
-                                                        ObjCMethodDecl *Setter,
-                                                        SourceLocation NameLoc,
-                                                        Expr *Base,
-                                                        SourceLocation SuperLoc,
-                                                        QualType SuperTy, 
-                                                        bool Super) {
-    // Since these expressions can only be value-dependent, we do not need to
-    // perform semantic analysis again.
-    if (Super)
-      return Owned(
-        new (getSema().Context) ObjCImplicitSetterGetterRefExpr(Getter, T,
-                                                                VK_LValue,
-                                                                OK_Ordinary,
-                                                                Setter,
-                                                                NameLoc,
-                                                                SuperLoc,
-                                                                SuperTy));
-    else
-      return Owned(
-        new (getSema().Context) ObjCImplicitSetterGetterRefExpr(Getter, T,
-                                                                VK_LValue,
-                                                                OK_Ordinary,
-                                                                Setter,
-                                                                NameLoc,
-                                                                Base));
+  /// Subclasses may override this routine to provide different behavior.
+  ExprResult RebuildObjCPropertyRefExpr(Expr *Base, QualType T,
+                                        ObjCMethodDecl *Getter,
+                                        ObjCMethodDecl *Setter,
+                                        SourceLocation PropertyLoc) {
+    // Since these expressions can only be value-dependent, we do not
+    // need to perform semantic analysis again.
+    return Owned(
+      new (getSema().Context) ObjCPropertyRefExpr(Getter, Setter, T,
+                                                  VK_LValue, OK_ObjCProperty,
+                                                  PropertyLoc, Base));
   }
 
   /// \brief Build a new Objective-C "isa" expression.
@@ -3388,6 +3378,28 @@ TreeTransform<Derived>::TransformElaboratedType(TypeLocBuilder &TLB,
   NewTL.setKeywordLoc(TL.getKeywordLoc());
   NewTL.setQualifierRange(TL.getQualifierRange());
 
+  return Result;
+}
+
+template<typename Derived>
+QualType
+TreeTransform<Derived>::TransformParenType(TypeLocBuilder &TLB,
+                                           ParenTypeLoc TL) {
+  QualType Inner = getDerived().TransformType(TLB, TL.getInnerLoc());
+  if (Inner.isNull())
+    return QualType();
+
+  QualType Result = TL.getType();
+  if (getDerived().AlwaysRebuild() ||
+      Inner != TL.getInnerLoc().getType()) {
+    Result = getDerived().RebuildParenType(Inner);
+    if (Result.isNull())
+      return QualType();
+  }
+
+  ParenTypeLoc NewTL = TLB.push<ParenTypeLoc>(Result);
+  NewTL.setLParenLoc(TL.getLParenLoc());
+  NewTL.setRParenLoc(TL.getRParenLoc());
   return Result;
 }
 
@@ -4943,30 +4955,6 @@ TreeTransform<Derived>::TransformStmtExpr(StmtExpr *E) {
 
 template<typename Derived>
 ExprResult
-TreeTransform<Derived>::TransformTypesCompatibleExpr(TypesCompatibleExpr *E) {
-  TypeSourceInfo *TInfo1;
-  TypeSourceInfo *TInfo2;
-  
-  TInfo1 = getDerived().TransformType(E->getArgTInfo1());
-  if (!TInfo1)
-    return ExprError();
-
-  TInfo2 = getDerived().TransformType(E->getArgTInfo2());
-  if (!TInfo2)
-    return ExprError();
-
-  if (!getDerived().AlwaysRebuild() &&
-      TInfo1 == E->getArgTInfo1() &&
-      TInfo2 == E->getArgTInfo2())
-    return SemaRef.Owned(E);
-
-  return getDerived().RebuildTypesCompatibleExpr(E->getBuiltinLoc(),
-                                                 TInfo1, TInfo2,
-                                                 E->getRParenLoc());
-}
-
-template<typename Derived>
-ExprResult
 TreeTransform<Derived>::TransformChooseExpr(ChooseExpr *E) {
   ExprResult Cond = getDerived().TransformExpr(E->getCond());
   if (Cond.isInvalid())
@@ -5686,6 +5674,27 @@ TreeTransform<Derived>::TransformUnaryTypeTraitExpr(UnaryTypeTraitExpr *E) {
 
 template<typename Derived>
 ExprResult
+TreeTransform<Derived>::TransformBinaryTypeTraitExpr(BinaryTypeTraitExpr *E) {
+  TypeSourceInfo *LhsT = getDerived().TransformType(E->getLhsTypeSourceInfo());
+  if (!LhsT)
+    return ExprError();
+
+  TypeSourceInfo *RhsT = getDerived().TransformType(E->getRhsTypeSourceInfo());
+  if (!RhsT)
+    return ExprError();
+
+  if (!getDerived().AlwaysRebuild() &&
+      LhsT == E->getLhsTypeSourceInfo() && RhsT == E->getRhsTypeSourceInfo())
+    return SemaRef.Owned(E);
+
+  return getDerived().RebuildBinaryTypeTrait(E->getTrait(),
+                                            E->getLocStart(),
+                                            LhsT, RhsT,
+                                            E->getLocEnd());
+}
+
+template<typename Derived>
+ExprResult
 TreeTransform<Derived>::TransformDependentScopeDeclRefExpr(
                                                DependentScopeDeclRefExpr *E) {
   NestedNameSpecifier *NNS
@@ -5799,15 +5808,14 @@ TreeTransform<Derived>::TransformCXXBindTemporaryExpr(CXXBindTemporaryExpr *E) {
   return getDerived().TransformExpr(E->getSubExpr());
 }
 
-/// \brief Transform a C++ expression that contains temporaries that should
-/// be destroyed after the expression is evaluated.
+/// \brief Transform a C++ expression that contains cleanups that should
+/// be run after the expression is evaluated.
 ///
-/// Since CXXExprWithTemporaries nodes are implicitly generated, we
+/// Since ExprWithCleanups nodes are implicitly generated, we
 /// just transform the subexpression and return that.
 template<typename Derived>
 ExprResult
-TreeTransform<Derived>::TransformCXXExprWithTemporaries(
-                                                    CXXExprWithTemporaries *E) {
+TreeTransform<Derived>::TransformExprWithCleanups(ExprWithCleanups *E) {
   return getDerived().TransformExpr(E->getSubExpr());
 }
 
@@ -6159,6 +6167,7 @@ TreeTransform<Derived>::TransformObjCMessageExpr(ObjCMessageExpr *E) {
     // Build a new class message send.
     return getDerived().RebuildObjCMessageExpr(ReceiverTypeInfo,
                                                E->getSelector(),
+                                               E->getSelectorLoc(),
                                                E->getMethodDecl(),
                                                E->getLeftLoc(),
                                                move_arg(Args),
@@ -6181,6 +6190,7 @@ TreeTransform<Derived>::TransformObjCMessageExpr(ObjCMessageExpr *E) {
   // Build a new instance message send.
   return getDerived().RebuildObjCMessageExpr(Receiver.get(),
                                              E->getSelector(),
+                                             E->getSelectorLoc(),
                                              E->getMethodDecl(),
                                              E->getLeftLoc(),
                                              move_arg(Args),
@@ -6222,9 +6232,9 @@ TreeTransform<Derived>::TransformObjCIvarRefExpr(ObjCIvarRefExpr *E) {
 template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformObjCPropertyRefExpr(ObjCPropertyRefExpr *E) {
-  // 'super' never changes. Property never changes. Just retain the existing
-  // expression.
-  if (E->isSuperReceiver())
+  // 'super' and types never change. Property never changes. Just
+  // retain the existing expression.
+  if (!E->isObjectReceiver())
     return SemaRef.Owned(E);
   
   // Transform the base expression.
@@ -6238,47 +6248,17 @@ TreeTransform<Derived>::TransformObjCPropertyRefExpr(ObjCPropertyRefExpr *E) {
   if (!getDerived().AlwaysRebuild() &&
       Base.get() == E->getBase())
     return SemaRef.Owned(E);
-  
-  return getDerived().RebuildObjCPropertyRefExpr(Base.get(), E->getProperty(),
-                                                 E->getLocation());
-}
 
-template<typename Derived>
-ExprResult
-TreeTransform<Derived>::TransformObjCImplicitSetterGetterRefExpr(
-                                          ObjCImplicitSetterGetterRefExpr *E) {
-  // If this implicit setter/getter refers to super, it cannot have any
-  // dependent parts. Just retain the existing declaration.
-  if (E->isSuperReceiver())
-    return SemaRef.Owned(E);
-  
-  // If this implicit setter/getter refers to class methods, it cannot have any
-  // dependent parts. Just retain the existing declaration.
-  if (E->getInterfaceDecl())
-    return SemaRef.Owned(E);
-  
-  // Transform the base expression.
-  ExprResult Base = getDerived().TransformExpr(E->getBase());
-  if (Base.isInvalid())
-    return ExprError();
-  
-  // We don't need to transform the getters/setters; they will never change.
-  
-  // If nothing changed, just retain the existing expression.
-  if (!getDerived().AlwaysRebuild() &&
-      Base.get() == E->getBase())
-    return SemaRef.Owned(E);
-  
-  return getDerived().RebuildObjCImplicitSetterGetterRefExpr(
-                                                          E->getGetterMethod(),
-                                                          E->getType(),
-                                                          E->getSetterMethod(),
-                                                          E->getLocation(),
-                                                          Base.get(),
-                                                          E->getSuperLocation(), 
-                                                          E->getSuperType(),
-                                                          E->isSuperReceiver());
-                                                             
+  if (E->isExplicitProperty())
+    return getDerived().RebuildObjCPropertyRefExpr(Base.get(),
+                                                   E->getExplicitProperty(),
+                                                   E->getLocation());
+
+  return getDerived().RebuildObjCPropertyRefExpr(Base.get(),
+                                                 E->getType(),
+                                                 E->getImplicitPropertyGetter(),
+                                                 E->getImplicitPropertySetter(),
+                                                 E->getLocation());
 }
 
 template<typename Derived>

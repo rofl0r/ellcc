@@ -409,16 +409,15 @@ void CFRetainReleaseChecker::PreVisitCallExpr(CheckerContext& C,
     return;
 
   // Get a NULL value.
-  ValueManager &ValMgr = C.getValueManager();
-  DefinedSVal Zero = cast<DefinedSVal>(ValMgr.makeZeroVal(Arg->getType()));
+  SValBuilder &svalBuilder = C.getSValBuilder();
+  DefinedSVal zero = cast<DefinedSVal>(svalBuilder.makeZeroVal(Arg->getType()));
 
   // Make an expression asserting that they're equal.
-  SValuator &SVator = ValMgr.getSValuator();
-  DefinedOrUnknownSVal ArgIsNull = SVator.EvalEQ(state, Zero, *DefArgVal);
+  DefinedOrUnknownSVal ArgIsNull = svalBuilder.evalEQ(state, zero, *DefArgVal);
 
   // Are they equal?
   const GRState *stateTrue, *stateFalse;
-  llvm::tie(stateTrue, stateFalse) = state->Assume(ArgIsNull);
+  llvm::tie(stateTrue, stateFalse) = state->assume(ArgIsNull);
 
   if (stateTrue && !stateFalse) {
     ExplodedNode *N = C.GenerateSink(stateTrue);

@@ -16,16 +16,17 @@
 #define LLVM_MC_MCDWARF_H
 
 #include "llvm/ADT/StringRef.h"
-#include "llvm/MC/MCStreamer.h"
-#include "llvm/MC/MCObjectStreamer.h"
 #include "llvm/MC/MCObjectWriter.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/Dwarf.h"
 #include <vector>
 
 namespace llvm {
+  class MachineMove;
   class MCContext;
   class MCSection;
+  class MCSectionData;
+  class MCStreamer;
   class MCSymbol;
   class MCObjectStreamer;
   class raw_ostream;
@@ -208,8 +209,7 @@ namespace llvm {
     //
     // This emits the Dwarf file and the line tables.
     //
-    static void Emit(MCStreamer *MCOS, const MCSection *DwarfLineSection,
-                     MCSectionData *DLS, int PointerSize);
+    static void Emit(MCStreamer *MCOS);
   };
 
   class MCDwarfLineAddr {
@@ -221,12 +221,24 @@ namespace llvm {
     static void Emit(MCStreamer *MCOS,
                      int64_t LineDelta,uint64_t AddrDelta);
 
-    /// Utility function to compute the size of the encoding.
-    static uint64_t ComputeSize(int64_t LineDelta, uint64_t AddrDelta);
-
     /// Utility function to write the encoding to an object writer.
     static void Write(MCObjectWriter *OW,
                       int64_t LineDelta, uint64_t AddrDelta);
+  };
+
+  struct MCDwarfFrameInfo {
+    MCSymbol *Begin;
+    MCSymbol *End;
+    const MCSymbol *Personality;
+    const MCSymbol *Lsda;
+  };
+
+  class MCDwarfFrameEmitter {
+  public:
+    //
+    // This emits the frame info section.
+    //
+    static void Emit(MCStreamer &streamer);
   };
 } // end namespace llvm
 

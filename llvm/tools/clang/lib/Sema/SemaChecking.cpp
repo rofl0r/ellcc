@@ -198,11 +198,9 @@ static unsigned RFT(unsigned t, bool shift = false) {
       assert(!shift && "cannot shift float types!");
       return (2 << (int)quad) - 1;
     case 5: // poly8
-      assert(!shift && "cannot shift polynomial types!");
-      return (8 << (int)quad) - 1;
+      return shift ? 7 : (8 << (int)quad) - 1;
     case 6: // poly16
-      assert(!shift && "cannot shift polynomial types!");
-      return (4 << (int)quad) - 1;
+      return shift ? 15 : (4 << (int)quad) - 1;
     case 7: // float16
       assert(!shift && "cannot shift float types!");
       return (4 << (int)quad) - 1;
@@ -1759,8 +1757,8 @@ void Sema::CheckFormatString(const StringLiteral *FExpr,
 
 //===--- CHECK: Return Address of Stack Variable --------------------------===//
 
-static DeclRefExpr* EvalVal(Expr *E);
-static DeclRefExpr* EvalAddr(Expr* E);
+static Expr *EvalVal(Expr *E, llvm::SmallVectorImpl<DeclRefExpr *> &refVars);
+static Expr *EvalAddr(Expr* E, llvm::SmallVectorImpl<DeclRefExpr *> &refVars);
 
 /// CheckReturnStackAddr - Check if a return statement returns the address
 ///   of a stack variable.
@@ -1768,45 +1766,79 @@ void
 Sema::CheckReturnStackAddr(Expr *RetValExp, QualType lhsType,
                            SourceLocation ReturnLoc) {
 
-  // Perform checking for returned stack addresses.
+  Expr *stackE = 0;
+  llvm::SmallVector<DeclRefExpr *, 8> refVars;
+
+  // Perform checking for returned stack addresses, local blocks,
+  // label addresses or references to temporaries.
   if (lhsType->isPointerType() || lhsType->isBlockPointerType()) {
-    if (DeclRefExpr *DR = EvalAddr(RetValExp))
-      Diag(DR->getLocStart(), diag::warn_ret_stack_addr)
-       << DR->getDecl()->getDeclName() << RetValExp->getSourceRange();
-
-    // Skip over implicit cast expressions when checking for block expressions.
-    RetValExp = RetValExp->IgnoreParenCasts();
-
-    if (BlockExpr *C = dyn_cast<BlockExpr>(RetValExp))
-      if (C->hasBlockDeclRefExprs())
-        Diag(C->getLocStart(), diag::err_ret_local_block)
-          << C->getSourceRange();
-
-    if (AddrLabelExpr *ALE = dyn_cast<AddrLabelExpr>(RetValExp))
-      Diag(ALE->getLocStart(), diag::warn_ret_addr_label)
-        << ALE->getSourceRange();
-
+    stackE = EvalAddr(RetValExp, refVars);
   } else if (lhsType->isReferenceType()) {
-    // Perform checking for stack values returned by reference.
-    // Check for a reference to the stack
-    if (DeclRefExpr *DR = EvalVal(RetValExp))
-      Diag(DR->getLocStart(), diag::warn_ret_stack_ref)
-        << DR->getDecl()->getDeclName() << RetValExp->getSourceRange();
+    stackE = EvalVal(RetValExp, refVars);
+  }
+
+  if (stackE == 0)
+    return; // Nothing suspicious was found.
+
+  SourceLocation diagLoc;
+  SourceRange diagRange;
+  if (refVars.empty()) {
+    diagLoc = stackE->getLocStart();
+    diagRange = stackE->getSourceRange();
+  } else {
+    // We followed through a reference variable. 'stackE' contains the
+    // problematic expression but we will warn at the return statement pointing
+    // at the reference variable. We will later display the "trail" of
+    // reference variables using notes.
+    diagLoc = refVars[0]->getLocStart();
+    diagRange = refVars[0]->getSourceRange();
+  }
+
+  if (DeclRefExpr *DR = dyn_cast<DeclRefExpr>(stackE)) { //address of local var.
+    Diag(diagLoc, lhsType->isReferenceType() ? diag::warn_ret_stack_ref
+                                             : diag::warn_ret_stack_addr)
+     << DR->getDecl()->getDeclName() << diagRange;
+  } else if (isa<BlockExpr>(stackE)) { // local block.
+    Diag(diagLoc, diag::err_ret_local_block) << diagRange;
+  } else if (isa<AddrLabelExpr>(stackE)) { // address of label.
+    Diag(diagLoc, diag::warn_ret_addr_label) << diagRange;
+  } else { // local temporary.
+    Diag(diagLoc, lhsType->isReferenceType() ? diag::warn_ret_local_temp_ref
+                                             : diag::warn_ret_local_temp_addr)
+     << diagRange;
+  }
+
+  // Display the "trail" of reference variables that we followed until we
+  // found the problematic expression using notes.
+  for (unsigned i = 0, e = refVars.size(); i != e; ++i) {
+    VarDecl *VD = cast<VarDecl>(refVars[i]->getDecl());
+    // If this var binds to another reference var, show the range of the next
+    // var, otherwise the var binds to the problematic expression, in which case
+    // show the range of the expression.
+    SourceRange range = (i < e-1) ? refVars[i+1]->getSourceRange()
+                                  : stackE->getSourceRange();
+    Diag(VD->getLocation(), diag::note_ref_var_local_bind)
+      << VD->getDeclName() << range;
   }
 }
 
 /// EvalAddr - EvalAddr and EvalVal are mutually recursive functions that
 ///  check if the expression in a return statement evaluates to an address
-///  to a location on the stack.  The recursion is used to traverse the
+///  to a location on the stack, a local block, an address of a label, or a
+///  reference to local temporary. The recursion is used to traverse the
 ///  AST of the return expression, with recursion backtracking when we
-///  encounter a subexpression that (1) clearly does not lead to the address
-///  of a stack variable or (2) is something we cannot determine leads to
-///  the address of a stack variable based on such local checking.
+///  encounter a subexpression that (1) clearly does not lead to one of the
+///  above problematic expressions (2) is something we cannot determine leads to
+///  a problematic expression based on such local checking.
+///
+///  Both EvalAddr and EvalVal follow through reference variables to evaluate
+///  the expression that they point to. Such variables are added to the
+///  'refVars' vector so that we know what the reference variable "trail" was.
 ///
 ///  EvalAddr processes expressions that are pointers that are used as
 ///  references (and not L-values).  EvalVal handles all other values.
-///  At the base case of the recursion is a check for a DeclRefExpr* in
-///  the refers to a stack variable.
+///  At the base case of the recursion is a check for the above problematic
+///  expressions.
 ///
 ///  This implementation handles:
 ///
@@ -1816,7 +1848,10 @@ Sema::CheckReturnStackAddr(Expr *RetValExp, QualType lhsType,
 ///   * arbitrary interplay between "&" and "*" operators
 ///   * pointer arithmetic from an address of a stack variable
 ///   * taking the address of an array element where the array is on the stack
-static DeclRefExpr* EvalAddr(Expr *E) {
+static Expr *EvalAddr(Expr *E, llvm::SmallVectorImpl<DeclRefExpr *> &refVars) {
+  if (E->isTypeDependent())
+      return NULL;
+
   // We should only be called for evaluating pointer expressions.
   assert((E->getType()->isAnyPointerType() ||
           E->getType()->isBlockPointerType() ||
@@ -1829,7 +1864,23 @@ static DeclRefExpr* EvalAddr(Expr *E) {
   switch (E->getStmtClass()) {
   case Stmt::ParenExprClass:
     // Ignore parentheses.
-    return EvalAddr(cast<ParenExpr>(E)->getSubExpr());
+    return EvalAddr(cast<ParenExpr>(E)->getSubExpr(), refVars);
+
+  case Stmt::DeclRefExprClass: {
+    DeclRefExpr *DR = cast<DeclRefExpr>(E);
+
+    if (VarDecl *V = dyn_cast<VarDecl>(DR->getDecl()))
+      // If this is a reference variable, follow through to the expression that
+      // it points to.
+      if (V->hasLocalStorage() &&
+          V->getType()->isReferenceType() && V->hasInit()) {
+        // Add the reference variable to the "trail".
+        refVars.push_back(DR);
+        return EvalAddr(V->getInit(), refVars);
+      }
+
+    return NULL;
+  }
 
   case Stmt::UnaryOperatorClass: {
     // The only unary operator that make sense to handle here
@@ -1837,7 +1888,7 @@ static DeclRefExpr* EvalAddr(Expr *E) {
     UnaryOperator *U = cast<UnaryOperator>(E);
 
     if (U->getOpcode() == UO_AddrOf)
-      return EvalVal(U->getSubExpr());
+      return EvalVal(U->getSubExpr(), refVars);
     else
       return NULL;
   }
@@ -1858,7 +1909,7 @@ static DeclRefExpr* EvalAddr(Expr *E) {
     if (!Base->getType()->isPointerType()) Base = B->getRHS();
 
     assert (Base->getType()->isPointerType());
-    return EvalAddr(Base);
+    return EvalAddr(Base, refVars);
   }
 
   // For conditional operators we need to see if either the LHS or RHS are
@@ -1870,7 +1921,7 @@ static DeclRefExpr* EvalAddr(Expr *E) {
     if (Expr *lhsExpr = C->getLHS()) {
     // In C++, we can have a throw-expression, which has 'void' type.
       if (!lhsExpr->getType()->isVoidType())
-        if (DeclRefExpr* LHS = EvalAddr(lhsExpr))
+        if (Expr* LHS = EvalAddr(lhsExpr, refVars))
           return LHS;
     }
 
@@ -1878,8 +1929,16 @@ static DeclRefExpr* EvalAddr(Expr *E) {
     if (C->getRHS()->getType()->isVoidType())
       return NULL;
 
-    return EvalAddr(C->getRHS());
+    return EvalAddr(C->getRHS(), refVars);
   }
+  
+  case Stmt::BlockExprClass:
+    if (cast<BlockExpr>(E)->hasBlockDeclRefExprs())
+      return E; // local block.
+    return NULL;
+
+  case Stmt::AddrLabelExprClass:
+    return E; // address of label.
 
   // For casts, we need to handle conversions from arrays to
   // pointer values, and pointer-to-pointer conversions.
@@ -1892,9 +1951,9 @@ static DeclRefExpr* EvalAddr(Expr *E) {
     if (SubExpr->getType()->isPointerType() ||
         SubExpr->getType()->isBlockPointerType() ||
         SubExpr->getType()->isObjCQualifiedIdType())
-      return EvalAddr(SubExpr);
+      return EvalAddr(SubExpr, refVars);
     else if (T->isArrayType())
-      return EvalVal(SubExpr);
+      return EvalVal(SubExpr, refVars);
     else
       return 0;
   }
@@ -1913,7 +1972,7 @@ static DeclRefExpr* EvalAddr(Expr *E) {
   case Stmt::CXXReinterpretCastExprClass: {
       Expr *S = cast<CXXNamedCastExpr>(E)->getSubExpr();
       if (S->getType()->isPointerType() || S->getType()->isBlockPointerType())
-        return EvalAddr(S);
+        return EvalAddr(S, refVars);
       else
         return NULL;
   }
@@ -1927,7 +1986,7 @@ static DeclRefExpr* EvalAddr(Expr *E) {
 
 ///  EvalVal - This function is complements EvalAddr in the mutual recursion.
 ///   See the comments for EvalAddr for more details.
-static DeclRefExpr* EvalVal(Expr *E) {
+static Expr *EvalVal(Expr *E, llvm::SmallVectorImpl<DeclRefExpr *> &refVars) {
 do {
   // We should only be called for evaluating non-pointer expressions, or
   // expressions with a pointer type that are not used as references but instead
@@ -1947,13 +2006,24 @@ do {
   }
 
   case Stmt::DeclRefExprClass: {
-    // DeclRefExpr: the base case.  When we hit a DeclRefExpr we are looking
-    //  at code that refers to a variable's name.  We check if it has local
-    //  storage within the function, and if so, return the expression.
+    // When we hit a DeclRefExpr we are looking at code that refers to a
+    // variable's name. If it's not a reference variable we check if it has
+    // local storage within the function, and if so, return the expression.
     DeclRefExpr *DR = cast<DeclRefExpr>(E);
 
     if (VarDecl *V = dyn_cast<VarDecl>(DR->getDecl()))
-      if (V->hasLocalStorage() && !V->getType()->isReferenceType()) return DR;
+      if (V->hasLocalStorage()) {
+        if (!V->getType()->isReferenceType())
+          return DR;
+
+        // Reference variable, follow through to the expression that
+        // it points to.
+        if (V->hasInit()) {
+          // Add the reference variable to the "trail".
+          refVars.push_back(DR);
+          return EvalVal(V->getInit(), refVars);
+        }
+      }
 
     return NULL;
   }
@@ -1971,7 +2041,7 @@ do {
     UnaryOperator *U = cast<UnaryOperator>(E);
 
     if (U->getOpcode() == UO_Deref)
-      return EvalAddr(U->getSubExpr());
+      return EvalAddr(U->getSubExpr(), refVars);
 
     return NULL;
   }
@@ -1980,20 +2050,20 @@ do {
     // Array subscripts are potential references to data on the stack.  We
     // retrieve the DeclRefExpr* for the array variable if it indeed
     // has local storage.
-    return EvalAddr(cast<ArraySubscriptExpr>(E)->getBase());
+    return EvalAddr(cast<ArraySubscriptExpr>(E)->getBase(), refVars);
   }
 
   case Stmt::ConditionalOperatorClass: {
     // For conditional operators we need to see if either the LHS or RHS are
-    // non-NULL DeclRefExpr's.  If one is non-NULL, we return it.
+    // non-NULL Expr's.  If one is non-NULL, we return it.
     ConditionalOperator *C = cast<ConditionalOperator>(E);
 
     // Handle the GNU extension for missing LHS.
     if (Expr *lhsExpr = C->getLHS())
-      if (DeclRefExpr *LHS = EvalVal(lhsExpr))
+      if (Expr *LHS = EvalVal(lhsExpr, refVars))
         return LHS;
 
-    return EvalVal(C->getRHS());
+    return EvalVal(C->getRHS(), refVars);
   }
 
   // Accesses to members are potential references to data on the stack.
@@ -2009,11 +2079,16 @@ do {
     if (M->getMemberDecl()->getType()->isReferenceType())
       return NULL;
 
-    return EvalVal(M->getBase());
+    return EvalVal(M->getBase(), refVars);
   }
 
-  // Everything else: we simply don't reason about them.
   default:
+    // Check that we don't return or take the address of a reference to a
+    // temporary. This is only useful in C++.
+    if (!E->isTypeDependent() && E->isRValue())
+      return E;
+
+    // Everything else: we simply don't reason about them.
     return NULL;
   }
 } while (true);
@@ -2027,8 +2102,8 @@ do {
 void Sema::CheckFloatComparison(SourceLocation loc, Expr* lex, Expr *rex) {
   bool EmitWarning = true;
 
-  Expr* LeftExprSansParen = lex->IgnoreParens();
-  Expr* RightExprSansParen = rex->IgnoreParens();
+  Expr* LeftExprSansParen = lex->IgnoreParenImpCasts();
+  Expr* RightExprSansParen = rex->IgnoreParenImpCasts();
 
   // Special case: check for x == x (which is OK).
   // Do not emit warnings for such cases.
@@ -2166,7 +2241,7 @@ IntRange GetValueRange(ASTContext &C, llvm::APSInt &value, unsigned MaxWidth) {
     return IntRange(value.getMinSignedBits(), false);
 
   if (value.getBitWidth() > MaxWidth)
-    value.trunc(MaxWidth);
+    value = value.trunc(MaxWidth);
 
   // isNonNegative() just checks the sign bit without considering
   // signedness.
@@ -2579,16 +2654,15 @@ bool AnalyzeBitFieldAssignment(Sema &S, FieldDecl *Bitfield, Expr *Init,
   if (OriginalWidth <= FieldWidth)
     return false;
 
-  llvm::APSInt TruncatedValue = Value;
-  TruncatedValue.trunc(FieldWidth);
+  llvm::APSInt TruncatedValue = Value.trunc(FieldWidth);
 
   // It's fairly common to write values into signed bitfields
   // that, if sign-extended, would end up becoming a different
   // value.  We don't want to warn about that.
   if (Value.isSigned() && Value.isNegative())
-    TruncatedValue.sext(OriginalWidth);
+    TruncatedValue = TruncatedValue.sext(OriginalWidth);
   else
-    TruncatedValue.zext(OriginalWidth);
+    TruncatedValue = TruncatedValue.zext(OriginalWidth);
 
   if (Value == TruncatedValue)
     return false;
@@ -2635,7 +2709,7 @@ std::string PrettyPrintInRange(const llvm::APSInt &Value, IntRange Range) {
 
   llvm::APSInt ValueInRange = Value;
   ValueInRange.setIsSigned(!Range.NonNegative);
-  ValueInRange.trunc(Range.Width);
+  ValueInRange = ValueInRange.trunc(Range.Width);
   return ValueInRange.toString(10);
 }
 

@@ -1651,7 +1651,6 @@ void CXXNameMangler::mangleExpression(const Expr *E, unsigned Arity) {
   case Expr::CompoundLiteralExprClass:
   case Expr::ExtVectorElementExprClass:
   case Expr::ObjCEncodeExprClass:
-  case Expr::ObjCImplicitSetterGetterRefExprClass:
   case Expr::ObjCIsaExprClass:
   case Expr::ObjCIvarRefExprClass:
   case Expr::ObjCMessageExprClass:
@@ -1663,8 +1662,8 @@ void CXXNameMangler::mangleExpression(const Expr *E, unsigned Arity) {
   case Expr::PredefinedExprClass:
   case Expr::ShuffleVectorExprClass:
   case Expr::StmtExprClass:
-  case Expr::TypesCompatibleExprClass:
   case Expr::UnaryTypeTraitExprClass:
+  case Expr::BinaryTypeTraitExprClass:
   case Expr::VAArgExprClass:
   case Expr::CXXUuidofExprClass:
   case Expr::CXXNoexceptExprClass: {
@@ -1961,8 +1960,8 @@ void CXXNameMangler::mangleExpression(const Expr *E, unsigned Arity) {
     mangleExpression(cast<CXXBindTemporaryExpr>(E)->getSubExpr());
     break;
 
-  case Expr::CXXExprWithTemporariesClass:
-    mangleExpression(cast<CXXExprWithTemporaries>(E)->getSubExpr(), Arity);
+  case Expr::ExprWithCleanupsClass:
+    mangleExpression(cast<ExprWithCleanups>(E)->getSubExpr(), Arity);
     break;
 
   case Expr::FloatingLiteralClass: {
@@ -2291,8 +2290,8 @@ static bool isCharSpecialization(QualType T, const char *Name) {
 }
 
 template <std::size_t StrLen>
-bool isStreamCharSpecialization(const ClassTemplateSpecializationDecl *SD,
-                                const char (&Str)[StrLen]) {
+static bool isStreamCharSpecialization(const ClassTemplateSpecializationDecl*SD,
+                                       const char (&Str)[StrLen]) {
   if (!SD->getIdentifier()->isStr(Str))
     return false;
 

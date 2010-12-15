@@ -128,7 +128,6 @@ CXCursor cxcursor::MakeCXCursor(Stmt *S, Decl *Parent,
   case Stmt::VAArgExprClass:             
   case Stmt::AddrLabelExprClass:        
   case Stmt::StmtExprClass:             
-  case Stmt::TypesCompatibleExprClass:  
   case Stmt::ChooseExprClass:           
   case Stmt::GNUNullExprClass:          
   case Stmt::CXXStaticCastExprClass:      
@@ -149,9 +148,10 @@ CXCursor cxcursor::MakeCXCursor(Stmt *S, Decl *Parent,
   case Stmt::CXXPseudoDestructorExprClass:
   case Stmt::UnresolvedLookupExprClass:   
   case Stmt::UnaryTypeTraitExprClass:     
+  case Stmt::BinaryTypeTraitExprClass:     
   case Stmt::DependentScopeDeclRefExprClass:  
   case Stmt::CXXBindTemporaryExprClass:   
-  case Stmt::CXXExprWithTemporariesClass: 
+  case Stmt::ExprWithCleanupsClass: 
   case Stmt::CXXUnresolvedConstructExprClass:
   case Stmt::CXXDependentScopeMemberExprClass:
   case Stmt::UnresolvedMemberExprClass:   
@@ -160,7 +160,6 @@ CXCursor cxcursor::MakeCXCursor(Stmt *S, Decl *Parent,
   case Stmt::ObjCEncodeExprClass:       
   case Stmt::ObjCSelectorExprClass:   
   case Stmt::ObjCProtocolExprClass:   
-  case Stmt::ObjCImplicitSetterGetterRefExprClass: 
   case Stmt::ObjCIsaExprClass:       
   case Stmt::ShuffleVectorExprClass: 
   case Stmt::BlockExprClass:  
@@ -189,7 +188,6 @@ CXCursor cxcursor::MakeCXCursor(Stmt *S, Decl *Parent,
   case Stmt::CXXConstructExprClass:  
   case Stmt::CXXTemporaryObjectExprClass:
     // FIXME: CXXUnresolvedConstructExpr
-    // FIXME: ObjCImplicitSetterGetterRefExpr?
     K = CXCursor_CallExpr;
     break;
       
@@ -494,4 +492,69 @@ bool cxcursor::isFirstInDeclGroup(CXCursor C) {
   assert(clang_isDeclaration(C.kind));
   return ((uintptr_t) (C.data[1])) != 0;
 }
+
+//===----------------------------------------------------------------------===//
+// CXCursorSet.
+//===----------------------------------------------------------------------===//
+
+typedef llvm::DenseMap<CXCursor, unsigned> CXCursorSet_Impl;
+
+static inline CXCursorSet packCXCursorSet(CXCursorSet_Impl *setImpl) {
+  return (CXCursorSet) setImpl;
+}
+static inline CXCursorSet_Impl *unpackCXCursorSet(CXCursorSet set) {
+  return (CXCursorSet_Impl*) set;
+}
+namespace llvm {
+template<> struct DenseMapInfo<CXCursor> {
+public:
+  static inline CXCursor getEmptyKey() {
+    return MakeCXCursorInvalid(CXCursor_InvalidFile);
+  }
+  static inline CXCursor getTombstoneKey() {
+    return MakeCXCursorInvalid(CXCursor_NoDeclFound);
+  }
+  static inline unsigned getHashValue(const CXCursor &cursor) {
+    return llvm::DenseMapInfo<std::pair<void*,void*> >
+      ::getHashValue(std::make_pair(cursor.data[0], cursor.data[1]));
+  }
+  static inline bool isEqual(const CXCursor &x, const CXCursor &y) {
+    return x.kind == y.kind &&
+           x.data[0] == y.data[0] &&
+           x.data[1] == y.data[1];
+  }
+};
+}
+
+extern "C" {
+CXCursorSet clang_createCXCursorSet() {
+  return packCXCursorSet(new CXCursorSet_Impl());
+}
+
+void clang_disposeCXCursorSet(CXCursorSet set) {
+  delete unpackCXCursorSet(set);
+}
+
+unsigned clang_CXCursorSet_contains(CXCursorSet set, CXCursor cursor) {
+  CXCursorSet_Impl *setImpl = unpackCXCursorSet(set);
+  if (!setImpl)
+    return 0;
+  return setImpl->find(cursor) == setImpl->end();
+}
+
+unsigned clang_CXCursorSet_insert(CXCursorSet set, CXCursor cursor) {
+  // Do not insert invalid cursors into the set.
+  if (cursor.kind >= CXCursor_FirstInvalid &&
+      cursor.kind <= CXCursor_LastInvalid)
+    return 1;
+
+  CXCursorSet_Impl *setImpl = unpackCXCursorSet(set);
+  if (!setImpl)
+    return 1;
+  unsigned &entry = (*setImpl)[cursor];
+  unsigned flag = entry == 0 ? 1 : 0;
+  entry = 1;
+  return flag;
+}
+} // end: extern "C"
 

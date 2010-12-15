@@ -811,6 +811,9 @@ ASTContext::getTypeInfo(const Type *T) {
     return getTypeInfo(cast<SubstTemplateTypeParmType>(T)->
                        getReplacementType().getTypePtr());
 
+  case Type::Paren:
+    return getTypeInfo(cast<ParenType>(T)->getInnerType().getTypePtr());
+
   case Type::Typedef: {
     const TypedefDecl *Typedef = cast<TypedefType>(T)->getDecl();
     std::pair<uint64_t, unsigned> Info
@@ -1008,6 +1011,25 @@ void ASTContext::setObjCImplementation(ObjCCategoryDecl *CatD,
   ObjCImpls[CatD] = ImplD;
 }
 
+/// \brief Get the copy initialization expression of VarDecl,or NULL if 
+/// none exists.
+Expr *ASTContext::getBlockVarCopyInits(const VarDecl*VD) {
+  assert(VD && "Passed null params");
+  assert(VD->hasAttr<BlocksAttr>() && 
+         "getBlockVarCopyInits - not __block var");
+  llvm::DenseMap<const VarDecl*, Expr*>::iterator
+    I = BlockVarCopyInits.find(VD);
+  return (I != BlockVarCopyInits.end()) ? cast<Expr>(I->second) : 0;
+}
+
+/// \brief Set the copy inialization expression of a block var decl.
+void ASTContext::setBlockVarCopyInits(VarDecl*VD, Expr* Init) {
+  assert(VD && Init && "Passed null params");
+  assert(VD->hasAttr<BlocksAttr>() && 
+         "setBlockVarCopyInits - not __block var");
+  BlockVarCopyInits[VD] = Init;
+}
+
 /// \brief Allocate an uninitialized TypeSourceInfo.
 ///
 /// The caller should initialize the memory held by TypeSourceInfo using
@@ -1065,21 +1087,10 @@ QualType ASTContext::getExtQualType(const Type *TypeNode, Qualifiers Quals) {
     return T;
   }
 
-  ExtQuals *New = new (*this, TypeAlignment) ExtQuals(*this, TypeNode, Quals);
+  ExtQuals *New = new (*this, TypeAlignment) ExtQuals(TypeNode, Quals);
   ExtQualNodes.InsertNode(New, InsertPos);
   QualType T = QualType(New, Fast);
   return T;
-}
-
-QualType ASTContext::getVolatileType(QualType T) {
-  QualType CanT = getCanonicalType(T);
-  if (CanT.isVolatileQualified()) return T;
-
-  QualifierCollector Quals;
-  const Type *TypeNode = Quals.strip(T);
-  Quals.addVolatile();
-
-  return getExtQualType(TypeNode, Quals);
 }
 
 QualType ASTContext::getAddrSpaceQualType(QualType T, unsigned AddressSpace) {
@@ -1130,7 +1141,7 @@ QualType ASTContext::getObjCGCQualType(QualType T,
 }
 
 static QualType getExtFunctionType(ASTContext& Context, QualType T,
-                                        const FunctionType::ExtInfo &Info) {
+                                   const FunctionType::ExtInfo &Info) {
   QualType ResultType;
   if (const PointerType *Pointer = T->getAs<PointerType>()) {
     QualType Pointee = Pointer->getPointeeType();
@@ -1139,6 +1150,13 @@ static QualType getExtFunctionType(ASTContext& Context, QualType T,
       return T;
 
     ResultType = Context.getPointerType(ResultType);
+  } else if (const ParenType *Paren = T->getAs<ParenType>()) {
+    QualType Inner = Paren->getInnerType();
+    ResultType = getExtFunctionType(Context, Inner, Info);
+    if (ResultType == Inner)
+      return T;
+
+    ResultType = Context.getParenType(ResultType);
   } else if (const BlockPointerType *BlockPointer
                                               = T->getAs<BlockPointerType>()) {
     QualType Pointee = BlockPointer->getPointeeType();
@@ -1165,15 +1183,11 @@ static QualType getExtFunctionType(ASTContext& Context, QualType T,
                                                   Info);
     } else {
       const FunctionProtoType *FPT = cast<FunctionProtoType>(F);
-      ResultType
-        = Context.getFunctionType(FPT->getResultType(), FPT->arg_type_begin(),
-                                  FPT->getNumArgs(), FPT->isVariadic(),
-                                  FPT->getTypeQuals(),
-                                  FPT->hasExceptionSpec(),
-                                  FPT->hasAnyExceptionSpec(),
-                                  FPT->getNumExceptions(),
-                                  FPT->exception_begin(),
-                                  Info);
+      FunctionProtoType::ExtProtoInfo EPI = FPT->getExtProtoInfo();
+      EPI.ExtInfo = Info;
+      ResultType = Context.getFunctionType(FPT->getResultType(),
+                                           FPT->arg_type_begin(),
+                                           FPT->getNumArgs(), EPI);
     }
   } else
     return T;
@@ -1183,20 +1197,17 @@ static QualType getExtFunctionType(ASTContext& Context, QualType T,
 
 QualType ASTContext::getNoReturnType(QualType T, bool AddNoReturn) {
   FunctionType::ExtInfo Info = getFunctionExtInfo(T);
-  return getExtFunctionType(*this, T,
-                                 Info.withNoReturn(AddNoReturn));
+  return getExtFunctionType(*this, T, Info.withNoReturn(AddNoReturn));
 }
 
 QualType ASTContext::getCallConvType(QualType T, CallingConv CallConv) {
   FunctionType::ExtInfo Info = getFunctionExtInfo(T);
-  return getExtFunctionType(*this, T,
-                            Info.withCallingConv(CallConv));
+  return getExtFunctionType(*this, T, Info.withCallingConv(CallConv));
 }
 
 QualType ASTContext::getRegParmType(QualType T, unsigned RegParm) {
   FunctionType::ExtInfo Info = getFunctionExtInfo(T);
-  return getExtFunctionType(*this, T,
-                                 Info.withRegParm(RegParm));
+  return getExtFunctionType(*this, T, Info.withRegParm(RegParm));
 }
 
 /// getComplexType - Return the uniqued reference to the type for a complex
@@ -1403,7 +1414,8 @@ QualType ASTContext::getConstantArrayType(QualType EltTy,
   // Convert the array size into a canonical width matching the pointer size for
   // the target.
   llvm::APInt ArySize(ArySizeIn);
-  ArySize.zextOrTrunc(Target.getPointerWidth(EltTy.getAddressSpace()));
+  ArySize =
+    ArySize.zextOrTrunc(Target.getPointerWidth(EltTy.getAddressSpace()));
 
   llvm::FoldingSetNodeID ID;
   ConstantArrayType::Profile(ID, EltTy, ArySize, ASM, EltTypeQuals);
@@ -1744,20 +1756,13 @@ QualType ASTContext::getFunctionNoProtoType(QualType ResultTy,
 
 /// getFunctionType - Return a normal function type with a typed argument
 /// list.  isVariadic indicates whether the argument list includes '...'.
-QualType ASTContext::getFunctionType(QualType ResultTy,const QualType *ArgArray,
-                                     unsigned NumArgs, bool isVariadic,
-                                     unsigned TypeQuals, bool hasExceptionSpec,
-                                     bool hasAnyExceptionSpec, unsigned NumExs,
-                                     const QualType *ExArray,
-                                     const FunctionType::ExtInfo &Info) {
-
-  const CallingConv CallConv= Info.getCC();
+QualType ASTContext::getFunctionType(QualType ResultTy,
+                                     const QualType *ArgArray, unsigned NumArgs,
+                                   const FunctionProtoType::ExtProtoInfo &EPI) {
   // Unique functions, to guarantee there is only one function of a particular
   // structure.
   llvm::FoldingSetNodeID ID;
-  FunctionProtoType::Profile(ID, ResultTy, ArgArray, NumArgs, isVariadic,
-                             TypeQuals, hasExceptionSpec, hasAnyExceptionSpec,
-                             NumExs, ExArray, Info);
+  FunctionProtoType::Profile(ID, ResultTy, ArgArray, NumArgs, EPI);
 
   void *InsertPos = 0;
   if (FunctionProtoType *FTP =
@@ -1765,10 +1770,12 @@ QualType ASTContext::getFunctionType(QualType ResultTy,const QualType *ArgArray,
     return QualType(FTP, 0);
 
   // Determine whether the type being created is already canonical or not.
-  bool isCanonical = !hasExceptionSpec && ResultTy.isCanonical();
+  bool isCanonical = !EPI.HasExceptionSpec && ResultTy.isCanonical();
   for (unsigned i = 0; i != NumArgs && isCanonical; ++i)
     if (!ArgArray[i].isCanonicalAsParam())
       isCanonical = false;
+
+  const CallingConv CallConv = EPI.ExtInfo.getCC();
 
   // If this type isn't canonical, get the canonical version of it.
   // The exception spec is not part of the canonical type.
@@ -1779,11 +1786,18 @@ QualType ASTContext::getFunctionType(QualType ResultTy,const QualType *ArgArray,
     for (unsigned i = 0; i != NumArgs; ++i)
       CanonicalArgs.push_back(getCanonicalParamType(ArgArray[i]));
 
+    FunctionProtoType::ExtProtoInfo CanonicalEPI = EPI;
+    if (CanonicalEPI.HasExceptionSpec) {
+      CanonicalEPI.HasExceptionSpec = false;
+      CanonicalEPI.HasAnyExceptionSpec = false;
+      CanonicalEPI.NumExceptions = 0;
+    }
+    CanonicalEPI.ExtInfo
+      = CanonicalEPI.ExtInfo.withCallingConv(getCanonicalCallConv(CallConv));
+
     Canonical = getFunctionType(getCanonicalType(ResultTy),
                                 CanonicalArgs.data(), NumArgs,
-                                isVariadic, TypeQuals, false,
-                                false, 0, 0,
-                     Info.withCallingConv(getCanonicalCallConv(CallConv)));
+                                CanonicalEPI);
 
     // Get the new insert position for the node we care about.
     FunctionProtoType *NewIP =
@@ -1794,13 +1808,11 @@ QualType ASTContext::getFunctionType(QualType ResultTy,const QualType *ArgArray,
   // FunctionProtoType objects are allocated with extra bytes after them
   // for two variable size arrays (for parameter and exception types) at the
   // end of them.
-  FunctionProtoType *FTP =
-    (FunctionProtoType*)Allocate(sizeof(FunctionProtoType) +
-                                 NumArgs*sizeof(QualType) +
-                                 NumExs*sizeof(QualType), TypeAlignment);
-  new (FTP) FunctionProtoType(ResultTy, ArgArray, NumArgs, isVariadic,
-                              TypeQuals, hasExceptionSpec, hasAnyExceptionSpec,
-                              ExArray, NumExs, Canonical, Info);
+  size_t Size = sizeof(FunctionProtoType) +
+                NumArgs * sizeof(QualType) +
+                EPI.NumExceptions * sizeof(QualType);
+  FunctionProtoType *FTP = (FunctionProtoType*) Allocate(Size, TypeAlignment);
+  new (FTP) FunctionProtoType(ResultTy, ArgArray, NumArgs, Canonical, EPI);
   Types.push_back(FTP);
   FunctionProtoTypes.InsertNode(FTP, InsertPos);
   return QualType(FTP, 0);
@@ -2083,6 +2095,30 @@ ASTContext::getElaboratedType(ElaboratedTypeKeyword Keyword,
   T = new (*this) ElaboratedType(Keyword, NNS, NamedType, Canon);
   Types.push_back(T);
   ElaboratedTypes.InsertNode(T, InsertPos);
+  return QualType(T, 0);
+}
+
+QualType
+ASTContext::getParenType(QualType InnerType) {
+  llvm::FoldingSetNodeID ID;
+  ParenType::Profile(ID, InnerType);
+
+  void *InsertPos = 0;
+  ParenType *T = ParenTypes.FindNodeOrInsertPos(ID, InsertPos);
+  if (T)
+    return QualType(T, 0);
+
+  QualType Canon = InnerType;
+  if (!Canon.isCanonical()) {
+    Canon = getCanonicalType(InnerType);
+    ParenType *CheckT = ParenTypes.FindNodeOrInsertPos(ID, InsertPos);
+    assert(!CheckT && "Paren canonical type broken");
+    (void)CheckT;
+  }
+
+  T = new (*this) ParenType(InnerType, Canon);
+  Types.push_back(T);
+  ParenTypes.InsertNode(T, InsertPos);
   return QualType(T, 0);
 }
 
@@ -2378,7 +2414,7 @@ static QualType getDecltypeForExpr(const Expr *e, ASTContext &Context) {
 
   // Otherwise, where T is the type of e, if e is an lvalue, decltype(e) is
   // defined as T&, otherwise decltype(e) is defined as T.
-  if (e->isLvalue(Context) == Expr::LV_Valid)
+  if (e->isLValue())
     T = Context.getLValueReferenceType(T);
 
   return T;
@@ -2782,7 +2818,7 @@ const ArrayType *ASTContext::getAsArrayType(QualType T) {
   // we must propagate them down into the element type.
 
   QualifierCollector Qs;
-  const Type *Ty = Qs.strip(T.getDesugaredType());
+  const Type *Ty = Qs.strip(T.getDesugaredType(*this));
 
   // If we have a simple case, just return now.
   const ArrayType *ATy = dyn_cast<ArrayType>(Ty);
@@ -2845,7 +2881,7 @@ QualType ASTContext::getBaseElementType(QualType QT) {
   QualifierCollector Qs;
   while (const ArrayType *AT = getAsArrayType(QualType(Qs.strip(QT), 0)))
     QT = AT->getElementType();
-  return Qs.apply(QT);
+  return Qs.apply(*this, QT);
 }
 
 QualType ASTContext::getBaseElementType(const ArrayType *AT) {
@@ -4722,7 +4758,7 @@ QualType ASTContext::mergeTransparentUnionType(QualType T, QualType SubType,
     if (UD->hasAttr<TransparentUnionAttr>()) {
       for (RecordDecl::field_iterator it = UD->field_begin(),
            itend = UD->field_end(); it != itend; ++it) {
-        QualType ET = it->getType();
+        QualType ET = it->getType().getUnqualifiedType();
         QualType MT = mergeTypes(ET, SubType, OfBlockPointer, Unqualified);
         if (!MT.isNull())
           return MT;
@@ -4809,6 +4845,8 @@ QualType ASTContext::mergeFunctionTypes(QualType lhs, QualType rhs,
   if (!isSameCallConv(lcc, rcc))
     return QualType();
 
+  FunctionType::ExtInfo einfo = FunctionType::ExtInfo(NoReturn, RegParm, lcc);
+
   if (lproto && rproto) { // two C99 style function prototypes
     assert(!lproto->hasExceptionSpec() && !rproto->hasExceptionSpec() &&
            "C++ shouldn't be here");
@@ -4852,10 +4890,10 @@ QualType ASTContext::mergeFunctionTypes(QualType lhs, QualType rhs,
     }
     if (allLTypes) return lhs;
     if (allRTypes) return rhs;
-    return getFunctionType(retType, types.begin(), types.size(),
-                           lproto->isVariadic(), lproto->getTypeQuals(),
-                           false, false, 0, 0,
-                           FunctionType::ExtInfo(NoReturn, RegParm, lcc));
+
+    FunctionProtoType::ExtProtoInfo EPI = lproto->getExtProtoInfo();
+    EPI.ExtInfo = einfo;
+    return getFunctionType(retType, types.begin(), types.size(), EPI);
   }
 
   if (lproto) allRTypes = false;
@@ -4886,11 +4924,11 @@ QualType ASTContext::mergeFunctionTypes(QualType lhs, QualType rhs,
 
     if (allLTypes) return lhs;
     if (allRTypes) return rhs;
+
+    FunctionProtoType::ExtProtoInfo EPI = proto->getExtProtoInfo();
+    EPI.ExtInfo = einfo;
     return getFunctionType(retType, proto->arg_type_begin(),
-                           proto->getNumArgs(), proto->isVariadic(),
-                           proto->getTypeQuals(),
-                           false, false, 0, 0,
-                           FunctionType::ExtInfo(NoReturn, RegParm, lcc));
+                           proto->getNumArgs(), EPI);
   }
 
   if (allLTypes) return lhs;
@@ -5175,16 +5213,11 @@ QualType ASTContext::mergeObjCGCQualifiers(QualType LHS, QualType RHS) {
       // In either case, use OldReturnType to build the new function type.
       const FunctionType *F = LHS->getAs<FunctionType>();
       if (const FunctionProtoType *FPT = cast<FunctionProtoType>(F)) {
-        FunctionType::ExtInfo Info = getFunctionExtInfo(LHS);
+        FunctionProtoType::ExtProtoInfo EPI = FPT->getExtProtoInfo();
+        EPI.ExtInfo = getFunctionExtInfo(LHS);
         QualType ResultType
           = getFunctionType(OldReturnType, FPT->arg_type_begin(),
-                                  FPT->getNumArgs(), FPT->isVariadic(),
-                                  FPT->getTypeQuals(),
-                                  FPT->hasExceptionSpec(),
-                                  FPT->hasAnyExceptionSpec(),
-                                  FPT->getNumExceptions(),
-                                  FPT->exception_begin(),
-                                  Info);
+                            FPT->getNumArgs(), EPI);
         return ResultType;
       }
     }
@@ -5537,10 +5570,11 @@ QualType ASTContext::GetBuiltinType(unsigned Id,
   if (ArgTypes.size() == 0 && TypeStr[0] == '.')
     return getFunctionNoProtoType(ResType);
 
+  FunctionProtoType::ExtProtoInfo EPI;
+  EPI.Variadic = (TypeStr[0] == '.');
   // FIXME: Should we create noreturn types?
-  return getFunctionType(ResType, ArgTypes.data(), ArgTypes.size(),
-                         TypeStr[0] == '.', 0, false, false, 0, 0,
-                         FunctionType::ExtInfo());
+
+  return getFunctionType(ResType, ArgTypes.data(), ArgTypes.size(), EPI);
 }
 
 GVALinkage ASTContext::GetGVALinkageForFunction(const FunctionDecl *FD) {
@@ -5714,6 +5748,11 @@ bool ASTContext::DeclMustBeEmitted(const Decl *D) {
 CallingConv ASTContext::getDefaultMethodCallConv() {
   // Pass through to the C++ ABI object
   return ABI->getDefaultMethodCallConv();
+}
+
+bool ASTContext::isNearlyEmpty(const CXXRecordDecl *RD) {
+  // Pass through to the C++ ABI object
+  return ABI->isNearlyEmpty(RD);
 }
 
 CXXABI::~CXXABI() {}

@@ -214,7 +214,7 @@ static bool InstantiateInitializer(Sema &S, Expr *Init,
   if (!Init)
     return false;
 
-  if (CXXExprWithTemporaries *ExprTemp = dyn_cast<CXXExprWithTemporaries>(Init))
+  if (ExprWithCleanups *ExprTemp = dyn_cast<ExprWithCleanups>(Init))
     Init = ExprTemp->getSubExpr();
 
   while (CXXBindTemporaryExpr *Binder = dyn_cast<CXXBindTemporaryExpr>(Init))
@@ -456,6 +456,30 @@ Decl *TemplateDeclInstantiator::VisitFieldDecl(FieldDecl *D) {
   return Field;
 }
 
+Decl *TemplateDeclInstantiator::VisitIndirectFieldDecl(IndirectFieldDecl *D) {
+  NamedDecl **NamedChain =
+    new (SemaRef.Context)NamedDecl*[D->getChainingSize()];
+
+  int i = 0;
+  for (IndirectFieldDecl::chain_iterator PI =
+       D->chain_begin(), PE = D->chain_end();
+       PI != PE; ++PI)
+    NamedChain[i++] = (SemaRef.FindInstantiatedDecl(D->getLocation(),
+                                            *PI, TemplateArgs));
+
+  QualType T = cast<FieldDecl>(NamedChain[i-1])->getType();
+  IndirectFieldDecl* IndirectField
+    = IndirectFieldDecl::Create(SemaRef.Context, Owner, D->getLocation(),
+                                D->getIdentifier(), T,
+                                NamedChain, D->getChainingSize());
+
+
+  IndirectField->setImplicit(D->isImplicit());
+  IndirectField->setAccess(D->getAccess());
+  Owner->addDecl(IndirectField);
+  return IndirectField;
+}
+
 Decl *TemplateDeclInstantiator::VisitFriendDecl(FriendDecl *D) {
   // Handle friend type expressions by simply substituting template
   // parameters into the pattern type and checking the result.
@@ -517,8 +541,8 @@ Decl *TemplateDeclInstantiator::VisitEnumDecl(EnumDecl *D) {
   EnumDecl *Enum = EnumDecl::Create(SemaRef.Context, Owner,
                                     D->getLocation(), D->getIdentifier(),
                                     D->getTagKeywordLoc(),
-                                    /*PrevDecl=*/0,
-                                    D->isScoped(), D->isFixed());
+                                    /*PrevDecl=*/0, D->isScoped(),
+                                    D->isScopedUsingClassTag(), D->isFixed());
   if (D->isFixed()) {
     if (TypeSourceInfo* TI = D->getIntegerTypeSourceInfo()) {
       // If we have type source information for the underlying type, it means it
@@ -1240,16 +1264,16 @@ TemplateDeclInstantiator::VisitCXXMethodDecl(CXXMethodDecl *D,
     return 0;
   QualType T = TInfo->getType();
 
-  // \brief If the type of this function is not *directly* a function
-  // type, then we're instantiating the a function that was declared
-  // via a typedef, e.g.,
+  // \brief If the type of this function, after ignoring parentheses,
+  // is not *directly* a function type, then we're instantiating a function
+  // that was declared via a typedef, e.g.,
   //
   //   typedef int functype(int, int);
   //   functype func;
   //
   // In this case, we'll just go instantiate the ParmVarDecls that we
   // synthesized in the method declaration.
-  if (!isa<FunctionProtoType>(T)) {
+  if (!isa<FunctionProtoType>(T.IgnoreParens())) {
     assert(!Params.size() && "Instantiating type could not yield parameters");
     for (unsigned I = 0, N = D->getNumParams(); I != N; ++I) {
       ParmVarDecl *P = SemaRef.SubstParmVarDecl(D->getParamDecl(I), 
@@ -1884,10 +1908,10 @@ TemplateDeclInstantiator::SubstFunctionType(FunctionDecl *D,
 
   if (NewTInfo != OldTInfo) {
     // Get parameters from the new type info.
-    TypeLoc OldTL = OldTInfo->getTypeLoc();
+    TypeLoc OldTL = OldTInfo->getTypeLoc().IgnoreParens();
     if (FunctionProtoTypeLoc *OldProtoLoc
                                   = dyn_cast<FunctionProtoTypeLoc>(&OldTL)) {
-      TypeLoc NewTL = NewTInfo->getTypeLoc();
+      TypeLoc NewTL = NewTInfo->getTypeLoc().IgnoreParens();
       FunctionProtoTypeLoc *NewProtoLoc = cast<FunctionProtoTypeLoc>(&NewTL);
       assert(NewProtoLoc && "Missing prototype?");
       for (unsigned i = 0, i_end = NewProtoLoc->getNumArgs(); i != i_end; ++i) {
@@ -1902,7 +1926,7 @@ TemplateDeclInstantiator::SubstFunctionType(FunctionDecl *D,
     // The function type itself was not dependent and therefore no
     // substitution occurred. However, we still need to instantiate
     // the function parameters themselves.
-    TypeLoc OldTL = OldTInfo->getTypeLoc();
+    TypeLoc OldTL = OldTInfo->getTypeLoc().IgnoreParens();
     if (FunctionProtoTypeLoc *OldProtoLoc
                                     = dyn_cast<FunctionProtoTypeLoc>(&OldTL)) {
       for (unsigned i = 0, i_end = OldProtoLoc->getNumArgs(); i != i_end; ++i) {
@@ -1971,19 +1995,20 @@ TemplateDeclInstantiator::InitFunctionInstantiation(FunctionDecl *New,
 
     // Rebuild the function type 
 
+    FunctionProtoType::ExtProtoInfo EPI = Proto->getExtProtoInfo();
+    EPI.HasExceptionSpec = Proto->hasExceptionSpec();
+    EPI.HasAnyExceptionSpec = Proto->hasAnyExceptionSpec();
+    EPI.NumExceptions = Exceptions.size();
+    EPI.Exceptions = Exceptions.data();
+    EPI.ExtInfo = Proto->getExtInfo();
+
     const FunctionProtoType *NewProto
       = New->getType()->getAs<FunctionProtoType>();
     assert(NewProto && "Template instantiation without function prototype?");
     New->setType(SemaRef.Context.getFunctionType(NewProto->getResultType(),
                                                  NewProto->arg_type_begin(),
                                                  NewProto->getNumArgs(),
-                                                 NewProto->isVariadic(),
-                                                 NewProto->getTypeQuals(),
-                                                 Proto->hasExceptionSpec(),
-                                                 Proto->hasAnyExceptionSpec(),
-                                                 Exceptions.size(),
-                                                 Exceptions.data(),
-                                                 Proto->getExtInfo()));
+                                                 EPI));
   }
 
   SemaRef.InstantiateAttrs(TemplateArgs, Tmpl, New);
@@ -2085,9 +2110,12 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
   // If we're performing recursive template instantiation, create our own
   // queue of pending implicit instantiations that we will instantiate later,
   // while we're still within our own instantiation context.
+  llvm::SmallVector<VTableUse, 16> SavedVTableUses;
   std::deque<PendingImplicitInstantiation> SavedPendingInstantiations;
-  if (Recursive)
+  if (Recursive) {
+    VTableUses.swap(SavedVTableUses);
     PendingInstantiations.swap(SavedPendingInstantiations);
+  }
 
   EnterExpressionEvaluationContext EvalContext(*this, 
                                                Sema::PotentiallyEvaluated);
@@ -2150,9 +2178,15 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
   Scope.Exit();
 
   if (Recursive) {
+    // Define any pending vtables.
+    DefineUsedVTables();
+
     // Instantiate any pending implicit instantiations found during the
     // instantiation of this template.
     PerformPendingInstantiations();
+
+    // Restore the set of pending vtables.
+    VTableUses.swap(SavedVTableUses);
 
     // Restore the set of pending implicit instantiations.
     PendingInstantiations.swap(SavedPendingInstantiations);
@@ -2239,7 +2273,7 @@ void Sema::InstantiateStaticDataMemberDefinition(
 
   VarDecl *OldVar = Var;
   Var = cast_or_null<VarDecl>(SubstDecl(Def, Var->getDeclContext(),
-                                          getTemplateInstantiationArgs(Var)));
+                                        getTemplateInstantiationArgs(Var)));
   CurContext = PreviousContext;
 
   if (Var) {
@@ -2309,18 +2343,23 @@ Sema::InstantiateMemInitializers(CXXConstructorDecl *New,
                                      Init->getRParenLoc(),
                                      New->getParent());
     } else if (Init->isMemberInitializer()) {
-      FieldDecl *Member;
-
-      // Is this an anonymous union?
-      if (FieldDecl *UnionInit = Init->getAnonUnionMember())
-        Member = cast<FieldDecl>(FindInstantiatedDecl(Init->getMemberLocation(),
-                                                      UnionInit, TemplateArgs));
-      else
-        Member = cast<FieldDecl>(FindInstantiatedDecl(Init->getMemberLocation(),
-                                                      Init->getMember(),
-                                                      TemplateArgs));
+      FieldDecl *Member = cast<FieldDecl>(FindInstantiatedDecl(
+                                                     Init->getMemberLocation(),
+                                                     Init->getMember(),
+                                                     TemplateArgs));
 
       NewInit = BuildMemberInitializer(Member, (Expr **)NewArgs.data(),
+                                       NewArgs.size(),
+                                       Init->getSourceLocation(),
+                                       Init->getLParenLoc(),
+                                       Init->getRParenLoc());
+    } else if (Init->isIndirectMemberInitializer()) {
+      IndirectFieldDecl *IndirectMember =
+         cast<IndirectFieldDecl>(FindInstantiatedDecl(
+                                 Init->getMemberLocation(),
+                                 Init->getIndirectMember(), TemplateArgs));
+
+      NewInit = BuildMemberInitializer(IndirectMember, (Expr **)NewArgs.data(),
                                        NewArgs.size(),
                                        Init->getSourceLocation(),
                                        Init->getLParenLoc(),

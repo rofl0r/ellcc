@@ -220,7 +220,7 @@ static APSInt HandleIntToIntCast(QualType DestType, QualType SrcType,
   APSInt Result = Value;
   // Figure out if this is a truncate, extend or noop cast.
   // If the input is signed, do a sign extend, noop, or truncate.
-  Result.extOrTrunc(DestWidth);
+  Result = Result.extOrTrunc(DestWidth);
   Result.setIsUnsigned(DestType->isUnsignedIntegerType());
   return Result;
 }
@@ -587,7 +587,7 @@ bool PointerExprEvaluator::VisitCastExpr(CastExpr* E) {
       break;
 
     if (Value.isInt()) {
-      Value.getInt().extOrTrunc((unsigned)Info.Ctx.getTypeSize(E->getType()));
+      Value.getInt() = Value.getInt().extOrTrunc((unsigned)Info.Ctx.getTypeSize(E->getType()));
       Result.Base = 0;
       Result.Offset = CharUnits::fromQuantity(Value.getInt().getZExtValue());
       return true;
@@ -731,8 +731,7 @@ APValue VectorExprEvaluator::VisitCastExpr(const CastExpr* E) {
 
   llvm::SmallVector<APValue, 4> Elts;
   for (unsigned i = 0; i != NElts; ++i) {
-    APSInt Tmp = Init;
-    Tmp.extOrTrunc(EltWidth);
+    APSInt Tmp = Init.extOrTrunc(EltWidth);
 
     if (EltTy->isIntegerType())
       Elts.push_back(APValue(Tmp));
@@ -911,16 +910,6 @@ public:
   bool VisitCharacterLiteral(const CharacterLiteral *E) {
     return Success(E->getValue(), E);
   }
-  bool VisitTypesCompatibleExpr(const TypesCompatibleExpr *E) {
-    // Per gcc docs "this built-in function ignores top level
-    // qualifiers".  We need to use the canonical version to properly
-    // be able to strip CRV qualifiers from the type.
-    QualType T0 = Info.Ctx.getCanonicalType(E->getArgType1());
-    QualType T1 = Info.Ctx.getCanonicalType(E->getArgType2());
-    return Success(Info.Ctx.typesAreCompatible(T0.getUnqualifiedType(),
-                                               T1.getUnqualifiedType()),
-                   E);
-  }
 
   bool CheckReferencedDecl(const Expr *E, const Decl *D);
   bool VisitDeclRefExpr(const DeclRefExpr *E) {
@@ -961,6 +950,10 @@ public:
   }
 
   bool VisitUnaryTypeTraitExpr(const UnaryTypeTraitExpr *E) {
+    return Success(E->getValue(), E);
+  }
+
+  bool VisitBinaryTypeTraitExpr(const BinaryTypeTraitExpr *E) {
     return Success(E->getValue(), E);
   }
 
@@ -2098,12 +2091,13 @@ public:
   bool VisitCastExpr(CastExpr *E);
 
   bool VisitBinaryOperator(const BinaryOperator *E);
+  bool VisitUnaryOperator(const UnaryOperator *E);
+  bool VisitConditionalOperator(const ConditionalOperator *E);
   bool VisitChooseExpr(const ChooseExpr *E)
     { return Visit(E->getChosenSubExpr(Info.Ctx)); }
   bool VisitUnaryExtension(const UnaryOperator *E)
     { return Visit(E->getSubExpr()); }
-  // FIXME Missing: unary +/-/~, binary div, ImplicitValueInitExpr,
-  //                conditional ?:, comma
+  // FIXME Missing: ImplicitValueInitExpr
 };
 } // end anonymous namespace
 
@@ -2139,101 +2133,143 @@ bool ComplexExprEvaluator::VisitImaginaryLiteral(ImaginaryLiteral *E) {
 }
 
 bool ComplexExprEvaluator::VisitCastExpr(CastExpr *E) {
-  Expr* SubExpr = E->getSubExpr();
-  QualType EltType = E->getType()->getAs<ComplexType>()->getElementType();
-  QualType SubType = SubExpr->getType();
 
-  // TODO: just trust CastKind
+  switch (E->getCastKind()) {
+  case CK_BitCast:
+  case CK_LValueBitCast:
+  case CK_BaseToDerived:
+  case CK_DerivedToBase:
+  case CK_UncheckedDerivedToBase:
+  case CK_Dynamic:
+  case CK_ToUnion:
+  case CK_ArrayToPointerDecay:
+  case CK_FunctionToPointerDecay:
+  case CK_NullToPointer:
+  case CK_NullToMemberPointer:
+  case CK_BaseToDerivedMemberPointer:
+  case CK_DerivedToBaseMemberPointer:
+  case CK_MemberPointerToBoolean:
+  case CK_ConstructorConversion:
+  case CK_IntegralToPointer:
+  case CK_PointerToIntegral:
+  case CK_PointerToBoolean:
+  case CK_ToVoid:
+  case CK_VectorSplat:
+  case CK_IntegralCast:
+  case CK_IntegralToBoolean:
+  case CK_IntegralToFloating:
+  case CK_FloatingToIntegral:
+  case CK_FloatingToBoolean:
+  case CK_FloatingCast:
+  case CK_AnyPointerToObjCPointerCast:
+  case CK_AnyPointerToBlockPointerCast:
+  case CK_ObjCObjectLValueCast:
+  case CK_FloatingComplexToReal:
+  case CK_FloatingComplexToBoolean:
+  case CK_IntegralComplexToReal:
+  case CK_IntegralComplexToBoolean:
+    llvm_unreachable("invalid cast kind for complex value");
 
-  if (SubType->isRealFloatingType()) {
+  case CK_LValueToRValue:
+  case CK_NoOp:
+    return Visit(E->getSubExpr());
+
+  case CK_Dependent:
+  case CK_GetObjCProperty:
+  case CK_UserDefinedConversion:
+    return false;
+
+  case CK_FloatingRealToComplex: {
     APFloat &Real = Result.FloatReal;
-    if (!EvaluateFloat(SubExpr, Real, Info))
+    if (!EvaluateFloat(E->getSubExpr(), Real, Info))
       return false;
 
-    if (EltType->isRealFloatingType()) {
-      Result.makeComplexFloat();
-      Real = HandleFloatToFloatCast(EltType, SubType, Real, Info.Ctx);
-      Result.FloatImag = APFloat(Real.getSemantics());
-      return true;
-    } else {
-      Result.makeComplexInt();
-      Result.IntReal = HandleFloatToIntCast(EltType, SubType, Real, Info.Ctx);
-      Result.IntImag = APSInt(Result.IntReal.getBitWidth(),
-                              !Result.IntReal.isSigned());
-      return true;
-    }
-  } else if (SubType->isIntegerType()) {
-    APSInt &Real = Result.IntReal;
-    if (!EvaluateInteger(SubExpr, Real, Info))
-      return false;
-
-    if (EltType->isRealFloatingType()) {
-      Result.makeComplexFloat();
-      Result.FloatReal
-        = HandleIntToFloatCast(EltType, SubType, Real, Info.Ctx);
-      Result.FloatImag = APFloat(Result.FloatReal.getSemantics());
-      return true;
-    } else {
-      Result.makeComplexInt();
-      Real = HandleIntToIntCast(EltType, SubType, Real, Info.Ctx);
-      Result.IntImag = APSInt(Real.getBitWidth(), !Real.isSigned());
-      return true;
-    }
-  } else if (const ComplexType *CT = SubType->getAs<ComplexType>()) {
-    if (!Visit(SubExpr))
-      return false;
-
-    QualType SrcType = CT->getElementType();
-
-    if (Result.isComplexFloat()) {
-      if (EltType->isRealFloatingType()) {
-        Result.makeComplexFloat();
-        Result.FloatReal = HandleFloatToFloatCast(EltType, SrcType,
-                                                  Result.FloatReal,
-                                                  Info.Ctx);
-        Result.FloatImag = HandleFloatToFloatCast(EltType, SrcType,
-                                                  Result.FloatImag,
-                                                  Info.Ctx);
-        return true;
-      } else {
-        Result.makeComplexInt();
-        Result.IntReal = HandleFloatToIntCast(EltType, SrcType,
-                                              Result.FloatReal,
-                                              Info.Ctx);
-        Result.IntImag = HandleFloatToIntCast(EltType, SrcType,
-                                              Result.FloatImag,
-                                              Info.Ctx);
-        return true;
-      }
-    } else {
-      assert(Result.isComplexInt() && "Invalid evaluate result.");
-      if (EltType->isRealFloatingType()) {
-        Result.makeComplexFloat();
-        Result.FloatReal = HandleIntToFloatCast(EltType, SrcType,
-                                                Result.IntReal,
-                                                Info.Ctx);
-        Result.FloatImag = HandleIntToFloatCast(EltType, SrcType,
-                                                Result.IntImag,
-                                                Info.Ctx);
-        return true;
-      } else {
-        Result.makeComplexInt();
-        Result.IntReal = HandleIntToIntCast(EltType, SrcType,
-                                            Result.IntReal,
-                                            Info.Ctx);
-        Result.IntImag = HandleIntToIntCast(EltType, SrcType,
-                                            Result.IntImag,
-                                            Info.Ctx);
-        return true;
-      }
-    }
+    Result.makeComplexFloat();
+    Result.FloatImag = APFloat(Real.getSemantics());
+    return true;
   }
 
-  // FIXME: Handle more casts.
+  case CK_FloatingComplexCast: {
+    if (!Visit(E->getSubExpr()))
+      return false;
+
+    QualType To = E->getType()->getAs<ComplexType>()->getElementType();
+    QualType From
+      = E->getSubExpr()->getType()->getAs<ComplexType>()->getElementType();
+
+    Result.FloatReal
+      = HandleFloatToFloatCast(To, From, Result.FloatReal, Info.Ctx);
+    Result.FloatImag
+      = HandleFloatToFloatCast(To, From, Result.FloatImag, Info.Ctx);
+    return true;
+  }
+
+  case CK_FloatingComplexToIntegralComplex: {
+    if (!Visit(E->getSubExpr()))
+      return false;
+
+    QualType To = E->getType()->getAs<ComplexType>()->getElementType();
+    QualType From
+      = E->getSubExpr()->getType()->getAs<ComplexType>()->getElementType();
+    Result.makeComplexInt();
+    Result.IntReal = HandleFloatToIntCast(To, From, Result.FloatReal, Info.Ctx);
+    Result.IntImag = HandleFloatToIntCast(To, From, Result.FloatImag, Info.Ctx);
+    return true;
+  }
+
+  case CK_IntegralRealToComplex: {
+    APSInt &Real = Result.IntReal;
+    if (!EvaluateInteger(E->getSubExpr(), Real, Info))
+      return false;
+
+    Result.makeComplexInt();
+    Result.IntImag = APSInt(Real.getBitWidth(), !Real.isSigned());
+    return true;
+  }
+
+  case CK_IntegralComplexCast: {
+    if (!Visit(E->getSubExpr()))
+      return false;
+
+    QualType To = E->getType()->getAs<ComplexType>()->getElementType();
+    QualType From
+      = E->getSubExpr()->getType()->getAs<ComplexType>()->getElementType();
+
+    Result.IntReal = HandleIntToIntCast(To, From, Result.IntReal, Info.Ctx);
+    Result.IntImag = HandleIntToIntCast(To, From, Result.IntImag, Info.Ctx);
+    return true;
+  }
+
+  case CK_IntegralComplexToFloatingComplex: {
+    if (!Visit(E->getSubExpr()))
+      return false;
+
+    QualType To = E->getType()->getAs<ComplexType>()->getElementType();
+    QualType From
+      = E->getSubExpr()->getType()->getAs<ComplexType>()->getElementType();
+    Result.makeComplexFloat();
+    Result.FloatReal = HandleIntToFloatCast(To, From, Result.IntReal, Info.Ctx);
+    Result.FloatImag = HandleIntToFloatCast(To, From, Result.IntImag, Info.Ctx);
+    return true;
+  }
+  }
+
+  llvm_unreachable("unknown cast resulting in complex value");
   return false;
 }
 
 bool ComplexExprEvaluator::VisitBinaryOperator(const BinaryOperator *E) {
+  if (E->getOpcode() == BO_Comma) {
+    if (!Visit(E->getRHS()))
+      return false;
+
+    // If we can't evaluate the LHS, it might have side effects;
+    // conservatively mark it.
+    if (!E->getLHS()->isEvaluatable(Info.Ctx))
+      Info.EvalResult.HasSideEffects = true;
+
+    return true;
+  }
   if (!Visit(E->getLHS()))
     return false;
 
@@ -2298,9 +2334,95 @@ bool ComplexExprEvaluator::VisitBinaryOperator(const BinaryOperator *E) {
          LHS.getComplexIntImag() * RHS.getComplexIntReal());
     }
     break;
+  case BO_Div:
+    if (Result.isComplexFloat()) {
+      ComplexValue LHS = Result;
+      APFloat &LHS_r = LHS.getComplexFloatReal();
+      APFloat &LHS_i = LHS.getComplexFloatImag();
+      APFloat &RHS_r = RHS.getComplexFloatReal();
+      APFloat &RHS_i = RHS.getComplexFloatImag();
+      APFloat &Res_r = Result.getComplexFloatReal();
+      APFloat &Res_i = Result.getComplexFloatImag();
+
+      APFloat Den = RHS_r;
+      Den.multiply(RHS_r, APFloat::rmNearestTiesToEven);
+      APFloat Tmp = RHS_i;
+      Tmp.multiply(RHS_i, APFloat::rmNearestTiesToEven);
+      Den.add(Tmp, APFloat::rmNearestTiesToEven);
+
+      Res_r = LHS_r;
+      Res_r.multiply(RHS_r, APFloat::rmNearestTiesToEven);
+      Tmp = LHS_i;
+      Tmp.multiply(RHS_i, APFloat::rmNearestTiesToEven);
+      Res_r.add(Tmp, APFloat::rmNearestTiesToEven);
+      Res_r.divide(Den, APFloat::rmNearestTiesToEven);
+
+      Res_i = LHS_i;
+      Res_i.multiply(RHS_r, APFloat::rmNearestTiesToEven);
+      Tmp = LHS_r;
+      Tmp.multiply(RHS_i, APFloat::rmNearestTiesToEven);
+      Res_i.subtract(Tmp, APFloat::rmNearestTiesToEven);
+      Res_i.divide(Den, APFloat::rmNearestTiesToEven);
+    } else {
+      if (RHS.getComplexIntReal() == 0 && RHS.getComplexIntImag() == 0) {
+        // FIXME: what about diagnostics?
+        return false;
+      }
+      ComplexValue LHS = Result;
+      APSInt Den = RHS.getComplexIntReal() * RHS.getComplexIntReal() +
+        RHS.getComplexIntImag() * RHS.getComplexIntImag();
+      Result.getComplexIntReal() =
+        (LHS.getComplexIntReal() * RHS.getComplexIntReal() +
+         LHS.getComplexIntImag() * RHS.getComplexIntImag()) / Den;
+      Result.getComplexIntImag() =
+        (LHS.getComplexIntImag() * RHS.getComplexIntReal() -
+         LHS.getComplexIntReal() * RHS.getComplexIntImag()) / Den;
+    }
+    break;
   }
 
   return true;
+}
+
+bool ComplexExprEvaluator::VisitUnaryOperator(const UnaryOperator *E) {
+  // Get the operand value into 'Result'.
+  if (!Visit(E->getSubExpr()))
+    return false;
+
+  switch (E->getOpcode()) {
+  default:
+    // FIXME: what about diagnostics?
+    return false;
+  case UO_Extension:
+    return true;
+  case UO_Plus:
+    // The result is always just the subexpr.
+    return true;
+  case UO_Minus:
+    if (Result.isComplexFloat()) {
+      Result.getComplexFloatReal().changeSign();
+      Result.getComplexFloatImag().changeSign();
+    }
+    else {
+      Result.getComplexIntReal() = -Result.getComplexIntReal();
+      Result.getComplexIntImag() = -Result.getComplexIntImag();
+    }
+    return true;
+  case UO_Not:
+    if (Result.isComplexFloat())
+      Result.getComplexFloatImag().changeSign();
+    else
+      Result.getComplexIntImag() = -Result.getComplexIntImag();
+    return true;
+  }
+}
+
+bool ComplexExprEvaluator::VisitConditionalOperator(const ConditionalOperator *E) {
+  bool Cond;
+  if (!HandleConversionToBool(E->getCond(), Cond, Info))
+    return false;
+
+  return Visit(Cond ? E->getTrueExpr() : E->getFalseExpr());
 }
 
 //===----------------------------------------------------------------------===//
@@ -2494,7 +2616,7 @@ static ICEDiag CheckICE(const Expr* E, ASTContext &Ctx) {
   case Expr::DependentScopeDeclRefExprClass:
   case Expr::CXXConstructExprClass:
   case Expr::CXXBindTemporaryExprClass:
-  case Expr::CXXExprWithTemporariesClass:
+  case Expr::ExprWithCleanupsClass:
   case Expr::CXXTemporaryObjectExprClass:
   case Expr::CXXUnresolvedConstructExprClass:
   case Expr::CXXDependentScopeMemberExprClass:
@@ -2506,7 +2628,6 @@ static ICEDiag CheckICE(const Expr* E, ASTContext &Ctx) {
   case Expr::ObjCProtocolExprClass:
   case Expr::ObjCIvarRefExprClass:
   case Expr::ObjCPropertyRefExprClass:
-  case Expr::ObjCImplicitSetterGetterRefExprClass:
   case Expr::ObjCIsaExprClass:
   case Expr::ShuffleVectorExprClass:
   case Expr::BlockExprClass:
@@ -2525,8 +2646,8 @@ static ICEDiag CheckICE(const Expr* E, ASTContext &Ctx) {
   case Expr::CharacterLiteralClass:
   case Expr::CXXBoolLiteralExprClass:
   case Expr::CXXScalarValueInitExprClass:
-  case Expr::TypesCompatibleExprClass:
   case Expr::UnaryTypeTraitExprClass:
+  case Expr::BinaryTypeTraitExprClass:
   case Expr::CXXNoexceptExprClass:
     return NoDiag();
   case Expr::CallExprClass:

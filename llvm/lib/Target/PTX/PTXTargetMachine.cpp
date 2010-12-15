@@ -13,12 +13,19 @@
 
 #include "PTX.h"
 #include "PTXMCAsmInfo.h"
-#include "PTXMCAsmStreamer.h"
 #include "PTXTargetMachine.h"
 #include "llvm/PassManager.h"
 #include "llvm/Target/TargetRegistry.h"
 
 using namespace llvm;
+
+namespace llvm {
+  MCStreamer *createPTXAsmStreamer(MCContext &Ctx, formatted_raw_ostream &OS,
+                                   bool isVerboseAsm, bool useLoc,
+                                   MCInstPrinter *InstPrint,
+                                   MCCodeEmitter *CE,
+                                   bool ShowInst);
+}
 
 extern "C" void LLVMInitializePTXTarget() {
   RegisterTargetMachine<PTXTargetMachine> X(ThePTXTarget);

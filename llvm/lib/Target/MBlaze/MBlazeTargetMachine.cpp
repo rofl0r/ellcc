@@ -43,7 +43,7 @@ static MCStreamer *createMCStreamer(const Target &T, const std::string &TT,
   case Triple::MinGW64:
   case Triple::Cygwin:
   case Triple::Win32:
-    llvm_unreachable("ARM does not support Windows COFF format");
+    llvm_unreachable("MBlaze does not support Windows COFF format");
     return NULL;
   default:
     return createELFStreamer(Ctx, TAB, _OS, _Emitter, RelaxAll);
@@ -97,8 +97,8 @@ MBlazeTargetMachine(const Target &T, const std::string &TT,
 
 // Install an instruction selector pass using
 // the ISelDag to gen MBlaze code.
-bool MBlazeTargetMachine::
-addInstSelector(PassManagerBase &PM, CodeGenOpt::Level OptLevel) {
+bool MBlazeTargetMachine::addInstSelector(PassManagerBase &PM,
+                                          CodeGenOpt::Level OptLevel) {
   PM.add(createMBlazeISelDag(*this));
   return false;
 }
@@ -106,8 +106,8 @@ addInstSelector(PassManagerBase &PM, CodeGenOpt::Level OptLevel) {
 // Implemented by targets that want to run passes immediately before
 // machine code is emitted. return true if -print-machineinstrs should
 // print out the code after the passes.
-bool MBlazeTargetMachine::
-addPreEmitPass(PassManagerBase &PM, CodeGenOpt::Level OptLevel) {
+bool MBlazeTargetMachine::addPreEmitPass(PassManagerBase &PM,
+                                         CodeGenOpt::Level OptLevel) {
   PM.add(createMBlazeDelaySlotFillerPass(*this));
   return true;
 }

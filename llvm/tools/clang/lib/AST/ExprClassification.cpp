@@ -64,7 +64,6 @@ Cl Expr::ClassifyImpl(ASTContext &Ctx, SourceLocation *Loc) const {
       kind = Cl::CL_Void;
   }
 
-#if 0
   // Enable this assertion for testing.
   switch (kind) {
   case Cl::CL_LValue: assert(getValueKind() == VK_LValue); break;
@@ -77,7 +76,6 @@ Cl Expr::ClassifyImpl(ASTContext &Ctx, SourceLocation *Loc) const {
   case Cl::CL_ClassTemporary:
   case Cl::CL_PRValue: assert(getValueKind() == VK_RValue); break;
   }
-#endif
 
   Cl::ModifiableType modifiable = Cl::CM_Untested;
   if (Loc)
@@ -106,7 +104,6 @@ static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
   case Expr::PredefinedExprClass:
     // Property references are lvalues
   case Expr::ObjCPropertyRefExprClass:
-  case Expr::ObjCImplicitSetterGetterRefExprClass:
     // C++ [expr.typeid]p1: The result of a typeid expression is an lvalue of...
   case Expr::CXXTypeidExprClass:
     // Unresolved lookups get classified as lvalues.
@@ -133,7 +130,6 @@ static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
   case Expr::CXXNewExprClass:
   case Expr::CXXThisExprClass:
   case Expr::CXXNullPtrLiteralExprClass:
-  case Expr::TypesCompatibleExprClass:
   case Expr::ImaginaryLiteralClass:
   case Expr::GNUNullExprClass:
   case Expr::OffsetOfExprClass:
@@ -149,6 +145,7 @@ static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
   case Expr::CXXNoexceptExprClass:
   case Expr::CXXScalarValueInitExprClass:
   case Expr::UnaryTypeTraitExprClass:
+  case Expr::BinaryTypeTraitExprClass:
   case Expr::ObjCSelectorExprClass:
   case Expr::ObjCProtocolExprClass:
   case Expr::ObjCStringLiteralClass:
@@ -197,8 +194,7 @@ static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
       Cl::Kinds K = ClassifyInternal(Ctx, Op);
       if (K != Cl::CL_LValue) return K;
 
-      if (isa<ObjCPropertyRefExpr>(Op) ||
-          isa<ObjCImplicitSetterGetterRefExpr>(Op))
+      if (isa<ObjCPropertyRefExpr>(Op))
         return Cl::CL_SubObjCPropertySetting;
       return Cl::CL_LValue;
     }
@@ -259,9 +255,9 @@ static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
   case Expr::CXXBindTemporaryExprClass:
     return ClassifyInternal(Ctx, cast<CXXBindTemporaryExpr>(E)->getSubExpr());
 
-    // And the temporary lifetime guard.
-  case Expr::CXXExprWithTemporariesClass:
-    return ClassifyInternal(Ctx, cast<CXXExprWithTemporaries>(E)->getSubExpr());
+    // And the cleanups guard.
+  case Expr::ExprWithCleanupsClass:
+    return ClassifyInternal(Ctx, cast<ExprWithCleanups>(E)->getSubExpr());
 
     // Casts depend completely on the target type. All casts work the same.
   case Expr::CStyleCastExprClass:
@@ -333,6 +329,7 @@ static Cl::Kinds ClassifyDecl(ASTContext &Ctx, const Decl *D) {
     islvalue = NTTParm->getType()->isReferenceType();
   else
     islvalue = isa<VarDecl>(D) || isa<FieldDecl>(D) ||
+	  isa<IndirectFieldDecl>(D) ||
       (Ctx.getLangOptions().CPlusPlus &&
         (isa<FunctionDecl>(D) || isa<FunctionTemplateDecl>(D)));
 
@@ -369,8 +366,7 @@ static Cl::Kinds ClassifyMemberExpr(ASTContext &Ctx, const MemberExpr *E) {
       return Cl::CL_LValue;
     // ObjC property accesses are not lvalues, but get special treatment.
     Expr *Base = E->getBase()->IgnoreParens();
-    if (isa<ObjCPropertyRefExpr>(Base) ||
-        isa<ObjCImplicitSetterGetterRefExpr>(Base))
+    if (isa<ObjCPropertyRefExpr>(Base))
       return Cl::CL_SubObjCPropertySetting;
     return ClassifyInternal(Ctx, Base);
   }
@@ -396,8 +392,7 @@ static Cl::Kinds ClassifyMemberExpr(ASTContext &Ctx, const MemberExpr *E) {
     if (E->isArrow())
       return Cl::CL_LValue;
     Expr *Base = E->getBase()->IgnoreParenImpCasts();
-    if (isa<ObjCPropertyRefExpr>(Base) ||
-        isa<ObjCImplicitSetterGetterRefExpr>(Base))
+    if (isa<ObjCPropertyRefExpr>(Base))
       return Cl::CL_SubObjCPropertySetting;
     return ClassifyInternal(Ctx, E->getBase());
   }
@@ -418,8 +413,10 @@ static Cl::Kinds ClassifyBinaryOp(ASTContext &Ctx, const BinaryOperator *E) {
   assert(Ctx.getLangOptions().CPlusPlus &&
          "This is only relevant for C++.");
   // C++ [expr.ass]p1: All [...] return an lvalue referring to the left operand.
+  // Except we override this for writes to ObjC properties.
   if (E->isAssignmentOp())
-    return Cl::CL_LValue;
+    return (E->getLHS()->getObjectKind() == OK_ObjCProperty
+              ? Cl::CL_PRValue : Cl::CL_LValue);
 
   // C++ [expr.comma]p1: the result is of the same value category as its right
   //   operand, [...].
@@ -473,9 +470,10 @@ static Cl::ModifiableType IsModifiable(ASTContext &Ctx, const Expr *E,
   if (Kind == Cl::CL_PRValue) {
     // For the sake of better diagnostics, we want to specifically recognize
     // use of the GCC cast-as-lvalue extension.
-    if (const CStyleCastExpr *CE = dyn_cast<CStyleCastExpr>(E->IgnoreParens())){
-      if (CE->getSubExpr()->Classify(Ctx).isLValue()) {
-        Loc = CE->getLParenLoc();
+    if (const ExplicitCastExpr *CE =
+          dyn_cast<ExplicitCastExpr>(E->IgnoreParens())) {
+      if (CE->getSubExpr()->IgnoreParenImpCasts()->isLValue()) {
+        Loc = CE->getExprLoc();
         return Cl::CM_LValueCast;
       }
     }
@@ -499,9 +497,8 @@ static Cl::ModifiableType IsModifiable(ASTContext &Ctx, const Expr *E,
 
   // Assignment to a property in ObjC is an implicit setter access. But a
   // setter might not exist.
-  if (const ObjCImplicitSetterGetterRefExpr *Expr =
-        dyn_cast<ObjCImplicitSetterGetterRefExpr>(E)) {
-    if (Expr->getSetterMethod() == 0)
+  if (const ObjCPropertyRefExpr *Expr = dyn_cast<ObjCPropertyRefExpr>(E)) {
+    if (Expr->isImplicitProperty() && Expr->getImplicitPropertySetter() == 0)
       return Cl::CM_NoSetterProperty;
   }
 
@@ -518,8 +515,7 @@ static Cl::ModifiableType IsModifiable(ASTContext &Ctx, const Expr *E,
 
   // Records with any const fields (recursively) are not modifiable.
   if (const RecordType *R = CT->getAs<RecordType>()) {
-    assert((isa<ObjCImplicitSetterGetterRefExpr>(E) ||
-            isa<ObjCPropertyRefExpr>(E) ||
+    assert((E->getObjectKind() == OK_ObjCProperty ||
             !Ctx.getLangOptions().CPlusPlus) &&
            "C++ struct assignment should be resolved by the "
            "copy assignment operator.");
@@ -530,7 +526,7 @@ static Cl::ModifiableType IsModifiable(ASTContext &Ctx, const Expr *E,
   return Cl::CM_Modifiable;
 }
 
-Expr::isLvalueResult Expr::isLvalue(ASTContext &Ctx) const {
+Expr::LValueClassification Expr::ClassifyLValue(ASTContext &Ctx) const {
   Classification VC = Classify(Ctx);
   switch (VC.getKind()) {
   case Cl::CL_LValue: return LV_Valid;

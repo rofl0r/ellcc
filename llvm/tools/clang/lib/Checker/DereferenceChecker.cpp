@@ -59,6 +59,7 @@ void DereferenceChecker::AddDerefSource(llvm::raw_ostream &os,
                                      llvm::SmallVectorImpl<SourceRange> &Ranges,
                                         const Expr *Ex,
                                         bool loadedFrom) {
+  Ex = Ex->IgnoreParenLValueCasts();
   switch (Ex->getStmtClass()) {
     default:
       return;
@@ -107,7 +108,7 @@ void DereferenceChecker::VisitLocation(CheckerContext &C, const Stmt *S,
 
   const GRState *state = C.getState();
   const GRState *notNullState, *nullState;
-  llvm::tie(notNullState, nullState) = state->Assume(location);
+  llvm::tie(notNullState, nullState) = state->assume(location);
 
   // The explicit NULL case.
   if (nullState) {

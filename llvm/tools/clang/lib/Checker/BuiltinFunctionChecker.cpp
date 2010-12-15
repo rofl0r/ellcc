@@ -22,7 +22,7 @@ namespace {
 class BuiltinFunctionChecker : public Checker {
 public:
   static void *getTag() { static int tag = 0; return &tag; }
-  virtual bool EvalCallExpr(CheckerContext &C, const CallExpr *CE);
+  virtual bool evalCallExpr(CheckerContext &C, const CallExpr *CE);
 };
 
 }
@@ -31,7 +31,7 @@ void clang::RegisterBuiltinFunctionChecker(GRExprEngine &Eng) {
   Eng.registerCheck(new BuiltinFunctionChecker());
 }
 
-bool BuiltinFunctionChecker::EvalCallExpr(CheckerContext &C,const CallExpr *CE){
+bool BuiltinFunctionChecker::evalCallExpr(CheckerContext &C,const CallExpr *CE){
   const GRState *state = C.getState();
   const Expr *Callee = CE->getCallee();
   SVal L = state->getSVal(Callee);
@@ -67,13 +67,11 @@ bool BuiltinFunctionChecker::EvalCallExpr(CheckerContext &C,const CallExpr *CE){
     DefinedOrUnknownSVal Size =
       cast<DefinedOrUnknownSVal>(state->getSVal(*(CE->arg_begin())));
 
-    ValueManager& ValMgr = C.getValueManager();
-    DefinedOrUnknownSVal Extent = R->getExtent(ValMgr);
-
-    SValuator& SVator = ValMgr.getSValuator();
-    DefinedOrUnknownSVal ExtentMatchesSizeArg =
-      SVator.EvalEQ(state, Extent, Size);
-    state = state->Assume(ExtentMatchesSizeArg, true);
+    SValBuilder& svalBuilder = C.getSValBuilder();
+    DefinedOrUnknownSVal Extent = R->getExtent(svalBuilder);
+    DefinedOrUnknownSVal extentMatchesSizeArg =
+      svalBuilder.evalEQ(state, Extent, Size);
+    state = state->assume(extentMatchesSizeArg, true);
 
     C.GenerateNode(state->BindExpr(CE, loc::MemRegionVal(R)));
     return true;

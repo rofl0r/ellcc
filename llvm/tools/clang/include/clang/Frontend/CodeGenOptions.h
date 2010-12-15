@@ -56,9 +56,13 @@ public:
   unsigned HiddenWeakVTables : 1; /// Emit weak vtables, RTTI, and thunks with
                                   /// hidden visibility
   unsigned InstrumentFunctions : 1; /// Set when -finstrument-functions is enabled
+  unsigned LessPreciseFPMAD  : 1; /// Enable less precise MAD instructions to be
+                                  /// generated.
   unsigned MergeAllConstants : 1; /// Merge identical constants.
   unsigned NoCommon          : 1; /// Set when -fno-common or C++ is enabled.
   unsigned NoImplicitFloat   : 1; /// Set when -mno-implicit-float is enabled.
+  unsigned NoInfsFPMath      : 1; /// Assume FP arguments, results not +-Inf.
+  unsigned NoNaNsFPMath      : 1; /// Assume FP arguments, results not NaN.
   unsigned NoZeroInitializedInBSS : 1; /// -fno-zero-initialized-in-bss
   unsigned ObjCDispatchMethod : 2; /// Method of Objective-C dispatch to use.
   unsigned OmitLeafFramePointer : 1; /// Set when -momit-leaf-frame-pointer is
@@ -73,6 +77,7 @@ public:
   unsigned UnitAtATime       : 1; /// Unused. For mirroring GCC optimization
                                   /// selection.
   unsigned UnrollLoops       : 1; /// Control whether loops are unrolled.
+  unsigned UnsafeFPMath      : 1; /// Allow unsafe floating point optzns.
   unsigned UnwindTables      : 1; /// Emit unwind tables.
   unsigned VerifyModule      : 1; /// Control whether the module should be run
                                   /// through the LLVM Verifier.
@@ -120,9 +125,12 @@ public:
     HiddenWeakTemplateVTables = 0;
     HiddenWeakVTables = 0;
     InstrumentFunctions = 0;
+    LessPreciseFPMAD = 0;
     MergeAllConstants = 1;
     NoCommon = 0;
     NoImplicitFloat = 0;
+    NoInfsFPMath = 0;
+    NoNaNsFPMath = 0;
     NoZeroInitializedInBSS = 0;
     ObjCDispatchMethod = Legacy;
     OmitLeafFramePointer = 0;
@@ -135,6 +143,7 @@ public:
     TimePasses = 0;
     UnitAtATime = 1;
     UnrollLoops = 0;
+    UnsafeFPMath = 0;
     UnwindTables = 0;
     VerifyModule = 1;
 

@@ -32,10 +32,11 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Support/Timer.h"
-#include "llvm/System/Host.h"
-#include "llvm/System/Path.h"
-#include "llvm/System/Program.h"
-#include "llvm/System/Signals.h"
+#include "llvm/Support/Host.h"
+#include "llvm/Support/Path.h"
+#include "llvm/Support/Program.h"
+#include "llvm/Support/Signals.h"
+#include "llvm/Support/system_error.h"
 using namespace clang;
 
 CompilerInstance::CompilerInstance()
@@ -148,14 +149,13 @@ CompilerInstance::createDiagnostics(const DiagnosticOptions &Opts,
 // File Manager
 
 void CompilerInstance::createFileManager() {
-  FileMgr.reset(new FileManager());
+  FileMgr.reset(new FileManager(getFileSystemOpts()));
 }
 
 // Source Manager
 
-void CompilerInstance::createSourceManager(FileManager &FileMgr,
-                                           const FileSystemOptions &FSOpts) {
-  SourceMgr.reset(new SourceManager(getDiagnostics(), FileMgr, FSOpts));
+void CompilerInstance::createSourceManager(FileManager &FileMgr) {
+  SourceMgr.reset(new SourceManager(getDiagnostics(), FileMgr));
 }
 
 // Preprocessor
@@ -164,8 +164,8 @@ void CompilerInstance::createPreprocessor() {
   PP.reset(createPreprocessor(getDiagnostics(), getLangOpts(),
                               getPreprocessorOpts(), getHeaderSearchOpts(),
                               getDependencyOutputOpts(), getTarget(),
-                              getFrontendOpts(), getFileSystemOpts(),
-                              getSourceManager(), getFileManager()));
+                              getFrontendOpts(), getSourceManager(),
+                              getFileManager()));
 }
 
 Preprocessor *
@@ -176,16 +176,15 @@ CompilerInstance::createPreprocessor(Diagnostic &Diags,
                                      const DependencyOutputOptions &DepOpts,
                                      const TargetInfo &Target,
                                      const FrontendOptions &FEOpts,
-                                     const FileSystemOptions &FSOpts,
                                      SourceManager &SourceMgr,
                                      FileManager &FileMgr) {
   // Create a PTH manager if we are using some form of a token cache.
   PTHManager *PTHMgr = 0;
   if (!PPOpts.TokenCache.empty())
-    PTHMgr = PTHManager::Create(PPOpts.TokenCache, FileMgr, FSOpts, Diags);
+    PTHMgr = PTHManager::Create(PPOpts.TokenCache, Diags);
 
   // Create the Preprocessor.
-  HeaderSearch *HeaderInfo = new HeaderSearch(FileMgr, FSOpts);
+  HeaderSearch *HeaderInfo = new HeaderSearch(FileMgr);
   Preprocessor *PP = new Preprocessor(Diags, LangInfo, Target,
                                       SourceMgr, *HeaderInfo, PTHMgr,
                                       /*OwnsHeaderSearch=*/true);
@@ -201,7 +200,7 @@ CompilerInstance::createPreprocessor(Diagnostic &Diags,
   if (PPOpts.DetailedRecord)
     PP->createPreprocessingRecord();
   
-  InitializePreprocessor(*PP, FSOpts, PPOpts, HSOpts, FEOpts);
+  InitializePreprocessor(*PP, PPOpts, HSOpts, FEOpts);
 
   // Handle generating dependencies, if requested.
   if (!DepOpts.OutputFile.empty())
@@ -278,8 +277,7 @@ static bool EnableCodeCompletion(Preprocessor &PP,
                                  unsigned Column) {
   // Tell the source manager to chop off the given file at a specific
   // line and column.
-  const FileEntry *Entry = PP.getFileManager().getFile(Filename,
-                                                       PP.getFileSystemOpts());
+  const FileEntry *Entry = PP.getFileManager().getFile(Filename);
   if (!Entry) {
     PP.getDiagnostics().Report(diag::err_fe_invalid_code_complete_file)
       << Filename;
@@ -469,33 +467,35 @@ CompilerInstance::createOutputFile(llvm::StringRef OutputPath,
 
 bool CompilerInstance::InitializeSourceManager(llvm::StringRef InputFile) {
   return InitializeSourceManager(InputFile, getDiagnostics(), getFileManager(),
-                                 getFileSystemOpts(),
                                  getSourceManager(), getFrontendOpts());
 }
 
 bool CompilerInstance::InitializeSourceManager(llvm::StringRef InputFile,
                                                Diagnostic &Diags,
                                                FileManager &FileMgr,
-                                               const FileSystemOptions &FSOpts,
                                                SourceManager &SourceMgr,
                                                const FrontendOptions &Opts) {
-  // Figure out where to get and map in the main file.
-  if (InputFile != "-") {
-    const FileEntry *File = FileMgr.getFile(InputFile, FSOpts);
+  // Figure out where to get and map in the main file, unless it's already
+  // been created (e.g., by a precompiled preamble).
+  if (!SourceMgr.getMainFileID().isInvalid()) {
+    // Do nothing: the main file has already been set.
+  } else if (InputFile != "-") {
+    const FileEntry *File = FileMgr.getFile(InputFile);
     if (!File) {
       Diags.Report(diag::err_fe_error_reading) << InputFile;
       return false;
     }
     SourceMgr.createMainFileID(File);
   } else {
-    llvm::MemoryBuffer *SB = llvm::MemoryBuffer::getSTDIN();
+    llvm::error_code ec;
+    llvm::MemoryBuffer *SB = llvm::MemoryBuffer::getSTDIN(ec);
     if (!SB) {
+      // FIXME: Give ec.message() in this diag.
       Diags.Report(diag::err_fe_error_reading_stdin);
       return false;
     }
     const FileEntry *File = FileMgr.getVirtualFile(SB->getBufferIdentifier(),
-                                                   SB->getBufferSize(), 0,
-                                                   FSOpts);
+                                                   SB->getBufferSize(), 0);
     SourceMgr.createMainFileID(File);
     SourceMgr.overrideFileContents(File, SB);
   }

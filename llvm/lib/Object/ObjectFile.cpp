@@ -14,7 +14,8 @@
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MemoryBuffer.h"
-#include "llvm/System/Path.h"
+#include "llvm/Support/Path.h"
+#include "llvm/Support/system_error.h"
 
 using namespace llvm;
 using namespace object;
@@ -62,5 +63,6 @@ ObjectFile *ObjectFile::createObjectFile(MemoryBuffer *Object) {
 }
 
 ObjectFile *ObjectFile::createObjectFile(StringRef ObjectPath) {
-  return createObjectFile(MemoryBuffer::getFile(ObjectPath));
+  error_code ec;
+  return createObjectFile(MemoryBuffer::getFile(ObjectPath, ec));
 }

@@ -605,7 +605,11 @@ void ARMConstantIslands::InitialFunctionScan(MachineFunction &MF,
 
           case ARM::LDRi12:
           case ARM::LDRcp:
-          case ARM::t2LDRpci:
+          case ARM::t2LDRi12:
+          case ARM::t2LDRHi12:
+          case ARM::t2LDRBi12:
+          case ARM::t2LDRSHi12:
+          case ARM::t2LDRSBi12:
             Bits = 12;  // +-offset_12
             NegOk = true;
             break;
@@ -1644,7 +1648,7 @@ bool ARMConstantIslands::OptimizeThumb2Branches(MachineFunction &MF) {
     unsigned DestOffset = BBOffsets[DestBB->getNumber()];
     if (BrOffset < DestOffset && (DestOffset - BrOffset) <= 126) {
       MachineBasicBlock::iterator CmpMI = Br.MI; --CmpMI;
-      if (CmpMI->getOpcode() == ARM::tCMPzi8) {
+      if (CmpMI->getOpcode() == ARM::tCMPi8) {
         unsigned Reg = CmpMI->getOperand(0).getReg();
         Pred = llvm::getInstrPredicate(CmpMI, PredReg);
         if (Pred == ARMCC::AL &&
@@ -1766,7 +1770,7 @@ bool ARMConstantIslands::OptimizeThumb2JumpTables(MachineFunction &MF) {
       if (!OptOk)
         continue;
 
-      unsigned Opc = ByteOk ? ARM::t2TBB : ARM::t2TBH;
+      unsigned Opc = ByteOk ? ARM::t2TBB_JT : ARM::t2TBH_JT;
       MachineInstr *NewJTMI = BuildMI(MBB, MI->getDebugLoc(), TII->get(Opc))
         .addReg(IdxReg, getKillRegState(IdxRegKill))
         .addJumpTableIndex(JTI, JTOP.getTargetFlags())

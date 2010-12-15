@@ -29,6 +29,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/PredIteratorCache.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Target/TargetData.h"
 using namespace llvm;
 
 STATISTIC(NumCacheNonLocal, "Number of fully cached non-local responses");
@@ -82,6 +83,7 @@ void MemoryDependenceAnalysis::getAnalysisUsage(AnalysisUsage &AU) const {
 
 bool MemoryDependenceAnalysis::runOnFunction(Function &) {
   AA = &getAnalysis<AliasAnalysis>();
+  TD = getAnalysisIfAvailable<TargetData>();
   if (PredCache == 0)
     PredCache.reset(new PredIteratorCache());
   return false;
@@ -289,7 +291,7 @@ getPointerDependencyFrom(const AliasAnalysis::Location &MemLoc, bool isLoad,
         continue;
       
       // May-alias loads don't depend on each other without a dependence.
-      if (isLoad && R == AliasAnalysis::MayAlias)
+      if (isLoad && R != AliasAnalysis::MustAlias)
         continue;
 
       // Stores don't alias loads from read-only memory.
@@ -321,9 +323,9 @@ getPointerDependencyFrom(const AliasAnalysis::Location &MemLoc, bool isLoad,
       
       if (R == AliasAnalysis::NoAlias)
         continue;
-      if (R == AliasAnalysis::MayAlias)
-        return MemDepResult::getClobber(Inst);
-      return MemDepResult::getDef(Inst);
+      if (R == AliasAnalysis::MustAlias)
+        return MemDepResult::getDef(Inst);
+      return MemDepResult::getClobber(Inst);
     }
 
     // If this is an allocation, and if we know that the accessed pointer is to
@@ -409,9 +411,9 @@ MemDepResult MemoryDependenceAnalysis::getDependency(Instruction *QueryInst) {
     if (MemLoc.Ptr) {
       // If we can do a pointer scan, make it happen.
       bool isLoad = !(MR & AliasAnalysis::Mod);
-      if (IntrinsicInst *II = dyn_cast<MemoryUseIntrinsic>(QueryInst)) {
+      if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(QueryInst))
         isLoad |= II->getIntrinsicID() == Intrinsic::lifetime_end;
-      }
+
       LocalCache = getPointerDependencyFrom(MemLoc, isLoad, ScanPos,
                                             QueryParent);
     } else if (isa<CallInst>(QueryInst) || isa<InvokeInst>(QueryInst)) {

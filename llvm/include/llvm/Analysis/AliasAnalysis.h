@@ -48,6 +48,8 @@ class VAArgInst;
 class TargetData;
 class Pass;
 class AnalysisUsage;
+class MemTransferInst;
+class MemIntrinsic;
 
 class AliasAnalysis {
 protected:
@@ -106,8 +108,7 @@ public:
     /// the location, or null if there is no known unique tag.
     const MDNode *TBAATag;
 
-    explicit Location(const Value *P = 0,
-                      uint64_t S = UnknownSize,
+    explicit Location(const Value *P = 0, uint64_t S = UnknownSize,
                       const MDNode *N = 0)
       : Ptr(P), Size(S), TBAATag(N) {}
 
@@ -135,6 +136,8 @@ public:
   Location getLocation(const LoadInst *LI);
   Location getLocation(const StoreInst *SI);
   Location getLocation(const VAArgInst *VI);
+  static Location getLocationForSource(const MemTransferInst *MTI);
+  static Location getLocationForDest(const MemIntrinsic *MI);
 
   /// Alias analysis result - Either we know for sure that it does not alias, we
   /// know for sure it must alias, or we don't know anything: The two pointers
@@ -147,8 +150,9 @@ public:
   ///
   enum AliasResult {
     NoAlias = 0,        ///< No dependencies.
-    MayAlias = 1,       ///< Anything goes.
-    MustAlias = 2       ///< Pointers are equal.
+    MayAlias,           ///< Anything goes.
+    PartialAlias,       ///< Pointers differ, but pointees overlap.
+    MustAlias           ///< Pointers are equal.
   };
 
   /// alias - The main low level interface to the alias analysis implementation.
@@ -179,7 +183,17 @@ public:
                  const Value *V2, uint64_t V2Size) {
     return isNoAlias(Location(V1, V1Size), Location(V2, V2Size));
   }
+  
+  /// isMustAlias - A convenience wrapper.
+  bool isMustAlias(const Location &LocA, const Location &LocB) {
+    return alias(LocA, LocB) == MustAlias;
+  }
 
+  /// isMustAlias - A convenience wrapper.
+  bool isMustAlias(const Value *V1, const Value *V2) {
+    return alias(V1, 1, V2, 1) == MustAlias;
+  }
+  
   /// pointsToConstantMemory - If the specified memory location is
   /// known to be constant, return true. If OrLocal is true and the
   /// specified memory location is known to be "local" (derived from

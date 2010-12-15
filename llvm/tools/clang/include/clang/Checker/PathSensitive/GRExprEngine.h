@@ -50,11 +50,8 @@ class GRExprEngine : public GRSubEngine {
   /// SymMgr - Object that manages the symbol information.
   SymbolManager& SymMgr;
 
-  /// ValMgr - Object that manages/creates SVals.
-  ValueManager &ValMgr;
-
-  /// SVator - SValuator object that creates SVals from expressions.
-  SValuator &SVator;
+  /// svalBuilder - SValBuilder object that creates SVals from expressions.
+  SValBuilder &svalBuilder;
 
   /// EntryNode - The immediate predecessor node.
   ExplodedNode* EntryNode;
@@ -136,7 +133,7 @@ public:
 
   virtual AnalysisManager &getAnalysisManager() { return AMgr; }
 
-  SValuator &getSValuator() { return SVator; }
+  SValBuilder &getSValBuilder() { return svalBuilder; }
 
   GRTransferFuncs& getTF() { return *TF; }
 
@@ -224,7 +221,7 @@ public:
   /// Called by GRCoreEngine when the analysis worklist has terminated.
   void ProcessEndWorklist(bool hasWorkRemaining);
 
-  /// EvalAssume - Callback function invoked by the ConstraintManager when
+  /// evalAssume - Callback function invoked by the ConstraintManager when
   ///  making assumptions about state values.
   const GRState *ProcessAssume(const GRState *state, SVal cond,bool assumption);
 
@@ -246,16 +243,13 @@ public:
     return StateMgr.getConstraintManager();
   }
 
-  // FIXME: Remove when we migrate over to just using ValueManager.
+  // FIXME: Remove when we migrate over to just using SValBuilder.
   BasicValueFactory& getBasicVals() {
     return StateMgr.getBasicVals();
   }
   const BasicValueFactory& getBasicVals() const {
     return StateMgr.getBasicVals();
   }
-
-  ValueManager &getValueManager() { return ValMgr; }
-  const ValueManager &getValueManager() const { return ValMgr; }
 
   // FIXME: Remove when we migrate over to just using ValueManager.
   SymbolManager& getSymbolManager() { return SymMgr; }
@@ -303,7 +297,7 @@ public:
   ///  other functions that handle specific kinds of statements.
   void Visit(const Stmt* S, ExplodedNode* Pred, ExplodedNodeSet& Dst);
 
-  /// VisitLValue - Evaluate the lvalue of the expression. For example, if Ex is
+  /// VisitLValue - evaluate the lvalue of the expression. For example, if Ex is
   /// a DeclRefExpr, it evaluates to the MemRegionVal which represents its
   /// storage location. Note that not all kinds of expressions has lvalue.
   void VisitLValue(const Expr* Ex, ExplodedNode* Pred, ExplodedNodeSet& Dst);
@@ -424,9 +418,16 @@ public:
 
   void VisitCXXThisExpr(const CXXThisExpr *TE, ExplodedNode *Pred, 
                         ExplodedNodeSet & Dst);
-  
+
+  void VisitCXXTemporaryObjectExpr(const CXXTemporaryObjectExpr *expr,
+                                   ExplodedNode *Pred, ExplodedNodeSet &Dst, 
+                                   bool asLValue) {
+    VisitCXXConstructExpr(expr, 0, Pred, Dst, asLValue);
+  }
+
   void VisitCXXConstructExpr(const CXXConstructExpr *E, const MemRegion *Dest,
-                             ExplodedNode *Pred, ExplodedNodeSet &Dst);
+                             ExplodedNode *Pred, ExplodedNodeSet &Dst, 
+                             bool asLValue);
 
   void VisitCXXDestructor(const CXXDestructorDecl *DD,
                           const MemRegion *Dest, const Stmt *S,
@@ -455,85 +456,92 @@ public:
   const CXXThisRegion *getCXXThisRegion(const CXXRecordDecl *RD,
                                         const StackFrameContext *SFC);
 
+  const CXXThisRegion *getCXXThisRegion(const CXXMethodDecl *decl,
+                                        const StackFrameContext *frameCtx);
+
   /// Evaluate arguments with a work list algorithm.
-  void EvalArguments(ConstExprIterator AI, ConstExprIterator AE,
+  void evalArguments(ConstExprIterator AI, ConstExprIterator AE,
                      const FunctionProtoType *FnType, 
                      ExplodedNode *Pred, ExplodedNodeSet &Dst,
                      bool FstArgAsLValue = false);
 
   /// Evaluate method call itself. Used for CXXMethodCallExpr and
   /// CXXOperatorCallExpr.
-  void EvalMethodCall(const CallExpr *MCE, const CXXMethodDecl *MD,
+  void evalMethodCall(const CallExpr *MCE, const CXXMethodDecl *MD,
                       const Expr *ThisExpr, ExplodedNode *Pred,
                       ExplodedNodeSet &Src, ExplodedNodeSet &Dst);
 
-  /// EvalEagerlyAssume - Given the nodes in 'Src', eagerly assume symbolic
+  /// evalEagerlyAssume - Given the nodes in 'Src', eagerly assume symbolic
   ///  expressions of the form 'x != 0' and generate new nodes (stored in Dst)
   ///  with those assumptions.
-  void EvalEagerlyAssume(ExplodedNodeSet& Dst, ExplodedNodeSet& Src, 
+  void evalEagerlyAssume(ExplodedNodeSet& Dst, ExplodedNodeSet& Src, 
                          const Expr *Ex);
 
-  SVal EvalMinus(SVal X) {
-    return X.isValid() ? SVator.EvalMinus(cast<NonLoc>(X)) : X;
+  SVal evalMinus(SVal X) {
+    return X.isValid() ? svalBuilder.evalMinus(cast<NonLoc>(X)) : X;
   }
 
-  SVal EvalComplement(SVal X) {
-    return X.isValid() ? SVator.EvalComplement(cast<NonLoc>(X)) : X;
+  SVal evalComplement(SVal X) {
+    return X.isValid() ? svalBuilder.evalComplement(cast<NonLoc>(X)) : X;
   }
 
 public:
 
-  SVal EvalBinOp(const GRState *state, BinaryOperator::Opcode op,
+  SVal evalBinOp(const GRState *state, BinaryOperator::Opcode op,
                  NonLoc L, NonLoc R, QualType T) {
-    return SVator.EvalBinOpNN(state, op, L, R, T);
+    return svalBuilder.evalBinOpNN(state, op, L, R, T);
   }
 
-  SVal EvalBinOp(const GRState *state, BinaryOperator::Opcode op,
+  SVal evalBinOp(const GRState *state, BinaryOperator::Opcode op,
                  NonLoc L, SVal R, QualType T) {
-    return R.isValid() ? SVator.EvalBinOpNN(state,op,L, cast<NonLoc>(R), T) : R;
+    return R.isValid() ? svalBuilder.evalBinOpNN(state,op,L, cast<NonLoc>(R), T) : R;
   }
 
-  SVal EvalBinOp(const GRState *ST, BinaryOperator::Opcode Op,
+  SVal evalBinOp(const GRState *ST, BinaryOperator::Opcode Op,
                  SVal LHS, SVal RHS, QualType T) {
-    return SVator.EvalBinOp(ST, Op, LHS, RHS, T);
+    return svalBuilder.evalBinOp(ST, Op, LHS, RHS, T);
   }
   
 protected:
-  void EvalObjCMessageExpr(ExplodedNodeSet& Dst, const ObjCMessageExpr* ME, 
+  void evalObjCMessageExpr(ExplodedNodeSet& Dst, const ObjCMessageExpr* ME, 
                            ExplodedNode* Pred, const GRState *state) {
     assert (Builder && "GRStmtNodeBuilder must be defined.");
-    getTF().EvalObjCMessageExpr(Dst, *this, *Builder, ME, Pred, state);
+    getTF().evalObjCMessageExpr(Dst, *this, *Builder, ME, Pred, state);
   }
 
   const GRState* MarkBranch(const GRState* St, const Stmt* Terminator,
                             bool branchTaken);
 
-  /// EvalBind - Handle the semantics of binding a value to a specific location.
-  ///  This method is used by EvalStore, VisitDeclStmt, and others.
-  void EvalBind(ExplodedNodeSet& Dst, const Stmt* StoreE, ExplodedNode* Pred,
+  /// evalBind - Handle the semantics of binding a value to a specific location.
+  ///  This method is used by evalStore, VisitDeclStmt, and others.
+  void evalBind(ExplodedNodeSet& Dst, const Stmt* StoreE, ExplodedNode* Pred,
                 const GRState* St, SVal location, SVal Val,
                 bool atDeclInit = false);
 
 public:
   // FIXME: 'tag' should be removed, and a LocationContext should be used
   // instead.
-  void EvalLoad(ExplodedNodeSet& Dst, const Expr* Ex, ExplodedNode* Pred,
+  // FIXME: Comment on the meaning of the arguments, when 'St' may not
+  // be the same as Pred->state, and when 'location' may not be the
+  // same as state->getLValue(Ex).
+  /// Simulate a read of the result of Ex.
+  void evalLoad(ExplodedNodeSet& Dst, const Expr* Ex, ExplodedNode* Pred,
                 const GRState* St, SVal location, const void *tag = 0,
                 QualType LoadTy = QualType());
 
   // FIXME: 'tag' should be removed, and a LocationContext should be used
   // instead.
-  void EvalStore(ExplodedNodeSet& Dst, const Expr* AssignE, const Expr* StoreE,
+  void evalStore(ExplodedNodeSet& Dst, const Expr* AssignE, const Expr* StoreE,
                  ExplodedNode* Pred, const GRState* St, SVal TargetLV, SVal Val,
                  const void *tag = 0);
-private:  
-  void EvalLoadCommon(ExplodedNodeSet& Dst, const Expr* Ex, ExplodedNode* Pred,
+private:
+  void evalLoadCommon(ExplodedNodeSet& Dst, const Expr* Ex, ExplodedNode* Pred,
                       const GRState* St, SVal location, const void *tag,
                       QualType LoadTy);
 
   // FIXME: 'tag' should be removed, and a LocationContext should be used
   // instead.
-  void EvalLocation(ExplodedNodeSet &Dst, const Stmt *S, ExplodedNode* Pred,
+  void evalLocation(ExplodedNodeSet &Dst, const Stmt *S, ExplodedNode* Pred,
                     const GRState* St, SVal location,
                     const void *tag, bool isLoad);
 

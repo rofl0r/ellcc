@@ -161,6 +161,10 @@ def Cleanup : Attr {
   let Args = [FunctionArgument<"FunctionDecl">];
 }
 
+def Common : Attr {
+  let Spellings = ["common"];
+}
+
 def Const : Attr {
   let Spellings = ["const"];
 }
@@ -168,6 +172,31 @@ def Const : Attr {
 def Constructor : Attr {
   let Spellings = ["constructor"];
   let Args = [IntArgument<"Priority">];
+}
+
+def CUDAConstant : Attr {
+  let Spellings = ["constant"];
+}
+
+def CUDADevice : Attr {
+  let Spellings = ["device"];
+}
+
+def CUDAGlobal : Attr {
+  let Spellings = ["global"];
+}
+
+def CUDAHost : Attr {
+  let Spellings = ["host"];
+}
+
+def CUDALaunchBounds : Attr {
+  let Spellings = ["launch_bounds"];
+  let Args = [IntArgument<"MaxThreads">, DefaultIntArgument<"MinBlocks", 0>];
+}
+
+def CUDAShared : Attr {
+  let Spellings = ["shared"];
 }
 
 def Deprecated : Attr {
@@ -252,6 +281,10 @@ def MSP430Interrupt : Attr {
 
 def Naked : Attr {
   let Spellings = ["naked"];
+}
+
+def NoCommon : Attr {
+  let Spellings = ["nocommon"];
 }
 
 def NoDebug : Attr {

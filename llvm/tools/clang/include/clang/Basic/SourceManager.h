@@ -16,7 +16,7 @@
 
 #include "clang/Basic/SourceLocation.h"
 #include "llvm/Support/Allocator.h"
-#include "llvm/System/DataTypes.h"
+#include "llvm/Support/DataTypes.h"
 #include "llvm/ADT/PointerIntPair.h"
 #include "llvm/ADT/PointerUnion.h"
 #include "llvm/ADT/DenseMap.h"
@@ -33,7 +33,6 @@ namespace clang {
 class Diagnostic;
 class SourceManager;
 class FileManager;
-class FileSystemOptions;
 class FileEntry;
 class LineTableInfo;
   
@@ -372,7 +371,6 @@ class SourceManager {
   Diagnostic &Diag;
 
   FileManager &FileMgr;
-  const FileSystemOptions &FileSystemOpts;
 
   mutable llvm::BumpPtrAllocator ContentCacheAlloc;
 
@@ -431,8 +429,7 @@ class SourceManager {
   explicit SourceManager(const SourceManager&);
   void operator=(const SourceManager&);
 public:
-  SourceManager(Diagnostic &Diag, FileManager &FileMgr,
-                const FileSystemOptions &FSOpts);
+  SourceManager(Diagnostic &Diag, FileManager &FileMgr);
   ~SourceManager();
 
   void clearIDTables();
@@ -440,7 +437,6 @@ public:
   Diagnostic &getDiagnostics() const { return Diag; }
 
   FileManager &getFileManager() const { return FileMgr; }
-  const FileSystemOptions &getFileSystemOpts() const { return FileSystemOpts; }
 
   //===--------------------------------------------------------------------===//
   // MainFileID creation and querying methods.
@@ -456,6 +452,13 @@ public:
     return MainFileID;
   }
 
+  /// \brief Set the file ID for the precompiled preamble, which is also the
+  /// main file.
+  void SetPreambleFileID(FileID Preamble) {
+    assert(MainFileID.isInvalid() && "MainFileID already set!");
+    MainFileID = Preamble;
+  }
+  
   //===--------------------------------------------------------------------===//
   // Methods to create new FileID's and instantiations.
   //===--------------------------------------------------------------------===//

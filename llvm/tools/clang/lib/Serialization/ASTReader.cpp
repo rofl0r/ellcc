@@ -33,13 +33,15 @@
 #include "clang/Basic/SourceManager.h"
 #include "clang/Basic/SourceManagerInternals.h"
 #include "clang/Basic/FileManager.h"
+#include "clang/Basic/FileSystemStatCache.h"
 #include "clang/Basic/TargetInfo.h"
 #include "clang/Basic/Version.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Bitcode/BitstreamReader.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/ErrorHandling.h"
-#include "llvm/System/Path.h"
+#include "llvm/Support/Path.h"
+#include "llvm/Support/system_error.h"
 #include <algorithm>
 #include <iterator>
 #include <cstdio>
@@ -130,6 +132,7 @@ PCHValidator::ReadLanguageOptions(const LangOptions &LangOpts) {
                           diag::warn_pch_stack_protector);
   PARSE_LANGOPT_BENIGN(InstantiationDepth);
   PARSE_LANGOPT_IMPORTANT(OpenCL, diag::warn_pch_opencl);
+  PARSE_LANGOPT_IMPORTANT(CUDA, diag::warn_pch_cuda);
   PARSE_LANGOPT_BENIGN(CatchUndefined);
   PARSE_LANGOPT_IMPORTANT(ElideConstructors, diag::warn_pch_elide_constructors);
   PARSE_LANGOPT_BENIGN(SpellChecking);
@@ -148,12 +151,14 @@ bool PCHValidator::ReadTargetTriple(llvm::StringRef Triple) {
   return true;
 }
 
-struct EmptyStringRef {
-  bool operator ()(llvm::StringRef r) const { return r.empty(); }
-};
-struct EmptyBlock {
-  bool operator ()(const PCHPredefinesBlock &r) const { return r.Data.empty(); }
-};
+namespace {
+  struct EmptyStringRef {
+    bool operator ()(llvm::StringRef r) const { return r.empty(); }
+  };
+  struct EmptyBlock {
+    bool operator ()(const PCHPredefinesBlock &r) const {return r.Data.empty();}
+  };
+}
 
 static bool EqualConcatenations(llvm::SmallVector<llvm::StringRef, 2> L,
                                 PCHPredefinesBlocks R) {
@@ -1004,7 +1009,6 @@ namespace {
 
 class ASTStatData {
 public:
-  const bool hasStat;
   const ino_t ino;
   const dev_t dev;
   const mode_t mode;
@@ -1012,10 +1016,7 @@ public:
   const off_t size;
 
   ASTStatData(ino_t i, dev_t d, mode_t mo, time_t m, off_t s)
-  : hasStat(true), ino(i), dev(d), mode(mo), mtime(m), size(s) {}
-
-  ASTStatData()
-    : hasStat(false), ino(0), dev(0), mode(0), mtime(0), size(0) {}
+    : ino(i), dev(d), mode(mo), mtime(m), size(s) {}
 };
 
 class ASTStatLookupTrait {
@@ -1050,9 +1051,6 @@ class ASTStatLookupTrait {
                             unsigned /*DataLen*/) {
     using namespace clang::io;
 
-    if (*d++ == 1)
-      return data_type();
-
     ino_t ino = (ino_t) ReadUnalignedLE32(d);
     dev_t dev = (dev_t) ReadUnalignedLE32(d);
     mode_t mode = (mode_t) ReadUnalignedLE16(d);
@@ -1066,44 +1064,40 @@ class ASTStatLookupTrait {
 ///
 /// This cache is very similar to the stat cache used by pretokenized
 /// headers.
-class ASTStatCache : public StatSysCallCache {
+class ASTStatCache : public FileSystemStatCache {
   typedef OnDiskChainedHashTable<ASTStatLookupTrait> CacheTy;
   CacheTy *Cache;
 
   unsigned &NumStatHits, &NumStatMisses;
 public:
-  ASTStatCache(const unsigned char *Buckets,
-               const unsigned char *Base,
-               unsigned &NumStatHits,
-               unsigned &NumStatMisses)
+  ASTStatCache(const unsigned char *Buckets, const unsigned char *Base,
+               unsigned &NumStatHits, unsigned &NumStatMisses)
     : Cache(0), NumStatHits(NumStatHits), NumStatMisses(NumStatMisses) {
     Cache = CacheTy::Create(Buckets, Base);
   }
 
   ~ASTStatCache() { delete Cache; }
 
-  int stat(const char *path, struct stat *buf) {
+  LookupResult getStat(const char *Path, struct stat &StatBuf,
+                       int *FileDescriptor) {
     // Do the lookup for the file's data in the AST file.
-    CacheTy::iterator I = Cache->find(path);
+    CacheTy::iterator I = Cache->find(Path);
 
     // If we don't get a hit in the AST file just forward to 'stat'.
     if (I == Cache->end()) {
       ++NumStatMisses;
-      return StatSysCallCache::stat(path, buf);
+      return statChained(Path, StatBuf, FileDescriptor);
     }
 
     ++NumStatHits;
     ASTStatData Data = *I;
 
-    if (!Data.hasStat)
-      return 1;
-
-    buf->st_ino = Data.ino;
-    buf->st_dev = Data.dev;
-    buf->st_mtime = Data.mtime;
-    buf->st_mode = Data.mode;
-    buf->st_size = Data.size;
-    return 0;
+    StatBuf.st_ino = Data.ino;
+    StatBuf.st_dev = Data.dev;
+    StatBuf.st_mtime = Data.mtime;
+    StatBuf.st_mode = Data.mode;
+    StatBuf.st_size = Data.size;
+    return CacheExists;
   }
 };
 } // end anonymous namespace
@@ -1234,7 +1228,7 @@ ASTReader::ASTReadResult ASTReader::ReadSLocEntryRecord(unsigned ID) {
   case SM_SLOC_FILE_ENTRY: {
     std::string Filename(BlobStart, BlobStart + BlobLen);
     MaybeAddSystemRootToFilename(Filename);
-    const FileEntry *File = FileMgr.getFile(Filename, FileSystemOpts);
+    const FileEntry *File = FileMgr.getFile(Filename);
     if (File == 0) {
       std::string ErrorStr = "could not find file '";
       ErrorStr += Filename;
@@ -1262,9 +1256,8 @@ ASTReader::ASTReadResult ASTReader::ReadSLocEntryRecord(unsigned ID) {
       return Failure;
     }
 
-    FileID FID = SourceMgr.createFileID(File,
-                                       ReadSourceLocation(*F, Record[1]),
-                                       (SrcMgr::CharacteristicKind)Record[2],
+    FileID FID = SourceMgr.createFileID(File, ReadSourceLocation(*F, Record[1]),
+                                        (SrcMgr::CharacteristicKind)Record[2],
                                         ID, Record[0]);
     if (Record[3])
       const_cast<SrcMgr::FileInfo&>(SourceMgr.getSLocEntry(FID).getFile())
@@ -1348,7 +1341,7 @@ bool ASTReader::ReadBlockAbbrevs(llvm::BitstreamCursor &Cursor,
   }
 }
 
-void ASTReader::ReadMacroRecord(PerFileData &F, uint64_t Offset) {
+PreprocessedEntity *ASTReader::ReadMacroRecord(PerFileData &F, uint64_t Offset) {
   assert(PP && "Forgot to set Preprocessor ?");
   llvm::BitstreamCursor &Stream = F.MacroCursor;
 
@@ -1365,14 +1358,14 @@ void ASTReader::ReadMacroRecord(PerFileData &F, uint64_t Offset) {
     unsigned Code = Stream.ReadCode();
     switch (Code) {
     case llvm::bitc::END_BLOCK:
-      return;
+      return 0;
 
     case llvm::bitc::ENTER_SUBBLOCK:
       // No known subblocks, always skip them.
       Stream.ReadSubBlockID();
       if (Stream.SkipBlock()) {
         Error("malformed block record in AST file");
-        return;
+        return 0;
       }
       continue;
 
@@ -1396,12 +1389,12 @@ void ASTReader::ReadMacroRecord(PerFileData &F, uint64_t Offset) {
       // of the definition of the macro we were looking for. We're
       // done.
       if (Macro)
-        return;
+        return 0;
 
       IdentifierInfo *II = DecodeIdentifierInfo(Record[0]);
       if (II == 0) {
         Error("macro must have a name in AST file");
-        return;
+        return 0;
       }
       SourceLocation Loc = ReadSourceLocation(F, Record[1]);
       bool isUsed = Record[2];
@@ -1468,16 +1461,16 @@ void ASTReader::ReadMacroRecord(PerFileData &F, uint64_t Offset) {
       // of the definition of the macro we were looking for. We're
       // done.
       if (Macro)
-        return;
+        return 0;
 
       if (!PP->getPreprocessingRecord()) {
         Error("missing preprocessing record in AST file");
-        return;
+        return 0;
       }
 
       PreprocessingRecord &PPRec = *PP->getPreprocessingRecord();
-      if (PPRec.getPreprocessedEntity(Record[0]))
-        return;
+      if (PreprocessedEntity *PE = PPRec.getPreprocessedEntity(Record[0]))
+        return PE;
 
       MacroInstantiation *MI
         = new (PPRec) MacroInstantiation(DecodeIdentifierInfo(Record[3]),
@@ -1485,7 +1478,7 @@ void ASTReader::ReadMacroRecord(PerFileData &F, uint64_t Offset) {
                                            ReadSourceLocation(F, Record[2])),
                                          getMacroDefinition(Record[4]));
       PPRec.SetPreallocatedEntity(Record[0], MI);
-      return;
+      return MI;
     }
 
     case PP_MACRO_DEFINITION: {
@@ -1493,20 +1486,20 @@ void ASTReader::ReadMacroRecord(PerFileData &F, uint64_t Offset) {
       // of the definition of the macro we were looking for. We're
       // done.
       if (Macro)
-        return;
+        return 0;
 
       if (!PP->getPreprocessingRecord()) {
         Error("missing preprocessing record in AST file");
-        return;
+        return 0;
       }
 
       PreprocessingRecord &PPRec = *PP->getPreprocessingRecord();
-      if (PPRec.getPreprocessedEntity(Record[0]))
-        return;
+      if (PreprocessedEntity *PE = PPRec.getPreprocessedEntity(Record[0]))
+        return PE;
 
       if (Record[1] > MacroDefinitionsLoaded.size()) {
         Error("out-of-bounds macro definition record");
-        return;
+        return 0;
       }
 
       // Decode the identifier info and then check again; if the macro is
@@ -1527,7 +1520,7 @@ void ASTReader::ReadMacroRecord(PerFileData &F, uint64_t Offset) {
           DeserializationListener->MacroDefinitionRead(Record[1], MD);
       }
 
-      return;
+      return MacroDefinitionsLoaded[Record[1] - 1];
     }
 
     case PP_INCLUSION_DIRECTIVE: {
@@ -1535,22 +1528,21 @@ void ASTReader::ReadMacroRecord(PerFileData &F, uint64_t Offset) {
       // of the definition of the macro we were looking for. We're
       // done.
       if (Macro)
-        return;
+        return 0;
 
       if (!PP->getPreprocessingRecord()) {
         Error("missing preprocessing record in AST file");
-        return;
+        return 0;
       }
 
       PreprocessingRecord &PPRec = *PP->getPreprocessingRecord();
-      if (PPRec.getPreprocessedEntity(Record[0]))
-        return;
+      if (PreprocessedEntity *PE = PPRec.getPreprocessedEntity(Record[0]))
+        return PE;
 
       const char *FullFileNameStart = BlobStart + Record[3];
       const FileEntry *File
-        = PP->getFileManager().getFile(FullFileNameStart,
-                                     FullFileNameStart + (BlobLen - Record[3]),
-                                     FileSystemOpts);
+        = PP->getFileManager().getFile(llvm::StringRef(FullFileNameStart,
+                                                       BlobLen - Record[3]));
 
       // FIXME: Stable encoding
       InclusionDirective::InclusionKind Kind
@@ -1563,10 +1555,12 @@ void ASTReader::ReadMacroRecord(PerFileData &F, uint64_t Offset) {
                                  SourceRange(ReadSourceLocation(F, Record[1]),
                                              ReadSourceLocation(F, Record[2])));
       PPRec.SetPreallocatedEntity(Record[0], ID);
-      return;
+      return ID;
     }
     }
   }
+  
+  return 0;
 }
 
 void ASTReader::SetIdentifierIsMacro(IdentifierInfo *II, PerFileData &F,
@@ -2249,6 +2243,18 @@ ASTReader::ASTReadResult ASTReader::ReadAST(const std::string &FileName,
   if (DeserializationListener)
     DeserializationListener->ReaderInitialized(this);
 
+  // If this AST file is a precompiled preamble, then set the main file ID of 
+  // the source manager to the file source file from which the preamble was
+  // built. This is the only valid way to use a precompiled preamble.
+  if (Type == Preamble) {
+    SourceLocation Loc
+      = SourceMgr.getLocation(FileMgr.getFile(getOriginalSourceFile()), 1, 1);
+    if (Loc.isValid()) {
+      std::pair<FileID, unsigned> Decomposed = SourceMgr.getDecomposedLoc(Loc);
+      SourceMgr.SetPreambleFileID(Decomposed.first);
+    }
+  }
+  
   return Success;
 }
 
@@ -2270,10 +2276,13 @@ ASTReader::ASTReadResult ASTReader::ReadASTCore(llvm::StringRef FileName,
   //
   // FIXME: This shouldn't be here, we should just take a raw_ostream.
   std::string ErrStr;
-  if (FileName == "-")
-    F.Buffer.reset(llvm::MemoryBuffer::getSTDIN(&ErrStr));
-  else
-    F.Buffer.reset(FileMgr.getBufferForFile(FileName, FileSystemOpts, &ErrStr));
+  llvm::error_code ec;
+  if (FileName == "-") {
+    F.Buffer.reset(llvm::MemoryBuffer::getSTDIN(ec));
+    if (ec)
+      ErrStr = ec.message();
+  } else
+    F.Buffer.reset(FileMgr.getBufferForFile(FileName, &ErrStr));
   if (!F.Buffer) {
     Error(ErrStr.c_str());
     return IgnorePCH;
@@ -2478,12 +2487,11 @@ void ASTReader::InitializeContext(ASTContext &Ctx) {
 /// file.
 std::string ASTReader::getOriginalSourceFile(const std::string &ASTFileName,
                                              FileManager &FileMgr,
-                                             const FileSystemOptions &FSOpts,
                                              Diagnostic &Diags) {
   // Open the AST file.
   std::string ErrStr;
   llvm::OwningPtr<llvm::MemoryBuffer> Buffer;
-  Buffer.reset(FileMgr.getBufferForFile(ASTFileName, FSOpts, &ErrStr));
+  Buffer.reset(FileMgr.getBufferForFile(ASTFileName, &ErrStr));
   if (!Buffer) {
     Diags.Report(diag::err_fe_unable_to_read_pch_file) << ErrStr;
     return std::string();
@@ -2623,6 +2631,7 @@ bool ASTReader::ParseLanguageOptions(
                                    Record[Idx++]);
     PARSE_LANGOPT(InstantiationDepth);
     PARSE_LANGOPT(OpenCL);
+    PARSE_LANGOPT(CUDA);
     PARSE_LANGOPT(CatchUndefined);
     // FIXME: Missing ElideConstructors?!
   #undef PARSE_LANGOPT
@@ -2635,6 +2644,25 @@ bool ASTReader::ParseLanguageOptions(
 
 void ASTReader::ReadPreprocessedEntities() {
   ReadDefinedMacros();
+}
+
+PreprocessedEntity *ASTReader::ReadPreprocessedEntity(uint64_t Offset) {
+  PerFileData *F = 0;  
+  for (unsigned I = 0, N = Chain.size(); I != N; ++I) {
+    if (Offset < Chain[I]->SizeInBits) {
+      F = Chain[I];
+      break;
+    }
+    
+    Offset -= Chain[I]->SizeInBits;
+  }
+  
+  if (!F) {
+    Error("Malformed preprocessed entity offset");
+    return 0;
+  }
+
+  return ReadMacroRecord(*F, Offset);
 }
 
 void ASTReader::ReadUserDiagnosticMappings(Diagnostic &Diag) {
@@ -2744,6 +2772,9 @@ QualType ASTReader::ReadTypeRecord(unsigned Index) {
     }
     QualType PointeeType = GetType(Record[0]);
     QualType ClassType = GetType(Record[1]);
+    if (PointeeType.isNull() || ClassType.isNull())
+      return QualType();
+    
     return Context->getMemberPointerType(PointeeType, ClassType.getTypePtr());
   }
 
@@ -2811,28 +2842,29 @@ QualType ASTReader::ReadTypeRecord(unsigned Index) {
 
   case TYPE_FUNCTION_PROTO: {
     QualType ResultType = GetType(Record[0]);
-    bool NoReturn = Record[1];
-    unsigned RegParm = Record[2];
-    CallingConv CallConv = (CallingConv)Record[3];
+
+    FunctionProtoType::ExtProtoInfo EPI;
+    EPI.ExtInfo = FunctionType::ExtInfo(/*noreturn*/ Record[1],
+                                        /*regparm*/ Record[2],
+                                        static_cast<CallingConv>(Record[3]));
+
     unsigned Idx = 4;
     unsigned NumParams = Record[Idx++];
     llvm::SmallVector<QualType, 16> ParamTypes;
     for (unsigned I = 0; I != NumParams; ++I)
       ParamTypes.push_back(GetType(Record[Idx++]));
-    bool isVariadic = Record[Idx++];
-    unsigned Quals = Record[Idx++];
-    bool hasExceptionSpec = Record[Idx++];
-    bool hasAnyExceptionSpec = Record[Idx++];
-    unsigned NumExceptions = Record[Idx++];
+
+    EPI.Variadic = Record[Idx++];
+    EPI.TypeQuals = Record[Idx++];
+    EPI.HasExceptionSpec = Record[Idx++];
+    EPI.HasAnyExceptionSpec = Record[Idx++];
+    EPI.NumExceptions = Record[Idx++];
     llvm::SmallVector<QualType, 2> Exceptions;
-    for (unsigned I = 0; I != NumExceptions; ++I)
+    for (unsigned I = 0; I != EPI.NumExceptions; ++I)
       Exceptions.push_back(GetType(Record[Idx++]));
+    EPI.Exceptions = Exceptions.data();
     return Context->getFunctionType(ResultType, ParamTypes.data(), NumParams,
-                                    isVariadic, Quals, hasExceptionSpec,
-                                    hasAnyExceptionSpec, NumExceptions,
-                                    Exceptions.data(),
-                                    FunctionType::ExtInfo(NoReturn, RegParm,
-                                                          CallConv));
+                                    EPI);
   }
 
   case TYPE_UNRESOLVED_USING:
@@ -2886,6 +2918,15 @@ QualType ASTReader::ReadTypeRecord(unsigned Index) {
     QualType T = Context->getEnumType(cast<EnumDecl>(GetDecl(Record[1])));
     T->setDependent(IsDependent);
     return T;
+  }
+
+  case TYPE_PAREN: {
+    if (Record.size() != 1) {
+      Error("incorrect encoding of paren type");
+      return QualType();
+    }
+    QualType InnerType = GetType(Record[0]);
+    return Context->getParenType(InnerType);
   }
 
   case TYPE_ELABORATED: {
@@ -3157,6 +3198,10 @@ void TypeLocReader::VisitTemplateSpecializationTypeLoc(
         Reader.GetTemplateArgumentLocInfo(F,
                                           TL.getTypePtr()->getArg(i).getKind(),
                                           Record, Idx));
+}
+void TypeLocReader::VisitParenTypeLoc(ParenTypeLoc TL) {
+  TL.setLParenLoc(ReadSourceLocation(Record, Idx));
+  TL.setRParenLoc(ReadSourceLocation(Record, Idx));
 }
 void TypeLocReader::VisitElaboratedTypeLoc(ElaboratedTypeLoc TL) {
   TL.setKeywordLoc(ReadSourceLocation(Record, Idx));
@@ -4246,18 +4291,21 @@ ASTReader::ReadCXXBaseOrMemberInitializers(PerFileData &F,
       TypeSourceInfo *BaseClassInfo = 0;
       bool IsBaseVirtual = false;
       FieldDecl *Member = 0;
+      IndirectFieldDecl *IndirectMember = 0;
 
       bool IsBaseInitializer = Record[Idx++];
       if (IsBaseInitializer) {
         BaseClassInfo = GetTypeSourceInfo(F, Record, Idx);
         IsBaseVirtual = Record[Idx++];
       } else {
-        Member = cast<FieldDecl>(GetDecl(Record[Idx++]));
+        bool IsIndirectMemberInitializer = Record[Idx++];
+        if (IsIndirectMemberInitializer)
+          IndirectMember = cast<IndirectFieldDecl>(GetDecl(Record[Idx++]));
+        else
+          Member = cast<FieldDecl>(GetDecl(Record[Idx++]));
       }
       SourceLocation MemberLoc = ReadSourceLocation(F, Record, Idx);
       Expr *Init = ReadExpr(F);
-      FieldDecl *AnonUnionMember
-          = cast_or_null<FieldDecl>(GetDecl(Record[Idx++]));
       SourceLocation LParenLoc = ReadSourceLocation(F, Record, Idx);
       SourceLocation RParenLoc = ReadSourceLocation(F, Record, Idx);
       bool IsWritten = Record[Idx++];
@@ -4278,8 +4326,14 @@ ASTReader::ReadCXXBaseOrMemberInitializers(PerFileData &F,
                                                      IsBaseVirtual, LParenLoc,
                                                      Init, RParenLoc);
       } else if (IsWritten) {
-        BOMInit = new (C) CXXBaseOrMemberInitializer(C, Member, MemberLoc,
-                                                     LParenLoc, Init, RParenLoc);
+        if (Member)
+          BOMInit = new (C) CXXBaseOrMemberInitializer(C, Member, MemberLoc,
+                                                       LParenLoc, Init,
+                                                       RParenLoc);
+        else 
+          BOMInit = new (C) CXXBaseOrMemberInitializer(C, IndirectMember,
+                                                       MemberLoc, LParenLoc,
+                                                       Init, RParenLoc);
       } else {
         BOMInit = CXXBaseOrMemberInitializer::Create(C, Member, MemberLoc,
                                                      LParenLoc, Init, RParenLoc,
@@ -4289,7 +4343,6 @@ ASTReader::ReadCXXBaseOrMemberInitializers(PerFileData &F,
 
       if (IsWritten)
         BOMInit->setSourceOrder(SourceOrderOrNumArrayIndices);
-      BOMInit->setAnonUnionMember(AnonUnionMember);
       BaseOrMemberInitializers[i] = BOMInit;
     }
   }
@@ -4319,7 +4372,10 @@ ASTReader::ReadNestedNameSpecifier(const RecordData &Record, unsigned &Idx) {
 
     case NestedNameSpecifier::TypeSpec:
     case NestedNameSpecifier::TypeSpecWithTemplate: {
-      Type *T = GetType(Record[Idx++]).getTypePtr();
+      Type *T = GetType(Record[Idx++]).getTypePtrOrNull();
+      if (!T)
+        return 0;
+      
       bool Template = Record[Idx++];
       NNS = NestedNameSpecifier::Create(*Context, Prev, Template, T);
       break;
@@ -4503,7 +4559,6 @@ ASTReader::ASTReader(Preprocessor &PP, ASTContext *Context,
                      const char *isysroot, bool DisableValidation)
   : Listener(new PCHValidator(PP, *this)), DeserializationListener(0),
     SourceMgr(PP.getSourceManager()), FileMgr(PP.getFileManager()),
-    FileSystemOpts(PP.getFileSystemOpts()),
     Diags(PP.getDiagnostics()), SemaObj(0), PP(&PP), Context(Context),
     Consumer(0), isysroot(isysroot), DisableValidation(DisableValidation),
     NumStatHits(0), NumStatMisses(0), NumSLocEntriesRead(0),
@@ -4517,11 +4572,9 @@ ASTReader::ASTReader(Preprocessor &PP, ASTContext *Context,
 }
 
 ASTReader::ASTReader(SourceManager &SourceMgr, FileManager &FileMgr,
-                     const FileSystemOptions &FileSystemOpts,
                      Diagnostic &Diags, const char *isysroot,
                      bool DisableValidation)
   : DeserializationListener(0), SourceMgr(SourceMgr), FileMgr(FileMgr),
-    FileSystemOpts(FileSystemOpts),
     Diags(Diags), SemaObj(0), PP(0), Context(0), Consumer(0),
     isysroot(isysroot), DisableValidation(DisableValidation), NumStatHits(0),
     NumStatMisses(0), NumSLocEntriesRead(0), TotalNumSLocEntries(0),

@@ -22,11 +22,15 @@ class PathDiagnosticClient;
 class Preprocessor;
 
 PathDiagnosticClient*
-CreateHTMLDiagnosticClient(const std::string& prefix, const Preprocessor &PP);
+createHTMLDiagnosticClient(const std::string& prefix, const Preprocessor &PP);
 
 PathDiagnosticClient*
-CreatePlistDiagnosticClient(const std::string& prefix, const Preprocessor &PP,
+createPlistDiagnosticClient(const std::string& prefix, const Preprocessor &PP,
                             PathDiagnosticClient *SubPD = 0);
+
+PathDiagnosticClient*
+createTextPathDiagnosticClient(const std::string& prefix,
+                               const Preprocessor &PP);
 
 } // end clang namespace
 #endif

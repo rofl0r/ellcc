@@ -91,10 +91,13 @@ public:
     AT_carries_dependency,
     AT_cdecl,
     AT_cleanup,
+    AT_common,
     AT_const,
+    AT_constant,
     AT_constructor,
     AT_deprecated,
     AT_destructor,
+    AT_device,
     AT_dllexport,
     AT_dllimport,
     AT_ext_vector_type,
@@ -102,8 +105,11 @@ public:
     AT_final,
     AT_format,
     AT_format_arg,
+    AT_global,
     AT_gnu_inline,
     AT_hiding,
+    AT_host,
+    AT_launch_bounds,
     AT_malloc,
     AT_may_alias,
     AT_mode,
@@ -113,6 +119,7 @@ public:
     AT_nodebug,
     AT_noinline,
     AT_no_instrument_function,
+    AT_nocommon,
     AT_nonnull,
     AT_noreturn,
     AT_nothrow,
@@ -134,6 +141,7 @@ public:
     AT_regparm,
     AT_section,
     AT_sentinel,
+    AT_shared,
     AT_stdcall,
     AT_thiscall,
     AT_transparent_union,
@@ -161,6 +169,7 @@ public:
   SourceLocation getScopeLoc() const { return ScopeLoc; }
   
   IdentifierInfo *getParameterName() const { return ParmName; }
+  SourceLocation getParameterLoc() const { return ParmLoc; }
 
   bool isDeclspecAttribute() const { return DeclspecAttribute; }
   bool isCXX0XAttribute() const { return CXX0XAttribute; }

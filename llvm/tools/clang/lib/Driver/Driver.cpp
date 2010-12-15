@@ -30,8 +30,8 @@
 #include "llvm/ADT/OwningPtr.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/System/Path.h"
-#include "llvm/System/Program.h"
+#include "llvm/Support/Path.h"
+#include "llvm/Support/Program.h"
 
 #include "InputInfo.h"
 
@@ -804,8 +804,7 @@ void Driver::BuildActions(const ToolChain &TC, const ArgList &Args,
 
   // -{E,M,MM} only run the preprocessor.
   if ((FinalPhaseArg = Args.getLastArg(options::OPT_E)) ||
-      (FinalPhaseArg = Args.getLastArg(options::OPT_M)) ||
-      (FinalPhaseArg = Args.getLastArg(options::OPT_MM))) {
+      (FinalPhaseArg = Args.getLastArg(options::OPT_M, options::OPT_MM))) {
     FinalPhase = phases::Preprocess;
 
     // -{fsyntax-only,-analyze,emit-ast,S} only run up to the compiler.
@@ -913,7 +912,7 @@ Action *Driver::ConstructPhaseAction(const ArgList &Args, phases::ID Phase,
   case phases::Preprocess: {
     types::ID OutputTy;
     // -{M, MM} alter the output type.
-    if (Args.hasArg(options::OPT_M) || Args.hasArg(options::OPT_MM)) {
+    if (Args.hasArg(options::OPT_M, options::OPT_MM)) {
       OutputTy = types::TY_Dependencies;
     } else {
       OutputTy = types::getPreprocessedType(Input->getType());

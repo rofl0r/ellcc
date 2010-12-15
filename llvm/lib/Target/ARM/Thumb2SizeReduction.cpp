@@ -58,7 +58,7 @@ namespace {
     { ARM::t2ADDri, ARM::tADDi3,  ARM::tADDi8,   3,   8,    1,   1,  0,0, 0 },
     { ARM::t2ADDrr, ARM::tADDrr,  ARM::tADDhirr, 0,   0,    1,   0,  0,1, 0 },
     // Note: immediate scale is 4.
-    { ARM::t2ADDrSPi,ARM::tADDrSPi,0,            8,   0,    1,   0,  1,0, 0 },
+    { ARM::t2ADDrSPi,ARM::tADDrSPi,0,            8,   0,    1,   0,  1,0, 1 },
     { ARM::t2ADDSri,ARM::tADDi3,  ARM::tADDi8,   3,   8,    1,   1,  2,2, 1 },
     { ARM::t2ADDSrr,ARM::tADDrr,  0,             0,   0,    1,   0,  2,0, 1 },
     { ARM::t2ANDrr, 0,            ARM::tAND,     0,   0,    0,   1,  0,0, 0 },
@@ -68,9 +68,7 @@ namespace {
     //FIXME: Disable CMN, as CCodes are backwards from compare expectations
     //{ ARM::t2CMNrr, ARM::tCMN,    0,             0,   0,    1,   0,  2,0, 0 },
     { ARM::t2CMPri, ARM::tCMPi8,  0,             8,   0,    1,   0,  2,0, 0 },
-    { ARM::t2CMPrr, ARM::tCMPhir, 0,             0,   0,    0,   0,  2,0, 0 },
-    { ARM::t2CMPzri,ARM::tCMPzi8, 0,             8,   0,    1,   0,  2,0, 0 },
-    { ARM::t2CMPzrr,ARM::tCMPzhir,0,             0,   0,    0,   0,  2,0, 0 },
+    { ARM::t2CMPrr, ARM::tCMPhir, 0,             0,   0,    0,   0,  2,0, 1 },
     { ARM::t2EORrr, 0,            ARM::tEOR,     0,   0,    0,   1,  0,0, 0 },
     // FIXME: adr.n immediate offset must be multiple of 4.
     //{ ARM::t2LEApcrelJT,ARM::tLEApcrelJT, 0,     0,   0,    1,   0,  1,0, 0 },
@@ -106,26 +104,27 @@ namespace {
 
     // FIXME: Clean this up after splitting each Thumb load / store opcode
     // into multiple ones.
-    { ARM::t2LDRi12,ARM::tLDR,    ARM::tLDRspi,  5,   8,    1,   0,  0,0, 1 },
-    { ARM::t2LDRs,  ARM::tLDR,    0,             0,   0,    1,   0,  0,0, 1 },
-    { ARM::t2LDRBi12,ARM::tLDRB,  0,             5,   0,    1,   0,  0,0, 1 },
-    { ARM::t2LDRBs, ARM::tLDRB,   0,             0,   0,    1,   0,  0,0, 1 },
-    { ARM::t2LDRHi12,ARM::tLDRH,  0,             5,   0,    1,   0,  0,0, 1 },
-    { ARM::t2LDRHs, ARM::tLDRH,   0,             0,   0,    1,   0,  0,0, 1 },
+    { ARM::t2LDRi12,ARM::tLDRi,   ARM::tLDRspi,  5,   8,    1,   0,  0,0, 1 },
+    { ARM::t2LDRs,  ARM::tLDRr,   0,             0,   0,    1,   0,  0,0, 1 },
+    { ARM::t2LDRBi12,ARM::tLDRBi, 0,             5,   0,    1,   0,  0,0, 1 },
+    { ARM::t2LDRBs, ARM::tLDRBr,  0,             0,   0,    1,   0,  0,0, 1 },
+    { ARM::t2LDRHi12,ARM::tLDRHi, 0,             5,   0,    1,   0,  0,0, 1 },
+    { ARM::t2LDRHs, ARM::tLDRHr,  0,             0,   0,    1,   0,  0,0, 1 },
     { ARM::t2LDRSBs,ARM::tLDRSB,  0,             0,   0,    1,   0,  0,0, 1 },
     { ARM::t2LDRSHs,ARM::tLDRSH,  0,             0,   0,    1,   0,  0,0, 1 },
-    { ARM::t2STRi12,ARM::tSTR,    ARM::tSTRspi,  5,   8,    1,   0,  0,0, 1 },
-    { ARM::t2STRs,  ARM::tSTR,    0,             0,   0,    1,   0,  0,0, 1 },
-    { ARM::t2STRBi12,ARM::tSTRB,  0,             5,   0,    1,   0,  0,0, 1 },
-    { ARM::t2STRBs, ARM::tSTRB,   0,             0,   0,    1,   0,  0,0, 1 },
-    { ARM::t2STRHi12,ARM::tSTRH,  0,             5,   0,    1,   0,  0,0, 1 },
-    { ARM::t2STRHs, ARM::tSTRH,   0,             0,   0,    1,   0,  0,0, 1 },
+    { ARM::t2STRi12,ARM::tSTRi,   ARM::tSTRspi,  5,   8,    1,   0,  0,0, 1 },
+    { ARM::t2STRs,  ARM::tSTRr,   0,             0,   0,    1,   0,  0,0, 1 },
+    { ARM::t2STRBi12,ARM::tSTRBi, 0,             5,   0,    1,   0,  0,0, 1 },
+    { ARM::t2STRBs, ARM::tSTRBr,  0,             0,   0,    1,   0,  0,0, 1 },
+    { ARM::t2STRHi12,ARM::tSTRHi, 0,             5,   0,    1,   0,  0,0, 1 },
+    { ARM::t2STRHs, ARM::tSTRHr,  0,             0,   0,    1,   0,  0,0, 1 },
 
     { ARM::t2LDMIA, ARM::tLDMIA,  0,             0,   0,    1,   1,  1,1, 1 },
     { ARM::t2LDMIA_RET,0,         ARM::tPOP_RET, 0,   0,    1,   1,  1,1, 1 },
     { ARM::t2LDMIA_UPD,ARM::tLDMIA_UPD,ARM::tPOP,0,   0,    1,   1,  1,1, 1 },
     // ARM::t2STM (with no basereg writeback) has no Thumb1 equivalent
-    { ARM::t2STMIA_UPD,ARM::tSTMIA_UPD,ARM::tPUSH,0,  0,    1,   1,  1,1, 1 },
+    { ARM::t2STMIA_UPD,ARM::tSTMIA_UPD, 0,       0,   0,    1,   1,  1,1, 1 },
+    { ARM::t2STMDB_UPD, 0,        ARM::tPUSH,    0,   0,    1,   1,  1,1, 1 },
   };
 
   class Thumb2SizeReduce : public MachineFunctionPass {
@@ -235,7 +234,7 @@ static bool VerifyLowRegs(MachineInstr *MI) {
   unsigned Opc = MI->getOpcode();
   bool isPCOk = (Opc == ARM::t2LDMIA_RET || Opc == ARM::t2LDMIA     ||
                  Opc == ARM::t2LDMDB     || Opc == ARM::t2LDMIA_UPD ||
-                 Opc == ARM::t2LDMDB_UPD);
+                 Opc == ARM::t2LDMDB_UPD || Opc == ARM::t2LDRi12);
   bool isLROk = (Opc == ARM::t2STMIA_UPD || Opc == ARM::t2STMDB_UPD);
   bool isSPOk = isPCOk || isLROk || (Opc == ARM::t2ADDrSPi);
   for (unsigned i = 0, e = MI->getNumOperands(); i != e; ++i) {
@@ -269,6 +268,7 @@ Thumb2SizeReduce::ReduceLoadStore(MachineBasicBlock &MBB, MachineInstr *MI,
     return false;
 
   unsigned Scale = 1;
+  bool HasBaseReg = true;
   bool HasImmOffset = false;
   bool HasShift = false;
   bool HasOffReg = true;
@@ -281,25 +281,61 @@ Thumb2SizeReduce::ReduceLoadStore(MachineBasicBlock &MBB, MachineInstr *MI,
   default:
     llvm_unreachable("Unexpected Thumb2 load / store opcode!");
   case ARM::t2LDRi12:
-  case ARM::t2STRi12: {
-    unsigned BaseReg = MI->getOperand(1).getReg();
-    if (BaseReg == ARM::SP) {
+  case ARM::t2STRi12:
+    if (MI->getOperand(1).getReg() == ARM::SP) {
       Opc = Entry.NarrowOpc2;
       ImmLimit = Entry.Imm2Limit;
       HasOffReg = false;
     }
+
     Scale = 4;
-    HasImmOffset = true;
+
+    if (MI->getOperand(2).isImm()) {
+      HasImmOffset = true;
+      HasOffReg = false;
+    } else {
+      if (Entry.WideOpc == ARM::t2LDRi12) {
+        Opc = ARM::tLDRpci;
+        OpNum = 2;
+      }
+
+      HasImmOffset = false;
+      HasBaseReg = false;
+      HasOffReg = false;
+    }
     break;
-  }
   case ARM::t2LDRBi12:
   case ARM::t2STRBi12:
-    HasImmOffset = true;
+    if (MI->getOperand(2).isImm()) {
+      HasImmOffset = true;
+      HasOffReg = false;
+    } else {
+      if (Entry.WideOpc == ARM::t2LDRBi12) {
+        Opc = ARM::tLDRpci;
+        OpNum = 2;
+      }
+
+      HasImmOffset = false;
+      HasBaseReg = false;
+      HasOffReg = false;
+    }
     break;
   case ARM::t2LDRHi12:
   case ARM::t2STRHi12:
     Scale = 2;
-    HasImmOffset = true;
+    if (MI->getOperand(2).isImm()) {
+      HasImmOffset = true;
+      HasOffReg = false;
+    } else {
+      if (Entry.WideOpc == ARM::t2LDRHi12) {
+        Opc = ARM::tLDRpci;
+        OpNum = 2;
+      }
+
+      HasImmOffset = false;
+      HasBaseReg = false;
+      HasOffReg = false;
+    }
     break;
   case ARM::t2LDRs:
   case ARM::t2LDRBs:
@@ -317,6 +353,7 @@ Thumb2SizeReduce::ReduceLoadStore(MachineBasicBlock &MBB, MachineInstr *MI,
     unsigned BaseReg = MI->getOperand(0).getReg();
     if (!isARMLowRegister(BaseReg) || Entry.WideOpc != ARM::t2LDMIA)
       return false;
+
     // For the non-writeback version (this one), the base register must be
     // one of the registers being loaded.
     bool isOK = false;
@@ -326,6 +363,7 @@ Thumb2SizeReduce::ReduceLoadStore(MachineBasicBlock &MBB, MachineInstr *MI,
         break;
       }
     }
+
     if (!isOK)
       return false;
 
@@ -347,6 +385,7 @@ Thumb2SizeReduce::ReduceLoadStore(MachineBasicBlock &MBB, MachineInstr *MI,
   case ARM::t2STMIA_UPD:
   case ARM::t2STMDB_UPD: {
     OpNum = 0;
+
     unsigned BaseReg = MI->getOperand(1).getReg();
     if (BaseReg == ARM::SP &&
         (Entry.WideOpc == ARM::t2LDMIA_UPD ||
@@ -358,6 +397,7 @@ Thumb2SizeReduce::ReduceLoadStore(MachineBasicBlock &MBB, MachineInstr *MI,
                 Entry.WideOpc != ARM::t2STMIA_UPD)) {
       return false;
     }
+
     isLdStMul = true;
     break;
   }
@@ -368,6 +408,7 @@ Thumb2SizeReduce::ReduceLoadStore(MachineBasicBlock &MBB, MachineInstr *MI,
   if (HasShift) {
     OffsetReg  = MI->getOperand(2).getReg();
     OffsetKill = MI->getOperand(2).isKill();
+
     if (MI->getOperand(3).getImm())
       // Thumb1 addressing mode doesn't support shift.
       return false;
@@ -377,23 +418,24 @@ Thumb2SizeReduce::ReduceLoadStore(MachineBasicBlock &MBB, MachineInstr *MI,
   if (HasImmOffset) {
     OffsetImm = MI->getOperand(2).getImm();
     unsigned MaxOffset = ((1 << ImmLimit) - 1) * Scale;
-    if ((OffsetImm & (Scale-1)) || OffsetImm > MaxOffset)
+
+    if ((OffsetImm & (Scale - 1)) || OffsetImm > MaxOffset)
       // Make sure the immediate field fits.
       return false;
   }
 
   // Add the 16-bit load / store instruction.
-  // FIXME: Thumb1 addressing mode encode both immediate and register offset.
   DebugLoc dl = MI->getDebugLoc();
   MachineInstrBuilder MIB = BuildMI(MBB, *MI, dl, TII->get(Opc));
   if (!isLdStMul) {
-    MIB.addOperand(MI->getOperand(0)).addOperand(MI->getOperand(1));
-    if (Opc != ARM::tLDRSB && Opc != ARM::tLDRSH) {
-      // tLDRSB and tLDRSH do not have an immediate offset field. On the other
-      // hand, it must have an offset register.
-      // FIXME: Remove this special case.
-      MIB.addImm(OffsetImm/Scale);
-    }
+    MIB.addOperand(MI->getOperand(0));
+
+    if (HasBaseReg)
+      MIB.addOperand(MI->getOperand(1));
+
+    if (HasImmOffset)
+      MIB.addImm(OffsetImm / Scale);
+
     assert((!HasShift || OffsetReg) && "Invalid so_reg load / store address!");
 
     if (HasOffReg)
@@ -456,6 +498,25 @@ Thumb2SizeReduce::ReduceSpecial(MachineBasicBlock &MBB, MachineInstr *MI,
     if (MI->getOperand(1).isImm())
       return ReduceToNarrow(MBB, MI, Entry, LiveCPSR);
     break;
+  case ARM::t2CMPrr: {
+    // Try to reduce to the lo-reg only version first. Why there are two
+    // versions of the instruction is a mystery.
+    // It would be nice to just have two entries in the master table that
+    // are prioritized, but the table assumes a unique entry for each
+    // source insn opcode. So for now, we hack a local entry record to use.
+    static const ReduceEntry NarrowEntry =
+      { ARM::t2CMPrr,ARM::tCMPr, 0, 0, 0, 1, 1,2, 0, 1 };
+    if (ReduceToNarrow(MBB, MI, NarrowEntry, LiveCPSR))
+      return true;
+    return ReduceToNarrow(MBB, MI, Entry, LiveCPSR);
+  }
+  case ARM::t2ADDrSPi: {
+    static const ReduceEntry NarrowEntry =
+      { ARM::t2ADDrSPi,ARM::tADDspi, 0, 7, 0, 1, 0, 1, 0, 1 };
+    if (MI->getOperand(0).getReg() == ARM::SP)
+      return ReduceToNarrow(MBB, MI, NarrowEntry, LiveCPSR);
+    return ReduceToNarrow(MBB, MI, Entry, LiveCPSR);
+  }
   }
   return false;
 }

@@ -66,14 +66,15 @@ add_clang_library(clangChecker
   RegionStore.cpp
   ReturnPointerRangeChecker.cpp
   ReturnUndefChecker.cpp
+  SValBuilder.cpp
   SVals.cpp
-  SValuator.cpp
   SimpleConstraintManager.cpp
-  SimpleSValuator.cpp
+  SimpleSValBuilder.cpp
   StackAddrLeakChecker.cpp
   Store.cpp
   StreamChecker.cpp
   SymbolManager.cpp
+  TextPathDiagnostics.cpp
   UndefBranchChecker.cpp
   UndefCapturedBlockVarChecker.cpp
   UndefResultChecker.cpp
@@ -82,7 +83,6 @@ add_clang_library(clangChecker
   UnixAPIChecker.cpp
   UnreachableCodeChecker.cpp
   VLASizeChecker.cpp
-  ValueManager.cpp
   )
 
 add_dependencies(clangChecker ClangAttrClasses ClangAttrList ClangDeclNodes

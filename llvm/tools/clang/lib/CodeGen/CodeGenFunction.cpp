@@ -250,13 +250,14 @@ void CodeGenFunction::StartFunction(GlobalDecl GD, QualType RetTy,
 
   Builder.SetInsertPoint(EntryBB);
 
-  QualType FnType = getContext().getFunctionType(RetTy, 0, 0, false, 0,
-                                                 false, false, 0, 0,
-                                                 /*FIXME?*/
-                                                 FunctionType::ExtInfo());
-
   // Emit subprogram debug descriptor.
   if (CGDebugInfo *DI = getDebugInfo()) {
+    // FIXME: what is going on here and why does it ignore all these
+    // interesting type properties?
+    QualType FnType =
+      getContext().getFunctionType(RetTy, 0, 0,
+                                   FunctionProtoType::ExtProtoInfo());
+
     DI->setLocation(StartLoc);
     DI->EmitFunctionStart(GD, FnType, CurFn, Builder);
   }
@@ -653,6 +654,11 @@ llvm::Value *CodeGenFunction::EmitVLASize(QualType Ty) {
 
   if (const ArrayType *AT = dyn_cast<ArrayType>(Ty)) {
     EmitVLASize(AT->getElementType());
+    return 0;
+  }
+
+  if (const ParenType *PT = dyn_cast<ParenType>(Ty)) {
+    EmitVLASize(PT->getInnerType());
     return 0;
   }
 

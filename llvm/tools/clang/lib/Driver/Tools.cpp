@@ -27,8 +27,8 @@
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/System/Host.h"
-#include "llvm/System/Process.h"
+#include "llvm/Support/Host.h"
+#include "llvm/Support/Process.h"
 
 #include "InputInfo.h"
 #include "ToolChains.h"
@@ -136,8 +136,7 @@ void Clang::AddPreprocessingOptions(const Driver &D,
   Args.AddLastArg(CmdArgs, options::OPT_CC);
 
   // Handle dependency file generation.
-  if ((A = Args.getLastArg(options::OPT_M)) ||
-      (A = Args.getLastArg(options::OPT_MM)) ||
+  if ((A = Args.getLastArg(options::OPT_M, options::OPT_MM)) ||
       (A = Args.getLastArg(options::OPT_MD)) ||
       (A = Args.getLastArg(options::OPT_MMD))) {
     // Determine the output location.
@@ -1455,6 +1454,12 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
                    options::OPT_faccess_control,
                    false))
     CmdArgs.push_back("-fno-access-control");
+
+  // -felide-constructors is the default.
+  if (Args.hasFlag(options::OPT_fno_elide_constructors,
+                   options::OPT_felide_constructors,
+                   false))
+    CmdArgs.push_back("-fno-elide-constructors");
 
   // -fexceptions=0 is default.
   if (!KernelOrKext &&
@@ -3401,7 +3406,8 @@ void linuxtools::Link::ConstructJob(Compilation &C, const JobAction &JA,
   CmdArgs.push_back("-o");
   CmdArgs.push_back(Output.getFilename());
 
-  if (!Args.hasArg(options::OPT_nostdlib)) {
+  if (!Args.hasArg(options::OPT_nostdlib) &&
+      !Args.hasArg(options::OPT_nostartfiles)) {
     const char *crt1 = NULL;
     if (!Args.hasArg(options::OPT_shared)){
       if (Args.hasArg(options::OPT_pie))
@@ -3487,15 +3493,17 @@ void linuxtools::Link::ConstructJob(Compilation &C, const JobAction &JA,
         CmdArgs.push_back("-lgcc");
     }
 
-    const char *crtend;
-    if (Args.hasArg(options::OPT_shared) || Args.hasArg(options::OPT_pie))
-      crtend = "crtendS.o";
-    else
-      crtend = "crtend.o";
 
-    CmdArgs.push_back(Args.MakeArgString(ToolChain.GetFilePath(crtend)));
+    if (!Args.hasArg(options::OPT_nostartfiles)) {
+      const char *crtend;
+      if (Args.hasArg(options::OPT_shared) || Args.hasArg(options::OPT_pie))
+        crtend = "crtendS.o";
+      else
+        crtend = "crtend.o";
 
-    CmdArgs.push_back(Args.MakeArgString(ToolChain.GetFilePath("crtn.o")));
+      CmdArgs.push_back(Args.MakeArgString(ToolChain.GetFilePath(crtend)));
+      CmdArgs.push_back(Args.MakeArgString(ToolChain.GetFilePath("crtn.o")));
+    }
   }
 
   if (Args.hasArg(options::OPT_use_gold_plugin)) {

@@ -307,9 +307,26 @@ void DeclPrinter::VisitTypedefDecl(TypedefDecl *D) {
 }
 
 void DeclPrinter::VisitEnumDecl(EnumDecl *D) {
-  Out << "enum " << D << " {\n";
-  VisitDeclContext(D);
-  Indent() << "}";
+  Out << "enum ";
+  if (D->isScoped()) {
+    if (D->isScopedUsingClassTag())
+      Out << "class ";
+    else
+      Out << "struct ";
+  }
+  Out << D;
+
+  if (D->isFixed()) {
+    std::string Underlying;
+    D->getIntegerType().getAsStringInternal(Underlying, Policy);
+    Out << " : " << Underlying;
+  }
+
+  if (D->isDefinition()) {
+    Out << " {\n";
+    VisitDeclContext(D);
+    Indent() << "}";
+  }
 }
 
 void DeclPrinter::VisitRecordDecl(RecordDecl *D) {
@@ -349,9 +366,15 @@ void DeclPrinter::VisitFunctionDecl(FunctionDecl *D) {
   PrintingPolicy SubPolicy(Policy);
   SubPolicy.SuppressSpecifiers = false;
   std::string Proto = D->getNameInfo().getAsString();
-  if (isa<FunctionType>(D->getType().getTypePtr())) {
-    const FunctionType *AFT = D->getType()->getAs<FunctionType>();
 
+  QualType Ty = D->getType();
+  while (ParenType* PT = dyn_cast<ParenType>(Ty)) {
+    Proto = '(' + Proto + ')';
+    Ty = PT->getInnerType();
+  }
+
+  if (isa<FunctionType>(Ty)) {
+    const FunctionType *AFT = Ty->getAs<FunctionType>();
     const FunctionProtoType *FT = 0;
     if (D->hasWrittenPrototype())
       FT = dyn_cast<FunctionProtoType>(AFT);
@@ -419,8 +442,8 @@ void DeclPrinter::VisitFunctionDecl(FunctionDecl *D) {
           CXXBaseOrMemberInitializer * BMInitializer = (*B);
           if (B != CDecl->init_begin())
             Out << ", ";
-          if (BMInitializer->isMemberInitializer()) {
-            FieldDecl *FD = BMInitializer->getMember();
+          if (BMInitializer->isAnyMemberInitializer()) {
+            FieldDecl *FD = BMInitializer->getAnyMember();
             Out << FD;
           } else {
             Out << QualType(BMInitializer->getBaseClass(),
@@ -432,8 +455,7 @@ void DeclPrinter::VisitFunctionDecl(FunctionDecl *D) {
             // Nothing to print
           } else {
             Expr *Init = BMInitializer->getInit();
-            if (CXXExprWithTemporaries *Tmp
-                  = dyn_cast<CXXExprWithTemporaries>(Init))
+            if (ExprWithCleanups *Tmp = dyn_cast<ExprWithCleanups>(Init))
               Init = Tmp->getSubExpr();
             
             Init = Init->IgnoreParens();
@@ -471,7 +493,7 @@ void DeclPrinter::VisitFunctionDecl(FunctionDecl *D) {
     else
       AFT->getResultType().getAsStringInternal(Proto, Policy);
   } else {
-    D->getType().getAsStringInternal(Proto, Policy);
+    Ty.getAsStringInternal(Proto, Policy);
   }
 
   Out << Proto;

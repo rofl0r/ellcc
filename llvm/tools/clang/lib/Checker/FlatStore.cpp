@@ -36,7 +36,7 @@ public:
                             const LocationContext *LC, SVal v);
 
   Store getInitialStore(const LocationContext *InitLoc) {
-    return RBFactory.GetEmptyMap().getRoot();
+    return RBFactory.getEmptyMap().getRoot();
   }
 
   SubRegionMap *getSubRegionMap(Store store) {
@@ -97,7 +97,7 @@ SVal FlatStoreManager::Retrieve(Store store, Loc L, QualType T) {
   RegionBindings B = getRegionBindings(store);
   const BindingVal *BV = B.lookup(RI.R);
   if (BV) {
-    const SVal *V = BVFactory.Lookup(*BV, RI.I);
+    const SVal *V = BVFactory.lookup(*BV, RI.I);
     if (V)
       return *V;
     else
@@ -111,7 +111,7 @@ SVal FlatStoreManager::RetrieveRegionWithNoBinding(const MemRegion *R,
   if (R->hasStackNonParametersStorage())
     return UndefinedVal();
   else
-    return ValMgr.getRegionValueSymbolVal(cast<TypedRegion>(R));
+    return svalBuilder.getRegionValueSymbolVal(cast<TypedRegion>(R));
 }
 
 Store FlatStoreManager::Bind(Store store, Loc L, SVal val) {
@@ -119,7 +119,7 @@ Store FlatStoreManager::Bind(Store store, Loc L, SVal val) {
   RegionBindings B = getRegionBindings(store);
   const BindingVal *V = B.lookup(R);
 
-  BindingVal BV = BVFactory.GetEmptyMap();
+  BindingVal BV = BVFactory.getEmptyMap();
   if (V)
     BV = *V;
 
@@ -127,8 +127,8 @@ Store FlatStoreManager::Bind(Store store, Loc L, SVal val) {
   // FIXME: FlatStore should handle regions with unknown intervals.
   if (!RI.R)
     return B.getRoot();
-  BV = BVFactory.Add(BV, RI.I, val);
-  B = RBFactory.Add(B, RI.R, BV);
+  BV = BVFactory.add(BV, RI.I, val);
+  B = RBFactory.add(B, RI.R, BV);
   return B.getRoot();
 }
 
@@ -149,7 +149,7 @@ SVal FlatStoreManager::ArrayToPointer(Loc Array) {
 
 Store FlatStoreManager::BindDecl(Store store, const VarRegion *VR, 
                                  SVal initVal) {
-  return Bind(store, ValMgr.makeLoc(VR), initVal);
+  return Bind(store, svalBuilder.makeLoc(VR), initVal);
 }
 
 Store FlatStoreManager::BindDeclWithNoInit(Store store, const VarRegion *VR) {

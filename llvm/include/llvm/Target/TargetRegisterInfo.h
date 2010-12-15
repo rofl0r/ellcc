@@ -29,6 +29,7 @@ class MachineFunction;
 class MachineMove;
 class RegScavenger;
 template<class T> class SmallVectorImpl;
+class raw_ostream;
 
 /// TargetRegisterDesc - This record contains all of the information known about
 /// a particular register.  The AliasSet field (if not null) contains a pointer
@@ -320,6 +321,9 @@ public:
     assert(Reg && "this is not a register!");
     return Reg >= FirstVirtualRegister;
   }
+
+  /// printReg - Print a virtual or physical register on OS.
+  void printReg(unsigned Reg, raw_ostream &OS) const;
 
   /// getMinimalPhysRegClass - Returns the Register Class of a physical
   /// register of the given type, picking the most sub register class of
@@ -678,21 +682,6 @@ public:
     assert(0 && "Call Frame Pseudo Instructions do not exist on this target!");
   }
 
-  /// processFunctionBeforeCalleeSavedScan - This method is called immediately
-  /// before PrologEpilogInserter scans the physical registers used to determine
-  /// what callee saved registers should be spilled. This method is optional.
-  virtual void processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
-                                                RegScavenger *RS = NULL) const {
-
-  }
-
-  /// processFunctionBeforeFrameFinalized - This method is called immediately
-  /// before the specified function's frame layout (MF.getFrameInfo()) is
-  /// finalized.  Once the frame is finalized, MO_FrameIndex operands are
-  /// replaced with direct constants.  This method is optional.
-  ///
-  virtual void processFunctionBeforeFrameFinalized(MachineFunction &MF) const {
-  }
 
   /// saveScavengerRegister - Spill the register so it can be used by the
   /// register scavenger. Return true if the register was spilled, false

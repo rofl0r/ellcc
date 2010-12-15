@@ -72,6 +72,7 @@ namespace clang {
     void VisitCXXDestructorDecl(CXXDestructorDecl *D);
     void VisitCXXConversionDecl(CXXConversionDecl *D);
     void VisitFieldDecl(FieldDecl *D);
+    void VisitIndirectFieldDecl(IndirectFieldDecl *D);
     void VisitVarDecl(VarDecl *D);
     void VisitImplicitParamDecl(ImplicitParamDecl *D);
     void VisitParmVarDecl(ParmVarDecl *D);
@@ -189,6 +190,7 @@ void ASTDeclWriter::VisitEnumDecl(EnumDecl *D) {
   Record.push_back(D->getNumPositiveBits());
   Record.push_back(D->getNumNegativeBits());
   Record.push_back(D->isScoped());
+  Record.push_back(D->isScopedUsingClassTag());
   Record.push_back(D->isFixed());
   Writer.AddDeclRef(D->getInstantiatedFromMemberEnum(), Record);
   Code = serialization::DECL_ENUM;
@@ -301,6 +303,7 @@ void ASTDeclWriter::VisitFunctionDecl(FunctionDecl *D) {
 
   Record.push_back(D->getStorageClass()); // FIXME: stable encoding
   Record.push_back(D->getStorageClassAsWritten());
+  Record.push_back(D->IsInline);
   Record.push_back(D->isInlineSpecified());
   Record.push_back(D->isVirtualAsWritten());
   Record.push_back(D->isPure());
@@ -526,6 +529,17 @@ void ASTDeclWriter::VisitFieldDecl(FieldDecl *D) {
   if (!D->getDeclName())
     Writer.AddDeclRef(Context.getInstantiatedFromUnnamedFieldDecl(D), Record);
   Code = serialization::DECL_FIELD;
+}
+
+void ASTDeclWriter::VisitIndirectFieldDecl(IndirectFieldDecl *D) {
+  VisitValueDecl(D);
+  Record.push_back(D->getChainingSize());
+
+  for (IndirectFieldDecl::chain_iterator
+       P = D->chain_begin(),
+       PEnd = D->chain_end(); P != PEnd; ++P)
+    Writer.AddDeclRef(*P, Record);
+  Code = serialization::DECL_INDIRECTFIELD;
 }
 
 void ASTDeclWriter::VisitVarDecl(VarDecl *D) {

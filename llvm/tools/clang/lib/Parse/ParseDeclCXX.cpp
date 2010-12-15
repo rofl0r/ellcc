@@ -1002,7 +1002,7 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
     TagOrTempResult = Actions.ActOnTag(getCurScope(), TagType, TUK, StartLoc,
                                        SS, Name, NameLoc, AttrList, AS,
                                        TParams, Owned, IsDependent, false,
-                                       clang::TypeResult());
+                                       false, clang::TypeResult());
 
     // If ActOnTag said the type was dependent, try again with the
     // less common call.
@@ -1239,7 +1239,7 @@ void Parser::HandleMemberFunctionDefaultArgs(Declarator& DeclaratorInfo,
   // has any default arguments, we'll need to parse them later.
   LateParsedMethodDeclaration *LateMethod = 0;
   DeclaratorChunk::FunctionTypeInfo &FTI
-    = DeclaratorInfo.getTypeObject(0).Fun;
+    = DeclaratorInfo.getFunctionTypeInfo();
   for (unsigned ParamIdx = 0; ParamIdx < FTI.NumArgs; ++ParamIdx) {
     if (LateMethod || FTI.ArgInfo[ParamIdx].DefaultArgTokens) {
       if (!LateMethod) {

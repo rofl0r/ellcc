@@ -29,10 +29,10 @@ public:
   {}
   static void *getTag() { static int tag; return &tag; }
 
-  bool EvalCallExpr(CheckerContext &C, const CallExpr *CE);
+  bool evalCallExpr(CheckerContext &C, const CallExpr *CE);
   void PreVisitDeclStmt(CheckerContext &C, const DeclStmt *DS);
   void MarkLiveSymbols(const GRState *state, SymbolReaper &SR);
-  void EvalDeadSymbols(CheckerContext &C, SymbolReaper &SR);
+  void evalDeadSymbols(CheckerContext &C, SymbolReaper &SR);
   bool WantsRegionChangeUpdate(const GRState *state);
 
   const GRState *EvalRegionChanges(const GRState *state,
@@ -42,30 +42,30 @@ public:
 
   typedef void (CStringChecker::*FnCheck)(CheckerContext &, const CallExpr *);
 
-  void EvalMemcpy(CheckerContext &C, const CallExpr *CE);
-  void EvalMemmove(CheckerContext &C, const CallExpr *CE);
-  void EvalBcopy(CheckerContext &C, const CallExpr *CE);
-  void EvalCopyCommon(CheckerContext &C, const GRState *state,
+  void evalMemcpy(CheckerContext &C, const CallExpr *CE);
+  void evalMemmove(CheckerContext &C, const CallExpr *CE);
+  void evalBcopy(CheckerContext &C, const CallExpr *CE);
+  void evalCopyCommon(CheckerContext &C, const GRState *state,
                       const Expr *Size, const Expr *Source, const Expr *Dest,
                       bool Restricted = false);
 
-  void EvalMemcmp(CheckerContext &C, const CallExpr *CE);
+  void evalMemcmp(CheckerContext &C, const CallExpr *CE);
 
-  void EvalStrlen(CheckerContext &C, const CallExpr *CE);
+  void evalstrLength(CheckerContext &C, const CallExpr *CE);
 
-  void EvalStrcpy(CheckerContext &C, const CallExpr *CE);
-  void EvalStpcpy(CheckerContext &C, const CallExpr *CE);
-  void EvalStrcpyCommon(CheckerContext &C, const CallExpr *CE, bool ReturnEnd);
+  void evalStrcpy(CheckerContext &C, const CallExpr *CE);
+  void evalStpcpy(CheckerContext &C, const CallExpr *CE);
+  void evalStrcpyCommon(CheckerContext &C, const CallExpr *CE, bool returnEnd);
 
   // Utility methods
   std::pair<const GRState*, const GRState*>
-  AssumeZero(CheckerContext &C, const GRState *state, SVal V, QualType Ty);
+  assumeZero(CheckerContext &C, const GRState *state, SVal V, QualType Ty);
 
-  const GRState *SetCStringLength(const GRState *state, const MemRegion *MR,
-                                  SVal StrLen);
-  SVal GetCStringLengthForRegion(CheckerContext &C, const GRState *&state,
+  const GRState *setCStringLength(const GRState *state, const MemRegion *MR,
+                                  SVal strLength);
+  SVal getCStringLengthForRegion(CheckerContext &C, const GRState *&state,
                                  const Expr *Ex, const MemRegion *MR);
-  SVal GetCStringLength(CheckerContext &C, const GRState *&state,
+  SVal getCStringLength(CheckerContext &C, const GRState *&state,
                         const Expr *Ex, SVal Buf);
 
   const GRState *InvalidateBuffer(CheckerContext &C, const GRState *state,
@@ -75,7 +75,7 @@ public:
                        const MemRegion *MR);
 
   // Re-usable checks
-  const GRState *CheckNonNull(CheckerContext &C, const GRState *state,
+  const GRState *checkNonNull(CheckerContext &C, const GRState *state,
                                const Expr *S, SVal l);
   const GRState *CheckLocation(CheckerContext &C, const GRState *state,
                                const Expr *S, SVal l,
@@ -88,7 +88,7 @@ public:
   const GRState *CheckOverlap(CheckerContext &C, const GRState *state,
                               const Expr *Size, const Expr *First,
                               const Expr *Second);
-  void EmitOverlapBug(CheckerContext &C, const GRState *state,
+  void emitOverlapBug(CheckerContext &C, const GRState *state,
                       const Stmt *First, const Stmt *Second);
 };
 
@@ -115,22 +115,18 @@ void clang::RegisterCStringChecker(GRExprEngine &Eng) {
 //===----------------------------------------------------------------------===//
 
 std::pair<const GRState*, const GRState*>
-CStringChecker::AssumeZero(CheckerContext &C, const GRState *state, SVal V,
+CStringChecker::assumeZero(CheckerContext &C, const GRState *state, SVal V,
                            QualType Ty) {
-  DefinedSVal *Val = dyn_cast<DefinedSVal>(&V);
-  if (!Val)
+  DefinedSVal *val = dyn_cast<DefinedSVal>(&V);
+  if (!val)
     return std::pair<const GRState*, const GRState *>(state, state);
 
-  ValueManager &ValMgr = C.getValueManager();
-  SValuator &SV = ValMgr.getSValuator();
-
-  DefinedOrUnknownSVal Zero = ValMgr.makeZeroVal(Ty);
-  DefinedOrUnknownSVal ValIsZero = SV.EvalEQ(state, *Val, Zero);
-
-  return state->Assume(ValIsZero);
+  SValBuilder &svalBuilder = C.getSValBuilder();
+  DefinedOrUnknownSVal zero = svalBuilder.makeZeroVal(Ty);
+  return state->assume(svalBuilder.evalEQ(state, *val, zero));
 }
 
-const GRState *CStringChecker::CheckNonNull(CheckerContext &C,
+const GRState *CStringChecker::checkNonNull(CheckerContext &C,
                                             const GRState *state,
                                             const Expr *S, SVal l) {
   // If a previous check has failed, propagate the failure.
@@ -138,7 +134,7 @@ const GRState *CStringChecker::CheckNonNull(CheckerContext &C,
     return NULL;
 
   const GRState *stateNull, *stateNonNull;
-  llvm::tie(stateNull, stateNonNull) = AssumeZero(C, state, l, S->getType());
+  llvm::tie(stateNull, stateNonNull) = assumeZero(C, state, l, S->getType());
 
   if (stateNull && !stateNonNull) {
     ExplodedNode *N = C.GenerateSink(stateNull);
@@ -187,16 +183,16 @@ const GRState *CStringChecker::CheckLocation(CheckerContext &C,
     "CheckLocation should only be called with char* ElementRegions");
 
   // Get the size of the array.
-  const SubRegion *Super = cast<SubRegion>(ER->getSuperRegion());
-  ValueManager &ValMgr = C.getValueManager();
-  SVal Extent = ValMgr.convertToArrayIndex(Super->getExtent(ValMgr));
+  const SubRegion *superReg = cast<SubRegion>(ER->getSuperRegion());
+  SValBuilder &svalBuilder = C.getSValBuilder();
+  SVal Extent = svalBuilder.convertToArrayIndex(superReg->getExtent(svalBuilder));
   DefinedOrUnknownSVal Size = cast<DefinedOrUnknownSVal>(Extent);
 
   // Get the index of the accessed element.
   DefinedOrUnknownSVal Idx = cast<DefinedOrUnknownSVal>(ER->getIndex());
 
-  const GRState *StInBound = state->AssumeInBound(Idx, Size, true);
-  const GRState *StOutBound = state->AssumeInBound(Idx, Size, false);
+  const GRState *StInBound = state->assumeInBound(Idx, Size, true);
+  const GRState *StOutBound = state->assumeInBound(Idx, Size, false);
   if (StOutBound && !StInBound) {
     ExplodedNode *N = C.GenerateSink(StOutBound);
     if (!N)
@@ -244,16 +240,15 @@ const GRState *CStringChecker::CheckBufferAccess(CheckerContext &C,
   if (!state)
     return NULL;
 
-  ValueManager &VM = C.getValueManager();
-  SValuator &SV = VM.getSValuator();
+  SValBuilder &svalBuilder = C.getSValBuilder();
   ASTContext &Ctx = C.getASTContext();
 
-  QualType SizeTy = Size->getType();
+  QualType sizeTy = Size->getType();
   QualType PtrTy = Ctx.getPointerType(Ctx.CharTy);
 
   // Check that the first buffer is non-null.
   SVal BufVal = state->getSVal(FirstBuf);
-  state = CheckNonNull(C, state, FirstBuf, BufVal);
+  state = checkNonNull(C, state, FirstBuf, BufVal);
   if (!state)
     return NULL;
 
@@ -264,15 +259,15 @@ const GRState *CStringChecker::CheckBufferAccess(CheckerContext &C,
     return state;
 
   // Compute the offset of the last element to be accessed: size-1.
-  NonLoc One = cast<NonLoc>(VM.makeIntVal(1, SizeTy));
-  NonLoc LastOffset = cast<NonLoc>(SV.EvalBinOpNN(state, BO_Sub,
-                                                  *Length, One, SizeTy));
+  NonLoc One = cast<NonLoc>(svalBuilder.makeIntVal(1, sizeTy));
+  NonLoc LastOffset = cast<NonLoc>(svalBuilder.evalBinOpNN(state, BO_Sub,
+                                                    *Length, One, sizeTy));
 
   // Check that the first buffer is sufficently long.
-  SVal BufStart = SV.EvalCast(BufVal, PtrTy, FirstBuf->getType());
+  SVal BufStart = svalBuilder.evalCast(BufVal, PtrTy, FirstBuf->getType());
   if (Loc *BufLoc = dyn_cast<Loc>(&BufStart)) {
-    SVal BufEnd = SV.EvalBinOpLN(state, BO_Add, *BufLoc,
-                                 LastOffset, PtrTy);
+    SVal BufEnd = svalBuilder.evalBinOpLN(state, BO_Add, *BufLoc,
+                                          LastOffset, PtrTy);
     state = CheckLocation(C, state, FirstBuf, BufEnd, FirstIsDestination);
 
     // If the buffer isn't large enough, abort.
@@ -283,14 +278,14 @@ const GRState *CStringChecker::CheckBufferAccess(CheckerContext &C,
   // If there's a second buffer, check it as well.
   if (SecondBuf) {
     BufVal = state->getSVal(SecondBuf);
-    state = CheckNonNull(C, state, SecondBuf, BufVal);
+    state = checkNonNull(C, state, SecondBuf, BufVal);
     if (!state)
       return NULL;
 
-    BufStart = SV.EvalCast(BufVal, PtrTy, SecondBuf->getType());
+    BufStart = svalBuilder.evalCast(BufVal, PtrTy, SecondBuf->getType());
     if (Loc *BufLoc = dyn_cast<Loc>(&BufStart)) {
-      SVal BufEnd = SV.EvalBinOpLN(state, BO_Add, *BufLoc,
-                                   LastOffset, PtrTy);
+      SVal BufEnd = svalBuilder.evalBinOpLN(state, BO_Add, *BufLoc,
+                                            LastOffset, PtrTy);
       state = CheckLocation(C, state, SecondBuf, BufEnd);
     }
   }
@@ -312,56 +307,54 @@ const GRState *CStringChecker::CheckOverlap(CheckerContext &C,
   if (!state)
     return NULL;
 
-  ValueManager &VM = state->getStateManager().getValueManager();
-  SValuator &SV = VM.getSValuator();
-  ASTContext &Ctx = VM.getContext();
   const GRState *stateTrue, *stateFalse;
 
   // Get the buffer values and make sure they're known locations.
-  SVal FirstVal = state->getSVal(First);
-  SVal SecondVal = state->getSVal(Second);
+  SVal firstVal = state->getSVal(First);
+  SVal secondVal = state->getSVal(Second);
 
-  Loc *FirstLoc = dyn_cast<Loc>(&FirstVal);
-  if (!FirstLoc)
+  Loc *firstLoc = dyn_cast<Loc>(&firstVal);
+  if (!firstLoc)
     return state;
 
-  Loc *SecondLoc = dyn_cast<Loc>(&SecondVal);
-  if (!SecondLoc)
+  Loc *secondLoc = dyn_cast<Loc>(&secondVal);
+  if (!secondLoc)
     return state;
 
   // Are the two values the same?
-  DefinedOrUnknownSVal EqualTest = SV.EvalEQ(state, *FirstLoc, *SecondLoc);
-  llvm::tie(stateTrue, stateFalse) = state->Assume(EqualTest);
+  SValBuilder &svalBuilder = C.getSValBuilder();  
+  llvm::tie(stateTrue, stateFalse) =
+    state->assume(svalBuilder.evalEQ(state, *firstLoc, *secondLoc));
 
   if (stateTrue && !stateFalse) {
     // If the values are known to be equal, that's automatically an overlap.
-    EmitOverlapBug(C, stateTrue, First, Second);
+    emitOverlapBug(C, stateTrue, First, Second);
     return NULL;
   }
 
-  // Assume the two expressions are not equal.
+  // assume the two expressions are not equal.
   assert(stateFalse);
   state = stateFalse;
 
   // Which value comes first?
-  QualType CmpTy = Ctx.IntTy;
-  SVal Reverse = SV.EvalBinOpLL(state, BO_GT,
-                                *FirstLoc, *SecondLoc, CmpTy);
-  DefinedOrUnknownSVal *ReverseTest = dyn_cast<DefinedOrUnknownSVal>(&Reverse);
-  if (!ReverseTest)
+  ASTContext &Ctx = svalBuilder.getContext();
+  QualType cmpTy = Ctx.IntTy;
+  SVal reverse = svalBuilder.evalBinOpLL(state, BO_GT,
+                                         *firstLoc, *secondLoc, cmpTy);
+  DefinedOrUnknownSVal *reverseTest = dyn_cast<DefinedOrUnknownSVal>(&reverse);
+  if (!reverseTest)
     return state;
 
-  llvm::tie(stateTrue, stateFalse) = state->Assume(*ReverseTest);
-
+  llvm::tie(stateTrue, stateFalse) = state->assume(*reverseTest);
   if (stateTrue) {
     if (stateFalse) {
       // If we don't know which one comes first, we can't perform this test.
       return state;
     } else {
-      // Switch the values so that FirstVal is before SecondVal.
-      Loc *tmpLoc = FirstLoc;
-      FirstLoc = SecondLoc;
-      SecondLoc = tmpLoc;
+      // Switch the values so that firstVal is before secondVal.
+      Loc *tmpLoc = firstLoc;
+      firstLoc = secondLoc;
+      secondLoc = tmpLoc;
 
       // Switch the Exprs as well, so that they still correspond.
       const Expr *tmpExpr = First;
@@ -379,39 +372,39 @@ const GRState *CStringChecker::CheckOverlap(CheckerContext &C,
   // Convert the first buffer's start address to char*.
   // Bail out if the cast fails.
   QualType CharPtrTy = Ctx.getPointerType(Ctx.CharTy);
-  SVal FirstStart = SV.EvalCast(*FirstLoc, CharPtrTy, First->getType());
+  SVal FirstStart = svalBuilder.evalCast(*firstLoc, CharPtrTy, First->getType());
   Loc *FirstStartLoc = dyn_cast<Loc>(&FirstStart);
   if (!FirstStartLoc)
     return state;
 
   // Compute the end of the first buffer. Bail out if THAT fails.
-  SVal FirstEnd = SV.EvalBinOpLN(state, BO_Add,
+  SVal FirstEnd = svalBuilder.evalBinOpLN(state, BO_Add,
                                  *FirstStartLoc, *Length, CharPtrTy);
   Loc *FirstEndLoc = dyn_cast<Loc>(&FirstEnd);
   if (!FirstEndLoc)
     return state;
 
   // Is the end of the first buffer past the start of the second buffer?
-  SVal Overlap = SV.EvalBinOpLL(state, BO_GT,
-                                *FirstEndLoc, *SecondLoc, CmpTy);
+  SVal Overlap = svalBuilder.evalBinOpLL(state, BO_GT,
+                                *FirstEndLoc, *secondLoc, cmpTy);
   DefinedOrUnknownSVal *OverlapTest = dyn_cast<DefinedOrUnknownSVal>(&Overlap);
   if (!OverlapTest)
     return state;
 
-  llvm::tie(stateTrue, stateFalse) = state->Assume(*OverlapTest);
+  llvm::tie(stateTrue, stateFalse) = state->assume(*OverlapTest);
 
   if (stateTrue && !stateFalse) {
     // Overlap!
-    EmitOverlapBug(C, stateTrue, First, Second);
+    emitOverlapBug(C, stateTrue, First, Second);
     return NULL;
   }
 
-  // Assume the two expressions don't overlap.
+  // assume the two expressions don't overlap.
   assert(stateFalse);
   return stateFalse;
 }
 
-void CStringChecker::EmitOverlapBug(CheckerContext &C, const GRState *state,
+void CStringChecker::emitOverlapBug(CheckerContext &C, const GRState *state,
                                     const Stmt *First, const Stmt *Second) {
   ExplodedNode *N = C.GenerateSink(state);
   if (!N)
@@ -430,11 +423,11 @@ void CStringChecker::EmitOverlapBug(CheckerContext &C, const GRState *state,
   C.EmitReport(report);
 }
 
-const GRState *CStringChecker::SetCStringLength(const GRState *state,
+const GRState *CStringChecker::setCStringLength(const GRState *state,
                                                 const MemRegion *MR,
-                                                SVal StrLen) {
-  assert(!StrLen.isUndef() && "Attempt to set an undefined string length");
-  if (StrLen.isUnknown())
+                                                SVal strLength) {
+  assert(!strLength.isUndef() && "Attempt to set an undefined string length");
+  if (strLength.isUnknown())
     return state;
 
   MR = MR->StripCasts();
@@ -450,7 +443,7 @@ const GRState *CStringChecker::SetCStringLength(const GRState *state,
   case MemRegion::VarRegionKind:
   case MemRegion::FieldRegionKind:
   case MemRegion::ObjCIvarRegionKind:
-    return state->set<CStringLength>(MR, StrLen);
+    return state->set<CStringLength>(MR, strLength);
 
   case MemRegion::ElementRegionKind:
     // FIXME: Handle element regions by upper-bounding the parent region's
@@ -466,7 +459,7 @@ const GRState *CStringChecker::SetCStringLength(const GRState *state,
   }
 }
 
-SVal CStringChecker::GetCStringLengthForRegion(CheckerContext &C,
+SVal CStringChecker::getCStringLengthForRegion(CheckerContext &C,
                                                const GRState *&state,
                                                const Expr *Ex,
                                                const MemRegion *MR) {
@@ -477,15 +470,14 @@ SVal CStringChecker::GetCStringLengthForRegion(CheckerContext &C,
   
   // Otherwise, get a new symbol and update the state.
   unsigned Count = C.getNodeBuilder().getCurrentBlockCount();
-  ValueManager &ValMgr = C.getValueManager();
-  QualType SizeTy = ValMgr.getContext().getSizeType();
-  SVal Strlen = ValMgr.getMetadataSymbolVal(getTag(), MR, Ex, SizeTy, Count);
-  
-  state = state->set<CStringLength>(MR, Strlen);
-  return Strlen;
+  SValBuilder &svalBuilder = C.getSValBuilder();
+  QualType sizeTy = svalBuilder.getContext().getSizeType();
+  SVal strLength = svalBuilder.getMetadataSymbolVal(getTag(), MR, Ex, sizeTy, Count);
+  state = state->set<CStringLength>(MR, strLength);
+  return strLength;
 }
 
-SVal CStringChecker::GetCStringLength(CheckerContext &C, const GRState *&state,
+SVal CStringChecker::getCStringLength(CheckerContext &C, const GRState *&state,
                                       const Expr *Ex, SVal Buf) {
   const MemRegion *MR = Buf.getAsRegion();
   if (!MR) {
@@ -527,17 +519,17 @@ SVal CStringChecker::GetCStringLength(CheckerContext &C, const GRState *&state,
   case MemRegion::StringRegionKind: {
     // Modifying the contents of string regions is undefined [C99 6.4.5p6],
     // so we can assume that the byte length is the correct C string length.
-    ValueManager &ValMgr = C.getValueManager();
-    QualType SizeTy = ValMgr.getContext().getSizeType();
-    const StringLiteral *Str = cast<StringRegion>(MR)->getStringLiteral();
-    return ValMgr.makeIntVal(Str->getByteLength(), SizeTy);
+    SValBuilder &svalBuilder = C.getSValBuilder();
+    QualType sizeTy = svalBuilder.getContext().getSizeType();
+    const StringLiteral *strLit = cast<StringRegion>(MR)->getStringLiteral();
+    return svalBuilder.makeIntVal(strLit->getByteLength(), sizeTy);
   }
   case MemRegion::SymbolicRegionKind:
   case MemRegion::AllocaRegionKind:
   case MemRegion::VarRegionKind:
   case MemRegion::FieldRegionKind:
   case MemRegion::ObjCIvarRegionKind:
-    return GetCStringLengthForRegion(C, state, Ex, MR);
+    return getCStringLengthForRegion(C, state, Ex, MR);
   case MemRegion::CompoundLiteralRegionKind:
     // FIXME: Can we track this? Is it necessary?
     return UnknownVal();
@@ -629,8 +621,8 @@ bool CStringChecker::SummarizeRegion(llvm::raw_ostream& os, ASTContext& Ctx,
     os << "a block";
     return true;
   case MemRegion::CXXThisRegionKind:
-  case MemRegion::CXXObjectRegionKind:
-    os << "a C++ object of type " << TR->getValueType().getAsString();
+  case MemRegion::CXXTempObjectRegionKind:
+    os << "a C++ temp object of type " << TR->getValueType().getAsString();
     return true;
   case MemRegion::VarRegionKind:
     os << "a variable of type" << TR->getValueType().getAsString();
@@ -647,26 +639,26 @@ bool CStringChecker::SummarizeRegion(llvm::raw_ostream& os, ASTContext& Ctx,
 }
 
 //===----------------------------------------------------------------------===//
-// Evaluation of individual function calls.
+// evaluation of individual function calls.
 //===----------------------------------------------------------------------===//
 
-void CStringChecker::EvalCopyCommon(CheckerContext &C, const GRState *state,
+void CStringChecker::evalCopyCommon(CheckerContext &C, const GRState *state,
                                     const Expr *Size, const Expr *Dest,
                                     const Expr *Source, bool Restricted) {
   // See if the size argument is zero.
-  SVal SizeVal = state->getSVal(Size);
-  QualType SizeTy = Size->getType();
+  SVal sizeVal = state->getSVal(Size);
+  QualType sizeTy = Size->getType();
 
-  const GRState *StZeroSize, *StNonZeroSize;
-  llvm::tie(StZeroSize, StNonZeroSize) = AssumeZero(C, state, SizeVal, SizeTy);
+  const GRState *stateZeroSize, *stateNonZeroSize;
+  llvm::tie(stateZeroSize, stateNonZeroSize) = assumeZero(C, state, sizeVal, sizeTy);
 
   // If the size is zero, there won't be any actual memory access.
-  if (StZeroSize)
-    C.addTransition(StZeroSize);
+  if (stateZeroSize)
+    C.addTransition(stateZeroSize);
 
   // If the size can be nonzero, we have to check the other arguments.
-  if (StNonZeroSize) {
-    state = StNonZeroSize;
+  if (stateNonZeroSize) {
+    state = stateNonZeroSize;
     state = CheckBufferAccess(C, state, Size, Dest, Source,
                               /* FirstIsDst = */ true);
     if (Restricted)
@@ -685,58 +677,57 @@ void CStringChecker::EvalCopyCommon(CheckerContext &C, const GRState *state,
 }
 
 
-void CStringChecker::EvalMemcpy(CheckerContext &C, const CallExpr *CE) {
+void CStringChecker::evalMemcpy(CheckerContext &C, const CallExpr *CE) {
   // void *memcpy(void *restrict dst, const void *restrict src, size_t n);
   // The return value is the address of the destination buffer.
   const Expr *Dest = CE->getArg(0);
   const GRState *state = C.getState();
   state = state->BindExpr(CE, state->getSVal(Dest));
-  EvalCopyCommon(C, state, CE->getArg(2), Dest, CE->getArg(1), true);
+  evalCopyCommon(C, state, CE->getArg(2), Dest, CE->getArg(1), true);
 }
 
-void CStringChecker::EvalMemmove(CheckerContext &C, const CallExpr *CE) {
+void CStringChecker::evalMemmove(CheckerContext &C, const CallExpr *CE) {
   // void *memmove(void *dst, const void *src, size_t n);
   // The return value is the address of the destination buffer.
   const Expr *Dest = CE->getArg(0);
   const GRState *state = C.getState();
   state = state->BindExpr(CE, state->getSVal(Dest));
-  EvalCopyCommon(C, state, CE->getArg(2), Dest, CE->getArg(1));
+  evalCopyCommon(C, state, CE->getArg(2), Dest, CE->getArg(1));
 }
 
-void CStringChecker::EvalBcopy(CheckerContext &C, const CallExpr *CE) {
+void CStringChecker::evalBcopy(CheckerContext &C, const CallExpr *CE) {
   // void bcopy(const void *src, void *dst, size_t n);
-  EvalCopyCommon(C, C.getState(), CE->getArg(2), CE->getArg(1), CE->getArg(0));
+  evalCopyCommon(C, C.getState(), CE->getArg(2), CE->getArg(1), CE->getArg(0));
 }
 
-void CStringChecker::EvalMemcmp(CheckerContext &C, const CallExpr *CE) {
+void CStringChecker::evalMemcmp(CheckerContext &C, const CallExpr *CE) {
   // int memcmp(const void *s1, const void *s2, size_t n);
   const Expr *Left = CE->getArg(0);
   const Expr *Right = CE->getArg(1);
   const Expr *Size = CE->getArg(2);
 
   const GRState *state = C.getState();
-  ValueManager &ValMgr = C.getValueManager();
-  SValuator &SV = ValMgr.getSValuator();
+  SValBuilder &svalBuilder = C.getSValBuilder();
 
   // See if the size argument is zero.
-  SVal SizeVal = state->getSVal(Size);
-  QualType SizeTy = Size->getType();
+  SVal sizeVal = state->getSVal(Size);
+  QualType sizeTy = Size->getType();
 
-  const GRState *StZeroSize, *StNonZeroSize;
-  llvm::tie(StZeroSize, StNonZeroSize) = AssumeZero(C, state, SizeVal, SizeTy);
+  const GRState *stateZeroSize, *stateNonZeroSize;
+  llvm::tie(stateZeroSize, stateNonZeroSize) =
+    assumeZero(C, state, sizeVal, sizeTy);
 
   // If the size can be zero, the result will be 0 in that case, and we don't
   // have to check either of the buffers.
-  if (StZeroSize) {
-    state = StZeroSize;
-    state = state->BindExpr(CE, ValMgr.makeZeroVal(CE->getType()));
+  if (stateZeroSize) {
+    state = stateZeroSize;
+    state = state->BindExpr(CE, svalBuilder.makeZeroVal(CE->getType()));
     C.addTransition(state);
   }
 
   // If the size can be nonzero, we have to check the other arguments.
-  if (StNonZeroSize) {
-    state = StNonZeroSize;
-
+  if (stateNonZeroSize) {
+    state = stateNonZeroSize;
     // If we know the two buffers are the same, we know the result is 0.
     // First, get the two buffers' addresses. Another checker will have already
     // made sure they're not undefined.
@@ -744,9 +735,9 @@ void CStringChecker::EvalMemcmp(CheckerContext &C, const CallExpr *CE) {
     DefinedOrUnknownSVal RV = cast<DefinedOrUnknownSVal>(state->getSVal(Right));
 
     // See if they are the same.
-    DefinedOrUnknownSVal SameBuf = SV.EvalEQ(state, LV, RV);
+    DefinedOrUnknownSVal SameBuf = svalBuilder.evalEQ(state, LV, RV);
     const GRState *StSameBuf, *StNotSameBuf;
-    llvm::tie(StSameBuf, StNotSameBuf) = state->Assume(SameBuf);
+    llvm::tie(StSameBuf, StNotSameBuf) = state->assume(SameBuf);
 
     // If the two arguments might be the same buffer, we know the result is zero,
     // and we only need to check one size.
@@ -754,7 +745,7 @@ void CStringChecker::EvalMemcmp(CheckerContext &C, const CallExpr *CE) {
       state = StSameBuf;
       state = CheckBufferAccess(C, state, Size, Left);
       if (state) {
-        state = StSameBuf->BindExpr(CE, ValMgr.makeZeroVal(CE->getType()));
+        state = StSameBuf->BindExpr(CE, svalBuilder.makeZeroVal(CE->getType()));
         C.addTransition(state); 
       }
     }
@@ -767,7 +758,7 @@ void CStringChecker::EvalMemcmp(CheckerContext &C, const CallExpr *CE) {
       if (state) {
         // The return value is the comparison result, which we don't know.
         unsigned Count = C.getNodeBuilder().getCurrentBlockCount();
-        SVal CmpV = ValMgr.getConjuredSymbolVal(NULL, CE, Count);
+        SVal CmpV = svalBuilder.getConjuredSymbolVal(NULL, CE, Count);
         state = state->BindExpr(CE, CmpV);
         C.addTransition(state);
       }
@@ -775,94 +766,90 @@ void CStringChecker::EvalMemcmp(CheckerContext &C, const CallExpr *CE) {
   }
 }
 
-void CStringChecker::EvalStrlen(CheckerContext &C, const CallExpr *CE) {
+void CStringChecker::evalstrLength(CheckerContext &C, const CallExpr *CE) {
   // size_t strlen(const char *s);
   const GRState *state = C.getState();
   const Expr *Arg = CE->getArg(0);
   SVal ArgVal = state->getSVal(Arg);
 
   // Check that the argument is non-null.
-  state = CheckNonNull(C, state, Arg, ArgVal);
+  state = checkNonNull(C, state, Arg, ArgVal);
 
   if (state) {
-    SVal StrLen = GetCStringLength(C, state, Arg, ArgVal);
+    SVal strLength = getCStringLength(C, state, Arg, ArgVal);
 
     // If the argument isn't a valid C string, there's no valid state to
     // transition to.
-    if (StrLen.isUndef())
+    if (strLength.isUndef())
       return;
 
-    // If GetCStringLength couldn't figure out the length, conjure a return
+    // If getCStringLength couldn't figure out the length, conjure a return
     // value, so it can be used in constraints, at least.
-    if (StrLen.isUnknown()) {
-      ValueManager &ValMgr = C.getValueManager();
+    if (strLength.isUnknown()) {
       unsigned Count = C.getNodeBuilder().getCurrentBlockCount();
-      StrLen = ValMgr.getConjuredSymbolVal(NULL, CE, Count);
+      strLength = C.getSValBuilder().getConjuredSymbolVal(NULL, CE, Count);
     }
 
     // Bind the return value.
-    state = state->BindExpr(CE, StrLen);
+    state = state->BindExpr(CE, strLength);
     C.addTransition(state);
   }
 }
 
-void CStringChecker::EvalStrcpy(CheckerContext &C, const CallExpr *CE) {
+void CStringChecker::evalStrcpy(CheckerContext &C, const CallExpr *CE) {
   // char *strcpy(char *restrict dst, const char *restrict src);
-  EvalStrcpyCommon(C, CE, /* ReturnEnd = */ false);
+  evalStrcpyCommon(C, CE, /* returnEnd = */ false);
 }
 
-void CStringChecker::EvalStpcpy(CheckerContext &C, const CallExpr *CE) {
+void CStringChecker::evalStpcpy(CheckerContext &C, const CallExpr *CE) {
   // char *stpcpy(char *restrict dst, const char *restrict src);
-  EvalStrcpyCommon(C, CE, /* ReturnEnd = */ true);
+  evalStrcpyCommon(C, CE, /* returnEnd = */ true);
 }
 
-void CStringChecker::EvalStrcpyCommon(CheckerContext &C, const CallExpr *CE,
-                                      bool ReturnEnd) {
+void CStringChecker::evalStrcpyCommon(CheckerContext &C, const CallExpr *CE,
+                                      bool returnEnd) {
   const GRState *state = C.getState();
 
   // Check that the destination is non-null
   const Expr *Dst = CE->getArg(0);
   SVal DstVal = state->getSVal(Dst);
 
-  state = CheckNonNull(C, state, Dst, DstVal);
+  state = checkNonNull(C, state, Dst, DstVal);
   if (!state)
     return;
 
   // Check that the source is non-null.
-  const Expr *Src = CE->getArg(1);
-  SVal SrcVal = state->getSVal(Src);
-
-  state = CheckNonNull(C, state, Src, SrcVal);
+  const Expr *srcExpr = CE->getArg(1);
+  SVal srcVal = state->getSVal(srcExpr);
+  state = checkNonNull(C, state, srcExpr, srcVal);
   if (!state)
     return;
 
   // Get the string length of the source.
-  SVal StrLen = GetCStringLength(C, state, Src, SrcVal);
+  SVal strLength = getCStringLength(C, state, srcExpr, srcVal);
 
   // If the source isn't a valid C string, give up.
-  if (StrLen.isUndef())
+  if (strLength.isUndef())
     return;
 
-  SVal Result = (ReturnEnd ? UnknownVal() : DstVal);
+  SVal Result = (returnEnd ? UnknownVal() : DstVal);
 
   // If the destination is a MemRegion, try to check for a buffer overflow and
   // record the new string length.
-  if (loc::MemRegionVal *DstRegVal = dyn_cast<loc::MemRegionVal>(&DstVal)) {
+  if (loc::MemRegionVal *dstRegVal = dyn_cast<loc::MemRegionVal>(&DstVal)) {
     // If the length is known, we can check for an overflow.
-    if (NonLoc *KnownStrLen = dyn_cast<NonLoc>(&StrLen)) {
-      SValuator &SV = C.getSValuator();
+    if (NonLoc *knownStrLength = dyn_cast<NonLoc>(&strLength)) {
+      SVal lastElement =
+        C.getSValBuilder().evalBinOpLN(state, BO_Add, *dstRegVal,
+                                       *knownStrLength, Dst->getType());
 
-      SVal LastElement = SV.EvalBinOpLN(state, BO_Add,
-                                        *DstRegVal, *KnownStrLen,
-                                        Dst->getType());
-
-      state = CheckLocation(C, state, Dst, LastElement, /* IsDst = */ true);
+      state = CheckLocation(C, state, Dst, lastElement, /* IsDst = */ true);
       if (!state)
         return;
 
       // If this is a stpcpy-style copy, the last element is the return value.
-      if (ReturnEnd)
-        Result = LastElement;
+      if (returnEnd)
+        Result = lastElement;
     }
 
     // Invalidate the destination. This must happen before we set the C string
@@ -871,18 +858,18 @@ void CStringChecker::EvalStrcpyCommon(CheckerContext &C, const CallExpr *CE,
     // can use LazyCompoundVals to copy the source values into the destination.
     // This would probably remove any existing bindings past the end of the
     // string, but that's still an improvement over blank invalidation.
-    state = InvalidateBuffer(C, state, Dst, *DstRegVal);
+    state = InvalidateBuffer(C, state, Dst, *dstRegVal);
 
     // Set the C string length of the destination.
-    state = SetCStringLength(state, DstRegVal->getRegion(), StrLen);
+    state = setCStringLength(state, dstRegVal->getRegion(), strLength);
   }
 
   // If this is a stpcpy-style copy, but we were unable to check for a buffer
   // overflow, we still need a result. Conjure a return value.
-  if (ReturnEnd && Result.isUnknown()) {
-    ValueManager &ValMgr = C.getValueManager();
+  if (returnEnd && Result.isUnknown()) {
+    SValBuilder &svalBuilder = C.getSValBuilder();
     unsigned Count = C.getNodeBuilder().getCurrentBlockCount();
-    StrLen = ValMgr.getConjuredSymbolVal(NULL, CE, Count);
+    strLength = svalBuilder.getConjuredSymbolVal(NULL, CE, Count);
   }
 
   // Set the return value.
@@ -894,7 +881,7 @@ void CStringChecker::EvalStrcpyCommon(CheckerContext &C, const CallExpr *CE,
 // The driver method, and other Checker callbacks.
 //===----------------------------------------------------------------------===//
 
-bool CStringChecker::EvalCallExpr(CheckerContext &C, const CallExpr *CE) {
+bool CStringChecker::evalCallExpr(CheckerContext &C, const CallExpr *CE) {
   // Get the callee.  All the functions we care about are C functions
   // with simple identifiers.
   const GRState *state = C.getState();
@@ -912,22 +899,22 @@ bool CStringChecker::EvalCallExpr(CheckerContext &C, const CallExpr *CE) {
   if (Name.startswith("__builtin_"))
     Name = Name.substr(10);
 
-  FnCheck EvalFunction = llvm::StringSwitch<FnCheck>(Name)
-    .Cases("memcpy", "__memcpy_chk", &CStringChecker::EvalMemcpy)
-    .Cases("memcmp", "bcmp", &CStringChecker::EvalMemcmp)
-    .Cases("memmove", "__memmove_chk", &CStringChecker::EvalMemmove)
-    .Cases("strcpy", "__strcpy_chk", &CStringChecker::EvalStrcpy)
-    .Cases("stpcpy", "__stpcpy_chk", &CStringChecker::EvalStpcpy)
-    .Case("strlen", &CStringChecker::EvalStrlen)
-    .Case("bcopy", &CStringChecker::EvalBcopy)
+  FnCheck evalFunction = llvm::StringSwitch<FnCheck>(Name)
+    .Cases("memcpy", "__memcpy_chk", &CStringChecker::evalMemcpy)
+    .Cases("memcmp", "bcmp", &CStringChecker::evalMemcmp)
+    .Cases("memmove", "__memmove_chk", &CStringChecker::evalMemmove)
+    .Cases("strcpy", "__strcpy_chk", &CStringChecker::evalStrcpy)
+    .Cases("stpcpy", "__stpcpy_chk", &CStringChecker::evalStpcpy)
+    .Case("strlen", &CStringChecker::evalstrLength)
+    .Case("bcopy", &CStringChecker::evalBcopy)
     .Default(NULL);
 
   // If the callee isn't a string function, let another checker handle it.
-  if (!EvalFunction)
+  if (!evalFunction)
     return false;
 
   // Check and evaluate the call.
-  (this->*EvalFunction)(C, CE);
+  (this->*evalFunction)(C, CE);
   return true;
 }
 
@@ -958,10 +945,10 @@ void CStringChecker::PreVisitDeclStmt(CheckerContext &C, const DeclStmt *DS) {
 
     SVal StrVal = state->getSVal(Init);
     assert(StrVal.isValid() && "Initializer string is unknown or undefined");
-    DefinedOrUnknownSVal StrLen
-      = cast<DefinedOrUnknownSVal>(GetCStringLength(C, state, Init, StrVal));
+    DefinedOrUnknownSVal strLength
+      = cast<DefinedOrUnknownSVal>(getCStringLength(C, state, Init, StrVal));
 
-    state = state->set<CStringLength>(MR, StrLen);
+    state = state->set<CStringLength>(MR, strLength);
   }
 
   C.addTransition(state);
@@ -1004,7 +991,7 @@ const GRState *CStringChecker::EvalRegionChanges(const GRState *state,
 
     // Is this entry for a super-region of a changed region?
     if (SuperRegions.count(MR)) {
-      Entries = F.Remove(Entries, MR);
+      Entries = F.remove(Entries, MR);
       continue;
     }
 
@@ -1013,7 +1000,7 @@ const GRState *CStringChecker::EvalRegionChanges(const GRState *state,
     while (const SubRegion *SR = dyn_cast<SubRegion>(Super)) {
       Super = SR->getSuperRegion();
       if (Invalidated.count(Super)) {
-        Entries = F.Remove(Entries, MR);
+        Entries = F.remove(Entries, MR);
         break;
       }
     }
@@ -1034,7 +1021,7 @@ void CStringChecker::MarkLiveSymbols(const GRState *state, SymbolReaper &SR) {
   }
 }
 
-void CStringChecker::EvalDeadSymbols(CheckerContext &C, SymbolReaper &SR) {
+void CStringChecker::evalDeadSymbols(CheckerContext &C, SymbolReaper &SR) {
   if (!SR.hasDeadSymbols())
     return;
 
@@ -1049,7 +1036,7 @@ void CStringChecker::EvalDeadSymbols(CheckerContext &C, SymbolReaper &SR) {
     SVal Len = I.getData();
     if (SymbolRef Sym = Len.getAsSymbol()) {
       if (SR.isDead(Sym))
-        Entries = F.Remove(Entries, I.getKey());
+        Entries = F.remove(Entries, I.getKey());
     }
   }
 

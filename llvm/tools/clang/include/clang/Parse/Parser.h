@@ -1210,7 +1210,7 @@ private:
   StmtResult ParseBreakStatement(AttributeList *Attr);
   StmtResult ParseReturnStatement(AttributeList *Attr);
   StmtResult ParseAsmStatement(bool &msAsm);
-  StmtResult FuzzyParseMicrosoftAsmStatement();
+  StmtResult FuzzyParseMicrosoftAsmStatement(SourceLocation AsmLoc);
   bool ParseAsmOperandsOpt(llvm::SmallVectorImpl<IdentifierInfo *> &Names,
                            llvm::SmallVectorImpl<ExprTy *> &Constraints,
                            llvm::SmallVectorImpl<ExprTy *> &Exprs);
@@ -1409,6 +1409,18 @@ private:
     bool operator!=(const TPResult &RHS) const { return Res != RHS.Res; }
   };
 
+  /// \brief Based only on the given token kind, determine whether we know that
+  /// we're at the start of an expression or a type-specifier-seq (which may
+  /// be an expression, in C++).
+  ///
+  /// This routine does not attempt to resolve any of the trick cases, e.g.,
+  /// those involving lookup of identifiers.
+  ///
+  /// \returns \c TPR_true if this token starts an expression, \c TPR_false if
+  /// this token starts a type-specifier-seq, or \c TPR_ambiguous if it cannot
+  /// tell.
+  TPResult isExpressionOrTypeSpecifierSimple(tok::TokenKind Kind);
+
   /// isCXXDeclarationSpecifier - Returns TPResult::True() if it is a
   /// declaration specifier, TPResult::False() if it is not,
   /// TPResult::Ambiguous() if it could be either a decl-specifier or a
@@ -1416,7 +1428,7 @@ private:
   /// encountered.
   /// Doesn't consume tokens.
   TPResult isCXXDeclarationSpecifier();
-
+  
   // "Tentative parsing" functions, used for disambiguation. If a parsing error
   // is encountered they will return TPResult::Error().
   // Returning TPResult::True()/False() indicates that the ambiguity was
@@ -1624,6 +1636,7 @@ private:
   //===--------------------------------------------------------------------===//
   // GNU G++: Type Traits [Type-Traits.html in the GCC manual]
   ExprResult ParseUnaryTypeTrait();
+  ExprResult ParseBinaryTypeTrait();
 
   //===--------------------------------------------------------------------===//
   // Preprocessor code-completion pass-through

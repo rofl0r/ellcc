@@ -15,13 +15,16 @@
 #define LLVM_CLANG_ANALYSIS_STORE_H
 
 #include "clang/Checker/PathSensitive/MemRegion.h"
-#include "clang/Checker/PathSensitive/SVals.h"
-#include "clang/Checker/PathSensitive/ValueManager.h"
+#include "clang/Checker/PathSensitive/SValBuilder.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/Optional.h"
 
 namespace clang {
 
+/// Store - This opaque type encapsulates an immutable mapping from
+///  locations to values.  At a high-level, it represents the symbolic
+///  memory model.  Different subclasses of StoreManager may choose
+///  different types to represent the locations and values.
 typedef const void* Store;
 
 class GRState;
@@ -34,7 +37,7 @@ class StackFrameContext;
 
 class StoreManager {
 protected:
-  ValueManager &ValMgr;
+  SValBuilder &svalBuilder;
   GRStateManager &StateMgr;
 
   /// MRMgr - Manages region objects associated with this StoreManager.
@@ -92,11 +95,11 @@ public:
   virtual SubRegionMap *getSubRegionMap(Store store) = 0;
 
   virtual Loc getLValueVar(const VarDecl *VD, const LocationContext *LC) {
-    return ValMgr.makeLoc(MRMgr.getVarRegion(VD, LC));
+    return svalBuilder.makeLoc(MRMgr.getVarRegion(VD, LC));
   }
 
   virtual Loc getLValueString(const StringLiteral* S) {
-    return ValMgr.makeLoc(MRMgr.getStringRegion(S));
+    return svalBuilder.makeLoc(MRMgr.getStringRegion(S));
   }
 
   Loc getLValueCompoundLiteral(const CompoundLiteralExpr* CL,
@@ -126,6 +129,11 @@ public:
   ///  conversions between arrays and pointers.
   virtual SVal ArrayToPointer(Loc Array) = 0;
 
+  /// Evaluates DerivedToBase casts.
+  virtual SVal evalDerivedToBase(SVal derived, QualType basePtrType) {
+    return UnknownVal();
+  }
+
   class CastResult {
     const GRState *state;
     const MemRegion *region;
@@ -143,8 +151,8 @@ public:
   const MemRegion *CastRegion(const MemRegion *region, QualType CastToTy);
 
 
-  /// EvalBinOp - Perform pointer arithmetic.
-  virtual SVal EvalBinOp(BinaryOperator::Opcode Op,
+  /// evalBinOp - Perform pointer arithmetic.
+  virtual SVal evalBinOp(BinaryOperator::Opcode Op,
                          Loc lhs, NonLoc rhs, QualType resultTy) {
     return UnknownVal();
   }
@@ -206,17 +214,17 @@ public:
   virtual void iterBindings(Store store, BindingsHandler& f) = 0;
 
 protected:
-  const MemRegion *MakeElementRegion(const MemRegion *Base,
+  const MemRegion *MakeElementRegion(const MemRegion *baseRegion,
                                      QualType pointeeTy, uint64_t index = 0);
 
   /// CastRetrievedVal - Used by subclasses of StoreManager to implement
   ///  implicit casts that arise from loads from regions that are reinterpreted
   ///  as another region.
-  SVal CastRetrievedVal(SVal val, const TypedRegion *R, QualType castTy,
+  SVal CastRetrievedVal(SVal val, const TypedRegion *region, QualType castTy,
                         bool performTestOnly = true);
 
 private:
-  SVal getLValueFieldOrIvar(const Decl* D, SVal Base);
+  SVal getLValueFieldOrIvar(const Decl* decl, SVal base);
 };
 
 // FIXME: Do we still need this?

@@ -44,14 +44,17 @@ void ArrayBoundChecker::VisitLocation(CheckerContext &C, const Stmt *S, SVal l){
   if (!R)
     return;
 
-  R = R->StripCasts();
-
   const ElementRegion *ER = dyn_cast<ElementRegion>(R);
   if (!ER)
     return;
 
   // Get the index of the accessed element.
   DefinedOrUnknownSVal Idx = cast<DefinedOrUnknownSVal>(ER->getIndex());
+
+  // Zero index is always in bound, this also passes ElementRegions created for
+  // pointer casts.
+  if (Idx.isZeroConstant())
+    return;
 
   const GRState *state = C.getState();
 
@@ -60,8 +63,8 @@ void ArrayBoundChecker::VisitLocation(CheckerContext &C, const Stmt *S, SVal l){
     = C.getStoreManager().getSizeInElements(state, ER->getSuperRegion(), 
                                             ER->getValueType());
 
-  const GRState *StInBound = state->AssumeInBound(Idx, NumElements, true);
-  const GRState *StOutBound = state->AssumeInBound(Idx, NumElements, false);
+  const GRState *StInBound = state->assumeInBound(Idx, NumElements, true);
+  const GRState *StOutBound = state->assumeInBound(Idx, NumElements, false);
   if (StOutBound && !StInBound) {
     ExplodedNode *N = C.GenerateSink(StOutBound);
     if (!N)

@@ -66,7 +66,16 @@ public:
 
   /// \brief Retrieve the underlying type pointer, which refers to a
   /// canonical type.
-  T *getTypePtr() const { return cast_or_null<T>(Stored.getTypePtr()); }
+  ///
+  /// The underlying pointer must not be NULL.
+  T *getTypePtr() const { return cast<T>(Stored.getTypePtr()); }
+
+  /// \brief Retrieve the underlying type pointer, which refers to a
+  /// canonical type, or NULL.
+  ///
+  T *getTypePtrOrNull() const { 
+    return cast_or_null<T>(Stored.getTypePtrOrNull()); 
+  }
 
   /// \brief Implicit conversion to a qualified type.
   operator QualType() const { return Stored; }
@@ -225,7 +234,7 @@ public:
   /// @code
   ///   if (CanQual<PointerType> Ptr = T->getAs<PointerType>()) { ... }
   /// @endcode
-  operator const T*() const { return this->Stored.getTypePtr(); }
+  operator const T*() const { return this->Stored.getTypePtrOrNull(); }
 
   /// \brief Try to convert the given canonical type to a specific structural
   /// type.

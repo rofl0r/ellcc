@@ -75,11 +75,11 @@ public:
       BT_BadFree(0),
       II_malloc(0), II_free(0), II_realloc(0), II_calloc(0) {}
   static void *getTag();
-  bool EvalCallExpr(CheckerContext &C, const CallExpr *CE);
-  void EvalDeadSymbols(CheckerContext &C, SymbolReaper &SymReaper);
-  void EvalEndPath(GREndPathNodeBuilder &B, void *tag, GRExprEngine &Eng);
+  bool evalCallExpr(CheckerContext &C, const CallExpr *CE);
+  void evalDeadSymbols(CheckerContext &C, SymbolReaper &SymReaper);
+  void evalEndPath(GREndPathNodeBuilder &B, void *tag, GRExprEngine &Eng);
   void PreVisitReturnStmt(CheckerContext &C, const ReturnStmt *S);
-  const GRState *EvalAssume(const GRState *state, SVal Cond, bool Assumption,
+  const GRState *evalAssume(const GRState *state, SVal Cond, bool Assumption,
                             bool *respondsToCallback);
   void VisitLocation(CheckerContext &C, const Stmt *S, SVal l);
   virtual void PreVisitBind(CheckerContext &C, const Stmt *StoreE,
@@ -132,7 +132,7 @@ void *MallocChecker::getTag() {
   return &x;
 }
 
-bool MallocChecker::EvalCallExpr(CheckerContext &C, const CallExpr *CE) {
+bool MallocChecker::evalCallExpr(CheckerContext &C, const CallExpr *CE) {
   const GRState *state = C.getState();
   const Expr *Callee = CE->getCallee();
   SVal L = state->getSVal(Callee);
@@ -227,27 +227,28 @@ const GRState *MallocChecker::MallocMemAux(CheckerContext &C,
                                            SVal Size, SVal Init,
                                            const GRState *state) {
   unsigned Count = C.getNodeBuilder().getCurrentBlockCount();
-  ValueManager &ValMgr = C.getValueManager();
+  SValBuilder &svalBuilder = C.getSValBuilder();
 
   // Set the return value.
-  SVal RetVal = ValMgr.getConjuredSymbolVal(NULL, CE, CE->getType(), Count);
-  state = state->BindExpr(CE, RetVal);
+  SVal retVal = svalBuilder.getConjuredSymbolVal(NULL, CE, CE->getType(), Count);
+  state = state->BindExpr(CE, retVal);
 
   // Fill the region with the initialization value.
-  state = state->bindDefault(RetVal, Init);
+  state = state->bindDefault(retVal, Init);
 
   // Set the region's extent equal to the Size parameter.
-  const SymbolicRegion *R = cast<SymbolicRegion>(RetVal.getAsRegion());
-  DefinedOrUnknownSVal Extent = R->getExtent(ValMgr);
+  const SymbolicRegion *R = cast<SymbolicRegion>(retVal.getAsRegion());
+  DefinedOrUnknownSVal Extent = R->getExtent(svalBuilder);
   DefinedOrUnknownSVal DefinedSize = cast<DefinedOrUnknownSVal>(Size);
+  DefinedOrUnknownSVal extentMatchesSize =
+    svalBuilder.evalEQ(state, Extent, DefinedSize);
 
-  SValuator &SVator = ValMgr.getSValuator();
-  DefinedOrUnknownSVal ExtentMatchesSize =
-    SVator.EvalEQ(state, Extent, DefinedSize);
-  state = state->Assume(ExtentMatchesSize, true);
-
-  SymbolRef Sym = RetVal.getAsLocSymbol();
+  state = state->assume(extentMatchesSize, true);
+  assert(state);
+  
+  SymbolRef Sym = retVal.getAsLocSymbol();
   assert(Sym);
+
   // Set the symbol's state to Allocated.
   return state->set<RegionState>(Sym, RefState::getAllocateUnchecked(CE));
 }
@@ -288,7 +289,7 @@ const GRState *MallocChecker::FreeMemAux(CheckerContext &C, const CallExpr *CE,
   // FIXME: Technically using 'Assume' here can result in a path
   //  bifurcation.  In such cases we need to return two states, not just one.
   const GRState *notNullState, *nullState;
-  llvm::tie(notNullState, nullState) = state->Assume(location);
+  llvm::tie(notNullState, nullState) = state->assume(location);
 
   // The explicit NULL case, no operation is performed.
   if (nullState && !notNullState)
@@ -500,21 +501,22 @@ void MallocChecker::ReportBadFree(CheckerContext &C, SVal ArgVal,
 
 void MallocChecker::ReallocMem(CheckerContext &C, const CallExpr *CE) {
   const GRState *state = C.getState();
-  const Expr *Arg0 = CE->getArg(0);
-  DefinedOrUnknownSVal Arg0Val=cast<DefinedOrUnknownSVal>(state->getSVal(Arg0));
+  const Expr *arg0Expr = CE->getArg(0);
+  DefinedOrUnknownSVal arg0Val 
+    = cast<DefinedOrUnknownSVal>(state->getSVal(arg0Expr));
 
-  ValueManager &ValMgr = C.getValueManager();
-  SValuator &SVator = C.getSValuator();
+  SValBuilder &svalBuilder = C.getSValBuilder();
 
-  DefinedOrUnknownSVal PtrEQ = SVator.EvalEQ(state, Arg0Val, ValMgr.makeNull());
+  DefinedOrUnknownSVal PtrEQ =
+    svalBuilder.evalEQ(state, arg0Val, svalBuilder.makeNull());
 
   // If the ptr is NULL, the call is equivalent to malloc(size).
-  if (const GRState *stateEqual = state->Assume(PtrEQ, true)) {
+  if (const GRState *stateEqual = state->assume(PtrEQ, true)) {
     // Hack: set the NULL symbolic region to released to suppress false warning.
     // In the future we should add more states for allocated regions, e.g., 
     // CheckedNull, CheckedNonNull.
     
-    SymbolRef Sym = Arg0Val.getAsLocSymbol();
+    SymbolRef Sym = arg0Val.getAsLocSymbol();
     if (Sym)
       stateEqual = stateEqual->set<RegionState>(Sym, RefState::getReleased(CE));
 
@@ -523,49 +525,44 @@ void MallocChecker::ReallocMem(CheckerContext &C, const CallExpr *CE) {
     C.addTransition(stateMalloc);
   }
 
-  if (const GRState *stateNotEqual = state->Assume(PtrEQ, false)) {
+  if (const GRState *stateNotEqual = state->assume(PtrEQ, false)) {
     const Expr *Arg1 = CE->getArg(1);
     DefinedOrUnknownSVal Arg1Val = 
       cast<DefinedOrUnknownSVal>(stateNotEqual->getSVal(Arg1));
-    DefinedOrUnknownSVal SizeZero = SVator.EvalEQ(stateNotEqual, Arg1Val,
-                                      ValMgr.makeIntValWithPtrWidth(0, false));
+    DefinedOrUnknownSVal SizeZero =
+      svalBuilder.evalEQ(stateNotEqual, Arg1Val,
+                         svalBuilder.makeIntValWithPtrWidth(0, false));
 
-    if (const GRState *stateSizeZero = stateNotEqual->Assume(SizeZero, true)) {
-      const GRState *stateFree = FreeMemAux(C, CE, stateSizeZero, 0, false);
-      if (stateFree)
+    if (const GRState *stateSizeZero = stateNotEqual->assume(SizeZero, true))
+      if (const GRState *stateFree = FreeMemAux(C, CE, stateSizeZero, 0, false))
         C.addTransition(stateFree->BindExpr(CE, UndefinedVal(), true));
-    }
 
-    if (const GRState *stateSizeNotZero=stateNotEqual->Assume(SizeZero,false)) {
-      const GRState *stateFree = FreeMemAux(C, CE, stateSizeNotZero, 0, false);
-      if (stateFree) {
+    if (const GRState *stateSizeNotZero = stateNotEqual->assume(SizeZero,false))
+      if (const GRState *stateFree = FreeMemAux(C, CE, stateSizeNotZero,
+                                                0, false)) {
         // FIXME: We should copy the content of the original buffer.
         const GRState *stateRealloc = MallocMemAux(C, CE, CE->getArg(1), 
                                                    UnknownVal(), stateFree);
         C.addTransition(stateRealloc);
       }
-    }
   }
 }
 
 void MallocChecker::CallocMem(CheckerContext &C, const CallExpr *CE) {
   const GRState *state = C.getState();
-  
-  ValueManager &ValMgr = C.getValueManager();
-  SValuator &SVator = C.getSValuator();
+  SValBuilder &svalBuilder = C.getSValBuilder();
 
-  SVal Count = state->getSVal(CE->getArg(0));
-  SVal EleSize = state->getSVal(CE->getArg(1));
-  SVal TotalSize = SVator.EvalBinOp(state, BO_Mul, Count, EleSize,
-                                    ValMgr.getContext().getSizeType());
-  
-  SVal Zero = ValMgr.makeZeroVal(ValMgr.getContext().CharTy);
+  SVal count = state->getSVal(CE->getArg(0));
+  SVal elementSize = state->getSVal(CE->getArg(1));
+  SVal TotalSize = svalBuilder.evalBinOp(state, BO_Mul, count, elementSize,
+                                        svalBuilder.getContext().getSizeType());  
+  SVal zeroVal = svalBuilder.makeZeroVal(svalBuilder.getContext().CharTy);
 
-  state = MallocMemAux(C, CE, TotalSize, Zero, state);
-  C.addTransition(state);
+  C.addTransition(MallocMemAux(C, CE, TotalSize, zeroVal, state));
 }
 
-void MallocChecker::EvalDeadSymbols(CheckerContext &C,SymbolReaper &SymReaper) {
+void MallocChecker::evalDeadSymbols(CheckerContext &C, SymbolReaper &SymReaper)
+{
   if (!SymReaper.hasDeadSymbols())
     return;
 
@@ -587,15 +584,13 @@ void MallocChecker::EvalDeadSymbols(CheckerContext &C,SymbolReaper &SymReaper) {
       }
 
       // Remove the dead symbol from the map.
-      RS = F.Remove(RS, I->first);
+      RS = F.remove(RS, I->first);
     }
   }
-
-  state = state->set<RegionState>(RS);
-  C.GenerateNode(state);
+  C.GenerateNode(state->set<RegionState>(RS));
 }
 
-void MallocChecker::EvalEndPath(GREndPathNodeBuilder &B, void *tag,
+void MallocChecker::evalEndPath(GREndPathNodeBuilder &B, void *tag,
                                 GRExprEngine &Eng) {
   SaveAndRestore<bool> OldHasGen(B.HasGeneratedNode);
   const GRState *state = B.getState();
@@ -617,14 +612,13 @@ void MallocChecker::EvalEndPath(GREndPathNodeBuilder &B, void *tag,
 }
 
 void MallocChecker::PreVisitReturnStmt(CheckerContext &C, const ReturnStmt *S) {
-  const Expr *RetE = S->getRetValue();
-  if (!RetE)
+  const Expr *retExpr = S->getRetValue();
+  if (!retExpr)
     return;
 
   const GRState *state = C.getState();
 
-  SymbolRef Sym = state->getSVal(RetE).getAsSymbol();
-
+  SymbolRef Sym = state->getSVal(retExpr).getAsSymbol();
   if (!Sym)
     return;
 
@@ -639,7 +633,7 @@ void MallocChecker::PreVisitReturnStmt(CheckerContext &C, const ReturnStmt *S) {
   C.addTransition(state);
 }
 
-const GRState *MallocChecker::EvalAssume(const GRState *state, SVal Cond, 
+const GRState *MallocChecker::evalAssume(const GRState *state, SVal Cond, 
                                          bool Assumption,
                                          bool * /* respondsToCallback */) {
   // If a symblic region is assumed to NULL, set its state to AllocateFailed.
@@ -697,7 +691,7 @@ void MallocChecker::PreVisitBind(CheckerContext &C,
     if (const RefState *RS = state->get<RegionState>(Sym)) {
       // If ptr is NULL, no operation is performed.
       const GRState *notNullState, *nullState;
-      llvm::tie(notNullState, nullState) = state->Assume(l);
+      llvm::tie(notNullState, nullState) = state->assume(l);
 
       // Generate a transition for 'nullState' to record the assumption
       // that the state was null.

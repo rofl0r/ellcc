@@ -910,7 +910,7 @@ class TemplateTypeParmDecl : public TypeDecl {
                        bool Typename, QualType Type, bool ParameterPack)
     : TypeDecl(TemplateTypeParm, DC, L, Id), Typename(Typename),
       InheritedDefault(false), ParameterPack(ParameterPack), DefaultArgument() {
-    TypeForDecl = Type.getTypePtr();
+    TypeForDecl = Type.getTypePtrOrNull();
   }
 
 public:
@@ -1079,6 +1079,14 @@ public:
   using TemplateParmPosition::getDepth;
   using TemplateParmPosition::getPosition;
   using TemplateParmPosition::getIndex;
+
+  /// \brief Whether this template template parameter is a template
+  /// parameter pack.
+  ///
+  /// \code
+  /// template<template <class T> ...MetaFunctions> struct Apply;
+  /// \endcode
+  bool isParameterPack() const { return /*FIXME: variadic templates*/false; }
 
   /// \brief Determine whether this template parameter has a default
   /// argument.

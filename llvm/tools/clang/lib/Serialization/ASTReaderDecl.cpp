@@ -107,6 +107,7 @@ namespace clang {
     void VisitCXXDestructorDecl(CXXDestructorDecl *D);
     void VisitCXXConversionDecl(CXXConversionDecl *D);
     void VisitFieldDecl(FieldDecl *FD);
+    void VisitIndirectFieldDecl(IndirectFieldDecl *FD);
     void VisitVarDecl(VarDecl *VD);
     void VisitImplicitParamDecl(ImplicitParamDecl *PD);
     void VisitParmVarDecl(ParmVarDecl *PD);
@@ -166,7 +167,7 @@ void ASTDeclReader::Visit(Decl *D) {
 
   if (TypeDecl *TD = dyn_cast<TypeDecl>(D)) {
     // if we have a fully initialized TypeDecl, we can safely read its type now.
-    TD->setTypeForDecl(Reader.GetType(TypeIDForTypeDecl).getTypePtr());
+    TD->setTypeForDecl(Reader.GetType(TypeIDForTypeDecl).getTypePtrOrNull());
   } else if (FunctionDecl *FD = dyn_cast<FunctionDecl>(D)) {
     // FunctionDecl's body was written last after all other Stmts/Exprs.
     if (Record[Idx++])
@@ -241,6 +242,7 @@ void ASTDeclReader::VisitEnumDecl(EnumDecl *ED) {
   ED->setNumPositiveBits(Record[Idx++]);
   ED->setNumNegativeBits(Record[Idx++]);
   ED->IsScoped = Record[Idx++];
+  ED->IsScopedUsingClassTag = Record[Idx++];
   ED->IsFixed = Record[Idx++];
   ED->setInstantiationOfMemberEnum(
                          cast_or_null<EnumDecl>(Reader.GetDecl(Record[Idx++])));
@@ -382,9 +384,10 @@ void ASTDeclReader::VisitFunctionDecl(FunctionDecl *FD) {
   // FunctionDecl's body is handled last at ASTDeclReader::Visit,
   // after everything else is read.
 
-  FD->setStorageClass((StorageClass)Record[Idx++]);
+  FD->SClass = (StorageClass)Record[Idx++];
   FD->setStorageClassAsWritten((StorageClass)Record[Idx++]);
-  FD->setInlineSpecified(Record[Idx++]);
+  FD->IsInline = Record[Idx++];
+  FD->IsInlineSpecified = Record[Idx++];
   FD->setVirtualAsWritten(Record[Idx++]);
   FD->setPure(Record[Idx++]);
   FD->setHasInheritedPrototype(Record[Idx++]);
@@ -440,7 +443,7 @@ void ASTDeclReader::VisitObjCContainerDecl(ObjCContainerDecl *CD) {
 
 void ASTDeclReader::VisitObjCInterfaceDecl(ObjCInterfaceDecl *ID) {
   VisitObjCContainerDecl(ID);
-  ID->setTypeForDecl(Reader.GetType(Record[Idx++]).getTypePtr());
+  ID->setTypeForDecl(Reader.GetType(Record[Idx++]).getTypePtrOrNull());
   ID->setSuperClass(cast_or_null<ObjCInterfaceDecl>
                        (Reader.GetDecl(Record[Idx++])));
   
@@ -635,10 +638,21 @@ void ASTDeclReader::VisitFieldDecl(FieldDecl *FD) {
   }
 }
 
+void ASTDeclReader::VisitIndirectFieldDecl(IndirectFieldDecl *FD) {
+  VisitValueDecl(FD);
+
+  FD->ChainingSize = Record[Idx++];
+  assert(FD->ChainingSize >= 2 && "Anonymous chaining must be >= 2");
+  FD->Chaining = new (*Reader.getContext())NamedDecl*[FD->ChainingSize];
+
+  for (unsigned I = 0; I != FD->ChainingSize; ++I)
+    FD->Chaining[I] = cast<NamedDecl>(Reader.GetDecl(Record[Idx++]));
+}
+
 void ASTDeclReader::VisitVarDecl(VarDecl *VD) {
   VisitDeclaratorDecl(VD);
   VisitRedeclarable(VD);
-  VD->setStorageClass((StorageClass)Record[Idx++]);
+  VD->SClass = (StorageClass)Record[Idx++];
   VD->setStorageClassAsWritten((StorageClass)Record[Idx++]);
   VD->setThreadSpecified(Record[Idx++]);
   VD->setCXXDirectInitializer(Record[Idx++]);
@@ -1474,6 +1488,10 @@ Decl *ASTReader::ReadDeclRecord(unsigned Index, DeclID ID) {
   case DECL_FIELD:
     D = FieldDecl::Create(*Context, 0, SourceLocation(), 0, QualType(), 0, 0,
                           false);
+    break;
+  case DECL_INDIRECTFIELD:
+    D = IndirectFieldDecl::Create(*Context, 0, SourceLocation(), 0, QualType(),
+                                  0, 0);
     break;
   case DECL_VAR:
     D = VarDecl::Create(*Context, 0, SourceLocation(), 0, QualType(), 0,

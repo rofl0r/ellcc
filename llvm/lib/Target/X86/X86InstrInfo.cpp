@@ -2151,76 +2151,6 @@ void X86InstrInfo::loadRegFromAddr(MachineFunction &MF, unsigned DestReg,
   NewMIs.push_back(MIB);
 }
 
-bool X86InstrInfo::spillCalleeSavedRegisters(MachineBasicBlock &MBB,
-                                             MachineBasicBlock::iterator MI,
-                                        const std::vector<CalleeSavedInfo> &CSI,
-                                          const TargetRegisterInfo *TRI) const {
-  if (CSI.empty())
-    return false;
-
-  DebugLoc DL = MBB.findDebugLoc(MI);
-
-  bool is64Bit = TM.getSubtarget<X86Subtarget>().is64Bit();
-  bool isWin64 = TM.getSubtarget<X86Subtarget>().isTargetWin64();
-  unsigned SlotSize = is64Bit ? 8 : 4;
-
-  MachineFunction &MF = *MBB.getParent();
-  unsigned FPReg = RI.getFrameRegister(MF);
-  X86MachineFunctionInfo *X86FI = MF.getInfo<X86MachineFunctionInfo>();
-  unsigned CalleeFrameSize = 0;
-  
-  unsigned Opc = is64Bit ? X86::PUSH64r : X86::PUSH32r;
-  for (unsigned i = CSI.size(); i != 0; --i) {
-    unsigned Reg = CSI[i-1].getReg();
-    // Add the callee-saved register as live-in. It's killed at the spill.
-    MBB.addLiveIn(Reg);
-    if (Reg == FPReg)
-      // X86RegisterInfo::emitPrologue will handle spilling of frame register.
-      continue;
-    if (!X86::VR128RegClass.contains(Reg) && !isWin64) {
-      CalleeFrameSize += SlotSize;
-      BuildMI(MBB, MI, DL, get(Opc)).addReg(Reg, RegState::Kill);
-    } else {
-      const TargetRegisterClass *RC = TRI->getMinimalPhysRegClass(Reg);
-      storeRegToStackSlot(MBB, MI, Reg, true, CSI[i-1].getFrameIdx(),
-                          RC, &RI);
-    }
-  }
-
-  X86FI->setCalleeSavedFrameSize(CalleeFrameSize);
-  return true;
-}
-
-bool X86InstrInfo::restoreCalleeSavedRegisters(MachineBasicBlock &MBB,
-                                               MachineBasicBlock::iterator MI,
-                                        const std::vector<CalleeSavedInfo> &CSI,
-                                          const TargetRegisterInfo *TRI) const {
-  if (CSI.empty())
-    return false;
-
-  DebugLoc DL = MBB.findDebugLoc(MI);
-
-  MachineFunction &MF = *MBB.getParent();
-  unsigned FPReg = RI.getFrameRegister(MF);
-  bool is64Bit = TM.getSubtarget<X86Subtarget>().is64Bit();
-  bool isWin64 = TM.getSubtarget<X86Subtarget>().isTargetWin64();
-  unsigned Opc = is64Bit ? X86::POP64r : X86::POP32r;
-  for (unsigned i = 0, e = CSI.size(); i != e; ++i) {
-    unsigned Reg = CSI[i].getReg();
-    if (Reg == FPReg)
-      // X86RegisterInfo::emitEpilogue will handle restoring of frame register.
-      continue;
-    if (!X86::VR128RegClass.contains(Reg) && !isWin64) {
-      BuildMI(MBB, MI, DL, get(Opc), Reg);
-    } else {
-      const TargetRegisterClass *RC = TRI->getMinimalPhysRegClass(Reg);
-      loadRegFromStackSlot(MBB, MI, Reg, CSI[i].getFrameIdx(),
-                           RC, &RI);
-    }
-  }
-  return true;
-}
-
 MachineInstr*
 X86InstrInfo::emitFrameIndexDebugValue(MachineFunction &MF,
                                        int FrameIx, uint64_t Offset,
@@ -2490,9 +2420,11 @@ MachineInstr* X86InstrInfo::foldMemoryOperandImpl(MachineFunction &MF,
       Alignment = 16;
       break;
     case X86::FsFLD0SD:
+    case X86::VFsFLD0SD:
       Alignment = 8;
       break;
     case X86::FsFLD0SS:
+    case X86::VFsFLD0SS:
       Alignment = 4;
       break;
     default:
@@ -2556,9 +2488,9 @@ MachineInstr* X86InstrInfo::foldMemoryOperandImpl(MachineFunction &MF,
     MachineConstantPool &MCP = *MF.getConstantPool();
     const Type *Ty;
     unsigned Opc = LoadMI->getOpcode();
-    if (Opc == X86::FsFLD0SS)
+    if (Opc == X86::FsFLD0SS || Opc == X86::VFsFLD0SS)
       Ty = Type::getFloatTy(MF.getFunction()->getContext());
-    else if (Opc == X86::FsFLD0SD)
+    else if (Opc == X86::FsFLD0SD || Opc == X86::VFsFLD0SD)
       Ty = Type::getDoubleTy(MF.getFunction()->getContext());
     else if (Opc == X86::AVX_SET0PSY || Opc == X86::AVX_SET0PDY)
       Ty = VectorType::get(Type::getFloatTy(MF.getFunction()->getContext()), 8);

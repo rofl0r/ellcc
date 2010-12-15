@@ -3367,8 +3367,8 @@ const SCEV *ScalarEvolution::createSCEV(Value *V) {
               // If C is a single bit, it may be in the sign-bit position
               // before the zero-extend. In this case, represent the xor
               // using an add, which is equivalent, and re-apply the zext.
-              APInt Trunc = APInt(CI->getValue()).trunc(Z0TySize);
-              if (APInt(Trunc).zext(getTypeSizeInBits(UTy)) == CI->getValue() &&
+              APInt Trunc = CI->getValue().trunc(Z0TySize);
+              if (Trunc.zext(getTypeSizeInBits(UTy)) == CI->getValue() &&
                   Trunc.isSignBit())
                 return getZeroExtendExpr(getAddExpr(Z0, getConstant(Trunc)),
                                          UTy);
@@ -4602,7 +4602,7 @@ static const SCEV *SolveLinEquationWithOverflow(const APInt &A, const APInt &B,
   // bit width during computations.
   APInt AD = A.lshr(Mult2).zext(BW + 1);  // AD = A / D
   APInt Mod(BW + 1, 0);
-  Mod.set(BW - Mult2);  // Mod = N / D
+  Mod.setBit(BW - Mult2);  // Mod = N / D
   APInt I = AD.multiplicativeInverse(Mod);
 
   // 4. Compute the minimum unsigned root of the equation:

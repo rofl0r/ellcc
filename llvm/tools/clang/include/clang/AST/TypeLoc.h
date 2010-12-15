@@ -115,6 +115,12 @@ public:
   /// \brief Skips past any qualifiers, if this is qualified.
   UnqualTypeLoc getUnqualifiedLoc() const; // implemented in this header
 
+  TypeLoc IgnoreParens() const {
+    if (isa<ParenTypeLoc>(this))
+      return IgnoreParensImpl(*this);
+    return *this;
+  }
+
   /// \brief Initializes this to state that every location in this
   /// type is the given location.
   ///
@@ -144,6 +150,7 @@ private:
   static void initializeImpl(TypeLoc TL, SourceLocation Loc);
   static void initializeFullCopyImpl(TypeLoc TL, TypeLoc Other);
   static TypeLoc getNextTypeLocImpl(TypeLoc TL);
+  static TypeLoc IgnoreParensImpl(TypeLoc TL);
   static SourceRange getLocalSourceRangeImpl(TypeLoc TL);
 };
 
@@ -694,6 +701,46 @@ public:
   }
 };
 
+struct ParenLocInfo {
+  SourceLocation LParenLoc;
+  SourceLocation RParenLoc;
+};
+
+class ParenTypeLoc
+  : public ConcreteTypeLoc<UnqualTypeLoc, ParenTypeLoc, ParenType,
+                           ParenLocInfo> {
+public:
+  SourceLocation getLParenLoc() const {
+    return this->getLocalData()->LParenLoc;
+  }
+  SourceLocation getRParenLoc() const {
+    return this->getLocalData()->RParenLoc;
+  }
+  void setLParenLoc(SourceLocation Loc) {
+    this->getLocalData()->LParenLoc = Loc;
+  }
+  void setRParenLoc(SourceLocation Loc) {
+    this->getLocalData()->RParenLoc = Loc;
+  }
+
+  SourceRange getLocalSourceRange() const {
+    return SourceRange(getLParenLoc(), getRParenLoc());
+  }
+
+  void initializeLocal(SourceLocation Loc) {
+    setLParenLoc(Loc);
+    setRParenLoc(Loc);
+  }
+
+  TypeLoc getInnerLoc() const {
+    return getInnerTypeLoc();
+  }
+
+  QualType getInnerType() const {
+    return this->getTypePtr()->getInnerType();
+  }
+};
+
 
 struct PointerLikeLocInfo {
   SourceLocation StarLoc;
@@ -1013,9 +1060,6 @@ public:
     return getTypePtr()->getNumArgs();
   }
   void setArgLocInfo(unsigned i, TemplateArgumentLocInfo AI) {
-#ifndef NDEBUG
-    AI.validateForArgument(getTypePtr()->getArg(i));
-#endif
     getArgInfos()[i] = AI;
   }
   TemplateArgumentLocInfo getArgLocInfo(unsigned i) const {
@@ -1061,34 +1105,8 @@ public:
                                 const TemplateArgument *Args,
                                 TemplateArgumentLocInfo *ArgInfos,
                                 SourceLocation Loc) {
-    for (unsigned i = 0, e = NumArgs; i != e; ++i) {
-      TemplateArgumentLocInfo Info;
-#ifndef NDEBUG
-      // If asserts are enabled, be sure to initialize the argument
-      // loc with the right kind of pointer.
-      switch (Args[i].getKind()) {
-      case TemplateArgument::Expression:
-      case TemplateArgument::Declaration:
-        Info = TemplateArgumentLocInfo((Expr*) 0);
-        break;
-
-      case TemplateArgument::Type:
-        Info = TemplateArgumentLocInfo((TypeSourceInfo*) 0);
-        break;
-
-      case TemplateArgument::Template:
-        Info = TemplateArgumentLocInfo(SourceRange(Loc), Loc);
-        break;
-          
-      case TemplateArgument::Integral:
-      case TemplateArgument::Pack:
-      case TemplateArgument::Null:
-        // K_None is fine.
-        break;
-      }
-#endif
-      ArgInfos[i] = Info;
-    }
+    for (unsigned i = 0, e = NumArgs; i != e; ++i)
+      ArgInfos[i] = TemplateArgumentLocInfo();
   }
 
   unsigned getExtraLocalDataSize() const {
@@ -1384,9 +1402,6 @@ public:
   }
 
   void setArgLocInfo(unsigned i, TemplateArgumentLocInfo AI) {
-#ifndef NDEBUG
-    AI.validateForArgument(getTypePtr()->getArg(i));
-#endif
     getArgInfos()[i] = AI;
   }
   TemplateArgumentLocInfo getArgLocInfo(unsigned i) const {

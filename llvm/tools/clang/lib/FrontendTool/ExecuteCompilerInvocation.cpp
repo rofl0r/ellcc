@@ -24,7 +24,7 @@
 #include "clang/Frontend/FrontendPluginRegistry.h"
 #include "clang/Rewrite/FrontendActions.h"
 #include "llvm/Support/ErrorHandling.h"
-#include "llvm/System/DynamicLibrary.h"
+#include "llvm/Support/DynamicLibrary.h"
 using namespace clang;
 
 static FrontendAction *CreateFrontendBaseAction(CompilerInstance &CI) {
@@ -35,6 +35,7 @@ static FrontendAction *CreateFrontendBaseAction(CompilerInstance &CI) {
     llvm_unreachable("Invalid program action!");
 
   case ASTDump:                return new ASTDumpAction();
+  case ASTDumpXML:             return new ASTDumpXMLAction();
   case ASTPrint:               return new ASTPrintAction();
   case ASTPrintXML:            return new ASTPrintXMLAction();
   case ASTView:                return new ASTViewAction();

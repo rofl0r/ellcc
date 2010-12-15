@@ -19,6 +19,7 @@
 #include "clang/Basic/SourceLocation.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/Analysis/DebugInfo.h"
+#include "llvm/Analysis/DIBuilder.h"
 #include "llvm/Support/ValueHandle.h"
 #include "llvm/Support/Allocator.h"
 
@@ -42,7 +43,7 @@ namespace CodeGen {
 /// the backend.
 class CGDebugInfo {
   CodeGenModule &CGM;
-  llvm::DIFactory DebugFactory;
+  llvm::DIBuilder DBuilder;
   llvm::DICompileUnit TheCU;
   SourceLocation CurLoc, PrevLoc;
   llvm::DIType VTablePtrType;
@@ -75,7 +76,7 @@ class CGDebugInfo {
 
   /// Helper functions for getOrCreateType.
   llvm::DIType CreateType(const BuiltinType *Ty);
-  llvm::DIType CreateType(const ComplexType *Ty, llvm::DIFile F);
+  llvm::DIType CreateType(const ComplexType *Ty);
   llvm::DIType CreateQualifiedType(QualType Ty, llvm::DIFile F);
   llvm::DIType CreateType(const TypedefType *Ty, llvm::DIFile F);
   llvm::DIType CreateType(const ObjCObjectPointerType *Ty,
@@ -96,8 +97,7 @@ class CGDebugInfo {
   llvm::DIType getOrCreateMethodType(const CXXMethodDecl *Method,
                                      llvm::DIFile F);
   llvm::DIType getOrCreateVTablePtrType(llvm::DIFile F);
-  llvm::DINameSpace getOrCreateNameSpace(const NamespaceDecl *N, 
-                                         llvm::DIDescriptor Unit);
+  llvm::DINameSpace getOrCreateNameSpace(const NamespaceDecl *N);
   llvm::DIType CreatePointeeType(QualType PointeeTy, llvm::DIFile F);
   llvm::DIType CreatePointerLikeType(unsigned Tag,
                                      const Type *Ty, QualType PointeeTy,
@@ -109,26 +109,26 @@ class CGDebugInfo {
   
   void CollectCXXMemberFunctions(const CXXRecordDecl *Decl,
                                  llvm::DIFile F,
-                                 llvm::SmallVectorImpl<llvm::DIDescriptor> &E,
+                                 llvm::SmallVectorImpl<llvm::Value *> &E,
                                  llvm::DIType T);
 
   void CollectCXXFriends(const CXXRecordDecl *Decl,
                        llvm::DIFile F,
-                       llvm::SmallVectorImpl<llvm::DIDescriptor> &EltTys,
+                       llvm::SmallVectorImpl<llvm::Value *> &EltTys,
                        llvm::DIType RecordTy);
 
   void CollectCXXBases(const CXXRecordDecl *Decl,
                        llvm::DIFile F,
-                       llvm::SmallVectorImpl<llvm::DIDescriptor> &EltTys,
+                       llvm::SmallVectorImpl<llvm::Value *> &EltTys,
                        llvm::DIType RecordTy);
 
 
   void CollectRecordFields(const RecordDecl *Decl, llvm::DIFile F,
-                           llvm::SmallVectorImpl<llvm::DIDescriptor> &E);
+                           llvm::SmallVectorImpl<llvm::Value *> &E);
 
   void CollectVTableInfo(const CXXRecordDecl *Decl,
                          llvm::DIFile F,
-                         llvm::SmallVectorImpl<llvm::DIDescriptor> &EltTys);
+                         llvm::SmallVectorImpl<llvm::Value *> &EltTys);
 
 public:
   CGDebugInfo(CodeGenModule &CGM);
@@ -205,8 +205,7 @@ private:
                                             uint64_t *OffSet);
 
   /// getContextDescriptor - Get context info for the decl.
-  llvm::DIDescriptor getContextDescriptor(const Decl *Decl,
-                                          llvm::DIDescriptor &CU);
+  llvm::DIDescriptor getContextDescriptor(const Decl *Decl);
 
   /// getCurrentDirname - Return current directory name.
   llvm::StringRef getCurrentDirname();

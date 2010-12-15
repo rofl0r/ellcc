@@ -229,3 +229,10 @@ TypeSpecifierType BuiltinTypeLoc::getWrittenTypeSpec() const {
   
   return TST_unspecified;
 }
+
+TypeLoc TypeLoc::IgnoreParensImpl(TypeLoc TL) {
+  while (ParenTypeLoc* PTL = dyn_cast<ParenTypeLoc>(&TL))
+    TL = PTL->getInnerLoc();
+  return TL;
+}
+

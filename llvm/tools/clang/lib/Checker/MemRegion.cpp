@@ -14,7 +14,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/Checker/PathSensitive/MemRegion.h"
-#include "clang/Checker/PathSensitive/ValueManager.h"
+#include "clang/Checker/PathSensitive/SValBuilder.h"
 #include "clang/Analysis/AnalysisContext.h"
 #include "clang/Analysis/Support/BumpVector.h"
 #include "clang/AST/CharUnits.h"
@@ -176,27 +176,27 @@ const StackFrameContext *VarRegion::getStackFrame() const {
 // Region extents.
 //===----------------------------------------------------------------------===//
 
-DefinedOrUnknownSVal DeclRegion::getExtent(ValueManager& ValMgr) const {
-  ASTContext& Ctx = ValMgr.getContext();
-  QualType T = getDesugaredValueType();
+DefinedOrUnknownSVal DeclRegion::getExtent(SValBuilder &svalBuilder) const {
+  ASTContext& Ctx = svalBuilder.getContext();
+  QualType T = getDesugaredValueType(Ctx);
 
   if (isa<VariableArrayType>(T))
-    return nonloc::SymbolVal(ValMgr.getSymbolManager().getExtentSymbol(this));
+    return nonloc::SymbolVal(svalBuilder.getSymbolManager().getExtentSymbol(this));
   if (isa<IncompleteArrayType>(T))
     return UnknownVal();
 
   CharUnits Size = Ctx.getTypeSizeInChars(T);
   QualType SizeTy = Ctx.getSizeType();
-  return ValMgr.makeIntVal(Size.getQuantity(), SizeTy);
+  return svalBuilder.makeIntVal(Size.getQuantity(), SizeTy);
 }
 
-DefinedOrUnknownSVal FieldRegion::getExtent(ValueManager& ValMgr) const {
-  DefinedOrUnknownSVal Extent = DeclRegion::getExtent(ValMgr);
+DefinedOrUnknownSVal FieldRegion::getExtent(SValBuilder &svalBuilder) const {
+  DefinedOrUnknownSVal Extent = DeclRegion::getExtent(svalBuilder);
 
   // A zero-length array at the end of a struct often stands for dynamically-
   // allocated extra memory.
   if (Extent.isZeroConstant()) {
-    QualType T = getDesugaredValueType();
+    QualType T = getDesugaredValueType(svalBuilder.getContext());
 
     if (isa<ConstantArrayType>(T))
       return UnknownVal();
@@ -205,17 +205,21 @@ DefinedOrUnknownSVal FieldRegion::getExtent(ValueManager& ValMgr) const {
   return Extent;
 }
 
-DefinedOrUnknownSVal AllocaRegion::getExtent(ValueManager& ValMgr) const {
-  return nonloc::SymbolVal(ValMgr.getSymbolManager().getExtentSymbol(this));
+DefinedOrUnknownSVal AllocaRegion::getExtent(SValBuilder &svalBuilder) const {
+  return nonloc::SymbolVal(svalBuilder.getSymbolManager().getExtentSymbol(this));
 }
 
-DefinedOrUnknownSVal SymbolicRegion::getExtent(ValueManager& ValMgr) const {
-  return nonloc::SymbolVal(ValMgr.getSymbolManager().getExtentSymbol(this));
+DefinedOrUnknownSVal SymbolicRegion::getExtent(SValBuilder &svalBuilder) const {
+  return nonloc::SymbolVal(svalBuilder.getSymbolManager().getExtentSymbol(this));
 }
 
-DefinedOrUnknownSVal StringRegion::getExtent(ValueManager& ValMgr) const {
-  QualType SizeTy = ValMgr.getContext().getSizeType();
-  return ValMgr.makeIntVal(getStringLiteral()->getByteLength()+1, SizeTy);
+DefinedOrUnknownSVal StringRegion::getExtent(SValBuilder &svalBuilder) const {
+  QualType SizeTy = svalBuilder.getContext().getSizeType();
+  return svalBuilder.makeIntVal(getStringLiteral()->getByteLength()+1, SizeTy);
+}
+
+QualType CXXBaseObjectRegion::getValueType() const {
+  return QualType(decl->getTypeForDecl(), 0);
 }
 
 //===----------------------------------------------------------------------===//
@@ -356,15 +360,26 @@ void BlockDataRegion::Profile(llvm::FoldingSetNodeID& ID) const {
   BlockDataRegion::ProfileRegion(ID, BC, LC, getSuperRegion());
 }
 
-void CXXObjectRegion::ProfileRegion(llvm::FoldingSetNodeID &ID,
-                                    Expr const *Ex,
-                                    const MemRegion *sReg) {
+void CXXTempObjectRegion::ProfileRegion(llvm::FoldingSetNodeID &ID,
+                                        Expr const *Ex,
+                                        const MemRegion *sReg) {
   ID.AddPointer(Ex);
   ID.AddPointer(sReg);
 }
 
-void CXXObjectRegion::Profile(llvm::FoldingSetNodeID &ID) const {
+void CXXTempObjectRegion::Profile(llvm::FoldingSetNodeID &ID) const {
   ProfileRegion(ID, Ex, getSuperRegion());
+}
+
+void CXXBaseObjectRegion::ProfileRegion(llvm::FoldingSetNodeID &ID,
+                                        const CXXRecordDecl *decl,
+                                        const MemRegion *sReg) {
+  ID.AddPointer(decl);
+  ID.AddPointer(sReg);
+}
+
+void CXXBaseObjectRegion::Profile(llvm::FoldingSetNodeID &ID) const {
+  ProfileRegion(ID, decl, superRegion);
 }
 
 //===----------------------------------------------------------------------===//
@@ -405,6 +420,14 @@ void BlockDataRegion::dumpToStream(llvm::raw_ostream& os) const {
 void CompoundLiteralRegion::dumpToStream(llvm::raw_ostream& os) const {
   // FIXME: More elaborate pretty-printing.
   os << "{ " << (void*) CL <<  " }";
+}
+
+void CXXTempObjectRegion::dumpToStream(llvm::raw_ostream &os) const {
+  os << "temp_object";
+}
+
+void CXXBaseObjectRegion::dumpToStream(llvm::raw_ostream &os) const {
+  os << "base " << decl->getName();
 }
 
 void CXXThisRegion::dumpToStream(llvm::raw_ostream &os) const {
@@ -675,12 +698,18 @@ MemRegionManager::getObjCIvarRegion(const ObjCIvarDecl* d,
   return getSubRegion<ObjCIvarRegion>(d, superRegion);
 }
 
-const CXXObjectRegion*
-MemRegionManager::getCXXObjectRegion(Expr const *E,
-                                     LocationContext const *LC) {
+const CXXTempObjectRegion*
+MemRegionManager::getCXXTempObjectRegion(Expr const *E,
+                                         LocationContext const *LC) {
   const StackFrameContext *SFC = LC->getCurrentStackFrame();
   assert(SFC);
-  return getSubRegion<CXXObjectRegion>(E, getStackLocalsRegion(SFC));
+  return getSubRegion<CXXTempObjectRegion>(E, getStackLocalsRegion(SFC));
+}
+
+const CXXBaseObjectRegion *
+MemRegionManager::getCXXBaseObjectRegion(const CXXRecordDecl *decl,
+                                         const MemRegion *superRegion) {
+  return getSubRegion<CXXBaseObjectRegion>(decl, superRegion);
 }
 
 const CXXThisRegion*
@@ -841,7 +870,7 @@ RegionOffset MemRegion::getAsOffset() const {
     case CXXThisRegionKind:
     case StringRegionKind:
     case VarRegionKind:
-    case CXXObjectRegionKind:
+    case CXXTempObjectRegionKind:
       goto Finish;
     case ElementRegionKind: {
       const ElementRegion *ER = cast<ElementRegion>(R);

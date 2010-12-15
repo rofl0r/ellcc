@@ -221,11 +221,11 @@ bool SVal::isZeroConstant() const {
 // Transfer function dispatch for Non-Locs.
 //===----------------------------------------------------------------------===//
 
-SVal nonloc::ConcreteInt::evalBinOp(ValueManager &ValMgr,
+SVal nonloc::ConcreteInt::evalBinOp(SValBuilder &svalBuilder,
                                     BinaryOperator::Opcode Op,
                                     const nonloc::ConcreteInt& R) const {
   const llvm::APSInt* X =
-    ValMgr.getBasicValueFactory().EvaluateAPSInt(Op, getValue(), R.getValue());
+    svalBuilder.getBasicValueFactory().evalAPSInt(Op, getValue(), R.getValue());
 
   if (X)
     return nonloc::ConcreteInt(*X);
@@ -234,26 +234,27 @@ SVal nonloc::ConcreteInt::evalBinOp(ValueManager &ValMgr,
 }
 
 nonloc::ConcreteInt
-nonloc::ConcreteInt::evalComplement(ValueManager &ValMgr) const {
-  return ValMgr.makeIntVal(~getValue());
+nonloc::ConcreteInt::evalComplement(SValBuilder &svalBuilder) const {
+  return svalBuilder.makeIntVal(~getValue());
 }
 
-nonloc::ConcreteInt nonloc::ConcreteInt::evalMinus(ValueManager &ValMgr) const {
-  return ValMgr.makeIntVal(-getValue());
+nonloc::ConcreteInt
+nonloc::ConcreteInt::evalMinus(SValBuilder &svalBuilder) const {
+  return svalBuilder.makeIntVal(-getValue());
 }
 
 //===----------------------------------------------------------------------===//
 // Transfer function dispatch for Locs.
 //===----------------------------------------------------------------------===//
 
-SVal loc::ConcreteInt::EvalBinOp(BasicValueFactory& BasicVals,
+SVal loc::ConcreteInt::evalBinOp(BasicValueFactory& BasicVals,
                                  BinaryOperator::Opcode Op,
                                  const loc::ConcreteInt& R) const {
 
   assert (Op == BO_Add || Op == BO_Sub ||
           (Op >= BO_LT && Op <= BO_NE));
 
-  const llvm::APSInt* X = BasicVals.EvaluateAPSInt(Op, getValue(), R.getValue());
+  const llvm::APSInt* X = BasicVals.evalAPSInt(Op, getValue(), R.getValue());
 
   if (X)
     return loc::ConcreteInt(*X);

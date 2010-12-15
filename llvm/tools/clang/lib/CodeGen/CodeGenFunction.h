@@ -1048,6 +1048,9 @@ public:
   /// expression and compare the result against zero, returning an Int1Ty value.
   llvm::Value *EvaluateExprAsBool(const Expr *E);
 
+  /// EmitIgnoredExpr - Emit an expression in a context which ignores the result.
+  void EmitIgnoredExpr(const Expr *E);
+
   /// EmitAnyExpr - Emit code to compute the specified expression which can have
   /// any type.  The result is returned as an RValue struct.  If this is an
   /// aggregate expression, the aggloc/agglocvolatile arguments indicate where
@@ -1382,9 +1385,8 @@ public:
   RValue EmitLoadOfLValue(LValue V, QualType LVType);
   RValue EmitLoadOfExtVectorElementLValue(LValue V, QualType LVType);
   RValue EmitLoadOfBitfieldLValue(LValue LV, QualType ExprType);
-  RValue EmitLoadOfPropertyRefLValue(LValue LV, QualType ExprType);
-  RValue EmitLoadOfKVCRefLValue(LValue LV, QualType ExprType);
-
+  RValue EmitLoadOfPropertyRefLValue(LValue LV,
+                                 ReturnValueSlot Return = ReturnValueSlot());
 
   /// EmitStoreThroughLValue - Store the specified rvalue into the specified
   /// lvalue, where both are guaranteed to the have the same type, and that type
@@ -1392,8 +1394,7 @@ public:
   void EmitStoreThroughLValue(RValue Src, LValue Dst, QualType Ty);
   void EmitStoreThroughExtVectorComponentLValue(RValue Src, LValue Dst,
                                                 QualType Ty);
-  void EmitStoreThroughPropertyRefLValue(RValue Src, LValue Dst, QualType Ty);
-  void EmitStoreThroughKVCRefLValue(RValue Src, LValue Dst, QualType Ty);
+  void EmitStoreThroughPropertyRefLValue(RValue Src, LValue Dst);
 
   /// EmitStoreThroughLValue - Store Src into Dst with same constraints as
   /// EmitStoreThroughLValue.
@@ -1406,10 +1407,11 @@ public:
 
   /// Emit an l-value for an assignment (simple or compound) of complex type.
   LValue EmitComplexAssignmentLValue(const BinaryOperator *E);
+  LValue EmitComplexCompoundAssignmentLValue(const CompoundAssignOperator *E);
 
   // Note: only availabe for agg return types
   LValue EmitBinaryOperatorLValue(const BinaryOperator *E);
-  LValue EmitCompoundAssignOperatorLValue(const CompoundAssignOperator *E);
+  LValue EmitCompoundAssignmentLValue(const CompoundAssignOperator *E);
   // Note: only available for agg return types
   LValue EmitCallExprLValue(const CallExpr *E);
   // Note: only available for agg return types
@@ -1431,7 +1433,7 @@ public:
   llvm::Value *EmitIvarOffset(const ObjCInterfaceDecl *Interface,
                               const ObjCIvarDecl *Ivar);
   LValue EmitLValueForAnonRecordField(llvm::Value* Base,
-                                      const FieldDecl* Field,
+                                      const IndirectFieldDecl* Field,
                                       unsigned CVRQualifiers);
   LValue EmitLValueForField(llvm::Value* Base, const FieldDecl* Field,
                             unsigned CVRQualifiers);
@@ -1454,13 +1456,12 @@ public:
 
   LValue EmitCXXConstructLValue(const CXXConstructExpr *E);
   LValue EmitCXXBindTemporaryLValue(const CXXBindTemporaryExpr *E);
-  LValue EmitCXXExprWithTemporariesLValue(const CXXExprWithTemporaries *E);
+  LValue EmitExprWithCleanupsLValue(const ExprWithCleanups *E);
   LValue EmitCXXTypeidLValue(const CXXTypeidExpr *E);
 
   LValue EmitObjCMessageExprLValue(const ObjCMessageExpr *E);
   LValue EmitObjCIvarRefLValue(const ObjCIvarRefExpr *E);
   LValue EmitObjCPropertyRefLValue(const ObjCPropertyRefExpr *E);
-  LValue EmitObjCKVCRefLValue(const ObjCImplicitSetterGetterRefExpr *E);
   LValue EmitStmtExprLValue(const StmtExpr *E);
   LValue EmitPointerToDataMemberBinaryExpr(const BinaryOperator *E);
   LValue EmitObjCSelectorLValue(const ObjCSelectorExpr *E);
@@ -1498,7 +1499,7 @@ public:
   llvm::Value *BuildVirtualCall(const CXXMethodDecl *MD, llvm::Value *This,
                                 const llvm::Type *Ty);
   llvm::Value *BuildVirtualCall(const CXXDestructorDecl *DD, CXXDtorType Type,
-                                llvm::Value *&This, const llvm::Type *Ty);
+                                llvm::Value *This, const llvm::Type *Ty);
 
   RValue EmitCXXMemberCall(const CXXMethodDecl *MD,
                            llvm::Value *Callee,
@@ -1529,10 +1530,9 @@ public:
   llvm::Value *EmitARMBuiltinExpr(unsigned BuiltinID, const CallExpr *E);
   llvm::Value *EmitNeonCall(llvm::Function *F,
                             llvm::SmallVectorImpl<llvm::Value*> &O,
-                            const char *name, bool splat = false,
+                            const char *name,
                             unsigned shift = 0, bool rightshift = false);
-  llvm::Value *EmitNeonSplat(llvm::Value *V, llvm::Constant *Idx,
-                             bool widen = false);
+  llvm::Value *EmitNeonSplat(llvm::Value *V, llvm::Constant *Idx);
   llvm::Value *EmitNeonShiftVector(llvm::Value *V, const llvm::Type *Ty,
                                    bool negateForRightShift);
 
@@ -1545,13 +1545,6 @@ public:
   llvm::Value *EmitObjCSelectorExpr(const ObjCSelectorExpr *E);
   RValue EmitObjCMessageExpr(const ObjCMessageExpr *E,
                              ReturnValueSlot Return = ReturnValueSlot());
-  RValue EmitObjCPropertyGet(const Expr *E,
-                             ReturnValueSlot Return = ReturnValueSlot());
-  RValue EmitObjCSuperPropertyGet(const Expr *Exp, const Selector &S,
-                                  ReturnValueSlot Return = ReturnValueSlot());
-  void EmitObjCPropertySet(const Expr *E, RValue Src);
-  void EmitObjCSuperPropertySet(const Expr *E, const Selector &S, RValue Src);
-
 
   /// EmitReferenceBindingToExpr - Emits a reference binding to the passed in
   /// expression. Will emit a temporary variable if E is not an LValue.
@@ -1660,11 +1653,10 @@ public:
   void EmitCXXConstructExpr(const CXXConstructExpr *E, AggValueSlot Dest);
   
   void EmitSynthesizedCXXCopyCtor(llvm::Value *Dest, llvm::Value *Src,
-                                  const BlockDeclRefExpr *BDRE);
+                                  const Expr *Exp);
 
-  RValue EmitCXXExprWithTemporaries(const CXXExprWithTemporaries *E,
-                                    AggValueSlot Slot
-                                      = AggValueSlot::ignored());
+  RValue EmitExprWithCleanups(const ExprWithCleanups *E,
+                              AggValueSlot Slot =AggValueSlot::ignored());
 
   void EmitCXXThrowExpr(const CXXThrowExpr *E);
 

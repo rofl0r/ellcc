@@ -726,20 +726,6 @@ const UnresolvedSetImpl *CXXRecordDecl::getVisibleConversionFunctions() {
   return &data().VisibleConversions;
 }
 
-#ifndef NDEBUG
-void CXXRecordDecl::CheckConversionFunction(NamedDecl *ConvDecl) {
-  assert(ConvDecl->getDeclContext() == this &&
-         "conversion function does not belong to this record");
-
-  ConvDecl = ConvDecl->getUnderlyingDecl();
-  if (FunctionTemplateDecl *Temp = dyn_cast<FunctionTemplateDecl>(ConvDecl)) {
-    assert(isa<CXXConversionDecl>(Temp->getTemplatedDecl()));
-  } else {
-    assert(isa<CXXConversionDecl>(ConvDecl));
-  }
-}
-#endif
-
 void CXXRecordDecl::removeConversion(const NamedDecl *ConvDecl) {
   // This operation is O(N) but extremely rare.  Sema only uses it to
   // remove UsingShadowDecls in a class that were followed by a direct
@@ -1016,7 +1002,7 @@ CXXBaseOrMemberInitializer::
 CXXBaseOrMemberInitializer(ASTContext &Context,
                            TypeSourceInfo *TInfo, bool IsVirtual,
                            SourceLocation L, Expr *Init, SourceLocation R)
-  : BaseOrMember(TInfo), Init(Init), AnonUnionMember(0),
+  : BaseOrMember(TInfo), Init(Init), 
     LParenLoc(L), RParenLoc(R), IsVirtual(IsVirtual), IsWritten(false),
     SourceOrderOrNumArrayIndices(0)
 {
@@ -1027,7 +1013,17 @@ CXXBaseOrMemberInitializer(ASTContext &Context,
                            FieldDecl *Member, SourceLocation MemberLoc,
                            SourceLocation L, Expr *Init, SourceLocation R)
   : BaseOrMember(Member), MemberLocation(MemberLoc), Init(Init),
-    AnonUnionMember(0), LParenLoc(L), RParenLoc(R), IsVirtual(false),
+    LParenLoc(L), RParenLoc(R), IsVirtual(false),
+    IsWritten(false), SourceOrderOrNumArrayIndices(0)
+{
+}
+
+CXXBaseOrMemberInitializer::
+CXXBaseOrMemberInitializer(ASTContext &Context,
+                           IndirectFieldDecl *Member, SourceLocation MemberLoc,
+                           SourceLocation L, Expr *Init, SourceLocation R)
+  : BaseOrMember(Member), MemberLocation(MemberLoc), Init(Init),
+    LParenLoc(L), RParenLoc(R), IsVirtual(false),
     IsWritten(false), SourceOrderOrNumArrayIndices(0)
 {
 }
@@ -1039,7 +1035,7 @@ CXXBaseOrMemberInitializer(ASTContext &Context,
                            VarDecl **Indices,
                            unsigned NumIndices)
   : BaseOrMember(Member), MemberLocation(MemberLoc), Init(Init), 
-    AnonUnionMember(0), LParenLoc(L), RParenLoc(R), IsVirtual(false),
+    LParenLoc(L), RParenLoc(R), IsVirtual(false),
     IsWritten(false), SourceOrderOrNumArrayIndices(NumIndices)
 {
   VarDecl **MyIndices = reinterpret_cast<VarDecl **> (this + 1);
@@ -1084,7 +1080,7 @@ const Type *CXXBaseOrMemberInitializer::getBaseClass() const {
 }
 
 SourceLocation CXXBaseOrMemberInitializer::getSourceLocation() const {
-  if (isMemberInitializer())
+  if (isAnyMemberInitializer())
     return getMemberLocation();
   
   return getBaseClassLoc().getLocalSourceRange().getBegin();

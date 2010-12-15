@@ -41,14 +41,14 @@ public:
 
   void PreVisitCallExpr(CheckerContext &C, const CallExpr *CE);
   void PreVisitObjCMessageExpr(CheckerContext &C, const ObjCMessageExpr *ME);
-  bool EvalNilReceiver(CheckerContext &C, const ObjCMessageExpr *ME);
+  bool evalNilReceiver(CheckerContext &C, const ObjCMessageExpr *ME);
 
 private:
   bool PreVisitProcessArg(CheckerContext &C, const Expr *Ex,
                           const char *BT_desc, BugType *&BT);
 
   void EmitBadCall(BugType *BT, CheckerContext &C, const CallExpr *CE);
-  void EmitNilReceiverBug(CheckerContext &C, const ObjCMessageExpr *ME,
+  void emitNilReceiverBug(CheckerContext &C, const ObjCMessageExpr *ME,
                           ExplodedNode *N);
 
   void HandleNilReceiver(CheckerContext &C, const GRState *state,
@@ -143,7 +143,7 @@ bool CallAndMessageChecker::PreVisitProcessArg(CheckerContext &C,
     const LazyCompoundValData *D = LV->getCVData();
     FindUninitializedField F(C.getASTContext(),
                              C.getState()->getStateManager().getStoreManager(),
-                             C.getValueManager().getRegionManager(),
+                             C.getSValBuilder().getRegionManager(),
                              D->getStore());
 
     if (F.Find(D->getRegion())) {
@@ -244,13 +244,13 @@ void CallAndMessageChecker::PreVisitObjCMessageExpr(CheckerContext &C,
         return;
 }
 
-bool CallAndMessageChecker::EvalNilReceiver(CheckerContext &C,
+bool CallAndMessageChecker::evalNilReceiver(CheckerContext &C,
                                             const ObjCMessageExpr *ME) {
   HandleNilReceiver(C, C.getState(), ME);
   return true; // Nil receiver is not handled elsewhere.
 }
 
-void CallAndMessageChecker::EmitNilReceiverBug(CheckerContext &C,
+void CallAndMessageChecker::emitNilReceiverBug(CheckerContext &C,
                                                const ObjCMessageExpr *ME,
                                                ExplodedNode *N) {
 
@@ -274,7 +274,7 @@ void CallAndMessageChecker::EmitNilReceiverBug(CheckerContext &C,
   C.EmitReport(report);
 }
 
-static bool SupportsNilWithFloatRet(const llvm::Triple &triple) {
+static bool supportsNilWithFloatRet(const llvm::Triple &triple) {
   return triple.getVendor() == llvm::Triple::Apple &&
          (triple.getDarwinMajorNumber() >= 9 || 
           triple.getArch() == llvm::Triple::arm || 
@@ -298,7 +298,7 @@ void CallAndMessageChecker::HandleNilReceiver(CheckerContext &C,
     // undefined value came from.
     if (C.getPredecessor()->getParentMap().isConsumedExpr(ME)) {
       if (ExplodedNode* N = C.GenerateSink(state))
-        EmitNilReceiverBug(C, ME, N);
+        emitNilReceiverBug(C, ME, N);
       return;
     }
 
@@ -316,14 +316,14 @@ void CallAndMessageChecker::HandleNilReceiver(CheckerContext &C,
     const uint64_t returnTypeSize = Ctx.getTypeSize(CanRetTy);
 
     if (voidPtrSize < returnTypeSize &&
-        !(SupportsNilWithFloatRet(Ctx.Target.getTriple()) &&
+        !(supportsNilWithFloatRet(Ctx.Target.getTriple()) &&
           (Ctx.FloatTy == CanRetTy ||
            Ctx.DoubleTy == CanRetTy ||
            Ctx.LongDoubleTy == CanRetTy ||
            Ctx.LongLongTy == CanRetTy ||
            Ctx.UnsignedLongLongTy == CanRetTy))) {
       if (ExplodedNode* N = C.GenerateSink(state))
-        EmitNilReceiverBug(C, ME, N);
+        emitNilReceiverBug(C, ME, N);
       return;
     }
 
@@ -340,7 +340,7 @@ void CallAndMessageChecker::HandleNilReceiver(CheckerContext &C,
     // it most likely isn't nil.  We should assume the semantics
     // of this case unless we have *a lot* more knowledge.
     //
-    SVal V = C.getValueManager().makeZeroVal(ME->getType());
+    SVal V = C.getSValBuilder().makeZeroVal(ME->getType());
     C.GenerateNode(state->BindExpr(ME, V));
     return;
   }

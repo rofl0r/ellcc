@@ -39,7 +39,7 @@
 #include "llvm/Support/Dwarf.h"
 #include "llvm/Support/DebugLoc.h"
 #include "llvm/Support/ValueHandle.h"
-#include "llvm/System/DataTypes.h"
+#include "llvm/Support/DataTypes.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/PointerIntPair.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -170,7 +170,8 @@ public:
   VariableDbgInfoMapTy VariableDbgInfo;
 
   MachineModuleInfo();  // DUMMY CONSTRUCTOR, DO NOT CALL.
-  MachineModuleInfo(const MCAsmInfo &MAI);  // Real constructor.
+  // Real constructor.
+  MachineModuleInfo(const MCAsmInfo &MAI, const TargetAsmInfo *TAI);
   ~MachineModuleInfo();
 
   bool doInitialization();

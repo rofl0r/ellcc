@@ -19,7 +19,7 @@
 
 #include "clang/AST/Type.h"
 #include "llvm/Bitcode/BitCodes.h"
-#include "llvm/System/DataTypes.h"
+#include "llvm/Support/DataTypes.h"
 #include "llvm/ADT/DenseMap.h"
 
 namespace clang {
@@ -549,7 +549,9 @@ namespace clang {
       /// \brief A DependentTemplateSpecializationType record.
       TYPE_DEPENDENT_TEMPLATE_SPECIALIZATION = 32,
       /// \brief A DependentSizedArrayType record.
-      TYPE_DEPENDENT_SIZED_ARRAY    = 33
+      TYPE_DEPENDENT_SIZED_ARRAY    = 33,
+      /// \brief A ParenType record.
+      TYPE_PAREN                    = 34
     };
 
     /// \brief The type IDs for special types constructed by semantic
@@ -718,7 +720,9 @@ namespace clang {
       /// \brief A StaticAssertDecl record.
       DECL_STATIC_ASSERT,
       /// \brief A record containing CXXBaseSpecifiers.
-      DECL_CXX_BASE_SPECIFIERS
+      DECL_CXX_BASE_SPECIFIERS,
+      /// \brief A IndirectFieldDecl record.
+      DECL_INDIRECTFIELD
     };
 
     /// \brief Record codes for each kind of statement or expression.
@@ -824,8 +828,6 @@ namespace clang {
       EXPR_ADDR_LABEL,
       /// \brief A StmtExpr record.
       EXPR_STMT,
-      /// \brief A TypesCompatibleExpr record.
-      EXPR_TYPES_COMPATIBLE,
       /// \brief A ChooseExpr record.
       EXPR_CHOOSE,
       /// \brief A GNUNullExpr record.
@@ -851,7 +853,7 @@ namespace clang {
       EXPR_OBJC_IVAR_REF_EXPR,
       /// \brief An ObjCPropertyRefExpr record.
       EXPR_OBJC_PROPERTY_REF_EXPR,
-      /// \brief An ObjCImplicitSetterGetterRefExpr record.
+      /// \brief UNUSED
       EXPR_OBJC_KVC_REF_EXPR,
       /// \brief An ObjCMessageExpr record.
       EXPR_OBJC_MESSAGE_EXPR,
@@ -913,7 +915,7 @@ namespace clang {
       EXPR_CXX_DELETE,            // CXXDeleteExpr
       EXPR_CXX_PSEUDO_DESTRUCTOR, // CXXPseudoDestructorExpr
       
-      EXPR_CXX_EXPR_WITH_TEMPORARIES,    // CXXExprWithTemporaries
+      EXPR_EXPR_WITH_CLEANUPS,    // ExprWithCleanups
       
       EXPR_CXX_DEPENDENT_SCOPE_MEMBER,   // CXXDependentScopeMemberExpr
       EXPR_CXX_DEPENDENT_SCOPE_DECL_REF, // DependentScopeDeclRefExpr
@@ -924,7 +926,8 @@ namespace clang {
       EXPR_CXX_UNARY_TYPE_TRAIT,  // UnaryTypeTraitExpr
       EXPR_CXX_NOEXCEPT,          // CXXNoexceptExpr
 
-      EXPR_OPAQUE_VALUE           // OpaqueValueExpr
+      EXPR_OPAQUE_VALUE,          // OpaqueValueExpr
+      EXPR_BINARY_TYPE_TRAIT      // BinaryTypeTraitExpr
     };
 
     /// \brief The kinds of designators that can occur in a

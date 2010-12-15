@@ -31,7 +31,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Bitcode/BitstreamReader.h"
-#include "llvm/System/DataTypes.h"
+#include "llvm/Support/DataTypes.h"
 #include <deque>
 #include <map>
 #include <string>
@@ -67,7 +67,6 @@ class ASTDeclReader;
 class ASTStmtReader;
 class ASTIdentifierLookupTrait;
 class TypeLocReader;
-class FileSystemOptions;
 struct HeaderFileInfo;
 
 struct PCHPredefinesBlock {
@@ -194,7 +193,6 @@ private:
 
   SourceManager &SourceMgr;
   FileManager &FileMgr;
-  const FileSystemOptions &FileSystemOpts;
   Diagnostic &Diags;
 
   /// \brief The semantic analysis object that will be processing the
@@ -808,7 +806,6 @@ public:
   /// of its regular consistency checking, allowing the use of precompiled
   /// headers that cannot be determined to be compatible.
   ASTReader(SourceManager &SourceMgr, FileManager &FileMgr,
-            const FileSystemOptions &FileSystemOpts,
             Diagnostic &Diags, const char *isysroot = 0,
             bool DisableValidation = false);
   ~ASTReader();
@@ -841,7 +838,6 @@ public:
   /// the AST file, without actually loading the AST file.
   static std::string getOriginalSourceFile(const std::string &ASTFileName,
                                            FileManager &FileMgr,
-                                           const FileSystemOptions &FSOpts,
                                            Diagnostic &Diags);
 
   /// \brief Returns the suggested contents of the predefines buffer,
@@ -849,8 +845,11 @@ public:
   /// build prior to including the precompiled header.
   const std::string &getSuggestedPredefines() { return SuggestedPredefines; }
       
-  /// \brief Read preprocessed entities into the 
+  /// \brief Read preprocessed entities into the preprocessing record.
   virtual void ReadPreprocessedEntities();
+
+  /// \brief Read the preprocessed entity at the given offset.
+  virtual PreprocessedEntity *ReadPreprocessedEntity(uint64_t Offset);
 
   void ReadUserDiagnosticMappings(Diagnostic &Diag);
 
@@ -1158,7 +1157,7 @@ public:
   Expr *ReadSubExpr();
 
   /// \brief Reads the macro record located at the given offset.
-  void ReadMacroRecord(PerFileData &F, uint64_t Offset);
+  PreprocessedEntity *ReadMacroRecord(PerFileData &F, uint64_t Offset);
 
   /// \brief Note that the identifier is a macro whose record will be loaded
   /// from the given AST file at the given (file-local) offset.

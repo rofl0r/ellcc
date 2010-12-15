@@ -39,8 +39,10 @@ void foo(const I *p, I* sel) {
 @interface DerivedFromI : I
 @end
 
-void accept_derived(DerivedFromI*); // expected-note{{candidate function not viable: cannot convert from superclass 'I *' to subclass 'DerivedFromI *' for 1st argument}}
+void accept_derived(DerivedFromI*);
 
 void test_base_to_derived(I* i) {
-  accept_derived(i); // expected-error{{no matching function for call to 'accept_derived'}}
+  accept_derived(i); // expected-warning{{incompatible pointer types passing 'I *' to parameter of type 'DerivedFromI *'}}
+  DerivedFromI *di = i; // expected-warning{{incompatible pointer types initializing 'I *' with an expression of type 'DerivedFromI *'}}
+  DerivedFromI *di2 = (DerivedFromI *)i;
 }

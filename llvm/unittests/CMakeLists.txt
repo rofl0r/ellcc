@@ -1,10 +1,11 @@
-function(add_llvm_unittest test_name)
+function(add_llvm_unittest test_dirname)
+  string(REGEX MATCH "([^/]+)$" test_name ${test_dirname})
   if (CMAKE_BUILD_TYPE)
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY
-      ${LLVM_BINARY_DIR}/unittests/${test_name}/${CMAKE_BUILD_TYPE})
+      ${LLVM_BINARY_DIR}/unittests/${test_dirname}/${CMAKE_BUILD_TYPE})
   else()
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY
-      ${LLVM_BINARY_DIR}/unittests/${test_name})
+      ${LLVM_BINARY_DIR}/unittests/${test_dirname})
   endif()
   if( NOT LLVM_BUILD_TESTS )
     set(EXCLUDE_FROM_ALL ON)
@@ -17,6 +18,13 @@ add_custom_target(UnitTests)
 
 include_directories(${LLVM_MAIN_SRC_DIR}/utils/unittest/googletest/include)
 add_definitions(-DGTEST_HAS_RTTI=0)
+if (NOT LLVM_ENABLE_THREADS)
+  add_definitions(-DGTEST_HAS_PTHREAD=0)
+endif()
+
+if(SUPPORTS_NO_VARIADIC_MACROS_FLAG)
+  add_definitions("-Wno-variadic-macros")
+endif()
 
 set(LLVM_LINK_COMPONENTS
   jit
@@ -26,13 +34,13 @@ set(LLVM_LINK_COMPONENTS
   BitReader
   AsmParser
   Core
-  System
   Support
   )
 
 set(LLVM_USED_LIBS
   gtest
   gtest_main
+  LLVMSupport # gtest needs it for raw_ostream.
   )
 
 add_llvm_unittest(ADT
@@ -76,9 +84,13 @@ if(MSVC)
   list(APPEND JITTestsSources ExecutionEngine/JIT/JITTests.def)
 endif()
 
-add_llvm_unittest(JIT ${JITTestsSources})
+add_llvm_unittest(ExecutionEngine/JIT ${JITTestsSources})
 
-add_llvm_unittest(Transforms
+if(MINGW)
+  set_property(TARGET JITTests PROPERTY LINK_FLAGS -Wl,--export-all-symbols)
+endif()
+
+add_llvm_unittest(Transforms/Utils
   Transforms/Utils/Cloning.cpp
   )
 
@@ -101,7 +113,6 @@ endif()
 add_llvm_unittest(VMCore ${VMCoreSources})
 
 set(LLVM_LINK_COMPONENTS
-  System
   Support
   Core
   )
@@ -114,10 +125,11 @@ add_llvm_unittest(Support
   Support/EndianTest.cpp
   Support/LeakDetectorTest.cpp
   Support/MathExtrasTest.cpp
+  Support/Path.cpp
   Support/raw_ostream_test.cpp
   Support/RegexTest.cpp
   Support/SwapByteOrderTest.cpp
-  Support/System.cpp
+  Support/TimeValue.cpp
   Support/TypeBuilderTest.cpp
   Support/ValueHandleTest.cpp
   )

@@ -101,6 +101,7 @@ class ASTContext {
   llvm::FoldingSet<SubstTemplateTypeParmType> SubstTemplateTypeParmTypes;
   llvm::ContextualFoldingSet<TemplateSpecializationType, ASTContext&>
     TemplateSpecializationTypes;
+  llvm::FoldingSet<ParenType> ParenTypes;
   llvm::FoldingSet<ElaboratedType> ElaboratedTypes;
   llvm::FoldingSet<DependentNameType> DependentNameTypes;
   llvm::ContextualFoldingSet<DependentTemplateSpecializationType, ASTContext&>
@@ -129,6 +130,9 @@ class ASTContext {
   /// \brief Mapping from ObjCContainers to their ObjCImplementations.
   llvm::DenseMap<ObjCContainerDecl*, ObjCImplDecl*> ObjCImpls;
 
+  /// \brief Mapping from __block VarDecls to their copy initialization expr.
+  llvm::DenseMap<const VarDecl*, Expr*> BlockVarCopyInits;
+    
   /// \brief Representation of a "canonical" template template parameter that
   /// is used in canonical template names.
   class CanonicalTemplateTemplateParm : public llvm::FoldingSetNode {
@@ -463,7 +467,9 @@ public:
   /// getVolatileType - Returns the uniqued reference to the type for a
   /// 'volatile' qualified type.  The resulting type has a union of the
   /// qualifiers from T and 'volatile'.
-  QualType getVolatileType(QualType T);
+  QualType getVolatileType(QualType T) {
+    return T.withFastQualifiers(Qualifiers::Volatile);
+  }
 
   /// getConstType - Returns the uniqued reference to the type for a
   /// 'const' qualified type.  The resulting type has a union of the
@@ -620,14 +626,11 @@ public:
     return getFunctionNoProtoType(ResultTy, FunctionType::ExtInfo());
   }
 
-  /// getFunctionType - Return a normal function type with a typed argument
-  /// list.  isVariadic indicates whether the argument list includes '...'.
-  QualType getFunctionType(QualType ResultTy, const QualType *ArgArray,
-                           unsigned NumArgs, bool isVariadic,
-                           unsigned TypeQuals, bool hasExceptionSpec,
-                           bool hasAnyExceptionSpec,
-                           unsigned NumExs, const QualType *ExArray,
-                           const FunctionType::ExtInfo &Info);
+  /// getFunctionType - Return a normal function type with a typed
+  /// argument list.
+  QualType getFunctionType(QualType ResultTy,
+                           const QualType *Args, unsigned NumArgs,
+                           const FunctionProtoType::ExtProtoInfo &EPI);
 
   /// getTypeDeclType - Return the unique reference to the type for
   /// the specified type declaration.
@@ -679,6 +682,8 @@ public:
   getTemplateSpecializationTypeInfo(TemplateName T, SourceLocation TLoc,
                                     const TemplateArgumentListInfo &Args,
                                     QualType Canon = QualType());
+
+  QualType getParenType(QualType NamedType);
 
   QualType getElaboratedType(ElaboratedTypeKeyword Keyword,
                              NestedNameSpecifier *NNS,
@@ -1040,6 +1045,8 @@ public:
   /// of class definition.
   const CXXMethodDecl *getKeyFunction(const CXXRecordDecl *RD);
 
+  bool isNearlyEmpty(const CXXRecordDecl *RD);
+
   void ShallowCollectObjCIvars(const ObjCInterfaceDecl *OI,
                                llvm::SmallVectorImpl<ObjCIvarDecl*> &Ivars);
   
@@ -1356,6 +1363,12 @@ public:
   /// \brief Set the implementation of ObjCCategoryDecl.
   void setObjCImplementation(ObjCCategoryDecl *CatD,
                              ObjCCategoryImplDecl *ImplD);
+  
+  /// \brief Set the copy inialization expression of a block var decl.
+  void setBlockVarCopyInits(VarDecl*VD, Expr* Init);
+  /// \brief Get the copy initialization expression of VarDecl,or NULL if 
+  /// none exists.
+  Expr *getBlockVarCopyInits(const VarDecl*VD);
 
   /// \brief Allocate an uninitialized TypeSourceInfo.
   ///
