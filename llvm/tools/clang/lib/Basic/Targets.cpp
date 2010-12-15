@@ -588,6 +588,14 @@ public:
     case 'W': // Vector constant that does not require memory
     case 'j': // Vector constant that is all zeros.
       break;
+    case '{':
+      // RICH: FIXME: Should figure out how to call
+      // TargetLowering::getRegForInlineAsmConstraint() to
+      // verify that the register is legal.
+      ++Name;
+      while (*Name && *Name != '}')
+        ++Name;
+      return *Name == '}';
     // End FIXME.
     }
     return true;
@@ -835,6 +843,14 @@ public:
     case 'f': // Floating point register
       Info.setAllowsRegister();
       return true;
+    case '{':
+      // RICH: FIXME: Should figure out how to call
+      // TargetLowering::getRegForInlineAsmConstraint() to
+      // verify that the register is legal.
+      ++Name;
+      while (*Name && *Name != '}')
+        ++Name;
+      return *Name == '}';
     }
   }
   virtual const char *getClobbers() const {
@@ -1884,6 +1900,14 @@ public:
     case 'P': // VFP Floating point register double precision
       Info.setAllowsRegister();
       return true;
+    case '{':
+      // RICH: FIXME: Should figure out how to call
+      // TargetLowering::getRegForInlineAsmConstraint() to
+      // verify that the register is legal.
+      ++Name;
+      while (*Name && *Name != '}')
+        ++Name;
+      return *Name == '}';
     }
     return false;
   }
@@ -2024,7 +2048,18 @@ public:
   virtual bool validateAsmConstraint(const char *&Name,
                                      TargetInfo::ConstraintInfo &info) const {
     // FIXME: Implement!
-    return false;
+    switch (*Name) {
+    default:
+      return false;
+    case '{':
+      // RICH: FIXME: Should figure out how to call
+      // TargetLowering::getRegForInlineAsmConstraint() to
+      // verify that the register is legal.
+      ++Name;
+      while (*Name && *Name != '}')
+        ++Name;
+      return *Name == '}';
+    }
   }
   virtual const char *getClobbers() const {
     // FIXME: Implement!
@@ -2435,6 +2470,14 @@ public:
     case 'f': // floating-point registers.
       Info.setAllowsRegister();
       return true;
+    case '{':
+      // RICH: FIXME: Should figure out how to call
+      // TargetLowering::getRegForInlineAsmConstraint() to
+      // verify that the register is legal.
+      ++Name;
+      while (*Name && *Name != '}')
+        ++Name;
+      return *Name == '}';
     }
     return false;
   }
@@ -2446,10 +2489,11 @@ public:
 };
 
 const char * const MipsTargetInfo::GCCRegNames[] = {
-  "$0",   "$1",   "$2",   "$3",   "$4",   "$5",   "$6",   "$7",
-  "$8",   "$9",   "$10",  "$11",  "$12",  "$13",  "$14",  "$15",
-  "$16",  "$17",  "$18",  "$19",  "$20",  "$21",  "$22",  "$23",
-  "$24",  "$25",  "$26",  "$27",  "$28",  "$sp",  "$fp",  "$31",
+  "zero", "at",  "v0",   "v1",  "a0",  "a1",  "a2",  "a3",
+  "t0",   "t1",  "t2",   "t3",  "t4",  "t5",  "t6",  "t7",
+  "s0",   "s1",  "s2",   "s3",  "s4",  "s5",  "s6",  "s7",
+  "t8",   "t9",  "k0",   "k1",  "gp",  "sp",  "fp",  "ra",
+
   "$f0",  "$f1",  "$f2",  "$f3",  "$f4",  "$f5",  "$f6",  "$f7",
   "$f8",  "$f9",  "$f10", "$f11", "$f12", "$f13", "$f14", "$f15",
   "$f16", "$f17", "$f18", "$f19", "$f20", "$f21", "$f22", "$f23",
@@ -2465,37 +2509,38 @@ void MipsTargetInfo::getGCCRegNames(const char * const *&Names,
 }
 
 const TargetInfo::GCCRegAlias MipsTargetInfo::GCCRegAliases[] = {
-  { { "at" },  "$1" },
-  { { "v0" },  "$2" },
-  { { "v1" },  "$3" },
-  { { "a0" },  "$4" },
-  { { "a1" },  "$5" },
-  { { "a2" },  "$6" },
-  { { "a3" },  "$7" },
-  { { "t0" },  "$8" },
-  { { "t1" },  "$9" },
-  { { "t2" }, "$10" },
-  { { "t3" }, "$11" },
-  { { "t4" }, "$12" },
-  { { "t5" }, "$13" },
-  { { "t6" }, "$14" },
-  { { "t7" }, "$15" },
-  { { "s0" }, "$16" },
-  { { "s1" }, "$17" },
-  { { "s2" }, "$18" },
-  { { "s3" }, "$19" },
-  { { "s4" }, "$20" },
-  { { "s5" }, "$21" },
-  { { "s6" }, "$22" },
-  { { "s7" }, "$23" },
-  { { "t8" }, "$24" },
-  { { "t9" }, "$25" },
-  { { "k0" }, "$26" },
-  { { "k1" }, "$27" },
-  { { "gp" }, "$28" },
-  { { "sp" }, "$29" },
-  { { "fp" }, "$30" },
-  { { "ra" }, "$31" }
+  { { "$0" }, "zero" },
+  { { "$1" }, "at" },
+  { { "$2" }, "v0" },
+  { { "$3" }, "v1" },
+  { { "$4" }, "a0" },
+  { { "$5" }, "a1" },
+  { { "$6" }, "a2" },
+  { { "$7" }, "a3" },
+  { { "$8" }, "t0" },
+  { { "$9" }, "t1" },
+  { { "$10" }, "t2" },
+  { { "$11" }, "t3" },
+  { { "$12" }, "t4" },
+  { { "$13" }, "t5" },
+  { { "$14" }, "t6" },
+  { { "$15" }, "t7" },
+  { { "$16" }, "s0" },
+  { { "$17" }, "s1" },
+  { { "$18" }, "s2" },
+  { { "$19" }, "s3" },
+  { { "$20" }, "s4" },
+  { { "$21" }, "s5" },
+  { { "$22" }, "s6" },
+  { { "$23" }, "s7" },
+  { { "$24" }, "t8" },
+  { { "$25" }, "t9" },
+  { { "$26" }, "k0" },
+  { { "$27" }, "k1" },
+  { { "$28" }, "gp" },
+  { { "$29" }, "sp" },
+  { { "$30" }, "fp" },
+  { { "$31" }, "ra" },
 };
 
 void MipsTargetInfo::getGCCRegAliases(const GCCRegAlias *&Aliases,

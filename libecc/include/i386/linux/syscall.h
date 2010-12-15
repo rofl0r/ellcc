@@ -165,4 +165,30 @@
     (int) result;                                                       \
     })
 
+/** A six argument system call.
+ * @param name The name of the system call.
+ * @param arg0 The first argument.
+ * @param arg1 The second argument.
+ * @param arg2 The third argument.
+ * @param arg3 The fourth argument.
+ * @param arg4 The fifth argument.
+ * @param arg5 The sixth argument.
+ */
+#define INLINE_SYSCALL_6(name, arg0, arg1, arg2, arg3, arg4, arg5)      \
+    ({                                                                  \
+    unsigned int result;					        \
+    asm volatile ("movl %1, %%eax\n\t"                                  \
+                  "int $0x80    # syscall " #name "\n\t"                \
+                  : "=a" (result)                                       \
+                  : "i" (__NR_##name), "b" (arg0), "c" (arg1),          \
+                                       "d" (arg2), "S" (arg3),          \
+                                       "D" (arg4), "B" (arg5)           \
+                  : SYSCALL_CLOBBERS);                                  \
+    if (IS_SYSCALL_ERROR(result)) {                                     \
+        __set_errno(SYSCALL_ERRNO(result));                             \
+        result = -1;                                                    \
+    }                                                                   \
+    (int) result;                                                       \
+    })
+
 #endif

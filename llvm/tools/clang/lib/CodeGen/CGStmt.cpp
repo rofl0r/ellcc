@@ -1051,7 +1051,16 @@ void CodeGenFunction::EmitAsmStmt(const AsmStmt &S) {
 
     // Simplify the output constraint.
     std::string OutputConstraint(S.getOutputConstraint(i));
-    OutputConstraint = SimplifyConstraint(OutputConstraint.c_str() + 1, Target);
+    if (OutputConstraint[1] == '{') {
+      // A register name, normalize it.
+      // Remove the braces from around the name.
+      std::string Name(OutputConstraint.data()+2, OutputConstraint.size()-3);
+      OutputConstraint = '{';
+      OutputConstraint += Target.getNormalizedGCCRegisterName(Name);
+      OutputConstraint += '}';
+    } else {
+      OutputConstraint = SimplifyConstraint(OutputConstraint.c_str() + 1, Target);
+    }
 
     const Expr *OutExpr = S.getOutputExpr(i);
     OutExpr = OutExpr->IgnoreParenNoopCasts(getContext());
@@ -1130,8 +1139,17 @@ void CodeGenFunction::EmitAsmStmt(const AsmStmt &S) {
 
     // Simplify the input constraint.
     std::string InputConstraint(S.getInputConstraint(i));
-    InputConstraint = SimplifyConstraint(InputConstraint.c_str(), Target,
-                                         &OutputConstraintInfos);
+    if (InputConstraint[0] == '{') {
+      // A register name, normalize it.
+      // Remove the braces from around the name.
+      std::string Name(InputConstraint.data()+1, InputConstraint.size()-2);
+      InputConstraint = '{';
+      InputConstraint += Target.getNormalizedGCCRegisterName(Name);
+      InputConstraint += '}';
+    } else {
+      InputConstraint = SimplifyConstraint(InputConstraint.c_str(), Target,
+                                           &OutputConstraintInfos);
+    }
 
     llvm::Value *Arg = EmitAsmInput(S, Info, InputExpr, Constraints);
 

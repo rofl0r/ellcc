@@ -79,10 +79,9 @@
 #define INLINE_SYSCALL_2(name, arg0, arg1)                              \
     ({                                                                  \
     unsigned int result;                                                \
-    asm volatile ("ldr r1,%2\n\t"                                       \
-                  "swi %3       @ syscall " #name                       \
+    asm volatile ("swi %3       @ syscall " #name                       \
                    : "={r0}" (result)                                   \
-                   : "0" (arg0), "g" (arg1),                            \
+                   : "0" (arg0), "{r1}" (arg1),                         \
                      "i" (SYS_CONSTANT(name))                           \
                    : SYSCALL_CLOBBERS);                                 \
     if (IS_SYSCALL_ERROR(result)) {                                     \
@@ -101,11 +100,9 @@
 #define INLINE_SYSCALL_3(name, arg0, arg1, arg2)                        \
     ({                                                                  \
     unsigned int result;                                                \
-    asm volatile ("ldr r2,%3\n\t"                                       \
-                  "ldr r1,%2\n\t"                                       \
-                  "swi %4       @ syscall " #name                       \
+    asm volatile ("swi %4       @ syscall " #name                       \
                    : "={r0}" (result)                                   \
-                   : "0" (arg0), "g" (arg1), "g" (arg2),                \
+                   : "0" (arg0), "{r1}" (arg1), "{r2}" (arg2),          \
                      "i" (SYS_CONSTANT(name))                           \
                    : SYSCALL_CLOBBERS);                                 \
     if (IS_SYSCALL_ERROR(result)) {                                     \
@@ -125,13 +122,10 @@
 #define INLINE_SYSCALL_4(name, arg0, arg1, arg2, arg3)                  \
     ({                                                                  \
     unsigned int result;                                                \
-    asm volatile ("ldr r3,%4\n\t"                                       \
-                  "ldr r2,%3\n\t"                                       \
-                  "ldr r1,%2\n\t"                                       \
-                  "swi %5       @ syscall " #name                       \
+    asm volatile ("swi %5       @ syscall " #name                       \
                    : "={r0}" (result)                                   \
-                   : "0" (arg0), "g" (arg1), "g" (arg2),                \
-                                 "g" (arg3)                             \
+                   : "0" (arg0), "{r1}" (arg1), "{r2}" (arg2),          \
+                                 "{r3}" (arg3),                         \
                      "i" (SYS_CONSTANT(name))                           \
                    : SYSCALL_CLOBBERS);                                 \
     if (IS_SYSCALL_ERROR(result)) {                                     \
@@ -152,14 +146,63 @@
 #define INLINE_SYSCALL_5(name, arg0, arg1, arg2, arg3, arg4)            \
     ({                                                                  \
     unsigned int result;                                                \
-    asm volatile ("ldr r4,%5\n\t"                                       \
-                  "ldr r3,%4\n\t"                                       \
-                  "ldr r2,%3\n\t"                                       \
-                  "ldr r1,%2\n\t"                                       \
-                  "swi %6       @ syscall " #name                       \
+    asm volatile ("swi %6       @ syscall " #name                       \
                    : "={r0}" (result)                                   \
-                   : "0" (arg0), "g" (arg1), "g" (arg2),                \
-                                 "g" (arg3), "g" (arg4)                 \
+                   : "0" (arg0), "{r1}" (arg1), "{r2}" (arg2),          \
+                                 "{r3}" (arg3), "{r4}" (arg4),          \
+                     "i" (SYS_CONSTANT(name))                           \
+                   : SYSCALL_CLOBBERS);                                 \
+    if (IS_SYSCALL_ERROR(result)) {                                     \
+        __set_errno(SYSCALL_ERRNO(result));                             \
+        result = -1;                                                    \
+    }                                                                   \
+    (int) result;                                                       \
+    })
+
+/** A six argument system call.
+ * @param name The name of the system call.
+ * @param arg0 The first argument.
+ * @param arg1 The second argument.
+ * @param arg2 The third argument.
+ * @param arg3 The fourth argument.
+ * @param arg4 The fifth argument.
+ * @param arg5 The sixth argument.
+ */
+#define INLINE_SYSCALL_6(name, arg0, arg1, arg2, arg3, arg4, arg5)      \
+    ({                                                                  \
+    unsigned int result;                                                \
+    asm volatile ("swi %7       @ syscall " #name                       \
+                   : "={r0}" (result)                                   \
+                   : "0" (arg0), "{r1}" (arg1), "{r2}" (arg2),          \
+                                 "{r3}" (arg3), "{r4}" (arg4),          \
+                                 "{r5}" (arg5),                         \
+                     "i" (SYS_CONSTANT(name))                           \
+                   : SYSCALL_CLOBBERS);                                 \
+    if (IS_SYSCALL_ERROR(result)) {                                     \
+        __set_errno(SYSCALL_ERRNO(result));                             \
+        result = -1;                                                    \
+    }                                                                   \
+    (int) result;                                                       \
+    })
+
+/** A seven argument system call.
+ * @param name The name of the system call.
+ * @param arg0 The first argument.
+ * @param arg1 The second argument.
+ * @param arg2 The third argument.
+ * @param arg3 The fourth argument.
+ * @param arg4 The fifth argument.
+ * @param arg5 The sixth argument.
+ * @param arg6 The seventh argument.
+ */
+#define INLINE_SYSCALL_6(name, arg0, arg1, arg2, arg3, arg4, arg5, arg6)\
+    ({                                                                  \
+    unsigned int result;                                                \
+    asm volatile ("swi %8       @ syscall " #name                       \
+                   : "={r0}" (result)                                   \
+                   : "0" (arg0), "{r1}" (arg1), "{r2}" (arg2),          \
+                                 "{r3}" (arg3), "{r4}" (arg4),          \
+                                 "{r5}" (arg5), "{r6}" (arg6),          \
                      "i" (SYS_CONSTANT(name))                           \
                    : SYSCALL_CLOBBERS);                                 \
     if (IS_SYSCALL_ERROR(result)) {                                     \
