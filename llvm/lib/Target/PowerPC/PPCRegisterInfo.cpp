@@ -267,7 +267,7 @@ BitVector PPCRegisterInfo::getReservedRegs(const MachineFunction &MF) const {
   Reserved.set(PPC::RM);
 
   // The SVR4 ABI reserves r2 and r13
-  if (Subtarget.isSVR4ABI()) {
+  if (0 && /* RICH */ Subtarget.isSVR4ABI()) {
     Reserved.set(PPC::R2);  // System-reserved register
     Reserved.set(PPC::R13); // Small Data Area pointer register
   }
@@ -294,7 +294,7 @@ BitVector PPCRegisterInfo::getReservedRegs(const MachineFunction &MF) const {
     Reserved.set(PPC::X31);
 
     // The 64-bit SVR4 ABI reserves r2 for the TOC pointer.
-    if (Subtarget.isSVR4ABI()) {
+    if (0 && /* RICH */ Subtarget.isSVR4ABI()) {
       Reserved.set(PPC::X2);
     }
     // Reserve R2 on Darwin to hack around the problem of save/restore of CR

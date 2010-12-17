@@ -41,7 +41,7 @@
  */
 #define INLINE_SYSCALL_0(name, ...)                                     \
     ({                                                                  \
-    unsigned int result;                                                \
+    unsigned long result;                                               \
     unsigned int err;                                                   \
     asm volatile ("sc           # syscall " #name "\n\t"                \
                   "mfcr %0"                                             \
@@ -52,7 +52,7 @@
         __set_errno(SYSCALL_ERRNO(result));                             \
         result = -1;                                                    \
     }                                                                   \
-    (int) result;                                                       \
+    (long) result;                                                      \
     })
 
 /** A single argument system call.
@@ -61,19 +61,19 @@
  */
 #define INLINE_SYSCALL_1(name, arg0)                                    \
     ({                                                                  \
-    unsigned int result;                                                \
+    unsigned long result;                                               \
     unsigned int err;                                                   \
     asm volatile ("sc           # syscall " #name "\n\t"                \
                   "mfcr %0"                                             \
                    : "={r0}" (err), "={r3}" (result)                    \
                    : "0" (SYS_CONSTANT(name)),                          \
-                     "1" (arg0)                                         \
+                     "1" ((long)arg0)                                   \
                    : SYSCALL_CLOBBERS);                                 \
     if (IS_SYSCALL_ERROR(err)) {                                        \
         __set_errno(SYSCALL_ERRNO(result));                             \
         result = -1;                                                    \
     }                                                                   \
-    (int) result;                                                       \
+    (long) result;                                                      \
     })
 
 /** A two argument system call.
@@ -83,19 +83,19 @@
  */
 #define INLINE_SYSCALL_2(name, arg0, arg1)                              \
     ({                                                                  \
-    unsigned int result;                                                \
+    unsigned long result;                                               \
     unsigned int err;                                                   \
     asm volatile ("sc           # syscall " #name "\n\t"                \
                   "mfcr %0"                                             \
                    : "={r0}" (err), "={r3}" (result)                    \
                    : "0" (SYS_CONSTANT(name)),                          \
-                     "1" (arg0), "{r4}" (arg1)                          \
+                     "1" ((long)arg0), "{r4}" (arg1)                    \
                    : SYSCALL_CLOBBERS);                                 \
     if (IS_SYSCALL_ERROR(err)) {                                        \
         __set_errno(SYSCALL_ERRNO(result));                             \
         result = -1;                                                    \
     }                                                                   \
-    (int) result;                                                       \
+    (long) result;                                                      \
     })
 
 /** A three argument system call.
@@ -106,19 +106,19 @@
  */
 #define INLINE_SYSCALL_3(name, arg0, arg1, arg2)                        \
     ({                                                                  \
-    unsigned int result;                                                \
+    unsigned long result;                                               \
     unsigned int err;                                                   \
     asm volatile ("sc           # syscall " #name "\n\t"                \
                   "mfcr %0"                                             \
                    : "={r0}" (err), "={r3}" (result)                    \
                    : "0" (SYS_CONSTANT(name)),                          \
-                     "1" (arg0), "{r4}" (arg1), "{r5}" (arg2)           \
+                     "1" ((long)arg0), "{r4}" (arg1), "{r5}" (arg2)     \
                    : SYSCALL_CLOBBERS);                                 \
     if (IS_SYSCALL_ERROR(err)) {                                        \
         __set_errno(SYSCALL_ERRNO(result));                             \
         result = -1;                                                    \
     }                                                                   \
-    (int) result;                                                       \
+    (long) result;                                                      \
     })
 
 /** A four argument system call.
@@ -130,20 +130,20 @@
  */
 #define INLINE_SYSCALL_4(name, arg0, arg1, arg2, arg3)                  \
     ({                                                                  \
-    unsigned int result;                                                \
+    unsigned long result;                                               \
     unsigned int err;                                                   \
     asm volatile ("sc           # syscall " #name "\n\t"                \
                   "mfcr %0"                                             \
                    : "={r0}" (err), "={r3}" (result)                    \
                    : "0" (SYS_CONSTANT(name)),                          \
-                     "1" (arg0), "{r4}" (arg1), "{r5}" (arg2),          \
+                     "1" ((long)arg0), "{r4}" (arg1), "{r5}" (arg2),    \
                                  "{r6}" (arg3)                          \
                    : SYSCALL_CLOBBERS);                                 \
     if (IS_SYSCALL_ERROR(err)) {                                        \
         __set_errno(SYSCALL_ERRNO(result));                             \
         result = -1;                                                    \
     }                                                                   \
-    (int) result;                                                       \
+    (long) result;                                                      \
     })
 
 /** A five argument system call.
@@ -156,20 +156,20 @@
  */
 #define INLINE_SYSCALL_5(name, arg0, arg1, arg2, arg3, arg4)            \
     ({                                                                  \
-    unsigned int result;                                                \
+    unsigned long result;                                               \
     unsigned int err;                                                   \
     asm volatile ("sc           # syscall " #name "\n\t"                \
                   "mfcr %0"                                             \
                    : "={r0}" (err), "={r3}" (result)                    \
                    : "0" (SYS_CONSTANT(name)),                          \
-                     "1" (arg0), "{r4}" (arg1), "{r5}" (arg2),          \
+                     "1" ((long)arg0), "{r4}" (arg1), "{r5}" (arg2),    \
                                  "{r6}" (arg3), "{r7}" (arg4)           \
                    : SYSCALL_CLOBBERS);                                 \
     if (IS_SYSCALL_ERROR(err)) {                                        \
         __set_errno(SYSCALL_ERRNO(result));                             \
         result = -1;                                                    \
     }                                                                   \
-    (int) result;                                                       \
+    (long) result;                                                      \
     })
 
 /** A six argument system call.
@@ -183,13 +183,13 @@
  */
 #define INLINE_SYSCALL_6(name, arg0, arg1, arg2, arg3, arg4, arg5)      \
     ({                                                                  \
-    unsigned int result;                                                \
+    unsigned long result;                                               \
     unsigned int err;                                                   \
     asm volatile ("sc           # syscall " #name "\n\t"                \
                   "mfcr %0"                                             \
                    : "={r0}" (err), "={r3}" (result)                    \
                    : "0" (SYS_CONSTANT(name)),                          \
-                     "1" (arg0), "{r4}" (arg1), "{r5}" (arg2),          \
+                     "1" ((long)arg0), "{r4}" (arg1), "{r5}" (arg2),    \
                                  "{r6}" (arg3), "{r7}" (arg4),          \
                                  "{r8}" (arg5)                          \
                    : SYSCALL_CLOBBERS);                                 \
@@ -197,7 +197,7 @@
         __set_errno(SYSCALL_ERRNO(result));                             \
         result = -1;                                                    \
     }                                                                   \
-    (int) result;                                                       \
+    (long) result;                                                      \
     })
 
 /** A seven argument system call.
@@ -212,13 +212,13 @@
  */
 #define INLINE_SYSCALL_6(name, arg0, arg1, arg2, arg3, arg4, arg5, arg6)\
     ({                                                                  \
-    unsigned int result;                                                \
+    unsigned long result;                                               \
     unsigned int err;                                                   \
     asm volatile ("sc           # syscall " #name "\n\t"                \
                   "mfcr %0"                                             \
                    : "={r0}" (err), "={r3}" (result)                    \
                    : "0" (SYS_CONSTANT(name)),                          \
-                     "1" (arg0), "{r4}" (arg1), "{r5}" (arg2),          \
+                     "1" ((long)arg0), "{r4}" (arg1), "{r5}" (arg2),    \
                                  "{r6}" (arg3), "{r7}" (arg4),          \
                                  "{r8}" (arg5), "{r9}" (arg6)           \
                    : SYSCALL_CLOBBERS);                                 \
@@ -226,7 +226,7 @@
         __set_errno(SYSCALL_ERRNO(result));                             \
         result = -1;                                                    \
     }                                                                   \
-    (int) result;                                                       \
+    (long) result;                                                      \
     })
 
 #endif // _PPC_LINUX_SYSCALL_H_

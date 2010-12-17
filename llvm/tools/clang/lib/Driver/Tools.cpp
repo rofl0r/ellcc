@@ -3765,6 +3765,9 @@ void ellcc::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
   }
 
   llvm::Triple Triple = getToolChain().getTriple();
+  if (Triple.getArch() == llvm::Triple::ppc) {
+      CmdArgs.push_back("-a32");
+  }
   std::string As = Triple.getArchTypeName(Triple.getArch());
   As += "-elf-as";
   const char *Exec =

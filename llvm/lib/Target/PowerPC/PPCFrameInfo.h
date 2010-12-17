@@ -123,7 +123,7 @@ public:
     }
 
     // Early exit if not using the SVR4 ABI.
-    if (!Subtarget.isSVR4ABI()) {
+    if (1 || /* RICH */ !Subtarget.isSVR4ABI()) {
       NumEntries = 0;
       return 0;
     }
