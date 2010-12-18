@@ -590,7 +590,7 @@ public:
       break;
     case '{':
       // RICH: FIXME: Should figure out how to call
-      // TargetLowering::getRegForInlineAsmConstraint() to
+      // TargetInfo::isValidGCCRegisterName() to
       // verify that the register is legal.
       ++Name;
       while (*Name && *Name != '}')
@@ -845,7 +845,7 @@ public:
       return true;
     case '{':
       // RICH: FIXME: Should figure out how to call
-      // TargetLowering::getRegForInlineAsmConstraint() to
+      // TargetInfo::isValidGCCRegisterName() to
       // verify that the register is legal.
       ++Name;
       while (*Name && *Name != '}')
@@ -1323,6 +1323,14 @@ X86TargetInfo::validateAsmConstraint(const char *&Name,
   case 'Z': // 32-bit unsigned integer constant for use with zero-extending
             // x86_64 instructions.
     return true;
+  case '{':
+    // RICH: FIXME: Should figure out how to call
+    // TargetInfo::isValidGCCRegisterName() to
+    // verify that the register is legal.
+    ++Name;
+    while (*Name && *Name != '}')
+      ++Name;
+    return *Name == '}';
   }
   return false;
 }
@@ -1902,7 +1910,7 @@ public:
       return true;
     case '{':
       // RICH: FIXME: Should figure out how to call
-      // TargetLowering::getRegForInlineAsmConstraint() to
+      // TargetInfo::isValidGCCRegisterName() to
       // verify that the register is legal.
       ++Name;
       while (*Name && *Name != '}')
@@ -2053,7 +2061,7 @@ public:
       return false;
     case '{':
       // RICH: FIXME: Should figure out how to call
-      // TargetLowering::getRegForInlineAsmConstraint() to
+      // TargetInfo::isValidGCCRegisterName() to
       // verify that the register is legal.
       ++Name;
       while (*Name && *Name != '}')
@@ -2472,7 +2480,7 @@ public:
       return true;
     case '{':
       // RICH: FIXME: Should figure out how to call
-      // TargetLowering::getRegForInlineAsmConstraint() to
+      // TargetInfo::isValidGCCRegisterName() to
       // verify that the register is legal.
       ++Name;
       while (*Name && *Name != '}')

@@ -47,7 +47,7 @@
     asm volatile ("movl %1, %%eax\n\t"                                  \
                   "int $0x80    # syscall " #name "\n\t"                \
                   : "=a" (result)                                       \
-                  : "i" (__NR_##name)                                   \
+                  : "i" SYS_CONSTANT(name)                              \
                   : SYSCALL_CLOBBERS);                                  \
     if (IS_SYSCALL_ERROR(result)) {                                     \
         __set_errno(SYSCALL_ERRNO(result));                             \
@@ -66,7 +66,7 @@
     asm volatile ("movl %1, %%eax\n\t"                                  \
                   "int $0x80    # syscall " #name "\n\t"                \
                   : "=a" (result)                                       \
-                  : "i" (__NR_##name), "b" (arg0)                       \
+                  : "i" SYS_CONSTANT(name), "b" (arg0)                  \
                   : SYSCALL_CLOBBERS);                                  \
     if (IS_SYSCALL_ERROR(result)) {                                     \
         __set_errno(SYSCALL_ERRNO(result));                             \
@@ -86,7 +86,7 @@
     asm volatile ("movl %1, %%eax\n\t"                                  \
                   "int $0x80    # syscall " #name "\n\t"                \
                   : "=a" (result)                                       \
-                  : "i" (__NR_##name), "b" (arg0), "c" (arg1)           \
+                  : "i" SYS_CONSTANT(name), "b" (arg0), "c" (arg1)      \
                   : SYSCALL_CLOBBERS);                                  \
     if (IS_SYSCALL_ERROR(result)) {                                     \
         __set_errno(SYSCALL_ERRNO(result));                             \
@@ -107,8 +107,8 @@
     asm volatile ("movl %1, %%eax\n\t"                                  \
                   "int $0x80    # syscall " #name "\n\t"                \
                   : "=a" (result)                                       \
-                  : "i" (__NR_##name), "b" (arg0), "c" (arg1),          \
-                                       "d" (arg2)                       \
+                  : "i" SYS_CONSTANT(name), "b" (arg0), "c" (arg1),     \
+                                            "d" (arg2)                  \
                   : SYSCALL_CLOBBERS);                                  \
     if (IS_SYSCALL_ERROR(result)) {                                     \
         __set_errno(SYSCALL_ERRNO(result));                             \
@@ -130,8 +130,8 @@
     asm volatile ("movl %1, %%eax\n\t"                                  \
                   "int $0x80    # syscall " #name                       \
                   : "=a" (result)                                       \
-                  : "i" (__NR_##name), "b" (arg0), "c" (arg1),          \
-                                       "d" (arg2), "S" (arg3)           \
+                  : "i" SYS_CONSTANT(name), "b" (arg0), "c" (arg1),     \
+                                            "d" (arg2), "S" (arg3)      \
                   : SYSCALL_CLOBBERS);                                  \
     if (IS_SYSCALL_ERROR(result)) {                                     \
         __set_errno(SYSCALL_ERRNO(result));                             \
@@ -154,9 +154,9 @@
     asm volatile ("movl %1, %%eax\n\t"                                  \
                   "int $0x80    # syscall " #name "\n\t"                \
                   : "=a" (result)                                       \
-                  : "i" (__NR_##name), "b" (arg0), "c" (arg1),          \
-                                       "d" (arg2), "S" (arg3),          \
-                                       "D" (arg4)                       \
+                  : "i" SYS_CONSTANT(name), "b" (arg0), "c" (arg1),     \
+                                            "d" (arg2), "S" (arg3),     \
+                                            "D" (arg4)                  \
                   : SYSCALL_CLOBBERS);                                  \
     if (IS_SYSCALL_ERROR(result)) {                                     \
         __set_errno(SYSCALL_ERRNO(result));                             \
@@ -180,9 +180,9 @@
     asm volatile ("movl %1, %%eax\n\t"                                  \
                   "int $0x80    # syscall " #name "\n\t"                \
                   : "=a" (result)                                       \
-                  : "i" (__NR_##name), "b" (arg0), "c" (arg1),          \
-                                       "d" (arg2), "S" (arg3),          \
-                                       "D" (arg4), "B" (arg5)           \
+                  : "i" SYS_CONSTANT(name), "b" (arg0), "c" (arg1),     \
+                                            "d" (arg2), "S" (arg3),     \
+                                            "D" (arg4), "B" (arg5)      \
                   : SYSCALL_CLOBBERS);                                  \
     if (IS_SYSCALL_ERROR(result)) {                                     \
         __set_errno(SYSCALL_ERRNO(result));                             \
