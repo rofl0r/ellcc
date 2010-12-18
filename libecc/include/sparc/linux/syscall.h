@@ -62,9 +62,9 @@
     unsigned int result;                                                \
     asm volatile ("ta 0x10      ! syscall " #name "\n\t"                \
                    : "={o0}" (result)                                   \
-                   : /* "{g1}" (SYS_CONSTANT(name)),                       \
+                   : "{g1}" (SYS_CONSTANT(name)),                       \
                      "0" (arg0)                                         \
-                   : SYSCALL_CLOBBERS */ );                                 \
+                   : SYSCALL_CLOBBERS);                                 \
     if (IS_SYSCALL_ERROR(result)) {                                     \
         __set_errno(SYSCALL_ERRNO(result));                             \
         result = -1;                                                    \
