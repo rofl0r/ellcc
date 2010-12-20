@@ -3,7 +3,7 @@
 #include <unistd.h>
 #include <stdarg.h>
 
-int _fcntl(int fd, int cmd, ...)
+int fcntl(int fd, int cmd, ...)
 {
     va_list ap;
     va_start(ap, cmd);

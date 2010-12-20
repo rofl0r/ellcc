@@ -75,11 +75,11 @@ int _fclose_r(struct _reent *rptr, register FILE * fp)
 
   CHECK_INIT (rptr, fp);
 
-  _flockfile (fp);
+  (void)_flockfile (fp);
 
   if (fp->_flags == 0)		/* not open! */
     {
-      _funlockfile (fp);
+      (void)_funlockfile (fp);
       __sfp_lock_release ();
       return (0);
     }
@@ -96,9 +96,9 @@ int _fclose_r(struct _reent *rptr, register FILE * fp)
   if (HASLB (fp))
     FREELB (rptr, fp);
   fp->_flags = 0;		/* release this FILE for reuse */
-  _funlockfile (fp);
+  (void)_funlockfile (fp);
 #ifndef __SINGLE_THREAD__
-  __lock_close_recursive (fp->_lock);
+  (void)__lock_close_recursive (fp->_lock);
 #endif
 
   __sfp_lock_release ();

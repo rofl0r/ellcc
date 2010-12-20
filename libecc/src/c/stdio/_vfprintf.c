@@ -302,7 +302,7 @@ static int __sbprintf(struct _reent *rptr, register FILE *fp, const char *fmt, v
 	fake._bf._size = fake._w = sizeof (buf);
 	fake._lbfsize = 0;	/* not actually used, but Just In Case */
 #ifndef __SINGLE_THREAD__
-	__lock_init_recursive (fake._lock);
+	(void)__lock_init_recursive (fake._lock);
 #endif
 
 	/* do the work, then copy any error status */
@@ -313,7 +313,7 @@ static int __sbprintf(struct _reent *rptr, register FILE *fp, const char *fmt, v
 		fp->_flags |= __SERR;
 
 #ifndef __SINGLE_THREAD__
-	__lock_close_recursive (fake._lock);
+	(void)__lock_close_recursive (fake._lock);
 #endif
 	return (ret);
 }
@@ -607,18 +607,18 @@ int _VFPRINTF_R(struct _reent *data, FILE * fp, const char *fmt0, va_list ap)
 #ifndef STRING_ONLY
 	/* Initialize std streams if not dealing with sprintf family.  */
 	CHECK_INIT (data, fp);
-	_flockfile (fp);
+	(void)_flockfile (fp);
 
 	/* sorry, fprintf(read_only_file, "") returns EOF, not 0 */
 	if (cantwrite (data, fp)) {
-		_funlockfile (fp);
+		(void)_funlockfile (fp);
 		return (EOF);
 	}
 
 	/* optimise fprintf(stderr) (and other unbuffered Unix files) */
 	if ((fp->_flags & (__SNBF|__SWR|__SRW)) == (__SNBF|__SWR) &&
 	    fp->_file >= 0) {
-		_funlockfile (fp);
+		(void)_funlockfile (fp);
 		return (__sbprintf (data, fp, fmt0, ap));
 	}
 #else /* STRING_ONLY */
@@ -1433,7 +1433,7 @@ error:
 	if (malloc_buf != NULL)
 		_free_r (data, malloc_buf);
 #ifndef STRING_ONLY
-	_funlockfile (fp);
+	(void)_funlockfile (fp);
 #endif
 	return (__sferror (fp) ? EOF : ret);
 	/* NOTREACHED */

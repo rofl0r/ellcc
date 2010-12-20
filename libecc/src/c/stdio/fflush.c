@@ -88,7 +88,7 @@ int _fflush_r(struct _reent *ptr, register FILE * fp)
 
   CHECK_INIT (ptr, fp);
 
-  _flockfile (fp);
+  (void)_flockfile (fp);
 
   t = fp->_flags;
   if ((t & __SWR) == 0)
@@ -125,7 +125,7 @@ int _fflush_r(struct _reent *ptr, register FILE * fp)
 		    result = 0;
 		  else
 		    fp->_flags |= __SERR;
-		  _funlockfile (fp);
+		  (void)_funlockfile (fp);
 		  return result;
 		}
             }
@@ -153,17 +153,17 @@ int _fflush_r(struct _reent *ptr, register FILE * fp)
 	  else
 	    {
 	      fp->_flags |= __SERR;
-	      _funlockfile (fp);
+	      (void)_funlockfile (fp);
 	      return EOF;
 	    }
 	}
-      _funlockfile (fp);
+      (void)_funlockfile (fp);
       return 0;
     }
   if ((p = fp->_bf._base) == NULL)
     {
       /* Nothing to flush.  */
-      _funlockfile (fp);
+      (void)_funlockfile (fp);
       return 0;
     }
   n = fp->_p - p;		/* write this much */
@@ -182,13 +182,13 @@ int _fflush_r(struct _reent *ptr, register FILE * fp)
       if (t <= 0)
 	{
           fp->_flags |= __SERR;
-          _funlockfile (fp);
+          (void)_funlockfile (fp);
           return EOF;
 	}
       p += t;
       n -= t;
     }
-  _funlockfile (fp);
+  (void)_funlockfile (fp);
   return 0;
 }
 

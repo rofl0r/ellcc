@@ -10,6 +10,8 @@ extern "C" {
 
 extern char **environ;
 
+typedef __INTPTR_TYPE__ intptr_t;
+
 void _exit(int __status ) __attribute__ ((noreturn));
 
 int access(const char *__path, int __amode );
@@ -84,7 +86,8 @@ int rresvport(int *__alport);
 int revoke(char *__path);
 int rmdir(const char *__path );
 int ruserok(const char *rhost, int superuser, const char *ruser, const char *luser);
-void * sbrk(ptrdiff_t __incr);
+int brk(void *addr);
+void * sbrk(intptr_t __incr);
 int setegid(gid_t __gid );
 int seteuid(uid_t __uid );
 int setgid(gid_t __gid );

@@ -1,7 +1,7 @@
 #include <syscall.h>
 #include <unistd.h>
 
-int _unlink(const char* path)
+int unlink(const char* path)
 {
     return INLINE_SYSCALL(unlink, 1, path);
 }

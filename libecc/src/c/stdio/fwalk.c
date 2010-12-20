@@ -32,10 +32,10 @@ static int __fwalk(struct _reent *ptr, register int (*function) (FILE *))
     for (fp = g->_iobs, n = g->_niobs; --n >= 0; fp++)
       if (fp->_flags != 0)
         {
-          _flockfile (fp);
+          (void)_flockfile (fp);
           if (fp->_flags != 0 && fp->_file != -1)
             ret |= (*function) (fp);
-          _funlockfile (fp);
+          (void)_funlockfile (fp);
         }
 
   return ret;
@@ -53,10 +53,10 @@ static int __fwalk_reent(struct _reent *ptr, register int (*reent_function) (str
     for (fp = g->_iobs, n = g->_niobs; --n >= 0; fp++)
       if (fp->_flags != 0)
         {
-          _flockfile (fp);
+          (void)_flockfile (fp);
           if (fp->_flags != 0 && fp->_file != -1)
             ret |= (*reent_function) (ptr, fp);
-          _funlockfile (fp);
+          (void)_funlockfile (fp);
         }
 
   return ret;

@@ -11,10 +11,12 @@ DESCRIPTION
 */
 
 #include <config.h>
-#include <stdlib.h>
 #include <reent.h>
+#include <stdlib.h>
 
 #ifndef REENTRANT_SYSCALLS_PROVIDED
+
+struct _reent *_impure_ptr; // RICH:  __ATTRIBUTE_IMPURE_PTR__;
 
 /* We use the errno variable used by the system dependent layer.  */
 #undef errno

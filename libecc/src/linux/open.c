@@ -3,7 +3,7 @@
 #include <unistd.h>
 #include <stdarg.h>
 
-int _open(const char *name, int flags, ...)
+int open(const char *name, int flags, ...)
 {
     va_list ap;
     va_start(ap, flags);

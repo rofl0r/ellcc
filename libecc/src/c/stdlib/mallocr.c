@@ -644,7 +644,7 @@ struct mallinfo {
 */
 
 
-extern void*     sbrk(ptrdiff_t);
+#include <sys/unistd.h> // For sbrk();
 
 #ifndef MORECORE
 #define MORECORE sbrk

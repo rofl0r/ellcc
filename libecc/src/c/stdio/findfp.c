@@ -51,7 +51,7 @@ static void std(FILE *ptr, int flags, int file , struct _reent *data)
   ptr->_seek = __sseek;
   ptr->_close = __sclose;
 #if !defined(__SINGLE_THREAD__) && !defined(_REENT_SMALL)
-  __lock_init_recursive (ptr->_lock);
+  (void)__lock_init_recursive (ptr->_lock);
   /*
    * #else
    * lock is already initialized in __sfp
@@ -111,7 +111,7 @@ found:
   fp->_file = -1;		/* no file */
   fp->_flags = 1;		/* reserve this slot; caller sets real flags */
 #ifndef __SINGLE_THREAD__
-  __lock_init_recursive (fp->_lock);
+  (void)__lock_init_recursive (fp->_lock);
 #endif
   __sfp_lock_release ();
 
@@ -203,28 +203,28 @@ __LOCK_INIT_RECURSIVE(static, __sinit_lock);
 
 void __sfp_lock_acquire(void)
 {
-  __lock_acquire_recursive(__sfp_lock);
+  (void)__lock_acquire_recursive(__sfp_lock);
 }
 
 void __sfp_lock_release(void)
 {
-  __lock_release_recursive (__sfp_lock);
+  (void)__lock_release_recursive (__sfp_lock);
 }
 
 void __sinit_lock_acquire(void)
 {
-  __lock_acquire_recursive (__sinit_lock);
+  (void)__lock_acquire_recursive (__sinit_lock);
 }
 
 void __sinit_lock_release(void)
 {
-  __lock_release_recursive (__sinit_lock);
+  (void)__lock_release_recursive (__sinit_lock);
 }
 
 /* Walkable file locking routine.  */
 static int __fp_lock(FILE * ptr)
 {
-  _flockfile (ptr);
+  (void)_flockfile (ptr);
 
   return 0;
 }
@@ -232,7 +232,7 @@ static int __fp_lock(FILE * ptr)
 /* Walkable file unlocking routine.  */
 static int __fp_unlock(FILE * ptr)
 {
-  _funlockfile (ptr);
+  (void)_funlockfile (ptr);
 
   return 0;
 }
@@ -241,12 +241,12 @@ void __fp_lock_all(void)
 {
   __sfp_lock_acquire ();
 
- (void)fwalk(_REENT, __fp_lock);
+ (void)_fwalk(_REENT, __fp_lock);
 }
 
 void __fp_unlock_all(void)
 {
-  (void)fwalk(_REENT, __fp_unlock);
+  (void)_fwalk(_REENT, __fp_unlock);
 
   __sfp_lock_release ();
 }
