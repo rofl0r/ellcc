@@ -9,8 +9,6 @@
 extern "C" {
 #endif
 
-#include <sys/reent.h>
-
 #define errno (*__errno())
 extern int *__errno(void);
 
@@ -18,12 +16,9 @@ extern int *__errno(void);
    Use strerror instead. */
 extern const char * const _sys_errlist[];
 extern int _sys_nerr;
-#ifdef __CYGWIN__
 extern const char * const sys_errlist[];
 extern int sys_nerr;
-#endif
 
-#define __errno_r(ptr) ((ptr)->_errno)
 #define __set_errno(x) (errno = (x))
 
 #define	EPERM 1		/* Not super-user */

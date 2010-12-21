@@ -10,14 +10,13 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-#include <sys/reent.h>
 
 #ifndef NULL
 #define	NULL	0
 #endif
 
 /* Get _CLOCKS_PER_SEC_ */
-#include <machine/time.h>
+// RICH #include <machine/time.h>
 
 #ifndef _CLOCKS_PER_SEC_
 #define _CLOCKS_PER_SEC_ 1000
@@ -47,12 +46,10 @@ clock_t	   clock(void);
 double	   difftime(time_t _time2, time_t _time1);
 time_t	   mktime(struct tm *_timeptr);
 time_t	   time(time_t *_timer);
-#ifndef _REENT_ONLY
 char	  *asctime(const struct tm *_tblock);
 char	  *ctime(const time_t *_time);
 struct tm *gmtime(const time_t *_timer);
 struct tm *localtime(const time_t *_timer);
-#endif
 size_t	   strftime(char *_s, size_t _maxsize, const char *_fmt, const struct tm *_t);
 
 char	  *asctime_r(const struct tm *, char *);
@@ -87,8 +84,6 @@ __tzinfo_type *__gettzinfo(void);
 
 /* getdate functions */
 
-#ifdef HAVE_GETDATE
-#ifndef _REENT_ONLY
 #define getdate_err (*__getdate_err())
 int *__getdate_err(void);
 
@@ -102,11 +97,9 @@ struct tm *	getdate(const char *);
      6  memory allication failed (not enough memory available),
      7  there is no line in the template that matches the input,
      8  invalid input specification  */
-#endif /* !_REENT_ONLY */
 
 /* getdate_r returns the error code as above */
 int		getdate_r(const char *, struct tm *);
-#endif /* HAVE_GETDATE */
 
 /* defines for the opengroup specifications Derived from Issue 1 of the SVID.  */
 extern long _timezone;
@@ -118,10 +111,6 @@ extern char *_tzname[2];
 #define tzname _tzname
 #endif
 #endif /* !__STRICT_ANSI__ */
-
-#include <sys/features.h>
-
-#if defined(_POSIX_TIMERS)
 
 #include <signal.h>
 
@@ -150,8 +139,6 @@ int timer_getoverrun(timer_t timerid);
 
 int nanosleep(const struct timespec  *rqtp, struct timespec *rmtp);
 
-#endif /* _POSIX_TIMERS */
-
 /* CPU-time Clock Attributes, P1003.4b/D8, p. 54 */
 
 /* values for the clock enable attribute */
@@ -179,17 +166,11 @@ int nanosleep(const struct timespec  *rqtp, struct timespec *rmtp);
 
 /* Manifest Constants, P1003.4b/D8, p. 55 */
 
-#if defined(_POSIX_CPUTIME)
-
 /* When used in a clock or timer function call, this is interpreted as
    the identifier of the CPU_time clock associated with the PROCESS
    making the function call.  */
 
 #define CLOCK_PROCESS_CPUTIME (clockid_t)2
-
-#endif
-
-#if defined(_POSIX_THREAD_CPUTIME)
 
 /*  When used in a clock or timer function call, this is interpreted as
     the identifier of the CPU_time clock associated with the THREAD
@@ -197,24 +178,15 @@ int nanosleep(const struct timespec  *rqtp, struct timespec *rmtp);
 
 #define CLOCK_THREAD_CPUTIME (clockid_t)3
 
-#endif
-
-#if defined(_POSIX_CPUTIME)
-
 /* Accessing a Process CPU-time CLock, P1003.4b/D8, p. 55 */
 
 int clock_getcpuclockid(pid_t pid, clockid_t *clock_id);
 
-#endif /* _POSIX_CPUTIME */
-
-#if defined(_POSIX_CPUTIME) || defined(_POSIX_THREAD_CPUTIME)
 
 /* CPU-time Clock Attribute Access, P1003.4b/D8, p. 56 */
 
 int clock_setenable_attr(clockid_t clock_id, int attr);
 int clock_getenable_attr(clockid_t clock_id, int *attr);
-
-#endif /* _POSIX_CPUTIME or _POSIX_THREAD_CPUTIME */
 
 #ifdef __cplusplus
 }

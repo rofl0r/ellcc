@@ -1,3 +1,0 @@
-static {
-  foo((Element)(bar));
-}

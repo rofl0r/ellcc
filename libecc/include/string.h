@@ -11,9 +11,6 @@
 extern "C" {
 #endif
 
-#include <sys/reent.h>
-
-#define __need_size_t
 #include <stddef.h>
 
 #ifndef NULL
@@ -41,9 +38,7 @@ char 	*strrchr(const char *, int);
 size_t	 strspn(const char *, const char *);
 char 	*strstr(const char *, const char *);
 
-#ifndef _REENT_ONLY
 char 	*strtok(char *, const char *);
-#endif
 
 size_t	 strxfrm(char *, const char *, size_t);
 
@@ -75,12 +70,10 @@ size_t	 strnlen(const char *, size_t);
 char 	*strsep(char **, const char *);
 char	*strlwr(char *);
 char	*strupr(char *);
-#ifdef __CYGWIN__
 #ifndef DEFS_H	/* Kludge to work around problem compiling in gdb */
 char  *strsignal(int __signo);
 #endif
 int     strtosigno(const char *__name);
-#endif
 
 /* These function names are used on Windows and perhaps other systems.  */
 #ifndef strcmpi
@@ -97,8 +90,6 @@ int     strtosigno(const char *__name);
 #endif
 
 #endif /* ! __STRICT_ANSI__ */
-
-#include <sys/string.h>
 
 #ifdef __cplusplus
 }

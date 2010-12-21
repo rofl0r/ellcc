@@ -1,1 +1,0 @@
-../../libecc/lib/include/typeclass.h

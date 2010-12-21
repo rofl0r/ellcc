@@ -6,13 +6,9 @@
 extern "C" {
 #endif
 
-#include <sys/features.h>
-
 /* #ifndef __STRICT_ANSI__*/
 
-#if defined(_POSIX_THREADS)
 #include <sys/types.h>   /* for pthread data types */
-#endif
 
 typedef unsigned long sigset_t;
 

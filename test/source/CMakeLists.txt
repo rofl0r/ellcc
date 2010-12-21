@@ -1,5 +1,0 @@
-SET(LIBECC_DIR ${PROJECT_SOURCE_DIR})
-cmake_minimum_required(VERSION 2.6)
-include(${ELLCC_SOURCE_DIR}/cmake/target.cmake)
-add_executable(main main.c)
-add_executable(write main.c)

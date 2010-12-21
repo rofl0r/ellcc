@@ -4,6 +4,10 @@
 
 
 
+
+
+  
+  
   
   
   
@@ -11,6 +15,12 @@
 
 
 
+
+
+  
+  
+  
+  
   
   
   
@@ -26,7 +36,11 @@
 
 
 
+
+
 <table style="text-align: left; width: 100%; height: 100%;" border="0" cellpadding="0" cellspacing="0">
+
+
 
 
 
@@ -34,7 +48,11 @@
 
 
 
+
+
     <tr align="center">
+
+
 
 
 
@@ -42,7 +60,11 @@
       
       
       
+      
+      
       <table style="text-align: left; width: 100%;" border="0" cellpadding="0" cellspacing="0">
+
+
 
 
 
@@ -50,7 +72,11 @@
 
 
 
+
+
           <tr>
+
+
 
 
 
@@ -58,7 +84,11 @@
 
 
 
+
+
             <td style="text-align: center;">
+            
+            
             
             
             
@@ -66,7 +96,11 @@
 
 
 
+
+
             </td>
+
+
 
 
 
@@ -74,6 +108,10 @@
 
 
 
+
+
+        
+        
         
         
         
@@ -81,7 +119,11 @@
       
       
       
+      
+      
       </table>
+
+
 
 
 
@@ -89,7 +131,11 @@
 
 
 
+
+
     </tr>
+
+
 
 
 
@@ -97,7 +143,11 @@
 
 
 
+
+
       <td style="vertical-align: top; background-color: rgb(153, 255, 153); width: 135px;"><a href="index.html">Home</a><br>
+
+
 
 
 
@@ -105,10 +155,16 @@
 
 
 
+
+
       <a href="ellcc/libecc/share/doc">Documentation</a><br>
 
 
+
+
       <a href="installation.html">Installation</a><br>
+
+
 
 
 
@@ -116,7 +172,11 @@
 
 
 
+
+
       <a href="bugzilla">Bug Database</a><br>
+
+
 
 
 
@@ -124,11 +184,17 @@
 
 
 
+
+
       <a href="mailto:rich@pennware.com">Contact</a><br>
 
 
 
+
+
       <br>
+
+
 
 
 
@@ -137,7 +203,11 @@ Software</a><br>
 
 
 
+
+
       <br>
+
+
 
 
 
@@ -145,13 +215,14 @@ Software</a><br>
 
 
 
-      <td style="vertical-align: top;">ELLCC is a project to combine
-the <a href="ellcc/ecc/Elkhound">Elkhound parser generator</a> and its
-companion <a href="ellcc/ecc/Elsa/index.html">Elsa C/C++ compiler</a> with
-the <a href="http://llvm.org">LLVM (Low Level Virtual Machine)</a>
+
+
+      <td style="vertical-align: top;">ELLCC is a project to using Clang and the&nbsp; <a href="http://llvm.org">LLVM (Low Level Virtual Machine)</a>
 compiler infrastructure. The primary emphasis of the ELLCC project is
 to
 create an easy to use multi-target cross compilation environment.<br>
+
+
 
 
 
@@ -159,10 +230,16 @@ create an easy to use multi-target cross compilation environment.<br>
       
       
       
+      
+      
       <h2>Goals</h2>
 
 
 
+
+
+      
+      
       
       
       
@@ -170,7 +247,11 @@ create an easy to use multi-target cross compilation environment.<br>
 
 
 
-        <li>A functional C/C++ compiler based on <a href="ellcc/ellcc/Elsa/index.html">Elsa</a></li>
+
+
+        <li>A functional C/C++ compiler based on Clang &nbsp;(ecc)</li>
+
+
 
 
 
@@ -179,20 +260,32 @@ create an easy to use multi-target cross compilation environment.<br>
 
 
 
+
+
         </li>
 
 
 
-        <li>Multi-target support: ARM, CellSPU, Mips, MSP430, Nios2,
-PIC16, PowerPC, PowerPC64, Sparc, X86, X86_64</li>
 
 
+        <li>Multi-target support:&nbsp;ARM, Microblaze, Mips, Nios2, PowerPC, and X86</li>
+        <li><a href="ELLCC.html">Notes</a></li>
+
+
+
+
+      
+      
       
       
       </ul>
 
 
 
+
+
+      
+      
       
       
       
@@ -200,6 +293,10 @@ PIC16, PowerPC, PowerPC64, Sparc, X86, X86_64</li>
 
 
 
+
+
+      
+      
       
       
       
@@ -207,6 +304,10 @@ PIC16, PowerPC, PowerPC64, Sparc, X86, X86_64</li>
 
 
 
+
+
+      
+      
       
       
       
@@ -214,6 +315,10 @@ PIC16, PowerPC, PowerPC64, Sparc, X86, X86_64</li>
 
 
 
+
+
+      
+      
       
       
       
@@ -221,7 +326,11 @@ PIC16, PowerPC, PowerPC64, Sparc, X86, X86_64</li>
 
 
 
+
+
         <li>ecc- The ELLCC C/C++ compiler<br>
+
+
 
 
 
@@ -229,11 +338,17 @@ PIC16, PowerPC, PowerPC64, Sparc, X86, X86_64</li>
 
 
 
+
+
         
         <li><a href="ellcc/libecc/share/doc/as.html">as</a> - The GNU assembler</li>
 
 
+
+
         <li><a href="ellcc/libecc/share/doc/ld.html">ld</a> - The GNU linker</li>
+
+
 
 
 
@@ -241,31 +356,30 @@ PIC16, PowerPC, PowerPC64, Sparc, X86, X86_64</li>
 
 
 
+
+
         <li>libecc - The C standard library</li>
 
 
 
-        <li>The <a href="ellcc/libecc/share/insight1.0/help">Insight</a> GUI debugger, based on <a href="ellcc/libecc/share/doc/gdb.html/gdb.html">GDB</a></li>
+
+
+        <li>The <a href="ellcc/libecc/share/doc/gdb.html/gdb.html">GDB debugger</a></li>
 
 
 
+
+
+      
+      
       
       
       
       </ul>
 
-
-      
-      
-      <h2>Screen Shots<br>
+      <a href="images/ssmacros.png"></a><br>
 
 
-
-      </h2>
-
-
-
-      <a href="images/ssmacros.png"><img alt="Macro Single Stepping Small" src="images/ssmacros-small.png" style="border: 0px solid ; width: 198px; height: 152px;" align="middle"></a><a href="images/ssmacros.png">Single stepping through a macro</a><br>
 
 
 
@@ -273,7 +387,11 @@ PIC16, PowerPC, PowerPC64, Sparc, X86, X86_64</li>
 
 
 
+
+
       </td>
+
+
 
 
 
@@ -281,6 +399,10 @@ PIC16, PowerPC, PowerPC64, Sparc, X86, X86_64</li>
 
 
 
+
+
+  
+  
   
   
   
@@ -289,7 +411,11 @@ PIC16, PowerPC, PowerPC64, Sparc, X86, X86_64</li>
 
 
 
+
+
 <br>
+
+
 
 
 

@@ -1,1746 +1,3460 @@
-dnl Autoconf configure script for GDB, the GNU debugger.
-dnl Copyright (C) 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004,
-dnl 2005, 2006
-dnl Free Software Foundation, Inc.
-dnl
-dnl This file is part of GDB.
-dnl 
-dnl This program is free software; you can redistribute it and/or modify
-dnl it under the terms of the GNU General Public License as published by
-dnl the Free Software Foundation; either version 3 of the License, or
-dnl (at your option) any later version.
-dnl
-dnl This program is distributed in the hope that it will be useful,
-dnl but WITHOUT ANY WARRANTY; without even the implied warranty of
-dnl MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-dnl GNU General Public License for more details.
-dnl
-dnl You should have received a copy of the GNU General Public License
-dnl along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#   Copyright (C) 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000,
+#   2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010
+#   Free Software Foundation, Inc.
+#
+# This file is free software; you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; see the file COPYING3.  If not see
+# <http://www.gnu.org/licenses/>.
 
-dnl Process this file with autoconf to produce a configure script.
+##############################################################################
+### WARNING: this file contains embedded tabs.  Do not run untabify on this file.
 
-AC_PREREQ(2.59)dnl
-AC_INIT(main.c)
-AC_CONFIG_HEADER(config.h:config.in)
-AM_MAINTAINER_MODE
+m4_include(config/acx.m4)
+m4_include(config/override.m4)
+m4_include(config/proginstall.m4)
+m4_include(config/elf.m4)
+m4_include([libtool.m4])
+m4_include([ltoptions.m4])
+m4_include([ltsugar.m4])
+m4_include([ltversion.m4])
+m4_include([lt~obsolete.m4])
 
-AC_PROG_CC
-AC_GNU_SOURCE
-AC_AIX
-AC_ISC_POSIX
-AM_PROG_CC_STDC
+AC_INIT(move-if-change)
+AC_PREREQ(2.64)
+AC_DISABLE_OPTION_CHECKING
 
-AC_CONFIG_AUX_DIR(`cd $srcdir;pwd`/..)
-AC_CANONICAL_SYSTEM
+progname=$0
+# if PWD already has a value, it is probably wrong.
+if test -n "$PWD" ; then PWD=`${PWDCMD-pwd}`; fi
 
-dnl List of object files and targets accumulated by configure.
-
-CONFIG_OBS=
-CONFIG_DEPS=
-CONFIG_SRCS=
-ENABLE_CFLAGS=
-
-CONFIG_ALL=
-CONFIG_CLEAN=
-CONFIG_INSTALL=
-CONFIG_UNINSTALL=
-
-dnl Set up for gettext.
-ZW_GNU_GETTEXT_SISTER_DIR
-
-localedir='${datadir}/locale'
-AC_SUBST(localedir)
-
-if test x"$USE_NLS" = xyes; then
-   CONFIG_ALL="$CONFIG_ALL all-po"
-   CONFIG_CLEAN="$CONFIG_CLEAN clean-po"		   
-   CONFIG_INSTALL="$CONFIG_INSTALL install-po"
-   CONFIG_UNINSTALL="$CONFIG_UNINSTALL uninstall-po"
-fi
-
-PACKAGE=gdb
-AC_DEFINE_UNQUOTED(PACKAGE, "$PACKAGE", [Name of this package. ])
-AC_SUBST(PACKAGE)
-
-debugdir=${libdir}/debug
-	 
-AC_ARG_WITH(separate-debug-dir,
-[  --with-separate-debug-dir=path   Look for global separate debug info in this path [LIBDIR/debug]],
-[debugdir="${withval}"])
-	
-AC_DEFINE_DIR(DEBUGDIR, debugdir,
-              [Global directory for separate debug files. ])
-#AC_DEFINE_UNQUOTED(DEBUGDIR, "$debugdir"),
-
-if test "x$exec_prefix" = xNONE || test "x$exec_prefix" = 'x${prefix}'; then
-  if test "x$prefix" = xNONE; then
-    test_prefix=/usr/local
-  else
-    test_prefix=$prefix
-  fi
-else
-  test_prefix=$exec_prefix
-fi
-case ${debugdir} in
-"${test_prefix}"|"${test_prefix}/"*|\
-'${exec_prefix}'|'${exec_prefix}/'*)
-  AC_DEFINE(DEBUGDIR_RELOCATABLE, 1, [Define if the debug directory should be relocated when GDB is moved.])
-  ;;
-esac
-
-AC_CONFIG_SUBDIRS(doc testsuite)
-
-# Check whether to support alternative target configurations
-AC_ARG_ENABLE(targets,
-[  --enable-targets        alternative target configurations],
-[case "${enableval}" in
-  yes | "") AC_ERROR(enable-targets option must specify target names or 'all')
-            ;;
-  no)       enable_targets= ;;
-  *)        enable_targets=$enableval ;;
-esac])
-
-# Check whether to enable 64-bit support on 32-bit hosts
-AC_ARG_ENABLE(64-bit-bfd,
-[  --enable-64-bit-bfd     64-bit support (on hosts with narrower word sizes)],
-[case "${enableval}" in
-  yes)  want64=true  ;;
-  no)   want64=false ;;
-  *)    AC_MSG_ERROR(bad value ${enableval} for 64-bit-bfd option) ;;
-esac],[want64=false])dnl
-
-# Provide defaults for some variables set by the per-host and per-target
-# configuration.
-gdb_host_obs=posix-hdep.o
-
-if test "${target}" = "${host}"; then
-  gdb_native=yes
-else
-  gdb_native=no
-fi
-
-. $srcdir/configure.host
-
-# Accumulate some settings from configure.tgt over all enabled targets
-
-TARGET_OBS=
-all_targets=
-
-for targ_alias in `echo $target_alias $enable_targets | sed 's/,/ /g'`
+# Export original configure arguments for use by sub-configures.
+# Quote arguments with shell meta charatcers.
+TOPLEVEL_CONFIGURE_ARGUMENTS=
+set -- "$progname" "$@"
+for ac_arg
 do
-  if test "$targ_alias" = "all"; then
-    all_targets=true
-  else
-    # Canonicalize the secondary target names.
-    result=`$ac_config_sub $targ_alias 2>/dev/null`
-    if test -n "$result"; then
-        targ=$result
-    else
-        targ=$targ_alias
-    fi
-
-    . ${srcdir}/configure.tgt
-
-    # Target-specific object files
-    for i in ${gdb_target_obs}; do
-        case " $TARGET_OBS " in
-        *" ${i} "*) ;;
-        *)
-          TARGET_OBS="$TARGET_OBS ${i}"
-          ;;
-        esac
-    done
-
-    # Check whether this target needs 64-bit CORE_ADDR
-    if test x${want64} = xfalse; then
-      . ${srcdir}/../bfd/config.bfd
-    fi
-  fi
+  case "$ac_arg" in
+  *" "*|*"	"*|*[[\[\]\~\#\$\^\&\*\(\)\{\}\\\|\;\<\>\?\']]*)
+    ac_arg=`echo "$ac_arg" | sed "s/'/'\\\\\\\\''/g"`
+    # if the argument is of the form -foo=baz, quote the baz part only
+    ac_arg=`echo "'$ac_arg'" | sed "s/^'\([[-a-zA-Z0-9]]*=\)/\\1'/"` ;;
+  *) ;;
+  esac
+  # Add the quoted argument to the list.
+  TOPLEVEL_CONFIGURE_ARGUMENTS="$TOPLEVEL_CONFIGURE_ARGUMENTS $ac_arg"
 done
-
-if test x${all_targets} = xtrue; then
-
-  # We want all 64-bit targets if we either:
-  #  - run on a 64-bit host  or
-  #  - already require 64-bit support for some other target  or
-  #  - the --enable-64-bit-bfd option was supplied
-  # Otherwise we only support all 32-bit targets.
-  #
-  # NOTE: This test must be in sync with the corresponding
-  #       tests in BFD!
-
-  if test x${want64} = xfalse; then
-    AC_CHECK_SIZEOF(long)
-    if test "x${ac_cv_sizeof_long}" = "x8"; then
-      want64=true
-    fi
-  fi
-  if test x${want64} = xtrue; then
-    TARGET_OBS='$(ALL_TARGET_OBS) $(ALL_64_TARGET_OBS)'
-  else
-    TARGET_OBS='$(ALL_TARGET_OBS)'
-  fi
+if test "$silent" = yes; then
+  TOPLEVEL_CONFIGURE_ARGUMENTS="$TOPLEVEL_CONFIGURE_ARGUMENTS --silent"
 fi
+# Remove the initial space we just introduced and, as these will be
+# expanded by make, quote '$'.
+TOPLEVEL_CONFIGURE_ARGUMENTS=`echo "x$TOPLEVEL_CONFIGURE_ARGUMENTS" | sed -e 's/^x *//' -e 's,\\$,$$,g'`
+AC_SUBST(TOPLEVEL_CONFIGURE_ARGUMENTS)
 
-AC_SUBST(TARGET_OBS)
+# Find the build, host, and target systems.
+ACX_NONCANONICAL_BUILD
+ACX_NONCANONICAL_HOST
+ACX_NONCANONICAL_TARGET
 
-# For other settings, only the main target counts.
-gdb_sim=
-gdb_osabi=
-build_gdbserver=
-targ=$target; . ${srcdir}/configure.tgt
+dnl Autoconf 2.5x and later will set a default program prefix if
+dnl --target was used, even if it was the same as --host.  Disable
+dnl that behavior.  This must be done before AC_CANONICAL_SYSTEM
+dnl to take effect.
+test "$host_noncanonical" = "$target_noncanonical" &&
+  test "$program_prefix$program_suffix$program_transform_name" = \
+    NONENONEs,x,x, &&
+  program_transform_name=s,y,y,
 
-# Fetch the default architecture and default target vector from BFD.
-targ=$target; . $srcdir/../bfd/config.bfd
-
-# We only want the first architecture, so strip off the others if
-# there is more than one.
-targ_archs=`echo $targ_archs | sed 's/ .*//'`
-
-if test "x$targ_archs" != x; then
-  AC_DEFINE_UNQUOTED(DEFAULT_BFD_ARCH, $targ_archs,
-    [Define to BFD's default architecture. ])
-fi
-if test "x$targ_defvec" != x; then
-  AC_DEFINE_UNQUOTED(DEFAULT_BFD_VEC, $targ_defvec,
-    [Define to BFD's default target vector. ])
-fi
-
+AC_CANONICAL_SYSTEM
 AC_ARG_PROGRAM
 
-# The CLI cannot be disabled yet, but may be in the future.
+m4_pattern_allow([^AS_FOR_TARGET$])dnl
+m4_pattern_allow([^AS_FOR_BUILD$])dnl
 
-# Enable CLI.
-AC_ARG_ENABLE(gdbcli,
-[  --disable-gdbcli        disable command-line interface (CLI)],
-  [case $enableval in
-    yes)
-      ;;
-    no)
-      AC_MSG_ERROR([the command-line interface cannot be disabled yet]) ;;
-    *)
-      AC_MSG_ERROR([bad value $enableval for --enable-gdbcli]) ;;
-  esac],
-  [enable_gdbcli=yes])
-if test x"$enable_gdbcli" = xyes; then
-  if test -d $srcdir/cli; then
-    CONFIG_OBS="$CONFIG_OBS \$(SUBDIR_CLI_OBS)"
-    CONFIG_DEPS="$CONFIG_DEPS \$(SUBDIR_CLI_DEPS)"
-    CONFIG_SRCS="$CONFIG_SRCS \$(SUBDIR_CLI_SRCS)"
-    ENABLE_CFLAGS="$ENABLE_CFLAGS \$(SUBDIR_CLI_CFLAGS)"
-  fi
-fi
-
-# Enable MI.
-AC_ARG_ENABLE(gdbmi,
-[  --disable-gdbmi         disable machine-interface (MI)],
-  [case $enableval in
-    yes | no)
-      ;;
-    *)
-      AC_MSG_ERROR([bad value $enableval for --enable-gdbmi]) ;;
-  esac],
-  [enable_gdbmi=yes])
-if test x"$enable_gdbmi" = xyes; then
-  if test -d $srcdir/mi; then
-    CONFIG_OBS="$CONFIG_OBS \$(SUBDIR_MI_OBS)"
-    CONFIG_DEPS="$CONFIG_DEPS \$(SUBDIR_MI_DEPS)"
-    CONFIG_SRCS="$CONFIG_SRCS \$(SUBDIR_MI_SRCS)"
-    ENABLE_CFLAGS="$ENABLE_CFLAGS \$(SUBDIR_MI_CFLAGS)"
-  fi
-fi
-
-# Enable TUI.
-AC_ARG_ENABLE(tui,
-[  --enable-tui            enable full-screen terminal user interface (TUI)],
-  [case $enableval in
-    yes | no)
-      ;;
-    *)
-      AC_MSG_ERROR([bad value $enableval for --enable-tui]) ;;
-  esac],enable_tui=yes)
-
-# Enable gdbtk.
-AC_ARG_ENABLE(gdbtk,
-[  --enable-gdbtk          enable gdbtk graphical user interface (GUI)],
-  [case $enableval in
-    yes | no)
-      ;;
-    *)
-      AC_MSG_ERROR([bad value $enableval for --enable-gdbtk]) ;;
-  esac],
-  [if test -d $srcdir/gdbtk -a -d $srcdir/../itcl; then
-    enable_gdbtk=yes
-  else
-    enable_gdbtk=no
-  fi])
-# We unconditionally disable gdbtk tests on selected platforms.
-case $host_os in
-  go32* | windows*)
-    AC_MSG_WARN([gdbtk isn't supported on $host; disabling])
-    enable_gdbtk=no ;;
-esac
-
-# Libunwind support.
-AC_ARG_WITH(libunwind,
-[  --with-libunwind            Use libunwind frame unwinding support],
-[case "${withval}" in
-  yes)  enable_libunwind=yes ;;
-  no)   enable_libunwind=no ;;
-  *)    AC_MSG_ERROR(bad value ${withval} for GDB with-libunwind option) ;;
-esac],[
-  AC_CHECK_HEADERS(libunwind.h)
-  AC_CHECK_HEADERS(libunwind-ia64.h)
-  if test x"$ac_cv_header_libunwind_h" = xyes -a x"$ac_cv_header_libunwind_ia64_h" = xyes; then
-    enable_libunwind=yes;
-  fi
-])
-   
-if test x"$enable_libunwind" = xyes; then
-  AC_CHECK_HEADERS(libunwind.h)
-  AC_CHECK_HEADERS(libunwind-ia64.h)
-  AC_DEFINE(HAVE_LIBUNWIND, 1, [Define if libunwind library is being used.])
-  CONFIG_OBS="$CONFIG_OBS libunwind-frame.o"
-  CONFIG_DEPS="$CONFIG_DEPS libunwind-frame.o"
-  CONFIG_SRCS="$CONFIG_SRCS libunwind-frame.c"
-fi
-
-# Profiling support.
-AC_ARG_ENABLE(profiling,
-[  --enable-profiling      enable profiling of GDB],
-  [case $enableval in
-    yes | no)
-      ;;
-    *)
-      AC_MSG_ERROR([bad value $enableval for --enable-profile]) ;;
-  esac],
- [enable_profiling=no])
-
-AC_CHECK_FUNCS(monstartup _mcleanup)
-AC_CACHE_CHECK([for _etext], ac_cv_var__etext,
-[AC_TRY_LINK(
-[#include <stdlib.h>
-extern char _etext;
-],
-[free (&_etext);], ac_cv_var__etext=yes, ac_cv_var__etext=no)])
-if test $ac_cv_var__etext = yes; then
-  AC_DEFINE(HAVE__ETEXT, 1,
-            [Define to 1 if your system has the _etext variable. ])
-fi
-AC_CACHE_CHECK([for etext], ac_cv_var_etext,
-[AC_TRY_LINK(
-[#include <stdlib.h>
-extern char etext;
-],
-[free (&etext);], ac_cv_var_etext=yes, ac_cv_var_etext=no)])
-if test $ac_cv_var_etext = yes; then
-  AC_DEFINE(HAVE_ETEXT, 1,
-            [Define to 1 if your system has the etext variable. ])
-fi
-if test "$enable_profiling" = yes ; then
-  if test $ac_cv_func_monstartup = no || test $ac_cv_func__mcleanup = no; then
-    AC_MSG_ERROR(--enable-profiling requires monstartup and _mcleanup)
-  fi
-  PROFILE_CFLAGS=-pg
-  OLD_CFLAGS="$CFLAGS"
-  CFLAGS="$CFLAGS $PROFILE_CFLAGS"
-
-  AC_CACHE_CHECK([whether $CC supports -pg], ac_cv_cc_supports_pg,
-    [AC_TRY_COMPILE([], [int x;], ac_cv_cc_supports_pg=yes,
-     ac_cv_cc_supports_pg=no)])
-
-  if test $ac_cv_cc_supports_pg = no; then
-    AC_MSG_ERROR(--enable-profiling requires a compiler which supports -pg)
-  fi
-
-  CFLAGS="$OLD_CFLAGS"
-fi
-
-# --------------------- #
-# Checks for programs.  #
-# --------------------- #
-
-AC_PROG_AWK
+# Get 'install' or 'install-sh' and its variants.
 AC_PROG_INSTALL
+ACX_PROG_LN
 AC_PROG_LN_S
-AC_PROG_RANLIB
-AC_PROG_YACC
+AC_PROG_SED
+AC_PROG_AWK
 
-AC_CHECK_TOOL(AR, ar)
-AC_CHECK_TOOL(DLLTOOL, dlltool)
-AC_CHECK_TOOL(WINDRES, windres)
+### we might need to use some other shell than /bin/sh for running subshells
+### If we are on Windows, search for the shell.  This will permit people
+### to not have /bin/sh, but to be able to see /SOME/PATH/sh configure
+### without also having to set CONFIG_SHELL.  This code will work when
+### using bash, which sets OSTYPE.
+case "${OSTYPE}" in
+*win32*)
+  if test x${CONFIG_SHELL} = x ; then
+    if test ! -f /bin/sh ; then
+      if test x${SHELL} != x && test -f ${SHELL} ; then
+	CONFIG_SHELL=${SHELL}
+	export CONFIG_SHELL
+      else
+	for prog in sh sh.exe bash bash.exe; do
+	  IFS="${IFS=	}"; save_ifs="$IFS"; IFS="${IFS}:"
+	  for dir in $PATH; do
+	    test -z "$dir" && dir=.
+	    if test -f $dir/$prog; then
+	      CONFIG_SHELL=$dir/$prog
+	      export CONFIG_SHELL
+	      break
+	    fi
+	  done
+	  IFS="$save_ifs"
+	  test -n "${CONFIG_SHELL}" && break
+	done
+      fi
+    fi
+  fi
+  ;;
+esac
 
-# Needed for GNU/Hurd.
-AC_CHECK_TOOL(MIG, mig)
+config_shell=${CONFIG_SHELL-/bin/sh}
 
-# ---------------------- #
-# Checks for libraries.  #
-# ---------------------- #
+moveifchange=${srcdir}/move-if-change
 
-# We might need to link with -lm; most simulators need it.
-AC_CHECK_LIB(m, main)
+srcpwd=`cd ${srcdir} ; ${PWDCMD-pwd}`
 
-# We need to link with -lw to get `wctype' on Solaris before Solaris
-# 2.6.  Solaris 2.6 and beyond have this function in libc, and have a
-# libw that some versions of the GNU linker cannot hanle (GNU ld 2.9.1
-# is known to have this problem).  Therefore we avoid libw if we can.
-AC_CHECK_FUNC(wctype, [],
-  [AC_CHECK_LIB(w, wctype)])
+# We pass INSTALL explicitly to sub-makes.  Make sure that it is not
+# a relative path.
+if test "$INSTALL" = "${srcdir}/install-sh -c"; then
+  INSTALL="${srcpwd}/install-sh -c"
+fi
 
-# Some systems (e.g. Solaris) have `gethostbyname' in libnsl.
-AC_SEARCH_LIBS(gethostbyname, nsl)
+# Set srcdir to "." if that's what it is.
+# This is important for multilib support.
+pwd=`${PWDCMD-pwd}`
+if test "${pwd}" = "${srcpwd}" ; then
+  srcdir=.
+fi
 
-# Some systems (e.g. Solaris) have `socketpair' in libsocket.
-AC_SEARCH_LIBS(socketpair, socket)
+topsrcdir=$srcpwd
 
-# For the TUI, we need enhanced curses functionality.
+extra_host_args=
+
+### To add a new directory to the tree, first choose whether it is a target
+### or a host dependent tool.  Then put it into the appropriate list
+### (library or tools, host or target), doing a dependency sort.
+
+# Subdirs will be configured in the order listed in build_configdirs, 
+# configdirs, or target_configdirs; see the serialization section below.
+
+# Dependency sorting is only needed when *configuration* must be done in 
+# a particular order.  In all cases a dependency should be specified in 
+# the Makefile, whether or not it's implicitly specified here.
+
+# Double entries in build_configdirs, configdirs, or target_configdirs may
+# cause circular dependencies and break everything horribly.
+
+# these library is used by various programs built for the build
+# environment
 #
-# FIXME: kettenis/20040905: We prefer ncurses over the vendor-supplied
-# curses library because the latter might not provide all the
-# functionality we need.  However, this leads to problems on systems
-# where the linker searches /usr/local/lib, but the compiler doesn't
-# search /usr/local/include, if ncurses is installed in /usr/local.  A
-# default installation of ncurses on alpha*-dec-osf* will lead to such
-# a situation.
-AC_SEARCH_LIBS(waddstr, [ncurses cursesX curses])
+build_libs="build-libiberty"
 
-# On HP/UX we may need libxpdl for dlgetmodinfo (used by solib-pa64.c).
-AC_SEARCH_LIBS(dlgetmodinfo, [dl xpdl])
+# these tools are built for the build environment
+build_tools="build-texinfo build-byacc build-flex build-bison build-m4 build-fixincludes"
 
-# Since GDB uses Readline, we need termcap functionality.  In many
-# cases this will be provided by the curses library, but some systems
-# have a seperate termcap library, or no curses library at all.
+# these libraries are used by various programs built for the host environment
+#
+host_libs="intl mmalloc libiberty opcodes bfd readline tcl tk itcl libgui zlib libcpp libdecnumber gmp mpfr mpc ppl cloog libelf libiconv"
 
-case $host_os in
-  cygwin*)
-    if test -d $srcdir/libtermcap; then
-      LIBS="../libtermcap/libtermcap.a $LIBS"
-      ac_cv_search_tgetent="../libtermcap/libtermcap.a"
-    fi ;;
-  go32* | *djgpp*)
-    ac_cv_search_tgetent="none required"
+# these tools are built for the host environment
+# Note, the powerpc-eabi build depends on sim occurring before gdb in order to
+# know that we are building the simulator.
+# binutils, gas and ld appear in that order because it makes sense to run
+# "make check" in that particular order.
+# If --enable-gold is used, "gold" may replace "ld".
+host_tools="byacc flex bison binutils gas ld fixincludes gcc cgen sid sim gdb make patch prms send-pr gprof etc expect dejagnu ash bash bzip2 m4 autoconf automake libtool diff rcs fileutils shellutils time textutils wdiff find uudecode hello tar gzip indent recode release sed utils guile perl gawk findutils gettext zip fastjar gnattools"
+
+# libgcj represents the runtime libraries only used by gcj.
+libgcj="target-libffi \
+	target-zlib \
+	target-qthreads \
+	target-libjava"
+
+# these libraries are built for the target environment, and are built after
+# the host libraries and the host tools (which may be a cross compiler)
+#
+target_libraries="target-libgcc \
+		target-libiberty \
+		target-libgloss \
+		target-newlib \
+		target-libgomp \
+		target-libstdc++-v3 \
+		target-libmudflap \
+		target-libssp \
+		target-libgfortran \
+		target-boehm-gc \
+		${libgcj} \
+		target-libobjc \
+		target-libada"
+
+# these tools are built using the target libraries, and are intended to
+# run only in the target environment
+#
+# note: any program that *uses* libraries that are in the "target_libraries"
+# list belongs in this list.  those programs are also very likely
+# candidates for the "native_only" list which follows
+#
+target_tools="target-examples target-groff target-gperf target-rda"
+
+################################################################################
+
+## All tools belong in one of the four categories, and are assigned above
+## We assign ${configdirs} this way to remove all embedded newlines.  This
+## is important because configure will choke if they ever get through.
+## ${configdirs} is directories we build using the host tools.
+## ${target_configdirs} is directories we build using the target tools.
+configdirs=`echo ${host_libs} ${host_tools}`
+target_configdirs=`echo ${target_libraries} ${target_tools}`
+build_configdirs=`echo ${build_libs} ${build_tools}`
+
+m4_divert_text([PARSE_ARGS],
+[ac_subdirs_all=`cd $srcdir && echo */configure | sed 's,/configure,,g'`
+])
+
+################################################################################
+
+srcname="gnu development package"
+
+# This gets set non-empty for some net releases of packages.
+appdirs=""
+
+# Define is_cross_compiler to save on calls to 'test'.
+is_cross_compiler=
+if test x"${host}" = x"${target}" ; then
+  is_cross_compiler=no
+else
+  is_cross_compiler=yes
+fi	
+
+# Find the build and target subdir names.
+GCC_TOPLEV_SUBDIRS
+# Be sure to cover against remnants of an in-tree build.
+if test $srcdir != .  && test -d $srcdir/host-${host_noncanonical}; then
+  AC_MSG_ERROR([building out of tree but $srcdir contains host-${host_noncanonical}.
+Use a pristine source tree when building in a separate tree])
+fi
+
+# Skipdirs are removed silently.
+skipdirs=
+# Noconfigdirs are removed loudly.
+noconfigdirs=""
+
+use_gnu_ld=
+# Make sure we don't let GNU ld be added if we didn't want it.
+if test x$with_gnu_ld = xno ; then
+  use_gnu_ld=no
+  noconfigdirs="$noconfigdirs ld gold"
+fi
+
+use_gnu_as=
+# Make sure we don't let GNU as be added if we didn't want it.
+if test x$with_gnu_as = xno ; then
+  use_gnu_as=no
+  noconfigdirs="$noconfigdirs gas"
+fi
+
+use_included_zlib=
+# Make sure we don't let ZLIB be added if we didn't want it.
+if test x$with_system_zlib = xyes ; then
+  use_included_zlib=no
+  noconfigdirs="$noconfigdirs zlib"
+fi
+
+# some tools are so dependent upon X11 that if we're not building with X, 
+# it's not even worth trying to configure, much less build, that tool.
+
+case ${with_x} in
+  yes | "") ;; # the default value for this tree is that X11 is available
+  no)
+    skipdirs="${skipdirs} tk itcl libgui"
+    # We won't be able to build gdbtk without X.
+    enable_gdbtk=no 
     ;;
-  *mingw32*)	 
-    ac_cv_search_tgetent="none required"
-    CONFIG_OBS="$CONFIG_OBS win32-termcap.o"
-    ;;
+  *)  echo "*** bad value \"${with_x}\" for -with-x flag; ignored" 1>&2 ;;
 esac
 
-# These are the libraries checked by Readline.
-AC_SEARCH_LIBS(tgetent, [termcap tinfo curses ncurses])
+# Some tools are only suitable for building in a "native" situation.
+# Remove these if host!=target.  
+native_only="autoconf automake libtool fileutils find gawk gettext gzip hello indent m4 rcs recode sed shellutils tar textutils uudecode wdiff target-groff guile perl time ash bash bzip2 prms gnuserv target-gperf"
 
-if test "$ac_cv_search_tgetent" = no; then
-  AC_MSG_ERROR([no termcap library found])
-fi
+# Similarly, some are only suitable for cross toolchains.
+# Remove these if host=target.
+cross_only="target-libgloss target-newlib target-opcodes"
 
-AC_ARG_WITH([system-readline],
-  [AS_HELP_STRING([--with-system-readline],
-                  [use installed readline library])])
-
-if test "$with_system_readline" = yes; then
-  READLINE=-lreadline
-  READLINE_DEPS=
-  READLINE_CFLAGS=
-else
-  READLINE='$(READLINE_DIR)/libreadline.a'
-  READLINE_DEPS='$(READLINE)'
-  READLINE_CFLAGS='-I$(READLINE_SRC)/..'
-fi
-AC_SUBST(READLINE)
-AC_SUBST(READLINE_DEPS)
-AC_SUBST(READLINE_CFLAGS)
-
-AC_ARG_WITH(expat,
-  AS_HELP_STRING([--with-expat], [include expat support (auto/yes/no)]),
-  [], [with_expat=auto])
-AC_MSG_CHECKING([whether to use expat])
-AC_MSG_RESULT([$with_expat])
-
-if test "${with_expat}" = no; then
-  AC_MSG_WARN([expat support disabled; some features may be unavailable.])
-  HAVE_LIBEXPAT=no
-else
-  AC_LIB_HAVE_LINKFLAGS([expat], [], [#include "expat.h"],
-			[XML_Parser p = XML_ParserCreate (0);])
-  if test "$HAVE_LIBEXPAT" != yes; then
-    if test "$with_expat" = yes; then
-      AC_MSG_ERROR([expat is missing or unusable])
-    else
-      AC_MSG_WARN([expat is missing or unusable; some features may be unavailable.])
-    fi
-  else
-    save_LIBS=$LIBS
-    LIBS="$LIBS $LIBEXPAT"
-    AC_CHECK_FUNCS(XML_StopParser)
-    LIBS=$save_LIBS
-  fi
-fi
-
-# ------------------------- #
-# Checks for header files.  #
-# ------------------------- #
-
-AC_HEADER_DIRENT
-AC_HEADER_STAT
-AC_HEADER_STDC
-AC_CHECK_HEADERS(nlist.h)
-AC_CHECK_HEADERS(link.h, [], [],
-[#if HAVE_SYS_TYPES_H
-# include <sys/types.h>
-#endif
-#if HAVE_NLIST_H
-# include <nlist.h>
-#endif
-])
-AC_CHECK_HEADERS(machine/reg.h)
-AC_CHECK_HEADERS(poll.h sys/poll.h)
-AC_CHECK_HEADERS(proc_service.h thread_db.h gnu/libc-version.h)
-AC_CHECK_HEADERS(signal.h)
-AC_CHECK_HEADERS(stddef.h)
-AC_CHECK_HEADERS(stdlib.h)
-AC_CHECK_HEADERS(stdint.h)
-AC_CHECK_HEADERS(string.h memory.h strings.h)
-AC_CHECK_HEADERS(sys/fault.h)
-AC_CHECK_HEADERS(sys/file.h)
-AC_CHECK_HEADERS(sys/filio.h)
-AC_CHECK_HEADERS(sys/ioctl.h)
-AC_CHECK_HEADERS(sys/param.h)
-AC_CHECK_HEADERS(sys/resource.h)
-AC_CHECK_HEADERS(sys/proc.h, [], [],
-[#if HAVE_SYS_PARAM_H
-# include <sys/param.h>
-#endif
-])
-AC_CHECK_HEADERS(sys/procfs.h)
-AC_CHECK_HEADERS(sys/ptrace.h ptrace.h)
-AC_CHECK_HEADERS(sys/reg.h sys/debugreg.h)
-AC_CHECK_HEADERS(sys/select.h)
-AC_CHECK_HEADERS(sys/syscall.h)
-AC_CHECK_HEADERS(sys/types.h)
-AC_CHECK_HEADERS(sys/user.h, [], [],
-[#if HAVE_SYS_PARAM_H
-# include <sys/param.h>
-#endif
-])
-AC_CHECK_HEADERS(sys/wait.h wait.h)
-AC_CHECK_HEADERS(termios.h termio.h sgtty.h)
-AC_CHECK_HEADERS(unistd.h)
-
-# On Solaris 2.[789], we need to define _MSE_INT_H to avoid a clash
-# between <widec.h> and <wchar.h> that would cause AC_CHECK_HEADERS to
-# think that we don't have <curses.h> if we're using GCC.
-case $host_os in
-  solaris2.[[789]])
-    if test "$GCC" = yes; then
-      AC_DEFINE(_MSE_INT_H, 1,
-        [Define to 1 to avoid a clash between <widec.h> and <wchar.h> on
-   Solaris 2.[789] when using GCC. ])
-    fi ;;
+case $is_cross_compiler in
+  no) skipdirs="${skipdirs} ${cross_only}" ;;
+  yes) skipdirs="${skipdirs} ${native_only}" ;;
 esac
-AC_CHECK_HEADERS(curses.h cursesX.h ncurses.h ncurses/ncurses.h)
-AC_CHECK_HEADERS(ncurses/term.h)
-AC_CHECK_HEADERS(term.h, [], [],
-[#if HAVE_CURSES_H
-# include <curses.h>
-#endif
-])
 
-# Check for HP/UX 64-bit shared library support
-AC_CHECK_HEADERS(elf_hp.h)
-
-# FIXME: kettenis/20030102: In most cases we include these
-# unconditionally, so what's the point in checking these?
-AC_CHECK_HEADERS(ctype.h time.h)
-
-# Create a header we can use portably to get the standard integer types.
-GCC_HEADER_STDINT(gdb_stdint.h)
-
-# ------------------------- #
-# Checks for declarations.  #
-# ------------------------- #
-
-AC_CHECK_DECLS([free, malloc, realloc])
-AC_CHECK_DECLS([strerror, strstr])
-AC_CHECK_DECLS([getopt, snprintf, vsnprintf])
-
-# ----------------------- #
-# Checks for structures.  #
-# ----------------------- #
-
-AC_CHECK_MEMBERS([struct stat.st_blocks])
-AC_CHECK_MEMBERS([struct stat.st_blksize])
-
-# ------------------ #
-# Checks for types.  #
-# ------------------ #
-
-AC_TYPE_SIGNAL
-AC_CHECK_TYPES(socklen_t, [], [],
-[#include <sys/types.h>
-#include <sys/socket.h>
-])
-AC_CHECK_TYPES(uintptr_t, [], [], [#include <stdint.h>])
-
-# ------------------------------------- #
-# Checks for compiler characteristics.  #
-# ------------------------------------- #
-
-AC_C_CONST
-AC_C_INLINE
-AC_C_BIGENDIAN
-
-# ------------------------------ #
-# Checks for library functions.  #
-# ------------------------------ #
-
-AC_FUNC_ALLOCA
-AC_FUNC_MMAP
-AC_FUNC_VFORK
-AC_CHECK_FUNCS(canonicalize_file_name realpath)
-AC_CHECK_FUNCS(getrusage)
-AC_CHECK_FUNCS(getuid getgid)
-AC_CHECK_FUNCS(poll)
-AC_CHECK_FUNCS(pread64)
-AC_CHECK_FUNCS(sbrk)
-AC_CHECK_FUNCS(setpgid setpgrp)
-AC_CHECK_FUNCS(sigaction sigprocmask sigsetmask)
-AC_CHECK_FUNCS(socketpair)
-AC_CHECK_FUNCS(syscall)
-AC_CHECK_FUNCS(ttrace)
-AC_CHECK_FUNCS(wborder)
-
-# Check the return and argument types of ptrace.  No canned test for
-# this, so roll our own.
-gdb_ptrace_headers='
-#if HAVE_SYS_TYPES_H
-# include <sys/types.h>
-#endif
-#if HAVE_SYS_PTRACE_H
-# include <sys/ptrace.h>
-#endif
-#if HAVE_UNISTD_H
-# include <unistd.h>
-#endif
-'
-# There is no point in checking if we don't have a prototype.
-AC_CHECK_DECLS(ptrace, [], [
-  : ${gdb_cv_func_ptrace_ret='int'}
-  : ${gdb_cv_func_ptrace_args='int,int,long,long'}
-], $gdb_ptrace_headers)
-# Check return type.
-AC_CACHE_CHECK([return type of ptrace], gdb_cv_func_ptrace_ret,
-  AC_TRY_COMPILE($gdb_ptrace_headers,
-    [extern int ptrace ();],
-    gdb_cv_func_ptrace_ret='int',
-    gdb_cv_func_ptrace_ret='long'))
-AC_DEFINE_UNQUOTED(PTRACE_TYPE_RET, $gdb_cv_func_ptrace_ret,
-  [Define as the return type of ptrace.])
-# Check argument types.
-AC_CACHE_CHECK([types of arguments for ptrace], gdb_cv_func_ptrace_args, [
-for gdb_arg1 in 'int' 'long'; do
- for gdb_arg2 in 'pid_t' 'int' 'long'; do
-  for gdb_arg3 in 'int *' 'caddr_t' 'int' 'long' 'void *'; do
-   for gdb_arg4 in 'int' 'long'; do
-     AC_TRY_COMPILE($gdb_ptrace_headers, [
-extern $gdb_cv_func_ptrace_ret
-  ptrace ($gdb_arg1, $gdb_arg2, $gdb_arg3, $gdb_arg4);
-], [gdb_cv_func_ptrace_args="$gdb_arg1,$gdb_arg2,$gdb_arg3,$gdb_arg4";
-    break 4;])
-    for gdb_arg5 in 'int *' 'int' 'long'; do
-     AC_TRY_COMPILE($gdb_ptrace_headers, [
-extern $gdb_cv_func_ptrace_ret
-  ptrace ($gdb_arg1, $gdb_arg2, $gdb_arg3, $gdb_arg4, $gdb_arg5);
-], [
-gdb_cv_func_ptrace_args="$gdb_arg1,$gdb_arg2,$gdb_arg3,$gdb_arg4,$gdb_arg5";
-    break 5;])
-    done
-   done
-  done
- done
-done
-# Provide a safe default value.
-: ${gdb_cv_func_ptrace_args='int,int,long,long'}
-])
-ac_save_IFS=$IFS; IFS=','
-set dummy `echo "$gdb_cv_func_ptrace_args" | sed 's/\*/\*/g'`
-IFS=$ac_save_IFS
-shift
-AC_DEFINE_UNQUOTED(PTRACE_TYPE_ARG3, $[3],
-  [Define to the type of arg 3 for ptrace.])
-if test -n "$[5]"; then
-  AC_DEFINE_UNQUOTED(PTRACE_TYPE_ARG5, $[5],
-    [Define to the type of arg 5 for ptrace.])
-fi
-
-dnl AC_FUNC_SETPGRP does not work when cross compiling
-dnl Instead, assume we will have a prototype for setpgrp if cross compiling.
-if test "$cross_compiling" = no; then
-  AC_FUNC_SETPGRP
-else
-  AC_CACHE_CHECK([whether setpgrp takes no argument], ac_cv_func_setpgrp_void,
-    [AC_TRY_COMPILE([
-#include <unistd.h>
-], [
-  if (setpgrp(1,1) == -1)
-    exit (0);
-  else
-    exit (1);
-], ac_cv_func_setpgrp_void=no, ac_cv_func_setpgrp_void=yes)])
-if test $ac_cv_func_setpgrp_void = yes; then
-  AC_DEFINE(SETPGRP_VOID, 1)
-fi
-fi
-
-# Check if sigsetjmp is available.  Using AC_CHECK_FUNCS won't do
-# since sigsetjmp might only be defined as a macro.
-AC_CACHE_CHECK([for sigsetjmp], gdb_cv_func_sigsetjmp,
-[AC_TRY_COMPILE([
-#include <setjmp.h>
-], [sigjmp_buf env; while (! sigsetjmp (env, 1)) siglongjmp (env, 1);],
-gdb_cv_func_sigsetjmp=yes, gdb_cv_func_sigsetjmp=no)])
-if test $gdb_cv_func_sigsetjmp = yes; then
-  AC_DEFINE(HAVE_SIGSETJMP, 1, [Define if sigsetjmp is available. ])
-fi
-
-# Assume we'll default to using the included libiberty regex.
-gdb_use_included_regex=yes
-
-# However, if the system regex is GNU regex, then default to *not*
-# using the included regex.
-AC_CACHE_CHECK(
-  [for GNU regex],
-  [gdb_cv_have_gnu_regex],
-  [AC_TRY_COMPILE(
-    [#include <gnu-versions.h>],
-    [#define REGEX_INTERFACE_VERSION 1
-#if _GNU_REGEX_INTERFACE_VERSION != REGEX_INTERFACE_VERSION
-# error "Version mismatch"
-#endif],
-    gdb_cv_have_gnu_regex=yes,
-    gdb_cv_have_gnu_regex=no)])
-if test $gdb_cv_have_gnu_regex = yes; then
-  gdb_use_included_regex=no
-fi
-
-AC_ARG_WITH(included-regex,
-  [  --without-included-regex don't use included regex; this is the default
-                          on systems with version 2 of the GNU C library
-                          (use with caution on other system)],
-  gdb_with_regex=$withval,
-  gdb_with_regex=$gdb_use_included_regex)
-if test "$gdb_with_regex" = yes; then
-  AC_DEFINE(USE_INCLUDED_REGEX, 1,
-    [Define to 1 if the regex included in libiberty should be used.])
-fi
-
-# Check if <sys/proc.h> defines `struct thread' with a td_pcb member.
-AC_CHECK_MEMBERS([struct thread.td_pcb], [], [],
-[#include <sys/param.h>
-#include <sys/proc.h>
-])
-
-# See if <sys/lwp.h> defines `struct lwp`.
-AC_CACHE_CHECK([for struct lwp], gdb_cv_struct_lwp,
-[AC_TRY_COMPILE([#include <sys/param.h>
-#include <sys/lwp.h>], [struct lwp l;],
-gdb_cv_struct_lwp=yes, gdb_cv_struct_lwp=no)])
-if test $gdb_cv_struct_lwp = yes; then
-  AC_DEFINE(HAVE_STRUCT_LWP, 1,
-            [Define to 1 if your system has struct lwp.])
-fi
-
-# See if <machine/reg.h> degines `struct reg'.
-AC_CACHE_CHECK([for struct reg in machine/reg.h], gdb_cv_struct_reg,
-[AC_TRY_COMPILE([#include <sys/types.h>
-#include <machine/reg.h>], [struct reg r;],
-gdb_cv_struct_reg=yes, gdb_cv_struct_reg=no)])
-if test $gdb_cv_struct_reg = yes; then
-  AC_DEFINE(HAVE_STRUCT_REG, 1,
-            [Define to 1 if your system has struct reg in <machine/reg.h>.])
-fi
-
-# See if <machine/reg.h> supports the %fs and %gs i386 segment registers.
-# Older i386 BSD's don't have the r_fs and r_gs members of `struct reg'.
-AC_CHECK_MEMBERS([struct reg.r_fs, struct reg.r_gs], [], [],
-                 [#include <machine/reg.h>])
-
-# See if <sys/ptrace.h> provides the PTRACE_GETREGS request.
-AC_MSG_CHECKING(for PTRACE_GETREGS)
-AC_CACHE_VAL(gdb_cv_have_ptrace_getregs,
-[AC_TRY_COMPILE([#include <sys/ptrace.h>],
-		[PTRACE_GETREGS;],
-		[gdb_cv_have_ptrace_getregs=yes],
-		[gdb_cv_have_ptrace_getregs=no])])
-AC_MSG_RESULT($gdb_cv_have_ptrace_getregs)
-if test $gdb_cv_have_ptrace_getregs = yes; then
-  AC_DEFINE(HAVE_PTRACE_GETREGS, 1, 
-  [Define if sys/ptrace.h defines the PTRACE_GETREGS request.])
-fi
-
-# See if <sys/ptrace.h> provides the PTRACE_GETFPXREGS request.
-AC_MSG_CHECKING(for PTRACE_GETFPXREGS)
-AC_CACHE_VAL(gdb_cv_have_ptrace_getfpxregs,
-[AC_TRY_COMPILE([#include <sys/ptrace.h>],
-		[PTRACE_GETFPXREGS;],
-		[gdb_cv_have_ptrace_getfpxregs=yes],
-		[gdb_cv_have_ptrace_getfpxregs=no])])
-AC_MSG_RESULT($gdb_cv_have_ptrace_getfpxregs)
-if test $gdb_cv_have_ptrace_getfpxregs = yes; then
-  AC_DEFINE(HAVE_PTRACE_GETFPXREGS, 1,
-  [Define if sys/ptrace.h defines the PTRACE_GETFPXREGS request.])
-fi
-
-# See if <sys/ptrace.h> provides the PT_GETDBREGS request.
-AC_MSG_CHECKING(for PT_GETDBREGS)
-AC_CACHE_VAL(gdb_cv_have_pt_getdbregs,
-[AC_TRY_COMPILE([#include <sys/types.h>
-#include <sys/ptrace.h>],
-		[PT_GETDBREGS;],
-		[gdb_cv_have_pt_getdbregs=yes],
-		[gdb_cv_have_pt_getdbregs=no])])
-AC_MSG_RESULT($gdb_cv_have_pt_getdbregs)
-if test $gdb_cv_have_pt_getdbregs = yes; then
-  AC_DEFINE(HAVE_PT_GETDBREGS, 1,
-  [Define if sys/ptrace.h defines the PT_GETDBREGS request.])
-fi
-
-# See if <sys/ptrace.h> provides the PT_GETXMMREGS request.
-AC_MSG_CHECKING(for PT_GETXMMREGS)
-AC_CACHE_VAL(gdb_cv_have_pt_getxmmregs,
-[AC_TRY_COMPILE([#include <sys/types.h>
-#include <sys/ptrace.h>],
-		[PT_GETXMMREGS;],
-		[gdb_cv_have_pt_getxmmregs=yes],
-		[gdb_cv_have_pt_getxmmregs=no])])
-AC_MSG_RESULT($gdb_cv_have_pt_getxmmregs)
-if test $gdb_cv_have_pt_getxmmregs = yes; then
-  AC_DEFINE(HAVE_PT_GETXMMREGS, 1,
-  [Define if sys/ptrace.h defines the PT_GETXMMREGS request.])
-fi
-
-# Detect which type of /proc is in use, such as for Unixware or Solaris.
-
-if test "${target}" = "${host}"; then
-  case "${host}" in
-  *-*-unixware* | *-*-sysv4.2* | *-*-sysv5* | *-*-interix* )
-      AC_DEFINE(NEW_PROC_API, 1,
-      [Define if you want to use new multi-fd /proc interface
-       (replaces HAVE_MULTIPLE_PROC_FDS as well as other macros).])
-      ;;
-  *-*-solaris2.[[6789]] | *-*-solaris2.1[[0-9]]*)
-      AC_DEFINE(NEW_PROC_API, 1,
-      [Define if you want to use new multi-fd /proc interface
-       (replaces HAVE_MULTIPLE_PROC_FDS as well as other macros).])
-      ;;
-  mips-sgi-irix5*)
-      # Work around <sys/proc.h> needing _KMEMUSER problem on IRIX 5.
-      AC_DEFINE([_KMEMUSER], 1,
-      [Define to 1 so <sys/proc.h> gets a definition of anon_hdl.  Works
-       around a <sys/proc.h> problem on IRIX 5.])
-      ;;
-  esac
-fi
-
-if test "$ac_cv_header_sys_procfs_h" = yes; then
-  BFD_HAVE_SYS_PROCFS_TYPE(pstatus_t)
-  BFD_HAVE_SYS_PROCFS_TYPE(prrun_t)
-  BFD_HAVE_SYS_PROCFS_TYPE(gregset_t)
-  BFD_HAVE_SYS_PROCFS_TYPE(fpregset_t)
-  BFD_HAVE_SYS_PROCFS_TYPE(prgregset_t)
-  BFD_HAVE_SYS_PROCFS_TYPE(prfpregset_t)
-  BFD_HAVE_SYS_PROCFS_TYPE(prgregset32_t)
-  BFD_HAVE_SYS_PROCFS_TYPE(prfpregset32_t)
-  BFD_HAVE_SYS_PROCFS_TYPE(lwpid_t)
-  BFD_HAVE_SYS_PROCFS_TYPE(psaddr_t)
-  BFD_HAVE_SYS_PROCFS_TYPE(prsysent_t)
-  BFD_HAVE_SYS_PROCFS_TYPE(pr_sigset_t)
-  BFD_HAVE_SYS_PROCFS_TYPE(pr_sigaction64_t)
-  BFD_HAVE_SYS_PROCFS_TYPE(pr_siginfo64_t)
-
-
-  dnl Check for broken prfpregset_t type
-
-  dnl For Linux/i386, glibc 2.1.3 was released with a bogus
-  dnl prfpregset_t type (it's a typedef for the pointer to a struct
-  dnl instead of the struct itself).  We detect this here, and work
-  dnl around it in gdb_proc_service.h.
-
-  if test $bfd_cv_have_sys_procfs_type_prfpregset_t = yes; then
-    AC_MSG_CHECKING(whether prfpregset_t type is broken)
-    AC_CACHE_VAL(gdb_cv_prfpregset_t_broken,
-      [AC_TRY_RUN([#include <sys/procfs.h>
-       int main ()
-       {
-         if (sizeof (prfpregset_t) == sizeof (void *))
-           return 1;
-         return 0;
-       }],
-       gdb_cv_prfpregset_t_broken=no,
-       gdb_cv_prfpregset_t_broken=yes,
-       gdb_cv_prfpregset_t_broken=yes)])
-    AC_MSG_RESULT($gdb_cv_prfpregset_t_broken)
-    if test $gdb_cv_prfpregset_t_broken = yes; then
-      AC_DEFINE(PRFPREGSET_T_BROKEN, 1,
-      [Define if the prfpregset_t type is broken.])
-    fi
-  fi
-
-  dnl Check for PIOCSET ioctl entry 
-
-  AC_MSG_CHECKING(for PIOCSET ioctl entry in sys/procfs.h)
-  AC_CACHE_VAL(gdb_cv_have_procfs_piocset,
-  [AC_TRY_COMPILE([#include <unistd.h>
-#include <sys/types.h>
-#include <sys/procfs.h>
-], [
-    int dummy;;
-    dummy = ioctl(0, PIOCSET, &dummy);
-  ],
-  gdb_cv_have_procfs_piocset=yes, gdb_cv_have_procfs_piocset=no)])
-  AC_MSG_RESULT($gdb_cv_have_procfs_piocset)
-  if test $gdb_cv_have_procfs_piocset = yes; then
-    AC_DEFINE(HAVE_PROCFS_PIOCSET, 1,
-    [Define if ioctl argument PIOCSET is available.])
+# If both --with-headers and --with-libs are specified, default to
+# --without-newlib.
+if test x"${with_headers}" != x && test x"${with_headers}" != xno \
+   && test x"${with_libs}" != x && test x"${with_libs}" != xno ; then
+  if test x"${with_newlib}" = x ; then
+    with_newlib=no
   fi
 fi
 
-dnl For native ports (host == target), check to see what kind of
-dnl legacy link.h support is needed.  (See solib-legacy.c.)
-if test ${host} = ${target} ; then
-  dnl Check for struct link_map with l_ members which are indicative
-  dnl of SVR4-like shared libraries
+# Recognize --with-newlib/--without-newlib.
+case ${with_newlib} in
+  no) skipdirs="${skipdirs} target-newlib" ;;
+  yes) skipdirs=`echo " ${skipdirs} " | sed -e 's/ target-newlib / /'` ;;
+esac
 
-  AC_MSG_CHECKING(for member l_addr in struct link_map)
-  AC_CACHE_VAL(gdb_cv_have_struct_link_map_with_l_members,
-    [AC_TRY_COMPILE([#include <link.h>],
-                    [struct link_map lm; (void) lm.l_addr;],
-                    gdb_cv_have_struct_link_map_with_l_members=yes,
-                    gdb_cv_have_struct_link_map_with_l_members=no)])
-  AC_MSG_RESULT($gdb_cv_have_struct_link_map_with_l_members)
-  if test $gdb_cv_have_struct_link_map_with_l_members = yes; then
-    AC_DEFINE(HAVE_STRUCT_LINK_MAP_WITH_L_MEMBERS,1,
-    [Define if <link.h> exists and defines struct link_map which has
-     members with an ``l_'' prefix.  (For Solaris, SVR4, and
-     SVR4-like systems.)])
-  fi
+# Handle --enable-gold.
+#   --enable-gold		Build only gold
+#   --disable-gold [default]	Build only ld
+#   --enable-gold=both		Build both gold and ld, ld is default
+#   --enable-gold=both/ld	Same
+#   --enable-gold=both/gold	Build both gold and ld, gold is default, ld is renamed ld.bfd
 
-  dnl Check for struct link_map with lm_ members which are indicative
-  dnl of SunOS-like shared libraries
-
-  AC_MSG_CHECKING(for member lm_addr in struct link_map)
-  AC_CACHE_VAL(gdb_cv_have_struct_link_map_with_lm_members,
-    [AC_TRY_COMPILE([#include <sys/types.h>
-#include <link.h>],
-                    [struct link_map lm; (void) lm.lm_addr;],
-                    gdb_cv_have_struct_link_map_with_lm_members=yes,
-                    gdb_cv_have_struct_link_map_with_lm_members=no)])
-  AC_MSG_RESULT($gdb_cv_have_struct_link_map_with_lm_members)
-  if test $gdb_cv_have_struct_link_map_with_lm_members = yes; then
-    AC_DEFINE(HAVE_STRUCT_LINK_MAP_WITH_LM_MEMBERS, 1,
-    [Define if <link.h> exists and defines struct link_map which has
-     members with an ``lm_'' prefix.  (For SunOS.)])
-  fi
-
-  dnl Check for struct so_map with som_ members which are found on 
-  dnl some *BSD systems.
-
-  AC_MSG_CHECKING(for member som_addr in struct so_map)
-  AC_CACHE_VAL(gdb_cv_have_struct_so_map_with_som_members,
-    [AC_TRY_COMPILE([#include <sys/types.h>
-#ifdef HAVE_NLIST_H
-#include <nlist.h>
-#endif
-#include <link.h>],
-                    [struct so_map lm; (void) lm.som_addr;],
-                    gdb_cv_have_struct_so_map_with_som_members=yes,
-                    gdb_cv_have_struct_so_map_with_som_members=no)])
-  AC_MSG_RESULT($gdb_cv_have_struct_so_map_with_som_members)
-  if test $gdb_cv_have_struct_so_map_with_som_members = yes; then
-    AC_DEFINE(HAVE_STRUCT_SO_MAP_WITH_SOM_MEMBERS, 1,
-    [Define if <link.h> exists and defines a struct so_map which has
-     members with an ``som_'' prefix.  (Found on older *BSD systems.)])
-  fi
-
-  dnl Check for struct link_map32 type, which allows a 64-bit Solaris
-  dnl debugger to debug a 32-bit Solaris app with 32-bit shared libraries.
-
-  AC_MSG_CHECKING(for struct link_map32 in sys/link.h)
-  AC_CACHE_VAL(gdb_cv_have_struct_link_map32, 
-    [AC_TRY_COMPILE([#define _SYSCALL32
-#include <sys/link.h>], [struct link_map32 l;],
-     gdb_cv_have_struct_link_map32=yes,
-     gdb_cv_have_struct_link_map32=no)])
-  AC_MSG_RESULT($gdb_cv_have_struct_link_map32)
-  if test $gdb_cv_have_struct_link_map32 = yes; then
-    AC_DEFINE(HAVE_STRUCT_LINK_MAP32, 1,
-    [Define if <sys/link.h> has struct link_map32])
-    AC_DEFINE(_SYSCALL32, 1,
-    [Define if <sys/link.h> has link_map32 (solaris sparc-64 target)])
-  fi
-fi
-
-# Check if the compiler supports the `long long' type.
-
-AC_CACHE_CHECK([for long long support in compiler], gdb_cv_c_long_long,
-               [AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
-[[extern long long foo;]],
-[[switch (foo & 2) { case 0: return 1; }]])],
-                                  gdb_cv_c_long_long=yes,
-                                  gdb_cv_c_long_long=no)])
-if test $gdb_cv_c_long_long = yes; then
-  AC_DEFINE(CC_HAS_LONG_LONG, 1,
-            [Define to 1 if the compiler supports long long.])
-fi
-
-# Check if the compiler and runtime support printing long longs.
-
-AC_CACHE_CHECK([for long long support in printf],
-               gdb_cv_printf_has_long_long,
-               [AC_RUN_IFELSE([AC_LANG_PROGRAM([AC_INCLUDES_DEFAULT],
-[[char buf[32];
-  long long l = 0;
-  l = (l << 16) + 0x0123;
-  l = (l << 16) + 0x4567;
-  l = (l << 16) + 0x89ab;
-  l = (l << 16) + 0xcdef;
-  sprintf (buf, "0x%016llx", l);
-  return (strcmp ("0x0123456789abcdef", buf));]])],
-                              gdb_cv_printf_has_long_long=yes,
-                              gdb_cv_printf_has_long_long=no,
-                              gdb_cv_printf_has_long_long=no)])
-if test $gdb_cv_printf_has_long_long = yes; then
-  AC_DEFINE(PRINTF_HAS_LONG_LONG, 1,
-            [Define to 1 if the "%ll" format works to print long longs.])
-fi
-
-# Check if the compiler and runtime support printing decfloats.
-
-AC_CACHE_CHECK([for decfloat support in printf],
-               gdb_cv_printf_has_decfloat,
-               [AC_RUN_IFELSE([AC_LANG_PROGRAM([AC_INCLUDES_DEFAULT],
-[[char buf[64];
-  _Decimal32 d32 = 1.2345df;
-  _Decimal64 d64 = 1.2345dd;
-  _Decimal128 d128 = 1.2345dl;
-  sprintf (buf, "Decimal32: %H\nDecimal64: %D\nDecimal128: %DD", d32, d64, d128);
-  return (strcmp ("Decimal32: 1.2345\nDecimal64: 1.2345\nDecimal128: 1.2345", buf));]])],
-                              gdb_cv_printf_has_decfloat=yes,
-                              gdb_cv_printf_has_decfloat=no,
-                              gdb_cv_printf_has_decfloat=no)])
-if test $gdb_cv_printf_has_decfloat = yes; then
-  AC_DEFINE(PRINTF_HAS_DECFLOAT, 1,
-            [Define to 1 if the "%H, %D and %DD" formats work to print decfloats.])
-fi
-
-# Check if the compiler supports the `long double' type.  We can't use
-# AC_C_LONG_DOUBLE because that one does additional checks on the
-# constants defined in <float.h> that fail on some systems,
-# e.g. FreeBSD/i386 4.7 and OpenBSD/i386 3.6.
-
-AC_CACHE_CHECK([for long double support in compiler], gdb_cv_c_long_double,
-               [AC_COMPILE_IFELSE([AC_LANG_SOURCE([[long double foo;]])],
-                                  gdb_cv_c_long_double=yes,
-                                  gdb_cv_c_long_double=no)])
-if test $gdb_cv_c_long_double = yes; then
-  AC_DEFINE(HAVE_LONG_DOUBLE, 1,
-           [Define to 1 if the compiler supports long double.])
-fi
-
-# Check if the compiler and runtime support printing long doubles.
-
-AC_CACHE_CHECK([for long double support in printf],
-               gdb_cv_printf_has_long_double,
-               [AC_RUN_IFELSE([AC_LANG_PROGRAM([AC_INCLUDES_DEFAULT],
-[[char buf[16];
-  long double f = 3.141592653;
-  sprintf (buf, "%Lg", f);
-  return (strncmp ("3.14159", buf, 7));]])],
-                              gdb_cv_printf_has_long_double=yes,
-                              gdb_cv_printf_has_long_double=no,
-                              gdb_cv_printf_has_long_double=no)])
-if test $gdb_cv_printf_has_long_double = yes; then
-  AC_DEFINE(PRINTF_HAS_LONG_DOUBLE, 1,
-            [Define to 1 if the "%Lg" format works to print long doubles.])
-fi
-
-# Check if the compiler and runtime support scanning long doubles.
-
-AC_CACHE_CHECK([for long double support in scanf], 
-               gdb_cv_scanf_has_long_double,
-               [AC_RUN_IFELSE([AC_LANG_PROGRAM(
-[[#include <stdio.h>]],
-[[char *buf = "3.141592653";
-  long double f = 0;
-  sscanf (buf, "%Lg", &f);
-  return !(f > 3.14159 && f < 3.14160);]])],
-                              gdb_cv_scanf_has_long_double=yes,
-                              gdb_cv_scanf_has_long_double=no,
-                              gdb_cv_scanf_has_long_double=no)])
-if test $gdb_cv_scanf_has_long_double = yes; then
-  AC_DEFINE(SCANF_HAS_LONG_DOUBLE, 1,
-            [Define to 1 if the "%Lg" format works to scan long doubles.])
-fi
-
-case ${host_os} in
-aix*)
-  AC_CACHE_CHECK([for -bbigtoc option], [gdb_cv_bigtoc], [
-    SAVE_LDFLAGS=$LDFLAGS
-
-    case $GCC in
-    yes) gdb_cv_bigtoc=-Wl,-bbigtoc ;;
-    *) gdb_cv_bigtoc=-bbigtoc ;;
+AC_ARG_ENABLE(gold,
+[[  --enable-gold[=ARG]     build gold [ARG={both}[/{gold,ld}]]]],
+ENABLE_GOLD=$enableval,
+ENABLE_GOLD=no)
+  case "${ENABLE_GOLD}" in
+  yes|both|both/gold|both/ld)
+    # Check for ELF target.
+    is_elf=no
+    case "${target}" in
+      *-*-elf* | *-*-sysv4* | *-*-unixware* | *-*-eabi* | hppa*64*-*-hpux* \
+      | *-*-linux* | frv-*-uclinux* | *-*-irix5* | *-*-irix6* \
+      | *-*-netbsd* | *-*-openbsd* | *-*-freebsd* | *-*-solaris2* | *-*-nto*)
+        case "${target}" in
+          *-*-linux*aout* | *-*-linux*oldld*)
+            ;;
+          *)
+            is_elf=yes
+            ;;
+        esac
     esac
 
-    LDFLAGS=$LDFLAGS\ $gdb_cv_bigtoc
-    AC_TRY_LINK([], [int i;], [], [gdb_cv_bigtoc=])
-    LDFLAGS="${SAVE_LDFLAGS}"
-  ])
-  CONFIG_LDFLAGS="${CONFIG_LDFLAGS} ${gdb_cv_bigtoc}"
+    if test "$is_elf" = "yes"; then
+      # Check for target supported by gold.
+      case "${target}" in
+        i?86-*-* | x86_64-*-* | sparc*-*-* | powerpc*-*-* | arm*-*-*)
+	  case "${ENABLE_GOLD}" in 
+	  both*)
+            configdirs="$configdirs gold"
+	    ;;
+	  *)
+            configdirs="`echo " ${configdirs} " | sed -e 's/ ld / gold /'`"
+	    ;;
+	  esac
+	  ENABLE_GOLD=yes
+          ;;
+      esac
+    fi
+    ;;
+  no)
+    ;;
+  *)
+    AC_MSG_ERROR([invalid --enable-gold argument])
+    ;;
+  esac
+
+# Configure extra directories which are host specific
+
+case "${host}" in
+  *-cygwin*)
+    configdirs="$configdirs libtermcap" ;;
+esac
+
+# A target can indicate whether a language isn't supported for some reason.
+# Only spaces may be used in this macro; not newlines or tabs.
+unsupported_languages=
+
+# Remove more programs from consideration, based on the host or 
+# target this usually means that a port of the program doesn't
+# exist yet.
+
+case "${host}" in
+  hppa*64*-*-*)
+    noconfigdirs="$noconfigdirs byacc"
+    ;;
+  i[[3456789]]86-*-vsta)
+    noconfigdirs="$noconfigdirs tcl expect dejagnu make texinfo bison patch flex byacc send-pr gprof uudecode dejagnu diff guile perl itcl gnuserv gettext"
+    ;;
+  i[[3456789]]86-*-go32* | i[[3456789]]86-*-msdosdjgpp*)
+    noconfigdirs="$noconfigdirs tcl tk expect dejagnu send-pr uudecode guile itcl gnuserv libffi"
+    ;;
+  x86_64-*-mingw*)
+    noconfigdirs="$noconfigdirs expect dejagnu autoconf automake send-pr rcs guile perl texinfo libtool newlib"
+    ;;
+  i[[3456789]]86-*-mingw32*)
+    # noconfigdirs="tcl tk expect dejagnu make texinfo bison patch flex byacc send-pr uudecode dejagnu diff guile perl itcl gnuserv"
+    noconfigdirs="$noconfigdirs expect dejagnu autoconf automake send-pr rcs guile perl texinfo libtool newlib"
+    ;;
+  i[[3456789]]86-*-beos*)
+    noconfigdirs="$noconfigdirs tk itcl libgui gdb"
+    ;;
+  *-*-cygwin*)
+    noconfigdirs="$noconfigdirs autoconf automake send-pr rcs guile perl"
+    ;;
+  *-*-netbsd*)
+    noconfigdirs="$noconfigdirs rcs"
+    ;;
+  ppc*-*-pe)
+    noconfigdirs="$noconfigdirs patch diff make tk tcl expect dejagnu autoconf automake texinfo bison send-pr gprof rcs guile perl itcl gnuserv"
+    ;;
+  powerpc-*-beos*)
+    noconfigdirs="$noconfigdirs tk itcl libgui gdb dejagnu readline"
+    ;;
+esac
+
+
+AC_ARG_ENABLE(libada,
+[  --enable-libada         build libada directory],
+ENABLE_LIBADA=$enableval,
+ENABLE_LIBADA=yes)
+if test "${ENABLE_LIBADA}" != "yes" ; then
+  noconfigdirs="$noconfigdirs gnattools"
+fi
+
+AC_ARG_ENABLE(libssp,
+[  --enable-libssp         build libssp directory],
+ENABLE_LIBSSP=$enableval,
+ENABLE_LIBSSP=yes)
+
+# Save it here so that, even in case of --enable-libgcj, if the Java
+# front-end isn't enabled, we still get libgcj disabled.
+libgcj_saved=$libgcj
+case $enable_libgcj in
+yes)
+  # If we reset it here, it won't get added to noconfigdirs in the
+  # target-specific build rules, so it will be forcibly enabled
+  # (unless the Java language itself isn't enabled).
+  libgcj=
+  ;;
+no)
+  # Make sure we get it printed in the list of not supported target libs.
+  noconfigdirs="$noconfigdirs ${libgcj}"
   ;;
 esac
 
 
-dnl For certain native configurations, we need to check whether thread
-dnl support can be built in or not.
-dnl
-dnl Note that we only want this if we are both native (host == target),
-dnl and not doing a canadian cross build (build == host).
-
-if test ${build} = ${host} -a ${host} = ${target} ; then
-   case ${host_os} in
-   hpux*)
-      AC_MSG_CHECKING(for HPUX/OSF thread support)
-      if test -f /usr/include/dce/cma_config.h ; then
-         if test "$GCC" = "yes" ; then
-            AC_MSG_RESULT(yes)
-            AC_DEFINE(HAVE_HPUX_THREAD_SUPPORT, 1,
-	    [Define if you have HPUX threads])
-            CONFIG_OBS="${CONFIG_OBS} hpux-thread.o"
-            CONFIG_SRCS="${CONFIG_SRCS} hpux-thread.c"
-         else
-            AC_MSG_RESULT(no (suppressed because you are not using GCC))
-         fi
-      else
-         AC_MSG_RESULT(no)
-      fi
-      ;;
-   solaris*)
-      # See if thread_db library is around for Solaris thread debugging.
-      # Note that we must explicitly test for version 1 of the library
-      # because version 0 (present on Solaris 2.4 or earlier) doesn't have
-      # the same API.
-      AC_MSG_CHECKING(for Solaris thread debugging library)
-      if test -f /usr/lib/libthread_db.so.1 ; then
-         AC_MSG_RESULT(yes)
-         AC_DEFINE(HAVE_THREAD_DB_LIB, 1,
-         [Define if using Solaris thread debugging.])
-         CONFIG_OBS="${CONFIG_OBS} sol-thread.o"
-         CONFIG_SRCS="${CONFIG_SRCS} sol-thread.c"
-         AC_CHECK_LIB(dl, dlopen)
-         if test "$GCC" = "yes" ; then
-            # The GNU linker requires the -export-dynamic option to make
-            # all symbols visible in the dynamic symbol table.
-            hold_ldflags=$LDFLAGS
-            AC_MSG_CHECKING(for the ld -export-dynamic flag)
-            LDFLAGS="${LDFLAGS} -Wl,-export-dynamic"
-            AC_TRY_LINK(, [int i;], found=yes, found=no)
-            LDFLAGS=$hold_ldflags
-            AC_MSG_RESULT($found)
-            if test $found = yes; then
-               CONFIG_LDFLAGS="${CONFIG_LDFLAGS} -Wl,-export-dynamic"
-            fi
-         fi
-	 # Sun randomly tweaked the prototypes in <proc_service.h>
-	 # at one point.
-	 AC_MSG_CHECKING(if <proc_service.h> is old)
-	 AC_CACHE_VAL(gdb_cv_proc_service_is_old,[
-	    AC_TRY_COMPILE([
-		#include <proc_service.h>
-		ps_err_e ps_pdwrite
-		    (struct ps_prochandle*, psaddr_t, const void*, size_t);
-	    ],, gdb_cv_proc_service_is_old=no,
-	        gdb_cv_proc_service_is_old=yes)
-	 ])
-	 AC_MSG_RESULT($gdb_cv_proc_service_is_old)
-	 if test $gdb_cv_proc_service_is_old = yes; then
-	    AC_DEFINE(PROC_SERVICE_IS_OLD, 1,
-            [Define if <proc_service.h> on solaris uses int instead of
-             size_t, and assorted other type changes.])
-	 fi
-      else
-         AC_MSG_RESULT(no)
-      fi
-      ;;
-   aix*)
-      AC_MSG_CHECKING(for AiX thread debugging library)
-      AC_CACHE_VAL(gdb_cv_have_aix_thread_debug,
-                   [AC_TRY_COMPILE([#include <sys/pthdebug.h>],
-                                   [#ifndef PTHDB_VERSION_3
-                                    #error
-                                    #endif],
-                                   gdb_cv_have_aix_thread_debug=yes,
-                                   gdb_cv_have_aix_thread_debug=no)])
-      AC_MSG_RESULT($gdb_cv_have_aix_thread_debug)
-      if test $gdb_cv_have_aix_thread_debug = yes; then
-         CONFIG_SRCS="${CONFIG_SRCS} aix-thread.c"
-         CONFIG_OBS="${CONFIG_OBS} aix-thread.o"
-         CONFIG_LDFLAGS="${CONFIG_LDFLAGS} -lpthdebug"
-      fi
-      ;;
-   esac
-   AC_SUBST(CONFIG_LDFLAGS)
-fi
-
-dnl See if we have a thread_db header file that has TD_NOTALLOC and
-dnl other error codes.
-if test "x$ac_cv_header_thread_db_h" = "xyes"; then
-   AC_CACHE_CHECK([whether <thread_db.h> has TD_NOTALLOC],
-                  gdb_cv_thread_db_h_has_td_notalloc,
-     AC_TRY_COMPILE(
-       [#include <thread_db.h>],
-       [int i = TD_NOTALLOC;],
-       gdb_cv_thread_db_h_has_td_notalloc=yes,
-       gdb_cv_thread_db_h_has_td_notalloc=no
-     )
-   )
-   AC_CACHE_CHECK([whether <thread_db.h> has TD_VERSION],
-                  gdb_cv_thread_db_h_has_td_version,
-     AC_TRY_COMPILE(
-       [#include <thread_db.h>],
-       [int i = TD_VERSION;],
-       gdb_cv_thread_db_h_has_td_version=yes,
-       gdb_cv_thread_db_h_has_td_version=no
-     )
-   )
-   AC_CACHE_CHECK([whether <thread_db.h> has TD_NOTLS],
-                  gdb_cv_thread_db_h_has_td_notls,
-     AC_TRY_COMPILE(
-       [#include <thread_db.h>],
-       [int i = TD_NOTLS;],
-       gdb_cv_thread_db_h_has_td_notls=yes,
-       gdb_cv_thread_db_h_has_td_notls=no
-     )
-   )
-fi
-if test "x$gdb_cv_thread_db_h_has_td_notalloc" = "xyes"; then
-  AC_DEFINE(THREAD_DB_HAS_TD_NOTALLOC, 1,
-            [Define if <thread_db.h> has the TD_NOTALLOC error code.])
-fi
-if test "x$gdb_cv_thread_db_h_has_td_version" = "xyes"; then
-  AC_DEFINE(THREAD_DB_HAS_TD_VERSION, 1,
-            [Define if <thread_db.h> has the TD_VERSION error code.])
-fi
-if test "x$gdb_cv_thread_db_h_has_td_notls" = "xyes"; then
-  AC_DEFINE(THREAD_DB_HAS_TD_NOTLS, 1,
-            [Define if <thread_db.h> has the TD_NOTLS error code.])
-fi
-
-dnl See if we have a sys/syscall header file that has __NR_tkill.
-if test "x$ac_cv_header_sys_syscall_h" = "xyes"; then
-   AC_CACHE_CHECK([whether <sys/syscall.h> has __NR_tkill],
-                  gdb_cv_sys_syscall_h_has_tkill,
-     AC_TRY_COMPILE(
-       [#include <sys/syscall.h>],
-       [int i = __NR_tkill;],
-       gdb_cv_sys_syscall_h_has_tkill=yes,
-       gdb_cv_sys_syscall_h_has_tkill=no
-     )
-   )
-fi
-dnl See if we can issue tkill syscall.
-if test "x$gdb_cv_sys_syscall_h_has_tkill" = "xyes" && test "x$ac_cv_func_syscall" = "xyes"; then
-  AC_DEFINE(HAVE_TKILL_SYSCALL, 1, [Define if you support the tkill syscall.])
-fi
-
-dnl Handle optional features that can be enabled.
-
-AC_ARG_WITH(sysroot,
-[  --with-sysroot[=DIR] Search for usr/lib et al within DIR.],
-[
- case ${with_sysroot} in
- yes) TARGET_SYSTEM_ROOT='${exec_prefix}/${target_alias}/sys-root' ;;
- *) TARGET_SYSTEM_ROOT=$with_sysroot ;;
- esac
-
- TARGET_SYSTEM_ROOT_DEFINE='-DTARGET_SYSTEM_ROOT=\"$(TARGET_SYSTEM_ROOT)\"'
-
- if test "x$prefix" = xNONE; then
-  test_prefix=/usr/local
- else
-  test_prefix=$prefix
- fi
- if test "x$exec_prefix" = xNONE || test "x$exec_prefix" = 'x${prefix}'; then
-  test_exec_prefix=$test_prefix
- else
-  test_exec_prefix=$exec_prefix
- fi
- case ${TARGET_SYSTEM_ROOT} in
- "${test_prefix}"|"${test_prefix}/"*|\
- "${test_exec_prefix}"|"${test_exec_prefix}/"*|\
- '${prefix}'|'${prefix}/'*|\
- '${exec_prefix}'|'${exec_prefix}/'*)
-   t="$TARGET_SYSTEM_ROOT_DEFINE -DTARGET_SYSTEM_ROOT_RELOCATABLE"
-   TARGET_SYSTEM_ROOT_DEFINE="$t"
-   ;;
- esac
-], [
- TARGET_SYSTEM_ROOT=
- TARGET_SYSTEM_ROOT_DEFINE='-DTARGET_SYSTEM_ROOT=\"\"'
-])
-AC_SUBST(TARGET_SYSTEM_ROOT)
-AC_SUBST(TARGET_SYSTEM_ROOT_DEFINE)
-
-AC_ARG_ENABLE(werror,
-  [  --enable-werror    treat compile warnings as errors],
-  [case "${enableval}" in
-     yes | y) ERROR_ON_WARNING="yes" ;;
-     no | n)  ERROR_ON_WARNING="no" ;;
-     *) AC_MSG_ERROR(bad value ${enableval} for --enable-werror) ;;
-   esac])
-
-# Enable -Werror by default when using gcc
-if test "${GCC}" = yes -a -z "${ERROR_ON_WARNING}" ; then
-    ERROR_ON_WARNING=yes
-fi
-
-WERROR_CFLAGS=""
-if test "${ERROR_ON_WARNING}" = yes ; then
-    WERROR_CFLAGS="-Werror"
-fi
-
-# The entries after -Wno-pointer-sign are disabled warnings which may
-# be enabled in the future, which can not currently be used to build
-# GDB.
-# NOTE: If you change this list, remember to update
-# gdb/doc/gdbint.texinfo.
-build_warnings="-Wall -Wdeclaration-after-statement -Wpointer-arith \
--Wformat-nonliteral -Wno-pointer-sign \
--Wno-unused -Wno-switch -Wno-char-subscripts"
-
-AC_ARG_ENABLE(build-warnings,
-[  --enable-build-warnings Enable build-time compiler warnings if gcc is used],
-[case "${enableval}" in
-  yes)	;;
-  no)	build_warnings="-w";;
-  ,*)   t=`echo "${enableval}" | sed -e "s/,/ /g"`
-        build_warnings="${build_warnings} ${t}";;
-  *,)   t=`echo "${enableval}" | sed -e "s/,/ /g"`
-        build_warnings="${t} ${build_warnings}";;
-  *)    build_warnings=`echo "${enableval}" | sed -e "s/,/ /g"`;;
-esac
-if test x"$silent" != x"yes" && test x"$build_warnings" != x""; then
-  echo "Setting compiler warning flags = $build_warnings" 6>&1
-fi])dnl
-AC_ARG_ENABLE(gdb-build-warnings,
-[  --enable-gdb-build-warnings Enable GDB specific build-time compiler warnings if gcc is used],
-[case "${enableval}" in
-  yes)	;;
-  no)	build_warnings="-w";;
-  ,*)   t=`echo "${enableval}" | sed -e "s/,/ /g"`
-        build_warnings="${build_warnings} ${t}";;
-  *,)   t=`echo "${enableval}" | sed -e "s/,/ /g"`
-        build_warnings="${t} ${build_warnings}";;
-  *)    build_warnings=`echo "${enableval}" | sed -e "s/,/ /g"`;;
-esac
-if test x"$silent" != x"yes" && test x"$build_warnings" != x""; then
-  echo "Setting GDB specific compiler warning flags = $build_warnings" 6>&1
-fi])dnl
-WARN_CFLAGS=""
-if test "x${build_warnings}" != x -a "x$GCC" = xyes
-then
-    AC_MSG_CHECKING(compiler warning flags)
-    # Separate out the -Werror flag as some files just cannot be
-    # compiled with it enabled.
-    for w in ${build_warnings}; do
-	case $w in
-	-Werr*) WERROR_CFLAGS=-Werror ;;
-	*) # Check that GCC accepts it
-	    saved_CFLAGS="$CFLAGS"
-	    CFLAGS="$CFLAGS $w"
-	    AC_TRY_COMPILE([],[],WARN_CFLAGS="${WARN_CFLAGS} $w",)
-	    CFLAGS="$saved_CFLAGS"
-	esac
-    done
-    AC_MSG_RESULT(${WARN_CFLAGS} ${WERROR_CFLAGS})
-fi
-AC_SUBST(WARN_CFLAGS)
-AC_SUBST(WERROR_CFLAGS)
-
-# In the Cygwin environment, we need some additional flags.
-AC_CACHE_CHECK([for cygwin], gdb_cv_os_cygwin,
-[AC_EGREP_CPP(lose, [
-#if defined (__CYGWIN__) || defined (__CYGWIN32__)
-lose
-#endif],[gdb_cv_os_cygwin=yes],[gdb_cv_os_cygwin=no])])
-
-
-dnl Figure out which of the many generic ser-*.c files the _host_ supports.
-SER_HARDWIRE="ser-base.o ser-unix.o ser-pipe.o ser-tcp.o"
-case ${host} in
-  *go32* ) SER_HARDWIRE=ser-go32.o ;;
-  *djgpp* ) SER_HARDWIRE=ser-go32.o ;;
-  *mingw32*) SER_HARDWIRE="ser-base.o ser-tcp.o ser-mingw.o" ;;
-esac
-AC_SUBST(SER_HARDWIRE)
-
-# libreadline needs libuser32.a in a cygwin environment
-WIN32LIBS=
-if test x$gdb_cv_os_cygwin = xyes; then
-    WIN32LIBS="-luser32"
+# Disable libmudflap on some systems.
+if test x$enable_libmudflap = x ; then
     case "${target}" in
-	*cygwin*) WIN32LIBS="$WIN32LIBS -limagehlp"
+    *-*-linux* | *-*-gnu* | *-*-k*bsd*-gnu | bfin*-*-uclinux* | *-*-kopensolaris*-gnu)
+        # Enable libmudflap by default in GNU and friends.
+	;;
+    *-*-freebsd*)
+        # Enable libmudflap by default in FreeBSD.
+	;;
+    *)
+        # Disable it by default everywhere else.
+	noconfigdirs="$noconfigdirs target-libmudflap"
 	;;
     esac
 fi
 
-# The ser-tcp.c module requires sockets.
-case ${host} in
-  *mingw32*)
-    AC_DEFINE(USE_WIN32API, 1,
-              [Define if we should use the Windows API, instead of the 
-	       POSIX API.  On Windows, we use the Windows API when 
-	       building for MinGW, but the POSIX API when building 
-	       for Cygwin.])
-    WIN32LIBS="$WIN32LIBS -lws2_32"
-    ;;
-esac	    
-AC_SUBST(WIN32LIBS)
-
-# Add ELF support to GDB, but only if BFD includes ELF support.
-OLD_CFLAGS=$CFLAGS
-OLD_LDFLAGS=$LDFLAGS
-OLD_LIBS=$LIBS
-CFLAGS="$CFLAGS -I${srcdir}/../include -I../bfd -I${srcdir}/../bfd"
-LDFLAGS="$LDFLAGS -L../bfd -L../libiberty"
-intl=`echo $LIBINTL | sed 's,${top_builddir}/,,g'`
-LIBS="$LIBS -lbfd -liberty $intl"
-AC_CACHE_CHECK([for ELF support in BFD], gdb_cv_var_elf,
-[AC_TRY_LINK(
-[#include <stdlib.h>
-#include "bfd.h"
-#include "elf-bfd.h"
-],
-[bfd *abfd = NULL; bfd_get_elf_phdr_upper_bound (abfd); ],
-gdb_cv_var_elf=yes, gdb_cv_var_elf=no)])
-if test $gdb_cv_var_elf = yes; then
-  CONFIG_OBS="$CONFIG_OBS elfread.o"
-  AC_DEFINE(HAVE_ELF, 1,
-	    [Define if ELF support should be included.])
-fi
-CFLAGS=$OLD_CFLAGS
-LDFLAGS=$OLD_LDFLAGS
-LIBS=$OLD_LIBS
-
-# Add any host-specific objects to GDB.
-CONFIG_OBS="${CONFIG_OBS} ${gdb_host_obs}"
-
-LIBGUI="../libgui/src/libgui.a"
-GUI_CFLAGS_X="-I${srcdir}/../libgui/src"
-AC_SUBST(LIBGUI)
-AC_SUBST(GUI_CFLAGS_X)
-
-WIN32LDAPP=
-AC_SUBST(WIN32LIBS)
-AC_SUBST(WIN32LDAPP)
-
-case "${host}" in
-*-*-cygwin*)
-    configdir="win"
-    ;;
-*)
-    configdir="unix"
-    ;;
-esac
-
-GDBTKLIBS=
-if test "${enable_gdbtk}" = "yes"; then
-
-    # Gdbtk must have an absolute path to srcdir in order to run
-    # properly when not installed.
-    here=`pwd`
-    cd ${srcdir}
-    GDBTK_SRC_DIR=`pwd`
-    cd $here
-
-    CY_AC_PATH_TCLCONFIG
-    if test -z "${no_tcl}"; then
-	CY_AC_LOAD_TCLCONFIG
-	CY_AC_PATH_TKCONFIG
-
-	# now look for Tcl library stuff
-
-	tcldir="../tcl/${configdir}/"
-
-	TCL_DEPS="${tcldir}${TCL_LIB_FILE}"
-
-	# If $no_tk is nonempty, then we can't do Tk, and there is no
-	# point to doing Tcl.
-	if test -z "${no_tk}"; then
-	   CY_AC_LOAD_TKCONFIG
-	   CY_AC_PATH_TCLH
-	   CY_AC_PATH_TKH
-	   CY_AC_PATH_ITCLH
-	   CY_AC_PATH_ITKH
-
-
-	   # now look for Tk library stuff
-
-	   tkdir="../tk/${configdir}/"
-
-	   TK_DEPS="${tkdir}${TK_LIB_FILE}"
-
-	   # now look for Itcl library stuff
-
-	   CY_AC_PATH_ITCLCONFIG
-           if test -z "${no_itcl}"; then
-             CY_AC_LOAD_ITCLCONFIG 
-
-	     ITCLLIB="${ITCL_BUILD_LIB_SPEC}"
-	     ITCL_DEPS="${ITCL_LIB_FULL_PATH}"
-           fi
-
-	   
-	   # now look for Itk library stuff
-	   CY_AC_PATH_ITKCONFIG
-           if test -z "${no_itcl}"; then
-             CY_AC_LOAD_ITKCONFIG
-
-	     ITKLIB="${ITK_BUILD_LIB_SPEC}"
-	     ITK_DEPS="${ITK_LIB_FULL_PATH}"
-           fi
-
-           ENABLE_CFLAGS="${ENABLE_CFLAGS} \$(SUBDIR_GDBTK_CFLAGS)"
-
-	   # Include some libraries that Tcl and Tk want.
-	   TCL_LIBS='$(LIBGUI) $(ITCL) $(ITK) $(TK) $(TCL) $(X11_LDFLAGS) $(X11_LIBS)'
-	   # Yes, the ordering seems wrong here.  But it isn't.
-	   # TK_LIBS is the list of libraries that need to be linked
-	   # after Tcl/Tk.  Note that this isn't put into LIBS.  If it
-	   # were in LIBS then any link tests after this point would
-	   # try to include things like `$(LIBGUI)', which wouldn't work.
-	   GDBTKLIBS="${TCL_LIBS} ${TK_LIBS}"
-
-           CONFIG_OBS="${CONFIG_OBS} \$(SUBDIR_GDBTK_OBS)"
-           CONFIG_DEPS="${CONFIG_DEPS} \$(SUBDIR_GDBTK_DEPS)"
-           CONFIG_SRCS="${CONFIG_SRCS} \$(SUBDIR_GDBTK_SRCS)"
-	   CONFIG_ALL="${CONFIG_ALL} all-gdbtk"
-	   CONFIG_CLEAN="${CONFIG_CLEAN} clean-gdbtk"
-	   CONFIG_INSTALL="${CONFIG_INSTALL} install-gdbtk"
-	   CONFIG_UNINSTALL="${CONFIG_UNINSTALL} uninstall-gdbtk"
-
-	   if test x$gdb_cv_os_cygwin = xyes; then
-	      WIN32LIBS="${WIN32LIBS} -lshell32 -lgdi32 -lcomdlg32 -ladvapi32"
-	      WIN32LDAPP="-Wl,--subsystem,console"
-	      CONFIG_OBS="${CONFIG_OBS} gdbres.o"
-	   fi
-	fi
-    fi
-
-    AC_CONFIG_SUBDIRS(gdbtk)
-fi
-
-AC_SUBST(X_CFLAGS)
-AC_SUBST(X_LDFLAGS)
-AC_SUBST(X_LIBS)
-AC_SUBST(TCL_DEPS)
-AC_SUBST(TK_DEPS)
-AC_SUBST(ITCLLIB)
-AC_SUBST(ITCL_DEPS)
-AC_SUBST(ITKLIB)
-AC_SUBST(ITK_DEPS)
-AC_SUBST(GDBTKLIBS)
-AC_SUBST(GDBTK_CFLAGS)
-AC_SUBST(GDBTK_SRC_DIR)
-
-AC_PATH_X
-
-# Check whether we should enable the TUI, but only do so if we really
-# can.
-if test x"$enable_tui" = xyes; then
-  if test -d $srcdir/tui; then
-    if test "$ac_cv_search_waddstr" != no; then
-      CONFIG_OBS="$CONFIG_OBS \$(SUBDIR_TUI_OBS)"
-      CONFIG_DEPS="$CONFIG_DEPS \$(SUBDIR_TUI_DEPS)"
-      CONFIG_SRCS="$CONFIG_SRCS \$(SUBDIR_TUI_SRCS)"
-      CONFIG_INITS="$CONFIG_INITS \$(SUBDIR_TUI_INITS)"
-      ENABLE_CFLAGS="$ENABLE_CFLAGS \$(SUBDIR_TUI_CFLAGS)"
-      CONFIG_ALL="${CONFIG_ALL} all-tui"
-      CONFIG_CLEAN="${CONFIG_CLEAN} clean-tui"
-      CONFIG_INSTALL="${CONFIG_INSTALL} install-tui"
-      CONFIG_UNINSTALL="${CONFIG_UNINSTALL} uninstall-tui"
-    else
-      AC_MSG_WARN([no enhanced curses library found; disabling TUI])
-    fi
-  fi
-fi
-
-# Unlike the sim directory, whether a simulator is linked is controlled by 
-# presence of a gdb_sim definition in the target configure.tgt entry.  
-# This code just checks for a few cases where we'd like to ignore those
-# definitions, even when they're present in the '.mt' file.  These cases
-# are when --disable-sim is specified, or if the simulator directory is
-# not part of the source tree.
-#
-AC_ARG_ENABLE(sim,
-[  --enable-sim            Link gdb with simulator],
-[echo "enable_sim = $enable_sim";
- echo "enableval = ${enableval}";
- case "${enableval}" in
-  yes) ignore_sim=false ;;
-  no)  ignore_sim=true ;;
-  *)   ignore_sim=false ;;
- esac],
-[ignore_sim=false])
-
-if test ! -d "${srcdir}/../sim"; then
-  ignore_sim=true
-fi
-
-SIM=
-SIM_OBS=
-if test "${ignore_sim}" = "false"; then
-  if test x"${gdb_sim}" != x ; then
-    SIM="${gdb_sim}"
-    SIM_OBS="remote-sim.o"
-    AC_DEFINE(WITH_SIM, 1, [Define if the simulator is being linked in.])
-  fi
-fi
-AC_SUBST(SIM)
-AC_SUBST(SIM_OBS)
-
-AC_SUBST(ENABLE_CFLAGS)
-AC_SUBST(PROFILE_CFLAGS)
-
-AC_SUBST(CONFIG_OBS)
-AC_SUBST(CONFIG_DEPS)
-AC_SUBST(CONFIG_SRCS)
-AC_SUBST(CONFIG_ALL)
-AC_SUBST(CONFIG_CLEAN)
-AC_SUBST(CONFIG_INSTALL)
-AC_SUBST(CONFIG_UNINSTALL)
-
-# List of host floatformats.
-AC_DEFINE_UNQUOTED(GDB_HOST_FLOAT_FORMAT,$gdb_host_float_format,[Host float floatformat])
-AC_DEFINE_UNQUOTED(GDB_HOST_DOUBLE_FORMAT,$gdb_host_double_format,[Host double floatformat])
-AC_DEFINE_UNQUOTED(GDB_HOST_LONG_DOUBLE_FORMAT,$gdb_host_long_double_format,[Host long double floatformat])
-
-# target_subdir is used by the testsuite to find the target libraries.
-target_subdir=
-if test "${host}" != "${target}"; then
-    target_subdir="${target_alias}/"
-fi
-AC_SUBST(target_subdir)
-
-frags=
-if test "${gdb_native}" = "yes"; then
-  host_makefile_frag=${srcdir}/config/${gdb_host_cpu}/${gdb_host}.mh
-  if test ! -f ${host_makefile_frag}; then
-    AC_MSG_ERROR("*** Gdb does not support native target ${host}")
-  fi
-  frags="$frags $host_makefile_frag"
-else
-  host_makefile_frag=/dev/null
-fi
-
-AC_SUBST_FILE(host_makefile_frag)
-AC_SUBST(frags)
-
-changequote(,)dnl
-if test "${gdb_native}" = "yes"; then
-# We pick this up from the host configuration file (.mh) because we
-# do not have a native configuration Makefile fragment.
-nativefile=`sed -n '
-s/NAT_FILE[ 	]*=[ 	]*\([^ 	]*\)/\1/p
-' ${host_makefile_frag}`
-fi
-changequote([,])
-
-if test x"${gdb_osabi}" != x ; then
-    AC_DEFINE_UNQUOTED(GDB_OSABI_DEFAULT, $gdb_osabi,
-		       [Define to the default OS ABI for this configuration.])
-fi
-
-# Enable multi-ice-gdb-server.
-AC_ARG_ENABLE(multi-ice,
-[  --enable-multi-ice      build the multi-ice-gdb-server],
-  [case $enableval in
-    yes | no)
-      ;;
-    *) AC_MSG_ERROR([bad value $enableval for --enable-multi-ice]) ;;
-  esac])
-if test "x$enable_multi_ice" = xyes; then
-   AC_CONFIG_SUBDIRS(multi-ice)
-fi
-
-# We only build gdbserver automatically in a native configuration. 
-if test "$gdb_native" = "yes"; then
-  AC_MSG_CHECKING(whether gdbserver is supported on this host)
-  if test "x$build_gdbserver" = xyes; then
-    AC_MSG_RESULT(yes)
-    AC_CONFIG_SUBDIRS(gdbserver)
-  else
-    AC_MSG_RESULT(no)
-  fi
-fi
-
-# If nativefile (NAT_FILE) is not set in config/*/*.m[ht] files, we link
-# to an empty version.
-
-files=
-links=
-
-rm -f nm.h
-nm_h=""
-if test "${nativefile}" != ""; then
-    nm_h=nm.h
-    case "${nativefile}" in
-      nm-*.h ) GDB_NM_FILE="config/${gdb_host_cpu}/${nativefile}" ;;
-      * ) GDB_NM_FILE="${nativefile}"
+# Disable libgomp on non POSIX hosted systems.
+if test x$enable_libgomp = x ; then
+    # Enable libgomp by default on hosted POSIX systems.
+    case "${target}" in
+    *-*-linux* | *-*-gnu* | *-*-k*bsd*-gnu | *-*-kopensolaris*-gnu)
+	;;
+    *-*-netbsd* | *-*-freebsd* | *-*-openbsd*)
+	;;
+    *-*-solaris2* | *-*-sysv4* | *-*-irix6* | *-*-osf* | *-*-hpux11*)
+	;;
+    *-*-darwin* | *-*-aix*)
+	;;
+    *)
+	noconfigdirs="$noconfigdirs target-libgomp"
+	;;
     esac
-    files="${files} ${GDB_NM_FILE}"
-    links="${links} nm.h"
-    AC_DEFINE_UNQUOTED(GDB_NM_FILE, "${GDB_NM_FILE}", [nativefile])
 fi
-AC_SUBST(nm_h)
 
-AC_LINK_FILES($files, $links)
+# Default libgloss CPU subdirectory.
+libgloss_dir="$target_cpu"
 
-dnl Check for exe extension set on certain hosts (e.g. Win32)
-AC_EXEEXT
+case "${target}" in
+  *-*-chorusos)
+    noconfigdirs="$noconfigdirs target-newlib target-libgloss ${libgcj}"
+    ;;
+  powerpc-*-darwin*)
+    noconfigdirs="$noconfigdirs ld gas gdb gprof"
+    noconfigdirs="$noconfigdirs sim target-rda"
+    ;;
+  i[[3456789]]86-*-darwin*)
+    noconfigdirs="$noconfigdirs ld gprof"
+    noconfigdirs="$noconfigdirs sim target-rda"
+    ;;
+  x86_64-*-darwin[[912]]*)
+    noconfigdirs="$noconfigdirs ld gas gprof"
+    noconfigdirs="$noconfigdirs sim target-rda"
+    ;;
+  *-*-darwin*)
+    noconfigdirs="$noconfigdirs ld gas gdb gprof"
+    noconfigdirs="$noconfigdirs sim target-rda"
+    noconfigdirs="$noconfigdirs ${libgcj}"
+    ;;
+  *-*-freebsd[[12]] | *-*-freebsd[[12]].* | *-*-freebsd*aout*)
+    noconfigdirs="$noconfigdirs target-newlib target-libgloss ${libgcj}"
+    ;;
+  *-*-freebsd*)
+    noconfigdirs="$noconfigdirs target-newlib target-libgloss"
+    if test "x$with_gmp" = x && test "x$with_gmp_dir" = x \
+	&& test -f /usr/local/include/gmp.h; then
+      with_gmp=/usr/local
+    fi
 
-dnl  Detect the character set used by this host.
+    # Skip some stuff that's unsupported on some FreeBSD configurations.
+    case "${target}" in
+      i*86-*-*) ;;
+      alpha*-*-*) ;;
+      x86_64-*-*) ;;
+      *)
+	noconfigdirs="$noconfigdirs ${libgcj}"
+	;;
+    esac
+    ;;
+  *-*-kaos*)
+    # Remove unsupported stuff on all kaOS configurations.
+    skipdirs="target-libiberty ${libgcj} target-libstdc++-v3 target-librx"
+    skipdirs="$skipdirs target-libobjc target-examples target-groff target-gperf"
+    skipdirs="$skipdirs zlib fastjar target-libjava target-boehm-gc target-zlib"
+    noconfigdirs="$noconfigdirs target-libgloss"
+    ;;
+  *-*-netbsd*)
+    # Skip some stuff on all NetBSD configurations.
+    noconfigdirs="$noconfigdirs target-newlib target-libiberty target-libgloss"
 
-dnl  At the moment, we just assume it's ISO-8859-1 (which is a
-dnl  superset of ASCII containing the characters needed for French,
-dnl  German, Spanish, Italian, and possibly others), but if were
-dnl  *were* to support any host character sets other than ISO-8859-1,
-dnl  here's where we'd detect it.
-AC_DEFINE(GDB_DEFAULT_HOST_CHARSET, "ISO-8859-1",
-          [Define to be a string naming the default host character set.])
+    # Skip some stuff that's unsupported on some NetBSD configurations.
+    case "${target}" in
+      i*86-*-netbsdelf*) ;;
+      arm*-*-netbsdelf*) ;;
+      *)
+	noconfigdirs="$noconfigdirs ${libgcj}"
+	;;
+    esac
+    ;;
+  *-*-netware*)
+    noconfigdirs="$noconfigdirs target-newlib target-libiberty target-libgloss ${libgcj} target-libmudflap"
+    ;;
+  *-*-rtems*)
+    skipdirs="${skipdirs} target-libiberty"
+    noconfigdirs="$noconfigdirs target-libgloss ${libgcj}"
+    ;;
+    # The tpf target doesn't support gdb yet.
+  *-*-tpf*)
+    noconfigdirs="$noconfigdirs target-newlib target-libgloss target-libiberty ${libgcj} target-libmudflap gdb tcl tk libgui itcl"
+    ;;
+  *-*-uclinux*)
+    noconfigdirs="$noconfigdirs target-newlib target-libgloss target-rda ${libgcj}"
+    ;;
+  *-*-vxworks*)
+    noconfigdirs="$noconfigdirs target-newlib target-libgloss target-libiberty target-libstdc++-v3 ${libgcj}"
+    ;;
+  alpha*-dec-osf*)
+    # ld works, but does not support shared libraries.
+    # newlib is not 64 bit ready.  I'm not sure about fileutils.
+    # gas doesn't generate exception information.
+    noconfigdirs="$noconfigdirs gas ld fileutils target-newlib target-libgloss"
+    ;;
+  alpha*-*-*vms*)
+    noconfigdirs="$noconfigdirs gdb target-newlib target-libgloss ${libgcj}"
+    ;;
+  alpha*-*-linux*)
+    # newlib is not 64 bit ready
+    noconfigdirs="$noconfigdirs target-newlib target-libgloss"
+    ;;
+  alpha*-*-*)
+    # newlib is not 64 bit ready
+    noconfigdirs="$noconfigdirs target-newlib target-libgloss ${libgcj}"
+    ;;
+  am33_2.0-*-linux*)
+    noconfigdirs="$noconfigdirs ${libgcj} target-newlib target-libgloss"
+    ;;
+  sh-*-linux*)
+    noconfigdirs="$noconfigdirs ${libgcj} target-newlib target-libgloss"
+    ;;    
+  sh*-*-pe|mips*-*-pe|*arm-wince-pe)
+    noconfigdirs="$noconfigdirs ${libgcj}"
+    noconfigdirs="$noconfigdirs target-examples"
+    noconfigdirs="$noconfigdirs target-libiberty texinfo send-pr"
+    noconfigdirs="$noconfigdirs tcl tk itcl libgui sim"
+    noconfigdirs="$noconfigdirs expect dejagnu"
+    # the C++ libraries don't build on top of CE's C libraries
+    noconfigdirs="$noconfigdirs target-libstdc++-v3"
+    noconfigdirs="$noconfigdirs target-newlib"
+    case "${host}" in
+      *-*-cygwin*) ;; # keep gdb and readline
+      *) noconfigdirs="$noconfigdirs gdb readline"
+	 ;;
+    esac
+    libgloss_dir=wince
+    ;;
+  arc-*-*)
+    noconfigdirs="$noconfigdirs target-libgloss ${libgcj}"
+    ;;
+  arm-semi-aof )
+    ;;
+  arm-*-coff | strongarm-*-coff | xscale-*-coff)
+    noconfigdirs="$noconfigdirs ${libgcj}"
+    libgloss_dir=arm
+    ;;
+  arm-*-elf* | strongarm-*-elf* | xscale-*-elf* | arm*-*-eabi* )
+    noconfigdirs="$noconfigdirs target-libffi target-qthreads"
+    libgloss_dir=arm
+    ;;
+  arm*-*-linux-gnueabi)
+    noconfigdirs="$noconfigdirs target-qthreads"
+    case ${with_newlib} in
+      no) noconfigdirs="$noconfigdirs target-newlib target-libgloss"
+    esac
+    libgloss_dir=arm
+    ;;
+  arm*-*-symbianelf*)
+    noconfigdirs="$noconfigdirs ${libgcj} target-libiberty"
+    libgloss_dir=arm
+    ;;
+  arm-*-pe*)
+    noconfigdirs="$noconfigdirs target-libgloss ${libgcj}"
+    ;;
+  thumb-*-coff)
+    noconfigdirs="$noconfigdirs target-libgloss ${libgcj}"
+    ;;
+  thumb-*-elf)
+    noconfigdirs="$noconfigdirs target-libgloss ${libgcj}"
+    ;;
+  thumb-*-pe)
+    noconfigdirs="$noconfigdirs target-libgloss ${libgcj}"
+    ;;
+  arm-*-riscix*)
+    noconfigdirs="$noconfigdirs ld target-libgloss ${libgcj}"
+    ;;
+  avr-*-*)
+    noconfigdirs="$noconfigdirs target-libiberty target-libstdc++-v3 ${libgcj} target-libssp"
+    ;;
+  bfin-*-*)
+    unsupported_languages="$unsupported_languages java"
+    noconfigdirs="$noconfigdirs target-boehm-gc gdb"
+    if test x${is_cross_compiler} != xno ; then
+      target_configdirs="${target_configdirs} target-bsp target-cygmon"
+    fi
+    ;;
+  c4x-*-* | tic4x-*-*)
+    noconfigdirs="$noconfigdirs target-libstdc++-v3 target-libgloss ${libgcj}"
+    ;;
+  c54x*-*-* | tic54x-*-*)
+    noconfigdirs="$noconfigdirs target-libstdc++-v3 target-libgloss ${libgcj} gcc gdb newlib"
+    ;;
+  cr16-*-*)
+    noconfigdirs="$noconfigdirs ${libgcj} gdb"
+    ;;
+  cris-*-* | crisv32-*-*)
+    unsupported_languages="$unsupported_languages java"
+    case "${target}" in
+      *-*-aout)
+	unsupported_languages="$unsupported_languages fortran"
+	noconfigdirs="$noconfigdirs target-libffi target-boehm-gc";;
+      *-*-elf)
+	noconfigdirs="$noconfigdirs target-boehm-gc";;
+      *-*-linux*)
+	noconfigdirs="$noconfigdirs target-newlib target-libgloss";;
+      *)
+	unsupported_languages="$unsupported_languages fortran"
+	noconfigdirs="$noconfigdirs ${libgcj} target-newlib target-libgloss";;
+    esac
+    libgloss_dir=cris
+    ;;
+  crx-*-*)
+    noconfigdirs="$noconfigdirs target-libstdc++-v3 target-mudflap ${libgcj}"
+    ;;
+  d10v-*-*)
+    noconfigdirs="$noconfigdirs target-libstdc++-v3 target-libgloss ${libgcj}"
+    ;;
+  d30v-*-*)
+    noconfigdirs="$noconfigdirs ${libgcj} gdb"
+    ;;
+  ep9312-*-elf | ep9312-*-coff)
+    libgloss_dir=arm
+    ;;
+  fr30-*-elf*)
+    noconfigdirs="$noconfigdirs ${libgcj} gdb"
+    ;;
+  frv-*-*)
+    noconfigdirs="$noconfigdirs ${libgcj}"
+    ;;
+  moxie-*-*)
+    noconfigdirs="$noconfigdirs ${libgcj}"
+    noconfigdirs="$noconfigdirs gprof"
+    ;;
+  h8300*-*-*)
+    noconfigdirs="$noconfigdirs target-libgloss ${libgcj}"
+    ;;
+  h8500-*-*)
+    noconfigdirs="$noconfigdirs target-libstdc++-v3 target-libgloss ${libgcj}"
+    ;;
+  hppa1.1-*-osf* | hppa1.1-*-bsd* )
+    ;;
+  hppa*64*-*-linux* | parisc*64*-*-linux*)
+    # In this case, it's because the hppa64-linux target is for
+    # the kernel only at this point and has no libc, and thus no
+    # headers, crt*.o, etc., all of which are needed by these.
+    noconfigdirs="$noconfigdirs target-zlib"
+    ;;
+  parisc*-*-linux* | hppa*-*-linux*)
+    ;;
+  hppa*-*-*elf* | \
+  hppa*-*-lites* | \
+  hppa*-*-openbsd* | \
+  hppa*64*-*-*)
+    noconfigdirs="$noconfigdirs ${libgcj}"
+    ;;
+  hppa*-hp-hpux11*)
+    noconfigdirs="$noconfigdirs ld shellutils"
+    ;;
+  hppa*-*-pro*)
+    libgloss_dir=pa
+    ;;
+  hppa*-*-*)
+    # According to Alexandre Oliva <aoliva@redhat.com>, libjava won't
+    # build on HP-UX 10.20.
+    noconfigdirs="$noconfigdirs ld shellutils ${libgcj}"
+    ;;
+  i960-*-*)
+    noconfigdirs="$noconfigdirs ${libgcj} gdb"
+    ;;
+  ia64*-*-elf*)
+    # No gdb support yet.
+    noconfigdirs="$noconfigdirs readline mmalloc libgui itcl gdb"
+    ;;
+  ia64*-**-hpux*)
+    # No gdb or ld support yet.
+    noconfigdirs="$noconfigdirs ${libgcj} readline mmalloc libgui itcl gdb ld"
+    ;;
+  ia64*-*-*vms*)
+    # No gdb or ld support yet.
+    noconfigdirs="$noconfigdirs ${libgcj} tix readline mmalloc libgui itcl gdb ld"
+    ;;
+  i370-*-opened*)
+    ;;
+  i[[3456789]]86-*-coff | i[[3456789]]86-*-elf)
+    noconfigdirs="$noconfigdirs ${libgcj}"
+    libgloss_dir=i386
+    ;;
+  i[[3456789]]86-*-linux*)
+    # The GCC port for glibc1 has no MD_FALLBACK_FRAME_STATE_FOR, so let's
+    # not build java stuff by default.
+    case "${target}" in
+      *-*-*libc1*)
+	noconfigdirs="$noconfigdirs ${libgcj}";;
+    esac
 
-AM_ICONV
-
-AC_OUTPUT(Makefile .gdbinit:gdbinit.in,
-[
-dnl Autoconf doesn't provide a mechanism for modifying definitions 
-dnl provided by makefile fragments.
-dnl
-
-changequote(,)dnl
-sed -e '/^NAT_FILE[ 	]*=/s,^NAT_FILE[ 	]*=[ 	]*,&config/'"${gdb_host_cpu}"'/,' <Makefile >Makefile.tmp
-mv -f Makefile.tmp Makefile
-changequote([,])dnl
-
-
-case x$CONFIG_HEADERS in
-xconfig.h:config.in)
-echo > stamp-h ;;
+    # This section makes it possible to build newlib natively on linux.
+    # If we are using a cross compiler then don't configure newlib.
+    if test x${is_cross_compiler} != xno ; then
+      noconfigdirs="$noconfigdirs target-newlib"
+    fi
+    noconfigdirs="$noconfigdirs target-libgloss"
+    # If we are not using a cross compiler, do configure newlib.
+    # Note however, that newlib will only be configured in this situation
+    # if the --with-newlib option has been given, because otherwise
+    # 'target-newlib' will appear in skipdirs.
+    ;;
+  i[[3456789]]86-w64-mingw*)
+    noconfigdirs="$noconfigdirs expect target-libgloss target-newlib ${libgcj}"
+    ;;
+  i[[3456789]]86-*-mingw*)
+    target_configdirs="$target_configdirs target-winsup"
+    noconfigdirs="$noconfigdirs expect target-libgloss target-newlib ${libgcj}"
+    ;;
+  x86_64-*-mingw*)
+    noconfigdirs="$noconfigdirs expect target-libgloss target-newlib ${libgcj}"
+    ;;
+  *-*-cygwin*)
+    target_configdirs="$target_configdirs target-libtermcap target-winsup"
+    noconfigdirs="$noconfigdirs target-gperf target-libgloss"
+    # always build newlib if winsup directory is present.
+    if test -d "$srcdir/winsup/cygwin"; then
+      skipdirs=`echo " ${skipdirs} " | sed -e 's/ target-newlib / /'`
+    elif test -d "$srcdir/newlib"; then
+      echo "Warning: winsup/cygwin is missing so newlib can't be built."
+    fi
+    ;;
+  i[[3456789]]86-moss-msdos | i[[3456789]]86-*-moss* | \
+  i[[3456789]]86-*-uwin* | i[[3456789]]86-*-interix* )
+    ;;
+  i[[3456789]]86-*-pe)
+    noconfigdirs="$noconfigdirs target-libstdc++-v3 target-libgloss ${libgcj}"
+    ;;
+  i[[3456789]]86-*-sco3.2v5*)
+    # The linker does not yet know about weak symbols in COFF,
+    # and is not configured to handle mixed ELF and COFF.
+    noconfigdirs="$noconfigdirs ld target-libgloss ${libgcj}"
+    ;;
+  i[[3456789]]86-*-sco*)
+    noconfigdirs="$noconfigdirs gprof target-libgloss ${libgcj}"
+    ;;
+  i[[3456789]]86-*-solaris2*)
+    noconfigdirs="$noconfigdirs target-libgloss"
+    ;;
+  i[[3456789]]86-*-sysv4*)
+    noconfigdirs="$noconfigdirs target-libgloss ${libgcj}"
+    ;;
+  i[[3456789]]86-*-beos*)
+    noconfigdirs="$noconfigdirs gdb target-newlib target-libgloss ${libgcj}"
+    ;;
+  i[[3456789]]86-*-rdos*)
+    noconfigdirs="$noconfigdirs gdb target-newlib target-libgloss"
+    ;;
+  m32r-*-*)
+    noconfigdirs="$noconfigdirs ${libgcj}"
+    ;;
+  m68hc11-*-*|m6811-*-*|m68hc12-*-*|m6812-*-*)
+    noconfigdirs="$noconfigdirs target-libiberty target-libstdc++-v3 ${libgcj}"
+    libgloss_dir=m68hc11
+    ;;
+  m68k-*-elf*)
+    noconfigdirs="$noconfigdirs ${libgcj}"
+    ;;
+  m68k-*-coff*)
+    noconfigdirs="$noconfigdirs ${libgcj}"
+    ;;
+  m68*-*-* | fido-*-*)
+    libgloss_dir=m68k
+    ;;
+  mcore-*-pe*)
+  # The EPOC C++ environment does not support exceptions or rtti,
+  # and so building libstdc++-v3 tends not to always work.
+    noconfigdirs="$noconfigdirs target-libstdc++-v3"
+    ;;
+  mmix-*-*)
+    noconfigdirs="$noconfigdirs target-libffi target-boehm-gc gdb libgloss"
+    unsupported_languages="$unsupported_languages fortran java"
+    ;;
+  mn10200-*-*)
+    noconfigdirs="$noconfigdirs ${libgcj}"
+    ;;
+  mn10300-*-*)
+    noconfigdirs="$noconfigdirs ${libgcj}"
+    ;;
+  mt-*-*)
+    noconfigdirs="$noconfigdirs sim"
+    ;;
+  powerpc-*-aix*)
+    # copied from rs6000-*-* entry
+    noconfigdirs="$noconfigdirs gprof target-libgloss target-libssp target-newlib ${libgcj}"
+    ;;
+  powerpc*-*-winnt* | powerpc*-*-pe* | ppc*-*-pe)
+    target_configdirs="$target_configdirs target-winsup"
+    noconfigdirs="$noconfigdirs gdb tcl tk make expect target-libgloss itcl gnuserv ${libgcj}"
+    # always build newlib.
+    skipdirs=`echo " ${skipdirs} " | sed -e 's/ target-newlib / /'`
+    ;;
+    # This is temporary until we can link against shared libraries
+  powerpcle-*-solaris*)
+    noconfigdirs="$noconfigdirs gdb sim make tcl tk expect itcl gnuserv ${libgcj}"
+    libgloss_dir=rs6000
+    ;;
+  powerpc-*-beos*)
+    noconfigdirs="$noconfigdirs gdb target-newlib target-libgloss ${libgcj}"
+    ;;
+  powerpc-*-eabi)
+    noconfigdirs="$noconfigdirs ${libgcj}"
+    libgloss_dir=rs6000
+    ;;
+  powerpc-*-eabi* | powerpcle-*-eabi* | powerpc-*-rtems* )
+    libgloss_dir=rs6000
+    ;;
+  rs6000-*-lynxos*)
+    noconfigdirs="$noconfigdirs target-newlib gprof ${libgcj}"
+    ;;
+  rs6000-*-aix*)
+    noconfigdirs="$noconfigdirs gprof target-libgloss target-libssp target-newlib ${libgcj}"
+    ;;
+  rs6000-*-*)
+    noconfigdirs="$noconfigdirs gprof ${libgcj}"
+    ;;
+  m68k-apollo-*)
+    noconfigdirs="$noconfigdirs ld binutils gprof target-libgloss ${libgcj}"
+    ;;
+  microblaze*)
+    noconfigdirs="$noconfigdirs gprof ${libgcj}"
+    ;;
+  mips*-sde-elf*)
+    skipdirs="$skipdirs target-libiberty"
+    noconfigdirs="$noconfigdirs ${libgcj}"
+    if test x$with_newlib = xyes; then
+      noconfigdirs="$noconfigdirs gprof"
+    fi
+    libgloss_dir=mips
+    ;;
+  mips*-*-irix5*)
+    noconfigdirs="$noconfigdirs gprof target-libgloss ${libgcj}"
+    ;;
+  mips*-*-irix6*)
+    # Linking libjava exceeds command-line length limits on at least
+    # IRIX 6.2, but not on IRIX 6.5.
+    # Also, boehm-gc won't build on IRIX 6.5, according to Jeffrey Oldham
+    # <oldham@codesourcery.com>
+    noconfigdirs="$noconfigdirs gprof target-libgloss ${libgcj}"
+    ;;
+  mips*-*-bsd*)
+    noconfigdirs="$noconfigdirs gprof target-libgloss ${libgcj}"
+    ;;
+  mips*-*-linux*)
+    noconfigdirs="$noconfigdirs target-newlib target-libgloss"
+    ;;
+  mips*-*-*)
+    noconfigdirs="$noconfigdirs gprof ${libgcj}"
+    libgloss_dir=mips
+    ;;
+  romp-*-*)
+    noconfigdirs="$noconfigdirs bfd binutils ld gas opcodes target-libgloss ${libgcj}"
+    ;;
+  sh-*-* | sh64-*-*)
+    case "${host}" in
+      i[[3456789]]86-*-vsta) ;; # don't add gprof back in
+      i[[3456789]]86-*-go32*) ;; # don't add gprof back in
+      i[[3456789]]86-*-msdosdjgpp*) ;; # don't add gprof back in
+      *) skipdirs=`echo " ${skipdirs} " | sed -e 's/ gprof / /'` ;;
+    esac
+    case "${target}" in
+      sh*-*-elf)
+         noconfigdirs="$noconfigdirs ${libgcj}" ;;
+      *)
+         noconfigdirs="$noconfigdirs target-libgloss ${libgcj}" ;;
+    esac
+    ;;
+  sparclet-*-aout* | sparc86x-*-*)
+    libgloss_dir=sparc
+    ;;
+  sparc-*-elf*)
+    noconfigdirs="$noconfigdirs ${libgcj}"
+    ;;
+  sparc64-*-elf*)
+    noconfigdirs="$noconfigdirs ${libgcj}"
+    libgloss_dir=sparc
+    ;;
+  sparclite-*-*)
+    noconfigdirs="$noconfigdirs ${libgcj}"
+    libgloss_dir=sparc
+    ;;
+  sparc-*-sunos4*)
+    noconfigdirs="$noconfigdirs ${libgcj}"
+    if test x${is_cross_compiler} != xno ; then
+           noconfigdirs="$noconfigdirs gdb target-newlib target-libgloss"
+    else
+           use_gnu_ld=no
+    fi
+    ;;
+  sparc-*-solaris2.[[0-6]] | sparc-*-solaris2.[[0-6]].*)
+    noconfigdirs="$noconfigdirs ${libgcj}"
+    ;;
+  sparc-*-solaris* | sparc64-*-solaris* | sparcv9-*-solaris*)
+    ;;
+  tic6x-*-*)
+    noconfigdirs="$noconfigdirs gdb sim ${libgcj}"
+    ;;
+  v810-*-*)
+    noconfigdirs="$noconfigdirs bfd binutils gas gcc gdb ld target-libstdc++-v3 opcodes target-libgloss ${libgcj}"
+    ;;
+  v850-*-*)
+    noconfigdirs="$noconfigdirs target-libgloss ${libgcj}"
+    ;;
+  v850e-*-*)
+    noconfigdirs="$noconfigdirs target-libgloss ${libgcj}"
+    ;;
+  v850ea-*-*)
+    noconfigdirs="$noconfigdirs target-libgloss ${libgcj}"
+    ;;
+  vax-*-vms)
+    noconfigdirs="$noconfigdirs bfd binutils gdb ld target-newlib opcodes target-libgloss ${libgcj}"
+    ;;
+  vax-*-*)
+    noconfigdirs="$noconfigdirs target-newlib target-libgloss ${libgcj}"
+    ;;
+  xtensa*-*-*)
+    noconfigdirs="$noconfigdirs ${libgcj}"
+    ;;
+  ip2k-*-*)
+    noconfigdirs="$noconfigdirs target-libiberty target-libstdc++-v3 ${libgcj}"
+    ;;
+  *-*-linux* | *-*-gnu* | *-*-k*bsd*-gnu | *-*-kopensolaris*-gnu)
+    noconfigdirs="$noconfigdirs target-newlib target-libgloss"
+    ;;
+  *-*-lynxos*)
+    noconfigdirs="$noconfigdirs target-newlib target-libgloss ${libgcj}"
+    ;; 
+  *-*-*)
+    noconfigdirs="$noconfigdirs ${libgcj}"
+    ;;
 esac
-],
-[
-gdb_host_cpu=$gdb_host_cpu
-nativefile=$nativefile
-])
 
-exit 0
+# If we aren't building newlib, then don't build libgloss, since libgloss
+# depends upon some newlib header files.
+case "${noconfigdirs}" in
+  *target-libgloss*) ;;
+  *target-newlib*) noconfigdirs="$noconfigdirs target-libgloss" ;;
+esac
+
+# Work in distributions that contain no compiler tools, like Autoconf.
+tentative_cc=""
+host_makefile_frag=/dev/null
+if test -d ${srcdir}/config ; then
+case "${host}" in
+  m68k-hp-hpux*)
+    # Avoid "too much defining" errors from HPUX compiler.
+    tentative_cc="cc -Wp,-H256000"
+    # If "ar" in $PATH is GNU ar, the symbol table may need rebuilding.
+    # If it's HP/UX ar, this should be harmless.
+    RANLIB="ar ts"
+    ;;
+  m68k-apollo-sysv*)
+    tentative_cc="cc -A ansi -A runtype,any -A systype,any -U__STDC__ -DUSG"
+    ;;
+  m68k-apollo-bsd*)
+    #None of the Apollo compilers can compile gas or binutils.  The preprocessor
+    # chokes on bfd, the compiler won't let you assign integers to enums, and
+    # other problems.  Defining CC to gcc is a questionable way to say "don't use
+    # the apollo compiler" (the preferred version of GCC could be called cc,
+    # or whatever), but I'm not sure leaving CC as cc is any better...
+    #CC=cc -A ansi -A runtype,any -A systype,any -U__STDC__ -DNO_STDARG
+    # Used to have BISON=yacc.
+    tentative_cc=gcc
+    ;;
+  m88k-dg-dgux*)
+    tentative_cc="gcc -Wall -ansi -D__using_DGUX"
+    ;;
+  m88k-harris-cxux*)
+    # Under CX/UX, we want to tell the compiler to use ANSI mode.
+    tentative_cc="cc -Xa"
+    host_makefile_frag="config/mh-cxux"
+    ;;
+  m88k-motorola-sysv*)
+    ;;
+  mips*-dec-ultrix*)
+    tentative_cc="cc -Wf,-XNg1000"
+    host_makefile_frag="config/mh-decstation"
+    ;;
+  mips*-nec-sysv4*)
+    # The C compiler on NEC MIPS SVR4 needs bigger tables.
+    tentative_cc="cc -ZXNd=5000 -ZXNg=1000"
+    host_makefile_frag="config/mh-necv4"
+    ;;
+  mips*-sgi-irix4*)
+    # Tell compiler to use K&R C.  We can't compile under the SGI Ansi
+    # environment.  Also bump switch table size so that cp-parse will
+    # compile.  Bump string length limit so linker builds.
+    tentative_cc="cc -cckr -Wf,-XNg1500 -Wf,-XNk1000 -Wf,-XNh2000 -Wf,-XNl8192"
+    ;;
+  mips*-*-sysv4*)
+    host_makefile_frag="config/mh-sysv4"
+    ;;
+  mips*-*-sysv*)
+    # This is for a MIPS running RISC/os 4.52C.
+
+    # This is needed for GDB, but needs to be in the top-level make because
+    # if a library is compiled with the bsd headers and gets linked with the
+    # sysv system libraries all hell can break loose (e.g. a jmp_buf might be
+    # a different size).
+    # ptrace(2) apparently has problems in the BSD environment.  No workaround is
+    # known except to select the sysv environment.  Could we use /proc instead?
+    # These "sysv environments" and "bsd environments" often end up being a pain.
+    #
+    # This is not part of CFLAGS because perhaps not all C compilers have this
+    # option.
+    tentative_cc="cc -systype sysv"
+    ;;
+  i370-ibm-opened*)
+    tentative_cc="c89"
+    ;;
+  i[[3456789]]86-*-sysv5*)
+    host_makefile_frag="config/mh-sysv5"
+    ;;
+  i[[3456789]]86-*-dgux*)
+    tentative_cc="gcc -Wall -ansi -D__using_DGUX"
+    host_makefile_frag="config/mh-dgux386"
+    ;;
+  i[[3456789]]86-ncr-sysv4.3*)
+    # The MetaWare compiler will generate a copyright message unless you
+    # turn it off by adding the -Hnocopyr flag.
+    tentative_cc="cc -Hnocopyr"
+    ;;
+  i[[3456789]]86-ncr-sysv4*)
+    # for an NCR 3000 (i486/SVR4) system.
+    # The NCR 3000 ships with a MetaWare compiler installed as /bin/cc.
+    # This compiler not only emits obnoxious copyright messages every time
+    # you run it, but it chokes and dies on a whole bunch of GNU source
+    # files.  Default to using the AT&T compiler installed in /usr/ccs/ATT/cc.
+    tentative_cc="/usr/ccs/ATT/cc"
+    host_makefile_frag="config/mh-ncr3000"
+    ;;
+  i[[3456789]]86-*-sco3.2v5*)
+    ;;
+  i[[3456789]]86-*-sco*)
+    # The native C compiler botches some simple uses of const.  Unfortunately,
+    # it doesn't defined anything like "__sco__" for us to test for in ansidecl.h.
+    tentative_cc="cc -Dconst="
+    host_makefile_frag="config/mh-sco"
+    ;;
+  i[[3456789]]86-*-udk*)
+    host_makefile_frag="config/mh-sysv5"
+    ;;
+  i[[3456789]]86-*-solaris2*)
+    host_makefile_frag="config/mh-sysv4"
+    ;;
+  i[[3456789]]86-*-msdosdjgpp*)
+    host_makefile_frag="config/mh-djgpp"
+    ;;
+  *-cygwin*)
+    ACX_CHECK_CYGWIN_CAT_WORKS
+    host_makefile_frag="config/mh-cygwin"
+    ;;
+  *-mingw*)
+    host_makefile_frag="config/mh-mingw"
+    ;;
+  *-interix*)
+    host_makefile_frag="config/mh-interix"
+    ;;
+  vax-*-ultrix2*)
+    # The old BSD pcc isn't up to compiling parts of gdb so use gcc
+    tentative_cc=gcc
+    ;;
+  *-*-solaris2*)
+    host_makefile_frag="config/mh-solaris"
+    ;;
+  m68k-sun-sunos*)
+    # Sun's C compiler needs the -J flag to be able to compile cp-parse.c
+    # without overflowing the jump tables (-J says to use a 32 bit table)
+    tentative_cc="cc -J"
+    ;;
+  hppa*-hp-hpux10*)
+    tentative_cc="cc -Wp,-H256000"
+    host_makefile_frag="config/mh-pa-hpux10"
+    ;;
+  hppa*-hp-hpux* | hppa*-*-hiux*)
+    tentative_cc="cc -Wp,-H256000"
+    host_makefile_frag="config/mh-pa"
+    ;;
+  hppa*-*)	
+    host_makefile_frag="config/mh-pa"
+    ;;
+  *-hp-hpux* | *-*-hiux*)
+    tentative_cc="cc -Wp,-H256000"
+    ;;
+  rs6000-*-lynxos*)
+    # /bin/cc is less than useful for our purposes.  Always use GCC
+    tentative_cc="/usr/cygnus/progressive/bin/gcc"
+    host_makefile_frag="config/mh-lynxrs6k"
+    ;;
+  powerpc-*-darwin*)
+    host_makefile_frag="config/mh-ppc-darwin"
+    ;;
+  powerpc-*-aix*)
+    host_makefile_frag="config/mh-ppc-aix"
+    ;;
+  rs6000-*-aix*)
+    host_makefile_frag="config/mh-ppc-aix"
+    ;;
+  *-*-lynxos*)
+    # /bin/cc is less than useful for our purposes.  Always use GCC
+    tentative_cc="/bin/gcc"
+    ;;
+  *-*-sysv4*)
+    host_makefile_frag="config/mh-sysv4"
+    ;;
+  # This is placed last to prevent interfering with the cases above.
+  i[[3456789]]86-*-*)
+    # Build the stage2 and stage3 compilers with -fomit-frame-pointer.
+    host_makefile_frag="config/mh-x86omitfp"
+    ;;
+esac
+fi
+
+# If we aren't going to be using gcc, see if we can extract a definition
+# of CC from the fragment.
+# Actually, use the 'pre-extracted' version above.
+if test -z "${CC}" && test "${build}" = "${host}" ; then
+  IFS="${IFS= 	}"; save_ifs="$IFS"; IFS="${IFS}:"
+  found=
+  for dir in $PATH; do
+    test -z "$dir" && dir=.
+    if test -f $dir/gcc; then
+      found=yes
+      break
+    fi
+  done
+  IFS="$save_ifs"
+  if test -z "${found}" && test -n "${tentative_cc}" ; then
+    CC=$tentative_cc
+  fi
+fi
+
+if test "${build}" != "${host}" ; then
+  AR_FOR_BUILD=${AR_FOR_BUILD-ar}
+  AS_FOR_BUILD=${AS_FOR_BUILD-as}
+  CC_FOR_BUILD=${CC_FOR_BUILD-gcc}
+  CXX_FOR_BUILD=${CXX_FOR_BUILD-g++}
+  GCJ_FOR_BUILD=${GCJ_FOR_BUILD-gcj}
+  GFORTRAN_FOR_BUILD=${GFORTRAN_FOR_BUILD-gfortran}
+  DLLTOOL_FOR_BUILD=${DLLTOOL_FOR_BUILD-dlltool}
+  LD_FOR_BUILD=${LD_FOR_BUILD-ld}
+  NM_FOR_BUILD=${NM_FOR_BUILD-nm}
+  RANLIB_FOR_BUILD=${RANLIB_FOR_BUILD-ranlib}
+  WINDRES_FOR_BUILD=${WINDRES_FOR_BUILD-windres}
+  WINDMC_FOR_BUILD=${WINDMC_FOR_BUILD-windmc}
+else
+  AR_FOR_BUILD="\$(AR)"
+  AS_FOR_BUILD="\$(AS)"
+  CC_FOR_BUILD="\$(CC)"
+  CXX_FOR_BUILD="\$(CXX)"
+  GCJ_FOR_BUILD="\$(GCJ)"
+  GFORTRAN_FOR_BUILD="\$(GFORTRAN)"
+  DLLTOOL_FOR_BUILD="\$(DLLTOOL)"
+  LD_FOR_BUILD="\$(LD)"
+  NM_FOR_BUILD="\$(NM)"
+  RANLIB_FOR_BUILD="\$(RANLIB)"
+  WINDRES_FOR_BUILD="\$(WINDRES)"
+  WINDMC_FOR_BUILD="\$(WINDMC)"
+fi
+
+AC_PROG_CC
+AC_PROG_CXX
+
+# We must set the default linker to the linker used by gcc for the correct
+# operation of libtool.  If LD is not defined and we are using gcc, try to
+# set the LD default to the ld used by gcc.
+if test -z "$LD"; then
+  if test "$GCC" = yes; then
+    case $build in
+    *-*-mingw*)
+      gcc_prog_ld=`$CC -print-prog-name=ld 2>&1 | tr -d '\015'` ;;
+    *)
+      gcc_prog_ld=`$CC -print-prog-name=ld 2>&1` ;;
+    esac
+    case $gcc_prog_ld in
+    # Accept absolute paths.
+    [[\\/]* | [A-Za-z]:[\\/]*)]
+      LD="$gcc_prog_ld" ;;
+    esac
+  fi
+fi
+
+ACX_PROG_GNAT
+ACX_PROG_CMP_IGNORE_INITIAL
+
+# See if we are building gcc with C++.
+AC_ARG_ENABLE(build-with-cxx,
+[  --enable-build-with-cxx build with C++ compiler instead of C compiler],
+ENABLE_BUILD_WITH_CXX=$enableval,
+ENABLE_BUILD_WITH_CXX=no)
+
+# Used for setting $lt_cv_objdir
+_LT_CHECK_OBJDIR
+
+# Check for GMP, MPFR and MPC
+gmplibs="-lmpc -lmpfr -lgmp"
+gmpinc=
+have_gmp=no
+
+# Specify a location for mpc
+# check for this first so it ends up on the link line before mpfr.
+AC_ARG_WITH(mpc, [  --with-mpc=PATH        specify prefix directory for installed MPC package.
+                          Equivalent to --with-mpc-include=PATH/include
+                          plus --with-mpc-lib=PATH/lib])
+AC_ARG_WITH(mpc_include, [  --with-mpc-include=PATH
+                          specify directory for installed MPC include files])
+AC_ARG_WITH(mpc_lib, [  --with-mpc-lib=PATH    specify directory for the installed MPC library])
+
+if test "x$with_mpc" != x; then
+  gmplibs="-L$with_mpc/lib $gmplibs"
+  gmpinc="-I$with_mpc/include $gmpinc"
+fi
+if test "x$with_mpc_include" != x; then
+  gmpinc="-I$with_mpc_include $gmpinc"
+fi
+if test "x$with_mpc_lib" != x; then
+  gmplibs="-L$with_mpc_lib $gmplibs"
+fi
+if test "x$with_mpc$with_mpc_include$with_mpc_lib" = x && test -d ${srcdir}/mpc; then
+  gmplibs='-L$$r/$(HOST_SUBDIR)/mpc/src/'"$lt_cv_objdir $gmplibs"
+  gmpinc='-I$$s/mpc/src '"$gmpinc"
+  # Do not test the mpc version.  Assume that it is sufficient, since
+  # it is in the source tree, and the library has not been built yet
+  # but it would be included on the link line in the version check below
+  # hence making the test fail.
+  have_gmp=yes
+fi
+
+# Specify a location for mpfr
+# check for this first so it ends up on the link line before gmp.
+AC_ARG_WITH(mpfr-dir, [  --with-mpfr-dir=PATH    this option has been REMOVED],
+  AC_MSG_ERROR([The --with-mpfr-dir=PATH option has been removed.
+Use --with-mpfr=PATH or --with-mpfr-include=PATH plus --with-mpfr-lib=PATH]))
+
+AC_ARG_WITH(mpfr, [  --with-mpfr=PATH        specify prefix directory for installed MPFR package.
+                          Equivalent to --with-mpfr-include=PATH/include
+                          plus --with-mpfr-lib=PATH/lib])
+AC_ARG_WITH(mpfr_include, [  --with-mpfr-include=PATH
+                          specify directory for installed MPFR include files])
+AC_ARG_WITH(mpfr_lib, [  --with-mpfr-lib=PATH    specify directory for the installed MPFR library])
+
+if test "x$with_mpfr" != x; then
+  gmplibs="-L$with_mpfr/lib $gmplibs"
+  gmpinc="-I$with_mpfr/include $gmpinc"
+fi
+if test "x$with_mpfr_include" != x; then
+  gmpinc="-I$with_mpfr_include $gmpinc"
+fi
+if test "x$with_mpfr_lib" != x; then
+  gmplibs="-L$with_mpfr_lib $gmplibs"
+fi
+if test "x$with_mpfr$with_mpfr_include$with_mpfr_lib" = x && test -d ${srcdir}/mpfr; then
+  gmplibs='-L$$r/$(HOST_SUBDIR)/mpfr/'"$lt_cv_objdir $gmplibs"
+  gmpinc='-I$$r/$(HOST_SUBDIR)/mpfr -I$$s/mpfr '"$gmpinc"
+  extra_mpc_mpfr_configure_flags='--with-mpfr-include=$$s/mpfr --with-mpfr-lib=$$r/$(HOST_SUBDIR)/mpfr/'"$lt_cv_objdir"
+  # Do not test the mpfr version.  Assume that it is sufficient, since
+  # it is in the source tree, and the library has not been built yet
+  # but it would be included on the link line in the version check below
+  # hence making the test fail.
+  have_gmp=yes
+fi
+
+# Specify a location for gmp
+AC_ARG_WITH(gmp-dir, [  --with-gmp-dir=PATH     this option has been REMOVED],
+  AC_MSG_ERROR([The --with-gmp-dir=PATH option has been removed.
+Use --with-gmp=PATH or --with-gmp-include=PATH plus --with-gmp-lib=PATH]))
+
+AC_ARG_WITH(gmp, [  --with-gmp=PATH         specify prefix directory for the installed GMP package.
+                          Equivalent to --with-gmp-include=PATH/include
+                          plus --with-gmp-lib=PATH/lib])
+AC_ARG_WITH(gmp_include, [  --with-gmp-include=PATH specify directory for installed GMP include files])
+AC_ARG_WITH(gmp_lib, [  --with-gmp-lib=PATH     specify directory for the installed GMP library])
+
+
+if test "x$with_gmp" != x; then
+  gmplibs="-L$with_gmp/lib $gmplibs"
+  gmpinc="-I$with_gmp/include $gmpinc"
+fi
+if test "x$with_gmp_include" != x; then
+  gmpinc="-I$with_gmp_include $gmpinc"
+fi
+if test "x$with_gmp_lib" != x; then
+  gmplibs="-L$with_gmp_lib $gmplibs"
+fi
+if test "x$with_gmp$with_gmp_include$with_gmp_lib" = x && test -d ${srcdir}/gmp; then
+  gmplibs='-L$$r/$(HOST_SUBDIR)/gmp/'"$lt_cv_objdir $gmplibs"
+  gmpinc='-I$$r/$(HOST_SUBDIR)/gmp -I$$s/gmp '"$gmpinc"
+  extra_mpfr_configure_flags='--with-gmp-build=$$r/$(HOST_SUBDIR)/gmp'
+  extra_mpc_gmp_configure_flags='--with-gmp-include=$$r/$(HOST_SUBDIR)/gmp --with-gmp-lib=$$r/$(HOST_SUBDIR)/gmp/'"$lt_cv_objdir"
+  # Do not test the gmp version.  Assume that it is sufficient, since
+  # it is in the source tree, and the library has not been built yet
+  # but it would be included on the link line in the version check below
+  # hence making the test fail.
+  have_gmp=yes
+fi
+
+if test -d ${srcdir}/gcc && test "x$have_gmp" = xno; then
+  have_gmp=yes
+  saved_CFLAGS="$CFLAGS"
+  CFLAGS="$CFLAGS $gmpinc"
+  # Check for the recommended and required versions of GMP.
+  AC_MSG_CHECKING([for the correct version of gmp.h])
+  AC_TRY_COMPILE([#include "gmp.h"],[
+  #define GCC_GMP_VERSION_NUM(a,b,c) (((a) << 16L) | ((b) << 8) | (c))
+  #define GCC_GMP_VERSION GCC_GMP_VERSION_NUM(__GNU_MP_VERSION,__GNU_MP_VERSION_MINOR,__GNU_MP_VERSION_PATCHLEVEL)
+  #if GCC_GMP_VERSION < GCC_GMP_VERSION_NUM(4,2,0)
+  choke me
+  #endif
+  ], [AC_TRY_COMPILE([#include <gmp.h>],[
+  #define GCC_GMP_VERSION_NUM(a,b,c) (((a) << 16L) | ((b) << 8) | (c))
+  #define GCC_GMP_VERSION GCC_GMP_VERSION_NUM(__GNU_MP_VERSION,__GNU_MP_VERSION_MINOR,__GNU_MP_VERSION_PATCHLEVEL)
+  #if GCC_GMP_VERSION < GCC_GMP_VERSION_NUM(4,3,2)
+  choke me
+  #endif
+  ], [AC_MSG_RESULT([yes])], [AC_MSG_RESULT([buggy but acceptable])])],
+   [AC_MSG_RESULT([no]); have_gmp=no])
+
+  # If we have GMP, check the MPFR version.
+  if test x"$have_gmp" = xyes; then
+    # Check for the recommended and required versions of MPFR.
+    AC_MSG_CHECKING([for the correct version of mpfr.h])
+    AC_TRY_COMPILE([#include <gmp.h>
+    #include <mpfr.h>],[
+    #if MPFR_VERSION < MPFR_VERSION_NUM(2,3,1)
+    choke me
+    #endif
+    ], [AC_TRY_COMPILE([#include <gmp.h>
+    #include <mpfr.h>],[
+    #if MPFR_VERSION < MPFR_VERSION_NUM(2,4,2)
+    choke me
+    #endif
+    ], [AC_MSG_RESULT([yes])], [AC_MSG_RESULT([buggy but acceptable])])],
+     [AC_MSG_RESULT([no]); have_gmp=no])
+  fi
+
+  # Check for the MPC header version.
+  if test x"$have_gmp" = xyes ; then
+    # Check for the recommended and required versions of MPC.
+    AC_MSG_CHECKING([for the correct version of mpc.h])
+    AC_TRY_COMPILE([#include <mpc.h>],[
+    #if MPC_VERSION < MPC_VERSION_NUM(0,8,0)
+    choke me
+    #endif
+    ], [AC_TRY_COMPILE([#include <mpc.h>],[
+    #if MPC_VERSION < MPC_VERSION_NUM(0,8,1)
+    choke me
+    #endif
+    ], [AC_MSG_RESULT([yes])], [AC_MSG_RESULT([buggy but acceptable])])],
+     [AC_MSG_RESULT([no]); have_gmp=no])
+  fi
+
+  # Now check the MPFR library.
+  if test x"$have_gmp" = xyes; then
+    saved_LIBS="$LIBS"
+    LIBS="$LIBS $gmplibs"
+    AC_MSG_CHECKING([for the correct version of the gmp/mpfr/mpc libraries])
+    AC_TRY_LINK([#include <mpc.h>],[
+    mpfr_t n;
+    mpfr_t x;
+    mpc_t c;
+    int t;
+    mpfr_init (n);
+    mpfr_init (x);
+    mpfr_atan2 (n, n, x, GMP_RNDN);
+    mpfr_erfc (n, x, GMP_RNDN);
+    mpfr_subnormalize (x, t, GMP_RNDN);
+    mpfr_clear(n);
+    mpfr_clear(x);
+    mpc_init2 (c, 53);
+    mpc_set_ui_ui (c, 1, 1, MPC_RNDNN);
+    mpc_cosh (c, c, MPC_RNDNN);
+    mpc_pow (c, c, c, MPC_RNDNN);
+    mpc_acosh (c, c, MPC_RNDNN);
+    mpc_clear (c);
+    ], [AC_MSG_RESULT([yes])], [AC_MSG_RESULT([no]); have_gmp=no])
+    LIBS="$saved_LIBS"
+  fi
+
+  CFLAGS="$saved_CFLAGS"
+
+# The library versions listed in the error message below should match
+# the HARD-minimums enforced above.
+  if test x$have_gmp != xyes; then
+    AC_MSG_ERROR([Building GCC requires GMP 4.2+, MPFR 2.3.1+ and MPC 0.8.0+.
+Try the --with-gmp, --with-mpfr and/or --with-mpc options to specify
+their locations.  Source code for these libraries can be found at
+their respective hosting sites as well as at
+ftp://gcc.gnu.org/pub/gcc/infrastructure/.  See also
+http://gcc.gnu.org/install/prerequisites.html for additional info.  If
+you obtained GMP, MPFR and/or MPC from a vendor distribution package,
+make sure that you have installed both the libraries and the header
+files.  They may be located in separate packages.])
+  fi
+fi
+
+# Flags needed for both GMP, MPFR and/or MPC.
+AC_SUBST(gmplibs)
+AC_SUBST(gmpinc)
+AC_SUBST(extra_mpfr_configure_flags)
+AC_SUBST(extra_mpc_gmp_configure_flags)
+AC_SUBST(extra_mpc_mpfr_configure_flags)
+
+# Allow host libstdc++ to be specified for static linking with PPL.
+AC_ARG_WITH(host-libstdcxx, [  --with-host-libstdcxx=L Use linker arguments L to link with libstdc++
+                          when linking with PPL])
+
+case $with_host_libstdcxx in
+  no|yes)
+    AC_MSG_ERROR([-with-host-libstdcxx needs an argument])
+    ;;
+esac
+
+# Linker flags to use for stage1 or when not boostrapping.
+AC_ARG_WITH(stage1-ldflags,
+[  --with-stage1-ldflags=FLAGS Linker flags for stage1],
+[if test "$withval" = "no" -o "$withval" = "yes"; then
+   stage1_ldflags=
+ else
+   stage1_ldflags=$withval
+ fi],
+[stage1_ldflags=])
+AC_SUBST(stage1_ldflags)
+
+# Libraries to use for stage1 or when not bootstrapping.
+AC_ARG_WITH(stage1-libs,
+[  -with-stage1-libs=LIBS      Libraries for stage1],
+[if test "$withval" = "no" -o "$withval" = "yes"; then
+   stage1_libs=
+ else
+   stage1_libs=$withval
+ fi],
+[stage1_libs=$with_host_libstdcxx])
+AC_SUBST(stage1_libs)
+
+# Libraries to use for stage2 and later builds.  This defaults to the
+# argument passed to --with-host-libstdcxx.
+AC_ARG_WITH(boot-libs,
+[  --with-boot-libs=LIBS     Libraries for stage2 and later],
+[if test "$withval" = "no" -o "$withval" = "yes"; then
+   poststage1_libs=
+ else
+   poststage1_libs=$withval
+ fi],
+[poststage1_libs=$with_host_libstdcxx])
+AC_SUBST(poststage1_libs)
+
+# Linker flags to use for stage2 and later builds.
+AC_ARG_WITH(boot-ldflags,
+[  --with-boot-ldflags=FLAGS Linker flags for stage2 and later],
+[if test "$withval" = "no" -o "$withval" = "yes"; then
+   poststage1_ldflags=
+ else
+   poststage1_ldflags=$withval
+ fi],
+[poststage1_ldflags=
+ # With --enable-build-with-cxx, default to linking libstdc++ and
+ # libgcc statically.  But if the user explicitly specified the
+ # libraries to use, trust that they are doing what they want.
+ if test "$ENABLE_BUILD_WITH_CXX" = "yes" -a "$poststage1_libs" = ""; then
+   poststage1_ldflags="-static-libstdc++ -static-libgcc"
+ fi])
+AC_SUBST(poststage1_ldflags)
+
+# Check for PPL
+ppllibs=" -lppl_c -lppl -lgmpxx"
+pplinc=
+
+AC_ARG_WITH(ppl, [  --with-ppl=PATH         Specify prefix directory for the installed PPL package
+                          Equivalent to --with-ppl-include=PATH/include
+                          plus --with-ppl-lib=PATH/lib])
+AC_ARG_WITH(ppl_include, [  --with-ppl-include=PATH Specify directory for installed PPL include files])
+AC_ARG_WITH(ppl_lib, [  --with-ppl-lib=PATH     Specify the directory for the installed PPL library])
+
+case $with_ppl in 
+  no)
+    ppllibs=
+    ;;
+  "" | yes)
+    ;;
+  *)
+    ppllibs="-L$with_ppl/lib -lppl_c -lppl -lgmpxx"
+    pplinc="-I$with_ppl/include $pplinc"
+    ;;
+esac
+if test "x$with_ppl_include" != x; then
+  pplinc="-I$with_ppl_include $pplinc"
+fi
+if test "x$with_ppl_lib" != x; then
+  ppllibs="-L$with_ppl_lib -lppl_c -lppl -lgmpxx"
+fi
+if test "x$with_ppl$with_ppl_include$with_ppl_lib" = x && test -d ${srcdir}/ppl; then
+  ppllibs='-L$$r/$(HOST_SUBDIR)/ppl/interfaces/C/'"$lt_cv_objdir"' -L$$r/$(HOST_SUBDIR)/ppl/src/'"$lt_cv_objdir"' -lppl_c -lppl -lgmpxx '
+  pplinc='-I$$r/$(HOST_SUBDIR)/ppl/src -I$$r/$(HOST_SUBDIR)/ppl/interfaces/C '
+  enable_ppl_version_check=no
+fi
+
+AC_ARG_ENABLE(ppl-version-check,
+[  --disable-ppl-version-check    disable check for PPL version],
+ENABLE_PPL_CHECK=$enableval,
+ENABLE_PPL_CHECK=yes)
+
+if test "x$with_ppl" != "xno" -a "${ENABLE_PPL_CHECK}" = "yes"; then
+  saved_CFLAGS="$CFLAGS"
+  CFLAGS="$CFLAGS $pplinc $gmpinc"
+  AC_MSG_CHECKING([for version 0.10 (or later revision) of PPL])
+  AC_TRY_COMPILE([#include "ppl_c.h"],[
+  #if PPL_VERSION_MAJOR != 0 || PPL_VERSION_MINOR < 10
+  choke me
+  #endif
+  ], [AC_MSG_RESULT([yes])], [AC_MSG_RESULT([no]); ppllibs= ; pplinc= ; with_ppl=no ])
+  CFLAGS="$saved_CFLAGS"
+fi
+
+# Flags needed for PPL
+AC_SUBST(ppllibs)
+AC_SUBST(pplinc)
+
+
+# Check for CLOOG
+clooglibs=" -lcloog "
+clooginc=" -DCLOOG_PPL_BACKEND "
+
+AC_ARG_WITH(cloog, [  --with-cloog=PATH       Specify prefix directory for the installed CLooG-PPL package
+                          Equivalent to --with-cloog-include=PATH/include
+                          plus --with-cloog-lib=PATH/lib])
+AC_ARG_WITH(cloog_include, [  --with-cloog-include=PATH Specify directory for installed CLooG include files])
+AC_ARG_WITH(cloog_lib, [  --with-cloog-lib=PATH   Specify the directory for the installed CLooG library])
+
+if test "x$with_ppl" = "xno"; then
+  with_cloog=no
+fi
+
+case $with_cloog in 
+  no)
+    clooglibs=
+    clooginc=
+    ;;
+  "" | yes)
+    ;;
+  *)
+    clooglibs="-L$with_cloog/lib -lcloog"
+    clooginc="-I$with_cloog/include -DCLOOG_PPL_BACKEND "
+    ;;
+esac
+if test "x$with_cloog_include" != x; then
+  clooginc="-I$with_cloog_include -DCLOOG_PPL_BACKEND "
+fi
+if test "x$with_cloog_lib" != x; then
+  clooglibs="-L$with_cloog_lib -lcloog"
+fi
+if test "x$with_cloog$with_cloog_include$with_cloog_lib" = x && test -d ${srcdir}/cloog; then
+  clooglibs='-L$$r/$(HOST_SUBDIR)/cloog/'"$lt_cv_objdir"' -lcloog '
+  clooginc='-I$$r/$(HOST_SUBDIR)/cloog/include -I$$s/cloog/include -DCLOOG_PPL_BACKEND '
+  enable_cloog_version_check=no
+fi
+
+AC_ARG_ENABLE(cloog-version-check,
+[  --disable-cloog-version-check  disable check for CLooG version],
+ENABLE_CLOOG_CHECK=$enableval,
+ENABLE_CLOOG_CHECK=yes)
+
+if test "x$with_cloog" != "xno" -a "${ENABLE_CLOOG_CHECK}" = "yes"; then
+  saved_CFLAGS="$CFLAGS"
+  CFLAGS="$CFLAGS $clooginc $gmpinc $pplinc"
+  AC_MSG_CHECKING([for version 0.15.5 (or later revision) of CLooG])
+  AC_TRY_COMPILE([#include "cloog/cloog.h"],[
+  #if CLOOG_VERSION_MAJOR != 0 || CLOOG_VERSION_MINOR != 15 || CLOOG_VERSION_REVISION < 5
+  choke me
+  #endif
+  ], [AC_TRY_COMPILE([#include "cloog/cloog.h"],[
+  #if CLOOG_VERSION_MAJOR != 0 || CLOOG_VERSION_MINOR != 15 || CLOOG_VERSION_REVISION < 9
+  choke me
+  #endif
+  ], [AC_MSG_RESULT([yes])], [AC_MSG_RESULT([buggy but acceptable])])],
+  [AC_MSG_RESULT([no]); clooglibs= ; clooginc= ])
+  CFLAGS="$saved_CFLAGS"
+fi
+
+# Flags needed for CLOOG
+AC_SUBST(clooglibs)
+AC_SUBST(clooginc)
+
+# Check for LTO support.
+AC_ARG_ENABLE(lto,
+[  --enable-lto            enable link time optimization support],
+enable_lto=$enableval,
+enable_lto=yes; default_enable_lto=yes)
+
+
+ACX_ELF_TARGET_IFELSE([if test x"$enable_lto" = x"yes" ; then
+  # Make sure that libelf.h and gelf.h are available.
+  AC_ARG_WITH(libelf, [  --with-libelf=PATH       Specify prefix directory for the installed libelf package
+                          Equivalent to --with-libelf-include=PATH/include
+                          plus --with-libelf-lib=PATH/lib])
+
+  AC_ARG_WITH(libelf_include, [  --with-libelf-include=PATH Specify directory for installed libelf include files])
+
+  AC_ARG_WITH(libelf_lib, [  --with-libelf-lib=PATH   Specify the directory for the installed libelf library])
+
+  saved_CFLAGS="$CFLAGS"
+  saved_CPPFLAGS="$CPPFLAGS"
+  saved_LIBS="$LIBS"
+
+  case $with_libelf in 
+    "")
+      libelflibs="-lelf"
+      libelfinc="-I/usr/include/libelf"
+      ;;
+    *)
+      libelflibs="-L$with_libelf/lib -lelf"
+      libelfinc="-I$with_libelf/include -I$with_libelf/include/libelf"
+      LIBS="$libelflibs $LIBS"
+      ;;
+  esac
+
+  if test "x$with_libelf_include" != x; then
+    libelfinc="-I$with_libelf_include"
+  fi
+
+  if test "x$with_libelf_lib" != x; then
+    libelflibs="-L$with_libelf_lib -lelf"
+    LIBS="$libelflibs $LIBS"
+  fi
+
+  if test "x$with_libelf$with_libelf_include$with_libelf_lib" = x \
+     && test -d ${srcdir}/libelf; then
+    libelflibs='-L$$r/$(HOST_SUBDIR)/libelf/lib -lelf '
+    libelfinc='-D__LIBELF_INTERNAL__ -I$$r/$(HOST_SUBDIR)/libelf/lib -I$$s/libelf/lib'
+    LIBS="$libelflibs $LIBS"
+
+ else
+
+  CFLAGS="$CFLAGS $libelfinc"
+  CPPFLAGS="$CPPFLAGS $libelfinc"
+  LIBS="$LIBS $libelflibs"
+
+  AC_CHECK_HEADERS(libelf.h, [have_libelf_h=yes])
+  AC_CHECK_HEADERS(gelf.h, [have_gelf_h=yes])
+
+  AC_CHECK_HEADERS(libelf/libelf.h, [have_libelf_libelf_h=yes])
+  AC_CHECK_HEADERS(libelf/gelf.h, [have_libelf_gelf_h=yes])
+
+  # If we couldn't find libelf.h and the user forced it, emit an error.
+  if test x"$have_libelf_h" != x"yes" \
+     && test x"$have_libelf_libelf_h" != x"yes" ; then
+    if test x"$default_enable_lto" != x"yes" ; then
+      AC_MSG_ERROR([LTO support requires libelf.h or libelf/libelf.h.])
+    else
+      enable_lto=no
+      libelflibs=
+      libelfinc=
+    fi
+  fi
+
+  # If we couldn't find gelf.h and the user forced it, emit an error.
+  if test x"$have_gelf_h" != x"yes" \
+     && test x"$have_libelf_gelf_h" != x"yes" ; then
+    if test x"$default_enable_lto" != x"yes" ; then
+      AC_MSG_ERROR([LTO support requires gelf.h or libelf/gelf.h.])
+    else
+      enable_lto=no
+      libelflibs=
+      libelfinc=
+    fi
+  fi
+
+  # Check that the detected libelf has the functions we need.  We cannot
+  # rely on just detecting the headers since they do not include 
+  # versioning information.  Add functions, if needed.
+  if test x"$enable_lto" = x"yes" ; then
+    AC_MSG_CHECKING([for the correct version of libelf])
+    AC_TRY_LINK(
+      [#include <libelf.h>],[
+      elf_errmsg (0);
+      elf_getscn (0, 0);
+      elf_nextscn (0, 0);
+      elf_strptr (0, 0, 0);
+      elf_getident (0, 0);
+      elf_begin (0, 0, 0);
+      elf_ndxscn (0);
+      elf_end (0);
+      ],
+      [AC_MSG_RESULT([yes]);],
+      [AC_MSG_RESULT([no]); enable_lto=no; libelflibs= ; libelfinc= ]
+    )
+
+    # Check for elf_getshdrstrndx or elf_getshstrndx.  The latter's flavor
+    # is determined in gcc/configure.ac.
+    if test x"$enable_lto" = x"yes" ; then
+      AC_MSG_CHECKING([for elf_getshdrstrndx])
+      AC_TRY_LINK(
+        [#include <libelf.h>],[
+	elf_getshdrstrndx (0, 0);
+        ],
+        [AC_MSG_RESULT([yes]);],
+        [AC_MSG_RESULT([no]);
+	 AC_MSG_CHECKING([for elf_getshstrndx])
+         AC_TRY_LINK(
+           [#include <libelf.h>],[
+	   elf_getshstrndx (0, 0);
+           ],
+           [AC_MSG_RESULT([yes]);],
+           [AC_MSG_RESULT([no]); enable_lto=no; libelflibs= ; libelfinc= ]
+         )]
+      )
+    fi
+
+    # If we couldn't enable LTO and the user forced it, emit an error.
+    if test x"$enable_lto" = x"no" \
+       && test x"$default_enable_lto" != x"yes" ; then
+      AC_MSG_ERROR([To enable LTO, GCC requires libelf v0.8.12+.
+Try the --with-libelf, --with-libelf-include and --with-libelf-lib options
+to specify its location.])
+    fi
+  fi
+
+  CFLAGS="$saved_CFLAGS"
+  CPPFLAGS="$saved_CPPFLAGS"
+  LIBS="$saved_LIBS"
+
+ fi
+
+  # Flags needed for libelf.
+  AC_SUBST(libelflibs)
+  AC_SUBST(libelfinc)
+fi],[if test x"$default_enable_lto" = x"yes" ; then
+    # On non-ELF platforms, LTO must be explicitly enabled.
+    enable_lto=no
+  else
+  # Apart from ELF platforms, only Windows supports LTO so far.  It
+  # would also be nice to check the binutils support, but we don't
+  # have gcc_GAS_CHECK_FEATURE available here.  For now, we'll just
+  # warn during gcc/ subconfigure; unless you're bootstrapping with
+  # -flto it won't be needed until after installation anyway.
+    case $target in
+      *-cygwin*|*-mingw*) ;;
+      *-apple-darwin*) ;;
+      *) if test x"$enable_lto" = x"yes"; then
+	AC_MSG_ERROR([LTO support is not enabled for this target.])
+        fi
+      ;;
+    esac
+  fi
+  default_enable_lto=no])
+
+
+# By default, C is the only stage 1 language.
+stage1_languages=,c,
+
+# Target libraries that we bootstrap.
+bootstrap_target_libs=,target-libgcc,
+
+# Figure out what language subdirectories are present.
+# Look if the user specified --enable-languages="..."; if not, use
+# the environment variable $LANGUAGES if defined. $LANGUAGES might
+# go away some day.
+# NB:  embedded tabs in this IF block -- do not untabify
+if test -d ${srcdir}/gcc; then
+  if test x"${enable_languages+set}" != xset; then
+    if test x"${LANGUAGES+set}" = xset; then
+      enable_languages="${LANGUAGES}"
+        echo configure.in: warning: setting LANGUAGES is deprecated, use --enable-languages instead 1>&2
+    else
+      enable_languages=all
+    fi
+  else
+    if test x"${enable_languages}" = x ||
+       test x"${enable_languages}" = xyes;
+       then
+      echo configure.in: --enable-languages needs at least one language argument 1>&2
+      exit 1
+    fi
+  fi
+  enable_languages=`echo "${enable_languages}" | sed -e 's/[[ 	,]][[ 	,]]*/,/g' -e 's/,$//'`
+
+  # 'f95' is the old name for the 'fortran' language. We issue a warning
+  # and make the substitution.
+  case ,${enable_languages}, in
+    *,f95,*)
+      echo configure.in: warning: 'f95' as language name is deprecated, use 'fortran' instead 1>&2
+      enable_languages=`echo "${enable_languages}" | sed -e 's/f95/fortran/g'`
+      ;;
+  esac
+
+  # First scan to see if an enabled language requires some other language.
+  # We assume that a given config-lang.in will list all the language
+  # front ends it requires, even if some are required indirectly.
+  for lang_frag in ${srcdir}/gcc/*/config-lang.in .. ; do
+    case ${lang_frag} in
+      ..) ;;
+      # The odd quoting in the next line works around
+      # an apparent bug in bash 1.12 on linux.
+      ${srcdir}/gcc/[[*]]/config-lang.in) ;;
+      *)
+        # From the config-lang.in, get $language, $lang_requires
+        language=
+        lang_requires=
+        . ${lang_frag}
+        for other in ${lang_requires} ; do
+          case ,${enable_languages}, in
+	    *,$other,*) ;;
+	    *,all,*) ;;
+	    *,$language,*)
+	      echo " \`$other' language required by \`$language'; enabling" 1>&2
+	      enable_languages="${enable_languages},${other}"
+	      ;;
+	  esac
+        done
+        ;;
+    esac
+  done
+
+  new_enable_languages=,c,
+
+  # If LTO is enabled, add the LTO front end.
+  extra_host_libiberty_configure_flags=
+  if test "$enable_lto" = "yes" ; then
+    case ,${enable_languages}, in
+      *,lto,*) ;;
+      *) enable_languages="${enable_languages},lto" ;;
+    esac
+    if test "${ENABLE_GOLD}" = "yes" ; then
+      configdirs="$configdirs lto-plugin"
+      extra_host_libiberty_configure_flags=--enable-shared
+    fi
+  fi
+  AC_SUBST(extra_host_libiberty_configure_flags)
+
+  missing_languages=`echo ",$enable_languages," | sed -e s/,all,/,/ -e s/,c,/,/ `
+  potential_languages=,c,
+
+  for lang_frag in ${srcdir}/gcc/*/config-lang.in .. ; do
+    case ${lang_frag} in
+      ..) ;;
+      # The odd quoting in the next line works around
+      # an apparent bug in bash 1.12 on linux.
+      ${srcdir}/gcc/[[*]]/config-lang.in) ;;
+      *)
+        # From the config-lang.in, get $language, $target_libs, 
+        # $lang_dirs, $boot_language, and $build_by_default
+        language=
+        target_libs=
+        lang_dirs=
+        subdir_requires=
+        boot_language=no
+        build_by_default=yes
+        . ${lang_frag}
+        if test x${language} = x; then
+          echo "${lang_frag} doesn't set \$language." 1>&2
+          exit 1
+        fi
+
+	if test "$language" = "c++" \
+	   && test "$ENABLE_BUILD_WITH_CXX" = "yes"; then
+	  boot_language=yes
+	fi
+
+        case ,${enable_languages}, in
+          *,${language},*)
+            # Language was explicitly selected; include it.
+            add_this_lang=yes
+            ;;
+          *,all,*)
+            # 'all' was selected, select it if it is a default language
+            add_this_lang=${build_by_default}
+            ;;
+          *)
+            add_this_lang=no
+            ;;
+        esac
+
+        # Disable languages that need other directories if these aren't available.
+	for i in $subdir_requires; do
+	  test -f "$srcdir/gcc/$i/config-lang.in" && continue
+	  case ,${enable_languages}, in
+            *,${language},*)
+              # Specifically requested language; tell them.
+              AC_MSG_ERROR([The gcc/$i directory contains parts of $language but is missing])
+              ;;
+            *)
+              # Silently disable.
+              add_this_lang=unsupported
+              ;;
+          esac
+	done
+
+        # Disable Ada if no preexisting GNAT is available.
+        case ,${enable_languages},:${language}:${have_gnat} in
+          *,${language},*:ada:no)
+            # Specifically requested language; tell them.
+            AC_MSG_ERROR([GNAT is required to build $language])
+            ;;
+          *:ada:no)
+            # Silently disable.
+            add_this_lang=unsupported
+            ;;
+        esac
+
+	# Disable a language that is unsupported by the target.
+	case " $unsupported_languages " in
+	  *" $language "*)
+	    add_this_lang=unsupported
+	    ;;
+	esac
+
+	case $add_this_lang in
+	  unsupported)
+            # Remove language-dependent dirs.
+            eval noconfigdirs='"$noconfigdirs "'\"$target_libs $lang_dirs\"
+	    ;;
+	  no)
+            # Remove language-dependent dirs; still show language as supported.
+            eval noconfigdirs='"$noconfigdirs "'\"$target_libs $lang_dirs\"
+            potential_languages="${potential_languages}${language},"
+	    ;;
+          yes)
+	    new_enable_languages="${new_enable_languages}${language},"
+            potential_languages="${potential_languages}${language},"
+	    missing_languages=`echo "$missing_languages" | sed "s/,$language,/,/"`
+	    case "${boot_language}:,$enable_stage1_languages," in
+	      yes:* | *:*,$language,* | *:*,yes, | *:*,all,)
+		# Add to (comma-separated) list of stage 1 languages.
+		case ",$stage1_languages," in
+		  *,$language,* | ,yes, | ,all,) ;;
+		  *) stage1_languages="${stage1_languages}${language}," ;;
+		esac
+		# We need to bootstrap any supporting libraries.
+		bootstrap_target_libs="${bootstrap_target_libs}${target_libs},"
+		;;
+	    esac
+	    ;;
+        esac
+        ;;
+    esac
+  done
+
+  AC_ARG_ENABLE(stage1-languages,
+[  --enable-stage1-languages@<:@=all@:>@   choose additional languages to build during
+                          stage1.  Mostly useful for compiler development.],
+  [case ,${enable_stage1_languages}, in
+    ,no,|,,)
+      # Set it to something that will have no effect in the loop below
+      enable_stage1_languages=c ;;
+    ,yes,)
+      enable_stage1_languages=`echo $new_enable_languages | \
+	sed -e "s/^,//" -e "s/,$//" ` ;;
+    *,all,*)
+      enable_stage1_languages=`echo ,$enable_stage1_languages, | \
+	sed -e "s/,all,/$new_enable_languages/" -e "s/^,//" -e "s/,$//" ` ;;
+  esac
+
+  # Add "good" languages from enable_stage1_languages to stage1_languages,
+  # while "bad" languages go in missing_languages.  Leave no duplicates.
+  for i in `echo $enable_stage1_languages | sed 's/,/ /g' `; do
+    case $potential_languages in
+      *,$i,*)
+        case $stage1_languages in
+          *,$i,*) ;;
+          *) stage1_languages="$stage1_languages$i," ;;
+        esac ;;
+      *)
+        case $missing_languages in
+          *,$i,*) ;;
+          *) missing_languages="$missing_languages$i," ;;
+        esac ;;
+     esac
+  done])
+
+  # Remove leading/trailing commas that were added for simplicity
+  potential_languages=`echo "$potential_languages" | sed -e "s/^,//" -e "s/,$//"`
+  missing_languages=`echo "$missing_languages" | sed -e "s/^,//" -e "s/,$//"`
+  stage1_languages=`echo "$stage1_languages" | sed -e "s/^,//" -e "s/,$//"`
+  new_enable_languages=`echo "$new_enable_languages" | sed -e "s/^,//" -e "s/,$//"`
+
+  if test "x$missing_languages" != x; then
+    AC_MSG_ERROR([
+The following requested languages could not be built: ${missing_languages}
+Supported languages are: ${potential_languages}])
+  fi
+  if test "x$new_enable_languages" != "x$enable_languages"; then
+    echo The following languages will be built: ${new_enable_languages}
+    enable_languages="$new_enable_languages"
+  fi
+
+  AC_SUBST(stage1_languages)
+  ac_configure_args=`echo " $ac_configure_args" | sed -e "s/ '--enable-languages=[[^ ]]*'//g" -e "s/$/ '--enable-languages="$enable_languages"'/" `
+fi
+
+# Handle --disable-<component> generically.
+for dir in $configdirs $build_configdirs $target_configdirs ; do
+  dirname=`echo $dir | sed -e s/target-//g -e s/build-//g -e s/-/_/g`
+  varname=`echo $dirname | sed -e s/+/_/g`
+  if eval test x\${enable_${varname}} "=" xno ; then
+    noconfigdirs="$noconfigdirs $dir"
+  fi
+done
+
+# Check for Boehm's garbage collector
+AC_ARG_ENABLE(objc-gc,
+[  --enable-objc-gc        enable use of Boehm's garbage collector with the
+                          GNU Objective-C runtime],
+[case ,${enable_languages},:${enable_objc_gc}:${noconfigdirs} in
+  *,objc,*:*:yes:*target-boehm-gc*)
+    AC_MSG_ERROR([Boehm's garbage collector was requested yet not supported in this configuration])
+    ;;
+esac])
+
+# Make sure we only build Boehm's garbage collector if required.
+case ,${enable_languages},:${enable_objc_gc} in
+  *,objc,*:yes)
+    # Keep target-boehm-gc if requested for Objective-C.
+    ;;
+  *)
+    # Otherwise remove target-boehm-gc depending on target-libjava.
+    if echo " ${noconfigdirs} " | grep "target-libjava" >/dev/null 2>&1; then
+      noconfigdirs="$noconfigdirs target-boehm-gc"
+    fi
+    ;;
+esac
+
+# Remove the entries in $skipdirs and $noconfigdirs from $configdirs,
+# $build_configdirs and $target_configdirs.
+# If we have the source for $noconfigdirs entries, add them to $notsupp.
+
+notsupp=""
+for dir in . $skipdirs $noconfigdirs ; do
+  dirname=`echo $dir | sed -e s/target-//g -e s/build-//g`
+  if test $dir != .  && echo " ${configdirs} " | grep " ${dir} " >/dev/null 2>&1; then
+    configdirs=`echo " ${configdirs} " | sed -e "s/ ${dir} / /"`
+    if test -r $srcdir/$dirname/configure ; then
+      if echo " ${skipdirs} " | grep " ${dir} " >/dev/null 2>&1; then
+	true
+      else
+	notsupp="$notsupp $dir"
+      fi
+    fi
+  fi
+  if test $dir != .  && echo " ${build_configdirs} " | grep " ${dir} " >/dev/null 2>&1; then
+    build_configdirs=`echo " ${build_configdirs} " | sed -e "s/ ${dir} / /"`
+    if test -r $srcdir/$dirname/configure ; then
+      if echo " ${skipdirs} " | grep " ${dir} " >/dev/null 2>&1; then
+	true
+      else
+	notsupp="$notsupp $dir"
+      fi
+    fi
+  fi
+  if test $dir != . && echo " ${target_configdirs} " | grep " ${dir} " >/dev/null 2>&1; then
+    target_configdirs=`echo " ${target_configdirs} " | sed -e "s/ ${dir} / /"`
+    if test -r $srcdir/$dirname/configure ; then
+      if echo " ${skipdirs} " | grep " ${dir} " >/dev/null 2>&1; then
+	true
+      else
+	notsupp="$notsupp $dir"
+      fi
+    fi
+  fi
+done
+
+# Sometimes the tools are distributed with libiberty but with no other
+# libraries.  In that case, we don't want to build target-libiberty.
+# Don't let libgcc imply libiberty either.
+if test -n "${target_configdirs}" ; then
+  libgcc=
+  others=
+  for i in `echo ${target_configdirs} | sed -e s/target-//g` ; do
+    if test "$i" = "libgcc"; then
+      libgcc=target-libgcc
+    elif test "$i" != "libiberty" ; then
+      if test -r $srcdir/$i/configure ; then
+	others=yes;
+	break;
+      fi
+    fi
+  done
+  if test -z "${others}" ; then
+    target_configdirs=$libgcc
+  fi
+fi
+
+# Quietly strip out all directories which aren't configurable in this tree.
+# This relies on all configurable subdirectories being autoconfiscated, which
+# is now the case.
+build_configdirs_all="$build_configdirs"
+build_configdirs=
+for i in ${build_configdirs_all} ; do
+  j=`echo $i | sed -e s/build-//g` 
+  if test -f ${srcdir}/$j/configure ; then
+    build_configdirs="${build_configdirs} $i"
+  fi
+done
+
+configdirs_all="$configdirs"
+configdirs=
+for i in ${configdirs_all} ; do
+  if test -f ${srcdir}/$i/configure ; then
+    configdirs="${configdirs} $i"
+  fi
+done
+
+target_configdirs_all="$target_configdirs"
+target_configdirs=
+for i in ${target_configdirs_all} ; do
+  j=`echo $i | sed -e s/target-//g` 
+  if test -f ${srcdir}/$j/configure ; then
+    target_configdirs="${target_configdirs} $i"
+  fi
+done
+
+# Produce a warning message for the subdirs we can't configure.
+# This isn't especially interesting in the Cygnus tree, but in the individual
+# FSF releases, it's important to let people know when their machine isn't
+# supported by the one or two programs in a package.
+
+if test -n "${notsupp}" && test -z "${norecursion}" ; then
+  # If $appdirs is non-empty, at least one of those directories must still
+  # be configured, or we error out.  (E.g., if the gas release supports a
+  # specified target in some subdirs but not the gas subdir, we shouldn't
+  # pretend that all is well.)
+  if test -n "$appdirs" ; then
+    for dir in $appdirs ; do
+      if test -r $dir/Makefile.in ; then
+	if echo " ${configdirs} " | grep " ${dir} " >/dev/null 2>&1; then
+	  appdirs=""
+	  break
+	fi
+	if echo " ${target_configdirs} " | grep " target-${dir} " >/dev/null 2>&1; then
+	  appdirs=""
+	  break
+	fi
+      fi
+    done
+    if test -n "$appdirs" ; then
+      echo "*** This configuration is not supported by this package." 1>&2
+      exit 1
+    fi
+  fi
+  # Okay, some application will build, or we don't care to check.  Still
+  # notify of subdirs not getting built.
+  echo "*** This configuration is not supported in the following subdirectories:" 1>&2
+  echo "    ${notsupp}" 1>&2
+  echo "    (Any other directories should still work fine.)" 1>&2
+fi
+
+case "$host" in
+  *msdosdjgpp*)
+    enable_gdbtk=no ;;
+esac
+
+# To find our prefix, in gcc_cv_tool_prefix.
+ACX_TOOL_DIRS
+
+copy_dirs=
+
+AC_ARG_WITH([build-sysroot], 
+  [  --with-build-sysroot=SYSROOT
+                          use sysroot as the system root during the build],
+  [if test x"$withval" != x ; then
+     SYSROOT_CFLAGS_FOR_TARGET="--sysroot=$withval"
+   fi],
+  [SYSROOT_CFLAGS_FOR_TARGET=])
+AC_SUBST(SYSROOT_CFLAGS_FOR_TARGET)
+
+AC_ARG_WITH([debug-prefix-map],
+  [  --with-debug-prefix-map='A=B C=D ...'
+                             map A to B, C to D ... in debug information],
+  [if test x"$withval" != x; then
+     DEBUG_PREFIX_CFLAGS_FOR_TARGET=
+     for debug_map in $withval; do
+       DEBUG_PREFIX_CFLAGS_FOR_TARGET="$DEBUG_PREFIX_CFLAGS_FOR_TARGET -fdebug-prefix-map=$debug_map"
+     done
+   fi],
+  [DEBUG_PREFIX_CFLAGS_FOR_TARGET=])
+AC_SUBST(DEBUG_PREFIX_CFLAGS_FOR_TARGET)
+
+# During gcc bootstrap, if we use some random cc for stage1 then CFLAGS
+# might be empty or "-g".  We don't require a C++ compiler, so CXXFLAGS
+# might also be empty (or "-g", if a non-GCC C++ compiler is in the path).
+# We want to ensure that TARGET libraries (which we know are built with
+# gcc) are built with "-O2 -g", so include those options when setting
+# CFLAGS_FOR_TARGET and CXXFLAGS_FOR_TARGET.
+if test "x$CFLAGS_FOR_TARGET" = x; then
+  CFLAGS_FOR_TARGET=$CFLAGS
+  case " $CFLAGS " in
+    *" -O2 "*) ;;
+    *) CFLAGS_FOR_TARGET="-O2 $CFLAGS" ;;
+  esac
+  case " $CFLAGS " in
+    *" -g "* | *" -g3 "*) ;;
+    *) CFLAGS_FOR_TARGET="-g $CFLAGS" ;;
+  esac
+fi
+AC_SUBST(CFLAGS_FOR_TARGET)
+
+if test "x$CXXFLAGS_FOR_TARGET" = x; then
+  CXXFLAGS_FOR_TARGET=$CXXFLAGS
+  case " $CXXFLAGS " in
+    *" -O2 "*) ;;
+    *) CXXFLAGS_FOR_TARGET="-O2 $CXXFLAGS" ;;
+  esac
+  case " $CXXFLAGS " in
+    *" -g "* | *" -g3 "*) ;;
+    *) CXXFLAGS_FOR_TARGET="-g $CXXFLAGS" ;;
+  esac
+fi
+AC_SUBST(CXXFLAGS_FOR_TARGET)
+
+# Handle --with-headers=XXX.  If the value is not "yes", the contents of
+# the named directory are copied to $(tooldir)/sys-include.
+if test x"${with_headers}" != x && test x"${with_headers}" != xno ; then
+  if test x${is_cross_compiler} = xno ; then
+    echo 1>&2 '***' --with-headers is only supported when cross compiling
+    exit 1
+  fi
+  if test x"${with_headers}" != xyes ; then
+    x=${gcc_cv_tool_prefix}
+    copy_dirs="${copy_dirs} ${with_headers} $x/${target_noncanonical}/sys-include"
+  fi
+fi
+
+# Handle --with-libs=XXX.  If the value is not "yes", the contents of
+# the name directories are copied to $(tooldir)/lib.  Multiple directories
+# are permitted.
+if test x"${with_libs}" != x && test x"${with_libs}" != xno ; then
+  if test x${is_cross_compiler} = xno ; then
+    echo 1>&2 '***' --with-libs is only supported when cross compiling
+    exit 1
+  fi
+  if test x"${with_libs}" != xyes ; then
+    # Copy the libraries in reverse order, so that files in the first named
+    # library override files in subsequent libraries.
+    x=${gcc_cv_tool_prefix}
+    for l in ${with_libs}; do
+      copy_dirs="$l $x/${target_noncanonical}/lib ${copy_dirs}"
+    done
+  fi
+fi
+
+# Set with_gnu_as, with_gnu_ld, and with_system_zlib as appropriate.
+#
+# This is done by determining whether or not the appropriate directory
+# is available, and by checking whether or not specific configurations
+# have requested that this magic not happen.
+# 
+# The command line options always override the explicit settings in 
+# configure.in, and the settings in configure.in override this magic.
+#
+# If the default for a toolchain is to use GNU as and ld, and you don't 
+# want to do that, then you should use the --without-gnu-as and
+# --without-gnu-ld options for the configure script.  Similarly, if
+# the default is to use the included zlib and you don't want to do that,
+# you should use the --with-system-zlib option for the configure script.
+
+if test x${use_gnu_as} = x &&
+   echo " ${configdirs} " | grep " gas " > /dev/null 2>&1 ; then
+  with_gnu_as=yes
+  extra_host_args="$extra_host_args --with-gnu-as"
+fi
+
+if test x${use_gnu_ld} = x &&
+   echo " ${configdirs} " | egrep " (go)?ld " > /dev/null 2>&1 ; then
+  with_gnu_ld=yes
+  extra_host_args="$extra_host_args --with-gnu-ld"
+fi
+
+if test x${use_included_zlib} = x &&
+   echo " ${configdirs} " | grep " zlib " > /dev/null 2>&1 ; then
+  :
+else
+  with_system_zlib=yes
+  extra_host_args="$extra_host_args --with-system-zlib"
+fi
+
+# If using newlib, add --with-newlib to the extra_host_args so that gcc/configure
+# can detect this case.
+
+if test x${with_newlib} != xno && echo " ${target_configdirs} " | grep " target-newlib " > /dev/null 2>&1 ; then
+  with_newlib=yes
+  extra_host_args="$extra_host_args --with-newlib"
+fi
+
+# Handle ${copy_dirs}
+set fnord ${copy_dirs}
+shift
+while test $# != 0 ; do
+  if test -f $2/COPIED && test x"`cat $2/COPIED`" = x"$1" ; then
+    :
+  else
+    echo Copying $1 to $2
+
+    # Use the install script to create the directory and all required
+    # parent directories.
+    if test -d $2 ; then
+      :
+    else
+      echo >config.temp
+      ${srcdir}/install-sh -c -m 644 config.temp $2/COPIED
+    fi
+
+    # Copy the directory, assuming we have tar.
+    # FIXME: Should we use B in the second tar?  Not all systems support it.
+    (cd $1; tar -cf - .) | (cd $2; tar -xpf -)
+
+    # It is the responsibility of the user to correctly adjust all
+    # symlinks.  If somebody can figure out how to handle them correctly
+    # here, feel free to add the code.
+
+    echo $1 > $2/COPIED
+  fi
+  shift; shift
+done
+
+# Determine a target-dependent exec_prefix that the installed
+# gcc will search in.  Keep this list sorted by triplet, with
+# the *-*-osname triplets last.
+md_exec_prefix=
+case "${target}" in
+  alpha*-*-*vms*)
+    md_exec_prefix=/gnu/lib/gcc-lib
+    ;;
+  i[[34567]]86-pc-msdosdjgpp*)
+    md_exec_prefix=/dev/env/DJDIR/bin
+    ;;
+  i[[34567]]86-*-sco3.2v5*)
+    if test $with_gnu_as = yes; then
+      md_exec_prefix=/usr/gnu/bin
+    else
+      md_exec_prefix=/usr/ccs/bin/elf
+    fi
+    ;;
+
+  mn10300-*-* | \
+  powerpc-*-chorusos* | \
+  powerpc*-*-eabi* | \
+  powerpc*-*-sysv* | \
+  powerpc*-*-kaos* | \
+  s390x-ibm-tpf*)
+    md_exec_prefix=/usr/ccs/bin
+    ;;
+  sparc64-*-elf*)
+    ;;
+  v850*-*-*)
+    md_exec_prefix=/usr/ccs/bin
+    ;;
+  xtensa*-*-elf*)
+    ;;
+
+  *-*-beos* | \
+  *-*-elf* | \
+  *-*-hpux* | \
+  *-*-netware* | \
+  *-*-nto-qnx* | \
+  *-*-rtems* | \
+  *-*-solaris2* | \
+  *-*-sysv[[45]]* | \
+  *-*-vxworks* | \
+  *-wrs-windiss)
+    md_exec_prefix=/usr/ccs/bin
+    ;;
+esac
+
+extra_arflags_for_target=
+extra_nmflags_for_target=
+extra_ranlibflags_for_target=
+target_makefile_frag=/dev/null
+case "${target}" in
+  mep*-*-*)
+    target_makefile_frag="config/mt-mep"
+    ;;
+  spu-*-*)
+    target_makefile_frag="config/mt-spu"
+    ;;
+  mips*-sde-elf*)
+    target_makefile_frag="config/mt-sde"
+    ;;
+  mipsisa*-*-elfoabi*)
+    target_makefile_frag="config/mt-mips-elfoabi"
+    ;;
+  mips*-*-*linux* | mips*-*-gnu*)
+    target_makefile_frag="config/mt-mips-gnu"
+    ;;
+  *-*-netware*)
+    target_makefile_frag="config/mt-netware"
+    ;;
+  *-*-linux* | *-*-gnu* | *-*-k*bsd*-gnu | *-*-kopensolaris*-gnu)
+    target_makefile_frag="config/mt-gnu"
+    ;;
+  *-*-aix4.[[3456789]]* | *-*-aix[[56789]].*)
+    # nm and ar from AIX 4.3 and above require -X32_64 flag to all ar and nm 
+    # commands to handle both 32-bit and 64-bit objects.  These flags are
+    # harmless if we're using GNU nm or ar.
+    extra_arflags_for_target=" -X32_64"
+    extra_nmflags_for_target=" -B -X32_64"
+    ;;
+  *-*-darwin[[3-9]]*)
+    # ranlib before Darwin10 requires the -c flag to look at common symbols.
+    extra_ranlibflags_for_target=" -c"
+    ;;
+  mips*-*-pe | sh*-*-pe | *arm-wince-pe)
+    target_makefile_frag="config/mt-wince"
+    ;;
+esac
+
+alphaieee_frag=/dev/null
+case $target in
+  alpha*-*-*)
+    # This just makes sure to use the -mieee option to build target libs.
+    # This should probably be set individually by each library.
+    alphaieee_frag="config/mt-alphaieee"
+    ;;
+esac
+
+# If --enable-target-optspace always use -Os instead of -O2 to build
+# the target libraries, similarly if it is not specified, use -Os
+# on selected platforms.
+ospace_frag=/dev/null
+case "${enable_target_optspace}:${target}" in
+  yes:*)
+    ospace_frag="config/mt-ospace"
+    ;;
+  :d30v-*)
+    ospace_frag="config/mt-d30v"
+    ;;
+  :m32r-* | :d10v-* | :fr30-*)
+    ospace_frag="config/mt-ospace"
+    ;;
+  no:* | :*)
+    ;;
+  *)
+    echo "*** bad value \"${enable_target_optspace}\" for --enable-target-optspace flag; ignored" 1>&2
+    ;;
+esac
+
+# Default to using --with-stabs for certain targets.
+if test x${with_stabs} = x ; then
+  case "${target}" in
+  mips*-*-irix[[56]]*)
+    ;;
+  mips*-*-* | alpha*-*-osf*)
+    with_stabs=yes;
+    extra_host_args="${extra_host_args} --with-stabs"
+    ;;
+  esac
+fi
+
+# hpux11 in 64bit mode has libraries in a weird place.  Arrange to find
+# them automatically.
+case "${host}" in
+  hppa*64*-*-hpux11*)	
+    extra_host_args="$extra_host_args -x-libraries=/usr/lib/pa20_64 -x-includes=/usr/X11R6/include"
+    ;;
+esac
+
+# Some systems (e.g., one of the i386-aix systems the gas testers are
+# using) don't handle "\$" correctly, so don't use it here.
+tooldir='${exec_prefix}'/${target_noncanonical}
+build_tooldir=${tooldir}
+
+# Create a .gdbinit file which runs the one in srcdir
+# and tells GDB to look there for source files.
+
+if test -r ${srcdir}/.gdbinit ; then
+  case ${srcdir} in
+    .) ;;
+    *) cat > ./.gdbinit <<EOF
+# ${NO_EDIT}
+dir ${srcdir}
+dir .
+source ${srcdir}/.gdbinit
+EOF
+    ;;
+  esac
+fi
+
+# Make sure that the compiler is able to generate an executable.  If it
+# can't, we are probably in trouble.  We don't care whether we can run the
+# executable--we might be using a cross compiler--we only care whether it
+# can be created.  At this point the main configure script has set CC.
+we_are_ok=no
+echo "int main () { return 0; }" > conftest.c
+${CC} -o conftest ${CFLAGS} ${CPPFLAGS} ${LDFLAGS} conftest.c
+if test $? = 0 ; then
+  if test -s conftest || test -s conftest.exe ; then
+    we_are_ok=yes
+  fi
+fi 
+case $we_are_ok in
+  no)
+    echo 1>&2 "*** The command '${CC} -o conftest ${CFLAGS} ${CPPFLAGS} ${LDFLAGS} conftest.c' failed."
+    echo 1>&2 "*** You must set the environment variable CC to a working compiler."
+    rm -f conftest*
+    exit 1
+    ;;
+esac
+rm -f conftest*
+
+# The Solaris /usr/ucb/cc compiler does not appear to work.
+case "${host}" in
+  sparc-sun-solaris2*)
+      CCBASE="`echo ${CC-cc} | sed 's/ .*$//'`"
+      if test "`type $CCBASE | sed 's/^[[^/]]*//'`" = "/usr/ucb/cc" ; then
+          could_use=
+          test -d /opt/SUNWspro/bin && could_use="/opt/SUNWspro/bin"
+          if test -d /opt/cygnus/bin ; then
+              if test "$could_use" = "" ; then
+                  could_use="/opt/cygnus/bin"
+              else
+                  could_use="$could_use or /opt/cygnus/bin"
+              fi
+          fi
+        if test "$could_use" = "" ; then
+            echo "Warning: compilation may fail because you're using"
+            echo "/usr/ucb/cc.  You should change your PATH or CC "
+            echo "variable and rerun configure."
+        else
+            echo "Warning: compilation may fail because you're using"
+            echo "/usr/ucb/cc, when you should use the C compiler from"
+            echo "$could_use.  You should change your"
+            echo "PATH or CC variable and rerun configure."
+        fi
+      fi
+  ;;
+esac
+
+# Decide which environment variable is used to find dynamic libraries.
+case "${host}" in
+  *-*-hpux*) RPATH_ENVVAR=SHLIB_PATH ;;
+  *-*-darwin* | *-*-rhapsody* ) RPATH_ENVVAR=DYLD_LIBRARY_PATH ;;
+  *-*-mingw* | *-*-cygwin ) RPATH_ENVVAR=PATH ;;
+  *) RPATH_ENVVAR=LD_LIBRARY_PATH ;;
+esac
+
+# On systems where the dynamic library environment variable is PATH,
+# gcc/ will put dynamic libraries into a subdirectory to avoid adding
+# built executables to PATH.
+if test "$RPATH_ENVVAR" = PATH; then
+  GCC_SHLIB_SUBDIR=/shlib
+else
+  GCC_SHLIB_SUBDIR=
+fi
+
+# Record target_configdirs and the configure arguments for target and
+# build configuration in Makefile.
+target_configdirs=`echo "${target_configdirs}" | sed -e 's/target-//g'`
+build_configdirs=`echo "${build_configdirs}" | sed -e 's/build-//g'`
+
+# If we are building libgomp, bootstrap it.
+if echo " ${target_configdirs} " | grep " libgomp " > /dev/null 2>&1 ; then
+  bootstrap_target_libs=${bootstrap_target_libs}target-libgomp,
+fi
+
+# Determine whether gdb needs tk/tcl or not.
+# Use 'maybe' since enable_gdbtk might be true even if tk isn't available
+# and in that case we want gdb to be built without tk.  Ugh!
+# In fact I believe gdb is the *only* package directly dependent on tk,
+# so we should be able to put the 'maybe's in unconditionally and
+# leave out the maybe dependencies when enable_gdbtk is false.  I'm not
+# 100% sure that that's safe though.
+
+gdb_tk="maybe-all-tcl maybe-all-tk maybe-all-itcl maybe-all-libgui"
+case "$enable_gdbtk" in
+  no)
+    GDB_TK="" ;;
+  yes)
+    GDB_TK="${gdb_tk}" ;;
+  *)
+    # Only add the dependency on gdbtk when GDBtk is part of the gdb
+    # distro.  Eventually someone will fix this and move Insight, nee
+    # gdbtk to a separate directory.
+    if test -d ${srcdir}/gdb/gdbtk ; then
+      GDB_TK="${gdb_tk}"
+    else
+      GDB_TK=""
+    fi
+    ;;
+esac
+CONFIGURE_GDB_TK=`echo ${GDB_TK} | sed s/-all-/-configure-/g`
+INSTALL_GDB_TK=`echo ${GDB_TK} | sed s/-all-/-install-/g`
+
+# Strip out unwanted targets.
+
+# While at that, we remove Makefiles if we were started for recursive
+# configuration, so that the top-level Makefile reconfigures them,
+# like we used to do when configure itself was recursive.
+
+# Loop over modules.  We used to use the "$extrasub" feature from Autoconf
+# but now we're fixing up the Makefile ourselves with the additional
+# commands passed to AC_CONFIG_FILES.  Use separate variables
+# extrasub-{build,host,target} not because there is any reason to split
+# the substitutions up that way, but only to remain below the limit of
+# 99 commands in a script, for HP-UX sed.
+# Do not nest @if/@endif pairs, because configure will not warn you at all.
+
+AC_ARG_ENABLE([bootstrap],
+[  --enable-bootstrap      enable bootstrapping @<:@yes if native build@:>@],,
+enable_bootstrap=default)
+
+# Issue errors and warnings for invalid/strange bootstrap combinations.
+case "$configdirs" in
+  *gcc*) have_compiler=yes ;;
+  *) have_compiler=no ;;
+esac
+
+case "$have_compiler:$host:$target:$enable_bootstrap" in
+  *:*:*:no) ;;
+
+  # Default behavior.  Enable bootstrap if we have a compiler
+  # and we are in a native configuration.
+  yes:$build:$build:default)
+    enable_bootstrap=yes ;;
+
+  *:*:*:default)
+    enable_bootstrap=no ;;
+
+  # We have a compiler and we are in a native configuration, bootstrap is ok
+  yes:$build:$build:yes)
+    ;;
+
+  # Other configurations, but we have a compiler.  Assume the user knows
+  # what he's doing.
+  yes:*:*:yes)
+    AC_MSG_WARN([trying to bootstrap a cross compiler])
+    ;;
+
+  # No compiler: if they passed --enable-bootstrap explicitly, fail
+  no:*:*:yes)
+    AC_MSG_ERROR([cannot bootstrap without a compiler]) ;;
+
+  # Fail if wrong command line
+  *)
+    AC_MSG_ERROR([invalid option for --enable-bootstrap])
+    ;;
+esac
+
+case ",$enable_languages,:$ENABLE_BUILD_WITH_CXX:$enable_bootstrap" in
+  *,c++,*:yes:yes) ;;
+  *:yes:yes)
+    AC_MSG_ERROR([bootstrapping with --enable-build-with-cxx requires c++ in --enable-languages])
+    ;;
+esac
+
+case "$enable_bootstrap:$ENABLE_GOLD: $configdirs :,$stage1_languages," in
+  yes:yes:*\ gold\ *:*,c++,*) ;;
+  yes:yes:*\ gold\ *:*)
+    AC_MSG_ERROR([in a combined tree, bootstrapping with --enable-gold requires c++ in stage1_languages])
+    ;;
+esac
+
+# Adjust the toplevel makefile according to whether bootstrap was selected.
+case $enable_bootstrap in
+  yes)
+    bootstrap_suffix=bootstrap
+    BUILD_CONFIG=bootstrap-debug
+    ;;
+  no)
+    bootstrap_suffix=no-bootstrap
+    BUILD_CONFIG=
+    ;;
+esac
+
+AC_MSG_CHECKING(for default BUILD_CONFIG)
+
+AC_ARG_WITH([build-config],
+  [--with-build-config='NAME NAME2...'
+                          Use config/NAME.mk build configuration],
+  [case $with_build_config in
+   yes) with_build_config= ;;
+   no) with_build_config= BUILD_CONFIG= ;;
+   esac])
+
+if test "x${with_build_config}" != x; then
+  BUILD_CONFIG=$with_build_config
+else
+  case $BUILD_CONFIG in
+  bootstrap-debug)
+    if echo "int f (void) { return 0; }" > conftest.c &&
+       ${CC} -c conftest.c &&
+       mv conftest.o conftest.o.g0 &&
+       ${CC} -c -g conftest.c &&
+       mv conftest.o conftest.o.g &&
+       ${srcdir}/contrib/compare-debug conftest.o.g0 conftest.o.g > /dev/null 2>&1; then
+      :
+    else
+      BUILD_CONFIG=
+    fi
+    rm -f conftest.c conftest.o conftest.o.g0 conftest.o.g
+    ;;
+  esac
+fi
+AC_MSG_RESULT($BUILD_CONFIG)
+AC_SUBST(BUILD_CONFIG)
+
+extrasub_build=
+for module in ${build_configdirs} ; do
+  if test -z "${no_recursion}" \
+     && test -f ${build_subdir}/${module}/Makefile; then
+    echo 1>&2 "*** removing ${build_subdir}/${module}/Makefile to force reconfigure"
+    rm -f ${build_subdir}/${module}/Makefile
+  fi
+  extrasub_build="$extrasub_build
+/^@if build-$module\$/d
+/^@endif build-$module\$/d
+/^@if build-$module-$bootstrap_suffix\$/d
+/^@endif build-$module-$bootstrap_suffix\$/d"
+done
+extrasub_host=
+for module in ${configdirs} ; do
+  if test -z "${no_recursion}"; then
+    for file in stage*-${module}/Makefile prev-${module}/Makefile ${module}/Makefile; do
+      if test -f ${file}; then
+	echo 1>&2 "*** removing ${file} to force reconfigure"
+	rm -f ${file}
+      fi
+    done
+  fi
+  extrasub_host="$extrasub_host
+/^@if $module\$/d
+/^@endif $module\$/d
+/^@if $module-$bootstrap_suffix\$/d
+/^@endif $module-$bootstrap_suffix\$/d"
+done
+extrasub_target=
+for module in ${target_configdirs} ; do
+  if test -z "${no_recursion}" \
+     && test -f ${target_subdir}/${module}/Makefile; then
+    echo 1>&2 "*** removing ${target_subdir}/${module}/Makefile to force reconfigure"
+    rm -f ${target_subdir}/${module}/Makefile
+  fi
+
+  # We only bootstrap target libraries listed in bootstrap_target_libs.
+  case $bootstrap_target_libs in
+    *,target-$module,*) target_bootstrap_suffix=$bootstrap_suffix ;;
+    *) target_bootstrap_suffix=no-bootstrap ;;
+  esac
+
+  extrasub_target="$extrasub_target
+/^@if target-$module\$/d
+/^@endif target-$module\$/d
+/^@if target-$module-$target_bootstrap_suffix\$/d
+/^@endif target-$module-$target_bootstrap_suffix\$/d"
+done
+
+# Do the final fixup along with target modules.
+extrasub_target="$extrasub_target
+/^@if /,/^@endif /d"
+
+# Create the serialization dependencies.  This uses a temporary file.
+
+AC_ARG_ENABLE([serial-configure],
+[  --enable-serial-@<:@{host,target,build}-@:>@configure
+                          force sequential configuration of
+                          sub-packages for the host, target or build
+                          machine, or all sub-packages])
+
+case ${enable_serial_configure} in
+  yes)
+    enable_serial_build_configure=yes
+    enable_serial_host_configure=yes
+    enable_serial_target_configure=yes
+    ;;
+esac
+
+# These force 'configure's to be done one at a time, to avoid problems
+# with contention over a shared config.cache.
+rm -f serdep.tmp
+echo '# serdep.tmp' > serdep.tmp
+olditem=
+test "x${enable_serial_build_configure}" = xyes &&
+for item in ${build_configdirs} ; do
+  case ${olditem} in
+    "") ;;
+    *) echo "configure-build-${item}: configure-build-${olditem}" >> serdep.tmp ;;
+  esac
+  olditem=${item}
+done
+olditem=
+test "x${enable_serial_host_configure}" = xyes &&
+for item in ${configdirs} ; do
+  case ${olditem} in
+    "") ;;
+    *) echo "configure-${item}: configure-${olditem}" >> serdep.tmp ;;
+  esac
+  olditem=${item}
+done
+olditem=
+test "x${enable_serial_target_configure}" = xyes &&
+for item in ${target_configdirs} ; do
+  case ${olditem} in
+    "") ;;
+    *) echo "configure-target-${item}: configure-target-${olditem}" >> serdep.tmp ;;
+  esac
+  olditem=${item}
+done
+serialization_dependencies=serdep.tmp
+AC_SUBST_FILE(serialization_dependencies)
+
+# Base args.  Strip norecursion, cache-file, srcdir, host, build,
+# target, nonopt, and variable assignments.  These are the ones we
+# might not want to pass down to subconfigures.  The exception being
+# --cache-file=/dev/null, which is used to turn off the use of cache
+# files altogether, and which should be passed on to subconfigures.
+# Also strip program-prefix, program-suffix, and program-transform-name,
+# so that we can pass down a consistent program-transform-name.
+baseargs=
+keep_next=no
+skip_next=no
+eval "set -- $ac_configure_args"
+for ac_arg
+do
+  if test X"$skip_next" = X"yes"; then
+    skip_next=no
+    continue
+  fi
+  if test X"$keep_next" = X"yes"; then
+    case $ac_arg in
+      *\'*)
+	ac_arg=`echo "$ac_arg" | sed "s/'/'\\\\\\\\''/g"` ;;
+    esac
+    baseargs="$baseargs '$ac_arg'"
+    keep_next=no
+    continue
+  fi
+
+  # Handle separated arguments.  Based on the logic generated by
+  # autoconf 2.59.
+  case $ac_arg in
+    *=* | --config-cache | -C | -disable-* | --disable-* \
+      | -enable-* | --enable-* | -gas | --g* | -nfp | --nf* \
+      | -q | -quiet | --q* | -silent | --sil* | -v | -verb* \
+      | -with-* | --with-* | -without-* | --without-* | --x)
+      separate_arg=no
+      ;;
+    -*)
+      separate_arg=yes
+      ;;
+    *)
+      separate_arg=no
+      ;;
+  esac
+
+  case "$ac_arg" in
+    --cache-file=/dev/null | \
+    -cache-file=/dev/null )
+      # Handled here to avoid the test to skip args below.
+      baseargs="$baseargs '$ac_arg'"
+      # Assert: $separate_arg should always be no.
+      keep_next=$separate_arg
+      ;;
+    --no*)
+      continue
+      ;;
+    --c* | \
+    --sr* | \
+    --ho* | \
+    --bu* | \
+    --t* | \
+    --program-* | \
+    -cache_file* | \
+    -srcdir* | \
+    -host* | \
+    -build* | \
+    -target* | \
+    -program-prefix* | \
+    -program-suffix* | \
+    -program-transform-name* )
+      skip_next=$separate_arg
+      continue
+      ;;
+    -*)
+      # An option.  Add it.
+      case $ac_arg in
+	*\'*)
+	  ac_arg=`echo "$ac_arg" | sed "s/'/'\\\\\\\\''/g"` ;;
+      esac
+      baseargs="$baseargs '$ac_arg'"
+      keep_next=$separate_arg
+      ;;
+    *)
+      # Either a variable assignment, or a nonopt (triplet).  Don't
+      # pass it down; let the Makefile handle this.
+      continue
+      ;;
+  esac
+done
+# Remove the initial space we just introduced and, as these will be
+# expanded by make, quote '$'.
+baseargs=`echo "x$baseargs" | sed -e 's/^x *//' -e 's,\\$,$$,g'`
+
+# Add in --program-transform-name, after --program-prefix and
+# --program-suffix have been applied to it.  Autoconf has already
+# doubled dollar signs and backslashes in program_transform_name; we want
+# the backslashes un-doubled, and then the entire thing wrapped in single
+# quotes, because this will be expanded first by make and then by the shell. 
+# Also, because we want to override the logic in subdir configure scripts to
+# choose program_transform_name, replace any s,x,x, with s,y,y,.
+sed -e "s,\\\\\\\\,\\\\,g; s,','\\\\'',g; s/s,x,x,/s,y,y,/" <<EOF_SED > conftestsed.out
+${program_transform_name}
+EOF_SED
+gcc_transform_name=`cat conftestsed.out`
+rm -f conftestsed.out
+baseargs="$baseargs --program-transform-name='${gcc_transform_name}'"
+if test "$silent" = yes; then
+  baseargs="$baseargs --silent"
+fi
+baseargs="$baseargs --disable-option-checking"
+
+# For the build-side libraries, we just need to pretend we're native,
+# and not use the same cache file.  Multilibs are neither needed nor
+# desired.
+build_configargs="--cache-file=../config.cache ${baseargs}"
+
+# For host modules, accept cache file option, or specification as blank.
+case "${cache_file}" in
+"") # empty
+  cache_file_option="" ;;
+/* | [[A-Za-z]]:[[\\/]]* ) # absolute path
+  cache_file_option="--cache-file=${cache_file}" ;;
+*) # relative path
+  cache_file_option="--cache-file=../${cache_file}" ;;
+esac
+
+# Host dirs don't like to share a cache file either, horribly enough.
+# This seems to be due to autoconf 2.5x stupidity.
+host_configargs="--cache-file=./config.cache ${extra_host_args} ${baseargs}"
+
+target_configargs=${baseargs}
+
+# Passing a --with-cross-host argument lets the target libraries know
+# whether they are being built with a cross-compiler or being built
+# native.  However, it would be better to use other mechanisms to make the
+# sorts of decisions they want to make on this basis.  Please consider
+# this option to be deprecated.  FIXME.
+if test x${is_cross_compiler} = xyes ; then
+  target_configargs="--with-cross-host=${host_noncanonical} ${target_configargs}"
+fi
+
+# Default to --enable-multilib.
+if test x${enable_multilib} = x ; then
+  target_configargs="--enable-multilib ${target_configargs}"
+fi
+
+# Pass --with-newlib if appropriate.  Note that target_configdirs has
+# changed from the earlier setting of with_newlib.
+if test x${with_newlib} != xno && echo " ${target_configdirs} " | grep " newlib " > /dev/null 2>&1 && test -d ${srcdir}/newlib ; then
+  target_configargs="--with-newlib ${target_configargs}"
+fi
+
+# Different target subdirs use different values of certain variables
+# (notably CXX).  Worse, multilibs use *lots* of different values.
+# Worse yet, autoconf 2.5x makes some of these 'precious', meaning that
+# it doesn't automatically accept command-line overrides of them.
+# This means it's not safe for target subdirs to share a cache file,
+# which is disgusting, but there you have it.  Hopefully this can be
+# fixed in future.  It's still worthwhile to use a cache file for each
+# directory.  I think.
+
+# Pass the appropriate --build, --host, --target and --cache-file arguments.
+# We need to pass --target, as newer autoconf's requires consistency
+# for target_alias and gcc doesn't manage it consistently.
+target_configargs="--cache-file=./config.cache ${target_configargs}"
+
+FLAGS_FOR_TARGET=
+case " $target_configdirs " in
+ *" newlib "*)
+  case " $target_configargs " in
+  *" --with-newlib "*)
+   case "$target" in
+    *-cygwin*)
+      FLAGS_FOR_TARGET=$FLAGS_FOR_TARGET' -L$$r/$(TARGET_SUBDIR)/winsup -L$$r/$(TARGET_SUBDIR)/winsup/cygwin -L$$r/$(TARGET_SUBDIR)/winsup/w32api/lib -isystem $$s/winsup/include -isystem $$s/winsup/cygwin/include -isystem $$s/winsup/w32api/include'
+      ;;
+   esac
+
+   # If we're not building GCC, don't discard standard headers.
+   if test -d ${srcdir}/gcc; then
+     FLAGS_FOR_TARGET=$FLAGS_FOR_TARGET' -nostdinc'
+
+     if test "${build}" != "${host}"; then
+       # On Canadian crosses, CC_FOR_TARGET will have already been set
+       # by `configure', so we won't have an opportunity to add -Bgcc/
+       # to it.  This is right: we don't want to search that directory
+       # for binaries, but we want the header files in there, so add
+       # them explicitly.
+       FLAGS_FOR_TARGET=$FLAGS_FOR_TARGET' -isystem $$r/$(HOST_SUBDIR)/gcc/include'
+
+       # Someone might think of using the pre-installed headers on
+       # Canadian crosses, in case the installed compiler is not fully
+       # compatible with the compiler being built.  In this case, it
+       # would be better to flag an error than risking having
+       # incompatible object files being constructed.  We can't
+       # guarantee that an error will be flagged, but let's hope the
+       # compiler will do it, when presented with incompatible header
+       # files.
+     fi
+   fi
+
+   case "${target}-${is_cross_compiler}" in
+   i[[3456789]]86-*-linux*-no)
+      # Here host == target, so we don't need to build gcc,
+      # so we don't want to discard standard headers.
+      FLAGS_FOR_TARGET=`echo " $FLAGS_FOR_TARGET " | sed -e 's/ -nostdinc / /'`
+      ;;
+   *)
+      # If we're building newlib, use its generic headers last, but search
+      # for any libc-related directories first (so make it the last -B
+      # switch).
+      FLAGS_FOR_TARGET=$FLAGS_FOR_TARGET' -B$$r/$(TARGET_SUBDIR)/newlib/ -isystem $$r/$(TARGET_SUBDIR)/newlib/targ-include -isystem $$s/newlib/libc/include'
+
+      # If we're building libgloss, find the startup file, simulator library
+      # and linker script.
+      case " $target_configdirs " in
+	*" libgloss "*)
+	# Look for startup file, simulator library and maybe linker script.
+	FLAGS_FOR_TARGET=$FLAGS_FOR_TARGET' -B$$r/$(TARGET_SUBDIR)/libgloss/'"$libgloss_dir"
+	# Look for libnosys.a in case the target needs it.
+	FLAGS_FOR_TARGET=$FLAGS_FOR_TARGET' -L$$r/$(TARGET_SUBDIR)/libgloss/libnosys'
+	# Most targets have the linker script in the source directory.
+	FLAGS_FOR_TARGET=$FLAGS_FOR_TARGET' -L$$s/libgloss/'"$libgloss_dir"
+	;;
+      esac
+      ;;
+   esac
+   ;;
+  esac
+  ;;
+esac
+
+case "$target" in
+  x86_64-*mingw* | *-w64-mingw*)
+  # MinGW-w64 does not use newlib, nor does it use winsup. It may,
+  # however, use a symlink named 'mingw' in ${prefix} .
+    FLAGS_FOR_TARGET=$FLAGS_FOR_TARGET' -L${prefix}/${target}/lib -L${prefix}/mingw/lib -isystem ${prefix}/${target}/include -isystem ${prefix}/mingw/include'
+    ;;
+  *-mingw*)
+  # MinGW can't be handled as Cygwin above since it does not use newlib.
+    FLAGS_FOR_TARGET=$FLAGS_FOR_TARGET' -L$$r/$(TARGET_SUBDIR)/winsup/mingw -L$$r/$(TARGET_SUBDIR)/winsup/w32api/lib -isystem $$s/winsup/mingw/include -isystem $$s/winsup/w32api/include'
+    ;;
+esac
+
+# Allow the user to override the flags for
+# our build compiler if desired.
+if test x"${build}" = x"${host}" ; then
+  CFLAGS_FOR_BUILD=${CFLAGS_FOR_BUILD-${CFLAGS}}
+  CXXFLAGS_FOR_BUILD=${CXXFLAGS_FOR_BUILD-${CXXFLAGS}}
+  LDFLAGS_FOR_BUILD=${LDFLAGS_FOR_BUILD-${LDFLAGS}}
+fi
+
+# On Canadian crosses, we'll be searching the right directories for
+# the previously-installed cross compiler, so don't bother to add
+# flags for directories within the install tree of the compiler
+# being built; programs in there won't even run.
+if test "${build}" = "${host}" && test -d ${srcdir}/gcc; then
+  # Search for pre-installed headers if nothing else fits.
+  FLAGS_FOR_TARGET=$FLAGS_FOR_TARGET' -B$(build_tooldir)/bin/ -B$(build_tooldir)/lib/ -isystem $(build_tooldir)/include -isystem $(build_tooldir)/sys-include'
+fi
+
+if test "x${use_gnu_ld}" = x &&
+   echo " ${configdirs} " | grep " ld " > /dev/null ; then
+  # Arrange for us to find uninstalled linker scripts.
+  FLAGS_FOR_TARGET=$FLAGS_FOR_TARGET' -L$$r/$(HOST_SUBDIR)/ld'
+fi
+
+# Search for other target-specific linker scripts and such.
+case "${target}" in
+  mep*)
+    FLAGS_FOR_TARGET="$FLAGS_FOR_TARGET -mlibrary"
+    ;;
+esac
+
+# Makefile fragments.
+for frag in host_makefile_frag target_makefile_frag alphaieee_frag ospace_frag;
+do
+  eval fragval=\$$frag
+  if test $fragval != /dev/null; then
+    eval $frag=${srcdir}/$fragval
+  fi
+done
+AC_SUBST_FILE(host_makefile_frag)
+AC_SUBST_FILE(target_makefile_frag)
+AC_SUBST_FILE(alphaieee_frag)
+AC_SUBST_FILE(ospace_frag)
+
+# Miscellanea: directories, flags, etc.
+AC_SUBST(RPATH_ENVVAR)
+AC_SUBST(GCC_SHLIB_SUBDIR)
+AC_SUBST(tooldir)
+AC_SUBST(build_tooldir)
+AC_SUBST(CONFIGURE_GDB_TK)
+AC_SUBST(GDB_TK)
+AC_SUBST(INSTALL_GDB_TK)
+
+# Build module lists & subconfigure args.
+AC_SUBST(build_configargs)
+AC_SUBST(build_configdirs)
+
+# Host module lists & subconfigure args.
+AC_SUBST(host_configargs)
+AC_SUBST(configdirs)
+AC_SUBST(target_configdirs)
+
+# Target module lists & subconfigure args.
+AC_SUBST(target_configargs)
+
+
+# Build tools.
+AC_SUBST(AR_FOR_BUILD)
+AC_SUBST(AS_FOR_BUILD)
+AC_SUBST(CC_FOR_BUILD)
+AC_SUBST(CFLAGS_FOR_BUILD)
+AC_SUBST(CXXFLAGS_FOR_BUILD)
+AC_SUBST(CXX_FOR_BUILD)
+AC_SUBST(DLLTOOL_FOR_BUILD)
+AC_SUBST(GCJ_FOR_BUILD)
+AC_SUBST(GFORTRAN_FOR_BUILD)
+AC_SUBST(LDFLAGS_FOR_BUILD)
+AC_SUBST(LD_FOR_BUILD)
+AC_SUBST(NM_FOR_BUILD)
+AC_SUBST(RANLIB_FOR_BUILD)
+AC_SUBST(WINDMC_FOR_BUILD)
+AC_SUBST(WINDRES_FOR_BUILD)
+AC_SUBST(config_shell)
+
+# Generate default definitions for YACC, M4, LEX and other programs that run
+# on the build machine.  These are used if the Makefile can't locate these
+# programs in objdir.
+MISSING=`cd $ac_aux_dir && ${PWDCMD-pwd}`/missing
+
+AC_CHECK_PROGS([YACC], ['bison -y' byacc yacc], [$MISSING bison -y])
+case " $build_configdirs " in
+  *" bison "*) YACC='$$r/$(BUILD_SUBDIR)/bison/tests/bison -y' ;;
+  *" byacc "*) YACC='$$r/$(BUILD_SUBDIR)/byacc/byacc' ;;
+esac
+
+AC_CHECK_PROGS([BISON], [bison], [$MISSING bison])
+case " $build_configdirs " in
+  *" bison "*) BISON='$$r/$(BUILD_SUBDIR)/bison/tests/bison' ;;
+esac
+
+AC_CHECK_PROGS([M4], [gm4 gnum4 m4], [$MISSING m4])
+case " $build_configdirs " in
+  *" m4 "*) M4='$$r/$(BUILD_SUBDIR)/m4/m4' ;;
+esac
+
+AC_CHECK_PROGS([LEX], [flex lex], [$MISSING flex])
+case " $build_configdirs " in
+  *" flex "*) LEX='$$r/$(BUILD_SUBDIR)/flex/flex' ;;
+  *" lex "*) LEX='$$r/$(BUILD_SUBDIR)/lex/lex' ;;
+esac
+
+AC_CHECK_PROGS([FLEX], [flex], [$MISSING flex])
+case " $build_configdirs " in
+  *" flex "*) FLEX='$$r/$(BUILD_SUBDIR)/flex/flex' ;;
+esac
+
+AC_CHECK_PROGS([MAKEINFO], makeinfo, [$MISSING makeinfo])
+case " $build_configdirs " in
+  *" texinfo "*) MAKEINFO='$$r/$(BUILD_SUBDIR)/texinfo/makeinfo/makeinfo' ;;
+  *)
+changequote(,)
+    # For an installed makeinfo, we require it to be from texinfo 4.7 or
+    # higher, else we use the "missing" dummy.
+    if ${MAKEINFO} --version \
+       | egrep 'texinfo[^0-9]*(4\.([7-9]|[1-9][0-9])|[5-9]|[1-9][0-9])' >/dev/null 2>&1; then
+      :
+    else
+      MAKEINFO="$MISSING makeinfo"
+    fi
+    ;;
+changequote([,])
+esac
+
+# FIXME: expect and dejagnu may become build tools?
+
+AC_CHECK_PROGS(EXPECT, expect, expect)
+case " $configdirs " in
+  *" expect "*)
+    test $host = $build && EXPECT='$$r/$(HOST_SUBDIR)/expect/expect'
+    ;;
+esac
+
+AC_CHECK_PROGS(RUNTEST, runtest, runtest)
+case " $configdirs " in
+  *" dejagnu "*)
+    test $host = $build && RUNTEST='$$s/$(HOST_SUBDIR)/dejagnu/runtest'
+    ;;
+esac
+
+
+# Host tools.
+NCN_STRICT_CHECK_TOOLS(AR, ar)
+NCN_STRICT_CHECK_TOOLS(AS, as)
+NCN_STRICT_CHECK_TOOLS(DLLTOOL, dlltool)
+NCN_STRICT_CHECK_TOOLS(LD, ld)
+NCN_STRICT_CHECK_TOOLS(LIPO, lipo)
+NCN_STRICT_CHECK_TOOLS(NM, nm)
+NCN_STRICT_CHECK_TOOLS(RANLIB, ranlib, true)
+NCN_STRICT_CHECK_TOOLS(STRIP, strip, true)
+NCN_STRICT_CHECK_TOOLS(WINDRES, windres)
+NCN_STRICT_CHECK_TOOLS(WINDMC, windmc)
+NCN_STRICT_CHECK_TOOLS(OBJCOPY, objcopy)
+NCN_STRICT_CHECK_TOOLS(OBJDUMP, objdump)
+AC_SUBST(CC)
+AC_SUBST(CXX)
+AC_SUBST(CFLAGS)
+AC_SUBST(CXXFLAGS)
+
+# Target tools.
+AC_ARG_WITH([build-time-tools], 
+  [  --with-build-time-tools=PATH
+                          use given path to find target tools during the build],
+  [case x"$withval" in
+     x/*) ;;
+     *)
+       with_build_time_tools=
+       AC_MSG_WARN([argument to --with-build-time-tools must be an absolute path])
+       ;;
+   esac],
+  [with_build_time_tools=])
+
+NCN_STRICT_CHECK_TARGET_TOOLS(CC_FOR_TARGET, cc gcc)
+NCN_STRICT_CHECK_TARGET_TOOLS(CXX_FOR_TARGET, c++ g++ cxx gxx)
+NCN_STRICT_CHECK_TARGET_TOOLS(GCC_FOR_TARGET, gcc, ${CC_FOR_TARGET})
+NCN_STRICT_CHECK_TARGET_TOOLS(GCJ_FOR_TARGET, gcj)
+NCN_STRICT_CHECK_TARGET_TOOLS(GFORTRAN_FOR_TARGET, gfortran)
+
+ACX_CHECK_INSTALLED_TARGET_TOOL(AR_FOR_TARGET, ar)
+ACX_CHECK_INSTALLED_TARGET_TOOL(AS_FOR_TARGET, as)
+ACX_CHECK_INSTALLED_TARGET_TOOL(DLLTOOL_FOR_TARGET, dlltool)
+ACX_CHECK_INSTALLED_TARGET_TOOL(LD_FOR_TARGET, ld)
+ACX_CHECK_INSTALLED_TARGET_TOOL(LIPO_FOR_TARGET, lipo)
+ACX_CHECK_INSTALLED_TARGET_TOOL(NM_FOR_TARGET, nm)
+ACX_CHECK_INSTALLED_TARGET_TOOL(OBJDUMP_FOR_TARGET, objdump)
+ACX_CHECK_INSTALLED_TARGET_TOOL(RANLIB_FOR_TARGET, ranlib)
+ACX_CHECK_INSTALLED_TARGET_TOOL(STRIP_FOR_TARGET, strip)
+ACX_CHECK_INSTALLED_TARGET_TOOL(WINDRES_FOR_TARGET, windres)
+ACX_CHECK_INSTALLED_TARGET_TOOL(WINDMC_FOR_TARGET, windmc)
+
+RAW_CXX_FOR_TARGET="$CXX_FOR_TARGET"
+
+GCC_TARGET_TOOL(ar, AR_FOR_TARGET, AR, [binutils/ar])
+GCC_TARGET_TOOL(as, AS_FOR_TARGET, AS, [gas/as-new])
+GCC_TARGET_TOOL(cc, CC_FOR_TARGET, CC, [gcc/xgcc -B$$r/$(HOST_SUBDIR)/gcc/])
+GCC_TARGET_TOOL(c++, CXX_FOR_TARGET, CXX,
+		[gcc/g++ -B$$r/$(HOST_SUBDIR)/gcc/ -nostdinc++ `test ! -f $$r/$(TARGET_SUBDIR)/libstdc++-v3/scripts/testsuite_flags || $(SHELL) $$r/$(TARGET_SUBDIR)/libstdc++-v3/scripts/testsuite_flags --build-includes` -L$$r/$(TARGET_SUBDIR)/libstdc++-v3/src -L$$r/$(TARGET_SUBDIR)/libstdc++-v3/src/.libs],
+		c++)
+GCC_TARGET_TOOL(c++ for libstdc++, RAW_CXX_FOR_TARGET, CXX,
+		[gcc/xgcc -shared-libgcc -B$$r/$(HOST_SUBDIR)/gcc -nostdinc++ -L$$r/$(TARGET_SUBDIR)/libstdc++-v3/src -L$$r/$(TARGET_SUBDIR)/libstdc++-v3/src/.libs],
+		c++)
+GCC_TARGET_TOOL(dlltool, DLLTOOL_FOR_TARGET, DLLTOOL, [binutils/dlltool])
+GCC_TARGET_TOOL(gcc, GCC_FOR_TARGET, , [gcc/xgcc -B$$r/$(HOST_SUBDIR)/gcc/])
+GCC_TARGET_TOOL(gcj, GCJ_FOR_TARGET, GCJ,
+		[gcc/gcj -B$$r/$(HOST_SUBDIR)/gcc/], java)
+GCC_TARGET_TOOL(gfortran, GFORTRAN_FOR_TARGET, GFORTRAN,
+		[gcc/gfortran -B$$r/$(HOST_SUBDIR)/gcc/], fortran)
+GCC_TARGET_TOOL(ld, LD_FOR_TARGET, LD, [ld/ld-new])
+GCC_TARGET_TOOL(lipo, LIPO_FOR_TARGET, LIPO)
+GCC_TARGET_TOOL(nm, NM_FOR_TARGET, NM, [binutils/nm-new])
+GCC_TARGET_TOOL(objdump, OBJDUMP_FOR_TARGET, OBJDUMP, [binutils/objdump])
+GCC_TARGET_TOOL(ranlib, RANLIB_FOR_TARGET, RANLIB, [binutils/ranlib])
+GCC_TARGET_TOOL(strip, STRIP_FOR_TARGET, STRIP, [binutils/strip])
+GCC_TARGET_TOOL(windres, WINDRES_FOR_TARGET, WINDRES, [binutils/windres])
+GCC_TARGET_TOOL(windmc, WINDMC_FOR_TARGET, WINDMC, [binutils/windmc])
+
+AC_SUBST(FLAGS_FOR_TARGET)
+AC_SUBST(RAW_CXX_FOR_TARGET)
+
+# Certain tools may need extra flags.
+AR_FOR_TARGET=${AR_FOR_TARGET}${extra_arflags_for_target}
+RANLIB_FOR_TARGET=${RANLIB_FOR_TARGET}${extra_ranlibflags_for_target}
+NM_FOR_TARGET=${NM_FOR_TARGET}${extra_nmflags_for_target}
+
+# When building target libraries, except in a Canadian cross, we use
+# the same toolchain as the compiler we just built.
+COMPILER_AS_FOR_TARGET='$(AS_FOR_TARGET)'
+COMPILER_LD_FOR_TARGET='$(LD_FOR_TARGET)'
+COMPILER_NM_FOR_TARGET='$(NM_FOR_TARGET)'
+if test $host = $build; then
+  case " $configdirs " in
+    *" gcc "*)
+      COMPILER_AS_FOR_TARGET='$$r/$(HOST_SUBDIR)/gcc/as'
+      COMPILER_LD_FOR_TARGET='$$r/$(HOST_SUBDIR)/gcc/collect-ld'
+      COMPILER_NM_FOR_TARGET='$$r/$(HOST_SUBDIR)/gcc/nm'${extra_nmflags_for_target}
+      ;;
+  esac
+fi
+
+AC_SUBST(COMPILER_AS_FOR_TARGET)
+AC_SUBST(COMPILER_LD_FOR_TARGET)
+AC_SUBST(COMPILER_NM_FOR_TARGET)
+
+AC_MSG_CHECKING([whether to enable maintainer-specific portions of Makefiles])
+AC_ARG_ENABLE(maintainer-mode,
+[  --enable-maintainer-mode enable make rules and dependencies not useful
+                          (and sometimes confusing) to the casual installer],
+      USE_MAINTAINER_MODE=$enableval,
+      USE_MAINTAINER_MODE=no)
+AC_MSG_RESULT($USE_MAINTAINER_MODE)
+AC_SUBST(MAINTAINER_MODE_TRUE)
+AC_SUBST(MAINTAINER_MODE_FALSE)
+if test "$USE_MAINTAINER_MODE" = yes; then
+  MAINTAINER_MODE_TRUE=
+  MAINTAINER_MODE_FALSE='#'
+else
+  MAINTAINER_MODE_TRUE='#'
+  MAINTAINER_MODE_FALSE=
+fi	
+MAINT=$MAINTAINER_MODE_TRUE
+AC_SUBST(MAINT)dnl
+
+# ---------------------
+# GCC bootstrap support
+# ---------------------
+
+# Stage specific cflags for build.
+stage1_cflags="-g"
+case $build in
+  vax-*-*)
+    case ${GCC} in
+      yes) stage1_cflags="-g -Wa,-J" ;;
+      *) stage1_cflags="-g -J" ;;
+    esac ;;
+esac
+
+# This is aimed to mimic bootstrap with a non-GCC compiler to catch problems.
+if test "$GCC" = yes -a "$ENABLE_BUILD_WITH_CXX" != yes; then
+  saved_CFLAGS="$CFLAGS"
+
+  # Pass -fkeep-inline-functions for stage 1 if the GCC version supports it.
+  CFLAGS="$CFLAGS -fkeep-inline-functions"
+  AC_MSG_CHECKING([whether -fkeep-inline-functions is supported])
+  AC_TRY_COMPILE([
+#if (__GNUC__ < 3) \
+    || (__GNUC__ == 3 && (__GNUC_MINOR__ < 3 \
+			  || (__GNUC_MINOR__ == 3 && __GNUC_PATCHLEVEL__ < 1)))
+#error http://gcc.gnu.org/PR29382
+#endif
+    ],,
+    [AC_MSG_RESULT([yes]); stage1_cflags="$stage1_cflags -fkeep-inline-functions"],
+    [AC_MSG_RESULT([no])])
+
+  CFLAGS="$saved_CFLAGS"
+fi
+
+AC_SUBST(stage1_cflags)
+
+# Enable --enable-checking in stage1 of the compiler.
+AC_ARG_ENABLE(stage1-checking,
+[  --enable-stage1-checking@<:@=all@:>@   choose additional checking for stage1
+                          of the compiler],
+[stage1_checking=--enable-checking=${enable_stage1_checking}],
+[if test "x$enable_checking" = xno || test "x$enable_checking" = x; then
+  stage1_checking=--enable-checking=yes,types
+else
+  stage1_checking=--enable-checking=$enable_checking,types
+fi])
+AC_SUBST(stage1_checking)
+
+# Enable -Werror in bootstrap stage2 and later.
+AC_ARG_ENABLE(werror,
+[  --enable-werror         enable -Werror in bootstrap stage2 and later], [],
+[if test -d ${srcdir}/gcc && test x"`cat $srcdir/gcc/DEV-PHASE`" = xexperimental; then
+  enable_werror=yes
+else
+  enable_werror=no
+fi])
+case ${enable_werror} in
+  yes) stage2_werror_flag="--enable-werror-always" ;;
+  *) stage2_werror_flag="" ;;
+esac
+AC_SUBST(stage2_werror_flag)
+
+# Specify what files to not compare during bootstrap.
+
+compare_exclusions="gcc/cc*-checksum\$(objext) | gcc/ada/*tools/*"
+case "$target" in
+  hppa*64*-*-hpux*) ;;
+  hppa*-*-hpux*) compare_exclusions="gcc/cc*-checksum\$(objext) | */libgcc/lib2funcs* | gcc/ada/*tools/*" ;;
+esac
+case " $configdirs " in
+*" ppl "*) compare_exclusions="$compare_exclusions | ppl/src/ppl-config.o" ;;
+esac
+AC_SUBST(compare_exclusions)
+
+AC_CONFIG_FILES([Makefile],
+  [sed "$extrasub_build" Makefile |
+   sed "$extrasub_host" |
+   sed "$extrasub_target" > mf$$
+   mv -f mf$$ Makefile],
+  [extrasub_build="$extrasub_build"
+   extrasub_host="$extrasub_host"
+   extrasub_target="$extrasub_target"])
+AC_OUTPUT

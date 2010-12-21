@@ -20,7 +20,7 @@
 #ifndef __INTTYPES_DEFINED__
 #define __INTTYPES_DEFINED__
 
-#include <machine/_types.h>
+// RICH #include <machine/_types.h>
 
 #if defined(__rtems__)
 /*
@@ -56,7 +56,7 @@ typedef	quad_t *	qaddr_t;
 #ifndef __need_inttypes
 
 #define _SYS_TYPES_H
-#include <sys/_types.h>
+// RICH #include <sys/_types.h>
 
 #ifdef __i386__
 #if defined (GO32) || defined (__MSDOS__)
@@ -156,18 +156,16 @@ typedef int32_t register_t;
  * how the file was compiled (e.g. -mint16 vs -mint32, etc.).
  */
 
-#ifndef __CYGWIN__	/* which defines these types in it's own types.h. */
-typedef _off_t	off_t;
+typedef __off_t	off_t;
 typedef __dev_t dev_t;
 typedef __uid_t uid_t;
 typedef __gid_t gid_t;
-#endif
 
 typedef int pid_t;
 #ifndef __CYGWIN__
 typedef	long key_t;
 #endif
-typedef _ssize_t ssize_t;
+typedef __ssize_t ssize_t;
 
 #ifndef __CYGWIN__
 #ifdef __MS_types__
@@ -250,8 +248,6 @@ typedef _TIMER_T_ timer_t;
 
 typedef unsigned long useconds_t;
 typedef long suseconds_t;
-
-#include <sys/features.h>
 
 
 /* Cygwin will probably never have full posix compliance due to little things

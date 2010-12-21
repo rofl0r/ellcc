@@ -1,6 +1,8 @@
 arm-elf
 mips-elf
-powerpc-elf
+ppc-elf
+ppc64-elf
 microblaze-elf
-i686-elf
+i386-elf
+sparc-elf
 x86_64-elf
