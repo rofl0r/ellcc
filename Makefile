@@ -1,17 +1,13 @@
-# Makefile for toplevel ELLCC distribution
+# Build ELLCC.
 
-# Just do recursive makes.
-all:
-	$(MAKE) -C ecc
+# Get the names of the subdirectories.
+SUBDIRS := llvm-build gnu
 
-check:
-	$(MAKE) -C ecc check
+all install clean veryclean check: llvm-build gnu/gnu-build
+	@for dir in $(SUBDIRS) ; do \
+	  echo Making $@ in $$dir ; \
+	  $(MAKE) -C $$dir $@ || exit 1; \
+	done
 
-clean:
-	$(MAKE) -C ecc clean
-
-distclean:
-	$(MAKE) -C ecc distclean
-
-doc:
-	$(MAKE) -C ecc doc
+llvm-build gnu/gnu-build:
+	./configure
