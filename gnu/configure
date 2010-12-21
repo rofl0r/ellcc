@@ -1,0 +1,109 @@
+#!/bin/sh
+# ELLCC GNU tools configure
+
+# Get the staging directory.
+prefix=`cd ..; pwd`
+# Get the bin directory.
+bin=`cd ../bin; pwd`
+
+# Get the supported targets.
+targets=`cat ../targets`
+targetlist=`echo $targets | sed -e "s/ /,/g"`
+
+# To build for the x86 with libecc:
+#cc=$bin/i386-elf-ecc
+#cxx=$bin/i386-elf-e++
+
+# To build with the hosted ecc and host libraries:
+#cc=$bin/ecc
+#cxx=$bin/e++
+
+# To build with the host compiler:
+cc=gcc
+cxx=g++
+
+# Configure for GNU tools.
+mkdir -p gnu-build
+
+# Configure for binutils.
+# binutils are build to support all targets in the target list.
+cd gnu-build
+packages="binutils"
+for p in $packages; do
+  echo Configuring package $p for $targets
+  mkdir $p
+  cd $p
+  ../../src/$p/configure CC=$cc CXX=$cxx --enable-64-bit-bfd --enable-targets=$targetlist \
+    --program-prefix=ecc- --prefix=$prefix/lib --bindir=$bin --datadir=$prefix/lib/share
+  if [ $? -ne 0 ] ; then
+    echo configure for $p failed
+    exit 1
+  fi
+
+  sed -e "s:/.*/gnu/src/missing ::g" Makefile > tmp$$
+  mv tmp$$ Makefile
+  cd ..
+done
+cd ..
+
+# Configure for GDB.
+# GDB is built to support all GDB targets.
+cd gnu-build
+packages="gdb"
+for p in $packages; do
+  echo Configuring package $p for $targets
+  mkdir $p
+  cd $p
+  ../../src/$p/configure CC=$cc CXX=$cxx --enable-64-bit-bfd --enable-targets=all \
+    --program-prefix=ecc- --prefix=$prefix/lib --bindir=$bin --datadir=$prefix/lib/share
+  if [ $? -ne 0 ] ; then
+    echo configure for $p failed
+    exit 1
+  fi
+
+  sed -e "s:/.*/gnu/src/missing ::g" Makefile > tmp$$
+  mv tmp$$ Makefile
+  cd ..
+done
+cd ..
+
+# Configure for assemblers for all targets..
+cd gnu-build
+cd binutils
+for t in $targets; do
+  mkdir $t
+  cd $t
+  echo Configuring the assembler for $t
+  ../../../src/binutils/gas/configure CC=$cc CXX=$cxx --target=$t --program-prefix=${t}- \
+      --prefix=$prefix/lib --bindir=$bin --datadir=$prefix/lib/share
+  if [ $? -ne 0 ] ; then
+    echo configure for $t failed
+    exit 1
+  fi
+  cd ..
+done
+cd ../..
+
+# Configure for QEMU.
+cd gnu-build
+# The QEMU system targets.
+qemu_target_list="i386-softmmu x86_64-softmmu arm-softmmu microblaze-softmmu mips-softmmu mipsel-softmmu \
+    ppc-softmmu ppc64-softmmu sparc-softmmu"
+
+# RICH: This should be conditional based on host.
+# The QEMU Linux user space targets.
+qemu_target_list="$qemu_target_list i386-linux-user x86_64-linux-user arm-linux-user armeb-linux-user \
+    microblaze-linux-user mips-linux-user mipsel-linux-user \
+    ppc-linux-user ppc64-linux-user ppc64abi32-linux-user sparc-linux-user"
+
+p=qemu
+echo Configuring package $p for $targets
+mkdir $p
+cd $p
+../../src/$p/configure --cc=$cc --host-cc=$cc --prefix=$prefix \
+  --target-list="$qemu_target_list"
+if [ $? -ne 0 ] ; then
+  echo configure for $p failed
+  exit 1
+fi
+cd ..
