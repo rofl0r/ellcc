@@ -1,7 +1,8 @@
 VPATH := $(VPATH):$(VPATH)/stdlib:$(VPATH)/string:$(VPATH)/stdio:$(VPATH)/reent:$(VPATH)/syscalls \
          
 SRCS = environ.c exit.c __call_atexit.c memset.c strlen.c \
-       puts.c fvwrite.c wsetup.c memmove.c malloc.c mallocr.c memcpy.c memchr.c \
-       stdio.c fflush.c findfp.c makebuf.c mlock.c fprintf.c fwalk.c fclose.c \
-       reent.c \
-       sysisatty.c isattyr.c _vfprintf.c
+
+#      puts.c fvwrite.c wsetup.c memmove.c malloc.c mallocr.c memcpy.c memchr.c \
+#      stdio.c fflush.c findfp.c makebuf.c mlock.c fprintf.c fwalk.c fclose.c \
+#      reent.c \
+#      sysisatty.c isattyr.c _vfprintf.c
