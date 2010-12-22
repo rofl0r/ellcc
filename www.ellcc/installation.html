@@ -161,7 +161,6 @@ This will take a while since it gets all of LLVM, Clang, binutils, GDB, and QEMU
 
       
       <h2><a class="mozTocH2" name="mozTocId231222"></a>Building ELLCC</h2>
-      <br>
       <div style="margin-left: 40px;"><code><span style="font-family: monospace;"></span></code>[~] main% cd ellcc<br>
 
       <code><span style="font-family: monospace;">
@@ -182,8 +181,8 @@ This will take a while since it gets all of LLVM, Clang, binutils, GDB, and QEMU
 
 
 
-If everything has been successful up to this point, you have built <span style="font-family: monospace;">ecc</span>. It, and
-the binaries created by the LLVM build are in the <span style="font-family: monospace;">bin</span>
+If everything has been successful up to this point, you have built <span style="font-family: monospace;">ecc, binutils, GDB </span>and<span style="font-family: monospace;"> QEMU </span>for all targets. All
+the binaries created by the build are in the <span style="font-family: monospace;">bin</span>
 subdirectory of the build directory, i.e. in <span style="font-family: monospace;">~/ellcc/bin</span> in my
 example. The <span style="font-family: monospace;">bin</span> directory should look something like this:<br>
 
@@ -192,7 +191,7 @@ example. The <span style="font-family: monospace;">bin</span> directory should l
 
 
       
-      <div style="margin-left: 40px;"><code><span style="font-family: monospace;">[~/ecc/ellcc] main% ls bin</span></code><br style="font-family: monospace;">
+      <div style="margin-left: 40px;"><code><span style="font-family: monospace;">[~/ellcc] main% ls bin</span></code><br style="font-family: monospace;">
 
       <code><span style="font-family: monospace;">arm-elf-as*&nbsp;&nbsp;&nbsp;&nbsp;
 ecc-ld*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;

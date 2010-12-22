@@ -540,6 +540,7 @@ void InitHeaderSearch::AddDefaultCIncludePaths(const llvm::Triple &triple,
       // Set up ELLCC specific include paths.
       // include/<arch>/<os>
       // include/<arch>
+      // include/<os>
       // include
       // RICH: This seems like a hack. May need to revisit.
       llvm::sys::Path P0(HSOpts.ResourceDir);
@@ -555,7 +556,12 @@ void InitHeaderSearch::AddDefaultCIncludePaths(const llvm::Triple &triple,
 
       llvm::sys::Path P2(HSOpts.ResourceDir);
       P2.appendComponent("include");
+      P2.appendComponent(triple.getOSTypeName(triple.getOS()));
       AddPath(P2.str(), System, false, false, false, /*IgnoreSysRoot=*/ true);
+
+      llvm::sys::Path P3(HSOpts.ResourceDir);
+      P3.appendComponent("include");
+      AddPath(P3.str(), System, false, false, false, /*IgnoreSysRoot=*/ true);
   }
 }
 
