@@ -2,7 +2,7 @@
 #define _PPC_LINUX_SYSCALL_H_
 
 #include <asm/unistd.h>
-#include <sys/errno.h>
+#include <errno.h>
 
 /** Convert a system call name into the proper constant name.
  * @param name The system call name.
@@ -120,6 +120,8 @@
     }                                                                   \
     (int) result;                                                       \
     })
+
+#define INLINE_SYSCALL_3ili INLINE_SYSCALL_3
 
 /** A four argument system call.
  * @param name The name of the system call.

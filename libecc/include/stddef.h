@@ -1,41 +1,67 @@
-/** Common definitions.
- *      ptrdiff_t       size_t          wchar_t         NULL
- *      offsetof(type, member-designator)
+/*	$NetBSD: stddef.h,v 1.16 2009/11/15 22:21:03 christos Exp $	*/
+
+/*-
+ * Copyright (c) 1990, 1993
+ *	The Regents of the University of California.  All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 3. Neither the name of the University nor the names of its contributors
+ *    may be used to endorse or promote products derived from this software
+ *    without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS'' AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
+ *
+ *	@(#)stddef.h	8.1 (Berkeley) 6/2/93
  */
 
 #ifndef _STDDEF_H_
 #define _STDDEF_H_
 
-#ifdef __cplusplus
-extern "C" {
+#include <sys/cdefs.h>
+#include <sys/featuretest.h>
+#include <machine/ansi.h>
+
+typedef	_BSD_PTRDIFF_T_	ptrdiff_t;
+
+#ifdef	_BSD_SIZE_T_
+typedef	_BSD_SIZE_T_	size_t;
+#undef	_BSD_SIZE_T_
 #endif
 
-/** A type to represent the size of an object.
- * __SIZE_TYPE__ is defined by the compiler.
- */
-typedef __SIZE_TYPE__ size_t;                   
-/** A type to represent the difference between two pointers.
- * __PTRDIFF_TYPE__ is defined by the compiler.
- */
-typedef __PTRDIFF_TYPE__ ptrdiff_t;
-#ifndef __cplusplus     // wchar_t is a C++ keyword.
-/** A type to represent a wide character.
- * __WCHAR_TYPE__ is defined by the compiler.
- */
-typedef __WCHAR_TYPE__ wchar_t;
-#endif
-/** A pointer to nothing.
- */
-#define NULL 0
-/** Get the offset of a struct/union member.
- * @param type The struct/union.
- * @param member The member desired.
- * @return The offset to the member.
- */
-#define offsetof(type, member) ((size_t)&((type*)NULL)->member)
-
-#ifdef __cplusplus
-}
+#if defined(_BSD_WCHAR_T_) && !defined(__cplusplus)
+typedef	_BSD_WCHAR_T_	wchar_t;
+#undef	_BSD_WCHAR_T_
 #endif
 
+#include <sys/null.h>
+
+#if __GNUC_PREREQ__(4, 0)
+#define	offsetof(type, member)	__builtin_offsetof(type, member)
+#elif !defined(__cplusplus)
+#define	offsetof(type, member)	((size_t)(unsigned long)(&((type *)0)->member))
+#else
+#if !__GNUC_PREREQ__(3, 4)
+#define __offsetof__(a) a
 #endif
+#define	offsetof(type, member) __offsetof__((reinterpret_cast<size_t> \
+    (&reinterpret_cast<const volatile char &>(static_cast<type *>(0)->member))))
+#endif  
+ 
+#endif /* _STDDEF_H_ */

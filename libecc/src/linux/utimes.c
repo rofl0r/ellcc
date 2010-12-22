@@ -2,6 +2,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <utime.h>
+#include <sys/time.h>
 #include <errno.h>
 
 int utimes(const char *filename, const struct timeval times[2])

@@ -1,10 +1,11 @@
 #include <syscall.h>
 #include <unistd.h>
 #include <errno.h>
+#include <sys/stdint.h>         // For uintptr_t.
 
-static void* current;  // The current break pointer.
+static void *current;           // The current break pointer.
 
-int brk(void* addr)
+int brk(void *addr)
 {
     current = (void *)INLINE_SYSCALL(brk, 1, addr);
     if (current < addr) {
@@ -15,13 +16,12 @@ int brk(void* addr)
     return 0;
 }
 
-void* sbrk(intptr_t increment)
+void *sbrk(intptr_t increment)
 {
     if (current == NULL && brk(0)) {
         // Get the first brk pointer.
         return (void*)-1;
     }
-
 
     void* next = current;
     if (increment > 0) {

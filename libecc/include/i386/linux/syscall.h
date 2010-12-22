@@ -2,7 +2,7 @@
 #define _I386_LINUX_SYSCALL_H_
 
 #include <asm/unistd.h>
-#include <sys/errno.h>
+#include <errno.h>
 
 /** Convert a system call name into the proper constant name.
  * @param name The system call name.
@@ -117,6 +117,30 @@
     (int) result;                                                       \
     })
 
+/** A three argument system call, the second argument is 64 bits.
+ * @param name The name of the system call.
+ * @param arg0 The first argument.
+ * @param arg1 The second argument.
+ * @param arg2 The third argument.
+ */
+#define INLINE_SYSCALL_3ili(name, arg0, arg1, arg2)                       \
+    ({                                                                  \
+    unsigned int result;					        \
+    int arg1l = arg1 & 0xFFFFFFFF;                                      \
+    int arg1h = arg1 >> 32;                                             \
+    asm volatile ("movl %1, %%eax\n\t"                                  \
+                  "int $0x80    # syscall " #name "\n\t"                \
+                  : "=a" (result)                                       \
+                  : "i" SYS_CONSTANT(name), "b" (arg0), "c" (arg1l),    \
+                                            "d" (arg1h), "S" (arg2)     \
+                  : SYSCALL_CLOBBERS);                                  \
+    if (IS_SYSCALL_ERROR(result)) {                                     \
+        __set_errno(SYSCALL_ERRNO(result));                             \
+        result = -1;                                                    \
+    }                                                                   \
+    (int) result;                                                       \
+    })
+
 /** A four argument system call.
  * @param name The name of the system call.
  * @param arg0 The first argument.
@@ -191,4 +215,4 @@
     (int) result;                                                       \
     })
 
-#endif
+#endif // _I386_LINUX_SYSCALL_H_
