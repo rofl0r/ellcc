@@ -1,15 +1,13 @@
-MYVPATH := $(VPATH)
-VPATH += $(MYVPATH)/stdlib
-SRCS += exit.c
+CFLAGS += -I$(SRCPATH)/c/include
 
-VPATH += $(MYVPATH)/stdio
-SRCS += puts.c
+MYVPATH := $(MYVPATH):$(SRCPATH)/c/stdlib
+SRCS += exit.c malloc.c abort.c
 
-#:$(VPATH)/string:$(VPATH)/stdio:$(VPATH)/reent:$(VPATH)/syscalls \
-         
-#SRCS = environ.c exit.c __call_atexit.c memset.c strlen.c \
+MYVPATH := $(MYVPATH):$(SRCPATH)/c/stdio
+SRCS += puts.c fvwrite.c findfp.c fwalk.c wsetup.c fflush.c stdio.c makebuf.c
 
-#      puts.c fvwrite.c wsetup.c memmove.c malloc.c mallocr.c memcpy.c memchr.c \
-#      stdio.c fflush.c findfp.c makebuf.c mlock.c fprintf.c fwalk.c fclose.c \
-#      reent.c \
-#      sysisatty.c isattyr.c _vfprintf.c
+MYVPATH := $(MYVPATH):$(SRCPATH)/c/string
+SRCS += strlen.c memcpy.c memchr.c memset.c
+
+MYVPATH := $(MYVPATH):$(SRCPATH)/c/gen
+SRCS += raise.c

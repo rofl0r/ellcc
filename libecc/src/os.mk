@@ -1,7 +1,7 @@
 # Build rules for an OS specific library.
 
 # The target library.
-LIBNAME = libos.a
+LIBNAME = libc.a
 
 # The target processor.
 TARGET = $(shell basename `cd ..; pwd`)
@@ -26,9 +26,13 @@ CFLAGS = -g -Werror -MD -MP -O1
 .S.o:
 	${CC} -c ${CFLAGS} $<
 
-VPATH := ../../../src/$(OS)
+SRCPATH := ../../../src
 
-include $(VPATH)/sources
+# Build the system calls.
+include $(SRCPATH)/$(OS)/sources
+# Build the C standard library.
+include $(SRCPATH)/c/sources
+VPATH := $(MYVPATH)
 
 BASENAMES := $(basename $(filter %.c %.s %.S, $(SRCS)))
 OBJS := $(BASENAMES:%=%.o)

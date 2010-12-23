@@ -3900,7 +3900,6 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
     if (!Args.hasArg(options::OPT_shared))
       CmdArgs.push_back("-lc");
     CmdArgs.push_back("-lcompiler-rt");
-    CmdArgs.push_back("-los");
   }
 
 #if RICH
