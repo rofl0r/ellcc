@@ -1,8 +1,8 @@
-/*	$NetBSD: types.h,v 1.17 2009/12/11 05:52:03 matt Exp $	*/
+/*	$NetBSD: ansi.h,v 1.24 2010/03/27 22:14:09 tnozaki Exp $	*/
 
-/*
- * Copyright (c) 1990 The Regents of the University of California.
- * All rights reserved.
+/*-
+ * Copyright (c) 1990, 1993
+ *	The Regents of the University of California.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -28,64 +28,40 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- *	from: @(#)types.h	7.5 (Berkeley) 3/9/91
+ *	@(#)ansi.h	8.2 (Berkeley) 1/4/94
  */
 
-#ifndef	_ARM_TYPES_H_
-#define	_ARM_TYPES_H_
+#ifndef	_I386_ANSI_H_
+#define	_I386_ANSI_H_
 
 #include <sys/cdefs.h>
-#include <sys/featuretest.h>
+
 #include <machine/int_types.h>
 
-#if defined(_KERNEL)
-typedef struct label_t {	/* Used by setjmp & longjmp */
-        int val[11];
-} label_t;
-#endif
-         
-/* NB: This should probably be if defined(_KERNEL) */
-#if defined(_NETBSD_SOURCE)
-typedef	unsigned long	vm_offset_t;	/* depreciated */
-typedef	unsigned long	vm_size_t;	/* depreciated */
-
-typedef unsigned long	paddr_t;
-typedef unsigned long	psize_t;
-typedef unsigned long	vaddr_t;
-typedef unsigned long	vsize_t;
-#define	PRIxPADDR	"lx"
-#define	PRIxPSIZE	"lx"
-#define	PRIuPSIZE	"lu"
-#define	PRIxVADDR	"lx"
-#define	PRIxVSIZE	"lx"
-#define	PRIuVSIZE	"lu"
-#endif
-
-typedef int		register_t;
-#define	PRIxREGISTER	"x"
-
-typedef unsigned long	pmc_evid_t;
-#define PMC_INVALID_EVID	(-1)
-typedef unsigned long	pmc_ctr_t;
-
 /*
- * This should have always been an 8-bit type, but since it's been exposed
- * to user-space, we don't want ABI breakage there.
+ * Types which are fundamental to the implementation and may appear in
+ * more than one standard header are defined here.  Standard headers
+ * then use:
+ *	#ifdef	_BSD_SIZE_T_
+ *	typedef	_BSD_SIZE_T_ size_t;
+ *	#undef	_BSD_SIZE_T_
+ *	#endif
  */
-#if defined(_KERNEL)
-typedef volatile unsigned char	__cpu_simple_lock_t;
+#define	_BSD_CLOCK_T_		unsigned long	/* clock() */
+#define	_BSD_PTRDIFF_T_		int		/* ptr1 - ptr2 */
+#define	_BSD_SIZE_T_		unsigned int	/* sizeof() */
+#define	_BSD_SSIZE_T_		int		/* byte count or error */
+#define	_BSD_TIME_T_		__int64_t	/* time() */
+#if __GNUC_PREREQ__(2, 96)
+#define	_BSD_VA_LIST_		__builtin_va_list /* GCC built-in type */
 #else
-typedef	volatile int		__cpu_simple_lock_t;
-#endif /* _KERNEL */
-
-#define	__SIMPLELOCK_LOCKED	1
-#define	__SIMPLELOCK_UNLOCKED	0
-
-#define	__HAVE_SYSCALL_INTERN
-#define	__HAVE_MINIMAL_EMUL
-
-#if defined(_KERNEL)
-#define	__HAVE_RAS
+#define	_BSD_VA_LIST_		char *		/* va_list */
 #endif
+#define	_BSD_CLOCKID_T_		int		/* clockid_t */
+#define	_BSD_TIMER_T_		int		/* timer_t */
+#define	_BSD_SUSECONDS_T_	int		/* suseconds_t */
+#define	_BSD_USECONDS_T_	unsigned int	/* useconds_t */
+#define	_BSD_WCHAR_T_		int		/* wchar_t */
+#define	_BSD_WINT_T_		int		/* wint_t */
 
-#endif	/* _ARM_TYPES_H_ */
+#endif	/* _I386_ANSI_H_ */
