@@ -1,7 +1,7 @@
-/*	$NetBSD: signal.c,v 1.12 2003/08/07 16:42:56 agc Exp $	*/
+/*	$NetBSD: tcsendbreak.c,v 1.9 2003/08/07 16:44:14 agc Exp $	*/
 
-/*
- * Copyright (c) 1985, 1989, 1993
+/*-
+ * Copyright (c) 1989, 1993
  *	The Regents of the University of California.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -32,37 +32,39 @@
 #include <sys/cdefs.h>
 #if defined(LIBC_SCCS) && !defined(lint)
 #if 0
-static char sccsid[] = "@(#)signal.c	8.1 (Berkeley) 6/4/93";
+static char sccsid[] = "@(#)termios.c	8.2 (Berkeley) 2/21/94";
 #else
-__RCSID("$NetBSD: signal.c,v 1.12 2003/08/07 16:42:56 agc Exp $");
+__RCSID("$NetBSD: tcsendbreak.c,v 1.9 2003/08/07 16:44:14 agc Exp $");
 #endif
 #endif /* LIBC_SCCS and not lint */
 
-/*
- * Almost backwards compatible signal.
- */
-// RICH #include "namespace.h"
-#include <signal.h>
+#include "namespace.h"
+#include <sys/types.h>
+#include <sys/ioctl.h>
+#include <sys/time.h>
+
+#include <assert.h>
+#include <errno.h>
+#include <termios.h>
+#include <unistd.h>
 
 #ifdef __weak_alias
-// RICH __weak_alias(signal,_signal)
+__weak_alias(tcsendbreak,_tcsendbreak)
 #endif
 
-sigset_t __sigintr;		/* shared with siginterrupt */
-
-sig_t
-signal(s, a)
-	int s;
-	sig_t a;
+/*ARGSUSED*/
+int
+tcsendbreak(fd, len)
+	int fd, len;
 {
-	struct sigaction sa, osa;
+	static const struct timespec sleepytime = { 0, 400000000 };
 
-	sa.sa_handler = a;
-	sigemptyset(&sa.sa_mask);
-	sa.sa_flags = 0;
-	if (!sigismember(&__sigintr, s))
-		sa.sa_flags |= SA_RESTART;
-	if (sigaction(s, &sa, &osa) < 0)
-		return (SIG_ERR);
-	return (osa.sa_handler);
+	_DIAGASSERT(fd != -1);
+
+	if (ioctl(fd, TIOCSBRK, 0) == -1)
+		return (-1);
+	(void)nanosleep(&sleepytime, NULL);
+	if (ioctl(fd, TIOCCBRK, 0) == -1)
+		return (-1);
+	return (0);
 }

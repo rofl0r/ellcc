@@ -1,7 +1,7 @@
-/*	$NetBSD: signal.c,v 1.12 2003/08/07 16:42:56 agc Exp $	*/
+/*	$NetBSD: cfmakeraw.c,v 1.9 2003/08/07 16:44:12 agc Exp $	*/
 
-/*
- * Copyright (c) 1985, 1989, 1993
+/*-
+ * Copyright (c) 1989, 1993
  *	The Regents of the University of California.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -32,37 +32,37 @@
 #include <sys/cdefs.h>
 #if defined(LIBC_SCCS) && !defined(lint)
 #if 0
-static char sccsid[] = "@(#)signal.c	8.1 (Berkeley) 6/4/93";
+static char sccsid[] = "@(#)termios.c	8.2 (Berkeley) 2/21/94";
 #else
-__RCSID("$NetBSD: signal.c,v 1.12 2003/08/07 16:42:56 agc Exp $");
+__RCSID("$NetBSD: cfmakeraw.c,v 1.9 2003/08/07 16:44:12 agc Exp $");
 #endif
 #endif /* LIBC_SCCS and not lint */
 
-/*
- * Almost backwards compatible signal.
- */
-// RICH #include "namespace.h"
-#include <signal.h>
+#include "namespace.h"
+
+#include <assert.h>
+#include <stdio.h>
+#include <termios.h>
 
 #ifdef __weak_alias
-// RICH __weak_alias(signal,_signal)
+__weak_alias(cfmakeraw,_cfmakeraw)
 #endif
 
-sigset_t __sigintr;		/* shared with siginterrupt */
-
-sig_t
-signal(s, a)
-	int s;
-	sig_t a;
+/*
+ * Make a pre-existing termios structure into "raw" mode: character-at-a-time
+ * mode with no characters interpreted, 8-bit data path.
+ */
+void
+cfmakeraw(t)
+	struct termios *t;
 {
-	struct sigaction sa, osa;
 
-	sa.sa_handler = a;
-	sigemptyset(&sa.sa_mask);
-	sa.sa_flags = 0;
-	if (!sigismember(&__sigintr, s))
-		sa.sa_flags |= SA_RESTART;
-	if (sigaction(s, &sa, &osa) < 0)
-		return (SIG_ERR);
-	return (osa.sa_handler);
+	_DIAGASSERT(t != NULL);
+
+	t->c_iflag &= ~(IMAXBEL|IGNBRK|BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL|IXON);
+	t->c_oflag &= ~OPOST;
+	t->c_lflag &= ~(ECHO|ECHONL|ICANON|ISIG|IEXTEN);
+	t->c_cflag &= ~(CSIZE|PARENB);
+	t->c_cflag |= CS8;
+	/* XXX set MIN/TIME */
 }

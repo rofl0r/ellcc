@@ -38,7 +38,7 @@ __RCSID("$NetBSD: isatty.c,v 1.12 2003/08/07 16:42:51 agc Exp $");
 #endif
 #endif /* LIBC_SCCS and not lint */
 
-#include "namespace.h"
+// RICH #include "namespace.h"
 
 #include <assert.h>
 #include <errno.h>
@@ -46,7 +46,7 @@ __RCSID("$NetBSD: isatty.c,v 1.12 2003/08/07 16:42:51 agc Exp $");
 #include <unistd.h>
 
 #ifdef __weak_alias
-__weak_alias(isatty,_isatty)
+// RICH __weak_alias(isatty,_isatty)
 #endif
 
 int

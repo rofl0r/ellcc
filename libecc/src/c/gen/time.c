@@ -38,7 +38,7 @@ __RCSID("$NetBSD: time.c,v 1.11 2009/01/11 02:46:27 christos Exp $");
 #endif
 #endif /* LIBC_SCCS and not lint */
 
-#include "namespace.h"
+// RICH: #include "namespace.h"
 #include <sys/types.h>
 #include <sys/time.h>
 

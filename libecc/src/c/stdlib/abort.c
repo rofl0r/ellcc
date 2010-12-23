@@ -38,7 +38,7 @@ __RCSID("$NetBSD: abort.c,v 1.13 2009/01/30 23:21:03 ad Exp $");
 #endif
 #endif /* LIBC_SCCS and not lint */
 
-#include "namespace.h"
+// RICH #include "namespace.h"
 #include <signal.h>
 #include <stdlib.h>
 #include <unistd.h>

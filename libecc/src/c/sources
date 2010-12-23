@@ -10,4 +10,7 @@ MYVPATH := $(MYVPATH):$(SRCPATH)/c/string
 SRCS += strlen.c memcpy.c memchr.c memset.c
 
 MYVPATH := $(MYVPATH):$(SRCPATH)/c/gen
-SRCS += raise.c
+SRCS += raise.c time.c isatty.c signal.c sigfuncs.c
+
+MYVPATH := $(MYVPATH):$(SRCPATH)/c/termios
+SRCS += tcgetattr.c

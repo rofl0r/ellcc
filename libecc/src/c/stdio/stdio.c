@@ -41,7 +41,7 @@ __RCSID("$NetBSD: stdio.c,v 1.16 2009/10/25 20:44:13 christos Exp $");
 #endif
 #endif /* LIBC_SCCS and not lint */
 
-#include "namespace.h"
+// RICH: #include "namespace.h"
 
 #include <assert.h>
 #include <errno.h>
