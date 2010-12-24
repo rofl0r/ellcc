@@ -52,8 +52,7 @@
 /* .. */
 
 /* Mac OSX has __BIG_ENDIAN__ or __LITTLE_ENDIAN__ automatically set by the compiler (at least with GCC) */
-#if defined(__APPLE__) && defined(__MACH__) || defined(__ellcc__ )
-
+#if defined(__APPLE__) && defined(__MACH__)
 #ifdef __BIG_ENDIAN__
 #if __BIG_ENDIAN__
 #define _YUGA_LITTLE_ENDIAN 0
@@ -71,6 +70,19 @@
 #endif /* Mac OSX */
 
 /* .. */
+
+#if defined(__ELLCC__ )
+#include <machine/endian.h>
+
+#if __BYTE_ORDER == __BIG_ENDIAN
+#define _YUGA_LITTLE_ENDIAN 0
+#define _YUGA_BIG_ENDIAN    1
+#elif __BYTE_ORDER == __LITTLE_ENDIAN
+#define _YUGA_LITTLE_ENDIAN 1
+#define _YUGA_BIG_ENDIAN    0
+#endif /* __BYTE_ORDER */
+
+#endif /* ELLCC */
 
 #if defined(__linux__)
 #include <endian.h>

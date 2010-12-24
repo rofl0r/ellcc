@@ -4,7 +4,7 @@ MYVPATH := $(MYVPATH):$(SRCPATH)/c/stdlib
 SRCS += exit.c malloc.c abort.c
 
 MYVPATH := $(MYVPATH):$(SRCPATH)/c/stdio
-SRCS += puts.c fvwrite.c findfp.c fwalk.c wsetup.c fflush.c stdio.c makebuf.c
+SRCS += puts.c fvwrite.c findfp.c fwalk.c wsetup.c fflush.c stdio.c makebuf.c fputs.c wbuf.c
 
 MYVPATH := $(MYVPATH):$(SRCPATH)/c/string
 SRCS += strlen.c memcpy.c memchr.c memset.c

@@ -472,6 +472,10 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
   if (LangOpts.FastRelaxedMath)
     Builder.defineMacro("__FAST_RELAXED_MATH__");
 
+  // ELLCC is a cross development environment.
+  if (TI.getTriple().getVendor() == llvm::Triple::ELLCC)
+    return Builder.defineMacro("__ELLCC__");
+ 
   // Get other target #defines.
   TI.getTargetDefines(LangOpts, Builder);
 }
