@@ -60,7 +60,7 @@ struct stat {
 	struct	  timespec st_atimespec;/* time of last access */
 	struct	  timespec st_mtimespec;/* time of last data modification */
 	struct	  timespec st_ctimespec;/* time of last file status change */
-        int32_t   pad1[2];
+        int32_t   pad1[12];
 };
 
 #endif // _MACHINE_STAT_H_

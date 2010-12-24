@@ -165,7 +165,7 @@ typedef	long		key_t;		/* IPC key (for Sys V IPC) */
 
 typedef	uint32_t	mode_t;		/* permissions */
 
-typedef	uint32_t	nlink_t;	/* link count */
+typedef	uint16_t	nlink_t;	/* link count */
 
 #ifndef	off_t
 typedef	int32_t	off_t;		        /* file offset */
