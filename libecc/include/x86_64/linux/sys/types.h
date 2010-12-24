@@ -126,7 +126,7 @@ typedef	int64_t		longlong_t;	/* for XDR */
 typedef	uint64_t	u_longlong_t;	/* for XDR */
 
 typedef	int64_t		blkcnt_t;	/* fs block count */
-typedef	uint32_t	blksize_t;	/* fs optimal block size */
+typedef	uint64_t	blksize_t;	/* fs optimal block size */
 
 #ifndef	fsblkcnt_t
 typedef	__fsblkcnt_t	fsblkcnt_t;	/* fs block count (statvfs) */
@@ -156,41 +156,29 @@ typedef	int64_t		daddr_t;	/* disk address */
 typedef	uint64_t	dev_t;		/* device number */
 typedef	uint32_t	fixpt_t;	/* fixed point number */
 
-#ifndef	gid_t
-typedef	__gid_t		gid_t;		/* group id */
-#define	gid_t		__gid_t
-#endif
+typedef	uint32_t	gid_t;		/* group id */
 
 typedef	int		idtype_t;	/* type of the id */
 typedef	uint32_t	id_t;		/* group id, process id or user id */
 typedef	uint64_t	ino_t;		/* inode number */
 typedef	long		key_t;		/* IPC key (for Sys V IPC) */
 
-#ifndef	mode_t
-typedef	__mode_t	mode_t;		/* permissions */
-#define	mode_t		__mode_t
-#endif
+typedef	uint32_t	mode_t;		/* permissions */
 
-typedef	uint32_t	nlink_t;	/* link count */
+typedef	uint64_t	nlink_t;	/* link count */
 
 #ifndef	off_t
-typedef	__off_t		off_t;		/* file offset */
-#define	off_t		__off_t
+typedef	int64_t	        off_t;		/* file offset */
+#define	off_t		int64_t
 #endif
 
-#ifndef	pid_t
-typedef	__pid_t		pid_t;		/* process id */
-#define	pid_t		__pid_t
-#endif
+typedef	uint32_t	pid_t;		/* process id */
 typedef int32_t		lwpid_t;	/* LWP id */
 typedef uint64_t	rlim_t;		/* resource limit */
 typedef	int32_t		segsz_t;	/* segment size */
 typedef	int32_t		swblk_t;	/* swap offset */
 
-#ifndef	uid_t
-typedef	__uid_t		uid_t;		/* user id */
-#define	uid_t		__uid_t
-#endif
+typedef	uint32_t	uid_t;		/* user id */
 
 typedef int		mqd_t;
 

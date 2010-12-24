@@ -34,7 +34,7 @@
 #ifndef _SYS_TERMIOS_H_
 #define _SYS_TERMIOS_H_
 
-#include <sys/ansi.h>
+// RICH #include <sys/ansi.h>
 #include <sys/featuretest.h>
 
 /*
@@ -253,10 +253,11 @@ struct termios {
 #define TCION		4
 
 #if defined(_XOPEN_SOURCE) || defined(_NETBSD_SOURCE)
-#ifndef	pid_t
-typedef	__pid_t		pid_t;
-#define	pid_t		__pid_t
-#endif
+#include <sys/types.h>  // RICH
+// RICH #ifndef	pid_t
+// RICH typedef	__pid_t		pid_t;
+// RICH #define	pid_t		__pid_t
+// RICH #endif
 #endif /* _XOPEN_SOURCE || _NETBSD_SOURCE */
 #include <sys/cdefs.h>
 

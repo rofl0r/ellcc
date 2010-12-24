@@ -4,5 +4,5 @@
 
 off_t lseek(int fd, off_t offset, int whence)
 {
-    return INLINE_SYSCALL(lseek, 3ili, fd, offset, whence);
+    return INLINE_SYSCALL(lseek, 3, fd, offset, whence);
 }

@@ -40,7 +40,7 @@
 #define	_SYS_STAT_H_
 
 #include <sys/featuretest.h>
-#include <sys/types.h>		/* XXX */
+#include <sys/types.h>
 
 #if defined(_NETBSD_SOURCE)
 #include <sys/time.h>

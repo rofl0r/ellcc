@@ -41,26 +41,7 @@
 #ifndef _SYS_STAT_H_
 #define	_SYS_STAT_H_
 
-#include <sys/featuretest.h>
-#include <sys/types.h>		/* XXX */
-#include <sys/time.h>
-
-// RICH: Check the alignment of this structure!
-struct stat {
-	dev_t	  st_dev;		/* inode's device */
-	ino_t	  st_ino;		/* inode's number */
-	mode_t	  st_mode;		/* inode protection mode */
-	nlink_t	  st_nlink;		/* number of hard links */
-	uid_t	  st_uid;		/* user ID of the file's owner */
-	gid_t	  st_gid;		/* group ID of the file's group */
-	dev_t	  st_rdev;		/* device type */
-	off_t	  st_size;		/* file size, in bytes */
-	blksize_t st_blksize;		/* optimal blocksize for I/O */
-	blkcnt_t  st_blocks;		/* blocks allocated for file */
-	struct	  timespec st_atimespec;/* time of last access */
-	struct	  timespec st_mtimespec;/* time of last data modification */
-	struct	  timespec st_ctimespec;/* time of last file status change */
-};
+#include <machine/stat.h>
 
 #define	st_atime		st_atimespec.tv_sec
 #define	st_atimensec		st_atimespec.tv_nsec

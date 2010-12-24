@@ -81,7 +81,7 @@
     unsigned int result;                                                \
     asm volatile ("swi %3       @ syscall " #name                       \
                    : "={r0}" (result)                                   \
-                   : "0" (arg0), "{r1}" (arg1),                         \
+                   : "0" ((int)arg0), "{r1}" (arg1),                         \
                      "i" (SYS_CONSTANT(name))                           \
                    : SYSCALL_CLOBBERS);                                 \
     if (IS_SYSCALL_ERROR(result)) {                                     \
