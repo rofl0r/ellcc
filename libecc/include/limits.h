@@ -16,16 +16,19 @@
  */
 #define SCHAR_MAX __SCHAR_MAX__
 /** The maximum value of an unsigned char.
- * __UCHAR_MAX__ is defined by the compiler.
  */
-#define UCHAR_MAX __UCHAR_MAX__
+#define UCHAR_MAX ((2 << __CHAR_BIT__) - 1)
 /** The minimum value of a char.
  */
 #define CHAR_MIN (-__CHAR_MAX__ - 1)
 /** The maximum value of a char.
- * __CHAR_MAX__ is defined by the compiler.
  */
-#define CHAR_MAX __CHAR_MAX__
+#ifdef __CHAR_UNSIGNED__
+#define CHAR_MAX ((2 << __CHAR_BIT__) - 1)
+#else
+#define CHAR_MAX __SCHAR_MAX__
+#endif
+
 /** The minimum value of a signed short.
  */
 #define SHRT_MIN (-__SHRT_MAX__ - 1)
@@ -45,9 +48,8 @@
  */
 #define INT_MAX __INT_MAX__
 /** The maximum value of an unsigned int.
- * __UINT_MAX__ is defined by the compiler.
  */
-#define UINT_MAX __UINT_MAX__
+#define UINT_MAX (~0)
 /** The minimum value of a signed long.
  */
 #define LONG_MIN (-__LONG_MAX__ - 1)
@@ -56,9 +58,8 @@
  */
 #define LONG_MAX __LONG_MAX__
 /** The maximum value of an unsigned long.
- * __ULONG_MAX__ is defined by the compiler.
  */
-#define ULONG_MAX __ULONG_MAX__
+#define ULONG_MAX (~0L)
 /** The minimum value of a signed long long.
  */
 #define LLONG_MIN (-__LLONG_MAX__ - 1)
@@ -67,8 +68,7 @@
  */
 #define LLONG_MAX __LLONG_MAX__
 /** The maximum value of an unsigned long long.
- * __ULLONG_MAX__ is defined by the compiler.
  */
-#define ULLONG_MAX __ULLONG_MAX__
+#define ULLONG_MAX (~0LL)
 
 #endif
