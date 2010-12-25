@@ -17,14 +17,14 @@
 #define SCHAR_MAX __SCHAR_MAX__
 /** The maximum value of an unsigned char.
  */
-#define UCHAR_MAX ((2 << __CHAR_BIT__) - 1)
+#define UCHAR_MAX ((1 << __CHAR_BIT__) - 1)
 /** The minimum value of a char.
  */
 #define CHAR_MIN (-__CHAR_MAX__ - 1)
 /** The maximum value of a char.
  */
 #ifdef __CHAR_UNSIGNED__
-#define CHAR_MAX ((2 << __CHAR_BIT__) - 1)
+#define CHAR_MAX ((1 << __CHAR_BIT__) - 1)
 #else
 #define CHAR_MAX __SCHAR_MAX__
 #endif

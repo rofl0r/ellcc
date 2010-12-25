@@ -46,7 +46,7 @@ __RCSID("$NetBSD: strdup.c,v 1.13 2003/08/07 16:43:50 agc Exp $");
 #include <string.h>
 
 #ifdef __weak_alias
-__weak_alias(strdup,_strdup)
+// RICH: __weak_alias(strdup,_strdup)
 #endif
 
 char *

@@ -1,2 +1,3 @@
 VPATH := $(VPATH):$(VPATH)/lib
-SRCS = umodsi3.c udivsi3.c
+SRCS = umodsi3.c udivsi3.c comparedf2.c floatunsidf.c adddf3.c muldf3.c floatsidf.c \
+       fixdfsi.c divdf3.c

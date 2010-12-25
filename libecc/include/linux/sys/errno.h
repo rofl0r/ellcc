@@ -64,6 +64,7 @@
 #define	ENOTDIR		20		/* Not a directory */
 #define	EISDIR		21		/* Is a directory */
 #define	EINVAL		22		/* Invalid argument */
+#define EFTYPE          EINVAL          /* Inappropriate file type or format */
 #define	ENFILE		23		/* Too many open files in system */
 #define	EMFILE		24		/* Too many open files */
 #define	ENOTTY		25		/* Inappropriate ioctl for device */
