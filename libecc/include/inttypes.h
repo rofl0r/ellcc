@@ -1,11 +1,11 @@
-/*	$NetBSD: fseek.c,v 1.23 2008/04/29 06:53:01 martin Exp $	*/
+/*	$NetBSD: inttypes.h,v 1.7 2009/11/15 22:21:03 christos Exp $	*/
 
 /*-
- * Copyright (c) 2005 The NetBSD Foundation, Inc.
+ * Copyright (c) 2001 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
- * by David Laight.
+ * by Klaus Klein.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -29,35 +29,36 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifndef _INTTYPES_H_
+#define _INTTYPES_H_
+
 #include <sys/cdefs.h>
-#if defined(LIBC_SCCS) && !defined(lint)
-__RCSID("$NetBSD: fseek.c,v 1.23 2008/04/29 06:53:01 martin Exp $");
-#endif /* LIBC_SCCS and not lint */
+#include <sys/inttypes.h>
+#include <machine/ansi.h>
 
-#include <sys/types.h>
-#include <sys/stat.h>
+#if defined(_BSD_WCHAR_T_) && !defined(__cplusplus)
+typedef	_BSD_WCHAR_T_	wchar_t;
+#undef	_BSD_WCHAR_T_
+#endif
 
-// RICH: #include "namespace.h"
-#include <assert.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include "reentrant.h"
-#include "local.h"
+__BEGIN_DECLS
+intmax_t	strtoimax(const char * __restrict,
+		    char ** __restrict, int);
+uintmax_t	strtoumax(const char * __restrict,
+		    char ** __restrict, int);
+intmax_t	wcstoimax(const wchar_t * __restrict,
+		    wchar_t ** __restrict, int);
+uintmax_t	wcstoumax(const wchar_t * __restrict,
+		    wchar_t ** __restrict, int);
 
-/*
- * Seek the given file to the given offset.
- * Zero extend the offset if SEEK_SET to allow access to 4GB files
- */
-int
-fseek(FILE *fp, long l_offset, int whence)
-{
-	off_t offset;
+intmax_t	imaxabs(intmax_t);
 
-	if (whence == SEEK_SET)
-		offset = (unsigned long)l_offset;
-	else
-		offset = l_offset;
-	return fseeko(fp, offset, whence);
-}
+typedef struct {
+	intmax_t quot;
+	intmax_t rem;
+} imaxdiv_t;
+
+imaxdiv_t	imaxdiv(intmax_t, intmax_t);
+__END_DECLS
+
+#endif /* !_INTTYPES_H_ */

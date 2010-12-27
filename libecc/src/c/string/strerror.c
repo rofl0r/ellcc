@@ -38,7 +38,7 @@ __RCSID("$NetBSD: strerror.c,v 1.14 2006/01/26 11:13:42 kleink Exp $");
 #endif
 #endif /* LIBC_SCCS and not lint */
 
-#include "namespace.h"
+// RICH: #include "namespace.h"
 #include <string.h>
 #include <limits.h>
 #include <errno.h>

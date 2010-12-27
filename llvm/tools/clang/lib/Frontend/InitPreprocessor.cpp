@@ -168,14 +168,15 @@ static void DefineFloatMacros(MacroBuilder &Builder, llvm::StringRef Prefix,
 static void DefineTypeSize(llvm::StringRef MacroName, unsigned TypeWidth,
                            llvm::StringRef ValSuffix, bool isSigned,
                            MacroBuilder& Builder) {
-  long long MaxVal;
   if (isSigned) {
+    long long MaxVal;
     assert(TypeWidth != 1);
     MaxVal = ~0ULL >> (65-TypeWidth);
-  } else
-    MaxVal = ~0ULL >> (64-TypeWidth);
-
-  Builder.defineMacro(MacroName, llvm::Twine(MaxVal) + ValSuffix);
+    Builder.defineMacro(MacroName, llvm::Twine(MaxVal) + ValSuffix);
+  } else {
+    unsigned long long MaxVal = ~0ULL >> (64-TypeWidth);
+    Builder.defineMacro(MacroName, llvm::Twine(MaxVal) + ValSuffix);
+  }
 }
 
 /// DefineTypeSize - An overloaded helper that uses TargetInfo to determine
@@ -361,9 +362,13 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
 
   DefineTypeSize("__SCHAR_MAX__", TI.getCharWidth(), "", true, Builder);
   DefineTypeSize("__SHRT_MAX__", TargetInfo::SignedShort, TI, Builder);
+  DefineTypeSize("__USHRT_MAX__", TargetInfo::UnsignedShort, TI, Builder);
   DefineTypeSize("__INT_MAX__", TargetInfo::SignedInt, TI, Builder);
+  DefineTypeSize("__UINT_MAX__", TargetInfo::UnsignedInt, TI, Builder);
   DefineTypeSize("__LONG_MAX__", TargetInfo::SignedLong, TI, Builder);
+  DefineTypeSize("__ULONG_MAX__", TargetInfo::UnsignedLong, TI, Builder);
   DefineTypeSize("__LONG_LONG_MAX__", TargetInfo::SignedLongLong, TI, Builder);
+  DefineTypeSize("__ULONG_LONG_MAX__", TargetInfo::UnsignedLongLong, TI, Builder);
   DefineTypeSize("__WCHAR_MAX__", TI.getWCharType(), TI, Builder);
   DefineTypeSize("__INTMAX_MAX__", TI.getIntMaxType(), TI, Builder);
 

@@ -34,7 +34,7 @@
 __RCSID("$NetBSD: _env.c,v 1.5 2010/11/17 13:25:53 tron Exp $");
 #endif /* LIBC_SCCS and not lint */
 
-#include "namespace.h"
+// RICH: #include "namespace.h"
 
 #include <sys/rbtree.h>
 
@@ -89,8 +89,10 @@ static rwlock_t env_lock = RWLOCK_INITIALIZER;
 /* Compatibility function. */
 char *__findenv(const char *name, int *offsetp);
 
+#if RICH
 __warn_references(__findenv,
     "warning: __findenv is an internal obsolete function.")
+#endif
 
 /* Our initialization function. */
 void __libc_env_init(void);

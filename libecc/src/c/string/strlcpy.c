@@ -28,7 +28,7 @@ __RCSID("$NetBSD: strlcpy.c,v 1.3 2007/06/04 18:19:27 christos Exp $");
 #endif /* LIBC_SCCS and not lint */
 
 #ifdef _LIBC
-#include "namespace.h"
+// RICH: #include "namespace.h"
 #endif
 #include <sys/types.h>
 #include <assert.h>
@@ -36,7 +36,7 @@ __RCSID("$NetBSD: strlcpy.c,v 1.3 2007/06/04 18:19:27 christos Exp $");
 
 #ifdef _LIBC
 # ifdef __weak_alias
-__weak_alias(strlcpy, _strlcpy)
+// RICH: __weak_alias(strlcpy, _strlcpy)
 # endif
 #endif
 #else

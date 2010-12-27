@@ -38,7 +38,7 @@ __RCSID("$NetBSD: getenv.c,v 1.35 2010/11/14 22:04:36 tron Exp $");
 #endif
 #endif /* LIBC_SCCS and not lint */
 
-#include "namespace.h"
+// RICH: #include "namespace.h"
 #include <assert.h>
 #include <errno.h>
 #include <stdlib.h>
@@ -48,7 +48,7 @@ __RCSID("$NetBSD: getenv.c,v 1.35 2010/11/14 22:04:36 tron Exp $");
 #include "reentrant.h"
 #include "local.h"
 
-__weak_alias(getenv_r, _getenv_r)
+// RICH: __weak_alias(getenv_r, _getenv_r)
 
 /*
  * getenv --

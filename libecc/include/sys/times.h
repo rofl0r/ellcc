@@ -1,11 +1,13 @@
-/*	$NetBSD: snprintf.c,v 1.22 2007/10/26 19:48:14 christos Exp $	*/
+/*	$NetBSD: times.h,v 1.13 2005/12/11 12:25:21 christos Exp $	*/
 
 /*-
  * Copyright (c) 1990, 1993
  *	The Regents of the University of California.  All rights reserved.
- *
- * This code is derived from software contributed to Berkeley by
- * Chris Torek.
+ * (c) UNIX System Laboratories, Inc.
+ * All or some portions of this file are derived from material licensed
+ * to the University of California by American Telephone and Telegraph
+ * Co. or Unix System Laboratories, Inc. and are reproduced herein with
+ * the permission of UNIX System Laboratories, Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -30,65 +32,34 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
+ *
+ *	@(#)times.h	8.4 (Berkeley) 1/21/94
  */
 
+#ifndef	_SYS_TIMES_H_
+#define	_SYS_TIMES_H_
+
+#include <machine/ansi.h>
+
+#ifdef	_BSD_CLOCK_T_
+typedef	_BSD_CLOCK_T_	clock_t;
+#undef	_BSD_CLOCK_T_
+#endif
+
+struct tms {
+	clock_t tms_utime;	/* User CPU time */
+	clock_t tms_stime;	/* System CPU time */
+	clock_t tms_cutime;	/* User CPU time of terminated child procs */
+	clock_t tms_cstime;	/* System CPU time of terminated child procs */
+};
+
+#ifndef _KERNEL
 #include <sys/cdefs.h>
-#if defined(LIBC_SCCS) && !defined(lint)
-#if 0
-static char sccsid[] = "@(#)snprintf.c	8.1 (Berkeley) 6/4/93";
-#else
-__RCSID("$NetBSD: snprintf.c,v 1.22 2007/10/26 19:48:14 christos Exp $");
+
+__BEGIN_DECLS
+#ifndef __LIBC12_SOURCE__
+clock_t times(struct tms *) __RENAME(__times13);
 #endif
-#endif /* LIBC_SCCS and not lint */
-
-// RICH: #include "namespace.h"
-
-#include <assert.h>
-#include <errno.h>
-#include <stdarg.h>
-#include <stdio.h>
-
-#include "reentrant.h"
-#include "local.h"
-
-#if defined(_FORTIFY_SOURCE) && !defined(__lint__)
-#undef snprintf
-#define snprintf _snprintf
+__END_DECLS
 #endif
-
-#ifdef __weak_alias
-// RICH: __weak_alias(snprintf,_snprintf)
-#endif
-
-int
-snprintf(char *str, size_t n, char const *fmt, ...)
-{
-	int ret;
-	va_list ap;
-	FILE f;
-	struct __sfileext fext;
-	unsigned char dummy[1];
-
-	_DIAGASSERT(n == 0 || str != NULL);
-	_DIAGASSERT(fmt != NULL);
-
-	if ((int)n < 0) {
-		errno = EINVAL;
-		return (-1);
-	}
-	va_start(ap, fmt);
-	_FILEEXT_SETUP(&f, &fext);
-	f._file = -1;
-	f._flags = __SWR | __SSTR;
-	if (n == 0) {
-		f._bf._base = f._p = dummy;
-		f._bf._size = f._w = 0;
-	} else {
-		f._bf._base = f._p = (unsigned char *)str;
-		f._bf._size = f._w = n - 1;
-	}
-	ret = __vfprintf_unlocked(&f, fmt, ap);
-	*f._p = 0;
-	va_end(ap);
-	return (ret);
-}
+#endif /* !_SYS_TIMES_H_ */
