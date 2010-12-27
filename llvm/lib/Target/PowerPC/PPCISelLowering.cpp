@@ -58,8 +58,10 @@ cl::desc("enable preincrement load/store generation on PPC (experimental)"),
                                      cl::Hidden);
 
 static TargetLoweringObjectFile *CreateTLOF(const PPCTargetMachine &TM) {
+#if RICH
   if (TM.getSubtargetImpl()->isDarwin())
     return new TargetLoweringObjectFileMachO();
+#endif
 
   return new TargetLoweringObjectFileELF();
 }
@@ -215,7 +217,7 @@ PPCTargetLowering::PPCTargetLowering(PPCTargetMachine &TM)
   setOperationAction(ISD::VASTART           , MVT::Other, Custom);
 
   // VAARG is custom lowered with the 32-bit SVR4 ABI.
-  if (    0 && /* RICH */ TM.getSubtarget<PPCSubtarget>().isSVR4ABI()
+  if (    TM.getSubtarget<PPCSubtarget>().isSVR4ABI()
       && !TM.getSubtarget<PPCSubtarget>().isPPC64())
     setOperationAction(ISD::VAARG, MVT::Other, Custom);
   else
@@ -1197,7 +1199,7 @@ SDValue PPCTargetLowering::LowerGlobalAddress(SDValue Op,
 
   // 64-bit SVR4 ABI code is always position-independent.
   // The actual address of the GlobalValue is stored in the TOC.
-  if (0 && /* RICH */ PPCSubTarget.isSVR4ABI() && PPCSubTarget.isPPC64()) {
+  if (PPCSubTarget.isSVR4ABI() && PPCSubTarget.isPPC64()) {
     SDValue GA = DAG.getTargetGlobalAddress(GV, DL, PtrVT, GSDN->getOffset());
     return DAG.getNode(PPCISD::TOC_ENTRY, DL, MVT::i64, GA,
                        DAG.getRegister(PPC::X2, MVT::i64));
@@ -1266,8 +1268,6 @@ SDValue PPCTargetLowering::LowerSETCC(SDValue Op, SelectionDAG &DAG) const {
 
 SDValue PPCTargetLowering::LowerVAARG(SDValue Op, SelectionDAG &DAG,
                                       const PPCSubtarget &Subtarget) const {
-
-  llvm_unreachable("VAARG not yet implemented for the SVR4 ABI!");
   return SDValue(); // Not reached
 }
 
@@ -1504,7 +1504,7 @@ PPCTargetLowering::LowerFormalArguments(SDValue Chain,
                                         DebugLoc dl, SelectionDAG &DAG,
                                         SmallVectorImpl<SDValue> &InVals)
                                           const {
-  if (0 && /* RICH */ PPCSubTarget.isSVR4ABI() && !PPCSubTarget.isPPC64()) {
+  if (PPCSubTarget.isSVR4ABI() && !PPCSubTarget.isPPC64()) {
     return LowerFormalArguments_SVR4(Chain, CallConv, isVarArg, Ins,
                                      dl, DAG, InVals);
   } else {
@@ -2429,7 +2429,7 @@ unsigned PrepareCall(SelectionDAG &DAG, SDValue &Callee, SDValue &InFlag,
   NodeTys.push_back(MVT::Other);   // Returns a chain
   NodeTys.push_back(MVT::Flag);    // Returns a flag for retval copy to use.
 
-  unsigned CallOpc = 0 && /* RICH */ isSVR4ABI ? PPCISD::CALL_SVR4 : PPCISD::CALL_Darwin;
+  unsigned CallOpc = isSVR4ABI ? PPCISD::CALL_SVR4 : PPCISD::CALL_Darwin;
 
   bool needIndirectCall = true;
   if (SDNode *Dest = isBLACompatibleAddress(Callee, DAG)) {
@@ -2485,7 +2485,7 @@ unsigned PrepareCall(SelectionDAG &DAG, SDValue &Callee, SDValue &InFlag,
     // to do the call, we can't use PPCISD::CALL.
     SDValue MTCTROps[] = {Chain, Callee, InFlag};
 
-    if (0 && /* RICH */ isSVR4ABI && isPPC64) {
+    if (isSVR4ABI && isPPC64) {
       // Function pointers in the 64-bit SVR4 ABI do not point to the function
       // entry point, but to the function descriptor (the function entry point
       // address is part of the function descriptor though).
@@ -2560,7 +2560,7 @@ unsigned PrepareCall(SelectionDAG &DAG, SDValue &Callee, SDValue &InFlag,
     NodeTys.push_back(MVT::Other);
     NodeTys.push_back(MVT::Flag);
     Ops.push_back(Chain);
-    CallOpc = 0 && /* RICH */ isSVR4ABI ? PPCISD::BCTRL_SVR4 : PPCISD::BCTRL_Darwin;
+    CallOpc = isSVR4ABI ? PPCISD::BCTRL_SVR4 : PPCISD::BCTRL_Darwin;
     Callee.setNode(0);
     // Add CTR register as callee so a bctr can be emitted later.
     if (isTailCall)
@@ -2671,7 +2671,7 @@ PPCTargetLowering::FinishCall(CallingConv::ID CallConv, DebugLoc dl,
   // which restores the TOC of the caller from the TOC save slot of the current
   // stack frame. If caller and callee belong to the same module (and have the
   // same TOC), the NOP will remain unchanged.
-  if (!isTailCall && 0 && /* RICH */ PPCSubTarget.isSVR4ABI()&& PPCSubTarget.isPPC64()) {
+  if (!isTailCall && PPCSubTarget.isSVR4ABI() && PPCSubTarget.isPPC64()) {
     SDVTList VTs = DAG.getVTList(MVT::Other, MVT::Flag);
     if (CallOpc == PPCISD::BCTRL_SVR4) {
       // This is a call through a function pointer.
@@ -2714,7 +2714,7 @@ PPCTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
     isTailCall = IsEligibleForTailCallOptimization(Callee, CallConv, isVarArg,
                                                    Ins, DAG);
 
-  if (0 && /* RICH */ PPCSubTarget.isSVR4ABI() && !PPCSubTarget.isPPC64())
+  if (PPCSubTarget.isSVR4ABI() && !PPCSubTarget.isPPC64())
     return LowerCall_SVR4(Chain, Callee, CallConv, isVarArg,
                           isTailCall, Outs, OutVals, Ins,
                           dl, DAG, InVals);
@@ -3256,7 +3256,7 @@ PPCTargetLowering::LowerCall_Darwin(SDValue Chain, SDValue Callee,
   // Check if this is an indirect call (MTCTR/BCTRL).
   // See PrepareCall() for more information about calls through function
   // pointers in the 64-bit SVR4 ABI.
-  if (!isTailCall && isPPC64 && 0 && /* RICH */ PPCSubTarget.isSVR4ABI() &&
+  if (!isTailCall && isPPC64 && PPCSubTarget.isSVR4ABI() &&
       !dyn_cast<GlobalAddressSDNode>(Callee) &&
       !dyn_cast<ExternalSymbolSDNode>(Callee) &&
       !isBLACompatibleAddress(Callee, DAG)) {

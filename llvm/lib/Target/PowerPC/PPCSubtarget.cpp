@@ -70,7 +70,7 @@ PPCSubtarget::PPCSubtarget(const std::string &TT, const std::string &FS,
   , HasSTFIWX(false)
   , HasLazyResolverStubs(false)
   , IsJITCodeModel(false)
-  , DarwinVers(0) {
+  , DarwinVers(10) {
 
   // Determine default and user specified characteristics
   std::string CPU = "generic";

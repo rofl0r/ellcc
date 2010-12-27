@@ -286,7 +286,7 @@ void PPCFrameInfo::emitPrologue(MachineFunction &MF) const {
 
   int FPOffset = 0;
   if (HasFP) {
-    if (0 && /* RICH */ Subtarget.isSVR4ABI()) {
+    if (Subtarget.isSVR4ABI()) {
       MachineFrameInfo *FFI = MF.getFrameInfo();
       int FPIndex = FI->getFramePointerSaveIndex();
       assert(FPIndex && "No Frame Pointer Save Slot!");
@@ -522,7 +522,7 @@ void PPCFrameInfo::emitEpilogue(MachineFunction &MF,
 
   int FPOffset = 0;
   if (HasFP) {
-    if (0 && /* RICH */ Subtarget.isSVR4ABI()) {
+    if (Subtarget.isSVR4ABI()) {
       MachineFrameInfo *FFI = MF.getFrameInfo();
       int FPIndex = FI->getFramePointerSaveIndex();
       assert(FPIndex && "No Frame Pointer Save Slot!");
@@ -771,7 +771,7 @@ PPCFrameInfo::processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
 void PPCFrameInfo::processFunctionBeforeFrameFinalized(MachineFunction &MF)
                                                                         const {
   // Early exit if not using the SVR4 ABI.
-  if (1 || /* RICH */ !Subtarget.isSVR4ABI())
+  if (!Subtarget.isSVR4ABI())
     return;
 
   // Get callee saved register information.

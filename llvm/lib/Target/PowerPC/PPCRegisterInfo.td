@@ -303,7 +303,7 @@ def GPRC : RegisterClass<"PPC", [i32], 32,
       const PPCSubtarget &Subtarget = MF.getTarget().getSubtarget<PPCSubtarget>();
       const TargetFrameInfo *TFI = MF.getTarget().getFrameInfo();
    
-      if (Subtarget.isPPC64() || 0 && /* RICH */ Subtarget.isSVR4ABI())
+      if (Subtarget.isPPC64() || Subtarget.isSVR4ABI())
         return end()-5;  // don't allocate R13, R31, R0, R1, LR
         
       if (TFI->hasFP(MF))
