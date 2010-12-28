@@ -122,7 +122,7 @@ SECTIONS
   .got            : { *(.got) }
   . = DATA_SEGMENT_RELRO_END (12, .);
   .got.plt        : { *(.got.plt) }
-  .data           :
+  .data           : ALIGN(4096)
   {
     *(.data .data.* .gnu.linkonce.d.*)
     KEEP (*(.gnu.linkonce.d.*personality*))
