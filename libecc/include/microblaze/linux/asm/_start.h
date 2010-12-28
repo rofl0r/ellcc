@@ -12,8 +12,8 @@ asm(
 "       add     r7, r7, r7\n"           // ... r7 = (argc + 1) * 2 ...
 "       add     r7, r7, r7\n"           // ... r7 = (argc + 1) * 4 ...
 "       add     r7, r7, r6\n"           // ... and compute environ.
-"       la      r2, r0, _SDA_BASE_\n"   // Get the SDAs.
-"       la      r13, r0, _SDA2_BASE_\n"
+// RICH "       la      r2, r0, _SDA_BASE_\n"   // Get the SDAs.
+// RICH "       la      r13, r0, _SDA2_BASE_\n"
 "       brid    _estart\n"              // Let's go!
 "       nop\n"
 "       .end    _start\n"

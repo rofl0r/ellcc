@@ -1,30 +1,95 @@
 /* Default linker script, for normal executables */
-OUTPUT_FORMAT("elf32-microblaze", "",
-	      "")
-ENTRY (_start)
-_TEXT_START_ADDR = DEFINED(_TEXT_START_ADDR) ? _TEXT_START_ADDR : 0x50;
-_HEAP_SIZE = DEFINED(_HEAP_SIZE) ? _HEAP_SIZE : 0x0;
-_STACK_SIZE = DEFINED(_STACK_SIZE) ? _STACK_SIZE : 0x400;
+OUTPUT_FORMAT("elf32-microblaze", "elf32-microblaze",
+	      "elf32-microblaze")
+OUTPUT_ARCH(microblaze)
+ENTRY(_start)
+/* Do we need any of these for elf?
+   __DYNAMIC = 0;    */
 SECTIONS
 {
-  .vectors.reset 0x0 : { KEEP (*(.vectors.reset)) } = 0
-  .vectors.sw_exception 0x8 : { KEEP (*(.vectors.sw_exception)) } = 0
-  .vectors.interrupt 0x10 : { KEEP (*(.vectors.interrupt)) } = 0
-  .vectors.debug_sw_break 0x18 : { KEEP (*(.vectors.debug_sw_break)) } = 0
-  .vectors.hw_exception 0x20 : { KEEP (*(.vectors.hw_exception)) } = 0
-  . = _TEXT_START_ADDR;
-   _ftext  =  .;
-  .text : {
-    *(.text)
-    *(.text.*)
-    *(.gnu.linkonce.t.*)
-  }
-   _etext  =  .;
-  .init : { KEEP (*(.init))	} =0
-  .fini : { KEEP (*(.fini))	} =0
-  PROVIDE (__CTOR_LIST__ = .);
-  PROVIDE (___CTOR_LIST__ = .);
-  .ctors   :
+  /* Read-only sections, merged into text segment: */
+  PROVIDE (__executable_start = 0x10000000); . = 0x10000000 + SIZEOF_HEADERS;
+  .interp         : { *(.interp) }
+  .hash           : { *(.hash) }
+  .dynsym         : { *(.dynsym) }
+  .dynstr         : { *(.dynstr) }
+  .gnu.version    : { *(.gnu.version) }
+  .gnu.version_d  : { *(.gnu.version_d) }
+  .gnu.version_r  : { *(.gnu.version_r) }
+  .rel.init       : { *(.rel.init) }
+  .rela.init      : { *(.rela.init) }
+  .rel.text       : { *(.rel.text .rel.text.* .rel.gnu.linkonce.t.*) }
+  .rela.text      : { *(.rela.text .rela.text.* .rela.gnu.linkonce.t.*) }
+  .rel.fini       : { *(.rel.fini) }
+  .rela.fini      : { *(.rela.fini) }
+  .rel.rodata     : { *(.rel.rodata .rel.rodata.* .rel.gnu.linkonce.r.*) }
+  .rela.rodata    : { *(.rela.rodata .rela.rodata.* .rela.gnu.linkonce.r.*) }
+  .rel.data.rel.ro   : { *(.rel.data.rel.ro*) }
+  .rela.data.rel.ro   : { *(.rel.data.rel.ro*) }
+  .rel.data       : { *(.rel.data .rel.data.* .rel.gnu.linkonce.d.*) }
+  .rela.data      : { *(.rela.data .rela.data.* .rela.gnu.linkonce.d.*) }
+  .rel.tdata	  : { *(.rel.tdata .rel.tdata.* .rel.gnu.linkonce.td.*) }
+  .rela.tdata	  : { *(.rela.tdata .rela.tdata.* .rela.gnu.linkonce.td.*) }
+  .rel.tbss	  : { *(.rel.tbss .rel.tbss.* .rel.gnu.linkonce.tb.*) }
+  .rela.tbss	  : { *(.rela.tbss .rela.tbss.* .rela.gnu.linkonce.tb.*) }
+  .rel.ctors      : { *(.rel.ctors) }
+  .rela.ctors     : { *(.rela.ctors) }
+  .rel.dtors      : { *(.rel.dtors) }
+  .rela.dtors     : { *(.rela.dtors) }
+  .rel.got        : { *(.rel.got) }
+  .rela.got       : { *(.rela.got) }
+  .rel.bss        : { *(.rel.bss .rel.bss.* .rel.gnu.linkonce.b.*) }
+  .rela.bss       : { *(.rela.bss .rela.bss.* .rela.gnu.linkonce.b.*) }
+  .rel.plt        : { *(.rel.plt) }
+  .rela.plt       : { *(.rela.plt) }
+  .init           :
+  {
+    KEEP (*(.init))
+  } =0x80000000
+  .plt            : { *(.plt) }
+  .text           :
+  {
+    *(.text .stub .text.* .gnu.linkonce.t.*)
+    KEEP (*(.text.*personality*))
+    /* .gnu.warning sections are handled specially by elf32.em.  */
+    *(.gnu.warning)
+  } =0x80000000
+  .fini           :
+  {
+    KEEP (*(.fini))
+  } =0x80000000
+  PROVIDE (__etext = .);
+  PROVIDE (_etext = .);
+  PROVIDE (etext = .);
+  .rodata         : { *(.rodata .rodata.* .gnu.linkonce.r.*) }
+  .rodata1        : { *(.rodata1) }
+  .eh_frame_hdr : { *(.eh_frame_hdr) }
+  .eh_frame       : ONLY_IF_RO { KEEP (*(.eh_frame)) }
+  .gcc_except_table   : ONLY_IF_RO { KEEP (*(.gcc_except_table)) *(.gcc_except_table.*) }
+  /* Adjust the address for the data segment.  We want to adjust up to
+     the same address within the page on the next page up.  */
+  . = ALIGN (0x1000) - ((0x1000 - .) & (0x1000 - 1)); . = DATA_SEGMENT_ALIGN (0x1000, 0x1000);
+  /* Exception handling  */
+  .eh_frame       : ONLY_IF_RW { KEEP (*(.eh_frame)) }
+  .gcc_except_table   : ONLY_IF_RW { KEEP (*(.gcc_except_table)) *(.gcc_except_table.*) }
+  /* Thread Local Storage sections  */
+  .tdata	  : { *(.tdata .tdata.* .gnu.linkonce.td.*) }
+  .tbss		  : { *(.tbss .tbss.* .gnu.linkonce.tb.*) *(.tcommon) }
+  /* Ensure the __preinit_array_start label is properly aligned.  We
+     could instead move the label definition inside the section, but
+     the linker would then create the section even if it turns out to
+     be empty, which isn't pretty.  */
+  . = ALIGN(4);
+  PROVIDE (__preinit_array_start = .);
+  .preinit_array     : { KEEP (*(.preinit_array)) }
+  PROVIDE (__preinit_array_end = .);
+  PROVIDE (__init_array_start = .);
+  .init_array     : { KEEP (*(.init_array)) }
+  PROVIDE (__init_array_end = .);
+  PROVIDE (__fini_array_start = .);
+  .fini_array     : { KEEP (*(.fini_array)) }
+  PROVIDE (__fini_array_end = .);
+  .ctors          :
   {
     /* gcc uses crtbegin.o to find the start of
        the constructors, so we make sure it is
@@ -35,143 +100,84 @@ SECTIONS
        wildcard.  The wildcard also means that it
        doesn't matter which directory crtbegin.o
        is in.  */
-    KEEP (*crtbegin.o(.ctors))
+    KEEP (*crtbegin*.o(.ctors))
     /* We don't want to include the .ctor section from
        from the crtend.o file until after the sorted ctors.
        The .ctor section from the crtend file contains the
        end of ctors marker and it must be last */
-    KEEP (*(EXCLUDE_FILE (*crtend.o) .ctors))
+    KEEP (*(EXCLUDE_FILE (*crtend*.o ) .ctors))
     KEEP (*(SORT(.ctors.*)))
     KEEP (*(.ctors))
   }
-  PROVIDE (__CTOR_END__ = .);
-  PROVIDE (___CTOR_END__ = .);
-  PROVIDE (__DTOR_LIST__ = .);
-  PROVIDE (___DTOR_LIST__ = .);
-   .dtors         :
+  .dtors          :
   {
-    KEEP (*crtbegin.o(.dtors))
-    KEEP (*(EXCLUDE_FILE (*crtend.o) .dtors))
+    KEEP (*crtbegin*.o(.dtors))
+    KEEP (*(EXCLUDE_FILE (*crtend*.o ) .dtors))
     KEEP (*(SORT(.dtors.*)))
     KEEP (*(.dtors))
   }
-  PROVIDE (__DTOR_END__ = .);
-  PROVIDE (___DTOR_END__ = .);
-   . = ALIGN(4);
-    _frodata = . ;
-  .rodata : {
-    *(.rodata)
-    *(.rodata.*)
-    *(.gnu.linkonce.r.*)
-    CONSTRUCTORS; /* Is this needed? */
+  .jcr            : { KEEP (*(.jcr)) }
+  .data.rel.ro : { *(.data.rel.ro.local) *(.data.rel.ro*) }
+  .dynamic        : { *(.dynamic) }
+  .got            : { *(.got) }
+  . = DATA_SEGMENT_RELRO_END (12, .);
+  .got.plt        : { *(.got.plt) }
+  .data           :
+  {
+    *(.data .data.* .gnu.linkonce.d.*)
+    KEEP (*(.gnu.linkonce.d.*personality*))
+    SORT(CONSTRUCTORS)
   }
-   _erodata = .;
-  /* Alignments by 8 to ensure that _SDA2_BASE_ on a word boundary */
-  /* Note that .sdata2 and .sbss2 must be contiguous */
-  . = ALIGN(8);
-   _ssrw = .;
-  .sdata2 : {
-    *(.sdata2)
-    *(.sdata2.*)
-    *(.gnu.linkonce.s2.*)
+  .data1          : { *(.data1) }
+  _edata = .;
+  PROVIDE (edata = .);
+  __bss_start = .;
+  .bss            :
+  {
+   *(.dynbss)
+   *(.bss .bss.* .gnu.linkonce.b.*)
+   *(COMMON)
+   /* Align here to ensure that the .bss section occupies space up to
+      _end.  Align after .bss to ensure correct alignment even if the
+      .bss section disappears because there are no input sections.  */
+   . = ALIGN(4);
   }
   . = ALIGN(4);
-  .sbss2 : {
-    PROVIDE (__sbss2_start = .);
-    *(.sbss2)
-    *(.sbss2.*)
-    *(.gnu.linkonce.sb2.*)
-    PROVIDE (__sbss2_end = .);
-  }
-  . = ALIGN(8);
-   _essrw = .;
-   _ssrw_size = _essrw - _ssrw;
-   PROVIDE (_SDA2_BASE_ = _ssrw + (_ssrw_size / 2 ));
-   . = ALIGN(4);
-   _fdata = .;
-  .data : {
-    *(.data)
-    *(.gnu.linkonce.d.*)
-    CONSTRUCTORS; /* Is this needed? */
-  }
-   _edata = . ;
-   /* Added to handle pic code */
-  .got : {
-    *(.got)
-  }
-  .got1 : {
-    *(.got1)
-  }
-  .got2 : {
-    *(.got2)
-  }
-  /* Added by Sathya to handle C++ exceptions */
-  .eh_frame : {
-    *(.eh_frame)
-  }
-  .jcr : {
-    *(.jcr)
-  }
-  .gcc_except_table : {
-    *(.gcc_except_table)
-  }
-  /* Alignments by 8 to ensure that _SDA_BASE_ on a word boundary */
-  /* Note that .sdata and .sbss must be contiguous */
-  . = ALIGN(8);
-   _ssro = .;
-  .sdata : {
-    *(.sdata)
-    *(.sdata.*)
-    *(.gnu.linkonce.s.*)
-  }
-  . = ALIGN(4);
-  .sbss : {
-    PROVIDE (__sbss_start = .);
-    *(.sbss)
-    *(.sbss.*)
-    *(.gnu.linkonce.sb.*)
-    PROVIDE (__sbss_end = .);
-  }
-  . = ALIGN(8);
-   _essro = .;
-   _ssro_size = _essro - _ssro;
-  PROVIDE (_SDA_BASE_ = _ssro + (_ssro_size / 2 ));
-   . = ALIGN(4);
-   _fbss = .;
-  __bss_start__ = .;
-  .bss : {
-    PROVIDE (__bss_start = .);
-    *(.bss)
-    *(.bss.*)
-    *(.gnu.linkonce.b.*)
-    *(COMMON)
-    . = ALIGN(4);
-    PROVIDE (__bss_end = .);
-  }
-  __bss_end__ = .;
-   . = ALIGN(4);
-  .heap : {
-     _heap = .;
-     _heap_start = .;
-     . += _HEAP_SIZE;
-     _heap_end = .;
-  }
-   . = ALIGN(4);
-  .stack : {
-     _stack_end = .;
-     . += _STACK_SIZE;
-     . = ALIGN(8);
-     _stack = .;
-     _end = .;
-  }
-  .tdata : {
-    *(.tdata)
-    *(.tdata.*)
-    *(.gnu.linkonce.td.*)
-  }
-  .tbss : {
-    *(.tbss)
-    *(.tbss.*)
-    *(.gnu.linkonce.tb.*)
-  }
+  _end = .;
+  PROVIDE (end = .);
+  . = DATA_SEGMENT_END (.);
+  /* Stabs debugging sections.  */
+  .stab          0 : { *(.stab) }
+  .stabstr       0 : { *(.stabstr) }
+  .stab.excl     0 : { *(.stab.excl) }
+  .stab.exclstr  0 : { *(.stab.exclstr) }
+  .stab.index    0 : { *(.stab.index) }
+  .stab.indexstr 0 : { *(.stab.indexstr) }
+  .comment       0 : { *(.comment) }
+  /* DWARF debug sections.
+     Symbols in the DWARF debugging sections are relative to the beginning
+     of the section so we begin them at 0.  */
+  /* DWARF 1 */
+  .debug          0 : { *(.debug) }
+  .line           0 : { *(.line) }
+  /* GNU DWARF 1 extensions */
+  .debug_srcinfo  0 : { *(.debug_srcinfo) }
+  .debug_sfnames  0 : { *(.debug_sfnames) }
+  /* DWARF 1.1 and DWARF 2 */
+  .debug_aranges  0 : { *(.debug_aranges) }
+  .debug_pubnames 0 : { *(.debug_pubnames) }
+  /* DWARF 2 */
+  .debug_info     0 : { *(.debug_info .gnu.linkonce.wi.*) }
+  .debug_abbrev   0 : { *(.debug_abbrev) }
+  .debug_line     0 : { *(.debug_line) }
+  .debug_frame    0 : { *(.debug_frame) }
+  .debug_str      0 : { *(.debug_str) }
+  .debug_loc      0 : { *(.debug_loc) }
+  .debug_macinfo  0 : { *(.debug_macinfo) }
+  /* SGI/MIPS DWARF 2 extensions */
+  .debug_weaknames 0 : { *(.debug_weaknames) }
+  .debug_funcnames 0 : { *(.debug_funcnames) }
+  .debug_typenames 0 : { *(.debug_typenames) }
+  .debug_varnames  0 : { *(.debug_varnames) }
+  /DISCARD/ : { *(.note.GNU-stack) }
 }
