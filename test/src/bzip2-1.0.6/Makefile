@@ -14,9 +14,9 @@
 
 SHELL=/bin/sh
 
-all: arm ppc i386 x86_64
+all: arm i386 ppc x86_64
 
-arm ppc i386 x86_64:
+arm i386 microblaze mips nios2 ppc ppc64 sparc x86_64:
 	$(MAKE) clean
 	$(MAKE) TARGET=$@ bzip2all
 
