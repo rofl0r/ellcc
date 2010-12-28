@@ -7,15 +7,12 @@ asm(
 "       .type   _start,@function\n"
 "_start:\n"
 "       xor     %rbp, %rbp\n"           // Clear the link register.
-"       mov     (%rsp), %rax\n"         // Get argc...
-"       lea     4(%rsp), %rcx\n"        // ... and argv ...
+"       mov     (%rsp), %rdi\n"         // Get argc...
+"       lea     8(%rsp), %rsi\n"        // ... and argv ...
 "       mov     %rax, %rbx\n"           // ... copy argc ...
 "       inc     %rbx\n"                 // ... argc + 1 ...
-"       lea     (%rcx, %rbx, 4), %rdx\n"// ... and compute environ.
-"       sub     $12, %rsp\n"            // Room for arguments.
-"       mov     %rdx, 8(%rsp)\n"
-"       mov     %rcx, 4(%rsp)\n"
-"       mov     %rax, (%rsp)\n"
+"       lea     (%rsi, %rbx, 8), %rdx\n"// ... and compute environ.
+"       andq    $~15, %rsp\n"           // Align the stack on a 16 byte boundry.
 "       call    _estart\n"              // Let's go!
 "       jmp     .\n"                    // Never gets here.
 "       .size   _start, .-_start\n"
