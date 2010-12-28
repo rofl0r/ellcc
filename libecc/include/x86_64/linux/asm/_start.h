@@ -16,6 +16,5 @@ asm(
 "       call    _estart\n"              // Let's go!
 "       jmp     .\n"                    // Never gets here.
 "       .size   _start, .-_start\n"
-"       .type   _argc,@object\n"
 );
 
