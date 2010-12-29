@@ -402,7 +402,7 @@ static QualType ConvertDeclSpecToType(Sema &TheSema,
 
   // See if there are any attributes on the declspec that apply to the type (as
   // opposed to the decl).
-  if (const AttributeList *AL = DS.getAttributes())
+  if (const AttributeList *AL = DS.getAttributes().getList())
     ProcessTypeAttributeList(TheSema, Result, true, AL, Delayed);
 
   // Apply const/volatile/restrict qualifiers to T.
@@ -680,7 +680,13 @@ QualType Sema::BuildArrayType(QualType T, ArrayType::ArraySizeModifier ASM,
     return QualType();
   }
 
+  // Do lvalue-to-rvalue conversions on the array size expression.
+  if (ArraySize && !ArraySize->isRValue())
+    DefaultLvalueConversion(ArraySize);
+
   // C99 6.7.5.2p1: The size expression shall have integer type.
+  // TODO: in theory, if we were insane, we could allow contextual
+  // conversions to integer type here.
   if (ArraySize && !ArraySize->isTypeDependent() &&
       !ArraySize->getType()->isIntegralOrUnscopedEnumerationType()) {
     Diag(ArraySize->getLocStart(), diag::err_array_size_non_int)
@@ -1459,6 +1465,66 @@ TypeSourceInfo *Sema::GetTypeForDeclarator(Declarator &D, Scope *S,
     T.addConst();
   }
 
+  // If there was an ellipsis in the declarator, the declaration declares a 
+  // parameter pack whose type may be a pack expansion type.
+  if (D.hasEllipsis() && !T.isNull()) {
+    // C++0x [dcl.fct]p13:
+    //   A declarator-id or abstract-declarator containing an ellipsis shall 
+    //   only be used in a parameter-declaration. Such a parameter-declaration
+    //   is a parameter pack (14.5.3). [...]
+    switch (D.getContext()) {
+    case Declarator::PrototypeContext:
+      // C++0x [dcl.fct]p13:
+      //   [...] When it is part of a parameter-declaration-clause, the 
+      //   parameter pack is a function parameter pack (14.5.3). The type T 
+      //   of the declarator-id of the function parameter pack shall contain
+      //   a template parameter pack; each template parameter pack in T is 
+      //   expanded by the function parameter pack.
+      //
+      // We represent function parameter packs as function parameters whose
+      // type is a pack expansion.
+      if (!T->containsUnexpandedParameterPack()) {
+        Diag(D.getEllipsisLoc(), 
+             diag::err_function_parameter_pack_without_parameter_packs)
+          << T <<  D.getSourceRange();
+        D.setEllipsisLoc(SourceLocation());
+      } else {
+        T = Context.getPackExpansionType(T);
+      }
+      break;
+        
+    case Declarator::TemplateParamContext:
+      // C++0x [temp.param]p15:
+      //   If a template-parameter is a [...] is a parameter-declaration that 
+      //   declares a parameter pack (8.3.5), then the template-parameter is a
+      //   template parameter pack (14.5.3).
+      //
+      // Note: core issue 778 clarifies that, if there are any unexpanded
+      // parameter packs in the type of the non-type template parameter, then
+      // it expands those parameter packs.
+      if (T->containsUnexpandedParameterPack())
+        T = Context.getPackExpansionType(T);
+      else if (!getLangOptions().CPlusPlus0x)
+        Diag(D.getEllipsisLoc(), diag::err_variadic_templates);
+      break;
+    
+    case Declarator::FileContext:
+    case Declarator::KNRTypeListContext:
+    case Declarator::TypeNameContext:
+    case Declarator::MemberContext:
+    case Declarator::BlockContext:
+    case Declarator::ForContext:
+    case Declarator::ConditionContext:
+    case Declarator::CXXCatchContext:
+    case Declarator::BlockLiteralContext:
+      // FIXME: We may want to allow parameter packs in block-literal contexts
+      // in the future.
+      Diag(D.getEllipsisLoc(), diag::err_ellipsis_in_declarator_not_parameter);
+      D.setEllipsisLoc(SourceLocation());
+      break;
+    }
+  }
+  
   // Process any function attributes we might have delayed from the
   // declaration-specifiers.
   ProcessDelayedFnAttrs(*this, T, FnAttrsFromDeclSpec);
@@ -1723,6 +1789,12 @@ Sema::GetTypeSourceInfoForDeclarator(Declarator &D, QualType T,
   TypeSourceInfo *TInfo = Context.CreateTypeSourceInfo(T);
   UnqualTypeLoc CurrTL = TInfo->getTypeLoc().getUnqualifiedLoc();
 
+  // Handle parameter packs whose type is a pack expansion.
+  if (isa<PackExpansionType>(T)) {
+    cast<PackExpansionTypeLoc>(CurrTL).setEllipsisLoc(D.getEllipsisLoc());
+    CurrTL = CurrTL.getNextTypeLoc().getUnqualifiedLoc();    
+  }
+  
   for (unsigned i = 0, e = D.getNumTypeObjects(); i != e; ++i) {
     DeclaratorLocFiller(D.getTypeObject(i)).Visit(CurrTL);
     CurrTL = CurrTL.getNextTypeLoc().getUnqualifiedLoc();
@@ -1885,9 +1957,142 @@ static void HandleObjCGCTypeAttribute(QualType &Type,
   Type = S.Context.getObjCGCQualType(Type, GCAttr);
 }
 
+namespace {
+  /// A helper class to unwrap a type down to a function for the
+  /// purposes of applying attributes there.
+  ///
+  /// Use:
+  ///   FunctionTypeUnwrapper unwrapped(SemaRef, T);
+  ///   if (unwrapped.isFunctionType()) {
+  ///     const FunctionType *fn = unwrapped.get();
+  ///     // change fn somehow
+  ///     T = unwrapped.wrap(fn);
+  ///   }
+  struct FunctionTypeUnwrapper {
+    enum WrapKind {
+      Desugar,
+      Parens,
+      Pointer,
+      BlockPointer,
+      Reference,
+      MemberPointer
+    };
+
+    QualType Original;
+    const FunctionType *Fn;
+    llvm::SmallVector<unsigned char /*WrapKind*/, 8> Stack;
+
+    FunctionTypeUnwrapper(Sema &S, QualType T) : Original(T) {
+      while (true) {
+        const Type *Ty = T.getTypePtr();
+        if (isa<FunctionType>(Ty)) {
+          Fn = cast<FunctionType>(Ty);
+          return;
+        } else if (isa<ParenType>(Ty)) {
+          T = cast<ParenType>(Ty)->getInnerType();
+          Stack.push_back(Parens);
+        } else if (isa<PointerType>(Ty)) {
+          T = cast<PointerType>(Ty)->getPointeeType();
+          Stack.push_back(Pointer);
+        } else if (isa<BlockPointerType>(Ty)) {
+          T = cast<BlockPointerType>(Ty)->getPointeeType();
+          Stack.push_back(BlockPointer);
+        } else if (isa<MemberPointerType>(Ty)) {
+          T = cast<MemberPointerType>(Ty)->getPointeeType();
+          Stack.push_back(MemberPointer);
+        } else if (isa<ReferenceType>(Ty)) {
+          T = cast<ReferenceType>(Ty)->getPointeeType();
+          Stack.push_back(Reference);
+        } else {
+          const Type *DTy = Ty->getUnqualifiedDesugaredType();
+          if (Ty == DTy) {
+            Fn = 0;
+            return;
+          }
+
+          T = QualType(DTy, 0);
+          Stack.push_back(Desugar);
+        }
+      }
+    }
+
+    bool isFunctionType() const { return (Fn != 0); }
+    const FunctionType *get() const { return Fn; }
+
+    QualType wrap(Sema &S, const FunctionType *New) {
+      // If T wasn't modified from the unwrapped type, do nothing.
+      if (New == get()) return Original;
+
+      Fn = New;
+      return wrap(S.Context, Original, 0);
+    }
+
+  private:
+    QualType wrap(ASTContext &C, QualType Old, unsigned I) {
+      if (I == Stack.size())
+        return C.getQualifiedType(Fn, Old.getQualifiers());
+
+      // Build up the inner type, applying the qualifiers from the old
+      // type to the new type.
+      SplitQualType SplitOld = Old.split();
+
+      // As a special case, tail-recurse if there are no qualifiers.
+      if (SplitOld.second.empty())
+        return wrap(C, SplitOld.first, I);
+      return C.getQualifiedType(wrap(C, SplitOld.first, I), SplitOld.second);
+    }
+
+    QualType wrap(ASTContext &C, const Type *Old, unsigned I) {
+      if (I == Stack.size()) return QualType(Fn, 0);
+
+      switch (static_cast<WrapKind>(Stack[I++])) {
+      case Desugar:
+        // This is the point at which we potentially lose source
+        // information.
+        return wrap(C, Old->getUnqualifiedDesugaredType(), I);
+
+      case Parens: {
+        QualType New = wrap(C, cast<ParenType>(Old)->getInnerType(), I);
+        return C.getParenType(New);
+      }
+
+      case Pointer: {
+        QualType New = wrap(C, cast<PointerType>(Old)->getPointeeType(), I);
+        return C.getPointerType(New);
+      }
+
+      case BlockPointer: {
+        QualType New = wrap(C, cast<BlockPointerType>(Old)->getPointeeType(),I);
+        return C.getBlockPointerType(New);
+      }
+
+      case MemberPointer: {
+        const MemberPointerType *OldMPT = cast<MemberPointerType>(Old);
+        QualType New = wrap(C, OldMPT->getPointeeType(), I);
+        return C.getMemberPointerType(New, OldMPT->getClass());
+      }
+
+      case Reference: {
+        const ReferenceType *OldRef = cast<ReferenceType>(Old);
+        QualType New = wrap(C, OldRef->getPointeeType(), I);
+        if (isa<LValueReferenceType>(OldRef))
+          return C.getLValueReferenceType(New, OldRef->isSpelledAsLValue());
+        else
+          return C.getRValueReferenceType(New);
+      }
+      }
+
+      llvm_unreachable("unknown wrapping kind");
+      return QualType();
+    }
+  };
+}
+
 /// Process an individual function attribute.  Returns true if the
 /// attribute does not make sense to apply to this type.
-bool ProcessFnAttr(Sema &S, QualType &Type, const AttributeList &Attr) {
+static bool ProcessFnAttr(Sema &S, QualType &Type, const AttributeList &Attr) {
+  FunctionTypeUnwrapper Unwrapped(S, Type);
+
   if (Attr.getKind() == AttributeList::AT_noreturn) {
     // Complain immediately if the arg count is wrong.
     if (Attr.getNumArgs() != 0) {
@@ -1896,15 +2101,13 @@ bool ProcessFnAttr(Sema &S, QualType &Type, const AttributeList &Attr) {
       return false;
     }
 
-    // Delay if this is not a function or pointer to block.
-    if (!Type->isFunctionPointerType()
-        && !Type->isBlockPointerType()
-        && !Type->isFunctionType()
-        && !Type->isMemberFunctionPointerType())
+    // Delay if this is not a function type.
+    if (!Unwrapped.isFunctionType())
       return true;
-    
+
     // Otherwise we can process right away.
-    Type = S.Context.getNoReturnType(Type);
+    FunctionType::ExtInfo EI = Unwrapped.get()->getExtInfo().withNoReturn(true);
+    Type = Unwrapped.wrap(S, S.Context.adjustFunctionType(Unwrapped.get(), EI));
     return false;
   }
 
@@ -1914,11 +2117,8 @@ bool ProcessFnAttr(Sema &S, QualType &Type, const AttributeList &Attr) {
       return false;
     }
 
-    // Delay if this is not a function or pointer to block.
-    if (!Type->isFunctionPointerType()
-        && !Type->isBlockPointerType()
-        && !Type->isFunctionType()
-        && !Type->isMemberFunctionPointerType())
+    // Delay if this is not a function type.
+    if (!Unwrapped.isFunctionType())
       return true;
 
     // Otherwise we can process right away.
@@ -1944,7 +2144,9 @@ bool ProcessFnAttr(Sema &S, QualType &Type, const AttributeList &Attr) {
       return false;
     }
 
-    Type = S.Context.getRegParmType(Type, NumParams.getZExtValue());
+    FunctionType::ExtInfo EI = 
+      Unwrapped.get()->getExtInfo().withRegParm(NumParams.getZExtValue());
+    Type = Unwrapped.wrap(S, S.Context.adjustFunctionType(Unwrapped.get(), EI));
     return false;
   }
 
@@ -1955,19 +2157,8 @@ bool ProcessFnAttr(Sema &S, QualType &Type, const AttributeList &Attr) {
     return false;
   }
 
-  QualType T = Type;
-  if (const PointerType *PT = Type->getAs<PointerType>())
-    T = PT->getPointeeType();
-  else if (const BlockPointerType *BPT = Type->getAs<BlockPointerType>())
-    T = BPT->getPointeeType();
-  else if (const MemberPointerType *MPT = Type->getAs<MemberPointerType>())
-    T = MPT->getPointeeType();
-  else if (const ReferenceType *RT = Type->getAs<ReferenceType>())
-    T = RT->getPointeeType();
-  const FunctionType *Fn = T->getAs<FunctionType>();
-
   // Delay if the type didn't work out to a function.
-  if (!Fn) return true;
+  if (!Unwrapped.isFunctionType()) return true;
 
   // TODO: diagnose uses of these conventions on the wrong target.
   CallingConv CC;
@@ -1980,6 +2171,7 @@ bool ProcessFnAttr(Sema &S, QualType &Type, const AttributeList &Attr) {
   default: llvm_unreachable("unexpected attribute kind"); return false;
   }
 
+  const FunctionType *Fn = Unwrapped.get();
   CallingConv CCOld = Fn->getCallConv();
   if (S.Context.getCanonicalCallConv(CC) ==
       S.Context.getCanonicalCallConv(CCOld)) {
@@ -2014,7 +2206,8 @@ bool ProcessFnAttr(Sema &S, QualType &Type, const AttributeList &Attr) {
     }
   }
 
-  Type = S.Context.getCallConvType(Type, CC);
+  FunctionType::ExtInfo EI = Unwrapped.get()->getExtInfo().withCallingConv(CC);
+  Type = Unwrapped.wrap(S, S.Context.adjustFunctionType(Unwrapped.get(), EI));
   return false;
 }
 

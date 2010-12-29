@@ -882,13 +882,44 @@ static bool IsNoReturnConversion(ASTContext &Context, QualType FromType,
   if (Context.hasSameUnqualifiedType(FromType, ToType))
     return false;
   
-  // Strip the noreturn off the type we're converting from; noreturn can
-  // safely be removed.
-  FromType = Context.getNoReturnType(FromType, false);
-  if (!Context.hasSameUnqualifiedType(FromType, ToType))
-    return false;
+  // Permit the conversion F(t __attribute__((noreturn))) -> F(t)
+  // where F adds one of the following at most once:
+  //   - a pointer
+  //   - a member pointer
+  //   - a block pointer
+  CanQualType CanTo = Context.getCanonicalType(ToType);
+  CanQualType CanFrom = Context.getCanonicalType(FromType);
+  Type::TypeClass TyClass = CanTo->getTypeClass();
+  if (TyClass != CanFrom->getTypeClass()) return false;
+  if (TyClass != Type::FunctionProto && TyClass != Type::FunctionNoProto) {
+    if (TyClass == Type::Pointer) {
+      CanTo = CanTo.getAs<PointerType>()->getPointeeType();
+      CanFrom = CanFrom.getAs<PointerType>()->getPointeeType();
+    } else if (TyClass == Type::BlockPointer) {
+      CanTo = CanTo.getAs<BlockPointerType>()->getPointeeType();
+      CanFrom = CanFrom.getAs<BlockPointerType>()->getPointeeType();
+    } else if (TyClass == Type::MemberPointer) {
+      CanTo = CanTo.getAs<MemberPointerType>()->getPointeeType();
+      CanFrom = CanFrom.getAs<MemberPointerType>()->getPointeeType();
+    } else {
+      return false;
+    }
 
-  ResultTy = FromType;
+    TyClass = CanTo->getTypeClass();
+    if (TyClass != CanFrom->getTypeClass()) return false;
+    if (TyClass != Type::FunctionProto && TyClass != Type::FunctionNoProto)
+      return false;
+  }
+
+  const FunctionType *FromFn = cast<FunctionType>(CanFrom);
+  FunctionType::ExtInfo EInfo = FromFn->getExtInfo();
+  if (!EInfo.getNoReturn()) return false;
+
+  FromFn = Context.adjustFunctionType(FromFn, EInfo.withNoReturn(false));
+  assert(QualType(FromFn, 0).isCanonical());
+  if (QualType(FromFn, 0) != CanTo) return false;
+
+  ResultTy = ToType;
   return true;
 }
  
@@ -1852,9 +1883,10 @@ bool Sema::IsMemberPointerConversion(Expr *From, QualType FromType,
   // where D is derived from B (C++ 4.11p2).
   QualType FromClass(FromTypePtr->getClass(), 0);
   QualType ToClass(ToTypePtr->getClass(), 0);
-  // FIXME: What happens when these are dependent? Is this function even called?
 
-  if (IsDerivedFrom(ToClass, FromClass)) {
+  if (!Context.hasSameUnqualifiedType(FromClass, ToClass) &&
+      !RequireCompleteType(From->getLocStart(), ToClass, PDiag()) &&
+      IsDerivedFrom(ToClass, FromClass)) {
     ConvertedType = Context.getMemberPointerType(FromTypePtr->getPointeeType(),
                                                  ToClass.getTypePtr());
     return true;
@@ -7275,7 +7307,7 @@ Sema::CreateOverloadedUnaryOp(SourceLocation OpLoc, unsigned OpcIn,
     
     CXXRecordDecl *NamingClass = 0; // because lookup ignores member operators
     UnresolvedLookupExpr *Fn
-      = UnresolvedLookupExpr::Create(Context, /*Dependent*/ true, NamingClass,
+      = UnresolvedLookupExpr::Create(Context, NamingClass,
                                      0, SourceRange(), OpNameInfo,
                                      /*ADL*/ true, IsOverloaded(Fns),
                                      Fns.begin(), Fns.end());
@@ -7452,9 +7484,8 @@ Sema::CreateOverloadedBinOp(SourceLocation OpLoc,
     // TODO: provide better source location info in DNLoc component.
     DeclarationNameInfo OpNameInfo(OpName, OpLoc);
     UnresolvedLookupExpr *Fn
-      = UnresolvedLookupExpr::Create(Context, /*Dependent*/ true, NamingClass,
-                                     0, SourceRange(), OpNameInfo,
-                                     /*ADL*/ true, IsOverloaded(Fns),
+      = UnresolvedLookupExpr::Create(Context, NamingClass, 0, SourceRange(), 
+                                     OpNameInfo, /*ADL*/ true, IsOverloaded(Fns),
                                      Fns.begin(), Fns.end());
     return Owned(new (Context) CXXOperatorCallExpr(Context, Op, Fn,
                                                    Args, 2,
@@ -7679,7 +7710,7 @@ Sema::CreateOverloadedArraySubscriptExpr(SourceLocation LLoc,
     DeclarationNameInfo OpNameInfo(OpName, LLoc);
     OpNameInfo.setCXXOperatorNameRange(SourceRange(LLoc, RLoc));
     UnresolvedLookupExpr *Fn
-      = UnresolvedLookupExpr::Create(Context, /*Dependent*/ true, NamingClass,
+      = UnresolvedLookupExpr::Create(Context, NamingClass,
                                      0, SourceRange(), OpNameInfo,
                                      /*ADL*/ true, /*Overloaded*/ false,
                                      UnresolvedSetIterator(),

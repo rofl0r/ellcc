@@ -41,44 +41,6 @@ public:
 
   ~ARMMCCodeEmitter() {}
 
-  unsigned getNumFixupKinds() const { return ARM::NumTargetFixupKinds; }
-
-  const MCFixupKindInfo &getFixupKindInfo(MCFixupKind Kind) const {
-    const static MCFixupKindInfo Infos[] = {
-// This table *must* be in the order that the fixup_* kinds are defined in
-// ARMFixupKinds.h.
-//
-// Name                      Offset (bits) Size (bits)     Flags
-{ "fixup_arm_ldst_pcrel_12", 1,            24,  MCFixupKindInfo::FKF_IsPCRel },
-{ "fixup_t2_ldst_pcrel_12",  0,            32,  MCFixupKindInfo::FKF_IsPCRel |
-                                                MCFixupKindInfo::FKF_IsAligned},
-{ "fixup_arm_pcrel_10",      1,            24,  MCFixupKindInfo::FKF_IsPCRel },
-{ "fixup_t2_pcrel_10",       0,            32,  MCFixupKindInfo::FKF_IsPCRel |
-                                                MCFixupKindInfo::FKF_IsAligned},
-{ "fixup_thumb_adr_pcrel_10",0,            8,   MCFixupKindInfo::FKF_IsPCRel },
-{ "fixup_arm_adr_pcrel_12",  1,            24,  MCFixupKindInfo::FKF_IsPCRel },
-{ "fixup_t2_adr_pcrel_12",   0,            32,  MCFixupKindInfo::FKF_IsPCRel |
-                                                MCFixupKindInfo::FKF_IsAligned},
-{ "fixup_arm_branch",        0,            24,  MCFixupKindInfo::FKF_IsPCRel },
-{ "fixup_t2_condbranch",     0,            32,  MCFixupKindInfo::FKF_IsPCRel },
-{ "fixup_t2_uncondbranch",   0,            32,  MCFixupKindInfo::FKF_IsPCRel },
-{ "fixup_arm_thumb_br",      0,            16,  MCFixupKindInfo::FKF_IsPCRel },
-{ "fixup_arm_thumb_bl",      0,            32,  MCFixupKindInfo::FKF_IsPCRel },
-{ "fixup_arm_thumb_blx",     7,            21,  MCFixupKindInfo::FKF_IsPCRel },
-{ "fixup_arm_thumb_cb",      0,            16,  MCFixupKindInfo::FKF_IsPCRel },
-{ "fixup_arm_thumb_cp",      1,             8,  MCFixupKindInfo::FKF_IsPCRel },
-{ "fixup_arm_thumb_bcc",     1,             8,  MCFixupKindInfo::FKF_IsPCRel },
-{ "fixup_arm_movt_hi16",     0,            16,  0 },
-{ "fixup_arm_movw_lo16",     0,            16,  0 },
-    };
-
-    if (Kind < FirstTargetFixupKind)
-      return MCCodeEmitter::getFixupKindInfo(Kind);
-
-    assert(unsigned(Kind - FirstTargetFixupKind) < getNumFixupKinds() &&
-           "Invalid kind!");
-    return Infos[Kind - FirstTargetFixupKind];
-  }
   unsigned getMachineSoImmOpValue(unsigned SoImm) const;
 
   // getBinaryCodeForInstr - TableGen'erated function for getting the
@@ -212,7 +174,7 @@ public:
 
   /// getAddrModeISOpValue - Encode the t_addrmode_is# operands.
   uint32_t getAddrModeISOpValue(const MCInst &MI, unsigned OpIdx,
-                                SmallVectorImpl<MCFixup> &) const;
+                                SmallVectorImpl<MCFixup> &Fixups) const;
 
   /// getAddrModePCOpValue - Return encoding for t_addrmode_pc operands.
   uint32_t getAddrModePCOpValue(const MCInst &MI, unsigned OpIdx,
@@ -804,10 +766,9 @@ getAddrModeThumbSPOpValue(const MCInst &MI, unsigned OpIdx,
   // [SP, #imm]
   //   {7-0} = imm8
   const MCOperand &MO1 = MI.getOperand(OpIdx + 1);
-#if 0  // FIXME: This crashes2003-05-14-initialize-string.c
   assert(MI.getOperand(OpIdx).getReg() == ARM::SP &&
          "Unexpected base register!");
-#endif
+
   // The immediate is already shifted for the implicit zeroes, so no change
   // here.
   return MO1.getImm() & 0xff;
@@ -816,7 +777,7 @@ getAddrModeThumbSPOpValue(const MCInst &MI, unsigned OpIdx,
 /// getAddrModeISOpValue - Encode the t_addrmode_is# operands.
 uint32_t ARMMCCodeEmitter::
 getAddrModeISOpValue(const MCInst &MI, unsigned OpIdx,
-                     SmallVectorImpl<MCFixup> &) const {
+                     SmallVectorImpl<MCFixup> &Fixups) const {
   // [Rn, #imm]
   //   {7-3} = imm5
   //   {2-0} = Rn

@@ -20,6 +20,7 @@
 #include "clang/Basic/IdentifierTable.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/FoldingSet.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 using namespace clang;
 
@@ -510,6 +511,28 @@ DeclarationNameLoc::DeclarationNameLoc(DeclarationName Name) {
   case DeclarationName::CXXUsingDirective:
     break;
   }
+}
+
+bool DeclarationNameInfo::containsUnexpandedParameterPack() const {
+  switch (Name.getNameKind()) {
+  case DeclarationName::Identifier:
+  case DeclarationName::ObjCZeroArgSelector:
+  case DeclarationName::ObjCOneArgSelector:
+  case DeclarationName::ObjCMultiArgSelector:
+  case DeclarationName::CXXOperatorName:
+  case DeclarationName::CXXLiteralOperatorName:
+  case DeclarationName::CXXUsingDirective:
+    return false;
+
+  case DeclarationName::CXXConstructorName:
+  case DeclarationName::CXXDestructorName:
+  case DeclarationName::CXXConversionFunctionName:
+    if (TypeSourceInfo *TInfo = LocInfo.NamedType.TInfo)
+      return TInfo->getType()->containsUnexpandedParameterPack();
+
+    return Name.getCXXNameType()->containsUnexpandedParameterPack();
+  }
+  llvm_unreachable("All name kinds handled.");
 }
 
 std::string DeclarationNameInfo::getAsString() const {

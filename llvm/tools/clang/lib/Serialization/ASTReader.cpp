@@ -84,6 +84,8 @@ PCHValidator::ReadLanguageOptions(const LangOptions &LangOpts) {
   PARSE_LANGOPT_IMPORTANT(ObjC2, diag::warn_pch_objective_c2);
   PARSE_LANGOPT_IMPORTANT(ObjCNonFragileABI, diag::warn_pch_nonfragile_abi);
   PARSE_LANGOPT_IMPORTANT(ObjCNonFragileABI2, diag::warn_pch_nonfragile_abi2);
+  PARSE_LANGOPT_IMPORTANT(ObjCDefaultSynthProperties,
+                          diag::warn_pch_objc_auto_properties);
   PARSE_LANGOPT_IMPORTANT(NoConstantCFStrings,
                           diag::warn_pch_no_constant_cfstrings);
   PARSE_LANGOPT_BENIGN(PascalStrings);
@@ -1703,7 +1705,7 @@ void ASTReader::MaybeAddSystemRootToFilename(std::string &Filename) {
   if (!RelocatablePCH)
     return;
 
-  if (Filename.empty() || llvm::sys::Path(Filename).isAbsolute())
+  if (Filename.empty() || llvm::sys::path::is_absolute(Filename))
     return;
 
   if (isysroot == 0) {
@@ -2278,7 +2280,7 @@ ASTReader::ASTReadResult ASTReader::ReadASTCore(llvm::StringRef FileName,
   std::string ErrStr;
   llvm::error_code ec;
   if (FileName == "-") {
-    F.Buffer.reset(llvm::MemoryBuffer::getSTDIN(ec));
+    ec = llvm::MemoryBuffer::getSTDIN(F.Buffer);
     if (ec)
       ErrStr = ec.message();
   } else
@@ -2598,6 +2600,7 @@ bool ASTReader::ParseLanguageOptions(
     PARSE_LANGOPT(ObjC2);
     PARSE_LANGOPT(ObjCNonFragileABI);
     PARSE_LANGOPT(ObjCNonFragileABI2);
+    PARSE_LANGOPT(ObjCDefaultSynthProperties);
     PARSE_LANGOPT(NoConstantCFStrings);
     PARSE_LANGOPT(PascalStrings);
     PARSE_LANGOPT(WritableStrings);
@@ -2670,7 +2673,8 @@ void ASTReader::ReadUserDiagnosticMappings(Diagnostic &Diag) {
   while (Idx < UserDiagMappings.size()) {
     unsigned DiagID = UserDiagMappings[Idx++];
     unsigned Map = UserDiagMappings[Idx++];
-    Diag.setDiagnosticMappingInternal(DiagID, Map, /*isUser=*/true);
+    Diag.setDiagnosticMappingInternal(DiagID, Map, Diag.GetCurDiagState(),
+                                      /*isUser=*/true);
   }
 }
 
@@ -2927,6 +2931,18 @@ QualType ASTReader::ReadTypeRecord(unsigned Index) {
     }
     QualType InnerType = GetType(Record[0]);
     return Context->getParenType(InnerType);
+  }
+
+  case TYPE_PACK_EXPANSION: {
+    if (Record.size() != 1) {
+      Error("incorrect encoding of pack expansion type");
+      return QualType();
+    }
+    QualType Pattern = GetType(Record[0]);
+    if (Pattern.isNull())
+      return QualType();
+
+    return Context->getPackExpansionType(Pattern);
   }
 
   case TYPE_ELABORATED: {
@@ -3227,6 +3243,9 @@ void TypeLocReader::VisitDependentTemplateSpecializationTypeLoc(
         Reader.GetTemplateArgumentLocInfo(F,
                                           TL.getTypePtr()->getArg(I).getKind(),
                                           Record, Idx));
+}
+void TypeLocReader::VisitPackExpansionTypeLoc(PackExpansionTypeLoc TL) {
+  TL.setEllipsisLoc(ReadSourceLocation(Record, Idx));
 }
 void TypeLocReader::VisitObjCInterfaceTypeLoc(ObjCInterfaceTypeLoc TL) {
   TL.setNameLoc(ReadSourceLocation(Record, Idx));

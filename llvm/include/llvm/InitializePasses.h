@@ -133,6 +133,7 @@ void initializeLoopSplitterPass(PassRegistry&);
 void initializeLoopStrengthReducePass(PassRegistry&);
 void initializeLoopUnrollPass(PassRegistry&);
 void initializeLoopUnswitchPass(PassRegistry&);
+void initializeLoopIdiomRecognizePass(PassRegistry&);
 void initializeLowerAtomicPass(PassRegistry&);
 void initializeLowerIntrinsicsPass(PassRegistry&);
 void initializeLowerInvokePass(PassRegistry&);
@@ -142,6 +143,7 @@ void initializeMachineCSEPass(PassRegistry&);
 void initializeMachineDominatorTreePass(PassRegistry&);
 void initializeMachineLICMPass(PassRegistry&);
 void initializeMachineLoopInfoPass(PassRegistry&);
+void initializeMachineLoopRangesPass(PassRegistry&);
 void initializeMachineModuleInfoPass(PassRegistry&);
 void initializeMachineSinkingPass(PassRegistry&);
 void initializeMachineVerifierPassPass(PassRegistry&);
@@ -216,6 +218,7 @@ void initializeUnreachableBlockElimPass(PassRegistry&);
 void initializeUnreachableMachineBlockElimPass(PassRegistry&);
 void initializeVerifierPass(PassRegistry&);
 void initializeVirtRegMapPass(PassRegistry&);
+void initializeInstSimplifierPass(PassRegistry&);
 
 }
 

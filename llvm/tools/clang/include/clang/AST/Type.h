@@ -92,7 +92,6 @@ namespace clang {
   class TemplateArgument;
   class TemplateArgumentLoc;
   class TemplateArgumentListInfo;
-  class Type;
   class ElaboratedType;
   struct PrintingPolicy;
 
@@ -1345,6 +1344,7 @@ public:
     Bool,     // This is bool and/or _Bool.
     Char_U,   // This is 'char' for targets where char is unsigned.
     UChar,    // This is explicitly qualified unsigned char.
+    WChar_U,  // This is 'wchar_t' for C++, when unsigned.
     Char16,   // This is 'char16_t' for C++.
     Char32,   // This is 'char32_t' for C++.
     UShort,
@@ -1355,7 +1355,7 @@ public:
 
     Char_S,   // This is 'char' for targets where char is signed.
     SChar,    // This is explicitly qualified signed char.
-    WChar,    // This is 'wchar_t' for C++.
+    WChar_S,  // This is 'wchar_t' for C++, when signed.
     Short,
     Int,
     Long,
@@ -2617,10 +2617,6 @@ public:
   // const, it needs to return false.
   bool hasConstFields() const { return false; }
 
-  // FIXME: RecordType needs to check when it is created that all fields are in
-  // the same address space, and return that.
-  unsigned getAddressSpace() const { return 0; }
-
   bool isSugared() const { return false; }
   QualType desugar() const { return QualType(this, 0); }
 
@@ -2797,7 +2793,8 @@ public:
   /// enclosing the template arguments.
   static std::string PrintTemplateArgumentList(const TemplateArgument *Args,
                                                unsigned NumArgs,
-                                               const PrintingPolicy &Policy);
+                                               const PrintingPolicy &Policy,
+                                               bool SkipBrackets = false);
 
   static std::string PrintTemplateArgumentList(const TemplateArgumentLoc *Args,
                                                unsigned NumArgs,
@@ -3187,6 +3184,65 @@ public:
     return T->getTypeClass() == DependentTemplateSpecialization;
   }
   static bool classof(const DependentTemplateSpecializationType *T) {
+    return true;
+  }  
+};
+
+/// \brief Represents a pack expansion of types.
+///
+/// Pack expansions are part of C++0x variadic templates. A pack
+/// expansion contains a pattern, which itself contains one or more
+/// "unexpanded" parameter packs. When instantiated, a pack expansion
+/// produces a series of types, each instantiated from the pattern of
+/// the expansion, where the Ith instantiation of the pattern uses the
+/// Ith arguments bound to each of the unexpanded parameter packs. The
+/// pack expansion is considered to "expand" these unexpanded
+/// parameter packs.
+///
+/// \code
+/// template<typename ...Types> struct tuple;
+///
+/// template<typename ...Types> 
+/// struct tuple_of_references {
+///   typedef tuple<Types&...> type;
+/// };
+/// \endcode
+///
+/// Here, the pack expansion \c Types&... is represented via a
+/// PackExpansionType whose pattern is Types&.
+class PackExpansionType : public Type, public llvm::FoldingSetNode {
+  /// \brief The pattern of the pack expansion.
+  QualType Pattern;
+
+  PackExpansionType(QualType Pattern, QualType Canon)
+    : Type(PackExpansion, Canon, /*Dependent=*/true,
+           /*VariableModified=*/Pattern->isVariablyModifiedType(),
+           /*ContainsUnexpandedParameterPack=*/false),
+      Pattern(Pattern) { }
+
+  friend class ASTContext;  // ASTContext creates these
+
+public:
+  /// \brief Retrieve the pattern of this pack expansion, which is the
+  /// type that will be repeatedly instantiated when instantiating the
+  /// pack expansion itself.
+  QualType getPattern() const { return Pattern; }
+
+  bool isSugared() const { return false; }
+  QualType desugar() const { return QualType(this, 0); }
+
+  void Profile(llvm::FoldingSetNodeID &ID) {
+    Profile(ID, getPattern());
+  }
+
+  static void Profile(llvm::FoldingSetNodeID &ID, QualType Pattern) {
+    ID.AddPointer(Pattern.getAsOpaquePtr());
+  }
+
+  static bool classof(const Type *T) {
+    return T->getTypeClass() == PackExpansion;
+  }
+  static bool classof(const PackExpansionType *T) {
     return true;
   }  
 };
@@ -3644,8 +3700,6 @@ inline unsigned QualType::getAddressSpace() const {
 
   if (const ArrayType *AT = dyn_cast<ArrayType>(CT))
     return AT->getElementType().getAddressSpace();
-  if (const RecordType *RT = dyn_cast<RecordType>(CT))
-    return RT->getAddressSpace();
   return 0;
 }
 

@@ -448,7 +448,7 @@ error_code canonicalize(const Twine &path, SmallVectorImpl<char> &result);
 /// @param magic Byte sequence to compare \a path's first len(magic) bytes to.
 /// @results errc::success if result has been successfully set, otherwise a
 ///          platform specific error_code.
-error_code has_magic(const Twine &path, const Twine &magic);
+error_code has_magic(const Twine &path, const Twine &magic, bool &result);
 
 /// @brief Get \a path's first \a len bytes.
 ///
@@ -604,10 +604,10 @@ class directory_iterator {
   directory_entry CurrentEntry;
 
   // Platform implementations implement these functions to handle iteration.
-  friend error_code directory_iterator_construct(directory_iterator& it,
-                                                 const StringRef &path);
-  friend error_code directory_iterator_increment(directory_iterator& it);
-  friend error_code directory_iterator_destruct(directory_iterator& it);
+  friend error_code directory_iterator_construct(directory_iterator &it,
+                                                 StringRef path);
+  friend error_code directory_iterator_increment(directory_iterator &it);
+  friend error_code directory_iterator_destruct(directory_iterator &it);
 
 public:
   explicit directory_iterator(const Twine &path, error_code &ec)

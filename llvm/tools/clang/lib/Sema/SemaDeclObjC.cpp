@@ -969,7 +969,8 @@ void Sema::CheckProtocolMethodDefs(SourceLocation ImpLoc,
             IDecl->lookupInstanceMethod(method->getSelector());
             if (!MethodInClass || !MethodInClass->isSynthesized()) {
               unsigned DIAG = diag::warn_unimplemented_protocol_method;
-              if (Diags.getDiagnosticLevel(DIAG) != Diagnostic::Ignored) {
+              if (Diags.getDiagnosticLevel(DIAG, ImpLoc)
+                      != Diagnostic::Ignored) {
                 WarnUndefinedMethod(ImpLoc, method, IncompleteImpl, DIAG);
                 Diag(method->getLocation(), diag::note_method_declared_at);
                 Diag(CDecl->getLocation(), diag::note_required_for_protocol_at)
@@ -987,7 +988,7 @@ void Sema::CheckProtocolMethodDefs(SourceLocation ImpLoc,
         !ClsMap.count(method->getSelector()) &&
         (!Super || !Super->lookupClassMethod(method->getSelector()))) {
       unsigned DIAG = diag::warn_unimplemented_protocol_method;
-      if (Diags.getDiagnosticLevel(DIAG) != Diagnostic::Ignored) {
+      if (Diags.getDiagnosticLevel(DIAG, ImpLoc) != Diagnostic::Ignored) {
         WarnUndefinedMethod(ImpLoc, method, IncompleteImpl, DIAG);
         Diag(method->getLocation(), diag::note_method_declared_at);
         Diag(IDecl->getLocation(), diag::note_required_for_protocol_at) <<
@@ -1094,7 +1095,8 @@ void Sema::ImplMethodsVsClassMethods(Scope *S, ObjCImplDecl* IMPDecl,
   // Check and see if properties declared in the interface have either 1)
   // an implementation or 2) there is a @synthesize/@dynamic implementation
   // of the property in the @implementation.
-  if (isa<ObjCInterfaceDecl>(CDecl) && !LangOpts.ObjCNonFragileABI2)
+  if (isa<ObjCInterfaceDecl>(CDecl) &&
+        !(LangOpts.ObjCDefaultSynthProperties && LangOpts.ObjCNonFragileABI2))
     DiagnoseUnimplementedProperties(S, IMPDecl, CDecl, InsMap);
       
   llvm::DenseSet<Selector> ClsMap;
@@ -1301,7 +1303,21 @@ void Sema::AddMethodToGlobalPool(ObjCMethodDecl *Method, bool impl,
   // signature.
   for (ObjCMethodList *List = &Entry; List; List = List->Next)
     if (MatchTwoMethodDeclarations(Method, List->Method)) {
-      List->Method->setDefined(impl);
+      ObjCMethodDecl *PrevObjCMethod = List->Method;
+      PrevObjCMethod->setDefined(impl);
+      // If a method is deprecated, push it in the global pool.
+      // This is used for better diagnostics.
+      if (Method->getAttr<DeprecatedAttr>()) {
+        if (!PrevObjCMethod->getAttr<DeprecatedAttr>())
+          List->Method = Method;
+      }
+      // If new method is unavailable, push it into global pool
+      // unless previous one is deprecated.
+      if (Method->getAttr<UnavailableAttr>()) {
+        if (!PrevObjCMethod->getAttr<UnavailableAttr>() &&
+            !PrevObjCMethod->getAttr<DeprecatedAttr>())
+          List->Method = Method;
+      }
       return;
     }
 
@@ -1325,7 +1341,8 @@ ObjCMethodDecl *Sema::LookupMethodInGlobalPool(Selector Sel, SourceRange R,
   ObjCMethodList &MethList = instance ? Pos->second.first : Pos->second.second;
 
   bool strictSelectorMatch = receiverIdOrClass && warn &&
-    (Diags.getDiagnosticLevel(diag::warn_strict_multiple_method_decl) != 
+    (Diags.getDiagnosticLevel(diag::warn_strict_multiple_method_decl,
+                              R.getBegin()) != 
       Diagnostic::Ignored);
   if (warn && MethList.Method && MethList.Next) {
     bool issueWarning = false;
@@ -1459,8 +1476,6 @@ void Sema::ActOnAtEnd(Scope *S, SourceRange AtEnd,
     Diag(L, diag::warn_missing_atend);
   }
   
-  DeclContext *DC = dyn_cast<DeclContext>(ClassDecl);
-
   // FIXME: Remove these and use the ObjCContainerDecl/DeclContext.
   llvm::DenseMap<Selector, const ObjCMethodDecl*> InsMap;
   llvm::DenseMap<Selector, const ObjCMethodDecl*> ClsMap;
@@ -1480,8 +1495,8 @@ void Sema::ActOnAtEnd(Scope *S, SourceRange AtEnd,
           Diag(Method->getLocation(), diag::err_duplicate_method_decl)
             << Method->getDeclName();
           Diag(PrevMethod->getLocation(), diag::note_previous_declaration);
+        Method->setInvalidDecl();
       } else {
-        DC->addDecl(Method);
         InsMap[Method->getSelector()] = Method;
         /// The following allows us to typecheck messages to "id".
         AddInstanceMethodToGlobalPool(Method);
@@ -1499,8 +1514,8 @@ void Sema::ActOnAtEnd(Scope *S, SourceRange AtEnd,
         Diag(Method->getLocation(), diag::err_duplicate_method_decl)
           << Method->getDeclName();
         Diag(PrevMethod->getLocation(), diag::note_previous_declaration);
+        Method->setInvalidDecl();
       } else {
-        DC->addDecl(Method);
         ClsMap[Method->getSelector()] = Method;
         /// The following allows us to typecheck messages to "Class".
         AddFactoryMethodToGlobalPool(Method);
@@ -1573,7 +1588,8 @@ void Sema::ActOnAtEnd(Scope *S, SourceRange AtEnd,
         }
       }
       
-      if (LangOpts.ObjCNonFragileABI2)
+      if (LangOpts.ObjCDefaultSynthProperties &&
+          LangOpts.ObjCNonFragileABI2)
         DefaultSynthesizeProperties(S, IC, IDecl);
       ImplMethodsVsClassMethods(S, IC, IDecl);
       AtomicPropertySetterGetterRules(IC, IDecl);
@@ -1757,10 +1773,7 @@ Decl *Sema::ActOnMethodDeclaration(
 
   const ObjCMethodDecl *InterfaceMD = 0;
 
-  // For implementations (which can be very "coarse grain"), we add the
-  // method now. This allows the AST to implement lookup methods that work
-  // incrementally (without waiting until we parse the @end). It also allows
-  // us to flag multiple declaration errors as they occur.
+  // Add the method now.
   if (ObjCImplementationDecl *ImpDecl =
         dyn_cast<ObjCImplementationDecl>(ClassDecl)) {
     if (MethodType == tok::minus) {
@@ -1787,6 +1800,8 @@ Decl *Sema::ActOnMethodDeclaration(
     if (ObjCMethod->hasAttrs() &&
         containsInvalidMethodImplAttribute(ObjCMethod->getAttrs()))
       Diag(EndLoc, diag::warn_attribute_method_def);
+  } else {
+    cast<DeclContext>(ClassDecl)->addDecl(ObjCMethod);
   }
   if (PrevMethod) {
     // You can never have two method definitions with the same name.

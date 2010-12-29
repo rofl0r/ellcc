@@ -23,6 +23,7 @@
 
 namespace llvm {
   class FoldingSetNodeID;
+  class raw_ostream;
 }
 
 namespace clang {
@@ -30,25 +31,14 @@ namespace clang {
 class Decl;
 class DiagnosticBuilder;
 class Expr;
+struct PrintingPolicy;
 class TypeSourceInfo;
 
 /// \brief Represents a template argument within a class template
 /// specialization.
 class TemplateArgument {
-  union {
-    uintptr_t TypeOrValue;
-    struct {
-      char Value[sizeof(llvm::APSInt)];
-      void *Type;
-    } Integer;
-    struct {
-      TemplateArgument *Args;
-      unsigned NumArgs;
-    } Args;
-  };
-
 public:
-  /// \brief The type of template argument we're storing.
+  /// \brief The kind of template argument we're storing.
   enum ArgKind {
     /// \brief Represents an empty template argument, e.g., one that has not
     /// been deduced.
@@ -71,10 +61,27 @@ public:
     /// The template argument is actually a parameter pack. Arguments are stored
     /// in the Args struct.
     Pack
-  } Kind;
+  };
 
+private:
+  /// \brief The kind of template argument we're storing.
+  unsigned Kind;
+
+  union {
+    uintptr_t TypeOrValue;
+    struct {
+      char Value[sizeof(llvm::APSInt)];
+      void *Type;
+    } Integer;
+    struct {
+      TemplateArgument *Args;
+      unsigned NumArgs;
+    } Args;
+  };
+
+public:
   /// \brief Construct an empty, invalid template argument.
-  TemplateArgument() : TypeOrValue(0), Kind(Null) { }
+  TemplateArgument() : Kind(Null), TypeOrValue(0) { }
 
   /// \brief Construct a template type argument.
   TemplateArgument(QualType T) : Kind(Type) {
@@ -177,15 +184,22 @@ public:
   }
 
   /// \brief Return the kind of stored template argument.
-  ArgKind getKind() const { return Kind; }
+  ArgKind getKind() const { return (ArgKind)Kind; }
 
   /// \brief Determine whether this template argument has no value.
   bool isNull() const { return Kind == Null; }
+
+  /// \brief Whether this template argument is dependent on a template
+  /// parameter.
+  bool isDependent() const;
 
   /// \brief Whether this template argument contains an unexpanded
   /// parameter pack.
   bool containsUnexpandedParameterPack() const;
 
+  /// \brief Determine whether this template argument is a pack expansion.
+  bool isPackExpansion() const;
+  
   /// \brief Retrieve the template argument as a type.
   QualType getAsType() const {
     if (Kind != Type)
@@ -271,6 +285,15 @@ public:
   /// same.
   bool structurallyEquals(const TemplateArgument &Other) const;
 
+  /// \brief When the template argument is a pack expansion, returns 
+  /// the pattern of the pack expansion.
+  ///
+  /// \param Ellipsis Will be set to the location of the ellipsis.
+  TemplateArgument getPackExpansionPattern() const;
+
+  /// \brief Print this template argument to the given output stream.
+  void print(const PrintingPolicy &Policy, llvm::raw_ostream &Out) const;
+             
   /// \brief Used to insert TemplateArguments into FoldingSets.
   void Profile(llvm::FoldingSetNodeID &ID, ASTContext &Context) const;
 };
@@ -395,6 +418,13 @@ public:
     assert(Argument.getKind() == TemplateArgument::Template);
     return LocInfo.getTemplateNameLoc();
   }  
+  
+  /// \brief When the template argument is a pack expansion, returns 
+  /// the pattern of the pack expansion.
+  ///
+  /// \param Ellipsis Will be set to the location of the ellipsis.
+  TemplateArgumentLoc getPackExpansionPattern(SourceLocation &Ellipsis,
+                                              ASTContext &Context) const;
 };
 
 /// A convenient class for passing around template argument

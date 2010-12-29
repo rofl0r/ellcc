@@ -12,19 +12,79 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/ADT/FoldingSet.h"
 #include "clang/AST/TemplateBase.h"
+#include "clang/AST/ASTContext.h"
 #include "clang/AST/DeclBase.h"
 #include "clang/AST/DeclTemplate.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/TypeLoc.h"
 #include "clang/Basic/Diagnostic.h"
+#include "llvm/ADT/FoldingSet.h"
 
 using namespace clang;
 
 //===----------------------------------------------------------------------===//
 // TemplateArgument Implementation
 //===----------------------------------------------------------------------===//
+
+bool TemplateArgument::isDependent() const {
+  switch (getKind()) {
+  case Null:
+    assert(false && "Should not have a NULL template argument");
+    return false;
+
+  case Type:
+    return getAsType()->isDependentType();
+
+  case Template:
+    return getAsTemplate().isDependent();
+      
+  case Declaration:
+    if (DeclContext *DC = dyn_cast<DeclContext>(getAsDecl()))
+      return DC->isDependentContext();
+    return getAsDecl()->getDeclContext()->isDependentContext();
+
+  case Integral:
+    // Never dependent
+    return false;
+
+  case Expression:
+    return (getAsExpr()->isTypeDependent() || getAsExpr()->isValueDependent());
+
+  case Pack:
+    for (pack_iterator P = pack_begin(), PEnd = pack_end(); P != PEnd; ++P) {
+      if (P->isDependent())
+        return true;
+    }
+
+    return false;
+  }
+
+  return false;
+}
+
+bool TemplateArgument::isPackExpansion() const {
+  switch (getKind()) {
+  case Null:
+  case Declaration:
+  case Integral:
+  case Pack:    
+    return false;
+      
+  case Type:
+    return llvm::isa<PackExpansionType>(getAsType());
+      
+  case Template:
+    // FIXME: Template template pack expansions.
+    break;
+    
+  case Expression:
+    // FIXME: Expansion pack expansions.
+    break;  
+  }
+  
+  return false;
+}
 
 bool TemplateArgument::containsUnexpandedParameterPack() const {
   switch (getKind()) {
@@ -131,6 +191,91 @@ bool TemplateArgument::structurallyEquals(const TemplateArgument &Other) const {
   return false;
 }
 
+TemplateArgument TemplateArgument::getPackExpansionPattern() const {
+  assert(isPackExpansion());
+  
+  switch (getKind()) {
+    case Type:
+      return getAsType()->getAs<PackExpansionType>()->getPattern();
+      
+    case Expression:
+    case Template:
+      // FIXME: Variadic templates.
+      llvm_unreachable("Expression and template pack expansions unsupported");
+      
+    case Declaration:
+    case Integral:
+    case Pack:
+    case Null:
+      return TemplateArgument();
+  }
+  
+  return TemplateArgument();
+}
+
+void TemplateArgument::print(const PrintingPolicy &Policy, 
+                             llvm::raw_ostream &Out) const {
+  switch (getKind()) {
+  case Null:
+    Out << "<no value>";
+    break;
+    
+  case Type: {
+    std::string TypeStr;
+    getAsType().getAsStringInternal(TypeStr, Policy);
+    Out << TypeStr;
+    break;
+  }
+    
+  case Declaration: {
+    bool Unnamed = true;
+    if (NamedDecl *ND = dyn_cast_or_null<NamedDecl>(getAsDecl())) {
+      if (ND->getDeclName()) {
+        Unnamed = false;
+        Out << ND->getNameAsString();
+      }
+    }
+    
+    if (Unnamed) {
+      Out << "<anonymous>";
+    }
+    break;
+  }
+    
+  case Template: {
+    getAsTemplate().print(Out, Policy);
+    break;
+  }
+    
+  case Integral: {
+    Out << getAsIntegral()->toString(10);
+    break;
+  }
+    
+  case Expression: {
+    // FIXME: This is non-optimal, since we're regurgitating the
+    // expression we were given.
+    getAsExpr()->printPretty(Out, 0, Policy);
+    break;
+  }
+    
+  case Pack:
+    Out << "<";
+    bool First = true;
+    for (TemplateArgument::pack_iterator P = pack_begin(), PEnd = pack_end();
+         P != PEnd; ++P) {
+      if (First)
+        First = false;
+      else
+        Out << ", ";
+      
+      P->print(Policy, Out);
+    }
+    Out << ">";
+    break;        
+  }
+}
+
 //===----------------------------------------------------------------------===//
 // TemplateArgumentLoc Implementation
 //===----------------------------------------------------------------------===//
@@ -163,6 +308,54 @@ SourceRange TemplateArgumentLoc::getSourceRange() const {
 
   // Silence bonus gcc warning.
   return SourceRange();
+}
+
+TemplateArgumentLoc 
+TemplateArgumentLoc::getPackExpansionPattern(SourceLocation &Ellipsis,
+                                             ASTContext &Context) const {
+  assert(Argument.isPackExpansion());
+  
+  switch (Argument.getKind()) {
+  case TemplateArgument::Type: {
+    // FIXME: We shouldn't ever have to worry about missing
+    // type-source info!
+    TypeSourceInfo *ExpansionTSInfo = getTypeSourceInfo();
+    if (!ExpansionTSInfo)
+      ExpansionTSInfo = Context.getTrivialTypeSourceInfo(
+                                                     getArgument().getAsType(),
+                                                         Ellipsis);
+    PackExpansionTypeLoc Expansion
+      = cast<PackExpansionTypeLoc>(ExpansionTSInfo->getTypeLoc());
+    Ellipsis = Expansion.getEllipsisLoc();
+    
+    TypeLoc Pattern = Expansion.getPatternLoc();
+    
+    // FIXME: This is horrible. We know where the source location data is for
+    // the pattern, and we have the pattern's type, but we are forced to copy
+    // them into an ASTContext because TypeSourceInfo bundles them together
+    // and TemplateArgumentLoc traffics in TypeSourceInfo pointers.
+    TypeSourceInfo *PatternTSInfo
+      = Context.CreateTypeSourceInfo(Pattern.getType(),
+                                     Pattern.getFullDataSize());
+    memcpy(PatternTSInfo->getTypeLoc().getOpaqueData(), 
+           Pattern.getOpaqueData(), Pattern.getFullDataSize());
+    return TemplateArgumentLoc(TemplateArgument(Pattern.getType()),
+                               PatternTSInfo);
+  }
+      
+  case TemplateArgument::Expression:
+  case TemplateArgument::Template:
+    // FIXME: Variadic templates.
+      llvm_unreachable("Expression and template pack expansions unsupported");
+    
+  case TemplateArgument::Declaration:
+  case TemplateArgument::Integral:
+  case TemplateArgument::Pack:
+  case TemplateArgument::Null:
+    return TemplateArgumentLoc();
+  }
+  
+  return TemplateArgumentLoc();
 }
 
 const DiagnosticBuilder &clang::operator<<(const DiagnosticBuilder &DB,
@@ -198,9 +391,16 @@ const DiagnosticBuilder &clang::operator<<(const DiagnosticBuilder &DB,
     return DB << OS.str();
   }
       
-  case TemplateArgument::Pack:
-    // FIXME: Format arguments in a list!
-    return DB << "<parameter pack>";
+  case TemplateArgument::Pack: {
+    // FIXME: We're guessing at LangOptions!
+    llvm::SmallString<32> Str;
+    llvm::raw_svector_ostream OS(Str);
+    LangOptions LangOpts;
+    LangOpts.CPlusPlus = true;
+    PrintingPolicy Policy(LangOpts);
+    Arg.print(Policy, OS);
+    return DB << OS.str();
+  }
   }
   
   return DB;

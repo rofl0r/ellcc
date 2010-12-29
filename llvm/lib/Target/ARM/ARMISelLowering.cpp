@@ -59,7 +59,7 @@ EnableARMTailCalls("arm-tail-calls", cl::Hidden,
   cl::desc("Generate tail calls (TEMPORARY OPTION)."),
   cl::init(false));
 
-static cl::opt<bool>
+cl::opt<bool>
 EnableARMLongCalls("arm-long-calls", cl::Hidden,
   cl::desc("Generate calls via indirect call instructions"),
   cl::init(false));
@@ -464,6 +464,8 @@ ARMTargetLowering::ARMTargetLowering(TargetMachine &TM)
     setTargetDAGCombine(ISD::SELECT_CC);
     setTargetDAGCombine(ISD::BUILD_VECTOR);
     setTargetDAGCombine(ISD::VECTOR_SHUFFLE);
+    setTargetDAGCombine(ISD::INSERT_VECTOR_ELT);
+    setTargetDAGCombine(ISD::STORE);
   }
 
   computeRegisterProperties();
@@ -778,9 +780,14 @@ const char *ARMTargetLowering::getTargetNodeName(unsigned Opcode) const {
   case ARMISD::PRELOAD:       return "ARMISD::PRELOAD";
 
   case ARMISD::VCEQ:          return "ARMISD::VCEQ";
+  case ARMISD::VCEQZ:         return "ARMISD::VCEQZ";
   case ARMISD::VCGE:          return "ARMISD::VCGE";
+  case ARMISD::VCGEZ:         return "ARMISD::VCGEZ";
+  case ARMISD::VCLEZ:         return "ARMISD::VCLEZ";
   case ARMISD::VCGEU:         return "ARMISD::VCGEU";
   case ARMISD::VCGT:          return "ARMISD::VCGT";
+  case ARMISD::VCGTZ:         return "ARMISD::VCGTZ";
+  case ARMISD::VCLTZ:         return "ARMISD::VCLTZ";
   case ARMISD::VCGTU:         return "ARMISD::VCGTU";
   case ARMISD::VTST:          return "ARMISD::VTST";
 
@@ -869,7 +876,7 @@ Sched::Preference ARMTargetLowering::getSchedulingPreference(SDNode *N) const {
 
   for (unsigned i = 0; i != NumVals; ++i) {
     EVT VT = N->getValueType(i);
-    if (VT == MVT::Flag || VT == MVT::Other)
+    if (VT == MVT::Glue || VT == MVT::Other)
       continue;
     if (VT.isFloatingPoint() || VT.isVector())
       return Sched::Latency;
@@ -1418,7 +1425,7 @@ ARMTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
   if (InFlag.getNode())
     Ops.push_back(InFlag);
 
-  SDVTList NodeTys = DAG.getVTList(MVT::Other, MVT::Flag);
+  SDVTList NodeTys = DAG.getVTList(MVT::Other, MVT::Glue);
   if (isTailCall)
     return DAG.getNode(ARMISD::TC_RETURN, dl, NodeTys, &Ops[0], Ops.size());
 
@@ -2425,7 +2432,7 @@ ARMTargetLowering::getARMCmp(SDValue LHS, SDValue RHS, ISD::CondCode CC,
     break;
   }
   ARMcc = DAG.getConstant(CondCode, MVT::i32);
-  return DAG.getNode(CompareType, dl, MVT::Flag, LHS, RHS);
+  return DAG.getNode(CompareType, dl, MVT::Glue, LHS, RHS);
 }
 
 /// Returns a appropriate VFP CMP (fcmp{s|d}+fmstat) for the given operands.
@@ -2434,10 +2441,10 @@ ARMTargetLowering::getVFPCmp(SDValue LHS, SDValue RHS, SelectionDAG &DAG,
                              DebugLoc dl) const {
   SDValue Cmp;
   if (!isFloatingPointZero(RHS))
-    Cmp = DAG.getNode(ARMISD::CMPFP, dl, MVT::Flag, LHS, RHS);
+    Cmp = DAG.getNode(ARMISD::CMPFP, dl, MVT::Glue, LHS, RHS);
   else
-    Cmp = DAG.getNode(ARMISD::CMPFPw0, dl, MVT::Flag, LHS);
-  return DAG.getNode(ARMISD::FMSTAT, dl, MVT::Flag, Cmp);
+    Cmp = DAG.getNode(ARMISD::CMPFPw0, dl, MVT::Glue, LHS);
+  return DAG.getNode(ARMISD::FMSTAT, dl, MVT::Glue, Cmp);
 }
 
 SDValue ARMTargetLowering::LowerSELECT(SDValue Op, SelectionDAG &DAG) const {
@@ -2628,7 +2635,7 @@ ARMTargetLowering::OptimizeVFPBrcond(SDValue Op, SelectionDAG &DAG) const {
     expandf64Toi32(RHS, DAG, RHS1, RHS2);
     ARMCC::CondCodes CondCode = IntCCToARMCC(CC);
     ARMcc = DAG.getConstant(CondCode, MVT::i32);
-    SDVTList VTList = DAG.getVTList(MVT::Other, MVT::Flag);
+    SDVTList VTList = DAG.getVTList(MVT::Other, MVT::Glue);
     SDValue Ops[] = { Chain, ARMcc, LHS1, LHS2, RHS1, RHS2, Dest };
     return DAG.getNode(ARMISD::BCC_i64, dl, VTList, Ops, 7);
   }
@@ -2668,7 +2675,7 @@ SDValue ARMTargetLowering::LowerBR_CC(SDValue Op, SelectionDAG &DAG) const {
   SDValue ARMcc = DAG.getConstant(CondCode, MVT::i32);
   SDValue Cmp = getVFPCmp(LHS, RHS, DAG, dl);
   SDValue CCR = DAG.getRegister(ARM::CPSR, MVT::i32);
-  SDVTList VTList = DAG.getVTList(MVT::Other, MVT::Flag);
+  SDVTList VTList = DAG.getVTList(MVT::Other, MVT::Glue);
   SDValue Ops[] = { Chain, Dest, ARMcc, CCR, Cmp };
   SDValue Res = DAG.getNode(ARMISD::BRCOND, dl, VTList, Ops, 5);
   if (CondCode2 != ARMCC::AL) {
@@ -3024,7 +3031,7 @@ static SDValue Expand64BitShift(SDNode *N, SelectionDAG &DAG,
   // First, build a SRA_FLAG/SRL_FLAG op, which shifts the top part by one and
   // captures the result into a carry flag.
   unsigned Opc = N->getOpcode() == ISD::SRL ? ARMISD::SRL_FLAG:ARMISD::SRA_FLAG;
-  Hi = DAG.getNode(Opc, dl, DAG.getVTList(MVT::i32, MVT::Flag), &Hi, 1);
+  Hi = DAG.getNode(Opc, dl, DAG.getVTList(MVT::i32, MVT::Glue), &Hi, 1);
 
   // The low part is an ARMISD::RRX operand, which shifts the carry in.
   Lo = DAG.getNode(ARMISD::RRX, dl, MVT::i32, Lo, Hi.getValue(1));
@@ -4426,6 +4433,9 @@ ARMTargetLowering::EmitInstrWithCustomInserter(MachineInstr *MI,
 
   case ARM::BCCi64:
   case ARM::BCCZi64: {
+    // If there is an unconditional branch to the other successor, remove it.
+    BB->erase(llvm::next(MachineBasicBlock::iterator(MI)), BB->end());
+    
     // Compare both parts that make up the double comparison separately for
     // equality.
     bool RHSisZero = MI->getOpcode() == ARM::BCCZi64;
@@ -4857,17 +4867,111 @@ static SDValue PerformVMOVDRRCombine(SDNode *N, SelectionDAG &DAG) {
   return SDValue();
 }
 
+/// PerformSTORECombine - Target-specific dag combine xforms for
+/// ISD::STORE.
+static SDValue PerformSTORECombine(SDNode *N,
+                                   TargetLowering::DAGCombinerInfo &DCI) {
+  // Bitcast an i64 store extracted from a vector to f64.
+  // Otherwise, the i64 value will be legalized to a pair of i32 values.
+  StoreSDNode *St = cast<StoreSDNode>(N);
+  SDValue StVal = St->getValue();
+  if (!ISD::isNormalStore(St) || St->isVolatile() ||
+      StVal.getValueType() != MVT::i64 ||
+      StVal.getNode()->getOpcode() != ISD::EXTRACT_VECTOR_ELT)
+    return SDValue();
+
+  SelectionDAG &DAG = DCI.DAG;
+  DebugLoc dl = StVal.getDebugLoc();
+  SDValue IntVec = StVal.getOperand(0);
+  EVT FloatVT = EVT::getVectorVT(*DAG.getContext(), MVT::f64,
+                                 IntVec.getValueType().getVectorNumElements());
+  SDValue Vec = DAG.getNode(ISD::BITCAST, dl, FloatVT, IntVec);
+  SDValue ExtElt = DAG.getNode(ISD::EXTRACT_VECTOR_ELT, dl, MVT::f64,
+                               Vec, StVal.getOperand(1));
+  dl = N->getDebugLoc();
+  SDValue V = DAG.getNode(ISD::BITCAST, dl, MVT::i64, ExtElt);
+  // Make the DAGCombiner fold the bitcasts.
+  DCI.AddToWorklist(Vec.getNode());
+  DCI.AddToWorklist(ExtElt.getNode());
+  DCI.AddToWorklist(V.getNode());
+  return DAG.getStore(St->getChain(), dl, V, St->getBasePtr(),
+                      St->getPointerInfo(), St->isVolatile(),
+                      St->isNonTemporal(), St->getAlignment(),
+                      St->getTBAAInfo());
+}
+
+/// hasNormalLoadOperand - Check if any of the operands of a BUILD_VECTOR node
+/// are normal, non-volatile loads.  If so, it is profitable to bitcast an
+/// i64 vector to have f64 elements, since the value can then be loaded
+/// directly into a VFP register.
+static bool hasNormalLoadOperand(SDNode *N) {
+  unsigned NumElts = N->getValueType(0).getVectorNumElements();
+  for (unsigned i = 0; i < NumElts; ++i) {
+    SDNode *Elt = N->getOperand(i).getNode();
+    if (ISD::isNormalLoad(Elt) && !cast<LoadSDNode>(Elt)->isVolatile())
+      return true;
+  }
+  return false;
+}
+
 /// PerformBUILD_VECTORCombine - Target-specific dag combine xforms for
 /// ISD::BUILD_VECTOR.
-static SDValue PerformBUILD_VECTORCombine(SDNode *N, SelectionDAG &DAG) {
+static SDValue PerformBUILD_VECTORCombine(SDNode *N,
+                                          TargetLowering::DAGCombinerInfo &DCI){
   // build_vector(N=ARMISD::VMOVRRD(X), N:1) -> bit_convert(X):
   // VMOVRRD is introduced when legalizing i64 types.  It forces the i64 value
   // into a pair of GPRs, which is fine when the value is used as a scalar,
   // but if the i64 value is converted to a vector, we need to undo the VMOVRRD.
-  if (N->getNumOperands() == 2)
-    return PerformVMOVDRRCombine(N, DAG);
+  SelectionDAG &DAG = DCI.DAG;
+  if (N->getNumOperands() == 2) {
+    SDValue RV = PerformVMOVDRRCombine(N, DAG);
+    if (RV.getNode())
+      return RV;
+  }
 
-  return SDValue();
+  // Load i64 elements as f64 values so that type legalization does not split
+  // them up into i32 values.
+  EVT VT = N->getValueType(0);
+  if (VT.getVectorElementType() != MVT::i64 || !hasNormalLoadOperand(N))
+    return SDValue();
+  DebugLoc dl = N->getDebugLoc();
+  SmallVector<SDValue, 8> Ops;
+  unsigned NumElts = VT.getVectorNumElements();
+  for (unsigned i = 0; i < NumElts; ++i) {
+    SDValue V = DAG.getNode(ISD::BITCAST, dl, MVT::f64, N->getOperand(i));
+    Ops.push_back(V);
+    // Make the DAGCombiner fold the bitcast.
+    DCI.AddToWorklist(V.getNode());
+  }
+  EVT FloatVT = EVT::getVectorVT(*DAG.getContext(), MVT::f64, NumElts);
+  SDValue BV = DAG.getNode(ISD::BUILD_VECTOR, dl, FloatVT, Ops.data(), NumElts);
+  return DAG.getNode(ISD::BITCAST, dl, VT, BV);
+}
+
+/// PerformInsertEltCombine - Target-specific dag combine xforms for
+/// ISD::INSERT_VECTOR_ELT.
+static SDValue PerformInsertEltCombine(SDNode *N,
+                                       TargetLowering::DAGCombinerInfo &DCI) {
+  // Bitcast an i64 load inserted into a vector to f64.
+  // Otherwise, the i64 value will be legalized to a pair of i32 values.
+  EVT VT = N->getValueType(0);
+  SDNode *Elt = N->getOperand(1).getNode();
+  if (VT.getVectorElementType() != MVT::i64 ||
+      !ISD::isNormalLoad(Elt) || cast<LoadSDNode>(Elt)->isVolatile())
+    return SDValue();
+
+  SelectionDAG &DAG = DCI.DAG;
+  DebugLoc dl = N->getDebugLoc();
+  EVT FloatVT = EVT::getVectorVT(*DAG.getContext(), MVT::f64,
+                                 VT.getVectorNumElements());
+  SDValue Vec = DAG.getNode(ISD::BITCAST, dl, FloatVT, N->getOperand(0));
+  SDValue V = DAG.getNode(ISD::BITCAST, dl, MVT::f64, N->getOperand(1));
+  // Make the DAGCombiner fold the bitcasts.
+  DCI.AddToWorklist(Vec.getNode());
+  DCI.AddToWorklist(V.getNode());
+  SDValue InsElt = DAG.getNode(ISD::INSERT_VECTOR_ELT, dl, FloatVT,
+                               Vec, V, N->getOperand(2));
+  return DAG.getNode(ISD::BITCAST, dl, VT, InsElt);
 }
 
 /// PerformVECTOR_SHUFFLECombine - Target-specific dag combine xforms for
@@ -5420,7 +5524,9 @@ SDValue ARMTargetLowering::PerformDAGCombine(SDNode *N,
   case ARMISD::BFI:     return PerformBFICombine(N, DCI);
   case ARMISD::VMOVRRD: return PerformVMOVRRDCombine(N, DCI);
   case ARMISD::VMOVDRR: return PerformVMOVDRRCombine(N, DCI.DAG);
-  case ISD::BUILD_VECTOR: return PerformBUILD_VECTORCombine(N, DCI.DAG);
+  case ISD::STORE:      return PerformSTORECombine(N, DCI);
+  case ISD::BUILD_VECTOR: return PerformBUILD_VECTORCombine(N, DCI);
+  case ISD::INSERT_VECTOR_ELT: return PerformInsertEltCombine(N, DCI);
   case ISD::VECTOR_SHUFFLE: return PerformVECTOR_SHUFFLECombine(N, DCI.DAG);
   case ARMISD::VDUPLANE: return PerformVDUPLANECombine(N, DCI);
   case ISD::INTRINSIC_WO_CHAIN: return PerformIntrinsicCombine(N, DCI.DAG);

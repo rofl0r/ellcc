@@ -11,6 +11,10 @@ typedef signed char BOOL;
 @class NSArray, NSString, NSURL;
 
 @interface NamingTest : NSObject {}
+-(NSObject*)copyPhoto;
+-(NSObject*)mutableCopyPhoto;
+-(NSObject*)mutable;
+-(NSObject*)mutableCopying;
 -(NSObject*)photocopy;    // read as "photocopy"
 -(NSObject*)photoCopy;    // read as "photo Copy"
 -(NSObject*)__blebPRCopy; // read as "bleb PRCopy"
@@ -45,9 +49,13 @@ typedef signed char BOOL;
 }
 
 void testNames(NamingTest* x) {
+  [x copyPhoto]; // expected-warning{{leak}}
+  [x mutableCopyPhoto]; // expected-warning{{leak}}
+  [x mutable]; // no-warning
+  [x mutableCopying]; // no-warning
   [x photocopy]; // no-warning
-  [x photoCopy]; // expected-warning{{leak}}
-  [x __blebPRCopy]; // expected-warning{{leak}}
+  [x photoCopy]; // no-warning
+  [x __blebPRCopy]; // no-warning
   [x __blebPRcopy]; // no-warning
   [x new_theprefixdoescount]; // expected-warning{{leak}}
   [x newestAwesomeStuff]; // no-warning

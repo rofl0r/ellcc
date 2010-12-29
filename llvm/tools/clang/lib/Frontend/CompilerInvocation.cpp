@@ -117,7 +117,9 @@ static void AnalyzerOptsToArgs(const AnalyzerOptions &Opts,
   if (Opts.EnableExperimentalInternalChecks)
     Res.push_back("-analyzer-experimental-internal-checks");
   if (Opts.IdempotentOps)
-      Res.push_back("-analyzer-check-idempotent-operations");
+    Res.push_back("-analyzer-check-idempotent-operations");
+  if (Opts.BufferOverflows)
+    Res.push_back("-analyzer-check-buffer-overflows");
 }
 
 static void CodeGenOptsToArgs(const CodeGenOptions &Opts,
@@ -548,6 +550,8 @@ static void LangOptsToArgs(const LangOptions &Opts,
     Res.push_back("-fobjc-nonfragile-abi");
   if (Opts.ObjCNonFragileABI2)
     Res.push_back("-fobjc-nonfragile-abi2");
+  if (Opts.ObjCDefaultSynthProperties)
+    Res.push_back("-fobjc-default-synthesize-properties");
   // NoInline is implicit.
   if (!Opts.CXXOperatorNames)
     Res.push_back("-fno-operator-names");
@@ -857,6 +861,7 @@ static void ParseAnalyzerArgs(AnalyzerOptions &Opts, ArgList &Args,
   Opts.MaxLoop = Args.getLastArgIntValue(OPT_analyzer_max_loop, 4, Diags);
   Opts.InlineCall = Args.hasArg(OPT_analyzer_inline_call);
   Opts.IdempotentOps = Args.hasArg(OPT_analysis_WarnIdempotentOps);
+  Opts.BufferOverflows = Args.hasArg(OPT_analysis_WarnBufferOverflows);
 }
 
 static void ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
@@ -1421,6 +1426,8 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   Opts.ObjCNonFragileABI2 = Args.hasArg(OPT_fobjc_nonfragile_abi2);
   if (Opts.ObjCNonFragileABI2)
     Opts.ObjCNonFragileABI = true;
+  Opts.ObjCDefaultSynthProperties =
+    Args.hasArg(OPT_fobjc_default_synthesize_properties);
   Opts.CatchUndefined = Args.hasArg(OPT_fcatch_undefined_behavior);
   Opts.EmitAllDecls = Args.hasArg(OPT_femit_all_decls);
   Opts.PICLevel = Args.getLastArgIntValue(OPT_pic_level, 0, Diags);

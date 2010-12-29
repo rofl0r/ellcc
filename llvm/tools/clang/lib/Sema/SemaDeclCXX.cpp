@@ -177,6 +177,12 @@ Sema::ActOnParamDefaultArgument(Decl *param, SourceLocation EqualLoc,
     return;
   }
 
+  // Check for unexpanded parameter packs.
+  if (DiagnoseUnexpandedParameterPack(DefaultArg, UPPC_DefaultArgument)) {
+    Param->setInvalidDecl();
+    return;
+  }    
+      
   // Check that the default argument is well-formed
   CheckDefaultArgumentVisitor DefaultArgChecker(DefaultArg, this);
   if (DefaultArgChecker.Visit(DefaultArg)) {
@@ -928,6 +934,7 @@ Sema::ActOnCXXMemberDeclarator(Scope *S, AccessSpecifier AS, Declarator &D,
     }
     
     // FIXME: Check for template parameters!
+    // FIXME: Check that the name is an identifier!
     Member = HandleField(S, cast<CXXRecordDecl>(CurContext), Loc, D, BitWidth,
                          AS);
     assert(Member && "HandleField never returns null");
@@ -1991,8 +1998,19 @@ DiagnoseBaseOrMemInitializerOrder(Sema &SemaRef,
   if (Constructor->getDeclContext()->isDependentContext())
     return;
 
-  if (SemaRef.Diags.getDiagnosticLevel(diag::warn_initializer_out_of_order)
-        == Diagnostic::Ignored)
+  // Don't check initializers order unless the warning is enabled at the
+  // location of at least one initializer. 
+  bool ShouldCheckOrder = false;
+  for (unsigned InitIndex = 0; InitIndex != NumInits; ++InitIndex) {
+    CXXBaseOrMemberInitializer *Init = Inits[InitIndex];
+    if (SemaRef.Diags.getDiagnosticLevel(diag::warn_initializer_out_of_order,
+                                         Init->getSourceLocation())
+          != Diagnostic::Ignored) {
+      ShouldCheckOrder = true;
+      break;
+    }
+  }
+  if (!ShouldCheckOrder)
     return;
   
   // Build the list of bases and members in the order that they'll
@@ -3536,6 +3554,10 @@ Decl *Sema::ActOnUsingDeclaration(Scope *S,
       << FixItHint::CreateInsertion(SS.getRange().getBegin(), "using ");
   }
 
+  if (DiagnoseUnexpandedParameterPack(SS, UPPC_UsingDeclaration) ||
+      DiagnoseUnexpandedParameterPack(TargetNameInfo, UPPC_UsingDeclaration))
+    return 0;
+
   NamedDecl *UD = BuildUsingDeclaration(S, AS, UsingLoc, SS,
                                         TargetNameInfo, AttrList,
                                         /* IsInstantiation */ false,
@@ -4029,6 +4051,10 @@ bool Sema::CheckUsingDeclQualifier(SourceLocation UsingLoc,
       << (NestedNameSpecifier*) SS.getScopeRep() << SS.getRange();
     return true;
   }
+
+  if (!NamedContext->isDependentContext() &&
+      RequireCompleteDeclContext(const_cast<CXXScopeSpec&>(SS), NamedContext))
+    return true;
 
   if (getLangOptions().CPlusPlus0x) {
     // C++0x [namespace.udecl]p3:
@@ -5501,11 +5527,21 @@ void Sema::AddCXXDirectInitializerToDecl(Decl *RealDecl,
     return;
   } 
 
+  bool IsDependent = false;
+  for (unsigned I = 0, N = Exprs.size(); I != N; ++I) {
+    if (DiagnoseUnexpandedParameterPack(Exprs.get()[I], UPPC_Expression)) {
+      VDecl->setInvalidDecl();
+      return;
+    }
+
+    if (Exprs.get()[I]->isTypeDependent())
+      IsDependent = true;
+  }
+
   // If either the declaration has a dependent type or if any of the
   // expressions is type-dependent, we represent the initialization
   // via a ParenListExpr for later use during template instantiation.
-  if (VDecl->getType()->isDependentType() ||
-      Expr::hasAnyTypeDependentArguments((Expr **)Exprs.get(), Exprs.size())) {
+  if (VDecl->getType()->isDependentType() || IsDependent) {
     // Let clients know that initialization was done with a direct initializer.
     VDecl->setCXXDirectInitializer(true);
 
@@ -6106,9 +6142,18 @@ VarDecl *Sema::BuildExceptionDeclaration(Scope *S,
 /// handler.
 Decl *Sema::ActOnExceptionDeclarator(Scope *S, Declarator &D) {
   TypeSourceInfo *TInfo = GetTypeForDeclarator(D, S);
+  bool Invalid = D.isInvalidType();
+
+  // Check for unexpanded parameter packs.
+  if (TInfo && DiagnoseUnexpandedParameterPack(D.getIdentifierLoc(), TInfo,
+                                               UPPC_ExceptionType)) {
+    TInfo = Context.getTrivialTypeSourceInfo(Context.IntTy, 
+                                             D.getIdentifierLoc());
+    Invalid = true;
+  }
+
   QualType ExDeclType = TInfo->getType();
 
-  bool Invalid = D.isInvalidType();
   IdentifierInfo *II = D.getIdentifier();
   if (NamedDecl *PrevDecl = LookupSingleName(S, II, D.getIdentifierLoc(),
                                              LookupOrdinaryName,
@@ -6163,6 +6208,9 @@ Decl *Sema::ActOnStaticAssertDeclaration(SourceLocation AssertLoc,
         << AssertMessage->getString() << AssertExpr->getSourceRange();
     }
   }
+
+  if (DiagnoseUnexpandedParameterPack(AssertExpr, UPPC_StaticAssertExpression))
+    return 0;
 
   Decl *Decl = StaticAssertDecl::Create(Context, CurContext, AssertLoc,
                                         AssertExpr, AssertMessage);
@@ -6364,6 +6412,9 @@ Decl *Sema::ActOnFriendTypeDecl(Scope *S, const DeclSpec &DS,
   if (TheDeclarator.isInvalidType())
     return 0;
 
+  if (DiagnoseUnexpandedParameterPack(Loc, TSI, UPPC_FriendDeclaration))
+    return 0;
+
   // This is definitely an error in C++98.  It's probably meant to
   // be forbidden in C++0x, too, but the specification is just
   // poorly written.
@@ -6462,6 +6513,12 @@ Decl *Sema::ActOnFriendFunctionDecl(Scope *S, Declarator &D, bool IsDefinition,
   DeclarationNameInfo NameInfo = GetNameForDeclarator(D);
   DeclarationName Name = NameInfo.getName();
   assert(Name);
+
+  // Check for unexpanded parameter packs.
+  if (DiagnoseUnexpandedParameterPack(Loc, TInfo, UPPC_FriendDeclaration) ||
+      DiagnoseUnexpandedParameterPack(NameInfo, UPPC_FriendDeclaration) ||
+      DiagnoseUnexpandedParameterPack(SS, UPPC_FriendDeclaration))
+    return 0;
 
   // The context we found the declaration in, or in which we should
   // create the declaration.

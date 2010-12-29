@@ -22,6 +22,7 @@
 #include "clang/Analysis/Support/BumpVector.h"
 #include "clang/Basic/SourceLocation.h"
 #include <cassert>
+#include <iterator>
 
 namespace llvm {
   class raw_ostream;
@@ -47,7 +48,6 @@ public:
   enum Kind {
     // main kind
     Statement,
-    StatementAsLValue,
     Initializer,
     ImplicitDtor,
     // dtor kind
@@ -94,18 +94,14 @@ public:
 class CFGStmt : public CFGElement {
 public:
   CFGStmt() {}
-  CFGStmt(Stmt *S, bool asLValue) : CFGElement(S, asLValue) {}
+  CFGStmt(Stmt *S) : CFGElement(S, 0) {}
 
   Stmt *getStmt() const { return static_cast<Stmt *>(Data1.getPointer()); }
 
   operator Stmt*() const { return getStmt(); }
 
-  bool asLValue() const { 
-    return static_cast<Kind>(Data1.getInt()) == StatementAsLValue;
-  }
-
   static bool classof(const CFGElement *E) {
-    return E->getKind() == Statement || E->getKind() == StatementAsLValue;
+    return E->getKind() == Statement;
   }
 };
 
@@ -492,12 +488,13 @@ public:
     Succs.push_back(Block, C);
   }
   
-  void appendStmt(Stmt* Statement, BumpVectorContext &C, bool asLValue) {
-    Elements.push_back(CFGStmt(Statement, asLValue), C);
+  void appendStmt(Stmt* statement, BumpVectorContext &C) {
+    Elements.push_back(CFGStmt(statement), C);
   }
 
-  void appendInitializer(CXXBaseOrMemberInitializer *I, BumpVectorContext& C) {
-    Elements.push_back(CFGInitializer(I), C);
+  void appendInitializer(CXXBaseOrMemberInitializer *initializer,
+                        BumpVectorContext& C) {
+    Elements.push_back(CFGInitializer(initializer), C);
   }
 
   void appendBaseDtor(const CXXBaseSpecifier *BS, BumpVectorContext &C) {

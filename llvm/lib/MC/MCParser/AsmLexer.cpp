@@ -15,6 +15,7 @@
 #include "llvm/Support/SMLoc.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/MC/MCAsmInfo.h"
+#include <cctype>
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
@@ -183,12 +184,12 @@ AsmToken AsmLexer::LexDigit() {
 
     long long Value;
     if (Result.getAsInteger(10, Value)) {
-      // We have to handle minint_as_a_positive_value specially, because
-      // - minint_as_a_positive_value = minint and it is valid.
-      if (Result == "9223372036854775808")
-        Value = -9223372036854775808ULL;
-      else
-        return ReturnError(TokStart, "Invalid decimal number");
+      // Allow positive values that are too large to fit into a signed 64-bit
+      // integer, but that do fit in an unsigned one, we just convert them over.
+      unsigned long long UValue;
+      if (Result.getAsInteger(10, UValue))
+        return ReturnError(TokStart, "invalid decimal number");
+      Value = (long long)UValue;
     }
     
     // The darwin/x86 (and x86-64) assembler accepts and ignores ULL and LL
@@ -264,6 +265,42 @@ AsmToken AsmLexer::LexDigit() {
   
   return AsmToken(AsmToken::Integer, Result, Value);
 }
+
+/// LexSingleQuote: Integer: 'b'
+AsmToken AsmLexer::LexSingleQuote() {
+  int CurChar = getNextChar();
+
+  if (CurChar == '\\')
+    CurChar = getNextChar();
+
+  if (CurChar == EOF)
+    return ReturnError(TokStart, "unterminated single quote");
+
+  CurChar = getNextChar();
+
+  if (CurChar != '\'')
+    return ReturnError(TokStart, "single quote way too long");
+
+  // The idea here being that 'c' is basically just an integral
+  // constant.
+  StringRef Res = StringRef(TokStart,CurPtr - TokStart);
+  long long Value;
+
+  if (Res.startswith("\'\\")) {
+    char theChar = Res[2];
+    switch (theChar) {
+      default: Value = theChar; break;
+      case '\'': Value = '\''; break;
+      case 't': Value = '\t'; break;
+      case 'n': Value = '\n'; break;
+      case 'b': Value = '\b'; break;
+    }
+  } else
+    Value = TokStart[1];
+
+  return AsmToken(AsmToken::Integer, Res, Value); 
+}
+
 
 /// LexQuote: String: "..."
 AsmToken AsmLexer::LexQuote() {
@@ -361,6 +398,7 @@ AsmToken AsmLexer::LexToken() {
   case '%': return AsmToken(AsmToken::Percent, StringRef(TokStart, 1));
   case '/': return LexSlash();
   case '#': return AsmToken(AsmToken::Hash, StringRef(TokStart, 1));
+  case '\'': return LexSingleQuote();
   case '"': return LexQuote();
   case '0': case '1': case '2': case '3': case '4':
   case '5': case '6': case '7': case '8': case '9':

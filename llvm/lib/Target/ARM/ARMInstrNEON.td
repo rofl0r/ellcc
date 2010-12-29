@@ -1724,6 +1724,15 @@ class N2VL<bits<2> op24_23, bits<2> op21_20, bits<2> op19_18,
         (ins DPR:$Vm), itin, OpcodeStr, Dt, "$Vd, $Vm", "",
         [(set QPR:$Vd, (TyQ (OpNode (TyD DPR:$Vm))))]>;
 
+// Long 2-register intrinsics.
+class N2VLInt<bits<2> op24_23, bits<2> op21_20, bits<2> op19_18,
+              bits<2> op17_16, bits<5> op11_7, bit op6, bit op4,
+              InstrItinClass itin, string OpcodeStr, string Dt,
+              ValueType TyQ, ValueType TyD, Intrinsic IntOp>
+  : N2V<op24_23, op21_20, op19_18, op17_16, op11_7, op6, op4, (outs QPR:$Vd),
+        (ins DPR:$Vm), itin, OpcodeStr, Dt, "$Vd, $Vm", "",
+        [(set QPR:$Vd, (TyQ (IntOp (TyD DPR:$Vm))))]>;
+
 // 2-register shuffles (VTRN/VZIP/VUZP), both double- and quad-register.
 class N2VDShuffle<bits<2> op19_18, bits<5> op11_7, string OpcodeStr, string Dt>
   : N2V<0b11, 0b11, op19_18, 0b10, op11_7, 0, 0, (outs DPR:$Vd, DPR:$Vm),
@@ -2341,9 +2350,10 @@ class N2VCvtQ<bit op24, bit op23, bits<4> op11_8, bit op7, bit op4,
 //   S = single int (32 bit) elements
 //   D = double int (64 bit) elements
 
-// Neon 2-register vector operations -- for disassembly only.
+// Neon 2-register vector operations and intrinsics.
 
-// First with only element sizes of 8, 16 and 32 bits:
+// Neon 2-register comparisons.
+//   source operand element sizes of 8, 16 and 32 bits:
 multiclass N2V_QHS_cmp<bits<2> op24_23, bits<2> op21_20, bits<2> op17_16,
                        bits<5> op11_7, bit op4, string opc, string Dt,
                        string asm, SDNode OpNode> {
@@ -2363,7 +2373,7 @@ multiclass N2V_QHS_cmp<bits<2> op24_23, bits<2> op21_20, bits<2> op17_16,
   def v2f32 : N2V<op24_23, op21_20, 0b10, op17_16, op11_7, 0, op4,
                   (outs DPR:$Vd), (ins DPR:$Vm), NoItinerary,
                   opc, "f32", asm, "",
-                  [(set DPR:$Vd, (v2f32 (OpNode (v2f32 DPR:$Vm))))]> {
+                  [(set DPR:$Vd, (v2i32 (OpNode (v2f32 DPR:$Vm))))]> {
     let Inst{10} = 1; // overwrite F = 1
   }
 
@@ -2383,10 +2393,83 @@ multiclass N2V_QHS_cmp<bits<2> op24_23, bits<2> op21_20, bits<2> op17_16,
   def v4f32 : N2V<op24_23, op21_20, 0b10, op17_16, op11_7, 1, op4,
                   (outs QPR:$Vd), (ins QPR:$Vm), NoItinerary,
                   opc, "f32", asm, "",
-                  [(set QPR:$Vd, (v4f32 (OpNode (v4f32 QPR:$Vm))))]> {
+                  [(set QPR:$Vd, (v4i32 (OpNode (v4f32 QPR:$Vm))))]> {
     let Inst{10} = 1; // overwrite F = 1
   }
 }
+
+
+// Neon 2-register vector intrinsics,
+//   element sizes of 8, 16 and 32 bits:
+multiclass N2VInt_QHS<bits<2> op24_23, bits<2> op21_20, bits<2> op17_16,
+                      bits<5> op11_7, bit op4,
+                      InstrItinClass itinD, InstrItinClass itinQ,
+                      string OpcodeStr, string Dt, Intrinsic IntOp> {
+  // 64-bit vector types.
+  def v8i8  : N2VDInt<op24_23, op21_20, 0b00, op17_16, op11_7, op4,
+                      itinD, OpcodeStr, !strconcat(Dt, "8"), v8i8, v8i8, IntOp>;
+  def v4i16 : N2VDInt<op24_23, op21_20, 0b01, op17_16, op11_7, op4,
+                      itinD, OpcodeStr, !strconcat(Dt, "16"),v4i16,v4i16,IntOp>;
+  def v2i32 : N2VDInt<op24_23, op21_20, 0b10, op17_16, op11_7, op4,
+                      itinD, OpcodeStr, !strconcat(Dt, "32"),v2i32,v2i32,IntOp>;
+
+  // 128-bit vector types.
+  def v16i8 : N2VQInt<op24_23, op21_20, 0b00, op17_16, op11_7, op4,
+                      itinQ, OpcodeStr, !strconcat(Dt, "8"), v16i8,v16i8,IntOp>;
+  def v8i16 : N2VQInt<op24_23, op21_20, 0b01, op17_16, op11_7, op4,
+                      itinQ, OpcodeStr, !strconcat(Dt, "16"),v8i16,v8i16,IntOp>;
+  def v4i32 : N2VQInt<op24_23, op21_20, 0b10, op17_16, op11_7, op4,
+                      itinQ, OpcodeStr, !strconcat(Dt, "32"),v4i32,v4i32,IntOp>;
+}
+
+
+// Neon Narrowing 2-register vector operations,
+//   source operand element sizes of 16, 32 and 64 bits:
+multiclass N2VN_HSD<bits<2> op24_23, bits<2> op21_20, bits<2> op17_16,
+                    bits<5> op11_7, bit op6, bit op4,
+                    InstrItinClass itin, string OpcodeStr, string Dt,
+                    SDNode OpNode> {
+  def v8i8  : N2VN<op24_23, op21_20, 0b00, op17_16, op11_7, op6, op4,
+                   itin, OpcodeStr, !strconcat(Dt, "16"),
+                   v8i8, v8i16, OpNode>;
+  def v4i16 : N2VN<op24_23, op21_20, 0b01, op17_16, op11_7, op6, op4,
+                   itin, OpcodeStr, !strconcat(Dt, "32"),
+                   v4i16, v4i32, OpNode>;
+  def v2i32 : N2VN<op24_23, op21_20, 0b10, op17_16, op11_7, op6, op4,
+                   itin, OpcodeStr, !strconcat(Dt, "64"),
+                   v2i32, v2i64, OpNode>;
+}
+
+// Neon Narrowing 2-register vector intrinsics,
+//   source operand element sizes of 16, 32 and 64 bits:
+multiclass N2VNInt_HSD<bits<2> op24_23, bits<2> op21_20, bits<2> op17_16,
+                       bits<5> op11_7, bit op6, bit op4,
+                       InstrItinClass itin, string OpcodeStr, string Dt,
+                       Intrinsic IntOp> {
+  def v8i8  : N2VNInt<op24_23, op21_20, 0b00, op17_16, op11_7, op6, op4,
+                      itin, OpcodeStr, !strconcat(Dt, "16"),
+                      v8i8, v8i16, IntOp>;
+  def v4i16 : N2VNInt<op24_23, op21_20, 0b01, op17_16, op11_7, op6, op4,
+                      itin, OpcodeStr, !strconcat(Dt, "32"),
+                      v4i16, v4i32, IntOp>;
+  def v2i32 : N2VNInt<op24_23, op21_20, 0b10, op17_16, op11_7, op6, op4,
+                      itin, OpcodeStr, !strconcat(Dt, "64"),
+                      v2i32, v2i64, IntOp>;
+}
+
+
+// Neon Lengthening 2-register vector intrinsic (currently specific to VMOVL).
+//   source operand element sizes of 16, 32 and 64 bits:
+multiclass N2VL_QHS<bits<2> op24_23, bits<5> op11_7, bit op6, bit op4,
+                    string OpcodeStr, string Dt, SDNode OpNode> {
+  def v8i16 : N2VL<op24_23, 0b00, 0b10, 0b00, op11_7, op6, op4, IIC_VQUNAiD,
+                   OpcodeStr, !strconcat(Dt, "8"), v8i16, v8i8, OpNode>;
+  def v4i32 : N2VL<op24_23, 0b01, 0b00, 0b00, op11_7, op6, op4, IIC_VQUNAiD,
+                   OpcodeStr, !strconcat(Dt, "16"), v4i32, v4i16, OpNode>;
+  def v2i64 : N2VL<op24_23, 0b10, 0b00, 0b00, op11_7, op6, op4, IIC_VQUNAiD,
+                   OpcodeStr, !strconcat(Dt, "32"), v2i64, v2i32, OpNode>;
+}
+
 
 // Neon 3-register vector operations.
 
@@ -2443,54 +2526,6 @@ multiclass N3V_QHSD<bit op24, bit op23, bits<4> op11_8, bit op4,
   def v2i64 : N3VQ<op24, op23, 0b11, op11_8, op4, itinQ,
                    OpcodeStr, !strconcat(Dt, "64"),
                    v2i64, v2i64, OpNode, Commutable>;
-}
-
-
-// Neon Narrowing 2-register vector operations,
-//   source operand element sizes of 16, 32 and 64 bits:
-multiclass N2VN_HSD<bits<2> op24_23, bits<2> op21_20, bits<2> op17_16,
-                    bits<5> op11_7, bit op6, bit op4,
-                    InstrItinClass itin, string OpcodeStr, string Dt,
-                    SDNode OpNode> {
-  def v8i8  : N2VN<op24_23, op21_20, 0b00, op17_16, op11_7, op6, op4,
-                   itin, OpcodeStr, !strconcat(Dt, "16"),
-                   v8i8, v8i16, OpNode>;
-  def v4i16 : N2VN<op24_23, op21_20, 0b01, op17_16, op11_7, op6, op4,
-                   itin, OpcodeStr, !strconcat(Dt, "32"),
-                   v4i16, v4i32, OpNode>;
-  def v2i32 : N2VN<op24_23, op21_20, 0b10, op17_16, op11_7, op6, op4,
-                   itin, OpcodeStr, !strconcat(Dt, "64"),
-                   v2i32, v2i64, OpNode>;
-}
-
-// Neon Narrowing 2-register vector intrinsics,
-//   source operand element sizes of 16, 32 and 64 bits:
-multiclass N2VNInt_HSD<bits<2> op24_23, bits<2> op21_20, bits<2> op17_16,
-                       bits<5> op11_7, bit op6, bit op4,
-                       InstrItinClass itin, string OpcodeStr, string Dt,
-                       Intrinsic IntOp> {
-  def v8i8  : N2VNInt<op24_23, op21_20, 0b00, op17_16, op11_7, op6, op4,
-                      itin, OpcodeStr, !strconcat(Dt, "16"),
-                      v8i8, v8i16, IntOp>;
-  def v4i16 : N2VNInt<op24_23, op21_20, 0b01, op17_16, op11_7, op6, op4,
-                      itin, OpcodeStr, !strconcat(Dt, "32"),
-                      v4i16, v4i32, IntOp>;
-  def v2i32 : N2VNInt<op24_23, op21_20, 0b10, op17_16, op11_7, op6, op4,
-                      itin, OpcodeStr, !strconcat(Dt, "64"),
-                      v2i32, v2i64, IntOp>;
-}
-
-
-// Neon Lengthening 2-register vector intrinsic (currently specific to VMOVL).
-//   source operand element sizes of 16, 32 and 64 bits:
-multiclass N2VL_QHS<bits<2> op24_23, bits<5> op11_7, bit op6, bit op4,
-                    string OpcodeStr, string Dt, SDNode OpNode> {
-  def v8i16 : N2VL<op24_23, 0b00, 0b10, 0b00, op11_7, op6, op4, IIC_VQUNAiD,
-                   OpcodeStr, !strconcat(Dt, "8"), v8i16, v8i8, OpNode>;
-  def v4i32 : N2VL<op24_23, 0b01, 0b00, 0b00, op11_7, op6, op4, IIC_VQUNAiD,
-                   OpcodeStr, !strconcat(Dt, "16"), v4i32, v4i16, OpNode>;
-  def v2i64 : N2VL<op24_23, 0b10, 0b00, 0b00, op11_7, op6, op4, IIC_VQUNAiD,
-                   OpcodeStr, !strconcat(Dt, "32"), v2i64, v2i32, OpNode>;
 }
 
 
@@ -2892,30 +2927,6 @@ multiclass N3VLIntExtOp_QHS<bit op24, bit op23, bits<4> op11_8, bit op4,
   def v2i64 : N3VLIntExtOp<op24, op23, 0b10, op11_8, op4, itin,
                            OpcodeStr, !strconcat(Dt, "32"), v2i64, v2i32,
                            IntOp, ExtOp, OpNode>;
-}
-
-
-// Neon 2-register vector intrinsics,
-//   element sizes of 8, 16 and 32 bits:
-multiclass N2VInt_QHS<bits<2> op24_23, bits<2> op21_20, bits<2> op17_16,
-                      bits<5> op11_7, bit op4,
-                      InstrItinClass itinD, InstrItinClass itinQ,
-                      string OpcodeStr, string Dt, Intrinsic IntOp> {
-  // 64-bit vector types.
-  def v8i8  : N2VDInt<op24_23, op21_20, 0b00, op17_16, op11_7, op4,
-                      itinD, OpcodeStr, !strconcat(Dt, "8"), v8i8, v8i8, IntOp>;
-  def v4i16 : N2VDInt<op24_23, op21_20, 0b01, op17_16, op11_7, op4,
-                      itinD, OpcodeStr, !strconcat(Dt, "16"),v4i16,v4i16,IntOp>;
-  def v2i32 : N2VDInt<op24_23, op21_20, 0b10, op17_16, op11_7, op4,
-                      itinD, OpcodeStr, !strconcat(Dt, "32"),v2i32,v2i32,IntOp>;
-
-  // 128-bit vector types.
-  def v16i8 : N2VQInt<op24_23, op21_20, 0b00, op17_16, op11_7, op4,
-                      itinQ, OpcodeStr, !strconcat(Dt, "8"), v16i8,v16i8,IntOp>;
-  def v8i16 : N2VQInt<op24_23, op21_20, 0b01, op17_16, op11_7, op4,
-                      itinQ, OpcodeStr, !strconcat(Dt, "16"),v8i16,v8i16,IntOp>;
-  def v4i32 : N2VQInt<op24_23, op21_20, 0b10, op17_16, op11_7, op4,
-                      itinQ, OpcodeStr, !strconcat(Dt, "32"),v4i32,v4i32,IntOp>;
 }
 
 
@@ -4446,6 +4457,16 @@ def VCVTxs2fq : N2VCvtQ<0, 1, 0b1110, 0, 1, "vcvt", "f32.s32",
                         v4f32, v4i32, int_arm_neon_vcvtfxs2fp>;
 def VCVTxu2fq : N2VCvtQ<1, 1, 0b1110, 0, 1, "vcvt", "f32.u32",
                         v4f32, v4i32, int_arm_neon_vcvtfxu2fp>;
+
+//   VCVT     : Vector Convert Between Half-Precision and Single-Precision.
+def  VCVTf2h  : N2VNInt<0b11, 0b11, 0b01, 0b10, 0b01100, 0, 0,
+                        IIC_VUNAQ, "vcvt", "f16.f32",
+                        v4i16, v4f32, int_arm_neon_vcvtfp2hf>,
+                Requires<[HasNEON, HasFP16]>;
+def  VCVTh2f  : N2VLInt<0b11, 0b11, 0b01, 0b10, 0b01110, 0, 0,
+                        IIC_VUNAQ, "vcvt", "f32.f16",
+                        v4f32, v4i16, int_arm_neon_vcvthf2fp>,
+                Requires<[HasNEON, HasFP16]>;
 
 // Vector Reverse.
 

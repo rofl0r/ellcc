@@ -228,13 +228,13 @@ static bool ExecuteAssembler(AssemblerInvocation &Opts, Diagnostic &Diags) {
     return false;
   }
 
-  error_code ec;
-  MemoryBuffer *Buffer = MemoryBuffer::getFileOrSTDIN(Opts.InputFile, ec);
-  if (Buffer == 0) {
+  OwningPtr<MemoryBuffer> BufferPtr;
+  if (error_code ec = MemoryBuffer::getFileOrSTDIN(Opts.InputFile, BufferPtr)) {
     Error = ec.message();
     Diags.Report(diag::err_fe_error_reading) << Opts.InputFile;
     return false;
   }
+  MemoryBuffer *Buffer = BufferPtr.take();
 
   SourceMgr SrcMgr;
 
@@ -274,10 +274,13 @@ static bool ExecuteAssembler(AssemblerInvocation &Opts, Diagnostic &Diags) {
     MCInstPrinter *IP =
       TheTarget->createMCInstPrinter(Opts.OutputAsmVariant, *MAI);
     MCCodeEmitter *CE = 0;
-    if (Opts.ShowEncoding)
+    TargetAsmBackend *TAB = 0;
+    if (Opts.ShowEncoding) {
       CE = TheTarget->createCodeEmitter(*TM, Ctx);
+      TAB = TheTarget->createAsmBackend(Opts.Triple);
+    }
     Str.reset(TheTarget->createAsmStreamer(Ctx, *Out, /*asmverbose*/true,
-                                           /*useLoc*/ true, IP, CE,
+                                           /*useLoc*/ true, IP, CE, TAB,
                                            Opts.ShowInst));
   } else if (Opts.OutputType == AssemblerInvocation::FT_Null) {
     Str.reset(createNullStreamer(Ctx));

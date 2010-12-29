@@ -15,6 +15,7 @@
 
 #include "clang/Sema/SemaInternal.h"
 #include "clang/Sema/Lookup.h"
+#include "clang/Sema/ParsedTemplate.h"
 #include "clang/Sema/SemaDiagnostic.h"
 #include "clang/Sema/ScopeInfo.h"
 #include "clang/AST/Decl.h"
@@ -90,7 +91,7 @@ template<typename Derived>
 class TreeTransform {
 protected:
   Sema &SemaRef;
-
+  
 public:
   /// \brief Initializes a new tree transformer.
   TreeTransform(Sema &SemaRef) : SemaRef(SemaRef) { }
@@ -178,6 +179,47 @@ public:
   /// CXXDefaultArgument nodes are dropped (prior to transformation).
   bool DropCallArgument(Expr *E) {
     return E->isDefaultArgument();
+  }
+  
+  /// \brief Determine whether we should expand a pack expansion with the
+  /// given set of parameter packs into separate arguments by repeatedly
+  /// transforming the pattern.
+  ///
+  /// By default, the transformer never tries to expand pack expansions.
+  /// Subclasses can override this routine to provide different behavior.
+  ///
+  /// \param EllipsisLoc The location of the ellipsis that identifies the
+  /// pack expansion.
+  ///
+  /// \param PatternRange The source range that covers the entire pattern of
+  /// the pack expansion.
+  ///
+  /// \param Unexpanded The set of unexpanded parameter packs within the 
+  /// pattern.
+  ///
+  /// \param NumUnexpanded The number of unexpanded parameter packs in
+  /// \p Unexpanded.
+  ///
+  /// \param ShouldExpand Will be set to \c true if the transformer should
+  /// expand the corresponding pack expansions into separate arguments. When
+  /// set, \c NumExpansions must also be set.
+  ///
+  /// \param NumExpansions The number of separate arguments that will be in
+  /// the expanded form of the corresponding pack expansion. Must be set when
+  /// \c ShouldExpand is \c true.
+  ///
+  /// \returns true if an error occurred (e.g., because the parameter packs 
+  /// are to be instantiated with arguments of different lengths), false 
+  /// otherwise. If false, \c ShouldExpand (and possibly \c NumExpansions) 
+  /// must be set.
+  bool TryExpandParameterPacks(SourceLocation EllipsisLoc,
+                               SourceRange PatternRange,
+                               const UnexpandedParameterPack *Unexpanded,
+                               unsigned NumUnexpanded,
+                               bool &ShouldExpand,
+                               unsigned &NumExpansions) {
+    ShouldExpand = false;
+    return false;
   }
   
   /// \brief Transforms the given type into another type.
@@ -294,6 +336,49 @@ public:
   /// Returns true if there was an error.
   bool TransformTemplateArgument(const TemplateArgumentLoc &Input,
                                  TemplateArgumentLoc &Output);
+
+  /// \brief Transform the given set of template arguments.
+  ///
+  /// By default, this operation transforms all of the template arguments 
+  /// in the input set using \c TransformTemplateArgument(), and appends
+  /// the transformed arguments to the output list.
+  ///
+  /// Note that this overload of \c TransformTemplateArguments() is merely
+  /// a convenience function. Subclasses that wish to override this behavior
+  /// should override the iterator-based member template version.
+  ///
+  /// \param Inputs The set of template arguments to be transformed.
+  ///
+  /// \param NumInputs The number of template arguments in \p Inputs.
+  ///
+  /// \param Outputs The set of transformed template arguments output by this
+  /// routine.
+  ///
+  /// Returns true if an error occurred.
+  bool TransformTemplateArguments(const TemplateArgumentLoc *Inputs,
+                                  unsigned NumInputs,
+                                  TemplateArgumentListInfo &Outputs) {
+    return TransformTemplateArguments(Inputs, Inputs + NumInputs, Outputs);
+  }
+
+  /// \brief Transform the given set of template arguments.
+  ///
+  /// By default, this operation transforms all of the template arguments 
+  /// in the input set using \c TransformTemplateArgument(), and appends
+  /// the transformed arguments to the output list. 
+  ///
+  /// \param First An iterator to the first template argument.
+  ///
+  /// \param Last An iterator one step past the last template argument.
+  ///
+  /// \param Outputs The set of transformed template arguments output by this
+  /// routine.
+  ///
+  /// Returns true if an error occurred.
+  template<typename InputIterator>
+  bool TransformTemplateArguments(InputIterator First,
+                                  InputIterator Last,
+                                  TemplateArgumentListInfo &Outputs);
 
   /// \brief Fakes up a TemplateArgumentLoc for a given TemplateArgument.
   void InventTemplateArgumentLoc(const TemplateArgument &Arg,
@@ -1982,6 +2067,36 @@ public:
     return move(Result);
   }
 
+  /// \brief Build a new template argument pack expansion.
+  ///
+  /// By default, performs semantic analysis to build a new pack expansion
+  /// for a template argument. Subclasses may override this routine to provide 
+  /// different behavior.
+  TemplateArgumentLoc RebuildPackExpansion(TemplateArgumentLoc Pattern,
+                                           SourceLocation EllipsisLoc) {
+    switch (Pattern.getArgument().getKind()) {
+    case TemplateArgument::Expression:
+    case TemplateArgument::Template:
+      llvm_unreachable("Unsupported pack expansion of expressions/templates");
+        
+    case TemplateArgument::Null:
+    case TemplateArgument::Integral:
+    case TemplateArgument::Declaration:
+    case TemplateArgument::Pack:
+      llvm_unreachable("Pack expansion pattern has no parameter packs");
+        
+    case TemplateArgument::Type:
+      if (TypeSourceInfo *Expansion 
+            = getSema().CheckPackExpansion(Pattern.getTypeSourceInfo(),
+                                           EllipsisLoc))
+        return TemplateArgumentLoc(TemplateArgument(Expansion->getType()),
+                                   Expansion);
+      break;
+    }
+    
+    return TemplateArgumentLoc();
+  }
+  
 private:
   QualType TransformTypeInObjectScope(QualType T,
                                       QualType ObjectType,
@@ -2396,6 +2511,157 @@ bool TreeTransform<Derived>::TransformTemplateArgument(
 
   // Work around bogus GCC warning
   return true;
+}
+
+/// \brief Iterator adaptor that invents template argument location information
+/// for each of the template arguments in its underlying iterator.
+template<typename Derived, typename InputIterator>
+class TemplateArgumentLocInventIterator {
+  TreeTransform<Derived> &Self;
+  InputIterator Iter;
+  
+public:
+  typedef TemplateArgumentLoc value_type;
+  typedef TemplateArgumentLoc reference;
+  typedef typename std::iterator_traits<InputIterator>::difference_type
+    difference_type;
+  typedef std::input_iterator_tag iterator_category;
+  
+  class pointer {
+    TemplateArgumentLoc Arg;
+    
+  public:
+    explicit pointer(TemplateArgumentLoc Arg) : Arg(Arg) { }
+    
+    const TemplateArgumentLoc *operator->() const { return &Arg; }
+  };
+  
+  TemplateArgumentLocInventIterator() { }
+  
+  explicit TemplateArgumentLocInventIterator(TreeTransform<Derived> &Self,
+                                             InputIterator Iter)
+    : Self(Self), Iter(Iter) { }
+  
+  TemplateArgumentLocInventIterator &operator++() {
+    ++Iter;
+    return *this;
+  }
+  
+  TemplateArgumentLocInventIterator operator++(int) {
+    TemplateArgumentLocInventIterator Old(*this);
+    ++(*this);
+    return Old;
+  }
+  
+  reference operator*() const {
+    TemplateArgumentLoc Result;
+    Self.InventTemplateArgumentLoc(*Iter, Result);
+    return Result;
+  }
+  
+  pointer operator->() const { return pointer(**this); }
+  
+  friend bool operator==(const TemplateArgumentLocInventIterator &X,
+                         const TemplateArgumentLocInventIterator &Y) {
+    return X.Iter == Y.Iter;
+  }
+
+  friend bool operator!=(const TemplateArgumentLocInventIterator &X,
+                         const TemplateArgumentLocInventIterator &Y) {
+    return X.Iter != Y.Iter;
+  }
+};
+  
+template<typename Derived>
+template<typename InputIterator>
+bool TreeTransform<Derived>::TransformTemplateArguments(InputIterator First,
+                                                        InputIterator Last,
+                                            TemplateArgumentListInfo &Outputs) {
+  for (; First != Last; ++First) {
+    TemplateArgumentLoc Out;
+    TemplateArgumentLoc In = *First;
+    
+    if (In.getArgument().getKind() == TemplateArgument::Pack) {
+      // Unpack argument packs, which we translate them into separate
+      // arguments.
+      // FIXME: We could do much better if we could guarantee that the
+      // TemplateArgumentLocInfo for the pack expansion would be usable for
+      // all of the template arguments in the argument pack.
+      typedef TemplateArgumentLocInventIterator<Derived, 
+                                                TemplateArgument::pack_iterator>
+        PackLocIterator;
+      if (TransformTemplateArguments(PackLocIterator(*this, 
+                                                 In.getArgument().pack_begin()),
+                                     PackLocIterator(*this,
+                                                   In.getArgument().pack_end()),
+                                     Outputs))
+        return true;
+      
+      continue;
+    }
+    
+    if (In.getArgument().isPackExpansion()) {
+      // We have a pack expansion, for which we will be substituting into
+      // the pattern.
+      SourceLocation Ellipsis;
+      TemplateArgumentLoc Pattern
+        = In.getPackExpansionPattern(Ellipsis, getSema().Context);
+      
+      llvm::SmallVector<UnexpandedParameterPack, 2> Unexpanded;
+      getSema().collectUnexpandedParameterPacks(Pattern, Unexpanded);
+      assert(!Unexpanded.empty() && "Pack expansion without parameter packs?");
+      
+      // Determine whether the set of unexpanded parameter packs can and should
+      // be expanded.
+      bool Expand = true;
+      unsigned NumExpansions = 0;
+      if (getDerived().TryExpandParameterPacks(Ellipsis,
+                                               Pattern.getSourceRange(),
+                                               Unexpanded.data(),
+                                               Unexpanded.size(),
+                                               Expand, NumExpansions))
+        return true;
+      
+      if (!Expand) {
+        // The transform has determined that we should perform a simple
+        // transformation on the pack expansion, producing another pack 
+        // expansion.
+        TemplateArgumentLoc OutPattern;
+        Sema::ArgumentPackSubstitutionIndexRAII SubstIndex(getSema(), -1);
+        if (getDerived().TransformTemplateArgument(Pattern, OutPattern))
+          return true;
+                
+        Out = getDerived().RebuildPackExpansion(OutPattern, Ellipsis);
+        if (Out.getArgument().isNull())
+          return true;
+        
+        Outputs.addArgument(Out);
+        continue;
+      }
+      
+      // The transform has determined that we should perform an elementwise
+      // expansion of the pattern. Do so.
+      for (unsigned I = 0; I != NumExpansions; ++I) {
+        Sema::ArgumentPackSubstitutionIndexRAII SubstIndex(getSema(), I);
+
+        if (getDerived().TransformTemplateArgument(Pattern, Out))
+          return true;
+        
+        Outputs.addArgument(Out);
+      }
+      
+      continue;
+    }
+    
+    // The simple case: 
+    if (getDerived().TransformTemplateArgument(In, Out))
+      return true;
+    
+    Outputs.addArgument(Out);
+  }
+  
+  return false;
+
 }
 
 //===----------------------------------------------------------------------===//
@@ -3307,23 +3573,87 @@ QualType TreeTransform<Derived>::TransformTemplateSpecializationType(
   return getDerived().TransformTemplateSpecializationType(TLB, TL, Template);
 }
 
+namespace {
+  /// \brief Simple iterator that traverses the template arguments in a 
+  /// container that provides a \c getArgLoc() member function.
+  ///
+  /// This iterator is intended to be used with the iterator form of
+  /// \c TreeTransform<Derived>::TransformTemplateArguments().
+  template<typename ArgLocContainer>
+  class TemplateArgumentLocContainerIterator {
+    ArgLocContainer *Container;
+    unsigned Index;
+    
+  public:
+    typedef TemplateArgumentLoc value_type;
+    typedef TemplateArgumentLoc reference;
+    typedef int difference_type;
+    typedef std::input_iterator_tag iterator_category;
+    
+    class pointer {
+      TemplateArgumentLoc Arg;
+      
+    public:
+      explicit pointer(TemplateArgumentLoc Arg) : Arg(Arg) { }
+      
+      const TemplateArgumentLoc *operator->() const {
+        return &Arg;
+      }
+    };
+    
+    
+    TemplateArgumentLocContainerIterator() {}
+    
+    TemplateArgumentLocContainerIterator(ArgLocContainer &Container,
+                                 unsigned Index)
+      : Container(&Container), Index(Index) { }
+    
+    TemplateArgumentLocContainerIterator &operator++() {
+      ++Index;
+      return *this;
+    }
+    
+    TemplateArgumentLocContainerIterator operator++(int) {
+      TemplateArgumentLocContainerIterator Old(*this);
+      ++(*this);
+      return Old;
+    }
+    
+    TemplateArgumentLoc operator*() const {
+      return Container->getArgLoc(Index);
+    }
+    
+    pointer operator->() const {
+      return pointer(Container->getArgLoc(Index));
+    }
+    
+    friend bool operator==(const TemplateArgumentLocContainerIterator &X,
+                           const TemplateArgumentLocContainerIterator &Y) {
+      return X.Container == Y.Container && X.Index == Y.Index;
+    }
+    
+    friend bool operator!=(const TemplateArgumentLocContainerIterator &X,
+                           const TemplateArgumentLocContainerIterator &Y) {
+      return !(X == Y);
+    }
+  };
+}
+  
+  
 template <typename Derived>
 QualType TreeTransform<Derived>::TransformTemplateSpecializationType(
                                                         TypeLocBuilder &TLB,
                                            TemplateSpecializationTypeLoc TL,
                                                       TemplateName Template) {
-  const TemplateSpecializationType *T = TL.getTypePtr();
-
   TemplateArgumentListInfo NewTemplateArgs;
   NewTemplateArgs.setLAngleLoc(TL.getLAngleLoc());
   NewTemplateArgs.setRAngleLoc(TL.getRAngleLoc());
-
-  for (unsigned i = 0, e = T->getNumArgs(); i != e; ++i) {
-    TemplateArgumentLoc Loc;
-    if (getDerived().TransformTemplateArgument(TL.getArgLoc(i), Loc))
-      return QualType();
-    NewTemplateArgs.addArgument(Loc);
-  }
+  typedef TemplateArgumentLocContainerIterator<TemplateSpecializationTypeLoc>
+    ArgIterator;
+  if (getDerived().TransformTemplateArguments(ArgIterator(TL, 0), 
+                                              ArgIterator(TL, TL.getNumArgs()),
+                                              NewTemplateArgs))
+    return QualType();
 
   // FIXME: maybe don't rebuild if all the template arguments are the same.
 
@@ -3465,13 +3795,13 @@ QualType TreeTransform<Derived>::
   TemplateArgumentListInfo NewTemplateArgs;
   NewTemplateArgs.setLAngleLoc(TL.getLAngleLoc());
   NewTemplateArgs.setRAngleLoc(TL.getRAngleLoc());
-
-  for (unsigned I = 0, E = T->getNumArgs(); I != E; ++I) {
-    TemplateArgumentLoc Loc;
-    if (getDerived().TransformTemplateArgument(TL.getArgLoc(I), Loc))
-      return QualType();
-    NewTemplateArgs.addArgument(Loc);
-  }
+            
+  typedef TemplateArgumentLocContainerIterator<
+                            DependentTemplateSpecializationTypeLoc> ArgIterator;
+  if (getDerived().TransformTemplateArguments(ArgIterator(TL, 0),
+                                              ArgIterator(TL, TL.getNumArgs()),
+                                              NewTemplateArgs))
+    return QualType();
 
   QualType Result
     = getDerived().RebuildDependentTemplateSpecializationType(T->getKeyword(),
@@ -3503,6 +3833,15 @@ QualType TreeTransform<Derived>::
     TLB.pushFullCopy(NewTL);
   }
   return Result;
+}
+
+template<typename Derived>
+QualType TreeTransform<Derived>::TransformPackExpansionType(TypeLocBuilder &TLB,
+                                                      PackExpansionTypeLoc TL) {
+  // FIXME: Implement!
+  getSema().Diag(TL.getEllipsisLoc(), 
+                 diag::err_pack_expansion_instantiation_unsupported);
+  return QualType();
 }
 
 template<typename Derived>
@@ -3672,9 +4011,8 @@ TreeTransform<Derived>::TransformIfStmt(IfStmt *S) {
     
     // Convert the condition to a boolean value.
     if (S->getCond()) {
-      ExprResult CondE = getSema().ActOnBooleanCondition(0, 
-                                                               S->getIfLoc(), 
-                                                               Cond.get());
+      ExprResult CondE = getSema().ActOnBooleanCondition(0, S->getIfLoc(), 
+                                                         Cond.get());
       if (CondE.isInvalid())
         return StmtError();
     
@@ -3768,9 +4106,8 @@ TreeTransform<Derived>::TransformWhileStmt(WhileStmt *S) {
 
     if (S->getCond()) {
       // Convert the condition to a boolean value.
-      ExprResult CondE = getSema().ActOnBooleanCondition(0, 
-                                                             S->getWhileLoc(), 
-                                                               Cond.get());
+      ExprResult CondE = getSema().ActOnBooleanCondition(0, S->getWhileLoc(), 
+                                                         Cond.get());
       if (CondE.isInvalid())
         return StmtError();
       Cond = CondE;
@@ -3846,9 +4183,8 @@ TreeTransform<Derived>::TransformForStmt(ForStmt *S) {
 
     if (S->getCond()) {
       // Convert the condition to a boolean value.
-      ExprResult CondE = getSema().ActOnBooleanCondition(0, 
-                                                               S->getForLoc(), 
-                                                               Cond.get());
+      ExprResult CondE = getSema().ActOnBooleanCondition(0, S->getForLoc(), 
+                                                         Cond.get());
       if (CondE.isInvalid())
         return StmtError();
 
@@ -4327,12 +4663,10 @@ TreeTransform<Derived>::TransformDeclRefExpr(DeclRefExpr *E) {
     TemplateArgs = &TransArgs;
     TransArgs.setLAngleLoc(E->getLAngleLoc());
     TransArgs.setRAngleLoc(E->getRAngleLoc());
-    for (unsigned I = 0, N = E->getNumTemplateArgs(); I != N; ++I) {
-      TemplateArgumentLoc Loc;
-      if (getDerived().TransformTemplateArgument(E->getTemplateArgs()[I], Loc))
-        return ExprError();
-      TransArgs.addArgument(Loc);
-    }
+    if (getDerived().TransformTemplateArguments(E->getTemplateArgs(),
+                                                E->getNumTemplateArgs(),
+                                                TransArgs))
+      return ExprError();
   }
 
   return getDerived().RebuildDeclRefExpr(Qualifier, E->getQualifierRange(),
@@ -4615,12 +4949,10 @@ TreeTransform<Derived>::TransformMemberExpr(MemberExpr *E) {
   if (E->hasExplicitTemplateArgs()) {
     TransArgs.setLAngleLoc(E->getLAngleLoc());
     TransArgs.setRAngleLoc(E->getRAngleLoc());
-    for (unsigned I = 0, N = E->getNumTemplateArgs(); I != N; ++I) {
-      TemplateArgumentLoc Loc;
-      if (getDerived().TransformTemplateArgument(E->getTemplateArgs()[I], Loc))
-        return ExprError();
-      TransArgs.addArgument(Loc);
-    }
+    if (getDerived().TransformTemplateArguments(E->getTemplateArgs(),
+                                                E->getNumTemplateArgs(),
+                                                TransArgs))
+      return ExprError();
   }
   
   // FIXME: Bogus source location for the operator
@@ -5644,12 +5976,10 @@ TreeTransform<Derived>::TransformUnresolvedLookupExpr(
   // If we have template arguments, rebuild them, then rebuild the
   // templateid expression.
   TemplateArgumentListInfo TransArgs(Old->getLAngleLoc(), Old->getRAngleLoc());
-  for (unsigned I = 0, N = Old->getNumTemplateArgs(); I != N; ++I) {
-    TemplateArgumentLoc Loc;
-    if (getDerived().TransformTemplateArgument(Old->getTemplateArgs()[I], Loc))
-      return ExprError();
-    TransArgs.addArgument(Loc);
-  }
+  if (getDerived().TransformTemplateArguments(Old->getTemplateArgs(),
+                                              Old->getNumTemplateArgs(),
+                                              TransArgs))
+    return ExprError();
 
   return getDerived().RebuildTemplateIdExpr(SS, R, Old->requiresADL(),
                                             TransArgs);
@@ -5727,12 +6057,10 @@ TreeTransform<Derived>::TransformDependentScopeDeclRefExpr(
   }
 
   TemplateArgumentListInfo TransArgs(E->getLAngleLoc(), E->getRAngleLoc());
-  for (unsigned I = 0, N = E->getNumTemplateArgs(); I != N; ++I) {
-    TemplateArgumentLoc Loc;
-    if (getDerived().TransformTemplateArgument(E->getTemplateArgs()[I], Loc))
-      return ExprError();
-    TransArgs.addArgument(Loc);
-  }
+  if (getDerived().TransformTemplateArguments(E->getTemplateArgs(),
+                                              E->getNumTemplateArgs(),
+                                              TransArgs))
+    return ExprError();
 
   return getDerived().RebuildDependentScopeDeclRefExpr(NNS,
                                                        E->getQualifierRange(),
@@ -5984,12 +6312,10 @@ TreeTransform<Derived>::TransformCXXDependentScopeMemberExpr(
   }
 
   TemplateArgumentListInfo TransArgs(E->getLAngleLoc(), E->getRAngleLoc());
-  for (unsigned I = 0, N = E->getNumTemplateArgs(); I != N; ++I) {
-    TemplateArgumentLoc Loc;
-    if (getDerived().TransformTemplateArgument(E->getTemplateArgs()[I], Loc))
-      return ExprError();
-    TransArgs.addArgument(Loc);
-  }
+  if (getDerived().TransformTemplateArguments(E->getTemplateArgs(),
+                                              E->getNumTemplateArgs(),
+                                              TransArgs))
+    return ExprError();
 
   return getDerived().RebuildCXXDependentScopeMemberExpr(Base.get(),
                                                      BaseType,
@@ -6074,13 +6400,10 @@ TreeTransform<Derived>::TransformUnresolvedMemberExpr(UnresolvedMemberExpr *Old)
   if (Old->hasExplicitTemplateArgs()) {
     TransArgs.setLAngleLoc(Old->getLAngleLoc());
     TransArgs.setRAngleLoc(Old->getRAngleLoc());
-    for (unsigned I = 0, N = Old->getNumTemplateArgs(); I != N; ++I) {
-      TemplateArgumentLoc Loc;
-      if (getDerived().TransformTemplateArgument(Old->getTemplateArgs()[I],
-                                                 Loc))
-        return ExprError();
-      TransArgs.addArgument(Loc);
-    }
+    if (getDerived().TransformTemplateArguments(Old->getTemplateArgs(),
+                                                Old->getNumTemplateArgs(),
+                                                TransArgs))
+      return ExprError();
   }
 
   // FIXME: to do this check properly, we will need to preserve the

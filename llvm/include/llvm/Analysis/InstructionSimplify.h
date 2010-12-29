@@ -11,7 +11,8 @@
 // that do not require creating new instructions.  This does constant folding
 // ("add i32 1, 1" -> "2") but can also handle non-constant operands, either
 // returning a constant ("and i32 %x, 0" -> "0") or an already existing value
-// ("and i32 %x, %x" -> "%x").
+// ("and i32 %x, %x" -> "%x").  If the simplification is also an instruction
+// then it dominates the original instruction.
 //
 //===----------------------------------------------------------------------===//
 
@@ -29,9 +30,19 @@ namespace llvm {
   Value *SimplifyAddInst(Value *LHS, Value *RHS, bool isNSW, bool isNUW,
                          const TargetData *TD = 0, const DominatorTree *DT = 0);
 
+  /// SimplifySubInst - Given operands for a Sub, see if we can
+  /// fold the result.  If not, this returns null.
+  Value *SimplifySubInst(Value *LHS, Value *RHS, bool isNSW, bool isNUW,
+                         const TargetData *TD = 0, const DominatorTree *DT = 0);
+
   /// SimplifyAndInst - Given operands for an And, see if we can
   /// fold the result.  If not, this returns null.
   Value *SimplifyAndInst(Value *LHS, Value *RHS, const TargetData *TD = 0,
+                         const DominatorTree *DT = 0);
+
+  /// SimplifyMulInst - Given operands for a Mul, see if we can
+  /// fold the result.  If not, this returns null.
+  Value *SimplifyMulInst(Value *LHS, Value *RHS, const TargetData *TD = 0,
                          const DominatorTree *DT = 0);
 
   /// SimplifyOrInst - Given operands for an Or, see if we can

@@ -64,7 +64,7 @@ std::string llvm::getEnumName(MVT::SimpleValueType T) {
   case MVT::f128:     return "MVT::f128";
   case MVT::ppcf128:  return "MVT::ppcf128";
   case MVT::x86mmx:   return "MVT::x86mmx";
-  case MVT::Flag:     return "MVT::Flag";
+  case MVT::Glue:     return "MVT::Glue";
   case MVT::isVoid:   return "MVT::isVoid";
   case MVT::v2i8:     return "MVT::v2i8";
   case MVT::v4i8:     return "MVT::v4i8";
@@ -108,7 +108,7 @@ std::string llvm::getQualifiedName(const Record *R) {
 
 /// getTarget - Return the current instance of the Target class.
 ///
-CodeGenTarget::CodeGenTarget(RecordKeeper& records) : Records(records) {
+CodeGenTarget::CodeGenTarget(RecordKeeper &records) : Records(records) {
   std::vector<Record*> Targets = Records.getAllDerivedDefinitions("Target");
   if (Targets.size() == 0)
     throw std::string("ERROR: No 'Target' subclasses defined!");
@@ -404,8 +404,8 @@ ComplexPattern::ComplexPattern(Record *R) {
   for (unsigned i = 0, e = PropList.size(); i != e; ++i)
     if (PropList[i]->getName() == "SDNPHasChain") {
       Properties |= 1 << SDNPHasChain;
-    } else if (PropList[i]->getName() == "SDNPOptInFlag") {
-      Properties |= 1 << SDNPOptInFlag;
+    } else if (PropList[i]->getName() == "SDNPOptInGlue") {
+      Properties |= 1 << SDNPOptInGlue;
     } else if (PropList[i]->getName() == "SDNPMayStore") {
       Properties |= 1 << SDNPMayStore;
     } else if (PropList[i]->getName() == "SDNPMayLoad") {

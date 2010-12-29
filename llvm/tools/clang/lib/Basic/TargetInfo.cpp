@@ -15,6 +15,7 @@
 #include "clang/Basic/LangOptions.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/STLExtras.h"
+#include <cctype>
 #include <cstdlib>
 using namespace clang;
 
@@ -132,7 +133,7 @@ unsigned TargetInfo::getTypeAlign(IntType T) const {
 
 /// isTypeSigned - Return whether an integer types is signed. Returns true if
 /// the type is signed; false otherwise.
-bool TargetInfo::isTypeSigned(IntType T) const {
+bool TargetInfo::isTypeSigned(IntType T) {
   switch (T) {
   default: assert(0 && "not an integer!");
   case SignedShort:

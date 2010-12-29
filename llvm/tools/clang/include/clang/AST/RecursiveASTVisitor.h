@@ -144,6 +144,10 @@ public:
   /// template instantiations.
   bool shouldVisitTemplateInstantiations() const { return false; }
 
+  /// \brief Return whether this visitor should recurse into the types of
+  /// TypeLocs.
+  bool shouldWalkTypesOfTypeLocs() const { return true; }
+  
   /// \brief Recursively visit a statement or expression, by
   /// dispatching to Traverse*() based on the argument's dynamic type.
   ///
@@ -738,6 +742,10 @@ DEF_TRAVERSE_TYPE(DependentTemplateSpecializationType, {
     TRY_TO(TraverseTemplateArguments(T->getArgs(), T->getNumArgs()));
   })
 
+DEF_TRAVERSE_TYPE(PackExpansionType, {
+    TRY_TO(TraverseType(T->getPattern()));
+  })
+
 DEF_TRAVERSE_TYPE(ObjCInterfaceType, { })
 
 DEF_TRAVERSE_TYPE(ObjCObjectType, {
@@ -756,14 +764,15 @@ DEF_TRAVERSE_TYPE(ObjCObjectPointerType, {
 // ----------------- TypeLoc traversal -----------------
 
 // This macro makes available a variable TL, the passed-in TypeLoc.
-// It calls WalkUpFrom* for the Type in the given TypeLoc, in addition
-// to WalkUpFrom* for the TypeLoc itself, such that existing clients
-// that override the WalkUpFrom*Type() and/or Visit*Type() methods
+// If requested, it calls WalkUpFrom* for the Type in the given TypeLoc, 
+// in addition to WalkUpFrom* for the TypeLoc itself, such that existing 
+// clients that override the WalkUpFrom*Type() and/or Visit*Type() methods
 // continue to work.
 #define DEF_TRAVERSE_TYPELOC(TYPE, CODE)                                \
   template<typename Derived>                                            \
   bool RecursiveASTVisitor<Derived>::Traverse##TYPE##Loc(TYPE##Loc TL) { \
-    TRY_TO(WalkUpFrom##TYPE(TL.getTypePtr()));                          \
+    if (getDerived().shouldWalkTypesOfTypeLocs())                       \
+      TRY_TO(WalkUpFrom##TYPE(TL.getTypePtr()));                        \
     TRY_TO(WalkUpFrom##TYPE##Loc(TL));                                  \
     { CODE; }                                                           \
     return true;                                                        \
@@ -941,6 +950,10 @@ DEF_TRAVERSE_TYPELOC(DependentTemplateSpecializationType, {
     for (unsigned I = 0, E = TL.getNumArgs(); I != E; ++I) {
       TRY_TO(TraverseTemplateArgumentLoc(TL.getArgLoc(I)));
     }
+  })
+
+DEF_TRAVERSE_TYPELOC(PackExpansionType, {
+    TRY_TO(TraverseTypeLoc(TL.getPatternLoc()));
   })
 
 DEF_TRAVERSE_TYPELOC(ObjCInterfaceType, { })
@@ -1293,11 +1306,7 @@ bool RecursiveASTVisitor<Derived>::TraverseRecordHelper(
     RecordDecl *D) {
   // We shouldn't traverse D->getTypeForDecl(); it's a result of
   // declaring the type, not something that was written in the source.
-  //
-  // The anonymous struct or union object is the variable or field
-  // whose type is the anonymous struct or union.  We shouldn't
-  // traverse D->getAnonymousStructOrUnionObject(), as it's not
-  // something that is explicitly written in the source.
+
   TRY_TO(TraverseNestedNameSpecifier(D->getQualifier()));
   return true;
 }
@@ -1655,27 +1664,27 @@ DEF_TRAVERSE_STMT(ImplicitCastExpr, {
   })
 
 DEF_TRAVERSE_STMT(CStyleCastExpr, {
-    TRY_TO(TraverseType(S->getTypeAsWritten()));
+    TRY_TO(TraverseTypeLoc(S->getTypeInfoAsWritten()->getTypeLoc()));
   })
 
 DEF_TRAVERSE_STMT(CXXFunctionalCastExpr, {
-    TRY_TO(TraverseType(S->getTypeAsWritten()));
+    TRY_TO(TraverseTypeLoc(S->getTypeInfoAsWritten()->getTypeLoc()));
   })
 
 DEF_TRAVERSE_STMT(CXXConstCastExpr, {
-    TRY_TO(TraverseType(S->getTypeAsWritten()));
+    TRY_TO(TraverseTypeLoc(S->getTypeInfoAsWritten()->getTypeLoc()));
   })
 
 DEF_TRAVERSE_STMT(CXXDynamicCastExpr, {
-    TRY_TO(TraverseType(S->getTypeAsWritten()));
+    TRY_TO(TraverseTypeLoc(S->getTypeInfoAsWritten()->getTypeLoc()));
   })
 
 DEF_TRAVERSE_STMT(CXXReinterpretCastExpr, {
-    TRY_TO(TraverseType(S->getTypeAsWritten()));
+    TRY_TO(TraverseTypeLoc(S->getTypeInfoAsWritten()->getTypeLoc()));
   })
 
 DEF_TRAVERSE_STMT(CXXStaticCastExpr, {
-    TRY_TO(TraverseType(S->getTypeAsWritten()));
+    TRY_TO(TraverseTypeLoc(S->getTypeInfoAsWritten()->getTypeLoc()));
   })
 
 // InitListExpr is a tricky one, because we want to do all our work on

@@ -524,20 +524,28 @@ bool Type::isCharType() const {
 
 bool Type::isWideCharType() const {
   if (const BuiltinType *BT = dyn_cast<BuiltinType>(CanonicalType))
-    return BT->getKind() == BuiltinType::WChar;
+    return BT->getKind() == BuiltinType::WChar_S ||
+           BT->getKind() == BuiltinType::WChar_U;
   return false;
 }
 
 /// \brief Determine whether this type is any of the built-in character
 /// types.
 bool Type::isAnyCharacterType() const {
-  if (const BuiltinType *BT = dyn_cast<BuiltinType>(CanonicalType))
-    return (BT->getKind() >= BuiltinType::Char_U &&
-            BT->getKind() <= BuiltinType::Char32) ||
-           (BT->getKind() >= BuiltinType::Char_S &&
-            BT->getKind() <= BuiltinType::WChar);
-  
-  return false;
+  const BuiltinType *BT = dyn_cast<BuiltinType>(CanonicalType);
+  if (BT == 0) return false;
+  switch (BT->getKind()) {
+  default: return false;
+  case BuiltinType::Char_U:
+  case BuiltinType::UChar:
+  case BuiltinType::WChar_U:
+  case BuiltinType::Char16:
+  case BuiltinType::Char32:
+  case BuiltinType::Char_S:
+  case BuiltinType::SChar:
+  case BuiltinType::WChar_S:
+    return true;
+  }
 }
 
 /// isSignedIntegerType - Return true if this is an integer type that is
@@ -1048,7 +1056,8 @@ const char *BuiltinType::getName(const LangOptions &LO) const {
   case Float:             return "float";
   case Double:            return "double";
   case LongDouble:        return "long double";
-  case WChar:             return "wchar_t";
+  case WChar_S:
+  case WChar_U:           return "wchar_t";
   case Char16:            return "char16_t";
   case Char32:            return "char32_t";
   case NullPtr:           return "nullptr_t";
@@ -1123,8 +1132,15 @@ FunctionProtoType::FunctionProtoType(QualType result, const QualType *args,
   
   // Fill in the exception array.
   QualType *exnSlot = argSlot + numArgs;
-  for (unsigned i = 0, e = epi.NumExceptions; i != e; ++i)
+  for (unsigned i = 0, e = epi.NumExceptions; i != e; ++i) {
+    if (epi.Exceptions[i]->isDependentType())
+      setDependent();
+
+    if (epi.Exceptions[i]->containsUnexpandedParameterPack())
+      setContainsUnexpandedParameterPack();
+
     exnSlot[i] = epi.Exceptions[i];
+  }
 }
 
 
@@ -1220,45 +1236,6 @@ bool EnumType::classof(const TagType *TT) {
   return isa<EnumDecl>(TT->getDecl());
 }
 
-static bool isDependent(const TemplateArgument &Arg) {
-  switch (Arg.getKind()) {
-  case TemplateArgument::Null:
-    assert(false && "Should not have a NULL template argument");
-    return false;
-
-  case TemplateArgument::Type:
-    return Arg.getAsType()->isDependentType();
-
-  case TemplateArgument::Template:
-    return Arg.getAsTemplate().isDependent();
-      
-  case TemplateArgument::Declaration:
-    if (DeclContext *DC = dyn_cast<DeclContext>(Arg.getAsDecl()))
-      return DC->isDependentContext();
-    return Arg.getAsDecl()->getDeclContext()->isDependentContext();
-
-  case TemplateArgument::Integral:
-    // Never dependent
-    return false;
-
-  case TemplateArgument::Expression:
-    return (Arg.getAsExpr()->isTypeDependent() ||
-            Arg.getAsExpr()->isValueDependent());
-
-  case TemplateArgument::Pack:
-    for (TemplateArgument::pack_iterator P = Arg.pack_begin(), 
-                                      PEnd = Arg.pack_end();
-         P != PEnd; ++P) {
-      if (isDependent(*P))
-        return true;
-    }
-
-    return false;
-  }
-
-  return false;
-}
-
 bool TemplateSpecializationType::
 anyDependentTemplateArguments(const TemplateArgumentListInfo &Args) {
   return anyDependentTemplateArguments(Args.getArgumentArray(), Args.size());
@@ -1267,7 +1244,7 @@ anyDependentTemplateArguments(const TemplateArgumentListInfo &Args) {
 bool TemplateSpecializationType::
 anyDependentTemplateArguments(const TemplateArgumentLoc *Args, unsigned N) {
   for (unsigned i = 0; i != N; ++i)
-    if (isDependent(Args[i].getArgument()))
+    if (Args[i].getArgument().isDependent())
       return true;
   return false;
 }
@@ -1275,7 +1252,7 @@ anyDependentTemplateArguments(const TemplateArgumentLoc *Args, unsigned N) {
 bool TemplateSpecializationType::
 anyDependentTemplateArguments(const TemplateArgument *Args, unsigned N) {
   for (unsigned i = 0; i != N; ++i)
-    if (isDependent(Args[i]))
+    if (Args[i].isDependent())
       return true;
   return false;
 }
@@ -1298,7 +1275,7 @@ TemplateSpecializationType(TemplateName T,
     = reinterpret_cast<TemplateArgument *>(this + 1);
   for (unsigned Arg = 0; Arg < NumArgs; ++Arg) {
     // Update dependent and variably-modified bits.
-    if (isDependent(Args[Arg]))
+    if (Args[Arg].isDependent())
       setDependent();
     if (Args[Arg].getKind() == TemplateArgument::Type &&
         Args[Arg].getAsType()->isVariablyModifiedType())

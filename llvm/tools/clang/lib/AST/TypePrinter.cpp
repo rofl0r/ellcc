@@ -36,7 +36,7 @@ namespace {
     void printTag(TagDecl *T, std::string &S);
 #define ABSTRACT_TYPE(CLASS, PARENT)
 #define TYPE(CLASS, PARENT) \
-  void print##CLASS(const CLASS##Type *T, std::string &S);
+    void print##CLASS(const CLASS##Type *T, std::string &S);
 #include "clang/AST/TypeNodes.def"
   };
 }
@@ -668,6 +668,12 @@ void TypePrinter::printDependentTemplateSpecialization(
     S = MyString + ' ' + S;
 }
 
+void TypePrinter::printPackExpansion(const PackExpansionType *T, 
+                                     std::string &S) {
+  print(T->getPattern(), S);
+  S += "...";
+}
+
 void TypePrinter::printObjCInterface(const ObjCInterfaceType *T, 
                                      std::string &S) { 
   if (!S.empty())    // Prefix the basic type, e.g. 'typedefname X'.
@@ -741,44 +747,6 @@ void TypePrinter::printObjCObjectPointer(const ObjCObjectPointerType *T,
   S = ObjCQIString + S;  
 }
 
-static void printTemplateArgument(std::string &Buffer,
-                                  const TemplateArgument &Arg,
-                                  const PrintingPolicy &Policy) {
-  switch (Arg.getKind()) {
-    case TemplateArgument::Null:
-      assert(false && "Null template argument");
-      break;
-      
-    case TemplateArgument::Type:
-      Arg.getAsType().getAsStringInternal(Buffer, Policy);
-      break;
-      
-    case TemplateArgument::Declaration:
-      Buffer = cast<NamedDecl>(Arg.getAsDecl())->getNameAsString();
-      break;
-      
-    case TemplateArgument::Template: {
-      llvm::raw_string_ostream s(Buffer);
-      Arg.getAsTemplate().print(s, Policy);
-      break;
-    }
-      
-    case TemplateArgument::Integral:
-      Buffer = Arg.getAsIntegral()->toString(10, true);
-      break;
-      
-    case TemplateArgument::Expression: {
-      llvm::raw_string_ostream s(Buffer);
-      Arg.getAsExpr()->printPretty(s, 0, Policy);
-      break;
-    }
-      
-    case TemplateArgument::Pack:
-      assert(0 && "FIXME: Implement!");
-      break;
-  }
-}
-
 std::string TemplateSpecializationType::
   PrintTemplateArgumentList(const TemplateArgumentListInfo &Args,
                             const PrintingPolicy &Policy) {
@@ -791,17 +759,27 @@ std::string
 TemplateSpecializationType::PrintTemplateArgumentList(
                                                 const TemplateArgument *Args,
                                                 unsigned NumArgs,
-                                                const PrintingPolicy &Policy) {
+                                                  const PrintingPolicy &Policy,
+                                                      bool SkipBrackets) {
   std::string SpecString;
-  SpecString += '<';
+  if (!SkipBrackets)
+    SpecString += '<';
+  
   for (unsigned Arg = 0; Arg < NumArgs; ++Arg) {
-    if (Arg)
+    if (SpecString.size() > !SkipBrackets)
       SpecString += ", ";
     
     // Print the argument into a string.
     std::string ArgString;
-    printTemplateArgument(ArgString, Args[Arg], Policy);
-    
+    if (Args[Arg].getKind() == TemplateArgument::Pack) {
+      ArgString = PrintTemplateArgumentList(Args[Arg].pack_begin(), 
+                                            Args[Arg].pack_size(), 
+                                            Policy, true);
+    } else {
+      llvm::raw_string_ostream ArgOut(ArgString);
+      Args[Arg].print(Policy, ArgOut);
+    }
+   
     // If this is the first argument and its string representation
     // begins with the global scope specifier ('::foo'), add a space
     // to avoid printing the diagraph '<:'.
@@ -817,7 +795,8 @@ TemplateSpecializationType::PrintTemplateArgumentList(
   if (SpecString[SpecString.size() - 1] == '>')
     SpecString += ' ';
   
-  SpecString += '>';
+  if (!SkipBrackets)
+    SpecString += '>';
   
   return SpecString;
 }
@@ -829,12 +808,20 @@ PrintTemplateArgumentList(const TemplateArgumentLoc *Args, unsigned NumArgs,
   std::string SpecString;
   SpecString += '<';
   for (unsigned Arg = 0; Arg < NumArgs; ++Arg) {
-    if (Arg)
+    if (SpecString.size() > 1)
       SpecString += ", ";
     
     // Print the argument into a string.
     std::string ArgString;
-    printTemplateArgument(ArgString, Args[Arg].getArgument(), Policy);
+    if (Args[Arg].getArgument().getKind() == TemplateArgument::Pack) {
+      ArgString = PrintTemplateArgumentList(
+                                           Args[Arg].getArgument().pack_begin(), 
+                                            Args[Arg].getArgument().pack_size(), 
+                                            Policy, true);
+    } else {
+      llvm::raw_string_ostream ArgOut(ArgString);
+      Args[Arg].getArgument().print(Policy, ArgOut);
+    }
     
     // If this is the first argument and its string representation
     // begins with the global scope specifier ('::foo'), add a space

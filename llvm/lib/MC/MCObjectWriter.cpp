@@ -7,7 +7,10 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "llvm/MC/MCAssembler.h"
+#include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCObjectWriter.h"
+#include "llvm/MC/MCSymbol.h"
 
 using namespace llvm;
 
@@ -38,4 +41,28 @@ void MCObjectWriter::EncodeULEB128(uint64_t Value, raw_ostream &OS) {
       Byte |= 0x80; // Mark this byte that that more bytes will follow.
     OS << char(Byte);
   } while (Value != 0);
+}
+
+bool
+MCObjectWriter::IsSymbolRefDifferenceFullyResolved(const MCAssembler &Asm,
+                                                   const MCSymbolRefExpr *A,
+                                                   const MCSymbolRefExpr *B,
+                                                   bool InSet) const {
+  // Modified symbol references cannot be resolved.
+  if (A->getKind() != MCSymbolRefExpr::VK_None ||
+      B->getKind() != MCSymbolRefExpr::VK_None)
+    return false;
+
+  const MCSymbol &SA = A->getSymbol();
+  const MCSymbol &SB = B->getSymbol();
+  if (SA.AliasedSymbol().isUndefined() || SB.AliasedSymbol().isUndefined())
+    return false;
+
+  const MCSymbolData &DataA = Asm.getSymbolData(SA);
+  const MCSymbolData &DataB = Asm.getSymbolData(SB);
+
+  return IsSymbolRefDifferenceFullyResolvedImpl(Asm, DataA,
+                                                *DataB.getFragment(),
+                                                InSet,
+                                                false);
 }

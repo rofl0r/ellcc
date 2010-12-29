@@ -20,6 +20,9 @@ class MCAsmLayout;
 class MCAssembler;
 class MCFixup;
 class MCFragment;
+class MCSymbol;
+class MCSymbolData;
+class MCSymbolRefExpr;
 class MCValue;
 class raw_ostream;
 
@@ -77,15 +80,24 @@ public:
                                 const MCFixup &Fixup, MCValue Target,
                                 uint64_t &FixedValue) = 0;
 
-  /// Check if a fixup is fully resolved.
+  /// \brief Check whether the difference (A - B) between two symbol
+  /// references is fully resolved.
   ///
-  /// This routine is used by the assembler to let the file format decide
-  /// if a fixup is not fully resolved. For example, one that crosses
-  /// two sections on ELF.
-  virtual bool IsFixupFullyResolved(const MCAssembler &Asm,
-                                    const MCValue Target,
-                                    bool IsPCRel,
-                                    const MCFragment *DF) const = 0;
+  /// Clients are not required to answer precisely and may conservatively return
+  /// false, even when a difference is fully resolved.
+  bool
+  IsSymbolRefDifferenceFullyResolved(const MCAssembler &Asm,
+                                     const MCSymbolRefExpr *A,
+                                     const MCSymbolRefExpr *B,
+                                     bool InSet) const;
+
+  virtual bool
+  IsSymbolRefDifferenceFullyResolvedImpl(const MCAssembler &Asm,
+                                         const MCSymbolData &DataA,
+                                         const MCFragment &FB,
+                                         bool InSet,
+                                         bool IsPCRel) const = 0;
+
 
   /// Write the object file.
   ///
@@ -179,13 +191,6 @@ public:
   static void EncodeULEB128(uint64_t Value, raw_ostream &OS);
 };
 
-MCObjectWriter *createMachObjectWriter(raw_ostream &OS, bool is64Bit,
-                                       uint32_t CPUType, uint32_t CPUSubtype,
-                                       bool IsLittleEndian);
-MCObjectWriter *createELFObjectWriter(raw_ostream &OS, bool is64Bit,
-                                      Triple::OSType OSType, uint16_t EMachine,
-                                      bool IsLittleEndian,
-                                      bool HasRelocationAddend);
 MCObjectWriter *createWinCOFFObjectWriter(raw_ostream &OS, bool is64Bit);
 
 } // End llvm namespace

@@ -90,6 +90,7 @@ namespace {
       (void) llvm::createLoopStrengthReducePass();
       (void) llvm::createLoopUnrollPass();
       (void) llvm::createLoopUnswitchPass();
+      (void) llvm::createLoopIdiomPass();
       (void) llvm::createLoopRotatePass();
       (void) llvm::createLowerInvokePass();
       (void) llvm::createLowerSetJmpPass();
@@ -147,6 +148,7 @@ namespace {
       (void) llvm::createLowerAtomicPass();
       (void) llvm::createCorrelatedValuePropagationPass();
       (void) llvm::createMemDepPrinter();
+      (void) llvm::createInstructionSimplifierPass();
 
       (void)new llvm::IntervalPartition();
       (void)new llvm::FindUsedTypes();

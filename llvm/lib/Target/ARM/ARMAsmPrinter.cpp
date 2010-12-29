@@ -286,7 +286,7 @@ bool ARMAsmPrinter::PrintAsmOperand(const MachineInstr *MI, unsigned OpNum,
     case 'Q':
     case 'R':
     case 'H':
-      report_fatal_error("llvm does not support 'Q', 'R', and 'H' modifiers!");
+      // These modifiers are not yet supported.
       return true;
     }
   }
@@ -746,6 +746,14 @@ void ARMAsmPrinter::EmitInstruction(const MachineInstr *MI) {
     }
     return;
   }
+  case ARM::tBfar: {
+    MCInst TmpInst;
+    TmpInst.setOpcode(ARM::tBL);
+    TmpInst.addOperand(MCOperand::CreateExpr(MCSymbolRefExpr::Create(
+          MI->getOperand(0).getMBB()->getSymbol(), OutContext)));
+    OutStreamer.EmitInstruction(TmpInst);
+    return;
+  }
   case ARM::LEApcrel:
   case ARM::tLEApcrel:
   case ARM::t2LEApcrel: {
@@ -1017,7 +1025,7 @@ void ARMAsmPrinter::EmitInstruction(const MachineInstr *MI) {
     OutStreamer.EmitInstruction(TmpInst);
 
     // Make sure the Thumb jump table is 4-byte aligned.
-    if (Opc == ARM::tMOVr)
+    if (Opc == ARM::tMOVgpr2gpr)
       EmitAlignment(2);
 
     // Output the data for the jump table itself

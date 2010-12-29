@@ -41,6 +41,7 @@
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Bitcode/BitstreamWriter.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
 #include <cstdio>
@@ -298,6 +299,11 @@ ASTTypeWriter::VisitDependentTemplateSpecializationType(
   Code = TYPE_DEPENDENT_TEMPLATE_SPECIALIZATION;
 }
 
+void ASTTypeWriter::VisitPackExpansionType(const PackExpansionType *T) {
+  Writer.AddTypeRef(T->getPattern(), Record);
+  Code = TYPE_PACK_EXPANSION;
+}
+
 void ASTTypeWriter::VisitParenType(const ParenType *T) {
   Writer.AddTypeRef(T->getInnerType(), Record);
   Code = TYPE_PAREN;
@@ -498,6 +504,9 @@ void TypeLocWriter::VisitDependentTemplateSpecializationTypeLoc(
   for (unsigned I = 0, E = TL.getNumArgs(); I != E; ++I)
     Writer.AddTemplateArgumentLocInfo(TL.getArgLoc(I).getArgument().getKind(),
                                       TL.getArgLoc(I).getLocInfo(), Record);
+}
+void TypeLocWriter::VisitPackExpansionTypeLoc(PackExpansionTypeLoc TL) {
+  Writer.AddSourceLocation(TL.getEllipsisLoc(), Record);
 }
 void TypeLocWriter::VisitObjCInterfaceTypeLoc(ObjCInterfaceTypeLoc TL) {
   Writer.AddSourceLocation(TL.getNameLoc(), Record);
@@ -802,9 +811,9 @@ void ASTWriter::WriteMetadata(ASTContext &Context, const char *isysroot) {
     FileAbbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Blob)); // File name
     unsigned FileAbbrevCode = Stream.EmitAbbrev(FileAbbrev);
 
-    llvm::sys::Path MainFilePath(MainFile->getName());
+    llvm::SmallString<128> MainFilePath(MainFile->getName());
 
-    MainFilePath.makeAbsolute();
+    llvm::sys::fs::make_absolute(MainFilePath);
 
     const char *MainFileNameStr = MainFilePath.c_str();
     MainFileNameStr = adjustFilenameForRelocatablePCH(MainFileNameStr,
@@ -851,6 +860,8 @@ void ASTWriter::WriteLanguageOptions(const LangOptions &LangOpts) {
                                                  // modern abi enabled.
   Record.push_back(LangOpts.ObjCNonFragileABI2); // Objective-C enhanced
                                                  // modern abi enabled.
+  Record.push_back(LangOpts.ObjCDefaultSynthProperties); // Objective-C auto-synthesized
+                                                      // properties enabled.
   Record.push_back(LangOpts.NoConstantCFStrings); // non cfstring generation enabled..
 
   Record.push_back(LangOpts.PascalStrings);  // Allow Pascal strings
@@ -1168,8 +1179,8 @@ void ASTWriter::WriteSourceManagerBlock(SourceManager &SourceMgr,
 
         // Turn the file name into an absolute path, if it isn't already.
         const char *Filename = Content->Entry->getName();
-        llvm::sys::Path FilePath(Filename, strlen(Filename));
-        FilePath.makeAbsolute();
+        llvm::SmallString<128> FilePath(Filename);
+        llvm::sys::fs::make_absolute(FilePath);
         Filename = FilePath.c_str();
 
         Filename = adjustFilenameForRelocatablePCH(Filename, isysroot);
@@ -1460,7 +1471,7 @@ void ASTWriter::WritePreprocessor(const Preprocessor &PP) {
 void ASTWriter::WriteUserDiagnosticMappings(const Diagnostic &Diag) {
   RecordData Record;
   for (unsigned i = 0; i != diag::DIAG_UPPER_LIMIT; ++i) {
-    diag::Mapping Map = Diag.getDiagnosticMappingInfo(i);
+    diag::Mapping Map = Diag.getDiagnosticMappingInfo(i,Diag.GetCurDiagState());
     if (Map & 0x8) { // user mapping.
       Record.push_back(i);
       Record.push_back(Map & 0x7);

@@ -371,7 +371,7 @@ static void HandleNonNullAttr(Decl *d, const AttributeList &Attr, Sema &S) {
     }
 
     // Is the function argument a pointer type?
-    QualType T = getFunctionOrMethodArgType(d, x);
+    QualType T = getFunctionOrMethodArgType(d, x).getNonReferenceType();
     if (!T->isAnyPointerType() && !T->isBlockPointerType()) {
       // FIXME: Should also highlight argument in decl.
       S.Diag(Attr.getLoc(), diag::warn_nonnull_pointers_only)
@@ -386,7 +386,7 @@ static void HandleNonNullAttr(Decl *d, const AttributeList &Attr, Sema &S) {
   // arguments have a nonnull attribute.
   if (NonNullArgs.empty()) {
     for (unsigned I = 0, E = getFunctionOrMethodNumArgs(d); I != E; ++I) {
-      QualType T = getFunctionOrMethodArgType(d, I);
+      QualType T = getFunctionOrMethodArgType(d, I).getNonReferenceType();
       if (T->isAnyPointerType() || T->isBlockPointerType())
         NonNullArgs.push_back(I);
       else if (const RecordType *UT = T->getAsUnionType()) {
@@ -2516,7 +2516,67 @@ static void HandleNSReturnsRetainedAttr(Decl *d, const AttributeList &Attr,
 
 static bool isKnownDeclSpecAttr(const AttributeList &Attr) {
   return Attr.getKind() == AttributeList::AT_dllimport ||
-         Attr.getKind() == AttributeList::AT_dllexport;
+         Attr.getKind() == AttributeList::AT_dllexport ||
+         Attr.getKind() == AttributeList::AT_uuid;
+}
+
+//===----------------------------------------------------------------------===//
+// Microsoft specific attribute handlers.
+//===----------------------------------------------------------------------===//
+
+static void HandleUuidAttr(Decl *d, const AttributeList &Attr, Sema &S) {
+  if (S.LangOpts.Microsoft || S.LangOpts.Borland) {
+    // check the attribute arguments.
+    if (Attr.getNumArgs() != 1) {
+      S.Diag(Attr.getLoc(), diag::err_attribute_wrong_number_arguments) << 1;
+      return;
+    }
+    Expr *Arg = Attr.getArg(0);
+    StringLiteral *Str = dyn_cast<StringLiteral>(Arg);
+    if (Str == 0 || Str->isWide()) {
+      S.Diag(Attr.getLoc(), diag::err_attribute_argument_n_not_string)
+        << "uuid" << 1;
+      return;
+    }
+
+    llvm::StringRef StrRef = Str->getString();
+
+    bool IsCurly = StrRef.size() > 1 && StrRef.front() == '{' &&
+                   StrRef.back() == '}';
+    
+    // Validate GUID length.
+    if (IsCurly && StrRef.size() != 38) {
+      S.Diag(Attr.getLoc(), diag::err_attribute_uuid_malformed_guid);
+      return;
+    }
+    if (!IsCurly && StrRef.size() != 36) {
+      S.Diag(Attr.getLoc(), diag::err_attribute_uuid_malformed_guid);
+      return;
+    }
+
+    // GUID format is "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX" or 
+    // "{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}"
+    llvm::StringRef::iterator I = StrRef.begin();
+    if (IsCurly) // Skip the optional '{'
+       ++I;
+
+    for (int i = 0; i < 36; ++i) {
+      if (i == 8 || i == 13 || i == 18 || i == 23) {
+        if (*I != '-') {
+          S.Diag(Attr.getLoc(), diag::err_attribute_uuid_malformed_guid);
+          return;
+        }
+      } else if (!isxdigit(*I)) {
+        S.Diag(Attr.getLoc(), diag::err_attribute_uuid_malformed_guid);
+        return;
+      }
+      I++;
+    }
+
+    d->addAttr(::new (S.Context) UuidAttr(Attr.getLoc(), S.Context, 
+                                          Str->getString()));
+  } else
+    S.Diag(Attr.getLoc(), diag::warn_attribute_ignored) << "uuid";
 }
 
 //===----------------------------------------------------------------------===//
@@ -2646,6 +2706,9 @@ static void ProcessDeclAttribute(Scope *scope, Decl *D,
   case AttributeList::AT_pascal:
     HandleCallConvAttr(D, Attr, S);
     break;
+  case AttributeList::AT_uuid:
+    HandleUuidAttr(D, Attr, S);
+    break;
   default:
     // Ask target about the attribute.
     const TargetAttributesSema &TargetAttrs = S.getTargetAttributesSema();
@@ -2745,7 +2808,7 @@ void Sema::ProcessDeclAttributes(Scope *S, Decl *D, const Declarator &PD) {
   }
 
   // Apply decl attributes from the DeclSpec if present.
-  if (const AttributeList *Attrs = PD.getDeclSpec().getAttributes())
+  if (const AttributeList *Attrs = PD.getDeclSpec().getAttributes().getList())
     ProcessDeclAttributeList(S, D, Attrs);
 
   // Walk the declarator structure, applying decl attributes that were in a type
@@ -2840,7 +2903,8 @@ void Sema::HandleDelayedDeprecationCheck(DelayedDiagnostic &DD,
 }
 
 void Sema::EmitDeprecationWarning(NamedDecl *D, llvm::StringRef Message,
-                                  SourceLocation Loc) {
+                                  SourceLocation Loc,
+                                  bool UnkownObjCClass) {
   // Delay if we're currently parsing a declaration.
   if (ParsingDeclDepth) {
     DelayedDiagnostics.push_back(DelayedDiagnostic::makeDeprecation(Loc, D, 
@@ -2854,6 +2918,10 @@ void Sema::EmitDeprecationWarning(NamedDecl *D, llvm::StringRef Message,
   if (!Message.empty())
     Diag(Loc, diag::warn_deprecated_message) << D->getDeclName() 
                                              << Message;
-  else
-    Diag(Loc, diag::warn_deprecated) << D->getDeclName();
+  else {
+    if (!UnkownObjCClass)
+      Diag(Loc, diag::warn_deprecated) << D->getDeclName();
+    else
+      Diag(Loc, diag::warn_deprecated_fwdclass_message) << D->getDeclName();
+  }
 }

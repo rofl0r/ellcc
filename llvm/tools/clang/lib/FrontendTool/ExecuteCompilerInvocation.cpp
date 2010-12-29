@@ -13,7 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/FrontendTool/Utils.h"
-#include "clang/Checker/FrontendActions.h"
+#include "clang/StaticAnalyzer/FrontendActions.h"
 #include "clang/CodeGen/CodeGenAction.h"
 #include "clang/Driver/CC1Options.h"
 #include "clang/Driver/OptTable.h"
@@ -80,7 +80,7 @@ static FrontendAction *CreateFrontendBaseAction(CompilerInstance &CI) {
   case RewriteMacros:          return new RewriteMacrosAction();
   case RewriteObjC:            return new RewriteObjCAction();
   case RewriteTest:            return new RewriteTestAction();
-  case RunAnalysis:            return new AnalysisAction();
+  case RunAnalysis:            return new ento::AnalysisAction();
   case RunPreprocessorOnly:    return new PreprocessOnlyAction();
   }
 }

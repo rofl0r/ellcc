@@ -29,9 +29,9 @@ entry:
   ret i8 %div
 
 ; CHECK: test3:
-; CHECK: imull	$171, %eax, %eax
-; CHECK-NEXT: shrb	%ah
-; CHECK-NEXT: movzbl	%ah, %eax
+; CHECK: movzbl  8(%esp), %eax
+; CHECK-NEXT: imull	$171, %eax, %eax
+; CHECK-NEXT: shrl	$9, %eax
 ; CHECK-NEXT: ret
 }
 
@@ -39,4 +39,15 @@ define signext i16 @test4(i16 signext %x) nounwind {
 entry:
 	%div = sdiv i16 %x, 33		; <i32> [#uses=1]
 	ret i16 %div
+; CHECK: test4:
+; CHECK: imull	$-1985, %ecx, %ecx 
 }
+
+define i32 @test5(i32 %A) nounwind {
+        %tmp1 = udiv i32 %A, 1577682821         ; <i32> [#uses=1]
+        ret i32 %tmp1
+; CHECK: test5:
+; CHECK: movl	$365384439, %eax
+; CHECK: mull	4(%esp)
+}
+

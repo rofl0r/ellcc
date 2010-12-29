@@ -707,7 +707,14 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
     }
     break;
   }
-  
+
+  case Type::PackExpansion:
+    if (!IsStructurallyEquivalent(Context,
+                                  cast<PackExpansionType>(T1)->getPattern(),
+                                  cast<PackExpansionType>(T2)->getPattern()))
+      return false;
+    break;
+
   case Type::ObjCInterface: {
     const ObjCInterfaceType *Iface1 = cast<ObjCInterfaceType>(T1);
     const ObjCInterfaceType *Iface2 = cast<ObjCInterfaceType>(T2);
@@ -1288,7 +1295,8 @@ QualType ASTNodeImporter::VisitBuiltinType(BuiltinType *T) {
     return Importer.getToContext().CharTy;
 
   case BuiltinType::SChar: return Importer.getToContext().SignedCharTy;
-  case BuiltinType::WChar:
+  case BuiltinType::WChar_S:
+  case BuiltinType::WChar_U:
     // FIXME: If not in C++, shall we translate to the C equivalent of
     // wchar_t?
     return Importer.getToContext().WCharTy;
@@ -3407,7 +3415,7 @@ ASTNodeImporter::VisitNonTypeTemplateParmDecl(NonTypeTemplateParmDecl *D) {
                                Importer.getToContext().getTranslationUnitDecl(),
                                          Loc, D->getDepth(), D->getPosition(),
                                          Name.getAsIdentifierInfo(),
-                                         T, TInfo);
+                                         T, D->isParameterPack(), TInfo);
 }
 
 Decl *

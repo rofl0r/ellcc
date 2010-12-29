@@ -372,11 +372,35 @@ Sema::ActOnCXXTypeid(SourceLocation OpLoc, SourceLocation LParenLoc,
   return BuildCXXTypeId(TypeInfoType, OpLoc, (Expr*)TyOrExpr, RParenLoc);
 }
 
+/// Retrieve the UuidAttr associated with QT.
+static UuidAttr *GetUuidAttrOfType(QualType QT) {
+  // Optionally remove one level of pointer, reference or array indirection.
+  Type *Ty = QT.getTypePtr();;
+  if (QT->isPointerType() || QT->isReferenceType())
+    Ty = QT->getPointeeType().getTypePtr();
+  else if (QT->isArrayType())
+    Ty = cast<ArrayType>(QT)->getElementType().getTypePtr();
+
+  // Loop all class definition and declaration looking for an uuid attribute.
+  CXXRecordDecl *RD = Ty->getAsCXXRecordDecl();
+  while (RD) {
+    if (UuidAttr *Uuid = RD->getAttr<UuidAttr>())
+      return Uuid;
+    RD = RD->getPreviousDeclaration();
+  }
+  return 0;
+}
+
 /// \brief Build a Microsoft __uuidof expression with a type operand.
 ExprResult Sema::BuildCXXUuidof(QualType TypeInfoType,
                                 SourceLocation TypeidLoc,
                                 TypeSourceInfo *Operand,
                                 SourceLocation RParenLoc) {
+  if (!Operand->getType()->isDependentType()) {
+    if (!GetUuidAttrOfType(Operand->getType()))
+      return ExprError(Diag(TypeidLoc, diag::err_uuidof_without_guid));
+  }
+  
   // FIXME: add __uuidof semantic analysis for type operand.
   return Owned(new (Context) CXXUuidofExpr(TypeInfoType.withConst(),
                                            Operand,
@@ -388,7 +412,12 @@ ExprResult Sema::BuildCXXUuidof(QualType TypeInfoType,
                                 SourceLocation TypeidLoc,
                                 Expr *E,
                                 SourceLocation RParenLoc) {
-  // FIXME: add __uuidof semantic analysis for expr operand.
+  if (!E->getType()->isDependentType()) {
+    if (!GetUuidAttrOfType(E->getType()) && 
+        !E->isNullPointerConstant(Context, Expr::NPC_ValueDependentIsNull))
+      return ExprError(Diag(TypeidLoc, diag::err_uuidof_without_guid));
+  }
+  // FIXME: add __uuidof semantic analysis for type operand.
   return Owned(new (Context) CXXUuidofExpr(TypeInfoType.withConst(),
                                            E,
                                            SourceRange(TypeidLoc, RParenLoc)));  
@@ -1895,8 +1924,7 @@ Sema::PerformImplicitConversion(Expr *&From, QualType ToType,
     if (CheckExceptionSpecCompatibility(From, ToType))
       return true;      
       
-    ImpCastExprToType(From, Context.getNoReturnType(From->getType(), false),
-                      CK_NoOp);
+    ImpCastExprToType(From, ToType, CK_NoOp);
     break;
       
   case ICK_Integral_Promotion:
@@ -3633,7 +3661,8 @@ void Sema::IgnoredValueConversions(Expr *&E) {
 }
 
 ExprResult Sema::ActOnFinishFullExpr(Expr *FullExpr) {
-  if (!FullExpr) return ExprError();
+  if (!FullExpr) 
+    return ExprError();
 
   if (DiagnoseUnexpandedParameterPack(FullExpr))
     return ExprError();

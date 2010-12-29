@@ -236,7 +236,7 @@ def err_objc_property_requires_field_name : Error<
   "property requires fields to be named">;
 def err_objc_property_bitfield : Error<"property name cannot be a bitfield">;
 def err_objc_expected_property_attr : Error<"unknown property attribute %0">;
-def err_objc_propertoes_require_objc2 : Error<
+def err_objc_properties_require_objc2 : Error<
   "properties are an Objective-C 2 feature">;
 def err_objc_unexpected_attr : Error<
   "prefix attribute must be followed by an interface or protocol">;
@@ -374,9 +374,6 @@ def err_expected_type_name_after_typename : Error<
 def err_explicit_spec_non_template : Error<
   "explicit %select{specialization|instantiation}0 of non-template "
   "%select{class|struct|union}1 %2">;
-
-def err_variadic_templates : Error<
-  "variadic templates are only allowed in C++0x">;
   
 def err_default_template_template_parameter_not_template : Error<
   "default template argument for a template template parameter must be a class "

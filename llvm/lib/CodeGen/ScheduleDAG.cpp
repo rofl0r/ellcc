@@ -15,6 +15,7 @@
 #define DEBUG_TYPE "pre-RA-sched"
 #include "llvm/CodeGen/ScheduleDAG.h"
 #include "llvm/CodeGen/ScheduleHazardRecognizer.h"
+#include "llvm/CodeGen/SelectionDAGNodes.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Target/TargetRegisterInfo.h"
@@ -32,6 +33,12 @@ ScheduleDAG::ScheduleDAG(MachineFunction &mf)
 }
 
 ScheduleDAG::~ScheduleDAG() {}
+
+/// getInstrDesc helper to handle SDNodes.
+const TargetInstrDesc *ScheduleDAG::getNodeDesc(const SDNode *Node) const {
+  if (!Node || !Node->isMachineOpcode()) return NULL;
+  return &TII->get(Node->getMachineOpcode());
+}
 
 /// dump - dump the schedule.
 void ScheduleDAG::dumpSchedule() const {
@@ -492,7 +499,7 @@ void ScheduleDAGTopologicalSort::RemovePred(SUnit *M, SUnit *N) {
 /// all nodes affected by the edge insertion. These nodes will later get new
 /// topological indexes by means of the Shift method.
 void ScheduleDAGTopologicalSort::DFS(const SUnit *SU, int UpperBound,
-                                     bool& HasLoop) {
+                                     bool &HasLoop) {
   std::vector<const SUnit*> WorkList;
   WorkList.reserve(SUnits.size());
 

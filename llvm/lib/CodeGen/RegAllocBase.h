@@ -30,7 +30,7 @@
 // of registers, if a more sophisticated allocator chooses to do that.
 //
 // This framework provides a way to engineer the compile time vs. code
-// quality trade-off without relying a particular theoretical solver.
+// quality trade-off without relying on a particular theoretical solver.
 //
 //===----------------------------------------------------------------------===//
 
@@ -155,6 +155,10 @@ protected:
 
   // Use this group name for NamedRegionTimer.
   static const char *TimerGroupName;
+
+public:
+  /// VerifyEnabled - True when -verify-regalloc is given.
+  static bool VerifyEnabled;
 
 private:
   void seedLiveVirtRegs(std::priority_queue<std::pair<float, unsigned> >&);

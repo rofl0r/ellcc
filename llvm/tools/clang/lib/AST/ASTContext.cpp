@@ -109,6 +109,7 @@ ASTContext::getCanonicalTemplateTemplateParmDecl(
                                             SourceLocation(), NTTP->getDepth(),
                                             NTTP->getPosition(), 0, 
                                             getCanonicalType(NTTP->getType()),
+                                            NTTP->isParameterPack(),
                                             0));
     else
       CanonParams.push_back(getCanonicalTemplateTemplateParmDecl(
@@ -315,9 +316,12 @@ void ASTContext::InitBuiltinTypes() {
   InitBuiltinType(Int128Ty,            BuiltinType::Int128);
   InitBuiltinType(UnsignedInt128Ty,    BuiltinType::UInt128);
 
-  if (LangOpts.CPlusPlus) // C++ 3.9.1p5
-    InitBuiltinType(WCharTy,           BuiltinType::WChar);
-  else // C99
+  if (LangOpts.CPlusPlus) { // C++ 3.9.1p5
+    if (!LangOpts.ShortWChar)
+      InitBuiltinType(WCharTy,           BuiltinType::WChar_S);
+    else  // -fshort-wchar makes wchar_t be unsigned.
+      InitBuiltinType(WCharTy,           BuiltinType::WChar_U);
+  } else // C99
     WCharTy = getFromTargetType(Target.getWCharType());
 
   if (LangOpts.CPlusPlus) // C++0x 3.9.1p5, extension for C++
@@ -675,7 +679,8 @@ ASTContext::getTypeInfo(const Type *T) {
       Width = Target.getCharWidth();
       Align = Target.getCharAlign();
       break;
-    case BuiltinType::WChar:
+    case BuiltinType::WChar_S:
+    case BuiltinType::WChar_U:
       Width = Target.getWCharWidth();
       Align = Target.getWCharAlign();
       break;
@@ -1118,8 +1123,8 @@ QualType ASTContext::getObjCGCQualType(QualType T,
   if (CanT.getObjCGCAttr() == GCAttr)
     return T;
 
-  if (T->isPointerType()) {
-    QualType Pointee = T->getAs<PointerType>()->getPointeeType();
+  if (const PointerType *ptr = T->getAs<PointerType>()) {
+    QualType Pointee = ptr->getPointeeType();
     if (Pointee->isAnyPointerType()) {
       QualType ResultType = getObjCGCQualType(Pointee, GCAttr);
       return getPointerType(ResultType);
@@ -1140,74 +1145,23 @@ QualType ASTContext::getObjCGCQualType(QualType T,
   return getExtQualType(TypeNode, Quals);
 }
 
-static QualType getExtFunctionType(ASTContext& Context, QualType T,
-                                   const FunctionType::ExtInfo &Info) {
-  QualType ResultType;
-  if (const PointerType *Pointer = T->getAs<PointerType>()) {
-    QualType Pointee = Pointer->getPointeeType();
-    ResultType = getExtFunctionType(Context, Pointee, Info);
-    if (ResultType == Pointee)
-      return T;
-
-    ResultType = Context.getPointerType(ResultType);
-  } else if (const ParenType *Paren = T->getAs<ParenType>()) {
-    QualType Inner = Paren->getInnerType();
-    ResultType = getExtFunctionType(Context, Inner, Info);
-    if (ResultType == Inner)
-      return T;
-
-    ResultType = Context.getParenType(ResultType);
-  } else if (const BlockPointerType *BlockPointer
-                                              = T->getAs<BlockPointerType>()) {
-    QualType Pointee = BlockPointer->getPointeeType();
-    ResultType = getExtFunctionType(Context, Pointee, Info);
-    if (ResultType == Pointee)
-      return T;
-
-    ResultType = Context.getBlockPointerType(ResultType);
-  } else if (const MemberPointerType *MemberPointer 
-                                            = T->getAs<MemberPointerType>()) {
-    QualType Pointee = MemberPointer->getPointeeType();
-    ResultType = getExtFunctionType(Context, Pointee, Info);
-    if (ResultType == Pointee)
-      return T;
-    
-    ResultType = Context.getMemberPointerType(ResultType, 
-                                              MemberPointer->getClass());
-   } else if (const FunctionType *F = T->getAs<FunctionType>()) {
-    if (F->getExtInfo() == Info)
-      return T;
-
-    if (const FunctionNoProtoType *FNPT = dyn_cast<FunctionNoProtoType>(F)) {
-      ResultType = Context.getFunctionNoProtoType(FNPT->getResultType(),
-                                                  Info);
-    } else {
-      const FunctionProtoType *FPT = cast<FunctionProtoType>(F);
-      FunctionProtoType::ExtProtoInfo EPI = FPT->getExtProtoInfo();
-      EPI.ExtInfo = Info;
-      ResultType = Context.getFunctionType(FPT->getResultType(),
-                                           FPT->arg_type_begin(),
-                                           FPT->getNumArgs(), EPI);
-    }
-  } else
+const FunctionType *ASTContext::adjustFunctionType(const FunctionType *T,
+                                                   FunctionType::ExtInfo Info) {
+  if (T->getExtInfo() == Info)
     return T;
 
-  return Context.getQualifiedType(ResultType, T.getLocalQualifiers());
-}
+  QualType Result;
+  if (const FunctionNoProtoType *FNPT = dyn_cast<FunctionNoProtoType>(T)) {
+    Result = getFunctionNoProtoType(FNPT->getResultType(), Info);
+  } else {
+    const FunctionProtoType *FPT = cast<FunctionProtoType>(T);
+    FunctionProtoType::ExtProtoInfo EPI = FPT->getExtProtoInfo();
+    EPI.ExtInfo = Info;
+    Result = getFunctionType(FPT->getResultType(), FPT->arg_type_begin(),
+                             FPT->getNumArgs(), EPI);
+  }
 
-QualType ASTContext::getNoReturnType(QualType T, bool AddNoReturn) {
-  FunctionType::ExtInfo Info = getFunctionExtInfo(T);
-  return getExtFunctionType(*this, T, Info.withNoReturn(AddNoReturn));
-}
-
-QualType ASTContext::getCallConvType(QualType T, CallingConv CallConv) {
-  FunctionType::ExtInfo Info = getFunctionExtInfo(T);
-  return getExtFunctionType(*this, T, Info.withCallingConv(CallConv));
-}
-
-QualType ASTContext::getRegParmType(QualType T, unsigned RegParm) {
-  FunctionType::ExtInfo Info = getFunctionExtInfo(T);
-  return getExtFunctionType(*this, T, Info.withRegParm(RegParm));
+  return cast<FunctionType>(Result.getTypePtr());
 }
 
 /// getComplexType - Return the uniqued reference to the type for a complex
@@ -1230,7 +1184,7 @@ QualType ASTContext::getComplexType(QualType T) {
 
     // Get the new insert position for the node we care about.
     ComplexType *NewIP = ComplexTypes.FindNodeOrInsertPos(ID, InsertPos);
-    assert(NewIP == 0 && "Shouldn't be in the map!"); NewIP = NewIP;
+    assert(NewIP == 0 && "Shouldn't be in the map!"); (void)NewIP;
   }
   ComplexType *New = new (*this, TypeAlignment) ComplexType(T, Canonical);
   Types.push_back(New);
@@ -1258,7 +1212,7 @@ QualType ASTContext::getPointerType(QualType T) {
 
     // Get the new insert position for the node we care about.
     PointerType *NewIP = PointerTypes.FindNodeOrInsertPos(ID, InsertPos);
-    assert(NewIP == 0 && "Shouldn't be in the map!"); NewIP = NewIP;
+    assert(NewIP == 0 && "Shouldn't be in the map!"); (void)NewIP;
   }
   PointerType *New = new (*this, TypeAlignment) PointerType(T, Canonical);
   Types.push_back(New);
@@ -1289,7 +1243,7 @@ QualType ASTContext::getBlockPointerType(QualType T) {
     // Get the new insert position for the node we care about.
     BlockPointerType *NewIP =
       BlockPointerTypes.FindNodeOrInsertPos(ID, InsertPos);
-    assert(NewIP == 0 && "Shouldn't be in the map!"); NewIP = NewIP;
+    assert(NewIP == 0 && "Shouldn't be in the map!"); (void)NewIP;
   }
   BlockPointerType *New
     = new (*this, TypeAlignment) BlockPointerType(T, Canonical);
@@ -1323,7 +1277,7 @@ QualType ASTContext::getLValueReferenceType(QualType T, bool SpelledAsLValue) {
     // Get the new insert position for the node we care about.
     LValueReferenceType *NewIP =
       LValueReferenceTypes.FindNodeOrInsertPos(ID, InsertPos);
-    assert(NewIP == 0 && "Shouldn't be in the map!"); NewIP = NewIP;
+    assert(NewIP == 0 && "Shouldn't be in the map!"); (void)NewIP;
   }
 
   LValueReferenceType *New
@@ -1360,7 +1314,7 @@ QualType ASTContext::getRValueReferenceType(QualType T) {
     // Get the new insert position for the node we care about.
     RValueReferenceType *NewIP =
       RValueReferenceTypes.FindNodeOrInsertPos(ID, InsertPos);
-    assert(NewIP == 0 && "Shouldn't be in the map!"); NewIP = NewIP;
+    assert(NewIP == 0 && "Shouldn't be in the map!"); (void)NewIP;
   }
 
   RValueReferenceType *New
@@ -1392,7 +1346,7 @@ QualType ASTContext::getMemberPointerType(QualType T, const Type *Cls) {
     // Get the new insert position for the node we care about.
     MemberPointerType *NewIP =
       MemberPointerTypes.FindNodeOrInsertPos(ID, InsertPos);
-    assert(NewIP == 0 && "Shouldn't be in the map!"); NewIP = NewIP;
+    assert(NewIP == 0 && "Shouldn't be in the map!"); (void)NewIP;
   }
   MemberPointerType *New
     = new (*this, TypeAlignment) MemberPointerType(T, Cls, Canonical);
@@ -1434,7 +1388,7 @@ QualType ASTContext::getConstantArrayType(QualType EltTy,
     // Get the new insert position for the node we care about.
     ConstantArrayType *NewIP =
       ConstantArrayTypes.FindNodeOrInsertPos(ID, InsertPos);
-    assert(NewIP == 0 && "Shouldn't be in the map!"); NewIP = NewIP;
+    assert(NewIP == 0 && "Shouldn't be in the map!"); (void)NewIP;
   }
 
   ConstantArrayType *New = new(*this,TypeAlignment)
@@ -1600,7 +1554,7 @@ QualType ASTContext::getIncompleteArrayType(QualType EltTy,
     // Get the new insert position for the node we care about.
     IncompleteArrayType *NewIP =
       IncompleteArrayTypes.FindNodeOrInsertPos(ID, InsertPos);
-    assert(NewIP == 0 && "Shouldn't be in the map!"); NewIP = NewIP;
+    assert(NewIP == 0 && "Shouldn't be in the map!"); (void)NewIP;
   }
 
   IncompleteArrayType *New = new (*this, TypeAlignment)
@@ -1636,7 +1590,7 @@ QualType ASTContext::getVectorType(QualType vecType, unsigned NumElts,
 
     // Get the new insert position for the node we care about.
     VectorType *NewIP = VectorTypes.FindNodeOrInsertPos(ID, InsertPos);
-    assert(NewIP == 0 && "Shouldn't be in the map!"); NewIP = NewIP;
+    assert(NewIP == 0 && "Shouldn't be in the map!"); (void)NewIP;
   }
   VectorType *New = new (*this, TypeAlignment)
     VectorType(vecType, NumElts, Canonical, VecKind);
@@ -1669,7 +1623,7 @@ QualType ASTContext::getExtVectorType(QualType vecType, unsigned NumElts) {
 
     // Get the new insert position for the node we care about.
     VectorType *NewIP = VectorTypes.FindNodeOrInsertPos(ID, InsertPos);
-    assert(NewIP == 0 && "Shouldn't be in the map!"); NewIP = NewIP;
+    assert(NewIP == 0 && "Shouldn't be in the map!"); (void)NewIP;
   }
   ExtVectorType *New = new (*this, TypeAlignment)
     ExtVectorType(vecType, NumElts, Canonical);
@@ -1744,7 +1698,7 @@ QualType ASTContext::getFunctionNoProtoType(QualType ResultTy,
     // Get the new insert position for the node we care about.
     FunctionNoProtoType *NewIP =
       FunctionNoProtoTypes.FindNodeOrInsertPos(ID, InsertPos);
-    assert(NewIP == 0 && "Shouldn't be in the map!"); NewIP = NewIP;
+    assert(NewIP == 0 && "Shouldn't be in the map!"); (void)NewIP;
   }
 
   FunctionNoProtoType *New = new (*this, TypeAlignment)
@@ -1802,7 +1756,7 @@ QualType ASTContext::getFunctionType(QualType ResultTy,
     // Get the new insert position for the node we care about.
     FunctionProtoType *NewIP =
       FunctionProtoTypes.FindNodeOrInsertPos(ID, InsertPos);
-    assert(NewIP == 0 && "Shouldn't be in the map!"); NewIP = NewIP;
+    assert(NewIP == 0 && "Shouldn't be in the map!"); (void)NewIP;
   }
 
   // FunctionProtoType objects are allocated with extra bytes after them
@@ -2218,6 +2172,32 @@ ASTContext::getDependentTemplateSpecializationType(
   Types.push_back(T);
   DependentTemplateSpecializationTypes.InsertNode(T, InsertPos);
   return QualType(T, 0);
+}
+
+QualType ASTContext::getPackExpansionType(QualType Pattern) {
+  llvm::FoldingSetNodeID ID;
+  PackExpansionType::Profile(ID, Pattern);
+
+  assert(Pattern->containsUnexpandedParameterPack() &&
+         "Pack expansions must expand one or more parameter packs");
+  void *InsertPos = 0;
+  PackExpansionType *T
+    = PackExpansionTypes.FindNodeOrInsertPos(ID, InsertPos);
+  if (T)
+    return QualType(T, 0);
+
+  QualType Canon;
+  if (!Pattern.isCanonical()) {
+    Canon = getPackExpansionType(getCanonicalType(Pattern));
+
+    // Find the insert position again.
+    PackExpansionTypes.FindNodeOrInsertPos(ID, InsertPos);
+  }
+
+  T = new (*this) PackExpansionType(Pattern, Canon);
+  Types.push_back(T);
+  PackExpansionTypes.InsertNode(T, InsertPos);
+  return QualType(T, 0);  
 }
 
 /// CmpProtocolNames - Comparison predicate for sorting protocols
@@ -2719,6 +2699,9 @@ ASTContext::getCanonicalTemplateArgument(const TemplateArgument &Arg) {
       return TemplateArgument(getCanonicalType(Arg.getAsType()));
 
     case TemplateArgument::Pack: {
+      if (Arg.pack_size() == 0)
+        return Arg;
+      
       TemplateArgument *CanonArgs
         = new (*this) TemplateArgument[Arg.pack_size()];
       unsigned Idx = 0;
@@ -2967,7 +2950,8 @@ unsigned ASTContext::getIntegerRank(Type *T) {
   if (EnumType* ET = dyn_cast<EnumType>(T))
     T = ET->getDecl()->getPromotionType().getTypePtr();
 
-  if (T->isSpecificBuiltinType(BuiltinType::WChar))
+  if (T->isSpecificBuiltinType(BuiltinType::WChar_S) ||
+      T->isSpecificBuiltinType(BuiltinType::WChar_U))
     T = getFromTargetType(Target.getWCharType()).getTypePtr();
 
   if (T->isSpecificBuiltinType(BuiltinType::Char16))
@@ -3752,7 +3736,8 @@ static char ObjCEncodingForPrimitiveKind(const ASTContext *C, QualType T) {
     case BuiltinType::Char_S:
     case BuiltinType::SChar:      return 'c';
     case BuiltinType::Short:      return 's';
-    case BuiltinType::WChar:
+    case BuiltinType::WChar_S:
+    case BuiltinType::WChar_U:
     case BuiltinType::Int:        return 'i';
     case BuiltinType::Long:
       return
@@ -3800,7 +3785,10 @@ static void EncodeBitField(const ASTContext *Context, std::string& S,
         break;
     }
     S += llvm::utostr(RL.getFieldOffset(i));
-    S += ObjCEncodingForPrimitiveKind(Context, T);
+    if (T->isEnumeralType())
+      S += 'i';
+    else
+      S += ObjCEncodingForPrimitiveKind(Context, T);
   }
   unsigned N = E->EvaluateAsInt(*Ctx).getZExtValue();
   S += llvm::utostr(N);
@@ -4806,8 +4794,8 @@ QualType ASTContext::mergeFunctionTypes(QualType lhs, QualType rhs,
     retType = mergeTypes(rbase->getResultType(), lbase->getResultType(), true,
                          Unqualified);
   else
-   retType = mergeTypes(lbase->getResultType(), rbase->getResultType(),
-                        false, Unqualified);
+    retType = mergeTypes(lbase->getResultType(), rbase->getResultType(), false,
+                         Unqualified);
   if (retType.isNull()) return QualType();
   
   if (Unqualified)
@@ -4824,28 +4812,33 @@ QualType ASTContext::mergeFunctionTypes(QualType lhs, QualType rhs,
     allLTypes = false;
   if (getCanonicalType(retType) != RRetType)
     allRTypes = false;
+
   // FIXME: double check this
   // FIXME: should we error if lbase->getRegParmAttr() != 0 &&
   //                           rbase->getRegParmAttr() != 0 &&
   //                           lbase->getRegParmAttr() != rbase->getRegParmAttr()?
   FunctionType::ExtInfo lbaseInfo = lbase->getExtInfo();
   FunctionType::ExtInfo rbaseInfo = rbase->getExtInfo();
-  unsigned RegParm = lbaseInfo.getRegParm() == 0 ? rbaseInfo.getRegParm() :
-      lbaseInfo.getRegParm();
-  bool NoReturn = lbaseInfo.getNoReturn() || rbaseInfo.getNoReturn();
-  if (NoReturn != lbaseInfo.getNoReturn() ||
-      RegParm != lbaseInfo.getRegParm())
-    allLTypes = false;
-  if (NoReturn != rbaseInfo.getNoReturn() ||
-      RegParm != rbaseInfo.getRegParm())
-    allRTypes = false;
-  CallingConv lcc = lbaseInfo.getCC();
-  CallingConv rcc = rbaseInfo.getCC();
+
   // Compatible functions must have compatible calling conventions
-  if (!isSameCallConv(lcc, rcc))
+  if (!isSameCallConv(lbaseInfo.getCC(), rbaseInfo.getCC()))
     return QualType();
 
-  FunctionType::ExtInfo einfo = FunctionType::ExtInfo(NoReturn, RegParm, lcc);
+  // Regparm is part of the calling convention.
+  if (lbaseInfo.getRegParm() != rbaseInfo.getRegParm())
+    return QualType();
+
+  // It's noreturn if either type is.
+  // FIXME: some uses, e.g. conditional exprs, really want this to be 'both'.
+  bool NoReturn = lbaseInfo.getNoReturn() || rbaseInfo.getNoReturn();
+  if (NoReturn != lbaseInfo.getNoReturn())
+    allLTypes = false;
+  if (NoReturn != rbaseInfo.getNoReturn())
+    allRTypes = false;
+
+  FunctionType::ExtInfo einfo(NoReturn,
+                              lbaseInfo.getRegParm(),
+                              lbaseInfo.getCC());
 
   if (lproto && rproto) { // two C99 style function prototypes
     assert(!lproto->hasExceptionSpec() && !rproto->hasExceptionSpec() &&
@@ -4933,8 +4926,7 @@ QualType ASTContext::mergeFunctionTypes(QualType lhs, QualType rhs,
 
   if (allLTypes) return lhs;
   if (allRTypes) return rhs;
-  FunctionType::ExtInfo Info(NoReturn, RegParm, lcc);
-  return getFunctionNoProtoType(retType, Info);
+  return getFunctionNoProtoType(retType, einfo);
 }
 
 QualType ASTContext::mergeTypes(QualType LHS, QualType RHS, 
@@ -5566,13 +5558,18 @@ QualType ASTContext::GetBuiltinType(unsigned Id,
   assert((TypeStr[0] != '.' || TypeStr[1] == 0) &&
          "'.' should only occur at end of builtin type list!");
 
-  // handle untyped/variadic arguments "T c99Style();" or "T cppStyle(...);".
-  if (ArgTypes.size() == 0 && TypeStr[0] == '.')
-    return getFunctionNoProtoType(ResType);
+  FunctionType::ExtInfo EI;
+  if (BuiltinInfo.isNoReturn(Id)) EI = EI.withNoReturn(true);
+
+  bool Variadic = (TypeStr[0] == '.');
+
+  // We really shouldn't be making a no-proto type here, especially in C++.
+  if (ArgTypes.empty() && Variadic)
+    return getFunctionNoProtoType(ResType, EI);
 
   FunctionProtoType::ExtProtoInfo EPI;
-  EPI.Variadic = (TypeStr[0] == '.');
-  // FIXME: Should we create noreturn types?
+  EPI.ExtInfo = EI;
+  EPI.Variadic = Variadic;
 
   return getFunctionType(ResType, ArgTypes.data(), ArgTypes.size(), EPI);
 }

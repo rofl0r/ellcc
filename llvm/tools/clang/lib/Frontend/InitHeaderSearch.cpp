@@ -41,15 +41,14 @@ class InitHeaderSearch {
   std::vector<DirectoryLookup> IncludeGroup[4];
   HeaderSearch& Headers;
   bool Verbose;
-  llvm::sys::Path IncludeSysroot;
+  std::string IncludeSysroot;
+  bool IsNotEmptyOrRoot;
 
 public:
 
   InitHeaderSearch(HeaderSearch &HS, bool verbose, llvm::StringRef sysroot)
-    : Headers(HS), Verbose(verbose),
-      IncludeSysroot((sysroot.empty() || sysroot == "/") ?
-                     llvm::sys::Path::GetRootDirectory() :
-                     llvm::sys::Path(sysroot)) {
+    : Headers(HS), Verbose(verbose), IncludeSysroot(sysroot),
+      IsNotEmptyOrRoot(!(sysroot.empty() || sysroot == "/")) {
   }
 
   /// AddPath - Add the specified path to the specified group list.
@@ -65,7 +64,7 @@ public:
                                    llvm::StringRef Dir64,
                                    const llvm::Triple &triple);
 
-  /// AddMinGWCPlusPlusIncludePaths - Add the necessary paths to suport a MinGW
+  /// AddMinGWCPlusPlusIncludePaths - Add the necessary paths to support a MinGW
   ///  libstdc++.
   void AddMinGWCPlusPlusIncludePaths(llvm::StringRef Base,
                                      llvm::StringRef Arch,
@@ -106,14 +105,14 @@ void InitHeaderSearch::AddPath(const llvm::Twine &Path,
   // Compute the actual path, taking into consideration -isysroot.
   llvm::SmallString<256> MappedPathStorage;
   llvm::StringRef MappedPathStr = Path.toStringRef(MappedPathStorage);
-  llvm::sys::Path MappedPath(MappedPathStr);
 
   // Handle isysroot.
-  if (Group == System && !IgnoreSysRoot && MappedPath.isAbsolute() &&
-      IncludeSysroot != llvm::sys::Path::GetRootDirectory()) {
+  if (Group == System && !IgnoreSysRoot &&
+      llvm::sys::path::is_absolute(MappedPathStr) &&
+      IsNotEmptyOrRoot) {
     MappedPathStorage.clear();
     MappedPathStr =
-      (IncludeSysroot.str() + Path).toStringRef(MappedPathStorage);
+      (IncludeSysroot + Path).toStringRef(MappedPathStorage);
   }
 
   // Compute the DirectoryLookup type.

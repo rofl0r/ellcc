@@ -25,6 +25,7 @@
 #include "clang/Basic/IdentifierTable.h"
 #include "clang/Basic/SourceLocation.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Allocator.h"
@@ -195,6 +196,16 @@ class Preprocessor {
   /// Macros - For each IdentifierInfo with 'HasMacro' set, we keep a mapping
   /// to the actual definition of the macro.
   llvm::DenseMap<IdentifierInfo*, MacroInfo*> Macros;
+
+  /// \brief Macros that we want to warn because they are not used at the end
+  /// of the translation unit; we store just their SourceLocations instead
+  /// something like MacroInfo*. The benefit of this is that when we are
+  /// deserializing from PCH, we don't need to deserialize identifier & macros
+  /// just so that we can report that they are unused, we just warn using
+  /// the SourceLocations of this set (that will be filled by the ASTReader).
+  /// We are using SmallPtrSet instead of a vector for faster removal.
+  typedef llvm::SmallPtrSet<SourceLocation, 32> WarnUnusedMacroLocsTy;
+  WarnUnusedMacroLocsTy WarnUnusedMacroLocs;
 
   /// MacroArgCache - This is a "freelist" of MacroArg objects that can be
   /// reused for quick allocation.
@@ -740,10 +751,10 @@ public:
   // Preprocessor callback methods.  These are invoked by a lexer as various
   // directives and events are found.
 
-  /// LookUpIdentifierInfo - Given a tok::identifier token, look up the
-  /// identifier information for the token and install it into the token.
-  IdentifierInfo *LookUpIdentifierInfo(Token &Identifier,
-                                       const char *BufPtr = 0) const;
+  /// LookUpIdentifierInfo - Given a tok::raw_identifier token, look up the
+  /// identifier information for the token and install it into the token,
+  /// updating the token kind accordingly.
+  IdentifierInfo *LookUpIdentifierInfo(Token &Identifier) const;
 
   /// HandleIdentifier - This callback is invoked when the lexer reads an
   /// identifier and has filled in the tokens IdentifierInfo member.  This
@@ -1013,6 +1024,10 @@ public:
   // Return true and store the first token only if any CommentHandler
   // has inserted some tokens and getCommentRetentionState() is false.
   bool HandleComment(Token &Token, SourceRange Comment);
+
+  /// \brief A macro is used, update information about macros that need unused
+  /// warnings.
+  void markMacroAsUsed(MacroInfo *MI);
 };
 
 /// \brief Abstract base class that describes a handler that will receive

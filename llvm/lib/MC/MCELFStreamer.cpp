@@ -113,9 +113,8 @@ public:
      SD.setSize(Value);
   }
 
-  virtual void EmitLocalCommonSymbol(MCSymbol *Symbol, uint64_t Size) {
-    assert(0 && "ELF doesn't support this directive");
-  }
+  virtual void EmitLocalCommonSymbol(MCSymbol *Symbol, uint64_t Size);
+
   virtual void EmitZerofill(const MCSection *Section, MCSymbol *Symbol = 0,
                             unsigned Size = 0, unsigned ByteAlignment = 0) {
     assert(0 && "ELF doesn't support this directive");
@@ -362,6 +361,16 @@ void MCELFStreamer::EmitCommonSymbol(MCSymbol *Symbol, uint64_t Size,
   SD.setSize(MCConstantExpr::Create(Size, getContext()));
 }
 
+void MCELFStreamer::EmitLocalCommonSymbol(MCSymbol *Symbol, uint64_t Size) {
+  // FIXME: Should this be caught and done earlier?
+  MCSymbolData &SD = getAssembler().getOrCreateSymbolData(*Symbol);
+  SetBinding(SD, ELF::STB_LOCAL);
+  SD.setExternal(false);
+  BindingExplicitlySet.insert(Symbol);
+  // FIXME: ByteAlignment is not needed here, but is required.
+  EmitCommonSymbol(Symbol, Size, 1);
+}
+
 void MCELFStreamer::EmitBytes(StringRef Data, unsigned AddrSpace) {
   // TODO: This is exactly the same as WinCOFFStreamer. Consider merging into
   // MCObjectStreamer.
@@ -479,7 +488,7 @@ void MCELFStreamer::EmitInstToData(const MCInst &Inst) {
 }
 
 void MCELFStreamer::Finish() {
-  if (!FrameInfos.empty())
+  if (getNumFrameInfos())
     MCDwarfFrameEmitter::Emit(*this);
 
   for (std::vector<LocalCommon>::const_iterator i = LocalCommons.begin(),

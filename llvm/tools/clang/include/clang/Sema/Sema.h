@@ -185,6 +185,11 @@ public:
   static bool classof(const LocInfoType *) { return true; }
 };
 
+// FIXME: No way to easily map from TemplateTypeParmTypes to
+// TemplateTypeParmDecls, so we have this horrible PointerUnion.
+typedef std::pair<llvm::PointerUnion<const TemplateTypeParmType*, NamedDecl*>,
+                  SourceLocation> UnexpandedParameterPack;
+
 /// Sema - This implements semantic analysis and AST building for C.
 class Sema {
   Sema(const Sema&);           // DO NOT IMPLEMENT
@@ -1699,14 +1704,15 @@ public:
   ParsingDeclStackState PushParsingDeclaration();
   void PopParsingDeclaration(ParsingDeclStackState S, Decl *D);
   void EmitDeprecationWarning(NamedDecl *D, llvm::StringRef Message,
-                              SourceLocation Loc);
+                              SourceLocation Loc, bool UnkownObjCClass=false);
 
   void HandleDelayedDeprecationCheck(sema::DelayedDiagnostic &DD, Decl *Ctx);
 
   //===--------------------------------------------------------------------===//
   // Expression Parsing Callbacks: SemaExpr.cpp.
 
-  bool DiagnoseUseOfDecl(NamedDecl *D, SourceLocation Loc);
+  bool DiagnoseUseOfDecl(NamedDecl *D, SourceLocation Loc, 
+                         bool UnkownObjCClass=false);
   bool DiagnosePropertyAccessorMismatch(ObjCPropertyDecl *PD,
                                         ObjCMethodDecl *Getter,
                                         SourceLocation Loc);
@@ -2906,8 +2912,7 @@ public:
 
   bool CheckClassTemplatePartialSpecializationArgs(
                                         TemplateParameterList *TemplateParams,
-                        llvm::SmallVectorImpl<TemplateArgument> &TemplateArgs,
-                                        bool &MirrorsPrimaryTemplate);
+                        llvm::SmallVectorImpl<TemplateArgument> &TemplateArgs);
 
   DeclResult
   ActOnClassTemplateSpecialization(Scope *S, unsigned TagSpec, TagUseKind TUK,
@@ -3129,16 +3134,60 @@ public:
                                   const TemplateArgument *Args,
                                   unsigned NumArgs);
 
+  //===--------------------------------------------------------------------===//
+  // C++ Variadic Templates (C++0x [temp.variadic])
+  //===--------------------------------------------------------------------===//
+
   /// \brief The context in which an unexpanded parameter pack is
   /// being diagnosed.
   ///
   /// Note that the values of this enumeration line up with the first
   /// argument to the \c err_unexpanded_parameter_pack diagnostic.
   enum UnexpandedParameterPackContext {
+    /// \brief An arbitrary expression.
     UPPC_Expression = 0,
+
+    /// \brief The base type of a class type.
     UPPC_BaseType,
+
+    /// \brief The type of an arbitrary declaration.
     UPPC_DeclarationType,
-    UPPC_TemplateArgument
+
+    /// \brief The type of a data member.
+    UPPC_DataMemberType,
+
+    /// \brief The size of a bit-field.
+    UPPC_BitFieldWidth,
+
+    /// \brief The expression in a static assertion.
+    UPPC_StaticAssertExpression,
+
+    /// \brief The fixed underlying type of an enumeration.
+    UPPC_FixedUnderlyingType,
+
+    /// \brief The enumerator value.
+    UPPC_EnumeratorValue,
+
+    /// \brief A using declaration.
+    UPPC_UsingDeclaration,
+
+    /// \brief A friend declaration.
+    UPPC_FriendDeclaration,
+
+    /// \brief A declaration qualifier.
+    UPPC_DeclarationQualifier,
+
+    /// \brief An initializer.
+    UPPC_Initializer,
+    
+    /// \brief A default argument.
+    UPPC_DefaultArgument,
+    
+    /// \brief The type of a non-type template parameter.
+    UPPC_NonTypeTemplateParameterType,
+
+    /// \brief The type of an exception.
+    UPPC_ExceptionType
   };
 
   /// \brief If the given type contains an unexpanded parameter pack,
@@ -3163,6 +3212,144 @@ public:
   bool DiagnoseUnexpandedParameterPack(Expr *E,
                        UnexpandedParameterPackContext UPPC = UPPC_Expression);
 
+  /// \brief If the given nested-name-specifier contains an unexpanded
+  /// parameter pack, diagnose the error.
+  ///
+  /// \param SS The nested-name-specifier that is being checked for
+  /// unexpanded parameter packs.
+  ///
+  /// \returns true if an error ocurred, false otherwise.
+  bool DiagnoseUnexpandedParameterPack(const CXXScopeSpec &SS,
+                                       UnexpandedParameterPackContext UPPC);
+
+  /// \brief If the given name contains an unexpanded parameter pack,
+  /// diagnose the error.
+  ///
+  /// \param NameInfo The name (with source location information) that
+  /// is being checked for unexpanded parameter packs.
+  ///
+  /// \returns true if an error ocurred, false otherwise.
+  bool DiagnoseUnexpandedParameterPack(const DeclarationNameInfo &NameInfo,
+                                       UnexpandedParameterPackContext UPPC);
+
+  /// \brief If the given template name contains an unexpanded parameter pack,
+  /// diagnose the error.
+  ///
+  /// \param Loc The location of the template name.
+  ///
+  /// \param Template The template name that is being checked for unexpanded 
+  /// parameter packs.
+  ///
+  /// \returns true if an error ocurred, false otherwise.
+  bool DiagnoseUnexpandedParameterPack(SourceLocation Loc,
+                                       TemplateName Template,
+                                       UnexpandedParameterPackContext UPPC);
+
+  /// \brief Collect the set of unexpanded parameter packs within the given
+  /// template argument.  
+  ///
+  /// \param Arg The template argument that will be traversed to find
+  /// unexpanded parameter packs.
+  void collectUnexpandedParameterPacks(TemplateArgument Arg,
+                   llvm::SmallVectorImpl<UnexpandedParameterPack> &Unexpanded);
+
+  /// \brief Collect the set of unexpanded parameter packs within the given
+  /// template argument.  
+  ///
+  /// \param Arg The template argument that will be traversed to find
+  /// unexpanded parameter packs.
+  void collectUnexpandedParameterPacks(TemplateArgumentLoc Arg,
+                    llvm::SmallVectorImpl<UnexpandedParameterPack> &Unexpanded);
+
+  /// \brief Collect the set of unexpanded parameter packs within the given
+  /// type.  
+  ///
+  /// \param Arg The template argument that will be traversed to find
+  /// unexpanded parameter packs.
+  void collectUnexpandedParameterPacks(QualType T,
+                   llvm::SmallVectorImpl<UnexpandedParameterPack> &Unexpanded);
+
+  /// \brief Invoked when parsing a template argument followed by an
+  /// ellipsis, which creates a pack expansion.
+  ///
+  /// \param Arg The template argument preceding the ellipsis, which
+  /// may already be invalid.
+  ///
+  /// \param EllipsisLoc The location of the ellipsis.
+  ParsedTemplateArgument ActOnPackExpansion(const ParsedTemplateArgument &Arg,
+                                            SourceLocation EllipsisLoc);
+
+  /// \brief Invoked when parsing a type follows by an ellipsis, which
+  /// creates a pack expansion.
+  ///
+  /// \param Type The type preceding the ellipsis, which will become
+  /// the pattern of the pack expansion.
+  ///
+  /// \param EllipsisLoc The location of the ellipsis.
+  TypeResult ActOnPackExpansion(ParsedType Type, SourceLocation EllipsisLoc);
+
+  /// \brief Construct a pack expansion type from the pattern of the pack
+  /// expansion.
+  TypeSourceInfo *CheckPackExpansion(TypeSourceInfo *Pattern,
+                                     SourceLocation EllipsisLoc);
+  
+  /// \brief Determine whether we could expand a pack expansion with the
+  /// given set of parameter packs into separate arguments by repeatedly
+  /// transforming the pattern.
+  ///
+  /// \param EllipsisLoc The location of the ellipsis that identifies the
+  /// pack expansion.
+  ///
+  /// \param PatternRange The source range that covers the entire pattern of
+  /// the pack expansion.
+  ///
+  /// \param Unexpanded The set of unexpanded parameter packs within the 
+  /// pattern.
+  ///
+  /// \param NumUnexpanded The number of unexpanded parameter packs in
+  /// \p Unexpanded.
+  ///
+  /// \param ShouldExpand Will be set to \c true if the transformer should
+  /// expand the corresponding pack expansions into separate arguments. When
+  /// set, \c NumExpansions must also be set.
+  ///
+  /// \param NumExpansions The number of separate arguments that will be in
+  /// the expanded form of the corresponding pack expansion. Must be set when
+  /// \c ShouldExpand is \c true.
+  ///
+  /// \returns true if an error occurred (e.g., because the parameter packs 
+  /// are to be instantiated with arguments of different lengths), false 
+  /// otherwise. If false, \c ShouldExpand (and possibly \c NumExpansions) 
+  /// must be set.
+  bool CheckParameterPacksForExpansion(SourceLocation EllipsisLoc,
+                                       SourceRange PatternRange,
+                                     const UnexpandedParameterPack *Unexpanded,
+                                       unsigned NumUnexpanded,
+                             const MultiLevelTemplateArgumentList &TemplateArgs,
+                                       bool &ShouldExpand,
+                                       unsigned &NumExpansions);
+
+  /// \brief Determine whether the given declarator contains any unexpanded
+  /// parameter packs.
+  ///
+  /// This routine is used by the parser to disambiguate function declarators
+  /// with an ellipsis prior to the ')', e.g.,
+  ///
+  /// \code
+  ///   void f(T...);
+  /// \endcode
+  ///
+  /// To determine whether we have an (unnamed) function parameter pack or
+  /// a variadic function.
+  ///
+  /// \returns true if the declarator contains any unexpanded parameter packs,
+  /// false otherwise.
+  bool containsUnexpandedParameterPacks(Declarator &D);
+  
+  //===--------------------------------------------------------------------===//
+  // C++ Template Argument Deduction (C++ [temp.deduct])
+  //===--------------------------------------------------------------------===//
+  
   /// \brief Describes the result of template argument deduction.
   ///
   /// The TemplateDeductionResult enumeration describes the result of
@@ -3425,6 +3612,35 @@ public:
   /// to implement it anywhere else.
   ActiveTemplateInstantiation LastTemplateInstantiationErrorContext;
 
+  /// \brief The current index into pack expansion arguments that will be
+  /// used for substitution of parameter packs.
+  ///
+  /// The pack expansion index will be -1 to indicate that parameter packs 
+  /// should be instantiated as themselves. Otherwise, the index specifies
+  /// which argument within the parameter pack will be used for substitution.
+  int ArgumentPackSubstitutionIndex;
+  
+  /// \brief RAII object used to change the argument pack substitution index
+  /// within a \c Sema object.
+  ///
+  /// See \c ArgumentPackSubstitutionIndex for more information.
+  class ArgumentPackSubstitutionIndexRAII {
+    Sema &Self;
+    int OldSubstitutionIndex;
+    
+  public:
+    ArgumentPackSubstitutionIndexRAII(Sema &Self, int NewSubstitutionIndex)
+      : Self(Self), OldSubstitutionIndex(Self.ArgumentPackSubstitutionIndex) {
+      Self.ArgumentPackSubstitutionIndex = NewSubstitutionIndex;
+    }
+    
+    ~ArgumentPackSubstitutionIndexRAII() {
+      Self.ArgumentPackSubstitutionIndex = OldSubstitutionIndex;
+    }
+  };
+  
+  friend class ArgumentPackSubstitutionRAII;
+  
   /// \brief The stack of calls expression undergoing template instantiation.
   ///
   /// The top of this stack is used by a fixit instantiating unresolved
@@ -3678,7 +3894,8 @@ public:
   TemplateName
   SubstTemplateName(TemplateName Name, SourceLocation Loc,
                     const MultiLevelTemplateArgumentList &TemplateArgs);
-  bool Subst(const TemplateArgumentLoc &Arg, TemplateArgumentLoc &Result,
+  bool Subst(const TemplateArgumentLoc *Args, unsigned NumArgs,
+             TemplateArgumentListInfo &Result,
              const MultiLevelTemplateArgumentList &TemplateArgs);
 
   void InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
@@ -4461,12 +4678,8 @@ public:
   void CodeCompleteObjCAtStatement(Scope *S);
   void CodeCompleteObjCAtExpression(Scope *S);
   void CodeCompleteObjCPropertyFlags(Scope *S, ObjCDeclSpec &ODS);
-  void CodeCompleteObjCPropertyGetter(Scope *S, Decl *ClassDecl,
-                                      Decl **Methods,
-                                      unsigned NumMethods);
-  void CodeCompleteObjCPropertySetter(Scope *S, Decl *ClassDecl,
-                                      Decl **Methods,
-                                      unsigned NumMethods);
+  void CodeCompleteObjCPropertyGetter(Scope *S, Decl *ClassDecl);
+  void CodeCompleteObjCPropertySetter(Scope *S, Decl *ClassDecl);
   void CodeCompleteObjCPassingType(Scope *S, ObjCDeclSpec &DS);
   void CodeCompleteObjCMessageReceiver(Scope *S);
   void CodeCompleteObjCSuperMessage(Scope *S, SourceLocation SuperLoc,

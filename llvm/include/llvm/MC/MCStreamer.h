@@ -52,6 +52,10 @@ namespace llvm {
     void EmitSymbolValue(const MCSymbol *Sym, unsigned Size,
                          bool isPCRel, unsigned AddrSpace);
 
+    std::vector<MCDwarfFrameInfo> FrameInfos;
+    MCDwarfFrameInfo *getCurrentFrameInfo();
+    void EnsureValidFrame();
+
   protected:
     MCStreamer(MCContext &Ctx);
 
@@ -62,10 +66,6 @@ namespace llvm {
     /// PrevSection - This is the previous section code is being emitted to, it
     /// is kept up to date by SwitchSection.
     const MCSection *PrevSection;
-
-    std::vector<MCDwarfFrameInfo> FrameInfos;
-    MCDwarfFrameInfo *getCurrentFrameInfo();
-    void EnsureValidFrame();
 
   public:
     virtual ~MCStreamer();
@@ -386,16 +386,24 @@ namespace llvm {
                                           const MCSymbol *LastLabel,
                                           const MCSymbol *Label) = 0;
 
+    virtual void EmitDwarfAdvanceFrameAddr(const MCSymbol *LastLabel,
+                                           const MCSymbol *Label) {
+    }
+
     void EmitDwarfSetLineAddr(int64_t LineDelta, const MCSymbol *Label,
                               int PointerSize);
 
     virtual bool EmitCFIStartProc();
     virtual bool EmitCFIEndProc();
+    virtual bool EmitCFIDefCfa(int64_t Register, int64_t Offset);
     virtual bool EmitCFIDefCfaOffset(int64_t Offset);
     virtual bool EmitCFIDefCfaRegister(int64_t Register);
     virtual bool EmitCFIOffset(int64_t Register, int64_t Offset);
-    virtual bool EmitCFIPersonality(const MCSymbol *Sym);
-    virtual bool EmitCFILsda(const MCSymbol *Sym);
+    virtual bool EmitCFIPersonality(const MCSymbol *Sym,
+                                    unsigned Encoding);
+    virtual bool EmitCFILsda(const MCSymbol *Sym, unsigned Encoding);
+    virtual bool EmitCFIRememberState();
+    virtual bool EmitCFIRestoreState();
 
     /// EmitInstruction - Emit the given @p Instruction into the current
     /// section.
@@ -426,6 +434,10 @@ namespace llvm {
   /// \param CE - If given, a code emitter to use to show the instruction
   /// encoding inline with the assembly. This method takes ownership of \arg CE.
   ///
+  /// \param TAB - If given, a target asm backend to use to show the fixup
+  /// information in conjunction with encoding information. This method takes
+  /// ownership of \arg TAB.
+  ///
   /// \param ShowInst - Whether to show the MCInst representation inline with
   /// the assembly.
   MCStreamer *createAsmStreamer(MCContext &Ctx, formatted_raw_ostream &OS,
@@ -433,6 +445,7 @@ namespace llvm {
                                 bool useLoc,
                                 MCInstPrinter *InstPrint = 0,
                                 MCCodeEmitter *CE = 0,
+                                TargetAsmBackend *TAB = 0,
                                 bool ShowInst = false);
 
   /// createMachOStreamer - Create a machine code streamer which will generate

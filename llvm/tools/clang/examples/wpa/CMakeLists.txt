@@ -7,7 +7,8 @@ set(LLVM_USED_LIBS
   clangSema
   clangAnalysis
   clangSerialization
-  clangChecker
+  clangStaticAnalyzerCheckers
+  clangStaticAnalyzerCore
   clangRewrite
   clangAST
   clangParse

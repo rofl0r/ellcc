@@ -30,6 +30,7 @@
 #include "llvm/ADT/OwningPtr.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Program.h"
 
@@ -77,24 +78,18 @@ Driver::Driver(llvm::StringRef _ClangExecutable,
       CCCUseClangCXX = false;
   }
 
-  llvm::sys::Path Executable(ClangExecutable);
-  Name = Executable.getBasename();
-  Dir = Executable.getDirname();
+  Name = llvm::sys::path::stem(ClangExecutable);
+  Dir  = llvm::sys::path::parent_path(ClangExecutable);
 
   // Compute the path to the resource directory.
   llvm::StringRef ClangResourceDir(CLANG_RESOURCE_DIR);
-  llvm::sys::Path P(Dir);
-  if (ClangResourceDir != "") {
-    P.appendComponent(ClangResourceDir);
-  } else if (CCCIsELLCC) {
-    P.appendComponent(".."); // Walk up from a 'bin' subdirectory.
-    P.appendComponent("libecc");
-  } else {
-    P.appendComponent(".."); // Walk up from a 'bin' subdirectory.
-    P.appendComponent("lib");
-    P.appendComponent("clang");
-    P.appendComponent(CLANG_VERSION_STRING);
-  }
+  llvm::SmallString<128> P(Dir);
+  if (ClangResourceDir != "")
+    llvm::sys::path::append(P, ClangResourceDir);
+  else if (CCCIsELLCC) {
+    llvm::sys::path::append(P, "..", "libecc");
+  } else
+    llvm::sys::path::append(P, "..", "lib", "clang", CLANG_VERSION_STRING);
   ResourceDir = P.str();
 }
 
@@ -758,14 +753,15 @@ void Driver::BuildActions(const ToolChain &TC, const ArgList &Args,
 
       // Check that the file exists, if enabled.
       if (CheckInputsExist && memcmp(Value, "-", 2) != 0) {
-        llvm::sys::Path Path(Value);
+        llvm::SmallString<64> Path(Value);
         if (Arg *WorkDir = Args.getLastArg(options::OPT_working_directory))
-          if (!Path.isAbsolute()) {
+          if (llvm::sys::path::is_absolute(Path.str())) {
             Path = WorkDir->getValue(Args);
-            Path.appendComponent(Value);
+            llvm::sys::path::append(Path, Value);
           }
 
-        if (!Path.exists())
+        bool exists = false;
+        if (/*error_code ec =*/llvm::sys::fs::exists(Value, exists) || !exists)
           Diag(clang::diag::err_drv_no_such_file) << Path.str();
         else
           Inputs.push_back(std::make_pair(Ty, A));
@@ -783,7 +779,7 @@ void Driver::BuildActions(const ToolChain &TC, const ArgList &Args,
 
       // Follow gcc behavior and treat as linker input for invalid -x
       // options. Its not clear why we shouldn't just revert to unknown; but
-      // this isn't very important, we might as well be bug comatible.
+      // this isn't very important, we might as well be bug compatible.
       if (!InputType) {
         Diag(clang::diag::err_drv_unknown_language) << A->getValue(Args);
         InputType = types::TY_Object;
@@ -1197,8 +1193,8 @@ const char *Driver::GetNamedOutputPath(Compilation &C,
     return C.addTempFile(C.getArgs().MakeArgString(TmpName.c_str()));
   }
 
-  llvm::sys::Path BasePath(BaseInput);
-  std::string BaseName(BasePath.getLast());
+  llvm::SmallString<128> BasePath(BaseInput);
+  llvm::StringRef BaseName = llvm::sys::path::filename(BasePath);
 
   // Determine what the derived output name should be.
   const char *NamedOutput;
@@ -1219,11 +1215,11 @@ const char *Driver::GetNamedOutputPath(Compilation &C,
 
   // As an annoying special case, PCH generation doesn't strip the pathname.
   if (JA.getType() == types::TY_PCH) {
-    BasePath.eraseComponent();
-    if (BasePath.isEmpty())
+    llvm::sys::path::remove_filename(BasePath);
+    if (BasePath.empty())
       BasePath = NamedOutput;
     else
-      BasePath.appendComponent(NamedOutput);
+      llvm::sys::path::append(BasePath, NamedOutput);
     return C.addResultFile(C.getArgs().MakeArgString(BasePath.c_str()));
   } else {
     return C.addResultFile(NamedOutput);

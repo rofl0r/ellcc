@@ -436,6 +436,11 @@ def warn_objc_property_attr_mutually_exclusive : Warning<
   InGroup<ReadOnlySetterAttrs>, DefaultIgnore;
 def warn_undeclared_selector : Warning<
   "undeclared selector %0">, InGroup<UndeclaredSelector>, DefaultIgnore;
+def warn_implicit_atomic_property : Warning<
+  "property is assumed atomic by default">, InGroup<ImplicitAtomic>, DefaultIgnore;
+def warn_auto_implicit_atomic_property : Warning<
+  "property is assumed atomic when auto-synthesizing the property">, 
+  InGroup<ImplicitAtomic>, DefaultIgnore;
 def warn_unimplemented_selector:  Warning<
   "unimplemented selector %0">, InGroup<Selector>, DefaultIgnore;
 def warn_unimplemented_protocol_method : Warning<
@@ -469,6 +474,8 @@ def err_tagless_friend_type_template : Error<
   "friend type templates must use an elaborated type">;
 def err_no_matching_local_friend : Error<
   "no matching function found in local scope">;
+def err_partial_specialization_friend : Error<
+  "partial specialization cannot be declared as a friend">;
 
 def err_abstract_type_in_decl : Error<
   "%select{return|parameter|variable|field}0 type %1 is an abstract class">;
@@ -924,6 +931,8 @@ def err_attribute_argument_out_of_bounds : Error<
   "'%0' attribute parameter %1 is out of bounds">;
 def err_attribute_requires_objc_interface : Error<
   "attribute may only be applied to an Objective-C interface">;
+def err_attribute_uuid_malformed_guid : Error<
+  "uuid attribute contains a malformed GUID">;
 def warn_nonnull_pointers_only : Warning<
   "nonnull attribute only applies to pointer arguments">;
 def err_attribute_invalid_implicit_this_argument : Error<
@@ -1821,9 +1830,52 @@ def note_template_parameter_pack_here : Note<
   "previous template %select{type|non-type|template}0 "
   "parameter%select{| pack}1 declared here">;
   
-def err_unexpanded_parameter_pack : Error<
-  "%select{expression|base type|declaration type|template argument}0 contains "
-  "unexpanded parameter pack">;
+def err_unexpanded_parameter_pack_0 : Error<
+  "%select{expression|base type|declaration type|data member type|bit-field "
+  "size|static assertion|fixed underlying type|enumerator value|"
+  "using declaration|friend declaration|qualifier|initializer|default argument|"
+  "non-type template parameter type|exception type}0 "
+  "contains an unexpanded parameter pack">;
+def err_unexpanded_parameter_pack_1 : Error<
+  "%select{expression|base type|declaration type|data member type|bit-field "
+  "size|static assertion|fixed underlying type|enumerator value|"
+  "using declaration|friend declaration|qualifier|initializer|default argument|"
+  "non-type template parameter type|exception type}0 "
+  "contains unexpanded parameter pack %1">;
+def err_unexpanded_parameter_pack_2 : Error<
+  "%select{expression|base type|declaration type|data member type|bit-field "
+  "size|static assertion|fixed underlying type|enumerator value|"
+  "using declaration|friend declaration|qualifier|initializer|default argument|"
+  "non-type template parameter type|exception type}0 "
+  "contains unexpanded parameter packs %1 and %2">;
+def err_unexpanded_parameter_pack_3_or_more : Error<
+  "%select{expression|base type|declaration type|data member type|bit-field "
+  "size|static assertion|fixed underlying type|enumerator value|"
+  "using declaration|friend declaration|qualifier|initializer|default argument|"
+  "non-type template parameter type|exception type}0 "
+  "contains unexpanded parameter packs %1, %2, ...">;
+
+def err_pack_expansion_without_parameter_packs : Error<
+  "pack expansion does not contain any unexpanded parameter packs">;
+def err_pack_expansion_length_conflict : Error<
+  "pack expansion contains parameter packs %0 and %1 that have different "
+  "lengths (%2 vs. %3)">;
+
+def err_function_parameter_pack_without_parameter_packs : Error<
+  "type %0 of function parameter pack does not contain any unexpanded "
+  "parameter packs">;
+def err_ellipsis_in_declarator_not_parameter : Error<
+  "only function and template parameters can be parameter packs">;
+
+// Unsupported variadic templates features
+def err_pack_expansion_unsupported : Error<
+  "clang does not yet support %select{non-type|template}0 pack expansions">;
+def err_pack_expansion_instantiation_unsupported : Error<
+  "clang cannot yet instantiate pack expansions">;
+def err_pack_expansion_mismatch_unsupported : Error<
+  "clang cannot yet instantiate pack expansions with mismatched pack levels">;
+def err_function_parameter_pack_unsupported : Error<
+  "clang does not yet support function parameter packs">;
 
 def err_unexpected_typedef : Error<
   "unexpected type name %0: expected expression">;
@@ -1837,10 +1889,15 @@ def warn_deprecated : Warning<"%0 is deprecated">,
     InGroup<DeprecatedDeclarations>;
 def warn_deprecated_message : Warning<"%0 is deprecated: %1">,
     InGroup<DeprecatedDeclarations>;
+def warn_deprecated_fwdclass_message : Warning<
+    "%0 maybe deprecated because receiver type is unknown">,
+    InGroup<DeprecatedDeclarations>;
 def err_unavailable : Error<"%0 is unavailable">;
 def err_unavailable_message : Error<"%0 is unavailable: %1">;
+def warn_unavailable_fwdclass_message : Warning<
+    "%0 maybe unavailable because receiver type is unknown">;
 def note_unavailable_here : Note<
-  "function has been explicitly marked %select{unavailable|deleted}0 here">;
+  "function has been explicitly marked %select{unavailable|deleted|deprecated}0 here">;
 def warn_not_enough_argument : Warning<
   "not enough variable arguments in %0 declaration to fit a sentinel">;
 def warn_missing_sentinel : Warning <
@@ -2399,6 +2456,12 @@ def err_ref_array_type : Error<
   "cannot refer to declaration with an array type inside block">;
 def err_property_not_found : Error<
   "property %0 not found on object of type %1">;
+def err_getter_not_found : Error<
+  "expected getter method not found on object of type %0">;
+def err_property_not_found_forward_class : Error<
+  "property %0 cannot be found in forward class object %1">;
+def note_forward_class : Note<
+  "forward class is declared here">;
 def err_duplicate_property : Error<
   "property has a previous declaration">;
 def ext_gnu_void_ptr : Extension<
@@ -2556,6 +2619,8 @@ def err_need_header_before_typeid : Error<
   "you need to include <typeinfo> before using the 'typeid' operator">;
 def err_need_header_before_ms_uuidof : Error<
   "you need to include <guiddef.h> before using the '__uuidof' operator">;
+def err_uuidof_without_guid : Error<
+  "cannot call operator __uuidof on a type with no GUID">;
 def err_incomplete_typeid : Error<"'typeid' of incomplete type %0">;
 def err_static_illegal_in_new : Error<
   "the 'static' modifier for the array size is not legal in new expressions">;

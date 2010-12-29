@@ -32,7 +32,9 @@ using namespace sema;
 
 StmtResult Sema::ActOnExprStmt(FullExprArg expr) {
   Expr *E = expr.get();
-  assert(E && "ActOnExprStmt(): missing expression");
+  if (!E) // FIXME: FullExprArg has no error state?
+    return StmtError();
+
   // C99 6.8.3p2: The expression in an expression statement is evaluated as a
   // void expression for its side effects.  Conversion to void allows any
   // operand, even incomplete types.
@@ -1595,6 +1597,8 @@ Sema::ActOnObjCAtTryStmt(SourceLocation AtLoc, Stmt *Try,
 StmtResult Sema::BuildObjCAtThrowStmt(SourceLocation AtLoc,
                                                   Expr *Throw) {
   if (Throw) {
+    DefaultLvalueConversion(Throw);
+
     QualType ThrowType = Throw->getType();
     // Make sure the expression type is an ObjC pointer or "void *".
     if (!ThrowType->isDependentType() &&
@@ -1629,6 +1633,8 @@ StmtResult
 Sema::ActOnObjCAtSynchronizedStmt(SourceLocation AtLoc, Expr *SyncExpr,
                                   Stmt *SyncBody) {
   getCurFunction()->setHasBranchProtectedScope();
+
+  DefaultLvalueConversion(SyncExpr);
 
   // Make sure the expression type is an ObjC pointer or "void *".
   if (!SyncExpr->getType()->isDependentType() &&

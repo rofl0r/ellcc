@@ -13,8 +13,9 @@
 #include "llvm/ADT/Twine.h"
 #include "llvm/MC/MCAssembler.h"
 #include "llvm/MC/MCDirectives.h"
+#include "llvm/MC/MCELFObjectWriter.h"
 #include "llvm/MC/MCExpr.h"
-#include "llvm/MC/MCObjectFormat.h"
+#include "llvm/MC/MCMachObjectWriter.h"
 #include "llvm/MC/MCObjectWriter.h"
 #include "llvm/MC/MCSectionELF.h"
 #include "llvm/MC/MCSectionMachO.h"
@@ -27,10 +28,65 @@
 using namespace llvm;
 
 namespace {
+class ARMMachObjectWriter : public MCMachObjectTargetWriter {
+public:
+  ARMMachObjectWriter(bool Is64Bit, uint32_t CPUType,
+                      uint32_t CPUSubtype)
+    : MCMachObjectTargetWriter(Is64Bit, CPUType, CPUSubtype,
+                               /*UseAggressiveSymbolFolding=*/true) {}
+};
+
+class ARMELFObjectWriter : public MCELFObjectTargetWriter {
+public:
+  ARMELFObjectWriter(Triple::OSType OSType)
+    : MCELFObjectTargetWriter(/*Is64Bit*/ false, OSType, ELF::EM_ARM,
+                              /*HasRelocationAddend*/ false) {}
+};
+
 class ARMAsmBackend : public TargetAsmBackend {
   bool isThumbMode;  // Currently emitting Thumb code.
 public:
   ARMAsmBackend(const Target &T) : TargetAsmBackend(), isThumbMode(false) {}
+
+  unsigned getNumFixupKinds() const { return ARM::NumTargetFixupKinds; }
+
+  const MCFixupKindInfo &getFixupKindInfo(MCFixupKind Kind) const {
+    const static MCFixupKindInfo Infos[ARM::NumTargetFixupKinds] = {
+// This table *must* be in the order that the fixup_* kinds are defined in
+// ARMFixupKinds.h.
+//
+// Name                      Offset (bits) Size (bits)     Flags
+{ "fixup_arm_ldst_pcrel_12", 1,            24,  MCFixupKindInfo::FKF_IsPCRel },
+{ "fixup_t2_ldst_pcrel_12",  0,            32,  MCFixupKindInfo::FKF_IsPCRel |
+                                   MCFixupKindInfo::FKF_IsAlignedDownTo32Bits},
+{ "fixup_arm_pcrel_10",      1,            24,  MCFixupKindInfo::FKF_IsPCRel },
+{ "fixup_t2_pcrel_10",       0,            32,  MCFixupKindInfo::FKF_IsPCRel |
+                                   MCFixupKindInfo::FKF_IsAlignedDownTo32Bits},
+{ "fixup_thumb_adr_pcrel_10",0,            8,   MCFixupKindInfo::FKF_IsPCRel |
+                                   MCFixupKindInfo::FKF_IsAlignedDownTo32Bits},
+{ "fixup_arm_adr_pcrel_12",  1,            24,  MCFixupKindInfo::FKF_IsPCRel },
+{ "fixup_t2_adr_pcrel_12",   0,            32,  MCFixupKindInfo::FKF_IsPCRel |
+                                   MCFixupKindInfo::FKF_IsAlignedDownTo32Bits},
+{ "fixup_arm_branch",        0,            24,  MCFixupKindInfo::FKF_IsPCRel },
+{ "fixup_t2_condbranch",     0,            32,  MCFixupKindInfo::FKF_IsPCRel },
+{ "fixup_t2_uncondbranch",   0,            32,  MCFixupKindInfo::FKF_IsPCRel },
+{ "fixup_arm_thumb_br",      0,            16,  MCFixupKindInfo::FKF_IsPCRel },
+{ "fixup_arm_thumb_bl",      0,            32,  MCFixupKindInfo::FKF_IsPCRel },
+{ "fixup_arm_thumb_blx",     7,            21,  MCFixupKindInfo::FKF_IsPCRel },
+{ "fixup_arm_thumb_cb",      0,            16,  MCFixupKindInfo::FKF_IsPCRel },
+{ "fixup_arm_thumb_cp",      1,             8,  MCFixupKindInfo::FKF_IsPCRel },
+{ "fixup_arm_thumb_bcc",     1,             8,  MCFixupKindInfo::FKF_IsPCRel },
+{ "fixup_arm_movt_hi16",     0,            16,  0 },
+{ "fixup_arm_movw_lo16",     0,            16,  0 },
+    };
+
+    if (Kind < FirstTargetFixupKind)
+      return TargetAsmBackend::getFixupKindInfo(Kind);
+
+    assert(unsigned(Kind - FirstTargetFixupKind) < getNumFixupKinds() &&
+           "Invalid kind!");
+    return Infos[Kind - FirstTargetFixupKind];
+  }
 
   bool MayNeedRelaxation(const MCInst &Inst) const;
 
@@ -68,18 +124,26 @@ void ARMAsmBackend::RelaxInstruction(const MCInst &Inst, MCInst &Res) const {
 
 bool ARMAsmBackend::WriteNopData(uint64_t Count, MCObjectWriter *OW) const {
   if (isThumb()) {
-    assert (((Count & 1) == 0) && "Unaligned Nop data fragment!");
     // FIXME: 0xbf00 is the ARMv7 value. For v6 and before, we'll need to
     // use 0x46c0 (which is a 'mov r8, r8' insn).
-    Count /= 2;
-    for (uint64_t i = 0; i != Count; ++i)
+    uint64_t NumNops = Count / 2;
+    for (uint64_t i = 0; i != NumNops; ++i)
       OW->Write16(0xbf00);
+    if (Count & 1)
+      OW->Write8(0);
     return true;
   }
   // ARM mode
-  Count /= 4;
-  for (uint64_t i = 0; i != Count; ++i)
+  uint64_t NumNops = Count / 4;
+  for (uint64_t i = 0; i != NumNops; ++i)
     OW->Write32(0xe1a00000);
+  switch (Count % 4) {
+  default: break; // No leftover bytes to write
+  case 1: OW->Write8(0); break;
+  case 2: OW->Write16(0); break;
+  case 3: OW->Write16(0); OW->Write8(0xa0); break;
+  }
+
   return true;
 }
 
@@ -87,6 +151,8 @@ static unsigned adjustFixupValue(unsigned Kind, uint64_t Value) {
   switch (Kind) {
   default:
     llvm_unreachable("Unknown fixup kind!");
+  case FK_Data_1:
+  case FK_Data_2:
   case FK_Data_4:
     return Value;
   case ARM::fixup_arm_movt_hi16:
@@ -283,27 +349,17 @@ namespace {
 // FIXME: This should be in a separate file.
 // ELF is an ELF of course...
 class ELFARMAsmBackend : public ARMAsmBackend {
-  MCELFObjectFormat Format;
-
 public:
   Triple::OSType OSType;
   ELFARMAsmBackend(const Target &T, Triple::OSType _OSType)
-    : ARMAsmBackend(T), OSType(_OSType) {
-    HasScatteredSymbols = true;
-  }
-
-  virtual const MCObjectFormat &getObjectFormat() const {
-    return Format;
-  }
+    : ARMAsmBackend(T), OSType(_OSType) { }
 
   void ApplyFixup(const MCFixup &Fixup, char *Data, unsigned DataSize,
                   uint64_t Value) const;
 
   MCObjectWriter *createObjectWriter(raw_ostream &OS) const {
-    return createELFObjectWriter(OS, /*Is64Bit=*/false,
-                                 OSType, ELF::EM_ARM,
-                                 /*IsLittleEndian=*/true,
-                                 /*HasRelocationAddend=*/false);
+    return createELFObjectWriter(new ARMELFObjectWriter(OSType), OS,
+                              /*IsLittleEndian*/ true);
   }
 };
 
@@ -326,24 +382,19 @@ void ELFARMAsmBackend::ApplyFixup(const MCFixup &Fixup, char *Data,
 
 // FIXME: This should be in a separate file.
 class DarwinARMAsmBackend : public ARMAsmBackend {
-  MCMachOObjectFormat Format;
 public:
-  DarwinARMAsmBackend(const Target &T) : ARMAsmBackend(T) {
-    HasScatteredSymbols = true;
-  }
-
-  virtual const MCObjectFormat &getObjectFormat() const {
-    return Format;
-  }
+  DarwinARMAsmBackend(const Target &T) : ARMAsmBackend(T) { }
 
   void ApplyFixup(const MCFixup &Fixup, char *Data, unsigned DataSize,
                   uint64_t Value) const;
 
   MCObjectWriter *createObjectWriter(raw_ostream &OS) const {
     // FIXME: Subtarget info should be derived. Force v7 for now.
-    return createMachObjectWriter(OS, /*Is64Bit=*/false,
-                                  object::mach::CTM_ARM,
-                                  object::mach::CSARM_V7,
+    return createMachObjectWriter(new ARMMachObjectWriter(
+                                    /*Is64Bit=*/false,
+                                    object::mach::CTM_ARM,
+                                    object::mach::CSARM_V7),
+                                  OS,
                                   /*IsLittleEndian=*/true);
   }
 
@@ -358,11 +409,13 @@ static unsigned getFixupKindNumBytes(unsigned Kind) {
   default:
     llvm_unreachable("Unknown fixup kind!");
 
+  case FK_Data_1:
   case ARM::fixup_arm_thumb_bcc:
   case ARM::fixup_arm_thumb_cp:
   case ARM::fixup_thumb_adr_pcrel_10:
     return 1;
 
+  case FK_Data_2:
   case ARM::fixup_arm_thumb_br:
   case ARM::fixup_arm_thumb_cb:
     return 2;

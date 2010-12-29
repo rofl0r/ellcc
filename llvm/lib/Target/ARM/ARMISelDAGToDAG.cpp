@@ -918,27 +918,15 @@ ARMDAGToDAGISel::SelectThumbAddrModeRI(SDValue N, SDValue &Base,
       return false;  // We want to select tLDRpci instead.
   }
 
-  if (N.getOpcode() != ISD::ADD) {
-    if (N.getOpcode() == ARMISD::Wrapper &&
-        (!Subtarget->useMovt() ||
-         N.getOperand(0).getOpcode() != ISD::TargetGlobalAddress))
-      Base = N.getOperand(0);
-    else
-      Base = N;
-
-    Offset = CurDAG->getRegister(0, MVT::i32);
-    return true;
-  }
+  if (N.getOpcode() != ISD::ADD)
+    return false;
 
   // Thumb does not have [sp, r] address mode.
   RegisterSDNode *LHSR = dyn_cast<RegisterSDNode>(N.getOperand(0));
   RegisterSDNode *RHSR = dyn_cast<RegisterSDNode>(N.getOperand(1));
   if ((LHSR && LHSR->getReg() == ARM::SP) ||
-      (RHSR && RHSR->getReg() == ARM::SP)) {
-    Base = N;
-    Offset = CurDAG->getRegister(0, MVT::i32);
-    return true;
-  }
+      (RHSR && RHSR->getReg() == ARM::SP))
+    return false;
 
   if (ConstantSDNode *RHS = dyn_cast<ConstantSDNode>(N.getOperand(1))) {
     int RHSC = (int)RHS->getZExtValue();
@@ -999,6 +987,23 @@ ARMDAGToDAGISel::SelectThumbAddrModeImm5S(SDValue N, unsigned Scale,
       Base = N;
     }
 
+    OffImm = CurDAG->getTargetConstant(0, MVT::i32);
+    return true;
+  }
+
+  RegisterSDNode *LHSR = dyn_cast<RegisterSDNode>(N.getOperand(0));
+  RegisterSDNode *RHSR = dyn_cast<RegisterSDNode>(N.getOperand(1));
+  if ((LHSR && LHSR->getReg() == ARM::SP) ||
+      (RHSR && RHSR->getReg() == ARM::SP)) {
+    ConstantSDNode *LHS = dyn_cast<ConstantSDNode>(N.getOperand(0));
+    ConstantSDNode *RHS = dyn_cast<ConstantSDNode>(N.getOperand(1));
+    unsigned LHSC = LHS ? LHS->getZExtValue() : 0;
+    unsigned RHSC = RHS ? RHS->getZExtValue() : 0;
+
+    // Thumb does not have [sp, #imm5] address mode for non-zero imm5.
+    if (LHSC != 0 || RHSC != 0) return false;
+
+    Base = N;
     OffImm = CurDAG->getTargetConstant(0, MVT::i32);
     return true;
   }
@@ -2034,7 +2039,7 @@ SelectARMCMOVImmOp(SDNode *N, SDValue FalseVal, SDValue TrueVal,
     SDValue Ops[] = { FalseVal, True, CC, CCR, InFlag };
     return CurDAG->SelectNodeTo(N, Opc, MVT::i32, Ops, 5);
   }
-  
+
   return 0;
 }
 
@@ -2136,13 +2141,7 @@ SDNode *ARMDAGToDAGISel::SelectConcatVector(SDNode *N) {
   EVT VT = N->getValueType(0);
   if (!VT.is128BitVector() || N->getNumOperands() != 2)
     llvm_unreachable("unexpected CONCAT_VECTORS");
-  DebugLoc dl = N->getDebugLoc();
-  SDValue V0 = N->getOperand(0);
-  SDValue V1 = N->getOperand(1);
-  SDValue SubReg0 = CurDAG->getTargetConstant(ARM::dsub_0, MVT::i32);
-  SDValue SubReg1 = CurDAG->getTargetConstant(ARM::dsub_1, MVT::i32);
-  const SDValue Ops[] = { V0, SubReg0, V1, SubReg1 };
-  return CurDAG->getMachineNode(TargetOpcode::REG_SEQUENCE, dl, VT, Ops, 4);
+  return PairDRegs(VT, N->getOperand(0), N->getOperand(1));
 }
 
 SDNode *ARMDAGToDAGISel::Select(SDNode *N) {
@@ -2182,7 +2181,7 @@ SDNode *ARMDAGToDAGISel::Select(SDNode *N) {
         SDValue Pred = getAL(CurDAG);
         SDValue PredReg = CurDAG->getRegister(0, MVT::i32);
         SDValue Ops[] = { CPIdx, Pred, PredReg, CurDAG->getEntryNode() };
-        ResNode = CurDAG->getMachineNode(ARM::tLDRcp, dl, MVT::i32, MVT::Other,
+        ResNode = CurDAG->getMachineNode(ARM::tLDRpci, dl, MVT::i32, MVT::Other,
                                          Ops, 4);
       } else {
         SDValue Ops[] = {
@@ -2380,7 +2379,7 @@ SDNode *ARMDAGToDAGISel::Select(SDNode *N) {
                                MVT::i32);
     SDValue Ops[] = { N1, Tmp2, N3, Chain, InFlag };
     SDNode *ResNode = CurDAG->getMachineNode(Opc, dl, MVT::Other,
-                                             MVT::Flag, Ops, 5);
+                                             MVT::Glue, Ops, 5);
     Chain = SDValue(ResNode, 0);
     if (N->getNumValues() == 2) {
       InFlag = SDValue(ResNode, 1);

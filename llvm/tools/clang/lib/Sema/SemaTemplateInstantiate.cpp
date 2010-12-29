@@ -589,7 +589,21 @@ namespace {
       this->Loc = Loc;
       this->Entity = Entity;
     }
-      
+
+    bool TryExpandParameterPacks(SourceLocation EllipsisLoc,
+                                 SourceRange PatternRange,
+                                 const UnexpandedParameterPack *Unexpanded,
+                                 unsigned NumUnexpanded,
+                                 bool &ShouldExpand,
+                                 unsigned &NumExpansions) {
+      return getSema().CheckParameterPacksForExpansion(EllipsisLoc, 
+                                                       PatternRange, Unexpanded,
+                                                       NumUnexpanded, 
+                                                       TemplateArgs, 
+                                                       ShouldExpand,
+                                                       NumExpansions);
+    }
+
     /// \brief Transform the given declaration by instantiating a reference to
     /// this declaration.
     Decl *TransformDecl(SourceLocation Loc, Decl *D);
@@ -624,7 +638,7 @@ namespace {
     ExprResult TransformDeclRefExpr(DeclRefExpr *E);
     ExprResult TransformCXXDefaultArgExpr(CXXDefaultArgExpr *E);
     ExprResult TransformTemplateParmRefExpr(DeclRefExpr *E,
-                                                NonTypeTemplateParmDecl *D);
+                                            NonTypeTemplateParmDecl *D);
 
     QualType TransformFunctionProtoType(TypeLocBuilder &TLB,
                                         FunctionProtoTypeLoc TL);
@@ -670,6 +684,7 @@ Decl *TemplateInstantiator::TransformDecl(SourceLocation Loc, Decl *D) {
                                             TTP->getPosition()))
         return D;
 
+      // FIXME: Variadic templates index substitution.
       TemplateName Template
         = TemplateArgs(TTP->getDepth(), TTP->getPosition()).getAsTemplate();
       assert(!Template.isNull() && Template.getAsTemplateDecl() &&
@@ -701,8 +716,25 @@ TemplateInstantiator::TransformFirstQualifierInScope(NamedDecl *D,
   if (TemplateTypeParmDecl *TTPD = dyn_cast_or_null<TemplateTypeParmDecl>(D)) {
     const TemplateTypeParmType *TTP 
       = cast<TemplateTypeParmType>(getSema().Context.getTypeDeclType(TTPD));
+    
     if (TTP->getDepth() < TemplateArgs.getNumLevels()) {
-      QualType T = TemplateArgs(TTP->getDepth(), TTP->getIndex()).getAsType();
+      // FIXME: This needs testing w/ member access expressions.
+      TemplateArgument Arg = TemplateArgs(TTP->getDepth(), TTP->getIndex());
+      
+      if (TTP->isParameterPack()) {
+        assert(Arg.getKind() == TemplateArgument::Pack && 
+               "Missing argument pack");
+        
+        if (getSema().ArgumentPackSubstitutionIndex == -1) {
+          // FIXME: Variadic templates fun case.
+          getSema().Diag(Loc, diag::err_pack_expansion_mismatch_unsupported);
+          return 0;
+        }
+        
+        Arg = Arg.pack_begin()[getSema().ArgumentPackSubstitutionIndex];
+      }
+
+      QualType T = Arg.getAsType();
       if (T.isNull())
         return cast_or_null<NamedDecl>(TransformDecl(Loc, D));
       
@@ -804,8 +836,19 @@ TemplateInstantiator::TransformTemplateParmRefExpr(DeclRefExpr *E,
                                         NTTP->getPosition()))
     return SemaRef.Owned(E);
 
-  const TemplateArgument &Arg = TemplateArgs(NTTP->getDepth(),
-                                             NTTP->getPosition());
+  TemplateArgument Arg = TemplateArgs(NTTP->getDepth(), NTTP->getPosition());
+  if (NTTP->isParameterPack()) {
+    assert(Arg.getKind() == TemplateArgument::Pack && 
+           "Missing argument pack");
+    
+    if (getSema().ArgumentPackSubstitutionIndex == -1) {
+      // FIXME: Variadic templates fun case.
+      getSema().Diag(Loc, diag::err_pack_expansion_mismatch_unsupported);
+      return ExprError();
+    }
+    
+    Arg = Arg.pack_begin()[getSema().ArgumentPackSubstitutionIndex];
+  }
 
   // The template argument itself might be an expression, in which
   // case we just return that expression.
@@ -895,12 +938,26 @@ TemplateInstantiator::TransformTemplateTypeParmType(TypeLocBuilder &TLB,
       return TL.getType();
     }
 
-    assert(TemplateArgs(T->getDepth(), T->getIndex()).getKind()
-             == TemplateArgument::Type &&
+    TemplateArgument Arg = TemplateArgs(T->getDepth(), T->getIndex());
+    
+    if (T->isParameterPack()) {
+      assert(Arg.getKind() == TemplateArgument::Pack && 
+             "Missing argument pack");
+      
+      if (getSema().ArgumentPackSubstitutionIndex == -1) {
+        // FIXME: Variadic templates fun case.
+        getSema().Diag(TL.getSourceRange().getBegin(), 
+                       diag::err_pack_expansion_mismatch_unsupported);
+        return QualType();
+      }
+      
+      Arg = Arg.pack_begin()[getSema().ArgumentPackSubstitutionIndex];
+    }
+    
+    assert(Arg.getKind() == TemplateArgument::Type &&
            "Template argument kind mismatch");
 
-    QualType Replacement
-      = TemplateArgs(T->getDepth(), T->getIndex()).getAsType();
+    QualType Replacement = Arg.getAsType();
 
     // TODO: only do this uniquing once, at the start of instantiation.
     QualType Result
@@ -1676,23 +1733,34 @@ Sema::SubstTemplateName(TemplateName Name, SourceLocation Loc,
   return Instantiator.TransformTemplateName(Name);
 }
 
-bool Sema::Subst(const TemplateArgumentLoc &Input, TemplateArgumentLoc &Output,
+bool Sema::Subst(const TemplateArgumentLoc *Args, unsigned NumArgs,
+                 TemplateArgumentListInfo &Result,
                  const MultiLevelTemplateArgumentList &TemplateArgs) {
   TemplateInstantiator Instantiator(*this, TemplateArgs, SourceLocation(),
                                     DeclarationName());
-
-  return Instantiator.TransformTemplateArgument(Input, Output);
+  
+  return Instantiator.TransformTemplateArguments(Args, NumArgs, Result);
 }
 
 Decl *LocalInstantiationScope::getInstantiationOf(const Decl *D) {
   for (LocalInstantiationScope *Current = this; Current; 
        Current = Current->Outer) {
     // Check if we found something within this scope.
-    llvm::DenseMap<const Decl *, Decl *>::iterator Found
-      = Current->LocalDecls.find(D);
-    if (Found != Current->LocalDecls.end())
-      return Found->second;
-   
+    const Decl *CheckD = D;
+    do {
+      llvm::DenseMap<const Decl *, Decl *>::iterator Found
+        = Current->LocalDecls.find(CheckD);
+      if (Found != Current->LocalDecls.end())
+        return Found->second;
+      
+      // If this is a tag declaration, it's possible that we need to look for
+      // a previous declaration.
+      if (const TagDecl *Tag = dyn_cast<TagDecl>(CheckD))
+        CheckD = Tag->getPreviousDeclaration();
+      else
+        CheckD = 0;
+    } while (CheckD);
+    
     // If we aren't combined with our outer scope, we're done. 
     if (!Current->CombineWithOuterScope)
       break;

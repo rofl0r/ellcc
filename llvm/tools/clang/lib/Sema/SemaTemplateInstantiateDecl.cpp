@@ -1095,13 +1095,9 @@ Decl *TemplateDeclInstantiator::VisitFunctionDecl(FunctionDecl *D,
     // Instantiate the explicit template arguments.
     TemplateArgumentListInfo ExplicitArgs(Info->getLAngleLoc(),
                                           Info->getRAngleLoc());
-    for (unsigned I = 0, E = Info->getNumTemplateArgs(); I != E; ++I) {
-      TemplateArgumentLoc Loc;
-      if (SemaRef.Subst(Info->getTemplateArg(I), Loc, TemplateArgs))
-        return 0;
-
-      ExplicitArgs.addArgument(Loc);
-    }
+    if (SemaRef.Subst(Info->getTemplateArgs(), Info->getNumTemplateArgs(),
+                      ExplicitArgs, TemplateArgs))
+      return 0;
 
     // Map the candidate templates to their instantiations.
     for (unsigned I = 0, E = Info->getNumTemplates(); I != E; ++I) {
@@ -1510,11 +1506,12 @@ Decl *TemplateDeclInstantiator::VisitNonTypeTemplateParmDecl(
     Invalid = true;
   }
   
+  // FIXME: Variadic templates.
   NonTypeTemplateParmDecl *Param
     = NonTypeTemplateParmDecl::Create(SemaRef.Context, Owner, D->getLocation(),
                                     D->getDepth() - TemplateArgs.getNumLevels(), 
                                       D->getPosition(), D->getIdentifier(), T, 
-                                      DI);
+                                      D->isParameterPack(), DI);
   if (Invalid)
     Param->setInvalidDecl();
   
@@ -1791,19 +1788,12 @@ TemplateDeclInstantiator::InstantiateClassTemplatePartialSpecialization(
   
   // Substitute into the template arguments of the class template partial
   // specialization.
-  const TemplateArgumentLoc *PartialSpecTemplateArgs
-    = PartialSpec->getTemplateArgsAsWritten();
-  unsigned N = PartialSpec->getNumTemplateArgsAsWritten();
-
   TemplateArgumentListInfo InstTemplateArgs; // no angle locations
-  for (unsigned I = 0; I != N; ++I) {
-    TemplateArgumentLoc Loc;
-    if (SemaRef.Subst(PartialSpecTemplateArgs[I], Loc, TemplateArgs))
-      return 0;
-    InstTemplateArgs.addArgument(Loc);
-  }
+  if (SemaRef.Subst(PartialSpec->getTemplateArgsAsWritten(), 
+                    PartialSpec->getNumTemplateArgsAsWritten(), 
+                    InstTemplateArgs, TemplateArgs))
+    return 0;
   
-
   // Check that the template argument list is well-formed for this
   // class template.
   llvm::SmallVector<TemplateArgument, 4> Converted;
@@ -1983,6 +1973,61 @@ TemplateDeclInstantiator::InitFunctionInstantiation(FunctionDecl *New,
     llvm::SmallVector<QualType, 4> Exceptions;
     for (unsigned I = 0, N = Proto->getNumExceptions(); I != N; ++I) {
       // FIXME: Poor location information!
+      if (const PackExpansionType *PackExpansion
+            = Proto->getExceptionType(I)->getAs<PackExpansionType>()) {
+        // We have a pack expansion. Instantiate it.
+        llvm::SmallVector<UnexpandedParameterPack, 2> Unexpanded;
+        SemaRef.collectUnexpandedParameterPacks(PackExpansion->getPattern(),
+                                                Unexpanded);
+        assert(!Unexpanded.empty() && 
+               "Pack expansion without parameter packs?");
+        
+        bool Expand = false;
+        unsigned NumExpansions = 0;
+        if (SemaRef.CheckParameterPacksForExpansion(New->getLocation(), 
+                                                    SourceRange(),
+                                                    Unexpanded.data(), 
+                                                    Unexpanded.size(),
+                                                    TemplateArgs,
+                                                    Expand, NumExpansions))
+          break;
+                      
+        if (!Expand) {
+          // We can't expand this pack expansion into separate arguments yet;
+          // just substitute into the argument pack.
+          Sema::ArgumentPackSubstitutionIndexRAII SubstIndex(SemaRef, -1);
+          QualType T = SemaRef.SubstType(PackExpansion->getPattern(), 
+                                         TemplateArgs,
+                                       New->getLocation(), New->getDeclName());
+          if (T.isNull())
+            break;
+          
+          Exceptions.push_back(T);
+          continue;
+        }
+        
+        // Substitute into the pack expansion pattern for each template
+        bool Invalid = false;
+        for (unsigned ArgIdx = 0; ArgIdx != NumExpansions; ++ArgIdx) {
+          Sema::ArgumentPackSubstitutionIndexRAII SubstIndex(SemaRef, ArgIdx);
+          
+          QualType T = SemaRef.SubstType(PackExpansion->getPattern(), 
+                                         TemplateArgs,
+                                       New->getLocation(), New->getDeclName());
+          if (T.isNull()) {
+            Invalid = true;
+            break;
+          }
+          
+          Exceptions.push_back(T);
+        }
+        
+        if (Invalid)
+          break;
+        
+        continue;
+      }
+      
       QualType T
         = SemaRef.SubstType(Proto->getExceptionType(I), TemplateArgs,
                             New->getLocation(), New->getDeclName());

@@ -77,7 +77,13 @@ namespace llvm {
   ///
   bool CannotBeNegativeZero(const Value *V, unsigned Depth = 0);
 
-  
+  /// isBytewiseValue - If the specified value can be set by repeating the same
+  /// byte in memory, return the i8 value that it is represented with.  This is
+  /// true for all i8 values obviously, but is also true for i32 0, i32 -1,
+  /// i16 0xF0F0, double 0.0 etc.  If the value can't be handled with a repeated
+  /// byte store (e.g. i16 0x1234), return null.
+  Value *isBytewiseValue(Value *V);
+    
   /// FindInsertedValue - Given an aggregrate and an sequence of indices, see if
   /// the scalar value indexed is already around as a register, for example if
   /// it were inserted directly into the aggregrate.
@@ -121,6 +127,18 @@ namespace llvm {
   /// GetStringLength - If we can compute the length of the string pointed to by
   /// the specified pointer, return 'len+1'.  If we can't, return 0.
   uint64_t GetStringLength(Value *V);
+
+  /// GetUnderlyingObject - This method strips off any GEP address adjustments
+  /// and pointer casts from the specified value, returning the original object
+  /// being addressed.  Note that the returned value has pointer type if the
+  /// specified value does.  If the MaxLookup value is non-zero, it limits the
+  /// number of instructions to be stripped off.
+  Value *GetUnderlyingObject(Value *V, unsigned MaxLookup = 6);
+  static inline const Value *
+  GetUnderlyingObject(const Value *V, unsigned MaxLookup = 6) {
+    return GetUnderlyingObject(const_cast<Value *>(V), MaxLookup);
+  }
+
 } // end namespace llvm
 
 #endif

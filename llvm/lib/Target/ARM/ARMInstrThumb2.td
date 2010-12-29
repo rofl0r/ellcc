@@ -908,7 +908,7 @@ multiclass T2I_ld<bit signed, bits<2> opcod, string opc,
     let Inst{5-4}   = addr{1-0}; // imm
   }
 
-  def pci : tPseudoInst<(outs GPR:$Rt), (ins i32imm:$addr), Size4Bytes, iis,
+  def pci : t2PseudoInst<(outs GPR:$Rt), (ins i32imm:$addr), Size4Bytes, iis,
                       [(set GPR:$Rt, (opnode (ARMWrapper tconstpool:$addr)))]>;
 }
 
@@ -1156,11 +1156,12 @@ def t2ADR : T2PCOneRegImm<(outs rGPR:$Rd),
 }
 
 let neverHasSideEffects = 1, isReMaterializable = 1 in
-def t2LEApcrel : PseudoInst<(outs rGPR:$Rd), (ins i32imm:$label, pred:$p),
-                            IIC_iALUi, []>;
-def t2LEApcrelJT : PseudoInst<(outs rGPR:$Rd),
-                        (ins i32imm:$label, nohash_imm:$id, pred:$p), IIC_iALUi,
-                        []>;
+def t2LEApcrel   : t2PseudoInst<(outs rGPR:$Rd), (ins i32imm:$label, pred:$p),
+                                Size4Bytes, IIC_iALUi, []>;
+def t2LEApcrelJT : t2PseudoInst<(outs rGPR:$Rd),
+                                (ins i32imm:$label, nohash_imm:$id, pred:$p),
+                                Size4Bytes, IIC_iALUi,
+                                []>;
 
 
 // FIXME: None of these add/sub SP special instructions should be necessary
@@ -2984,17 +2985,17 @@ def t2B   : T2XI<(outs), (ins uncondbrtarget:$target), IIC_Br,
 }
 
 let isNotDuplicable = 1, isIndirectBranch = 1 in {
-def t2BR_JT : tPseudoInst<(outs),
+def t2BR_JT : t2PseudoInst<(outs),
           (ins GPR:$target, GPR:$index, i32imm:$jt, i32imm:$id),
            SizeSpecial, IIC_Br,
           [(ARMbr2jt GPR:$target, GPR:$index, tjumptable:$jt, imm:$id)]>;
 
 // FIXME: Add a non-pc based case that can be predicated.
-def t2TBB_JT : tPseudoInst<(outs),
+def t2TBB_JT : t2PseudoInst<(outs),
         (ins GPR:$index, i32imm:$jt, i32imm:$id),
          SizeSpecial, IIC_Br, []>;
 
-def t2TBH_JT : tPseudoInst<(outs),
+def t2TBH_JT : t2PseudoInst<(outs),
         (ins GPR:$index, i32imm:$jt, i32imm:$id),
          SizeSpecial, IIC_Br, []>;
 
@@ -3002,7 +3003,7 @@ def t2TBB : T2I<(outs), (ins GPR:$Rn, GPR:$Rm), IIC_Br,
                     "tbb", "\t[$Rn, $Rm]", []> {
   bits<4> Rn;
   bits<4> Rm;
-  let Inst{27-20} = 0b10001101;
+  let Inst{31-20} = 0b111010001101;
   let Inst{19-16} = Rn;
   let Inst{15-5} = 0b11110000000;
   let Inst{4} = 0; // B form
@@ -3013,7 +3014,7 @@ def t2TBH : T2I<(outs), (ins GPR:$Rn, GPR:$Rm), IIC_Br,
                    "tbh", "\t[$Rn, $Rm, lsl #1]", []> {
   bits<4> Rn;
   bits<4> Rm;
-  let Inst{27-20} = 0b10001101;
+  let Inst{31-20} = 0b111010001101;
   let Inst{19-16} = Rn;
   let Inst{15-5} = 0b11110000000;
   let Inst{4} = 1; // H form

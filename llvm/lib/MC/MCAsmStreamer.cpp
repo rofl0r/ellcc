@@ -12,6 +12,7 @@
 #include "llvm/MC/MCCodeEmitter.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCExpr.h"
+#include "llvm/MC/MCFixupKindInfo.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCInstPrinter.h"
 #include "llvm/MC/MCSectionMachO.h"
@@ -23,8 +24,10 @@
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/FormattedStream.h"
-#include "llvm/Target/TargetLoweringObjectFile.h"
+#include "llvm/Target/TargetAsmBackend.h"
 #include "llvm/Target/TargetAsmInfo.h"
+#include "llvm/Target/TargetLoweringObjectFile.h"
+#include <cctype>
 using namespace llvm;
 
 namespace {
@@ -34,6 +37,7 @@ class MCAsmStreamer : public MCStreamer {
   const MCAsmInfo &MAI;
   OwningPtr<MCInstPrinter> InstPrinter;
   OwningPtr<MCCodeEmitter> Emitter;
+  OwningPtr<TargetAsmBackend> AsmBackend;
 
   SmallString<128> CommentToEmit;
   raw_svector_ostream CommentStream;
@@ -48,10 +52,12 @@ public:
   MCAsmStreamer(MCContext &Context, formatted_raw_ostream &os,
                 bool isVerboseAsm,
                 bool useLoc,
-                MCInstPrinter *printer, MCCodeEmitter *emitter, bool showInst)
+                MCInstPrinter *printer, MCCodeEmitter *emitter,
+                TargetAsmBackend *asmbackend,
+                bool showInst)
     : MCStreamer(Context), OS(os), MAI(Context.getAsmInfo()),
-      InstPrinter(printer), Emitter(emitter), CommentStream(CommentToEmit),
-      IsVerboseAsm(isVerboseAsm),
+      InstPrinter(printer), Emitter(emitter), AsmBackend(asmbackend),
+      CommentStream(CommentToEmit), IsVerboseAsm(isVerboseAsm),
       ShowInst(showInst), UseLoc(useLoc) {
     if (InstPrinter && IsVerboseAsm)
       InstPrinter->setCommentStream(CommentStream);
@@ -183,8 +189,8 @@ public:
   virtual bool EmitCFIDefCfaOffset(int64_t Offset);
   virtual bool EmitCFIDefCfaRegister(int64_t Register);
   virtual bool EmitCFIOffset(int64_t Register, int64_t Offset);
-  virtual bool EmitCFIPersonality(const MCSymbol *Sym);
-  virtual bool EmitCFILsda(const MCSymbol *Sym);
+  virtual bool EmitCFIPersonality(const MCSymbol *Sym, unsigned Encoding);
+  virtual bool EmitCFILsda(const MCSymbol *Sym, unsigned Encoding);
 
   virtual void EmitInstruction(const MCInst &Inst);
 
@@ -752,21 +758,22 @@ bool MCAsmStreamer::EmitCFIOffset(int64_t Register, int64_t Offset) {
   return false;
 }
 
-bool MCAsmStreamer::EmitCFIPersonality(const MCSymbol *Sym) {
-  if (this->MCStreamer::EmitCFIPersonality(Sym))
+bool MCAsmStreamer::EmitCFIPersonality(const MCSymbol *Sym,
+                                       unsigned Encoding) {
+  if (this->MCStreamer::EmitCFIPersonality(Sym, Encoding))
     return true;
 
-  OS << ".cfi_personality 0, " << *Sym;
+  OS << ".cfi_personality " << Encoding << ", " << *Sym;
   EmitEOL();
 
   return false;
 }
 
-bool MCAsmStreamer::EmitCFILsda(const MCSymbol *Sym) {
-  if (this->MCStreamer::EmitCFILsda(Sym))
+bool MCAsmStreamer::EmitCFILsda(const MCSymbol *Sym, unsigned Encoding) {
+  if (this->MCStreamer::EmitCFILsda(Sym, Encoding))
     return true;
 
-  OS << ".cfi_lsda 0, " << *Sym;
+  OS << ".cfi_lsda " << Encoding << ", " << *Sym;
   EmitEOL();
 
   return false;
@@ -790,7 +797,7 @@ void MCAsmStreamer::AddEncodingComment(const MCInst &Inst) {
 
   for (unsigned i = 0, e = Fixups.size(); i != e; ++i) {
     MCFixup &F = Fixups[i];
-    const MCFixupKindInfo &Info = Emitter->getFixupKindInfo(F.getKind());
+    const MCFixupKindInfo &Info = AsmBackend->getFixupKindInfo(F.getKind());
     for (unsigned j = 0; j != Info.TargetSize; ++j) {
       unsigned Index = F.getOffset() * 8 + Info.TargetOffset + j;
       assert(Index < Code.size() * 8 && "Invalid offset in fixup!");
@@ -844,7 +851,7 @@ void MCAsmStreamer::AddEncodingComment(const MCInst &Inst) {
 
   for (unsigned i = 0, e = Fixups.size(); i != e; ++i) {
     MCFixup &F = Fixups[i];
-    const MCFixupKindInfo &Info = Emitter->getFixupKindInfo(F.getKind());
+    const MCFixupKindInfo &Info = AsmBackend->getFixupKindInfo(F.getKind());
     OS << "  fixup " << char('A' + i) << " - " << "offset: " << F.getOffset()
        << ", value: " << *F.getValue() << ", kind: " << Info.Name << "\n";
   }
@@ -893,8 +900,8 @@ void MCAsmStreamer::Finish() {
 MCStreamer *llvm::createAsmStreamer(MCContext &Context,
                                     formatted_raw_ostream &OS,
                                     bool isVerboseAsm, bool useLoc,
-                                    MCInstPrinter *IP,
-                                    MCCodeEmitter *CE, bool ShowInst) {
+                                    MCInstPrinter *IP, MCCodeEmitter *CE,
+                                    TargetAsmBackend *TAB, bool ShowInst) {
   return new MCAsmStreamer(Context, OS, isVerboseAsm, useLoc,
-                           IP, CE, ShowInst);
+                           IP, CE, TAB, ShowInst);
 }

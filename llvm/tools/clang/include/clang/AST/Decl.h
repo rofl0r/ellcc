@@ -1503,11 +1503,16 @@ public:
     IsInline = I;
   }
 
+  /// Flag that this function is implicitly inline.
+  void setImplicitlyInline() {
+    IsInline = true;
+  }
+
   /// \brief Determine whether this function should be inlined, because it is
   /// either marked "inline" or is a member function of a C++ class that
   /// was defined in the class body.
   bool isInlined() const;
-                       
+
   bool isInlineDefinitionExternallyVisible() const;
                        
   /// isOverloadedOperator - Whether this function declaration
@@ -2400,11 +2405,6 @@ public:
     AnonymousStructOrUnion = Anon;
   }
 
-  ValueDecl *getAnonymousStructOrUnionObject();
-  const ValueDecl *getAnonymousStructOrUnionObject() const {
-    return const_cast<RecordDecl*>(this)->getAnonymousStructOrUnionObject();
-  }
-
   bool hasObjectMember() const { return HasObjectMember; }
   void setHasObjectMember (bool val) { HasObjectMember = val; }
 
@@ -2543,6 +2543,8 @@ public:
   }
   void setParams(ParmVarDecl **NewParamInfo, unsigned NumParams);
 
+  virtual SourceRange getSourceRange() const;
+  
   // Implement isa/cast/dyncast/etc.
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classof(const BlockDecl *D) { return true; }

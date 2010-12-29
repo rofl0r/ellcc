@@ -279,6 +279,14 @@ def MSP430Interrupt : Attr {
   let Args = [UnsignedArgument<"Number">];
 }
 
+def MBlazeInterruptHandler : Attr {
+  let Spellings = [];
+}
+
+def MBlazeSaveVolatiles : Attr {
+  let Spellings = [];
+}
+
 def Naked : Attr {
   let Spellings = ["naked"];
 }
@@ -420,6 +428,12 @@ def Unused : Attr {
 
 def Used : Attr {
   let Spellings = ["used"];
+}
+
+def Uuid : Attr {
+  let Spellings = ["uuid"];
+  let Args = [StringArgument<"Guid">];
+  let Subjects = [CXXRecord];
 }
 
 def Visibility : Attr {

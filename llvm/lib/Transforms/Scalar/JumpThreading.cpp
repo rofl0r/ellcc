@@ -538,6 +538,40 @@ ComputeValueKnownInPredecessors(Value *V, BasicBlock *BB, PredValueInfo &Result,
     }
   }
 
+  if (SelectInst *SI = dyn_cast<SelectInst>(I)) {
+    // Handle select instructions where at least one operand is a known constant
+    // and we can figure out the condition value for any predecessor block.
+    Constant *TrueVal = getKnownConstant(SI->getTrueValue(), Preference);
+    Constant *FalseVal = getKnownConstant(SI->getFalseValue(), Preference);
+    PredValueInfoTy Conds;
+    if ((TrueVal || FalseVal) &&
+        ComputeValueKnownInPredecessors(SI->getCondition(), BB, Conds,
+                                        WantInteger)) {
+      for (unsigned i = 0, e = Conds.size(); i != e; ++i) {
+        Constant *Cond = Conds[i].first;
+
+        // Figure out what value to use for the condition.
+        bool KnownCond;
+        if (ConstantInt *CI = dyn_cast<ConstantInt>(Cond)) {
+          // A known boolean.
+          KnownCond = CI->isOne();
+        } else {
+          assert(isa<UndefValue>(Cond) && "Unexpected condition value");
+          // Either operand will do, so be sure to pick the one that's a known
+          // constant.
+          // FIXME: Do this more cleverly if both values are known constants?
+          KnownCond = (TrueVal != 0);
+        }
+
+        // See if the select has a known constant value for this predecessor.
+        if (Constant *Val = KnownCond ? TrueVal : FalseVal)
+          Result.push_back(std::make_pair(Val, Conds[i].second));
+      }
+
+      return !Result.empty();
+    }
+  }
+
   // If all else fails, see if LVI can figure out a constant value for us.
   Constant *CI = LVI->getConstant(V, BB);
   if (Constant *KC = getKnownConstant(CI, Preference)) {
@@ -950,7 +984,7 @@ FindMostPopularDest(BasicBlock *BB,
     }
   }
 
-  // Okay, now we know the most popular destination.  If there is more than
+  // Okay, now we know the most popular destination.  If there is more than one
   // destination, we need to determine one.  This is arbitrary, but we need
   // to make a deterministic decision.  Pick the first one that appears in the
   // successor list.
@@ -1030,7 +1064,7 @@ bool JumpThreading::ProcessThreadableEdges(Value *Cond, BasicBlock *BB,
     }
 
     // If we have exactly one destination, remember it for efficiency below.
-    if (i == 0)
+    if (PredToDestList.empty())
       OnlyDest = DestBB;
     else if (OnlyDest != DestBB)
       OnlyDest = MultipleDestSentinel;

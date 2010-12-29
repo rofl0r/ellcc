@@ -365,20 +365,24 @@ SparcTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
     SDValue Val = OutVals[i];
     EVT ObjectVT = Outs[i].VT;
     SDValue ValToStore(0, 0);
-    unsigned ObjSize;
+    SDValue ValToStore2(0, 0);
+    unsigned ArgOffset1 = 0, ArgOffset2 = 0;
     switch (ObjectVT.getSimpleVT().SimpleTy) {
     default: llvm_unreachable("Unhandled argument type!");
     case MVT::i32:
-      ObjSize = 4;
+      ArgOffset1 = ArgOffset;
+      ArgOffset += 4;
 
       if (RegsToPass.size() >= 6) {
         ValToStore = Val;
       } else {
         RegsToPass.push_back(std::make_pair(ArgRegs[RegsToPass.size()], Val));
       }
+
       break;
     case MVT::f32:
-      ObjSize = 4;
+      ArgOffset1 = ArgOffset;
+      ArgOffset += 4;
       if (RegsToPass.size() >= 6) {
         ValToStore = Val;
       } else {
@@ -388,14 +392,17 @@ SparcTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
       }
       break;
     case MVT::f64: {
-      ObjSize = 8;
-      if (RegsToPass.size() >= 6) {
-        ValToStore = Val;    // Whole thing is passed in memory.
-        break;
-      }
 
+      if (RegsToPass.size() >= 6) {
+        if (ArgOffset % 8 == 0) {
+          ArgOffset1 = ArgOffset;
+          ArgOffset += 8;
+          ValToStore = Val;    // Whole thing is passed in memory.
+          break;
+        }
+      }
       // Break into top and bottom parts by storing to the stack and loading
-      // out the parts as integers.  Top part goes in a reg.
+      // out the parts as integers.
       SDValue StackPtr = DAG.CreateStackTemporary(MVT::f64, MVT::i32);
       SDValue Store = DAG.getStore(DAG.getEntryNode(), dl,
                                    Val, StackPtr, MachinePointerInfo(),
@@ -410,22 +417,31 @@ SparcTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
       SDValue Lo = DAG.getLoad(MVT::i32, dl, Store, StackPtr,
                                MachinePointerInfo(), false, false, 0);
 
-      RegsToPass.push_back(std::make_pair(ArgRegs[RegsToPass.size()], Hi));
-
       if (RegsToPass.size() >= 6) {
-        ValToStore = Lo;
-        ArgOffset += 4;
-        ObjSize = 4;
+        ArgOffset1 = ArgOffset;
+        ValToStore = Hi;
+      } else {
+        RegsToPass.push_back(std::make_pair(ArgRegs[RegsToPass.size()], Hi));
+      }
+      ArgOffset += 4;
+      if (RegsToPass.size() >= 6) {
+        ArgOffset2 = ArgOffset;
+        ValToStore2 = Lo;
       } else {
         RegsToPass.push_back(std::make_pair(ArgRegs[RegsToPass.size()], Lo));
       }
+      ArgOffset += 4;
       break;
     }
     case MVT::i64: {
-      ObjSize = 8;
+
       if (RegsToPass.size() >= 6) {
-        ValToStore = Val;    // Whole thing is passed in memory.
-        break;
+        if (ArgOffset % 8 == 0) {
+          ArgOffset1 = ArgOffset;
+          ArgOffset += 8;
+          ValToStore = Val;    // Whole thing is passed in memory.
+          break;
+        }
       }
 
       // Split the value into top and bottom part.  Top part goes in a reg.
@@ -433,28 +449,40 @@ SparcTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
                                  DAG.getConstant(1, MVT::i32));
       SDValue Lo = DAG.getNode(ISD::EXTRACT_ELEMENT, dl, MVT::i32, Val,
                                  DAG.getConstant(0, MVT::i32));
-      RegsToPass.push_back(std::make_pair(ArgRegs[RegsToPass.size()], Hi));
-
       if (RegsToPass.size() >= 6) {
-        ValToStore = Lo;
-        ArgOffset += 4;
-        ObjSize = 4;
+        ArgOffset1 = ArgOffset;
+        ValToStore = Hi;
+      } else {
+        RegsToPass.push_back(std::make_pair(ArgRegs[RegsToPass.size()], Hi));
+      }
+      ArgOffset += 4;
+      if (RegsToPass.size() >= 6) {
+        ArgOffset2 = ArgOffset;
+        ValToStore2 = Lo;
       } else {
         RegsToPass.push_back(std::make_pair(ArgRegs[RegsToPass.size()], Lo));
       }
+      ArgOffset += 4;
       break;
     }
     }
 
     if (ValToStore.getNode()) {
       SDValue StackPtr = DAG.getRegister(SP::O6, MVT::i32);
-      SDValue PtrOff = DAG.getConstant(ArgOffset, MVT::i32);
+      SDValue PtrOff = DAG.getConstant(ArgOffset1, MVT::i32);
       PtrOff = DAG.getNode(ISD::ADD, dl, MVT::i32, StackPtr, PtrOff);
       MemOpChains.push_back(DAG.getStore(Chain, dl, ValToStore,
                                          PtrOff, MachinePointerInfo(),
                                          false, false, 0));
     }
-    ArgOffset += ObjSize;
+    if (ValToStore2.getNode()) {
+      SDValue StackPtr = DAG.getRegister(SP::O6, MVT::i32);
+      SDValue PtrOff = DAG.getConstant(ArgOffset2, MVT::i32);
+      PtrOff = DAG.getNode(ISD::ADD, dl, MVT::i32, StackPtr, PtrOff);
+      MemOpChains.push_back(DAG.getStore(Chain, dl, ValToStore2,
+                                         PtrOff, MachinePointerInfo(),
+                                         false, false, 0));
+    }
   }
 #endif
 
@@ -488,7 +516,7 @@ SparcTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
 
   std::vector<EVT> NodeTys;
   NodeTys.push_back(MVT::Other);   // Returns a chain
-  NodeTys.push_back(MVT::Flag);    // Returns a flag for retval copy to use.
+  NodeTys.push_back(MVT::Glue);    // Returns a flag for retval copy to use.
   SDValue Ops[] = { Chain, Callee, InFlag };
   Chain = DAG.getNode(SPISD::CALL, dl, NodeTys, Ops, InFlag.getNode() ? 3 : 2);
   InFlag = Chain.getValue(1);
@@ -834,13 +862,13 @@ static SDValue LowerBR_CC(SDValue Op, SelectionDAG &DAG) {
   if (LHS.getValueType() == MVT::i32) {
     std::vector<EVT> VTs;
     VTs.push_back(MVT::i32);
-    VTs.push_back(MVT::Flag);
+    VTs.push_back(MVT::Glue);
     SDValue Ops[2] = { LHS, RHS };
     CompareFlag = DAG.getNode(SPISD::CMPICC, dl, VTs, Ops, 2).getValue(1);
     if (SPCC == ~0U) SPCC = IntCondCCodeToICC(CC);
     Opc = SPISD::BRICC;
   } else {
-    CompareFlag = DAG.getNode(SPISD::CMPFCC, dl, MVT::Flag, LHS, RHS);
+    CompareFlag = DAG.getNode(SPISD::CMPFCC, dl, MVT::Glue, LHS, RHS);
     if (SPCC == ~0U) SPCC = FPCondCCodeToFCC(CC);
     Opc = SPISD::BRFCC;
   }
@@ -865,13 +893,13 @@ static SDValue LowerSELECT_CC(SDValue Op, SelectionDAG &DAG) {
   if (LHS.getValueType() == MVT::i32) {
     std::vector<EVT> VTs;
     VTs.push_back(LHS.getValueType());   // subcc returns a value
-    VTs.push_back(MVT::Flag);
+    VTs.push_back(MVT::Glue);
     SDValue Ops[2] = { LHS, RHS };
     CompareFlag = DAG.getNode(SPISD::CMPICC, dl, VTs, Ops, 2).getValue(1);
     Opc = SPISD::SELECT_ICC;
     if (SPCC == ~0U) SPCC = IntCondCCodeToICC(CC);
   } else {
-    CompareFlag = DAG.getNode(SPISD::CMPFCC, dl, MVT::Flag, LHS, RHS);
+    CompareFlag = DAG.getNode(SPISD::CMPFCC, dl, MVT::Glue, LHS, RHS);
     Opc = SPISD::SELECT_FCC;
     if (SPCC == ~0U) SPCC = FPCondCCodeToFCC(CC);
   }
@@ -1012,6 +1040,8 @@ SparcTargetLowering::EmitInstrWithCustomInserter(MachineInstr *MI,
   MachineFunction *F = BB->getParent();
   MachineBasicBlock *copy0MBB = F->CreateMachineBasicBlock(LLVM_BB);
   MachineBasicBlock *sinkMBB = F->CreateMachineBasicBlock(LLVM_BB);
+  F->insert(It, copy0MBB);
+  F->insert(It, sinkMBB);
 
   // Transfer the remainder of BB and its successor edges to sinkMBB.
   sinkMBB->splice(sinkMBB->begin(), BB,
@@ -1024,8 +1054,6 @@ SparcTargetLowering::EmitInstrWithCustomInserter(MachineInstr *MI,
   BB->addSuccessor(sinkMBB);
 
   BuildMI(BB, dl, TII.get(BROpcode)).addMBB(sinkMBB).addImm(CC);
-  F->insert(It, copy0MBB);
-  F->insert(It, sinkMBB);
 
   //  copy0MBB:
   //   %FalseValue = ...
