@@ -7,7 +7,7 @@ MYVPATH := $(MYVPATH):$(SRCPATH)/c/stdio
 SRCS += puts.c fvwrite.c findfp.c fwalk.c wsetup.c fflush.c stdio.c makebuf.c fputs.c wbuf.c \
         fputc.c printf.c vfprintf.c fprintf.c fwrite.c fgetc.c remove.c fclose.c ungetc.c \
         fread.c fopen.c fdopen.c rget.c refill.c rewind.c fseek.c flags.c perror.c fseeko.c \
-        snprintf.c sprintf.c
+        snprintf.c sprintf.c fgets.c
 
 MYVPATH := $(MYVPATH):$(SRCPATH)/c/string
 SRCS += strlen.c memcpy.c memchr.c memset.c memcmp.c strdup.c strncpy.c strcmp.c strcat.c \
@@ -15,7 +15,7 @@ SRCS += strlen.c memcpy.c memchr.c memset.c memcmp.c strdup.c strncpy.c strcmp.c
 
 MYVPATH := $(MYVPATH):$(SRCPATH)/c/gen
 SRCS += raise.c time.c isatty.c signal.c sigfuncs.c isinfd_ieee754.c isnand_ieee754.c rb.c \
-        sys_errlist.c errno.c _errno.c
+        sys_errlist.c errno.c _errno.c isctype.c
 
 MYVPATH := $(MYVPATH):$(SRCPATH)/c/termios
 SRCS += tcgetattr.c
