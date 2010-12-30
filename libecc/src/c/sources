@@ -15,7 +15,7 @@ SRCS += strlen.c memcpy.c memchr.c memset.c memcmp.c strdup.c strncpy.c strcmp.c
 
 MYVPATH := $(MYVPATH):$(SRCPATH)/c/gen
 SRCS += raise.c time.c isatty.c signal.c sigfuncs.c isinfd_ieee754.c isnand_ieee754.c rb.c \
-        sys_errlist.c
+        sys_errlist.c errno.c _errno.c
 
 MYVPATH := $(MYVPATH):$(SRCPATH)/c/termios
 SRCS += tcgetattr.c

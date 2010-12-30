@@ -1,22 +1,23 @@
 # Build rules for an OS specific library.
 
-# The target library.
-LIBNAME = libc.a
-
 # The target processor.
-TARGET = $(shell basename `cd ..; pwd`)
-OS = $(shell basename `pwd`)
+TARGET = $(shell basename `cd ../..; pwd`)
+OS = $(shell basename `cd ../; pwd`)
+LIB = $(shell basename `pwd`)
+
+# The target library.
+LIBNAME = lib$(LIB).a
 
 # The target library directory.
-LIBDIR  = ../../../lib/$(TARGET)/$(OS)
+LIBDIR  = ../../../../lib/$(TARGET)/$(OS)
 
 # The build compiler for this OS.
-CC = ../../../../bin/$(TARGET)-$(OS)-ecc
+CC = ../../../../../bin/$(TARGET)-$(OS)-ecc
 # The base compiler.
-ECC = ../../../../bin/ecc
+ECC = ../../../../../bin/ecc
 
 # The archiver.
-AR = ../../../../bin/ecc-ar
+AR = ../../../../../bin/ecc-ar
 
 CFLAGS = -g -Werror -MD -MP -O1
 
@@ -26,12 +27,11 @@ CFLAGS = -g -Werror -MD -MP -O1
 .S.o:
 	${CC} -c ${CFLAGS} $<
 
-SRCPATH := ../../../src
+SRCPATH := ../../../../src
 
-# Build the system calls.
-include $(SRCPATH)/$(OS)/sources
-# Build the C standard library.
-include $(SRCPATH)/c/sources
+# Build the library.
+MYVPATH :=
+include $(SRCPATH)/$(LIB)/sources $(EXTRASRCS)
 VPATH := $(MYVPATH)
 
 BASENAMES := $(basename $(filter %.c %.s %.S, $(SRCS)))
