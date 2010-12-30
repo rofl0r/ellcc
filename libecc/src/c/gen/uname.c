@@ -38,22 +38,23 @@ __RCSID("$NetBSD: uname.c,v 1.10 2007/01/15 22:26:35 cbiere Exp $");
 #endif
 #endif /* LIBC_SCCS and not lint */
 
-#include "namespace.h"
-#include <sys/param.h>
-#include <sys/sysctl.h>
+// RICH #include "namespace.h"
+// RICH #include <sys/param.h>
+// RICH #include <sys/sysctl.h>
 #include <sys/utsname.h>
 
 #include <assert.h>
 #include <errno.h>
 
 #ifdef __weak_alias
-__weak_alias(uname,_uname)
+// RICH __weak_alias(uname,_uname)
 #endif
 
 int
 uname(name)
 	struct utsname *name;
 {
+#if RICH
 	int mib[2];
 	size_t len;
 	char *p;
@@ -102,5 +103,6 @@ uname(name)
 	return (0);
 
 error:
+#endif // RICH
 	return (-1);
 }
