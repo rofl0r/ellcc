@@ -245,11 +245,12 @@ EXTRALIBS = $(HESLIB) $(AFSLIB)
 CPP = ${CC} -E
 
 # To assist in cross-compiling with ELLCC.
-TARGET=i386
+TARGET=x86_64
 XCC=$(TARGET)-linux-
 XAS=$(TARGET)-elf-
 #XAS=ecc-
 CC=../../../bin/$(XCC)ecc
+HOSTCC=../../../bin/ecc
 AS=../../../bin/$(XAS)as
 AR=../../../bin/ecc-ar
 LD=../../../bin/ecc-ld
@@ -363,7 +364,7 @@ tcsh.exe: tcsh
 
 gethost:  gethost.c sh.err.h tc.const.h sh.h
 	rm -f gethost
-	${CC} -o gethost ${LDFLAGS} ${CFLAGS} ${DFLAGS} $(srcdir)/gethost.c ${LIBES} ${EXTRALIBS}
+	${HOSTCC} -o gethost ${LDFLAGS} ${CFLAGS} ${DFLAGS} $(srcdir)/gethost.c ${LIBES} ${EXTRALIBS}
 
 tc.defs.c:	gethost host.defs
 	@rm -f $@
