@@ -133,7 +133,7 @@ __BEGIN_DECLS
 int	getpriority(int, id_t);
 int	getrlimit(int, struct rlimit *);
 #ifndef __LIBC12_SOURCE__
-int	getrusage(int, struct rusage *) __RENAME(__getrusage50);
+int	getrusage(int, struct rusage *);
 #endif
 int	setpriority(int, id_t, int);
 int	setrlimit(int, const struct rlimit *);

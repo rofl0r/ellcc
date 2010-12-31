@@ -38,7 +38,7 @@ __RCSID("$NetBSD: ttyname.c,v 1.24 2008/06/25 11:47:29 ad Exp $");
 #endif
 #endif /* LIBC_SCCS and not lint */
 
-// RICH: #include "namespace.h"
+#include "namespace.h"
 #include <sys/types.h>
 #include <sys/param.h>
 #include <sys/stat.h>
@@ -55,8 +55,8 @@ __RCSID("$NetBSD: ttyname.c,v 1.24 2008/06/25 11:47:29 ad Exp $");
 #include <sys/ioctl.h>
 
 #ifdef __weak_alias
-// RICH: __weak_alias(ttyname,_ttyname)
-// RICH: __weak_alias(ttyname_r,_ttyname_r)
+__weak_alias(ttyname,_ttyname)
+__weak_alias(ttyname_r,_ttyname_r)
 #endif
 
 static int oldttyname(const struct stat *, char *, size_t);
@@ -116,7 +116,7 @@ ttyname_r(int fd, char *buf, size_t len)
 		}
 		(void)(db->close)(db);
 	}
-#endif
+#endif // RICH
 	if (oldttyname(&sb, buf, len) == -1)
 		return errno;
 	return 0;

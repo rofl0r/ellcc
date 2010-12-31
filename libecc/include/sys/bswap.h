@@ -17,8 +17,8 @@ __BEGIN_DECLS
 uint16_t bswap16(uint16_t) __constfunc;
 uint32_t bswap32(uint32_t) __constfunc;
 #else
-uint16_t bswap16(uint16_t) __RENAME(__bswap16) __constfunc;
-uint32_t bswap32(uint32_t) __RENAME(__bswap32) __constfunc;
+uint16_t bswap16(uint16_t) __constfunc;
+uint32_t bswap32(uint32_t) __constfunc;
 #endif
 uint64_t bswap64(uint64_t) __constfunc;
 __END_DECLS

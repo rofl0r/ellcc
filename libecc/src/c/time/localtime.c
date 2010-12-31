@@ -21,13 +21,12 @@ __RCSID("$NetBSD: localtime.c,v 1.50 2010/12/17 23:11:57 christos Exp $");
 
 /*LINTLIBRARY*/
 
-// RICH #include "namespace.h"
+#include "namespace.h"
 #include "private.h"
 #include "tzfile.h"
 #include "fcntl.h"
 #include "reentrant.h"
 
-#if RICH
 #if defined(__weak_alias)
 __weak_alias(ctime_r,_ctime_r)
 __weak_alias(ctime_rz,_ctime_rz)
@@ -38,7 +37,6 @@ __weak_alias(localtime_rz,_localtime_rz)
 __weak_alias(posix2time,_posix2time)
 __weak_alias(posix2time_z,_posix2time_z)
 __weak_alias(tzname,_tzname)
-#endif
 #endif
 
 #include "float.h"	/* for FLT_MAX and DBL_MAX */

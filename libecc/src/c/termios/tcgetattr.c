@@ -38,7 +38,7 @@ __RCSID("$NetBSD: tcgetattr.c,v 1.9 2003/08/07 16:44:13 agc Exp $");
 #endif
 #endif /* LIBC_SCCS and not lint */
 
-// RICH: #include "namespace.h"
+#include "namespace.h"
 #include <sys/ioctl.h>
 
 #include <assert.h>
@@ -47,7 +47,7 @@ __RCSID("$NetBSD: tcgetattr.c,v 1.9 2003/08/07 16:44:13 agc Exp $");
 #include <termios.h>
 
 #ifdef __weak_alias
-// RICH: __weak_alias(tcgetattr,_tcgetattr)
+__weak_alias(tcgetattr,_tcgetattr)
 #endif
 
 int

@@ -38,7 +38,7 @@ __RCSID("$NetBSD: strerror_r.c,v 1.2 2005/07/30 15:21:21 christos Exp $");
 #endif
 #endif /* LIBC_SCCS and not lint */
 
-// RICH: #include "namespace.h"
+#include "namespace.h"
 #ifdef NLS
 #include <limits.h>
 #include <nl_types.h>
@@ -52,7 +52,7 @@ __RCSID("$NetBSD: strerror_r.c,v 1.2 2005/07/30 15:21:21 christos Exp $");
 
 #ifdef _LIBC
 # ifdef __weak_alias
-// RICH: __weak_alias(strerror_r, _strerror_r)
+__weak_alias(strerror_r, _strerror_r)
 # endif
 #endif
 

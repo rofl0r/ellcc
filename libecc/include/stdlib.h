@@ -182,11 +182,7 @@ void	 srandom(unsigned long);
 
 char	*mkdtemp(char *);
 int	 mkstemp(char *);
-char	*mktemp(char *)
-#ifdef __MKTEMP_OK__
-	__RENAME(_mktemp)
-#endif
-	;
+char	*mktemp(char *);
 
 int	 setkey(const char *);
 
@@ -228,7 +224,7 @@ long double	strtold(const char * __restrict, char ** __restrict);
     defined(_NETBSD_SOURCE)
 int	 setenv(const char *, const char *, int);
 #ifndef __LIBC12_SOURCE__
-int	 unsetenv(const char *) __RENAME(__unsetenv13);
+int	 unsetenv(const char *);
 #endif
 
 int	 posix_openpt(int);
@@ -266,7 +262,7 @@ void	 csetexpandtc(int);
 
 int	 daemon(int, int);
 #ifndef __LIBC12_SOURCE__
-__aconst char *devname(dev_t, mode_t) __RENAME(__devname50);
+__aconst char *devname(dev_t, mode_t);
 #endif
 
 #define	HN_DECIMAL		0x01

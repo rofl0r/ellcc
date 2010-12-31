@@ -85,7 +85,7 @@ typedef struct _locale_impl_t		*_locale_t;
 
 __BEGIN_DECLS
 struct lconv *localeconv(void);
-char *setlocale(int, const char *) __RENAME(__setlocale50);
+char *setlocale(int, const char *);
 __END_DECLS
 
 #endif /* _LOCALE_H_ */

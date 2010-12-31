@@ -41,7 +41,7 @@ __RCSID("$NetBSD: snprintf.c,v 1.22 2007/10/26 19:48:14 christos Exp $");
 #endif
 #endif /* LIBC_SCCS and not lint */
 
-// RICH: #include "namespace.h"
+#include "namespace.h"
 
 #include <assert.h>
 #include <errno.h>
@@ -57,7 +57,7 @@ __RCSID("$NetBSD: snprintf.c,v 1.22 2007/10/26 19:48:14 christos Exp $");
 #endif
 
 #ifdef __weak_alias
-// RICH: __weak_alias(snprintf,_snprintf)
+__weak_alias(snprintf,_snprintf)
 #endif
 
 int

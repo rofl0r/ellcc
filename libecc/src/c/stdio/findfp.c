@@ -165,7 +165,7 @@ found:
 	return (fp);
 }
 
-#if RICH
+#if RICH  // Avoid sysconf().
 /*
  * XXX.  Force immediate allocation of internal memory.  Not used by stdio,
  * but documented historically for certain applications.  Bad applications.

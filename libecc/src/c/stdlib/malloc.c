@@ -3391,7 +3391,7 @@ static void internal_malloc_stats(mstate m) {
       }
     }
 
-#if RICH
+#if RICH        // Malloc shouldn't pull in fprintf.
     fprintf(stderr, "max system bytes = %10lu\n", (unsigned long)(maxfp));
     fprintf(stderr, "system bytes     = %10lu\n", (unsigned long)(fp));
     fprintf(stderr, "in use bytes     = %10lu\n", (unsigned long)(used));

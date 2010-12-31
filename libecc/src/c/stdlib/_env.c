@@ -34,7 +34,7 @@
 __RCSID("$NetBSD: _env.c,v 1.5 2010/11/17 13:25:53 tron Exp $");
 #endif /* LIBC_SCCS and not lint */
 
-// RICH: #include "namespace.h"
+#include "namespace.h"
 
 #include <sys/rbtree.h>
 

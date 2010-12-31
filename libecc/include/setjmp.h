@@ -62,13 +62,13 @@ typedef _BSD_JBSLOT_T_ jmp_buf[_JBLEN] _JB_ATTRIBUTES;
 
 __BEGIN_DECLS
 #ifndef __LIBC12_SOURCE__
-int	setjmp(jmp_buf)			 __RENAME(__setjmp14);
-void	longjmp(jmp_buf, int)		 __RENAME(__longjmp14) __dead;
+int	setjmp(jmp_buf);
+void	longjmp(jmp_buf, int) __dead;
 
 #if defined(_POSIX_C_SOURCE) || defined(_XOPEN_SOURCE) || \
     defined(_NETBSD_SOURCE)
-int	sigsetjmp(sigjmp_buf, int)	__RENAME(__sigsetjmp14);
-void	siglongjmp(sigjmp_buf, int)	 __RENAME(__siglongjmp14) __dead;
+int	sigsetjmp(sigjmp_buf, int);
+void	siglongjmp(sigjmp_buf, int) __dead;
 #endif /* not ANSI */
 #endif /* __LIBC12_SOURCE__ */
 

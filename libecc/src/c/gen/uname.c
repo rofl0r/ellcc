@@ -38,7 +38,7 @@ __RCSID("$NetBSD: uname.c,v 1.10 2007/01/15 22:26:35 cbiere Exp $");
 #endif
 #endif /* LIBC_SCCS and not lint */
 
-// RICH #include "namespace.h"
+#include "namespace.h"
 // RICH #include <sys/param.h>
 // RICH #include <sys/sysctl.h>
 #include <sys/utsname.h>
@@ -47,7 +47,7 @@ __RCSID("$NetBSD: uname.c,v 1.10 2007/01/15 22:26:35 cbiere Exp $");
 #include <errno.h>
 
 #ifdef __weak_alias
-// RICH __weak_alias(uname,_uname)
+__weak_alias(uname,_uname)
 #endif
 
 int

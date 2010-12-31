@@ -119,21 +119,21 @@ struct passwd {
 
 __BEGIN_DECLS
 #ifndef __LIBC12_SOURCE__
-struct passwd	*getpwuid(uid_t) __RENAME(__getpwuid50);
-struct passwd	*getpwnam(const char *) __RENAME(__getpwnam50);
+struct passwd	*getpwuid(uid_t);
+struct passwd	*getpwnam(const char *);
 #endif
 #if (_POSIX_C_SOURCE - 0) >= 199506L || (_XOPEN_SOURCE - 0) >= 500 || \
     defined(_REENTRANT) || defined(_NETBSD_SOURCE)
 #ifndef __LIBC12_SOURCE__
 int		 getpwnam_r(const char *, struct passwd *, char *, size_t,
-    struct passwd **) __RENAME(__getpwnam_r50);
+    struct passwd **);
 int		 getpwuid_r(uid_t, struct passwd *, char *, size_t,
-    struct passwd **) __RENAME(__getpwuid_r50);
+    struct passwd **);
 #endif
 #endif
 #if defined(_XOPEN_SOURCE) || defined(_NETBSD_SOURCE)
 #ifndef __LIBC12_SOURCE__
-struct passwd	*getpwent(void) __RENAME(__getpwent50);
+struct passwd	*getpwent(void);
 #endif
 void		 setpwent(void);
 void		 endpwent(void);
@@ -141,17 +141,15 @@ void		 endpwent(void);
 #if defined(_NETBSD_SOURCE)
 int		 pw_gensalt(char *, size_t, const char *, const char *);
 #ifndef __LIBC12_SOURCE__
-int		 pw_scan(char *, struct passwd *, int *) __RENAME(__pw_scan50);
-int		 getpwent_r(struct passwd *, char *, size_t, struct passwd **)
-    __RENAME(__getpwent_r50);
+int		 pw_scan(char *, struct passwd *, int *);
+int		 getpwent_r(struct passwd *, char *, size_t, struct passwd **);
 #endif
 int		 setpassent(int);
 const char	*user_from_uid(uid_t, int);
 int		 uid_from_user(const char *, uid_t *);
 #ifndef __LIBC12_SOURCE__
 int		 pwcache_userdb(int (*)(int), void (*)(void),
-    struct passwd * (*)(const char *), struct passwd * (*)(uid_t))
-    __RENAME(__pwcache_userdb50);
+    struct passwd * (*)(const char *), struct passwd * (*)(uid_t));
 #endif
 #endif
 __END_DECLS

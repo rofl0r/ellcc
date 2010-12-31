@@ -40,7 +40,6 @@ __RCSID("$NetBSD: compat_errlist.c,v 1.2 2006/10/31 00:38:07 cbiere Exp $");
 #endif
 #endif /* LIBC_SCCS and not lint */
 
-#if RICH
 #include "namespace.h"
 
 #define __LIBC12_SOURCE__
@@ -50,7 +49,6 @@ __weak_alias(sys_errlist, _sys_errlist)
 __weak_alias(__sys_errlist, _sys_errlist)
 __weak_alias(sys_nerr, _sys_nerr)
 __weak_alias(__sys_nerr, _sys_nerr)
-#endif
 #endif
 
 const char *const sys_errlist[] = {

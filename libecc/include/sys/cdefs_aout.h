@@ -25,9 +25,13 @@
 #define	__strong_alias(alias,sym)	       				\
     __asm(".global " _C_LABEL_STRING(#alias) "\n"			\
 	    _C_LABEL_STRING(#alias) " = " _C_LABEL_STRING(#sym));
+#if RICH
 #define	__weak_alias(alias,sym)						\
     __asm(".weak " _C_LABEL_STRING(#alias) "\n"			\
 	    _C_LABEL_STRING(#alias) " = " _C_LABEL_STRING(#sym));
+#else
+#define	__weak_alias(alias,sym)
+#endif
 
 /* Do not use __weak_extern, use __weak_reference instead */
 #define	__weak_extern(sym)						\

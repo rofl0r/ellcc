@@ -37,7 +37,7 @@
 __RCSID("$NetBSD: fseeko.c,v 1.8 2009/01/31 00:08:05 lukem Exp $");
 #endif /* LIBC_SCCS and not lint */
 
-// RICH: #include "namespace.h"
+#include "namespace.h"
 #include <sys/types.h>
 #include <sys/stat.h>
 
@@ -50,7 +50,7 @@ __RCSID("$NetBSD: fseeko.c,v 1.8 2009/01/31 00:08:05 lukem Exp $");
 #include "local.h"
 
 #ifdef __weak_alias
-// RICH: __weak_alias(fseeko, _fseeko)
+__weak_alias(fseeko, _fseeko)
 #endif
 
 #define	POS_ERR	(-(fpos_t)1)

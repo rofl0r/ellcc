@@ -125,7 +125,7 @@ void tzset(void);
 #if defined(_XOPEN_SOURCE) || defined(_NETBSD_SOURCE)
 extern int daylight;
 #ifndef __LIBC12_SOURCE__
-extern long int timezone __RENAME(__timezone13);
+extern long int timezone;
 #endif
 char *strptime(const char * __restrict, const char * __restrict,
     struct tm * __restrict);

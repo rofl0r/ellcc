@@ -1,7 +1,8 @@
+# Library private includes.
 CFLAGS += -I$(SRCPATH)/c/include
 
 MYVPATH := $(MYVPATH):$(SRCPATH)/c/stdlib
-SRCS += exit.c malloc.c abort.c getenv.c _env.c atoi.c
+SRCS += exit.c malloc.c abort.c getenv.c _env.c atoi.c strtol.c atof.c
 
 MYVPATH := $(MYVPATH):$(SRCPATH)/c/stdio
 SRCS += puts.c fvwrite.c findfp.c fwalk.c wsetup.c fflush.c stdio.c makebuf.c fputs.c wbuf.c \
@@ -16,10 +17,12 @@ SRCS += strlen.c memcpy.c memchr.c memset.c memcmp.c strdup.c strncpy.c strcmp.c
 
 MYVPATH := $(MYVPATH):$(SRCPATH)/c/gen
 SRCS += raise.c time.c isatty.c signal.c sigfuncs.c isinfd_ieee754.c isnand_ieee754.c rb.c \
-        sys_errlist.c errno.c _errno.c isctype.c closedir.c uname.c ttyname.c
+        sys_errlist.c errno.c _errno.c isctype.c closedir.c uname.c ttyname.c opendir.c \
+        readdir.c rewinddir.c execv.c execvp.c execl.c execlp.c execle.c
+
 
 MYVPATH := $(MYVPATH):$(SRCPATH)/c/termios
-SRCS += tcgetattr.c
+SRCS += tcgetattr.c tcsetpgrp.c tcgetpgrp.c
 
 CFLAGS += -I$(SRCPATH)/c/locale
 MYVPATH := $(MYVPATH):$(SRCPATH)/c/locale
@@ -28,7 +31,13 @@ SRCS += localeconv.c current_locale.c global_locale.c tolower_.c ctype_.c touppe
         multibyte_sb.c # RICH: Multibyte stubs.
 
 MYVPATH := $(MYVPATH):$(SRCPATH)/c/gdtoa
-SRCS += gdtoa.c dtoa.c misc.c dmisc.c
+SRCS +=	strtod.c dtoa.c ldtoa.c hdtoa.c gdtoa.c dmisc.c gethex.c gmisc.c strtord.c \
+        hd_init.c hexnan.c misc.c smisc.c strtodg.c sum.c ulp.c _strtof.c _strtold.c \
+        strtord.c
 
 MYVPATH := $(MYVPATH):$(SRCPATH)/c/time
-SRCS += localtime.c
+SRCS += localtime.c asctime.c strftime.c
+
+# Target specific sources.
+MYVPATH := $(MYVPATH):$(SRCPATH)/c/$(TARGET)
+SRCS += setjmp.S

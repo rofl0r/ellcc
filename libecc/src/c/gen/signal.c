@@ -41,11 +41,11 @@ __RCSID("$NetBSD: signal.c,v 1.12 2003/08/07 16:42:56 agc Exp $");
 /*
  * Almost backwards compatible signal.
  */
-// RICH #include "namespace.h"
+#include "namespace.h"
 #include <signal.h>
 
 #ifdef __weak_alias
-// RICH __weak_alias(signal,_signal)
+__weak_alias(signal,_signal)
 #endif
 
 sigset_t __sigintr;		/* shared with siginterrupt */

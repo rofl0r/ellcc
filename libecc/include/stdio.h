@@ -275,7 +275,7 @@ int	 vsprintf(char * __restrict, const char * __restrict,
 #endif
 
 #if defined(_POSIX_C_SOURCE) || defined(_XOPEN_SOURCE)
-int	 rename (const char *, const char *) __RENAME(__posix_rename);
+int	 rename (const char *, const char *);
 #else
 int	 rename (const char *, const char *);
 #endif

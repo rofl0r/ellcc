@@ -89,10 +89,10 @@ __BEGIN_DECLS
 int closedir(DIR *);
 void rewinddir(DIR *);
 #ifndef __LIBC12_SOURCE__
-DIR *opendir(const char *) __RENAME(__opendir30);
-struct dirent *readdir(DIR *) __RENAME(__readdir30);
+DIR *opendir(const char *);
+struct dirent *readdir(DIR *);
 int readdir_r(DIR * __restrict, struct dirent * __restrict,
-    struct dirent ** __restrict) __RENAME(__readdir_r30);
+    struct dirent ** __restrict);
 #endif
 #if defined(_XOPEN_SOURCE) || defined(_NETBSD_SOURCE)
 void seekdir(DIR *, long);
@@ -101,12 +101,11 @@ long telldir(DIR *);
 #if defined(_NETBSD_SOURCE)
 #ifndef __LIBC12_SOURCE__
 DIR *fdopendir(int);
-DIR *__opendir2(const char *, int) __RENAME(__opendir230);
+DIR *__opendir2(const char *, int);
 int scandir(const char *, struct dirent ***,
-    int (*)(const struct dirent *), int (*)(const void *, const void *))
-    __RENAME(__scandir30);
-int getdents(int, char *, size_t) __RENAME(__getdents30);
-int alphasort(const void *, const void *) __RENAME(__alphasort30);
+    int (*)(const struct dirent *), int (*)(const void *, const void *));
+int getdents(int, char *, size_t);
+int alphasort(const void *, const void *);
 #endif
 #endif /* defined(_NETBSD_SOURCE) */
 __END_DECLS

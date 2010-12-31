@@ -282,7 +282,7 @@ int	utimes(const char *, const struct timeval [2]);
 
 #if defined(_NETBSD_SOURCE) || defined(HAVE_NBTOOL_CONFIG_H)
 int	adjtime(const struct timeval *, struct timeval *);
-int	futimes(int, const struct timeval [2]) __RENAME(__futimes50);
+int	futimes(int, const struct timeval [2]);
 int	lutimes(const char *, const struct timeval [2]);
 int	settimeofday(const struct timeval * __restrict,
 	    const void *__restrict);

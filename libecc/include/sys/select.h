@@ -66,9 +66,9 @@ __BEGIN_DECLS
 #ifndef __LIBC12_SOURCE__
 int	pselect(int, fd_set * __restrict, fd_set * __restrict,
     fd_set * __restrict, const struct timespec * __restrict,
-    const sigset_t * __restrict) __RENAME(__pselect50);
+    const sigset_t * __restrict);
 int	select(int, fd_set * __restrict, fd_set * __restrict,
-    fd_set * __restrict, struct timeval * __restrict) __RENAME(__select50);
+    fd_set * __restrict, struct timeval * __restrict);
 #endif /* __LIBC12_SOURCE__ */
 __END_DECLS
 #endif /* _KERNEL */

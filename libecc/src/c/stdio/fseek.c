@@ -37,7 +37,7 @@ __RCSID("$NetBSD: fseek.c,v 1.23 2008/04/29 06:53:01 martin Exp $");
 #include <sys/types.h>
 #include <sys/stat.h>
 
-// RICH: #include "namespace.h"
+#include "namespace.h"
 #include <assert.h>
 #include <errno.h>
 #include <fcntl.h>

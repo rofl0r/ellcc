@@ -4,9 +4,7 @@
 
 #include <errno.h>
 
-static int _errno;      // RICH: threads.
-
 int * __errno()
 {
-  return &_errno;
+  return &errno;        // RICH: Threads.
 }

@@ -33,7 +33,7 @@ THIS SOFTWARE.
 
 #include "gdtoaimp.h"
 #ifndef NO_FENV_H
-#include <fenv.h>
+// RICH: #include <fenv.h>
 #endif
 
 #ifdef USE_LOCALE

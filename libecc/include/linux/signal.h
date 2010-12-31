@@ -183,11 +183,9 @@ void	psiginfo(const siginfo_t *, const char *);
 #ifndef __LIBC12_SOURCE__
 struct timespec;
 int	sigtimedwait(const sigset_t * __restrict,
-    siginfo_t * __restrict, const struct timespec * __restrict)
-    __RENAME(__sigtimedwait50);
+    siginfo_t * __restrict, const struct timespec * __restrict);
 int	__sigtimedwait(const sigset_t * __restrict,
-    siginfo_t * __restrict, struct timespec * __restrict)
-    __RENAME(____sigtimedwait50);
+    siginfo_t * __restrict, struct timespec * __restrict);
 #endif
 #endif /* _POSIX_C_SOURCE >= 200112 || _XOPEN_SOURCE_EXTENDED || ... */
 

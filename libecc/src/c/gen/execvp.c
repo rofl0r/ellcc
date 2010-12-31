@@ -47,6 +47,7 @@ __RCSID("$NetBSD: execvp.c,v 1.30 2007/07/20 12:41:07 yamt Exp $");
 #include <limits.h>
 #include <unistd.h>
 #include <paths.h>
+#include <sys/syslimits.h>
 #include "reentrant.h"
 
 #ifdef __weak_alias

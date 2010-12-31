@@ -38,7 +38,7 @@ __RCSID("$NetBSD: perror.c,v 1.24 2006/01/26 11:13:42 kleink Exp $");
 #endif
 #endif /* LIBC_SCCS and not lint */
 
-// RICH: #include "namespace.h"
+#include "namespace.h"
 #include <errno.h>
 #include <limits.h>
 #include <stdio.h>

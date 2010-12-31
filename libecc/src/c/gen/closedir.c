@@ -38,7 +38,7 @@ __RCSID("$NetBSD: closedir.c,v 1.16 2010/09/26 02:26:59 yamt Exp $");
 #endif
 #endif /* LIBC_SCCS and not lint */
 
-// RICH #include "namespace.h"
+#include "namespace.h"
 #include "reentrant.h"
 #include <sys/types.h>
 #include "extern.h"
@@ -52,7 +52,7 @@ __RCSID("$NetBSD: closedir.c,v 1.16 2010/09/26 02:26:59 yamt Exp $");
 #include "dirent_private.h"
 
 #ifdef __weak_alias
-// RICH __weak_alias(closedir,_closedir)
+__weak_alias(closedir,_closedir)
 #endif
 
 /*

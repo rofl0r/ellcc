@@ -58,7 +58,7 @@ struct tms {
 
 __BEGIN_DECLS
 #ifndef __LIBC12_SOURCE__
-clock_t times(struct tms *) __RENAME(__times13);
+clock_t times(struct tms *);
 #endif
 __END_DECLS
 #endif

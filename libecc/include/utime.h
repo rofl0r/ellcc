@@ -50,7 +50,7 @@ struct utimbuf {
 
 __BEGIN_DECLS
 #ifndef __LIBC12_SOURCE__
-int utime(const char *, const struct utimbuf *) __RENAME(__utime50);
+int utime(const char *, const struct utimbuf *);
 #endif
 __END_DECLS
 

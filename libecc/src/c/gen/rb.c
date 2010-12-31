@@ -43,7 +43,6 @@
 #include <lib/libkern/libkern.h>
 #endif
 
-#if RICH
 #ifdef _LIBC
 __weak_alias(rb_tree_init, _rb_tree_init)
 __weak_alias(rb_tree_find_node, _rb_tree_find_node)
@@ -59,7 +58,6 @@ __weak_alias(rb_tree_depths, _rb_tree_depths)
 
 #include "namespace.h"
 #endif
-#endif // RICH
 
 #ifdef RBTEST
 #include "rbtree.h"

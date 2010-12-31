@@ -24,6 +24,8 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <sys/types.h>
+
 __BEGIN_DECLS
 extern char *__minbrk;
 int __getcwd(char *, size_t);

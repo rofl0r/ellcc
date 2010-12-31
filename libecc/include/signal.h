@@ -45,7 +45,7 @@
 #include <sys/signal.h>
 
 #if defined(_NETBSD_SOURCE)
-extern const char *const *sys_signame __RENAME(__sys_signame14);
+extern const char *const *sys_signame;
 #ifndef __SYS_SIGLIST_DECLARED
 #define __SYS_SIGLIST_DECLARED
 /* also in unistd.h */

@@ -41,7 +41,7 @@ __RCSID("$NetBSD: fdopen.c,v 1.15 2008/03/13 15:40:00 christos Exp $");
 #endif
 #endif /* LIBC_SCCS and not lint */
 
-// RICH: #include "namespace.h"
+#include "namespace.h"
 #include <sys/types.h>
 
 #include <assert.h>
@@ -55,7 +55,7 @@ __RCSID("$NetBSD: fdopen.c,v 1.15 2008/03/13 15:40:00 christos Exp $");
 #include "local.h"
 
 #ifdef __weak_alias
-// RICH: __weak_alias(fdopen,_fdopen)
+__weak_alias(fdopen,_fdopen)
 #endif
 
 FILE *

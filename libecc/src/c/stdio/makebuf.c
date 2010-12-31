@@ -41,7 +41,7 @@ __RCSID("$NetBSD: makebuf.c,v 1.15 2008/03/13 15:40:00 christos Exp $");
 #endif
 #endif /* LIBC_SCCS and not lint */
 
-// RICH: #include "namespace.h"
+#include "namespace.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>

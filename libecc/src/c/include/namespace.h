@@ -31,6 +31,8 @@
 
 #include <sys/cdefs.h>
 
+#if RICH
+
 #ifndef __lint__
 #define aio_suspend	_aio_suspend
 #define brk		_brk
@@ -847,5 +849,6 @@
 #define __learn_tree		___learn_tree
 #endif /* __weak_alias */
 #endif /* !__lint__ */
+#endif // RICH
 
 #endif /* _NAMESPACE_H_ */
