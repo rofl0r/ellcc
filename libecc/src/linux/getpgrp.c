@@ -2,7 +2,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-pid_t getgid(void)
+pid_t getpgrp(void)
 {
-    return INLINE_SYSCALL(getgid, 0);
+    return INLINE_SYSCALL(getpgrp, 0);
 }
