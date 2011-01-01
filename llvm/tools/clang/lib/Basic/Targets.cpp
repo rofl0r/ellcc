@@ -647,6 +647,8 @@ void PPCTargetInfo::getTargetDefines(const LangOptions &Opts,
     Builder.defineMacro("__VEC__", "10206");
     Builder.defineMacro("__ALTIVEC__");
   }
+  if (SoftFloat)
+    Builder.defineMacro("_SOFT_FLOAT", "1");
 }
 
 
@@ -873,6 +875,8 @@ void MBlazeTargetInfo::getTargetDefines(const LangOptions &Opts,
 
   // Subtarget options.
   Builder.defineMacro("__REGISTER_PREFIX__", "");
+  if (SoftFloat)
+    Builder.defineMacro("_SOFT_FLOAT", "1");
 }
 
 
@@ -1861,8 +1865,10 @@ public:
     if (ABI == "aapcs" || ABI == "aapcs-linux")
       Builder.defineMacro("__ARM_EABI__");
 
-    if (SoftFloat)
+    if (SoftFloat) {
       Builder.defineMacro("__SOFTFP__");
+      Builder.defineMacro("_SOFT_FLOAT", "1");
+    }
 
     if (CPU == "xscale")
       Builder.defineMacro("__XSCALE__");
@@ -2042,8 +2048,10 @@ public:
     Builder.defineMacro("__sparcv8");
     Builder.defineMacro("__REGISTER_PREFIX__", "");
 
-    if (SoftFloat)
+    if (SoftFloat) {
       Builder.defineMacro("SOFT_FLOAT", "1");
+      Builder.defineMacro("_SOFT_FLOAT", "1");
+    }
   }
   virtual void getTargetBuiltins(const Builtin::Info *&Records,
                                  unsigned &NumRecords) const {
@@ -2459,6 +2467,8 @@ public:
     Builder.defineMacro("_MIPSEB");
     Builder.defineMacro("__REGISTER_PREFIX__", "");
     getArchDefines(Opts, Builder);
+    if (SoftFloat)
+      Builder.defineMacro("_SOFT_FLOAT", "1");
   }
   virtual void getTargetBuiltins(const Builtin::Info *&Records,
                                  unsigned &NumRecords) const {
@@ -2581,6 +2591,8 @@ void MipselTargetInfo::getTargetDefines(const LangOptions &Opts,
   Builder.defineMacro("_MIPSEL");
   Builder.defineMacro("__REGISTER_PREFIX__", "");
   getArchDefines(Opts, Builder);
+  if (SoftFloat)
+    Builder.defineMacro("_SOFT_FLOAT", "1");
 }
 } // end anonymous namespace.
 
