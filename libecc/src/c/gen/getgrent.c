@@ -101,12 +101,12 @@ __RCSID("$NetBSD: getgrent.c,v 1.62 2008/04/28 20:22:59 martin Exp $");
 #include <errno.h>
 #include <grp.h>
 #include <limits.h>
-#include <nsswitch.h>
+// RICH #include <nsswitch.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <syslog.h>
+// RICH #include <syslog.h>
 
 #ifdef HESIOD
 #include <hesiod.h>
@@ -118,7 +118,7 @@ __RCSID("$NetBSD: getgrent.c,v 1.62 2008/04/28 20:22:59 martin Exp $");
 #include <rpcsvc/ypclnt.h>
 #endif
 
-#include "gr_private.h"
+// RICH: #include "gr_private.h"
 
 #ifdef __weak_alias
 __weak_alias(endgrent,_endgrent)
@@ -132,6 +132,7 @@ __weak_alias(setgrent,_setgrent)
 __weak_alias(setgroupent,_setgroupent)
 #endif
 
+#if RICH
 #ifdef _REENTRANT
 mutex_t	__grmutex = MUTEX_INITIALIZER;
 #endif
@@ -1715,6 +1716,7 @@ _compat_getgrnam_r(void *nsrv, void *nscb, va_list ap)
 
 #endif	/* _GROUP_COMPAT */
 
+#endif // RICH
 
 		/*
 		 *	public functions
@@ -1723,6 +1725,7 @@ _compat_getgrnam_r(void *nsrv, void *nscb, va_list ap)
 struct group *
 getgrent(void)
 {
+#if RICH
 	int		rv;
 	struct group	*retval;
 
@@ -1739,12 +1742,16 @@ getgrent(void)
 	    &retval);
 	mutex_unlock(&__grmutex);
 	return (rv == NS_SUCCESS) ? retval : NULL;
+#else
+    return NULL;
+#endif // RICH
 }
 
 int
 getgrent_r(struct group *grp, char *buffer, size_t buflen,
     struct group **result)
 {
+#if RICH
 	int		rv, retval;
 
 	static const ns_dtab dtab[] = {
@@ -1766,12 +1773,16 @@ getgrent_r(struct group *grp, char *buffer, size_t buflen,
 	default:
 		return retval;
 	}
+#else
+    return 0;
+#endif // RICH
 }
 
 
 struct group *
 getgrgid(gid_t gid)
 {
+#if RICH
 	int		rv;
 	struct group	*retval;
 
@@ -1788,12 +1799,16 @@ getgrgid(gid_t gid)
 	    &retval, gid);
 	mutex_unlock(&__grmutex);
 	return (rv == NS_SUCCESS) ? retval : NULL;
+#else
+    return NULL;
+#endif // RICH
 }
 
 int
 getgrgid_r(gid_t gid, struct group *grp, char *buffer, size_t buflen,
 	struct group **result)
 {
+#if RICH
 	int	rv, retval;
 
 	static const ns_dtab dtab[] = {
@@ -1821,11 +1836,15 @@ getgrgid_r(gid_t gid, struct group *grp, char *buffer, size_t buflen,
 	default:
 		return retval;
 	}
+#else
+    return 0;
+#endif // RICH
 }
 
 struct group *
 getgrnam(const char *name)
 {
+#if RICH
 	int		rv;
 	struct group	*retval;
 
@@ -1842,12 +1861,16 @@ getgrnam(const char *name)
 	    &retval, name);
 	mutex_unlock(&__grmutex);
 	return (rv == NS_SUCCESS) ? retval : NULL;
+#else
+    return NULL;
+#endif // RICH
 }
 
 int
 getgrnam_r(const char *name, struct group *grp, char *buffer, size_t buflen,
 	struct group **result)
 {
+#if RICH
 	int	rv, retval;
 
 	static const ns_dtab dtab[] = {
@@ -1876,11 +1899,15 @@ getgrnam_r(const char *name, struct group *grp, char *buffer, size_t buflen,
 	default:
 		return retval;
 	}
+#else
+    return 0;
+#endif // RICH
 }
 
 void
 endgrent(void)
 {
+#if RICH
 	static const ns_dtab dtab[] = {
 		NS_FILES_CB(_files_endgrent, NULL)
 		NS_DNS_CB(_dns_endgrent, NULL)
@@ -1894,11 +1921,13 @@ endgrent(void)
 	(void) nsdispatch(NULL, dtab, NSDB_GROUP, "endgrent",
 	    __nsdefaultcompat_forceall);
 	mutex_unlock(&__grmutex);
+#endif // RICH
 }
 
 int
 setgroupent(int stayopen)
 {
+#if RICH
 	static const ns_dtab dtab[] = {
 		NS_FILES_CB(_files_setgroupent, NULL)
 		NS_DNS_CB(_dns_setgroupent, NULL)
@@ -1914,11 +1943,15 @@ setgroupent(int stayopen)
 	    __nsdefaultcompat_forceall, &retval, stayopen);
 	mutex_unlock(&__grmutex);
 	return (rv == NS_SUCCESS) ? retval : 0;
+#else
+    return 0;
+#endif // RICH
 }
 
 void
 setgrent(void)
 {
+#if RICH
 	static const ns_dtab dtab[] = {
 		NS_FILES_CB(_files_setgrent, NULL)
 		NS_DNS_CB(_dns_setgrent, NULL)
@@ -1932,4 +1965,5 @@ setgrent(void)
 	(void) nsdispatch(NULL, dtab, NSDB_GROUP, "setgrent",
 	    __nsdefaultcompat_forceall);
 	mutex_unlock(&__grmutex);
+#endif // RICH
 }

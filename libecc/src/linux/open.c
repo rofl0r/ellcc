@@ -1,6 +1,6 @@
 #include <syscall.h>
-#include <sys/types.h>
-#include <unistd.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 #include <stdarg.h>
 
 int open(const char *name, int flags, ...)

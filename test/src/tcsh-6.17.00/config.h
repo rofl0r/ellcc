@@ -132,6 +132,6 @@
 #endif
 #define ECHO_STYLE      BOTH_ECHO
 
-#define NLS_CATALOGS
+#undef NLS_CATALOGS
 
 #endif /* _h_config */

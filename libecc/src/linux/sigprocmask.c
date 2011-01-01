@@ -1,6 +1,5 @@
 #include <syscall.h>
 #include <signal.h>
-#include <unistd.h>
 
 int sigprocmask(int how, const sigset_t *set, sigset_t *oldset)
 {

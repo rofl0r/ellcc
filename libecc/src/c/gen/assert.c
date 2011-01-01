@@ -44,7 +44,7 @@ __RCSID("$NetBSD: assert.c,v 1.16 2005/02/09 21:35:46 kleink Exp $");
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <syslog.h>
+// RICH: #include <syslog.h>
 
 void
 __assert13(file, line, function, failedexpr)
@@ -125,8 +125,10 @@ __diagassert13(file, line, function, failedexpr)
 	    function ? "\"" : "");
 	if (diagassert_flags & DIAGASSERT_STDERR)
 		(void)fprintf(stderr, "%s: %s\n", getprogname(), buf);
+#if RICH
 	if (diagassert_flags & DIAGASSERT_SYSLOG)
 		syslog(LOG_DEBUG | LOG_USER, "%s", buf);
+#endif
 	if (diagassert_flags & DIAGASSERT_ABORT)
 		abort();
 }

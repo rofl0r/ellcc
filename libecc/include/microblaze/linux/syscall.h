@@ -133,7 +133,7 @@
                   "brki r14, 0x8        # syscall " #name               \
                    : "={r3}" (result)                                   \
                    : "i" (SYS_CONSTANT(name)),                          \
-                     "{r5}" (arg0), "{r6}" (arg1), "{r7}" (arg2)        \
+                     "{r5}" (arg0), "{r6}" (arg1), "{r7}" (arg2),       \
                      "{r7}" (arg3)                                      \
                    : SYSCALL_CLOBBERS);                                 \
     if (IS_SYSCALL_ERROR(result)) {                                     \
@@ -158,7 +158,7 @@
                   "brki r14, 0x8        # syscall " #name               \
                    : "={r3}" (result)                                   \
                    : "i" (SYS_CONSTANT(name)),                          \
-                     "{r5}" (arg0), "{r6}" (arg1), "{r7}" (arg2)        \
+                     "{r5}" (arg0), "{r6}" (arg1), "{r7}" (arg2),       \
                      "{r8}" (arg3), "{r9}" (arg4)                       \
                    : SYSCALL_CLOBBERS);                                 \
     if (IS_SYSCALL_ERROR(result)) {                                     \
@@ -184,7 +184,7 @@
                   "brki r14, 0x8        # syscall " #name               \
                    : "={r3}" (result)                                   \
                    : "i" (SYS_CONSTANT(name)),                          \
-                     "{r5}" (arg0), "{r6}" (arg1), "{r7}" (arg2)        \
+                     "{r5}" (arg0), "{r6}" (arg1), "{r7}" (arg2),       \
                      "{r8}" (arg3), "{r9}" (arg4), "{r10}" (arg5)       \
                    : SYSCALL_CLOBBERS);                                 \
     if (IS_SYSCALL_ERROR(result)) {                                     \

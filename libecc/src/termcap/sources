@@ -1,0 +1,4 @@
+MYVPATH := $(MYVPATH):$(SRCPATH)/$(LIB)
+CFLAGS += -I$(SRCPATH)/$(LIB)
+
+SRCS += termcap.c tputs.c curterm.c setupterm.c tparm.c compile.c hash.c term.c

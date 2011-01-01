@@ -1,7 +1,7 @@
-/*	$NetBSD: getpagesize.c,v 1.10 2009/12/14 01:04:46 matt Exp $	*/
+/*	$NetBSD: err.h,v 1.15 2010/02/25 18:37:12 joerg Exp $	*/
 
-/*
- * Copyright (c) 1989, 1993
+/*-
+ * Copyright (c) 1993
  *	The Regents of the University of California.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -27,46 +27,40 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
+ *
+ *	@(#)err.h	8.1 (Berkeley) 6/2/93
  */
 
+#ifndef _ERR_H_
+#define	_ERR_H_
+
+/*
+ * Don't use va_list in the err/warn prototypes.   Va_list is typedef'd in two
+ * places (<machine/varargs.h> and <machine/stdarg.h>), so if we include one
+ * of them here we may collide with the utility's includes.  It's unreasonable
+ * for utilities to have to include one of them to include err.h, so we get
+ * _BSD_VA_LIST_ from <machine/ansi.h> and use it.
+ */
+#include <machine/ansi.h>
 #include <sys/cdefs.h>
-#if defined(LIBC_SCCS) && !defined(lint)
-#if 0
-static char sccsid[] = "@(#)getpagesize.c	8.1 (Berkeley) 6/4/93";
-#else
-__RCSID("$NetBSD: getpagesize.c,v 1.10 2009/12/14 01:04:46 matt Exp $");
-#endif
-#endif /* LIBC_SCCS and not lint */
 
-#include "namespace.h"
-#include <sys/param.h>
-// RICH: #include <sys/sysctl.h>
-#include <assert.h>
-#include <unistd.h>
+__BEGIN_DECLS
+__dead void	err(int, const char *, ...)
+		     __printflike(2, 3) __dead;
+__dead void	verr(int, const char *, _BSD_VA_LIST_)
+		    __printflike(2, 0) __dead;
+__dead void	errx(int, const char *, ...)
+		     __printflike(2, 3) __dead;
+__dead void	verrx(int, const char *, _BSD_VA_LIST_)
+		    __printflike(2, 0) __dead;
+void		warn(const char *, ...)
+		    __printflike(1, 2);
+void		vwarn(const char *, _BSD_VA_LIST_)
+		    __printflike(1, 0);
+void		warnx(const char *, ...)
+		    __printflike(1, 2);
+void		vwarnx(const char *, _BSD_VA_LIST_)
+		    __printflike(1, 0);
+__END_DECLS
 
-#ifdef __weak_alias
-__weak_alias(getpagesize,_getpagesize)
-#endif
-
-int
-getpagesize()
-{
-#if RICH
-	static int pagsz;
-
-	if (pagsz == 0) {
-		int mib[2];
-		size_t size;
-
-		mib[0] = CTL_HW;
-		mib[1] = HW_PAGESIZE;
-		size = sizeof pagsz;
-		if (sysctl(mib, 2, &pagsz, &size, NULL, 0) == -1)
-			return (-1);
-		_DIAGASSERT(pagsz);
-	}
-	return (pagsz);
-#else
-        return 4096;
-#endif // RICH
-}
+#endif /* !_ERR_H_ */

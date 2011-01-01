@@ -19,6 +19,5 @@ int _initdir(DIR *, int, const char *);
 void _finidir(DIR *);
 #ifndef __LIBC12_SOURCE__
 struct dirent;
-struct dirent *_readdir_unlocked(struct _dirdesc *, int)
-    __RENAME(___readdir_unlocked50);
+struct dirent *_readdir_unlocked(struct _dirdesc *, int);
 #endif

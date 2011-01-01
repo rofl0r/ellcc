@@ -98,18 +98,18 @@ __RCSID("$NetBSD: getpwent.c,v 1.77 2010/03/23 20:28:59 drochner Exp $");
 #include <sys/param.h>
 
 #include <assert.h>
-#include <db.h>
+// RICH: #include <db.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
-#include <netgroup.h>
-#include <nsswitch.h>
+// RICH: #include <netgroup.h>
+// RICH: #include <nsswitch.h>
 #include <pwd.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <syslog.h>
+// RICH: #include <syslog.h>
 #include <unistd.h>
 
 #ifdef HESIOD
@@ -123,7 +123,7 @@ __RCSID("$NetBSD: getpwent.c,v 1.77 2010/03/23 20:28:59 drochner Exp $");
 #include <rpcsvc/ypclnt.h>
 #endif
 
-#include "pw_private.h"
+// RICH: #include "pw_private.h"
 
 #define	_PASSWD_COMPAT	/* "passwd" defaults to compat, so always provide it */
 
@@ -132,6 +132,8 @@ __weak_alias(endpwent,_endpwent)
 __weak_alias(setpassent,_setpassent)
 __weak_alias(setpwent,_setpwent)
 #endif
+
+#if RICH
 
 #ifdef _REENTRANT
 static 	mutex_t			_pwmutex = MUTEX_INITIALIZER;
@@ -2352,6 +2354,8 @@ _compat_getpwuid_r(void *nsrv, void *nscb, va_list ap)
 
 #endif /* _PASSWD_COMPAT */
 
+#endif // RICH
+
 
 		/*
 		 *	public functions
@@ -2360,6 +2364,7 @@ _compat_getpwuid_r(void *nsrv, void *nscb, va_list ap)
 struct passwd *
 getpwent(void)
 {
+#if RICH
 	int		r;
 	struct passwd	*retval;
 
@@ -2376,12 +2381,16 @@ getpwent(void)
 	    &retval);
 	mutex_unlock(&_pwmutex);
 	return (r == NS_SUCCESS) ? retval : NULL;
+#else
+    return NULL;
+#endif // RICH
 }
 
 int
 getpwent_r(struct passwd *pwd, char *buffer, size_t buflen,
     struct passwd **result)
 {
+#if RICH
 	int	r, retval;
 
 	static const ns_dtab dtab[] = {
@@ -2409,12 +2418,16 @@ getpwent_r(struct passwd *pwd, char *buffer, size_t buflen,
 	default:
 		return retval;
 	}
+#else
+    return 0;
+#endif // RICH
 }
 
 
 struct passwd *
 getpwnam(const char *name)
 {
+#if RICH
 	int		rv;
 	struct passwd	*retval;
 
@@ -2431,12 +2444,16 @@ getpwnam(const char *name)
 	    &retval, name);
 	mutex_unlock(&_pwmutex);
 	return (rv == NS_SUCCESS) ? retval : NULL;
+#else
+    return NULL;
+#endif // RICH
 }
 
 int
 getpwnam_r(const char *name, struct passwd *pwd, char *buffer, size_t buflen,
 	struct passwd **result)
 {
+#if RICH
 	int	r, retval;
 
 	static const ns_dtab dtab[] = {
@@ -2465,11 +2482,15 @@ getpwnam_r(const char *name, struct passwd *pwd, char *buffer, size_t buflen,
 	default:
 		return retval;
 	}
+#else
+    return 0;
+#endif // RICH
 }
 
 struct passwd *
 getpwuid(uid_t uid)
 {
+#if RICH
 	int		rv;
 	struct passwd	*retval;
 
@@ -2486,12 +2507,16 @@ getpwuid(uid_t uid)
 	    &retval, uid);
 	mutex_unlock(&_pwmutex);
 	return (rv == NS_SUCCESS) ? retval : NULL;
+#else
+    return NULL;
+#endif // RICH
 }
 
 int
 getpwuid_r(uid_t uid, struct passwd *pwd, char *buffer, size_t buflen,
 	struct passwd **result)
 {
+#if RICH
 	int	r, retval;
 
 	static const ns_dtab dtab[] = {
@@ -2519,11 +2544,15 @@ getpwuid_r(uid_t uid, struct passwd *pwd, char *buffer, size_t buflen,
 	default:
 		return retval;
 	}
+#else
+    return 0;
+#endif // RICH
 }
 
 void
 endpwent(void)
 {
+#if RICH
 	static const ns_dtab dtab[] = {
 		NS_FILES_CB(_files_endpwent, NULL)
 		NS_DNS_CB(_dns_endpwent, NULL)
@@ -2537,12 +2566,14 @@ endpwent(void)
 	(void) nsdispatch(NULL, dtab, NSDB_PASSWD, "endpwent",
 	    __nsdefaultcompat_forceall);
 	mutex_unlock(&_pwmutex);
+#endif // RICH
 }
 
 /*ARGSUSED*/
 int
 setpassent(int stayopen)
 {
+#if RICH
 	static const ns_dtab dtab[] = {
 		NS_FILES_CB(_files_setpassent, NULL)
 		NS_DNS_CB(_dns_setpassent, NULL)
@@ -2558,11 +2589,15 @@ setpassent(int stayopen)
 	    __nsdefaultcompat_forceall, &retval, stayopen);
 	mutex_unlock(&_pwmutex);
 	return (rv == NS_SUCCESS) ? retval : 0;
+#else
+    return 0;
+#endif // RICH
 }
 
 void
 setpwent(void)
 {
+#if RICH
 	static const ns_dtab dtab[] = {
 		NS_FILES_CB(_files_setpwent, NULL)
 		NS_DNS_CB(_dns_setpwent, NULL)
@@ -2576,4 +2611,5 @@ setpwent(void)
 	(void) nsdispatch(NULL, dtab, NSDB_PASSWD, "setpwent",
 	    __nsdefaultcompat_forceall);
 	mutex_unlock(&_pwmutex);
+#endif // RICH
 }
