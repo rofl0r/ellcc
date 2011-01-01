@@ -54,55 +54,51 @@
  */
 
 ENTRY(setjmp)
-	movq	(%rsp),%r11
-	movq	%rbx,(_JB_RBX * 8)(%rdi)
-	movq	%rbp,(_JB_RBP * 8)(%rdi)
-	movq	%r12,(_JB_R12 * 8)(%rdi)
-	movq	%r13,(_JB_R13 * 8)(%rdi)
-	movq	%r14,(_JB_R14 * 8)(%rdi)
-	movq	%r15,(_JB_R15 * 8)(%rdi)
-	movq	%rsp,(_JB_RSP * 8)(%rdi)
-	movq	%r11,(_JB_PC  * 8)(%rdi)
+        // Save registers relative to r5 (env)
+        swi     r1, r5, (_JB_REG_R1 * 4)        // sp
+        swi     r15, r5, (_JB_REG_R15 * 4)      // lr
+        swi     r18, r5, (_JB_REG_R18 * 4)
+        swi     r19, r5, (_JB_REG_R19 * 4)
+        swi     r20, r5, (_JB_REG_R20 * 4)
+        swi     r21, r5, (_JB_REG_R21 * 4)
+        swi     r22, r5, (_JB_REG_R22 * 4)
+        swi     r23, r5, (_JB_REG_R23 * 4)
+        swi     r24, r5, (_JB_REG_R24 * 4)
+        swi     r25, r5, (_JB_REG_R25 * 4)
+        swi     r26, r5, (_JB_REG_R26 * 4)
+        swi     r27, r5, (_JB_REG_R27 * 4)
+        swi     r28, r5, (_JB_REG_R28 * 4)
+        swi     r29, r5, (_JB_REG_R29 * 4)
+        swi     r30, r5, (_JB_REG_R30 * 4)
 
-	leaq	(_JB_SIGMASK * 8)(%rdi),%rdx
-	xorl	%edi,%edi
-	xorq	%rsi,%rsi
-
-#ifdef PIC
-	call	PIC_PLT(_C_LABEL(sigprocmask))
-#else
-	call	_C_LABEL(sigprocmask)
-#endif
-2:	xorl	%eax,%eax
-	ret
+	addi	r7, r5, (_JB_SIGMASK * 8)       // Address of the mask.
+        addi    r5, r0, 0                       // how (ignored).
+	brid	_C_LABEL(sigprocmask)           // Tail call.
+        addi    r6, r0, 0                       // set (NULL). (delay)
+END(setjmp)
 
 ENTRY(longjmp)
-	movq	%rdi,%r12
-	movl	%esi,%r8d
+        addi     r19. r5, 0                     // Save the env pointer.
+	addi	r6, r5, (_JB_SIGMASK * 8)       // Address of the mask.
+        addi    r5, r0, 3                       // how (SIG_SETMASK).
+	brlid	r15, _C_LABEL(sigprocmask)      // Call. No need to preserve lr.
+        addi    r7, r0, 0                       // oldset (NULL). (delay)
 
-	leaq	(_JB_SIGMASK * 8)(%rdi),%rsi
-	movl	$3,%edi		/* SIG_SETMASK */
-	xorq	%rdx,%rdx
-
-	pushq	%r8
-#ifdef PIC
-	call	PIC_PLT(_C_LABEL(sigprocmask))
-#else
-	call	_C_LABEL(sigprocmask)
-#endif
-	popq	%r8
-	movq	(_JB_RBX * 8)(%r12),%rbx
-	movq	(_JB_RBP * 8)(%r12),%rbp
-	movq	(_JB_R13 * 8)(%r12),%r13
-	movq	(_JB_R14 * 8)(%r12),%r14
-	movq	(_JB_R15 * 8)(%r12),%r15
-	movq	(_JB_RSP * 8)(%r12),%rsp
-	movq	(_JB_PC  * 8)(%r12),%r11
-	movq	(_JB_R12 * 8)(%r12),%r12
-
-	movl	%r8d,%eax
-	testl	%eax,%eax
-	jnz	1f
-	incl	%eax
-1:	movq	%r11,0(%rsp)
-	ret
+        lwi     r1, r19, (_JB_REG_R1 * 4)       // sp
+        lwi     r15, r19, (_JB_REG_R15 * 4)     // lr
+        lwi     r18, r19, (_JB_REG_R18 * 4)
+        lwi     r19, r19, (_JB_REG_R19 * 4)
+        lwi     r20, r19, (_JB_REG_R20 * 4)
+        lwi     r21, r19, (_JB_REG_R21 * 4)
+        lwi     r22, r19, (_JB_REG_R22 * 4)
+        lwi     r23, r19, (_JB_REG_R23 * 4)
+        lwi     r24, r19, (_JB_REG_R24 * 4)
+        lwi     r25, r19, (_JB_REG_R25 * 4)
+        lwi     r26, r19, (_JB_REG_R26 * 4)
+        lwi     r27, r19, (_JB_REG_R27 * 4)
+        lwi     r28, r19, (_JB_REG_R28 * 4)
+        lwi     r29, r19, (_JB_REG_R29 * 4)
+        lwi     r30, r19, (_JB_REG_R30 * 4)
+	rtid    r15, 8
+        addi    r3, r0, 1                       // return 1 (delay)
+END(longjmp)

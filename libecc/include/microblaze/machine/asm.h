@@ -34,8 +34,8 @@
  *	from: @(#)asm.h	5.5 (Berkeley) 5/7/91
  */
 
-#ifndef _ARM_MACHINE_ASM_H_
-#define _ARM_MACHINE_ASM_H_
+#ifndef _MICROBLAZE_MACHINE_ASM_H_
+#define _MICROBLAZE_MACHINE_ASM_H_
 
 #include <machine/cdefs.h>
 
@@ -62,18 +62,13 @@
  */
 #define _ASM_TYPE_FUNCTION	%function
 #define _ASM_TYPE_OBJECT	%object
-#ifdef __thumb__
-#define _ENTRY(x) \
-	.text; _ALIGN_TEXT; .globl x; .type x,_ASM_TYPE_FUNCTION; .thumb_func; x:
-#else
 #define _ENTRY(x) \
 	.text; _ALIGN_TEXT; .globl x; .type x,_ASM_TYPE_FUNCTION; x:
-#endif
 #define	_END(x)		.size x,.-x
 
 #ifdef GPROF
 # define _PROF_PROLOGUE	\
-	mov ip, lr; bl __mcount
+	foo ip, lr; bl __mcount // RICH
 #else
 # define _PROF_PROLOGUE
 #endif
@@ -86,45 +81,6 @@
 #define	ASEND(y)	_END(_ASM_LABEL(y))
 
 #define	ASMSTR		.asciz
-
-#if defined(PIC)
-#ifdef __thumb__
-#define	PLT_SYM(x)	x
-#define	GOT_SYM(x)	PIC_SYM(x, GOTOFF)
-#define	GOT_GET(x,got,sym)	\
-	ldr	x, sym;		\
-	add	x, got;		\
-	ldr	x, [x]
-#else
-#define	PLT_SYM(x)	PIC_SYM(x, PLT)
-#define	GOT_SYM(x)	PIC_SYM(x, GOT)
-#define	GOT_GET(x,got,sym)	\
-	ldr	x, sym;		\
-	ldr	x, [x, got]
-#endif /* __thumb__ */
-
-#define	GOT_INIT(got,gotsym,pclabel) \
-	ldr	got, gotsym;	\
-	add	got, got, pc;	\
-	pclabel:
-#define	GOT_INITSYM(gotsym,pclabel) \
-	gotsym: .word _C_LABEL(_GLOBAL_OFFSET_TABLE_) + (. - (pclabel+4))
-
-#ifdef __STDC__
-#define	PIC_SYM(x,y)	x ## ( ## y ## )
-#else
-#define	PIC_SYM(x,y)	x/**/(/**/y/**/)
-#endif
-
-#else
-#define	PLT_SYM(x)	x
-#define	GOT_SYM(x)	x
-#define	GOT_GET(x,got,sym)	\
-	ldr	x, sym;
-#define	GOT_INIT(got,gotsym,pclabel)
-#define	GOT_INITSYM(gotsym,pclabel)
-#define	PIC_SYM(x,y)	x
-#endif	/* PIC */
 
 #define RCSID(x)	.pushsection ".ident"; .asciz x; .popsection
 
@@ -143,26 +99,4 @@
 	.stabs msg,30,0,0,0 ;						\
 	.stabs __STRING(_C_LABEL(sym)),1,0,0,0
 
-#ifdef __thumb__
-# define XPUSH		push
-# define XPOP		pop
-# define XPOPRET	pop	{pc}
-#else
-# define XPUSH		stmfd	sp!,
-# define XPOP		ldmfd	sp!,
-# ifdef _ARM_ARCH_5
-#  define XPOPRET	ldmfd	sp!, {pc}
-# else
-#  define XPOPRET	ldmfd	sp!, {lr}; mov pc, lr
-# endif
-#endif
-  
-#if defined (_ARM_ARCH_4T)
-# define RET		bx		lr
-# define RETc(c)	__CONCAT(bx,c)	lr
-#else
-# define RET		mov		pc, lr
-# define RETc(c)	__CONCAT(mov,c)	pc, lr
-#endif
-
-#endif // _ARM_MACHINE_ASM_H_
+#endif // _MICROBLAZE_MACHINE_ASM_H_
