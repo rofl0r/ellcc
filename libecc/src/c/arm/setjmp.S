@@ -54,33 +54,21 @@ ENTRY(setjmp)
 	bl	PIC_SYM(_C_LABEL(sigprocmask), PLT)
 	ldmfd	sp!, {r0-r2, r14}
 
-	ldr	r1, .Lsetjmp_magic
-	str	r1, [r0], #4
-
-#ifdef SOFTFLOAT
-	add	r0, r0, #52
+#ifdef _SOFT_FLOAT
+	add	r0, r0, #(_JB_REG_R4 * 4)
 #else
 	/* Store fp registers */
 	sfm	f4, 4, [r0], #48
 	/* Store fpsr */
 	rfs	r1
 	str	r1, [r0], #0x0004
-#endif	/*SOFTFLOAT*/
+#endif // _SOFT_FLOAT
 	/* Store integer registers */
         stmia	r0, {r4-r14}
         mov	r0, #0x00000000
         RET
 
-.Lsetjmp_magic:
-	.word	_JB_MAGIC_SETJMP
-
-
 ENTRY(longjmp)
-	ldr	r2, .Lsetjmp_magic
-	ldr	r3, [r0]
-	teq	r2, r3
-	bne	.Lbotch
-
 	/* Restore the signal mask. */
 	stmfd	sp!, {r0-r2, r14}
 	mov	r2, #0x00000000
@@ -89,23 +77,17 @@ ENTRY(longjmp)
 	bl	PIC_SYM(_C_LABEL(sigprocmask), PLT)
 	ldmfd	sp!, {r0-r2, r14}
 
-	add	r0, r0, #4
-#ifdef SOFTFLOAT
-	add	r0, r0, #52
+#ifdef _SOFT_FLOAT
+	add	r0, r0, #(_JB_REG_R4 * 4)
 #else
 	/* Restore fp registers */
 	lfm	f4, 4, [r0], #48
 	/* Restore FPSR */
 	ldr	r4, [r0], #0x0004
 	wfs	r4
-#endif	/* SOFTFLOAT */
+#endif // _SOFT_FLOAT
 	/* Restore integer registers */
         ldmia	r0, {r4-r14}
-
-	/* Validate sp and r14 */
-	teq	sp, #0
-	teqne	r14, #0
-	beq	.Lbotch
 
 	/* Set return value */
 
@@ -113,9 +95,3 @@ ENTRY(longjmp)
 	teq	r0, #0x00000000
 	moveq	r0, #0x00000001
 	RET
-
-	/* validation failed, die die die. */
-.Lbotch:
-	bl	PIC_SYM(_C_LABEL(longjmperror), PLT)
-	bl	PIC_SYM(_C_LABEL(abort), PLT)
-	b	. - 8		/* Cannot get here */

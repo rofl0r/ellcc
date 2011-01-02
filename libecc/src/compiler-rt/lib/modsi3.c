@@ -16,8 +16,10 @@
 
 /* Returns: a % b */
 
+si_int __divsi3(si_int a, si_int b);
+
 si_int
 __modsi3(si_int a, si_int b)
 {
-    return a - (a / b) * b;
+    return a - __divsi3(a, b) * b;
 }

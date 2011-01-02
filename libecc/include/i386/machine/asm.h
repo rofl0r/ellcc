@@ -61,6 +61,7 @@
 #define PIC_GOTOFF(x)	x
 #endif
 
+#define __ELF__
 #ifdef __ELF__
 # define _C_LABEL(x)	x
 #else

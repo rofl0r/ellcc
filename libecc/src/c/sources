@@ -3,7 +3,7 @@ CFLAGS += -I$(SRCPATH)/c/include
 
 MYVPATH := $(MYVPATH):$(SRCPATH)/c/stdlib
 SRCS += exit.c malloc.c abort.c getenv.c _env.c atoi.c strtol.c strtoul.c atof.c mi_vector_hash.c \
-        putchar.c merge.c
+        putchar.c merge.c random.c
 
 MYVPATH := $(MYVPATH):$(SRCPATH)/c/stdio
 SRCS += puts.c fvwrite.c findfp.c fwalk.c wsetup.c fflush.c stdio.c makebuf.c fputs.c wbuf.c \
@@ -14,14 +14,15 @@ SRCS += puts.c fvwrite.c findfp.c fwalk.c wsetup.c fflush.c stdio.c makebuf.c fp
 MYVPATH := $(MYVPATH):$(SRCPATH)/c/string
 SRCS += strlen.c memcpy.c memchr.c memset.c memcmp.c strdup.c strncpy.c strcmp.c strcat.c \
         strcpy.c strncmp.c strstr.c strerror.c strcspn.c strlcpy.c strerror_r.c strrchr.c \
-        strchr.c bcopy.c memmove.c
+        strchr.c bcopy.c memmove.c strlcat.c
 
 MYVPATH := $(MYVPATH):$(SRCPATH)/c/gen
 SRCS += raise.c time.c isatty.c signal.c sigfuncs.c isinfd_ieee754.c isnand_ieee754.c rb.c \
-        sys_errlist.c errno.c _errno.c isctype.c closedir.c uname.c ttyname.c opendir.c \
+        sys_errlist.c errno.c isctype.c closedir.c uname.c ttyname.c opendir.c \
         readdir.c rewinddir.c initdir.c execv.c execvp.c execl.c execlp.c execle.c assert.c \
         getprogname.c setprogname.c alarm.c getgrent.c getpwent.c wait3.c sleep.c errx.c \
-        vwarnx.c alphasort.c getpagesize.c telldir.c verrx.c
+        vwarnx.c alphasort.c getpagesize.c telldir.c verrx.c sha1.c md5c.c arc4random.c \
+        bswap16.c bswap32.c bswap64.c fpgetround.c
 
 MYVPATH := $(MYVPATH):$(SRCPATH)/c/termios
 SRCS += tcgetattr.c tcsetpgrp.c tcgetpgrp.c tcsetattr.c cfsetispeed.c cfgetispeed.c \

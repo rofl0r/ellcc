@@ -37,7 +37,7 @@ __RCSID("$NetBSD: arc4random.c,v 1.9 2005/12/24 21:11:16 perry Exp $");
 #include <sys/types.h>
 #include <sys/param.h>
 #include <sys/time.h>
-#include <sys/sysctl.h>
+// RICH: #include <sys/sysctl.h>
 
 #ifdef __weak_alias
 __weak_alias(arc4random,_arc4random)

@@ -48,7 +48,8 @@ LFLAGS=$(INCLUDES)
 #CFLAGS=-O $(INCLUDES)
 
 # gcc-2.1+
-CFLAGS=-O2 -std=c99 -Wall $(INCLUDES)
+#CFLAGS=-O2 -std=c99 -Wall $(INCLUDES)
+CFLAGS=-g -O1 -std=c99 -Wall $(INCLUDES)
 
 # lucid c on suns
 #CFLAGS=-O5 $(INCLUDES)
