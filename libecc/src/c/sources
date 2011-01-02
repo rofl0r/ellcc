@@ -22,7 +22,7 @@ SRCS += raise.c time.c isatty.c signal.c sigfuncs.c isinfd_ieee754.c isnand_ieee
         readdir.c rewinddir.c initdir.c execv.c execvp.c execl.c execlp.c execle.c assert.c \
         getprogname.c setprogname.c alarm.c getgrent.c getpwent.c wait3.c sleep.c errx.c \
         vwarnx.c alphasort.c getpagesize.c telldir.c verrx.c sha1.c md5c.c arc4random.c \
-        bswap16.c bswap32.c bswap64.c fpgetround.c
+        bswap16.c bswap32.c bswap64.c fpgetround.c getcwd.c
 
 MYVPATH := $(MYVPATH):$(SRCPATH)/c/termios
 SRCS += tcgetattr.c tcsetpgrp.c tcgetpgrp.c tcsetattr.c cfsetispeed.c cfgetispeed.c \

@@ -17,6 +17,9 @@
 /* Define to 1 if the `getpgrp' function requires zero arguments. */
 #define GETPGRP_VOID
 
+/* Define to 1 if you have the `getcwd' function. */
+#define HAVE_GETCWD
+
 #define HAVE_SETPGID
 
 #define RCSID(id)	/* Nothing */
