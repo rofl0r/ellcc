@@ -84,8 +84,8 @@ struct ptmget {
 						/* 15 unused */
 #define	TIOCFLUSH	_IOW('t', 16, int)	/* flush buffers */
 						/* 17-18 compat */
-#define	TIOCGETA	0x5401                  /* get termios struct */
-#define	TIOCSETA	0x5402                  /* set termios struct */
+#define	TIOCGETA	0x5401  // RICH _IOR('t', 19, struct termios)                 /* get termios struct */
+#define	TIOCSETA	0x5402  // RICH _IOW('t', 20, struct termios)                 /* set termios struct */
 #define	TIOCSETAW	_IOW('t', 21, struct termios) /* drain output, set */
 #define	TIOCSETAF	_IOW('t', 22, struct termios) /* drn out, fls in, set */
 #define	TIOCGETD	_IOR('t', 26, int)	/* get line discipline (deprecated) */
@@ -103,8 +103,8 @@ typedef char linedn_t[TTLINEDNAMELEN];
 #define	TIOCCBRK	 _IO('t', 122)		/* clear break bit */
 #define	TIOCSDTR	 _IO('t', 121)		/* set data terminal ready */
 #define	TIOCCDTR	 _IO('t', 120)		/* clear data terminal ready */
-#define	TIOCGPGRP	_IOR('t', 119, int)	/* get pgrp of tty */
-#define	TIOCSPGRP	_IOW('t', 118, int)	/* set pgrp of tty */
+#define	TIOCGPGRP	0x540F  // RICH _IOR('t', 119, int)	/* get pgrp of tty */
+#define	TIOCSPGRP	0x5410  // RICH _IOW('t', 118, int)	/* set pgrp of tty */
 						/* 117-116 compat */
 #define	TIOCOUTQ	_IOR('t', 115, int)	/* output queue size */
 #define	TIOCSTI		_IOW('t', 114, char)	/* simulate terminal input */
