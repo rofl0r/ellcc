@@ -246,7 +246,7 @@ EXTRALIBS = $(HESLIB) $(AFSLIB)
 CPP = ${CC} -E
 
 # To assist in cross-compiling with ELLCC.
-TARGET=x86_64
+TARGET=arm
 XCC=$(TARGET)-linux-
 XAS=$(TARGET)-elf-
 #XAS=ecc-

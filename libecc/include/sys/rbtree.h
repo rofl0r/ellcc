@@ -38,7 +38,6 @@
 #include <stdbool.h>
 #include <inttypes.h>
 #endif
-// RICH: #include <sys/queue.h>
 #include <sys/endian.h>
 
 __BEGIN_DECLS

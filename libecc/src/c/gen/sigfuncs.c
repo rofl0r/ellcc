@@ -69,14 +69,14 @@ sigismember(const sigset_t *set, int signo)
 int
 sigemptyset(sigset_t *set)
 {
-	__sigemptyset(set);
+	(void)__sigemptyset(set);
 	return (0);
 }
 
 int
 sigfillset(sigset_t *set)
 {
-	__sigfillset(set);
+	(void)__sigfillset(set);
 	return (0);
 }
 

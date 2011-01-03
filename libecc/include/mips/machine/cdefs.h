@@ -27,8 +27,8 @@
  * rights to redistribute these changes.
  */
 
-#ifndef _MIPS_CDEFS_H_
-#define	_MIPS_CDEFS_H_
+#ifndef _MIPS_MACHINE_CDEFS_H_
+#define	_MIPS_MACHINE_CDEFS_H_
 
 /*
  * These are depreciated.  Use __mips_{o32,o64,n32,n64} instead.
@@ -71,4 +71,6 @@
 #define	_MIPS_ISA_MIPS32	5
 #define	_MIPS_ISA_MIPS64	6
 
-#endif /* !_MIPS_CDEFS_H_ */
+#define __ELF__ 1
+
+#endif // _MIPS_MACHINE_CDEFS_H_

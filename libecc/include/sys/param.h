@@ -327,7 +327,7 @@
  * MAXSYMLINKS should be >= _POSIX_SYMLOOP_MAX (see <limits.h>)
  */
 #define	MAXPATHLEN	PATH_MAX
-#define	MAXSYMLINKS	32
+#define	MAXSYMLINKS	20
 
 /* Bit map related macros. */
 #define	setbit(a,i)	((a)[(i)/NBBY] |= 1<<((i)%NBBY))

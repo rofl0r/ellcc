@@ -44,7 +44,7 @@
 #include <sys/featuretest.h>
 #include <sys/sigtypes.h>
 
-#define _NSIG		64
+#define _NSIG		65
 
 #if defined(_NETBSD_SOURCE)
 #define NSIG _NSIG
@@ -58,36 +58,36 @@
 #define	SIGTRAP		5	/* trace trap (not reset when caught) */
 #define	SIGABRT		6	/* abort() */
 #define	SIGIOT		SIGABRT	/* compatibility */
-#define	SIGEMT		7	/* EMT instruction */
+#define	SIGBUS		7	/* bus error */
 #define	SIGFPE		8	/* floating point exception */
 #define	SIGKILL		9	/* kill (cannot be caught or ignored) */
-#define	SIGBUS		10	/* bus error */
+#define	SIGUSR1		10	/* user defined signal 1 */
 #define	SIGSEGV		11	/* segmentation violation */
-#define	SIGSYS		12	/* bad argument to system call */
+#define	SIGUSR2		12	/* user defined signal 2 */
 #define	SIGPIPE		13	/* write on a pipe with no one to read it */
 #define	SIGALRM		14	/* alarm clock */
 #define	SIGTERM		15	/* software termination signal from kill */
-#define	SIGURG		16	/* urgent condition on IO channel */
-#define	SIGSTOP		17	/* sendable stop signal not from tty */
-#define	SIGTSTP		18	/* stop signal from tty */
-#define	SIGCONT		19	/* continue a stopped process */
-#define	SIGCHLD		20	/* to parent on child stop or exit */
+#define SIGSTKFLT       16      /* stack fault */
+#define	SIGCHLD		17	/* to parent on child stop or exit */
+#define	SIGCLD		SIGCHLD	/* compatibility */
+#define	SIGCONT		18	/* continue a stopped process */
+#define	SIGSTOP		19	/* sendable stop signal not from tty */
+#define	SIGTSTP		20	/* stop signal from tty */
 #define	SIGTTIN		21	/* to readers pgrp upon background tty read */
 #define	SIGTTOU		22	/* like TTIN for output if (tp->t_local&LTOSTOP) */
-#define	SIGIO		23	/* input/output possible signal */
+#define	SIGURG		23	/* urgent condition on IO channel */
 #define	SIGXCPU		24	/* exceeded CPU time limit */
 #define	SIGXFSZ		25	/* exceeded file size limit */
 #define	SIGVTALRM	26	/* virtual time alarm */
 #define	SIGPROF		27	/* profiling time alarm */
 #define	SIGWINCH	28	/* window size changes */
-#define	SIGINFO		29	/* information request */
-#define	SIGUSR1		30	/* user defined signal 1 */
-#define	SIGUSR2		31	/* user defined signal 2 */
-#define	SIGPWR		32	/* power fail/restart (not reset when caught) */
-#ifdef _KERNEL
-#define	SIGRTMIN	33	/* Kernel only; not exposed to userland yet */
-#define	SIGRTMAX	63	/* Kernel only; not exposed to userland yet */
-#endif
+#define	SIGIO		29	/* input/output possible signal */
+#define SIGPOLL         SIGIO   /* pollable event occured */
+#define	SIGPWR		30	/* power fail/restart (not reset when caught) */
+#define	SIGSYS		31	/* bad argument to system call */
+
+#define	SIGRTMIN	32
+#define	SIGRTMAX	(_NSIG - 1)
 
 #ifndef _KERNEL
 #include <sys/cdefs.h>
@@ -96,7 +96,7 @@
 #define	SIG_DFL		((void (*)(int))  0)
 #define	SIG_IGN		((void (*)(int))  1)
 #define	SIG_ERR		((void (*)(int)) -1)
-#define	SIG_HOLD	((void (*)(int))  3)
+#define	SIG_HOLD	((void (*)(int))  2)
 
 #if defined(_POSIX_C_SOURCE) || defined(_XOPEN_SOURCE) || \
     defined(_NETBSD_SOURCE)
@@ -134,6 +134,7 @@ struct	sigaction {
 	} _sa_u;	/* signal handler */
 	sigset_t sa_mask;		/* signal mask to apply */
 	int	sa_flags;		/* see signal options below */
+        void (*sa_restorer)(void);      /* restore handler */
 };
 
 #define sa_handler _sa_u._sa_handler
@@ -144,33 +145,30 @@ struct	sigaction {
 
 #include <machine/signal.h>	/* sigcontext; codes for SIGILL, SIGFPE */
 
-#if (defined(_XOPEN_SOURCE) && defined(_XOPEN_SOURCE_EXTENDED)) || \
-    (_XOPEN_SOURCE - 0) >= 500 || defined(_NETBSD_SOURCE)
-#define SA_ONSTACK	0x0001	/* take signal on signal stack */
-#define SA_RESTART	0x0002	/* restart system call on signal return */
-#define SA_RESETHAND	0x0004	/* reset to SIG_DFL when taking signal */
-#define SA_NODEFER	0x0010	/* don't mask the signal we're delivering */
-#endif /* _XOPEN_SOURCE_EXTENDED || XOPEN_SOURCE >= 500 || _NETBSD_SOURCE */
 /* Only valid for SIGCHLD. */
-#define SA_NOCLDSTOP	0x0008	/* do not generate SIGCHLD on child stop */
-#define SA_NOCLDWAIT	0x0020	/* do not generate zombies on unwaited child */
+#define SA_NOCLDSTOP	0x0000000001	/* do not generate SIGCHLD on child stop */
+#define SA_NOCLDWAIT	0x0000000002	/* do not generate zombies on unwaited child */
 #if (_POSIX_C_SOURCE - 0) >= 199309L || (_XOPEN_SOURCE - 0) >= 500 || \
     defined(_NETBSD_SOURCE)
-#define SA_SIGINFO	0x0040	/* take sa_sigaction handler */
+#define SA_SIGINFO	0x0000000004	/* take sa_sigaction handler */
 #endif /* (_POSIX_C_SOURCE - 0) >= 199309L || ... */
-#if defined(_NETBSD_SOURCE)
-#define	SA_NOKERNINFO	0x0080	/* siginfo does not print kernel info on tty */
-#endif /*_NETBSD_SOURCE */
+#if (defined(_XOPEN_SOURCE) && defined(_XOPEN_SOURCE_EXTENDED)) || \
+    (_XOPEN_SOURCE - 0) >= 500 || defined(_NETBSD_SOURCE)
+#define SA_ONSTACK	0x08000000	/* take signal on signal stack */
+#define SA_RESTART	0x10000000	/* restart system call on signal return */
+#define SA_NODEFER	0x40000000	/* don't mask the signal we're delivering */
+#define SA_RESETHAND	0x80000000	/* reset to SIG_DFL when taking signal */
+#endif /* _XOPEN_SOURCE_EXTENDED || XOPEN_SOURCE >= 500 || _NETBSD_SOURCE */
 #ifdef _KERNEL
-#define	SA_ALLBITS	0x00ff
+#define	SA_ALLBITS	0xFFFFFFFF
 #endif
 
 /*
  * Flags for sigprocmask():
  */
-#define	SIG_BLOCK	1	/* block specified signal set */
-#define	SIG_UNBLOCK	2	/* unblock specified signal set */
-#define	SIG_SETMASK	3	/* set specified signal set */
+#define	SIG_BLOCK	0	/* block specified signal set */
+#define	SIG_UNBLOCK	1	/* unblock specified signal set */
+#define	SIG_SETMASK	2	/* set specified signal set */
 
 #if defined(_NETBSD_SOURCE)
 typedef	void (*sig_t)(int);	/* type of signal function */
@@ -187,7 +185,7 @@ typedef	void (*sig_t)(int);	/* type of signal function */
 #define	SS_ALLBITS	0x0005
 #endif
 #define	MINSIGSTKSZ	8192			/* minimum allowable stack */
-#define	SIGSTKSZ	(MINSIGSTKSZ + 32768)	/* recommended stack size */
+#define	SIGSTKSZ	(MINSIGSTKSZ + 32768)   /* recommended stack size */
 #endif /* _XOPEN_SOURCE_EXTENDED || _XOPEN_SOURCE >= 500 || _NETBSD_SOURCE */
 
 #if (defined(_XOPEN_SOURCE) && defined(_XOPEN_SOURCE_EXTENDED)) || \
@@ -221,12 +219,9 @@ struct	sigevent {
 	void /* pthread_attr_t */	*sigev_notify_attributes;
 };
 
-#define SIGEV_NONE	0
-#define SIGEV_SIGNAL	1
+#define SIGEV_SIGNAL	0
+#define SIGEV_NONE	1
 #define SIGEV_THREAD	2
-#if defined(_NETBSD_SOURCE)
-#define SIGEV_SA	3
-#endif
 #endif /* (_POSIX_C_SOURCE - 0) >= 199309L || ... */
 
 #endif	/* _POSIX_C_SOURCE || _XOPEN_SOURCE || _NETBSD_SOURCE */

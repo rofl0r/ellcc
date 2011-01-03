@@ -1,7 +1,5 @@
-/*	$NetBSD: filio.h,v 1.10 2005/12/11 12:25:20 christos Exp $	*/
-
 /*-
- * Copyright (c) 1982, 1986, 1990, 1993, 1994
+ * Copyright (c) 1982, 1986, 1993
  *	The Regents of the University of California.  All rights reserved.
  * (c) UNIX System Laboratories, Inc.
  * All or some portions of this file are derived from material licensed
@@ -33,21 +31,70 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- *	@(#)filio.h	8.1 (Berkeley) 3/28/94
+ *	@(#)ttydefaults.h	8.4 (Berkeley) 1/21/94
  */
 
-#ifndef	_SYS_FILIO_H_
-#define	_SYS_FILIO_H_
+/*
+ * System wide defaults for terminal state.  Linux version.
+ */
+#ifndef _SYS_TTYDEFAULTS_H_
+#define	_SYS_TTYDEFAULTS_H_
 
-#include <sys/ioccom.h>
+/*
+ * Defaults on "first" open.
+ */
+#define	TTYDEF_IFLAG	(BRKINT | ISTRIP | ICRNL | IMAXBEL | IXON | IXANY)
+#define TTYDEF_OFLAG	(OPOST | ONLCR | XTABS)
+#define TTYDEF_LFLAG	(ECHO | ICANON | ISIG | IEXTEN | ECHOE|ECHOKE|ECHOCTL)
+#define TTYDEF_CFLAG	(CREAD | CS7 | PARENB | HUPCL)
+#define TTYDEF_SPEED	(B9600)
 
-/* Generic file-descriptor ioctl's. */
-#define	FIONREAD	0x541B                  /* get # bytes to read */
-#define	FIONBIO	        0x5421                  /* set/clear non-blocking i/o */
-#define	FIONCLEX	0x5450                  /* remove close on exec */
-#define	FIOCLEX	        0x5451		        /* set close on exec on fd */
-#define	FIOASYNC	0x5452                  /* set/clear async i/o */
-#define	FIOSETOWN	0x8901                  /* set owner */
-#define	FIOGETOWN	0x8903                  /* get owner */
+/*
+ * Control Character Defaults
+ */
+#define CTRL(x)	(x&037)
+#define	CEOF		CTRL('d')
+#ifdef _POSIX_VDISABLE
+# define CEOL		_POSIX_VDISABLE
+#else
+# define CEOL		'\0'		/* XXX avoid _POSIX_VDISABLE */
+#endif
+#define	CERASE		0177
+#define	CINTR		CTRL('c')
+#ifdef _POSIX_VDISABLE
+# define CSTATUS	_POSIX_VDISABLE
+#else
+# define CSTATUS	'\0'		/* XXX avoid _POSIX_VDISABLE */
+#endif
+#define	CKILL		CTRL('u')
+#define	CMIN		1
+#define	CQUIT		034		/* FS, ^\ */
+#define	CSUSP		CTRL('z')
+#define	CTIME		0
+#define	CDSUSP		CTRL('y')
+#define	CSTART		CTRL('q')
+#define	CSTOP		CTRL('s')
+#define	CLNEXT		CTRL('v')
+#define	CDISCARD 	CTRL('o')
+#define	CWERASE 	CTRL('w')
+#define	CREPRINT 	CTRL('r')
+#define	CEOT		CEOF
+/* compat */
+#define	CBRK		CEOL
+#define CRPRNT		CREPRINT
+#define	CFLUSH		CDISCARD
 
-#endif /* !_SYS_FILIO_H_ */
+/* PROTECTED INCLUSION ENDS HERE */
+#endif /* !_SYS_TTYDEFAULTS_H_ */
+
+/*
+ * #define TTYDEFCHARS to include an array of default control characters.
+ */
+#ifdef TTYDEFCHARS
+cc_t	ttydefchars[NCCS] = {
+	CEOF,	CEOL,	CEOL,	CERASE, CWERASE, CKILL, CREPRINT,
+	_POSIX_VDISABLE, CINTR,	CQUIT,	CSUSP,	CDSUSP,	CSTART,	CSTOP,	CLNEXT,
+	CDISCARD, CMIN,	CTIME,  CSTATUS, _POSIX_VDISABLE
+};
+#undef TTYDEFCHARS
+#endif

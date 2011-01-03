@@ -59,8 +59,10 @@ typedef	_BSD_SIZE_T_	size_t;
 #if defined(_POSIX_C_SOURCE) || defined(_XOPEN_SOURCE) || \
     defined(_NETBSD_SOURCE)
 
+/* There are 1024 bits in a sigset_t. */
+#define _SIGSET_NWORDS (1024 / (8 * sizeof(__uint32_t)))
 typedef struct {
-	__uint32_t	__bits[4];
+	__uint32_t	__bits[_SIGSET_NWORDS];
 } sigset_t;
 
 /*
@@ -71,39 +73,52 @@ typedef struct {
 #define	__sigaddset(s, n)	((s)->__bits[__sigword(n)] |= __sigmask(n))
 #define	__sigdelset(s, n)	((s)->__bits[__sigword(n)] &= ~__sigmask(n))
 #define	__sigismember(s, n)	(((s)->__bits[__sigword(n)] & __sigmask(n)) != 0)
-#define	__sigemptyset(s)	((s)->__bits[0] = 0x00000000, \
-				 (s)->__bits[1] = 0x00000000, \
-				 (s)->__bits[2] = 0x00000000, \
-				 (s)->__bits[3] = 0x00000000)
-#define __sigsetequal(s1,s2)	((s1)->__bits[0] == (s2)->__bits[0] && \
-				 (s1)->__bits[1] == (s2)->__bits[1] && \
-				 (s1)->__bits[2] == (s2)->__bits[2] && \
-				 (s1)->__bits[3] == (s2)->__bits[3])
-#define	__sigfillset(s)		((s)->__bits[0] = 0xffffffff, \
-				 (s)->__bits[1] = 0xffffffff, \
-				 (s)->__bits[2] = 0xffffffff, \
-				 (s)->__bits[3] = 0xffffffff)
-#define	__sigplusset(s, t) \
-	do {						\
-		(t)->__bits[0] |= (s)->__bits[0];	\
-		(t)->__bits[1] |= (s)->__bits[1];	\
-		(t)->__bits[2] |= (s)->__bits[2];	\
-		(t)->__bits[3] |= (s)->__bits[3];	\
-	} while (/* CONSTCOND */ 0)
-#define	__sigminusset(s, t) \
-	do {						\
-		(t)->__bits[0] &= ~(s)->__bits[0];	\
-		(t)->__bits[1] &= ~(s)->__bits[1];	\
-		(t)->__bits[2] &= ~(s)->__bits[2];	\
-		(t)->__bits[3] &= ~(s)->__bits[3];	\
-	} while (/* CONSTCOND */ 0)
-#define	__sigandset(s, t) \
-	do {						\
-		(t)->__bits[0] &= (s)->__bits[0];	\
-		(t)->__bits[1] &= (s)->__bits[1];	\
-		(t)->__bits[2] &= (s)->__bits[2];	\
-		(t)->__bits[3] &= (s)->__bits[3];	\
-	} while (/* CONSTCOND */ 0)
+
+#define	__sigemptyset(s)	                                        \
+ (__extension__ ({ int count;                                           \
+                   for (count = 0; count < _SIGSET_NWORDS; ++ count) {  \
+                       (s)->__bits[count] = 0;                          \
+                   }                                                    \
+                   0; }))
+
+#define	__sigfillset(s)	                                                \
+ (__extension__ ({ int count;                                           \
+                   for (count = 0; count < _SIGSET_NWORDS; ++ count) {  \
+                       (s)->__bits[count] = 0xFFFFFFFF;                 \
+                   }                                                    \
+                   0; }))
+
+#define	__sigsetequal(s1, s2)	                                        \
+ (__extension__ ({ int count;                                           \
+                   int result = 1;                                      \
+                   for (count = 0; count < _SIGSET_NWORDS; ++ count) {  \
+                       if ((s1)->__bits[count] != (s1)->__bits[count]) {\
+                           result = 0;                                  \
+                           break;                                       \
+                       }                                                \
+                   }                                                    \
+                   result; }))
+
+#define	__sigplusset(s, t)	                                        \
+ (__extension__ ({ int count;                                           \
+                   for (count = 0; count < _SIGSET_NWORDS; ++ count) {  \
+                       (t)->__bits[count] |= (s)->__bits[count]);       \
+                   }                                                    \
+                   0; }))
+
+#define	__sigminusset(s, t)	                                        \
+ (__extension__ ({ int count;                                           \
+                   for (count = 0; count < _SIGSET_NWORDS; ++ count) {  \
+                       (t)->__bits[count] &= ~(s)->__bits[count]);      \
+                   }                                                    \
+                   0; }))
+
+#define	__sigandset(s, t)	                                        \
+ (__extension__ ({ int count;                                           \
+                   for (count = 0; count < _SIGSET_NWORDS; ++ count) {  \
+                       (t)->__bits[count] &= (s)->__bits[count]);       \
+                   }                                                    \
+                   0; }))
 
 #if (defined(_XOPEN_SOURCE) && defined(_XOPEN_SOURCE_EXTENDED)) || \
     (_XOPEN_SOURCE - 0) >= 500 || defined(_NETBSD_SOURCE)
@@ -113,8 +128,8 @@ typedef struct
 #endif /* _NETBSD_SOURCE */
 			   {
 	void	*ss_sp;			/* signal stack base */
-	size_t	ss_size;		/* signal stack length */
 	int	ss_flags;		/* SS_DISABLE and/or SS_ONSTACK */
+	size_t	ss_size;		/* signal stack length */
 } stack_t;
 
 #endif /* _XOPEN_SOURCE_EXTENDED || XOPEN_SOURCE >= 500 || _NETBSD_SOURCE */

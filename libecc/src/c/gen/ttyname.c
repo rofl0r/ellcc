@@ -75,6 +75,7 @@ ttyname_r(int fd, char *buf, size_t len)
 		return ERANGE;
 	}
 
+#if RICH
 	/* If it is a pty, deal with it quickly */
 	if (ioctl(fd, TIOCPTSNAME, &ptm) != -1) {
 		if (strlcpy(buf, ptm.sn, len) >= len) {
@@ -82,6 +83,7 @@ ttyname_r(int fd, char *buf, size_t len)
 		}
 		return 0;
 	}
+#endif // RICH
 	/* Must be a terminal. */
 	if (tcgetattr(fd, &ttyb) == -1)
 		return errno;
@@ -138,7 +140,7 @@ oldttyname(const struct stat *sb, char *buf, size_t len)
 	while ((dirp = readdir(dp)) != NULL) {
 		if (dirp->d_fileno != sb->st_ino)
 			continue;
-		dlen = dirp->d_namlen + 1;
+		dlen = strlen(dirp->d_name) + 1;
 		if (len - DEVSZ <= dlen) {
 			/*
 			 * XXX: we return an error if *any* entry does not

@@ -49,9 +49,9 @@ extern const char *const *sys_signame;
 #ifndef __SYS_SIGLIST_DECLARED
 #define __SYS_SIGLIST_DECLARED
 /* also in unistd.h */
-extern const char *const *sys_siglist __RENAME(__sys_siglist14);
+extern const char *const *sys_siglist;
 #endif /* __SYS_SIGLIST_DECLARED */
-extern const int sys_nsig __RENAME(__sys_nsig14);
+extern const int sys_nsig;
 #endif
 
 __BEGIN_DECLS
@@ -76,16 +76,15 @@ int	__libc_thr_sigsetmask(int, const sigset_t * __restrict,
 
 #ifndef __LIBC12_SOURCE__
 int	sigaction(int, const struct sigaction * __restrict,
-    struct sigaction * __restrict) __RENAME(__sigaction14);
-int	sigaddset(sigset_t *, int) __RENAME(__sigaddset14);
-int	sigdelset(sigset_t *, int) __RENAME(__sigdelset14);
-int	sigemptyset(sigset_t *) __RENAME(__sigemptyset14);
-int	sigfillset(sigset_t *) __RENAME(__sigfillset14);
-int	sigismember(const sigset_t *, int) __RENAME(__sigismember14);
-int	sigpending(sigset_t *) __RENAME(__sigpending14);
-int	sigprocmask(int, const sigset_t * __restrict, sigset_t * __restrict)
-    __RENAME(__sigprocmask14);
-int	sigsuspend(const sigset_t *) __RENAME(__sigsuspend14);
+    struct sigaction * __restrict);
+int	sigaddset(sigset_t *, int);
+int	sigdelset(sigset_t *, int);
+int	sigemptyset(sigset_t *);
+int	sigfillset(sigset_t *);
+int	sigismember(const sigset_t *, int);
+int	sigpending(sigset_t *);
+int	sigprocmask(int, const sigset_t * __restrict, sigset_t * __restrict);
+int	sigsuspend(const sigset_t *);
 
 #if defined(__c99inline) || defined(__SIGSETOPS_BODY)
 
@@ -162,8 +161,7 @@ int	killpg(pid_t, int);
 int	siginterrupt(int, int);
 int	sigstack(const struct sigstack *, struct sigstack *);
 #ifndef __LIBC12_SOURCE__
-int	sigaltstack(const stack_t * __restrict, stack_t * __restrict)
-    __RENAME(__sigaltstack14);
+int	sigaltstack(const stack_t * __restrict, stack_t * __restrict);
 #endif
 int	sighold(int);
 int	sigignore(int);
@@ -185,11 +183,9 @@ void	psiginfo(const siginfo_t *, const char *);
 #ifndef __LIBC12_SOURCE__
 struct timespec;
 int	sigtimedwait(const sigset_t * __restrict,
-    siginfo_t * __restrict, const struct timespec * __restrict)
-    __RENAME(__sigtimedwait50);
+    siginfo_t * __restrict, const struct timespec * __restrict);
 int	__sigtimedwait(const sigset_t * __restrict,
-    siginfo_t * __restrict, struct timespec * __restrict)
-    __RENAME(____sigtimedwait50);
+    siginfo_t * __restrict, struct timespec * __restrict);
 #endif
 #endif /* _POSIX_C_SOURCE >= 200112 || _XOPEN_SOURCE_EXTENDED || ... */
 

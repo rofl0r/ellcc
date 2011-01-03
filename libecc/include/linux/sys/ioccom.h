@@ -1,13 +1,8 @@
-/*	$NetBSD: filio.h,v 1.10 2005/12/11 12:25:20 christos Exp $	*/
+/*	$NetBSD: ioccom.h,v 1.10 2009/05/19 21:59:10 christos Exp $	*/
 
 /*-
  * Copyright (c) 1982, 1986, 1990, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
- * (c) UNIX System Laboratories, Inc.
- * All or some portions of this file are derived from material licensed
- * to the University of California by American Telephone and Telegraph
- * Co. or Unix System Laboratories, Inc. and are reproduced herein with
- * the permission of UNIX System Laboratories, Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -33,21 +28,41 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- *	@(#)filio.h	8.1 (Berkeley) 3/28/94
+ *	@(#)ioccom.h	8.3 (Berkeley) 1/9/95
  */
 
-#ifndef	_SYS_FILIO_H_
-#define	_SYS_FILIO_H_
+#ifndef	_SYS_IOCCOM_H_
+#define	_SYS_IOCCOM_H_
 
-#include <sys/ioccom.h>
+/*
+ * Ioctl's have the command encoded in the lower word, and the size of
+ * any in or out parameters in the upper word.  The high 3 bits of the
+ * upper word are used to encode the in/out status of the parameter.
+ */
+#define	IOCPARM_MASK	0x3fff		/* parameter length, at most 14 bits */
+#define	IOCPARM_SHIFT	16
+#define	IOCGROUP_SHIFT	8
+#define	IOCPARM_LEN(x)	(((x) >> IOCPARM_SHIFT) & IOCPARM_MASK)
+#define	IOCBASECMD(x)	((x) & ~(IOCPARM_MASK << IOCPARM_SHIFT))
+#define	IOCGROUP(x)	(((x) >> IOCGROUP_SHIFT) & 0xff)
 
-/* Generic file-descriptor ioctl's. */
-#define	FIONREAD	0x541B                  /* get # bytes to read */
-#define	FIONBIO	        0x5421                  /* set/clear non-blocking i/o */
-#define	FIONCLEX	0x5450                  /* remove close on exec */
-#define	FIOCLEX	        0x5451		        /* set close on exec on fd */
-#define	FIOASYNC	0x5452                  /* set/clear async i/o */
-#define	FIOSETOWN	0x8901                  /* set owner */
-#define	FIOGETOWN	0x8903                  /* get owner */
+#define	IOCPARM_MAX	NBPG	/* max size of ioctl args, mult. of NBPG */
+				/* copy parameters out */
+#define	IOC_OUT		(unsigned long)0x40000000
+				/* copy parameters in */
+#define	IOC_IN		(unsigned long)0x80000000
+				/* copy parameters in and out */
+#define	IOC_INOUT	(IOC_IN|IOC_OUT)
+				/* mask for IN/OUT/VOID */
+#define	IOC_DIRMASK	(unsigned long)0xc0000000
 
-#endif /* !_SYS_FILIO_H_ */
+#define	_IOC(inout, group, num, len) \
+    ((inout) | (((len) & IOCPARM_MASK) << IOCPARM_SHIFT) | \
+    ((group) << IOCGROUP_SHIFT) | (num))
+#define	_IO(g,n)	_IOC(IOC_VOID,	(g), (n), 0)
+#define	_IOR(g,n,t)	_IOC(IOC_OUT,	(g), (n), sizeof(t))
+#define	_IOW(g,n,t)	_IOC(IOC_IN,	(g), (n), sizeof(t))
+/* this should be _IORW, but stdio got there first */
+#define	_IOWR(g,n,t)	_IOC(IOC_INOUT,	(g), (n), sizeof(t))
+
+#endif /* !_SYS_IOCCOM_H_ */

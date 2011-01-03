@@ -1,13 +1,11 @@
-/*	$NetBSD: filio.h,v 1.10 2005/12/11 12:25:20 christos Exp $	*/
+/*	$NetBSD: utsname.h,v 1.13 2005/12/11 12:25:21 christos Exp $	*/
 
 /*-
- * Copyright (c) 1982, 1986, 1990, 1993, 1994
+ * Copyright (c) 1994
  *	The Regents of the University of California.  All rights reserved.
- * (c) UNIX System Laboratories, Inc.
- * All or some portions of this file are derived from material licensed
- * to the University of California by American Telephone and Telegraph
- * Co. or Unix System Laboratories, Inc. and are reproduced herein with
- * the permission of UNIX System Laboratories, Inc.
+ *
+ * This code is derived from software contributed to Berkeley by
+ * Chuck Karish of Mindcraft, Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -33,21 +31,32 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- *	@(#)filio.h	8.1 (Berkeley) 3/28/94
+ *	@(#)utsname.h	8.1 (Berkeley) 1/4/94
  */
 
-#ifndef	_SYS_FILIO_H_
-#define	_SYS_FILIO_H_
+#ifndef	_SYS_UTSNAME_H_
+#define	_SYS_UTSNAME_H_
 
-#include <sys/ioccom.h>
+#include <sys/featuretest.h>
 
-/* Generic file-descriptor ioctl's. */
-#define	FIONREAD	0x541B                  /* get # bytes to read */
-#define	FIONBIO	        0x5421                  /* set/clear non-blocking i/o */
-#define	FIONCLEX	0x5450                  /* remove close on exec */
-#define	FIOCLEX	        0x5451		        /* set close on exec on fd */
-#define	FIOASYNC	0x5452                  /* set/clear async i/o */
-#define	FIOSETOWN	0x8901                  /* set owner */
-#define	FIOGETOWN	0x8903                  /* get owner */
+#define	_SYS_NMLN	65
 
-#endif /* !_SYS_FILIO_H_ */
+#if defined(_NETBSD_SOURCE)
+#define	SYS_NMLN	_SYS_NMLN
+#endif
+
+struct utsname {
+	char	sysname[_SYS_NMLN];	/* Name of this OS. */
+	char	nodename[_SYS_NMLN];	/* Name of this network node. */
+	char	release[_SYS_NMLN];	/* Release level. */
+	char	version[_SYS_NMLN];	/* Version level. */
+	char	machine[_SYS_NMLN];	/* Hardware type. */
+};
+
+#include <sys/cdefs.h>
+
+__BEGIN_DECLS
+int	uname(struct utsname *);
+__END_DECLS
+
+#endif	/* !_SYS_UTSNAME_H_ */

@@ -57,7 +57,7 @@ struct ttysize {
 
 #include <sys/ioccom.h>
 
-#include <sys/dkio.h>
+// RICH: #include <sys/dkio.h>
 #include <sys/filio.h>
 #include <sys/sockio.h>
 
