@@ -647,8 +647,10 @@ void PPCTargetInfo::getTargetDefines(const LangOptions &Opts,
     Builder.defineMacro("__VEC__", "10206");
     Builder.defineMacro("__ALTIVEC__");
   }
+#if RICH
   if (SoftFloat)
     Builder.defineMacro("_SOFT_FLOAT", "1");
+#endif
 }
 
 
@@ -875,8 +877,10 @@ void MBlazeTargetInfo::getTargetDefines(const LangOptions &Opts,
 
   // Subtarget options.
   Builder.defineMacro("__REGISTER_PREFIX__", "");
+#if RICH
   if (SoftFloat)
     Builder.defineMacro("_SOFT_FLOAT", "1");
+#endif
 }
 
 
@@ -2467,8 +2471,10 @@ public:
     Builder.defineMacro("_MIPSEB");
     Builder.defineMacro("__REGISTER_PREFIX__", "");
     getArchDefines(Opts, Builder);
+#if RICH
     if (SoftFloat)
       Builder.defineMacro("_SOFT_FLOAT", "1");
+#endif
   }
   virtual void getTargetBuiltins(const Builtin::Info *&Records,
                                  unsigned &NumRecords) const {
@@ -2591,8 +2597,10 @@ void MipselTargetInfo::getTargetDefines(const LangOptions &Opts,
   Builder.defineMacro("_MIPSEL");
   Builder.defineMacro("__REGISTER_PREFIX__", "");
   getArchDefines(Opts, Builder);
+#if RICH
   if (SoftFloat)
     Builder.defineMacro("_SOFT_FLOAT", "1");
+#endif
 }
 } // end anonymous namespace.
 
