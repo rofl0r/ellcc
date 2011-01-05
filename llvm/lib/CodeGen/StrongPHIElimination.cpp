@@ -144,6 +144,10 @@ namespace {
     // sources.
     DenseMap<MachineBasicBlock*, std::vector<MachineInstr*> > PHISrcDefs;
 
+    // Maps a color to a pair of a MachineInstr* and a virtual register, which
+    // is the operand of that PHI corresponding to the current basic block.
+    DenseMap<unsigned, std::pair<MachineInstr*, unsigned> > CurrentPHIForColor;
+
     // FIXME: Can these two data structures be combined? Would a std::multimap
     // be any better?
 
@@ -233,10 +237,9 @@ bool StrongPHIElimination::runOnMachineFunction(MachineFunction& MF) {
         addReg(SrcReg);
         unionRegs(DestReg, SrcReg);
 
-        for (MachineRegisterInfo::def_iterator DI = MRI->def_begin(SrcReg),
-             DE = MRI->def_end(); DI != DE; ++DI) {
-          PHISrcDefs[DI->getParent()].push_back(&*DI);
-        }
+        MachineInstr* DefMI = MRI->getVRegDef(SrcReg);
+        if (DefMI)
+          PHISrcDefs[DefMI->getParent()].push_back(DefMI);
       }
     }
   }
@@ -397,12 +400,18 @@ void StrongPHIElimination::addReg(unsigned Reg) {
 
 StrongPHIElimination::Node*
 StrongPHIElimination::Node::getLeader() {
-  Node* parentPointer = parent.getPointer();
-  if (parentPointer == this)
-    return this;
-  Node* newParent = parentPointer->getLeader();
-  parent.setPointer(newParent);
-  return newParent;
+  Node* N = this;
+  Node* Parent = parent.getPointer();
+  Node* Grandparent = Parent->parent.getPointer();
+
+  while (Parent != Grandparent) {
+    N->parent.setPointer(Grandparent);
+    N = Grandparent;
+    Parent = Parent->parent.getPointer();
+    Grandparent = Parent->parent.getPointer();
+  }
+
+  return Parent;
 }
 
 unsigned StrongPHIElimination::getRegColor(unsigned Reg) {
@@ -568,12 +577,7 @@ StrongPHIElimination::SplitInterferencesForBasicBlock(
   // the predecessor block. The def of a PHI's destination register is processed
   // along with the other defs in a basic block.
 
-  // The map CurrentPHIForColor maps a color to a pair of a MachineInstr* and a
-  // virtual register, which is the operand of that PHI corresponding to the
-  // current basic block.
-  // FIXME: This should use a container that doesn't always perform heap
-  // allocation.
-  DenseMap<unsigned, std::pair<MachineInstr*, unsigned> > CurrentPHIForColor;
+  CurrentPHIForColor.clear();
 
   for (MachineBasicBlock::succ_iterator SI = MBB.succ_begin(),
        SE = MBB.succ_end(); SI != SE; ++SI) {

@@ -483,12 +483,21 @@ static bool LookupBuiltin(Sema &S, LookupResult &R) {
             S.Context.BuiltinInfo.isPredefinedLibFunction(BuiltinID))
           return false;
         
-        NamedDecl *D = S.LazilyCreateBuiltin((IdentifierInfo *)II, BuiltinID,
-                                             S.TUScope, R.isForRedeclaration(),
-                                             R.getNameLoc());
-        if (D) 
+        if (NamedDecl *D = S.LazilyCreateBuiltin((IdentifierInfo *)II, 
+                                                 BuiltinID, S.TUScope, 
+                                                 R.isForRedeclaration(),
+                                                 R.getNameLoc())) {
           R.addDecl(D);
-        return (D != NULL);
+          return true;
+        }
+
+        if (R.isForRedeclaration()) {
+          // If we're redeclaring this function anyway, forget that
+          // this was a builtin at all.
+          S.Context.BuiltinInfo.ForgetBuiltin(BuiltinID, S.Context.Idents);
+        }
+
+        return false;
       }
     }
   }
@@ -1495,13 +1504,6 @@ bool Sema::LookupQualifiedName(LookupResult &R, DeclContext *LookupCtx,
 /// begin.
 ///
 /// @param SS       An optional C++ scope-specifier, e.g., "::N::M".
-///
-/// @param Name     The name of the entity that name lookup will
-/// search for.
-///
-/// @param Loc      If provided, the source location where we're performing
-/// name lookup. At present, this is only used to produce diagnostics when
-/// C library functions (like "malloc") are implicitly declared.
 ///
 /// @param EnteringContext Indicates whether we are going to enter the
 /// context of the scope-specifier SS (if present).

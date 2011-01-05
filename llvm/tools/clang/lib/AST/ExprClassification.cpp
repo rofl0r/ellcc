@@ -151,6 +151,7 @@ static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
   case Expr::ObjCStringLiteralClass:
   case Expr::ParenListExprClass:
   case Expr::InitListExprClass:
+  case Expr::SizeOfPackExprClass:
     return Cl::CL_PRValue;
 
     // Next come the complicated cases.
@@ -304,6 +305,9 @@ static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
       
   case Expr::CXXUuidofExprClass:
     return Cl::CL_LValue;
+      
+  case Expr::PackExpansionExprClass:
+    return ClassifyInternal(Ctx, cast<PackExpansionExpr>(E)->getPattern());
   }
   
   llvm_unreachable("unhandled expression kind in classification");

@@ -150,7 +150,8 @@ namespace clang {
     void VisitUnaryTypeTraitExpr(UnaryTypeTraitExpr *E);
     void VisitBinaryTypeTraitExpr(BinaryTypeTraitExpr *E);
     void VisitCXXNoexceptExpr(CXXNoexceptExpr *E);
-
+    void VisitPackExpansionExpr(PackExpansionExpr *E);
+    void VisitSizeOfPackExpr(SizeOfPackExpr *E);
     void VisitOpaqueValueExpr(OpaqueValueExpr *E);
   };
 }
@@ -1294,6 +1295,23 @@ void ASTStmtWriter::VisitCXXNoexceptExpr(CXXNoexceptExpr *E) {
   Writer.AddSourceRange(E->getSourceRange(), Record);
   Writer.AddStmt(E->getOperand());
   Code = serialization::EXPR_CXX_NOEXCEPT;
+}
+
+void ASTStmtWriter::VisitPackExpansionExpr(PackExpansionExpr *E) {
+  VisitExpr(E);
+  Writer.AddSourceLocation(E->getEllipsisLoc(), Record);
+  Writer.AddStmt(E->getPattern());
+  Code = serialization::EXPR_PACK_EXPANSION;
+}
+
+void ASTStmtWriter::VisitSizeOfPackExpr(SizeOfPackExpr *E) {
+  VisitExpr(E);
+  Writer.AddSourceLocation(E->OperatorLoc, Record);
+  Writer.AddSourceLocation(E->PackLoc, Record);
+  Writer.AddSourceLocation(E->RParenLoc, Record);
+  Record.push_back(E->Length);
+  Writer.AddDeclRef(E->Pack, Record);
+  Code = serialization::EXPR_SIZEOF_PACK;
 }
 
 void ASTStmtWriter::VisitOpaqueValueExpr(OpaqueValueExpr *E) {

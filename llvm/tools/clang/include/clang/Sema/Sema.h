@@ -127,6 +127,7 @@ namespace clang {
   class TemplateTemplateParmDecl;
   class Token;
   class TypedefDecl;
+  class TypeLoc;
   class UnqualifiedId;
   class UnresolvedLookupExpr;
   class UnresolvedMemberExpr;
@@ -1704,7 +1705,7 @@ public:
   ParsingDeclStackState PushParsingDeclaration();
   void PopParsingDeclaration(ParsingDeclStackState S, Decl *D);
   void EmitDeprecationWarning(NamedDecl *D, llvm::StringRef Message,
-                              SourceLocation Loc, bool UnkownObjCClass=false);
+                              SourceLocation Loc, bool UnknownObjCClass=false);
 
   void HandleDelayedDeprecationCheck(sema::DelayedDiagnostic &DD, Decl *Ctx);
 
@@ -1712,7 +1713,7 @@ public:
   // Expression Parsing Callbacks: SemaExpr.cpp.
 
   bool DiagnoseUseOfDecl(NamedDecl *D, SourceLocation Loc, 
-                         bool UnkownObjCClass=false);
+                         bool UnknownObjCClass=false);
   bool DiagnosePropertyAccessorMismatch(ObjCPropertyDecl *PD,
                                         ObjCMethodDecl *Getter,
                                         SourceLocation Loc);
@@ -1816,7 +1817,11 @@ public:
 
   bool CheckSizeOfAlignOfOperand(QualType type, SourceLocation OpLoc,
                                  SourceRange R, bool isSizeof);
-
+  ExprResult ActOnSizeofParameterPackExpr(Scope *S,
+                                          SourceLocation OpLoc,
+                                          IdentifierInfo &Name,
+                                          SourceLocation NameLoc,
+                                          SourceLocation RParenLoc);
   ExprResult ActOnPostfixUnaryOp(Scope *S, SourceLocation OpLoc,
                                  tok::TokenKind Kind, Expr *Input);
 
@@ -2540,7 +2545,8 @@ public:
                                     SourceLocation IdLoc,
                                     SourceLocation LParenLoc,
                                     Expr **Args, unsigned NumArgs,
-                                    SourceLocation RParenLoc);
+                                    SourceLocation RParenLoc,
+                                    SourceLocation EllipsisLoc);
 
   MemInitResult BuildMemberInitializer(ValueDecl *Member, Expr **Args,
                                        unsigned NumArgs, SourceLocation IdLoc,
@@ -2552,7 +2558,8 @@ public:
                                      Expr **Args, unsigned NumArgs,
                                      SourceLocation LParenLoc,
                                      SourceLocation RParenLoc,
-                                     CXXRecordDecl *ClassDecl);
+                                     CXXRecordDecl *ClassDecl,
+                                     SourceLocation EllipsisLoc);
 
   bool SetBaseOrMemberInitializers(CXXConstructorDecl *Constructor,
                                    CXXBaseOrMemberInitializer **Initializers,
@@ -2653,13 +2660,15 @@ public:
   CXXBaseSpecifier *CheckBaseSpecifier(CXXRecordDecl *Class,
                                        SourceRange SpecifierRange,
                                        bool Virtual, AccessSpecifier Access,
-                                       TypeSourceInfo *TInfo);
+                                       TypeSourceInfo *TInfo,
+                                       SourceLocation EllipsisLoc);
 
   BaseResult ActOnBaseSpecifier(Decl *classdecl,
                                 SourceRange SpecifierRange,
                                 bool Virtual, AccessSpecifier Access,
-                                ParsedType basetype, SourceLocation
-                                BaseLoc);
+                                ParsedType basetype, 
+                                SourceLocation BaseLoc,
+                                SourceLocation EllipsisLoc);
 
   bool AttachBaseSpecifiers(CXXRecordDecl *Class, CXXBaseSpecifier **Bases,
                             unsigned NumBases);
@@ -2910,10 +2919,6 @@ public:
                                               bool EnteringContext,
                                               TemplateTy &Template);
 
-  bool CheckClassTemplatePartialSpecializationArgs(
-                                        TemplateParameterList *TemplateParams,
-                        llvm::SmallVectorImpl<TemplateArgument> &TemplateArgs);
-
   DeclResult
   ActOnClassTemplateSpecialization(Scope *S, unsigned TagSpec, TagUseKind TUK,
                                    SourceLocation KWLoc,
@@ -3006,7 +3011,7 @@ public:
 
   bool CheckTemplateArgument(NamedDecl *Param,
                              const TemplateArgumentLoc &Arg,
-                             TemplateDecl *Template,
+                             NamedDecl *Template,
                              SourceLocation TemplateLoc,
                              SourceLocation RAngleLoc,
                            llvm::SmallVectorImpl<TemplateArgument> &Converted,
@@ -3187,7 +3192,10 @@ public:
     UPPC_NonTypeTemplateParameterType,
 
     /// \brief The type of an exception.
-    UPPC_ExceptionType
+    UPPC_ExceptionType,
+    
+    /// \brief Partial specialization.
+    UPPC_PartialSpecialization
   };
 
   /// \brief If the given type contains an unexpanded parameter pack,
@@ -3245,6 +3253,16 @@ public:
                                        TemplateName Template,
                                        UnexpandedParameterPackContext UPPC);
 
+  /// \brief If the given template argument contains an unexpanded parameter 
+  /// pack, diagnose the error.
+  ///
+  /// \param Arg The template argument that is being checked for unexpanded 
+  /// parameter packs.
+  ///
+  /// \returns true if an error ocurred, false otherwise.
+  bool DiagnoseUnexpandedParameterPack(TemplateArgumentLoc Arg,
+                                       UnexpandedParameterPackContext UPPC);
+  
   /// \brief Collect the set of unexpanded parameter packs within the given
   /// template argument.  
   ///
@@ -3264,9 +3282,17 @@ public:
   /// \brief Collect the set of unexpanded parameter packs within the given
   /// type.  
   ///
-  /// \param Arg The template argument that will be traversed to find
+  /// \param T The type that will be traversed to find
   /// unexpanded parameter packs.
   void collectUnexpandedParameterPacks(QualType T,
+                   llvm::SmallVectorImpl<UnexpandedParameterPack> &Unexpanded);
+
+  /// \brief Collect the set of unexpanded parameter packs within the given
+  /// type.  
+  ///
+  /// \param TL The type that will be traversed to find
+  /// unexpanded parameter packs.
+  void collectUnexpandedParameterPacks(TypeLoc TL,
                    llvm::SmallVectorImpl<UnexpandedParameterPack> &Unexpanded);
 
   /// \brief Invoked when parsing a template argument followed by an
@@ -3279,7 +3305,7 @@ public:
   ParsedTemplateArgument ActOnPackExpansion(const ParsedTemplateArgument &Arg,
                                             SourceLocation EllipsisLoc);
 
-  /// \brief Invoked when parsing a type follows by an ellipsis, which
+  /// \brief Invoked when parsing a type followed by an ellipsis, which
   /// creates a pack expansion.
   ///
   /// \param Type The type preceding the ellipsis, which will become
@@ -3292,6 +3318,15 @@ public:
   /// expansion.
   TypeSourceInfo *CheckPackExpansion(TypeSourceInfo *Pattern,
                                      SourceLocation EllipsisLoc);
+  
+  /// \brief Invoked when parsing an expression followed by an ellipsis, which
+  /// creates a pack expansion.
+  ///
+  /// \param Pattern The expression preceding the ellipsis, which will become
+  /// the pattern of the pack expansion.
+  ///
+  /// \param EllipsisLoc The location of the ellipsis.
+  ExprResult ActOnPackExpansion(Expr *Pattern, SourceLocation EllipsisLoc);
   
   /// \brief Determine whether we could expand a pack expansion with the
   /// given set of parameter packs into separate arguments by repeatedly
@@ -3522,9 +3557,10 @@ public:
     /// \brief The point of instantiation within the source code.
     SourceLocation PointOfInstantiation;
 
-    /// \brief The template in which we are performing the instantiation,
-    /// for substitutions of prior template arguments.
-    TemplateDecl *Template;
+    /// \brief The template (or partial specialization) in which we are 
+    /// performing the instantiation, for substitutions of prior template 
+    /// arguments.
+    NamedDecl *Template;
 
     /// \brief The entity that is being instantiated.
     uintptr_t Entity;
@@ -3710,14 +3746,14 @@ public:
     /// \brief Note that we are substituting prior template arguments into a
     /// non-type or template template parameter.
     InstantiatingTemplate(Sema &SemaRef, SourceLocation PointOfInstantiation,
-                          TemplateDecl *Template,
+                          NamedDecl *Template,
                           NonTypeTemplateParmDecl *Param,
                           const TemplateArgument *TemplateArgs,
                           unsigned NumTemplateArgs,
                           SourceRange InstantiationRange);
 
     InstantiatingTemplate(Sema &SemaRef, SourceLocation PointOfInstantiation,
-                          TemplateDecl *Template,
+                          NamedDecl *Template,
                           TemplateTemplateParmDecl *Param,
                           const TemplateArgument *TemplateArgs,
                           unsigned NumTemplateArgs,

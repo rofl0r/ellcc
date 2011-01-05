@@ -263,7 +263,7 @@ Sema::InstantiatingTemplate::InstantiatingTemplate(Sema &SemaRef,
 
 Sema::InstantiatingTemplate::
 InstantiatingTemplate(Sema &SemaRef, SourceLocation PointOfInstantiation,
-                      TemplateDecl *Template,
+                      NamedDecl *Template,
                       NonTypeTemplateParmDecl *Param,
                       const TemplateArgument *TemplateArgs,
                       unsigned NumTemplateArgs,
@@ -286,7 +286,7 @@ InstantiatingTemplate(Sema &SemaRef, SourceLocation PointOfInstantiation,
 
 Sema::InstantiatingTemplate::
 InstantiatingTemplate(Sema &SemaRef, SourceLocation PointOfInstantiation,
-                      TemplateDecl *Template,
+                      NamedDecl *Template,
                       TemplateTemplateParmDecl *Param,
                       const TemplateArgument *TemplateArgs,
                       unsigned NumTemplateArgs,
@@ -490,13 +490,19 @@ void Sema::PrintInstantiationStack() {
       std::string Name;
       if (!Parm->getName().empty())
         Name = std::string(" '") + Parm->getName().str() + "'";
-                                        
+                    
+      TemplateParameterList *TemplateParams = 0;
+      if (TemplateDecl *Template = dyn_cast<TemplateDecl>(Active->Template))
+        TemplateParams = Template->getTemplateParameters();
+      else
+        TemplateParams =
+          cast<ClassTemplatePartialSpecializationDecl>(Active->Template)
+                                                      ->getTemplateParameters();
       Diags.Report(Active->PointOfInstantiation,
                    diag::note_prior_template_arg_substitution)
         << isa<TemplateTemplateParmDecl>(Parm)
         << Name
-        << getTemplateArgumentBindingsText(
-                                    Active->Template->getTemplateParameters(), 
+        << getTemplateArgumentBindingsText(TemplateParams, 
                                            Active->TemplateArgs, 
                                            Active->NumTemplateArgs)
         << Active->InstantiationRange;
@@ -504,10 +510,17 @@ void Sema::PrintInstantiationStack() {
     }
 
     case ActiveTemplateInstantiation::DefaultTemplateArgumentChecking: {
+      TemplateParameterList *TemplateParams = 0;
+      if (TemplateDecl *Template = dyn_cast<TemplateDecl>(Active->Template))
+        TemplateParams = Template->getTemplateParameters();
+      else
+        TemplateParams =
+          cast<ClassTemplatePartialSpecializationDecl>(Active->Template)
+                                                      ->getTemplateParameters();
+
       Diags.Report(Active->PointOfInstantiation,
                    diag::note_template_default_arg_checking)
-        << getTemplateArgumentBindingsText(
-                                     Active->Template->getTemplateParameters(), 
+        << getTemplateArgumentBindingsText(TemplateParams, 
                                            Active->TemplateArgs, 
                                            Active->NumTemplateArgs)
         << Active->InstantiationRange;
@@ -1155,6 +1168,58 @@ Sema::SubstBaseSpecifiers(CXXRecordDecl *Instantiation,
       continue;
     }
 
+    SourceLocation EllipsisLoc;
+    if (Base->isPackExpansion()) {
+      // This is a pack expansion. See whether we should expand it now, or
+      // wait until later.
+      llvm::SmallVector<UnexpandedParameterPack, 2> Unexpanded;
+      collectUnexpandedParameterPacks(Base->getTypeSourceInfo()->getTypeLoc(),
+                                      Unexpanded);
+      bool ShouldExpand = false;
+      unsigned NumExpansions = 0;
+      if (CheckParameterPacksForExpansion(Base->getEllipsisLoc(), 
+                                          Base->getSourceRange(),
+                                          Unexpanded.data(), Unexpanded.size(),
+                                          TemplateArgs, ShouldExpand, 
+                                          NumExpansions)) {
+        Invalid = true;
+        continue;
+      }
+      
+      // If we should expand this pack expansion now, do so.
+      if (ShouldExpand) {
+        for (unsigned I = 0; I != NumExpansions; ++I) {
+            Sema::ArgumentPackSubstitutionIndexRAII SubstIndex(*this, I);
+          
+          TypeSourceInfo *BaseTypeLoc = SubstType(Base->getTypeSourceInfo(),
+                                                  TemplateArgs,
+                                              Base->getSourceRange().getBegin(),
+                                                  DeclarationName());
+          if (!BaseTypeLoc) {
+            Invalid = true;
+            continue;
+          }
+          
+          if (CXXBaseSpecifier *InstantiatedBase
+                = CheckBaseSpecifier(Instantiation,
+                                     Base->getSourceRange(),
+                                     Base->isVirtual(),
+                                     Base->getAccessSpecifierAsWritten(),
+                                     BaseTypeLoc,
+                                     SourceLocation()))
+            InstantiatedBases.push_back(InstantiatedBase);
+          else
+            Invalid = true;
+        }
+      
+        continue;
+      }
+      
+      // The resulting base specifier will (still) be a pack expansion.
+      EllipsisLoc = Base->getEllipsisLoc();
+    }
+    
+    Sema::ArgumentPackSubstitutionIndexRAII SubstIndex(*this, -1);
     TypeSourceInfo *BaseTypeLoc = SubstType(Base->getTypeSourceInfo(),
                                             TemplateArgs,
                                             Base->getSourceRange().getBegin(),
@@ -1169,7 +1234,8 @@ Sema::SubstBaseSpecifiers(CXXRecordDecl *Instantiation,
                                Base->getSourceRange(),
                                Base->isVirtual(),
                                Base->getAccessSpecifierAsWritten(),
-                               BaseTypeLoc))
+                               BaseTypeLoc,
+                               EllipsisLoc))
       InstantiatedBases.push_back(InstantiatedBase);
     else
       Invalid = true;

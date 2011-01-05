@@ -10,6 +10,7 @@
 //===----------------------------------------------------------------------===/
 
 #include "clang/Sema/Sema.h"
+#include "clang/Sema/Lookup.h"
 #include "clang/Sema/ParsedTemplate.h"
 #include "clang/Sema/SemaInternal.h"
 #include "clang/Sema/Template.h"
@@ -78,9 +79,6 @@ namespace {
     }
     
     // FIXME: Record occurrences of template template parameter packs.
-
-    // FIXME: Once we have pack expansions in the AST, block their
-    // traversal.
 
     //------------------------------------------------------------------------
     // Pruning the search for unexpanded parameter packs.
@@ -266,6 +264,20 @@ bool Sema::DiagnoseUnexpandedParameterPack(SourceLocation Loc,
   return true;
 }
 
+bool Sema::DiagnoseUnexpandedParameterPack(TemplateArgumentLoc Arg,
+                                         UnexpandedParameterPackContext UPPC) {
+  if (Arg.getArgument().isNull() || 
+      !Arg.getArgument().containsUnexpandedParameterPack())
+    return false;
+  
+  llvm::SmallVector<UnexpandedParameterPack, 2> Unexpanded;
+  CollectUnexpandedParameterPacksVisitor(Unexpanded)
+    .TraverseTemplateArgumentLoc(Arg);
+  assert(!Unexpanded.empty() && "Unable to find unexpanded parameter packs");
+  DiagnoseUnexpandedParameterPacks(*this, Arg.getLocation(), UPPC, Unexpanded);
+  return true;  
+}
+
 void Sema::collectUnexpandedParameterPacks(TemplateArgument Arg,
                    llvm::SmallVectorImpl<UnexpandedParameterPack> &Unexpanded) {
   CollectUnexpandedParameterPacksVisitor(Unexpanded)
@@ -281,6 +293,11 @@ void Sema::collectUnexpandedParameterPacks(TemplateArgumentLoc Arg,
 void Sema::collectUnexpandedParameterPacks(QualType T,
                    llvm::SmallVectorImpl<UnexpandedParameterPack> &Unexpanded) {
   CollectUnexpandedParameterPacksVisitor(Unexpanded).TraverseType(T);  
+}  
+
+void Sema::collectUnexpandedParameterPacks(TypeLoc TL,
+                   llvm::SmallVectorImpl<UnexpandedParameterPack> &Unexpanded) {
+  CollectUnexpandedParameterPacksVisitor(Unexpanded).TraverseTypeLoc(TL);  
 }  
 
 ParsedTemplateArgument 
@@ -299,14 +316,17 @@ Sema::ActOnPackExpansion(const ParsedTemplateArgument &Arg,
                                   Arg.getLocation());
   }
 
-  case ParsedTemplateArgument::NonType:
-    Diag(EllipsisLoc, diag::err_pack_expansion_unsupported)
-      << 0;
-    return ParsedTemplateArgument();
-
+  case ParsedTemplateArgument::NonType: {
+    ExprResult Result = ActOnPackExpansion(Arg.getAsExpr(), EllipsisLoc);
+    if (Result.isInvalid())
+      return ParsedTemplateArgument();
+    
+    return ParsedTemplateArgument(Arg.getKind(), Result.get(), 
+                                  Arg.getLocation());
+  }
+    
   case ParsedTemplateArgument::Template:
-    Diag(EllipsisLoc, diag::err_pack_expansion_unsupported)
-      << 1;
+    Diag(EllipsisLoc, diag::err_pack_expansion_unsupported);
     return ParsedTemplateArgument();
   }
   llvm_unreachable("Unhandled template argument kind?");
@@ -352,6 +372,24 @@ TypeSourceInfo *Sema::CheckPackExpansion(TypeSourceInfo *Pattern,
   return TSResult;
 }
 
+ExprResult Sema::ActOnPackExpansion(Expr *Pattern, SourceLocation EllipsisLoc) {
+  if (!Pattern)
+    return ExprError();
+  
+  // C++0x [temp.variadic]p5:
+  //   The pattern of a pack expansion shall name one or more
+  //   parameter packs that are not expanded by a nested pack
+  //   expansion.
+  if (!Pattern->containsUnexpandedParameterPack()) {
+    Diag(EllipsisLoc, diag::err_pack_expansion_without_parameter_packs)
+    << Pattern->getSourceRange();
+    return ExprError();
+  }
+  
+  // Create the pack expansion expression and source-location information.
+  return Owned(new (Context) PackExpansionExpr(Context.DependentTy, Pattern,
+                                               EllipsisLoc));
+}
 
 bool Sema::CheckParameterPacksForExpansion(SourceLocation EllipsisLoc,
                                            SourceRange PatternRange,
@@ -396,7 +434,8 @@ bool Sema::CheckParameterPacksForExpansion(SourceLocation EllipsisLoc,
     // If we don't have a template argument at this depth/index, then we 
     // cannot expand the pack expansion. Make a note of this, but we still 
     // want to check any parameter packs we *do* have arguments for.
-    if (!TemplateArgs.hasTemplateArgument(Depth, Index)) {
+    if (Depth >= TemplateArgs.getNumLevels() ||
+        !TemplateArgs.hasTemplateArgument(Depth, Index)) {
       ShouldExpand = false;
       continue;
     }
@@ -494,4 +533,72 @@ bool Sema::containsUnexpandedParameterPacks(Declarator &D) {
   }
   
   return false;
+}
+
+/// \brief Called when an expression computing the size of a parameter pack
+/// is parsed.
+///
+/// \code
+/// template<typename ...Types> struct count {
+///   static const unsigned value = sizeof...(Types);
+/// };
+/// \endcode
+///
+//
+/// \param OpLoc The location of the "sizeof" keyword.
+/// \param Name The name of the parameter pack whose size will be determined.
+/// \param NameLoc The source location of the name of the parameter pack.
+/// \param RParenLoc The location of the closing parentheses.
+ExprResult Sema::ActOnSizeofParameterPackExpr(Scope *S,
+                                              SourceLocation OpLoc,
+                                              IdentifierInfo &Name,
+                                              SourceLocation NameLoc,
+                                              SourceLocation RParenLoc) {
+  // C++0x [expr.sizeof]p5:
+  //   The identifier in a sizeof... expression shall name a parameter pack.
+  
+  LookupResult R(*this, &Name, NameLoc, LookupOrdinaryName);
+  LookupName(R, S);
+  
+  NamedDecl *ParameterPack = 0;
+  switch (R.getResultKind()) {
+  case LookupResult::Found:
+    ParameterPack = R.getFoundDecl();
+    break;
+    
+  case LookupResult::NotFound:
+  case LookupResult::NotFoundInCurrentInstantiation:
+    if (DeclarationName CorrectedName = CorrectTypo(R, S, 0, 0, false, 
+                                                    CTC_NoKeywords)) {
+      // FIXME: Variadic templates function parameter packs.
+      if (NamedDecl *CorrectedResult = R.getAsSingle<NamedDecl>())
+        if (CorrectedResult->isTemplateParameterPack()) {
+          ParameterPack = CorrectedResult;
+          Diag(NameLoc, diag::err_sizeof_pack_no_pack_name_suggest)
+            << &Name << CorrectedName
+            << FixItHint::CreateReplacement(NameLoc, 
+                                            CorrectedName.getAsString());
+          Diag(ParameterPack->getLocation(), diag::note_parameter_pack_here)
+            << CorrectedName;
+        }
+    }
+      
+  case LookupResult::FoundOverloaded:
+  case LookupResult::FoundUnresolvedValue:
+    break;
+    
+  case LookupResult::Ambiguous:
+    DiagnoseAmbiguousLookup(R);
+    return ExprError();
+  }
+  
+  // FIXME: Variadic templates function parameter packs.
+  if (!ParameterPack || !ParameterPack->isTemplateParameterPack()) {
+    Diag(NameLoc, diag::err_sizeof_pack_no_pack_name)
+      << &Name;
+    return ExprError();
+  }
+
+  return new (Context) SizeOfPackExpr(Context.getSizeType(), OpLoc, 
+                                      ParameterPack, NameLoc, RParenLoc);
 }

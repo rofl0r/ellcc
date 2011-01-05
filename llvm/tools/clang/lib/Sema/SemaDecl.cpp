@@ -557,7 +557,8 @@ bool Sema::ShouldWarnIfUnusedFileScopedDecl(const DeclaratorDecl *D) const {
     return false;
 
   // Ignore class templates.
-  if (D->getDeclContext()->isDependentContext())
+  if (D->getDeclContext()->isDependentContext() ||
+      D->getLexicalDeclContext()->isDependentContext())
     return false;
 
   if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(D)) {
@@ -793,13 +794,13 @@ NamedDecl *Sema::LazilyCreateBuiltin(IdentifierInfo *II, unsigned bid,
 
   case ASTContext::GE_Missing_stdio:
     if (ForRedeclaration)
-      Diag(Loc, diag::err_implicit_decl_requires_stdio)
+      Diag(Loc, diag::warn_implicit_decl_requires_stdio)
         << Context.BuiltinInfo.GetName(BID);
     return 0;
 
   case ASTContext::GE_Missing_setjmp:
     if (ForRedeclaration)
-      Diag(Loc, diag::err_implicit_decl_requires_setjmp)
+      Diag(Loc, diag::warn_implicit_decl_requires_setjmp)
         << Context.BuiltinInfo.GetName(BID);
     return 0;
   }
@@ -2995,8 +2996,12 @@ Sema::ActOnVariableDeclarator(Scope *S, Declarator &D, DeclContext *DC,
   if (Expr *E = (Expr*)D.getAsmLabel()) {
     // The parser guarantees this is a string.
     StringLiteral *SE = cast<StringLiteral>(E);
+    llvm::StringRef Label = SE->getString();
+    if (S->getFnParent() != 0 &&
+        !Context.Target.isValidGCCRegisterName(Label))
+      Diag(E->getExprLoc(), diag::err_asm_unknown_register_name) << Label;
     NewVD->addAttr(::new (Context) AsmLabelAttr(SE->getStrTokenLoc(0), 
-                                                Context, SE->getString()));
+                                                Context, Label));
   }
 
   // Diagnose shadowed variables before filtering for scope.
@@ -5410,7 +5415,8 @@ Decl *Sema::ActOnFinishFunctionBody(Decl *dcl, Stmt *Body,
   } else if (ObjCMethodDecl *MD = dyn_cast_or_null<ObjCMethodDecl>(dcl)) {
     assert(MD == getCurMethodDecl() && "Method parsing confused");
     MD->setBody(Body);
-    MD->setEndLoc(Body->getLocEnd());
+    if (Body)
+      MD->setEndLoc(Body->getLocEnd());
     if (!MD->isInvalidDecl()) {
       DiagnoseUnusedParameters(MD->param_begin(), MD->param_end());
       DiagnoseSizeOfParametersAndReturnValue(MD->param_begin(), MD->param_end(),

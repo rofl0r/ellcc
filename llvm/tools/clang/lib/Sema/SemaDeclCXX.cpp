@@ -464,7 +464,8 @@ CXXBaseSpecifier *
 Sema::CheckBaseSpecifier(CXXRecordDecl *Class,
                          SourceRange SpecifierRange,
                          bool Virtual, AccessSpecifier Access,
-                         TypeSourceInfo *TInfo) {
+                         TypeSourceInfo *TInfo,
+                         SourceLocation EllipsisLoc) {
   QualType BaseType = TInfo->getType();
 
   // C++ [class.union]p1:
@@ -475,10 +476,17 @@ Sema::CheckBaseSpecifier(CXXRecordDecl *Class,
     return 0;
   }
 
+  if (EllipsisLoc.isValid() && 
+      !TInfo->getType()->containsUnexpandedParameterPack()) {
+    Diag(EllipsisLoc, diag::err_pack_expansion_without_parameter_packs)
+      << TInfo->getTypeLoc().getSourceRange();
+    EllipsisLoc = SourceLocation();
+  }
+  
   if (BaseType->isDependentType())
     return new (Context) CXXBaseSpecifier(SpecifierRange, Virtual,
                                           Class->getTagKind() == TTK_Class,
-                                          Access, TInfo);
+                                          Access, TInfo, EllipsisLoc);
 
   SourceLocation BaseLoc = TInfo->getTypeLoc().getBeginLoc();
 
@@ -527,7 +535,7 @@ Sema::CheckBaseSpecifier(CXXRecordDecl *Class,
   // Create the base specifier.
   return new (Context) CXXBaseSpecifier(SpecifierRange, Virtual,
                                         Class->getTagKind() == TTK_Class,
-                                        Access, TInfo);
+                                        Access, TInfo, EllipsisLoc);
 }
 
 /// ActOnBaseSpecifier - Parsed a base specifier. A base specifier is
@@ -538,7 +546,8 @@ Sema::CheckBaseSpecifier(CXXRecordDecl *Class,
 BaseResult
 Sema::ActOnBaseSpecifier(Decl *classdecl, SourceRange SpecifierRange,
                          bool Virtual, AccessSpecifier Access,
-                         ParsedType basetype, SourceLocation BaseLoc) {
+                         ParsedType basetype, SourceLocation BaseLoc,
+                         SourceLocation EllipsisLoc) {
   if (!classdecl)
     return true;
 
@@ -550,12 +559,14 @@ Sema::ActOnBaseSpecifier(Decl *classdecl, SourceRange SpecifierRange,
   TypeSourceInfo *TInfo = 0;
   GetTypeFromParser(basetype, &TInfo);
 
-  if (DiagnoseUnexpandedParameterPack(SpecifierRange.getBegin(), TInfo, 
+  if (EllipsisLoc.isInvalid() &&
+      DiagnoseUnexpandedParameterPack(SpecifierRange.getBegin(), TInfo, 
                                       UPPC_BaseType))
     return true;
-
+  
   if (CXXBaseSpecifier *BaseSpec = CheckBaseSpecifier(Class, SpecifierRange,
-                                                      Virtual, Access, TInfo))
+                                                      Virtual, Access, TInfo,
+                                                      EllipsisLoc))
     return BaseSpec;
 
   return true;
@@ -1046,7 +1057,8 @@ Sema::ActOnMemInitializer(Decl *ConstructorD,
                           SourceLocation IdLoc,
                           SourceLocation LParenLoc,
                           ExprTy **Args, unsigned NumArgs,
-                          SourceLocation RParenLoc) {
+                          SourceLocation RParenLoc,
+                          SourceLocation EllipsisLoc) {
   if (!ConstructorD)
     return true;
 
@@ -1082,15 +1094,26 @@ Sema::ActOnMemInitializer(Decl *ConstructorD,
     if (Result.first != Result.second) {
       Member = dyn_cast<FieldDecl>(*Result.first);
     
-      if (Member)
+      if (Member) {
+        if (EllipsisLoc.isValid())
+          Diag(EllipsisLoc, diag::err_pack_expansion_member_init)
+            << MemberOrBase << SourceRange(IdLoc, RParenLoc);
+        
         return BuildMemberInitializer(Member, (Expr**)Args, NumArgs, IdLoc,
                                     LParenLoc, RParenLoc);
+      }
+      
       // Handle anonymous union case.
       if (IndirectFieldDecl* IndirectField
-            = dyn_cast<IndirectFieldDecl>(*Result.first))
+            = dyn_cast<IndirectFieldDecl>(*Result.first)) {
+        if (EllipsisLoc.isValid())
+          Diag(EllipsisLoc, diag::err_pack_expansion_member_init)
+            << MemberOrBase << SourceRange(IdLoc, RParenLoc);
+
          return BuildMemberInitializer(IndirectField, (Expr**)Args,
                                        NumArgs, IdLoc,
                                        LParenLoc, RParenLoc);
+      }
     }
   }
   // It didn't name a member, so see if it names a class.
@@ -1199,7 +1222,7 @@ Sema::ActOnMemInitializer(Decl *ConstructorD,
     TInfo = Context.getTrivialTypeSourceInfo(BaseType, IdLoc);
 
   return BuildBaseInitializer(BaseType, TInfo, (Expr **)Args, NumArgs, 
-                              LParenLoc, RParenLoc, ClassDecl);
+                              LParenLoc, RParenLoc, ClassDecl, EllipsisLoc);
 }
 
 /// Checks an initializer expression for use of uninitialized fields, such as
@@ -1372,7 +1395,8 @@ MemInitResult
 Sema::BuildBaseInitializer(QualType BaseType, TypeSourceInfo *BaseTInfo,
                            Expr **Args, unsigned NumArgs, 
                            SourceLocation LParenLoc, SourceLocation RParenLoc, 
-                           CXXRecordDecl *ClassDecl) {
+                           CXXRecordDecl *ClassDecl,
+                           SourceLocation EllipsisLoc) {
   bool HasDependentArg = false;
   for (unsigned i = 0; i < NumArgs; i++)
     HasDependentArg |= Args[i]->isTypeDependent();
@@ -1392,6 +1416,24 @@ Sema::BuildBaseInitializer(QualType BaseType, TypeSourceInfo *BaseTInfo,
   //   name that denotes that base class type.
   bool Dependent = BaseType->isDependentType() || HasDependentArg;
 
+  if (EllipsisLoc.isValid()) {
+    // This is a pack expansion.
+    if (!BaseType->containsUnexpandedParameterPack())  {
+      Diag(EllipsisLoc, diag::err_pack_expansion_without_parameter_packs)
+        << SourceRange(BaseLoc, RParenLoc);
+      
+      EllipsisLoc = SourceLocation();
+    }
+  } else {
+    // Check for any unexpanded parameter packs.
+    if (DiagnoseUnexpandedParameterPack(BaseLoc, BaseTInfo, UPPC_Initializer))
+      return true;
+    
+    for (unsigned I = 0; I != NumArgs; ++I)
+      if (DiagnoseUnexpandedParameterPack(Args[I]))
+        return true;
+  }
+  
   // Check for direct and virtual base classes.
   const CXXBaseSpecifier *DirectBaseSpec = 0;
   const CXXBaseSpecifier *VirtualBaseSpec = 0;
@@ -1436,7 +1478,8 @@ Sema::BuildBaseInitializer(QualType BaseType, TypeSourceInfo *BaseTInfo,
                                                     /*IsVirtual=*/false,
                                                     LParenLoc, 
                                                     BaseInit.takeAs<Expr>(),
-                                                    RParenLoc);
+                                                    RParenLoc,
+                                                    EllipsisLoc);
   }
 
   // C++ [base.class.init]p2:
@@ -1490,14 +1533,16 @@ Sema::BuildBaseInitializer(QualType BaseType, TypeSourceInfo *BaseTInfo,
                                                     BaseSpec->isVirtual(),
                                                     LParenLoc, 
                                                     Init.takeAs<Expr>(),
-                                                    RParenLoc);
+                                                    RParenLoc,
+                                                    EllipsisLoc);
   }
 
   return new (Context) CXXBaseOrMemberInitializer(Context, BaseTInfo,
                                                   BaseSpec->isVirtual(),
                                                   LParenLoc, 
                                                   BaseInit.takeAs<Expr>(),
-                                                  RParenLoc);
+                                                  RParenLoc,
+                                                  EllipsisLoc);
 }
 
 /// ImplicitInitializerKind - How an implicit base or member initializer should
@@ -1575,6 +1620,7 @@ BuildImplicitBaseInitializer(Sema &SemaRef, CXXConstructorDecl *Constructor,
                                              BaseSpec->isVirtual(),
                                              SourceLocation(),
                                              BaseInit.takeAs<Expr>(),
+                                             SourceLocation(),
                                              SourceLocation());
 
   return false;

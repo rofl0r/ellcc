@@ -19,7 +19,8 @@ ECC = ../../../../../bin/ecc
 # The archiver.
 AR = ../../../../../bin/ecc-ar
 
-CFLAGS = -g -Werror -MD -MP -O1
+#CFLAGS = -g -Werror -MD -MP -O1 -fno-builtin
+CFLAGS = -Werror -MD -MP -O1 -fno-builtin
 
 .SUFFIXES: .c .S .o
 .c.o:

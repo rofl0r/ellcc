@@ -176,7 +176,9 @@ namespace clang {
     void VisitUnaryTypeTraitExpr(UnaryTypeTraitExpr *E);
     void VisitBinaryTypeTraitExpr(BinaryTypeTraitExpr *E);
     void VisitCXXNoexceptExpr(CXXNoexceptExpr *E);
-
+    void VisitPackExpansionExpr(PackExpansionExpr *E);
+    void VisitSizeOfPackExpr(SizeOfPackExpr *E);
+    
     void VisitOpaqueValueExpr(OpaqueValueExpr *E);
   };
 }
@@ -1287,6 +1289,21 @@ void ASTStmtReader::VisitCXXNoexceptExpr(CXXNoexceptExpr *E) {
   E->Operand = Reader.ReadSubExpr();
 }
 
+void ASTStmtReader::VisitPackExpansionExpr(PackExpansionExpr *E) {
+  VisitExpr(E);
+  E->EllipsisLoc = ReadSourceLocation(Record, Idx);
+  E->Pattern = Reader.ReadSubExpr();  
+}
+
+void ASTStmtReader::VisitSizeOfPackExpr(SizeOfPackExpr *E) {
+  VisitExpr(E);
+  E->OperatorLoc = ReadSourceLocation(Record, Idx);
+  E->PackLoc = ReadSourceLocation(Record, Idx);
+  E->RParenLoc = ReadSourceLocation(Record, Idx);
+  E->Length = Record[Idx++];
+  E->Pack = cast_or_null<NamedDecl>(Reader.GetDecl(Record[Idx++]));
+}
+
 void ASTStmtReader::VisitOpaqueValueExpr(OpaqueValueExpr *E) {
   VisitExpr(E);
 }
@@ -1809,6 +1826,14 @@ Stmt *ASTReader::ReadStmtFromStream(PerFileData &F) {
       S = new (Context) CXXNoexceptExpr(Empty);
       break;
 
+    case EXPR_PACK_EXPANSION:
+      S = new (Context) PackExpansionExpr(Empty);
+      break;
+        
+    case EXPR_SIZEOF_PACK:
+      S = new (Context) SizeOfPackExpr(Empty);
+      break;
+        
     case EXPR_OPAQUE_VALUE:
       S = new (Context) OpaqueValueExpr(Empty);
       break;

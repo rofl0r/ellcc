@@ -56,7 +56,7 @@ using namespace sema;
 /// referenced), false otherwise.
 ///
 bool Sema::DiagnoseUseOfDecl(NamedDecl *D, SourceLocation Loc,
-                             bool UnkownObjCClass) {
+                             bool UnknownObjCClass) {
   if (getLangOptions().CPlusPlus && isa<FunctionDecl>(D)) {
     // If there were any diagnostics suppressed by template argument deduction,
     // emit them now.
@@ -77,12 +77,12 @@ bool Sema::DiagnoseUseOfDecl(NamedDecl *D, SourceLocation Loc,
 
   // See if the decl is deprecated.
   if (const DeprecatedAttr *DA = D->getAttr<DeprecatedAttr>())
-    EmitDeprecationWarning(D, DA->getMessage(), Loc, UnkownObjCClass);
+    EmitDeprecationWarning(D, DA->getMessage(), Loc, UnknownObjCClass);
 
   // See if the decl is unavailable
   if (const UnavailableAttr *UA = D->getAttr<UnavailableAttr>()) {
     if (UA->getMessage().empty()) {
-      if (!UnkownObjCClass)
+      if (!UnknownObjCClass)
         Diag(Loc, diag::err_unavailable) << D->getDeclName();
       else
         Diag(Loc, diag::warn_unavailable_fwdclass_message) 
@@ -1470,7 +1470,8 @@ ExprResult Sema::ActOnIdExpression(Scope *S,
       Expr *Ex = E.takeAs<Expr>();
       if (Ex) return Owned(Ex);
       // Synthesize ivars lazily
-      if (getLangOptions().ObjCNonFragileABI2) {
+      if (getLangOptions().ObjCDefaultSynthProperties &&
+          getLangOptions().ObjCNonFragileABI2) {
         if (SynthesizeProvisionalIvar(*this, R, II, NameLoc)) {
           if (const ObjCPropertyDecl *Property = 
                 canSynthesizeProvisionalIvar(II)) {
@@ -1527,7 +1528,8 @@ ExprResult Sema::ActOnIdExpression(Scope *S,
 
   if (VarDecl *Var = R.getAsSingle<VarDecl>()) {
     if (getLangOptions().ObjCNonFragileABI && IvarLookupFollowUp &&
-        !getLangOptions().ObjCNonFragileABI2 &&
+        !(getLangOptions().ObjCDefaultSynthProperties && 
+          getLangOptions().ObjCNonFragileABI2) &&
         Var->isFileVarDecl()) {
       ObjCPropertyDecl *Property = canSynthesizeProvisionalIvar(II);
       if (Property) {
@@ -4501,15 +4503,14 @@ static CastKind PrepareScalarCast(Sema &S, Expr *&Src, QualType DestTy) {
   // Also, callers should have filtered out the invalid cases with
   // pointers.  Everything else should be possible.
 
-  QualType SrcTy = S.Context.getCanonicalType(Src->getType());
-  DestTy = S.Context.getCanonicalType(DestTy);
+  QualType SrcTy = Src->getType();
   if (S.Context.hasSameUnqualifiedType(SrcTy, DestTy))
     return CK_NoOp;
 
   switch (SrcTy->getScalarTypeKind()) {
   case Type::STK_MemberPointer:
     llvm_unreachable("member pointer type in C");
-    
+
   case Type::STK_Pointer:
     switch (DestTy->getScalarTypeKind()) {
     case Type::STK_Pointer:
@@ -4542,11 +4543,11 @@ static CastKind PrepareScalarCast(Sema &S, Expr *&Src, QualType DestTy) {
     case Type::STK_Floating:
       return CK_IntegralToFloating;
     case Type::STK_IntegralComplex:
-      S.ImpCastExprToType(Src, cast<ComplexType>(DestTy)->getElementType(),
+      S.ImpCastExprToType(Src, DestTy->getAs<ComplexType>()->getElementType(),
                           CK_IntegralCast);
       return CK_IntegralRealToComplex;
     case Type::STK_FloatingComplex:
-      S.ImpCastExprToType(Src, cast<ComplexType>(DestTy)->getElementType(),
+      S.ImpCastExprToType(Src, DestTy->getAs<ComplexType>()->getElementType(),
                           CK_IntegralToFloating);
       return CK_FloatingRealToComplex;
     case Type::STK_MemberPointer:
@@ -4563,11 +4564,11 @@ static CastKind PrepareScalarCast(Sema &S, Expr *&Src, QualType DestTy) {
     case Type::STK_Integral:
       return CK_FloatingToIntegral;
     case Type::STK_FloatingComplex:
-      S.ImpCastExprToType(Src, cast<ComplexType>(DestTy)->getElementType(),
+      S.ImpCastExprToType(Src, DestTy->getAs<ComplexType>()->getElementType(),
                           CK_FloatingCast);
       return CK_FloatingRealToComplex;
     case Type::STK_IntegralComplex:
-      S.ImpCastExprToType(Src, cast<ComplexType>(DestTy)->getElementType(),
+      S.ImpCastExprToType(Src, DestTy->getAs<ComplexType>()->getElementType(),
                           CK_FloatingToIntegral);
       return CK_IntegralRealToComplex;
     case Type::STK_Pointer:
@@ -4584,7 +4585,7 @@ static CastKind PrepareScalarCast(Sema &S, Expr *&Src, QualType DestTy) {
     case Type::STK_IntegralComplex:
       return CK_FloatingComplexToIntegralComplex;
     case Type::STK_Floating: {
-      QualType ET = cast<ComplexType>(SrcTy)->getElementType();
+      QualType ET = SrcTy->getAs<ComplexType>()->getElementType();
       if (S.Context.hasSameType(ET, DestTy))
         return CK_FloatingComplexToReal;
       S.ImpCastExprToType(Src, ET, CK_FloatingComplexToReal);
@@ -4593,7 +4594,7 @@ static CastKind PrepareScalarCast(Sema &S, Expr *&Src, QualType DestTy) {
     case Type::STK_Bool:
       return CK_FloatingComplexToBoolean;
     case Type::STK_Integral:
-      S.ImpCastExprToType(Src, cast<ComplexType>(SrcTy)->getElementType(),
+      S.ImpCastExprToType(Src, SrcTy->getAs<ComplexType>()->getElementType(),
                           CK_FloatingComplexToReal);
       return CK_FloatingToIntegral;
     case Type::STK_Pointer:
@@ -4610,7 +4611,7 @@ static CastKind PrepareScalarCast(Sema &S, Expr *&Src, QualType DestTy) {
     case Type::STK_IntegralComplex:
       return CK_IntegralComplexCast;
     case Type::STK_Integral: {
-      QualType ET = cast<ComplexType>(SrcTy)->getElementType();
+      QualType ET = SrcTy->getAs<ComplexType>()->getElementType();
       if (S.Context.hasSameType(ET, DestTy))
         return CK_IntegralComplexToReal;
       S.ImpCastExprToType(Src, ET, CK_IntegralComplexToReal);
@@ -4619,7 +4620,7 @@ static CastKind PrepareScalarCast(Sema &S, Expr *&Src, QualType DestTy) {
     case Type::STK_Bool:
       return CK_IntegralComplexToBoolean;
     case Type::STK_Floating:
-      S.ImpCastExprToType(Src, cast<ComplexType>(SrcTy)->getElementType(),
+      S.ImpCastExprToType(Src, SrcTy->getAs<ComplexType>()->getElementType(),
                           CK_IntegralComplexToReal);
       return CK_IntegralToFloating;
     case Type::STK_Pointer:
@@ -7458,6 +7459,40 @@ static inline UnaryOperatorKind ConvertTokenKindToUnaryOpcode(
   return Opc;
 }
 
+/// DiagnoseSelfAssignment - Emits a warning if a value is assigned to itself.
+/// This warning is only emitted for builtin assignment operations. It is also
+/// suppressed in the event of macro expansions.
+static void DiagnoseSelfAssignment(Sema &S, Expr *lhs, Expr *rhs,
+                                   SourceLocation OpLoc) {
+  if (!S.ActiveTemplateInstantiations.empty())
+    return;
+  if (OpLoc.isInvalid() || OpLoc.isMacroID())
+    return;
+  lhs = lhs->IgnoreParenImpCasts();
+  rhs = rhs->IgnoreParenImpCasts();
+  const DeclRefExpr *LeftDeclRef = dyn_cast<DeclRefExpr>(lhs);
+  const DeclRefExpr *RightDeclRef = dyn_cast<DeclRefExpr>(rhs);
+  if (!LeftDeclRef || !RightDeclRef ||
+      LeftDeclRef->getLocation().isMacroID() ||
+      RightDeclRef->getLocation().isMacroID())
+    return;
+  const ValueDecl *LeftDecl =
+    cast<ValueDecl>(LeftDeclRef->getDecl()->getCanonicalDecl());
+  const ValueDecl *RightDecl =
+    cast<ValueDecl>(RightDeclRef->getDecl()->getCanonicalDecl());
+  if (LeftDecl != RightDecl)
+    return;
+  if (LeftDecl->getType().isVolatileQualified())
+    return;
+  if (const ReferenceType *RefTy = LeftDecl->getType()->getAs<ReferenceType>())
+    if (RefTy->getPointeeType().isVolatileQualified())
+      return;
+
+  S.Diag(OpLoc, diag::warn_self_assignment)
+      << LeftDeclRef->getType()
+      << lhs->getSourceRange() << rhs->getSourceRange();
+}
+
 /// CreateBuiltinBinOp - Creates a new built-in binary operation with
 /// operator @p Opc at location @c TokLoc. This routine only supports
 /// built-in operations; ActOnBinOp handles overloaded operators.
@@ -7480,6 +7515,8 @@ ExprResult Sema::CreateBuiltinBinOp(SourceLocation OpLoc,
       VK = lhs->getValueKind();
       OK = lhs->getObjectKind();
     }
+    if (!ResultTy.isNull())
+      DiagnoseSelfAssignment(*this, lhs, rhs, OpLoc);
     break;
   case BO_PtrMemD:
   case BO_PtrMemI:

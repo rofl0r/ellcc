@@ -929,7 +929,10 @@ namespace clang {
       EXPR_CXX_NOEXCEPT,          // CXXNoexceptExpr
 
       EXPR_OPAQUE_VALUE,          // OpaqueValueExpr
-      EXPR_BINARY_TYPE_TRAIT      // BinaryTypeTraitExpr
+      EXPR_BINARY_TYPE_TRAIT,     // BinaryTypeTraitExpr
+      
+      EXPR_PACK_EXPANSION,        // PackExpansionExpr
+      EXPR_SIZEOF_PACK            // SizeOfPackExpr
     };
 
     /// \brief The kinds of designators that can occur in a

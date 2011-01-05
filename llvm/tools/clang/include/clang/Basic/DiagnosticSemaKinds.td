@@ -223,10 +223,12 @@ def note_please_include_header : Note<
   "please include the header <%0> or explicitly provide a "
   "declaration for '%1'">;
 def note_previous_builtin_declaration : Note<"%0 is a builtin with type %1">;
-def err_implicit_decl_requires_stdio : Error<
-  "implicit declaration of '%0' requires inclusion of the header <stdio.h>">;
-def err_implicit_decl_requires_setjmp : Error<
-  "implicit declaration of '%0' requires inclusion of the header <setjmp.h>">;
+def warn_implicit_decl_requires_stdio : Warning<
+  "declaration of built-in function '%0' requires inclusion of the header "
+  "<stdio.h>">;
+def warn_implicit_decl_requires_setjmp : Warning<
+  "declaration of built-in function '%0' requires inclusion of the header "
+  "<setjmp.h>">;
 def warn_redecl_library_builtin : Warning<
   "incompatible redeclaration of library function %0">;
 def err_builtin_definition : Error<"definition of builtin function %0">;
@@ -1834,25 +1836,25 @@ def err_unexpanded_parameter_pack_0 : Error<
   "%select{expression|base type|declaration type|data member type|bit-field "
   "size|static assertion|fixed underlying type|enumerator value|"
   "using declaration|friend declaration|qualifier|initializer|default argument|"
-  "non-type template parameter type|exception type}0 "
+  "non-type template parameter type|exception type|partial specialization}0 "
   "contains an unexpanded parameter pack">;
 def err_unexpanded_parameter_pack_1 : Error<
   "%select{expression|base type|declaration type|data member type|bit-field "
   "size|static assertion|fixed underlying type|enumerator value|"
   "using declaration|friend declaration|qualifier|initializer|default argument|"
-  "non-type template parameter type|exception type}0 "
+  "non-type template parameter type|exception type|partial specialization}0 "
   "contains unexpanded parameter pack %1">;
 def err_unexpanded_parameter_pack_2 : Error<
   "%select{expression|base type|declaration type|data member type|bit-field "
   "size|static assertion|fixed underlying type|enumerator value|"
   "using declaration|friend declaration|qualifier|initializer|default argument|"
-  "non-type template parameter type|exception type}0 "
+  "non-type template parameter type|exception type|partial specialization}0 "
   "contains unexpanded parameter packs %1 and %2">;
 def err_unexpanded_parameter_pack_3_or_more : Error<
   "%select{expression|base type|declaration type|data member type|bit-field "
   "size|static assertion|fixed underlying type|enumerator value|"
   "using declaration|friend declaration|qualifier|initializer|default argument|"
-  "non-type template parameter type|exception type}0 "
+  "non-type template parameter type|exception type|partial specialization}0 "
   "contains unexpanded parameter packs %1, %2, ...">;
 
 def err_pack_expansion_without_parameter_packs : Error<
@@ -1860,6 +1862,8 @@ def err_pack_expansion_without_parameter_packs : Error<
 def err_pack_expansion_length_conflict : Error<
   "pack expansion contains parameter packs %0 and %1 that have different "
   "lengths (%2 vs. %3)">;
+def err_pack_expansion_member_init : Error<
+  "pack expansion for initialization of member %0">;
 
 def err_function_parameter_pack_without_parameter_packs : Error<
   "type %0 of function parameter pack does not contain any unexpanded "
@@ -1867,9 +1871,12 @@ def err_function_parameter_pack_without_parameter_packs : Error<
 def err_ellipsis_in_declarator_not_parameter : Error<
   "only function and template parameters can be parameter packs">;
 
+def err_sizeof_pack_no_pack_name : Error<
+  "%0 does not refer to the name of a parameter pack">;
+
 // Unsupported variadic templates features
 def err_pack_expansion_unsupported : Error<
-  "clang does not yet support %select{non-type|template}0 pack expansions">;
+  "clang does not yet support template pack expansions">;
 def err_pack_expansion_instantiation_unsupported : Error<
   "clang cannot yet instantiate pack expansions">;
 def err_pack_expansion_mismatch_unsupported : Error<
@@ -2163,6 +2170,8 @@ def err_illegal_message_expr_incomplete_type : Error<
   "objective-c message has incomplete result type %0">;
 def err_illegal_decl_array_of_references : Error<
   "'%0' declared as array of references of type %1">;
+def err_decl_negative_array_size : Error<
+  "'%0' declared as an array with a negative size">;
 def err_array_star_outside_prototype : Error<
   "star modifier used outside of function prototype">;
 def err_illegal_decl_pointer_to_reference : Error<
@@ -2236,6 +2245,10 @@ def warn_logical_and_in_logical_or : Warning<
   "'&&' within '||'">, InGroup<LogicalOpParentheses>;
 def note_logical_and_in_logical_or_silence : Note<
   "place parentheses around the '&&' expression to silence this warning">;
+
+def warn_self_assignment : Warning<
+  "explicitly assigning a variable of type %0 to itself">,
+  InGroup<SelfAssignment>, DefaultIgnore;
 
 def err_sizeof_nonfragile_interface : Error<
   "invalid application of '%select{alignof|sizeof}1' to interface %0 in "
@@ -2763,7 +2776,7 @@ def err_not_tag_in_scope : Error<
 def err_cannot_form_pointer_to_member_of_reference_type : Error<
   "cannot form a pointer-to-member to member %0 of reference type %1">;
 def err_invalid_use_of_bound_member_func : Error<
-  "a bound member function may only be used to call it">;
+  "a bound member function may only be used to call itself">;
 def err_incomplete_object_call : Error<
   "incomplete type in call to object of type %0">;
 def err_incomplete_pointer_to_member_return : Error<
@@ -3558,6 +3571,9 @@ def err_using_directive_suggest : Error<
 def err_using_directive_member_suggest : Error<
   "no namespace named %0 in %1; did you mean %2?">;
 def note_namespace_defined_here : Note<"namespace %0 defined here">;
+def err_sizeof_pack_no_pack_name_suggest : Error<
+  "%0 does not refer to the name of a parameter pack; did you mean %1?">;
+def note_parameter_pack_here : Note<"parameter pack %0 declared here">;
 
 } // end of sema category
 } // end of sema component.

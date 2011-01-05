@@ -1314,6 +1314,114 @@ static bool isSameTemplateArg(ASTContext &Context,
   return false;
 }
 
+/// \brief Allocate a TemplateArgumentLoc where all locations have
+/// been initialized to the given location.
+///
+/// \param S The semantic analysis object.
+///
+/// \param The template argument we are producing template argument
+/// location information for.
+///
+/// \param NTTPType For a declaration template argument, the type of
+/// the non-type template parameter that corresponds to this template
+/// argument.
+///
+/// \param Loc The source location to use for the resulting template
+/// argument.
+static TemplateArgumentLoc 
+getTrivialTemplateArgumentLoc(Sema &S,
+                              const TemplateArgument &Arg, 
+                              QualType NTTPType,
+                              SourceLocation Loc) {
+  switch (Arg.getKind()) {
+  case TemplateArgument::Null:
+    llvm_unreachable("Can't get a NULL template argument here");
+    break;
+    
+  case TemplateArgument::Type:
+    return TemplateArgumentLoc(Arg, 
+                     S.Context.getTrivialTypeSourceInfo(Arg.getAsType(), Loc));
+    
+  case TemplateArgument::Declaration: {
+    Expr *E
+    = S.BuildExpressionFromDeclTemplateArgument(Arg, NTTPType, Loc)
+    .takeAs<Expr>();
+    return TemplateArgumentLoc(TemplateArgument(E), E);
+  }
+    
+  case TemplateArgument::Integral: {
+    Expr *E
+    = S.BuildExpressionFromIntegralTemplateArgument(Arg, Loc).takeAs<Expr>();
+    return TemplateArgumentLoc(TemplateArgument(E), E);
+  }
+    
+  case TemplateArgument::Template:
+    return TemplateArgumentLoc(Arg, SourceRange(), Loc);
+    
+  case TemplateArgument::Expression:
+    return TemplateArgumentLoc(Arg, Arg.getAsExpr());
+    
+  case TemplateArgument::Pack:
+    return TemplateArgumentLoc(Arg, TemplateArgumentLocInfo());
+  }
+  
+  return TemplateArgumentLoc();
+}
+
+
+/// \brief Convert the given deduced template argument and add it to the set of
+/// fully-converted template arguments.
+static bool ConvertDeducedTemplateArgument(Sema &S, NamedDecl *Param, 
+                                           DeducedTemplateArgument Arg,
+                                           NamedDecl *Template, 
+                                           QualType NTTPType, 
+                                           TemplateDeductionInfo &Info,
+                                           bool InFunctionTemplate,
+                             llvm::SmallVectorImpl<TemplateArgument> &Output) {
+  if (Arg.getKind() == TemplateArgument::Pack) {
+    // This is a template argument pack, so check each of its arguments against
+    // the template parameter.
+    llvm::SmallVector<TemplateArgument, 2> PackedArgsBuilder;
+    for (TemplateArgument::pack_iterator PA = Arg.pack_begin(), 
+         PAEnd = Arg.pack_end();
+         PA != PAEnd; ++PA) {
+      DeducedTemplateArgument InnerArg(*PA);
+      InnerArg.setDeducedFromArrayBound(Arg.wasDeducedFromArrayBound());
+      if (ConvertDeducedTemplateArgument(S, Param, InnerArg, Template, 
+                                         NTTPType, Info, 
+                                         InFunctionTemplate, PackedArgsBuilder))
+        return true;
+    }
+    
+    // Create the resulting argument pack.
+    TemplateArgument *PackedArgs = 0;
+    if (!PackedArgsBuilder.empty()) {
+      PackedArgs = new (S.Context) TemplateArgument[PackedArgsBuilder.size()];
+      std::copy(PackedArgsBuilder.begin(), PackedArgsBuilder.end(), PackedArgs);
+    }
+    Output.push_back(TemplateArgument(PackedArgs, PackedArgsBuilder.size()));
+    return false;
+  }
+  
+  // Convert the deduced template argument into a template
+  // argument that we can check, almost as if the user had written
+  // the template argument explicitly.
+  TemplateArgumentLoc ArgLoc = getTrivialTemplateArgumentLoc(S, Arg, NTTPType,
+                                                             Info.getLocation());
+  
+  // Check the template argument, converting it as necessary.
+  return S.CheckTemplateArgument(Param, ArgLoc,
+                                 Template,
+                                 Template->getLocation(),
+                                 Template->getSourceRange().getEnd(),
+                                 Output,
+                                 InFunctionTemplate
+                                  ? (Arg.wasDeducedFromArrayBound()
+                                       ? Sema::CTAK_DeducedFromArrayBound 
+                                       : Sema::CTAK_Deduced)
+                                 : Sema::CTAK_Specified);
+}
+
 /// Complete template argument deduction for a class template partial
 /// specialization.
 static Sema::TemplateDeductionResult
@@ -1330,21 +1438,35 @@ FinishTemplateArgumentDeduction(Sema &S,
   // C++ [temp.deduct.type]p2:
   //   [...] or if any template argument remains neither deduced nor
   //   explicitly specified, template argument deduction fails.
-  // FIXME: Variadic templates Empty parameter packs?
   llvm::SmallVector<TemplateArgument, 4> Builder;
-  for (unsigned I = 0, N = Deduced.size(); I != N; ++I) {
+  TemplateParameterList *PartialParams = Partial->getTemplateParameters();
+  for (unsigned I = 0, N = PartialParams->size(); I != N; ++I) {
+    NamedDecl *Param = PartialParams->getParam(I);
     if (Deduced[I].isNull()) {
-      unsigned ParamIdx = I;
-      if (ParamIdx >= Partial->getTemplateParameters()->size())
-        ParamIdx = Partial->getTemplateParameters()->size() - 1;
-      Decl *Param
-        = const_cast<NamedDecl *>(
-                          Partial->getTemplateParameters()->getParam(ParamIdx));
       Info.Param = makeTemplateParameter(Param);
       return Sema::TDK_Incomplete;
     }
     
-    Builder.push_back(Deduced[I]);
+    // We have deduced this argument, so it still needs to be
+    // checked and converted.
+    
+    // First, for a non-type template parameter type that is
+    // initialized by a declaration, we need the type of the
+    // corresponding non-type template parameter.
+    QualType NTTPType;
+    if (NonTypeTemplateParmDecl *NTTP 
+                                     = dyn_cast<NonTypeTemplateParmDecl>(Param))
+      NTTPType = NTTP->getType();
+    
+    if (ConvertDeducedTemplateArgument(S, Param, Deduced[I],
+                                       Partial, NTTPType, Info, false,
+                                       Builder)) {
+      Info.Param = makeTemplateParameter(Param);
+      // FIXME: These template arguments are temporary. Free them!
+      Info.reset(TemplateArgumentList::CreateCopy(S.Context, Builder.data(), 
+                                                  Builder.size()));  
+      return Sema::TDK_SubstitutionFailure;
+    }
   }
   
   // Form the template argument list from the deduced template arguments.
@@ -1386,33 +1508,15 @@ FinishTemplateArgumentDeduction(Sema &S,
 
   llvm::SmallVector<TemplateArgument, 4> ConvertedInstArgs;
   if (S.CheckTemplateArgumentList(ClassTemplate, Partial->getLocation(),
-                                InstArgs, false, ConvertedInstArgs))
+                                  InstArgs, false, ConvertedInstArgs))
     return Sema::TDK_SubstitutionFailure;
   
-  for (unsigned I = 0, E = ConvertedInstArgs.size(); I != E; ++I) {
+  TemplateParameterList *TemplateParams
+    = ClassTemplate->getTemplateParameters();
+  for (unsigned I = 0, E = TemplateParams->size(); I != E; ++I) {
     TemplateArgument InstArg = ConvertedInstArgs.data()[I];
-
-    Decl *Param = const_cast<NamedDecl *>(
-                    ClassTemplate->getTemplateParameters()->getParam(I));
-
-    if (InstArg.getKind() == TemplateArgument::Expression) {
-      // When the argument is an expression, check the expression result
-      // against the actual template parameter to get down to the canonical
-      // template argument.
-      // FIXME: Variadic templates.
-      Expr *InstExpr = InstArg.getAsExpr();
-      if (NonTypeTemplateParmDecl *NTTP
-            = dyn_cast<NonTypeTemplateParmDecl>(Param)) {
-        if (S.CheckTemplateArgument(NTTP, NTTP->getType(), InstExpr, InstArg)) {
-          Info.Param = makeTemplateParameter(Param);
-          Info.FirstArg = Partial->getTemplateArgs()[I];
-          return Sema::TDK_SubstitutionFailure;
-        }
-      }
-    }
-
     if (!isSameTemplateArg(S.Context, TemplateArgs[I], InstArg)) {
-      Info.Param = makeTemplateParameter(Param);
+      Info.Param = makeTemplateParameter(TemplateParams->getParam(I));
       Info.FirstArg = TemplateArgs[I];
       Info.SecondArg = InstArg;
       return Sema::TDK_NonDeducedMismatch;
@@ -1614,67 +1718,11 @@ Sema::SubstituteExplicitTemplateArguments(
   //
   // Take all of the explicitly-specified arguments and put them into the
   // set of deduced template arguments.
-  //
-  // FIXME: Variadic templates?
   Deduced.reserve(TemplateParams->size());
   for (unsigned I = 0, N = ExplicitArgumentList->size(); I != N; ++I)
     Deduced.push_back(ExplicitArgumentList->get(I));
 
   return TDK_Success;
-}
-
-/// \brief Allocate a TemplateArgumentLoc where all locations have
-/// been initialized to the given location.
-///
-/// \param S The semantic analysis object.
-///
-/// \param The template argument we are producing template argument
-/// location information for.
-///
-/// \param NTTPType For a declaration template argument, the type of
-/// the non-type template parameter that corresponds to this template
-/// argument.
-///
-/// \param Loc The source location to use for the resulting template
-/// argument.
-static TemplateArgumentLoc 
-getTrivialTemplateArgumentLoc(Sema &S,
-                              const TemplateArgument &Arg, 
-                              QualType NTTPType,
-                              SourceLocation Loc) {
-  switch (Arg.getKind()) {
-  case TemplateArgument::Null:
-    llvm_unreachable("Can't get a NULL template argument here");
-    break;
-
-  case TemplateArgument::Type:
-    return TemplateArgumentLoc(Arg, 
-                    S.Context.getTrivialTypeSourceInfo(Arg.getAsType(), Loc));
-
-  case TemplateArgument::Declaration: {
-    Expr *E
-      = S.BuildExpressionFromDeclTemplateArgument(Arg, NTTPType, Loc)
-                                                              .takeAs<Expr>();
-    return TemplateArgumentLoc(TemplateArgument(E), E);
-  }
-
-  case TemplateArgument::Integral: {
-    Expr *E
-      = S.BuildExpressionFromIntegralTemplateArgument(Arg, Loc).takeAs<Expr>();
-    return TemplateArgumentLoc(TemplateArgument(E), E);
-  }
-
-  case TemplateArgument::Template:
-    return TemplateArgumentLoc(Arg, SourceRange(), Loc);
-
-  case TemplateArgument::Expression:
-    return TemplateArgumentLoc(Arg, Arg.getAsExpr());
-
-  case TemplateArgument::Pack:
-    return TemplateArgumentLoc(Arg, TemplateArgumentLocInfo());
-  }
-
-  return TemplateArgumentLoc();
 }
 
 /// \brief Finish template argument deduction for a function template,
@@ -1708,9 +1756,8 @@ Sema::FinishTemplateArgumentDeduction(FunctionTemplateDecl *FunctionTemplate,
   //   [...] or if any template argument remains neither deduced nor
   //   explicitly specified, template argument deduction fails.
   llvm::SmallVector<TemplateArgument, 4> Builder;
-  for (unsigned I = 0, N = Deduced.size(); I != N; ++I) {    
-    // FIXME: Variadic templates. Unwrap argument packs?
-    NamedDecl *Param = FunctionTemplate->getTemplateParameters()->getParam(I);
+  for (unsigned I = 0, N = TemplateParams->size(); I != N; ++I) {
+    NamedDecl *Param = TemplateParams->getParam(I);
     
     if (!Deduced[I].isNull()) {
       if (I < NumExplicitlySpecified) {
@@ -1730,49 +1777,32 @@ Sema::FinishTemplateArgumentDeduction(FunctionTemplateDecl *FunctionTemplate,
       QualType NTTPType;
       if (NonTypeTemplateParmDecl *NTTP 
                                 = dyn_cast<NonTypeTemplateParmDecl>(Param)) { 
-        if (Deduced[I].getKind() == TemplateArgument::Declaration) {
-          NTTPType = NTTP->getType();
-          if (NTTPType->isDependentType()) {
-            TemplateArgumentList TemplateArgs(TemplateArgumentList::OnStack, 
-                                              Builder.data(), Builder.size());
-            NTTPType = SubstType(NTTPType,
-                                 MultiLevelTemplateArgumentList(TemplateArgs),
-                                 NTTP->getLocation(),
-                                 NTTP->getDeclName());
-            if (NTTPType.isNull()) {
-              Info.Param = makeTemplateParameter(Param);
-              // FIXME: These template arguments are temporary. Free them!
-              Info.reset(TemplateArgumentList::CreateCopy(Context, 
-                                                          Builder.data(), 
-                                                          Builder.size()));
-              return TDK_SubstitutionFailure;
-            }
+        NTTPType = NTTP->getType();
+        if (NTTPType->isDependentType()) {
+          TemplateArgumentList TemplateArgs(TemplateArgumentList::OnStack, 
+                                            Builder.data(), Builder.size());
+          NTTPType = SubstType(NTTPType,
+                               MultiLevelTemplateArgumentList(TemplateArgs),
+                               NTTP->getLocation(),
+                               NTTP->getDeclName());
+          if (NTTPType.isNull()) {
+            Info.Param = makeTemplateParameter(Param);
+            // FIXME: These template arguments are temporary. Free them!
+            Info.reset(TemplateArgumentList::CreateCopy(Context, 
+                                                        Builder.data(), 
+                                                        Builder.size()));
+            return TDK_SubstitutionFailure;
           }
         }
       }
 
-      // Convert the deduced template argument into a template
-      // argument that we can check, almost as if the user had written
-      // the template argument explicitly.
-      TemplateArgumentLoc Arg = getTrivialTemplateArgumentLoc(*this,
-                                                              Deduced[I],
-                                                              NTTPType,
-                                                            Info.getLocation());
-
-      // Check the template argument, converting it as necessary.
-      if (CheckTemplateArgument(Param, Arg,
-                                FunctionTemplate,
-                                FunctionTemplate->getLocation(),
-                                FunctionTemplate->getSourceRange().getEnd(),
-                                Builder,
-                                Deduced[I].wasDeducedFromArrayBound()
-                                  ? CTAK_DeducedFromArrayBound 
-                                  : CTAK_Deduced)) {
-        Info.Param = makeTemplateParameter(
-                         const_cast<NamedDecl *>(TemplateParams->getParam(I)));
+      if (ConvertDeducedTemplateArgument(*this, Param, Deduced[I],
+                                         FunctionTemplate, NTTPType, Info,
+                                         true, Builder)) {
+        Info.Param = makeTemplateParameter(Param);
         // FIXME: These template arguments are temporary. Free them!
         Info.reset(TemplateArgumentList::CreateCopy(Context, Builder.data(), 
-                                                    Builder.size()));
+                                                    Builder.size()));  
         return TDK_SubstitutionFailure;
       }
 
@@ -2926,6 +2956,14 @@ MarkUsedTemplateParameters(Sema &SemaRef,
                            bool OnlyDeduced,
                            unsigned Depth,
                            llvm::SmallVectorImpl<bool> &Used) {
+  // We can deduce from a pack expansion.
+  if (const PackExpansionExpr *Expansion = dyn_cast<PackExpansionExpr>(E))
+    E = Expansion->getPattern();
+      
+  // Skip through any implicit casts we added while type-checking.
+  while (const ImplicitCastExpr *ICE = dyn_cast<ImplicitCastExpr>(E))
+    E = ICE->getSubExpr();
+  
   // FIXME: if !OnlyDeduced, we have to walk the whole subexpression to 
   // find other occurrences of template parameters.
   const DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(E);
@@ -3259,7 +3297,6 @@ Sema::MarkDeducedTemplateParameters(FunctionTemplateDecl *FunctionTemplate,
   Deduced.clear();
   Deduced.resize(TemplateParams->size());
   
-  // FIXME: Variadic templates.
   FunctionDecl *Function = FunctionTemplate->getTemplatedDecl();
   for (unsigned I = 0, N = Function->getNumParams(); I != N; ++I)
     ::MarkUsedTemplateParameters(*this, Function->getParamDecl(I)->getType(),

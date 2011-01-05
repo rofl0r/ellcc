@@ -20,6 +20,66 @@ struct is_same<T, T> {
 
 // FIXME: Many more bullets to go
 
+// In an initializer-list (8.5); the pattern is an initializer-clause.
+// Note: this also covers expression-lists, since expression-list is
+// just defined as initializer-list.
+void five_args(int, int, int, int, int); // expected-note{{candidate function not viable: requires 5 arguments, but 6 were provided}}
+
+template<int ...Values>
+void initializer_list_expansion() {
+  int values[5] = { Values... }; // expected-error{{excess elements in array initializer}}
+  five_args(Values...); // expected-error{{no matching function for call to 'five_args'}}
+}
+
+template void initializer_list_expansion<1, 2, 3, 4, 5>();
+template void initializer_list_expansion<1, 2, 3, 4, 5, 6>(); // expected-note{{in instantiation of function template specialization 'initializer_list_expansion<1, 2, 3, 4, 5, 6>' requested here}}
+
+// In a base-specifier-list (Clause 10); the pattern is a base-specifier.
+template<typename ...Mixins>
+struct HasMixins : public Mixins... { 
+  HasMixins();
+  HasMixins(const HasMixins&);
+  HasMixins(int i);
+};
+
+struct A { }; // expected-note{{candidate constructor (the implicit copy constructor) not viable: no known conversion from 'int' to 'const A' for 1st argument}} \
+// expected-note{{candidate constructor (the implicit default constructor) not viable: requires 0 arguments, but 1 was provided}}
+struct B { };
+struct C { };
+struct D { };
+
+A *checkA = new HasMixins<A, B, C, D>;
+B *checkB = new HasMixins<A, B, C, D>;
+D *checkD = new HasMixins<A, B, C, D>;
+C *checkC = new HasMixins<A, B, D>; // expected-error{{cannot initialize a variable of type 'C *' with an rvalue of type 'HasMixins<A, B, D> *'}}
+HasMixins<> *checkNone = new HasMixins<>;
+
+template<typename Mixins>
+struct BrokenMixins : public Mixins... { }; // expected-error{{pack expansion does not contain any unexpanded parameter packs}}
+
+// In a mem-initializer-list (12.6.2); the pattern is a mem-initializer.
+template<typename ...Mixins>
+HasMixins<Mixins...>::HasMixins(): Mixins()... { }
+
+template<typename ...Mixins>
+HasMixins<Mixins...>::HasMixins(const HasMixins &other): Mixins(other)... { }
+
+template<typename ...Mixins>
+HasMixins<Mixins...>::HasMixins(int i): Mixins(i)... { } // expected-error{{no matching constructor for initialization of 'A'}}
+
+void test_has_mixins() {
+  HasMixins<A, B> ab;
+  HasMixins<A, B> ab2 = ab;
+  HasMixins<A, B> ab3(17); // expected-note{{in instantiation of member function 'HasMixins<A, B>::HasMixins' requested here}}
+}
+
+template<typename T>
+struct X {
+  T member;
+
+  X() : member()... { } // expected-error{{pack expansion for initialization of member 'member'}}
+};
+
 // In a template-argument-list (14.3); the pattern is a template-argument.
 template<typename ...Types>
 struct tuple_of_refs {

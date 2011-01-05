@@ -26,7 +26,7 @@ CC=../../../bin/$(XCC)ecc
 AR=../../../bin/ecc-ar
 RANLIB=../../../bin/ecc-ranlib
 LDFLAGS=
-RUN=qemu-$(TARGET)
+RUN=../../../bin/qemu-$(TARGET)
 
 BIGFILES=-D_FILE_OFFSET_BITS=64
 CFLAGS=-Wall -Winline -O2 -g $(BIGFILES)

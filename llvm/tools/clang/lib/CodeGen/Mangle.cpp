@@ -2043,7 +2043,33 @@ void CXXNameMangler::mangleExpression(const Expr *E, unsigned Arity) {
     Out << "LDnE";
     break;
   }
-
+      
+  case Expr::PackExpansionExprClass:
+    Out << "sp";
+    mangleExpression(cast<PackExpansionExpr>(E)->getPattern());
+    break;
+      
+  case Expr::SizeOfPackExprClass: {
+    // FIXME: Variadic templates missing mangling for function parameter packs?
+    Out << "sZ";
+    const NamedDecl *Pack = cast<SizeOfPackExpr>(E)->getPack();
+    if (const TemplateTypeParmDecl *TTP = dyn_cast<TemplateTypeParmDecl>(Pack))
+      mangleTemplateParameter(TTP->getIndex());
+    else if (const NonTypeTemplateParmDecl *NTTP
+                = dyn_cast<NonTypeTemplateParmDecl>(Pack))
+      mangleTemplateParameter(NTTP->getIndex());
+    else if (const TemplateTemplateParmDecl *TempTP
+                                    = dyn_cast<TemplateTemplateParmDecl>(Pack))
+      mangleTemplateParameter(TempTP->getIndex());
+    else {
+      // FIXME: This case isn't handled by the Itanium C++ ABI
+      Diagnostic &Diags = Context.getDiags();
+      unsigned DiagID = Diags.getCustomDiagID(Diagnostic::Error,
+                            "cannot mangle sizeof...(function parameter pack)");
+      Diags.Report(DiagID);
+      return;
+    }
+  }
   }
 }
 
@@ -2133,8 +2159,9 @@ void CXXNameMangler::mangleTemplateArg(const NamedDecl *P,
   //                ::= I <template-arg>* E # argument pack
   //                ::= sp <expression>     # pack expansion of (C++0x)
   switch (A.getKind()) {
-  default:
-    assert(0 && "Unknown template argument kind!");
+  case TemplateArgument::Null:
+    llvm_unreachable("Cannot mangle NULL template argument");
+      
   case TemplateArgument::Type:
     mangleType(A.getAsType());
     break;
@@ -2182,6 +2209,16 @@ void CXXNameMangler::mangleTemplateArg(const NamedDecl *P,
       Out << 'E';
 
     break;
+  }
+      
+  case TemplateArgument::Pack: {
+    // Note: proposal by Mike Herrick on 12/20/10
+    Out << 'J';
+    for (TemplateArgument::pack_iterator PA = A.pack_begin(), 
+                                      PAEnd = A.pack_end();
+         PA != PAEnd; ++PA)
+      mangleTemplateArg(P, *PA);
+    Out << 'E';
   }
   }
 }

@@ -771,6 +771,7 @@ void ExprEngine::Visit(const Stmt* S, ExplodedNode* Pred,
     case Stmt::UnresolvedLookupExprClass:
     case Stmt::UnresolvedMemberExprClass:
     case Stmt::CXXNoexceptExprClass:
+    case Stmt::PackExpansionExprClass:
     {
       SaveAndRestore<bool> OldSink(Builder->BuildSinks);
       Builder->BuildSinks = true;
@@ -834,6 +835,7 @@ void ExprEngine::Visit(const Stmt* S, ExplodedNode* Pred,
     case Stmt::CharacterLiteralClass:
     case Stmt::CXXBoolLiteralExprClass:
     case Stmt::FloatingLiteralClass:
+    case Stmt::SizeOfPackExprClass:
       Dst.Add(Pred); // No-op. Simply propagate the current state unchanged.
       break;
 

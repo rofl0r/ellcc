@@ -1196,13 +1196,20 @@ Parser::BaseResult Parser::ParseBaseSpecifier(Decl *ClassDecl) {
   if (BaseType.isInvalid())
     return true;
 
+  // Parse the optional ellipsis (for a pack expansion). The ellipsis is 
+  // actually part of the base-specifier-list grammar productions, but we
+  // parse it here for convenience.
+  SourceLocation EllipsisLoc;
+  if (Tok.is(tok::ellipsis))
+    EllipsisLoc = ConsumeToken();
+  
   // Find the complete source range for the base-specifier.
   SourceRange Range(StartLoc, EndLocation);
 
   // Notify semantic analysis that we have parsed a complete
   // base-specifier.
   return Actions.ActOnBaseSpecifier(ClassDecl, Range, IsVirtual, Access,
-                                    BaseType.get(), BaseLoc);
+                                    BaseType.get(), BaseLoc, EllipsisLoc);
 }
 
 /// getAccessSpecifierIfPresent - Determine whether the next token is
@@ -1732,8 +1739,8 @@ void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
 ///          ':' mem-initializer-list
 ///
 /// [C++]  mem-initializer-list:
-///          mem-initializer
-///          mem-initializer , mem-initializer-list
+///          mem-initializer ...[opt]
+///          mem-initializer ...[opt] , mem-initializer-list
 void Parser::ParseConstructorInitializer(Decl *ConstructorDecl) {
   assert(Tok.is(tok::colon) && "Constructor initializer always starts with ':'");
 
@@ -1832,10 +1839,15 @@ Parser::MemInitResult Parser::ParseMemInitializer(Decl *ConstructorDecl) {
 
   SourceLocation RParenLoc = MatchRHSPunctuation(tok::r_paren, LParenLoc);
 
+  SourceLocation EllipsisLoc;
+  if (Tok.is(tok::ellipsis))
+    EllipsisLoc = ConsumeToken();
+  
   return Actions.ActOnMemInitializer(ConstructorDecl, getCurScope(), SS, II,
                                      TemplateTypeTy, IdLoc,
                                      LParenLoc, ArgExprs.take(),
-                                     ArgExprs.size(), RParenLoc);
+                                     ArgExprs.size(), RParenLoc,
+                                     EllipsisLoc);
 }
 
 /// ParseExceptionSpecification - Parse a C++ exception-specification

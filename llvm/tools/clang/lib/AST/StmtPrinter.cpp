@@ -1246,6 +1246,15 @@ void StmtPrinter::VisitCXXNoexceptExpr(CXXNoexceptExpr *E) {
   OS << ")";
 }
 
+void StmtPrinter::VisitPackExpansionExpr(PackExpansionExpr *E) {
+  PrintExpr(E->getPattern());
+  OS << "...";
+}
+
+void StmtPrinter::VisitSizeOfPackExpr(SizeOfPackExpr *E) {
+  OS << "sizeof...(" << E->getPack()->getNameAsString() << ")";
+}
+
 // Obj-C
 
 void StmtPrinter::VisitObjCStringLiteral(ObjCStringLiteral *Node) {

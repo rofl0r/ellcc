@@ -1466,6 +1466,10 @@ Decl *Parser::ParseFunctionStatementBody(Decl *Decl) {
   assert(Tok.is(tok::l_brace));
   SourceLocation LBraceLoc = Tok.getLocation();
 
+  if (PP.isCodeCompletionEnabled())
+    if (trySkippingFunctionBodyForCodeCompletion())
+      return Actions.ActOnFinishFunctionBody(Decl, 0);
+
   PrettyDeclStackTraceEntry CrashInfo(Actions, Decl, LBraceLoc,
                                       "parsing function body");
 
@@ -1498,6 +1502,10 @@ Decl *Parser::ParseFunctionTryBlock(Decl *Decl) {
   if (Tok.is(tok::colon))
     ParseConstructorInitializer(Decl);
 
+  if (PP.isCodeCompletionEnabled())
+    if (trySkippingFunctionBodyForCodeCompletion())
+      return Actions.ActOnFinishFunctionBody(Decl, 0);
+
   SourceLocation LBraceLoc = Tok.getLocation();
   StmtResult FnBody(ParseCXXTryBlockCommon(TryLoc));
   // If we failed to parse the try-catch, we just give the function an empty
@@ -1507,6 +1515,25 @@ Decl *Parser::ParseFunctionTryBlock(Decl *Decl) {
                                        MultiStmtArg(Actions), false);
 
   return Actions.ActOnFinishFunctionBody(Decl, FnBody.take());
+}
+
+bool Parser::trySkippingFunctionBodyForCodeCompletion() {
+  assert(Tok.is(tok::l_brace));
+  assert(PP.isCodeCompletionEnabled() &&
+         "Should only be called when in code-completion mode");
+
+  // We're in code-completion mode. Skip parsing for all function bodies unless
+  // the body contains the code-completion point.
+  TentativeParsingAction PA(*this);
+  ConsumeBrace();
+  if (SkipUntil(tok::r_brace, /*StopAtSemi=*/false, /*DontConsume=*/false,
+                /*StopAtCodeCompletion=*/true)) {
+    PA.Commit();
+    return true;
+  }
+
+  PA.Revert();
+  return false;
 }
 
 /// ParseCXXTryBlock - Parse a C++ try-block.

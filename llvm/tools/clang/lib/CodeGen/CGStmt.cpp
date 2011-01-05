@@ -919,6 +919,33 @@ SimplifyConstraint(const char *Constraint, const TargetInfo &Target,
   return Result;
 }
 
+/// AddVariableConstraints - Look at AsmExpr and if it is a variable declared
+/// as using a particular register add that as a constraint that will be used
+/// in this asm stmt.
+static std::string
+AddVariableConstraints(const std::string &Constraint, const Expr &AsmExpr,
+                       const TargetInfo &Target, CodeGenModule &CGM,
+                       const AsmStmt &Stmt) {
+  const DeclRefExpr *AsmDeclRef = dyn_cast<DeclRefExpr>(&AsmExpr);
+  if (!AsmDeclRef)
+    return Constraint;
+  const ValueDecl &Value = *AsmDeclRef->getDecl();
+  const VarDecl *Variable = dyn_cast<VarDecl>(&Value);
+  if (!Variable)
+    return Constraint;
+  AsmLabelAttr *Attr = Variable->getAttr<AsmLabelAttr>();
+  if (!Attr)
+    return Constraint;
+  llvm::StringRef Register = Attr->getLabel();
+  assert(Target.isValidGCCRegisterName(Register));
+  // FIXME: We should check which registers are compatible with "r" or "x".
+  if (Constraint != "r" && Constraint != "x") {
+    CGM.ErrorUnsupported(&Stmt, "__asm__");
+    return Constraint;
+  }
+  return "{" + Register.str() + "}";
+}
+
 llvm::Value*
 CodeGenFunction::EmitAsmInputLValue(const AsmStmt &S,
                                     const TargetInfo::ConstraintInfo &Info,
@@ -1065,6 +1092,9 @@ void CodeGenFunction::EmitAsmStmt(const AsmStmt &S) {
     const Expr *OutExpr = S.getOutputExpr(i);
     OutExpr = OutExpr->IgnoreParenNoopCasts(getContext());
 
+    OutputConstraint = AddVariableConstraints(OutputConstraint, *OutExpr, Target,
+                                             CGM, S);
+
     LValue Dest = EmitLValue(OutExpr);
     if (!Constraints.empty())
       Constraints += ',';
@@ -1150,6 +1180,11 @@ void CodeGenFunction::EmitAsmStmt(const AsmStmt &S) {
       InputConstraint = SimplifyConstraint(InputConstraint.c_str(), Target,
                                            &OutputConstraintInfos);
     }
+
+    InputConstraint =
+      AddVariableConstraints(InputConstraint,
+                            *InputExpr->IgnoreParenNoopCasts(getContext()),
+                            Target, CGM, S);
 
     llvm::Value *Arg = EmitAsmInput(S, Info, InputExpr, Constraints);
 

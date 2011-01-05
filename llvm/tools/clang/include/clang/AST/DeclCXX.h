@@ -168,6 +168,10 @@ class CXXBaseSpecifier {
   /// specifier (if present).
   SourceRange Range;
 
+  /// \brief The source location of the ellipsis, if this is a pack
+  /// expansion.
+  SourceLocation EllipsisLoc;
+  
   /// Virtual - Whether this is a virtual base class or not.
   bool Virtual : 1;
 
@@ -192,8 +196,9 @@ public:
   CXXBaseSpecifier() { }
 
   CXXBaseSpecifier(SourceRange R, bool V, bool BC, AccessSpecifier A,
-                   TypeSourceInfo *TInfo)
-    : Range(R), Virtual(V), BaseOfClass(BC), Access(A), BaseTypeInfo(TInfo) { }
+                   TypeSourceInfo *TInfo, SourceLocation EllipsisLoc)
+    : Range(R), EllipsisLoc(EllipsisLoc), Virtual(V), BaseOfClass(BC), 
+      Access(A), BaseTypeInfo(TInfo) { }
 
   /// getSourceRange - Retrieves the source range that contains the
   /// entire base specifier.
@@ -206,6 +211,14 @@ public:
   /// \brief Determine whether this base class is a base of a class declared
   /// with the 'class' keyword (vs. one declared with the 'struct' keyword).
   bool isBaseOfClass() const { return BaseOfClass; }
+  
+  /// \brief Determine whether this base specifier is a pack expansion.
+  bool isPackExpansion() const { return EllipsisLoc.isValid(); }
+  
+  /// \brief For a pack expansion, determine the location of the ellipsis.
+  SourceLocation getEllipsisLoc() const {
+    return EllipsisLoc;
+  }
   
   /// getAccessSpecifier - Returns the access specifier for this base
   /// specifier. This is the actual base specifier as used for
@@ -1109,11 +1122,14 @@ public:
 /// @endcode
 class CXXBaseOrMemberInitializer {
   /// \brief Either the base class name (stored as a TypeSourceInfo*), an normal
-  /// field (FieldDecl) or an anonymous field (IndirectFieldDecl*) being initialized.
-  llvm::PointerUnion3<TypeSourceInfo *, FieldDecl *, IndirectFieldDecl *> BaseOrMember;
+  /// field (FieldDecl) or an anonymous field (IndirectFieldDecl*) being 
+  /// initialized.
+  llvm::PointerUnion3<TypeSourceInfo *, FieldDecl *, IndirectFieldDecl *> 
+    BaseOrMember;
   
-  /// \brief The source location for the field name.
-  SourceLocation MemberLocation;
+  /// \brief The source location for the field name or, for a base initializer
+  /// pack expansion, the location of the ellipsis.
+  SourceLocation MemberOrEllipsisLocation;
   
   /// \brief The argument used to initialize the base or member, which may
   /// end up constructing an object (when multiple arguments are involved).
@@ -1155,7 +1171,8 @@ public:
                              TypeSourceInfo *TInfo, bool IsVirtual,
                              SourceLocation L, 
                              Expr *Init,
-                             SourceLocation R);
+                             SourceLocation R,
+                             SourceLocation EllipsisLoc);
 
   /// CXXBaseOrMemberInitializer - Creates a new member initializer.
   explicit
@@ -1200,6 +1217,17 @@ public:
     return BaseOrMember.is<IndirectFieldDecl*>();
   }
 
+  /// \brief Determine whether this initializer is a pack expansion.
+  bool isPackExpansion() const { 
+    return isBaseInitializer() && MemberOrEllipsisLocation.isValid(); 
+  }
+  
+  // \brief For a pack expansion, returns the location of the ellipsis.
+  SourceLocation getEllipsisLoc() const {
+    assert(isPackExpansion() && "Initializer is not a pack expansion");
+    return MemberOrEllipsisLocation;
+  }
+           
   /// If this is a base class initializer, returns the type of the 
   /// base class with location information. Otherwise, returns an NULL
   /// type location.
@@ -1248,7 +1276,7 @@ public:
   }
 
   SourceLocation getMemberLocation() const { 
-    return MemberLocation;
+    return MemberOrEllipsisLocation;
   }
   
   /// \brief Determine the source location of the initializer.
