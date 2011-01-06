@@ -335,8 +335,7 @@ ClassTemplateDecl::getInjectedClassNameSpecialization() {
       Arg = TemplateArgument(E);
     } else {
       TemplateTemplateParmDecl *TTP = cast<TemplateTemplateParmDecl>(*Param);
-      // FIXME: Variadic templates.
-      Arg = TemplateArgument(TemplateName(TTP));
+      Arg = TemplateArgument(TemplateName(TTP), TTP->isParameterPack());
     }
     
     if ((*Param)->isTemplateParameterPack()) {
@@ -412,9 +411,10 @@ SourceLocation NonTypeTemplateParmDecl::getDefaultArgumentLoc() const {
 TemplateTemplateParmDecl *
 TemplateTemplateParmDecl::Create(ASTContext &C, DeclContext *DC,
                                  SourceLocation L, unsigned D, unsigned P,
-                                 IdentifierInfo *Id,
+                                 bool ParameterPack, IdentifierInfo *Id,
                                  TemplateParameterList *Params) {
-  return new (C) TemplateTemplateParmDecl(DC, L, D, P, Id, Params);
+  return new (C) TemplateTemplateParmDecl(DC, L, D, P, ParameterPack, Id, 
+                                          Params);
 }
 
 //===----------------------------------------------------------------------===//

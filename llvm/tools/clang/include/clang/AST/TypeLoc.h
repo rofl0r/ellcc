@@ -133,7 +133,18 @@ public:
   /// \brief Initializes this by copying its information from another
   /// TypeLoc of the same type.
   void initializeFullCopy(TypeLoc Other) const {
-    initializeFullCopyImpl(*this, Other);
+    assert(getType() == Other.getType());
+    size_t Size = getFullDataSize();
+    memcpy(getOpaqueData(), Other.getOpaqueData(), Size);
+  }
+
+  /// \brief Initializes this by copying its information from another
+  /// TypeLoc of the same type.  The given size must be the full data
+  /// size.
+  void initializeFullCopy(TypeLoc Other, unsigned Size) const {
+    assert(getType() == Other.getType());
+    assert(getFullDataSize() == Size);
+    memcpy(getOpaqueData(), Other.getOpaqueData(), Size);
   }
 
   friend bool operator==(const TypeLoc &LHS, const TypeLoc &RHS) {
@@ -148,7 +159,6 @@ public:
 
 private:
   static void initializeImpl(TypeLoc TL, SourceLocation Loc);
-  static void initializeFullCopyImpl(TypeLoc TL, TypeLoc Other);
   static TypeLoc getNextTypeLocImpl(TypeLoc TL);
   static TypeLoc IgnoreParensImpl(TypeLoc TL);
   static SourceRange getLocalSourceRangeImpl(TypeLoc TL);
@@ -580,6 +590,130 @@ class SubstTemplateTypeParmTypeLoc :
     public InheritingConcreteTypeLoc<TypeSpecTypeLoc,
                                      SubstTemplateTypeParmTypeLoc,
                                      SubstTemplateTypeParmType> {
+};
+
+struct AttributedLocInfo {
+  union {
+    Expr *ExprOperand;
+
+    /// A raw SourceLocation.
+    unsigned EnumOperandLoc;
+  };
+
+  SourceRange OperandParens;
+
+  SourceLocation AttrLoc;
+};
+
+/// \brief Type source information for an attributed type.
+class AttributedTypeLoc : public ConcreteTypeLoc<UnqualTypeLoc,
+                                                 AttributedTypeLoc,
+                                                 AttributedType,
+                                                 AttributedLocInfo> {
+public:
+  AttributedType::Kind getAttrKind() const {
+    return getTypePtr()->getAttrKind();
+  }
+
+  bool hasAttrExprOperand() const {
+    return (getAttrKind() >= AttributedType::FirstExprOperandKind &&
+            getAttrKind() <= AttributedType::LastExprOperandKind);
+  }
+
+  bool hasAttrEnumOperand() const {
+    return (getAttrKind() >= AttributedType::FirstEnumOperandKind &&
+            getAttrKind() <= AttributedType::LastEnumOperandKind);
+  }
+
+  bool hasAttrOperand() const {
+    return hasAttrExprOperand() || hasAttrEnumOperand();
+  }
+
+  /// The modified type, which is generally canonically different from
+  /// the attribute type.
+  ///    int main(int, char**) __attribute__((noreturn))
+  ///    ~~~     ~~~~~~~~~~~~~
+  TypeLoc getModifiedLoc() const {
+    return getInnerTypeLoc();
+  }
+
+  /// The location of the attribute name, i.e.
+  ///    __attribute__((regparm(1000)))
+  ///                   ^~~~~~~
+  SourceLocation getAttrNameLoc() const {
+    return getLocalData()->AttrLoc;
+  }
+  void setAttrNameLoc(SourceLocation loc) {
+    getLocalData()->AttrLoc = loc;
+  }
+
+  /// The attribute's expression operand, if it has one.
+  ///    void *cur_thread __attribute__((address_space(21)))
+  ///                                                  ^~
+  Expr *getAttrExprOperand() const {
+    assert(hasAttrExprOperand());
+    return getLocalData()->ExprOperand;
+  }
+  void setAttrExprOperand(Expr *e) {
+    assert(hasAttrExprOperand());
+    getLocalData()->ExprOperand = e;
+  }
+
+  /// The location of the attribute's enumerated operand, if it has one.
+  ///    void * __attribute__((objc_gc(weak)))
+  ///                                  ^~~~
+  SourceLocation getAttrEnumOperandLoc() const {
+    assert(hasAttrEnumOperand());
+    return SourceLocation::getFromRawEncoding(getLocalData()->EnumOperandLoc);
+  }
+  void setAttrEnumOperandLoc(SourceLocation loc) {
+    assert(hasAttrEnumOperand());
+    getLocalData()->EnumOperandLoc = loc.getRawEncoding();
+  }
+
+  /// The location of the parentheses around the operand, if there is
+  /// an operand.
+  ///    void * __attribute__((objc_gc(weak)))
+  ///                                 ^    ^
+  SourceRange getAttrOperandParensRange() const {
+    assert(hasAttrOperand());
+    return getLocalData()->OperandParens;
+  }
+  void setAttrOperandParensRange(SourceRange range) {
+    assert(hasAttrOperand());
+    getLocalData()->OperandParens = range;
+  }
+
+  SourceRange getLocalSourceRange() const {
+    // Note that this does *not* include the range of the attribute
+    // enclosure, e.g.:
+    //    __attribute__((foo(bar)))
+    //    ^~~~~~~~~~~~~~~        ~~
+    // or
+    //    [[foo(bar)]]
+    //    ^~        ~~
+    // That enclosure doesn't necessarily belong to a single attribute
+    // anyway.
+    SourceRange range(getAttrNameLoc());
+    if (hasAttrOperand())
+      range.setEnd(getAttrOperandParensRange().getEnd());
+    return range;
+  }
+
+  void initializeLocal(SourceLocation loc) {
+    setAttrNameLoc(loc);
+    if (hasAttrExprOperand()) {
+      setAttrOperandParensRange(SourceRange(loc));
+      setAttrExprOperand(0);
+    } else if (hasAttrEnumOperand()) {
+      setAttrOperandParensRange(SourceRange(loc));
+      setAttrEnumOperandLoc(loc);
+    }
+  }
+
+  QualType getInnerType() const {
+    return getTypePtr()->getModifiedType();
+  }
 };
 
 
@@ -1105,8 +1239,11 @@ public:
                                 const TemplateArgument *Args,
                                 TemplateArgumentLocInfo *ArgInfos,
                                 SourceLocation Loc) {
-    for (unsigned i = 0, e = NumArgs; i != e; ++i)
+    for (unsigned i = 0, e = NumArgs; i != e; ++i) {
+      // FIXME: We can generate better location info here for type arguments,
+      // template template arguments, and template template pack expansions (?).
       ArgInfos[i] = TemplateArgumentLocInfo();
+    }
   }
 
   unsigned getExtraLocalDataSize() const {

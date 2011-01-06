@@ -301,7 +301,12 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
     return IsStructurallyEquivalent(Context, 
                                     Arg1.getAsTemplate(), 
                                     Arg2.getAsTemplate());
-      
+
+  case TemplateArgument::TemplateExpansion:
+    return IsStructurallyEquivalent(Context, 
+                                    Arg1.getAsTemplateOrTemplatePattern(), 
+                                    Arg2.getAsTemplateOrTemplatePattern());
+
   case TemplateArgument::Expression:
     return IsStructurallyEquivalent(Context, 
                                     Arg1.getAsExpr(), Arg2.getAsExpr());
@@ -551,6 +556,17 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
                                   cast<UnresolvedUsingType>(T2)->getDecl()))
       return false;
       
+    break;
+
+  case Type::Attributed:
+    if (!IsStructurallyEquivalent(Context,
+                                  cast<AttributedType>(T1)->getModifiedType(),
+                                  cast<AttributedType>(T2)->getModifiedType()))
+      return false;
+    if (!IsStructurallyEquivalent(Context,
+                                cast<AttributedType>(T1)->getEquivalentType(),
+                                cast<AttributedType>(T2)->getEquivalentType()))
+      return false;
     break;
       
   case Type::Paren:
@@ -1785,7 +1801,16 @@ ASTNodeImporter::ImportTemplateArgument(const TemplateArgument &From) {
     
     return TemplateArgument(ToTemplate);
   }
-      
+
+  case TemplateArgument::TemplateExpansion: {
+    TemplateName ToTemplate 
+      = Importer.Import(From.getAsTemplateOrTemplatePattern());
+    if (ToTemplate.isNull())
+      return TemplateArgument();
+    
+    return TemplateArgument(ToTemplate, true);
+  }
+
   case TemplateArgument::Expression:
     if (Expr *ToExpr = Importer.Import(From.getAsExpr()))
       return TemplateArgument(ToExpr);
@@ -3444,6 +3469,7 @@ ASTNodeImporter::VisitTemplateTemplateParmDecl(TemplateTemplateParmDecl *D) {
   return TemplateTemplateParmDecl::Create(Importer.getToContext(), 
                               Importer.getToContext().getTranslationUnitDecl(), 
                                           Loc, D->getDepth(), D->getPosition(),
+                                          D->isParameterPack(),
                                           Name.getAsIdentifierInfo(), 
                                           TemplateParams);
 }

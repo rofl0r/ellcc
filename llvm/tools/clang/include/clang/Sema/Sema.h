@@ -23,6 +23,7 @@
 #include "clang/AST/OperationKinds.h"
 #include "clang/AST/DeclarationName.h"
 #include "clang/AST/ExternalASTSource.h"
+#include "clang/AST/TypeLoc.h"
 #include "clang/Basic/Specifiers.h"
 #include "clang/Basic/TemplateKinds.h"
 #include "clang/Basic/TypeTraits.h"
@@ -1370,6 +1371,10 @@ public:
   void ProcessDeclAttributes(Scope *S, Decl *D, const Declarator &PD);
   void ProcessDeclAttributeList(Scope *S, Decl *D, const AttributeList *AL);
 
+  bool CheckRegparmAttr(const AttributeList &attr, unsigned &value);
+  bool CheckCallingConvAttr(const AttributeList &attr, CallingConv &CC);
+  bool CheckNoReturnAttr(const AttributeList &attr);
+
   void WarnUndefinedMethod(SourceLocation ImpLoc, ObjCMethodDecl *method,
                            bool &IncompleteImpl, unsigned DiagID);
   void WarnConflictingTypedMethods(ObjCMethodDecl *ImpMethod,
@@ -1797,7 +1802,7 @@ public:
   ExprResult ActOnStringLiteral(const Token *Toks, unsigned NumToks);
 
   // Binary/Unary Operators.  'Tok' is the token for the operator.
-  ExprResult CreateBuiltinUnaryOp(SourceLocation OpLoc, unsigned OpcIn,
+  ExprResult CreateBuiltinUnaryOp(SourceLocation OpLoc, UnaryOperatorKind Opc,
                                   Expr *InputArg);
   ExprResult BuildUnaryOp(Scope *S, SourceLocation OpLoc,
                           UnaryOperatorKind Opc, Expr *input);
@@ -1928,7 +1933,7 @@ public:
   ExprResult BuildBinOp(Scope *S, SourceLocation OpLoc,
                         BinaryOperatorKind Opc, Expr *lhs, Expr *rhs);
   ExprResult CreateBuiltinBinOp(SourceLocation TokLoc,
-                                unsigned Opc, Expr *lhs, Expr *rhs);
+                                BinaryOperatorKind Opc, Expr *lhs, Expr *rhs);
 
   /// ActOnConditionalOp - Parse a ?: operation.  Note that 'LHS' may be null
   /// in the case of a the GNU conditional expr extension.
@@ -2841,12 +2846,13 @@ public:
   Decl *ActOnTemplateTemplateParameter(Scope *S,
                                        SourceLocation TmpLoc,
                                        TemplateParamsTy *Params,
+                                       SourceLocation EllipsisLoc,
                                        IdentifierInfo *ParamName,
                                        SourceLocation ParamNameLoc,
                                        unsigned Depth,
                                        unsigned Position,
                                        SourceLocation EqualLoc,
-                                 const ParsedTemplateArgument &DefaultArg);
+                                       ParsedTemplateArgument DefaultArg);
 
   TemplateParamsTy *
   ActOnTemplateParameterList(unsigned Depth,
@@ -3873,6 +3879,10 @@ public:
   QualType SubstType(QualType T,
                      const MultiLevelTemplateArgumentList &TemplateArgs,
                      SourceLocation Loc, DeclarationName Entity);
+
+  TypeSourceInfo *SubstType(TypeLoc TL,
+                            const MultiLevelTemplateArgumentList &TemplateArgs,
+                            SourceLocation Loc, DeclarationName Entity);
 
   TypeSourceInfo *SubstFunctionDeclType(TypeSourceInfo *T,
                             const MultiLevelTemplateArgumentList &TemplateArgs,

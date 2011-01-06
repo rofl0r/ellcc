@@ -2924,6 +2924,17 @@ QualType ASTReader::ReadTypeRecord(unsigned Index) {
     return T;
   }
 
+  case TYPE_ATTRIBUTED: {
+    if (Record.size() != 3) {
+      Error("incorrect encoding of attributed type");
+      return QualType();
+    }
+    QualType modifiedType = GetType(Record[0]);
+    QualType equivalentType = GetType(Record[1]);
+    AttributedType::Kind kind = static_cast<AttributedType::Kind>(Record[2]);
+    return Context->getAttributedType(kind, modifiedType, equivalentType);
+  }
+
   case TYPE_PAREN: {
     if (Record.size() != 1) {
       Error("incorrect encoding of paren type");
@@ -3197,6 +3208,22 @@ void TypeLocReader::VisitRecordTypeLoc(RecordTypeLoc TL) {
 void TypeLocReader::VisitEnumTypeLoc(EnumTypeLoc TL) {
   TL.setNameLoc(ReadSourceLocation(Record, Idx));
 }
+void TypeLocReader::VisitAttributedTypeLoc(AttributedTypeLoc TL) {
+  TL.setAttrNameLoc(ReadSourceLocation(Record, Idx));
+  if (TL.hasAttrOperand()) {
+    SourceRange range;
+    range.setBegin(ReadSourceLocation(Record, Idx));
+    range.setEnd(ReadSourceLocation(Record, Idx));
+    TL.setAttrOperandParensRange(range);
+  }
+  if (TL.hasAttrExprOperand()) {
+    if (Record[Idx++])
+      TL.setAttrExprOperand(Reader.ReadExpr(F));
+    else
+      TL.setAttrExprOperand(0);
+  } else if (TL.hasAttrEnumOperand())
+    TL.setAttrEnumOperandLoc(ReadSourceLocation(Record, Idx));
+}
 void TypeLocReader::VisitTemplateTypeParmTypeLoc(TemplateTypeParmTypeLoc TL) {
   TL.setNameLoc(ReadSourceLocation(Record, Idx));
 }
@@ -3381,7 +3408,15 @@ ASTReader::GetTemplateArgumentLocInfo(PerFileData &F,
   case TemplateArgument::Template: {
     SourceRange QualifierRange = ReadSourceRange(F, Record, Index);
     SourceLocation TemplateNameLoc = ReadSourceLocation(F, Record, Index);
-    return TemplateArgumentLocInfo(QualifierRange, TemplateNameLoc);
+    return TemplateArgumentLocInfo(QualifierRange, TemplateNameLoc,
+                                   SourceLocation());
+  }
+  case TemplateArgument::TemplateExpansion: {
+    SourceRange QualifierRange = ReadSourceRange(F, Record, Index);
+    SourceLocation TemplateNameLoc = ReadSourceLocation(F, Record, Index);
+    SourceLocation EllipsisLoc = ReadSourceLocation(F, Record, Index);
+    return TemplateArgumentLocInfo(QualifierRange, TemplateNameLoc, 
+                                   EllipsisLoc);
   }
   case TemplateArgument::Null:
   case TemplateArgument::Integral:
@@ -4214,7 +4249,8 @@ ASTReader::ReadTemplateName(const RecordData &Record, unsigned &Idx) {
 TemplateArgument
 ASTReader::ReadTemplateArgument(PerFileData &F,
                                 const RecordData &Record, unsigned &Idx) {
-  switch ((TemplateArgument::ArgKind)Record[Idx++]) {
+  TemplateArgument::ArgKind Kind = (TemplateArgument::ArgKind)Record[Idx++];
+  switch (Kind) {
   case TemplateArgument::Null:
     return TemplateArgument();
   case TemplateArgument::Type:
@@ -4226,8 +4262,11 @@ ASTReader::ReadTemplateArgument(PerFileData &F,
     QualType T = GetType(Record[Idx++]);
     return TemplateArgument(Value, T);
   }
-  case TemplateArgument::Template:
-    return TemplateArgument(ReadTemplateName(Record, Idx));
+  case TemplateArgument::Template: 
+  case TemplateArgument::TemplateExpansion: {
+    TemplateName Name = ReadTemplateName(Record, Idx);
+    return TemplateArgument(Name, Kind == TemplateArgument::TemplateExpansion);
+  }
   case TemplateArgument::Expression:
     return TemplateArgument(ReadExpr(F));
   case TemplateArgument::Pack: {

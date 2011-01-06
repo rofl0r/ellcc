@@ -78,7 +78,16 @@ namespace {
       return true;
     }
     
-    // FIXME: Record occurrences of template template parameter packs.
+    /// \brief Record occurrences of template template parameter packs.
+    bool TraverseTemplateName(TemplateName Template) {
+      if (TemplateTemplateParmDecl *TTP 
+            = dyn_cast_or_null<TemplateTemplateParmDecl>(
+                                                  Template.getAsTemplateDecl()))
+        if (TTP->isParameterPack())
+          Unexpanded.push_back(std::make_pair(TTP, SourceLocation()));
+      
+      return inherited::TraverseTemplateName(Template);
+    }
 
     //------------------------------------------------------------------------
     // Pruning the search for unexpanded parameter packs.
@@ -120,6 +129,22 @@ namespace {
         return inherited::TraverseDecl(D);
 
       return true; 
+    }
+
+    /// \brief Suppress traversal of template argument pack expansions.
+    bool TraverseTemplateArgument(const TemplateArgument &Arg) {
+      if (Arg.isPackExpansion())
+        return true;
+
+      return inherited::TraverseTemplateArgument(Arg);
+    }
+
+    /// \brief Suppress traversal of template argument pack expansions.
+    bool TraverseTemplateArgumentLoc(const TemplateArgumentLoc &ArgLoc) {
+      if (ArgLoc.getArgument().isPackExpansion())
+        return true;
+      
+      return inherited::TraverseTemplateArgumentLoc(ArgLoc);
     }
   };
 }
@@ -326,8 +351,16 @@ Sema::ActOnPackExpansion(const ParsedTemplateArgument &Arg,
   }
     
   case ParsedTemplateArgument::Template:
-    Diag(EllipsisLoc, diag::err_pack_expansion_unsupported);
-    return ParsedTemplateArgument();
+    if (!Arg.getAsTemplate().get().containsUnexpandedParameterPack()) {
+      SourceRange R(Arg.getLocation());
+      if (Arg.getScopeSpec().isValid())
+        R.setBegin(Arg.getScopeSpec().getBeginLoc());
+      Diag(EllipsisLoc, diag::err_pack_expansion_without_parameter_packs)
+        << R;
+      return ParsedTemplateArgument();
+    }
+      
+    return Arg.getTemplatePackExpansion(EllipsisLoc);
   }
   llvm_unreachable("Unhandled template argument kind?");
   return ParsedTemplateArgument();
@@ -556,7 +589,6 @@ ExprResult Sema::ActOnSizeofParameterPackExpr(Scope *S,
                                               SourceLocation RParenLoc) {
   // C++0x [expr.sizeof]p5:
   //   The identifier in a sizeof... expression shall name a parameter pack.
-  
   LookupResult R(*this, &Name, NameLoc, LookupOrdinaryName);
   LookupName(R, S);
   
@@ -570,9 +602,8 @@ ExprResult Sema::ActOnSizeofParameterPackExpr(Scope *S,
   case LookupResult::NotFoundInCurrentInstantiation:
     if (DeclarationName CorrectedName = CorrectTypo(R, S, 0, 0, false, 
                                                     CTC_NoKeywords)) {
-      // FIXME: Variadic templates function parameter packs.
       if (NamedDecl *CorrectedResult = R.getAsSingle<NamedDecl>())
-        if (CorrectedResult->isTemplateParameterPack()) {
+        if (CorrectedResult->isParameterPack()) {
           ParameterPack = CorrectedResult;
           Diag(NameLoc, diag::err_sizeof_pack_no_pack_name_suggest)
             << &Name << CorrectedName
@@ -592,8 +623,7 @@ ExprResult Sema::ActOnSizeofParameterPackExpr(Scope *S,
     return ExprError();
   }
   
-  // FIXME: Variadic templates function parameter packs.
-  if (!ParameterPack || !ParameterPack->isTemplateParameterPack()) {
+  if (!ParameterPack || !ParameterPack->isParameterPack()) {
     Diag(NameLoc, diag::err_sizeof_pack_no_pack_name)
       << &Name;
     return ExprError();

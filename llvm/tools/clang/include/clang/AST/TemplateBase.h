@@ -55,6 +55,9 @@ public:
     /// The template argument is a template name that was provided for a 
     /// template template parameter.
     Template,
+    /// The template argument is a pack expansion of a template name that was 
+    /// provided for a template template parameter.
+    TemplateExpansion,
     /// The template argument is a value- or type-dependent expression
     /// stored in an Expr*.
     Expression,
@@ -104,13 +107,19 @@ public:
     Integer.Type = Type.getAsOpaquePtr();
   }
 
-  /// \brief Construct a template argument that is a template.
+  /// \brief Construct a template argument that is a template or a pack
+  /// expansion of templates.
   ///
   /// This form of template argument is generally used for template template
   /// parameters. However, the template name could be a dependent template
   /// name that ends up being instantiated to a function template whose address
   /// is taken.
-  TemplateArgument(TemplateName Name) : Kind(Template) {
+  ///
+  /// \param Name The template name.
+  /// \param PackExpansion Whether this template argument is a pack expansion.
+  TemplateArgument(TemplateName Name, bool PackExpansion = false) 
+    : Kind(PackExpansion? TemplateExpansion : Template) 
+  {
     TypeOrValue = reinterpret_cast<uintptr_t>(Name.getAsVoidPointer());
   }
   
@@ -142,8 +151,7 @@ public:
     } else if (Kind == Pack) {
       Args.NumArgs = Other.Args.NumArgs;
       Args.Args = Other.Args.Args;
-    }
-    else
+    } else
       TypeOrValue = Other.TypeOrValue;
   }
 
@@ -221,9 +229,19 @@ public:
       return TemplateName();
     
     return TemplateName::getFromVoidPointer(
-                                        reinterpret_cast<void *> (TypeOrValue));
+                                          reinterpret_cast<void*>(TypeOrValue));
   }
-  
+
+  /// \brief Retrieve the template argument as a template name; if the argument
+  /// is a pack expansion, return the pattern as a template name.
+  TemplateName getAsTemplateOrTemplatePattern() const {
+    if (Kind != Template && Kind != TemplateExpansion)
+      return TemplateName();
+    
+    return TemplateName::getFromVoidPointer(
+                                          reinterpret_cast<void*>(TypeOrValue));
+  }
+
   /// \brief Retrieve the template argument as an integral value.
   llvm::APSInt *getAsIntegral() {
     if (Kind != Integral)
@@ -307,22 +325,25 @@ private:
     struct {
       unsigned QualifierRange[2];
       unsigned TemplateNameLoc;
+      unsigned EllipsisLoc;
     } Template;
   };
 
 public:
-  TemplateArgumentLocInfo() : Expression(0) {}
+  TemplateArgumentLocInfo();
   
   TemplateArgumentLocInfo(TypeSourceInfo *TInfo) : Declarator(TInfo) {}
   
   TemplateArgumentLocInfo(Expr *E) : Expression(E) {}
   
   TemplateArgumentLocInfo(SourceRange QualifierRange, 
-                          SourceLocation TemplateNameLoc)
+                          SourceLocation TemplateNameLoc,
+                          SourceLocation EllipsisLoc)
   {
     Template.QualifierRange[0] = QualifierRange.getBegin().getRawEncoding();
     Template.QualifierRange[1] = QualifierRange.getEnd().getRawEncoding();
     Template.TemplateNameLoc = TemplateNameLoc.getRawEncoding();
+    Template.EllipsisLoc = EllipsisLoc.getRawEncoding();
   }
 
   TypeSourceInfo *getAsTypeSourceInfo() const {
@@ -341,6 +362,10 @@ public:
   
   SourceLocation getTemplateNameLoc() const {
     return SourceLocation::getFromRawEncoding(Template.TemplateNameLoc);
+  }
+  
+  SourceLocation getTemplateEllipsisLoc() const {
+    return SourceLocation::getFromRawEncoding(Template.EllipsisLoc);
   }
 };
 
@@ -370,14 +395,18 @@ public:
 
   TemplateArgumentLoc(const TemplateArgument &Argument, 
                       SourceRange QualifierRange,
-                      SourceLocation TemplateNameLoc)
-    : Argument(Argument), LocInfo(QualifierRange, TemplateNameLoc) {
-    assert(Argument.getKind() == TemplateArgument::Template);
+                      SourceLocation TemplateNameLoc,
+                      SourceLocation EllipsisLoc = SourceLocation())
+    : Argument(Argument), 
+      LocInfo(QualifierRange, TemplateNameLoc, EllipsisLoc) {
+    assert(Argument.getKind() == TemplateArgument::Template ||
+           Argument.getKind() == TemplateArgument::TemplateExpansion);
   }
   
   /// \brief - Fetches the primary location of the argument.
   SourceLocation getLocation() const {
-    if (Argument.getKind() == TemplateArgument::Template)
+    if (Argument.getKind() == TemplateArgument::Template ||
+        Argument.getKind() == TemplateArgument::TemplateExpansion)
       return getTemplateNameLoc();
     
     return getSourceRange().getBegin();
@@ -410,14 +439,21 @@ public:
   }
   
   SourceRange getTemplateQualifierRange() const {
-    assert(Argument.getKind() == TemplateArgument::Template);
+    assert(Argument.getKind() == TemplateArgument::Template ||
+           Argument.getKind() == TemplateArgument::TemplateExpansion);
     return LocInfo.getTemplateQualifierRange();
   }
   
   SourceLocation getTemplateNameLoc() const {
-    assert(Argument.getKind() == TemplateArgument::Template);
+    assert(Argument.getKind() == TemplateArgument::Template ||
+           Argument.getKind() == TemplateArgument::TemplateExpansion);
     return LocInfo.getTemplateNameLoc();
   }  
+  
+  SourceLocation getTemplateEllipsisLoc() const {
+    assert(Argument.getKind() == TemplateArgument::TemplateExpansion);
+    return LocInfo.getTemplateEllipsisLoc();
+  }
   
   /// \brief When the template argument is a pack expansion, returns 
   /// the pattern of the pack expansion.

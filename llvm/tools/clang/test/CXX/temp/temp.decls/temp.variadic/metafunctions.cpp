@@ -121,6 +121,33 @@ namespace Math {
 #endif
 }
 
+namespace ListMath {
+  template<typename T, T ... V> struct add;
+
+  template<typename T, T i, T ... V>
+  struct add<T, i, V...> {
+    static const T value = i + add<T, V...>::value; 
+  };
+
+  template<typename T>
+  struct add<T> {
+    static const T value = T(); 
+  };
+
+  template<typename T, T ... V>
+  struct List {
+    struct sum {
+      static const T value = add<T, V...>::value;
+    };
+  };
+
+  template<int ... V>
+  struct ListI : public List<int, V...> {
+  };
+
+  int check0[ListI<1, 2, 3>::sum::value == 6? 1 : -1];
+}
+
 namespace Indices {
   template<unsigned I, unsigned N, typename IntTuple>
   struct build_indices_impl;
@@ -140,4 +167,94 @@ namespace Indices {
 
   int check0[is_same<build_indices<5>::type,
                      int_tuple<0, 1, 2, 3, 4>>::value? 1 : -1];
+}
+
+namespace TemplateTemplateApply {
+  template<typename T, template<class> class ...Meta>
+  struct apply_each {
+    typedef tuple<typename Meta<T>::type...> type;
+  };
+
+  template<typename T> 
+  struct add_reference {
+    typedef T& type;
+  };
+
+  template<typename T> 
+  struct add_pointer {
+    typedef T* type;
+  };
+
+  template<typename T> 
+  struct add_const {
+    typedef const T type;
+  };
+
+  int check0[is_same<apply_each<int, 
+                                add_reference, add_pointer, add_const>::type,
+                     tuple<int&, int*, int const>>::value? 1 : -1];
+
+  template<typename T, template<class> class ...Meta>
+  struct apply_each_indirect {
+    typedef typename apply_each<T, Meta...>::type type;
+  };
+
+  int check1[is_same<apply_each_indirect<int, add_reference, add_pointer, 
+                                         add_const>::type,
+                     tuple<int&, int*, int const>>::value? 1 : -1];
+
+  template<typename T, typename ...Meta>
+  struct apply_each_nested {
+    typedef typename apply_each<T, Meta::template apply...>::type type;
+  };
+
+  struct add_reference_meta {
+    template<typename T>
+    struct apply {
+      typedef T& type;
+    };
+  };
+
+  struct add_pointer_meta {
+    template<typename T>
+    struct apply {
+      typedef T* type;
+    };
+  };
+
+  struct add_const_meta {
+    template<typename T>
+    struct apply {
+      typedef const T type;
+    };
+  };
+
+  int check2[is_same<apply_each_nested<int, add_reference_meta, 
+                                       add_pointer_meta, add_const_meta>::type,
+                     tuple<int&, int*, int const>>::value? 1 : -1];
+
+}
+
+namespace FunctionTypes {
+  template<typename FunctionType>
+  struct Arity;
+
+  template<typename R, typename ...Types>
+  struct Arity<R(Types...)> {
+    static const unsigned value = sizeof...(Types);
+  };
+
+  template<typename R, typename ...Types>
+  struct Arity<R(Types......)> {
+    static const unsigned value = sizeof...(Types);
+  };
+
+  template<typename R, typename T1, typename T2, typename T3, typename T4>
+  struct Arity<R(T1, T2, T3, T4)>; // expected-note{{template is declared here}}
+
+  int check0[Arity<int()>::value == 0? 1 : -1];
+  int check1[Arity<int(float, double)>::value == 2? 1 : -1];
+  int check2[Arity<int(float...)>::value == 1? 1 : -1];
+  int check3[Arity<int(float, double, long double...)>::value == 3? 1 : -1];
+  Arity<int(float, double, long double, char)> check4; // expected-error{{implicit instantiation of undefined template 'FunctionTypes::Arity<int (float, double, long double, char)>'}}
 }

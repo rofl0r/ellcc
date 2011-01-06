@@ -12,9 +12,10 @@
 //===----------------------------------------------------------------------===//
 
 #define DEBUG_TYPE "loop-instsimplify"
-#include "llvm/Analysis/LoopPass.h"
 #include "llvm/Analysis/Dominators.h"
 #include "llvm/Analysis/InstructionSimplify.h"
+#include "llvm/Analysis/LoopPass.h"
+#include "llvm/Support/Debug.h"
 #include "llvm/Target/TargetData.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Utils/Local.h"
@@ -38,7 +39,7 @@ namespace {
       AU.addRequired<DominatorTree>();
       AU.addPreserved<DominatorTree>();
       AU.addRequired<LoopInfo>();
-      AU.addPreserved<LoopInfo>();
+      AU.addRequiredID(LoopSimplifyID);
       AU.addPreservedID(LCSSAID);
     }
   };
@@ -57,34 +58,51 @@ Pass* llvm::createLoopInstSimplifyPass() {
   return new LoopInstSimplify();
 }
 
-bool LoopInstSimplify::runOnLoop(Loop* L, LPPassManager& LPM) {
-  DominatorTree* DT = &getAnalysis<DominatorTree>();
-  const LoopInfo* LI = &getAnalysis<LoopInfo>();
-  const TargetData* TD = getAnalysisIfAvailable<TargetData>();
+bool LoopInstSimplify::runOnLoop(Loop *L, LPPassManager &LPM) {
+  DominatorTree *DT = getAnalysisIfAvailable<DominatorTree>();
+  LoopInfo *LI = &getAnalysis<LoopInfo>();
+  const TargetData *TD = getAnalysisIfAvailable<TargetData>();
+
+  SmallVector<BasicBlock*, 8> ExitBlocks;
+  L->getUniqueExitBlocks(ExitBlocks);
+  array_pod_sort(ExitBlocks.begin(), ExitBlocks.end());
+
+  SmallPtrSet<const Instruction*, 8> S1, S2, *ToSimplify = &S1, *Next = &S2;
+
+  SmallVector<BasicBlock*, 16> VisitStack;
+  SmallPtrSet<BasicBlock*, 32> Visited;
 
   bool Changed = false;
   bool LocalChanged;
   do {
     LocalChanged = false;
 
-    SmallPtrSet<BasicBlock*, 32> Visited;
-    SmallVector<BasicBlock*, 32> VisitStack;
+    VisitStack.clear();
+    Visited.clear();
 
     VisitStack.push_back(L->getHeader());
 
     while (!VisitStack.empty()) {
-      BasicBlock* BB = VisitStack.back();
-      VisitStack.pop_back();
+      BasicBlock *BB = VisitStack.pop_back_val();
 
-      if (Visited.count(BB))
-        continue;
-      Visited.insert(BB);
-
+      // Simplify instructions in the current basic block.
       for (BasicBlock::iterator BI = BB->begin(), BE = BB->end(); BI != BE;) {
-        Instruction* I = BI++;
+        Instruction *I = BI++;
+
+        // The first time through the loop ToSimplify is empty and we try to
+        // simplify all instructions. On later iterations ToSimplify is not
+        // empty and we only bother simplifying instructions that are in it.
+        if (!ToSimplify->empty() && !ToSimplify->count(I))
+          continue;
+
         // Don't bother simplifying unused instructions.
         if (!I->use_empty()) {
           if (Value* V = SimplifyInstruction(I, TD, DT)) {
+            // Mark all uses for resimplification next time round the loop.
+            for (Value::use_iterator UI = I->use_begin(), UE = I->use_end();
+                 UI != UE; ++UI)
+              Next->insert(cast<Instruction>(*UI));
+
             I->replaceAllUsesWith(V);
             LocalChanged = true;
             ++NumSimplified;
@@ -94,15 +112,23 @@ bool LoopInstSimplify::runOnLoop(Loop* L, LPPassManager& LPM) {
       }
       Changed |= LocalChanged;
 
-      DomTreeNode* Node = DT->getNode(BB);
-      const std::vector<DomTreeNode*>& Children = Node->getChildren();
-      for (unsigned i = 0; i < Children.size(); ++i) {
-        // Only visit children that are in the same loop.
-        BasicBlock* ChildBB = Children[i]->getBlock();
-        if (!Visited.count(ChildBB) && LI->getLoopFor(ChildBB) == L)
-          VisitStack.push_back(ChildBB);
+      // Add all successors to the worklist, except for loop exit blocks.
+      for (succ_iterator SI = succ_begin(BB), SE = succ_end(BB); SI != SE;
+           ++SI) {
+        BasicBlock *SuccBB = *SI;
+        bool IsExitBlock = std::binary_search(ExitBlocks.begin(),
+                                             ExitBlocks.end(), SuccBB);
+        if (!IsExitBlock && Visited.insert(SuccBB))
+          VisitStack.push_back(SuccBB);
       }
     }
+
+    // Place the list of instructions to simplify on the next loop iteration
+    // into ToSimplify.
+    std::swap(ToSimplify, Next);
+    Next->clear();
+
+    Changed |= LocalChanged;
   } while (LocalChanged);
 
   // Nothing that SimplifyInstruction() does should invalidate LCSSA form.

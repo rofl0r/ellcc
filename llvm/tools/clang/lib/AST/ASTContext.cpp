@@ -51,7 +51,7 @@ ASTContext::CanonicalTemplateTemplateParm::Profile(llvm::FoldingSetNodeID &ID,
                                                TemplateTemplateParmDecl *Parm) {
   ID.AddInteger(Parm->getDepth());
   ID.AddInteger(Parm->getPosition());
-  // FIXME: Parameter pack
+  ID.AddBoolean(Parm->isParameterPack());
 
   TemplateParameterList *Params = Parm->getTemplateParameters();
   ID.AddInteger(Params->size());
@@ -66,7 +66,7 @@ ASTContext::CanonicalTemplateTemplateParm::Profile(llvm::FoldingSetNodeID &ID,
     
     if (NonTypeTemplateParmDecl *NTTP = dyn_cast<NonTypeTemplateParmDecl>(*P)) {
       ID.AddInteger(1);
-      // FIXME: Parameter pack
+      ID.AddBoolean(NTTP->isParameterPack());
       ID.AddPointer(NTTP->getType().getAsOpaquePtr());
       continue;
     }
@@ -119,7 +119,9 @@ ASTContext::getCanonicalTemplateTemplateParmDecl(
   TemplateTemplateParmDecl *CanonTTP
     = TemplateTemplateParmDecl::Create(*this, getTranslationUnitDecl(), 
                                        SourceLocation(), TTP->getDepth(),
-                                       TTP->getPosition(), 0,
+                                       TTP->getPosition(), 
+                                       TTP->isParameterPack(),
+                                       0,
                          TemplateParameterList::Create(*this, SourceLocation(),
                                                        SourceLocation(),
                                                        CanonParams.data(),
@@ -841,6 +843,10 @@ ASTContext::getTypeInfo(const Type *T) {
 
   case Type::Elaborated:
     return getTypeInfo(cast<ElaboratedType>(T)->getNamedType().getTypePtr());
+
+  case Type::Attributed:
+    return getTypeInfo(
+                  cast<AttributedType>(T)->getEquivalentType().getTypePtr());
 
   case Type::TemplateSpecialization:
     assert(getCanonicalType(T) != T &&
@@ -1873,6 +1879,27 @@ QualType ASTContext::getEnumType(const EnumDecl *Decl) {
   return QualType(Decl->TypeForDecl, 0);
 }
 
+QualType ASTContext::getAttributedType(AttributedType::Kind attrKind,
+                                       QualType modifiedType,
+                                       QualType equivalentType) {
+  llvm::FoldingSetNodeID id;
+  AttributedType::Profile(id, attrKind, modifiedType, equivalentType);
+
+  void *insertPos = 0;
+  AttributedType *type = AttributedTypes.FindNodeOrInsertPos(id, insertPos);
+  if (type) return QualType(type, 0);
+
+  QualType canon = getCanonicalType(equivalentType);
+  type = new (*this, TypeAlignment)
+           AttributedType(canon, attrKind, modifiedType, equivalentType);
+
+  Types.push_back(type);
+  AttributedTypes.InsertNode(type, insertPos);
+
+  return QualType(type, 0);
+}
+
+
 /// \brief Retrieve a substitution-result type.
 QualType
 ASTContext::getSubstTemplateTypeParmType(const TemplateTypeParmType *Parm,
@@ -2690,7 +2717,12 @@ ASTContext::getCanonicalTemplateArgument(const TemplateArgument &Arg) {
 
     case TemplateArgument::Template:
       return TemplateArgument(getCanonicalTemplateName(Arg.getAsTemplate()));
-      
+
+    case TemplateArgument::TemplateExpansion:
+      return TemplateArgument(getCanonicalTemplateName(
+                                         Arg.getAsTemplateOrTemplatePattern()),
+                              true);
+
     case TemplateArgument::Integral:
       return TemplateArgument(*Arg.getAsIntegral(),
                               getCanonicalType(Arg.getIntegralType()));

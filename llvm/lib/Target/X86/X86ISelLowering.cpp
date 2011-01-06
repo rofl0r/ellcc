@@ -978,11 +978,14 @@ X86TargetLowering::X86TargetLowering(X86TargetMachine &TM)
 
   computeRegisterProperties();
 
-  // FIXME: These should be based on subtarget info. Plus, the values should
-  // be smaller when we are in optimizing for size mode.
+  // On Darwin, -Os means optimize for size without hurting performance,
+  // do not reduce the limit.
   maxStoresPerMemset = 16; // For @llvm.memset -> sequence of stores
+  maxStoresPerMemsetOptSize = Subtarget->isTargetDarwin() ? 16 : 8;
   maxStoresPerMemcpy = 8; // For @llvm.memcpy -> sequence of stores
-  maxStoresPerMemmove = 3; // For @llvm.memmove -> sequence of stores
+  maxStoresPerMemcpyOptSize = Subtarget->isTargetDarwin() ? 8 : 4;
+  maxStoresPerMemmove = 8; // For @llvm.memmove -> sequence of stores
+  maxStoresPerMemmoveOptSize = Subtarget->isTargetDarwin() ? 8 : 4;
   setPrefLoopAlignment(16);
   benefitFromCodePlacementOpt = true;
 }
@@ -1060,12 +1063,8 @@ X86TargetLowering::getOptimalMemOpType(uint64_t Size,
   // linux.  This is because the stack realignment code can't handle certain
   // cases like PR2962.  This should be removed when PR2962 is fixed.
   const Function *F = MF.getFunction();
-  if (NonScalarIntSafe &&
-      !F->hasFnAttr(Attribute::NoImplicitFloat)) {
+  if (NonScalarIntSafe && !F->hasFnAttr(Attribute::NoImplicitFloat)) {
     if (Size >= 16 &&
-        (Subtarget->isUnalignedMemAccessFast() ||
-         ((DstAlign == 0 || DstAlign >= 16) &&
-          (SrcAlign == 0 || SrcAlign >= 16))) &&
         Subtarget->getStackAlignment() >= 16) {
       if (Subtarget->hasSSE2())
         return MVT::v4i32;

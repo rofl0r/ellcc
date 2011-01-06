@@ -1821,15 +1821,15 @@ def err_template_param_pack_must_be_last_template_parameter : Error<
   "template parameter pack must be the last template parameter">;
 
 def err_template_parameter_pack_non_pack : Error<
-  "template %select{type|non-type|template}0 parameter%select{| pack}1 "
-  "conflicts with previous template %select{type|non-type|template}0 "
-  "parameter%select{ pack|}1">;
+  "%select{template type|non-type template|template template}0 parameter"
+  "%select{| pack}1 conflicts with previous %select{template type|"
+  "non-type template|template template}0 parameter%select{ pack|}1">;
 def note_template_parameter_pack_non_pack : Note<
-  "template %select{type|non-type|template}0 parameter%select{| pack}1 "
-  "does not match template %select{type|non-type|template}0 "
-  "parameter%select{ pack|}1 in template argument">;
+  "%select{template type|non-type template|template template}0 parameter"
+  "%select{| pack}1 does not match %select{template type|non-type template"
+  "|template template}0 parameter%select{ pack|}1 in template argument">;
 def note_template_parameter_pack_here : Note<
-  "previous template %select{type|non-type|template}0 "
+  "previous %select{template type|non-type template|template template}0 "
   "parameter%select{| pack}1 declared here">;
   
 def err_unexpanded_parameter_pack_0 : Error<
@@ -1875,14 +1875,8 @@ def err_sizeof_pack_no_pack_name : Error<
   "%0 does not refer to the name of a parameter pack">;
 
 // Unsupported variadic templates features
-def err_pack_expansion_unsupported : Error<
-  "clang does not yet support template pack expansions">;
-def err_pack_expansion_instantiation_unsupported : Error<
-  "clang cannot yet instantiate pack expansions">;
 def err_pack_expansion_mismatch_unsupported : Error<
   "clang cannot yet instantiate pack expansions with mismatched pack levels">;
-def err_function_parameter_pack_unsupported : Error<
-  "clang does not yet support function parameter packs">;
 
 def err_unexpected_typedef : Error<
   "unexpected type name %0: expected expression">;
@@ -2776,7 +2770,7 @@ def err_not_tag_in_scope : Error<
 def err_cannot_form_pointer_to_member_of_reference_type : Error<
   "cannot form a pointer-to-member to member %0 of reference type %1">;
 def err_invalid_use_of_bound_member_func : Error<
-  "a bound member function may only be used to call itself">;
+  "a bound member function may only be called">;
 def err_incomplete_object_call : Error<
   "incomplete type in call to object of type %0">;
 def err_incomplete_pointer_to_member_return : Error<

@@ -7497,10 +7497,9 @@ static void DiagnoseSelfAssignment(Sema &S, Expr *lhs, Expr *rhs,
 /// operator @p Opc at location @c TokLoc. This routine only supports
 /// built-in operations; ActOnBinOp handles overloaded operators.
 ExprResult Sema::CreateBuiltinBinOp(SourceLocation OpLoc,
-                                    unsigned Op,
+                                    BinaryOperatorKind Opc,
                                     Expr *lhs, Expr *rhs) {
   QualType ResultTy;     // Result type of the binary operator.
-  BinaryOperatorKind Opc = (BinaryOperatorKind) Op;
   // The following two variables are used for compound assignment operators
   QualType CompLHSTy;    // Type of LHS after promotions for computation
   QualType CompResultTy; // Type of computation result
@@ -7844,10 +7843,8 @@ ExprResult Sema::BuildBinOp(Scope *S, SourceLocation OpLoc,
 }
 
 ExprResult Sema::CreateBuiltinUnaryOp(SourceLocation OpLoc,
-                                      unsigned OpcIn,
+                                      UnaryOperatorKind Opc,
                                       Expr *Input) {
-  UnaryOperatorKind Opc = static_cast<UnaryOperatorKind>(OpcIn);
-
   ExprValueKind VK = VK_RValue;
   ExprObjectKind OK = OK_Ordinary;
   QualType resultType;
@@ -7888,7 +7885,7 @@ ExprResult Sema::CreateBuiltinUnaryOp(SourceLocation OpLoc,
     else if (resultType->isPlaceholderType()) {
       ExprResult PR = CheckPlaceholderExpr(Input, OpLoc);
       if (PR.isInvalid()) return ExprError();
-      return CreateBuiltinUnaryOp(OpLoc, OpcIn, PR.take());
+      return CreateBuiltinUnaryOp(OpLoc, Opc, PR.take());
     }
 
     return ExprError(Diag(OpLoc, diag::err_typecheck_unary_expr)
@@ -7908,7 +7905,7 @@ ExprResult Sema::CreateBuiltinUnaryOp(SourceLocation OpLoc,
     else if (resultType->isPlaceholderType()) {
       ExprResult PR = CheckPlaceholderExpr(Input, OpLoc);
       if (PR.isInvalid()) return ExprError();
-      return CreateBuiltinUnaryOp(OpLoc, OpcIn, PR.take());
+      return CreateBuiltinUnaryOp(OpLoc, Opc, PR.take());
     } else {
       return ExprError(Diag(OpLoc, diag::err_typecheck_unary_expr)
         << resultType << Input->getSourceRange());
@@ -7925,7 +7922,7 @@ ExprResult Sema::CreateBuiltinUnaryOp(SourceLocation OpLoc,
     } else if (resultType->isPlaceholderType()) {
       ExprResult PR = CheckPlaceholderExpr(Input, OpLoc);
       if (PR.isInvalid()) return ExprError();
-      return CreateBuiltinUnaryOp(OpLoc, OpcIn, PR.take());
+      return CreateBuiltinUnaryOp(OpLoc, Opc, PR.take());
     } else {
       return ExprError(Diag(OpLoc, diag::err_typecheck_unary_expr)
         << resultType << Input->getSourceRange());
@@ -8297,31 +8294,50 @@ void Sema::ActOnBlockStart(SourceLocation CaretLoc, Scope *BlockScope) {
 
 void Sema::ActOnBlockArguments(Declarator &ParamInfo, Scope *CurScope) {
   assert(ParamInfo.getIdentifier()==0 && "block-id should have no identifier!");
+  assert(ParamInfo.getContext() == Declarator::BlockLiteralContext);
   BlockScopeInfo *CurBlock = getCurBlock();
 
   TypeSourceInfo *Sig = GetTypeForDeclarator(ParamInfo, CurScope);
-  CurBlock->TheDecl->setSignatureAsWritten(Sig);
   QualType T = Sig->getType();
 
-  bool isVariadic;
-  QualType RetTy;
-  if (const FunctionType *Fn = T->getAs<FunctionType>()) {
-    CurBlock->FunctionType = T;
-    RetTy = Fn->getResultType();
-    isVariadic =
-      !isa<FunctionProtoType>(Fn) || cast<FunctionProtoType>(Fn)->isVariadic();
-  } else {
-    RetTy = T;
-    isVariadic = false;
+  // GetTypeForDeclarator always produces a function type for a block
+  // literal signature.  Furthermore, it is always a FunctionProtoType
+  // unless the function was written with a typedef.
+  assert(T->isFunctionType() &&
+         "GetTypeForDeclarator made a non-function block signature");
+
+  // Look for an explicit signature in that function type.
+  FunctionProtoTypeLoc ExplicitSignature;
+
+  TypeLoc tmp = Sig->getTypeLoc().IgnoreParens();
+  if (isa<FunctionProtoTypeLoc>(tmp)) {
+    ExplicitSignature = cast<FunctionProtoTypeLoc>(tmp);
+
+    // Check whether that explicit signature was synthesized by
+    // GetTypeForDeclarator.  If so, don't save that as part of the
+    // written signature.
+    if (ExplicitSignature.getLParenLoc() ==
+        ExplicitSignature.getRParenLoc()) {
+      // This would be much cheaper if we stored TypeLocs instead of
+      // TypeSourceInfos.
+      TypeLoc Result = ExplicitSignature.getResultLoc();
+      unsigned Size = Result.getFullDataSize();
+      Sig = Context.CreateTypeSourceInfo(Result.getType(), Size);
+      Sig->getTypeLoc().initializeFullCopy(Result, Size);
+
+      ExplicitSignature = FunctionProtoTypeLoc();
+    }
   }
+
+  CurBlock->TheDecl->setSignatureAsWritten(Sig);
+  CurBlock->FunctionType = T;
+
+  const FunctionType *Fn = T->getAs<FunctionType>();
+  QualType RetTy = Fn->getResultType();
+  bool isVariadic =
+    (isa<FunctionProtoType>(Fn) && cast<FunctionProtoType>(Fn)->isVariadic());
 
   CurBlock->TheDecl->setIsVariadic(isVariadic);
-
-  // Don't allow returning an array by value.
-  if (RetTy->isArrayType()) {
-    Diag(ParamInfo.getSourceRange().getBegin(), diag::err_block_returns_array);
-    return;
-  }
 
   // Don't allow returning a objc interface by value.
   if (RetTy->isObjCObjectType()) {
@@ -8339,11 +8355,9 @@ void Sema::ActOnBlockArguments(Declarator &ParamInfo, Scope *CurScope) {
 
   // Push block parameters from the declarator if we had them.
   llvm::SmallVector<ParmVarDecl*, 8> Params;
-  if (isa<FunctionProtoType>(T.IgnoreParens())) {
-    FunctionProtoTypeLoc TL
-      = cast<FunctionProtoTypeLoc>(Sig->getTypeLoc().IgnoreParens());
-    for (unsigned I = 0, E = TL.getNumArgs(); I != E; ++I) {
-      ParmVarDecl *Param = TL.getArg(I);
+  if (ExplicitSignature) {
+    for (unsigned I = 0, E = ExplicitSignature.getNumArgs(); I != E; ++I) {
+      ParmVarDecl *Param = ExplicitSignature.getArg(I);
       if (Param->getIdentifier() == 0 &&
           !Param->isImplicit() &&
           !Param->isInvalidDecl() &&

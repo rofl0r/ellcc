@@ -111,9 +111,19 @@ bool Decl::isTemplateParameterPack() const {
   if (const TemplateTypeParmDecl *TTP = dyn_cast<TemplateTypeParmDecl>(this))
     return TTP->isParameterPack();
   if (const NonTypeTemplateParmDecl *NTTP
-                                = llvm::dyn_cast<NonTypeTemplateParmDecl>(this))
+                                = dyn_cast<NonTypeTemplateParmDecl>(this))
     return NTTP->isParameterPack();
+  if (const TemplateTemplateParmDecl *TTP
+                                    = dyn_cast<TemplateTemplateParmDecl>(this))
+    return TTP->isParameterPack();
   return false;
+}
+
+bool Decl::isParameterPack() const {
+  if (const ParmVarDecl *Parm = dyn_cast<ParmVarDecl>(this))
+    return Parm->isParameterPack();
+  
+  return isTemplateParameterPack();
 }
 
 bool Decl::isFunctionOrFunctionTemplate() const {

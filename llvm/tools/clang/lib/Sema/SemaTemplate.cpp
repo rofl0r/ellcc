@@ -437,6 +437,17 @@ TemplateDecl *Sema::AdjustDeclIfTemplate(Decl *&D) {
   return 0;
 }
 
+ParsedTemplateArgument ParsedTemplateArgument::getTemplatePackExpansion(
+                                             SourceLocation EllipsisLoc) const {
+  assert(Kind == Template && 
+         "Only template template arguments can be pack expansions here");
+  assert(getAsTemplate().get().containsUnexpandedParameterPack() &&
+         "Template template argument pack expansion without packs");
+  ParsedTemplateArgument Result(*this);
+  Result.EllipsisLoc = EllipsisLoc;
+  return Result;
+}
+
 static TemplateArgumentLoc translateTemplateArgument(Sema &SemaRef,
                                             const ParsedTemplateArgument &Arg) {
   
@@ -456,9 +467,11 @@ static TemplateArgumentLoc translateTemplateArgument(Sema &SemaRef,
     
   case ParsedTemplateArgument::Template: {
     TemplateName Template = Arg.getAsTemplate().get();
-    return TemplateArgumentLoc(TemplateArgument(Template),
+    return TemplateArgumentLoc(TemplateArgument(Template,
+                                                Arg.getEllipsisLoc().isValid()),
                                Arg.getScopeSpec().getRange(),
-                               Arg.getLocation());
+                               Arg.getLocation(),
+                               Arg.getEllipsisLoc());
   }
   }
   
@@ -522,6 +535,14 @@ Decl *Sema::ActOnTypeParameter(Scope *S, bool Typename, bool Ellipsis,
     IdResolver.AddDecl(Param);
   }
 
+  // C++0x [temp.param]p9:
+  //   A default template-argument may be specified for any kind of
+  //   template-parameter that is not a template parameter pack.
+  if (DefaultArg && Ellipsis) {
+    Diag(EqualLoc, diag::err_template_param_pack_default_arg);
+    DefaultArg = ParsedType();
+  }
+
   // Handle the default argument, if provided.
   if (DefaultArg) {
     TypeSourceInfo *DefaultTInfo;
@@ -529,14 +550,6 @@ Decl *Sema::ActOnTypeParameter(Scope *S, bool Typename, bool Ellipsis,
     
     assert(DefaultTInfo && "expected source information for type");
     
-    // C++0x [temp.param]p9:
-    // A default template-argument may be specified for any kind of
-    // template-parameter that is not a template parameter pack.
-    if (Ellipsis) {
-      Diag(EqualLoc, diag::err_template_param_pack_default_arg);
-      return Param;
-    }
-
     // Check for unexpanded parameter packs.
     if (DiagnoseUnexpandedParameterPack(Loc, DefaultTInfo, 
                                         UPPC_DefaultArgument))
@@ -647,16 +660,16 @@ Decl *Sema::ActOnNonTypeTemplateParameter(Scope *S, Declarator &D,
     IdResolver.AddDecl(Param);
   }
   
+  // C++0x [temp.param]p9:
+  //   A default template-argument may be specified for any kind of
+  //   template-parameter that is not a template parameter pack.
+  if (Default && IsParameterPack) {
+    Diag(EqualLoc, diag::err_template_param_pack_default_arg);
+    Default = 0;
+  }
+
   // Check the well-formedness of the default template argument, if provided.
   if (Default) {
-    // C++0x [temp.param]p9:
-    //   A default template-argument may be specified for any kind of
-    //   template-parameter that is not a template parameter pack.
-    if (IsParameterPack) {
-      Diag(EqualLoc, diag::err_template_param_pack_default_arg);
-      return Param;
-    }
-
     // Check for unexpanded parameter packs.
     if (DiagnoseUnexpandedParameterPack(Default, UPPC_DefaultArgument))
       return Param;
@@ -679,21 +692,24 @@ Decl *Sema::ActOnNonTypeTemplateParameter(Scope *S, Declarator &D,
 Decl *Sema::ActOnTemplateTemplateParameter(Scope* S,
                                            SourceLocation TmpLoc,
                                            TemplateParamsTy *Params,
+                                           SourceLocation EllipsisLoc,
                                            IdentifierInfo *Name,
                                            SourceLocation NameLoc,
                                            unsigned Depth,
                                            unsigned Position,
                                            SourceLocation EqualLoc,
-                                       const ParsedTemplateArgument &Default) {
+                                           ParsedTemplateArgument Default) {
   assert(S->isTemplateParamScope() &&
          "Template template parameter not in template parameter scope!");
 
   // Construct the parameter object.
+  bool IsParameterPack = EllipsisLoc.isValid();
+  // FIXME: Pack-ness is dropped
   TemplateTemplateParmDecl *Param =
     TemplateTemplateParmDecl::Create(Context, Context.getTranslationUnitDecl(),
                                      NameLoc.isInvalid()? TmpLoc : NameLoc, 
-                                     Depth, Position, Name,
-                                     Params);
+                                     Depth, Position, IsParameterPack, 
+                                     Name, Params);
 
   // If the template template parameter has a name, then link the identifier 
   // into the scope and lookup mechanisms.
@@ -708,6 +724,14 @@ Decl *Sema::ActOnTemplateTemplateParameter(Scope* S,
     Param->setInvalidDecl();
   }
 
+  // C++0x [temp.param]p9:
+  //   A default template-argument may be specified for any kind of
+  //   template-parameter that is not a template parameter pack.
+  if (IsParameterPack && !Default.isInvalid()) {
+    Diag(EqualLoc, diag::err_template_param_pack_default_arg);
+    Default = ParsedTemplateArgument();
+  }
+  
   if (!Default.isInvalid()) {
     // Check only that we have a template template argument. We don't want to
     // try to check well-formedness now, because our template template parameter
@@ -1133,9 +1157,9 @@ bool Sema::CheckTemplateParameterList(TemplateParameterList *NewParams,
     bool MissingDefaultArg = false;
 
     // C++0x [temp.param]p11:
-    // If a template parameter of a class template is a template parameter pack,
-    // it must be the last template parameter.
-    if (SawParameterPack) {
+    //   If a template parameter of a primary class template is a template 
+    //   parameter pack, it shall be the last template parameter.
+    if (SawParameterPack && TPC == TPC_ClassTemplate) {
       Diag(ParameterPackLoc,
            diag::err_template_param_pack_must_be_last_template_parameter);
       Invalid = true;
@@ -1200,7 +1224,12 @@ bool Sema::CheckTemplateParameterList(TemplateParameterList *NewParams,
       // Merge default arguments for non-type template parameters
       NonTypeTemplateParmDecl *OldNonTypeParm
         = OldParams? cast<NonTypeTemplateParmDecl>(*OldParam) : 0;
-      if (OldNonTypeParm && OldNonTypeParm->hasDefaultArgument() &&
+      if (NewNonTypeParm->isParameterPack()) {
+        assert(!NewNonTypeParm->hasDefaultArgument() &&
+               "Parameter packs can't have a default argument!");
+        SawParameterPack = true;
+        ParameterPackLoc = NewNonTypeParm->getLocation();
+      } else if (OldNonTypeParm && OldNonTypeParm->hasDefaultArgument() &&
           NewNonTypeParm->hasDefaultArgument()) {
         OldDefaultLoc = OldNonTypeParm->getDefaultArgumentLoc();
         NewDefaultLoc = NewNonTypeParm->getDefaultArgumentLoc();
@@ -1212,7 +1241,7 @@ bool Sema::CheckTemplateParameterList(TemplateParameterList *NewParams,
         // new declaration.
         SawDefaultArgument = true;
         // FIXME: We need to create a new kind of "default argument"
-        // expression that points to a previous template template
+        // expression that points to a previous non-type template
         // parameter.
         NewNonTypeParm->setDefaultArgument(
                                          OldNonTypeParm->getDefaultArgument(),
@@ -1243,7 +1272,12 @@ bool Sema::CheckTemplateParameterList(TemplateParameterList *NewParams,
       // Merge default arguments for template template parameters
       TemplateTemplateParmDecl *OldTemplateParm
         = OldParams? cast<TemplateTemplateParmDecl>(*OldParam) : 0;
-      if (OldTemplateParm && OldTemplateParm->hasDefaultArgument() &&
+      if (NewTemplateParm->isParameterPack()) {
+        assert(!NewTemplateParm->hasDefaultArgument() &&
+               "Parameter packs can't have a default argument!");
+        SawParameterPack = true;
+        ParameterPackLoc = NewTemplateParm->getLocation();
+      } else if (OldTemplateParm && OldTemplateParm->hasDefaultArgument() &&
           NewTemplateParm->hasDefaultArgument()) {
         OldDefaultLoc = OldTemplateParm->getDefaultArgument().getLocation();
         NewDefaultLoc = NewTemplateParm->getDefaultArgument().getLocation();
@@ -1278,9 +1312,10 @@ bool Sema::CheckTemplateParameterList(TemplateParameterList *NewParams,
       Invalid = true;
     } else if (MissingDefaultArg) {
       // C++ [temp.param]p11:
-      //   If a template-parameter has a default template-argument,
-      //   all subsequent template-parameters shall have a default
-      //   template-argument supplied.
+      //   If a template-parameter of a class template has a default 
+      //   template-argument, each subsequent template- parameter shall either 
+      //   have a default template-argument supplied or be a template parameter
+      //   pack.
       Diag((*NewParam)->getLocation(),
            diag::err_template_param_default_arg_missing);
       Diag(PreviousDefaultArgLoc, diag::note_template_param_prev_default_arg);
@@ -2221,10 +2256,12 @@ bool Sema::CheckTemplateArgument(NamedDecl *Param,
       break;
       
     case TemplateArgument::Template:
+    case TemplateArgument::TemplateExpansion:
       // We were given a template template argument. It may not be ill-formed;
       // see below.
       if (DependentTemplateName *DTN
-            = Arg.getArgument().getAsTemplate().getAsDependentTemplateName()) {
+            = Arg.getArgument().getAsTemplateOrTemplatePattern()
+                                              .getAsDependentTemplateName()) {
         // We have a template argument such as \c T::template X, which we
         // parsed as a template template argument. However, since we now
         // know that we need a non-type template argument, convert this
@@ -2237,6 +2274,17 @@ bool Sema::CheckTemplateArgument(NamedDecl *Param,
                                                     DTN->getQualifier(),
                                                Arg.getTemplateQualifierRange(),
                                                     NameInfo);
+        
+        // If we parsed the template argument as a pack expansion, create a
+        // pack expansion expression.
+        if (Arg.getArgument().getKind() == TemplateArgument::TemplateExpansion){
+          ExprResult Expansion = ActOnPackExpansion(E, 
+                                                  Arg.getTemplateEllipsisLoc());
+          if (Expansion.isInvalid())
+            return true;
+          
+          E = Expansion.get();
+        }
         
         TemplateArgument Result;
         if (CheckTemplateArgument(NTTP, NTTPType, E, Result))
@@ -2313,6 +2361,7 @@ bool Sema::CheckTemplateArgument(NamedDecl *Param,
     return true;
     
   case TemplateArgument::Template:
+  case TemplateArgument::TemplateExpansion:
     if (CheckTemplateArgument(TempParm, Arg))
       return true;
       
@@ -3676,6 +3725,27 @@ Sema::TemplateParameterListsAreEqual(TemplateParameterList *New,
       NonTypeTemplateParmDecl *NewNTTP
         = cast<NonTypeTemplateParmDecl>(*NewParm);
       
+      if (OldNTTP->isParameterPack() != NewNTTP->isParameterPack()) {
+        // FIXME: Implement the rules in C++0x [temp.arg.template]p5 that
+        // allow one to match a template parameter pack in the template
+        // parameter list of a template template parameter to one or more
+        // template parameters in the template parameter list of the 
+        // corresponding template template argument.        
+        if (Complain) {
+          unsigned NextDiag = diag::err_template_parameter_pack_non_pack;
+          if (TemplateArgLoc.isValid()) {
+            Diag(TemplateArgLoc,
+                 diag::err_template_arg_template_params_mismatch);
+            NextDiag = diag::note_template_parameter_pack_non_pack;
+          }
+          Diag(NewNTTP->getLocation(), NextDiag)
+            << 1 << NewNTTP->isParameterPack();
+          Diag(OldNTTP->getLocation(), diag::note_template_parameter_pack_here)
+            << 1 << OldNTTP->isParameterPack();
+        }
+        return false;
+      }
+
       // If we are matching a template template argument to a template
       // template parameter and one of the non-type template parameter types
       // is dependent, then we must wait until template instantiation time
@@ -3712,6 +3782,28 @@ Sema::TemplateParameterListsAreEqual(TemplateParameterList *New,
         = cast<TemplateTemplateParmDecl>(*OldParm);
       TemplateTemplateParmDecl *NewTTP
         = cast<TemplateTemplateParmDecl>(*NewParm);
+      
+      if (OldTTP->isParameterPack() != NewTTP->isParameterPack()) {
+        // FIXME: Implement the rules in C++0x [temp.arg.template]p5 that
+        // allow one to match a template parameter pack in the template
+        // parameter list of a template template parameter to one or more
+        // template parameters in the template parameter list of the 
+        // corresponding template template argument.        
+        if (Complain) {
+          unsigned NextDiag = diag::err_template_parameter_pack_non_pack;
+          if (TemplateArgLoc.isValid()) {
+            Diag(TemplateArgLoc,
+                 diag::err_template_arg_template_params_mismatch);
+            NextDiag = diag::note_template_parameter_pack_non_pack;
+          }
+          Diag(NewTTP->getLocation(), NextDiag)
+            << 2 << NewTTP->isParameterPack();
+          Diag(OldTTP->getLocation(), diag::note_template_parameter_pack_here)
+            << 2 << OldTTP->isParameterPack();
+        }
+        return false;
+      }
+
       if (!TemplateParameterListsAreEqual(NewTTP->getTemplateParameters(),
                                           OldTTP->getTemplateParameters(),
                                           Complain,
