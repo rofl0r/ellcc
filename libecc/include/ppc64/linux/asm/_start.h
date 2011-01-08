@@ -3,11 +3,11 @@
 asm(
 "       .section \".opd\",\"aw\"\n"
 "       .align  3\n"
+"       .globl  _start\n"
 "_start:\n"
 "       .quad   ._start, .TOC.@tocbase, 0\n"
 "       .size _start, 24\n"
 "       .section \".text\"\n"
-"       .globl  ._start\n"
 "       .type   ._start, %function\n"
 "       .align  3\n"
 "._start:\n"
