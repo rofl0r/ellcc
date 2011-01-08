@@ -14,19 +14,20 @@
 
 SHELL=/bin/sh
 
-all: arm i386 ppc x86_64 microblaze
+all: ecc arm i386 ppc x86_64 microblaze
 
 arm i386 microblaze mips nios2 ppc ppc64 sparc x86_64:
 	$(MAKE) clean
-	$(MAKE) TARGET=$@ bzip2all
+	$(MAKE) XCC=$@-linux- RUN=../../../bin/qemu-$@ bzip2all
 
-# To assist in cross-compiling
-XCC=$(TARGET)-linux-
+ecc:
+	$(MAKE) clean
+	$(MAKE) bzip2all
+
 CC=../../../bin/$(XCC)ecc
 AR=../../../bin/ecc-ar
 RANLIB=../../../bin/ecc-ranlib
 LDFLAGS=
-RUN=../../../bin/qemu-$(TARGET)
 
 BIGFILES=-D_FILE_OFFSET_BITS=64
 CFLAGS=-Wall -Winline -O2 -g $(BIGFILES)
