@@ -169,6 +169,7 @@ static void analyzeFrameIndexes(MachineFunction &MF) {
   // caller has allocated stack space for it already.  Instead of allocating
   // stack space on our frame, we record the correct location in the callers
   // frame.
+#if RICH
   for (MachineRegisterInfo::livein_iterator LI = LII; LI != LIE; ++LI) {
     for (MachineBasicBlock::iterator I=MIB; I != MIE; ++I) {
       if (I->definesRegister(LI->first))
@@ -200,6 +201,7 @@ static void analyzeFrameIndexes(MachineFunction &MF) {
       }
     }
   }
+#endif // RICH
 
   // Go ahead and erase all of the instructions that we determined were
   // no longer needed.
