@@ -65,6 +65,16 @@ struct ptmget {
 	char	sn[16];
 };
 
+#define NCC 8   // RICH: This is from QEMU, Linux says 10. Which is right?
+struct termio {
+        unsigned short  c_iflag;        /* input flags */
+        unsigned short  c_oflag;        /* output flags */
+        unsigned short  c_cflag;        /* control flags */
+        unsigned short  c_lflag;        /* local flags */
+        unsigned char   c_line;         /* line discipline */
+        unsigned char   c_cc[NCC];      /* control chars */
+};
+
 #define _PATH_PTMDEV	"/dev/ptm"
 
 #define		TIOCM_LE	0001		/* line enable */
@@ -79,11 +89,12 @@ struct ptmget {
 #define		TIOCM_RI	TIOCM_RNG
 #define		TIOCM_DSR	0400		/* data set ready */
 
+// RICH: Many of these need to be fixed.
 #define	TIOCEXCL	0x540C                  /* set exclusive use of tty */
 #define	TIOCNXCL        0x540D                  /* reset exclusive use of tty */
 #define	TIOCFLUSH	0x540B                  /* flush buffers */
-#define	TIOCGETA	0x5405  // RICH_IOR('t', 23, struct termio)    /* get termios struct */
-#define	TIOCSETA	0x5406  // RICH_IOW('t', 24, struct termio)    /* set termios struct */
+#define	TIOCGETA	_IOR('t', 23, struct termio)    /* get termios struct */
+#define	TIOCSETA	_IOW('t', 24, struct termio)    /* set termios struct */
 #define	TIOCSETAW	0x5407                  /* drain output, set */
 #define	TIOCSETAF	0x5408                  /* drn out, fls in, set */
 
