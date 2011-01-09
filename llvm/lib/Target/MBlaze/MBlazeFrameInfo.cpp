@@ -125,7 +125,10 @@ static void analyzeFrameIndexes(MachineFunction &MF) {
           !I->getOperand(1).isFI() || !I->getOperand(0).isReg() ||
           I->getOperand(1).getIndex() != LiveInFI[i]) continue;
 
+      int LFI = I->getOperand(1).getIndex();
       unsigned FIReg = I->getOperand(0).getReg();
+      if (MFI->getObjectSize(LFI) != 4) continue;
+
       MachineBasicBlock::iterator SI = I;
       for (SI++; SI != MIE; ++SI) {
         if (!SI->getOperand(0).isReg() ||
@@ -140,8 +143,7 @@ static void analyzeFrameIndexes(MachineFunction &MF) {
         if (SI->getOperand(0).isDef()) break;
 
         if (SI->getOperand(0).isKill()) {
-          DEBUG(dbgs() << "LWI for FI#" << I->getOperand(1).getIndex() 
-                       << " removed\n");
+          DEBUG(dbgs() << "LWI for FI#" << LFI << " removed\n");
           EraseInstr.push_back(I);
         }
 
@@ -169,7 +171,6 @@ static void analyzeFrameIndexes(MachineFunction &MF) {
   // caller has allocated stack space for it already.  Instead of allocating
   // stack space on our frame, we record the correct location in the callers
   // frame.
-#if RICH
   for (MachineRegisterInfo::livein_iterator LI = LII; LI != LIE; ++LI) {
     for (MachineBasicBlock::iterator I=MIB; I != MIE; ++I) {
       if (I->definesRegister(LI->first))
@@ -179,8 +180,10 @@ static void analyzeFrameIndexes(MachineFunction &MF) {
           !I->getOperand(1).isFI() || !I->getOperand(0).isReg() ||
           I->getOperand(1).getIndex() < 0) continue;
 
+      int FI  = I->getOperand(1).getIndex();
+      if (MFI->getObjectSize(FI) != 4) continue;
+
       if (I->getOperand(0).getReg() == LI->first) {
-        int FI = I->getOperand(1).getIndex();
         MBlazeFI->recordLiveIn(FI);
 
         int FILoc = 0;
@@ -201,7 +204,6 @@ static void analyzeFrameIndexes(MachineFunction &MF) {
       }
     }
   }
-#endif // RICH
 
   // Go ahead and erase all of the instructions that we determined were
   // no longer needed.
