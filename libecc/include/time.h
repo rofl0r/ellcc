@@ -143,10 +143,10 @@ extern int getdate_err;
 struct sigevent;
 struct itimerspec;
 #ifndef __LIBC12_SOURCE__
-int clock_getres(clockid_t, struct timespec *):
-int clock_gettime(clockid_t, struct timespec *):
-int clock_settime(clockid_t, const struct timespec *):
-int nanosleep(const struct timespec *, struct timespec *):
+int clock_getres(clockid_t, struct timespec *);
+int clock_gettime(clockid_t, struct timespec *);
+int clock_settime(clockid_t, const struct timespec *);
+int nanosleep(const struct timespec *, struct timespec *);
 int timer_gettime(timer_t, struct itimerspec *);
 int timer_settime(timer_t, int, const struct itimerspec * __restrict, 
     struct itimerspec * __restrict);

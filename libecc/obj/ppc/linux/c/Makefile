@@ -1,4 +1,4 @@
 # Build the system calls.
-EXTRASRCS = ../../../../src/linux/sources
+EXTRASRCS = ../../../../src/$(OS)/sources ../../../../src/syscalls/sources
 
 include ../../../../src/os.mk

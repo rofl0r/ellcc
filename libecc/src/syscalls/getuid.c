@@ -2,7 +2,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-pid_t getuid(void)
+uid_t getuid(void)
 {
     return INLINE_SYSCALL(getuid, 0);
 }
