@@ -1,4 +1,4 @@
-MYVPATH := $(MYVPATH):$(SRCPATH)/$(OS)
+MYVPATH := $(MYVPATH):$(SRCPATH)/syscalls
 SRCS += brk.c fcntl.c stat.c chmod.c fstat.c lseek.c unlink.c \
         chown.c _exit.c getpid.c lstat.c utime.c close.c fchmod.c \
         open.c utimes.c fchown.c kill.c read.c write.c gettimeofday.c \
