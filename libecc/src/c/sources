@@ -22,7 +22,8 @@ SRCS += raise.c time.c isatty.c signal.c sigfuncs.c isinfd_ieee754.c isnand_ieee
         readdir.c rewinddir.c initdir.c execv.c execvp.c execl.c execlp.c execle.c assert.c \
         getprogname.c setprogname.c alarm.c getgrent.c getpwent.c wait3.c sleep.c errx.c \
         vwarnx.c alphasort.c getpagesize.c telldir.c verrx.c sha1.c md5c.c arc4random.c \
-        bswap16.c bswap32.c bswap64.c fpgetround.c getcwd.c isnanf_ieee754.c isinff_ieee754.c
+        bswap16.c bswap32.c bswap64.c fpgetround.c getcwd.c isnanf_ieee754.c isinff_ieee754.c \
+        fpclassifyl_ieee754.c fpclassifyd_ieee754.c fpclassifyf_ieee754.c
 
 MYVPATH := $(MYVPATH):$(SRCPATH)/c/termios
 SRCS += tcgetattr.c tcsetpgrp.c tcgetpgrp.c tcsetattr.c cfsetispeed.c cfgetispeed.c \
@@ -38,7 +39,7 @@ SRCS += localeconv.c current_locale.c global_locale.c tolower_.c ctype_.c touppe
 MYVPATH := $(MYVPATH):$(SRCPATH)/c/gdtoa
 SRCS +=	strtod.c dtoa.c ldtoa.c gdtoa.c dmisc.c gethex.c gmisc.c strtord.c \
         hd_init.c hexnan.c misc.c smisc.c strtodg.c sum.c ulp.c _strtof.c _strtold.c \
-        strtord.c
+        strtord.c hdtoa.c
 
 MYVPATH := $(MYVPATH):$(SRCPATH)/c/time
 SRCS += localtime.c asctime.c strftime.c

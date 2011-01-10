@@ -42,6 +42,8 @@ __RCSID("$NetBSD: vfwprintf.c,v 1.23 2010/12/16 17:42:27 wiz Exp $");
 #endif
 #endif /* LIBC_SCCS and not lint */
 
+#define WIDE_DOUBLE
+
 /*
  * Actual {w,}printf innards.
  */
@@ -1134,7 +1136,7 @@ fp_common:
 				flags &= ~ZEROPAD;
 				break;
 			}
-#else
+#else // !WIDE_DOUBLE
 		case 'e':
 		case 'E':
 		case 'f':
@@ -1193,7 +1195,7 @@ fp_common:
 			__freedtoa(dtoaresult);
 			if (softsign)
 				sign = '-';
-#endif
+#endif // !WIDE_DOUBLE
 			flags |= FPT;
 			if (ch == 'g' || ch == 'G') {
 				if (expt > -4 && expt <= prec) {

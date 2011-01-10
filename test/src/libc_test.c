@@ -85,6 +85,9 @@ int main(int argc, char** argv)
         sprintf(buffer, "%e", 0.010);
         TEST(strcmp(buffer, "1.000000e-02") == 0, "Format %%e of 0.0100 gives %s", buffer);
 
+        sprintf(buffer, "%g", 1e50);
+        TEST(strcmp(buffer, "1.000000e+50") == 0, "Format %%g of 1e50 gives %s", buffer);
+
         sprintf(buffer, "%e", 1e50);
         TEST(strcmp(buffer, "1.000000e+50") == 0, "Format %%e of 1e50 gives %s", buffer);
 
