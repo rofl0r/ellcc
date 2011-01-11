@@ -1,0 +1,5 @@
+MYVPATH := $(MYVPATH):$(SRCPATH)/$(OS)
+
+# Startup code.
+CRTSRCS = crt0.c
+

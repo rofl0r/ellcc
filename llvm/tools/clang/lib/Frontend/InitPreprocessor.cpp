@@ -481,7 +481,7 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
 
   // ELLCC is a cross development environment.
   if (TI.getTriple().getVendor() == llvm::Triple::ELLCC)
-    return Builder.defineMacro("__ELLCC__");
+    Builder.defineMacro("__ELLCC__");
  
   // Get other target #defines.
   TI.getTargetDefines(LangOpts, Builder);

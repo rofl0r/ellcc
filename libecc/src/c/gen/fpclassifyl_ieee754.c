@@ -43,7 +43,7 @@ __RCSID("$NetBSD: fpclassifyd_ieee754.c,v 1.2 2008/04/28 20:22:59 martin Exp $")
 int
 __fpclassifyl(long double x)
 {
-#if 1 // RICH: preprocessor defines. defined(i386) || defined(__amd64__)
+#if defined(i386) || defined(__amd64__)
 // IEEE 754 compatible 80-bit extended-precision Intel 386 version
         union ieee_ext_u u;
 
@@ -64,7 +64,7 @@ __fpclassifyl(long double x)
         }
 
         return FP_NORMAL;
-#else
+#elif defined(EXT_EXPBITS)
     // IEEE 754 compatible 128-bit extended-precision version.
         union ieee_ext_u u;
 
@@ -85,5 +85,7 @@ __fpclassifyl(long double x)
         }
 
         return FP_NORMAL;
+#else // Punt!
+        return FP_NAN;
 #endif
 }

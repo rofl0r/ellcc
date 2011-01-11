@@ -3,6 +3,7 @@
 #ifndef _ARM_FLOAT_H_
 #define _ARM_FLOAT_H_
 
+#if 0 // RICH
 #ifndef __VFP_FP__
 #define LDBL_MANT_DIG	64
 #define LDBL_EPSILON	1.0842021724855044340E-19L
@@ -13,6 +14,7 @@
 #define LDBL_MAX_EXP	16384
 #define LDBL_MAX	1.1897314953572317650E+4932L
 #define LDBL_MAX_10_EXP	4932
+#endif
 #endif
 
 #include <sys/float_ieee754.h>
