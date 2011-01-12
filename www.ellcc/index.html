@@ -50,15 +50,27 @@ Clang and the&nbsp; <a href="http://llvm.org">LLVM (Low Level Virtual
 Machine)</a>
 compiler infrastructure. The primary emphasis of the ELLCC project is
 to
-create an easy to use multi-target cross compilation environment.<br>
+create an easy to use multi-target cross compilation environment for
+embedded systems.<br>
+      <br>
+QEMU is used for cross-platform testing. Programs are built for the
+target as a Linux user space program and run under QEMU for testing
+purposes.<br>
+      <br>
+ELLCC is in a pre-release state. Some targets are farther along than
+others. Not for the unhardy!<br>
       <span style="text-decoration: underline;"></span>
       <h2>Goals</h2>
       <ul>
         <li>A functional C/C++ compiler based on <a
  href="http://clang.llvm.org">Clang</a> &nbsp;(ecc)</li>
-        <li>Multi-target support:&nbsp;ARM, Microblaze, Mips, Nios2,
-PowerPC, PowerPC 64 Sparc and X86</li>
-        <li><a href="ELLCC.html">Notes</a></li>
+        <li>Multi-target support:&nbsp;ARM, i386, Microblaze, Mips<sup>[1]</sup>,
+Nios2<sup>[2]</sup>,
+PowerPC, PowerPC64<sup>[3]</sup>, Sparc<sup>[1]</sup> and X86_64</li>
+        <li>Multi-OS support: Linux, NetBSD, Standalone, ...<br>
+        </li>
+        <li><a href="ELLCC.html">Notes<br>
+          </a></li>
       </ul>
       <ul>
       </ul>
@@ -69,14 +81,17 @@ PowerPC, PowerPC 64 Sparc and X86</li>
         <li><a href="ellcc/libecc/share/doc/binutils.html">binutils</a>
 - The GNU binutils package</li>
         <li>libecc - The C standard library based on the NetBSD
-standard C library<br>
+standard C library and the LLVM project's compiler-rt<br>
         </li>
         <li>The <a href="ellcc/libecc/share/doc/gdb.html/gdb.html">GDB
 debugger</a></li>
         <li>The QEMU emulator</li>
       </ul>
-      <a href="images/ssmacros.png"></a><br>
-      <br clear="all">
+      <br>
+      <hr style="width: 100%; height: 2px;">[1] The standard C library
+does not compile.<br>
+[2] The code generator is unfinished.<br>
+[3] Regression tests fail.<br clear="all">
       </td>
     </tr>
   </tbody>
