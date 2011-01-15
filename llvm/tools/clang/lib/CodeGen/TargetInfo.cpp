@@ -2607,7 +2607,6 @@ llvm::Value *MBlazeABIInfo::EmitVAArg(llvm::Value *VAListAddr, QualType Ty,
   return AddrTyped;
 }
 
-
 ABIArgInfo MBlazeABIInfo::classifyReturnType(QualType RetTy) const {
   if (RetTy->isVoidType())
     return ABIArgInfo::getIgnore();
@@ -2702,10 +2701,30 @@ void MSP430TargetCodeGenInfo::SetTargetAttributes(const Decl *D,
 //===----------------------------------------------------------------------===//
 
 namespace {
+class MIPSABIInfo : public ABIInfo {
+public:
+  MIPSABIInfo(CodeGenTypes &CGT) : ABIInfo(CGT) {}
+
+  bool isPromotableIntegerType(QualType Ty) const;
+
+  ABIArgInfo classifyReturnType(QualType RetTy) const;
+  ABIArgInfo classifyArgumentType(QualType RetTy) const;
+
+  virtual void computeInfo(CGFunctionInfo &FI) const {
+    FI.getReturnInfo() = classifyReturnType(FI.getReturnType());
+    for (CGFunctionInfo::arg_iterator it = FI.arg_begin(), ie = FI.arg_end();
+         it != ie; ++it)
+      it->info = classifyArgumentType(it->type);
+  }
+
+  virtual llvm::Value *EmitVAArg(llvm::Value *VAListAddr, QualType Ty,
+                                 CodeGenFunction &CGF) const;
+};
+
 class MIPSTargetCodeGenInfo : public TargetCodeGenInfo {
 public:
   MIPSTargetCodeGenInfo(CodeGenTypes &CGT)
-    : TargetCodeGenInfo(new DefaultABIInfo(CGT)) {}
+    : TargetCodeGenInfo(new MIPSABIInfo(CGT)) {}
 
   int getDwarfEHStackPointer(CodeGen::CodeGenModule &CGM) const {
     return 29;
@@ -2749,6 +2768,65 @@ MIPSTargetCodeGenInfo::initDwarfEHRegSizeTable(CodeGen::CodeGenFunction &CGF,
   return false;
 }
 
+bool MIPSABIInfo::isPromotableIntegerType(QualType Ty) const {
+  // Mips ABI requires all 8 and 16 bit quantities to be extended.
+  if (const BuiltinType *BT = Ty->getAs<BuiltinType>())
+    switch (BT->getKind()) {
+    case BuiltinType::Bool:
+    case BuiltinType::Char_S:
+    case BuiltinType::Char_U:
+    case BuiltinType::SChar:
+    case BuiltinType::UChar:
+    case BuiltinType::Short:
+    case BuiltinType::UShort:
+      return true;
+    default:
+      return false;
+    }
+  return false;
+}
+
+llvm::Value *MIPSABIInfo::EmitVAArg(llvm::Value *VAListAddr, QualType Ty,
+                                      CodeGenFunction &CGF) const {
+  // FIXME: Need to handle alignment
+  const llvm::Type *BP = llvm::Type::getInt8PtrTy(CGF.getLLVMContext());
+  const llvm::Type *BPP = llvm::PointerType::getUnqual(BP);
+
+  CGBuilderTy &Builder = CGF.Builder;
+  llvm::Value *VAListAddrAsBPP = Builder.CreateBitCast(VAListAddr, BPP,
+                                                       "ap");
+  llvm::Value *Addr = Builder.CreateLoad(VAListAddrAsBPP, "ap.cur");
+  llvm::Type *PTy =
+    llvm::PointerType::getUnqual(CGF.ConvertType(Ty));
+  llvm::Value *AddrTyped = Builder.CreateBitCast(Addr, PTy);
+
+  uint64_t Offset =
+    llvm::RoundUpToAlignment(CGF.getContext().getTypeSize(Ty) / 8, 4);
+  llvm::Value *NextAddr =
+    Builder.CreateGEP(Addr, llvm::ConstantInt::get(CGF.Int32Ty, Offset),
+                      "ap.next");
+  Builder.CreateStore(NextAddr, VAListAddrAsBPP);
+
+  return AddrTyped;
+}
+
+ABIArgInfo MIPSABIInfo::classifyReturnType(QualType RetTy) const {
+  if (RetTy->isVoidType())
+    return ABIArgInfo::getIgnore();
+  if (isAggregateTypeForABI(RetTy))
+    return ABIArgInfo::getIndirect(0);
+
+  return (isPromotableIntegerType(RetTy) ?
+          ABIArgInfo::getExtend() : ABIArgInfo::getDirect());
+}
+
+ABIArgInfo MIPSABIInfo::classifyArgumentType(QualType Ty) const {
+  if (isAggregateTypeForABI(Ty))
+    return ABIArgInfo::getIndirect(0);
+
+  return (isPromotableIntegerType(Ty) ?
+          ABIArgInfo::getExtend() : ABIArgInfo::getDirect());
+}
 
 const TargetCodeGenInfo &CodeGenModule::getTargetCodeGenInfo() {
   if (TheTargetCodeGenInfo)

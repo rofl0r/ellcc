@@ -1159,7 +1159,7 @@ MipsTargetLowering::LowerFormalArguments(SDValue Chain,
       SDValue ArgValue = DAG.getCopyFromReg(Chain, dl, Reg, MVT::i32);
 
       int FI = MFI->CreateFixedObject(4, 0, true);
-      MipsFI->recordStoreVarArgsFI(FI, -(4+(StackLoc*4)));
+      MipsFI->recordStoreVarArgsFI(FI, -(8+(StackLoc*4)));
       SDValue PtrOff = DAG.getFrameIndex(FI, getPointerTy());
       OutChains.push_back(DAG.getStore(Chain, dl, ArgValue, PtrOff,
                                        MachinePointerInfo(),
