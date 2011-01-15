@@ -32,6 +32,7 @@
 #include "llvm/CodeGen/ValueTypes.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Target/TargetOptions.h"
 using namespace llvm;
 
 const char *MipsTargetLowering::getTargetNodeName(unsigned Opcode) const {
@@ -61,12 +62,14 @@ MipsTargetLowering(MipsTargetMachine &TM)
 
   // Set up the register classes
   addRegisterClass(MVT::i32, Mips::CPURegsRegisterClass);
-  addRegisterClass(MVT::f32, Mips::FGR32RegisterClass);
+  if (FloatABIType != FloatABI::Soft)
+    addRegisterClass(MVT::f32, Mips::FGR32RegisterClass);
 
   // When dealing with single precision only, use libcalls
-  if (!Subtarget->isSingleFloat())
-    if (!Subtarget->isFP64bit())
-      addRegisterClass(MVT::f64, Mips::AFGR64RegisterClass);
+  if (FloatABIType != FloatABI::Soft)
+    if (!Subtarget->isSingleFloat())
+      if (!Subtarget->isFP64bit())
+        addRegisterClass(MVT::f64, Mips::AFGR64RegisterClass);
 
   // Load extented operations for i1 types must be promoted
   setLoadExtAction(ISD::EXTLOAD,  MVT::i1,  Promote);
@@ -74,8 +77,10 @@ MipsTargetLowering(MipsTargetMachine &TM)
   setLoadExtAction(ISD::SEXTLOAD, MVT::i1,  Promote);
 
   // MIPS doesn't have extending float->double load/store
-  setLoadExtAction(ISD::EXTLOAD, MVT::f32, Expand);
-  setTruncStoreAction(MVT::f64, MVT::f32, Expand);
+  if (FloatABIType != FloatABI::Soft) {
+    setLoadExtAction(ISD::EXTLOAD, MVT::f32, Expand);
+    setTruncStoreAction(MVT::f64, MVT::f32, Expand);
+  }
 
   // Used by legalize types to correctly generate the setcc result.
   // Without this, every float setcc comes with a AND/OR with the result,
@@ -88,11 +93,13 @@ MipsTargetLowering(MipsTargetMachine &TM)
   setOperationAction(ISD::GlobalTLSAddress,   MVT::i32,   Custom);
   setOperationAction(ISD::JumpTable,          MVT::i32,   Custom);
   setOperationAction(ISD::ConstantPool,       MVT::i32,   Custom);
-  setOperationAction(ISD::SELECT,             MVT::f32,   Custom);
-  setOperationAction(ISD::SELECT,             MVT::f64,   Custom);
   setOperationAction(ISD::SELECT,             MVT::i32,   Custom);
-  setOperationAction(ISD::SETCC,              MVT::f32,   Custom);
-  setOperationAction(ISD::SETCC,              MVT::f64,   Custom);
+  if (FloatABIType != FloatABI::Soft) {
+    setOperationAction(ISD::SELECT,             MVT::f32,   Custom);
+    setOperationAction(ISD::SELECT,             MVT::f64,   Custom);
+    setOperationAction(ISD::SETCC,              MVT::f32,   Custom);
+    setOperationAction(ISD::SETCC,              MVT::f64,   Custom);
+  }
   setOperationAction(ISD::BRCOND,             MVT::Other, Custom);
   setOperationAction(ISD::DYNAMIC_STACKALLOC, MVT::i32,   Custom);
   setOperationAction(ISD::FP_TO_SINT,         MVT::i32,   Custom);
@@ -125,16 +132,18 @@ MipsTargetLowering(MipsTargetMachine &TM)
   setOperationAction(ISD::SHL_PARTS,         MVT::i32,   Expand);
   setOperationAction(ISD::SRA_PARTS,         MVT::i32,   Expand);
   setOperationAction(ISD::SRL_PARTS,         MVT::i32,   Expand);
-  setOperationAction(ISD::FCOPYSIGN,         MVT::f32,   Expand);
-  setOperationAction(ISD::FCOPYSIGN,         MVT::f64,   Expand);
-  setOperationAction(ISD::FSIN,              MVT::f32,   Expand);
-  setOperationAction(ISD::FCOS,              MVT::f32,   Expand);
-  setOperationAction(ISD::FPOWI,             MVT::f32,   Expand);
-  setOperationAction(ISD::FPOW,              MVT::f32,   Expand);
-  setOperationAction(ISD::FLOG,              MVT::f32,   Expand);
-  setOperationAction(ISD::FLOG2,             MVT::f32,   Expand);
-  setOperationAction(ISD::FLOG10,            MVT::f32,   Expand);
-  setOperationAction(ISD::FEXP,              MVT::f32,   Expand);
+  if (FloatABIType != FloatABI::Soft) {
+    setOperationAction(ISD::FCOPYSIGN,         MVT::f32,   Expand);
+    setOperationAction(ISD::FCOPYSIGN,         MVT::f64,   Expand);
+    setOperationAction(ISD::FSIN,              MVT::f32,   Expand);
+    setOperationAction(ISD::FCOS,              MVT::f32,   Expand);
+    setOperationAction(ISD::FPOWI,             MVT::f32,   Expand);
+    setOperationAction(ISD::FPOW,              MVT::f32,   Expand);
+    setOperationAction(ISD::FLOG,              MVT::f32,   Expand);
+    setOperationAction(ISD::FLOG2,             MVT::f32,   Expand);
+    setOperationAction(ISD::FLOG10,            MVT::f32,   Expand);
+    setOperationAction(ISD::FEXP,              MVT::f32,   Expand);
+  }
 
   setOperationAction(ISD::EH_LABEL,          MVT::Other, Expand);
 
@@ -143,8 +152,9 @@ MipsTargetLowering(MipsTargetMachine &TM)
   setOperationAction(ISD::STACKRESTORE,      MVT::Other, Expand);
   setOperationAction(ISD::MEMBARRIER,        MVT::Other, Expand);
 
-  if (Subtarget->isSingleFloat())
-    setOperationAction(ISD::SELECT_CC, MVT::f64, Expand);
+  if (FloatABIType != FloatABI::Soft)
+    if (Subtarget->isSingleFloat())
+      setOperationAction(ISD::SELECT_CC, MVT::f64, Expand);
 
   if (!Subtarget->hasSEInReg()) {
     setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::i8,  Expand);
