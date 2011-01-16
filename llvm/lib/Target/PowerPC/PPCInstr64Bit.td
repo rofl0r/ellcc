@@ -233,6 +233,11 @@ def MTCTR8 : XFXForm_7_ext<31, 467, 9, (outs), (ins G8RC:$rS),
              PPC970_DGroup_First, PPC970_Unit_FXU;
 }
 
+let isTerminator = 1, isBarrier = 1, PPC970_Unit = 7 in {
+  let isBranch = 1, isIndirectBranch = 1, Uses = [CTR8] in
+    def BCTR8 : XLForm_2_ext<19, 528, 20, 0, 0, (outs), (ins), "bctr", BrB, []>;
+}
+
 let Defs = [X1], Uses = [X1] in
 def DYNALLOC8 : Pseudo<(outs G8RC:$result), (ins G8RC:$negsize, memri:$fpsi),"",
                        [(set G8RC:$result,

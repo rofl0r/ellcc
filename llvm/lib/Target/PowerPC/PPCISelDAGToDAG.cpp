@@ -1058,7 +1058,8 @@ SDNode *PPCDAGToDAGISel::Select(SDNode *N) {
     unsigned Opc = Target.getValueType() == MVT::i32 ? PPC::MTCTR : PPC::MTCTR8;
     Chain = SDValue(CurDAG->getMachineNode(Opc, dl, MVT::Other, Target,
                                            Chain), 0);
-    return CurDAG->SelectNodeTo(N, PPC::BCTR, MVT::Other, Chain);
+    return CurDAG->SelectNodeTo(N, Opc == PPC::MTCTR ? PPC::BCTR : PPC::BCTR8,
+                                MVT::Other, Chain);
   }
   }
 
