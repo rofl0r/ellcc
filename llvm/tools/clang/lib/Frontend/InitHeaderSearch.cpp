@@ -421,15 +421,20 @@ void InitHeaderSearch::AddDefaultCIncludePaths(const llvm::Triple &triple,
   if (triple.getVendor() != llvm::Triple::ELLCC) {
     // FIXME: temporary hack: hard-coded paths.
     AddPath("/usr/local/include", System, true, false, false);
-    // Builtin includes use #include_next directives and should be positioned
-    // just prior C include dirs.
-    if (HSOpts.UseBuiltinIncludes) {
-      // Ignore the sys root, we *always* look for clang headers relative to
-      // supplied path.
-      llvm::sys::Path P(HSOpts.ResourceDir);
+  }
+
+  // Builtin includes use #include_next directives and should be positioned
+  // just prior C include dirs.
+  if (HSOpts.UseBuiltinIncludes) {
+    // Ignore the sys root, we *always* look for clang headers relative to
+    // supplied path.
+    llvm::sys::Path P(HSOpts.ResourceDir);
+    if (triple.getVendor() != llvm::Triple::ELLCC) {
       P.appendComponent("include");
-      AddPath(P.str(), System, false, false, false, /*IgnoreSysRoot=*/ true);
+    } else {
+      P.appendComponent("ecc");
     }
+    AddPath(P.str(), System, false, false, false, /*IgnoreSysRoot=*/ true);
   }
 
   // Add dirs specified via 'configure --with-c-include-dirs'.

@@ -2485,8 +2485,11 @@ public:
   }
   virtual void getTargetBuiltins(const Builtin::Info *&Records,
                                  unsigned &NumRecords) const {
-    // FIXME: Implement!
+    // FIXME: Implement.
+    Records = 0;
+    NumRecords = 0;
   }
+
   virtual const char *getVAListDeclaration() const {
     return "typedef void* __builtin_va_list;";
   }

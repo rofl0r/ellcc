@@ -67,6 +67,8 @@ const char *Triple::getArchTypePrefix(ArchType Kind) {
 
   case mblaze:  return "mblaze";
 
+  case mips:    return "mips";
+
   case nios2:   return "nios2";
 
   case sparcv9:
