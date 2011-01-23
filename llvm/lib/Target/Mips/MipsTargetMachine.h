@@ -19,6 +19,7 @@
 #include "MipsISelLowering.h"
 #include "MipsFrameInfo.h"
 #include "MipsSelectionDAGInfo.h"
+#include "MipsIntrinsicInfo.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetData.h"
 #include "llvm/Target/TargetFrameInfo.h"
@@ -33,6 +34,7 @@ namespace llvm {
     MipsFrameInfo       FrameInfo;
     MipsTargetLowering  TLInfo;
     MipsSelectionDAGInfo TSInfo;
+    MipsIntrinsicInfo   IntrinsicInfo;
   public:
     MipsTargetMachine(const Target &T, const std::string &TT,
                       const std::string &FS, bool isLittle);
@@ -56,6 +58,10 @@ namespace llvm {
 
     virtual const MipsSelectionDAGInfo* getSelectionDAGInfo() const {
       return &TSInfo;
+    }
+
+    const TargetIntrinsicInfo *getIntrinsicInfo() const {
+      return &IntrinsicInfo;
     }
 
     // Pass Pipeline Configuration

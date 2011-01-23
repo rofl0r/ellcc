@@ -9,6 +9,7 @@ tablegen(MipsGenAsmWriter.inc -gen-asm-writer)
 tablegen(MipsGenDAGISel.inc -gen-dag-isel)
 tablegen(MipsGenCallingConv.inc -gen-callingconv)
 tablegen(MipsGenSubtarget.inc -gen-subtarget)
+tablegen(MipsGenIntrinsics.inc -gen-tgt-intrinsic)
 
 add_llvm_target(MipsCodeGen
   MipsAsmPrinter.cpp
@@ -23,4 +24,5 @@ add_llvm_target(MipsCodeGen
   MipsTargetMachine.cpp
   MipsTargetObjectFile.cpp
   MipsSelectionDAGInfo.cpp
+  MipsIntrinsicInfo.cpp
   )

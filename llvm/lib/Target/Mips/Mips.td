@@ -21,6 +21,7 @@ include "llvm/Target/Target.td"
 
 include "MipsRegisterInfo.td"
 include "MipsSchedule.td"
+include "MipsIntrinsics.td"
 include "MipsInstrInfo.td"
 include "MipsCallingConv.td"
 
