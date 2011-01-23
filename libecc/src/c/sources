@@ -46,4 +46,4 @@ SRCS += localtime.c asctime.c strftime.c
 
 # Target specific sources.
 MYVPATH := $(MYVPATH):$(SRCPATH)/c/$(TARGET)
-SRCS += setjmp.S flt_rounds.c
+SRCS += setjmp.S
