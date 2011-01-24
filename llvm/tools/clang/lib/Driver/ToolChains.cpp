@@ -1498,7 +1498,7 @@ Tool &DragonFly::SelectTool(const Compilation &C, const JobAction &JA) const {
 
 ELLCC::ELLCC(const HostInfo &Host, const llvm::Triple& Triple)
   : Generic_ELF(Host, Triple) {
-  getFilePaths().push_back(getDriver().Dir + "/../lib");
+  getFilePaths().push_back(getDriver().Dir + "/../libecc");
 }
 
 Tool &ELLCC::SelectTool(const Compilation &C, const JobAction &JA) const {

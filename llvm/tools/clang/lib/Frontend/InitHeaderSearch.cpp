@@ -429,11 +429,7 @@ void InitHeaderSearch::AddDefaultCIncludePaths(const llvm::Triple &triple,
     // Ignore the sys root, we *always* look for clang headers relative to
     // supplied path.
     llvm::sys::Path P(HSOpts.ResourceDir);
-    if (triple.getVendor() != llvm::Triple::ELLCC) {
-      P.appendComponent("include");
-    } else {
-      P.appendComponent("ecc");
-    }
+    P.appendComponent("include");
     AddPath(P.str(), System, false, false, false, /*IgnoreSysRoot=*/ true);
   }
 
@@ -542,29 +538,29 @@ void InitHeaderSearch::AddDefaultCIncludePaths(const llvm::Triple &triple,
     AddPath("/usr/include", System, false, false, false);
   } else {
       // Set up ELLCC specific include paths.
-      // include/<arch>/<os>
-      // include/<arch>
-      // include/<os>
-      // include
+      // usrinclude/<arch>/<os>
+      // usrinclude/<arch>
+      // usrinclude/<os>
+      // usrinclude
       // RICH: This seems like a hack. May need to revisit.
       llvm::sys::Path P0(HSOpts.ResourceDir);
-      P0.appendComponent("include");
+      P0.appendComponent("usrinclude");
       P0.appendComponent(triple.getArchTypeName(triple.getArch()));
       P0.appendComponent(triple.getOSTypeName(triple.getOS()));
       AddPath(P0.str(), System, false, false, false, /*IgnoreSysRoot=*/ true);
 
       llvm::sys::Path P1(HSOpts.ResourceDir);
-      P1.appendComponent("include");
+      P1.appendComponent("usrinclude");
       P1.appendComponent(triple.getArchTypeName(triple.getArch()));
       AddPath(P1.str(), System, false, false, false, /*IgnoreSysRoot=*/ true);
 
       llvm::sys::Path P2(HSOpts.ResourceDir);
-      P2.appendComponent("include");
+      P2.appendComponent("usrinclude");
       P2.appendComponent(triple.getOSTypeName(triple.getOS()));
       AddPath(P2.str(), System, false, false, false, /*IgnoreSysRoot=*/ true);
 
       llvm::sys::Path P3(HSOpts.ResourceDir);
-      P3.appendComponent("include");
+      P3.appendComponent("usrinclude");
       AddPath(P3.str(), System, false, false, false, /*IgnoreSysRoot=*/ true);
   }
 }
