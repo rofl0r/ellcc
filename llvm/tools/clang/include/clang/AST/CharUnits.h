@@ -16,6 +16,7 @@
 
 #include "llvm/ADT/DenseMapInfo.h"
 #include "llvm/Support/DataTypes.h"
+#include "llvm/Support/MathExtras.h"
 
 namespace clang {
   
@@ -132,11 +133,23 @@ namespace clang {
       CharUnits operator- (const CharUnits &Other) const {
         return CharUnits(Quantity - Other.Quantity);
       }
+      CharUnits operator- () const {
+        return CharUnits(-Quantity);
+      }
+
       
       // Conversions.
 
       /// getQuantity - Get the raw integer representation of this quantity.
       QuantityType getQuantity() const { return Quantity; }
+
+      /// RoundUpToAlignment - Returns the next integer (mod 2**64) that is
+      /// greater than or equal to this quantity and is a multiple of \arg
+      /// Align. Align must be non-zero.
+      CharUnits RoundUpToAlignment(const CharUnits &Align) {
+        return CharUnits(llvm::RoundUpToAlignment(Quantity, 
+                                                  Align.Quantity));
+      }
 
 
   }; // class CharUnit

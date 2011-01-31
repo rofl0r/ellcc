@@ -111,7 +111,8 @@ CXXNewExpr::CXXNewExpr(ASTContext &C, bool globalNew, FunctionDecl *operatorNew,
                        SourceRange TypeIdParens, Expr *arraySize,
                        CXXConstructorDecl *constructor, bool initializer,
                        Expr **constructorArgs, unsigned numConsArgs,
-                       FunctionDecl *operatorDelete, QualType ty,
+                       FunctionDecl *operatorDelete,
+                       bool usualArrayDeleteWantsSize, QualType ty,
                        TypeSourceInfo *AllocatedTypeInfo,
                        SourceLocation startLoc, SourceLocation endLoc,
                        SourceLocation constructorLParen,
@@ -119,8 +120,9 @@ CXXNewExpr::CXXNewExpr(ASTContext &C, bool globalNew, FunctionDecl *operatorNew,
   : Expr(CXXNewExprClass, ty, VK_RValue, OK_Ordinary,
          ty->isDependentType(), ty->isDependentType(),
          ty->containsUnexpandedParameterPack()),
-    GlobalNew(globalNew),
-    Initializer(initializer), SubExprs(0), OperatorNew(operatorNew),
+    GlobalNew(globalNew), Initializer(initializer),
+    UsualArrayDeleteWantsSize(usualArrayDeleteWantsSize),
+    SubExprs(0), OperatorNew(operatorNew),
     OperatorDelete(operatorDelete), Constructor(constructor),
     AllocatedTypeInfo(AllocatedTypeInfo), TypeIdParens(TypeIdParens),
     StartLoc(startLoc), EndLoc(endLoc), ConstructorLParen(constructorLParen),
@@ -525,12 +527,14 @@ CXXStaticCastExpr *CXXStaticCastExpr::Create(ASTContext &C, QualType T,
                                              CastKind K, Expr *Op,
                                              const CXXCastPath *BasePath,
                                              TypeSourceInfo *WrittenTy,
-                                             SourceLocation L) {
+                                             SourceLocation L, 
+                                             SourceLocation RParenLoc) {
   unsigned PathSize = (BasePath ? BasePath->size() : 0);
   void *Buffer = C.Allocate(sizeof(CXXStaticCastExpr)
                             + PathSize * sizeof(CXXBaseSpecifier*));
   CXXStaticCastExpr *E =
-    new (Buffer) CXXStaticCastExpr(T, VK, K, Op, PathSize, WrittenTy, L);
+    new (Buffer) CXXStaticCastExpr(T, VK, K, Op, PathSize, WrittenTy, L,
+                                   RParenLoc);
   if (PathSize) E->setCastPath(*BasePath);
   return E;
 }
@@ -547,12 +551,14 @@ CXXDynamicCastExpr *CXXDynamicCastExpr::Create(ASTContext &C, QualType T,
                                                CastKind K, Expr *Op,
                                                const CXXCastPath *BasePath,
                                                TypeSourceInfo *WrittenTy,
-                                               SourceLocation L) {
+                                               SourceLocation L, 
+                                               SourceLocation RParenLoc) {
   unsigned PathSize = (BasePath ? BasePath->size() : 0);
   void *Buffer = C.Allocate(sizeof(CXXDynamicCastExpr)
                             + PathSize * sizeof(CXXBaseSpecifier*));
   CXXDynamicCastExpr *E =
-    new (Buffer) CXXDynamicCastExpr(T, VK, K, Op, PathSize, WrittenTy, L);
+    new (Buffer) CXXDynamicCastExpr(T, VK, K, Op, PathSize, WrittenTy, L,
+                                    RParenLoc);
   if (PathSize) E->setCastPath(*BasePath);
   return E;
 }
@@ -568,12 +574,14 @@ CXXReinterpretCastExpr *
 CXXReinterpretCastExpr::Create(ASTContext &C, QualType T, ExprValueKind VK,
                                CastKind K, Expr *Op,
                                const CXXCastPath *BasePath,
-                               TypeSourceInfo *WrittenTy, SourceLocation L) {
+                               TypeSourceInfo *WrittenTy, SourceLocation L, 
+                               SourceLocation RParenLoc) {
   unsigned PathSize = (BasePath ? BasePath->size() : 0);
   void *Buffer =
     C.Allocate(sizeof(CXXReinterpretCastExpr) + PathSize * sizeof(CXXBaseSpecifier*));
   CXXReinterpretCastExpr *E =
-    new (Buffer) CXXReinterpretCastExpr(T, VK, K, Op, PathSize, WrittenTy, L);
+    new (Buffer) CXXReinterpretCastExpr(T, VK, K, Op, PathSize, WrittenTy, L,
+                                        RParenLoc);
   if (PathSize) E->setCastPath(*BasePath);
   return E;
 }
@@ -588,8 +596,9 @@ CXXReinterpretCastExpr::CreateEmpty(ASTContext &C, unsigned PathSize) {
 CXXConstCastExpr *CXXConstCastExpr::Create(ASTContext &C, QualType T,
                                            ExprValueKind VK, Expr *Op,
                                            TypeSourceInfo *WrittenTy,
-                                           SourceLocation L) {
-  return new (C) CXXConstCastExpr(T, VK, Op, WrittenTy, L);
+                                           SourceLocation L, 
+                                           SourceLocation RParenLoc) {
+  return new (C) CXXConstCastExpr(T, VK, Op, WrittenTy, L, RParenLoc);
 }
 
 CXXConstCastExpr *CXXConstCastExpr::CreateEmpty(ASTContext &C) {
@@ -988,7 +997,7 @@ CXXRecordDecl *UnresolvedMemberExpr::getNamingClass() const {
   // lookup.
   CXXRecordDecl *Record = 0;
   if (getQualifier()) {
-    Type *T = getQualifier()->getAsType();
+    const Type *T = getQualifier()->getAsType();
     assert(T && "qualifier in member expression does not name type");
     Record = T->getAsCXXRecordDecl();
     assert(Record && "qualifier in member expression does not name record");
@@ -1049,3 +1058,31 @@ Stmt::child_iterator SizeOfPackExpr::child_begin() {
 Stmt::child_iterator SizeOfPackExpr::child_end() {
   return child_iterator();
 }
+
+SubstNonTypeTemplateParmPackExpr::
+SubstNonTypeTemplateParmPackExpr(QualType T, 
+                                 NonTypeTemplateParmDecl *Param,
+                                 SourceLocation NameLoc,
+                                 const TemplateArgument &ArgPack)
+  : Expr(SubstNonTypeTemplateParmPackExprClass, T, VK_RValue, OK_Ordinary, 
+         true, false, true),
+    Param(Param), Arguments(ArgPack.pack_begin()), 
+    NumArguments(ArgPack.pack_size()), NameLoc(NameLoc) { }
+
+TemplateArgument SubstNonTypeTemplateParmPackExpr::getArgumentPack() const {
+  return TemplateArgument(Arguments, NumArguments);
+}
+
+SourceRange SubstNonTypeTemplateParmPackExpr::getSourceRange() const {
+  return NameLoc;
+}
+
+Stmt::child_iterator SubstNonTypeTemplateParmPackExpr::child_begin() {
+  return child_iterator();
+}
+
+Stmt::child_iterator SubstNonTypeTemplateParmPackExpr::child_end() {
+  return child_iterator();
+}
+
+

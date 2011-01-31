@@ -31,7 +31,6 @@
 #include "llvm/CodeGen/PseudoSourceValue.h"
 #include "llvm/Target/TargetRegisterInfo.h"
 #include "llvm/Target/TargetData.h"
-#include "llvm/Target/TargetFrameInfo.h"
 #include "llvm/Target/TargetLowering.h"
 #include "llvm/Target/TargetSelectionDAGInfo.h"
 #include "llvm/Target/TargetOptions.h"
@@ -2865,10 +2864,29 @@ SDValue SelectionDAG::getNode(unsigned Opcode, DebugLoc DL, EVT VT,
       return getConstant(ShiftedVal.trunc(ElementSize), VT);
     }
     break;
-  case ISD::EXTRACT_SUBVECTOR:
-    if (N1.getValueType() == VT) // Trivial extraction.
-      return N1;
+  case ISD::EXTRACT_SUBVECTOR: {
+    SDValue Index = N2;
+    if (VT.isSimple() && N1.getValueType().isSimple()) {
+      assert(VT.isVector() && N1.getValueType().isVector() &&
+             "Extract subvector VTs must be a vectors!");
+      assert(VT.getVectorElementType() == N1.getValueType().getVectorElementType() &&
+             "Extract subvector VTs must have the same element type!");
+      assert(VT.getSimpleVT() <= N1.getValueType().getSimpleVT() &&
+             "Extract subvector must be from larger vector to smaller vector!");
+
+      if (ConstantSDNode *CSD = dyn_cast<ConstantSDNode>(Index.getNode())) {
+        (void)CSD;
+        assert((VT.getVectorNumElements() + CSD->getZExtValue()
+                <= N1.getValueType().getVectorNumElements())
+               && "Extract subvector overflow!");
+      }
+
+      // Trivial extraction.
+      if (VT.getSimpleVT() == N1.getValueType().getSimpleVT())
+        return N1;
+    }
     break;
+  }
   }
 
   if (N1C) {
@@ -3064,6 +3082,30 @@ SDValue SelectionDAG::getNode(unsigned Opcode, DebugLoc DL, EVT VT,
   case ISD::VECTOR_SHUFFLE:
     llvm_unreachable("should use getVectorShuffle constructor!");
     break;
+  case ISD::INSERT_SUBVECTOR: {
+    SDValue Index = N3;
+    if (VT.isSimple() && N1.getValueType().isSimple()
+        && N2.getValueType().isSimple()) {
+      assert(VT.isVector() && N1.getValueType().isVector() &&
+             N2.getValueType().isVector() &&
+             "Insert subvector VTs must be a vectors");
+      assert(VT == N1.getValueType() &&
+             "Dest and insert subvector source types must match!");
+      assert(N2.getValueType().getSimpleVT() <= N1.getValueType().getSimpleVT() &&
+             "Insert subvector must be from smaller vector to larger vector!");
+      if (ConstantSDNode *CSD = dyn_cast<ConstantSDNode>(Index.getNode())) {
+        (void)CSD;
+        assert((N2.getValueType().getVectorNumElements() + CSD->getZExtValue()
+                <= VT.getVectorNumElements())
+               && "Insert subvector overflow!");
+      }
+
+      // Trivial insertion.
+      if (VT.getSimpleVT() == N2.getValueType().getSimpleVT())
+        return N2;
+    }
+    break;
+  }
   case ISD::BITCAST:
     // Fold bit_convert nodes from a type to themselves.
     if (N1.getValueType() == VT)
@@ -4932,7 +4974,7 @@ SelectionDAG::getMachineNode(unsigned Opcode, DebugLoc DL, SDVTList VTs,
                              const SDValue *Ops, unsigned NumOps) {
   bool DoCSE = VTs.VTs[VTs.NumVTs-1] != MVT::Glue;
   MachineSDNode *N;
-  void *IP;
+  void *IP = 0;
 
   if (DoCSE) {
     FoldingSetNodeID ID;
@@ -5425,6 +5467,23 @@ void SelectionDAG::AddDbgValue(SDDbgValue *DB, SDNode *SD, bool isParameter) {
     SD->setHasDebugValue(true);
 }
 
+/// TransferDbgValues - Transfer SDDbgValues.
+void SelectionDAG::TransferDbgValues(SDValue From, SDValue To) {
+  if (From == To || !From.getNode()->getHasDebugValue())
+    return;
+  SDNode *FromNode = From.getNode();
+  SDNode *ToNode = To.getNode();
+  SmallVector<SDDbgValue*,2> &DVs = GetDbgValues(FromNode);
+  DbgInfo->removeSDDbgValues(FromNode);
+  for (SmallVector<SDDbgValue *, 2>::iterator I = DVs.begin(), E = DVs.end();
+       I != E; ++I) {
+    if ((*I)->getKind() == SDDbgValue::SDNODE) {
+      AddDbgValue(*I, ToNode, false);
+      (*I)->setSDNode(ToNode, To.getResNo());
+    }
+  }
+}
+
 //===----------------------------------------------------------------------===//
 //                              SDNode Class
 //===----------------------------------------------------------------------===//
@@ -5776,6 +5835,7 @@ std::string SDNode::getOperationName(const SelectionDAG *G) const {
   case ISD::INSERT_VECTOR_ELT:   return "insert_vector_elt";
   case ISD::EXTRACT_VECTOR_ELT:  return "extract_vector_elt";
   case ISD::CONCAT_VECTORS:      return "concat_vectors";
+  case ISD::INSERT_SUBVECTOR:    return "insert_subvector";
   case ISD::EXTRACT_SUBVECTOR:   return "extract_subvector";
   case ISD::SCALAR_TO_VECTOR:    return "scalar_to_vector";
   case ISD::VECTOR_SHUFFLE:      return "vector_shuffle";
@@ -6021,12 +6081,7 @@ void SDNode::print_details(raw_ostream &OS, const SelectionDAG *G) const {
       OS << LBB->getName() << " ";
     OS << (const void*)BBDN->getBasicBlock() << ">";
   } else if (const RegisterSDNode *R = dyn_cast<RegisterSDNode>(this)) {
-    if (G && R->getReg() &&
-        TargetRegisterInfo::isPhysicalRegister(R->getReg())) {
-      OS << " %" << G->getTarget().getRegisterInfo()->getName(R->getReg());
-    } else {
-      OS << " %reg" << R->getReg();
-    }
+    OS << ' ' << PrintReg(R->getReg(), G ? G->getTarget().getRegisterInfo() :0);
   } else if (const ExternalSymbolSDNode *ES =
              dyn_cast<ExternalSymbolSDNode>(this)) {
     OS << "'" << ES->getSymbol() << "'";

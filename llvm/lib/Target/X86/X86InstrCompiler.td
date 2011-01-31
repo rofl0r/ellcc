@@ -283,7 +283,7 @@ def TLS_addr64 : I<0, Pseudo, (outs), (ins i64mem:$sym),
 // For i386, the address of the thunk is passed on the stack, on return the
 // address of the variable is in %eax.  %ecx is trashed during the function
 // call.  All other registers are preserved.
-let Defs = [EAX, ECX],
+let Defs = [EAX, ECX, EFLAGS],
     Uses = [ESP],
     usesCustomInserter = 1 in
 def TLSCall_32 : I<0, Pseudo, (outs), (ins i32mem:$sym),
@@ -293,7 +293,7 @@ def TLSCall_32 : I<0, Pseudo, (outs), (ins i32mem:$sym),
 
 // For x86_64, the address of the thunk is passed in %rdi, on return
 // the address of the variable is in %rax.  All other registers are preserved.
-let Defs = [RAX],
+let Defs = [RAX, EFLAGS],
     Uses = [RSP, RDI],
     usesCustomInserter = 1 in
 def TLSCall_64 : I<0, Pseudo, (outs), (ins i64mem:$sym),
@@ -849,38 +849,38 @@ def : Pat<(X86call (i64 texternalsym:$dst)),
 // tailcall stuff
 def : Pat<(X86tcret GR32_TC:$dst, imm:$off),
           (TCRETURNri GR32_TC:$dst, imm:$off)>,
-	  Requires<[In32BitMode]>;
+          Requires<[In32BitMode]>;
 
 // FIXME: This is disabled for 32-bit PIC mode because the global base
 // register which is part of the address mode may be assigned a
 // callee-saved register.
 def : Pat<(X86tcret (load addr:$dst), imm:$off),
           (TCRETURNmi addr:$dst, imm:$off)>,
-	  Requires<[In32BitMode, IsNotPIC]>;
+          Requires<[In32BitMode, IsNotPIC]>;
 
 def : Pat<(X86tcret (i32 tglobaladdr:$dst), imm:$off),
           (TCRETURNdi texternalsym:$dst, imm:$off)>,
-	  Requires<[In32BitMode]>;
+          Requires<[In32BitMode]>;
 
 def : Pat<(X86tcret (i32 texternalsym:$dst), imm:$off),
           (TCRETURNdi texternalsym:$dst, imm:$off)>,
-	  Requires<[In32BitMode]>;
+          Requires<[In32BitMode]>;
 
-def : Pat<(X86tcret GR64_TC:$dst, imm:$off),
-          (TCRETURNri64 GR64_TC:$dst, imm:$off)>,
-	  Requires<[In64BitMode]>;
+def : Pat<(X86tcret ptr_rc_tailcall:$dst, imm:$off),
+          (TCRETURNri64 ptr_rc_tailcall:$dst, imm:$off)>,
+          Requires<[In64BitMode]>;
 
 def : Pat<(X86tcret (load addr:$dst), imm:$off),
           (TCRETURNmi64 addr:$dst, imm:$off)>,
-	  Requires<[In64BitMode]>;
+          Requires<[In64BitMode]>;
 
 def : Pat<(X86tcret (i64 tglobaladdr:$dst), imm:$off),
           (TCRETURNdi64 tglobaladdr:$dst, imm:$off)>,
-	  Requires<[In64BitMode]>;
+          Requires<[In64BitMode]>;
 
 def : Pat<(X86tcret (i64 texternalsym:$dst), imm:$off),
           (TCRETURNdi64 texternalsym:$dst, imm:$off)>,
-	  Requires<[In64BitMode]>;
+          Requires<[In64BitMode]>;
 
 // Normal calls, with various flavors of addresses.
 def : Pat<(X86call (i32 tglobaladdr:$dst)),
@@ -1661,4 +1661,3 @@ def : Pat<(and GR64:$src1, i64immSExt8:$src2),
           (AND64ri8 GR64:$src1, i64immSExt8:$src2)>;
 def : Pat<(and GR64:$src1, i64immSExt32:$src2),
           (AND64ri32 GR64:$src1, i64immSExt32:$src2)>;
-

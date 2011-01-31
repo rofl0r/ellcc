@@ -879,9 +879,9 @@ llvm::DIType CGDebugInfo::getOrCreateRecordType(QualType RTy,
 }
 
 /// CreateType - get structure or union type.
-llvm::DIType CGDebugInfo::CreateType(const RecordType *Ty,
-                                     llvm::DIFile Unit) {
+llvm::DIType CGDebugInfo::CreateType(const RecordType *Ty) {
   RecordDecl *RD = Ty->getDecl();
+  llvm::DIFile Unit = getOrCreateFile(RD->getLocation());
 
   // Get overall information about the record type for the debug info.
   llvm::DIFile DefUnit = getOrCreateFile(RD->getLocation());
@@ -1146,18 +1146,11 @@ llvm::DIType CGDebugInfo::CreateType(const ObjCInterfaceType *Ty,
   return RealDecl;
 }
 
-llvm::DIType CGDebugInfo::CreateType(const EnumType *Ty,
-                                     llvm::DIFile Unit) {
-  return CreateEnumType(Ty->getDecl(), Unit);
-
-}
-
-llvm::DIType CGDebugInfo::CreateType(const TagType *Ty,
-                                     llvm::DIFile Unit) {
+llvm::DIType CGDebugInfo::CreateType(const TagType *Ty) {
   if (const RecordType *RT = dyn_cast<RecordType>(Ty))
-    return CreateType(RT, Unit);
+    return CreateType(RT);
   else if (const EnumType *ET = dyn_cast<EnumType>(Ty))
-    return CreateType(ET, Unit);
+    return CreateEnumType(ET->getDecl());
 
   return llvm::DIType();
 }
@@ -1233,6 +1226,12 @@ llvm::DIType CGDebugInfo::CreateType(const LValueReferenceType *Ty,
                                Ty, Ty->getPointeeType(), Unit);
 }
 
+llvm::DIType CGDebugInfo::CreateType(const RValueReferenceType *Ty, 
+                                     llvm::DIFile Unit) {
+  return CreatePointerLikeType(llvm::dwarf::DW_TAG_rvalue_reference_type, 
+                               Ty, Ty->getPointeeType(), Unit);
+}
+
 llvm::DIType CGDebugInfo::CreateType(const MemberPointerType *Ty, 
                                      llvm::DIFile U) {
   QualType PointerDiffTy = CGM.getContext().getPointerDiffType();
@@ -1272,7 +1271,8 @@ llvm::DIType CGDebugInfo::CreateType(const MemberPointerType *Ty,
 }
 
 /// CreateEnumType - get enumeration type.
-llvm::DIType CGDebugInfo::CreateEnumType(const EnumDecl *ED, llvm::DIFile Unit){
+llvm::DIType CGDebugInfo::CreateEnumType(const EnumDecl *ED) {
+  llvm::DIFile Unit = getOrCreateFile(ED->getLocation());
   llvm::SmallVector<llvm::Value *, 16> Enumerators;
 
   // Create DIEnumerator elements for each enumerator.
@@ -1313,11 +1313,9 @@ static QualType UnwrapTypeForDebugInfo(QualType T) {
     case Type::TemplateSpecialization:
       T = cast<TemplateSpecializationType>(T)->desugar();
       break;
-    case Type::TypeOfExpr: {
-      TypeOfExprType *Ty = cast<TypeOfExprType>(T);
-      T = Ty->getUnderlyingExpr()->getType();
+    case Type::TypeOfExpr:
+      T = cast<TypeOfExprType>(T)->getUnderlyingExpr()->getType();
       break;
-    }
     case Type::TypeOf:
       T = cast<TypeOfType>(T)->getUnderlyingType();
       break;
@@ -1410,7 +1408,7 @@ llvm::DIType CGDebugInfo::CreateTypeNode(QualType Ty,
   case Type::Typedef: return CreateType(cast<TypedefType>(Ty), Unit);
   case Type::Record:
   case Type::Enum:
-    return CreateType(cast<TagType>(Ty), Unit);
+    return CreateType(cast<TagType>(Ty));
   case Type::FunctionProto:
   case Type::FunctionNoProto:
     return CreateType(cast<FunctionType>(Ty), Unit);
@@ -1421,6 +1419,8 @@ llvm::DIType CGDebugInfo::CreateTypeNode(QualType Ty,
 
   case Type::LValueReference:
     return CreateType(cast<LValueReferenceType>(Ty), Unit);
+  case Type::RValueReference:
+    return CreateType(cast<RValueReferenceType>(Ty), Unit);
 
   case Type::MemberPointer:
     return CreateType(cast<MemberPointerType>(Ty), Unit);
@@ -1434,12 +1434,7 @@ llvm::DIType CGDebugInfo::CreateTypeNode(QualType Ty,
   case Type::TypeOf:
   case Type::Decltype:
     llvm_unreachable("type should have been unwrapped!");
-    return llvm::DIType();
-      
-  case Type::RValueReference:
-    // FIXME: Implement!
-    Diag = "rvalue references";
-    break;
+    return llvm::DIType();      
   }
   
   assert(Diag && "Fall through without a diagnostic?");
@@ -1740,7 +1735,36 @@ void CGDebugInfo::EmitDeclare(const VarDecl *VD, unsigned Tag,
     
   llvm::StringRef Name = VD->getName();
   if (!Name.empty()) {
-    // Create the descriptor for the variable.
+    if (VD->hasAttr<BlocksAttr>()) {
+      CharUnits offset = CharUnits::fromQuantity(32);
+      llvm::SmallVector<llvm::Value *, 9> addr;
+      const llvm::Type *Int64Ty = llvm::Type::getInt64Ty(CGM.getLLVMContext());
+      addr.push_back(llvm::ConstantInt::get(Int64Ty, llvm::DIFactory::OpPlus));
+      // offset of __forwarding field
+      offset = 
+        CharUnits::fromQuantity(CGM.getContext().Target.getPointerWidth(0)/8);
+      addr.push_back(llvm::ConstantInt::get(Int64Ty, offset.getQuantity()));
+      addr.push_back(llvm::ConstantInt::get(Int64Ty, llvm::DIFactory::OpDeref));
+      addr.push_back(llvm::ConstantInt::get(Int64Ty, llvm::DIFactory::OpPlus));
+      // offset of x field
+      offset = CharUnits::fromQuantity(XOffset/8);
+      addr.push_back(llvm::ConstantInt::get(Int64Ty, offset.getQuantity()));
+
+      // Create the descriptor for the variable.
+      llvm::DIVariable D =
+        DBuilder.CreateComplexVariable(Tag, 
+                                       llvm::DIDescriptor(RegionStack.back()),
+                                       VD->getName(), Unit, Line, Ty,
+                                       addr.data(), addr.size());
+      
+      // Insert an llvm.dbg.declare into the current block.
+      llvm::Instruction *Call =
+        DBuilder.InsertDeclare(Storage, D, Builder.GetInsertBlock());
+      
+      Call->setDebugLoc(llvm::DebugLoc::get(Line, Column, Scope));
+      return;
+    } 
+      // Create the descriptor for the variable.
     llvm::DIVariable D =
       DBuilder.CreateLocalVariable(Tag, llvm::DIDescriptor(Scope), 
                                    Name, Unit, Line, Ty, 
@@ -1929,7 +1953,7 @@ void CGDebugInfo::EmitGlobalVariable(const ValueDecl *VD,
   llvm::DIType Ty = getOrCreateType(VD->getType(), Unit);
   if (const EnumConstantDecl *ECD = dyn_cast<EnumConstantDecl>(VD)) {
     if (const EnumDecl *ED = dyn_cast<EnumDecl>(ECD->getDeclContext()))
-      Ty = CreateEnumType(ED, Unit);
+      Ty = CreateEnumType(ED);
   }
   // Do not use DIGlobalVariable for enums.
   if (Ty.getTag() == llvm::dwarf::DW_TAG_enumeration_type)

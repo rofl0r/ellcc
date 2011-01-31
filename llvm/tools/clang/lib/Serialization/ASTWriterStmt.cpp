@@ -14,6 +14,7 @@
 #include "clang/Serialization/ASTWriter.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclObjC.h"
+#include "clang/AST/DeclTemplate.h"
 #include "clang/AST/StmtVisitor.h"
 #include "llvm/Bitcode/BitstreamWriter.h"
 using namespace clang;
@@ -152,6 +153,8 @@ namespace clang {
     void VisitCXXNoexceptExpr(CXXNoexceptExpr *E);
     void VisitPackExpansionExpr(PackExpansionExpr *E);
     void VisitSizeOfPackExpr(SizeOfPackExpr *E);
+    void VisitSubstNonTypeTemplateParmPackExpr(
+                                           SubstNonTypeTemplateParmPackExpr *E);
     void VisitOpaqueValueExpr(OpaqueValueExpr *E);
   };
 }
@@ -984,7 +987,8 @@ void ASTStmtWriter::VisitCXXTemporaryObjectExpr(CXXTemporaryObjectExpr *E) {
 
 void ASTStmtWriter::VisitCXXNamedCastExpr(CXXNamedCastExpr *E) {
   VisitExplicitCastExpr(E);
-  Writer.AddSourceLocation(E->getOperatorLoc(), Record);
+  Writer.AddSourceRange(SourceRange(E->getOperatorLoc(), E->getRParenLoc()),
+                        Record);
 }
 
 void ASTStmtWriter::VisitCXXStaticCastExpr(CXXStaticCastExpr *E) {
@@ -1097,6 +1101,7 @@ void ASTStmtWriter::VisitCXXNewExpr(CXXNewExpr *E) {
   VisitExpr(E);
   Record.push_back(E->isGlobalNew());
   Record.push_back(E->hasInitializer());
+  Record.push_back(E->doesUsualArrayDeleteWantSize());
   Record.push_back(E->isArray());
   Record.push_back(E->getNumPlacementArgs());
   Record.push_back(E->getNumConstructorArgs());
@@ -1121,6 +1126,7 @@ void ASTStmtWriter::VisitCXXDeleteExpr(CXXDeleteExpr *E) {
   Record.push_back(E->isGlobalDelete());
   Record.push_back(E->isArrayForm());
   Record.push_back(E->isArrayFormAsWritten());
+  Record.push_back(E->doesUsualArrayDeleteWantSize());
   Writer.AddDeclRef(E->getOperatorDelete(), Record);
   Writer.AddStmt(E->getArgument());
   Writer.AddSourceLocation(E->getSourceRange().getBegin(), Record);
@@ -1300,6 +1306,7 @@ void ASTStmtWriter::VisitCXXNoexceptExpr(CXXNoexceptExpr *E) {
 void ASTStmtWriter::VisitPackExpansionExpr(PackExpansionExpr *E) {
   VisitExpr(E);
   Writer.AddSourceLocation(E->getEllipsisLoc(), Record);
+  Record.push_back(E->NumExpansions);
   Writer.AddStmt(E->getPattern());
   Code = serialization::EXPR_PACK_EXPANSION;
 }
@@ -1314,8 +1321,18 @@ void ASTStmtWriter::VisitSizeOfPackExpr(SizeOfPackExpr *E) {
   Code = serialization::EXPR_SIZEOF_PACK;
 }
 
+void ASTStmtWriter::VisitSubstNonTypeTemplateParmPackExpr(
+                                          SubstNonTypeTemplateParmPackExpr *E) {
+  VisitExpr(E);
+  Writer.AddDeclRef(E->Param, Record);
+  Writer.AddTemplateArgument(E->getArgumentPack(), Record);
+  Writer.AddSourceLocation(E->NameLoc, Record);
+  Code = serialization::EXPR_SUBST_NON_TYPE_TEMPLATE_PARM_PACK;
+}
+
 void ASTStmtWriter::VisitOpaqueValueExpr(OpaqueValueExpr *E) {
   VisitExpr(E);
+  Writer.AddSourceLocation(E->getLocation(), Record);
   Code = serialization::EXPR_OPAQUE_VALUE;
 }
 

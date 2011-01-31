@@ -1724,7 +1724,6 @@ ParseStructDeclaration(DeclSpec &DS, FieldCallback &Fields) {
   }
 
   // Parse the common specifier-qualifiers-list piece.
-  SourceLocation DSStart = Tok.getLocation();
   ParseSpecifierQualifierList(DS);
 
   // If there are no declarators, this is a free-standing declaration
@@ -2723,7 +2722,7 @@ void Parser::ParseDeclaratorInternal(Declarator &D,
     // Complain about rvalue references in C++03, but then go on and build
     // the declarator.
     if (Kind == tok::ampamp && !getLang().CPlusPlus0x)
-      Diag(Loc, diag::err_rvalue_reference);
+      Diag(Loc, diag::ext_rvalue_reference);
 
     // C++ 8.3.2p1: cv-qualified references are ill-formed except when the
     // cv-qualifiers are introduced through the use of a typedef or of a
@@ -3065,8 +3064,8 @@ void Parser::ParseParenDeclarator(Declarator &D) {
 ///           '=' assignment-expression
 /// [GNU]   declaration-specifiers abstract-declarator[opt] attributes
 ///
-/// For C++, after the parameter-list, it also parses "cv-qualifier-seq[opt]"
-/// and "exception-specification[opt]".
+/// For C++, after the parameter-list, it also parses "cv-qualifier-seq[opt]",
+/// C++0x "ref-qualifier[opt]" and "exception-specification[opt]".
 ///
 void Parser::ParseFunctionDeclarator(SourceLocation LParenLoc, Declarator &D,
                                      ParsedAttributes &attrs,
@@ -3086,6 +3085,8 @@ void Parser::ParseFunctionDeclarator(SourceLocation LParenLoc, Declarator &D,
 
     // cv-qualifier-seq[opt].
     DeclSpec DS;
+    SourceLocation RefQualifierLoc;
+    bool RefQualifierIsLValueRef = true;
     bool hasExceptionSpec = false;
     SourceLocation ThrowLoc;
     bool hasAnyExceptionSpec = false;
@@ -3098,6 +3099,16 @@ void Parser::ParseFunctionDeclarator(SourceLocation LParenLoc, Declarator &D,
       if (!DS.getSourceRange().getEnd().isInvalid())
         EndLoc = DS.getSourceRange().getEnd();
 
+      // Parse ref-qualifier[opt]
+      if (Tok.is(tok::amp) || Tok.is(tok::ampamp)) {
+        if (!getLang().CPlusPlus0x)
+          Diag(Tok, diag::ext_ref_qualifier);
+        
+        RefQualifierIsLValueRef = Tok.is(tok::amp);
+        RefQualifierLoc = ConsumeToken();
+        EndLoc = RefQualifierLoc;
+      }
+      
       // Parse exception-specification[opt].
       if (Tok.is(tok::kw_throw)) {
         hasExceptionSpec = true;
@@ -3122,6 +3133,8 @@ void Parser::ParseFunctionDeclarator(SourceLocation LParenLoc, Declarator &D,
                                                SourceLocation(),
                                                /*arglist*/ 0, 0,
                                                DS.getTypeQualifiers(),
+                                               RefQualifierIsLValueRef,
+                                               RefQualifierLoc,
                                                hasExceptionSpec, ThrowLoc,
                                                hasAnyExceptionSpec,
                                                Exceptions.data(),
@@ -3321,6 +3334,8 @@ void Parser::ParseFunctionDeclarator(SourceLocation LParenLoc, Declarator &D,
   SourceLocation EndLoc = RParenLoc;
 
   DeclSpec DS;
+  SourceLocation RefQualifierLoc;
+  bool RefQualifierIsLValueRef = true;
   bool hasExceptionSpec = false;
   SourceLocation ThrowLoc;
   bool hasAnyExceptionSpec = false;
@@ -3334,6 +3349,16 @@ void Parser::ParseFunctionDeclarator(SourceLocation LParenLoc, Declarator &D,
     ParseTypeQualifierListOpt(DS, false /*no attributes*/);
       if (!DS.getSourceRange().getEnd().isInvalid())
         EndLoc = DS.getSourceRange().getEnd();
+
+    // Parse ref-qualifier[opt]
+    if (Tok.is(tok::amp) || Tok.is(tok::ampamp)) {
+      if (!getLang().CPlusPlus0x)
+        Diag(Tok, diag::ext_ref_qualifier);
+      
+      RefQualifierIsLValueRef = Tok.is(tok::amp);
+      RefQualifierLoc = ConsumeToken();
+      EndLoc = RefQualifierLoc;
+    }
 
     // Parse exception-specification[opt].
     if (Tok.is(tok::kw_throw)) {
@@ -3363,6 +3388,8 @@ void Parser::ParseFunctionDeclarator(SourceLocation LParenLoc, Declarator &D,
                                              EllipsisLoc,
                                              ParamInfo.data(), ParamInfo.size(),
                                              DS.getTypeQualifiers(),
+                                             RefQualifierIsLValueRef,
+                                             RefQualifierLoc,
                                              hasExceptionSpec, ThrowLoc,
                                              hasAnyExceptionSpec,
                                              Exceptions.data(),
@@ -3444,6 +3471,7 @@ void Parser::ParseFunctionDeclaratorIdentifierList(SourceLocation LParenLoc,
                                              SourceLocation(),
                                              &ParamInfo[0], ParamInfo.size(),
                                              /*TypeQuals*/0,
+                                             true, SourceLocation(),
                                              /*exception*/false,
                                              SourceLocation(), false, 0, 0, 0,
                                              LParenLoc, RLoc, D),

@@ -31,6 +31,7 @@
 #include "llvm/ADT/DepthFirstIterator.h"
 #include "llvm/Support/Casting.h"
 #include "clang/Analysis/Support/BumpVector.h"
+#include "clang/StaticAnalyzer/PathSensitive/GRState.h"
 
 namespace clang {
 
@@ -38,7 +39,6 @@ class CFG;
 
 namespace ento {
 
-class GRState;
 class ExplodedGraph;
 
 //===----------------------------------------------------------------------===//
@@ -47,6 +47,9 @@ class ExplodedGraph;
 // on top of these classes.
 //===----------------------------------------------------------------------===//
 
+// ExplodedNode is not constified all over the engine because we need to add
+// successors to it at any time after creating it.
+
 class ExplodedNode : public llvm::FoldingSetNode {
   friend class ExplodedGraph;
   friend class CoreEngine;
@@ -54,7 +57,7 @@ class ExplodedNode : public llvm::FoldingSetNode {
   friend class BranchNodeBuilder;
   friend class IndirectGotoNodeBuilder;
   friend class SwitchNodeBuilder;
-  friend class EndPathNodeBuilder;
+  friend class EndOfFunctionNodeBuilder;
 
   class NodeGroup {
     enum { Size1 = 0x0, SizeOther = 0x1, AuxFlag = 0x2, Mask = 0x3 };
@@ -112,7 +115,9 @@ class ExplodedNode : public llvm::FoldingSetNode {
 public:
 
   explicit ExplodedNode(const ProgramPoint& loc, const GRState* state)
-    : Location(loc), State(state) {}
+    : Location(loc), State(state) {
+    const_cast<GRState*>(State)->setReferencedByExplodedNode();
+  }
 
   /// getLocation - Returns the edge associated with the given node.
   ProgramPoint getLocation() const { return Location; }

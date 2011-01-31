@@ -1274,8 +1274,7 @@ protected:
       IsInline(isInlineSpecified), IsInlineSpecified(isInlineSpecified),
       IsVirtualAsWritten(false), IsPure(false), HasInheritedPrototype(false),
       HasWrittenPrototype(true), IsDeleted(false), IsTrivial(false),
-      HasImplicitReturnZero(false),
-      EndRangeLoc(NameInfo.getEndLoc()),
+      HasImplicitReturnZero(false), EndRangeLoc(NameInfo.getEndLoc()),
       TemplateOrSpecialization(),
       DNLoc(NameInfo.getInfo()) {}
 
@@ -1716,18 +1715,25 @@ public:
 class FieldDecl : public DeclaratorDecl {
   // FIXME: This can be packed into the bitfields in Decl.
   bool Mutable : 1;
+  mutable unsigned CachedFieldIndex : 31;
+
   Expr *BitWidth;
 protected:
   FieldDecl(Kind DK, DeclContext *DC, SourceLocation L,
             IdentifierInfo *Id, QualType T, TypeSourceInfo *TInfo,
             Expr *BW, bool Mutable)
-    : DeclaratorDecl(DK, DC, L, Id, T, TInfo), Mutable(Mutable), BitWidth(BW) {
+    : DeclaratorDecl(DK, DC, L, Id, T, TInfo),
+      Mutable(Mutable), CachedFieldIndex(0), BitWidth(BW) {
   }
 
 public:
-  static FieldDecl *Create(ASTContext &C, DeclContext *DC, SourceLocation L,
-                           IdentifierInfo *Id, QualType T,
+  static FieldDecl *Create(const ASTContext &C, DeclContext *DC,
+                           SourceLocation L, IdentifierInfo *Id, QualType T,
                            TypeSourceInfo *TInfo, Expr *BW, bool Mutable);
+
+  /// getFieldIndex - Returns the index of this field within its record,
+  /// as appropriate for passing to ASTRecordLayout::getFieldOffset.
+  unsigned getFieldIndex() const;
 
   /// isMutable - Determines whether this field is mutable (C++ only).
   bool isMutable() const { return Mutable; }
@@ -1850,7 +1856,7 @@ class TypeDecl : public NamedDecl {
   /// this TypeDecl.  It is a cache maintained by
   /// ASTContext::getTypedefType, ASTContext::getTagDeclType, and
   /// ASTContext::getTemplateTypeParmType, and TemplateTypeParmDecl.
-  mutable Type *TypeForDecl;
+  mutable const Type *TypeForDecl;
   friend class ASTContext;
   friend class DeclContext;
   friend class TagDecl;
@@ -1864,8 +1870,8 @@ protected:
 
 public:
   // Low-level accessor
-  Type *getTypeForDecl() const { return TypeForDecl; }
-  void setTypeForDecl(Type *TD) { TypeForDecl = TD; }
+  const Type *getTypeForDecl() const { return TypeForDecl; }
+  void setTypeForDecl(const Type *TD) { TypeForDecl = TD; }
 
   // Implement isa/cast/dyncast/etc.
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
@@ -2371,11 +2377,11 @@ protected:
              RecordDecl *PrevDecl, SourceLocation TKL);
 
 public:
-  static RecordDecl *Create(ASTContext &C, TagKind TK, DeclContext *DC,
+  static RecordDecl *Create(const ASTContext &C, TagKind TK, DeclContext *DC,
                             SourceLocation L, IdentifierInfo *Id,
                             SourceLocation TKL = SourceLocation(),
                             RecordDecl* PrevDecl = 0);
-  static RecordDecl *Create(ASTContext &C, EmptyShell Empty);
+  static RecordDecl *Create(const ASTContext &C, EmptyShell Empty);
 
   const RecordDecl *getPreviousDeclaration() const {
     return cast_or_null<RecordDecl>(TagDecl::getPreviousDeclaration());

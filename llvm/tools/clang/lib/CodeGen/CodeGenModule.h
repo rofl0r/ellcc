@@ -14,17 +14,17 @@
 #ifndef CLANG_CODEGEN_CODEGENMODULE_H
 #define CLANG_CODEGEN_CODEGENMODULE_H
 
+#include "clang/Basic/ABI.h"
 #include "clang/Basic/LangOptions.h"
 #include "clang/AST/Attr.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclObjC.h"
+#include "clang/AST/Mangle.h"
 #include "CGBlocks.h"
 #include "CGCall.h"
-#include "CGCXX.h"
 #include "CGVTables.h"
 #include "CodeGenTypes.h"
 #include "GlobalDecl.h"
-#include "Mangle.h"
 #include "llvm/Module.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/StringMap.h"
@@ -66,6 +66,7 @@ namespace clang {
   class Diagnostic;
   class AnnotateAttr;
   class CXXDestructorDecl;
+  class MangleBuffer;
 
 namespace CodeGen {
 
@@ -74,7 +75,6 @@ namespace CodeGen {
   class CGCXXABI;
   class CGDebugInfo;
   class CGObjCRuntime;
-  class MangleBuffer;
   
   struct OrderGlobalInits {
     unsigned int priority;
@@ -265,7 +265,7 @@ public:
   /// setTypeVisibility - Set the visibility for the given global
   /// value which holds information about a type.
   void setTypeVisibility(llvm::GlobalValue *GV, const CXXRecordDecl *D,
-                         bool IsForRTTI, bool IsForDefinition) const;
+                         bool IsForRTTI) const;
 
   llvm::Constant *GetAddrOfGlobal(GlobalDecl GD) {
     if (isa<CXXConstructorDecl>(GD.getDecl()))
@@ -480,7 +480,8 @@ public:
                               unsigned &CallingConv);
 
   llvm::StringRef getMangledName(GlobalDecl GD);
-  void getMangledName(GlobalDecl GD, MangleBuffer &Buffer, const BlockDecl *BD);
+  void getBlockMangledName(GlobalDecl GD, MangleBuffer &Buffer,
+                           const BlockDecl *BD);
 
   void EmitTentativeDefinition(const VarDecl *D);
 
@@ -495,8 +496,7 @@ public:
 
   /// getVTableLinkage - Return the appropriate linkage for the vtable, VTT,
   /// and type information of the given class.
-  static llvm::GlobalVariable::LinkageTypes 
-  getVTableLinkage(const CXXRecordDecl *RD);
+  llvm::GlobalVariable::LinkageTypes getVTableLinkage(const CXXRecordDecl *RD);
 
   /// GetTargetTypeStoreSize - Return the store size, in character units, of
   /// the given LLVM type.
@@ -518,7 +518,8 @@ private:
                                           GlobalDecl D);
   llvm::Constant *GetOrCreateLLVMGlobal(llvm::StringRef MangledName,
                                         const llvm::PointerType *PTy,
-                                        const VarDecl *D);
+                                        const VarDecl *D,
+                                        bool UnnamedAddr = false);
 
   /// SetCommonAttributes - Set attributes which are common to any
   /// form of a global definition (alias, Objective-C method,

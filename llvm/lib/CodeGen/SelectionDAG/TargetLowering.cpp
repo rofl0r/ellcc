@@ -1176,8 +1176,9 @@ bool TargetLowering::SimplifyDemandedBits(SDValue Op,
     // the RHS.
     if (ConstantSDNode *RHSC = dyn_cast<ConstantSDNode>(Op.getOperand(1))) {
       APInt LHSZero, LHSOne;
+      // Do not increment Depth here; that can cause an infinite loop.
       TLO.DAG.ComputeMaskedBits(Op.getOperand(0), NewMask,
-                                LHSZero, LHSOne, Depth+1);
+                                LHSZero, LHSOne, Depth);
       // If the LHS already has zeros where RHSC does, this and is dead.
       if ((LHSZero & NewMask) == (~RHSC->getAPIntValue() & NewMask))
         return TLO.CombineTo(Op, Op.getOperand(0));
@@ -1867,6 +1868,30 @@ TargetLowering::SimplifySetCC(EVT VT, SDValue N0, SDValue N1,
         return DAG.getSetCC(dl, VT, N0.getOperand(0).getOperand(0),
                             Zero, Cond);
       }
+    }
+
+    SDValue CTPOP = N0;
+    // Look through truncs that don't change the value of a ctpop.
+    if (N0.hasOneUse() && N0.getOpcode() == ISD::TRUNCATE)
+      CTPOP = N0.getOperand(0);
+
+    if (CTPOP.hasOneUse() && CTPOP.getOpcode() == ISD::CTPOP &&
+        (N0 == CTPOP || N0.getValueType().getSizeInBits() >
+                        Log2_32_Ceil(CTPOP.getValueType().getSizeInBits()))) {
+      EVT CTVT = CTPOP.getValueType();
+      SDValue CTOp = CTPOP.getOperand(0);
+
+      // (ctpop x) u< 2 -> (x & x-1) == 0
+      // (ctpop x) u> 1 -> (x & x-1) != 0
+      if ((Cond == ISD::SETULT && C1 == 2) || (Cond == ISD::SETUGT && C1 == 1)){
+        SDValue Sub = DAG.getNode(ISD::SUB, dl, CTVT, CTOp,
+                                  DAG.getConstant(1, CTVT));
+        SDValue And = DAG.getNode(ISD::AND, dl, CTVT, CTOp, Sub);
+        ISD::CondCode CC = Cond == ISD::SETULT ? ISD::SETEQ : ISD::SETNE;
+        return DAG.getSetCC(dl, VT, And, DAG.getConstant(0, CTVT), CC);
+      }
+
+      // TODO: (ctpop x) == 1 -> x && (x & x-1) == 0 iff ctpop is illegal.
     }
 
     // If the LHS is '(and load, const)', the RHS is 0,

@@ -25,11 +25,11 @@ using namespace clang;
 namespace {
   class StmtProfiler : public StmtVisitor<StmtProfiler> {
     llvm::FoldingSetNodeID &ID;
-    ASTContext &Context;
+    const ASTContext &Context;
     bool Canonical;
 
   public:
-    StmtProfiler(llvm::FoldingSetNodeID &ID, ASTContext &Context,
+    StmtProfiler(llvm::FoldingSetNodeID &ID, const ASTContext &Context,
                  bool Canonical)
       : ID(ID), Context(Context), Canonical(Canonical) { }
 
@@ -841,6 +841,13 @@ void StmtProfiler::VisitSizeOfPackExpr(SizeOfPackExpr *S) {
   VisitDecl(S->getPack());
 }
 
+void StmtProfiler::VisitSubstNonTypeTemplateParmPackExpr(
+                                         SubstNonTypeTemplateParmPackExpr *S) {
+  VisitExpr(S);
+  VisitDecl(S->getParameterPack());
+  VisitTemplateArgument(S->getArgumentPack());
+}
+
 void StmtProfiler::VisitOpaqueValueExpr(OpaqueValueExpr *E) {
   VisitExpr(E);  
 }
@@ -997,7 +1004,7 @@ void StmtProfiler::VisitTemplateArgument(const TemplateArgument &Arg) {
   }
 }
 
-void Stmt::Profile(llvm::FoldingSetNodeID &ID, ASTContext &Context,
+void Stmt::Profile(llvm::FoldingSetNodeID &ID, const ASTContext &Context,
                    bool Canonical) {
   StmtProfiler Profiler(ID, Context, Canonical);
   Profiler.Visit(this);

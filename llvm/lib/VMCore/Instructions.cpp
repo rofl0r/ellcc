@@ -96,8 +96,7 @@ PHINode::PHINode(const PHINode &PN)
 }
 
 PHINode::~PHINode() {
-  if (OperandList)
-    dropHungoffUses(OperandList);
+  dropHungoffUses();
 }
 
 // removeIncomingValue - Remove an incoming value.  This is useful if a
@@ -158,7 +157,7 @@ void PHINode::resizeOperands(unsigned NumOps) {
   Use *NewOps = allocHungoffUses(NumOps);
   std::copy(OldOps, OldOps + e, NewOps);
   OperandList = NewOps;
-  if (OldOps) Use::zap(OldOps, OldOps + e, true);
+  Use::zap(OldOps, OldOps + e, true);
 }
 
 /// hasConstantValue - If the specified PHI node always merges together the same
@@ -730,31 +729,6 @@ BranchInst::BranchInst(const BranchInst &BI) :
   SubclassOptionalData = BI.SubclassOptionalData;
 }
 
-
-Use* Use::getPrefix() {
-  PointerIntPair<Use**, 2, PrevPtrTag> &PotentialPrefix(this[-1].Prev);
-  if (PotentialPrefix.getOpaqueValue())
-    return 0;
-
-  return reinterpret_cast<Use*>((char*)&PotentialPrefix + 1);
-}
-
-BranchInst::~BranchInst() {
-  if (NumOperands == 1) {
-    if (Use *Prefix = OperandList->getPrefix()) {
-      Op<-1>() = 0;
-      //
-      // mark OperandList to have a special value for scrutiny
-      // by baseclass destructors and operator delete
-      OperandList = Prefix;
-    } else {
-      NumOperands = 3;
-      OperandList = op_begin();
-    }
-  }
-}
-
-
 BasicBlock *BranchInst::getSuccessorV(unsigned idx) const {
   return getSuccessor(idx);
 }
@@ -1194,6 +1168,12 @@ static const Type* getIndexedTypeInternal(const Type *Ptr, IndexTy const *Idxs,
 
 const Type* GetElementPtrInst::getIndexedType(const Type *Ptr,
                                               Value* const *Idxs,
+                                              unsigned NumIdx) {
+  return getIndexedTypeInternal(Ptr, Idxs, NumIdx);
+}
+
+const Type* GetElementPtrInst::getIndexedType(const Type *Ptr,
+                                              Constant* const *Idxs,
                                               unsigned NumIdx) {
   return getIndexedTypeInternal(Ptr, Idxs, NumIdx);
 }
@@ -3001,7 +2981,7 @@ SwitchInst::SwitchInst(const SwitchInst &SI)
 }
 
 SwitchInst::~SwitchInst() {
-  dropHungoffUses(OperandList);
+  dropHungoffUses();
 }
 
 
@@ -3072,7 +3052,7 @@ void SwitchInst::resizeOperands(unsigned NumOps) {
       NewOps[i] = OldOps[i];
   }
   OperandList = NewOps;
-  if (OldOps) Use::zap(OldOps, OldOps + e, true);
+  Use::zap(OldOps, OldOps + e, true);
 }
 
 
@@ -3087,7 +3067,7 @@ void SwitchInst::setSuccessorV(unsigned idx, BasicBlock *B) {
 }
 
 //===----------------------------------------------------------------------===//
-//                        SwitchInst Implementation
+//                        IndirectBrInst Implementation
 //===----------------------------------------------------------------------===//
 
 void IndirectBrInst::init(Value *Address, unsigned NumDests) {
@@ -3127,7 +3107,7 @@ void IndirectBrInst::resizeOperands(unsigned NumOps) {
   for (unsigned i = 0; i != e; ++i)
     NewOps[i] = OldOps[i];
   OperandList = NewOps;
-  if (OldOps) Use::zap(OldOps, OldOps + e, true);
+  Use::zap(OldOps, OldOps + e, true);
 }
 
 IndirectBrInst::IndirectBrInst(Value *Address, unsigned NumCases,
@@ -3155,7 +3135,7 @@ IndirectBrInst::IndirectBrInst(const IndirectBrInst &IBI)
 }
 
 IndirectBrInst::~IndirectBrInst() {
-  dropHungoffUses(OperandList);
+  dropHungoffUses();
 }
 
 /// addDestination - Add a destination.
@@ -3329,8 +3309,7 @@ ReturnInst *ReturnInst::clone_impl() const {
 }
 
 BranchInst *BranchInst::clone_impl() const {
-  unsigned Ops(getNumOperands());
-  return new(Ops, Ops == 1) BranchInst(*this);
+  return new(getNumOperands()) BranchInst(*this);
 }
 
 SwitchInst *SwitchInst::clone_impl() const {

@@ -56,6 +56,8 @@ def err_variably_modified_new_type : Error<
   "'new' cannot allocate object of variably modified type %0">;
 
 // C99 Designated Initializers
+def ext_designated_init : Extension<
+  "designated initializers are a C99 feature, accepted in C++ as an extension">;
 def err_array_designator_negative : Error<
   "array designator value '%0' is negative">;
 def err_array_designator_empty_range : Error<
@@ -277,8 +279,8 @@ def warn_pragma_pack_pop_failed : Warning<"#pragma pack(pop, ...) failed: %0">;
 
 def warn_pragma_unused_undeclared_var : Warning<
   "undeclared variable %0 used as an argument for '#pragma unused'">;
-def warn_pragma_unused_expected_localvar : Warning<
-  "only local variables can be arguments to '#pragma unused'">;
+def warn_pragma_unused_expected_var_arg : Warning<
+  "only variables can be arguments to '#pragma unused'">;
 def err_unsupported_pragma_weak : Error<
   "using '#pragma weak' to refer to an undeclared identifier is not yet supported">;
 
@@ -539,65 +541,67 @@ def warn_missing_exception_specification : Warning<
 def err_class_redeclared_with_different_access : Error<
   "%0 redeclared with '%1' access">;
 def err_access : Error<
-  "%1 is a %select{private|protected}0 member of %3">, NoSFINAE;
+  "%1 is a %select{private|protected}0 member of %3">, AccessControl;
 def err_access_ctor : Error<
-  "calling a %select{private|protected}0 constructor of class %2">, NoSFINAE;
+  "calling a %select{private|protected}0 constructor of class %2">, 
+  AccessControl;
 def ext_rvalue_to_reference_access_ctor : ExtWarn<
   "C++98 requires an accessible copy constructor for class %2 when binding "
   "a reference to a temporary; was %select{private|protected}0">,
-  NoSFINAE, InGroup<BindToTemporaryCopy>;
+  AccessControl, InGroup<BindToTemporaryCopy>;
 def err_access_base : Error<
   "%select{base class|inherited virtual base class}0 %1 has %select{private|"
   "protected}3 %select{constructor|copy constructor|copy assignment operator|"
-  "destructor}2">, NoSFINAE;
+  "destructor}2">, AccessControl;
 def err_access_field: Error<
   "field of type %0 has %select{private|protected}2 %select{constructor|copy "
-  "constructor|copy assignment operator|destructor}1">, NoSFINAE;
+  "constructor|copy assignment operator|destructor}1">, AccessControl;
 
 def err_access_ctor_field :
     Error<"field of type %1 has %select{private|protected}2 constructor">,
-    NoSFINAE;
+    AccessControl;
 def err_access_dtor_base :
     Error<"base class %0 has %select{private|protected}1 destructor">,
-    NoSFINAE;
+    AccessControl;
 def err_access_dtor_vbase :
     Error<"inherited virtual base class %0 has "
     "%select{private|protected}1 destructor">,
-    NoSFINAE;
+    AccessControl;
 def err_access_dtor_temp :
     Error<"temporary of type %0 has %select{private|protected}1 destructor">,
-    NoSFINAE;
+    AccessControl;
 def err_access_dtor_exception :
     Error<"exception object of type %0 has %select{private|protected}1 "
-          "destructor">, NoSFINAE;
+          "destructor">, AccessControl;
 def err_access_dtor_field :
     Error<"field of type %1 has %select{private|protected}2 destructor">,
-    NoSFINAE;
+    AccessControl;
 def err_access_dtor_var :
     Error<"variable of type %1 has %select{private|protected}2 destructor">,
-    NoSFINAE;
+    AccessControl;
 def err_access_assign_field :
     Error<"field of type %1 has %select{private|protected}2 copy assignment"
           " operator">,
-    NoSFINAE;
+    AccessControl;
 def err_access_assign_base :
     Error<"base class %0 has %select{private|protected}1 copy assignment"
           " operator">,
-    NoSFINAE;
+    AccessControl;
 def err_access_copy_field :
     Error<"field of type %1 has %select{private|protected}2 copy constructor">,
-    NoSFINAE;
+    AccessControl;
 def err_access_copy_base :
     Error<"base class %0 has %select{private|protected}1 copy constructor">,
-    NoSFINAE;
+    AccessControl;
 def err_access_dtor_ivar :
     Error<"instance variable of type %0 has %select{private|protected}1 "
           "destructor">,
-    NoSFINAE;
+    AccessControl;
 def note_previous_access_declaration : Note<
   "previously declared '%1' here">;
 def err_access_outside_class : Error<
-  "access to %select{private|protected}0 member outside any class context">;
+  "access to %select{private|protected}0 member outside any class context">,
+  AccessControl;
 def note_access_natural : Note<
   "%select{|implicitly }1declared %select{private|protected}0 here">;
 def note_access_constrained_by_path : Note<
@@ -640,6 +644,8 @@ def err_virtual_non_function : Error<
   "'virtual' can only appear on non-static member functions">;
 def err_virtual_out_of_class : Error<
   "'virtual' can only be specified inside the class definition">;
+def err_virtual_member_function_template : Error<
+  "'virtual' can not be specified on member function templates">;
 def err_static_overrides_virtual : Error<
   "'static' member function %0 overrides a virtual function in a base class">;
 def err_explicit_non_function : Error<
@@ -703,7 +709,7 @@ def note_overridden_virtual_function : Note<
 
 def err_covariant_return_inaccessible_base : Error<
   "invalid covariant return for virtual function: %1 is a "
-  "%select{private|protected}2 base class of %0">, NoSFINAE;
+  "%select{private|protected}2 base class of %0">, AccessControl;
 def err_covariant_return_ambiguous_derived_to_base_conv : Error<
   "return type of virtual function %3 is not covariant with the return type of "
   "the function it overrides (ambiguous conversion from derived class "
@@ -726,6 +732,9 @@ def err_covariant_return_type_class_type_more_qualified : Error<
 def err_constructor_cannot_be : Error<"constructor cannot be declared '%0'">;
 def err_invalid_qualified_constructor : Error<
   "'%0' qualifier is not allowed on a constructor">;
+def err_ref_qualifier_constructor : Error<
+  "ref-qualifier '%select{&&|&}0' is not allowed on a constructor">;
+
 def err_constructor_return_type : Error<
   "constructor cannot have a return type">;
 def err_constructor_redeclared : Error<"constructor cannot be redeclared">;
@@ -736,6 +745,8 @@ def warn_no_constructor_for_refconst : Warning<
   "initialize its non-modifiable members">;
 def note_refconst_member_not_initialized : Note<
   "%select{const|reference}0 member %1 will never be initialized">;
+def ext_ms_explicit_constructor_call : ExtWarn<
+  "explicit constructor calls are a Microsoft extension">, InGroup<Microsoft>;
 
 // C++ destructors
 def err_destructor_not_member : Error<
@@ -743,6 +754,8 @@ def err_destructor_not_member : Error<
 def err_destructor_cannot_be : Error<"destructor cannot be declared '%0'">;
 def err_invalid_qualified_destructor : Error<
   "'%0' qualifier is not allowed on a destructor">;
+def err_ref_qualifier_destructor : Error<
+  "ref-qualifier '%select{&&|&}0' is not allowed on a destructor">;
 def err_destructor_return_type : Error<"destructor cannot have a return type">;
 def err_destructor_redeclared : Error<"destructor cannot be redeclared">;
 def err_destructor_with_params : Error<"destructor cannot have any parameters">;
@@ -763,7 +776,8 @@ def err_init_conversion_failed : Error<
   "base class|a vector element}0 of type %1 with an %select{rvalue|lvalue}2 of "
   "type %3">;
 
-def err_lvalue_to_rvalue_ref : Error<"rvalue reference cannot bind to lvalue">;
+def err_lvalue_to_rvalue_ref : Error<"rvalue reference to type %0 cannot bind "
+  "to lvalue of type %1">;
 def err_invalid_initialization : Error<
 "invalid initialization of reference of type %0 from expression of type %1">;
 def err_lvalue_to_rvalue_ambig_ref : Error<"rvalue reference cannot bind to lvalue "
@@ -814,7 +828,15 @@ def err_init_reference_member_uninitialized : Error<
 def note_uninit_reference_member : Note<
   "uninitialized reference member is here">;
 def warn_field_is_uninit : Warning<"field is uninitialized when used here">,
-  InGroup<DiagGroup<"uninitialized">>;
+  InGroup<Uninitialized>;
+def warn_uninit_var : Warning<"use of uninitialized variable %0">,
+  InGroup<Uninitialized>, DefaultIgnore;
+def note_uninit_var : Note<
+  "variable %0 is possibly uninitialized when used here">;
+def note_uninit_var_captured_by_block : Note<
+  "variable %0 is possibly uninitialized when captured by block">;
+def note_var_fixit_add_initialization : Note<
+  "add initialization to silence this warning">;
 def err_init_incomplete_type : Error<"initialization of incomplete type %0">;
 
 def err_temp_copy_no_viable : Error<
@@ -860,7 +882,15 @@ def err_auto_missing_trailing_return : Error<
   "'auto' return without trailing return type">;
 def err_trailing_return_without_auto : Error<
   "trailing return type without 'auto' return">;
-  
+
+// C++0x override control
+def override_keyword_only_allowed_on_virtual_member_functions : Error<
+  "only virtual member functions can be marked '%0'">;
+def err_function_marked_override_not_overriding : Error<
+  "%0 marked 'override' but does not override any member functions">;
+def err_class_marked_final_used_as_base : Error<
+  "base %0 is marked 'final'">;
+
 // C++0x attributes
 def err_repeat_attribute : Error<"'%0' attribute cannot be repeated">;
 
@@ -869,10 +899,6 @@ def err_final_function_overridden : Error<
   "declaration of %0 overrides a 'final' function">;
 def err_final_base : Error<
   "derivation from 'final' %0">;
-
-// C++0x [[override]]
-def err_override_function_not_overriding : Error<
-  "%0 marked 'override' but does not override any member functions">;
 
 def err_function_overriding_without_override : Error<
   "%0 overrides function%s1 without being marked 'override'">;
@@ -893,6 +919,12 @@ def err_enum_redeclare_fixed_mismatch : Error<
   "enumeration previously declared with %select{non|}0fixed underlying type">;
 def err_enum_redeclare_scoped_mismatch : Error<
   "enumeration previously declared as %select{un|}0scoped">;
+
+// C++0x delegating constructors
+def err_delegation_0x_only : Error<
+  "delegating constructors are permitted only in C++0x">;
+def err_delegation_unimplemented : Error<
+  "delegating constructors are not fully implemented">;
   
 // Objective-C++
 def err_objc_decls_may_only_appear_in_global_scope : Error<
@@ -1015,17 +1047,17 @@ def err_attribute_weakref_without_alias : Error<
 def err_alias_not_supported_on_darwin : Error <
   "only weak aliases are supported on darwin">;
 def warn_attribute_wrong_decl_type : Warning<
-  "%0 attribute only applies to %select{function|union|"
-  "variable and function|function or method|parameter|"
-  "parameter or Objective-C method |function, method or block|"
-  "virtual method or class|function, method, or parameter|class|virtual method"
-  "|member|variable}1 types">;
+  "%0 attribute only applies to %select{functions|unions|"
+  "variables and functions|functions and methods|parameters|"
+  "parameters and methods|functions, methods and blocks|"
+  "classes and virtual methods|functions, methods, and parameters|"
+  "classes|virtual methods|class members|variables|methods}1">;
 def err_attribute_wrong_decl_type : Error<
-  "%0 attribute only applies to %select{function|union|"
-  "variable and function|function or method|parameter|"
-  "parameter or Objective-C method |function, method or block|"
-  "virtual method or class|function, method, or parameter|class|virtual method"
-  "|member|variable}1 types">;
+  "%0 attribute only applies to %select{functions|unions|"
+  "variables and functions|functions and methods|parameters|"
+  "parameters and methods|functions, methods and blocks|"
+  "classes and virtual methods|functions, methods, and parameters|"
+  "classes|virtual methods|class members|variables|methods}1">;
 def warn_function_attribute_wrong_type : Warning<
   "%0 only applies to function types; type here is %1">;
 def warn_gnu_inline_attribute_requires_inline : Warning<
@@ -1156,8 +1188,11 @@ def note_attribute_overloadable_prev_overload : Note<
 def err_attribute_overloadable_no_prototype : Error<
   "'overloadable' function %0 must have a prototype">;
 def warn_ns_attribute_wrong_return_type : Warning<
-    "%0 attribute only applies to functions or methods that "
-    "return a pointer or Objective-C object">;
+  "%0 attribute only applies to %select{functions|methods}1 that "
+  "return %select{an Objective-C object|a pointer}2">;
+def warn_ns_attribute_wrong_parameter_type : Warning<
+  "%0 attribute only applies to %select{Objective-C object|pointer}1 "
+  "parameters">;
 
 // Function Parameter Semantic Analysis.
 def err_param_with_void_type : Error<"argument may not have 'void' type">;
@@ -1545,6 +1580,9 @@ def ext_template_arg_extra_parens : ExtWarn<
   "address non-type template argument cannot be surrounded by parentheses">;
 def err_pointer_to_member_type : Error<
   "invalid use of pointer to member type after %select{.*|->*}0">;
+def err_pointer_to_member_oper_value_classify: Error<
+  "pointer-to-member function type %0 can only be called on an "
+  "%select{rvalue|lvalue}1">;
 
 // C++ template specialization
 def err_template_spec_unknown_kind : Error<
@@ -1660,6 +1698,8 @@ def err_function_template_spec_ambiguous : Error<
     "arguments to identify a particular function template">;
 def note_function_template_spec_matched : Note<
     "function template matches specialization %0">;
+def err_function_template_partial_spec : Error<
+    "function template partial specialization is not allowed">;
 
 // C++ Template Instantiation
 def err_template_recursion_depth_exceeded : Error<
@@ -1813,8 +1853,6 @@ def ext_template_outside_of_template : ExtWarn<
   "'template' keyword outside of a template">, InGroup<CXX0x>;
 
 // C++0x Variadic Templates
-def err_variadic_templates_unsupported : Error<
-  "variadic templates are not yet implemented">;
 def err_template_param_pack_default_arg : Error<
   "template parameter pack cannot have a default argument">;
 def err_template_param_pack_must_be_last_template_parameter : Error<
@@ -1862,6 +1900,9 @@ def err_pack_expansion_without_parameter_packs : Error<
 def err_pack_expansion_length_conflict : Error<
   "pack expansion contains parameter packs %0 and %1 that have different "
   "lengths (%2 vs. %3)">;
+def err_pack_expansion_length_conflict_multilevel : Error<
+  "pack expansion contains parameter pack %0 that has a different "
+  "length (%1 vs. %2) from outer parameter packs">;
 def err_pack_expansion_member_init : Error<
   "pack expansion for initialization of member %0">;
 
@@ -1873,10 +1914,6 @@ def err_ellipsis_in_declarator_not_parameter : Error<
 
 def err_sizeof_pack_no_pack_name : Error<
   "%0 does not refer to the name of a parameter pack">;
-
-// Unsupported variadic templates features
-def err_pack_expansion_mismatch_unsupported : Error<
-  "clang cannot yet instantiate pack expansions with mismatched pack levels">;
 
 def err_unexpected_typedef : Error<
   "unexpected type name %0: expected expression">;
@@ -2340,7 +2377,7 @@ def err_array_init_not_init_list : Error<
   "array initializer must be an initializer "
   "list%select{| or string literal}0">;
 def warn_deprecated_string_literal_conversion : Warning<
-  "conversion from string literal to %0 is deprecated">, InGroup<Deprecated>;
+  "conversion from string literal to %0 is deprecated">, InGroup<DeprecatedWritableStr>;
 def err_realimag_invalid_type : Error<"invalid type %0 to %1 operator">;
 def err_typecheck_sclass_fscope : Error<
   "illegal storage class on file-scoped variable">;
@@ -2431,11 +2468,22 @@ def err_invalid_member_use_in_static_method : Error<
   "invalid use of member %0 in static member function">;
 def err_invalid_qualified_function_type : Error<
   "type qualifier is not allowed on this function">;
+def err_invalid_ref_qualifier_function_type : Error<
+  "ref-qualifier '%select{&&|&}0' is only allowed on non-static member functions,"
+  " member function pointers, and typedefs of function types">;
 def err_invalid_qualified_function_pointer : Error<
   "type qualifier is not allowed on this function %select{pointer|reference}0">;
 def err_invalid_qualified_typedef_function_type_use : Error<
   "a qualified function type cannot be used to declare a "
   "%select{static member|nonmember}0 function">;
+def err_invalid_ref_qualifier_typedef_function_type_use : Error<
+  "%select{static member|nonmember}0 function cannot have a ref-qualifier "
+  "'%select{&&|&}1'">;
+
+def err_ref_qualifier_overload : Error<
+  "cannot overload a member function %select{without a ref-qualifier|with "
+  "ref-qualifier '&'|with ref-qualifier '&&'}0 with a member function %select{"
+  "without a ref-qualifier|with ref-qualifier '&'|with ref-qualifier '&&'}1">;
 
 def err_invalid_non_static_member_use : Error<
   "invalid use of nonstatic data member %0">;
@@ -2502,8 +2550,8 @@ def warn_inst_method_not_found : Warning<
   "method %objcinstance0 not found (return type defaults to 'id')">;
 def error_no_super_class_message : Error<
   "no @interface declaration found in class messaging of %0">;
-def error_no_super_class : Error<
-  "no super class declared in @interface for %0">;
+def error_root_class_cannot_use_super : Error<
+  "%0 cannot use 'super' because it is a root class">;
 def err_invalid_receiver_to_message : Error<
   "invalid receiver to message expression">;
 def err_invalid_receiver_to_message_super : Error<
@@ -2785,6 +2833,8 @@ def warn_condition_is_idiomatic_assignment : Warning<"using the result "
   InGroup<DiagGroup<"idiomatic-parentheses">>, DefaultIgnore;
 def note_condition_assign_to_comparison : Note<
   "use '==' to turn this assignment into an equality comparison">;
+def note_condition_or_assign_to_comparison : Note<
+  "use '!=' to turn this compound assignment into an inequality comparison">;
 def note_condition_assign_silence : Note<
   "place parentheses around the assignment to silence this warning">;
 
@@ -3023,6 +3073,8 @@ let CategoryName = "Inline Assembly Issue" in {
   def err_asm_tying_incompatible_types : Error<
     "unsupported inline asm: input with type %0 matching output with type %1">;
   def err_asm_unknown_register_name : Error<"unknown register name '%0' in asm">;
+  def warn_asm_label_on_auto_decl : Warning<
+    "ignored asm label '%0' on automatic variable">;
   def err_invalid_asm_cast_lvalue : Error<
     "invalid use of a cast in a inline asm context requiring an l-value: "
     "remove the cast or build with -fheinous-gnu-extensions">;
@@ -3147,7 +3199,7 @@ def err_memptr_conv_via_virtual : Error<
 
 // C++ access control
 def err_conv_to_inaccessible_base : Error<
-  "conversion from %0 to inaccessible base class %1">, NoSFINAE;
+  "conversion from %0 to inaccessible base class %1">, AccessControl;
 def note_inheritance_specifier_here : Note<
   "'%0' inheritance specifier here">;
 def note_inheritance_implicitly_private_here : Note<
@@ -3347,8 +3399,8 @@ def err_blocks_disable : Error<"blocks support disabled - compile with -fblocks"
 def err_expected_block_lbrace : Error<"expected '{' in block literal">;
 def err_return_in_block_expression : Error<
   "return not allowed in block expression literal">;
-def err_block_returns_array : Error<
-  "block declared as returning an array">;
+def err_block_returning_array_function : Error<
+  "block cannot return %select{array|function}0 type %1">;
 
 
 // CFString checking
@@ -3516,9 +3568,9 @@ def warn_ivar_use_hidden : Warning<
 def error_ivar_use_in_class_method : Error<
   "instance variable %0 accessed in class method">;
 def error_private_ivar_access : Error<"instance variable %0 is private">,
-  NoSFINAE;
+  AccessControl;
 def error_protected_ivar_access : Error<"instance variable %0 is protected">,
-  NoSFINAE;
+  AccessControl;
 def warn_maynot_respond : Warning<"%0 may not respond to %1">;
 def warn_attribute_method_def : Warning<
   "method attribute can only be specified on method declarations">;

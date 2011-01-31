@@ -63,7 +63,7 @@ unsigned ConstantArrayType::getMaxSizeBits(ASTContext &Context) {
   return Bits;
 }
 
-DependentSizedArrayType::DependentSizedArrayType(ASTContext &Context, 
+DependentSizedArrayType::DependentSizedArrayType(const ASTContext &Context, 
                                                  QualType et, QualType can,
                                                  Expr *e, ArraySizeModifier sm,
                                                  unsigned tq,
@@ -76,7 +76,7 @@ DependentSizedArrayType::DependentSizedArrayType(ASTContext &Context,
 }
 
 void DependentSizedArrayType::Profile(llvm::FoldingSetNodeID &ID,
-                                      ASTContext &Context,
+                                      const ASTContext &Context,
                                       QualType ET,
                                       ArraySizeModifier SizeMod,
                                       unsigned TypeQuals,
@@ -87,7 +87,8 @@ void DependentSizedArrayType::Profile(llvm::FoldingSetNodeID &ID,
   E->Profile(ID, Context, true);
 }
 
-DependentSizedExtVectorType::DependentSizedExtVectorType(ASTContext &Context, 
+DependentSizedExtVectorType::DependentSizedExtVectorType(const
+                                                         ASTContext &Context,
                                                          QualType ElementType,
                                                          QualType can, 
                                                          Expr *SizeExpr, 
@@ -103,7 +104,7 @@ DependentSizedExtVectorType::DependentSizedExtVectorType(ASTContext &Context,
 
 void
 DependentSizedExtVectorType::Profile(llvm::FoldingSetNodeID &ID,
-                                     ASTContext &Context,
+                                     const ASTContext &Context,
                                      QualType ElementType, Expr *SizeExpr) {
   ID.AddPointer(ElementType.getAsOpaquePtr());
   SizeExpr->Profile(ID, Context, true);
@@ -149,51 +150,13 @@ const Type *Type::getArrayElementTypeNoTypeQual() const {
     ->getElementType().getTypePtr();
 }
 
-/// \brief Retrieve the unqualified variant of the given type, removing as
-/// little sugar as possible.
-///
-/// This routine looks through various kinds of sugar to find the 
-/// least-desuraged type that is unqualified. For example, given:
-///
-/// \code
-/// typedef int Integer;
-/// typedef const Integer CInteger;
-/// typedef CInteger DifferenceType;
-/// \endcode
-///
-/// Executing \c getUnqualifiedTypeSlow() on the type \c DifferenceType will
-/// desugar until we hit the type \c Integer, which has no qualifiers on it.
-QualType QualType::getUnqualifiedTypeSlow() const {
-  QualType Cur = *this;
-  while (true) {
-    if (!Cur.hasQualifiers())
-      return Cur;
-    
-    const Type *CurTy = Cur.getTypePtr();
-    switch (CurTy->getTypeClass()) {
-#define ABSTRACT_TYPE(Class, Parent)
-#define TYPE(Class, Parent)                                  \
-    case Type::Class: {                                      \
-      const Class##Type *Ty = cast<Class##Type>(CurTy);      \
-      if (!Ty->isSugared())                                  \
-        return Cur.getLocalUnqualifiedType();                \
-      Cur = Ty->desugar();                                   \
-      break;                                                 \
-    }
-#include "clang/AST/TypeNodes.def"
-    }
-  }
-  
-  return Cur.getUnqualifiedType();
-}
-
 /// getDesugaredType - Return the specified type with any "sugar" removed from
 /// the type.  This takes off typedefs, typeof's etc.  If the outer level of
 /// the type is already concrete, it returns it unmodified.  This is similar
 /// to getting the canonical type, but it doesn't remove *all* typedefs.  For
 /// example, it returns "T*" as "T*", (not as "int*"), because the pointer is
 /// concrete.
-QualType QualType::getDesugaredType(QualType T, ASTContext &Context) {
+QualType QualType::getDesugaredType(QualType T, const ASTContext &Context) {
   SplitQualType split = getSplitDesugaredType(T);
   return Context.getQualifiedType(split.first, split.second);
 }
@@ -219,7 +182,47 @@ SplitQualType QualType::getSplitDesugaredType(QualType T) {
   }
 }
 
+SplitQualType QualType::getSplitUnqualifiedTypeImpl(QualType type) {
+  SplitQualType split = type.split();
+
+  // All the qualifiers we've seen so far.
+  Qualifiers quals = split.second;
+
+  // The last type node we saw with any nodes inside it.
+  const Type *lastTypeWithQuals = split.first;
+
+  while (true) {
+    QualType next;
+
+    // Do a single-step desugar, aborting the loop if the type isn't
+    // sugared.
+    switch (split.first->getTypeClass()) {
+#define ABSTRACT_TYPE(Class, Parent)
+#define TYPE(Class, Parent) \
+    case Type::Class: { \
+      const Class##Type *ty = cast<Class##Type>(split.first); \
+      if (!ty->isSugared()) goto done; \
+      next = ty->desugar(); \
+      break; \
+    }
+#include "clang/AST/TypeNodes.def"
+    }
+
+    // Otherwise, split the underlying type.  If that yields qualifiers,
+    // update the information.
+    split = next.split();
+    if (!split.second.empty()) {
+      lastTypeWithQuals = split.first;
+      quals.addConsistentQualifiers(split.second);
+    }
+  }
+
+ done:
+  return SplitQualType(lastTypeWithQuals, quals);
+}
+
 QualType QualType::IgnoreParens(QualType T) {
+  // FIXME: this seems inherently un-qualifiers-safe.
   while (const ParenType *PT = T->getAs<ParenType>())
     T = PT->getInnerType();
   return T;
@@ -996,7 +999,7 @@ DependentTemplateSpecializationType::DependentTemplateSpecializationType(
 
 void
 DependentTemplateSpecializationType::Profile(llvm::FoldingSetNodeID &ID,
-                                             ASTContext &Context,
+                                             const ASTContext &Context,
                                              ElaboratedTypeKeyword Keyword,
                                              NestedNameSpecifier *Qualifier,
                                              const IdentifierInfo *Name,
@@ -1109,7 +1112,8 @@ llvm::StringRef FunctionType::getNameForCallConv(CallingConv CC) {
 FunctionProtoType::FunctionProtoType(QualType result, const QualType *args,
                                      unsigned numArgs, QualType canonical,
                                      const ExtProtoInfo &epi)
-  : FunctionType(FunctionProto, result, epi.Variadic, epi.TypeQuals, canonical,
+  : FunctionType(FunctionProto, result, epi.Variadic, epi.TypeQuals, 
+                 epi.RefQualifier, canonical,
                  result->isDependentType(),
                  result->isVariablyModifiedType(),
                  result->containsUnexpandedParameterPack(),
@@ -1143,6 +1147,13 @@ FunctionProtoType::FunctionProtoType(QualType result, const QualType *args,
   }
 }
 
+bool FunctionProtoType::isTemplateVariadic() const {
+  for (unsigned ArgIdx = getNumArgs(); ArgIdx; --ArgIdx)
+    if (isa<PackExpansionType>(getArgType(ArgIdx - 1)))
+      return true;
+  
+  return false;
+}
 
 void FunctionProtoType::Profile(llvm::FoldingSetNodeID &ID, QualType Result,
                                 const QualType *ArgTys, unsigned NumArgs,
@@ -1152,6 +1163,7 @@ void FunctionProtoType::Profile(llvm::FoldingSetNodeID &ID, QualType Result,
     ID.AddPointer(ArgTys[i].getAsOpaquePtr());
   ID.AddBoolean(epi.Variadic);
   ID.AddInteger(epi.TypeQuals);
+  ID.AddInteger(epi.RefQualifier);
   if (epi.HasExceptionSpec) {
     ID.AddBoolean(epi.HasAnyExceptionSpec);
     for (unsigned i = 0; i != epi.NumExceptions; ++i)
@@ -1180,7 +1192,7 @@ QualType TypeOfExprType::desugar() const {
 }
 
 void DependentTypeOfExprType::Profile(llvm::FoldingSetNodeID &ID,
-                                      ASTContext &Context, Expr *E) {
+                                      const ASTContext &Context, Expr *E) {
   E->Profile(ID, Context, true);
 }
 
@@ -1192,11 +1204,11 @@ DecltypeType::DecltypeType(Expr *E, QualType underlyingType, QualType can)
   UnderlyingType(underlyingType) {
 }
 
-DependentDecltypeType::DependentDecltypeType(ASTContext &Context, Expr *E)
+DependentDecltypeType::DependentDecltypeType(const ASTContext &Context, Expr *E)
   : DecltypeType(E, Context.DependentTy), Context(Context) { }
 
 void DependentDecltypeType::Profile(llvm::FoldingSetNodeID &ID,
-                                    ASTContext &Context, Expr *E) {
+                                    const ASTContext &Context, Expr *E) {
   E->Profile(ID, Context, true);
 }
 
@@ -1234,6 +1246,34 @@ bool RecordType::classof(const TagType *TT) {
 
 bool EnumType::classof(const TagType *TT) {
   return isa<EnumDecl>(TT->getDecl());
+}
+
+SubstTemplateTypeParmPackType::
+SubstTemplateTypeParmPackType(const TemplateTypeParmType *Param, 
+                              QualType Canon,
+                              const TemplateArgument &ArgPack)
+  : Type(SubstTemplateTypeParmPack, Canon, true, false, true), Replaced(Param), 
+    Arguments(ArgPack.pack_begin()), NumArguments(ArgPack.pack_size()) 
+{ 
+}
+
+TemplateArgument SubstTemplateTypeParmPackType::getArgumentPack() const {
+  return TemplateArgument(Arguments, NumArguments);
+}
+
+void SubstTemplateTypeParmPackType::Profile(llvm::FoldingSetNodeID &ID) {
+  Profile(ID, getReplacedParameter(), getArgumentPack());
+}
+
+void SubstTemplateTypeParmPackType::Profile(llvm::FoldingSetNodeID &ID,
+                                           const TemplateTypeParmType *Replaced,
+                                            const TemplateArgument &ArgPack) {
+  ID.AddPointer(Replaced);
+  ID.AddInteger(ArgPack.pack_size());
+  for (TemplateArgument::pack_iterator P = ArgPack.pack_begin(), 
+                                    PEnd = ArgPack.pack_end();
+       P != PEnd; ++P)
+    ID.AddPointer(P->getAsType().getAsOpaquePtr());
 }
 
 bool TemplateSpecializationType::
@@ -1292,20 +1332,22 @@ TemplateSpecializationType::Profile(llvm::FoldingSetNodeID &ID,
                                     TemplateName T,
                                     const TemplateArgument *Args,
                                     unsigned NumArgs,
-                                    ASTContext &Context) {
+                                    const ASTContext &Context) {
   T.Profile(ID);
   for (unsigned Idx = 0; Idx < NumArgs; ++Idx)
     Args[Idx].Profile(ID, Context);
 }
 
-QualType QualifierCollector::apply(ASTContext &Context, QualType QT) const {
+QualType
+QualifierCollector::apply(const ASTContext &Context, QualType QT) const {
   if (!hasNonFastQualifiers())
     return QT.withFastQualifiers(getFastQualifiers());
 
   return Context.getQualifiedType(QT, *this);
 }
 
-QualType QualifierCollector::apply(ASTContext &Context, const Type *T) const {
+QualType
+QualifierCollector::apply(const ASTContext &Context, const Type *T) const {
   if (!hasNonFastQualifiers())
     return QualType(T, getFastQualifiers());
 
@@ -1374,8 +1416,8 @@ public:
 
     // If this type is non-canonical, ask its canonical type for the
     // relevant information.
-    if (QualType(T, 0) != T->CanonicalType) {
-      const Type *CT = T->CanonicalType.getTypePtr();
+    if (!T->isCanonicalUnqualified()) {
+      const Type *CT = T->getCanonicalTypeInternal().getTypePtr();
       ensure(CT);
       T->TypeBits.CacheValidAndVisibility =
         CT->TypeBits.CacheValidAndVisibility;
@@ -1515,4 +1557,22 @@ void Type::ClearLinkageCache() {
   TypeBits.CacheValidAndVisibility = 0;
   if (QualType(this, 0) != CanonicalType)
     CanonicalType->TypeBits.CacheValidAndVisibility = 0;
+}
+
+bool Type::hasSizedVLAType() const {
+  if (!isVariablyModifiedType()) return false;
+
+  if (const PointerType *ptr = getAs<PointerType>())
+    return ptr->getPointeeType()->hasSizedVLAType();
+  if (const ReferenceType *ref = getAs<ReferenceType>())
+    return ref->getPointeeType()->hasSizedVLAType();
+  if (const ArrayType *arr = getAsArrayTypeUnsafe()) {
+    if (isa<VariableArrayType>(arr) && 
+        cast<VariableArrayType>(arr)->getSizeExpr())
+      return true;
+
+    return arr->getElementType()->hasSizedVLAType();
+  }
+
+  return false;
 }

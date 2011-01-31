@@ -27,6 +27,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "spillplacement"
 #include "SpillPlacement.h"
 #include "llvm/CodeGen/EdgeBundles.h"
 #include "llvm/CodeGen/LiveIntervalAnalysis.h"

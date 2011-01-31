@@ -15,6 +15,7 @@
 #include "clang/AST/StmtVisitor.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclObjC.h"
+#include "clang/AST/DeclTemplate.h"
 #include "clang/AST/PrettyPrinter.h"
 #include "llvm/Support/Format.h"
 #include "clang/AST/Expr.h"
@@ -480,7 +481,8 @@ void StmtPrinter::VisitDeclRefExpr(DeclRefExpr *Node) {
 
 void StmtPrinter::VisitDependentScopeDeclRefExpr(
                                            DependentScopeDeclRefExpr *Node) {
-  Node->getQualifier()->print(OS, Policy);
+  if (NestedNameSpecifier *Qualifier = Node->getQualifier())
+    Qualifier->print(OS, Policy);
   OS << Node->getNameInfo();
   if (Node->hasExplicitTemplateArgs())
     OS << TemplateSpecializationType::PrintTemplateArgumentList(
@@ -1126,14 +1128,15 @@ void StmtPrinter::VisitCXXPseudoDestructorExpr(CXXPseudoDestructorExpr *E) {
 }
 
 void StmtPrinter::VisitCXXConstructExpr(CXXConstructExpr *E) {
-  // FIXME. For now we just print a trivial constructor call expression,
-  // constructing its first argument object.
-  if (E->getNumArgs() == 1) {
-    CXXConstructorDecl *CD = E->getConstructor();
-    if (CD->isTrivial())
-      PrintExpr(E->getArg(0));
+  for (unsigned i = 0, e = E->getNumArgs(); i != e; ++i) {
+    if (isa<CXXDefaultArgExpr>(E->getArg(i))) {
+      // Don't print any defaulted arguments
+      break;
+    }
+
+    if (i) OS << ", ";
+    PrintExpr(E->getArg(i));
   }
-  // Nothing to print.
 }
 
 void StmtPrinter::VisitExprWithCleanups(ExprWithCleanups *E) {
@@ -1222,9 +1225,9 @@ static const char *getTypeTraitName(UnaryTypeTrait UTT) {
 
 static const char *getTypeTraitName(BinaryTypeTrait BTT) {
   switch (BTT) {
-  default: llvm_unreachable("Unknown binary type trait");
   case BTT_IsBaseOf:         return "__is_base_of";
   case BTT_TypeCompatible:   return "__builtin_types_compatible_p";
+  case BTT_IsConvertibleTo:  return "__is_convertible_to";
   }
   return "";
 }
@@ -1253,6 +1256,11 @@ void StmtPrinter::VisitPackExpansionExpr(PackExpansionExpr *E) {
 
 void StmtPrinter::VisitSizeOfPackExpr(SizeOfPackExpr *E) {
   OS << "sizeof...(" << E->getPack()->getNameAsString() << ")";
+}
+
+void StmtPrinter::VisitSubstNonTypeTemplateParmPackExpr(
+                                       SubstNonTypeTemplateParmPackExpr *Node) {
+  OS << Node->getParameterPack()->getNameAsString();
 }
 
 // Obj-C

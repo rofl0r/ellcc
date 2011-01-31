@@ -21,12 +21,24 @@
 #include "clang/AST/TypeLoc.h"
 #include "clang/Basic/Diagnostic.h"
 #include "llvm/ADT/FoldingSet.h"
+#include <algorithm>
 
 using namespace clang;
 
 //===----------------------------------------------------------------------===//
 // TemplateArgument Implementation
 //===----------------------------------------------------------------------===//
+
+TemplateArgument TemplateArgument::CreatePackCopy(ASTContext &Context,
+                                                  const TemplateArgument *Args,
+                                                  unsigned NumArgs) {
+  if (NumArgs == 0)
+    return TemplateArgument(0, 0);
+  
+  TemplateArgument *Storage = new (Context) TemplateArgument [NumArgs];
+  std::copy(Args, Args + NumArgs, Storage);
+  return TemplateArgument(Storage, NumArgs);
+}
 
 bool TemplateArgument::isDependent() const {
   switch (getKind()) {
@@ -123,8 +135,16 @@ bool TemplateArgument::containsUnexpandedParameterPack() const {
   return false;
 }
 
+llvm::Optional<unsigned> TemplateArgument::getNumTemplateExpansions() const {
+  assert(Kind == TemplateExpansion);
+  if (TemplateArg.NumExpansions)
+    return TemplateArg.NumExpansions - 1;
+  
+  return llvm::Optional<unsigned>();
+}
+
 void TemplateArgument::Profile(llvm::FoldingSetNodeID &ID,
-                               ASTContext &Context) const {
+                               const ASTContext &Context) const {
   ID.AddInteger(Kind);
   switch (Kind) {
   case Null:
@@ -211,7 +231,7 @@ TemplateArgument TemplateArgument::getPackExpansionPattern() const {
     return cast<PackExpansionExpr>(getAsExpr())->getPattern();
     
   case TemplateExpansion:
-    return TemplateArgument(getAsTemplateOrTemplatePattern(), false);
+    return TemplateArgument(getAsTemplateOrTemplatePattern());
     
   case Declaration:
   case Integral:
@@ -334,6 +354,7 @@ SourceRange TemplateArgumentLoc::getSourceRange() const {
 
 TemplateArgumentLoc 
 TemplateArgumentLoc::getPackExpansionPattern(SourceLocation &Ellipsis,
+                                       llvm::Optional<unsigned> &NumExpansions,
                                              ASTContext &Context) const {
   assert(Argument.isPackExpansion());
   
@@ -351,6 +372,7 @@ TemplateArgumentLoc::getPackExpansionPattern(SourceLocation &Ellipsis,
     Ellipsis = Expansion.getEllipsisLoc();
     
     TypeLoc Pattern = Expansion.getPatternLoc();
+    NumExpansions = Expansion.getTypePtr()->getNumExpansions();
     
     // FIXME: This is horrible. We know where the source location data is for
     // the pattern, and we have the pattern's type, but we are forced to copy
@@ -370,11 +392,13 @@ TemplateArgumentLoc::getPackExpansionPattern(SourceLocation &Ellipsis,
       = cast<PackExpansionExpr>(Argument.getAsExpr());
     Expr *Pattern = Expansion->getPattern();
     Ellipsis = Expansion->getEllipsisLoc();
+    NumExpansions = Expansion->getNumExpansions();
     return TemplateArgumentLoc(Pattern, Pattern);
   }
 
   case TemplateArgument::TemplateExpansion:
     Ellipsis = getTemplateEllipsisLoc();
+    NumExpansions = Argument.getNumTemplateExpansions();
     return TemplateArgumentLoc(Argument.getPackExpansionPattern(),
                                getTemplateQualifierRange(),
                                getTemplateNameLoc());

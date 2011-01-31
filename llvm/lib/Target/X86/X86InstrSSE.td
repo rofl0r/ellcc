@@ -2201,6 +2201,10 @@ let neverHasSideEffects = 1 in
 def MOVDQArr : PDI<0x6F, MRMSrcReg, (outs VR128:$dst), (ins VR128:$src),
                    "movdqa\t{$src, $dst|$dst, $src}", []>;
 
+def MOVDQUrr :   I<0x6F, MRMSrcReg, (outs VR128:$dst), (ins VR128:$src),
+                   "movdqu\t{$src, $dst|$dst, $src}",
+                   []>, XS, Requires<[HasSSE2]>;
+
 let canFoldAsLoad = 1, mayLoad = 1 in {
 def MOVDQArm : PDI<0x6F, MRMSrcMem, (outs VR128:$dst), (ins i128mem:$src),
                    "movdqa\t{$src, $dst|$dst, $src}",
@@ -5794,6 +5798,9 @@ def : Pat<(X86Movlps VR128:$src1,
 // fold opportunity reappears.
 def : Pat<(v4f32 (X86Movlps VR128:$src1, VR128:$src2)),
           (MOVSDrr VR128:$src1, (EXTRACT_SUBREG (v4f32 VR128:$src2), sub_sd))>;
+
+def : Pat<(v4i32 (X86Movlps VR128:$src1, VR128:$src2)), 
+          (MOVSDrr VR128:$src1, (EXTRACT_SUBREG (v4i32 VR128:$src2), sub_sd))>; 
 
 // Shuffle with MOVLPD
 def : Pat<(v2f64 (X86Movlpd VR128:$src1, (load addr:$src2))),

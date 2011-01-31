@@ -84,6 +84,7 @@ class Xform16Bit { bit canXformTo16Bit = 1; }
 // ARM Instruction flags.  These need to match ARMBaseInstrInfo.h.
 //
 
+// FIXME: Once the JIT is MC-ized, these can go away.
 // Addressing mode.
 class AddrMode<bits<5> val> {
   bits<5> Value = val;
@@ -800,6 +801,13 @@ class TIx2<bits<5> opcod1, bits<2> opcod2, bit opcod3,
   let Inst{12}    = opcod3;
 }
 
+// Move to/from coprocessor instructions
+class T1Cop<dag oops, dag iops, string asm, list<dag> pattern>
+  : ThumbI<oops, iops, AddrModeNone, Size4Bytes, NoItinerary, asm, "", pattern>,
+    Encoding, Requires<[IsThumb, HasV6]> {
+  let Inst{31-28} = 0b1110;
+}
+
 // BR_JT instructions
 class TJTI<dag oops, dag iops, InstrItinClass itin, string asm,
            list<dag> pattern>
@@ -1045,6 +1053,12 @@ class T2XI<dag oops, dag iops, InstrItinClass itin,
 class T2JTI<dag oops, dag iops, InstrItinClass itin,
             string asm, list<dag> pattern>
   : Thumb2XI<oops, iops, AddrModeNone, SizeSpecial, itin, asm, "", pattern>;
+
+// Move to/from coprocessor instructions
+class T2Cop<dag oops, dag iops, string asm, list<dag> pattern>
+  : T2XI<oops, iops, NoItinerary, asm, pattern>, Requires<[IsThumb2, HasV6]> {
+  let Inst{31-28} = 0b1111;
+}
 
 // Two-address instructions
 class T2XIt<dag oops, dag iops, InstrItinClass itin,

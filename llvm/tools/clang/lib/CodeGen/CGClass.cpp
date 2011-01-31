@@ -180,8 +180,17 @@ CodeGenFunction::GetAddressOfBaseClass(llvm::Value *Value,
 
   llvm::Value *VirtualOffset = 0;
 
-  if (VBase)
-    VirtualOffset = GetVirtualBaseClassOffset(Value, Derived, VBase);
+  if (VBase) {
+    if (Derived->hasAttr<FinalAttr>()) {
+      VirtualOffset = 0;
+
+      const ASTRecordLayout &Layout = getContext().getASTRecordLayout(Derived);
+
+      uint64_t VBaseOffset = Layout.getVBaseClassOffsetInBits(VBase);
+      NonVirtualOffset += VBaseOffset / 8;
+    } else
+      VirtualOffset = GetVirtualBaseClassOffset(Value, Derived, VBase);
+  }
 
   // Apply the offsets.
   Value = ApplyNonVirtualAndVirtualOffset(*this, Value, NonVirtualOffset, 
@@ -363,7 +372,7 @@ static bool BaseInitializerUsesThis(ASTContext &C, const Expr *Init) {
 
 static void EmitBaseInitializer(CodeGenFunction &CGF, 
                                 const CXXRecordDecl *ClassDecl,
-                                CXXBaseOrMemberInitializer *BaseInit,
+                                CXXCtorInitializer *BaseInit,
                                 CXXCtorType CtorType) {
   assert(BaseInit->isBaseInitializer() &&
          "Must have base initializer!");
@@ -405,7 +414,7 @@ static void EmitBaseInitializer(CodeGenFunction &CGF,
 static void EmitAggMemberInitializer(CodeGenFunction &CGF,
                                      LValue LHS,
                                      llvm::Value *ArrayIndexVar,
-                                     CXXBaseOrMemberInitializer *MemberInit,
+                                     CXXCtorInitializer *MemberInit,
                                      QualType T,
                                      unsigned Index) {
   if (Index == MemberInit->getNumArrayIndices()) {
@@ -509,7 +518,7 @@ namespace {
   
 static void EmitMemberInitializer(CodeGenFunction &CGF,
                                   const CXXRecordDecl *ClassDecl,
-                                  CXXBaseOrMemberInitializer *MemberInit,
+                                  CXXCtorInitializer *MemberInit,
                                   const CXXConstructorDecl *Constructor,
                                   FunctionArgList &Args) {
   assert(MemberInit->isAnyMemberInitializer() &&
@@ -531,7 +540,7 @@ static void EmitMemberInitializer(CodeGenFunction &CGF,
     LHS = CGF.EmitLValueForFieldInitialization(ThisPtr, Field, 0);
   }
 
-  // FIXME: If there's no initializer and the CXXBaseOrMemberInitializer
+  // FIXME: If there's no initializer and the CXXCtorInitializer
   // was implicitly generated, we shouldn't be zeroing memory.
   RValue RHS;
   if (FieldType->isReferenceType()) {
@@ -707,12 +716,12 @@ void CodeGenFunction::EmitCtorPrologue(const CXXConstructorDecl *CD,
                                        FunctionArgList &Args) {
   const CXXRecordDecl *ClassDecl = CD->getParent();
 
-  llvm::SmallVector<CXXBaseOrMemberInitializer *, 8> MemberInitializers;
+  llvm::SmallVector<CXXCtorInitializer *, 8> MemberInitializers;
   
   for (CXXConstructorDecl::init_const_iterator B = CD->init_begin(),
        E = CD->init_end();
        B != E; ++B) {
-    CXXBaseOrMemberInitializer *Member = (*B);
+    CXXCtorInitializer *Member = (*B);
     
     if (Member->isBaseInitializer())
       EmitBaseInitializer(*this, ClassDecl, Member, CtorType);

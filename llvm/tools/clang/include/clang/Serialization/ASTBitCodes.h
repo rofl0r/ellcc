@@ -343,8 +343,8 @@ namespace clang {
       /// sets.
       CXX_BASE_SPECIFIER_OFFSETS = 37,
 
-      /// \brief Record code for diagnostic mappings specified by the user.
-      DIAG_USER_MAPPINGS = 38
+      /// \brief Record code for #pragma diagnostic mappings.
+      DIAG_PRAGMA_MAPPINGS = 38
     };
 
     /// \brief Record types used within a source manager block.
@@ -555,7 +555,9 @@ namespace clang {
       /// \brief A PackExpansionType record.
       TYPE_PACK_EXPANSION           = 35,
       /// \brief An AttributedType record.
-      TYPE_ATTRIBUTED               = 36
+      TYPE_ATTRIBUTED               = 36,
+      /// \brief A SubstTemplateTypeParmPackType record.
+      TYPE_SUBST_TEMPLATE_TYPE_PARM_PACK = 37
     };
 
     /// \brief The type IDs for special types constructed by semantic
@@ -726,7 +728,10 @@ namespace clang {
       /// \brief A record containing CXXBaseSpecifiers.
       DECL_CXX_BASE_SPECIFIERS,
       /// \brief A IndirectFieldDecl record.
-      DECL_INDIRECTFIELD
+      DECL_INDIRECTFIELD,
+      /// \brief A NonTypeTemplateParmDecl record that stores an expanded
+      /// non-type template parameter pack.
+      DECL_EXPANDED_NON_TYPE_TEMPLATE_PARM_PACK
     };
 
     /// \brief Record codes for each kind of statement or expression.
@@ -934,7 +939,8 @@ namespace clang {
       EXPR_BINARY_TYPE_TRAIT,     // BinaryTypeTraitExpr
       
       EXPR_PACK_EXPANSION,        // PackExpansionExpr
-      EXPR_SIZEOF_PACK            // SizeOfPackExpr
+      EXPR_SIZEOF_PACK,           // SizeOfPackExpr
+      EXPR_SUBST_NON_TYPE_TEMPLATE_PARM_PACK // SubstNonTypeTemplateParmPackExpr
     };
 
     /// \brief The kinds of designators that can occur in a

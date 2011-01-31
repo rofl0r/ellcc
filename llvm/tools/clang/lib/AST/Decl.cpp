@@ -133,11 +133,21 @@ getLVForTemplateParameterList(const TemplateParameterList *Params) {
   for (TemplateParameterList::const_iterator P = Params->begin(),
                                           PEnd = Params->end();
        P != PEnd; ++P) {
-    if (NonTypeTemplateParmDecl *NTTP = dyn_cast<NonTypeTemplateParmDecl>(*P))
+    if (NonTypeTemplateParmDecl *NTTP = dyn_cast<NonTypeTemplateParmDecl>(*P)) {
+      if (NTTP->isExpandedParameterPack()) {
+        for (unsigned I = 0, N = NTTP->getNumExpansionTypes(); I != N; ++I) {
+          QualType T = NTTP->getExpansionType(I);
+          if (!T->isDependentType())
+            LV = merge(LV, T->getLinkageAndVisibility());
+        }
+        continue;
+      }
+      
       if (!NTTP->getType()->isDependentType()) {
         LV = merge(LV, NTTP->getType()->getLinkageAndVisibility());
         continue;
       }
+    }
 
     if (TemplateTemplateParmDecl *TTP
                                    = dyn_cast<TemplateTemplateParmDecl>(*P)) {
@@ -1411,7 +1421,7 @@ unsigned FunctionDecl::getBuiltinID() const {
 
 
 /// getNumParams - Return the number of parameters this function must have
-/// based on its FunctionType.  This is the length of the PararmInfo array
+/// based on its FunctionType.  This is the length of the ParamInfo array
 /// after it has been created.
 unsigned FunctionDecl::getNumParams() const {
   const FunctionType *FT = getType()->getAs<FunctionType>();
@@ -1442,13 +1452,35 @@ void FunctionDecl::setParams(ASTContext &C,
 /// getMinRequiredArguments - Returns the minimum number of arguments
 /// needed to call this function. This may be fewer than the number of
 /// function parameters, if some of the parameters have default
-/// arguments (in C++).
+/// arguments (in C++) or the last parameter is a parameter pack.
 unsigned FunctionDecl::getMinRequiredArguments() const {
-  unsigned NumRequiredArgs = getNumParams();
-  while (NumRequiredArgs > 0
-         && getParamDecl(NumRequiredArgs-1)->hasDefaultArg())
+  if (!getASTContext().getLangOptions().CPlusPlus)
+    return getNumParams();
+  
+  unsigned NumRequiredArgs = getNumParams();  
+  
+  // If the last parameter is a parameter pack, we don't need an argument for 
+  // it.
+  if (NumRequiredArgs > 0 &&
+      getParamDecl(NumRequiredArgs - 1)->isParameterPack())
+    --NumRequiredArgs;
+      
+  // If this parameter has a default argument, we don't need an argument for
+  // it.
+  while (NumRequiredArgs > 0 &&
+         getParamDecl(NumRequiredArgs-1)->hasDefaultArg())
     --NumRequiredArgs;
 
+  // We might have parameter packs before the end. These can't be deduced,
+  // but they can still handle multiple arguments.
+  unsigned ArgIdx = NumRequiredArgs;
+  while (ArgIdx > 0) {
+    if (getParamDecl(ArgIdx - 1)->isParameterPack())
+      NumRequiredArgs = ArgIdx;
+    
+    --ArgIdx;
+  }
+  
   return NumRequiredArgs;
 }
 
@@ -1833,8 +1865,8 @@ bool FunctionDecl::isOutOfLine() const {
 // FieldDecl Implementation
 //===----------------------------------------------------------------------===//
 
-FieldDecl *FieldDecl::Create(ASTContext &C, DeclContext *DC, SourceLocation L,
-                             IdentifierInfo *Id, QualType T,
+FieldDecl *FieldDecl::Create(const ASTContext &C, DeclContext *DC,
+                             SourceLocation L, IdentifierInfo *Id, QualType T,
                              TypeSourceInfo *TInfo, Expr *BW, bool Mutable) {
   return new (C) FieldDecl(Decl::Field, DC, L, Id, T, TInfo, BW, Mutable);
 }
@@ -1847,6 +1879,25 @@ bool FieldDecl::isAnonymousStructOrUnion() const {
     return Record->getDecl()->isAnonymousStructOrUnion();
 
   return false;
+}
+
+unsigned FieldDecl::getFieldIndex() const {
+  if (CachedFieldIndex) return CachedFieldIndex - 1;
+
+  unsigned index = 0;
+  RecordDecl::field_iterator
+    i = getParent()->field_begin(), e = getParent()->field_end();
+  while (true) {
+    assert(i != e && "failed to find field in parent!");
+    if (*i == this)
+      break;
+
+    ++i;
+    ++index;
+  }
+
+  CachedFieldIndex = index + 1;
+  return index;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1869,7 +1920,7 @@ TagDecl* TagDecl::getCanonicalDecl() {
 void TagDecl::setTypedefForAnonDecl(TypedefDecl *TDD) { 
   TypedefDeclOrQualifier = TDD; 
   if (TypeForDecl)
-    TypeForDecl->ClearLinkageCache();
+    const_cast<Type*>(TypeForDecl)->ClearLinkageCache();
   ClearLinkageCache();
 }
 
@@ -1978,7 +2029,7 @@ RecordDecl::RecordDecl(Kind DK, TagKind TK, DeclContext *DC, SourceLocation L,
   assert(classof(static_cast<Decl*>(this)) && "Invalid Kind!");
 }
 
-RecordDecl *RecordDecl::Create(ASTContext &C, TagKind TK, DeclContext *DC,
+RecordDecl *RecordDecl::Create(const ASTContext &C, TagKind TK, DeclContext *DC,
                                SourceLocation L, IdentifierInfo *Id,
                                SourceLocation TKL, RecordDecl* PrevDecl) {
 
@@ -1987,7 +2038,7 @@ RecordDecl *RecordDecl::Create(ASTContext &C, TagKind TK, DeclContext *DC,
   return R;
 }
 
-RecordDecl *RecordDecl::Create(ASTContext &C, EmptyShell Empty) {
+RecordDecl *RecordDecl::Create(const ASTContext &C, EmptyShell Empty) {
   return new (C) RecordDecl(Record, TTK_Struct, 0, SourceLocation(), 0, 0,
                             SourceLocation());
 }

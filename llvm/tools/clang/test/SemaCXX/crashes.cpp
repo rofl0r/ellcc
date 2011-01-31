@@ -68,3 +68,30 @@ void f()
     callback<void(const int&)> op;
 }
 }
+
+namespace PR9007 {
+  struct bar {
+    enum xxx {
+      yyy = sizeof(struct foo*)
+    };
+    foo *xxx();
+  };
+}
+
+namespace PR9026 {
+  class InfallibleTArray {
+  };
+  class Variant;
+  class CompVariant {
+    operator const InfallibleTArray&() const;
+  };
+  class Variant {
+    operator const CompVariant&() const;
+  };
+  void     Write(const Variant& __v);
+  void     Write(const InfallibleTArray& __v);
+  Variant x;
+  void Write2() {
+    Write(x);
+  }
+}

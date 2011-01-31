@@ -684,7 +684,6 @@ Sema::ObjCMessageKind Sema::getObjCMessageKind(Scope *S,
       Diag(NameLoc, diag::err_unknown_receiver_suggest)
         << Name << Corrected
         << FixItHint::CreateReplacement(SourceRange(NameLoc), "super");
-      Name = Corrected.getAsIdentifierInfo();
       return ObjCSuperMessage;
     }
   }
@@ -717,7 +716,8 @@ ExprResult Sema::ActOnSuperMessage(Scope *S,
   ObjCInterfaceDecl *Super = Class->getSuperClass();
   if (!Super) {
     // The current class does not have a superclass.
-    Diag(SuperLoc, diag::error_no_super_class) << Class->getIdentifier();
+    Diag(SuperLoc, diag::error_root_class_cannot_use_super)
+      << Class->getIdentifier();
     return ExprError();
   }
 
@@ -838,6 +838,11 @@ ExprResult Sema::BuildClassMessage(TypeSourceInfo *ReceiverTypeInfo,
   Expr **Args = reinterpret_cast<Expr **>(ArgsIn.release());
   if (CheckMessageArgumentTypes(Args, NumArgs, Sel, Method, true,
                                 LBracLoc, RBracLoc, ReturnType, VK))
+    return ExprError();
+
+  if (Method && !Method->getResultType()->isVoidType() &&
+      RequireCompleteType(LBracLoc, Method->getResultType(), 
+                          diag::err_illegal_message_expr_incomplete_type))
     return ExprError();
 
   // Construct the appropriate ObjCMessageExpr.
@@ -1105,11 +1110,10 @@ ExprResult Sema::BuildInstanceMessage(Expr *Receiver,
                                 LBracLoc, RBracLoc, ReturnType, VK))
     return ExprError();
   
-  if (!ReturnType->isVoidType()) {
-    if (RequireCompleteType(LBracLoc, ReturnType, 
-                            diag::err_illegal_message_expr_incomplete_type))
-      return ExprError();
-  }
+  if (Method && !Method->getResultType()->isVoidType() &&
+      RequireCompleteType(LBracLoc, Method->getResultType(), 
+                          diag::err_illegal_message_expr_incomplete_type))
+    return ExprError();
 
   // Construct the appropriate ObjCMessageExpr instance.
   Expr *Result;

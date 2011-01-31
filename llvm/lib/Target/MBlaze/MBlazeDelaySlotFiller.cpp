@@ -187,9 +187,8 @@ static bool isDelayFiller(MachineBasicBlock &MBB,
   return (brdesc.hasDelaySlot());
 }
 
-static bool hasUnknownSideEffects(MachineBasicBlock::iterator &I,
-                                  TargetInstrDesc &desc) {
-  if (!desc.hasUnmodeledSideEffects())
+static bool hasUnknownSideEffects(MachineBasicBlock::iterator &I) {
+  if (!I->hasUnmodeledSideEffects())
     return false;
 
   unsigned op = I->getOpcode();
@@ -215,10 +214,10 @@ findDelayInstr(MachineBasicBlock &MBB,MachineBasicBlock::iterator slot) {
     TargetInstrDesc desc = I->getDesc();
     if (desc.hasDelaySlot() || desc.isBranch() || isDelayFiller(MBB,I) ||
         desc.isCall() || desc.isReturn() || desc.isBarrier() ||
-        hasUnknownSideEffects(I,desc))
+        hasUnknownSideEffects(I))
       break;
 
-    if (hasImmInstruction(I) || delayHasHazard(I,slot))
+    if (I->isDebugValue() || hasImmInstruction(I) || delayHasHazard(I,slot))
       continue;
 
     return I;
@@ -228,8 +227,7 @@ findDelayInstr(MachineBasicBlock &MBB,MachineBasicBlock::iterator slot) {
 }
 
 /// runOnMachineBasicBlock - Fill in delay slots for the given basic block.
-/// Currently, we fill delay slots with NOPs. We assume there is only one
-/// delay slot per delayed instruction.
+/// We assume there is only one delay slot per delayed instruction.
 bool Filler::runOnMachineBasicBlock(MachineBasicBlock &MBB) {
   bool Changed = false;
   for (MachineBasicBlock::iterator I = MBB.begin(); I != MBB.end(); ++I)
@@ -243,7 +241,7 @@ bool Filler::runOnMachineBasicBlock(MachineBasicBlock &MBB) {
       ++FilledSlots;
       Changed = true;
 
-      if (D == MBB.end())
+      if (D == MBB.end() || D->isDebugValue())
         BuildMI(MBB, ++J, I->getDebugLoc(), TII->get(MBlaze::NOP));
       else
         MBB.splice(++J, &MBB, D);

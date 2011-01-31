@@ -176,6 +176,7 @@ void ASTTypeWriter::VisitFunctionProtoType(const FunctionProtoType *T) {
     Writer.AddTypeRef(T->getArgType(I), Record);
   Record.push_back(T->isVariadic());
   Record.push_back(T->getTypeQuals());
+  Record.push_back(static_cast<unsigned>(T->getRefQualifier()));
   Record.push_back(T->hasExceptionSpec());
   Record.push_back(T->hasAnyExceptionSpec());
   Record.push_back(T->getNumExceptions());
@@ -244,6 +245,14 @@ ASTTypeWriter::VisitSubstTemplateTypeParmType(
 }
 
 void
+ASTTypeWriter::VisitSubstTemplateTypeParmPackType(
+                                      const SubstTemplateTypeParmPackType *T) {
+  Writer.AddTypeRef(QualType(T->getReplacedParameter(), 0), Record);
+  Writer.AddTemplateArgument(T->getArgumentPack(), Record);
+  Code = TYPE_SUBST_TEMPLATE_TYPE_PARM_PACK;
+}
+
+void
 ASTTypeWriter::VisitTemplateSpecializationType(
                                        const TemplateSpecializationType *T) {
   Record.push_back(T->isDependentType());
@@ -308,6 +317,10 @@ ASTTypeWriter::VisitDependentTemplateSpecializationType(
 
 void ASTTypeWriter::VisitPackExpansionType(const PackExpansionType *T) {
   Writer.AddTypeRef(T->getPattern(), Record);
+  if (llvm::Optional<unsigned> NumExpansions = T->getNumExpansions())
+    Record.push_back(*NumExpansions + 1);
+  else
+    Record.push_back(0);
   Code = TYPE_PACK_EXPANSION;
 }
 
@@ -489,6 +502,10 @@ void TypeLocWriter::VisitTemplateTypeParmTypeLoc(TemplateTypeParmTypeLoc TL) {
 }
 void TypeLocWriter::VisitSubstTemplateTypeParmTypeLoc(
                                             SubstTemplateTypeParmTypeLoc TL) {
+  Writer.AddSourceLocation(TL.getNameLoc(), Record);
+}
+void TypeLocWriter::VisitSubstTemplateTypeParmPackTypeLoc(
+                                          SubstTemplateTypeParmPackTypeLoc TL) {
   Writer.AddSourceLocation(TL.getNameLoc(), Record);
 }
 void TypeLocWriter::VisitTemplateSpecializationTypeLoc(
@@ -882,6 +899,7 @@ void ASTWriter::WriteLanguageOptions(const LangOptions &LangOpts) {
                                                  // modern abi enabled.
   Record.push_back(LangOpts.ObjCNonFragileABI2); // Objective-C enhanced
                                                  // modern abi enabled.
+  Record.push_back(LangOpts.AppleKext);          // Apple's kernel extensions ABI
   Record.push_back(LangOpts.ObjCDefaultSynthProperties); // Objective-C auto-synthesized
                                                       // properties enabled.
   Record.push_back(LangOpts.NoConstantCFStrings); // non cfstring generation enabled..
@@ -924,6 +942,9 @@ void ASTWriter::WriteLanguageOptions(const LangOptions &LangOpts) {
   Record.push_back(LangOpts.CharIsSigned); // Whether char is a signed or
                                            // unsigned type
   Record.push_back(LangOpts.ShortWChar);  // force wchar_t to be unsigned short
+  Record.push_back(LangOpts.ShortEnums);  // Should the enum type be equivalent
+                                          // to the smallest integer type with
+                                          // enough room.
   Record.push_back(LangOpts.getGCMode());
   Record.push_back(LangOpts.getVisibilityMode());
   Record.push_back(LangOpts.getStackProtectorMode());
@@ -1490,18 +1511,30 @@ void ASTWriter::WritePreprocessor(const Preprocessor &PP) {
   }
 }
 
-void ASTWriter::WriteUserDiagnosticMappings(const Diagnostic &Diag) {
+void ASTWriter::WritePragmaDiagnosticMappings(const Diagnostic &Diag) {
   RecordData Record;
-  for (unsigned i = 0; i != diag::DIAG_UPPER_LIMIT; ++i) {
-    diag::Mapping Map = Diag.getDiagnosticMappingInfo(i,Diag.GetCurDiagState());
-    if (Map & 0x8) { // user mapping.
-      Record.push_back(i);
-      Record.push_back(Map & 0x7);
+  for (Diagnostic::DiagStatePointsTy::const_iterator
+         I = Diag.DiagStatePoints.begin(), E = Diag.DiagStatePoints.end();
+         I != E; ++I) {
+    const Diagnostic::DiagStatePoint &point = *I; 
+    if (point.Loc.isInvalid())
+      continue;
+
+    Record.push_back(point.Loc.getRawEncoding());
+    for (Diagnostic::DiagState::iterator
+           I = point.State->begin(), E = point.State->end(); I != E; ++I) {
+      unsigned diag = I->first, map = I->second;
+      if (map & 0x10) { // mapping from a diagnostic pragma.
+        Record.push_back(diag);
+        Record.push_back(map & 0x7);
+      }
     }
+    Record.push_back(-1); // mark the end of the diag/map pairs for this
+                          // location.
   }
 
   if (!Record.empty())
-    Stream.EmitRecord(DIAG_USER_MAPPINGS, Record);
+    Stream.EmitRecord(DIAG_PRAGMA_MAPPINGS, Record);
 }
 
 //===----------------------------------------------------------------------===//
@@ -2252,7 +2285,6 @@ void ASTWriter::WriteAttributes(const AttrVec &Attrs, RecordDataImpl &Record) {
     const Attr * A = *i;
     Record.push_back(A->getKind()); // FIXME: stable encoding, target attrs
     AddSourceLocation(A->getLocation(), Record);
-    Record.push_back(A->isInherited());
 
 #include "clang/Serialization/AttrPCHWrite.inc"
 
@@ -2466,7 +2498,7 @@ void ASTWriter::WriteASTCore(Sema &SemaRef, MemorizeStatCalls *StatCalls,
   WriteIdentifierTable(PP);
 
   WriteTypeDeclOffsets();
-  WriteUserDiagnosticMappings(Context.getDiagnostics());
+  WritePragmaDiagnosticMappings(Context.getDiagnostics());
 
   // Write the C++ base-specifier set offsets.
   if (!CXXBaseSpecifiersOffsets.empty()) {
@@ -2702,7 +2734,7 @@ void ASTWriter::WriteASTChain(Sema &SemaRef, MemorizeStatCalls *StatCalls,
   WriteTypeDeclOffsets();
   // FIXME: For chained PCH only write the new mappings (we currently
   // write all of them again).
-  WriteUserDiagnosticMappings(Context.getDiagnostics());
+  WritePragmaDiagnosticMappings(Context.getDiagnostics());
 
   /// Build a record containing first declarations from a chained PCH and the
   /// most recent declarations in this AST that they point to.
@@ -3182,6 +3214,14 @@ void ASTWriter::AddTemplateName(TemplateName Name, RecordDataImpl &Record) {
       Record.push_back(DepT->getOperator());
     break;
   }
+      
+  case TemplateName::SubstTemplateTemplateParmPack: {
+    SubstTemplateTemplateParmPackStorage *SubstPack
+      = Name.getAsSubstTemplateTemplateParmPack();
+    AddDeclRef(SubstPack->getParameterPack(), Record);
+    AddTemplateArgument(SubstPack->getArgumentPack(), Record);
+    break;
+  }
   }
 }
 
@@ -3202,8 +3242,14 @@ void ASTWriter::AddTemplateArgument(const TemplateArgument &Arg,
     AddTypeRef(Arg.getIntegralType(), Record);
     break;
   case TemplateArgument::Template:
+    AddTemplateName(Arg.getAsTemplateOrTemplatePattern(), Record);
+    break;
   case TemplateArgument::TemplateExpansion:
     AddTemplateName(Arg.getAsTemplateOrTemplatePattern(), Record);
+    if (llvm::Optional<unsigned> NumExpansions = Arg.getNumTemplateExpansions())
+      Record.push_back(*NumExpansions + 1);
+    else
+      Record.push_back(0);
     break;
   case TemplateArgument::Expression:
     AddStmt(Arg.getAsExpr());
@@ -3293,12 +3339,13 @@ void ASTWriter::FlushCXXBaseSpecifiers() {
   CXXBaseSpecifiersToWrite.clear();
 }
 
-void ASTWriter::AddCXXBaseOrMemberInitializers(
-                        const CXXBaseOrMemberInitializer * const *BaseOrMembers,
-                        unsigned NumBaseOrMembers, RecordDataImpl &Record) {
-  Record.push_back(NumBaseOrMembers);
-  for (unsigned i=0; i != NumBaseOrMembers; ++i) {
-    const CXXBaseOrMemberInitializer *Init = BaseOrMembers[i];
+void ASTWriter::AddCXXCtorInitializers(
+                             const CXXCtorInitializer * const *CtorInitializers,
+                             unsigned NumCtorInitializers,
+                             RecordDataImpl &Record) {
+  Record.push_back(NumCtorInitializers);
+  for (unsigned i=0; i != NumCtorInitializers; ++i) {
+    const CXXCtorInitializer *Init = CtorInitializers[i];
 
     Record.push_back(Init->isBaseInitializer());
     if (Init->isBaseInitializer()) {

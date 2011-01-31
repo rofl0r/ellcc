@@ -330,6 +330,21 @@ ABIArgInfo DefaultABIInfo::classifyArgumentType(QualType Ty) const {
           ABIArgInfo::getExtend() : ABIArgInfo::getDirect());
 }
 
+ABIArgInfo DefaultABIInfo::classifyReturnType(QualType RetTy) const {
+  if (RetTy->isVoidType())
+    return ABIArgInfo::getIgnore();
+
+  if (isAggregateTypeForABI(RetTy))
+    return ABIArgInfo::getIndirect(0);
+
+  // Treat an enum type as its underlying type.
+  if (const EnumType *EnumTy = RetTy->getAs<EnumType>())
+    RetTy = EnumTy->getDecl()->getIntegerType();
+
+  return (RetTy->isPromotableIntegerType() ?
+          ABIArgInfo::getExtend() : ABIArgInfo::getDirect());
+}
+
 /// UseX86_MMXType - Return true if this is an MMX type that should use the special
 /// x86_mmx type.
 bool UseX86_MMXType(const llvm::Type *IRType) {
@@ -844,9 +859,14 @@ public:
 };
 
 /// WinX86_64ABIInfo - The Windows X86_64 ABI information.
-class WinX86_64ABIInfo : public X86_64ABIInfo {
+class WinX86_64ABIInfo : public ABIInfo {
+
+  ABIArgInfo classify(QualType Ty) const;
+
 public:
-  WinX86_64ABIInfo(CodeGen::CodeGenTypes &CGT) : X86_64ABIInfo(CGT) {}
+  WinX86_64ABIInfo(CodeGen::CodeGenTypes &CGT) : ABIInfo(CGT) {}
+
+  virtual void computeInfo(CGFunctionInfo &FI) const;
 
   virtual llvm::Value *EmitVAArg(llvm::Value *VAListAddr, QualType Ty,
                                  CodeGenFunction &CGF) const;
@@ -2048,6 +2068,46 @@ llvm::Value *X86_64ABIInfo::EmitVAArg(llvm::Value *VAListAddr, QualType Ty,
   return ResAddr;
 }
 
+ABIArgInfo WinX86_64ABIInfo::classify(QualType Ty) const {
+
+  if (Ty->isVoidType())
+    return ABIArgInfo::getIgnore();
+
+  if (const EnumType *EnumTy = Ty->getAs<EnumType>())
+    Ty = EnumTy->getDecl()->getIntegerType();
+
+  uint64_t Size = getContext().getTypeSize(Ty);
+
+  if (const RecordType *RT = Ty->getAs<RecordType>()) {
+    if (hasNonTrivialDestructorOrCopyConstructor(RT) ||
+        RT->getDecl()->hasFlexibleArrayMember())
+      return ABIArgInfo::getIndirect(0, /*ByVal=*/false);
+
+    // FIXME: mingw64-gcc emits 128-bit struct as i128
+    if (Size <= 128 &&
+        (Size & (Size - 1)) == 0)
+      return ABIArgInfo::getDirect(llvm::IntegerType::get(getVMContext(),
+                                                          Size));
+
+    return ABIArgInfo::getIndirect(0, /*ByVal=*/false);
+  }
+
+  if (Ty->isPromotableIntegerType())
+    return ABIArgInfo::getExtend();
+
+  return ABIArgInfo::getDirect();
+}
+
+void WinX86_64ABIInfo::computeInfo(CGFunctionInfo &FI) const {
+
+  QualType RetTy = FI.getReturnType();
+  FI.getReturnInfo() = classify(RetTy);
+
+  for (CGFunctionInfo::arg_iterator it = FI.arg_begin(), ie = FI.arg_end();
+       it != ie; ++it)
+    it->info = classify(it->type);
+}
+
 llvm::Value *WinX86_64ABIInfo::EmitVAArg(llvm::Value *VAListAddr, QualType Ty,
                                       CodeGenFunction &CGF) const {
   const llvm::Type *BP = llvm::Type::getInt8PtrTy(CGF.getLLVMContext());
@@ -2225,15 +2285,6 @@ ABIArgInfo ARMABIInfo::classifyArgumentType(QualType Ty) const {
   // copy constructor are always indirect.
   if (isRecordWithNonTrivialDestructorOrCopyConstructor(Ty))
     return ABIArgInfo::getIndirect(0, /*ByVal=*/false);
-
-  // NEON vectors are implemented as (theoretically) opaque structures wrapping
-  // the underlying vector type. We trust the backend to pass the underlying
-  // vectors appropriately, so we can unwrap the structs which generally will
-  // lead to much cleaner IR.
-  if (const Type *SeltTy = isSingleElementStruct(Ty, getContext())) {
-    if (SeltTy->isVectorType())
-      return ABIArgInfo::getDirect(CGT.ConvertType(QualType(SeltTy, 0)));
-  }
 
   // Otherwise, pass by coercing to a structure of the appropriate size.
   //
@@ -2433,21 +2484,6 @@ llvm::Value *ARMABIInfo::EmitVAArg(llvm::Value *VAListAddr, QualType Ty,
   Builder.CreateStore(NextAddr, VAListAddrAsBPP);
 
   return AddrTyped;
-}
-
-ABIArgInfo DefaultABIInfo::classifyReturnType(QualType RetTy) const {
-  if (RetTy->isVoidType())
-    return ABIArgInfo::getIgnore();
-
-  if (isAggregateTypeForABI(RetTy))
-    return ABIArgInfo::getIndirect(0);
-
-  // Treat an enum type as its underlying type.
-  if (const EnumType *EnumTy = RetTy->getAs<EnumType>())
-    RetTy = EnumTy->getDecl()->getIntegerType();
-
-  return (RetTy->isPromotableIntegerType() ?
-          ABIArgInfo::getExtend() : ABIArgInfo::getDirect());
 }
 
 //===----------------------------------------------------------------------===//

@@ -53,18 +53,62 @@ RValue CodeGenFunction::EmitCXXMemberCall(const CXXMethodDecl *MD,
                   Callee, ReturnValue, Args, MD);
 }
 
+static const CXXRecordDecl *getMostDerivedClassDecl(const Expr *Base) {
+  const Expr *E = Base;
+  
+  while (true) {
+    E = E->IgnoreParens();
+    if (const CastExpr *CE = dyn_cast<CastExpr>(E)) {
+      if (CE->getCastKind() == CK_DerivedToBase || 
+          CE->getCastKind() == CK_UncheckedDerivedToBase ||
+          CE->getCastKind() == CK_NoOp) {
+        E = CE->getSubExpr();
+        continue;
+      }
+    }
+
+    break;
+  }
+
+  QualType DerivedType = E->getType();
+  if (const PointerType *PTy = DerivedType->getAs<PointerType>())
+    DerivedType = PTy->getPointeeType();
+
+  return cast<CXXRecordDecl>(DerivedType->castAs<RecordType>()->getDecl());
+}
+
 /// canDevirtualizeMemberFunctionCalls - Checks whether virtual calls on given
 /// expr can be devirtualized.
-static bool canDevirtualizeMemberFunctionCalls(const Expr *Base, 
+static bool canDevirtualizeMemberFunctionCalls(ASTContext &Context,
+                                               const Expr *Base, 
                                                const CXXMethodDecl *MD) {
   
-  // If the member function has the "final" attribute, we know that it can't be
+  // When building with -fapple-kext, all calls must go through the vtable since
+  // the kernel linker can do runtime patching of vtables.
+  if (Context.getLangOptions().AppleKext)
+    return false;
+
+  // If the most derived class is marked final, we know that no subclass can
+  // override this member function and so we can devirtualize it. For example:
+  //
+  // struct A { virtual void f(); }
+  // struct B final : A { };
+  //
+  // void f(B *b) {
+  //   b->f();
+  // }
+  //
+  const CXXRecordDecl *MostDerivedClassDecl = getMostDerivedClassDecl(Base);
+  if (MostDerivedClassDecl->hasAttr<FinalAttr>())
+    return true;
+
+  // If the member function is marked 'final', we know that it can't be
   // overridden and can therefore devirtualize it.
   if (MD->hasAttr<FinalAttr>())
     return true;
 
-  // Similarly, if the class itself has the "final" attribute it can't be
-  // overridden and we can therefore devirtualize the member function call.
+  // Similarly, if the class itself is marked 'final' it can't be overridden
+  // and we can therefore devirtualize the member function call.
   if (MD->getParent()->hasAttr<FinalAttr>())
     return true;
 
@@ -93,6 +137,8 @@ static bool canDevirtualizeMemberFunctionCalls(const Expr *Base,
   return false;
 }
 
+// Note: This function also emit constructor calls to support a MSVC
+// extensions allowing explicit constructor function call.
 RValue CodeGenFunction::EmitCXXMemberCallExpr(const CXXMemberCallExpr *CE,
                                               ReturnValueSlot ReturnValue) {
   if (isa<BinaryOperator>(CE->getCallee()->IgnoreParens())) 
@@ -127,25 +173,42 @@ RValue CodeGenFunction::EmitCXXMemberCallExpr(const CXXMemberCallExpr *CE,
 
   if (MD->isTrivial()) {
     if (isa<CXXDestructorDecl>(MD)) return RValue::get(0);
+    if (isa<CXXConstructorDecl>(MD) && 
+        cast<CXXConstructorDecl>(MD)->isDefaultConstructor())
+      return RValue::get(0);
 
-    assert(MD->isCopyAssignmentOperator() && "unknown trivial member function");
-    // We don't like to generate the trivial copy assignment operator when
-    // it isn't necessary; just produce the proper effect here.
-    llvm::Value *RHS = EmitLValue(*CE->arg_begin()).getAddress();
-    EmitAggregateCopy(This, RHS, CE->getType());
-    return RValue::get(This);
+    if (MD->isCopyAssignmentOperator()) {
+      // We don't like to generate the trivial copy assignment operator when
+      // it isn't necessary; just produce the proper effect here.
+      llvm::Value *RHS = EmitLValue(*CE->arg_begin()).getAddress();
+      EmitAggregateCopy(This, RHS, CE->getType());
+      return RValue::get(This);
+    }
+    
+    if (isa<CXXConstructorDecl>(MD) && 
+        cast<CXXConstructorDecl>(MD)->isCopyConstructor()) {
+      llvm::Value *RHS = EmitLValue(*CE->arg_begin()).getAddress();
+      EmitSynthesizedCXXCopyCtorCall(cast<CXXConstructorDecl>(MD), This, RHS,
+                                     CE->arg_begin(), CE->arg_end());
+      return RValue::get(This);
+    }
+    llvm_unreachable("unknown trivial member function");
   }
 
   // Compute the function type we're calling.
-  const CGFunctionInfo &FInfo =
-    (isa<CXXDestructorDecl>(MD)
-     ? CGM.getTypes().getFunctionInfo(cast<CXXDestructorDecl>(MD),
-                                      Dtor_Complete)
-     : CGM.getTypes().getFunctionInfo(MD));
+  const CGFunctionInfo *FInfo = 0;
+  if (isa<CXXDestructorDecl>(MD))
+    FInfo = &CGM.getTypes().getFunctionInfo(cast<CXXDestructorDecl>(MD),
+                                           Dtor_Complete);
+  else if (isa<CXXConstructorDecl>(MD))
+    FInfo = &CGM.getTypes().getFunctionInfo(cast<CXXConstructorDecl>(MD),
+                                            Ctor_Complete);
+  else
+    FInfo = &CGM.getTypes().getFunctionInfo(MD);
 
   const FunctionProtoType *FPT = MD->getType()->getAs<FunctionProtoType>();
   const llvm::Type *Ty
-    = CGM.getTypes().GetFunctionType(FInfo, FPT->isVariadic());
+    = CGM.getTypes().GetFunctionType(*FInfo, FPT->isVariadic());
 
   // C++ [class.virtual]p12:
   //   Explicit qualification with the scope operator (5.1) suppresses the
@@ -153,9 +216,10 @@ RValue CodeGenFunction::EmitCXXMemberCallExpr(const CXXMemberCallExpr *CE,
   //
   // We also don't emit a virtual call if the base expression has a record type
   // because then we know what the type is.
-  bool UseVirtualCall = MD->isVirtual() && !ME->hasQualifier()
-                     && !canDevirtualizeMemberFunctionCalls(ME->getBase(), MD);
-
+  bool UseVirtualCall;
+  UseVirtualCall = MD->isVirtual() && !ME->hasQualifier()
+                   && !canDevirtualizeMemberFunctionCalls(getContext(),
+                                                          ME->getBase(), MD);
   llvm::Value *Callee;
   if (const CXXDestructorDecl *Dtor = dyn_cast<CXXDestructorDecl>(MD)) {
     if (UseVirtualCall) {
@@ -163,10 +227,18 @@ RValue CodeGenFunction::EmitCXXMemberCallExpr(const CXXMemberCallExpr *CE,
     } else {
       Callee = CGM.GetAddrOfFunction(GlobalDecl(Dtor, Dtor_Complete), Ty);
     }
+  } else if (const CXXConstructorDecl *Ctor =
+               dyn_cast<CXXConstructorDecl>(MD)) {
+    Callee = CGM.GetAddrOfFunction(GlobalDecl(Ctor, Ctor_Complete), Ty);
   } else if (UseVirtualCall) {
-    Callee = BuildVirtualCall(MD, This, Ty); 
+      Callee = BuildVirtualCall(MD, This, Ty); 
   } else {
-    Callee = CGM.GetAddrOfFunction(MD, Ty);
+    if (getContext().getLangOptions().AppleKext &&
+        MD->isVirtual() &&
+        ME->hasQualifier())
+      Callee = BuildAppleKextVirtualCall(MD, ME->getQualifier(), This, Ty);
+    else 
+      Callee = CGM.GetAddrOfFunction(MD, Ty);
   }
 
   return EmitCXXMemberCall(MD, Callee, ReturnValue, This, /*VTT=*/0,
@@ -245,7 +317,9 @@ CodeGenFunction::EmitCXXOperatorMemberCallExpr(const CXXOperatorCallExpr *E,
     CGM.getTypes().GetFunctionType(CGM.getTypes().getFunctionInfo(MD),
                                    FPT->isVariadic());
   llvm::Value *Callee;
-  if (MD->isVirtual() && !canDevirtualizeMemberFunctionCalls(E->getArg(0), MD))
+  if (MD->isVirtual() && 
+      !canDevirtualizeMemberFunctionCalls(getContext(),
+                                           E->getArg(0), MD))
     Callee = BuildVirtualCall(MD, This, Ty);
   else
     Callee = CGM.GetAddrOfFunction(MD, Ty);
@@ -361,7 +435,7 @@ static CharUnits CalculateCookiePadding(CodeGenFunction &CGF,
   if (IsPlacementOperatorNewArray(CGF.getContext(), OperatorNew))
     return CharUnits::Zero();
 
-  return CGF.CGM.getCXXABI().GetArrayCookieSize(E->getAllocatedType());
+  return CGF.CGM.getCXXABI().GetArrayCookieSize(E);
 }
 
 static llvm::Value *EmitCXXNewAllocSize(ASTContext &Context,
@@ -618,8 +692,9 @@ static void EmitZeroMemSet(CodeGenFunction &CGF, QualType T,
   if (NewPtr->getType() != BP)
     NewPtr = CGF.Builder.CreateBitCast(NewPtr, BP, "tmp");
 
+  CharUnits Alignment = CGF.getContext().getTypeAlignInChars(T);
   CGF.Builder.CreateMemSet(NewPtr, CGF.Builder.getInt8(0), Size,
-                           CGF.getContext().getTypeAlign(T)/8, false);
+                           Alignment.getQuantity(), false);
 }
                        
 static void EmitNewInitializer(CodeGenFunction &CGF, const CXXNewExpr *E,
@@ -687,107 +762,6 @@ static void EmitNewInitializer(CodeGenFunction &CGF, const CXXNewExpr *E,
 }
 
 namespace {
-/// A utility class for saving an rvalue.
-class SavedRValue {
-public:
-  enum Kind { ScalarLiteral, ScalarAddress,
-              AggregateLiteral, AggregateAddress,
-              Complex };
-
-private:
-  llvm::Value *Value;
-  Kind K;
-
-  SavedRValue(llvm::Value *V, Kind K) : Value(V), K(K) {}
-
-public:
-  SavedRValue() {}
-
-  static SavedRValue forScalarLiteral(llvm::Value *V) {
-    return SavedRValue(V, ScalarLiteral);
-  }
-
-  static SavedRValue forScalarAddress(llvm::Value *Addr) {
-    return SavedRValue(Addr, ScalarAddress);
-  }
-
-  static SavedRValue forAggregateLiteral(llvm::Value *V) {
-    return SavedRValue(V, AggregateLiteral);
-  }
-
-  static SavedRValue forAggregateAddress(llvm::Value *Addr) {
-    return SavedRValue(Addr, AggregateAddress);
-  }
-
-  static SavedRValue forComplexAddress(llvm::Value *Addr) {
-    return SavedRValue(Addr, Complex);
-  }
-
-  Kind getKind() const { return K; }
-  llvm::Value *getValue() const { return Value; }
-};
-} // end anonymous namespace
-
-/// Given an r-value, perform the code necessary to make sure that a
-/// future RestoreRValue will be able to load the value without
-/// domination concerns.
-static SavedRValue SaveRValue(CodeGenFunction &CGF, RValue RV) {
-  if (RV.isScalar()) {
-    llvm::Value *V = RV.getScalarVal();
-
-    // These automatically dominate and don't need to be saved.
-    if (isa<llvm::Constant>(V) || isa<llvm::AllocaInst>(V))
-      return SavedRValue::forScalarLiteral(V);
-
-    // Everything else needs an alloca.
-    llvm::Value *Addr = CGF.CreateTempAlloca(V->getType(), "saved-rvalue");
-    CGF.Builder.CreateStore(V, Addr);
-    return SavedRValue::forScalarAddress(Addr);
-  }
-
-  if (RV.isComplex()) {
-    CodeGenFunction::ComplexPairTy V = RV.getComplexVal();
-    const llvm::Type *ComplexTy =
-      llvm::StructType::get(CGF.getLLVMContext(),
-                            V.first->getType(), V.second->getType(),
-                            (void*) 0);
-    llvm::Value *Addr = CGF.CreateTempAlloca(ComplexTy, "saved-complex");
-    CGF.StoreComplexToAddr(V, Addr, /*volatile*/ false);
-    return SavedRValue::forComplexAddress(Addr);
-  }
-
-  assert(RV.isAggregate());
-  llvm::Value *V = RV.getAggregateAddr(); // TODO: volatile?
-  if (isa<llvm::Constant>(V) || isa<llvm::AllocaInst>(V))
-    return SavedRValue::forAggregateLiteral(V);
-
-  llvm::Value *Addr = CGF.CreateTempAlloca(V->getType(), "saved-rvalue");
-  CGF.Builder.CreateStore(V, Addr);
-  return SavedRValue::forAggregateAddress(Addr);
-}
-
-/// Given a saved r-value produced by SaveRValue, perform the code
-/// necessary to restore it to usability at the current insertion
-/// point.
-static RValue RestoreRValue(CodeGenFunction &CGF, SavedRValue RV) {
-  switch (RV.getKind()) {
-  case SavedRValue::ScalarLiteral:
-    return RValue::get(RV.getValue());
-  case SavedRValue::ScalarAddress:
-    return RValue::get(CGF.Builder.CreateLoad(RV.getValue()));
-  case SavedRValue::AggregateLiteral:
-    return RValue::getAggregate(RV.getValue());
-  case SavedRValue::AggregateAddress:
-    return RValue::getAggregate(CGF.Builder.CreateLoad(RV.getValue()));
-  case SavedRValue::Complex:
-    return RValue::getComplex(CGF.LoadComplexFromAddr(RV.getValue(), false));
-  }
-
-  llvm_unreachable("bad saved r-value kind");
-  return RValue();
-}
-
-namespace {
   /// A cleanup to call the given 'operator delete' function upon
   /// abnormal exit from a new expression.
   class CallDeleteDuringNew : public EHScopeStack::Cleanup {
@@ -848,26 +822,26 @@ namespace {
   class CallDeleteDuringConditionalNew : public EHScopeStack::Cleanup {
     size_t NumPlacementArgs;
     const FunctionDecl *OperatorDelete;
-    SavedRValue Ptr;
-    SavedRValue AllocSize;
+    DominatingValue<RValue>::saved_type Ptr;
+    DominatingValue<RValue>::saved_type AllocSize;
 
-    SavedRValue *getPlacementArgs() {
-      return reinterpret_cast<SavedRValue*>(this+1);
+    DominatingValue<RValue>::saved_type *getPlacementArgs() {
+      return reinterpret_cast<DominatingValue<RValue>::saved_type*>(this+1);
     }
 
   public:
     static size_t getExtraSize(size_t NumPlacementArgs) {
-      return NumPlacementArgs * sizeof(SavedRValue);
+      return NumPlacementArgs * sizeof(DominatingValue<RValue>::saved_type);
     }
 
     CallDeleteDuringConditionalNew(size_t NumPlacementArgs,
                                    const FunctionDecl *OperatorDelete,
-                                   SavedRValue Ptr,
-                                   SavedRValue AllocSize) 
+                                   DominatingValue<RValue>::saved_type Ptr,
+                              DominatingValue<RValue>::saved_type AllocSize)
       : NumPlacementArgs(NumPlacementArgs), OperatorDelete(OperatorDelete),
         Ptr(Ptr), AllocSize(AllocSize) {}
 
-    void setPlacementArg(unsigned I, SavedRValue Arg) {
+    void setPlacementArg(unsigned I, DominatingValue<RValue>::saved_type Arg) {
       assert(I < NumPlacementArgs && "index out of range");
       getPlacementArgs()[I] = Arg;
     }
@@ -882,17 +856,17 @@ namespace {
 
       // The first argument is always a void*.
       FunctionProtoType::arg_type_iterator AI = FPT->arg_type_begin();
-      DeleteArgs.push_back(std::make_pair(RestoreRValue(CGF, Ptr), *AI++));
+      DeleteArgs.push_back(std::make_pair(Ptr.restore(CGF), *AI++));
 
       // A member 'operator delete' can take an extra 'size_t' argument.
       if (FPT->getNumArgs() == NumPlacementArgs + 2) {
-        RValue RV = RestoreRValue(CGF, AllocSize);
+        RValue RV = AllocSize.restore(CGF);
         DeleteArgs.push_back(std::make_pair(RV, *AI++));
       }
 
       // Pass the rest of the arguments, which must match exactly.
       for (unsigned I = 0; I != NumPlacementArgs; ++I) {
-        RValue RV = RestoreRValue(CGF, getPlacementArgs()[I]);
+        RValue RV = getPlacementArgs()[I].restore(CGF);
         DeleteArgs.push_back(std::make_pair(RV, *AI++));
       }
 
@@ -926,8 +900,10 @@ static void EnterNewDeleteCleanup(CodeGenFunction &CGF,
   }
 
   // Otherwise, we need to save all this stuff.
-  SavedRValue SavedNewPtr = SaveRValue(CGF, RValue::get(NewPtr));
-  SavedRValue SavedAllocSize = SaveRValue(CGF, RValue::get(AllocSize));
+  DominatingValue<RValue>::saved_type SavedNewPtr =
+    DominatingValue<RValue>::save(CGF, RValue::get(NewPtr));
+  DominatingValue<RValue>::saved_type SavedAllocSize =
+    DominatingValue<RValue>::save(CGF, RValue::get(AllocSize));
 
   CallDeleteDuringConditionalNew *Cleanup = CGF.EHStack
     .pushCleanupWithExtra<CallDeleteDuringConditionalNew>(InactiveEHCleanup,
@@ -936,7 +912,8 @@ static void EnterNewDeleteCleanup(CodeGenFunction &CGF,
                                                  SavedNewPtr,
                                                  SavedAllocSize);
   for (unsigned I = 0, N = E->getNumPlacementArgs(); I != N; ++I)
-    Cleanup->setPlacementArg(I, SaveRValue(CGF, NewArgs[I+1].first));
+    Cleanup->setPlacementArg(I,
+                     DominatingValue<RValue>::save(CGF, NewArgs[I+1].first));
 
   CGF.ActivateCleanupBlock(CGF.EHStack.stable_begin());
 }
@@ -1030,7 +1007,7 @@ llvm::Value *CodeGenFunction::EmitCXXNewExpr(const CXXNewExpr *E) {
   if (AllocSize != AllocSizeWithoutCookie) {
     assert(E->isArray());
     NewPtr = CGM.getCXXABI().InitializeArrayCookie(CGF, NewPtr, NumElements,
-                                                   AllocType);
+                                                   E, AllocType);
   }
 
   // If there's an operator delete, enter a cleanup to call it if an
@@ -1162,6 +1139,8 @@ static void EmitObjectDelete(CodeGenFunction &CGF,
   }
 
   // Make sure that we call delete even if the dtor throws.
+  // This doesn't have to a conditional cleanup because we're going
+  // to pop it off in a second.
   CGF.EHStack.pushCleanup<CallObjectDelete>(NormalAndEHCleanup,
                                             Ptr, OperatorDelete, ElementType);
 
@@ -1236,18 +1215,19 @@ namespace {
 
 /// Emit the code for deleting an array of objects.
 static void EmitArrayDelete(CodeGenFunction &CGF,
-                            const FunctionDecl *OperatorDelete,
+                            const CXXDeleteExpr *E,
                             llvm::Value *Ptr,
                             QualType ElementType) {
   llvm::Value *NumElements = 0;
   llvm::Value *AllocatedPtr = 0;
   CharUnits CookieSize;
-  CGF.CGM.getCXXABI().ReadArrayCookie(CGF, Ptr, ElementType,
+  CGF.CGM.getCXXABI().ReadArrayCookie(CGF, Ptr, E, ElementType,
                                       NumElements, AllocatedPtr, CookieSize);
 
   assert(AllocatedPtr && "ReadArrayCookie didn't set AllocatedPtr");
 
   // Make sure that we call delete even if one of the dtors throws.
+  const FunctionDecl *OperatorDelete = E->getOperatorDelete();
   CGF.EHStack.pushCleanup<CallArrayDelete>(NormalAndEHCleanup,
                                            AllocatedPtr, OperatorDelete,
                                            NumElements, ElementType,
@@ -1317,7 +1297,7 @@ void CodeGenFunction::EmitCXXDeleteExpr(const CXXDeleteExpr *E) {
          cast<llvm::PointerType>(Ptr->getType())->getElementType());
 
   if (E->isArrayForm()) {
-    EmitArrayDelete(*this, E->getOperatorDelete(), Ptr, DeleteTy);
+    EmitArrayDelete(*this, E, Ptr, DeleteTy);
   } else {
     EmitObjectDelete(*this, E->getOperatorDelete(), Ptr, DeleteTy);
   }
@@ -1325,7 +1305,7 @@ void CodeGenFunction::EmitCXXDeleteExpr(const CXXDeleteExpr *E) {
   EmitBlock(DeleteEnd);
 }
 
-llvm::Value * CodeGenFunction::EmitCXXTypeidExpr(const CXXTypeidExpr *E) {
+llvm::Value *CodeGenFunction::EmitCXXTypeidExpr(const CXXTypeidExpr *E) {
   QualType Ty = E->getType();
   const llvm::Type *LTy = ConvertType(Ty)->getPointerTo();
   

@@ -91,9 +91,11 @@ public:
 
   Stmt *getBody();
   CFG *getCFG();
-  
+
   /// Return a version of the CFG without any edges pruned.
   CFG *getUnoptimizedCFG();
+
+  void dumpCFG();
 
   ParentMap &getParentMap();
   PseudoConstantAnalysis *getPseudoConstantAnalysis();
@@ -199,8 +201,7 @@ public:
 };
 
 class StackFrameContext : public LocationContext {
-  // The callsite where this stack frame is established. The int bit indicates
-  // whether the call expr should return an l-value when it has reference type.
+  // The callsite where this stack frame is established.
   const Stmt *CallSite;
 
   // The parent block of the callsite.
@@ -220,12 +221,6 @@ public:
   ~StackFrameContext() {}
 
   const Stmt *getCallSite() const { return CallSite; }
-
-  bool evalAsLValue() const {
-    if (const Expr *CE = dyn_cast<Expr>(CallSite))
-      return CE->isLValue();
-    return false;
-  }
 
   const CFGBlock *getCallSiteBlock() const { return Block; }
 

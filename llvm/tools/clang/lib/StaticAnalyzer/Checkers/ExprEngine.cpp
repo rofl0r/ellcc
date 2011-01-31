@@ -145,10 +145,49 @@ void ExprEngine::CheckerVisit(const Stmt *S, ExplodedNodeSet &Dst,
   // automatically.
 }
 
-void ExprEngine::CheckerEvalNilReceiver(const ObjCMessageExpr *ME,
-                                          ExplodedNodeSet &Dst,
-                                          const GRState *state,
-                                          ExplodedNode *Pred) {
+void ExprEngine::CheckerVisitObjCMessage(const ObjCMessage &msg,
+                                         ExplodedNodeSet &Dst,
+                                         ExplodedNodeSet &Src,
+                                         bool isPrevisit) {
+
+  if (Checkers.empty()) {
+    Dst.insert(Src);
+    return;
+  }
+
+  ExplodedNodeSet Tmp;
+  ExplodedNodeSet *PrevSet = &Src;
+
+  for (CheckersOrdered::iterator I=Checkers.begin(),E=Checkers.end(); I!=E; ++I)
+  {
+    ExplodedNodeSet *CurrSet = 0;
+    if (I+1 == E)
+      CurrSet = &Dst;
+    else {
+      CurrSet = (PrevSet == &Tmp) ? &Src : &Tmp;
+      CurrSet->clear();
+    }
+
+    void *tag = I->first;
+    Checker *checker = I->second;
+
+    for (ExplodedNodeSet::iterator NI = PrevSet->begin(), NE = PrevSet->end();
+         NI != NE; ++NI)
+      checker->GR_visitObjCMessage(*CurrSet, *Builder, *this, msg,
+                                   *NI, tag, isPrevisit);
+
+    // Update which NodeSet is the current one.
+    PrevSet = CurrSet;
+  }
+
+  // Don't autotransition.  The CheckerContext objects should do this
+  // automatically.
+}
+
+void ExprEngine::CheckerEvalNilReceiver(const ObjCMessage &msg,
+                                        ExplodedNodeSet &Dst,
+                                        const GRState *state,
+                                        ExplodedNode *Pred) {
   bool evaluated = false;
   ExplodedNodeSet DstTmp;
 
@@ -156,7 +195,7 @@ void ExprEngine::CheckerEvalNilReceiver(const ObjCMessageExpr *ME,
     void *tag = I->first;
     Checker *checker = I->second;
 
-    if (checker->GR_evalNilReceiver(DstTmp, *Builder, *this, ME, Pred, state,
+    if (checker->GR_evalNilReceiver(DstTmp, *Builder, *this, msg, Pred, state,
                                     tag)) {
       evaluated = true;
       break;
@@ -384,7 +423,7 @@ const GRState* ExprEngine::getInitialState(const LocationContext *InitLoc) {
 
 /// evalAssume - Called by ConstraintManager. Used to call checker-specific
 ///  logic for handling assumptions on symbolic values.
-const GRState *ExprEngine::ProcessAssume(const GRState *state, SVal cond,
+const GRState *ExprEngine::processAssume(const GRState *state, SVal cond,
                                            bool assumption) {
   // Determine if we already have a cached 'CheckersOrdered' vector
   // specifically tailored for processing assumptions.  This
@@ -392,7 +431,7 @@ const GRState *ExprEngine::ProcessAssume(const GRState *state, SVal cond,
   CheckersOrdered *CO = &Checkers;
   llvm::OwningPtr<CheckersOrdered> NewCO;
 
-  CallbackTag K = GetCallbackTag(ProcessAssumeCallback);
+  CallbackTag K = GetCallbackTag(processAssumeCallback);
   CheckersOrdered *& CO_Ref = COCache[K];
 
   if (!CO_Ref) {
@@ -439,7 +478,7 @@ const GRState *ExprEngine::ProcessAssume(const GRState *state, SVal cond,
   return TF->evalAssume(state, cond, assumption);
 }
 
-bool ExprEngine::WantsRegionChangeUpdate(const GRState* state) {
+bool ExprEngine::wantsRegionChangeUpdate(const GRState* state) {
   CallbackTag K = GetCallbackTag(EvalRegionChangesCallback);
   CheckersOrdered *CO = COCache[K];
 
@@ -448,7 +487,7 @@ bool ExprEngine::WantsRegionChangeUpdate(const GRState* state) {
 
   for (CheckersOrdered::iterator I = CO->begin(), E = CO->end(); I != E; ++I) {
     Checker *C = I->second;
-    if (C->WantsRegionChangeUpdate(state))
+    if (C->wantsRegionChangeUpdate(state))
       return true;
   }
 
@@ -456,10 +495,10 @@ bool ExprEngine::WantsRegionChangeUpdate(const GRState* state) {
 }
 
 const GRState *
-ExprEngine::ProcessRegionChanges(const GRState *state,
+ExprEngine::processRegionChanges(const GRState *state,
                                    const MemRegion * const *Begin,
                                    const MemRegion * const *End) {
-  // FIXME: Most of this method is copy-pasted from ProcessAssume.
+  // FIXME: Most of this method is copy-pasted from processAssume.
 
   // Determine if we already have a cached 'CheckersOrdered' vector
   // specifically tailored for processing region changes.  This
@@ -508,14 +547,14 @@ ExprEngine::ProcessRegionChanges(const GRState *state,
   return state;
 }
 
-void ExprEngine::ProcessEndWorklist(bool hasWorkRemaining) {
+void ExprEngine::processEndWorklist(bool hasWorkRemaining) {
   for (CheckersOrdered::iterator I = Checkers.begin(), E = Checkers.end();
        I != E; ++I) {
     I->second->VisitEndAnalysis(G, BR, *this);
   }
 }
 
-void ExprEngine::ProcessElement(const CFGElement E, 
+void ExprEngine::processCFGElement(const CFGElement E, 
                                   StmtNodeBuilder& builder) {
   switch (E.getKind()) {
   case CFGElement::Statement:
@@ -534,13 +573,16 @@ void ExprEngine::ProcessElement(const CFGElement E,
 }
 
 void ExprEngine::ProcessStmt(const CFGStmt S, StmtNodeBuilder& builder) {
+  // Recycle any unused states in the GRStateManager.
+  StateMgr.recycleUnusedStates();
+  
   currentStmt = S.getStmt();
   PrettyStackTraceLoc CrashInfo(getContext().getSourceManager(),
                                 currentStmt->getLocStart(),
                                 "Error evaluating statement");
 
   Builder = &builder;
-  EntryNode = builder.getBasePredecessor();
+  EntryNode = builder.getPredecessor();
 
   // Create the cleaned state.
   const LocationContext *LC = EntryNode->getLocationContext();
@@ -556,7 +598,7 @@ void ExprEngine::ProcessStmt(const CFGStmt S, StmtNodeBuilder& builder) {
     }
 
     const StackFrameContext *SFC = LC->getCurrentStackFrame();
-    CleanedState = StateMgr.RemoveDeadBindings(St, SFC, SymReaper);
+    CleanedState = StateMgr.removeDeadBindings(St, SFC, SymReaper);
   } else {
     CleanedState = EntryNode->getState();
   }
@@ -568,7 +610,7 @@ void ExprEngine::ProcessStmt(const CFGStmt S, StmtNodeBuilder& builder) {
     Tmp.Add(EntryNode);
   else {
     SaveAndRestore<bool> OldSink(Builder->BuildSinks);
-    SaveOr OldHasGen(Builder->HasGeneratedNode);
+    SaveOr OldHasGen(Builder->hasGeneratedNode);
 
     SaveAndRestore<bool> OldPurgeDeadSymbols(Builder->PurgingDeadSymbols);
     Builder->PurgingDeadSymbols = true;
@@ -603,7 +645,7 @@ void ExprEngine::ProcessStmt(const CFGStmt S, StmtNodeBuilder& builder) {
       }
     }
 
-    if (!Builder->BuildSinks && !Builder->HasGeneratedNode)
+    if (!Builder->BuildSinks && !Builder->hasGeneratedNode)
       Tmp.Add(EntryNode);
   }
 
@@ -622,7 +664,7 @@ void ExprEngine::ProcessStmt(const CFGStmt S, StmtNodeBuilder& builder) {
     // a node with a "cleaned" state; CoreEngine will actually handle
     // auto-transitions for other cases.
     if (Dst.size() == 1 && *Dst.begin() == EntryNode
-        && !Builder->HasGeneratedNode && !HasAutoGenerated) {
+        && !Builder->hasGeneratedNode && !HasAutoGenerated) {
       HasAutoGenerated = true;
       builder.generateNode(currentStmt, GetState(EntryNode), *I);
     }
@@ -640,38 +682,54 @@ void ExprEngine::ProcessStmt(const CFGStmt S, StmtNodeBuilder& builder) {
 void ExprEngine::ProcessInitializer(const CFGInitializer Init,
                                     StmtNodeBuilder &builder) {
   // We don't set EntryNode and currentStmt. And we don't clean up state.
-  const CXXBaseOrMemberInitializer *BMI = Init.getInitializer();
+  const CXXCtorInitializer *BMI = Init.getInitializer();
 
-  ExplodedNode *Pred = builder.getBasePredecessor();
-  const LocationContext *LC = Pred->getLocationContext();
+  ExplodedNode *pred = builder.getPredecessor();
+
+  const StackFrameContext *stackFrame = cast<StackFrameContext>(pred->getLocationContext());
+  const CXXConstructorDecl *decl = cast<CXXConstructorDecl>(stackFrame->getDecl());
+  const CXXThisRegion *thisReg = getCXXThisRegion(decl, stackFrame);
+
+  SVal thisVal = pred->getState()->getSVal(thisReg);
 
   if (BMI->isAnyMemberInitializer()) {
     ExplodedNodeSet Dst;
 
     // Evaluate the initializer.
-    Visit(BMI->getInit(), Pred, Dst);
+    Visit(BMI->getInit(), pred, Dst);
 
     for (ExplodedNodeSet::iterator I = Dst.begin(), E = Dst.end(); I != E; ++I){
       ExplodedNode *Pred = *I;
       const GRState *state = Pred->getState();
 
       const FieldDecl *FD = BMI->getAnyMember();
-      const RecordDecl *RD = FD->getParent();
-      const CXXThisRegion *ThisR = getCXXThisRegion(cast<CXXRecordDecl>(RD),
-                           cast<StackFrameContext>(LC));
 
-      SVal ThisV = state->getSVal(ThisR);
-      SVal FieldLoc = state->getLValue(FD, ThisV);
+      SVal FieldLoc = state->getLValue(FD, thisVal);
       SVal InitVal = state->getSVal(BMI->getInit());
       state = state->bindLoc(FieldLoc, InitVal);
 
       // Use a custom node building process.
-      PostInitializer PP(BMI, LC);
+      PostInitializer PP(BMI, stackFrame);
       // Builder automatically add the generated node to the deferred set,
       // which are processed in the builder's dtor.
       builder.generateNode(PP, state, Pred);
     }
+    return;
   }
+
+  assert(BMI->isBaseInitializer());
+
+  // Get the base class declaration.
+  const CXXConstructExpr *ctorExpr = cast<CXXConstructExpr>(BMI->getInit());
+
+  // Create the base object region.
+  SVal baseVal = 
+    getStoreManager().evalDerivedToBase(thisVal, ctorExpr->getType());
+  const MemRegion *baseReg = baseVal.getAsRegion();
+  assert(baseReg);
+  Builder = &builder;
+  ExplodedNodeSet dst;
+  VisitCXXConstructExpr(ctorExpr, baseReg, pred, dst);
 }
 
 void ExprEngine::ProcessImplicitDtor(const CFGImplicitDtor D,
@@ -698,7 +756,7 @@ void ExprEngine::ProcessImplicitDtor(const CFGImplicitDtor D,
 
 void ExprEngine::ProcessAutomaticObjDtor(const CFGAutomaticObjDtor dtor,
                                            StmtNodeBuilder &builder) {
-  ExplodedNode *pred = builder.getBasePredecessor();
+  ExplodedNode *pred = builder.getPredecessor();
   const GRState *state = pred->getState();
   const VarDecl *varDecl = dtor.getVarDecl();
 
@@ -772,6 +830,7 @@ void ExprEngine::Visit(const Stmt* S, ExplodedNode* Pred,
     case Stmt::UnresolvedMemberExprClass:
     case Stmt::CXXNoexceptExprClass:
     case Stmt::PackExpansionExprClass:
+    case Stmt::SubstNonTypeTemplateParmPackExprClass:
     {
       SaveAndRestore<bool> OldSink(Builder->BuildSinks);
       Builder->BuildSinks = true;
@@ -808,6 +867,10 @@ void ExprEngine::Visit(const Stmt* S, ExplodedNode* Pred,
       VisitObjCAtSynchronizedStmt(cast<ObjCAtSynchronizedStmt>(S), Pred, Dst);
       break;
 
+    case Stmt::ObjCPropertyRefExprClass:
+      VisitObjCPropertyRefExpr(cast<ObjCPropertyRefExpr>(S), Pred, Dst);
+      break;
+
     // Cases not handled yet; but will handle some day.
     case Stmt::DesignatedInitExprClass:
     case Stmt::ExtVectorElementExprClass:
@@ -818,7 +881,6 @@ void ExprEngine::Visit(const Stmt* S, ExplodedNode* Pred,
     case Stmt::ObjCAtTryStmtClass:
     case Stmt::ObjCEncodeExprClass:
     case Stmt::ObjCIsaExprClass:
-    case Stmt::ObjCPropertyRefExprClass:
     case Stmt::ObjCProtocolExprClass:
     case Stmt::ObjCSelectorExprClass:
     case Stmt::ObjCStringLiteralClass:
@@ -1077,11 +1139,20 @@ void ExprEngine::Visit(const Stmt* S, ExplodedNode* Pred,
 // Block entrance.  (Update counters).
 //===----------------------------------------------------------------------===//
 
-bool ExprEngine::ProcessBlockEntrance(const CFGBlock* B, 
-                                        const ExplodedNode *Pred,
-                                        BlockCounter BC) {
-  return BC.getNumVisited(Pred->getLocationContext()->getCurrentStackFrame(), 
-                          B->getBlockID()) < AMgr.getMaxVisit();
+void ExprEngine::processCFGBlockEntrance(ExplodedNodeSet &dstNodes,
+                               GenericNodeBuilder<BlockEntrance> &nodeBuilder){
+  
+  // FIXME: Refactor this into a checker.
+  const CFGBlock *block = nodeBuilder.getProgramPoint().getBlock();
+  ExplodedNode *pred = nodeBuilder.getPredecessor();
+  
+  if (nodeBuilder.getBlockCounter().getNumVisited(
+                       pred->getLocationContext()->getCurrentStackFrame(), 
+                       block->getBlockID()) >= AMgr.getMaxVisit()) {
+
+    static int tag = 0;
+    nodeBuilder.generateNode(pred->getState(), pred, &tag, true);
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -1195,7 +1266,7 @@ static SVal RecoverCastedSymbol(GRStateManager& StateMgr, const GRState* state,
   return state->getSVal(Ex);
 }
 
-void ExprEngine::ProcessBranch(const Stmt* Condition, const Stmt* Term,
+void ExprEngine::processBranch(const Stmt* Condition, const Stmt* Term,
                                  BranchNodeBuilder& builder) {
 
   // Check for NULL conditions; e.g. "for(;;)"
@@ -1265,9 +1336,9 @@ void ExprEngine::ProcessBranch(const Stmt* Condition, const Stmt* Term,
   }
 }
 
-/// ProcessIndirectGoto - Called by CoreEngine.  Used to generate successor
+/// processIndirectGoto - Called by CoreEngine.  Used to generate successor
 ///  nodes by processing the 'effects' of a computed goto jump.
-void ExprEngine::ProcessIndirectGoto(IndirectGotoNodeBuilder& builder) {
+void ExprEngine::processIndirectGoto(IndirectGotoNodeBuilder& builder) {
 
   const GRState *state = builder.getState();
   SVal V = state->getSVal(builder.getTarget());
@@ -1333,7 +1404,7 @@ void ExprEngine::VisitGuardedExpr(const Expr* Ex, const Expr* L,
 
 /// ProcessEndPath - Called by CoreEngine.  Used to generate end-of-path
 ///  nodes when the control reaches the end of a function.
-void ExprEngine::ProcessEndPath(EndPathNodeBuilder& builder) {
+void ExprEngine::processEndOfFunction(EndOfFunctionNodeBuilder& builder) {
   getTF().evalEndPath(*this, builder);
   StateMgr.EndPath(builder.getState());
   for (CheckersOrdered::iterator I=Checkers.begin(),E=Checkers.end(); I!=E;++I){
@@ -1345,7 +1416,7 @@ void ExprEngine::ProcessEndPath(EndPathNodeBuilder& builder) {
 
 /// ProcessSwitch - Called by CoreEngine.  Used to generate successor
 ///  nodes by processing the 'effects' of a switch statement.
-void ExprEngine::ProcessSwitch(SwitchNodeBuilder& builder) {
+void ExprEngine::processSwitch(SwitchNodeBuilder& builder) {
   typedef SwitchNodeBuilder::iterator iterator;
   const GRState* state = builder.getState();
   const Expr* CondE = builder.getCondition();
@@ -1454,12 +1525,12 @@ void ExprEngine::ProcessSwitch(SwitchNodeBuilder& builder) {
   builder.generateDefaultCaseNode(DefaultSt);
 }
 
-void ExprEngine::ProcessCallEnter(CallEnterNodeBuilder &B) {
-  const GRState *state = B.getState()->EnterStackFrame(B.getCalleeContext());
+void ExprEngine::processCallEnter(CallEnterNodeBuilder &B) {
+  const GRState *state = B.getState()->enterStackFrame(B.getCalleeContext());
   B.generateNode(state);
 }
 
-void ExprEngine::ProcessCallExit(CallExitNodeBuilder &B) {
+void ExprEngine::processCallExit(CallExitNodeBuilder &B) {
   const GRState *state = B.getState();
   const ExplodedNode *Pred = B.getPredecessor();
   const StackFrameContext *calleeCtx = 
@@ -1733,6 +1804,17 @@ void ExprEngine::evalStore(ExplodedNodeSet& Dst, const Expr *AssignE,
 
   assert(Builder && "StmtNodeBuilder must be defined.");
 
+  // Proceed with the store.  We use AssignE as the anchor for the PostStore
+  // ProgramPoint if it is non-NULL, and LocationE otherwise.
+  const Expr *StoreE = AssignE ? AssignE : LocationE;
+
+  if (isa<loc::ObjCPropRef>(location)) {
+    loc::ObjCPropRef prop = cast<loc::ObjCPropRef>(location);
+    ExplodedNodeSet src = Pred;
+    return VisitObjCMessage(ObjCPropertySetter(prop.getPropRefExpr(),
+                                               StoreE, Val), src, Dst);
+  }
+
   // Evaluate the location (checks for bad dereferences).
   ExplodedNodeSet Tmp;
   evalLocation(Tmp, LocationE, Pred, state, location, tag, false);
@@ -1744,11 +1826,6 @@ void ExprEngine::evalStore(ExplodedNodeSet& Dst, const Expr *AssignE,
 
   SaveAndRestore<ProgramPoint::Kind> OldSPointKind(Builder->PointKind,
                                                    ProgramPoint::PostStoreKind);
-  SaveAndRestore<const void*> OldTag(Builder->Tag, tag);
-
-  // Proceed with the store.  We use AssignE as the anchor for the PostStore
-  // ProgramPoint if it is non-NULL, and LocationE otherwise.
-  const Expr *StoreE = AssignE ? AssignE : LocationE;
 
   for (ExplodedNodeSet::iterator NI=Tmp.begin(), NE=Tmp.end(); NI!=NE; ++NI)
     evalBind(Dst, StoreE, *NI, GetState(*NI), location, Val);
@@ -1759,6 +1836,13 @@ void ExprEngine::evalLoad(ExplodedNodeSet& Dst, const Expr *Ex,
                             const GRState* state, SVal location,
                             const void *tag, QualType LoadTy) {
   assert(!isa<NonLoc>(location) && "location cannot be a NonLoc.");
+
+  if (isa<loc::ObjCPropRef>(location)) {
+    loc::ObjCPropRef prop = cast<loc::ObjCPropRef>(location);
+    ExplodedNodeSet src = Pred;
+    return VisitObjCMessage(ObjCPropertyGetter(prop.getPropRefExpr(), Ex),
+                            src, Dst);
+  }
 
   // Are we loading from a region?  This actually results in two loads; one
   // to fetch the address of the referenced value and one to fetch the
@@ -1801,7 +1885,6 @@ void ExprEngine::evalLoadCommon(ExplodedNodeSet& Dst, const Expr *Ex,
   assert(!location.isUndef());
 
   SaveAndRestore<ProgramPoint::Kind> OldSPointKind(Builder->PointKind);
-  SaveAndRestore<const void*> OldTag(Builder->Tag);
 
   // Proceed with the load.
   for (ExplodedNodeSet::iterator NI=Tmp.begin(), NE=Tmp.end(); NI!=NE; ++NI) {
@@ -1961,7 +2044,7 @@ void ExprEngine::VisitCall(const CallExpr* CE, ExplodedNode* Pred,
 
         // Dispatch to the plug-in transfer function.
         unsigned oldSize = DstTmp3.size();
-        SaveOr OldHasGen(Builder->HasGeneratedNode);
+        SaveOr OldHasGen(Builder->hasGeneratedNode);
         Pred = *DI_Checker;
 
         // Dispatch to transfer function logic to handle the call itself.
@@ -1972,7 +2055,7 @@ void ExprEngine::VisitCall(const CallExpr* CE, ExplodedNode* Pred,
         // Handle the case where no nodes where generated.  Auto-generate that
         // contains the updated state if we aren't generating sinks.
         if (!Builder->BuildSinks && DstTmp3.size() == oldSize &&
-            !Builder->HasGeneratedNode)
+            !Builder->hasGeneratedNode)
           MakeNode(DstTmp3, CE, Pred, state);
       }
     }
@@ -1981,6 +2064,34 @@ void ExprEngine::VisitCall(const CallExpr* CE, ExplodedNode* Pred,
   // Finally, perform the post-condition check of the CallExpr and store
   // the created nodes in 'Dst'.
   CheckerVisit(CE, Dst, DstTmp3, PostVisitStmtCallback);
+}
+
+//===----------------------------------------------------------------------===//
+// Transfer function: Objective-C dot-syntax to access a property.
+//===----------------------------------------------------------------------===//
+
+void ExprEngine::VisitObjCPropertyRefExpr(const ObjCPropertyRefExpr *Ex,
+                                          ExplodedNode *Pred,
+                                          ExplodedNodeSet &Dst) {
+  ExplodedNodeSet dstBase;
+
+  // Visit the receiver (if any).
+  if (Ex->isObjectReceiver())
+    Visit(Ex->getBase(), Pred, dstBase);
+  else
+    dstBase = Pred;
+
+  ExplodedNodeSet dstPropRef;
+
+  // Using the base, compute the lvalue of the instance variable.
+  for (ExplodedNodeSet::iterator I = dstBase.begin(), E = dstBase.end();
+       I!=E; ++I) {
+    ExplodedNode *nodeBase = *I;
+    const GRState *state = GetState(nodeBase);
+    MakeNode(dstPropRef, Ex, *I, state->BindExpr(Ex, loc::ObjCPropRef(Ex)));
+  }
+  
+  Dst.insert(dstPropRef);
 }
 
 //===----------------------------------------------------------------------===//
@@ -2061,6 +2172,8 @@ void ExprEngine::VisitLvalObjCIvarRefExpr(const ObjCIvarRefExpr* Ex,
   const Expr *baseExpr = Ex->getBase();
   Visit(baseExpr, Pred, dstBase);
 
+  ExplodedNodeSet dstIvar;
+
   // Using the base, compute the lvalue of the instance variable.
   for (ExplodedNodeSet::iterator I = dstBase.begin(), E = dstBase.end();
        I!=E; ++I) {
@@ -2068,8 +2181,12 @@ void ExprEngine::VisitLvalObjCIvarRefExpr(const ObjCIvarRefExpr* Ex,
     const GRState *state = GetState(nodeBase);
     SVal baseVal = state->getSVal(baseExpr);
     SVal location = state->getLValue(Ex->getDecl(), baseVal);
-    MakeNode(Dst, Ex, *I, state->BindExpr(Ex, location));
+    MakeNode(dstIvar, Ex, *I, state->BindExpr(Ex, location));
   }
+
+  // Perform the post-condition check of the ObjCIvarRefExpr and store
+  // the created nodes in 'Dst'.
+  CheckerVisit(Ex, Dst, dstIvar, PostVisitStmtCallback);
 }
 
 //===----------------------------------------------------------------------===//
@@ -2230,9 +2347,16 @@ void ExprEngine::VisitObjCMessageExpr(const ObjCMessageExpr* ME,
       WL.push_back(ObjCMsgWLItem(Item.I, *NI));
   }
 
-  // Now that the arguments are processed, handle the previsits checks.
+  // Now that the arguments are processed, handle the ObjC message.
+  VisitObjCMessage(ME, ArgsEvaluated, Dst);
+}
+
+void ExprEngine::VisitObjCMessage(const ObjCMessage &msg,
+                                  ExplodedNodeSet &Src, ExplodedNodeSet& Dst) {
+
+  // Handle the previsits checks.
   ExplodedNodeSet DstPrevisit;
-  CheckerVisit(ME, DstPrevisit, ArgsEvaluated, PreVisitStmtCallback);
+  CheckerVisitObjCMessage(msg, DstPrevisit, Src, /*isPreVisit=*/true);
 
   // Proceed with evaluate the message expression.
   ExplodedNodeSet dstEval;
@@ -2240,13 +2364,13 @@ void ExprEngine::VisitObjCMessageExpr(const ObjCMessageExpr* ME,
   for (ExplodedNodeSet::iterator DI = DstPrevisit.begin(),
                                  DE = DstPrevisit.end(); DI != DE; ++DI) {
 
-    Pred = *DI;
+    ExplodedNode *Pred = *DI;
     bool RaisesException = false;
     unsigned oldSize = dstEval.size();
     SaveAndRestore<bool> OldSink(Builder->BuildSinks);
-    SaveOr OldHasGen(Builder->HasGeneratedNode);
+    SaveOr OldHasGen(Builder->hasGeneratedNode);
 
-    if (const Expr *Receiver = ME->getInstanceReceiver()) {
+    if (const Expr *Receiver = msg.getInstanceReceiver()) {
       const GRState *state = GetState(Pred);
 
       // Bifurcate the state into nil and non-nil ones.
@@ -2259,13 +2383,13 @@ void ExprEngine::VisitObjCMessageExpr(const ObjCMessageExpr* ME,
       // There are three cases: can be nil or non-nil, must be nil, must be
       // non-nil. We handle must be nil, and merge the rest two into non-nil.
       if (nilState && !notNilState) {
-        CheckerEvalNilReceiver(ME, dstEval, nilState, Pred);
+        CheckerEvalNilReceiver(msg, dstEval, nilState, Pred);
         continue;
       }
 
       // Check if the "raise" message was sent.
       assert(notNilState);
-      if (ME->getSelector() == RaiseSel)
+      if (msg.getSelector() == RaiseSel)
         RaisesException = true;
 
       // Check if we raise an exception.  For now treat these as sinks.
@@ -2274,11 +2398,11 @@ void ExprEngine::VisitObjCMessageExpr(const ObjCMessageExpr* ME,
         Builder->BuildSinks = true;
 
       // Dispatch to plug-in transfer function.
-      evalObjCMessageExpr(dstEval, ME, Pred, notNilState);
+      evalObjCMessage(dstEval, msg, Pred, notNilState);
     }
-    else if (ObjCInterfaceDecl *Iface = ME->getReceiverInterface()) {
+    else if (const ObjCInterfaceDecl *Iface = msg.getReceiverInterface()) {
       IdentifierInfo* ClsName = Iface->getIdentifier();
-      Selector S = ME->getSelector();
+      Selector S = msg.getSelector();
 
       // Check for special instance methods.
       if (!NSExceptionII) {
@@ -2322,19 +2446,19 @@ void ExprEngine::VisitObjCMessageExpr(const ObjCMessageExpr* ME,
         Builder->BuildSinks = true;
 
       // Dispatch to plug-in transfer function.
-      evalObjCMessageExpr(dstEval, ME, Pred, Builder->GetState(Pred));
+      evalObjCMessage(dstEval, msg, Pred, Builder->GetState(Pred));
     }
 
     // Handle the case where no nodes where generated.  Auto-generate that
     // contains the updated state if we aren't generating sinks.
     if (!Builder->BuildSinks && dstEval.size() == oldSize &&
-        !Builder->HasGeneratedNode)
-      MakeNode(dstEval, ME, Pred, GetState(Pred));
+        !Builder->hasGeneratedNode)
+      MakeNode(dstEval, msg.getOriginExpr(), Pred, GetState(Pred));
   }
 
   // Finally, perform the post-condition check of the ObjCMessageExpr and store
   // the created nodes in 'Dst'.
-  CheckerVisit(ME, Dst, dstEval, PostVisitStmtCallback);
+  CheckerVisitObjCMessage(msg, Dst, dstEval, /*isPreVisit=*/false);
 }
 
 //===----------------------------------------------------------------------===//
@@ -2349,7 +2473,8 @@ void ExprEngine::VisitCast(const CastExpr *CastE, const Expr *Ex,
   ExplodedNodeSet S2;
   CheckerVisit(CastE, S2, S1, PreVisitStmtCallback);
   
-  if (CastE->getCastKind() == CK_LValueToRValue) {
+  if (CastE->getCastKind() == CK_LValueToRValue ||
+      CastE->getCastKind() == CK_GetObjCProperty) {
     for (ExplodedNodeSet::iterator I = S2.begin(), E = S2.end(); I!=E; ++I) {
       ExplodedNode *subExprNode = *I;
       const GRState *state = GetState(subExprNode);
@@ -2987,7 +3112,7 @@ void ExprEngine::VisitUnaryOperator(const UnaryOperator* U,
 
       // Since the lvalue-to-rvalue conversion is explicit in the AST,
       // we bind an l-value if the operator is prefix and an lvalue (in C++).
-      if (U->isPrefix() && U->isLValue())
+      if (U->isLValue())
         state = state->BindExpr(U, loc);
       else
         state = state->BindExpr(U, V2);
@@ -3064,13 +3189,12 @@ void ExprEngine::VisitReturnStmt(const ReturnStmt *RS, ExplodedNode *Pred,
   ExplodedNodeSet Src;
   if (const Expr *RetE = RS->getRetValue()) {
     // Record the returned expression in the state. It will be used in
-    // ProcessCallExit to bind the return value to the call expr.
+    // processCallExit to bind the return value to the call expr.
     {
-      static int Tag = 0;
-      SaveAndRestore<const void *> OldTag(Builder->Tag, &Tag);
+      static int tag = 0;
       const GRState *state = GetState(Pred);
       state = state->set<ReturnExpr>(RetE);
-      Pred = Builder->generateNode(RetE, state, Pred);
+      Pred = Builder->generateNode(RetE, state, Pred, &tag);
     }
     // We may get a NULL Pred because we generated a cached node.
     if (Pred)
@@ -3092,13 +3216,13 @@ void ExprEngine::VisitReturnStmt(const ReturnStmt *RS, ExplodedNode *Pred,
     unsigned size = Dst.size();
 
     SaveAndRestore<bool> OldSink(Builder->BuildSinks);
-    SaveOr OldHasGen(Builder->HasGeneratedNode);
+    SaveOr OldHasGen(Builder->hasGeneratedNode);
 
     getTF().evalReturn(Dst, *this, *Builder, RS, Pred);
 
     // Handle the case where no nodes where generated.
     if (!Builder->BuildSinks && Dst.size() == size &&
-        !Builder->HasGeneratedNode)
+        !Builder->hasGeneratedNode)
       MakeNode(Dst, RS, Pred, GetState(Pred));
   }
 }
@@ -3138,8 +3262,6 @@ void ExprEngine::VisitBinaryOperator(const BinaryOperator* B,
       if (Op == BO_Assign) {
         // EXPERIMENTAL: "Conjured" symbols.
         // FIXME: Handle structs.
-        QualType T = RHS->getType();
-
         if (RightV.isUnknown() ||!getConstraintManager().canReasonAbout(RightV))
         {
           unsigned Count = Builder->getCurrentBlockCount();
@@ -3208,7 +3330,6 @@ void ExprEngine::VisitBinaryOperator(const BinaryOperator* B,
         CLHSTy = getContext().getCanonicalType(CLHSTy);
 
         QualType LTy = getContext().getCanonicalType(LHS->getType());
-        QualType RTy = getContext().getCanonicalType(RHS->getType());
 
         // Promote LHS.
         V = svalBuilder.evalCast(V, CLHSTy, LTy);
@@ -3241,8 +3362,14 @@ void ExprEngine::VisitBinaryOperator(const BinaryOperator* B,
           LHSVal = svalBuilder.evalCast(Result, LTy, CTy);
         }
 
-        evalStore(Tmp3, B, LHS, *I4, state->BindExpr(B, Result),
-                  location, LHSVal);
+        // In C++, assignment and compound assignment operators return an 
+        // lvalue.
+        if (B->isLValue())
+          state = state->BindExpr(B, location);
+        else
+          state = state->BindExpr(B, Result);
+
+        evalStore(Tmp3, B, LHS, *I4, state, location, LHSVal);
       }
     }
   }

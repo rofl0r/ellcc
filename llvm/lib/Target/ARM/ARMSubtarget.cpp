@@ -13,6 +13,7 @@
 
 #include "ARMSubtarget.h"
 #include "ARMGenSubtarget.inc"
+#include "ARMBaseRegisterInfo.h"
 #include "llvm/GlobalValue.h"
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/Support/CommandLine.h"
@@ -24,8 +25,7 @@ ReserveR9("arm-reserve-r9", cl::Hidden,
           cl::desc("Reserve R9, making it unavailable as GPR"));
 
 static cl::opt<bool>
-UseMOVT("arm-use-movt",
-        cl::init(true), cl::Hidden);
+DarwinUseMOVT("arm-darwin-use-movt", cl::init(true), cl::Hidden);
 
 static cl::opt<bool>
 StrictAlign("arm-strict-align", cl::Hidden,
@@ -44,7 +44,7 @@ ARMSubtarget::ARMSubtarget(const std::string &TT, const std::string &FS,
   , NoARM(false)
   , PostRAScheduler(false)
   , IsR9Reserved(ReserveR9)
-  , UseMovt(UseMOVT)
+  , UseMovt(false)
   , HasFP16(false)
   , HasD16(false)
   , HasHardwareDivide(false)
@@ -56,7 +56,7 @@ ARMSubtarget::ARMSubtarget(const std::string &TT, const std::string &FS,
   , AllowsUnalignedMem(false)
   , stackAlignment(4)
   , CPUString("generic")
-  , TargetType(isELF) // Default to ELF unless otherwise specified.
+  , TargetTriple(TT)
   , TargetABI(ARM_ABI_APCS) {
   // Default to soft float ABI
   if (FloatABIType == FloatABI::Default)
@@ -118,12 +118,6 @@ ARMSubtarget::ARMSubtarget(const std::string &TT, const std::string &FS,
     }
   }
 
-  if (Len >= 10) {
-    if (TT.find("-darwin") != std::string::npos)
-      // arm-darwin
-      TargetType = isDarwin;
-  }
-
   if (TT.find("eabi") != std::string::npos)
     TargetABI = ARM_ABI_AAPCS;
 
@@ -152,8 +146,12 @@ ARMSubtarget::ARMSubtarget(const std::string &TT, const std::string &FS,
   if (isAAPCS_ABI())
     stackAlignment = 8;
 
-  if (isTargetDarwin())
+  if (!isTargetDarwin())
+    UseMovt = hasV6T2Ops();
+  else {
     IsR9Reserved = ReserveR9 | (ARMArchVersion < V6);
+    UseMovt = DarwinUseMOVT && hasV6T2Ops();
+  }
 
   if (!isThumb() || hasThumb2())
     PostRAScheduler = true;

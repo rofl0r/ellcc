@@ -72,9 +72,9 @@ public:
   ///  conversions between arrays and pointers.
   SVal ArrayToPointer(Loc Array) { return Array; }
 
-  /// RemoveDeadBindings - Scans a BasicStore of 'state' for dead values.
+  /// removeDeadBindings - Scans a BasicStore of 'state' for dead values.
   ///  It updatees the GRState object in place with the values removed.
-  Store RemoveDeadBindings(Store store, const StackFrameContext *LCtx,
+  Store removeDeadBindings(Store store, const StackFrameContext *LCtx,
                            SymbolReaper& SymReaper,
                           llvm::SmallVectorImpl<const MemRegion*>& RegionRoots);
 
@@ -196,6 +196,7 @@ SVal BasicStoreManager::Retrieve(Store store, Loc loc, QualType T) {
       return V.isUnknownOrUndef() ? V : CastRetrievedVal(V, TR, T);
     }
 
+    case loc::ObjCPropRefKind:
     case loc::ConcreteIntKind:
       // Support direct accesses to memory.  It's up to individual checkers
       // to flag an error.
@@ -278,7 +279,7 @@ Store BasicStoreManager::Remove(Store store, Loc loc) {
   }
 }
 
-Store BasicStoreManager::RemoveDeadBindings(Store store,
+Store BasicStoreManager::removeDeadBindings(Store store,
                                             const StackFrameContext *LCtx,
                                             SymbolReaper& SymReaper,
                            llvm::SmallVectorImpl<const MemRegion*>& RegionRoots)
@@ -458,8 +459,8 @@ Store BasicStoreManager::BindDeclInternal(Store store, const VarRegion* VR,
       // C99: 6.7.8 Initialization
       //  If an object that has static storage duration is not initialized
       //  explicitly, then:
-      //   —if it has pointer type, it is initialized to a null pointer;
-      //   —if it has arithmetic type, it is initialized to (positive or
+      //   -if it has pointer type, it is initialized to a null pointer;
+      //   -if it has arithmetic type, it is initialized to (positive or
       //     unsigned) zero;
       if (!InitVal) {
         QualType T = VD->getType();
@@ -591,4 +592,3 @@ Store BasicStoreManager::InvalidateRegion(Store store,
   SVal V = svalBuilder.getConjuredSymbolVal(R, E, T, Count);
   return Bind(store, loc::MemRegionVal(R), V);
 }
-

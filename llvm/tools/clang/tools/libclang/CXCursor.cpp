@@ -57,7 +57,7 @@ CXCursor cxcursor::MakeCXCursor(Decl *D, CXTranslationUnit TU,
                                 bool FirstInDeclGroup) {
   assert(D && TU && "Invalid arguments!");
   CXCursor C = { getCursorKindForDecl(D),
-                 { D, (void*) (FirstInDeclGroup ? 1 : 0), TU }
+                 { D, (void*)(intptr_t) (FirstInDeclGroup ? 1 : 0), TU }
                };
   return C;
 }
@@ -171,6 +171,7 @@ CXCursor cxcursor::MakeCXCursor(Stmt *S, Decl *Parent,
       
   case Stmt::DeclRefExprClass:           
   case Stmt::BlockDeclRefExprClass:
+  case Stmt::SubstNonTypeTemplateParmPackExprClass:
     // FIXME: UnresolvedLookupExpr?
     // FIXME: DependentScopeDeclRefExpr?
     K = CXCursor_DeclRefExpr;
@@ -559,4 +560,3 @@ unsigned clang_CXCursorSet_insert(CXCursorSet set, CXCursor cursor) {
   return flag;
 }
 } // end: extern "C"
-

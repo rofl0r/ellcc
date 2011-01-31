@@ -1203,3 +1203,37 @@ void rdar_8642434_funcB(struct rdar_8642434_typeA *x, struct rdar_8642434_typeA 
     rdar_8642434_funcA(y); // expected-warning{{Null pointer passed as an argument to a 'nonnull' parameter}}
 }
 
+// <rdar://problem/8848957> - Handle loads and stores from a symbolic index
+// into array without warning about an uninitialized value being returned.
+// While RegionStore can't fully reason about this example, it shouldn't
+// warn here either.
+typedef struct s_test_rdar8848957 {
+  int x, y, z;
+} s_test_rdar8848957;
+
+s_test_rdar8848957 foo_rdar8848957();
+int rdar8848957(int index) {
+  s_test_rdar8848957 vals[10];
+  vals[index] = foo_rdar8848957();
+  return vals[index].x; // no-warning
+}
+
+// PR 9049 - crash on symbolicating unions.  This test exists solely to
+// test that the analyzer doesn't crash.
+typedef struct pr9048_cdev *pr9048_cdev_t;
+typedef union pr9048_abstracted_disklabel { void *opaque; } pr9048_disklabel_t;
+struct pr9048_diskslice { pr9048_disklabel_t ds_label; };
+struct pr9048_diskslices {
+  int dss_secmult;
+  struct pr9048_diskslice dss_slices[16];
+};
+void pr9048(pr9048_cdev_t dev, struct pr9048_diskslices * ssp, unsigned int slice)
+{
+  pr9048_disklabel_t     lp;
+  struct pr9048_diskslice *sp;
+  sp = &ssp->dss_slices[slice];
+  if (ssp->dss_secmult == 1) {
+  } else if ((lp = sp->ds_label).opaque != ((void *) 0)) {
+  }
+}
+

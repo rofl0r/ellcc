@@ -25,6 +25,7 @@
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/Host.h"
@@ -224,9 +225,10 @@ void Clang::AddPreprocessingOptions(const Driver &D,
       bool FoundPTH = false;
       bool FoundPCH = false;
       llvm::sys::Path P(A->getValue(Args));
+      bool Exists;
       if (UsePCH) {
         P.appendSuffix("pch");
-        if (P.exists())
+        if (!llvm::sys::fs::exists(P.str(), Exists) && Exists)
           FoundPCH = true;
         else
           P.eraseSuffix();
@@ -234,7 +236,7 @@ void Clang::AddPreprocessingOptions(const Driver &D,
 
       if (!FoundPCH) {
         P.appendSuffix("pth");
-        if (P.exists())
+        if (!llvm::sys::fs::exists(P.str(), Exists) && Exists)
           FoundPTH = true;
         else
           P.eraseSuffix();
@@ -242,7 +244,7 @@ void Clang::AddPreprocessingOptions(const Driver &D,
 
       if (!FoundPCH && !FoundPTH) {
         P.appendSuffix("gch");
-        if (P.exists()) {
+        if (!llvm::sys::fs::exists(P.str(), Exists) && Exists) {
           FoundPCH = UsePCH;
           FoundPTH = !UsePCH;
         }
@@ -995,17 +997,33 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
 
     // Add default argument set.
     if (!Args.hasArg(options::OPT__analyzer_no_default_checks)) {
+      types::ID InputType = Inputs[0].getType();
+
+      // Checks to perform for all language types.
       CmdArgs.push_back("-analyzer-check-dead-stores");
-      // Do not enable the security-syntatic check since it
-      // it needs to be refined (known issues).
-      // CmdArgs.push_back("-analyzer-check-security-syntactic");
-      CmdArgs.push_back("-analyzer-check-objc-mem");
-      CmdArgs.push_back("-analyzer-eagerly-assume");
-      CmdArgs.push_back("-analyzer-check-objc-methodsigs");
-      // Do not enable the missing -dealloc check.
-      // '-analyzer-check-objc-missing-dealloc',
-      CmdArgs.push_back("-analyzer-check-objc-unused-ivars");
-      CmdArgs.push_back("-analyzer-check-idempotent-operations");
+
+      // Checks to perform for Objective-C/Objective-C++.
+      if (types::isObjC(InputType)) {
+        CmdArgs.push_back("-analyzer-check-objc-methodsigs");
+        CmdArgs.push_back("-analyzer-check-objc-unused-ivars");
+        CmdArgs.push_back("-analyzer-check-objc-self-init");
+        // Do not enable the missing -dealloc check.
+        // '-analyzer-check-objc-missing-dealloc',
+      }
+
+      // Checks to perform for all languages *except* C++.
+      if (!types::isCXX(InputType)) {
+        // Do not enable the security-syntatic check since it
+        // it needs to be refined (known issues).
+        // CmdArgs.push_back("-analyzer-check-security-syntactic");
+
+        // NOTE: Leaving -analyzer-check-objc-mem here is intentional.
+        // It also checks C code.
+        CmdArgs.push_back("-analyzer-check-objc-mem");
+
+        CmdArgs.push_back("-analyzer-eagerly-assume");
+        CmdArgs.push_back("-analyzer-check-idempotent-operations");
+      }
     }
 
     // Set the output format. The default is plist, for (lame) historical
@@ -1393,6 +1411,9 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     }
   }
 
+  if (Args.getLastArg(options::OPT_fapple_kext))
+    CmdArgs.push_back("-fapple-kext");
+
   Args.AddLastArg(CmdArgs, options::OPT_fno_show_column);
   Args.AddLastArg(CmdArgs, options::OPT_fobjc_sender_dependent_dispatch);
   Args.AddLastArg(CmdArgs, options::OPT_fdiagnostics_print_source_range_info);
@@ -1430,8 +1451,14 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   // Forward -f options with positive and negative forms; we translate
   // these by hand.
 
+  if (Args.hasArg(options::OPT_mkernel)) {
+    if (!Args.hasArg(options::OPT_fapple_kext))
+      CmdArgs.push_back("-fapple-kext");
+    if (!Args.hasArg(options::OPT_fbuiltin))
+      CmdArgs.push_back("-fno-builtin");
+  }
   // -fbuiltin is default.
-  if (!Args.hasFlag(options::OPT_fbuiltin, options::OPT_fno_builtin))
+  else if (!Args.hasFlag(options::OPT_fbuiltin, options::OPT_fno_builtin))
     CmdArgs.push_back("-fno-builtin");
 
   if (!Args.hasFlag(options::OPT_fassume_sane_operator_new,
@@ -1628,9 +1655,14 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
                    options::OPT_mno_pascal_strings,
                    false))
     CmdArgs.push_back("-fpascal-strings");
-
+  
+  if (Args.hasArg(options::OPT_mkernel) ||
+      Args.hasArg(options::OPT_fapple_kext)) {
+    if (!Args.hasArg(options::OPT_fcommon))
+      CmdArgs.push_back("-fno-common");
+  }
   // -fcommon is default, only pass non-default.
-  if (!Args.hasFlag(options::OPT_fcommon, options::OPT_fno_common))
+  else if (!Args.hasFlag(options::OPT_fcommon, options::OPT_fno_common))
     CmdArgs.push_back("-fno-common");
 
   // -fsigned-bitfields is default, and clang doesn't yet support
@@ -2042,7 +2074,7 @@ const char *darwin::CC1::getBaseInputStem(const ArgList &Args,
                                           const InputInfoList &Inputs) {
   const char *Str = getBaseInputName(Args, Inputs);
 
-  if (const char *End = strchr(Str, '.'))
+  if (const char *End = strrchr(Str, '.'))
     return Args.MakeArgString(std::string(Str, End));
 
   return Str;

@@ -354,7 +354,8 @@ static void X86PopulateOperands(
     const CGIOperandList::OperandInfo &operandInfo = inst.Operands[index];
     Record &rec = *operandInfo.Rec;
 
-    if (X86TypeFromOpName(operandTypes[index], rec.getName())) {
+    if (X86TypeFromOpName(operandTypes[index], rec.getName()) &&
+        !rec.isSubClassOf("PointerLikeRegClass")) {
       errs() << "Operand type: " << rec.getName().c_str() << "\n";
       errs() << "Operand name: " << operandInfo.Name.c_str() << "\n";
       errs() << "Instruction name: " << inst.TheDef->getName().c_str() << "\n";
@@ -564,10 +565,14 @@ static int ARMFlagFromOpName(LiteralConstantEmitter *type,
   REG("QQQQPR");
 
   IMM("i32imm");
-  IMM("movt_imm");
+  IMM("i32imm_hilo16");
   IMM("bf_inv_mask_imm");
+  IMM("lsb_pos_imm");
+  IMM("width_imm");
   IMM("jtblock_operand");
   IMM("nohash_imm");
+  IMM("p_imm");
+  IMM("c_imm");
   IMM("cpinst_operand");
   IMM("setend_op");
   IMM("cps_opt");

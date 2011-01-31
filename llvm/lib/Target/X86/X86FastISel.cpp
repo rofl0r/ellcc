@@ -1036,8 +1036,8 @@ bool X86FastISel::X86SelectBranch(const Instruction *I) {
           }
 
           const TargetInstrDesc &TID = MI.getDesc();
-          if (TID.hasUnmodeledSideEffects() ||
-              TID.hasImplicitDefOfPhysReg(X86::EFLAGS))
+          if (TID.hasImplicitDefOfPhysReg(X86::EFLAGS) ||
+              MI.hasUnmodeledSideEffects())
             break;
         }
 
@@ -1548,7 +1548,6 @@ bool X86FastISel::X86SelectCall(const Instruction *I) {
       bool Emitted = X86FastEmitExtend(ISD::SIGN_EXTEND, VA.getLocVT(),
                                        Arg, ArgVT, Arg);
       assert(Emitted && "Failed to emit a sext!"); (void)Emitted;
-      Emitted = true;
       ArgVT = VA.getLocVT();
       break;
     }
@@ -1556,7 +1555,6 @@ bool X86FastISel::X86SelectCall(const Instruction *I) {
       bool Emitted = X86FastEmitExtend(ISD::ZERO_EXTEND, VA.getLocVT(),
                                        Arg, ArgVT, Arg);
       assert(Emitted && "Failed to emit a zext!"); (void)Emitted;
-      Emitted = true;
       ArgVT = VA.getLocVT();
       break;
     }
@@ -1935,7 +1933,7 @@ bool X86FastISel::TryToFoldLoad(MachineInstr *MI, unsigned OpNo,
     XII.foldMemoryOperandImpl(*FuncInfo.MF, MI, OpNo, AddrOps, Size, Alignment);
   if (Result == 0) return false;
 
-  MI->getParent()->insert(MI, Result);
+  FuncInfo.MBB->insert(FuncInfo.InsertPt, Result);
   MI->eraseFromParent();
   return true;
 }

@@ -503,8 +503,8 @@ void ASTDeclWriter::VisitObjCCategoryImplDecl(ObjCCategoryImplDecl *D) {
 void ASTDeclWriter::VisitObjCImplementationDecl(ObjCImplementationDecl *D) {
   VisitObjCImplDecl(D);
   Writer.AddDeclRef(D->getSuperClass(), Record);
-  Writer.AddCXXBaseOrMemberInitializers(D->IvarInitializers,
-                                        D->NumIvarInitializers, Record);
+  Writer.AddCXXCtorInitializers(D->IvarInitializers, D->NumIvarInitializers,
+                                Record);
   Record.push_back(D->hasSynthBitfield());
   Code = serialization::DECL_OBJC_IMPLEMENTATION;
 }
@@ -661,7 +661,6 @@ void ASTDeclWriter::VisitNamespaceDecl(NamespaceDecl *D) {
     if (Map) {
       for (StoredDeclsMap::iterator D = Map->begin(), DEnd = Map->end();
            D != DEnd; ++D) {
-        DeclarationName Name = D->first;
         DeclContext::lookup_result Result = D->second.getLookupResult();
         while (Result.first != Result.second) {
           Writer.GetDeclRef(*Result.first);
@@ -781,8 +780,8 @@ void ASTDeclWriter::VisitCXXConstructorDecl(CXXConstructorDecl *D) {
 
   Record.push_back(D->IsExplicitSpecified);
   Record.push_back(D->ImplicitlyDefined);
-  Writer.AddCXXBaseOrMemberInitializers(D->BaseOrMemberInitializers,
-                                        D->NumBaseOrMemberInitializers, Record);
+  Writer.AddCXXCtorInitializers(D->CtorInitializers, D->NumCtorInitializers,
+                                Record);
 
   Code = serialization::DECL_CXX_CONSTRUCTOR;
 }
@@ -989,18 +988,33 @@ void ASTDeclWriter::VisitTemplateTypeParmDecl(TemplateTypeParmDecl *D) {
 }
 
 void ASTDeclWriter::VisitNonTypeTemplateParmDecl(NonTypeTemplateParmDecl *D) {
+  // For an expanded parameter pack, record the number of expansion types here
+  // so that it's easier for 
+  if (D->isExpandedParameterPack())
+    Record.push_back(D->getNumExpansionTypes());
+  
   VisitVarDecl(D);
   // TemplateParmPosition.
   Record.push_back(D->getDepth());
   Record.push_back(D->getPosition());
-  // Rest of NonTypeTemplateParmDecl.
-  Record.push_back(D->isParameterPack());
-  Record.push_back(D->getDefaultArgument() != 0);
-  if (D->getDefaultArgument()) {
-    Writer.AddStmt(D->getDefaultArgument());
-    Record.push_back(D->defaultArgumentWasInherited());
+  
+  if (D->isExpandedParameterPack()) {
+    for (unsigned I = 0, N = D->getNumExpansionTypes(); I != N; ++I) {
+      Writer.AddTypeRef(D->getExpansionType(I), Record);
+      Writer.AddTypeSourceInfo(D->getExpansionTypeSourceInfo(I), Record);
+    }
+      
+    Code = serialization::DECL_EXPANDED_NON_TYPE_TEMPLATE_PARM_PACK;
+  } else {
+    // Rest of NonTypeTemplateParmDecl.
+    Record.push_back(D->isParameterPack());
+    Record.push_back(D->getDefaultArgument() != 0);
+    if (D->getDefaultArgument()) {
+      Writer.AddStmt(D->getDefaultArgument());
+      Record.push_back(D->defaultArgumentWasInherited());
+    }
+    Code = serialization::DECL_NON_TYPE_TEMPLATE_PARM;
   }
-  Code = serialization::DECL_NON_TYPE_TEMPLATE_PARM;
 }
 
 void ASTDeclWriter::VisitTemplateTemplateParmDecl(TemplateTemplateParmDecl *D) {

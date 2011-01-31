@@ -15,8 +15,10 @@
 #include "llvm/Module.h"
 #include "llvm/ADT/OwningPtr.h"
 #include "llvm/Bitcode/ReaderWriter.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Process.h"
+#include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/system_error.h"
 #include <fstream>
@@ -26,7 +28,7 @@ using namespace llvm;
 
 // Write an integer using variable bit rate encoding. This saves a few bytes
 // per entry in the symbol table.
-static inline void writeInteger(unsigned num, std::ofstream& ARFile) {
+static inline void writeInteger(unsigned num, raw_ostream& ARFile) {
   while (1) {
     if (num < 0x80) { // done?
       ARFile << (unsigned char)num;
@@ -154,9 +156,10 @@ Archive::fillHeader(const ArchiveMember &mbr, ArchiveMemberHeader& hdr,
 // Insert a file into the archive before some other member. This also takes care
 // of extracting the necessary flags and information from the file.
 bool
-Archive::addFileBefore(const sys::Path& filePath, iterator where, 
+Archive::addFileBefore(const sys::Path& filePath, iterator where,
                         std::string* ErrMsg) {
-  if (!filePath.exists()) {
+  bool Exists;
+  if (sys::fs::exists(filePath.str(), Exists) || !Exists) {
     if (ErrMsg)
       *ErrMsg = "Can not add a non-existent file to archive";
     return true;
@@ -179,9 +182,11 @@ Archive::addFileBefore(const sys::Path& filePath, iterator where,
     flags |= ArchiveMember::HasPathFlag;
   if (hasSlash || filePath.str().length() > 15)
     flags |= ArchiveMember::HasLongFilenameFlag;
-  std::string magic;
-  mbr->path.getMagicNumber(magic,4);
-  switch (sys::IdentifyFileType(magic.c_str(),4)) {
+
+  sys::LLVMFileType type;
+  if (sys::fs::identify_magic(mbr->path.str(), type))
+    type = sys::Unknown_FileType;
+  switch (type) {
     case sys::Bitcode_FileType:
       flags |= ArchiveMember::BitcodeFlag;
       break;
@@ -197,14 +202,14 @@ Archive::addFileBefore(const sys::Path& filePath, iterator where,
 bool
 Archive::writeMember(
   const ArchiveMember& member,
-  std::ofstream& ARFile,
+  raw_ostream& ARFile,
   bool CreateSymbolTable,
   bool TruncateNames,
   bool ShouldCompress,
   std::string* ErrMsg
 ) {
 
-  unsigned filepos = ARFile.tellp();
+  unsigned filepos = ARFile.tell();
   filepos -= 8;
 
   // Get the data and its size either from the
@@ -230,7 +235,7 @@ Archive::writeMember(
     std::vector<std::string> symbols;
     std::string FullMemberName = archPath.str() + "(" + member.getPath().str()
       + ")";
-    Module* M = 
+    Module* M =
       GetBitcodeSymbols(data, fSize, FullMemberName, Context, symbols, ErrMsg);
 
     // If the bitcode parsed successfully
@@ -277,7 +282,7 @@ Archive::writeMember(
   ARFile.write(data,fSize);
 
   // Make sure the member is an even length
-  if ((ARFile.tellp() & 1) == 1)
+  if ((ARFile.tell() & 1) == 1)
     ARFile << ARFILE_PAD;
 
   // Close the mapped file if it was opened
@@ -287,7 +292,7 @@ Archive::writeMember(
 
 // Write out the LLVM symbol table as an archive member to the file.
 void
-Archive::writeSymbolTable(std::ofstream& ARFile) {
+Archive::writeSymbolTable(raw_ostream& ARFile) {
 
   // Construct the symbol table's header
   ArchiveMemberHeader Hdr;
@@ -311,7 +316,7 @@ Archive::writeSymbolTable(std::ofstream& ARFile) {
 
 #ifndef NDEBUG
   // Save the starting position of the symbol tables data content.
-  unsigned startpos = ARFile.tellp();
+  unsigned startpos = ARFile.tell();
 #endif
 
   // Write out the symbols sequentially
@@ -328,7 +333,7 @@ Archive::writeSymbolTable(std::ofstream& ARFile) {
 
 #ifndef NDEBUG
   // Now that we're done with the symbol table, get the ending file position
-  unsigned endpos = ARFile.tellp();
+  unsigned endpos = ARFile.tell();
 #endif
 
   // Make sure that the amount we wrote is what we pre-computed. This is
@@ -357,25 +362,20 @@ Archive::writeToDisk(bool CreateSymbolTable, bool TruncateNames, bool Compress,
   }
 
   // Create a temporary file to store the archive in
-  sys::Path TmpArchive = archPath;
-  if (TmpArchive.createTemporaryFileOnDisk(ErrMsg))
-    return true;
-
-  // Make sure the temporary gets removed if we crash
-  sys::RemoveFileOnSignal(TmpArchive);
-
-  // Create archive file for output.
-  std::ios::openmode io_mode = std::ios::out | std::ios::trunc |
-                               std::ios::binary;
-  std::ofstream ArchiveFile(TmpArchive.c_str(), io_mode);
-
-  // Check for errors opening or creating archive file.
-  if (!ArchiveFile.is_open() || ArchiveFile.bad()) {
-    TmpArchive.eraseFromDisk();
-    if (ErrMsg)
-      *ErrMsg = "Error opening archive file: " + archPath.str();
+  SmallString<128> TempArchivePath;
+  int ArchFD;
+  if (error_code ec =
+      sys::fs::unique_file("%%-%%-%%-%%-" + sys::path::filename(archPath.str()),
+                           ArchFD, TempArchivePath)) {
+    if (ErrMsg) *ErrMsg = ec.message();
     return true;
   }
+
+  // Make sure the temporary gets removed if we crash
+  sys::RemoveFileOnSignal(sys::Path(TempArchivePath.str()));
+
+  // Create archive file for output.
+  raw_fd_ostream ArchiveFile(ArchFD, true);
 
   // If we're creating a symbol table, reset it now
   if (CreateSymbolTable) {
@@ -391,8 +391,9 @@ Archive::writeToDisk(bool CreateSymbolTable, bool TruncateNames, bool Compress,
   for (MembersList::iterator I = begin(), E = end(); I != E; ++I) {
     if (writeMember(*I, ArchiveFile, CreateSymbolTable,
                      TruncateNames, Compress, ErrMsg)) {
-      TmpArchive.eraseFromDisk();
       ArchiveFile.close();
+      bool existed;
+      sys::fs::remove(TempArchivePath.str(), existed);
       return true;
     }
   }
@@ -407,31 +408,29 @@ Archive::writeToDisk(bool CreateSymbolTable, bool TruncateNames, bool Compress,
     // ensure compatibility with other archivers we need to put the symbol
     // table first in the file. Unfortunately, this means mapping the file
     // we just wrote back in and copying it to the destination file.
-    sys::Path FinalFilePath = archPath;
+    SmallString<128> TempArchiveWithSymbolTablePath;
 
     // Map in the archive we just wrote.
     {
     OwningPtr<MemoryBuffer> arch;
-    if (error_code ec = MemoryBuffer::getFile(TmpArchive.c_str(), arch)) {
+    if (error_code ec = MemoryBuffer::getFile(TempArchivePath.c_str(), arch)) {
       if (ErrMsg)
         *ErrMsg = ec.message();
       return true;
     }
     const char* base = arch->getBufferStart();
 
-    // Open another temporary file in order to avoid invalidating the 
+    // Open another temporary file in order to avoid invalidating the
     // mmapped data
-    if (FinalFilePath.createTemporaryFileOnDisk(ErrMsg))
-      return true;
-    sys::RemoveFileOnSignal(FinalFilePath);
-
-    std::ofstream FinalFile(FinalFilePath.c_str(), io_mode);
-    if (!FinalFile.is_open() || FinalFile.bad()) {
-      TmpArchive.eraseFromDisk();
-      if (ErrMsg)
-        *ErrMsg = "Error opening archive file: " + FinalFilePath.str();
+    if (error_code ec =
+      sys::fs::unique_file("%%-%%-%%-%%-" + sys::path::filename(archPath.str()),
+                           ArchFD, TempArchiveWithSymbolTablePath)) {
+      if (ErrMsg) *ErrMsg = ec.message();
       return true;
     }
+    sys::RemoveFileOnSignal(sys::Path(TempArchiveWithSymbolTablePath.str()));
+
+    raw_fd_ostream FinalFile(ArchFD, true);
 
     // Write the file magic number
     FinalFile << ARFILE_MAGIC;
@@ -444,7 +443,8 @@ Archive::writeToDisk(bool CreateSymbolTable, bool TruncateNames, bool Compress,
     if (foreignST) {
       if (writeMember(*foreignST, FinalFile, false, false, false, ErrMsg)) {
         FinalFile.close();
-        TmpArchive.eraseFromDisk();
+        bool existed;
+        sys::fs::remove(TempArchiveWithSymbolTablePath.str(), existed);
         return true;
       }
     }
@@ -460,19 +460,25 @@ Archive::writeToDisk(bool CreateSymbolTable, bool TruncateNames, bool Compress,
     // Close up shop
     FinalFile.close();
     } // free arch.
-    
+
     // Move the final file over top of TmpArchive
-    if (FinalFilePath.renamePathOnDisk(TmpArchive, ErrMsg))
+    if (error_code ec = sys::fs::rename(TempArchiveWithSymbolTablePath.str(),
+                                        TempArchivePath.str())) {
+      if (ErrMsg) *ErrMsg = ec.message();
       return true;
+    }
   }
-  
+
   // Before we replace the actual archive, we need to forget all the
   // members, since they point to data in that old archive. We need to do
   // this because we cannot replace an open file on Windows.
   cleanUpMemory();
-  
-  if (TmpArchive.renamePathOnDisk(archPath, ErrMsg))
+
+  if (error_code ec = sys::fs::rename(TempArchivePath.str(),
+                                      archPath.str())) {
+    if (ErrMsg) *ErrMsg = ec.message();
     return true;
+  }
 
   // Set correct read and write permissions after temporary file is moved
   // to final destination path.

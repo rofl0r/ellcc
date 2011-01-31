@@ -493,7 +493,7 @@
 
 <pre class="doc_code">
 <i>; Declare the string constant as a global constant.</i>&nbsp;
-<a href="#identifiers">@.LC0</a> = <a href="#linkage_internal">internal</a> <a href="#globalvars">constant</a> <a href="#t_array">[13 x i8]</a> c"hello world\0A\00"      <i>; [13 x i8]*</i>&nbsp;
+<a href="#identifiers">@.LC0</a> = <a href="#linkage_internal">internal</a>&nbsp;<a href="#globalvars">constant</a>&nbsp;<a href="#t_array">[13 x i8]</a> c"hello world\0A\00"      <i>; [13 x i8]*</i>&nbsp;
 
 <i>; External declaration of the puts function</i>&nbsp;
 <a href="#functionstructure">declare</a> i32 @puts(i8*)                                      <i>; i32 (i8*)* </i>&nbsp;
@@ -846,6 +846,13 @@ define i32 @main() {   <i>; i32()* </i>&nbsp;
    region of memory, and all memory objects in LLVM are accessed through
    pointers.</p>
 
+<p>Global variables can be marked with <tt>unnamed_addr</tt> which indicates
+  that the address is not significant, only the content. Constants marked
+  like this can be merged with other constants if they have the same
+  initializer. Note that a constant with significant address <em>can</em>
+  be merged with a <tt>unnamed_addr</tt> constant, the result being a
+  constant whose address is significant.</p>
+
 <p>A global variable may be declared to reside in a target-specific numbered
    address space. For targets that support them, address spaces may affect how
    optimizations are performed and/or what target instructions are used to
@@ -885,7 +892,8 @@ define i32 @main() {   <i>; i32()* </i>&nbsp;
 <p>LLVM function definitions consist of the "<tt>define</tt>" keyword, an
    optional <a href="#linkage">linkage type</a>, an optional
    <a href="#visibility">visibility style</a>, an optional
-   <a href="#callingconv">calling convention</a>, a return type, an optional
+   <a href="#callingconv">calling convention</a>,
+   an optional <tt>unnamed_addr</tt> attribute, a return type, an optional
    <a href="#paramattrs">parameter attribute</a> for the return type, a function
    name, a (possibly empty) argument list (each with optional
    <a href="#paramattrs">parameter attributes</a>), optional
@@ -896,7 +904,8 @@ define i32 @main() {   <i>; i32()* </i>&nbsp;
 <p>LLVM function declarations consist of the "<tt>declare</tt>" keyword, an
    optional <a href="#linkage">linkage type</a>, an optional
    <a href="#visibility">visibility style</a>, an optional
-   <a href="#callingconv">calling convention</a>, a return type, an optional
+   <a href="#callingconv">calling convention</a>,
+   an optional <tt>unnamed_addr</tt> attribute, a return type, an optional
    <a href="#paramattrs">parameter attribute</a> for the return type, a function
    name, a possibly empty list of arguments, an optional alignment, and an
    optional <a href="#gc">garbage collector name</a>.</p>
@@ -921,6 +930,9 @@ define i32 @main() {   <i>; i32()* </i>&nbsp;
    target to whatever it feels convenient.  If an explicit alignment is
    specified, the function is forced to have at least that much alignment.  All
    alignments must be a power of 2.</p>
+
+<p>If the <tt>unnamed_addr</tt> attribute is given, the address is know to not
+  be significant and two identical functions can be merged</p>.
 
 <h5>Syntax:</h5>
 <pre class="doc_code">
@@ -7741,7 +7753,7 @@ LLVM</a>.</p>
 
   <a href="mailto:sabre@nondot.org">Chris Lattner</a><br>
   <a href="http://llvm.org">The LLVM Compiler Infrastructure</a><br>
-  Last modified: $Date: 2010-12-28 14:29:31 -0600 (Tue, 28 Dec 2010) $
+  Last modified: $Date: 2011-01-28 19:09:53 -0600 (Fri, 28 Jan 2011) $
 </address>
 
 </body>

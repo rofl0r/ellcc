@@ -77,7 +77,7 @@ class ExprEngine : public SubEngine {
   enum CallbackKind {
     PreVisitStmtCallback,
     PostVisitStmtCallback,
-    ProcessAssumeCallback,
+    processAssumeCallback,
     EvalRegionChangesCallback
   };
 
@@ -176,9 +176,9 @@ public:
      return static_cast<CHECKER*>(lookupChecker(CHECKER::getTag()));
   }
 
-  /// ProcessElement - Called by CoreEngine. Used to generate new successor
+  /// processCFGElement - Called by CoreEngine. Used to generate new successor
   ///  nodes by processing the 'effects' of a CFG element.
-  void ProcessElement(const CFGElement E, StmtNodeBuilder& builder);
+  void processCFGElement(const CFGElement E, StmtNodeBuilder& builder);
 
   void ProcessStmt(const CFGStmt S, StmtNodeBuilder &builder);
 
@@ -193,49 +193,47 @@ public:
   void ProcessTemporaryDtor(const CFGTemporaryDtor D, 
                             StmtNodeBuilder &builder);
 
-  /// ProcessBlockEntrance - Called by CoreEngine when start processing
-  ///  a CFGBlock.  This method returns true if the analysis should continue
-  ///  exploring the given path, and false otherwise.
-  bool ProcessBlockEntrance(const CFGBlock* B, const ExplodedNode *Pred,
-                            BlockCounter BC);
-
+  /// Called by CoreEngine when processing the entrance of a CFGBlock.
+  virtual void processCFGBlockEntrance(ExplodedNodeSet &dstNodes,
+                                GenericNodeBuilder<BlockEntrance> &nodeBuilder);
+  
   /// ProcessBranch - Called by CoreEngine.  Used to generate successor
   ///  nodes by processing the 'effects' of a branch condition.
-  void ProcessBranch(const Stmt* Condition, const Stmt* Term, 
+  void processBranch(const Stmt* Condition, const Stmt* Term, 
                      BranchNodeBuilder& builder);
 
-  /// ProcessIndirectGoto - Called by CoreEngine.  Used to generate successor
+  /// processIndirectGoto - Called by CoreEngine.  Used to generate successor
   ///  nodes by processing the 'effects' of a computed goto jump.
-  void ProcessIndirectGoto(IndirectGotoNodeBuilder& builder);
+  void processIndirectGoto(IndirectGotoNodeBuilder& builder);
 
   /// ProcessSwitch - Called by CoreEngine.  Used to generate successor
   ///  nodes by processing the 'effects' of a switch statement.
-  void ProcessSwitch(SwitchNodeBuilder& builder);
+  void processSwitch(SwitchNodeBuilder& builder);
 
   /// ProcessEndPath - Called by CoreEngine.  Used to generate end-of-path
   ///  nodes when the control reaches the end of a function.
-  void ProcessEndPath(EndPathNodeBuilder& builder);
+  void processEndOfFunction(EndOfFunctionNodeBuilder& builder);
 
   /// Generate the entry node of the callee.
-  void ProcessCallEnter(CallEnterNodeBuilder &builder);
+  void processCallEnter(CallEnterNodeBuilder &builder);
 
   /// Generate the first post callsite node.
-  void ProcessCallExit(CallExitNodeBuilder &builder);
+  void processCallExit(CallExitNodeBuilder &builder);
 
   /// Called by CoreEngine when the analysis worklist has terminated.
-  void ProcessEndWorklist(bool hasWorkRemaining);
+  void processEndWorklist(bool hasWorkRemaining);
 
   /// evalAssume - Callback function invoked by the ConstraintManager when
   ///  making assumptions about state values.
-  const GRState *ProcessAssume(const GRState *state, SVal cond,bool assumption);
+  const GRState *processAssume(const GRState *state, SVal cond,bool assumption);
 
-  /// WantsRegionChangeUpdate - Called by GRStateManager to determine if a
-  ///  region change should trigger a ProcessRegionChanges update.
-  bool WantsRegionChangeUpdate(const GRState* state);
+  /// wantsRegionChangeUpdate - Called by GRStateManager to determine if a
+  ///  region change should trigger a processRegionChanges update.
+  bool wantsRegionChangeUpdate(const GRState* state);
 
-  /// ProcessRegionChanges - Called by GRStateManager whenever a change is made
+  /// processRegionChanges - Called by GRStateManager whenever a change is made
   ///  to the store. Used to update checkers that track region values.
-  const GRState* ProcessRegionChanges(const GRState *state,
+  const GRState* processRegionChanges(const GRState *state,
                                       const MemRegion * const *Begin,
                                       const MemRegion * const *End);
 
@@ -284,11 +282,14 @@ public:
   void CheckerVisit(const Stmt *S, ExplodedNodeSet &Dst, ExplodedNodeSet &Src, 
                     CallbackKind Kind);
 
+  void CheckerVisitObjCMessage(const ObjCMessage &msg, ExplodedNodeSet &Dst,
+                               ExplodedNodeSet &Src, bool isPrevisit);
+
   bool CheckerEvalCall(const CallExpr *CE, 
                        ExplodedNodeSet &Dst, 
                        ExplodedNode *Pred);
 
-  void CheckerEvalNilReceiver(const ObjCMessageExpr *ME, 
+  void CheckerEvalNilReceiver(const ObjCMessage &msg,
                               ExplodedNodeSet &Dst,
                               const GRState *state,
                               ExplodedNode *Pred);
@@ -374,6 +375,9 @@ public:
   void VisitObjCAtSynchronizedStmt(const ObjCAtSynchronizedStmt *S,
                                    ExplodedNode *Pred, ExplodedNodeSet &Dst);
 
+  void VisitObjCPropertyRefExpr(const ObjCPropertyRefExpr *E,
+                                ExplodedNode *Pred, ExplodedNodeSet &Dst);
+
   /// Transfer function logic for computing the lvalue of an Objective-C ivar.
   void VisitLvalObjCIvarRefExpr(const ObjCIvarRefExpr* DR, ExplodedNode* Pred,
                                 ExplodedNodeSet& Dst);
@@ -390,6 +394,8 @@ public:
   /// VisitObjCMessageExpr - Transfer function for ObjC message expressions.
   void VisitObjCMessageExpr(const ObjCMessageExpr* ME, ExplodedNode* Pred, 
                             ExplodedNodeSet& Dst);
+  void VisitObjCMessage(const ObjCMessage &msg, ExplodedNodeSet &Src,
+                        ExplodedNodeSet& Dst);
 
   /// VisitReturnStmt - Transfer function logic for return statements.
   void VisitReturnStmt(const ReturnStmt* R, ExplodedNode* Pred, 
@@ -492,10 +498,10 @@ public:
   }
   
 protected:
-  void evalObjCMessageExpr(ExplodedNodeSet& Dst, const ObjCMessageExpr* ME, 
-                           ExplodedNode* Pred, const GRState *state) {
+  void evalObjCMessage(ExplodedNodeSet& Dst, const ObjCMessage &msg, 
+                       ExplodedNode* Pred, const GRState *state) {
     assert (Builder && "StmtNodeBuilder must be defined.");
-    getTF().evalObjCMessageExpr(Dst, *this, *Builder, ME, Pred, state);
+    getTF().evalObjCMessage(Dst, *this, *Builder, msg, Pred, state);
   }
 
   const GRState* MarkBranch(const GRState* St, const Stmt* Terminator,
@@ -537,7 +543,7 @@ private:
   bool InlineCall(ExplodedNodeSet &Dst, const CallExpr *CE, ExplodedNode *Pred);
 };
 
-} // end GR namespace
+} // end ento namespace
 
 } // end clang namespace
 

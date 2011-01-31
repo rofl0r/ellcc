@@ -310,7 +310,7 @@ distributeObjCPointerTypeAttrFromDeclarator(TypeProcessingState &state,
     case DeclaratorChunk::Pointer:
     case DeclaratorChunk::BlockPointer:
       innermost = i;
-      return;
+      continue;
 
     case DeclaratorChunk::Reference:
     case DeclaratorChunk::MemberPointer:
@@ -520,6 +520,7 @@ static void maybeSynthesizeBlockSignature(TypeProcessingState &state,
                              /*variadic*/ false, SourceLocation(),
                              /*args*/ 0, 0,
                              /*type quals*/ 0,
+                             /*ref-qualifier*/true, SourceLocation(),
                              /*EH*/ false, SourceLocation(), false, 0, 0, 0,
                              /*parens*/ loc, loc,
                              declarator));
@@ -1001,13 +1002,13 @@ QualType Sema::BuildPointerType(QualType T,
 QualType Sema::BuildReferenceType(QualType T, bool SpelledAsLValue,
                                   SourceLocation Loc,
                                   DeclarationName Entity) {
+  // C++0x [dcl.ref]p6:
+  //   If a typedef (7.1.3), a type template-parameter (14.3.1), or a 
+  //   decltype-specifier (7.1.6.2) denotes a type TR that is a reference to a 
+  //   type T, an attempt to create the type "lvalue reference to cv TR" creates 
+  //   the type "lvalue reference to T", while an attempt to create the type 
+  //   "rvalue reference to cv TR" creates the type TR.
   bool LValueRef = SpelledAsLValue || T->getAs<LValueReferenceType>();
-
-  // C++0x [dcl.typedef]p9: If a typedef TD names a type that is a
-  //   reference to a type T, and attempt to create the type "lvalue
-  //   reference to cv TD" creates the type "lvalue reference to T".
-  // We use the qualifiers (restrict or none) of the original reference,
-  // not the new ones. This is consistent with GCC.
 
   // C++ [dcl.ref]p4: There shall be no references to references.
   //
@@ -1020,8 +1021,8 @@ QualType Sema::BuildReferenceType(QualType T, bool SpelledAsLValue,
   //
   // Parser::ParseDeclaratorInternal diagnoses the case where
   // references are written directly; here, we handle the
-  // collapsing of references-to-references as described in C++
-  // DR 106 and amended by C++ DR 540.
+  // collapsing of references-to-references as described in C++0x.
+  // DR 106 and 540 introduce reference-collapsing into C++98/03.
 
   // C++ [dcl.ref]p1:
   //   A declarator that specifies the type "reference to cv void"
@@ -1268,6 +1269,7 @@ QualType Sema::BuildFunctionType(QualType T,
                                  QualType *ParamTypes,
                                  unsigned NumParamTypes,
                                  bool Variadic, unsigned Quals,
+                                 RefQualifierKind RefQualifier,
                                  SourceLocation Loc, DeclarationName Entity,
                                  FunctionType::ExtInfo Info) {
   if (T->isArrayType() || T->isFunctionType()) {
@@ -1293,6 +1295,7 @@ QualType Sema::BuildFunctionType(QualType T,
   FunctionProtoType::ExtProtoInfo EPI;
   EPI.Variadic = Variadic;
   EPI.TypeQuals = Quals;
+  EPI.RefQualifier = RefQualifier;
   EPI.ExtInfo = Info;
 
   return Context.getFunctionType(T, ParamTypes, NumParamTypes, EPI);
@@ -1388,7 +1391,7 @@ QualType Sema::GetTypeFromParser(ParsedType Ty, TypeSourceInfo **TInfo) {
   }
 
   TypeSourceInfo *DI = 0;
-  if (LocInfoType *LIT = dyn_cast<LocInfoType>(QT)) {
+  if (const LocInfoType *LIT = dyn_cast<LocInfoType>(QT)) {
     QT = LIT->getType();
     DI = LIT->getTypeSourceInfo();
   }
@@ -1621,8 +1624,13 @@ TypeSourceInfo *Sema::GetTypeForDeclarator(Declarator &D, Scope *S,
       // For conversion functions, we'll diagnose this particular error later.
       if ((T->isArrayType() || T->isFunctionType()) &&
           (D.getName().getKind() != UnqualifiedId::IK_ConversionFunctionId)) {
-        Diag(DeclType.Loc, diag::err_func_returning_array_function) 
-          << T->isFunctionType() << T;
+        unsigned diagID = diag::err_func_returning_array_function;
+        // Last processing chunk in block context means this function chunk
+        // represents the block.
+        if (chunkIndex == 0 &&
+            D.getContext() == Declarator::BlockLiteralContext)
+          diagID = diag::err_block_returning_array_function;
+        Diag(DeclType.Loc, diagID) << T->isFunctionType() << T;
         T = Context.IntTy;
         D.setInvalidType(true);
       }
@@ -1716,7 +1724,10 @@ TypeSourceInfo *Sema::GetTypeForDeclarator(Declarator &D, Scope *S,
         FunctionProtoType::ExtProtoInfo EPI;
         EPI.Variadic = FTI.isVariadic;
         EPI.TypeQuals = FTI.TypeQuals;
-
+        EPI.RefQualifier = !FTI.hasRefQualifier()? RQ_None
+                    : FTI.RefQualifierIsLValueRef? RQ_LValue
+                    : RQ_RValue;
+        
         // Otherwise, we have a function with an argument list that is
         // potentially variadic.
         llvm::SmallVector<QualType, 16> ArgTys;
@@ -1870,21 +1881,52 @@ TypeSourceInfo *Sema::GetTypeForDeclarator(Declarator &D, Scope *S,
       FreeFunction = (DC && !DC->isRecord());
     }
 
-    if (FnTy->getTypeQuals() != 0 &&
+    // C++0x [dcl.fct]p6:
+    //   A ref-qualifier shall only be part of the function type for a
+    //   non-static member function, the function type to which a pointer to
+    //   member refers, or the top-level function type of a function typedef 
+    //   declaration.
+    if ((FnTy->getTypeQuals() != 0 || FnTy->getRefQualifier()) &&
         D.getDeclSpec().getStorageClassSpec() != DeclSpec::SCS_typedef &&
         (FreeFunction ||
          D.getDeclSpec().getStorageClassSpec() == DeclSpec::SCS_static)) {
-      if (D.isFunctionDeclarator())
-        Diag(D.getIdentifierLoc(), diag::err_invalid_qualified_function_type);
-      else
-        Diag(D.getIdentifierLoc(),
-             diag::err_invalid_qualified_typedef_function_type_use)
-          << FreeFunction;
+      if (FnTy->getTypeQuals() != 0) {
+        if (D.isFunctionDeclarator())
+          Diag(D.getIdentifierLoc(), diag::err_invalid_qualified_function_type);
+        else
+          Diag(D.getIdentifierLoc(),
+               diag::err_invalid_qualified_typedef_function_type_use)
+            << FreeFunction;
+      }
+          
+      if (FnTy->getRefQualifier()) {
+        if (D.isFunctionDeclarator()) {
+          SourceLocation Loc = D.getIdentifierLoc();
+          for (unsigned I = 0, N = D.getNumTypeObjects(); I != N; ++I) {
+            const DeclaratorChunk &Chunk = D.getTypeObject(N-I-1);
+            if (Chunk.Kind == DeclaratorChunk::Function &&
+                Chunk.Fun.hasRefQualifier()) {
+              Loc = Chunk.Fun.getRefQualifierLoc();
+              break;
+            }
+          }
 
-      // Strip the cv-quals from the type.
+          Diag(Loc, diag::err_invalid_ref_qualifier_function_type)
+            << (FnTy->getRefQualifier() == RQ_LValue)
+            << FixItHint::CreateRemoval(Loc);
+        } else {
+          Diag(D.getIdentifierLoc(), 
+               diag::err_invalid_ref_qualifier_typedef_function_type_use)
+            << FreeFunction
+            << (FnTy->getRefQualifier() == RQ_LValue);
+        }
+      }
+          
+      // Strip the cv-quals and ref-qualifier from the type.
       FunctionProtoType::ExtProtoInfo EPI = FnTy->getExtProtoInfo();
       EPI.TypeQuals = 0;
-
+      EPI.RefQualifier = RQ_None;
+          
       T = Context.getFunctionType(FnTy->getResultType(), FnTy->arg_type_begin(),
                                   FnTy->getNumArgs(), EPI);
     }
@@ -1927,7 +1969,7 @@ TypeSourceInfo *Sema::GetTypeForDeclarator(Declarator &D, Scope *S,
           << T <<  D.getSourceRange();
         D.setEllipsisLoc(SourceLocation());
       } else {
-        T = Context.getPackExpansionType(T);
+        T = Context.getPackExpansionType(T, llvm::Optional<unsigned>());
       }
       break;
         
@@ -1941,9 +1983,9 @@ TypeSourceInfo *Sema::GetTypeForDeclarator(Declarator &D, Scope *S,
       // parameter packs in the type of the non-type template parameter, then
       // it expands those parameter packs.
       if (T->containsUnexpandedParameterPack())
-        T = Context.getPackExpansionType(T);
+        T = Context.getPackExpansionType(T, llvm::Optional<unsigned>());
       else if (!getLangOptions().CPlusPlus0x)
-        Diag(D.getEllipsisLoc(), diag::err_variadic_templates);
+        Diag(D.getEllipsisLoc(), diag::ext_variadic_templates);
       break;
     
     case Declarator::FileContext:
@@ -1972,10 +2014,12 @@ TypeSourceInfo *Sema::GetTypeForDeclarator(Declarator &D, Scope *S,
 
 namespace {
   class TypeSpecLocFiller : public TypeLocVisitor<TypeSpecLocFiller> {
+    ASTContext &Context;
     const DeclSpec &DS;
 
   public:
-    TypeSpecLocFiller(const DeclSpec &DS) : DS(DS) {}
+    TypeSpecLocFiller(ASTContext &Context, const DeclSpec &DS) 
+      : Context(Context), DS(DS) {}
 
     void VisitQualifiedTypeLoc(QualifiedTypeLoc TL) {
       Visit(TL.getUnqualifiedLoc());
@@ -1990,7 +2034,7 @@ namespace {
       // Handle the base type, which might not have been written explicitly.
       if (DS.getTypeSpecType() == DeclSpec::TST_unspecified) {
         TL.setHasBaseTypeAsWritten(false);
-        TL.getBaseLoc().initialize(SourceLocation());
+        TL.getBaseLoc().initialize(Context, SourceLocation());
       } else {
         TL.setHasBaseTypeAsWritten(true);
         Visit(TL.getBaseLoc());
@@ -2021,7 +2065,7 @@ namespace {
       // If we got no declarator info from previous Sema routines,
       // just fill with the typespec loc.
       if (!TInfo) {
-        TL.initialize(DS.getTypeSpecTypeLoc());
+        TL.initialize(Context, DS.getTypeSpecTypeLoc());
         return;
       }
 
@@ -2114,7 +2158,7 @@ namespace {
           return;
         }
       }
-      TL.initializeLocal(SourceLocation());
+      TL.initializeLocal(Context, SourceLocation());
       TL.setKeywordLoc(Keyword != ETK_None
                        ? DS.getTypeSpecTypeLoc()
                        : SourceLocation());
@@ -2126,7 +2170,7 @@ namespace {
 
     void VisitTypeLoc(TypeLoc TL) {
       // FIXME: add other typespec types and change this to an assert.
-      TL.initialize(DS.getTypeSpecTypeLoc());
+      TL.initialize(Context, DS.getTypeSpecTypeLoc());
     }
   };
 
@@ -2231,7 +2275,7 @@ Sema::GetTypeSourceInfoForDeclarator(Declarator &D, QualType T,
     assert(TL.getFullDataSize() == CurrTL.getFullDataSize());
     memcpy(CurrTL.getOpaqueData(), TL.getOpaqueData(), TL.getFullDataSize());
   } else {
-    TypeSpecLocFiller(D.getDeclSpec()).Visit(CurrTL);
+    TypeSpecLocFiller(Context, D.getDeclSpec()).Visit(CurrTL);
   }
       
   return TInfo;
@@ -2556,6 +2600,17 @@ static bool handleFunctionTypeAttr(TypeProcessingState &state,
     if (!unwrapped.isFunctionType())
       return false;
 
+    // Diagnose regparm with fastcall.
+    const FunctionType *fn = unwrapped.get();
+    CallingConv CC = fn->getCallConv();
+    if (CC == CC_X86FastCall) {
+      S.Diag(attr.getLoc(), diag::err_attributes_are_not_compatible)
+        << FunctionType::getNameForCallConv(CC)
+        << "regparm";
+      attr.setInvalid();
+      return true;
+    }
+
     FunctionType::ExtInfo EI = 
       unwrapped.get()->getExtInfo().withRegParm(value);
     type = unwrapped.wrap(S, S.Context.adjustFunctionType(unwrapped.get(), EI));
@@ -2574,7 +2629,8 @@ static bool handleFunctionTypeAttr(TypeProcessingState &state,
   CallingConv CCOld = fn->getCallConv();
   if (S.Context.getCanonicalCallConv(CC) ==
       S.Context.getCanonicalCallConv(CCOld)) {
-    attr.setInvalid();
+    FunctionType::ExtInfo EI= unwrapped.get()->getExtInfo().withCallingConv(CC);
+    type = unwrapped.wrap(S, S.Context.adjustFunctionType(unwrapped.get(), EI));
     return true;
   }
 
@@ -2599,6 +2655,15 @@ static bool handleFunctionTypeAttr(TypeProcessingState &state,
     const FunctionProtoType *FnP = cast<FunctionProtoType>(fn);
     if (FnP->isVariadic()) {
       S.Diag(attr.getLoc(), diag::err_cconv_varargs)
+        << FunctionType::getNameForCallConv(CC);
+      attr.setInvalid();
+      return true;
+    }
+
+    // Also diagnose fastcall with regparm.
+    if (fn->getRegParmType()) {
+      S.Diag(attr.getLoc(), diag::err_attributes_are_not_compatible)
+        << "regparm"
         << FunctionType::getNameForCallConv(CC);
       attr.setInvalid();
       return true;

@@ -22,6 +22,7 @@
 #include "llvm/Analysis/InstructionSimplify.h"
 #include "llvm/Analysis/ConstantFolding.h"
 #include "llvm/Analysis/Dominators.h"
+#include "llvm/Analysis/ValueTracking.h"
 #include "llvm/Support/PatternMatch.h"
 #include "llvm/Support/ValueHandle.h"
 #include "llvm/Target/TargetData.h"
@@ -586,22 +587,84 @@ static Value *SimplifySubInst(Value *Op0, Value *Op1, bool isNSW, bool isNUW,
   if (Op0 == Op1)
     return Constant::getNullValue(Op0->getType());
 
-  // (X + Y) - Y -> X
-  // (Y + X) - Y -> X
+  // (X*2) - X -> X
+  // (X<<1) - X -> X
   Value *X = 0;
-  if (match(Op0, m_Add(m_Value(X), m_Specific(Op1))) ||
-      match(Op0, m_Add(m_Specific(Op1), m_Value(X))))
-    return X;
+  if (match(Op0, m_Mul(m_Specific(Op1), m_ConstantInt<2>())) ||
+      match(Op0, m_Shl(m_Specific(Op1), m_One())))
+    return Op1;
 
-  /// i1 sub -> xor.
-  if (MaxRecurse && Op0->getType()->isIntegerTy(1))
-    if (Value *V = SimplifyXorInst(Op0, Op1, TD, DT, MaxRecurse-1))
-      return V;
+  // (X + Y) - Z -> X + (Y - Z) or Y + (X - Z) if everything simplifies.
+  // For example, (X + Y) - Y -> X; (Y + X) - Y -> X
+  Value *Y = 0, *Z = Op1;
+  if (MaxRecurse && match(Op0, m_Add(m_Value(X), m_Value(Y)))) { // (X + Y) - Z
+    // See if "V === Y - Z" simplifies.
+    if (Value *V = SimplifyBinOp(Instruction::Sub, Y, Z, TD, DT, MaxRecurse-1))
+      // It does!  Now see if "X + V" simplifies.
+      if (Value *W = SimplifyBinOp(Instruction::Add, X, V, TD, DT,
+                                   MaxRecurse-1)) {
+        // It does, we successfully reassociated!
+        ++NumReassoc;
+        return W;
+      }
+    // See if "V === X - Z" simplifies.
+    if (Value *V = SimplifyBinOp(Instruction::Sub, X, Z, TD, DT, MaxRecurse-1))
+      // It does!  Now see if "Y + V" simplifies.
+      if (Value *W = SimplifyBinOp(Instruction::Add, Y, V, TD, DT,
+                                   MaxRecurse-1)) {
+        // It does, we successfully reassociated!
+        ++NumReassoc;
+        return W;
+      }
+  }
+
+  // X - (Y + Z) -> (X - Y) - Z or (X - Z) - Y if everything simplifies.
+  // For example, X - (X + 1) -> -1
+  X = Op0;
+  if (MaxRecurse && match(Op1, m_Add(m_Value(Y), m_Value(Z)))) { // X - (Y + Z)
+    // See if "V === X - Y" simplifies.
+    if (Value *V = SimplifyBinOp(Instruction::Sub, X, Y, TD, DT, MaxRecurse-1))
+      // It does!  Now see if "V - Z" simplifies.
+      if (Value *W = SimplifyBinOp(Instruction::Sub, V, Z, TD, DT,
+                                   MaxRecurse-1)) {
+        // It does, we successfully reassociated!
+        ++NumReassoc;
+        return W;
+      }
+    // See if "V === X - Z" simplifies.
+    if (Value *V = SimplifyBinOp(Instruction::Sub, X, Z, TD, DT, MaxRecurse-1))
+      // It does!  Now see if "V - Y" simplifies.
+      if (Value *W = SimplifyBinOp(Instruction::Sub, V, Y, TD, DT,
+                                   MaxRecurse-1)) {
+        // It does, we successfully reassociated!
+        ++NumReassoc;
+        return W;
+      }
+  }
+
+  // Z - (X - Y) -> (Z - X) + Y if everything simplifies.
+  // For example, X - (X - Y) -> Y.
+  Z = Op0;
+  if (MaxRecurse && match(Op1, m_Sub(m_Value(X), m_Value(Y)))) // Z - (X - Y)
+    // See if "V === Z - X" simplifies.
+    if (Value *V = SimplifyBinOp(Instruction::Sub, Z, X, TD, DT, MaxRecurse-1))
+      // It does!  Now see if "V + Y" simplifies.
+      if (Value *W = SimplifyBinOp(Instruction::Add, V, Y, TD, DT,
+                                   MaxRecurse-1)) {
+        // It does, we successfully reassociated!
+        ++NumReassoc;
+        return W;
+      }
 
   // Mul distributes over Sub.  Try some generic simplifications based on this.
   if (Value *V = FactorizeBinOp(Instruction::Sub, Op0, Op1, Instruction::Mul,
                                 TD, DT, MaxRecurse))
     return V;
+
+  // i1 sub -> xor.
+  if (MaxRecurse && Op0->getType()->isIntegerTy(1))
+    if (Value *V = SimplifyXorInst(Op0, Op1, TD, DT, MaxRecurse-1))
+      return V;
 
   // Threading Sub over selects and phi nodes is pointless, so don't bother.
   // Threading over the select in "A - select(cond, B, C)" means evaluating
@@ -682,6 +745,221 @@ static Value *SimplifyMulInst(Value *Op0, Value *Op1, const TargetData *TD,
 Value *llvm::SimplifyMulInst(Value *Op0, Value *Op1, const TargetData *TD,
                              const DominatorTree *DT) {
   return ::SimplifyMulInst(Op0, Op1, TD, DT, RecursionLimit);
+}
+
+/// SimplifyDiv - Given operands for an SDiv or UDiv, see if we can
+/// fold the result.  If not, this returns null.
+static Value *SimplifyDiv(unsigned Opcode, Value *Op0, Value *Op1,
+                          const TargetData *TD, const DominatorTree *DT,
+                          unsigned MaxRecurse) {
+  if (Constant *C0 = dyn_cast<Constant>(Op0)) {
+    if (Constant *C1 = dyn_cast<Constant>(Op1)) {
+      Constant *Ops[] = { C0, C1 };
+      return ConstantFoldInstOperands(Opcode, C0->getType(), Ops, 2, TD);
+    }
+  }
+
+  bool isSigned = Opcode == Instruction::SDiv;
+
+  // X / undef -> undef
+  if (isa<UndefValue>(Op1))
+    return Op1;
+
+  // undef / X -> 0
+  if (isa<UndefValue>(Op0))
+    return Constant::getNullValue(Op0->getType());
+
+  // 0 / X -> 0, we don't need to preserve faults!
+  if (match(Op0, m_Zero()))
+    return Op0;
+
+  // X / 1 -> X
+  if (match(Op1, m_One()))
+    return Op0;
+  // Vector case. TODO: Have m_One match vectors.
+  if (ConstantVector *Op1V = dyn_cast<ConstantVector>(Op1)) {
+    if (ConstantInt *X = cast_or_null<ConstantInt>(Op1V->getSplatValue()))
+      if (X->isOne())
+        return Op0;
+  }
+
+  if (Op0->getType()->isIntegerTy(1))
+    // It can't be division by zero, hence it must be division by one.
+    return Op0;
+
+  // X / X -> 1
+  if (Op0 == Op1)
+    return ConstantInt::get(Op0->getType(), 1);
+
+  // (X * Y) / Y -> X if the multiplication does not overflow.
+  Value *X = 0, *Y = 0;
+  if (match(Op0, m_Mul(m_Value(X), m_Value(Y))) && (X == Op1 || Y == Op1)) {
+    if (Y != Op1) std::swap(X, Y); // Ensure expression is (X * Y) / Y, Y = Op1
+    BinaryOperator *Mul = cast<BinaryOperator>(Op0);
+    // If the Mul knows it does not overflow, then we are good to go.
+    if ((isSigned && Mul->hasNoSignedWrap()) ||
+        (!isSigned && Mul->hasNoUnsignedWrap()))
+      return X;
+    // If X has the form X = A / Y then X * Y cannot overflow.
+    if (BinaryOperator *Div = dyn_cast<BinaryOperator>(X))
+      if (Div->getOpcode() == Opcode && Div->getOperand(1) == Y)
+        return X;
+  }
+
+  // (X rem Y) / Y -> 0
+  if ((isSigned && match(Op0, m_SRem(m_Value(), m_Specific(Op1)))) ||
+      (!isSigned && match(Op0, m_URem(m_Value(), m_Specific(Op1)))))
+    return Constant::getNullValue(Op0->getType());
+
+  // If the operation is with the result of a select instruction, check whether
+  // operating on either branch of the select always yields the same value.
+  if (isa<SelectInst>(Op0) || isa<SelectInst>(Op1))
+    if (Value *V = ThreadBinOpOverSelect(Opcode, Op0, Op1, TD, DT, MaxRecurse))
+      return V;
+
+  // If the operation is with the result of a phi instruction, check whether
+  // operating on all incoming values of the phi always yields the same value.
+  if (isa<PHINode>(Op0) || isa<PHINode>(Op1))
+    if (Value *V = ThreadBinOpOverPHI(Opcode, Op0, Op1, TD, DT, MaxRecurse))
+      return V;
+
+  return 0;
+}
+
+/// SimplifySDivInst - Given operands for an SDiv, see if we can
+/// fold the result.  If not, this returns null.
+static Value *SimplifySDivInst(Value *Op0, Value *Op1, const TargetData *TD,
+                               const DominatorTree *DT, unsigned MaxRecurse) {
+  if (Value *V = SimplifyDiv(Instruction::SDiv, Op0, Op1, TD, DT, MaxRecurse))
+    return V;
+
+  return 0;
+}
+
+Value *llvm::SimplifySDivInst(Value *Op0, Value *Op1, const TargetData *TD,
+                             const DominatorTree *DT) {
+  return ::SimplifySDivInst(Op0, Op1, TD, DT, RecursionLimit);
+}
+
+/// SimplifyUDivInst - Given operands for a UDiv, see if we can
+/// fold the result.  If not, this returns null.
+static Value *SimplifyUDivInst(Value *Op0, Value *Op1, const TargetData *TD,
+                               const DominatorTree *DT, unsigned MaxRecurse) {
+  if (Value *V = SimplifyDiv(Instruction::UDiv, Op0, Op1, TD, DT, MaxRecurse))
+    return V;
+
+  return 0;
+}
+
+Value *llvm::SimplifyUDivInst(Value *Op0, Value *Op1, const TargetData *TD,
+                             const DominatorTree *DT) {
+  return ::SimplifyUDivInst(Op0, Op1, TD, DT, RecursionLimit);
+}
+
+/// SimplifyShift - Given operands for an Shl, LShr or AShr, see if we can
+/// fold the result.  If not, this returns null.
+static Value *SimplifyShift(unsigned Opcode, Value *Op0, Value *Op1,
+                            const TargetData *TD, const DominatorTree *DT,
+                            unsigned MaxRecurse) {
+  if (Constant *C0 = dyn_cast<Constant>(Op0)) {
+    if (Constant *C1 = dyn_cast<Constant>(Op1)) {
+      Constant *Ops[] = { C0, C1 };
+      return ConstantFoldInstOperands(Opcode, C0->getType(), Ops, 2, TD);
+    }
+  }
+
+  // 0 shift by X -> 0
+  if (match(Op0, m_Zero()))
+    return Op0;
+
+  // X shift by 0 -> X
+  if (match(Op1, m_Zero()))
+    return Op0;
+
+  // X shift by undef -> undef because it may shift by the bitwidth.
+  if (isa<UndefValue>(Op1))
+    return Op1;
+
+  // Shifting by the bitwidth or more is undefined.
+  if (ConstantInt *CI = dyn_cast<ConstantInt>(Op1))
+    if (CI->getValue().getLimitedValue() >=
+        Op0->getType()->getScalarSizeInBits())
+      return UndefValue::get(Op0->getType());
+
+  // If the operation is with the result of a select instruction, check whether
+  // operating on either branch of the select always yields the same value.
+  if (isa<SelectInst>(Op0) || isa<SelectInst>(Op1))
+    if (Value *V = ThreadBinOpOverSelect(Opcode, Op0, Op1, TD, DT, MaxRecurse))
+      return V;
+
+  // If the operation is with the result of a phi instruction, check whether
+  // operating on all incoming values of the phi always yields the same value.
+  if (isa<PHINode>(Op0) || isa<PHINode>(Op1))
+    if (Value *V = ThreadBinOpOverPHI(Opcode, Op0, Op1, TD, DT, MaxRecurse))
+      return V;
+
+  return 0;
+}
+
+/// SimplifyShlInst - Given operands for an Shl, see if we can
+/// fold the result.  If not, this returns null.
+static Value *SimplifyShlInst(Value *Op0, Value *Op1, const TargetData *TD,
+                              const DominatorTree *DT, unsigned MaxRecurse) {
+  if (Value *V = SimplifyShift(Instruction::Shl, Op0, Op1, TD, DT, MaxRecurse))
+    return V;
+
+  // undef << X -> 0
+  if (isa<UndefValue>(Op0))
+    return Constant::getNullValue(Op0->getType());
+
+  return 0;
+}
+
+Value *llvm::SimplifyShlInst(Value *Op0, Value *Op1, const TargetData *TD,
+                             const DominatorTree *DT) {
+  return ::SimplifyShlInst(Op0, Op1, TD, DT, RecursionLimit);
+}
+
+/// SimplifyLShrInst - Given operands for an LShr, see if we can
+/// fold the result.  If not, this returns null.
+static Value *SimplifyLShrInst(Value *Op0, Value *Op1, const TargetData *TD,
+                               const DominatorTree *DT, unsigned MaxRecurse) {
+  if (Value *V = SimplifyShift(Instruction::LShr, Op0, Op1, TD, DT, MaxRecurse))
+    return V;
+
+  // undef >>l X -> 0
+  if (isa<UndefValue>(Op0))
+    return Constant::getNullValue(Op0->getType());
+
+  return 0;
+}
+
+Value *llvm::SimplifyLShrInst(Value *Op0, Value *Op1, const TargetData *TD,
+                              const DominatorTree *DT) {
+  return ::SimplifyLShrInst(Op0, Op1, TD, DT, RecursionLimit);
+}
+
+/// SimplifyAShrInst - Given operands for an AShr, see if we can
+/// fold the result.  If not, this returns null.
+static Value *SimplifyAShrInst(Value *Op0, Value *Op1, const TargetData *TD,
+                              const DominatorTree *DT, unsigned MaxRecurse) {
+  if (Value *V = SimplifyShift(Instruction::AShr, Op0, Op1, TD, DT, MaxRecurse))
+    return V;
+
+  // all ones >>a X -> all ones
+  if (match(Op0, m_AllOnes()))
+    return Op0;
+
+  // undef >>a X -> all ones
+  if (isa<UndefValue>(Op0))
+    return Constant::getAllOnesValue(Op0->getType());
+
+  return 0;
+}
+
+Value *llvm::SimplifyAShrInst(Value *Op0, Value *Op1, const TargetData *TD,
+                              const DominatorTree *DT) {
+  return ::SimplifyAShrInst(Op0, Op1, TD, DT, RecursionLimit);
 }
 
 /// SimplifyAndInst - Given operands for an And, see if we can
@@ -938,8 +1216,8 @@ static Value *SimplifyICmpInst(unsigned Predicate, Value *LHS, Value *RHS,
     Pred = CmpInst::getSwappedPredicate(Pred);
   }
 
-  // ITy - This is the return type of the compare we're considering.
-  const Type *ITy = GetCompareTy(LHS);
+  const Type *ITy = GetCompareTy(LHS); // The return type.
+  const Type *OpTy = LHS->getType();   // The operand type.
 
   // icmp X, X -> true/false
   // X icmp undef -> true/false.  For example, icmp ugt %X, undef -> false
@@ -947,37 +1225,304 @@ static Value *SimplifyICmpInst(unsigned Predicate, Value *LHS, Value *RHS,
   if (LHS == RHS || isa<UndefValue>(RHS))
     return ConstantInt::get(ITy, CmpInst::isTrueWhenEqual(Pred));
 
-  // icmp <global/alloca*/null>, <global/alloca*/null> - Global/Stack value
-  // addresses never equal each other!  We already know that Op0 != Op1.
-  if ((isa<GlobalValue>(LHS) || isa<AllocaInst>(LHS) ||
-       isa<ConstantPointerNull>(LHS)) &&
-      (isa<GlobalValue>(RHS) || isa<AllocaInst>(RHS) ||
-       isa<ConstantPointerNull>(RHS)))
-    return ConstantInt::get(ITy, CmpInst::isFalseWhenEqual(Pred));
-
-  // See if we are doing a comparison with a constant.
-  if (ConstantInt *CI = dyn_cast<ConstantInt>(RHS)) {
-    // If we have an icmp le or icmp ge instruction, turn it into the
-    // appropriate icmp lt or icmp gt instruction.  This allows us to rely on
-    // them being folded in the code below.
+  // Special case logic when the operands have i1 type.
+  if (OpTy->isIntegerTy(1) || (OpTy->isVectorTy() &&
+       cast<VectorType>(OpTy)->getElementType()->isIntegerTy(1))) {
     switch (Pred) {
     default: break;
-    case ICmpInst::ICMP_ULE:
-      if (CI->isMaxValue(false))                 // A <=u MAX -> TRUE
-        return ConstantInt::getTrue(CI->getContext());
+    case ICmpInst::ICMP_EQ:
+      // X == 1 -> X
+      if (match(RHS, m_One()))
+        return LHS;
+      break;
+    case ICmpInst::ICMP_NE:
+      // X != 0 -> X
+      if (match(RHS, m_Zero()))
+        return LHS;
+      break;
+    case ICmpInst::ICMP_UGT:
+      // X >u 0 -> X
+      if (match(RHS, m_Zero()))
+        return LHS;
+      break;
+    case ICmpInst::ICMP_UGE:
+      // X >=u 1 -> X
+      if (match(RHS, m_One()))
+        return LHS;
+      break;
+    case ICmpInst::ICMP_SLT:
+      // X <s 0 -> X
+      if (match(RHS, m_Zero()))
+        return LHS;
       break;
     case ICmpInst::ICMP_SLE:
-      if (CI->isMaxValue(true))                  // A <=s MAX -> TRUE
-        return ConstantInt::getTrue(CI->getContext());
+      // X <=s -1 -> X
+      if (match(RHS, m_One()))
+        return LHS;
+      break;
+    }
+  }
+
+  // icmp <alloca*>, <global/alloca*/null> - Different stack variables have
+  // different addresses, and what's more the address of a stack variable is
+  // never null or equal to the address of a global.  Note that generalizing
+  // to the case where LHS is a global variable address or null is pointless,
+  // since if both LHS and RHS are constants then we already constant folded
+  // the compare, and if only one of them is then we moved it to RHS already.
+  if (isa<AllocaInst>(LHS) && (isa<GlobalValue>(RHS) || isa<AllocaInst>(RHS) ||
+                               isa<ConstantPointerNull>(RHS)))
+    // We already know that LHS != LHS.
+    return ConstantInt::get(ITy, CmpInst::isFalseWhenEqual(Pred));
+
+  // If we are comparing with zero then try hard since this is a common case.
+  if (match(RHS, m_Zero())) {
+    bool LHSKnownNonNegative, LHSKnownNegative;
+    switch (Pred) {
+    default:
+      assert(false && "Unknown ICmp predicate!");
+    case ICmpInst::ICMP_ULT:
+      return ConstantInt::getFalse(LHS->getContext());
+    case ICmpInst::ICMP_UGE:
+      return ConstantInt::getTrue(LHS->getContext());
+    case ICmpInst::ICMP_EQ:
+    case ICmpInst::ICMP_ULE:
+      if (isKnownNonZero(LHS, TD))
+        return ConstantInt::getFalse(LHS->getContext());
+      break;
+    case ICmpInst::ICMP_NE:
+    case ICmpInst::ICMP_UGT:
+      if (isKnownNonZero(LHS, TD))
+        return ConstantInt::getTrue(LHS->getContext());
+      break;
+    case ICmpInst::ICMP_SLT:
+      ComputeSignBit(LHS, LHSKnownNonNegative, LHSKnownNegative, TD);
+      if (LHSKnownNegative)
+        return ConstantInt::getTrue(LHS->getContext());
+      if (LHSKnownNonNegative)
+        return ConstantInt::getFalse(LHS->getContext());
+      break;
+    case ICmpInst::ICMP_SLE:
+      ComputeSignBit(LHS, LHSKnownNonNegative, LHSKnownNegative, TD);
+      if (LHSKnownNegative)
+        return ConstantInt::getTrue(LHS->getContext());
+      if (LHSKnownNonNegative && isKnownNonZero(LHS, TD))
+        return ConstantInt::getFalse(LHS->getContext());
+      break;
+    case ICmpInst::ICMP_SGE:
+      ComputeSignBit(LHS, LHSKnownNonNegative, LHSKnownNegative, TD);
+      if (LHSKnownNegative)
+        return ConstantInt::getFalse(LHS->getContext());
+      if (LHSKnownNonNegative)
+        return ConstantInt::getTrue(LHS->getContext());
+      break;
+    case ICmpInst::ICMP_SGT:
+      ComputeSignBit(LHS, LHSKnownNonNegative, LHSKnownNegative, TD);
+      if (LHSKnownNegative)
+        return ConstantInt::getFalse(LHS->getContext());
+      if (LHSKnownNonNegative && isKnownNonZero(LHS, TD))
+        return ConstantInt::getTrue(LHS->getContext());
+      break;
+    }
+  }
+
+  // See if we are doing a comparison with a constant integer.
+  if (ConstantInt *CI = dyn_cast<ConstantInt>(RHS)) {
+    switch (Pred) {
+    default: break;
+    case ICmpInst::ICMP_UGT:
+      if (CI->isMaxValue(false))                 // A >u MAX -> FALSE
+        return ConstantInt::getFalse(CI->getContext());
       break;
     case ICmpInst::ICMP_UGE:
       if (CI->isMinValue(false))                 // A >=u MIN -> TRUE
         return ConstantInt::getTrue(CI->getContext());
       break;
+    case ICmpInst::ICMP_ULT:
+      if (CI->isMinValue(false))                 // A <u MIN -> FALSE
+        return ConstantInt::getFalse(CI->getContext());
+      break;
+    case ICmpInst::ICMP_ULE:
+      if (CI->isMaxValue(false))                 // A <=u MAX -> TRUE
+        return ConstantInt::getTrue(CI->getContext());
+      break;
+    case ICmpInst::ICMP_SGT:
+      if (CI->isMaxValue(true))                  // A >s MAX -> FALSE
+        return ConstantInt::getFalse(CI->getContext());
+      break;
     case ICmpInst::ICMP_SGE:
       if (CI->isMinValue(true))                  // A >=s MIN -> TRUE
         return ConstantInt::getTrue(CI->getContext());
       break;
+    case ICmpInst::ICMP_SLT:
+      if (CI->isMinValue(true))                  // A <s MIN -> FALSE
+        return ConstantInt::getFalse(CI->getContext());
+      break;
+    case ICmpInst::ICMP_SLE:
+      if (CI->isMaxValue(true))                  // A <=s MAX -> TRUE
+        return ConstantInt::getTrue(CI->getContext());
+      break;
+    }
+  }
+
+  // Compare of cast, for example (zext X) != 0 -> X != 0
+  if (isa<CastInst>(LHS) && (isa<Constant>(RHS) || isa<CastInst>(RHS))) {
+    Instruction *LI = cast<CastInst>(LHS);
+    Value *SrcOp = LI->getOperand(0);
+    const Type *SrcTy = SrcOp->getType();
+    const Type *DstTy = LI->getType();
+
+    // Turn icmp (ptrtoint x), (ptrtoint/constant) into a compare of the input
+    // if the integer type is the same size as the pointer type.
+    if (MaxRecurse && TD && isa<PtrToIntInst>(LI) &&
+        TD->getPointerSizeInBits() == DstTy->getPrimitiveSizeInBits()) {
+      if (Constant *RHSC = dyn_cast<Constant>(RHS)) {
+        // Transfer the cast to the constant.
+        if (Value *V = SimplifyICmpInst(Pred, SrcOp,
+                                        ConstantExpr::getIntToPtr(RHSC, SrcTy),
+                                        TD, DT, MaxRecurse-1))
+          return V;
+      } else if (PtrToIntInst *RI = dyn_cast<PtrToIntInst>(RHS)) {
+        if (RI->getOperand(0)->getType() == SrcTy)
+          // Compare without the cast.
+          if (Value *V = SimplifyICmpInst(Pred, SrcOp, RI->getOperand(0),
+                                          TD, DT, MaxRecurse-1))
+            return V;
+      }
+    }
+
+    if (isa<ZExtInst>(LHS)) {
+      // Turn icmp (zext X), (zext Y) into a compare of X and Y if they have the
+      // same type.
+      if (ZExtInst *RI = dyn_cast<ZExtInst>(RHS)) {
+        if (MaxRecurse && SrcTy == RI->getOperand(0)->getType())
+          // Compare X and Y.  Note that signed predicates become unsigned.
+          if (Value *V = SimplifyICmpInst(ICmpInst::getUnsignedPredicate(Pred),
+                                          SrcOp, RI->getOperand(0), TD, DT,
+                                          MaxRecurse-1))
+            return V;
+      }
+      // Turn icmp (zext X), Cst into a compare of X and Cst if Cst is extended
+      // too.  If not, then try to deduce the result of the comparison.
+      else if (ConstantInt *CI = dyn_cast<ConstantInt>(RHS)) {
+        // Compute the constant that would happen if we truncated to SrcTy then
+        // reextended to DstTy.
+        Constant *Trunc = ConstantExpr::getTrunc(CI, SrcTy);
+        Constant *RExt = ConstantExpr::getCast(CastInst::ZExt, Trunc, DstTy);
+
+        // If the re-extended constant didn't change then this is effectively
+        // also a case of comparing two zero-extended values.
+        if (RExt == CI && MaxRecurse)
+          if (Value *V = SimplifyICmpInst(ICmpInst::getUnsignedPredicate(Pred),
+                                          SrcOp, Trunc, TD, DT, MaxRecurse-1))
+            return V;
+
+        // Otherwise the upper bits of LHS are zero while RHS has a non-zero bit
+        // there.  Use this to work out the result of the comparison.
+        if (RExt != CI) {
+          switch (Pred) {
+          default:
+            assert(false && "Unknown ICmp predicate!");
+          // LHS <u RHS.
+          case ICmpInst::ICMP_EQ:
+          case ICmpInst::ICMP_UGT:
+          case ICmpInst::ICMP_UGE:
+            return ConstantInt::getFalse(CI->getContext());
+
+          case ICmpInst::ICMP_NE:
+          case ICmpInst::ICMP_ULT:
+          case ICmpInst::ICMP_ULE:
+            return ConstantInt::getTrue(CI->getContext());
+
+          // LHS is non-negative.  If RHS is negative then LHS >s LHS.  If RHS
+          // is non-negative then LHS <s RHS.
+          case ICmpInst::ICMP_SGT:
+          case ICmpInst::ICMP_SGE:
+            return CI->getValue().isNegative() ?
+              ConstantInt::getTrue(CI->getContext()) :
+              ConstantInt::getFalse(CI->getContext());
+
+          case ICmpInst::ICMP_SLT:
+          case ICmpInst::ICMP_SLE:
+            return CI->getValue().isNegative() ?
+              ConstantInt::getFalse(CI->getContext()) :
+              ConstantInt::getTrue(CI->getContext());
+          }
+        }
+      }
+    }
+
+    if (isa<SExtInst>(LHS)) {
+      // Turn icmp (sext X), (sext Y) into a compare of X and Y if they have the
+      // same type.
+      if (SExtInst *RI = dyn_cast<SExtInst>(RHS)) {
+        if (MaxRecurse && SrcTy == RI->getOperand(0)->getType())
+          // Compare X and Y.  Note that the predicate does not change.
+          if (Value *V = SimplifyICmpInst(Pred, SrcOp, RI->getOperand(0),
+                                          TD, DT, MaxRecurse-1))
+            return V;
+      }
+      // Turn icmp (sext X), Cst into a compare of X and Cst if Cst is extended
+      // too.  If not, then try to deduce the result of the comparison.
+      else if (ConstantInt *CI = dyn_cast<ConstantInt>(RHS)) {
+        // Compute the constant that would happen if we truncated to SrcTy then
+        // reextended to DstTy.
+        Constant *Trunc = ConstantExpr::getTrunc(CI, SrcTy);
+        Constant *RExt = ConstantExpr::getCast(CastInst::SExt, Trunc, DstTy);
+
+        // If the re-extended constant didn't change then this is effectively
+        // also a case of comparing two sign-extended values.
+        if (RExt == CI && MaxRecurse)
+          if (Value *V = SimplifyICmpInst(Pred, SrcOp, Trunc, TD, DT,
+                                          MaxRecurse-1))
+            return V;
+
+        // Otherwise the upper bits of LHS are all equal, while RHS has varying
+        // bits there.  Use this to work out the result of the comparison.
+        if (RExt != CI) {
+          switch (Pred) {
+          default:
+            assert(false && "Unknown ICmp predicate!");
+          case ICmpInst::ICMP_EQ:
+            return ConstantInt::getFalse(CI->getContext());
+          case ICmpInst::ICMP_NE:
+            return ConstantInt::getTrue(CI->getContext());
+
+          // If RHS is non-negative then LHS <s RHS.  If RHS is negative then
+          // LHS >s RHS.
+          case ICmpInst::ICMP_SGT:
+          case ICmpInst::ICMP_SGE:
+            return CI->getValue().isNegative() ?
+              ConstantInt::getTrue(CI->getContext()) :
+              ConstantInt::getFalse(CI->getContext());
+          case ICmpInst::ICMP_SLT:
+          case ICmpInst::ICMP_SLE:
+            return CI->getValue().isNegative() ?
+              ConstantInt::getFalse(CI->getContext()) :
+              ConstantInt::getTrue(CI->getContext());
+
+          // If LHS is non-negative then LHS <u RHS.  If LHS is negative then
+          // LHS >u RHS.
+          case ICmpInst::ICMP_UGT:
+          case ICmpInst::ICMP_UGE:
+            // Comparison is true iff the LHS <s 0.
+            if (MaxRecurse)
+              if (Value *V = SimplifyICmpInst(ICmpInst::ICMP_SLT, SrcOp,
+                                              Constant::getNullValue(SrcTy),
+                                              TD, DT, MaxRecurse-1))
+                return V;
+            break;
+          case ICmpInst::ICMP_ULT:
+          case ICmpInst::ICMP_ULE:
+            // Comparison is true iff the LHS >=s 0.
+            if (MaxRecurse)
+              if (Value *V = SimplifyICmpInst(ICmpInst::ICMP_SGE, SrcOp,
+                                              Constant::getNullValue(SrcTy),
+                                              TD, DT, MaxRecurse-1))
+                return V;
+            break;
+          }
+        }
+      }
     }
   }
 
@@ -1213,6 +1758,11 @@ static Value *SimplifyBinOp(unsigned Opcode, Value *LHS, Value *RHS,
                                                 /* isNUW */ false, TD, DT,
                                                 MaxRecurse);
   case Instruction::Mul: return SimplifyMulInst(LHS, RHS, TD, DT, MaxRecurse);
+  case Instruction::SDiv: return SimplifySDivInst(LHS, RHS, TD, DT, MaxRecurse);
+  case Instruction::UDiv: return SimplifyUDivInst(LHS, RHS, TD, DT, MaxRecurse);
+  case Instruction::Shl: return SimplifyShlInst(LHS, RHS, TD, DT, MaxRecurse);
+  case Instruction::LShr: return SimplifyLShrInst(LHS, RHS, TD, DT, MaxRecurse);
+  case Instruction::AShr: return SimplifyAShrInst(LHS, RHS, TD, DT, MaxRecurse);
   case Instruction::And: return SimplifyAndInst(LHS, RHS, TD, DT, MaxRecurse);
   case Instruction::Or:  return SimplifyOrInst(LHS, RHS, TD, DT, MaxRecurse);
   case Instruction::Xor: return SimplifyXorInst(LHS, RHS, TD, DT, MaxRecurse);
@@ -1290,6 +1840,21 @@ Value *llvm::SimplifyInstruction(Instruction *I, const TargetData *TD,
     break;
   case Instruction::Mul:
     Result = SimplifyMulInst(I->getOperand(0), I->getOperand(1), TD, DT);
+    break;
+  case Instruction::SDiv:
+    Result = SimplifySDivInst(I->getOperand(0), I->getOperand(1), TD, DT);
+    break;
+  case Instruction::UDiv:
+    Result = SimplifyUDivInst(I->getOperand(0), I->getOperand(1), TD, DT);
+    break;
+  case Instruction::Shl:
+    Result = SimplifyShlInst(I->getOperand(0), I->getOperand(1), TD, DT);
+    break;
+  case Instruction::LShr:
+    Result = SimplifyLShrInst(I->getOperand(0), I->getOperand(1), TD, DT);
+    break;
+  case Instruction::AShr:
+    Result = SimplifyAShrInst(I->getOperand(0), I->getOperand(1), TD, DT);
     break;
   case Instruction::And:
     Result = SimplifyAndInst(I->getOperand(0), I->getOperand(1), TD, DT);

@@ -42,10 +42,6 @@ void MCExpr::print(raw_ostream &OS) const {
     // absolute names.
     bool UseParens = Sym.getName()[0] == '$';
 
-    if (SRE.getKind() == MCSymbolRefExpr::VK_ARM_HI16 ||
-        SRE.getKind() == MCSymbolRefExpr::VK_ARM_LO16)
-      OS << MCSymbolRefExpr::getVariantKindName(SRE.getKind());
-
 #if RICH // FIXME: Need a way to select gnu syntax.
     if (SRE.getKind() == MCSymbolRefExpr::VK_PPC_HA16 ||
         SRE.getKind() == MCSymbolRefExpr::VK_PPC_LO16) {
@@ -66,9 +62,7 @@ void MCExpr::print(raw_ostream &OS) const {
         SRE.getKind() == MCSymbolRefExpr::VK_ARM_TPOFF ||
         SRE.getKind() == MCSymbolRefExpr::VK_ARM_GOTTPOFF)
       OS << MCSymbolRefExpr::getVariantKindName(SRE.getKind());
-    else if (SRE.getKind() != MCSymbolRefExpr::VK_None &&
-             SRE.getKind() != MCSymbolRefExpr::VK_ARM_HI16 &&
-             SRE.getKind() != MCSymbolRefExpr::VK_ARM_LO16) // RICH:  &&
+    else if (SRE.getKind() != MCSymbolRefExpr::VK_None) // RICH &&
 #if RICH // FIXME: Need a way to select gnu syntax.
              SRE.getKind() != MCSymbolRefExpr::VK_PPC_HA16 &&
              SRE.getKind() != MCSymbolRefExpr::VK_PPC_LO16)
@@ -200,8 +194,6 @@ StringRef MCSymbolRefExpr::getVariantKindName(VariantKind Kind) {
   case VK_TPOFF: return "TPOFF";
   case VK_DTPOFF: return "DTPOFF";
   case VK_TLVP: return "TLVP";
-  case VK_ARM_HI16: return ":upper16:";
-  case VK_ARM_LO16: return ":lower16:";
   case VK_ARM_PLT: return "(PLT)";
   case VK_ARM_GOT: return "(GOT)";
   case VK_ARM_GOTOFF: return "(GOTOFF)";
@@ -223,19 +215,33 @@ MCSymbolRefExpr::VariantKind
 MCSymbolRefExpr::getVariantKindForName(StringRef Name) {
   return StringSwitch<VariantKind>(Name)
     .Case("GOT", VK_GOT)
+    .Case("got", VK_GOT)
     .Case("GOTOFF", VK_GOTOFF)
+    .Case("gotoff", VK_GOTOFF)
     .Case("GOTPCREL", VK_GOTPCREL)
+    .Case("gotpcrel", VK_GOTPCREL)
     .Case("GOTTPOFF", VK_GOTTPOFF)
+    .Case("gottpoff", VK_GOTTPOFF)
     .Case("INDNTPOFF", VK_INDNTPOFF)
+    .Case("indntpoff", VK_INDNTPOFF)
     .Case("NTPOFF", VK_NTPOFF)
+    .Case("ntpoff", VK_NTPOFF)
     .Case("GOTNTPOFF", VK_GOTNTPOFF)
+    .Case("gotntpoff", VK_GOTNTPOFF)
     .Case("PLT", VK_PLT)
+    .Case("plt", VK_PLT)
     .Case("TLSGD", VK_TLSGD)
+    .Case("tlsgd", VK_TLSGD)
     .Case("TLSLD", VK_TLSLD)
+    .Case("tlsld", VK_TLSLD)
     .Case("TLSLDM", VK_TLSLDM)
+    .Case("tlsldm", VK_TLSLDM)
     .Case("TPOFF", VK_TPOFF)
+    .Case("tpoff", VK_TPOFF)
     .Case("DTPOFF", VK_DTPOFF)
+    .Case("dtpoff", VK_DTPOFF)
     .Case("TLVP", VK_TLVP)
+    .Case("tlvp", VK_TLVP)
     .Default(VK_Invalid);
 }
 

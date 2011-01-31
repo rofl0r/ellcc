@@ -807,9 +807,9 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
 
   // There are four options here.  If we have 'struct foo;', then this
   // is either a forward declaration or a friend declaration, which
-  // have to be treated differently.  If we have 'struct foo {...' or
-  // 'struct foo :...' then this is a definition. Otherwise we have
-  // something like 'struct foo xyz', a reference.
+  // have to be treated differently.  If we have 'struct foo {...',
+  // 'struct foo :...' or 'struct foo <class-virt-specifier>' then this is a
+  // definition. Otherwise we have something like 'struct foo xyz', a reference.
   // However, in some contexts, things look like declarations but are just
   // references, e.g.
   // new struct s;
@@ -819,7 +819,9 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
   Sema::TagUseKind TUK;
   if (SuppressDeclarations)
     TUK = Sema::TUK_Reference;
-  else if (Tok.is(tok::l_brace) || (getLang().CPlusPlus && Tok.is(tok::colon))){
+  else if (Tok.is(tok::l_brace) || 
+           (getLang().CPlusPlus && Tok.is(tok::colon)) ||
+           isCXX0XClassVirtSpecifier() != ClassVirtSpecifiers::CVS_None) {
     if (DS.isFriendSpecified()) {
       // C++ [class.friend]p2:
       //   A class shall not be defined in a friend declaration.
@@ -1004,7 +1006,8 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
   // If there is a body, parse it and inform the actions module.
   if (TUK == Sema::TUK_Definition) {
     assert(Tok.is(tok::l_brace) ||
-           (getLang().CPlusPlus && Tok.is(tok::colon)));
+           (getLang().CPlusPlus && Tok.is(tok::colon)) ||
+           isCXX0XClassVirtSpecifier() != ClassVirtSpecifiers::CVS_None);
     if (getLang().CPlusPlus)
       ParseCXXMemberSpecification(StartLoc, TagType, TagOrTempResult.get());
     else
@@ -1261,6 +1264,122 @@ void Parser::HandleMemberFunctionDefaultArgs(Declarator& DeclaratorInfo,
   }
 }
 
+/// isCXX0XVirtSpecifier - Determine whether the next token is a C++0x
+/// virt-specifier.
+///
+///       virt-specifier:
+///         override
+///         final
+///         new
+VirtSpecifiers::Specifier Parser::isCXX0XVirtSpecifier() const {
+  if (!getLang().CPlusPlus)
+    return VirtSpecifiers::VS_None;
+
+  if (Tok.is(tok::kw_new))
+    return VirtSpecifiers::VS_New;
+
+  if (Tok.is(tok::identifier)) {
+    IdentifierInfo *II = Tok.getIdentifierInfo();
+
+    // Initialize the contextual keywords.
+    if (!Ident_final) {
+      Ident_final = &PP.getIdentifierTable().get("final");
+      Ident_override = &PP.getIdentifierTable().get("override");
+    }
+
+    if (II == Ident_override)
+      return VirtSpecifiers::VS_Override;
+
+    if (II == Ident_final)
+      return VirtSpecifiers::VS_Final;
+  }
+
+  return VirtSpecifiers::VS_None;
+}
+
+/// ParseOptionalCXX0XVirtSpecifierSeq - Parse a virt-specifier-seq.
+///
+///       virt-specifier-seq:
+///         virt-specifier
+///         virt-specifier-seq virt-specifier
+void Parser::ParseOptionalCXX0XVirtSpecifierSeq(VirtSpecifiers &VS) {
+  while (true) {
+    VirtSpecifiers::Specifier Specifier = isCXX0XVirtSpecifier();
+    if (Specifier == VirtSpecifiers::VS_None)
+      return;
+
+    // C++ [class.mem]p8:
+    //   A virt-specifier-seq shall contain at most one of each virt-specifier.
+    const char *PrevSpec = 0;
+    if (VS.SetSpecifier(Specifier, Tok.getLocation(), PrevSpec))
+      Diag(Tok.getLocation(), diag::err_duplicate_virt_specifier)
+        << PrevSpec
+        << FixItHint::CreateRemoval(Tok.getLocation());
+
+    if (!getLang().CPlusPlus0x)
+      Diag(Tok.getLocation(), diag::ext_override_control_keyword)
+        << VirtSpecifiers::getSpecifierName(Specifier);
+    ConsumeToken();
+  }
+}
+
+/// isCXX0XClassVirtSpecifier - Determine whether the next token is a C++0x
+/// class-virt-specifier.
+///
+///       class-virt-specifier:
+///         final
+///         explicit
+ClassVirtSpecifiers::Specifier Parser::isCXX0XClassVirtSpecifier() const {
+  if (!getLang().CPlusPlus)
+    return ClassVirtSpecifiers::CVS_None;
+
+  if (Tok.is(tok::kw_explicit))
+    return ClassVirtSpecifiers::CVS_Explicit;
+
+  if (Tok.is(tok::identifier)) {
+    IdentifierInfo *II = Tok.getIdentifierInfo();
+  
+    // Initialize the contextual keywords.
+    if (!Ident_final) {
+      Ident_final = &PP.getIdentifierTable().get("final");
+      Ident_override = &PP.getIdentifierTable().get("override");
+    }
+
+    if (II == Ident_final)
+      return ClassVirtSpecifiers::CVS_Final;
+  }
+
+  return ClassVirtSpecifiers::CVS_None;
+}
+
+/// ParseOptionalCXX0XClassVirtSpecifierSeq - Parse a class-virt-specifier-seq.
+///
+///       class-virt-specifier-seq:
+///         class-virt-specifier
+///         class-virt-specifier-seq class-virt-specifier
+void Parser::ParseOptionalCXX0XClassVirtSpecifierSeq(ClassVirtSpecifiers &CVS) {
+  while (true) {
+    ClassVirtSpecifiers::Specifier Specifier = isCXX0XClassVirtSpecifier();
+    if (Specifier == ClassVirtSpecifiers::CVS_None)
+      return;
+
+    // C++ [class]p1:
+    // A class-virt-specifier-seq shall contain at most one of each 
+    // class-virt-specifier.
+    const char *PrevSpec = 0;
+    if (CVS.SetSpecifier(Specifier, Tok.getLocation(), PrevSpec))
+      Diag(Tok.getLocation(), diag::err_duplicate_class_virt_specifier)
+       << PrevSpec
+       << FixItHint::CreateRemoval(Tok.getLocation());
+
+    if (!getLang().CPlusPlus0x)
+      Diag(Tok.getLocation(), diag::ext_override_control_keyword)
+      << ClassVirtSpecifiers::getSpecifierName(Specifier);
+
+    ConsumeToken();
+  }
+}
+
 /// ParseCXXClassMemberDeclaration - Parse a C++ class member declaration.
 ///
 ///       member-declaration:
@@ -1277,10 +1396,19 @@ void Parser::HandleMemberFunctionDefaultArgs(Declarator& DeclaratorInfo,
 ///         member-declarator-list ',' member-declarator
 ///
 ///       member-declarator:
-///         declarator pure-specifier[opt]
+///         declarator virt-specifier-seq[opt] pure-specifier[opt]
 ///         declarator constant-initializer[opt]
 ///         identifier[opt] ':' constant-expression
 ///
+///       virt-specifier-seq:
+///         virt-specifier
+///         virt-specifier-seq virt-specifier
+///
+///       virt-specifier:
+///         override
+///         final
+///         new
+/// 
 ///       pure-specifier:
 ///         '= 0'
 ///
@@ -1384,7 +1512,6 @@ void Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
     return;
   }
 
-  SourceLocation DSStart = Tok.getLocation();
   // decl-specifier-seq:
   // Parse the common declaration-specifiers piece.
   ParsingDeclSpec DS(*this, TemplateDiags);
@@ -1404,6 +1531,7 @@ void Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
   }
 
   ParsingDeclarator DeclaratorInfo(*this, DS, Declarator::MemberContext);
+  VirtSpecifiers VS;
 
   if (Tok.isNot(tok::colon)) {
     // Don't parse FOO:BAR as if it were a typo for FOO::BAR.
@@ -1420,6 +1548,8 @@ void Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
       return;
     }
 
+    ParseOptionalCXX0XVirtSpecifierSeq(VS);
+
     // If attributes exist after the declarator, but before an '{', parse them.
     MaybeParseGNUAttributes(DeclaratorInfo);
 
@@ -1431,6 +1561,10 @@ void Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
         Diag(Tok, diag::err_func_def_no_params);
         ConsumeBrace();
         SkipUntil(tok::r_brace, true);
+        
+        // Consume the optional ';'
+        if (Tok.is(tok::semi))
+          ConsumeToken();
         return;
       }
 
@@ -1441,10 +1575,18 @@ void Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
         // assumes the declarator represents a function, not a typedef.
         ConsumeBrace();
         SkipUntil(tok::r_brace, true);
+
+        // Consume the optional ';'
+        if (Tok.is(tok::semi))
+          ConsumeToken();
         return;
       }
 
-      ParseCXXInlineMethodDef(AS, DeclaratorInfo, TemplateInfo);
+      ParseCXXInlineMethodDef(AS, DeclaratorInfo, TemplateInfo, VS);
+      // Consume the optional ';'
+      if (Tok.is(tok::semi))
+        ConsumeToken();
+
       return;
     }
   }
@@ -1469,6 +1611,8 @@ void Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
       if (BitfieldSize.isInvalid())
         SkipUntil(tok::comma, true, true);
     }
+
+    ParseOptionalCXX0XVirtSpecifierSeq(VS);
 
     // pure-specifier:
     //   '= 0'
@@ -1522,7 +1666,7 @@ void Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
                                                   DeclaratorInfo,
                                                   move(TemplateParams),
                                                   BitfieldSize.release(),
-                                                  Init.release(),
+                                                  VS, Init.release(),
                                                   /*IsDefinition*/Deleted,
                                                   Deleted);
     }
@@ -1547,6 +1691,7 @@ void Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
 
     // Parse the next declarator.
     DeclaratorInfo.clear();
+    VS.clear();
     BitfieldSize = 0;
     Init = 0;
     Deleted = false;
@@ -1618,6 +1763,9 @@ void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
   if (TagDecl)
     Actions.ActOnTagStartDefinition(getCurScope(), TagDecl);
 
+  ClassVirtSpecifiers CVS;
+  ParseOptionalCXX0XClassVirtSpecifierSeq(CVS);
+
   if (Tok.is(tok::colon)) {
     ParseBaseClause(TagDecl);
 
@@ -1635,7 +1783,8 @@ void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
   SourceLocation LBraceLoc = ConsumeBrace();
 
   if (TagDecl)
-    Actions.ActOnStartCXXMemberDeclarations(getCurScope(), TagDecl, LBraceLoc);
+    Actions.ActOnStartCXXMemberDeclarations(getCurScope(), TagDecl, CVS,
+                                            LBraceLoc);
 
   // C++ 11p3: Members of a class defined with the keyword class are private
   // by default. Members of a class defined with the keywords struct or union
@@ -1746,7 +1895,7 @@ void Parser::ParseConstructorInitializer(Decl *ConstructorDecl) {
 
   SourceLocation ColonLoc = ConsumeToken();
 
-  llvm::SmallVector<CXXBaseOrMemberInitializer*, 4> MemInitializers;
+  llvm::SmallVector<CXXCtorInitializer*, 4> MemInitializers;
   bool AnyErrors = false;
 
   do {
@@ -1869,7 +2018,7 @@ bool Parser::ParseExceptionSpecification(SourceLocation &EndLoc,
                                          bool &hasAnyExceptionSpec) {
   assert(Tok.is(tok::kw_throw) && "expected throw");
 
-  SourceLocation ThrowLoc = ConsumeToken();
+  ConsumeToken();
 
   if (!Tok.is(tok::l_paren)) {
     return Diag(Tok, diag::err_expected_lparen_after) << "throw";
@@ -2075,12 +2224,8 @@ void Parser::ParseCXX0XAttributes(ParsedAttributesWithRange &attrs,
       switch(AttributeList::getKind(AttrName))
       {
       // No arguments
-      case AttributeList::AT_base_check:
       case AttributeList::AT_carries_dependency:
-      case AttributeList::AT_final:
-      case AttributeList::AT_hiding:
-      case AttributeList::AT_noreturn:
-      case AttributeList::AT_override: {
+      case AttributeList::AT_noreturn: {
         if (Tok.is(tok::l_paren)) {
           Diag(Tok.getLocation(), diag::err_cxx0x_attribute_forbids_arguments)
             << AttrName->getName();

@@ -111,10 +111,7 @@ bool Parser::isCXXSimpleDeclaration() {
   // We need tentative parsing...
 
   TentativeParsingAction PA(*this);
-
   TPR = TryParseSimpleDeclaration();
-  SourceLocation TentativeParseLoc = Tok.getLocation();
-
   PA.Revert();
 
   // In case of an error, let the declaration parsing code handle it.
@@ -509,6 +506,7 @@ Parser::TPResult Parser::TryParseDeclarator(bool mayBeAbstract,
         return TPResult::Error();
 
     if (Tok.is(tok::star) || Tok.is(tok::amp) || Tok.is(tok::caret) ||
+        Tok.is(tok::ampamp) ||
         (Tok.is(tok::annot_cxxscope) && NextToken().is(tok::star))) {
       // ptr-operator
       ConsumeToken();
@@ -611,6 +609,7 @@ Parser::isExpressionOrTypeSpecifierSimple(tok::TokenKind Kind) {
   case tok::l_square:
   case tok::l_paren:
   case tok::amp:
+  case tok::ampamp:
   case tok::star:
   case tok::plus:
   case tok::plusplus:
@@ -656,6 +655,7 @@ Parser::isExpressionOrTypeSpecifierSimple(tok::TokenKind Kind) {
   case tok::kw___is_abstract:
   case tok::kw___is_base_of:
   case tok::kw___is_class:
+  case tok::kw___is_convertible_to:
   case tok::kw___is_empty:
   case tok::kw___is_enum:
   case tok::kw___is_pod:
@@ -1223,6 +1223,10 @@ Parser::TPResult Parser::TryParseFunctionDeclarator() {
          Tok.is(tok::kw_restrict)   )
     ConsumeToken();
 
+  // ref-qualifier[opt]
+  if (Tok.is(tok::amp) || Tok.is(tok::ampamp))
+    ConsumeToken();
+  
   // exception-specification
   if (Tok.is(tok::kw_throw)) {
     ConsumeToken();

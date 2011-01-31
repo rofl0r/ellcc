@@ -517,7 +517,7 @@ unsigned ARMFastISel::ARMMaterializeGV(const GlobalValue *GV, EVT VT) {
 
   // Grab index.
   unsigned PCAdj = (RelocM != Reloc::PIC_) ? 0 : (Subtarget->isThumb() ? 4 : 8);
-  unsigned Id = AFI->createConstPoolEntryUId();
+  unsigned Id = AFI->createPICLabelUId();
   ARMConstantPoolValue *CPV = new ARMConstantPoolValue(GV, Id,
                                                        ARMCP::CPValue, PCAdj);
   unsigned Idx = MCP.getConstantPoolIndex(CPV, Align);
@@ -1017,21 +1017,17 @@ bool ARMFastISel::SelectBranch(const Instruction *I) {
         return false;
 
       unsigned CmpOpc;
-      unsigned CondReg;
       switch (VT.SimpleTy) {
         default: return false;
         // TODO: Verify compares.
         case MVT::f32:
           CmpOpc = ARM::VCMPES;
-          CondReg = ARM::FPSCR;
           break;
         case MVT::f64:
           CmpOpc = ARM::VCMPED;
-          CondReg = ARM::FPSCR;
           break;
         case MVT::i32:
           CmpOpc = isThumb ? ARM::t2CMPrr : ARM::CMPrr;
-          CondReg = ARM::CPSR;
           break;
       }
 
@@ -1441,8 +1437,8 @@ bool ARMFastISel::ProcessCallArgs(SmallVectorImpl<Value*> &Args,
     unsigned Arg = ArgRegs[VA.getValNo()];
     MVT ArgVT = ArgVTs[VA.getValNo()];
 
-    // We don't handle NEON parameters yet.
-    if (VA.getLocVT().isVector() && VA.getLocVT().getSizeInBits() > 64)
+    // We don't handle NEON/vector parameters yet.
+    if (ArgVT.isVector() || ArgVT.getSizeInBits() > 64)
       return false;
 
     // Handle arg promotion, etc.

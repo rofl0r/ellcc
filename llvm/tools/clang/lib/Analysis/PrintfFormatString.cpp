@@ -100,6 +100,10 @@ static PrintfSpecifierResult ParsePrintfSpecifier(FormatStringHandler &H,
   for ( ; I != E; ++I) {
     switch (*I) {
       default: hasMore = false; break;
+      case '\'':
+        // FIXME: POSIX specific.  Always accept?
+        FS.setHasThousandsGrouping(I);
+        break;
       case '-': FS.setIsLeftJustified(I); break;
       case '+': FS.setHasPlusPrefix(I); break;
       case ' ': FS.setHasSpacePrefix(I); break;
@@ -185,7 +189,7 @@ static PrintfSpecifierResult ParsePrintfSpecifier(FormatStringHandler &H,
     case 's': k = ConversionSpecifier::sArg;      break;
     case 'u': k = ConversionSpecifier::uArg; break;
     case 'x': k = ConversionSpecifier::xArg; break;
-    // Mac OS X (unicode) specific
+    // POSIX specific.
     case 'C': k = ConversionSpecifier::CArg; break;
     case 'S': k = ConversionSpecifier::SArg; break;
     // Objective-C.
@@ -277,7 +281,7 @@ const char *ConversionSpecifier::toString() const {
 
 ArgTypeResult PrintfSpecifier::getArgType(ASTContext &Ctx) const {
   const PrintfConversionSpecifier &CS = getConversionSpecifier();
-  
+
   if (!CS.consumesDataArgument())
     return ArgTypeResult::Invalid();
 
@@ -288,7 +292,7 @@ ArgTypeResult PrintfSpecifier::getArgType(ASTContext &Ctx) const {
       default:
         return ArgTypeResult::Invalid();
     }
-  
+
   if (CS.isIntArg())
     switch (LM.getKind()) {
       case LengthModifier::AsLongDouble:
@@ -450,7 +454,7 @@ bool PrintfSpecifier::fixType(QualType QT) {
 
 void PrintfSpecifier::toString(llvm::raw_ostream &os) const {
   // Whilst some features have no defined order, we are using the order
-  // appearing in the C99 standard (ISO/IEC 9899:1999 (E) ¤7.19.6.1)
+  // appearing in the C99 standard (ISO/IEC 9899:1999 (E) 7.19.6.1)
   os << "%";
 
   // Positional args
@@ -583,6 +587,24 @@ bool PrintfSpecifier::hasValidLeftJustified() const {
 
   default:
     return true;
+  }
+}
+
+bool PrintfSpecifier::hasValidThousandsGroupingPrefix() const {
+  if (!HasThousandsGrouping)
+    return true;
+
+  switch (CS.getKind()) {
+    case ConversionSpecifier::dArg:
+    case ConversionSpecifier::iArg:
+    case ConversionSpecifier::uArg:
+    case ConversionSpecifier::fArg:
+    case ConversionSpecifier::FArg:
+    case ConversionSpecifier::gArg:
+    case ConversionSpecifier::GArg:
+      return true;
+    default:
+      return false;
   }
 }
 

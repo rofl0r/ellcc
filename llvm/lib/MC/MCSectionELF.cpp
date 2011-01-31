@@ -11,7 +11,9 @@
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCSymbol.h"
+#include "llvm/Support/ELF.h"
 #include "llvm/Support/raw_ostream.h"
+
 using namespace llvm;
 
 MCSectionELF::~MCSectionELF() {} // anchor.
@@ -41,37 +43,37 @@ void MCSectionELF::PrintSwitchToSection(const MCAsmInfo &MAI,
   
   // Handle the weird solaris syntax if desired.
   if (MAI.usesSunStyleELFSectionSwitchSyntax() && 
-      !(Flags & MCSectionELF::SHF_MERGE)) {
-    if (Flags & MCSectionELF::SHF_ALLOC)
+      !(Flags & ELF::SHF_MERGE)) {
+    if (Flags & ELF::SHF_ALLOC)
       OS << ",#alloc";
-    if (Flags & MCSectionELF::SHF_EXECINSTR)
+    if (Flags & ELF::SHF_EXECINSTR)
       OS << ",#execinstr";
-    if (Flags & MCSectionELF::SHF_WRITE)
+    if (Flags & ELF::SHF_WRITE)
       OS << ",#write";
-    if (Flags & MCSectionELF::SHF_TLS)
+    if (Flags & ELF::SHF_TLS)
       OS << ",#tls";
     OS << '\n';
     return;
   }
   
   OS << ",\"";
-  if (Flags & MCSectionELF::SHF_ALLOC)
+  if (Flags & ELF::SHF_ALLOC)
     OS << 'a';
-  if (Flags & MCSectionELF::SHF_EXECINSTR)
+  if (Flags & ELF::SHF_EXECINSTR)
     OS << 'x';
-  if (Flags & MCSectionELF::SHF_WRITE)
+  if (Flags & ELF::SHF_WRITE)
     OS << 'w';
-  if (Flags & MCSectionELF::SHF_MERGE)
+  if (Flags & ELF::SHF_MERGE)
     OS << 'M';
-  if (Flags & MCSectionELF::SHF_STRINGS)
+  if (Flags & ELF::SHF_STRINGS)
     OS << 'S';
-  if (Flags & MCSectionELF::SHF_TLS)
+  if (Flags & ELF::SHF_TLS)
     OS << 'T';
   
   // If there are target-specific flags, print them.
-  if (Flags & MCSectionELF::XCORE_SHF_CP_SECTION)
+  if (Flags & ELF::XCORE_SHF_CP_SECTION)
     OS << 'c';
-  if (Flags & MCSectionELF::XCORE_SHF_DP_SECTION)
+  if (Flags & ELF::XCORE_SHF_DP_SECTION)
     OS << 'd';
   
   OS << '"';
@@ -84,21 +86,21 @@ void MCSectionELF::PrintSwitchToSection(const MCAsmInfo &MAI,
   else
     OS << '@';
 
-  if (Type == MCSectionELF::SHT_INIT_ARRAY)
+  if (Type == ELF::SHT_INIT_ARRAY)
     OS << "init_array";
-  else if (Type == MCSectionELF::SHT_FINI_ARRAY)
+  else if (Type == ELF::SHT_FINI_ARRAY)
     OS << "fini_array";
-  else if (Type == MCSectionELF::SHT_PREINIT_ARRAY)
+  else if (Type == ELF::SHT_PREINIT_ARRAY)
     OS << "preinit_array";
-  else if (Type == MCSectionELF::SHT_NOBITS)
+  else if (Type == ELF::SHT_NOBITS)
     OS << "nobits";
-  else if (Type == MCSectionELF::SHT_NOTE)
+  else if (Type == ELF::SHT_NOTE)
     OS << "note";
-  else if (Type == MCSectionELF::SHT_PROGBITS)
+  else if (Type == ELF::SHT_PROGBITS)
     OS << "progbits";
 
   if (EntrySize) {
-    assert(Flags & MCSectionELF::SHF_MERGE);
+    assert(Flags & ELF::SHF_MERGE);
     OS << "," << EntrySize;
   }
 
@@ -106,11 +108,11 @@ void MCSectionELF::PrintSwitchToSection(const MCAsmInfo &MAI,
 }
 
 bool MCSectionELF::UseCodeAlign() const {
-  return getFlags() & MCSectionELF::SHF_EXECINSTR;
+  return getFlags() & ELF::SHF_EXECINSTR;
 }
 
 bool MCSectionELF::isVirtualSection() const {
-  return getType() == MCSectionELF::SHT_NOBITS;
+  return getType() == ELF::SHT_NOBITS;
 }
 
 // HasCommonSymbols - True if this section holds common symbols, this is

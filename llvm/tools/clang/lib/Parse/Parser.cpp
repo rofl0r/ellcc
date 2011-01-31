@@ -387,6 +387,9 @@ void Parser::Initialize() {
     ObjCTypeQuals[objc_byref] = &PP.getIdentifierTable().get("byref");
   }
 
+  Ident_final = 0;
+  Ident_override = 0;
+
   Ident_super = &PP.getIdentifierTable().get("super");
 
   if (getLang().AltiVec) {
@@ -398,6 +401,10 @@ void Parser::Initialize() {
 /// ParseTopLevelDecl - Parse one top-level declaration, return whatever the
 /// action tells us to.  This returns true if the EOF was encountered.
 bool Parser::ParseTopLevelDecl(DeclGroupPtrTy &Result) {
+
+  while (Tok.is(tok::annot_pragma_unused))
+    HandlePragmaUnused();
+
   Result = DeclGroupPtrTy();
   if (Tok.is(tok::eof)) {
     Actions.ActOnEndOfTranslationUnit();

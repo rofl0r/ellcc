@@ -252,7 +252,7 @@ namespace {
     void RewriteTypeIntoString(QualType T, std::string &ResultStr,
                                const FunctionType *&FPRetType);
     void RewriteByRefString(std::string &ResultStr, const std::string &Name,
-                            ValueDecl *VD);
+                            ValueDecl *VD, bool def=false);
     void RewriteCategoryDecl(ObjCCategoryDecl *Dcl);
     void RewriteProtocolDecl(ObjCProtocolDecl *Dcl);
     void RewriteForwardProtocolDecl(ObjCForwardProtocolDecl *Dcl);
@@ -472,7 +472,7 @@ namespace {
 
 void RewriteObjC::RewriteBlocksInFunctionProtoType(QualType funcType,
                                                    NamedDecl *D) {
-  if (FunctionProtoType *fproto
+  if (const FunctionProtoType *fproto
       = dyn_cast<FunctionProtoType>(funcType.IgnoreParens())) {
     for (FunctionProtoType::arg_type_iterator I = fproto->arg_type_begin(),
          E = fproto->arg_type_end(); I && (I != E); ++I)
@@ -1410,7 +1410,7 @@ Stmt *RewriteObjC::RewriteObjCIvarRefExpr(ObjCIvarRefExpr *IV,
   const Expr *BaseExpr = IV->getBase();
   if (CurMethodDef) {
     if (BaseExpr->getType()->isObjCObjectPointerType()) {
-      ObjCInterfaceType *iFaceDecl =
+      const ObjCInterfaceType *iFaceDecl =
         dyn_cast<ObjCInterfaceType>(BaseExpr->getType()->getPointeeType());
       assert(iFaceDecl && "RewriteObjCIvarRefExpr - iFaceDecl is null");
       // lookup which class implements the instance variable.
@@ -1457,7 +1457,7 @@ Stmt *RewriteObjC::RewriteObjCIvarRefExpr(ObjCIvarRefExpr *IV,
     // Explicit ivar refs need to have a cast inserted.
     // FIXME: consider sharing some of this code with the code above.
     if (BaseExpr->getType()->isObjCObjectPointerType()) {
-      ObjCInterfaceType *iFaceDecl =
+      const ObjCInterfaceType *iFaceDecl =
         dyn_cast<ObjCInterfaceType>(BaseExpr->getType()->getPointeeType());
       // lookup which class implements the instance variable.
       ObjCInterfaceDecl *clsDeclared = 0;
@@ -1952,7 +1952,6 @@ Stmt *RewriteObjC::RewriteObjCTryStmt(ObjCAtTryStmt *S) {
     buf += "}";
     ReplaceText(lastCurlyLoc, 1, buf);
   }
-  bool sawIdTypedCatch = false;
   Stmt *lastCatchBody = 0;
   for (unsigned I = 0, N = S->getNumCatchStmts(); I != N; ++I) {
     ObjCAtCatchStmt *Catch = S->getCatchStmt(I);
@@ -1985,7 +1984,6 @@ Stmt *RewriteObjC::RewriteObjCTryStmt(ObjCAtTryStmt *S) {
       if (t == Context->getObjCIdType()) {
         buf += "1) { ";
         ReplaceText(startLoc, lParenLoc-startBuf+1, buf);
-        sawIdTypedCatch = true;
       } else if (const ObjCObjectPointerType *Ptr =
                    t->getAs<ObjCObjectPointerType>()) {
         // Should be a pointer to a class.
@@ -4120,10 +4118,12 @@ void RewriteObjC::SynthesizeMetaDataIntoBuffer(std::string &Result) {
 
 void RewriteObjC::RewriteByRefString(std::string &ResultStr, 
                                      const std::string &Name,
-                                     ValueDecl *VD) {
+                                     ValueDecl *VD, bool def) {
   assert(BlockByRefDeclNo.count(VD) && 
          "RewriteByRefString: ByRef decl missing");
-  ResultStr += "struct __Block_byref_" + Name + 
+  if (def)
+    ResultStr += "struct ";
+  ResultStr += "__Block_byref_" + Name + 
     "_" + utostr(BlockByRefDeclNo[VD]) ;
 }
 
@@ -5114,7 +5114,7 @@ void RewriteObjC::RewriteByRefVar(VarDecl *ND) {
   const char *endBuf = SM->getCharacterData(X);
   std::string Name(ND->getNameAsString());
   std::string ByrefType;
-  RewriteByRefString(ByrefType, Name, ND);
+  RewriteByRefString(ByrefType, Name, ND, true);
   ByrefType += " {\n";
   ByrefType += "  void *__isa;\n";
   RewriteByRefString(ByrefType, Name, ND);
@@ -5407,7 +5407,7 @@ Stmt *RewriteObjC::SynthBlockInitExpr(BlockExpr *Exp,
       ValueDecl *ND = (*I);
       std::string Name(ND->getNameAsString());
       std::string RecName;
-      RewriteByRefString(RecName, Name, ND);
+      RewriteByRefString(RecName, Name, ND, true);
       IdentifierInfo *II = &Context->Idents.get(RecName.c_str() 
                                                 + sizeof("struct"));
       RecordDecl *RD = RecordDecl::Create(*Context, TTK_Struct, TUDecl,

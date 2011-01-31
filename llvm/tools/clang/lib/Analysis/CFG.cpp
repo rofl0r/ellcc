@@ -200,12 +200,12 @@ int LocalScope::const_iterator::distance(LocalScope::const_iterator L) {
 /// build process. It consists of CFGBlock that specifies position in CFG graph
 /// and  LocalScope::const_iterator that specifies position in LocalScope graph.
 struct BlockScopePosPair {
-  BlockScopePosPair() {}
-  BlockScopePosPair(CFGBlock* B, LocalScope::const_iterator S)
-      : Block(B), ScopePos(S) {}
+  BlockScopePosPair() : block(0) {}
+  BlockScopePosPair(CFGBlock* b, LocalScope::const_iterator scopePos)
+      : block(b), scopePosition(scopePos) {}
 
-  CFGBlock*                   Block;
-  LocalScope::const_iterator  ScopePos;
+  CFGBlock *block;
+  LocalScope::const_iterator scopePosition;
 };
 
 /// CFGBuilder - This class implements CFG construction from an AST.
@@ -340,7 +340,7 @@ private:
   CFGBlock *addStmt(Stmt *S) {
     return Visit(S, AddStmtChoice::AlwaysAdd);
   }
-  CFGBlock *addInitializer(CXXBaseOrMemberInitializer *I);
+  CFGBlock *addInitializer(CXXCtorInitializer *I);
   void addAutomaticObjDtors(LocalScope::const_iterator B,
                             LocalScope::const_iterator E, Stmt* S);
   void addImplicitDtorsForDestructor(const CXXDestructorDecl *DD);
@@ -359,7 +359,7 @@ private:
                   AddStmtChoice asc = AddStmtChoice::AlwaysAdd) {
     B->appendStmt(S, cfg->getBumpVectorContext());
   }
-  void appendInitializer(CFGBlock *B, CXXBaseOrMemberInitializer *I) {
+  void appendInitializer(CFGBlock *B, CXXCtorInitializer *I) {
     B->appendInitializer(I, cfg->getBumpVectorContext());
   }
   void appendBaseDtor(CFGBlock *B, const CXXBaseSpecifier *BS) {
@@ -419,9 +419,9 @@ private:
 
 // FIXME: Add support for dependent-sized array types in C++?
 // Does it even make sense to build a CFG for an uninstantiated template?
-static VariableArrayType* FindVA(Type* t) {
-  while (ArrayType* vt = dyn_cast<ArrayType>(t)) {
-    if (VariableArrayType* vat = dyn_cast<VariableArrayType>(vt))
+static const VariableArrayType *FindVA(const Type *t) {
+  while (const ArrayType *vt = dyn_cast<ArrayType>(t)) {
+    if (const VariableArrayType *vat = dyn_cast<VariableArrayType>(vt))
       if (vat->getSizeExpr())
         return vat;
 
@@ -481,7 +481,7 @@ CFG* CFGBuilder::buildCFG(const Decl *D, Stmt* Statement, ASTContext* C,
   for (BackpatchBlocksTy::iterator I = BackpatchBlocks.begin(),
                                    E = BackpatchBlocks.end(); I != E; ++I ) {
 
-    CFGBlock* B = I->Block;
+    CFGBlock* B = I->block;
     GotoStmt* G = cast<GotoStmt>(B->getTerminator());
     LabelMapTy::iterator LI = LabelMap.find(G->getLabel());
 
@@ -490,8 +490,9 @@ CFG* CFGBuilder::buildCFG(const Decl *D, Stmt* Statement, ASTContext* C,
     if (LI == LabelMap.end()) continue;
 
     JumpTarget JT = LI->second;
-    prependAutomaticObjDtorsWithTerminator(B, I->ScopePos, JT.ScopePos);
-    addSuccessor(B, JT.Block);
+    prependAutomaticObjDtorsWithTerminator(B, I->scopePosition,
+                                           JT.scopePosition);
+    addSuccessor(B, JT.block);
   }
 
   // Add successors to the Indirect Goto Dispatch block (if we have one).
@@ -506,7 +507,7 @@ CFG* CFGBuilder::buildCFG(const Decl *D, Stmt* Statement, ASTContext* C,
       // at an incomplete AST.  Handle this by not registering a successor.
       if (LI == LabelMap.end()) continue;
       
-      addSuccessor(B, LI->second.Block);
+      addSuccessor(B, LI->second.block);
     }
 
   // Create an empty entry block that has no predecessors.
@@ -525,7 +526,7 @@ CFGBlock* CFGBuilder::createBlock(bool add_successor) {
 }
 
 /// addInitializer - Add C++ base or member initializer element to CFG.
-CFGBlock *CFGBuilder::addInitializer(CXXBaseOrMemberInitializer *I) {
+CFGBlock *CFGBuilder::addInitializer(CXXCtorInitializer *I) {
   if (!BuildOpts.AddInitializers)
     return Block;
 
@@ -1045,9 +1046,9 @@ CFGBlock *CFGBuilder::VisitBreakStmt(BreakStmt *B) {
 
   // If there is no target for the break, then we are looking at an incomplete
   // AST.  This means that the CFG cannot be constructed.
-  if (BreakJumpTarget.Block) {
-    addAutomaticObjDtors(ScopePos, BreakJumpTarget.ScopePos, B);
-    addSuccessor(Block, BreakJumpTarget.Block);
+  if (BreakJumpTarget.block) {
+    addAutomaticObjDtors(ScopePos, BreakJumpTarget.scopePosition, B);
+    addSuccessor(Block, BreakJumpTarget.block);
   } else
     badCFG = true;
 
@@ -1308,8 +1309,8 @@ CFGBlock *CFGBuilder::VisitDeclSubExpr(DeclStmt* DS) {
   }
 
   // If the type of VD is a VLA, then we must process its size expressions.
-  for (VariableArrayType* VA = FindVA(VD->getType().getTypePtr()); VA != 0;
-       VA = FindVA(VA->getElementType().getTypePtr()))
+  for (const VariableArrayType* VA = FindVA(VD->getType().getTypePtr());
+       VA != 0; VA = FindVA(VA->getElementType().getTypePtr()))
     Block = addStmt(VA->getSizeExpr());
 
   // Remove variable from local scope.
@@ -1494,8 +1495,8 @@ CFGBlock* CFGBuilder::VisitGotoStmt(GotoStmt* G) {
     BackpatchBlocks.push_back(JumpSource(Block, ScopePos));
   else {
     JumpTarget JT = I->second;
-    addAutomaticObjDtors(ScopePos, JT.ScopePos, G);
-    addSuccessor(Block, JT.Block);
+    addAutomaticObjDtors(ScopePos, JT.scopePosition, G);
+    addSuccessor(Block, JT.block);
   }
 
   return Block;
@@ -1549,6 +1550,8 @@ CFGBlock* CFGBuilder::VisitForStmt(ForStmt* F) {
   if (Stmt* C = F->getCond()) {
     Block = ExitConditionBlock;
     EntryConditionBlock = addStmt(C);
+    if (badCFG)
+      return 0;
     assert(Block == EntryConditionBlock ||
            (Block == 0 && EntryConditionBlock == Succ));
 
@@ -1616,7 +1619,7 @@ CFGBlock* CFGBuilder::VisitForStmt(ForStmt* F) {
 
     // The starting block for the loop increment is the block that should
     // represent the 'loop target' for looping back to the start of the loop.
-    ContinueJumpTarget.Block->setLoopTarget(F);
+    ContinueJumpTarget.block->setLoopTarget(F);
 
     // If body is not a compound statement create implicit scope
     // and add destructors.
@@ -1628,7 +1631,7 @@ CFGBlock* CFGBuilder::VisitForStmt(ForStmt* F) {
     CFGBlock* BodyBlock = addStmt(F->getBody());
 
     if (!BodyBlock)
-      BodyBlock = ContinueJumpTarget.Block;//can happen for "for (...;...;...);"
+      BodyBlock = ContinueJumpTarget.block;//can happen for "for (...;...;...);"
     else if (badCFG)
       return 0;
 
@@ -1894,7 +1897,7 @@ CFGBlock* CFGBuilder::VisitWhileStmt(WhileStmt* W) {
     CFGBlock* BodyBlock = addStmt(W->getBody());
 
     if (!BodyBlock)
-      BodyBlock = ContinueJumpTarget.Block; // can happen for "while(...) ;"
+      BodyBlock = ContinueJumpTarget.block; // can happen for "while(...) ;"
     else if (Block) {
       if (badCFG)
         return 0;
@@ -2078,9 +2081,9 @@ CFGBlock* CFGBuilder::VisitContinueStmt(ContinueStmt* C) {
 
   // If there is no target for the continue, then we are looking at an
   // incomplete AST.  This means the CFG cannot be constructed.
-  if (ContinueJumpTarget.Block) {
-    addAutomaticObjDtors(ScopePos, ContinueJumpTarget.ScopePos, C);
-    addSuccessor(Block, ContinueJumpTarget.Block);
+  if (ContinueJumpTarget.block) {
+    addAutomaticObjDtors(ScopePos, ContinueJumpTarget.scopePosition, C);
+    addSuccessor(Block, ContinueJumpTarget.block);
   } else
     badCFG = true;
 
@@ -2097,7 +2100,7 @@ CFGBlock *CFGBuilder::VisitSizeOfAlignOfExpr(SizeOfAlignOfExpr *E,
 
   // VLA types have expressions that must be evaluated.
   if (E->isArgumentType()) {
-    for (VariableArrayType* VA = FindVA(E->getArgumentType().getTypePtr());
+    for (const VariableArrayType *VA =FindVA(E->getArgumentType().getTypePtr());
          VA != 0; VA = FindVA(VA->getElementType().getTypePtr()))
       addStmt(VA->getSizeExpr());
   }
@@ -3047,7 +3050,7 @@ static void print_elem(llvm::raw_ostream &OS, StmtPrinterHelper* Helper,
       OS << '\n';
 
   } else if (CFGInitializer IE = E.getAs<CFGInitializer>()) {
-    CXXBaseOrMemberInitializer* I = IE;
+    CXXCtorInitializer* I = IE;
     if (I->isBaseInitializer())
       OS << I->getBaseClass()->getAsCXXRecordDecl()->getName();
     else OS << I->getAnyMember()->getName();

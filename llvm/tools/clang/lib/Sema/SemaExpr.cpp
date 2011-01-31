@@ -528,7 +528,8 @@ QualType Sema::UsualArithmeticConversions(Expr *&lhsExpr, Expr *&rhsExpr,
     if (order < 0) { // RHS is wider
       // float -> _Complex double
       if (!isCompAssign) {
-        ImpCastExprToType(lhsExpr, rhs, CK_FloatingCast);
+        QualType fp = cast<ComplexType>(rhs)->getElementType();
+        ImpCastExprToType(lhsExpr, fp, CK_FloatingCast);
         ImpCastExprToType(lhsExpr, rhs, CK_FloatingRealToComplex);
       }
       return rhs;
@@ -1353,7 +1354,8 @@ static ObjCIvarDecl *SynthesizeProvisionalIvar(Sema &SemaRef,
     LookForIvars = false;
   else
     LookForIvars = (Lookup.isSingleResult() &&
-                    Lookup.getFoundDecl()->isDefinedOutsideFunctionOrMethod());
+                    Lookup.getFoundDecl()->isDefinedOutsideFunctionOrMethod() &&
+                    (Lookup.getAsSingle<VarDecl>() != 0));
   if (!LookForIvars)
     return 0;
   
@@ -2497,7 +2499,10 @@ ExprResult Sema::ActOnNumericConstant(const Token &Tok) {
         // Does it fit in a unsigned long long?
         if (ResultVal.isIntN(LongLongSize)) {
           // Does it fit in a signed long long?
-          if (!Literal.isUnsigned && ResultVal[LongLongSize-1] == 0)
+          // To be compatible with MSVC, hex integer literals ending with the
+          // LL or i64 suffix are always signed in Microsoft mode.
+          if (!Literal.isUnsigned && (ResultVal[LongLongSize-1] == 0 ||
+              (getLangOptions().Microsoft && Literal.isLongLong)))
             Ty = Context.LongLongTy;
           else if (AllowUnsigned)
             Ty = Context.UnsignedLongLongTy;
@@ -3810,7 +3815,7 @@ Sema::LookupMemberExpr(LookupResult &R, Expr *&BaseExpr,
     //   - 'type' is an Objective C type
     //   - 'bar' is a pseudo-destructor name which happens to refer to
     //     the appropriate pointer type
-    } else if (Ptr->getPointeeType()->isRecordType() &&
+    } else if (!IsArrow && Ptr->getPointeeType()->isRecordType() &&
                MemberName.getNameKind() != DeclarationName::CXXDestructorName) {
       Diag(OpLoc, diag::err_typecheck_member_reference_suggestion)
         << BaseType << int(IsArrow) << BaseExpr->getSourceRange()
@@ -3898,6 +3903,12 @@ ExprResult Sema::ActOnMemberAccessExpr(Scope *S, Expr *Base,
                                        bool HasTrailingLParen) {
   if (SS.isSet() && SS.isInvalid())
     return ExprError();
+
+  // Warn about the explicit constructor calls Microsoft extension.
+  if (getLangOptions().Microsoft &&
+      Id.getKind() == UnqualifiedId::IK_ConstructorName)
+    Diag(Id.getSourceRange().getBegin(),
+         diag::ext_ms_explicit_constructor_call);
 
   TemplateArgumentListInfo TemplateArgsBuffer;
 
@@ -5496,12 +5507,13 @@ Sema::CheckObjCPointerTypesForAssignment(QualType lhsType, QualType rhsType) {
 }
 
 Sema::AssignConvertType
-Sema::CheckAssignmentConstraints(QualType lhsType, QualType rhsType) {
+Sema::CheckAssignmentConstraints(SourceLocation Loc,
+                                 QualType lhsType, QualType rhsType) {
   // Fake up an opaque expression.  We don't actually care about what
   // cast operations are required, so if CheckAssignmentConstraints
   // adds casts to this they'll be wasted, but fortunately that doesn't
   // usually happen on valid code.
-  OpaqueValueExpr rhs(rhsType, VK_RValue);
+  OpaqueValueExpr rhs(Loc, rhsType, VK_RValue);
   Expr *rhsPtr = &rhs;
   CastKind K = CK_Invalid;
 
@@ -6941,7 +6953,7 @@ QualType Sema::CheckAssignmentOperands(Expr *LHS, Expr *&RHS,
     }
   } else {
     // Compound assignment "x += y"
-    ConvTy = CheckAssignmentConstraints(LHSType, RHSType);
+    ConvTy = CheckAssignmentConstraints(Loc, LHSType, RHSType);
   }
 
   if (DiagnoseAssignmentResult(ConvTy, Loc, LHSType, RHSType,
@@ -7976,7 +7988,7 @@ ExprResult Sema::BuildUnaryOp(Scope *S, SourceLocation OpLoc,
 
 // Unary Operators.  'Tok' is the token for the operator.
 ExprResult Sema::ActOnUnaryOp(Scope *S, SourceLocation OpLoc,
-                                            tok::TokenKind Op, Expr *Input) {
+                              tok::TokenKind Op, Expr *Input) {
   return BuildUnaryOp(S, OpLoc, ConvertTokenKindToUnaryOpcode(Op), Input);
 }
 
@@ -8528,7 +8540,7 @@ ExprResult Sema::ActOnVAArg(SourceLocation BuiltinLoc,
                                         Expr *expr, ParsedType type,
                                         SourceLocation RPLoc) {
   TypeSourceInfo *TInfo;
-  QualType T = GetTypeFromParser(type, &TInfo);
+  GetTypeFromParser(type, &TInfo);
   return BuildVAArgExpr(BuiltinLoc, expr, TInfo, RPLoc);
 }
 
@@ -8572,10 +8584,17 @@ ExprResult Sema::ActOnGNUNullExpr(SourceLocation TokenLoc) {
   // The type of __null will be int or long, depending on the size of
   // pointers on the target.
   QualType Ty;
-  if (Context.Target.getPointerWidth(0) == Context.Target.getIntWidth())
+  unsigned pw = Context.Target.getPointerWidth(0);
+  if (pw == Context.Target.getIntWidth())
     Ty = Context.IntTy;
-  else
+  else if (pw == Context.Target.getLongWidth())
     Ty = Context.LongTy;
+  else if (pw == Context.Target.getLongLongWidth())
+    Ty = Context.LongLongTy;
+  else {
+    assert(!"I don't know size of pointer!");
+    Ty = Context.IntTy;
+  }
 
   return Owned(new (Context) GNUNullExpr(Ty, TokenLoc));
 }
@@ -9101,17 +9120,20 @@ bool Sema::CheckCallReturnType(QualType ReturnType, SourceLocation Loc,
   return false;
 }
 
-// Diagnose the common s/=/==/ typo.  Note that adding parentheses
+// Diagnose the s/=/==/ and s/\|=/!=/ typos. Note that adding parentheses
 // will prevent this condition from triggering, which is what we want.
 void Sema::DiagnoseAssignmentAsCondition(Expr *E) {
   SourceLocation Loc;
 
   unsigned diagnostic = diag::warn_condition_is_assignment;
+  bool IsOrAssign = false;
 
   if (isa<BinaryOperator>(E)) {
     BinaryOperator *Op = cast<BinaryOperator>(E);
-    if (Op->getOpcode() != BO_Assign)
+    if (Op->getOpcode() != BO_Assign && Op->getOpcode() != BO_OrAssign)
       return;
+
+    IsOrAssign = Op->getOpcode() == BO_OrAssign;
 
     // Greylist some idioms by putting them into a warning subcategory.
     if (ObjCMessageExpr *ME
@@ -9132,9 +9154,10 @@ void Sema::DiagnoseAssignmentAsCondition(Expr *E) {
     Loc = Op->getOperatorLoc();
   } else if (isa<CXXOperatorCallExpr>(E)) {
     CXXOperatorCallExpr *Op = cast<CXXOperatorCallExpr>(E);
-    if (Op->getOperator() != OO_Equal)
+    if (Op->getOperator() != OO_Equal && Op->getOperator() != OO_PipeEqual)
       return;
 
+    IsOrAssign = Op->getOperator() == OO_PipeEqual;
     Loc = Op->getOperatorLoc();
   } else {
     // Not an assignment.
@@ -9145,8 +9168,14 @@ void Sema::DiagnoseAssignmentAsCondition(Expr *E) {
   SourceLocation Close = PP.getLocForEndOfToken(E->getSourceRange().getEnd());
 
   Diag(Loc, diagnostic) << E->getSourceRange();
-  Diag(Loc, diag::note_condition_assign_to_comparison)
-    << FixItHint::CreateReplacement(Loc, "==");
+
+  if (IsOrAssign)
+    Diag(Loc, diag::note_condition_or_assign_to_comparison)
+      << FixItHint::CreateReplacement(Loc, "!=");
+  else
+    Diag(Loc, diag::note_condition_assign_to_comparison)
+      << FixItHint::CreateReplacement(Loc, "==");
+
   Diag(Loc, diag::note_condition_assign_silence)
     << FixItHint::CreateInsertion(Open, "(")
     << FixItHint::CreateInsertion(Close, ")");

@@ -139,7 +139,8 @@ Sema::Sema(Preprocessor &pp, ASTContext &ctxt, ASTConsumer &consumer,
     IdResolver(pp.getLangOptions()), CXXTypeInfoDecl(0), MSVCGuidDecl(0),
     GlobalNewDeleteDeclared(false), 
     CompleteTranslationUnit(CompleteTranslationUnit),
-    NumSFINAEErrors(0), SuppressAccessChecking(false),
+    NumSFINAEErrors(0), SuppressAccessChecking(false), 
+    AccessCheckingSFINAE(false), InNonInstantiationSFINAEContext(false),
     NonInstantiationEntries(0), ArgumentPackSubstitutionIndex(-1),
     CurrentInstantiationScope(0), TyposCorrected(0),
     AnalysisWarnings(*this)
@@ -290,6 +291,8 @@ void Sema::ActOnEndOfTranslationUnit() {
     // this translation unit, then those vtables are considered "used" and must
     // be emitted.
     for (unsigned I = 0, N = DynamicClasses.size(); I != N; ++I) {
+      assert(!DynamicClasses[I]->isDependentType() &&
+             "Should not see dependent types here!");
       if (const CXXMethodDecl *KeyFunction
           = Context.getKeyFunction(DynamicClasses[I])) {
         const FunctionDecl *Definition = 0;
@@ -448,12 +451,18 @@ Sema::SemaDiagnosticBuilder::~SemaDiagnosticBuilder() {
   if (!isActive())
     return;
   
-  if (TemplateDeductionInfo *Info = SemaRef.isSFINAEContext()) {
+  if (llvm::Optional<TemplateDeductionInfo*> Info = SemaRef.isSFINAEContext()) {
     switch (DiagnosticIDs::getDiagnosticSFINAEResponse(getDiagID())) {
     case DiagnosticIDs::SFINAE_Report:
       // Fall through; we'll report the diagnostic below.
       break;
       
+    case DiagnosticIDs::SFINAE_AccessControl:
+      // Unless access checking is specifically called out as a SFINAE
+      // error, report this diagnostic.
+      if (!SemaRef.AccessCheckingSFINAE)
+        break;
+        
     case DiagnosticIDs::SFINAE_SubstitutionFailure:
       // Count this failure so that we know that template argument deduction
       // has failed.
@@ -469,7 +478,8 @@ Sema::SemaDiagnosticBuilder::~SemaDiagnosticBuilder() {
       FlushCounts();
       DiagnosticInfo DiagInfo(&SemaRef.Diags);
         
-      Info->addSuppressedDiagnostic(DiagInfo.getLocation(),
+      if (*Info)
+        (*Info)->addSuppressedDiagnostic(DiagInfo.getLocation(),
                         PartialDiagnostic(DiagInfo,
                                           SemaRef.Context.getDiagAllocator()));
         

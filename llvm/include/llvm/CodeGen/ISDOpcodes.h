@@ -269,9 +269,17 @@ namespace ISD {
     /// lengths of the input vectors.
     CONCAT_VECTORS,
 
+    /// INSERT_SUBVECTOR(VECTOR1, VECTOR2, IDX) - Returns a vector
+    /// with VECTOR2 inserted into VECTOR1 at the (potentially
+    /// variable) element number IDX, which must be a multiple of the
+    /// VECTOR2 vector length.  The elements of VECTOR1 starting at
+    /// IDX are overwritten with VECTOR2.  Elements IDX through
+    /// vector_length(VECTOR2) must be valid VECTOR1 indices.
+    INSERT_SUBVECTOR,
+
     /// EXTRACT_SUBVECTOR(VECTOR, IDX) - Returns a subvector from VECTOR (an
-    /// vector value) starting with the (potentially variable) element number
-    /// IDX, which must be a multiple of the result vector length.
+    /// vector value) starting with the element number IDX, which must be a
+    /// constant multiple of the result vector length.
     EXTRACT_SUBVECTOR,
 
     /// VECTOR_SHUFFLE(VEC1, VEC2) - Returns a vector, of the same type as
@@ -482,6 +490,7 @@ namespace ISD {
     //   Operand #0   : Input chain.
     //   Operand #1   : a ExternalSymbolSDNode with a pointer to the asm string.
     //   Operand #2   : a MDNodeSDNode with the !srcloc metadata.
+    //   Operand #3   : HasSideEffect, IsAlignStack bits.
     //   After this, it is followed by a list of operands with this format:
     //     ConstantSDNode: Flags that encode whether it is a mem or not, the
     //                     of operands that follow, etc.  See InlineAsm.h.

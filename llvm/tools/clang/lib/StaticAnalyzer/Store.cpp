@@ -22,7 +22,7 @@ StoreManager::StoreManager(GRStateManager &stateMgr)
   : svalBuilder(stateMgr.getSValBuilder()), StateMgr(stateMgr),
     MRMgr(svalBuilder.getRegionManager()), Ctx(stateMgr.getContext()) {}
 
-Store StoreManager::EnterStackFrame(const GRState *state,
+Store StoreManager::enterStackFrame(const GRState *state,
                                     const StackFrameContext *frame) {
   return state->getStore();
 }
@@ -147,7 +147,7 @@ const MemRegion *StoreManager::CastRegion(const MemRegion *R, QualType CastToTy)
       if (!baseR)
         return NULL;
 
-      CharUnits off = CharUnits::fromQuantity(rawOff.getByteOffset());
+      CharUnits off = rawOff.getOffset();
 
       if (off.isZero()) {
         // Edge case: we are at 0 bytes off the beginning of baseR.  We

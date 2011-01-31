@@ -417,7 +417,13 @@ bool Driver::HandleImmediateArgs(const Compilation &C) {
   }
 
   if (C.getArgs().hasArg(options::OPT_dumpversion)) {
-    llvm::outs() << CLANG_VERSION_STRING "\n";
+    // Since -dumpversion is only implemented for pedantic GCC compatibility, we
+    // return an answer which matches our definition of __VERSION__.
+    //
+    // If we want to return a more correct answer some day, then we should
+    // introduce a non-pedantically GCC compatible mode to Clang in which we
+    // provide sensible definitions for -dumpversion, __VERSION__, etc.
+    llvm::outs() << "4.2.1\n";
     return false;
   }
 
@@ -1232,7 +1238,8 @@ std::string Driver::GetFilePath(const char *Name, const ToolChain &TC) const {
   if (!PrefixDir.empty()) {
     llvm::sys::Path P(PrefixDir);
     P.appendComponent(Name);
-    if (P.exists())
+    bool Exists;
+    if (!llvm::sys::fs::exists(P.str(), Exists) && Exists)
       return P.str();
   }
 
@@ -1241,7 +1248,8 @@ std::string Driver::GetFilePath(const char *Name, const ToolChain &TC) const {
          it = List.begin(), ie = List.end(); it != ie; ++it) {
     llvm::sys::Path P(*it);
     P.appendComponent(Name);
-    if (P.exists())
+    bool Exists;
+    if (!llvm::sys::fs::exists(P.str(), Exists) && Exists)
       return P.str();
   }
 
@@ -1255,7 +1263,9 @@ std::string Driver::GetProgramPath(const char *Name, const ToolChain &TC,
   if (!PrefixDir.empty()) {
     llvm::sys::Path P(PrefixDir);
     P.appendComponent(Name);
-    if (WantFile ? P.exists() : P.canExecute())
+    bool Exists;
+    if (WantFile ? !llvm::sys::fs::exists(P.str(), Exists) && Exists
+                 : P.canExecute())
       return P.str();
   }
 
@@ -1264,7 +1274,9 @@ std::string Driver::GetProgramPath(const char *Name, const ToolChain &TC,
          it = List.begin(), ie = List.end(); it != ie; ++it) {
     llvm::sys::Path P(*it);
     P.appendComponent(Name);
-    if (WantFile ? P.exists() : P.canExecute())
+    bool Exists;
+    if (WantFile ? !llvm::sys::fs::exists(P.str(), Exists) && Exists
+                 : P.canExecute())
       return P.str();
   }
 

@@ -50,14 +50,8 @@ void ExprEngine::evalArguments(ConstExprIterator AI, ConstExprIterator AE,
 
     // Evaluate the argument.
     ExplodedNodeSet Tmp;
-    bool VisitAsLvalue = FstArgAsLValue;
     if (FstArgAsLValue) {
       FstArgAsLValue = false;
-    } else {
-      const unsigned ParamIdx = Item.I - AI;
-      VisitAsLvalue = FnType && ParamIdx < FnType->getNumArgs() 
-        ? FnType->getArgType(ParamIdx)->isReferenceType()
-        : false;
     }
 
     Visit(*Item.I, Item.N, Tmp);
@@ -69,7 +63,7 @@ void ExprEngine::evalArguments(ConstExprIterator AI, ConstExprIterator AE,
 
 const CXXThisRegion *ExprEngine::getCXXThisRegion(const CXXRecordDecl *D,
                                                  const StackFrameContext *SFC) {
-  Type *T = D->getTypeForDecl();
+  const Type *T = D->getTypeForDecl();
   QualType PT = getContext().getPointerType(QualType(T, 0));
   return svalBuilder.getRegionManager().getCXXThisRegion(PT, SFC);
 }

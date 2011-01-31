@@ -104,12 +104,10 @@ public:
     AT_dllimport,
     AT_ext_vector_type,
     AT_fastcall,
-    AT_final,
     AT_format,
     AT_format_arg,
     AT_global,
     AT_gnu_inline,
-    AT_hiding,
     AT_host,
     AT_launch_bounds,
     AT_malloc,
@@ -127,11 +125,14 @@ public:
     AT_nothrow,
     AT_nsobject,
     AT_objc_exception,
-    AT_override,
     AT_cf_returns_not_retained, // Clang-specific.
     AT_cf_returns_retained,     // Clang-specific.
     AT_ns_returns_not_retained, // Clang-specific.
     AT_ns_returns_retained,     // Clang-specific.
+    AT_ns_returns_autoreleased, // Clang-specific.
+    AT_cf_consumed,             // Clang-specific.
+    AT_ns_consumed,             // Clang-specific.
+    AT_ns_consumes_self,        // Clang-specific.
     AT_objc_gc,
     AT_overloadable,       // Clang-specific.
     AT_ownership_holds,    // Clang-specific.

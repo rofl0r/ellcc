@@ -898,6 +898,10 @@ struct DeclaratorChunk {
     /// contains the location of the ellipsis.
     unsigned isVariadic : 1;
 
+    /// \brief Whether the ref-qualifier (if any) is an lvalue reference.
+    /// Otherwise, it's an rvalue reference.
+    unsigned RefQualifierIsLValueRef : 1;
+    
     /// The type qualifiers: const/volatile/restrict.
     /// The qualifier bitmask values are the same as in QualType.
     unsigned TypeQuals : 3;
@@ -922,6 +926,11 @@ struct DeclaratorChunk {
     /// the function has one.
     unsigned NumExceptions;
 
+    /// \brief The location of the ref-qualifier, if any.
+    ///
+    /// If this is an invalid location, there is no ref-qualifier.
+    unsigned RefQualifierLoc;
+    
     /// ThrowLoc - When hasExceptionSpec is true, the location of the throw
     /// keyword introducing the spec.
     unsigned ThrowLoc;
@@ -970,6 +979,15 @@ struct DeclaratorChunk {
     SourceLocation getThrowLoc() const {
       return SourceLocation::getFromRawEncoding(ThrowLoc);
     }
+    
+    /// \brief Retrieve the location of the ref-qualifier, if any.
+    SourceLocation getRefQualifierLoc() const {
+      return SourceLocation::getFromRawEncoding(RefQualifierLoc);
+    }
+    
+    /// \brief Determine whether this function declaration contains a 
+    /// ref-qualifier.
+    bool hasRefQualifier() const { return getRefQualifierLoc().isValid(); }
   };
 
   struct BlockPointerTypeInfo : TypeInfoCommon {
@@ -1084,7 +1102,10 @@ struct DeclaratorChunk {
                                      bool hasProto, bool isVariadic,
                                      SourceLocation EllipsisLoc,
                                      ParamInfo *ArgInfo, unsigned NumArgs,
-                                     unsigned TypeQuals, bool hasExceptionSpec,
+                                     unsigned TypeQuals, 
+                                     bool RefQualifierIsLvalueRef,
+                                     SourceLocation RefQualifierLoc,
+                                     bool hasExceptionSpec,
                                      SourceLocation ThrowLoc,
                                      bool hasAnyExceptionSpec,
                                      ParsedType *Exceptions,
@@ -1467,7 +1488,69 @@ struct FieldDeclarator {
     BitfieldSize = 0;
   }
 };
-  
+
+/// VirtSpecifiers - Represents a C++0x virt-specifier-seq.
+class VirtSpecifiers {
+public:
+  enum Specifier {
+    VS_None = 0,
+    VS_Override = 1,
+    VS_Final = 2,
+    VS_New = 4
+  };
+
+  VirtSpecifiers() : Specifiers(0) { }
+
+  bool SetSpecifier(Specifier VS, SourceLocation Loc,
+                    const char *&PrevSpec);
+
+  bool isOverrideSpecified() const { return Specifiers & VS_Override; }
+  SourceLocation getOverrideLoc() const { return VS_overrideLoc; }
+
+  bool isFinalSpecified() const { return Specifiers & VS_Final; }
+  SourceLocation getFinalLoc() const { return VS_finalLoc; }
+
+  bool isNewSpecified() const { return Specifiers & VS_New; }
+  SourceLocation getNewLoc() const { return VS_newLoc; }
+
+  void clear() { Specifiers = 0; }
+
+  static const char *getSpecifierName(Specifier VS);
+
+private:
+  unsigned Specifiers;
+
+  SourceLocation VS_overrideLoc, VS_finalLoc, VS_newLoc;
+};
+
+/// ClassVirtSpecifiers - Represents a C++0x class-virt-specifier-seq.
+class ClassVirtSpecifiers {
+public:
+  enum Specifier {
+    CVS_None = 0,
+    CVS_Final = 1,
+    CVS_Explicit = 2
+  };
+
+  ClassVirtSpecifiers() : Specifiers(0) { }
+
+  bool SetSpecifier(Specifier CVS, SourceLocation Loc,
+                    const char *&PrevSpec);
+
+  bool isFinalSpecified() const { return Specifiers & CVS_Final; }
+  SourceLocation getFinalLoc() const { return CVS_finalLoc; }
+
+  bool isExplicitSpecified() const { return Specifiers & CVS_Explicit; }
+  SourceLocation getExplicitLoc() const { return CVS_explicitLoc; }
+
+  static const char *getSpecifierName(Specifier CVS);
+
+private:
+  unsigned Specifiers;
+
+  SourceLocation CVS_finalLoc, CVS_explicitLoc;
+};
+
 } // end namespace clang
 
 #endif

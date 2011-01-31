@@ -168,7 +168,8 @@ bool LLVMTargetMachine::addPassesToEmitFile(PassManagerBase &PM,
 
     AsmStreamer.reset(getTarget().createObjectStreamer(TargetTriple, *Context,
                                                        *TAB, Out, MCE,
-                                                       hasMCRelaxAll()));
+                                                       hasMCRelaxAll(),
+                                                       hasMCNoExecStack()));
     AsmStreamer.get()->InitSections();
     break;
   }
@@ -301,7 +302,8 @@ bool LLVMTargetMachine::addCommonCodeGenPasses(PassManagerBase &PM,
     // edge from elsewhere.
     PM.add(createSjLjEHPass(getTargetLowering()));
     // FALLTHROUGH
-  case ExceptionHandling::Dwarf:
+  case ExceptionHandling::DwarfCFI:
+  case ExceptionHandling::DwarfTable:
     PM.add(createDwarfEHPass(this));
     break;
   case ExceptionHandling::None:

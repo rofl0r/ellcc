@@ -1540,46 +1540,25 @@ Instruction *InstCombiner::visitICmpInstWithCastAndCast(ICmpInst &ICI) {
 
   // The re-extended constant changed so the constant cannot be represented 
   // in the shorter type. Consequently, we cannot emit a simple comparison.
+  // All the cases that fold to true or false will have already been handled
+  // by SimplifyICmpInst, so only deal with the tricky case.
 
-  // First, handle some easy cases. We know the result cannot be equal at this
-  // point so handle the ICI.isEquality() cases
-  if (ICI.getPredicate() == ICmpInst::ICMP_EQ)
-    return ReplaceInstUsesWith(ICI, ConstantInt::getFalse(ICI.getContext()));
-  if (ICI.getPredicate() == ICmpInst::ICMP_NE)
-    return ReplaceInstUsesWith(ICI, ConstantInt::getTrue(ICI.getContext()));
+  if (isSignedCmp || !isSignedExt)
+    return 0;
 
   // Evaluate the comparison for LT (we invert for GT below). LE and GE cases
   // should have been folded away previously and not enter in here.
-  Value *Result;
-  if (isSignedCmp) {
-    // We're performing a signed comparison.
-    if (cast<ConstantInt>(CI)->getValue().isNegative())
-      Result = ConstantInt::getFalse(ICI.getContext()); // X < (small) --> false
-    else
-      Result = ConstantInt::getTrue(ICI.getContext());  // X < (large) --> true
-  } else {
-    // We're performing an unsigned comparison.
-    if (isSignedExt) {
-      // We're performing an unsigned comp with a sign extended value.
-      // This is true if the input is >= 0. [aka >s -1]
-      Constant *NegOne = Constant::getAllOnesValue(SrcTy);
-      Result = Builder->CreateICmpSGT(LHSCIOp, NegOne, ICI.getName());
-    } else {
-      // Unsigned extend & unsigned compare -> always true.
-      Result = ConstantInt::getTrue(ICI.getContext());
-    }
-  }
+
+  // We're performing an unsigned comp with a sign extended value.
+  // This is true if the input is >= 0. [aka >s -1]
+  Constant *NegOne = Constant::getAllOnesValue(SrcTy);
+  Value *Result = Builder->CreateICmpSGT(LHSCIOp, NegOne, ICI.getName());
 
   // Finally, return the value computed.
-  if (ICI.getPredicate() == ICmpInst::ICMP_ULT ||
-      ICI.getPredicate() == ICmpInst::ICMP_SLT)
+  if (ICI.getPredicate() == ICmpInst::ICMP_ULT)
     return ReplaceInstUsesWith(ICI, Result);
 
-  assert((ICI.getPredicate()==ICmpInst::ICMP_UGT || 
-          ICI.getPredicate()==ICmpInst::ICMP_SGT) &&
-         "ICmp should be folded!");
-  if (Constant *CI = dyn_cast<Constant>(Result))
-    return ReplaceInstUsesWith(ICI, ConstantExpr::getNot(CI));
+  assert(ICI.getPredicate() == ICmpInst::ICMP_UGT && "ICmp should be folded!");
   return BinaryOperator::CreateNot(Result);
 }
 
@@ -1693,6 +1672,42 @@ static Instruction *ProcessUAddIdiom(Instruction &I, Value *OrigAddV,
   return ExtractValueInst::Create(Call, 1, "uadd.overflow");
 }
 
+// DemandedBitsLHSMask - When performing a comparison against a constant,
+// it is possible that not all the bits in the LHS are demanded.  This helper
+// method computes the mask that IS demanded.
+static APInt DemandedBitsLHSMask(ICmpInst &I,
+                                 unsigned BitWidth, bool isSignCheck) {
+  if (isSignCheck)
+    return APInt::getSignBit(BitWidth);
+  
+  ConstantInt *CI = dyn_cast<ConstantInt>(I.getOperand(1));
+  if (!CI) return APInt::getAllOnesValue(BitWidth);
+  const APInt &RHS = CI->getValue();
+  
+  switch (I.getPredicate()) {
+  // For a UGT comparison, we don't care about any bits that 
+  // correspond to the trailing ones of the comparand.  The value of these
+  // bits doesn't impact the outcome of the comparison, because any value
+  // greater than the RHS must differ in a bit higher than these due to carry.
+  case ICmpInst::ICMP_UGT: {
+    unsigned trailingOnes = RHS.countTrailingOnes();
+    APInt lowBitsSet = APInt::getLowBitsSet(BitWidth, trailingOnes);
+    return ~lowBitsSet;
+  }
+  
+  // Similarly, for a ULT comparison, we don't care about the trailing zeros.
+  // Any value less than the RHS must differ in a higher bit because of carries.
+  case ICmpInst::ICMP_ULT: {
+    unsigned trailingZeros = RHS.countTrailingZeros();
+    APInt lowBitsSet = APInt::getLowBitsSet(BitWidth, trailingZeros);
+    return ~lowBitsSet;
+  }
+  
+  default:
+    return APInt::getAllOnesValue(BitWidth);
+  }
+  
+}
 
 Instruction *InstCombiner::visitICmpInst(ICmpInst &I) {
   bool Changed = false;
@@ -1830,8 +1845,7 @@ Instruction *InstCombiner::visitICmpInst(ICmpInst &I) {
     APInt Op1KnownZero(BitWidth, 0), Op1KnownOne(BitWidth, 0);
 
     if (SimplifyDemandedBits(I.getOperandUse(0),
-                             isSignBit ? APInt::getSignBit(BitWidth)
-                                       : APInt::getAllOnesValue(BitWidth),
+                             DemandedBitsLHSMask(I, BitWidth, isSignBit),
                              Op0KnownZero, Op0KnownOne, 0))
       return &I;
     if (SimplifyDemandedBits(I.getOperandUse(1),
@@ -2090,7 +2104,7 @@ Instruction *InstCombiner::visitICmpInst(ICmpInst &I) {
         // block.  If in the same block, we're encouraging jump threading.  If
         // not, we are just pessimizing the code by making an i1 phi.
         if (LHSI->getParent() == I.getParent())
-          if (Instruction *NV = FoldOpIntoPhi(I, true))
+          if (Instruction *NV = FoldOpIntoPhi(I))
             return NV;
         break;
       case Instruction::Select: {
@@ -2249,11 +2263,15 @@ Instruction *InstCombiner::visitICmpInst(ICmpInst &I) {
     }
   }
   
-  // ~x < ~y --> y < x
   { Value *A, *B;
-    if (match(Op0, m_Not(m_Value(A))) &&
-        match(Op1, m_Not(m_Value(B))))
-      return new ICmpInst(I.getPredicate(), B, A);
+    // ~x < ~y --> y < x
+    // ~x < cst --> ~cst < x
+    if (match(Op0, m_Not(m_Value(A)))) {
+      if (match(Op1, m_Not(m_Value(B))))
+        return new ICmpInst(I.getPredicate(), B, A);
+      if (ConstantInt *RHSC = dyn_cast<ConstantInt>(Op1))
+        return new ICmpInst(I.getPredicate(), ConstantExpr::getNot(RHSC), A);
+    }
 
     // (a+b) <u a  --> llvm.uadd.with.overflow.
     // (a+b) <u b  --> llvm.uadd.with.overflow.
@@ -2609,7 +2627,7 @@ Instruction *InstCombiner::visitFCmpInst(FCmpInst &I) {
         // block.  If in the same block, we're encouraging jump threading.  If
         // not, we are just pessimizing the code by making an i1 phi.
         if (LHSI->getParent() == I.getParent())
-          if (Instruction *NV = FoldOpIntoPhi(I, true))
+          if (Instruction *NV = FoldOpIntoPhi(I))
             return NV;
         break;
       case Instruction::SIToFP:

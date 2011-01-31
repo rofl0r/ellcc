@@ -34,6 +34,10 @@ namespace llvm {
 
       Wrapper,      // Wrapper - A wrapper node for TargetConstantPool,
                     // TargetExternalSymbol, and TargetGlobalAddress.
+      WrapperDYN,   // WrapperDYN - A wrapper node for TargetGlobalAddress in
+                    // DYN mode.
+      WrapperPIC,   // WrapperPIC - A wrapper node for TargetGlobalAddress in
+                    // PIC mode.
       WrapperJT,    // WrapperJT - A wrapper node for TargetJumpTable
 
       CALL,         // Function call.
@@ -257,6 +261,8 @@ namespace llvm {
                                                 unsigned Depth) const;
 
 
+    virtual bool ExpandInlineAsm(CallInst *CI) const;
+
     ConstraintType getConstraintType(const std::string &Constraint) const;
 
     /// Examine constraint string and operand type and determine a weight value.
@@ -378,6 +384,10 @@ namespace llvm {
     SDValue LowerShiftRightParts(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerShiftLeftParts(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerFLT_ROUNDS_(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerBUILD_VECTOR(SDValue Op, SelectionDAG &DAG, 
+                              const ARMSubtarget *ST) const;
+
+    SDValue ReconstructShuffle(SDValue Op, SelectionDAG &DAG) const;
 
     SDValue LowerCallResult(SDValue Chain, SDValue InFlag,
                             CallingConv::ID CallConv, bool isVarArg,

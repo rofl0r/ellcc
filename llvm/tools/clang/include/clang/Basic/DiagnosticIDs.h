@@ -27,7 +27,7 @@ namespace clang {
     enum {
       DIAG_START_DRIVER   =                        300,
       DIAG_START_FRONTEND = DIAG_START_DRIVER   +  100,
-      DIAG_START_LEX      = DIAG_START_FRONTEND +  100,
+      DIAG_START_LEX      = DIAG_START_FRONTEND +  120,
       DIAG_START_PARSE    = DIAG_START_LEX      +  300,
       DIAG_START_AST      = DIAG_START_PARSE    +  300,
       DIAG_START_SEMA     = DIAG_START_AST      +  100,
@@ -42,7 +42,7 @@ namespace clang {
 
     // Get typedefs for common diagnostics.
     enum {
-#define DIAG(ENUM,FLAGS,DEFAULT_MAPPING,DESC,GROUP,SFINAE,CATEGORY) ENUM,
+#define DIAG(ENUM,FLAGS,DEFAULT_MAPPING,DESC,GROUP,SFINAE,ACCESS,CATEGORY) ENUM,
 #include "clang/Basic/DiagnosticCommonKinds.inc"
       NUM_BUILTIN_COMMON_DIAGNOSTICS
 #undef DIAG
@@ -157,7 +157,11 @@ public:
     ///
     /// The diagnostic should be reported. Various fatal errors (e.g., 
     /// template instantiation depth exceeded) fall into this category.
-    SFINAE_Report
+    SFINAE_Report,
+    
+    /// \brief The diagnostic is an access-control diagnostic, which will be
+    /// substitution failures in some contexts and reported in others.
+    SFINAE_AccessControl
   };
   
   /// \brief Determines whether the given built-in diagnostic ID is

@@ -467,7 +467,7 @@ Decl *Parser::ParseTypeParameter(unsigned Depth, unsigned Position) {
     EllipsisLoc = ConsumeToken();
 
     if (!getLang().CPlusPlus0x)
-      Diag(EllipsisLoc, diag::err_variadic_templates);
+      Diag(EllipsisLoc, diag::ext_variadic_templates);
   }
 
   // Grab the template parameter name (if given)
@@ -531,7 +531,7 @@ Parser::ParseTemplateTemplateParameter(unsigned Depth, unsigned Position) {
       << PP.getSpelling(Tok);
     return 0;
   }
-  SourceLocation ClassLoc = ConsumeToken();
+  ConsumeToken();
 
   // Parse the ellipsis, if given.
   SourceLocation EllipsisLoc;
@@ -539,7 +539,7 @@ Parser::ParseTemplateTemplateParameter(unsigned Depth, unsigned Position) {
     EllipsisLoc = ConsumeToken();
     
     if (!getLang().CPlusPlus0x)
-      Diag(EllipsisLoc, diag::err_variadic_templates);
+      Diag(EllipsisLoc, diag::ext_variadic_templates);
   }
       
   // Get the identifier, if given.
@@ -595,8 +595,6 @@ Parser::ParseTemplateTemplateParameter(unsigned Depth, unsigned Position) {
 ///         parameter-declaration
 Decl *
 Parser::ParseNonTypeTemplateParameter(unsigned Depth, unsigned Position) {
-  SourceLocation StartLoc = Tok.getLocation();
-
   // Parse the declaration-specifiers (i.e., the type).
   // FIXME: The type should probably be restricted in some way... Not all
   // declarators (parts of declarators?) are accepted for parameters.
@@ -677,7 +675,7 @@ Parser::ParseTemplateIdAfterTemplateName(TemplateTy Template,
   bool Invalid = false;
   {
     GreaterThanIsOperatorScope G(GreaterThanIsOperator, false);
-    if (Tok.isNot(tok::greater))
+    if (Tok.isNot(tok::greater) && Tok.isNot(tok::greatergreater))
       Invalid = ParseTemplateArgumentList(TemplateArgs);
 
     if (Invalid) {

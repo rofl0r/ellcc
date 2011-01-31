@@ -155,21 +155,21 @@ private:
   }
 
   void SetSectionData() {
-    SetSection(".data", MCSectionELF::SHT_PROGBITS,
-               MCSectionELF::SHF_WRITE |MCSectionELF::SHF_ALLOC,
+    SetSection(".data", ELF::SHT_PROGBITS,
+               ELF::SHF_WRITE |ELF::SHF_ALLOC,
                SectionKind::getDataRel());
     EmitCodeAlignment(4, 0);
   }
   void SetSectionText() {
-    SetSection(".text", MCSectionELF::SHT_PROGBITS,
-               MCSectionELF::SHF_EXECINSTR |
-               MCSectionELF::SHF_ALLOC, SectionKind::getText());
+    SetSection(".text", ELF::SHT_PROGBITS,
+               ELF::SHF_EXECINSTR |
+               ELF::SHF_ALLOC, SectionKind::getText());
     EmitCodeAlignment(4, 0);
   }
   void SetSectionBss() {
-    SetSection(".bss", MCSectionELF::SHT_NOBITS,
-               MCSectionELF::SHF_WRITE |
-               MCSectionELF::SHF_ALLOC, SectionKind::getBSS());
+    SetSection(".bss", ELF::SHT_NOBITS,
+               ELF::SHF_WRITE |
+               ELF::SHF_ALLOC, SectionKind::getBSS());
     EmitCodeAlignment(4, 0);
   }
 };
@@ -193,7 +193,7 @@ void MCELFStreamer::EmitLabel(MCSymbol *Symbol) {
   const MCSectionELF &Section =
     static_cast<const MCSectionELF&>(Symbol->getSection());
   MCSymbolData &SD = getAssembler().getSymbolData(*Symbol);
-  if (Section.getFlags() & MCSectionELF::SHF_TLS)
+  if (Section.getFlags() & ELF::SHF_TLS)
     SetType(SD, ELF::STT_TLS);
 }
 
@@ -346,9 +346,9 @@ void MCELFStreamer::EmitCommonSymbol(MCSymbol *Symbol, uint64_t Size,
 
   if (GetBinding(SD) == ELF_STB_Local) {
     const MCSection *Section = getAssembler().getContext().getELFSection(".bss",
-                                                                    MCSectionELF::SHT_NOBITS,
-                                                                    MCSectionELF::SHF_WRITE |
-                                                                    MCSectionELF::SHF_ALLOC,
+                                                                    ELF::SHT_NOBITS,
+                                                                    ELF::SHF_WRITE |
+                                                                    ELF::SHF_ALLOC,
                                                                     SectionKind::getBSS());
     Symbol->setSection(*Section);
 
@@ -515,10 +515,12 @@ void MCELFStreamer::Finish() {
 }
 
 MCStreamer *llvm::createELFStreamer(MCContext &Context, TargetAsmBackend &TAB,
-                                      raw_ostream &OS, MCCodeEmitter *CE,
-                                      bool RelaxAll) {
+                                    raw_ostream &OS, MCCodeEmitter *CE,
+                                    bool RelaxAll, bool NoExecStack) {
   MCELFStreamer *S = new MCELFStreamer(Context, TAB, OS, CE);
   if (RelaxAll)
     S->getAssembler().setRelaxAll(true);
+  if (NoExecStack)
+    S->getAssembler().setNoExecStack(true);
   return S;
 }

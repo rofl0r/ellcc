@@ -84,6 +84,7 @@ PCHValidator::ReadLanguageOptions(const LangOptions &LangOpts) {
   PARSE_LANGOPT_IMPORTANT(ObjC2, diag::warn_pch_objective_c2);
   PARSE_LANGOPT_IMPORTANT(ObjCNonFragileABI, diag::warn_pch_nonfragile_abi);
   PARSE_LANGOPT_IMPORTANT(ObjCNonFragileABI2, diag::warn_pch_nonfragile_abi2);
+  PARSE_LANGOPT_IMPORTANT(AppleKext, diag::warn_pch_apple_kext);
   PARSE_LANGOPT_IMPORTANT(ObjCDefaultSynthProperties,
                           diag::warn_pch_objc_auto_properties);
   PARSE_LANGOPT_IMPORTANT(NoConstantCFStrings,
@@ -1231,6 +1232,9 @@ ASTReader::ASTReadResult ASTReader::ReadSLocEntryRecord(unsigned ID) {
     std::string Filename(BlobStart, BlobStart + BlobLen);
     MaybeAddSystemRootToFilename(Filename);
     const FileEntry *File = FileMgr.getFile(Filename);
+    if (File == 0)
+      File = FileMgr.getVirtualFile(Filename, (off_t)Record[4],
+                                    (time_t)Record[5]);
     if (File == 0) {
       std::string ErrorStr = "could not find file '";
       ErrorStr += Filename;
@@ -2127,15 +2131,15 @@ ASTReader::ReadASTBlock(PerFileData &F) {
       break;
     }
 
-    case DIAG_USER_MAPPINGS:
+    case DIAG_PRAGMA_MAPPINGS:
       if (Record.size() % 2 != 0) {
         Error("invalid DIAG_USER_MAPPINGS block in AST file");
         return Failure;
       }
-      if (UserDiagMappings.empty())
-        UserDiagMappings.swap(Record);
+      if (PragmaDiagMappings.empty())
+        PragmaDiagMappings.swap(Record);
       else
-        UserDiagMappings.insert(UserDiagMappings.end(),
+        PragmaDiagMappings.insert(PragmaDiagMappings.end(),
                                 Record.begin(), Record.end());
       break;
     }
@@ -2481,7 +2485,7 @@ void ASTReader::InitializeContext(ASTContext &Ctx) {
   if (SpecialTypes[SPECIAL_TYPE_INT128_INSTALLED])
     Context->setInt128Installed();
 
-  ReadUserDiagnosticMappings(Context->getDiagnostics());
+  ReadPragmaDiagnosticMappings(Context->getDiagnostics());
 }
 
 /// \brief Retrieve the name of the original source file name
@@ -2600,6 +2604,7 @@ bool ASTReader::ParseLanguageOptions(
     PARSE_LANGOPT(ObjC2);
     PARSE_LANGOPT(ObjCNonFragileABI);
     PARSE_LANGOPT(ObjCNonFragileABI2);
+    PARSE_LANGOPT(AppleKext);
     PARSE_LANGOPT(ObjCDefaultSynthProperties);
     PARSE_LANGOPT(NoConstantCFStrings);
     PARSE_LANGOPT(PascalStrings);
@@ -2628,6 +2633,7 @@ bool ASTReader::ParseLanguageOptions(
     PARSE_LANGOPT(AccessControl);
     PARSE_LANGOPT(CharIsSigned);
     PARSE_LANGOPT(ShortWChar);
+    PARSE_LANGOPT(ShortEnums);
     LangOpts.setGCMode((LangOptions::GCMode)Record[Idx++]);
     LangOpts.setVisibilityMode((Visibility)Record[Idx++]);
     LangOpts.setStackProtectorMode((LangOptions::StackProtectorMode)
@@ -2668,13 +2674,23 @@ PreprocessedEntity *ASTReader::ReadPreprocessedEntity(uint64_t Offset) {
   return ReadMacroRecord(*F, Offset);
 }
 
-void ASTReader::ReadUserDiagnosticMappings(Diagnostic &Diag) {
+void ASTReader::ReadPragmaDiagnosticMappings(Diagnostic &Diag) {
   unsigned Idx = 0;
-  while (Idx < UserDiagMappings.size()) {
-    unsigned DiagID = UserDiagMappings[Idx++];
-    unsigned Map = UserDiagMappings[Idx++];
-    Diag.setDiagnosticMappingInternal(DiagID, Map, Diag.GetCurDiagState(),
-                                      /*isUser=*/true);
+  while (Idx < PragmaDiagMappings.size()) {
+    SourceLocation
+      Loc = SourceLocation::getFromRawEncoding(PragmaDiagMappings[Idx++]);
+    while (1) {
+      assert(Idx < PragmaDiagMappings.size() &&
+             "Invalid data, didn't find '-1' marking end of diag/map pairs");
+      if (Idx >= PragmaDiagMappings.size())
+        break; // Something is messed up but at least avoid infinite loop in
+               // release build.
+      unsigned DiagID = PragmaDiagMappings[Idx++];
+      if (DiagID == (unsigned)-1)
+        break; // no more diag/map pairs for this location.
+      diag::Mapping Map = (diag::Mapping)PragmaDiagMappings[Idx++];
+      Diag.setDiagnosticMapping(DiagID, Map, Loc);
+    }
   }
 }
 
@@ -2860,6 +2876,7 @@ QualType ASTReader::ReadTypeRecord(unsigned Index) {
 
     EPI.Variadic = Record[Idx++];
     EPI.TypeQuals = Record[Idx++];
+    EPI.RefQualifier = static_cast<RefQualifierKind>(Record[Idx++]);
     EPI.HasExceptionSpec = Record[Idx++];
     EPI.HasAnyExceptionSpec = Record[Idx++];
     EPI.NumExceptions = Record[Idx++];
@@ -2909,7 +2926,7 @@ QualType ASTReader::ReadTypeRecord(unsigned Index) {
     }
     bool IsDependent = Record[0];
     QualType T = Context->getRecordType(cast<RecordDecl>(GetDecl(Record[1])));
-    T->setDependent(IsDependent);
+    const_cast<Type*>(T.getTypePtr())->setDependent(IsDependent);
     return T;
   }
 
@@ -2920,7 +2937,7 @@ QualType ASTReader::ReadTypeRecord(unsigned Index) {
     }
     bool IsDependent = Record[0];
     QualType T = Context->getEnumType(cast<EnumDecl>(GetDecl(Record[1])));
-    T->setDependent(IsDependent);
+    const_cast<Type*>(T.getTypePtr())->setDependent(IsDependent);
     return T;
   }
 
@@ -2952,8 +2969,10 @@ QualType ASTReader::ReadTypeRecord(unsigned Index) {
     QualType Pattern = GetType(Record[0]);
     if (Pattern.isNull())
       return QualType();
-
-    return Context->getPackExpansionType(Pattern);
+    llvm::Optional<unsigned> NumExpansions;
+    if (Record[1])
+      NumExpansions = Record[1] - 1;
+    return Context->getPackExpansionType(Pattern, NumExpansions);
   }
 
   case TYPE_ELABORATED: {
@@ -2993,6 +3012,15 @@ QualType ASTReader::ReadTypeRecord(unsigned Index) {
     return
       Context->getSubstTemplateTypeParmType(cast<TemplateTypeParmType>(Parm),
                                             Replacement);
+  }
+
+  case TYPE_SUBST_TEMPLATE_TYPE_PARM_PACK: {
+    unsigned Idx = 0;
+    QualType Parm = GetType(Record[Idx++]);
+    TemplateArgument ArgPack = ReadTemplateArgument(*Loc.F, Record, Idx);
+    return Context->getSubstTemplateTypeParmPackType(
+                                               cast<TemplateTypeParmType>(Parm),
+                                                     ArgPack);
   }
 
   case TYPE_INJECTED_CLASS_NAME: {
@@ -3058,7 +3086,7 @@ QualType ASTReader::ReadTypeRecord(unsigned Index) {
   case TYPE_TEMPLATE_SPECIALIZATION: {
     unsigned Idx = 0;
     bool IsDependent = Record[Idx++];
-    TemplateName Name = ReadTemplateName(Record, Idx);
+    TemplateName Name = ReadTemplateName(*Loc.F, Record, Idx);
     llvm::SmallVector<TemplateArgument, 8> Args;
     ReadTemplateArgumentList(Args, *Loc.F, Record, Idx);
     QualType Canon = GetType(Record[Idx++]);
@@ -3069,7 +3097,7 @@ QualType ASTReader::ReadTypeRecord(unsigned Index) {
     else
       T = Context->getTemplateSpecializationType(Name, Args.data(),
                                                  Args.size(), Canon);
-    T->setDependent(IsDependent);
+    const_cast<Type*>(T.getTypePtr())->setDependent(IsDependent);
     return T;
   }
   }
@@ -3229,6 +3257,10 @@ void TypeLocReader::VisitTemplateTypeParmTypeLoc(TemplateTypeParmTypeLoc TL) {
 }
 void TypeLocReader::VisitSubstTemplateTypeParmTypeLoc(
                                             SubstTemplateTypeParmTypeLoc TL) {
+  TL.setNameLoc(ReadSourceLocation(Record, Idx));
+}
+void TypeLocReader::VisitSubstTemplateTypeParmPackTypeLoc(
+                                          SubstTemplateTypeParmPackTypeLoc TL) {
   TL.setNameLoc(ReadSourceLocation(Record, Idx));
 }
 void TypeLocReader::VisitTemplateSpecializationTypeLoc(
@@ -4210,7 +4242,8 @@ void ASTReader::ReadQualifierInfo(PerFileData &F, QualifierInfo &Info,
 }
 
 TemplateName
-ASTReader::ReadTemplateName(const RecordData &Record, unsigned &Idx) {
+ASTReader::ReadTemplateName(PerFileData &F, const RecordData &Record, 
+                            unsigned &Idx) {
   TemplateName::NameKind Kind = (TemplateName::NameKind)Record[Idx++];
   switch (Kind) {
   case TemplateName::Template:
@@ -4240,6 +4273,19 @@ ASTReader::ReadTemplateName(const RecordData &Record, unsigned &Idx) {
     return Context->getDependentTemplateName(NNS,
                                          (OverloadedOperatorKind)Record[Idx++]);
   }
+      
+  case TemplateName::SubstTemplateTemplateParmPack: {
+    TemplateTemplateParmDecl *Param 
+      = cast_or_null<TemplateTemplateParmDecl>(GetDecl(Record[Idx++]));
+    if (!Param)
+      return TemplateName();
+    
+    TemplateArgument ArgPack = ReadTemplateArgument(F, Record, Idx);
+    if (ArgPack.getKind() != TemplateArgument::Pack)
+      return TemplateName();
+    
+    return Context->getSubstTemplateTemplateParmPack(Param, ArgPack);
+  }
   }
 
   assert(0 && "Unhandled template name kind!");
@@ -4263,9 +4309,13 @@ ASTReader::ReadTemplateArgument(PerFileData &F,
     return TemplateArgument(Value, T);
   }
   case TemplateArgument::Template: 
+    return TemplateArgument(ReadTemplateName(F, Record, Idx));
   case TemplateArgument::TemplateExpansion: {
-    TemplateName Name = ReadTemplateName(Record, Idx);
-    return TemplateArgument(Name, Kind == TemplateArgument::TemplateExpansion);
+    TemplateName Name = ReadTemplateName(F, Record, Idx);
+    llvm::Optional<unsigned> NumTemplateExpansions;
+    if (unsigned NumExpansions = Record[Idx++])
+      NumTemplateExpansions = NumExpansions - 1;
+    return TemplateArgument(Name, NumTemplateExpansions);
   }
   case TemplateArgument::Expression:
     return TemplateArgument(ReadExpr(F));
@@ -4336,17 +4386,16 @@ ASTReader::ReadCXXBaseSpecifier(PerFileData &F,
                           EllipsisLoc);
 }
 
-std::pair<CXXBaseOrMemberInitializer **, unsigned>
-ASTReader::ReadCXXBaseOrMemberInitializers(PerFileData &F,
-                                           const RecordData &Record,
-                                           unsigned &Idx) {
-  CXXBaseOrMemberInitializer **BaseOrMemberInitializers = 0;
+std::pair<CXXCtorInitializer **, unsigned>
+ASTReader::ReadCXXCtorInitializers(PerFileData &F, const RecordData &Record,
+                                   unsigned &Idx) {
+  CXXCtorInitializer **CtorInitializers = 0;
   unsigned NumInitializers = Record[Idx++];
   if (NumInitializers) {
     ASTContext &C = *getContext();
 
-    BaseOrMemberInitializers
-        = new (C) CXXBaseOrMemberInitializer*[NumInitializers];
+    CtorInitializers
+        = new (C) CXXCtorInitializer*[NumInitializers];
     for (unsigned i=0; i != NumInitializers; ++i) {
       TypeSourceInfo *BaseClassInfo = 0;
       bool IsBaseVirtual = false;
@@ -4380,38 +4429,32 @@ ASTReader::ReadCXXBaseOrMemberInitializers(PerFileData &F,
           Indices.push_back(cast<VarDecl>(GetDecl(Record[Idx++])));
       }
 
-      CXXBaseOrMemberInitializer *BOMInit;
+      CXXCtorInitializer *BOMInit;
       if (IsBaseInitializer) {
-        BOMInit = new (C) CXXBaseOrMemberInitializer(C, BaseClassInfo,
-                                                     IsBaseVirtual, LParenLoc,
-                                                     Init, RParenLoc,
-                                                     MemberOrEllipsisLoc);
+        BOMInit = new (C) CXXCtorInitializer(C, BaseClassInfo, IsBaseVirtual,
+                                             LParenLoc, Init, RParenLoc,
+                                             MemberOrEllipsisLoc);
       } else if (IsWritten) {
         if (Member)
-          BOMInit = new (C) CXXBaseOrMemberInitializer(C, Member, 
-                                                       MemberOrEllipsisLoc,
-                                                       LParenLoc, Init,
-                                                       RParenLoc);
+          BOMInit = new (C) CXXCtorInitializer(C, Member, MemberOrEllipsisLoc,
+                                               LParenLoc, Init, RParenLoc);
         else 
-          BOMInit = new (C) CXXBaseOrMemberInitializer(C, IndirectMember,
-                                                       MemberOrEllipsisLoc,
-                                                       LParenLoc,
-                                                       Init, RParenLoc);
+          BOMInit = new (C) CXXCtorInitializer(C, IndirectMember,
+                                               MemberOrEllipsisLoc, LParenLoc,
+                                               Init, RParenLoc);
       } else {
-        BOMInit = CXXBaseOrMemberInitializer::Create(C, Member, 
-                                                     MemberOrEllipsisLoc,
-                                                     LParenLoc, Init, RParenLoc,
-                                                     Indices.data(),
-                                                     Indices.size());
+        BOMInit = CXXCtorInitializer::Create(C, Member, MemberOrEllipsisLoc,
+                                             LParenLoc, Init, RParenLoc,
+                                             Indices.data(), Indices.size());
       }
 
       if (IsWritten)
         BOMInit->setSourceOrder(SourceOrderOrNumArrayIndices);
-      BaseOrMemberInitializers[i] = BOMInit;
+      CtorInitializers[i] = BOMInit;
     }
   }
 
-  return std::make_pair(BaseOrMemberInitializers, NumInitializers);
+  return std::make_pair(CtorInitializers, NumInitializers);
 }
 
 NestedNameSpecifier *
@@ -4436,7 +4479,7 @@ ASTReader::ReadNestedNameSpecifier(const RecordData &Record, unsigned &Idx) {
 
     case NestedNameSpecifier::TypeSpec:
     case NestedNameSpecifier::TypeSpecWithTemplate: {
-      Type *T = GetType(Record[Idx++]).getTypePtrOrNull();
+      const Type *T = GetType(Record[Idx++]).getTypePtrOrNull();
       if (!T)
         return 0;
       

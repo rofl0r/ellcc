@@ -36,7 +36,7 @@ GRStateManager::~GRStateManager() {
 }
 
 const GRState*
-GRStateManager::RemoveDeadBindings(const GRState* state,
+GRStateManager::removeDeadBindings(const GRState* state,
                                    const StackFrameContext *LCtx,
                                    SymbolReaper& SymReaper) {
 
@@ -49,14 +49,14 @@ GRStateManager::RemoveDeadBindings(const GRState* state,
   llvm::SmallVector<const MemRegion*, 10> RegionRoots;
   GRState NewState = *state;
 
-  NewState.Env = EnvMgr.RemoveDeadBindings(NewState.Env, SymReaper,
+  NewState.Env = EnvMgr.removeDeadBindings(NewState.Env, SymReaper,
                                            state, RegionRoots);
 
   // Clean up the store.
-  NewState.St = StoreMgr->RemoveDeadBindings(NewState.St, LCtx, 
+  NewState.St = StoreMgr->removeDeadBindings(NewState.St, LCtx, 
                                              SymReaper, RegionRoots);
   state = getPersistentState(NewState);
-  return ConstraintMgr->RemoveDeadBindings(state, SymReaper);
+  return ConstraintMgr->removeDeadBindings(state, SymReaper);
 }
 
 const GRState *GRStateManager::MarshalState(const GRState *state,
@@ -95,7 +95,7 @@ const GRState *GRState::bindLoc(Loc LV, SVal V) const {
 
   const MemRegion *MR = LV.getAsRegion();
   if (MR)
-    return Mgr.getOwningEngine().ProcessRegionChange(new_state, MR);
+    return Mgr.getOwningEngine().processRegionChange(new_state, MR);
 
   return new_state;
 }
@@ -105,7 +105,7 @@ const GRState *GRState::bindDefault(SVal loc, SVal V) const {
   const MemRegion *R = cast<loc::MemRegionVal>(loc).getRegion();
   Store new_store = Mgr.StoreMgr->BindDefault(St, R, V);
   const GRState *new_state = makeWithStore(new_store);
-  return Mgr.getOwningEngine().ProcessRegionChange(new_state, R);
+  return Mgr.getOwningEngine().processRegionChange(new_state, R);
 }
 
 const GRState *GRState::InvalidateRegions(const MemRegion * const *Begin,
@@ -116,7 +116,7 @@ const GRState *GRState::InvalidateRegions(const MemRegion * const *Begin,
   GRStateManager &Mgr = getStateManager();
   SubEngine &Eng = Mgr.getOwningEngine();
 
-  if (Eng.WantsRegionChangeUpdate(this)) {
+  if (Eng.wantsRegionChangeUpdate(this)) {
     StoreManager::InvalidatedRegions Regions;
 
     Store new_store = Mgr.StoreMgr->InvalidateRegions(St, Begin, End,
@@ -125,7 +125,7 @@ const GRState *GRState::InvalidateRegions(const MemRegion * const *Begin,
                                                       &Regions);
     const GRState *new_state = makeWithStore(new_store);
 
-    return Eng.ProcessRegionChanges(new_state,
+    return Eng.processRegionChanges(new_state,
                                     &Regions.front(),
                                     &Regions.back()+1);
   }
@@ -149,8 +149,8 @@ const GRState *GRState::unbindLoc(Loc LV) const {
   return makeWithStore(NewStore);
 }
 
-const GRState *GRState::EnterStackFrame(const StackFrameContext *frame) const {
-  Store new_store = getStateManager().StoreMgr->EnterStackFrame(this, frame);
+const GRState *GRState::enterStackFrame(const StackFrameContext *frame) const {
+  Store new_store = getStateManager().StoreMgr->enterStackFrame(this, frame);
   return makeWithStore(new_store);
 }
 
@@ -285,6 +285,18 @@ const GRState* GRStateManager::getInitialState(const LocationContext *InitLoc) {
   return getPersistentState(State);
 }
 
+void GRStateManager::recycleUnusedStates() {
+  for (std::vector<GRState*>::iterator i = recentlyAllocatedStates.begin(),
+       e = recentlyAllocatedStates.end(); i != e; ++i) {
+    GRState *state = *i;
+    if (state->referencedByExplodedNode())
+      continue;
+    StateSet.RemoveNode(state);
+    freeStates.push_back(state);
+  }
+  recentlyAllocatedStates.clear();
+}
+
 const GRState* GRStateManager::getPersistentState(GRState& State) {
 
   llvm::FoldingSetNodeID ID;
@@ -294,10 +306,18 @@ const GRState* GRStateManager::getPersistentState(GRState& State) {
   if (GRState* I = StateSet.FindNodeOrInsertPos(ID, InsertPos))
     return I;
 
-  GRState* I = (GRState*) Alloc.Allocate<GRState>();
-  new (I) GRState(State);
-  StateSet.InsertNode(I, InsertPos);
-  return I;
+  GRState *newState = 0;
+  if (!freeStates.empty()) {
+    newState = freeStates.back();
+    freeStates.pop_back();    
+  }
+  else {
+    newState = (GRState*) Alloc.Allocate<GRState>();
+  }
+  new (newState) GRState(State);
+  StateSet.InsertNode(newState, InsertPos);
+  recentlyAllocatedStates.push_back(newState);
+  return newState;
 }
 
 const GRState* GRState::makeWithStore(Store store) const {

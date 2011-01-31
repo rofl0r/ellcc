@@ -1,4 +1,3 @@
-//
 //===-- SPUISelLowering.cpp - Cell SPU DAG Lowering Implementation --------===//
 //                     The LLVM Compiler Infrastructure
 //
@@ -14,7 +13,7 @@
 #include "SPURegisterNames.h"
 #include "SPUISelLowering.h"
 #include "SPUTargetMachine.h"
-#include "SPUFrameInfo.h"
+#include "SPUFrameLowering.h"
 #include "SPUMachineFunction.h"
 #include "llvm/Constants.h"
 #include "llvm/Function.h"
@@ -561,7 +560,7 @@ LowerLOAD(SDValue Op, SelectionDAG &DAG, const SPUSubtarget *ST) {
   assert( LN->getAddressingMode() == ISD::UNINDEXED
           && "we should get only UNINDEXED adresses");
   // clean aligned loads can be selected as-is
-  if (InVT.getSizeInBits() == 128 && alignment == 16)
+  if (InVT.getSizeInBits() == 128 && (alignment%16) == 0)
     return SDValue();
 
   // Get pointerinfos to the memory chunk(s) that contain the data to load
@@ -574,7 +573,7 @@ LowerLOAD(SDValue Op, SelectionDAG &DAG, const SPUSubtarget *ST) {
   SDValue basePtr = LN->getBasePtr();
   SDValue rotate;
 
-  if (alignment == 16) {
+  if ((alignment%16) == 0) {
     ConstantSDNode *CN;
 
     // Special cases for a known aligned load to simplify the base pointer
@@ -683,10 +682,6 @@ LowerLOAD(SDValue Op, SelectionDAG &DAG, const SPUSubtarget *ST) {
     // storage position offset from lower 16 byte aligned memory chunk
     SDValue offset = DAG.getNode(ISD::AND, dl, MVT::i32,
                                   basePtr, DAG.getConstant( 0xf, MVT::i32 ) );
-    // 16 - offset
-    SDValue offset_compl = DAG.getNode(ISD::SUB, dl, MVT::i32,
-                                        DAG.getConstant( 16, MVT::i32),
-                                        offset );
     // get a registerfull of ones. (this implementation is a workaround: LLVM
     // cannot handle 128 bit signed int constants)
     SDValue ones = DAG.getConstant(-1, MVT::v4i32 );
@@ -778,7 +773,7 @@ LowerSTORE(SDValue Op, SelectionDAG &DAG, const SPUSubtarget *ST) {
   assert( SN->getAddressingMode() == ISD::UNINDEXED
           && "we should get only UNINDEXED adresses");
   // clean aligned loads can be selected as-is
-  if (StVT.getSizeInBits() == 128 && alignment == 16)
+  if (StVT.getSizeInBits() == 128 && (alignment%16) == 0)
     return SDValue();
 
   SDValue alignLoadVec;
@@ -786,7 +781,7 @@ LowerSTORE(SDValue Op, SelectionDAG &DAG, const SPUSubtarget *ST) {
   SDValue the_chain = SN->getChain();
   SDValue insertEltOffs;
 
-  if (alignment == 16) {
+  if ((alignment%16) == 0) {
     ConstantSDNode *CN;
     // Special cases for a known aligned load to simplify the base pointer
     // and insertion byte:
@@ -911,10 +906,6 @@ LowerSTORE(SDValue Op, SelectionDAG &DAG, const SPUSubtarget *ST) {
     SDValue offset_compl = DAG.getNode(ISD::SUB, dl, MVT::i32,
                                            DAG.getConstant( 16, MVT::i32),
                                            offset);
-    SDValue hi_shift = DAG.getNode(ISD::SUB, dl, MVT::i32,
-                                      DAG.getConstant( VT.getSizeInBits()/8,
-                                                       MVT::i32),
-                                      offset_compl);
     // 16 - sizeof(Value)
     SDValue surplus = DAG.getNode(ISD::SUB, dl, MVT::i32,
                                      DAG.getConstant( 16, MVT::i32),
@@ -1123,9 +1114,9 @@ SPUTargetLowering::LowerFormalArguments(SDValue Chain,
   MachineRegisterInfo &RegInfo = MF.getRegInfo();
   SPUFunctionInfo *FuncInfo = MF.getInfo<SPUFunctionInfo>();
 
-  unsigned ArgOffset = SPUFrameInfo::minStackSize();
+  unsigned ArgOffset = SPUFrameLowering::minStackSize();
   unsigned ArgRegIdx = 0;
-  unsigned StackSlotSize = SPUFrameInfo::stackSlotSize();
+  unsigned StackSlotSize = SPUFrameLowering::stackSlotSize();
 
   EVT PtrVT = DAG.getTargetLoweringInfo().getPointerTy();
 
@@ -1274,7 +1265,7 @@ SPUTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
 
   const SPUSubtarget *ST = SPUTM.getSubtargetImpl();
   unsigned NumOps     = Outs.size();
-  unsigned StackSlotSize = SPUFrameInfo::stackSlotSize();
+  unsigned StackSlotSize = SPUFrameLowering::stackSlotSize();
 
   SmallVector<CCValAssign, 16> ArgLocs;
   CCState CCInfo(CallConv, isVarArg, getTargetMachine(), ArgLocs,
@@ -1295,7 +1286,7 @@ SPUTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
 
   // Figure out which arguments are going to go in registers, and which in
   // memory.
-  unsigned ArgOffset = SPUFrameInfo::minStackSize(); // Just below [LR]
+  unsigned ArgOffset = SPUFrameLowering::minStackSize(); // Just below [LR]
   unsigned ArgRegIdx = 0;
 
   // Keep track of registers passing arguments
@@ -1342,7 +1333,7 @@ SPUTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
   // Accumulate how many bytes are to be pushed on the stack, including the
   // linkage area, and parameter passing area.  According to the SPU ABI,
   // we minimally need space for [LR] and [SP].
-  unsigned NumStackBytes = ArgOffset - SPUFrameInfo::minStackSize();
+  unsigned NumStackBytes = ArgOffset - SPUFrameLowering::minStackSize();
 
   // Insert a call sequence start
   Chain = DAG.getCALLSEQ_START(Chain, DAG.getIntPtrConstant(NumStackBytes,
@@ -2728,6 +2719,12 @@ static SDValue LowerSIGN_EXTEND(SDValue Op, SelectionDAG &DAG)
   SDValue Op0 = Op.getOperand(0);
   MVT Op0VT = Op0.getValueType().getSimpleVT();
 
+  // extend i8 & i16 via i32
+  if (Op0VT == MVT::i8 || Op0VT == MVT::i16) {
+    Op0 = DAG.getNode(ISD::SIGN_EXTEND, dl, MVT::i32, Op0);
+    Op0VT = MVT::i32;
+  }
+
   // The type to extend to needs to be a i128 and
   // the type to extend from needs to be i64 or i32.
   assert((OpVT == MVT::i128 && (Op0VT == MVT::i64 || Op0VT == MVT::i32)) &&
@@ -3260,4 +3257,3 @@ SPUTargetLowering::isLegalAddressingMode(const AddrMode &AM,
 
   return false;
 }
-

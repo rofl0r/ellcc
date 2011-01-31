@@ -104,6 +104,20 @@ endif( MSVC )
 set(CLANG_RESOURCE_DIR "" CACHE STRING
   "Relative directory from the Clang binary to its resource files.")
 
+option(LLVM_ENABLE_CBE_PRINTF_A "Set to ON if CBE is enabled for printf %a output" ON)
+if(LLVM_ENABLE_CBE_PRINTF_A)
+  set(ENABLE_CBE_PRINTF_A 1)
+endif()
+
+option(LLVM_ENABLE_TIMESTAMPS "Enable embedding timestamp information in build" ON)
+if(LLVM_ENABLE_TIMESTAMPS)
+  set(ENABLE_TIMESTAMPS 1)
+endif()
+
+option(LLVM_ENABLE_FFI "Use libffi to call external functions from the interpreter" OFF)
+set(FFI_LIBRARY_DIR "" CACHE PATH "Additional directory, where CMake should search for libffi.so")
+set(FFI_INCLUDE_DIR "" CACHE PATH "Additional directory, where CMake should search for ffi.h or ffi/ffi.h")
+
 set(C_INCLUDE_DIRS "" CACHE STRING
   "Colon separated list of directories clang will search for headers.")
 
@@ -195,26 +209,29 @@ else(WIN32)
   endif(UNIX)
 endif(WIN32)
 
-include(config-ix)
-
 option(LLVM_ENABLE_PIC "Build Position-Independent Code" ON)
 
-set(ENABLE_PIC 0)
 if( LLVM_ENABLE_PIC )
- if( XCODE )
-   # Xcode has -mdynamic-no-pic on by default, which overrides -fPIC. I don't
-   # know how to disable this, so just force ENABLE_PIC off for now.
-   message(STATUS "Warning: -fPIC not supported with Xcode.")
- else( XCODE )
-   if( SUPPORTS_FPIC_FLAG )
+  if( XCODE )
+    # Xcode has -mdynamic-no-pic on by default, which overrides -fPIC. I don't
+    # know how to disable this, so just force ENABLE_PIC off for now.
+    message(WARNING "-fPIC not supported with Xcode.")
+  elseif( WIN32 )
+    # On Windows all code is PIC. MinGW warns if -fPIC is used.
+  else()
+    include(CheckCXXCompilerFlag)
+    check_cxx_compiler_flag("-fPIC" SUPPORTS_FPIC_FLAG)
+    if( SUPPORTS_FPIC_FLAG )
       message(STATUS "Building with -fPIC")
-      add_llvm_definitions(-fPIC)
-      set(ENABLE_PIC 1)
-   else( SUPPORTS_FPIC_FLAG )
-      message(STATUS "Warning: -fPIC not supported.")
-   endif()
- endif()
+      set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
+      set(CMAKE_C_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
+    else( SUPPORTS_FPIC_FLAG )
+      message(WARNING "-fPIC not supported.")
+    endif()
+  endif()
 endif()
+
+include(config-ix)
 
 set( CMAKE_RUNTIME_OUTPUT_DIRECTORY ${LLVM_TOOLS_BINARY_DIR} )
 set( CMAKE_LIBRARY_OUTPUT_DIRECTORY ${LLVM_BINARY_DIR}/lib )
@@ -273,6 +290,7 @@ if( MSVC )
     -wd4624 # Suppress ''derived class' : destructor could not be generated because a base class destructor is inaccessible'
     -wd4715 # Suppress ''function' : not all control paths return a value'
     -wd4800 # Suppress ''type' : forcing value to bool 'true' or 'false' (performance warning)'
+    -wd4065 # Suppress 'switch statement contains 'default' but no 'case' labels'
 
     -w14062 # Promote "enumerator in switch of enum is not handled" to level 1 warning.
     )
@@ -315,6 +333,12 @@ if( MINGW )
   endforeach()
   set(CMAKE_CXX_STANDARD_LIBRARIES "${CMAKE_CXX_STANDARD_LIBRARIES}${LLVM_SYSTEM_LIBS}")
   set(CMAKE_C_STANDARD_LIBRARIES "${CMAKE_C_STANDARD_LIBRARIES}${LLVM_SYSTEM_LIBS}")
+endif()
+
+if( MINGW )
+  # People report that -O3 is unreliable on MinGW. The traditional
+  # build also uses -O2 for that reason:
+  llvm_replace_compiler_option(CMAKE_CXX_FLAGS_RELEASE "-O3" "-O2")
 endif()
 
 add_subdirectory(lib/Support)

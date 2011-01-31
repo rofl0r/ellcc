@@ -162,3 +162,68 @@
   ldrsb.w	r0, [r0]
 @ CHECK: ldrsh.w	r0, [r0]                @ encoding: [0x00,0x00,0xb0,0xf9]
   ldrsh.w	r0, [r0]
+@ CHECK: bfi  r0, r0, #5, #7 @ encoding: [0x60,0xf3,0x4b,0x10]
+  bfi  r0, r0, #5, #7
+@ CHECK: isb @ encoding: [0xbf,0xf3,0x6f,0x8f]
+  isb
+@ CHECK: mrs  r0, cpsr @ encoding: [0xef,0xf3,0x00,0x80]
+  mrs  r0, cpsr
+@ CHECK: vmrs  r0, fpscr @ encoding: [0xf1,0xee,0x10,0x0a]
+  vmrs  r0, fpscr
+@ CHECK: vmrs  r0, fpexc @ encoding: [0xf8,0xee,0x10,0x0a]
+  vmrs  r0, fpexc
+@ CHECK: vmrs  r0, fpsid @ encoding: [0xf0,0xee,0x10,0x0a]
+  vmrs  r0, fpsid
+
+@ CHECK: vmsr  fpscr, r0 @ encoding: [0xe1,0xee,0x10,0x0a]
+  vmsr  fpscr, r0
+@ CHECK: vmsr  fpexc, r0 @ encoding: [0xe8,0xee,0x10,0x0a]
+  vmsr  fpexc, r0
+@ CHECK: vmsr  fpsid, r0 @ encoding: [0xe0,0xee,0x10,0x0a]
+  vmsr  fpsid, r0
+
+@ CHECK: mcr2  p7, #1, r5, c1, c1, #4 @ encoding: [0x21,0xfe,0x91,0x57]
+        mcr2  p7, #1, r5, c1, c1, #4
+
+@ CHECK: mrc2  p14, #0, r1, c1, c2, #4 @ encoding: [0x11,0xfe,0x92,0x1e]
+        mrc2  p14, #0, r1, c1, c2, #4
+
+@ CHECK: mcrr2  p7, #1, r5, r4, c1 @ encoding: [0x44,0xfc,0x11,0x57]
+        mcrr2  p7, #1, r5, r4, c1
+
+@ CHECK: mrrc2  p7, #1, r5, r4, c1 @ encoding: [0x54,0xfc,0x11,0x57]
+        mrrc2  p7, #1, r5, r4, c1
+
+@ CHECK: cdp2  p7, #1, c1, c1, c1, #4 @ encoding: [0x11,0xfe,0x81,0x17]
+        cdp2  p7, #1, c1, c1, c1, #4
+
+@ CHECK: clrex @ encoding: [0xbf,0xf3,0x2f,0x8f]
+        clrex
+
+@ CHECK: clz  r9, r0 @ encoding: [0xb0,0xfa,0x80,0xf9]
+        clz  r9, r0
+
+@ CHECK: qadd  r1, r2, r3 @ encoding: [0x83,0xfa,0x82,0xf1]
+        qadd  r1, r2, r3
+
+@ CHECK: qsub  r1, r2, r3 @ encoding: [0x83,0xfa,0xa2,0xf1]
+        qsub  r1, r2, r3
+
+@ CHECK: qdadd  r1, r2, r3 @ encoding: [0x83,0xfa,0x92,0xf1]
+        qdadd  r1, r2, r3
+
+@ CHECK: qdsub  r1, r2, r3 @ encoding: [0x83,0xfa,0xb2,0xf1]
+        qdsub  r1, r2, r3
+
+@ CHECK: nop.w @ encoding: [0xaf,0xf3,0x00,0x80]
+        nop.w
+
+@ CHECK: yield.w @ encoding: [0xaf,0xf3,0x01,0x80]
+        yield.w
+
+@ CHECK: wfe.w @ encoding: [0xaf,0xf3,0x02,0x80]
+        wfe.w
+
+@ CHECK: wfi.w @ encoding: [0xaf,0xf3,0x03,0x80]
+        wfi.w
+

@@ -43,12 +43,12 @@ using llvm::APFloat;
 /// evaluate the expression regardless of what the RHS is, but C only allows
 /// certain things in certain situations.
 struct EvalInfo {
-  ASTContext &Ctx;
+  const ASTContext &Ctx;
 
   /// EvalResult - Contains information about the evaluation.
   Expr::EvalResult &EvalResult;
 
-  EvalInfo(ASTContext &ctx, Expr::EvalResult& evalresult)
+  EvalInfo(const ASTContext &ctx, Expr::EvalResult& evalresult)
     : Ctx(ctx), EvalResult(evalresult) {}
 };
 
@@ -192,7 +192,7 @@ static bool HandleConversionToBool(const Expr* E, bool& Result,
 }
 
 static APSInt HandleFloatToIntCast(QualType DestType, QualType SrcType,
-                                   APFloat &Value, ASTContext &Ctx) {
+                                   APFloat &Value, const ASTContext &Ctx) {
   unsigned DestWidth = Ctx.getIntWidth(DestType);
   // Determine whether we are converting to unsigned or signed.
   bool DestSigned = DestType->isSignedIntegerType();
@@ -206,7 +206,7 @@ static APSInt HandleFloatToIntCast(QualType DestType, QualType SrcType,
 }
 
 static APFloat HandleFloatToFloatCast(QualType DestType, QualType SrcType,
-                                      APFloat &Value, ASTContext &Ctx) {
+                                      APFloat &Value, const ASTContext &Ctx) {
   bool ignored;
   APFloat Result = Value;
   Result.convert(Ctx.getFloatTypeSemantics(DestType),
@@ -215,7 +215,7 @@ static APFloat HandleFloatToFloatCast(QualType DestType, QualType SrcType,
 }
 
 static APSInt HandleIntToIntCast(QualType DestType, QualType SrcType,
-                                 APSInt &Value, ASTContext &Ctx) {
+                                 APSInt &Value, const ASTContext &Ctx) {
   unsigned DestWidth = Ctx.getIntWidth(DestType);
   APSInt Result = Value;
   // Figure out if this is a truncate, extend or noop cast.
@@ -226,7 +226,7 @@ static APSInt HandleIntToIntCast(QualType DestType, QualType SrcType,
 }
 
 static APFloat HandleIntToFloatCast(QualType DestType, QualType SrcType,
-                                    APSInt &Value, ASTContext &Ctx) {
+                                    APSInt &Value, const ASTContext &Ctx) {
 
   APFloat Result(Ctx.getFloatTypeSemantics(DestType), 1);
   Result.convertFromAPInt(Value, Value.isSigned(),
@@ -404,7 +404,7 @@ bool LValueExprEvaluator::VisitMemberExpr(MemberExpr *E) {
       break;
   }
 
-  Result.Offset += CharUnits::fromQuantity(RL.getFieldOffset(i) / 8);
+  Result.Offset += Info.Ctx.toCharUnitsFromBits(RL.getFieldOffset(i));
   return true;
 }
 
@@ -549,7 +549,7 @@ bool PointerExprEvaluator::VisitCastExpr(CastExpr* E) {
 
     // Now figure out the necessary offset to add to the baseLV to get from
     // the derived class to the base class.
-    uint64_t Offset = 0;
+    CharUnits Offset = CharUnits::Zero();
 
     QualType Ty = E->getSubExpr()->getType();
     const CXXRecordDecl *DerivedDecl = 
@@ -567,13 +567,12 @@ bool PointerExprEvaluator::VisitCastExpr(CastExpr* E) {
       const CXXRecordDecl *BaseDecl = Base->getType()->getAsCXXRecordDecl();
       const ASTRecordLayout &Layout = Info.Ctx.getASTRecordLayout(DerivedDecl);
 
-      Offset += Layout.getBaseClassOffsetInBits(BaseDecl);
+      Offset += Layout.getBaseClassOffset(BaseDecl);
       DerivedDecl = BaseDecl;
     }
 
     Result.Base = BaseLV.getLValueBase();
-    Result.Offset = BaseLV.getLValueOffset() + 
-      CharUnits::fromQuantity(Offset / Info.Ctx.getCharWidth());
+    Result.Offset = BaseLV.getLValueOffset() + Offset;
     return true;
   }
 
@@ -1480,12 +1479,9 @@ CharUnits IntExprEvaluator::GetAlignOfType(QualType T) {
   if (const ReferenceType *Ref = T->getAs<ReferenceType>())
     T = Ref->getPointeeType();
 
-  // Get information about the alignment.
-  unsigned CharSize = Info.Ctx.Target.getCharWidth();
-
   // __alignof is defined to return the preferred alignment.
-  return CharUnits::fromQuantity(
-      Info.Ctx.getPreferredTypeAlign(T.getTypePtr()) / CharSize);
+  return Info.Ctx.toCharUnitsFromBits(
+    Info.Ctx.getPreferredTypeAlign(T.getTypePtr()));
 }
 
 CharUnits IntExprEvaluator::GetAlignOfExpr(const Expr *E) {
@@ -1568,17 +1564,9 @@ bool IntExprEvaluator::VisitOffsetOfExpr(const OffsetOfExpr *E) {
         return false;
       RecordDecl *RD = RT->getDecl();
       const ASTRecordLayout &RL = Info.Ctx.getASTRecordLayout(RD);
-      unsigned i = 0;
-      // FIXME: It would be nice if we didn't have to loop here!
-      for (RecordDecl::field_iterator Field = RD->field_begin(),
-                                      FieldEnd = RD->field_end();
-           Field != FieldEnd; (void)++Field, ++i) {
-        if (*Field == MemberDecl)
-          break;
-      }
+      unsigned i = MemberDecl->getFieldIndex();
       assert(i < RL.getFieldCount() && "offsetof field in wrong type");
-      Result += CharUnits::fromQuantity(
-                           RL.getFieldOffset(i) / Info.Ctx.getCharWidth());
+      Result += Info.Ctx.toCharUnitsFromBits(RL.getFieldOffset(i));
       CurrentType = MemberDecl->getType().getNonReferenceType();
       break;
     }
@@ -1606,9 +1594,7 @@ bool IntExprEvaluator::VisitOffsetOfExpr(const OffsetOfExpr *E) {
         return false;
       
       // Add the offset to the base.
-      Result += CharUnits::fromQuantity(
-             RL.getBaseClassOffsetInBits(cast<CXXRecordDecl>(BaseRT->getDecl()))
-                                        / Info.Ctx.getCharWidth());
+      Result += RL.getBaseClassOffset(cast<CXXRecordDecl>(BaseRT->getDecl()));
       break;
     }
     }
@@ -1818,7 +1804,7 @@ static bool EvaluateFloat(const Expr* E, APFloat& Result, EvalInfo &Info) {
   return FloatExprEvaluator(Info, Result).Visit(const_cast<Expr*>(E));
 }
 
-static bool TryEvaluateBuiltinNaN(ASTContext &Context,
+static bool TryEvaluateBuiltinNaN(const ASTContext &Context,
                                   QualType ResultTy,
                                   const Expr *Arg,
                                   bool SNaN,
@@ -2440,7 +2426,7 @@ bool ComplexExprEvaluator::VisitConditionalOperator(const ConditionalOperator *E
 /// any crazy technique (that has nothing to do with language standards) that
 /// we want to.  If this function returns true, it returns the folded constant
 /// in Result.
-bool Expr::Evaluate(EvalResult &Result, ASTContext &Ctx) const {
+bool Expr::Evaluate(EvalResult &Result, const ASTContext &Ctx) const {
   const Expr *E = this;
   EvalInfo Info(Ctx, Result);
   if (E->getType()->isVectorType()) {
@@ -2475,14 +2461,15 @@ bool Expr::Evaluate(EvalResult &Result, ASTContext &Ctx) const {
   return true;
 }
 
-bool Expr::EvaluateAsBooleanCondition(bool &Result, ASTContext &Ctx) const {
+bool Expr::EvaluateAsBooleanCondition(bool &Result,
+                                      const ASTContext &Ctx) const {
   EvalResult Scratch;
   EvalInfo Info(Ctx, Scratch);
 
   return HandleConversionToBool(this, Result, Info);
 }
 
-bool Expr::EvaluateAsLValue(EvalResult &Result, ASTContext &Ctx) const {
+bool Expr::EvaluateAsLValue(EvalResult &Result, const ASTContext &Ctx) const {
   EvalInfo Info(Ctx, Result);
 
   LValue LV;
@@ -2495,7 +2482,8 @@ bool Expr::EvaluateAsLValue(EvalResult &Result, ASTContext &Ctx) const {
   return false;
 }
 
-bool Expr::EvaluateAsAnyLValue(EvalResult &Result, ASTContext &Ctx) const {
+bool Expr::EvaluateAsAnyLValue(EvalResult &Result,
+                               const ASTContext &Ctx) const {
   EvalInfo Info(Ctx, Result);
 
   LValue LV;
@@ -2508,18 +2496,18 @@ bool Expr::EvaluateAsAnyLValue(EvalResult &Result, ASTContext &Ctx) const {
 
 /// isEvaluatable - Call Evaluate to see if this expression can be constant
 /// folded, but discard the result.
-bool Expr::isEvaluatable(ASTContext &Ctx) const {
+bool Expr::isEvaluatable(const ASTContext &Ctx) const {
   EvalResult Result;
   return Evaluate(Result, Ctx) && !Result.HasSideEffects;
 }
 
-bool Expr::HasSideEffects(ASTContext &Ctx) const {
+bool Expr::HasSideEffects(const ASTContext &Ctx) const {
   Expr::EvalResult Result;
   EvalInfo Info(Ctx, Result);
   return HasSideEffect(Info).Visit(const_cast<Expr*>(this));
 }
 
-APSInt Expr::EvaluateAsInt(ASTContext &Ctx) const {
+APSInt Expr::EvaluateAsInt(const ASTContext &Ctx) const {
   EvalResult EvalResult;
   bool Result = Evaluate(EvalResult, Ctx);
   (void)Result;
@@ -2642,6 +2630,7 @@ static ICEDiag CheckICE(const Expr* E, ASTContext &Ctx) {
   case Expr::NoStmtClass:
   case Expr::OpaqueValueExprClass:
   case Expr::PackExpansionExprClass:
+  case Expr::SubstNonTypeTemplateParmPackExprClass:
     return ICEDiag(2, E->getLocStart());
 
   case Expr::SizeOfPackExprClass:

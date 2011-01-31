@@ -43,7 +43,8 @@ static MCStreamer *createMCStreamer(const Target &T, const std::string &TT,
                                     MCContext &Ctx, TargetAsmBackend &TAB,
                                     raw_ostream &_OS,
                                     MCCodeEmitter *_Emitter,
-                                    bool RelaxAll) {
+                                    bool RelaxAll,
+                                    bool NoExecStack) {
   Triple TheTriple(TT);
   switch (TheTriple.getOS()) {
   case Triple::Darwin:
@@ -54,7 +55,7 @@ static MCStreamer *createMCStreamer(const Target &T, const std::string &TT,
   case Triple::Win32:
     return createWinCOFFStreamer(Ctx, TAB, *_Emitter, _OS, RelaxAll);
   default:
-    return createELFStreamer(Ctx, TAB, _OS, _Emitter, RelaxAll);
+    return createELFStreamer(Ctx, TAB, _OS, _Emitter, RelaxAll, NoExecStack);
   }
 }
 
@@ -119,7 +120,7 @@ X86TargetMachine::X86TargetMachine(const Target &T, const std::string &TT,
                                    const std::string &FS, bool is64Bit)
   : LLVMTargetMachine(T, TT),
     Subtarget(TT, FS, is64Bit),
-    FrameInfo(*this, Subtarget),
+    FrameLowering(*this, Subtarget),
     ELFWriterInfo(is64Bit, true) {
   DefRelocModel = getRelocationModel();
 

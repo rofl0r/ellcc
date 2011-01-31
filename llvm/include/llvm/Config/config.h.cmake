@@ -1,4 +1,3 @@
-
 /**************************************
 ** Created by Kevin from config.h.in **
 ***************************************/
@@ -6,53 +5,53 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-/* Define if dlopen(0) will open the symbols of the program */
-#undef CAN_DLOPEN_SELF
-
-/* Define if CBE is enabled for printf %a output */
-#undef ENABLE_CBE_PRINTF_A
-
 /* Relative directory for resource files */
 #define CLANG_RESOURCE_DIR "${CLANG_RESOURCE_DIR}"
+
+/* 32 bit multilib directory. */
+#define CXX_INCLUDE_32BIT_DIR "${CXX_INCLUDE_32BIT_DIR}"
+
+/* 64 bit multilib directory. */
+#define CXX_INCLUDE_64BIT_DIR "${CXX_INCLUDE_64BIT_DIR}"
+
+/* Arch the libstdc++ headers. */
+#define CXX_INCLUDE_ARCH "${CXX_INCLUDE_ARCH}"
+
+/* Directory with the libstdc++ headers. */
+#define CXX_INCLUDE_ROOT "${CXX_INCLUDE_ROOT}"
 
 /* Directories clang will search for headers */
 #define C_INCLUDE_DIRS "${C_INCLUDE_DIRS}"
 
-/* Directory clang will search for libstdc++ headers */
-#define CXX_INCLUDE_ROOT "${CXX_INCLUDE_ROOT}"
-
-/* Architecture of libstdc++ headers */
-#define CXX_INCLUDE_ARCH "${CXX_INCLUDE_ARCH}"
-
-/* 32 bit multilib directory */
-#define CXX_INCLUDE_32BIT_DIR "${CXX_INCLUDE_32BIT_DIR}"
-
-/* 64 bit multilib directory */
-#define CXX_INCLUDE_64BIT_DIR "${CXX_INCLUDE_64BIT_DIR}"
+/* Define if CBE is enabled for printf %a output */
+#cmakedefine ENABLE_CBE_PRINTF_A ${ENABLE_CBE_PRINTF_A}
 
 /* Define if position independent code is enabled */
-#cmakedefine ENABLE_PIC ${ENABLE_PIC}
+#cmakedefine ENABLE_PIC
 
 /* Define if threads enabled */
 #cmakedefine ENABLE_THREADS ${ENABLE_THREADS}
 
+/* Define if timestamp information (e.g., __DATE___) is allowed */
+#cmakedefine ENABLE_TIMESTAMPS ${ENABLE_TIMESTAMPS}
+
 /* Define to 1 if you have the `argz_append' function. */
-#undef HAVE_ARGZ_APPEND
+#cmakedefine HAVE_ARGZ_APPEND ${HAVE_ARGZ_APPEND}
 
 /* Define to 1 if you have the `argz_create_sep' function. */
-#undef HAVE_ARGZ_CREATE_SEP
+#cmakedefine HAVE_ARGZ_CREATE_SEP ${HAVE_ARGZ_CREATE_SEP}
 
 /* Define to 1 if you have the <argz.h> header file. */
 #cmakedefine HAVE_ARGZ_H ${HAVE_ARGZ_H}
 
 /* Define to 1 if you have the `argz_insert' function. */
-#undef HAVE_ARGZ_INSERT
+#cmakedefine HAVE_ARGZ_INSERT ${HAVE_ARGZ_INSERT}
 
 /* Define to 1 if you have the `argz_next' function. */
-#undef HAVE_ARGZ_NEXT
+#cmakedefine HAVE_ARGZ_NEXT ${HAVE_ARGZ_NEXT}
 
 /* Define to 1 if you have the `argz_stringify' function. */
-#undef HAVE_ARGZ_STRINGIFY
+#cmakedefine HAVE_ARGZ_STRINGIFY ${HAVE_ARGZ_STRINGIFY}
 
 /* Define to 1 if you have the <assert.h> header file. */
 #cmakedefine HAVE_ASSERT_H ${HAVE_ASSERT_H}
@@ -63,9 +62,6 @@
 /* Define to 1 if you have the `bcopy' function. */
 #undef HAVE_BCOPY
 
-/* Does not have bi-directional iterator */
-#undef HAVE_BI_ITERATOR
-
 /* Define to 1 if you have the `ceilf' function. */
 #cmakedefine HAVE_CEILF ${HAVE_CEILF}
 
@@ -73,10 +69,16 @@
 #cmakedefine HAVE_CIRCO ${HAVE_CIRCO}
 
 /* Define to 1 if you have the `closedir' function. */
-#undef HAVE_CLOSEDIR
+#cmakedefine HAVE_CLOSEDIR ${HAVE_CLOSEDIR}
+
+/* Define to 1 if you have the <CrashReporterClient.h> header file. */
+#undef HAVE_CRASHREPORTERCLIENT_H
+
+/* Define if __crashreporter_info__ exists. */
+#undef HAVE_CRASHREPORTER_INFO
 
 /* Define to 1 if you have the <ctype.h> header file. */
-#undef HAVE_CTYPE_H
+#cmakedefine HAVE_CTYPE_H ${HAVE_CTYPE_H}
 
 /* Define to 1 if you have the <dirent.h> header file, and it defines `DIR'.
    */
@@ -89,13 +91,13 @@
 #cmakedefine HAVE_DLD_H ${HAVE_DLD_H}
 
 /* Define to 1 if you have the `dlerror' function. */
-#undef HAVE_DLERROR
+#cmakedefine HAVE_DLERROR ${HAVE_DLERROR}
 
 /* Define to 1 if you have the <dlfcn.h> header file. */
 #cmakedefine HAVE_DLFCN_H ${HAVE_DLFCN_H}
 
 /* Define if dlopen() is available on this platform. */
-#undef HAVE_DLOPEN
+#cmakedefine HAVE_DLOPEN ${HAVE_DLOPEN}
 
 /* Define to 1 if you have the <dl.h> header file. */
 #cmakedefine HAVE_DL_H ${HAVE_DL_H}
@@ -113,7 +115,7 @@
 #cmakedefine HAVE_ERRNO_H ${HAVE_ERRNO_H}
 
 /* Define to 1 if the system has the type `error_t'. */
-#undef HAVE_ERROR_T
+#cmakedefine HAVE_ERROR_T ${HAVE_ERROR_T}
 
 /* Define to 1 if you have the <execinfo.h> header file. */
 #cmakedefine HAVE_EXECINFO_H ${HAVE_EXECINFO_H}
@@ -124,41 +126,41 @@
 /* Define if the neat program is available */
 #cmakedefine HAVE_FDP ${HAVE_FDP}
 
+/* Define to 1 if you have the <fenv.h> header file. */
+#cmakedefine HAVE_FENV_H ${HAVE_FENV_H}
+
+/* Define if libffi is available on this platform. */
+#cmakedefine HAVE_FFI_CALL ${HAVE_FFI_CALL}
+
+/* Define to 1 if you have the <ffi/ffi.h> header file. */
+#cmakedefine HAVE_FFI_FFI_H ${HAVE_FFI_FFI_H}
+
+/* Define to 1 if you have the <ffi.h> header file. */
+#cmakedefine HAVE_FFI_H ${HAVE_FFI_H}
+
 /* Set to 1 if the finite function is found in <ieeefp.h> */
 #cmakedefine HAVE_FINITE_IN_IEEEFP_H ${HAVE_FINITE_IN_IEEEFP_H}
 
 /* Define to 1 if you have the `floorf' function. */
 #cmakedefine HAVE_FLOORF ${HAVE_FLOORF}
 
-/* Does not have forward iterator */
-#undef HAVE_FWD_ITERATOR
+/* Define to 1 if you have the `fmodf' function. */
+#cmakedefine HAVE_FMODF ${HAVE_FMODF}
 
 /* Define to 1 if you have the `getcwd' function. */
-#undef HAVE_GETCWD
+#cmakedefine HAVE_GETCWD ${HAVE_GETCWD}
 
 /* Define to 1 if you have the `getpagesize' function. */
 #cmakedefine HAVE_GETPAGESIZE ${HAVE_GETPAGESIZE}
 
 /* Define to 1 if you have the `getrlimit' function. */
-#undef HAVE_GETRLIMIT
+#cmakedefine HAVE_GETRLIMIT ${HAVE_GETRLIMIT}
 
 /* Define to 1 if you have the `getrusage' function. */
 #cmakedefine HAVE_GETRUSAGE ${HAVE_GETRUSAGE}
 
 /* Define to 1 if you have the `gettimeofday' function. */
-#undef HAVE_GETTIMEOFDAY
-
-/* Does not have <hash_map> */
-#undef HAVE_GLOBAL_HASH_MAP
-
-/* Does not have hash_set in global namespace */
-#undef HAVE_GLOBAL_HASH_SET
-
-/* Does not have ext/hash_map */
-#undef HAVE_GNU_EXT_HASH_MAP
-
-/* Does not have hash_set in gnu namespace */
-#undef HAVE_GNU_EXT_HASH_SET
+#cmakedefine HAVE_GETTIMEOFDAY ${HAVE_GETTIMEOFDAY}
 
 /* Define if the Graphviz program is available */
 #undef HAVE_GRAPHVIZ
@@ -170,7 +172,7 @@
 #undef HAVE_INDEX
 
 /* Define to 1 if the system has the type `int64_t'. */
-#undef HAVE_INT64_T
+#cmakedefine HAVE_INT64_T ${HAVE_INT64_T}
 
 /* Define to 1 if you have the <inttypes.h> header file. */
 #cmakedefine HAVE_INTTYPES_H ${HAVE_INTTYPES_H}
@@ -191,7 +193,7 @@
 #cmakedefine HAVE_ISNAN_IN_MATH_H ${HAVE_ISNAN_IN_MATH_H}
 
 /* Define if you have the libdl library or equivalent. */
-#undef HAVE_LIBDL
+#cmakedefine HAVE_LIBDL ${HAVE_LIBDL}
 
 /* Define to 1 if you have the `imagehlp' library (-limagehlp). */
 #cmakedefine HAVE_LIBIMAGEHLP ${HAVE_LIBIMAGEHLP}
@@ -211,6 +213,9 @@
 /* Define to 1 if you have the <limits.h> header file. */
 #cmakedefine HAVE_LIMITS_H ${HAVE_LIMITS_H}
 
+/* Define if you can use -Wl,-export-dynamic. */
+#define HAVE_LINK_EXPORT_DYNAMIC 1
+
 /* Define to 1 if you have the <link.h> header file. */
 #cmakedefine HAVE_LINK_H ${HAVE_LINK_H}
 
@@ -222,10 +227,10 @@
 #undef HAVE_LONGJMP
 
 /* Define to 1 if you have the <mach/mach.h> header file. */
-#undef HAVE_MACH_MACH_H
+#cmakedefine HAVE_MACH_MACH_H ${HAVE_MACH_MACH_H}
 
 /* Define to 1 if you have the <mach-o/dyld.h> header file. */
-#undef HAVE_MACH_O_DYLD_H
+#cmakedefine HAVE_MACH_O_DYLD_H ${HAVE_MACH_O_DYLD_H}
 
 /* Define if mallinfo() is available on this platform. */
 #cmakedefine HAVE_MALLINFO ${HAVE_MALLINFO}
@@ -240,10 +245,10 @@
 #cmakedefine HAVE_MALLOC_ZONE_STATISTICS ${HAVE_MALLOC_ZONE_STATISTICS}
 
 /* Define to 1 if you have the `memcpy' function. */
-#undef HAVE_MEMCPY
+#cmakedefine HAVE_MEMCPY ${HAVE_MEMCPY}
 
 /* Define to 1 if you have the `memmove' function. */
-#undef HAVE_MEMMOVE
+#cmakedefine HAVE_MEMMOVE ${HAVE_MEMMOVE}
 
 /* Define to 1 if you have the <memory.h> header file. */
 #cmakedefine HAVE_MEMORY_H ${HAVE_MEMORY_H}
@@ -267,9 +272,6 @@
 /* Define if mmap() can map files into memory */
 #undef HAVE_MMAP_FILE
 
-/* define if the compiler implements namespaces */
-#undef HAVE_NAMESPACES
-
 /* Define to 1 if you have the <ndir.h> header file, and it defines `DIR'. */
 #cmakedefine HAVE_NDIR_H ${HAVE_NDIR_H}
 
@@ -280,7 +282,13 @@
 #cmakedefine HAVE_NEATO ${HAVE_NEATO}
 
 /* Define to 1 if you have the `opendir' function. */
-#undef HAVE_OPENDIR
+#cmakedefine HAVE_OPENDIR ${HAVE_OPENDIR}
+
+/* Define to 1 if you have the `posix_spawn' function. */
+#cmakedefine HAVE_POSIX_SPAWN ${HAVE_POSIX_SPAWN}
+
+/* Define to 1 if you have the `powf' function. */
+#cmakedefine HAVE_POWF ${HAVE_POWF}
 
 /* Define if libtool can extract symbol lists from object files. */
 #undef HAVE_PRELOADED_SYMBOLS
@@ -288,7 +296,10 @@
 /* Define to have the %a format string */
 #undef HAVE_PRINTF_A
 
-/* Have pthread.h */
+/* Have pthread_getspecific */
+#cmakedefine HAVE_PTHREAD_GETSPECIFIC ${HAVE_PTHREAD_GETSPECIFIC}
+
+/* Define to 1 if you have the <pthread.h> header file. */
 #cmakedefine HAVE_PTHREAD_H ${HAVE_PTHREAD_H}
 
 /* Have pthread_mutex_lock */
@@ -296,9 +307,6 @@
 
 /* Have pthread_rwlock_init */
 #cmakedefine HAVE_PTHREAD_RWLOCK_INIT ${HAVE_PTHREAD_RWLOCK_INIT}
-
-/* Have pthread_getspecific */
-#cmakedefine HAVE_PTHREAD_GETSPECIFIC ${HAVE_PTHREAD_GETSPECIFIC}
 
 /* Define to 1 if srand48/lrand48/drand48 exist in <stdlib.h> */
 #undef HAVE_RAND48
@@ -315,20 +323,17 @@
 /* Define to 1 if you have the `rintf' function. */
 #undef HAVE_RINTF
 
-/* Define to 1 if you have the `roundf' function. */
-#undef HAVE_ROUNDF
-
 /* Define to 1 if you have the `round' function. */
 #cmakedefine HAVE_ROUND ${HAVE_ROUND}
+
+/* Define to 1 if you have the `roundf' function. */
+#undef HAVE_ROUNDF
 
 /* Define to 1 if you have the `sbrk' function. */
 #cmakedefine HAVE_SBRK ${HAVE_SBRK}
 
 /* Define to 1 if you have the `setenv' function. */
 #cmakedefine HAVE_SETENV ${HAVE_SETENV}
-
-/* Define to 1 if you have the `_chsize_s' function. */
-#cmakedefine HAVE__CHSIZE_S ${HAVE__CHSIZE_S}
 
 /* Define to 1 if you have the `setjmp' function. */
 #undef HAVE_SETJMP
@@ -360,29 +365,20 @@
 /* Define to 1 if you have the <stdlib.h> header file. */
 #cmakedefine HAVE_STDLIB_H ${HAVE_STDLIB_H}
 
-/* Does not have ext/hash_map> */
-#undef HAVE_STD_EXT_HASH_MAP
-
-/* Does not have hash_set in std namespace */
-#undef HAVE_STD_EXT_HASH_SET
-
 /* Set to 1 if the std::isinf function is found in <cmath> */
 #undef HAVE_STD_ISINF_IN_CMATH
 
 /* Set to 1 if the std::isnan function is found in <cmath> */
 #undef HAVE_STD_ISNAN_IN_CMATH
 
-/* Does not have std namespace iterator */
-#undef HAVE_STD_ITERATOR
-
 /* Define to 1 if you have the `strchr' function. */
-#undef HAVE_STRCHR
+#cmakedefine HAVE_STRCHR ${HAVE_STRCHR}
 
 /* Define to 1 if you have the `strcmp' function. */
-#undef HAVE_STRCMP
+#cmakedefine HAVE_STRCMP ${HAVE_STRCMP}
 
 /* Define to 1 if you have the `strdup' function. */
-#undef HAVE_STRDUP
+#cmakedefine HAVE_STRDUP ${HAVE_STRDUP}
 
 /* Define to 1 if you have the `strerror' function. */
 #cmakedefine HAVE_STRERROR ${HAVE_STRERROR}
@@ -394,13 +390,16 @@
 #cmakedefine HAVE_STRERROR_S ${HAVE_STRERROR_S}
 
 /* Define to 1 if you have the <strings.h> header file. */
-#undef HAVE_STRINGS_H
+#cmakedefine HAVE_STRINGS_H ${HAVE_STRINGS_H}
 
 /* Define to 1 if you have the <string.h> header file. */
 #cmakedefine HAVE_STRING_H ${HAVE_STRING_H}
 
 /* Define to 1 if you have the `strrchr' function. */
-#undef HAVE_STRRCHR
+#cmakedefine HAVE_STRRCHR ${HAVE_STRRCHR}
+
+/* Define to 1 if you have the `strtof' function. */
+#cmakedefine HAVE_STRTOF ${HAVE_STRTOF}
 
 /* Define to 1 if you have the `strtoll' function. */
 #cmakedefine HAVE_STRTOLL ${HAVE_STRTOLL}
@@ -446,12 +445,6 @@
 /* Define to 1 if you have <sys/wait.h> that is POSIX.1 compatible. */
 #cmakedefine HAVE_SYS_WAIT_H ${HAVE_SYS_WAIT_H}
 
-/* Define if the neat program is available */
-#cmakedefine HAVE_TWOPI ${HAVE_TWOPI}
-
-/* Define to 1 if the system has the type `uint64_t'. */
-#undef HAVE_UINT64_T
-
 /* Define to 1 if you have the <termios.h> header file. */
 #cmakedefine HAVE_TERMIOS_H ${HAVE_TERMIOS_H}
 
@@ -462,16 +455,22 @@
 #cmakedefine HAVE_UTIME_H ${HAVE_UTIME_H}
 
 /* Define to 1 if the system has the type `u_int64_t'. */
-#undef HAVE_U_INT64_T
+#cmakedefine HAVE_U_INT64_T ${HAVE_U_INT64_T}
 
 /* Define to 1 if you have the <valgrind/valgrind.h> header file. */
 #cmakedefine HAVE_VALGRIND_VALGRIND_H ${HAVE_VALGRIND_VALGRIND_H}
 
-/* Define to 1 if you have the <fenv.h> header file. */
-#cmakedefine HAVE_FENV_H ${HAVE_FENV_H}
-
 /* Define to 1 if you have the <windows.h> header file. */
 #cmakedefine HAVE_WINDOWS_H ${HAVE_WINDOWS_H}
+
+/* Define if the xdot.py program is available */
+#undef HAVE_XDOT_PY
+
+/* Define to 1 if you have the `__dso_handle' function. */
+#undef HAVE___DSO_HANDLE
+
+/* Linker version detected at compile time. */
+#undef HOST_LINK_VERSION
 
 /* Installation directory for binary executables */
 #undef LLVM_BINDIR
@@ -481,6 +480,9 @@
 
 /* Installation directory for documentation */
 #undef LLVM_DATADIR
+
+/* Installation directory for documentation */
+#undef LLVM_DOCSDIR
 
 /* Installation directory for config files */
 #undef LLVM_ETCDIR
@@ -503,14 +505,23 @@
 /* Build multithreading support into LLVM */
 #cmakedefine LLVM_MULTITHREADED ${LLVM_MULTITHREADED}
 
+/* LLVM architecture name for the native architecture, if available */
+#cmakedefine LLVM_NATIVE_ARCH ${LLVM_NATIVE_ARCH}
+
+/* LLVM name for the native AsmPrinter init function, if available */
+#cmakedefine LLVM_NATIVE_ASMPRINTER LLVMInitialize${LLVM_NATIVE_ARCH}AsmPrinter
+
+/* LLVM name for the native Target init function, if available */
+#cmakedefine LLVM_NATIVE_TARGET LLVMInitialize${LLVM_NATIVE_ARCH}Target
+
+/* LLVM name for the native TargetInfo init function, if available */
+#cmakedefine LLVM_NATIVE_TARGETINFO LLVMInitialize${LLVM_NATIVE_ARCH}TargetInfo
+
 /* Define if this is Unixish platform */
 #cmakedefine LLVM_ON_UNIX ${LLVM_ON_UNIX}
 
 /* Define if this is Win32ish platform */
 #cmakedefine LLVM_ON_WIN32 ${LLVM_ON_WIN32}
-
-/* Added by Kevin -- Maximum path length */
-#cmakedefine MAXPATHLEN ${MAXPATHLEN}
 
 /* Define to path to circo program if found or 'echo circo' otherwise */
 #cmakedefine LLVM_PATH_CIRCO "${LLVM_PATH_CIRCO}"
@@ -535,6 +546,9 @@
 
 /* Define to path to twopi program if found or 'echo twopi' otherwise */
 #cmakedefine LLVM_PATH_TWOPI "${LLVM_PATH_TWOPI}"
+
+/* Define to path to xdot.py program if found or 'echo xdot.py' otherwise */
+#undef LLVM_PATH_XDOT_PY
 
 /* Installation prefix directory */
 #cmakedefine LLVM_PREFIX "${LLVM_PREFIX}"
@@ -581,6 +595,9 @@
 /* Define as the return type of signal handlers (`int' or `void'). */
 #cmakedefine RETSIGTYPE ${RETSIGTYPE}
 
+/* Define to 1 if the `S_IS*' macros in <sys/stat.h> do not work properly. */
+#undef STAT_MACROS_BROKEN
+
 /* If using the C implementation of alloca, define if you know the
    direction of stack growth for your system; otherwise it will be
    automatically deduced at runtime.
@@ -601,12 +618,11 @@
 /* Define to 1 if your <sys/time.h> declares `struct tm'. */
 #undef TM_IN_SYS_TIME
 
+/* Define if we have the oprofile JIT-support library */
+#undef USE_OPROFILE
+
 /* Define if use udis86 library */
 #undef USE_UDIS86
-
-/* Define to 1 if `lex' declares `yytext' as a `char *' by default, not a
-   `char[]'. */
-#undef YYTEXT_POINTER
 
 /* Define to empty if `const' does not conform to ANSI C. */
 #undef const
@@ -614,14 +630,24 @@
 /* Define to a type to use for `error_t' if it is not otherwise available. */
 #cmakedefine error_t ${error_t}
 
-/* Define to a type to use for `mode_t' if it is not otherwise available. */
-#cmakedefine mode_t ${mode_t}
-
 /* Define to `int' if <sys/types.h> does not define. */
 #undef pid_t
 
 /* Define to `unsigned int' if <sys/types.h> does not define. */
 #undef size_t
+
+/* Define if the neat program is available */
+#cmakedefine HAVE_TWOPI ${HAVE_TWOPI}
+
+/* Define to 1 if the system has the type `uint64_t'. */
+#cmakedefine HAVE_UINT64_T ${HAVE_UINT64_T}
+
+/* Define to 1 if `lex' declares `yytext' as a `char *' by default, not a
+   `char[]'. */
+#undef YYTEXT_POINTER
+
+/* Define to a type to use for `mode_t' if it is not otherwise available. */
+#cmakedefine mode_t ${mode_t}
 
 /* Define to a function replacing strtoll */
 #cmakedefine strtoll ${strtoll}
@@ -635,16 +661,40 @@
 /* Define to a function implementing strdup */
 #cmakedefine strdup ${strdup}
 
-/* LLVM architecture name for the native architecture, if available */
-#cmakedefine LLVM_NATIVE_ARCH ${LLVM_NATIVE_ARCH}
-  
-/* LLVM name for the native Target init function, if available */
-#cmakedefine LLVM_NATIVE_TARGET LLVMInitialize${LLVM_NATIVE_ARCH}Target
- 
-/* LLVM name for the native TargetInfo init function, if available */
-#cmakedefine LLVM_NATIVE_TARGETINFO LLVMInitialize${LLVM_NATIVE_ARCH}TargetInfo
- 
-/* LLVM name for the native AsmPrinter init function, if available */
-#cmakedefine LLVM_NATIVE_ASMPRINTER LLVMInitialize${LLVM_NATIVE_ARCH}AsmPrinter
+/* Define to 1 if you have the `_chsize_s' function. */
+#cmakedefine HAVE__CHSIZE_S ${HAVE__CHSIZE_S}
+
+/* define if the compiler implements namespaces */
+#undef HAVE_NAMESPACES
+
+/* Does not have std namespace iterator */
+#undef HAVE_STD_ITERATOR
+
+/* Does not have forward iterator */
+#undef HAVE_FWD_ITERATOR
+
+/* Does not have bi-directional iterator */
+#undef HAVE_BI_ITERATOR
+
+/* Does not have <hash_map> */
+#undef HAVE_GLOBAL_HASH_MAP
+
+/* Does not have hash_set in global namespace */
+#undef HAVE_GLOBAL_HASH_SET
+
+/* Does not have ext/hash_map */
+#undef HAVE_GNU_EXT_HASH_MAP
+
+/* Does not have hash_set in gnu namespace */
+#undef HAVE_GNU_EXT_HASH_SET
+
+/* Does not have ext/hash_map> */
+#undef HAVE_STD_EXT_HASH_MAP
+
+/* Does not have hash_set in std namespace */
+#undef HAVE_STD_EXT_HASH_SET
+
+/* Added by Kevin -- Maximum path length */
+#cmakedefine MAXPATHLEN ${MAXPATHLEN}
 
 #endif

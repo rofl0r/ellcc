@@ -141,7 +141,7 @@ public:
               ExplicitTemplateArgsVisitKind,
               NestedNameSpecifierVisitKind,
               DeclarationNameInfoVisitKind,
-              MemberRefVisitKind };
+              MemberRefVisitKind, SizeOfPackExprPartsKind };
 protected:
   void *data[3];
   CXCursor parent;
@@ -689,11 +689,11 @@ bool CursorVisitor::VisitDeclaratorDecl(DeclaratorDecl *DD) {
 }
 
 /// \brief Compare two base or member initializers based on their source order.
-static int CompareCXXBaseOrMemberInitializers(const void* Xp, const void *Yp) {
-  CXXBaseOrMemberInitializer const * const *X
-    = static_cast<CXXBaseOrMemberInitializer const * const *>(Xp);
-  CXXBaseOrMemberInitializer const * const *Y
-    = static_cast<CXXBaseOrMemberInitializer const * const *>(Yp);
+static int CompareCXXCtorInitializers(const void* Xp, const void *Yp) {
+  CXXCtorInitializer const * const *X
+    = static_cast<CXXCtorInitializer const * const *>(Xp);
+  CXXCtorInitializer const * const *Y
+    = static_cast<CXXCtorInitializer const * const *>(Yp);
   
   if ((*X)->getSourceOrder() < (*Y)->getSourceOrder())
     return -1;
@@ -738,7 +738,7 @@ bool CursorVisitor::VisitFunctionDecl(FunctionDecl *ND) {
   if (ND->isThisDeclarationADefinition()) {
     if (CXXConstructorDecl *Constructor = dyn_cast<CXXConstructorDecl>(ND)) {
       // Find the initializers that were written in the source.
-      llvm::SmallVector<CXXBaseOrMemberInitializer *, 4> WrittenInits;
+      llvm::SmallVector<CXXCtorInitializer *, 4> WrittenInits;
       for (CXXConstructorDecl::init_iterator I = Constructor->init_begin(),
                                           IEnd = Constructor->init_end();
            I != IEnd; ++I) {
@@ -750,11 +750,11 @@ bool CursorVisitor::VisitFunctionDecl(FunctionDecl *ND) {
       
       // Sort the initializers in source order
       llvm::array_pod_sort(WrittenInits.begin(), WrittenInits.end(),
-                           &CompareCXXBaseOrMemberInitializers);
+                           &CompareCXXCtorInitializers);
       
       // Visit the initializers in source order
       for (unsigned I = 0, N = WrittenInits.size(); I != N; ++I) {
-        CXXBaseOrMemberInitializer *Init = WrittenInits[I];
+        CXXCtorInitializer *Init = WrittenInits[I];
         if (Init->isAnyMemberInitializer()) {
           if (Visit(MakeCursorMemberRef(Init->getAnyMember(),
                                         Init->getMemberLocation(), TU)))
@@ -1172,7 +1172,7 @@ bool CursorVisitor::VisitNestedNameSpecifier(NestedNameSpecifier *NNS,
     // If the type has a form where we know that the beginning of the source
     // range matches up with a reference cursor. Visit the appropriate reference
     // cursor.
-    Type *T = NNS->getAsType();
+    const Type *T = NNS->getAsType();
     if (const TypedefType *Typedef = dyn_cast<TypedefType>(T))
       return Visit(MakeCursorTypeRef(Typedef->getDecl(), Range.getBegin(), TU));
     if (const TagType *Tag = dyn_cast<TagType>(T))
@@ -1227,6 +1227,11 @@ bool CursorVisitor::VisitTemplateName(TemplateName Name, SourceLocation Loc) {
     // FIXME: Visit nested-name-specifier.
     return Visit(MakeCursorTemplateRef(
                                   Name.getAsQualifiedTemplateName()->getDecl(), 
+                                       Loc, TU));
+      
+  case TemplateName::SubstTemplateTemplateParmPack:
+    return Visit(MakeCursorTemplateRef(
+                  Name.getAsSubstTemplateTemplateParmPack()->getParameterPack(),
                                        Loc, TU));
   }
                  
@@ -1492,6 +1497,7 @@ DEF_JOB(DeclRefExprParts, DeclRefExpr, DeclRefExprPartsKind)
 DEF_JOB(OverloadExprParts, OverloadExpr, OverloadExprPartsKind)
 DEF_JOB(ExplicitTemplateArgsVisit, ExplicitTemplateArgumentList, 
         ExplicitTemplateArgsVisitKind)
+DEF_JOB(SizeOfPackExprParts, SizeOfPackExpr, SizeOfPackExprPartsKind)
 #undef DEF_JOB
 
 class DeclVisit : public VisitorJob {
@@ -1525,22 +1531,22 @@ class LabelRefVisit : public VisitorJob {
 public:
   LabelRefVisit(LabelStmt *LS, SourceLocation labelLoc, CXCursor parent)
     : VisitorJob(parent, VisitorJob::LabelRefVisitKind, LS,
-                 (void*) labelLoc.getRawEncoding()) {}
+                 labelLoc.getPtrEncoding()) {}
   
   static bool classof(const VisitorJob *VJ) {
     return VJ->getKind() == VisitorJob::LabelRefVisitKind;
   }
   LabelStmt *get() const { return static_cast<LabelStmt*>(data[0]); }
   SourceLocation getLoc() const { 
-    return SourceLocation::getFromRawEncoding((unsigned)(uintptr_t) data[1]); }
+    return SourceLocation::getFromPtrEncoding(data[1]); }
 };
 class NestedNameSpecifierVisit : public VisitorJob {
 public:
   NestedNameSpecifierVisit(NestedNameSpecifier *NS, SourceRange R,
                            CXCursor parent)
     : VisitorJob(parent, VisitorJob::NestedNameSpecifierVisitKind,
-                 NS, (void*) R.getBegin().getRawEncoding(),
-                 (void*) R.getEnd().getRawEncoding()) {}
+                 NS, R.getBegin().getPtrEncoding(),
+                 R.getEnd().getPtrEncoding()) {}
   static bool classof(const VisitorJob *VJ) {
     return VJ->getKind() == VisitorJob::NestedNameSpecifierVisitKind;
   }
@@ -1578,7 +1584,7 @@ class MemberRefVisit : public VisitorJob {
 public:
   MemberRefVisit(FieldDecl *D, SourceLocation L, CXCursor parent)
     : VisitorJob(parent, VisitorJob::MemberRefVisitKind, D,
-                 (void*) L.getRawEncoding()) {}
+                 L.getPtrEncoding()) {}
   static bool classof(const VisitorJob *VJ) {
     return VJ->getKind() == VisitorJob::MemberRefVisitKind;
   }
@@ -1632,7 +1638,7 @@ public:
   void VisitBinaryTypeTraitExpr(BinaryTypeTraitExpr *E);
   void VisitUnresolvedMemberExpr(UnresolvedMemberExpr *U);
   void VisitVAArgExpr(VAArgExpr *E);
-  // FIXME: Variadic templates SizeOfPackExpr!
+  void VisitSizeOfPackExpr(SizeOfPackExpr *E);
   
 private:
   void AddDeclarationNameInfo(Stmt *S);
@@ -1924,6 +1930,9 @@ void EnqueueVisitor::VisitVAArgExpr(VAArgExpr *E) {
   AddStmt(E->getSubExpr());
   AddTypeLoc(E->getWrittenTypeInfo());
 }
+void EnqueueVisitor::VisitSizeOfPackExpr(SizeOfPackExpr *E) {
+  WL.push_back(SizeOfPackExprParts(E, Parent));
+}
 
 void CursorVisitor::EnqueueWorkList(VisitorWorkList &WL, Stmt *S) {
   EnqueueVisitor(WL, MakeCXCursor(S, StmtParent, TU)).Visit(S);
@@ -2069,6 +2078,29 @@ bool CursorVisitor::RunVisitorWorkList(VisitorWorkList &WL) {
           return true;
         continue;
       }
+      case VisitorJob::SizeOfPackExprPartsKind: {
+        SizeOfPackExpr *E = cast<SizeOfPackExprParts>(&LI)->get();
+        NamedDecl *Pack = E->getPack();
+        if (isa<TemplateTypeParmDecl>(Pack)) {
+          if (Visit(MakeCursorTypeRef(cast<TemplateTypeParmDecl>(Pack),
+                                      E->getPackLoc(), TU)))
+            return true;
+          
+          continue;
+        }
+          
+        if (isa<TemplateTemplateParmDecl>(Pack)) {
+          if (Visit(MakeCursorTemplateRef(cast<TemplateTemplateParmDecl>(Pack),
+                                          E->getPackLoc(), TU)))
+            return true;
+          
+          continue;
+        }
+        
+        // Non-type template parameter packs and function parameter packs are
+        // treated like DeclRefExpr cursors.
+        continue;
+      }
     }
   }
   return false;
@@ -2206,7 +2238,8 @@ static void clang_parseTranslationUnit_Impl(void *UserData) {
   // Configure the diagnostics.
   DiagnosticOptions DiagOpts;
   llvm::IntrusiveRefCntPtr<Diagnostic> Diags;
-  Diags = CompilerInstance::createDiagnostics(DiagOpts, 0, 0);
+  Diags = CompilerInstance::createDiagnostics(DiagOpts, num_command_line_args, 
+                                              command_line_args);
 
   llvm::SmallVector<ASTUnit::RemappedFile, 4> RemappedFiles;
   for (unsigned I = 0; I != num_unsaved_files; ++I) {
@@ -2649,6 +2682,13 @@ static Decl *getDeclFromExpr(Stmt *E) {
 
   if (ObjCProtocolExpr *PE = dyn_cast<ObjCProtocolExpr>(E))
     return PE->getProtocol();
+  if (SubstNonTypeTemplateParmPackExpr *NTTP 
+                              = dyn_cast<SubstNonTypeTemplateParmPackExpr>(E))
+    return NTTP->getParameterPack();
+  if (SizeOfPackExpr *SizeOfPack = dyn_cast<SizeOfPackExpr>(E))
+    if (isa<NonTypeTemplateParmDecl>(SizeOfPack->getPack()) || 
+        isa<ParmVarDecl>(SizeOfPack->getPack()))
+      return SizeOfPack->getPack();
   
   return 0;
 }
@@ -2664,6 +2704,9 @@ static SourceLocation getLocationFromExpr(Expr *E) {
     return Member->getMemberLoc();
   if (ObjCIvarRefExpr *Ivar = dyn_cast<ObjCIvarRefExpr>(E))
     return Ivar->getLocation();
+  if (SizeOfPackExpr *SizeOfPack = dyn_cast<SizeOfPackExpr>(E))
+    return SizeOfPack->getPackLoc();
+  
   return E->getLocStart();
 }
 

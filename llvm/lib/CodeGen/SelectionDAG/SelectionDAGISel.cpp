@@ -380,10 +380,8 @@ bool SelectionDAGISel::runOnMachineFunction(MachineFunction &mf) {
              II = MBB->begin(), IE = MBB->end(); II != IE; ++II) {
         const TargetInstrDesc &TID = TM.getInstrInfo()->get(II->getOpcode());
 
-        // Operand 1 of an inline asm instruction indicates whether the asm
-        // needs stack or not.
-        if ((II->isInlineAsm() && II->getOperand(1).getImm()) ||
-            (TID.isCall() && !TID.isReturn())) {
+        if ((TID.isCall() && !TID.isReturn()) ||
+            II->isStackAligningInlineAsm()) {
           MFI->setHasCalls(true);
           goto done;
         }
@@ -484,9 +482,7 @@ void SelectionDAGISel::ComputeLiveOutVRegInfo() {
 
     // Only install this information if it tells us something.
     if (NumSignBits != 1 || KnownZero != 0 || KnownOne != 0) {
-      DestReg -= TargetRegisterInfo::FirstVirtualRegister;
-      if (DestReg >= FuncInfo->LiveOutRegInfo.size())
-        FuncInfo->LiveOutRegInfo.resize(DestReg+1);
+      FuncInfo->LiveOutRegInfo.grow(DestReg);
       FunctionLoweringInfo::LiveOutInfo &LOI =
         FuncInfo->LiveOutRegInfo[DestReg];
       LOI.NumSignBits = NumSignBits;
@@ -775,8 +771,16 @@ bool SelectionDAGISel::TryToFoldFastISelLoad(const LoadInst *LI,
   assert(RI.getOperand().isUse() &&
          "The only use of the vreg must be a use, we haven't emitted the def!");
 
+  MachineInstr *User = &*RI;
+  
+  // Set the insertion point properly.  Folding the load can cause generation of
+  // other random instructions (like sign extends) for addressing modes, make
+  // sure they get inserted in a logical place before the new instruction.
+  FuncInfo->InsertPt = User;
+  FuncInfo->MBB = User->getParent();
+
   // Ask the target to try folding the load.
-  return FastIS->TryToFoldLoad(&*RI, RI.getOperandNo(), LI);
+  return FastIS->TryToFoldLoad(User, RI.getOperandNo(), LI);
 }
 
 #ifndef NDEBUG
@@ -895,10 +899,8 @@ void SelectionDAGISel::SelectAllBasicBlocks(const Function &Fn) {
             BeforeInst = llvm::prior(llvm::prior(BI));
           if (BeforeInst && isa<LoadInst>(BeforeInst) &&
               BeforeInst->hasOneUse() && *BeforeInst->use_begin() == Inst &&
-              TryToFoldFastISelLoad(cast<LoadInst>(BeforeInst), FastIS)) {
-            // If we succeeded, don't re-select the load.
-            --BI;
-          }
+              TryToFoldFastISelLoad(cast<LoadInst>(BeforeInst), FastIS))
+            --BI; // If we succeeded, don't re-select the load.
           continue;
         }
 
@@ -1139,7 +1141,7 @@ SelectionDAGISel::FinishBasicBlock() {
   // additional DAGs necessary.
   for (unsigned i = 0, e = SDB->SwitchCases.size(); i != e; ++i) {
     // Set the current basic block to the mbb we wish to insert the code into
-    MachineBasicBlock *ThisBB = FuncInfo->MBB = SDB->SwitchCases[i].ThisBB;
+    FuncInfo->MBB = SDB->SwitchCases[i].ThisBB;
     FuncInfo->InsertPt = FuncInfo->MBB->end();
 
     // Determine the unique successors.
@@ -1148,13 +1150,15 @@ SelectionDAGISel::FinishBasicBlock() {
     if (SDB->SwitchCases[i].TrueBB != SDB->SwitchCases[i].FalseBB)
       Succs.push_back(SDB->SwitchCases[i].FalseBB);
 
-    // Emit the code. Note that this could result in ThisBB being split, so
-    // we need to check for updates.
+    // Emit the code. Note that this could result in FuncInfo->MBB being split.
     SDB->visitSwitchCase(SDB->SwitchCases[i], FuncInfo->MBB);
     CurDAG->setRoot(SDB->getRoot());
     SDB->clear();
     CodeGenAndEmitDAG();
-    ThisBB = FuncInfo->MBB;
+
+    // Remember the last block, now that any splitting is done, for use in
+    // populating PHI nodes in successors.
+    MachineBasicBlock *ThisBB = FuncInfo->MBB;
 
     // Handle any PHI nodes in successors of this chunk, as if we were coming
     // from the original BB before switch expansion.  Note that PHI nodes can
@@ -1283,7 +1287,7 @@ SelectInlineAsmMemoryOperands(std::vector<SDValue> &Ops) {
   Ops.push_back(InOps[InlineAsm::Op_InputChain]); // 0
   Ops.push_back(InOps[InlineAsm::Op_AsmString]);  // 1
   Ops.push_back(InOps[InlineAsm::Op_MDNode]);     // 2, !srcloc
-  Ops.push_back(InOps[InlineAsm::Op_IsAlignStack]);  // 3
+  Ops.push_back(InOps[InlineAsm::Op_ExtraInfo]);  // 3 (SideEffect, AlignStack)
 
   unsigned i = InlineAsm::Op_FirstOperand, e = InOps.size();
   if (InOps[e-1].getValueType() == MVT::Glue)

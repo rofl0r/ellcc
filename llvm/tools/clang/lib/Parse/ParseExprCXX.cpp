@@ -13,6 +13,7 @@
 
 #include "clang/Parse/ParseDiagnostic.h"
 #include "clang/Parse/Parser.h"
+#include "RAIIObjectsForParser.h"
 #include "clang/Sema/DeclSpec.h"
 #include "clang/Sema/ParsedTemplate.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -720,6 +721,8 @@ Parser::ParseCXXTypeConstructExpression(const DeclSpec &DS) {
   ParsedType TypeRep = Actions.ActOnTypeName(getCurScope(), DeclaratorInfo).get();
 
   assert(Tok.is(tok::l_paren) && "Expected '('!");
+  GreaterThanIsOperatorScope G(GreaterThanIsOperator, true);
+
   SourceLocation LParenLoc = ConsumeParen();
 
   ExprVector Exprs(Actions);
@@ -821,7 +824,7 @@ bool Parser::ParseCXXCondition(ExprResult &ExprOut,
   // '=' assignment-expression
   if (isTokenEqualOrMistypedEqualEqual(
                                diag::err_invalid_equalequal_after_declarator)) {
-    SourceLocation EqualLoc = ConsumeToken();
+    ConsumeToken();
     ExprResult AssignExpr(ParseAssignmentExpression());
     if (!AssignExpr.isInvalid()) 
       Actions.AddInitializerToDecl(DeclOut, AssignExpr.take());
@@ -908,8 +911,11 @@ void Parser::ParseCXXSimpleTypeSpecifier(DeclSpec &DS) {
 
   // type-name
   case tok::annot_typename: {
-    DS.SetTypeSpecType(DeclSpec::TST_typename, Loc, PrevSpec, DiagID,
-                       getTypeAnnotation(Tok));
+    if (getTypeAnnotation(Tok))
+      DS.SetTypeSpecType(DeclSpec::TST_typename, Loc, PrevSpec, DiagID,
+                         getTypeAnnotation(Tok));
+    else
+      DS.SetTypeSpecError();
     
     DS.SetRangeEnd(Tok.getAnnotationEndLoc());
     ConsumeToken();
@@ -1822,6 +1828,7 @@ static BinaryTypeTrait BinaryTypeTraitFromTokKind(tok::TokenKind kind) {
   default: llvm_unreachable("Not a known binary type trait");
   case tok::kw___is_base_of:                 return BTT_IsBaseOf;
   case tok::kw___builtin_types_compatible_p: return BTT_TypeCompatible;
+  case tok::kw___is_convertible_to:          return BTT_IsConvertibleTo;
   }
 }
 

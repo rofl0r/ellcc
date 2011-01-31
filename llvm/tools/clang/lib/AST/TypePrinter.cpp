@@ -354,6 +354,21 @@ void TypePrinter::printFunctionProto(const FunctionProtoType *T,
     S += " __attribute__((regparm (" +
         llvm::utostr_32(Info.getRegParm()) + ")))";
   
+  AppendTypeQualList(S, T->getTypeQuals());
+
+  switch (T->getRefQualifier()) {
+  case RQ_None:
+    break;
+    
+  case RQ_LValue:
+    S += " &";
+    break;
+    
+  case RQ_RValue:
+    S += " &&";
+    break;
+  }
+  
   if (T->hasExceptionSpec()) {
     S += " throw(";
     if (T->hasAnyExceptionSpec())
@@ -370,8 +385,6 @@ void TypePrinter::printFunctionProto(const FunctionProtoType *T,
     S += ")";
   }
 
-  AppendTypeQualList(S, T->getTypeQuals());
-  
   print(T->getResultType(), S);
 }
 
@@ -568,6 +581,12 @@ void TypePrinter::printSubstTemplateTypeParm(const SubstTemplateTypeParmType *T,
   print(T->getReplacementType(), S);
 }
 
+void TypePrinter::printSubstTemplateTypeParmPack(
+                                        const SubstTemplateTypeParmPackType *T, 
+                                             std::string &S) { 
+  printTemplateTypeParm(T->getReplacedParameter(), S);
+}
+
 void TypePrinter::printTemplateSpecialization(
                                             const TemplateSpecializationType *T, 
                                               std::string &S) { 
@@ -681,13 +700,13 @@ void TypePrinter::printAttributed(const AttributedType *T,
   // TODO: not all attributes are GCC-style attributes.
   S += "__attribute__((";
   switch (T->getAttrKind()) {
-  case AttributedType::address_space:
+  case AttributedType::attr_address_space:
     S += "address_space(";
     S += T->getEquivalentType().getAddressSpace();
     S += ")";
     break;
 
-  case AttributedType::vector_size: {
+  case AttributedType::attr_vector_size: {
     S += "__vector_size__(";
     if (const VectorType *vector =T->getEquivalentType()->getAs<VectorType>()) {
       S += vector->getNumElements();
@@ -702,9 +721,9 @@ void TypePrinter::printAttributed(const AttributedType *T,
     break;
   }
 
-  case AttributedType::neon_vector_type:
-  case AttributedType::neon_polyvector_type: {
-    if (T->getAttrKind() == AttributedType::neon_vector_type)
+  case AttributedType::attr_neon_vector_type:
+  case AttributedType::attr_neon_polyvector_type: {
+    if (T->getAttrKind() == AttributedType::attr_neon_vector_type)
       S += "neon_vector_type(";
     else
       S += "neon_polyvector_type(";
@@ -714,7 +733,7 @@ void TypePrinter::printAttributed(const AttributedType *T,
     break;
   }
 
-  case AttributedType::regparm: {
+  case AttributedType::attr_regparm: {
     S += "regparm(";
     QualType t = T->getEquivalentType();
     while (!t->isFunctionType())
@@ -724,7 +743,7 @@ void TypePrinter::printAttributed(const AttributedType *T,
     break;
   }
 
-  case AttributedType::objc_gc: {
+  case AttributedType::attr_objc_gc: {
     S += "objc_gc(";
 
     QualType tmp = T->getEquivalentType();
@@ -742,12 +761,12 @@ void TypePrinter::printAttributed(const AttributedType *T,
     break;
   }
 
-  case AttributedType::noreturn: S += "noreturn"; break;
-  case AttributedType::cdecl: S += "cdecl"; break;
-  case AttributedType::fastcall: S += "fastcall"; break;
-  case AttributedType::stdcall: S += "stdcall"; break;
-  case AttributedType::thiscall: S += "thiscall"; break;
-  case AttributedType::pascal: S += "pascal"; break;
+  case AttributedType::attr_noreturn: S += "noreturn"; break;
+  case AttributedType::attr_cdecl: S += "cdecl"; break;
+  case AttributedType::attr_fastcall: S += "fastcall"; break;
+  case AttributedType::attr_stdcall: S += "stdcall"; break;
+  case AttributedType::attr_thiscall: S += "thiscall"; break;
+  case AttributedType::attr_pascal: S += "pascal"; break;
   }
   S += "))";
 }
@@ -870,7 +889,7 @@ TemplateSpecializationType::PrintTemplateArgumentList(
   // If the last character of our string is '>', add another space to
   // keep the two '>''s separate tokens. We don't *have* to do this in
   // C++0x, but it's still good hygiene.
-  if (SpecString[SpecString.size() - 1] == '>')
+  if (!SpecString.empty() && SpecString[SpecString.size() - 1] == '>')
     SpecString += ' ';
   
   if (!SkipBrackets)

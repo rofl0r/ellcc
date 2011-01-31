@@ -119,12 +119,16 @@ def callseq_start : SDNode<"ISD::CALLSEQ_START", SDT_SPCallSeqStart,
 def callseq_end   : SDNode<"ISD::CALLSEQ_END",   SDT_SPCallSeqEnd,
                            [SDNPHasChain, SDNPOptInGlue, SDNPOutGlue]>;
 
-def SDT_SPCall    : SDTypeProfile<0, 1, [SDTCisVT<0, i32>]>;
+def SDT_SPCall    : SDTypeProfile<0, -1, [SDTCisVT<0, i32>]>;
 def call          : SDNode<"SPISD::CALL", SDT_SPCall,
-                           [SDNPHasChain, SDNPOptInGlue, SDNPOutGlue]>;
+                           [SDNPHasChain, SDNPOptInGlue, SDNPOutGlue,
+                            SDNPVariadic]>;
 
 def retflag       : SDNode<"SPISD::RET_FLAG", SDTNone,
                            [SDNPHasChain, SDNPOptInGlue]>;
+
+def flushw        : SDNode<"SPISD::FLUSHW", SDTNone,
+                           [SDNPHasChain]>;
 
 def getPCX        : Operand<i32> {
   let PrintMethod = "printGetPCX";
@@ -204,7 +208,7 @@ class Pseudo<dag outs, dag ins, string asmstr, list<dag> pattern>
    : InstSP<outs, ins, asmstr, pattern>;
 
 // GETPCX for PIC
-let Defs = [O7], Uses = [O7] in {
+let Defs = [O7] in {
   def GETPCX : Pseudo<(outs getPCX:$getpcseq), (ins), "$getpcseq", [] >;
 }
 
@@ -215,6 +219,17 @@ def ADJCALLSTACKDOWN : Pseudo<(outs), (ins i32imm:$amt),
 def ADJCALLSTACKUP : Pseudo<(outs), (ins i32imm:$amt1, i32imm:$amt2),
                             "!ADJCALLSTACKUP $amt1",
                             [(callseq_end timm:$amt1, timm:$amt2)]>;
+}
+
+let hasSideEffects = 1, mayStore = 1 in {
+  let rd = 0, rs1 = 0, rs2 = 0 in
+    def FLUSHW : F3_1<0b10, 0b101011, (outs), (ins),
+                      "flushw",
+                      [(flushw)]>, Requires<[HasV9]>;
+  let rd = 0, rs1 = 1, simm13 = 3 in
+    def TA3 : F3_2<0b10, 0b111010, (outs), (ins),
+                   "ta 3",
+                   [(flushw)]>;
 }
 
 // FpMOVD/FpNEGD/FpABSD - These are lowered to single-precision ops by the 
@@ -233,36 +248,39 @@ let Predicates = [HasNoV9] in {  // Only emit these in V8 mode.
 // SELECT_CC_* - Used to implement the SELECT_CC DAG operation.  Expanded after
 // instruction selection into a branch sequence.  This has to handle all
 // permutations of selection between i32/f32/f64 on ICC and FCC.
-let Uses = [ICC],
-    usesCustomInserter = 1 in {   // Expanded after instruction selection.
+  // Expanded after instruction selection.
+let Uses = [ICC], usesCustomInserter = 1 in { 
   def SELECT_CC_Int_ICC
    : Pseudo<(outs IntRegs:$dst), (ins IntRegs:$T, IntRegs:$F, i32imm:$Cond),
             "; SELECT_CC_Int_ICC PSEUDO!",
             [(set IntRegs:$dst, (SPselecticc IntRegs:$T, IntRegs:$F,
                                              imm:$Cond))]>;
-  def SELECT_CC_Int_FCC
-   : Pseudo<(outs IntRegs:$dst), (ins IntRegs:$T, IntRegs:$F, i32imm:$Cond),
-            "; SELECT_CC_Int_FCC PSEUDO!",
-            [(set IntRegs:$dst, (SPselectfcc IntRegs:$T, IntRegs:$F,
-                                             imm:$Cond))]>;
-}
-
-let usesCustomInserter = 1, Uses = [FCC] in {
   def SELECT_CC_FP_ICC
    : Pseudo<(outs FPRegs:$dst), (ins FPRegs:$T, FPRegs:$F, i32imm:$Cond),
             "; SELECT_CC_FP_ICC PSEUDO!",
             [(set FPRegs:$dst, (SPselecticc FPRegs:$T, FPRegs:$F,
                                             imm:$Cond))]>;
-  def SELECT_CC_FP_FCC
-   : Pseudo<(outs FPRegs:$dst), (ins FPRegs:$T, FPRegs:$F, i32imm:$Cond),
-            "; SELECT_CC_FP_FCC PSEUDO!",
-            [(set FPRegs:$dst, (SPselectfcc FPRegs:$T, FPRegs:$F,
-                                            imm:$Cond))]>;
+
   def SELECT_CC_DFP_ICC
    : Pseudo<(outs DFPRegs:$dst), (ins DFPRegs:$T, DFPRegs:$F, i32imm:$Cond),
             "; SELECT_CC_DFP_ICC PSEUDO!",
             [(set DFPRegs:$dst, (SPselecticc DFPRegs:$T, DFPRegs:$F,
                                              imm:$Cond))]>;
+}
+
+let usesCustomInserter = 1, Uses = [FCC] in {
+
+  def SELECT_CC_Int_FCC
+   : Pseudo<(outs IntRegs:$dst), (ins IntRegs:$T, IntRegs:$F, i32imm:$Cond),
+            "; SELECT_CC_Int_FCC PSEUDO!",
+            [(set IntRegs:$dst, (SPselectfcc IntRegs:$T, IntRegs:$F,
+                                             imm:$Cond))]>;
+
+  def SELECT_CC_FP_FCC
+   : Pseudo<(outs FPRegs:$dst), (ins FPRegs:$T, FPRegs:$F, i32imm:$Cond),
+            "; SELECT_CC_FP_FCC PSEUDO!",
+            [(set FPRegs:$dst, (SPselectfcc FPRegs:$T, FPRegs:$F,
+                                            imm:$Cond))]>;
   def SELECT_CC_DFP_FCC
    : Pseudo<(outs DFPRegs:$dst), (ins DFPRegs:$T, DFPRegs:$F, i32imm:$Cond),
             "; SELECT_CC_DFP_FCC PSEUDO!",
@@ -276,6 +294,9 @@ let usesCustomInserter = 1, Uses = [FCC] in {
 let isReturn = 1, isTerminator = 1, hasDelaySlot = 1, isBarrier = 1 in {
   let rd = O7.Num, rs1 = G0.Num, simm13 = 8 in
     def RETL: F3_2<2, 0b111000, (outs), (ins), "retl", [(retflag)]>;
+
+  let rd = I7.Num, rs1 = G0.Num, simm13 = 8 in
+    def RET: F3_2<2, 0b111000, (outs), (ins), "ret", []>;
 }
 
 // Section B.1 - Load Integer Instructions, p. 90
@@ -440,7 +461,8 @@ def LEA_ADDri   : F3_2<2, 0b000000,
 let Defs = [ICC] in                   
   defm ADDCC  : F3_12<"addcc", 0b010000, addc>;
 
-defm ADDX  : F3_12<"addx", 0b001000, adde>;
+let Uses = [ICC] in
+  defm ADDX  : F3_12<"addx", 0b001000, adde>;
 
 // Section B.15 - Subtract Instructions, p. 110
 defm SUB    : F3_12  <"sub"  , 0b000100, sub>;
@@ -513,11 +535,12 @@ let Uses = [FCC] in
 
 // Section B.24 - Call and Link Instruction, p. 125
 // This is the only Format 1 instruction
-let Uses = [O0, O1, O2, O3, O4, O5],
+let Uses = [O6],
     hasDelaySlot = 1, isCall = 1,
     Defs = [O0, O1, O2, O3, O4, O5, O7, G1, G2, G3, G4, G5, G6, G7,
-    D0, D1, D2, D3, D4, D5, D6, D7, D8, D9, D10, D11, D12, D13, D14, D15] in { 
-  def CALL : InstSP<(outs), (ins calltarget:$dst),
+    D0, D1, D2, D3, D4, D5, D6, D7, D8, D9, D10, D11, D12, D13, D14, D15,
+        ICC, FCC, Y] in {
+  def CALL : InstSP<(outs), (ins calltarget:$dst, variable_ops),
                     "call $dst", []> {
     bits<30> disp;
     let op = 1;
@@ -526,11 +549,11 @@ let Uses = [O0, O1, O2, O3, O4, O5],
   
   // indirect calls
   def JMPLrr : F3_1<2, 0b111000,
-                    (outs), (ins MEMrr:$ptr),
+                    (outs), (ins MEMrr:$ptr, variable_ops),
                     "call $ptr",
                     [(call ADDRrr:$ptr)]>;
   def JMPLri : F3_2<2, 0b111000,
-                    (outs), (ins MEMri:$ptr),
+                    (outs), (ins MEMri:$ptr, variable_ops),
                     "call $ptr",
                     [(call ADDRri:$ptr)]>;
 }
@@ -671,48 +694,57 @@ let Defs = [FCC] in {
 let Predicates = [HasV9], Constraints = "$T = $dst" in {
   // Move Integer Register on Condition (MOVcc) p. 194 of the V9 manual.
   // FIXME: Add instruction encodings for the JIT some day.
-  def MOVICCrr
-    : Pseudo<(outs IntRegs:$dst), (ins IntRegs:$T, IntRegs:$F, CCOp:$cc),
-             "mov$cc %icc, $F, $dst",
-             [(set IntRegs:$dst,
-                         (SPselecticc IntRegs:$F, IntRegs:$T, imm:$cc))]>;
-  def MOVICCri
-    : Pseudo<(outs IntRegs:$dst), (ins IntRegs:$T, i32imm:$F, CCOp:$cc),
-             "mov$cc %icc, $F, $dst",
-             [(set IntRegs:$dst,
-                          (SPselecticc simm11:$F, IntRegs:$T, imm:$cc))]>;
+  let Uses = [ICC] in {
+    def MOVICCrr
+      : Pseudo<(outs IntRegs:$dst), (ins IntRegs:$T, IntRegs:$F, CCOp:$cc),
+               "mov$cc %icc, $F, $dst",
+               [(set IntRegs:$dst,
+                           (SPselecticc IntRegs:$F, IntRegs:$T, imm:$cc))]>;
+    def MOVICCri
+      : Pseudo<(outs IntRegs:$dst), (ins IntRegs:$T, i32imm:$F, CCOp:$cc),
+               "mov$cc %icc, $F, $dst",
+               [(set IntRegs:$dst,
+                            (SPselecticc simm11:$F, IntRegs:$T, imm:$cc))]>;
+  }
 
-  def MOVFCCrr
-    : Pseudo<(outs IntRegs:$dst), (ins IntRegs:$T, IntRegs:$F, CCOp:$cc),
-             "mov$cc %fcc0, $F, $dst",
-             [(set IntRegs:$dst,
-                         (SPselectfcc IntRegs:$F, IntRegs:$T, imm:$cc))]>;
-  def MOVFCCri
-    : Pseudo<(outs IntRegs:$dst), (ins IntRegs:$T, i32imm:$F, CCOp:$cc),
-             "mov$cc %fcc0, $F, $dst",
-             [(set IntRegs:$dst,
-                          (SPselectfcc simm11:$F, IntRegs:$T, imm:$cc))]>;
+  let Uses = [FCC] in {
+    def MOVFCCrr
+      : Pseudo<(outs IntRegs:$dst), (ins IntRegs:$T, IntRegs:$F, CCOp:$cc),
+               "mov$cc %fcc0, $F, $dst",
+               [(set IntRegs:$dst,
+                           (SPselectfcc IntRegs:$F, IntRegs:$T, imm:$cc))]>;
+    def MOVFCCri
+      : Pseudo<(outs IntRegs:$dst), (ins IntRegs:$T, i32imm:$F, CCOp:$cc),
+               "mov$cc %fcc0, $F, $dst",
+               [(set IntRegs:$dst,
+                            (SPselectfcc simm11:$F, IntRegs:$T, imm:$cc))]>;
+  }
 
-  def FMOVS_ICC
-    : Pseudo<(outs FPRegs:$dst), (ins FPRegs:$T, FPRegs:$F, CCOp:$cc),
-             "fmovs$cc %icc, $F, $dst",
-             [(set FPRegs:$dst,
-                         (SPselecticc FPRegs:$F, FPRegs:$T, imm:$cc))]>;
-  def FMOVD_ICC
-    : Pseudo<(outs DFPRegs:$dst), (ins DFPRegs:$T, DFPRegs:$F, CCOp:$cc),
-             "fmovd$cc %icc, $F, $dst",
-             [(set DFPRegs:$dst,
-                         (SPselecticc DFPRegs:$F, DFPRegs:$T, imm:$cc))]>;
-  def FMOVS_FCC
-    : Pseudo<(outs FPRegs:$dst), (ins FPRegs:$T, FPRegs:$F, CCOp:$cc),
-             "fmovs$cc %fcc0, $F, $dst",
-             [(set FPRegs:$dst,
-                         (SPselectfcc FPRegs:$F, FPRegs:$T, imm:$cc))]>;
-  def FMOVD_FCC
-    : Pseudo<(outs DFPRegs:$dst), (ins DFPRegs:$T, DFPRegs:$F, CCOp:$cc),
-             "fmovd$cc %fcc0, $F, $dst",
-             [(set DFPRegs:$dst,
-                         (SPselectfcc DFPRegs:$F, DFPRegs:$T, imm:$cc))]>;
+  let Uses = [ICC] in {
+    def FMOVS_ICC
+      : Pseudo<(outs FPRegs:$dst), (ins FPRegs:$T, FPRegs:$F, CCOp:$cc),
+               "fmovs$cc %icc, $F, $dst",
+               [(set FPRegs:$dst,
+                           (SPselecticc FPRegs:$F, FPRegs:$T, imm:$cc))]>;
+    def FMOVD_ICC
+      : Pseudo<(outs DFPRegs:$dst), (ins DFPRegs:$T, DFPRegs:$F, CCOp:$cc),
+               "fmovd$cc %icc, $F, $dst",
+               [(set DFPRegs:$dst,
+                           (SPselecticc DFPRegs:$F, DFPRegs:$T, imm:$cc))]>;
+  }
+
+  let Uses = [FCC] in {
+    def FMOVS_FCC
+      : Pseudo<(outs FPRegs:$dst), (ins FPRegs:$T, FPRegs:$F, CCOp:$cc),
+               "fmovs$cc %fcc0, $F, $dst",
+               [(set FPRegs:$dst,
+                           (SPselectfcc FPRegs:$F, FPRegs:$T, imm:$cc))]>;
+    def FMOVD_FCC
+      : Pseudo<(outs DFPRegs:$dst), (ins DFPRegs:$T, DFPRegs:$F, CCOp:$cc),
+               "fmovd$cc %fcc0, $F, $dst",
+               [(set DFPRegs:$dst,
+                           (SPselectfcc DFPRegs:$F, DFPRegs:$T, imm:$cc))]>;
+  }
 
 }
 

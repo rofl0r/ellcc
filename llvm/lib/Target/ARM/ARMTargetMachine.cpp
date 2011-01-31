@@ -12,7 +12,7 @@
 
 #include "ARMTargetMachine.h"
 #include "ARMMCAsmInfo.h"
-#include "ARMFrameInfo.h"
+#include "ARMFrameLowering.h"
 #include "ARM.h"
 #include "llvm/PassManager.h"
 #include "llvm/CodeGen/Passes.h"
@@ -39,7 +39,8 @@ static MCStreamer *createMCStreamer(const Target &T, const std::string &TT,
                                     MCContext &Ctx, TargetAsmBackend &TAB,
                                     raw_ostream &OS,
                                     MCCodeEmitter *Emitter,
-                                    bool RelaxAll) {
+                                    bool RelaxAll,
+                                    bool NoExecStack) {
   switch (Triple(TT).getOS()) {
   case Triple::Darwin:
     return createMachOStreamer(Ctx, TAB, OS, Emitter, RelaxAll);
@@ -50,7 +51,7 @@ static MCStreamer *createMCStreamer(const Target &T, const std::string &TT,
     llvm_unreachable("ARM does not support Windows COFF format");
     return NULL;
   default:
-    return createELFStreamer(Ctx, TAB, OS, Emitter, RelaxAll);
+    return createELFStreamer(Ctx, TAB, OS, Emitter, RelaxAll, NoExecStack);
   }
 }
 
@@ -102,7 +103,7 @@ ARMTargetMachine::ARMTargetMachine(const Target &T, const std::string &TT,
     ELFWriterInfo(*this),
     TLInfo(*this),
     TSInfo(*this),
-    FrameInfo(Subtarget) {
+    FrameLowering(Subtarget) {
   if (!Subtarget.hasARMOps())
     report_fatal_error("CPU: '" + Subtarget.getCPUString() + "' does not "
                        "support ARM mode execution!");
@@ -124,9 +125,9 @@ ThumbTargetMachine::ThumbTargetMachine(const Target &T, const std::string &TT,
     ELFWriterInfo(*this),
     TLInfo(*this),
     TSInfo(*this),
-    FrameInfo(Subtarget.hasThumb2()
-              ? new ARMFrameInfo(Subtarget)
-              : (ARMFrameInfo*)new Thumb1FrameInfo(Subtarget)) {
+    FrameLowering(Subtarget.hasThumb2()
+              ? new ARMFrameLowering(Subtarget)
+              : (ARMFrameLowering*)new Thumb1FrameLowering(Subtarget)) {
 }
 
 // Pass Pipeline Configuration

@@ -268,6 +268,12 @@ public:
     bool isPRValue() const { return Kind >= CL_Function; }
     bool isRValue() const { return Kind >= CL_XValue; }
     bool isModifiable() const { return getModifiable() == CM_Modifiable; }
+    
+    /// \brief Create a simple, modifiably lvalue
+    static Classification makeSimpleLValue() {
+      return Classification(CL_LValue, CM_Modifiable);
+    }
+    
   };
   /// \brief Classify - Classify this expression according to the C++0x
   ///        expression taxonomy.
@@ -404,33 +410,33 @@ public:
   /// any crazy technique (that has nothing to do with language standards) that
   /// we want to.  If this function returns true, it returns the folded constant
   /// in Result.
-  bool Evaluate(EvalResult &Result, ASTContext &Ctx) const;
+  bool Evaluate(EvalResult &Result, const ASTContext &Ctx) const;
 
   /// EvaluateAsBooleanCondition - Return true if this is a constant
   /// which we we can fold and convert to a boolean condition using
   /// any crazy technique that we want to.
-  bool EvaluateAsBooleanCondition(bool &Result, ASTContext &Ctx) const;
+  bool EvaluateAsBooleanCondition(bool &Result, const ASTContext &Ctx) const;
 
   /// isEvaluatable - Call Evaluate to see if this expression can be constant
   /// folded, but discard the result.
-  bool isEvaluatable(ASTContext &Ctx) const;
+  bool isEvaluatable(const ASTContext &Ctx) const;
 
   /// HasSideEffects - This routine returns true for all those expressions
   /// which must be evaluated each time and must not be optimized away 
   /// or evaluated at compile time. Example is a function call, volatile
   /// variable read.
-  bool HasSideEffects(ASTContext &Ctx) const;
+  bool HasSideEffects(const ASTContext &Ctx) const;
   
   /// EvaluateAsInt - Call Evaluate and return the folded integer. This
   /// must be called on an expression that constant folds to an integer.
-  llvm::APSInt EvaluateAsInt(ASTContext &Ctx) const;
+  llvm::APSInt EvaluateAsInt(const ASTContext &Ctx) const;
 
   /// EvaluateAsLValue - Evaluate an expression to see if it's a lvalue
   /// with link time known address.
-  bool EvaluateAsLValue(EvalResult &Result, ASTContext &Ctx) const;
+  bool EvaluateAsLValue(EvalResult &Result, const ASTContext &Ctx) const;
 
   /// EvaluateAsLValue - Evaluate an expression to see if it's a lvalue.
-  bool EvaluateAsAnyLValue(EvalResult &Result, ASTContext &Ctx) const;
+  bool EvaluateAsAnyLValue(EvalResult &Result, const ASTContext &Ctx) const;
 
   /// \brief Enumeration used to describe how \c isNullPointerConstant()
   /// should cope with value-dependent expressions.
@@ -1732,7 +1738,7 @@ public:
 
   /// isBuiltinCall - If this is a call to a builtin, return the builtin ID.  If
   /// not, return 0.
-  unsigned isBuiltinCall(ASTContext &Context) const;
+  unsigned isBuiltinCall(const ASTContext &Context) const;
 
   /// getCallReturnType - Get the return type of the call expr. This is not
   /// always the type of the expr itself, if the return type is a reference
@@ -2797,11 +2803,11 @@ public:
 
   /// isConditionTrue - Return whether the condition is true (i.e. not
   /// equal to zero).
-  bool isConditionTrue(ASTContext &C) const;
+  bool isConditionTrue(const ASTContext &C) const;
 
   /// getChosenSubExpr - Return the subexpression chosen according to the
   /// condition.
-  Expr *getChosenSubExpr(ASTContext &C) const {
+  Expr *getChosenSubExpr(const ASTContext &C) const {
     return isConditionTrue(C) ? getLHS() : getRHS();
   }
 
@@ -3572,15 +3578,9 @@ class BlockDeclRefExpr : public Expr {
   bool ConstQualAdded : 1;
   Stmt *CopyConstructorVal;
 public:
-  // FIXME: Fix type/value dependence!
-  // FIXME: Variadic templates.
   BlockDeclRefExpr(ValueDecl *d, QualType t, ExprValueKind VK,
                    SourceLocation l, bool ByRef, bool constAdded = false,
-                   Stmt *copyConstructorVal = 0)
-    : Expr(BlockDeclRefExprClass, t, VK, OK_Ordinary,
-           (!t.isNull() && t->isDependentType()), false, false),
-    D(d), Loc(l), IsByRef(ByRef),
-    ConstQualAdded(constAdded),  CopyConstructorVal(copyConstructorVal) {}
+                   Stmt *copyConstructorVal = 0);
 
   // \brief Build an empty reference to a declared variable in a
   // block.
@@ -3625,15 +3625,22 @@ public:
 /// context.
 class OpaqueValueExpr : public Expr {
   friend class ASTStmtReader;
+  SourceLocation Loc;
+  
 public:
-  OpaqueValueExpr(QualType T, ExprValueKind VK, ExprObjectKind OK = OK_Ordinary)
+  OpaqueValueExpr(SourceLocation Loc, QualType T, ExprValueKind VK, 
+                  ExprObjectKind OK = OK_Ordinary)
     : Expr(OpaqueValueExprClass, T, VK, OK,
-           T->isDependentType(), T->isDependentType(), false) {
+           T->isDependentType(), T->isDependentType(), false), 
+      Loc(Loc) {
   }
 
   explicit OpaqueValueExpr(EmptyShell Empty)
     : Expr(OpaqueValueExprClass, Empty) { }
 
+  /// \brief Retrieve the location of this expression.
+  SourceLocation getLocation() const { return Loc; }
+  
   virtual SourceRange getSourceRange() const;
   virtual child_iterator child_begin();
   virtual child_iterator child_end();

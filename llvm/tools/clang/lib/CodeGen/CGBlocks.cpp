@@ -799,7 +799,7 @@ CodeGenFunction::GenerateBlockFunction(GlobalDecl GD, const BlockExpr *BExpr,
   const llvm::FunctionType *LTy = Types.GetFunctionType(FI, IsVariadic);
 
   MangleBuffer Name;
-  CGM.getMangledName(GD, Name, BD);
+  CGM.getBlockMangledName(GD, Name, BD);
   llvm::Function *Fn =
     llvm::Function::Create(LTy, llvm::GlobalValue::InternalLinkage, 
                            Name.getString(), &CGM.getModule());
@@ -821,7 +821,7 @@ CodeGenFunction::GenerateBlockFunction(GlobalDecl GD, const BlockExpr *BExpr,
                                      SC_Static,
                                      SC_None,
                                      false, HasPrototype);
-  if (FunctionProtoType *FT = dyn_cast<FunctionProtoType>(FnType)) {
+  if (const FunctionProtoType *FT = dyn_cast<FunctionProtoType>(FnType)) {
     const FunctionDecl *CFD = dyn_cast<FunctionDecl>(CurCodeDecl);
     FunctionDecl *FD = const_cast<FunctionDecl *>(CFD);
     llvm::SmallVector<ParmVarDecl*, 16> Params;
@@ -900,9 +900,7 @@ CodeGenFunction::GenerateBlockFunction(GlobalDecl GD, const BlockExpr *BExpr,
 
   // The runtime needs a minimum alignment of a void *.
   CharUnits MinAlign = getContext().getTypeAlignInChars(getContext().VoidPtrTy);
-  BlockOffset = CharUnits::fromQuantity(
-      llvm::RoundUpToAlignment(BlockOffset.getQuantity(), 
-                               MinAlign.getQuantity()));
+  BlockOffset = BlockOffset.RoundUpToAlignment(MinAlign);
 
   Info.BlockSize = BlockOffset;
   Info.BlockAlign = BlockAlign;
@@ -917,8 +915,7 @@ CharUnits BlockFunction::getBlockOffset(CharUnits Size, CharUnits Align) {
   CharUnits OldOffset = BlockOffset;
 
   // Ensure proper alignment, even if it means we have to have a gap
-  BlockOffset = CharUnits::fromQuantity(
-      llvm::RoundUpToAlignment(BlockOffset.getQuantity(), Align.getQuantity()));
+  BlockOffset = BlockOffset.RoundUpToAlignment(Align);
   BlockAlign = std::max(Align, BlockAlign);
 
   CharUnits Pad = BlockOffset - OldOffset;

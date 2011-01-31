@@ -126,26 +126,33 @@ public:
 class CXXNamedCastExpr : public ExplicitCastExpr {
 private:
   SourceLocation Loc; // the location of the casting op
-
+  SourceLocation RParenLoc; // the location of the right parenthesis
+  
 protected:
   CXXNamedCastExpr(StmtClass SC, QualType ty, ExprValueKind VK,
                    CastKind kind, Expr *op, unsigned PathSize,
-                   TypeSourceInfo *writtenTy, SourceLocation l)
-    : ExplicitCastExpr(SC, ty, VK, kind, op, PathSize, writtenTy), Loc(l) {}
+                   TypeSourceInfo *writtenTy, SourceLocation l,
+                   SourceLocation RParenLoc)
+    : ExplicitCastExpr(SC, ty, VK, kind, op, PathSize, writtenTy), Loc(l),
+      RParenLoc(RParenLoc) {}
 
   explicit CXXNamedCastExpr(StmtClass SC, EmptyShell Shell, unsigned PathSize)
     : ExplicitCastExpr(SC, Shell, PathSize) { }
 
+  friend class ASTStmtReader;
+  
 public:
   const char *getCastName() const;
 
   /// \brief Retrieve the location of the cast operator keyword, e.g.,
   /// "static_cast".
   SourceLocation getOperatorLoc() const { return Loc; }
-  void setOperatorLoc(SourceLocation L) { Loc = L; }
 
+  /// \brief Retrieve the location of the closing parenthesis.
+  SourceLocation getRParenLoc() const { return RParenLoc; }
+  
   virtual SourceRange getSourceRange() const {
-    return SourceRange(Loc, getSubExpr()->getSourceRange().getEnd());
+    return SourceRange(Loc, RParenLoc);
   }
   static bool classof(const Stmt *T) {
     switch (T->getStmtClass()) {
@@ -168,9 +175,9 @@ public:
 class CXXStaticCastExpr : public CXXNamedCastExpr {
   CXXStaticCastExpr(QualType ty, ExprValueKind vk, CastKind kind, Expr *op,
                     unsigned pathSize, TypeSourceInfo *writtenTy,
-                    SourceLocation l)
+                    SourceLocation l, SourceLocation RParenLoc)
     : CXXNamedCastExpr(CXXStaticCastExprClass, ty, vk, kind, op, pathSize,
-                       writtenTy, l) {}
+                       writtenTy, l, RParenLoc) {}
 
   explicit CXXStaticCastExpr(EmptyShell Empty, unsigned PathSize)
     : CXXNamedCastExpr(CXXStaticCastExprClass, Empty, PathSize) { }
@@ -179,7 +186,8 @@ public:
   static CXXStaticCastExpr *Create(ASTContext &Context, QualType T,
                                    ExprValueKind VK, CastKind K, Expr *Op,
                                    const CXXCastPath *Path,
-                                   TypeSourceInfo *Written, SourceLocation L);
+                                   TypeSourceInfo *Written, SourceLocation L, 
+                                   SourceLocation RParenLoc);
   static CXXStaticCastExpr *CreateEmpty(ASTContext &Context,
                                         unsigned PathSize);
 
@@ -198,9 +206,9 @@ public:
 class CXXDynamicCastExpr : public CXXNamedCastExpr {
   CXXDynamicCastExpr(QualType ty, ExprValueKind VK, CastKind kind,
                      Expr *op, unsigned pathSize, TypeSourceInfo *writtenTy,
-                     SourceLocation l)
+                     SourceLocation l, SourceLocation RParenLoc)
     : CXXNamedCastExpr(CXXDynamicCastExprClass, ty, VK, kind, op, pathSize,
-                       writtenTy, l) {}
+                       writtenTy, l, RParenLoc) {}
 
   explicit CXXDynamicCastExpr(EmptyShell Empty, unsigned pathSize)
     : CXXNamedCastExpr(CXXDynamicCastExprClass, Empty, pathSize) { }
@@ -209,7 +217,8 @@ public:
   static CXXDynamicCastExpr *Create(ASTContext &Context, QualType T,
                                     ExprValueKind VK, CastKind Kind, Expr *Op,
                                     const CXXCastPath *Path,
-                                    TypeSourceInfo *Written, SourceLocation L);
+                                    TypeSourceInfo *Written, SourceLocation L, 
+                                    SourceLocation RParenLoc);
   
   static CXXDynamicCastExpr *CreateEmpty(ASTContext &Context,
                                          unsigned pathSize);
@@ -229,9 +238,10 @@ public:
 class CXXReinterpretCastExpr : public CXXNamedCastExpr {
   CXXReinterpretCastExpr(QualType ty, ExprValueKind vk, CastKind kind,
                          Expr *op, unsigned pathSize,
-                         TypeSourceInfo *writtenTy, SourceLocation l)
+                         TypeSourceInfo *writtenTy, SourceLocation l, 
+                         SourceLocation RParenLoc)
     : CXXNamedCastExpr(CXXReinterpretCastExprClass, ty, vk, kind, op,
-                       pathSize, writtenTy, l) {}
+                       pathSize, writtenTy, l, RParenLoc) {}
 
   CXXReinterpretCastExpr(EmptyShell Empty, unsigned pathSize)
     : CXXNamedCastExpr(CXXReinterpretCastExprClass, Empty, pathSize) { }
@@ -240,7 +250,8 @@ public:
   static CXXReinterpretCastExpr *Create(ASTContext &Context, QualType T,
                                         ExprValueKind VK, CastKind Kind,
                                         Expr *Op, const CXXCastPath *Path,
-                                 TypeSourceInfo *WrittenTy, SourceLocation L);
+                                 TypeSourceInfo *WrittenTy, SourceLocation L, 
+                                        SourceLocation RParenLoc);
   static CXXReinterpretCastExpr *CreateEmpty(ASTContext &Context,
                                              unsigned pathSize);
 
@@ -257,9 +268,10 @@ public:
 /// @c const_cast<char*>(PtrToConstChar).
 class CXXConstCastExpr : public CXXNamedCastExpr {
   CXXConstCastExpr(QualType ty, ExprValueKind VK, Expr *op,
-                   TypeSourceInfo *writtenTy, SourceLocation l)
+                   TypeSourceInfo *writtenTy, SourceLocation l, 
+                   SourceLocation RParenLoc)
     : CXXNamedCastExpr(CXXConstCastExprClass, ty, VK, CK_NoOp, op, 
-                       0, writtenTy, l) {}
+                       0, writtenTy, l, RParenLoc) {}
 
   explicit CXXConstCastExpr(EmptyShell Empty)
     : CXXNamedCastExpr(CXXConstCastExprClass, Empty, 0) { }
@@ -267,7 +279,8 @@ class CXXConstCastExpr : public CXXNamedCastExpr {
 public:
   static CXXConstCastExpr *Create(ASTContext &Context, QualType T,
                                   ExprValueKind VK, Expr *Op,
-                                  TypeSourceInfo *WrittenTy, SourceLocation L);
+                                  TypeSourceInfo *WrittenTy, SourceLocation L, 
+                                  SourceLocation RParenLoc);
   static CXXConstCastExpr *CreateEmpty(ASTContext &Context);
 
   static bool classof(const Stmt *T) {
@@ -979,8 +992,11 @@ class CXXNewExpr : public Expr {
   bool Initializer : 1;
   // Do we allocate an array? If so, the first SubExpr is the size expression.
   bool Array : 1;
+  // If this is an array allocation, does the usual deallocation
+  // function for the allocated type want to know the allocated size?
+  bool UsualArrayDeleteWantsSize : 1;
   // The number of placement new arguments.
-  unsigned NumPlacementArgs : 15;
+  unsigned NumPlacementArgs : 14;
   // The number of constructor arguments. This may be 1 even for non-class
   // types; use the pseudo copy constructor.
   unsigned NumConstructorArgs : 14;
@@ -1016,8 +1032,8 @@ public:
              SourceRange TypeIdParens,
              Expr *arraySize, CXXConstructorDecl *constructor, bool initializer,
              Expr **constructorArgs, unsigned numConsArgs,
-             FunctionDecl *operatorDelete, QualType ty,
-             TypeSourceInfo *AllocatedTypeInfo,
+             FunctionDecl *operatorDelete, bool usualArrayDeleteWantsSize,
+             QualType ty, TypeSourceInfo *AllocatedTypeInfo,
              SourceLocation startLoc, SourceLocation endLoc,
              SourceLocation constructorLParen,
              SourceLocation constructorRParen);
@@ -1069,9 +1085,14 @@ public:
   SourceRange getTypeIdParens() const { return TypeIdParens; }
 
   bool isGlobalNew() const { return GlobalNew; }
-  void setGlobalNew(bool V) { GlobalNew = V; }
   bool hasInitializer() const { return Initializer; }
-  void setHasInitializer(bool V) { Initializer = V; }
+
+  /// Answers whether the usual array deallocation function for the
+  /// allocated type expects the size of the allocation as a
+  /// parameter.
+  bool doesUsualArrayDeleteWantSize() const {
+    return UsualArrayDeleteWantsSize;
+  }
 
   unsigned getNumConstructorArgs() const { return NumConstructorArgs; }
   
@@ -1156,6 +1177,9 @@ class CXXDeleteExpr : public Expr {
   // to pointer-to-array type (ArrayFormAsWritten will be false while ArrayForm
   // will be true).
   bool ArrayFormAsWritten : 1;
+  // Does the usual deallocation function for the element type require
+  // a size_t argument?
+  bool UsualArrayDeleteWantsSize : 1;
   // Points to the operator delete overload that is used. Could be a member.
   FunctionDecl *OperatorDelete;
   // The pointer expression to be deleted.
@@ -1164,12 +1188,13 @@ class CXXDeleteExpr : public Expr {
   SourceLocation Loc;
 public:
   CXXDeleteExpr(QualType ty, bool globalDelete, bool arrayForm,
-                bool arrayFormAsWritten, FunctionDecl *operatorDelete,
-                Expr *arg, SourceLocation loc)
+                bool arrayFormAsWritten, bool usualArrayDeleteWantsSize,
+                FunctionDecl *operatorDelete, Expr *arg, SourceLocation loc)
     : Expr(CXXDeleteExprClass, ty, VK_RValue, OK_Ordinary, false, false,
            arg->containsUnexpandedParameterPack()),
       GlobalDelete(globalDelete),
       ArrayForm(arrayForm), ArrayFormAsWritten(arrayFormAsWritten),
+      UsualArrayDeleteWantsSize(usualArrayDeleteWantsSize),
       OperatorDelete(operatorDelete), Argument(arg), Loc(loc) { }
   explicit CXXDeleteExpr(EmptyShell Shell)
     : Expr(CXXDeleteExprClass, Shell), OperatorDelete(0), Argument(0) { }
@@ -1177,6 +1202,14 @@ public:
   bool isGlobalDelete() const { return GlobalDelete; }
   bool isArrayForm() const { return ArrayForm; }
   bool isArrayFormAsWritten() const { return ArrayFormAsWritten; }
+
+  /// Answers whether the usual array deallocation function for the
+  /// allocated type expects the size of the allocation as a
+  /// parameter.  This can be true even if the actual deallocation
+  /// function that we're using doesn't want a size.
+  bool doesUsualArrayDeleteWantSize() const {
+    return UsualArrayDeleteWantsSize;
+  }
 
   FunctionDecl *getOperatorDelete() const { return OperatorDelete; }
 
@@ -2599,16 +2632,27 @@ public:
 /// or more function arguments to the function object \c f.
 class PackExpansionExpr : public Expr {
   SourceLocation EllipsisLoc;
+  
+  /// \brief The number of expansions that will be produced by this pack
+  /// expansion expression, if known.
+  ///
+  /// When zero, the number of expansions is not known. Otherwise, this value
+  /// is the number of expansions + 1.
+  unsigned NumExpansions;
+  
   Stmt *Pattern;
   
   friend class ASTStmtReader;
+  friend class ASTStmtWriter;
   
 public:
-  PackExpansionExpr(QualType T, Expr *Pattern, SourceLocation EllipsisLoc)
+  PackExpansionExpr(QualType T, Expr *Pattern, SourceLocation EllipsisLoc,
+                    llvm::Optional<unsigned> NumExpansions)
     : Expr(PackExpansionExprClass, T, Pattern->getValueKind(), 
            Pattern->getObjectKind(), /*TypeDependent=*/true, 
            /*ValueDependent=*/true, /*ContainsUnexpandedParameterPack=*/false),
       EllipsisLoc(EllipsisLoc),
+      NumExpansions(NumExpansions? *NumExpansions + 1 : 0),
       Pattern(Pattern) { }
 
   PackExpansionExpr(EmptyShell Empty) : Expr(PackExpansionExprClass, Empty) { }
@@ -2622,6 +2666,15 @@ public:
   /// \brief Retrieve the location of the ellipsis that describes this pack
   /// expansion.
   SourceLocation getEllipsisLoc() const { return EllipsisLoc; }
+  
+  /// \brief Determine the number of expansions that will be produced when 
+  /// this pack expansion is instantiated, if already known.
+  llvm::Optional<unsigned> getNumExpansions() const {
+    if (NumExpansions)
+      return NumExpansions - 1;
+    
+    return llvm::Optional<unsigned>();
+  }
   
   virtual SourceRange getSourceRange() const;
 
@@ -2713,7 +2766,8 @@ public:
   
   /// \brief Retrieve the length of the parameter pack.
   ///
-  /// This routine may only be invoked when 
+  /// This routine may only be invoked when the expression is not 
+  /// value-dependent.
   unsigned getPackLength() const {
     assert(!isValueDependent() && 
            "Cannot get the length of a value-dependent pack size expression");
@@ -2726,6 +2780,68 @@ public:
     return T->getStmtClass() == SizeOfPackExprClass;
   }
   static bool classof(const SizeOfPackExpr *) { return true; }
+  
+  // Iterators
+  virtual child_iterator child_begin();
+  virtual child_iterator child_end();
+};
+
+/// \brief Represents a reference to a non-type template parameter pack that
+/// has been substituted with a non-template argument pack.
+///
+/// When a pack expansion in the source code contains multiple parameter packs
+/// and those parameter packs correspond to different levels of template
+/// parameter lists, this node node is used to represent a non-type template 
+/// parameter pack from an outer level, which has already had its argument pack
+/// substituted but that still lives within a pack expansion that itself
+/// could not be instantiated. When actually performing a substitution into
+/// that pack expansion (e.g., when all template parameters have corresponding
+/// arguments), this type will be replaced with the appropriate underlying
+/// expression at the current pack substitution index.
+class SubstNonTypeTemplateParmPackExpr : public Expr {
+  /// \brief The non-type template parameter pack itself.
+  NonTypeTemplateParmDecl *Param;
+  
+  /// \brief A pointer to the set of template arguments that this
+  /// parameter pack is instantiated with.
+  const TemplateArgument *Arguments;
+  
+  /// \brief The number of template arguments in \c Arguments.
+  unsigned NumArguments;
+  
+  /// \brief The location of the non-type template parameter pack reference.
+  SourceLocation NameLoc;
+  
+  friend class ASTStmtReader;
+  friend class ASTStmtWriter;
+  
+public:
+  SubstNonTypeTemplateParmPackExpr(QualType T, 
+                                   NonTypeTemplateParmDecl *Param,
+                                   SourceLocation NameLoc,
+                                   const TemplateArgument &ArgPack);
+  
+  SubstNonTypeTemplateParmPackExpr(EmptyShell Empty) 
+    : Expr(SubstNonTypeTemplateParmPackExprClass, Empty) { }
+  
+  /// \brief Retrieve the non-type template parameter pack being substituted.
+  NonTypeTemplateParmDecl *getParameterPack() const { return Param; }
+
+  /// \brief Retrieve the location of the parameter pack name.
+  SourceLocation getParameterPackLocation() const { return NameLoc; }
+  
+  /// \brief Retrieve the template argument pack containing the substituted
+  /// template arguments.
+  TemplateArgument getArgumentPack() const;
+
+  virtual SourceRange getSourceRange() const;
+  
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == SubstNonTypeTemplateParmPackExprClass;
+  }
+  static bool classof(const SubstNonTypeTemplateParmPackExpr *) { 
+    return true; 
+  }
   
   // Iterators
   virtual child_iterator child_begin();

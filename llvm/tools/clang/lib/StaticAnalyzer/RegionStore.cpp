@@ -86,7 +86,7 @@ BindingKey BindingKey::Make(const MemRegion *R, Kind k) {
     // FIXME: There are some ElementRegions for which we cannot compute
     // raw offsets yet, including regions with symbolic offsets. These will be
     // ignored by the store.
-    return BindingKey(O.getRegion(), O.getByteOffset(), k);
+    return BindingKey(O.getRegion(), O.getOffset().getQuantity(), k);
   }
 
   return BindingKey(R, 0, k);
@@ -356,13 +356,13 @@ public: // Part of public interface to class.
   // State pruning.
   //===------------------------------------------------------------------===//
 
-  /// RemoveDeadBindings - Scans the RegionStore of 'state' for dead values.
+  /// removeDeadBindings - Scans the RegionStore of 'state' for dead values.
   ///  It returns a new Store with these values removed.
-  Store RemoveDeadBindings(Store store, const StackFrameContext *LCtx,
+  Store removeDeadBindings(Store store, const StackFrameContext *LCtx,
                            SymbolReaper& SymReaper,
                           llvm::SmallVectorImpl<const MemRegion*>& RegionRoots);
 
-  Store EnterStackFrame(const GRState *state, const StackFrameContext *frame);
+  Store enterStackFrame(const GRState *state, const StackFrameContext *frame);
 
   //===------------------------------------------------------------------===//
   // Region "extents".
@@ -801,7 +801,7 @@ SVal RegionStoreManager::ArrayToPointer(Loc Array) {
 
   // Strip off typedefs from the ArrayRegion's ValueType.
   QualType T = ArrayR->getValueType().getDesugaredType(Ctx);
-  ArrayType *AT = cast<ArrayType>(T);
+  const ArrayType *AT = cast<ArrayType>(T);
   T = AT->getElementType();
 
   NonLoc ZeroIdx = svalBuilder.makeZeroArrayIndex();
@@ -822,7 +822,8 @@ SVal RegionStoreManager::evalDerivedToBase(SVal derived, QualType baseType) {
     return derived;
 
   const MemRegion *baseReg = 
-    MRMgr.getCXXBaseObjectRegion(baseDecl, derivedRegVal->getRegion());
+    MRMgr.getCXXBaseObjectRegion(baseDecl, derivedRegVal->getRegion()); 
+
   return loc::MemRegionVal(baseReg);
 }
 //===----------------------------------------------------------------------===//
@@ -984,6 +985,9 @@ SVal RegionStoreManager::Retrieve(Store store, Loc L, QualType T) {
   if (isa<loc::ConcreteInt>(L)) {
     return UnknownVal();
   }
+  if (!isa<loc::MemRegionVal>(L)) {
+    return UnknownVal();
+  }
 
   const MemRegion *MR = cast<loc::MemRegionVal>(L).getRegion();
 
@@ -1104,6 +1108,17 @@ RegionStoreManager::GetLazyBinding(RegionBindings B, const MemRegion *R) {
     if (X.second)
       return std::make_pair(X.first,
                             MRMgr.getFieldRegionWithSuper(FR, X.second));
+  }
+  // C++ base object region is another kind of region that we should blast
+  // through to look for lazy compound value. It is like a field region.
+  else if (const CXXBaseObjectRegion *baseReg = 
+                            dyn_cast<CXXBaseObjectRegion>(R)) {
+    const std::pair<Store, const MemRegion *> &X =
+      GetLazyBinding(B, baseReg->getSuperRegion());
+    
+    if (X.second)
+      return std::make_pair(X.first,
+                     MRMgr.getCXXBaseObjectRegionWithSuper(baseReg, X.second));
   }
   // The NULL MemRegion indicates an non-existent lazy binding. A NULL Store is
   // possible for a valid lazy binding.
@@ -1572,13 +1587,37 @@ Store RegionStoreManager::BindStruct(Store store, const TypedRegion* R,
 
 Store RegionStoreManager::KillStruct(Store store, const TypedRegion* R,
                                      SVal DefaultVal) {
+  BindingKey key = BindingKey::Make(R, BindingKey::Default);
+  
+  // The BindingKey may be "invalid" if we cannot handle the region binding
+  // explicitly.  One example is something like array[index], where index
+  // is a symbolic value.  In such cases, we want to invalidate the entire
+  // array, as the index assignment could have been to any element.  In
+  // the case of nested symbolic indices, we need to march up the region
+  // hierarchy untile we reach a region whose binding we can reason about.
+  const SubRegion *subReg = R;
+
+  while (!key.isValid()) {
+    if (const SubRegion *tmp = dyn_cast<SubRegion>(subReg->getSuperRegion())) {
+      subReg = tmp;
+      key = BindingKey::Make(tmp, BindingKey::Default);
+    }
+    else
+      break;
+  }                                 
+
+  // Remove the old bindings, using 'subReg' as the root of all regions
+  // we will invalidate.
   RegionBindings B = GetRegionBindings(store);
   llvm::OwningPtr<RegionStoreSubRegionMap>
     SubRegions(getRegionStoreSubRegionMap(store));
-  RemoveSubRegionBindings(B, R, *SubRegions);
+  RemoveSubRegionBindings(B, subReg, *SubRegions);
 
   // Set the default value of the struct region to "unknown".
-  return addBinding(B, R, BindingKey::Default, DefaultVal).getRoot();
+  if (!key.isValid())
+    return B.getRoot();
+  
+  return addBinding(B, key, DefaultVal).getRoot();
 }
 
 Store RegionStoreManager::CopyLazyBindings(nonloc::LazyCompoundVal V,
@@ -1646,17 +1685,17 @@ RegionBindings RegionStoreManager::removeBinding(RegionBindings B,
 //===----------------------------------------------------------------------===//
 
 namespace {
-class RemoveDeadBindingsWorker :
-  public ClusterAnalysis<RemoveDeadBindingsWorker> {
+class removeDeadBindingsWorker :
+  public ClusterAnalysis<removeDeadBindingsWorker> {
   llvm::SmallVector<const SymbolicRegion*, 12> Postponed;
   SymbolReaper &SymReaper;
   const StackFrameContext *CurrentLCtx;
 
 public:
-  RemoveDeadBindingsWorker(RegionStoreManager &rm, GRStateManager &stateMgr,
+  removeDeadBindingsWorker(RegionStoreManager &rm, GRStateManager &stateMgr,
                            RegionBindings b, SymbolReaper &symReaper,
                            const StackFrameContext *LCtx)
-    : ClusterAnalysis<RemoveDeadBindingsWorker>(rm, stateMgr, b,
+    : ClusterAnalysis<removeDeadBindingsWorker>(rm, stateMgr, b,
                                                 /* includeGlobals = */ false),
       SymReaper(symReaper), CurrentLCtx(LCtx) {}
 
@@ -1670,7 +1709,7 @@ public:
 };
 }
 
-void RemoveDeadBindingsWorker::VisitAddedToCluster(const MemRegion *baseR,
+void removeDeadBindingsWorker::VisitAddedToCluster(const MemRegion *baseR,
                                                    RegionCluster &C) {
 
   if (const VarRegion *VR = dyn_cast<VarRegion>(baseR)) {
@@ -1704,13 +1743,13 @@ void RemoveDeadBindingsWorker::VisitAddedToCluster(const MemRegion *baseR,
   }
 }
 
-void RemoveDeadBindingsWorker::VisitCluster(const MemRegion *baseR,
+void removeDeadBindingsWorker::VisitCluster(const MemRegion *baseR,
                                             BindingKey *I, BindingKey *E) {
   for ( ; I != E; ++I)
     VisitBindingKey(*I);
 }
 
-void RemoveDeadBindingsWorker::VisitBinding(SVal V) {
+void removeDeadBindingsWorker::VisitBinding(SVal V) {
   // Is it a LazyCompoundVal?  All referenced regions are live as well.
   if (const nonloc::LazyCompoundVal *LCS =
       dyn_cast<nonloc::LazyCompoundVal>(&V)) {
@@ -1735,7 +1774,7 @@ void RemoveDeadBindingsWorker::VisitBinding(SVal V) {
     SymReaper.markLive(*SI);
 }
 
-void RemoveDeadBindingsWorker::VisitBindingKey(BindingKey K) {
+void removeDeadBindingsWorker::VisitBindingKey(BindingKey K) {
   const MemRegion *R = K.getRegion();
 
   // Mark this region "live" by adding it to the worklist.  This will cause
@@ -1768,7 +1807,7 @@ void RemoveDeadBindingsWorker::VisitBindingKey(BindingKey K) {
     VisitBinding(*V);
 }
 
-bool RemoveDeadBindingsWorker::UpdatePostponed() {
+bool removeDeadBindingsWorker::UpdatePostponed() {
   // See if any postponed SymbolicRegions are actually live now, after
   // having done a scan.
   bool changed = false;
@@ -1786,13 +1825,13 @@ bool RemoveDeadBindingsWorker::UpdatePostponed() {
   return changed;
 }
 
-Store RegionStoreManager::RemoveDeadBindings(Store store,
+Store RegionStoreManager::removeDeadBindings(Store store,
                                              const StackFrameContext *LCtx,
                                              SymbolReaper& SymReaper,
                            llvm::SmallVectorImpl<const MemRegion*>& RegionRoots)
 {
   RegionBindings B = GetRegionBindings(store);
-  RemoveDeadBindingsWorker W(*this, StateMgr, B, SymReaper, LCtx);
+  removeDeadBindingsWorker W(*this, StateMgr, B, SymReaper, LCtx);
   W.GenerateClusters();
 
   // Enqueue the region roots onto the worklist.
@@ -1829,20 +1868,23 @@ Store RegionStoreManager::RemoveDeadBindings(Store store,
 }
 
 
-Store RegionStoreManager::EnterStackFrame(const GRState *state,
+Store RegionStoreManager::enterStackFrame(const GRState *state,
                                           const StackFrameContext *frame) {
   FunctionDecl const *FD = cast<FunctionDecl>(frame->getDecl());
-  FunctionDecl::param_const_iterator PI = FD->param_begin();
+  FunctionDecl::param_const_iterator PI = FD->param_begin(), 
+                                     PE = FD->param_end();
   Store store = state->getStore();
 
   if (CallExpr const *CE = dyn_cast<CallExpr>(frame->getCallSite())) {
     CallExpr::const_arg_iterator AI = CE->arg_begin(), AE = CE->arg_end();
 
-    // Copy the arg expression value to the arg variables.
-    for (; AI != AE; ++AI, ++PI) {
+    // Copy the arg expression value to the arg variables.  We check that
+    // PI != PE because the actual number of arguments may be different than
+    // the function declaration.
+    for (; AI != AE && PI != PE; ++AI, ++PI) {
       SVal ArgVal = state->getSVal(*AI);
       store = Bind(store,
-                   svalBuilder.makeLoc(MRMgr.getVarRegion(*PI,frame)), ArgVal);
+                   svalBuilder.makeLoc(MRMgr.getVarRegion(*PI, frame)), ArgVal);
     }
   } else if (const CXXConstructExpr *CE =
                dyn_cast<CXXConstructExpr>(frame->getCallSite())) {

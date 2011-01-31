@@ -145,11 +145,14 @@ std::size_t ExplicitTemplateArgumentList::sizeFor(
   return sizeFor(Info.size());
 }
 
-void DeclRefExpr::computeDependence() {
-  ExprBits.TypeDependent = false;
-  ExprBits.ValueDependent = false;
+/// \brief Compute the type- and value-dependence of a declaration reference
+/// based on the declaration being referenced.
+static void computeDeclRefDependence(NamedDecl *D, QualType T,
+                                     bool &TypeDependent,
+                                     bool &ValueDependent) {
+  TypeDependent = false;
+  ValueDependent = false;
   
-  NamedDecl *D = getDecl();
 
   // (TD) C++ [temp.dep.expr]p3:
   //   An id-expression is type-dependent if it contains:
@@ -158,60 +161,84 @@ void DeclRefExpr::computeDependence() {
   //
   // (VD) C++ [temp.dep.constexpr]p2:
   //  An identifier is value-dependent if it is:
-
+  
   //  (TD)  - an identifier that was declared with dependent type
   //  (VD)  - a name declared with a dependent type,
-  if (getType()->isDependentType()) {
-    ExprBits.TypeDependent = true;
-    ExprBits.ValueDependent = true;
+  if (T->isDependentType()) {
+    TypeDependent = true;
+    ValueDependent = true;
+    return;
   }
+  
   //  (TD)  - a conversion-function-id that specifies a dependent type
-  else if (D->getDeclName().getNameKind() 
-                               == DeclarationName::CXXConversionFunctionName &&
+  if (D->getDeclName().getNameKind() 
+           == DeclarationName::CXXConversionFunctionName &&
            D->getDeclName().getCXXNameType()->isDependentType()) {
-    ExprBits.TypeDependent = true;
-    ExprBits.ValueDependent = true;
-  }
-  //  (TD)  - a template-id that is dependent,
-  else if (hasExplicitTemplateArgs() && 
-           TemplateSpecializationType::anyDependentTemplateArguments(
-                                                       getTemplateArgs(), 
-                                                       getNumTemplateArgs())) {
-    ExprBits.TypeDependent = true;
-    ExprBits.ValueDependent = true;
+    TypeDependent = true;
+    ValueDependent = true;
+    return;
   }
   //  (VD)  - the name of a non-type template parameter,
-  else if (isa<NonTypeTemplateParmDecl>(D))
-    ExprBits.ValueDependent = true;
+  if (isa<NonTypeTemplateParmDecl>(D)) {
+    ValueDependent = true;
+    return;
+  }
+  
   //  (VD) - a constant with integral or enumeration type and is
   //         initialized with an expression that is value-dependent.
-  else if (VarDecl *Var = dyn_cast<VarDecl>(D)) {
+  if (VarDecl *Var = dyn_cast<VarDecl>(D)) {
     if (Var->getType()->isIntegralOrEnumerationType() &&
         Var->getType().getCVRQualifiers() == Qualifiers::Const) {
       if (const Expr *Init = Var->getAnyInitializer())
         if (Init->isValueDependent())
-          ExprBits.ValueDependent = true;
+          ValueDependent = true;
     } 
+    
     // (VD) - FIXME: Missing from the standard: 
     //      -  a member function or a static data member of the current 
     //         instantiation
     else if (Var->isStaticDataMember() && 
              Var->getDeclContext()->isDependentContext())
-      ExprBits.ValueDependent = true;
-  } 
+      ValueDependent = true;
+    
+    return;
+  }
+  
   // (VD) - FIXME: Missing from the standard: 
   //      -  a member function or a static data member of the current 
   //         instantiation
-  else if (isa<CXXMethodDecl>(D) && D->getDeclContext()->isDependentContext())
-    ExprBits.ValueDependent = true;
-  //  (TD)  - a nested-name-specifier or a qualified-id that names a
-  //          member of an unknown specialization.
-  //        (handled by DependentScopeDeclRefExpr)
+  if (isa<CXXMethodDecl>(D) && D->getDeclContext()->isDependentContext()) {
+    ValueDependent = true;
+    return;
+  }  
+}
 
-  // Determine whether this expression contains any unexpanded parameter
-  // packs.
+void DeclRefExpr::computeDependence() {
+  bool TypeDependent = false;
+  bool ValueDependent = false;
+  computeDeclRefDependence(getDecl(), getType(), TypeDependent, ValueDependent);
+  
+  // (TD) C++ [temp.dep.expr]p3:
+  //   An id-expression is type-dependent if it contains:
+  //
+  // and 
+  //
+  // (VD) C++ [temp.dep.constexpr]p2:
+  //  An identifier is value-dependent if it is:
+  if (!TypeDependent && !ValueDependent &&
+      hasExplicitTemplateArgs() && 
+      TemplateSpecializationType::anyDependentTemplateArguments(
+                                                            getTemplateArgs(), 
+                                                       getNumTemplateArgs())) {
+    TypeDependent = true;
+    ValueDependent = true;
+  }
+  
+  ExprBits.TypeDependent = TypeDependent;
+  ExprBits.ValueDependent = ValueDependent;
+  
   // Is the declaration a parameter pack?
-  if (D->isParameterPack())
+  if (getDecl()->isParameterPack())
     ExprBits.ContainsUnexpandedParameterPack = true;
 }
 
@@ -724,7 +751,7 @@ void CallExpr::setNumArgs(ASTContext& C, unsigned NumArgs) {
 
 /// isBuiltinCall - If this is a call to a builtin, return the builtin ID.  If
 /// not, return 0.
-unsigned CallExpr::isBuiltinCall(ASTContext &Context) const {
+unsigned CallExpr::isBuiltinCall(const ASTContext &Context) const {
   // All simple function calls (e.g. func()) are implicitly cast to pointer to
   // function. As a result, we try and obtain the DeclRefExpr from the
   // ImplicitCastExpr.
@@ -2444,16 +2471,16 @@ ObjCInterfaceDecl *ObjCMessageExpr::getReceiverInterface() const {
     break;
 
   case SuperClass:
-    if (const ObjCObjectPointerType *Iface
-                       = getSuperType()->getAs<ObjCObjectPointerType>())
-      return Iface->getInterfaceDecl();
+    if (const ObjCObjectType *Iface
+          = getSuperType()->getAs<ObjCObjectType>())
+      return Iface->getInterface();
     break;
   }
 
   return 0;
 }
 
-bool ChooseExpr::isConditionTrue(ASTContext &C) const {
+bool ChooseExpr::isConditionTrue(const ASTContext &C) const {
   return getCond()->EvaluateAsInt(C) != 0;
 }
 
@@ -2768,7 +2795,7 @@ Stmt::child_iterator SizeOfAlignOfExpr::child_begin() {
   // size expression of the VLA needs to be treated as an executable expression.
   // Why isn't this weirdness documented better in StmtIterator?
   if (isArgumentType()) {
-    if (VariableArrayType* T = dyn_cast<VariableArrayType>(
+    if (const VariableArrayType* T = dyn_cast<VariableArrayType>(
                                    getArgumentType().getTypePtr()))
       return child_iterator(T);
     return child_iterator();
@@ -2932,6 +2959,21 @@ Stmt::child_iterator ObjCMessageExpr::child_end() {
 }
 
 // Blocks
+BlockDeclRefExpr::BlockDeclRefExpr(ValueDecl *d, QualType t, ExprValueKind VK,
+                                   SourceLocation l, bool ByRef, 
+                                   bool constAdded, Stmt *copyConstructorVal)
+  : Expr(BlockDeclRefExprClass, t, VK, OK_Ordinary, false, false,
+         d->isParameterPack()),
+    D(d), Loc(l), IsByRef(ByRef),
+    ConstQualAdded(constAdded),  CopyConstructorVal(copyConstructorVal) 
+{
+  bool TypeDependent = false;
+  bool ValueDependent = false;
+  computeDeclRefDependence(D, getType(), TypeDependent, ValueDependent);
+  ExprBits.TypeDependent = TypeDependent;
+  ExprBits.ValueDependent = ValueDependent;
+}
+
 Stmt::child_iterator BlockExpr::child_begin() { return child_iterator(); }
 Stmt::child_iterator BlockExpr::child_end() { return child_iterator(); }
 
@@ -2939,7 +2981,7 @@ Stmt::child_iterator BlockDeclRefExpr::child_begin() { return child_iterator();}
 Stmt::child_iterator BlockDeclRefExpr::child_end() { return child_iterator(); }
 
 // OpaqueValueExpr
-SourceRange OpaqueValueExpr::getSourceRange() const { return SourceRange(); }
+SourceRange OpaqueValueExpr::getSourceRange() const { return Loc; }
 Stmt::child_iterator OpaqueValueExpr::child_begin() { return child_iterator(); }
 Stmt::child_iterator OpaqueValueExpr::child_end() { return child_iterator(); }
 

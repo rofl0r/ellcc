@@ -712,7 +712,7 @@ bool MCAsmStreamer::EmitCFIStartProc() {
   if (this->MCStreamer::EmitCFIStartProc())
     return true;
 
-  OS << ".cfi_startproc";
+  OS << "\t.cfi_startproc";
   EmitEOL();
 
   return false;
@@ -722,7 +722,7 @@ bool MCAsmStreamer::EmitCFIEndProc() {
   if (this->MCStreamer::EmitCFIEndProc())
     return true;
 
-  OS << ".cfi_endproc";
+  OS << "\t.cfi_endproc";
   EmitEOL();
 
   return false;
@@ -732,7 +732,7 @@ bool MCAsmStreamer::EmitCFIDefCfaOffset(int64_t Offset) {
   if (this->MCStreamer::EmitCFIDefCfaOffset(Offset))
     return true;
 
-  OS << ".cfi_def_cfa_offset " << Offset;
+  OS << "\t.cfi_def_cfa_offset " << Offset;
   EmitEOL();
 
   return false;
@@ -742,7 +742,7 @@ bool MCAsmStreamer::EmitCFIDefCfaRegister(int64_t Register) {
   if (this->MCStreamer::EmitCFIDefCfaRegister(Register))
     return true;
 
-  OS << ".cfi_def_cfa_register " << Register;
+  OS << "\t.cfi_def_cfa_register " << Register;
   EmitEOL();
 
   return false;
@@ -752,7 +752,7 @@ bool MCAsmStreamer::EmitCFIOffset(int64_t Register, int64_t Offset) {
   if (this->MCStreamer::EmitCFIOffset(Register, Offset))
     return true;
 
-  OS << ".cfi_offset " << Register << ", " << Offset;
+  OS << "\t.cfi_offset " << Register << ", " << Offset;
   EmitEOL();
 
   return false;
@@ -763,7 +763,7 @@ bool MCAsmStreamer::EmitCFIPersonality(const MCSymbol *Sym,
   if (this->MCStreamer::EmitCFIPersonality(Sym, Encoding))
     return true;
 
-  OS << ".cfi_personality " << Encoding << ", " << *Sym;
+  OS << "\t.cfi_personality " << Encoding << ", " << *Sym;
   EmitEOL();
 
   return false;
@@ -773,7 +773,7 @@ bool MCAsmStreamer::EmitCFILsda(const MCSymbol *Sym, unsigned Encoding) {
   if (this->MCStreamer::EmitCFILsda(Sym, Encoding))
     return true;
 
-  OS << ".cfi_lsda " << Encoding << ", " << *Sym;
+  OS << "\t.cfi_lsda " << Encoding << ", " << *Sym;
   EmitEOL();
 
   return false;
@@ -805,6 +805,8 @@ void MCAsmStreamer::AddEncodingComment(const MCInst &Inst) {
     }
   }
 
+  // FIXME: Node the fixup comments for Thumb2 are completely bogus since the
+  // high order halfword of a 32-bit Thumb2 instruction is emitted first.
   OS << "encoding: [";
   for (unsigned i = 0, e = Code.size(); i != e; ++i) {
     if (i)
@@ -824,8 +826,12 @@ void MCAsmStreamer::AddEncodingComment(const MCInst &Inst) {
       if (MapEntry == 0) {
         OS << format("0x%02x", uint8_t(Code[i]));
       } else {
-        assert(Code[i] == 0 && "Encoder wrote into fixed up bit!");
-        OS << char('A' + MapEntry - 1);
+        if (Code[i]) {
+          // FIXME: Some of the 8 bits require fix up.
+          OS << format("0x%02x", uint8_t(Code[i])) << '\''
+             << char('A' + MapEntry - 1) << '\'';
+        } else
+          OS << char('A' + MapEntry - 1);
       }
     } else {
       // Otherwise, write out in binary.

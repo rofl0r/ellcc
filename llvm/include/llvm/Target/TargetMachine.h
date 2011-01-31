@@ -29,7 +29,7 @@ class TargetIntrinsicInfo;
 class TargetJITInfo;
 class TargetLowering;
 class TargetSelectionDAGInfo;
-class TargetFrameInfo;
+class TargetFrameLowering;
 class JITCodeEmitter;
 class MCContext;
 class TargetRegisterInfo;
@@ -104,6 +104,7 @@ protected: // Can only create subclasses.
   const MCAsmInfo *AsmInfo;
 
   unsigned MCRelaxAll : 1;
+  unsigned MCNoExecStack : 1;
   unsigned MCUseLoc : 1;
 
 public:
@@ -117,11 +118,11 @@ public:
   // -- Stack frame information
   // -- Selection DAG lowering information
   //
-  virtual const TargetInstrInfo        *getInstrInfo() const { return 0; }
-  virtual const TargetFrameInfo        *getFrameInfo() const { return 0; }
+  virtual const TargetInstrInfo         *getInstrInfo() const { return 0; }
+  virtual const TargetFrameLowering *getFrameLowering() const { return 0; }
   virtual const TargetLowering    *getTargetLowering() const { return 0; }
   virtual const TargetSelectionDAGInfo *getSelectionDAGInfo() const{ return 0; }
-  virtual const TargetData            *getTargetData() const { return 0; }
+  virtual const TargetData             *getTargetData() const { return 0; }
 
   /// getMCAsmInfo - Return target specific asm information.
   ///
@@ -169,6 +170,12 @@ public:
   /// setMCRelaxAll - Set whether all machine code instructions should be
   /// relaxed.
   void setMCRelaxAll(bool Value) { MCRelaxAll = Value; }
+
+  /// hasMCNoExecStack - Check whether an executable stack is not needed.
+  bool hasMCNoExecStack() const { return MCNoExecStack; }
+
+  /// setMCNoExecStack - Set whether an executabel stack is not needed.
+  void setMCNoExecStack(bool Value) { MCNoExecStack = Value; }
 
   /// hasMCUseLoc - Check whether we should use dwarf's .loc directive.
   bool hasMCUseLoc() const { return MCUseLoc; }

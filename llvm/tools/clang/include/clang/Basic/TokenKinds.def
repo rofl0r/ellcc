@@ -319,6 +319,7 @@ KEYWORD(__has_virtual_destructor    , KEYCXX)
 KEYWORD(__is_abstract               , KEYCXX)
 KEYWORD(__is_base_of                , KEYCXX)
 KEYWORD(__is_class                  , KEYCXX)
+KEYWORD(__is_convertible_to         , KEYCXX)
 KEYWORD(__is_empty                  , KEYCXX)
 KEYWORD(__is_enum                   , KEYCXX)
 KEYWORD(__is_pod                    , KEYCXX)
@@ -326,7 +327,6 @@ KEYWORD(__is_polymorphic            , KEYCXX)
 KEYWORD(__is_union                  , KEYCXX)
 // Tentative name - there's no implementation of std::is_literal_type yet.
 KEYWORD(__is_literal                , KEYCXX)
-// FIXME: Add MS's traits, too.
 
 // Apple Extension.
 KEYWORD(__private_extern__          , KEYALL)
@@ -433,6 +433,12 @@ ANNOTATION(typename)     // annotation for a C typedef name, a C++ (possibly
 ANNOTATION(template_id)  // annotation for a C++ template-id that names a
                          // function template specialization (not a type),
                          // e.g., "std::swap<int>"
+
+// Annotation for #pragma unused(...)
+// For each argument inside the parentheses the pragma handler will produce
+// one 'pragma_unused' annotation token followed by the argument token.
+ANNOTATION(pragma_unused)
+
 #undef ANNOTATION
 #undef OBJC2_AT_KEYWORD
 #undef OBJC1_AT_KEYWORD

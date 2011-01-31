@@ -35,14 +35,39 @@ namespace llvm {
   Value *SimplifySubInst(Value *LHS, Value *RHS, bool isNSW, bool isNUW,
                          const TargetData *TD = 0, const DominatorTree *DT = 0);
 
-  /// SimplifyAndInst - Given operands for an And, see if we can
-  /// fold the result.  If not, this returns null.
-  Value *SimplifyAndInst(Value *LHS, Value *RHS, const TargetData *TD = 0,
-                         const DominatorTree *DT = 0);
-
   /// SimplifyMulInst - Given operands for a Mul, see if we can
   /// fold the result.  If not, this returns null.
   Value *SimplifyMulInst(Value *LHS, Value *RHS, const TargetData *TD = 0,
+                         const DominatorTree *DT = 0);
+
+  /// SimplifySDivInst - Given operands for an SDiv, see if we can
+  /// fold the result.  If not, this returns null.
+  Value *SimplifySDivInst(Value *LHS, Value *RHS, const TargetData *TD = 0,
+                          const DominatorTree *DT = 0);
+
+  /// SimplifyUDivInst - Given operands for a UDiv, see if we can
+  /// fold the result.  If not, this returns null.
+  Value *SimplifyUDivInst(Value *LHS, Value *RHS, const TargetData *TD = 0,
+                         const DominatorTree *DT = 0);
+
+  /// SimplifyShlInst - Given operands for a Shl, see if we can
+  /// fold the result.  If not, this returns null.
+  Value *SimplifyShlInst(Value *Op0, Value *Op1, const TargetData *TD = 0,
+                         const DominatorTree *DT = 0);
+
+  /// SimplifyLShrInst - Given operands for a LShr, see if we can
+  /// fold the result.  If not, this returns null.
+  Value *SimplifyLShrInst(Value *Op0, Value *Op1, const TargetData *TD = 0,
+                          const DominatorTree *DT = 0);
+
+  /// SimplifyAShrInst - Given operands for a AShr, see if we can
+  /// fold the result.  If not, this returns null.
+  Value *SimplifyAShrInst(Value *Op0, Value *Op1, const TargetData *TD = 0,
+                          const DominatorTree *DT = 0);
+
+  /// SimplifyAndInst - Given operands for an And, see if we can
+  /// fold the result.  If not, this returns null.
+  Value *SimplifyAndInst(Value *LHS, Value *RHS, const TargetData *TD = 0,
                          const DominatorTree *DT = 0);
 
   /// SimplifyOrInst - Given operands for an Or, see if we can

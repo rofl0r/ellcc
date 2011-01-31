@@ -25,7 +25,7 @@
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineLocation.h"
-#include "llvm/Target/TargetFrameInfo.h"
+#include "llvm/Target/TargetFrameLowering.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/Target/TargetInstrInfo.h"
@@ -161,6 +161,13 @@ eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
            "Instr doesn't have FrameIndex operand!");
   }
 
+  assert(i < 3 && "FrameIndex operand in a strange position!");
+  unsigned oi;
+  switch (i) {
+      case 2:
+      case 0: oi = 1; break;
+      case 1: oi = 0; break;
+  }
   DEBUG(errs() << "\nFunction : " << MF.getFunction()->getName() << "\n";
         errs() << "<--------->\n" << MI);
 
@@ -175,11 +182,11 @@ eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
   // as explained on LowerFormalArguments, detect negative offsets
   // and adjust SPOffsets considering the final stack size.
   int Offset = ((spOffset < 0) ? (stackSize + (-(spOffset+4))) : (spOffset));
-  Offset    += MI.getOperand(i-1).getImm();
+  Offset    += MI.getOperand(oi).getImm();
 
   DEBUG(errs() << "Offset     : " << Offset << "\n" << "<--------->\n");
 
-  MI.getOperand(i-1).ChangeToImmediate(Offset);
+  MI.getOperand(oi).ChangeToImmediate(Offset);
   MI.getOperand(i).ChangeToRegister(getFrameRegister(MF), false);
 }
 
@@ -199,7 +206,7 @@ getRARegister() const {
 
 unsigned MipsRegisterInfo::
 getFrameRegister(const MachineFunction &MF) const {
-  const TargetFrameInfo *TFI = MF.getTarget().getFrameInfo();
+  const TargetFrameLowering *TFI = MF.getTarget().getFrameLowering();
 
   return TFI->hasFP(MF) ? Mips::FP : Mips::SP;
 }

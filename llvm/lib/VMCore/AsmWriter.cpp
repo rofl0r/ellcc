@@ -1459,6 +1459,7 @@ void AssemblyWriter::printGlobal(const GlobalVariable *GV) {
   if (GV->isThreadLocal()) Out << "thread_local ";
   if (unsigned AddressSpace = GV->getType()->getAddressSpace())
     Out << "addrspace(" << AddressSpace << ") ";
+  if (GV->hasUnnamedAddr()) Out << "unnamed_addr ";
   Out << (GV->isConstant() ? "constant " : "global ");
   TypePrinter.print(GV->getType()->getElementType(), Out);
 
@@ -1628,6 +1629,8 @@ void AssemblyWriter::printFunction(const Function *F) {
     Out << "...";  // Output varargs portion of signature!
   }
   Out << ')';
+  if (F->hasUnnamedAddr())
+    Out << " unnamed_addr";
   Attributes FnAttrs = Attrs.getFnAttributes();
   if (FnAttrs != Attribute::None)
     Out << ' ' << Attribute::getAsString(Attrs.getFnAttributes());

@@ -24,11 +24,10 @@ CheckerContext::~CheckerContext() {
   // without actually generated a new node.  We also shouldn't autotransition
   // if we are building sinks or we generated a node and decided to not
   // add it as a transition.
-  if (Dst.size() == size && !B.BuildSinks && !B.HasGeneratedNode) {
+  if (Dst.size() == size && !B.BuildSinks && !B.hasGeneratedNode) {
     if (ST && ST != B.GetState(Pred)) {
       static int autoTransitionTag = 0;
-      B.Tag = &autoTransitionTag;
-      addTransition(ST);
+      addTransition(ST, &autoTransitionTag);
     }
     else
       Dst.Add(Pred);

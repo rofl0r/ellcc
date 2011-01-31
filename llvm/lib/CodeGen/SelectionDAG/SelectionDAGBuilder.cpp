@@ -44,9 +44,8 @@
 #include "llvm/CodeGen/PseudoSourceValue.h"
 #include "llvm/CodeGen/SelectionDAG.h"
 #include "llvm/Analysis/DebugInfo.h"
-#include "llvm/Target/TargetRegisterInfo.h"
 #include "llvm/Target/TargetData.h"
-#include "llvm/Target/TargetFrameInfo.h"
+#include "llvm/Target/TargetFrameLowering.h"
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Target/TargetIntrinsicInfo.h"
 #include "llvm/Target/TargetLowering.h"
@@ -642,14 +641,12 @@ SDValue RegsForValue::getCopyFromRegs(SelectionDAG &DAG,
       // If the source register was virtual and if we know something about it,
       // add an assert node.
       if (!TargetRegisterInfo::isVirtualRegister(Regs[Part+i]) ||
-          !RegisterVT.isInteger() || RegisterVT.isVector())
+          !RegisterVT.isInteger() || RegisterVT.isVector() ||
+          !FuncInfo.LiveOutRegInfo.inBounds(Regs[Part+i]))
         continue;
       
-      unsigned SlotNo = Regs[Part+i]-TargetRegisterInfo::FirstVirtualRegister;
-      if (SlotNo >= FuncInfo.LiveOutRegInfo.size()) continue;
-      
       const FunctionLoweringInfo::LiveOutInfo &LOI =
-        FuncInfo.LiveOutRegInfo[SlotNo];
+        FuncInfo.LiveOutRegInfo[Regs[Part+i]];
 
       unsigned RegSize = RegisterVT.getSizeInBits();
       unsigned NumSignBits = LOI.NumSignBits;
@@ -932,7 +929,9 @@ SDValue SelectionDAGBuilder::getValue(const Value *V) {
     unsigned InReg = It->second;
     RegsForValue RFV(*DAG.getContext(), TLI, InReg, V->getType());
     SDValue Chain = DAG.getEntryNode();
-    return N = RFV.getCopyFromRegs(DAG, FuncInfo, getCurDebugLoc(), Chain,NULL);
+    N = RFV.getCopyFromRegs(DAG, FuncInfo, getCurDebugLoc(), Chain,NULL);
+    resolveDanglingDebugInfo(V, N);
+    return N;
   }
 
   // Otherwise create a new SDValue and remember it.
@@ -2262,7 +2261,8 @@ size_t SelectionDAGBuilder::Clusterify(CaseVector& Cases,
   if (Cases.size() >= 2)
     // Must recompute end() each iteration because it may be
     // invalidated by erase if we hold on to it
-    for (CaseItr I = Cases.begin(), J = ++(Cases.begin()); J != Cases.end(); ) {
+    for (CaseItr I = Cases.begin(), J = llvm::next(Cases.begin());
+         J != Cases.end(); ) {
       const APInt& nextValue = cast<ConstantInt>(J->Low)->getValue();
       const APInt& currentValue = cast<ConstantInt>(I->High)->getValue();
       MachineBasicBlock* nextBB = J->BB;
@@ -2745,7 +2745,7 @@ void SelectionDAGBuilder::visitShuffleVector(const User &I) {
         } else {
           StartIdx[Input] = (MinRange[Input]/MaskNumElts)*MaskNumElts;
           if (MaxRange[Input] - StartIdx[Input] < (int)MaskNumElts &&
-              StartIdx[Input] + MaskNumElts < SrcNumElts)
+              StartIdx[Input] + MaskNumElts <= SrcNumElts)
             RangeUse[Input] = 1; // Extract from a multiple of the mask length.
         }
       }
@@ -2977,7 +2977,7 @@ void SelectionDAGBuilder::visitAlloca(const AllocaInst &I) {
   // Handle alignment.  If the requested alignment is less than or equal to
   // the stack alignment, ignore it.  If the size is greater than or equal to
   // the stack alignment, we note this in the DYNAMIC_STACKALLOC node.
-  unsigned StackAlign = TM.getFrameInfo()->getStackAlignment();
+  unsigned StackAlign = TM.getFrameLowering()->getStackAlignment();
   if (Align <= StackAlign)
     Align = 0;
 
@@ -4073,7 +4073,7 @@ SelectionDAGBuilder::EmitFuncArgumentDbgValue(const Value *V, MDNode *Variable,
 
   if (N.getNode() && N.getOpcode() == ISD::CopyFromReg) {
     Reg = cast<RegisterSDNode>(N.getOperand(1))->getReg();
-    if (Reg && TargetRegisterInfo::isVirtualRegister(Reg)) {
+    if (TargetRegisterInfo::isVirtualRegister(Reg)) {
       MachineRegisterInfo &RegInfo = MF.getRegInfo();
       unsigned PR = RegInfo.getLiveInPhysReg(Reg);
       if (PR)
@@ -5738,9 +5738,14 @@ void SelectionDAGBuilder::visitInlineAsm(ImmutableCallSite CS) {
   const MDNode *SrcLoc = CS.getInstruction()->getMetadata("srcloc");
   AsmNodeOperands.push_back(DAG.getMDNode(SrcLoc));
 
-  // Remember the AlignStack bit as operand 3.
-  AsmNodeOperands.push_back(DAG.getTargetConstant(IA->isAlignStack() ? 1 : 0,
-                                            MVT::i1));
+  // Remember the HasSideEffect and AlignStack bits as operand 3.
+  unsigned ExtraInfo = 0;
+  if (IA->hasSideEffects())
+    ExtraInfo |= InlineAsm::Extra_HasSideEffects;
+  if (IA->isAlignStack())
+    ExtraInfo |= InlineAsm::Extra_IsAlignStack;
+  AsmNodeOperands.push_back(DAG.getTargetConstant(ExtraInfo,
+                                                  TLI.getPointerTy()));
 
   // Loop over all of the inputs, copying the operand values into the
   // appropriate registers and processing the output regs.

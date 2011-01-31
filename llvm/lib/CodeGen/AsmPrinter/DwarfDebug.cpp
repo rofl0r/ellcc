@@ -16,6 +16,7 @@
 #include "DIE.h"
 #include "llvm/Constants.h"
 #include "llvm/Module.h"
+#include "llvm/Instructions.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/MC/MCAsmInfo.h"
@@ -24,7 +25,7 @@
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/Target/Mangler.h"
 #include "llvm/Target/TargetData.h"
-#include "llvm/Target/TargetFrameInfo.h"
+#include "llvm/Target/TargetFrameLowering.h"
 #include "llvm/Target/TargetLoweringObjectFile.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetRegisterInfo.h"
@@ -594,7 +595,7 @@ void DwarfDebug::addSourceLine(DIE *Die, DINameSpace NS) {
 void DwarfDebug::addVariableAddress(DbgVariable *&DV, DIE *Die, int64_t FI) {
   MachineLocation Location;
   unsigned FrameReg;
-  const TargetFrameInfo *TFI = Asm->TM.getFrameInfo();
+  const TargetFrameLowering *TFI = Asm->TM.getFrameLowering();
   int Offset = TFI->getFrameIndexReference(*Asm->MF, FI, FrameReg);
   Location.set(FrameReg, Offset);
 
@@ -626,8 +627,7 @@ void DwarfDebug::addComplexAddress(DbgVariable *&DV, DIE *Die,
     if (Reg < 32) {
       addUInt(Block, 0, dwarf::DW_FORM_data1, dwarf::DW_OP_reg0 + Reg);
     } else {
-      Reg = Reg - dwarf::DW_OP_reg0;
-      addUInt(Block, 0, dwarf::DW_FORM_data1, dwarf::DW_OP_breg0 + Reg);
+      addUInt(Block, 0, dwarf::DW_FORM_data1, dwarf::DW_OP_regx);
       addUInt(Block, 0, dwarf::DW_FORM_udata, Reg);
     }
   } else {
@@ -766,8 +766,7 @@ void DwarfDebug::addBlockByrefAddress(DbgVariable *&DV, DIE *Die,
     if (Reg < 32)
       addUInt(Block, 0, dwarf::DW_FORM_data1, dwarf::DW_OP_reg0 + Reg);
     else {
-      Reg = Reg - dwarf::DW_OP_reg0;
-      addUInt(Block, 0, dwarf::DW_FORM_data1, dwarf::DW_OP_breg0 + Reg);
+      addUInt(Block, 0, dwarf::DW_FORM_data1, dwarf::DW_OP_regx);
       addUInt(Block, 0, dwarf::DW_FORM_udata, Reg);
     }
   } else {
@@ -894,6 +893,39 @@ bool DwarfDebug::addConstantFPValue(DIE *Die, const MachineOperand &MO) {
   return true;
 }
 
+/// addConstantValue - Add constant value entry in variable DIE.
+bool DwarfDebug::addConstantValue(DIE *Die, ConstantInt *CI,
+                                  bool Unsigned) {
+  if (CI->getBitWidth() <= 64) {
+    if (Unsigned)
+      addUInt(Die, dwarf::DW_AT_const_value, dwarf::DW_FORM_udata,
+              CI->getZExtValue());
+    else
+      addSInt(Die, dwarf::DW_AT_const_value, dwarf::DW_FORM_sdata,
+              CI->getSExtValue());
+    return true;
+  }
+
+  DIEBlock *Block = new (DIEValueAllocator) DIEBlock();
+
+  // Get the raw data form of the large APInt.
+  const APInt Val = CI->getValue();
+  const char *Ptr = (const char*)Val.getRawData();
+
+  int NumBytes = Val.getBitWidth() / 8; // 8 bits per byte.
+  bool LittleEndian = Asm->getTargetData().isLittleEndian();
+  int Incr = (LittleEndian ? 1 : -1);
+  int Start = (LittleEndian ? 0 : NumBytes - 1);
+  int Stop = (LittleEndian ? NumBytes : -1);
+
+  // Output the constant to DWARF one byte at a time.
+  for (; Start != Stop; Start += Incr)
+    addUInt(Block, 0, dwarf::DW_FORM_data1,
+            (unsigned char)0xFF & Ptr[Start]);
+
+  addBlock(Die, dwarf::DW_AT_const_value, 0, Block);
+  return true;
+}
 
 /// addToContextOwner - Add Die into the list of its context owner's children.
 void DwarfDebug::addToContextOwner(DIE *Die, DIDescriptor Context) {
@@ -1891,6 +1923,32 @@ static bool isUnsignedDIType(DIType Ty) {
   return false;
 }
 
+// Return const exprssion if value is a GEP to access merged global
+// constant. e.g.
+// i8* getelementptr ({ i8, i8, i8, i8 }* @_MergedGlobals, i32 0, i32 0)
+static const ConstantExpr *getMergedGlobalExpr(const Value *V) {
+  const ConstantExpr *CE = dyn_cast_or_null<ConstantExpr>(V);
+  if (!CE || CE->getNumOperands() != 3 ||
+      CE->getOpcode() != Instruction::GetElementPtr)
+    return NULL;
+
+  // First operand points to a global value.
+  if (!isa<GlobalValue>(CE->getOperand(0)))
+    return NULL;
+
+  // Second operand is zero.
+  const ConstantInt *CI = 
+    dyn_cast_or_null<ConstantInt>(CE->getOperand(1));
+  if (!CI || !CI->isZero())
+    return NULL;
+
+  // Third operand is offset.
+  if (!isa<ConstantInt>(CE->getOperand(2)))
+    return NULL;
+
+  return CE;
+}
+
 /// constructGlobalVariableDIE - Construct global variable DIE.
 void DwarfDebug::constructGlobalVariableDIE(const MDNode *N) {
   DIGlobalVariable GV(N);
@@ -1957,16 +2015,22 @@ void DwarfDebug::constructGlobalVariableDIE(const MDNode *N) {
     } else {
       addBlock(VariableDIE, dwarf::DW_AT_location, 0, Block);
     } 
-  } else if (Constant *C = GV.getConstant()) {
-    if (ConstantInt *CI = dyn_cast<ConstantInt>(C)) {
-      if (isUnsignedDIType(GTy))
-          addUInt(VariableDIE, dwarf::DW_AT_const_value, dwarf::DW_FORM_udata,
-                  CI->getZExtValue());
-        else
-          addSInt(VariableDIE, dwarf::DW_AT_const_value, dwarf::DW_FORM_sdata,
-                 CI->getSExtValue());
-    }
+  } else if (ConstantInt *CI = 
+             dyn_cast_or_null<ConstantInt>(GV.getConstant()))
+    addConstantValue(VariableDIE, CI, isUnsignedDIType(GTy));
+  else if (const ConstantExpr *CE = getMergedGlobalExpr(N->getOperand(11))) {
+    // GV is a merged global.
+    DIEBlock *Block = new (DIEValueAllocator) DIEBlock();
+    addUInt(Block, 0, dwarf::DW_FORM_data1, dwarf::DW_OP_addr);
+    addLabel(Block, 0, dwarf::DW_FORM_udata,
+             Asm->Mang->getSymbol(cast<GlobalValue>(CE->getOperand(0))));
+    ConstantInt *CII = cast<ConstantInt>(CE->getOperand(2));
+    addUInt(Block, 0, dwarf::DW_FORM_data1, dwarf::DW_OP_constu);
+    addUInt(Block, 0, dwarf::DW_FORM_udata, CII->getZExtValue());
+    addUInt(Block, 0, dwarf::DW_FORM_data1, dwarf::DW_OP_plus);
+    addBlock(VariableDIE, dwarf::DW_AT_location, 0, Block);
   }
+
   return;
 }
 
@@ -2230,15 +2294,6 @@ DwarfDebug::collectVariableInfoFromMMITable(const MachineFunction * MF,
   }
 }
 
-/// isDbgValueInUndefinedReg - Return true if debug value, encoded by
-/// DBG_VALUE instruction, is in undefined reg.
-static bool isDbgValueInUndefinedReg(const MachineInstr *MI) {
-  assert (MI->isDebugValue() && "Invalid DBG_VALUE machine instruction!");
-  if (MI->getOperand(0).isReg() && !MI->getOperand(0).getReg())
-    return true;
-  return false;
-}
-
 /// isDbgValueInDefinedReg - Return true if debug value, encoded by
 /// DBG_VALUE instruction, is in a defined reg.
 static bool isDbgValueInDefinedReg(const MachineInstr *MI) {
@@ -2263,7 +2318,7 @@ DwarfDebug::collectVariableInfo(const MachineFunction *MF,
     for (MachineBasicBlock::const_iterator II = I->begin(), IE = I->end();
          II != IE; ++II) {
       const MachineInstr *MInsn = II;
-      if (!MInsn->isDebugValue() || isDbgValueInUndefinedReg(MInsn))
+      if (!MInsn->isDebugValue())
         continue;
       DbgValues.push_back(MInsn);
     }
@@ -2285,19 +2340,18 @@ DwarfDebug::collectVariableInfo(const MachineFunction *MF,
            ME = DbgValues.end(); MI != ME; ++MI) {
       const MDNode *Var =
         (*MI)->getOperand((*MI)->getNumOperands()-1).getMetadata();
-      if (Var == DV && isDbgValueInDefinedReg(*MI) &&
+      if (Var == DV && 
           !PrevMI->isIdenticalTo(*MI))
         MultipleValues.push_back(*MI);
       PrevMI = *MI;
     }
 
-    DbgScope *Scope = findDbgScope(MInsn);
-    bool CurFnArg = false;
+    DbgScope *Scope = NULL;
     if (DV.getTag() == dwarf::DW_TAG_arg_variable &&
         DISubprogram(DV.getContext()).describes(MF->getFunction()))
-      CurFnArg = true;
-    if (!Scope && CurFnArg)
       Scope = CurrentFnDbgScope;
+    else
+      Scope = findDbgScope(MInsn);
     // If variable scope is not found then skip this variable.
     if (!Scope)
       continue;
@@ -3267,8 +3321,8 @@ void DwarfDebug::emitCommonDebugFrame() {
     return;
 
   int stackGrowth = Asm->getTargetData().getPointerSize();
-  if (Asm->TM.getFrameInfo()->getStackGrowthDirection() ==
-      TargetFrameInfo::StackGrowsDown)
+  if (Asm->TM.getFrameLowering()->getStackGrowthDirection() ==
+      TargetFrameLowering::StackGrowsDown)
     stackGrowth *= -1;
 
   // Start the dwarf frame section.
@@ -3291,7 +3345,7 @@ void DwarfDebug::emitCommonDebugFrame() {
   Asm->EmitSLEB128(stackGrowth, "CIE Data Alignment Factor");
   Asm->OutStreamer.AddComment("CIE RA Column");
   const TargetRegisterInfo *RI = Asm->TM.getRegisterInfo();
-  const TargetFrameInfo *TFI = Asm->TM.getFrameInfo();
+  const TargetFrameLowering *TFI = Asm->TM.getFrameLowering();
   Asm->EmitInt8(RI->getDwarfRegNum(RI->getRARegister(), false));
 
   std::vector<MachineMove> Moves;

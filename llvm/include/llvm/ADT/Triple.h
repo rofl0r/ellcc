@@ -74,7 +74,8 @@ public:
 
     Apple,
     PC,
-    ELLCC
+    ELLCC,
+    NoVendor
   };
   enum OSType {
     UnknownOS,
@@ -97,10 +98,15 @@ public:
     Minix,
     RTOS,       // ELLCC: Free-, Open-, Safe-RTOS
     Partikle,   // ELLCC: Partikle
-    SA          // ELLCC: Stand Alone
+    SA,         // ELLCC: Stand Alone
+    NoOS
   };
   enum EnvironmentType {
-    UnknownEnvironment
+    UnknownEnvironment,
+
+    GNU,
+    GNUEABI,
+    EABI
   };
 
 private:

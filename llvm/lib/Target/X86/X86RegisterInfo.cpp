@@ -31,7 +31,7 @@
 #include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/MC/MCAsmInfo.h"
-#include "llvm/Target/TargetFrameInfo.h"
+#include "llvm/Target/TargetFrameLowering.h"
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
@@ -60,7 +60,7 @@ X86RegisterInfo::X86RegisterInfo(X86TargetMachine &tm,
   const X86Subtarget *Subtarget = &TM.getSubtarget<X86Subtarget>();
   Is64Bit = Subtarget->is64Bit();
   IsWin64 = Subtarget->isTargetWin64();
-  StackAlign = TM.getFrameInfo()->getStackAlignment();
+  StackAlign = TM.getFrameLowering()->getStackAlignment();
 
   if (Is64Bit) {
     SlotSize = 8;
@@ -316,10 +316,16 @@ X86RegisterInfo::getPointerRegClass(unsigned Kind) const {
     if (TM.getSubtarget<X86Subtarget>().is64Bit())
       return &X86::GR64RegClass;
     return &X86::GR32RegClass;
-  case 1: // Normal GRPs except the stack pointer (for encoding reasons).
+  case 1: // Normal GPRs except the stack pointer (for encoding reasons).
     if (TM.getSubtarget<X86Subtarget>().is64Bit())
       return &X86::GR64_NOSPRegClass;
     return &X86::GR32_NOSPRegClass;
+  case 2: // Available for tailcall (not callee-saved GPRs).
+    if (TM.getSubtarget<X86Subtarget>().isTargetWin64())
+      return &X86::GR64_TCW64RegClass;
+    if (TM.getSubtarget<X86Subtarget>().is64Bit())
+      return &X86::GR64_TCRegClass;
+    return &X86::GR32_TCRegClass;
   }
 }
 
@@ -388,7 +394,7 @@ X86RegisterInfo::getCalleeSavedRegs(const MachineFunction *MF) const {
 
 BitVector X86RegisterInfo::getReservedRegs(const MachineFunction &MF) const {
   BitVector Reserved(getNumRegs());
-  const TargetFrameInfo *TFI = MF.getTarget().getFrameInfo();
+  const TargetFrameLowering *TFI = MF.getTarget().getFrameLowering();
 
   // Set the stack-pointer register and its aliases as reserved.
   Reserved.set(X86::RSP);
@@ -445,17 +451,17 @@ bool X86RegisterInfo::needsStackRealignment(const MachineFunction &MF) const {
   if (0 && requiresRealignment && MFI->hasVarSizedObjects())
     report_fatal_error(
       "Stack realignment in presense of dynamic allocas is not supported");
-    
+
   // If we've requested that we force align the stack do so now.
   if (ForceStackAlign)
     return canRealignStack(MF);
-    
+
   return requiresRealignment && canRealignStack(MF);
 }
 
 bool X86RegisterInfo::hasReservedSpillSlot(const MachineFunction &MF,
                                            unsigned Reg, int &FrameIdx) const {
-  const TargetFrameInfo *TFI = MF.getTarget().getFrameInfo();
+  const TargetFrameLowering *TFI = MF.getTarget().getFrameLowering();
 
   if (Reg == FramePtr && TFI->hasFP(MF)) {
     FrameIdx = MF.getFrameInfo()->getObjectIndexBegin();
@@ -491,7 +497,7 @@ static unsigned getADDriOpcode(unsigned is64Bit, int64_t Imm) {
 void X86RegisterInfo::
 eliminateCallFramePseudoInstr(MachineFunction &MF, MachineBasicBlock &MBB,
                               MachineBasicBlock::iterator I) const {
-  const TargetFrameInfo *TFI = MF.getTarget().getFrameInfo();
+  const TargetFrameLowering *TFI = MF.getTarget().getFrameLowering();
   bool reseveCallFrame = TFI->hasReservedCallFrame(MF);
   int Opcode = I->getOpcode();
   bool isDestroy = Opcode == getCallFrameDestroyOpcode();
@@ -524,7 +530,7 @@ eliminateCallFramePseudoInstr(MachineFunction &MF, MachineBasicBlock &MBB,
 
       // Factor out the amount the callee already popped.
       Amount -= CalleeAmt;
-  
+
       if (Amount) {
         unsigned Opc = getADDriOpcode(Is64Bit, Amount);
         New = BuildMI(MF, DL, TII.get(Opc), StackPtr)
@@ -565,7 +571,7 @@ X86RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
   unsigned i = 0;
   MachineInstr &MI = *II;
   MachineFunction &MF = *MI.getParent()->getParent();
-  const TargetFrameInfo *TFI = MF.getTarget().getFrameInfo();
+  const TargetFrameLowering *TFI = MF.getTarget().getFrameLowering();
 
   while (!MI.getOperand(i).isFI()) {
     ++i;
@@ -614,7 +620,7 @@ unsigned X86RegisterInfo::getRARegister() const {
 }
 
 unsigned X86RegisterInfo::getFrameRegister(const MachineFunction &MF) const {
-  const TargetFrameInfo *TFI = MF.getTarget().getFrameInfo();
+  const TargetFrameLowering *TFI = MF.getTarget().getFrameLowering();
   return TFI->hasFP(MF) ? FramePtr : StackPtr;
 }
 
@@ -814,13 +820,13 @@ namespace {
       // Be over-conservative: scan over all vreg defs and find whether vector
       // registers are used. If yes, there is a possibility that vector register
       // will be spilled and thus require dynamic stack realignment.
-      for (unsigned RegNum = TargetRegisterInfo::FirstVirtualRegister;
-           RegNum < RI.getLastVirtReg(); ++RegNum)
-        if (RI.getRegClass(RegNum)->getAlignment() > StackAlignment) {
+      for (unsigned i = 0, e = RI.getNumVirtRegs(); i != e; ++i) {
+        unsigned Reg = TargetRegisterInfo::index2VirtReg(i);
+        if (RI.getRegClass(Reg)->getAlignment() > StackAlignment) {
           FuncInfo->setReserveFP(true);
           return true;
         }
-
+      }
       // Nothing to do
       return false;
     }

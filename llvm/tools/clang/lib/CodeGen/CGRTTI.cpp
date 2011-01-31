@@ -329,7 +329,8 @@ static bool ContainsIncompleteClassType(QualType Ty) {
 
 /// getTypeInfoLinkage - Return the linkage that the type info and type info
 /// name constants should have for the given type.
-static llvm::GlobalVariable::LinkageTypes getTypeInfoLinkage(QualType Ty) {
+static llvm::GlobalVariable::LinkageTypes 
+getTypeInfoLinkage(CodeGenModule &CGM, QualType Ty) {
   // Itanium C++ ABI 2.9.5p7:
   //   In addition, it and all of the intermediate abi::__pointer_type_info 
   //   structs in the chain down to the abi::__class_type_info for the
@@ -349,16 +350,22 @@ static llvm::GlobalVariable::LinkageTypes getTypeInfoLinkage(QualType Ty) {
     return llvm::GlobalValue::InternalLinkage;
 
   case ExternalLinkage:
+    if (!CGM.getLangOptions().RTTI) {
+      // RTTI is not enabled, which means that this type info struct is going
+      // to be used for exception handling. Give it linkonce_odr linkage.
+      return llvm::GlobalValue::LinkOnceODRLinkage;
+    }
+
     if (const RecordType *Record = dyn_cast<RecordType>(Ty)) {
       const CXXRecordDecl *RD = cast<CXXRecordDecl>(Record->getDecl());
       if (RD->isDynamicClass())
-        return CodeGenModule::getVTableLinkage(RD);
+        return CGM.getVTableLinkage(RD);
     }
 
-    return llvm::GlobalValue::WeakODRLinkage;
+    return llvm::GlobalValue::LinkOnceODRLinkage;
   }
 
-  return llvm::GlobalValue::WeakODRLinkage;
+  return llvm::GlobalValue::LinkOnceODRLinkage;
 }
 
 // CanUseSingleInheritance - Return whether the given record decl has a "single, 
@@ -530,7 +537,7 @@ llvm::Constant *RTTIBuilder::BuildTypeInfo(QualType Ty, bool Force) {
   if (IsStdLib)
     Linkage = llvm::GlobalValue::ExternalLinkage;
   else
-    Linkage = getTypeInfoLinkage(Ty);
+    Linkage = getTypeInfoLinkage(CGM, Ty);
 
   // Add the vtable pointer.
   BuildVTablePointer(cast<Type>(Ty));
@@ -637,12 +644,14 @@ llvm::Constant *RTTIBuilder::BuildTypeInfo(QualType Ty, bool Force) {
   // compatibility.
   if (const RecordType *RT = dyn_cast<RecordType>(Ty))
     CGM.setTypeVisibility(GV, cast<CXXRecordDecl>(RT->getDecl()),
-                          /*ForRTTI*/ true, /*ForDefinition*/ true);
+                          /*ForRTTI=*/true);
   else if (Hidden || 
            (CGM.getCodeGenOpts().HiddenWeakVTables &&
-            Linkage == llvm::GlobalValue::WeakODRLinkage))
+            Linkage == llvm::GlobalValue::LinkOnceODRLinkage)) {
     GV->setVisibility(llvm::GlobalValue::HiddenVisibility);
-  
+  }
+  GV->setUnnamedAddr(true);
+
   return llvm::ConstantExpr::getBitCast(GV, Int8PtrTy);
 }
 

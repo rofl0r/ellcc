@@ -78,11 +78,11 @@ public:
   static void *getTag();
   bool evalCallExpr(CheckerContext &C, const CallExpr *CE);
   void evalDeadSymbols(CheckerContext &C, SymbolReaper &SymReaper);
-  void evalEndPath(EndPathNodeBuilder &B, void *tag, ExprEngine &Eng);
+  void evalEndPath(EndOfFunctionNodeBuilder &B, void *tag, ExprEngine &Eng);
   void PreVisitReturnStmt(CheckerContext &C, const ReturnStmt *S);
   const GRState *evalAssume(const GRState *state, SVal Cond, bool Assumption,
                             bool *respondsToCallback);
-  void visitLocation(CheckerContext &C, const Stmt *S, SVal l);
+  void visitLocation(CheckerContext &C, const Stmt *S, SVal l, bool isLoad);
   virtual void PreVisitBind(CheckerContext &C, const Stmt *StoreE,
                             SVal location, SVal val);
 
@@ -593,9 +593,8 @@ void MallocChecker::evalDeadSymbols(CheckerContext &C, SymbolReaper &SymReaper)
   C.generateNode(state->set<RegionState>(RS));
 }
 
-void MallocChecker::evalEndPath(EndPathNodeBuilder &B, void *tag,
+void MallocChecker::evalEndPath(EndOfFunctionNodeBuilder &B, void *tag,
                                 ExprEngine &Eng) {
-  SaveAndRestore<bool> OldHasGen(B.HasGeneratedNode);
   const GRState *state = B.getState();
   RegionStateTy M = state->get<RegionState>();
 
@@ -653,7 +652,8 @@ const GRState *MallocChecker::evalAssume(const GRState *state, SVal Cond,
 }
 
 // Check if the location is a freed symbolic region.
-void MallocChecker::visitLocation(CheckerContext &C, const Stmt *S, SVal l) {
+void MallocChecker::visitLocation(CheckerContext &C, const Stmt *S, SVal l,
+                                  bool isLoad) {
   SymbolRef Sym = l.getLocSymbolInBase();
   if (Sym) {
     const RefState *RS = C.getState()->get<RegionState>(Sym);

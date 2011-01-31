@@ -257,6 +257,7 @@ public:
   LinuxTargetInfo(const std::string& triple)
     : OSTargetInfo<Target>(triple) {
     this->UserLabelPrefix = "";
+    this->WIntType = TargetInfo::UnsignedInt;
   }
 };
 
@@ -1610,11 +1611,15 @@ public:
     SizeType = UnsignedLongLong;
     PtrDiffType = SignedLongLong;
     IntPtrType = SignedLongLong;
+    this->UserLabelPrefix = "";
   }
   virtual void getTargetDefines(const LangOptions &Opts,
                                 MacroBuilder &Builder) const {
     WindowsTargetInfo<X86_64TargetInfo>::getTargetDefines(Opts, Builder);
     Builder.defineMacro("_WIN64");
+  }
+  virtual const char *getVAListDeclaration() const {
+    return "typedef char* __builtin_va_list;";
   }
 };
 } // end anonymous namespace
@@ -1633,9 +1638,6 @@ public:
     Builder.defineMacro("_M_X64");
     Builder.defineMacro("_M_AMD64");
   }
-  virtual const char *getVAListDeclaration() const {
-    return "typedef char* __builtin_va_list;";
-  }
 };
 } // end anonymous namespace
 
@@ -1652,7 +1654,7 @@ public:
     DefineStd(Builder, "WIN64", Opts);
     Builder.defineMacro("__MSVCRT__");
     Builder.defineMacro("__MINGW64__");
-    Builder.defineMacro("__declspec");
+    Builder.defineMacro("__declspec", "__declspec");
   }
 };
 } // end anonymous namespace
@@ -1843,6 +1845,7 @@ public:
       .Cases("arm1136jf-s", "mpcorenovfp", "mpcore", "6K")
       .Cases("arm1156t2-s", "arm1156t2f-s", "6T2")
       .Cases("cortex-a8", "cortex-a9", "7A")
+      .Case("cortex-m3", "7M")
       .Default(0);
   }
   virtual bool setCPU(const std::string &Name) {

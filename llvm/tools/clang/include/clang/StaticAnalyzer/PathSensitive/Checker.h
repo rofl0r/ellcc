@@ -32,7 +32,7 @@ class CheckerContext {
   ExprEngine &Eng;
   ExplodedNode *Pred;
   SaveAndRestore<bool> OldSink;
-  SaveAndRestore<const void*> OldTag;
+  const void *checkerTag;
   SaveAndRestore<ProgramPoint::Kind> OldPointKind;
   SaveOr OldHasGen;
   const GRState *ST;
@@ -48,9 +48,9 @@ public:
                  const Stmt *stmt = 0, const GRState *st = 0)
     : Dst(dst), B(builder), Eng(eng), Pred(pred),
       OldSink(B.BuildSinks),
-      OldTag(B.Tag, tag),
+      checkerTag(tag),
       OldPointKind(B.PointKind, K),
-      OldHasGen(B.HasGeneratedNode),
+      OldHasGen(B.hasGeneratedNode),
       ST(st), statement(stmt), size(Dst.size()),
       respondsToCallback(respondsToCB) {}
 
@@ -95,16 +95,18 @@ public:
 
   ExplodedNode *generateNode(bool autoTransition = true) {
     assert(statement && "Only transitions with statements currently supported");
-    ExplodedNode *N = generateNodeImpl(statement, getState(), false);
+    ExplodedNode *N = generateNodeImpl(statement, getState(), false,
+                                       checkerTag);
     if (N && autoTransition)
       Dst.Add(N);
     return N;
   }
   
   ExplodedNode *generateNode(const Stmt *stmt, const GRState *state,
-                             bool autoTransition = true) {
+                             bool autoTransition = true, const void *tag = 0) {
     assert(state);
-    ExplodedNode *N = generateNodeImpl(stmt, state, false);
+    ExplodedNode *N = generateNodeImpl(stmt, state, false,
+                                       tag ? tag : checkerTag);
     if (N && autoTransition)
       addTransition(N);
     return N;
@@ -119,44 +121,40 @@ public:
     return N;
   }
 
-  ExplodedNode *generateNode(const GRState *state, bool autoTransition = true) {
+  ExplodedNode *generateNode(const GRState *state, bool autoTransition = true,
+                             const void *tag = 0) {
     assert(statement && "Only transitions with statements currently supported");
-    ExplodedNode *N = generateNodeImpl(statement, state, false);
+    ExplodedNode *N = generateNodeImpl(statement, state, false,
+                                       tag ? tag : checkerTag);
     if (N && autoTransition)
       addTransition(N);
     return N;
   }
 
   ExplodedNode *generateSink(const Stmt *stmt, const GRState *state = 0) {
-    return generateNodeImpl(stmt, state ? state : getState(), true);
+    return generateNodeImpl(stmt, state ? state : getState(), true,
+                            checkerTag);
   }
   
   ExplodedNode *generateSink(const GRState *state = 0) {
     assert(statement && "Only transitions with statements currently supported");
-    return generateNodeImpl(statement, state ? state : getState(), true);
+    return generateNodeImpl(statement, state ? state : getState(), true,
+                            checkerTag);
   }
 
   void addTransition(ExplodedNode *node) {
     Dst.Add(node);
   }
   
-  void addTransition(const GRState *state) {
+  void addTransition(const GRState *state, const void *tag = 0) {
     assert(state);
     // If the 'state' is not new, we need to check if the cached state 'ST'
     // is new.
     if (state != getState() || (ST && ST != B.GetState(Pred)))
       // state is new or equals to ST.
-      generateNode(state, true);
+      generateNode(state, true, tag);
     else
       Dst.Add(Pred);
-  }
-
-  // Generate a node with a new program point different from the one that will
-  // be created by the StmtNodeBuilder.
-  void addTransition(const GRState *state, ProgramPoint Loc) {
-    ExplodedNode *N = B.generateNode(Loc, state, Pred);
-    if (N)
-      addTransition(N);
   }
 
   void EmitReport(BugReport *R) {
@@ -169,8 +167,8 @@ public:
 
 private:
   ExplodedNode *generateNodeImpl(const Stmt* stmt, const GRState *state,
-                             bool markAsSink) {
-    ExplodedNode *node = B.generateNode(stmt, state, Pred);
+                             bool markAsSink, const void *tag) {
+    ExplodedNode *node = B.generateNode(stmt, state, Pred, tag);
     if (markAsSink && node)
       node->markAsSink();
     return node;
@@ -178,7 +176,7 @@ private:
 
   ExplodedNode *generateNodeImpl(const Stmt* stmt, const GRState *state,
                                  ExplodedNode *pred, bool markAsSink) {
-   ExplodedNode *node = B.generateNode(stmt, state, pred);
+   ExplodedNode *node = B.generateNode(stmt, state, pred, checkerTag);
     if (markAsSink && node)
       node->markAsSink();
     return node;
@@ -205,12 +203,26 @@ private:
       _PostVisit(C, S);
   }
 
+  void GR_visitObjCMessage(ExplodedNodeSet &Dst,
+                           StmtNodeBuilder &Builder,
+                           ExprEngine &Eng,
+                           const ObjCMessage &msg,
+                           ExplodedNode *Pred, void *tag, bool isPrevisit) {
+    CheckerContext C(Dst, Builder, Eng, Pred, tag,
+                     isPrevisit ? ProgramPoint::PreStmtKind :
+                     ProgramPoint::PostStmtKind, 0, msg.getOriginExpr());
+    if (isPrevisit)
+      preVisitObjCMessage(C, msg);
+    else
+      postVisitObjCMessage(C, msg);
+  }
+
   bool GR_evalNilReceiver(ExplodedNodeSet &Dst, StmtNodeBuilder &Builder,
-                          ExprEngine &Eng, const ObjCMessageExpr *ME,
+                          ExprEngine &Eng, const ObjCMessage &msg,
                           ExplodedNode *Pred, const GRState *state, void *tag) {
     CheckerContext C(Dst, Builder, Eng, Pred, tag, ProgramPoint::PostStmtKind,
-                     0, ME, state);
-    return evalNilReceiver(C, ME);
+                     0, msg.getOriginExpr(), state);
+    return evalNilReceiver(C, msg);
   }
 
   bool GR_evalCallExpr(ExplodedNodeSet &Dst, StmtNodeBuilder &Builder,
@@ -245,7 +257,7 @@ private:
     CheckerContext C(Dst, Builder, Eng, Pred, tag,
                      isLoad ? ProgramPoint::PreLoadKind :
                      ProgramPoint::PreStoreKind, 0, S, state);
-    visitLocation(C, S, location);
+    visitLocation(C, S, location, isLoad);
   }
 
   void GR_evalDeadSymbols(ExplodedNodeSet &Dst, StmtNodeBuilder &Builder,
@@ -260,11 +272,14 @@ public:
   virtual ~Checker();
   virtual void _PreVisit(CheckerContext &C, const Stmt *S) {}
   virtual void _PostVisit(CheckerContext &C, const Stmt *S) {}
-  virtual void visitLocation(CheckerContext &C, const Stmt *S, SVal location) {}
+  virtual void preVisitObjCMessage(CheckerContext &C, ObjCMessage msg) {}
+  virtual void postVisitObjCMessage(CheckerContext &C, ObjCMessage msg) {}
+  virtual void visitLocation(CheckerContext &C, const Stmt *S, SVal location,
+                             bool isLoad) {}
   virtual void PreVisitBind(CheckerContext &C, const Stmt *StoreE,
                             SVal location, SVal val) {}
   virtual void evalDeadSymbols(CheckerContext &C, SymbolReaper &SymReaper) {}
-  virtual void evalEndPath(EndPathNodeBuilder &B, void *tag,
+  virtual void evalEndPath(EndOfFunctionNodeBuilder &B, void *tag,
                            ExprEngine &Eng) {}
 
   virtual void MarkLiveSymbols(const GRState *state, SymbolReaper &SymReaper) {}
@@ -273,7 +288,7 @@ public:
                                     ExprEngine &Eng,
                                     const Stmt *Condition, void *tag) {}
 
-  virtual bool evalNilReceiver(CheckerContext &C, const ObjCMessageExpr *ME) {
+  virtual bool evalNilReceiver(CheckerContext &C, ObjCMessage msg) {
     return false;
   }
 
@@ -287,7 +302,7 @@ public:
     return state;
   }
 
-  virtual bool WantsRegionChangeUpdate(const GRState *state) { return false; }
+  virtual bool wantsRegionChangeUpdate(const GRState *state) { return false; }
 
   virtual const GRState *EvalRegionChanges(const GRState *state,
                                            const MemRegion * const *Begin,

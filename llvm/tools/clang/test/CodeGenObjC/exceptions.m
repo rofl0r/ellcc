@@ -29,10 +29,8 @@ void f1() {
     // CHECK-NEXT: call void @foo()
       foo();
     // CHECK-NEXT: call void @objc_exception_try_exit
-    // CHECK-NEXT: ret void
 
     // CHECK:      call void asm sideeffect "", "=*m"
-    // CHECK-NEXT: ret void
     } @finally {
       break;
     }
@@ -65,7 +63,6 @@ int f2() {
     // CHECK-NEXT: call void @foo()
     // CHECK-NEXT: call void @objc_exception_try_exit
     // CHECK-NEXT: [[T:%.*]] = load i32* [[X]]
-    // CHECK-NEXT: ret i32 [[T]]
     foo();
   } @catch (id) {
     // Landing pad.  Note that we elide the re-enter.
@@ -76,10 +73,9 @@ int f2() {
 
     // This store is dead.
     // CHECK-NEXT: store i32 [[T2]], i32* [[X]]
-
-    // CHECK-NEXT: ret i32 [[T2]]
     x--;
   }
+
   return x;
 }
 

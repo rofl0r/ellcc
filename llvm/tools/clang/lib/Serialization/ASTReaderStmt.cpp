@@ -14,6 +14,7 @@
 
 #include "clang/Serialization/ASTReader.h"
 #include "clang/AST/DeclCXX.h"
+#include "clang/AST/DeclTemplate.h"
 #include "clang/AST/StmtVisitor.h"
 using namespace clang;
 using namespace clang::serialization;
@@ -178,7 +179,8 @@ namespace clang {
     void VisitCXXNoexceptExpr(CXXNoexceptExpr *E);
     void VisitPackExpansionExpr(PackExpansionExpr *E);
     void VisitSizeOfPackExpr(SizeOfPackExpr *E);
-    
+    void VisitSubstNonTypeTemplateParmPackExpr(
+                                           SubstNonTypeTemplateParmPackExpr *E);
     void VisitOpaqueValueExpr(OpaqueValueExpr *E);
   };
 }
@@ -1006,7 +1008,9 @@ void ASTStmtReader::VisitCXXTemporaryObjectExpr(CXXTemporaryObjectExpr *E) {
 
 void ASTStmtReader::VisitCXXNamedCastExpr(CXXNamedCastExpr *E) {
   VisitExplicitCastExpr(E);
-  E->setOperatorLoc(ReadSourceLocation(Record, Idx));
+  SourceRange R = ReadSourceRange(Record, Idx);
+  E->Loc = R.getBegin();
+  E->RParenLoc = R.getEnd();
 }
 
 void ASTStmtReader::VisitCXXStaticCastExpr(CXXStaticCastExpr *E) {
@@ -1102,8 +1106,9 @@ void ASTStmtReader::VisitCXXScalarValueInitExpr(CXXScalarValueInitExpr *E) {
 
 void ASTStmtReader::VisitCXXNewExpr(CXXNewExpr *E) {
   VisitExpr(E);
-  E->setGlobalNew(Record[Idx++]);
-  E->setHasInitializer(Record[Idx++]);
+  E->GlobalNew = Record[Idx++];
+  E->Initializer = Record[Idx++];
+  E->UsualArrayDeleteWantsSize = Record[Idx++];
   bool isArray = Record[Idx++];
   unsigned NumPlacementArgs = Record[Idx++];
   unsigned NumCtorArgs = Record[Idx++];
@@ -1136,6 +1141,7 @@ void ASTStmtReader::VisitCXXDeleteExpr(CXXDeleteExpr *E) {
   E->GlobalDelete = Record[Idx++];
   E->ArrayForm = Record[Idx++];
   E->ArrayFormAsWritten = Record[Idx++];
+  E->UsualArrayDeleteWantsSize = Record[Idx++];
   E->OperatorDelete = cast_or_null<FunctionDecl>(Reader.GetDecl(Record[Idx++]));
   E->Argument = Reader.ReadSubExpr();
   E->Loc = ReadSourceLocation(Record, Idx);
@@ -1292,6 +1298,7 @@ void ASTStmtReader::VisitCXXNoexceptExpr(CXXNoexceptExpr *E) {
 void ASTStmtReader::VisitPackExpansionExpr(PackExpansionExpr *E) {
   VisitExpr(E);
   E->EllipsisLoc = ReadSourceLocation(Record, Idx);
+  E->NumExpansions = Record[Idx++];
   E->Pattern = Reader.ReadSubExpr();  
 }
 
@@ -1304,8 +1311,23 @@ void ASTStmtReader::VisitSizeOfPackExpr(SizeOfPackExpr *E) {
   E->Pack = cast_or_null<NamedDecl>(Reader.GetDecl(Record[Idx++]));
 }
 
+void ASTStmtReader::VisitSubstNonTypeTemplateParmPackExpr(
+                                          SubstNonTypeTemplateParmPackExpr *E) {
+  VisitExpr(E);
+  E->Param
+    = cast_or_null<NonTypeTemplateParmDecl>(Reader.GetDecl(Record[Idx++]));
+  TemplateArgument ArgPack = Reader.ReadTemplateArgument(F, Record, Idx);
+  if (ArgPack.getKind() != TemplateArgument::Pack)
+    return;
+  
+  E->Arguments = ArgPack.pack_begin();
+  E->NumArguments = ArgPack.pack_size();
+  E->NameLoc = ReadSourceLocation(Record, Idx);
+}
+
 void ASTStmtReader::VisitOpaqueValueExpr(OpaqueValueExpr *E) {
   VisitExpr(E);
+  E->Loc = ReadSourceLocation(Record, Idx);
 }
 
 Stmt *ASTReader::ReadStmt(PerFileData &F) {
@@ -1832,6 +1854,10 @@ Stmt *ASTReader::ReadStmtFromStream(PerFileData &F) {
         
     case EXPR_SIZEOF_PACK:
       S = new (Context) SizeOfPackExpr(Empty);
+      break;
+        
+    case EXPR_SUBST_NON_TYPE_TEMPLATE_PARM_PACK:
+      S = new (Context) SubstNonTypeTemplateParmPackExpr(Empty);
       break;
         
     case EXPR_OPAQUE_VALUE:

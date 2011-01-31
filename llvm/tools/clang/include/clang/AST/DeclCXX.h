@@ -481,12 +481,12 @@ public:
 
   bool hasDefinition() const { return DefinitionData != 0; }
 
-  static CXXRecordDecl *Create(ASTContext &C, TagKind TK, DeclContext *DC,
+  static CXXRecordDecl *Create(const ASTContext &C, TagKind TK, DeclContext *DC,
                                SourceLocation L, IdentifierInfo *Id,
                                SourceLocation TKL = SourceLocation(),
                                CXXRecordDecl* PrevDecl=0,
                                bool DelayTypeCreation = false);
-  static CXXRecordDecl *Create(ASTContext &C, EmptyShell Empty);
+  static CXXRecordDecl *Create(const ASTContext &C, EmptyShell Empty);
 
   bool isDynamicClass() const {
     return data().Polymorphic || data().NumVBases != 0;
@@ -591,10 +591,10 @@ public:
   
   /// hasConstCopyConstructor - Determines whether this class has a
   /// copy constructor that accepts a const-qualified argument.
-  bool hasConstCopyConstructor(ASTContext &Context) const;
+  bool hasConstCopyConstructor(const ASTContext &Context) const;
 
   /// getCopyConstructor - Returns the copy constructor for this class
-  CXXConstructorDecl *getCopyConstructor(ASTContext &Context,
+  CXXConstructorDecl *getCopyConstructor(const ASTContext &Context,
                                          unsigned TypeQuals) const;
 
   /// \brief Retrieve the copy-assignment operator for this class, if available.
@@ -658,7 +658,7 @@ public:
   ///
   /// This value is used for lazy creation of destructors.
   bool hasDeclaredDestructor() const { return data().DeclaredDestructor; }
-  
+
   /// getConversions - Retrieve the overload set containing all of the
   /// conversion functions in this class.
   UnresolvedSetImpl *getConversionFunctions() {
@@ -811,7 +811,7 @@ public:
   /// \param Base the base class we are searching for.
   ///
   /// \returns true if this class is derived from Base, false otherwise.
-  bool isDerivedFrom(CXXRecordDecl *Base) const;
+  bool isDerivedFrom(const CXXRecordDecl *Base) const;
   
   /// \brief Determine whether this class is derived from the type \p Base.
   ///
@@ -829,7 +829,7 @@ public:
   ///
   /// \todo add a separate paramaeter to configure IsDerivedFrom, rather than 
   /// tangling input and output in \p Paths  
-  bool isDerivedFrom(CXXRecordDecl *Base, CXXBasePaths &Paths) const;
+  bool isDerivedFrom(const CXXRecordDecl *Base, CXXBasePaths &Paths) const;
 
   /// \brief Determine whether this class is virtually derived from
   /// the class \p Base.
@@ -1096,6 +1096,20 @@ public:
     return getType()->getAs<FunctionProtoType>()->getTypeQuals();
   }
 
+  /// \brief Retrieve the ref-qualifier associated with this method.
+  ///
+  /// In the following example, \c f() has an lvalue ref-qualifier, \c g()
+  /// has an rvalue ref-qualifier, and \c h() has no ref-qualifier.
+  /// \code
+  /// struct X {
+  ///   void f() &;
+  ///   void g() &&;
+  ///   void h();
+  /// };
+  RefQualifierKind getRefQualifier() const {
+    return getType()->getAs<FunctionProtoType>()->getRefQualifier();
+  }
+  
   bool hasInlineBody() const;
 
   // Implement isa/cast/dyncast/etc.
@@ -1106,7 +1120,7 @@ public:
   }
 };
 
-/// CXXBaseOrMemberInitializer - Represents a C++ base or member
+/// CXXCtorInitializer - Represents a C++ base or member
 /// initializer, which is part of a constructor initializer that
 /// initializes one non-static member variable or one base class. For
 /// example, in the following, both 'A(a)' and 'f(3.14159)' are member
@@ -1120,12 +1134,12 @@ public:
 ///   B(A& a) : A(a), f(3.14159) { }
 /// };
 /// @endcode
-class CXXBaseOrMemberInitializer {
+class CXXCtorInitializer {
   /// \brief Either the base class name (stored as a TypeSourceInfo*), an normal
   /// field (FieldDecl) or an anonymous field (IndirectFieldDecl*) being 
   /// initialized.
-  llvm::PointerUnion3<TypeSourceInfo *, FieldDecl *, IndirectFieldDecl *> 
-    BaseOrMember;
+  llvm::PointerUnion3<TypeSourceInfo *, FieldDecl *, IndirectFieldDecl *>
+    Initializee;
   
   /// \brief The source location for the field name or, for a base initializer
   /// pack expansion, the location of the ellipsis.
@@ -1156,65 +1170,49 @@ class CXXBaseOrMemberInitializer {
   /// object in memory.
   unsigned SourceOrderOrNumArrayIndices : 14;
 
-  CXXBaseOrMemberInitializer(ASTContext &Context,
-                             FieldDecl *Member, SourceLocation MemberLoc,
-                             SourceLocation L,
-                             Expr *Init,
-                             SourceLocation R,
-                             VarDecl **Indices,
-                             unsigned NumIndices);
+  CXXCtorInitializer(ASTContext &Context, FieldDecl *Member,
+                     SourceLocation MemberLoc, SourceLocation L, Expr *Init,
+                     SourceLocation R, VarDecl **Indices, unsigned NumIndices);
   
 public:
-  /// CXXBaseOrMemberInitializer - Creates a new base-class initializer.
+  /// CXXCtorInitializer - Creates a new base-class initializer.
   explicit
-  CXXBaseOrMemberInitializer(ASTContext &Context,
-                             TypeSourceInfo *TInfo, bool IsVirtual,
-                             SourceLocation L, 
-                             Expr *Init,
-                             SourceLocation R,
-                             SourceLocation EllipsisLoc);
+  CXXCtorInitializer(ASTContext &Context, TypeSourceInfo *TInfo, bool IsVirtual,
+                     SourceLocation L, Expr *Init, SourceLocation R,
+                     SourceLocation EllipsisLoc);
 
-  /// CXXBaseOrMemberInitializer - Creates a new member initializer.
+  /// CXXCtorInitializer - Creates a new member initializer.
   explicit
-  CXXBaseOrMemberInitializer(ASTContext &Context,
-                             FieldDecl *Member, SourceLocation MemberLoc,
-                             SourceLocation L,
-                             Expr *Init,
-                             SourceLocation R);
+  CXXCtorInitializer(ASTContext &Context, FieldDecl *Member,
+                     SourceLocation MemberLoc, SourceLocation L, Expr *Init,
+                     SourceLocation R);
 
   explicit
-  CXXBaseOrMemberInitializer(ASTContext &Context,
-                             IndirectFieldDecl *Member,
-                             SourceLocation MemberLoc,
-                             SourceLocation L,
-                             Expr *Init,
-                             SourceLocation R);
+  CXXCtorInitializer(ASTContext &Context, IndirectFieldDecl *Member,
+                     SourceLocation MemberLoc, SourceLocation L, Expr *Init,
+                     SourceLocation R);
 
   /// \brief Creates a new member initializer that optionally contains 
   /// array indices used to describe an elementwise initialization.
-  static CXXBaseOrMemberInitializer *Create(ASTContext &Context,
-                                            FieldDecl *Member, 
-                                            SourceLocation MemberLoc,
-                                            SourceLocation L,
-                                            Expr *Init,
-                                            SourceLocation R,
-                                            VarDecl **Indices,
-                                            unsigned NumIndices);
+  static CXXCtorInitializer *Create(ASTContext &Context, FieldDecl *Member,
+                                    SourceLocation MemberLoc, SourceLocation L,
+                                    Expr *Init, SourceLocation R,
+                                    VarDecl **Indices, unsigned NumIndices);
   
   /// isBaseInitializer - Returns true when this initializer is
   /// initializing a base class.
-  bool isBaseInitializer() const { return BaseOrMember.is<TypeSourceInfo*>(); }
+  bool isBaseInitializer() const { return Initializee.is<TypeSourceInfo*>(); }
 
   /// isMemberInitializer - Returns true when this initializer is
   /// initializing a non-static data member.
-  bool isMemberInitializer() const { return BaseOrMember.is<FieldDecl*>(); }
+  bool isMemberInitializer() const { return Initializee.is<FieldDecl*>(); }
 
   bool isAnyMemberInitializer() const { 
     return isMemberInitializer() || isIndirectMemberInitializer();
   }
 
   bool isIndirectMemberInitializer() const {
-    return BaseOrMember.is<IndirectFieldDecl*>();
+    return Initializee.is<IndirectFieldDecl*>();
   }
 
   /// \brief Determine whether this initializer is a pack expansion.
@@ -1236,7 +1234,6 @@ public:
   /// If this is a base class initializer, returns the type of the base class.
   /// Otherwise, returns NULL.
   const Type *getBaseClass() const;
-  Type *getBaseClass();
 
   /// Returns whether the base is virtual or not.
   bool isBaseVirtual() const {
@@ -1247,7 +1244,7 @@ public:
 
   /// \brief Returns the declarator information for a base class initializer.
   TypeSourceInfo *getBaseClassInfo() const {
-    return BaseOrMember.dyn_cast<TypeSourceInfo *>();
+    return Initializee.dyn_cast<TypeSourceInfo *>();
   }
   
   /// getMember - If this is a member initializer, returns the
@@ -1255,22 +1252,22 @@ public:
   /// initialized. Otherwise, returns NULL.
   FieldDecl *getMember() const {
     if (isMemberInitializer())
-      return BaseOrMember.get<FieldDecl*>();
+      return Initializee.get<FieldDecl*>();
     else
       return 0;
   }
   FieldDecl *getAnyMember() const {
     if (isMemberInitializer())
-      return BaseOrMember.get<FieldDecl*>();
+      return Initializee.get<FieldDecl*>();
     else if (isIndirectMemberInitializer())
-      return BaseOrMember.get<IndirectFieldDecl*>()->getAnonField();
+      return Initializee.get<IndirectFieldDecl*>()->getAnonField();
     else
       return 0;
   }
 
   IndirectFieldDecl *getIndirectMember() const {
     if (isIndirectMemberInitializer())
-      return BaseOrMember.get<IndirectFieldDecl*>();
+      return Initializee.get<IndirectFieldDecl*>();
     else
       return 0;
   }
@@ -1359,10 +1356,10 @@ class CXXConstructorDecl : public CXXMethodDecl {
   bool ImplicitlyDefined : 1;
 
   /// Support for base and member initializers.
-  /// BaseOrMemberInitializers - The arguments used to initialize the base
+  /// CtorInitializers - The arguments used to initialize the base
   /// or member.
-  CXXBaseOrMemberInitializer **BaseOrMemberInitializers;
-  unsigned NumBaseOrMemberInitializers;
+  CXXCtorInitializer **CtorInitializers;
+  unsigned NumCtorInitializers;
 
   CXXConstructorDecl(CXXRecordDecl *RD, const DeclarationNameInfo &NameInfo,
                      QualType T, TypeSourceInfo *TInfo,
@@ -1371,7 +1368,7 @@ class CXXConstructorDecl : public CXXMethodDecl {
     : CXXMethodDecl(CXXConstructor, RD, NameInfo, T, TInfo, false,
                     SC_None, isInline),
       IsExplicitSpecified(isExplicitSpecified), ImplicitlyDefined(false),
-      BaseOrMemberInitializers(0), NumBaseOrMemberInitializers(0) {
+      CtorInitializers(0), NumCtorInitializers(0) {
     setImplicit(isImplicitlyDeclared);
   }
 
@@ -1414,23 +1411,23 @@ public:
   }
 
   /// init_iterator - Iterates through the member/base initializer list.
-  typedef CXXBaseOrMemberInitializer **init_iterator;
+  typedef CXXCtorInitializer **init_iterator;
 
   /// init_const_iterator - Iterates through the memberbase initializer list.
-  typedef CXXBaseOrMemberInitializer * const * init_const_iterator;
+  typedef CXXCtorInitializer * const * init_const_iterator;
 
   /// init_begin() - Retrieve an iterator to the first initializer.
-  init_iterator       init_begin()       { return BaseOrMemberInitializers; }
+  init_iterator       init_begin()       { return CtorInitializers; }
   /// begin() - Retrieve an iterator to the first initializer.
-  init_const_iterator init_begin() const { return BaseOrMemberInitializers; }
+  init_const_iterator init_begin() const { return CtorInitializers; }
 
   /// init_end() - Retrieve an iterator past the last initializer.
   init_iterator       init_end()       {
-    return BaseOrMemberInitializers + NumBaseOrMemberInitializers;
+    return CtorInitializers + NumCtorInitializers;
   }
   /// end() - Retrieve an iterator past the last initializer.
   init_const_iterator init_end() const {
-    return BaseOrMemberInitializers + NumBaseOrMemberInitializers;
+    return CtorInitializers + NumCtorInitializers;
   }
 
   typedef std::reverse_iterator<init_iterator> init_reverse_iterator;
@@ -1452,16 +1449,16 @@ public:
 
   /// getNumArgs - Determine the number of arguments used to
   /// initialize the member or base.
-  unsigned getNumBaseOrMemberInitializers() const {
-      return NumBaseOrMemberInitializers;
+  unsigned getNumCtorInitializers() const {
+      return NumCtorInitializers;
   }
 
-  void setNumBaseOrMemberInitializers(unsigned numBaseOrMemberInitializers) {
-    NumBaseOrMemberInitializers = numBaseOrMemberInitializers;
+  void setNumCtorInitializers(unsigned numCtorInitializers) {
+    NumCtorInitializers = numCtorInitializers;
   }
 
-  void setBaseOrMemberInitializers(CXXBaseOrMemberInitializer ** initializers) {
-    BaseOrMemberInitializers = initializers;
+  void setCtorInitializers(CXXCtorInitializer ** initializers) {
+    CtorInitializers = initializers;
   }
   /// isDefaultConstructor - Whether this constructor is a default
   /// constructor (C++ [class.ctor]p5), which can be used to
@@ -1488,6 +1485,29 @@ public:
   bool isCopyConstructor() const {
     unsigned TypeQuals = 0;
     return isCopyConstructor(TypeQuals);
+  }
+
+  /// \brief Determine whether this constructor is a move constructor
+  /// (C++0x [class.copy]p3), which can be used to move values of the class.
+  ///
+  /// \param TypeQuals If this constructor is a move constructor, will be set
+  /// to the type qualifiers on the referent of the first parameter's type.
+  bool isMoveConstructor(unsigned &TypeQuals) const;
+
+  /// \brief Determine whether this constructor is a move constructor
+  /// (C++0x [class.copy]p3), which can be used to move values of the class.
+  bool isMoveConstructor() const;
+  
+  /// \brief Determine whether this is a copy or move constructor.
+  ///
+  /// \param TypeQuals Will be set to the type qualifiers on the reference
+  /// parameter, if in fact this is a copy or move constructor.
+  bool isCopyOrMoveConstructor(unsigned &TypeQuals) const;
+
+  /// \brief Determine whether this a copy or move constructor.
+  bool isCopyOrMoveConstructor() const {
+    unsigned Quals;
+    return isCopyOrMoveConstructor(Quals);
   }
 
   /// isConvertingConstructor - Whether this constructor is a

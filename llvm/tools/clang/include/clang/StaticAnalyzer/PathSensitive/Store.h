@@ -153,7 +153,7 @@ public:
   ///  casted and 'CastToTy' the result type of the cast.
   const MemRegion *CastRegion(const MemRegion *region, QualType CastToTy);
 
-  virtual Store RemoveDeadBindings(Store store, const StackFrameContext *LCtx,
+  virtual Store removeDeadBindings(Store store, const StackFrameContext *LCtx,
                                    SymbolReaper& SymReaper,
                       llvm::SmallVectorImpl<const MemRegion*>& RegionRoots) = 0;
 
@@ -191,9 +191,9 @@ public:
                                   bool invalidateGlobals,
                                   InvalidatedRegions *Regions) = 0;
 
-  /// EnterStackFrame - Let the StoreManager to do something when execution
+  /// enterStackFrame - Let the StoreManager to do something when execution
   /// engine is about to execute into a callee.
-  virtual Store EnterStackFrame(const GRState *state,
+  virtual Store enterStackFrame(const GRState *state,
                                 const StackFrameContext *frame);
 
   virtual void print(Store store, llvm::raw_ostream& Out,

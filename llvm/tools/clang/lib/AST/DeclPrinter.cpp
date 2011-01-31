@@ -368,7 +368,7 @@ void DeclPrinter::VisitFunctionDecl(FunctionDecl *D) {
   std::string Proto = D->getNameInfo().getAsString();
 
   QualType Ty = D->getType();
-  while (ParenType* PT = dyn_cast<ParenType>(Ty)) {
+  while (const ParenType *PT = dyn_cast<ParenType>(Ty)) {
     Proto = '(' + Proto + ')';
     Ty = PT->getInnerType();
   }
@@ -432,14 +432,14 @@ void DeclPrinter::VisitFunctionDecl(FunctionDecl *D) {
     if (D->hasAttr<NoReturnAttr>())
       Proto += " __attribute((noreturn))";
     if (CXXConstructorDecl *CDecl = dyn_cast<CXXConstructorDecl>(D)) {
-      if (CDecl->getNumBaseOrMemberInitializers() > 0) {
+      if (CDecl->getNumCtorInitializers() > 0) {
         Proto += " : ";
         Out << Proto;
         Proto.clear();
         for (CXXConstructorDecl::init_const_iterator B = CDecl->init_begin(),
              E = CDecl->init_end();
              B != E; ++B) {
-          CXXBaseOrMemberInitializer * BMInitializer = (*B);
+          CXXCtorInitializer * BMInitializer = (*B);
           if (B != CDecl->init_begin())
             Out << ", ";
           if (BMInitializer->isAnyMemberInitializer()) {

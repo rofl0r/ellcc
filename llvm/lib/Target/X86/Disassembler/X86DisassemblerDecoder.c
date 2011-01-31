@@ -290,7 +290,7 @@ static int readPrefixes(struct InternalInstruction* insn) {
   BOOL isPrefix = TRUE;
   BOOL prefixGroups[4] = { FALSE };
   uint64_t prefixLocation;
-  uint8_t byte;
+  uint8_t byte = 0;
   
   BOOL hasAdSize = FALSE;
   BOOL hasOpSize = FALSE;
@@ -511,7 +511,8 @@ static int getIDWithAttrMask(uint16_t* instructionID,
                                     insn->opcode);
   
   if (hasModRMExtension) {
-    readModRM(insn);
+    if (readModRM(insn))
+      return -1;
     
     *instructionID = decode(insn->opcodeType,
                             instructionClass,
@@ -860,7 +861,8 @@ static int readModRM(struct InternalInstruction* insn) {
   if (insn->consumedModRM)
     return 0;
   
-  consumeByte(insn, &insn->modRM);
+  if (consumeByte(insn, &insn->modRM))
+    return -1;
   insn->consumedModRM = TRUE;
   
   mod     = modFromModRM(insn->modRM);

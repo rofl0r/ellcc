@@ -818,7 +818,7 @@ static int AnalyzeLoadFromClobberingMemInst(const Type *LoadTy, Value *LoadPtr,
   Constant *Src = dyn_cast<Constant>(MTI->getSource());
   if (Src == 0) return -1;
   
-  GlobalVariable *GV = dyn_cast<GlobalVariable>(GetUnderlyingObject(Src));
+  GlobalVariable *GV = dyn_cast<GlobalVariable>(GetUnderlyingObject(Src, &TD));
   if (GV == 0 || !GV->isConstant()) return -1;
   
   // See if the access is within the bounds of the transfer.
@@ -1383,8 +1383,11 @@ bool GVN::processNonLocalLoad(LoadInst *LI,
   }
 
   if (!CanDoPRE) {
-    while (!NewInsts.empty())
-      NewInsts.pop_back_val()->eraseFromParent();
+    while (!NewInsts.empty()) {
+      Instruction *I = NewInsts.pop_back_val();
+      if (MD) MD->removeInstruction(I);
+      I->eraseFromParent();
+    }
     return false;
   }
 
@@ -1741,8 +1744,8 @@ bool GVN::runOnFunction(Function& F) {
   // Merge unconditional branches, allowing PRE to catch more
   // optimization opportunities.
   for (Function::iterator FI = F.begin(), FE = F.end(); FI != FE; ) {
-    BasicBlock *BB = FI;
-    ++FI;
+    BasicBlock *BB = FI++;
+    
     bool removedBlock = MergeBlockIntoPredecessor(BB, this);
     if (removedBlock) ++NumGVNBlocks;
 
@@ -1750,7 +1753,6 @@ bool GVN::runOnFunction(Function& F) {
   }
 
   unsigned Iteration = 0;
-
   while (ShouldContinue) {
     DEBUG(dbgs() << "GVN iteration: " << Iteration << "\n");
     ShouldContinue = iterateOnFunction(F);

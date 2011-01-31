@@ -226,7 +226,7 @@ struct XMLDumper : public XMLDeclVisitor<XMLDumper>,
 
   //---- General utilities -------------------------------------------//
 
-  void setPointer(llvm::StringRef prop, void *p) {
+  void setPointer(llvm::StringRef prop, const void *p) {
     llvm::SmallString<10> buffer;
     llvm::raw_svector_ostream os(buffer);
     os << p;
@@ -502,7 +502,7 @@ struct XMLDumper : public XMLDeclVisitor<XMLDumper>,
   // CXXDestructorDecl ?
   // CXXConversionDecl ?
 
-  void dispatch(CXXBaseOrMemberInitializer *Init) {
+  void dispatch(CXXCtorInitializer *Init) {
     // TODO
   }
 

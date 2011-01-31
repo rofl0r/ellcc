@@ -537,8 +537,9 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
 ///                   '__is_polymorphic'
 ///                   '__is_union'
 ///
-/// [GNU] binary-type-trait:
-///                   '__is_base_of'                          [TODO]
+///       binary-type-trait:
+/// [GNU]             '__is_base_of'       
+/// [MS]              '__is_convertible_to'
 ///
 ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
                                        bool isAddressOfOperand,
@@ -566,7 +567,6 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     ParenParseOption ParenExprType =
       (isUnaryExpression && !getLang().CPlusPlus)? CompoundLiteral : CastExpr;
     ParsedType CastTy;
-    SourceLocation LParenLoc = Tok.getLocation();
     SourceLocation RParenLoc;
     
     {
@@ -641,7 +641,7 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
         (Actions.getTypeName(II, ILoc, getCurScope()) ||
          // Allow the base to be 'super' if in an objc-method.
          (&II == Ident_super && getCurScope()->isInObjcMethodScope()))) {
-      SourceLocation DotLoc = ConsumeToken();
+      ConsumeToken();
       
       if (Tok.isNot(tok::identifier)) {
         Diag(Tok, diag::err_expected_property_name);
@@ -989,6 +989,7 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
 
   case tok::kw___builtin_types_compatible_p:
   case tok::kw___is_base_of:
+  case tok::kw___is_convertible_to:
     return ParseBinaryTypeTrait();
 
   case tok::at: {
@@ -1172,11 +1173,13 @@ Parser::ParsePostfixExpressionSuffix(ExprResult LHS) {
       // expression), or we didn't see a '~' in the right place. We
       // can still parse a destructor name here, but in that case it
       // names a real destructor.
+      // Allow explicit constructor calls in Microsoft mode.
+      // FIXME: Add support for explicit call of template constructor.
       UnqualifiedId Name;
       if (ParseUnqualifiedId(SS, 
                              /*EnteringContext=*/false, 
                              /*AllowDestructorName=*/true,
-                             /*AllowConstructorName=*/false, 
+                             /*AllowConstructorName=*/ getLang().Microsoft, 
                              ObjectType,
                              Name))
         LHS = ExprError();
@@ -1858,6 +1861,7 @@ ExprResult Parser::ParseBlockLiteralExpression() {
                                                        true, false,
                                                        SourceLocation(),
                                                        0, 0, 0,
+                                                       true, SourceLocation(),
                                                        false, SourceLocation(),
                                                        false, 0, 0, 0,
                                                        CaretLoc, CaretLoc,

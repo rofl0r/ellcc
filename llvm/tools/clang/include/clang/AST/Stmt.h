@@ -143,6 +143,7 @@ protected:
     friend class DeclRefExpr; // computeDependence
     friend class InitListExpr; // ctor
     friend class DesignatedInitExpr; // ctor
+    friend class BlockDeclRefExpr; // ctor
     friend class ASTStmtReader; // deserialization
     friend class CXXNewExpr; // ctor
     friend class DependentScopeDeclRefExpr; // ctor
@@ -309,7 +310,7 @@ public:
   /// parameters are identified by index/level rather than their
   /// declaration pointers) or the exact representation of the statement as
   /// written in the source.
-  void Profile(llvm::FoldingSetNodeID &ID, ASTContext &Context,
+  void Profile(llvm::FoldingSetNodeID &ID, const ASTContext &Context,
                bool Canonical);
 };
 

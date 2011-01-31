@@ -18,7 +18,6 @@
 #include "CGCall.h"
 #include "CGCXXABI.h"
 #include "CGObjCRuntime.h"
-#include "Mangle.h"
 #include "TargetInfo.h"
 #include "clang/Frontend/CodeGenOptions.h"
 #include "clang/AST/ASTContext.h"
@@ -26,6 +25,7 @@
 #include "clang/AST/DeclObjC.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclTemplate.h"
+#include "clang/AST/Mangle.h"
 #include "clang/AST/RecordLayout.h"
 #include "clang/Basic/Builtins.h"
 #include "clang/Basic/Diagnostic.h"
@@ -195,9 +195,8 @@ void CodeGenModule::setGlobalVisibility(llvm::GlobalValue *GV,
 /// associated with the given type.
 void CodeGenModule::setTypeVisibility(llvm::GlobalValue *GV,
                                       const CXXRecordDecl *RD,
-                                      bool IsForRTTI,
-                                      bool IsForDefinition) const {
-  setGlobalVisibility(GV, RD, IsForDefinition);
+                                      bool IsForRTTI) const {
+  setGlobalVisibility(GV, RD, /*IsForDefinition=*/true);
 
   if (!CodeGenOpts.HiddenWeakVTables)
     return;
@@ -210,7 +209,7 @@ void CodeGenModule::setTypeVisibility(llvm::GlobalValue *GV,
   // in CGVTables.cpp.
 
   // Preconditions.
-  if (GV->getLinkage() != llvm::GlobalVariable::WeakODRLinkage ||
+  if (GV->getLinkage() != llvm::GlobalVariable::LinkOnceODRLinkage ||
       GV->getVisibility() != llvm::GlobalVariable::DefaultVisibility)
     return;
 
@@ -251,6 +250,7 @@ void CodeGenModule::setTypeVisibility(llvm::GlobalValue *GV,
 
   // Otherwise, drop the visibility to hidden.
   GV->setVisibility(llvm::GlobalValue::HiddenVisibility);
+  GV->setUnnamedAddr(true);
 }
 
 llvm::StringRef CodeGenModule::getMangledName(GlobalDecl GD) {
@@ -274,7 +274,7 @@ llvm::StringRef CodeGenModule::getMangledName(GlobalDecl GD) {
   else if (const CXXDestructorDecl *D = dyn_cast<CXXDestructorDecl>(ND))
     getCXXABI().getMangleContext().mangleCXXDtor(D, GD.getDtorType(), Buffer);
   else if (const BlockDecl *BD = dyn_cast<BlockDecl>(ND))
-    getCXXABI().getMangleContext().mangleBlock(GD, BD, Buffer);
+    getCXXABI().getMangleContext().mangleBlock(BD, Buffer);
   else
     getCXXABI().getMangleContext().mangleName(ND, Buffer);
 
@@ -288,9 +288,18 @@ llvm::StringRef CodeGenModule::getMangledName(GlobalDecl GD) {
   return Str;
 }
 
-void CodeGenModule::getMangledName(GlobalDecl GD, MangleBuffer &Buffer,
-                                   const BlockDecl *BD) {
-  getCXXABI().getMangleContext().mangleBlock(GD, BD, Buffer.getBuffer());
+void CodeGenModule::getBlockMangledName(GlobalDecl GD, MangleBuffer &Buffer,
+                                        const BlockDecl *BD) {
+  MangleContext &MangleCtx = getCXXABI().getMangleContext();
+  const Decl *D = GD.getDecl();
+  if (D == 0)
+    MangleCtx.mangleGlobalBlock(BD, Buffer.getBuffer());
+  else if (const CXXConstructorDecl *CD = dyn_cast<CXXConstructorDecl>(D))
+    MangleCtx.mangleCtorBlock(CD, GD.getCtorType(), BD, Buffer.getBuffer());
+  else if (const CXXDestructorDecl *DD = dyn_cast<CXXDestructorDecl>(D))
+    MangleCtx.mangleDtorBlock(DD, GD.getDtorType(), BD, Buffer.getBuffer());
+  else
+    MangleCtx.mangleBlock(cast<DeclContext>(D), BD, Buffer.getBuffer());
 }
 
 llvm::GlobalValue *CodeGenModule::GetGlobalValue(llvm::StringRef Name) {
@@ -314,9 +323,7 @@ void CodeGenModule::AddGlobalDtor(llvm::Function * Dtor, int Priority) {
 void CodeGenModule::EmitCtorList(const CtorList &Fns, const char *GlobalName) {
   // Ctor function type is void()*.
   llvm::FunctionType* CtorFTy =
-    llvm::FunctionType::get(llvm::Type::getVoidTy(VMContext),
-                            std::vector<const llvm::Type*>(),
-                            false);
+    llvm::FunctionType::get(llvm::Type::getVoidTy(VMContext), false);
   llvm::Type *CtorPFTy = llvm::PointerType::getUnqual(CtorFTy);
 
   // Get the type of a ctor entry, { i32, void ()* }.
@@ -432,6 +439,9 @@ void CodeGenModule::SetLLVMFunctionAttributesForDefinition(const Decl *D,
 
   if (D->hasAttr<NoInlineAttr>())
     F->addFnAttr(llvm::Attribute::NoInline);
+
+  if (isa<CXXConstructorDecl>(D) || isa<CXXDestructorDecl>(D))
+    F->setUnnamedAddr(true);
 
   if (Features.getStackProtectorMode() == LangOptions::SSPOn)
     F->addFnAttr(llvm::Attribute::StackProtect);
@@ -617,6 +627,7 @@ llvm::Constant *CodeGenModule::EmitAnnotateAttr(llvm::GlobalValue *GV,
     new llvm::GlobalVariable(*M, unit->getType(), false,
                              llvm::GlobalValue::PrivateLinkage, unit,
                              ".str");
+  unitGV->setUnnamedAddr(true);
 
   // Create the ConstantStruct for the global annotation.
   llvm::Constant *Fields[4] = {
@@ -808,8 +819,7 @@ CodeGenModule::GetOrCreateLLVMFunction(llvm::StringRef MangledName,
   if (isa<llvm::FunctionType>(Ty)) {
     FTy = cast<llvm::FunctionType>(Ty);
   } else {
-    FTy = llvm::FunctionType::get(llvm::Type::getVoidTy(VMContext),
-                                  std::vector<const llvm::Type*>(), false);
+    FTy = llvm::FunctionType::get(llvm::Type::getVoidTy(VMContext), false);
     IsIncompleteFunction = true;
   }
   
@@ -908,7 +918,8 @@ static bool DeclIsConstantGlobal(ASTContext &Context, const VarDecl *D) {
 llvm::Constant *
 CodeGenModule::GetOrCreateLLVMGlobal(llvm::StringRef MangledName,
                                      const llvm::PointerType *Ty,
-                                     const VarDecl *D) {
+                                     const VarDecl *D,
+                                     bool UnnamedAddr) {
   // Lookup the entry, lazily creating it if necessary.
   llvm::GlobalValue *Entry = GetGlobalValue(MangledName);
   if (Entry) {
@@ -918,6 +929,9 @@ CodeGenModule::GetOrCreateLLVMGlobal(llvm::StringRef MangledName,
 
       WeakRefReferences.erase(Entry);
     }
+
+    if (UnnamedAddr)
+      Entry->setUnnamedAddr(true);
 
     if (Entry->getType() == Ty)
       return Entry;
@@ -994,7 +1008,8 @@ llvm::Constant *CodeGenModule::GetAddrOfGlobalVar(const VarDecl *D,
 llvm::Constant *
 CodeGenModule::CreateRuntimeVariable(const llvm::Type *Ty,
                                      llvm::StringRef Name) {
-  return GetOrCreateLLVMGlobal(Name, llvm::PointerType::getUnqual(Ty), 0);
+  return GetOrCreateLLVMGlobal(Name,  llvm::PointerType::getUnqual(Ty), 0,
+                               true);
 }
 
 void CodeGenModule::EmitTentativeDefinition(const VarDecl *D) {
@@ -1037,19 +1052,21 @@ CodeGenModule::getVTableLinkage(const CXXRecordDecl *RD) {
       case TSK_Undeclared:
       case TSK_ExplicitSpecialization:
         if (KeyFunction->isInlined())
-          return llvm::GlobalVariable::WeakODRLinkage;
+          return llvm::GlobalVariable::LinkOnceODRLinkage;
         
         return llvm::GlobalVariable::ExternalLinkage;
         
       case TSK_ImplicitInstantiation:
+        return llvm::GlobalVariable::LinkOnceODRLinkage;
+
       case TSK_ExplicitInstantiationDefinition:
         return llvm::GlobalVariable::WeakODRLinkage;
-        
+  
       case TSK_ExplicitInstantiationDeclaration:
         // FIXME: Use available_externally linkage. However, this currently
         // breaks LLVM's build due to undefined symbols.
         //      return llvm::GlobalVariable::AvailableExternallyLinkage;
-        return llvm::GlobalVariable::WeakODRLinkage;
+        return llvm::GlobalVariable::LinkOnceODRLinkage;
     }
   }
   
@@ -1057,6 +1074,8 @@ CodeGenModule::getVTableLinkage(const CXXRecordDecl *RD) {
   case TSK_Undeclared:
   case TSK_ExplicitSpecialization:
   case TSK_ImplicitInstantiation:
+    return llvm::GlobalVariable::LinkOnceODRLinkage;
+
   case TSK_ExplicitInstantiationDefinition:
     return llvm::GlobalVariable::WeakODRLinkage;
     
@@ -1064,16 +1083,16 @@ CodeGenModule::getVTableLinkage(const CXXRecordDecl *RD) {
     // FIXME: Use available_externally linkage. However, this currently
     // breaks LLVM's build due to undefined symbols.
     //   return llvm::GlobalVariable::AvailableExternallyLinkage;
-    return llvm::GlobalVariable::WeakODRLinkage;
+    return llvm::GlobalVariable::LinkOnceODRLinkage;
   }
   
   // Silence GCC warning.
-  return llvm::GlobalVariable::WeakODRLinkage;
+  return llvm::GlobalVariable::LinkOnceODRLinkage;
 }
 
 CharUnits CodeGenModule::GetTargetTypeStoreSize(const llvm::Type *Ty) const {
-    return CharUnits::fromQuantity(
-      TheTargetData.getTypeStoreSizeInBits(Ty) / Context.getCharWidth());
+    return Context.toCharUnitsFromBits(
+      TheTargetData.getTypeStoreSizeInBits(Ty));
 }
 
 void CodeGenModule::EmitGlobalVarDefinition(const VarDecl *D) {
@@ -1300,7 +1319,6 @@ static void ReplaceUsesOfNonProtoTypeWithRealFunction(llvm::GlobalValue *Old,
 void CodeGenModule::EmitGlobalFunctionDefinition(GlobalDecl GD) {
   const FunctionDecl *D = cast<FunctionDecl>(GD.getDecl());
   const llvm::FunctionType *Ty = getTypes().GetFunctionType(GD);
-  getCXXABI().getMangleContext().mangleInitDiscriminator();
   // Get or create the prototype for the function.
   llvm::Constant *Entry = GetAddrOfFunction(GD, Ty);
 
@@ -1577,6 +1595,7 @@ CodeGenModule::GetAddrOfConstantCFString(const StringLiteral *Literal) {
   llvm::GlobalVariable *GV =
     new llvm::GlobalVariable(getModule(), C->getType(), isConstant, Linkage, C,
                              ".str");
+  GV->setUnnamedAddr(true);
   if (isUTF16) {
     CharUnits Align = getContext().getTypeAlignInChars(getContext().ShortTy);
     GV->setAlignment(Align.getQuantity());
@@ -1668,6 +1687,7 @@ CodeGenModule::GetAddrOfConstantString(const StringLiteral *Literal) {
   llvm::GlobalVariable *GV =
   new llvm::GlobalVariable(getModule(), C->getType(), isConstant, Linkage, C,
                            ".str");
+  GV->setUnnamedAddr(true);
   if (isUTF16) {
     CharUnits Align = getContext().getTypeAlignInChars(getContext().ShortTy);
     GV->setAlignment(Align.getQuantity());
@@ -1749,9 +1769,12 @@ static llvm::Constant *GenerateStringLiteral(const std::string &str,
       llvm::ConstantArray::get(CGM.getLLVMContext(), str, false);
 
   // Create a global variable for this string
-  return new llvm::GlobalVariable(CGM.getModule(), C->getType(), constant,
-                                  llvm::GlobalValue::PrivateLinkage,
-                                  C, GlobalName);
+  llvm::GlobalVariable *GV =
+    new llvm::GlobalVariable(CGM.getModule(), C->getType(), constant,
+                             llvm::GlobalValue::PrivateLinkage,
+                             C, GlobalName);
+  GV->setUnnamedAddr(true);
+  return GV;
 }
 
 /// GetAddrOfConstantString - Returns a pointer to a character array

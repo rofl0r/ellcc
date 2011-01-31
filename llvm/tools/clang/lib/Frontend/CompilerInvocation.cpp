@@ -118,6 +118,8 @@ static void AnalyzerOptsToArgs(const AnalyzerOptions &Opts,
     Res.push_back("-analyzer-experimental-internal-checks");
   if (Opts.IdempotentOps)
     Res.push_back("-analyzer-check-idempotent-operations");
+  if (Opts.ObjCSelfInitCheck)
+    Res.push_back("-analyzer-check-objc-self-init");
   if (Opts.BufferOverflows)
     Res.push_back("-analyzer-check-buffer-overflows");
 }
@@ -433,6 +435,10 @@ static void FrontendOptsToArgs(const FrontendOptions &Opts,
     Res.push_back("-load");
     Res.push_back(Opts.Plugins[i]);
   }
+  for (unsigned i = 0, e = Opts.AddPluginActions.size(); i != e; ++i) {
+    Res.push_back("-add-plugin");
+    Res.push_back(Opts.AddPluginActions[i]);
+  }
   for (unsigned i = 0, e = Opts.ASTMergeFiles.size(); i != e; ++i) {
     Res.push_back("-ast-merge");
     Res.push_back(Opts.ASTMergeFiles[i]);
@@ -639,6 +645,9 @@ static void LangOptsToArgs(const LangOptions &Opts,
       Res.push_back("-fobjc-gc-only");
     }
   }
+  if (Opts.AppleKext)
+    Res.push_back("-fapple-kext");
+  
   if (Opts.getVisibilityMode() != DefaultVisibility) {
     Res.push_back("-fvisibility");
     if (Opts.getVisibilityMode() == HiddenVisibility) {
@@ -861,6 +870,7 @@ static void ParseAnalyzerArgs(AnalyzerOptions &Opts, ArgList &Args,
   Opts.MaxLoop = Args.getLastArgIntValue(OPT_analyzer_max_loop, 4, Diags);
   Opts.InlineCall = Args.hasArg(OPT_analyzer_inline_call);
   Opts.IdempotentOps = Args.hasArg(OPT_analysis_WarnIdempotentOps);
+  Opts.ObjCSelfInitCheck = Args.hasArg(OPT_analysis_WarnObjCSelfInit);
   Opts.BufferOverflows = Args.hasArg(OPT_analysis_WarnBufferOverflows);
 }
 
@@ -1094,6 +1104,8 @@ static InputKind ParseFrontendArgs(FrontendOptions &Opts, ArgList &Args,
         Opts.PluginArgs.push_back((*it)->getValue(Args, 1));
     }
   }
+
+  Opts.AddPluginActions = Args.getAllArgValues(OPT_add_plugin);
 
   if (const Arg *A = Args.getLastArg(OPT_code_completion_at)) {
     Opts.CodeCompletionAt =
@@ -1351,7 +1363,9 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
     Opts.setGCMode(LangOptions::GCOnly);
   else if (Args.hasArg(OPT_fobjc_gc))
     Opts.setGCMode(LangOptions::HybridGC);
-
+  
+  if (Args.hasArg(OPT_fapple_kext))
+    Opts.AppleKext = 1;
   if (Args.hasArg(OPT_print_ivar_layout))
     Opts.ObjCGCBitmapPrint = 1;
   if (Args.hasArg(OPT_fno_constant_cfstrings))

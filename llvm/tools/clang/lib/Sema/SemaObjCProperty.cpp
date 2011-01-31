@@ -440,9 +440,13 @@ Decl *Sema::ActOnPropertyImplDecl(Scope *S,
           Context.canAssignObjCInterfaces(
                                   PropType->getAs<ObjCObjectPointerType>(),
                                   IvarType->getAs<ObjCObjectPointerType>());
-      else 
-        compat = (CheckAssignmentConstraints(PropType, IvarType)
+      else {
+        SourceLocation Loc = PropertyIvarLoc;
+        if (Loc.isInvalid())
+          Loc = PropertyLoc;
+        compat = (CheckAssignmentConstraints(Loc, PropType, IvarType)
                     == Compatible);
+      }
       if (!compat) {
         Diag(PropertyLoc, diag::error_property_ivar_type)
           << property->getDeclName() << PropType
@@ -564,7 +568,7 @@ Decl *Sema::ActOnPropertyImplDecl(Scope *S,
       // Diagnose if an ivar was lazily synthesdized due to a previous
       // use and if 1) property is @dynamic or 2) property is synthesized
       // but it requires an ivar of different name.
-      ObjCInterfaceDecl *ClassDeclared;
+      ObjCInterfaceDecl *ClassDeclared=0;
       ObjCIvarDecl *Ivar = 0;
       if (!Synthesize)
         Ivar = IDecl->lookupInstanceVariable(PropertyId, ClassDeclared);
@@ -663,7 +667,7 @@ bool Sema::DiagnosePropertyAccessorMismatch(ObjCPropertyDecl *property,
       GetterMethod->getResultType() != property->getType()) {
     AssignConvertType result = Incompatible;
     if (property->getType()->isObjCObjectPointerType())
-      result = CheckAssignmentConstraints(GetterMethod->getResultType(),
+      result = CheckAssignmentConstraints(Loc, GetterMethod->getResultType(),
                                           property->getType());
     if (result != Compatible) {
       Diag(Loc, diag::warn_accessor_property_type_mismatch)

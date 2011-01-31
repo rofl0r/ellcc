@@ -19,7 +19,7 @@
 #include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/CodeGen/PseudoSourceValue.h"
 #include "llvm/CodeGen/SelectionDAG.h"
-#include "llvm/Target/TargetFrameInfo.h"
+#include "llvm/Target/TargetFrameLowering.h"
 #include "llvm/Target/TargetLowering.h"
 #include "llvm/Target/TargetData.h"
 #include "llvm/Target/TargetMachine.h"
@@ -65,11 +65,6 @@ class SelectionDAGLegalize {
   /// legalized.  We use this to ensure that calls are properly serialized
   /// against each other, including inserted libcalls.
   SDValue LastCALLSEQ_END;
-
-  /// IsLegalizingCall - This member is used *only* for purposes of providing
-  /// helpful assertions that a libcall isn't created while another call is
-  /// being legalized (which could lead to non-serialized call sequences).
-  bool IsLegalizingCall;
 
   enum LegalizeAction {
     Legal,      // The target natively supports this operation.
@@ -173,6 +168,7 @@ private:
   SDValue ExpandBitCount(unsigned Opc, SDValue Op, DebugLoc dl);
 
   SDValue ExpandExtractFromVectorThroughStack(SDValue Op);
+  SDValue ExpandInsertToVectorThroughStack(SDValue Op);
   SDValue ExpandVectorBuildThroughStack(SDNode* Node);
 
   std::pair<SDValue, SDValue> ExpandAtomic(SDNode *Node);
@@ -225,7 +221,6 @@ SelectionDAGLegalize::SelectionDAGLegalize(SelectionDAG &dag,
 
 void SelectionDAGLegalize::LegalizeDAG() {
   LastCALLSEQ_END = DAG.getEntryNode();
-  IsLegalizingCall = false;
 
   // The legalize process is inherently a bottom-up recursive process (users
   // legalize their uses before themselves).  Given infinite stack space, we
@@ -819,7 +814,7 @@ SDValue SelectionDAGLegalize::LegalizeOp(SDValue Op) {
   bool isCustom = false;
 
   // Figure out the correct action; the way to query this varies by opcode
-  TargetLowering::LegalizeAction Action;
+  TargetLowering::LegalizeAction Action = TargetLowering::Legal;
   bool SimpleFinishLegalizing = true;
   switch (Node->getOpcode()) {
   case ISD::INTRINSIC_W_CHAIN:
@@ -1024,6 +1019,7 @@ SDValue SelectionDAGLegalize::LegalizeOp(SDValue Op) {
     }
     break;
   case ISD::CALLSEQ_START: {
+    static int depth = 0;
     SDNode *CallEnd = FindCallEndFromCallStart(Node);
 
     // Recursively Legalize all of the inputs of the call end that do not lead
@@ -1041,7 +1037,7 @@ SDValue SelectionDAGLegalize::LegalizeOp(SDValue Op) {
 
     // Merge in the last call to ensure that this call starts after the last
     // call ended.
-    if (LastCALLSEQ_END.getOpcode() != ISD::EntryToken) {
+    if (LastCALLSEQ_END.getOpcode() != ISD::EntryToken && depth == 0) {
       Tmp1 = DAG.getNode(ISD::TokenFactor, dl, MVT::Other,
                          Tmp1, LastCALLSEQ_END);
       Tmp1 = LegalizeOp(Tmp1);
@@ -1064,14 +1060,18 @@ SDValue SelectionDAGLegalize::LegalizeOp(SDValue Op) {
     // sequence have been legalized, legalize the call itself.  During this
     // process, no libcalls can/will be inserted, guaranteeing that no calls
     // can overlap.
-    assert(!IsLegalizingCall && "Inconsistent sequentialization of calls!");
+
+    SDValue Saved_LastCALLSEQ_END = LastCALLSEQ_END ;
     // Note that we are selecting this call!
     LastCALLSEQ_END = SDValue(CallEnd, 0);
-    IsLegalizingCall = true;
 
+    depth++;
     // Legalize the call, starting from the CALLSEQ_END.
     LegalizeOp(LastCALLSEQ_END);
-    assert(!IsLegalizingCall && "CALLSEQ_END should have cleared this!");
+    depth--;
+    assert(depth >= 0 && "Un-matched CALLSEQ_START?");
+    if (depth > 0)
+      LastCALLSEQ_END = Saved_LastCALLSEQ_END;
     return Result;
   }
   case ISD::CALLSEQ_END:
@@ -1110,10 +1110,7 @@ SDValue SelectionDAGLegalize::LegalizeOp(SDValue Op) {
                          Result.getResNo());
       }
     }
-    assert(IsLegalizingCall && "Call sequence imbalance between start/end?");
     // This finishes up call legalization.
-    IsLegalizingCall = false;
-
     // If the CALLSEQ_END node has a flag, remember that we legalized it.
     AddLegalizedOperand(SDValue(Node, 0), Result.getValue(0));
     if (Node->getNumValues() == 2)
@@ -1378,7 +1375,7 @@ SDValue SelectionDAGLegalize::LegalizeOp(SDValue Op) {
                                Result.getValueType(),
                                Result, DAG.getValueType(SrcVT));
         else
-          ValRes = DAG.getZeroExtendInReg(Result, dl, SrcVT);
+          ValRes = DAG.getZeroExtendInReg(Result, dl, SrcVT.getScalarType());
         Tmp1 = LegalizeOp(ValRes);  // Relegalize new nodes.
         Tmp2 = LegalizeOp(Result.getValue(1));  // Relegalize new nodes.
         break;
@@ -1589,6 +1586,50 @@ SDValue SelectionDAGLegalize::ExpandExtractFromVectorThroughStack(SDValue Op) {
                         false, false, 0);
 }
 
+SDValue SelectionDAGLegalize::ExpandInsertToVectorThroughStack(SDValue Op) {
+  assert(Op.getValueType().isVector() && "Non-vector insert subvector!");
+
+  SDValue Vec  = Op.getOperand(0);
+  SDValue Part = Op.getOperand(1);
+  SDValue Idx  = Op.getOperand(2);
+  DebugLoc dl  = Op.getDebugLoc();
+
+  // Store the value to a temporary stack slot, then LOAD the returned part.
+
+  SDValue StackPtr = DAG.CreateStackTemporary(Vec.getValueType());
+  int FI = cast<FrameIndexSDNode>(StackPtr.getNode())->getIndex();
+  MachinePointerInfo PtrInfo = MachinePointerInfo::getFixedStack(FI);
+
+  // First store the whole vector.
+  SDValue Ch = DAG.getStore(DAG.getEntryNode(), dl, Vec, StackPtr, PtrInfo,
+                            false, false, 0);
+
+  // Then store the inserted part.
+
+  // Add the offset to the index.
+  unsigned EltSize =
+      Vec.getValueType().getVectorElementType().getSizeInBits()/8;
+
+  Idx = DAG.getNode(ISD::MUL, dl, Idx.getValueType(), Idx,
+                    DAG.getConstant(EltSize, Idx.getValueType()));
+
+  if (Idx.getValueType().bitsGT(TLI.getPointerTy()))
+    Idx = DAG.getNode(ISD::TRUNCATE, dl, TLI.getPointerTy(), Idx);
+  else
+    Idx = DAG.getNode(ISD::ZERO_EXTEND, dl, TLI.getPointerTy(), Idx);
+
+  SDValue SubStackPtr = DAG.getNode(ISD::ADD, dl, Idx.getValueType(), Idx,
+                                    StackPtr);
+
+  // Store the subvector.
+  Ch = DAG.getStore(DAG.getEntryNode(), dl, Part, SubStackPtr,
+                    MachinePointerInfo(), false, false, 0);
+
+  // Finally, load the updated vector.
+  return DAG.getLoad(Op.getValueType(), dl, Ch, StackPtr, PtrInfo,
+                     false, false, 0);
+}
+
 SDValue SelectionDAGLegalize::ExpandVectorBuildThroughStack(SDNode* Node) {
   // We can't handle this case efficiently.  Allocate a sufficiently
   // aligned object on the stack, store each element into it, then load
@@ -1719,7 +1760,7 @@ void SelectionDAGLegalize::ExpandDYNAMIC_STACKALLOC(SDNode* Node,
   SDValue SP = DAG.getCopyFromReg(Chain, dl, SPReg, VT);
   Chain = SP.getValue(1);
   unsigned Align = cast<ConstantSDNode>(Tmp3)->getZExtValue();
-  unsigned StackAlign = TM.getFrameInfo()->getStackAlignment();
+  unsigned StackAlign = TM.getFrameLowering()->getStackAlignment();
   if (Align > StackAlign)
     SP = DAG.getNode(ISD::AND, dl, VT, SP,
                       DAG.getConstant(-(uint64_t)Align, VT));
@@ -1949,7 +1990,6 @@ SDValue SelectionDAGLegalize::ExpandBUILD_VECTOR(SDNode *Node) {
 // and leave the Hi part unset.
 SDValue SelectionDAGLegalize::ExpandLibCall(RTLIB::Libcall LC, SDNode *Node,
                                             bool isSigned) {
-  assert(!IsLegalizingCall && "Cannot overlap legalization of calls!");
   // The input chain to this libcall is the entry node of the function.
   // Legalizing the call will automatically add the previous call to the
   // dependence.
@@ -1997,7 +2037,6 @@ std::pair<SDValue, SDValue>
 SelectionDAGLegalize::ExpandChainLibCall(RTLIB::Libcall LC,
                                          SDNode *Node,
                                          bool isSigned) {
-  assert(!IsLegalizingCall && "Cannot overlap legalization of calls!");
   SDValue InChain = Node->getOperand(0);
 
   TargetLowering::ArgListTy Args;
@@ -2388,6 +2427,18 @@ SDValue SelectionDAGLegalize::ExpandBSWAP(SDValue Op, DebugLoc dl) {
   }
 }
 
+/// SplatByte - Distribute ByteVal over NumBits bits.
+// FIXME: Move this helper to a common place.
+static APInt SplatByte(unsigned NumBits, uint8_t ByteVal) {
+  APInt Val = APInt(NumBits, ByteVal);
+  unsigned Shift = 8;
+  for (unsigned i = NumBits; i > 8; i >>= 1) {
+    Val = (Val << Shift) | Val;
+    Shift <<= 1;
+  }
+  return Val;
+}
+
 /// ExpandBitCount - Expand the specified bitcount instruction into operations.
 ///
 SDValue SelectionDAGLegalize::ExpandBitCount(unsigned Opc, SDValue Op,
@@ -2395,26 +2446,45 @@ SDValue SelectionDAGLegalize::ExpandBitCount(unsigned Opc, SDValue Op,
   switch (Opc) {
   default: assert(0 && "Cannot expand this yet!");
   case ISD::CTPOP: {
-    static const uint64_t mask[6] = {
-      0x5555555555555555ULL, 0x3333333333333333ULL,
-      0x0F0F0F0F0F0F0F0FULL, 0x00FF00FF00FF00FFULL,
-      0x0000FFFF0000FFFFULL, 0x00000000FFFFFFFFULL
-    };
     EVT VT = Op.getValueType();
     EVT ShVT = TLI.getShiftAmountTy();
-    unsigned len = VT.getSizeInBits();
-    for (unsigned i = 0; (1U << i) <= (len / 2); ++i) {
-      //x = (x & mask[i][len/8]) + (x >> (1 << i) & mask[i][len/8])
-      unsigned EltSize = VT.isVector() ?
-        VT.getVectorElementType().getSizeInBits() : len;
-      SDValue Tmp2 = DAG.getConstant(APInt(EltSize, mask[i]), VT);
-      SDValue Tmp3 = DAG.getConstant(1ULL << i, ShVT);
-      Op = DAG.getNode(ISD::ADD, dl, VT,
-                       DAG.getNode(ISD::AND, dl, VT, Op, Tmp2),
-                       DAG.getNode(ISD::AND, dl, VT,
-                                   DAG.getNode(ISD::SRL, dl, VT, Op, Tmp3),
-                                   Tmp2));
-    }
+    unsigned Len = VT.getSizeInBits();
+
+    assert(VT.isInteger() && Len <= 128 && Len % 8 == 0 &&
+           "CTPOP not implemented for this type.");
+
+    // This is the "best" algorithm from
+    // http://graphics.stanford.edu/~seander/bithacks.html#CountBitsSetParallel
+
+    SDValue Mask55 = DAG.getConstant(SplatByte(Len, 0x55), VT);
+    SDValue Mask33 = DAG.getConstant(SplatByte(Len, 0x33), VT);
+    SDValue Mask0F = DAG.getConstant(SplatByte(Len, 0x0F), VT);
+    SDValue Mask01 = DAG.getConstant(SplatByte(Len, 0x01), VT);
+
+    // v = v - ((v >> 1) & 0x55555555...)
+    Op = DAG.getNode(ISD::SUB, dl, VT, Op,
+                     DAG.getNode(ISD::AND, dl, VT,
+                                 DAG.getNode(ISD::SRL, dl, VT, Op,
+                                             DAG.getConstant(1, ShVT)),
+                                 Mask55));
+    // v = (v & 0x33333333...) + ((v >> 2) & 0x33333333...)
+    Op = DAG.getNode(ISD::ADD, dl, VT,
+                     DAG.getNode(ISD::AND, dl, VT, Op, Mask33),
+                     DAG.getNode(ISD::AND, dl, VT,
+                                 DAG.getNode(ISD::SRL, dl, VT, Op,
+                                             DAG.getConstant(2, ShVT)),
+                                 Mask33));
+    // v = (v + (v >> 4)) & 0x0F0F0F0F...
+    Op = DAG.getNode(ISD::AND, dl, VT,
+                     DAG.getNode(ISD::ADD, dl, VT, Op,
+                                 DAG.getNode(ISD::SRL, dl, VT, Op,
+                                             DAG.getConstant(4, ShVT))),
+                     Mask0F);
+    // v = (v * 0x01010101...) >> (Len - 8)
+    Op = DAG.getNode(ISD::SRL, dl, VT,
+                     DAG.getNode(ISD::MUL, dl, VT, Op, Mask01),
+                     DAG.getConstant(Len - 8, ShVT));
+    
     return Op;
   }
   case ISD::CTLZ: {
@@ -2777,6 +2847,9 @@ void SelectionDAGLegalize::ExpandNode(SDNode *Node,
     break;
   case ISD::EXTRACT_SUBVECTOR:
     Results.push_back(ExpandExtractFromVectorThroughStack(SDValue(Node, 0)));
+    break;
+  case ISD::INSERT_SUBVECTOR:
+    Results.push_back(ExpandInsertToVectorThroughStack(SDValue(Node, 0)));
     break;
   case ISD::CONCAT_VECTORS: {
     Results.push_back(ExpandVectorBuildThroughStack(Node));
@@ -3156,14 +3229,8 @@ void SelectionDAGLegalize::ExpandNode(SDNode *Node,
       BottomHalf = DAG.getNode(Ops[isSigned][1], dl, DAG.getVTList(VT, VT), LHS,
                                RHS);
       TopHalf = BottomHalf.getValue(1);
-    } else {
-      // FIXME: We should be able to fall back to a libcall with an illegal
-      // type in some cases.
-      // Also, we can fall back to a division in some cases, but that's a big
-      // performance hit in the general case.
-      assert(TLI.isTypeLegal(EVT::getIntegerVT(*DAG.getContext(),
-                                               VT.getSizeInBits() * 2)) &&
-             "Don't know how to expand this operation yet!");
+    } else if (TLI.isTypeLegal(EVT::getIntegerVT(*DAG.getContext(),
+                                                 VT.getSizeInBits() * 2))) {
       EVT WideVT = EVT::getIntegerVT(*DAG.getContext(), VT.getSizeInBits() * 2);
       LHS = DAG.getNode(Ops[isSigned][2], dl, WideVT, LHS);
       RHS = DAG.getNode(Ops[isSigned][2], dl, WideVT, RHS);
@@ -3172,6 +3239,30 @@ void SelectionDAGLegalize::ExpandNode(SDNode *Node,
                                DAG.getIntPtrConstant(0));
       TopHalf = DAG.getNode(ISD::EXTRACT_ELEMENT, dl, VT, Tmp1,
                             DAG.getIntPtrConstant(1));
+    } else {
+      // We can fall back to a libcall with an illegal type for the MUL if we
+      // have a libcall big enough.
+      // Also, we can fall back to a division in some cases, but that's a big
+      // performance hit in the general case.
+      EVT WideVT = EVT::getIntegerVT(*DAG.getContext(), VT.getSizeInBits() * 2);
+      RTLIB::Libcall LC = RTLIB::UNKNOWN_LIBCALL;
+      if (WideVT == MVT::i16)
+        LC = RTLIB::MUL_I16;
+      else if (WideVT == MVT::i32)
+        LC = RTLIB::MUL_I32;
+      else if (WideVT == MVT::i64)
+        LC = RTLIB::MUL_I64;
+      else if (WideVT == MVT::i128)
+        LC = RTLIB::MUL_I128;
+      assert(LC != RTLIB::UNKNOWN_LIBCALL && "Cannot expand this operation!");
+      LHS = DAG.getNode(Ops[isSigned][2], dl, WideVT, LHS);
+      RHS = DAG.getNode(Ops[isSigned][2], dl, WideVT, RHS);
+      
+      SDValue Ret = ExpandLibCall(LC, Node, isSigned);
+      BottomHalf = DAG.getNode(ISD::TRUNCATE, dl, VT, Ret);
+      TopHalf = DAG.getNode(ISD::SRL, dl, Ret.getValueType(), Ret,
+                       DAG.getConstant(VT.getSizeInBits(), TLI.getPointerTy()));
+      TopHalf = DAG.getNode(ISD::TRUNCATE, dl, VT, TopHalf);
     }
     if (isSigned) {
       Tmp1 = DAG.getConstant(VT.getSizeInBits() - 1, TLI.getShiftAmountTy());

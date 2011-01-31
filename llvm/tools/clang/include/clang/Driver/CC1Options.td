@@ -64,6 +64,8 @@ def analysis_WarnObjCUnusedIvars : Flag<"-analyzer-check-objc-unused-ivars">,
   HelpText<"Warn about private ivars that are never used">;
 def analysis_ObjCMemChecker : Flag<"-analyzer-check-objc-mem">,
   HelpText<"Run the [Core] Foundation reference count checker">;
+def analysis_WarnObjCSelfInit : Flag<"-analyzer-check-objc-self-init">,
+  HelpText<"Warn about missing initialization of 'self' in an initializer">;
 def analysis_WarnSizeofPointer : Flag<"-warn-sizeof-pointer">,
   HelpText<"Warn about unintended use of sizeof() on pointer expressions">;
 def analysis_WarnIdempotentOps : Flag<"-analyzer-check-idempotent-operations">,
@@ -290,10 +292,12 @@ def o : Separate<"-o">, MetaVarName<"<path>">, HelpText<"Specify output file">;
 def load : Separate<"-load">, MetaVarName<"<dsopath>">,
   HelpText<"Load the named plugin (dynamic shared object)">;
 def plugin : Separate<"-plugin">, MetaVarName<"<name>">,
-  HelpText<"Use the named plugin action (use \"help\" to list available options)">;
+  HelpText<"Use the named plugin action instead of the default action (use \"help\" to list available options)">;
 def plugin_arg : JoinedAndSeparate<"-plugin-arg-">,
     MetaVarName<"<name> <arg>">,
     HelpText<"Pass <arg> to plugin <name>">;
+def add_plugin : Separate<"-add-plugin">, MetaVarName<"<name>">,
+  HelpText<"Use the named plugin action in addition to the default action">;
 def resource_dir : Separate<"-resource-dir">,
   HelpText<"The directory which holds the compiler resource files">;
 def version : Flag<"-version">,
@@ -461,6 +465,8 @@ def fobjc_gc : Flag<"-fobjc-gc">,
   HelpText<"Enable Objective-C garbage collection">;
 def fobjc_gc_only : Flag<"-fobjc-gc-only">,
   HelpText<"Use GC exclusively for Objective-C related memory management">;
+def fapple_kext : Flag<"-fapple-kext">,
+  HelpText<"Use Apple's kernel extensions ABI">;
 def fobjc_dispatch_method_EQ : Joined<"-fobjc-dispatch-method=">,
   HelpText<"Objective-C dispatch method to use">;
 def fobjc_default_synthesize_properties : Flag<"-fobjc-default-synthesize-properties">,

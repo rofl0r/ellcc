@@ -78,7 +78,10 @@ static bool CastsAwayConstness(Sema &Self, QualType SrcType, QualType DestType);
 // %1: Source Type
 // %2: Destination Type
 static TryCastResult TryLValueToRValueCast(Sema &Self, Expr *SrcExpr,
-                                           QualType DestType, unsigned &msg);
+                                           QualType DestType, bool CStyle,
+                                           CastKind &Kind,
+                                           CXXCastPath &BasePath,
+                                           unsigned &msg);
 static TryCastResult TryStaticReferenceDowncast(Sema &Self, Expr *SrcExpr,
                                                QualType DestType, bool CStyle,
                                                const SourceRange &OpRange,
@@ -172,7 +175,8 @@ Sema::BuildCXXNamedCast(SourceLocation OpLoc, tok::TokenKind Kind,
       CheckConstCast(*this, Ex, DestType, VK, OpRange, DestRange);
     return Owned(CXXConstCastExpr::Create(Context,
                                         DestType.getNonLValueExprType(Context),
-                                          VK, Ex, DestTInfo, OpLoc));
+                                          VK, Ex, DestTInfo, OpLoc,
+                                          Parens.getEnd()));
 
   case tok::kw_dynamic_cast: {
     CastKind Kind = CK_Dependent;
@@ -183,7 +187,7 @@ Sema::BuildCXXNamedCast(SourceLocation OpLoc, tok::TokenKind Kind,
     return Owned(CXXDynamicCastExpr::Create(Context,
                                           DestType.getNonLValueExprType(Context),
                                             VK, Kind, Ex, &BasePath, DestTInfo,
-                                            OpLoc));
+                                            OpLoc, Parens.getEnd()));
   }
   case tok::kw_reinterpret_cast: {
     CastKind Kind = CK_Dependent;
@@ -192,7 +196,7 @@ Sema::BuildCXXNamedCast(SourceLocation OpLoc, tok::TokenKind Kind,
     return Owned(CXXReinterpretCastExpr::Create(Context,
                                   DestType.getNonLValueExprType(Context),
                                   VK, Kind, Ex, 0,
-                                  DestTInfo, OpLoc));
+                                  DestTInfo, OpLoc, Parens.getEnd()));
   }
   case tok::kw_static_cast: {
     CastKind Kind = CK_Dependent;
@@ -203,7 +207,7 @@ Sema::BuildCXXNamedCast(SourceLocation OpLoc, tok::TokenKind Kind,
     return Owned(CXXStaticCastExpr::Create(Context,
                                          DestType.getNonLValueExprType(Context),
                                            VK, Kind, Ex, &BasePath,
-                                           DestTInfo, OpLoc));
+                                           DestTInfo, OpLoc, Parens.getEnd()));
   }
   }
 
@@ -316,7 +320,7 @@ CastsAwayConstness(Sema &Self, QualType SrcType, QualType DestType) {
 
   // Test if they're compatible.
   return SrcConstruct != DestConstruct &&
-    !Self.IsQualificationConversion(SrcConstruct, DestConstruct);
+    !Self.IsQualificationConversion(SrcConstruct, DestConstruct, false);
 }
 
 /// CheckDynamicCast - Check that a dynamic_cast\<DestType\>(SrcExpr) is valid.
@@ -340,7 +344,9 @@ CheckDynamicCast(Sema &Self, Expr *&SrcExpr, QualType DestType,
     DestPointee = DestPointer->getPointeeType();
   } else if ((DestReference = DestType->getAs<ReferenceType>())) {
     DestPointee = DestReference->getPointeeType();
-    VK = isa<LValueReferenceType>(DestReference) ? VK_LValue : VK_RValue;
+    VK = isa<LValueReferenceType>(DestReference) ? VK_LValue 
+       : isa<RValueReferenceType>(DestReference) ? VK_XValue
+       : VK_RValue;
   } else {
     Self.Diag(OpRange.getBegin(), diag::err_bad_dynamic_cast_not_ref_or_ptr)
       << OrigDestType << DestRange;
@@ -363,10 +369,8 @@ CheckDynamicCast(Sema &Self, Expr *&SrcExpr, QualType DestType,
 
   // C++0x 5.2.7p2: If T is a pointer type, v shall be an rvalue of a pointer to
   //   complete class type, [...]. If T is an lvalue reference type, v shall be
-  //   an lvalue of a complete class type, [...]. If T is an rvalue reference
-  //   type, v shall be an expression having a complete effective class type,
-  //   [...]
-
+  //   an lvalue of a complete class type, [...]. If T is an rvalue reference 
+  //   type, v shall be an expression having a complete class type, [...]
   QualType SrcType = Self.Context.getCanonicalType(OrigSrcType);
   QualType SrcPointee;
   if (DestPointer) {
@@ -577,13 +581,13 @@ static TryCastResult TryStaticCast(Sema &Self, Expr *&SrcExpr,
   if (tcr != TC_NotApplicable)
     return tcr;
 
-  // N2844 5.2.9p3: An lvalue of type "cv1 T1" can be cast to type "rvalue
-  //   reference to cv2 T2" if "cv2 T2" is reference-compatible with "cv1 T1".
-  tcr = TryLValueToRValueCast(Self, SrcExpr, DestType, msg);
-  if (tcr != TC_NotApplicable) {
-    Kind = CK_NoOp;
+  // C++0x [expr.static.cast]p3: 
+  //   A glvalue of type "cv1 T1" can be cast to type "rvalue reference to cv2
+  //   T2" if "cv2 T2" is reference-compatible with "cv1 T1".
+  tcr = TryLValueToRValueCast(Self, SrcExpr, DestType, CStyle, Kind, BasePath, 
+                              msg);
+  if (tcr != TC_NotApplicable)
     return tcr;
-  }
 
   // C++ 5.2.9p2: An expression e can be explicitly converted to a type T
   //   [...] if the declaration "T t(e);" is well-formed, [...].
@@ -599,8 +603,6 @@ static TryCastResult TryStaticCast(Sema &Self, Expr *&SrcExpr,
   // of qualification conversions impossible.
   // In the CStyle case, the earlier attempt to const_cast should have taken
   // care of reverse qualification conversions.
-
-  QualType OrigSrcType = SrcExpr->getType();
 
   QualType SrcType = Self.Context.getCanonicalType(SrcExpr->getType());
 
@@ -695,14 +697,16 @@ static TryCastResult TryStaticCast(Sema &Self, Expr *&SrcExpr,
 /// Tests whether a conversion according to N2844 is valid.
 TryCastResult
 TryLValueToRValueCast(Sema &Self, Expr *SrcExpr, QualType DestType,
+                      bool CStyle, CastKind &Kind, CXXCastPath &BasePath, 
                       unsigned &msg) {
-  // N2844 5.2.9p3: An lvalue of type "cv1 T1" can be cast to type "rvalue
-  //   reference to cv2 T2" if "cv2 T2" is reference-compatible with "cv1 T1".
+  // C++0x [expr.static.cast]p3:
+  //   A glvalue of type "cv1 T1" can be cast to type "rvalue reference to 
+  //   cv2 T2" if "cv2 T2" is reference-compatible with "cv1 T1".
   const RValueReferenceType *R = DestType->getAs<RValueReferenceType>();
   if (!R)
     return TC_NotApplicable;
 
-  if (!SrcExpr->isLValue())
+  if (!SrcExpr->isGLValue())
     return TC_NotApplicable;
 
   // Because we try the reference downcast before this function, from now on
@@ -710,16 +714,32 @@ TryLValueToRValueCast(Sema &Self, Expr *SrcExpr, QualType DestType,
   // FIXME: Should allow casting away constness if CStyle.
   bool DerivedToBase;
   bool ObjCConversion;
+  QualType FromType = SrcExpr->getType();
+  QualType ToType = R->getPointeeType();
+  if (CStyle) {
+    FromType = FromType.getUnqualifiedType();
+    ToType = ToType.getUnqualifiedType();
+  }
+  
   if (Self.CompareReferenceRelationship(SrcExpr->getLocStart(),
-                                        SrcExpr->getType(), R->getPointeeType(),
+                                        ToType, FromType,
                                         DerivedToBase, ObjCConversion) <
         Sema::Ref_Compatible_With_Added_Qualification) {
     msg = diag::err_bad_lvalue_to_rvalue_cast;
     return TC_Failed;
   }
 
-  // FIXME: We should probably have an AST node for lvalue-to-rvalue 
-  // conversions.
+  if (DerivedToBase) {
+    Kind = CK_DerivedToBase;
+    CXXBasePaths Paths(/*FindAmbiguities=*/true, /*RecordPaths=*/true,
+                       /*DetectVirtual=*/true);
+    if (!Self.IsDerivedFrom(SrcExpr->getType(), R->getPointeeType(), Paths))
+      return TC_NotApplicable;
+  
+    Self.BuildBasePathArray(Paths, BasePath);
+  } else
+    Kind = CK_NoOp;
+  
   return TC_Success;
 }
 
@@ -1015,8 +1035,7 @@ TryStaticImplicitCast(Sema &Self, Expr *&SrcExpr, QualType DestType,
   
   InitializedEntity Entity = InitializedEntity::InitializeTemporary(DestType);
   InitializationKind InitKind
-    = InitializationKind::CreateCast(/*FIXME:*/OpRange, 
-                                                               CStyle);    
+    = InitializationKind::CreateCast(/*FIXME:*/OpRange, CStyle);    
   InitializationSequence InitSeq(Self, Entity, InitKind, &SrcExpr, 1);
 
   // At this point of CheckStaticCast, if the destination is a reference,
@@ -1051,9 +1070,8 @@ static TryCastResult TryConstCast(Sema &Self, Expr *SrcExpr, QualType DestType,
                                   bool CStyle, unsigned &msg) {
   DestType = Self.Context.getCanonicalType(DestType);
   QualType SrcType = SrcExpr->getType();
-  if (const LValueReferenceType *DestTypeTmp =
-        DestType->getAs<LValueReferenceType>()) {
-    if (!SrcExpr->isLValue()) {
+  if (const ReferenceType *DestTypeTmp =DestType->getAs<ReferenceType>()) {
+    if (DestTypeTmp->isLValueReferenceType() && !SrcExpr->isLValue()) {
       // Cannot const_cast non-lvalue to lvalue reference type. But if this
       // is C-style, static_cast might find a way, so we simply suggest a
       // message and tell the parent to keep searching.
@@ -1157,8 +1175,8 @@ static TryCastResult TryReinterpretCast(Sema &Self, Expr *SrcExpr,
   if (const ReferenceType *DestTypeTmp = DestType->getAs<ReferenceType>()) {
     bool LValue = DestTypeTmp->isLValueReferenceType();
     if (LValue && !SrcExpr->isLValue()) {
-      // Cannot cast non-lvalue to reference type. See the similar comment in
-      // const_cast.
+      // Cannot cast non-lvalue to lvalue reference type. See the similar 
+      // comment in const_cast.
       msg = diag::err_bad_cxx_cast_rvalue;
       return TC_NotApplicable;
     }

@@ -112,6 +112,10 @@ class Parser : public CodeCompletionHandler {
   IdentifierInfo *Ident_vector;
   IdentifierInfo *Ident_pixel;
 
+  /// C++0x contextual keywords. 
+  mutable IdentifierInfo *Ident_final;
+  mutable IdentifierInfo *Ident_override;
+
   llvm::OwningPtr<PragmaHandler> AlignHandler;
   llvm::OwningPtr<PragmaHandler> GCCVisibilityHandler;
   llvm::OwningPtr<PragmaHandler> OptionsHandler;
@@ -162,7 +166,7 @@ public:
   typedef Stmt StmtTy;
   typedef OpaquePtr<DeclGroupRef> DeclGroupPtrTy;
   typedef CXXBaseSpecifier BaseTy;
-  typedef CXXBaseOrMemberInitializer MemInitTy;
+  typedef CXXCtorInitializer MemInitTy;
   typedef NestedNameSpecifier CXXScopeTy;
   typedef TemplateParameterList TemplateParamsTy;
   typedef OpaquePtr<TemplateName> TemplateTy;
@@ -344,6 +348,9 @@ private:
   /// matched specific position in the grammar, provide code-completion results
   /// based on context.
   void CodeCompletionRecovery();
+
+  /// \brief Handle the annotation token produced for #pragma unused(...)
+  void HandlePragmaUnused();
 
   /// GetLookAheadToken - This peeks ahead N tokens and returns that token
   /// without consuming any tokens.  LookAhead(0) returns 'Tok', LookAhead(1)
@@ -903,7 +910,8 @@ private:
   void PopParsingClass();
 
   Decl *ParseCXXInlineMethodDef(AccessSpecifier AS, Declarator &D,
-                                     const ParsedTemplateInfo &TemplateInfo);
+                                const ParsedTemplateInfo &TemplateInfo,
+                                const VirtSpecifiers& VS);
   void ParseLexedMethodDeclarations(ParsingClass &Class);
   void ParseLexedMethodDeclaration(LateParsedMethodDeclaration &LM);
   void ParseLexedMethodDefs(ParsingClass &Class);
@@ -1520,6 +1528,12 @@ private:
   void ParseDecltypeSpecifier(DeclSpec &DS);
   
   ExprResult ParseCXX0XAlignArgument(SourceLocation Start);
+
+  VirtSpecifiers::Specifier isCXX0XVirtSpecifier() const;
+  void ParseOptionalCXX0XVirtSpecifierSeq(VirtSpecifiers &VS);
+
+  ClassVirtSpecifiers::Specifier isCXX0XClassVirtSpecifier() const;
+  void ParseOptionalCXX0XClassVirtSpecifierSeq(ClassVirtSpecifiers &CVS);
 
   /// DeclaratorScopeObj - RAII object used in Parser::ParseDirectDeclarator to
   /// enter a new C++ declarator scope and exit it when the function is

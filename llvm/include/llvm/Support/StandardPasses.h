@@ -20,7 +20,6 @@
 #define LLVM_SUPPORT_STANDARDPASSES_H
 
 #include "llvm/PassManager.h"
-#include "llvm/Analysis/Dominators.h"
 #include "llvm/Analysis/Passes.h"
 #include "llvm/Analysis/Verifier.h"
 #include "llvm/Transforms/Scalar.h"
@@ -82,11 +81,8 @@ namespace llvm {
     if (OptimizationLevel > 0) {
       createStandardAliasAnalysisPasses(PM);
       PM->add(createCFGSimplificationPass());
-      if (OptimizationLevel == 1)
-        PM->add(createPromoteMemoryToRegisterPass());
-      else
-        PM->add(createScalarReplAggregatesPass());
-      PM->add(createInstructionCombiningPass());
+      PM->add(createScalarReplAggregatesPass());
+      PM->add(createEarlyCSEPass());
     }
   }
 
@@ -128,7 +124,8 @@ namespace llvm {
       PM->add(createArgumentPromotionPass());   // Scalarize uninlined fn args
     
     // Start of function pass.
-    PM->add(createScalarReplAggregatesPass());  // Break up aggregate allocas
+    // Break up aggregate allocas, using SSAUpdater.
+    PM->add(createScalarReplAggregatesPass(-1, false));
     PM->add(createEarlyCSEPass());              // Catch trivial redundancies
     if (OptimizeBuiltins)
       PM->add(createSimplifyLibCallsPass());    // Library Call Optimizations

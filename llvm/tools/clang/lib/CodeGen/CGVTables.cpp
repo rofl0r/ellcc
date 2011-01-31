@@ -2758,7 +2758,14 @@ void CodeGenVTables::ComputeVTableRelatedInformation(const CXXRecordDecl *RD,
 
   // Add the VTable layout.
   uint64_t NumVTableComponents = Builder.getNumVTableComponents();
+  // -fapple-kext adds an extra entry at end of vtbl.
+  bool IsAppleKext = CGM.getContext().getLangOptions().AppleKext;
+  if (IsAppleKext)
+    NumVTableComponents += 1;
+
   uint64_t *LayoutData = new uint64_t[NumVTableComponents + 1];
+  if (IsAppleKext)
+    LayoutData[NumVTableComponents] = 0;
   Entry.setPointer(LayoutData);
 
   // Store the number of components.
@@ -2979,8 +2986,11 @@ llvm::GlobalVariable *CodeGenVTables::GetAddrOfVTable(const CXXRecordDecl *RD) {
   llvm::ArrayType *ArrayType = 
     llvm::ArrayType::get(Int8PtrTy, getNumVTableComponents(RD));
 
-  return GetGlobalVariable(CGM.getModule(), Name, ArrayType, 
-                           llvm::GlobalValue::ExternalLinkage);
+  llvm::GlobalVariable *GV =
+    GetGlobalVariable(CGM.getModule(), Name, ArrayType,
+                      llvm::GlobalValue::ExternalLinkage);
+  GV->setUnnamedAddr(true);
+  return GV;
 }
 
 void
@@ -3009,7 +3019,7 @@ CodeGenVTables::EmitVTableDefinition(llvm::GlobalVariable *VTable,
   VTable->setLinkage(Linkage);
   
   // Set the right visibility.
-  CGM.setTypeVisibility(VTable, RD, /*ForRTTI*/ false, /*ForDef*/ true);
+  CGM.setTypeVisibility(VTable, RD, /*ForRTTI=*/false);
 }
 
 llvm::GlobalVariable *

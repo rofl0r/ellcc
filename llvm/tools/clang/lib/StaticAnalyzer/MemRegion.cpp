@@ -469,7 +469,7 @@ void RegionRawOffset::dump() const {
 }
 
 void RegionRawOffset::dumpToStream(llvm::raw_ostream& os) const {
-  os << "raw_offset{" << getRegion() << ',' << getByteOffset() << '}';
+  os << "raw_offset{" << getRegion() << ',' << getOffset().getQuantity() << '}';
 }
 
 void StaticGlobalSpaceRegion::dumpToStream(llvm::raw_ostream &os) const {
@@ -770,6 +770,7 @@ const MemRegion *MemRegion::getBaseRegion() const {
       case MemRegion::ElementRegionKind:
       case MemRegion::FieldRegionKind:
       case MemRegion::ObjCIvarRegionKind:
+      case MemRegion::CXXBaseObjectRegionKind:
         R = cast<SubRegion>(R)->getSuperRegion();
         continue;
       default:
@@ -854,7 +855,7 @@ RegionRawOffset ElementRegion::getAsArrayOffset() const {
   }
 
   assert(superR && "super region cannot be NULL");
-  return RegionRawOffset(superR, offset.getQuantity());
+  return RegionRawOffset(superR, offset);
 }
 
 RegionOffset MemRegion::getAsOffset() const {
