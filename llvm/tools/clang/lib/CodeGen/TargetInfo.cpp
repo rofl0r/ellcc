@@ -2192,6 +2192,136 @@ PPC32TargetCodeGenInfo::initDwarfEHRegSizeTable(CodeGen::CodeGenFunction &CGF,
 }
 
 
+// PowerPC-64
+
+namespace {
+class PPC64ABIInfo : public ABIInfo {
+public:
+  PPC64ABIInfo(CodeGenTypes &CGT) : ABIInfo(CGT) {}
+
+  ABIArgInfo classifyReturnType(QualType RetTy) const;
+  ABIArgInfo classifyArgumentType(QualType RetTy) const;
+
+  virtual void computeInfo(CGFunctionInfo &FI) const {
+    FI.getReturnInfo() = classifyReturnType(FI.getReturnType());
+    for (CGFunctionInfo::arg_iterator it = FI.arg_begin(), ie = FI.arg_end();
+         it != ie; ++it)
+      it->info = classifyArgumentType(it->type);
+  }
+
+  virtual llvm::Value *EmitVAArg(llvm::Value *VAListAddr, QualType Ty,
+                                 CodeGenFunction &CGF) const;
+};
+
+class PPC64TargetCodeGenInfo : public TargetCodeGenInfo {
+public:
+  PPC64TargetCodeGenInfo(CodeGenTypes &CGT)
+    : TargetCodeGenInfo(new PPC64ABIInfo(CGT)) {}
+
+  int getDwarfEHStackPointer(CodeGen::CodeGenModule &M) const {
+    // This is recovered from gcc output.
+    return 1; // r1 is the dedicated stack pointer
+  }
+
+  bool initDwarfEHRegSizeTable(CodeGen::CodeGenFunction &CGF,
+                               llvm::Value *Address) const;
+};
+
+}
+
+bool
+PPC64TargetCodeGenInfo::initDwarfEHRegSizeTable(CodeGen::CodeGenFunction &CGF,
+                                                llvm::Value *Address) const {
+  // This is calculated from the LLVM and GCC tables and verified
+  // against gcc output.  AFAIK all ABIs use the same encoding.
+
+  CodeGen::CGBuilderTy &Builder = CGF.Builder;
+  llvm::LLVMContext &Context = CGF.getLLVMContext();
+
+  // RICH: Check this.
+  const llvm::IntegerType *i8 = llvm::Type::getInt8Ty(Context);
+  llvm::Value *Four8 = llvm::ConstantInt::get(i8, 4);
+  llvm::Value *Eight8 = llvm::ConstantInt::get(i8, 8);
+  llvm::Value *Sixteen8 = llvm::ConstantInt::get(i8, 16);
+
+  // 0-31: r0-31, the 4-byte general-purpose registers
+  AssignToArrayRange(Builder, Address, Eight8, 0, 31);
+
+  // 32-63: fp0-31, the 8-byte floating-point registers
+  AssignToArrayRange(Builder, Address, Eight8, 32, 63);
+
+  // 64-76 are various 4-byte special-purpose registers:
+  // 64: mq
+  // 65: lr
+  // 66: ctr
+  // 67: ap
+  // 68-75 cr0-7
+  // 76: xer
+  AssignToArrayRange(Builder, Address, Four8, 64, 76);
+
+  // 77-108: v0-31, the 16-byte vector registers
+  AssignToArrayRange(Builder, Address, Sixteen8, 77, 108);
+
+  // 109: vrsave
+  // 110: vscr
+  // 111: spe_acc
+  // 112: spefscr
+  // 113: sfp
+  AssignToArrayRange(Builder, Address, Four8, 109, 113);
+
+  return false;
+}
+
+ABIArgInfo PPC64ABIInfo::classifyReturnType(QualType RetTy) const {
+  if (RetTy->isVoidType())
+    return ABIArgInfo::getIgnore();
+  if (isAggregateTypeForABI(RetTy))
+    return ABIArgInfo::getIndirect(0);
+
+  return (RetTy->isPromotableIntegerType() ?
+          ABIArgInfo::getExtend() : ABIArgInfo::getDirect());
+}
+
+ABIArgInfo PPC64ABIInfo::classifyArgumentType(QualType Ty) const {
+  if (isAggregateTypeForABI(Ty))
+    return ABIArgInfo::getIndirect(0);
+
+  return (Ty->isPromotableIntegerType() ?
+          ABIArgInfo::getExtend() : ABIArgInfo::getDirect());
+}
+
+llvm::Value *PPC64ABIInfo::EmitVAArg(llvm::Value *VAListAddr, QualType Ty,
+                                   CodeGenFunction &CGF) const {
+  // FIXME: Need to handle alignment
+  const llvm::Type *BP = llvm::Type::getInt8PtrTy(CGF.getLLVMContext());
+  const llvm::Type *BPP = llvm::PointerType::getUnqual(BP);
+
+  CGBuilderTy &Builder = CGF.Builder;
+  llvm::Value *VAListAddrAsBPP = Builder.CreateBitCast(VAListAddr, BPP,
+                                                       "ap");
+  llvm::Value *Addr = Builder.CreateLoad(VAListAddrAsBPP, "ap.cur");
+  llvm::Value *AddrAdj = Addr;
+  if (CGF.getContext().getTypeSize(Ty) / 8 < 8) {
+    // Align smaller paramaters to the right of an 8 byte slot.
+    uint64_t Offset = 8 - CGF.getContext().getTypeSize(Ty) / 8;
+    AddrAdj = 
+      Builder.CreateGEP(Addr, llvm::ConstantInt::get(CGF.Int32Ty, Offset),
+                        "ap.adj");
+  }
+  llvm::Type *PTy =
+    llvm::PointerType::getUnqual(CGF.ConvertType(Ty));
+  llvm::Value *AddrTyped = Builder.CreateBitCast(AddrAdj, PTy);
+
+  uint64_t Offset =
+    llvm::RoundUpToAlignment(CGF.getContext().getTypeSize(Ty) / 8, 8);
+  llvm::Value *NextAddr =
+    Builder.CreateGEP(Addr, llvm::ConstantInt::get(CGF.Int32Ty, Offset),
+                      "ap.next");
+  Builder.CreateStore(NextAddr, VAListAddrAsBPP);
+
+  return AddrTyped;
+}
+
 //===----------------------------------------------------------------------===//
 // ARM ABI Implementation
 //===----------------------------------------------------------------------===//
@@ -2892,6 +3022,9 @@ const TargetCodeGenInfo &CodeGenModule::getTargetCodeGenInfo() {
 
   case llvm::Triple::ppc:
     return *(TheTargetCodeGenInfo = new PPC32TargetCodeGenInfo(Types));
+
+  case llvm::Triple::ppc64:
+    return *(TheTargetCodeGenInfo = new PPC64TargetCodeGenInfo(Types));
 
   case llvm::Triple::systemz:
     return *(TheTargetCodeGenInfo = new SystemZTargetCodeGenInfo(Types));
