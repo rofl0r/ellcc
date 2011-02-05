@@ -47,7 +47,15 @@
             <td style="vertical-align: top;">February 5, 2011<br>
             </td>
             <td style="vertical-align: top;">Completed initial printf
-regression tests on ppc64.</td>
+regression tests on ppc64. tcsh now builds for arm, i386, microblaze,
+ppc, ppc64, and x86_64. In QEMU user mode tcsh for arm, i386, ppc, and
+x86_64 runs and the "set" and "exit" commands work as expected. The ppc
+can run a few "ls" commands before coredump. The arm, i386, ppc64, and
+x86_64 can run one "ls" command and then hang. I suspect a SIGCHLD
+problem. The Startup under QEMU fails for microblaze. The ppc64 tcsh
+starts, but displays no prompt. The "set" command works, but the "exit"
+command coredumps.<br>
+            </td>
           </tr>
           <tr>
             <td style="vertical-align: top;">January 15, 2011</td>
@@ -97,7 +105,8 @@ and
 cross
 compilations
 supported.
-New directory layout.</td>
+New
+directory layout.</td>
           </tr>
           <tr>
             <td
@@ -112,7 +121,8 @@ compilation
 and
 successful
 execution
-of bzip2 for the ARM<br>
+of
+bzip2 for the ARM<br>
             </td>
           </tr>
           <tr>
@@ -128,7 +138,8 @@ compilation
 and
 successful
 execution
-of bzip2 for the X86<br>
+of
+bzip2 for the X86<br>
             </td>
           </tr>
           <tr>
@@ -186,6 +197,7 @@ of
 links
 to
 online
+
             <a href="wiki/index.php/Documentation">documentation</a>.</td>
           </tr>
           <tr>
@@ -197,6 +209,7 @@ online
  style="width: 777px; background-color: rgb(192, 192, 192); text-decoration: line-through;">Beginning
 of
 the
+
 
 
             <a href="wiki">Wiki</a>.</td>
