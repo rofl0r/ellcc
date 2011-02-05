@@ -84,6 +84,7 @@
 #define	MCOUNT
 #endif
 
+#define __NO_LEADING_UNDERSCORES__ // RICH
 #ifdef __NO_LEADING_UNDERSCORES__
 # define _C_LABEL(x)	x
 #else

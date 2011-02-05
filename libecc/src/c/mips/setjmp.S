@@ -68,7 +68,7 @@
 
 	.set	noreorder
 
-LEAF(_setjmp)
+LEAF(setjmp)
 	REG_PROLOGUE
 	REG_LI	v0, 0xACEDBADE			# sigcontext magic number
 	REG_S	ra, _OFFSETOF_SC_PC(a0)		# sc_pc = return address
@@ -119,10 +119,10 @@ LEAF(_setjmp)
 
 	j	ra
 	move	v0, zero
-END(_setjmp)
+END(setjmp)
 
-LEAF(_longjmp)
-	PIC_PROLOGUE(_longjmp)
+LEAF(longjmp)
+	PIC_PROLOGUE(longjmp)
 	PTR_SUBU	sp, sp, CALLFRAME_SIZ
 	SAVE_GP(CALLFRAME_GP)
 
@@ -190,4 +190,4 @@ botch:
 	jal	_C_LABEL(longjmperror)
 	
 	PIC_TAILCALL(abort)
-END(_longjmp)
+END(longjmp)

@@ -245,14 +245,23 @@ EXTRALIBS = $(HESLIB) $(AFSLIB)
 # This is for setting your C preprocessor value.
 CPP = ${CC} -E
 
+targets: ecc arm i386 mips microblaze ppc ppc64 x86_64
+
+arm i386 microblaze mips nios2 ppc ppc64 sparc x86_64:
+	$(MAKE) clean
+	$(MAKE) XCC=$@-linux- RUN=../../../bin/qemu-$@ all
+	../../../bin/qemu-$@ ./tcsh -f
+
+ecc:
+	$(MAKE) clean
+	$(MAKE) all
+	./tcsh -f
+
 # To assist in cross-compiling with ELLCC.
-#TARGET=x86_64
-#XCC=$(TARGET)-linux-
-#XAS=$(TARGET)-elf-
-XAS=ecc-
+#XAS=ecc-
 CC=../../../bin/$(XCC)ecc
 HOSTCC=../../../bin/ecc
-AS=../../../bin/$(XAS)as
+#AS=../../../bin/$(XAS)as
 AR=../../../bin/ecc-ar
 LD=../../../bin/ecc-ld
 RANLIB=../../../bin/ecc-ranlib

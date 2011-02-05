@@ -47,15 +47,12 @@
  *	#endif
  */
 #define	_BSD_CLOCK_T_		unsigned long	/* clock() */
-#ifndef __mips_o32
-#define	_BSD_PTRDIFF_T_		long		/* ptr1 - ptr2 */
-#define	_BSD_SIZE_T_		unsigned long	/* sizeof() */
+
+#define	_BSD_PTRDIFF_T_		__typeof__(((int*)0)-((int*)0))
+#define	_BSD_SIZE_T_		__typeof__(sizeof(int))
+// RICH: FIXME
 #define	_BSD_SSIZE_T_		long		/* byte count or error */
-#else
-#define	_BSD_PTRDIFF_T_		int		/* ptr1 - ptr2 */
-#define	_BSD_SIZE_T_		unsigned int	/* sizeof() */
-#define	_BSD_SSIZE_T_		int		/* byte count or error */
-#endif /* !__mips_o32 */
+
 #define	_BSD_TIME_T_		__int64_t	/* time() */
 #if __GNUC_PREREQ__(3, 0)
 #define	_BSD_VA_LIST_		__builtin_va_list /* GCC builtin type */
