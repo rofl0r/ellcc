@@ -11,7 +11,7 @@
 <a name="50bb1mu9ue7jm1nni1ggeuf28c">ELLCC</a>
 </h1>
 <div align="center" class="globalOverview">
-<img src="ELLCC_files/images/ELLCC 4.jpg"></div>
+<img src="ELLCC_files/images/ELLCC 5.jpg"></div>
 <h2 class="topic">
 <a name="6is4ebfnl2humff0mmuk1vglsu">GNU Tools</a>
 </h2>
@@ -292,7 +292,6 @@
 </h3>
 <div class="notesContainer">
 <p>Bzip2 runs.</p>
-<p>libc_test.c fails. varargs are not passed as 64 bit.</p>
 <p>QEMU does not have full signal handling support.</p>
 </div>
 <h3 class="topic">
@@ -347,12 +346,17 @@
 <p>/usr/share/doc/subversion-1.6.13/svn_load_dirs.pl -svn_username rich -svn_password **** -t svn-&lt;current-rev&gt; http://ellcc.org/svn/vendor/llvm current llvm</p>
 <p>/usr/share/doc/subversion-1.6.13/svn_load_dirs.pl -svn_username rich -svn_password **** -t svn-&lt;current-rev&gt; http://ellcc.org/svn/vendor/clang current clang</p>
 <p></p>
-<p>The next two lines should be executed above a checkout of the latest trunk llvm</p>
+<p>The next commands should be executed above a checkout of the latest trunk llvm (where &lt;last rev&gt; is the last tagged import before svn-&lt;current-rev&gt; above.</p>
 <p>svn merge http://ellcc.org/svn/vendor/llvm/svn-&lt;last rev&gt; http://ellcc.org/svn/vendor/llvm/current llvm</p>
-<p></p>
+<p>cd libecc/src</p>
+<p>svn merge http://ellcc.org/svn/vendor/compiler-rt/svn-&lt;last rev&gt; http://ellcc.org/svn/vendor/compiler-rt/current llvm</p>
 <p>cd llvm/tools</p>
 <p>svn merge http://ellcc.org/svn/vendor/clang/svn-&lt;last rev&gt; http://ellcc.org/svn/vendor/clang/current clang</p>
 <p></p>
+<p>To find merge files to fix:</p>
+<p>find . -name "*merge-*.r*" | grep -v svn</p>
+<p></p>
+<p>To get specific debug information: -mllvm -debug-only=mblaze-reg-info</p>
 </div>
 <h3 class="topic">
 <a name="2u38ttet9s8nhip9ijj5g59dv3">Nios2 Support</a>
