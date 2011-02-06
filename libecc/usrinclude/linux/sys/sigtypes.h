@@ -60,16 +60,16 @@ typedef	_BSD_SIZE_T_	size_t;
     defined(_NETBSD_SOURCE)
 
 /* There are 1024 bits in a sigset_t. */
-#define _SIGSET_NWORDS (1024 / (8 * sizeof(__uint32_t)))
+#define _SIGSET_NWORDS (1024 / (8 * sizeof(unsigned long)))
 typedef struct {
-	__uint32_t	__bits[_SIGSET_NWORDS];
+	unsigned long __bits[_SIGSET_NWORDS];
 } sigset_t;
 
 /*
  * Macro for manipulating signal masks.
  */
-#define __sigmask(n)		(1 << (((unsigned int)(n) - 1) & 31))
-#define	__sigword(n)		(((unsigned int)(n) - 1) >> 5)
+#define __sigmask(n)		(1UL << (((n) - 1) % (8 * sizeof(unsigned long))))
+#define	__sigword(n)		(((unsigned int)(n) - 1) / (8 * sizeof(unsigned long)))
 #define	__sigaddset(s, n)	((s)->__bits[__sigword(n)] |= __sigmask(n))
 #define	__sigdelset(s, n)	((s)->__bits[__sigword(n)] &= ~__sigmask(n))
 #define	__sigismember(s, n)	(((s)->__bits[__sigword(n)] & __sigmask(n)) != 0)
@@ -84,7 +84,7 @@ typedef struct {
 #define	__sigfillset(s)	                                                \
  (__extension__ ({ int count;                                           \
                    for (count = 0; count < _SIGSET_NWORDS; ++ count) {  \
-                       (s)->__bits[count] = 0xFFFFFFFF;                 \
+                       (s)->__bits[count] = ~0UL;                       \
                    }                                                    \
                    0; }))
 

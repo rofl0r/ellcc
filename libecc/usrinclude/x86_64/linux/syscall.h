@@ -18,7 +18,7 @@
  *
  * Return values of -1 .. -4095 indicate error return values.
  */
-#define IS_SYSCALL_ERROR(result) ((unsigned long int)(result) >= 0xFFFFF001U)
+#define IS_SYSCALL_ERROR(result) ((unsigned long int)(result) >= 0xFFFFFFFFFFFFF001UL)
 
 /** Convert a system call result to a valid error number.
  * @param result A system call result indicating an error.
@@ -43,7 +43,7 @@
  */
 #define INLINE_SYSCALL_0(name, ...)                                     \
     ({                                                                  \
-    unsigned int result;					        \
+    unsigned long result;					        \
     asm volatile ("syscall      #" #name "\n\t"                         \
                   : "=a" (result)                                       \
                   : "0" SYS_CONSTANT(name)                              \
@@ -61,7 +61,7 @@
  */
 #define INLINE_SYSCALL_1(name, arg0)                                    \
     ({                                                                  \
-    unsigned int result;					        \
+    unsigned long result;					        \
     asm volatile ("syscall      #" #name "\n\t"                         \
                   : "=a" (result)                                       \
                   : "0" SYS_CONSTANT(name),                             \
@@ -81,7 +81,7 @@
  */
 #define INLINE_SYSCALL_2(name, arg0, arg1)                              \
     ({                                                                  \
-    unsigned int result;					        \
+    unsigned long result;					        \
     asm volatile ("syscall      #" #name "\n\t"                         \
                   : "=a" (result)                                       \
                   : "0" SYS_CONSTANT(name),                             \
@@ -102,7 +102,7 @@
  */
 #define INLINE_SYSCALL_3(name, arg0, arg1, arg2)                        \
     ({                                                                  \
-    unsigned int result;					        \
+    unsigned long result;					        \
     asm volatile ("syscall      #" #name "\n\t"                         \
                   : "=a" (result)                                       \
                   : "0" SYS_CONSTANT(name),                             \
@@ -127,7 +127,7 @@
  */
 #define INLINE_SYSCALL_4(name, arg0, arg1, arg2, arg3)                  \
     ({                                                                  \
-    unsigned int result;					        \
+    unsigned long result;					        \
     asm volatile ("syscall      #" #name "\n\t"                         \
                   : "=a" (result)                                       \
                   : "0" SYS_CONSTANT(name),                             \
@@ -151,7 +151,7 @@
  */
 #define INLINE_SYSCALL_5(name, arg0, arg1, arg2, arg3, arg4)            \
     ({                                                                  \
-    unsigned int result;					        \
+    unsigned long result;					        \
     asm volatile ("syscall      #" #name "\n\t"                         \
                   : "=a" (result)                                       \
                   : "0" SYS_CONSTANT(name),                             \
@@ -177,7 +177,7 @@
  */
 #define INLINE_SYSCALL_6(name, arg0, arg1, arg2, arg3, arg4, arg5)      \
     ({                                                                  \
-    unsigned int result;					        \
+    unsigned long result;					        \
     asm volatile ("syscall      #" #name "\n\t"                         \
                   : "=a" (result)                                       \
                   : "0" SYS_CONSTANT(name),                             \

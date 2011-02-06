@@ -3,5 +3,5 @@
 
 int sigaction(int signum, const struct sigaction *act, struct sigaction *oldact)
 {
-    return INLINE_SYSCALL(sigaction, 3, signum, act, oldact);
+    return INLINE_SYSCALL(sigaction, 4, signum, act, oldact, _NSIG / 8);
 }
