@@ -250,18 +250,16 @@ targets: ecc arm i386 mips microblaze ppc ppc64 x86_64
 arm i386 microblaze mips nios2 ppc ppc64 sparc x86_64:
 	$(MAKE) clean
 	$(MAKE) XCC=$@-linux- RUN=../../../bin/qemu-$@ all
-	../../../bin/qemu-$@ ./tcsh -f
+	../../../bin/qemu-$@ ./tcsh -f -q
 
 ecc:
 	$(MAKE) clean
 	$(MAKE) all
-	./tcsh -f
+	./tcsh -f -q
 
 # To assist in cross-compiling with ELLCC.
-#XAS=ecc-
 CC=../../../bin/$(XCC)ecc
 HOSTCC=../../../bin/ecc
-#AS=../../../bin/$(XAS)as
 AR=../../../bin/ecc-ar
 LD=../../../bin/ecc-ld
 RANLIB=../../../bin/ecc-ranlib
