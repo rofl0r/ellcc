@@ -18,7 +18,7 @@ all: ecc arm i386 mips microblaze ppc ppc64 x86_64
 
 arm i386 microblaze mips nios2 ppc ppc64 sparc x86_64:
 	$(MAKE) clean
-	$(MAKE) XCC=$@-linux- RUN=../../../bin/qemu-$@ bzip2all
+	$(MAKE) EXT=.$@ XCC=$@-linux- RUN=../../../bin/qemu-$@ bzip2all
 
 ecc:
 	$(MAKE) clean
@@ -44,10 +44,10 @@ OBJS= blocksort.o  \
       decompress.o \
       bzlib.o
 
-bzip2all: libbz2.a bzip2 bzip2recover test
+bzip2all: libbz2.a bzip2$(EXT) bzip2recover test
 
-bzip2: libbz2.a bzip2.o
-	$(CC) $(CFLAGS) $(LDFLAGS) -o bzip2 bzip2.o -L. -lbz2
+bzip2$(EXT): libbz2.a bzip2.o
+	$(CC) $(CFLAGS) $(LDFLAGS) -o bzip2$(EXT) bzip2.o -L. -lbz2
 
 bzip2recover: bzip2recover.o
 	$(CC) $(CFLAGS) $(LDFLAGS) -o bzip2recover bzip2recover.o
@@ -64,12 +64,12 @@ libbz2.a: $(OBJS)
 check: test
 test: bzip2
 	@cat words1
-	$(RUN) ./bzip2 -1  < sample1.ref > sample1.rb2
-	$(RUN) ./bzip2 -2  < sample2.ref > sample2.rb2
-	$(RUN) ./bzip2 -3  < sample3.ref > sample3.rb2
-	$(RUN) ./bzip2 -d  < sample1.bz2 > sample1.tst
-	$(RUN) ./bzip2 -d  < sample2.bz2 > sample2.tst
-	$(RUN) ./bzip2 -ds < sample3.bz2 > sample3.tst
+	$(RUN) ./bzip2$(EXT) -1  < sample1.ref > sample1.rb2
+	$(RUN) ./bzip2$(EXT) -2  < sample2.ref > sample2.rb2
+	$(RUN) ./bzip2$(EXT) -3  < sample3.ref > sample3.rb2
+	$(RUN) ./bzip2$(EXT) -d  < sample1.bz2 > sample1.tst
+	$(RUN) ./bzip2$(EXT) -d  < sample2.bz2 > sample2.tst
+	$(RUN) ./bzip2$(EXT) -ds < sample3.bz2 > sample3.tst
 	cmp sample1.bz2 sample1.rb2 
 	cmp sample2.bz2 sample2.rb2
 	cmp sample3.bz2 sample3.rb2
@@ -118,9 +118,13 @@ install: bzip2 bzip2recover
 	echo ".so man1/bzdiff.1" > $(PREFIX)/man/man1/bzcmp.1
 
 clean: 
-	rm -f *.o libbz2.a bzip2 bzip2recover \
+	rm -f *.o libbz2.a bzip2recover \
 	sample1.rb2 sample2.rb2 sample3.rb2 \
 	sample1.tst sample2.tst sample3.tst
+
+veryclean: clean
+	rm -f bzip2 bzip2.arm bzip2.i386 bzip2.microblaze bzip2.mips \
+	      bzip2.nios2 bzip2.ppc bzip2.ppc64 bzip2.sparc bzip2.x86_64
 
 blocksort.o: blocksort.c
 	@cat words0

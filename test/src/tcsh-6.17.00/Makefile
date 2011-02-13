@@ -10,7 +10,7 @@
 #
 SHELL=/bin/sh
 VERSION=6.12
-BUILD=tcsh
+BUILD=tcsh$(EXT)
 srcdir=.
 
 ################################################################
@@ -249,8 +249,8 @@ targets: ecc arm i386 mips microblaze ppc ppc64 x86_64
 
 arm i386 microblaze mips nios2 ppc ppc64 sparc x86_64:
 	$(MAKE) clean
-	$(MAKE) XCC=$@-linux- RUN=../../../bin/qemu-$@ all
-	../../../bin/qemu-$@ ./tcsh -f -q
+	$(MAKE) EXT=$@ XCC=$@-linux- RUN=../../../bin/qemu-$@ all
+	../../../bin/qemu-$@ ./tcsh$@ -f -q
 
 ecc:
 	$(MAKE) clean
@@ -358,9 +358,9 @@ OBJS= ${SHOBJS} ${TWOBJS} ${EDOBJS} ${TCOBJS}
 
 all: ${BUILD}
 
-tcsh:$(P) ${OBJS} 
+tcsh$(EXT):$(P) ${OBJS} 
 	rm -f tcsh core
-	${CC} -o tcsh ${LDFLAGS} ${CFLAGS} ${OBJS} ${LIBES} ${EXTRALIBS}
+	${CC} -o tcsh$(EXT) ${LDFLAGS} ${CFLAGS} ${OBJS} ${LIBES} ${EXTRALIBS}
 
 # Purify
 pure:$(P) ${OBJS} 
@@ -510,11 +510,13 @@ install.man: tcsh.man
 #	chmod 444 ${DESTMAN}/tcsh.${MANSECT}.Z
 
 clean:
-	${RM} -f a.out strings x.c xs.c tcsh tcsh.a _MAKE_LOG core gethost
+	${RM} -f a.out strings x.c xs.c tcsh.a _MAKE_LOG core gethost
 	${RM} -f *.${SUF} sh.prof.c ed.defns.h tc.const.h sh.err.h tc.defs.c
 	${RM} -f tcsh.*.m tcsh.*.cat
 
 veryclean: clean
+	${RM} -f tcsh tcsh.arm tcsh.i386 tcsh.microblaze tcsh.mips \
+		 tcsh.nios2 tcsh.ppc tcsh.ppc64 tcsh.sparc tcsh.x86_64
 	${RM} -f config.status config.cache config.log tcsh.ps
 	${RM} -f *~ #*
 
