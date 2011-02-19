@@ -1,4 +1,4 @@
-MYVPATH := $(MYVPATH):$(SRCPATH)/$(LIB)
+VPATH := $(VPATH):$(SRCPATH)/$(LIB)
 CFLAGS += -I$(SRCPATH)/$(LIB)
 
 SRCS += bcrypt.c crypt.c crypt-sha1.c hmac_sha1.c md5crypt.c util.c

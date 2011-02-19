@@ -2,7 +2,9 @@
 
 # The target processor.
 TARGET = $(shell basename `cd ../..; pwd`)
+# The target operating system.
 OS = $(shell basename `cd ../; pwd`)
+# The base of the library name.
 LIB = $(shell basename `pwd`)
 
 # The target library.
@@ -30,9 +32,8 @@ CFLAGS = -g -Werror -MD -MP -O1 -fno-builtin
 SRCPATH := ../../../../src
 
 # Build the library.
-MYVPATH :=
+VPATH :=
 include $(SRCPATH)/$(LIB)/sources $(EXTRASRCS)
-VPATH := $(MYVPATH)
 
 BASENAMES := $(basename $(filter %.c %.s %.S, $(SRCS)))
 OBJS := $(BASENAMES:%=%.o)

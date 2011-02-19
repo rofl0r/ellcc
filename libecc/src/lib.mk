@@ -2,6 +2,7 @@
 
 # The target processor.
 TARGET = $(shell basename `cd ..; pwd`)
+# The base of the library name.
 LIB = $(shell basename `pwd`)
 
 # The target library.
