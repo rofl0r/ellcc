@@ -210,6 +210,25 @@ public:
   FreeBSDTargetInfo(const std::string &triple)
     : OSTargetInfo<Target>(triple) {
       this->UserLabelPrefix = "";
+
+      llvm::Triple Triple(triple);
+      switch (Triple.getArch()) {
+        default:
+        case llvm::Triple::x86:
+        case llvm::Triple::x86_64:
+          this->MCountName = ".mcount";
+          break;
+        case llvm::Triple::mips:
+        case llvm::Triple::mipsel:
+        case llvm::Triple::ppc:
+        case llvm::Triple::ppc64:
+          this->MCountName = "_mcount";
+          break;
+        case llvm::Triple::arm:
+          this->MCountName = "__mcount";
+          break;
+      }
+
     }
 };
 
@@ -1019,9 +1038,6 @@ public:
   }
   virtual bool validateAsmConstraint(const char *&Name,
                                      TargetInfo::ConstraintInfo &info) const;
-  virtual const llvm::Type* adjustInlineAsmType(std::string& Constraint,
-                                     const llvm::Type* Ty,
-                                     llvm::LLVMContext& Context) const;
   virtual std::string convertConstraint(const char Constraint) const;
   virtual const char *getClobbers() const {
     return "~{dirflag},~{fpsr},~{flags}";
@@ -1352,15 +1368,6 @@ X86TargetInfo::validateAsmConstraint(const char *&Name,
     return *Name == '}';
   }
   return false;
-}
-
-const llvm::Type*
-X86TargetInfo::adjustInlineAsmType(std::string& Constraint,
-                                   const llvm::Type* Ty,
-                                   llvm::LLVMContext &Context) const {
-  if (Constraint=="y" && Ty->isVectorTy())
-    return llvm::Type::getX86_MMXTy(Context);
-  return Ty;
 }
 
 
@@ -2409,8 +2416,8 @@ namespace {
       LongDoubleFormat = &llvm::APFloat::IEEEsingle;
       DescriptionString = "E-p:32:32:32-i1:8:8-i8:8:32-"
                           "i16:16:32-i32:32:32-i64:32:32-"
-                          "f32:32:32-f64:64:64-v64:64:64-"
-                          "v128:128:128-a0:0:64-n32";
+                          "f32:32:32-f64:32:32-v64:32:32-"
+                          "v128:32:32-a0:0:32-n32";
     }
 
     virtual void getTargetDefines(const LangOptions &Opts,
@@ -2748,10 +2755,13 @@ static TargetInfo *AllocateTarget(const std::string &T) {
       return new FreeBSDTargetInfo<X86_64TargetInfo>(T);
     case llvm::Triple::Solaris:
       return new SolarisTargetInfo<X86_64TargetInfo>(T);
-    case llvm::Triple::MinGW64:
+    case llvm::Triple::MinGW32:
       return new MinGWX86_64TargetInfo(T);
     case llvm::Triple::Win32:   // This is what Triple.h supports now.
-      return new VisualStudioWindowsX86_64TargetInfo(T);
+      if (Triple.getEnvironment() == llvm::Triple::MachO)
+        return new DarwinX86_64TargetInfo(T);
+      else
+        return new VisualStudioWindowsX86_64TargetInfo(T);
     default:
       return new X86_64TargetInfo(T);
     }

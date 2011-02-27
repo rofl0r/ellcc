@@ -18,8 +18,6 @@
 
 namespace llvm {
   class raw_ostream;
-  class Module;
-  class LLVMContext;
   namespace sys { class Path; }
 }
 namespace clang {
@@ -60,10 +58,6 @@ ASTConsumer *CreateASTViewer();
 // DeclContext printer: prints out the DeclContext tree in human-readable form
 // to stderr; this is intended for debugging.
 ASTConsumer *CreateDeclContextPrinter();
-
-// Inheritance viewer: for C++ code, creates a graph of the inheritance
-// tree for the given class and displays it with "dotty".
-ASTConsumer *CreateInheritanceViewer(const std::string& clsname);
 
 } // end clang namespace
 

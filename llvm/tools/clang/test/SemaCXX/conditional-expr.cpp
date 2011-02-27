@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -fsyntax-only -verify -std=c++0x -Wsign-compare %s
+// RUN: %clang_cc1 -fexceptions -fsyntax-only -verify -std=c++0x -Wsign-compare %s
 
 // C++ rules for ?: are a lot stricter than C rules, and have to take into
 // account more conversion options.
@@ -306,4 +306,18 @@ namespace PR7598 {
     Enum e3 = false ? g2() : v;
   }
 
+}
+
+namespace PR9236 {
+#define NULL 0L
+  void f() {
+    int i;
+    (void)(true ? A() : NULL); // expected-error{{non-pointer operand type 'A' incompatible with NULL}}
+    (void)(true ? NULL : A()); // expected-error{{non-pointer operand type 'A' incompatible with NULL}}
+    (void)(true ? 0 : A()); // expected-error{{incompatible operand types}}
+    (void)(true ? nullptr : A()); // expected-error{{non-pointer operand type 'A' incompatible with nullptr}}
+    (void)(true ? nullptr : i); // expected-error{{non-pointer operand type 'int' incompatible with nullptr}}
+    (void)(true ? __null : A()); // expected-error{{non-pointer operand type 'A' incompatible with NULL}}
+    (void)(true ? (void*)0 : A()); // expected-error{{incompatible operand types}}
+  }
 }

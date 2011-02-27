@@ -61,6 +61,8 @@ void MCSectionELF::PrintSwitchToSection(const MCAsmInfo &MAI,
     OS << 'a';
   if (Flags & ELF::SHF_EXECINSTR)
     OS << 'x';
+  if (Flags & ELF::SHF_GROUP)
+    OS << 'G';
   if (Flags & ELF::SHF_WRITE)
     OS << 'w';
   if (Flags & ELF::SHF_MERGE)
@@ -104,6 +106,8 @@ void MCSectionELF::PrintSwitchToSection(const MCAsmInfo &MAI,
     OS << "," << EntrySize;
   }
 
+  if (Flags & ELF::SHF_GROUP)
+    OS << "," << Group->getName() << ",comdat";
   OS << '\n';
 }
 
@@ -113,17 +117,6 @@ bool MCSectionELF::UseCodeAlign() const {
 
 bool MCSectionELF::isVirtualSection() const {
   return getType() == ELF::SHT_NOBITS;
-}
-
-// HasCommonSymbols - True if this section holds common symbols, this is
-// indicated on the ELF object file by a symbol with SHN_COMMON section 
-// header index.
-bool MCSectionELF::HasCommonSymbols() const {
-  
-  if (StringRef(SectionName).startswith(".gnu.linkonce."))
-    return true;
-
-  return false;
 }
 
 unsigned MCSectionELF::DetermineEntrySize(SectionKind Kind) {

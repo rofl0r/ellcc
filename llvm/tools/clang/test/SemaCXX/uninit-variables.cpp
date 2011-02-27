@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -fsyntax-only -Wuninitialized -fsyntax-only %s -verify
+// RUN: %clang_cc1 -fsyntax-only -Wuninitialized-experimental -fsyntax-only %s -verify
 
 int test1_aux(int &x);
 int test1() {
@@ -33,11 +33,19 @@ unsigned test3_b() {
   return x; // no-warning
 }
 unsigned test3_c() {
-  unsigned x ; // expected-warning{{use of uninitialized variable 'x'}} expected-note{{add initialization to silence this warning}}
+  unsigned x; // expected-note{{declared here}} expected-note{{add initialization}}
   const bool flag = false;
   if (flag && (x = test3_aux()) == 0) {
     x = 1;
   }
-  return x; // expected-note{{variable 'x' is possibly uninitialized when used here}}
+  return x; // expected-warning{{variable 'x' is possibly uninitialized when used here}}
+}
+
+enum test4_A {
+ test4_A_a, test_4_A_b
+};
+test4_A test4() {
+ test4_A a; // expected-note{{variable 'a' is declared here}}
+ return a; // expected-warning{{variable 'a' is possibly uninitialized when used here}}
 }
 

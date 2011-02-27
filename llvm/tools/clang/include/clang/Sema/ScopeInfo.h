@@ -17,12 +17,13 @@
 #include "clang/AST/Type.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/SetVector.h"
 
 namespace clang {
 
 class BlockDecl;
 class IdentifierInfo;
-class LabelStmt;
+class LabelDecl;
 class ReturnStmt;
 class Scope;
 class SwitchStmt;
@@ -51,11 +52,6 @@ public:
   /// \brief Used to determine if errors occurred in this function or block.
   DiagnosticErrorTrap ErrorTrap;
 
-  /// LabelMap - This is a mapping from label identifiers to the LabelStmt for
-  /// it (which acts like the label decl in some ways).  Forward referenced
-  /// labels have a LabelStmt created for them with a null location & SubStmt.
-  llvm::DenseMap<IdentifierInfo*, LabelStmt*> LabelMap;
-
   /// SwitchStack - This is the current set of active switch statements in the
   /// block.
   llvm::SmallVector<SwitchStmt*, 8> SwitchStack;
@@ -63,7 +59,7 @@ public:
   /// \brief The list of return statements that occur within the function or
   /// block, if there is any chance of applying the named return value
   /// optimization.
-  llvm::SmallVector<ReturnStmt *, 4> Returns;
+  llvm::SmallVector<ReturnStmt*, 4> Returns;
 
   void setHasBranchIntoScope() {
     HasBranchIntoScope = true;
@@ -101,8 +97,6 @@ public:
 /// \brief Retains information about a block that is currently being parsed.
 class BlockScopeInfo : public FunctionScopeInfo {
 public:
-  bool hasBlockDeclRefExprs;
-
   BlockDecl *TheDecl;
   
   /// TheScope - This is the scope for the block itself, which contains
@@ -117,9 +111,18 @@ public:
   /// Its return type may be BuiltinType::Dependent.
   QualType FunctionType;
 
+  /// CaptureMap - A map of captured variables to (index+1) into Captures.
+  llvm::DenseMap<VarDecl*, unsigned> CaptureMap;
+
+  /// Captures - The captured variables.
+  llvm::SmallVector<BlockDecl::Capture, 4> Captures;
+
+  /// CapturesCXXThis - Whether this block captures 'this'.
+  bool CapturesCXXThis;
+
   BlockScopeInfo(Diagnostic &Diag, Scope *BlockScope, BlockDecl *Block)
-    : FunctionScopeInfo(Diag), hasBlockDeclRefExprs(false),
-      TheDecl(Block), TheScope(BlockScope)
+    : FunctionScopeInfo(Diag), TheDecl(Block), TheScope(BlockScope),
+      CapturesCXXThis(false)
   {
     IsBlockInfo = true;
   }

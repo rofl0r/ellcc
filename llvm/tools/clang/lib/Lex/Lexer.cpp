@@ -357,6 +357,9 @@ SourceLocation Lexer::GetBeginningOfToken(SourceLocation Loc,
                                           const SourceManager &SM,
                                           const LangOptions &LangOpts) {
   std::pair<FileID, unsigned> LocInfo = SM.getDecomposedLoc(Loc);
+  if (LocInfo.first.isInvalid())
+    return Loc;
+  
   bool Invalid = false;
   llvm::StringRef Buffer = SM.getBufferData(LocInfo.first, &Invalid);
   if (Invalid)
@@ -365,6 +368,9 @@ SourceLocation Lexer::GetBeginningOfToken(SourceLocation Loc,
   // Back up from the current location until we hit the beginning of a line
   // (or the buffer). We'll relex from that point.
   const char *BufStart = Buffer.data();
+  if (LocInfo.second >= Buffer.size())
+    return Loc;
+  
   const char *StrData = BufStart+LocInfo.second;
   if (StrData[0] == '\n' || StrData[0] == '\r')
     return Loc;
@@ -1156,7 +1162,7 @@ void Lexer::LexStringLiteral(Token &Result, const char *CurPtr, bool Wide) {
       if (C == 0 && PP && PP->isCodeCompletionFile(FileLoc))
         PP->CodeCompleteNaturalLanguage();
       else if (!isLexingRawMode() && !Features.AsmPreprocessor)
-        Diag(BufferPtr, diag::err_unterminated_string);
+        Diag(BufferPtr, diag::warn_unterminated_string);
       FormTokenWithChars(Result, CurPtr-1, tok::unknown);
       return;
     }
@@ -1235,7 +1241,7 @@ void Lexer::LexCharConstant(Token &Result, const char *CurPtr) {
       if (C == 0 && PP && PP->isCodeCompletionFile(FileLoc))
         PP->CodeCompleteNaturalLanguage();
       else if (!isLexingRawMode() && !Features.AsmPreprocessor)
-        Diag(BufferPtr, diag::err_unterminated_char);
+        Diag(BufferPtr, diag::warn_unterminated_char);
       FormTokenWithChars(Result, CurPtr-1, tok::unknown);
       return;
     } else if (C == 0) {
@@ -2317,6 +2323,10 @@ LexNextToken:
         // If this is actually a '<<<<<<<' version control conflict marker,
         // recognize it as such and recover nicely.
         goto LexNextToken;
+      } else if (Features.CUDA && After == '<') {
+        Kind = tok::lesslessless;
+        CurPtr = ConsumeChar(ConsumeChar(CurPtr, SizeTmp, Result),
+                             SizeTmp2, Result);
       } else {
         CurPtr = ConsumeChar(CurPtr, SizeTmp, Result);
         Kind = tok::lessless;
@@ -2348,6 +2358,10 @@ LexNextToken:
       } else if (After == '>' && HandleEndOfConflictMarker(CurPtr-1)) {
         // If this is '>>>>>>>' and we're in a conflict marker, ignore it.
         goto LexNextToken;
+      } else if (Features.CUDA && After == '>') {
+        Kind = tok::greatergreatergreater;
+        CurPtr = ConsumeChar(ConsumeChar(CurPtr, SizeTmp, Result),
+                             SizeTmp2, Result);
       } else {
         CurPtr = ConsumeChar(CurPtr, SizeTmp, Result);
         Kind = tok::greatergreater;

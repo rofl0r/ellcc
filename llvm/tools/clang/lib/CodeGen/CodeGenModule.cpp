@@ -37,6 +37,7 @@
 #include "llvm/Intrinsics.h"
 #include "llvm/LLVMContext.h"
 #include "llvm/ADT/Triple.h"
+#include "llvm/Target/Mangler.h"
 #include "llvm/Target/TargetData.h"
 #include "llvm/Support/CallSite.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -58,8 +59,7 @@ static CGCXXABI &createCXXABI(CodeGenModule &CGM) {
 CodeGenModule::CodeGenModule(ASTContext &C, const CodeGenOptions &CGO,
                              llvm::Module &M, const llvm::TargetData &TD,
                              Diagnostic &diags)
-  : BlockModule(C, M, TD, Types, *this), Context(C),
-    Features(C.getLangOptions()), CodeGenOpts(CGO), TheModule(M),
+  : Context(C), Features(C.getLangOptions()), CodeGenOpts(CGO), TheModule(M),
     TheTargetData(TD), TheTargetCodeGenInfo(0), Diags(diags),
     ABI(createCXXABI(*this)), 
     Types(C, M, TD, getTargetCodeGenInfo().getABIInfo(), ABI),
@@ -70,8 +70,8 @@ CodeGenModule::CodeGenModule(ASTContext &C, const CodeGenOptions &CGO,
     NSConcreteGlobalBlockDecl(0), NSConcreteStackBlockDecl(0),
     NSConcreteGlobalBlock(0), NSConcreteStackBlock(0),
     BlockObjectAssignDecl(0), BlockObjectDisposeDecl(0),
-    BlockObjectAssign(0), BlockObjectDispose(0){
-
+    BlockObjectAssign(0), BlockObjectDispose(0),
+    BlockDescriptorType(0), GenericBlockLiteralType(0) {
   if (!Features.ObjC1)
     Runtime = 0;
   else if (!Features.NeXTRuntime)
@@ -88,6 +88,19 @@ CodeGenModule::CodeGenModule(ASTContext &C, const CodeGenOptions &CGO,
 
   // If debug info generation is enabled, create the CGDebugInfo object.
   DebugInfo = CodeGenOpts.DebugInfo ? new CGDebugInfo(*this) : 0;
+
+  Block.GlobalUniqueCount = 0;
+
+  // Initialize the type cache.
+  llvm::LLVMContext &LLVMContext = M.getContext();
+  Int8Ty  = llvm::Type::getInt8Ty(LLVMContext);
+  Int32Ty  = llvm::Type::getInt32Ty(LLVMContext);
+  Int64Ty  = llvm::Type::getInt64Ty(LLVMContext);
+  PointerWidthInBits = C.Target.getPointerWidth(0);
+  IntTy = llvm::IntegerType::get(LLVMContext, C.Target.getIntWidth());
+  IntPtrTy = llvm::IntegerType::get(LLVMContext, PointerWidthInBits);
+  Int8PtrTy = Int8Ty->getPointerTo(0);
+  Int8PtrPtrTy = Int8PtrTy->getPointerTo(0);
 }
 
 CodeGenModule::~CodeGenModule() {
@@ -164,20 +177,8 @@ void CodeGenModule::ErrorUnsupported(const Decl *D, const char *Type,
   getDiags().Report(Context.getFullLoc(D->getLocation()), DiagID) << Msg;
 }
 
-static llvm::GlobalValue::VisibilityTypes GetLLVMVisibility(Visibility V) {
-  switch (V) {
-  case DefaultVisibility:   return llvm::GlobalValue::DefaultVisibility;
-  case HiddenVisibility:    return llvm::GlobalValue::HiddenVisibility;
-  case ProtectedVisibility: return llvm::GlobalValue::ProtectedVisibility;
-  }
-  llvm_unreachable("unknown visibility!");
-  return llvm::GlobalValue::DefaultVisibility;
-}
-
-
 void CodeGenModule::setGlobalVisibility(llvm::GlobalValue *GV,
-                                        const NamedDecl *D,
-                                        bool IsForDefinition) const {
+                                        const NamedDecl *D) const {
   // Internal definitions always have default visibility.
   if (GV->hasLocalLinkage()) {
     GV->setVisibility(llvm::GlobalValue::DefaultVisibility);
@@ -186,8 +187,7 @@ void CodeGenModule::setGlobalVisibility(llvm::GlobalValue *GV,
 
   // Set visibility for definitions.
   NamedDecl::LinkageInfo LV = D->getLinkageAndVisibility();
-  if (LV.visibilityExplicit() ||
-      (IsForDefinition && !GV->hasAvailableExternallyLinkage()))
+  if (LV.visibilityExplicit() || !GV->hasAvailableExternallyLinkage())
     GV->setVisibility(GetLLVMVisibility(LV.visibility()));
 }
 
@@ -195,10 +195,14 @@ void CodeGenModule::setGlobalVisibility(llvm::GlobalValue *GV,
 /// associated with the given type.
 void CodeGenModule::setTypeVisibility(llvm::GlobalValue *GV,
                                       const CXXRecordDecl *RD,
-                                      bool IsForRTTI) const {
-  setGlobalVisibility(GV, RD, /*IsForDefinition=*/true);
+                                      TypeVisibilityKind TVK) const {
+  setGlobalVisibility(GV, RD);
 
   if (!CodeGenOpts.HiddenWeakVTables)
+    return;
+
+  // We never want to drop the visibility for RTTI names.
+  if (TVK == TVK_ForRTTIName)
     return;
 
   // We want to drop the visibility to hidden for weak type symbols.
@@ -244,9 +248,10 @@ void CodeGenModule::setTypeVisibility(llvm::GlobalValue *GV,
   // If there's a key function, there may be translation units
   // that don't have the key function's definition.  But ignore
   // this if we're emitting RTTI under -fno-rtti.
-  if (!IsForRTTI || Features.RTTI)
+  if (!(TVK != TVK_ForRTTI) || Features.RTTI) {
     if (Context.getKeyFunction(RD))
       return;
+  }
 
   // Otherwise, drop the visibility to hidden.
   GV->setVisibility(llvm::GlobalValue::HiddenVisibility);
@@ -269,16 +274,18 @@ llvm::StringRef CodeGenModule::getMangledName(GlobalDecl GD) {
   }
   
   llvm::SmallString<256> Buffer;
+  llvm::raw_svector_ostream Out(Buffer);
   if (const CXXConstructorDecl *D = dyn_cast<CXXConstructorDecl>(ND))
-    getCXXABI().getMangleContext().mangleCXXCtor(D, GD.getCtorType(), Buffer);
+    getCXXABI().getMangleContext().mangleCXXCtor(D, GD.getCtorType(), Out);
   else if (const CXXDestructorDecl *D = dyn_cast<CXXDestructorDecl>(ND))
-    getCXXABI().getMangleContext().mangleCXXDtor(D, GD.getDtorType(), Buffer);
+    getCXXABI().getMangleContext().mangleCXXDtor(D, GD.getDtorType(), Out);
   else if (const BlockDecl *BD = dyn_cast<BlockDecl>(ND))
-    getCXXABI().getMangleContext().mangleBlock(BD, Buffer);
+    getCXXABI().getMangleContext().mangleBlock(BD, Out);
   else
-    getCXXABI().getMangleContext().mangleName(ND, Buffer);
+    getCXXABI().getMangleContext().mangleName(ND, Out);
 
   // Allocate space for the mangled name.
+  Out.flush();
   size_t Length = Buffer.size();
   char *Name = MangledNamesAllocator.Allocate<char>(Length);
   std::copy(Buffer.begin(), Buffer.end(), Name);
@@ -292,14 +299,15 @@ void CodeGenModule::getBlockMangledName(GlobalDecl GD, MangleBuffer &Buffer,
                                         const BlockDecl *BD) {
   MangleContext &MangleCtx = getCXXABI().getMangleContext();
   const Decl *D = GD.getDecl();
+  llvm::raw_svector_ostream Out(Buffer.getBuffer());
   if (D == 0)
-    MangleCtx.mangleGlobalBlock(BD, Buffer.getBuffer());
+    MangleCtx.mangleGlobalBlock(BD, Out);
   else if (const CXXConstructorDecl *CD = dyn_cast<CXXConstructorDecl>(D))
-    MangleCtx.mangleCtorBlock(CD, GD.getCtorType(), BD, Buffer.getBuffer());
+    MangleCtx.mangleCtorBlock(CD, GD.getCtorType(), BD, Out);
   else if (const CXXDestructorDecl *DD = dyn_cast<CXXDestructorDecl>(D))
-    MangleCtx.mangleDtorBlock(DD, GD.getDtorType(), BD, Buffer.getBuffer());
+    MangleCtx.mangleDtorBlock(DD, GD.getDtorType(), BD, Out);
   else
-    MangleCtx.mangleBlock(cast<DeclContext>(D), BD, Buffer.getBuffer());
+    MangleCtx.mangleBlock(cast<DeclContext>(D), BD, Out);
 }
 
 llvm::GlobalValue *CodeGenModule::GetGlobalValue(llvm::StringRef Name) {
@@ -391,14 +399,18 @@ CodeGenModule::getFunctionLinkage(const FunctionDecl *D) {
   // merged with other definitions. c) C++ has the ODR, so we know the
   // definition is dependable.
   if (Linkage == GVA_CXXInline || Linkage == GVA_TemplateInstantiation)
-    return llvm::Function::LinkOnceODRLinkage;
+    return !Context.getLangOptions().AppleKext 
+             ? llvm::Function::LinkOnceODRLinkage 
+             : llvm::Function::InternalLinkage;
   
   // An explicit instantiation of a template has weak linkage, since
   // explicit instantiations can occur in multiple translation units
   // and must all be equivalent. However, we are not allowed to
   // throw away these explicit instantiations.
   if (Linkage == GVA_ExplicitTemplateInstantiation)
-    return llvm::Function::WeakODRLinkage;
+    return !Context.getLangOptions().AppleKext
+             ? llvm::Function::WeakODRLinkage
+             : llvm::Function::InternalLinkage;
   
   // Otherwise, we have strong external linkage.
   assert(Linkage == GVA_StrongExternal);
@@ -459,8 +471,8 @@ void CodeGenModule::SetLLVMFunctionAttributesForDefinition(const Decl *D,
 
 void CodeGenModule::SetCommonAttributes(const Decl *D,
                                         llvm::GlobalValue *GV) {
-  if (isa<NamedDecl>(D))
-    setGlobalVisibility(GV, cast<NamedDecl>(D), /*ForDef*/ true);
+  if (const NamedDecl *ND = dyn_cast<NamedDecl>(D))
+    setGlobalVisibility(GV, ND);
   else
     GV->setVisibility(llvm::GlobalValue::DefaultVisibility);
 
@@ -658,7 +670,8 @@ llvm::Constant *CodeGenModule::GetWeakRefReference(const ValueDecl *VD) {
 
   llvm::Constant *Aliasee;
   if (isa<llvm::FunctionType>(DeclTy))
-    Aliasee = GetOrCreateLLVMFunction(AA->getAliasee(), DeclTy, GlobalDecl());
+    Aliasee = GetOrCreateLLVMFunction(AA->getAliasee(), DeclTy, GlobalDecl(),
+                                      /*ForVTable=*/false);
   else
     Aliasee = GetOrCreateLLVMGlobal(AA->getAliasee(),
                                     llvm::PointerType::getUnqual(DeclTy), 0);
@@ -790,7 +803,7 @@ void CodeGenModule::EmitGlobalDefinition(GlobalDecl GD) {
 llvm::Constant *
 CodeGenModule::GetOrCreateLLVMFunction(llvm::StringRef MangledName,
                                        const llvm::Type *Ty,
-                                       GlobalDecl D) {
+                                       GlobalDecl D, bool ForVTable) {
   // Lookup the entry, lazily creating it if necessary.
   llvm::GlobalValue *Entry = GetGlobalValue(MangledName);
   if (Entry) {
@@ -848,17 +861,20 @@ CodeGenModule::GetOrCreateLLVMFunction(llvm::StringRef MangledName,
   //   - special member functions with implicit definitions
   // If we ever change our AST traversal to walk into class methods,
   // this will be unnecessary.
+  //
+  // We also don't emit a definition for a function if it's going to be an entry
+  // in a vtable, unless it's already marked as used.
   } else if (getLangOptions().CPlusPlus && D.getDecl()) {
     // Look for a declaration that's lexically in a record.
     const FunctionDecl *FD = cast<FunctionDecl>(D.getDecl());
     do {
       if (isa<CXXRecordDecl>(FD->getLexicalDeclContext())) {
-        if (FD->isImplicit()) {
+        if (FD->isImplicit() && !ForVTable) {
           assert(FD->isUsed() && "Sema didn't mark implicit function as used!");
-          DeferredDeclsToEmit.push_back(D);
+          DeferredDeclsToEmit.push_back(D.getWithDecl(FD));
           break;
         } else if (FD->isThisDeclarationADefinition()) {
-          DeferredDeclsToEmit.push_back(D);
+          DeferredDeclsToEmit.push_back(D.getWithDecl(FD));
           break;
         }
       }
@@ -880,13 +896,14 @@ CodeGenModule::GetOrCreateLLVMFunction(llvm::StringRef MangledName,
 /// non-null, then this function will use the specified type if it has to
 /// create it (this occurs when we see a definition of the function).
 llvm::Constant *CodeGenModule::GetAddrOfFunction(GlobalDecl GD,
-                                                 const llvm::Type *Ty) {
+                                                 const llvm::Type *Ty,
+                                                 bool ForVTable) {
   // If there was no specific requested type, just convert it now.
   if (!Ty)
     Ty = getTypes().ConvertType(cast<ValueDecl>(GD.getDecl())->getType());
   
   llvm::StringRef MangledName = getMangledName(GD);
-  return GetOrCreateLLVMFunction(MangledName, Ty, GD);
+  return GetOrCreateLLVMFunction(MangledName, Ty, GD, ForVTable);
 }
 
 /// CreateRuntimeFunction - Create a new runtime function with the specified
@@ -894,7 +911,7 @@ llvm::Constant *CodeGenModule::GetAddrOfFunction(GlobalDecl GD,
 llvm::Constant *
 CodeGenModule::CreateRuntimeFunction(const llvm::FunctionType *FTy,
                                      llvm::StringRef Name) {
-  return GetOrCreateLLVMFunction(Name, FTy, GlobalDecl());
+  return GetOrCreateLLVMFunction(Name, FTy, GlobalDecl(), /*ForVTable=*/false);
 }
 
 static bool DeclIsConstantGlobal(ASTContext &Context, const VarDecl *D) {
@@ -966,7 +983,7 @@ CodeGenModule::GetOrCreateLLVMGlobal(llvm::StringRef MangledName,
     // Set linkage and visibility in case we never see a definition.
     NamedDecl::LinkageInfo LV = D->getLinkageAndVisibility();
     if (LV.linkage() != ExternalLinkage) {
-      GV->setLinkage(llvm::GlobalValue::InternalLinkage);
+      // Don't set internal linkage on declarations.
     } else {
       if (D->hasAttr<DLLImportAttr>())
         GV->setLinkage(llvm::GlobalValue::DLLImportLinkage);
@@ -984,6 +1001,45 @@ CodeGenModule::GetOrCreateLLVMGlobal(llvm::StringRef MangledName,
   return GV;
 }
 
+
+llvm::GlobalVariable *
+CodeGenModule::CreateOrReplaceCXXRuntimeVariable(llvm::StringRef Name, 
+                                      const llvm::Type *Ty,
+                                      llvm::GlobalValue::LinkageTypes Linkage) {
+  llvm::GlobalVariable *GV = getModule().getNamedGlobal(Name);
+  llvm::GlobalVariable *OldGV = 0;
+
+  
+  if (GV) {
+    // Check if the variable has the right type.
+    if (GV->getType()->getElementType() == Ty)
+      return GV;
+
+    // Because C++ name mangling, the only way we can end up with an already
+    // existing global with the same name is if it has been declared extern "C".
+      assert(GV->isDeclaration() && "Declaration has wrong type!");
+    OldGV = GV;
+  }
+  
+  // Create a new variable.
+  GV = new llvm::GlobalVariable(getModule(), Ty, /*isConstant=*/true,
+                                Linkage, 0, Name);
+  
+  if (OldGV) {
+    // Replace occurrences of the old variable if needed.
+    GV->takeName(OldGV);
+    
+    if (!OldGV->use_empty()) {
+      llvm::Constant *NewPtrForOldDecl =
+      llvm::ConstantExpr::getBitCast(GV, OldGV->getType());
+      OldGV->replaceAllUsesWith(NewPtrForOldDecl);
+    }
+    
+    OldGV->eraseFromParent();
+  }
+  
+  return GV;
+}
 
 /// GetAddrOfGlobalVar - Return the llvm::Constant for the address of the
 /// given global variable.  If Ty is non-null and if the global doesn't exist,
@@ -1051,39 +1107,54 @@ CodeGenModule::getVTableLinkage(const CXXRecordDecl *RD) {
     switch (KeyFunction->getTemplateSpecializationKind()) {
       case TSK_Undeclared:
       case TSK_ExplicitSpecialization:
+        // When compiling with optimizations turned on, we emit all vtables,
+        // even if the key function is not defined in the current translation
+        // unit. If this is the case, use available_externally linkage.
+        if (!Def && CodeGenOpts.OptimizationLevel)
+          return llvm::GlobalVariable::AvailableExternallyLinkage;
+
         if (KeyFunction->isInlined())
-          return llvm::GlobalVariable::LinkOnceODRLinkage;
+          return !Context.getLangOptions().AppleKext ?
+                   llvm::GlobalVariable::LinkOnceODRLinkage :
+                   llvm::Function::InternalLinkage;
         
         return llvm::GlobalVariable::ExternalLinkage;
         
       case TSK_ImplicitInstantiation:
-        return llvm::GlobalVariable::LinkOnceODRLinkage;
+        return !Context.getLangOptions().AppleKext ?
+                 llvm::GlobalVariable::LinkOnceODRLinkage :
+                 llvm::Function::InternalLinkage;
 
       case TSK_ExplicitInstantiationDefinition:
-        return llvm::GlobalVariable::WeakODRLinkage;
+        return !Context.getLangOptions().AppleKext ?
+                 llvm::GlobalVariable::WeakODRLinkage :
+                 llvm::Function::InternalLinkage;
   
       case TSK_ExplicitInstantiationDeclaration:
         // FIXME: Use available_externally linkage. However, this currently
         // breaks LLVM's build due to undefined symbols.
         //      return llvm::GlobalVariable::AvailableExternallyLinkage;
-        return llvm::GlobalVariable::LinkOnceODRLinkage;
+        return !Context.getLangOptions().AppleKext ?
+                 llvm::GlobalVariable::LinkOnceODRLinkage :
+                 llvm::Function::InternalLinkage;
     }
   }
+  
+  if (Context.getLangOptions().AppleKext)
+    return llvm::Function::InternalLinkage;
   
   switch (RD->getTemplateSpecializationKind()) {
   case TSK_Undeclared:
   case TSK_ExplicitSpecialization:
   case TSK_ImplicitInstantiation:
-    return llvm::GlobalVariable::LinkOnceODRLinkage;
-
-  case TSK_ExplicitInstantiationDefinition:
-    return llvm::GlobalVariable::WeakODRLinkage;
-    
-  case TSK_ExplicitInstantiationDeclaration:
     // FIXME: Use available_externally linkage. However, this currently
     // breaks LLVM's build due to undefined symbols.
     //   return llvm::GlobalVariable::AvailableExternallyLinkage;
+  case TSK_ExplicitInstantiationDeclaration:
     return llvm::GlobalVariable::LinkOnceODRLinkage;
+
+  case TSK_ExplicitInstantiationDefinition:
+      return llvm::GlobalVariable::WeakODRLinkage;
   }
   
   // Silence GCC warning.
@@ -1376,7 +1447,7 @@ void CodeGenModule::EmitGlobalFunctionDefinition(GlobalDecl GD) {
   setFunctionLinkage(D, Fn);
 
   // FIXME: this is redundant with part of SetFunctionDefinitionAttributes
-  setGlobalVisibility(Fn, D, /*ForDef*/ true);
+  setGlobalVisibility(Fn, D);
 
   CodeGenFunction(*this).GenerateCode(D, Fn);
 
@@ -1408,7 +1479,8 @@ void CodeGenModule::EmitAliasDefinition(GlobalDecl GD) {
   // if a deferred decl.
   llvm::Constant *Aliasee;
   if (isa<llvm::FunctionType>(DeclTy))
-    Aliasee = GetOrCreateLLVMFunction(AA->getAliasee(), DeclTy, GlobalDecl());
+    Aliasee = GetOrCreateLLVMFunction(AA->getAliasee(), DeclTy, GlobalDecl(),
+                                      /*ForVTable=*/false);
   else
     Aliasee = GetOrCreateLLVMGlobal(AA->getAliasee(),
                                     llvm::PointerType::getUnqual(DeclTy), 0);
@@ -1474,7 +1546,7 @@ llvm::Value *CodeGenModule::getBuiltinLibFunction(const FunctionDecl *FD,
   const llvm::FunctionType *Ty =
     cast<llvm::FunctionType>(getTypes().ConvertType(FD->getType()));
 
-  return GetOrCreateLLVMFunction(Name, Ty, GlobalDecl(FD));
+  return GetOrCreateLLVMFunction(Name, Ty, GlobalDecl(FD), /*ForVTable=*/false);
 }
 
 llvm::Function *CodeGenModule::getIntrinsic(unsigned IID,const llvm::Type **Tys,
@@ -1717,15 +1789,16 @@ CodeGenModule::GetAddrOfConstantString(const StringLiteral *Literal) {
 /// GetStringForStringLiteral - Return the appropriate bytes for a
 /// string literal, properly padded to match the literal type.
 std::string CodeGenModule::GetStringForStringLiteral(const StringLiteral *E) {
+  const ASTContext &Context = getContext();
   const ConstantArrayType *CAT =
-    getContext().getAsConstantArrayType(E->getType());
+    Context.getAsConstantArrayType(E->getType());
   assert(CAT && "String isn't pointer or array!");
 
   // Resize the string to the right size.
   uint64_t RealLen = CAT->getSize().getZExtValue();
 
   if (E->isWide())
-    RealLen *= getContext().Target.getWCharWidth()/8;
+    RealLen *= Context.Target.getWCharWidth() / Context.getCharWidth();
 
   std::string Str = E->getString().str();
   Str.resize(RealLen, '\0');
@@ -2113,7 +2186,7 @@ llvm::Constant *CodeGenModule::getBlockObjectDispose() {
   const llvm::FunctionType *FTy;
   std::vector<const llvm::Type*> ArgTys;
   const llvm::Type *ResultType = llvm::Type::getVoidTy(VMContext);
-  ArgTys.push_back(PtrToInt8Ty);
+  ArgTys.push_back(Int8PtrTy);
   ArgTys.push_back(llvm::Type::getInt32Ty(VMContext));
   FTy = llvm::FunctionType::get(ResultType, ArgTys, false);
   return BlockObjectDispose =
@@ -2135,8 +2208,8 @@ llvm::Constant *CodeGenModule::getBlockObjectAssign() {
   const llvm::FunctionType *FTy;
   std::vector<const llvm::Type*> ArgTys;
   const llvm::Type *ResultType = llvm::Type::getVoidTy(VMContext);
-  ArgTys.push_back(PtrToInt8Ty);
-  ArgTys.push_back(PtrToInt8Ty);
+  ArgTys.push_back(Int8PtrTy);
+  ArgTys.push_back(Int8PtrTy);
   ArgTys.push_back(llvm::Type::getInt32Ty(VMContext));
   FTy = llvm::FunctionType::get(ResultType, ArgTys, false);
   return BlockObjectAssign =
@@ -2155,8 +2228,8 @@ llvm::Constant *CodeGenModule::getNSConcreteGlobalBlock() {
   }
 
   // Otherwise construct the variable by hand.
-  return NSConcreteGlobalBlock = CreateRuntimeVariable(
-    PtrToInt8Ty, "_NSConcreteGlobalBlock");
+  return NSConcreteGlobalBlock =
+    CreateRuntimeVariable(Int8PtrTy, "_NSConcreteGlobalBlock");
 }
 
 llvm::Constant *CodeGenModule::getNSConcreteStackBlock() {
@@ -2171,8 +2244,8 @@ llvm::Constant *CodeGenModule::getNSConcreteStackBlock() {
   }
 
   // Otherwise construct the variable by hand.
-  return NSConcreteStackBlock = CreateRuntimeVariable(
-    PtrToInt8Ty, "_NSConcreteStackBlock");
+  return NSConcreteStackBlock =
+    CreateRuntimeVariable(Int8PtrTy, "_NSConcreteStackBlock");
 }
 
 ///@}

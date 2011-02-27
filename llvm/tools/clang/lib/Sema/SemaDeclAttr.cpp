@@ -255,7 +255,7 @@ static void HandleIBAction(Decl *d, const AttributeList &Attr, Sema &S) {
       return;
     }
 
-  S.Diag(Attr.getLoc(), diag::err_attribute_ibaction) << Attr.getName();
+  S.Diag(Attr.getLoc(), diag::warn_attribute_ibaction) << Attr.getName();
 }
 
 static void HandleIBOutlet(Decl *d, const AttributeList &Attr, Sema &S) {
@@ -272,7 +272,7 @@ static void HandleIBOutlet(Decl *d, const AttributeList &Attr, Sema &S) {
     return;
   }
 
-  S.Diag(Attr.getLoc(), diag::err_attribute_iboutlet) << Attr.getName();
+  S.Diag(Attr.getLoc(), diag::warn_attribute_iboutlet) << Attr.getName();
 }
 
 static void HandleIBOutletCollection(Decl *d, const AttributeList &Attr,
@@ -287,7 +287,7 @@ static void HandleIBOutletCollection(Decl *d, const AttributeList &Attr,
   // The IBOutletCollection attributes only apply to instance variables of
   // Objective-C classes.
   if (!(isa<ObjCIvarDecl>(d) || isa<ObjCPropertyDecl>(d))) {
-    S.Diag(Attr.getLoc(), diag::err_attribute_iboutlet) << Attr.getName();
+    S.Diag(Attr.getLoc(), diag::warn_attribute_iboutlet) << Attr.getName();
     return;
   }
   if (const ValueDecl *VD = dyn_cast<ValueDecl>(d))
@@ -586,11 +586,23 @@ static void HandleOwnershipAttr(Decl *d, const AttributeList &AL, Sema &S) {
                                              start, size));
 }
 
-static bool isStaticVarOrStaticFunction(Decl *D) {
-  if (VarDecl *VD = dyn_cast<VarDecl>(D))
-    return VD->getStorageClass() == SC_Static;
-  if (FunctionDecl *FD = dyn_cast<FunctionDecl>(D))
-    return FD->getStorageClass() == SC_Static;
+/// Whether this declaration has internal linkage for the purposes of
+/// things that want to complain about things not have internal linkage.
+static bool hasEffectivelyInternalLinkage(NamedDecl *D) {
+  switch (D->getLinkage()) {
+  case NoLinkage:
+  case InternalLinkage:
+    return true;
+
+  // Template instantiations that go from external to unique-external
+  // shouldn't get diagnosed.
+  case UniqueExternalLinkage:
+    return true;
+
+  case ExternalLinkage:
+    return false;
+  }
+  llvm_unreachable("unknown linkage kind!");
   return false;
 }
 
@@ -600,6 +612,14 @@ static void HandleWeakRefAttr(Decl *d, const AttributeList &Attr, Sema &S) {
     S.Diag(Attr.getLoc(), diag::err_attribute_wrong_number_arguments) << 1;
     return;
   }
+
+  if (!isa<VarDecl>(d) && !isa<FunctionDecl>(d)) {
+    S.Diag(Attr.getLoc(), diag::err_attribute_wrong_decl_type)
+      << Attr.getName() << 2 /*variables and functions*/;
+    return;
+  }
+
+  NamedDecl *nd = cast<NamedDecl>(d);
 
   // gcc rejects
   // class c {
@@ -614,7 +634,7 @@ static void HandleWeakRefAttr(Decl *d, const AttributeList &Attr, Sema &S) {
   const DeclContext *Ctx = d->getDeclContext()->getRedeclContext();
   if (!Ctx->isFileContext()) {
     S.Diag(Attr.getLoc(), diag::err_attribute_weakref_not_global_context) <<
-        dyn_cast<NamedDecl>(d)->getNameAsString();
+        nd->getNameAsString();
     return;
   }
 
@@ -636,9 +656,8 @@ static void HandleWeakRefAttr(Decl *d, const AttributeList &Attr, Sema &S) {
   // This looks like a bug in gcc. We reject that for now. We should revisit
   // it if this behaviour is actually used.
 
-  if (!isStaticVarOrStaticFunction(d)) {
-    S.Diag(Attr.getLoc(), diag::err_attribute_weakref_not_static) <<
-      dyn_cast<NamedDecl>(d)->getNameAsString();
+  if (!hasEffectivelyInternalLinkage(nd)) {
+    S.Diag(Attr.getLoc(), diag::err_attribute_weakref_not_static);
     return;
   }
 
@@ -902,9 +921,9 @@ static void HandleUnusedAttr(Decl *d, const AttributeList &Attr, Sema &S) {
   }
 
   if (!isa<VarDecl>(d) && !isa<ObjCIvarDecl>(d) && !isFunctionOrMethod(d) &&
-      !isa<TypeDecl>(d)) {
+      !isa<TypeDecl>(d) && !isa<LabelDecl>(d)) {
     S.Diag(Attr.getLoc(), diag::warn_attribute_wrong_decl_type)
-      << Attr.getName() << 2 /*variable and function*/;
+      << Attr.getName() << 14 /*variable, function, labels*/;
     return;
   }
 
@@ -1274,28 +1293,28 @@ static void HandleWarnUnusedResult(Decl *D, const AttributeList &Attr, Sema &S) 
   D->addAttr(::new (S.Context) WarnUnusedResultAttr(Attr.getLoc(), S.Context));
 }
 
-static void HandleWeakAttr(Decl *D, const AttributeList &Attr, Sema &S) {
+static void HandleWeakAttr(Decl *d, const AttributeList &attr, Sema &S) {
   // check the attribute arguments.
-  if (Attr.getNumArgs() != 0) {
-    S.Diag(Attr.getLoc(), diag::err_attribute_wrong_number_arguments) << 0;
+  if (attr.getNumArgs() != 0) {
+    S.Diag(attr.getLoc(), diag::err_attribute_wrong_number_arguments) << 0;
     return;
   }
 
-  /* weak only applies to non-static declarations */
-  if (isStaticVarOrStaticFunction(D)) {
-    S.Diag(Attr.getLoc(), diag::err_attribute_weak_static) <<
-      dyn_cast<NamedDecl>(D)->getNameAsString();
+  if (!isa<VarDecl>(d) && !isa<FunctionDecl>(d)) {
+    S.Diag(attr.getLoc(), diag::warn_attribute_wrong_decl_type)
+      << attr.getName() << 2 /*variables and functions*/;
     return;
   }
 
-  // TODO: could also be applied to methods?
-  if (!isa<FunctionDecl>(D) && !isa<VarDecl>(D)) {
-    S.Diag(Attr.getLoc(), diag::warn_attribute_wrong_decl_type)
-      << Attr.getName() << 2 /*variable and function*/;
+  NamedDecl *nd = cast<NamedDecl>(d);
+
+  // 'weak' only applies to declarations with external linkage.
+  if (hasEffectivelyInternalLinkage(nd)) {
+    S.Diag(attr.getLoc(), diag::err_attribute_weak_static);
     return;
   }
 
-  D->addAttr(::new (S.Context) WeakAttr(Attr.getLoc(), S.Context));
+  nd->addAttr(::new (S.Context) WeakAttr(attr.getLoc(), S.Context));
 }
 
 static void HandleWeakImportAttr(Decl *D, const AttributeList &Attr, Sema &S) {
@@ -1584,7 +1603,8 @@ static FormatAttrKind getFormatAttrKind(llvm::StringRef Format) {
   if (Format == "scanf" || Format == "printf" || Format == "printf0" ||
       Format == "strfmon" || Format == "cmn_err" || Format == "strftime" ||
       Format == "NSString" || Format == "CFString" || Format == "vcmn_err" ||
-      Format == "zcmn_err")
+      Format == "zcmn_err" ||
+      Format == "kprintf")  // OpenBSD.
     return SupportedFormat;
 
   if (Format == "gcc_diag" || Format == "gcc_cdiag" ||
@@ -2314,6 +2334,11 @@ static void HandleCallConvAttr(Decl *d, const AttributeList &attr, Sema &S) {
   }
 }
 
+static void HandleOpenCLKernelAttr(Decl *d, const AttributeList &Attr, Sema &S){
+  assert(Attr.isInvalid() == false);
+  d->addAttr(::new (S.Context) OpenCLKernelAttr(Attr.getLoc(), S.Context));
+}
+
 bool Sema::CheckCallingConvAttr(const AttributeList &attr, CallingConv &CC) {
   if (attr.isInvalid())
     return true;
@@ -2755,6 +2780,9 @@ static void ProcessInheritableDeclAttr(Scope *scope, Decl *D,
   case AttributeList::AT_pascal:
     HandleCallConvAttr(D, Attr, S);
     break;
+  case AttributeList::AT_opencl_kernel_function:
+    HandleOpenCLKernelAttr(D, Attr, S);
+    break;
   case AttributeList::AT_uuid:
     HandleUuidAttr(D, Attr, S);
     break;
@@ -2896,59 +2924,77 @@ void Sema::ProcessDeclAttributes(Scope *S, Decl *D, const Declarator &PD,
     ProcessDeclAttributeList(S, D, Attrs, NonInheritable, Inheritable);
 }
 
-/// PushParsingDeclaration - Enter a new "scope" of deprecation
-/// warnings.
-///
-/// The state token we use is the start index of this scope
-/// on the warning stack.
-Sema::ParsingDeclStackState Sema::PushParsingDeclaration() {
-  ParsingDeclDepth++;
-  return (ParsingDeclStackState) DelayedDiagnostics.size();
+// This duplicates a vector push_back but hides the need to know the
+// size of the type.
+void Sema::DelayedDiagnostics::add(const DelayedDiagnostic &diag) {
+  assert(StackSize <= StackCapacity);
+
+  // Grow the stack if necessary.
+  if (StackSize == StackCapacity) {
+    unsigned newCapacity = 2 * StackCapacity + 2;
+    char *newBuffer = new char[newCapacity * sizeof(DelayedDiagnostic)];
+    const char *oldBuffer = (const char*) Stack;
+
+    if (StackCapacity)
+      memcpy(newBuffer, oldBuffer, StackCapacity * sizeof(DelayedDiagnostic));
+    
+    delete[] oldBuffer;
+    Stack = reinterpret_cast<sema::DelayedDiagnostic*>(newBuffer);
+    StackCapacity = newCapacity;
+  }
+
+  assert(StackSize < StackCapacity);
+  new (&Stack[StackSize++]) DelayedDiagnostic(diag);
 }
 
-void Sema::PopParsingDeclaration(ParsingDeclStackState S, Decl *D) {
-  assert(ParsingDeclDepth > 0 && "empty ParsingDeclaration stack");
-  ParsingDeclDepth--;
+void Sema::DelayedDiagnostics::popParsingDecl(Sema &S, ParsingDeclState state,
+                                              Decl *decl) {
+  DelayedDiagnostics &DD = S.DelayedDiagnostics;
 
-  if (DelayedDiagnostics.empty())
+  // Check the invariants.
+  assert(DD.StackSize >= state.SavedStackSize);
+  assert(state.SavedStackSize >= DD.ActiveStackBase);
+  assert(DD.ParsingDepth > 0);
+
+  // Drop the parsing depth.
+  DD.ParsingDepth--;
+
+  // If there are no active diagnostics, we're done.
+  if (DD.StackSize == DD.ActiveStackBase)
     return;
-
-  unsigned SavedIndex = (unsigned) S;
-  assert(SavedIndex <= DelayedDiagnostics.size() &&
-         "saved index is out of bounds");
-
-  unsigned E = DelayedDiagnostics.size();
 
   // We only want to actually emit delayed diagnostics when we
   // successfully parsed a decl.
-  if (D) {
-    // We really do want to start with 0 here.  We get one push for a
+  if (decl) {
+    // We emit all the active diagnostics, not just those starting
+    // from the saved state.  The idea is this:  we get one push for a
     // decl spec and another for each declarator;  in a decl group like:
     //   deprecated_typedef foo, *bar, baz();
     // only the declarator pops will be passed decls.  This is correct;
     // we really do need to consider delayed diagnostics from the decl spec
     // for each of the different declarations.
-    for (unsigned I = 0; I != E; ++I) {
-      if (DelayedDiagnostics[I].Triggered)
+    for (unsigned i = DD.ActiveStackBase, e = DD.StackSize; i != e; ++i) {
+      DelayedDiagnostic &diag = DD.Stack[i];
+      if (diag.Triggered)
         continue;
 
-      switch (DelayedDiagnostics[I].Kind) {
+      switch (diag.Kind) {
       case DelayedDiagnostic::Deprecation:
-        HandleDelayedDeprecationCheck(DelayedDiagnostics[I], D);
+        S.HandleDelayedDeprecationCheck(diag, decl);
         break;
 
       case DelayedDiagnostic::Access:
-        HandleDelayedAccessCheck(DelayedDiagnostics[I], D);
+        S.HandleDelayedAccessCheck(diag, decl);
         break;
       }
     }
   }
 
   // Destroy all the delayed diagnostics we're about to pop off.
-  for (unsigned I = SavedIndex; I != E; ++I)
-    DelayedDiagnostics[I].destroy();
+  for (unsigned i = state.SavedStackSize, e = DD.StackSize; i != e; ++i)
+    DD.Stack[i].destroy();
 
-  DelayedDiagnostics.set_size(SavedIndex);
+  DD.StackSize = state.SavedStackSize;
 }
 
 static bool isDeclDeprecated(Decl *D) {
@@ -2978,9 +3024,8 @@ void Sema::EmitDeprecationWarning(NamedDecl *D, llvm::StringRef Message,
                                   SourceLocation Loc,
                                   bool UnknownObjCClass) {
   // Delay if we're currently parsing a declaration.
-  if (ParsingDeclDepth) {
-    DelayedDiagnostics.push_back(DelayedDiagnostic::makeDeprecation(Loc, D, 
-                                                                    Message));
+  if (DelayedDiagnostics.shouldDelayDiagnostics()) {
+    DelayedDiagnostics.add(DelayedDiagnostic::makeDeprecation(Loc, D, Message));
     return;
   }
 

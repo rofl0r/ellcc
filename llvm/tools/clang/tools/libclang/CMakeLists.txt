@@ -1,7 +1,5 @@
 set(SHARED_LIBRARY TRUE)
 
-set(LLVM_NO_RTTI 1)
-
 set(LLVM_USED_LIBS
   clangFrontend
   clangDriver
@@ -13,9 +11,8 @@ set(LLVM_USED_LIBS
   clangBasic)
 
 set( LLVM_LINK_COMPONENTS
-  bitreader
+  support
   mc
-  core
   )
 
 add_clang_library(libclang
@@ -60,5 +57,6 @@ endif(MSVC)
 
 set_target_properties(libclang
   PROPERTIES
+  PREFIX ""  # Otherwise we get liblibclang.so
   LINKER_LANGUAGE CXX
   DEFINE_SYMBOL _CINDEX_LIB_)

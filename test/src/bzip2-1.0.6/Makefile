@@ -62,7 +62,7 @@ libbz2.a: $(OBJS)
 	fi
 
 check: test
-test: bzip2
+test: bzip2$(EXT)
 	@cat words1
 	$(RUN) ./bzip2$(EXT) -1  < sample1.ref > sample1.rb2
 	$(RUN) ./bzip2$(EXT) -2  < sample2.ref > sample2.rb2

@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -analyze -analyzer-experimental-internal-checks -analyzer-check-dead-stores -verify %s
+// RUN: %clang_cc1 -analyze -analyzer-experimental-internal-checks -analyzer-checker=core.DeadStores -verify %s
 
 typedef signed char BOOL;
 typedef unsigned int NSUInteger;
@@ -59,3 +59,20 @@ void foo_rdar8527823();
  }
 }
 @end
+
+// Don't flag dead stores to assignments to self within a nested assignment.
+@interface Rdar7947686
+- (id) init;
+@end
+
+@interface Rdar7947686_B : Rdar7947686
+- (id) init;
+@end
+
+@implementation Rdar7947686_B
+- (id) init {
+  id x = (self = [super init]); // no-warning
+  return x;
+}
+@end
+

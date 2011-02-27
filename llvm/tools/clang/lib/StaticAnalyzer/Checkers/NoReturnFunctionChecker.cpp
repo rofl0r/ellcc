@@ -12,8 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "ExprEngineInternalChecks.h"
-#include "clang/StaticAnalyzer/PathSensitive/CheckerVisitor.h"
+#include "InternalChecks.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/CheckerVisitor.h"
 #include "llvm/ADT/StringSwitch.h"
 
 using namespace clang;

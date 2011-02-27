@@ -30,6 +30,7 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/ELF.h"
 #include "llvm/Target/TargetAsmBackend.h"
+#include "llvm/ADT/StringSwitch.h"
 
 #include "../Target/X86/X86FixupKinds.h"
 #include "../Target/ARM/ARMFixupKinds.h"
@@ -189,6 +190,14 @@ namespace {
                                   const MCValue &Target,
                                   const MCFragment &F) const;
 
+    // For arch-specific emission of explicit reloc symbol
+    virtual const MCSymbol *ExplicitRelSym(const MCAssembler &Asm,
+                                           const MCValue &Target,
+                                           const MCFragment &F,
+                                           bool IsBSS) const {
+      return NULL;
+    }
+
     bool is64Bit() const { return TargetObjectWriter->is64Bit(); }
     bool hasRelocationAddend() const {
       return TargetObjectWriter->hasRelocationAddend();
@@ -276,6 +285,9 @@ namespace {
 
     virtual void WriteHeader(uint64_t SectionDataSize, unsigned NumberOfSections);
 
+    /// Default e_flags = 0
+    virtual void WriteEFlags() { Write32(0); }
+
     virtual void WriteSymbolEntry(MCDataFragment *SymtabF, MCDataFragment *ShndxF,
                           uint64_t name, uint8_t info,
                           uint64_t value, uint64_t size,
@@ -347,13 +359,6 @@ namespace {
                                           MCDataFragment *F,
                                           const MCSectionData *SD);
 
-    virtual bool
-    IsSymbolRefDifferenceFullyResolvedImpl(const MCAssembler &Asm,
-                                           const MCSymbolData &DataA,
-                                           const MCFragment &FB,
-                                           bool InSet,
-                                           bool IsPCRel) const;
-
     virtual void WriteObject(MCAssembler &Asm, const MCAsmLayout &Layout);
     virtual void WriteSection(MCAssembler &Asm,
                       const SectionIndexMapTy &SectionIndexMap,
@@ -387,12 +392,22 @@ namespace {
 
   class ARMELFObjectWriter : public ELFObjectWriter {
   public:
+    // FIXME: MCAssembler can't yet return the Subtarget,
+    enum { DefaultEABIVersion = 0x05000000U };
+
     ARMELFObjectWriter(MCELFObjectTargetWriter *MOTW,
                        raw_ostream &_OS,
                        bool IsLittleEndian);
 
     virtual ~ARMELFObjectWriter();
+
+    virtual void WriteEFlags();
   protected:
+    virtual const MCSymbol *ExplicitRelSym(const MCAssembler &Asm,
+                                           const MCValue &Target,
+                                           const MCFragment &F,
+                                           bool IsBSS) const;
+
     virtual unsigned GetRelocType(const MCValue &Target, const MCFixup &Fixup,
                                   bool IsPCRel, bool IsRelocWithSymbol,
                                   int64_t Addend);
@@ -459,8 +474,8 @@ void ELFObjectWriter::WriteHeader(uint64_t SectionDataSize,
   WriteWord(SectionDataSize + (is64Bit() ? sizeof(ELF::Elf64_Ehdr) :
             sizeof(ELF::Elf32_Ehdr)));  // e_shoff = sec hdr table off in bytes
 
-  // FIXME: Make this configurable.
-  Write32(0);   // e_flags = whatever the target wants
+  // e_flags = whatever the target wants
+  WriteEFlags();
 
   // e_ehsize = ELF header size
   Write16(is64Bit() ? sizeof(ELF::Elf64_Ehdr) : sizeof(ELF::Elf32_Ehdr));
@@ -696,7 +711,7 @@ const MCSymbol *ELFObjectWriter::SymbolToReloc(const MCAssembler &Asm,
   const SectionKind secKind = Section.getKind();
 
   if (secKind.isBSS())
-    return NULL;
+    return ExplicitRelSym(Asm, Target, F, true);
 
   if (secKind.isThreadLocal()) {
     if (Renamed)
@@ -725,7 +740,7 @@ const MCSymbol *ELFObjectWriter::SymbolToReloc(const MCAssembler &Asm,
     return &Symbol;
   }
 
-  return NULL;
+  return ExplicitRelSym(Asm, Target, F, false);
 }
 
 
@@ -1159,24 +1174,6 @@ void ELFObjectWriter::CreateMetadataSections(MCAssembler &Asm,
   }
 }
 
-bool
-ELFObjectWriter::IsSymbolRefDifferenceFullyResolvedImpl(const MCAssembler &Asm,
-                                                      const MCSymbolData &DataA,
-                                                      const MCFragment &FB,
-                                                      bool InSet,
-                                                      bool IsPCRel) const {
-  // FIXME: This is in here just to match gnu as output. If the two ends
-  // are in the same section, there is nothing that the linker can do to
-  // break it.
-  if (DataA.isExternal())
-    return false;
-
-  const MCSection &SecA = DataA.getSymbol().AliasedSymbol().getSection();
-  const MCSection &SecB = FB.getParent()->getSection();
-  // On ELF A - B is absolute if A and B are in the same section.
-  return &SecA == &SecB;
-}
-
 void ELFObjectWriter::CreateIndexedSections(MCAssembler &Asm,
                                             MCAsmLayout &Layout,
                                             GroupMapTy &GroupMap,
@@ -1477,6 +1474,39 @@ ARMELFObjectWriter::ARMELFObjectWriter(MCELFObjectTargetWriter *MOTW,
 ARMELFObjectWriter::~ARMELFObjectWriter()
 {}
 
+// FIXME: get the real EABI Version from the Triple.
+void ARMELFObjectWriter::WriteEFlags() {
+  Write32(ELF::EF_ARM_EABIMASK & DefaultEABIVersion);
+}
+
+// In ARM, _MergedGlobals and other most symbols get emitted directly.
+// I.e. not as an offset to a section symbol.
+// This code is a first-cut approximation of what ARM/gcc does.
+
+const MCSymbol *ARMELFObjectWriter::ExplicitRelSym(const MCAssembler &Asm,
+                                                   const MCValue &Target,
+                                                   const MCFragment &F,
+                                                   bool IsBSS) const {
+  const MCSymbol &Symbol = Target.getSymA()->getSymbol();
+  bool EmitThisSym = false;
+
+  if (IsBSS) {
+    EmitThisSym = StringSwitch<bool>(Symbol.getName())
+      .Case("_MergedGlobals", true)
+      .Default(false);
+  } else {
+    EmitThisSym = StringSwitch<bool>(Symbol.getName())
+      .Case("_MergedGlobals", true)
+      .StartsWith(".L.str", true)
+      .Default(false);
+  }
+  if (EmitThisSym)
+    return &Symbol;
+  if (! Symbol.isTemporary())
+    return &Symbol;
+  return NULL;
+}
+
 unsigned ARMELFObjectWriter::GetRelocType(const MCValue &Target,
                                           const MCFixup &Fixup,
                                           bool IsPCRel,
@@ -1503,7 +1533,7 @@ unsigned ARMELFObjectWriter::GetRelocType(const MCValue &Target,
         break;
       }
       break;
-    case ARM::fixup_arm_branch:
+    case ARM::fixup_arm_uncondbranch:
       switch (Modifier) {
       case MCSymbolRefExpr::VK_ARM_PLT:
         Type = ELF::R_ARM_PLT32;
@@ -1512,6 +1542,9 @@ unsigned ARMELFObjectWriter::GetRelocType(const MCValue &Target,
         Type = ELF::R_ARM_CALL;
         break;
       }
+      break;
+    case ARM::fixup_arm_condbranch:
+      Type = ELF::R_ARM_JUMP24;
       break;
     case ARM::fixup_arm_movt_hi16:
     case ARM::fixup_arm_movt_hi16_pcrel:
@@ -1565,10 +1598,11 @@ unsigned ARMELFObjectWriter::GetRelocType(const MCValue &Target,
     case ARM::fixup_arm_thumb_br:
       assert(0 && "Unimplemented");
       break;
-    case ARM::fixup_arm_branch:
-      // FIXME: Differentiate between R_ARM_CALL and
-      // R_ARM_JUMP24 (latter used for conditional jumps)
+    case ARM::fixup_arm_uncondbranch:
       Type = ELF::R_ARM_CALL;
+      break;
+    case ARM::fixup_arm_condbranch:
+      Type = ELF::R_ARM_JUMP24;
       break;
     case ARM::fixup_arm_movt_hi16:
       Type = ELF::R_ARM_MOVT_ABS;
@@ -1587,7 +1621,7 @@ unsigned ARMELFObjectWriter::GetRelocType(const MCValue &Target,
 
   if (RelocNeedsGOT(Modifier))
     NeedsGOT = true;
-  
+
   return Type;
 }
 

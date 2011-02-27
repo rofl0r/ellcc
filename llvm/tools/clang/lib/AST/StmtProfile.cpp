@@ -68,8 +68,7 @@ namespace {
 
 void StmtProfiler::VisitStmt(Stmt *S) {
   ID.AddInteger(S->getStmtClass());
-  for (Stmt::child_iterator C = S->child_begin(), CEnd = S->child_end();
-       C != CEnd; ++C)
+  for (Stmt::child_range C = S->children(); C; ++C)
     Visit(*C);
 }
 
@@ -102,7 +101,7 @@ void StmtProfiler::VisitDefaultStmt(DefaultStmt *S) {
 
 void StmtProfiler::VisitLabelStmt(LabelStmt *S) {
   VisitStmt(S);
-  VisitName(S->getID());
+  VisitDecl(S->getDecl());
 }
 
 void StmtProfiler::VisitIfStmt(IfStmt *S) {
@@ -130,7 +129,7 @@ void StmtProfiler::VisitForStmt(ForStmt *S) {
 
 void StmtProfiler::VisitGotoStmt(GotoStmt *S) {
   VisitStmt(S);
-  VisitName(S->getLabel()->getID());
+  VisitDecl(S->getLabel());
 }
 
 void StmtProfiler::VisitIndirectGotoStmt(IndirectGotoStmt *S) {
@@ -350,9 +349,13 @@ void StmtProfiler::VisitConditionalOperator(ConditionalOperator *S) {
   VisitExpr(S);
 }
 
+void StmtProfiler::VisitBinaryConditionalOperator(BinaryConditionalOperator *S){
+  VisitExpr(S);
+}
+
 void StmtProfiler::VisitAddrLabelExpr(AddrLabelExpr *S) {
   VisitExpr(S);
-  VisitName(S->getLabel()->getID());
+  VisitDecl(S->getLabel());
 }
 
 void StmtProfiler::VisitStmtExpr(StmtExpr *S) {
@@ -425,8 +428,6 @@ void StmtProfiler::VisitBlockDeclRefExpr(BlockDeclRefExpr *S) {
   VisitDecl(S->getDecl());
   ID.AddBoolean(S->isByRef());
   ID.AddBoolean(S->isConstQualAdded());
-  if (S->getCopyConstructorExpr())
-    Visit(S->getCopyConstructorExpr());
 }
 
 static Stmt::StmtClass DecodeOperatorCall(CXXOperatorCallExpr *S,
@@ -643,6 +644,10 @@ void StmtProfiler::VisitCXXOperatorCallExpr(CXXOperatorCallExpr *S) {
 }
 
 void StmtProfiler::VisitCXXMemberCallExpr(CXXMemberCallExpr *S) {
+  VisitCallExpr(S);
+}
+
+void StmtProfiler::VisitCUDAKernelCallExpr(CUDAKernelCallExpr *S) {
   VisitCallExpr(S);
 }
 

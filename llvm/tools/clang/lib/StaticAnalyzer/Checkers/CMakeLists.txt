@@ -1,10 +1,15 @@
-set(LLVM_NO_RTTI 1)
+set(LLVM_TARGET_DEFINITIONS Checkers.td)
+tablegen(Checkers.inc
+         -gen-clang-sa-checkers
+         -I ${CMAKE_CURRENT_SOURCE_DIR}/../../../include)
+add_custom_target(ClangSACheckers
+  DEPENDS Checkers.inc)
 
 set(LLVM_USED_LIBS clangBasic clangAST)
 
 add_clang_library(clangStaticAnalyzerCheckers
   AdjustedReturnValueChecker.cpp
-  AnalysisConsumer.cpp
+  AnalyzerStatsChecker.cpp
   ArrayBoundChecker.cpp
   ArrayBoundCheckerV2.cpp
   AttrNonNullChecker.cpp
@@ -19,13 +24,14 @@ add_clang_library(clangStaticAnalyzerCheckers
   CheckSecuritySyntaxOnly.cpp
   CheckSizeofPointer.cpp
   ChrootChecker.cpp
+  ClangSACheckerProvider.cpp
   DeadStoresChecker.cpp
+  DebugCheckers.cpp
   DereferenceChecker.cpp
   DivZeroChecker.cpp
   ExprEngine.cpp
-  ExprEngineExperimentalChecks.cpp
+  ExperimentalChecks.cpp
   FixedAddressChecker.cpp
-  FrontendActions.cpp
   IdempotentOperationChecker.cpp
   LLVMConventionsChecker.cpp
   MacOSXAPIChecker.cpp
@@ -55,4 +61,4 @@ add_clang_library(clangStaticAnalyzerCheckers
   )
 
 add_dependencies(clangStaticAnalyzerCore ClangAttrClasses ClangAttrList ClangDeclNodes
-                 ClangStmtNodes)
+                 ClangStmtNodes ClangSACheckers)

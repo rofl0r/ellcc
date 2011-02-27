@@ -1,15 +1,16 @@
-//===------- TreeTransform.h - Semantic Tree Transformation -----*- C++ -*-===/
+//===------- TreeTransform.h - Semantic Tree Transformation -----*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
-//===----------------------------------------------------------------------===/
+//===----------------------------------------------------------------------===//
 //
 //  This file implements a semantic tree transformation that takes a given
 //  AST and rebuilds it, possibly transforming some nodes in the process.
 //
-//===----------------------------------------------------------------------===/
+//===----------------------------------------------------------------------===//
+
 #ifndef LLVM_CLANG_SEMA_TREETRANSFORM_H
 #define LLVM_CLANG_SEMA_TREETRANSFORM_H
 
@@ -975,12 +976,9 @@ public:
   ///
   /// By default, performs semantic analysis to build the new statement.
   /// Subclasses may override this routine to provide different behavior.
-  StmtResult RebuildLabelStmt(SourceLocation IdentLoc,
-                                    IdentifierInfo *Id,
-                                    SourceLocation ColonLoc,
-                                    Stmt *SubStmt, bool HasUnusedAttr) {
-    return SemaRef.ActOnLabelStmt(IdentLoc, Id, ColonLoc, SubStmt,
-                                  HasUnusedAttr);
+  StmtResult RebuildLabelStmt(SourceLocation IdentLoc, LabelDecl *L,
+                              SourceLocation ColonLoc, Stmt *SubStmt) {
+    return SemaRef.ActOnLabelStmt(IdentLoc, L, ColonLoc, SubStmt);
   }
 
   /// \brief Build a new "if" statement.
@@ -988,8 +986,8 @@ public:
   /// By default, performs semantic analysis to build the new statement.
   /// Subclasses may override this routine to provide different behavior.
   StmtResult RebuildIfStmt(SourceLocation IfLoc, Sema::FullExprArg Cond,
-                                 VarDecl *CondVar, Stmt *Then, 
-                                 SourceLocation ElseLoc, Stmt *Else) {
+                           VarDecl *CondVar, Stmt *Then, 
+                           SourceLocation ElseLoc, Stmt *Else) {
     return getSema().ActOnIfStmt(IfLoc, Cond, CondVar, Then, ElseLoc, Else);
   }
 
@@ -998,7 +996,7 @@ public:
   /// By default, performs semantic analysis to build the new statement.
   /// Subclasses may override this routine to provide different behavior.
   StmtResult RebuildSwitchStmtStart(SourceLocation SwitchLoc,
-                                          Expr *Cond, VarDecl *CondVar) {
+                                    Expr *Cond, VarDecl *CondVar) {
     return getSema().ActOnStartOfSwitchStmt(SwitchLoc, Cond, 
                                             CondVar);
   }
@@ -1008,7 +1006,7 @@ public:
   /// By default, performs semantic analysis to build the new statement.
   /// Subclasses may override this routine to provide different behavior.
   StmtResult RebuildSwitchStmtBody(SourceLocation SwitchLoc,
-                                         Stmt *Switch, Stmt *Body) {
+                                   Stmt *Switch, Stmt *Body) {
     return getSema().ActOnFinishSwitchStmt(SwitchLoc, Switch, Body);
   }
 
@@ -1016,10 +1014,8 @@ public:
   ///
   /// By default, performs semantic analysis to build the new statement.
   /// Subclasses may override this routine to provide different behavior.
-  StmtResult RebuildWhileStmt(SourceLocation WhileLoc,
-                                    Sema::FullExprArg Cond,
-                                    VarDecl *CondVar,
-                                    Stmt *Body) {
+  StmtResult RebuildWhileStmt(SourceLocation WhileLoc, Sema::FullExprArg Cond,
+                              VarDecl *CondVar, Stmt *Body) {
     return getSema().ActOnWhileStmt(WhileLoc, Cond, CondVar, Body);
   }
 
@@ -1028,10 +1024,8 @@ public:
   /// By default, performs semantic analysis to build the new statement.
   /// Subclasses may override this routine to provide different behavior.
   StmtResult RebuildDoStmt(SourceLocation DoLoc, Stmt *Body,
-                                 SourceLocation WhileLoc,
-                                 SourceLocation LParenLoc,
-                                 Expr *Cond,
-                                 SourceLocation RParenLoc) {
+                           SourceLocation WhileLoc, SourceLocation LParenLoc,
+                           Expr *Cond, SourceLocation RParenLoc) {
     return getSema().ActOnDoStmt(DoLoc, Body, WhileLoc, LParenLoc,
                                  Cond, RParenLoc);
   }
@@ -1040,24 +1034,21 @@ public:
   ///
   /// By default, performs semantic analysis to build the new statement.
   /// Subclasses may override this routine to provide different behavior.
-  StmtResult RebuildForStmt(SourceLocation ForLoc,
-                                  SourceLocation LParenLoc,
-                                  Stmt *Init, Sema::FullExprArg Cond, 
-                                  VarDecl *CondVar, Sema::FullExprArg Inc,
-                                  SourceLocation RParenLoc, Stmt *Body) {
+  StmtResult RebuildForStmt(SourceLocation ForLoc, SourceLocation LParenLoc,
+                            Stmt *Init, Sema::FullExprArg Cond, 
+                            VarDecl *CondVar, Sema::FullExprArg Inc,
+                            SourceLocation RParenLoc, Stmt *Body) {
     return getSema().ActOnForStmt(ForLoc, LParenLoc, Init, Cond, 
-                                  CondVar,
-                                  Inc, RParenLoc, Body);
+                                  CondVar, Inc, RParenLoc, Body);
   }
 
   /// \brief Build a new goto statement.
   ///
   /// By default, performs semantic analysis to build the new statement.
   /// Subclasses may override this routine to provide different behavior.
-  StmtResult RebuildGotoStmt(SourceLocation GotoLoc,
-                                   SourceLocation LabelLoc,
-                                   LabelStmt *Label) {
-    return getSema().ActOnGotoStmt(GotoLoc, LabelLoc, Label->getID());
+  StmtResult RebuildGotoStmt(SourceLocation GotoLoc, SourceLocation LabelLoc,
+                             LabelDecl *Label) {
+    return getSema().ActOnGotoStmt(GotoLoc, LabelLoc, Label);
   }
 
   /// \brief Build a new indirect goto statement.
@@ -1065,8 +1056,8 @@ public:
   /// By default, performs semantic analysis to build the new statement.
   /// Subclasses may override this routine to provide different behavior.
   StmtResult RebuildIndirectGotoStmt(SourceLocation GotoLoc,
-                                           SourceLocation StarLoc,
-                                           Expr *Target) {
+                                     SourceLocation StarLoc,
+                                     Expr *Target) {
     return getSema().ActOnIndirectGotoStmt(GotoLoc, StarLoc, Target);
   }
 
@@ -1074,9 +1065,7 @@ public:
   ///
   /// By default, performs semantic analysis to build the new statement.
   /// Subclasses may override this routine to provide different behavior.
-  StmtResult RebuildReturnStmt(SourceLocation ReturnLoc,
-                                     Expr *Result) {
-
+  StmtResult RebuildReturnStmt(SourceLocation ReturnLoc, Expr *Result) {
     return getSema().ActOnReturnStmt(ReturnLoc, Result);
   }
 
@@ -1348,9 +1337,10 @@ public:
   /// Subclasses may override this routine to provide different behavior.
   ExprResult RebuildCallExpr(Expr *Callee, SourceLocation LParenLoc,
                                    MultiExprArg Args,
-                                   SourceLocation RParenLoc) {
+                                   SourceLocation RParenLoc,
+                                   Expr *ExecConfig = 0) {
     return getSema().ActOnCallExpr(/*Scope=*/0, Callee, LParenLoc,
-                                   move(Args), RParenLoc);
+                                   move(Args), RParenLoc, ExecConfig);
   }
 
   /// \brief Build a new member access expression.
@@ -1422,10 +1412,10 @@ public:
   /// By default, performs semantic analysis to build the new expression.
   /// Subclasses may override this routine to provide different behavior.
   ExprResult RebuildConditionalOperator(Expr *Cond,
-                                              SourceLocation QuestionLoc,
-                                              Expr *LHS,
-                                              SourceLocation ColonLoc,
-                                              Expr *RHS) {
+                                        SourceLocation QuestionLoc,
+                                        Expr *LHS,
+                                        SourceLocation ColonLoc,
+                                        Expr *RHS) {
     return getSema().ActOnConditionalOp(QuestionLoc, ColonLoc, Cond,
                                         LHS, RHS);
   }
@@ -1549,9 +1539,8 @@ public:
   /// rather than attempting to map the label statement itself.
   /// Subclasses may override this routine to provide different behavior.
   ExprResult RebuildAddrLabelExpr(SourceLocation AmpAmpLoc,
-                                        SourceLocation LabelLoc,
-                                        LabelStmt *Label) {
-    return getSema().ActOnAddrLabel(AmpAmpLoc, LabelLoc, Label->getID());
+                                  SourceLocation LabelLoc, LabelDecl *Label) {
+    return getSema().ActOnAddrLabel(AmpAmpLoc, LabelLoc, Label);
   }
 
   /// \brief Build a new GNU statement expression.
@@ -2280,6 +2269,7 @@ StmtResult TreeTransform<Derived>::TransformStmt(Stmt *S) {
   // Transform individual statement nodes
 #define STMT(Node, Parent)                                              \
   case Stmt::Node##Class: return getDerived().Transform##Node(cast<Node>(S));
+#define ABSTRACT_STMT(Node)
 #define EXPR(Node, Parent)
 #include "clang/AST/StmtNodes.inc"
 
@@ -4518,10 +4508,16 @@ TreeTransform<Derived>::TransformLabelStmt(LabelStmt *S) {
   if (SubStmt.isInvalid())
     return StmtError();
 
+  Decl *LD = getDerived().TransformDecl(S->getDecl()->getLocation(),
+                                        S->getDecl());
+  if (!LD)
+    return StmtError();
+  
+  
   // FIXME: Pass the real colon location in.
-  SourceLocation ColonLoc = SemaRef.PP.getLocForEndOfToken(S->getIdentLoc());
-  return getDerived().RebuildLabelStmt(S->getIdentLoc(), S->getID(), ColonLoc,
-                                       SubStmt.get(), S->HasUnusedAttribute());
+  return getDerived().RebuildLabelStmt(S->getIdentLoc(),
+                                       cast<LabelDecl>(LD), SourceLocation(),
+                                       SubStmt.get());
 }
 
 template<typename Derived>
@@ -4760,9 +4756,14 @@ TreeTransform<Derived>::TransformForStmt(ForStmt *S) {
 template<typename Derived>
 StmtResult
 TreeTransform<Derived>::TransformGotoStmt(GotoStmt *S) {
+  Decl *LD = getDerived().TransformDecl(S->getLabel()->getLocation(),
+                                        S->getLabel());
+  if (!LD)
+    return StmtError();
+  
   // Goto statements must always be rebuilt, to resolve the label.
   return getDerived().RebuildGotoStmt(S->getGotoLoc(), S->getLabelLoc(),
-                                      S->getLabel());
+                                      cast<LabelDecl>(LD));
 }
 
 template<typename Derived>
@@ -4827,13 +4828,6 @@ TreeTransform<Derived>::TransformDeclStmt(DeclStmt *S) {
 
   return getDerived().RebuildDeclStmt(Decls.data(), Decls.size(),
                                       S->getStartLoc(), S->getEndLoc());
-}
-
-template<typename Derived>
-StmtResult
-TreeTransform<Derived>::TransformSwitchCase(SwitchCase *S) {
-  assert(false && "SwitchCase is abstract and cannot be transformed");
-  return SemaRef.Owned(S);
 }
 
 template<typename Derived>
@@ -5535,6 +5529,32 @@ TreeTransform<Derived>::TransformCompoundAssignOperator(
 }
 
 template<typename Derived>
+ExprResult TreeTransform<Derived>::
+TransformBinaryConditionalOperator(BinaryConditionalOperator *e) {
+  // Just rebuild the common and RHS expressions and see whether we
+  // get any changes.
+
+  ExprResult commonExpr = getDerived().TransformExpr(e->getCommon());
+  if (commonExpr.isInvalid())
+    return ExprError();
+
+  ExprResult rhs = getDerived().TransformExpr(e->getFalseExpr());
+  if (rhs.isInvalid())
+    return ExprError();
+
+  if (!getDerived().AlwaysRebuild() &&
+      commonExpr.get() == e->getCommon() &&
+      rhs.get() == e->getFalseExpr())
+    return SemaRef.Owned(e);
+
+  return getDerived().RebuildConditionalOperator(commonExpr.take(),
+                                                 e->getQuestionLoc(),
+                                                 0,
+                                                 e->getColonLoc(),
+                                                 rhs.get());
+}
+
+template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformConditionalOperator(ConditionalOperator *E) {
   ExprResult Cond = getDerived().TransformExpr(E->getCond());
@@ -5784,8 +5804,13 @@ TreeTransform<Derived>::TransformParenListExpr(ParenListExpr *E) {
 template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformAddrLabelExpr(AddrLabelExpr *E) {
+  Decl *LD = getDerived().TransformDecl(E->getLabel()->getLocation(),
+                                        E->getLabel());
+  if (!LD)
+    return ExprError();
+  
   return getDerived().RebuildAddrLabelExpr(E->getAmpAmpLoc(), E->getLabelLoc(),
-                                           E->getLabel());
+                                           cast<LabelDecl>(LD));
 }
 
 template<typename Derived>
@@ -5923,6 +5948,39 @@ template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformCXXMemberCallExpr(CXXMemberCallExpr *E) {
   return getDerived().TransformCallExpr(E);
+}
+
+template<typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformCUDAKernelCallExpr(CUDAKernelCallExpr *E) {
+  // Transform the callee.
+  ExprResult Callee = getDerived().TransformExpr(E->getCallee());
+  if (Callee.isInvalid())
+    return ExprError();
+
+  // Transform exec config.
+  ExprResult EC = getDerived().TransformCallExpr(E->getConfig());
+  if (EC.isInvalid())
+    return ExprError();
+
+  // Transform arguments.
+  bool ArgChanged = false;
+  ASTOwningVector<Expr*> Args(SemaRef);
+  if (getDerived().TransformExprs(E->getArgs(), E->getNumArgs(), true, Args, 
+                                  &ArgChanged))
+    return ExprError();
+
+  if (!getDerived().AlwaysRebuild() &&
+      Callee.get() == E->getCallee() &&
+      !ArgChanged)
+    return SemaRef.Owned(E);
+
+  // FIXME: Wrong source location information for the '('.
+  SourceLocation FakeLParenLoc
+    = ((Expr *)Callee.get())->getSourceRange().getBegin();
+  return getDerived().RebuildCallExpr(Callee.get(), FakeLParenLoc,
+                                      move_arg(Args),
+                                      E->getRParenLoc(), EC.get());
 }
 
 template<typename Derived>
@@ -7136,70 +7194,92 @@ TreeTransform<Derived>::TransformShuffleVectorExpr(ShuffleVectorExpr *E) {
 template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformBlockExpr(BlockExpr *E) {
-  SourceLocation CaretLoc(E->getExprLoc());
+  BlockDecl *oldBlock = E->getBlockDecl();
   
-  SemaRef.ActOnBlockStart(CaretLoc, /*Scope=*/0);
-  BlockScopeInfo *CurBlock = SemaRef.getCurBlock();
-  CurBlock->TheDecl->setIsVariadic(E->getBlockDecl()->isVariadic());
-  llvm::SmallVector<ParmVarDecl*, 4> Params;
-  llvm::SmallVector<QualType, 4> ParamTypes;
+  SemaRef.ActOnBlockStart(E->getCaretLocation(), /*Scope=*/0);
+  BlockScopeInfo *blockScope = SemaRef.getCurBlock();
+
+  blockScope->TheDecl->setIsVariadic(oldBlock->isVariadic());
+  llvm::SmallVector<ParmVarDecl*, 4> params;
+  llvm::SmallVector<QualType, 4> paramTypes;
   
   // Parameter substitution.
-  BlockDecl *BD = E->getBlockDecl();
-  if (getDerived().TransformFunctionTypeParams(E->getLocStart(), 
-                                               BD->param_begin(),
-                                               BD->param_size(), 0, ParamTypes,
-                                               &Params))
+  if (getDerived().TransformFunctionTypeParams(E->getCaretLocation(),
+                                               oldBlock->param_begin(),
+                                               oldBlock->param_size(),
+                                               0, paramTypes, &params))
     return true;
-  
-  
-  const FunctionType *BExprFunctionType = E->getFunctionType();
-  QualType BExprResultType = BExprFunctionType->getResultType();
-  if (!BExprResultType.isNull()) {
-    if (!BExprResultType->isDependentType())
-      CurBlock->ReturnType = BExprResultType;
-    else if (BExprResultType != SemaRef.Context.DependentTy)
-      CurBlock->ReturnType = getDerived().TransformType(BExprResultType);
+
+  const FunctionType *exprFunctionType = E->getFunctionType();
+  QualType exprResultType = exprFunctionType->getResultType();
+  if (!exprResultType.isNull()) {
+    if (!exprResultType->isDependentType())
+      blockScope->ReturnType = exprResultType;
+    else if (exprResultType != getSema().Context.DependentTy)
+      blockScope->ReturnType = getDerived().TransformType(exprResultType);
   }
   
   // If the return type has not been determined yet, leave it as a dependent
   // type; it'll get set when we process the body.
-  if (CurBlock->ReturnType.isNull())
-    CurBlock->ReturnType = getSema().Context.DependentTy;
+  if (blockScope->ReturnType.isNull())
+    blockScope->ReturnType = getSema().Context.DependentTy;
 
   // Don't allow returning a objc interface by value.
-  if (CurBlock->ReturnType->isObjCObjectType()) {
-    getSema().Diag(E->getLocStart(), 
+  if (blockScope->ReturnType->isObjCObjectType()) {
+    getSema().Diag(E->getCaretLocation(), 
                    diag::err_object_cannot_be_passed_returned_by_value) 
-      << 0 << CurBlock->ReturnType;
+      << 0 << blockScope->ReturnType;
     return ExprError();
   }
 
-  QualType FunctionType = getDerived().RebuildFunctionProtoType(
-                                                        CurBlock->ReturnType,
-                                                        ParamTypes.data(),
-                                                        ParamTypes.size(),
-                                                        BD->isVariadic(),
+  QualType functionType = getDerived().RebuildFunctionProtoType(
+                                                        blockScope->ReturnType,
+                                                        paramTypes.data(),
+                                                        paramTypes.size(),
+                                                        oldBlock->isVariadic(),
                                                         0, RQ_None,
-                                               BExprFunctionType->getExtInfo());
-  CurBlock->FunctionType = FunctionType;
+                                               exprFunctionType->getExtInfo());
+  blockScope->FunctionType = functionType;
 
   // Set the parameters on the block decl.
-  if (!Params.empty())
-    CurBlock->TheDecl->setParams(Params.data(), Params.size());
+  if (!params.empty())
+    blockScope->TheDecl->setParams(params.data(), params.size());
   
   // If the return type wasn't explicitly set, it will have been marked as a 
   // dependent type (DependentTy); clear out the return type setting so 
   // we will deduce the return type when type-checking the block's body.
-  if (CurBlock->ReturnType == getSema().Context.DependentTy)
-    CurBlock->ReturnType = QualType();
+  if (blockScope->ReturnType == getSema().Context.DependentTy)
+    blockScope->ReturnType = QualType();
   
   // Transform the body
-  StmtResult Body = getDerived().TransformStmt(E->getBody());
-  if (Body.isInvalid())
+  StmtResult body = getDerived().TransformStmt(E->getBody());
+  if (body.isInvalid())
     return ExprError();
 
-  return SemaRef.ActOnBlockStmtExpr(CaretLoc, Body.get(), /*Scope=*/0);
+#ifndef NDEBUG
+  // In builds with assertions, make sure that we captured everything we
+  // captured before.
+
+  if (oldBlock->capturesCXXThis()) assert(blockScope->CapturesCXXThis);
+
+  for (BlockDecl::capture_iterator i = oldBlock->capture_begin(),
+         e = oldBlock->capture_end(); i != e; ++i) {
+    VarDecl *oldCapture = i->getVariable();
+
+    // Ignore parameter packs.
+    if (isa<ParmVarDecl>(oldCapture) &&
+        cast<ParmVarDecl>(oldCapture)->isParameterPack())
+      continue;
+
+    VarDecl *newCapture =
+      cast<VarDecl>(getDerived().TransformDecl(E->getCaretLocation(),
+                                               oldCapture));
+    assert(blockScope->CaptureMap.count(newCapture));
+  }
+#endif
+
+  return SemaRef.ActOnBlockStmtExpr(E->getCaretLocation(), body.get(),
+                                    /*Scope=*/0);
 }
 
 template<typename Derived>

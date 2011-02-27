@@ -12,10 +12,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "ExprEngineExperimentalChecks.h"
-#include "clang/StaticAnalyzer/BugReporter/BugType.h"
-#include "clang/StaticAnalyzer/PathSensitive/CheckerVisitor.h"
-#include "clang/StaticAnalyzer/PathSensitive/GRStateTrait.h"
+#include "ClangSACheckers.h"
+#include "clang/StaticAnalyzer/Core/CheckerManager.h"
+#include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/CheckerVisitor.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/GRStateTrait.h"
 #include "llvm/ADT/StringSwitch.h"
 
 using namespace clang;
@@ -109,8 +110,12 @@ namespace ento {
 }
 }
 
-void ento::RegisterCStringChecker(ExprEngine &Eng) {
+static void RegisterCStringChecker(ExprEngine &Eng) {
   Eng.registerCheck(new CStringChecker());
+}
+
+void ento::registerCStringChecker(CheckerManager &mgr) {
+  mgr.addCheckerRegisterFunction(RegisterCStringChecker);
 }
 
 //===----------------------------------------------------------------------===//
@@ -496,7 +501,7 @@ SVal CStringChecker::getCStringLength(CheckerContext &C, const GRState *&state,
         llvm::SmallString<120> buf;
         llvm::raw_svector_ostream os(buf);
         os << "Argument to byte string function is the address of the label '"
-           << Label->getLabel()->getID()->getName()
+           << Label->getLabel()->getName()
            << "', which is not a null-terminated string";
 
         // Generate a report for this bug.
@@ -593,7 +598,7 @@ const GRState *CStringChecker::InvalidateBuffer(CheckerContext &C,
 
     // Invalidate this region.
     unsigned Count = C.getNodeBuilder().getCurrentBlockCount();
-    return state->InvalidateRegion(R, E, Count, NULL);
+    return state->invalidateRegion(R, E, Count, NULL);
   }
 
   // If we have a non-region value by chance, just remove the binding.

@@ -669,12 +669,17 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
       break;
     }
     
-    // If we have an Objective-C class name followed by an identifier and
-    // either ':' or ']', this is an Objective-C class message send that's
-    // missing the opening '['. Recovery appropriately.
-    if (getLang().ObjC1 && Tok.is(tok::identifier) && !InMessageExpression) {
+    // If we have an Objective-C class name followed by an identifier
+    // and either ':' or ']', this is an Objective-C class message
+    // send that's missing the opening '['. Recovery
+    // appropriately. Also take this path if we're performing code
+    // completion after an Objective-C class name.
+    if (getLang().ObjC1 && 
+        ((Tok.is(tok::identifier) && !InMessageExpression) || 
+         Tok.is(tok::code_completion))) {
       const Token& Next = NextToken();
-      if (Next.is(tok::colon) || Next.is(tok::r_square))
+      if (Tok.is(tok::code_completion) || 
+          Next.is(tok::colon) || Next.is(tok::r_square))
         if (ParsedType Typ = Actions.getTypeName(II, ILoc, getCurScope()))
           if (Typ.get()->isObjCObjectOrInterfaceType()) {
             // Fake up a Declarator to use with ActOnTypeName.
@@ -789,9 +794,13 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     if (Tok.isNot(tok::identifier))
       return ExprError(Diag(Tok, diag::err_expected_ident));
 
+    if (getCurScope()->getFnParent() == 0)
+      return ExprError(Diag(Tok, diag::err_address_of_label_outside_fn));
+    
     Diag(AmpAmpLoc, diag::ext_gnu_address_of_label);
-    Res = Actions.ActOnAddrLabel(AmpAmpLoc, Tok.getLocation(),
-                                 Tok.getIdentifierInfo());
+    LabelDecl *LD = Actions.LookupOrCreateLabel(Tok.getIdentifierInfo(),
+                                                Tok.getLocation());
+    Res = Actions.ActOnAddrLabel(AmpAmpLoc, Tok.getLocation(), LD);
     ConsumeToken();
     return move(Res);
   }
@@ -1093,24 +1102,68 @@ Parser::ParsePostfixExpressionSuffix(ExprResult LHS) {
       break;
     }
 
-    case tok::l_paren: {   // p-e: p-e '(' argument-expression-list[opt] ')'
+    case tok::l_paren:         // p-e: p-e '(' argument-expression-list[opt] ')'
+    case tok::lesslessless: {  // p-e: p-e '<<<' argument-expression-list '>>>'
+                               //   '(' argument-expression-list[opt] ')'
+      tok::TokenKind OpKind = Tok.getKind();
       InMessageExpressionRAIIObject InMessage(*this, false);
       
+      Expr *ExecConfig = 0;
+
+      if (OpKind == tok::lesslessless) {
+        ExprVector ExecConfigExprs(Actions);
+        CommaLocsTy ExecConfigCommaLocs;
+        SourceLocation LLLLoc, GGGLoc;
+
+        LLLLoc = ConsumeToken();
+
+        if (ParseExpressionList(ExecConfigExprs, ExecConfigCommaLocs)) {
+          LHS = ExprError();
+        }
+
+        if (LHS.isInvalid()) {
+          SkipUntil(tok::greatergreatergreater);
+        } else if (Tok.isNot(tok::greatergreatergreater)) {
+          MatchRHSPunctuation(tok::greatergreatergreater, LLLLoc);
+          LHS = ExprError();
+        } else {
+          GGGLoc = ConsumeToken();
+        }
+
+        if (!LHS.isInvalid()) {
+          if (ExpectAndConsume(tok::l_paren, diag::err_expected_lparen, ""))
+            LHS = ExprError();
+          else
+            Loc = PrevTokLocation;
+        }
+
+        if (!LHS.isInvalid()) {
+          ExprResult ECResult = Actions.ActOnCUDAExecConfigExpr(getCurScope(),
+                                     LLLLoc, move_arg(ExecConfigExprs), GGGLoc);
+          if (ECResult.isInvalid())
+            LHS = ExprError();
+          else
+            ExecConfig = ECResult.get();
+        }
+      } else {
+        Loc = ConsumeParen();
+      }
+
       ExprVector ArgExprs(Actions);
       CommaLocsTy CommaLocs;
-
-      Loc = ConsumeParen();
       
       if (Tok.is(tok::code_completion)) {
         Actions.CodeCompleteCall(getCurScope(), LHS.get(), 0, 0);
         ConsumeCodeCompletionToken();
       }
-      
-      if (Tok.isNot(tok::r_paren)) {
-        if (ParseExpressionList(ArgExprs, CommaLocs, &Sema::CodeCompleteCall,
-                                LHS.get())) {
-          SkipUntil(tok::r_paren);
-          LHS = ExprError();
+
+      if (OpKind == tok::l_paren || !LHS.isInvalid()) {
+        if (Tok.isNot(tok::r_paren)) {
+          if (ParseExpressionList(ArgExprs, CommaLocs, &Sema::CodeCompleteCall,
+                                  LHS.get())) {
+            SkipUntil(tok::r_paren);
+            LHS = ExprError();
+          }
         }
       }
 
@@ -1125,7 +1178,8 @@ Parser::ParsePostfixExpressionSuffix(ExprResult LHS) {
                 ArgExprs.size()-1 == CommaLocs.size())&&
                "Unexpected number of commas!");
         LHS = Actions.ActOnCallExpr(getCurScope(), LHS.take(), Loc,
-                                    move_arg(ArgExprs), Tok.getLocation());
+                                    move_arg(ArgExprs), Tok.getLocation(),
+                                    ExecConfig);
         ConsumeParen();
       }
 
@@ -1751,6 +1805,8 @@ bool Parser::ParseExpressionList(llvm::SmallVectorImpl<Expr*> &Exprs,
     if (Tok.is(tok::code_completion)) {
       if (Completer)
         (Actions.*Completer)(getCurScope(), Data, Exprs.data(), Exprs.size());
+      else
+        Actions.CodeCompleteOrdinaryName(getCurScope(), Sema::PCC_Expression);
       ConsumeCodeCompletionToken();
     }
     

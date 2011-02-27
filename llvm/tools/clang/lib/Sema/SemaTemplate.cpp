@@ -946,7 +946,11 @@ Sema::CheckClassTemplate(Scope *S, unsigned TagSpec, TagUseKind TUK,
   // template declaration.
   if (CheckTemplateParameterList(TemplateParams,
             PrevClassTemplate? PrevClassTemplate->getTemplateParameters() : 0,
-                                 TPC_ClassTemplate))
+                                 (SS.isSet() && SemanticContext &&
+                                  SemanticContext->isRecord() &&
+                                  SemanticContext->isDependentContext())
+                                   ? TPC_ClassTemplateMember
+                                   : TPC_ClassTemplate))
     Invalid = true;
 
   if (SS.isSet()) {
@@ -1045,14 +1049,18 @@ static bool DiagnoseDefaultTemplateArgument(Sema &S,
     return false;
 
   case Sema::TPC_FunctionTemplate:
+  case Sema::TPC_FriendFunctionTemplateDefinition:
     // C++ [temp.param]p9:
     //   A default template-argument shall not be specified in a
     //   function template declaration or a function template
     //   definition [...]
-    // (This sentence is not in C++0x, per DR226).
+    //   If a friend function template declaration specifies a default 
+    //   template-argument, that declaration shall be a definition and shall be
+    //   the only declaration of the function template in the translation unit.
+    // (C++98/03 doesn't have this wording; see DR226).
     if (!S.getLangOptions().CPlusPlus0x)
       S.Diag(ParamLoc,
-             diag::err_template_parameter_default_in_function_template)
+             diag::ext_template_parameter_default_in_function_template)
         << DefArgRange;
     return false;
 
@@ -1315,7 +1323,7 @@ bool Sema::CheckTemplateParameterList(TemplateParameterList *NewParams,
       Diag(NewDefaultLoc, diag::err_template_param_default_arg_redefinition);
       Diag(OldDefaultLoc, diag::note_template_param_prev_default_arg);
       Invalid = true;
-    } else if (MissingDefaultArg) {
+    } else if (MissingDefaultArg && TPC != TPC_FunctionTemplate) {
       // C++ [temp.param]p11:
       //   If a template-parameter of a class template has a default
       //   template-argument, each subsequent template-parameter shall either
@@ -3699,8 +3707,15 @@ Sema::BuildExpressionFromIntegralTemplateArgument(const TemplateArgument &Arg,
     BT = T;
 
   Expr *E = IntegerLiteral::Create(Context, *Arg.getAsIntegral(), BT, Loc);
-  ImpCastExprToType(E, T, CK_IntegralCast);
-
+  if (T->isEnumeralType()) {
+    // FIXME: This is a hack. We need a better way to handle substituted
+    // non-type template parameters.
+    E = CStyleCastExpr::Create(Context, T, VK_RValue, CK_IntegralCast,
+                                      E, 0, 
+                                      Context.getTrivialTypeSourceInfo(T, Loc),
+                                      Loc, Loc);
+  }
+  
   return Owned(E);
 }
 

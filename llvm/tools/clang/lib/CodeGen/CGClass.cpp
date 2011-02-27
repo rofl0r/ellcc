@@ -318,7 +318,7 @@ static llvm::Value *GetVTTParameter(CodeGenFunction &CGF, GlobalDecl GD,
     VTT = CGF.Builder.CreateConstInBoundsGEP1_64(VTT, SubVTTIndex);
   } else {
     // We're the complete constructor, so get the VTT by name.
-    VTT = CGF.CGM.getVTables().getVTT(RD);
+    VTT = CGF.CGM.getVTables().GetAddrOfVTT(RD);
     VTT = CGF.Builder.CreateConstInBoundsGEP2_64(VTT, 0, SubVTTIndex);
   }
 
@@ -796,6 +796,10 @@ void CodeGenFunction::EmitDestructorBody(FunctionArgList &Args) {
       assert(Dtor->isImplicit() && "bodyless dtor not implicit");
       // nothing to do besides what's in the epilogue
     }
+    // -fapple-kext must inline any call to this dtor into
+    // the caller's body.
+    if (getContext().getLangOptions().AppleKext)
+      CurFn->addFnAttr(llvm::Attribute::AlwaysInline);
     break;
   }
 
@@ -1264,7 +1268,13 @@ void CodeGenFunction::EmitCXXDestructorCall(const CXXDestructorDecl *DD,
                                             llvm::Value *This) {
   llvm::Value *VTT = GetVTTParameter(*this, GlobalDecl(DD, Type), 
                                      ForVirtualBase);
-  llvm::Value *Callee = CGM.GetAddrOfCXXDestructor(DD, Type);
+  llvm::Value *Callee = 0;
+  if (getContext().getLangOptions().AppleKext)
+    Callee = BuildAppleKextVirtualDestructorCall(DD, Type, 
+                                                 DD->getParent());
+    
+  if (!Callee)
+    Callee = CGM.GetAddrOfCXXDestructor(DD, Type);
   
   EmitCXXMemberCall(DD, Callee, ReturnValueSlot(), This, VTT, 0, 0);
 }
@@ -1302,9 +1312,6 @@ llvm::Value *
 CodeGenFunction::GetVirtualBaseClassOffset(llvm::Value *This,
                                            const CXXRecordDecl *ClassDecl,
                                            const CXXRecordDecl *BaseClassDecl) {
-  const llvm::Type *Int8PtrTy = 
-    llvm::Type::getInt8Ty(VMContext)->getPointerTo();
-
   llvm::Value *VTablePtr = GetVTablePtr(This, Int8PtrTy);
   int64_t VBaseOffsetOffset = 
     CGM.getVTables().getVirtualBaseOffsetOffset(ClassDecl, BaseClassDecl);

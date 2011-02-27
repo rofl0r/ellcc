@@ -148,7 +148,10 @@ namespace clang {
       DECLTYPES_BLOCK_ID,
 
       /// \brief The block containing DECL_UPDATES records.
-      DECL_UPDATES_BLOCK_ID
+      DECL_UPDATES_BLOCK_ID,
+      
+      /// \brief The block containing the detailed preprocessing record.
+      PREPROCESSOR_DETAIL_BLOCK_ID
     };
 
     /// \brief Record types that occur within the AST block itself.
@@ -344,7 +347,22 @@ namespace clang {
       CXX_BASE_SPECIFIER_OFFSETS = 37,
 
       /// \brief Record code for #pragma diagnostic mappings.
-      DIAG_PRAGMA_MAPPINGS = 38
+      DIAG_PRAGMA_MAPPINGS = 38,
+
+      /// \brief Record code for special CUDA declarations.
+      CUDA_SPECIAL_DECL_REFS = 39,
+      
+      /// \brief Record code for header search information.
+      HEADER_SEARCH_TABLE = 40,
+
+      /// \brief The directory that the PCH was originally created in.
+      ORIGINAL_PCH_DIR = 41,
+
+      /// \brief Record code for floating point #pragma options.
+      FP_PRAGMA_OPTIONS = 42,
+
+      /// \brief Record code for enabled OpenCL extensions.
+      OPENCL_EXTENSIONS = 43
     };
 
     /// \brief Record types used within a source manager block.
@@ -383,20 +401,23 @@ namespace clang {
 
       /// \brief Describes one token.
       /// [PP_TOKEN, SLoc, Length, IdentInfoID, Kind, Flags]
-      PP_TOKEN = 3,
-
-      /// \brief Describes a macro instantiation within the preprocessing 
-      /// record.
-      PP_MACRO_INSTANTIATION = 4,
-      
-      /// \brief Describes a macro definition within the preprocessing record.
-      PP_MACRO_DEFINITION = 5,
-      
-      /// \brief Describes am inclusion directive within the preprocessing
-      /// record.
-      PP_INCLUSION_DIRECTIVE = 6
+      PP_TOKEN = 3
     };
 
+    /// \brief Record types used within a preprocessor detail block.
+    enum PreprocessorDetailRecordTypes {
+      /// \brief Describes a macro instantiation within the preprocessing 
+      /// record.
+      PPD_MACRO_INSTANTIATION = 0,
+      
+      /// \brief Describes a macro definition within the preprocessing record.
+      PPD_MACRO_DEFINITION = 1,
+      
+      /// \brief Describes an inclusion directive within the preprocessing
+      /// record.
+      PPD_INCLUSION_DIRECTIVE = 2
+    };
+    
     /// \defgroup ASTAST AST file AST constants
     ///
     /// The constants in this group describe various components of the
@@ -676,7 +697,9 @@ namespace clang {
       /// IDs. This data is used when performing qualified name lookup
       /// into a DeclContext via DeclContext::lookup.
       DECL_CONTEXT_VISIBLE,
-      /// \brief A NamespaceDecl rcord.
+      /// \brief A LabelDecl record.
+      DECL_LABEL,
+      /// \brief A NamespaceDecl record.
       DECL_NAMESPACE,
       /// \brief A NamespaceAliasDecl record.
       DECL_NAMESPACE_ALIAS,
@@ -936,11 +959,16 @@ namespace clang {
       EXPR_CXX_NOEXCEPT,          // CXXNoexceptExpr
 
       EXPR_OPAQUE_VALUE,          // OpaqueValueExpr
+      EXPR_BINARY_CONDITIONAL_OPERATOR,  // BinaryConditionalOperator
       EXPR_BINARY_TYPE_TRAIT,     // BinaryTypeTraitExpr
       
       EXPR_PACK_EXPANSION,        // PackExpansionExpr
       EXPR_SIZEOF_PACK,           // SizeOfPackExpr
-      EXPR_SUBST_NON_TYPE_TEMPLATE_PARM_PACK // SubstNonTypeTemplateParmPackExpr
+      EXPR_SUBST_NON_TYPE_TEMPLATE_PARM_PACK,// SubstNonTypeTemplateParmPackExpr
+
+      // CUDA
+
+      EXPR_CUDA_KERNEL_CALL       // CUDAKernelCallExpr
     };
 
     /// \brief The kinds of designators that can occur in a

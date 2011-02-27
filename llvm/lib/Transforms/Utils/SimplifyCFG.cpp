@@ -305,7 +305,7 @@ static ConstantInt *GetConstantInt(Value *V, const TargetData *TD) {
 /// Values vector.
 static Value *
 GatherConstantCompares(Value *V, std::vector<ConstantInt*> &Vals, Value *&Extra,
-                       const TargetData *TD, bool isEQ) {
+                       const TargetData *TD, bool isEQ, unsigned &UsedICmps) {
   Instruction *I = dyn_cast<Instruction>(V);
   if (I == 0) return 0;
   
@@ -313,6 +313,7 @@ GatherConstantCompares(Value *V, std::vector<ConstantInt*> &Vals, Value *&Extra,
   if (ICmpInst *ICI = dyn_cast<ICmpInst>(I)) {
     if (ConstantInt *C = GetConstantInt(I->getOperand(1), TD)) {
       if (ICI->getPredicate() == (isEQ ? ICmpInst::ICMP_EQ:ICmpInst::ICMP_NE)) {
+        UsedICmps++;
         Vals.push_back(C);
         return I->getOperand(0);
       }
@@ -335,6 +336,7 @@ GatherConstantCompares(Value *V, std::vector<ConstantInt*> &Vals, Value *&Extra,
       
       for (APInt Tmp = Span.getLower(); Tmp != Span.getUpper(); ++Tmp)
         Vals.push_back(ConstantInt::get(V->getContext(), Tmp));
+      UsedICmps++;
       return I->getOperand(0);
     }
     return 0;
@@ -345,14 +347,17 @@ GatherConstantCompares(Value *V, std::vector<ConstantInt*> &Vals, Value *&Extra,
     return 0;
   
   unsigned NumValsBeforeLHS = Vals.size();
+  unsigned UsedICmpsBeforeLHS = UsedICmps;
   if (Value *LHS = GatherConstantCompares(I->getOperand(0), Vals, Extra, TD,
-                                          isEQ)) {
+                                          isEQ, UsedICmps)) {
     unsigned NumVals = Vals.size();
+    unsigned UsedICmpsBeforeRHS = UsedICmps;
     if (Value *RHS = GatherConstantCompares(I->getOperand(1), Vals, Extra, TD,
-                                            isEQ)) {
+                                            isEQ, UsedICmps)) {
       if (LHS == RHS)
         return LHS;
       Vals.resize(NumVals);
+      UsedICmps = UsedICmpsBeforeRHS;
     }
 
     // The RHS of the or/and can't be folded in and we haven't used "Extra" yet,
@@ -363,6 +368,7 @@ GatherConstantCompares(Value *V, std::vector<ConstantInt*> &Vals, Value *&Extra,
     }
     
     Vals.resize(NumValsBeforeLHS);
+    UsedICmps = UsedICmpsBeforeLHS;
     return 0;
   }
   
@@ -372,7 +378,7 @@ GatherConstantCompares(Value *V, std::vector<ConstantInt*> &Vals, Value *&Extra,
     Value *OldExtra = Extra;
     Extra = I->getOperand(0);
     if (Value *RHS = GatherConstantCompares(I->getOperand(1), Vals, Extra, TD,
-                                            isEQ))
+                                            isEQ, UsedICmps))
       return RHS;
     assert(Vals.size() == NumValsBeforeLHS);
     Extra = OldExtra;
@@ -1926,16 +1932,23 @@ static bool SimplifyBranchOnICmpChain(BranchInst *BI, const TargetData *TD) {
   std::vector<ConstantInt*> Values;
   bool TrueWhenEqual = true;
   Value *ExtraCase = 0;
+  unsigned UsedICmps = 0;
   
   if (Cond->getOpcode() == Instruction::Or) {
-    CompVal = GatherConstantCompares(Cond, Values, ExtraCase, TD, true);
+    CompVal = GatherConstantCompares(Cond, Values, ExtraCase, TD, true,
+                                     UsedICmps);
   } else if (Cond->getOpcode() == Instruction::And) {
-    CompVal = GatherConstantCompares(Cond, Values, ExtraCase, TD, false);
+    CompVal = GatherConstantCompares(Cond, Values, ExtraCase, TD, false,
+                                     UsedICmps);
     TrueWhenEqual = false;
   }
   
   // If we didn't have a multiply compared value, fail.
   if (CompVal == 0) return false;
+
+  // Avoid turning single icmps into a switch.
+  if (UsedICmps <= 1)
+    return false;
 
   // There might be duplicate constants in the list, which the switch
   // instruction can't handle, remove them now.
@@ -2237,6 +2250,47 @@ bool SimplifyCFGOpt::SimplifyUnreachable(UnreachableInst *UI) {
   return Changed;
 }
 
+/// TurnSwitchRangeIntoICmp - Turns a switch with that contains only a
+/// integer range comparison into a sub, an icmp and a branch.
+static bool TurnSwitchRangeIntoICmp(SwitchInst *SI) {
+  assert(SI->getNumCases() > 2 && "Degenerate switch?");
+
+  // Make sure all cases point to the same destination and gather the values.
+  SmallVector<ConstantInt *, 16> Cases;
+  Cases.push_back(SI->getCaseValue(1));
+  for (unsigned I = 2, E = SI->getNumCases(); I != E; ++I) {
+    if (SI->getSuccessor(I-1) != SI->getSuccessor(I))
+      return false;
+    Cases.push_back(SI->getCaseValue(I));
+  }
+  assert(Cases.size() == SI->getNumCases()-1 && "Not all cases gathered");
+
+  // Sort the case values, then check if they form a range we can transform.
+  array_pod_sort(Cases.begin(), Cases.end(), ConstantIntSortPredicate);
+  for (unsigned I = 1, E = Cases.size(); I != E; ++I) {
+    if (Cases[I-1]->getValue() != Cases[I]->getValue()+1)
+      return false;
+  }
+
+  Constant *Offset = ConstantExpr::getNeg(Cases.back());
+  Constant *NumCases = ConstantInt::get(Offset->getType(), SI->getNumCases()-1);
+
+  Value *Sub = SI->getCondition();
+  if (!Offset->isNullValue())
+    Sub = BinaryOperator::CreateAdd(Sub, Offset, Sub->getName()+".off", SI);
+  Value *Cmp = new ICmpInst(SI, ICmpInst::ICMP_ULT, Sub, NumCases, "switch");
+  BranchInst::Create(SI->getSuccessor(1), SI->getDefaultDest(), Cmp, SI);
+
+  // Prune obsolete incoming values off the successor's PHI nodes.
+  for (BasicBlock::iterator BBI = SI->getSuccessor(1)->begin();
+       isa<PHINode>(BBI); ++BBI) {
+    for (unsigned I = 0, E = SI->getNumCases()-2; I != E; ++I)
+      cast<PHINode>(BBI)->removeIncomingValue(SI->getParent());
+  }
+  SI->eraseFromParent();
+
+  return true;
+}
 
 bool SimplifyCFGOpt::SimplifySwitch(SwitchInst *SI) {
   // If this switch is too complex to want to look at, ignore it.
@@ -2260,6 +2314,10 @@ bool SimplifyCFGOpt::SimplifySwitch(SwitchInst *SI) {
   if (SI == &*BBI)
     if (FoldValueComparisonIntoPredecessors(SI))
       return SimplifyCFG(BB) | true;
+
+  // Try to transform the switch into an icmp and a branch.
+  if (TurnSwitchRangeIntoICmp(SI))
+    return SimplifyCFG(BB) | true;
   
   return false;
 }

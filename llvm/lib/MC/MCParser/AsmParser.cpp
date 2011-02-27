@@ -173,6 +173,7 @@ private:
   bool ParsePrimaryExpr(const MCExpr *&Res, SMLoc &EndLoc);
   bool ParseBinOpRHS(unsigned Precedence, const MCExpr *&Res, SMLoc &EndLoc);
   bool ParseParenExpr(const MCExpr *&Res, SMLoc &EndLoc);
+  bool ParseBracketExpr(const MCExpr *&Res, SMLoc &EndLoc);
 
   /// ParseIdentifier - Parse an identifier or string (as a quoted identifier)
   /// and set \arg Res to the identifier contents.
@@ -202,6 +203,8 @@ private:
   bool ParseDirectiveInclude(); // ".include"
 
   bool ParseDirectiveIf(SMLoc DirectiveLoc); // ".if"
+  // ".ifdef" or ".ifndef", depending on expect_defined
+  bool ParseDirectiveIfdef(SMLoc DirectiveLoc, bool expect_defined);
   bool ParseDirectiveElseIf(SMLoc DirectiveLoc); // ".elseif"
   bool ParseDirectiveElse(SMLoc DirectiveLoc); // ".else"
   bool ParseDirectiveEndIf(SMLoc DirectiveLoc); // .endif
@@ -222,7 +225,6 @@ class GenericAsmParser : public MCAsmParserExtension {
     getParser().AddDirectiveHandler(this, Directive,
                                     HandleDirective<GenericAsmParser, Handler>);
   }
-
 public:
   GenericAsmParser() {}
 
@@ -491,6 +493,20 @@ bool AsmParser::ParseParenExpr(const MCExpr *&Res, SMLoc &EndLoc) {
   return false;
 }
 
+/// ParseBracketExpr - Parse a bracket expression and return it.
+/// NOTE: This assumes the leading '[' has already been consumed.
+///
+/// bracketexpr ::= expr]
+///
+bool AsmParser::ParseBracketExpr(const MCExpr *&Res, SMLoc &EndLoc) {
+  if (ParseExpression(Res)) return true;
+  if (Lexer.isNot(AsmToken::RBrac))
+    return TokError("expected ']' in brackets expression");
+  EndLoc = Lexer.getLoc();
+  Lex();
+  return false;
+}
+
 /// ParsePrimaryExpr - Parse a primary expression and return it.
 ///  primaryexpr ::= (parenexpr
 ///  primaryexpr ::= symbol
@@ -568,7 +584,7 @@ bool AsmParser::ParsePrimaryExpr(const MCExpr *&Res, SMLoc &EndLoc) {
   }
   case AsmToken::Real: {
     APFloat RealVal(APFloat::IEEEdouble, getTok().getString());
-    int64_t IntVal = RealVal.bitcastToAPInt().getSExtValue();
+    uint64_t IntVal = RealVal.bitcastToAPInt().getZExtValue();
     Res = MCConstantExpr::Create(IntVal, getContext());
     Lex(); // Eat token.
     return false;
@@ -586,6 +602,9 @@ bool AsmParser::ParsePrimaryExpr(const MCExpr *&Res, SMLoc &EndLoc) {
   case AsmToken::LParen:
     Lex(); // Eat the '('.
     return ParseParenExpr(Res, EndLoc);
+  case AsmToken::LBrac:
+    Lex(); // Eat the '['.
+    return ParseBracketExpr(Res, EndLoc);
   case AsmToken::Minus:
     Lex(); // Eat the operator.
     if (ParsePrimaryExpr(Res, EndLoc))
@@ -887,6 +906,10 @@ bool AsmParser::ParseStatement() {
   // example.
   if (IDVal == ".if")
     return ParseDirectiveIf(IDLoc);
+  if (IDVal == ".ifdef")
+    return ParseDirectiveIfdef(IDLoc, true);
+  if (IDVal == ".ifndef" || IDVal == ".ifnotdef")
+    return ParseDirectiveIfdef(IDLoc, false);
   if (IDVal == ".elseif")
     return ParseDirectiveElseIf(IDLoc);
   if (IDVal == ".else")
@@ -1065,8 +1088,8 @@ bool AsmParser::ParseStatement() {
     if (IDVal == ".include")
       return ParseDirectiveInclude();
 
-    if (IDVal == ".code16")
-      return TokError(".code16 not supported yet");
+    if (IDVal == ".code16" || IDVal == ".code32" || IDVal == ".code64")
+      return TokError(Twine(IDVal) + " not supported yet");
 
     // Look up the handler in the handler table.
     std::pair<MCAsmParserExtension*, DirectiveHandler> Handler =
@@ -1933,6 +1956,31 @@ bool AsmParser::ParseDirectiveIf(SMLoc DirectiveLoc) {
   return false;
 }
 
+bool AsmParser::ParseDirectiveIfdef(SMLoc DirectiveLoc, bool expect_defined) {
+  StringRef Name;
+  TheCondStack.push_back(TheCondState);
+  TheCondState.TheCond = AsmCond::IfCond;
+
+  if (TheCondState.Ignore) {
+    EatToEndOfStatement();
+  } else {
+    if (ParseIdentifier(Name))
+      return TokError("expected identifier after '.ifdef'");
+
+    Lex();
+
+    MCSymbol *Sym = getContext().LookupSymbol(Name);
+
+    if (expect_defined)
+      TheCondState.CondMet = (Sym != NULL && !Sym->isUndefined());
+    else
+      TheCondState.CondMet = (Sym == NULL || Sym->isUndefined());
+    TheCondState.Ignore = !TheCondState.CondMet;
+  }
+
+  return false;
+}
+
 /// ParseDirectiveElseIf
 /// ::= .elseif expression
 bool AsmParser::ParseDirectiveElseIf(SMLoc DirectiveLoc) {
@@ -2203,7 +2251,7 @@ bool GenericAsmParser::ParseRegisterOrRegisterNumber(int64_t &Register,
     Register = getContext().getTargetAsmInfo().getDwarfRegNum(RegNo, true);
   } else
     return getParser().ParseAbsoluteExpression(Register);
-  
+
   return false;
 }
 

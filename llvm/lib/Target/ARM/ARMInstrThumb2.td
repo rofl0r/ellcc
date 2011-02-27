@@ -43,10 +43,7 @@ def t2_so_imm_neg_XFORM : SDNodeXForm<imm, [{
 
 // t2_so_imm - Match a 32-bit immediate operand, which is an
 // 8-bit immediate rotated by an arbitrary number of bits, or an 8-bit
-// immediate splatted into multiple bytes of the word. t2_so_imm values are
-// represented in the imm field in the same 12-bit form that they are encoded
-// into t2_so_imm instructions: the 8-bit immediate is the least significant
-// bits [bits 0-7], the 4-bit shift/splat amount is the next 4 bits [bits 8-11].
+// immediate splatted into multiple bytes of the word.
 def t2_so_imm : Operand<i32>, PatLeaf<(imm), [{ return Pred_t2_so_imm(N); }]> {
   let EncoderMethod = "getT2SOImmOpValue";
 }
@@ -913,8 +910,23 @@ multiclass T2I_ld<bit signed, bits<2> opcod, string opc,
     let Inst{5-4}   = addr{1-0}; // imm
   }
 
-  def pci : t2PseudoInst<(outs GPR:$Rt), (ins i32imm:$addr), Size4Bytes, iis,
-                      [(set GPR:$Rt, (opnode (ARMWrapper tconstpool:$addr)))]>;
+  // FIXME: Is the pci variant actually needed?
+  def pci : T2Ipc <(outs GPR:$Rt), (ins i32imm:$addr), iii,
+                   opc, ".w\t$Rt, $addr",
+                   [(set GPR:$Rt, (opnode (ARMWrapper tconstpool:$addr)))]> {
+    let isReMaterializable = 1;
+    let Inst{31-27} = 0b11111;
+    let Inst{26-25} = 0b00;
+    let Inst{24} = signed;
+    let Inst{23} = ?; // add = (U == '1')
+    let Inst{22-21} = opcod;
+    let Inst{20} = 1; // load
+    let Inst{19-16} = 0b1111; // Rn
+    bits<4> Rt;
+    bits<12> addr;
+    let Inst{15-12} = Rt{3-0};
+    let Inst{11-0}  = addr{11-0};
+  }
 }
 
 /// T2I_st - Defines a set of (op r, {imm12|imm8|so_reg}) store patterns.
@@ -3115,40 +3127,39 @@ def t2BXJ : T2I<(outs), (ins rGPR:$func), NoItinerary, "bxj", "\t$func",
   let Inst{19-16} = func;
 }
 
-// Change Processor State is a system instruction -- for disassembly only.
-// The singleton $opt operand contains the following information:
-// opt{4-0} = mode from Inst{4-0}
-// opt{5} = changemode from Inst{17}
-// opt{8-6} = AIF from Inst{8-6}
-// opt{10-9} = imod from Inst{19-18} with 0b10 as enable and 0b11 as disable
-def t2CPS : T2XI<(outs),(ins cps_opt:$opt), NoItinerary, "cps$opt",
-                 [/* For disassembly only; pattern left blank */]> {
+// Change Processor State is a system instruction -- for disassembly and
+// parsing only.
+// FIXME: Since the asm parser has currently no clean way to handle optional
+// operands, create 3 versions of the same instruction. Once there's a clean
+// framework to represent optional operands, change this behavior.
+class t2CPS<dag iops, string asm_op> : T2XI<(outs), iops, NoItinerary,
+            !strconcat("cps", asm_op),
+            [/* For disassembly only; pattern left blank */]> {
+  bits<2> imod;
+  bits<3> iflags;
+  bits<5> mode;
+  bit M;
+
   let Inst{31-27} = 0b11110;
-  let Inst{26} = 0;
+  let Inst{26}    = 0;
   let Inst{25-20} = 0b111010;
+  let Inst{19-16} = 0b1111;
   let Inst{15-14} = 0b10;
-  let Inst{12} = 0;
-
-  bits<11> opt;
-
-  // mode number
-  let Inst{4-0} = opt{4-0};
-
-  // M flag
-  let Inst{8} = opt{5};
-
-  // F flag
-  let Inst{5} = opt{6};
-
-  // I flag
-  let Inst{6} = opt{7};
-
-  // A flag
-  let Inst{7} = opt{8};
-
-  // imod flag
-  let Inst{10-9} = opt{10-9};
+  let Inst{12}    = 0;
+  let Inst{10-9}  = imod;
+  let Inst{8}     = M;
+  let Inst{7-5}   = iflags;
+  let Inst{4-0}   = mode;
 }
+
+let M = 1 in
+  def t2CPS3p : t2CPS<(ins imod_op:$imod, iflags_op:$iflags, i32imm:$mode),
+                      "$imod.w\t$iflags, $mode">;
+let mode = 0, M = 0 in
+  def t2CPS2p : t2CPS<(ins imod_op:$imod, iflags_op:$iflags),
+                      "$imod.w\t$iflags">;
+let imod = 0, iflags = 0, M = 1 in
+  def t2CPS1p : t2CPS<(ins i32imm:$mode), "\t$mode">;
 
 // A6.3.4 Branches and miscellaneous control
 // Table A6-14 Change Processor State, and hint instructions
@@ -3319,24 +3330,23 @@ def t2MRSsys : T2MRS<0b111100111111, 0b10, 0,
                    (outs rGPR:$Rd), (ins), NoItinerary, "mrs", "\t$Rd, spsr",
                    [/* For disassembly only; pattern left blank */]>;
 
-class T2MSR<bits<12> op31_20, bits<2> op15_14, bits<1> op12,
-            dag oops, dag iops, InstrItinClass itin,
-          string opc, string asm, list<dag> pattern>
-  : T2SpecialReg<op31_20, op15_14, op12, oops, iops, itin, opc, asm, pattern> {
+// Move from ARM core register to Special Register
+//
+// No need to have both system and application versions, the encodings are the
+// same and the assembly parser has no way to distinguish between them. The mask
+// operand contains the special register (R Bit) in bit 4 and bits 3-0 contains
+// the mask with the fields to be accessed in the special register.
+def t2MSR : T2SpecialReg<0b111100111000 /* op31-20 */, 0b10 /* op15-14 */,
+                         0 /* op12 */, (outs), (ins msr_mask:$mask, rGPR:$Rn),
+                         NoItinerary, "msr", "\t$mask, $Rn",
+                         [/* For disassembly only; pattern left blank */]> {
+  bits<5> mask;
   bits<4> Rn;
-  bits<4> mask;
   let Inst{19-16} = Rn;
-  let Inst{11-8} = mask;
+  let Inst{20}    = mask{4}; // R Bit
+  let Inst{13}    = 0b0;
+  let Inst{11-8}  = mask{3-0};
 }
-
-def t2MSR : T2MSR<0b111100111000, 0b10, 0,
-                (outs), (ins rGPR:$Rn, msr_mask:$mask), NoItinerary, "msr",
-                "\tcpsr$mask, $Rn",
-                [/* For disassembly only; pattern left blank */]>;
-def t2MSRsys : T2MSR<0b111100111001, 0b10, 0,
-                   (outs), (ins rGPR:$Rn, msr_mask:$mask), NoItinerary, "msr",
-                   "\tspsr$mask, $Rn",
-                   [/* For disassembly only; pattern left blank */]>;
 
 //===----------------------------------------------------------------------===//
 // Move between coprocessor and ARM core register -- for disassembly only

@@ -231,7 +231,7 @@ void ConstStructBuilder::AppendBitField(const FieldDecl *Field,
 
     if (CGM.getTargetData().isBigEndian()) {
       // We want the high bits.
-      Tmp = FieldValue.lshr(Tmp.getBitWidth() - 8).trunc(8);
+      Tmp = FieldValue.lshr(FieldValue.getBitWidth() - 8).trunc(8);
     } else {
       // We want the low bits.
       Tmp = FieldValue.trunc(8);
@@ -368,7 +368,7 @@ bool ConstStructBuilder::Build(InitListExpr *ILE) {
     }
   }
 
-  uint64_t LayoutSizeInBytes = Layout.getSize() / 8;
+  uint64_t LayoutSizeInBytes = Layout.getSize().getQuantity();
 
   if (NextFieldOffsetInBytes > LayoutSizeInBytes) {
     // If the struct is bigger than the size of the record type,
@@ -394,9 +394,9 @@ bool ConstStructBuilder::Build(InitListExpr *ILE) {
   }
 
   // Append tail padding if necessary.
-  AppendTailPadding(Layout.getSize());
+  AppendTailPadding(CGM.getContext().toBits(Layout.getSize()));
 
-  assert(Layout.getSize() / 8 == NextFieldOffsetInBytes &&
+  assert(Layout.getSize().getQuantity() == NextFieldOffsetInBytes &&
          "Tail padding mismatch!");
 
   return true;
@@ -450,17 +450,10 @@ public:
   llvm::Constant *VisitCompoundLiteralExpr(CompoundLiteralExpr *E) {
     return Visit(E->getInitializer());
   }
-    
+
   llvm::Constant *VisitUnaryAddrOf(UnaryOperator *E) {
-    if (const MemberPointerType *MPT = 
-          E->getType()->getAs<MemberPointerType>()) {
-      DeclRefExpr *DRE = cast<DeclRefExpr>(E->getSubExpr());
-      NamedDecl *ND = DRE->getDecl();
-      if (MPT->isMemberFunctionPointer())
-        return CGM.getCXXABI().EmitMemberPointer(cast<CXXMethodDecl>(ND));
-      else 
-        return CGM.getCXXABI().EmitMemberPointer(cast<FieldDecl>(ND));
-    }
+    if (E->getType()->isMemberPointerType())
+      return CGM.getMemberPointerConstant(E);
 
     return 0;
   }
@@ -921,7 +914,7 @@ llvm::Constant *CodeGenModule::EmitConstantExpr(const Expr *E,
         else
           Inits.push_back(llvm::ConstantFP::get(VMContext, Elt.getFloat()));
       }
-      return llvm::ConstantVector::get(&Inits[0], Inits.size());
+      return llvm::ConstantVector::get(Inits);
     }
     }
   }
@@ -932,6 +925,38 @@ llvm::Constant *CodeGenModule::EmitConstantExpr(const Expr *E,
     C = llvm::ConstantExpr::getZExt(C, BoolTy);
   }
   return C;
+}
+
+static uint64_t getFieldOffset(ASTContext &C, const FieldDecl *field) {
+  const ASTRecordLayout &layout = C.getASTRecordLayout(field->getParent());
+  return layout.getFieldOffset(field->getFieldIndex());
+}
+    
+llvm::Constant *
+CodeGenModule::getMemberPointerConstant(const UnaryOperator *uo) {
+  // Member pointer constants always have a very particular form.
+  const MemberPointerType *type = cast<MemberPointerType>(uo->getType());
+  const ValueDecl *decl = cast<DeclRefExpr>(uo->getSubExpr())->getDecl();
+
+  // A member function pointer.
+  if (const CXXMethodDecl *method = dyn_cast<CXXMethodDecl>(decl))
+    return getCXXABI().EmitMemberPointer(method);
+
+  // Otherwise, a member data pointer.
+  uint64_t fieldOffset;
+  if (const FieldDecl *field = dyn_cast<FieldDecl>(decl))
+    fieldOffset = getFieldOffset(getContext(), field);
+  else {
+    const IndirectFieldDecl *ifield = cast<IndirectFieldDecl>(decl);
+
+    fieldOffset = 0;
+    for (IndirectFieldDecl::chain_iterator ci = ifield->chain_begin(),
+           ce = ifield->chain_end(); ci != ce; ++ci)
+      fieldOffset += getFieldOffset(getContext(), cast<FieldDecl>(*ci));
+  }
+
+  CharUnits chars = getContext().toCharUnitsFromBits((int64_t) fieldOffset);
+  return getCXXABI().EmitMemberDataPointer(type, chars);
 }
 
 static void
@@ -1000,9 +1025,10 @@ FillInNullDataMemberPointers(CodeGenModule &CGM, QualType T,
     uint64_t StartIndex = StartOffset / 8;
     uint64_t EndIndex = StartIndex + CGM.getContext().getTypeSize(T) / 8;
 
+    // FIXME: hardcodes Itanium member pointer representation!
     llvm::Constant *NegativeOne =
       llvm::ConstantInt::get(llvm::Type::getInt8Ty(CGM.getLLVMContext()),
-                             -1ULL, /*isSigned=*/true);
+                             -1ULL, /*isSigned*/true);
 
     // Fill in the null data member pointer.
     for (uint64_t I = StartIndex; I != EndIndex; ++I)
@@ -1010,87 +1036,122 @@ FillInNullDataMemberPointers(CodeGenModule &CGM, QualType T,
   }
 }
 
+static llvm::Constant *EmitNullConstantForBase(CodeGenModule &CGM,
+                                               const llvm::Type *baseType,
+                                               const CXXRecordDecl *base);
+
 static llvm::Constant *EmitNullConstant(CodeGenModule &CGM,
-                                        const CXXRecordDecl *RD) {
-  QualType T = CGM.getContext().getTagDeclType(RD);
+                                        const CXXRecordDecl *record,
+                                        bool asCompleteObject) {
+  const CGRecordLayout &layout = CGM.getTypes().getCGRecordLayout(record);
+  const llvm::StructType *structure =
+    (asCompleteObject ? layout.getLLVMType()
+                      : layout.getBaseSubobjectLLVMType());
 
-  const llvm::StructType *STy =
-    cast<llvm::StructType>(CGM.getTypes().ConvertTypeForMem(T));
-  unsigned NumElements = STy->getNumElements();
-  std::vector<llvm::Constant *> Elements(NumElements);
+  unsigned numElements = structure->getNumElements();
+  std::vector<llvm::Constant *> elements(numElements);
 
-  const CGRecordLayout &Layout = CGM.getTypes().getCGRecordLayout(RD);
-
-  for (CXXRecordDecl::base_class_const_iterator I = RD->bases_begin(),
-       E = RD->bases_end(); I != E; ++I) {
+  // Fill in all the bases.
+  for (CXXRecordDecl::base_class_const_iterator
+         I = record->bases_begin(), E = record->bases_end(); I != E; ++I) {
     if (I->isVirtual()) {
-      // Ignore virtual bases.
+      // Ignore virtual bases; if we're laying out for a complete
+      // object, we'll lay these out later.
       continue;
     }
 
-    const CXXRecordDecl *BaseDecl = 
-      cast<CXXRecordDecl>(I->getType()->getAs<RecordType>()->getDecl());
+    const CXXRecordDecl *base = 
+      cast<CXXRecordDecl>(I->getType()->castAs<RecordType>()->getDecl());
 
     // Ignore empty bases.
-    if (BaseDecl->isEmpty())
+    if (base->isEmpty())
       continue;
     
-    // Ignore bases that don't have any pointer to data members.
-    if (CGM.getTypes().isZeroInitializable(BaseDecl))
-      continue;
-
-    unsigned BaseFieldNo = Layout.getNonVirtualBaseLLVMFieldNo(BaseDecl);
-    const llvm::Type *BaseTy = STy->getElementType(BaseFieldNo);
-
-    if (isa<llvm::StructType>(BaseTy)) {
-      // We can just emit the base as a null constant.
-      Elements[BaseFieldNo] = EmitNullConstant(CGM, BaseDecl);
-      continue;
-    }
-
-    // Some bases are represented as arrays of i8 if the size of the
-    // base is smaller than its corresponding LLVM type.
-    // Figure out how many elements this base array has.
-    const llvm::ArrayType *BaseArrayTy =  cast<llvm::ArrayType>(BaseTy);
-    unsigned NumBaseElements = BaseArrayTy->getNumElements();
-
-    // Fill in null data member pointers.
-    std::vector<llvm::Constant *> BaseElements(NumBaseElements);
-    FillInNullDataMemberPointers(CGM, I->getType(), BaseElements, 0);
-
-    // Now go through all other elements and zero them out.
-    if (NumBaseElements) {
-      const llvm::Type* Int8Ty = llvm::Type::getInt8Ty(CGM.getLLVMContext());
-      llvm::Constant *Zero = llvm::Constant::getNullValue(Int8Ty);
-      for (unsigned I = 0; I != NumBaseElements; ++I) {
-        if (!BaseElements[I])
-          BaseElements[I] = Zero;
-      }
-    }
-      
-    Elements[BaseFieldNo] = llvm::ConstantArray::get(BaseArrayTy, BaseElements);
+    unsigned fieldIndex = layout.getNonVirtualBaseLLVMFieldNo(base);
+    const llvm::Type *baseType = structure->getElementType(fieldIndex);
+    elements[fieldIndex] = EmitNullConstantForBase(CGM, baseType, base);
   }
 
-  // Visit all fields.
-  for (RecordDecl::field_iterator I = RD->field_begin(), E = RD->field_end();
-       I != E; ++I) {
-    const FieldDecl *FD = *I;
+  // Fill in all the fields.
+  for (RecordDecl::field_iterator I = record->field_begin(),
+         E = record->field_end(); I != E; ++I) {
+    const FieldDecl *field = *I;
     
     // Ignore bit fields.
-    if (FD->isBitField())
+    if (field->isBitField())
       continue;
     
-    unsigned FieldNo = Layout.getLLVMFieldNo(FD);
-    Elements[FieldNo] = CGM.EmitNullConstant(FD->getType());
+    unsigned fieldIndex = layout.getLLVMFieldNo(field);
+    elements[fieldIndex] = CGM.EmitNullConstant(field->getType());
+  }
+
+  // Fill in the virtual bases, if we're working with the complete object.
+  if (asCompleteObject) {
+    for (CXXRecordDecl::base_class_const_iterator
+           I = record->vbases_begin(), E = record->vbases_end(); I != E; ++I) {
+      const CXXRecordDecl *base = 
+        cast<CXXRecordDecl>(I->getType()->castAs<RecordType>()->getDecl());
+
+      // Ignore empty bases.
+      if (base->isEmpty())
+        continue;
+
+      unsigned fieldIndex = layout.getVirtualBaseIndex(base);
+
+      // We might have already laid this field out.
+      if (elements[fieldIndex]) continue;
+
+      const llvm::Type *baseType = structure->getElementType(fieldIndex);
+      elements[fieldIndex] = EmitNullConstantForBase(CGM, baseType, base);
+    }
   }
 
   // Now go through all other fields and zero them out.
-  for (unsigned i = 0; i != NumElements; ++i) {
-    if (!Elements[i])
-      Elements[i] = llvm::Constant::getNullValue(STy->getElementType(i));
+  for (unsigned i = 0; i != numElements; ++i) {
+    if (!elements[i])
+      elements[i] = llvm::Constant::getNullValue(structure->getElementType(i));
   }
   
-  return llvm::ConstantStruct::get(STy, Elements);
+  return llvm::ConstantStruct::get(structure, elements);
+}
+
+/// Emit the null constant for a base subobject.
+static llvm::Constant *EmitNullConstantForBase(CodeGenModule &CGM,
+                                               const llvm::Type *baseType,
+                                               const CXXRecordDecl *base) {
+  const CGRecordLayout &baseLayout = CGM.getTypes().getCGRecordLayout(base);
+
+  // Just zero out bases that don't have any pointer to data members.
+  if (baseLayout.isZeroInitializableAsBase())
+    return llvm::Constant::getNullValue(baseType);
+
+  // If the base type is a struct, we can just use its null constant.
+  if (isa<llvm::StructType>(baseType)) {
+    return EmitNullConstant(CGM, base, /*complete*/ false);
+  }
+
+  // Otherwise, some bases are represented as arrays of i8 if the size
+  // of the base is smaller than its corresponding LLVM type.  Figure
+  // out how many elements this base array has.
+  const llvm::ArrayType *baseArrayType = cast<llvm::ArrayType>(baseType);
+  unsigned numBaseElements = baseArrayType->getNumElements();
+
+  // Fill in null data member pointers.
+  std::vector<llvm::Constant *> baseElements(numBaseElements);
+  FillInNullDataMemberPointers(CGM, CGM.getContext().getTypeDeclType(base),
+                               baseElements, 0);
+
+  // Now go through all other elements and zero them out.
+  if (numBaseElements) {
+    const llvm::Type *i8 = llvm::Type::getInt8Ty(CGM.getLLVMContext());
+    llvm::Constant *i8_zero = llvm::Constant::getNullValue(i8);
+    for (unsigned i = 0; i != numBaseElements; ++i) {
+      if (!baseElements[i])
+        baseElements[i] = i8_zero;
+    }
+  }
+      
+  return llvm::ConstantArray::get(baseArrayType, baseElements);
 }
 
 llvm::Constant *CodeGenModule::EmitNullConstant(QualType T) {
@@ -1114,7 +1175,7 @@ llvm::Constant *CodeGenModule::EmitNullConstant(QualType T) {
 
   if (const RecordType *RT = T->getAs<RecordType>()) {
     const CXXRecordDecl *RD = cast<CXXRecordDecl>(RT->getDecl());
-    return ::EmitNullConstant(*this, RD);
+    return ::EmitNullConstant(*this, RD, /*complete object*/ true);
   }
 
   assert(T->isMemberPointerType() && "Should only see member pointers here!");
@@ -1123,6 +1184,5 @@ llvm::Constant *CodeGenModule::EmitNullConstant(QualType T) {
   
   // Itanium C++ ABI 2.3:
   //   A NULL pointer is represented as -1.
-  return llvm::ConstantInt::get(getTypes().ConvertTypeForMem(T), -1ULL, 
-                                /*isSigned=*/true);
+  return getCXXABI().EmitNullMemberPointer(T->castAs<MemberPointerType>());
 }

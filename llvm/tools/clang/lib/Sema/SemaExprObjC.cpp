@@ -14,6 +14,7 @@
 #include "clang/Sema/SemaInternal.h"
 #include "clang/Sema/Lookup.h"
 #include "clang/Sema/Scope.h"
+#include "clang/Sema/ScopeInfo.h"
 #include "clang/Sema/Initialization.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/DeclObjC.h"
@@ -23,6 +24,7 @@
 #include "clang/Lex/Preprocessor.h"
 
 using namespace clang;
+using namespace sema;
 
 ExprResult Sema::ParseObjCStringLiteral(SourceLocation *AtLocs,
                                         Expr **strings,
@@ -194,6 +196,44 @@ ExprResult Sema::ParseObjCProtocolExpression(IdentifierInfo *ProtocolId,
   Ty = Context.getObjCObjectPointerType(Ty);
   return new (Context) ObjCProtocolExpr(Ty, PDecl, AtLoc, RParenLoc);
 }
+
+/// Try to capture an implicit reference to 'self'.
+ObjCMethodDecl *Sema::tryCaptureObjCSelf() {
+  // Ignore block scopes: we can capture through them.
+  DeclContext *DC = CurContext;
+  while (true) {
+    if (isa<BlockDecl>(DC)) DC = cast<BlockDecl>(DC)->getDeclContext();
+    else if (isa<EnumDecl>(DC)) DC = cast<EnumDecl>(DC)->getDeclContext();
+    else break;
+  }
+
+  // If we're not in an ObjC method, error out.  Note that, unlike the
+  // C++ case, we don't require an instance method --- class methods
+  // still have a 'self', and we really do still need to capture it!
+  ObjCMethodDecl *method = dyn_cast<ObjCMethodDecl>(DC);
+  if (!method)
+    return 0;
+
+  ImplicitParamDecl *self = method->getSelfDecl();
+  assert(self && "capturing 'self' in non-definition?");
+
+  // Mark that we're closing on 'this' in all the block scopes, if applicable.
+  for (unsigned idx = FunctionScopes.size() - 1;
+       isa<BlockScopeInfo>(FunctionScopes[idx]);
+       --idx) {
+    BlockScopeInfo *blockScope = cast<BlockScopeInfo>(FunctionScopes[idx]);
+    unsigned &captureIndex = blockScope->CaptureMap[self];
+    if (captureIndex) break;
+
+    bool nested = isa<BlockScopeInfo>(FunctionScopes[idx-1]);
+    blockScope->Captures.push_back(
+              BlockDecl::Capture(self, /*byref*/ false, nested, /*copy*/ 0));
+    captureIndex = blockScope->Captures.size(); // +1
+  }
+
+  return method;
+}
+
 
 bool Sema::CheckMessageArgumentTypes(Expr **Args, unsigned NumArgs,
                                      Selector Sel, ObjCMethodDecl *Method,
@@ -480,6 +520,22 @@ HandleExprPropertyRefExpr(const ObjCObjectPointerType *OPT,
     return HandleExprPropertyRefExpr(OPT, BaseExpr, TypoResult, MemberLoc,
                                      SuperLoc, SuperType, Super);
   }
+  ObjCInterfaceDecl *ClassDeclared;
+  if (ObjCIvarDecl *Ivar = 
+      IFace->lookupInstanceVariable(Member, ClassDeclared)) {
+    QualType T = Ivar->getType();
+    if (const ObjCObjectPointerType * OBJPT = 
+        T->getAsObjCInterfacePointerType()) {
+      const ObjCInterfaceType *IFaceT = OBJPT->getInterfaceType();
+      if (ObjCInterfaceDecl *IFace = IFaceT->getDecl())
+        if (IFace->isForwardDecl()) {
+          Diag(MemberLoc, diag::err_property_not_as_forward_class)
+          << MemberName << IFace;
+          Diag(IFace->getLocation(), diag::note_forward_class);
+          return ExprError();
+        }
+    }
+  }
   
   Diag(MemberLoc, diag::err_property_not_found)
     << MemberName << QualType(OPT, 0);
@@ -503,8 +559,8 @@ ActOnClassPropertyRefExpr(IdentifierInfo &receiverName,
   if (IFace == 0) {
     // If the "receiver" is 'super' in a method, handle it as an expression-like
     // property reference.
-    if (ObjCMethodDecl *CurMethod = getCurMethodDecl())
-      if (receiverNamePtr->isStr("super")) {
+    if (receiverNamePtr->isStr("super")) {
+      if (ObjCMethodDecl *CurMethod = tryCaptureObjCSelf()) {
         if (CurMethod->isInstanceMethod()) {
           QualType T = 
             Context.getObjCInterfaceType(CurMethod->getClassInterface());
@@ -520,6 +576,7 @@ ActOnClassPropertyRefExpr(IdentifierInfo &receiverName,
         // superclass.
         IFace = CurMethod->getClassInterface()->getSuperClass();
       }
+    }
     
     if (IFace == 0) {
       Diag(receiverNameLoc, diag::err_expected_ident_or_lparen);
@@ -634,6 +691,10 @@ Sema::ObjCMessageKind Sema::getObjCMessageKind(Scope *S,
     return ObjCInstanceMessage;
 
   case LookupResult::Found: {
+    // If the identifier is a class or not, and there is a trailing dot,
+    // it's an instance message.
+    if (HasTrailingDot)
+      return ObjCInstanceMessage;
     // We found something. If it's a type, then we have a class
     // message. Otherwise, it's an instance message.
     NamedDecl *ND = Result.getFoundDecl();
@@ -700,7 +761,7 @@ ExprResult Sema::ActOnSuperMessage(Scope *S,
                                    SourceLocation RBracLoc,
                                    MultiExprArg Args) {
   // Determine whether we are inside a method or not.
-  ObjCMethodDecl *Method = getCurMethodDecl();
+  ObjCMethodDecl *Method = tryCaptureObjCSelf();
   if (!Method) {
     Diag(SuperLoc, diag::err_invalid_receiver_to_message_super);
     return ExprError();

@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -fsyntax-only -verify %s
+// RUN: %clang_cc1 -fexceptions -fsyntax-only -verify %s
 
 // C++0x [class.access]p4:
 
@@ -497,4 +497,14 @@ namespace rdar8876150 {
     B b;
     return !b;
   }
+}
+
+namespace test23 {
+  template <typename T> class A {
+    A();
+    static A instance;
+  };
+
+  template <typename T> A<T> A<T>::instance;
+  template class A<int>;
 }

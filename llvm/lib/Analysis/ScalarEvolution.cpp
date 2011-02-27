@@ -2785,10 +2785,21 @@ const SCEV *ScalarEvolution::createNodeForPHI(PHINode *PN) {
                   HasNSW = true;
               } else if (const GEPOperator *GEP = 
                             dyn_cast<GEPOperator>(BEValueV)) {
-                // If the increment is a GEP, then we know it won't perform an
-                // unsigned overflow, because the address space cannot be
+                // If the increment is a GEP, then we know it won't perform a
+                // signed overflow, because the address space cannot be
                 // wrapped around.
-                HasNUW |= GEP->isInBounds();
+                //
+                // NOTE: This isn't strictly true, because you could have an
+                // object straddling the 2G address boundary in a 32-bit address
+                // space (for example).  We really want to model this as a "has
+                // no signed/unsigned wrap" where the base pointer is treated as
+                // unsigned and the increment is known to not have signed
+                // wrapping.
+                //
+                // This is a highly theoretical concern though, and this is good
+                // enough for all cases we know of at this point. :)
+                //                
+                HasNSW |= GEP->isInBounds();
               }
 
               const SCEV *StartVal = getSCEV(StartValueV);
@@ -2859,6 +2870,7 @@ const SCEV *ScalarEvolution::createNodeForGEP(GEPOperator *GEP) {
   // Add expression, because the Instruction may be guarded by control flow
   // and the no-overflow bits may not be valid for the expression in any
   // context.
+  bool isInBounds = GEP->isInBounds();
 
   const Type *IntPtrTy = getEffectiveSCEVType(GEP->getType());
   Value *Base = GEP->getOperand(0);
@@ -2887,7 +2899,8 @@ const SCEV *ScalarEvolution::createNodeForGEP(GEPOperator *GEP) {
       IndexS = getTruncateOrSignExtend(IndexS, IntPtrTy);
 
       // Multiply the index by the element size to compute the element offset.
-      const SCEV *LocalOffset = getMulExpr(IndexS, ElementSize);
+      const SCEV *LocalOffset = getMulExpr(IndexS, ElementSize, /*NUW*/ false,
+                                           /*NSW*/ isInBounds);
 
       // Add the element offset to the running total offset.
       TotalOffset = getAddExpr(TotalOffset, LocalOffset);
@@ -2898,7 +2911,8 @@ const SCEV *ScalarEvolution::createNodeForGEP(GEPOperator *GEP) {
   const SCEV *BaseS = getSCEV(Base);
 
   // Add the total offset from all the GEP indices to the base.
-  return getAddExpr(BaseS, TotalOffset);
+  return getAddExpr(BaseS, TotalOffset, /*NUW*/ false,
+                    /*NSW*/ isInBounds);
 }
 
 /// GetMinTrailingZeros - Determine the minimum number of zero bits that S is

@@ -12,9 +12,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "ExprEngineInternalChecks.h"
-#include "clang/StaticAnalyzer/BugReporter/BugType.h"
-#include "clang/StaticAnalyzer/PathSensitive/CheckerVisitor.h"
+#include "InternalChecks.h"
+#include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/CheckerVisitor.h"
 
 using namespace clang;
 using namespace ento;

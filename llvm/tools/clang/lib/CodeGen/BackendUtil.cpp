@@ -26,6 +26,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/SubtargetFeature.h"
 #include "llvm/Target/TargetData.h"
+#include "llvm/Target/TargetLibraryInfo.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/Target/TargetRegistry.h"
@@ -107,14 +108,22 @@ void EmitAssemblyHelper::CreatePasses() {
     OptLevel = 0;
     Inlining = CodeGenOpts.NoInlining;
   }
+  
+  FunctionPassManager *FPM = getPerFunctionPasses();
+  
+  TargetLibraryInfo *TLI =
+    new TargetLibraryInfo(Triple(TheModule->getTargetTriple()));
+  if (!CodeGenOpts.SimplifyLibCalls)
+    TLI->disableAllFunctions();
+  FPM->add(TLI);
 
   // In -O0 if checking is disabled, we don't even have per-function passes.
   if (CodeGenOpts.VerifyModule)
-    getPerFunctionPasses()->add(createVerifierPass());
+    FPM->add(createVerifierPass());
 
   // Assume that standard function passes aren't run for -O0.
   if (OptLevel > 0)
-    llvm::createStandardFunctionPasses(getPerFunctionPasses(), OptLevel);
+    llvm::createStandardFunctionPasses(FPM, OptLevel);
 
   llvm::Pass *InliningPass = 0;
   switch (Inlining) {
@@ -136,8 +145,15 @@ void EmitAssemblyHelper::CreatePasses() {
     break;
   }
 
+  PassManager *MPM = getPerModulePasses();
+  
+  TLI = new TargetLibraryInfo(Triple(TheModule->getTargetTriple()));
+  if (!CodeGenOpts.SimplifyLibCalls)
+    TLI->disableAllFunctions();
+  MPM->add(TLI);
+
   // For now we always create per module passes.
-  llvm::createStandardModulePasses(getPerModulePasses(), OptLevel,
+  llvm::createStandardModulePasses(MPM, OptLevel,
                                    CodeGenOpts.OptimizeSize,
                                    CodeGenOpts.UnitAtATime,
                                    CodeGenOpts.UnrollLoops,

@@ -590,6 +590,10 @@ void llvm::ComputeMaskedBits(Value *V, const APInt &Mask,
       }
     }
 
+    // Unreachable blocks may have zero-operand PHI nodes.
+    if (P->getNumIncomingValues() == 0)
+      return;
+
     // Otherwise take the unions of the known bit sets of the operands,
     // taking conservative care to avoid excessive recursion.
     if (Depth < MaxDepth - 1 && !KnownZero && !KnownOne) {
@@ -666,9 +670,7 @@ bool llvm::isPowerOfTwo(Value *V, const TargetData *TD, unsigned Depth) {
 
   // (signbit) >>l X is clearly a power of two if the one is not shifted off the
   // bottom.  If it is shifted off the bottom then the result is undefined.
-  ConstantInt *CI;
-  if (match(V, m_LShr(m_ConstantInt(CI), m_Value())) &&
-      CI->getValue().isSignBit())
+  if (match(V, m_LShr(m_SignBit(), m_Value())))
     return true;
 
   // The remaining tests are all recursive, so bail out if we hit the limit.
@@ -715,16 +717,16 @@ bool llvm::isKnownNonZero(Value *V, const TargetData *TD, unsigned Depth) {
   if (isa<SExtInst>(V) || isa<ZExtInst>(V))
     return isKnownNonZero(cast<Instruction>(V)->getOperand(0), TD, Depth);
 
-  // shl X, A != 0 if X is odd.  Note that the value of the shift is undefined
+  // shl X, Y != 0 if X is odd.  Note that the value of the shift is undefined
   // if the lowest bit is shifted off the end.
   if (BitWidth && match(V, m_Shl(m_Value(X), m_Value(Y)))) {
     APInt KnownZero(BitWidth, 0);
     APInt KnownOne(BitWidth, 0);
-    ComputeMaskedBits(V, APInt(BitWidth, 1), KnownZero, KnownOne, TD, Depth);
+    ComputeMaskedBits(X, APInt(BitWidth, 1), KnownZero, KnownOne, TD, Depth);
     if (KnownOne[0])
       return true;
   }
-  // shr X, A != 0 if X is negative.  Note that the value of the shift is not
+  // shr X, Y != 0 if X is negative.  Note that the value of the shift is not
   // defined if the sign bit is shifted off the end.
   else if (match(V, m_Shr(m_Value(X), m_Value(Y)))) {
     bool XKnownNonNegative, XKnownNegative;
@@ -1161,6 +1163,11 @@ bool llvm::CannotBeNegativeZero(const Value *V, unsigned Depth) {
 Value *llvm::isBytewiseValue(Value *V) {
   // All byte-wide stores are splatable, even of arbitrary variables.
   if (V->getType()->isIntegerTy(8)) return V;
+
+  // Handle 'null' ConstantArrayZero etc.
+  if (Constant *C = dyn_cast<Constant>(V))
+    if (C->isNullValue())
+      return Constant::getNullValue(Type::getInt8Ty(V->getContext()));
   
   // Constant float and double values can be handled as integer values if the
   // corresponding integer value is "byteable".  An important case is 0.0. 

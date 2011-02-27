@@ -54,7 +54,7 @@ class IdentifierInfo {
   // Objective-C keyword ('protocol' in '@protocol') or builtin (__builtin_inf).
   // First NUM_OBJC_KEYWORDS values are for Objective-C, the remaining values
   // are for builtins.
-  unsigned ObjCOrBuiltinID    :10;
+  unsigned ObjCOrBuiltinID    :11;
   bool HasMacro               : 1; // True if there is a #define for this.
   bool IsExtension            : 1; // True if identifier is a lang extension.
   bool IsPoisoned             : 1; // True if identifier is poisoned.
@@ -64,7 +64,7 @@ class IdentifierInfo {
                                    // file and wasn't modified since.
   bool RevertedTokenID        : 1; // True if RevertTokenIDToIdentifier was
                                    // called.
-  // 7 bits left in 32-bit word.
+  // 6 bits left in 32-bit word.
   void *FETokenInfo;               // Managed by the language front-end.
   llvm::StringMapEntry<IdentifierInfo*> *Entry;
 
@@ -510,8 +510,33 @@ public:
     return getIdentifierInfoFlag() == ZeroArg;
   }
   unsigned getNumArgs() const;
+  
+  
+  /// \brief Retrieve the identifier at a given position in the selector.
+  ///
+  /// Note that the identifier pointer returned may be NULL. Clients that only
+  /// care about the text of the identifier string, and not the specific, 
+  /// uniqued identifier pointer, should use \c getNameForSlot(), which returns
+  /// an empty string when the identifier pointer would be NULL.
+  ///
+  /// \param argIndex The index for which we want to retrieve the identifier.
+  /// This index shall be less than \c getNumArgs() unless this is a keyword
+  /// selector, in which case 0 is the only permissible value.
+  ///
+  /// \returns the uniqued identifier for this slot, or NULL if this slot has
+  /// no corresponding identifier.
   IdentifierInfo *getIdentifierInfoForSlot(unsigned argIndex) const;
-
+  
+  /// \brief Retrieve the name at a given position in the selector.
+  ///
+  /// \param argIndex The index for which we want to retrieve the name.
+  /// This index shall be less than \c getNumArgs() unless this is a keyword
+  /// selector, in which case 0 is the only permissible value.
+  ///
+  /// \returns the name for this slot, which may be the empty string if no
+  /// name was supplied.
+  llvm::StringRef getNameForSlot(unsigned argIndex) const;
+  
   /// getAsString - Derive the full selector name (e.g. "foo:bar:") and return
   /// it as an std::string.
   std::string getAsString() const;

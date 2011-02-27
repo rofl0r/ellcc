@@ -755,10 +755,10 @@ void CodeGenModule::ConstructAttributeList(const CGFunctionInfo &FI,
   if (RetAttrs)
     PAL.push_back(llvm::AttributeWithIndex::get(0, RetAttrs));
 
-  // FIXME: we need to honor command line settings also.
-  // FIXME: RegParm should be reduced in case of nested functions and/or global
-  // register variable.
+  // FIXME: RegParm should be reduced in case of global register variable.
   signed RegParm = FI.getRegParm();
+  if (!RegParm)
+    RegParm = CodeGenOpts.NumRegisterParameters;
 
   unsigned PointerWidth = getContext().Target.getPointerWidth(0);
   for (CGFunctionInfo::const_arg_iterator it = FI.arg_begin(),
@@ -769,7 +769,7 @@ void CodeGenModule::ConstructAttributeList(const CGFunctionInfo &FI,
 
     // 'restrict' -> 'noalias' is done in EmitFunctionProlog when we
     // have the corresponding parameter variable.  It doesn't make
-    // sense to do it here because parameters are so fucked up.
+    // sense to do it here because parameters are so messed up.
     switch (AI.getKind()) {
     case ABIArgInfo::Extend:
       if (ParamType->isSignedIntegerType())
@@ -928,7 +928,7 @@ void CodeGenFunction::EmitFunctionProlog(const CGFunctionInfo &FI,
       // The alignment we need to use is the max of the requested alignment for
       // the argument plus the alignment required by our access code below.
       unsigned AlignmentToUse =
-        CGF.CGM.getTargetData().getABITypeAlignment(ArgI.getCoerceToType());
+        CGM.getTargetData().getABITypeAlignment(ArgI.getCoerceToType());
       AlignmentToUse = std::max(AlignmentToUse,
                         (unsigned)getContext().getDeclAlign(Arg).getQuantity());
 

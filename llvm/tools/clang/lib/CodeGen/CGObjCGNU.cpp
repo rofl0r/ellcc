@@ -216,8 +216,8 @@ public:
   virtual llvm::Value *EmitIvarOffset(CodeGen::CodeGenFunction &CGF,
                                       const ObjCInterfaceDecl *Interface,
                                       const ObjCIvarDecl *Ivar);
-  virtual llvm::Constant *GCBlockLayout(CodeGen::CodeGenFunction &CGF,
-              const llvm::SmallVectorImpl<const Expr *> &) {
+  virtual llvm::Constant *BuildGCBlockLayout(CodeGen::CodeGenModule &CGM,
+                                             const CGBlockInfo &blockInfo) {
     return NULLPtr;
   }
 };
@@ -1437,7 +1437,8 @@ void CGObjCGNU::GenerateClass(const ObjCImplementationDecl *OID) {
   }
 
   // Get the size of instances.
-  int instanceSize = Context.getASTObjCImplementationLayout(OID).getSize() / 8;
+  int instanceSize = 
+    Context.getASTObjCImplementationLayout(OID).getSize().getQuantity();
 
   // Collect information about instance variables.
   llvm::SmallVector<llvm::Constant*, 16> IvarNames;
@@ -1447,7 +1448,7 @@ void CGObjCGNU::GenerateClass(const ObjCImplementationDecl *OID) {
   std::vector<llvm::Constant*> IvarOffsetValues;
 
   int superInstanceSize = !SuperClassDecl ? 0 :
-    Context.getASTObjCInterfaceLayout(SuperClassDecl).getSize() / 8;
+    Context.getASTObjCInterfaceLayout(SuperClassDecl).getSize().getQuantity();
   // For non-fragile ivars, set the instance size to 0 - {the size of just this
   // class}.  The runtime will then set this to the correct value on load.
   if (CGM.getContext().getLangOptions().ObjCNonFragileABI) {

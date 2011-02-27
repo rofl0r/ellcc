@@ -96,6 +96,7 @@ class ComparableFunction {
 public:
   static const ComparableFunction EmptyKey;
   static const ComparableFunction TombstoneKey;
+  static TargetData * const LookupOnly;
 
   ComparableFunction(Function *Func, TargetData *TD)
     : Func(Func), Hash(profileFunction(Func)), TD(TD) {}
@@ -112,22 +113,9 @@ public:
     Func = NULL;
   }
 
-  bool &getOrInsertCachedComparison(const ComparableFunction &Other,
-                                    bool &inserted) const {
-    typedef DenseMap<Function *, bool>::iterator iterator;
-    std::pair<iterator, bool> p =
-        CompareResultCache.insert(std::make_pair(Other.getFunc(), false));
-    inserted = p.second;
-    return p.first->second;
-  }
-
 private:
   explicit ComparableFunction(unsigned Hash)
     : Func(NULL), Hash(Hash), TD(NULL) {}
-
-  // DenseMap::grow() triggers a recomparison of all keys in the map, which is
-  // wildly expensive. This cache tries to preserve known results.
-  mutable DenseMap<Function *, bool> CompareResultCache;
 
   AssertingVH<Function> Func;
   unsigned Hash;
@@ -137,6 +125,7 @@ private:
 const ComparableFunction ComparableFunction::EmptyKey = ComparableFunction(0);
 const ComparableFunction ComparableFunction::TombstoneKey =
     ComparableFunction(1);
+TargetData * const ComparableFunction::LookupOnly = (TargetData*)(-1);
 
 }
 
@@ -297,6 +286,10 @@ bool FunctionComparator::isEquivalentType(const Type *Ty1,
 // Instruction::isSameOperationAs.
 bool FunctionComparator::isEquivalentOperation(const Instruction *I1,
                                                const Instruction *I2) const {
+  // Differences from Instruction::isSameOperationAs:
+  //  * replace type comparison with calls to isEquivalentType.
+  //  * we test for I->hasSameSubclassOptionalData (nuw/nsw/tail) at the top
+  //  * because of the above, we don't test for the tail bit on calls later on
   if (I1->getOpcode() != I2->getOpcode() ||
       I1->getNumOperands() != I2->getNumOperands() ||
       !isEquivalentType(I1->getType(), I2->getType()) ||
@@ -320,8 +313,7 @@ bool FunctionComparator::isEquivalentOperation(const Instruction *I1,
   if (const CmpInst *CI = dyn_cast<CmpInst>(I1))
     return CI->getPredicate() == cast<CmpInst>(I2)->getPredicate();
   if (const CallInst *CI = dyn_cast<CallInst>(I1))
-    return CI->isTailCall() == cast<CallInst>(I2)->isTailCall() &&
-           CI->getCallingConv() == cast<CallInst>(I2)->getCallingConv() &&
+    return CI->getCallingConv() == cast<CallInst>(I2)->getCallingConv() &&
            CI->getAttributes() == cast<CallInst>(I2)->getAttributes();
   if (const InvokeInst *CI = dyn_cast<InvokeInst>(I1))
     return CI->getCallingConv() == cast<InvokeInst>(I2)->getCallingConv() &&
@@ -402,12 +394,8 @@ bool FunctionComparator::enumerate(const Value *V1, const Value *V2) {
       C1 == ConstantExpr::getBitCast(const_cast<Constant*>(C2), C1->getType());
   }
 
-  if (isa<InlineAsm>(V1) && isa<InlineAsm>(V2)) {
-    const InlineAsm *IA1 = cast<InlineAsm>(V1);
-    const InlineAsm *IA2 = cast<InlineAsm>(V2);
-    return IA1->getAsmString() == IA2->getAsmString() &&
-           IA1->getConstraintString() == IA2->getConstraintString();
-  }
+  if (isa<InlineAsm>(V1) || isa<InlineAsm>(V2))
+    return V1 == V2;
 
   unsigned long &ID1 = Map1[V1];
   if (!ID1)
@@ -672,19 +660,17 @@ bool DenseMapInfo<ComparableFunction>::isEqual(const ComparableFunction &LHS,
     return true;
   if (!LHS.getFunc() || !RHS.getFunc())
     return false;
+
+  // One of these is a special "underlying pointer comparison only" object.
+  if (LHS.getTD() == ComparableFunction::LookupOnly ||
+      RHS.getTD() == ComparableFunction::LookupOnly)
+    return false;
+
   assert(LHS.getTD() == RHS.getTD() &&
          "Comparing functions for different targets");
 
-  bool inserted;
-  bool &result1 = LHS.getOrInsertCachedComparison(RHS, inserted);
-  if (!inserted)
-    return result1;
-  bool &result2 = RHS.getOrInsertCachedComparison(LHS, inserted);
-  if (!inserted)
-    return result1 = result2;
-
-  return result1 = result2 = FunctionComparator(LHS.getTD(), LHS.getFunc(),
-                                                RHS.getFunc()).compare();
+  return FunctionComparator(LHS.getTD(), LHS.getFunc(),
+                            RHS.getFunc()).compare();
 }
 
 // Replace direct callers of Old with New.
@@ -818,8 +804,10 @@ void MergeFunctions::mergeTwoFunctions(Function *F, Function *G) {
 // that was already inserted.
 bool MergeFunctions::insert(ComparableFunction &NewF) {
   std::pair<FnSetType::iterator, bool> Result = FnSet.insert(NewF);
-  if (Result.second)
+  if (Result.second) {
+    DEBUG(dbgs() << "Inserting as unique: " << NewF.getFunc()->getName() << '\n');
     return false;
+  }
 
   const ComparableFunction &OldF = *Result.first;
 
@@ -839,8 +827,15 @@ bool MergeFunctions::insert(ComparableFunction &NewF) {
 // Remove a function from FnSet. If it was already in FnSet, add it to Deferred
 // so that we'll look at it in the next round.
 void MergeFunctions::remove(Function *F) {
-  ComparableFunction CF = ComparableFunction(F, TD);
+  // We need to make sure we remove F, not a function "equal" to F per the
+  // function equality comparator.
+  //
+  // The special "lookup only" ComparableFunction bypasses the expensive
+  // function comparison in favour of a pointer comparison on the underlying
+  // Function*'s.
+  ComparableFunction CF = ComparableFunction(F, ComparableFunction::LookupOnly);
   if (FnSet.erase(CF)) {
+    DEBUG(dbgs() << "Removed " << F->getName() << " from set and deferred it.\n");
     Deferred.push_back(F);
   }
 }

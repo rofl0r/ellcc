@@ -12,12 +12,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "ExprEngineExperimentalChecks.h"
-#include "clang/StaticAnalyzer/BugReporter/BugType.h"
-#include "clang/StaticAnalyzer/PathSensitive/CheckerVisitor.h"
-#include "clang/StaticAnalyzer/PathSensitive/GRState.h"
-#include "clang/StaticAnalyzer/PathSensitive/GRStateTrait.h"
-#include "clang/StaticAnalyzer/PathSensitive/SymbolManager.h"
+#include "ExperimentalChecks.h"
+#include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/CheckerVisitor.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/GRState.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/GRStateTrait.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/SymbolManager.h"
 #include "llvm/ADT/ImmutableMap.h"
 using namespace clang;
 using namespace ento;
@@ -380,9 +380,7 @@ bool MallocChecker::SummarizeValue(llvm::raw_ostream& os, SVal V) {
   else if (loc::ConcreteInt *ConstAddr = dyn_cast<loc::ConcreteInt>(&V))
     os << "a constant address (" << ConstAddr->getValue() << ")";
   else if (loc::GotoLabel *Label = dyn_cast<loc::GotoLabel>(&V))
-    os << "the address of the label '"
-       << Label->getLabel()->getID()->getName()
-       << "'";
+    os << "the address of the label '" << Label->getLabel()->getName() << "'";
   else
     return false;
   

@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -analyze -analyzer-experimental-checks -analyzer-check-objc-mem -analyzer-check-dead-stores -verify -analyzer-opt-analyze-nested-blocks -Wno-unused-value %s
+// RUN: %clang_cc1 -analyze -analyzer-checker=core.experimental.UnreachableCode -analyzer-check-objc-mem -analyzer-checker=core.DeadStores -verify -analyzer-opt-analyze-nested-blocks -Wno-unused-value %s
 
 extern void foo(int a);
 
@@ -114,9 +114,9 @@ void test10() {
   goto b; // expected-warning {{never executed}}
   goto a; // expected-warning {{never executed}}
   b:
-  i = 1; // expected-warning {{Value stored to 'i' is never read}}
+  i = 1; // no-warning
   a:
-  i = 2; // expected-warning {{Value stored to 'i' is never read}}
+  i = 2;  // no-warning
   goto f;
   e:
   goto d;

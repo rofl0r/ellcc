@@ -392,6 +392,14 @@ static LinkageInfo getLVForNamespaceScopeDecl(const NamedDecl *D, LVFlags F) {
       }
     }
 
+    // In C++, then if the type of the function uses a type with
+    // unique-external linkage, it's not legally usable from outside
+    // this translation unit.  However, we should use the C linkage
+    // rules instead for extern "C" declarations.
+    if (Context.getLangOptions().CPlusPlus && !Function->isExternC() &&
+        Function->getType()->getLinkage() == UniqueExternalLinkage)
+      return LinkageInfo::uniqueExternal();
+
     if (FunctionTemplateSpecializationInfo *SpecInfo
                                = Function->getTemplateSpecializationInfo()) {
       LV.merge(getLVForDecl(SpecInfo->getTemplate(),
@@ -512,6 +520,11 @@ static LinkageInfo getLVForClassMember(const NamedDecl *D, LVFlags F) {
     return LinkageInfo::uniqueExternal();
 
   if (const CXXMethodDecl *MD = dyn_cast<CXXMethodDecl>(D)) {
+    // If the type of the function uses a type with unique-external
+    // linkage, it's not legally usable from outside this translation unit.
+    if (MD->getType()->getLinkage() == UniqueExternalLinkage)
+      return LinkageInfo::uniqueExternal();
+
     TemplateSpecializationKind TSK = TSK_Undeclared;
 
     // If this is a method template specialization, use the linkage for
@@ -577,6 +590,49 @@ static LinkageInfo getLVForClassMember(const NamedDecl *D, LVFlags F) {
   }
 
   return LV;
+}
+
+static void clearLinkageForClass(const CXXRecordDecl *record) {
+  for (CXXRecordDecl::decl_iterator
+         i = record->decls_begin(), e = record->decls_end(); i != e; ++i) {
+    Decl *child = *i;
+    if (isa<NamedDecl>(child))
+      cast<NamedDecl>(child)->ClearLinkageCache();
+  }
+}
+
+void NamedDecl::ClearLinkageCache() {
+  // Note that we can't skip clearing the linkage of children just
+  // because the parent doesn't have cached linkage:  we don't cache
+  // when computing linkage for parent contexts.
+
+  HasCachedLinkage = 0;
+
+  // If we're changing the linkage of a class, we need to reset the
+  // linkage of child declarations, too.
+  if (const CXXRecordDecl *record = dyn_cast<CXXRecordDecl>(this))
+    clearLinkageForClass(record);
+
+  if (ClassTemplateDecl *temp =
+        dyn_cast<ClassTemplateDecl>(const_cast<NamedDecl*>(this))) {
+    // Clear linkage for the template pattern.
+    CXXRecordDecl *record = temp->getTemplatedDecl();
+    record->HasCachedLinkage = 0;
+    clearLinkageForClass(record);
+
+    // We need to clear linkage for specializations, too.
+    for (ClassTemplateDecl::spec_iterator
+           i = temp->spec_begin(), e = temp->spec_end(); i != e; ++i)
+      i->ClearLinkageCache();
+  }
+
+  // Clear cached linkage for function template decls, too.
+  if (FunctionTemplateDecl *temp =
+        dyn_cast<FunctionTemplateDecl>(const_cast<NamedDecl*>(this)))
+    for (FunctionTemplateDecl::spec_iterator
+           i = temp->spec_begin(), e = temp->spec_end(); i != e; ++i)
+      i->ClearLinkageCache();
+    
 }
 
 Linkage NamedDecl::getLinkage() const {
@@ -2104,8 +2160,26 @@ void BlockDecl::setParams(ParmVarDecl **NewParamInfo,
   }
 }
 
-unsigned BlockDecl::getNumParams() const {
-  return NumParams;
+void BlockDecl::setCaptures(ASTContext &Context,
+                            const Capture *begin,
+                            const Capture *end,
+                            bool capturesCXXThis) {
+  CapturesCXXThis = capturesCXXThis;
+
+  if (begin == end) {
+    NumCaptures = 0;
+    Captures = 0;
+    return;
+  }
+
+  NumCaptures = end - begin;
+
+  // Avoid new Capture[] because we don't want to provide a default
+  // constructor.
+  size_t allocationSize = NumCaptures * sizeof(Capture);
+  void *buffer = Context.Allocate(allocationSize, /*alignment*/sizeof(void*));
+  memcpy(buffer, begin, allocationSize);
+  Captures = static_cast<Capture*>(buffer);
 }
 
 SourceRange BlockDecl::getSourceRange() const {
@@ -2119,6 +2193,12 @@ SourceRange BlockDecl::getSourceRange() const {
 TranslationUnitDecl *TranslationUnitDecl::Create(ASTContext &C) {
   return new (C) TranslationUnitDecl(C);
 }
+
+LabelDecl *LabelDecl::Create(ASTContext &C, DeclContext *DC,
+                             SourceLocation L, IdentifierInfo *II) {
+  return new (C) LabelDecl(DC, L, II, 0);
+}
+
 
 NamespaceDecl *NamespaceDecl::Create(ASTContext &C, DeclContext *DC,
                                      SourceLocation L, IdentifierInfo *Id) {

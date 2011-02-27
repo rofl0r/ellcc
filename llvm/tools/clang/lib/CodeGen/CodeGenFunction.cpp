@@ -29,9 +29,9 @@ using namespace clang;
 using namespace CodeGen;
 
 CodeGenFunction::CodeGenFunction(CodeGenModule &cgm)
-  : BlockFunction(cgm, *this, Builder), CGM(cgm),
-    Target(CGM.getContext().Target),
-    Builder(cgm.getModule().getContext()),
+  : CodeGenTypeCache(cgm), CGM(cgm),
+    Target(CGM.getContext().Target), Builder(cgm.getModule().getContext()),
+    BlockInfo(0), BlockPointer(0),
     NormalCleanupDest(0), EHCleanupDest(0), NextCleanupDestIndex(1),
     ExceptionSlot(0), DebugInfo(0), IndirectBranch(0),
     SwitchInsn(0), CaseRangeBlock(0),
@@ -39,13 +39,6 @@ CodeGenFunction::CodeGenFunction(CodeGenModule &cgm)
     CXXThisDecl(0), CXXThisValue(0), CXXVTTDecl(0), CXXVTTValue(0),
     OutermostConditional(0), TerminateLandingPad(0), TerminateHandler(0),
     TrapBB(0) {
-      
-  // Get some frequently used types.
-  LLVMPointerWidth = Target.getPointerWidth(0);
-  llvm::LLVMContext &LLVMContext = CGM.getLLVMContext();
-  IntPtrTy = llvm::IntegerType::get(LLVMContext, LLVMPointerWidth);
-  Int32Ty  = llvm::Type::getInt32Ty(LLVMContext);
-  Int64Ty  = llvm::Type::getInt64Ty(LLVMContext);
       
   Exceptions = getContext().getLangOptions().Exceptions;
   CatchUndefined = getContext().getLangOptions().CatchUndefined;
@@ -125,7 +118,8 @@ void CodeGenFunction::FinishFunction(SourceLocation EndLoc) {
   // Emit function epilog (to return).
   EmitReturnBlock();
 
-  EmitFunctionInstrumentation("__cyg_profile_func_exit");
+  if (ShouldInstrumentFunction())
+    EmitFunctionInstrumentation("__cyg_profile_func_exit");
 
   // Emit debug descriptor for function end.
   if (CGDebugInfo *DI = getDebugInfo()) {
@@ -184,20 +178,16 @@ bool CodeGenFunction::ShouldInstrumentFunction() {
 /// instrumentation function with the current function and the call site, if
 /// function instrumentation is enabled.
 void CodeGenFunction::EmitFunctionInstrumentation(const char *Fn) {
-  if (!ShouldInstrumentFunction())
-    return;
-
   const llvm::PointerType *PointerTy;
   const llvm::FunctionType *FunctionTy;
   std::vector<const llvm::Type*> ProfileFuncArgs;
 
   // void __cyg_profile_func_{enter,exit} (void *this_fn, void *call_site);
-  PointerTy = llvm::Type::getInt8PtrTy(VMContext);
+  PointerTy = Int8PtrTy;
   ProfileFuncArgs.push_back(PointerTy);
   ProfileFuncArgs.push_back(PointerTy);
-  FunctionTy = llvm::FunctionType::get(
-    llvm::Type::getVoidTy(VMContext),
-    ProfileFuncArgs, false);
+  FunctionTy = llvm::FunctionType::get(llvm::Type::getVoidTy(getLLVMContext()),
+                                       ProfileFuncArgs, false);
 
   llvm::Constant *F = CGM.CreateRuntimeFunction(FunctionTy, Fn);
   llvm::CallInst *CallSite = Builder.CreateCall(
@@ -208,6 +198,15 @@ void CodeGenFunction::EmitFunctionInstrumentation(const char *Fn) {
   Builder.CreateCall2(F,
                       llvm::ConstantExpr::getBitCast(CurFn, PointerTy),
                       CallSite);
+}
+
+void CodeGenFunction::EmitMCountInstrumentation() {
+  llvm::FunctionType *FTy =
+    llvm::FunctionType::get(llvm::Type::getVoidTy(getLLVMContext()), false);
+
+  llvm::Constant *MCountFn = CGM.CreateRuntimeFunction(FTy,
+                                                       Target.getMCountName());
+  Builder.CreateCall(MCountFn);
 }
 
 void CodeGenFunction::StartFunction(GlobalDecl GD, QualType RetTy,
@@ -231,6 +230,19 @@ void CodeGenFunction::StartFunction(GlobalDecl GD, QualType RetTy,
         Fn->addFnAttr(llvm::Attribute::InlineHint);
         break;
       }
+
+  if (getContext().getLangOptions().OpenCL) {
+    // Add metadata for a kernel function.
+    if (const FunctionDecl *FD = dyn_cast_or_null<FunctionDecl>(D))
+      if (FD->hasAttr<OpenCLKernelAttr>()) {
+        llvm::LLVMContext &Context = getLLVMContext();
+        llvm::NamedMDNode *OpenCLMetadata = 
+          CGM.getModule().getOrInsertNamedMetadata("opencl.kernels");
+          
+        llvm::Value *Op = Fn;
+        OpenCLMetadata->addOperand(llvm::MDNode::get(Context, &Op, 1));
+      }
+  }
 
   llvm::BasicBlock *EntryBB = createBasicBlock("entry", CurFn);
 
@@ -258,7 +270,11 @@ void CodeGenFunction::StartFunction(GlobalDecl GD, QualType RetTy,
     DI->EmitFunctionStart(GD, FnType, CurFn, Builder);
   }
 
-  EmitFunctionInstrumentation("__cyg_profile_func_enter");
+  if (ShouldInstrumentFunction())
+    EmitFunctionInstrumentation("__cyg_profile_func_enter");
+
+  if (CGM.getCodeGenOpts().InstrumentForProfiling)
+    EmitMCountInstrumentation();
 
   // FIXME: Leaked.
   // CC info is ignored, hopefully?
@@ -385,8 +401,7 @@ bool CodeGenFunction::ContainsLabel(const Stmt *S, bool IgnoreCaseStmts) {
     IgnoreCaseStmts = true;
 
   // Scan subexpressions for verboten labels.
-  for (Stmt::const_child_iterator I = S->child_begin(), E = S->child_end();
-       I != E; ++I)
+  for (Stmt::const_child_range I = S->children(); I; ++I)
     if (ContainsLabel(*I, IgnoreCaseStmts))
       return true;
 
@@ -530,6 +545,57 @@ void CodeGenFunction::ErrorUnsupported(const Stmt *S, const char *Type,
   CGM.ErrorUnsupported(S, Type, OmitOnError);
 }
 
+/// emitNonZeroVLAInit - Emit the "zero" initialization of a
+/// variable-length array whose elements have a non-zero bit-pattern.
+///
+/// \param src - a char* pointing to the bit-pattern for a single
+/// base element of the array
+/// \param sizeInChars - the total size of the VLA, in chars
+/// \param align - the total alignment of the VLA
+static void emitNonZeroVLAInit(CodeGenFunction &CGF, QualType baseType,
+                               llvm::Value *dest, llvm::Value *src, 
+                               llvm::Value *sizeInChars) {
+  std::pair<CharUnits,CharUnits> baseSizeAndAlign
+    = CGF.getContext().getTypeInfoInChars(baseType);
+
+  CGBuilderTy &Builder = CGF.Builder;
+
+  llvm::Value *baseSizeInChars
+    = llvm::ConstantInt::get(CGF.IntPtrTy, baseSizeAndAlign.first.getQuantity());
+
+  const llvm::Type *i8p = Builder.getInt8PtrTy();
+
+  llvm::Value *begin = Builder.CreateBitCast(dest, i8p, "vla.begin");
+  llvm::Value *end = Builder.CreateInBoundsGEP(dest, sizeInChars, "vla.end");
+
+  llvm::BasicBlock *originBB = CGF.Builder.GetInsertBlock();
+  llvm::BasicBlock *loopBB = CGF.createBasicBlock("vla-init.loop");
+  llvm::BasicBlock *contBB = CGF.createBasicBlock("vla-init.cont");
+
+  // Make a loop over the VLA.  C99 guarantees that the VLA element
+  // count must be nonzero.
+  CGF.EmitBlock(loopBB);
+
+  llvm::PHINode *cur = Builder.CreatePHI(i8p, "vla.cur");
+  cur->reserveOperandSpace(2);
+  cur->addIncoming(begin, originBB);
+
+  // memcpy the individual element bit-pattern.
+  Builder.CreateMemCpy(cur, src, baseSizeInChars,
+                       baseSizeAndAlign.second.getQuantity(),
+                       /*volatile*/ false);
+
+  // Go to the next element.
+  llvm::Value *next = Builder.CreateConstInBoundsGEP1_32(cur, 1, "vla.next");
+
+  // Leave if that's the end of the VLA.
+  llvm::Value *done = Builder.CreateICmpEQ(next, end, "vla-init.isdone");
+  Builder.CreateCondBr(done, contBB, loopBB);
+  cur->addIncoming(next, loopBB);
+
+  CGF.EmitBlock(contBB);
+} 
+
 void
 CodeGenFunction::EmitNullInitialization(llvm::Value *DestPtr, QualType Ty) {
   // Ignore empty classes in C++.
@@ -553,7 +619,7 @@ CodeGenFunction::EmitNullInitialization(llvm::Value *DestPtr, QualType Ty) {
   unsigned Align = TypeInfo.second / 8;
 
   llvm::Value *SizeVal;
-  bool vla;
+  const VariableArrayType *vla;
 
   // Don't bother emitting a zero-byte memset.
   if (Size == 0) {
@@ -562,20 +628,22 @@ CodeGenFunction::EmitNullInitialization(llvm::Value *DestPtr, QualType Ty) {
           dyn_cast_or_null<VariableArrayType>(
                                           getContext().getAsArrayType(Ty))) {
       SizeVal = GetVLASize(vlaType);
-      vla = true;
+      vla = vlaType;
     } else {
       return;
     }
   } else {
     SizeVal = llvm::ConstantInt::get(IntPtrTy, Size);
-    vla = false;
+    vla = 0;
   }
 
   // If the type contains a pointer to data member we can't memset it to zero.
   // Instead, create a null constant and copy it to the destination.
+  // TODO: there are other patterns besides zero that we can usefully memset,
+  // like -1, which happens to be the pattern used by member-pointers.
   if (!CGM.getTypes().isZeroInitializable(Ty)) {
-    // FIXME: variable-size types!
-    if (vla) return;
+    // For a VLA, emit a single element, then splat that over the VLA.
+    if (vla) Ty = getContext().getBaseElementType(vla);
 
     llvm::Constant *NullConstant = CGM.EmitNullConstant(Ty);
 
@@ -586,6 +654,8 @@ CodeGenFunction::EmitNullInitialization(llvm::Value *DestPtr, QualType Ty) {
                                NullConstant, llvm::Twine());
     llvm::Value *SrcPtr =
       Builder.CreateBitCast(NullVariable, Builder.getInt8PtrTy());
+
+    if (vla) return emitNonZeroVLAInit(*this, Ty, DestPtr, SrcPtr, SizeVal);
 
     // Get and call the appropriate llvm.memcpy overload.
     Builder.CreateMemCpy(DestPtr, SrcPtr, SizeVal, Align, false);
@@ -598,7 +668,7 @@ CodeGenFunction::EmitNullInitialization(llvm::Value *DestPtr, QualType Ty) {
   Builder.CreateMemSet(DestPtr, Builder.getInt8(0), SizeVal, Align, false);
 }
 
-llvm::BlockAddress *CodeGenFunction::GetAddrOfLabel(const LabelStmt *L) {
+llvm::BlockAddress *CodeGenFunction::GetAddrOfLabel(const LabelDecl *L) {
   // Make sure that there is a block for the indirect goto.
   if (IndirectBranch == 0)
     GetIndirectGotoBlock();
@@ -616,8 +686,6 @@ llvm::BasicBlock *CodeGenFunction::GetIndirectGotoBlock() {
   
   CGBuilderTy TmpBuilder(createBasicBlock("indirectgoto"));
   
-  const llvm::Type *Int8PtrTy = llvm::Type::getInt8PtrTy(VMContext);
-
   // Create the PHI node that indirect gotos will add entries to.
   llvm::Value *DestVal = TmpBuilder.CreatePHI(Int8PtrTy, "indirect.goto.dest");
   
@@ -693,4 +761,31 @@ void CodeGenFunction::EmitDeclRefExprDbgValue(const DeclRefExpr *E,
   assert (Init && "Invalid DeclRefExpr initializer!");
   if (CGDebugInfo *Dbg = getDebugInfo())
     Dbg->EmitGlobalVariable(E->getDecl(), Init);
+}
+
+CodeGenFunction::PeepholeProtection
+CodeGenFunction::protectFromPeepholes(RValue rvalue) {
+  // At the moment, the only aggressive peephole we do in IR gen
+  // is trunc(zext) folding, but if we add more, we can easily
+  // extend this protection.
+
+  if (!rvalue.isScalar()) return PeepholeProtection();
+  llvm::Value *value = rvalue.getScalarVal();
+  if (!isa<llvm::ZExtInst>(value)) return PeepholeProtection();
+
+  // Just make an extra bitcast.
+  assert(HaveInsertPoint());
+  llvm::Instruction *inst = new llvm::BitCastInst(value, value->getType(), "",
+                                                  Builder.GetInsertBlock());
+
+  PeepholeProtection protection;
+  protection.Inst = inst;
+  return protection;
+}
+
+void CodeGenFunction::unprotectFromPeepholes(PeepholeProtection protection) {
+  if (!protection.Inst) return;
+
+  // In theory, we could try to duplicate the peepholes now, but whatever.
+  protection.Inst->eraseFromParent();
 }

@@ -293,19 +293,35 @@ def fsub_mlx : PatFrag<(ops node:$lhs, node:$rhs),(fsub node:$lhs, node:$rhs),[{
 //
 
 // Branch target.
+// FIXME: rename brtarget to t2_brtarget
 def brtarget : Operand<OtherVT> {
   let EncoderMethod = "getBranchTargetOpValue";
 }
 
+// FIXME: get rid of this one?
 def uncondbrtarget : Operand<OtherVT> {
   let EncoderMethod = "getUnconditionalBranchTargetOpValue";
 }
 
+// Branch target for ARM. Handles conditional/unconditional
+def br_target : Operand<OtherVT> {
+  let EncoderMethod = "getARMBranchTargetOpValue";
+}
+
 // Call target.
+// FIXME: rename bltarget to t2_bl_target?
 def bltarget : Operand<i32> {
   // Encoded the same as branch targets.
   let EncoderMethod = "getBranchTargetOpValue";
 }
+
+// Call target for ARM. Handles conditional/unconditional
+// FIXME: rename bl_target to t2_bltarget?
+def bl_target : Operand<i32> {
+  // Encoded the same as branch targets.
+  let EncoderMethod = "getARMBranchTargetOpValue";
+}
+
 
 // A list of registers separated by comma. Used by load/store multiple.
 def RegListAsmOperand : AsmOperandClass {
@@ -391,10 +407,7 @@ def shift_so_reg : Operand<i32>,    // reg reg imm
 }
 
 // so_imm - Match a 32-bit shifter_operand immediate operand, which is an
-// 8-bit immediate rotated by an arbitrary number of bits.  so_imm values are
-// represented in the imm field in the same 12-bit form that they are encoded
-// into so_imm instructions: the 8-bit immediate is the least significant bits
-// [bits 0-7], the 4-bit shift amount is the next 4 bits [bits 8-11].
+// 8-bit immediate rotated by an arbitrary number of bits.
 def so_imm : Operand<i32>, PatLeaf<(imm), [{ return Pred_so_imm(N); }]> {
   let EncoderMethod = "getSOImmOpValue";
   let PrintMethod = "printSOImmOperand";
@@ -539,7 +552,7 @@ def addrmode5 : Operand<i32>,
   let EncoderMethod = "getAddrMode5OpValue";
 }
 
-// addrmode6 := reg with optional writeback
+// addrmode6 := reg with optional alignment
 //
 def addrmode6 : Operand<i32>,
                 ComplexPattern<i32, 2, "SelectAddrMode6", [], [SDNPWantParent]>{
@@ -575,12 +588,26 @@ def nohash_imm : Operand<i32> {
   let PrintMethod = "printNoHashImmediate";
 }
 
+def CoprocNumAsmOperand : AsmOperandClass {
+  let Name = "CoprocNum";
+  let SuperClasses = [];
+  let ParserMethod = "tryParseCoprocNumOperand";
+}
+
+def CoprocRegAsmOperand : AsmOperandClass {
+  let Name = "CoprocReg";
+  let SuperClasses = [];
+  let ParserMethod = "tryParseCoprocRegOperand";
+}
+
 def p_imm : Operand<i32> {
   let PrintMethod = "printPImmediate";
+  let ParserMatchClass = CoprocNumAsmOperand;
 }
 
 def c_imm : Operand<i32> {
   let PrintMethod = "printCImmediate";
+  let ParserMatchClass = CoprocRegAsmOperand;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1075,21 +1102,37 @@ def BKPT : AI<(outs), (ins i32imm:$val), MiscFrm, NoItinerary, "bkpt", "\t$val",
   let Inst{7-4} = 0b0111;
 }
 
-// Change Processor State is a system instruction -- for disassembly only.
-// The singleton $opt operand contains the following information:
-// opt{4-0} = mode from Inst{4-0}
-// opt{5} = changemode from Inst{17}
-// opt{8-6} = AIF from Inst{8-6}
-// opt{10-9} = imod from Inst{19-18} with 0b10 as enable and 0b11 as disable
-// FIXME: Integrated assembler will need these split out.
-def CPS : AXI<(outs), (ins cps_opt:$opt), MiscFrm, NoItinerary, "cps$opt",
-              [/* For disassembly only; pattern left blank */]>,
-          Requires<[IsARM]> {
+// Change Processor State is a system instruction -- for disassembly and
+// parsing only.
+// FIXME: Since the asm parser has currently no clean way to handle optional
+// operands, create 3 versions of the same instruction. Once there's a clean
+// framework to represent optional operands, change this behavior.
+class CPS<dag iops, string asm_ops>
+  : AXI<(outs), iops, MiscFrm, NoItinerary, !strconcat("cps", asm_ops),
+        [/* For disassembly only; pattern left blank */]>, Requires<[IsARM]> {
+  bits<2> imod;
+  bits<3> iflags;
+  bits<5> mode;
+  bit M;
+
   let Inst{31-28} = 0b1111;
   let Inst{27-20} = 0b00010000;
-  let Inst{16} = 0;
-  let Inst{5} = 0;
+  let Inst{19-18} = imod;
+  let Inst{17}    = M; // Enabled if mode is set;
+  let Inst{16}    = 0;
+  let Inst{8-6}   = iflags;
+  let Inst{5}     = 0;
+  let Inst{4-0}   = mode;
 }
+
+let M = 1 in
+  def CPS3p : CPS<(ins imod_op:$imod, iflags_op:$iflags, i32imm:$mode),
+                  "$imod\t$iflags, $mode">;
+let mode = 0, M = 0 in
+  def CPS2p : CPS<(ins imod_op:$imod, iflags_op:$iflags), "$imod\t$iflags">;
+
+let imod = 0, iflags = 0, M = 1 in
+  def CPS1p : CPS<(ins i32imm:$mode), "\t$mode">;
 
 // Preload signals the memory system of possible future data/instruction access.
 // These are for disassembly only.
@@ -1271,7 +1314,7 @@ let isCall = 1,
           D16, D17, D18, D19, D20, D21, D22, D23,
           D24, D25, D26, D27, D28, D29, D30, D31, CPSR, FPSCR],
   Uses = [SP] in {
-  def BL  : ABXI<0b1011, (outs), (ins bltarget:$func, variable_ops),
+  def BL  : ABXI<0b1011, (outs), (ins bl_target:$func, variable_ops),
                 IIC_Br, "bl\t$func",
                 [(ARMcall tglobaladdr:$func)]>,
             Requires<[IsARM, IsNotDarwin]> {
@@ -1280,7 +1323,7 @@ let isCall = 1,
     let Inst{23-0} = func;
   }
 
-  def BL_pred : ABI<0b1011, (outs), (ins bltarget:$func, variable_ops),
+  def BL_pred : ABI<0b1011, (outs), (ins bl_target:$func, variable_ops),
                    IIC_Br, "bl", "\t$func",
                    [(ARMcall_pred tglobaladdr:$func)]>,
                 Requires<[IsARM, IsNotDarwin]> {
@@ -1456,7 +1499,7 @@ let isBranch = 1, isTerminator = 1 in {
 
   // FIXME: should be able to write a pattern for ARMBrcond, but can't use
   // a two-value operand where a dag node expects two operands. :(
-  def Bcc : ABI<0b1010, (outs), (ins brtarget:$target),
+  def Bcc : ABI<0b1010, (outs), (ins br_target:$target),
                IIC_Br, "b", "\t$target",
                [/*(ARMbrcond bb:$target, imm:$cc, CCR:$ccr)*/]> {
     bits<24> target;
@@ -3164,6 +3207,7 @@ def MVNCCi : AI1<0b1111, (outs GPR:$Rd),
 
 def memb_opt : Operand<i32> {
   let PrintMethod = "printMemBOption";
+  let ParserMatchClass = MemBarrierOptOperand;
 }
 
 // memory barriers protect the atomic sequences
@@ -3812,6 +3856,7 @@ def MRRC2 : MovRRCopro2<"mrrc2", 1 /* from coprocessor to ARM core register */>;
 // Move between special register and ARM core register -- for disassembly only
 //
 
+// Move to ARM core register from Special Register
 def MRS : ABI<0b0001, (outs GPR:$Rd), (ins), NoItinerary, "mrs", "\t$Rd, cpsr",
               [/* For disassembly only; pattern left blank */]> {
   bits<4> Rd;
@@ -3828,30 +3873,37 @@ def MRSsys : ABI<0b0001, (outs GPR:$Rd), (ins), NoItinerary,"mrs","\t$Rd, spsr",
   let Inst{7-4} = 0b0000;
 }
 
-def MSR : ABI<0b0001, (outs), (ins GPR:$src, msr_mask:$mask), NoItinerary,
-              "msr", "\tcpsr$mask, $src",
+// Move from ARM core register to Special Register
+//
+// No need to have both system and application versions, the encodings are the
+// same and the assembly parser has no way to distinguish between them. The mask
+// operand contains the special register (R Bit) in bit 4 and bits 3-0 contains
+// the mask with the fields to be accessed in the special register.
+def MSR : ABI<0b0001, (outs), (ins msr_mask:$mask, GPR:$Rn), NoItinerary,
+              "msr", "\t$mask, $Rn",
               [/* For disassembly only; pattern left blank */]> {
-  let Inst{23-20} = 0b0010;
-  let Inst{7-4} = 0b0000;
+  bits<5> mask;
+  bits<4> Rn;
+
+  let Inst{23} = 0;
+  let Inst{22} = mask{4}; // R bit
+  let Inst{21-20} = 0b10;
+  let Inst{19-16} = mask{3-0};
+  let Inst{15-12} = 0b1111;
+  let Inst{11-4} = 0b00000000;
+  let Inst{3-0} = Rn;
 }
 
-def MSRi : ABI<0b0011, (outs), (ins so_imm:$a, msr_mask:$mask), NoItinerary,
-              "msr", "\tcpsr$mask, $a",
-              [/* For disassembly only; pattern left blank */]> {
-  let Inst{23-20} = 0b0010;
-  let Inst{7-4} = 0b0000;
-}
+def MSRi : ABI<0b0011, (outs), (ins msr_mask:$mask,  so_imm:$a), NoItinerary,
+               "msr", "\t$mask, $a",
+               [/* For disassembly only; pattern left blank */]> {
+  bits<5> mask;
+  bits<12> a;
 
-def MSRsys : ABI<0b0001, (outs), (ins GPR:$src, msr_mask:$mask), NoItinerary,
-              "msr", "\tspsr$mask, $src",
-              [/* For disassembly only; pattern left blank */]> {
-  let Inst{23-20} = 0b0110;
-  let Inst{7-4} = 0b0000;
-}
-
-def MSRsysi : ABI<0b0011, (outs), (ins so_imm:$a, msr_mask:$mask), NoItinerary,
-              "msr", "\tspsr$mask, $a",
-              [/* For disassembly only; pattern left blank */]> {
-  let Inst{23-20} = 0b0110;
-  let Inst{7-4} = 0b0000;
+  let Inst{23} = 0;
+  let Inst{22} = mask{4}; // R bit
+  let Inst{21-20} = 0b10;
+  let Inst{19-16} = mask{3-0};
+  let Inst{15-12} = 0b1111;
+  let Inst{11-0} = a;
 }

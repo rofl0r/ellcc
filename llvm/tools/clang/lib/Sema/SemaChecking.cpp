@@ -885,11 +885,12 @@ bool Sema::SemaCheckStringLiteral(const Expr *E, const CallExpr *TheCall,
     return false;
 
   switch (E->getStmtClass()) {
+  case Stmt::BinaryConditionalOperatorClass:
   case Stmt::ConditionalOperatorClass: {
-    const ConditionalOperator *C = cast<ConditionalOperator>(E);
+    const AbstractConditionalOperator *C = cast<AbstractConditionalOperator>(E);
     return SemaCheckStringLiteral(C->getTrueExpr(), TheCall, HasVAListArg,
                                   format_idx, firstDataArg, isPrintf)
-        && SemaCheckStringLiteral(C->getRHS(), TheCall, HasVAListArg,
+        && SemaCheckStringLiteral(C->getFalseExpr(), TheCall, HasVAListArg,
                                   format_idx, firstDataArg, isPrintf);
   }
 
@@ -909,6 +910,13 @@ bool Sema::SemaCheckStringLiteral(const Expr *E, const CallExpr *TheCall,
     E = cast<ParenExpr>(E)->getSubExpr();
     goto tryAgain;
   }
+
+  case Stmt::OpaqueValueExprClass:
+    if (const Expr *src = cast<OpaqueValueExpr>(E)->getSourceExpr()) {
+      E = src;
+      goto tryAgain;
+    }
+    return false;
 
   case Stmt::DeclRefExprClass: {
     const DeclRefExpr *DR = cast<DeclRefExpr>(E);
@@ -1935,7 +1943,7 @@ static Expr *EvalAddr(Expr *E, llvm::SmallVectorImpl<DeclRefExpr *> &refVars) {
   }
   
   case Stmt::BlockExprClass:
-    if (cast<BlockExpr>(E)->hasBlockDeclRefExprs())
+    if (cast<BlockExpr>(E)->getBlockDecl()->hasCaptures())
       return E; // local block.
     return NULL;
 
@@ -2643,6 +2651,13 @@ bool AnalyzeBitFieldAssignment(Sema &S, FieldDecl *Bitfield, Expr *Init,
   if (Bitfield->getType()->isBooleanType())
     return false;
 
+  // Ignore value- or type-dependent expressions.
+  if (Bitfield->getBitWidth()->isValueDependent() ||
+      Bitfield->getBitWidth()->isTypeDependent() ||
+      Init->isValueDependent() ||
+      Init->isTypeDependent())
+    return false;
+
   Expr *OriginalInit = Init->IgnoreParenImpCasts();
 
   llvm::APSInt Width(32);
@@ -2784,9 +2799,15 @@ void CheckImplicitConversion(Sema &S, Expr *E, QualType T,
     }
 
     // If the target is integral, always warn.
-    if ((TargetBT && TargetBT->isInteger()))
-      // TODO: don't warn for integer values?
-      DiagnoseImpCast(S, E, T, CC, diag::warn_impcast_float_integer);
+    if ((TargetBT && TargetBT->isInteger())) {
+      Expr *InnerE = E->IgnoreParenImpCasts();
+      if (FloatingLiteral *LiteralExpr = dyn_cast<FloatingLiteral>(InnerE)) {
+        DiagnoseImpCast(S, LiteralExpr, T, CC,
+                        diag::warn_impcast_literal_float_to_integer);
+      } else {
+        DiagnoseImpCast(S, E, T, CC, diag::warn_impcast_float_integer);
+      }
+    }
 
     return;
   }
@@ -2947,8 +2968,7 @@ void AnalyzeImplicitConversions(Sema &S, Expr *OrigE, SourceLocation CC) {
 
   // Now just recurse over the expression's children.
   CC = E->getExprLoc();
-  for (Stmt::child_iterator I = E->child_begin(), IE = E->child_end();
-         I != IE; ++I)
+  for (Stmt::child_range I = E->children(); I; ++I)
     AnalyzeImplicitConversions(S, cast<Expr>(*I), CC);
 }
 
@@ -3072,5 +3092,49 @@ void Sema::CheckCastAlign(Expr *Op, QualType T, SourceRange TRange) {
     << static_cast<unsigned>(SrcAlign.getQuantity())
     << static_cast<unsigned>(DestAlign.getQuantity())
     << TRange << Op->getSourceRange();
+}
+
+void Sema::CheckArrayAccess(const clang::ArraySubscriptExpr *E) {
+  const Expr *BaseExpr = E->getBase()->IgnoreParenImpCasts();
+  const ConstantArrayType *ArrayTy =
+    Context.getAsConstantArrayType(BaseExpr->getType());
+  if (!ArrayTy)
+    return;
+
+  const Expr *IndexExpr = E->getIdx();
+  if (IndexExpr->isValueDependent())
+    return;
+  llvm::APSInt index;
+  if (!IndexExpr->isIntegerConstantExpr(index, Context))
+    return;
+
+  if (!index.isNegative()) {
+    llvm::APInt size = ArrayTy->getSize();
+    if (!size.isStrictlyPositive())
+      return;
+    if (size.getBitWidth() > index.getBitWidth())
+      index = index.sext(size.getBitWidth());
+    else if (size.getBitWidth() < index.getBitWidth())
+      size = size.sext(index.getBitWidth());
+
+    if (index.slt(size))
+      return;
+
+    Diag(E->getBase()->getLocStart(), diag::warn_array_index_exceeds_bounds)
+      << index.toString(10, true) << size.toString(10, true)
+      << IndexExpr->getSourceRange();
+  } else {
+    Diag(E->getBase()->getLocStart(), diag::warn_array_index_precedes_bounds)
+      << index.toString(10, true) << IndexExpr->getSourceRange();
+  }
+
+  const NamedDecl *ND = NULL;
+  if (const DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(BaseExpr))
+    ND = dyn_cast<NamedDecl>(DRE->getDecl());
+  if (const MemberExpr *ME = dyn_cast<MemberExpr>(BaseExpr))
+    ND = dyn_cast<NamedDecl>(ME->getMemberDecl());
+  if (ND)
+    Diag(ND->getLocStart(), diag::note_array_index_out_of_bounds)
+      << ND->getDeclName();
 }
 

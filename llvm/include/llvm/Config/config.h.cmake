@@ -5,24 +5,6 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-/* Relative directory for resource files */
-#define CLANG_RESOURCE_DIR "${CLANG_RESOURCE_DIR}"
-
-/* 32 bit multilib directory. */
-#define CXX_INCLUDE_32BIT_DIR "${CXX_INCLUDE_32BIT_DIR}"
-
-/* 64 bit multilib directory. */
-#define CXX_INCLUDE_64BIT_DIR "${CXX_INCLUDE_64BIT_DIR}"
-
-/* Arch the libstdc++ headers. */
-#define CXX_INCLUDE_ARCH "${CXX_INCLUDE_ARCH}"
-
-/* Directory with the libstdc++ headers. */
-#define CXX_INCLUDE_ROOT "${CXX_INCLUDE_ROOT}"
-
-/* Directories clang will search for headers */
-#define C_INCLUDE_DIRS "${C_INCLUDE_DIRS}"
-
 /* Define if CBE is enabled for printf %a output */
 #cmakedefine ENABLE_CBE_PRINTF_A ${ENABLE_CBE_PRINTF_A}
 
@@ -79,6 +61,10 @@
 
 /* Define to 1 if you have the <ctype.h> header file. */
 #cmakedefine HAVE_CTYPE_H ${HAVE_CTYPE_H}
+
+/* Define to 1 if you have the declaration of `strerror_s', and to 0 if you
+   don't. */
+#cmakedefine01 HAVE_DECL_STRERROR_S
 
 /* Define to 1 if you have the <dirent.h> header file, and it defines `DIR'.
    */
@@ -169,7 +155,7 @@
 #cmakedefine HAVE_GV ${HAVE_GV}
 
 /* Define to 1 if you have the `index' function. */
-#undef HAVE_INDEX
+#cmakedefine HAVE_INDEX ${HAVE_INDEX}
 
 /* Define to 1 if the system has the type `int64_t'. */
 #cmakedefine HAVE_INT64_T ${HAVE_INT64_T}
@@ -224,7 +210,7 @@
 #undef HAVE_LINK_R
 
 /* Define to 1 if you have the `longjmp' function. */
-#undef HAVE_LONGJMP
+#cmakedefine HAVE_LONGJMP ${HAVE_LONGJMP}
 
 /* Define to 1 if you have the <mach/mach.h> header file. */
 #cmakedefine HAVE_MACH_MACH_H ${HAVE_MACH_MACH_H}
@@ -309,16 +295,16 @@
 #cmakedefine HAVE_PTHREAD_RWLOCK_INIT ${HAVE_PTHREAD_RWLOCK_INIT}
 
 /* Define to 1 if srand48/lrand48/drand48 exist in <stdlib.h> */
-#undef HAVE_RAND48
+#cmakedefine HAVE_RAND48 ${HAVE_RAND48}
 
 /* Define to 1 if you have the `readdir' function. */
-#undef HAVE_READDIR
+#cmakedefine HAVE_READDIR ${HAVE_READDIR}
 
 /* Define to 1 if you have the `realpath' function. */
 #undef HAVE_REALPATH
 
 /* Define to 1 if you have the `rindex' function. */
-#undef HAVE_RINDEX
+#cmakedefine HAVE_RINDEX ${HAVE_RINDEX}
 
 /* Define to 1 if you have the `rintf' function. */
 #undef HAVE_RINTF
@@ -336,7 +322,7 @@
 #cmakedefine HAVE_SETENV ${HAVE_SETENV}
 
 /* Define to 1 if you have the `setjmp' function. */
-#undef HAVE_SETJMP
+#cmakedefine HAVE_SETJMP ${HAVE_SETJMP}
 
 /* Define to 1 if you have the <setjmp.h> header file. */
 #cmakedefine HAVE_SETJMP_H ${HAVE_SETJMP_H}
@@ -348,13 +334,13 @@
 #undef HAVE_SHL_LOAD
 
 /* Define to 1 if you have the `siglongjmp' function. */
-#undef HAVE_SIGLONGJMP
+#cmakedefine HAVE_SIGLONGJMP ${HAVE_SIGLONGJMP}
 
 /* Define to 1 if you have the <signal.h> header file. */
 #cmakedefine HAVE_SIGNAL_H ${HAVE_SIGNAL_H}
 
 /* Define to 1 if you have the `sigsetjmp' function. */
-#undef HAVE_SIGSETJMP
+#cmakedefine HAVE_SIGSETJMP ${HAVE_SIGSETJMP}
 
 /* Define to 1 if you have the <stdint.h> header file. */
 #cmakedefine HAVE_STDINT_H ${HAVE_STDINT_H}
@@ -386,9 +372,6 @@
 /* Define to 1 if you have the `strerror_r' function. */
 #cmakedefine HAVE_STRERROR_R ${HAVE_STRERROR_R}
 
-/* Define to 1 if you have the `strerror_s' function. */
-#cmakedefine HAVE_STRERROR_S ${HAVE_STRERROR_S}
-
 /* Define to 1 if you have the <strings.h> header file. */
 #cmakedefine HAVE_STRINGS_H ${HAVE_STRINGS_H}
 
@@ -405,7 +388,7 @@
 #cmakedefine HAVE_STRTOLL ${HAVE_STRTOLL}
 
 /* Define to 1 if you have the `strtoq' function. */
-#undef HAVE_STRTOQ
+#cmakedefine HAVE_STRTOQ ${HAVE_STRTOQ}
 
 /* Define to 1 if you have the `sysconf' function. */
 #undef HAVE_SYSCONF
@@ -442,6 +425,9 @@
 /* Define to 1 if you have the <sys/types.h> header file. */
 #cmakedefine HAVE_SYS_TYPES_H ${HAVE_SYS_TYPES_H}
 
+/* Define to 1 if you have the <sys/uio.h> header file. */
+#cmakedefine HAVE_SYS_UIO_H ${HAVE_SYS_UIO_H}
+
 /* Define to 1 if you have <sys/wait.h> that is POSIX.1 compatible. */
 #cmakedefine HAVE_SYS_WAIT_H ${HAVE_SYS_WAIT_H}
 
@@ -463,11 +449,62 @@
 /* Define to 1 if you have the <windows.h> header file. */
 #cmakedefine HAVE_WINDOWS_H ${HAVE_WINDOWS_H}
 
+/* Define to 1 if you have the `writev' function. */
+#cmakedefine HAVE_WRITEV ${HAVE_WRITEV}
+
 /* Define if the xdot.py program is available */
 #undef HAVE_XDOT_PY
 
+/* Have host's _alloca */
+#cmakedefine HAVE__ALLOCA ${HAVE__ALLOCA}
+
+/* Have host's __alloca */
+#cmakedefine HAVE___ALLOCA ${HAVE___ALLOCA}
+
+/* Have host's __ashldi3 */
+#cmakedefine HAVE___ASHLDI3 ${HAVE___ASHLDI3}
+
+/* Have host's __ashrdi3 */
+#cmakedefine HAVE___ASHRDI3 ${HAVE___ASHRDI3}
+
+/* Have host's __chkstk */
+#cmakedefine HAVE___CHKSTK ${HAVE___CHKSTK}
+
+/* Have host's __cmpdi2 */
+#cmakedefine HAVE___CMPDI2 ${HAVE___CMPDI2}
+
+/* Have host's __divdi3 */
+#cmakedefine HAVE___DIVDI3 ${HAVE___DIVDI3}
+
 /* Define to 1 if you have the `__dso_handle' function. */
 #undef HAVE___DSO_HANDLE
+
+/* Have host's __fixdfdi */
+#cmakedefine HAVE___FIXDFDI ${HAVE___FIXDFDI}
+
+/* Have host's __fixsfdi */
+#cmakedefine HAVE___FIXSFDI ${HAVE___FIXSFDI}
+
+/* Have host's __floatdidf */
+#cmakedefine HAVE___FLOATDIDF ${HAVE___FLOATDIDF}
+
+/* Have host's __lshrdi3 */
+#cmakedefine HAVE___LSHRDI3 ${HAVE___LSHRDI3}
+
+/* Have host's __main */
+#cmakedefine HAVE___MAIN ${HAVE___MAIN}
+
+/* Have host's __moddi3 */
+#cmakedefine HAVE___MODDI3 ${HAVE___MODDI3}
+
+/* Have host's __udivdi3 */
+#cmakedefine HAVE___UDIVDI3 ${HAVE___UDIVDI3}
+
+/* Have host's __umoddi3 */
+#cmakedefine HAVE___UMODDI3 ${HAVE___UMODDI3}
+
+/* Have host's ___chkstk */
+#cmakedefine HAVE____CHKSTK ${HAVE____CHKSTK}
 
 /* Linker version detected at compile time. */
 #undef HOST_LINK_VERSION

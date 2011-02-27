@@ -13,7 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/FrontendTool/Utils.h"
-#include "clang/StaticAnalyzer/FrontendActions.h"
+#include "clang/StaticAnalyzer/Frontend/FrontendActions.h"
 #include "clang/CodeGen/CodeGenAction.h"
 #include "clang/Driver/CC1Options.h"
 #include "clang/Driver/OptTable.h"
@@ -53,7 +53,6 @@ static FrontendAction *CreateFrontendBaseAction(CompilerInstance &CI) {
   case FixIt:                  return new FixItAction();
   case GeneratePCH:            return new GeneratePCHAction();
   case GeneratePTH:            return new GeneratePTHAction();
-  case InheritanceView:        return new InheritanceViewAction();
   case InitOnly:               return new InitOnlyAction();
   case ParseSyntaxOnly:        return new SyntaxOnlyAction();
 

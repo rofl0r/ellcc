@@ -36,40 +36,16 @@ def triple_EQ : Joined<"-triple=">, Alias<triple>;
 // Analyzer Options
 //===----------------------------------------------------------------------===//
 
-def analysis_CFGDump : Flag<"-cfg-dump">,
-  HelpText<"Display Control-Flow Graphs">;
-def analysis_CFGView : Flag<"-cfg-view">,
-  HelpText<"View Control-Flow Graphs using GraphViz">;
 def analysis_UnoptimizedCFG : Flag<"-unoptimized-cfg">,
   HelpText<"Generate unoptimized CFGs for all analyses">;
 def analysis_CFGAddImplicitDtors : Flag<"-cfg-add-implicit-dtors">,
   HelpText<"Add C++ implicit destructors to CFGs for all analyses">;
 def analysis_CFGAddInitializers : Flag<"-cfg-add-initializers">,
   HelpText<"Add C++ initializers to CFGs for all analyses">;
-def analysis_DisplayLiveVariables : Flag<"-dump-live-variables">,
-  HelpText<"Print results of live variable analysis">;
-def analysis_LLVMConventionChecker : Flag<"-analyzer-check-llvm-conventions">,
-  HelpText<"Check code for LLVM codebase conventions (domain-specific)">;
-def analysis_SecuritySyntacticChecks : Flag<"-analyzer-check-security-syntactic">,
-  HelpText<"Perform quick security checks that require no data flow">;
-def analysis_WarnDeadStores : Flag<"-analyzer-check-dead-stores">,
-  HelpText<"Warn about stores to dead variables">;
 def analysis_WarnUninitVals : Flag<"-warn-uninit-values">,
   HelpText<"Warn about uses of uninitialized variables">;
-def analysis_WarnObjCMethSigs : Flag<"-analyzer-check-objc-methodsigs">,
-  HelpText<"Warn about Objective-C method signatures with type incompatibilities">;
-def analysis_WarnObjCDealloc : Flag<"-analyzer-check-objc-missing-dealloc">,
-  HelpText<"Warn about Objective-C classes that lack a correct implementation of -dealloc">;
-def analysis_WarnObjCUnusedIvars : Flag<"-analyzer-check-objc-unused-ivars">,
-  HelpText<"Warn about private ivars that are never used">;
 def analysis_ObjCMemChecker : Flag<"-analyzer-check-objc-mem">,
   HelpText<"Run the [Core] Foundation reference count checker">;
-def analysis_WarnObjCSelfInit : Flag<"-analyzer-check-objc-self-init">,
-  HelpText<"Warn about missing initialization of 'self' in an initializer">;
-def analysis_WarnSizeofPointer : Flag<"-warn-sizeof-pointer">,
-  HelpText<"Warn about unintended use of sizeof() on pointer expressions">;
-def analysis_WarnIdempotentOps : Flag<"-analyzer-check-idempotent-operations">,
-  HelpText<"Warn about idempotent operations">;
 def analysis_AnalyzerStats : Flag<"-analyzer-stats">,
   HelpText<"Emit warnings with analyzer statistics">;
 def analysis_WarnBufferOverflows : Flag<"-analyzer-check-buffer-overflows">,
@@ -107,6 +83,8 @@ def analyzer_eagerly_assume : Flag<"-analyzer-eagerly-assume">,
   HelpText<"Eagerly assume the truth/falseness of some symbolic constraints">;
 def analyzer_no_purge_dead : Flag<"-analyzer-no-purge-dead">,
   HelpText<"Don't remove dead symbols, bindings, and constraints before processing a statement">;
+def analyzer_no_eagerly_trim_egraph : Flag<"-analyzer-no-eagerly-trim-egraph">,
+  HelpText<"Don't eagerly remove uninteresting ExplodedNodes from the ExplodedGraph">;
 def trim_egraph : Flag<"-trim-egraph">,
   HelpText<"Only show error-related paths in the analysis graph">;
 def analyzer_viz_egraph_graphviz : Flag<"-analyzer-viz-egraph-graphviz">,
@@ -119,6 +97,16 @@ def analyzer_max_nodes : Separate<"-analyzer-max-nodes">,
   HelpText<"The maximum number of nodes the analyzer can generate (150000 default, 0 = no limit)">;
 def analyzer_max_loop : Separate<"-analyzer-max-loop">,
   HelpText<"The maximum number of times the analyzer will go through a loop">;
+
+def analyzer_checker : Separate<"-analyzer-checker">,
+  HelpText<"Choose analyzer checkers to enable">;
+def analyzer_checker_EQ : Joined<"-analyzer-checker=">,
+  Alias<analyzer_checker>;
+
+def analyzer_disable_checker : Separate<"-analyzer-disable-checker">,
+  HelpText<"Choose analyzer checkers to disable">;
+def analyzer_disable_checker_EQ : Joined<"-analyzer-disable-checker=">,
+  Alias<analyzer_disable_checker>;
 
 //===----------------------------------------------------------------------===//
 // CodeGen Options
@@ -175,6 +163,8 @@ def momit_leaf_frame_pointer : Flag<"-momit-leaf-frame-pointer">,
   HelpText<"Omit frame pointer setup for leaf functions.">;
 def msoft_float : Flag<"-msoft-float">,
   HelpText<"Use software floating point">;
+def mregparm : Separate<"-mregparm">,
+  HelpText<"Limit the number of registers available for integer arguments">;
 def mrelax_all : Flag<"-mrelax-all">,
   HelpText<"Relax all machine instructions">;
 def mrelocation_model : Separate<"-mrelocation-model">,
@@ -183,8 +173,11 @@ def munwind_tables : Flag<"-munwind-tables">,
   HelpText<"Generate unwinding tables for all functions">;
 def mconstructor_aliases : Flag<"-mconstructor-aliases">,
   HelpText<"Emit complete constructors and destructors as aliases when possible">;
+def mms_bitfields : Flag<"-mms-bitfields">,
+  HelpText<"Set the default structure layout to be compatible with the Microsoft compiler standard.">;
 def O : Joined<"-O">, HelpText<"Optimization level">;
 def Os : Flag<"-Os">, HelpText<"Optimize for size">;
+def pg : Flag<"-pg">, HelpText<"Enable mcount instrumentation">;
 
 //===----------------------------------------------------------------------===//
 // Dependency Output Options
@@ -194,6 +187,10 @@ def dependency_file : Separate<"-dependency-file">,
   HelpText<"Filename (or -) to write dependency output to">;
 def sys_header_deps : Flag<"-sys-header-deps">,
   HelpText<"Include system headers in dependency output">;
+def header_include_file : Separate<"-header-include-file">,
+  HelpText<"Filename (or -) to write header include output to">;
+def H : Flag<"-H">,
+  HelpText<"Show header includes and nesting depth">;
 def MQ : Separate<"-MQ">, HelpText<"Specify target to quote for dependency">;
 def MT : Separate<"-MT">, HelpText<"Specify target for dependency">;
 def MP : Flag<"-MP">,
@@ -285,9 +282,6 @@ def help : Flag<"-help">,
   HelpText<"Print this help text">;
 def _help : Flag<"--help">, Alias<help>;
 def x : Separate<"-x">, HelpText<"Input language type">;
-def cxx_inheritance_view : Separate<"-cxx-inheritance-view">,
-  MetaVarName<"<class name>">,
-  HelpText<"View C++ inheritance for a specified class">;
 def o : Separate<"-o">, MetaVarName<"<path>">, HelpText<"Specify output file">;
 def load : Separate<"-load">, MetaVarName<"<dsopath>">,
   HelpText<"Load the named plugin (dynamic shared object)">;
@@ -598,8 +592,6 @@ def dM : Flag<"-dM">,
   HelpText<"Print macro definitions in -E mode instead of normal output">;
 def dD : Flag<"-dD">,
   HelpText<"Print macro definitions in -E mode in addition to normal output">;
-def H : Flag<"-H">,
-  HelpText<"Show header includes and nesting depth">;
 
 //===----------------------------------------------------------------------===//
 // OpenCL Options

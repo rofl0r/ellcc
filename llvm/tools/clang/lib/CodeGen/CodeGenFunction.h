@@ -24,7 +24,6 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/ValueHandle.h"
 #include "CodeGenModule.h"
-#include "CGBlocks.h"
 #include "CGBuilder.h"
 #include "CGCall.h"
 #include "CGValue.h"
@@ -46,6 +45,7 @@ namespace clang {
   class CXXDestructorDecl;
   class CXXTryStmt;
   class Decl;
+  class LabelDecl;
   class EnumConstantDecl;
   class FunctionDecl;
   class FunctionProtoType;
@@ -71,6 +71,8 @@ namespace CodeGen {
   class CGRecordLayout;
   class CGBlockInfo;
   class CGCXXABI;
+  class BlockFlags;
+  class BlockFieldFlags;
 
 /// A branch fixup.  These are required when emitting a goto to a
 /// label which hasn't been emitted yet.  The goto is optimistically
@@ -502,7 +504,7 @@ public:
 
 /// CodeGenFunction - This class organizes the per-function state that is used
 /// while generating LLVM code.
-class CodeGenFunction : public BlockFunction {
+class CodeGenFunction : public CodeGenTypeCache {
   CodeGenFunction(const CodeGenFunction&); // DO NOT IMPLEMENT
   void operator=(const CodeGenFunction&);  // DO NOT IMPLEMENT
 
@@ -580,23 +582,15 @@ public:
   /// we prefer to insert allocas.
   llvm::AssertingVH<llvm::Instruction> AllocaInsertPt;
 
-  // intptr_t, i32, i64
-  const llvm::IntegerType *IntPtrTy, *Int32Ty, *Int64Ty;
-  uint32_t LLVMPointerWidth;
-
   bool Exceptions;
   bool CatchUndefined;
+
+  const CodeGen::CGBlockInfo *BlockInfo;
+  llvm::Value *BlockPointer;
 
   /// \brief A mapping from NRVO variables to the flags used to indicate
   /// when the NRVO has been applied to this variable.
   llvm::DenseMap<const VarDecl *, llvm::Value *> NRVOFlags;
-
-  /// \brief A mapping from 'Save' expression in a conditional expression
-  /// to the IR for this expression. Used to implement IR gen. for Gnu
-  /// extension's missing LHS expression in a conditional operator expression.
-  llvm::DenseMap<const Expr *, llvm::Value *> ConditionalSaveExprs;
-  llvm::DenseMap<const Expr *, ComplexPairTy> ConditionalSaveComplexExprs;
-  llvm::DenseMap<const Expr *, LValue> ConditionalSaveLValueExprs;
 
   EHScopeStack EHStack;
 
@@ -768,7 +762,7 @@ public:
   /// The given basic block lies in the current EH scope, but may be a
   /// target of a potentially scope-crossing jump; get a stable handle
   /// to which we can perform this jump later.
-  JumpDest getJumpDestInCurrentScope(const char *Name = 0) {
+  JumpDest getJumpDestInCurrentScope(llvm::StringRef Name = llvm::StringRef()) {
     return getJumpDestInCurrentScope(createBasicBlock(Name));
   }
 
@@ -838,6 +832,108 @@ public:
       CGF.EnsureInsertPoint();
     }
   };
+
+  /// An object which temporarily prevents a value from being
+  /// destroyed by aggressive peephole optimizations that assume that
+  /// all uses of a value have been realized in the IR.
+  class PeepholeProtection {
+    llvm::Instruction *Inst;
+    friend class CodeGenFunction;
+
+  public:
+    PeepholeProtection() : Inst(0) {}
+  };  
+
+  /// An RAII object to set (and then clear) a mapping for an OpaqueValueExpr.
+  class OpaqueValueMapping {
+    CodeGenFunction &CGF;
+    const OpaqueValueExpr *OpaqueValue;
+    bool BoundLValue;
+    CodeGenFunction::PeepholeProtection Protection;
+
+  public:
+    static bool shouldBindAsLValue(const Expr *expr) {
+      return expr->isGLValue() || expr->getType()->isRecordType();
+    }
+
+    /// Build the opaque value mapping for the given conditional
+    /// operator if it's the GNU ?: extension.  This is a common
+    /// enough pattern that the convenience operator is really
+    /// helpful.
+    ///
+    OpaqueValueMapping(CodeGenFunction &CGF,
+                       const AbstractConditionalOperator *op) : CGF(CGF) {
+      if (isa<ConditionalOperator>(op)) {
+        OpaqueValue = 0;
+        BoundLValue = false;
+        return;
+      }
+
+      const BinaryConditionalOperator *e = cast<BinaryConditionalOperator>(op);
+      init(e->getOpaqueValue(), e->getCommon());
+    }
+
+    OpaqueValueMapping(CodeGenFunction &CGF,
+                       const OpaqueValueExpr *opaqueValue,
+                       LValue lvalue)
+      : CGF(CGF), OpaqueValue(opaqueValue), BoundLValue(true) {
+      assert(opaqueValue && "no opaque value expression!");
+      assert(shouldBindAsLValue(opaqueValue));
+      initLValue(lvalue);
+    }
+
+    OpaqueValueMapping(CodeGenFunction &CGF,
+                       const OpaqueValueExpr *opaqueValue,
+                       RValue rvalue)
+      : CGF(CGF), OpaqueValue(opaqueValue), BoundLValue(false) {
+      assert(opaqueValue && "no opaque value expression!");
+      assert(!shouldBindAsLValue(opaqueValue));
+      initRValue(rvalue);
+    }
+
+    void pop() {
+      assert(OpaqueValue && "mapping already popped!");
+      popImpl();
+      OpaqueValue = 0;
+    }
+
+    ~OpaqueValueMapping() {
+      if (OpaqueValue) popImpl();
+    }
+
+  private:
+    void popImpl() {
+      if (BoundLValue)
+        CGF.OpaqueLValues.erase(OpaqueValue);
+      else {
+        CGF.OpaqueRValues.erase(OpaqueValue);
+        CGF.unprotectFromPeepholes(Protection);
+      }
+    }
+
+    void init(const OpaqueValueExpr *ov, const Expr *e) {
+      OpaqueValue = ov;
+      BoundLValue = shouldBindAsLValue(ov);
+      assert(BoundLValue == shouldBindAsLValue(e)
+             && "inconsistent expression value kinds!");
+      if (BoundLValue)
+        initLValue(CGF.EmitLValue(e));
+      else
+        initRValue(CGF.EmitAnyExpr(e));
+    }
+
+    void initLValue(const LValue &lv) {
+      CGF.OpaqueLValues.insert(std::make_pair(OpaqueValue, lv));
+    }
+
+    void initRValue(const RValue &rv) {
+      // Work around an extremely aggressive peephole optimization in
+      // EmitScalarConversion which assumes that all other uses of a
+      // value are extant.
+      Protection = CGF.protectFromPeepholes(rv);
+      CGF.OpaqueRValues.insert(std::make_pair(OpaqueValue, rv));
+    }
+  };
   
   /// getByrefValueFieldNumber - Given a declaration, returns the LLVM field
   /// number that holds the value.
@@ -858,10 +954,11 @@ private:
 
   /// LocalDeclMap - This keeps track of the LLVM allocas or globals for local C
   /// decls.
-  llvm::DenseMap<const Decl*, llvm::Value*> LocalDeclMap;
+  typedef llvm::DenseMap<const Decl*, llvm::Value*> DeclMapTy;
+  DeclMapTy LocalDeclMap;
 
   /// LabelMap - This keeps track of the LLVM basic block for each C label.
-  llvm::DenseMap<const LabelStmt*, JumpDest> LabelMap;
+  llvm::DenseMap<const LabelDecl*, JumpDest> LabelMap;
 
   // BreakContinueStack - This keeps track of where break and continue
   // statements should jump to.
@@ -881,6 +978,11 @@ private:
   /// CaseRangeBlock - This block holds if condition check for last case
   /// statement range in current switch instruction.
   llvm::BasicBlock *CaseRangeBlock;
+
+  /// OpaqueLValues - Keeps track of the current set of opaque value
+  /// expressions.
+  llvm::DenseMap<const OpaqueValueExpr *, LValue> OpaqueLValues;
+  llvm::DenseMap<const OpaqueValueExpr *, RValue> OpaqueRValues;
 
   // VLASizeMap - This keeps track of the associated size for each VLA type.
   // We track this by the size expression rather than the type itself because
@@ -931,6 +1033,8 @@ public:
   ASTContext &getContext() const;
   CGDebugInfo *getDebugInfo() { return DebugInfo; }
 
+  const LangOptions &getLangOptions() const { return CGM.getLangOptions(); }
+
   /// Returns a pointer to the function's exception object slot, which
   /// is assigned in every landing pad.
   llvm::Value *getExceptionSlot();
@@ -951,7 +1055,7 @@ public:
     return getInvokeDestImpl();
   }
 
-  llvm::LLVMContext &getLLVMContext() { return VMContext; }
+  llvm::LLVMContext &getLLVMContext() { return CGM.getLLVMContext(); }
 
   //===--------------------------------------------------------------------===//
   //                                  Objective-C
@@ -965,6 +1069,10 @@ public:
   /// GenerateObjCGetter - Synthesize an Objective-C property getter function.
   void GenerateObjCGetter(ObjCImplementationDecl *IMP,
                           const ObjCPropertyImplDecl *PID);
+  void GenerateObjCGetterBody(ObjCIvarDecl *Ivar, bool IsAtomic, bool IsStrong);
+  void GenerateObjCAtomicSetterBody(ObjCMethodDecl *OMD,
+                                    ObjCIvarDecl *Ivar);
+
   void GenerateObjCCtorDtorMethod(ObjCImplementationDecl *IMP,
                                   ObjCMethodDecl *MD, bool ctor);
 
@@ -979,29 +1087,41 @@ public:
   //                                  Block Bits
   //===--------------------------------------------------------------------===//
 
-  llvm::Value *BuildBlockLiteralTmp(const BlockExpr *);
+  llvm::Value *EmitBlockLiteral(const BlockExpr *);
   llvm::Constant *BuildDescriptorBlockDecl(const BlockExpr *,
                                            const CGBlockInfo &Info,
                                            const llvm::StructType *,
-                                           llvm::Constant *BlockVarLayout,
-                                           std::vector<HelperInfo> *);
+                                           llvm::Constant *BlockVarLayout);
 
   llvm::Function *GenerateBlockFunction(GlobalDecl GD,
-                                        const BlockExpr *BExpr,
-                                        CGBlockInfo &Info,
+                                        const CGBlockInfo &Info,
                                         const Decl *OuterFuncDecl,
-                                        llvm::Constant *& BlockVarLayout,
-                                  llvm::DenseMap<const Decl*, llvm::Value*> ldm);
+                                        const DeclMapTy &ldm);
 
-  llvm::Value *LoadBlockStruct();
+  llvm::Constant *GenerateCopyHelperFunction(const CGBlockInfo &blockInfo);
+  llvm::Constant *GenerateDestroyHelperFunction(const CGBlockInfo &blockInfo);
+
+  llvm::Constant *GeneratebyrefCopyHelperFunction(const llvm::Type *,
+                                                  BlockFieldFlags flags,
+                                                  const VarDecl *BD);
+  llvm::Constant *GeneratebyrefDestroyHelperFunction(const llvm::Type *T, 
+                                                     BlockFieldFlags flags, 
+                                                     const VarDecl *BD);
+
+  void BuildBlockRelease(llvm::Value *DeclPtr, BlockFieldFlags flags);
+
+  llvm::Value *LoadBlockStruct() {
+    assert(BlockPointer && "no block pointer set!");
+    return BlockPointer;
+  }
 
   void AllocateBlockCXXThisPointer(const CXXThisExpr *E);
   void AllocateBlockDecl(const BlockDeclRefExpr *E);
   llvm::Value *GetAddrOfBlockDecl(const BlockDeclRefExpr *E) {
     return GetAddrOfBlockDecl(E->getDecl(), E->isByRef());
   }
-  llvm::Value *GetAddrOfBlockDecl(const ValueDecl *D, bool ByRef);
-  const llvm::Type *BuildByRefType(const ValueDecl *D);
+  llvm::Value *GetAddrOfBlockDecl(const VarDecl *var, bool ByRef);
+  const llvm::Type *BuildByRefType(const VarDecl *var);
 
   void GenerateCode(GlobalDecl GD, llvm::Function *Fn);
   void StartFunction(GlobalDecl GD, QualType RetTy,
@@ -1066,6 +1186,9 @@ public:
   /// function instrumentation is enabled.
   void EmitFunctionInstrumentation(const char *Fn);
 
+  /// EmitMCountInstrumentation - Emit call to .mcount.
+  void EmitMCountInstrumentation();
+
   /// EmitFunctionProlog - Emit the target specific LLVM code to load the
   /// arguments for the given function. This is also responsible for naming the
   /// LLVM function arguments.
@@ -1109,19 +1232,19 @@ public:
   static bool hasAggregateLLVMType(QualType T);
 
   /// createBasicBlock - Create an LLVM basic block.
-  llvm::BasicBlock *createBasicBlock(const char *Name="",
-                                     llvm::Function *Parent=0,
-                                     llvm::BasicBlock *InsertBefore=0) {
+  llvm::BasicBlock *createBasicBlock(llvm::StringRef name = "",
+                                     llvm::Function *parent = 0,
+                                     llvm::BasicBlock *before = 0) {
 #ifdef NDEBUG
-    return llvm::BasicBlock::Create(VMContext, "", Parent, InsertBefore);
+    return llvm::BasicBlock::Create(getLLVMContext(), "", parent, before);
 #else
-    return llvm::BasicBlock::Create(VMContext, Name, Parent, InsertBefore);
+    return llvm::BasicBlock::Create(getLLVMContext(), name, parent, before);
 #endif
   }
 
   /// getBasicBlockForLabel - Return the LLVM basicblock that the specified
   /// label maps to.
-  JumpDest getJumpDestForLabel(const LabelStmt *S);
+  JumpDest getJumpDestForLabel(const LabelDecl *S);
 
   /// SimplifyForwardingBlocks - If the given basic block is only a branch to
   /// another basic block, simplify it. This assumes that no other code could
@@ -1203,6 +1326,9 @@ public:
     return AggValueSlot::forAddr(CreateMemTemp(T, Name), false, false);
   }
 
+  /// Emit a cast to void* in the appropriate address space.
+  llvm::Value *EmitCastToVoidPtr(llvm::Value *value);
+
   /// EvaluateExprAsBool - Perform the usual unary conversions on the specified
   /// expression and compare the result against zero, returning an Int1Ty value.
   llvm::Value *EvaluateExprAsBool(const Expr *E);
@@ -1257,11 +1383,33 @@ public:
     return Res;
   }
 
+  /// getOpaqueLValueMapping - Given an opaque value expression (which
+  /// must be mapped to an l-value), return its mapping.
+  const LValue &getOpaqueLValueMapping(const OpaqueValueExpr *e) {
+    assert(OpaqueValueMapping::shouldBindAsLValue(e));
+
+    llvm::DenseMap<const OpaqueValueExpr*,LValue>::iterator
+      it = OpaqueLValues.find(e);
+    assert(it != OpaqueLValues.end() && "no mapping for opaque value!");
+    return it->second;
+  }
+
+  /// getOpaqueRValueMapping - Given an opaque value expression (which
+  /// must be mapped to an r-value), return its mapping.
+  const RValue &getOpaqueRValueMapping(const OpaqueValueExpr *e) {
+    assert(!OpaqueValueMapping::shouldBindAsLValue(e));
+
+    llvm::DenseMap<const OpaqueValueExpr*,RValue>::iterator
+      it = OpaqueRValues.find(e);
+    assert(it != OpaqueRValues.end() && "no mapping for opaque value!");
+    return it->second;
+  }
+
   /// getAccessedFieldNo - Given an encoded value and a result number, return
   /// the input field number being accessed.
   static unsigned getAccessedFieldNo(unsigned Idx, const llvm::Constant *Elts);
 
-  llvm::BlockAddress *GetAddrOfLabel(const LabelStmt *L);
+  llvm::BlockAddress *GetAddrOfLabel(const LabelDecl *L);
   llvm::BasicBlock *GetIndirectGotoBlock();
 
   /// EmitNullInitialization - Generate code to set a value of the given type to
@@ -1416,6 +1564,18 @@ public:
   /// EmitParmDecl - Emit a ParmVarDecl or an ImplicitParamDecl.
   void EmitParmDecl(const VarDecl &D, llvm::Value *Arg);
 
+  /// protectFromPeepholes - Protect a value that we're intending to
+  /// store to the side, but which will probably be used later, from
+  /// aggressive peepholing optimizations that might delete it.
+  ///
+  /// Pass the result to unprotectFromPeepholes to declare that
+  /// protection is no longer required.
+  ///
+  /// There's no particular reason why this shouldn't apply to
+  /// l-values, it's just that no existing peepholes work on pointers.
+  PeepholeProtection protectFromPeepholes(RValue rvalue);
+  void unprotectFromPeepholes(PeepholeProtection protection);
+
   //===--------------------------------------------------------------------===//
   //                             Statement Emission
   //===--------------------------------------------------------------------===//
@@ -1444,7 +1604,7 @@ public:
 
   /// EmitLabel - Emit the block for the given label. It is legal to call this
   /// function even if there is no current insertion point.
-  void EmitLabel(const LabelStmt &S); // helper for EmitLabelStmt.
+  void EmitLabel(const LabelDecl *D); // helper for EmitLabelStmt.
 
   void EmitLabelStmt(const LabelStmt &S);
   void EmitGotoStmt(const GotoStmt &S);
@@ -1585,9 +1745,10 @@ public:
   LValue EmitMemberExpr(const MemberExpr *E);
   LValue EmitObjCIsaExpr(const ObjCIsaExpr *E);
   LValue EmitCompoundLiteralLValue(const CompoundLiteralExpr *E);
-  LValue EmitConditionalOperatorLValue(const ConditionalOperator *E);
+  LValue EmitConditionalOperatorLValue(const AbstractConditionalOperator *E);
   LValue EmitCastLValue(const CastExpr *E);
   LValue EmitNullInitializationLValue(const CXXScalarValueInitExpr *E);
+  LValue EmitOpaqueValueLValue(const OpaqueValueExpr *e);
 
   llvm::Value *EmitIvarOffset(const ObjCInterfaceDecl *Interface,
                               const ObjCIvarDecl *Ivar);
@@ -1625,6 +1786,7 @@ public:
   LValue EmitPointerToDataMemberBinaryExpr(const BinaryOperator *E);
   LValue EmitObjCSelectorLValue(const ObjCSelectorExpr *E);
   void   EmitDeclRefExprDbgValue(const DeclRefExpr *E, llvm::Constant *Init);
+
   //===--------------------------------------------------------------------===//
   //                         Scalar Expression Emission
   //===--------------------------------------------------------------------===//
@@ -1661,8 +1823,11 @@ public:
                                 llvm::Value *This, const llvm::Type *Ty);
   llvm::Value *BuildAppleKextVirtualCall(const CXXMethodDecl *MD, 
                                          NestedNameSpecifier *Qual,
-                                         llvm::Value *This,
                                          const llvm::Type *Ty);
+  
+  llvm::Value *BuildAppleKextVirtualDestructorCall(const CXXDestructorDecl *DD,
+                                                   CXXDtorType Type, 
+                                                   const CXXRecordDecl *RD);
 
   RValue EmitCXXMemberCall(const CXXMethodDecl *MD,
                            llvm::Value *Callee,
@@ -2015,40 +2180,6 @@ template <> struct DominatingValue<RValue> {
   static type restore(CodeGenFunction &CGF, saved_type value) {
     return value.restore(CGF);
   }
-};
-
-/// CGBlockInfo - Information to generate a block literal.
-class CGBlockInfo {
-public:
-  /// Name - The name of the block, kindof.
-  const char *Name;
-
-  /// DeclRefs - Variables from parent scopes that have been
-  /// imported into this block.
-  llvm::SmallVector<const BlockDeclRefExpr *, 8> DeclRefs;
-
-  /// InnerBlocks - This block and the blocks it encloses.
-  llvm::SmallPtrSet<const DeclContext *, 4> InnerBlocks;
-
-  /// CXXThisRef - Non-null if 'this' was required somewhere, in
-  /// which case this is that expression.
-  const CXXThisExpr *CXXThisRef;
-
-  /// NeedsObjCSelf - True if something in this block has an implicit
-  /// reference to 'self'.
-  bool NeedsObjCSelf : 1;
-  
-  /// HasCXXObject - True if block has imported c++ object requiring copy
-  /// construction in copy helper and destruction in copy dispose helpers.
-  bool HasCXXObject : 1;
-  
-  /// These are initialized by GenerateBlockFunction.
-  bool BlockHasCopyDispose : 1;
-  CharUnits BlockSize;
-  CharUnits BlockAlign;
-  llvm::SmallVector<const Expr*, 8> BlockLayout;
-
-  CGBlockInfo(const char *Name);
 };
 
 }  // end namespace CodeGen

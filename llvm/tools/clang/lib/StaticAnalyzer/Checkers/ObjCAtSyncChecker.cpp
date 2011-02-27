@@ -12,11 +12,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "ExprEngineInternalChecks.h"
-#include "clang/StaticAnalyzer/BugReporter/BugType.h"
+#include "ClangSACheckers.h"
+#include "clang/StaticAnalyzer/Core/CheckerManager.h"
+#include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
 #include "clang/StaticAnalyzer/Checkers/DereferenceChecker.h"
-#include "clang/StaticAnalyzer/PathSensitive/CheckerVisitor.h"
-#include "clang/StaticAnalyzer/PathSensitive/ExprEngine.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/CheckerVisitor.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/ExprEngine.h"
 
 using namespace clang;
 using namespace ento;
@@ -33,10 +34,14 @@ public:
 };
 } // end anonymous namespace
 
-void ento::RegisterObjCAtSyncChecker(ExprEngine &Eng) {
+static void RegisterObjCAtSyncChecker(ExprEngine &Eng) {
   // @synchronized is an Objective-C 2 feature.
   if (Eng.getContext().getLangOptions().ObjC2)
     Eng.registerCheck(new ObjCAtSyncChecker());
+}
+
+void ento::registerObjCAtSyncChecker(CheckerManager &mgr) {
+  mgr.addCheckerRegisterFunction(RegisterObjCAtSyncChecker);
 }
 
 void ObjCAtSyncChecker::PreVisitObjCAtSynchronizedStmt(CheckerContext &C,

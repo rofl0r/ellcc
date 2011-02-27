@@ -46,10 +46,11 @@
 // objects in the diagnostics.
 // http://developer.apple.com/library/mac/#documentation/Cocoa/Conceptual/ObjectiveC/Articles/ocAllocInit.html
 
-#include "ExprEngineInternalChecks.h"
-#include "clang/StaticAnalyzer/PathSensitive/CheckerVisitor.h"
-#include "clang/StaticAnalyzer/PathSensitive/GRStateTrait.h"
-#include "clang/StaticAnalyzer/BugReporter/BugType.h"
+#include "ClangSACheckers.h"
+#include "clang/StaticAnalyzer/Core/CheckerManager.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/CheckerVisitor.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/GRStateTrait.h"
+#include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
 #include "clang/Analysis/DomainSpecific/CocoaConventions.h"
 #include "clang/AST/ParentMap.h"
 
@@ -92,9 +93,13 @@ public:
 };
 } // end anonymous namespace
 
-void ento::registerObjCSelfInitChecker(ExprEngine &Eng) {
+static void RegisterObjCSelfInitChecker(ExprEngine &Eng) {
   if (Eng.getContext().getLangOptions().ObjC1)
     Eng.registerCheck(new ObjCSelfInitChecker());
+}
+
+void ento::registerObjCSelfInitChecker(CheckerManager &mgr) {
+  mgr.addCheckerRegisterFunction(RegisterObjCSelfInitChecker);
 }
 
 namespace {
@@ -109,6 +114,7 @@ public:
 } // end anonymous namespace
 
 typedef llvm::ImmutableMap<SymbolRef, unsigned> SelfFlag;
+namespace { struct CalledInit {}; }
 
 namespace clang {
 namespace ento {
@@ -118,6 +124,10 @@ namespace ento {
       static int index = 0;
       return &index;
     }
+  };
+  template <>
+  struct GRStateTrait<CalledInit> : public GRStatePartialTrait<bool> {
+    static void *GDMIndex() { static int index = 0; return &index; }
   };
 }
 }
@@ -133,11 +143,9 @@ static SelfFlagEnum getSelfFlags(SVal val, CheckerContext &C) {
   return getSelfFlags(val, C.getState());
 }
 
-static void addSelfFlag(SVal val, SelfFlagEnum flag, CheckerContext &C) {
-  const GRState *state = C.getState();
-  // FIXME: We tag the symbol that the SVal wraps but this is conceptually
-  // wrong, we should tag the SVal; the fact that there is a symbol behind the
-  // SVal is irrelevant.
+static void addSelfFlag(const GRState *state, SVal val,
+                        SelfFlagEnum flag, CheckerContext &C) {
+  // We tag the symbol that the SVal wraps.
   if (SymbolRef sym = val.getAsSymbol())
     C.addTransition(state->set<SelfFlag>(sym, getSelfFlags(val, C) | flag));
 }
@@ -163,9 +171,13 @@ static void checkForInvalidSelf(const Expr *E, CheckerContext &C,
                                 const char *errorStr) {
   if (!E)
     return;
+  
+  if (!C.getState()->get<CalledInit>())
+    return;
+  
   if (!isInvalidSelf(E, C))
     return;
-
+  
   // Generate an error node.
   ExplodedNode *N = C.generateSink();
   if (!N)
@@ -190,8 +202,14 @@ void ObjCSelfInitChecker::postVisitObjCMessage(CheckerContext &C,
   if (isInitMessage(msg)) {
     // Tag the return value as the result of an initializer.
     const GRState *state = C.getState();
+    
+    // FIXME this really should be context sensitive, where we record
+    // the current stack frame (for IPA).  Also, we need to clean this
+    // value out when we return from this method.
+    state = state->set<CalledInit>(true);
+    
     SVal V = state->getSVal(msg.getOriginExpr());
-    addSelfFlag(V, SelfFlag_InitRes, C);
+    addSelfFlag(state, V, SelfFlag_InitRes, C);
     return;
   }
 
@@ -209,7 +227,7 @@ void ObjCSelfInitChecker::PostVisitObjCIvarRefExpr(CheckerContext &C,
     return;
 
   checkForInvalidSelf(E->getBase(), C,
-    "Instance variable used before setting 'self' to the result of "
+    "Instance variable used while 'self' is not set to the result of "
                                                  "'[(super or self) init...]'");
 }
 
@@ -221,13 +239,25 @@ void ObjCSelfInitChecker::PreVisitReturnStmt(CheckerContext &C,
     return;
 
   checkForInvalidSelf(S->getRetValue(), C,
-    "Returning 'self' before setting it to the result of "
+    "Returning 'self' while it is not set to the result of "
                                                  "'[(super or self) init...]'");
 }
 
 // When a call receives a reference to 'self', [Pre/Post]VisitGenericCall pass
 // the SelfFlags from the object 'self' point to before the call, to the new
-// object after the call.
+// object after the call. This is to avoid invalidation of 'self' by logging
+// functions.
+// Another common pattern in classes with multiple initializers is to put the
+// subclass's common initialization bits into a static function that receives
+// the value of 'self', e.g:
+// @code
+//   if (!(self = [super init]))
+//     return nil;
+//   if (!(self = _commonInit(self)))
+//     return nil;
+// @endcode
+// Until we can use inter-procedural analysis, in such a call, transfer the
+// SelfFlags to the result of the call.
 
 void ObjCSelfInitChecker::PreVisitGenericCall(CheckerContext &C,
                                               const CallExpr *CE) {
@@ -237,6 +267,9 @@ void ObjCSelfInitChecker::PreVisitGenericCall(CheckerContext &C,
     SVal argV = state->getSVal(*I);
     if (isSelfVar(argV, C)) {
       preCallSelfFlags = getSelfFlags(state->getSVal(cast<Loc>(argV)), C);
+      return;
+    } else if (hasSelfFlag(argV, SelfFlag_Self, C)) {
+      preCallSelfFlags = getSelfFlags(argV, C);
       return;
     }
   }
@@ -249,7 +282,10 @@ void ObjCSelfInitChecker::PostVisitGenericCall(CheckerContext &C,
          I = CE->arg_begin(), E = CE->arg_end(); I != E; ++I) {
     SVal argV = state->getSVal(*I);
     if (isSelfVar(argV, C)) {
-      addSelfFlag(state->getSVal(cast<Loc>(argV)), preCallSelfFlags, C);
+      addSelfFlag(state, state->getSVal(cast<Loc>(argV)), preCallSelfFlags, C);
+      return;
+    } else if (hasSelfFlag(argV, SelfFlag_Self, C)) {
+      addSelfFlag(state, state->getSVal(CE), preCallSelfFlags, C);
       return;
     }
   }
@@ -261,7 +297,7 @@ void ObjCSelfInitChecker::visitLocation(CheckerContext &C, const Stmt *S,
   // value is the object that 'self' points to.
   const GRState *state = C.getState();
   if (isSelfVar(location, C))
-    addSelfFlag(state->getSVal(cast<Loc>(location)), SelfFlag_Self, C);
+    addSelfFlag(state, state->getSVal(cast<Loc>(location)), SelfFlag_Self, C);
 }
 
 // FIXME: A callback should disable checkers at the start of functions.

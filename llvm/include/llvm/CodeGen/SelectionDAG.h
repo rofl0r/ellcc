@@ -100,10 +100,6 @@ public:
     return DbgValMap[Node];
   }
 
-  void removeSDDbgValues(const SDNode *Node) {
-    DbgValMap.erase(Node);
-  }
-
   typedef SmallVector<SDDbgValue*,32>::iterator DbgIterator;
   DbgIterator DbgBegin() { return DbgValues.begin(); }
   DbgIterator DbgEnd()   { return DbgValues.end(); }
@@ -634,7 +630,7 @@ public:
                   MachinePointerInfo PtrInfo, bool isVolatile,
                   bool isNonTemporal, unsigned Alignment,
                   const MDNode *TBAAInfo = 0);
-  SDValue getExtLoad(ISD::LoadExtType ExtType, EVT VT, DebugLoc dl,
+  SDValue getExtLoad(ISD::LoadExtType ExtType, DebugLoc dl, EVT VT,
                      SDValue Chain, SDValue Ptr, MachinePointerInfo PtrInfo,
                      EVT MemVT, bool isVolatile,
                      bool isNonTemporal, unsigned Alignment,
@@ -970,6 +966,13 @@ public:
   /// class to allow target nodes to be understood.
   unsigned ComputeNumSignBits(SDValue Op, unsigned Depth = 0) const;
 
+  /// isBaseWithConstantOffset - Return true if the specified operand is an
+  /// ISD::ADD with a ConstantSDNode on the right-hand side, or if it is an
+  /// ISD::OR with a ConstantSDNode that is guaranteed to have the same
+  /// semantics as an ADD.  This handles the equivalence:
+  ///     X|Cst == X+Cst iff X&Cst = 0.
+  bool isBaseWithConstantOffset(SDValue Op) const;
+  
   /// isKnownNeverNan - Test whether the given SDValue is known to never be NaN.
   bool isKnownNeverNaN(SDValue Op) const;
 

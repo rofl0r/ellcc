@@ -31,6 +31,7 @@
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclObjC.h"
 #include "clang/AST/Expr.h"
+#include "clang/AST/StmtCXX.h"
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Basic/PartialDiagnostic.h"
 #include "clang/Basic/TargetInfo.h"
@@ -44,7 +45,6 @@ void FunctionScopeInfo::Clear() {
   HasBranchIntoScope = false;
   HasIndirectGoto = false;
   
-  LabelMap.clear();
   SwitchStack.clear();
   Returns.clear();
   ErrorTrap.reset();
@@ -131,11 +131,11 @@ void Sema::ActOnTranslationUnitScope(Scope *S) {
 Sema::Sema(Preprocessor &pp, ASTContext &ctxt, ASTConsumer &consumer,
            bool CompleteTranslationUnit,
            CodeCompleteConsumer *CodeCompleter)
-  : TheTargetAttributesSema(0),
+  : TheTargetAttributesSema(0), FPFeatures(pp.getLangOptions()),
     LangOpts(pp.getLangOptions()), PP(pp), Context(ctxt), Consumer(consumer),
     Diags(PP.getDiagnostics()), SourceMgr(PP.getSourceManager()),
     ExternalSource(0), CodeCompleter(CodeCompleter), CurContext(0), 
-    PackContext(0), VisContext(0), ParsingDeclDepth(0),
+    PackContext(0), VisContext(0),
     IdResolver(pp.getLangOptions()), CXXTypeInfoDecl(0), MSVCGuidDecl(0),
     GlobalNewDeleteDeclared(false), 
     CompleteTranslationUnit(CompleteTranslationUnit),
@@ -206,15 +206,6 @@ void Sema::ImpCastExprToType(Expr *&Expr, QualType Ty,
   if (ExprTy == TypeTy)
     return;
 
-  if (Expr->getType()->isPointerType() && Ty->isPointerType()) {
-    QualType ExprBaseType = cast<PointerType>(ExprTy)->getPointeeType();
-    QualType BaseType = cast<PointerType>(TypeTy)->getPointeeType();
-    if (ExprBaseType.getAddressSpace() != BaseType.getAddressSpace()) {
-      Diag(Expr->getExprLoc(), diag::err_implicit_pointer_address_space_cast)
-        << Expr->getSourceRange();
-    }
-  }
-
   // If this is a derived-to-base cast to a through a virtual base, we
   // need a vtable.
   if (Kind == CK_DerivedToBase && 
@@ -278,6 +269,65 @@ static bool ShouldRemoveFromUnused(Sema *SemaRef, const DeclaratorDecl *D) {
   }
 
   return false;
+}
+
+namespace {
+  struct UndefinedInternal {
+    NamedDecl *decl;
+    FullSourceLoc useLoc;
+
+    UndefinedInternal(NamedDecl *decl, FullSourceLoc useLoc)
+      : decl(decl), useLoc(useLoc) {}
+  };
+
+  bool operator<(const UndefinedInternal &l, const UndefinedInternal &r) {
+    return l.useLoc.isBeforeInTranslationUnitThan(r.useLoc);
+  }
+}
+
+/// checkUndefinedInternals - Check for undefined objects with internal linkage.
+static void checkUndefinedInternals(Sema &S) {
+  if (S.UndefinedInternals.empty()) return;
+
+  // Collect all the still-undefined entities with internal linkage.
+  llvm::SmallVector<UndefinedInternal, 16> undefined;
+  for (llvm::DenseMap<NamedDecl*,SourceLocation>::iterator
+         i = S.UndefinedInternals.begin(), e = S.UndefinedInternals.end();
+       i != e; ++i) {
+    NamedDecl *decl = i->first;
+
+    // Ignore attributes that have become invalid.
+    if (decl->isInvalidDecl()) continue;
+
+    // __attribute__((weakref)) is basically a definition.
+    if (decl->hasAttr<WeakRefAttr>()) continue;
+
+    if (FunctionDecl *fn = dyn_cast<FunctionDecl>(decl)) {
+      if (fn->isPure() || fn->hasBody())
+        continue;
+    } else {
+      if (cast<VarDecl>(decl)->hasDefinition() != VarDecl::DeclarationOnly)
+        continue;
+    }
+
+    // We build a FullSourceLoc so that we can sort with array_pod_sort.
+    FullSourceLoc loc(i->second, S.Context.getSourceManager());
+    undefined.push_back(UndefinedInternal(decl, loc));
+  }
+
+  if (undefined.empty()) return;
+
+  // Sort (in order of use site) so that we're not (as) dependent on
+  // the iteration order through an llvm::DenseMap.
+  llvm::array_pod_sort(undefined.begin(), undefined.end());
+
+  for (llvm::SmallVectorImpl<UndefinedInternal>::iterator
+         i = undefined.begin(), e = undefined.end(); i != e; ++i) {
+    NamedDecl *decl = i->decl;
+    S.Diag(decl->getLocation(), diag::warn_undefined_internal)
+      << isa<VarDecl>(decl) << decl;
+    S.Diag(i->useLoc, diag::note_used_here);
+  }
 }
 
 /// ActOnEndOfTranslationUnit - This is called at the very end of the
@@ -388,26 +438,32 @@ void Sema::ActOnEndOfTranslationUnit() {
       Consumer.CompleteTentativeDefinition(VD);
 
   }
-  
-  // Output warning for unused file scoped decls.
-  for (llvm::SmallVectorImpl<const DeclaratorDecl*>::iterator
-         I = UnusedFileScopedDecls.begin(),
-         E = UnusedFileScopedDecls.end(); I != E; ++I) {
-    if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(*I)) {
-      const FunctionDecl *DiagD;
-      if (!FD->hasBody(DiagD))
-        DiagD = FD;
-      Diag(DiagD->getLocation(),
-           isa<CXXMethodDecl>(DiagD) ? diag::warn_unused_member_function
-                                     : diag::warn_unused_function)
-            << DiagD->getDeclName();
-    } else {
-      const VarDecl *DiagD = cast<VarDecl>(*I)->getDefinition();
-      if (!DiagD)
-        DiagD = cast<VarDecl>(*I);
-      Diag(DiagD->getLocation(), diag::warn_unused_variable)
-            << DiagD->getDeclName();
+
+  // If there were errors, disable 'unused' warnings since they will mostly be
+  // noise.
+  if (!Diags.hasErrorOccurred()) {
+    // Output warning for unused file scoped decls.
+    for (llvm::SmallVectorImpl<const DeclaratorDecl*>::iterator
+           I = UnusedFileScopedDecls.begin(),
+           E = UnusedFileScopedDecls.end(); I != E; ++I) {
+      if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(*I)) {
+        const FunctionDecl *DiagD;
+        if (!FD->hasBody(DiagD))
+          DiagD = FD;
+        Diag(DiagD->getLocation(),
+             isa<CXXMethodDecl>(DiagD) ? diag::warn_unused_member_function
+                                       : diag::warn_unused_function)
+              << DiagD->getDeclName();
+      } else {
+        const VarDecl *DiagD = cast<VarDecl>(*I)->getDefinition();
+        if (!DiagD)
+          DiagD = cast<VarDecl>(*I);
+        Diag(DiagD->getLocation(), diag::warn_unused_variable)
+              << DiagD->getDeclName();
+      }
     }
+
+    checkUndefinedInternals(*this);
   }
 
   TUScope = 0;

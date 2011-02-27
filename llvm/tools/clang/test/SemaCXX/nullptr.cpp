@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -fsyntax-only -verify -std=c++0x -ffreestanding %s
+// RUN: %clang_cc1 -fexceptions -fsyntax-only -verify -std=c++0x -ffreestanding %s
 #include <stdint.h>
 
 typedef decltype(nullptr) nullptr_t;
@@ -44,8 +44,10 @@ nullptr_t f(nullptr_t null)
   (void)(1 > nullptr); // expected-error {{invalid operands to binary expression}}
   (void)(1 != nullptr); // expected-error {{invalid operands to binary expression}}
   (void)(1 + nullptr); // expected-error {{invalid operands to binary expression}}
-  (void)(0 ? nullptr : 0); // expected-error {{incompatible operand types}}
+  (void)(0 ? nullptr : 0); // expected-error {{non-pointer operand type 'int' incompatible with nullptr}}
   (void)(0 ? nullptr : (void*)0);
+  (void)(0 ? nullptr : A()); // expected-error {{non-pointer operand type 'A' incompatible with nullptr}}
+  (void)(0 ? A() : nullptr); // expected-error {{non-pointer operand type 'A' incompatible with nullptr}}
 
   // Overloading
   int t = o1(nullptr);

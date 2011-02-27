@@ -1,4 +1,6 @@
 #! /bin/sh
-svn merge http://ellcc.org/svn/vendor/llvm/svn-122855 http://ellcc.org/svn/vendor/llvm/current llvm
+svn merge http://ellcc.org/svn/vendor/llvm/svn-126041 http://ellcc.org/svn/vendor/llvm/current llvm
 cd llvm/tools
-svn merge http://ellcc.org/svn/vendor/clang/svn-122855 http://ellcc.org/svn/vendor/clang/current clang
+svn merge http://ellcc.org/svn/vendor/clang/svn-126041 http://ellcc.org/svn/vendor/clang/current clang
+cd ../libecc/src
+svn merge http://ellcc.org/svn/vendor/compiler-rt/svn-126041 http://ellcc.org/svn/vendor/compiler-rt/current compiler-rt

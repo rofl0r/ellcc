@@ -72,13 +72,15 @@ public:
   bool VisitStmt(Stmt* S);
   bool VisitCallExpr(CallExpr* C);
   bool VisitDeclStmt(DeclStmt* D);
-  bool VisitConditionalOperator(ConditionalOperator* C);
+  bool VisitAbstractConditionalOperator(AbstractConditionalOperator* C);
   bool BlockStmt_VisitObjCForCollectionStmt(ObjCForCollectionStmt* S);
 
   bool Visit(Stmt *S);
   bool BlockStmt_VisitExpr(Expr* E);
 
   void VisitTerminator(CFGBlock* B) { }
+    
+  void setCurrentBlock(const CFGBlock *block) {}
 };
 
 static const bool Initialized = false;
@@ -211,13 +213,14 @@ TransferFuncs::BlockStmt_VisitObjCForCollectionStmt(ObjCForCollectionStmt* S) {
 }
 
 
-bool TransferFuncs::VisitConditionalOperator(ConditionalOperator* C) {
+bool TransferFuncs::
+VisitAbstractConditionalOperator(AbstractConditionalOperator* C) {
   Visit(C->getCond());
 
-  bool rhsResult = Visit(C->getRHS());
+  bool rhsResult = Visit(C->getFalseExpr());
   // Handle the GNU extension for missing LHS.
-  if (Expr *lhs = C->getLHS())
-    return Visit(lhs) & rhsResult; // Yes: we want &, not &&.
+  if (isa<ConditionalOperator>(C))
+    return Visit(C->getTrueExpr()) & rhsResult; // Yes: we want &, not &&.
   else
     return rhsResult;
 }
@@ -228,7 +231,7 @@ bool TransferFuncs::VisitStmt(Stmt* S) {
   // We don't stop at the first subexpression that is Uninitialized because
   // evaluating some subexpressions may result in propogating "Uninitialized"
   // or "Initialized" to variables referenced in the other subexpressions.
-  for (Stmt::child_iterator I=S->child_begin(), E=S->child_end(); I!=E; ++I)
+  for (Stmt::child_range I = S->children(); I; ++I)
     if (*I && Visit(*I) == Uninitialized) x = Uninitialized;
 
   return x;

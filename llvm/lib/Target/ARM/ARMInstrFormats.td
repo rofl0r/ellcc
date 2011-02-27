@@ -149,6 +149,34 @@ def CCOutOperand : AsmOperandClass {
   let SuperClasses = [];
 }
 
+def MemBarrierOptOperand : AsmOperandClass {
+  let Name = "MemBarrierOpt";
+  let SuperClasses = [];
+  let ParserMethod = "tryParseMemBarrierOptOperand";
+}
+
+def ProcIFlagsOperand : AsmOperandClass {
+  let Name = "ProcIFlags";
+  let SuperClasses = [];
+  let ParserMethod = "tryParseProcIFlagsOperand";
+}
+
+def MSRMaskOperand : AsmOperandClass {
+  let Name = "MSRMask";
+  let SuperClasses = [];
+  let ParserMethod = "tryParseMSRMaskOperand";
+}
+
+// ARM imod and iflag operands, used only by the CPS instruction.
+def imod_op : Operand<i32> {
+  let PrintMethod = "printCPSIMod";
+}
+
+def iflags_op : Operand<i32> {
+  let PrintMethod = "printCPSIFlag";
+  let ParserMatchClass = ProcIFlagsOperand;
+}
+
 // ARM Predicate operand. Default to 14 = always (AL). Second part is CC
 // register whose default is 0 (no register).
 def pred : PredicateOperand<OtherVT, (ops i32imm, CCR),
@@ -183,6 +211,7 @@ def cps_opt : Operand<i32> {
 
 def msr_mask : Operand<i32> {
   let PrintMethod = "printMSRMaskOperand";
+  let ParserMatchClass = MSRMaskOperand;
 }
 
 // A8.6.117, A8.6.118.  Different instructions are generated for #0 and #-0.
@@ -1178,7 +1207,7 @@ class ADI5<bits<4> opcod1, bits<2> opcod2, dag oops, dag iops,
   let Inst{11-9}  = 0b101;
   let Inst{8}     = 1;          // Double precision
 
-  // 64-bit loads & stores operate on both NEON and VFP pipelines.
+  // Loads & stores operate on both NEON and VFP pipelines.
   let D = VFPNeonDomain;
 }
 
@@ -1203,6 +1232,9 @@ class ASI5<bits<4> opcod1, bits<2> opcod2, dag oops, dag iops,
   let Inst{21-20} = opcod2;
   let Inst{11-9}  = 0b101;
   let Inst{8}     = 0;          // Single precision
+
+  // Loads & stores operate on both NEON and VFP pipelines.
+  let D = VFPNeonDomain;
 }
 
 // VFP Load / store multiple pseudo instructions.
@@ -1235,9 +1267,6 @@ class AXDI4<dag oops, dag iops, IndexMode im, InstrItinClass itin,
   let Inst{27-25} = 0b110;
   let Inst{11-9}  = 0b101;
   let Inst{8}     = 1;          // Double precision
-
-  // 64-bit loads & stores operate on both NEON and VFP pipelines.
-  let D = VFPNeonDomain;
 }
 
 class AXSI4<dag oops, dag iops, IndexMode im, InstrItinClass itin,

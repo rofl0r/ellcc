@@ -43,6 +43,7 @@ namespace {
       AU.addRequiredID(LoopSimplifyID);
       AU.addPreservedID(LoopSimplifyID);
       AU.addPreservedID(LCSSAID);
+      AU.addPreserved("scalar-evolution");
     }
   };
 }

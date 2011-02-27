@@ -30,8 +30,6 @@
 #include <algorithm>
 using namespace clang;
 
-void Expr::ANCHOR() {} // key function for Expr class.
-
 /// isKnownToHaveBooleanValue - Return true if this is an integer expression
 /// that is known to return 0 or 1.  This happens for _Bool/bool expressions
 /// but also int expressions which are produced by things like comparisons in
@@ -91,6 +89,42 @@ bool Expr::isKnownToHaveBooleanValue() const {
            CO->getFalseExpr()->isKnownToHaveBooleanValue();
   
   return false;
+}
+
+// Amusing macro metaprogramming hack: check whether a class provides
+// a more specific implementation of getExprLoc().
+namespace {
+  /// This implementation is used when a class provides a custom
+  /// implementation of getExprLoc.
+  template <class E, class T>
+  SourceLocation getExprLocImpl(const Expr *expr,
+                                SourceLocation (T::*v)() const) {
+    return static_cast<const E*>(expr)->getExprLoc();
+  }
+
+  /// This implementation is used when a class doesn't provide
+  /// a custom implementation of getExprLoc.  Overload resolution
+  /// should pick it over the implementation above because it's
+  /// more specialized according to function template partial ordering.
+  template <class E>
+  SourceLocation getExprLocImpl(const Expr *expr,
+                                SourceLocation (Expr::*v)() const) {
+    return static_cast<const E*>(expr)->getSourceRange().getBegin();
+  }
+}
+
+SourceLocation Expr::getExprLoc() const {
+  switch (getStmtClass()) {
+  case Stmt::NoStmtClass: llvm_unreachable("statement without class");
+#define ABSTRACT_STMT(type)
+#define STMT(type, base) \
+  case Stmt::type##Class: llvm_unreachable(#type " is not an Expr"); break;
+#define EXPR(type, base) \
+  case Stmt::type##Class: return getExprLocImpl<type>(this, &type::getExprLoc);
+#include "clang/AST/StmtNodes.inc"
+  }
+  llvm_unreachable("unknown statement kind");
+  return SourceLocation();
 }
 
 //===----------------------------------------------------------------------===//
@@ -319,13 +353,15 @@ DeclRefExpr *DeclRefExpr::Create(ASTContext &Context,
                                TemplateArgs, T, VK);
 }
 
-DeclRefExpr *DeclRefExpr::CreateEmpty(ASTContext &Context, bool HasQualifier,
+DeclRefExpr *DeclRefExpr::CreateEmpty(ASTContext &Context, 
+                                      bool HasQualifier,
+                                      bool HasExplicitTemplateArgs,
                                       unsigned NumTemplateArgs) {
   std::size_t Size = sizeof(DeclRefExpr);
   if (HasQualifier)
     Size += sizeof(NameQualifier);
   
-  if (NumTemplateArgs)
+  if (HasExplicitTemplateArgs)
     Size += ExplicitTemplateArgumentList::sizeFor(NumTemplateArgs);
   
   void *Mem = Context.Allocate(Size, llvm::alignOf<DeclRefExpr>());
@@ -645,8 +681,8 @@ OverloadedOperatorKind UnaryOperator::getOverloadedOperator(Opcode Opc) {
 // Postfix Operators.
 //===----------------------------------------------------------------------===//
 
-CallExpr::CallExpr(ASTContext& C, StmtClass SC, Expr *fn, Expr **args,
-                   unsigned numargs, QualType t, ExprValueKind VK,
+CallExpr::CallExpr(ASTContext& C, StmtClass SC, Expr *fn, unsigned NumPreArgs,
+                   Expr **args, unsigned numargs, QualType t, ExprValueKind VK,
                    SourceLocation rparenloc)
   : Expr(SC, t, VK, OK_Ordinary,
          fn->isTypeDependent(),
@@ -654,7 +690,7 @@ CallExpr::CallExpr(ASTContext& C, StmtClass SC, Expr *fn, Expr **args,
          fn->containsUnexpandedParameterPack()),
     NumArgs(numargs) {
 
-  SubExprs = new (C) Stmt*[numargs+1];
+  SubExprs = new (C) Stmt*[numargs+PREARGS_START+NumPreArgs];
   SubExprs[FN] = fn;
   for (unsigned i = 0; i != numargs; ++i) {
     if (args[i]->isTypeDependent())
@@ -664,9 +700,10 @@ CallExpr::CallExpr(ASTContext& C, StmtClass SC, Expr *fn, Expr **args,
     if (args[i]->containsUnexpandedParameterPack())
       ExprBits.ContainsUnexpandedParameterPack = true;
 
-    SubExprs[i+ARGS_START] = args[i];
+    SubExprs[i+PREARGS_START+NumPreArgs] = args[i];
   }
 
+  CallExprBits.NumPreArgs = NumPreArgs;
   RParenLoc = rparenloc;
 }
 
@@ -678,7 +715,7 @@ CallExpr::CallExpr(ASTContext& C, Expr *fn, Expr **args, unsigned numargs,
          fn->containsUnexpandedParameterPack()),
     NumArgs(numargs) {
 
-  SubExprs = new (C) Stmt*[numargs+1];
+  SubExprs = new (C) Stmt*[numargs+PREARGS_START];
   SubExprs[FN] = fn;
   for (unsigned i = 0; i != numargs; ++i) {
     if (args[i]->isTypeDependent())
@@ -688,16 +725,26 @@ CallExpr::CallExpr(ASTContext& C, Expr *fn, Expr **args, unsigned numargs,
     if (args[i]->containsUnexpandedParameterPack())
       ExprBits.ContainsUnexpandedParameterPack = true;
 
-    SubExprs[i+ARGS_START] = args[i];
+    SubExprs[i+PREARGS_START] = args[i];
   }
 
+  CallExprBits.NumPreArgs = 0;
   RParenLoc = rparenloc;
 }
 
 CallExpr::CallExpr(ASTContext &C, StmtClass SC, EmptyShell Empty)
   : Expr(SC, Empty), SubExprs(0), NumArgs(0) {
   // FIXME: Why do we allocate this?
-  SubExprs = new (C) Stmt*[1];
+  SubExprs = new (C) Stmt*[PREARGS_START];
+  CallExprBits.NumPreArgs = 0;
+}
+
+CallExpr::CallExpr(ASTContext &C, StmtClass SC, unsigned NumPreArgs,
+                   EmptyShell Empty)
+  : Expr(SC, Empty), SubExprs(0), NumArgs(0) {
+  // FIXME: Why do we allocate this?
+  SubExprs = new (C) Stmt*[PREARGS_START+NumPreArgs];
+  CallExprBits.NumPreArgs = NumPreArgs;
 }
 
 Decl *CallExpr::getCalleeDecl() {
@@ -736,12 +783,14 @@ void CallExpr::setNumArgs(ASTContext& C, unsigned NumArgs) {
   }
 
   // Otherwise, we are growing the # arguments.  New an bigger argument array.
-  Stmt **NewSubExprs = new (C) Stmt*[NumArgs+1];
+  unsigned NumPreArgs = getNumPreArgs();
+  Stmt **NewSubExprs = new (C) Stmt*[NumArgs+PREARGS_START+NumPreArgs];
   // Copy over args.
-  for (unsigned i = 0; i != getNumArgs()+ARGS_START; ++i)
+  for (unsigned i = 0; i != getNumArgs()+PREARGS_START+NumPreArgs; ++i)
     NewSubExprs[i] = SubExprs[i];
   // Null out new args.
-  for (unsigned i = getNumArgs()+ARGS_START; i != NumArgs+ARGS_START; ++i)
+  for (unsigned i = getNumArgs()+PREARGS_START+NumPreArgs;
+       i != NumArgs+PREARGS_START+NumPreArgs; ++i)
     NewSubExprs[i] = 0;
 
   if (SubExprs) C.Deallocate(SubExprs);
@@ -1545,8 +1594,7 @@ static Expr::CanThrowResult MergeCanThrow(Expr::CanThrowResult CT1,
 static Expr::CanThrowResult CanSubExprsThrow(ASTContext &C, const Expr *CE) {
   Expr *E = const_cast<Expr*>(CE);
   Expr::CanThrowResult R = Expr::CT_Cannot;
-  for (Expr::child_iterator I = E->child_begin(), IE = E->child_end();
-       I != IE && R != Expr::CT_Can; ++I) {
+  for (Expr::child_range I = E->children(); I && R != Expr::CT_Can; ++I) {
     R = MergeCanThrow(R, cast<Expr>(*I)->CanThrow(C));
   }
   return R;
@@ -1955,6 +2003,10 @@ bool Expr::isTemporaryObject(ASTContext &C, const CXXRecordDecl *TempTy) const {
   if (isa<MemberExpr>(E))
     return false;
 
+  // - opaque values (all)
+  if (isa<OpaqueValueExpr>(E))
+    return false;
+
   return true;
 }
 
@@ -2080,11 +2132,14 @@ bool Expr::isConstantInitializer(ASTContext &Ctx, bool IsForRef) const {
   return isEvaluatable(Ctx);
 }
 
-/// isNullPointerConstant - C99 6.3.2.3p3 -  Return true if this is either an
-/// integer constant expression with the value zero, or if this is one that is
-/// cast to void*.
-bool Expr::isNullPointerConstant(ASTContext &Ctx,
-                                 NullPointerConstantValueDependence NPC) const {
+/// isNullPointerConstant - C99 6.3.2.3p3 - Return whether this is a null 
+/// pointer constant or not, as well as the specific kind of constant detected.
+/// Null pointer constants can be integer constant expressions with the
+/// value zero, casts of zero to void*, nullptr (C++0X), or __null
+/// (a GNU extension).
+Expr::NullPointerConstantKind
+Expr::isNullPointerConstant(ASTContext &Ctx,
+                            NullPointerConstantValueDependence NPC) const {
   if (isValueDependent()) {
     switch (NPC) {
     case NPC_NeverValueDependent:
@@ -2092,10 +2147,13 @@ bool Expr::isNullPointerConstant(ASTContext &Ctx,
       // If the unthinkable happens, fall through to the safest alternative.
         
     case NPC_ValueDependentIsNull:
-      return isTypeDependent() || getType()->isIntegralType(Ctx);
+      if (isTypeDependent() || getType()->isIntegralType(Ctx))
+        return NPCK_ZeroInteger;
+      else
+        return NPCK_NotNull;
         
     case NPC_ValueDependentIsNotNull:
-      return false;
+      return NPCK_NotNull;
     }
   }
 
@@ -2124,12 +2182,12 @@ bool Expr::isNullPointerConstant(ASTContext &Ctx,
     return DefaultArg->getExpr()->isNullPointerConstant(Ctx, NPC);
   } else if (isa<GNUNullExpr>(this)) {
     // The GNU __null extension is always a null pointer constant.
-    return true;
+    return NPCK_GNUNull;
   }
 
   // C++0x nullptr_t is always a null pointer constant.
   if (getType()->isNullPtrType())
-    return true;
+    return NPCK_CXX0X_nullptr;
 
   if (const RecordType *UT = getType()->getAsUnionType())
     if (UT && UT->getDecl()->hasAttr<TransparentUnionAttr>())
@@ -2141,12 +2199,14 @@ bool Expr::isNullPointerConstant(ASTContext &Ctx,
   // This expression must be an integer type.
   if (!getType()->isIntegerType() || 
       (Ctx.getLangOptions().CPlusPlus && getType()->isEnumeralType()))
-    return false;
+    return NPCK_NotNull;
 
   // If we have an integer constant expression, we need to *evaluate* it and
   // test for the value 0.
   llvm::APSInt Result;
-  return isIntegerConstantExpr(Result, Ctx) && Result == 0;
+  bool IsNull = isIntegerConstantExpr(Result, Ctx) && Result == 0;
+
+  return (IsNull ? NPCK_ZeroInteger : NPCK_NotNull);
 }
 
 /// \brief If this expression is an l-value for an Objective C
@@ -2543,7 +2603,7 @@ DesignatedInitExpr::DesignatedInitExpr(ASTContext &C, QualType Ty,
   this->Designators = new (C) Designator[NumDesignators];
 
   // Record the initializer itself.
-  child_iterator Child = child_begin();
+  child_range Child = children();
   *Child++ = Init;
 
   // Copy the designators and their subexpressions, computing
@@ -2703,6 +2763,15 @@ ParenListExpr::ParenListExpr(ASTContext& C, SourceLocation lparenloc,
   }
 }
 
+const OpaqueValueExpr *OpaqueValueExpr::findInCopyConstruct(const Expr *e) {
+  if (const ExprWithCleanups *ewc = dyn_cast<ExprWithCleanups>(e))
+    e = ewc->getSubExpr();
+  e = cast<CXXConstructExpr>(e)->getArg(0);
+  while (const ImplicitCastExpr *ice = dyn_cast<ImplicitCastExpr>(e))
+    e = ice->getSubExpr();
+  return cast<OpaqueValueExpr>(e);
+}
+
 //===----------------------------------------------------------------------===//
 //  ExprIterator.
 //===----------------------------------------------------------------------===//
@@ -2720,252 +2789,38 @@ const Expr* ConstExprIterator::operator->() const { return cast<Expr>(*I); }
 //  Child Iterators for iterating over subexpressions/substatements
 //===----------------------------------------------------------------------===//
 
-// DeclRefExpr
-Stmt::child_iterator DeclRefExpr::child_begin() { return child_iterator(); }
-Stmt::child_iterator DeclRefExpr::child_end() { return child_iterator(); }
-
-// ObjCIvarRefExpr
-Stmt::child_iterator ObjCIvarRefExpr::child_begin() { return &Base; }
-Stmt::child_iterator ObjCIvarRefExpr::child_end() { return &Base+1; }
-
-// ObjCPropertyRefExpr
-Stmt::child_iterator ObjCPropertyRefExpr::child_begin()
-{ 
-  if (Receiver.is<Stmt*>()) {
-    // Hack alert!
-    return reinterpret_cast<Stmt**> (&Receiver);
-  }
-  return child_iterator(); 
-}
-
-Stmt::child_iterator ObjCPropertyRefExpr::child_end()
-{ return Receiver.is<Stmt*>() ? 
-          reinterpret_cast<Stmt**> (&Receiver)+1 : 
-          child_iterator(); 
-}
-
-// ObjCIsaExpr
-Stmt::child_iterator ObjCIsaExpr::child_begin() { return &Base; }
-Stmt::child_iterator ObjCIsaExpr::child_end() { return &Base+1; }
-
-// PredefinedExpr
-Stmt::child_iterator PredefinedExpr::child_begin() { return child_iterator(); }
-Stmt::child_iterator PredefinedExpr::child_end() { return child_iterator(); }
-
-// IntegerLiteral
-Stmt::child_iterator IntegerLiteral::child_begin() { return child_iterator(); }
-Stmt::child_iterator IntegerLiteral::child_end() { return child_iterator(); }
-
-// CharacterLiteral
-Stmt::child_iterator CharacterLiteral::child_begin() { return child_iterator();}
-Stmt::child_iterator CharacterLiteral::child_end() { return child_iterator(); }
-
-// FloatingLiteral
-Stmt::child_iterator FloatingLiteral::child_begin() { return child_iterator(); }
-Stmt::child_iterator FloatingLiteral::child_end() { return child_iterator(); }
-
-// ImaginaryLiteral
-Stmt::child_iterator ImaginaryLiteral::child_begin() { return &Val; }
-Stmt::child_iterator ImaginaryLiteral::child_end() { return &Val+1; }
-
-// StringLiteral
-Stmt::child_iterator StringLiteral::child_begin() { return child_iterator(); }
-Stmt::child_iterator StringLiteral::child_end() { return child_iterator(); }
-
-// ParenExpr
-Stmt::child_iterator ParenExpr::child_begin() { return &Val; }
-Stmt::child_iterator ParenExpr::child_end() { return &Val+1; }
-
-// UnaryOperator
-Stmt::child_iterator UnaryOperator::child_begin() { return &Val; }
-Stmt::child_iterator UnaryOperator::child_end() { return &Val+1; }
-
-// OffsetOfExpr
-Stmt::child_iterator OffsetOfExpr::child_begin() {
-  return reinterpret_cast<Stmt **> (reinterpret_cast<OffsetOfNode *> (this + 1)
-                                      + NumComps);
-}
-Stmt::child_iterator OffsetOfExpr::child_end() {
-  return child_iterator(&*child_begin() + NumExprs);
-}
-
 // SizeOfAlignOfExpr
-Stmt::child_iterator SizeOfAlignOfExpr::child_begin() {
+Stmt::child_range SizeOfAlignOfExpr::children() {
   // If this is of a type and the type is a VLA type (and not a typedef), the
   // size expression of the VLA needs to be treated as an executable expression.
   // Why isn't this weirdness documented better in StmtIterator?
   if (isArgumentType()) {
     if (const VariableArrayType* T = dyn_cast<VariableArrayType>(
                                    getArgumentType().getTypePtr()))
-      return child_iterator(T);
-    return child_iterator();
+      return child_range(child_iterator(T), child_iterator());
+    return child_range();
   }
-  return child_iterator(&Argument.Ex);
-}
-Stmt::child_iterator SizeOfAlignOfExpr::child_end() {
-  if (isArgumentType())
-    return child_iterator();
-  return child_iterator(&Argument.Ex + 1);
-}
-
-// ArraySubscriptExpr
-Stmt::child_iterator ArraySubscriptExpr::child_begin() {
-  return &SubExprs[0];
-}
-Stmt::child_iterator ArraySubscriptExpr::child_end() {
-  return &SubExprs[0]+END_EXPR;
-}
-
-// CallExpr
-Stmt::child_iterator CallExpr::child_begin() {
-  return &SubExprs[0];
-}
-Stmt::child_iterator CallExpr::child_end() {
-  return &SubExprs[0]+NumArgs+ARGS_START;
-}
-
-// MemberExpr
-Stmt::child_iterator MemberExpr::child_begin() { return &Base; }
-Stmt::child_iterator MemberExpr::child_end() { return &Base+1; }
-
-// ExtVectorElementExpr
-Stmt::child_iterator ExtVectorElementExpr::child_begin() { return &Base; }
-Stmt::child_iterator ExtVectorElementExpr::child_end() { return &Base+1; }
-
-// CompoundLiteralExpr
-Stmt::child_iterator CompoundLiteralExpr::child_begin() { return &Init; }
-Stmt::child_iterator CompoundLiteralExpr::child_end() { return &Init+1; }
-
-// CastExpr
-Stmt::child_iterator CastExpr::child_begin() { return &Op; }
-Stmt::child_iterator CastExpr::child_end() { return &Op+1; }
-
-// BinaryOperator
-Stmt::child_iterator BinaryOperator::child_begin() {
-  return &SubExprs[0];
-}
-Stmt::child_iterator BinaryOperator::child_end() {
-  return &SubExprs[0]+END_EXPR;
-}
-
-// ConditionalOperator
-Stmt::child_iterator ConditionalOperator::child_begin() {
-  return &SubExprs[0];
-}
-Stmt::child_iterator ConditionalOperator::child_end() {
-  return &SubExprs[0]+END_EXPR;
-}
-
-// AddrLabelExpr
-Stmt::child_iterator AddrLabelExpr::child_begin() { return child_iterator(); }
-Stmt::child_iterator AddrLabelExpr::child_end() { return child_iterator(); }
-
-// StmtExpr
-Stmt::child_iterator StmtExpr::child_begin() { return &SubStmt; }
-Stmt::child_iterator StmtExpr::child_end() { return &SubStmt+1; }
-
-
-// ChooseExpr
-Stmt::child_iterator ChooseExpr::child_begin() { return &SubExprs[0]; }
-Stmt::child_iterator ChooseExpr::child_end() { return &SubExprs[0]+END_EXPR; }
-
-// GNUNullExpr
-Stmt::child_iterator GNUNullExpr::child_begin() { return child_iterator(); }
-Stmt::child_iterator GNUNullExpr::child_end() { return child_iterator(); }
-
-// ShuffleVectorExpr
-Stmt::child_iterator ShuffleVectorExpr::child_begin() {
-  return &SubExprs[0];
-}
-Stmt::child_iterator ShuffleVectorExpr::child_end() {
-  return &SubExprs[0]+NumExprs;
-}
-
-// VAArgExpr
-Stmt::child_iterator VAArgExpr::child_begin() { return &Val; }
-Stmt::child_iterator VAArgExpr::child_end() { return &Val+1; }
-
-// InitListExpr
-Stmt::child_iterator InitListExpr::child_begin() {
-  return InitExprs.size() ? &InitExprs[0] : 0;
-}
-Stmt::child_iterator InitListExpr::child_end() {
-  return InitExprs.size() ? &InitExprs[0] + InitExprs.size() : 0;
-}
-
-// DesignatedInitExpr
-Stmt::child_iterator DesignatedInitExpr::child_begin() {
-  char* Ptr = static_cast<char*>(static_cast<void *>(this));
-  Ptr += sizeof(DesignatedInitExpr);
-  return reinterpret_cast<Stmt**>(reinterpret_cast<void**>(Ptr));
-}
-Stmt::child_iterator DesignatedInitExpr::child_end() {
-  return child_iterator(&*child_begin() + NumSubExprs);
-}
-
-// ImplicitValueInitExpr
-Stmt::child_iterator ImplicitValueInitExpr::child_begin() {
-  return child_iterator();
-}
-
-Stmt::child_iterator ImplicitValueInitExpr::child_end() {
-  return child_iterator();
-}
-
-// ParenListExpr
-Stmt::child_iterator ParenListExpr::child_begin() {
-  return &Exprs[0];
-}
-Stmt::child_iterator ParenListExpr::child_end() {
-  return &Exprs[0]+NumExprs;
-}
-
-// ObjCStringLiteral
-Stmt::child_iterator ObjCStringLiteral::child_begin() {
-  return &String;
-}
-Stmt::child_iterator ObjCStringLiteral::child_end() {
-  return &String+1;
-}
-
-// ObjCEncodeExpr
-Stmt::child_iterator ObjCEncodeExpr::child_begin() { return child_iterator(); }
-Stmt::child_iterator ObjCEncodeExpr::child_end() { return child_iterator(); }
-
-// ObjCSelectorExpr
-Stmt::child_iterator ObjCSelectorExpr::child_begin() {
-  return child_iterator();
-}
-Stmt::child_iterator ObjCSelectorExpr::child_end() {
-  return child_iterator();
-}
-
-// ObjCProtocolExpr
-Stmt::child_iterator ObjCProtocolExpr::child_begin() {
-  return child_iterator();
-}
-Stmt::child_iterator ObjCProtocolExpr::child_end() {
-  return child_iterator();
+  return child_range(&Argument.Ex, &Argument.Ex + 1);
 }
 
 // ObjCMessageExpr
-Stmt::child_iterator ObjCMessageExpr::child_begin() {
+Stmt::child_range ObjCMessageExpr::children() {
+  Stmt **begin;
   if (getReceiverKind() == Instance)
-    return reinterpret_cast<Stmt **>(this + 1);
-  return reinterpret_cast<Stmt **>(getArgs());
-}
-Stmt::child_iterator ObjCMessageExpr::child_end() {
-  return reinterpret_cast<Stmt **>(getArgs() + getNumArgs());
+    begin = reinterpret_cast<Stmt **>(this + 1);
+  else
+    begin = reinterpret_cast<Stmt **>(getArgs());
+  return child_range(begin,
+                     reinterpret_cast<Stmt **>(getArgs() + getNumArgs()));
 }
 
 // Blocks
-BlockDeclRefExpr::BlockDeclRefExpr(ValueDecl *d, QualType t, ExprValueKind VK,
+BlockDeclRefExpr::BlockDeclRefExpr(VarDecl *d, QualType t, ExprValueKind VK,
                                    SourceLocation l, bool ByRef, 
-                                   bool constAdded, Stmt *copyConstructorVal)
+                                   bool constAdded)
   : Expr(BlockDeclRefExprClass, t, VK, OK_Ordinary, false, false,
          d->isParameterPack()),
-    D(d), Loc(l), IsByRef(ByRef),
-    ConstQualAdded(constAdded),  CopyConstructorVal(copyConstructorVal) 
+    D(d), Loc(l), IsByRef(ByRef), ConstQualAdded(constAdded)
 {
   bool TypeDependent = false;
   bool ValueDependent = false;
@@ -2973,15 +2828,4 @@ BlockDeclRefExpr::BlockDeclRefExpr(ValueDecl *d, QualType t, ExprValueKind VK,
   ExprBits.TypeDependent = TypeDependent;
   ExprBits.ValueDependent = ValueDependent;
 }
-
-Stmt::child_iterator BlockExpr::child_begin() { return child_iterator(); }
-Stmt::child_iterator BlockExpr::child_end() { return child_iterator(); }
-
-Stmt::child_iterator BlockDeclRefExpr::child_begin() { return child_iterator();}
-Stmt::child_iterator BlockDeclRefExpr::child_end() { return child_iterator(); }
-
-// OpaqueValueExpr
-SourceRange OpaqueValueExpr::getSourceRange() const { return Loc; }
-Stmt::child_iterator OpaqueValueExpr::child_begin() { return child_iterator(); }
-Stmt::child_iterator OpaqueValueExpr::child_end() { return child_iterator(); }
 

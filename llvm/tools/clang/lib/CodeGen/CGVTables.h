@@ -182,13 +182,16 @@ class CodeGenVTables {
   
   void ComputeMethodVTableIndices(const CXXRecordDecl *RD);
 
-  llvm::GlobalVariable *GenerateVTT(llvm::GlobalVariable::LinkageTypes Linkage,
-                                    bool GenerateDefinition,
-                                    const CXXRecordDecl *RD);
-
   /// EmitThunk - Emit a single thunk.
-  void EmitThunk(GlobalDecl GD, const ThunkInfo &Thunk);
-  
+  void EmitThunk(GlobalDecl GD, const ThunkInfo &Thunk, 
+                 bool UseAvailableExternallyLinkage);
+
+  /// MaybeEmitThunkAvailableExternally - Try to emit the given thunk with
+  /// available_externally linkage to allow for inlining of thunks.
+  /// This will be done iff optimizations are enabled and the member function
+  /// doesn't contain any incomplete types.
+  void MaybeEmitThunkAvailableExternally(GlobalDecl GD, const ThunkInfo &Thunk);
+
   /// ComputeVTableRelatedInformation - Compute and store all vtable related
   /// information (vtable layout, vbase offset offsets, thunks etc) for the
   /// given record decl.
@@ -257,8 +260,15 @@ public:
   GenerateConstructionVTable(const CXXRecordDecl *RD, const BaseSubobject &Base, 
                              bool BaseIsVirtual, 
                              VTableAddressPointsMapTy& AddressPoints);
-  
-  llvm::GlobalVariable *getVTT(const CXXRecordDecl *RD);
+
+    
+  /// GetAddrOfVTable - Get the address of the VTT for the given record decl.
+  llvm::GlobalVariable *GetAddrOfVTT(const CXXRecordDecl *RD);
+
+  /// EmitVTTDefinition - Emit the definition of the given vtable.
+  void EmitVTTDefinition(llvm::GlobalVariable *VTT,
+                         llvm::GlobalVariable::LinkageTypes Linkage,
+                         const CXXRecordDecl *RD);
 
   /// EmitThunks - Emit the associated thunks for the given global decl.
   void EmitThunks(GlobalDecl GD);

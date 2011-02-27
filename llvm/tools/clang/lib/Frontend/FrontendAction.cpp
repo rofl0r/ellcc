@@ -112,7 +112,7 @@ ASTConsumer* FrontendAction::CreateWrappedASTConsumer(CompilerInstance &CI,
       if (it->getName() == CI.getFrontendOpts().AddPluginActions[i]) {
         llvm::OwningPtr<PluginASTAction> P(it->instantiate());
         FrontendAction* c = P.get();
-        if (P->ParseArgs(CI, CI.getFrontendOpts().PluginArgs))
+        if (P->ParseArgs(CI, CI.getFrontendOpts().AddPluginArgs[i]))
           Consumers.push_back(c->CreateASTConsumer(CI, InFile));
       }
     }
@@ -224,6 +224,7 @@ bool FrontendAction::BeginSourceFile(CompilerInstance &CI,
       CI.createPCHExternalASTSource(
                                 CI.getPreprocessorOpts().ImplicitPCHInclude,
                                 CI.getPreprocessorOpts().DisablePCHValidation,
+                                CI.getPreprocessorOpts().DisableStatCache,
                                 DeserialListener);
       if (!CI.getASTContext().getExternalSource())
         goto failure;
@@ -289,6 +290,9 @@ void FrontendAction::Execute() {
 void FrontendAction::EndSourceFile() {
   CompilerInstance &CI = getCompilerInstance();
 
+  // Inform the diagnostic client we are done with this source file.
+  CI.getDiagnosticClient().EndSourceFile();
+
   // Finalize the action.
   EndSourceFileAction();
 
@@ -326,9 +330,6 @@ void FrontendAction::EndSourceFile() {
   // Cleanup the output streams, and erase the output files if we encountered
   // an error.
   CI.clearOutputFiles(/*EraseFiles=*/CI.getDiagnostics().hasErrorOccurred());
-
-  // Inform the diagnostic client we are done with this source file.
-  CI.getDiagnosticClient().EndSourceFile();
 
   if (isCurrentFileAST()) {
     CI.takeSema();

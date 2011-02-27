@@ -246,7 +246,7 @@ Parser::ParseSingleDeclarationAfterTemplate(
 
     // Eat the semi colon after the declaration.
     ExpectAndConsume(tok::semi, diag::err_expected_semi_declaration);
-    DS.complete(ThisDecl);
+    DeclaratorInfo.complete(ThisDecl);
     return ThisDecl;
   }
 
@@ -992,7 +992,8 @@ ParsedTemplateArgument Parser::ParseTemplateArgument() {
   // Therefore, we initially try to parse a type-id.  
   if (isCXXTypeId(TypeIdAsTemplateArgument)) {
     SourceLocation Loc = Tok.getLocation();
-    TypeResult TypeArg = ParseTypeName();
+    TypeResult TypeArg = ParseTypeName(/*Range=*/0, 
+                                       Declarator::TemplateTypeArgContext);
     if (TypeArg.isInvalid())
       return ParsedTemplateArgument();
     

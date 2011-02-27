@@ -14,6 +14,7 @@
 #include "CGDebugInfo.h"
 #include "CodeGenFunction.h"
 #include "CodeGenModule.h"
+#include "CGBlocks.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/DeclFriend.h"
 #include "clang/AST/DeclObjC.h"
@@ -33,6 +34,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Dwarf.h"
 #include "llvm/Support/Path.h"
+#include "llvm/Target/TargetData.h"
 #include "llvm/Target/TargetMachine.h"
 using namespace clang;
 using namespace clang::CodeGen;
@@ -159,7 +161,7 @@ llvm::DIFile CGDebugInfo::getOrCreateFile(SourceLocation Loc) {
   SourceManager &SM = CGM.getContext().getSourceManager();
   PresumedLoc PLoc = SM.getPresumedLoc(Loc);
 
-  if (PLoc.isInvalid())
+  if (PLoc.isInvalid() || llvm::StringRef(PLoc.getFilename()).empty())
     // If the location is not valid then use main input file.
     return DBuilder.CreateFile(TheCU.getFilename(), TheCU.getDirectory());
 
@@ -310,6 +312,12 @@ llvm::DIType CGDebugInfo::CreateType(const BuiltinType *BT) {
     return DBuilder.CreateStructType(TheCU, "objc_object", 
                                      getOrCreateMainFile(),
                                      0, 0, 0, 0, Elements);
+  }
+  case BuiltinType::ObjCSel: {
+    return  DBuilder.CreateStructType(TheCU, "objc_selector", 
+                                      getOrCreateMainFile(), 0, 0, 0,
+                                      llvm::DIDescriptor::FlagFwdDecl, 
+                                      llvm::DIArray());
   }
   case BuiltinType::UChar:
   case BuiltinType::Char_U: Encoding = llvm::dwarf::DW_ATE_unsigned_char; break;
@@ -953,9 +961,30 @@ llvm::DIType CGDebugInfo::CreateType(const RecordType *Ty) {
     }
 
   CollectRecordFields(RD, Unit, EltTys);
+  llvm::SmallVector<llvm::Value *, 16> TemplateParams;
   if (CXXDecl) {
     CollectCXXMemberFunctions(CXXDecl, Unit, EltTys, FwdDecl);
     CollectCXXFriends(CXXDecl, Unit, EltTys, FwdDecl);
+    if (ClassTemplateSpecializationDecl *TSpecial
+        = dyn_cast<ClassTemplateSpecializationDecl>(RD)) {
+      const TemplateArgumentList &TAL = TSpecial->getTemplateArgs();
+      for (unsigned i = 0, e = TAL.size(); i != e; ++i) {
+        const TemplateArgument &TA = TAL[i];
+        if (TA.getKind() == TemplateArgument::Type) {
+          llvm::DIType TTy = getOrCreateType(TA.getAsType(), Unit);
+          llvm::DITemplateTypeParameter TTP =
+            DBuilder.CreateTemplateTypeParameter(TheCU, TTy.getName(), TTy);
+          TemplateParams.push_back(TTP);
+        } else if (TA.getKind() == TemplateArgument::Integral) {
+          llvm::DIType TTy = getOrCreateType(TA.getIntegralType(), Unit);
+          // FIXME: Get parameter name, instead of parameter type name.
+          llvm::DITemplateValueParameter TVP =
+            DBuilder.CreateTemplateValueParameter(TheCU, TTy.getName(), TTy,
+                                                  TA.getAsIntegral()->getZExtValue());
+          TemplateParams.push_back(TVP);          
+        }
+      }
+    }
   }
 
   RegionStack.pop_back();
@@ -1000,9 +1029,12 @@ llvm::DIType CGDebugInfo::CreateType(const RecordType *Ty) {
     }
     else if (CXXDecl->isDynamicClass()) 
       ContainingType = FwdDecl;
+    llvm::DIArray TParamsArray = 
+      DBuilder.GetOrCreateArray(TemplateParams.data(), TemplateParams.size());
    RealDecl = DBuilder.CreateClassType(RDContext, RDName, DefUnit, Line,
                                        Size, Align, 0, 0, llvm::DIType(),
-                                       Elements, ContainingType);
+                                       Elements, ContainingType,
+                                       TParamsArray);
   }
 
   // Now that we have a real decl for the struct, replace anything using the
@@ -1661,7 +1693,7 @@ llvm::DIType CGDebugInfo::EmitTypeForVarWithBlocksAttr(const ValueDecl *VD,
   EltTys.push_back(CreateMemberType(Unit, FType, "__flags", &FieldOffset));
   EltTys.push_back(CreateMemberType(Unit, FType, "__size", &FieldOffset));
 
-  bool HasCopyAndDispose = CGM.BlockRequiresCopying(Type);
+  bool HasCopyAndDispose = CGM.getContext().BlockRequiresCopying(Type);
   if (HasCopyAndDispose) {
     FType = CGM.getContext().getPointerType(CGM.getContext().VoidTy);
     EltTys.push_back(CreateMemberType(Unit, FType, "__copy_helper",
@@ -1725,6 +1757,20 @@ void CGDebugInfo::EmitDeclare(const VarDecl *VD, unsigned Tag,
   if (!Ty)
     return;
 
+  if (llvm::Argument *Arg = dyn_cast<llvm::Argument>(Storage)) {
+    // If Storage is an aggregate returned as 'sret' then let debugger know
+    // about this.
+    if (Arg->hasStructRetAttr())
+      Ty = DBuilder.CreateReferenceType(Ty);
+    else if (CXXRecordDecl *Record = VD->getType()->getAsCXXRecordDecl()) {
+      // If an aggregate variable has non trivial destructor or non trivial copy
+      // constructor than it is pass indirectly. Let debug info know about this
+      // by using reference of the aggregate type as a argument type.
+      if (!Record->hasTrivialCopyConstructor() || !Record->hasTrivialDestructor())
+        Ty = DBuilder.CreateReferenceType(Ty);
+    }
+  }
+      
   // Get location information.
   unsigned Line = getLineNumber(VD->getLocation());
   unsigned Column = getColumnNumber(VD->getLocation());
@@ -1739,13 +1785,13 @@ void CGDebugInfo::EmitDeclare(const VarDecl *VD, unsigned Tag,
       CharUnits offset = CharUnits::fromQuantity(32);
       llvm::SmallVector<llvm::Value *, 9> addr;
       const llvm::Type *Int64Ty = llvm::Type::getInt64Ty(CGM.getLLVMContext());
-      addr.push_back(llvm::ConstantInt::get(Int64Ty, llvm::DIFactory::OpPlus));
+      addr.push_back(llvm::ConstantInt::get(Int64Ty, llvm::DIBuilder::OpPlus));
       // offset of __forwarding field
       offset = 
         CharUnits::fromQuantity(CGM.getContext().Target.getPointerWidth(0)/8);
       addr.push_back(llvm::ConstantInt::get(Int64Ty, offset.getQuantity()));
-      addr.push_back(llvm::ConstantInt::get(Int64Ty, llvm::DIFactory::OpDeref));
-      addr.push_back(llvm::ConstantInt::get(Int64Ty, llvm::DIFactory::OpPlus));
+      addr.push_back(llvm::ConstantInt::get(Int64Ty, llvm::DIBuilder::OpDeref));
+      addr.push_back(llvm::ConstantInt::get(Int64Ty, llvm::DIBuilder::OpPlus));
       // offset of x field
       offset = CharUnits::fromQuantity(XOffset/8);
       addr.push_back(llvm::ConstantInt::get(Int64Ty, offset.getQuantity()));
@@ -1810,19 +1856,20 @@ void CGDebugInfo::EmitDeclare(const VarDecl *VD, unsigned Tag,
 }
 
 /// EmitDeclare - Emit local variable declaration debug info.
-void CGDebugInfo::EmitDeclare(const BlockDeclRefExpr *BDRE, unsigned Tag,
+void CGDebugInfo::EmitDeclare(const VarDecl *VD, unsigned Tag,
                               llvm::Value *Storage, CGBuilderTy &Builder,
-                              CodeGenFunction *CGF) {
-  const ValueDecl *VD = BDRE->getDecl();
+                              const CGBlockInfo &blockInfo) {
   assert(!RegionStack.empty() && "Region stack mismatch, stack empty!");
 
   if (Builder.GetInsertBlock() == 0)
     return;
 
+  bool isByRef = VD->hasAttr<BlocksAttr>();
+
   uint64_t XOffset = 0;
   llvm::DIFile Unit = getOrCreateFile(VD->getLocation());
   llvm::DIType Ty;
-  if (VD->hasAttr<BlocksAttr>())
+  if (isByRef)
     Ty = EmitTypeForVarWithBlocksAttr(VD, &XOffset);
   else 
     Ty = getOrCreateType(VD->getType(), Unit);
@@ -1831,20 +1878,25 @@ void CGDebugInfo::EmitDeclare(const BlockDeclRefExpr *BDRE, unsigned Tag,
   unsigned Line = getLineNumber(VD->getLocation());
   unsigned Column = getColumnNumber(VD->getLocation());
 
-  CharUnits offset = CGF->BlockDecls[VD];
+  const llvm::TargetData &target = CGM.getTargetData();
+
+  CharUnits offset = CharUnits::fromQuantity(
+    target.getStructLayout(blockInfo.StructureType)
+          ->getElementOffset(blockInfo.getCapture(VD).getIndex()));
+
   llvm::SmallVector<llvm::Value *, 9> addr;
   const llvm::Type *Int64Ty = llvm::Type::getInt64Ty(CGM.getLLVMContext());
-  addr.push_back(llvm::ConstantInt::get(Int64Ty, llvm::DIFactory::OpDeref));
-  addr.push_back(llvm::ConstantInt::get(Int64Ty, llvm::DIFactory::OpPlus));
+  addr.push_back(llvm::ConstantInt::get(Int64Ty, llvm::DIBuilder::OpDeref));
+  addr.push_back(llvm::ConstantInt::get(Int64Ty, llvm::DIBuilder::OpPlus));
   addr.push_back(llvm::ConstantInt::get(Int64Ty, offset.getQuantity()));
-  if (BDRE->isByRef()) {
-    addr.push_back(llvm::ConstantInt::get(Int64Ty, llvm::DIFactory::OpDeref));
-    addr.push_back(llvm::ConstantInt::get(Int64Ty, llvm::DIFactory::OpPlus));
+  if (isByRef) {
+    addr.push_back(llvm::ConstantInt::get(Int64Ty, llvm::DIBuilder::OpDeref));
+    addr.push_back(llvm::ConstantInt::get(Int64Ty, llvm::DIBuilder::OpPlus));
     // offset of __forwarding field
-    offset = CharUnits::fromQuantity(CGF->LLVMPointerWidth/8);
+    offset = CharUnits::fromQuantity(target.getPointerSize()/8);
     addr.push_back(llvm::ConstantInt::get(Int64Ty, offset.getQuantity()));
-    addr.push_back(llvm::ConstantInt::get(Int64Ty, llvm::DIFactory::OpDeref));
-    addr.push_back(llvm::ConstantInt::get(Int64Ty, llvm::DIFactory::OpPlus));
+    addr.push_back(llvm::ConstantInt::get(Int64Ty, llvm::DIBuilder::OpDeref));
+    addr.push_back(llvm::ConstantInt::get(Int64Ty, llvm::DIBuilder::OpPlus));
     // offset of x field
     offset = CharUnits::fromQuantity(XOffset/8);
     addr.push_back(llvm::ConstantInt::get(Int64Ty, offset.getQuantity()));
@@ -1870,9 +1922,10 @@ void CGDebugInfo::EmitDeclareOfAutoVariable(const VarDecl *VD,
 }
 
 void CGDebugInfo::EmitDeclareOfBlockDeclRefVariable(
-  const BlockDeclRefExpr *BDRE, llvm::Value *Storage, CGBuilderTy &Builder,
-  CodeGenFunction *CGF) {
-  EmitDeclare(BDRE, llvm::dwarf::DW_TAG_auto_variable, Storage, Builder, CGF);
+  const VarDecl *variable, llvm::Value *Storage, CGBuilderTy &Builder,
+  const CGBlockInfo &blockInfo) {
+  EmitDeclare(variable, llvm::dwarf::DW_TAG_auto_variable, Storage, Builder,
+              blockInfo);
 }
 
 /// EmitDeclareOfArgVariable - Emit call to llvm.dbg.declare for an argument
@@ -1906,7 +1959,8 @@ void CGDebugInfo::EmitGlobalVariable(llvm::GlobalVariable *Var,
   }
   llvm::StringRef DeclName = D->getName();
   llvm::StringRef LinkageName;
-  if (D->getDeclContext() && !isa<FunctionDecl>(D->getDeclContext()))
+  if (D->getDeclContext() && !isa<FunctionDecl>(D->getDeclContext())
+      && !isa<ObjCMethodDecl>(D->getDeclContext()))
     LinkageName = Var->getName();
   if (LinkageName == DeclName)
     LinkageName = llvm::StringRef();

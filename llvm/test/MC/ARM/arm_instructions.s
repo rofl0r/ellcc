@@ -188,3 +188,97 @@
 
 @ CHECK: nop @ encoding: [0x00,0xf0,0x20,0xe3]
         nop
+
+@ CHECK: dmb  sy @ encoding: [0x5f,0xf0,0x7f,0xf5]
+        dmb  sy
+
+@ CHECK: dmb  st @ encoding: [0x5e,0xf0,0x7f,0xf5]
+        dmb  st
+
+@ CHECK: dmb  ish @ encoding: [0x5b,0xf0,0x7f,0xf5]
+        dmb  ish
+
+@ CHECK: dmb  ishst @ encoding: [0x5a,0xf0,0x7f,0xf5]
+        dmb  ishst
+
+@ CHECK: dmb  nsh @ encoding: [0x57,0xf0,0x7f,0xf5]
+        dmb  nsh
+
+@ CHECK: dmb  nshst @ encoding: [0x56,0xf0,0x7f,0xf5]
+        dmb  nshst
+
+@ CHECK: dmb  osh @ encoding: [0x53,0xf0,0x7f,0xf5]
+        dmb  osh
+
+@ CHECK: dmb  oshst @ encoding: [0x52,0xf0,0x7f,0xf5]
+        dmb  oshst
+
+@ CHECK: dsb  sy @ encoding: [0x4f,0xf0,0x7f,0xf5]
+        dsb  sy
+
+@ CHECK: dsb  st @ encoding: [0x4e,0xf0,0x7f,0xf5]
+        dsb  st
+
+@ CHECK: dsb  ish @ encoding: [0x4b,0xf0,0x7f,0xf5]
+        dsb  ish
+
+@ CHECK: dsb  ishst @ encoding: [0x4a,0xf0,0x7f,0xf5]
+        dsb  ishst
+
+@ CHECK: dsb  nsh @ encoding: [0x47,0xf0,0x7f,0xf5]
+        dsb  nsh
+
+@ CHECK: dsb  nshst @ encoding: [0x46,0xf0,0x7f,0xf5]
+        dsb  nshst
+
+@ CHECK: dsb  osh @ encoding: [0x43,0xf0,0x7f,0xf5]
+        dsb  osh
+
+@ CHECK: dsb  oshst @ encoding: [0x42,0xf0,0x7f,0xf5]
+        dsb  oshst
+
+@ CHECK: cpsie  aif @ encoding: [0xc0,0x01,0x08,0xf1]
+        cpsie  aif
+
+@ CHECK: cps  #15 @ encoding: [0x0f,0x00,0x02,0xf1]
+        cps  #15
+
+@ CHECK: cpsie  if, #10 @ encoding: [0xca,0x00,0x0a,0xf1]
+        cpsie  if, #10
+
+@ CHECK: msr  cpsr_fc, r0 @ encoding: [0x00,0xf0,0x29,0xe1]
+        msr  apsr, r0
+
+@ CHECK: msr  cpsr_s, r0 @ encoding: [0x00,0xf0,0x24,0xe1]
+        msr  apsr_g, r0
+
+@ CHECK: msr  cpsr_f, r0 @ encoding: [0x00,0xf0,0x28,0xe1]
+        msr  apsr_nzcvq, r0
+
+@ CHECK: msr  cpsr_fs, r0 @ encoding: [0x00,0xf0,0x2c,0xe1]
+        msr  apsr_nzcvqg, r0
+
+@ CHECK: msr  cpsr_fc, r0 @ encoding: [0x00,0xf0,0x29,0xe1]
+        msr  cpsr_fc, r0
+
+@ CHECK: msr  cpsr_c, r0 @ encoding: [0x00,0xf0,0x21,0xe1]
+        msr  cpsr_c, r0
+
+@ CHECK: msr  cpsr_x, r0 @ encoding: [0x00,0xf0,0x22,0xe1]
+        msr  cpsr_x, r0
+
+@ CHECK: msr  cpsr_fc, r0 @ encoding: [0x00,0xf0,0x29,0xe1]
+        msr  cpsr_fc, r0
+
+@ CHECK: msr  cpsr_fsx, r0 @ encoding: [0x00,0xf0,0x2e,0xe1]
+        msr  cpsr_fsx, r0
+
+@ CHECK: msr  spsr_fc, r0 @ encoding: [0x00,0xf0,0x69,0xe1]
+        msr  spsr_fc, r0
+
+@ CHECK: msr  spsr_fsxc, r0 @ encoding: [0x00,0xf0,0x6f,0xe1]
+        msr  spsr_fsxc, r0
+
+@ CHECK: msr  cpsr_fsxc, r0 @ encoding: [0x00,0xf0,0x2f,0xe1]
+        msr  cpsr_fsxc, r0
+

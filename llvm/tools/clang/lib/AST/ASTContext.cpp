@@ -197,6 +197,7 @@ ASTContext::ASTContext(const LangOptions& LOpts, SourceManager &SM,
   CFConstantStringTypeDecl(0), NSConstantStringTypeDecl(0),
   ObjCFastEnumerationStateTypeDecl(0), FILEDecl(0), jmp_bufDecl(0),
   sigjmp_bufDecl(0), BlockDescriptorType(0), BlockDescriptorExtendedType(0),
+  cudaConfigureCallDecl(0),
   NullTypeSourceInfo(QualType()),
   SourceMgr(SM), LangOpts(LOpts), ABI(createCXXABI(t)), Target(t),
   Idents(idents), Selectors(sels),
@@ -631,7 +632,7 @@ CharUnits ASTContext::getDeclAlign(const Decl *D, bool RefAsPointee) const {
       const ASTRecordLayout &layout = getASTRecordLayout(field->getParent());
 
       // Start with the record's overall alignment.
-      unsigned fieldAlign = layout.getAlignment();
+      unsigned fieldAlign = toBits(layout.getAlignment());
 
       // Use the GCD of that and the offset within the record.
       uint64_t offset = layout.getFieldOffset(field->getFieldIndex());
@@ -846,8 +847,8 @@ ASTContext::getTypeInfo(const Type *T) const {
   case Type::ObjCInterface: {
     const ObjCInterfaceType *ObjCI = cast<ObjCInterfaceType>(T);
     const ASTRecordLayout &Layout = getASTObjCInterfaceLayout(ObjCI->getDecl());
-    Width = Layout.getSize();
-    Align = Layout.getAlignment();
+    Width = toBits(Layout.getSize());
+    Align = toBits(Layout.getAlignment());
     break;
   }
   case Type::Record:
@@ -865,8 +866,8 @@ ASTContext::getTypeInfo(const Type *T) const {
 
     const RecordType *RT = cast<RecordType>(TT);
     const ASTRecordLayout &Layout = getASTRecordLayout(RT->getDecl());
-    Width = Layout.getSize();
-    Align = Layout.getAlignment();
+    Width = toBits(Layout.getSize());
+    Align = toBits(Layout.getAlignment());
     break;
   }
 
@@ -920,6 +921,11 @@ ASTContext::getTypeInfo(const Type *T) const {
 /// toCharUnitsFromBits - Convert a size in bits to a size in characters.
 CharUnits ASTContext::toCharUnitsFromBits(int64_t BitSize) const {
   return CharUnits::fromQuantity(BitSize / getCharWidth());
+}
+
+/// toBits - Convert a size in characters to a size in characters.
+int64_t ASTContext::toBits(CharUnits CharSize) const {
+  return CharSize.getQuantity() * getCharWidth();
 }
 
 /// getTypeSizeInChars - Return the size of the specified type, in characters.
@@ -3693,10 +3699,11 @@ std::string charUnitsToString(const CharUnits &CU) {
   return llvm::itostr(CU.getQuantity());
 }
 
-/// getObjCEncodingForBlockDecl - Return the encoded type for this block
+/// getObjCEncodingForBlock - Return the encoded type for this block
 /// declaration.
-void ASTContext::getObjCEncodingForBlock(const BlockExpr *Expr, 
-                                             std::string& S) const {
+std::string ASTContext::getObjCEncodingForBlock(const BlockExpr *Expr) const {
+  std::string S;
+
   const BlockDecl *Decl = Expr->getBlockDecl();
   QualType BlockTy =
       Expr->getType()->getAs<BlockPointerType>()->getPointeeType();
@@ -3739,6 +3746,8 @@ void ASTContext::getObjCEncodingForBlock(const BlockExpr *Expr,
     S += charUnitsToString(ParmOffset);
     ParmOffset += getObjCEncodingTypeSize(PType);
   }
+
+  return S;
 }
 
 void ASTContext::getObjCEncodingForFunctionDecl(const FunctionDecl *Decl,
@@ -5067,9 +5076,14 @@ QualType ASTContext::mergeFunctionTypes(QualType lhs, QualType rhs,
 
   // Check return type
   QualType retType;
-  if (OfBlockPointer)
-    retType = mergeTypes(rbase->getResultType(), lbase->getResultType(), true,
-                         Unqualified);
+  if (OfBlockPointer) {
+    QualType RHS = rbase->getResultType();
+    QualType LHS = lbase->getResultType();
+    bool UnqualifiedResult = Unqualified;
+    if (!UnqualifiedResult)
+      UnqualifiedResult = (!RHS.hasQualifiers() && LHS.hasQualifiers());
+    retType = mergeTypes(RHS, LHS, true, UnqualifiedResult);
+  }
   else
     retType = mergeTypes(lbase->getResultType(), rbase->getResultType(), false,
                          Unqualified);
@@ -5855,10 +5869,6 @@ GVALinkage ASTContext::GetGVALinkageForFunction(const FunctionDecl *FD) {
   GVALinkage External = GVA_StrongExternal;
 
   Linkage L = FD->getLinkage();
-  if (L == ExternalLinkage && getLangOptions().CPlusPlus &&
-      FD->getType()->getLinkage() == UniqueExternalLinkage)
-    L = UniqueExternalLinkage;
-  
   switch (L) {
   case NoLinkage:
   case InternalLinkage:

@@ -79,10 +79,6 @@ class ARMFunctionInfo : public MachineFunctionInfo {
   BitVector GPRCS2Frames;
   BitVector DPRCSFrames;
 
-  /// SpilledCSRegs - A BitVector mask of all spilled callee-saved registers.
-  ///
-  BitVector SpilledCSRegs;
-
   /// JumpTableUId - Unique id for jumptables.
   ///
   unsigned JumpTableUId;
@@ -94,6 +90,10 @@ class ARMFunctionInfo : public MachineFunctionInfo {
 
   /// HasITBlocks - True if IT blocks have been inserted.
   bool HasITBlocks;
+
+  /// CPEClones - Track constant pool entries clones created by Constant Island
+  /// pass.
+  DenseMap<unsigned, unsigned> CPEClones;
 
 public:
   ARMFunctionInfo() :
@@ -115,7 +115,6 @@ public:
     FramePtrSpillOffset(0), GPRCS1Offset(0), GPRCS2Offset(0), DPRCSOffset(0),
     GPRCS1Size(0), GPRCS2Size(0), DPRCSSize(0),
     GPRCS1Frames(32), GPRCS2Frames(32), DPRCSFrames(32),
-    SpilledCSRegs(MF.getTarget().getRegisterInfo()->getNumRegs()),
     JumpTableUId(0), PICLabelUId(0),
     VarArgsFrameIndex(0), HasITBlocks(false) {}
 
@@ -207,18 +206,6 @@ public:
     }
   }
 
-  void setCSRegisterIsSpilled(unsigned Reg) {
-    SpilledCSRegs.set(Reg);
-  }
-
-  bool isCSRegisterSpilled(unsigned Reg) const {
-    return SpilledCSRegs[Reg];
-  }
-
-  const BitVector &getSpilledCSRegisters() const {
-    return SpilledCSRegs;
-  }
-
   unsigned createJumpTableUId() {
     return JumpTableUId++;
   }
@@ -244,6 +231,19 @@ public:
 
   bool hasITBlocks() const { return HasITBlocks; }
   void setHasITBlocks(bool h) { HasITBlocks = h; }
+
+  void recordCPEClone(unsigned CPIdx, unsigned CPCloneIdx) {
+    if (!CPEClones.insert(std::make_pair(CPCloneIdx, CPIdx)).second)
+      assert(0 && "Duplicate entries!");
+  }
+
+  unsigned getOriginalCPIdx(unsigned CloneIdx) const {
+    DenseMap<unsigned, unsigned>::const_iterator I = CPEClones.find(CloneIdx);
+    if (I != CPEClones.end())
+      return I->second;
+    else
+      return -1U;
+  }
 };
 } // End llvm namespace
 

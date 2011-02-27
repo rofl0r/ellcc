@@ -11,12 +11,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "ExprEngineExperimentalChecks.h"
-#include "clang/StaticAnalyzer/BugReporter/BugType.h"
-#include "clang/StaticAnalyzer/PathSensitive/CheckerVisitor.h"
-#include "clang/StaticAnalyzer/PathSensitive/GRState.h"
-#include "clang/StaticAnalyzer/PathSensitive/GRStateTrait.h"
-#include "clang/StaticAnalyzer/PathSensitive/SymbolManager.h"
+#include "ClangSACheckers.h"
+#include "clang/StaticAnalyzer/Core/CheckerManager.h"
+#include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/CheckerVisitor.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/GRState.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/GRStateTrait.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/SymbolManager.h"
 #include "llvm/ADT/ImmutableMap.h"
 
 using namespace clang;
@@ -114,8 +115,12 @@ namespace ento {
 }
 }
 
-void ento::RegisterStreamChecker(ExprEngine &Eng) {
+static void RegisterStreamChecker(ExprEngine &Eng) {
   Eng.registerCheck(new StreamChecker());
+}
+
+void ento::registerStreamChecker(CheckerManager &mgr) {
+  mgr.addCheckerRegisterFunction(RegisterStreamChecker);
 }
 
 bool StreamChecker::evalCallExpr(CheckerContext &C, const CallExpr *CE) {

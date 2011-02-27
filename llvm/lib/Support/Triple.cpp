@@ -90,7 +90,6 @@ const char *Triple::getVendorTypeName(VendorType Kind) {
   case Apple: return "apple";
   case PC: return "pc";
   case ELLCC: return "ellcc";
-  case NoVendor: return "none";
   }
 
   return "<invalid>";
@@ -108,7 +107,6 @@ const char *Triple::getOSTypeName(OSType Kind) {
   case Linux: return "linux";
   case Lv2: return "lv2";
   case MinGW32: return "mingw32";
-  case MinGW64: return "mingw64";
   case NetBSD: return "netbsd";
   case OpenBSD: return "openbsd";
   case Psp: return "psp";
@@ -119,7 +117,6 @@ const char *Triple::getOSTypeName(OSType Kind) {
   case RTOS: return "rtos";
   case Partikle: return "partikle";
   case SA: return "sa";
-  case NoOS: return "none";
   }
 
   return "<invalid>";
@@ -131,6 +128,7 @@ const char *Triple::getEnvironmentTypeName(EnvironmentType Kind) {
   case GNU: return "gnu";
   case GNUEABI: return "gnueabi";
   case EABI: return "eabi";
+  case MachO: return "macho";
   }
 
   return "<invalid>";
@@ -341,8 +339,6 @@ Triple::VendorType Triple::ParseVendor(StringRef VendorName) {
     return PC;
   else if (VendorName == "ellcc")
     return ELLCC;
-  else if (VendorName == "none")
-    return NoVendor;
   else
     return UnknownVendor;
 }
@@ -364,8 +360,6 @@ Triple::OSType Triple::ParseOS(StringRef OSName) {
     return Lv2;
   else if (OSName.startswith("mingw32"))
     return MinGW32;
-  else if (OSName.startswith("mingw64"))
-    return MinGW64;
   else if (OSName.startswith("netbsd"))
     return NetBSD;
   else if (OSName.startswith("openbsd"))
@@ -386,8 +380,6 @@ Triple::OSType Triple::ParseOS(StringRef OSName) {
     return Partikle;
   else if (OSName.startswith("sa"))
     return SA;
-  else if (OSName.startswith("eabi"))
-    return NoOS;
   else
     return UnknownOS;
 }
@@ -399,6 +391,8 @@ Triple::EnvironmentType Triple::ParseEnvironment(StringRef EnvironmentName) {
     return GNUEABI;
   else if (EnvironmentName.startswith("gnu"))
     return GNU;
+  else if (EnvironmentName.startswith("macho"))
+    return MachO;
   else
     return UnknownEnvironment;
 }
@@ -409,12 +403,7 @@ void Triple::Parse() const {
   Arch = ParseArch(getArchName());
   Vendor = ParseVendor(getVendorName());
   OS = ParseOS(getOSName());
-  if (OS == NoOS) {
-    // Some targets don't have an OS (embedded systems)
-    Environment = ParseEnvironment(getOSName());
-  } else {
-    Environment = ParseEnvironment(getEnvironmentName());
-  }
+  Environment = ParseEnvironment(getEnvironmentName());
 
   assert(isInitialized() && "Failed to initialize!");
 }
@@ -481,13 +470,7 @@ std::string Triple::normalize(StringRef Str) {
         break;
       case 2:
         OS = ParseOS(Comp);
-        // Some targets don't have an OS (embedded systems)
-        if (OS == NoOS) {
-          Environment = ParseEnvironment(Comp);
-          Valid = Environment != UnknownEnvironment;
-        } else {
-          Valid = OS != UnknownOS;
-        }
+        Valid = OS != UnknownOS;
         break;
       case 3:
         Environment = ParseEnvironment(Comp);
@@ -523,18 +506,16 @@ std::string Triple::normalize(StringRef Str) {
         do {
           // Insert one empty component at Idx.
           StringRef CurrentComponent(""); // The empty component.
-          for (unsigned i = Idx; i < Components.size(); ++i) {
-            // Skip over any fixed components.
-            while (i < array_lengthof(Found) && Found[i]) ++i;
-            // Fix problem when Components vector is not big enough
-            if (i >= Components.size())
-              Components.push_back(StringRef(""));
+          for (unsigned i = Idx; i < Components.size();) {
             // Place the component at the new position, getting the component
             // that was at this position - it will be moved right.
             std::swap(CurrentComponent, Components[i]);
             // If it was placed on top of an empty component then we are done.
             if (CurrentComponent.empty())
               break;
+            // Advance to the next component, skipping any fixed components.
+            while (++i < array_lengthof(Found) && Found[i])
+              ;
           }
           // The last component was pushed off the end - append it.
           if (!CurrentComponent.empty())

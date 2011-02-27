@@ -29,13 +29,14 @@ using namespace clang;
 ///         specifier-qualifier-list abstract-declarator[opt]
 ///
 /// Called type-id in C++.
-TypeResult Parser::ParseTypeName(SourceRange *Range) {
+TypeResult Parser::ParseTypeName(SourceRange *Range,
+                                 Declarator::TheContext Context) {
   // Parse the common declaration-specifiers piece.
   DeclSpec DS;
   ParseSpecifierQualifierList(DS);
 
   // Parse the abstract-declarator, if present.
-  Declarator DeclaratorInfo(DS, Declarator::TypeNameContext);
+  Declarator DeclaratorInfo(DS, Context);
   ParseDeclarator(DeclaratorInfo);
   if (Range)
     *Range = DeclaratorInfo.getSourceRange();
@@ -297,6 +298,16 @@ void Parser::ParseBorlandTypeAttributes(ParsedAttributes &attrs) {
     SourceLocation AttrNameLoc = ConsumeToken();
     attrs.add(AttrFactory.Create(AttrName, AttrNameLoc, 0, AttrNameLoc, 0,
                                  SourceLocation(), 0, 0, true));
+  }
+}
+
+void Parser::ParseOpenCLAttributes(ParsedAttributes &attrs) {
+  // Treat these like attributes
+  while (Tok.is(tok::kw___kernel)) {
+    SourceLocation AttrNameLoc = ConsumeToken();
+    attrs.add(AttrFactory.Create(PP.getIdentifierInfo("opencl_kernel_function"),
+                                 AttrNameLoc, 0, AttrNameLoc, 0,
+                                 SourceLocation(), 0, 0, false));
   }
 }
 
@@ -863,6 +874,7 @@ Parser::getDeclSpecContextFromDeclaratorContext(unsigned Context) {
 /// [C99]   'inline'
 /// [C++]   'virtual'
 /// [C++]   'explicit'
+/// [OpenCL] '__kernel'
 ///       'friend': [C++ dcl.friend]
 ///       'constexpr': [C++0x dcl.constexpr]
 
@@ -908,7 +920,9 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
         return;
       } 
       
-      if (TemplateInfo.Kind != ParsedTemplateInfo::NonTemplate)
+      if (getCurScope()->getFnParent() || getCurScope()->getBlockParent())
+        CCC = Sema::PCC_LocalDeclarationSpecifiers;
+      else if (TemplateInfo.Kind != ParsedTemplateInfo::NonTemplate)
         CCC = DSContext == DSC_class? Sema::PCC_MemberTemplate 
                                     : Sema::PCC_Template;
       else if (DSContext == DSC_class)
@@ -1200,26 +1214,31 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
       ParseBorlandTypeAttributes(DS.getAttributes());
       continue;
 
+    // OpenCL single token adornments.
+    case tok::kw___kernel:
+      ParseOpenCLAttributes(DS.getAttributes());
+      continue;
+
     // storage-class-specifier
     case tok::kw_typedef:
       isInvalid = DS.SetStorageClassSpec(DeclSpec::SCS_typedef, Loc, PrevSpec,
-                                         DiagID);
+                                         DiagID, getLang());
       break;
     case tok::kw_extern:
       if (DS.isThreadSpecified())
         Diag(Tok, diag::ext_thread_before) << "extern";
       isInvalid = DS.SetStorageClassSpec(DeclSpec::SCS_extern, Loc, PrevSpec,
-                                         DiagID);
+                                         DiagID, getLang());
       break;
     case tok::kw___private_extern__:
       isInvalid = DS.SetStorageClassSpec(DeclSpec::SCS_private_extern, Loc,
-                                         PrevSpec, DiagID);
+                                         PrevSpec, DiagID, getLang());
       break;
     case tok::kw_static:
       if (DS.isThreadSpecified())
         Diag(Tok, diag::ext_thread_before) << "static";
       isInvalid = DS.SetStorageClassSpec(DeclSpec::SCS_static, Loc, PrevSpec,
-                                         DiagID);
+                                         DiagID, getLang());
       break;
     case tok::kw_auto:
       if (getLang().CPlusPlus0x)
@@ -1227,15 +1246,15 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
                                        DiagID);
       else
         isInvalid = DS.SetStorageClassSpec(DeclSpec::SCS_auto, Loc, PrevSpec,
-                                           DiagID);
+                                           DiagID, getLang());
       break;
     case tok::kw_register:
       isInvalid = DS.SetStorageClassSpec(DeclSpec::SCS_register, Loc, PrevSpec,
-                                         DiagID);
+                                         DiagID, getLang());
       break;
     case tok::kw_mutable:
       isInvalid = DS.SetStorageClassSpec(DeclSpec::SCS_mutable, Loc, PrevSpec,
-                                         DiagID);
+                                         DiagID, getLang());
       break;
     case tok::kw___thread:
       isInvalid = DS.SetStorageClassSpecThread(Loc, PrevSpec, DiagID);
@@ -2511,6 +2530,10 @@ bool Parser::isConstructorDeclarator() {
   DeclaratorScopeObj DeclScopeObj(*this, SS);
   if (SS.isSet() && Actions.ShouldEnterDeclaratorScope(getCurScope(), SS))
     DeclScopeObj.EnterDeclaratorScope();
+
+  // Optionally skip Microsoft attributes.
+  ParsedAttributes Attrs;
+  MaybeParseMicrosoftAttributes(Attrs);
 
   // Check whether the next token(s) are part of a declaration
   // specifier, in which case we have the start of a parameter and,

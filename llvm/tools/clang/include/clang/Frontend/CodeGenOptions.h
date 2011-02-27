@@ -47,15 +47,18 @@ public:
                                   /// internal state before optimizations are
                                   /// done.
   unsigned DisableRedZone    : 1; /// Set when -mno-red-zone is enabled.
-  unsigned EmitDeclMetadata  : 1; /// Emit special metadata indicating what Decl*
-                                  /// various IR entities came from.  Only useful
-                                  /// when running CodeGen as a subroutine.
+  unsigned EmitDeclMetadata  : 1; /// Emit special metadata indicating what
+                                  /// Decl* various IR entities came from.  Only
+                                  /// useful when running CodeGen as a
+                                  /// subroutine.
   unsigned FunctionSections  : 1; /// Set when -ffunction-sections is enabled
   unsigned HiddenWeakTemplateVTables : 1; /// Emit weak vtables and RTTI for
                                   /// template classes with hidden visibility
   unsigned HiddenWeakVTables : 1; /// Emit weak vtables, RTTI, and thunks with
-                                  /// hidden visibility
-  unsigned InstrumentFunctions : 1; /// Set when -finstrument-functions is enabled
+                                  /// hidden visibility.
+  unsigned InstrumentFunctions : 1; /// Set when -finstrument-functions is
+                                    /// enabled.
+  unsigned InstrumentForProfiling : 1; /// Set when -pg is enabled
   unsigned LessPreciseFPMAD  : 1; /// Enable less precise MAD instructions to be
                                   /// generated.
   unsigned MergeAllConstants : 1; /// Merge identical constants.
@@ -109,6 +112,10 @@ public:
   /// The name of the relocation model to use.
   std::string RelocationModel;
 
+  /// The user specified number of registers to be used for integral arguments,
+  /// or 0 if unspecified.
+  unsigned NumRegisterParameters;
+
 public:
   CodeGenOptions() {
     AsmVerbose = 0;
@@ -125,6 +132,7 @@ public:
     HiddenWeakTemplateVTables = 0;
     HiddenWeakVTables = 0;
     InstrumentFunctions = 0;
+    InstrumentForProfiling = 0;
     LessPreciseFPMAD = 0;
     MergeAllConstants = 1;
     NoCommon = 0;
@@ -132,6 +140,7 @@ public:
     NoInfsFPMath = 0;
     NoNaNsFPMath = 0;
     NoZeroInitializedInBSS = 0;
+    NumRegisterParameters = 0;
     ObjCDispatchMethod = Legacy;
     OmitLeafFramePointer = 0;
     OptimizationLevel = 0;

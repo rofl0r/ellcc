@@ -87,6 +87,17 @@ LTOModule *LTOModule::makeLTOModule(const char *path,
   return makeLTOModule(buffer.get(), errMsg);
 }
 
+LTOModule *LTOModule::makeLTOModule(int fd, const char *path,
+                                    off_t size,
+                                    std::string &errMsg) {
+  OwningPtr<MemoryBuffer> buffer;
+  if (error_code ec = MemoryBuffer::getOpenFile(fd, path, buffer, size)) {
+    errMsg = ec.message();
+    return NULL;
+  }
+  return makeLTOModule(buffer.get(), errMsg);
+}
+
 /// makeBuffer - Create a MemoryBuffer from a memory range.  MemoryBuffer
 /// requires the byte past end of the buffer to be a zero.  We might get lucky
 /// and already be that way, otherwise make a copy.  Also if next byte is on a
@@ -304,8 +315,14 @@ void LTOModule::addDefinedSymbol(GlobalValue *def, Mangler &mangler,
   if (def->getName().startswith("llvm."))
     return;
 
+  // ignore available_externally
+  if (def->hasAvailableExternallyLinkage())
+    return;
+
   // string is owned by _defines
-  const char *symbolName = ::strdup(mangler.getNameWithPrefix(def).c_str());
+  SmallString<64> Buffer;
+  mangler.getNameWithPrefix(Buffer, def, false);
+  const char *symbolName = ::strdup(Buffer.c_str());
 
   // set alignment part log2() can have rounding errors
   uint32_t align = def->getAlignment();
@@ -380,7 +397,8 @@ void LTOModule::addPotentialUndefinedSymbol(GlobalValue *decl,
   if (isa<GlobalAlias>(decl))
     return;
 
-  std::string name = mangler.getNameWithPrefix(decl);
+  SmallString<64> name;
+  mangler.getNameWithPrefix(name, decl, false);
 
   // we already have the symbol
   if (_undefines.find(name) != _undefines.end())

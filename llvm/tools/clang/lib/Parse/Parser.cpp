@@ -50,6 +50,17 @@ Parser::Parser(Preprocessor &pp, Sema &actions)
 
   WeakHandler.reset(new PragmaWeakHandler(actions));
   PP.AddPragmaHandler(WeakHandler.get());
+
+  FPContractHandler.reset(new PragmaFPContractHandler(actions, *this));
+  PP.AddPragmaHandler("STDC", FPContractHandler.get());
+
+  if (getLang().OpenCL) {
+    OpenCLExtensionHandler.reset(
+                  new PragmaOpenCLExtensionHandler(actions, *this));
+    PP.AddPragmaHandler("OPENCL", OpenCLExtensionHandler.get());
+
+    PP.AddPragmaHandler("OPENCL", FPContractHandler.get());
+  }
       
   PP.setCodeCompletionHandler(*this);
 }
@@ -126,6 +137,8 @@ SourceLocation Parser::MatchRHSPunctuation(tok::TokenKind RHSTok,
   case tok::r_brace : LHSName = "{"; DID = diag::err_expected_rbrace; break;
   case tok::r_square: LHSName = "["; DID = diag::err_expected_rsquare; break;
   case tok::greater:  LHSName = "<"; DID = diag::err_expected_greater; break;
+  case tok::greatergreatergreater:
+                      LHSName = "<<<"; DID = diag::err_expected_ggg; break;
   }
   Diag(Tok, DID);
   Diag(LHSLoc, diag::note_matching) << LHSName;
@@ -358,6 +371,15 @@ Parser::~Parser() {
   UnusedHandler.reset();
   PP.RemovePragmaHandler(WeakHandler.get());
   WeakHandler.reset();
+
+  if (getLang().OpenCL) {
+    PP.RemovePragmaHandler("OPENCL", OpenCLExtensionHandler.get());
+    OpenCLExtensionHandler.reset();
+    PP.RemovePragmaHandler("OPENCL", FPContractHandler.get());
+  }
+
+  PP.RemovePragmaHandler("STDC", FPContractHandler.get());
+  FPContractHandler.reset();
   PP.clearCodeCompletionHandler();
 }
 
@@ -739,8 +761,9 @@ Decl *Parser::ParseFunctionDefinition(ParsingDeclarator &D,
 
   // We should have either an opening brace or, in a C++ constructor,
   // we may have a colon.
-  if (Tok.isNot(tok::l_brace) && Tok.isNot(tok::colon) &&
-      Tok.isNot(tok::kw_try)) {
+  if (Tok.isNot(tok::l_brace) && 
+      (!getLang().CPlusPlus ||
+       (Tok.isNot(tok::colon) && Tok.isNot(tok::kw_try)))) {
     Diag(Tok, diag::err_expected_fn_body);
 
     // Skip over garbage, until we get to '{'.  Don't eat the '{'.
@@ -1060,7 +1083,8 @@ bool Parser::TryAnnotateTypeOrScopeToken(bool EnteringContext) {
     // Determine whether the identifier is a type name.
     if (ParsedType Ty = Actions.getTypeName(*Tok.getIdentifierInfo(),
                                             Tok.getLocation(), getCurScope(),
-                                            &SS)) {
+                                            &SS, false, 
+                                            NextToken().is(tok::period))) {
       // This is a typename. Replace the current token in-place with an
       // annotation type token.
       Tok.setKind(tok::annot_typename);

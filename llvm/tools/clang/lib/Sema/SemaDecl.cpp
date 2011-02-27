@@ -60,7 +60,7 @@ Sema::DeclGroupPtrTy Sema::ConvertDeclToDeclGroup(Decl *Ptr) {
 /// and then return NULL.
 ParsedType Sema::getTypeName(IdentifierInfo &II, SourceLocation NameLoc,
                              Scope *S, CXXScopeSpec *SS,
-                             bool isClassName,
+                             bool isClassName, bool HasTrailingDot,
                              ParsedType ObjectTypePtr) {
   // Determine where we will perform name lookup.
   DeclContext *LookupCtx = 0;
@@ -193,13 +193,15 @@ ParsedType Sema::getTypeName(IdentifierInfo &II, SourceLocation NameLoc,
       T = getElaboratedType(ETK_None, *SS, T);
     
   } else if (ObjCInterfaceDecl *IDecl = dyn_cast<ObjCInterfaceDecl>(IIDecl)) {
-    T = Context.getObjCInterfaceType(IDecl);
-  } else {
+    if (!HasTrailingDot)
+      T = Context.getObjCInterfaceType(IDecl);
+  }
+
+  if (T.isNull()) {
     // If it's not plausibly a type, suppress diagnostics.
     Result.suppressDiagnostics();
     return ParsedType();
   }
-
   return ParsedType::make(T);
 }
 
@@ -627,6 +629,9 @@ static bool ShouldDiagnoseUnusedDecl(const NamedDecl *D) {
   if (D->isUsed() || D->hasAttr<UnusedAttr>())
     return false;
 
+  if (isa<LabelDecl>(D))
+    return true;
+  
   // White-list anything that isn't a local variable.
   if (!isa<VarDecl>(D) || isa<ParmVarDecl>(D) || isa<ImplicitParamDecl>(D) ||
       !D->getDeclContext()->isFunctionOrMethod())
@@ -669,16 +674,29 @@ static bool ShouldDiagnoseUnusedDecl(const NamedDecl *D) {
   return true;
 }
 
+/// DiagnoseUnusedDecl - Emit warnings about declarations that are not used
+/// unless they are marked attr(unused).
 void Sema::DiagnoseUnusedDecl(const NamedDecl *D) {
   if (!ShouldDiagnoseUnusedDecl(D))
     return;
   
+  unsigned DiagID;
   if (isa<VarDecl>(D) && cast<VarDecl>(D)->isExceptionVariable())
-    Diag(D->getLocation(), diag::warn_unused_exception_param)
-    << D->getDeclName();
+    DiagID = diag::warn_unused_exception_param;
+  else if (isa<LabelDecl>(D))
+    DiagID = diag::warn_unused_label;
   else
-    Diag(D->getLocation(), diag::warn_unused_variable) 
-    << D->getDeclName();
+    DiagID = diag::warn_unused_variable;
+
+  Diag(D->getLocation(), DiagID) << D->getDeclName();
+}
+
+static void CheckPoppedLabel(LabelDecl *L, Sema &S) {
+  // Verify that we have no forward references left.  If so, there was a goto
+  // or address of a label taken, but no definition of it.  Label fwd
+  // definitions are indicated with a null substmt.
+  if (L->getStmt() == 0)
+    S.Diag(L->getLocation(), diag::err_undeclared_label_use) <<L->getDeclName();
 }
 
 void Sema::ActOnPopScope(SourceLocation Loc, Scope *S) {
@@ -699,6 +717,10 @@ void Sema::ActOnPopScope(SourceLocation Loc, Scope *S) {
     // Diagnose unused variables in this scope.
     if (!S->hasErrorOccurred())
       DiagnoseUnusedDecl(D);
+    
+    // If this was a forward reference to a label, verify it was defined.
+    if (LabelDecl *LD = dyn_cast<LabelDecl>(D))
+      CheckPoppedLabel(LD, *this);
     
     // Remove this name from our lexical scope.
     IdResolver.RemoveDecl(D);
@@ -1201,7 +1223,11 @@ bool Sema::MergeFunctionDecl(FunctionDecl *New, Decl *OldD) {
           && OldReturnType->isObjCObjectPointerType())
         ResQT = Context.mergeObjCGCQualifiers(NewQType, OldQType);
       if (ResQT.isNull()) {
-        Diag(New->getLocation(), diag::err_ovl_diff_return_type);
+        if (New->isCXXClassMember() && New->isOutOfLine())
+          Diag(New->getLocation(),
+               diag::err_member_def_does_not_match_ret_type) << New;
+        else
+          Diag(New->getLocation(), diag::err_ovl_diff_return_type);
         Diag(Old->getLocation(), PrevDiag) << Old << Old->getType();
         return true;
       }
@@ -1544,6 +1570,20 @@ void Sema::MergeVarDecl(VarDecl *New, LookupResult &Previous) {
   else if (New->getStorageClass() != SC_Static &&
            Old->getStorageClass() == SC_Static) {
     Diag(New->getLocation(), diag::err_non_static_static) << New->getDeclName();
+    Diag(Old->getLocation(), diag::note_previous_definition);
+    return New->setInvalidDecl();
+  }
+
+  // Check if extern is followed by non-extern and vice-versa.
+  if (New->hasExternalStorage() &&
+      !Old->hasLinkage() && Old->isLocalVarDecl()) {
+    Diag(New->getLocation(), diag::err_extern_non_extern) << New->getDeclName();
+    Diag(Old->getLocation(), diag::note_previous_definition);
+    return New->setInvalidDecl();
+  }
+  if (Old->hasExternalStorage() &&
+      !New->hasLinkage() && New->isLocalVarDecl()) {
+    Diag(New->getLocation(), diag::err_non_extern_extern) << New->getDeclName();
     Diag(Old->getLocation(), diag::note_previous_definition);
     return New->setInvalidDecl();
   }
@@ -1902,7 +1942,7 @@ Decl *Sema::BuildAnonymousStructOrUnion(Scope *S, DeclSpec &DS,
 
       // Recover by adding 'static'.
       DS.SetStorageClassSpec(DeclSpec::SCS_static, SourceLocation(),
-                             PrevSpec, DiagID);
+                             PrevSpec, DiagID, getLangOptions());
     }
     // C++ [class.union]p3:
     //   A storage class is not allowed in a declaration of an
@@ -1915,7 +1955,7 @@ Decl *Sema::BuildAnonymousStructOrUnion(Scope *S, DeclSpec &DS,
 
       // Recover by removing the storage specifier.
       DS.SetStorageClassSpec(DeclSpec::SCS_unspecified, SourceLocation(),
-                             PrevSpec, DiagID);
+                             PrevSpec, DiagID, getLangOptions());
     }
 
     // C++ [class.union]p2:
@@ -3101,10 +3141,9 @@ void Sema::CheckShadow(Scope *S, VarDecl *D, const LookupResult& R) {
         Diagnostic::Ignored)
     return;
 
-  // Don't diagnose declarations at file scope.  The scope might not
-  // have a DeclContext if (e.g.) we're parsing a function prototype.
-  DeclContext *NewDC = static_cast<DeclContext*>(S->getEntity());
-  if (NewDC && NewDC->isFileContext())
+  // Don't diagnose declarations at file scope.
+  DeclContext *NewDC = D->getDeclContext();
+  if (NewDC->isFileContext())
     return;
   
   // Only diagnose if we're shadowing an unambiguous field or variable.
@@ -3114,6 +3153,36 @@ void Sema::CheckShadow(Scope *S, VarDecl *D, const LookupResult& R) {
   NamedDecl* ShadowedDecl = R.getFoundDecl();
   if (!isa<VarDecl>(ShadowedDecl) && !isa<FieldDecl>(ShadowedDecl))
     return;
+
+  // Fields are not shadowed by variables in C++ static methods.
+  if (isa<FieldDecl>(ShadowedDecl))
+    if (CXXMethodDecl *MD = dyn_cast<CXXMethodDecl>(NewDC))
+      if (MD->isStatic())
+        return;
+
+  if (VarDecl *shadowedVar = dyn_cast<VarDecl>(ShadowedDecl))
+    if (shadowedVar->isExternC()) {
+      // Don't warn for this case:
+      //
+      // @code
+      // extern int bob;
+      // void f() {
+      //   extern int bob;
+      // }
+      // @endcode
+      if (D->isExternC())
+        return;
+
+      // For shadowing external vars, make sure that we point to the global
+      // declaration, not a locally scoped extern declaration.
+      for (VarDecl::redecl_iterator
+             I = shadowedVar->redecls_begin(), E = shadowedVar->redecls_end();
+           I != E; ++I)
+        if (I->isFileVarDecl()) {
+          ShadowedDecl = *I;
+          break;
+        }
+    }
 
   DeclContext *OldDC = ShadowedDecl->getDeclContext();
 
@@ -3923,8 +3992,15 @@ Sema::ActOnFunctionDeclarator(Scope* S, Declarator& D, DeclContext* DC,
       FunctionTemplateDecl *PrevTemplate = FunctionTemplate->getPreviousDeclaration();
       CheckTemplateParameterList(FunctionTemplate->getTemplateParameters(),
                                  PrevTemplate? PrevTemplate->getTemplateParameters() : 0,
-                                 D.getDeclSpec().isFriendSpecified()? TPC_FriendFunctionTemplate
-                                                  : TPC_FunctionTemplate);
+                            D.getDeclSpec().isFriendSpecified()
+                              ? (IsFunctionDefinition 
+                                   ? TPC_FriendFunctionTemplateDefinition
+                                   : TPC_FriendFunctionTemplate)
+                              : (D.getCXXScopeSpec().isSet() && 
+                                 DC && DC->isRecord() && 
+                                 DC->isDependentContext())
+                                  ? TPC_ClassTemplateMember
+                                  : TPC_FunctionTemplate);
     }
 
     if (NewFD->isInvalidDecl()) {
@@ -4054,6 +4130,19 @@ Sema::ActOnFunctionDeclarator(Scope* S, Declarator& D, DeclContext* DC,
   }
 
   MarkUnusedFileScopedDecl(NewFD);
+
+  if (getLangOptions().CUDA)
+    if (IdentifierInfo *II = NewFD->getIdentifier())
+      if (!NewFD->isInvalidDecl() &&
+          NewFD->getDeclContext()->getRedeclContext()->isTranslationUnit()) {
+        if (II->isStr("cudaConfigureCall")) {
+          if (!R->getAs<FunctionType>()->getResultType()->isScalarType())
+            Diag(NewFD->getLocation(), diag::err_config_scalar_return);
+
+          Context.setcudaConfigureCallDecl(NewFD);
+        }
+      }
+
   return NewFD;
 }
 
@@ -4232,7 +4321,7 @@ void Sema::CheckFunctionDeclaration(Scope *S, FunctionDecl *NewFD,
                    diag::note_overridden_virtual_function);
             }
           }
-        }        
+        }
       }
     }
 
@@ -4288,14 +4377,7 @@ void Sema::CheckMain(FunctionDecl* FD) {
   const FunctionType* FT = T->getAs<FunctionType>();
 
   if (!Context.hasSameUnqualifiedType(FT->getResultType(), Context.IntTy)) {
-    TypeSourceInfo *TSI = FD->getTypeSourceInfo();
-    TypeLoc TL = TSI->getTypeLoc().IgnoreParens();
-    const SemaDiagnosticBuilder& D = Diag(FD->getTypeSpecStartLoc(),
-                                          diag::err_main_returns_nonint);
-    if (FunctionTypeLoc* PTL = dyn_cast<FunctionTypeLoc>(&TL)) {
-      D << FixItHint::CreateReplacement(PTL->getResultLoc().getSourceRange(),
-                                        "int");
-    }
+    Diag(FD->getTypeSpecStartLoc(), diag::err_main_returns_nonint);
     FD->setInvalidDecl(true);
   }
 
@@ -5405,50 +5487,6 @@ Decl *Sema::ActOnFinishFunctionBody(Decl *dcl, Stmt *Body,
   }
 
   // Verify and clean out per-function state.
-
-  // Check goto/label use.
-  FunctionScopeInfo *CurFn = getCurFunction();
-  for (llvm::DenseMap<IdentifierInfo*, LabelStmt*>::iterator
-         I = CurFn->LabelMap.begin(), E = CurFn->LabelMap.end(); I != E; ++I) {
-    LabelStmt *L = I->second;
-
-    // Verify that we have no forward references left.  If so, there was a goto
-    // or address of a label taken, but no definition of it.  Label fwd
-    // definitions are indicated with a null substmt.
-    if (L->getSubStmt() != 0) {
-      if (!L->isUsed())
-        Diag(L->getIdentLoc(), diag::warn_unused_label) << L->getName();
-      continue;
-    }
-
-    // Emit error.
-    Diag(L->getIdentLoc(), diag::err_undeclared_label_use) << L->getName();
-
-    // At this point, we have gotos that use the bogus label.  Stitch it into
-    // the function body so that they aren't leaked and that the AST is well
-    // formed.
-    if (Body == 0) {
-      // The whole function wasn't parsed correctly.
-      continue;
-    }
-
-    // Otherwise, the body is valid: we want to stitch the label decl into the
-    // function somewhere so that it is properly owned and so that the goto
-    // has a valid target.  Do this by creating a new compound stmt with the
-    // label in it.
-
-    // Give the label a sub-statement.
-    L->setSubStmt(new (Context) NullStmt(L->getIdentLoc()));
-
-    CompoundStmt *Compound = isa<CXXTryStmt>(Body) ?
-                               cast<CXXTryStmt>(Body)->getTryBlock() :
-                               cast<CompoundStmt>(Body);
-    llvm::SmallVector<Stmt*, 64> Elements(Compound->body_begin(),
-                                          Compound->body_end());
-    Elements.push_back(L);
-    Compound->setStmts(Context, Elements.data(), Elements.size());
-  }
-
   if (Body) {
     // C++ constructors that have function-try-blocks can't have return
     // statements in the handlers of that block. (C++ [except.handle]p14)
@@ -5653,17 +5691,46 @@ TypedefDecl *Sema::ParseTypedefDecl(Scope *S, Declarator &D, QualType T,
                                            D.getIdentifier(),
                                            TInfo);
 
-  if (const TagType *TT = T->getAs<TagType>()) {
-    TagDecl *TD = TT->getDecl();
-
-    // If the TagDecl that the TypedefDecl points to is an anonymous decl
-    // keep track of the TypedefDecl.
-    if (!TD->getIdentifier() && !TD->getTypedefForAnonDecl())
-      TD->setTypedefForAnonDecl(NewTD);
+  // Bail out immediately if we have an invalid declaration.
+  if (D.isInvalidType()) {
+    NewTD->setInvalidDecl();
+    return NewTD;
   }
 
-  if (D.isInvalidType())
-    NewTD->setInvalidDecl();
+  // C++ [dcl.typedef]p8:
+  //   If the typedef declaration defines an unnamed class (or
+  //   enum), the first typedef-name declared by the declaration
+  //   to be that class type (or enum type) is used to denote the
+  //   class type (or enum type) for linkage purposes only.
+  // We need to check whether the type was declared in the declaration.
+  switch (D.getDeclSpec().getTypeSpecType()) {
+  case TST_enum:
+  case TST_struct:
+  case TST_union:
+  case TST_class: {
+    TagDecl *tagFromDeclSpec = cast<TagDecl>(D.getDeclSpec().getRepAsDecl());
+
+    // Do nothing if the tag is not anonymous or already has an
+    // associated typedef (from an earlier typedef in this decl group).
+    if (tagFromDeclSpec->getIdentifier()) break;
+    if (tagFromDeclSpec->getTypedefForAnonDecl()) break;
+
+    // A well-formed anonymous tag must always be a TUK_Definition.
+    assert(tagFromDeclSpec->isThisDeclarationADefinition());
+
+    // The type must match the tag exactly;  no qualifiers allowed.
+    if (!Context.hasSameType(T, Context.getTagDeclType(tagFromDeclSpec)))
+      break;
+
+    // Otherwise, set this is the anon-decl typedef for the tag.
+    tagFromDeclSpec->setTypedefForAnonDecl(NewTD);
+    break;
+  }
+    
+  default:
+    break;
+  }
+
   return NewTD;
 }
 

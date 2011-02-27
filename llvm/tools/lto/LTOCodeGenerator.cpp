@@ -350,17 +350,30 @@ void LTOCodeGenerator::applyScopeRestrictions() {
     MCContext Context(*_target->getMCAsmInfo(), NULL);
     Mangler mangler(Context, *_target->getTargetData());
     std::vector<const char*> mustPreserveList;
+    SmallString<64> Buffer;
     for (Module::iterator f = mergedModule->begin(),
          e = mergedModule->end(); f != e; ++f) {
+      Buffer.clear();
+      mangler.getNameWithPrefix(Buffer, f, false);
       if (!f->isDeclaration() &&
-          _mustPreserveSymbols.count(mangler.getNameWithPrefix(f)))
+          _mustPreserveSymbols.count(Buffer))
         mustPreserveList.push_back(::strdup(f->getNameStr().c_str()));
     }
     for (Module::global_iterator v = mergedModule->global_begin(), 
          e = mergedModule->global_end(); v !=  e; ++v) {
+      Buffer.clear();
+      mangler.getNameWithPrefix(Buffer, v, false);
       if (!v->isDeclaration() &&
-          _mustPreserveSymbols.count(mangler.getNameWithPrefix(v)))
+          _mustPreserveSymbols.count(Buffer))
         mustPreserveList.push_back(::strdup(v->getNameStr().c_str()));
+    }
+    for (Module::alias_iterator a = mergedModule->alias_begin(),
+         e = mergedModule->alias_end(); a != e; ++a) {
+      Buffer.clear();
+      mangler.getNameWithPrefix(Buffer, a, false);
+      if (!a->isDeclaration() &&
+          _mustPreserveSymbols.count(Buffer))
+        mustPreserveList.push_back(::strdup(a->getNameStr().c_str()));
     }
     passes.add(createInternalizePass(mustPreserveList));
   }

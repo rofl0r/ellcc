@@ -2166,22 +2166,11 @@ bool Sema::Subst(const TemplateArgumentLoc *Args, unsigned NumArgs,
   return Instantiator.TransformTemplateArguments(Args, NumArgs, Result);
 }
 
-Decl *LocalInstantiationScope::getInstantiationOf(const Decl *D) {
-  llvm::PointerUnion<Decl *, DeclArgumentPack *> *Found= findInstantiationOf(D);
-  if (!Found)
-    return 0;
-  
-  if (Found->is<Decl *>())
-    return Found->get<Decl *>();
-  
-  return (*Found->get<DeclArgumentPack *>())[
-                                        SemaRef.ArgumentPackSubstitutionIndex];
-}
-
 llvm::PointerUnion<Decl *, LocalInstantiationScope::DeclArgumentPack *> *
 LocalInstantiationScope::findInstantiationOf(const Decl *D) {
-  for (LocalInstantiationScope *Current = this; Current; 
+  for (LocalInstantiationScope *Current = this; Current;
        Current = Current->Outer) {
+
     // Check if we found something within this scope.
     const Decl *CheckD = D;
     do {
@@ -2201,9 +2190,11 @@ LocalInstantiationScope::findInstantiationOf(const Decl *D) {
     if (!Current->CombineWithOuterScope)
       break;
   }
-  
-  assert(D->isInvalidDecl() && 
-         "declaration was not instantiated in this scope!");
+
+  // If we didn't find the decl, then we either have a sema bug, or we have a
+  // forward reference to a label declaration.  Return null to indicate that
+  // we have an uninstantiated label.
+  assert(isa<LabelDecl>(D) && "declaration not instantiated in this scope");
   return 0;
 }
 

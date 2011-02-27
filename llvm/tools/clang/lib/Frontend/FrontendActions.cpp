@@ -83,19 +83,21 @@ ASTConsumer *DeclContextPrintAction::CreateASTConsumer(CompilerInstance &CI,
 ASTConsumer *GeneratePCHAction::CreateASTConsumer(CompilerInstance &CI,
                                                   llvm::StringRef InFile) {
   std::string Sysroot;
+  std::string OutputFile;
   llvm::raw_ostream *OS = 0;
   bool Chaining;
-  if (ComputeASTConsumerArguments(CI, InFile, Sysroot, OS, Chaining))
+  if (ComputeASTConsumerArguments(CI, InFile, Sysroot, OutputFile, OS, Chaining))
     return 0;
 
   const char *isysroot = CI.getFrontendOpts().RelocatablePCH ?
                              Sysroot.c_str() : 0;  
-  return new PCHGenerator(CI.getPreprocessor(), Chaining, isysroot, OS);
+  return new PCHGenerator(CI.getPreprocessor(), OutputFile, Chaining, isysroot, OS);
 }
 
 bool GeneratePCHAction::ComputeASTConsumerArguments(CompilerInstance &CI,
                                                     llvm::StringRef InFile,
                                                     std::string &Sysroot,
+                                                    std::string &OutputFile,
                                                     llvm::raw_ostream *&OS,
                                                     bool &Chaining) {
   Sysroot = CI.getHeaderSearchOpts().Sysroot;
@@ -104,18 +106,17 @@ bool GeneratePCHAction::ComputeASTConsumerArguments(CompilerInstance &CI,
     return true;
   }
 
-  OS = CI.createDefaultOutputFile(true, InFile);
+  // We use createOutputFile here because this is exposed via libclang, and we
+  // must disable the RemoveFileOnSignal behavior.
+  OS = CI.createOutputFile(CI.getFrontendOpts().OutputFile, /*Binary=*/true,
+                           /*RemoveFileOnSignal=*/false, InFile);
   if (!OS)
     return true;
 
+  OutputFile = CI.getFrontendOpts().OutputFile;
   Chaining = CI.getInvocation().getFrontendOpts().ChainedPCH &&
              !CI.getPreprocessorOpts().ImplicitPCHInclude.empty();
   return false;
-}
-
-ASTConsumer *InheritanceViewAction::CreateASTConsumer(CompilerInstance &CI,
-                                                      llvm::StringRef InFile) {
-  return CreateInheritanceViewer(CI.getFrontendOpts().ViewClassInheritance);
 }
 
 ASTConsumer *SyntaxOnlyAction::CreateASTConsumer(CompilerInstance &CI,

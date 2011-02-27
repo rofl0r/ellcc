@@ -1012,7 +1012,7 @@ void AsmPrinter::EmitJumpTableInfo() {
       }
     }          
     
-    // On some targets (e.g. Darwin) we want to emit two consequtive labels
+    // On some targets (e.g. Darwin) we want to emit two consecutive labels
     // before each jump table.  The first label is never referenced, but tells
     // the assembler and linker the extents of the jump table object.  The
     // second label is actually referenced by the code.
@@ -1033,6 +1033,7 @@ void AsmPrinter::EmitJumpTableInfo() {
 void AsmPrinter::EmitJumpTableEntry(const MachineJumpTableInfo *MJTI,
                                     const MachineBasicBlock *MBB,
                                     unsigned UID) const {
+  assert(MBB && MBB->getNumber() >= 0 && "Invalid basic block");
   const MCExpr *Value = 0;
   switch (MJTI->getEntryKind()) {
   case MachineJumpTableInfo::EK_Inline:

@@ -86,7 +86,6 @@ CXCursor cxcursor::MakeCXCursor(Stmt *S, Decl *Parent,
   case Stmt::BreakStmtClass:       
   case Stmt::ReturnStmtClass:      
   case Stmt::DeclStmtClass:        
-  case Stmt::SwitchCaseClass:      
   case Stmt::AsmStmtClass:         
   case Stmt::ObjCAtTryStmtClass:        
   case Stmt::ObjCAtCatchStmtClass:      
@@ -117,6 +116,7 @@ CXCursor cxcursor::MakeCXCursor(Stmt *S, Decl *Parent,
   case Stmt::BinaryOperatorClass:        
   case Stmt::CompoundAssignOperatorClass:
   case Stmt::ConditionalOperatorClass:   
+  case Stmt::BinaryConditionalOperatorClass:
   case Stmt::ImplicitCastExprClass:
   case Stmt::CStyleCastExprClass:
   case Stmt::CompoundLiteralExprClass:   
@@ -188,6 +188,7 @@ CXCursor cxcursor::MakeCXCursor(Stmt *S, Decl *Parent,
   case Stmt::CallExprClass:              
   case Stmt::CXXOperatorCallExprClass:
   case Stmt::CXXMemberCallExprClass:
+  case Stmt::CUDAKernelCallExprClass:
   case Stmt::CXXConstructExprClass:  
   case Stmt::CXXTemporaryObjectExprClass:
     // FIXME: CXXUnresolvedConstructExpr

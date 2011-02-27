@@ -79,7 +79,8 @@ public:
   llvm::Constant *EmitNullMemberPointer(const MemberPointerType *MPT);
 
   llvm::Constant *EmitMemberPointer(const CXXMethodDecl *MD);
-  llvm::Constant *EmitMemberPointer(const FieldDecl *FD);
+  llvm::Constant *EmitMemberDataPointer(const MemberPointerType *MPT,
+                                        CharUnits offset);
 
   llvm::Value *EmitMemberPointerComparison(CodeGenFunction &CGF,
                                            llvm::Value *L,
@@ -493,19 +494,13 @@ ItaniumCXXABI::EmitNullMemberPointer(const MemberPointerType *MPT) {
                                    /*Packed=*/false);
 }
 
-llvm::Constant *ItaniumCXXABI::EmitMemberPointer(const FieldDecl *FD) {
+llvm::Constant *
+ItaniumCXXABI::EmitMemberDataPointer(const MemberPointerType *MPT,
+                                     CharUnits offset) {
   // Itanium C++ ABI 2.3:
   //   A pointer to data member is an offset from the base address of
   //   the class object containing it, represented as a ptrdiff_t
-
-  const CGRecordLayout &RL = CGM.getTypes().getCGRecordLayout(FD->getParent());
-  const llvm::StructType *ClassLTy = RL.getLLVMType();
-
-  unsigned FieldNo = RL.getLLVMFieldNo(FD);
-  uint64_t Offset = 
-    CGM.getTargetData().getStructLayout(ClassLTy)->getElementOffset(FieldNo);
-
-  return llvm::ConstantInt::get(getPtrDiffTy(), Offset);
+  return llvm::ConstantInt::get(getPtrDiffTy(), offset.getQuantity());
 }
 
 llvm::Constant *ItaniumCXXABI::EmitMemberPointer(const CXXMethodDecl *MD) {
@@ -1077,7 +1072,9 @@ void ItaniumCXXABI::EmitGuardedInit(CodeGenFunction &CGF,
 
   // Create the guard variable.
   llvm::SmallString<256> GuardVName;
-  getMangleContext().mangleItaniumGuardVariable(&D, GuardVName);
+  llvm::raw_svector_ostream Out(GuardVName);
+  getMangleContext().mangleItaniumGuardVariable(&D, Out);
+  Out.flush();
 
   // Just absorb linkage and visibility from the variable.
   llvm::GlobalVariable *GuardVariable =

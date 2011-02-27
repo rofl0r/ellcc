@@ -1491,8 +1491,7 @@ Stmt *RewriteObjC::RewriteObjCIvarRefExpr(ObjCIvarRefExpr *IV,
 }
 
 Stmt *RewriteObjC::RewriteObjCNestedIvarRefExpr(Stmt *S, bool &replaced) {
-  for (Stmt::child_iterator CI = S->child_begin(), E = S->child_end();
-       CI != E; ++CI) {
+  for (Stmt::child_range CI = S->children(); CI; ++CI) {
     if (*CI) {
       Stmt *newStmt = RewriteObjCNestedIvarRefExpr(*CI, replaced);
       if (newStmt)
@@ -1837,8 +1836,7 @@ Stmt *RewriteObjC::RewriteObjCSynchronizedStmt(ObjCAtSynchronizedStmt *S) {
 void RewriteObjC::WarnAboutReturnGotoStmts(Stmt *S)
 {
   // Perform a bottom up traversal of all children.
-  for (Stmt::child_iterator CI = S->child_begin(), E = S->child_end();
-       CI != E; ++CI)
+  for (Stmt::child_range CI = S->children(); CI; ++CI)
     if (*CI)
       WarnAboutReturnGotoStmts(*CI);
 
@@ -1852,8 +1850,7 @@ void RewriteObjC::WarnAboutReturnGotoStmts(Stmt *S)
 void RewriteObjC::HasReturnStmts(Stmt *S, bool &hasReturns) 
 {  
   // Perform a bottom up traversal of all children.
-  for (Stmt::child_iterator CI = S->child_begin(), E = S->child_end();
-        CI != E; ++CI)
+  for (Stmt::child_range CI = S->children(); CI; ++CI)
    if (*CI)
      HasReturnStmts(*CI, hasReturns);
 
@@ -1864,8 +1861,7 @@ void RewriteObjC::HasReturnStmts(Stmt *S, bool &hasReturns)
 
 void RewriteObjC::RewriteTryReturnStmts(Stmt *S) {
  // Perform a bottom up traversal of all children.
- for (Stmt::child_iterator CI = S->child_begin(), E = S->child_end();
-      CI != E; ++CI)
+ for (Stmt::child_range CI = S->children(); CI; ++CI)
    if (*CI) {
      RewriteTryReturnStmts(*CI);
    }
@@ -1888,8 +1884,7 @@ void RewriteObjC::RewriteTryReturnStmts(Stmt *S) {
 
 void RewriteObjC::RewriteSyncReturnStmts(Stmt *S, std::string syncExitBuf) {
   // Perform a bottom up traversal of all children.
-  for (Stmt::child_iterator CI = S->child_begin(), E = S->child_end();
-       CI != E; ++CI)
+  for (Stmt::child_range CI = S->children(); CI; ++CI)
     if (*CI) {
       RewriteSyncReturnStmts(*CI, syncExitBuf);
     }
@@ -3126,7 +3121,7 @@ Stmt *RewriteObjC::SynthMessageExpr(ObjCMessageExpr *Exp,
     ConditionalOperator *CondExpr =
       new (Context) ConditionalOperator(lessThanExpr,
                                         SourceLocation(), CE,
-                                        SourceLocation(), STCE, (Expr*)0,
+                                        SourceLocation(), STCE,
                                         returnType, VK_RValue, OK_Ordinary);
     ReplacingStmt = new (Context) ParenExpr(SourceLocation(), SourceLocation(), 
                                             CondExpr);
@@ -4545,8 +4540,7 @@ void RewriteObjC::InsertBlockLiteralsWithinMethod(ObjCMethodDecl *MD) {
 }
 
 void RewriteObjC::GetBlockDeclRefExprs(Stmt *S) {
-  for (Stmt::child_iterator CI = S->child_begin(), E = S->child_end();
-       CI != E; ++CI)
+  for (Stmt::child_range CI = S->children(); CI; ++CI)
     if (*CI) {
       if (BlockExpr *CBE = dyn_cast<BlockExpr>(*CI))
         GetBlockDeclRefExprs(CBE->getBody());
@@ -4562,7 +4556,8 @@ void RewriteObjC::GetBlockDeclRefExprs(Stmt *S) {
   else if (DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(S))
     if (HasLocalVariableExternalStorage(DRE->getDecl())) {
         BlockDeclRefExpr *BDRE = 
-          new (Context)BlockDeclRefExpr(DRE->getDecl(), DRE->getType(), 
+          new (Context)BlockDeclRefExpr(cast<VarDecl>(DRE->getDecl()),
+                                        DRE->getType(), 
                                         VK_LValue, DRE->getLocation(), false);
         BlockDeclRefs.push_back(BDRE);
     }
@@ -4573,8 +4568,7 @@ void RewriteObjC::GetBlockDeclRefExprs(Stmt *S) {
 void RewriteObjC::GetInnerBlockDeclRefExprs(Stmt *S, 
                 llvm::SmallVector<BlockDeclRefExpr *, 8> &InnerBlockDeclRefs,
                 llvm::SmallPtrSet<const DeclContext *, 8> &InnerContexts) {
-  for (Stmt::child_iterator CI = S->child_begin(), E = S->child_end();
-       CI != E; ++CI)
+  for (Stmt::child_range CI = S->children(); CI; ++CI)
     if (*CI) {
       if (BlockExpr *CBE = dyn_cast<BlockExpr>(*CI)) {
         InnerContexts.insert(cast<DeclContext>(CBE->getBlockDecl()));
@@ -4662,7 +4656,6 @@ Stmt *RewriteObjC::SynthesizeBlockCall(CallExpr *Exp, const Expr *BlockExp) {
       new (Context) ConditionalOperator(CONDExp,
                                       SourceLocation(), cast<Expr>(LHSStmt),
                                       SourceLocation(), cast<Expr>(RHSStmt),
-                                      (Expr*)0,
                                       Exp->getType(), VK_RValue, OK_Ordinary);
     return CondExpr;
   } else if (const ObjCIvarRefExpr *IRE = dyn_cast<ObjCIvarRefExpr>(BlockExp)) {
@@ -5275,6 +5268,7 @@ FunctionDecl *RewriteObjC::SynthBlockInitFunctionDecl(llvm::StringRef name) {
 
 Stmt *RewriteObjC::SynthBlockInitExpr(BlockExpr *Exp,
           const llvm::SmallVector<BlockDeclRefExpr *, 8> &InnerBlockDeclRefs) {
+  const BlockDecl *block = Exp->getBlockDecl();
   Blocks.push_back(Exp);
 
   CollectBlockDeclRefInfo(Exp);
@@ -5418,7 +5412,22 @@ Stmt *RewriteObjC::SynthBlockInitExpr(BlockExpr *Exp,
       FD = SynthBlockInitFunctionDecl((*I)->getName());
       Exp = new (Context) DeclRefExpr(FD, FD->getType(), VK_LValue,
                                       SourceLocation());
-      Exp = new (Context) UnaryOperator(Exp, UO_AddrOf,
+      bool isNestedCapturedVar = false;
+      if (block)
+        for (BlockDecl::capture_const_iterator ci = block->capture_begin(),
+             ce = block->capture_end(); ci != ce; ++ci) {
+          const VarDecl *variable = ci->getVariable();
+          if (variable == ND && ci->isNested()) {
+            assert (ci->isByRef() && 
+                    "SynthBlockInitExpr - captured block variable is not byref");
+            isNestedCapturedVar = true;
+            break;
+          }
+        }
+      // captured nested byref variable has its address passed. Do not take
+      // its address again.
+      if (!isNestedCapturedVar)
+          Exp = new (Context) UnaryOperator(Exp, UO_AddrOf,
                                      Context->getPointerType(Exp->getType()),
                                      VK_RValue, OK_Ordinary, SourceLocation());
       Exp = NoTypeInfoCStyleCastExpr(Context, castT, CK_BitCast, Exp);
@@ -5462,8 +5471,7 @@ Stmt *RewriteObjC::SynthBlockInitExpr(BlockExpr *Exp,
 // we get this right.
 void RewriteObjC::CollectPropertySetters(Stmt *S) {
   // Perform a bottom up traversal of all children.
-  for (Stmt::child_iterator CI = S->child_begin(), E = S->child_end();
-       CI != E; ++CI)
+  for (Stmt::child_range CI = S->children(); CI; ++CI)
     if (*CI)
       CollectPropertySetters(*CI);
 
@@ -5487,8 +5495,7 @@ Stmt *RewriteObjC::RewriteFunctionBodyOrGlobalInitializer(Stmt *S) {
   SourceRange OrigStmtRange = S->getSourceRange();
 
   // Perform a bottom up rewrite of all children.
-  for (Stmt::child_iterator CI = S->child_begin(), E = S->child_end();
-       CI != E; ++CI)
+  for (Stmt::child_range CI = S->children(); CI; ++CI)
     if (*CI) {
       Stmt *newStmt;
       Stmt *S = (*CI);

@@ -63,6 +63,7 @@ namespace clang {
   class ClassTemplatePartialSpecializationDecl;
   class ClassTemplateSpecializationDecl;
   class CodeCompleteConsumer;
+  class CodeCompletionAllocator;
   class CodeCompletionResult;
   class Decl;
   class DeclAccessPair;
@@ -209,6 +210,9 @@ public:
   typedef TemplateParameterList TemplateParamsTy;
   typedef NestedNameSpecifier CXXScopeTy;
 
+  OpenCLOptions OpenCLFeatures;
+  FPOptions FPFeatures;
+
   const LangOptions &LangOpts;
   Preprocessor &PP;
   ASTContext &Context;
@@ -228,36 +232,6 @@ public:
   /// VAListTagName - The declaration name corresponding to __va_list_tag.
   /// This is used as part of a hack to omit that class from ADL results.
   DeclarationName VAListTagName;
-
-  /// A RAII object to temporarily push a declaration context.
-  class ContextRAII {
-  private:
-    Sema &S;
-    DeclContext *SavedContext;
-    unsigned SavedParsingDeclDepth;
-    
-  public:
-    ContextRAII(Sema &S, DeclContext *ContextToPush,
-                unsigned ParsingDeclDepth = 0)
-      : S(S), SavedContext(S.CurContext), 
-        SavedParsingDeclDepth(S.ParsingDeclDepth) 
-    {
-      assert(ContextToPush && "pushing null context");
-      S.CurContext = ContextToPush;
-      S.ParsingDeclDepth = 0;
-    }
-
-    void pop() {
-      if (!SavedContext) return;
-      S.CurContext = SavedContext;
-      S.ParsingDeclDepth = SavedParsingDeclDepth;
-      SavedContext = 0;
-    }
-
-    ~ContextRAII() {
-      pop();
-    }
-  };
 
   /// PackContext - Manages the stack for #pragma pack. An alignment
   /// of 0 indicates default alignment.
@@ -327,14 +301,125 @@ public:
   /// and must warn if not used. Only contains the first declaration.
   llvm::SmallVector<const DeclaratorDecl*, 4> UnusedFileScopedDecls;
 
-  /// \brief The stack of diagnostics that were delayed due to being
-  /// produced during the parsing of a declaration.
-  llvm::SmallVector<sema::DelayedDiagnostic, 0> DelayedDiagnostics;
+  class DelayedDiagnostics;
 
-  /// \brief The depth of the current ParsingDeclaration stack.
-  /// If nonzero, we are currently parsing a declaration (and
-  /// hence should delay deprecation warnings).
-  unsigned ParsingDeclDepth;
+  class ParsingDeclState {
+    unsigned SavedStackSize;
+    friend class Sema::DelayedDiagnostics;
+  };
+
+  class ProcessingContextState {
+    unsigned SavedParsingDepth;
+    unsigned SavedActiveStackBase;
+    friend class Sema::DelayedDiagnostics;
+  };
+
+  /// A class which encapsulates the logic for delaying diagnostics
+  /// during parsing and other processing.
+  class DelayedDiagnostics {
+    /// \brief The stack of diagnostics that were delayed due to being
+    /// produced during the parsing of a declaration.
+    sema::DelayedDiagnostic *Stack;
+
+    /// \brief The number of objects on the delayed-diagnostics stack.
+    unsigned StackSize;
+
+    /// \brief The current capacity of the delayed-diagnostics stack.
+    unsigned StackCapacity;
+
+    /// \brief The index of the first "active" delayed diagnostic in
+    /// the stack.  When parsing class definitions, we ignore active
+    /// delayed diagnostics from the surrounding context.
+    unsigned ActiveStackBase;
+
+    /// \brief The depth of the declarations we're currently parsing.
+    /// This gets saved and reset whenever we enter a class definition.
+    unsigned ParsingDepth;
+
+  public:
+    DelayedDiagnostics() : Stack(0), StackSize(0), StackCapacity(0),
+      ActiveStackBase(0), ParsingDepth(0) {}
+
+    ~DelayedDiagnostics() {
+      delete[] reinterpret_cast<char*>(Stack);
+    }
+
+    /// Adds a delayed diagnostic.
+    void add(const sema::DelayedDiagnostic &diag);
+
+    /// Determines whether diagnostics should be delayed.
+    bool shouldDelayDiagnostics() { return ParsingDepth > 0; }
+
+    /// Observe that we've started parsing a declaration.  Access and
+    /// deprecation diagnostics will be delayed; when the declaration
+    /// is completed, all active delayed diagnostics will be evaluated
+    /// in its context, and then active diagnostics stack will be
+    /// popped down to the saved depth.
+    ParsingDeclState pushParsingDecl() {
+      ParsingDepth++;
+
+      ParsingDeclState state;
+      state.SavedStackSize = StackSize;
+      return state;
+    }
+
+    /// Observe that we're completed parsing a declaration.
+    static void popParsingDecl(Sema &S, ParsingDeclState state, Decl *decl);
+
+    /// Observe that we've started processing a different context, the
+    /// contents of which are semantically separate from the
+    /// declarations it may lexically appear in.  This sets aside the
+    /// current stack of active diagnostics and starts afresh.
+    ProcessingContextState pushContext() {
+      assert(StackSize >= ActiveStackBase);
+
+      ProcessingContextState state;
+      state.SavedParsingDepth = ParsingDepth;
+      state.SavedActiveStackBase = ActiveStackBase;
+
+      ActiveStackBase = StackSize;
+      ParsingDepth = 0;
+
+      return state;
+    }
+
+    /// Observe that we've stopped processing a context.  This
+    /// restores the previous stack of active diagnostics.
+    void popContext(ProcessingContextState state) {
+      assert(ActiveStackBase == StackSize);
+      assert(ParsingDepth == 0);
+      ActiveStackBase = state.SavedActiveStackBase;
+      ParsingDepth = state.SavedParsingDepth;
+    }  
+  } DelayedDiagnostics;
+
+  /// A RAII object to temporarily push a declaration context.
+  class ContextRAII {
+  private:
+    Sema &S;
+    DeclContext *SavedContext;
+    ProcessingContextState SavedContextState;
+    
+  public:
+    ContextRAII(Sema &S, DeclContext *ContextToPush)
+      : S(S), SavedContext(S.CurContext), 
+        SavedContextState(S.DelayedDiagnostics.pushContext()) 
+    {
+      assert(ContextToPush && "pushing null context");
+      S.CurContext = ContextToPush;
+    }
+
+    void pop() {
+      if (!SavedContext) return;
+      S.CurContext = SavedContext;
+      S.DelayedDiagnostics.popContext(SavedContextState);
+      SavedContext = 0;
+    }
+
+    ~ContextRAII() {
+      pop();
+    }
+  };
 
   /// WeakUndeclaredIdentifiers - Identifiers contained in
   /// #pragma weak before declared. rare. may alias another
@@ -515,6 +600,10 @@ public:
   // argument locations.
   llvm::DenseMap<ParmVarDecl *,SourceLocation> UnparsedDefaultArgLocs;
 
+  /// UndefinedInternals - all the used, undefined objects with
+  /// internal linkage in this translation unit.
+  llvm::DenseMap<NamedDecl*, SourceLocation> UndefinedInternals;
+
   typedef std::pair<ObjCMethodList, ObjCMethodList> GlobalMethods;
   typedef llvm::DenseMap<Selector, GlobalMethods> GlobalMethodPool;
 
@@ -543,6 +632,9 @@ public:
   void Initialize();
   
   const LangOptions &getLangOptions() const { return LangOpts; }
+  OpenCLOptions &getOpenCLOptions() { return OpenCLFeatures; }
+  FPOptions     &getFPOptions() { return FPFeatures; }
+
   Diagnostic &getDiagnostics() const { return Diags; }
   SourceManager &getSourceManager() const { return SourceMgr; }
   const TargetAttributesSema &getTargetAttributesSema() const;
@@ -693,6 +785,7 @@ public:
   ParsedType getTypeName(IdentifierInfo &II, SourceLocation NameLoc,
                          Scope *S, CXXScopeSpec *SS = 0,
                          bool isClassName = false,
+                         bool HasTrailingDot = false,
                          ParsedType ObjectType = ParsedType());
   TypeSpecifierType isTagName(IdentifierInfo &II, Scope *S);
   bool DiagnoseUnknownTypeName(const IdentifierInfo &II,
@@ -731,6 +824,7 @@ public:
                                      bool IsFunctionDefinition,
                                      bool &Redeclaration);
   bool AddOverriddenMethods(CXXRecordDecl *DC, CXXMethodDecl *MD);
+  void DiagnoseHiddenVirtualMethods(CXXRecordDecl *DC, CXXMethodDecl *MD);
   void CheckFunctionDeclaration(Scope *S,
                                 FunctionDecl *NewFD, LookupResult &Previous,
                                 bool IsExplicitSpecialization,
@@ -1016,6 +1110,8 @@ public:
                            QualType& ConvertedType, bool &IncompatibleObjC);
   bool isObjCPointerConversion(QualType FromType, QualType ToType,
                                QualType& ConvertedType, bool &IncompatibleObjC);
+  bool IsBlockPointerConversion(QualType FromType, QualType ToType,
+                                QualType& ConvertedType);
   bool FunctionArgTypesAreEqual(const FunctionProtoType *OldType, 
                                 const FunctionProtoType *NewType);
   
@@ -1174,7 +1270,8 @@ public:
                                      UnresolvedLookupExpr *ULE,
                                      SourceLocation LParenLoc,
                                      Expr **Args, unsigned NumArgs,
-                                     SourceLocation RParenLoc);
+                                     SourceLocation RParenLoc,
+                                     Expr *ExecConfig);
 
   ExprResult CreateOverloadedUnaryOp(SourceLocation OpLoc,
                                      unsigned Opc,
@@ -1251,6 +1348,8 @@ public:
     /// Tag name lookup, which finds the names of enums, classes,
     /// structs, and unions.
     LookupTagName,
+    /// Label name lookup.
+    LookupLabel,
     /// Member name lookup, which finds the names of
     /// class/struct/union members.
     LookupMemberName,
@@ -1319,6 +1418,9 @@ public:
                                     QualType T1, QualType T2,
                                     UnresolvedSetImpl &Functions);
 
+  LabelDecl *LookupOrCreateLabel(IdentifierInfo *II, SourceLocation Loc,
+                                 bool isLocalLabel = false);
+  
   DeclContextLookupResult LookupConstructors(CXXRecordDecl *Class);
   CXXDestructorDecl *LookupDestructor(CXXRecordDecl *Class);
 
@@ -1622,12 +1724,9 @@ public:
   StmtResult ActOnDefaultStmt(SourceLocation DefaultLoc,
                                       SourceLocation ColonLoc,
                                       Stmt *SubStmt, Scope *CurScope);
-  StmtResult ActOnLabelStmt(SourceLocation IdentLoc, IdentifierInfo *II,
-                            SourceLocation ColonLoc, Stmt *SubStmt,
-                            const AttributeList *Attr);
-  StmtResult ActOnLabelStmt(SourceLocation IdentLoc, IdentifierInfo *II,
-                            SourceLocation ColonLoc, Stmt *SubStmt,
-                            bool HasUnusedAttr);
+  StmtResult ActOnLabelStmt(SourceLocation IdentLoc, LabelDecl *TheDecl,
+                            SourceLocation ColonLoc, Stmt *SubStmt);
+    
   StmtResult ActOnIfStmt(SourceLocation IfLoc,
                          FullExprArg CondVal, Decl *CondVar,
                          Stmt *ThenVal,
@@ -1659,7 +1758,7 @@ public:
 
   StmtResult ActOnGotoStmt(SourceLocation GotoLoc,
                            SourceLocation LabelLoc,
-                           IdentifierInfo *LabelII);
+                           LabelDecl *TheDecl);
   StmtResult ActOnIndirectGotoStmt(SourceLocation GotoLoc,
                                    SourceLocation StarLoc,
                                    Expr *DestExp);
@@ -1728,10 +1827,21 @@ public:
   void DiagnoseUnusedExprResult(const Stmt *S);
   void DiagnoseUnusedDecl(const NamedDecl *ND);
   
-  typedef uintptr_t ParsingDeclStackState;
+  ParsingDeclState PushParsingDeclaration() {
+    return DelayedDiagnostics.pushParsingDecl();
+  }
+  void PopParsingDeclaration(ParsingDeclState state, Decl *decl) {
+    DelayedDiagnostics::popParsingDecl(*this, state, decl);
+  }
 
-  ParsingDeclStackState PushParsingDeclaration();
-  void PopParsingDeclaration(ParsingDeclStackState S, Decl *D);
+  typedef ProcessingContextState ParsingClassState;
+  ParsingClassState PushParsingClass() {
+    return DelayedDiagnostics.pushContext();
+  }
+  void PopParsingClass(ParsingClassState state) {
+    DelayedDiagnostics.popContext(state);
+  }
+
   void EmitDeprecationWarning(NamedDecl *D, llvm::StringRef Message,
                               SourceLocation Loc, bool UnknownObjCClass=false);
 
@@ -1783,10 +1893,11 @@ public:
                               const DeclarationNameInfo &NameInfo,
                               const CXXScopeSpec *SS = 0);
   ExprResult
-  BuildAnonymousStructUnionMemberReference(SourceLocation Loc,
-                                           IndirectFieldDecl *IndirectField,
-                                           Expr *BaseObjectExpr = 0,
-                                      SourceLocation OpLoc = SourceLocation());
+  BuildAnonymousStructUnionMemberReference(const CXXScopeSpec &SS,
+                                           SourceLocation nameLoc,
+                                           IndirectFieldDecl *indirectField,
+                                           Expr *baseObjectExpr = 0,
+                                      SourceLocation opLoc = SourceLocation());
   ExprResult BuildPossibleImplicitMemberExpr(const CXXScopeSpec &SS,
                                              LookupResult &R,
                                 const TemplateArgumentListInfo *TemplateArgs);
@@ -1909,11 +2020,16 @@ public:
   /// This provides the location of the left/right parens and a list of comma
   /// locations.
   ExprResult ActOnCallExpr(Scope *S, Expr *Fn, SourceLocation LParenLoc,
-                           MultiExprArg Args, SourceLocation RParenLoc);
+                           MultiExprArg Args, SourceLocation RParenLoc,
+                           Expr *ExecConfig = 0);
   ExprResult BuildResolvedCallExpr(Expr *Fn, NamedDecl *NDecl,
                                    SourceLocation LParenLoc,
                                    Expr **Args, unsigned NumArgs,
-                                   SourceLocation RParenLoc);
+                                   SourceLocation RParenLoc,
+                                   Expr *ExecConfig = 0);
+
+  ExprResult ActOnCUDAExecConfigExpr(Scope *S, SourceLocation LLLLoc,
+                                MultiExprArg ExecConfig, SourceLocation GGGLoc);
 
   ExprResult ActOnCastExpr(Scope *S, SourceLocation LParenLoc,
                            ParsedType Ty, SourceLocation RParenLoc,
@@ -1965,10 +2081,9 @@ public:
                                 Expr *Cond, Expr *LHS, Expr *RHS);
 
   /// ActOnAddrLabel - Parse the GNU address of label extension: "&&foo".
-  ExprResult ActOnAddrLabel(SourceLocation OpLoc,
-                            SourceLocation LabLoc,
-                            IdentifierInfo *LabelII);
-
+  ExprResult ActOnAddrLabel(SourceLocation OpLoc, SourceLocation LabLoc,
+                            LabelDecl *LD);
+  
   ExprResult ActOnStmtExpr(SourceLocation LPLoc, Stmt *SubStmt,
                            SourceLocation RPLoc); // "({..})"
 
@@ -2088,6 +2203,8 @@ public:
                                    bool IsTypeName,
                                    SourceLocation TypenameLoc);
 
+  bool CheckInheritedConstructorUsingDecl(UsingDecl *UD);
+
   Decl *ActOnUsingDeclaration(Scope *CurScope,
                               AccessSpecifier AS,
                               bool HasUsingKeyword,
@@ -2167,6 +2284,12 @@ public:
   /// defining this destructor as the default destructor.
   void DefineImplicitDestructor(SourceLocation CurrentLocation,
                                 CXXDestructorDecl *Destructor);
+
+  /// \brief Declare all inherited constructors for the given class.
+  ///
+  /// \param ClassDecl The class declaration into which the inherited
+  /// constructors will be added.
+  void DeclareInheritedConstructors(CXXRecordDecl *ClassDecl);
 
   /// \brief Declare the implicit copy constructor for the given class.
   ///
@@ -2269,7 +2392,12 @@ public:
 
 
   //// ActOnCXXThis -  Parse 'this' pointer.
-  ExprResult ActOnCXXThis(SourceLocation ThisLoc);
+  ExprResult ActOnCXXThis(SourceLocation loc);
+
+  /// tryCaptureCXXThis - Try to capture a 'this' pointer.  Returns a
+  /// pointer to an instance method whose 'this' pointer is
+  /// capturable, or null if this is not possible.
+  CXXMethodDecl *tryCaptureCXXThis();
 
   /// ActOnCXXBoolLiteral - Parse {true,false} literals.
   ExprResult ActOnCXXBoolLiteral(SourceLocation OpLoc, tok::TokenKind Kind);
@@ -2906,7 +3034,8 @@ public:
     TPC_ClassTemplate,
     TPC_FunctionTemplate,
     TPC_ClassTemplateMember,
-    TPC_FriendFunctionTemplate
+    TPC_FriendFunctionTemplate,
+    TPC_FriendFunctionTemplateDefinition
   };
 
   bool CheckTemplateParameterList(TemplateParameterList *NewParams,
@@ -4227,6 +4356,7 @@ public:
   };
 
   Decl *ActOnMethodDeclaration(
+    Scope *S,
     SourceLocation BeginLoc, // location of the + or -.
     SourceLocation EndLoc,   // location of the ; or {.
     tok::TokenKind MethodType,
@@ -4261,6 +4391,8 @@ public:
                             IdentifierInfo &propertyName,
                             SourceLocation receiverNameLoc,
                             SourceLocation propertyNameLoc);
+
+  ObjCMethodDecl *tryCaptureObjCSelf();
 
   /// \brief Describes the kind of message expression indicated by a message
   /// send that starts with an identifier.
@@ -4377,6 +4509,10 @@ public:
                             SourceLocation PragmaLoc,
                             SourceLocation WeakNameLoc,
                             SourceLocation AliasNameLoc);
+
+  /// ActOnPragmaFPContract - Called on well formed
+  /// #pragma {STDC,OPENCL} FP_CONTRACT
+  void ActOnPragmaFPContract(tok::OnOffSwitch OOS);
 
   /// AddAlignmentAttributesForRecord - Adds any needed alignment attributes to
   /// a the record decl, to handle '#pragma pack' and '#pragma options align'.
@@ -4511,6 +4647,11 @@ public:
     /// c/v/r qualifiers, which we accept as an extension.
     CompatiblePointerDiscardsQualifiers,
 
+    /// IncompatiblePointerDiscardsQualifiers - The assignment
+    /// discards qualifiers that we don't permit to be discarded,
+    /// like address spaces.
+    IncompatiblePointerDiscardsQualifiers,
+
     /// IncompatibleNestedPointerQualifiers - The assignment is between two
     /// nested pointer types, and the qualifiers other than the first two
     /// levels differ e.g. char ** -> const char **, but we accept them as an
@@ -4570,18 +4711,6 @@ public:
   AssignConvertType CheckTransparentUnionArgumentConstraints(QualType lhs,
                                                              Expr *&rExpr);
 
-  // Helper function for CheckAssignmentConstraints (C99 6.5.16.1p1)
-  AssignConvertType CheckPointerTypesForAssignment(QualType lhsType,
-                                                   QualType rhsType);
-
-  AssignConvertType CheckObjCPointerTypesForAssignment(QualType lhsType,
-                                                       QualType rhsType);
-
-  // Helper function for CheckAssignmentConstraints involving two
-  // block pointer types.
-  AssignConvertType CheckBlockPointerTypesForAssignment(QualType lhsType,
-                                                        QualType rhsType);
-
   bool IsStringLiteralToNonConstPointerConversion(Expr *From, QualType ToType);
 
   bool CheckExceptionSpecCompatibility(Expr *From, QualType ToType);
@@ -4638,16 +4767,19 @@ public:
   void ConvertPropertyForLValue(Expr *&LHS, Expr *&RHS, QualType& LHSTy);
                                    
   QualType CheckConditionalOperands( // C99 6.5.15
-    Expr *&cond, Expr *&lhs, Expr *&rhs, Expr *&save,
+    Expr *&cond, Expr *&lhs, Expr *&rhs,
     ExprValueKind &VK, ExprObjectKind &OK, SourceLocation questionLoc);
   QualType CXXCheckConditionalOperands( // C++ 5.16
-    Expr *&cond, Expr *&lhs, Expr *&rhs, Expr *&save,
+    Expr *&cond, Expr *&lhs, Expr *&rhs,
     ExprValueKind &VK, ExprObjectKind &OK, SourceLocation questionLoc);
   QualType FindCompositePointerType(SourceLocation Loc, Expr *&E1, Expr *&E2,
                                     bool *NonStandardCompositeType = 0);
 
   QualType FindCompositeObjCPointerType(Expr *&LHS, Expr *&RHS,
                                         SourceLocation questionLoc);
+
+  bool DiagnoseConditionalForNull(Expr *LHS, Expr *RHS,
+                                  SourceLocation QuestionLoc);
 
   /// type checking for vector binary operators.
   QualType CheckVectorOperands(SourceLocation l, Expr *&lex, Expr *&rex);
@@ -4740,6 +4872,10 @@ public:
   /// being used as a boolean condition, warn if it's an assignment.
   void DiagnoseAssignmentAsCondition(Expr *E);
 
+  /// \brief Redundant parentheses over an equality comparison can indicate
+  /// that the user intended an assignment used as condition.
+  void DiagnoseEqualityWithExtraParens(ParenExpr *parenE);
+
   /// CheckCXXBooleanCondition - Returns true if conversion to bool is invalid.
   bool CheckCXXBooleanCondition(Expr *&CondExpr);
 
@@ -4810,7 +4946,10 @@ public:
     PCC_Type,
     /// \brief Code completion occurs in a parenthesized expression, which
     /// might also be a type cast.
-    PCC_ParenthesizedExpression
+    PCC_ParenthesizedExpression,
+    /// \brief Code completion occurs within a sequence of declaration 
+    /// specifiers within a function, method, or block.
+    PCC_LocalDeclarationSpecifiers
   };
 
   void CodeCompleteOrdinaryName(Scope *S,
@@ -4853,7 +4992,8 @@ public:
   void CodeCompleteObjCPropertyFlags(Scope *S, ObjCDeclSpec &ODS);
   void CodeCompleteObjCPropertyGetter(Scope *S, Decl *ClassDecl);
   void CodeCompleteObjCPropertySetter(Scope *S, Decl *ClassDecl);
-  void CodeCompleteObjCPassingType(Scope *S, ObjCDeclSpec &DS);
+  void CodeCompleteObjCPassingType(Scope *S, ObjCDeclSpec &DS, 
+                                   bool IsParameter);
   void CodeCompleteObjCMessageReceiver(Scope *S);
   void CodeCompleteObjCSuperMessage(Scope *S, SourceLocation SuperLoc,
                                     IdentifierInfo **SelIdents,
@@ -4911,7 +5051,7 @@ public:
                                              MacroInfo *MacroInfo,
                                              unsigned Argument);
   void CodeCompleteNaturalLanguage();
-  void GatherGlobalCodeCompletions(
+  void GatherGlobalCodeCompletions(CodeCompletionAllocator &Allocator,
                   llvm::SmallVectorImpl<CodeCompletionResult> &Results);
   //@}
 
@@ -4924,7 +5064,8 @@ public:
   SourceLocation getLocationOfStringLiteralByte(const StringLiteral *SL,
                                                 unsigned ByteNo) const;
 
-private:
+private:  
+  void CheckArrayAccess(const ArraySubscriptExpr *E);
   bool CheckFunctionCall(FunctionDecl *FDecl, CallExpr *TheCall);
   bool CheckBlockCall(NamedDecl *NDecl, CallExpr *TheCall);
 

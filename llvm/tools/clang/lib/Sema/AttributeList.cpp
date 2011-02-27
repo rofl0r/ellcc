@@ -120,6 +120,7 @@ AttributeList::Kind AttributeList::getKind(const IdentifierInfo *Name) {
     .Case("init_priority", AT_init_priority)
     .Case("no_instrument_function", AT_no_instrument_function)
     .Case("thiscall", AT_thiscall)
+    .Case("bounded", IgnoredAttribute)       // OpenBSD
     .Case("pascal", AT_pascal)
     .Case("__cdecl", AT_cdecl)
     .Case("__stdcall", AT_stdcall)
@@ -134,6 +135,7 @@ AttributeList::Kind AttributeList::getKind(const IdentifierInfo *Name) {
     .Case("launch_bounds", AT_launch_bounds)
     .Case("common", AT_common)
     .Case("nocommon", AT_nocommon)
+    .Case("opencl_kernel_function", AT_opencl_kernel_function)
     .Case("uuid", AT_uuid)
     .Default(UnknownAttribute);
 }

@@ -13,9 +13,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "clang/StaticAnalyzer/Checkers/LocalCheckers.h"
-#include "clang/StaticAnalyzer/BugReporter/PathDiagnostic.h"
-#include "clang/StaticAnalyzer/BugReporter/BugReporter.h"
+#include "ClangSACheckers.h"
+#include "clang/StaticAnalyzer/Core/CheckerV2.h"
+#include "clang/StaticAnalyzer/Core/BugReporter/PathDiagnostic.h"
+#include "clang/StaticAnalyzer/Core/BugReporter/BugReporter.h"
 #include "clang/AST/DeclObjC.h"
 #include "clang/AST/Type.h"
 #include "clang/AST/ASTContext.h"
@@ -70,8 +71,8 @@ static void CompareReturnTypes(const ObjCMethodDecl *MethDerived,
   }
 }
 
-void ento::CheckObjCInstMethSignature(const ObjCImplementationDecl* ID,
-                                    BugReporter& BR) {
+static void CheckObjCInstMethSignature(const ObjCImplementationDecl* ID,
+                                       BugReporter& BR) {
 
   const ObjCInterfaceDecl* D = ID->getClassInterface();
   const ObjCInterfaceDecl* C = D->getSuperClass();
@@ -117,4 +118,23 @@ void ento::CheckObjCInstMethSignature(const ObjCImplementationDecl* ID,
 
     C = C->getSuperClass();
   }
+}
+
+//===----------------------------------------------------------------------===//
+// ObjCMethSigsChecker
+//===----------------------------------------------------------------------===//
+
+namespace {
+class ObjCMethSigsChecker : public CheckerV2<
+                                      check::ASTDecl<ObjCImplementationDecl> > {
+public:
+  void checkASTDecl(const ObjCImplementationDecl *D, AnalysisManager& mgr,
+                    BugReporter &BR) const {
+    CheckObjCInstMethSignature(D, BR);
+  }
+};
+}
+
+void ento::registerObjCMethSigsChecker(CheckerManager &mgr) {
+  mgr.registerChecker<ObjCMethSigsChecker>();
 }

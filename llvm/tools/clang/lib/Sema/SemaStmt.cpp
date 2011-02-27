@@ -48,9 +48,8 @@ StmtResult Sema::ActOnNullStmt(SourceLocation SemiLoc, bool LeadingEmptyMacro) {
   return Owned(new (Context) NullStmt(SemiLoc, LeadingEmptyMacro));
 }
 
-StmtResult Sema::ActOnDeclStmt(DeclGroupPtrTy dg,
-                                           SourceLocation StartLoc,
-                                           SourceLocation EndLoc) {
+StmtResult Sema::ActOnDeclStmt(DeclGroupPtrTy dg, SourceLocation StartLoc,
+                               SourceLocation EndLoc) {
   DeclGroupRef DG = dg.getAsVal<DeclGroupRef>();
 
   // If we have an invalid decl, just return an error.
@@ -232,52 +231,23 @@ Sema::ActOnDefaultStmt(SourceLocation DefaultLoc, SourceLocation ColonLoc,
 }
 
 StmtResult
-Sema::ActOnLabelStmt(SourceLocation IdentLoc, IdentifierInfo *II,
-                     SourceLocation ColonLoc, Stmt *SubStmt,
-                     const AttributeList *Attr) {
-  // According to GCC docs, "the only attribute that makes sense after a label
-  // is 'unused'".
-  bool HasUnusedAttr = false;
-  for ( ; Attr; Attr = Attr->getNext()) {
-    if (Attr->getKind() == AttributeList::AT_unused) {
-      HasUnusedAttr = true;
-    } else {
-      Diag(Attr->getLoc(), diag::warn_label_attribute_not_unused);
-      Attr->setInvalid(true);
-    }
-  }
-
-  return ActOnLabelStmt(IdentLoc, II, ColonLoc, SubStmt, HasUnusedAttr);
-}
-
-StmtResult
-Sema::ActOnLabelStmt(SourceLocation IdentLoc, IdentifierInfo *II,
-                     SourceLocation ColonLoc, Stmt *SubStmt,
-                     bool HasUnusedAttr) {
-  // Look up the record for this label identifier.
-  LabelStmt *&LabelDecl = getCurFunction()->LabelMap[II];
-
-  // If not forward referenced or defined already, just create a new LabelStmt.
-  if (LabelDecl == 0)
-    return Owned(LabelDecl = new (Context) LabelStmt(IdentLoc, II, SubStmt,
-                                                     HasUnusedAttr));
-
-  assert(LabelDecl->getID() == II && "Label mismatch!");
-
-  // Otherwise, this label was either forward reference or multiply defined.  If
-  // multiply defined, reject it now.
-  if (LabelDecl->getSubStmt()) {
-    Diag(IdentLoc, diag::err_redefinition_of_label) << LabelDecl->getID();
-    Diag(LabelDecl->getIdentLoc(), diag::note_previous_definition);
+Sema::ActOnLabelStmt(SourceLocation IdentLoc, LabelDecl *TheDecl,
+                     SourceLocation ColonLoc, Stmt *SubStmt) {
+  
+  // If the label was multiply defined, reject it now.
+  if (TheDecl->getStmt()) {
+    Diag(IdentLoc, diag::err_redefinition_of_label) << TheDecl->getDeclName();
+    Diag(TheDecl->getLocation(), diag::note_previous_definition);
     return Owned(SubStmt);
   }
 
-  // Otherwise, this label was forward declared, and we just found its real
-  // definition.  Fill in the forward definition and return it.
-  LabelDecl->setIdentLoc(IdentLoc);
-  LabelDecl->setSubStmt(SubStmt);
-  LabelDecl->setUnusedAttribute(HasUnusedAttr);
-  return Owned(LabelDecl);
+  // Otherwise, things are good.  Fill in the declaration and return it.
+  TheDecl->setLocation(IdentLoc);
+  
+  LabelStmt *LS = new (Context) LabelStmt(IdentLoc, TheDecl, SubStmt);
+  TheDecl->setStmt(LS);
+  TheDecl->setLocation(IdentLoc);
+  return Owned(LS);
 }
 
 StmtResult
@@ -1033,20 +1003,12 @@ Sema::ActOnObjCForCollectionStmt(SourceLocation ForLoc,
                                                    ForLoc, RParenLoc));
 }
 
-StmtResult
-Sema::ActOnGotoStmt(SourceLocation GotoLoc, SourceLocation LabelLoc,
-                    IdentifierInfo *LabelII) {
-  // Look up the record for this label identifier.
-  LabelStmt *&LabelDecl = getCurFunction()->LabelMap[LabelII];
-
+StmtResult Sema::ActOnGotoStmt(SourceLocation GotoLoc,
+                               SourceLocation LabelLoc,
+                               LabelDecl *TheDecl) {
   getCurFunction()->setHasBranchIntoScope();
-
-  // If we haven't seen this label yet, create a forward reference.
-  if (LabelDecl == 0)
-    LabelDecl = new (Context) LabelStmt(LabelLoc, LabelII, 0);
-
-  LabelDecl->setUsed();
-  return Owned(new (Context) GotoStmt(LabelDecl, GotoLoc, LabelLoc));
+  TheDecl->setUsed();
+  return Owned(new (Context) GotoStmt(TheDecl, GotoLoc, LabelLoc));
 }
 
 StmtResult
@@ -1779,6 +1741,9 @@ public:
 StmtResult
 Sema::ActOnCXXTryBlock(SourceLocation TryLoc, Stmt *TryBlock,
                        MultiStmtArg RawHandlers) {
+  if (!getLangOptions().Exceptions)
+    return Diag(TryLoc, diag::err_exceptions_disabled) << "try";
+
   unsigned NumHandlers = RawHandlers.size();
   assert(NumHandlers > 0 &&
          "The parser shouldn't call this if there are no handlers.");

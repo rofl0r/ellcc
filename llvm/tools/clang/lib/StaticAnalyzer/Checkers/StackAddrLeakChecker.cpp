@@ -12,10 +12,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "ExprEngineInternalChecks.h"
-#include "clang/StaticAnalyzer/BugReporter/BugType.h"
-#include "clang/StaticAnalyzer/PathSensitive/CheckerVisitor.h"
-#include "clang/StaticAnalyzer/PathSensitive/GRState.h"
+#include "ClangSACheckers.h"
+#include "clang/StaticAnalyzer/Core/CheckerManager.h"
+#include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/CheckerVisitor.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/GRState.h"
 #include "clang/Basic/SourceManager.h"
 #include "llvm/ADT/SmallString.h"
 using namespace clang;
@@ -41,8 +42,12 @@ private:
 };
 }
 
-void ento::RegisterStackAddrLeakChecker(ExprEngine &Eng) {
+static void RegisterStackAddrLeakChecker(ExprEngine &Eng) {
   Eng.registerCheck(new StackAddrLeakChecker());
+}
+
+void ento::registerStackAddrLeakChecker(CheckerManager &mgr) {
+  mgr.addCheckerRegisterFunction(RegisterStackAddrLeakChecker);
 }
 
 SourceRange StackAddrLeakChecker::GenName(llvm::raw_ostream &os,

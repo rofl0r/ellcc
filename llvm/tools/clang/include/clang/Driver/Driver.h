@@ -74,7 +74,8 @@ public:
   /// functionality.
   /// FIXME: This type of customization should be removed in favor of the
   /// universal driver when it is ready.
-  std::string PrefixDir;
+  typedef llvm::SmallVector<std::string, 4> prefix_list;
+  prefix_list PrefixDirs;
 
   /// Default host triple.
   std::string DefaultHostTriple;
@@ -95,6 +96,9 @@ public:
   /// The file to log CC_PRINT_OPTIONS output to, if enabled.
   const char *CCPrintOptionsFilename;
 
+  /// The file to log CC_PRINT_HEADERS output to, if enabled.
+  const char *CCPrintHeadersFilename;
+
   /// Whether the driver should follow g++ like behavior.
   unsigned CCCIsCXX : 1;
 
@@ -107,6 +111,10 @@ public:
   /// Set CC_PRINT_OPTIONS mode, which is like -v but logs the commands to
   /// CCPrintOptionsFilename or to stderr.
   unsigned CCPrintOptions : 1;
+
+  /// Set CC_PRINT_HEADERS mode, which causes the frontend to log header include
+  /// information to CCPrintHeadersFilename or to stderr.
+  unsigned CCPrintHeaders : 1;
 
 private:
   /// Name to use when calling the generic gcc.

@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -analyze -analyzer-check-objc-mem -analyzer-check-objc-self-init %s -verify
+// RUN: %clang_cc1 -analyze -analyzer-check-objc-mem -analyzer-checker=cocoa.SelfInit %s -verify
 
 @class NSZone, NSCoder;
 @protocol NSObject
@@ -41,6 +41,11 @@ extern NSString * const NSConnectionReplyMode;
 
 void log(void *obj);
 extern void *somePtr;
+
+@class MyObj;
+static id _commonInit(MyObj *self) {
+  return self;
+}
 
 @interface MyObj : NSObject {
 	id myivar;
@@ -97,7 +102,7 @@ extern void *somePtr;
 }
 
 -(id)init6 {
-  [NSBundle loadNibNamed:@"Window" owner:myivar]; // expected-warning {{Instance variable used}}
+  [NSBundle loadNibNamed:@"Window" owner:myivar]; // no-warning
   return [self initWithSomething:0];
 }
 
@@ -116,17 +121,17 @@ extern void *somePtr;
 }
 
 -(id)init9 {
-	[self doSomething];
-    return self; // expected-warning {{Returning 'self'}}
+  [self doSomething];
+  return self; // no-warning
 }
 
 -(id)init10 {
-	myivar = 0; // expected-warning {{Instance variable used}}
-    return self;
+  myivar = 0; // no-warning
+  return self;
 }
 
 -(id)init11 {
-	return self; // expected-warning {{Returning 'self'}}
+  return self; // no-warning
 }
 
 -(id)init12 {
@@ -135,10 +140,18 @@ extern void *somePtr;
 }
 
 -(id)init13 {
-	if ((self == [super init])) {
+	if (self == [super init]) {
 	  myivar = 0; // expected-warning {{Instance variable used}}
 	}
 	return self; // expected-warning {{Returning 'self'}}
+}
+
+-(id)init14 {
+  if (!(self = [super init]))
+    return 0;
+  if (!(self = _commonInit(self)))
+    return 0;
+  return self;
 }
 
 -(void)doSomething {}

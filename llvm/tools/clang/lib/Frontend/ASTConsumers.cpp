@@ -359,8 +359,13 @@ void DeclContextPrinter::PrintDeclContext(const DeclContext* DC,
       Out << "<IndirectField> " << IFD << '\n';
       break;
     }
+    case Decl::Label: {
+      LabelDecl *LD = cast<LabelDecl>(*I);
+      Out << "<Label> " << LD << '\n';
+      break;
+    }
     case Decl::Field: {
-      FieldDecl* FD = cast<FieldDecl>(*I);
+      FieldDecl *FD = cast<FieldDecl>(*I);
       Out << "<field> " << FD << '\n';
       break;
     }
@@ -425,34 +430,6 @@ void DeclContextPrinter::PrintDeclContext(const DeclContext* DC,
 }
 ASTConsumer *clang::CreateDeclContextPrinter() {
   return new DeclContextPrinter();
-}
-
-//===----------------------------------------------------------------------===//
-/// InheritanceViewer - C++ Inheritance Visualization
-
-namespace {
-class InheritanceViewer : public ASTConsumer {
-  const std::string clsname;
-public:
-  InheritanceViewer(const std::string& cname) : clsname(cname) {}
-
-  void HandleTranslationUnit(ASTContext &C) {
-    for (ASTContext::type_iterator I=C.types_begin(),E=C.types_end(); I!=E; ++I)
-      if (RecordType *T = dyn_cast<RecordType>(*I)) {
-        if (CXXRecordDecl *D = dyn_cast<CXXRecordDecl>(T->getDecl())) {
-          // FIXME: This lookup needs to be generalized to handle namespaces and
-          // (when we support them) templates.
-          if (D->getNameAsString() == clsname) {
-            D->viewInheritance(C);
-          }
-        }
-      }
-  }
-};
-}
-
-ASTConsumer *clang::CreateInheritanceViewer(const std::string& clsname) {
-  return new InheritanceViewer(clsname);
 }
 
 //===----------------------------------------------------------------------===//

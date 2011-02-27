@@ -2387,29 +2387,13 @@ void SelectionDAGBuilder::visitIndirectBr(const IndirectBrInst &I) {
 void SelectionDAGBuilder::visitFSub(const User &I) {
   // -0.0 - X --> fneg
   const Type *Ty = I.getType();
-  if (Ty->isVectorTy()) {
-    if (ConstantVector *CV = dyn_cast<ConstantVector>(I.getOperand(0))) {
-      const VectorType *DestTy = cast<VectorType>(I.getType());
-      const Type *ElTy = DestTy->getElementType();
-      unsigned VL = DestTy->getNumElements();
-      std::vector<Constant*> NZ(VL, ConstantFP::getNegativeZero(ElTy));
-      Constant *CNZ = ConstantVector::get(&NZ[0], NZ.size());
-      if (CV == CNZ) {
-        SDValue Op2 = getValue(I.getOperand(1));
-        setValue(&I, DAG.getNode(ISD::FNEG, getCurDebugLoc(),
-                                 Op2.getValueType(), Op2));
-        return;
-      }
-    }
+  if (isa<Constant>(I.getOperand(0)) &&
+      I.getOperand(0) == ConstantFP::getZeroValueForNegation(Ty)) {
+    SDValue Op2 = getValue(I.getOperand(1));
+    setValue(&I, DAG.getNode(ISD::FNEG, getCurDebugLoc(),
+                             Op2.getValueType(), Op2));
+    return;
   }
-
-  if (ConstantFP *CFP = dyn_cast<ConstantFP>(I.getOperand(0)))
-    if (CFP->isExactlyValue(ConstantFP::getNegativeZero(Ty)->getValueAPF())) {
-      SDValue Op2 = getValue(I.getOperand(1));
-      setValue(&I, DAG.getNode(ISD::FNEG, getCurDebugLoc(),
-                               Op2.getValueType(), Op2));
-      return;
-    }
 
   visitBinary(I, ISD::FSUB);
 }
@@ -2424,31 +2408,29 @@ void SelectionDAGBuilder::visitBinary(const User &I, unsigned OpCode) {
 void SelectionDAGBuilder::visitShift(const User &I, unsigned Opcode) {
   SDValue Op1 = getValue(I.getOperand(0));
   SDValue Op2 = getValue(I.getOperand(1));
-  if (!I.getType()->isVectorTy() &&
-      Op2.getValueType() != TLI.getShiftAmountTy()) {
+  
+  MVT ShiftTy = TLI.getShiftAmountTy();
+  
+  // Coerce the shift amount to the right type if we can.
+  if (!I.getType()->isVectorTy() && Op2.getValueType() != ShiftTy) {
+    unsigned ShiftSize = ShiftTy.getSizeInBits();
+    unsigned Op2Size = Op2.getValueType().getSizeInBits();
+    DebugLoc DL = getCurDebugLoc();
+    
     // If the operand is smaller than the shift count type, promote it.
-    EVT PTy = TLI.getPointerTy();
-    EVT STy = TLI.getShiftAmountTy();
-    if (STy.bitsGT(Op2.getValueType()))
-      Op2 = DAG.getNode(ISD::ANY_EXTEND, getCurDebugLoc(),
-                        TLI.getShiftAmountTy(), Op2);
+    if (ShiftSize > Op2Size)
+      Op2 = DAG.getNode(ISD::ZERO_EXTEND, DL, ShiftTy, Op2);
+    
     // If the operand is larger than the shift count type but the shift
     // count type has enough bits to represent any shift value, truncate
     // it now. This is a common case and it exposes the truncate to
     // optimization early.
-    else if (STy.getSizeInBits() >=
-             Log2_32_Ceil(Op2.getValueType().getSizeInBits()))
-      Op2 = DAG.getNode(ISD::TRUNCATE, getCurDebugLoc(),
-                        TLI.getShiftAmountTy(), Op2);
-    // Otherwise we'll need to temporarily settle for some other
-    // convenient type; type legalization will make adjustments as
-    // needed.
-    else if (PTy.bitsLT(Op2.getValueType()))
-      Op2 = DAG.getNode(ISD::TRUNCATE, getCurDebugLoc(),
-                        TLI.getPointerTy(), Op2);
-    else if (PTy.bitsGT(Op2.getValueType()))
-      Op2 = DAG.getNode(ISD::ANY_EXTEND, getCurDebugLoc(),
-                        TLI.getPointerTy(), Op2);
+    else if (ShiftSize >= Log2_32_Ceil(Op2.getValueType().getSizeInBits()))
+      Op2 = DAG.getNode(ISD::TRUNCATE, DL, ShiftTy, Op2);
+    // Otherwise we'll need to temporarily settle for some other convenient
+    // type.  Type legalization will make adjustments once the shiftee is split.
+    else
+      Op2 = DAG.getZExtOrTrunc(Op2, DL, MVT::i32);
   }
 
   setValue(&I, DAG.getNode(Opcode, getCurDebugLoc(),
@@ -4305,7 +4287,7 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
                                 N.getResNo(), Offset, dl, SDNodeOrder);
           DAG.AddDbgValue(SDV, N.getNode(), false);
         }
-      } else if (isa<PHINode>(V) && !V->use_empty() ) {
+      } else if (!V->use_empty() ) {
         // Do not call getValue(V) yet, as we don't want to generate code.
         // Remember it for later.
         DanglingDebugInfo DDI(&DI, dl, SDNodeOrder);

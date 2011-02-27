@@ -101,6 +101,14 @@ TemplateDeclInstantiator::VisitTranslationUnitDecl(TranslationUnitDecl *D) {
 }
 
 Decl *
+TemplateDeclInstantiator::VisitLabelDecl(LabelDecl *D) {
+  LabelDecl *Inst = LabelDecl::Create(SemaRef.Context, Owner, D->getLocation(),
+                                      D->getIdentifier());
+  Owner->addDecl(Inst);
+  return Inst;
+}
+
+Decl *
 TemplateDeclInstantiator::VisitNamespaceDecl(NamespaceDecl *D) {
   assert(false && "Namespaces cannot be instantiated");
   return D;
@@ -143,13 +151,15 @@ Decl *TemplateDeclInstantiator::VisitTypedefDecl(TypedefDecl *D) {
   if (Invalid)
     Typedef->setInvalidDecl();
 
-  if (const TagType *TT = DI->getType()->getAs<TagType>()) {
-    TagDecl *TD = TT->getDecl();
-    
-    // If the TagDecl that the TypedefDecl points to is an anonymous decl
-    // keep track of the TypedefDecl.
-    if (!TD->getIdentifier() && !TD->getTypedefForAnonDecl())
-      TD->setTypedefForAnonDecl(Typedef);
+  // If the old typedef was the name for linkage purposes of an anonymous
+  // tag decl, re-establish that relationship for the new typedef.
+  if (const TagType *oldTagType = D->getUnderlyingType()->getAs<TagType>()) {
+    TagDecl *oldTag = oldTagType->getDecl();
+    if (oldTag->getTypedefForAnonDecl() == D) {
+      TagDecl *newTag = DI->getType()->castAs<TagType>()->getDecl();
+      assert(!newTag->getIdentifier() && !newTag->getTypedefForAnonDecl());
+      newTag->setTypedefForAnonDecl(Typedef);
+    }
   }
   
   if (TypedefDecl *Prev = D->getPreviousDeclaration()) {
@@ -2308,8 +2318,7 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
 
   // Enter the scope of this instantiation. We don't use
   // PushDeclContext because we don't have a scope.
-  DeclContext *PreviousContext = CurContext;
-  CurContext = Function;
+  Sema::ContextRAII savedContext(*this, Function);
 
   MultiLevelTemplateArgumentList TemplateArgs =
     getTemplateInstantiationArgs(Function, 0, false, PatternDecl);
@@ -2332,7 +2341,7 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
 
   PerformDependentDiagnostics(PatternDecl, TemplateArgs);
 
-  CurContext = PreviousContext;
+  savedContext.pop();
 
   DeclGroupRef DG(Function);
   Consumer.HandleTopLevelDecl(DG);
@@ -2433,13 +2442,13 @@ void Sema::InstantiateStaticDataMemberDefinition(
 
   // Enter the scope of this instantiation. We don't use
   // PushDeclContext because we don't have a scope.
-  DeclContext *PreviousContext = CurContext;
-  CurContext = Var->getDeclContext();
+  ContextRAII previousContext(*this, Var->getDeclContext());
 
   VarDecl *OldVar = Var;
   Var = cast_or_null<VarDecl>(SubstDecl(Def, Var->getDeclContext(),
                                         getTemplateInstantiationArgs(Var)));
-  CurContext = PreviousContext;
+
+  previousContext.pop();
 
   if (Var) {
     MemberSpecializationInfo *MSInfo = OldVar->getMemberSpecializationInfo();
@@ -2859,7 +2868,27 @@ NamedDecl *Sema::FindInstantiatedDecl(SourceLocation Loc, NamedDecl *D,
       (ParentDC->isFunctionOrMethod() && ParentDC->isDependentContext())) {
     // D is a local of some kind. Look into the map of local
     // declarations to their instantiations.
-    return cast<NamedDecl>(CurrentInstantiationScope->getInstantiationOf(D));
+    typedef LocalInstantiationScope::DeclArgumentPack DeclArgumentPack;
+    llvm::PointerUnion<Decl *, DeclArgumentPack *> *Found
+      = CurrentInstantiationScope->findInstantiationOf(D);
+    
+    if (Found) {
+      if (Decl *FD = Found->dyn_cast<Decl *>())
+        return cast<NamedDecl>(FD);
+      
+      unsigned PackIdx = ArgumentPackSubstitutionIndex;
+      return cast<NamedDecl>((*Found->get<DeclArgumentPack *>())[PackIdx]);
+    }
+
+    // If we didn't find the decl, then we must have a label decl that hasn't
+    // been found yet.  Lazily instantiate it and return it now.
+    assert(isa<LabelDecl>(D));
+    
+    Decl *Inst = SubstDecl(D, CurContext, TemplateArgs);
+    assert(Inst && "Failed to instantiate label??");
+    
+    CurrentInstantiationScope->InstantiatedLocal(D, Inst);
+    return cast<LabelDecl>(Inst);
   }
 
   if (CXXRecordDecl *Record = dyn_cast<CXXRecordDecl>(D)) {

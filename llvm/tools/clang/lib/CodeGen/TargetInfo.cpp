@@ -355,6 +355,14 @@ bool UseX86_MMXType(const llvm::Type *IRType) {
     IRType->getScalarSizeInBits() != 64;
 }
 
+static const llvm::Type* X86AdjustInlineAsmType(CodeGen::CodeGenFunction &CGF,
+                                                llvm::StringRef Constraint,
+                                                const llvm::Type* Ty) {
+  if (Constraint=="y" && UseX86_MMXType(Ty))
+    return llvm::Type::getX86_MMXTy(CGF.getLLVMContext());
+  return Ty;
+}
+
 //===----------------------------------------------------------------------===//
 // X86-32 ABI Implementation
 //===----------------------------------------------------------------------===//
@@ -415,6 +423,13 @@ public:
 
   bool initDwarfEHRegSizeTable(CodeGen::CodeGenFunction &CGF,
                                llvm::Value *Address) const;
+
+  const llvm::Type* adjustInlineAsmType(CodeGen::CodeGenFunction &CGF,
+                                        llvm::StringRef Constraint,
+                                        const llvm::Type* Ty) const {
+    return X86AdjustInlineAsmType(CGF, Constraint, Ty);
+  }
+
 };
 
 }
@@ -895,6 +910,13 @@ public:
 
     return false;
   }
+
+  const llvm::Type* adjustInlineAsmType(CodeGen::CodeGenFunction &CGF,
+                                        llvm::StringRef Constraint,
+                                        const llvm::Type* Ty) const {
+    return X86AdjustInlineAsmType(CGF, Constraint, Ty);
+  }
+
 };
 
 class WinX86_64TargetCodeGenInfo : public TargetCodeGenInfo {
@@ -2797,7 +2819,7 @@ void MBlazeTargetCodeGenInfo::SetTargetAttributes(const Decl *D,
                                                   const {
   const FunctionDecl *FD = dyn_cast<FunctionDecl>(D);
   if (!FD) return;
-  
+
   llvm::CallingConv::ID CC = llvm::CallingConv::C;
   if (FD->hasAttr<MBlazeInterruptHandlerAttr>())
     CC = llvm::CallingConv::MBLAZE_INTR;
@@ -3046,6 +3068,7 @@ const TargetCodeGenInfo &CodeGenModule::getTargetCodeGenInfo() {
     case llvm::Triple::DragonFly:
     case llvm::Triple::FreeBSD:
     case llvm::Triple::OpenBSD:
+    case llvm::Triple::NetBSD:
       return *(TheTargetCodeGenInfo =
                new X86_32TargetCodeGenInfo(Types, false, true));
 
@@ -3057,7 +3080,7 @@ const TargetCodeGenInfo &CodeGenModule::getTargetCodeGenInfo() {
   case llvm::Triple::x86_64:
     switch (Triple.getOS()) {
     case llvm::Triple::Win32:
-    case llvm::Triple::MinGW64:
+    case llvm::Triple::MinGW32:
     case llvm::Triple::Cygwin:
       return *(TheTargetCodeGenInfo = new WinX86_64TargetCodeGenInfo(Types));
     default:

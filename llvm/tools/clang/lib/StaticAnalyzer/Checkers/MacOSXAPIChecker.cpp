@@ -15,11 +15,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "ExprEngineInternalChecks.h"
+#include "ClangSACheckers.h"
 #include "clang/Basic/TargetInfo.h"
-#include "clang/StaticAnalyzer/BugReporter/BugType.h"
-#include "clang/StaticAnalyzer/PathSensitive/CheckerVisitor.h"
-#include "clang/StaticAnalyzer/PathSensitive/GRStateTrait.h"
+#include "clang/StaticAnalyzer/Core/CheckerManager.h"
+#include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/CheckerVisitor.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/GRStateTrait.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/Support/raw_ostream.h"
@@ -45,9 +46,12 @@ public:
 };
 } //end anonymous namespace
 
-void ento::RegisterMacOSXAPIChecker(ExprEngine &Eng) {
-  if (Eng.getContext().Target.getTriple().getVendor() == llvm::Triple::Apple)
-    Eng.registerCheck(new MacOSXAPIChecker());
+static void RegisterMacOSXAPIChecker(ExprEngine &Eng) {
+  Eng.registerCheck(new MacOSXAPIChecker());
+}
+
+void ento::registerMacOSXAPIChecker(CheckerManager &mgr) {
+  mgr.addCheckerRegisterFunction(RegisterMacOSXAPIChecker);
 }
 
 //===----------------------------------------------------------------------===//

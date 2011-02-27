@@ -90,7 +90,7 @@ private:
 ///
 class LocalScope {
 public:
-  typedef llvm::SmallVector<VarDecl*, 4> AutomaticVarsTy;
+  typedef BumpVector<VarDecl*> AutomaticVarsTy;
 
   /// const_iterator - Iterates local scope backwards and jumps to previous
   /// scope on reaching the beginning of currently iterated scope.
@@ -160,6 +160,8 @@ public:
   friend class const_iterator;
 
 private:
+  BumpVectorContext ctx;
+  
   /// Automatic variables in order of declaration.
   AutomaticVarsTy Vars;
   /// Iterator to variable in previous scope that was declared just before
@@ -168,15 +170,14 @@ private:
 
 public:
   /// Constructs empty scope linked to previous scope in specified place.
-  LocalScope(const_iterator P)
-      : Vars()
-      , Prev(P) {}
+  LocalScope(BumpVectorContext &ctx, const_iterator P)
+      : ctx(ctx), Vars(ctx, 4), Prev(P) {}
 
   /// Begin of scope in direction of CFG building (backwards).
   const_iterator begin() const { return const_iterator(*this, Vars.size()); }
 
   void addVar(VarDecl* VD) {
-    Vars.push_back(VD);
+    Vars.push_back(VD, ctx);
   }
 };
 
@@ -241,7 +242,7 @@ class CFGBuilder {
   LocalScope::const_iterator ScopePos;
 
   // LabelMap records the mapping from Label expressions to their jump targets.
-  typedef llvm::DenseMap<LabelStmt*, JumpTarget> LabelMapTy;
+  typedef llvm::DenseMap<LabelDecl*, JumpTarget> LabelMapTy;
   LabelMapTy LabelMap;
 
   // A list of blocks that end with a "goto" that must be backpatched to their
@@ -250,7 +251,7 @@ class CFGBuilder {
   BackpatchBlocksTy BackpatchBlocks;
 
   // A list of labels whose address has been taken (for indirect gotos).
-  typedef llvm::SmallPtrSet<LabelStmt*,5> LabelSetTy;
+  typedef llvm::SmallPtrSet<LabelDecl*, 5> LabelSetTy;
   LabelSetTy AddressTakenLabels;
 
   bool badCFG;
@@ -289,7 +290,8 @@ private:
   CFGBlock *VisitCaseStmt(CaseStmt *C);
   CFGBlock *VisitChooseExpr(ChooseExpr *C, AddStmtChoice asc);
   CFGBlock *VisitCompoundStmt(CompoundStmt *C);
-  CFGBlock *VisitConditionalOperator(ConditionalOperator *C, AddStmtChoice asc);
+  CFGBlock *VisitConditionalOperator(AbstractConditionalOperator *C,
+                                     AddStmtChoice asc);
   CFGBlock *VisitContinueStmt(ContinueStmt *C);
   CFGBlock *VisitDeclStmt(DeclStmt *DS);
   CFGBlock *VisitDeclSubExpr(DeclStmt* DS);
@@ -325,8 +327,9 @@ private:
   CFGBlock *VisitBinaryOperatorForTemporaryDtors(BinaryOperator *E);
   CFGBlock *VisitCXXBindTemporaryExprForTemporaryDtors(CXXBindTemporaryExpr *E,
       bool BindToTemporary);
-  CFGBlock *VisitConditionalOperatorForTemporaryDtors(ConditionalOperator *E,
-      bool BindToTemporary);
+  CFGBlock *
+  VisitConditionalOperatorForTemporaryDtors(AbstractConditionalOperator *E,
+                                            bool BindToTemporary);
 
   // NYS == Not Yet Supported
   CFGBlock* NYS() {
@@ -630,8 +633,10 @@ void CFGBuilder::addImplicitDtorsForDestructor(const CXXDestructorDecl *DD) {
 /// way return valid LocalScope object.
 LocalScope* CFGBuilder::createOrReuseLocalScope(LocalScope* Scope) {
   if (!Scope) {
-    Scope = cfg->getAllocator().Allocate<LocalScope>();
-    new (Scope) LocalScope(ScopePos);
+    llvm::BumpPtrAllocator &alloc = cfg->getAllocator();
+    Scope = alloc.Allocate<LocalScope>();
+    BumpVectorContext ctx(alloc);
+    new (Scope) LocalScope(ctx, ScopePos);
   }
   return Scope;
 }
@@ -645,13 +650,13 @@ void CFGBuilder::addLocalScopeForStmt(Stmt* S) {
   LocalScope *Scope = 0;
 
   // For compound statement we will be creating explicit scope.
-  if (CompoundStmt* CS = dyn_cast<CompoundStmt>(S)) {
+  if (CompoundStmt *CS = dyn_cast<CompoundStmt>(S)) {
     for (CompoundStmt::body_iterator BI = CS->body_begin(), BE = CS->body_end()
         ; BI != BE; ++BI) {
-      Stmt* SI = *BI;
-      if (LabelStmt* LS = dyn_cast<LabelStmt>(SI))
+      Stmt *SI = *BI;
+      if (LabelStmt *LS = dyn_cast<LabelStmt>(SI))
         SI = LS->getSubStmt();
-      if (DeclStmt* DS = dyn_cast<DeclStmt>(SI))
+      if (DeclStmt *DS = dyn_cast<DeclStmt>(SI))
         Scope = addLocalScopeForDeclStmt(DS, Scope);
     }
     return;
@@ -659,9 +664,9 @@ void CFGBuilder::addLocalScopeForStmt(Stmt* S) {
 
   // For any other statement scope will be implicit and as such will be
   // interesting only for DeclStmt.
-  if (LabelStmt* LS = dyn_cast<LabelStmt>(S))
+  if (LabelStmt *LS = dyn_cast<LabelStmt>(S))
     S = LS->getSubStmt();
-  if (DeclStmt* DS = dyn_cast<DeclStmt>(S))
+  if (DeclStmt *DS = dyn_cast<DeclStmt>(S))
     addLocalScopeForDeclStmt(DS);
 }
 
@@ -781,6 +786,9 @@ tryAgain:
 
     case Stmt::AddrLabelExprClass:
       return VisitAddrLabelExpr(cast<AddrLabelExpr>(S), asc);
+
+    case Stmt::BinaryConditionalOperatorClass:
+      return VisitConditionalOperator(cast<BinaryConditionalOperator>(S), asc);
 
     case Stmt::BinaryOperatorClass:
       return VisitBinaryOperator(cast<BinaryOperator>(S), asc);
@@ -921,8 +929,7 @@ CFGBlock *CFGBuilder::VisitStmt(Stmt *S, AddStmtChoice asc) {
 /// VisitChildren - Visit the children of a Stmt.
 CFGBlock *CFGBuilder::VisitChildren(Stmt* Terminator) {
   CFGBlock *B = Block;
-  for (Stmt::child_iterator I = Terminator->child_begin(),
-         E = Terminator->child_end(); I != E; ++I) {
+  for (Stmt::child_range I = Terminator->children(); I; ++I) {
     if (*I) B = Visit(*I);
   }
   return B;
@@ -1172,8 +1179,11 @@ CFGBlock* CFGBuilder::VisitCompoundStmt(CompoundStmt* C) {
   return LastBlock;
 }
 
-CFGBlock *CFGBuilder::VisitConditionalOperator(ConditionalOperator *C,
+CFGBlock *CFGBuilder::VisitConditionalOperator(AbstractConditionalOperator *C,
                                                AddStmtChoice asc) {
+  const BinaryConditionalOperator *BCO = dyn_cast<BinaryConditionalOperator>(C);
+  const OpaqueValueExpr *opaqueValue = (BCO ? BCO->getOpaqueValue() : NULL);
+
   // Create the confluence block that will "merge" the results of the ternary
   // expression.
   CFGBlock* ConfluenceBlock = Block ? Block : createBlock();
@@ -1189,9 +1199,10 @@ CFGBlock *CFGBuilder::VisitConditionalOperator(ConditionalOperator *C,
   //  e.g: x ?: y is shorthand for: x ? x : y;
   Succ = ConfluenceBlock;
   Block = NULL;
-  CFGBlock* LHSBlock = NULL;
-  if (C->getLHS()) {
-    LHSBlock = Visit(C->getLHS(), alwaysAdd);
+  CFGBlock* LHSBlock = 0;
+  const Expr *trueExpr = C->getTrueExpr();
+  if (trueExpr != opaqueValue) {
+    LHSBlock = Visit(C->getTrueExpr(), alwaysAdd);
     if (badCFG)
       return 0;
     Block = NULL;
@@ -1199,7 +1210,7 @@ CFGBlock *CFGBuilder::VisitConditionalOperator(ConditionalOperator *C,
 
   // Create the block for the RHS expression.
   Succ = ConfluenceBlock;
-  CFGBlock* RHSBlock = Visit(C->getRHS(), alwaysAdd);
+  CFGBlock* RHSBlock = Visit(C->getFalseExpr(), alwaysAdd);
   if (badCFG)
     return 0;
 
@@ -1208,33 +1219,23 @@ CFGBlock *CFGBuilder::VisitConditionalOperator(ConditionalOperator *C,
 
   // See if this is a known constant.
   const TryResult& KnownVal = tryEvaluateBool(C->getCond());
-  if (LHSBlock) {
+  if (LHSBlock)
     addSuccessor(Block, KnownVal.isFalse() ? NULL : LHSBlock);
-  } else {
-    if (KnownVal.isFalse()) {
-      // If we know the condition is false, add NULL as the successor for
-      // the block containing the condition.  In this case, the confluence
-      // block will have just one predecessor.
-      addSuccessor(Block, 0);
-      assert(ConfluenceBlock->pred_size() == 1);
-    } else {
-      // If we have no LHS expression, add the ConfluenceBlock as a direct
-      // successor for the block containing the condition.  Moreover, we need to
-      // reverse the order of the predecessors in the ConfluenceBlock because
-      // the RHSBlock will have been added to the succcessors already, and we
-      // want the first predecessor to the the block containing the expression
-      // for the case when the ternary expression evaluates to true.
-      addSuccessor(Block, ConfluenceBlock);
-      // Note that there can possibly only be one predecessor if one of the
-      // subexpressions resulted in calling a noreturn function.
-      std::reverse(ConfluenceBlock->pred_begin(),
-                   ConfluenceBlock->pred_end());
-    }
-  }
-
   addSuccessor(Block, KnownVal.isTrue() ? NULL : RHSBlock);
   Block->setTerminator(C);
-  return addStmt(C->getCond());
+  Expr *condExpr = C->getCond();
+
+  CFGBlock *result = 0;
+
+  // Run the condition expression if it's not trivially expressed in
+  // terms of the opaque value (or if there is no opaque value).
+  if (condExpr != opaqueValue) result = addStmt(condExpr);
+
+  // Before that, run the common subexpression if there was one.
+  // At least one of this or the above will be run.
+  if (opaqueValue) result = addStmt(BCO->getCommon());
+
+  return result;
 }
 
 CFGBlock *CFGBuilder::VisitDeclStmt(DeclStmt *DS) {
@@ -1452,16 +1453,17 @@ CFGBlock* CFGBuilder::VisitReturnStmt(ReturnStmt* R) {
   return VisitStmt(R, AddStmtChoice::AlwaysAdd);
 }
 
-CFGBlock* CFGBuilder::VisitLabelStmt(LabelStmt* L) {
+CFGBlock* CFGBuilder::VisitLabelStmt(LabelStmt *L) {
   // Get the block of the labeled statement.  Add it to our map.
   addStmt(L->getSubStmt());
-  CFGBlock* LabelBlock = Block;
+  CFGBlock *LabelBlock = Block;
 
   if (!LabelBlock)              // This can happen when the body is empty, i.e.
     LabelBlock = createBlock(); // scopes that only contains NullStmts.
 
-  assert(LabelMap.find(L) == LabelMap.end() && "label already in map");
-  LabelMap[ L ] = JumpTarget(LabelBlock, ScopePos);
+  assert(LabelMap.find(L->getDecl()) == LabelMap.end() &&
+         "label already in map");
+  LabelMap[L->getDecl()] = JumpTarget(LabelBlock, ScopePos);
 
   // Labels partition blocks, so this is the end of the basic block we were
   // processing (L is the block's label).  Because this is label (and we have
@@ -2482,9 +2484,10 @@ tryAgain:
       return VisitCXXBindTemporaryExprForTemporaryDtors(
           cast<CXXBindTemporaryExpr>(E), BindToTemporary);
 
+    case Stmt::BinaryConditionalOperatorClass:
     case Stmt::ConditionalOperatorClass:
       return VisitConditionalOperatorForTemporaryDtors(
-          cast<ConditionalOperator>(E), BindToTemporary);
+          cast<AbstractConditionalOperator>(E), BindToTemporary);
 
     case Stmt::ImplicitCastExprClass:
       // For implicit cast we want BindToTemporary to be passed further.
@@ -2503,8 +2506,7 @@ CFGBlock *CFGBuilder::VisitChildrenForTemporaryDtors(Stmt *E) {
   // them in helper vector.
   typedef llvm::SmallVector<Stmt *, 4> ChildrenVect;
   ChildrenVect ChildrenRev;
-  for (Stmt::child_iterator I = E->child_begin(), L = E->child_end();
-      I != L; ++I) {
+  for (Stmt::child_range I = E->children(); I; ++I) {
     if (*I) ChildrenRev.push_back(*I);
   }
 
@@ -2600,7 +2602,7 @@ CFGBlock *CFGBuilder::VisitCXXBindTemporaryExprForTemporaryDtors(
 }
 
 CFGBlock *CFGBuilder::VisitConditionalOperatorForTemporaryDtors(
-    ConditionalOperator *E, bool BindToTemporary) {
+    AbstractConditionalOperator *E, bool BindToTemporary) {
   // First add destructors for condition expression.  Even if this will
   // unnecessarily create a block, this block will be used at least by the full
   // expression.
@@ -2608,21 +2610,26 @@ CFGBlock *CFGBuilder::VisitConditionalOperatorForTemporaryDtors(
   CFGBlock *ConfluenceBlock = VisitForTemporaryDtors(E->getCond());
   if (badCFG)
     return NULL;
-
-  // Try to add block with destructors for LHS expression.
-  CFGBlock *LHSBlock = NULL;
-  if (E->getLHS()) {
-    Succ = ConfluenceBlock;
-    Block = NULL;
-    LHSBlock = VisitForTemporaryDtors(E->getLHS(), BindToTemporary);
+  if (BinaryConditionalOperator *BCO
+        = dyn_cast<BinaryConditionalOperator>(E)) {
+    ConfluenceBlock = VisitForTemporaryDtors(BCO->getCommon());
     if (badCFG)
       return NULL;
   }
 
+  // Try to add block with destructors for LHS expression.
+  CFGBlock *LHSBlock = NULL;
+  Succ = ConfluenceBlock;
+  Block = NULL;
+  LHSBlock = VisitForTemporaryDtors(E->getTrueExpr(), BindToTemporary);
+  if (badCFG)
+    return NULL;
+
   // Try to add block with destructors for RHS expression;
   Succ = ConfluenceBlock;
   Block = NULL;
-  CFGBlock *RHSBlock = VisitForTemporaryDtors(E->getRHS(), BindToTemporary);
+  CFGBlock *RHSBlock = VisitForTemporaryDtors(E->getFalseExpr(),
+                                              BindToTemporary);
   if (badCFG)
     return NULL;
 
@@ -2697,7 +2704,7 @@ static void FindSubExprAssignments(Stmt *S,
   if (!S)
     return;
 
-  for (Stmt::child_iterator I=S->child_begin(), E=S->child_end(); I!=E; ++I) {
+  for (Stmt::child_range I = S->children(); I; ++I) {
     Stmt *child = *I;
     if (!child)
       continue;
@@ -2967,7 +2974,7 @@ public:
     OS << "try ...";
   }
 
-  void VisitConditionalOperator(ConditionalOperator* C) {
+  void VisitAbstractConditionalOperator(AbstractConditionalOperator* C) {
     C->getCond()->printPretty(OS, Helper, Policy);
     OS << " ? ... : ...";
   }
@@ -3020,7 +3027,7 @@ static void print_elem(llvm::raw_ostream &OS, StmtPrinterHelper* Helper,
       if (StmtExpr* SE = dyn_cast<StmtExpr>(S)) {
         CompoundStmt* Sub = SE->getSubStmt();
 
-        if (Sub->child_begin() != Sub->child_end()) {
+        if (Sub->children()) {
           OS << "({ ... ; ";
           Helper->handledStmt(*SE->getSubStmt()->body_rbegin(),OS);
           OS << " })\n";
@@ -3305,6 +3312,10 @@ Stmt* CFGBlock::getTerminatorCondition() {
       E = cast<SwitchStmt>(Terminator)->getCond();
       break;
 
+    case Stmt::BinaryConditionalOperatorClass:
+      E = cast<BinaryConditionalOperator>(Terminator)->getCond();
+      break;
+
     case Stmt::ConditionalOperatorClass:
       E = cast<ConditionalOperator>(Terminator)->getCond();
       break;
@@ -3336,6 +3347,7 @@ bool CFGBlock::hasBinaryBranchTerminator() const {
     case Stmt::DoStmtClass:
     case Stmt::IfStmtClass:
     case Stmt::ChooseExprClass:
+    case Stmt::BinaryConditionalOperatorClass:
     case Stmt::ConditionalOperatorClass:
     case Stmt::BinaryOperatorClass:
       return true;

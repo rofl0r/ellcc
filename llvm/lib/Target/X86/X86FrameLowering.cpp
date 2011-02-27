@@ -318,7 +318,7 @@ void X86FrameLowering::emitCalleeSavedFrameMoves(MachineFunction &MF,
     // move" for this extra "PUSH", the linker will lose track of the fact that
     // the frame pointer should have the value of the first "PUSH" when it's
     // trying to unwind.
-    // 
+    //
     // FIXME: This looks inelegant. It's possibly correct, but it's covering up
     //        another bug. I.e., one where we generate a prolog like this:
     //
@@ -396,11 +396,6 @@ void X86FrameLowering::emitPrologue(MachineFunction &MF) const {
     uint64_t MinSize = X86FI->getCalleeSavedFrameSize();
     if (HasFP) MinSize += SlotSize;
     StackSize = std::max(MinSize, StackSize > 128 ? StackSize - 128 : 0);
-    MFI->setStackSize(StackSize);
-  } else if (IsWin64) {
-    // We need to always allocate 32 bytes as register spill area.
-    // FIXME: We might reuse these 32 bytes for leaf functions.
-    StackSize += 32;
     MFI->setStackSize(StackSize);
   }
 
@@ -556,7 +551,9 @@ void X86FrameLowering::emitPrologue(MachineFunction &MF) const {
   // responsible for adjusting the stack pointer.  Touching the stack at 4K
   // increments is necessary to ensure that the guard pages used by the OS
   // virtual memory manager are allocated in correct sequence.
-  if (NumBytes >= 4096 && (STI.isTargetCygMing() || STI.isTargetWin32())) {
+  if (NumBytes >= 4096 &&
+      (STI.isTargetCygMing() || STI.isTargetWin32()) &&
+      !STI.isTargetEnvMacho()) {
     // Check whether EAX is livein for this function.
     bool isEAXAlive = isEAXLiveIn(MF);
 
@@ -592,9 +589,11 @@ void X86FrameLowering::emitPrologue(MachineFunction &MF) const {
                                       StackPtr, false, NumBytes - 4);
       MBB.insert(MBBI, MI);
     }
-  } else if (NumBytes >= 4096 && STI.isTargetWin64()) {
+  } else if (NumBytes >= 4096 &&
+             STI.isTargetWin64() &&
+             !STI.isTargetEnvMacho()) {
     // Sanity check that EAX is not livein for this function.  It should
-    // should not be, so throw an assert.
+    // not be, so throw an assert.
     assert(!isEAXLiveIn(MF) && "EAX is livein in the Win64 case!");
 
     // Handle the 64-bit Windows ABI case where we need to call __chkstk.

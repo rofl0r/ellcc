@@ -54,6 +54,14 @@ class TargetInfo;
 
 using namespace idx;
   
+/// \brief Allocator for a cached set of global code completions.
+class GlobalCodeCompletionAllocator 
+  : public CodeCompletionAllocator,
+    public llvm::RefCountedBase<GlobalCodeCompletionAllocator> 
+{
+
+};
+  
 /// \brief Utility class for loading a ASTContext from an AST file.
 ///
 class ASTUnit {
@@ -287,7 +295,17 @@ public:
     return CachedCompletionTypes; 
   }
   
+  /// \brief Retrieve the allocator used to cache global code completions.
+  llvm::IntrusiveRefCntPtr<GlobalCodeCompletionAllocator> 
+  getCachedCompletionAllocator() {
+    return CachedCompletionAllocator;
+  }
+  
 private:
+  /// \brief Allocator used to store cached code completions.
+  llvm::IntrusiveRefCntPtr<GlobalCodeCompletionAllocator>
+    CachedCompletionAllocator;
+
   /// \brief The set of cached code-completion results.
   std::vector<CachedCodeCompletionResult> CachedCompletionResults;
   
@@ -295,20 +313,24 @@ private:
   /// type, which is used for type equality comparisons.
   llvm::StringMap<unsigned> CachedCompletionTypes;
   
-  /// \brief The number of top-level declarations present the last time we
-  /// cached code-completion results.
+  /// \brief A string hash of the top-level declaration and macro definition 
+  /// names processed the last time that we reparsed the file.
   ///
-  /// The value is used to help detect when we should repopulate the global
-  /// completion cache.
-  unsigned NumTopLevelDeclsAtLastCompletionCache;
+  /// This hash value is used to determine when we need to refresh the 
+  /// global code-completion cache.
+  unsigned CompletionCacheTopLevelHashValue;
 
-  /// \brief The number of reparses left until we'll consider updating the
-  /// code-completion cache.
+  /// \brief A string hash of the top-level declaration and macro definition 
+  /// names processed the last time that we reparsed the precompiled preamble.
   ///
-  /// This is meant to avoid thrashing during reparsing, by not allowing the
-  /// code-completion cache to be updated on every reparse.
-  unsigned CacheCodeCompletionCoolDown;
+  /// This hash value is used to determine when we need to refresh the 
+  /// global code-completion cache after a rebuild of the precompiled preamble.
+  unsigned PreambleTopLevelHashValue;
 
+  /// \brief The current hash value for the top-level declaration and macro
+  /// definition names
+  unsigned CurrentTopLevelHashValue;
+  
   /// \brief Bit used by CIndex to mark when a translation unit may be in an
   /// inconsistent state, and is not safe to free.
   unsigned UnsafeToFree : 1;
@@ -447,6 +469,11 @@ public:
     TopLevelDeclsInPreamble.push_back(D);
   }
 
+  /// \brief Retrieve a reference to the current top-level name hash value.
+  ///
+  /// Note: This is used internally by the top-level tracking action
+  unsigned &getCurrentTopLevelHashValue() { return CurrentTopLevelHashValue; }
+  
   typedef std::vector<PreprocessedEntity *>::iterator pp_entity_iterator;
   
   pp_entity_iterator pp_entity_begin();

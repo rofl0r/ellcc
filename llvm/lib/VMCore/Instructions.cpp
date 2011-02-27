@@ -1822,7 +1822,7 @@ void BinaryOperator::setHasNoSignedWrap(bool b) {
 }
 
 void BinaryOperator::setIsExact(bool b) {
-  cast<SDivOperator>(this)->setIsExact(b);
+  cast<PossiblyExactOperator>(this)->setIsExact(b);
 }
 
 bool BinaryOperator::hasNoUnsignedWrap() const {
@@ -1834,7 +1834,7 @@ bool BinaryOperator::hasNoSignedWrap() const {
 }
 
 bool BinaryOperator::isExact() const {
-  return cast<SDivOperator>(this)->isExact();
+  return cast<PossiblyExactOperator>(this)->isExact();
 }
 
 //===----------------------------------------------------------------------===//
@@ -3009,14 +3009,10 @@ void SwitchInst::removeCase(unsigned idx) {
   unsigned NumOps = getNumOperands();
   Use *OL = OperandList;
 
-  // Move everything after this operand down.
-  //
-  // FIXME: we could just swap with the end of the list, then erase.  However,
-  // client might not expect this to happen.  The code as it is thrashes the
-  // use/def lists, which is kinda lame.
-  for (unsigned i = (idx+1)*2; i != NumOps; i += 2) {
-    OL[i-2] = OL[i];
-    OL[i-2+1] = OL[i+1];
+  // Overwrite this case with the end of the list.
+  if ((idx + 1) * 2 != NumOps) {
+    OL[idx * 2] = OL[NumOps - 2];
+    OL[idx * 2 + 1] = OL[NumOps - 1];
   }
 
   // Nuke the last value.

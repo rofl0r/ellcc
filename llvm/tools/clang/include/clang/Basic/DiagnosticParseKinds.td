@@ -62,6 +62,8 @@ def ext_gnu_indirect_goto : Extension<
   "use of GNU indirect-goto extension">, InGroup<GNU>;
 def ext_gnu_address_of_label : Extension<
   "use of GNU address-of-label extension">, InGroup<GNU>;
+def ext_gnu_local_label : Extension<
+  "use of GNU locally declared label extension">, InGroup<GNU>;
 def ext_gnu_statement_expr : Extension<
   "use of GNU statement expression extension">, InGroup<GNU>;
 def ext_gnu_conditional_expr : Extension<
@@ -95,6 +97,7 @@ def err_expected_lsquare : Error<"expected '['">;
 def err_expected_rsquare : Error<"expected ']'">;
 def err_expected_rbrace : Error<"expected '}'">;
 def err_expected_greater : Error<"expected '>'">;
+def err_expected_ggg : Error<"expected '>>>'">;
 def err_expected_semi_declaration : Error<
   "expected ';' at end of declaration">;
 def err_expected_semi_decl_list : Error<
@@ -145,6 +148,8 @@ def err_expected_semi_for : Error<"expected ';' in 'for' statement specifier">;
 def err_expected_colon_after : Error<"expected ':' after %0">;
 def err_label_end_of_compound_statement : Error<
   "label at end of compound statement: expected statement">;
+def err_address_of_label_outside_fn : Error<
+  "use of address-of-label extension outside of a function body">;
 def err_expected_string_literal : Error<"expected string literal">;
 def err_expected_asm_operand : Error<
   "expected string literal or '[' for asm operand">, CatInlineAsm;
@@ -441,6 +446,18 @@ def warn_pragma_unused_expected_var : Warning<
   "expected '#pragma unused' argument to be a variable name">;
 def warn_pragma_unused_expected_punc : Warning<
   "expected ')' or ',' in '#pragma unused'">;
+
+// OpenCL Section 6.8.g
+def err_not_opencl_storage_class_specifier : Error<
+  "OpenCL does not support the '%0' storage class specifier">;
+
+// OpenCL EXTENSION pragma (OpenCL 1.1 [9.1])
+def warn_pragma_expected_colon : Warning<
+  "missing ':' after %0 - ignoring">;
+def warn_pragma_expected_enable_disable : Warning<
+  "expected 'enable' or 'disable' - ignoring">;
+def warn_pragma_unknown_extension : Warning<
+  "unknown OpenCL extension %0 - ignoring">;
 
 } // end of Parse Issue category.
 } // end of Parser diagnostics

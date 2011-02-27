@@ -7,6 +7,10 @@
 //
 //===----------------------------------------------------------------------===//
 
+#ifdef HAVE_CLANG_CONFIG_H
+# include "clang/Config/config.h"
+#endif
+
 #include "clang/Driver/Driver.h"
 
 #include "clang/Driver/Action.h"
@@ -59,8 +63,9 @@ Driver::Driver(llvm::StringRef _ClangExecutable,
     DefaultImageName(_DefaultImageName),
     DriverTitle("clang \"gcc-compatible\" driver"),
     Host(0),
-    CCPrintOptionsFilename(0), CCCIsCXX(false),
-    CCCEcho(false), CCCPrintBindings(false), CCPrintOptions(false), CCCGenericGCCName("gcc"),
+    CCPrintOptionsFilename(0), CCPrintHeadersFilename(0), CCCIsCXX(false),
+    CCCEcho(false), CCCPrintBindings(false), CCPrintOptions(false),
+    CCPrintHeaders(false), CCCGenericGCCName("gcc"),
     CheckInputsExist(true), CCCUseClang(true), CCCUseClangCXX(true),
     CCCUseClangCPP(true), CCCUsePCH(true), SuppressMissingInputWarning(false) {
   if (IsProduction) {
@@ -279,8 +284,12 @@ Compilation *Driver::BuildCompilation(int argc, const char **argv) {
     DefaultHostTriple = A->getValue(*Args);
   if (const Arg *A = Args->getLastArg(options::OPT_ccc_install_dir))
     Dir = InstalledDir = A->getValue(*Args);
-  if (const Arg *A = Args->getLastArg(options::OPT_B))
-    PrefixDir = A->getValue(*Args);
+  for (arg_iterator it = Args->filtered_begin(options::OPT_B),
+         ie = Args->filtered_end(); it != ie; ++it) {
+    const Arg *A = *it;
+    A->claim();
+    PrefixDirs.push_back(A->getValue(*Args, 0));
+  }
 
   Host = GetHostInfo(DefaultHostTriple.c_str());
 
@@ -1235,8 +1244,9 @@ const char *Driver::GetNamedOutputPath(Compilation &C,
 std::string Driver::GetFilePath(const char *Name, const ToolChain &TC) const {
   // Respect a limited subset of the '-Bprefix' functionality in GCC by
   // attempting to use this prefix when lokup up program paths.
-  if (!PrefixDir.empty()) {
-    llvm::sys::Path P(PrefixDir);
+  for (Driver::prefix_list::const_iterator it = PrefixDirs.begin(),
+       ie = PrefixDirs.end(); it != ie; ++it) {
+    llvm::sys::Path P(*it);
     P.appendComponent(Name);
     bool Exists;
     if (!llvm::sys::fs::exists(P.str(), Exists) && Exists)
@@ -1260,8 +1270,9 @@ std::string Driver::GetProgramPath(const char *Name, const ToolChain &TC,
                                    bool WantFile) const {
   // Respect a limited subset of the '-Bprefix' functionality in GCC by
   // attempting to use this prefix when lokup up program paths.
-  if (!PrefixDir.empty()) {
-    llvm::sys::Path P(PrefixDir);
+  for (Driver::prefix_list::const_iterator it = PrefixDirs.begin(),
+       ie = PrefixDirs.end(); it != ie; ++it) {
+    llvm::sys::Path P(*it);
     P.appendComponent(Name);
     bool Exists;
     if (WantFile ? !llvm::sys::fs::exists(P.str(), Exists) && Exists
@@ -1334,6 +1345,8 @@ const HostInfo *Driver::GetHostInfo(const char *TripleStr) const {
     return createDragonFlyHostInfo(*this, Triple);
   case llvm::Triple::OpenBSD:
     return createOpenBSDHostInfo(*this, Triple);
+  case llvm::Triple::NetBSD:
+    return createNetBSDHostInfo(*this, Triple);
   case llvm::Triple::FreeBSD:
     return createFreeBSDHostInfo(*this, Triple);
   case llvm::Triple::Minix:
@@ -1343,7 +1356,6 @@ const HostInfo *Driver::GetHostInfo(const char *TripleStr) const {
   case llvm::Triple::Win32:
     return createWindowsHostInfo(*this, Triple);
   case llvm::Triple::MinGW32:
-  case llvm::Triple::MinGW64:
     return createMinGWHostInfo(*this, Triple);
   default:
     return createUnknownHostInfo(*this, Triple);

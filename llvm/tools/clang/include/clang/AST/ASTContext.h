@@ -210,6 +210,9 @@ class ASTContext {
   /// \brief Type for the Block descriptor for Blocks CodeGen.
   mutable RecordDecl *BlockDescriptorExtendedType;
 
+  /// \brief Declaration for the CUDA cudaConfigureCall function.
+  FunctionDecl *cudaConfigureCallDecl;
+
   TypeSourceInfo NullTypeSourceInfo;
 
   /// \brief Keeps track of all declaration attributes.
@@ -541,6 +544,13 @@ public:
     return QualType();
   }
 
+  void setcudaConfigureCallDecl(FunctionDecl *FD) {
+    cudaConfigureCallDecl = FD;
+  }
+  FunctionDecl *getcudaConfigureCallDecl() {
+    return cudaConfigureCallDecl;
+  }
+
   /// This gets the struct used to keep track of pointer to blocks, complete
   /// with captured variables.
   QualType getBlockParmType(bool BlockHasCopyDispose,
@@ -834,6 +844,11 @@ public:
     return QualType();
   }
 
+  /// \brief The result type of logical operations, '<', '>', '!=', etc.
+  QualType getLogicalOperationType() const {
+    return getLangOptions().CPlusPlus ? BoolTy : IntTy;
+  }
+
   /// getObjCEncodingForType - Emit the ObjC type encoding for the
   /// given type into \arg S. If \arg NameFields is specified then
   /// record field names are also encoded.
@@ -855,9 +870,9 @@ public:
   void getObjCEncodingForMethodDecl(const ObjCMethodDecl *Decl, std::string &S)
     const;
 
-  /// getObjCEncodingForBlockDecl - Return the encoded type for this block
+  /// getObjCEncodingForBlock - Return the encoded type for this block
   /// declaration.
-  void getObjCEncodingForBlock(const BlockExpr *Expr, std::string& S) const;
+  std::string getObjCEncodingForBlock(const BlockExpr *blockExpr) const;
   
   /// getObjCEncodingForPropertyDecl - Return the encoded type for
   /// this method declaration. If non-NULL, Container must be either
@@ -1004,6 +1019,9 @@ public:
   
   /// toCharUnitsFromBits - Convert a size in bits to a size in characters.
   CharUnits toCharUnitsFromBits(int64_t BitSize) const;
+
+  /// toBits - Convert a size in characters to a size in bits.
+  int64_t toBits(CharUnits CharSize) const;
 
   /// getTypeSizeInChars - Return the size of the specified type, in characters.
   /// This method does not work on incomplete types.
@@ -1380,6 +1398,11 @@ public:
   ObjCImplementationDecl *getObjCImplementation(ObjCInterfaceDecl *D);
   /// \brief Get the implementation of ObjCCategoryDecl, or NULL if none exists.
   ObjCCategoryImplDecl   *getObjCImplementation(ObjCCategoryDecl *D);
+
+  /// \brief returns true if there is at lease one @implementation in TU.
+  bool AnyObjCImplementation() {
+    return !ObjCImpls.empty();
+  }
 
   /// \brief Set the implementation of ObjCInterfaceDecl.
   void setObjCImplementation(ObjCInterfaceDecl *IFaceD,

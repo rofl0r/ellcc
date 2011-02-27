@@ -122,6 +122,8 @@ class Parser : public CodeCompletionHandler {
   llvm::OwningPtr<PragmaHandler> PackHandler;
   llvm::OwningPtr<PragmaHandler> UnusedHandler;
   llvm::OwningPtr<PragmaHandler> WeakHandler;
+  llvm::OwningPtr<PragmaHandler> FPContractHandler;
+  llvm::OwningPtr<PragmaHandler> OpenCLExtensionHandler;
 
   /// Whether the '>' token acts as an operator or not. This will be
   /// true except when we are parsing an expression within a C++
@@ -723,7 +725,7 @@ private:
   /// class or function definition.
   class ParsingDeclRAIIObject {
     Sema &Actions;
-    Sema::ParsingDeclStackState State;
+    Sema::ParsingDeclState State;
     bool Popped;
 
   public:
@@ -835,23 +837,24 @@ private:
   class ParsingClassDefinition {
     Parser &P;
     bool Popped;
+    Sema::ParsingClassState State;
 
   public:
     ParsingClassDefinition(Parser &P, Decl *TagOrTemplate, bool TopLevelClass)
-      : P(P), Popped(false) {
-      P.PushParsingClass(TagOrTemplate, TopLevelClass);
+      : P(P), Popped(false),
+        State(P.PushParsingClass(TagOrTemplate, TopLevelClass)) {
     }
 
     /// \brief Pop this class of the stack.
     void Pop() {
       assert(!Popped && "Nested class has already been popped");
       Popped = true;
-      P.PopParsingClass();
+      P.PopParsingClass(State);
     }
 
     ~ParsingClassDefinition() {
       if (!Popped)
-        P.PopParsingClass();
+        P.PopParsingClass(State);
     }
   };
 
@@ -905,11 +908,12 @@ private:
     SourceRange getSourceRange() const;
   };
 
-  void PushParsingClass(Decl *TagOrTemplate, bool TopLevelClass);
+  Sema::ParsingClassState
+  PushParsingClass(Decl *TagOrTemplate, bool TopLevelClass);
   void DeallocateParsedClasses(ParsingClass *Class);
-  void PopParsingClass();
+  void PopParsingClass(Sema::ParsingClassState);
 
-  Decl *ParseCXXInlineMethodDef(AccessSpecifier AS, Declarator &D,
+  Decl *ParseCXXInlineMethodDef(AccessSpecifier AS, ParsingDeclarator &D,
                                 const ParsedTemplateInfo &TemplateInfo,
                                 const VirtSpecifiers& VS);
   void ParseLexedMethodDeclarations(ParsingClass &Class);
@@ -1464,7 +1468,9 @@ private:
   TPResult TryParseFunctionDeclarator();
   TPResult TryParseBracketDeclarator();
 
-  TypeResult ParseTypeName(SourceRange *Range = 0);
+  TypeResult ParseTypeName(SourceRange *Range = 0,
+                           Declarator::TheContext Context
+                                                 = Declarator::TypeNameContext);
   void ParseBlockId();
 
   void ProhibitAttributes(ParsedAttributesWithRange &attrs) {
@@ -1523,6 +1529,7 @@ private:
   void ParseMicrosoftDeclSpec(ParsedAttributes &attrs);
   void ParseMicrosoftTypeAttributes(ParsedAttributes &attrs);
   void ParseBorlandTypeAttributes(ParsedAttributes &attrs);
+  void ParseOpenCLAttributes(ParsedAttributes &attrs);
 
   void ParseTypeofSpecifier(DeclSpec &DS);
   void ParseDecltypeSpecifier(DeclSpec &DS);

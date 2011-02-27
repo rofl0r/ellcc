@@ -236,10 +236,14 @@ StmtResult Parser::ParseLabeledStatement(ParsedAttributes &attrs) {
   // Broken substmt shouldn't prevent the label from being added to the AST.
   if (SubStmt.isInvalid())
     SubStmt = Actions.ActOnNullStmt(ColonLoc);
-
-  return Actions.ActOnLabelStmt(IdentTok.getLocation(),
-                                IdentTok.getIdentifierInfo(),
-                                ColonLoc, SubStmt.get(), attrs.getList());
+  
+  LabelDecl *LD = Actions.LookupOrCreateLabel(IdentTok.getIdentifierInfo(),
+                                              IdentTok.getLocation());
+  if (AttributeList *Attrs = attrs.getList())
+    Actions.ProcessDeclAttributeList(Actions.CurScope, LD, Attrs);
+  
+  return Actions.ActOnLabelStmt(IdentTok.getLocation(), LD, ColonLoc,
+                                SubStmt.get());
 }
 
 /// ParseCaseStatement
@@ -472,12 +476,41 @@ StmtResult Parser::ParseCompoundStatementBody(bool isStmtExpr) {
   
   SourceLocation LBraceLoc = ConsumeBrace();  // eat the '{'.
 
-  // TODO: "__label__ X, Y, Z;" is the GNU "Local Label" extension.  These are
-  // only allowed at the start of a compound stmt regardless of the language.
-
   StmtVector Stmts(Actions);
-  while (Tok.isNot(tok::r_brace) && Tok.isNot(tok::eof)) {
 
+  // "__label__ X, Y, Z;" is the GNU "Local Label" extension.  These are
+  // only allowed at the start of a compound stmt regardless of the language.
+  while (Tok.is(tok::kw___label__)) {
+    SourceLocation LabelLoc = ConsumeToken();
+    Diag(LabelLoc, diag::ext_gnu_local_label);
+    
+    llvm::SmallVector<Decl *, 8> DeclsInGroup;
+    while (1) {
+      if (Tok.isNot(tok::identifier)) {
+        Diag(Tok, diag::err_expected_ident);
+        break;
+      }
+      
+      IdentifierInfo *II = Tok.getIdentifierInfo();
+      SourceLocation IdLoc = ConsumeToken();
+      DeclsInGroup.push_back(Actions.LookupOrCreateLabel(II, IdLoc, true));
+      
+      if (!Tok.is(tok::comma))
+        break;
+      ConsumeToken();
+    }
+    
+    DeclSpec DS;
+    DeclGroupPtrTy Res = Actions.FinalizeDeclaratorGroup(getCurScope(), DS,
+                                      DeclsInGroup.data(), DeclsInGroup.size());
+    StmtResult R = Actions.ActOnDeclStmt(Res, LabelLoc, Tok.getLocation());
+    
+    ExpectAndConsume(tok::semi, diag::err_expected_semi_declaration);
+    if (R.isUsable())
+      Stmts.push_back(R.release());
+  }
+  
+  while (Tok.isNot(tok::r_brace) && Tok.isNot(tok::eof)) {
     if (Tok.is(tok::annot_pragma_unused)) {
       HandlePragmaUnused();
       continue;
@@ -1039,7 +1072,6 @@ StmtResult Parser::ParseForStatement(ParsedAttributes &attrs) {
       Collection = ParseExpression();
     } else {
       Diag(Tok, diag::err_expected_semi_for);
-      SkipUntil(tok::semi);
     }
   } else {
     Value = ParseExpression();
@@ -1065,8 +1097,14 @@ StmtResult Parser::ParseForStatement(ParsedAttributes &attrs) {
       }
       Collection = ParseExpression();
     } else {
-      if (!Value.isInvalid()) Diag(Tok, diag::err_expected_semi_for);
-      SkipUntil(tok::semi);
+      if (!Value.isInvalid()) {
+        Diag(Tok, diag::err_expected_semi_for);
+      } else {
+        // Skip until semicolon or rparen, don't consume it.
+        SkipUntil(tok::r_paren, true, true);
+        if (Tok.is(tok::semi))
+          ConsumeToken();
+      }
     }
   }
   if (!ForEach) {
@@ -1074,6 +1112,8 @@ StmtResult Parser::ParseForStatement(ParsedAttributes &attrs) {
     // Parse the second part of the for specifier.
     if (Tok.is(tok::semi)) {  // for (...;;
       // no second part.
+    } else if (Tok.is(tok::r_paren)) {
+      // missing both semicolons.
     } else {
       ExprResult Second;
       if (getLang().CPlusPlus)
@@ -1088,12 +1128,16 @@ StmtResult Parser::ParseForStatement(ParsedAttributes &attrs) {
       SecondPart = Actions.MakeFullExpr(Second.get());
     }
 
+    if (Tok.isNot(tok::semi)) {
+      if (!SecondPartIsInvalid || SecondVar)
+        Diag(Tok, diag::err_expected_semi_for);
+      else
+        // Skip until semicolon or rparen, don't consume it.
+        SkipUntil(tok::r_paren, true, true);
+    }
+
     if (Tok.is(tok::semi)) {
       ConsumeToken();
-    } else {
-      if (!SecondPartIsInvalid || SecondVar) 
-        Diag(Tok, diag::err_expected_semi_for);
-      SkipUntil(tok::semi);
     }
 
     // Parse the third part of the for specifier.
@@ -1157,8 +1201,9 @@ StmtResult Parser::ParseGotoStatement(ParsedAttributes &attrs) {
 
   StmtResult Res;
   if (Tok.is(tok::identifier)) {
-    Res = Actions.ActOnGotoStmt(GotoLoc, Tok.getLocation(),
-                                Tok.getIdentifierInfo());
+    LabelDecl *LD = Actions.LookupOrCreateLabel(Tok.getIdentifierInfo(),
+                                                Tok.getLocation());
+    Res = Actions.ActOnGotoStmt(GotoLoc, Tok.getLocation(), LD);
     ConsumeToken();
   } else if (Tok.is(tok::star)) {
     // GNU indirect goto extension.

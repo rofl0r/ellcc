@@ -1,12 +1,12 @@
 // NOTE: Use '-fobjc-gc' to test the analysis being run twice, and multiple reports are not issued.
-// RUN: %clang_cc1 -triple i386-apple-darwin10 -analyze -analyzer-experimental-internal-checks -analyzer-check-objc-mem -analyzer-store=basic -fobjc-gc -analyzer-constraints=basic -verify -fblocks -Wno-unreachable-code %s
-// RUN: %clang_cc1 -triple i386-apple-darwin10 -analyze -analyzer-experimental-internal-checks -analyzer-check-objc-mem -analyzer-store=basic -analyzer-constraints=range -verify -fblocks -Wno-unreachable-code %s
-// RUN: %clang_cc1 -triple i386-apple-darwin10 -analyze -analyzer-experimental-internal-checks -analyzer-check-objc-mem -analyzer-store=region -analyzer-constraints=basic -verify -fblocks -Wno-unreachable-code %s
-// RUN: %clang_cc1 -triple i386-apple-darwin10 -analyze -analyzer-experimental-internal-checks -analyzer-check-objc-mem -analyzer-store=region -analyzer-constraints=range -verify -fblocks -Wno-unreachable-code %s
-// RUN: %clang_cc1 -triple x86_64-apple-darwin10 -analyze -analyzer-experimental-internal-checks -analyzer-check-objc-mem -analyzer-store=basic -fobjc-gc -analyzer-constraints=basic -verify -fblocks -Wno-unreachable-code %s
-// RUN: %clang_cc1 -triple x86_64-apple-darwin10 -analyze -analyzer-experimental-internal-checks -analyzer-check-objc-mem -analyzer-store=basic -analyzer-constraints=range -verify -fblocks -Wno-unreachable-code %s
-// RUN: %clang_cc1 -triple x86_64-apple-darwin10 -analyze -analyzer-experimental-internal-checks -analyzer-check-objc-mem -analyzer-store=region -analyzer-constraints=basic -verify -fblocks -Wno-unreachable-code %s
-// RUN: %clang_cc1 -triple x86_64-apple-darwin10 -analyze -analyzer-experimental-internal-checks -analyzer-check-objc-mem -analyzer-store=region -analyzer-constraints=range -verify -fblocks -Wno-unreachable-code %s
+// RUN: %clang_cc1 -triple i386-apple-darwin10 -analyze -analyzer-experimental-internal-checks -analyzer-check-objc-mem -analyzer-checker=core.experimental.IdempotentOps -analyzer-checker=core.experimental.CastToStruct -analyzer-checker=cocoa.AtSync -analyzer-store=basic -fobjc-gc -analyzer-constraints=basic -verify -fblocks -Wno-unreachable-code %s
+// RUN: %clang_cc1 -triple i386-apple-darwin10 -analyze -analyzer-experimental-internal-checks -analyzer-check-objc-mem -analyzer-checker=core.experimental.IdempotentOps -analyzer-checker=core.experimental.CastToStruct -analyzer-checker=cocoa.AtSync -analyzer-store=basic -analyzer-constraints=range -verify -fblocks -Wno-unreachable-code %s
+// RUN: %clang_cc1 -triple i386-apple-darwin10 -analyze -analyzer-experimental-internal-checks -analyzer-check-objc-mem -analyzer-checker=core.experimental.IdempotentOps -analyzer-checker=core.experimental.CastToStruct -analyzer-checker=cocoa.AtSync -analyzer-store=region -analyzer-constraints=basic -verify -fblocks -Wno-unreachable-code %s
+// RUN: %clang_cc1 -triple i386-apple-darwin10 -analyze -analyzer-experimental-internal-checks -analyzer-check-objc-mem -analyzer-checker=core.experimental.IdempotentOps -analyzer-checker=core.experimental.CastToStruct -analyzer-checker=cocoa.AtSync -analyzer-store=region -analyzer-constraints=range -verify -fblocks -Wno-unreachable-code %s
+// RUN: %clang_cc1 -triple x86_64-apple-darwin10 -analyze -analyzer-experimental-internal-checks -analyzer-check-objc-mem -analyzer-checker=core.experimental.IdempotentOps -analyzer-checker=core.experimental.CastToStruct -analyzer-checker=cocoa.AtSync -analyzer-store=basic -fobjc-gc -analyzer-constraints=basic -verify -fblocks -Wno-unreachable-code %s
+// RUN: %clang_cc1 -triple x86_64-apple-darwin10 -analyze -analyzer-experimental-internal-checks -analyzer-check-objc-mem -analyzer-checker=core.experimental.IdempotentOps -analyzer-checker=core.experimental.CastToStruct -analyzer-checker=cocoa.AtSync -analyzer-store=basic -analyzer-constraints=range -verify -fblocks -Wno-unreachable-code %s
+// RUN: %clang_cc1 -triple x86_64-apple-darwin10 -analyze -analyzer-experimental-internal-checks -analyzer-check-objc-mem -analyzer-checker=core.experimental.IdempotentOps -analyzer-checker=core.experimental.CastToStruct -analyzer-checker=cocoa.AtSync -analyzer-store=region -analyzer-constraints=basic -verify -fblocks -Wno-unreachable-code %s
+// RUN: %clang_cc1 -triple x86_64-apple-darwin10 -analyze -analyzer-experimental-internal-checks -analyzer-check-objc-mem -analyzer-checker=core.experimental.IdempotentOps -analyzer-checker=core.experimental.CastToStruct -analyzer-checker=cocoa.AtSync -analyzer-store=region -analyzer-constraints=range -verify -fblocks -Wno-unreachable-code %s
 
 #ifndef __clang_analyzer__
 #error __clang__analyzer__ not defined
@@ -822,7 +822,7 @@ struct trie {
 
 struct kwset {
   struct trie *trie;
-  unsigned char delta[10];
+  unsigned char y[10];
   struct trie* next[10];
   int d;
 };
@@ -837,9 +837,9 @@ void f(kwset_t *kws, char const *p, char const *q) {
   register char const *end = p;
   register char const *lim = q;
   register int d = 1;
-  register unsigned char const *delta = kws->delta;
+  register unsigned char const *y = kws->y;
 
-  d = delta[c = (end+=d)[-1]]; // no-warning
+  d = y[c = (end+=d)[-1]]; // no-warning
   trie = next[c];
 }
 
@@ -1212,3 +1212,24 @@ void pr8619(int a, int b, int c) {
 }
 
 
+// PR 8646 - crash in the analyzer when handling unions.
+union pr8648_union {
+        signed long long pr8648_union_field;
+};
+void pr8648() {
+  long long y;
+  union pr8648_union x = { .pr8648_union_field = 0LL };
+  y = x.pr8648_union_field;
+  
+  union pr8648_union z;
+  z = (union pr8648_union) { .pr8648_union_field = 0LL };
+
+  union pr8648_union w;
+  w = ({ (union pr8648_union) { .pr8648_union_field = 0LL }; }); 
+
+  // crash, no assignment
+  (void) ({ (union pr8648_union) { .pr8648_union_field = 0LL }; }).pr8648_union_field;
+
+  // crash with assignment
+  y = ({ (union pr8648_union) { .pr8648_union_field = 0LL }; }).pr8648_union_field;
+}

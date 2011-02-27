@@ -27,7 +27,6 @@
 #include "clang/Frontend/Utils.h"
 #include "clang/Serialization/ASTReader.h"
 #include "clang/Sema/CodeCompleteConsumer.h"
-#include "llvm/LLVMContext.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
@@ -45,10 +44,6 @@ CompilerInstance::CompilerInstance()
 }
 
 CompilerInstance::~CompilerInstance() {
-}
-
-void CompilerInstance::setLLVMContext(llvm::LLVMContext *Value) {
-  LLVMContext.reset(Value);
 }
 
 void CompilerInstance::setInvocation(CompilerInvocation *Value) {
@@ -207,6 +202,16 @@ CompilerInstance::createPreprocessor(Diagnostic &Diags,
   if (!DepOpts.OutputFile.empty())
     AttachDependencyFileGen(*PP, DepOpts);
 
+  // Handle generating header include information, if requested.
+  if (DepOpts.ShowHeaderIncludes)
+    AttachHeaderIncludeGen(*PP);
+  if (!DepOpts.HeaderIncludeOutputFile.empty()) {
+    llvm::StringRef OutputPath = DepOpts.HeaderIncludeOutputFile;
+    if (OutputPath == "-")
+      OutputPath = "";
+    AttachHeaderIncludeGen(*PP, /*ShowAllHeaders=*/true, OutputPath);
+  }
+
   return PP;
 }
 
@@ -224,11 +229,13 @@ void CompilerInstance::createASTContext() {
 
 void CompilerInstance::createPCHExternalASTSource(llvm::StringRef Path,
                                                   bool DisablePCHValidation,
+                                                  bool DisableStatCache,
                                                  void *DeserializationListener){
   llvm::OwningPtr<ExternalASTSource> Source;
   bool Preamble = getPreprocessorOpts().PrecompiledPreambleBytes.first != 0;
   Source.reset(createPCHExternalASTSource(Path, getHeaderSearchOpts().Sysroot,
-                                          DisablePCHValidation,
+                                          DisablePCHValidation, 
+                                          DisableStatCache,
                                           getPreprocessor(), getASTContext(),
                                           DeserializationListener,
                                           Preamble));
@@ -239,6 +246,7 @@ ExternalASTSource *
 CompilerInstance::createPCHExternalASTSource(llvm::StringRef Path,
                                              const std::string &Sysroot,
                                              bool DisablePCHValidation,
+                                             bool DisableStatCache,
                                              Preprocessor &PP,
                                              ASTContext &Context,
                                              void *DeserializationListener,
@@ -246,7 +254,7 @@ CompilerInstance::createPCHExternalASTSource(llvm::StringRef Path,
   llvm::OwningPtr<ASTReader> Reader;
   Reader.reset(new ASTReader(PP, &Context,
                              Sysroot.empty() ? 0 : Sysroot.c_str(),
-                             DisablePCHValidation));
+                             DisablePCHValidation, DisableStatCache));
 
   Reader->setDeserializationListener(
             static_cast<ASTDeserializationListener *>(DeserializationListener));
@@ -381,16 +389,17 @@ CompilerInstance::createDefaultOutputFile(bool Binary,
                                           llvm::StringRef InFile,
                                           llvm::StringRef Extension) {
   return createOutputFile(getFrontendOpts().OutputFile, Binary,
-                          InFile, Extension);
+                          /*RemoveFileOnSignal=*/true, InFile, Extension);
 }
 
 llvm::raw_fd_ostream *
 CompilerInstance::createOutputFile(llvm::StringRef OutputPath,
-                                   bool Binary,
+                                   bool Binary, bool RemoveFileOnSignal,
                                    llvm::StringRef InFile,
                                    llvm::StringRef Extension) {
   std::string Error, OutputPathName, TempPathName;
   llvm::raw_fd_ostream *OS = createOutputFile(OutputPath, Error, Binary,
+                                              RemoveFileOnSignal,
                                               InFile, Extension,
                                               &OutputPathName,
                                               &TempPathName);
@@ -412,6 +421,7 @@ llvm::raw_fd_ostream *
 CompilerInstance::createOutputFile(llvm::StringRef OutputPath,
                                    std::string &Error,
                                    bool Binary,
+                                   bool RemoveFileOnSignal,
                                    llvm::StringRef InFile,
                                    llvm::StringRef Extension,
                                    std::string *ResultPathName,
@@ -455,7 +465,8 @@ CompilerInstance::createOutputFile(llvm::StringRef OutputPath,
     return 0;
 
   // Make sure the out stream file gets removed if we crash.
-  llvm::sys::RemoveFileOnSignal(llvm::sys::Path(OSFile));
+  if (RemoveFileOnSignal)
+    llvm::sys::RemoveFileOnSignal(llvm::sys::Path(OSFile));
 
   if (ResultPathName)
     *ResultPathName = OutFile;

@@ -24,6 +24,19 @@
 
 using namespace clang;
 
+static void DiagnoseObjCImplementedDeprecations(Sema &S,
+                                                NamedDecl *ND,
+                                                SourceLocation ImplLoc,
+                                                int select) {
+  if (ND && ND->getAttr<DeprecatedAttr>()) {
+    S.Diag(ImplLoc, diag::warn_deprecated_def) << select;
+    if (select == 0)
+      S.Diag(ND->getLocation(), diag::note_method_declared_at);
+    else
+      S.Diag(ND->getLocation(), diag::note_previous_decl) << "class";
+  }
+}
+
 /// ActOnStartOfObjCMethodDef - This routine sets up parameters; invisible
 /// and user declared, in the method definition's AST.
 void Sema::ActOnStartOfObjCMethodDef(Scope *FnBodyScope, Decl *D) {
@@ -64,6 +77,14 @@ void Sema::ActOnStartOfObjCMethodDef(Scope *FnBodyScope, Decl *D) {
     if ((*PI)->getIdentifier())
       PushOnScopeChains(*PI, FnBodyScope);
   }
+  // Warn on implementating deprecated methods under 
+  // -Wdeprecated-implementations flag.
+  if (ObjCInterfaceDecl *IC = MDecl->getClassInterface())
+    if (ObjCMethodDecl *IMD = 
+          IC->lookupMethod(MDecl->getSelector(), MDecl->isInstanceMethod()))
+      DiagnoseObjCImplementedDeprecations(*this, 
+                                          dyn_cast<NamedDecl>(IMD), 
+                                          MDecl->getLocation(), 0);
 }
 
 Decl *Sema::
@@ -537,8 +558,14 @@ Decl *Sema::ActOnStartCategoryImplementation(
         << CatName;
       Diag(CatIDecl->getImplementation()->getLocation(),
            diag::note_previous_definition);
-    } else
+    } else {
       CatIDecl->setImplementation(CDecl);
+      // Warn on implementating category of deprecated class under 
+      // -Wdeprecated-implementations flag.
+      DiagnoseObjCImplementedDeprecations(*this, 
+                                          dyn_cast<NamedDecl>(IDecl), 
+                                          CDecl->getLocation(), 2);
+    }
   }
 
   CheckObjCDeclScope(CDecl);
@@ -647,6 +674,11 @@ Decl *Sema::ActOnStartClassImplementation(
   } else { // add it to the list.
     IDecl->setImplementation(IMPDecl);
     PushOnScopeChains(IMPDecl, TUScope);
+    // Warn on implementating deprecated class under 
+    // -Wdeprecated-implementations flag.
+    DiagnoseObjCImplementedDeprecations(*this, 
+                                        dyn_cast<NamedDecl>(IDecl), 
+                                        IMPDecl->getLocation(), 1);
   }
   return IMPDecl;
 }
@@ -1664,6 +1696,7 @@ bool containsInvalidMethodImplAttribute(const AttrVec &A) {
 }
 
 Decl *Sema::ActOnMethodDeclaration(
+    Scope *S,
     SourceLocation MethodLoc, SourceLocation EndLoc,
     tok::TokenKind MethodType, Decl *ClassDecl,
     ObjCDeclSpec &ReturnQT, ParsedType ReturnType,
@@ -1677,7 +1710,6 @@ Decl *Sema::ActOnMethodDeclaration(
   // Make sure we can establish a context for the method.
   if (!ClassDecl) {
     Diag(MethodLoc, diag::error_missing_method_context);
-    getCurFunction()->LabelMap.clear();
     return 0;
   }
   QualType resultDeclType;
@@ -1721,6 +1753,20 @@ Decl *Sema::ActOnMethodDeclaration(
       ArgType = adjustParameterType(ArgType);
     }
 
+    LookupResult R(*this, ArgInfo[i].Name, ArgInfo[i].NameLoc, 
+                   LookupOrdinaryName, ForRedeclaration);
+    LookupName(R, S);
+    if (R.isSingleResult()) {
+      NamedDecl *PrevDecl = R.getFoundDecl();
+      if (S->isDeclScope(PrevDecl)) {
+        // FIXME. This should be an error; but will break projects.
+        Diag(ArgInfo[i].NameLoc, diag::warn_method_param_redefinition) 
+          << ArgInfo[i].Name;
+        Diag(PrevDecl->getLocation(), 
+             diag::note_previous_declaration);
+      }
+    }
+
     ParmVarDecl* Param
       = ParmVarDecl::Create(Context, ObjCMethod, ArgInfo[i].NameLoc,
                             ArgInfo[i].Name, ArgType, DI,
@@ -1739,9 +1785,12 @@ Decl *Sema::ActOnMethodDeclaration(
     // Apply the attributes to the parameter.
     ProcessDeclAttributeList(TUScope, Param, ArgInfo[i].ArgAttrs);
 
+    S->AddDecl(Param);
+    IdResolver.AddDecl(Param);
+
     Params.push_back(Param);
   }
-
+  
   for (unsigned i = 0, e = CNumArgs; i != e; ++i) {
     ParmVarDecl *Param = cast<ParmVarDecl>(CParamInfo[i].Param);
     QualType ArgType = Param->getType();
@@ -1757,8 +1806,7 @@ Decl *Sema::ActOnMethodDeclaration(
       Param->setInvalidDecl();
     }
     Param->setDeclContext(ObjCMethod);
-    if (Param->getDeclName())
-      IdResolver.RemoveDecl(Param);
+    
     Params.push_back(Param);
   }
   
@@ -1994,7 +2042,11 @@ void ObjCImplementationDecl::setIvarInitializers(ASTContext &C,
 }
 
 void Sema::DiagnoseUseOfUnimplementedSelectors() {
-  if (ReferencedSelectors.empty())
+  // Warning will be issued only when selector table is
+  // generated (which means there is at lease one implementation
+  // in the TU). This is to match gcc's behavior.
+  if (ReferencedSelectors.empty() || 
+      !Context.AnyObjCImplementation())
     return;
   for (llvm::DenseMap<Selector, SourceLocation>::iterator S = 
         ReferencedSelectors.begin(),

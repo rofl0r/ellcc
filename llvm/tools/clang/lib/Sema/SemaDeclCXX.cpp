@@ -63,8 +63,7 @@ namespace {
   /// VisitExpr - Visit all of the children of this expression.
   bool CheckDefaultArgumentVisitor::VisitExpr(Expr *Node) {
     bool IsInvalid = false;
-    for (Stmt::child_iterator I = Node->child_begin(),
-         E = Node->child_end(); I != E; ++I)
+    for (Stmt::child_range I = Node->children(); I; ++I)
       IsInvalid |= Visit(*I);
     return IsInvalid;
   }
@@ -1078,10 +1077,8 @@ Sema::ActOnCXXMemberDeclarator(Scope *S, AccessSpecifier AS, Declarator &D,
   if (Deleted) // FIXME: Source location is not very good.
     SetDeclDeleted(Member, D.getSourceRange().getBegin());
 
-  if (isInstField) {
+  if (isInstField)
     FieldCollector->Add(cast<FieldDecl>(Member));
-    return 0;
-  }
   return Member;
 }
 
@@ -1365,8 +1362,7 @@ static bool InitExprContainsUninitializedFields(const Stmt *S,
     if (UOE->getOpcode() == UO_AddrOf)
       return false;
   }
-  for (Stmt::const_child_iterator it = S->child_begin(), e = S->child_end();
-       it != e; ++it) {
+  for (Stmt::const_child_range it = S->children(); it; ++it) {
     if (!*it) {
       // An expression such as 'member(arg ?: "")' may trigger this.
       continue;
@@ -2539,7 +2535,7 @@ void Sema::DiagnoseAbstractType(const CXXRecordDecl *RD) {
 
       Diag(SO->second.front().Method->getLocation(), 
            diag::note_pure_virtual_function) 
-        << SO->second.front().Method->getDeclName();
+        << SO->second.front().Method->getDeclName() << RD->getDeclName();
     }
   }
 
@@ -2767,6 +2763,126 @@ void Sema::CheckCompletedCXXClass(CXXRecordDecl *Record) {
           << D->getDeclName();
         break;
       }
+    }
+  }
+
+  // Warn if the class has virtual methods but non-virtual public destructor.
+  if (Record->isPolymorphic() && !Record->isDependentType()) {
+    CXXDestructorDecl *dtor = Record->getDestructor();
+    if (!dtor || (!dtor->isVirtual() && dtor->getAccess() == AS_public))
+      Diag(dtor ? dtor->getLocation() : Record->getLocation(),
+           diag::warn_non_virtual_dtor) << Context.getRecordType(Record);
+  }
+
+  // See if a method overloads virtual methods in a base
+  /// class without overriding any.
+  if (!Record->isDependentType()) {
+    for (CXXRecordDecl::method_iterator M = Record->method_begin(),
+                                     MEnd = Record->method_end();
+         M != MEnd; ++M) {
+      DiagnoseHiddenVirtualMethods(Record, *M);
+    }
+  }
+
+  // Declare inherited constructors. We do this eagerly here because:
+  // - The standard requires an eager diagnostic for conflicting inherited
+  //   constructors from different classes.
+  // - The lazy declaration of the other implicit constructors is so as to not
+  //   waste space and performance on classes that are not meant to be
+  //   instantiated (e.g. meta-functions). This doesn't apply to classes that
+  //   have inherited constructors.
+  DeclareInheritedConstructors(Record);
+}
+
+/// \brief Data used with FindHiddenVirtualMethod
+struct FindHiddenVirtualMethodData {
+  Sema *S;
+  CXXMethodDecl *Method;
+  llvm::SmallPtrSet<const CXXMethodDecl *, 8> OverridenAndUsingBaseMethods;
+  llvm::SmallVector<CXXMethodDecl *, 8> OverloadedMethods;
+};
+
+/// \brief Member lookup function that determines whether a given C++
+/// method overloads virtual methods in a base class without overriding any,
+/// to be used with CXXRecordDecl::lookupInBases().
+static bool FindHiddenVirtualMethod(const CXXBaseSpecifier *Specifier,
+                                    CXXBasePath &Path,
+                                    void *UserData) {
+  RecordDecl *BaseRecord = Specifier->getType()->getAs<RecordType>()->getDecl();
+
+  FindHiddenVirtualMethodData &Data
+    = *static_cast<FindHiddenVirtualMethodData*>(UserData);
+
+  DeclarationName Name = Data.Method->getDeclName();
+  assert(Name.getNameKind() == DeclarationName::Identifier);
+
+  bool foundSameNameMethod = false;
+  llvm::SmallVector<CXXMethodDecl *, 8> overloadedMethods;
+  for (Path.Decls = BaseRecord->lookup(Name);
+       Path.Decls.first != Path.Decls.second;
+       ++Path.Decls.first) {
+    NamedDecl *D = *Path.Decls.first;
+    if (CXXMethodDecl *MD = dyn_cast<CXXMethodDecl>(D)) {
+      MD = MD->getCanonicalDecl();
+      foundSameNameMethod = true;
+      // Interested only in hidden virtual methods.
+      if (!MD->isVirtual())
+        continue;
+      // If the method we are checking overrides a method from its base
+      // don't warn about the other overloaded methods.
+      if (!Data.S->IsOverload(Data.Method, MD, false))
+        return true;
+      // Collect the overload only if its hidden.
+      if (!Data.OverridenAndUsingBaseMethods.count(MD))
+        overloadedMethods.push_back(MD);
+    }
+  }
+
+  if (foundSameNameMethod)
+    Data.OverloadedMethods.append(overloadedMethods.begin(),
+                                   overloadedMethods.end());
+  return foundSameNameMethod;
+}
+
+/// \brief See if a method overloads virtual methods in a base class without
+/// overriding any.
+void Sema::DiagnoseHiddenVirtualMethods(CXXRecordDecl *DC, CXXMethodDecl *MD) {
+  if (Diags.getDiagnosticLevel(diag::warn_overloaded_virtual,
+                               MD->getLocation()) == Diagnostic::Ignored)
+    return;
+  if (MD->getDeclName().getNameKind() != DeclarationName::Identifier)
+    return;
+
+  CXXBasePaths Paths(/*FindAmbiguities=*/true, // true to look in all bases.
+                     /*bool RecordPaths=*/false,
+                     /*bool DetectVirtual=*/false);
+  FindHiddenVirtualMethodData Data;
+  Data.Method = MD;
+  Data.S = this;
+
+  // Keep the base methods that were overriden or introduced in the subclass
+  // by 'using' in a set. A base method not in this set is hidden.
+  for (DeclContext::lookup_result res = DC->lookup(MD->getDeclName());
+       res.first != res.second; ++res.first) {
+    if (CXXMethodDecl *MD = dyn_cast<CXXMethodDecl>(*res.first))
+      for (CXXMethodDecl::method_iterator I = MD->begin_overridden_methods(),
+                                          E = MD->end_overridden_methods();
+           I != E; ++I)
+        Data.OverridenAndUsingBaseMethods.insert((*I)->getCanonicalDecl());
+    if (UsingShadowDecl *shad = dyn_cast<UsingShadowDecl>(*res.first))
+      if (CXXMethodDecl *MD = dyn_cast<CXXMethodDecl>(shad->getTargetDecl()))
+        Data.OverridenAndUsingBaseMethods.insert(MD->getCanonicalDecl());
+  }
+
+  if (DC->lookupInBases(&FindHiddenVirtualMethod, &Data, Paths) &&
+      !Data.OverloadedMethods.empty()) {
+    Diag(MD->getLocation(), diag::warn_overloaded_virtual)
+      << MD << (Data.OverloadedMethods.size() > 1);
+
+    for (unsigned i = 0, e = Data.OverloadedMethods.size(); i != e; ++i) {
+      CXXMethodDecl *overloadedMD = Data.OverloadedMethods[i];
+      Diag(overloadedMD->getLocation(),
+           diag::note_hidden_overloaded_virtual_declared_here) << overloadedMD;
     }
   }
 }
@@ -4012,8 +4128,7 @@ NamedDecl *Sema::BuildUsingDeclaration(Scope *S, AccessSpecifier AS,
     LookupQualifiedName(Previous, CurContext);
   }
 
-  NestedNameSpecifier *NNS =
-    static_cast<NestedNameSpecifier *>(SS.getScopeRep());
+  NestedNameSpecifier *NNS = SS.getScopeRep();
 
   // Check for invalid redeclarations.
   if (CheckUsingDeclRedeclaration(UsingLoc, IsTypeName, SS, IdentLoc, Previous))
@@ -4053,7 +4168,14 @@ NamedDecl *Sema::BuildUsingDeclaration(Scope *S, AccessSpecifier AS,
     return UD;
   }
 
-  // Look up the target name.
+  // Constructor inheriting using decls get special treatment.
+  if (NameInfo.getName().getNameKind() == DeclarationName::CXXConstructorName) {
+    if (CheckInheritedConstructorUsingDecl(UD))
+      UD->setInvalidDecl();
+    return UD;
+  }
+
+  // Otherwise, look up the target name.
 
   LookupResult R(*this, NameInfo, LookupOrdinaryName);
 
@@ -4115,6 +4237,42 @@ NamedDecl *Sema::BuildUsingDeclaration(Scope *S, AccessSpecifier AS,
   }
 
   return UD;
+}
+
+/// Additional checks for a using declaration referring to a constructor name.
+bool Sema::CheckInheritedConstructorUsingDecl(UsingDecl *UD) {
+  if (UD->isTypeName()) {
+    // FIXME: Cannot specify typename when specifying constructor
+    return true;
+  }
+
+  const Type *SourceType = UD->getTargetNestedNameDecl()->getAsType();
+  assert(SourceType &&
+         "Using decl naming constructor doesn't have type in scope spec.");
+  CXXRecordDecl *TargetClass = cast<CXXRecordDecl>(CurContext);
+
+  // Check whether the named type is a direct base class.
+  CanQualType CanonicalSourceType = SourceType->getCanonicalTypeUnqualified();
+  CXXRecordDecl::base_class_iterator BaseIt, BaseE;
+  for (BaseIt = TargetClass->bases_begin(), BaseE = TargetClass->bases_end();
+       BaseIt != BaseE; ++BaseIt) {
+    CanQualType BaseType = BaseIt->getType()->getCanonicalTypeUnqualified();
+    if (CanonicalSourceType == BaseType)
+      break;
+  }
+
+  if (BaseIt == BaseE) {
+    // Did not find SourceType in the bases.
+    Diag(UD->getUsingLocation(),
+         diag::err_using_decl_constructor_not_in_direct_base)
+      << UD->getNameInfo().getSourceRange()
+      << QualType(SourceType, 0) << TargetClass;
+    return true;
+  }
+
+  BaseIt->setInheritConstructors();
+
+  return false;
 }
 
 /// Checks that the given using declaration is not an invalid
@@ -4396,13 +4554,12 @@ namespace {
   /// to implicitly define the body of a C++ member function;
   class ImplicitlyDefinedFunctionScope {
     Sema &S;
-    DeclContext *PreviousContext;
+    Sema::ContextRAII SavedContext;
     
   public:
     ImplicitlyDefinedFunctionScope(Sema &S, CXXMethodDecl *Method)
-      : S(S), PreviousContext(S.CurContext) 
+      : S(S), SavedContext(S, Method) 
     {
-      S.CurContext = Method;
       S.PushFunctionScope();
       S.PushExpressionEvaluationContext(Sema::PotentiallyEvaluated);
     }
@@ -4410,7 +4567,6 @@ namespace {
     ~ImplicitlyDefinedFunctionScope() {
       S.PopExpressionEvaluationContext();
       S.PopFunctionOrBlockScope();
-      S.CurContext = PreviousContext;
     }
   };
 }
@@ -4558,6 +4714,180 @@ void Sema::DefineImplicitDefaultConstructor(SourceLocation CurrentLocation,
 
   Constructor->setUsed();
   MarkVTableUsed(CurrentLocation, ClassDecl);
+}
+
+void Sema::DeclareInheritedConstructors(CXXRecordDecl *ClassDecl) {
+  // We start with an initial pass over the base classes to collect those that
+  // inherit constructors from. If there are none, we can forgo all further
+  // processing.
+  typedef llvm::SmallVector<const RecordType *, 4> BasesVector;
+  BasesVector BasesToInheritFrom;
+  for (CXXRecordDecl::base_class_iterator BaseIt = ClassDecl->bases_begin(),
+                                          BaseE = ClassDecl->bases_end();
+         BaseIt != BaseE; ++BaseIt) {
+    if (BaseIt->getInheritConstructors()) {
+      QualType Base = BaseIt->getType();
+      if (Base->isDependentType()) {
+        // If we inherit constructors from anything that is dependent, just
+        // abort processing altogether. We'll get another chance for the
+        // instantiations.
+        return;
+      }
+      BasesToInheritFrom.push_back(Base->castAs<RecordType>());
+    }
+  }
+  if (BasesToInheritFrom.empty())
+    return;
+
+  // Now collect the constructors that we already have in the current class.
+  // Those take precedence over inherited constructors.
+  // C++0x [class.inhctor]p3: [...] a constructor is implicitly declared [...]
+  //   unless there is a user-declared constructor with the same signature in
+  //   the class where the using-declaration appears.
+  llvm::SmallSet<const Type *, 8> ExistingConstructors;
+  for (CXXRecordDecl::ctor_iterator CtorIt = ClassDecl->ctor_begin(),
+                                    CtorE = ClassDecl->ctor_end();
+       CtorIt != CtorE; ++CtorIt) {
+    ExistingConstructors.insert(
+        Context.getCanonicalType(CtorIt->getType()).getTypePtr());
+  }
+
+  Scope *S = getScopeForContext(ClassDecl);
+  DeclarationName CreatedCtorName =
+      Context.DeclarationNames.getCXXConstructorName(
+          ClassDecl->getTypeForDecl()->getCanonicalTypeUnqualified());
+
+  // Now comes the true work.
+  // First, we keep a map from constructor types to the base that introduced
+  // them. Needed for finding conflicting constructors. We also keep the
+  // actually inserted declarations in there, for pretty diagnostics.
+  typedef std::pair<CanQualType, CXXConstructorDecl *> ConstructorInfo;
+  typedef llvm::DenseMap<const Type *, ConstructorInfo> ConstructorToSourceMap;
+  ConstructorToSourceMap InheritedConstructors;
+  for (BasesVector::iterator BaseIt = BasesToInheritFrom.begin(),
+                             BaseE = BasesToInheritFrom.end();
+       BaseIt != BaseE; ++BaseIt) {
+    const RecordType *Base = *BaseIt;
+    CanQualType CanonicalBase = Base->getCanonicalTypeUnqualified();
+    CXXRecordDecl *BaseDecl = cast<CXXRecordDecl>(Base->getDecl());
+    for (CXXRecordDecl::ctor_iterator CtorIt = BaseDecl->ctor_begin(),
+                                      CtorE = BaseDecl->ctor_end();
+         CtorIt != CtorE; ++CtorIt) {
+      // Find the using declaration for inheriting this base's constructors.
+      DeclarationName Name =
+          Context.DeclarationNames.getCXXConstructorName(CanonicalBase);
+      UsingDecl *UD = dyn_cast_or_null<UsingDecl>(
+          LookupSingleName(S, Name,SourceLocation(), LookupUsingDeclName));
+      SourceLocation UsingLoc = UD ? UD->getLocation() :
+                                     ClassDecl->getLocation();
+
+      // C++0x [class.inhctor]p1: The candidate set of inherited constructors
+      //   from the class X named in the using-declaration consists of actual
+      //   constructors and notional constructors that result from the
+      //   transformation of defaulted parameters as follows:
+      //   - all non-template default constructors of X, and
+      //   - for each non-template constructor of X that has at least one
+      //     parameter with a default argument, the set of constructors that
+      //     results from omitting any ellipsis parameter specification and
+      //     successively omitting parameters with a default argument from the
+      //     end of the parameter-type-list.
+      CXXConstructorDecl *BaseCtor = *CtorIt;
+      bool CanBeCopyOrMove = BaseCtor->isCopyOrMoveConstructor();
+      const FunctionProtoType *BaseCtorType =
+          BaseCtor->getType()->getAs<FunctionProtoType>();
+
+      for (unsigned params = BaseCtor->getMinRequiredArguments(),
+                    maxParams = BaseCtor->getNumParams();
+           params <= maxParams; ++params) {
+        // Skip default constructors. They're never inherited.
+        if (params == 0)
+          continue;
+        // Skip copy and move constructors for the same reason.
+        if (CanBeCopyOrMove && params == 1)
+          continue;
+
+        // Build up a function type for this particular constructor.
+        // FIXME: The working paper does not consider that the exception spec
+        // for the inheriting constructor might be larger than that of the
+        // source. This code doesn't yet, either.
+        const Type *NewCtorType;
+        if (params == maxParams)
+          NewCtorType = BaseCtorType;
+        else {
+          llvm::SmallVector<QualType, 16> Args;
+          for (unsigned i = 0; i < params; ++i) {
+            Args.push_back(BaseCtorType->getArgType(i));
+          }
+          FunctionProtoType::ExtProtoInfo ExtInfo =
+              BaseCtorType->getExtProtoInfo();
+          ExtInfo.Variadic = false;
+          NewCtorType = Context.getFunctionType(BaseCtorType->getResultType(),
+                                                Args.data(), params, ExtInfo)
+                       .getTypePtr();
+        }
+        const Type *CanonicalNewCtorType =
+            Context.getCanonicalType(NewCtorType);
+
+        // Now that we have the type, first check if the class already has a
+        // constructor with this signature.
+        if (ExistingConstructors.count(CanonicalNewCtorType))
+          continue;
+
+        // Then we check if we have already declared an inherited constructor
+        // with this signature.
+        std::pair<ConstructorToSourceMap::iterator, bool> result =
+            InheritedConstructors.insert(std::make_pair(
+                CanonicalNewCtorType,
+                std::make_pair(CanonicalBase, (CXXConstructorDecl*)0)));
+        if (!result.second) {
+          // Already in the map. If it came from a different class, that's an
+          // error. Not if it's from the same.
+          CanQualType PreviousBase = result.first->second.first;
+          if (CanonicalBase != PreviousBase) {
+            const CXXConstructorDecl *PrevCtor = result.first->second.second;
+            const CXXConstructorDecl *PrevBaseCtor =
+                PrevCtor->getInheritedConstructor();
+            assert(PrevBaseCtor && "Conflicting constructor was not inherited");
+
+            Diag(UsingLoc, diag::err_using_decl_constructor_conflict);
+            Diag(BaseCtor->getLocation(),
+                 diag::note_using_decl_constructor_conflict_current_ctor);
+            Diag(PrevBaseCtor->getLocation(),
+                 diag::note_using_decl_constructor_conflict_previous_ctor);
+            Diag(PrevCtor->getLocation(),
+                 diag::note_using_decl_constructor_conflict_previous_using);
+          }
+          continue;
+        }
+
+        // OK, we're there, now add the constructor.
+        // C++0x [class.inhctor]p8: [...] that would be performed by a
+        //   user-writtern inline constructor [...]
+        DeclarationNameInfo DNI(CreatedCtorName, UsingLoc);
+        CXXConstructorDecl *NewCtor = CXXConstructorDecl::Create(
+            Context, ClassDecl, DNI, QualType(NewCtorType, 0), /*TInfo=*/0,
+            BaseCtor->isExplicit(), /*Inline=*/true,
+            /*ImplicitlyDeclared=*/true);
+        NewCtor->setAccess(BaseCtor->getAccess());
+
+        // Build up the parameter decls and add them.
+        llvm::SmallVector<ParmVarDecl *, 16> ParamDecls;
+        for (unsigned i = 0; i < params; ++i) {
+          ParamDecls.push_back(ParmVarDecl::Create(Context, NewCtor, UsingLoc,
+                                                   /*IdentifierInfo=*/0,
+                                                   BaseCtorType->getArgType(i),
+                                                   /*TInfo=*/0, SC_None,
+                                                   SC_None, /*DefaultArg=*/0));
+        }
+        NewCtor->setParams(ParamDecls.data(), ParamDecls.size());
+        NewCtor->setInheritedConstructor(BaseCtor);
+
+        PushOnScopeChains(NewCtor, S, false);
+        ClassDecl->addDecl(NewCtor);
+        result.first->second.second = NewCtor;
+      }
+    }
+  }
 }
 
 CXXDestructorDecl *Sema::DeclareImplicitDestructor(CXXRecordDecl *ClassDecl) {
@@ -5480,7 +5810,6 @@ CXXConstructorDecl *Sema::DeclareImplicitCopyConstructor(
                                  /*isInline=*/true,
                                  /*isImplicitlyDeclared=*/true);
   CopyConstructor->setAccess(AS_public);
-  CopyConstructor->setImplicit();
   CopyConstructor->setTrivial(ClassDecl->hasTrivialCopyConstructor());
   
   // Note that we have declared this constructor.
@@ -6264,7 +6593,7 @@ VarDecl *Sema::BuildExceptionDeclaration(Scope *S,
   ExDecl->setExceptionVariable(true);
   
   if (!Invalid) {
-    if (const RecordType *RecordTy = ExDeclType->getAs<RecordType>()) {
+    if (const RecordType *recordType = ExDeclType->getAs<RecordType>()) {
       // C++ [except.handle]p16:
       //   The object declared in an exception-declaration or, if the 
       //   exception-declaration does not specify a name, a temporary (12.2) is 
@@ -6274,18 +6603,32 @@ VarDecl *Sema::BuildExceptionDeclaration(Scope *S,
       //
       // We just pretend to initialize the object with itself, then make sure 
       // it can be destroyed later.
-      InitializedEntity Entity = InitializedEntity::InitializeVariable(ExDecl);
-      Expr *ExDeclRef = DeclRefExpr::Create(Context, 0, SourceRange(), ExDecl, 
-                                            Loc, ExDeclType, VK_LValue, 0);
-      InitializationKind Kind = InitializationKind::CreateCopy(Loc, 
-                                                               SourceLocation());
-      InitializationSequence InitSeq(*this, Entity, Kind, &ExDeclRef, 1);
-      ExprResult Result = InitSeq.Perform(*this, Entity, Kind, 
-                                         MultiExprArg(*this, &ExDeclRef, 1));
-      if (Result.isInvalid())
+      QualType initType = ExDeclType;
+
+      InitializedEntity entity =
+        InitializedEntity::InitializeVariable(ExDecl);
+      InitializationKind initKind =
+        InitializationKind::CreateCopy(Loc, SourceLocation());
+
+      Expr *opaqueValue =
+        new (Context) OpaqueValueExpr(Loc, initType, VK_LValue, OK_Ordinary);
+      InitializationSequence sequence(*this, entity, initKind, &opaqueValue, 1);
+      ExprResult result = sequence.Perform(*this, entity, initKind,
+                                           MultiExprArg(&opaqueValue, 1));
+      if (result.isInvalid())
         Invalid = true;
-      else 
-        FinalizeVarWithDestructor(ExDecl, RecordTy);
+      else {
+        // If the constructor used was non-trivial, set this as the
+        // "initializer".
+        CXXConstructExpr *construct = cast<CXXConstructExpr>(result.take());
+        if (!construct->getConstructor()->isTrivial()) {
+          Expr *init = MaybeCreateExprWithCleanups(construct);
+          ExDecl->setInit(init);
+        }
+        
+        // And make sure it's destructable.
+        FinalizeVarWithDestructor(ExDecl, recordType);
+      }
     }
   }
   
@@ -6864,8 +7207,7 @@ void Sema::SetDeclDeleted(Decl *Dcl, SourceLocation DelLoc) {
 }
 
 static void SearchForReturnInStmt(Sema &Self, Stmt *S) {
-  for (Stmt::child_iterator CI = S->child_begin(), E = S->child_end(); CI != E;
-       ++CI) {
+  for (Stmt::child_range CI = S->children(); CI; ++CI) {
     Stmt *SubStmt = *CI;
     if (!SubStmt)
       continue;
@@ -6949,6 +7291,10 @@ bool Sema::CheckOverridingFunctionReturnType(const CXXMethodDecl *New,
                     diag::err_covariant_return_ambiguous_derived_to_base_conv,
                     // FIXME: Should this point to the return type?
                     New->getLocation(), SourceRange(), New->getDeclName(), 0)) {
+      // FIXME: this note won't trigger for delayed access control
+      // diagnostics, and it's impossible to get an undelayed error
+      // here from access control during the original parse because
+      // the ParsingDeclSpec/ParsingDeclarator are still in scope.
       Diag(Old->getLocation(), diag::note_overridden_virtual_function);
       return true;
     }

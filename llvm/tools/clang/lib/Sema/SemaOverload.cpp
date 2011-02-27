@@ -1166,6 +1166,8 @@ static bool IsStandardConversion(Sema &S, Expr* From, QualType ToType,
     // Floating-integral conversions (C++ 4.9).
     SCS.Second = ICK_Floating_Integral;
     FromType = ToType.getUnqualifiedType();
+  } else if (S.IsBlockPointerConversion(FromType, ToType, FromType)) {
+               SCS.Second = ICK_Block_Pointer_Conversion;
   } else if (S.IsPointerConversion(From, FromType, ToType, InOverloadResolution,
                                    FromType, IncompatibleObjC)) {
     // Pointer conversions (C++ 4.10).
@@ -1780,6 +1782,91 @@ bool Sema::isObjCPointerConversion(QualType FromType, QualType ToType,
   }
 
   return false;
+}
+
+bool Sema::IsBlockPointerConversion(QualType FromType, QualType ToType,
+                                    QualType& ConvertedType) {
+  QualType ToPointeeType;
+  if (const BlockPointerType *ToBlockPtr =
+        ToType->getAs<BlockPointerType>())
+    ToPointeeType = ToBlockPtr->getPointeeType();
+  else
+    return false;
+  
+  QualType FromPointeeType;
+  if (const BlockPointerType *FromBlockPtr =
+      FromType->getAs<BlockPointerType>())
+    FromPointeeType = FromBlockPtr->getPointeeType();
+  else
+    return false;
+  // We have pointer to blocks, check whether the only
+  // differences in the argument and result types are in Objective-C
+  // pointer conversions. If so, we permit the conversion.
+  
+  const FunctionProtoType *FromFunctionType
+    = FromPointeeType->getAs<FunctionProtoType>();
+  const FunctionProtoType *ToFunctionType
+    = ToPointeeType->getAs<FunctionProtoType>();
+  
+  if (!FromFunctionType || !ToFunctionType)
+    return false;
+
+  if (Context.hasSameType(FromPointeeType, ToPointeeType))
+    return true;
+    
+  // Perform the quick checks that will tell us whether these
+  // function types are obviously different.
+  if (FromFunctionType->getNumArgs() != ToFunctionType->getNumArgs() ||
+      FromFunctionType->isVariadic() != ToFunctionType->isVariadic())
+    return false;
+    
+  FunctionType::ExtInfo FromEInfo = FromFunctionType->getExtInfo();
+  FunctionType::ExtInfo ToEInfo = ToFunctionType->getExtInfo();
+  if (FromEInfo != ToEInfo)
+    return false;
+
+  bool IncompatibleObjC = false;
+  if (Context.hasSameType(FromFunctionType->getResultType(), 
+                          ToFunctionType->getResultType())) {
+    // Okay, the types match exactly. Nothing to do.
+  } else {
+    QualType RHS = FromFunctionType->getResultType();
+    QualType LHS = ToFunctionType->getResultType();
+    if ((!getLangOptions().CPlusPlus || !RHS->isRecordType()) &&
+        !RHS.hasQualifiers() && LHS.hasQualifiers())
+       LHS = LHS.getUnqualifiedType();
+
+     if (Context.hasSameType(RHS,LHS)) {
+       // OK exact match.
+     } else if (isObjCPointerConversion(RHS, LHS,
+                                        ConvertedType, IncompatibleObjC)) {
+     if (IncompatibleObjC)
+       return false;
+     // Okay, we have an Objective-C pointer conversion.
+     }
+     else
+       return false;
+   }
+    
+   // Check argument types.
+   for (unsigned ArgIdx = 0, NumArgs = FromFunctionType->getNumArgs();
+        ArgIdx != NumArgs; ++ArgIdx) {
+     IncompatibleObjC = false;
+     QualType FromArgType = FromFunctionType->getArgType(ArgIdx);
+     QualType ToArgType = ToFunctionType->getArgType(ArgIdx);
+     if (Context.hasSameType(FromArgType, ToArgType)) {
+       // Okay, the types match exactly. Nothing to do.
+     } else if (isObjCPointerConversion(ToArgType, FromArgType,
+                                        ConvertedType, IncompatibleObjC)) {
+       if (IncompatibleObjC)
+         return false;
+       // Okay, we have an Objective-C pointer conversion.
+     } else
+       // Argument types are too different. Abort.
+       return false;
+   }
+   ConvertedType = ToType;
+   return true;
 }
 
 /// FunctionArgTypesAreEqual - This routine checks two function proto types
@@ -2651,9 +2738,6 @@ CompareDerivedToBaseConversions(Sema &S,
   //   If class B is derived directly or indirectly from class A and
   //   class C is derived directly or indirectly from B,
   //
-  // For Objective-C, we let A, B, and C also be Objective-C
-  // interfaces.
-
   // Compare based on pointer conversions.
   if (SCS1.Second == ICK_Pointer_Conversion &&
       SCS2.Second == ICK_Pointer_Conversion &&
@@ -2669,24 +2753,12 @@ CompareDerivedToBaseConversions(Sema &S,
     QualType ToPointee2
       = ToType2->getAs<PointerType>()->getPointeeType().getUnqualifiedType();
 
-    const ObjCObjectType* FromIface1 = FromPointee1->getAs<ObjCObjectType>();
-    const ObjCObjectType* FromIface2 = FromPointee2->getAs<ObjCObjectType>();
-    const ObjCObjectType* ToIface1 = ToPointee1->getAs<ObjCObjectType>();
-    const ObjCObjectType* ToIface2 = ToPointee2->getAs<ObjCObjectType>();
-
     //   -- conversion of C* to B* is better than conversion of C* to A*,
     if (FromPointee1 == FromPointee2 && ToPointee1 != ToPointee2) {
       if (S.IsDerivedFrom(ToPointee1, ToPointee2))
         return ImplicitConversionSequence::Better;
       else if (S.IsDerivedFrom(ToPointee2, ToPointee1))
         return ImplicitConversionSequence::Worse;
-
-      if (ToIface1 && ToIface2) {
-        if (S.Context.canAssignObjCInterfaces(ToIface2, ToIface1))
-          return ImplicitConversionSequence::Better;
-        else if (S.Context.canAssignObjCInterfaces(ToIface1, ToIface2))
-          return ImplicitConversionSequence::Worse;
-      }
     }
 
     //   -- conversion of B* to A* is better than conversion of C* to A*,
@@ -2695,16 +2767,79 @@ CompareDerivedToBaseConversions(Sema &S,
         return ImplicitConversionSequence::Better;
       else if (S.IsDerivedFrom(FromPointee1, FromPointee2))
         return ImplicitConversionSequence::Worse;
+    }
+  } else if (SCS1.Second == ICK_Pointer_Conversion &&
+             SCS2.Second == ICK_Pointer_Conversion) {
+    const ObjCObjectPointerType *FromPtr1
+      = FromType1->getAs<ObjCObjectPointerType>();
+    const ObjCObjectPointerType *FromPtr2
+      = FromType2->getAs<ObjCObjectPointerType>();
+    const ObjCObjectPointerType *ToPtr1
+      = ToType1->getAs<ObjCObjectPointerType>();
+    const ObjCObjectPointerType *ToPtr2
+      = ToType2->getAs<ObjCObjectPointerType>();
+    
+    if (FromPtr1 && FromPtr2 && ToPtr1 && ToPtr2) {
+      // Apply the same conversion ranking rules for Objective-C pointer types
+      // that we do for C++ pointers to class types. However, we employ the
+      // Objective-C pseudo-subtyping relationship used for assignment of
+      // Objective-C pointer types.
+      bool FromAssignLeft
+        = S.Context.canAssignObjCInterfaces(FromPtr1, FromPtr2);
+      bool FromAssignRight
+        = S.Context.canAssignObjCInterfaces(FromPtr2, FromPtr1);
+      bool ToAssignLeft
+        = S.Context.canAssignObjCInterfaces(ToPtr1, ToPtr2);
+      bool ToAssignRight
+        = S.Context.canAssignObjCInterfaces(ToPtr2, ToPtr1);
+      
+      // A conversion to an a non-id object pointer type or qualified 'id' 
+      // type is better than a conversion to 'id'.
+      if (ToPtr1->isObjCIdType() &&
+          (ToPtr2->isObjCQualifiedIdType() || ToPtr2->getInterfaceDecl()))
+        return ImplicitConversionSequence::Worse;
+      if (ToPtr2->isObjCIdType() &&
+          (ToPtr1->isObjCQualifiedIdType() || ToPtr1->getInterfaceDecl()))
+        return ImplicitConversionSequence::Better;
+      
+      // A conversion to a non-id object pointer type is better than a 
+      // conversion to a qualified 'id' type 
+      if (ToPtr1->isObjCQualifiedIdType() && ToPtr2->getInterfaceDecl())
+        return ImplicitConversionSequence::Worse;
+      if (ToPtr2->isObjCQualifiedIdType() && ToPtr1->getInterfaceDecl())
+        return ImplicitConversionSequence::Better;
+  
+      // A conversion to an a non-Class object pointer type or qualified 'Class' 
+      // type is better than a conversion to 'Class'.
+      if (ToPtr1->isObjCClassType() &&
+          (ToPtr2->isObjCQualifiedClassType() || ToPtr2->getInterfaceDecl()))
+        return ImplicitConversionSequence::Worse;
+      if (ToPtr2->isObjCClassType() &&
+          (ToPtr1->isObjCQualifiedClassType() || ToPtr1->getInterfaceDecl()))
+        return ImplicitConversionSequence::Better;
+      
+      // A conversion to a non-Class object pointer type is better than a 
+      // conversion to a qualified 'Class' type.
+      if (ToPtr1->isObjCQualifiedClassType() && ToPtr2->getInterfaceDecl())
+        return ImplicitConversionSequence::Worse;
+      if (ToPtr2->isObjCQualifiedClassType() && ToPtr1->getInterfaceDecl())
+        return ImplicitConversionSequence::Better;
 
-      if (FromIface1 && FromIface2) {
-        if (S.Context.canAssignObjCInterfaces(FromIface1, FromIface2))
-          return ImplicitConversionSequence::Better;
-        else if (S.Context.canAssignObjCInterfaces(FromIface2, FromIface1))
-          return ImplicitConversionSequence::Worse;
-      }
+      //   -- "conversion of C* to B* is better than conversion of C* to A*,"
+      if (S.Context.hasSameType(FromType1, FromType2) && 
+          !FromPtr1->isObjCIdType() && !FromPtr1->isObjCClassType() &&
+          (ToAssignLeft != ToAssignRight))
+        return ToAssignLeft? ImplicitConversionSequence::Worse
+                           : ImplicitConversionSequence::Better;
+
+      //   -- "conversion of B* to A* is better than conversion of C* to A*,"
+      if (S.Context.hasSameUnqualifiedType(ToType1, ToType2) &&
+          (FromAssignLeft != FromAssignRight))
+        return FromAssignLeft? ImplicitConversionSequence::Better
+        : ImplicitConversionSequence::Worse;
     }
   }
-
+  
   // Ranking of member-pointer types.
   if (SCS1.Second == ICK_Pointer_Member && SCS2.Second == ICK_Pointer_Member &&
       FromType1->isMemberPointerType() && FromType2->isMemberPointerType() &&
@@ -6153,7 +6288,8 @@ enum OverloadCandidateKind {
   oc_constructor_template,
   oc_implicit_default_constructor,
   oc_implicit_copy_constructor,
-  oc_implicit_copy_assignment
+  oc_implicit_copy_assignment,
+  oc_implicit_inherited_constructor
 };
 
 OverloadCandidateKind ClassifyOverloadCandidate(Sema &S,
@@ -6170,6 +6306,9 @@ OverloadCandidateKind ClassifyOverloadCandidate(Sema &S,
   if (CXXConstructorDecl *Ctor = dyn_cast<CXXConstructorDecl>(Fn)) {
     if (!Ctor->isImplicit())
       return isTemplate ? oc_constructor_template : oc_constructor;
+
+    if (Ctor->getInheritedConstructor())
+      return oc_implicit_inherited_constructor;
 
     return Ctor->isCopyConstructor() ? oc_implicit_copy_constructor
                                      : oc_implicit_default_constructor;
@@ -6189,6 +6328,16 @@ OverloadCandidateKind ClassifyOverloadCandidate(Sema &S,
   return isTemplate ? oc_function_template : oc_function;
 }
 
+void MaybeEmitInheritedConstructorNote(Sema &S, FunctionDecl *Fn) {
+  const CXXConstructorDecl *Ctor = dyn_cast<CXXConstructorDecl>(Fn);
+  if (!Ctor) return;
+
+  Ctor = Ctor->getInheritedConstructor();
+  if (!Ctor) return;
+
+  S.Diag(Ctor->getLocation(), diag::note_ovl_candidate_inherited_constructor);
+}
+
 } // end anonymous namespace
 
 // Notes the location of an overload candidate.
@@ -6197,6 +6346,7 @@ void Sema::NoteOverloadCandidate(FunctionDecl *Fn) {
   OverloadCandidateKind K = ClassifyOverloadCandidate(*this, Fn, FnDesc);
   Diag(Fn->getLocation(), diag::note_ovl_candidate)
     << (unsigned) K << FnDesc;
+  MaybeEmitInheritedConstructorNote(*this, Fn);
 }
 
 /// Diagnoses an ambiguous conversion.  The partial diagnostic is the
@@ -6251,6 +6401,7 @@ void DiagnoseBadConversion(Sema &S, OverloadCandidate *Cand, unsigned I) {
       << (unsigned) FnKind << FnDesc
       << (FromExpr ? FromExpr->getSourceRange() : SourceRange())
       << ToTy << Name << I+1;
+    MaybeEmitInheritedConstructorNote(S, Fn);
     return;
   }
 
@@ -6285,6 +6436,7 @@ void DiagnoseBadConversion(Sema &S, OverloadCandidate *Cand, unsigned I) {
         << FromTy
         << FromQs.getAddressSpace() << ToQs.getAddressSpace()
         << (unsigned) isObjectArgument << I+1;
+      MaybeEmitInheritedConstructorNote(S, Fn);
       return;
     }
 
@@ -6302,6 +6454,7 @@ void DiagnoseBadConversion(Sema &S, OverloadCandidate *Cand, unsigned I) {
         << (FromExpr ? FromExpr->getSourceRange() : SourceRange())
         << FromTy << (CVR - 1) << I+1;
     }
+    MaybeEmitInheritedConstructorNote(S, Fn);
     return;
   }
 
@@ -6316,6 +6469,7 @@ void DiagnoseBadConversion(Sema &S, OverloadCandidate *Cand, unsigned I) {
       << (unsigned) FnKind << FnDesc
       << (FromExpr ? FromExpr->getSourceRange() : SourceRange())
       << FromTy << ToTy << (unsigned) isObjectArgument << I+1;
+    MaybeEmitInheritedConstructorNote(S, Fn);
     return;
   }
 
@@ -6356,6 +6510,7 @@ void DiagnoseBadConversion(Sema &S, OverloadCandidate *Cand, unsigned I) {
       << (FromExpr ? FromExpr->getSourceRange() : SourceRange())
       << (BaseToDerivedConversion - 1)
       << FromTy << ToTy << I+1;
+    MaybeEmitInheritedConstructorNote(S, Fn);
     return;
   }
 
@@ -6364,6 +6519,7 @@ void DiagnoseBadConversion(Sema &S, OverloadCandidate *Cand, unsigned I) {
     << (unsigned) FnKind << FnDesc
     << (FromExpr ? FromExpr->getSourceRange() : SourceRange())
     << FromTy << ToTy << (unsigned) isObjectArgument << I+1;
+  MaybeEmitInheritedConstructorNote(S, Fn);
 }
 
 void DiagnoseArityMismatch(Sema &S, OverloadCandidate *Cand,
@@ -6404,6 +6560,7 @@ void DiagnoseArityMismatch(Sema &S, OverloadCandidate *Cand,
   S.Diag(Fn->getLocation(), diag::note_ovl_candidate_arity)
     << (unsigned) FnKind << (Fn->getDescribedFunctionTemplate() != 0) << mode
     << modeCount << NumFormalArgs;
+  MaybeEmitInheritedConstructorNote(S, Fn);
 }
 
 /// Diagnose a failed template-argument deduction.
@@ -6424,6 +6581,7 @@ void DiagnoseBadDeduction(Sema &S, OverloadCandidate *Cand,
     assert(ParamD && "no parameter found for incomplete deduction result");
     S.Diag(Fn->getLocation(), diag::note_ovl_candidate_incomplete_deduction)
       << ParamD->getDeclName();
+    MaybeEmitInheritedConstructorNote(S, Fn);
     return;
   }
 
@@ -6448,6 +6606,7 @@ void DiagnoseBadDeduction(Sema &S, OverloadCandidate *Cand,
 
     S.Diag(Fn->getLocation(), diag::note_ovl_candidate_underqualified)
       << ParamD->getDeclName() << Arg << NonCanonParam;
+    MaybeEmitInheritedConstructorNote(S, Fn);
     return;
   }
 
@@ -6466,6 +6625,7 @@ void DiagnoseBadDeduction(Sema &S, OverloadCandidate *Cand,
       << which << ParamD->getDeclName()
       << *Cand->DeductionFailure.getFirstArg()
       << *Cand->DeductionFailure.getSecondArg();
+    MaybeEmitInheritedConstructorNote(S, Fn);
     return;
   }
 
@@ -6488,6 +6648,7 @@ void DiagnoseBadDeduction(Sema &S, OverloadCandidate *Cand,
              diag::note_ovl_candidate_explicit_arg_mismatch_unnamed)
         << (index + 1);
     }
+    MaybeEmitInheritedConstructorNote(S, Fn);
     return;
 
   case Sema::TDK_TooManyArguments:
@@ -6497,6 +6658,7 @@ void DiagnoseBadDeduction(Sema &S, OverloadCandidate *Cand,
 
   case Sema::TDK_InstantiationDepth:
     S.Diag(Fn->getLocation(), diag::note_ovl_candidate_instantiation_depth);
+    MaybeEmitInheritedConstructorNote(S, Fn);
     return;
 
   case Sema::TDK_SubstitutionFailure: {
@@ -6508,6 +6670,7 @@ void DiagnoseBadDeduction(Sema &S, OverloadCandidate *Cand,
                                                     *Args);
     S.Diag(Fn->getLocation(), diag::note_ovl_candidate_substitution_failure)
       << ArgString;
+    MaybeEmitInheritedConstructorNote(S, Fn);
     return;
   }
 
@@ -6516,6 +6679,7 @@ void DiagnoseBadDeduction(Sema &S, OverloadCandidate *Cand,
   case Sema::TDK_NonDeducedMismatch:
   case Sema::TDK_FailedOverloadResolution:
     S.Diag(Fn->getLocation(), diag::note_ovl_candidate_bad_deduction);
+    MaybeEmitInheritedConstructorNote(S, Fn);
     return;
   }
 }
@@ -6544,6 +6708,7 @@ void NoteFunctionCandidate(Sema &S, OverloadCandidate *Cand,
 
     S.Diag(Fn->getLocation(), diag::note_ovl_candidate_deleted)
       << FnKind << FnDesc << Fn->isDeleted();
+    MaybeEmitInheritedConstructorNote(S, Fn);
     return;
   }
 
@@ -6610,6 +6775,7 @@ void NoteSurrogateCandidate(Sema &S, OverloadCandidate *Cand) {
 
   S.Diag(Cand->Surrogate->getLocation(), diag::note_ovl_surrogate_cand)
     << FnType;
+  MaybeEmitInheritedConstructorNote(S, Cand->Surrogate);
 }
 
 void NoteBuiltinOperatorCandidate(Sema &S,
@@ -7347,7 +7513,8 @@ ExprResult
 Sema::BuildOverloadedCallExpr(Scope *S, Expr *Fn, UnresolvedLookupExpr *ULE,
                               SourceLocation LParenLoc,
                               Expr **Args, unsigned NumArgs,
-                              SourceLocation RParenLoc) {
+                              SourceLocation RParenLoc,
+                              Expr *ExecConfig) {
 #ifndef NDEBUG
   if (ULE->requiresADL()) {
     // To do ADL, we must have found an unqualified name.
@@ -7387,8 +7554,8 @@ Sema::BuildOverloadedCallExpr(Scope *S, Expr *Fn, UnresolvedLookupExpr *ULE,
     DiagnoseUseOfDecl(FDecl? FDecl : Best->FoundDecl.getDecl(),
                       ULE->getNameLoc());
     Fn = FixOverloadedFunctionReference(Fn, Best->FoundDecl, FDecl);
-    return BuildResolvedCallExpr(Fn, FDecl, LParenLoc, Args, NumArgs,
-                                 RParenLoc);
+    return BuildResolvedCallExpr(Fn, FDecl, LParenLoc, Args, NumArgs, RParenLoc,
+                                 ExecConfig);
   }
 
   case OR_No_Viable_Function:

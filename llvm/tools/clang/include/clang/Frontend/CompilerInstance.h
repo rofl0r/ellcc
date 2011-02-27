@@ -19,7 +19,6 @@
 #include <string>
 
 namespace llvm {
-class LLVMContext;
 class raw_ostream;
 class raw_fd_ostream;
 class Timer;
@@ -59,9 +58,6 @@ class TargetInfo;
 /// come in two forms; a short form that reuses the CompilerInstance objects,
 /// and a long form that takes explicit instances of any required objects.
 class CompilerInstance {
-  /// The LLVM context used for this instance.
-  llvm::OwningPtr<llvm::LLVMContext> LLVMContext;
-
   /// The options used in this compiler instance.
   llvm::OwningPtr<CompilerInvocation> Invocation;
 
@@ -153,23 +149,6 @@ public:
   // FIXME: Eliminate the llvm_shutdown requirement, that should either be part
   // of the context or else not CompilerInstance specific.
   bool ExecuteAction(FrontendAction &Act);
-
-  /// }
-  /// @name LLVM Context
-  /// {
-
-  bool hasLLVMContext() const { return LLVMContext != 0; }
-
-  llvm::LLVMContext &getLLVMContext() const {
-    assert(LLVMContext && "Compiler instance has no LLVM context!");
-    return *LLVMContext;
-  }
-
-  llvm::LLVMContext *takeLLVMContext() { return LLVMContext.take(); }
-
-  /// setLLVMContext - Replace the current LLVM context and take ownership of
-  /// \arg Value.
-  void setLLVMContext(llvm::LLVMContext *Value);
 
   /// }
   /// @name Compiler Invocation and Options
@@ -537,6 +516,7 @@ public:
   /// context.
   void createPCHExternalASTSource(llvm::StringRef Path,
                                   bool DisablePCHValidation,
+                                  bool DisableStatCache,
                                   void *DeserializationListener);
 
   /// Create an external AST source to read a PCH file.
@@ -545,6 +525,7 @@ public:
   static ExternalASTSource *
   createPCHExternalASTSource(llvm::StringRef Path, const std::string &Sysroot,
                              bool DisablePCHValidation,
+                             bool DisableStatCache,
                              Preprocessor &PP, ASTContext &Context,
                              void *DeserializationListener, bool Preamble);
 
@@ -583,7 +564,8 @@ public:
   ///
   /// \return - Null on error.
   llvm::raw_fd_ostream *
-  createOutputFile(llvm::StringRef OutputPath, bool Binary = true,
+  createOutputFile(llvm::StringRef OutputPath,
+                   bool Binary = true, bool RemoveFileOnSignal = true,
                    llvm::StringRef BaseInput = "",
                    llvm::StringRef Extension = "");
 
@@ -600,13 +582,17 @@ public:
   /// for deriving the output path.
   /// \param Extension - The extension to use for derived output names.
   /// \param Binary - The mode to open the file in.
+  /// \param RemoveFileOnSignal - Whether the file should be registered with
+  /// llvm::sys::RemoveFileOnSignal. Note that this is not safe for
+  /// multithreaded use, as the underlying signal mechanism is not reentrant
   /// \param ResultPathName [out] - If given, the result path name will be
   /// stored here on success.
   /// \param TempPathName [out] - If given, the temporary file path name
   /// will be stored here on success.
   static llvm::raw_fd_ostream *
   createOutputFile(llvm::StringRef OutputPath, std::string &Error,
-                   bool Binary = true, llvm::StringRef BaseInput = "",
+                   bool Binary = true, bool RemoveFileOnSignal = true,
+                   llvm::StringRef BaseInput = "",
                    llvm::StringRef Extension = "",
                    std::string *ResultPathName = 0,
                    std::string *TempPathName = 0);

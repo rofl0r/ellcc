@@ -1,4 +1,9 @@
-set(LLVM_NO_RTTI 1)
+set(LLVM_LINK_COMPONENTS
+  asmparser
+  bitreader
+  bitwriter
+  ipo
+  )
 
 set(LLVM_USED_LIBS clangBasic clangAST clangFrontend)
 

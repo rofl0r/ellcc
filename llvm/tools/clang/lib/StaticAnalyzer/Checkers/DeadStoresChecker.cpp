@@ -12,11 +12,13 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "ClangSACheckers.h"
+#include "clang/StaticAnalyzer/Core/CheckerV2.h"
 #include "clang/StaticAnalyzer/Checkers/LocalCheckers.h"
 #include "clang/Analysis/Analyses/LiveVariables.h"
 #include "clang/Analysis/Visitors/CFGRecStmtVisitor.h"
-#include "clang/StaticAnalyzer/BugReporter/BugReporter.h"
-#include "clang/StaticAnalyzer/PathSensitive/ExprEngine.h"
+#include "clang/StaticAnalyzer/Core/BugReporter/BugReporter.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/ExprEngine.h"
 #include "clang/Analysis/Visitors/CFGRecStmtDeclVisitor.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/AST/ASTContext.h"
@@ -28,26 +30,80 @@ using namespace ento;
 
 namespace {
 
+// FIXME: Eventually migrate into its own file, and have it managed by
+// AnalysisManager.
+class ReachableCode {
+  const CFG &cfg;
+  llvm::BitVector reachable;
+public:
+  ReachableCode(const CFG &cfg)
+    : cfg(cfg), reachable(cfg.getNumBlockIDs(), false) {}
+  
+  void computeReachableBlocks();
+  
+  bool isReachable(const CFGBlock *block) const {
+    return reachable[block->getBlockID()];
+  }
+};
+}
+
+void ReachableCode::computeReachableBlocks() {
+  if (!cfg.getNumBlockIDs())
+    return;
+  
+  llvm::SmallVector<const CFGBlock*, 10> worklist;
+  worklist.push_back(&cfg.getEntry());
+  
+  while (!worklist.empty()) {
+    const CFGBlock *block = worklist.back();
+    worklist.pop_back();
+    llvm::BitVector::reference isReachable = reachable[block->getBlockID()];
+    if (isReachable)
+      continue;
+    isReachable = true;
+    for (CFGBlock::const_succ_iterator i = block->succ_begin(),
+                                       e = block->succ_end(); i != e; ++i)
+      if (const CFGBlock *succ = *i)
+        worklist.push_back(succ);
+  }
+}
+
+namespace {
 class DeadStoreObs : public LiveVariables::ObserverTy {
+  const CFG &cfg;
   ASTContext &Ctx;
   BugReporter& BR;
   ParentMap& Parents;
   llvm::SmallPtrSet<VarDecl*, 20> Escaped;
+  llvm::OwningPtr<ReachableCode> reachableCode;
+  const CFGBlock *currentBlock;
 
   enum DeadStoreKind { Standard, Enclosing, DeadIncrement, DeadInit };
 
 public:
-  DeadStoreObs(ASTContext &ctx, BugReporter& br, ParentMap& parents,
+  DeadStoreObs(const CFG &cfg, ASTContext &ctx,
+               BugReporter& br, ParentMap& parents,
                llvm::SmallPtrSet<VarDecl*, 20> &escaped)
-    : Ctx(ctx), BR(br), Parents(parents), Escaped(escaped) {}
+    : cfg(cfg), Ctx(ctx), BR(br), Parents(parents),
+      Escaped(escaped), currentBlock(0) {}
 
   virtual ~DeadStoreObs() {}
 
   void Report(VarDecl* V, DeadStoreKind dsk, SourceLocation L, SourceRange R) {
     if (Escaped.count(V))
       return;
+    
+    // Compute reachable blocks within the CFG for trivial cases
+    // where a bogus dead store can be reported because itself is unreachable.
+    if (!reachableCode.get()) {
+      reachableCode.reset(new ReachableCode(cfg));
+      reachableCode->computeReachableBlocks();
+    }
+    
+    if (!reachableCode->isReachable(currentBlock))
+      return;
 
-    std::string name = V->getNameAsString();
+    const std::string &name = V->getNameAsString();
 
     const char* BugType = 0;
     std::string msg;
@@ -127,14 +183,18 @@ public:
     return false;
   }
 
-  virtual void ObserveStmt(Stmt* S,
+  virtual void ObserveStmt(Stmt* S, const CFGBlock *block,
                            const LiveVariables::AnalysisDataTy& AD,
                            const LiveVariables::ValTy& Live) {
 
+    currentBlock = block;
+    
     // Skip statements in macros.
     if (S->getLocStart().isMacroID())
       return;
 
+    // Only cover dead stores from regular assignments.  ++/-- dead stores
+    // have never flagged a real bug.
     if (BinaryOperator* B = dyn_cast<BinaryOperator>(S)) {
       if (!B->isAssignmentOp()) return; // Skip non-assignments.
 
@@ -165,14 +225,11 @@ public:
         }
     }
     else if (UnaryOperator* U = dyn_cast<UnaryOperator>(S)) {
-      if (!U->isIncrementOp())
+      if (!U->isIncrementOp() || U->isPrefix())
         return;
 
-      // Handle: ++x within a subexpression.  The solution is not warn
-      //  about preincrements to dead variables when the preincrement occurs
-      //  as a subexpression.  This can lead to false negatives, e.g. "(++x);"
-      //  A generalized dead code checker should find such issues.
-      if (U->isPrefix() && Parents.isConsumedExpr(U))
+      Stmt *parent = Parents.getParentIgnoreParenCasts(U);
+      if (!parent || !isa<ReturnStmt>(parent))
         return;
 
       Expr *Ex = U->getSubExpr()->IgnoreParenCasts();
@@ -280,10 +337,27 @@ public:
 } // end anonymous namespace
 
 
-void ento::CheckDeadStores(CFG &cfg, LiveVariables &L, ParentMap &pmap, 
-                            BugReporter& BR) {
-  FindEscaped FS(&cfg);
-  FS.getCFG().VisitBlockStmts(FS);
-  DeadStoreObs A(BR.getContext(), BR, pmap, FS.Escaped);
-  L.runOnAllBlocks(cfg, &A);
+//===----------------------------------------------------------------------===//
+// DeadStoresChecker
+//===----------------------------------------------------------------------===//
+
+namespace {
+class DeadStoresChecker : public CheckerV2<check::ASTCodeBody> {
+public:
+  void checkASTCodeBody(const Decl *D, AnalysisManager& mgr,
+                        BugReporter &BR) const {
+    if (LiveVariables *L = mgr.getLiveVariables(D)) {
+      CFG &cfg = *mgr.getCFG(D);
+      ParentMap &pmap = mgr.getParentMap(D);
+      FindEscaped FS(&cfg);
+      FS.getCFG().VisitBlockStmts(FS);
+      DeadStoreObs A(cfg, BR.getContext(), BR, pmap, FS.Escaped);
+      L->runOnAllBlocks(cfg, &A);
+    }
+  }
+};
+}
+
+void ento::registerDeadStoresChecker(CheckerManager &mgr) {
+  mgr.registerChecker<DeadStoresChecker>();
 }

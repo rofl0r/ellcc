@@ -54,7 +54,7 @@ static Constant *FoldBitCast(Constant *C, const Type *DestTy,
   // vector so the code below can handle it uniformly.
   if (isa<ConstantFP>(C) || isa<ConstantInt>(C)) {
     Constant *Ops = C; // don't take the address of C!
-    return FoldBitCast(ConstantVector::get(&Ops, 1), DestTy, TD);
+    return FoldBitCast(ConstantVector::get(Ops), DestTy, TD);
   }
   
   // If this is a bitcast from constant vector -> vector, fold it.
@@ -167,7 +167,7 @@ static Constant *FoldBitCast(Constant *C, const Type *DestTy,
     }
   }
   
-  return ConstantVector::get(Result.data(), Result.size());
+  return ConstantVector::get(Result);
 }
 
 
@@ -340,6 +340,13 @@ static bool ReadDataFromGlobal(Constant *C, uint64_t ByteOffset,
     return true;
   }
   
+  if (ConstantExpr *CE = dyn_cast<ConstantExpr>(C)) {
+    if (CE->getOpcode() == Instruction::IntToPtr &&
+        CE->getOperand(0)->getType() == TD.getIntPtrType(CE->getContext())) 
+        return ReadDataFromGlobal(CE->getOperand(0), ByteOffset, CurPtr, 
+                                  BytesLeft, TD);
+  }
+
   // Otherwise, unknown initializer type.
   return false;
 }

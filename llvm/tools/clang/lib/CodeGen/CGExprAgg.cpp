@@ -116,7 +116,7 @@ public:
   }
   void VisitObjCPropertyRefExpr(ObjCPropertyRefExpr *E);
 
-  void VisitConditionalOperator(const ConditionalOperator *CO);
+  void VisitAbstractConditionalOperator(const AbstractConditionalOperator *CO);
   void VisitChooseExpr(const ChooseExpr *CE);
   void VisitInitListExpr(InitListExpr *E);
   void VisitImplicitValueInitExpr(ImplicitValueInitExpr *E);
@@ -128,6 +128,8 @@ public:
   void VisitExprWithCleanups(ExprWithCleanups *E);
   void VisitCXXScalarValueInitExpr(CXXScalarValueInitExpr *E);
   void VisitCXXTypeidExpr(CXXTypeidExpr *E) { EmitAggLoadOfLValue(E); }
+
+  void VisitOpaqueValueExpr(OpaqueValueExpr *E);
 
   void VisitVAArgExpr(VAArgExpr *E);
 
@@ -241,6 +243,10 @@ void AggExprEmitter::EmitFinalDestCopy(const Expr *E, LValue Src, bool Ignore) {
 //===----------------------------------------------------------------------===//
 //                            Visitor Methods
 //===----------------------------------------------------------------------===//
+
+void AggExprEmitter::VisitOpaqueValueExpr(OpaqueValueExpr *e) {
+  EmitFinalDestCopy(e, CGF.getOpaqueLValueMapping(e));
+}
 
 void AggExprEmitter::VisitCastExpr(CastExpr *E) {
   if (Dest.isIgnored() && E->getCastKind() != CK_Dynamic) {
@@ -413,15 +419,14 @@ void AggExprEmitter::VisitBinAssign(const BinaryOperator *E) {
   }
 }
 
-void AggExprEmitter::VisitConditionalOperator(const ConditionalOperator *E) {
-  if (!E->getLHS()) {
-    CGF.ErrorUnsupported(E, "conditional operator with missing LHS");
-    return;
-  }
-
+void AggExprEmitter::
+VisitAbstractConditionalOperator(const AbstractConditionalOperator *E) {
   llvm::BasicBlock *LHSBlock = CGF.createBasicBlock("cond.true");
   llvm::BasicBlock *RHSBlock = CGF.createBasicBlock("cond.false");
   llvm::BasicBlock *ContBlock = CGF.createBasicBlock("cond.end");
+
+  // Bind the common expression if necessary.
+  CodeGenFunction::OpaqueValueMapping binding(CGF, E);
 
   CodeGenFunction::ConditionalEvaluation eval(CGF);
   CGF.EmitBranchOnBoolExpr(E->getCond(), LHSBlock, RHSBlock);
@@ -431,7 +436,7 @@ void AggExprEmitter::VisitConditionalOperator(const ConditionalOperator *E) {
 
   eval.begin(CGF);
   CGF.EmitBlock(LHSBlock);
-  Visit(E->getLHS());
+  Visit(E->getTrueExpr());
   eval.end(CGF);
 
   assert(CGF.HaveInsertPoint() && "expression evaluation ended with no IP!");
@@ -445,7 +450,7 @@ void AggExprEmitter::VisitConditionalOperator(const ConditionalOperator *E) {
 
   eval.begin(CGF);
   CGF.EmitBlock(RHSBlock);
-  Visit(E->getRHS());
+  Visit(E->getFalseExpr());
   eval.end(CGF);
 
   CGF.EmitBlock(ContBlock);
@@ -901,12 +906,12 @@ void CodeGenFunction::EmitAggregateCopy(llvm::Value *DestPtr,
 
   const llvm::PointerType *DPT = cast<llvm::PointerType>(DestPtr->getType());
   const llvm::Type *DBP =
-    llvm::Type::getInt8PtrTy(VMContext, DPT->getAddressSpace());
+    llvm::Type::getInt8PtrTy(getLLVMContext(), DPT->getAddressSpace());
   DestPtr = Builder.CreateBitCast(DestPtr, DBP, "tmp");
 
   const llvm::PointerType *SPT = cast<llvm::PointerType>(SrcPtr->getType());
   const llvm::Type *SBP =
-    llvm::Type::getInt8PtrTy(VMContext, SPT->getAddressSpace());
+    llvm::Type::getInt8PtrTy(getLLVMContext(), SPT->getAddressSpace());
   SrcPtr = Builder.CreateBitCast(SrcPtr, SBP, "tmp");
 
   if (const RecordType *RecordTy = Ty->getAs<RecordType>()) {

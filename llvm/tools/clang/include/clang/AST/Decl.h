@@ -36,6 +36,7 @@ class FunctionTemplateSpecializationInfo;
 class DependentFunctionTemplateSpecializationInfo;
 class TypeLoc;
 class UnresolvedSetImpl;
+class LabelStmt;
 
 /// \brief A container of type source information.
 ///
@@ -274,7 +275,7 @@ public:
 
   /// \brief Clear the linkage cache in response to a change
   /// to the declaration. 
-  void ClearLinkageCache() { HasCachedLinkage = 0; }
+  void ClearLinkageCache();
 
   /// \brief Looks through UsingDecls and ObjCCompatibleAliasDecls for
   /// the underlying named decl.
@@ -294,6 +295,29 @@ inline llvm::raw_ostream &operator<<(llvm::raw_ostream &OS,
   return OS;
 }
 
+/// LabelDecl - Represents the declaration of a label.  Labels also have a
+/// corresponding LabelStmt, which indicates the position that the label was
+/// defined at.  For normal labels, the location of the decl is the same as the
+/// location of the statement.  For GNU local labels (__label__), the decl
+/// location is where the __label__ is.
+class LabelDecl : public NamedDecl {
+  LabelStmt *TheStmt;
+  LabelDecl(DeclContext *DC, SourceLocation L, IdentifierInfo *II, LabelStmt *S)
+    : NamedDecl(Label, DC, L, II), TheStmt(S) {}
+  
+public:
+  static LabelDecl *Create(ASTContext &C, DeclContext *DC,
+                           SourceLocation L, IdentifierInfo *II);
+
+  LabelStmt *getStmt() const { return TheStmt; }
+  void setStmt(LabelStmt *T) { TheStmt = T; }
+  
+  // Implement isa/cast/dyncast/etc.
+  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
+  static bool classof(const LabelDecl *D) { return true; }
+  static bool classofKind(Kind K) { return K == Label; }
+};
+  
 /// NamespaceDecl - Represent a C++ namespace.
 class NamespaceDecl : public NamedDecl, public DeclContext {
   bool IsInline : 1;
@@ -2493,8 +2517,49 @@ public:
 /// ^{ statement-body }   or   ^(int arg1, float arg2){ statement-body }
 ///
 class BlockDecl : public Decl, public DeclContext {
+public:
+  /// A class which contains all the information about a particular
+  /// captured value.
+  class Capture {
+    enum {
+      flag_isByRef = 0x1,
+      flag_isNested = 0x2
+    };
+
+    /// The variable being captured.
+    llvm::PointerIntPair<VarDecl*, 2> VariableAndFlags;
+
+    /// The copy expression, expressed in terms of a DeclRef (or
+    /// BlockDeclRef) to the captured variable.  Only required if the
+    /// variable has a C++ class type.
+    Expr *CopyExpr;
+
+  public:
+    Capture(VarDecl *variable, bool byRef, bool nested, Expr *copy)
+      : VariableAndFlags(variable,
+                  (byRef ? flag_isByRef : 0) | (nested ? flag_isNested : 0)),
+        CopyExpr(copy) {}
+
+    /// The variable being captured.
+    VarDecl *getVariable() const { return VariableAndFlags.getPointer(); }
+
+    /// Whether this is a "by ref" capture, i.e. a capture of a __block
+    /// variable.
+    bool isByRef() const { return VariableAndFlags.getInt() & flag_isByRef; }
+
+    /// Whether this is a nested capture, i.e. the variable captured
+    /// is not from outside the immediately enclosing function/block.
+    bool isNested() const { return VariableAndFlags.getInt() & flag_isNested; }
+
+    bool hasCopyExpr() const { return CopyExpr != 0; }
+    Expr *getCopyExpr() const { return CopyExpr; }
+    void setCopyExpr(Expr *e) { CopyExpr = e; }
+  };
+
+private:
   // FIXME: This can be packed into the bitfields in Decl.
   bool IsVariadic : 1;
+  bool CapturesCXXThis : 1;
   /// ParamInfo - new[]'d array of pointers to ParmVarDecls for the formal
   /// parameters of this function.  This is null if a prototype or if there are
   /// no formals.
@@ -2504,11 +2569,15 @@ class BlockDecl : public Decl, public DeclContext {
   Stmt *Body;
   TypeSourceInfo *SignatureAsWritten;
 
+  Capture *Captures;
+  unsigned NumCaptures;
+
 protected:
   BlockDecl(DeclContext *DC, SourceLocation CaretLoc)
     : Decl(Block, DC, CaretLoc), DeclContext(Block),
-      IsVariadic(false), ParamInfo(0), NumParams(0), Body(0),
-      SignatureAsWritten(0) {}
+      IsVariadic(false), CapturesCXXThis(false),
+      ParamInfo(0), NumParams(0), Body(0),
+      SignatureAsWritten(0), Captures(0), NumCaptures(0) {}
 
 public:
   static BlockDecl *Create(ASTContext &C, DeclContext *DC, SourceLocation L);
@@ -2537,7 +2606,7 @@ public:
   param_const_iterator param_begin() const { return ParamInfo; }
   param_const_iterator param_end() const   { return ParamInfo+param_size(); }
 
-  unsigned getNumParams() const;
+  unsigned getNumParams() const { return NumParams; }
   const ParmVarDecl *getParamDecl(unsigned i) const {
     assert(i < getNumParams() && "Illegal param #");
     return ParamInfo[i];
@@ -2547,6 +2616,28 @@ public:
     return ParamInfo[i];
   }
   void setParams(ParmVarDecl **NewParamInfo, unsigned NumParams);
+
+  /// hasCaptures - True if this block (or its nested blocks) captures
+  /// anything of local storage from its enclosing scopes.
+  bool hasCaptures() const { return NumCaptures != 0 || CapturesCXXThis; }
+
+  /// getNumCaptures - Returns the number of captured variables.
+  /// Does not include an entry for 'this'.
+  unsigned getNumCaptures() const { return NumCaptures; }
+
+  typedef const Capture *capture_iterator;
+  typedef const Capture *capture_const_iterator;
+  capture_iterator capture_begin() { return Captures; }
+  capture_iterator capture_end() { return Captures + NumCaptures; }
+  capture_const_iterator capture_begin() const { return Captures; }
+  capture_const_iterator capture_end() const { return Captures + NumCaptures; }
+
+  bool capturesCXXThis() const { return CapturesCXXThis; }
+
+  void setCaptures(ASTContext &Context,
+                   const Capture *begin,
+                   const Capture *end,
+                   bool capturesCXXThis);
 
   virtual SourceRange getSourceRange() const;
   

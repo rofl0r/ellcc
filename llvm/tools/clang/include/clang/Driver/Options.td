@@ -476,6 +476,7 @@ def mkernel : Flag<"-mkernel">, Group<m_Group>;
 def mlinker_version_EQ : Joined<"-mlinker-version=">, Flags<[NoForward]>;
 def mllvm : Separate<"-mllvm">;
 def mmacosx_version_min_EQ : Joined<"-mmacosx-version-min=">, Group<m_Group>;
+def mms_bitfields : Flag<"-mms-bitfields">, Group<m_Group>;
 def mmmx : Flag<"-mmmx">, Group<m_x86_Features_Group>;
 def mno_3dnowa : Flag<"-mno-3dnowa">, Group<m_x86_Features_Group>;
 def mno_3dnow : Flag<"-mno-3dnow">, Group<m_x86_Features_Group>;
@@ -504,6 +505,7 @@ def mno_omit_leaf_frame_pointer : Flag<"-mno-omit-leaf-frame-pointer">, Group<f_
 def momit_leaf_frame_pointer : Flag<"-momit-leaf-frame-pointer">, Group<f_Group>;
 def mpascal_strings : Flag<"-mpascal-strings">, Group<m_Group>;
 def mred_zone : Flag<"-mred-zone">, Group<m_Group>;
+def mregparm_EQ : Joined<"-mregparm=">, Group<m_Group>;
 def mrelax_all : Flag<"-mrelax-all">, Group<m_Group>;
 def msoft_float : Flag<"-msoft-float">, Group<m_Group>;
 def msse2 : Flag<"-msse2">, Group<m_x86_Features_Group>;
@@ -776,7 +778,12 @@ def _write_user_dependencies : Flag<"--write-user-dependencies">, Alias<MMD>;
 def _ : Joined<"--">, Flags<[Unsupported]>;
 
 // Special internal option to handle -Xlinker --no-demangle.
-def Z_Xlinker__no_demangle : Flag<"-Z-Xlinker-no-demangle">, Flags<[Unsupported, NoArgumentUnused]>;
+def Z_Xlinker__no_demangle : Flag<"-Z-Xlinker-no-demangle">,
+    Flags<[Unsupported, NoArgumentUnused]>;
+
+// Special internal option to allow forwarding arbitrary arguments to linker.
+def Zlinker_input : Separate<"-Zlinker-input">,
+    Flags<[Unsupported, NoArgumentUnused]>;
 
 // Reserved library options.
 def Z_reserved_lib_stdcxx : Flag<"-Z-reserved-lib-stdc++">,

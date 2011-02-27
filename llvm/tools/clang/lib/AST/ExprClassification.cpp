@@ -29,7 +29,8 @@ static Cl::Kinds ClassifyUnnamed(ASTContext &Ctx, QualType T);
 static Cl::Kinds ClassifyMemberExpr(ASTContext &Ctx, const MemberExpr *E);
 static Cl::Kinds ClassifyBinaryOp(ASTContext &Ctx, const BinaryOperator *E);
 static Cl::Kinds ClassifyConditional(ASTContext &Ctx,
-                                    const ConditionalOperator *E);
+                                     const Expr *trueExpr,
+                                     const Expr *falseExpr);
 static Cl::ModifiableType IsModifiable(ASTContext &Ctx, const Expr *E,
                                        Cl::Kinds Kind, SourceLocation &Loc);
 
@@ -90,6 +91,7 @@ static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
   switch (E->getStmtClass()) {
     // First come the expressions that are always lvalues, unconditionally.
   case Stmt::NoStmtClass:
+#define ABSTRACT_STMT(Kind)
 #define STMT(Kind, Base) case Expr::Kind##Class:
 #define EXPR(Kind, Base)
 #include "clang/AST/StmtNodes.inc"
@@ -237,6 +239,7 @@ static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
   case Expr::CallExprClass:
   case Expr::CXXOperatorCallExprClass:
   case Expr::CXXMemberCallExprClass:
+  case Expr::CUDAKernelCallExprClass:
     return ClassifyUnnamed(Ctx, cast<CallExpr>(E)->getCallReturnType());
 
     // __builtin_choose_expr is equivalent to the chosen expression.
@@ -272,10 +275,18 @@ static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
     if (!Lang.CPlusPlus) return Cl::CL_PRValue;
     return ClassifyUnnamed(Ctx, cast<ExplicitCastExpr>(E)->getTypeAsWritten());
 
-  case Expr::ConditionalOperatorClass:
+  case Expr::BinaryConditionalOperatorClass: {
+    if (!Lang.CPlusPlus) return Cl::CL_PRValue;
+    const BinaryConditionalOperator *co = cast<BinaryConditionalOperator>(E);
+    return ClassifyConditional(Ctx, co->getTrueExpr(), co->getFalseExpr());
+  }
+
+  case Expr::ConditionalOperatorClass: {
     // Once again, only C++ is interesting.
     if (!Lang.CPlusPlus) return Cl::CL_PRValue;
-    return ClassifyConditional(Ctx, cast<ConditionalOperator>(E));
+    const ConditionalOperator *co = cast<ConditionalOperator>(E);
+    return ClassifyConditional(Ctx, co->getTrueExpr(), co->getFalseExpr());
+  }
 
     // ObjC message sends are effectively function calls, if the target function
     // is known.
@@ -445,13 +456,11 @@ static Cl::Kinds ClassifyBinaryOp(ASTContext &Ctx, const BinaryOperator *E) {
   return Cl::CL_PRValue;
 }
 
-static Cl::Kinds ClassifyConditional(ASTContext &Ctx,
-                                     const ConditionalOperator *E) {
+static Cl::Kinds ClassifyConditional(ASTContext &Ctx, const Expr *True,
+                                     const Expr *False) {
   assert(Ctx.getLangOptions().CPlusPlus &&
          "This is only relevant for C++.");
 
-  Expr *True = E->getTrueExpr();
-  Expr *False = E->getFalseExpr();
   // C++ [expr.cond]p2
   //   If either the second or the third operand has type (cv) void, [...]
   //   the result [...] is a prvalue.

@@ -39,8 +39,7 @@ namespace {
 static void mangleFunctionBlock(MangleContext &Context,
                                 llvm::StringRef Outer,
                                 const BlockDecl *BD,
-                                llvm::SmallVectorImpl<char> &Res) {
-  llvm::raw_svector_ostream Out(Res);
+                                llvm::raw_ostream &Out) {
   Out << "__" << Outer << "_block_invoke_" << Context.getBlockId(BD, true);
 }
 
@@ -56,58 +55,62 @@ static void checkMangleDC(const DeclContext *DC, const BlockDecl *BD) {
 }
 
 void MangleContext::mangleGlobalBlock(const BlockDecl *BD,
-                                      llvm::SmallVectorImpl<char> &Res) {
-  llvm::raw_svector_ostream Out(Res);
+                                      llvm::raw_ostream &Out) {
   Out << "__block_global_" << getBlockId(BD, false);
 }
 
 void MangleContext::mangleCtorBlock(const CXXConstructorDecl *CD,
                                     CXXCtorType CT, const BlockDecl *BD,
-                                    llvm::SmallVectorImpl<char> &Res) {
+                                    llvm::raw_ostream &ResStream) {
   checkMangleDC(CD, BD);
   llvm::SmallString<64> Buffer;
-  mangleCXXCtor(CD, CT, Buffer);
-  mangleFunctionBlock(*this, Buffer, BD, Res);
+  llvm::raw_svector_ostream Out(Buffer);
+  mangleCXXCtor(CD, CT, Out);
+  Out.flush();
+  mangleFunctionBlock(*this, Buffer, BD, ResStream);
 }
 
 void MangleContext::mangleDtorBlock(const CXXDestructorDecl *DD,
                                     CXXDtorType DT, const BlockDecl *BD,
-                                    llvm::SmallVectorImpl<char> &Res) {
+                                    llvm::raw_ostream &ResStream) {
   checkMangleDC(DD, BD);
   llvm::SmallString<64> Buffer;
-  mangleCXXDtor(DD, DT, Buffer);
-  mangleFunctionBlock(*this, Buffer, BD, Res);
+  llvm::raw_svector_ostream Out(Buffer);
+  mangleCXXDtor(DD, DT, Out);
+  Out.flush();
+  mangleFunctionBlock(*this, Buffer, BD, ResStream);
 }
 
 void MangleContext::mangleBlock(const DeclContext *DC, const BlockDecl *BD,
-                                llvm::SmallVectorImpl<char> &Res) {
+                                llvm::raw_ostream &Out) {
   assert(!isa<CXXConstructorDecl>(DC) && !isa<CXXDestructorDecl>(DC));
   checkMangleDC(DC, BD);
 
   llvm::SmallString<64> Buffer;
+  llvm::raw_svector_ostream Stream(Buffer);
   if (const ObjCMethodDecl *Method = dyn_cast<ObjCMethodDecl>(DC)) {
-    mangleObjCMethodName(Method, Buffer);
+    mangleObjCMethodName(Method, Stream);
   } else {
     const NamedDecl *ND = cast<NamedDecl>(DC);
     if (IdentifierInfo *II = ND->getIdentifier())
-      Buffer = II->getName();
+      Stream << II->getName();
     else {
       // FIXME: We were doing a mangleUnqualifiedName() before, but that's
       // a private member of a class that will soon itself be private to the
       // Itanium C++ ABI object. What should we do now? Right now, I'm just
       // calling the mangleName() method on the MangleContext; is there a
       // better way?
-      mangleName(ND, Buffer);
+      mangleName(ND, Stream);
     }
   }
-
-  mangleFunctionBlock(*this, Buffer, BD, Res);
+  Stream.flush();
+  mangleFunctionBlock(*this, Buffer, BD, Out);
 }
 
 void MangleContext::mangleObjCMethodName(const ObjCMethodDecl *MD,
-                                         llvm::SmallVectorImpl<char> &Res) {
+                                         llvm::raw_ostream &Out) {
   llvm::SmallString<64> Name;
-  llvm::raw_svector_ostream OS(Name), Out(Res);
+  llvm::raw_svector_ostream OS(Name);
   
   const ObjCContainerDecl *CD =
   dyn_cast<ObjCContainerDecl>(MD->getDeclContext());
@@ -121,12 +124,12 @@ void MangleContext::mangleObjCMethodName(const ObjCMethodDecl *MD,
 }
 
 void MangleContext::mangleBlock(const BlockDecl *BD,
-                                llvm::SmallVectorImpl<char> &Res) {
+                                llvm::raw_ostream &Out) {
   const DeclContext *DC = BD->getDeclContext();
   while (isa<BlockDecl>(DC) || isa<EnumDecl>(DC))
     DC = DC->getParent();
   if (DC->isFunctionOrMethod())
-    mangleBlock(DC, BD, Res);
+    mangleBlock(DC, BD, Out);
   else
-    mangleGlobalBlock(BD, Res);
+    mangleGlobalBlock(BD, Out);
 }

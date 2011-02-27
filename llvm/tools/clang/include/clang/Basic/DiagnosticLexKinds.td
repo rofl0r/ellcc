@@ -45,8 +45,8 @@ def charize_microsoft_ext : Extension<"@# is a microsoft extension">;
 
 def ext_token_used : Extension<"extension used">;
 
-def err_unterminated_string : Error<"missing terminating '\"' character">;
-def err_unterminated_char : Error<"missing terminating ' character">;
+def warn_unterminated_string : ExtWarn<"missing terminating '\"' character">;
+def warn_unterminated_char : ExtWarn<"missing terminating ' character">;
 def err_empty_character : Error<"empty character constant">;
 def err_unterminated_block_comment : Error<"unterminated /* comment">;
 def err_invalid_character_to_charify : Error<
@@ -244,11 +244,11 @@ def warn_pragma_ignored : Warning<"unknown pragma ignored">,
    InGroup<UnknownPragmas>, DefaultIgnore;
 def ext_stdc_pragma_ignored : ExtWarn<"unknown pragma in STDC namespace">,
    InGroup<UnknownPragmas>;
-def ext_stdc_pragma_syntax :
+def ext_on_off_switch_syntax :
    ExtWarn<"expected 'ON' or 'OFF' or 'DEFAULT' in pragma">,
    InGroup<UnknownPragmas>;
-def ext_stdc_pragma_syntax_eom :
-   ExtWarn<"expected end of macro in STDC pragma">,
+def ext_pragma_syntax_eom :
+   ExtWarn<"expected end of macro in pragma">,
    InGroup<UnknownPragmas>;
 def warn_stdc_fenv_access_not_supported :
    Warning<"pragma STDC FENV_ACCESS ON is not supported, ignoring pragma">,

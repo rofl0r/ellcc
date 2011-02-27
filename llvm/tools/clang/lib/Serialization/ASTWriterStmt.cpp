@@ -76,6 +76,7 @@ namespace clang {
     void VisitBinaryOperator(BinaryOperator *E);
     void VisitCompoundAssignOperator(CompoundAssignOperator *E);
     void VisitConditionalOperator(ConditionalOperator *E);
+    void VisitBinaryConditionalOperator(BinaryConditionalOperator *E);
     void VisitImplicitCastExpr(ImplicitCastExpr *E);
     void VisitExplicitCastExpr(ExplicitCastExpr *E);
     void VisitCStyleCastExpr(CStyleCastExpr *E);
@@ -156,6 +157,9 @@ namespace clang {
     void VisitSubstNonTypeTemplateParmPackExpr(
                                            SubstNonTypeTemplateParmPackExpr *E);
     void VisitOpaqueValueExpr(OpaqueValueExpr *E);
+
+    // CUDA Expressions
+    void VisitCUDAKernelCallExpr(CUDAKernelCallExpr *E);
   };
 }
 
@@ -214,12 +218,9 @@ void ASTStmtWriter::VisitDefaultStmt(DefaultStmt *S) {
 
 void ASTStmtWriter::VisitLabelStmt(LabelStmt *S) {
   VisitStmt(S);
-  Writer.AddIdentifierRef(S->getID(), Record);
+  Writer.AddDeclRef(S->getDecl(), Record);
   Writer.AddStmt(S->getSubStmt());
   Writer.AddSourceLocation(S->getIdentLoc(), Record);
-  Record.push_back(S->isUsed());
-  Record.push_back(S->HasUnusedAttribute());
-  Record.push_back(Writer.GetLabelID(S));
   Code = serialization::STMT_LABEL;
 }
 
@@ -281,7 +282,7 @@ void ASTStmtWriter::VisitForStmt(ForStmt *S) {
 
 void ASTStmtWriter::VisitGotoStmt(GotoStmt *S) {
   VisitStmt(S);
-  Record.push_back(Writer.GetLabelID(S->getLabel()));
+  Writer.AddDeclRef(S->getLabel(), Record);
   Writer.AddSourceLocation(S->getGotoLoc(), Record);
   Writer.AddSourceLocation(S->getLabelLoc(), Record);
   Code = serialization::STMT_GOTO;
@@ -379,18 +380,18 @@ void ASTStmtWriter::VisitDeclRefExpr(DeclRefExpr *E) {
   VisitExpr(E);
 
   Record.push_back(E->hasQualifier());
-  unsigned NumTemplateArgs = E->getNumTemplateArgs();
-  assert((NumTemplateArgs != 0) == E->hasExplicitTemplateArgs() &&
-         "Template args list with no args ?");
-  Record.push_back(NumTemplateArgs);
+  Record.push_back(E->hasExplicitTemplateArgs());
 
   if (E->hasQualifier()) {
     Writer.AddNestedNameSpecifier(E->getQualifier(), Record);
     Writer.AddSourceRange(E->getQualifierRange(), Record);
   }
 
-  if (NumTemplateArgs)
+  if (E->hasExplicitTemplateArgs()) {
+    unsigned NumTemplateArgs = E->getNumTemplateArgs();
+    Record.push_back(NumTemplateArgs);
     AddExplicitTemplateArgumentList(E->getExplicitTemplateArgs());
+  }
 
   Writer.AddDeclRef(E->getDecl(), Record);
   Writer.AddSourceLocation(E->getLocation(), Record);
@@ -545,11 +546,10 @@ void ASTStmtWriter::VisitMemberExpr(MemberExpr *E) {
     Writer.AddSourceRange(E->getQualifierRange(), Record);
   }
 
-  unsigned NumTemplateArgs = E->getNumTemplateArgs();
-  assert((NumTemplateArgs != 0) == E->hasExplicitTemplateArgs() &&
-         "Template args list with no args ?");
-  Record.push_back(NumTemplateArgs);
-  if (NumTemplateArgs) {
+  Record.push_back(E->hasExplicitTemplateArgs());
+  if (E->hasExplicitTemplateArgs()) {
+    unsigned NumTemplateArgs = E->getNumTemplateArgs();
+    Record.push_back(NumTemplateArgs);
     Writer.AddSourceLocation(E->getLAngleLoc(), Record);
     Writer.AddSourceLocation(E->getRAngleLoc(), Record);
     for (unsigned i=0; i != NumTemplateArgs; ++i)
@@ -612,10 +612,22 @@ void ASTStmtWriter::VisitConditionalOperator(ConditionalOperator *E) {
   Writer.AddStmt(E->getCond());
   Writer.AddStmt(E->getLHS());
   Writer.AddStmt(E->getRHS());
-  Writer.AddStmt(E->getSAVE());
   Writer.AddSourceLocation(E->getQuestionLoc(), Record);
   Writer.AddSourceLocation(E->getColonLoc(), Record);
   Code = serialization::EXPR_CONDITIONAL_OPERATOR;
+}
+
+void
+ASTStmtWriter::VisitBinaryConditionalOperator(BinaryConditionalOperator *E) {
+  VisitExpr(E);
+  Writer.AddStmt(E->getOpaqueValue());
+  Writer.AddStmt(E->getCommon());
+  Writer.AddStmt(E->getCond());
+  Writer.AddStmt(E->getTrueExpr());
+  Writer.AddStmt(E->getFalseExpr());
+  Writer.AddSourceLocation(E->getQuestionLoc(), Record);
+  Writer.AddSourceLocation(E->getColonLoc(), Record);
+  Code = serialization::EXPR_BINARY_CONDITIONAL_OPERATOR;
 }
 
 void ASTStmtWriter::VisitImplicitCastExpr(ImplicitCastExpr *E) {
@@ -720,7 +732,7 @@ void ASTStmtWriter::VisitAddrLabelExpr(AddrLabelExpr *E) {
   VisitExpr(E);
   Writer.AddSourceLocation(E->getAmpAmpLoc(), Record);
   Writer.AddSourceLocation(E->getLabelLoc(), Record);
-  Record.push_back(Writer.GetLabelID(E->getLabel()));
+  Writer.AddDeclRef(E->getLabel(), Record);
   Code = serialization::EXPR_ADDR_LABEL;
 }
 
@@ -761,7 +773,6 @@ void ASTStmtWriter::VisitShuffleVectorExpr(ShuffleVectorExpr *E) {
 void ASTStmtWriter::VisitBlockExpr(BlockExpr *E) {
   VisitExpr(E);
   Writer.AddDeclRef(E->getBlockDecl(), Record);
-  Record.push_back(E->hasBlockDeclRefExprs());
   Code = serialization::EXPR_BLOCK;
 }
 
@@ -771,7 +782,6 @@ void ASTStmtWriter::VisitBlockDeclRefExpr(BlockDeclRefExpr *E) {
   Writer.AddSourceLocation(E->getLocation(), Record);
   Record.push_back(E->isByRef());
   Record.push_back(E->isConstQualAdded());
-  Writer.AddStmt(E->getCopyConstructorExpr());
   Code = serialization::EXPR_BLOCK_DECL_REF;
 }
 
@@ -1170,16 +1180,14 @@ void
 ASTStmtWriter::VisitCXXDependentScopeMemberExpr(CXXDependentScopeMemberExpr *E){
   VisitExpr(E);
   
-  // Don't emit anything here, NumTemplateArgs must be emitted first.
+  // Don't emit anything here, hasExplicitTemplateArgs() must be
+  // emitted first.
 
+  Record.push_back(E->hasExplicitTemplateArgs());
   if (E->hasExplicitTemplateArgs()) {
     const ExplicitTemplateArgumentList &Args = E->getExplicitTemplateArgs();
-    assert(Args.NumTemplateArgs &&
-           "Num of template args was zero! AST reading will mess up!");
     Record.push_back(Args.NumTemplateArgs);
     AddExplicitTemplateArgumentList(Args);
-  } else {
-    Record.push_back(0);
   }
   
   if (!E->isImplicitAccess())
@@ -1200,16 +1208,13 @@ void
 ASTStmtWriter::VisitDependentScopeDeclRefExpr(DependentScopeDeclRefExpr *E) {
   VisitExpr(E);
   
-  // Don't emit anything here, NumTemplateArgs must be emitted first.
-
+  // Don't emit anything here, hasExplicitTemplateArgs() must be
+  // emitted first.
+  Record.push_back(E->hasExplicitTemplateArgs());
   if (E->hasExplicitTemplateArgs()) {
     const ExplicitTemplateArgumentList &Args = E->getExplicitTemplateArgs();
-    assert(Args.NumTemplateArgs &&
-           "Num of template args was zero! AST reading will mess up!");
     Record.push_back(Args.NumTemplateArgs);
     AddExplicitTemplateArgumentList(Args);
-  } else {
-    Record.push_back(0);
   }
 
   Writer.AddDeclarationNameInfo(E->NameInfo, Record);
@@ -1234,16 +1239,12 @@ ASTStmtWriter::VisitCXXUnresolvedConstructExpr(CXXUnresolvedConstructExpr *E) {
 void ASTStmtWriter::VisitOverloadExpr(OverloadExpr *E) {
   VisitExpr(E);
   
-  // Don't emit anything here, NumTemplateArgs must be emitted first.
-
+  // Don't emit anything here, hasExplicitTemplateArgs() must be emitted first.
+  Record.push_back(E->hasExplicitTemplateArgs());
   if (E->hasExplicitTemplateArgs()) {
     const ExplicitTemplateArgumentList &Args = E->getExplicitTemplateArgs();
-    assert(Args.NumTemplateArgs &&
-           "Num of template args was zero! AST reading will mess up!");
     Record.push_back(Args.NumTemplateArgs);
     AddExplicitTemplateArgumentList(Args);
-  } else {
-    Record.push_back(0);
   }
 
   Record.push_back(E->getNumDecls());
@@ -1332,8 +1333,19 @@ void ASTStmtWriter::VisitSubstNonTypeTemplateParmPackExpr(
 
 void ASTStmtWriter::VisitOpaqueValueExpr(OpaqueValueExpr *E) {
   VisitExpr(E);
+  Record.push_back(Writer.getOpaqueValueID(E));
   Writer.AddSourceLocation(E->getLocation(), Record);
   Code = serialization::EXPR_OPAQUE_VALUE;
+}
+
+//===----------------------------------------------------------------------===//
+// CUDA Expressions and Statements.
+//===----------------------------------------------------------------------===//
+
+void ASTStmtWriter::VisitCUDAKernelCallExpr(CUDAKernelCallExpr *E) {
+  VisitCallExpr(E);
+  Writer.AddStmt(E->getConfig());
+  Code = serialization::EXPR_CUDA_KERNEL_CALL;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1358,16 +1370,10 @@ void ASTWriter::ClearSwitchCaseIDs() {
   SwitchCaseIDs.clear();
 }
 
-/// \brief Retrieve the ID for the given label statement, which may
-/// or may not have been emitted yet.
-unsigned ASTWriter::GetLabelID(LabelStmt *S) {
-  std::map<LabelStmt *, unsigned>::iterator Pos = LabelIDs.find(S);
-  if (Pos != LabelIDs.end())
-    return Pos->second;
-
-  unsigned NextID = LabelIDs.size();
-  LabelIDs[S] = NextID;
-  return NextID;
+unsigned ASTWriter::getOpaqueValueID(OpaqueValueExpr *e) {
+  unsigned &entry = OpaqueValues[e];
+  if (!entry) entry = OpaqueValues.size();
+  return entry;
 }
 
 /// \brief Write the given substatement or subexpression to the

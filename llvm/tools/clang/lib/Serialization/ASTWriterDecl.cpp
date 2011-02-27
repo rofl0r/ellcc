@@ -47,6 +47,7 @@ namespace clang {
     void VisitDecl(Decl *D);
     void VisitTranslationUnitDecl(TranslationUnitDecl *D);
     void VisitNamedDecl(NamedDecl *D);
+    void VisitLabelDecl(LabelDecl *LD);
     void VisitNamespaceDecl(NamespaceDecl *D);
     void VisitUsingDirectiveDecl(UsingDirectiveDecl *D);
     void VisitNamespaceAliasDecl(NamespaceAliasDecl *D);
@@ -623,6 +624,22 @@ void ASTDeclWriter::VisitBlockDecl(BlockDecl *D) {
   for (FunctionDecl::param_iterator P = D->param_begin(), PEnd = D->param_end();
        P != PEnd; ++P)
     Writer.AddDeclRef(*P, Record);
+  Record.push_back(D->capturesCXXThis());
+  Record.push_back(D->getNumCaptures());
+  for (BlockDecl::capture_iterator
+         i = D->capture_begin(), e = D->capture_end(); i != e; ++i) {
+    const BlockDecl::Capture &capture = *i;
+    Writer.AddDeclRef(capture.getVariable(), Record);
+
+    unsigned flags = 0;
+    if (capture.isByRef()) flags |= 1;
+    if (capture.isNested()) flags |= 2;
+    if (capture.hasCopyExpr()) flags |= 4;
+    Record.push_back(flags);
+
+    if (capture.hasCopyExpr()) Writer.AddStmt(capture.getCopyExpr());
+  }
+
   Code = serialization::DECL_BLOCK;
 }
 
@@ -634,6 +651,12 @@ void ASTDeclWriter::VisitLinkageSpecDecl(LinkageSpecDecl *D) {
   Record.push_back(D->hasBraces());
   Code = serialization::DECL_LINKAGE_SPEC;
 }
+
+void ASTDeclWriter::VisitLabelDecl(LabelDecl *D) {
+  VisitNamedDecl(D);
+  Code = serialization::DECL_LABEL;
+}
+
 
 void ASTDeclWriter::VisitNamespaceDecl(NamespaceDecl *D) {
   VisitNamedDecl(D);
@@ -846,6 +869,9 @@ void ASTDeclWriter::VisitRedeclarableTemplateDecl(RedeclarableTemplateDecl *D) {
   // getCommonPtr() can be used while this is still initializing.
 
   Writer.AddDeclRef(D->getPreviousDeclaration(), Record);
+  if (D->getPreviousDeclaration())
+    Writer.AddDeclRef(D->getFirstDeclaration(), Record);
+
   if (D->getPreviousDeclaration() == 0) {
     // This TemplateDecl owns the CommonPtr; write it.
     assert(D->isCanonicalDecl());
@@ -993,7 +1019,7 @@ void ASTDeclWriter::VisitNonTypeTemplateParmDecl(NonTypeTemplateParmDecl *D) {
   if (D->isExpandedParameterPack())
     Record.push_back(D->getNumExpansionTypes());
   
-  VisitVarDecl(D);
+  VisitDeclaratorDecl(D);
   // TemplateParmPosition.
   Record.push_back(D->getDepth());
   Record.push_back(D->getPosition());
@@ -1059,9 +1085,14 @@ void ASTDeclWriter::VisitRedeclarable(Redeclarable<T> *D) {
   if (D->RedeclLink.getNext() == D) {
     Record.push_back(NoRedeclaration);
   } else {
-    Record.push_back(D->RedeclLink.NextIsPrevious() ? PointsToPrevious
-                                                    : PointsToLatest);
-    Writer.AddDeclRef(D->RedeclLink.getPointer(), Record);
+    if (D->RedeclLink.NextIsPrevious()) {
+      Record.push_back(PointsToPrevious);
+      Writer.AddDeclRef(D->getPreviousDeclaration(), Record);
+      Writer.AddDeclRef(D->getFirstDeclaration(), Record);
+    } else {
+      Record.push_back(PointsToLatest);
+      Writer.AddDeclRef(D->RedeclLink.getPointer(), Record);
+    }
   }
 
   T *First = D->getFirstDeclaration();

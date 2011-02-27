@@ -23,7 +23,7 @@ def ContinueStmt : Stmt;
 def BreakStmt : Stmt;
 def ReturnStmt : Stmt;
 def DeclStmt  : Stmt;
-def SwitchCase : Stmt;
+def SwitchCase : Stmt<1>;
 def CaseStmt : DStmt<SwitchCase>;
 def DefaultStmt : DStmt<SwitchCase>;
 
@@ -61,7 +61,9 @@ def MemberExpr : DStmt<Expr>;
 def CastExpr : DStmt<Expr, 1>;
 def BinaryOperator : DStmt<Expr>;
 def CompoundAssignOperator : DStmt<BinaryOperator>;
-def ConditionalOperator : DStmt<Expr>;
+def AbstractConditionalOperator : DStmt<Expr, 1>;
+def ConditionalOperator : DStmt<AbstractConditionalOperator>;
+def BinaryConditionalOperator : DStmt<AbstractConditionalOperator>;
 def ImplicitCastExpr : DStmt<CastExpr>;
 def ExplicitCastExpr : DStmt<CastExpr, 1>;
 def CStyleCastExpr : DStmt<ExplicitCastExpr>;
@@ -124,6 +126,9 @@ def ObjCProtocolExpr : DStmt<Expr>;
 def ObjCIvarRefExpr : DStmt<Expr>;
 def ObjCPropertyRefExpr : DStmt<Expr>;
 def ObjCIsaExpr : DStmt<Expr>;
+
+// CUDA Expressions.
+def CUDAKernelCallExpr : DStmt<CallExpr>;
 
 // Clang Extensions.
 def ShuffleVectorExpr : DStmt<Expr>;

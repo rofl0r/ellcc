@@ -12,10 +12,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "ExprEngineInternalChecks.h"
+#include "ClangSACheckers.h"
 #include "clang/Basic/TargetInfo.h"
-#include "clang/StaticAnalyzer/BugReporter/BugType.h"
-#include "clang/StaticAnalyzer/PathSensitive/CheckerVisitor.h"
+#include "clang/StaticAnalyzer/Core/CheckerManager.h"
+#include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/CheckerVisitor.h"
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/StringSwitch.h"
 #include <fcntl.h>
@@ -46,8 +47,12 @@ public:
 };
 } //end anonymous namespace
 
-void ento::RegisterUnixAPIChecker(ExprEngine &Eng) {
+static void RegisterUnixAPIChecker(ExprEngine &Eng) {
   Eng.registerCheck(new UnixAPIChecker());
+}
+
+void ento::registerUnixAPIChecker(CheckerManager &mgr) {
+  mgr.addCheckerRegisterFunction(RegisterUnixAPIChecker);
 }
 
 //===----------------------------------------------------------------------===//

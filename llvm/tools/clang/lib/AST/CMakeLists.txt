@@ -1,4 +1,4 @@
-set(LLVM_NO_RTTI 1)
+set(LLVM_LINK_COMPONENTS support)
 
 set(LLVM_USED_LIBS clangBasic)
 

@@ -90,7 +90,8 @@ namespace {
     BOOLSUPPORT = 64,
     KEYALTIVEC = 128,
     KEYNOCXX = 256,
-    KEYBORLAND = 512
+    KEYBORLAND = 512,
+    KEYOPENCL = 1024
   };
 }
 
@@ -115,6 +116,7 @@ static void AddKeyword(llvm::StringRef Keyword,
   else if (LangOpts.Borland && (Flags & KEYBORLAND)) AddResult = 1;
   else if (LangOpts.Bool && (Flags & BOOLSUPPORT)) AddResult = 2;
   else if (LangOpts.AltiVec && (Flags & KEYALTIVEC)) AddResult = 2;
+  else if (LangOpts.OpenCL && (Flags & KEYOPENCL)) AddResult = 2;
   else if (!LangOpts.CPlusPlus && (Flags & KEYNOCXX)) AddResult = 2;
 
   // Don't add this keyword if disabled in this language.
@@ -322,6 +324,11 @@ IdentifierInfo *Selector::getIdentifierInfoForSlot(unsigned argIndex) const {
   // We point to a MultiKeywordSelector (pointer doesn't contain any flags).
   MultiKeywordSelector *SI = reinterpret_cast<MultiKeywordSelector *>(InfoPtr);
   return SI->getIdentifierInfoForSlot(argIndex);
+}
+
+llvm::StringRef Selector::getNameForSlot(unsigned int argIndex) const {
+  IdentifierInfo *II = getIdentifierInfoForSlot(argIndex);
+  return II? II->getName() : llvm::StringRef();
 }
 
 std::string MultiKeywordSelector::getName() const {

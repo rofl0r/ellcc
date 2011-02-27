@@ -1088,6 +1088,11 @@ DEF_TRAVERSE_DECL(NamespaceAliasDecl, {
     return true;
   })
 
+DEF_TRAVERSE_DECL(LabelDecl, {
+  // There is no code in a LabelDecl.
+})
+  
+  
 DEF_TRAVERSE_DECL(NamespaceDecl, {
     // Code in an unnamed namespace shows up automatically in
     // decls_begin()/decls_end().  Thus we don't need to recurse on
@@ -1538,7 +1543,7 @@ DEF_TRAVERSE_DECL(ImplicitParamDecl, {
 
 DEF_TRAVERSE_DECL(NonTypeTemplateParmDecl, {
     // A non-type template parameter, e.g. "S" in template<int S> class Foo ...
-    TRY_TO(TraverseVarHelper(D));
+    TRY_TO(TraverseDeclaratorHelper(D));
     TRY_TO(TraverseStmt(D->getDefaultArgument()));
   })
 
@@ -1561,12 +1566,11 @@ DEF_TRAVERSE_DECL(ParmVarDecl, {
 // ----------------- Stmt traversal -----------------
 //
 // For stmts, we automate (in the DEF_TRAVERSE_STMT macro) iterating
-// over the children defined in child_begin/child_end (every stmt
-// defines these, though sometimes the range is empty).  Each
-// individual Traverse* method only needs to worry about children
-// other than those.  To see what child_begin()/end() does for a given
-// class, see, e.g.,
-// http://clang.llvm.org/doxygen/Stmt_8cpp_source.html
+// over the children defined in children() (every stmt defines these,
+// though sometimes the range is empty).  Each individual Traverse*
+// method only needs to worry about children other than those.  To see
+// what children() does for a given class, see, e.g.,
+//   http://clang.llvm.org/doxygen/Stmt_8cpp_source.html
 
 // This macro makes available a variable S, the passed-in stmt.
 #define DEF_TRAVERSE_STMT(STMT, CODE)                                   \
@@ -1574,9 +1578,8 @@ template<typename Derived>                                              \
 bool RecursiveASTVisitor<Derived>::Traverse##STMT (STMT *S) {           \
   TRY_TO(WalkUpFrom##STMT(S));                                          \
   { CODE; }                                                             \
-  for (Stmt::child_iterator C = S->child_begin(), CEnd = S->child_end(); \
-       C != CEnd; ++C) {                                                \
-    TRY_TO(TraverseStmt(*C));                                           \
+  for (Stmt::child_range range = S->children(); range; ++range) {       \
+    TRY_TO(TraverseStmt(*range));                                       \
   }                                                                     \
   return true;                                                          \
 }
@@ -1592,12 +1595,12 @@ DEF_TRAVERSE_STMT(AsmStmt, {
     for (unsigned I = 0, E = S->getNumClobbers(); I < E; ++I) {
       TRY_TO(TraverseStmt(S->getClobber(I)));
     }
-    // child_begin()/end() iterates over inputExpr and outputExpr.
+    // children() iterates over inputExpr and outputExpr.
   })
 
 DEF_TRAVERSE_STMT(CXXCatchStmt, {
     TRY_TO(TraverseDecl(S->getExceptionDecl()));
-    // child_begin()/end() iterates over the handler block.
+    // children() iterates over the handler block.
   })
 
 DEF_TRAVERSE_STMT(DeclStmt, {
@@ -1605,11 +1608,11 @@ DEF_TRAVERSE_STMT(DeclStmt, {
          I != E; ++I) {
       TRY_TO(TraverseDecl(*I));
     }
-    // Suppress the default iteration over child_begin/end by
+    // Suppress the default iteration over children() by
     // returning.  Here's why: A DeclStmt looks like 'type var [=
     // initializer]'.  The decls above already traverse over the
     // initializers, so we don't have to do it again (which
-    // child_begin/end would do).
+    // children() would do).
     return true;
   })
 
@@ -1636,7 +1639,6 @@ DEF_TRAVERSE_STMT(ObjCAtThrowStmt, { })
 DEF_TRAVERSE_STMT(ObjCAtTryStmt, { })
 DEF_TRAVERSE_STMT(ObjCForCollectionStmt, { })
 DEF_TRAVERSE_STMT(ReturnStmt, { })
-DEF_TRAVERSE_STMT(SwitchCase, { })
 DEF_TRAVERSE_STMT(SwitchStmt, { })
 DEF_TRAVERSE_STMT(WhileStmt, { })
 
@@ -1713,9 +1715,8 @@ bool RecursiveASTVisitor<Derived>::TraverseInitListExpr(InitListExpr *S) {
     S = Syn;
   TRY_TO(WalkUpFromInitListExpr(S));
   // All we need are the default actions.  FIXME: use a helper function.
-  for (Stmt::child_iterator C = S->child_begin(), CEnd = S->child_end();
-       C != CEnd; ++C) {
-    TRY_TO(TraverseStmt(*C));
+  for (Stmt::child_range range = S->children(); range; ++range) {
+    TRY_TO(TraverseStmt(*range));
   }
   return true;
 }
@@ -1847,9 +1848,11 @@ DEF_TRAVERSE_STMT(UnresolvedMemberExpr, {
 
 DEF_TRAVERSE_STMT(CXXOperatorCallExpr, { })
 DEF_TRAVERSE_STMT(OpaqueValueExpr, { })
+DEF_TRAVERSE_STMT(CUDAKernelCallExpr, { })
 
 // These operators (all of them) do not need any action except
 // iterating over the children.
+DEF_TRAVERSE_STMT(BinaryConditionalOperator, { })
 DEF_TRAVERSE_STMT(ConditionalOperator, { })
 DEF_TRAVERSE_STMT(UnaryOperator, { })
 DEF_TRAVERSE_STMT(BinaryOperator, { })
