@@ -53,6 +53,8 @@ public:
   unsigned LaxVectorConversions : 1;
   unsigned AltiVec           : 1;  // Support AltiVec-style vector initializers.
   unsigned Exceptions        : 1;  // Support exception handling.
+  unsigned ObjCExceptions    : 1;  // Support Objective-C exceptions.
+  unsigned CXXExceptions     : 1;  // Support C++ exceptions.
   unsigned SjLjExceptions    : 1;  // Use setjmp-longjump exception handling.
   unsigned RTTI              : 1;  // Support RTTI information.
 
@@ -164,7 +166,8 @@ public:
     NoConstantCFStrings = 0; InlineVisibilityHidden = 0;
     C99 = Microsoft = Borland = CPlusPlus = CPlusPlus0x = 0;
     CXXOperatorNames = PascalStrings = WritableStrings = ConstStrings = 0;
-    Exceptions = SjLjExceptions = Freestanding = NoBuiltin = 0;
+    Exceptions = ObjCExceptions = CXXExceptions = SjLjExceptions = 0;
+    Freestanding = NoBuiltin = 0;
     MSBitfields = 0;
     NeXTRuntime = 1;
     RTTI = 1;
@@ -235,6 +238,10 @@ public:
   }
   void setSignedOverflowBehavior(SignedOverflowBehaviorTy V) {
     SignedOverflowBehavior = (unsigned)V;
+  }
+
+  bool areExceptionsEnabled() const {
+    return Exceptions;
   }
 };
 

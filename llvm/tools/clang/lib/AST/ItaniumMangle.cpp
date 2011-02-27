@@ -606,6 +606,9 @@ void CXXNameMangler::mangleUnresolvedScope(NestedNameSpecifier *Qualifier) {
   case NestedNameSpecifier::Namespace:
     mangleName(Qualifier->getAsNamespace());
     break;
+  case NestedNameSpecifier::NamespaceAlias:
+    mangleName(Qualifier->getAsNamespaceAlias()->getNamespace());
+    break;
   case NestedNameSpecifier::TypeSpec:
   case NestedNameSpecifier::TypeSpecWithTemplate: {
     const Type *QTy = Qualifier->getAsType();
@@ -1313,9 +1316,6 @@ void CXXNameMangler::mangleType(const BuiltinType *T) {
     assert(false &&
            "Overloaded and dependent types shouldn't get to name mangling");
     break;
-  case BuiltinType::UndeducedAuto:
-    assert(0 && "Should not see undeduced auto here");
-    break;
   case BuiltinType::ObjCId: Out << "11objc_object"; break;
   case BuiltinType::ObjCClass: Out << "10objc_class"; break;
   case BuiltinType::ObjCSel: Out << "13objc_selector"; break;
@@ -1646,6 +1646,15 @@ void CXXNameMangler::mangleType(const DecltypeType *T) {
     Out << "DT";
   mangleExpression(E);
   Out << 'E';
+}
+
+void CXXNameMangler::mangleType(const AutoType *T) {
+  QualType D = T->getDeducedType();
+  // <builtin-type> ::= Da  # dependent auto
+  if (D.isNull())
+    Out << "Da";
+  else
+    mangleType(D);
 }
 
 void CXXNameMangler::mangleIntegerLiteral(QualType T,

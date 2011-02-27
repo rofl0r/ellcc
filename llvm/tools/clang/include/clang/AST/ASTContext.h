@@ -115,6 +115,7 @@ class ASTContext {
   llvm::FoldingSet<PackExpansionType> PackExpansionTypes;
   mutable llvm::FoldingSet<ObjCObjectTypeImpl> ObjCObjectTypes;
   mutable llvm::FoldingSet<ObjCObjectPointerType> ObjCObjectPointerTypes;
+  mutable llvm::FoldingSet<AutoType> AutoTypes;
   llvm::FoldingSet<AttributedType> AttributedTypes;
 
   mutable llvm::FoldingSet<QualifiedTemplateName> QualifiedTemplateNames;
@@ -412,7 +413,7 @@ public:
   CanQualType FloatTy, DoubleTy, LongDoubleTy;
   CanQualType FloatComplexTy, DoubleComplexTy, LongDoubleComplexTy;
   CanQualType VoidPtrTy, NullPtrTy;
-  CanQualType OverloadTy, UndeducedAutoTy;
+  CanQualType OverloadTy;
   CanQualType DependentTy;
   CanQualType ObjCBuiltinIdTy, ObjCBuiltinClassTy, ObjCBuiltinSelTy;
 
@@ -550,11 +551,6 @@ public:
   FunctionDecl *getcudaConfigureCallDecl() {
     return cudaConfigureCallDecl;
   }
-
-  /// This gets the struct used to keep track of pointer to blocks, complete
-  /// with captured variables.
-  QualType getBlockParmType(bool BlockHasCopyDispose,
-                            llvm::SmallVectorImpl<const Expr *> &Layout) const;
 
   /// This builds the struct used for __block variables.
   QualType BuildByRefType(llvm::StringRef DeclName, QualType Ty) const;
@@ -739,6 +735,9 @@ public:
 
   /// getDecltypeType - C++0x decltype.
   QualType getDecltypeType(Expr *e) const;
+
+  /// getAutoType - C++0x deduced auto type.
+  QualType getAutoType(QualType DeducedType) const;
 
   /// getTagDeclType - Return the unique reference to the type for the
   /// specified TagDecl (struct/union/class/enum) decl.
@@ -1042,8 +1041,8 @@ public:
   CharUnits getTypeAlignInChars(QualType T) const;
   CharUnits getTypeAlignInChars(const Type *T) const;
 
-  std::pair<CharUnits, CharUnits> getTypeInfoInChars(const Type *T);
-  std::pair<CharUnits, CharUnits> getTypeInfoInChars(QualType T);
+  std::pair<CharUnits, CharUnits> getTypeInfoInChars(const Type *T) const;
+  std::pair<CharUnits, CharUnits> getTypeInfoInChars(QualType T) const;
 
   /// getPreferredTypeAlign - Return the "preferred" alignment of the specified
   /// type for the current target in bits.  This can be different than the ABI
@@ -1522,7 +1521,6 @@ private:
 
   /// \brief A counter used to uniquely identify "blocks".
   mutable unsigned int UniqueBlockByRefTypeID;
-  mutable unsigned int UniqueBlockParmTypeID;
   
   friend class DeclContext;
   friend class DeclarationNameTable;

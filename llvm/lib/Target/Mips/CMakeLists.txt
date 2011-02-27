@@ -26,3 +26,5 @@ add_llvm_target(MipsCodeGen
   MipsSelectionDAGInfo.cpp
   MipsIntrinsicInfo.cpp
   )
+
+add_subdirectory(TargetInfo)

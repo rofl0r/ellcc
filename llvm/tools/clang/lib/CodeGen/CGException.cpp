@@ -439,7 +439,7 @@ void CodeGenFunction::EmitCXXThrowExpr(const CXXThrowExpr *E) {
 }
 
 void CodeGenFunction::EmitStartEHSpec(const Decl *D) {
-  if (!Exceptions)
+  if (!CGM.getLangOptions().areExceptionsEnabled())
     return;
   
   const FunctionDecl* FD = dyn_cast_or_null<FunctionDecl>(D);
@@ -467,7 +467,7 @@ void CodeGenFunction::EmitStartEHSpec(const Decl *D) {
 }
 
 void CodeGenFunction::EmitEndEHSpec(const Decl *D) {
-  if (!Exceptions)
+  if (!CGM.getLangOptions().areExceptionsEnabled())
     return;
   
   const FunctionDecl* FD = dyn_cast_or_null<FunctionDecl>(D);
@@ -541,7 +541,7 @@ llvm::BasicBlock *CodeGenFunction::getInvokeDestImpl() {
   assert(EHStack.requiresLandingPad());
   assert(!EHStack.empty());
 
-  if (!Exceptions)
+  if (!CGM.getLangOptions().areExceptionsEnabled())
     return 0;
 
   // Check the innermost scope for a cached landing pad.  If this is
@@ -1086,14 +1086,14 @@ static void BeginCatch(CodeGenFunction &CGF, const CXXCatchStmt *S) {
   //   3.  Enter __cxa_end_catch cleanup
   //   4.  Enter dtor cleanup
   //
-  // We do this by initializing the exception variable with a
-  // "special initializer", InitCatchParam.  Delegation sequence:
+  // We do this by using a slightly abnormal initialization process.
+  // Delegation sequence:
   //   - ExitCXXTryStmt opens a RunCleanupsScope
-  //     - EmitLocalBlockVarDecl creates the variable and debug info
+  //     - EmitAutoVarAlloca creates the variable and debug info
   //       - InitCatchParam initializes the variable from the exception
-  //         - CallBeginCatch calls __cxa_begin_catch
-  //         - CallBeginCatch enters the __cxa_end_catch cleanup
-  //     - EmitLocalBlockVarDecl enters the variable destructor cleanup
+  //       - CallBeginCatch calls __cxa_begin_catch
+  //       - CallBeginCatch enters the __cxa_end_catch cleanup
+  //     - EmitAutoVarCleanups enters the variable destructor cleanup
   //   - EmitCXXTryStmt emits the code for the catch body
   //   - EmitCXXTryStmt close the RunCleanupsScope
 
@@ -1105,7 +1105,9 @@ static void BeginCatch(CodeGenFunction &CGF, const CXXCatchStmt *S) {
   }
 
   // Emit the local.
-  CGF.EmitAutoVarDecl(*CatchParam, &InitCatchParam);
+  CodeGenFunction::AutoVarEmission var = CGF.EmitAutoVarAlloca(*CatchParam);
+  InitCatchParam(CGF, *CatchParam, var.getObjectAddress(CGF));
+  CGF.EmitAutoVarCleanups(var);
 }
 
 namespace {

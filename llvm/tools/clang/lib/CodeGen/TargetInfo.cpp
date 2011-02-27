@@ -358,7 +358,7 @@ bool UseX86_MMXType(const llvm::Type *IRType) {
 static const llvm::Type* X86AdjustInlineAsmType(CodeGen::CodeGenFunction &CGF,
                                                 llvm::StringRef Constraint,
                                                 const llvm::Type* Ty) {
-  if (Constraint=="y" && UseX86_MMXType(Ty))
+  if (Constraint=="y" && Ty->isVectorTy())
     return llvm::Type::getX86_MMXTy(CGF.getLLVMContext());
   return Ty;
 }
@@ -2105,8 +2105,15 @@ ABIArgInfo WinX86_64ABIInfo::classify(QualType Ty) const {
         RT->getDecl()->hasFlexibleArrayMember())
       return ABIArgInfo::getIndirect(0, /*ByVal=*/false);
 
-    // FIXME: mingw64-gcc emits 128-bit struct as i128
-    if (Size <= 128 &&
+    // FIXME: mingw-w64-gcc emits 128-bit struct as i128
+    if (Size == 128 &&
+        getContext().Target.getTriple().getOS() == llvm::Triple::MinGW32)
+      return ABIArgInfo::getDirect(llvm::IntegerType::get(getVMContext(),
+                                                          Size));
+
+    // MS x64 ABI requirement: "Any argument that doesn't fit in 8 bytes, or is
+    // not 1, 2, 4, or 8 bytes, must be passed by reference."
+    if (Size <= 64 &&
         (Size & (Size - 1)) == 0)
       return ABIArgInfo::getDirect(llvm::IntegerType::get(getVMContext(),
                                                           Size));

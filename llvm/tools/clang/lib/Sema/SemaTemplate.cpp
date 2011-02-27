@@ -400,8 +400,7 @@ Sema::BuildDependentDeclRefExpr(const CXXScopeSpec &SS,
                                 const DeclarationNameInfo &NameInfo,
                                 const TemplateArgumentListInfo *TemplateArgs) {
   return Owned(DependentScopeDeclRefExpr::Create(Context,
-               static_cast<NestedNameSpecifier*>(SS.getScopeRep()),
-                                                 SS.getRange(),
+                                               SS.getWithLocInContext(Context),
                                                  NameInfo,
                                                  TemplateArgs));
 }
@@ -783,8 +782,7 @@ Sema::ActOnTemplateParameterList(unsigned Depth,
 
 static void SetNestedNameSpecifier(TagDecl *T, const CXXScopeSpec &SS) {
   if (SS.isSet())
-    T->setQualifierInfo(static_cast<NestedNameSpecifier*>(SS.getScopeRep()),
-                        SS.getRange());
+    T->setQualifierInfo(SS.getWithLocInContext(T->getASTContext()));
 }
 
 DeclResult
@@ -1824,6 +1822,11 @@ ExprResult Sema::BuildTemplateIdExpr(const CXXScopeSpec &SS,
   // template arguments that we have against the template name, if the template
   // name refers to a single template. That's not a terribly common case,
   // though.
+  // foo<int> could identify a single function unambiguously
+  // This approach does NOT work, since f<int>(1);
+  // gets resolved prior to resorting to overload resolution
+  // i.e., template<class T> void f(double);
+  //       vs template<class T, class U> void f(U);
 
   // These should be filtered out by our callers.
   assert(!R.empty() && "empty lookup results when building templateid");
@@ -2328,9 +2331,13 @@ bool Sema::CheckTemplateArgument(NamedDecl *Param,
         DeclarationNameInfo NameInfo(DTN->getIdentifier(),
                                      Arg.getTemplateNameLoc());
 
+        // FIXME: TemplateArgumentLoc should store a NestedNameSpecifierLoc
+        // for the template name.
+        CXXScopeSpec SS;
+        SS.MakeTrivial(Context, DTN->getQualifier(), 
+                       Arg.getTemplateQualifierRange());
         Expr *E = DependentScopeDeclRefExpr::Create(Context,
-                                                    DTN->getQualifier(),
-                                               Arg.getTemplateQualifierRange(),
+                                                SS.getWithLocInContext(Context),
                                                     NameInfo);
 
         // If we parsed the template argument as a pack expansion, create a
@@ -2778,6 +2785,10 @@ bool UnnamedLocalNoLinkageFinder::VisitDecltypeType(const DecltypeType*) {
   return false;
 }
 
+bool UnnamedLocalNoLinkageFinder::VisitAutoType(const AutoType *T) {
+  return Visit(T->getDeducedType());
+}
+
 bool UnnamedLocalNoLinkageFinder::VisitRecordType(const RecordType* T) {
   return VisitTagDecl(T->getDecl());
 }
@@ -2859,6 +2870,7 @@ bool UnnamedLocalNoLinkageFinder::VisitNestedNameSpecifier(
   switch (NNS->getKind()) {
   case NestedNameSpecifier::Identifier:
   case NestedNameSpecifier::Namespace:
+  case NestedNameSpecifier::NamespaceAlias:
   case NestedNameSpecifier::Global:
     return false;
 
@@ -3601,7 +3613,7 @@ Sema::BuildExpressionFromDeclTemplateArgument(const TemplateArgument &Arg,
         = NestedNameSpecifier::Create(Context, 0, false,
                                       ClassType.getTypePtr());
       CXXScopeSpec SS;
-      SS.setScopeRep(Qualifier);
+      SS.MakeTrivial(Context, Qualifier, Loc);
 
       // The actual value-ness of this is unimportant, but for
       // internal consistency's sake, references to instance methods
@@ -5988,8 +6000,7 @@ Sema::CheckTypenameType(ElaboratedTypeKeyword Keyword,
                         SourceLocation KeywordLoc, SourceRange NNSRange,
                         SourceLocation IILoc) {
   CXXScopeSpec SS;
-  SS.setScopeRep(NNS);
-  SS.setRange(NNSRange);
+  SS.MakeTrivial(Context, NNS, NNSRange);
 
   DeclContext *Ctx = computeDeclContext(SS);
   if (!Ctx) {
@@ -6027,7 +6038,7 @@ Sema::CheckTypenameType(ElaboratedTypeKeyword Keyword,
       << Name << Ctx << FullRange;
     if (UnresolvedUsingValueDecl *Using
           = dyn_cast<UnresolvedUsingValueDecl>(Result.getRepresentativeDecl())){
-      SourceLocation Loc = Using->getTargetNestedNameRange().getBegin();
+      SourceLocation Loc = Using->getQualifierLoc().getBeginLoc();
       Diag(Loc, diag::note_using_value_decl_missing_typename)
         << FixItHint::CreateInsertion(Loc, "typename ");
     }
@@ -6159,16 +6170,18 @@ ExprResult Sema::RebuildExprInCurrentInstantiation(Expr *E) {
 }
 
 bool Sema::RebuildNestedNameSpecifierInCurrentInstantiation(CXXScopeSpec &SS) {
-  if (SS.isInvalid()) return true;
+  if (SS.isInvalid()) 
+    return true;
 
-  NestedNameSpecifier *NNS = static_cast<NestedNameSpecifier*>(SS.getScopeRep());
+  NestedNameSpecifierLoc QualifierLoc = SS.getWithLocInContext(Context);
   CurrentInstantiationRebuilder Rebuilder(*this, SS.getRange().getBegin(),
                                           DeclarationName());
-  NestedNameSpecifier *Rebuilt =
-    Rebuilder.TransformNestedNameSpecifier(NNS, SS.getRange());
-  if (!Rebuilt) return true;
+  NestedNameSpecifierLoc Rebuilt 
+    = Rebuilder.TransformNestedNameSpecifierLoc(QualifierLoc);
+  if (!Rebuilt) 
+    return true;
 
-  SS.setScopeRep(Rebuilt);
+  SS.Adopt(Rebuilt);
   return false;
 }
 

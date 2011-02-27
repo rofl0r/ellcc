@@ -22,6 +22,7 @@
 #include "clang/AST/Expr.h"
 #include "clang/AST/ExprCXX.h"
 #include "llvm/ADT/BitVector.h"
+#include "TreeTransform.h"
 #include <algorithm>
 
 namespace clang {
@@ -2445,21 +2446,22 @@ static bool AdjustFunctionParmAndArgTypesForDeduction(Sema &S,
     ParamType = ParamType.getLocalUnqualifiedType();
   const ReferenceType *ParamRefType = ParamType->getAs<ReferenceType>();
   if (ParamRefType) {
+    QualType PointeeType = ParamRefType->getPointeeType();
+
     //   [C++0x] If P is an rvalue reference to a cv-unqualified
     //   template parameter and the argument is an lvalue, the type
     //   "lvalue reference to A" is used in place of A for type
     //   deduction.
-    if (const RValueReferenceType *RValueRef
-                                   = dyn_cast<RValueReferenceType>(ParamType)) {
-      if (!RValueRef->getPointeeType().getQualifiers() &&
-          isa<TemplateTypeParmType>(RValueRef->getPointeeType()) &&
+    if (isa<RValueReferenceType>(ParamType)) {
+      if (!PointeeType.getQualifiers() &&
+          isa<TemplateTypeParmType>(PointeeType) &&
           Arg->Classify(S.Context).isLValue())
         ArgType = S.Context.getLValueReferenceType(ArgType);
     }
 
     //   [...] If P is a reference type, the type referred to by P is used
     //   for type deduction.
-    ParamType = ParamRefType->getPointeeType();
+    ParamType = PointeeType;
   }
 
   // Overload sets usually make this parameter an undeduced
@@ -2946,6 +2948,95 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
                                  QualType(), Specialization, Info);
 }
 
+namespace {
+  /// Substitute the 'auto' type specifier within a type for a given replacement
+  /// type.
+  class SubstituteAutoTransform :
+    public TreeTransform<SubstituteAutoTransform> {
+    QualType Replacement;
+  public:
+    SubstituteAutoTransform(Sema &SemaRef, QualType Replacement) :
+      TreeTransform<SubstituteAutoTransform>(SemaRef), Replacement(Replacement) {
+    }
+    QualType TransformAutoType(TypeLocBuilder &TLB, AutoTypeLoc TL) {
+      // If we're building the type pattern to deduce against, don't wrap the
+      // substituted type in an AutoType. Certain template deduction rules
+      // apply only when a template type parameter appears directly (and not if
+      // the parameter is found through desugaring). For instance:
+      //   auto &&lref = lvalue;
+      // must transform into "rvalue reference to T" not "rvalue reference to
+      // auto type deduced as T" in order for [temp.deduct.call]p3 to apply.
+      if (isa<TemplateTypeParmType>(Replacement)) {
+        QualType Result = Replacement;
+        TemplateTypeParmTypeLoc NewTL = TLB.push<TemplateTypeParmTypeLoc>(Result);
+        NewTL.setNameLoc(TL.getNameLoc());
+        return Result;
+      } else {
+        QualType Result = RebuildAutoType(Replacement);
+        AutoTypeLoc NewTL = TLB.push<AutoTypeLoc>(Result);
+        NewTL.setNameLoc(TL.getNameLoc());
+        return Result;
+      }
+    }
+  };
+}
+
+/// \brief Deduce the type for an auto type-specifier (C++0x [dcl.spec.auto]p6)
+///
+/// \param Type the type pattern using the auto type-specifier.
+///
+/// \param Init the initializer for the variable whose type is to be deduced.
+///
+/// \param Result if type deduction was successful, this will be set to the
+/// deduced type. This may still contain undeduced autos if the type is
+/// dependent.
+///
+/// \returns true if deduction succeeded, false if it failed.
+bool
+Sema::DeduceAutoType(QualType Type, Expr *Init, QualType &Result) {
+  if (Init->isTypeDependent()) {
+    Result = Type;
+    return true;
+  }
+
+  SourceLocation Loc = Init->getExprLoc();
+
+  LocalInstantiationScope InstScope(*this);
+
+  // Build template<class TemplParam> void Func(FuncParam);
+  QualType TemplArg = Context.getTemplateTypeParmType(0, 0, false);
+  TemplateTypeParmDecl TemplParam(0, Loc, 0, false, TemplArg, false);
+  NamedDecl *TemplParamPtr = &TemplParam;
+  FixedSizeTemplateParameterList<1> TemplateParams(Loc, Loc, &TemplParamPtr,
+                                                   Loc);
+
+  QualType FuncParam =
+    SubstituteAutoTransform(*this, TemplArg).TransformType(Type);
+
+  // Deduce type of TemplParam in Func(Init)
+  llvm::SmallVector<DeducedTemplateArgument, 1> Deduced;
+  Deduced.resize(1);
+  QualType InitType = Init->getType();
+  unsigned TDF = 0;
+  if (AdjustFunctionParmAndArgTypesForDeduction(*this, &TemplateParams,
+                                                FuncParam, InitType, Init,
+                                                TDF))
+    return false;
+
+  TemplateDeductionInfo Info(Context, Loc);
+  if (::DeduceTemplateArguments(*this, &TemplateParams,
+                                FuncParam, InitType, Info, Deduced,
+                                TDF))
+    return false;
+
+  QualType DeducedType = Deduced[0].getAsType();
+  if (DeducedType.isNull())
+    return false;
+
+  Result = SubstituteAutoTransform(*this, DeducedType).TransformType(Type);
+  return true;
+}
+
 static void
 MarkUsedTemplateParameters(Sema &SemaRef, QualType T,
                            bool OnlyDeduced,
@@ -3322,9 +3413,11 @@ Sema::getMostSpecialized(UnresolvedSetIterator SpecBegin,
                          SourceLocation Loc,
                          const PartialDiagnostic &NoneDiag,
                          const PartialDiagnostic &AmbigDiag,
-                         const PartialDiagnostic &CandidateDiag) {
+                         const PartialDiagnostic &CandidateDiag,
+                         bool Complain) {
   if (SpecBegin == SpecEnd) {
-    Diag(Loc, NoneDiag);
+    if (Complain)
+      Diag(Loc, NoneDiag);
     return SpecEnd;
   }
 
@@ -3370,13 +3463,15 @@ Sema::getMostSpecialized(UnresolvedSetIterator SpecBegin,
   }
 
   // Diagnose the ambiguity.
-  Diag(Loc, AmbigDiag);
+  if (Complain)
+    Diag(Loc, AmbigDiag);
 
+  if (Complain)
   // FIXME: Can we order the candidates in some sane way?
-  for (UnresolvedSetIterator I = SpecBegin; I != SpecEnd; ++I)
-    Diag((*I)->getLocation(), CandidateDiag)
-      << getTemplateArgumentBindingsText(
-        cast<FunctionDecl>(*I)->getPrimaryTemplate()->getTemplateParameters(),
+    for (UnresolvedSetIterator I = SpecBegin; I != SpecEnd; ++I)
+      Diag((*I)->getLocation(), CandidateDiag)
+        << getTemplateArgumentBindingsText(
+          cast<FunctionDecl>(*I)->getPrimaryTemplate()->getTemplateParameters(),
                     *cast<FunctionDecl>(*I)->getTemplateSpecializationArgs());
 
   return SpecEnd;
@@ -3735,6 +3830,11 @@ MarkUsedTemplateParameters(Sema &SemaRef, QualType T,
                                cast<PackExpansionType>(T)->getPattern(),
                                OnlyDeduced, Depth, Used);
     break;
+
+  case Type::Auto:
+    MarkUsedTemplateParameters(SemaRef,
+                               cast<AutoType>(T)->getDeducedType(),
+                               OnlyDeduced, Depth, Used);
 
   // None of these types have any template parameters in them.
   case Type::Builtin:

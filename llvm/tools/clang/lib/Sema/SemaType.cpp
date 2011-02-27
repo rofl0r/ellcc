@@ -791,7 +791,7 @@ static QualType ConvertDeclSpecToType(Sema &S, TypeProcessingState &state) {
   }
   case DeclSpec::TST_auto: {
     // TypeQuals handled by caller.
-    Result = Context.UndeducedAutoTy;
+    Result = Context.getAutoType(QualType());
     break;
   }
 
@@ -1091,9 +1091,9 @@ QualType Sema::BuildArrayType(QualType T, ArrayType::ArraySizeModifier ASM,
     return QualType();
   }
 
-  if (Context.getCanonicalType(T) == Context.UndeducedAutoTy) {
-    Diag(Loc,  diag::err_illegal_decl_array_of_auto)
-      << getPrintableNameForEntity(Entity);
+  if (T->getContainedAutoType()) {
+    Diag(Loc, diag::err_illegal_decl_array_of_auto)
+      << getPrintableNameForEntity(Entity) << T;
     return QualType();
   }
 
@@ -1395,6 +1395,56 @@ QualType Sema::GetTypeFromParser(ParsedType Ty, TypeSourceInfo **TInfo) {
   return QT;
 }
 
+static void DiagnoseIgnoredQualifiers(unsigned Quals,
+                                      SourceLocation ConstQualLoc,
+                                      SourceLocation VolatileQualLoc,
+                                      SourceLocation RestrictQualLoc,
+                                      Sema& S) {
+  std::string QualStr;
+  unsigned NumQuals = 0;
+  SourceLocation Loc;
+
+  FixItHint ConstFixIt;
+  FixItHint VolatileFixIt;
+  FixItHint RestrictFixIt;
+
+  // FIXME: The locations here are set kind of arbitrarily. It'd be nicer to
+  // find a range and grow it to encompass all the qualifiers, regardless of
+  // the order in which they textually appear.
+  if (Quals & Qualifiers::Const) {
+    ConstFixIt = FixItHint::CreateRemoval(ConstQualLoc);
+    Loc = ConstQualLoc;
+    ++NumQuals;
+    QualStr = "const";
+  }
+  if (Quals & Qualifiers::Volatile) {
+    VolatileFixIt = FixItHint::CreateRemoval(VolatileQualLoc);
+    if (NumQuals == 0) {
+      Loc = VolatileQualLoc;
+      QualStr = "volatile";
+    } else {
+      QualStr += " volatile";
+    }
+    ++NumQuals;
+  }
+  if (Quals & Qualifiers::Restrict) {
+    RestrictFixIt = FixItHint::CreateRemoval(RestrictQualLoc);
+    if (NumQuals == 0) {
+      Loc = RestrictQualLoc;
+      QualStr = "restrict";
+    } else {
+      QualStr += " restrict";
+    }
+    ++NumQuals;
+  }
+
+  assert(NumQuals > 0 && "No known qualifiers?");
+
+  S.Diag(Loc, diag::warn_qual_return_type)
+    << QualStr << NumQuals
+    << ConstFixIt << VolatileFixIt << RestrictFixIt;
+}
+
 /// GetTypeForDeclarator - Convert the type for the specified
 /// declarator to Type instances.
 ///
@@ -1405,7 +1455,8 @@ QualType Sema::GetTypeFromParser(ParsedType Ty, TypeSourceInfo **TInfo) {
 /// The result of this call will never be null, but the associated
 /// type may be a null type if there's an unrecoverable error.
 TypeSourceInfo *Sema::GetTypeForDeclarator(Declarator &D, Scope *S,
-                                           TagDecl **OwnedDecl) {
+                                           TagDecl **OwnedDecl,
+                                           bool AutoAllowedInTypeName) {
   // Determine the type of the declarator. Not all forms of declarator
   // have a type.
   QualType T;
@@ -1449,33 +1500,12 @@ TypeSourceInfo *Sema::GetTypeForDeclarator(Declarator &D, Scope *S,
   if (D.getAttributes())
     distributeTypeAttrsFromDeclarator(state, T);
 
-  // Check for auto functions and trailing return type and adjust the
-  // return type accordingly.
-  if (getLangOptions().CPlusPlus0x && D.isFunctionDeclarator()) {
-    const DeclaratorChunk::FunctionTypeInfo &FTI = D.getFunctionTypeInfo();
-    if (T == Context.UndeducedAutoTy) {
-      if (FTI.TrailingReturnType) {
-          T = GetTypeFromParser(ParsedType::getFromOpaquePtr(FTI.TrailingReturnType),
-                                &ReturnTypeInfo);
-      }
-      else {
-          Diag(D.getDeclSpec().getTypeSpecTypeLoc(),
-               diag::err_auto_missing_trailing_return);
-          T = Context.IntTy;
-          D.setInvalidType(true);
-      }
-    }
-    else if (FTI.TrailingReturnType) {
-      Diag(D.getDeclSpec().getTypeSpecTypeLoc(),
-           diag::err_trailing_return_without_auto);
-      D.setInvalidType(true);
-    }
-  }
-
-  if (T.isNull())
-    return Context.getNullTypeSourceInfo();
-
-  if (T == Context.UndeducedAutoTy) {
+  // C++0x [dcl.spec.auto]p5: reject 'auto' if it is not in an allowed context.
+  // In C++0x, a function declarator using 'auto' must have a trailing return
+  // type (this is checked later) and we can skip this. In other languages
+  // using auto, we need to check regardless.
+  if (D.getDeclSpec().getTypeSpecType() == DeclSpec::TST_auto &&
+      (!getLangOptions().CPlusPlus0x || !D.isFunctionDeclarator())) {
     int Error = -1;
 
     switch (D.getContext()) {
@@ -1500,15 +1530,46 @@ TypeSourceInfo *Sema::GetTypeForDeclarator(Declarator &D, Scope *S,
       Error = 5; // Template parameter
       break;
     case Declarator::BlockLiteralContext:
-      Error = 6;  // Block literal
+      Error = 6; // Block literal
+      break;
+    case Declarator::TemplateTypeArgContext:
+      Error = 7; // Template type argument
+      break;
+    case Declarator::TypeNameContext:
+      if (!AutoAllowedInTypeName)
+        Error = 10; // Generic
       break;
     case Declarator::FileContext:
     case Declarator::BlockContext:
     case Declarator::ForContext:
     case Declarator::ConditionContext:
-    case Declarator::TypeNameContext:
-    case Declarator::TemplateTypeArgContext:
       break;
+    }
+
+    if (D.getDeclSpec().getStorageClassSpec() == DeclSpec::SCS_typedef)
+      Error = 8;
+
+    // In Objective-C it is an error to use 'auto' on a function declarator.
+    if (D.isFunctionDeclarator())
+      Error = 9;
+
+    // C++0x [dcl.spec.auto]p2: 'auto' is always fine if the declarator
+    // contains a trailing return type. That is only legal at the outermost
+    // level. Check all declarator chunks (outermost first) anyway, to give
+    // better diagnostics.
+    if (getLangOptions().CPlusPlus0x && Error != -1) {
+      for (unsigned i = 0, e = D.getNumTypeObjects(); i != e; ++i) {
+        unsigned chunkIndex = e - i - 1;
+        state.setCurrentChunkIndex(chunkIndex);
+        DeclaratorChunk &DeclType = D.getTypeObject(chunkIndex);
+        if (DeclType.Kind == DeclaratorChunk::Function) {
+          const DeclaratorChunk::FunctionTypeInfo &FTI = DeclType.Fun;
+          if (FTI.TrailingReturnType) {
+            Error = -1;
+            break;
+          }
+        }
+      }
     }
 
     if (Error != -1) {
@@ -1518,6 +1579,9 @@ TypeSourceInfo *Sema::GetTypeForDeclarator(Declarator &D, Scope *S,
       D.setInvalidType(true);
     }
   }
+  
+  if (T.isNull())
+    return Context.getNullTypeSourceInfo();
 
   // The name we're declaring, if any.
   DeclarationName Name;
@@ -1616,6 +1680,37 @@ TypeSourceInfo *Sema::GetTypeForDeclarator(Declarator &D, Scope *S,
       // of the type, otherwise the argument list is ().
       const DeclaratorChunk::FunctionTypeInfo &FTI = DeclType.Fun;
 
+      // Check for auto functions and trailing return type and adjust the
+      // return type accordingly.
+      if (!D.isInvalidType()) {
+        // trailing-return-type is only required if we're declaring a function,
+        // and not, for instance, a pointer to a function.
+        if (D.getDeclSpec().getTypeSpecType() == DeclSpec::TST_auto &&
+            !FTI.TrailingReturnType && chunkIndex == 0) {
+          Diag(D.getDeclSpec().getTypeSpecTypeLoc(),
+               diag::err_auto_missing_trailing_return);
+          T = Context.IntTy;
+          D.setInvalidType(true);
+        } else if (FTI.TrailingReturnType) {
+          // T must be exactly 'auto' at this point. See CWG issue 681.
+          if (isa<ParenType>(T)) {
+            Diag(D.getDeclSpec().getTypeSpecTypeLoc(),
+                 diag::err_trailing_return_in_parens)
+              << T << D.getDeclSpec().getSourceRange();
+            D.setInvalidType(true);
+          } else if (T.hasQualifiers() || !isa<AutoType>(T)) {
+            Diag(D.getDeclSpec().getTypeSpecTypeLoc(),
+                 diag::err_trailing_return_without_auto)
+              << T << D.getDeclSpec().getSourceRange();
+            D.setInvalidType(true);
+          }
+
+          T = GetTypeFromParser(
+            ParsedType::getFromOpaquePtr(FTI.TrailingReturnType),
+            &ReturnTypeInfo);
+        }
+      }
+
       // C99 6.7.5.3p1: The return type may not be a function or array type.
       // For conversion functions, we'll diagnose this particular error later.
       if ((T->isArrayType() || T->isFunctionType()) &&
@@ -1633,46 +1728,31 @@ TypeSourceInfo *Sema::GetTypeForDeclarator(Declarator &D, Scope *S,
 
       // cv-qualifiers on return types are pointless except when the type is a
       // class type in C++.
-      if (T.getCVRQualifiers() && D.getDeclSpec().getTypeQualifiers() &&
+      if (T->isPointerType() && T.getCVRQualifiers() &&
+          (!getLangOptions().CPlusPlus || !T->isDependentType())) {
+        assert(chunkIndex + 1 < e && "No DeclaratorChunk for the return type?");
+        DeclaratorChunk ReturnTypeChunk = D.getTypeObject(chunkIndex + 1);
+        assert(ReturnTypeChunk.Kind == DeclaratorChunk::Pointer);
+
+        DeclaratorChunk::PointerTypeInfo &PTI = ReturnTypeChunk.Ptr;
+
+        DiagnoseIgnoredQualifiers(PTI.TypeQuals,
+            SourceLocation::getFromRawEncoding(PTI.ConstQualLoc),
+            SourceLocation::getFromRawEncoding(PTI.VolatileQualLoc),
+            SourceLocation::getFromRawEncoding(PTI.RestrictQualLoc),
+            *this);
+
+      } else if (T.getCVRQualifiers() && D.getDeclSpec().getTypeQualifiers() &&
           (!getLangOptions().CPlusPlus ||
            (!T->isDependentType() && !T->isRecordType()))) {
-        unsigned Quals = D.getDeclSpec().getTypeQualifiers();
-        std::string QualStr;
-        unsigned NumQuals = 0;
-        SourceLocation Loc;
-        if (Quals & Qualifiers::Const) {
-          Loc = D.getDeclSpec().getConstSpecLoc();
-          ++NumQuals;
-          QualStr = "const";
-        }
-        if (Quals & Qualifiers::Volatile) {
-          if (NumQuals == 0) {
-            Loc = D.getDeclSpec().getVolatileSpecLoc();
-            QualStr = "volatile";
-          } else
-            QualStr += " volatile";
-          ++NumQuals;
-        }
-        if (Quals & Qualifiers::Restrict) {
-          if (NumQuals == 0) {
-            Loc = D.getDeclSpec().getRestrictSpecLoc();
-            QualStr = "restrict";
-          } else
-            QualStr += " restrict";
-          ++NumQuals;
-        }
-        assert(NumQuals > 0 && "No known qualifiers?");
-            
-        SemaDiagnosticBuilder DB = Diag(Loc, diag::warn_qual_return_type);
-        DB << QualStr << NumQuals;
-        if (Quals & Qualifiers::Const)
-          DB << FixItHint::CreateRemoval(D.getDeclSpec().getConstSpecLoc());
-        if (Quals & Qualifiers::Volatile)
-          DB << FixItHint::CreateRemoval(D.getDeclSpec().getVolatileSpecLoc());
-        if (Quals & Qualifiers::Restrict)
-          DB << FixItHint::CreateRemoval(D.getDeclSpec().getRestrictSpecLoc());
+
+        DiagnoseIgnoredQualifiers(D.getDeclSpec().getTypeQualifiers(),
+                                  D.getDeclSpec().getConstSpecLoc(),
+                                  D.getDeclSpec().getVolatileSpecLoc(),
+                                  D.getDeclSpec().getRestrictSpecLoc(),
+                                  *this);
       }
-      
+
       if (getLangOptions().CPlusPlus && D.getDeclSpec().isTypeSpecOwned()) {
         // C++ [dcl.fct]p6:
         //   Types shall not be defined in return or parameter types.
@@ -1815,6 +1895,7 @@ TypeSourceInfo *Sema::GetTypeForDeclarator(Declarator &D, Scope *S,
           break;
 
         case NestedNameSpecifier::Namespace:
+        case NestedNameSpecifier::NamespaceAlias:
         case NestedNameSpecifier::Global:
           llvm_unreachable("Nested-name-specifier must name a type");
           break;
@@ -2037,7 +2118,7 @@ TypeSourceInfo *Sema::GetTypeForDeclarator(Declarator &D, Scope *S,
       break;
     }
   }
-  
+
   if (T.isNull())
     return Context.getNullTypeSourceInfo();
   else if (D.isInvalidType())

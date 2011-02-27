@@ -181,6 +181,12 @@ public:
   /// \returns false if the visitation was terminated early, true otherwise.
   bool TraverseNestedNameSpecifier(NestedNameSpecifier *NNS);
 
+  /// \brief Recursively visit a C++ nested-name-specifier with location 
+  /// information.
+  ///
+  /// \returns false if the visitation was terminated early, true otherwise.
+  bool TraverseNestedNameSpecifierLoc(NestedNameSpecifierLoc NNS);
+
   /// \brief Recursively visit a template name and dispatch to the
   /// appropriate method.
   ///
@@ -502,6 +508,7 @@ bool RecursiveASTVisitor<Derived>::TraverseNestedNameSpecifier(
   switch (NNS->getKind()) {
   case NestedNameSpecifier::Identifier:
   case NestedNameSpecifier::Namespace:
+  case NestedNameSpecifier::NamespaceAlias:
   case NestedNameSpecifier::Global:
     return true;
 
@@ -510,6 +517,31 @@ bool RecursiveASTVisitor<Derived>::TraverseNestedNameSpecifier(
     TRY_TO(TraverseType(QualType(NNS->getAsType(), 0)));
   }
 
+  return true;
+}
+
+template<typename Derived>
+bool RecursiveASTVisitor<Derived>::TraverseNestedNameSpecifierLoc(
+                                                  NestedNameSpecifierLoc NNS) {
+  if (!NNS)
+    return true;
+  
+   if (NestedNameSpecifierLoc Prefix = NNS.getPrefix())
+     TRY_TO(TraverseNestedNameSpecifierLoc(Prefix));
+           
+  switch (NNS.getNestedNameSpecifier()->getKind()) {
+  case NestedNameSpecifier::Identifier:
+  case NestedNameSpecifier::Namespace:
+  case NestedNameSpecifier::NamespaceAlias:
+  case NestedNameSpecifier::Global:
+    return true;
+     
+  case NestedNameSpecifier::TypeSpec:
+  case NestedNameSpecifier::TypeSpecWithTemplate:
+    TRY_TO(TraverseTypeLoc(NNS.getTypeLoc()));
+    break;
+  }
+  
   return true;
 }
 
@@ -713,6 +745,10 @@ DEF_TRAVERSE_TYPE(TypeOfType, {
 
 DEF_TRAVERSE_TYPE(DecltypeType, {
     TRY_TO(TraverseStmt(T->getUnderlyingExpr()));
+  })
+
+DEF_TRAVERSE_TYPE(AutoType, {
+    TRY_TO(TraverseType(T->getDeducedType()));
   })
 
 DEF_TRAVERSE_TYPE(RecordType, { })
@@ -921,6 +957,10 @@ DEF_TRAVERSE_TYPELOC(TypeOfType, {
 // FIXME: location of underlying expr
 DEF_TRAVERSE_TYPELOC(DecltypeType, {
     TRY_TO(TraverseStmt(TL.getTypePtr()->getUnderlyingExpr()));
+  })
+
+DEF_TRAVERSE_TYPELOC(AutoType, {
+    TRY_TO(TraverseType(TL.getTypePtr()->getDeducedType()));
   })
 
 DEF_TRAVERSE_TYPELOC(RecordType, { })
@@ -1134,11 +1174,11 @@ DEF_TRAVERSE_DECL(ObjCPropertyDecl, {
   })
 
 DEF_TRAVERSE_DECL(UsingDecl, {
-    TRY_TO(TraverseNestedNameSpecifier(D->getTargetNestedNameDecl()));
+    TRY_TO(TraverseNestedNameSpecifierLoc(D->getQualifierLoc()));
   })
 
 DEF_TRAVERSE_DECL(UsingDirectiveDecl, {
-    TRY_TO(TraverseNestedNameSpecifier(D->getQualifier()));
+    TRY_TO(TraverseNestedNameSpecifierLoc(D->getQualifierLoc()));
   })
 
 DEF_TRAVERSE_DECL(UsingShadowDecl, { })
@@ -1304,7 +1344,7 @@ DEF_TRAVERSE_DECL(TypedefDecl, {
 DEF_TRAVERSE_DECL(UnresolvedUsingTypenameDecl, {
     // A dependent using declaration which was marked with 'typename'.
     //   template<class T> class A : public B<T> { using typename B<T>::foo; };
-    TRY_TO(TraverseNestedNameSpecifier(D->getTargetNestedNameSpecifier()));
+    TRY_TO(TraverseNestedNameSpecifierLoc(D->getQualifierLoc()));
     // We shouldn't traverse D->getTypeForDecl(); it's a result of
     // declaring the type, not something that was written in the
     // source.
@@ -1417,7 +1457,7 @@ DEF_TRAVERSE_DECL(EnumConstantDecl, {
 DEF_TRAVERSE_DECL(UnresolvedUsingValueDecl, {
     // Like UnresolvedUsingTypenameDecl, but without the 'typename':
     //    template <class T> Class A : public Base<T> { using Base<T>::foo; };
-    TRY_TO(TraverseNestedNameSpecifier(D->getTargetNestedNameSpecifier()));
+    TRY_TO(TraverseNestedNameSpecifierLoc(D->getQualifierLoc()));
   })
 
 DEF_TRAVERSE_DECL(IndirectFieldDecl, {})
@@ -1652,20 +1692,18 @@ DEF_TRAVERSE_STMT(CXXDependentScopeMemberExpr, {
   })
 
 DEF_TRAVERSE_STMT(DeclRefExpr, {
+    TRY_TO(TraverseNestedNameSpecifier(S->getQualifier()));
     TRY_TO(TraverseTemplateArgumentLocsHelper(
         S->getTemplateArgs(), S->getNumTemplateArgs()));
-    // FIXME: Should we be recursing on the qualifier?
-    TRY_TO(TraverseNestedNameSpecifier(S->getQualifier()));
   })
 
 DEF_TRAVERSE_STMT(DependentScopeDeclRefExpr, {
-    // FIXME: Should we be recursing on these two things?
+    TRY_TO(TraverseNestedNameSpecifierLoc(S->getQualifierLoc()));
     if (S->hasExplicitTemplateArgs()) {
       TRY_TO(TraverseTemplateArgumentLocsHelper(
           S->getExplicitTemplateArgs().getTemplateArgs(),
           S->getNumTemplateArgs()));
     }
-    TRY_TO(TraverseNestedNameSpecifier(S->getQualifier()));
   })
 
 DEF_TRAVERSE_STMT(MemberExpr, {
@@ -1806,7 +1844,7 @@ DEF_TRAVERSE_STMT(CXXDeleteExpr, { })
 DEF_TRAVERSE_STMT(ExprWithCleanups, { })
 DEF_TRAVERSE_STMT(CXXNullPtrLiteralExpr, { })
 DEF_TRAVERSE_STMT(CXXPseudoDestructorExpr, { 
-  TRY_TO(TraverseNestedNameSpecifier(S->getQualifier()));
+  TRY_TO(TraverseNestedNameSpecifierLoc(S->getQualifierLoc()));
   if (TypeSourceInfo *ScopeInfo = S->getScopeTypeInfo())
     TRY_TO(TraverseTypeLoc(ScopeInfo->getTypeLoc()));
   if (TypeSourceInfo *DestroyedTypeInfo = S->getDestroyedTypeInfo())

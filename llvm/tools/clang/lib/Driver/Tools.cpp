@@ -1654,6 +1654,11 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
                      getToolChain().IsObjCDefaultSynthPropertiesDefault())) {
       CmdArgs.push_back("-fobjc-default-synthesize-properties");
     }
+
+    // -fno-objc-exceptions is default.
+    if (IsRewriter || Args.hasFlag(options::OPT_fobjc_exceptions, 
+                                   options::OPT_fno_objc_exceptions))
+      CmdArgs.push_back("-fobjc-exceptions");
   }
 
   if (!Args.hasFlag(options::OPT_fassume_sane_operator_new,
@@ -3189,7 +3194,7 @@ void openbsd::Link::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back("-lgcc");
 
     if (Args.hasArg(options::OPT_pthread))
-      CmdArgs.push_back("-pthread");
+      CmdArgs.push_back("-lpthread");
     if (!Args.hasArg(options::OPT_shared))
       CmdArgs.push_back("-lc");
     CmdArgs.push_back("-lgcc");

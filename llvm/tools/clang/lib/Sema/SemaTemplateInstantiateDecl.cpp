@@ -27,33 +27,33 @@ using namespace clang;
 
 bool TemplateDeclInstantiator::SubstQualifier(const DeclaratorDecl *OldDecl,
                                               DeclaratorDecl *NewDecl) {
-  NestedNameSpecifier *OldQual = OldDecl->getQualifier();
-  if (!OldQual) return false;
-
-  SourceRange QualRange = OldDecl->getQualifierRange();
-
-  NestedNameSpecifier *NewQual
-    = SemaRef.SubstNestedNameSpecifier(OldQual, QualRange, TemplateArgs);
-  if (!NewQual)
+  if (!OldDecl->getQualifierLoc())
+    return false;
+  
+  NestedNameSpecifierLoc NewQualifierLoc
+    = SemaRef.SubstNestedNameSpecifierLoc(OldDecl->getQualifierLoc(), 
+                                          TemplateArgs);
+  
+  if (!NewQualifierLoc)
     return true;
-
-  NewDecl->setQualifierInfo(NewQual, QualRange);
+  
+  NewDecl->setQualifierInfo(NewQualifierLoc);
   return false;
 }
 
 bool TemplateDeclInstantiator::SubstQualifier(const TagDecl *OldDecl,
                                               TagDecl *NewDecl) {
-  NestedNameSpecifier *OldQual = OldDecl->getQualifier();
-  if (!OldQual) return false;
-
-  SourceRange QualRange = OldDecl->getQualifierRange();
-
-  NestedNameSpecifier *NewQual
-    = SemaRef.SubstNestedNameSpecifier(OldQual, QualRange, TemplateArgs);
-  if (!NewQual)
+  if (!OldDecl->getQualifierLoc())
+    return false;
+  
+  NestedNameSpecifierLoc NewQualifierLoc
+  = SemaRef.SubstNestedNameSpecifierLoc(OldDecl->getQualifierLoc(), 
+                                        TemplateArgs);
+  
+  if (!NewQualifierLoc)
     return true;
-
-  NewDecl->setQualifierInfo(NewQual, QualRange);
+  
+  NewDecl->setQualifierInfo(NewQualifierLoc);
   return false;
 }
 
@@ -120,9 +120,8 @@ TemplateDeclInstantiator::VisitNamespaceAliasDecl(NamespaceAliasDecl *D) {
     = NamespaceAliasDecl::Create(SemaRef.Context, Owner,
                                  D->getNamespaceLoc(),
                                  D->getAliasLoc(),
-                                 D->getNamespace()->getIdentifier(),
-                                 D->getQualifierRange(),
-                                 D->getQualifier(),
+                                 D->getIdentifier(),
+                                 D->getQualifierLoc(),
                                  D->getTargetNameLoc(),
                                  D->getNamespace());
   Owner->addDecl(Inst);
@@ -324,19 +323,21 @@ Decl *TemplateDeclInstantiator::VisitVarDecl(VarDecl *D) {
     ASTOwningVector<Expr*> InitArgs(SemaRef);
     if (!InstantiateInitializer(SemaRef, D->getInit(), TemplateArgs, LParenLoc,
                                 InitArgs, RParenLoc)) {
+      bool TypeMayContainAuto = true;
       // Attach the initializer to the declaration, if we have one.
       if (InitArgs.size() == 0)
-        SemaRef.ActOnUninitializedDecl(Var, false);    
+        SemaRef.ActOnUninitializedDecl(Var, TypeMayContainAuto);
       else if (D->hasCXXDirectInitializer()) {
         // Add the direct initializer to the declaration.
         SemaRef.AddCXXDirectInitializerToDecl(Var,
                                               LParenLoc,
                                               move_arg(InitArgs),
-                                              RParenLoc);
+                                              RParenLoc,
+                                              TypeMayContainAuto);
       } else {
         assert(InitArgs.size() == 1);
         Expr *Init = InitArgs.take()[0];
-        SemaRef.AddInitializerToDecl(Var, Init, false);
+        SemaRef.AddInitializerToDecl(Var, Init, false, TypeMayContainAuto);
       }
     } else {
       // FIXME: Not too happy about invalidating the declaration
@@ -640,12 +641,12 @@ Decl *TemplateDeclInstantiator::VisitClassTemplateDecl(ClassTemplateDecl *D) {
   // Instantiate the qualifier.  We have to do this first in case
   // we're a friend declaration, because if we are then we need to put
   // the new declaration in the appropriate context.
-  NestedNameSpecifier *Qualifier = Pattern->getQualifier();
-  if (Qualifier) {
-    Qualifier = SemaRef.SubstNestedNameSpecifier(Qualifier,
-                                                 Pattern->getQualifierRange(),
-                                                 TemplateArgs);
-    if (!Qualifier) return 0;
+  NestedNameSpecifierLoc QualifierLoc = Pattern->getQualifierLoc();
+  if (QualifierLoc) {
+    QualifierLoc = SemaRef.SubstNestedNameSpecifierLoc(QualifierLoc,
+                                                       TemplateArgs);
+    if (!QualifierLoc)
+      return 0;
   }
 
   CXXRecordDecl *PrevDecl = 0;
@@ -666,10 +667,9 @@ Decl *TemplateDeclInstantiator::VisitClassTemplateDecl(ClassTemplateDecl *D) {
   // the appropriate context.
   DeclContext *DC = Owner;
   if (isFriend) {
-    if (Qualifier) {
+    if (QualifierLoc) {
       CXXScopeSpec SS;
-      SS.setScopeRep(Qualifier);
-      SS.setRange(Pattern->getQualifierRange());
+      SS.Adopt(QualifierLoc);
       DC = SemaRef.computeDeclContext(SS);
       if (!DC) return 0;
     } else {
@@ -690,10 +690,10 @@ Decl *TemplateDeclInstantiator::VisitClassTemplateDecl(ClassTemplateDecl *D) {
         PrevDecl = PrevClassTemplate->getTemplatedDecl();
     }
 
-    if (!PrevClassTemplate && Qualifier) {
+    if (!PrevClassTemplate && QualifierLoc) {
       SemaRef.Diag(Pattern->getLocation(), diag::err_not_tag_in_scope)
         << D->getTemplatedDecl()->getTagKind() << Pattern->getDeclName() << DC
-        << Pattern->getQualifierRange();
+        << QualifierLoc.getSourceRange();
       return 0;
     }
 
@@ -754,8 +754,8 @@ Decl *TemplateDeclInstantiator::VisitClassTemplateDecl(ClassTemplateDecl *D) {
                             Pattern->getTagKeywordLoc(), PrevDecl,
                             /*DelayTypeCreation=*/true);
 
-  if (Qualifier)
-    RecordInst->setQualifierInfo(Qualifier, Pattern->getQualifierRange());
+  if (QualifierLoc)
+    RecordInst->setQualifierInfo(QualifierLoc);
 
   ClassTemplateDecl *Inst
     = ClassTemplateDecl::Create(SemaRef.Context, DC, D->getLocation(),
@@ -967,12 +967,12 @@ Decl *TemplateDeclInstantiator::VisitFunctionDecl(FunctionDecl *D,
     return 0;
   QualType T = TInfo->getType();
 
-  NestedNameSpecifier *Qualifier = D->getQualifier();
-  if (Qualifier) {
-    Qualifier = SemaRef.SubstNestedNameSpecifier(Qualifier,
-                                                 D->getQualifierRange(),
-                                                 TemplateArgs);
-    if (!Qualifier) return 0;
+  NestedNameSpecifierLoc QualifierLoc = D->getQualifierLoc();
+  if (QualifierLoc) {
+    QualifierLoc = SemaRef.SubstNestedNameSpecifierLoc(QualifierLoc,
+                                                       TemplateArgs);
+    if (!QualifierLoc)
+      return 0;
   }
 
   // If we're instantiating a local function declaration, put the result
@@ -980,10 +980,9 @@ Decl *TemplateDeclInstantiator::VisitFunctionDecl(FunctionDecl *D,
   DeclContext *DC;
   if (D->getDeclContext()->isFunctionOrMethod())
     DC = Owner;
-  else if (isFriend && Qualifier) {
+  else if (isFriend && QualifierLoc) {
     CXXScopeSpec SS;
-    SS.setScopeRep(Qualifier);
-    SS.setRange(D->getQualifierRange());
+    SS.Adopt(QualifierLoc);
     DC = SemaRef.computeDeclContext(SS);
     if (!DC) return 0;
   } else {
@@ -997,8 +996,8 @@ Decl *TemplateDeclInstantiator::VisitFunctionDecl(FunctionDecl *D,
                            D->getStorageClass(), D->getStorageClassAsWritten(),
                            D->isInlineSpecified(), D->hasWrittenPrototype());
 
-  if (Qualifier)
-    Function->setQualifierInfo(Qualifier, D->getQualifierRange());
+  if (QualifierLoc)
+    Function->setQualifierInfo(QualifierLoc);
 
   DeclContext *LexicalDC = Owner;
   if (!isFriend && D->isOutOfLine()) {
@@ -1260,20 +1259,19 @@ TemplateDeclInstantiator::VisitCXXMethodDecl(CXXMethodDecl *D,
       return 0;    
   }
 
-  NestedNameSpecifier *Qualifier = D->getQualifier();
-  if (Qualifier) {
-    Qualifier = SemaRef.SubstNestedNameSpecifier(Qualifier,
-                                                 D->getQualifierRange(),
+  NestedNameSpecifierLoc QualifierLoc = D->getQualifierLoc();
+  if (QualifierLoc) {
+    QualifierLoc = SemaRef.SubstNestedNameSpecifierLoc(QualifierLoc,
                                                  TemplateArgs);
-    if (!Qualifier) return 0;
+    if (!QualifierLoc) 
+      return 0;
   }
 
   DeclContext *DC = Owner;
   if (isFriend) {
-    if (Qualifier) {
+    if (QualifierLoc) {
       CXXScopeSpec SS;
-      SS.setScopeRep(Qualifier);
-      SS.setRange(D->getQualifierRange());
+      SS.Adopt(QualifierLoc);
       DC = SemaRef.computeDeclContext(SS);
 
       if (DC && SemaRef.RequireCompleteDeclContext(SS, DC))
@@ -1316,8 +1314,8 @@ TemplateDeclInstantiator::VisitCXXMethodDecl(CXXMethodDecl *D,
                                    D->isInlineSpecified());
   }
 
-  if (Qualifier)
-    Method->setQualifierInfo(Qualifier, D->getQualifierRange());
+  if (QualifierLoc)
+    Method->setQualifierInfo(QualifierLoc);
 
   if (TemplateParams) {
     // Our resulting instantiation is actually a function template, since we
@@ -1639,12 +1637,13 @@ TemplateDeclInstantiator::VisitTemplateTemplateParmDecl(
 }
 
 Decl *TemplateDeclInstantiator::VisitUsingDirectiveDecl(UsingDirectiveDecl *D) {
-  // Using directives are never dependent, so they require no explicit
+  // Using directives are never dependent (and never contain any types or
+  // expressions), so they require no explicit instantiation work.
   
   UsingDirectiveDecl *Inst
     = UsingDirectiveDecl::Create(SemaRef.Context, Owner, D->getLocation(),
                                  D->getNamespaceKeyLocation(), 
-                                 D->getQualifierRange(), D->getQualifier(), 
+                                 D->getQualifierLoc(),
                                  D->getIdentLocation(), 
                                  D->getNominatedNamespace(), 
                                  D->getCommonAncestor());
@@ -1662,12 +1661,11 @@ Decl *TemplateDeclInstantiator::VisitUsingDecl(UsingDecl *D) {
   //     template struct t<int>;
   // Here, in using s1::f1, s1 refers to t<T>::s1;
   // we need to substitute for t<int>::s1.
-  NestedNameSpecifier *NNS =
-      SemaRef.SubstNestedNameSpecifier(D->getTargetNestedNameDecl(),
-      D->getNestedNameRange(),
-      TemplateArgs);
-  if (!NNS)
-      return 0;
+  NestedNameSpecifierLoc QualifierLoc
+    = SemaRef.SubstNestedNameSpecifierLoc(D->getQualifierLoc(),
+                                          TemplateArgs);
+  if (!QualifierLoc)
+    return 0;
 
   // The name info is non-dependent, so no transformation
   // is required.
@@ -1682,16 +1680,13 @@ Decl *TemplateDeclInstantiator::VisitUsingDecl(UsingDecl *D) {
                     Sema::ForRedeclaration);
 
   UsingDecl *NewUD = UsingDecl::Create(SemaRef.Context, Owner,
-                                       D->getNestedNameRange(),
                                        D->getUsingLocation(),
-                                       NNS,
+                                       QualifierLoc,
                                        NameInfo,
                                        D->isTypeName());
 
   CXXScopeSpec SS;
-  SS.setScopeRep(NNS);
-  SS.setRange(D->getNestedNameRange());
-
+  SS.Adopt(QualifierLoc);
   if (CheckRedeclaration) {
     Prev.setHideTags(false);
     SemaRef.LookupQualifiedName(Prev, Owner);
@@ -1750,16 +1745,14 @@ Decl *TemplateDeclInstantiator::VisitUsingShadowDecl(UsingShadowDecl *D) {
 
 Decl * TemplateDeclInstantiator
     ::VisitUnresolvedUsingTypenameDecl(UnresolvedUsingTypenameDecl *D) {
-  NestedNameSpecifier *NNS =
-    SemaRef.SubstNestedNameSpecifier(D->getTargetNestedNameSpecifier(),
-                                     D->getTargetNestedNameRange(),
-                                     TemplateArgs);
-  if (!NNS)
+  NestedNameSpecifierLoc QualifierLoc
+    = SemaRef.SubstNestedNameSpecifierLoc(D->getQualifierLoc(), 
+                                          TemplateArgs);
+  if (!QualifierLoc)
     return 0;
 
   CXXScopeSpec SS;
-  SS.setRange(D->getTargetNestedNameRange());
-  SS.setScopeRep(NNS);
+  SS.Adopt(QualifierLoc);
 
   // Since NameInfo refers to a typename, it cannot be a C++ special name.
   // Hence, no tranformation is required for it.
@@ -1777,16 +1770,13 @@ Decl * TemplateDeclInstantiator
 
 Decl * TemplateDeclInstantiator
     ::VisitUnresolvedUsingValueDecl(UnresolvedUsingValueDecl *D) {
-  NestedNameSpecifier *NNS =
-    SemaRef.SubstNestedNameSpecifier(D->getTargetNestedNameSpecifier(),
-                                     D->getTargetNestedNameRange(),
-                                     TemplateArgs);
-  if (!NNS)
+  NestedNameSpecifierLoc QualifierLoc
+      = SemaRef.SubstNestedNameSpecifierLoc(D->getQualifierLoc(), TemplateArgs);
+  if (!QualifierLoc)
     return 0;
-
+  
   CXXScopeSpec SS;
-  SS.setRange(D->getTargetNestedNameRange());
-  SS.setScopeRep(NNS);
+  SS.Adopt(QualifierLoc);
 
   DeclarationNameInfo NameInfo
     = SemaRef.SubstDeclarationNameInfo(D->getNameInfo(), TemplateArgs);
