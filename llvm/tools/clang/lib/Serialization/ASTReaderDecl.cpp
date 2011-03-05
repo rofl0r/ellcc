@@ -38,6 +38,9 @@ namespace clang {
     const RecordData &Record;
     unsigned &Idx;
     TypeID TypeIDForTypeDecl;
+    
+    DeclID DeclContextIDForTemplateParmDecl;
+    DeclID LexicalDeclContextIDForTemplateParmDecl;
 
     uint64_t GetCurrentCursorOffset();
     SourceLocation ReadSourceLocation(const RecordData &R, unsigned &I) {
@@ -175,13 +178,32 @@ void ASTDeclReader::Visit(Decl *D) {
     // FunctionDecl's body was written last after all other Stmts/Exprs.
     if (Record[Idx++])
       FD->setLazyBody(GetCurrentCursorOffset());
+  } else if (D->isTemplateParameter()) {
+    // If we have a fully initialized template parameter, we can now
+    // set its DeclContext.
+    D->setDeclContext(
+          cast_or_null<DeclContext>(
+                            Reader.GetDecl(DeclContextIDForTemplateParmDecl)));
+    D->setLexicalDeclContext(
+          cast_or_null<DeclContext>(
+                      Reader.GetDecl(LexicalDeclContextIDForTemplateParmDecl)));
   }
 }
 
 void ASTDeclReader::VisitDecl(Decl *D) {
-  D->setDeclContext(cast_or_null<DeclContext>(Reader.GetDecl(Record[Idx++])));
-  D->setLexicalDeclContext(
+  if (D->isTemplateParameter()) {
+    // We don't want to deserialize the DeclContext of a template
+    // parameter immediately, because the template parameter might be
+    // used in the formulation of its DeclContext. Use the translation
+    // unit DeclContext as a placeholder.
+    DeclContextIDForTemplateParmDecl = Record[Idx++];
+    LexicalDeclContextIDForTemplateParmDecl = Record[Idx++];
+    D->setDeclContext(Reader.getContext()->getTranslationUnitDecl()); 
+  } else {
+    D->setDeclContext(cast_or_null<DeclContext>(Reader.GetDecl(Record[Idx++])));
+    D->setLexicalDeclContext(
                      cast_or_null<DeclContext>(Reader.GetDecl(Record[Idx++])));
+  }
   D->setLocation(ReadSourceLocation(Record, Idx));
   D->setInvalidDecl(Record[Idx++]);
   if (Record[Idx++]) { // hasAttrs
@@ -687,6 +709,7 @@ void ASTDeclReader::VisitParmVarDecl(ParmVarDecl *PD) {
 void ASTDeclReader::VisitFileScopeAsmDecl(FileScopeAsmDecl *AD) {
   VisitDecl(AD);
   AD->setAsmString(cast<StringLiteral>(Reader.ReadExpr(F)));
+  AD->setRParenLoc(ReadSourceLocation(Record, Idx));
 }
 
 void ASTDeclReader::VisitBlockDecl(BlockDecl *BD) {
@@ -720,11 +743,13 @@ void ASTDeclReader::VisitBlockDecl(BlockDecl *BD) {
 void ASTDeclReader::VisitLinkageSpecDecl(LinkageSpecDecl *D) {
   VisitDecl(D);
   D->setLanguage((LinkageSpecDecl::LanguageIDs)Record[Idx++]);
-  D->setHasBraces(Record[Idx++]);
+  D->setRBraceLoc(ReadSourceLocation(Record, Idx));
 }
 
 void ASTDeclReader::VisitLabelDecl(LabelDecl *D) {
   VisitNamedDecl(D);
+  bool IsGnuLocal = Record[Idx++];
+  D->setGnuLocal(IsGnuLocal);
 }
 
 
@@ -1417,7 +1442,7 @@ Decl *ASTReader::ReadDeclRecord(unsigned Index, DeclID ID) {
   case DECL_LINKAGE_SPEC:
     D = LinkageSpecDecl::Create(*Context, 0, SourceLocation(),
                                 (LinkageSpecDecl::LanguageIDs)0,
-                                false);
+                                SourceLocation());
     break;
   case DECL_LABEL:
     D = LabelDecl::Create(*Context, 0, SourceLocation(), 0);
@@ -1482,19 +1507,17 @@ Decl *ASTReader::ReadDeclRecord(unsigned Index, DeclID ID) {
     D = FriendTemplateDecl::Create(*Context, Decl::EmptyShell());
     break;
   case DECL_CLASS_TEMPLATE:
-    D = ClassTemplateDecl::Create(*Context, 0, SourceLocation(),
-                                  DeclarationName(), 0, 0, 0);
+    D = ClassTemplateDecl::Create(*Context, Decl::EmptyShell());
     break;
   case DECL_CLASS_TEMPLATE_SPECIALIZATION:
     D = ClassTemplateSpecializationDecl::Create(*Context, Decl::EmptyShell());
     break;
   case DECL_CLASS_TEMPLATE_PARTIAL_SPECIALIZATION:
     D = ClassTemplatePartialSpecializationDecl::Create(*Context,
-                                                            Decl::EmptyShell());
+                                                       Decl::EmptyShell());
     break;
   case DECL_FUNCTION_TEMPLATE:
-    D = FunctionTemplateDecl::Create(*Context, 0, SourceLocation(),
-                                     DeclarationName(), 0, 0);
+      D = FunctionTemplateDecl::Create(*Context, Decl::EmptyShell());
     break;
   case DECL_TEMPLATE_TYPE_PARM:
     D = TemplateTypeParmDecl::Create(*Context, Decl::EmptyShell());
@@ -1585,7 +1608,8 @@ Decl *ASTReader::ReadDeclRecord(unsigned Index, DeclID ID) {
                             SC_None, SC_None, 0);
     break;
   case DECL_FILE_SCOPE_ASM:
-    D = FileScopeAsmDecl::Create(*Context, 0, SourceLocation(), 0);
+    D = FileScopeAsmDecl::Create(*Context, 0, 0, SourceLocation(),
+                                 SourceLocation());
     break;
   case DECL_BLOCK:
     D = BlockDecl::Create(*Context, 0, SourceLocation());

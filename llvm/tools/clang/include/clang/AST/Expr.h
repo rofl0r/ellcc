@@ -536,6 +536,9 @@ public:
   /// temporary object of the given class type.
   bool isTemporaryObject(ASTContext &Ctx, const CXXRecordDecl *TempTy) const;
 
+  /// \brief Whether this expression is an implicit reference to 'this' in C++.
+  bool isImplicitCXXThis() const;
+  
   const Expr *IgnoreParens() const {
     return const_cast<Expr*>(this)->IgnoreParens();
   }
@@ -621,11 +624,9 @@ public:
 /// \brief Represents the qualifier that may precede a C++ name, e.g., the
 /// "std::" in "std::sort".
 struct NameQualifier {
-  /// \brief The nested name specifier.
-  NestedNameSpecifier *NNS;
-  
-  /// \brief The source range covered by the nested name specifier.
-  SourceRange Range;
+  /// \brief The nested-name-specifier that qualifies the name, including
+  /// source-location information.
+  NestedNameSpecifierLoc QualifierLoc;
 };
 
 /// \brief Represents an explicit template argument list in C++, e.g.,
@@ -698,12 +699,12 @@ class DeclRefExpr : public Expr {
     return const_cast<DeclRefExpr *>(this)->getNameQualifier();
   }
 
-  DeclRefExpr(NestedNameSpecifier *Qualifier, SourceRange QualifierRange,
+  DeclRefExpr(NestedNameSpecifierLoc QualifierLoc, 
               ValueDecl *D, SourceLocation NameLoc,
               const TemplateArgumentListInfo *TemplateArgs,
               QualType T, ExprValueKind VK);
 
-  DeclRefExpr(NestedNameSpecifier *Qualifier, SourceRange QualifierRange,
+  DeclRefExpr(NestedNameSpecifierLoc QualifierLoc,
               ValueDecl *D, const DeclarationNameInfo &NameInfo,
               const TemplateArgumentListInfo *TemplateArgs,
               QualType T, ExprValueKind VK);
@@ -724,16 +725,14 @@ public:
   }
 
   static DeclRefExpr *Create(ASTContext &Context,
-                             NestedNameSpecifier *Qualifier,
-                             SourceRange QualifierRange,
+                             NestedNameSpecifierLoc QualifierLoc,
                              ValueDecl *D,
                              SourceLocation NameLoc,
                              QualType T, ExprValueKind VK,
                              const TemplateArgumentListInfo *TemplateArgs = 0);
 
   static DeclRefExpr *Create(ASTContext &Context,
-                             NestedNameSpecifier *Qualifier,
-                             SourceRange QualifierRange,
+                             NestedNameSpecifierLoc QualifierLoc,
                              ValueDecl *D,
                              const DeclarationNameInfo &NameInfo,
                              QualType T, ExprValueKind VK,
@@ -761,25 +760,24 @@ public:
   /// C++ nested-name-specifier, e.g., \c N::foo.
   bool hasQualifier() const { return DecoratedD.getInt() & HasQualifierFlag; }
   
-  /// \brief If the name was qualified, retrieves the source range of
-  /// the nested-name-specifier that precedes the name. Otherwise,
-  /// returns an empty source range.
-  SourceRange getQualifierRange() const {
-    if (!hasQualifier())
-      return SourceRange();
-    
-    return getNameQualifier()->Range;
-  }
-  
   /// \brief If the name was qualified, retrieves the nested-name-specifier 
   /// that precedes the name. Otherwise, returns NULL.
   NestedNameSpecifier *getQualifier() const {
     if (!hasQualifier())
       return 0;
     
-    return getNameQualifier()->NNS;
+    return getNameQualifier()->QualifierLoc.getNestedNameSpecifier();
   }
-  
+
+  /// \brief If the name was qualified, retrieves the nested-name-specifier 
+  /// that precedes the name, with source-location information.
+  NestedNameSpecifierLoc getQualifierLoc() const {
+    if (!hasQualifier())
+      return NestedNameSpecifierLoc();
+    
+    return getNameQualifier()->QualifierLoc;
+  }
+
   bool hasExplicitTemplateArgs() const {
     return (DecoratedD.getInt() & HasExplicitTemplateArgumentListFlag);
   }
@@ -1936,7 +1934,7 @@ public:
       HasQualifierOrFoundDecl(false), HasExplicitTemplateArgumentList(false) {}
 
   static MemberExpr *Create(ASTContext &C, Expr *base, bool isarrow,
-                            NestedNameSpecifier *qual, SourceRange qualrange,
+                            NestedNameSpecifierLoc QualifierLoc,
                             ValueDecl *memberdecl, DeclAccessPair founddecl,
                             DeclarationNameInfo MemberNameInfo,
                             const TemplateArgumentListInfo *targs,
@@ -1965,16 +1963,6 @@ public:
   /// x->Base::foo.
   bool hasQualifier() const { return getQualifier() != 0; }
 
-  /// \brief If the member name was qualified, retrieves the source range of
-  /// the nested-name-specifier that precedes the member name. Otherwise,
-  /// returns an empty source range.
-  SourceRange getQualifierRange() const {
-    if (!HasQualifierOrFoundDecl)
-      return SourceRange();
-
-    return getMemberQualifier()->Range;
-  }
-
   /// \brief If the member name was qualified, retrieves the
   /// nested-name-specifier that precedes the member name. Otherwise, returns
   /// NULL.
@@ -1982,7 +1970,17 @@ public:
     if (!HasQualifierOrFoundDecl)
       return 0;
 
-    return getMemberQualifier()->NNS;
+    return getMemberQualifier()->QualifierLoc.getNestedNameSpecifier();
+  }
+
+  /// \brief If the member name was qualified, retrieves the 
+  /// nested-name-specifier that precedes the member name, with source-location
+  /// information.
+  NestedNameSpecifierLoc getQualifierLoc() const {
+    if (!hasQualifier())
+      return NestedNameSpecifierLoc();
+    
+    return getMemberQualifier()->QualifierLoc;
   }
 
   /// \brief Determines whether this member expression actually had a C++
@@ -2075,20 +2073,15 @@ public:
   SourceLocation getMemberLoc() const { return MemberLoc; }
   void setMemberLoc(SourceLocation L) { MemberLoc = L; }
 
-  SourceRange getSourceRange() const {
-    // If we have an implicit base (like a C++ implicit this),
-    // make sure not to return its location
-    SourceLocation EndLoc = (HasExplicitTemplateArgumentList)
-      ? getRAngleLoc() : getMemberNameInfo().getEndLoc();
-
-    SourceLocation BaseLoc = getBase()->getLocStart();
-    if (BaseLoc.isInvalid())
-      return SourceRange(MemberLoc, EndLoc);
-    return SourceRange(BaseLoc, EndLoc);
-  }
-
+  SourceRange getSourceRange() const;
+  
   SourceLocation getExprLoc() const { return MemberLoc; }
 
+  /// \brief Determine whether the base of this explicit is implicit.
+  bool isImplicitAccess() const {
+    return getBase() && getBase()->isImplicitCXXThis();
+  }
+  
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == MemberExprClass;
   }

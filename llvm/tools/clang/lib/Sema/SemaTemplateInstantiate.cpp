@@ -730,9 +730,12 @@ namespace {
     /// elaborated type.
     QualType RebuildElaboratedType(SourceLocation KeywordLoc,
                                    ElaboratedTypeKeyword Keyword,
-                                   NestedNameSpecifier *NNS, QualType T);
+                                   NestedNameSpecifierLoc QualifierLoc,
+                                   QualType T);
 
-    TemplateName TransformTemplateName(TemplateName Name,
+    TemplateName TransformTemplateName(CXXScopeSpec &SS,
+                                       TemplateName Name,
+                                       SourceLocation NameLoc,                                     
                                        QualType ObjectType = QualType(),
                                        NamedDecl *FirstQualifierInScope = 0);
 
@@ -892,7 +895,7 @@ VarDecl *TemplateInstantiator::RebuildObjCExceptionDecl(VarDecl *ExceptionDecl,
 QualType
 TemplateInstantiator::RebuildElaboratedType(SourceLocation KeywordLoc,
                                             ElaboratedTypeKeyword Keyword,
-                                            NestedNameSpecifier *NNS,
+                                            NestedNameSpecifierLoc QualifierLoc,
                                             QualType T) {
   if (const TagType *TT = T->getAs<TagType>()) {
     TagDecl* TD = TT->getDecl();
@@ -918,10 +921,13 @@ TemplateInstantiator::RebuildElaboratedType(SourceLocation KeywordLoc,
 
   return TreeTransform<TemplateInstantiator>::RebuildElaboratedType(KeywordLoc,
                                                                     Keyword,
-                                                                    NNS, T);
+                                                                  QualifierLoc,
+                                                                    T);
 }
 
-TemplateName TemplateInstantiator::TransformTemplateName(TemplateName Name,
+TemplateName TemplateInstantiator::TransformTemplateName(CXXScopeSpec &SS,
+                                                         TemplateName Name,
+                                                         SourceLocation NameLoc,                                     
                                                          QualType ObjectType,
                                              NamedDecl *FirstQualifierInScope) {
   if (TemplateTemplateParmDecl *TTP
@@ -960,19 +966,19 @@ TemplateName TemplateInstantiator::TransformTemplateName(TemplateName Name,
   }
   
   if (SubstTemplateTemplateParmPackStorage *SubstPack
-                                  = Name.getAsSubstTemplateTemplateParmPack()) {
+      = Name.getAsSubstTemplateTemplateParmPack()) {
     if (getSema().ArgumentPackSubstitutionIndex == -1)
       return Name;
-
+    
     const TemplateArgument &ArgPack = SubstPack->getArgumentPack();
     assert(getSema().ArgumentPackSubstitutionIndex < (int)ArgPack.pack_size() &&
            "Pack substitution index out-of-range");
     return ArgPack.pack_begin()[getSema().ArgumentPackSubstitutionIndex]
-                                                               .getAsTemplate();
+    .getAsTemplate();
   }
   
-  return inherited::TransformTemplateName(Name, ObjectType, 
-                                          FirstQualifierInScope);
+  return inherited::TransformTemplateName(SS, Name, NameLoc, ObjectType, 
+                                          FirstQualifierInScope);  
 }
 
 ExprResult 
@@ -1508,6 +1514,7 @@ Sema::SubstBaseSpecifiers(CXXRecordDecl *Instantiation,
     }
 
     SourceLocation EllipsisLoc;
+    TypeSourceInfo *BaseTypeLoc;
     if (Base->isPackExpansion()) {
       // This is a pack expansion. See whether we should expand it now, or
       // wait until later.
@@ -1558,13 +1565,18 @@ Sema::SubstBaseSpecifiers(CXXRecordDecl *Instantiation,
       
       // The resulting base specifier will (still) be a pack expansion.
       EllipsisLoc = Base->getEllipsisLoc();
+      Sema::ArgumentPackSubstitutionIndexRAII SubstIndex(*this, -1);
+      BaseTypeLoc = SubstType(Base->getTypeSourceInfo(),
+                              TemplateArgs,
+                              Base->getSourceRange().getBegin(),
+                              DeclarationName());
+    } else {
+      BaseTypeLoc = SubstType(Base->getTypeSourceInfo(),
+                              TemplateArgs,
+                              Base->getSourceRange().getBegin(),
+                              DeclarationName());
     }
     
-    Sema::ArgumentPackSubstitutionIndexRAII SubstIndex(*this, -1);
-    TypeSourceInfo *BaseTypeLoc = SubstType(Base->getTypeSourceInfo(),
-                                            TemplateArgs,
-                                            Base->getSourceRange().getBegin(),
-                                            DeclarationName());
     if (!BaseTypeLoc) {
       Invalid = true;
       continue;
@@ -2130,16 +2142,6 @@ bool Sema::SubstExprs(Expr **Exprs, unsigned NumExprs, bool IsCall,
   return Instantiator.TransformExprs(Exprs, NumExprs, IsCall, Outputs);
 }
 
-/// \brief Do template substitution on a nested-name-specifier.
-NestedNameSpecifier *
-Sema::SubstNestedNameSpecifier(NestedNameSpecifier *NNS,
-                               SourceRange Range,
-                         const MultiLevelTemplateArgumentList &TemplateArgs) {
-  TemplateInstantiator Instantiator(*this, TemplateArgs, Range.getBegin(),
-                                    DeclarationName());
-  return Instantiator.TransformNestedNameSpecifier(NNS, Range);
-}
-
 NestedNameSpecifierLoc
 Sema::SubstNestedNameSpecifierLoc(NestedNameSpecifierLoc NNS,
                         const MultiLevelTemplateArgumentList &TemplateArgs) {  
@@ -2161,11 +2163,14 @@ Sema::SubstDeclarationNameInfo(const DeclarationNameInfo &NameInfo,
 }
 
 TemplateName
-Sema::SubstTemplateName(TemplateName Name, SourceLocation Loc,
+Sema::SubstTemplateName(NestedNameSpecifierLoc QualifierLoc,
+                        TemplateName Name, SourceLocation Loc,
                         const MultiLevelTemplateArgumentList &TemplateArgs) {
   TemplateInstantiator Instantiator(*this, TemplateArgs, Loc,
                                     DeclarationName());
-  return Instantiator.TransformTemplateName(Name);
+  CXXScopeSpec SS;
+  SS.Adopt(QualifierLoc);
+  return Instantiator.TransformTemplateName(SS, Name, Loc);
 }
 
 bool Sema::Subst(const TemplateArgumentLoc *Args, unsigned NumArgs,

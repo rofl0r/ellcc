@@ -613,6 +613,7 @@ void ASTDeclWriter::VisitParmVarDecl(ParmVarDecl *D) {
 void ASTDeclWriter::VisitFileScopeAsmDecl(FileScopeAsmDecl *D) {
   VisitDecl(D);
   Writer.AddStmt(D->getAsmString());
+  Writer.AddSourceLocation(D->getRParenLoc(), Record);
   Code = serialization::DECL_FILE_SCOPE_ASM;
 }
 
@@ -645,15 +646,14 @@ void ASTDeclWriter::VisitBlockDecl(BlockDecl *D) {
 
 void ASTDeclWriter::VisitLinkageSpecDecl(LinkageSpecDecl *D) {
   VisitDecl(D);
-  // FIXME: It might be nice to serialize the brace locations for this
-  // declaration, which don't seem to be readily available in the AST.
   Record.push_back(D->getLanguage());
-  Record.push_back(D->hasBraces());
+  Writer.AddSourceLocation(D->getRBraceLoc(), Record);
   Code = serialization::DECL_LINKAGE_SPEC;
 }
 
 void ASTDeclWriter::VisitLabelDecl(LabelDecl *D) {
   VisitNamedDecl(D);
+  Record.push_back(D->isGnuLocal());
   Code = serialization::DECL_LABEL;
 }
 

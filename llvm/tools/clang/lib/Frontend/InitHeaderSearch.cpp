@@ -113,7 +113,7 @@ void InitHeaderSearch::AddPath(const llvm::Twine &Path,
   llvm::StringRef MappedPathStr = Path.toStringRef(MappedPathStorage);
 
   // Handle isysroot.
-  if (Group == System && !IgnoreSysRoot &&
+  if ((Group == System || Group == CXXSystem) && !IgnoreSysRoot &&
       llvm::sys::path::is_absolute(MappedPathStr) &&
       IsNotEmptyOrRoot) {
     MappedPathStorage.clear();
@@ -429,6 +429,7 @@ void InitHeaderSearch::AddDefaultCIncludePaths(const llvm::Triple &triple,
   if (triple.getVendor() != llvm::Triple::ELLCC) {
 
     switch (os) {
+    case llvm::Triple::FreeBSD:
     case llvm::Triple::NetBSD:
       break;
     default:

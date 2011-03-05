@@ -70,16 +70,78 @@ def ObjCMethSigsChecker : Checker<"MethodSigs">,
 def ObjCUnusedIvarsChecker : Checker<"UnusedIvars">,
   HelpText<"Warn about private ivars that are never used">,
   DescFile<"ObjCUnusedIVarsChecker.cpp">;
+ 
+def NSErrorChecker : Checker<"NSError">,
+  HelpText<"Check usage of NSError** parameters">,
+  DescFile<"NSErrorChecker.cpp">;
 
 } // end "cocoa"
 
+let ParentPackage = Core in {
+
+def DereferenceChecker : Checker<"Deref">,
+  HelpText<"Check for null pointers at loads and stores">,
+  DescFile<"DereferenceChecker.cpp">;
+
+def CallAndMessageChecker : Checker<"CallAndMsg">,
+  HelpText<"Check for errors of call and objc message expressions">,
+  DescFile<"CallAndMessageChecker.cpp">;
+
+def AdjustedReturnValueChecker : Checker<"AdjustRet">,
+  HelpText<"Check to see if the return value of a function call is different than the caller expects">,
+  DescFile<"AdjustedReturnValueChecker.cpp">;
+
+def AttrNonNullChecker : Checker<"AttrNonNull">,
+  HelpText<"Check for arguments declared to have nonnull attribute">,
+  DescFile<"AttrNonNullChecker.cpp">;
+
+def VLASizeChecker : Checker<"VLASize">,
+  HelpText<"Check for declarations of VLA of undefined or zero size">,
+  DescFile<"VLASizeChecker.cpp">;
+
+def DivZeroChecker : Checker<"DivZero">,
+  HelpText<"Check for division by zeros">,
+  DescFile<"DivZeroChecker.cpp">;
+
+def ReturnUndefChecker : Checker<"UndefReturn">,
+  HelpText<"Check for undefined or garbage values being returned to the caller">,
+  DescFile<"ReturnUndefChecker.cpp">;
+
+def UndefinedArraySubscriptChecker : Checker<"UndefArraySubscript">,
+  HelpText<"Check for undefined array subscripts">,
+  DescFile<"UndefinedArraySubscriptChecker.cpp">;
+
+def UndefinedAssignmentChecker : Checker<"UndefAssign">,
+  HelpText<"Check for assigning undefined values">,
+  DescFile<"UndefinedAssignmentChecker.cpp">;
+
+def UndefBranchChecker : Checker<"UndefBranch">,
+  HelpText<"Check for undefined branch conditions">,
+  DescFile<"UndefBranchChecker.cpp">;
+
+def UndefCapturedBlockVarChecker : Checker<"UndefBlockVar">,
+  HelpText<"Check for blocks that capture uninitialized values">,
+  DescFile<"UndefCapturedBlockVarChecker.cpp">;
+
+def UndefResultChecker : Checker<"UndefBinOpResult">,
+  HelpText<"Check for undefined results of non-assignment binary operators">,
+  DescFile<"UndefResultChecker.cpp">;
+
+def NoReturnFunctionChecker : Checker<"NoReturnFunc">,
+  HelpText<"Evaluate functions that do not return to the caller">,
+  DescFile<"NoReturnFunctionChecker.cpp">;
+
+def BuiltinFunctionChecker : Checker<"BuiltinFunc">,
+  HelpText<"Evaluate clang builtin functions">,
+  DescFile<"BuiltinFunctionChecker.cpp">;
+
 def StackAddrEscapeChecker : Checker<"StackAddrEscape">,
-  InPackage<Core>,
   HelpText<"Check that addresses to stack memory do not escape the function">,
   DescFile<"StackAddrEscapeChecker.cpp">;
 
+} // end "core"
+
 def DeadStoresChecker : Checker<"DeadStores">,
-  InPackage<Core>,
   HelpText<"Check for values stored to a variables that are never read afterwards">,
   DescFile<"DeadStoresChecker.cpp">;
 
@@ -93,6 +155,11 @@ def MacOSXAPIChecker : Checker<"API">,
   HelpText<"Check for proper uses of various Mac OS X APIs">,
   DescFile<"MacOSXAPIChecker.cpp">;
 
+def OSAtomicChecker : Checker<"AtomicCAS">,
+  InPackage<MacOSX>,
+  HelpText<"Evaluate calls to OSAtomic functions">,
+  DescFile<"OSAtomicChecker.cpp">;
+
 def CFNumberCreateChecker : Checker<"CFNumber">,
   InPackage<MacOSX>,
   HelpText<"Check for proper uses of CFNumberCreate">,
@@ -102,6 +169,11 @@ def CFRetainReleaseChecker : Checker<"CFRetainRelease">,
   InPackage<MacOSX>,
   HelpText<"Check for null arguments to CFRetain/CFRelease">,
   DescFile<"BasicObjCFoundationChecks.cpp">;
+
+def CFErrorChecker : Checker<"CFError">,
+  InPackage<MacOSX>,
+  HelpText<"Check usage of CFErrorRef* parameters">,
+  DescFile<"NSErrorChecker.cpp">;
 
 def LLVMConventionsChecker : Checker<"Conventions">,
   InPackage<LLVM>,
@@ -123,11 +195,27 @@ def CFGDumper : Checker<"DumpCFG">,
   HelpText<"Display Control-Flow Graphs">,
   DescFile<"DebugCheckers.cpp">;
 
+def AnalyzerStatsChecker : Checker<"Stats">,
+  InPackage<Debug>,
+  HelpText<"Emit warnings with analyzer statistics">,
+  DescFile<"AnalyzerStatsChecker.cpp">;
+
 //===----------------------------------------------------------------------===//
 // Hidden experimental checkers.
 //===----------------------------------------------------------------------===//
 
 let Group = AllExperimental in {
+
+def ArrayBoundCheckerV2 : Checker<"Overflow">,
+  InPackage<CoreExperimental>,
+  HelpText<"Warn about buffer overflows">,
+  DescFile<"ArrayBoundCheckerV2.cpp">,
+  Hidden; // Must be specified explicitly in order to run.
+
+def MallocChecker : Checker<"Malloc">,
+  InPackage<CoreExperimental>,
+  HelpText<"Check for potential memory leaks, double free, and use-after-free problems">,
+  DescFile<"MallocChecker.cpp">;
 
 def CStringChecker : Checker<"CString">,
   InPackage<CoreExperimental>,

@@ -13,10 +13,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "BasicObjCFoundationChecks.h"
-
 #include "ClangSACheckers.h"
-#include "clang/StaticAnalyzer/Core/CheckerV2.h"
+#include "clang/StaticAnalyzer/Core/Checker.h"
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ExplodedGraph.h"
@@ -24,7 +22,6 @@
 #include "clang/StaticAnalyzer/Core/PathSensitive/GRState.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/MemRegion.h"
-#include "clang/StaticAnalyzer/Checkers/LocalCheckers.h"
 #include "clang/AST/DeclObjC.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/ExprObjC.h"
@@ -69,7 +66,7 @@ static inline bool isNil(SVal X) {
 //===----------------------------------------------------------------------===//
 
 namespace {
-  class NilArgChecker : public CheckerV2<check::PreObjCMessage> {
+  class NilArgChecker : public Checker<check::PreObjCMessage> {
     mutable llvm::OwningPtr<APIMisuse> BT;
 
     void WarnNilArg(CheckerContext &C,
@@ -140,7 +137,7 @@ void NilArgChecker::checkPreObjCMessage(ObjCMessage msg,
 //===----------------------------------------------------------------------===//
 
 namespace {
-class CFNumberCreateChecker : public CheckerV2< check::PreStmt<CallExpr> > {
+class CFNumberCreateChecker : public Checker< check::PreStmt<CallExpr> > {
   mutable llvm::OwningPtr<APIMisuse> BT;
   mutable IdentifierInfo* II;
 public:
@@ -347,7 +344,7 @@ void CFNumberCreateChecker::checkPreStmt(const CallExpr *CE,
 //===----------------------------------------------------------------------===//
 
 namespace {
-class CFRetainReleaseChecker : public CheckerV2< check::PreStmt<CallExpr> > {
+class CFRetainReleaseChecker : public Checker< check::PreStmt<CallExpr> > {
   mutable llvm::OwningPtr<APIMisuse> BT;
   mutable IdentifierInfo *Retain, *Release;
 public:
@@ -429,7 +426,7 @@ void CFRetainReleaseChecker::checkPreStmt(const CallExpr* CE,
 //===----------------------------------------------------------------------===//
 
 namespace {
-class ClassReleaseChecker : public CheckerV2<check::PreObjCMessage> {
+class ClassReleaseChecker : public Checker<check::PreObjCMessage> {
   mutable Selector releaseS;
   mutable Selector retainS;
   mutable Selector autoreleaseS;

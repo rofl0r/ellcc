@@ -513,14 +513,16 @@ Parser::ParseExternalDeclaration(ParsedAttributesWithRange &attrs,
   case tok::kw_asm: {
     ProhibitAttributes(attrs);
 
-    ExprResult Result(ParseSimpleAsm());
+    SourceLocation StartLoc = Tok.getLocation();
+    SourceLocation EndLoc;
+    ExprResult Result(ParseSimpleAsm(&EndLoc));
 
     ExpectAndConsume(tok::semi, diag::err_expected_semi_after,
                      "top-level asm block");
 
     if (Result.isInvalid())
       return DeclGroupPtrTy();
-    SingleDecl = Actions.ActOnFileScopeAsmDecl(Tok.getLocation(), Result.get());
+    SingleDecl = Actions.ActOnFileScopeAsmDecl(Result.get(), StartLoc, EndLoc);
     break;
   }
   case tok::at:
@@ -1051,15 +1053,18 @@ bool Parser::TryAnnotateTypeOrScopeToken(bool EnteringContext) {
         return true;
       }
 
-      AnnotateTemplateIdTokenAsType(0);
-      assert(Tok.is(tok::annot_typename) &&
-             "AnnotateTemplateIdTokenAsType isn't working properly");
-      if (Tok.getAnnotationValue())
-        Ty = Actions.ActOnTypenameType(getCurScope(), TypenameLoc, SS, 
-                                       SourceLocation(),
-                                       getTypeAnnotation(Tok));
-      else
-        Ty = true;
+      ASTTemplateArgsPtr TemplateArgsPtr(Actions,
+                                         TemplateId->getTemplateArgs(),
+                                         TemplateId->NumArgs);
+      
+      Ty = Actions.ActOnTypenameType(getCurScope(), TypenameLoc, SS,
+                                     /*FIXME:*/SourceLocation(),
+                                     TemplateId->Template,
+                                     TemplateId->TemplateNameLoc,
+                                     TemplateId->LAngleLoc,
+                                     TemplateArgsPtr, 
+                                     TemplateId->RAngleLoc);
+      TemplateId->Destroy();
     } else {
       Diag(Tok, diag::err_expected_type_name_after_typename)
         << SS.getRange();
@@ -1088,7 +1093,9 @@ bool Parser::TryAnnotateTypeOrScopeToken(bool EnteringContext) {
     if (ParsedType Ty = Actions.getTypeName(*Tok.getIdentifierInfo(),
                                             Tok.getLocation(), getCurScope(),
                                             &SS, false, 
-                                            NextToken().is(tok::period))) {
+                                            NextToken().is(tok::period),
+                                            ParsedType(),
+                                            /*NonTrivialTypeSourceInfo*/true)) {
       // This is a typename. Replace the current token in-place with an
       // annotation type token.
       Tok.setKind(tok::annot_typename);
@@ -1124,7 +1131,7 @@ bool Parser::TryAnnotateTypeOrScopeToken(bool EnteringContext) {
                                    Template, MemberOfUnknownSpecialization)) {
         // Consume the identifier.
         ConsumeToken();
-        if (AnnotateTemplateIdToken(Template, TNK, &SS, TemplateName)) {
+        if (AnnotateTemplateIdToken(Template, TNK, SS, TemplateName)) {
           // If an unrecoverable error occurred, we need to return true here,
           // because the token stream is in a damaged state.  We may not return
           // a valid identifier.
@@ -1147,7 +1154,7 @@ bool Parser::TryAnnotateTypeOrScopeToken(bool EnteringContext) {
       // template-id annotation in a context where we weren't allowed
       // to produce a type annotation token. Update the template-id
       // annotation token to a type annotation token now.
-      AnnotateTemplateIdTokenAsType(&SS);
+      AnnotateTemplateIdTokenAsType();
       return false;
     }
   }

@@ -516,6 +516,9 @@ public:
   void setNextSwitchCase(SwitchCase *SC) { NextSwitchCase = SC; }
 
   Stmt *getSubStmt();
+  const Stmt *getSubStmt() const {
+    return const_cast<SwitchCase*>(this)->getSubStmt();
+  }
 
   SourceRange getSourceRange() const { return SourceRange(); }
 
@@ -527,7 +530,7 @@ public:
 };
 
 class CaseStmt : public SwitchCase {
-  enum { SUBSTMT, LHS, RHS, END_EXPR };
+  enum { LHS, RHS, SUBSTMT, END_EXPR };
   Stmt* SubExprs[END_EXPR];  // The expression for the RHS is Non-null for
                              // GNU "case 1 ... 4" extension
   SourceLocation CaseLoc;

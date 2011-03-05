@@ -245,11 +245,10 @@ Sema::ActOnLabelStmt(SourceLocation IdentLoc, LabelDecl *TheDecl,
   }
 
   // Otherwise, things are good.  Fill in the declaration and return it.
-  TheDecl->setLocation(IdentLoc);
-  
   LabelStmt *LS = new (Context) LabelStmt(IdentLoc, TheDecl, SubStmt);
   TheDecl->setStmt(LS);
-  TheDecl->setLocation(IdentLoc);
+  if (!TheDecl->isGnuLocal())
+    TheDecl->setLocation(IdentLoc);
   return Owned(LS);
 }
 
@@ -1766,7 +1765,7 @@ StmtResult
 Sema::ActOnCXXTryBlock(SourceLocation TryLoc, Stmt *TryBlock,
                        MultiStmtArg RawHandlers) {
   // Don't report an error if 'try' is used in system headers.
-  if (!getLangOptions().Exceptions &&
+  if (!getLangOptions().CXXExceptions &&
       !getSourceManager().isInSystemHeader(TryLoc))
       Diag(TryLoc, diag::err_exceptions_disabled) << "try";
 

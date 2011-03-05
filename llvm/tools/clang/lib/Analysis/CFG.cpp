@@ -210,6 +210,25 @@ struct BlockScopePosPair {
   LocalScope::const_iterator scopePosition;
 };
 
+/// TryResult - a class representing a variant over the values
+///  'true', 'false', or 'unknown'.  This is returned by tryEvaluateBool,
+///  and is used by the CFGBuilder to decide if a branch condition
+///  can be decided up front during CFG construction.
+class TryResult {
+  int X;
+public:
+  TryResult(bool b) : X(b ? 1 : 0) {}
+  TryResult() : X(-1) {}
+  
+  bool isTrue() const { return X == 1; }
+  bool isFalse() const { return X == 0; }
+  bool isKnown() const { return X >= 0; }
+  void negate() {
+    assert(isKnown());
+    X ^= 0x1;
+  }
+};
+
 /// CFGBuilder - This class implements CFG construction from an AST.
 ///   The builder is stateful: an instance of the builder should be used to only
 ///   construct a single CFG.
@@ -238,7 +257,7 @@ class CFGBuilder {
   CFGBlock* SwitchTerminatedBlock;
   CFGBlock* DefaultCaseBlock;
   CFGBlock* TryTerminatedBlock;
-
+  
   // Current position in local scope.
   LocalScope::const_iterator ScopePos;
 
@@ -257,12 +276,17 @@ class CFGBuilder {
 
   bool badCFG;
   CFG::BuildOptions BuildOpts;
+  
+  // State to track for building switch statements.
+  bool switchExclusivelyCovered;
+  Expr::EvalResult *switchCond;
 
 public:
   explicit CFGBuilder() : cfg(new CFG()), // crew a new CFG
                           Block(NULL), Succ(NULL),
                           SwitchTerminatedBlock(NULL), DefaultCaseBlock(NULL),
-                          TryTerminatedBlock(NULL), badCFG(false) {}
+                          TryTerminatedBlock(NULL), badCFG(false),
+                          switchExclusivelyCovered(false), switchCond(0) {}
 
   // buildCFG - Used by external clients to construct the CFG.
   CFG* buildCFG(const Decl *D, Stmt *Statement, ASTContext *C,
@@ -387,45 +411,34 @@ private:
     B->addSuccessor(S, cfg->getBumpVectorContext());
   }
 
-  /// TryResult - a class representing a variant over the values
-  ///  'true', 'false', or 'unknown'.  This is returned by tryEvaluateBool,
-  ///  and is used by the CFGBuilder to decide if a branch condition
-  ///  can be decided up front during CFG construction.
-  class TryResult {
-    int X;
-  public:
-    TryResult(bool b) : X(b ? 1 : 0) {}
-    TryResult() : X(-1) {}
-
-    bool isTrue() const { return X == 1; }
-    bool isFalse() const { return X == 0; }
-    bool isKnown() const { return X >= 0; }
-    void negate() {
-      assert(isKnown());
-      X ^= 0x1;
-    }
-  };
+  /// Try and evaluate an expression to an integer constant.
+  bool tryEvaluate(Expr *S, Expr::EvalResult &outResult) {
+    if (!BuildOpts.PruneTriviallyFalseEdges)
+      return false;
+    return !S->isTypeDependent() && 
+    !S->isValueDependent() &&
+    S->Evaluate(outResult, *Context);
+  }
 
   /// tryEvaluateBool - Try and evaluate the Stmt and return 0 or 1
   /// if we can evaluate to a known value, otherwise return -1.
   TryResult tryEvaluateBool(Expr *S) {
-    if (!BuildOpts.PruneTriviallyFalseEdges)
-      return TryResult();
-
     Expr::EvalResult Result;
-    if (!S->isTypeDependent() && !S->isValueDependent() &&
-        S->Evaluate(Result, *Context)) {      
-      if (Result.Val.isInt())
-        return Result.Val.getInt().getBoolValue();
-      if (Result.Val.isLValue()) {
-        Expr *e = Result.Val.getLValueBase();
-        const CharUnits &c = Result.Val.getLValueOffset();        
-        if (!e && c.isZero())
-          return false;        
-      }
+    if (!tryEvaluate(S, Result))
+      return TryResult();
+    
+    if (Result.Val.isInt())
+      return Result.Val.getInt().getBoolValue();
+
+    if (Result.Val.isLValue()) {
+      Expr *e = Result.Val.getLValueBase();
+      const CharUnits &c = Result.Val.getLValueOffset();        
+      if (!e && c.isZero())
+        return false;        
     }
     return TryResult();
   }
+  
 };
 
 // FIXME: Add support for dependent-sized array types in C++?
@@ -1099,7 +1112,7 @@ CFGBlock *CFGBuilder::VisitCallExpr(CallExpr *C, AddStmtChoice asc) {
   bool AddEHEdge = false;
 
   // Languages without exceptions are assumed to not throw.
-  if (Context->getLangOptions().areExceptionsEnabled()) {
+  if (Context->getLangOptions().Exceptions) {
     if (BuildOpts.AddEHEdges)
       AddEHEdge = true;
   }
@@ -2180,6 +2193,17 @@ CFGBlock* CFGBuilder::VisitSwitchStmt(SwitchStmt* Terminator) {
   assert(Terminator->getBody() && "switch must contain a non-NULL body");
   Block = NULL;
 
+  // For pruning unreachable case statements, save the current state
+  // for tracking the condition value.
+  SaveAndRestore<bool> save_switchExclusivelyCovered(switchExclusivelyCovered,
+                                                     false);
+
+  // Determine if the switch condition can be explicitly evaluated.
+  assert(Terminator->getCond() && "switch condition must be non-NULL");
+  Expr::EvalResult result;
+  tryEvaluate(Terminator->getCond(), result);
+  SaveAndRestore<Expr::EvalResult*> save_switchCond(switchCond, &result);
+
   // If body is not a compound statement create implicit scope
   // and add destructors.
   if (!isa<CompoundStmt>(Terminator->getBody()))
@@ -2193,11 +2217,11 @@ CFGBlock* CFGBuilder::VisitSwitchStmt(SwitchStmt* Terminator) {
 
   // If we have no "default:" case, the default transition is to the code
   // following the switch body.
-  addSuccessor(SwitchTerminatedBlock, DefaultCaseBlock);
+  addSuccessor(SwitchTerminatedBlock,
+               switchExclusivelyCovered ? 0 : DefaultCaseBlock);
 
   // Add the terminator and condition in the switch block.
   SwitchTerminatedBlock->setTerminator(Terminator);
-  assert(Terminator->getCond() && "switch condition must be non-NULL");
   Block = SwitchTerminatedBlock;
   Block = addStmt(Terminator->getCond());
 
@@ -2213,12 +2237,51 @@ CFGBlock* CFGBuilder::VisitSwitchStmt(SwitchStmt* Terminator) {
 
   return Block;
 }
+  
+static bool shouldAddCase(bool &switchExclusivelyCovered,
+                          const Expr::EvalResult &switchCond,
+                          const CaseStmt *CS,
+                          ASTContext &Ctx) {
+  bool addCase = false;
+
+  if (!switchExclusivelyCovered) {
+    if (switchCond.Val.isInt()) {
+      // Evaluate the LHS of the case value.
+      Expr::EvalResult V1;
+      CS->getLHS()->Evaluate(V1, Ctx);
+      assert(V1.Val.isInt());
+      const llvm::APSInt &condInt = switchCond.Val.getInt();
+      const llvm::APSInt &lhsInt = V1.Val.getInt();
+      
+      if (condInt == lhsInt) {
+        addCase = true;
+        switchExclusivelyCovered = true;
+      }
+      else if (condInt < lhsInt) {
+        if (const Expr *RHS = CS->getRHS()) {
+          // Evaluate the RHS of the case value.
+          Expr::EvalResult V2;
+          RHS->Evaluate(V2, Ctx);
+          assert(V2.Val.isInt());
+          if (V2.Val.getInt() <= condInt) {
+            addCase = true;
+            switchExclusivelyCovered = true;
+          }
+        }
+      }
+    }
+    else
+      addCase = true;
+  }
+  return addCase;  
+}
 
 CFGBlock* CFGBuilder::VisitCaseStmt(CaseStmt* CS) {
   // CaseStmts are essentially labels, so they are the first statement in a
   // block.
   CFGBlock *TopBlock = 0, *LastBlock = 0;
-  
+  assert(switchCond);
+
   if (Stmt *Sub = CS->getSubStmt()) {
     // For deeply nested chains of CaseStmts, instead of doing a recursion
     // (which can blow out the stack), manually unroll and create blocks
@@ -2232,9 +2295,12 @@ CFGBlock* CFGBuilder::VisitCaseStmt(CaseStmt* CS) {
       else
         TopBlock = currentBlock;
 
-      addSuccessor(SwitchTerminatedBlock, currentBlock);
-      LastBlock = currentBlock;
+      addSuccessor(SwitchTerminatedBlock,
+                   shouldAddCase(switchExclusivelyCovered, *switchCond,
+                                 CS, *Context)
+                   ? currentBlock : 0);
 
+      LastBlock = currentBlock;
       CS = cast<CaseStmt>(Sub);
       Sub = CS->getSubStmt();
     }
@@ -2256,7 +2322,10 @@ CFGBlock* CFGBuilder::VisitCaseStmt(CaseStmt* CS) {
   // Add this block to the list of successors for the block with the switch
   // statement.
   assert(SwitchTerminatedBlock);
-  addSuccessor(SwitchTerminatedBlock, CaseBlock);
+  addSuccessor(SwitchTerminatedBlock,
+               shouldAddCase(switchExclusivelyCovered, *switchCond,
+                             CS, *Context)
+               ? CaseBlock : 0);
 
   // We set Block to NULL to allow lazy creation of a new block (if necessary)
   Block = NULL;
@@ -2704,6 +2773,50 @@ CFG* CFG::buildCFG(const Decl *D, Stmt* Statement, ASTContext *C,
   return Builder.buildCFG(D, Statement, C, BO);
 }
 
+const CXXDestructorDecl *
+CFGImplicitDtor::getDestructorDecl(ASTContext &astContext) const {
+  switch (getKind()) {
+    case CFGElement::Invalid:
+    case CFGElement::Statement:
+    case CFGElement::Initializer:
+      llvm_unreachable("getDestructorDecl should only be used with "
+                       "ImplicitDtors");
+    case CFGElement::AutomaticObjectDtor: {
+      const VarDecl *var = cast<CFGAutomaticObjDtor>(this)->getVarDecl();
+      QualType ty = var->getType();
+      ty = ty.getNonReferenceType();
+      if (const ArrayType *arrayType = astContext.getAsArrayType(ty)) {
+        ty = arrayType->getElementType();
+      }
+      const RecordType *recordType = ty->getAs<RecordType>();
+      const CXXRecordDecl *classDecl =
+      cast<CXXRecordDecl>(recordType->getDecl());
+      return classDecl->getDestructor();      
+    }
+    case CFGElement::TemporaryDtor: {
+      const CXXBindTemporaryExpr *bindExpr =
+        cast<CFGTemporaryDtor>(this)->getBindTemporaryExpr();
+      const CXXTemporary *temp = bindExpr->getTemporary();
+      return temp->getDestructor();
+    }
+    case CFGElement::BaseDtor:
+    case CFGElement::MemberDtor:
+
+      // Not yet supported.
+      return 0;
+  }
+  llvm_unreachable("getKind() returned bogus value");
+  return 0;
+}
+
+bool CFGImplicitDtor::isNoReturn(ASTContext &astContext) const {
+  if (const CXXDestructorDecl *cdecl = getDestructorDecl(astContext)) {
+    QualType ty = cdecl->getType();
+    return cast<FunctionType>(ty)->getNoReturnAttr();
+  }
+  return false;
+}
+
 //===----------------------------------------------------------------------===//
 // CFG: Queries for BlkExprs.
 //===----------------------------------------------------------------------===//
@@ -2740,8 +2853,8 @@ static BlkExprMapTy* PopulateBlkExprMap(CFG& cfg) {
 
   for (CFG::iterator I=cfg.begin(), E=cfg.end(); I != E; ++I)
     for (CFGBlock::iterator BI=(*I)->begin(), EI=(*I)->end(); BI != EI; ++BI)
-      if (CFGStmt S = BI->getAs<CFGStmt>())
-        FindSubExprAssignments(S, SubExprAssignments);
+      if (const CFGStmt *S = BI->getAs<CFGStmt>())
+        FindSubExprAssignments(S->getStmt(), SubExprAssignments);
 
   for (CFG::iterator I=cfg.begin(), E=cfg.end(); I != E; ++I) {
 
@@ -2749,10 +2862,10 @@ static BlkExprMapTy* PopulateBlkExprMap(CFG& cfg) {
     // block-level that are block-level expressions.
 
     for (CFGBlock::iterator BI=(*I)->begin(), EI=(*I)->end(); BI != EI; ++BI) {
-      CFGStmt CS = BI->getAs<CFGStmt>();
-      if (!CS.isValid())
+      const CFGStmt *CS = BI->getAs<CFGStmt>();
+      if (!CS)
         continue;
-      if (Expr* Exp = dyn_cast<Expr>(CS.getStmt())) {
+      if (Expr* Exp = dyn_cast<Expr>(CS->getStmt())) {
 
         if (BinaryOperator* B = dyn_cast<BinaryOperator>(Exp)) {
           // Assignment expressions that are not nested within another
@@ -2845,8 +2958,8 @@ CFG::~CFG() {
 namespace {
 
 class StmtPrinterHelper : public PrinterHelper  {
-  typedef llvm::DenseMap<Stmt*,std::pair<unsigned,unsigned> > StmtMapTy;
-  typedef llvm::DenseMap<Decl*,std::pair<unsigned,unsigned> > DeclMapTy;
+  typedef llvm::DenseMap<const Stmt*,std::pair<unsigned,unsigned> > StmtMapTy;
+  typedef llvm::DenseMap<const Decl*,std::pair<unsigned,unsigned> > DeclMapTy;
   StmtMapTy StmtMap;
   DeclMapTy DeclMap;
   signed currentBlock;
@@ -2855,42 +2968,62 @@ class StmtPrinterHelper : public PrinterHelper  {
 public:
 
   StmtPrinterHelper(const CFG* cfg, const LangOptions &LO)
-    : currentBlock(0), currentStmt(0), LangOpts(LO) {
+    : currentBlock(0), currentStmt(0), LangOpts(LO)
+  {
     for (CFG::const_iterator I = cfg->begin(), E = cfg->end(); I != E; ++I ) {
       unsigned j = 1;
       for (CFGBlock::const_iterator BI = (*I)->begin(), BEnd = (*I)->end() ;
            BI != BEnd; ++BI, ++j ) {        
-        if (CFGStmt SE = BI->getAs<CFGStmt>()) {
+        if (const CFGStmt *SE = BI->getAs<CFGStmt>()) {
+          const Stmt *stmt= SE->getStmt();
           std::pair<unsigned, unsigned> P((*I)->getBlockID(), j);
-          StmtMap[SE] = P;
+          StmtMap[stmt] = P;
 
-          if (DeclStmt* DS = dyn_cast<DeclStmt>(SE.getStmt())) {
-              DeclMap[DS->getSingleDecl()] = P;
-
-          } else if (IfStmt* IS = dyn_cast<IfStmt>(SE.getStmt())) {
-            if (VarDecl* VD = IS->getConditionVariable())
-              DeclMap[VD] = P;
-
-          } else if (ForStmt* FS = dyn_cast<ForStmt>(SE.getStmt())) {
-            if (VarDecl* VD = FS->getConditionVariable())
-              DeclMap[VD] = P;
-
-          } else if (WhileStmt* WS = dyn_cast<WhileStmt>(SE.getStmt())) {
-            if (VarDecl* VD = WS->getConditionVariable())
-              DeclMap[VD] = P;
-
-          } else if (SwitchStmt* SS = dyn_cast<SwitchStmt>(SE.getStmt())) {
-            if (VarDecl* VD = SS->getConditionVariable())
-              DeclMap[VD] = P;
-
-          } else if (CXXCatchStmt* CS = dyn_cast<CXXCatchStmt>(SE.getStmt())) {
-            if (VarDecl* VD = CS->getExceptionDecl())
-              DeclMap[VD] = P;
+          switch (stmt->getStmtClass()) {
+            case Stmt::DeclStmtClass:
+                DeclMap[cast<DeclStmt>(stmt)->getSingleDecl()] = P;
+                break;
+            case Stmt::IfStmtClass: {
+              const VarDecl *var = cast<IfStmt>(stmt)->getConditionVariable();
+              if (var)
+                DeclMap[var] = P;
+              break;
+            }
+            case Stmt::ForStmtClass: {
+              const VarDecl *var = cast<ForStmt>(stmt)->getConditionVariable();
+              if (var)
+                DeclMap[var] = P;
+              break;
+            }
+            case Stmt::WhileStmtClass: {
+              const VarDecl *var =
+                cast<WhileStmt>(stmt)->getConditionVariable();
+              if (var)
+                DeclMap[var] = P;
+              break;
+            }
+            case Stmt::SwitchStmtClass: {
+              const VarDecl *var =
+                cast<SwitchStmt>(stmt)->getConditionVariable();
+              if (var)
+                DeclMap[var] = P;
+              break;
+            }
+            case Stmt::CXXCatchStmtClass: {
+              const VarDecl *var =
+                cast<CXXCatchStmt>(stmt)->getExceptionDecl();
+              if (var)
+                DeclMap[var] = P;
+              break;
+            }
+            default:
+              break;
           }
         }
       }
     }
   }
+  
 
   virtual ~StmtPrinterHelper() {}
 
@@ -2913,7 +3046,7 @@ public:
     return true;
   }
 
-  bool handleDecl(Decl* D, llvm::raw_ostream& OS) {
+  bool handleDecl(const Decl* D, llvm::raw_ostream& OS) {
     DeclMapTy::iterator I = DeclMap.find(D);
 
     if (I == DeclMap.end())
@@ -3031,8 +3164,8 @@ public:
 
 static void print_elem(llvm::raw_ostream &OS, StmtPrinterHelper* Helper,
                        const CFGElement &E) {
-  if (CFGStmt CS = E.getAs<CFGStmt>()) {
-    Stmt *S = CS;
+  if (const CFGStmt *CS = E.getAs<CFGStmt>()) {
+    Stmt *S = CS->getStmt();
     
     if (Helper) {
 
@@ -3069,8 +3202,8 @@ static void print_elem(llvm::raw_ostream &OS, StmtPrinterHelper* Helper,
     if (isa<Expr>(S))
       OS << '\n';
 
-  } else if (CFGInitializer IE = E.getAs<CFGInitializer>()) {
-    CXXCtorInitializer* I = IE;
+  } else if (const CFGInitializer *IE = E.getAs<CFGInitializer>()) {
+    const CXXCtorInitializer *I = IE->getInitializer();
     if (I->isBaseInitializer())
       OS << I->getBaseClass()->getAsCXXRecordDecl()->getName();
     else OS << I->getAnyMember()->getName();
@@ -3084,8 +3217,8 @@ static void print_elem(llvm::raw_ostream &OS, StmtPrinterHelper* Helper,
       OS << " (Base initializer)\n";
     else OS << " (Member initializer)\n";
 
-  } else if (CFGAutomaticObjDtor DE = E.getAs<CFGAutomaticObjDtor>()){
-    VarDecl* VD = DE.getVarDecl();
+  } else if (const CFGAutomaticObjDtor *DE = E.getAs<CFGAutomaticObjDtor>()){
+    const VarDecl* VD = DE->getVarDecl();
     Helper->handleDecl(VD, OS);
 
     const Type* T = VD->getType().getTypePtr();
@@ -3097,13 +3230,13 @@ static void print_elem(llvm::raw_ostream &OS, StmtPrinterHelper* Helper,
     OS << ".~" << T->getAsCXXRecordDecl()->getName().str() << "()";
     OS << " (Implicit destructor)\n";
 
-  } else if (CFGBaseDtor BE = E.getAs<CFGBaseDtor>()) {
-    const CXXBaseSpecifier *BS = BE.getBaseSpecifier();
+  } else if (const CFGBaseDtor *BE = E.getAs<CFGBaseDtor>()) {
+    const CXXBaseSpecifier *BS = BE->getBaseSpecifier();
     OS << "~" << BS->getType()->getAsCXXRecordDecl()->getName() << "()";
     OS << " (Base object destructor)\n";
 
-  } else if (CFGMemberDtor ME = E.getAs<CFGMemberDtor>()) {
-    FieldDecl *FD = ME.getFieldDecl();
+  } else if (const CFGMemberDtor *ME = E.getAs<CFGMemberDtor>()) {
+    const FieldDecl *FD = ME->getFieldDecl();
 
     const Type *T = FD->getType().getTypePtr();
     if (const Type *ET = T->getArrayElementTypeNoTypeQual())
@@ -3113,8 +3246,8 @@ static void print_elem(llvm::raw_ostream &OS, StmtPrinterHelper* Helper,
     OS << ".~" << T->getAsCXXRecordDecl()->getName() << "()";
     OS << " (Member object destructor)\n";
 
-  } else if (CFGTemporaryDtor TE = E.getAs<CFGTemporaryDtor>()) {
-    CXXBindTemporaryExpr *BT = TE.getBindTemporaryExpr();
+  } else if (const CFGTemporaryDtor *TE = E.getAs<CFGTemporaryDtor>()) {
+    const CXXBindTemporaryExpr *BT = TE->getBindTemporaryExpr();
     OS << "~" << BT->getType()->getAsCXXRecordDecl()->getName() << "()";
     OS << " (Temporary object destructor)\n";
   }

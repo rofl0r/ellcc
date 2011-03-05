@@ -115,6 +115,9 @@ private:
 
   /// \brief Whether we should time each operation.
   bool WantTiming;
+
+  /// \brief Whether the ASTUnit should delete the remapped buffers.
+  bool OwnsRemappedFileBuffers;
   
   /// Track the top-level decls which appeared in an ASTUnit which was loaded
   /// from a source file.
@@ -422,6 +425,9 @@ public:
                         
   bool getOnlyLocalDecls() const { return OnlyLocalDecls; }
 
+  bool getOwnsRemappedFileBuffers() const { return OwnsRemappedFileBuffers; }
+  void setOwnsRemappedFileBuffers(bool val) { OwnsRemappedFileBuffers = val; }
+
   /// \brief Retrieve the maximum PCH level of declarations that a
   /// traversal of the translation unit should consider.
   unsigned getMaxPCHLevel() const;
@@ -529,9 +535,11 @@ public:
   /// that might still be used as a precompiled header or preamble.
   bool isCompleteTranslationUnit() const { return CompleteTranslationUnit; }
 
+  typedef llvm::PointerUnion<const char *, const llvm::MemoryBuffer *>
+      FilenameOrMemBuf;
   /// \brief A mapping from a file name to the memory buffer that stores the
   /// remapped contents of that file.
-  typedef std::pair<std::string, const llvm::MemoryBuffer *> RemappedFile;
+  typedef std::pair<std::string, FilenameOrMemBuf> RemappedFile;
   
   /// \brief Create a ASTUnit from an AST file.
   ///

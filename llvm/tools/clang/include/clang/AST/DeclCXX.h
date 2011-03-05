@@ -1711,18 +1711,18 @@ private:
   /// Language - The language for this linkage specification.
   LanguageIDs Language;
 
-  /// HadBraces - Whether this linkage specification had curly braces or not.
-  bool HadBraces : 1;
+  /// RBraceLoc - The source location for the right brace (if valid).
+  SourceLocation RBraceLoc;
 
   LinkageSpecDecl(DeclContext *DC, SourceLocation L, LanguageIDs lang,
-                  bool Braces)
-    : Decl(LinkageSpec, DC, L),
-      DeclContext(LinkageSpec), Language(lang), HadBraces(Braces) { }
+                  SourceLocation RBLoc)
+    : Decl(LinkageSpec, DC, L), DeclContext(LinkageSpec),
+      Language(lang), RBraceLoc(RBLoc) { }
 
 public:
   static LinkageSpecDecl *Create(ASTContext &C, DeclContext *DC,
                                  SourceLocation L, LanguageIDs Lang,
-                                 bool Braces);
+                                 SourceLocation RBraceLoc = SourceLocation());
 
   /// \brief Return the language specified by this linkage specification.
   LanguageIDs getLanguage() const { return Language; }
@@ -1732,11 +1732,21 @@ public:
 
   /// \brief Determines whether this linkage specification had braces in
   /// its syntactic form.
-  bool hasBraces() const { return HadBraces; }
+  bool hasBraces() const { return RBraceLoc.isValid(); }
+  SourceLocation getRBraceLoc() const { return RBraceLoc; }
+  void setRBraceLoc(SourceLocation L) { RBraceLoc = L; }
 
-  /// \brief Set whether this linkage specification has braces in its
-  /// syntactic form.
-  void setHasBraces(bool B) { HadBraces = B; }
+  SourceLocation getLocEnd() const {
+    if (hasBraces())
+      return getRBraceLoc();
+    // No braces: get the end location of the (only) declaration in context
+    // (if present).
+    return decls_empty() ? getLocation() : decls_begin()->getLocEnd();
+  }
+
+  SourceRange getSourceRange() const {
+    return SourceRange(getLocation(), getLocEnd());
+  }
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classof(const LinkageSpecDecl *D) { return true; }
@@ -2045,12 +2055,6 @@ public:
     return QualifierLoc.getNestedNameSpecifier(); 
   }
 
-  /// \brief Retrieve the source range of the nested-name-specifier
-  /// that qualifies the name.
-  SourceRange getQualifierRange() const { 
-    return QualifierLoc.getSourceRange();
-  }
-
   DeclarationNameInfo getNameInfo() const {
     return DeclarationNameInfo(getDeclName(), getLocation(), DNLoc);
   }
@@ -2176,12 +2180,6 @@ public:
     return QualifierLoc.getNestedNameSpecifier(); 
   }
   
-  /// \brief Retrieve the source range of the nested-name-specifier
-  /// that qualifies the name.
-  SourceRange getQualifierRange() const { 
-    return QualifierLoc.getSourceRange();
-  }
-
   DeclarationNameInfo getNameInfo() const {
     return DeclarationNameInfo(getDeclName(), getLocation(), DNLoc);
   }
@@ -2249,13 +2247,6 @@ public:
     return QualifierLoc.getNestedNameSpecifier(); 
   }
 
-  /// \brief Retrieve the source range of the nested-name-specifier
-  /// that qualifies the name.
-  SourceRange getQualifierRange() const { 
-    return QualifierLoc.getSourceRange();
-  }
-
-  // FIXME: DeclarationNameInfo
   static UnresolvedUsingTypenameDecl *
     Create(ASTContext &C, DeclContext *DC, SourceLocation UsingLoc,
            SourceLocation TypenameLoc, NestedNameSpecifierLoc QualifierLoc,

@@ -17,6 +17,7 @@
 #include "clang/Sema/CXXFieldCollector.h"
 #include "clang/Sema/Scope.h"
 #include "clang/Sema/ScopeInfo.h"
+#include "TypeLocBuilder.h"
 #include "clang/AST/APValue.h"
 #include "clang/AST/ASTConsumer.h"
 #include "clang/AST/ASTContext.h"
@@ -61,7 +62,8 @@ Sema::DeclGroupPtrTy Sema::ConvertDeclToDeclGroup(Decl *Ptr) {
 ParsedType Sema::getTypeName(IdentifierInfo &II, SourceLocation NameLoc,
                              Scope *S, CXXScopeSpec *SS,
                              bool isClassName, bool HasTrailingDot,
-                             ParsedType ObjectTypePtr) {
+                             ParsedType ObjectTypePtr,
+                             bool WantNontrivialTypeSourceInfo) {
   // Determine where we will perform name lookup.
   DeclContext *LookupCtx = 0;
   if (ObjectTypePtr) {
@@ -87,10 +89,15 @@ ParsedType Sema::getTypeName(IdentifierInfo &II, SourceLocation NameLoc,
         
         // We know from the grammar that this name refers to a type,
         // so build a dependent node to describe the type.
+        if (WantNontrivialTypeSourceInfo)
+          return ActOnTypenameType(S, SourceLocation(), *SS, II, NameLoc).get();
+        
+        NestedNameSpecifierLoc QualifierLoc = SS->getWithLocInContext(Context);
         QualType T =
-          CheckTypenameType(ETK_None, SS->getScopeRep(), II,
-                            SourceLocation(), SS->getRange(), NameLoc);
-        return ParsedType::make(T);
+          CheckTypenameType(ETK_None, SourceLocation(), QualifierLoc,
+                            II, NameLoc);
+        
+          return ParsedType::make(T);
       }
       
       return ParsedType();
@@ -189,9 +196,21 @@ ParsedType Sema::getTypeName(IdentifierInfo &II, SourceLocation NameLoc,
     if (T.isNull())
       T = Context.getTypeDeclType(TD);
     
-    if (SS)
-      T = getElaboratedType(ETK_None, *SS, T);
-    
+    if (SS && SS->isNotEmpty()) {
+      if (WantNontrivialTypeSourceInfo) {
+        // Construct a type with type-source information.
+        TypeLocBuilder Builder;
+        Builder.pushTypeSpec(T).setNameLoc(NameLoc);
+        
+        T = getElaboratedType(ETK_None, *SS, T);
+        ElaboratedTypeLoc ElabTL = Builder.push<ElaboratedTypeLoc>(T);
+        ElabTL.setKeywordLoc(SourceLocation());
+        ElabTL.setQualifierLoc(SS->getWithLocInContext(Context));
+        return CreateParsedType(T, Builder.getTypeSourceInfo(Context, T));
+      } else {
+        T = getElaboratedType(ETK_None, *SS, T);
+      }
+    }
   } else if (ObjCInterfaceDecl *IDecl = dyn_cast<ObjCInterfaceDecl>(IIDecl)) {
     if (!HasTrailingDot)
       T = Context.getObjCInterfaceType(IDecl);
@@ -263,7 +282,9 @@ bool Sema::DiagnoseUnknownTypeName(const IdentifierInfo &II,
         Diag(Result->getLocation(), diag::note_previous_decl)
           << Result->getDeclName();
         
-        SuggestedType = getTypeName(*Result->getIdentifier(), IILoc, S, SS);
+        SuggestedType = getTypeName(*Result->getIdentifier(), IILoc, S, SS,
+                                    false, false, ParsedType(),
+                                    /*NonTrivialTypeSourceInfo=*/true);
         return true;
       }
     } else if (Lookup.empty()) {
@@ -1033,23 +1054,58 @@ DeclHasAttr(const Decl *D, const Attr *A) {
   return false;
 }
 
-/// MergeDeclAttributes - append attributes from the Old decl to the New one.
-static void MergeDeclAttributes(Decl *New, Decl *Old, ASTContext &C) {
-  if (!Old->hasAttrs())
+/// mergeDeclAttributes - Copy attributes from the Old decl to the New one.
+static void mergeDeclAttributes(Decl *newDecl, const Decl *oldDecl,
+                                ASTContext &C) {
+  if (!oldDecl->hasAttrs())
     return;
+
+  bool foundAny = newDecl->hasAttrs();
+
   // Ensure that any moving of objects within the allocated map is done before
   // we process them.
-  if (!New->hasAttrs())
-    New->setAttrs(AttrVec());
+  if (!foundAny) newDecl->setAttrs(AttrVec());
+
   for (specific_attr_iterator<InheritableAttr>
-       i = Old->specific_attr_begin<InheritableAttr>(),
-       e = Old->specific_attr_end<InheritableAttr>(); i != e; ++i) {
-    if (!DeclHasAttr(New, *i)) {
-      InheritableAttr *NewAttr = cast<InheritableAttr>((*i)->clone(C));
-      NewAttr->setInherited(true);
-      New->addAttr(NewAttr);
+       i = oldDecl->specific_attr_begin<InheritableAttr>(),
+       e = oldDecl->specific_attr_end<InheritableAttr>(); i != e; ++i) {
+    if (!DeclHasAttr(newDecl, *i)) {
+      InheritableAttr *newAttr = cast<InheritableAttr>((*i)->clone(C));
+      newAttr->setInherited(true);
+      newDecl->addAttr(newAttr);
+      foundAny = true;
     }
   }
+
+  if (!foundAny) newDecl->dropAttrs();
+}
+
+/// mergeParamDeclAttributes - Copy attributes from the old parameter
+/// to the new one.
+static void mergeParamDeclAttributes(ParmVarDecl *newDecl,
+                                     const ParmVarDecl *oldDecl,
+                                     ASTContext &C) {
+  if (!oldDecl->hasAttrs())
+    return;
+
+  bool foundAny = newDecl->hasAttrs();
+
+  // Ensure that any moving of objects within the allocated map is
+  // done before we process them.
+  if (!foundAny) newDecl->setAttrs(AttrVec());
+
+  for (specific_attr_iterator<InheritableParamAttr>
+       i = oldDecl->specific_attr_begin<InheritableParamAttr>(),
+       e = oldDecl->specific_attr_end<InheritableParamAttr>(); i != e; ++i) {
+    if (!DeclHasAttr(newDecl, *i)) {
+      InheritableAttr *newAttr = cast<InheritableParamAttr>((*i)->clone(C));
+      newAttr->setInherited(true);
+      newDecl->addAttr(newAttr);
+      foundAny = true;
+    }
+  }
+
+  if (!foundAny) newDecl->dropAttrs();
 }
 
 namespace {
@@ -1450,7 +1506,7 @@ bool Sema::MergeFunctionDecl(FunctionDecl *New, Decl *OldD) {
 /// \returns false
 bool Sema::MergeCompatibleFunctionDecls(FunctionDecl *New, FunctionDecl *Old) {
   // Merge the attributes
-  MergeDeclAttributes(New, Old, Context);
+  mergeDeclAttributes(New, Old, Context);
 
   // Merge the storage class.
   if (Old->getStorageClass() != SC_Extern &&
@@ -1465,10 +1521,29 @@ bool Sema::MergeCompatibleFunctionDecls(FunctionDecl *New, FunctionDecl *Old) {
   if (Old->isDeleted())
     New->setDeleted();
 
+  // Merge attributes from the parameters.  These can mismatch with K&R
+  // declarations.
+  if (New->getNumParams() == Old->getNumParams())
+    for (unsigned i = 0, e = New->getNumParams(); i != e; ++i)
+      mergeParamDeclAttributes(New->getParamDecl(i), Old->getParamDecl(i),
+                               Context);
+
   if (getLangOptions().CPlusPlus)
     return MergeCXXFunctionDecl(New, Old);
 
   return false;
+}
+
+void Sema::mergeObjCMethodDecls(ObjCMethodDecl *newMethod,
+                                const ObjCMethodDecl *oldMethod) {
+  // Merge the attributes.
+  mergeDeclAttributes(newMethod, oldMethod, Context);
+
+  // Merge attributes from the parameters.
+  for (ObjCMethodDecl::param_iterator oi = oldMethod->param_begin(),
+         ni = newMethod->param_begin(), ne = newMethod->param_end();
+       ni != ne; ++ni, ++oi)
+    mergeParamDeclAttributes(*ni, *oi, Context);    
 }
 
 /// MergeVarDecl - We parsed a variable 'New' which has the same name and scope
@@ -1564,7 +1639,7 @@ void Sema::MergeVarDecl(VarDecl *New, LookupResult &Previous) {
     New->setInvalidDecl();
   }
   
-  MergeDeclAttributes(New, Old, Context);
+  mergeDeclAttributes(New, Old, Context);
 
   // Merge the types.
   MergeVarDeclTypes(New, Old);
@@ -3680,7 +3755,7 @@ Sema::ActOnFunctionDeclarator(Scope* S, Declarator& D, DeclContext* DC,
     // determine whether we have a template or a template specialization.
     bool Invalid = false;
     if (TemplateParameterList *TemplateParams
-        = MatchTemplateParametersToScopeSpecifier(
+          = MatchTemplateParametersToScopeSpecifier(
                                   D.getDeclSpec().getSourceRange().getBegin(),
                                   D.getCXXScopeSpec(),
                                   TemplateParamLists.get(),
@@ -3698,6 +3773,13 @@ Sema::ActOnFunctionDeclarator(Scope* S, Declarator& D, DeclContext* DC,
             if (CheckTemplateDeclScope(S, TemplateParams))
               return 0;
 
+            // A destructor cannot be a template.
+            if (Name.getNameKind() == DeclarationName::CXXDestructorName) {
+              Diag(NewFD->getLocation(), diag::err_destructor_template);
+              return 0;
+            }
+            
+            
             FunctionTemplate = FunctionTemplateDecl::Create(Context, DC,
                                                       NewFD->getLocation(),
                                                       Name, TemplateParams,
@@ -5615,7 +5697,8 @@ Decl *Sema::ActOnFinishFunctionBody(Decl *dcl, Stmt *Body,
     // If any errors have occurred, clear out any temporaries that may have
     // been leftover. This ensures that these temporaries won't be picked up for
     // deletion in some later function.
-    if (PP.getDiagnostics().hasErrorOccurred())
+    if (PP.getDiagnostics().hasErrorOccurred() ||
+        PP.getDiagnostics().getSuppressAllDiagnostics())
       ExprTemporaries.clear();
     else if (!isa<FunctionTemplateDecl>(dcl)) {
       // Since the body is valid, issue any analysis-based warnings that are
@@ -7949,11 +8032,14 @@ void Sema::ActOnEnumBody(SourceLocation EnumLoc, SourceLocation LBraceLoc,
                            NumPositiveBits, NumNegativeBits);
 }
 
-Decl *Sema::ActOnFileScopeAsmDecl(SourceLocation Loc, Expr *expr) {
+Decl *Sema::ActOnFileScopeAsmDecl(Expr *expr,
+                                  SourceLocation StartLoc,
+                                  SourceLocation EndLoc) {
   StringLiteral *AsmString = cast<StringLiteral>(expr);
 
   FileScopeAsmDecl *New = FileScopeAsmDecl::Create(Context, CurContext,
-                                                   Loc, AsmString);
+                                                   AsmString, StartLoc,
+                                                   EndLoc);
   CurContext->addDecl(New);
   return New;
 }

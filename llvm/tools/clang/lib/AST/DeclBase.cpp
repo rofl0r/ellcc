@@ -173,9 +173,6 @@ void PrettyStackTraceDecl::print(llvm::raw_ostream &OS) const {
 Decl::~Decl() { }
 
 void Decl::setDeclContext(DeclContext *DC) {
-  if (isOutOfSemaDC())
-    delete getMultipleDC();
-
   DeclCtx = DC;
 }
 
@@ -960,7 +957,7 @@ void DeclContext::makeDeclVisibleInContext(NamedDecl *D, bool Recoverable) {
   // FIXME: This feels like a hack. Should DeclarationName support
   // template-ids, or is there a better way to keep specializations
   // from being visible?
-  if (isa<ClassTemplateSpecializationDecl>(D))
+  if (isa<ClassTemplateSpecializationDecl>(D) || D->isTemplateParameter())
     return;
   if (FunctionDecl *FD = dyn_cast<FunctionDecl>(D))
     if (FD->isFunctionTemplateSpecialization())
@@ -999,7 +996,7 @@ void DeclContext::makeDeclVisibleInContextImpl(NamedDecl *D) {
   // FIXME: This feels like a hack. Should DeclarationName support
   // template-ids, or is there a better way to keep specializations
   // from being visible?
-  if (isa<ClassTemplateSpecializationDecl>(D))
+  if (isa<ClassTemplateSpecializationDecl>(D) || D->isTemplateParameter())
     return;
 
   ASTContext *C = 0;

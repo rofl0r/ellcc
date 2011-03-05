@@ -1289,13 +1289,21 @@ Instruction *InstCombiner::visitICmpInstWithInstAndIntCst(ICmpInst &ICI,
   }
     
   case Instruction::LShr:         // (icmp pred (shr X, ShAmt), CI)
-  case Instruction::AShr:
-    // Only handle equality comparisons of shift-by-constant.
-    if (ConstantInt *ShAmt = dyn_cast<ConstantInt>(LHSI->getOperand(1)))
-      if (Instruction *Res = FoldICmpShrCst(ICI, cast<BinaryOperator>(LHSI),
-                                            ShAmt))
+  case Instruction::AShr: {
+    // Handle equality comparisons of shift-by-constant.
+    BinaryOperator *BO = cast<BinaryOperator>(LHSI);
+    if (ConstantInt *ShAmt = dyn_cast<ConstantInt>(LHSI->getOperand(1))) {
+      if (Instruction *Res = FoldICmpShrCst(ICI, BO, ShAmt))
         return Res;
+    }
+
+    // Handle exact shr's.
+    if (ICI.isEquality() && BO->isExact() && BO->hasOneUse()) {
+      if (RHSV.isMinValue())
+        return new ICmpInst(ICI.getPredicate(), BO->getOperand(0), RHS);
+    }
     break;
+  }
     
   case Instruction::SDiv:
   case Instruction::UDiv:
@@ -1855,11 +1863,11 @@ Instruction *InstCombiner::visitICmpInst(ICmpInst &I) {
       return new ICmpInst(ICmpInst::ICMP_SLT, Op0,
                           ConstantInt::get(CI->getContext(), CI->getValue()+1));
     case ICmpInst::ICMP_UGE:
-      assert(!CI->isMinValue(false));                  // A >=u MIN -> TRUE
+      assert(!CI->isMinValue(false));                 // A >=u MIN -> TRUE
       return new ICmpInst(ICmpInst::ICMP_UGT, Op0,
                           ConstantInt::get(CI->getContext(), CI->getValue()-1));
     case ICmpInst::ICMP_SGE:
-      assert(!CI->isMinValue(true));                   // A >=s MIN -> TRUE
+      assert(!CI->isMinValue(true));                  // A >=s MIN -> TRUE
       return new ICmpInst(ICmpInst::ICMP_SGT, Op0,
                           ConstantInt::get(CI->getContext(), CI->getValue()-1));
     }
@@ -1913,7 +1921,7 @@ Instruction *InstCombiner::visitICmpInst(ICmpInst &I) {
                           ConstantInt::get(I.getContext(), Op1Min));
 
     // Based on the range information we know about the LHS, see if we can
-    // simplify this comparison.  For example, (x&4) < 8  is always true.
+    // simplify this comparison.  For example, (x&4) < 8 is always true.
     switch (I.getPredicate()) {
     default: llvm_unreachable("Unknown icmp opcode!");
     case ICmpInst::ICMP_EQ: {
@@ -2306,6 +2314,35 @@ Instruction *InstCombiner::visitICmpInst(ICmpInst &I) {
         BO0->hasOneUse() && BO1->hasOneUse())
       return new ICmpInst(Pred, D, B);
 
+    BinaryOperator *SRem = NULL;
+    // icmp Y, (srem X, Y)
+    if (BO0 && BO0->getOpcode() == Instruction::SRem &&
+        Op1 == BO0->getOperand(1))
+      SRem = BO0;
+    // icmp (srem X, Y), Y
+    else if (BO1 && BO1->getOpcode() == Instruction::SRem &&
+             Op0 == BO1->getOperand(1))
+      SRem = BO1;
+    if (SRem) {
+      // We don't check hasOneUse to avoid increasing register pressure because
+      // the value we use is the same value this instruction was already using.
+      switch (SRem == BO0 ? ICmpInst::getSwappedPredicate(Pred) : Pred) {
+        default: break;
+        case ICmpInst::ICMP_EQ:
+          return ReplaceInstUsesWith(I, ConstantInt::getFalse(I.getContext()));
+        case ICmpInst::ICMP_NE:
+          return ReplaceInstUsesWith(I, ConstantInt::getTrue(I.getContext()));
+        case ICmpInst::ICMP_SGT:
+        case ICmpInst::ICMP_SGE:
+          return new ICmpInst(ICmpInst::ICMP_SGT, SRem->getOperand(1),
+                              Constant::getAllOnesValue(SRem->getType()));
+        case ICmpInst::ICMP_SLT:
+        case ICmpInst::ICMP_SLE:
+          return new ICmpInst(ICmpInst::ICMP_SLT, SRem->getOperand(1),
+                              Constant::getNullValue(SRem->getType()));
+      }
+    }
+
     if (BO0 && BO1 && BO0->getOpcode() == BO1->getOpcode() &&
         BO0->hasOneUse() && BO1->hasOneUse() &&
         BO0->getOperand(1) == BO1->getOperand(1)) {
@@ -2356,6 +2393,27 @@ Instruction *InstCombiner::visitICmpInst(ICmpInst &I) {
           }
         }
         break;
+      case Instruction::UDiv:
+      case Instruction::LShr:
+        if (I.isSigned())
+          break;
+        // fall-through
+      case Instruction::SDiv:
+      case Instruction::AShr:
+        if (!BO0->isExact() && !BO1->isExact())
+          break;
+        return new ICmpInst(I.getPredicate(), BO0->getOperand(0),
+                            BO1->getOperand(0));
+      case Instruction::Shl: {
+        bool NUW = BO0->hasNoUnsignedWrap() && BO1->hasNoUnsignedWrap();
+        bool NSW = BO0->hasNoSignedWrap() && BO1->hasNoSignedWrap();
+        if (!NUW && !NSW)
+          break;
+        if (!NSW && I.isSigned())
+          break;
+        return new ICmpInst(I.getPredicate(), BO0->getOperand(0),
+                            BO1->getOperand(0));
+      }
       }
     }
   }

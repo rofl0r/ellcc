@@ -1862,7 +1862,9 @@ ASTContext::getDependentSizedExtVectorType(QualType vecType,
 QualType
 ASTContext::getFunctionNoProtoType(QualType ResultTy,
                                    const FunctionType::ExtInfo &Info) const {
-  const CallingConv CallConv = Info.getCC();
+  const CallingConv DefaultCC = Info.getCC();
+  const CallingConv CallConv = (LangOpts.MRTD && DefaultCC == CC_Default) ?
+                               CC_X86StdCall : DefaultCC;
   // Unique functions, to guarantee there is only one function of a particular
   // structure.
   llvm::FoldingSetNodeID ID;
@@ -1886,8 +1888,9 @@ ASTContext::getFunctionNoProtoType(QualType ResultTy,
     assert(NewIP == 0 && "Shouldn't be in the map!"); (void)NewIP;
   }
 
+  FunctionProtoType::ExtInfo newInfo = Info.withCallingConv(CallConv);
   FunctionNoProtoType *New = new (*this, TypeAlignment)
-    FunctionNoProtoType(ResultTy, Canonical, Info);
+    FunctionNoProtoType(ResultTy, Canonical, newInfo);
   Types.push_back(New);
   FunctionNoProtoTypes.InsertNode(New, InsertPos);
   return QualType(New, 0);
@@ -1915,7 +1918,9 @@ ASTContext::getFunctionType(QualType ResultTy,
     if (!ArgArray[i].isCanonicalAsParam())
       isCanonical = false;
 
-  const CallingConv CallConv = EPI.ExtInfo.getCC();
+  const CallingConv DefaultCC = EPI.ExtInfo.getCC();
+  const CallingConv CallConv = (LangOpts.MRTD && DefaultCC == CC_Default) ?
+                               CC_X86StdCall : DefaultCC;
 
   // If this type isn't canonical, get the canonical version of it.
   // The exception spec is not part of the canonical type.
@@ -1952,7 +1957,9 @@ ASTContext::getFunctionType(QualType ResultTy,
                 NumArgs * sizeof(QualType) +
                 EPI.NumExceptions * sizeof(QualType);
   FunctionProtoType *FTP = (FunctionProtoType*) Allocate(Size, TypeAlignment);
-  new (FTP) FunctionProtoType(ResultTy, ArgArray, NumArgs, Canonical, EPI);
+  FunctionProtoType::ExtProtoInfo newEPI = EPI;
+  newEPI.ExtInfo = EPI.ExtInfo.withCallingConv(CallConv);
+  new (FTP) FunctionProtoType(ResultTy, ArgArray, NumArgs, Canonical, newEPI);
   Types.push_back(FTP);
   FunctionProtoTypes.InsertNode(FTP, InsertPos);
   return QualType(FTP, 0);
@@ -2183,6 +2190,8 @@ ASTContext::getTemplateSpecializationTypeInfo(TemplateName Name,
                                               SourceLocation NameLoc,
                                         const TemplateArgumentListInfo &Args,
                                               QualType CanonType) const {
+  assert(!Name.getAsDependentTemplateName() && 
+         "No dependent template names here!");
   QualType TST = getTemplateSpecializationType(Name, Args, CanonType);
 
   TypeSourceInfo *DI = CreateTypeSourceInfo(TST);
@@ -2200,6 +2209,9 @@ QualType
 ASTContext::getTemplateSpecializationType(TemplateName Template,
                                           const TemplateArgumentListInfo &Args,
                                           QualType Canon) const {
+  assert(!Template.getAsDependentTemplateName() && 
+         "No dependent template names here!");
+  
   unsigned NumArgs = Args.size();
 
   llvm::SmallVector<TemplateArgument, 4> ArgVec;
@@ -2216,6 +2228,12 @@ ASTContext::getTemplateSpecializationType(TemplateName Template,
                                           const TemplateArgument *Args,
                                           unsigned NumArgs,
                                           QualType Canon) const {
+  assert(!Template.getAsDependentTemplateName() && 
+         "No dependent template names here!");
+  // Look through qualified template names.
+  if (QualifiedTemplateName *QTN = Template.getAsQualifiedTemplateName())
+    Template = TemplateName(QTN->getTemplateDecl());
+  
   if (!Canon.isNull())
     Canon = getCanonicalType(Canon);
   else
@@ -2240,6 +2258,12 @@ QualType
 ASTContext::getCanonicalTemplateSpecializationType(TemplateName Template,
                                                    const TemplateArgument *Args,
                                                    unsigned NumArgs) const {
+  assert(!Template.getAsDependentTemplateName() && 
+         "No dependent template names here!");
+  // Look through qualified template names.
+  if (QualifiedTemplateName *QTN = Template.getAsQualifiedTemplateName())
+    Template = TemplateName(QTN->getTemplateDecl());
+  
   // Build the canonical template specialization type.
   TemplateName CanonTemplate = getCanonicalTemplateName(Template);
   llvm::SmallVector<TemplateArgument, 4> CanonArgs;
@@ -2377,7 +2401,8 @@ ASTContext::getDependentTemplateSpecializationType(
                                  const IdentifierInfo *Name,
                                  unsigned NumArgs,
                                  const TemplateArgument *Args) const {
-  assert(NNS->isDependent() && "nested-name-specifier must be dependent");
+  assert((!NNS || NNS->isDependent()) && 
+         "nested-name-specifier must be dependent");
 
   llvm::FoldingSetNodeID ID;
   DependentTemplateSpecializationType::Profile(ID, *this, Keyword, NNS,
@@ -3014,10 +3039,11 @@ ASTContext::getCanonicalNestedNameSpecifier(NestedNameSpecifier *NNS) const {
           = T->getAs<DependentTemplateSpecializationType>()) {
       NestedNameSpecifier *Prefix
         = getCanonicalNestedNameSpecifier(DTST->getQualifier());
-      TemplateName Name
-        = getDependentTemplateName(Prefix, DTST->getIdentifier());
-      T = getTemplateSpecializationType(Name, 
-                                        DTST->getArgs(), DTST->getNumArgs());
+      
+      T = getDependentTemplateSpecializationType(DTST->getKeyword(),
+                                                 Prefix, DTST->getIdentifier(),
+                                                 DTST->getNumArgs(),
+                                                 DTST->getArgs());
       T = getCanonicalType(T);
     }
     
@@ -4367,6 +4393,8 @@ TemplateName
 ASTContext::getQualifiedTemplateName(NestedNameSpecifier *NNS,
                                      bool TemplateKeyword,
                                      TemplateDecl *Template) const {
+  assert(NNS && "Missing nested-name-specifier in qualified template name");
+  
   // FIXME: Canonicalization?
   llvm::FoldingSetNodeID ID;
   QualifiedTemplateName::Profile(ID, NNS, TemplateKeyword, Template);
@@ -5556,10 +5584,6 @@ QualType ASTContext::getCorrespondingUnsignedType(QualType T) {
     return QualType();
   }
 }
-
-ExternalASTSource::~ExternalASTSource() { }
-
-void ExternalASTSource::PrintStats() { }
 
 ASTMutationListener::~ASTMutationListener() { }
 

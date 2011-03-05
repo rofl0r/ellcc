@@ -1939,8 +1939,8 @@ bool Sema::CheckPointerConversion(Expr *From, QualType ToType,
   if (CXXBoolLiteralExpr* LitBool
                           = dyn_cast<CXXBoolLiteralExpr>(From->IgnoreParens()))
     if (!IsCStyleOrFunctionalCast && LitBool->getValue() == false)
-      Diag(LitBool->getExprLoc(), diag::warn_init_pointer_from_false)
-        << ToType;
+      DiagRuntimeBehavior(LitBool->getExprLoc(), From,
+                          PDiag(diag::warn_init_pointer_from_false) << ToType);
 
   if (const PointerType *FromPtrType = FromType->getAs<PointerType>())
     if (const PointerType *ToPtrType = ToType->getAs<PointerType>()) {
@@ -4061,7 +4061,7 @@ void
 Sema::AddMethodTemplateCandidate(FunctionTemplateDecl *MethodTmpl,
                                  DeclAccessPair FoundDecl,
                                  CXXRecordDecl *ActingContext,
-                        const TemplateArgumentListInfo *ExplicitTemplateArgs,
+                                 TemplateArgumentListInfo *ExplicitTemplateArgs,
                                  QualType ObjectType,
                                  Expr::Classification ObjectClassification,
                                  Expr **Args, unsigned NumArgs,
@@ -4114,7 +4114,7 @@ Sema::AddMethodTemplateCandidate(FunctionTemplateDecl *MethodTmpl,
 void
 Sema::AddTemplateOverloadCandidate(FunctionTemplateDecl *FunctionTemplate,
                                    DeclAccessPair FoundDecl,
-                        const TemplateArgumentListInfo *ExplicitTemplateArgs,
+                                 TemplateArgumentListInfo *ExplicitTemplateArgs,
                                    Expr **Args, unsigned NumArgs,
                                    OverloadCandidateSet& CandidateSet,
                                    bool SuppressUserConversions) {
@@ -6090,7 +6090,7 @@ void
 Sema::AddArgumentDependentLookupCandidates(DeclarationName Name,
                                            bool Operator,
                                            Expr **Args, unsigned NumArgs,
-                       const TemplateArgumentListInfo *ExplicitTemplateArgs,
+                                 TemplateArgumentListInfo *ExplicitTemplateArgs,
                                            OverloadCandidateSet& CandidateSet,
                                            bool PartialOverloading) {
   ADLResult Fns;
@@ -7493,7 +7493,7 @@ FunctionDecl *Sema::ResolveSingleFunctionTemplateSpecialization(Expr *From,
 /// \brief Add a single candidate to the overload set.
 static void AddOverloadedCallCandidate(Sema &S,
                                        DeclAccessPair FoundDecl,
-                       const TemplateArgumentListInfo *ExplicitTemplateArgs,
+                                 TemplateArgumentListInfo *ExplicitTemplateArgs,
                                        Expr **Args, unsigned NumArgs,
                                        OverloadCandidateSet &CandidateSet,
                                        bool PartialOverloading) {
@@ -7559,7 +7559,7 @@ void Sema::AddOverloadedCallCandidates(UnresolvedLookupExpr *ULE,
 
   // It would be nice to avoid this copy.
   TemplateArgumentListInfo TABuffer;
-  const TemplateArgumentListInfo *ExplicitTemplateArgs = 0;
+  TemplateArgumentListInfo *ExplicitTemplateArgs = 0;
   if (ULE->hasExplicitTemplateArgs()) {
     ULE->copyTemplateArgumentsInto(TABuffer);
     ExplicitTemplateArgs = &TABuffer;
@@ -7590,9 +7590,7 @@ BuildRecoveryCallExpr(Sema &SemaRef, Scope *S, Expr *Fn,
                       SourceLocation RParenLoc) {
 
   CXXScopeSpec SS;
-  if (ULE->getQualifier())
-    SS.MakeTrivial(SemaRef.Context, 
-                   ULE->getQualifier(), ULE->getQualifierRange());
+  SS.Adopt(ULE->getQualifierLoc());
 
   TemplateArgumentListInfo TABuffer;
   const TemplateArgumentListInfo *ExplicitTemplateArgs = 0;
@@ -7776,11 +7774,11 @@ Sema::CreateOverloadedUnaryOp(SourceLocation OpLoc, unsigned OpcIn,
     CXXRecordDecl *NamingClass = 0; // because lookup ignores member operators
     UnresolvedLookupExpr *Fn
       = UnresolvedLookupExpr::Create(Context, NamingClass,
-                                     0, SourceRange(), OpNameInfo,
+                                     NestedNameSpecifierLoc(), OpNameInfo,
                                      /*ADL*/ true, IsOverloaded(Fns),
                                      Fns.begin(), Fns.end());
     return Owned(new (Context) CXXOperatorCallExpr(Context, Op, Fn,
-                                                   &Args[0], NumArgs,
+                                                  &Args[0], NumArgs,
                                                    Context.DependentTy,
                                                    VK_RValue,
                                                    OpLoc));
@@ -7956,8 +7954,9 @@ Sema::CreateOverloadedBinOp(SourceLocation OpLoc,
     // TODO: provide better source location info in DNLoc component.
     DeclarationNameInfo OpNameInfo(OpName, OpLoc);
     UnresolvedLookupExpr *Fn
-      = UnresolvedLookupExpr::Create(Context, NamingClass, 0, SourceRange(),
-                                     OpNameInfo, /*ADL*/ true, IsOverloaded(Fns),
+      = UnresolvedLookupExpr::Create(Context, NamingClass, 
+                                     NestedNameSpecifierLoc(), OpNameInfo, 
+                                     /*ADL*/ true, IsOverloaded(Fns),
                                      Fns.begin(), Fns.end());
     return Owned(new (Context) CXXOperatorCallExpr(Context, Op, Fn,
                                                    Args, 2,
@@ -8187,7 +8186,7 @@ Sema::CreateOverloadedArraySubscriptExpr(SourceLocation LLoc,
     OpNameInfo.setCXXOperatorNameRange(SourceRange(LLoc, RLoc));
     UnresolvedLookupExpr *Fn
       = UnresolvedLookupExpr::Create(Context, NamingClass,
-                                     0, SourceRange(), OpNameInfo,
+                                     NestedNameSpecifierLoc(), OpNameInfo,
                                      /*ADL*/ true, /*Overloaded*/ false,
                                      UnresolvedSetIterator(),
                                      UnresolvedSetIterator());
@@ -8930,8 +8929,7 @@ Expr *Sema::FixOverloadedFunctionReference(Expr *E, DeclAccessPair Found,
     }
 
     return DeclRefExpr::Create(Context,
-                               ULE->getQualifier(),
-                               ULE->getQualifierRange(),
+                               ULE->getQualifierLoc(),
                                Fn,
                                ULE->getNameLoc(),
                                Fn->getType(),
@@ -8954,8 +8952,7 @@ Expr *Sema::FixOverloadedFunctionReference(Expr *E, DeclAccessPair Found,
     if (MemExpr->isImplicitAccess()) {
       if (cast<CXXMethodDecl>(Fn)->isStatic()) {
         return DeclRefExpr::Create(Context,
-                                   MemExpr->getQualifier(),
-                                   MemExpr->getQualifierRange(),
+                                   MemExpr->getQualifierLoc(),
                                    Fn,
                                    MemExpr->getMemberLoc(),
                                    Fn->getType(),
@@ -8964,7 +8961,7 @@ Expr *Sema::FixOverloadedFunctionReference(Expr *E, DeclAccessPair Found,
       } else {
         SourceLocation Loc = MemExpr->getMemberLoc();
         if (MemExpr->getQualifier())
-          Loc = MemExpr->getQualifierRange().getBegin();
+          Loc = MemExpr->getQualifierLoc().getBeginLoc();
         Base = new (Context) CXXThisExpr(Loc,
                                          MemExpr->getBaseType(),
                                          /*isImplicit=*/true);
@@ -8974,8 +8971,7 @@ Expr *Sema::FixOverloadedFunctionReference(Expr *E, DeclAccessPair Found,
 
     return MemberExpr::Create(Context, Base,
                               MemExpr->isArrow(),
-                              MemExpr->getQualifier(),
-                              MemExpr->getQualifierRange(),
+                              MemExpr->getQualifierLoc(),
                               Fn,
                               Found,
                               MemExpr->getMemberNameInfo(),

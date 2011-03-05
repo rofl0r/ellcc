@@ -1728,11 +1728,24 @@ getTrivialTemplateArgumentLoc(Sema &S,
     return TemplateArgumentLoc(TemplateArgument(E), E);
   }
 
-  case TemplateArgument::Template:
-    return TemplateArgumentLoc(Arg, SourceRange(), Loc);
-
-  case TemplateArgument::TemplateExpansion:
-    return TemplateArgumentLoc(Arg, SourceRange(), Loc, Loc);
+    case TemplateArgument::Template:
+    case TemplateArgument::TemplateExpansion: {
+      NestedNameSpecifierLocBuilder Builder;
+      TemplateName Template = Arg.getAsTemplate();
+      if (DependentTemplateName *DTN = Template.getAsDependentTemplateName())
+        Builder.MakeTrivial(S.Context, DTN->getQualifier(), Loc);
+      else if (QualifiedTemplateName *QTN = Template.getAsQualifiedTemplateName())
+        Builder.MakeTrivial(S.Context, QTN->getQualifier(), Loc);
+      
+      if (Arg.getKind() == TemplateArgument::Template)
+        return TemplateArgumentLoc(Arg, 
+                                   Builder.getWithLocInContext(S.Context),
+                                   Loc);
+      
+      
+      return TemplateArgumentLoc(Arg, Builder.getWithLocInContext(S.Context),
+                                 Loc, Loc);
+    }
 
   case TemplateArgument::Expression:
     return TemplateArgumentLoc(Arg, Arg.getAsExpr());
@@ -1996,7 +2009,7 @@ static bool isSimpleTemplateIdType(QualType T) {
 Sema::TemplateDeductionResult
 Sema::SubstituteExplicitTemplateArguments(
                                       FunctionTemplateDecl *FunctionTemplate,
-                        const TemplateArgumentListInfo &ExplicitTemplateArgs,
+                               TemplateArgumentListInfo &ExplicitTemplateArgs,
                        llvm::SmallVectorImpl<DeducedTemplateArgument> &Deduced,
                                  llvm::SmallVectorImpl<QualType> &ParamTypes,
                                           QualType *FunctionType,
@@ -2563,7 +2576,7 @@ static bool AdjustFunctionParmAndArgTypesForDeduction(Sema &S,
 /// \returns the result of template argument deduction.
 Sema::TemplateDeductionResult
 Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
-                          const TemplateArgumentListInfo *ExplicitTemplateArgs,
+                              TemplateArgumentListInfo *ExplicitTemplateArgs,
                               Expr **Args, unsigned NumArgs,
                               FunctionDecl *&Specialization,
                               TemplateDeductionInfo &Info) {
@@ -2761,7 +2774,7 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
 /// \returns the result of template argument deduction.
 Sema::TemplateDeductionResult
 Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
-                        const TemplateArgumentListInfo *ExplicitTemplateArgs,
+                              TemplateArgumentListInfo *ExplicitTemplateArgs,
                               QualType ArgFunctionType,
                               FunctionDecl *&Specialization,
                               TemplateDeductionInfo &Info) {
@@ -2941,7 +2954,7 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
 /// \returns the result of template argument deduction.
 Sema::TemplateDeductionResult
 Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
-                           const TemplateArgumentListInfo *ExplicitTemplateArgs,
+                              TemplateArgumentListInfo *ExplicitTemplateArgs,
                               FunctionDecl *&Specialization,
                               TemplateDeductionInfo &Info) {
   return DeduceTemplateArguments(FunctionTemplate, ExplicitTemplateArgs,

@@ -89,7 +89,12 @@ class Attr {
   code AdditionalMembers = [{}];
 }
 
+/// An inheritable attribute is inherited by later redeclarations.
 class InheritableAttr : Attr;
+
+/// An inheritable parameter attribute is inherited by later
+/// redeclarations, even when it's written on a parameter.
+class InheritableParamAttr : InheritableAttr;
 
 //
 // Attributes begin here
@@ -134,7 +139,7 @@ def Blocks : InheritableAttr {
   let Args = [EnumArgument<"Type", "BlockType", ["byref"], ["ByRef"]>];
 }
 
-def CarriesDependency : InheritableAttr {
+def CarriesDependency : InheritableParamAttr {
   let Spellings = ["carries_dependency"];
   let Subjects = [ParmVar, Function];
   let Namespaces = ["", "std"];
@@ -154,7 +159,7 @@ def CFReturnsNotRetained : InheritableAttr {
   let Subjects = [ObjCMethod, Function];
 }
 
-def CFConsumed : InheritableAttr {
+def CFConsumed : InheritableParamAttr {
   let Spellings = ["cf_consumed"];
   let Subjects = [ParmVar];
 }
@@ -355,13 +360,22 @@ def NSConsumesSelf : InheritableAttr {
   let Subjects = [ObjCMethod];
 }
 
-def NSConsumed : InheritableAttr {
+def NSConsumed : InheritableParamAttr {
   let Spellings = ["ns_consumed"];
   let Subjects = [ParmVar];
 }
 
 def ObjCException : InheritableAttr {
   let Spellings = ["objc_exception"];
+}
+
+def ObjCMethodFamily : InheritableAttr {
+  let Spellings = ["objc_method_family"];
+  let Subjects = [ObjCMethod];
+  let Args = [EnumArgument<"Family", "FamilyKind",
+               ["none", "alloc", "copy", "init", "mutableCopy", "new"],
+               ["OMF_None", "OMF_alloc", "OMF_copy", "OMF_init",
+                "OMF_mutableCopy", "OMF_new"]>];
 }
 
 def ObjCNSObject : InheritableAttr {

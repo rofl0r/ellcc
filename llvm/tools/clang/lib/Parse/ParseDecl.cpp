@@ -1013,7 +1013,7 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
         ConsumeToken(); // The C++ scope.
         assert(Tok.is(tok::annot_template_id) &&
                "ParseOptionalCXXScopeSpecifier not working");
-        AnnotateTemplateIdTokenAsType(&SS);
+        AnnotateTemplateIdTokenAsType();
         continue;
       }
 
@@ -1056,7 +1056,9 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
 
       ParsedType TypeRep = Actions.getTypeName(*Next.getIdentifierInfo(),
                                                Next.getLocation(),
-                                               getCurScope(), &SS);
+                                               getCurScope(), &SS,
+                                               false, false, ParsedType(),
+                                               /*NonTrivialSourceInfo=*/true);
 
       // If the referenced identifier is not a type, then this declspec is
       // erroneous: We already checked about that it has no type specifier, and

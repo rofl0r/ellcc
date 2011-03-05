@@ -47,12 +47,11 @@
 // http://developer.apple.com/library/mac/#documentation/Cocoa/Conceptual/ObjectiveC/Articles/ocAllocInit.html
 
 #include "ClangSACheckers.h"
-#include "clang/StaticAnalyzer/Core/CheckerV2.h"
+#include "clang/StaticAnalyzer/Core/Checker.h"
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/GRStateTrait.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
-#include "clang/Analysis/DomainSpecific/CocoaConventions.h"
 #include "clang/AST/ParentMap.h"
 
 using namespace clang;
@@ -64,7 +63,7 @@ static bool isInitMessage(const ObjCMessage &msg);
 static bool isSelfVar(SVal location, CheckerContext &C);
 
 namespace {
-class ObjCSelfInitChecker : public CheckerV2<
+class ObjCSelfInitChecker : public Checker<
                                              check::PostObjCMessage,
                                              check::PostStmt<ObjCIvarRefExpr>,
                                              check::PreStmt<ReturnStmt>,
@@ -347,15 +346,11 @@ static bool isSelfVar(SVal location, CheckerContext &C) {
 }
 
 static bool isInitializationMethod(const ObjCMethodDecl *MD) {
-  // Init methods with prefix like '-(id)_init' are private and the requirements
-  // are less strict so we don't check those.
-  return MD->isInstanceMethod() &&
-      cocoa::deriveNamingConvention(MD->getSelector(),
-                                    /*ignorePrefix=*/false) == cocoa::InitRule;
+  return MD->getMethodFamily() == OMF_init;
 }
 
 static bool isInitMessage(const ObjCMessage &msg) {
-  return cocoa::deriveNamingConvention(msg.getSelector()) == cocoa::InitRule;
+  return msg.getMethodFamily() == OMF_init;
 }
 
 //===----------------------------------------------------------------------===//

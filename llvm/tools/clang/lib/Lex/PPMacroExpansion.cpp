@@ -355,9 +355,9 @@ MacroArgs *Preprocessor::ReadFunctionLikeMacroArgs(Token &MacroName,
         LexUnexpandedToken(Tok);
       }
       
-      if (Tok.is(tok::eof) || Tok.is(tok::eom)) { // "#if f(<eof>" & "#if f(\n"
+      if (Tok.is(tok::eof) || Tok.is(tok::eod)) { // "#if f(<eof>" & "#if f(\n"
         Diag(MacroName, diag::err_unterm_macro_invoc);
-        // Do not lose the EOF/EOM.  Return it to the client.
+        // Do not lose the EOF/EOD.  Return it to the client.
         MacroName = Tok;
         return 0;
       } else if (Tok.is(tok::r_paren)) {
@@ -540,6 +540,7 @@ static bool HasFeature(const Preprocessor &PP, const IdentifierInfo *II) {
            .Case("attribute_ns_consumed", true)
            .Case("attribute_cf_consumed", true)
            .Case("attribute_objc_ivar_unused", true)
+           .Case("attribute_objc_method_family", true)
            .Case("attribute_overloadable", true)
            .Case("attribute_unavailable_with_message", true)
            .Case("blocks", LangOpts.Blocks)
@@ -626,8 +627,8 @@ static bool EvaluateHasIncludeCommon(Token &Tok,
   SourceLocation EndLoc;
   
   switch (Tok.getKind()) {
-  case tok::eom:
-    // If the token kind is EOM, the error has already been diagnosed.
+  case tok::eod:
+    // If the token kind is EOD, the error has already been diagnosed.
     return false;
 
   case tok::angle_string_literal:
@@ -644,7 +645,7 @@ static bool EvaluateHasIncludeCommon(Token &Tok,
     // case, glue the tokens together into FilenameBuffer and interpret those.
     FilenameBuffer.push_back('<');
     if (PP.ConcatenateIncludeName(FilenameBuffer, EndLoc))
-      return false;   // Found <eom> but no ">"?  Diagnostic already emitted.
+      return false;   // Found <eod> but no ">"?  Diagnostic already emitted.
     Filename = FilenameBuffer.str();
     break;
   default:

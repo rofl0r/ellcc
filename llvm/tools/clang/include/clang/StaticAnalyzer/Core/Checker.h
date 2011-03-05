@@ -1,4 +1,4 @@
-//== CheckerV2.h - Registration mechanism for checkers -----------*- C++ -*--=//
+//== Checker.h - Registration mechanism for checkers -------------*- C++ -*--=//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -7,14 +7,15 @@
 //
 //===----------------------------------------------------------------------===//
 //
-//  This file defines CheckerV2, used to create and register checkers.
+//  This file defines Checker, used to create and register checkers.
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_SA_CORE_CHECKERV2
-#define LLVM_CLANG_SA_CORE_CHECKERV2
+#ifndef LLVM_CLANG_SA_CORE_CHECKER
+#define LLVM_CLANG_SA_CORE_CHECKER
 
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/SVals.h"
 #include "llvm/Support/Casting.h"
 
 namespace clang {
@@ -145,6 +146,21 @@ public:
   }
 };
 
+class Bind {
+  template <typename CHECKER>
+  static void _checkBind(void *checker, const SVal &location, const SVal &val,
+                         CheckerContext &C) {
+    ((const CHECKER *)checker)->checkBind(location, val, C);
+  }
+
+public:
+  template <typename CHECKER>
+  static void _register(CHECKER *checker, CheckerManager &mgr) {
+    mgr._registerForBind(
+           CheckerManager::CheckBindFunc(checker, _checkBind<CHECKER>));
+  }
+};
+
 class EndAnalysis {
   template <typename CHECKER>
   static void _checkEndAnalysis(void *checker, ExplodedGraph &G,
@@ -172,6 +188,22 @@ public:
   static void _register(CHECKER *checker, CheckerManager &mgr) {
     mgr._registerForEndPath(
      CheckerManager::CheckEndPathFunc(checker, _checkEndPath<CHECKER>));
+  }
+};
+
+class BranchCondition {
+  template <typename CHECKER>
+  static void _checkBranchCondition(void *checker, const Stmt *condition,
+                                    BranchNodeBuilder &B, ExprEngine &Eng) {
+    ((const CHECKER *)checker)->checkBranchCondition(condition, B, Eng);
+  }
+
+public:
+  template <typename CHECKER>
+  static void _register(CHECKER *checker, CheckerManager &mgr) {
+    mgr._registerForBranchCondition(
+      CheckerManager::CheckBranchConditionFunc(checker,
+                                               _checkBranchCondition<CHECKER>));
   }
 };
 
@@ -228,9 +260,38 @@ public:
   }
 };
 
+template <typename EVENT>
+class Event {
+  template <typename CHECKER>
+  static void _checkEvent(void *checker, const void *event) {
+    ((const CHECKER *)checker)->checkEvent(*(const EVENT *)event);
+  }
+public:
+  template <typename CHECKER>
+  static void _register(CHECKER *checker, CheckerManager &mgr) {
+    mgr._registerListenerForEvent<EVENT>(
+                 CheckerManager::CheckEventFunc(checker, _checkEvent<CHECKER>));
+  }
+};
+
 } // end check namespace
 
 namespace eval {
+
+class Assume {
+  template <typename CHECKER>
+  static const GRState *_evalAssume(void *checker, const GRState *state,
+                                    const SVal &cond, bool assumption) {
+    return ((const CHECKER *)checker)->evalAssume(state, cond, assumption);
+  }
+
+public:
+  template <typename CHECKER>
+  static void _register(CHECKER *checker, CheckerManager &mgr) {
+    mgr._registerForEvalAssume(
+                 CheckerManager::EvalAssumeFunc(checker, _evalAssume<CHECKER>));
+  }
+};
 
 class Call {
   template <typename CHECKER>
@@ -254,23 +315,56 @@ template <typename CHECK1, typename CHECK2=check::_VoidCheck,
           typename CHECK7=check::_VoidCheck, typename CHECK8=check::_VoidCheck,
           typename CHECK9=check::_VoidCheck, typename CHECK10=check::_VoidCheck,
           typename CHECK11=check::_VoidCheck,typename CHECK12=check::_VoidCheck>
-class CheckerV2 {
+class Checker;
+
+template <>
+class Checker<check::_VoidCheck, check::_VoidCheck, check::_VoidCheck,
+                check::_VoidCheck, check::_VoidCheck, check::_VoidCheck,
+                check::_VoidCheck, check::_VoidCheck, check::_VoidCheck,
+                check::_VoidCheck, check::_VoidCheck, check::_VoidCheck> {
+public:
+  static void _register(void *checker, CheckerManager &mgr) { }
+};
+
+template <typename CHECK1, typename CHECK2, typename CHECK3, typename CHECK4,
+          typename CHECK5, typename CHECK6, typename CHECK7, typename CHECK8,
+          typename CHECK9, typename CHECK10,typename CHECK11,typename CHECK12>
+class Checker
+    : public CHECK1,
+      public Checker<CHECK2, CHECK3, CHECK4, CHECK5, CHECK6, CHECK7, CHECK8,
+                       CHECK9, CHECK10, CHECK11, CHECK12> {
 public:
   template <typename CHECKER>
   static void _register(CHECKER *checker, CheckerManager &mgr) {
     CHECK1::_register(checker, mgr);
-    CHECK2::_register(checker, mgr);
-    CHECK3::_register(checker, mgr);
-    CHECK4::_register(checker, mgr);
-    CHECK5::_register(checker, mgr);
-    CHECK6::_register(checker, mgr);
-    CHECK7::_register(checker, mgr);
-    CHECK8::_register(checker, mgr);
-    CHECK9::_register(checker, mgr);
-    CHECK10::_register(checker, mgr);
-    CHECK11::_register(checker, mgr);
-    CHECK12::_register(checker, mgr);
+    Checker<CHECK2, CHECK3, CHECK4, CHECK5, CHECK6, CHECK7, CHECK8, CHECK9,
+              CHECK10, CHECK11,CHECK12>::_register(checker, mgr);
   }
+};
+
+template <typename EVENT>
+class EventDispatcher {
+  CheckerManager *Mgr;
+public:
+  EventDispatcher() : Mgr(0) { }
+
+  template <typename CHECKER>
+  static void _register(CHECKER *checker, CheckerManager &mgr) {
+    mgr._registerDispatcherForEvent<EVENT>();
+    static_cast<EventDispatcher<EVENT> *>(checker)->Mgr = &mgr;
+  }
+
+  void dispatchEvent(const EVENT &event) const {
+    Mgr->_dispatchEvent(event);
+  }
+};
+
+/// \brief We dereferenced a location that may be null.
+struct ImplicitNullDerefEvent {
+  SVal Location;
+  bool IsLoad;
+  ExplodedNode *SinkNode;
+  BugReporter *BR;
 };
 
 } // end ento namespace

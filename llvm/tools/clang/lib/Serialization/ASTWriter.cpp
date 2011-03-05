@@ -532,20 +532,20 @@ void TypeLocWriter::VisitParenTypeLoc(ParenTypeLoc TL) {
 }
 void TypeLocWriter::VisitElaboratedTypeLoc(ElaboratedTypeLoc TL) {
   Writer.AddSourceLocation(TL.getKeywordLoc(), Record);
-  Writer.AddSourceRange(TL.getQualifierRange(), Record);
+  Writer.AddNestedNameSpecifierLoc(TL.getQualifierLoc(), Record);
 }
 void TypeLocWriter::VisitInjectedClassNameTypeLoc(InjectedClassNameTypeLoc TL) {
   Writer.AddSourceLocation(TL.getNameLoc(), Record);
 }
 void TypeLocWriter::VisitDependentNameTypeLoc(DependentNameTypeLoc TL) {
   Writer.AddSourceLocation(TL.getKeywordLoc(), Record);
-  Writer.AddSourceRange(TL.getQualifierRange(), Record);
+  Writer.AddNestedNameSpecifierLoc(TL.getQualifierLoc(), Record);
   Writer.AddSourceLocation(TL.getNameLoc(), Record);
 }
 void TypeLocWriter::VisitDependentTemplateSpecializationTypeLoc(
        DependentTemplateSpecializationTypeLoc TL) {
   Writer.AddSourceLocation(TL.getKeywordLoc(), Record);
-  Writer.AddSourceRange(TL.getQualifierRange(), Record);
+  Writer.AddNestedNameSpecifierLoc(TL.getQualifierLoc(), Record);
   Writer.AddSourceLocation(TL.getNameLoc(), Record);
   Writer.AddSourceLocation(TL.getLAngleLoc(), Record);
   Writer.AddSourceLocation(TL.getRAngleLoc(), Record);
@@ -1072,6 +1072,7 @@ void ASTWriter::WriteLanguageOptions(const LangOptions &LangOpts) {
   Record.push_back(LangOpts.DefaultFPContract);
   Record.push_back(LangOpts.ElideConstructors);
   Record.push_back(LangOpts.SpellChecking);
+  Record.push_back(LangOpts.MRTD);
   Stream.EmitRecord(LANGUAGE_OPTIONS, Record);
 }
 
@@ -1427,7 +1428,7 @@ void ASTWriter::WriteSourceManagerBlock(SourceManager &SourceMgr,
     // Figure out which record code to use.
     unsigned Code;
     if (SLoc->isFile()) {
-      if (SLoc->getFile().getContentCache()->Entry)
+      if (SLoc->getFile().getContentCache()->OrigEntry)
         Code = SM_SLOC_FILE_ENTRY;
       else
         Code = SM_SLOC_BUFFER_ENTRY;
@@ -1444,16 +1445,19 @@ void ASTWriter::WriteSourceManagerBlock(SourceManager &SourceMgr,
       Record.push_back(File.hasLineDirectives());
 
       const SrcMgr::ContentCache *Content = File.getContentCache();
-      if (Content->Entry) {
+      if (Content->OrigEntry) {
+        assert(Content->OrigEntry == Content->ContentsEntry &&
+               "Writing to AST an overriden file is not supported");
+
         // The source location entry is a file. The blob associated
         // with this entry is the file name.
 
         // Emit size/modification time for this file.
-        Record.push_back(Content->Entry->getSize());
-        Record.push_back(Content->Entry->getModificationTime());
+        Record.push_back(Content->OrigEntry->getSize());
+        Record.push_back(Content->OrigEntry->getModificationTime());
 
         // Turn the file name into an absolute path, if it isn't already.
-        const char *Filename = Content->Entry->getName();
+        const char *Filename = Content->OrigEntry->getName();
         llvm::SmallString<128> FilePath(Filename);
         llvm::sys::fs::make_absolute(FilePath);
         Filename = FilePath.c_str();
@@ -3245,11 +3249,11 @@ void ASTWriter::AddTemplateArgumentLocInfo(TemplateArgument::ArgKind Kind,
     AddTypeSourceInfo(Arg.getAsTypeSourceInfo(), Record);
     break;
   case TemplateArgument::Template:
-    AddSourceRange(Arg.getTemplateQualifierRange(), Record);
+    AddNestedNameSpecifierLoc(Arg.getTemplateQualifierLoc(), Record);
     AddSourceLocation(Arg.getTemplateNameLoc(), Record);
     break;
   case TemplateArgument::TemplateExpansion:
-    AddSourceRange(Arg.getTemplateQualifierRange(), Record);
+    AddNestedNameSpecifierLoc(Arg.getTemplateQualifierLoc(), Record);
     AddSourceLocation(Arg.getTemplateNameLoc(), Record);
     AddSourceLocation(Arg.getTemplateEllipsisLoc(), Record);
     break;

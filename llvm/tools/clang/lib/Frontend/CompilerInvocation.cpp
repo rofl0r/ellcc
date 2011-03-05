@@ -30,16 +30,6 @@
 #include "llvm/Support/Path.h"
 using namespace clang;
 
-static const char *getAnalysisName(Analyses Kind) {
-  switch (Kind) {
-  default:
-    llvm_unreachable("Unknown analysis kind!");
-#define ANALYSIS(NAME, CMDFLAG, DESC, SCOPE)\
-  case NAME: return "-" CMDFLAG;
-#include "clang/Frontend/Analyses.def"
-  }
-}
-
 static const char *getAnalysisStoreName(AnalysisStores Kind) {
   switch (Kind) {
   default:
@@ -76,8 +66,6 @@ static const char *getAnalysisDiagClientName(AnalysisDiagClients Kind) {
 
 static void AnalyzerOptsToArgs(const AnalyzerOptions &Opts,
                                std::vector<std::string> &Res) {
-  for (unsigned i = 0, e = Opts.AnalysisList.size(); i != e; ++i)
-    Res.push_back(getAnalysisName(Opts.AnalysisList[i]));
   if (Opts.ShowCheckerHelp)
     Res.push_back("-analyzer-checker-help");
   if (Opts.AnalysisStoreOpt != BasicStoreModel) {
@@ -102,8 +90,6 @@ static void AnalyzerOptsToArgs(const AnalyzerOptions &Opts,
     Res.push_back("-analyzer-display-progress");
   if (Opts.AnalyzeNestedBlocks)
     Res.push_back("-analyzer-opt-analyze-nested-blocks");
-  if (Opts.AnalyzerStats)
-    Res.push_back("-analyzer-stats");
   if (Opts.EagerlyAssume)
     Res.push_back("-analyzer-eagerly-assume");
   if (!Opts.PurgeDead)
@@ -114,10 +100,6 @@ static void AnalyzerOptsToArgs(const AnalyzerOptions &Opts,
     Res.push_back("-analyzer-viz-egraph-graphviz");
   if (Opts.VisualizeEGDot)
     Res.push_back("-analyzer-viz-egraph-ubigraph");
-  if (Opts.EnableExperimentalChecks)
-    Res.push_back("-analyzer-experimental-checks");
-  if (Opts.BufferOverflows)
-    Res.push_back("-analyzer-check-buffer-overflows");
 
   for (unsigned i = 0, e = Opts.CheckersControlList.size(); i != e; ++i) {
     const std::pair<std::string, bool> &opt = Opts.CheckersControlList[i];
@@ -811,11 +793,6 @@ static void ParseAnalyzerArgs(AnalyzerOptions &Opts, ArgList &Args,
                               Diagnostic &Diags) {
   using namespace cc1options;
 
-  Opts.AnalysisList.clear();
-#define ANALYSIS(NAME, CMDFLAG, DESC, SCOPE) \
-  if (Args.hasArg(OPT_analysis_##NAME)) Opts.AnalysisList.push_back(NAME);
-#include "clang/Frontend/Analyses.def"
-
   if (Arg *A = Args.getLastArg(OPT_analyzer_store)) {
     llvm::StringRef Name = A->getValue(Args);
     AnalysisStores Value = llvm::StringSwitch<AnalysisStores>(Name)
@@ -868,20 +845,17 @@ static void ParseAnalyzerArgs(AnalyzerOptions &Opts, ArgList &Args,
   Opts.AnalyzerDisplayProgress = Args.hasArg(OPT_analyzer_display_progress);
   Opts.AnalyzeNestedBlocks =
     Args.hasArg(OPT_analyzer_opt_analyze_nested_blocks);
-  Opts.AnalyzerStats = Args.hasArg(OPT_analysis_AnalyzerStats);
   Opts.PurgeDead = !Args.hasArg(OPT_analyzer_no_purge_dead);
   Opts.EagerlyAssume = Args.hasArg(OPT_analyzer_eagerly_assume);
   Opts.AnalyzeSpecificFunction = Args.getLastArgValue(OPT_analyze_function);
   Opts.UnoptimizedCFG = Args.hasArg(OPT_analysis_UnoptimizedCFG);
   Opts.CFGAddImplicitDtors = Args.hasArg(OPT_analysis_CFGAddImplicitDtors);
   Opts.CFGAddInitializers = Args.hasArg(OPT_analysis_CFGAddInitializers);
-  Opts.EnableExperimentalChecks = Args.hasArg(OPT_analyzer_experimental_checks);
   Opts.TrimGraph = Args.hasArg(OPT_trim_egraph);
   Opts.MaxNodes = Args.getLastArgIntValue(OPT_analyzer_max_nodes, 150000,Diags);
   Opts.MaxLoop = Args.getLastArgIntValue(OPT_analyzer_max_loop, 4, Diags);
   Opts.EagerlyTrimEGraph = !Args.hasArg(OPT_analyzer_no_eagerly_trim_egraph);
   Opts.InlineCall = Args.hasArg(OPT_analyzer_inline_call);
-  Opts.BufferOverflows = Args.hasArg(OPT_analysis_WarnBufferOverflows);
 
   Opts.CheckersControlList.clear();
   for (arg_iterator it = Args.filtered_begin(OPT_analyzer_checker,
@@ -1501,6 +1475,7 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   Opts.SinglePrecisionConstants = Args.hasArg(OPT_cl_single_precision_constant);
   Opts.FastRelaxedMath = Args.hasArg(OPT_cl_fast_relaxed_math);
   Opts.OptimizeSize = 0;
+  Opts.MRTD = Args.hasArg(OPT_mrtd);
 
   // FIXME: Eliminate this dependency.
   unsigned Opt = getOptimizationLevel(Args, IK, Diags);

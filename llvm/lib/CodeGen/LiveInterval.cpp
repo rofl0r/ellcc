@@ -33,16 +33,18 @@ using namespace llvm;
 // CompEnd - Compare LiveRange ends.
 namespace {
 struct CompEnd {
-  bool operator()(const LiveRange &A, const LiveRange &B) const {
-    return A.end < B.end;
+  bool operator()(SlotIndex A, const LiveRange &B) const {
+    return A < B.end;
+  }
+  bool operator()(const LiveRange &A, SlotIndex B) const {
+    return A.end < B;
   }
 };
 }
 
 LiveInterval::iterator LiveInterval::find(SlotIndex Pos) {
   assert(Pos.isValid() && "Cannot search for an invalid index");
-  return std::upper_bound(begin(), end(), LiveRange(SlotIndex(), Pos, 0),
-                          CompEnd());
+  return std::upper_bound(begin(), end(), Pos, CompEnd());
 }
 
 /// killedInRange - Return true if the interval has kills in [Start,End).
@@ -291,6 +293,22 @@ LiveInterval::addRangeFrom(LiveRange LR, iterator From) {
   return ranges.insert(it, LR);
 }
 
+/// extendInBlock - If this interval is live before UseIdx in the basic
+/// block that starts at StartIdx, extend it to be live at UseIdx and return
+/// the value. If there is no live range before UseIdx, return NULL.
+VNInfo *LiveInterval::extendInBlock(SlotIndex StartIdx, SlotIndex UseIdx) {
+  if (empty())
+    return 0;
+  iterator I = std::upper_bound(begin(), end(), UseIdx);
+  if (I == begin())
+    return 0;
+  --I;
+  if (I->end <= StartIdx)
+    return 0;
+  if (I->end <= UseIdx)
+    extendIntervalEndTo(I, UseIdx.getNextSlot());
+  return I->valno;
+}
 
 /// removeRange - Remove the specified range from this interval.  Note that
 /// the range must be in a single LiveRange in its entirety.

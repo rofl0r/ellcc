@@ -42,14 +42,6 @@ def analysis_CFGAddImplicitDtors : Flag<"-cfg-add-implicit-dtors">,
   HelpText<"Add C++ implicit destructors to CFGs for all analyses">;
 def analysis_CFGAddInitializers : Flag<"-cfg-add-initializers">,
   HelpText<"Add C++ initializers to CFGs for all analyses">;
-def analysis_WarnUninitVals : Flag<"-warn-uninit-values">,
-  HelpText<"Warn about uses of uninitialized variables">;
-def analysis_ObjCMemChecker : Flag<"-analyzer-check-objc-mem">,
-  HelpText<"Run the [Core] Foundation reference count checker">;
-def analysis_AnalyzerStats : Flag<"-analyzer-stats">,
-  HelpText<"Emit warnings with analyzer statistics">;
-def analysis_WarnBufferOverflows : Flag<"-analyzer-check-buffer-overflows">,
-  HelpText<"Warn about buffer overflows">;
 
 def analyzer_store : Separate<"-analyzer-store">,
   HelpText<"Source Code Analysis - Abstract Memory Store Models">;
@@ -71,8 +63,6 @@ def analyzer_opt_analyze_nested_blocks : Flag<"-analyzer-opt-analyze-nested-bloc
   HelpText<"Analyze the definitions of blocks in addition to functions">;
 def analyzer_display_progress : Flag<"-analyzer-display-progress">,
   HelpText<"Emit verbose output about the analyzer's progress">;
-def analyzer_experimental_checks : Flag<"-analyzer-experimental-checks">,
-  HelpText<"Use experimental path-sensitive checks">;
 def analyze_function : Separate<"-analyze-function">,
   HelpText<"Run analysis on specific function">;
 def analyze_function_EQ : Joined<"-analyze-function=">, Alias<analyze_function>;
@@ -167,6 +157,8 @@ def mregparm : Separate<"-mregparm">,
   HelpText<"Limit the number of registers available for integer arguments">;
 def mrelax_all : Flag<"-mrelax-all">,
   HelpText<"Relax all machine instructions">;
+def mrtd: Flag<"-mrtd">,
+  HelpText<"Make StdCall calling convention the default">;
 def mrelocation_model : Separate<"-mrelocation-model">,
   HelpText<"The relocation model to use">;
 def munwind_tables : Flag<"-munwind-tables">,

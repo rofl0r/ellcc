@@ -429,8 +429,8 @@ void ASTStmtReader::VisitDeclRefExpr(DeclRefExpr *E) {
          ? DeclRefExpr::HasExplicitTemplateArgumentListFlag : 0));
   
   if (HasQualifier) {
-    E->getNameQualifier()->NNS = Reader.ReadNestedNameSpecifier(Record, Idx);
-    E->getNameQualifier()->Range = ReadSourceRange(Record, Idx);
+    E->getNameQualifier()->QualifierLoc
+      = Reader.ReadNestedNameSpecifierLoc(F, Record, Idx);
   }
 
   if (HasExplicitTemplateArgs) {
@@ -1201,14 +1201,13 @@ ASTStmtReader::VisitCXXDependentScopeMemberExpr(CXXDependentScopeMemberExpr *E){
     ReadExplicitTemplateArgumentList(E->getExplicitTemplateArgs(),
                                      Record[Idx++]);
 
-  E->setBase(Reader.ReadSubExpr());
-  E->setBaseType(Reader.GetType(Record[Idx++]));
-  E->setArrow(Record[Idx++]);
-  E->setOperatorLoc(ReadSourceLocation(Record, Idx));
-  E->setQualifier(Reader.ReadNestedNameSpecifier(Record, Idx));
-  E->setQualifierRange(ReadSourceRange(Record, Idx));
-  E->setFirstQualifierFoundInScope(
-                        cast_or_null<NamedDecl>(Reader.GetDecl(Record[Idx++])));
+  E->Base = Reader.ReadSubExpr();
+  E->BaseType = Reader.GetType(Record[Idx++]);
+  E->IsArrow = Record[Idx++];
+  E->OperatorLoc = ReadSourceLocation(Record, Idx);
+  E->QualifierLoc = Reader.ReadNestedNameSpecifierLoc(F, Record, Idx);
+  E->FirstQualifierFoundInScope
+                      = cast_or_null<NamedDecl>(Reader.GetDecl(Record[Idx++]));
   ReadDeclarationNameInfo(E->MemberNameInfo, Record, Idx);
 }
 
@@ -1254,24 +1253,23 @@ void ASTStmtReader::VisitOverloadExpr(OverloadExpr *E) {
   E->initializeResults(*Reader.getContext(), Decls.begin(), Decls.end());
 
   ReadDeclarationNameInfo(E->NameInfo, Record, Idx);
-  E->setQualifier(Reader.ReadNestedNameSpecifier(Record, Idx));
-  E->setQualifierRange(ReadSourceRange(Record, Idx));
+  E->QualifierLoc = Reader.ReadNestedNameSpecifierLoc(F, Record, Idx);
 }
 
 void ASTStmtReader::VisitUnresolvedMemberExpr(UnresolvedMemberExpr *E) {
   VisitOverloadExpr(E);
-  E->setArrow(Record[Idx++]);
-  E->setHasUnresolvedUsing(Record[Idx++]);
-  E->setBase(Reader.ReadSubExpr());
-  E->setBaseType(Reader.GetType(Record[Idx++]));
-  E->setOperatorLoc(ReadSourceLocation(Record, Idx));
+  E->IsArrow = Record[Idx++];
+  E->HasUnresolvedUsing = Record[Idx++];
+  E->Base = Reader.ReadSubExpr();
+  E->BaseType = Reader.GetType(Record[Idx++]);
+  E->OperatorLoc = ReadSourceLocation(Record, Idx);
 }
 
 void ASTStmtReader::VisitUnresolvedLookupExpr(UnresolvedLookupExpr *E) {
   VisitOverloadExpr(E);
-  E->setRequiresADL(Record[Idx++]);
-  E->setOverloaded(Record[Idx++]);
-  E->setNamingClass(cast_or_null<CXXRecordDecl>(Reader.GetDecl(Record[Idx++])));
+  E->RequiresADL = Record[Idx++];
+  E->Overloaded = Record[Idx++];
+  E->NamingClass = cast_or_null<CXXRecordDecl>(Reader.GetDecl(Record[Idx++]));
 }
 
 void ASTStmtReader::VisitUnaryTypeTraitExpr(UnaryTypeTraitExpr *E) {
@@ -1565,11 +1563,9 @@ Stmt *ASTReader::ReadStmtFromStream(PerFileData &F) {
       // logic with a MemberExpr::CreateEmpty.
 
       assert(Idx == 0);
-      NestedNameSpecifier *NNS = 0;
-      SourceRange QualifierRange;
+      NestedNameSpecifierLoc QualifierLoc;
       if (Record[Idx++]) { // HasQualifier.
-        NNS = ReadNestedNameSpecifier(Record, Idx);
-        QualifierRange = ReadSourceRange(F, Record, Idx);
+        QualifierLoc = ReadNestedNameSpecifierLoc(F, Record, Idx);
       }
 
       TemplateArgumentListInfo ArgInfo;
@@ -1595,7 +1591,7 @@ Stmt *ASTReader::ReadStmtFromStream(PerFileData &F) {
       DeclarationNameInfo MemberNameInfo(MemberD->getDeclName(), MemberLoc);
       bool IsArrow = Record[Idx++];
 
-      S = MemberExpr::Create(*Context, Base, IsArrow, NNS, QualifierRange,
+      S = MemberExpr::Create(*Context, Base, IsArrow, QualifierLoc,
                              MemberD, FoundDecl, MemberNameInfo,
                              HasExplicitTemplateArgs ? &ArgInfo : 0, T, VK, OK);
       ReadDeclarationNameLoc(F, cast<MemberExpr>(S)->MemberDNLoc,

@@ -301,8 +301,7 @@ void Sema::DefaultLvalueConversion(Expr *&E) {
   if (T.hasQualifiers())
     T = T.getUnqualifiedType();
 
-  if (const ArraySubscriptExpr *ae = dyn_cast<ArraySubscriptExpr>(E))
-    CheckArrayAccess(ae);
+  CheckArrayAccess(E);
   
   E = ImplicitCastExpr::Create(Context, T, CK_LValueToRValue,
                                E, 0, VK_RValue);
@@ -974,8 +973,8 @@ Sema::BuildDeclRefExpr(ValueDecl *D, QualType Ty, ExprValueKind VK,
   MarkDeclarationReferenced(NameInfo.getLoc(), D);
 
   Expr *E = DeclRefExpr::Create(Context,
-                              SS? (NestedNameSpecifier *)SS->getScopeRep() : 0,
-                                SS? SS->getRange() : SourceRange(),
+                                SS? SS->getWithLocInContext(Context) 
+                                  : NestedNameSpecifierLoc(),
                                 D, NameInfo, Ty, VK);
 
   // Just in case we're building an illegal pointer-to-member.
@@ -1350,10 +1349,13 @@ bool Sema::DiagnoseEmptyLookup(Scope *S, CXXScopeSpec &SS, LookupResult &R,
             TemplateArgumentListInfo TList;
             if (ULE->hasExplicitTemplateArgs())
               ULE->copyTemplateArgumentsInto(TList);
+            
+            CXXScopeSpec SS;
+            SS.Adopt(ULE->getQualifierLoc());
             CXXDependentScopeMemberExpr *DepExpr =
                 CXXDependentScopeMemberExpr::Create(
                     Context, DepThis, DepThisType, true, SourceLocation(),
-                    ULE->getQualifier(), ULE->getQualifierRange(), NULL,
+                    SS.getWithLocInContext(Context), NULL,
                     R.getLookupNameInfo(), &TList);
             CallsUndergoingInstantiation.back()->setCallee(DepExpr);
           } else {
@@ -2061,14 +2063,7 @@ static MemberExpr *BuildMemberExpr(ASTContext &C, Expr *Base, bool isArrow,
                                    QualType Ty,
                                    ExprValueKind VK, ExprObjectKind OK,
                           const TemplateArgumentListInfo *TemplateArgs = 0) {
-  NestedNameSpecifier *Qualifier = 0;
-  SourceRange QualifierRange;
-  if (SS.isSet()) {
-    Qualifier = (NestedNameSpecifier *) SS.getScopeRep();
-    QualifierRange = SS.getRange();
-  }
-
-  return MemberExpr::Create(C, Base, isArrow, Qualifier, QualifierRange,
+  return MemberExpr::Create(C, Base, isArrow, SS.getWithLocInContext(C),
                             Member, FoundDecl, MemberNameInfo,
                             TemplateArgs, Ty, VK, OK);
 }
@@ -2276,8 +2271,8 @@ Sema::BuildDeclarationNameExpr(const CXXScopeSpec &SS,
 
   UnresolvedLookupExpr *ULE
     = UnresolvedLookupExpr::Create(Context, R.getNamingClass(),
-                                   (NestedNameSpecifier*) SS.getScopeRep(),
-                                   SS.getRange(), R.getLookupNameInfo(),
+                                   SS.getWithLocInContext(Context),
+                                   R.getLookupNameInfo(),
                                    NeedsADL, R.isOverloadedResult(),
                                    R.begin(), R.end());
 
@@ -3269,8 +3264,7 @@ Sema::ActOnDependentMemberExpr(Expr *BaseExpr, QualType BaseType,
   // must have pointer type, and the accessed type is the pointee.
   return Owned(CXXDependentScopeMemberExpr::Create(Context, BaseExpr, BaseType,
                                                    IsArrow, OpLoc,
-                                                   SS.getScopeRep(),
-                                                   SS.getRange(),
+                                               SS.getWithLocInContext(Context),
                                                    FirstQualifierInScope,
                                                    NameInfo, TemplateArgs));
 }
@@ -3477,7 +3471,6 @@ Sema::BuildMemberReferenceExpr(Expr *BaseExpr, QualType BaseExprType,
   }
   R.setBaseObjectType(BaseType);
 
-  NestedNameSpecifier *Qualifier = SS.getScopeRep();
   const DeclarationNameInfo &MemberNameInfo = R.getLookupNameInfo();
   DeclarationName MemberName = MemberNameInfo.getName();
   SourceLocation MemberLoc = MemberNameInfo.getLoc();
@@ -3522,7 +3515,7 @@ Sema::BuildMemberReferenceExpr(Expr *BaseExpr, QualType BaseExprType,
       = UnresolvedMemberExpr::Create(Context, R.isUnresolvableResult(),
                                      BaseExpr, BaseExprType,
                                      IsArrow, OpLoc,
-                                     Qualifier, SS.getRange(),
+                                     SS.getWithLocInContext(Context),
                                      MemberNameInfo,
                                      TemplateArgs, R.begin(), R.end());
 
@@ -4024,21 +4017,24 @@ Sema::LookupMemberExpr(LookupResult &R, Expr *&BaseExpr,
     bool HasViableZeroArgOverload = false;
     for (OverloadExpr::decls_iterator it = AllOverloads.begin(),
          DeclsEnd = AllOverloads.end(); it != DeclsEnd; ++it) {
-      const FunctionDecl *OverloadDecl = cast<FunctionDecl>(*it);
-      QualType ResultTy = OverloadDecl->getResultType();
-      if ((!IsArrow && ResultTy->isRecordType()) ||
-          (IsArrow && ResultTy->isPointerType() &&
-           ResultTy->getPointeeType()->isRecordType())) {
-        ViableOverloads.addDecl(*it);
-        if (OverloadDecl->getMinRequiredArguments() == 0) {
-          HasViableZeroArgOverload = true;
+      // Our overload set may include TemplateDecls, which we'll ignore for the
+      // purposes of determining whether we can issue a '()' fixit.
+      if (const FunctionDecl *OverloadDecl = dyn_cast<FunctionDecl>(*it)) {
+        QualType ResultTy = OverloadDecl->getResultType();
+        if ((!IsArrow && ResultTy->isRecordType()) ||
+            (IsArrow && ResultTy->isPointerType() &&
+             ResultTy->getPointeeType()->isRecordType())) {
+          ViableOverloads.addDecl(*it);
+          if (OverloadDecl->getMinRequiredArguments() == 0) {
+            HasViableZeroArgOverload = true;
+          }
         }
       }
     }
 
     if (!HasViableZeroArgOverload || ViableOverloads.size() != 1) {
       Diag(BaseExpr->getExprLoc(), diag::err_member_reference_needs_call)
-          << 1 << 0
+          << (AllOverloads.size() > 1) << 0
           << BaseExpr->getSourceRange();
       int ViableOverloadCount = ViableOverloads.size();
       int I;
@@ -6647,13 +6643,17 @@ static void DiagnoseBadShiftValues(Sema& S, Expr *&lex, Expr *&rex,
     return;
 
   if (Right.isNegative()) {
-    S.Diag(Loc, diag::warn_shift_negative) << rex->getSourceRange();
+    S.DiagRuntimeBehavior(Loc, rex,
+                          S.PDiag(diag::warn_shift_negative)
+                            << rex->getSourceRange());
     return;
   }
   llvm::APInt LeftBits(Right.getBitWidth(),
                        S.Context.getTypeSize(lex->getType()));
   if (Right.uge(LeftBits)) {
-    S.Diag(Loc, diag::warn_shift_gt_typewidth) << rex->getSourceRange();
+    S.DiagRuntimeBehavior(Loc, rex,
+                          S.PDiag(diag::warn_shift_gt_typewidth)
+                            << rex->getSourceRange());
     return;
   }
   if (Opc != BO_Shl)
@@ -7030,6 +7030,12 @@ QualType Sema::CheckCompareOperands(Expr *&lex, Expr *&rex, SourceLocation Loc,
       ImpCastExprToType(rex, T, CK_BitCast);
       return ResultTy;
     }
+
+    // Handle scoped enumeration types specifically, since they don't promote
+    // to integers.
+    if (lex->getType()->isEnumeralType() &&
+        Context.hasSameUnqualifiedType(lex->getType(), rex->getType()))
+      return ResultTy;
   }
 
   // Handle block pointer types.
@@ -7129,6 +7135,7 @@ QualType Sema::CheckCompareOperands(Expr *&lex, Expr *&rex, SourceLocation Loc,
     ImpCastExprToType(lex, rType, CK_NullToPointer);
     return ResultTy;
   }
+
   return InvalidOperands(Loc, lex, rex);
 }
 
@@ -7429,9 +7436,7 @@ QualType Sema::CheckAssignmentOperands(Expr *LHS, Expr *&RHS,
   }
   
   // Check for trivial buffer overflows.
-  if (const ArraySubscriptExpr *ae
-      = dyn_cast<ArraySubscriptExpr>(LHS->IgnoreParenCasts()))
-    CheckArrayAccess(ae);
+  CheckArrayAccess(LHS->IgnoreParenCasts());
   
   // C99 6.5.16p3: The type of an assignment expression is the type of the
   // left operand unless the left operand has qualified type, in which case

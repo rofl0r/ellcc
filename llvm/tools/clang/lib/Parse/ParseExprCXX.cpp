@@ -173,7 +173,7 @@ bool Parser::ParseOptionalCXXScopeSpecifier(CXXScopeSpec &SS,
                                                                     ObjectType, 
                                                                 EnteringContext,
                                                                     Template)) {
-        if (AnnotateTemplateIdToken(Template, TNK, &SS, TemplateName, 
+        if (AnnotateTemplateIdToken(Template, TNK, SS, TemplateName, 
                                     TemplateKWLoc, false))
           return true;
       } else
@@ -197,35 +197,37 @@ bool Parser::ParseOptionalCXXScopeSpecifier(CXXScopeSpec &SS,
         return false;
       }
 
-      if (TemplateId->Kind == TNK_Type_template ||
-          TemplateId->Kind == TNK_Dependent_template_name) {
-        AnnotateTemplateIdTokenAsType(&SS);
+      // Consume the template-id token.
+      ConsumeToken();
+      
+      assert(Tok.is(tok::coloncolon) && "NextToken() not working properly!");
+      SourceLocation CCLoc = ConsumeToken();
 
-        assert(Tok.is(tok::annot_typename) &&
-               "AnnotateTemplateIdTokenAsType isn't working");
-        Token TypeToken = Tok;
-        ConsumeToken();
-        assert(Tok.is(tok::coloncolon) && "NextToken() not working properly!");
-        SourceLocation CCLoc = ConsumeToken();
-
-        if (!HasScopeSpecifier)
-          HasScopeSpecifier = true;
-
-        if (ParsedType T = getTypeAnnotation(TypeToken)) {
-          if (Actions.ActOnCXXNestedNameSpecifier(getCurScope(), T, CCLoc, SS))
-            SS.SetInvalid(SourceRange(SS.getBeginLoc(), CCLoc));
-          
-          continue;
-        } else {
-          SourceLocation Start = SS.getBeginLoc().isValid()? SS.getBeginLoc() 
-                                                           : CCLoc;
-          SS.SetInvalid(SourceRange(Start, CCLoc));
-        }
-        
-        continue;
+      if (!HasScopeSpecifier)
+        HasScopeSpecifier = true;
+      
+      ASTTemplateArgsPtr TemplateArgsPtr(Actions,
+                                         TemplateId->getTemplateArgs(),
+                                         TemplateId->NumArgs);
+      
+      if (Actions.ActOnCXXNestedNameSpecifier(getCurScope(),
+                                              /*FIXME:*/SourceLocation(),
+                                              SS, 
+                                              TemplateId->Template,
+                                              TemplateId->TemplateNameLoc,
+                                              TemplateId->LAngleLoc,
+                                              TemplateArgsPtr,
+                                              TemplateId->RAngleLoc,
+                                              CCLoc,
+                                              EnteringContext)) {
+        SourceLocation StartLoc 
+          = SS.getBeginLoc().isValid()? SS.getBeginLoc()
+                                      : TemplateId->TemplateNameLoc;
+        SS.SetInvalid(SourceRange(StartLoc, CCLoc));
       }
-
-      assert(false && "FIXME: Only type template names supported here");
+      
+      TemplateId->Destroy();
+      continue;
     }
 
 
@@ -305,7 +307,7 @@ bool Parser::ParseOptionalCXXScopeSpecifier(CXXScopeSpec &SS,
         // specializations) still want to see the original template-id
         // token.
         ConsumeToken();
-        if (AnnotateTemplateIdToken(Template, TNK, &SS, TemplateName, 
+        if (AnnotateTemplateIdToken(Template, TNK, SS, TemplateName, 
                                     SourceLocation(), false))
           return true;
         continue;
@@ -328,7 +330,7 @@ bool Parser::ParseOptionalCXXScopeSpecifier(CXXScopeSpec &SS,
                                                    EnteringContext, Template)) {
           // Consume the identifier.
           ConsumeToken();
-          if (AnnotateTemplateIdToken(Template, TNK, &SS, TemplateName, 
+          if (AnnotateTemplateIdToken(Template, TNK, SS, TemplateName, 
                                       SourceLocation(), false))
             return true;                
         }
@@ -1157,7 +1159,7 @@ bool Parser::ParseUnqualifiedIdTemplateId(CXXScopeSpec &SS,
   TemplateArgList TemplateArgs;
   if (Tok.is(tok::less) &&
       ParseTemplateIdAfterTemplateName(Template, Id.StartLocation,
-                                       &SS, true, LAngleLoc,
+                                       SS, true, LAngleLoc,
                                        TemplateArgs,
                                        RAngleLoc))
     return true;
@@ -1180,6 +1182,7 @@ bool Parser::ParseUnqualifiedIdTemplateId(CXXScopeSpec &SS,
       TemplateId->TemplateNameLoc = Id.StartLocation;
     }
 
+    TemplateId->SS = SS;
     TemplateId->Template = Template;
     TemplateId->Kind = TNK;
     TemplateId->LAngleLoc = LAngleLoc;
@@ -1199,7 +1202,7 @@ bool Parser::ParseUnqualifiedIdTemplateId(CXXScopeSpec &SS,
   
   // Constructor and destructor names.
   TypeResult Type
-    = Actions.ActOnTemplateIdType(Template, NameLoc,
+    = Actions.ActOnTemplateIdType(SS, Template, NameLoc,
                                   LAngleLoc, TemplateArgsPtr,
                                   RAngleLoc);
   if (Type.isInvalid())
@@ -1465,7 +1468,9 @@ bool Parser::ParseUnqualifiedId(CXXScopeSpec &SS, bool EnteringContext,
         Actions.isCurrentClassName(*Id, getCurScope(), &SS)) {
       // We have parsed a constructor name.
       Result.setConstructorName(Actions.getTypeName(*Id, IdLoc, getCurScope(),
-                                                    &SS, false),
+                                                    &SS, false, false,
+                                                    ParsedType(),
+                                            /*NonTrivialTypeSourceInfo=*/true),
                                 IdLoc, IdLoc);
     } else {
       // We have parsed an identifier.
@@ -1503,7 +1508,9 @@ bool Parser::ParseUnqualifiedId(CXXScopeSpec &SS, bool EnteringContext,
         Result.setConstructorName(Actions.getTypeName(*TemplateId->Name,
                                                   TemplateId->TemplateNameLoc, 
                                                       getCurScope(),
-                                                      &SS, false),
+                                                      &SS, false, false,
+                                                      ParsedType(),
+                                            /*NontrivialTypeSourceInfo=*/true),
                                   TemplateId->TemplateNameLoc, 
                                   TemplateId->RAngleLoc);
         TemplateId->Destroy();

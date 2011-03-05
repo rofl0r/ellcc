@@ -382,10 +382,8 @@ void ASTStmtWriter::VisitDeclRefExpr(DeclRefExpr *E) {
   Record.push_back(E->hasQualifier());
   Record.push_back(E->hasExplicitTemplateArgs());
 
-  if (E->hasQualifier()) {
-    Writer.AddNestedNameSpecifier(E->getQualifier(), Record);
-    Writer.AddSourceRange(E->getQualifierRange(), Record);
-  }
+  if (E->hasQualifier())
+    Writer.AddNestedNameSpecifierLoc(E->getQualifierLoc(), Record);
 
   if (E->hasExplicitTemplateArgs()) {
     unsigned NumTemplateArgs = E->getNumTemplateArgs();
@@ -541,10 +539,8 @@ void ASTStmtWriter::VisitMemberExpr(MemberExpr *E) {
   // Don't call VisitExpr, we'll write everything here.
 
   Record.push_back(E->hasQualifier());
-  if (E->hasQualifier()) {
-    Writer.AddNestedNameSpecifier(E->getQualifier(), Record);
-    Writer.AddSourceRange(E->getQualifierRange(), Record);
-  }
+  if (E->hasQualifier())
+    Writer.AddNestedNameSpecifierLoc(E->getQualifierLoc(), Record);
 
   Record.push_back(E->hasExplicitTemplateArgs());
   if (E->hasExplicitTemplateArgs()) {
@@ -1196,8 +1192,7 @@ ASTStmtWriter::VisitCXXDependentScopeMemberExpr(CXXDependentScopeMemberExpr *E){
   Writer.AddTypeRef(E->getBaseType(), Record);
   Record.push_back(E->isArrow());
   Writer.AddSourceLocation(E->getOperatorLoc(), Record);
-  Writer.AddNestedNameSpecifier(E->getQualifier(), Record);
-  Writer.AddSourceRange(E->getQualifierRange(), Record);
+  Writer.AddNestedNameSpecifierLoc(E->getQualifierLoc(), Record);
   Writer.AddDeclRef(E->getFirstQualifierFoundInScope(), Record);
   Writer.AddDeclarationNameInfo(E->MemberNameInfo, Record);
   Code = serialization::EXPR_CXX_DEPENDENT_SCOPE_MEMBER;
@@ -1253,8 +1248,7 @@ void ASTStmtWriter::VisitOverloadExpr(OverloadExpr *E) {
   }
 
   Writer.AddDeclarationNameInfo(E->NameInfo, Record);
-  Writer.AddNestedNameSpecifier(E->getQualifier(), Record);
-  Writer.AddSourceRange(E->getQualifierRange(), Record);
+  Writer.AddNestedNameSpecifierLoc(E->getQualifierLoc(), Record);
 }
 
 void ASTStmtWriter::VisitUnresolvedMemberExpr(UnresolvedMemberExpr *E) {

@@ -764,7 +764,7 @@ bool SelectionDAGISel::TryToFoldFastISelLoad(const LoadInst *LI,
          "The only use of the vreg must be a use, we haven't emitted the def!");
 
   MachineInstr *User = &*RI;
-  
+
   // Set the insertion point properly.  Folding the load can cause generation of
   // other random instructions (like sign extends) for addressing modes, make
   // sure they get inserted in a logical place before the new instruction.
@@ -2388,6 +2388,18 @@ SelectCodeCommon(SDNode *NodeToMatch, const unsigned char *MatcherTable,
       MVT::SimpleValueType VT =
         (MVT::SimpleValueType)MatcherTable[MatcherIndex++];
       unsigned RegNo = MatcherTable[MatcherIndex++];
+      RecordedNodes.push_back(std::pair<SDValue, SDNode*>(
+                              CurDAG->getRegister(RegNo, VT), (SDNode*)0));
+      continue;
+    }
+    case OPC_EmitRegister2: {
+      // For targets w/ more than 256 register names, the register enum
+      // values are stored in two bytes in the matcher table (just like
+      // opcodes).
+      MVT::SimpleValueType VT =
+        (MVT::SimpleValueType)MatcherTable[MatcherIndex++];
+      unsigned RegNo = MatcherTable[MatcherIndex++];
+      RegNo |= MatcherTable[MatcherIndex++] << 8;
       RecordedNodes.push_back(std::pair<SDValue, SDNode*>(
                               CurDAG->getRegister(RegNo, VT), (SDNode*)0));
       continue;

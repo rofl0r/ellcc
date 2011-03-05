@@ -387,9 +387,12 @@ bool CodeGenFunction::ContainsLabel(const Stmt *S, bool IgnoreCaseStmts) {
 
   // If this is a label, we have to emit the code, consider something like:
   // if (0) {  ...  foo:  bar(); }  goto foo;
+  //
+  // TODO: If anyone cared, we could track __label__'s, since we know that you
+  // can't jump to one from outside their declared region.
   if (isa<LabelStmt>(S))
     return true;
-
+  
   // If this is a case/default statement, and we haven't seen a switch, we have
   // to emit the code.
   if (isa<SwitchCase>(S) && !IgnoreCaseStmts)
@@ -407,24 +410,63 @@ bool CodeGenFunction::ContainsLabel(const Stmt *S, bool IgnoreCaseStmts) {
   return false;
 }
 
+/// containsBreak - Return true if the statement contains a break out of it.
+/// If the statement (recursively) contains a switch or loop with a break
+/// inside of it, this is fine.
+bool CodeGenFunction::containsBreak(const Stmt *S) {
+  // Null statement, not a label!
+  if (S == 0) return false;
 
-/// ConstantFoldsToSimpleInteger - If the sepcified expression does not fold to
-/// a constant, or if it does but contains a label, return 0.  If it constant
-/// folds to 'true' and does not contain a label, return 1, if it constant folds
-/// to 'false' and does not contain a label, return -1.
-int CodeGenFunction::ConstantFoldsToSimpleInteger(const Expr *Cond) {
+  // If this is a switch or loop that defines its own break scope, then we can
+  // include it and anything inside of it.
+  if (isa<SwitchStmt>(S) || isa<WhileStmt>(S) || isa<DoStmt>(S) ||
+      isa<ForStmt>(S))
+    return false;
+  
+  if (isa<BreakStmt>(S))
+    return true;
+  
+  // Scan subexpressions for verboten breaks.
+  for (Stmt::const_child_range I = S->children(); I; ++I)
+    if (containsBreak(*I))
+      return true;
+  
+  return false;
+}
+
+
+/// ConstantFoldsToSimpleInteger - If the specified expression does not fold
+/// to a constant, or if it does but contains a label, return false.  If it
+/// constant folds return true and set the boolean result in Result.
+bool CodeGenFunction::ConstantFoldsToSimpleInteger(const Expr *Cond,
+                                                   bool &ResultBool) {
+  llvm::APInt ResultInt;
+  if (!ConstantFoldsToSimpleInteger(Cond, ResultInt))
+    return false;
+  
+  ResultBool = ResultInt.getBoolValue();
+  return true;
+}
+
+/// ConstantFoldsToSimpleInteger - If the specified expression does not fold
+/// to a constant, or if it does but contains a label, return false.  If it
+/// constant folds return true and set the folded value.
+bool CodeGenFunction::
+ConstantFoldsToSimpleInteger(const Expr *Cond, llvm::APInt &ResultInt) {
   // FIXME: Rename and handle conversion of other evaluatable things
   // to bool.
   Expr::EvalResult Result;
   if (!Cond->Evaluate(Result, getContext()) || !Result.Val.isInt() ||
       Result.HasSideEffects)
-    return 0;  // Not foldable, not integer or not fully evaluatable.
-
+    return false;  // Not foldable, not integer or not fully evaluatable.
+  
   if (CodeGenFunction::ContainsLabel(Cond))
-    return 0;  // Contains a label.
-
-  return Result.Val.getInt().getBoolValue() ? 1 : -1;
+    return false;  // Contains a label.
+  
+  ResultInt = Result.Val.getInt();
+  return true;
 }
+
 
 
 /// EmitBranchOnBoolExpr - Emit a branch on a boolean condition (e.g. for an if
@@ -442,14 +484,17 @@ void CodeGenFunction::EmitBranchOnBoolExpr(const Expr *Cond,
     if (CondBOp->getOpcode() == BO_LAnd) {
       // If we have "1 && X", simplify the code.  "0 && X" would have constant
       // folded if the case was simple enough.
-      if (ConstantFoldsToSimpleInteger(CondBOp->getLHS()) == 1) {
+      bool ConstantBool = false;
+      if (ConstantFoldsToSimpleInteger(CondBOp->getLHS(), ConstantBool) &&
+          ConstantBool) {
         // br(1 && X) -> br(X).
         return EmitBranchOnBoolExpr(CondBOp->getRHS(), TrueBlock, FalseBlock);
       }
 
       // If we have "X && 1", simplify the code to use an uncond branch.
       // "X && 0" would have been constant folded to 0.
-      if (ConstantFoldsToSimpleInteger(CondBOp->getRHS()) == 1) {
+      if (ConstantFoldsToSimpleInteger(CondBOp->getRHS(), ConstantBool) &&
+          ConstantBool) {
         // br(X && 1) -> br(X).
         return EmitBranchOnBoolExpr(CondBOp->getLHS(), TrueBlock, FalseBlock);
       }
@@ -468,17 +513,22 @@ void CodeGenFunction::EmitBranchOnBoolExpr(const Expr *Cond,
       eval.end(*this);
 
       return;
-    } else if (CondBOp->getOpcode() == BO_LOr) {
+    }
+    
+    if (CondBOp->getOpcode() == BO_LOr) {
       // If we have "0 || X", simplify the code.  "1 || X" would have constant
       // folded if the case was simple enough.
-      if (ConstantFoldsToSimpleInteger(CondBOp->getLHS()) == -1) {
+      bool ConstantBool = false;
+      if (ConstantFoldsToSimpleInteger(CondBOp->getLHS(), ConstantBool) &&
+          !ConstantBool) {
         // br(0 || X) -> br(X).
         return EmitBranchOnBoolExpr(CondBOp->getRHS(), TrueBlock, FalseBlock);
       }
 
       // If we have "X || 0", simplify the code to use an uncond branch.
       // "X || 1" would have been constant folded to 1.
-      if (ConstantFoldsToSimpleInteger(CondBOp->getRHS()) == -1) {
+      if (ConstantFoldsToSimpleInteger(CondBOp->getRHS(), ConstantBool) &&
+          !ConstantBool) {
         // br(X || 0) -> br(X).
         return EmitBranchOnBoolExpr(CondBOp->getLHS(), TrueBlock, FalseBlock);
       }

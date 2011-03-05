@@ -276,20 +276,18 @@ void DeclRefExpr::computeDependence() {
     ExprBits.ContainsUnexpandedParameterPack = true;
 }
 
-DeclRefExpr::DeclRefExpr(NestedNameSpecifier *Qualifier, 
-                         SourceRange QualifierRange,
+DeclRefExpr::DeclRefExpr(NestedNameSpecifierLoc QualifierLoc, 
                          ValueDecl *D, SourceLocation NameLoc,
                          const TemplateArgumentListInfo *TemplateArgs,
                          QualType T, ExprValueKind VK)
   : Expr(DeclRefExprClass, T, VK, OK_Ordinary, false, false, false),
     DecoratedD(D,
-               (Qualifier? HasQualifierFlag : 0) |
+               (QualifierLoc? HasQualifierFlag : 0) |
                (TemplateArgs ? HasExplicitTemplateArgumentListFlag : 0)),
     Loc(NameLoc) {
-  if (Qualifier) {
+  if (QualifierLoc) {
     NameQualifier *NQ = getNameQualifier();
-    NQ->NNS = Qualifier;
-    NQ->Range = QualifierRange;
+    NQ->QualifierLoc = QualifierLoc;
   }
       
   if (TemplateArgs)
@@ -298,20 +296,18 @@ DeclRefExpr::DeclRefExpr(NestedNameSpecifier *Qualifier,
   computeDependence();
 }
 
-DeclRefExpr::DeclRefExpr(NestedNameSpecifier *Qualifier,
-                         SourceRange QualifierRange,
+DeclRefExpr::DeclRefExpr(NestedNameSpecifierLoc QualifierLoc,
                          ValueDecl *D, const DeclarationNameInfo &NameInfo,
                          const TemplateArgumentListInfo *TemplateArgs,
                          QualType T, ExprValueKind VK)
   : Expr(DeclRefExprClass, T, VK, OK_Ordinary, false, false, false),
     DecoratedD(D,
-               (Qualifier? HasQualifierFlag : 0) |
+               (QualifierLoc? HasQualifierFlag : 0) |
                (TemplateArgs ? HasExplicitTemplateArgumentListFlag : 0)),
     Loc(NameInfo.getLoc()), DNLoc(NameInfo.getInfo()) {
-  if (Qualifier) {
+  if (QualifierLoc) {
     NameQualifier *NQ = getNameQualifier();
-    NQ->NNS = Qualifier;
-    NQ->Range = QualifierRange;
+    NQ->QualifierLoc = QualifierLoc;
   }
 
   if (TemplateArgs)
@@ -321,36 +317,33 @@ DeclRefExpr::DeclRefExpr(NestedNameSpecifier *Qualifier,
 }
 
 DeclRefExpr *DeclRefExpr::Create(ASTContext &Context,
-                                 NestedNameSpecifier *Qualifier,
-                                 SourceRange QualifierRange,
+                                 NestedNameSpecifierLoc QualifierLoc,
                                  ValueDecl *D,
                                  SourceLocation NameLoc,
                                  QualType T,
                                  ExprValueKind VK,
                                  const TemplateArgumentListInfo *TemplateArgs) {
-  return Create(Context, Qualifier, QualifierRange, D,
+  return Create(Context, QualifierLoc, D,
                 DeclarationNameInfo(D->getDeclName(), NameLoc),
                 T, VK, TemplateArgs);
 }
 
 DeclRefExpr *DeclRefExpr::Create(ASTContext &Context,
-                                 NestedNameSpecifier *Qualifier,
-                                 SourceRange QualifierRange,
+                                 NestedNameSpecifierLoc QualifierLoc,
                                  ValueDecl *D,
                                  const DeclarationNameInfo &NameInfo,
                                  QualType T,
                                  ExprValueKind VK,
                                  const TemplateArgumentListInfo *TemplateArgs) {
   std::size_t Size = sizeof(DeclRefExpr);
-  if (Qualifier != 0)
+  if (QualifierLoc != 0)
     Size += sizeof(NameQualifier);
   
   if (TemplateArgs)
     Size += ExplicitTemplateArgumentList::sizeFor(*TemplateArgs);
   
   void *Mem = Context.Allocate(Size, llvm::alignOf<DeclRefExpr>());
-  return new (Mem) DeclRefExpr(Qualifier, QualifierRange, D, NameInfo,
-                               TemplateArgs, T, VK);
+  return new (Mem) DeclRefExpr(QualifierLoc, D, NameInfo, TemplateArgs, T, VK);
 }
 
 DeclRefExpr *DeclRefExpr::CreateEmpty(ASTContext &Context, 
@@ -371,7 +364,7 @@ DeclRefExpr *DeclRefExpr::CreateEmpty(ASTContext &Context,
 SourceRange DeclRefExpr::getSourceRange() const {
   SourceRange R = getNameInfo().getSourceRange();
   if (hasQualifier())
-    R.setBegin(getQualifierRange().getBegin());
+    R.setBegin(getQualifierLoc().getBeginLoc());
   if (hasExplicitTemplateArgs())
     R.setEnd(getRAngleLoc());
   return R;
@@ -906,8 +899,7 @@ IdentifierInfo *OffsetOfExpr::OffsetOfNode::getFieldName() const {
 }
 
 MemberExpr *MemberExpr::Create(ASTContext &C, Expr *base, bool isarrow,
-                               NestedNameSpecifier *qual,
-                               SourceRange qualrange,
+                               NestedNameSpecifierLoc QualifierLoc,
                                ValueDecl *memberdecl,
                                DeclAccessPair founddecl,
                                DeclarationNameInfo nameinfo,
@@ -917,7 +909,7 @@ MemberExpr *MemberExpr::Create(ASTContext &C, Expr *base, bool isarrow,
                                ExprObjectKind ok) {
   std::size_t Size = sizeof(MemberExpr);
 
-  bool hasQualOrFound = (qual != 0 ||
+  bool hasQualOrFound = (QualifierLoc ||
                          founddecl.getDecl() != memberdecl ||
                          founddecl.getAccess() != memberdecl->getAccess());
   if (hasQualOrFound)
@@ -931,15 +923,15 @@ MemberExpr *MemberExpr::Create(ASTContext &C, Expr *base, bool isarrow,
                                        ty, vk, ok);
 
   if (hasQualOrFound) {
-    if (qual && qual->isDependent()) {
+    // FIXME: Wrong. We should be looking at the member declaration we found.
+    if (QualifierLoc && QualifierLoc.getNestedNameSpecifier()->isDependent()) {
       E->setValueDependent(true);
       E->setTypeDependent(true);
     }
     E->HasQualifierOrFoundDecl = true;
 
     MemberNameQualifier *NQ = E->getMemberQualifier();
-    NQ->NNS = qual;
-    NQ->Range = qualrange;
+    NQ->QualifierLoc = QualifierLoc;
     NQ->FoundDecl = founddecl;
   }
 
@@ -949,6 +941,28 @@ MemberExpr *MemberExpr::Create(ASTContext &C, Expr *base, bool isarrow,
   }
 
   return E;
+}
+
+SourceRange MemberExpr::getSourceRange() const {
+  SourceLocation StartLoc;
+  if (isImplicitAccess()) {
+    if (hasQualifier())
+      StartLoc = getQualifierLoc().getBeginLoc();
+    else
+      StartLoc = MemberLoc;
+  } else {
+    // FIXME: We don't want this to happen. Rather, we should be able to
+    // detect all kinds of implicit accesses more cleanly.
+    StartLoc = getBase()->getLocStart();
+    if (StartLoc.isInvalid())
+      StartLoc = MemberLoc;
+  }
+  
+  SourceLocation EndLoc = 
+    HasExplicitTemplateArgumentList? getRAngleLoc() 
+                                   : getMemberNameInfo().getEndLoc();
+  
+  return SourceRange(StartLoc, EndLoc);
 }
 
 const char *CastExpr::getCastKindName() const {
@@ -1412,13 +1426,15 @@ bool Expr::isUnusedResultAWarning(SourceLocation &Loc, SourceRange &R1,
     return false;
 
   case ConditionalOperatorClass: {
-    // The condition must be evaluated, but if either the LHS or RHS is a
-    // warning, warn about them.
+    // If only one of the LHS or RHS is a warning, the operator might
+    // be being used for control flow. Only warn if both the LHS and
+    // RHS are warnings.
     const ConditionalOperator *Exp = cast<ConditionalOperator>(this);
-    if (Exp->getLHS() &&
-        Exp->getLHS()->isUnusedResultAWarning(Loc, R1, R2, Ctx))
+    if (!Exp->getRHS()->isUnusedResultAWarning(Loc, R1, R2, Ctx))
+      return false;
+    if (!Exp->getLHS())
       return true;
-    return Exp->getRHS()->isUnusedResultAWarning(Loc, R1, R2, Ctx);
+    return Exp->getLHS()->isUnusedResultAWarning(Loc, R1, R2, Ctx);
   }
 
   case MemberExprClass:
@@ -2021,6 +2037,42 @@ bool Expr::isTemporaryObject(ASTContext &C, const CXXRecordDecl *TempTy) const {
     return false;
 
   return true;
+}
+
+bool Expr::isImplicitCXXThis() const {
+  const Expr *E = this;
+  
+  // Strip away parentheses and casts we don't care about.
+  while (true) {
+    if (const ParenExpr *Paren = dyn_cast<ParenExpr>(E)) {
+      E = Paren->getSubExpr();
+      continue;
+    }
+    
+    if (const ImplicitCastExpr *ICE = dyn_cast<ImplicitCastExpr>(E)) {
+      if (ICE->getCastKind() == CK_NoOp ||
+          ICE->getCastKind() == CK_LValueToRValue ||
+          ICE->getCastKind() == CK_DerivedToBase || 
+          ICE->getCastKind() == CK_UncheckedDerivedToBase) {
+        E = ICE->getSubExpr();
+        continue;
+      }
+    }
+    
+    if (const UnaryOperator* UnOp = dyn_cast<UnaryOperator>(E)) {
+      if (UnOp->getOpcode() == UO_Extension) {
+        E = UnOp->getSubExpr();
+        continue;
+      }
+    }
+    
+    break;
+  }
+  
+  if (const CXXThisExpr *This = dyn_cast<CXXThisExpr>(E))
+    return This->isImplicit();
+  
+  return false;
 }
 
 /// hasAnyTypeDependentArguments - Determines if any of the expressions

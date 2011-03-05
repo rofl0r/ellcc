@@ -164,6 +164,9 @@ Decl *TemplateDeclInstantiator::VisitTypedefDecl(TypedefDecl *D) {
   if (TypedefDecl *Prev = D->getPreviousDeclaration()) {
     NamedDecl *InstPrev = SemaRef.FindInstantiatedDecl(D->getLocation(), Prev,
                                                        TemplateArgs);
+    if (!InstPrev)
+      return 0;
+    
     Typedef->setPreviousDeclaration(cast<TypedefDecl>(InstPrev));
   }
 
@@ -448,9 +451,14 @@ Decl *TemplateDeclInstantiator::VisitIndirectFieldDecl(IndirectFieldDecl *D) {
   int i = 0;
   for (IndirectFieldDecl::chain_iterator PI =
        D->chain_begin(), PE = D->chain_end();
-       PI != PE; ++PI)
-    NamedChain[i++] = (SemaRef.FindInstantiatedDecl(D->getLocation(),
-                                            *PI, TemplateArgs));
+       PI != PE; ++PI) {
+    NamedDecl *Next = SemaRef.FindInstantiatedDecl(D->getLocation(), *PI, 
+                                              TemplateArgs);
+    if (!Next)
+      return 0;
+    
+    NamedChain[i++] = Next;
+  }
 
   QualType T = cast<FieldDecl>(NamedChain[i-1])->getType();
   IndirectFieldDecl* IndirectField
@@ -1447,7 +1455,8 @@ Decl *TemplateDeclInstantiator::VisitTemplateTypeParmDecl(
                                  TTPT->getIndex(), D->getIdentifier(),
                                  D->wasDeclaredWithTypename(),
                                  D->isParameterPack());
-
+  Inst->setAccess(AS_public);
+  
   if (D->hasDefaultArgument())
     Inst->setDefaultArgument(D->getDefaultArgumentInfo(), false);  
 
@@ -1595,6 +1604,7 @@ Decl *TemplateDeclInstantiator::VisitNonTypeTemplateParmDecl(
                                             D->getIdentifier(), T, 
                                             D->isParameterPack(), DI);
   
+  Param->setAccess(AS_public);
   if (Invalid)
     Param->setInvalidDecl();
   
@@ -1628,6 +1638,7 @@ TemplateDeclInstantiator::VisitTemplateTemplateParmDecl(
                                        D->getPosition(), D->isParameterPack(), 
                                        D->getIdentifier(), InstParams);
   Param->setDefaultArgument(D->getDefaultArgument(), false);
+  Param->setAccess(AS_public);
   
   // Introduce this template parameter's instantiation into the instantiation 
   // scope.
@@ -1719,9 +1730,12 @@ Decl *TemplateDeclInstantiator::VisitUsingDecl(UsingDecl *D) {
          I != E; ++I) {
     UsingShadowDecl *Shadow = *I;
     NamedDecl *InstTarget =
-      cast<NamedDecl>(SemaRef.FindInstantiatedDecl(Shadow->getLocation(),
-                                                   Shadow->getTargetDecl(),
-                                                   TemplateArgs));
+      cast_or_null<NamedDecl>(SemaRef.FindInstantiatedDecl(
+                                                          Shadow->getLocation(),
+                                                        Shadow->getTargetDecl(),
+                                                           TemplateArgs));
+    if (!InstTarget)
+      return 0;
 
     if (CheckRedeclaration &&
         SemaRef.CheckUsingShadowDecl(NewUD, InstTarget, Prev))
@@ -2573,10 +2587,15 @@ Sema::InstantiateMemInitializers(CXXConstructorDecl *New,
                                      New->getParent(),
                                      EllipsisLoc);
     } else if (Init->isMemberInitializer()) {
-      FieldDecl *Member = cast<FieldDecl>(FindInstantiatedDecl(
+      FieldDecl *Member = cast_or_null<FieldDecl>(FindInstantiatedDecl(
                                                      Init->getMemberLocation(),
                                                      Init->getMember(),
                                                      TemplateArgs));
+      if (!Member) {
+        AnyErrors = true;
+        New->setInvalidDecl();
+        continue;
+      }
 
       NewInit = BuildMemberInitializer(Member, (Expr **)NewArgs.data(),
                                        NewArgs.size(),
@@ -2585,10 +2604,16 @@ Sema::InstantiateMemInitializers(CXXConstructorDecl *New,
                                        Init->getRParenLoc());
     } else if (Init->isIndirectMemberInitializer()) {
       IndirectFieldDecl *IndirectMember =
-         cast<IndirectFieldDecl>(FindInstantiatedDecl(
+         cast_or_null<IndirectFieldDecl>(FindInstantiatedDecl(
                                  Init->getMemberLocation(),
                                  Init->getIndirectMember(), TemplateArgs));
 
+      if (!IndirectMember) {
+        AnyErrors = true;
+        New->setInvalidDecl();
+        continue;        
+      }
+      
       NewInit = BuildMemberInitializer(IndirectMember, (Expr **)NewArgs.data(),
                                        NewArgs.size(),
                                        Init->getSourceLocation(),
@@ -2917,7 +2942,7 @@ NamedDecl *Sema::FindInstantiatedDecl(SourceLocation Loc, NamedDecl *D,
 
       // FIXME: Can we use the CurrentInstantiationScope to avoid this
       // extra instantiation in the common case?
-      T = SubstType(T, TemplateArgs, SourceLocation(), DeclarationName());
+      T = SubstType(T, TemplateArgs, Loc, DeclarationName());
       assert(!T.isNull() && "Instantiation of injected-class-name cannot fail.");
     
       if (!T->isDependentType()) {
@@ -3006,9 +3031,11 @@ NamedDecl *Sema::FindInstantiatedDecl(SourceLocation Loc, NamedDecl *D,
     }
 
     // UsingShadowDecls can instantiate to nothing because of using hiding.
-    assert((Result || isa<UsingShadowDecl>(D) || D->isInvalidDecl() ||
-            cast<Decl>(ParentDC)->isInvalidDecl())
-           && "Unable to find instantiation of declaration!");
+    // Note: this assertion end up firing in invalid code even when none of the 
+    // AST invariants have been broken, so we explicitly check whether any
+    // errors have been emitted
+    assert((Result || isa<UsingShadowDecl>(D) || Diags.hasErrorOccurred()) &&
+           "Unable to find instantiation of declaration!");
 
     D = Result;
   }

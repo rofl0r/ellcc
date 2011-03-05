@@ -1012,14 +1012,10 @@ llvm::DIType CGDebugInfo::CreateType(const RecordType *Ty) {
     DBuilder.getOrCreateArray(EltTys.data(), EltTys.size());
   llvm::MDNode *RealDecl = NULL;
 
-  if (RD->isStruct()) 
-    RealDecl = DBuilder.createStructType(RDContext, RDName, DefUnit, Line,
-                                         Size, Align, 0, Elements);
-  else if (RD->isUnion())
+  if (RD->isUnion())
     RealDecl = DBuilder.createUnionType(RDContext, RDName, DefUnit, Line,
-                                         Size, Align, 0, Elements);
-  else {
-    assert(RD->isClass() && "Unknown RecordType!");
+                                        Size, Align, 0, Elements);
+  else if (CXXDecl) {
     RDName = getClassName(RD);
      // A class's primary base or the class itself contains the vtable.
     llvm::MDNode *ContainingType = NULL;
@@ -1045,7 +1041,9 @@ llvm::DIType CGDebugInfo::CreateType(const RecordType *Ty) {
                                        Size, Align, 0, 0, llvm::DIType(),
                                        Elements, ContainingType,
                                        TParamsArray);
-  }
+  } else 
+    RealDecl = DBuilder.createStructType(RDContext, RDName, DefUnit, Line,
+                                         Size, Align, 0, Elements);
 
   // Now that we have a real decl for the struct, replace anything using the
   // old decl with the new one.  This will recursively update the debug info.
@@ -1366,6 +1364,7 @@ static QualType UnwrapTypeForDebugInfo(QualType T) {
       break;
     case Type::Attributed:
       T = cast<AttributedType>(T)->getEquivalentType();
+      break;
     case Type::Elaborated:
       T = cast<ElaboratedType>(T)->getNamedType();
       break;
@@ -1752,7 +1751,8 @@ llvm::DIType CGDebugInfo::EmitTypeForVarWithBlocksAttr(const ValueDecl *VD,
 
 /// EmitDeclare - Emit local variable declaration debug info.
 void CGDebugInfo::EmitDeclare(const VarDecl *VD, unsigned Tag,
-                              llvm::Value *Storage, CGBuilderTy &Builder) {
+                              llvm::Value *Storage, 
+                              unsigned ArgNo, CGBuilderTy &Builder) {
   assert(!RegionStack.empty() && "Region stack mismatch, stack empty!");
 
   llvm::DIFile Unit = getOrCreateFile(VD->getLocation());
@@ -1812,7 +1812,7 @@ void CGDebugInfo::EmitDeclare(const VarDecl *VD, unsigned Tag,
         DBuilder.createComplexVariable(Tag, 
                                        llvm::DIDescriptor(RegionStack.back()),
                                        VD->getName(), Unit, Line, Ty,
-                                       addr.data(), addr.size());
+                                       addr.data(), addr.size(), ArgNo);
       
       // Insert an llvm.dbg.declare into the current block.
       llvm::Instruction *Call =
@@ -1825,7 +1825,7 @@ void CGDebugInfo::EmitDeclare(const VarDecl *VD, unsigned Tag,
     llvm::DIVariable D =
       DBuilder.createLocalVariable(Tag, llvm::DIDescriptor(Scope), 
                                    Name, Unit, Line, Ty, 
-                                   CGM.getLangOptions().Optimize, Flags);
+                                   CGM.getLangOptions().Optimize, Flags, ArgNo);
     
     // Insert an llvm.dbg.declare into the current block.
     llvm::Instruction *Call =
@@ -1855,7 +1855,8 @@ void CGDebugInfo::EmitDeclare(const VarDecl *VD, unsigned Tag,
         llvm::DIVariable D =
           DBuilder.createLocalVariable(Tag, llvm::DIDescriptor(Scope),
                                        FieldName, Unit, Line, FieldTy, 
-                                       CGM.getLangOptions().Optimize, Flags);
+                                       CGM.getLangOptions().Optimize, Flags,
+                                       ArgNo);
           
         // Insert an llvm.dbg.declare into the current block.
         llvm::Instruction *Call =
@@ -1929,7 +1930,7 @@ void CGDebugInfo::EmitDeclare(const VarDecl *VD, unsigned Tag,
 void CGDebugInfo::EmitDeclareOfAutoVariable(const VarDecl *VD,
                                             llvm::Value *Storage,
                                             CGBuilderTy &Builder) {
-  EmitDeclare(VD, llvm::dwarf::DW_TAG_auto_variable, Storage, Builder);
+  EmitDeclare(VD, llvm::dwarf::DW_TAG_auto_variable, Storage, 0, Builder);
 }
 
 void CGDebugInfo::EmitDeclareOfBlockDeclRefVariable(
@@ -1942,8 +1943,9 @@ void CGDebugInfo::EmitDeclareOfBlockDeclRefVariable(
 /// EmitDeclareOfArgVariable - Emit call to llvm.dbg.declare for an argument
 /// variable declaration.
 void CGDebugInfo::EmitDeclareOfArgVariable(const VarDecl *VD, llvm::Value *AI,
+                                           unsigned ArgNo,
                                            CGBuilderTy &Builder) {
-  EmitDeclare(VD, llvm::dwarf::DW_TAG_arg_variable, AI, Builder);
+  EmitDeclare(VD, llvm::dwarf::DW_TAG_arg_variable, AI, ArgNo, Builder);
 }
 
 namespace {
@@ -2048,10 +2050,24 @@ void CGDebugInfo::EmitDeclareOfBlockLiteralArgVariable(const CGBlockInfo &block,
     }
 
     const VarDecl *variable = capture->getVariable();
-    QualType type = (capture->isByRef() ? C.VoidPtrTy : variable->getType());
     llvm::StringRef name = variable->getName();
-    fields.push_back(createFieldType(name, type, 0, loc, AS_public,
-                                     offsetInBits, tunit));
+
+    llvm::DIType fieldType;
+    if (capture->isByRef()) {
+      std::pair<uint64_t,unsigned> ptrInfo = C.getTypeInfo(C.VoidPtrTy);
+
+      // FIXME: this creates a second copy of this type!
+      uint64_t xoffset;
+      fieldType = EmitTypeForVarWithBlocksAttr(variable, &xoffset);
+      fieldType = DBuilder.createPointerType(fieldType, ptrInfo.first);
+      fieldType = DBuilder.createMemberType(name, tunit, line,
+                                            ptrInfo.first, ptrInfo.second,
+                                            offsetInBits, 0, fieldType);
+    } else {
+      fieldType = createFieldType(name, variable->getType(), 0,
+                                  loc, AS_public, offsetInBits, tunit);
+    }
+    fields.push_back(fieldType);
   }
 
   llvm::SmallString<36> typeName;
@@ -2078,7 +2094,8 @@ void CGDebugInfo::EmitDeclareOfBlockLiteralArgVariable(const CGBlockInfo &block,
     DBuilder.createLocalVariable(llvm::dwarf::DW_TAG_arg_variable,
                                  llvm::DIDescriptor(scope), 
                                  name, tunit, line, type, 
-                                 CGM.getLangOptions().Optimize, flags);
+                                 CGM.getLangOptions().Optimize, flags,
+                                 cast<llvm::Argument>(addr)->getArgNo() + 1);
     
   // Insert an llvm.dbg.value into the current block.
   llvm::Instruction *declare =

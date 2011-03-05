@@ -1728,7 +1728,7 @@ TypeSourceInfo *Sema::GetTypeForDeclarator(Declarator &D, Scope *S,
 
       // cv-qualifiers on return types are pointless except when the type is a
       // class type in C++.
-      if (T->isPointerType() && T.getCVRQualifiers() &&
+      if (isa<PointerType>(T) && T.getLocalCVRQualifiers() &&
           (!getLangOptions().CPlusPlus || !T->isDependentType())) {
         assert(chunkIndex + 1 < e && "No DeclaratorChunk for the return type?");
         DeclaratorChunk ReturnTypeChunk = D.getTypeObject(chunkIndex + 1);
@@ -2126,6 +2126,60 @@ TypeSourceInfo *Sema::GetTypeForDeclarator(Declarator &D, Scope *S,
   return GetTypeSourceInfoForDeclarator(D, T, ReturnTypeInfo);
 }
 
+/// Map an AttributedType::Kind to an AttributeList::Kind.
+static AttributeList::Kind getAttrListKind(AttributedType::Kind kind) {
+  switch (kind) {
+  case AttributedType::attr_address_space:
+    return AttributeList::AT_address_space;
+  case AttributedType::attr_regparm:
+    return AttributeList::AT_regparm;
+  case AttributedType::attr_vector_size:
+    return AttributeList::AT_vector_size;
+  case AttributedType::attr_neon_vector_type:
+    return AttributeList::AT_neon_vector_type;
+  case AttributedType::attr_neon_polyvector_type:
+    return AttributeList::AT_neon_polyvector_type;
+  case AttributedType::attr_objc_gc:
+    return AttributeList::AT_objc_gc;
+  case AttributedType::attr_noreturn:
+    return AttributeList::AT_noreturn;
+  case AttributedType::attr_cdecl:
+    return AttributeList::AT_cdecl;
+  case AttributedType::attr_fastcall:
+    return AttributeList::AT_fastcall;
+  case AttributedType::attr_stdcall:
+    return AttributeList::AT_stdcall;
+  case AttributedType::attr_thiscall:
+    return AttributeList::AT_thiscall;
+  case AttributedType::attr_pascal:
+    return AttributeList::AT_pascal;
+  }
+  llvm_unreachable("unexpected attribute kind!");
+  return AttributeList::Kind();
+}
+
+static void fillAttributedTypeLoc(AttributedTypeLoc TL,
+                                  const AttributeList *attrs) {
+  AttributedType::Kind kind = TL.getAttrKind();
+
+  assert(attrs && "no type attributes in the expected location!");
+  AttributeList::Kind parsedKind = getAttrListKind(kind);
+  while (attrs->getKind() != parsedKind) {
+    attrs = attrs->getNext();
+    assert(attrs && "no matching attribute in expected location!");
+  }
+
+  TL.setAttrNameLoc(attrs->getLoc());
+  if (TL.hasAttrExprOperand())
+    TL.setAttrExprOperand(attrs->getArg(0));
+  else if (TL.hasAttrEnumOperand())
+    TL.setAttrEnumOperandLoc(attrs->getParameterLoc());
+
+  // FIXME: preserve this information to here.
+  if (TL.hasAttrOperand())
+    TL.setAttrOperandParensRange(SourceRange());
+}
+
 namespace {
   class TypeSpecLocFiller : public TypeLocVisitor<TypeSpecLocFiller> {
     ASTContext &Context;
@@ -2135,6 +2189,10 @@ namespace {
     TypeSpecLocFiller(ASTContext &Context, const DeclSpec &DS) 
       : Context(Context), DS(DS) {}
 
+    void VisitAttributedTypeLoc(AttributedTypeLoc TL) {
+      fillAttributedTypeLoc(TL, DS.getAttributes().getList());
+      Visit(TL.getModifiedLoc());
+    }
     void VisitQualifiedTypeLoc(QualifiedTypeLoc TL) {
       Visit(TL.getUnqualifiedLoc());
     }
@@ -2237,7 +2295,7 @@ namespace {
                        ? DS.getTypeSpecTypeLoc()
                        : SourceLocation());
       const CXXScopeSpec& SS = DS.getTypeSpecScope();
-      TL.setQualifierRange(SS.isEmpty() ? SourceRange(): SS.getRange());
+      TL.setQualifierLoc(SS.getWithLocInContext(Context));
       Visit(TL.getNextTypeLoc().getUnqualifiedLoc());
     }
     void VisitDependentNameTypeLoc(DependentNameTypeLoc TL) {
@@ -2255,8 +2313,7 @@ namespace {
                        ? DS.getTypeSpecTypeLoc()
                        : SourceLocation());
       const CXXScopeSpec& SS = DS.getTypeSpecScope();
-      TL.setQualifierRange(SS.isEmpty() ? SourceRange() : SS.getRange());
-      // FIXME: load appropriate source location.
+      TL.setQualifierLoc(SS.getWithLocInContext(Context));
       TL.setNameLoc(DS.getTypeSpecTypeLoc());
     }
     void VisitDependentTemplateSpecializationTypeLoc(
@@ -2277,8 +2334,7 @@ namespace {
                        ? DS.getTypeSpecTypeLoc()
                        : SourceLocation());
       const CXXScopeSpec& SS = DS.getTypeSpecScope();
-      TL.setQualifierRange(SS.isEmpty() ? SourceRange() : SS.getRange());
-      // FIXME: load appropriate source location.
+      TL.setQualifierLoc(SS.getWithLocInContext(Context));
       TL.setNameLoc(DS.getTypeSpecTypeLoc());
     }
 
@@ -2378,6 +2434,12 @@ Sema::GetTypeSourceInfoForDeclarator(Declarator &D, QualType T,
   }
   
   for (unsigned i = 0, e = D.getNumTypeObjects(); i != e; ++i) {
+    while (isa<AttributedTypeLoc>(CurrTL)) {
+      AttributedTypeLoc TL = cast<AttributedTypeLoc>(CurrTL);
+      fillAttributedTypeLoc(TL, D.getTypeObject(i).getAttrs());
+      CurrTL = TL.getNextTypeLoc().getUnqualifiedLoc();
+    }
+
     DeclaratorLocFiller(D.getTypeObject(i)).Visit(CurrTL);
     CurrTL = CurrTL.getNextTypeLoc().getUnqualifiedLoc();
   }
@@ -2547,7 +2609,14 @@ static bool handleObjCGCTypeAttr(TypeProcessingState &state,
     return true;
   }
 
-  type = S.Context.getObjCGCQualType(type, GCAttr);
+  QualType origType = type;
+  type = S.Context.getObjCGCQualType(origType, GCAttr);
+
+  // Make an attributed type to preserve the source information.
+  if (attr.getLoc().isValid())
+    type = S.Context.getAttributedType(AttributedType::attr_objc_gc,
+                                       origType, type);
+
   return true;
 }
 

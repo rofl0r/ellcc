@@ -1040,9 +1040,9 @@ DependentTemplateSpecializationType::DependentTemplateSpecializationType(
                          QualType Canon)
   : TypeWithKeyword(Keyword, DependentTemplateSpecialization, Canon, true,
                     /*VariablyModified=*/false,
-                    NNS->containsUnexpandedParameterPack()),
+                    NNS && NNS->containsUnexpandedParameterPack()),
     NNS(NNS), Name(Name), NumArgs(NumArgs) {
-  assert(NNS && NNS->isDependent() &&
+  assert((!NNS || NNS->isDependent()) &&
          "DependentTemplateSpecializatonType requires dependent qualifier");
   for (unsigned I = 0; I != NumArgs; ++I) {
     if (Args[I].containsUnexpandedParameterPack())
@@ -1357,10 +1357,11 @@ TemplateSpecializationType(TemplateName T,
                            unsigned NumArgs, QualType Canon)
   : Type(TemplateSpecialization,
          Canon.isNull()? QualType(this, 0) : Canon,
-         T.isDependent(), false,
-         T.containsUnexpandedParameterPack()),
+         T.isDependent(), false, T.containsUnexpandedParameterPack()),
     Template(T), NumArgs(NumArgs) 
 {
+  assert(!T.getAsDependentTemplateName() && 
+         "Use DependentTemplateSpecializationType for dependent template-name");
   assert((!Canon.isNull() ||
           T.isDependent() || anyDependentTemplateArguments(Args, NumArgs)) &&
          "No canonical type for non-dependent class template specialization");

@@ -95,6 +95,18 @@ unsigned TemplateParameterList::getDepth() const {
     return cast<TemplateTemplateParmDecl>(FirstParm)->getDepth();
 }
 
+static void AdoptTemplateParameterList(TemplateParameterList *Params,
+                                       DeclContext *Owner) {
+  for (TemplateParameterList::iterator P = Params->begin(), 
+                                    PEnd = Params->end();
+       P != PEnd; ++P) {
+    (*P)->setDeclContext(Owner);
+    
+    if (TemplateTemplateParmDecl *TTP = dyn_cast<TemplateTemplateParmDecl>(*P))
+      AdoptTemplateParameterList(TTP->getTemplateParameters(), Owner);
+  }
+}
+
 //===----------------------------------------------------------------------===//
 // RedeclarableTemplateDecl Implementation
 //===----------------------------------------------------------------------===//
@@ -165,7 +177,13 @@ FunctionTemplateDecl *FunctionTemplateDecl::Create(ASTContext &C,
                                                    DeclarationName Name,
                                                TemplateParameterList *Params,
                                                    NamedDecl *Decl) {
+  AdoptTemplateParameterList(Params, cast<DeclContext>(Decl));
   return new (C) FunctionTemplateDecl(DC, L, Name, Params, Decl);
+}
+
+FunctionTemplateDecl *FunctionTemplateDecl::Create(ASTContext &C, EmptyShell) {
+  return new (C) FunctionTemplateDecl(0, SourceLocation(), DeclarationName(),
+                                      0, 0);
 }
 
 RedeclarableTemplateDecl::CommonBase *
@@ -196,9 +214,14 @@ ClassTemplateDecl *ClassTemplateDecl::Create(ASTContext &C,
                                              TemplateParameterList *Params,
                                              NamedDecl *Decl,
                                              ClassTemplateDecl *PrevDecl) {
+  AdoptTemplateParameterList(Params, cast<DeclContext>(Decl));
   ClassTemplateDecl *New = new (C) ClassTemplateDecl(DC, L, Name, Params, Decl);
   New->setPreviousDeclaration(PrevDecl);
   return New;
+}
+
+ClassTemplateDecl *ClassTemplateDecl::Create(ASTContext &C, EmptyShell Empty) {
+  return new (C) ClassTemplateDecl(Empty);
 }
 
 void ClassTemplateDecl::LoadLazySpecializations() {
@@ -385,7 +408,17 @@ TemplateTypeParmDecl::Create(const ASTContext &C, EmptyShell Empty) {
 }
 
 SourceLocation TemplateTypeParmDecl::getDefaultArgumentLoc() const {
-  return DefaultArgument->getTypeLoc().getSourceRange().getBegin();
+  return hasDefaultArgument()
+    ? DefaultArgument->getTypeLoc().getBeginLoc()
+    : SourceLocation();
+}
+
+SourceRange TemplateTypeParmDecl::getSourceRange() const {
+  if (hasDefaultArgument() && !defaultArgumentWasInherited())
+    return SourceRange(getLocation(),
+                       DefaultArgument->getTypeLoc().getEndLoc());
+  else
+    return SourceRange(getLocation());
 }
 
 unsigned TemplateTypeParmDecl::getDepth() const {
@@ -455,7 +488,10 @@ SourceLocation NonTypeTemplateParmDecl::getInnerLocStart() const {
 }
 
 SourceRange NonTypeTemplateParmDecl::getSourceRange() const {
-  return SourceRange(getOuterLocStart(), getLocation());
+  SourceLocation End = getLocation();
+  if (hasDefaultArgument() && !defaultArgumentWasInherited())
+    End = getDefaultArgument()->getSourceRange().getEnd();
+  return SourceRange(getOuterLocStart(), End);
 }
 
 SourceLocation NonTypeTemplateParmDecl::getDefaultArgumentLoc() const {
@@ -564,9 +600,44 @@ ClassTemplateSpecializationDecl::getSpecializedTemplate() const {
   return SpecializedTemplate.get<ClassTemplateDecl*>();
 }
 
+SourceRange
+ClassTemplateSpecializationDecl::getSourceRange() const {
+  if (!ExplicitInfo)
+    return SourceRange();
+  SourceLocation Begin = getExternLoc();
+  if (Begin.isInvalid())
+    Begin = getTemplateKeywordLoc();
+  SourceLocation End = getRBraceLoc();
+  if (End.isInvalid())
+    End = getTypeAsWritten()->getTypeLoc().getEndLoc();
+  return SourceRange(Begin, End);
+}
+
 //===----------------------------------------------------------------------===//
 // ClassTemplatePartialSpecializationDecl Implementation
 //===----------------------------------------------------------------------===//
+ClassTemplatePartialSpecializationDecl::
+ClassTemplatePartialSpecializationDecl(ASTContext &Context, TagKind TK,
+                                       DeclContext *DC, SourceLocation L,
+                                       TemplateParameterList *Params,
+                                       ClassTemplateDecl *SpecializedTemplate,
+                                       const TemplateArgument *Args,
+                                       unsigned NumArgs,
+                                       TemplateArgumentLoc *ArgInfos,
+                                       unsigned NumArgInfos,
+                               ClassTemplatePartialSpecializationDecl *PrevDecl,
+                                       unsigned SequenceNumber)
+  : ClassTemplateSpecializationDecl(Context,
+                                    ClassTemplatePartialSpecialization,
+                                    TK, DC, L, SpecializedTemplate, 
+                                    Args, NumArgs, PrevDecl),
+    TemplateParams(Params), ArgsAsWritten(ArgInfos),
+    NumArgsAsWritten(NumArgInfos), SequenceNumber(SequenceNumber),
+    InstantiatedFromMember(0, false)
+{ 
+  AdoptTemplateParameterList(Params, this);
+}
+
 ClassTemplatePartialSpecializationDecl *
 ClassTemplatePartialSpecializationDecl::
 Create(ASTContext &Context, TagKind TK,DeclContext *DC, SourceLocation L,
