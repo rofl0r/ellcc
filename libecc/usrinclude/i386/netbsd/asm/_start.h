@@ -1,3 +1,5 @@
+#include <sys/elf_note.h>
+
 /** The initial entry point.
  */
 asm(
