@@ -1,11 +1,15 @@
-#ifndef _X86_64_LINUX_ASM_UNISTD_64_H_
-#define _X86_64_LINUX_ASM_UNISTD_64_H_
+#ifndef _X86_64_NETBSD_ASM_UNISTD_64_H_
+#define _X86_64_NETBSD_ASM_UNISTD_64_H_
 
 #define __NR_SYSCALL_BASE 0
-#define __NR_read (__NR_SYSCALL_BASE + 0)
-#define __NR_write (__NR_SYSCALL_BASE + 1)
-#define __NR_open (__NR_SYSCALL_BASE + 2)
-#define __NR_close (__NR_SYSCALL_BASE + 3)
+#define __NR_syscall (__NR_SYSCALL_BASE + 0)
+#define __NR_exit (__NR_SYSCALL_BASE + 1)
+#define __NR_fork (__NR_SYSCALL_BASE + 2)
+#define __NR_read (__NR_SYSCALL_BASE + 3)
+#define __NR_write (__NR_SYSCALL_BASE + 4)
+#define __NR_open (__NR_SYSCALL_BASE + 5)
+#define __NR_close (__NR_SYSCALL_BASE + 6)
+
 #define __NR_stat (__NR_SYSCALL_BASE + 4)
 #define __NR_fstat (__NR_SYSCALL_BASE + 5)
 #define __NR_lstat (__NR_SYSCALL_BASE + 6)
@@ -59,10 +63,8 @@
 #define __NR_setsockopt (__NR_SYSCALL_BASE + 54)
 #define __NR_getsockopt (__NR_SYSCALL_BASE + 55)
 #define __NR_clone (__NR_SYSCALL_BASE + 56)
-#define __NR_fork (__NR_SYSCALL_BASE + 57)
 #define __NR_vfork (__NR_SYSCALL_BASE + 58)
 #define __NR_execve (__NR_SYSCALL_BASE + 59)
-#define __NR_exit (__NR_SYSCALL_BASE + 60)
 #define __NR_wait4 (__NR_SYSCALL_BASE + 61)
 #define __NR_kill (__NR_SYSCALL_BASE + 62)
 #define __NR_uname (__NR_SYSCALL_BASE + 63)
@@ -298,4 +300,4 @@
 #define __NR_pipe2 (__NR_SYSCALL_BASE + 293)
 #define __NR_inotify_init1 (__NR_SYSCALL_BASE + 294)
 
-#endif // _X86_64_LINUX_ASM_UNISTD_64_H_
+#endif // _X86_64_NETBSD_ASM_UNISTD_64_H_
