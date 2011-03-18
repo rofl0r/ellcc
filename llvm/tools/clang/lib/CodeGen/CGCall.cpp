@@ -223,8 +223,13 @@ const CGFunctionInfo &CodeGenTypes::getFunctionInfo(QualType ResTy,
   llvm::SmallVector<CanQualType, 16> ArgTys;
   for (FunctionArgList::const_iterator i = Args.begin(), e = Args.end();
        i != e; ++i)
-    ArgTys.push_back(Context.getCanonicalParamType(i->second));
+    ArgTys.push_back(Context.getCanonicalParamType((*i)->getType()));
   return getFunctionInfo(GetReturnType(ResTy), ArgTys, Info);
+}
+
+const CGFunctionInfo &CodeGenTypes::getNullaryFunctionInfo() {
+  llvm::SmallVector<CanQualType, 1> args;
+  return getFunctionInfo(getContext().VoidTy, args, FunctionType::ExtInfo());
 }
 
 const CGFunctionInfo &CodeGenTypes::getFunctionInfo(CanQualType ResTy,
@@ -704,7 +709,7 @@ void CodeGenModule::ConstructAttributeList(const CGFunctionInfo &FI,
       FuncAttrs |= llvm::Attribute::NoUnwind;
     else if (const FunctionDecl *Fn = dyn_cast<FunctionDecl>(TargetDecl)) {
       const FunctionProtoType *FPT = Fn->getType()->getAs<FunctionProtoType>();
-      if (FPT && FPT->hasEmptyExceptionSpec())
+      if (FPT && FPT->isNothrow())
         FuncAttrs |= llvm::Attribute::NoUnwind;
     }
 
@@ -826,6 +831,26 @@ void CodeGenModule::ConstructAttributeList(const CGFunctionInfo &FI,
     PAL.push_back(llvm::AttributeWithIndex::get(~0, FuncAttrs));
 }
 
+/// An argument came in as a promoted argument; demote it back to its
+/// declared type.
+static llvm::Value *emitArgumentDemotion(CodeGenFunction &CGF,
+                                         const VarDecl *var,
+                                         llvm::Value *value) {
+  const llvm::Type *varType = CGF.ConvertType(var->getType());
+
+  // This can happen with promotions that actually don't change the
+  // underlying type, like the enum promotions.
+  if (value->getType() == varType) return value;
+
+  assert((varType->isIntegerTy() || varType->isFloatingPointTy())
+         && "unexpected promotion type");
+
+  if (isa<llvm::IntegerType>(varType))
+    return CGF.Builder.CreateTrunc(value, varType, "arg.unpromote");
+
+  return CGF.Builder.CreateFPCast(value, varType, "arg.unpromote");
+}
+
 void CodeGenFunction::EmitFunctionProlog(const CGFunctionInfo &FI,
                                          llvm::Function *Fn,
                                          const FunctionArgList &Args) {
@@ -860,9 +885,12 @@ void CodeGenFunction::EmitFunctionProlog(const CGFunctionInfo &FI,
   CGFunctionInfo::const_arg_iterator info_it = FI.arg_begin();
   for (FunctionArgList::const_iterator i = Args.begin(), e = Args.end(); 
        i != e; ++i, ++info_it, ++ArgNo) {
-    const VarDecl *Arg = i->first;
+    const VarDecl *Arg = *i;
     QualType Ty = info_it->type;
     const ABIArgInfo &ArgI = info_it->info;
+
+    bool isPromoted =
+      isa<ParmVarDecl>(Arg) && cast<ParmVarDecl>(Arg)->isKNRPromoted();
 
     switch (ArgI.getKind()) {
     case ABIArgInfo::Indirect: {
@@ -881,8 +909,10 @@ void CodeGenFunction::EmitFunctionProlog(const CGFunctionInfo &FI,
           // copy.
           const llvm::Type *I8PtrTy = Builder.getInt8PtrTy();
           CharUnits Size = getContext().getTypeSizeInChars(Ty);
-          Builder.CreateMemCpy(Builder.CreateBitCast(AlignedTemp, I8PtrTy),
-                               Builder.CreateBitCast(V, I8PtrTy),
+          llvm::Value *Dst = Builder.CreateBitCast(AlignedTemp, I8PtrTy);
+          llvm::Value *Src = Builder.CreateBitCast(V, I8PtrTy);
+          Builder.CreateMemCpy(Dst,
+                               Src,
                                llvm::ConstantInt::get(IntPtrTy, 
                                                       Size.getQuantity()),
                                ArgI.getIndirectAlign(),
@@ -893,11 +923,9 @@ void CodeGenFunction::EmitFunctionProlog(const CGFunctionInfo &FI,
         // Load scalar value from indirect argument.
         CharUnits Alignment = getContext().getTypeAlignInChars(Ty);
         V = EmitLoadOfScalar(V, false, Alignment.getQuantity(), Ty);
-        if (!getContext().typesAreCompatible(Ty, Arg->getType())) {
-          // This must be a promotion, for something like
-          // "void a(x) short x; {..."
-          V = EmitScalarConversion(V, Ty, Arg->getType());
-        }
+
+        if (isPromoted)
+          V = emitArgumentDemotion(*this, Arg, V);
       }
       EmitParmDecl(*Arg, V, ArgNo);
       break;
@@ -915,11 +943,9 @@ void CodeGenFunction::EmitFunctionProlog(const CGFunctionInfo &FI,
         if (Arg->getType().isRestrictQualified())
           AI->addAttr(llvm::Attribute::NoAlias);
 
-        if (!getContext().typesAreCompatible(Ty, Arg->getType())) {
-          // This must be a promotion, for something like
-          // "void a(x) short x; {..."
-          V = EmitScalarConversion(V, Ty, Arg->getType());
-        }
+        if (isPromoted)
+          V = emitArgumentDemotion(*this, Arg, V);
+
         EmitParmDecl(*Arg, V, ArgNo);
         break;
       }
@@ -969,11 +995,8 @@ void CodeGenFunction::EmitFunctionProlog(const CGFunctionInfo &FI,
       // Match to what EmitParmDecl is expecting for this type.
       if (!CodeGenFunction::hasAggregateLLVMType(Ty)) {
         V = EmitLoadOfScalar(V, false, AlignmentToUse, Ty);
-        if (!getContext().typesAreCompatible(Ty, Arg->getType())) {
-          // This must be a promotion, for something like
-          // "void a(x) short x; {..."
-          V = EmitScalarConversion(V, Ty, Arg->getType());
-        }
+        if (isPromoted)
+          V = emitArgumentDemotion(*this, Arg, V);
       }
       EmitParmDecl(*Arg, V, ArgNo);
       continue;  // Skip ++AI increment, already done.
@@ -1093,42 +1116,48 @@ void CodeGenFunction::EmitFunctionEpilog(const CGFunctionInfo &FI) {
     Ret->setDebugLoc(RetDbgLoc);
 }
 
-RValue CodeGenFunction::EmitDelegateCallArg(const VarDecl *Param) {
+void CodeGenFunction::EmitDelegateCallArg(CallArgList &args,
+                                          const VarDecl *param) {
   // StartFunction converted the ABI-lowered parameter(s) into a
   // local alloca.  We need to turn that into an r-value suitable
   // for EmitCall.
-  llvm::Value *Local = GetAddrOfLocalVar(Param);
+  llvm::Value *local = GetAddrOfLocalVar(param);
 
-  QualType ArgType = Param->getType();
+  QualType type = param->getType();
 
   // For the most part, we just need to load the alloca, except:
   // 1) aggregate r-values are actually pointers to temporaries, and
   // 2) references to aggregates are pointers directly to the aggregate.
   // I don't know why references to non-aggregates are different here.
-  if (const ReferenceType *RefType = ArgType->getAs<ReferenceType>()) {
-    if (hasAggregateLLVMType(RefType->getPointeeType()))
-      return RValue::getAggregate(Local);
+  if (const ReferenceType *ref = type->getAs<ReferenceType>()) {
+    if (hasAggregateLLVMType(ref->getPointeeType()))
+      return args.add(RValue::getAggregate(local), type);
 
     // Locals which are references to scalars are represented
     // with allocas holding the pointer.
-    return RValue::get(Builder.CreateLoad(Local));
+    return args.add(RValue::get(Builder.CreateLoad(local)), type);
   }
 
-  if (ArgType->isAnyComplexType())
-    return RValue::getComplex(LoadComplexFromAddr(Local, /*volatile*/ false));
+  if (type->isAnyComplexType()) {
+    ComplexPairTy complex = LoadComplexFromAddr(local, /*volatile*/ false);
+    return args.add(RValue::getComplex(complex), type);
+  }
 
-  if (hasAggregateLLVMType(ArgType))
-    return RValue::getAggregate(Local);
+  if (hasAggregateLLVMType(type))
+    return args.add(RValue::getAggregate(local), type);
 
-  unsigned Alignment = getContext().getDeclAlign(Param).getQuantity();
-  return RValue::get(EmitLoadOfScalar(Local, false, Alignment, ArgType));
+  unsigned alignment = getContext().getDeclAlign(param).getQuantity();
+  llvm::Value *value = EmitLoadOfScalar(local, false, alignment, type);
+  return args.add(RValue::get(value), type);
 }
 
-RValue CodeGenFunction::EmitCallArg(const Expr *E, QualType ArgType) {
-  if (ArgType->isReferenceType())
-    return EmitReferenceBindingToExpr(E, /*InitializedDecl=*/0);
+void CodeGenFunction::EmitCallArg(CallArgList &args, const Expr *E,
+                                  QualType type) {
+  if (type->isReferenceType())
+    return args.add(EmitReferenceBindingToExpr(E, /*InitializedDecl=*/0),
+                    type);
 
-  return EmitAnyExprToTemp(E);
+  args.add(EmitAnyExprToTemp(E), type);
 }
 
 /// Emits a call or invoke instruction to the given function, depending

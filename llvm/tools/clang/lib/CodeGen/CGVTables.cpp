@@ -2559,8 +2559,19 @@ static void setThunkVisibility(CodeGenModule &CGM, const CXXMethodDecl *MD,
   Fn->setVisibility(llvm::GlobalValue::HiddenVisibility);
 }
 
-void CodeGenFunction::GenerateThunk(llvm::Function *Fn, GlobalDecl GD,
-                                    const ThunkInfo &Thunk) {
+#ifndef NDEBUG
+static bool similar(const ABIArgInfo &infoL, CanQualType typeL,
+                    const ABIArgInfo &infoR, CanQualType typeR) {
+  return (infoL.getKind() == infoR.getKind() &&
+          (typeL == typeR ||
+           (isa<PointerType>(typeL) && isa<PointerType>(typeR)) ||
+           (isa<ReferenceType>(typeL) && isa<ReferenceType>(typeR))));
+}
+#endif
+
+void CodeGenFunction::GenerateThunk(llvm::Function *Fn,
+                                    const CGFunctionInfo &FnInfo,
+                                    GlobalDecl GD, const ThunkInfo &Thunk) {
   const CXXMethodDecl *MD = cast<CXXMethodDecl>(GD.getDecl());
   const FunctionProtoType *FPT = MD->getType()->getAs<FunctionProtoType>();
   QualType ResultType = FPT->getResultType();
@@ -2580,10 +2591,11 @@ void CodeGenFunction::GenerateThunk(llvm::Function *Fn, GlobalDecl GD,
        E = MD->param_end(); I != E; ++I) {
     ParmVarDecl *Param = *I;
     
-    FunctionArgs.push_back(std::make_pair(Param, Param->getType()));
+    FunctionArgs.push_back(Param);
   }
   
-  StartFunction(GlobalDecl(), ResultType, Fn, FunctionArgs, SourceLocation());
+  StartFunction(GlobalDecl(), ResultType, Fn, FnInfo, FunctionArgs,
+                SourceLocation());
 
   CGM.getCXXABI().EmitInstanceFunctionProlog(*this);
 
@@ -2601,11 +2613,8 @@ void CodeGenFunction::GenerateThunk(llvm::Function *Fn, GlobalDecl GD,
   // Add the rest of the parameters.
   for (FunctionDecl::param_const_iterator I = MD->param_begin(),
        E = MD->param_end(); I != E; ++I) {
-    ParmVarDecl *Param = *I;
-    QualType ArgType = Param->getType();
-    RValue Arg = EmitDelegateCallArg(Param);
-    
-    CallArgs.push_back(std::make_pair(Arg, ArgType));
+    ParmVarDecl *param = *I;
+    EmitDelegateCallArg(CallArgs, param);
   }
 
   // Get our callee.
@@ -2614,9 +2623,20 @@ void CodeGenFunction::GenerateThunk(llvm::Function *Fn, GlobalDecl GD,
                                    FPT->isVariadic());
   llvm::Value *Callee = CGM.GetAddrOfFunction(GD, Ty, /*ForVTable=*/true);
 
-  const CGFunctionInfo &FnInfo = 
-    CGM.getTypes().getFunctionInfo(ResultType, CallArgs,
-                                   FPT->getExtInfo());
+#ifndef NDEBUG
+  const CGFunctionInfo &CallFnInfo = 
+    CGM.getTypes().getFunctionInfo(ResultType, CallArgs, FPT->getExtInfo());
+  assert(CallFnInfo.getRegParm() == FnInfo.getRegParm() &&
+         CallFnInfo.isNoReturn() == FnInfo.isNoReturn() &&
+         CallFnInfo.getCallingConvention() == FnInfo.getCallingConvention());
+  assert(similar(CallFnInfo.getReturnInfo(), CallFnInfo.getReturnType(),
+                 FnInfo.getReturnInfo(), FnInfo.getReturnType()));
+  assert(CallFnInfo.arg_size() == FnInfo.arg_size());
+  for (unsigned i = 0, e = FnInfo.arg_size(); i != e; ++i)
+    assert(similar(CallFnInfo.arg_begin()[i].info,
+                   CallFnInfo.arg_begin()[i].type,
+                   FnInfo.arg_begin()[i].info, FnInfo.arg_begin()[i].type));
+#endif
   
   // Determine whether we have a return value slot to use.
   ReturnValueSlot Slot;
@@ -2684,6 +2704,9 @@ void CodeGenFunction::GenerateThunk(llvm::Function *Fn, GlobalDecl GD,
 void CodeGenVTables::EmitThunk(GlobalDecl GD, const ThunkInfo &Thunk, 
                                bool UseAvailableExternallyLinkage)
 {
+  const CGFunctionInfo &FnInfo = CGM.getTypes().getFunctionInfo(GD);
+
+  // FIXME: re-use FnInfo in this computation.
   llvm::Constant *Entry = CGM.GetAddrOfThunk(GD, Thunk);
   
   // Strip off a bitcast if we got one back.
@@ -2735,7 +2758,7 @@ void CodeGenVTables::EmitThunk(GlobalDecl GD, const ThunkInfo &Thunk,
   }
 
   // Actually generate the thunk body.
-  CodeGenFunction(CGM).GenerateThunk(ThunkFn, GD, Thunk);
+  CodeGenFunction(CGM).GenerateThunk(ThunkFn, FnInfo, GD, Thunk);
 
   if (UseAvailableExternallyLinkage)
     ThunkFn->setLinkage(llvm::GlobalValue::AvailableExternallyLinkage);

@@ -450,14 +450,20 @@ FileManager::getVirtualFile(llvm::StringRef Filename, off_t Size,
   return UFE;
 }
 
-void FileManager::FixupRelativePath(llvm::sys::Path &path,
+void FileManager::FixupRelativePath(llvm::SmallVectorImpl<char> &path,
                                     const FileSystemOptions &FSOpts) {
-  if (FSOpts.WorkingDir.empty() || llvm::sys::path::is_absolute(path.str()))
+  llvm::StringRef pathRef(path.data(), path.size());
+
+  if (FSOpts.WorkingDir.empty() || llvm::sys::path::is_absolute(pathRef))
     return;
 
   llvm::SmallString<128> NewPath(FSOpts.WorkingDir);
-  llvm::sys::path::append(NewPath, path.str());
+  llvm::sys::path::append(NewPath, pathRef);
   path = NewPath;
+}
+
+void FileManager::FixupRelativePath(llvm::SmallVectorImpl<char> &path) const {
+  FixupRelativePath(path, FileSystemOpts);
 }
 
 llvm::MemoryBuffer *FileManager::
@@ -484,10 +490,10 @@ getBufferForFile(const FileEntry *Entry, std::string *ErrorStr) {
       *ErrorStr = ec.message();
     return Result.take();
   }
-  
-  llvm::sys::Path FilePath(Entry->getName());
-  FixupRelativePath(FilePath, FileSystemOpts);
-  ec = llvm::MemoryBuffer::getFile(FilePath.c_str(), Result, Entry->getSize());
+
+  llvm::SmallString<128> FilePath(Entry->getName());
+  FixupRelativePath(FilePath);
+  ec = llvm::MemoryBuffer::getFile(FilePath.str(), Result, Entry->getSize());
   if (ec && ErrorStr)
     *ErrorStr = ec.message();
   return Result.take();
@@ -504,8 +510,8 @@ getBufferForFile(llvm::StringRef Filename, std::string *ErrorStr) {
     return Result.take();
   }
 
-  llvm::sys::Path FilePath(Filename);
-  FixupRelativePath(FilePath, FileSystemOpts);
+  llvm::SmallString<128> FilePath(Filename);
+  FixupRelativePath(FilePath);
   ec = llvm::MemoryBuffer::getFile(FilePath.c_str(), Result);
   if (ec && ErrorStr)
     *ErrorStr = ec.message();
@@ -525,8 +531,8 @@ bool FileManager::getStatValue(const char *Path, struct stat &StatBuf,
     return FileSystemStatCache::get(Path, StatBuf, FileDescriptor,
                                     StatCache.get());
 
-  llvm::sys::Path FilePath(Path);
-  FixupRelativePath(FilePath, FileSystemOpts);
+  llvm::SmallString<128> FilePath(Path);
+  FixupRelativePath(FilePath);
 
   return FileSystemStatCache::get(FilePath.c_str(), StatBuf, FileDescriptor,
                                   StatCache.get());

@@ -111,7 +111,7 @@ def err_expected_semi_declaration : Error<
   "expected ';' at end of declaration">;
 def err_expected_semi_decl_list : Error<
   "expected ';' at end of declaration list">;
-def ext_expected_semi_decl_list : Extension<
+def ext_expected_semi_decl_list : ExtWarn<
   "expected ';' at end of declaration list">;
 def err_expected_member_name_or_semi : Error<
   "expected member name or ';' after declaration specifiers">;
@@ -178,6 +178,9 @@ def ext_ref_qualifier : ExtWarn<
   "reference qualifiers on functions are a C++0x extension">, InGroup<CXX0x>;
 def ext_inline_namespace : ExtWarn<
   "inline namespaces are a C++0x feature">, InGroup<CXX0x>;
+def ext_generalized_initializer_lists : ExtWarn<
+  "generalized initializer lists are a C++0x extension unsupported in Clang">,
+  InGroup<CXX0x>;
 def err_argument_required_after_attribute : Error<
   "argument required after attribute">;
 def err_missing_param : Error<"expected parameter declarator">;
@@ -300,6 +303,8 @@ def err_expected_lbrace_after_base_specifiers : Error<
   "expected '{' after base class list">;
 def ext_ellipsis_exception_spec : Extension<
   "exception specification of '...' is a Microsoft extension">;
+def err_dynamic_and_noexcept_specification : Error<
+  "cannot have both throw() and noexcept() clause on the same function">;
 def err_expected_catch : Error<"expected catch">;
 def err_expected_lbrace_or_comma : Error<"expected '{' or ','">;
 def err_using_namespace_in_class : Error<

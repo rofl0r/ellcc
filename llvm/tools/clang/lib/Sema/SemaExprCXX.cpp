@@ -165,7 +165,7 @@ ParsedType Sema::getDestructorName(SourceLocation TildeLoc,
 
         return ParsedType::make(T);
       }
-      
+
       if (!SearchType.isNull())
         NonMatchingTypeDecl = Type;
     }
@@ -1437,9 +1437,9 @@ void Sema::DeclareGlobalNewDelete() {
     // implicitly.
     StdBadAlloc = CXXRecordDecl::Create(Context, TTK_Class,
                                         getOrCreateStdNamespace(),
-                                        SourceLocation(),
+                                        SourceLocation(), SourceLocation(),
                                       &PP.getIdentifierTable().get("bad_alloc"),
-                                        SourceLocation(), 0);
+                                        0);
     getStdBadAlloc()->setImplicit(true);
   }
 
@@ -1501,15 +1501,18 @@ void Sema::DeclareGlobalAllocationFunction(DeclarationName Name,
   }
 
   FunctionProtoType::ExtProtoInfo EPI;
-  EPI.HasExceptionSpec = true;
   if (HasBadAllocExceptionSpec) {
+    EPI.ExceptionSpecType = EST_Dynamic;
     EPI.NumExceptions = 1;
     EPI.Exceptions = &BadAllocType;
+  } else {
+    EPI.ExceptionSpecType = EST_DynamicNone;
   }
 
   QualType FnType = Context.getFunctionType(Return, &Argument, 1, EPI);
   FunctionDecl *Alloc =
-    FunctionDecl::Create(Context, GlobalCtx, SourceLocation(), Name,
+    FunctionDecl::Create(Context, GlobalCtx, SourceLocation(),
+                         SourceLocation(), Name,
                          FnType, /*TInfo=*/0, SC_None,
                          SC_None, false, true);
   Alloc->setImplicit();
@@ -1518,9 +1521,9 @@ void Sema::DeclareGlobalAllocationFunction(DeclarationName Name,
     Alloc->addAttr(::new (Context) MallocAttr(SourceLocation(), Context));
 
   ParmVarDecl *Param = ParmVarDecl::Create(Context, Alloc, SourceLocation(),
-                                           0, Argument, /*TInfo=*/0,
-                                           SC_None,
-                                           SC_None, 0);
+                                           SourceLocation(), 0,
+                                           Argument, /*TInfo=*/0,
+                                           SC_None, SC_None, 0);
   Alloc->setParams(&Param, 1);
 
   // FIXME: Also add this declaration to the IdentifierResolver, but
@@ -2420,7 +2423,7 @@ static bool EvaluateUnaryTypeTrait(Sema &Self, UnaryTypeTrait UTT, QualType T,
             FoundAssign = true;
             const FunctionProtoType *CPT
                 = Operator->getType()->getAs<FunctionProtoType>();
-            if (!CPT->hasEmptyExceptionSpec()) {
+            if (!CPT->isNothrow()) {
               AllNoThrow = false;
               break;
             }
@@ -2460,9 +2463,9 @@ static bool EvaluateUnaryTypeTrait(Sema &Self, UnaryTypeTrait UTT, QualType T,
           FoundConstructor = true;
           const FunctionProtoType *CPT
               = Constructor->getType()->getAs<FunctionProtoType>();
-          // TODO: check whether evaluating default arguments can throw.
+          // FIXME: check whether evaluating default arguments can throw.
           // For now, we'll be conservative and assume that they can throw.
-          if (!CPT->hasEmptyExceptionSpec() || CPT->getNumArgs() > 1) {
+          if (!CPT->isNothrow() || CPT->getNumArgs() > 1) {
             AllNoThrow = false;
             break;
           }
@@ -2497,7 +2500,7 @@ static bool EvaluateUnaryTypeTrait(Sema &Self, UnaryTypeTrait UTT, QualType T,
               = Constructor->getType()->getAs<FunctionProtoType>();
           // TODO: check whether evaluating default arguments can throw.
           // For now, we'll be conservative and assume that they can throw.
-          return CPT->hasEmptyExceptionSpec() && CPT->getNumArgs() == 0;
+          return CPT->isNothrow() && CPT->getNumArgs() == 0;
         }
       }
     }
@@ -3911,8 +3914,31 @@ ExprResult Sema::ActOnFinishFullExpr(Expr *FullExpr) {
   if (DiagnoseUnexpandedParameterPack(FullExpr))
     return ExprError();
 
+  // 13.4.1 ... An overloaded function name shall not be used without arguments 
+  //         in contexts other than those listed [i.e list of targets].
+  //  
+  //  void foo(); void foo(int);
+  //  template<class T> void fooT(); template<class T> void fooT(int);
+  
+  //  Therefore these should error:
+  //  foo; 
+  //  fooT<int>;
+  
+  if (FullExpr->getType() == Context.OverloadTy) {
+    if (!ResolveSingleFunctionTemplateSpecialization(FullExpr, 
+                                                     /* Complain */ false)) {
+      OverloadExpr* OvlExpr = OverloadExpr::find(FullExpr).Expression; 
+      Diag(FullExpr->getLocStart(), diag::err_addr_ovl_ambiguous)
+        << OvlExpr->getName();
+      NoteAllOverloadCandidates(OvlExpr);
+      return ExprError();
+    }  
+  }
+
+
   IgnoredValueConversions(FullExpr);
   CheckImplicitConversions(FullExpr);
+  
   return MaybeCreateExprWithCleanups(FullExpr);
 }
 

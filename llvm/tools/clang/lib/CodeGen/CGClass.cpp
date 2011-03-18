@@ -589,8 +589,7 @@ static void EmitMemberInitializer(CodeGenFunction &CGF,
         // we know we're in a copy constructor.
         unsigned SrcArgIndex = Args.size() - 1;
         llvm::Value *SrcPtr
-          = CGF.Builder.CreateLoad(
-                               CGF.GetAddrOfLocalVar(Args[SrcArgIndex].first));
+          = CGF.Builder.CreateLoad(CGF.GetAddrOfLocalVar(Args[SrcArgIndex]));
         LValue Src = CGF.EmitLValueForFieldInitialization(SrcPtr, Field, 0);
         
         // Copy the aggregate.
@@ -1212,9 +1211,7 @@ CodeGenFunction::EmitSynthesizedCXXCopyCtorCall(const CXXConstructorDecl *D,
   for (FunctionProtoType::arg_type_iterator I = FPT->arg_type_begin()+1,
        E = FPT->arg_type_end(); I != E; ++I, ++Arg) {
     assert(Arg != ArgEnd && "Running over edge of argument list!");
-    QualType ArgType = *I;
-    Args.push_back(std::make_pair(EmitCallArg(*Arg, ArgType),
-                                  ArgType));
+    EmitCallArg(Args, *Arg, *I);
   }
   // Either we've emitted all the call args, or we have a call to a
   // variadic function.
@@ -1223,8 +1220,7 @@ CodeGenFunction::EmitSynthesizedCXXCopyCtorCall(const CXXConstructorDecl *D,
   // If we still have any arguments, emit them using the type of the argument.
   for (; Arg != ArgEnd; ++Arg) {
     QualType ArgType = Arg->getType();
-    Args.push_back(std::make_pair(EmitCallArg(*Arg, ArgType),
-                                  ArgType));
+    EmitCallArg(Args, *Arg, ArgType);
   }
   
   QualType ResultType = FPT->getResultType();
@@ -1244,7 +1240,7 @@ CodeGenFunction::EmitDelegateCXXConstructorCall(const CXXConstructorDecl *Ctor,
 
   // this
   DelegateArgs.push_back(std::make_pair(RValue::get(LoadCXXThis()),
-                                        I->second));
+                                        (*I)->getType()));
   ++I;
 
   // vtt
@@ -1255,18 +1251,15 @@ CodeGenFunction::EmitDelegateCXXConstructorCall(const CXXConstructorDecl *Ctor,
 
     if (CodeGenVTables::needsVTTParameter(CurGD)) {
       assert(I != E && "cannot skip vtt parameter, already done with args");
-      assert(I->second == VoidPP && "skipping parameter not of vtt type");
+      assert((*I)->getType() == VoidPP && "skipping parameter not of vtt type");
       ++I;
     }
   }
 
   // Explicit arguments.
   for (; I != E; ++I) {
-    const VarDecl *Param = I->first;
-    QualType ArgType = Param->getType(); // because we're passing it to itself
-    RValue Arg = EmitDelegateCallArg(Param);
-
-    DelegateArgs.push_back(std::make_pair(Arg, ArgType));
+    const VarDecl *param = *I;
+    EmitDelegateCallArg(DelegateArgs, param);
   }
 
   EmitCall(CGM.getTypes().getFunctionInfo(Ctor, CtorType),

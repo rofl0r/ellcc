@@ -463,7 +463,9 @@ provide details such as name, type and where the variable is defined.</p>
   i32,     ;; Tag = 11 + <a href="#LLVMDebugVersion">LLVMDebugVersion</a> (DW_TAG_lexical_block)
   metadata,;; Reference to context descriptor
   i32,     ;; Line number
-  i32      ;; Column number
+  i32,     ;; Column number
+  metadata,;; Reference to source file
+  i32      ;; Unique ID to identify blocks from a template function
 }
 </pre>
 </div>
@@ -742,7 +744,8 @@ DW_TAG_inheritance      = 28
   metadata, ;; Context
   metadata, ;; Name
   metadata, ;; Reference to file where defined
-  i32,      ;; Line number where defined
+  i32,      ;; 24 bit - Line number where defined
+            ;; 8 bit - Argument number. 1 indicates 1st argument.
   metadata  ;; Type descriptor
 }
 </pre>
@@ -1776,7 +1779,7 @@ enum Trees {
 
   <a href="mailto:sabre@nondot.org">Chris Lattner</a><br>
   <a href="http://llvm.org">LLVM Compiler Infrastructure</a><br>
-  Last modified: $Date: 2011-02-02 18:22:17 -0600 (Wed, 02 Feb 2011) $
+  Last modified: $Date: 2011-03-08 10:29:40 -0600 (Tue, 08 Mar 2011) $
 </address>
 
 </body>

@@ -33,7 +33,7 @@ CodeGenFunction::CodeGenFunction(CodeGenModule &cgm)
     Target(CGM.getContext().Target), Builder(cgm.getModule().getContext()),
     BlockInfo(0), BlockPointer(0),
     NormalCleanupDest(0), EHCleanupDest(0), NextCleanupDestIndex(1),
-    ExceptionSlot(0), DebugInfo(0), IndirectBranch(0),
+    ExceptionSlot(0), DebugInfo(0), DisableDebugInfo(false), IndirectBranch(0),
     SwitchInsn(0), CaseRangeBlock(0),
     DidCallStackSave(false), UnreachableBlock(0),
     CXXThisDecl(0), CXXThisValue(0), CXXVTTDecl(0), CXXVTTValue(0),
@@ -210,6 +210,7 @@ void CodeGenFunction::EmitMCountInstrumentation() {
 
 void CodeGenFunction::StartFunction(GlobalDecl GD, QualType RetTy,
                                     llvm::Function *Fn,
+                                    const CGFunctionInfo &FnInfo,
                                     const FunctionArgList &Args,
                                     SourceLocation StartLoc) {
   const Decl *D = GD.getDecl();
@@ -218,6 +219,7 @@ void CodeGenFunction::StartFunction(GlobalDecl GD, QualType RetTy,
   CurCodeDecl = CurFuncDecl = D;
   FnRetTy = RetTy;
   CurFn = Fn;
+  CurFnInfo = &FnInfo;
   assert(CurFn->isDeclaration() && "Function already has body?");
 
   // Pass inline keyword to optimizer if it appears explicitly on any
@@ -275,11 +277,6 @@ void CodeGenFunction::StartFunction(GlobalDecl GD, QualType RetTy,
   if (CGM.getCodeGenOpts().InstrumentForProfiling)
     EmitMCountInstrumentation();
 
-  // FIXME: Leaked.
-  // CC info is ignored, hopefully?
-  CurFnInfo = &CGM.getTypes().getFunctionInfo(FnRetTy, Args,
-                                              FunctionType::ExtInfo());
-
   if (RetTy->isVoidType()) {
     // Void type; nothing to return.
     ReturnValue = 0;
@@ -302,7 +299,7 @@ void CodeGenFunction::StartFunction(GlobalDecl GD, QualType RetTy,
   // emit the type size.
   for (FunctionArgList::const_iterator i = Args.begin(), e = Args.end();
        i != e; ++i) {
-    QualType Ty = i->second;
+    QualType Ty = (*i)->getType();
 
     if (Ty->isVariablyModifiedType())
       EmitVLASize(Ty);
@@ -332,12 +329,13 @@ static void TryMarkNoThrow(llvm::Function *F) {
   F->setDoesNotThrow(true);
 }
 
-void CodeGenFunction::GenerateCode(GlobalDecl GD, llvm::Function *Fn) {
+void CodeGenFunction::GenerateCode(GlobalDecl GD, llvm::Function *Fn,
+                                   const CGFunctionInfo &FnInfo) {
   const FunctionDecl *FD = cast<FunctionDecl>(GD.getDecl());
   
   // Check if we should generate debug info for this function.
-  if (CGM.getDebugInfo() && !FD->hasAttr<NoDebugAttr>())
-    DebugInfo = CGM.getDebugInfo();
+  if (CGM.getModuleDebugInfo() && !FD->hasAttr<NoDebugAttr>())
+    DebugInfo = CGM.getModuleDebugInfo();
 
   FunctionArgList Args;
   QualType ResTy = FD->getResultType();
@@ -346,20 +344,15 @@ void CodeGenFunction::GenerateCode(GlobalDecl GD, llvm::Function *Fn) {
   if (isa<CXXMethodDecl>(FD) && cast<CXXMethodDecl>(FD)->isInstance())
     CGM.getCXXABI().BuildInstanceFunctionParams(*this, ResTy, Args);
 
-  if (FD->getNumParams()) {
-    const FunctionProtoType* FProto = FD->getType()->getAs<FunctionProtoType>();
-    assert(FProto && "Function def must have prototype!");
-
+  if (FD->getNumParams())
     for (unsigned i = 0, e = FD->getNumParams(); i != e; ++i)
-      Args.push_back(std::make_pair(FD->getParamDecl(i),
-                                    FProto->getArgType(i)));
-  }
+      Args.push_back(FD->getParamDecl(i));
 
   SourceRange BodyRange;
   if (Stmt *Body = FD->getBody()) BodyRange = Body->getSourceRange();
 
   // Emit the standard function prologue.
-  StartFunction(GD, ResTy, Fn, Args, BodyRange.getBegin());
+  StartFunction(GD, ResTy, Fn, FnInfo, Args, BodyRange.getBegin());
 
   // Generate the body of the function.
   if (isa<CXXDestructorDecl>(FD))

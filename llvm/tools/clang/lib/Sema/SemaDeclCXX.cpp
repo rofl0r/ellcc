@@ -383,6 +383,48 @@ bool Sema::MergeCXXFunctionDecl(FunctionDecl *New, FunctionDecl *Old) {
   return Invalid;
 }
 
+/// \brief Merge the exception specifications of two variable declarations.
+///
+/// This is called when there's a redeclaration of a VarDecl. The function
+/// checks if the redeclaration might have an exception specification and
+/// validates compatibility and merges the specs if necessary.
+void Sema::MergeVarDeclExceptionSpecs(VarDecl *New, VarDecl *Old) {
+  // Shortcut if exceptions are disabled.
+  if (!getLangOptions().CXXExceptions)
+    return;
+
+  assert(Context.hasSameType(New->getType(), Old->getType()) &&
+         "Should only be called if types are otherwise the same.");
+
+  QualType NewType = New->getType();
+  QualType OldType = Old->getType();
+
+  // We're only interested in pointers and references to functions, as well
+  // as pointers to member functions.
+  if (const ReferenceType *R = NewType->getAs<ReferenceType>()) {
+    NewType = R->getPointeeType();
+    OldType = OldType->getAs<ReferenceType>()->getPointeeType();
+  } else if (const PointerType *P = NewType->getAs<PointerType>()) {
+    NewType = P->getPointeeType();
+    OldType = OldType->getAs<PointerType>()->getPointeeType();
+  } else if (const MemberPointerType *M = NewType->getAs<MemberPointerType>()) {
+    NewType = M->getPointeeType();
+    OldType = OldType->getAs<MemberPointerType>()->getPointeeType();
+  }
+
+  if (!NewType->isFunctionProtoType())
+    return;
+
+  // There's lots of special cases for functions. For function pointers, system
+  // libraries are hopefully not as broken so that we don't need these
+  // workarounds.
+  if (CheckEquivalentExceptionSpec(
+        OldType->getAs<FunctionProtoType>(), Old->getLocation(),
+        NewType->getAs<FunctionProtoType>(), New->getLocation())) {
+    New->setInvalidDecl();
+  }
+}
+
 /// CheckCXXDefaultArguments - Verify that the default arguments for a
 /// function declaration are well-formed according to C++
 /// [dcl.fct.default].
@@ -1069,6 +1111,12 @@ Sema::ActOnCXXMemberDeclarator(Scope *S, AccessSpecifier AS, Declarator &D,
       MD->addAttr(new (Context) FinalAttr(VS.getFinalLoc(), Context));
   }
 
+  if (VS.getLastLocation().isValid()) {
+    // Update the end location of a method that has a virt-specifiers.
+    if (CXXMethodDecl *MD = dyn_cast_or_null<CXXMethodDecl>(Member))
+      MD->setRangeEnd(VS.getLastLocation());
+  }
+      
   CheckOverrideControl(Member);
 
   assert((Name || isInstField) && "No identifier for non-field ?");
@@ -1356,7 +1404,7 @@ static bool InitExprContainsUninitializedFields(const Stmt *S,
       *L = ME->getMemberLoc();
       return true;
     }
-  } else if (isa<SizeOfAlignOfExpr>(S)) {
+  } else if (isa<UnaryExprOrTypeTraitExpr>(S)) {
     // sizeof/alignof doesn't reference contents, do not warn.
     return false;
   } else if (const UnaryOperator *UOE = dyn_cast<UnaryOperator>(S)) {
@@ -1826,7 +1874,7 @@ BuildImplicitMemberInitializer(Sema &SemaRef, CXXConstructorDecl *Constructor,
         IterationVarName = &SemaRef.Context.Idents.get(OS.str());
       }
       VarDecl *IterationVar
-        = VarDecl::Create(SemaRef.Context, SemaRef.CurContext, Loc,
+        = VarDecl::Create(SemaRef.Context, SemaRef.CurContext, Loc, Loc,
                           IterationVarName, SizeType,
                         SemaRef.Context.getTrivialTypeSourceInfo(SizeType, Loc),
                           SC_None, SC_None);
@@ -2972,53 +3020,101 @@ namespace {
   /// implicitly-declared special member functions.
   class ImplicitExceptionSpecification {
     ASTContext &Context;
-    bool AllowsAllExceptions;
+    // We order exception specifications thus:
+    // noexcept is the most restrictive, but is only used in C++0x.
+    // throw() comes next.
+    // Then a throw(collected exceptions)
+    // Finally no specification.
+    // throw(...) is used instead if any called function uses it.
+    ExceptionSpecificationType ComputedEST;
     llvm::SmallPtrSet<CanQualType, 4> ExceptionsSeen;
     llvm::SmallVector<QualType, 4> Exceptions;
-    
+
+    void ClearExceptions() {
+      ExceptionsSeen.clear();
+      Exceptions.clear();
+    }
+
   public:
     explicit ImplicitExceptionSpecification(ASTContext &Context) 
-      : Context(Context), AllowsAllExceptions(false) { }
-    
-    /// \brief Whether the special member function should have any
-    /// exception specification at all.
-    bool hasExceptionSpecification() const {
-      return !AllowsAllExceptions;
+      : Context(Context), ComputedEST(EST_BasicNoexcept) {
+      if (!Context.getLangOptions().CPlusPlus0x)
+        ComputedEST = EST_DynamicNone;
     }
-    
-    /// \brief Whether the special member function should have a
-    /// throw(...) exception specification (a Microsoft extension).
-    bool hasAnyExceptionSpecification() const {
-      return false;
+
+    /// \brief Get the computed exception specification type.
+    ExceptionSpecificationType getExceptionSpecType() const {
+      assert(ComputedEST != EST_ComputedNoexcept &&
+             "noexcept(expr) should not be a possible result");
+      return ComputedEST;
     }
-    
+
     /// \brief The number of exceptions in the exception specification.
     unsigned size() const { return Exceptions.size(); }
-    
+
     /// \brief The set of exceptions in the exception specification.
     const QualType *data() const { return Exceptions.data(); }
-    
-    /// \brief Note that 
+
+    /// \brief Integrate another called method into the collected data.
     void CalledDecl(CXXMethodDecl *Method) {
-      // If we already know that we allow all exceptions, do nothing.
-      if (AllowsAllExceptions || !Method)
+      // If we have an MSAny spec already, don't bother.
+      if (!Method || ComputedEST == EST_MSAny)
         return;
-      
+
       const FunctionProtoType *Proto
         = Method->getType()->getAs<FunctionProtoType>();
-      
+
+      ExceptionSpecificationType EST = Proto->getExceptionSpecType();
+
       // If this function can throw any exceptions, make a note of that.
-      if (!Proto->hasExceptionSpec() || Proto->hasAnyExceptionSpec()) {
-        AllowsAllExceptions = true;
-        ExceptionsSeen.clear();
-        Exceptions.clear();
+      if (EST == EST_MSAny || EST == EST_None) {
+        ClearExceptions();
+        ComputedEST = EST;
         return;
       }
-        
+
+      // If this function has a basic noexcept, it doesn't affect the outcome.
+      if (EST == EST_BasicNoexcept)
+        return;
+
+      // If we have a throw-all spec at this point, ignore the function.
+      if (ComputedEST == EST_None)
+        return;
+
+      // If we're still at noexcept(true) and there's a nothrow() callee,
+      // change to that specification.
+      if (EST == EST_DynamicNone) {
+        if (ComputedEST == EST_BasicNoexcept)
+          ComputedEST = EST_DynamicNone;
+        return;
+      }
+
+      // Check out noexcept specs.
+      if (EST == EST_ComputedNoexcept) {
+        FunctionProtoType::NoexceptResult NR = Proto->getNoexceptSpec();
+        assert(NR != FunctionProtoType::NR_NoNoexcept &&
+               "Must have noexcept result for EST_ComputedNoexcept.");
+        assert(NR != FunctionProtoType::NR_Dependent &&
+               "Should not generate implicit declarations for dependent cases, "
+               "and don't know how to handle them anyway.");
+
+        // noexcept(false) -> no spec on the new function
+        if (NR == FunctionProtoType::NR_Throw) {
+          ClearExceptions();
+          ComputedEST = EST_None;
+        }
+        // noexcept(true) won't change anything either.
+        return;
+      }
+
+      assert(EST == EST_Dynamic && "EST case not considered earlier.");
+      assert(ComputedEST != EST_None &&
+             "Shouldn't collect exceptions when throw-all is guaranteed.");
+      ComputedEST = EST_Dynamic;
       // Record the exceptions in this function's exception specification.
       for (FunctionProtoType::exception_iterator E = Proto->exception_begin(),
                                               EEnd = Proto->exception_end();
-           E != EEnd; ++E) 
+           E != EEnd; ++E)
         if (ExceptionsSeen.insert(Context.getCanonicalType(*E)))
           Exceptions.push_back(*E);
     }
@@ -3543,14 +3639,16 @@ Decl *Sema::ActOnConversionDeclarator(CXXConversionDecl *Conversion) {
 /// definition.
 Decl *Sema::ActOnStartNamespaceDef(Scope *NamespcScope,
                                    SourceLocation InlineLoc,
+                                   SourceLocation NamespaceLoc,
                                    SourceLocation IdentLoc,
                                    IdentifierInfo *II,
                                    SourceLocation LBrace,
                                    AttributeList *AttrList) {
-  // anonymous namespace starts at its left brace
+  SourceLocation StartLoc = InlineLoc.isValid() ? InlineLoc : NamespaceLoc;
+  // For anonymous namespace, take the location of the left brace.
+  SourceLocation Loc = II ? IdentLoc : LBrace;
   NamespaceDecl *Namespc = NamespaceDecl::Create(Context, CurContext,
-    (II ? IdentLoc : LBrace) , II);
-  Namespc->setLBracLoc(LBrace);
+                                                 StartLoc, Loc, II);
   Namespc->setInline(InlineLoc.isValid());
 
   Scope *DeclRegionScope = NamespcScope->getParent();
@@ -3709,7 +3807,7 @@ static inline NamespaceDecl *getNamespaceDecl(NamedDecl *D) {
 void Sema::ActOnFinishNamespaceDef(Decl *Dcl, SourceLocation RBrace) {
   NamespaceDecl *Namespc = dyn_cast_or_null<NamespaceDecl>(Dcl);
   assert(Namespc && "Invalid parameter, expected NamespaceDecl");
-  Namespc->setRBracLoc(RBrace);
+  Namespc->setRBraceLoc(RBrace);
   PopDeclContext();
   if (Namespc->hasAttr<VisibilityAttr>())
     PopPragmaVisibility();
@@ -3732,7 +3830,7 @@ NamespaceDecl *Sema::getOrCreateStdNamespace() {
     // The "std" namespace has not yet been defined, so build one implicitly.
     StdNamespace = NamespaceDecl::Create(Context, 
                                          Context.getTranslationUnitDecl(),
-                                         SourceLocation(),
+                                         SourceLocation(), SourceLocation(),
                                          &PP.getIdentifierTable().get("std"));
     getStdNamespace()->setImplicit(true);
   }
@@ -4664,7 +4762,7 @@ CXXConstructorDecl *Sema::DeclareImplicitDefaultConstructor(
   //   exception-specification. [...]
   ImplicitExceptionSpecification ExceptSpec(Context);
 
-  // Direct base-class destructors.
+  // Direct base-class constructors.
   for (CXXRecordDecl::base_class_iterator B = ClassDecl->bases_begin(),
                                        BEnd = ClassDecl->bases_end();
        B != BEnd; ++B) {
@@ -4680,8 +4778,8 @@ CXXConstructorDecl *Sema::DeclareImplicitDefaultConstructor(
         ExceptSpec.CalledDecl(Constructor);
     }
   }
-  
-  // Virtual base-class destructors.
+
+  // Virtual base-class constructors.
   for (CXXRecordDecl::base_class_iterator B = ClassDecl->vbases_begin(),
                                        BEnd = ClassDecl->vbases_end();
        B != BEnd; ++B) {
@@ -4694,8 +4792,8 @@ CXXConstructorDecl *Sema::DeclareImplicitDefaultConstructor(
         ExceptSpec.CalledDecl(Constructor);
     }
   }
-  
-  // Field destructors.
+
+  // Field constructors.
   for (RecordDecl::field_iterator F = ClassDecl->field_begin(),
                                FEnd = ClassDecl->field_end();
        F != FEnd; ++F) {
@@ -4712,19 +4810,19 @@ CXXConstructorDecl *Sema::DeclareImplicitDefaultConstructor(
   }
 
   FunctionProtoType::ExtProtoInfo EPI;
-  EPI.HasExceptionSpec = ExceptSpec.hasExceptionSpecification();
-  EPI.HasAnyExceptionSpec = ExceptSpec.hasAnyExceptionSpecification();
+  EPI.ExceptionSpecType = ExceptSpec.getExceptionSpecType();
   EPI.NumExceptions = ExceptSpec.size();
   EPI.Exceptions = ExceptSpec.data();
-  
+
   // Create the actual constructor declaration.
   CanQualType ClassType
     = Context.getCanonicalType(Context.getTypeDeclType(ClassDecl));
+  SourceLocation ClassLoc = ClassDecl->getLocation();
   DeclarationName Name
     = Context.DeclarationNames.getCXXConstructorName(ClassType);
-  DeclarationNameInfo NameInfo(Name, ClassDecl->getLocation());
+  DeclarationNameInfo NameInfo(Name, ClassLoc);
   CXXConstructorDecl *DefaultCon
-    = CXXConstructorDecl::Create(Context, ClassDecl, NameInfo,
+    = CXXConstructorDecl::Create(Context, ClassDecl, ClassLoc, NameInfo,
                                  Context.getFunctionType(Context.VoidTy,
                                                          0, 0, EPI),
                                  /*TInfo=*/0,
@@ -4920,15 +5018,16 @@ void Sema::DeclareInheritedConstructors(CXXRecordDecl *ClassDecl) {
         //   user-writtern inline constructor [...]
         DeclarationNameInfo DNI(CreatedCtorName, UsingLoc);
         CXXConstructorDecl *NewCtor = CXXConstructorDecl::Create(
-            Context, ClassDecl, DNI, QualType(NewCtorType, 0), /*TInfo=*/0,
-            BaseCtor->isExplicit(), /*Inline=*/true,
+            Context, ClassDecl, UsingLoc, DNI, QualType(NewCtorType, 0),
+            /*TInfo=*/0, BaseCtor->isExplicit(), /*Inline=*/true,
             /*ImplicitlyDeclared=*/true);
         NewCtor->setAccess(BaseCtor->getAccess());
 
         // Build up the parameter decls and add them.
         llvm::SmallVector<ParmVarDecl *, 16> ParamDecls;
         for (unsigned i = 0; i < params; ++i) {
-          ParamDecls.push_back(ParmVarDecl::Create(Context, NewCtor, UsingLoc,
+          ParamDecls.push_back(ParmVarDecl::Create(Context, NewCtor,
+                                                   UsingLoc, UsingLoc,
                                                    /*IdentifierInfo=*/0,
                                                    BaseCtorType->getArgType(i),
                                                    /*TInfo=*/0, SC_None,
@@ -4986,24 +5085,24 @@ CXXDestructorDecl *Sema::DeclareImplicitDestructor(CXXRecordDecl *ClassDecl) {
       ExceptSpec.CalledDecl(
                     LookupDestructor(cast<CXXRecordDecl>(RecordTy->getDecl())));
   }
-  
+
   // Create the actual destructor declaration.
   FunctionProtoType::ExtProtoInfo EPI;
-  EPI.HasExceptionSpec = ExceptSpec.hasExceptionSpecification();
-  EPI.HasAnyExceptionSpec = ExceptSpec.hasAnyExceptionSpecification();
+  EPI.ExceptionSpecType = ExceptSpec.getExceptionSpecType();
   EPI.NumExceptions = ExceptSpec.size();
   EPI.Exceptions = ExceptSpec.data();
   QualType Ty = Context.getFunctionType(Context.VoidTy, 0, 0, EPI);
-  
+
   CanQualType ClassType
     = Context.getCanonicalType(Context.getTypeDeclType(ClassDecl));
+  SourceLocation ClassLoc = ClassDecl->getLocation();
   DeclarationName Name
     = Context.DeclarationNames.getCXXDestructorName(ClassType);
-  DeclarationNameInfo NameInfo(Name, ClassDecl->getLocation());
+  DeclarationNameInfo NameInfo(Name, ClassLoc);
   CXXDestructorDecl *Destructor
-      = CXXDestructorDecl::Create(Context, ClassDecl, NameInfo, Ty, 0,
-                                /*isInline=*/true,
-                                /*isImplicitlyDeclared=*/true);
+      = CXXDestructorDecl::Create(Context, ClassDecl, ClassLoc, NameInfo, Ty, 0,
+                                  /*isInline=*/true,
+                                  /*isImplicitlyDeclared=*/true);
   Destructor->setAccess(AS_public);
   Destructor->setImplicit();
   Destructor->setTrivial(ClassDecl->hasTrivialDestructor());
@@ -5188,7 +5287,7 @@ BuildSingleCopyAssign(Sema &S, SourceLocation Loc, QualType T,
     OS << "__i" << Depth;
     IterationVarName = &S.Context.Idents.get(OS.str());
   }
-  VarDecl *IterationVar = VarDecl::Create(S.Context, S.CurContext, Loc,
+  VarDecl *IterationVar = VarDecl::Create(S.Context, S.CurContext, Loc, Loc,
                                           IterationVarName, SizeType,
                             S.Context.getTrivialTypeSourceInfo(SizeType, Loc),
                                           SC_None, SC_None);
@@ -5383,30 +5482,30 @@ CXXMethodDecl *Sema::DeclareImplicitCopyAssignment(CXXRecordDecl *ClassDecl) {
         ExceptSpec.CalledDecl(CopyAssign);      
     }      
   }
-  
+
   //   An implicitly-declared copy assignment operator is an inline public
   //   member of its class.
   FunctionProtoType::ExtProtoInfo EPI;
-  EPI.HasExceptionSpec = ExceptSpec.hasExceptionSpecification();
-  EPI.HasAnyExceptionSpec = ExceptSpec.hasAnyExceptionSpecification();
+  EPI.ExceptionSpecType = ExceptSpec.getExceptionSpecType();
   EPI.NumExceptions = ExceptSpec.size();
   EPI.Exceptions = ExceptSpec.data();
   DeclarationName Name = Context.DeclarationNames.getCXXOperatorName(OO_Equal);
-  DeclarationNameInfo NameInfo(Name, ClassDecl->getLocation());
+  SourceLocation ClassLoc = ClassDecl->getLocation();
+  DeclarationNameInfo NameInfo(Name, ClassLoc);
   CXXMethodDecl *CopyAssignment
-    = CXXMethodDecl::Create(Context, ClassDecl, NameInfo,
+    = CXXMethodDecl::Create(Context, ClassDecl, ClassLoc, NameInfo,
                             Context.getFunctionType(RetType, &ArgType, 1, EPI),
                             /*TInfo=*/0, /*isStatic=*/false,
                             /*StorageClassAsWritten=*/SC_None,
-                            /*isInline=*/true);
+                            /*isInline=*/true,
+                            SourceLocation());
   CopyAssignment->setAccess(AS_public);
   CopyAssignment->setImplicit();
   CopyAssignment->setTrivial(ClassDecl->hasTrivialCopyAssignment());
   
   // Add the parameter to the operator.
   ParmVarDecl *FromParam = ParmVarDecl::Create(Context, CopyAssignment,
-                                               ClassDecl->getLocation(),
-                                               /*Id=*/0,
+                                               ClassLoc, ClassLoc, /*Id=*/0,
                                                ArgType, /*TInfo=*/0,
                                                SC_None,
                                                SC_None, 0);
@@ -5845,20 +5944,20 @@ CXXConstructorDecl *Sema::DeclareImplicitCopyConstructor(
         ExceptSpec.CalledDecl(CopyConstructor);
     }
   }
-  
+
   //   An implicitly-declared copy constructor is an inline public
   //   member of its class.
   FunctionProtoType::ExtProtoInfo EPI;
-  EPI.HasExceptionSpec = ExceptSpec.hasExceptionSpecification();
-  EPI.HasAnyExceptionSpec = ExceptSpec.hasAnyExceptionSpecification();
+  EPI.ExceptionSpecType = ExceptSpec.getExceptionSpecType();
   EPI.NumExceptions = ExceptSpec.size();
   EPI.Exceptions = ExceptSpec.data();
   DeclarationName Name
     = Context.DeclarationNames.getCXXConstructorName(
                                            Context.getCanonicalType(ClassType));
-  DeclarationNameInfo NameInfo(Name, ClassDecl->getLocation());
+  SourceLocation ClassLoc = ClassDecl->getLocation();
+  DeclarationNameInfo NameInfo(Name, ClassLoc);
   CXXConstructorDecl *CopyConstructor
-    = CXXConstructorDecl::Create(Context, ClassDecl, NameInfo,
+    = CXXConstructorDecl::Create(Context, ClassDecl, ClassLoc, NameInfo,
                                  Context.getFunctionType(Context.VoidTy,
                                                          &ArgType, 1, EPI),
                                  /*TInfo=*/0,
@@ -5873,7 +5972,7 @@ CXXConstructorDecl *Sema::DeclareImplicitCopyConstructor(
   
   // Add the parameter to the constructor.
   ParmVarDecl *FromParam = ParmVarDecl::Create(Context, CopyConstructor,
-                                               ClassDecl->getLocation(),
+                                               ClassLoc, ClassLoc,
                                                /*IdentifierInfo=*/0,
                                                ArgType, /*TInfo=*/0,
                                                SC_None,
@@ -6578,7 +6677,7 @@ Decl *Sema::ActOnStartLinkageSpecification(Scope *S, SourceLocation ExternLoc,
   // FIXME: Add all the various semantics of linkage specifications
 
   LinkageSpecDecl *D = LinkageSpecDecl::Create(Context, CurContext,
-                                               LangLoc, Language);
+                                               ExternLoc, LangLoc, Language);
   CurContext->addDecl(D);
   PushDeclContext(S, D);
   return D;
@@ -6604,10 +6703,11 @@ Decl *Sema::ActOnFinishLinkageSpecification(Scope *S,
 /// \brief Perform semantic analysis for the variable declaration that
 /// occurs within a C++ catch clause, returning the newly-created
 /// variable.
-VarDecl *Sema::BuildExceptionDeclaration(Scope *S, 
+VarDecl *Sema::BuildExceptionDeclaration(Scope *S,
                                          TypeSourceInfo *TInfo,
-                                         IdentifierInfo *Name,
-                                         SourceLocation Loc) {
+                                         SourceLocation StartLoc,
+                                         SourceLocation Loc,
+                                         IdentifierInfo *Name) {
   bool Invalid = false;
   QualType ExDeclType = TInfo->getType();
   
@@ -6677,9 +6777,8 @@ VarDecl *Sema::BuildExceptionDeclaration(Scope *S,
     }
   }
 
-  VarDecl *ExDecl = VarDecl::Create(Context, CurContext, Loc,
-                                    Name, ExDeclType, TInfo, SC_None,
-                                    SC_None);
+  VarDecl *ExDecl = VarDecl::Create(Context, CurContext, StartLoc, Loc, Name,
+                                    ExDeclType, TInfo, SC_None, SC_None);
   ExDecl->setExceptionVariable(true);
   
   if (!Invalid) {
@@ -6762,9 +6861,9 @@ Decl *Sema::ActOnExceptionDeclarator(Scope *S, Declarator &D) {
   }
 
   VarDecl *ExDecl = BuildExceptionDeclaration(S, TInfo,
-                                              D.getIdentifier(),
-                                              D.getIdentifierLoc());
-
+                                              D.getSourceRange().getBegin(),
+                                              D.getIdentifierLoc(),
+                                              D.getIdentifier());
   if (Invalid)
     ExDecl->setInvalidDecl();
 
@@ -6778,21 +6877,23 @@ Decl *Sema::ActOnExceptionDeclarator(Scope *S, Declarator &D) {
   return ExDecl;
 }
 
-Decl *Sema::ActOnStaticAssertDeclaration(SourceLocation AssertLoc,
+Decl *Sema::ActOnStaticAssertDeclaration(SourceLocation StaticAssertLoc,
                                          Expr *AssertExpr,
-                                         Expr *AssertMessageExpr_) {
+                                         Expr *AssertMessageExpr_,
+                                         SourceLocation RParenLoc) {
   StringLiteral *AssertMessage = cast<StringLiteral>(AssertMessageExpr_);
 
   if (!AssertExpr->isTypeDependent() && !AssertExpr->isValueDependent()) {
     llvm::APSInt Value(32);
     if (!AssertExpr->isIntegerConstantExpr(Value, Context)) {
-      Diag(AssertLoc, diag::err_static_assert_expression_is_not_constant) <<
+      Diag(StaticAssertLoc,
+           diag::err_static_assert_expression_is_not_constant) <<
         AssertExpr->getSourceRange();
       return 0;
     }
 
     if (Value == 0) {
-      Diag(AssertLoc, diag::err_static_assert_failed)
+      Diag(StaticAssertLoc, diag::err_static_assert_failed)
         << AssertMessage->getString() << AssertExpr->getSourceRange();
     }
   }
@@ -6800,8 +6901,8 @@ Decl *Sema::ActOnStaticAssertDeclaration(SourceLocation AssertLoc,
   if (DiagnoseUnexpandedParameterPack(AssertExpr, UPPC_StaticAssertExpression))
     return 0;
 
-  Decl *Decl = StaticAssertDecl::Create(Context, CurContext, AssertLoc,
-                                        AssertExpr, AssertMessage);
+  Decl *Decl = StaticAssertDecl::Create(Context, CurContext, StaticAssertLoc,
+                                        AssertExpr, AssertMessage, RParenLoc);
 
   CurContext->addDecl(Decl);
   return Decl;
@@ -6890,10 +6991,12 @@ Decl *Sema::ActOnTemplatedFriendTag(Scope *S, SourceLocation FriendLoc,
       // This is a declaration of a class template.
       if (Invalid)
         return 0;
-        
+
       return CheckClassTemplate(S, TagSpec, TUK_Friend, TagLoc,
                                 SS, Name, NameLoc, Attr,
-                                TemplateParams, AS_public).take();
+                                TemplateParams, AS_public,
+                                NumMatchedTemplateParamLists,
+                   (TemplateParameterList**) TempParamLists.release()).take();
     } else {
       // The "template<>" header is extraneous.
       Diag(TemplateParams->getTemplateLoc(), diag::err_template_tag_noparams)
@@ -7419,10 +7522,14 @@ bool Sema::CheckOverridingFunctionReturnType(const CXXMethodDecl *New,
 ///
 /// \param InitRange the source range that covers the "0" initializer.
 bool Sema::CheckPureMethod(CXXMethodDecl *Method, SourceRange InitRange) {
+  SourceLocation EndLoc = InitRange.getEnd();
+  if (EndLoc.isValid())
+    Method->setRangeEnd(EndLoc);
+
   if (Method->isVirtual() || Method->getParent()->isDependentContext()) {
     Method->setPure();
     return false;
-  } 
+  }
 
   if (!Method->isInvalidDecl())
     Diag(Method->getLocation(), diag::err_non_virtual_pure)

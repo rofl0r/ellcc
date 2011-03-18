@@ -992,13 +992,21 @@ private:
 
   bool isTokIdentifier_in() const;
 
-  ParsedType ParseObjCTypeName(ObjCDeclSpec &DS, bool IsParameter);
+  /// \brief The context in which we are parsing an Objective-C type name.
+  enum ObjCTypeNameContext {
+    OTN_ResultType,
+    OTN_ParameterType
+  };
+  
+  ParsedType ParseObjCTypeName(ObjCDeclSpec &DS, ObjCTypeNameContext Context);
   void ParseObjCMethodRequirement();
   Decl *ParseObjCMethodPrototype(Decl *classOrCat,
-            tok::ObjCKeywordKind MethodImplKind = tok::objc_not_keyword);
+            tok::ObjCKeywordKind MethodImplKind = tok::objc_not_keyword,
+            bool MethodDefinition = true);
   Decl *ParseObjCMethodDecl(SourceLocation mLoc, tok::TokenKind mType,
                                 Decl *classDecl,
-            tok::ObjCKeywordKind MethodImplKind = tok::objc_not_keyword);
+            tok::ObjCKeywordKind MethodImplKind = tok::objc_not_keyword,
+            bool MethodDefinition=true);
   void ParseObjCPropertyAttribute(ObjCDeclSpec &DS, Decl *ClassDecl);
 
   Decl *ParseObjCMethodDefinition();
@@ -1035,10 +1043,10 @@ private:
   }
 
   ExprResult ParsePostfixExpressionSuffix(ExprResult LHS);
-  ExprResult ParseSizeofAlignofExpression();
+  ExprResult ParseUnaryExprOrTypeTraitExpression();
   ExprResult ParseBuiltinPrimaryExpression();
 
-  ExprResult ParseExprAfterTypeofSizeofAlignof(const Token &OpTok,
+  ExprResult ParseExprAfterUnaryExprOrTypeTrait(const Token &OpTok,
                                                      bool &isCastExpr,
                                                      ParsedType &CastTy,
                                                      SourceRange &CastRange);
@@ -1114,11 +1122,18 @@ private:
   //===--------------------------------------------------------------------===//
   // C++ 15: C++ Throw Expression
   ExprResult ParseThrowExpression();
+
+  ExceptionSpecificationType MaybeParseExceptionSpecification(
+                    SourceRange &SpecificationRange,
+                    llvm::SmallVectorImpl<ParsedType> &DynamicExceptions,
+                    llvm::SmallVectorImpl<SourceRange> &DynamicExceptionRanges,
+                    ExprResult &NoexceptExpr);
+
   // EndLoc is filled with the location of the last token of the specification.
-  bool ParseExceptionSpecification(SourceLocation &EndLoc,
-                                   llvm::SmallVectorImpl<ParsedType> &Exns,
-                                   llvm::SmallVectorImpl<SourceRange> &Ranges,
-                                   bool &hasAnyExceptionSpec);
+  ExceptionSpecificationType ParseDynamicExceptionSpecification(
+                                  SourceRange &SpecificationRange,
+                                  llvm::SmallVectorImpl<ParsedType> &Exceptions,
+                                  llvm::SmallVectorImpl<SourceRange> &Ranges);
 
   //===--------------------------------------------------------------------===//
   // C++0x 8: Function declaration trailing-return-type
@@ -1296,7 +1311,8 @@ private:
 
   void ParseSpecifierQualifierList(DeclSpec &DS);
 
-  void ParseObjCTypeQualifierList(ObjCDeclSpec &DS, bool IsParameter);
+  void ParseObjCTypeQualifierList(ObjCDeclSpec &DS, 
+                                  ObjCTypeNameContext Context);
 
   void ParseEnumSpecifier(SourceLocation TagLoc, DeclSpec &DS,
                 const ParsedTemplateInfo &TemplateInfo = ParsedTemplateInfo(),

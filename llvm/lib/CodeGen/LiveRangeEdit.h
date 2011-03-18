@@ -29,9 +29,24 @@ class MachineRegisterInfo;
 class VirtRegMap;
 
 class LiveRangeEdit {
+public:
+  /// Callback methods for LiveRangeEdit owners.
+  struct Delegate {
+    /// Called immediately before erasing a dead machine instruction.
+    virtual void LRE_WillEraseInstruction(MachineInstr *MI) {}
+
+    /// Called when a virtual register is no longer used. Return false to defer
+    /// its deletion from LiveIntervals.
+    virtual bool LRE_CanEraseVirtReg(unsigned) { return true; }
+
+    virtual ~Delegate() {}
+  };
+
+private:
   LiveInterval &parent_;
   SmallVectorImpl<LiveInterval*> &newRegs_;
-  const SmallVectorImpl<LiveInterval*> &uselessRegs_;
+  Delegate *const delegate_;
+  const SmallVectorImpl<LiveInterval*> *uselessRegs_;
 
   /// firstNew_ - Index of the first register added to newRegs_.
   const unsigned firstNew_;
@@ -66,9 +81,13 @@ public:
   ///        rematerializing values because they are about to be removed.
   LiveRangeEdit(LiveInterval &parent,
                 SmallVectorImpl<LiveInterval*> &newRegs,
-                const SmallVectorImpl<LiveInterval*> &uselessRegs)
-    : parent_(parent), newRegs_(newRegs), uselessRegs_(uselessRegs),
-      firstNew_(newRegs.size()), scannedRemattable_(false) {}
+                Delegate *delegate = 0,
+                const SmallVectorImpl<LiveInterval*> *uselessRegs = 0)
+    : parent_(parent), newRegs_(newRegs),
+      delegate_(delegate),
+      uselessRegs_(uselessRegs),
+      firstNew_(newRegs.size()),
+      scannedRemattable_(false) {}
 
   LiveInterval &getParent() const { return parent_; }
   unsigned getReg() const { return parent_.reg; }
@@ -81,13 +100,20 @@ public:
   bool empty() const { return size() == 0; }
   LiveInterval *get(unsigned idx) const { return newRegs_[idx+firstNew_]; }
 
+  /// FIXME: Temporary accessors until we can get rid of
+  /// LiveIntervals::AddIntervalsForSpills
+  SmallVectorImpl<LiveInterval*> *getNewVRegs() { return &newRegs_; }
+  const SmallVectorImpl<LiveInterval*> *getUselessVRegs() {
+    return uselessRegs_;
+  }
+
   /// create - Create a new register with the same class and stack slot as
   /// parent.
   LiveInterval &create(MachineRegisterInfo&, LiveIntervals&, VirtRegMap&);
 
   /// anyRematerializable - Return true if any parent values may be
   /// rematerializable.
-  /// This function must be called before ny rematerialization is attempted.
+  /// This function must be called before any rematerialization is attempted.
   bool anyRematerializable(LiveIntervals&, const TargetInstrInfo&,
                            AliasAnalysis*);
 
@@ -128,6 +154,18 @@ public:
   bool didRematerialize(const VNInfo *ParentVNI) const {
     return rematted_.count(ParentVNI);
   }
+
+  /// eraseVirtReg - Notify the delegate that Reg is no longer in use, and try
+  /// to erase it from LIS.
+  void eraseVirtReg(unsigned Reg, LiveIntervals &LIS);
+
+  /// eliminateDeadDefs - Try to delete machine instructions that are now dead
+  /// (allDefsAreDead returns true). This may cause live intervals to be trimmed
+  /// and further dead efs to be eliminated.
+  void eliminateDeadDefs(SmallVectorImpl<MachineInstr*> &Dead,
+                         LiveIntervals&,
+                         const TargetInstrInfo&);
+
 };
 
 }

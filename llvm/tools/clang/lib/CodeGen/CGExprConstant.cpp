@@ -56,9 +56,9 @@ private:
   void AppendBitField(const FieldDecl *Field, uint64_t FieldOffset,
                       llvm::ConstantInt *InitExpr);
 
-  void AppendPadding(uint64_t NumBytes);
+  void AppendPadding(CharUnits PadSize);
 
-  void AppendTailPadding(uint64_t RecordSize);
+  void AppendTailPadding(CharUnits RecordSize);
 
   void ConvertStructToPacked();
                               
@@ -99,7 +99,8 @@ AppendField(const FieldDecl *Field, uint64_t FieldOffset,
 
   if (AlignedNextFieldOffsetInBytes < FieldOffsetInBytes) {
     // We need to append padding.
-    AppendPadding(FieldOffsetInBytes - NextFieldOffsetInBytes);
+    AppendPadding(
+        CharUnits::fromQuantity(FieldOffsetInBytes - NextFieldOffsetInBytes));
 
     assert(NextFieldOffsetInBytes == FieldOffsetInBytes &&
            "Did not add enough padding!");
@@ -123,17 +124,18 @@ AppendField(const FieldDecl *Field, uint64_t FieldOffset,
 void ConstStructBuilder::AppendBitField(const FieldDecl *Field,
                                         uint64_t FieldOffset,
                                         llvm::ConstantInt *CI) {
+  const ASTContext &Context = CGM.getContext();
   if (FieldOffset > NextFieldOffsetInBytes * 8) {
     // We need to add padding.
-    uint64_t NumBytes =
-      llvm::RoundUpToAlignment(FieldOffset -
-                               NextFieldOffsetInBytes * 8, 8) / 8;
+    CharUnits PadSize = Context.toCharUnitsFromBits(
+      llvm::RoundUpToAlignment(FieldOffset - NextFieldOffsetInBytes * 8, 
+                               Context.Target.getCharAlign()));
 
-    AppendPadding(NumBytes);
+    AppendPadding(PadSize);
   }
 
   uint64_t FieldSize =
-    Field->getBitWidth()->EvaluateAsInt(CGM.getContext()).getZExtValue();
+    Field->getBitWidth()->EvaluateAsInt(Context).getZExtValue();
 
   llvm::APInt FieldValue = CI->getValue();
 
@@ -212,8 +214,8 @@ void ConstStructBuilder::AppendBitField(const FieldDecl *Field,
         Elements.pop_back();
         
         // Add the padding back in two chunks.
-        AppendPadding(AT->getNumElements()-1);
-        AppendPadding(1);
+        AppendPadding(CharUnits::fromQuantity(AT->getNumElements()-1));
+        AppendPadding(CharUnits::One());
         assert(isa<llvm::UndefValue>(Elements.back()) &&
                Elements.back()->getType()->isIntegerTy(8) &&
                "Padding addition didn't work right");
@@ -265,13 +267,13 @@ void ConstStructBuilder::AppendBitField(const FieldDecl *Field,
   NextFieldOffsetInBytes++;
 }
 
-void ConstStructBuilder::AppendPadding(uint64_t NumBytes) {
-  if (!NumBytes)
+void ConstStructBuilder::AppendPadding(CharUnits PadSize) {
+  if (PadSize.isZero())
     return;
 
   const llvm::Type *Ty = llvm::Type::getInt8Ty(CGM.getLLVMContext());
-  if (NumBytes > 1)
-    Ty = llvm::ArrayType::get(Ty, NumBytes);
+  if (PadSize > CharUnits::One())
+    Ty = llvm::ArrayType::get(Ty, PadSize.getQuantity());
 
   llvm::Constant *C = llvm::UndefValue::get(Ty);
   Elements.push_back(C);
@@ -280,14 +282,11 @@ void ConstStructBuilder::AppendPadding(uint64_t NumBytes) {
   NextFieldOffsetInBytes += getSizeInBytes(C);
 }
 
-void ConstStructBuilder::AppendTailPadding(uint64_t RecordSize) {
-  assert(RecordSize % 8 == 0 && "Invalid record size!");
+void ConstStructBuilder::AppendTailPadding(CharUnits RecordSize) {
+  assert(NextFieldOffsetInBytes <= RecordSize.getQuantity() && 
+         "Size mismatch!");
 
-  uint64_t RecordSizeInBytes = RecordSize / 8;
-  assert(NextFieldOffsetInBytes <= RecordSizeInBytes && "Size mismatch!");
-
-  unsigned NumPadBytes = RecordSizeInBytes - NextFieldOffsetInBytes;
-  AppendPadding(NumPadBytes);
+  AppendPadding(RecordSize - CharUnits::fromQuantity(NextFieldOffsetInBytes));
 }
 
 void ConstStructBuilder::ConvertStructToPacked() {
@@ -394,7 +393,7 @@ bool ConstStructBuilder::Build(InitListExpr *ILE) {
   }
 
   // Append tail padding if necessary.
-  AppendTailPadding(CGM.getContext().toBits(Layout.getSize()));
+  AppendTailPadding(Layout.getSize());
 
   assert(Layout.getSize().getQuantity() == NextFieldOffsetInBytes &&
          "Tail padding mismatch!");

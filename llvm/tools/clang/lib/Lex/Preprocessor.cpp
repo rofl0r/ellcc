@@ -278,7 +278,6 @@ void Preprocessor::CodeCompleteNaturalLanguage() {
     CodeComplete->CodeCompleteNaturalLanguage();
 }
 
-
 /// getSpelling - This method is used to get the spelling of a token into a
 /// SmallVector. Note that the returned StringRef may not point to the
 /// supplied buffer if a copy can be avoided.

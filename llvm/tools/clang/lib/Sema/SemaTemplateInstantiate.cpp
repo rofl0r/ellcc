@@ -95,6 +95,12 @@ Sema::getTemplateInstantiationArgs(NamedDecl *D,
         assert(Function->getPrimaryTemplate() && "No function template?");
         if (Function->getPrimaryTemplate()->isMemberSpecialization())
           break;
+      } else if (FunctionTemplateDecl *FunTmpl
+                                   = Function->getDescribedFunctionTemplate()) {
+        // Add the "injected" template arguments.
+        std::pair<const TemplateArgument *, unsigned>
+          Injected = FunTmpl->getInjectedTemplateArgs();
+        Result.addOuterTemplateArguments(Injected.first, Injected.second);
       }
       
       // If this is a friend declaration and it declares an entity at
@@ -718,8 +724,9 @@ namespace {
     /// as an instantiated local.
     VarDecl *RebuildExceptionDecl(VarDecl *ExceptionDecl, 
                                   TypeSourceInfo *Declarator,
-                                  IdentifierInfo *Name,
-                                  SourceLocation Loc);
+                                  SourceLocation StartLoc,
+                                  SourceLocation NameLoc,
+                                  IdentifierInfo *Name);
 
     /// \brief Rebuild the Objective-C exception declaration and register the 
     /// declaration as an instantiated local.
@@ -874,10 +881,11 @@ TemplateInstantiator::TransformFirstQualifierInScope(NamedDecl *D,
 VarDecl *
 TemplateInstantiator::RebuildExceptionDecl(VarDecl *ExceptionDecl,
                                            TypeSourceInfo *Declarator,
-                                           IdentifierInfo *Name,
-                                           SourceLocation Loc) {
+                                           SourceLocation StartLoc,
+                                           SourceLocation NameLoc,
+                                           IdentifierInfo *Name) {
   VarDecl *Var = inherited::RebuildExceptionDecl(ExceptionDecl, Declarator,
-                                                 Name, Loc);
+                                                 StartLoc, NameLoc, Name);
   if (Var)
     getSema().CurrentInstantiationScope->InstantiatedLocal(ExceptionDecl, Var);
   return Var;
@@ -961,6 +969,13 @@ TemplateName TemplateInstantiator::TransformTemplateName(CXXScopeSpec &SS,
       TemplateName Template = Arg.getAsTemplate();
       assert(!Template.isNull() && Template.getAsTemplateDecl() &&
              "Wrong kind of template template argument");
+      
+      // We don't ever want to substitute for a qualified template name, since
+      // the qualifier is handled separately. So, look through the qualified
+      // template name to its underlying declaration.
+      if (QualifiedTemplateName *QTN = Template.getAsQualifiedTemplateName())
+        Template = TemplateName(QTN->getTemplateDecl());
+          
       return Template;
     }
   }
@@ -1438,9 +1453,10 @@ ParmVarDecl *Sema::SubstParmVarDecl(ParmVarDecl *OldParm,
   }
 
   ParmVarDecl *NewParm = CheckParameter(Context.getTranslationUnitDecl(),
-                                        NewDI, NewDI->getType(),
-                                        OldParm->getIdentifier(),
+                                        OldParm->getInnerLocStart(),
                                         OldParm->getLocation(),
+                                        OldParm->getIdentifier(),
+                                        NewDI->getType(), NewDI,
                                         OldParm->getStorageClass(),
                                         OldParm->getStorageClassAsWritten());
   if (!NewParm)

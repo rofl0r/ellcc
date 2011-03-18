@@ -25,7 +25,6 @@
 #include "llvm/Support/ValueHandle.h"
 #include "CodeGenModule.h"
 #include "CGBuilder.h"
-#include "CGCall.h"
 #include "CGValue.h"
 
 namespace llvm {
@@ -944,6 +943,7 @@ public:
                                       const VarDecl *V);
 private:
   CGDebugInfo *DebugInfo;
+  bool DisableDebugInfo;
 
   /// IndirectBranch - The first time an indirect goto is seen we create a block
   /// with an indirect branch.  Every time we see the address of a label taken,
@@ -1030,7 +1030,14 @@ public:
 
   CodeGenTypes &getTypes() const { return CGM.getTypes(); }
   ASTContext &getContext() const;
-  CGDebugInfo *getDebugInfo() { return DebugInfo; }
+  CGDebugInfo *getDebugInfo() { 
+    if (DisableDebugInfo) 
+      return NULL;
+    return DebugInfo; 
+  }
+  void disableDebugInfo() { DisableDebugInfo = true; }
+  void enableDebugInfo() { DisableDebugInfo = false; }
+
 
   const LangOptions &getLangOptions() const { return CGM.getLangOptions(); }
 
@@ -1122,9 +1129,11 @@ public:
   llvm::Value *GetAddrOfBlockDecl(const VarDecl *var, bool ByRef);
   const llvm::Type *BuildByRefType(const VarDecl *var);
 
-  void GenerateCode(GlobalDecl GD, llvm::Function *Fn);
+  void GenerateCode(GlobalDecl GD, llvm::Function *Fn,
+                    const CGFunctionInfo &FnInfo);
   void StartFunction(GlobalDecl GD, QualType RetTy,
                      llvm::Function *Fn,
+                     const CGFunctionInfo &FnInfo,
                      const FunctionArgList &Args,
                      SourceLocation StartLoc);
 
@@ -1141,7 +1150,8 @@ public:
   void FinishFunction(SourceLocation EndLoc=SourceLocation());
 
   /// GenerateThunk - Generate a thunk for the given method.
-  void GenerateThunk(llvm::Function *Fn, GlobalDecl GD, const ThunkInfo &Thunk);
+  void GenerateThunk(llvm::Function *Fn, const CGFunctionInfo &FnInfo,
+                     GlobalDecl GD, const ThunkInfo &Thunk);
 
   void EmitCtorPrologue(const CXXConstructorDecl *CD, CXXCtorType Type,
                         FunctionArgList &Args);
@@ -1353,11 +1363,17 @@ public:
   /// always be accessible even if no aggregate location is provided.
   RValue EmitAnyExprToTemp(const Expr *E);
 
-  /// EmitsAnyExprToMem - Emits the code necessary to evaluate an
+  /// EmitAnyExprToMem - Emits the code necessary to evaluate an
   /// arbitrary expression into the given memory location.
   void EmitAnyExprToMem(const Expr *E, llvm::Value *Location,
                         bool IsLocationVolatile,
                         bool IsInitializer);
+
+  /// EmitExprAsInit - Emits the code necessary to initialize a
+  /// location in memory with the given initializer.
+  void EmitExprAsInit(const Expr *init, const VarDecl *var,
+                      llvm::Value *loc, CharUnits alignment,
+                      bool capturedByInit);
 
   /// EmitAggregateCopy - Emit an aggrate copy.
   ///
@@ -2022,7 +2038,8 @@ public:
                                  const std::vector<std::pair<llvm::WeakVH,
                                    llvm::Constant*> > &DtorsAndObjects);
 
-  void GenerateCXXGlobalVarDeclInitFunc(llvm::Function *Fn, const VarDecl *D,
+  void GenerateCXXGlobalVarDeclInitFunc(llvm::Function *Fn,
+                                        const VarDecl *D,
                                         llvm::GlobalVariable *Addr);
 
   void EmitCXXConstructExpr(const CXXConstructExpr *E, AggValueSlot Dest);
@@ -2070,12 +2087,12 @@ public:
   llvm::BasicBlock *getTrapBB();
 
   /// EmitCallArg - Emit a single call argument.
-  RValue EmitCallArg(const Expr *E, QualType ArgType);
+  void EmitCallArg(CallArgList &args, const Expr *E, QualType ArgType);
 
   /// EmitDelegateCallArg - We are performing a delegate call; that
   /// is, the current function is delegating to another one.  Produce
   /// a r-value suitable for passing the given parameter.
-  RValue EmitDelegateCallArg(const VarDecl *Param);
+  void EmitDelegateCallArg(CallArgList &args, const VarDecl *param);
 
 private:
   void EmitReturnOfRValue(RValue RV, QualType Ty);
@@ -2140,8 +2157,7 @@ private:
                getContext().getCanonicalType(ActualArgType).getTypePtr() &&
                "type mismatch in call argument!");
 #endif
-        Args.push_back(std::make_pair(EmitCallArg(*Arg, ArgType),
-                                      ArgType));
+        EmitCallArg(Args, *Arg, ArgType);
       }
 
       // Either we've emitted all the call args, or we have a call to a
@@ -2152,11 +2168,8 @@ private:
     }
 
     // If we still have any arguments, emit them using the type of the argument.
-    for (; Arg != ArgEnd; ++Arg) {
-      QualType ArgType = Arg->getType();
-      Args.push_back(std::make_pair(EmitCallArg(*Arg, ArgType),
-                                    ArgType));
-    }
+    for (; Arg != ArgEnd; ++Arg)
+      EmitCallArg(Args, *Arg, Arg->getType());
   }
 
   const TargetCodeGenInfo &getTargetHooks() const {

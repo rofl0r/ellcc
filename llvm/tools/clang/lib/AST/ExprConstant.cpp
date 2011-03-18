@@ -290,7 +290,8 @@ public:
   bool VisitFloatingLiteral(FloatingLiteral *E) { return false; }
   bool VisitStringLiteral(StringLiteral *E) { return false; }
   bool VisitCharacterLiteral(CharacterLiteral *E) { return false; }
-  bool VisitSizeOfAlignOfExpr(SizeOfAlignOfExpr *E) { return false; }
+  bool VisitUnaryExprOrTypeTraitExpr(UnaryExprOrTypeTraitExpr *E)
+    { return false; }
   bool VisitArraySubscriptExpr(ArraySubscriptExpr *E)
     { return Visit(E->getLHS()) || Visit(E->getRHS()); }
   bool VisitChooseExpr(ChooseExpr *E)
@@ -953,6 +954,11 @@ public:
     return true;
   }
 
+  bool Success(CharUnits Size, const Expr *E) {
+    return Success(Size.getQuantity(), E);
+  }
+
+
   bool Error(SourceLocation L, diag::kind D, const Expr *E) {
     // Take the first error.
     if (Info.EvalResult.Diag == 0) {
@@ -1015,7 +1021,7 @@ public:
   bool VisitBinaryConditionalOperator(const BinaryConditionalOperator *E);
 
   bool VisitCastExpr(CastExpr* E);
-  bool VisitSizeOfAlignOfExpr(const SizeOfAlignOfExpr *E);
+  bool VisitUnaryExprOrTypeTraitExpr(const UnaryExprOrTypeTraitExpr *E);
 
   bool VisitCXXBoolLiteralExpr(const CXXBoolLiteralExpr *E) {
     return Success(E->getValue(), E);
@@ -1213,7 +1219,7 @@ bool IntExprEvaluator::TryEvaluateBuiltinObjectSize(CallExpr *E) {
     Size -= Offset;
   else
     Size = CharUnits::Zero();
-  return Success(Size.getQuantity(), E);
+  return Success(Size, E);
 }
 
 bool IntExprEvaluator::VisitCallExpr(CallExpr *E) {
@@ -1596,36 +1602,59 @@ CharUnits IntExprEvaluator::GetAlignOfExpr(const Expr *E) {
 }
 
 
-/// VisitSizeAlignOfExpr - Evaluate a sizeof or alignof with a result as the
-/// expression's type.
-bool IntExprEvaluator::VisitSizeOfAlignOfExpr(const SizeOfAlignOfExpr *E) {
-  // Handle alignof separately.
-  if (!E->isSizeOf()) {
+/// VisitUnaryExprOrTypeTraitExpr - Evaluate a sizeof, alignof or vec_step with
+/// a result as the expression's type.
+bool IntExprEvaluator::VisitUnaryExprOrTypeTraitExpr(
+                                    const UnaryExprOrTypeTraitExpr *E) {
+  switch(E->getKind()) {
+  case UETT_AlignOf: {
     if (E->isArgumentType())
-      return Success(GetAlignOfType(E->getArgumentType()).getQuantity(), E);
+      return Success(GetAlignOfType(E->getArgumentType()), E);
     else
-      return Success(GetAlignOfExpr(E->getArgumentExpr()).getQuantity(), E);
+      return Success(GetAlignOfExpr(E->getArgumentExpr()), E);
   }
 
-  QualType SrcTy = E->getTypeOfArgument();
-  // C++ [expr.sizeof]p2: "When applied to a reference or a reference type,
-  //   the result is the size of the referenced type."
-  // C++ [expr.alignof]p3: "When alignof is applied to a reference type, the
-  //   result shall be the alignment of the referenced type."
-  if (const ReferenceType *Ref = SrcTy->getAs<ReferenceType>())
-    SrcTy = Ref->getPointeeType();
+  case UETT_VecStep: {
+    QualType Ty = E->getTypeOfArgument();
 
-  // sizeof(void), __alignof__(void), sizeof(function) = 1 as a gcc
-  // extension.
-  if (SrcTy->isVoidType() || SrcTy->isFunctionType())
-    return Success(1, E);
+    if (Ty->isVectorType()) {
+      unsigned n = Ty->getAs<VectorType>()->getNumElements();
 
-  // sizeof(vla) is not a constantexpr: C99 6.5.3.4p2.
-  if (!SrcTy->isConstantSizeType())
-    return false;
+      // The vec_step built-in functions that take a 3-component
+      // vector return 4. (OpenCL 1.1 spec 6.11.12)
+      if (n == 3)
+        n = 4;
 
-  // Get information about the size.
-  return Success(Info.Ctx.getTypeSizeInChars(SrcTy).getQuantity(), E);
+      return Success(n, E);
+    } else
+      return Success(1, E);
+  }
+
+  case UETT_SizeOf: {
+    QualType SrcTy = E->getTypeOfArgument();
+    // C++ [expr.sizeof]p2: "When applied to a reference or a reference type,
+    //   the result is the size of the referenced type."
+    // C++ [expr.alignof]p3: "When alignof is applied to a reference type, the
+    //   result shall be the alignment of the referenced type."
+    if (const ReferenceType *Ref = SrcTy->getAs<ReferenceType>())
+      SrcTy = Ref->getPointeeType();
+
+    // sizeof(void), __alignof__(void), sizeof(function) = 1 as a gcc
+    // extension.
+    if (SrcTy->isVoidType() || SrcTy->isFunctionType())
+      return Success(1, E);
+
+    // sizeof(vla) is not a constantexpr: C99 6.5.3.4p2.
+    if (!SrcTy->isConstantSizeType())
+      return false;
+
+    // Get information about the size.
+    return Success(Info.Ctx.getTypeSizeInChars(SrcTy), E);
+  }
+  }
+
+  llvm_unreachable("unknown expr/type trait");
+  return false;
 }
 
 bool IntExprEvaluator::VisitOffsetOfExpr(const OffsetOfExpr *E) {
@@ -1694,7 +1723,7 @@ bool IntExprEvaluator::VisitOffsetOfExpr(const OffsetOfExpr *E) {
     }
     }
   }
-  return Success(Result.getQuantity(), E);
+  return Success(Result, E);
 }
 
 bool IntExprEvaluator::VisitUnaryOperator(const UnaryOperator *E) {
@@ -2879,9 +2908,10 @@ static ICEDiag CheckICE(const Expr* E, ASTContext &Ctx) {
       // are ICEs, the value of the offsetof must be an integer constant.
       return CheckEvalInICE(E, Ctx);
   }
-  case Expr::SizeOfAlignOfExprClass: {
-    const SizeOfAlignOfExpr *Exp = cast<SizeOfAlignOfExpr>(E);
-    if (Exp->isSizeOf() && Exp->getTypeOfArgument()->isVariableArrayType())
+  case Expr::UnaryExprOrTypeTraitExprClass: {
+    const UnaryExprOrTypeTraitExpr *Exp = cast<UnaryExprOrTypeTraitExpr>(E);
+    if ((Exp->getKind() ==  UETT_SizeOf) &&
+        Exp->getTypeOfArgument()->isVariableArrayType())
       return ICEDiag(2, E->getLocStart());
     return NoDiag();
   }

@@ -24,6 +24,7 @@
 #include "clang/Sema/Ownership.h"
 #include "clang/AST/NestedNameSpecifier.h"
 #include "clang/Lex/Token.h"
+#include "clang/Basic/ExceptionSpecificationType.h"
 #include "clang/Basic/OperatorKinds.h"
 #include "clang/Basic/Specifiers.h"
 #include "llvm/ADT/SmallVector.h"
@@ -1019,11 +1020,8 @@ struct DeclaratorChunk {
     /// The qualifier bitmask values are the same as in QualType.
     unsigned TypeQuals : 3;
 
-    /// hasExceptionSpec - True if the function has an exception specification.
-    unsigned hasExceptionSpec : 1;
-
-    /// hasAnyExceptionSpec - True if the function has a throw(...) specifier.
-    unsigned hasAnyExceptionSpec : 1;
+    /// ExceptionSpecType - An ExceptionSpecificationType value.
+    unsigned ExceptionSpecType : 3;
 
     /// DeleteArgInfo - If this is true, we need to delete[] ArgInfo.
     unsigned DeleteArgInfo : 1;
@@ -1035,28 +1033,34 @@ struct DeclaratorChunk {
     /// declarator.
     unsigned NumArgs;
 
-    /// NumExceptions - This is the number of types in the exception-decl, if
-    /// the function has one.
+    /// NumExceptions - This is the number of types in the dynamic-exception-
+    /// decl, if the function has one.
     unsigned NumExceptions;
 
     /// \brief The location of the ref-qualifier, if any.
     ///
     /// If this is an invalid location, there is no ref-qualifier.
     unsigned RefQualifierLoc;
-    
-    /// ThrowLoc - When hasExceptionSpec is true, the location of the throw
+
+    /// \brief When ExceptionSpecType isn't EST_None, the location of the
     /// keyword introducing the spec.
-    unsigned ThrowLoc;
+    unsigned ExceptionSpecLoc;
 
     /// ArgInfo - This is a pointer to a new[]'d array of ParamInfo objects that
     /// describe the arguments for this function declarator.  This is null if
     /// there are no arguments specified.
     ParamInfo *ArgInfo;
 
-    /// Exceptions - This is a pointer to a new[]'d array of TypeAndRange
-    /// objects that contain the types in the function's exception
-    /// specification and their locations.
-    TypeAndRange *Exceptions;
+    union {
+      /// \brief Pointer to a new[]'d array of TypeAndRange objects that
+      /// contain the types in the function's dynamic exception specification
+      /// and their locations, if there is one.
+      TypeAndRange *Exceptions;
+
+      /// \brief Pointer to the expression in the noexcept-specifier of this
+      /// function, if it has one.
+      Expr *NoexceptExpr;
+    };
 
     /// TrailingReturnType - If this isn't null, it's the trailing return type
     /// specified. This is actually a ParsedType, but stored as void* to
@@ -1076,7 +1080,8 @@ struct DeclaratorChunk {
     void destroy() {
       if (DeleteArgInfo)
         delete[] ArgInfo;
-      delete[] Exceptions;
+      if (getExceptionSpecType() == EST_Dynamic)
+        delete[] Exceptions;
     }
 
     /// isKNRPrototype - Return true if this is a K&R style identifier list,
@@ -1089,18 +1094,23 @@ struct DeclaratorChunk {
     SourceLocation getEllipsisLoc() const {
       return SourceLocation::getFromRawEncoding(EllipsisLoc);
     }
-    SourceLocation getThrowLoc() const {
-      return SourceLocation::getFromRawEncoding(ThrowLoc);
+    SourceLocation getExceptionSpecLoc() const {
+      return SourceLocation::getFromRawEncoding(ExceptionSpecLoc);
     }
-    
+
     /// \brief Retrieve the location of the ref-qualifier, if any.
     SourceLocation getRefQualifierLoc() const {
       return SourceLocation::getFromRawEncoding(RefQualifierLoc);
     }
-    
+
     /// \brief Determine whether this function declaration contains a 
     /// ref-qualifier.
     bool hasRefQualifier() const { return getRefQualifierLoc().isValid(); }
+
+    /// \brief Get the type of exception specification this function has.
+    ExceptionSpecificationType getExceptionSpecType() const {
+      return static_cast<ExceptionSpecificationType>(ExceptionSpecType);
+    }
   };
 
   struct BlockPointerTypeInfo : TypeInfoCommon {
@@ -1224,15 +1234,17 @@ struct DeclaratorChunk {
                                      unsigned TypeQuals, 
                                      bool RefQualifierIsLvalueRef,
                                      SourceLocation RefQualifierLoc,
-                                     bool hasExceptionSpec,
-                                     SourceLocation ThrowLoc,
-                                     bool hasAnyExceptionSpec,
+                                     ExceptionSpecificationType ESpecType,
+                                     SourceLocation ESpecLoc,
                                      ParsedType *Exceptions,
                                      SourceRange *ExceptionRanges,
                                      unsigned NumExceptions,
-                                     SourceLocation LPLoc, SourceLocation RPLoc,
+                                     Expr *NoexceptExpr,
+                                     SourceLocation LocalRangeBegin,
+                                     SourceLocation LocalRangeEnd,
                                      Declarator &TheDeclarator,
-                                     ParsedType TrailingReturnType = ParsedType());
+                                     ParsedType TrailingReturnType =
+                                                    ParsedType());
 
   /// getBlockPointer - Return a DeclaratorChunk for a block.
   ///
@@ -1638,10 +1650,13 @@ public:
 
   static const char *getSpecifierName(Specifier VS);
 
+  SourceLocation getLastLocation() const { return LastLocation; }
+  
 private:
   unsigned Specifiers;
 
   SourceLocation VS_overrideLoc, VS_finalLoc, VS_newLoc;
+  SourceLocation LastLocation;
 };
 
 /// ClassVirtSpecifiers - Represents a C++0x class-virt-specifier-seq.

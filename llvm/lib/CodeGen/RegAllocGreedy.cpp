@@ -56,7 +56,10 @@ static RegisterRegAlloc greedyRegAlloc("greedy", "greedy register allocator",
                                        createGreedyRegisterAllocator);
 
 namespace {
-class RAGreedy : public MachineFunctionPass, public RegAllocBase {
+class RAGreedy : public MachineFunctionPass,
+                 public RegAllocBase,
+                 private LiveRangeEdit::Delegate {
+
   // context
   MachineFunction *MF;
   BitVector ReservedRegs;
@@ -157,6 +160,9 @@ public:
   static char ID;
 
 private:
+  void LRE_WillEraseInstruction(MachineInstr*);
+  bool LRE_CanEraseVirtReg(unsigned);
+
   bool checkUncachedInterference(LiveInterval&, unsigned);
   LiveInterval *getSingleInterference(LiveInterval&, unsigned);
   bool reassignVReg(LiveInterval &InterferingVReg, unsigned OldPhysReg);
@@ -232,6 +238,26 @@ void RAGreedy::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addRequired<EdgeBundles>();
   AU.addRequired<SpillPlacement>();
   MachineFunctionPass::getAnalysisUsage(AU);
+}
+
+
+//===----------------------------------------------------------------------===//
+//                     LiveRangeEdit delegate methods
+//===----------------------------------------------------------------------===//
+
+void RAGreedy::LRE_WillEraseInstruction(MachineInstr *MI) {
+  // LRE itself will remove from SlotIndexes and parent basic block.
+  VRM->RemoveMachineInstrFromMaps(MI);
+}
+
+bool RAGreedy::LRE_CanEraseVirtReg(unsigned VirtReg) {
+  if (unsigned PhysReg = VRM->getPhys(VirtReg)) {
+    unassign(LIS->getInterval(VirtReg), PhysReg);
+    return true;
+  }
+  // Unassigned virtreg is probably in the priority queue.
+  // RegAllocBase will erase it after dequeueing.
+  return false;
 }
 
 void RAGreedy::releaseMemory() {
@@ -601,8 +627,7 @@ void RAGreedy::splitAroundRegion(LiveInterval &VirtReg, unsigned PhysReg,
   SmallVector<IndexPair, 8> InterferenceRanges;
   mapGlobalInterference(PhysReg, InterferenceRanges);
 
-  SmallVector<LiveInterval*, 4> SpillRegs;
-  LiveRangeEdit LREdit(VirtReg, NewVRegs, SpillRegs);
+  LiveRangeEdit LREdit(VirtReg, NewVRegs, this);
   SE->reset(LREdit);
 
   // Create the main cross-block interval.
@@ -1130,8 +1155,7 @@ unsigned RAGreedy::tryLocalSplit(LiveInterval &VirtReg, AllocationOrder &Order,
                << '-' << Uses[BestAfter] << ", " << BestDiff
                << ", " << (BestAfter - BestBefore + 1) << " instrs\n");
 
-  SmallVector<LiveInterval*, 4> SpillRegs;
-  LiveRangeEdit LREdit(VirtReg, NewVRegs, SpillRegs);
+  LiveRangeEdit LREdit(VirtReg, NewVRegs, this);
   SE->reset(LREdit);
 
   SE->openIntv();
@@ -1183,8 +1207,7 @@ unsigned RAGreedy::trySplit(LiveInterval &VirtReg, AllocationOrder &Order,
   if (Stage < RS_Block) {
     SplitAnalysis::BlockPtrSet Blocks;
     if (SA->getMultiUseBlocks(Blocks)) {
-      SmallVector<LiveInterval*, 4> SpillRegs;
-      LiveRangeEdit LREdit(VirtReg, NewVRegs, SpillRegs);
+      LiveRangeEdit LREdit(VirtReg, NewVRegs, this);
       SE->reset(LREdit);
       SE->splitSingleBlocks(Blocks);
       setStage(NewVRegs.begin(), NewVRegs.end(), RS_Block);
@@ -1240,8 +1263,8 @@ unsigned RAGreedy::selectOrSplit(LiveInterval &VirtReg,
 
   // Finally spill VirtReg itself.
   NamedRegionTimer T("Spiller", TimerGroupName, TimePassesIsEnabled);
-  SmallVector<LiveInterval*, 1> pendingSpills;
-  spiller().spill(&VirtReg, NewVRegs, pendingSpills);
+  LiveRangeEdit LRE(VirtReg, NewVRegs, this);
+  spiller().spill(LRE);
 
   // The live virtual register requesting allocation was spilled, so tell
   // the caller not to allocate anything during this round.

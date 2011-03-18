@@ -429,6 +429,29 @@ void llvm::ComputeMaskedBits(Value *V, const APInt &Mask,
       KnownZero |= LHSKnownZero & Mask;
       KnownOne  |= LHSKnownOne & Mask;
     }
+
+    // Are we still trying to solve for the sign bit?
+    if (Mask.isNegative() && !KnownZero.isNegative() && !KnownOne.isNegative()){
+      OverflowingBinaryOperator *OBO = cast<OverflowingBinaryOperator>(I);
+      if (OBO->hasNoSignedWrap()) {
+        if (I->getOpcode() == Instruction::Add) {
+          // Adding two positive numbers can't wrap into negative
+          if (LHSKnownZero.isNegative() && KnownZero2.isNegative())
+            KnownZero |= APInt::getSignBit(BitWidth);
+          // and adding two negative numbers can't wrap into positive.
+          else if (LHSKnownOne.isNegative() && KnownOne2.isNegative())
+            KnownOne |= APInt::getSignBit(BitWidth);
+        } else {
+          // Subtracting a negative number from a positive one can't wrap
+          if (LHSKnownZero.isNegative() && KnownOne2.isNegative())
+            KnownZero |= APInt::getSignBit(BitWidth);
+          // neither can subtracting a positive number from a negative one.
+          else if (LHSKnownOne.isNegative() && KnownZero2.isNegative())
+            KnownOne |= APInt::getSignBit(BitWidth);
+        }
+      }
+    }
+
     return;
   }
   case Instruction::SRem:
@@ -460,6 +483,19 @@ void llvm::ComputeMaskedBits(Value *V, const APInt &Mask,
         assert((KnownZero & KnownOne) == 0 && "Bits known to be one AND zero?"); 
       }
     }
+
+    // The sign bit is the LHS's sign bit, except when the result of the
+    // remainder is zero.
+    if (Mask.isNegative() && KnownZero.isNonNegative()) {
+      APInt Mask2 = APInt::getSignBit(BitWidth);
+      APInt LHSKnownZero(BitWidth, 0), LHSKnownOne(BitWidth, 0);
+      ComputeMaskedBits(I->getOperand(0), Mask2, LHSKnownZero, LHSKnownOne, TD,
+                        Depth+1);
+      // If it's known zero, our sign bit is also zero.
+      if (LHSKnownZero.isNegative())
+        KnownZero |= LHSKnownZero;
+    }
+
     break;
   case Instruction::URem: {
     if (ConstantInt *Rem = dyn_cast<ConstantInt>(I->getOperand(1))) {
@@ -597,6 +633,10 @@ void llvm::ComputeMaskedBits(Value *V, const APInt &Mask,
     // Otherwise take the unions of the known bit sets of the operands,
     // taking conservative care to avoid excessive recursion.
     if (Depth < MaxDepth - 1 && !KnownZero && !KnownOne) {
+      // Skip if every incoming value references to ourself.
+      if (P->hasConstantValue() == P)
+        break;
+
       KnownZero = APInt::getAllOnesValue(BitWidth);
       KnownOne = APInt::getAllOnesValue(BitWidth);
       for (unsigned i = 0, e = P->getNumIncomingValues(); i != e; ++i) {

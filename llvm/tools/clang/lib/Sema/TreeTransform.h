@@ -1130,9 +1130,10 @@ public:
   /// Subclasses may override this routine to provide different behavior.
   VarDecl *RebuildObjCExceptionDecl(VarDecl *ExceptionDecl,
                                     TypeSourceInfo *TInfo, QualType T) {
-    return getSema().BuildObjCExceptionDecl(TInfo, T, 
-                                            ExceptionDecl->getIdentifier(), 
-                                            ExceptionDecl->getLocation());
+    return getSema().BuildObjCExceptionDecl(TInfo, T,
+                                            ExceptionDecl->getInnerLocStart(),
+                                            ExceptionDecl->getLocation(),
+                                            ExceptionDecl->getIdentifier());
   }
   
   /// \brief Build a new Objective-C @catch statement.
@@ -1197,11 +1198,13 @@ public:
   ///
   /// By default, performs semantic analysis to build the new decaration.
   /// Subclasses may override this routine to provide different behavior.
-  VarDecl *RebuildExceptionDecl(VarDecl *ExceptionDecl, 
+  VarDecl *RebuildExceptionDecl(VarDecl *ExceptionDecl,
                                 TypeSourceInfo *Declarator,
-                                IdentifierInfo *Name,
-                                SourceLocation Loc) {
-    return getSema().BuildExceptionDeclaration(0, Declarator, Name, Loc);
+                                SourceLocation StartLoc,
+                                SourceLocation IdLoc,
+                                IdentifierInfo *Id) {
+    return getSema().BuildExceptionDeclaration(0, Declarator,
+                                               StartLoc, IdLoc, Id);
   }
 
   /// \brief Build a new C++ catch statement.
@@ -1297,25 +1300,28 @@ public:
                                           NumComponents, RParenLoc);
   }
   
-  /// \brief Build a new sizeof or alignof expression with a type argument.
+  /// \brief Build a new sizeof, alignof or vec_step expression with a 
+  /// type argument.
   ///
   /// By default, performs semantic analysis to build the new expression.
   /// Subclasses may override this routine to provide different behavior.
-  ExprResult RebuildSizeOfAlignOf(TypeSourceInfo *TInfo,
-                                        SourceLocation OpLoc,
-                                        bool isSizeOf, SourceRange R) {
-    return getSema().CreateSizeOfAlignOfExpr(TInfo, OpLoc, isSizeOf, R);
+  ExprResult RebuildUnaryExprOrTypeTrait(TypeSourceInfo *TInfo,
+                                         SourceLocation OpLoc,
+                                         UnaryExprOrTypeTrait ExprKind,
+                                         SourceRange R) {
+    return getSema().CreateUnaryExprOrTypeTraitExpr(TInfo, OpLoc, ExprKind, R);
   }
 
-  /// \brief Build a new sizeof or alignof expression with an expression
-  /// argument.
+  /// \brief Build a new sizeof, alignof or vec step expression with an
+  /// expression argument.
   ///
   /// By default, performs semantic analysis to build the new expression.
   /// Subclasses may override this routine to provide different behavior.
-  ExprResult RebuildSizeOfAlignOf(Expr *SubExpr, SourceLocation OpLoc,
-                                        bool isSizeOf, SourceRange R) {
+  ExprResult RebuildUnaryExprOrTypeTrait(Expr *SubExpr, SourceLocation OpLoc,
+                                         UnaryExprOrTypeTrait ExprKind,
+                                         SourceRange R) {
     ExprResult Result
-      = getSema().CreateSizeOfAlignOfExpr(SubExpr, OpLoc, isSizeOf, R);
+      = getSema().CreateUnaryExprOrTypeTraitExpr(SubExpr, OpLoc, ExprKind, R);
     if (Result.isInvalid())
       return ExprError();
 
@@ -3308,23 +3314,34 @@ template<typename Derived>
 QualType
 TreeTransform<Derived>::TransformMemberPointerType(TypeLocBuilder &TLB,
                                                    MemberPointerTypeLoc TL) {
-  const MemberPointerType *T = TL.getTypePtr();
-
   QualType PointeeType = getDerived().TransformType(TLB, TL.getPointeeLoc());
   if (PointeeType.isNull())
     return QualType();
 
-  // TODO: preserve source information for this.
-  QualType ClassType
-    = getDerived().TransformType(QualType(T->getClass(), 0));
-  if (ClassType.isNull())
-    return QualType();
+  TypeSourceInfo* OldClsTInfo = TL.getClassTInfo();
+  TypeSourceInfo* NewClsTInfo = 0;
+  if (OldClsTInfo) {
+    NewClsTInfo = getDerived().TransformType(OldClsTInfo);
+    if (!NewClsTInfo)
+      return QualType();
+  }
+
+  const MemberPointerType *T = TL.getTypePtr();
+  QualType OldClsType = QualType(T->getClass(), 0);
+  QualType NewClsType;
+  if (NewClsTInfo)
+    NewClsType = NewClsTInfo->getType();
+  else {
+    NewClsType = getDerived().TransformType(OldClsType);
+    if (NewClsType.isNull())
+      return QualType();
+  }
 
   QualType Result = TL.getType();
   if (getDerived().AlwaysRebuild() ||
       PointeeType != T->getPointeeType() ||
-      ClassType != QualType(T->getClass(), 0)) {
-    Result = getDerived().RebuildMemberPointerType(PointeeType, ClassType,
+      NewClsType != OldClsType) {
+    Result = getDerived().RebuildMemberPointerType(PointeeType, NewClsType,
                                                    TL.getStarLoc());
     if (Result.isNull())
       return QualType();
@@ -3332,6 +3349,7 @@ TreeTransform<Derived>::TransformMemberPointerType(TypeLocBuilder &TLB,
 
   MemberPointerTypeLoc NewTL = TLB.push<MemberPointerTypeLoc>(Result);
   NewTL.setSigilLoc(TL.getSigilLoc());
+  NewTL.setClassTInfo(NewClsTInfo);
 
   return Result;
 }
@@ -3616,6 +3634,7 @@ TreeTransform<Derived>::TransformFunctionTypeParam(ParmVarDecl *OldParm,
   else
     return ParmVarDecl::Create(SemaRef.Context,
                                OldParm->getDeclContext(),
+                               OldParm->getInnerLocStart(),
                                OldParm->getLocation(),
                                OldParm->getIdentifier(),
                                NewDI->getType(),
@@ -3861,8 +3880,8 @@ TreeTransform<Derived>::TransformFunctionProtoType(TypeLocBuilder &TLB,
   }
 
   FunctionProtoTypeLoc NewTL = TLB.push<FunctionProtoTypeLoc>(Result);
-  NewTL.setLParenLoc(TL.getLParenLoc());
-  NewTL.setRParenLoc(TL.getRParenLoc());
+  NewTL.setLocalRangeBegin(TL.getLocalRangeBegin());
+  NewTL.setLocalRangeEnd(TL.getLocalRangeEnd());
   NewTL.setTrailingReturn(TL.getTrailingReturn());
   for (unsigned i = 0, e = NewTL.getNumArgs(); i != e; ++i)
     NewTL.setArg(i, ParamDecls[i]);
@@ -3885,8 +3904,8 @@ QualType TreeTransform<Derived>::TransformFunctionNoProtoType(
     Result = getDerived().RebuildFunctionNoProtoType(ResultType);
 
   FunctionNoProtoTypeLoc NewTL = TLB.push<FunctionNoProtoTypeLoc>(Result);
-  NewTL.setLParenLoc(TL.getLParenLoc());
-  NewTL.setRParenLoc(TL.getRParenLoc());
+  NewTL.setLocalRangeBegin(TL.getLocalRangeBegin());
+  NewTL.setLocalRangeEnd(TL.getLocalRangeEnd());
   NewTL.setTrailingReturn(false);
 
   return Result;
@@ -4114,7 +4133,28 @@ template<typename Derived>
 QualType TreeTransform<Derived>::TransformSubstTemplateTypeParmType(
                                          TypeLocBuilder &TLB,
                                          SubstTemplateTypeParmTypeLoc TL) {
-  return TransformTypeSpecType(TLB, TL);
+  const SubstTemplateTypeParmType *T = TL.getTypePtr();
+  
+  // Substitute into the replacement type, which itself might involve something
+  // that needs to be transformed. This only tends to occur with default
+  // template arguments of template template parameters.
+  TemporaryBase Rebase(*this, TL.getNameLoc(), DeclarationName());
+  QualType Replacement = getDerived().TransformType(T->getReplacementType());
+  if (Replacement.isNull())
+    return QualType();
+  
+  // Always canonicalize the replacement type.
+  Replacement = SemaRef.Context.getCanonicalType(Replacement);
+  QualType Result
+    = SemaRef.Context.getSubstTemplateTypeParmType(T->getReplacedParameter(), 
+                                                   Replacement);
+  
+  // Propagate type-source information.
+  SubstTemplateTypeParmTypeLoc NewTL
+    = TLB.push<SubstTemplateTypeParmTypeLoc>(Result);
+  NewTL.setNameLoc(TL.getNameLoc());
+  return Result;
+
 }
 
 template<typename Derived>
@@ -4480,19 +4520,33 @@ TransformDependentTemplateSpecializationType(TypeLocBuilder &TLB,
     
     // Copy information relevant to the template specialization.
     TemplateSpecializationTypeLoc NamedTL
-    = TLB.push<TemplateSpecializationTypeLoc>(NamedT);
+      = TLB.push<TemplateSpecializationTypeLoc>(NamedT);
     NamedTL.setLAngleLoc(TL.getLAngleLoc());
     NamedTL.setRAngleLoc(TL.getRAngleLoc());
-    for (unsigned I = 0, E = TL.getNumArgs(); I != E; ++I)
-      NamedTL.setArgLocInfo(I, TL.getArgLocInfo(I));
+    for (unsigned I = 0, E = NewTemplateArgs.size(); I != E; ++I)
+      NamedTL.setArgLocInfo(I, NewTemplateArgs[I].getLocInfo());
     
     // Copy information relevant to the elaborated type.
     ElaboratedTypeLoc NewTL = TLB.push<ElaboratedTypeLoc>(Result);
     NewTL.setKeywordLoc(TL.getKeywordLoc());
     NewTL.setQualifierLoc(QualifierLoc);
+  } else if (isa<DependentTemplateSpecializationType>(Result)) {
+    DependentTemplateSpecializationTypeLoc SpecTL
+      = TLB.push<DependentTemplateSpecializationTypeLoc>(Result);
+    SpecTL.setKeywordLoc(TL.getKeywordLoc());
+    SpecTL.setQualifierLoc(QualifierLoc);
+    SpecTL.setLAngleLoc(TL.getLAngleLoc());
+    SpecTL.setRAngleLoc(TL.getRAngleLoc());
+    SpecTL.setNameLoc(TL.getNameLoc());
+    for (unsigned I = 0, E = NewTemplateArgs.size(); I != E; ++I)
+      SpecTL.setArgLocInfo(I, NewTemplateArgs[I].getLocInfo());
   } else {
-    TypeLoc NewTL(Result, TL.getOpaqueData());
-    TLB.pushFullCopy(NewTL);
+    TemplateSpecializationTypeLoc SpecTL
+      = TLB.push<TemplateSpecializationTypeLoc>(Result);
+    SpecTL.setLAngleLoc(TL.getLAngleLoc());
+    SpecTL.setRAngleLoc(TL.getRAngleLoc());
+    for (unsigned I = 0, E = NewTemplateArgs.size(); I != E; ++I)
+      SpecTL.setArgLocInfo(I, NewTemplateArgs[I].getLocInfo());
   }
   return Result;
 }
@@ -5241,8 +5295,9 @@ TreeTransform<Derived>::TransformCXXCatchStmt(CXXCatchStmt *S) {
       return StmtError();
 
     Var = getDerived().RebuildExceptionDecl(ExceptionDecl, T,
-                                            ExceptionDecl->getIdentifier(),
-                                            ExceptionDecl->getLocation());
+                                            ExceptionDecl->getInnerLocStart(),
+                                            ExceptionDecl->getLocation(),
+                                            ExceptionDecl->getIdentifier());
     if (!Var || Var->isInvalidDecl())
       return StmtError();
   }
@@ -5435,8 +5490,8 @@ TreeTransform<Derived>::TransformOffsetOfExpr(OffsetOfExpr *E) {
     const Node &ON = E->getComponent(I);
     Component Comp;
     Comp.isBrackets = true;
-    Comp.LocStart = ON.getRange().getBegin();
-    Comp.LocEnd = ON.getRange().getEnd();
+    Comp.LocStart = ON.getSourceRange().getBegin();
+    Comp.LocEnd = ON.getSourceRange().getEnd();
     switch (ON.getKind()) {
     case Node::Array: {
       Expr *FromIndex = E->getIndexExpr(ON.getArrayExprIndex());
@@ -5489,7 +5544,8 @@ TreeTransform<Derived>::TransformOpaqueValueExpr(OpaqueValueExpr *E) {
 
 template<typename Derived>
 ExprResult
-TreeTransform<Derived>::TransformSizeOfAlignOfExpr(SizeOfAlignOfExpr *E) {
+TreeTransform<Derived>::TransformUnaryExprOrTypeTraitExpr(
+                                                UnaryExprOrTypeTraitExpr *E) {
   if (E->isArgumentType()) {
     TypeSourceInfo *OldT = E->getArgumentTypeInfo();
 
@@ -5500,9 +5556,9 @@ TreeTransform<Derived>::TransformSizeOfAlignOfExpr(SizeOfAlignOfExpr *E) {
     if (!getDerived().AlwaysRebuild() && OldT == NewT)
       return SemaRef.Owned(E);
 
-    return getDerived().RebuildSizeOfAlignOf(NewT, E->getOperatorLoc(),
-                                             E->isSizeOf(),
-                                             E->getSourceRange());
+    return getDerived().RebuildUnaryExprOrTypeTrait(NewT, E->getOperatorLoc(),
+                                                    E->getKind(),
+                                                    E->getSourceRange());
   }
 
   ExprResult SubExpr;
@@ -5520,9 +5576,10 @@ TreeTransform<Derived>::TransformSizeOfAlignOfExpr(SizeOfAlignOfExpr *E) {
       return SemaRef.Owned(E);
   }
 
-  return getDerived().RebuildSizeOfAlignOf(SubExpr.get(), E->getOperatorLoc(),
-                                           E->isSizeOf(),
-                                           E->getSourceRange());
+  return getDerived().RebuildUnaryExprOrTypeTrait(SubExpr.get(),
+                                                  E->getOperatorLoc(),
+                                                  E->getKind(),
+                                                  E->getSourceRange());
 }
 
 template<typename Derived>
@@ -6269,7 +6326,7 @@ TreeTransform<Derived>::TransformCXXUuidofExpr(CXXUuidofExpr *E) {
         TInfo == E->getTypeOperandSourceInfo())
       return SemaRef.Owned(E);
 
-    return getDerived().RebuildCXXTypeidExpr(E->getType(),
+    return getDerived().RebuildCXXUuidofExpr(E->getType(),
                                              E->getLocStart(),
                                              TInfo,
                                              E->getLocEnd());

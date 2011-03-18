@@ -1659,7 +1659,7 @@ static Expr::CanThrowResult CanCalleeThrow(const Decl *D,
   if (!FT)
     return Expr::CT_Can;
 
-  return FT->hasEmptyExceptionSpec() ? Expr::CT_Cannot : Expr::CT_Can;
+  return FT->isNothrow() ? Expr::CT_Cannot : Expr::CT_Can;
 }
 
 static Expr::CanThrowResult CanDynamicCastThrow(const CXXDynamicCastExpr *DC) {
@@ -2854,8 +2854,8 @@ const Expr* ConstExprIterator::operator->() const { return cast<Expr>(*I); }
 //  Child Iterators for iterating over subexpressions/substatements
 //===----------------------------------------------------------------------===//
 
-// SizeOfAlignOfExpr
-Stmt::child_range SizeOfAlignOfExpr::children() {
+// UnaryExprOrTypeTraitExpr
+Stmt::child_range UnaryExprOrTypeTraitExpr::children() {
   // If this is of a type and the type is a VLA type (and not a typedef), the
   // size expression of the VLA needs to be treated as an executable expression.
   // Why isn't this weirdness documented better in StmtIterator?

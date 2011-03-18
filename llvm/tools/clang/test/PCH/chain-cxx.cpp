@@ -4,9 +4,7 @@
 // RUN: %clang_cc1 -fsyntax-only -verify -include %s -include %s %s
 
 // With PCH
-// RUN: %clang_cc1 -x c++-header -emit-pch -o %t1 %s
-// RUN: %clang_cc1 -x c++-header -emit-pch -o %t2 %s -include-pch %t1 -chained-pch
-// RUN: %clang_cc1 -fsyntax-only -verify -include-pch %t2 %s
+// RUN: %clang_cc1 -fsyntax-only -verify %s -chain-include %s -chain-include %s
 
 #ifndef HEADER1
 #define HEADER1
@@ -33,6 +31,9 @@ struct S<T *> { typedef int H; };
 
 template <typename T> struct TS2;
 typedef TS2<int> TS2int;
+
+template <typename T> struct TestBaseSpecifiers { };
+template<typename T> struct TestBaseSpecifiers2 : TestBaseSpecifiers<T> { };
 
 //===----------------------------------------------------------------------===//
 #elif not defined(HEADER2)
@@ -73,6 +74,12 @@ struct S<int &> { typedef int L; };
 
 template <typename T> struct TS2 { };
 
+struct TestBaseSpecifiers3 { };
+struct TestBaseSpecifiers4 : TestBaseSpecifiers3 { };
+
+struct A { };
+struct B : A { };
+
 //===----------------------------------------------------------------------===//
 #else
 //===----------------------------------------------------------------------===//
@@ -96,6 +103,8 @@ void test() {
   typedef S<int &>::L T6;
 
   TS2int ts2;
+
+  B b;
 }
 
 //===----------------------------------------------------------------------===//

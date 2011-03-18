@@ -81,7 +81,20 @@ void SplitAnalysis::analyzeUses() {
     UsingBlocks[MBB]++;
   }
   array_pod_sort(UseSlots.begin(), UseSlots.end());
-  calcLiveBlockInfo();
+
+  // Compute per-live block info.
+  if (!calcLiveBlockInfo()) {
+    // FIXME: calcLiveBlockInfo found inconsistencies in the live range.
+    // I am looking at you, SimpleRegisterCoalescing!
+    DEBUG(dbgs() << "*** Fixing inconsistent live interval! ***\n");
+    const_cast<LiveIntervals&>(LIS)
+      .shrinkToUses(const_cast<LiveInterval*>(CurLI));
+    LiveBlocks.clear();
+    bool fixed = calcLiveBlockInfo();
+    (void)fixed;
+    assert(fixed && "Couldn't fix broken live interval");
+  }
+
   DEBUG(dbgs() << "  counted "
                << UsingInstrs.size() << " instrs, "
                << UsingBlocks.size() << " blocks.\n");
@@ -89,9 +102,9 @@ void SplitAnalysis::analyzeUses() {
 
 /// calcLiveBlockInfo - Fill the LiveBlocks array with information about blocks
 /// where CurLI is live.
-void SplitAnalysis::calcLiveBlockInfo() {
+bool SplitAnalysis::calcLiveBlockInfo() {
   if (CurLI->empty())
-    return;
+    return true;
 
   LiveInterval::const_iterator LVI = CurLI->begin();
   LiveInterval::const_iterator LVE = CurLI->end();
@@ -154,6 +167,11 @@ void SplitAnalysis::calcLiveBlockInfo() {
     BI.LiveThrough = !hasGap && BI.LiveIn && BI.LiveOut;
     LiveBlocks.push_back(BI);
 
+    // FIXME: This should never happen. The live range stops or starts without a
+    // corresponding use. An earlier pass did something wrong.
+    if (!BI.LiveThrough && !BI.Uses)
+      return false;
+
     // LVI is now at LVE or LVI->end >= Stop.
     if (LVI == LVE)
       break;
@@ -168,6 +186,7 @@ void SplitAnalysis::calcLiveBlockInfo() {
     else
       MFI = LIS.getMBBFromIndex(LVI->start);
   }
+  return true;
 }
 
 bool SplitAnalysis::isOriginalEndpoint(SlotIndex Idx) const {
@@ -778,6 +797,40 @@ void SplitEditor::rewriteComponents(const SmallVectorImpl<LiveInterval*> &Intvs,
   }
 }
 
+void SplitEditor::deleteRematVictims() {
+  SmallVector<MachineInstr*, 8> Dead;
+  for (LiveInterval::const_vni_iterator I = Edit->getParent().vni_begin(),
+         E = Edit->getParent().vni_end(); I != E; ++I) {
+    const VNInfo *VNI = *I;
+    // Was VNI rematted anywhere?
+    if (VNI->isUnused() || VNI->isPHIDef() || !Edit->didRematerialize(VNI))
+      continue;
+    unsigned RegIdx = RegAssign.lookup(VNI->def);
+    LiveInterval *LI = Edit->get(RegIdx);
+    LiveInterval::const_iterator LII = LI->FindLiveRangeContaining(VNI->def);
+    assert(LII != LI->end() && "Missing live range for rematted def");
+
+    // Is this a dead def?
+    if (LII->end != VNI->def.getNextSlot())
+      continue;
+
+    MachineInstr *MI = LIS.getInstructionFromIndex(VNI->def);
+    assert(MI && "Missing instruction for dead def");
+    MI->addRegisterDead(LI->reg, &TRI);
+
+    if (!MI->allDefsAreDead())
+      continue;
+
+    DEBUG(dbgs() << "All defs dead: " << *MI);
+    Dead.push_back(MI);
+  }
+
+  if (Dead.empty())
+    return;
+
+  Edit->eliminateDeadDefs(Dead, LIS, TII);
+}
+
 void SplitEditor::finish() {
   assert(OpenIdx == 0 && "Previous LI not closed before rewrite");
   ++NumFinished;
@@ -816,7 +869,9 @@ void SplitEditor::finish() {
   // Rewrite virtual registers, possibly extending ranges.
   rewriteAssigned(Complex);
 
-  // FIXME: Delete defs that were rematted everywhere.
+  // Delete defs that were rematted everywhere.
+  if (Complex)
+    deleteRematVictims();
 
   // Get rid of unused values and set phi-kill flags.
   for (LiveRangeEdit::iterator I = Edit->begin(), E = Edit->end(); I != E; ++I)

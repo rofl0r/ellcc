@@ -68,7 +68,7 @@ namespace clang {
     void VisitParenListExpr(ParenListExpr *E);
     void VisitUnaryOperator(UnaryOperator *E);
     void VisitOffsetOfExpr(OffsetOfExpr *E);
-    void VisitSizeOfAlignOfExpr(SizeOfAlignOfExpr *E);
+    void VisitUnaryExprOrTypeTraitExpr(UnaryExprOrTypeTraitExpr *E);
     void VisitArraySubscriptExpr(ArraySubscriptExpr *E);
     void VisitCallExpr(CallExpr *E);
     void VisitMemberExpr(MemberExpr *E);
@@ -382,14 +382,16 @@ void ASTStmtWriter::VisitDeclRefExpr(DeclRefExpr *E) {
   Record.push_back(E->hasQualifier());
   Record.push_back(E->hasExplicitTemplateArgs());
 
-  if (E->hasQualifier())
-    Writer.AddNestedNameSpecifierLoc(E->getQualifierLoc(), Record);
-
   if (E->hasExplicitTemplateArgs()) {
     unsigned NumTemplateArgs = E->getNumTemplateArgs();
     Record.push_back(NumTemplateArgs);
-    AddExplicitTemplateArgumentList(E->getExplicitTemplateArgs());
   }
+
+  if (E->hasQualifier())
+    Writer.AddNestedNameSpecifierLoc(E->getQualifierLoc(), Record);
+
+  if (E->hasExplicitTemplateArgs())
+    AddExplicitTemplateArgumentList(E->getExplicitTemplateArgs());
 
   Writer.AddDeclRef(E->getDecl(), Record);
   Writer.AddSourceLocation(E->getLocation(), Record);
@@ -477,8 +479,8 @@ void ASTStmtWriter::VisitOffsetOfExpr(OffsetOfExpr *E) {
   for (unsigned I = 0, N = E->getNumComponents(); I != N; ++I) {
     const OffsetOfExpr::OffsetOfNode &ON = E->getComponent(I);
     Record.push_back(ON.getKind()); // FIXME: Stable encoding
-    Writer.AddSourceLocation(ON.getRange().getBegin(), Record);
-    Writer.AddSourceLocation(ON.getRange().getEnd(), Record);
+    Writer.AddSourceLocation(ON.getSourceRange().getBegin(), Record);
+    Writer.AddSourceLocation(ON.getSourceRange().getEnd(), Record);
     switch (ON.getKind()) {
     case OffsetOfExpr::OffsetOfNode::Array:
       Record.push_back(ON.getArrayExprIndex());
@@ -502,9 +504,9 @@ void ASTStmtWriter::VisitOffsetOfExpr(OffsetOfExpr *E) {
   Code = serialization::EXPR_OFFSETOF;
 }
 
-void ASTStmtWriter::VisitSizeOfAlignOfExpr(SizeOfAlignOfExpr *E) {
+void ASTStmtWriter::VisitUnaryExprOrTypeTraitExpr(UnaryExprOrTypeTraitExpr *E) {
   VisitExpr(E);
-  Record.push_back(E->isSizeOf());
+  Record.push_back(E->getKind());
   if (E->isArgumentType())
     Writer.AddTypeSourceInfo(E->getArgumentTypeInfo(), Record);
   else {

@@ -2753,6 +2753,13 @@ void DiagnoseImpCast(Sema &S, Expr *E, QualType T, SourceLocation CContext,
     << E->getType() << T << E->getSourceRange() << SourceRange(CContext);
 }
 
+/// Diagnose an implicit cast;  purely a helper for CheckImplicitConversion.
+void DiagnoseImpCast(Sema &S, Expr *E, QualType SourceType, QualType T, 
+                     SourceLocation CContext, unsigned diag) {
+  S.Diag(E->getExprLoc(), diag)
+    << SourceType << T << E->getSourceRange() << SourceRange(CContext);
+}
+
 std::string PrettyPrintInRange(const llvm::APSInt &Value, IntRange Range) {
   if (!Range.Width) return "0";
 
@@ -2762,6 +2769,11 @@ std::string PrettyPrintInRange(const llvm::APSInt &Value, IntRange Range) {
   return ValueInRange.toString(10);
 }
 
+static bool isFromSystemMacro(Sema &S, SourceLocation loc) {
+  SourceManager &smgr = S.Context.getSourceManager();
+  return loc.isMacroID() && smgr.isInSystemHeader(smgr.getSpellingLoc(loc));
+}
+  
 void CheckImplicitConversion(Sema &S, Expr *E, QualType T,
                              SourceLocation CC, bool *ICContext = 0) {
   if (E->isTypeDependent() || E->isValueDependent()) return;
@@ -2771,11 +2783,12 @@ void CheckImplicitConversion(Sema &S, Expr *E, QualType T,
   if (Source == Target) return;
   if (Target->isDependentType()) return;
 
-  // If the conversion context location is invalid or instantiated
-  // from a system macro, don't complain.
-  if (CC.isInvalid() ||
-      (CC.isMacroID() && S.Context.getSourceManager().isInSystemHeader(
-                           S.Context.getSourceManager().getSpellingLoc(CC))))
+  // If the conversion context location is invalid don't complain.
+  // We also don't want to emit a warning if the issue occurs from the
+  // instantiation of a system macro.  The problem is that 'getSpellingLoc()'
+  // is slow, so we delay this check as long as possible.  Once we detect
+  // we are in that scenario, we just return.
+  if (CC.isInvalid())
     return;
 
   // Never diagnose implicit casts to bool.
@@ -2784,8 +2797,11 @@ void CheckImplicitConversion(Sema &S, Expr *E, QualType T,
 
   // Strip vector types.
   if (isa<VectorType>(Source)) {
-    if (!isa<VectorType>(Target))
+    if (!isa<VectorType>(Target)) {
+      if (isFromSystemMacro(S, CC))
+        return;
       return DiagnoseImpCast(S, E, T, CC, diag::warn_impcast_vector_scalar);
+    }
 
     Source = cast<VectorType>(Source)->getElementType().getTypePtr();
     Target = cast<VectorType>(Target)->getElementType().getTypePtr();
@@ -2793,8 +2809,12 @@ void CheckImplicitConversion(Sema &S, Expr *E, QualType T,
 
   // Strip complex types.
   if (isa<ComplexType>(Source)) {
-    if (!isa<ComplexType>(Target))
+    if (!isa<ComplexType>(Target)) {
+      if (isFromSystemMacro(S, CC))
+        return;
+
       return DiagnoseImpCast(S, E, T, CC, diag::warn_impcast_complex_scalar);
+    }
 
     Source = cast<ComplexType>(Source)->getElementType().getTypePtr();
     Target = cast<ComplexType>(Target)->getElementType().getTypePtr();
@@ -2822,13 +2842,19 @@ void CheckImplicitConversion(Sema &S, Expr *E, QualType T,
             return;
         }
 
+        if (isFromSystemMacro(S, CC))
+          return;
+
         DiagnoseImpCast(S, E, T, CC, diag::warn_impcast_float_precision);
       }
       return;
     }
 
-    // If the target is integral, always warn.
+    // If the target is integral, always warn.    
     if ((TargetBT && TargetBT->isInteger())) {
+      if (isFromSystemMacro(S, CC))
+        return;
+      
       Expr *InnerE = E->IgnoreParenImpCasts();
       if (FloatingLiteral *LiteralExpr = dyn_cast<FloatingLiteral>(InnerE)) {
         DiagnoseImpCast(S, LiteralExpr, T, CC,
@@ -2852,6 +2878,9 @@ void CheckImplicitConversion(Sema &S, Expr *E, QualType T,
     // TODO: this should happen for bitfield stores, too.
     llvm::APSInt Value(32);
     if (E->isIntegerConstantExpr(Value, S.Context)) {
+      if (isFromSystemMacro(S, CC))
+        return;
+
       std::string PrettySourceValue = Value.toString(10);
       std::string PrettyTargetValue = PrettyPrintInRange(Value, TargetRange);
 
@@ -2863,6 +2892,10 @@ void CheckImplicitConversion(Sema &S, Expr *E, QualType T,
 
     // People want to build with -Wshorten-64-to-32 and not -Wconversion
     // and by god we'll let them.
+    
+    if (isFromSystemMacro(S, CC))
+      return;
+    
     if (SourceRange.Width == 64 && TargetRange.Width == 32)
       return DiagnoseImpCast(S, E, T, CC, diag::warn_impcast_integer_64_32);
     return DiagnoseImpCast(S, E, T, CC, diag::warn_impcast_integer_precision);
@@ -2871,6 +2904,10 @@ void CheckImplicitConversion(Sema &S, Expr *E, QualType T,
   if ((TargetRange.NonNegative && !SourceRange.NonNegative) ||
       (!TargetRange.NonNegative && SourceRange.NonNegative &&
        SourceRange.Width == TargetRange.Width)) {
+        
+    if (isFromSystemMacro(S, CC))
+      return;
+
     unsigned DiagID = diag::warn_impcast_integer_sign;
 
     // Traditionally, gcc has warned about this under -Wsign-compare.
@@ -2887,15 +2924,31 @@ void CheckImplicitConversion(Sema &S, Expr *E, QualType T,
   }
 
   // Diagnose conversions between different enumeration types.
+  // In C, we pretend that the type of an EnumConstantDecl is its enumeration
+  // type, to give us better diagnostics.
+  QualType SourceType = E->getType();
+  if (!S.getLangOptions().CPlusPlus) {
+    if (DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(E))
+      if (EnumConstantDecl *ECD = dyn_cast<EnumConstantDecl>(DRE->getDecl())) {
+        EnumDecl *Enum = cast<EnumDecl>(ECD->getDeclContext());
+        SourceType = S.Context.getTypeDeclType(Enum);
+        Source = S.Context.getCanonicalType(SourceType).getTypePtr();
+      }
+  }
+  
   if (const EnumType *SourceEnum = Source->getAs<EnumType>())
     if (const EnumType *TargetEnum = Target->getAs<EnumType>())
       if ((SourceEnum->getDecl()->getIdentifier() || 
            SourceEnum->getDecl()->getTypedefForAnonDecl()) &&
           (TargetEnum->getDecl()->getIdentifier() ||
            TargetEnum->getDecl()->getTypedefForAnonDecl()) &&
-          SourceEnum != TargetEnum)
-        return DiagnoseImpCast(S, E, T, CC, 
+          SourceEnum != TargetEnum) {
+        if (isFromSystemMacro(S, CC))
+          return;
+
+        return DiagnoseImpCast(S, E, SourceType, T, CC, 
                                diag::warn_impcast_different_enum_types);
+      }
   
   return;
 }
@@ -3004,7 +3057,7 @@ void AnalyzeImplicitConversions(Sema &S, Expr *OrigE, SourceLocation CC) {
   if (isa<StmtExpr>(E)) return;
 
   // Don't descend into unevaluated contexts.
-  if (isa<SizeOfAlignOfExpr>(E)) return;
+  if (isa<UnaryExprOrTypeTraitExpr>(E)) return;
 
   // Now just recurse over the expression's children.
   CC = E->getExprLoc();

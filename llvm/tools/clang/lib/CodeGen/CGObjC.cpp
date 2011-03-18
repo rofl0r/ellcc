@@ -119,28 +119,26 @@ RValue CodeGenFunction::EmitObjCMessageExpr(const ObjCMessageExpr *E,
 /// CodeGenFunction.
 void CodeGenFunction::StartObjCMethod(const ObjCMethodDecl *OMD,
                                       const ObjCContainerDecl *CD) {
-  FunctionArgList Args;
+  FunctionArgList args;
   // Check if we should generate debug info for this method.
-  if (CGM.getDebugInfo() && !OMD->hasAttr<NoDebugAttr>())
-    DebugInfo = CGM.getDebugInfo();
+  if (CGM.getModuleDebugInfo() && !OMD->hasAttr<NoDebugAttr>())
+    DebugInfo = CGM.getModuleDebugInfo();
 
   llvm::Function *Fn = CGM.getObjCRuntime().GenerateMethod(OMD, CD);
 
   const CGFunctionInfo &FI = CGM.getTypes().getFunctionInfo(OMD);
   CGM.SetInternalFunctionAttributes(OMD, Fn, FI);
 
-  Args.push_back(std::make_pair(OMD->getSelfDecl(),
-                                OMD->getSelfDecl()->getType()));
-  Args.push_back(std::make_pair(OMD->getCmdDecl(),
-                                OMD->getCmdDecl()->getType()));
+  args.push_back(OMD->getSelfDecl());
+  args.push_back(OMD->getCmdDecl());
 
   for (ObjCMethodDecl::param_iterator PI = OMD->param_begin(),
        E = OMD->param_end(); PI != E; ++PI)
-    Args.push_back(std::make_pair(*PI, (*PI)->getType()));
+    args.push_back(*PI);
 
   CurGD = OMD;
 
-  StartFunction(OMD, OMD->getResultType(), Fn, Args, OMD->getLocStart());
+  StartFunction(OMD, OMD->getResultType(), Fn, FI, args, OMD->getLocStart());
 }
 
 void CodeGenFunction::GenerateObjCGetterBody(ObjCIvarDecl *Ivar, 

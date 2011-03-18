@@ -2461,20 +2461,26 @@ ASTReader::ASTReadResult ASTReader::ReadASTCore(llvm::StringRef FileName,
     if (CurrentDir.empty()) CurrentDir = ".";
   }
 
-  // Open the AST file.
-  //
-  // FIXME: This shouldn't be here, we should just take a raw_ostream.
-  std::string ErrStr;
-  llvm::error_code ec;
-  if (FileName == "-") {
-    ec = llvm::MemoryBuffer::getSTDIN(F.Buffer);
-    if (ec)
-      ErrStr = ec.message();
-  } else
-    F.Buffer.reset(FileMgr.getBufferForFile(FileName, &ErrStr));
-  if (!F.Buffer) {
-    Error(ErrStr.c_str());
-    return IgnorePCH;
+  if (!ASTBuffers.empty()) {
+    F.Buffer.reset(ASTBuffers.front());
+    ASTBuffers.pop_front();
+    assert(F.Buffer && "Passed null buffer");
+  } else {
+    // Open the AST file.
+    //
+    // FIXME: This shouldn't be here, we should just take a raw_ostream.
+    std::string ErrStr;
+    llvm::error_code ec;
+    if (FileName == "-") {
+      ec = llvm::MemoryBuffer::getSTDIN(F.Buffer);
+      if (ec)
+        ErrStr = ec.message();
+    } else
+      F.Buffer.reset(FileMgr.getBufferForFile(FileName, &ErrStr));
+    if (!F.Buffer) {
+      Error(ErrStr.c_str());
+      return IgnorePCH;
+    }
   }
 
   // Initialize the stream
@@ -3111,13 +3117,18 @@ QualType ASTReader::ReadTypeRecord(unsigned Index) {
     EPI.Variadic = Record[Idx++];
     EPI.TypeQuals = Record[Idx++];
     EPI.RefQualifier = static_cast<RefQualifierKind>(Record[Idx++]);
-    EPI.HasExceptionSpec = Record[Idx++];
-    EPI.HasAnyExceptionSpec = Record[Idx++];
-    EPI.NumExceptions = Record[Idx++];
-    llvm::SmallVector<QualType, 2> Exceptions;
-    for (unsigned I = 0; I != EPI.NumExceptions; ++I)
-      Exceptions.push_back(GetType(Record[Idx++]));
-    EPI.Exceptions = Exceptions.data();
+    ExceptionSpecificationType EST =
+        static_cast<ExceptionSpecificationType>(Record[Idx++]);
+    EPI.ExceptionSpecType = EST;
+    if (EST == EST_Dynamic) {
+      EPI.NumExceptions = Record[Idx++];
+      llvm::SmallVector<QualType, 2> Exceptions;
+      for (unsigned I = 0; I != EPI.NumExceptions; ++I)
+        Exceptions.push_back(GetType(Record[Idx++]));
+      EPI.Exceptions = Exceptions.data();
+    } else if (EST == EST_ComputedNoexcept) {
+      EPI.NoexceptExpr = ReadExpr(*Loc.F);
+    }
     return Context->getFunctionType(ResultType, ParamTypes.data(), NumParams,
                                     EPI);
   }
@@ -3401,6 +3412,7 @@ void TypeLocReader::VisitRValueReferenceTypeLoc(RValueReferenceTypeLoc TL) {
 }
 void TypeLocReader::VisitMemberPointerTypeLoc(MemberPointerTypeLoc TL) {
   TL.setStarLoc(ReadSourceLocation(Record, Idx));
+  TL.setClassTInfo(Reader.GetTypeSourceInfo(F, Record, Idx));
 }
 void TypeLocReader::VisitArrayTypeLoc(ArrayTypeLoc TL) {
   TL.setLBracketLoc(ReadSourceLocation(Record, Idx));
@@ -3434,8 +3446,8 @@ void TypeLocReader::VisitExtVectorTypeLoc(ExtVectorTypeLoc TL) {
   TL.setNameLoc(ReadSourceLocation(Record, Idx));
 }
 void TypeLocReader::VisitFunctionTypeLoc(FunctionTypeLoc TL) {
-  TL.setLParenLoc(ReadSourceLocation(Record, Idx));
-  TL.setRParenLoc(ReadSourceLocation(Record, Idx));
+  TL.setLocalRangeBegin(ReadSourceLocation(Record, Idx));
+  TL.setLocalRangeEnd(ReadSourceLocation(Record, Idx));
   TL.setTrailingReturn(Record[Idx++]);
   for (unsigned i = 0, e = TL.getNumArgs(); i != e; ++i) {
     TL.setArg(i, cast_or_null<ParmVarDecl>(Reader.GetDecl(Record[Idx++])));
@@ -3727,11 +3739,13 @@ ASTReader::GetCXXBaseSpecifiersOffset(serialization::CXXBaseSpecifiersID ID) {
   --ID;
   uint64_t Offset = 0;
   for (unsigned I = 0, N = Chain.size(); I != N; ++I) {
-    if (ID < Chain[I]->LocalNumCXXBaseSpecifiers)
-      return Offset + Chain[I]->CXXBaseSpecifiersOffsets[ID];
+    PerFileData &F = *Chain[N - I - 1];
+
+    if (ID < F.LocalNumCXXBaseSpecifiers)
+      return Offset + F.CXXBaseSpecifiersOffsets[ID];
     
-    ID -= Chain[I]->LocalNumCXXBaseSpecifiers;
-    Offset += Chain[I]->SizeInBits;
+    ID -= F.LocalNumCXXBaseSpecifiers;
+    Offset += F.SizeInBits;
   }
   
   assert(false && "CXXBaseSpecifiers not found");
@@ -3742,14 +3756,14 @@ CXXBaseSpecifier *ASTReader::GetExternalCXXBaseSpecifiers(uint64_t Offset) {
   // Figure out which AST file contains this offset.
   PerFileData *F = 0;
   for (unsigned I = 0, N = Chain.size(); I != N; ++I) {
-    if (Offset < Chain[I]->SizeInBits) {
-      F = Chain[I];
+    if (Offset < Chain[N - I - 1]->SizeInBits) {
+      F = Chain[N - I - 1];
       break;
     }
     
-    Offset -= Chain[I]->SizeInBits;
+    Offset -= Chain[N - I - 1]->SizeInBits;
   }
-  
+
   if (!F) {
     Error("Malformed AST file: C++ base specifiers at impossible offset");
     return 0;

@@ -318,8 +318,6 @@ def emit_html : Flag<"-emit-html">,
   HelpText<"Output input source as HTML">;
 def ast_print : Flag<"-ast-print">,
   HelpText<"Build ASTs and then pretty-print them">;
-def ast_print_xml : Flag<"-ast-print-xml">,
-  HelpText<"Build ASTs and then print them in XML format">;
 def ast_dump : Flag<"-ast-dump">,
   HelpText<"Build ASTs and then debug dump them">;
 def ast_dump_xml : Flag<"-ast-dump-xml">,
@@ -562,6 +560,8 @@ def include_pch : Separate<"-include-pch">, MetaVarName<"<file>">,
   HelpText<"Include precompiled header file">;
 def include_pth : Separate<"-include-pth">, MetaVarName<"<file>">,
   HelpText<"Include file before parsing">;
+def chain_include : Separate<"-chain-include">, MetaVarName<"<file>">,
+  HelpText<"Include and chain a header file after turning it into PCH">;
 def preamble_bytes_EQ : Joined<"-preamble-bytes=">,
   HelpText<"Assume that the precompiled header is a precompiled preamble "
            "covering the first N bytes of the main file">;

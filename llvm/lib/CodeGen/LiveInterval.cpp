@@ -30,21 +30,22 @@
 #include <algorithm>
 using namespace llvm;
 
-// CompEnd - Compare LiveRange ends.
-namespace {
-struct CompEnd {
-  bool operator()(SlotIndex A, const LiveRange &B) const {
-    return A < B.end;
-  }
-  bool operator()(const LiveRange &A, SlotIndex B) const {
-    return A.end < B;
-  }
-};
-}
-
 LiveInterval::iterator LiveInterval::find(SlotIndex Pos) {
-  assert(Pos.isValid() && "Cannot search for an invalid index");
-  return std::upper_bound(begin(), end(), Pos, CompEnd());
+  // This algorithm is basically std::upper_bound.
+  // Unfortunately, std::upper_bound cannot be used with mixed types until we
+  // adopt C++0x. Many libraries can do it, but not all.
+  if (empty() || Pos >= endIndex())
+    return end();
+  iterator I = begin();
+  size_t Len = ranges.size();
+  do {
+    size_t Mid = Len >> 1;
+    if (Pos < I[Mid].end)
+      Len = Mid;
+    else
+      I += Mid + 1, Len -= Mid + 1;
+  } while (Len);
+  return I;
 }
 
 /// killedInRange - Return true if the interval has kills in [Start,End).

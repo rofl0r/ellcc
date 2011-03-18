@@ -525,8 +525,8 @@ Decl *Sema::ActOnTypeParameter(Scope *S, bool Typename, bool Ellipsis,
 
   TemplateTypeParmDecl *Param
     = TemplateTypeParmDecl::Create(Context, Context.getTranslationUnitDecl(),
-                                   Loc, Depth, Position, ParamName, Typename,
-                                   Ellipsis);
+                                   KeyLoc, Loc, Depth, Position, ParamName,
+                                   Typename, Ellipsis);
   Param->setAccess(AS_public);
   if (Invalid)
     Param->setInvalidDecl();
@@ -650,6 +650,7 @@ Decl *Sema::ActOnNonTypeTemplateParameter(Scope *S, Declarator &D,
   bool IsParameterPack = D.hasEllipsis();
   NonTypeTemplateParmDecl *Param
     = NonTypeTemplateParmDecl::Create(Context, Context.getTranslationUnitDecl(),
+                                      D.getSourceRange().getBegin(),
                                       D.getIdentifierLoc(),
                                       Depth, Position, ParamName, T,
                                       IsParameterPack, TInfo);
@@ -792,7 +793,9 @@ Sema::CheckClassTemplate(Scope *S, unsigned TagSpec, TagUseKind TUK,
                          IdentifierInfo *Name, SourceLocation NameLoc,
                          AttributeList *Attr,
                          TemplateParameterList *TemplateParams,
-                         AccessSpecifier AS) {
+                         AccessSpecifier AS,
+                         unsigned NumOuterTemplateParamLists,
+                         TemplateParameterList** OuterTemplateParamLists) {
   assert(TemplateParams && TemplateParams->size() > 0 &&
          "No template parameters");
   assert(TUK != TUK_Reference && "Can only declare or define class templates");
@@ -962,11 +965,15 @@ Sema::CheckClassTemplate(Scope *S, unsigned TagSpec, TagUseKind TUK,
   }
 
   CXXRecordDecl *NewClass =
-    CXXRecordDecl::Create(Context, Kind, SemanticContext, NameLoc, Name, KWLoc,
+    CXXRecordDecl::Create(Context, Kind, SemanticContext, KWLoc, NameLoc, Name,
                           PrevClassTemplate?
                             PrevClassTemplate->getTemplatedDecl() : 0,
                           /*DelayTypeCreation=*/true);
   SetNestedNameSpecifier(NewClass, SS);
+  if (NumOuterTemplateParamLists > 0)
+    NewClass->setTemplateParameterListsInfo(Context,
+                                            NumOuterTemplateParamLists,
+                                            OuterTemplateParamLists);
 
   ClassTemplateDecl *NewTemplate
     = ClassTemplateDecl::Create(Context, SemanticContext, NameLoc,
@@ -1756,6 +1763,7 @@ QualType Sema::CheckTemplateIdType(TemplateName Name,
                             ClassTemplate->getTemplatedDecl()->getTagKind(),
                                                 ClassTemplate->getDeclContext(),
                                                 ClassTemplate->getLocation(),
+                                                ClassTemplate->getLocation(),
                                                      ClassTemplate,
                                                      Converted.data(),
                                                      Converted.size(), 0);
@@ -2028,7 +2036,8 @@ TemplateNameKind Sema::ActOnDependentTemplateName(Scope *S,
                                           MemberOfUnknownSpecialization);
     if (TNK == TNK_Non_template && LookupCtx->isDependentContext() &&
         isa<CXXRecordDecl>(LookupCtx) &&
-        cast<CXXRecordDecl>(LookupCtx)->hasAnyDependentBases()) {
+        (!cast<CXXRecordDecl>(LookupCtx)->hasDefinition() ||
+         cast<CXXRecordDecl>(LookupCtx)->hasAnyDependentBases())) {
       // This is a dependent template. Handle it below.
     } else if (TNK == TNK_Non_template) {
       Diag(Name.getSourceRange().getBegin(),
@@ -4584,7 +4593,9 @@ Sema::ActOnClassTemplateSpecialization(Scope *S, unsigned TagSpec,
                                 TemplateNameLoc,
                                 Attr,
                                 TemplateParams,
-                                AS_none);
+                                AS_none,
+                                NumMatchedTemplateParamLists,
+                  (TemplateParameterList**) TemplateParameterLists.release());
     }
 
     // Create a new class template partial specialization declaration node.
@@ -4595,7 +4606,7 @@ Sema::ActOnClassTemplateSpecialization(Scope *S, unsigned TagSpec,
     ClassTemplatePartialSpecializationDecl *Partial
       = ClassTemplatePartialSpecializationDecl::Create(Context, Kind,
                                              ClassTemplate->getDeclContext(),
-                                                       TemplateNameLoc,
+                                                       KWLoc, TemplateNameLoc,
                                                        TemplateParams,
                                                        ClassTemplate,
                                                        Converted.data(),
@@ -4658,7 +4669,7 @@ Sema::ActOnClassTemplateSpecialization(Scope *S, unsigned TagSpec,
     Specialization
       = ClassTemplateSpecializationDecl::Create(Context, Kind,
                                              ClassTemplate->getDeclContext(),
-                                                TemplateNameLoc,
+                                                KWLoc, TemplateNameLoc,
                                                 ClassTemplate,
                                                 Converted.data(),
                                                 Converted.size(),
@@ -5521,7 +5532,7 @@ Sema::ActOnExplicitInstantiation(Scope *S,
     Specialization
       = ClassTemplateSpecializationDecl::Create(Context, Kind,
                                              ClassTemplate->getDeclContext(),
-                                                TemplateNameLoc,
+                                                KWLoc, TemplateNameLoc,
                                                 ClassTemplate,
                                                 Converted.data(),
                                                 Converted.size(),

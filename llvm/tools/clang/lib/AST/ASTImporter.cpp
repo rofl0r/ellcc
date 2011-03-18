@@ -139,7 +139,7 @@ namespace {
     Expr *VisitCharacterLiteral(CharacterLiteral *E);
     Expr *VisitParenExpr(ParenExpr *E);
     Expr *VisitUnaryOperator(UnaryOperator *E);
-    Expr *VisitSizeOfAlignOfExpr(SizeOfAlignOfExpr *E);
+    Expr *VisitUnaryExprOrTypeTraitExpr(UnaryExprOrTypeTraitExpr *E);
     Expr *VisitBinaryOperator(BinaryOperator *E);
     Expr *VisitCompoundAssignOperator(CompoundAssignOperator *E);
     Expr *VisitImplicitCastExpr(ImplicitCastExpr *E);
@@ -521,16 +521,21 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
     }
     if (Proto1->isVariadic() != Proto2->isVariadic())
       return false;
-    if (Proto1->hasExceptionSpec() != Proto2->hasExceptionSpec())
+    if (Proto1->getExceptionSpecType() != Proto2->getExceptionSpecType())
       return false;
-    if (Proto1->hasAnyExceptionSpec() != Proto2->hasAnyExceptionSpec())
-      return false;
-    if (Proto1->getNumExceptions() != Proto2->getNumExceptions())
-      return false;
-    for (unsigned I = 0, N = Proto1->getNumExceptions(); I != N; ++I) {
+    if (Proto1->getExceptionSpecType() == EST_Dynamic) {
+      if (Proto1->getNumExceptions() != Proto2->getNumExceptions())
+        return false;
+      for (unsigned I = 0, N = Proto1->getNumExceptions(); I != N; ++I) {
+        if (!IsStructurallyEquivalent(Context,
+                                      Proto1->getExceptionType(I),
+                                      Proto2->getExceptionType(I)))
+          return false;
+      }
+    } else if (Proto1->getExceptionSpecType() == EST_ComputedNoexcept) {
       if (!IsStructurallyEquivalent(Context,
-                                    Proto1->getExceptionType(I),
-                                    Proto2->getExceptionType(I)))
+                                    Proto1->getNoexceptExpr(),
+                                    Proto2->getNoexceptExpr()))
         return false;
     }
     if (Proto1->getTypeQuals() != Proto2->getTypeQuals())
@@ -1967,8 +1972,9 @@ Decl *ASTNodeImporter::VisitNamespaceDecl(NamespaceDecl *D) {
   // Create the "to" namespace, if needed.
   NamespaceDecl *ToNamespace = MergeWithNamespace;
   if (!ToNamespace) {
-    ToNamespace = NamespaceDecl::Create(Importer.getToContext(), DC, Loc,
-                                        Name.getAsIdentifierInfo());
+    ToNamespace = NamespaceDecl::Create(Importer.getToContext(), DC,
+                                        Importer.Import(D->getLocStart()),
+                                        Loc, Name.getAsIdentifierInfo());
     ToNamespace->setLexicalDeclContext(LexicalDC);
     LexicalDC->addDecl(ToNamespace);
     
@@ -2032,8 +2038,10 @@ Decl *ASTNodeImporter::VisitTypedefDecl(TypedefDecl *D) {
   
   // Create the new typedef node.
   TypeSourceInfo *TInfo = Importer.Import(D->getTypeSourceInfo());
+  SourceLocation StartL = Importer.Import(D->getLocStart());
   TypedefDecl *ToTypedef = TypedefDecl::Create(Importer.getToContext(), DC,
-                                               Loc, Name.getAsIdentifierInfo(),
+                                               StartL, Loc,
+                                               Name.getAsIdentifierInfo(),
                                                TInfo);
   ToTypedef->setAccess(D->getAccess());
   ToTypedef->setLexicalDeclContext(LexicalDC);
@@ -2091,9 +2099,9 @@ Decl *ASTNodeImporter::VisitEnumDecl(EnumDecl *D) {
   }
   
   // Create the enum declaration.
-  EnumDecl *D2 = EnumDecl::Create(Importer.getToContext(), DC, Loc,
-                                  Name.getAsIdentifierInfo(),
-                                  Importer.Import(D->getTagKeywordLoc()), 0,
+  EnumDecl *D2 = EnumDecl::Create(Importer.getToContext(), DC,
+                                  Importer.Import(D->getLocStart()),
+                                  Loc, Name.getAsIdentifierInfo(), 0,
                                   D->isScoped(), D->isScopedUsingClassTag(),
                                   D->isFixed());
   // Import the qualifier, if any.
@@ -2206,20 +2214,18 @@ Decl *ASTNodeImporter::VisitRecordDecl(RecordDecl *D) {
   
   // Create the record declaration.
   RecordDecl *D2 = AdoptDecl;
+  SourceLocation StartLoc = Importer.Import(D->getLocStart());
   if (!D2) {
     if (isa<CXXRecordDecl>(D)) {
       CXXRecordDecl *D2CXX = CXXRecordDecl::Create(Importer.getToContext(), 
                                                    D->getTagKind(),
-                                                   DC, Loc,
-                                                   Name.getAsIdentifierInfo(), 
-                                        Importer.Import(D->getTagKeywordLoc()));
+                                                   DC, StartLoc, Loc,
+                                                   Name.getAsIdentifierInfo());
       D2 = D2CXX;
       D2->setAccess(D->getAccess());
     } else {
       D2 = RecordDecl::Create(Importer.getToContext(), D->getTagKind(),
-                                    DC, Loc,
-                                    Name.getAsIdentifierInfo(), 
-                                    Importer.Import(D->getTagKeywordLoc()));
+                              DC, StartLoc, Loc, Name.getAsIdentifierInfo());
     }
     
     D2->setQualifierInfo(Importer.Import(D->getQualifierLoc()));
@@ -2367,6 +2373,7 @@ Decl *ASTNodeImporter::VisitFunctionDecl(FunctionDecl *D) {
   if (CXXConstructorDecl *FromConstructor = dyn_cast<CXXConstructorDecl>(D)) {
     ToFunction = CXXConstructorDecl::Create(Importer.getToContext(),
                                             cast<CXXRecordDecl>(DC),
+                                            D->getInnerLocStart(),
                                             NameInfo, T, TInfo, 
                                             FromConstructor->isExplicit(),
                                             D->isInlineSpecified(), 
@@ -2374,6 +2381,7 @@ Decl *ASTNodeImporter::VisitFunctionDecl(FunctionDecl *D) {
   } else if (isa<CXXDestructorDecl>(D)) {
     ToFunction = CXXDestructorDecl::Create(Importer.getToContext(),
                                            cast<CXXRecordDecl>(DC),
+                                           D->getInnerLocStart(),
                                            NameInfo, T, TInfo,
                                            D->isInlineSpecified(),
                                            D->isImplicit());
@@ -2381,18 +2389,23 @@ Decl *ASTNodeImporter::VisitFunctionDecl(FunctionDecl *D) {
                                            = dyn_cast<CXXConversionDecl>(D)) {
     ToFunction = CXXConversionDecl::Create(Importer.getToContext(), 
                                            cast<CXXRecordDecl>(DC),
+                                           D->getInnerLocStart(),
                                            NameInfo, T, TInfo,
                                            D->isInlineSpecified(),
-                                           FromConversion->isExplicit());
+                                           FromConversion->isExplicit(),
+                                           Importer.Import(D->getLocEnd()));
   } else if (CXXMethodDecl *Method = dyn_cast<CXXMethodDecl>(D)) {
     ToFunction = CXXMethodDecl::Create(Importer.getToContext(), 
                                        cast<CXXRecordDecl>(DC),
+                                       D->getInnerLocStart(),
                                        NameInfo, T, TInfo,
                                        Method->isStatic(),
                                        Method->getStorageClassAsWritten(),
-                                       Method->isInlineSpecified());
+                                       Method->isInlineSpecified(),
+                                       Importer.Import(D->getLocEnd()));
   } else {
     ToFunction = FunctionDecl::Create(Importer.getToContext(), DC,
+                                      D->getInnerLocStart(),
                                       NameInfo, T, TInfo, D->getStorageClass(),
                                       D->getStorageClassAsWritten(),
                                       D->isInlineSpecified(),
@@ -2457,7 +2470,8 @@ Decl *ASTNodeImporter::VisitFieldDecl(FieldDecl *D) {
   if (!BitWidth && D->getBitWidth())
     return 0;
   
-  FieldDecl *ToField = FieldDecl::Create(Importer.getToContext(), DC, 
+  FieldDecl *ToField = FieldDecl::Create(Importer.getToContext(), DC,
+                                         Importer.Import(D->getInnerLocStart()),
                                          Loc, Name.getAsIdentifierInfo(),
                                          T, TInfo, BitWidth, D->isMutable());
   ToField->setAccess(D->getAccess());
@@ -2542,6 +2556,7 @@ Decl *ASTNodeImporter::VisitObjCIvarDecl(ObjCIvarDecl *D) {
   
   ObjCIvarDecl *ToIvar = ObjCIvarDecl::Create(Importer.getToContext(),
                                               cast<ObjCContainerDecl>(DC),
+                                       Importer.Import(D->getInnerLocStart()),
                                               Loc, Name.getAsIdentifierInfo(),
                                               T, TInfo, D->getAccessControl(),
                                               BitWidth, D->getSynthesize());
@@ -2650,8 +2665,10 @@ Decl *ASTNodeImporter::VisitVarDecl(VarDecl *D) {
   
   // Create the imported variable.
   TypeSourceInfo *TInfo = Importer.Import(D->getTypeSourceInfo());
-  VarDecl *ToVar = VarDecl::Create(Importer.getToContext(), DC, Loc, 
-                                   Name.getAsIdentifierInfo(), T, TInfo,
+  VarDecl *ToVar = VarDecl::Create(Importer.getToContext(), DC,
+                                   Importer.Import(D->getInnerLocStart()),
+                                   Loc, Name.getAsIdentifierInfo(),
+                                   T, TInfo,
                                    D->getStorageClass(),
                                    D->getStorageClassAsWritten());
   ToVar->setQualifierInfo(Importer.Import(D->getQualifierLoc()));
@@ -2718,6 +2735,7 @@ Decl *ASTNodeImporter::VisitParmVarDecl(ParmVarDecl *D) {
   // Create the imported parameter.
   TypeSourceInfo *TInfo = Importer.Import(D->getTypeSourceInfo());
   ParmVarDecl *ToParm = ParmVarDecl::Create(Importer.getToContext(), DC,
+                                     Importer.Import(D->getInnerLocStart()),
                                             Loc, Name.getAsIdentifierInfo(),
                                             T, TInfo, D->getStorageClass(),
                                              D->getStorageClassAsWritten(),
@@ -3444,6 +3462,7 @@ Decl *ASTNodeImporter::VisitTemplateTypeParmDecl(TemplateTypeParmDecl *D) {
   // FIXME: Import default argument.
   return TemplateTypeParmDecl::Create(Importer.getToContext(),
                               Importer.getToContext().getTranslationUnitDecl(),
+                                      Importer.Import(D->getLocStart()),
                                       Importer.Import(D->getLocation()),
                                       D->getDepth(),
                                       D->getIndex(), 
@@ -3476,6 +3495,7 @@ ASTNodeImporter::VisitNonTypeTemplateParmDecl(NonTypeTemplateParmDecl *D) {
   
   return NonTypeTemplateParmDecl::Create(Importer.getToContext(),
                                Importer.getToContext().getTranslationUnitDecl(),
+                                         Importer.Import(D->getInnerLocStart()),
                                          Loc, D->getDepth(), D->getPosition(),
                                          Name.getAsIdentifierInfo(),
                                          T, D->isParameterPack(), TInfo);
@@ -3567,12 +3587,12 @@ Decl *ASTNodeImporter::VisitClassTemplateDecl(ClassTemplateDecl *D) {
   CXXRecordDecl *DTemplated = D->getTemplatedDecl();
   
   // Create the declaration that is being templated.
+  SourceLocation StartLoc = Importer.Import(DTemplated->getLocStart());
+  SourceLocation IdLoc = Importer.Import(DTemplated->getLocation());
   CXXRecordDecl *D2Templated = CXXRecordDecl::Create(Importer.getToContext(),
                                                      DTemplated->getTagKind(),
-                                                     DC, 
-                                     Importer.Import(DTemplated->getLocation()),
-                                                     Name.getAsIdentifierInfo(),                                                       
-                               Importer.Import(DTemplated->getTagKeywordLoc()));
+                                                     DC, StartLoc, IdLoc,
+                                                   Name.getAsIdentifierInfo());
   D2Templated->setAccess(DTemplated->getAccess());
   D2Templated->setQualifierInfo(Importer.Import(DTemplated->getQualifierLoc()));
   D2Templated->setLexicalDeclContext(LexicalDC);
@@ -3637,7 +3657,8 @@ Decl *ASTNodeImporter::VisitClassTemplateSpecializationDecl(
   }
   
   // Import the location of this declaration.
-  SourceLocation Loc = Importer.Import(D->getLocation());
+  SourceLocation StartLoc = Importer.Import(D->getLocStart());
+  SourceLocation IdLoc = Importer.Import(D->getLocation());
 
   // Import template arguments.
   llvm::SmallVector<TemplateArgument, 2> TemplateArgs;
@@ -3669,7 +3690,8 @@ Decl *ASTNodeImporter::VisitClassTemplateSpecializationDecl(
     // Create a new specialization.
     D2 = ClassTemplateSpecializationDecl::Create(Importer.getToContext(), 
                                                  D->getTagKind(), DC, 
-                                                 Loc, ClassTemplate,
+                                                 StartLoc, IdLoc,
+                                                 ClassTemplate,
                                                  TemplateArgs.data(), 
                                                  TemplateArgs.size(), 
                                                  /*PrevDecl=*/0);
@@ -3782,7 +3804,8 @@ Expr *ASTNodeImporter::VisitUnaryOperator(UnaryOperator *E) {
                                          Importer.Import(E->getOperatorLoc()));                                        
 }
 
-Expr *ASTNodeImporter::VisitSizeOfAlignOfExpr(SizeOfAlignOfExpr *E) {
+Expr *ASTNodeImporter::VisitUnaryExprOrTypeTraitExpr(
+                                            UnaryExprOrTypeTraitExpr *E) {
   QualType ResultType = Importer.Import(E->getType());
   
   if (E->isArgumentType()) {
@@ -3790,8 +3813,8 @@ Expr *ASTNodeImporter::VisitSizeOfAlignOfExpr(SizeOfAlignOfExpr *E) {
     if (!TInfo)
       return 0;
     
-    return new (Importer.getToContext()) SizeOfAlignOfExpr(E->isSizeOf(),
-                                                           TInfo, ResultType,
+    return new (Importer.getToContext()) UnaryExprOrTypeTraitExpr(E->getKind(),
+                                           TInfo, ResultType,
                                            Importer.Import(E->getOperatorLoc()),
                                            Importer.Import(E->getRParenLoc()));
   }
@@ -3800,8 +3823,8 @@ Expr *ASTNodeImporter::VisitSizeOfAlignOfExpr(SizeOfAlignOfExpr *E) {
   if (!SubExpr)
     return 0;
   
-  return new (Importer.getToContext()) SizeOfAlignOfExpr(E->isSizeOf(),
-                                                         SubExpr, ResultType,
+  return new (Importer.getToContext()) UnaryExprOrTypeTraitExpr(E->getKind(),
+                                          SubExpr, ResultType,
                                           Importer.Import(E->getOperatorLoc()),
                                           Importer.Import(E->getRParenLoc()));
 }

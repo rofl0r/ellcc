@@ -27,7 +27,7 @@ using namespace CodeGen;
 
 CGBlockInfo::CGBlockInfo(const BlockExpr *blockExpr, const char *N)
   : Name(N), CXXThisIndex(0), CanBeGlobal(false), NeedsCopyDispose(false),
-    HasCXXObject(false), StructureType(0), Block(blockExpr) {
+    HasCXXObject(false), UsesStret(false), StructureType(0), Block(blockExpr) {
     
   // Skip asm prefix, if any.
   if (Name && Name[0] == '\01')
@@ -102,23 +102,6 @@ static llvm::Constant *buildBlockDescriptor(CodeGenModule &CGM,
                              init, "__block_descriptor_tmp");
 
   return llvm::ConstantExpr::getBitCast(global, CGM.getBlockDescriptorType());
-}
-
-static BlockFlags computeBlockFlag(CodeGenModule &CGM,
-                                   const BlockExpr *BE,
-                                   BlockFlags flags) {
-  const FunctionType *ftype = BE->getFunctionType();
-  
-  // This is a bit overboard.
-  CallArgList args;
-  const CGFunctionInfo &fnInfo =
-    CGM.getTypes().getFunctionInfo(ftype->getResultType(), args,
-                                   ftype->getExtInfo());
-
-  if (CGM.ReturnTypeUsesSRet(fnInfo))
-    flags |= BLOCK_USE_STRET;
-
-  return flags;
 }
 
 /*
@@ -536,7 +519,7 @@ llvm::Value *CodeGenFunction::EmitBlockLiteral(const BlockExpr *blockExpr) {
   BlockFlags flags = BLOCK_HAS_SIGNATURE;
   if (blockInfo.NeedsCopyDispose) flags |= BLOCK_HAS_COPY_DISPOSE;
   if (blockInfo.HasCXXObject) flags |= BLOCK_HAS_CXX_OBJ;
-  flags = computeBlockFlag(CGM, blockInfo.getBlockExpr(), flags);
+  if (blockInfo.UsesStret) flags |= BLOCK_USE_STRET;
 
   // Initialize the block literal.
   Builder.CreateStore(isa, Builder.CreateStructGEP(blockAddr, 0, "block.isa"));
@@ -630,7 +613,9 @@ llvm::Value *CodeGenFunction::EmitBlockLiteral(const BlockExpr *blockExpr) {
 
       ImplicitCastExpr l2r(ImplicitCastExpr::OnStack, type, CK_LValueToRValue,
                            declRef, VK_RValue);
-      EmitAnyExprToMem(&l2r, blockField, /*volatile*/ false, /*init*/ true);
+      EmitExprAsInit(&l2r, variable, blockField,
+                     getContext().getDeclAlign(variable),
+                     /*captured by init*/ false);
     }
 
     // Push a destructor if necessary.  The semantics for when this
@@ -745,7 +730,7 @@ RValue CodeGenFunction::EmitBlockCallExpr(const CallExpr* E,
   // Load the function.
   llvm::Value *Func = Builder.CreateLoad(FuncPtr, "tmp");
 
-  const FunctionType *FuncTy = FnType->getAs<FunctionType>();
+  const FunctionType *FuncTy = FnType->castAs<FunctionType>();
   QualType ResultType = FuncTy->getResultType();
 
   const CGFunctionInfo &FnInfo =
@@ -834,8 +819,9 @@ static llvm::Constant *buildGlobalBlock(CodeGenModule &CGM,
   fields[0] = CGM.getNSConcreteGlobalBlock();
 
   // __flags
-  BlockFlags flags = computeBlockFlag(CGM, blockInfo.getBlockExpr(),
-                                      BLOCK_IS_GLOBAL | BLOCK_HAS_SIGNATURE);
+  BlockFlags flags = BLOCK_IS_GLOBAL | BLOCK_HAS_SIGNATURE;
+  if (blockInfo.UsesStret) flags |= BLOCK_USE_STRET;
+                                      
   fields[1] = llvm::ConstantInt::get(CGM.IntTy, flags.getBitMask());
 
   // Reserved
@@ -873,7 +859,10 @@ CodeGenFunction::GenerateBlockFunction(GlobalDecl GD,
                                        const DeclMapTy &ldm) {
   const BlockDecl *blockDecl = blockInfo.getBlockDecl();
 
-  DebugInfo = CGM.getDebugInfo();
+  // Check if we should generate debug info for this block function.
+  if (CGM.getModuleDebugInfo())
+    DebugInfo = CGM.getModuleDebugInfo();
+
   BlockInfo = &blockInfo;
 
   // Arrange for local static and local extern declarations to appear
@@ -897,12 +886,12 @@ CodeGenFunction::GenerateBlockFunction(GlobalDecl GD,
 
   ImplicitParamDecl selfDecl(const_cast<BlockDecl*>(blockDecl),
                              SourceLocation(), II, selfTy);
-  args.push_back(std::make_pair(&selfDecl, selfTy));
+  args.push_back(&selfDecl);
 
   // Now add the rest of the parameters.
   for (BlockDecl::param_const_iterator i = blockDecl->param_begin(),
        e = blockDecl->param_end(); i != e; ++i)
-    args.push_back(std::make_pair(*i, (*i)->getType()));
+    args.push_back(*i);
 
   // Create the function declaration.
   const FunctionProtoType *fnType =
@@ -910,6 +899,9 @@ CodeGenFunction::GenerateBlockFunction(GlobalDecl GD,
   const CGFunctionInfo &fnInfo =
     CGM.getTypes().getFunctionInfo(fnType->getResultType(), args,
                                    fnType->getExtInfo());
+  if (CGM.ReturnTypeUsesSRet(fnInfo))
+    blockInfo.UsesStret = true;
+
   const llvm::FunctionType *fnLLVMType =
     CGM.getTypes().GetFunctionType(fnInfo, fnType->isVariadic());
 
@@ -921,7 +913,7 @@ CodeGenFunction::GenerateBlockFunction(GlobalDecl GD,
   CGM.SetInternalFunctionAttributes(blockDecl, fn, fnInfo);
 
   // Begin generating the function.
-  StartFunction(blockDecl, fnType->getResultType(), fn, args,
+  StartFunction(blockDecl, fnType->getResultType(), fn, fnInfo, args,
                 blockInfo.getBlockExpr()->getBody()->getLocEnd());
   CurFuncDecl = outerFnDecl; // StartFunction sets this to blockDecl
 
@@ -1049,13 +1041,10 @@ CodeGenFunction::GenerateCopyHelperFunction(const CGBlockInfo &blockInfo) {
   ASTContext &C = getContext();
 
   FunctionArgList args;
-  // FIXME: This leaks
-  ImplicitParamDecl *dstDecl =
-    ImplicitParamDecl::Create(C, 0, SourceLocation(), 0, C.VoidPtrTy);
-  args.push_back(std::make_pair(dstDecl, dstDecl->getType()));
-  ImplicitParamDecl *srcDecl =
-    ImplicitParamDecl::Create(C, 0, SourceLocation(), 0, C.VoidPtrTy);
-  args.push_back(std::make_pair(srcDecl, srcDecl->getType()));
+  ImplicitParamDecl dstDecl(0, SourceLocation(), 0, C.VoidPtrTy);
+  args.push_back(&dstDecl);
+  ImplicitParamDecl srcDecl(0, SourceLocation(), 0, C.VoidPtrTy);
+  args.push_back(&srcDecl);
 
   const CGFunctionInfo &FI =
       CGM.getTypes().getFunctionInfo(C.VoidTy, args, FunctionType::ExtInfo());
@@ -1073,20 +1062,21 @@ CodeGenFunction::GenerateCopyHelperFunction(const CGBlockInfo &blockInfo) {
 
   FunctionDecl *FD = FunctionDecl::Create(C,
                                           C.getTranslationUnitDecl(),
+                                          SourceLocation(),
                                           SourceLocation(), II, C.VoidTy, 0,
                                           SC_Static,
                                           SC_None,
                                           false,
                                           true);
-  StartFunction(FD, C.VoidTy, Fn, args, SourceLocation());
+  StartFunction(FD, C.VoidTy, Fn, FI, args, SourceLocation());
 
   const llvm::Type *structPtrTy = blockInfo.StructureType->getPointerTo();
 
-  llvm::Value *src = GetAddrOfLocalVar(srcDecl);
+  llvm::Value *src = GetAddrOfLocalVar(&srcDecl);
   src = Builder.CreateLoad(src);
   src = Builder.CreateBitCast(src, structPtrTy, "block.source");
 
-  llvm::Value *dst = GetAddrOfLocalVar(dstDecl);
+  llvm::Value *dst = GetAddrOfLocalVar(&dstDecl);
   dst = Builder.CreateLoad(dst);
   dst = Builder.CreateBitCast(dst, structPtrTy, "block.dest");
 
@@ -1143,10 +1133,8 @@ CodeGenFunction::GenerateDestroyHelperFunction(const CGBlockInfo &blockInfo) {
   ASTContext &C = getContext();
 
   FunctionArgList args;
-  // FIXME: This leaks
-  ImplicitParamDecl *srcDecl =
-    ImplicitParamDecl::Create(C, 0, SourceLocation(), 0, C.VoidPtrTy);
-  args.push_back(std::make_pair(srcDecl, srcDecl->getType()));
+  ImplicitParamDecl srcDecl(0, SourceLocation(), 0, C.VoidPtrTy);
+  args.push_back(&srcDecl);
 
   const CGFunctionInfo &FI =
       CGM.getTypes().getFunctionInfo(C.VoidTy, args, FunctionType::ExtInfo());
@@ -1163,15 +1151,16 @@ CodeGenFunction::GenerateDestroyHelperFunction(const CGBlockInfo &blockInfo) {
     = &CGM.getContext().Idents.get("__destroy_helper_block_");
 
   FunctionDecl *FD = FunctionDecl::Create(C, C.getTranslationUnitDecl(),
+                                          SourceLocation(),
                                           SourceLocation(), II, C.VoidTy, 0,
                                           SC_Static,
                                           SC_None,
                                           false, true);
-  StartFunction(FD, C.VoidTy, Fn, args, SourceLocation());
+  StartFunction(FD, C.VoidTy, Fn, FI, args, SourceLocation());
 
   const llvm::Type *structPtrTy = blockInfo.StructureType->getPointerTo();
 
-  llvm::Value *src = GetAddrOfLocalVar(srcDecl);
+  llvm::Value *src = GetAddrOfLocalVar(&srcDecl);
   src = Builder.CreateLoad(src);
   src = Builder.CreateBitCast(src, structPtrTy, "block");
 
@@ -1234,23 +1223,15 @@ GeneratebyrefCopyHelperFunction(const llvm::Type *T, BlockFieldFlags flags,
                                 const VarDecl *variable) {
   QualType R = getContext().VoidTy;
 
-  FunctionArgList Args;
-  // FIXME: This leaks
-  ImplicitParamDecl *Dst =
-    ImplicitParamDecl::Create(getContext(), 0,
-                              SourceLocation(), 0,
-                              getContext().getPointerType(getContext().VoidTy));
-  Args.push_back(std::make_pair(Dst, Dst->getType()));
+  FunctionArgList args;
+  ImplicitParamDecl dst(0, SourceLocation(), 0, getContext().VoidPtrTy);
+  args.push_back(&dst);
 
-  // FIXME: This leaks
-  ImplicitParamDecl *Src =
-    ImplicitParamDecl::Create(getContext(), 0,
-                              SourceLocation(), 0,
-                              getContext().getPointerType(getContext().VoidTy));
-  Args.push_back(std::make_pair(Src, Src->getType()));
+  ImplicitParamDecl src(0, SourceLocation(), 0, getContext().VoidPtrTy);
+  args.push_back(&src);
 
   const CGFunctionInfo &FI =
-      CGM.getTypes().getFunctionInfo(R, Args, FunctionType::ExtInfo());
+      CGM.getTypes().getFunctionInfo(R, args, FunctionType::ExtInfo());
 
   CodeGenTypes &Types = CGM.getTypes();
   const llvm::FunctionType *LTy = Types.GetFunctionType(FI, false);
@@ -1266,21 +1247,22 @@ GeneratebyrefCopyHelperFunction(const llvm::Type *T, BlockFieldFlags flags,
 
   FunctionDecl *FD = FunctionDecl::Create(getContext(),
                                           getContext().getTranslationUnitDecl(),
+                                          SourceLocation(),
                                           SourceLocation(), II, R, 0,
                                           SC_Static,
                                           SC_None,
                                           false, true);
-  StartFunction(FD, R, Fn, Args, SourceLocation());
+  StartFunction(FD, R, Fn, FI, args, SourceLocation());
 
   // dst->x
-  llvm::Value *V = GetAddrOfLocalVar(Dst);
+  llvm::Value *V = GetAddrOfLocalVar(&dst);
   V = Builder.CreateBitCast(V, llvm::PointerType::get(T, 0));
   V = Builder.CreateLoad(V);
   V = Builder.CreateStructGEP(V, 6, "x");
   llvm::Value *DstObj = V;
 
   // src->x
-  V = GetAddrOfLocalVar(Src);
+  V = GetAddrOfLocalVar(&src);
   V = Builder.CreateLoad(V);
   V = Builder.CreateBitCast(V, T);
   V = Builder.CreateStructGEP(V, 6, "x");
@@ -1309,17 +1291,12 @@ CodeGenFunction::GeneratebyrefDestroyHelperFunction(const llvm::Type *T,
                                                     const VarDecl *variable) {
   QualType R = getContext().VoidTy;
 
-  FunctionArgList Args;
-  // FIXME: This leaks
-  ImplicitParamDecl *Src =
-    ImplicitParamDecl::Create(getContext(), 0,
-                              SourceLocation(), 0,
-                              getContext().getPointerType(getContext().VoidTy));
-
-  Args.push_back(std::make_pair(Src, Src->getType()));
+  FunctionArgList args;
+  ImplicitParamDecl src(0, SourceLocation(), 0, getContext().VoidPtrTy);
+  args.push_back(&src);
 
   const CGFunctionInfo &FI =
-      CGM.getTypes().getFunctionInfo(R, Args, FunctionType::ExtInfo());
+      CGM.getTypes().getFunctionInfo(R, args, FunctionType::ExtInfo());
 
   CodeGenTypes &Types = CGM.getTypes();
   const llvm::FunctionType *LTy = Types.GetFunctionType(FI, false);
@@ -1336,13 +1313,14 @@ CodeGenFunction::GeneratebyrefDestroyHelperFunction(const llvm::Type *T,
 
   FunctionDecl *FD = FunctionDecl::Create(getContext(),
                                           getContext().getTranslationUnitDecl(),
+                                          SourceLocation(),
                                           SourceLocation(), II, R, 0,
                                           SC_Static,
                                           SC_None,
                                           false, true);
-  StartFunction(FD, R, Fn, Args, SourceLocation());
+  StartFunction(FD, R, Fn, FI, args, SourceLocation());
 
-  llvm::Value *V = GetAddrOfLocalVar(Src);
+  llvm::Value *V = GetAddrOfLocalVar(&src);
   V = Builder.CreateBitCast(V, llvm::PointerType::get(T, 0));
   V = Builder.CreateLoad(V);
   V = Builder.CreateStructGEP(V, 6, "x");

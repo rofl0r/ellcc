@@ -327,7 +327,7 @@ void Parser::ParseObjCInterfaceDeclList(Decl *interfaceDecl,
     // If this is a method prototype, parse it.
     if (Tok.is(tok::minus) || Tok.is(tok::plus)) {
       Decl *methodPrototype =
-        ParseObjCMethodPrototype(interfaceDecl, MethodImplKind);
+        ParseObjCMethodPrototype(interfaceDecl, MethodImplKind, false);
       allMethods.push_back(methodPrototype);
       // Consume the ';' here, since ParseObjCMethodPrototype() is re-used for
       // method definitions.
@@ -340,7 +340,7 @@ void Parser::ParseObjCInterfaceDeclList(Decl *interfaceDecl,
       ParseObjCMethodDecl(Tok.getLocation(), 
                           tok::minus, 
                           interfaceDecl,
-                          MethodImplKind);
+                          MethodImplKind, false);
       continue;
     }
     // Ignore excess semicolons.
@@ -582,12 +582,14 @@ void Parser::ParseObjCPropertyAttribute(ObjCDeclSpec &DS, Decl *ClassDecl) {
 ///     __attribute__((deprecated))
 ///
 Decl *Parser::ParseObjCMethodPrototype(Decl *IDecl,
-                                       tok::ObjCKeywordKind MethodImplKind) {
+                                       tok::ObjCKeywordKind MethodImplKind,
+                                       bool MethodDefinition) {
   assert((Tok.is(tok::minus) || Tok.is(tok::plus)) && "expected +/-");
 
   tok::TokenKind methodType = Tok.getKind();
   SourceLocation mLoc = ConsumeToken();
-  Decl *MDecl = ParseObjCMethodDecl(mLoc, methodType, IDecl,MethodImplKind);
+  Decl *MDecl = ParseObjCMethodDecl(mLoc, methodType, IDecl,MethodImplKind,
+                                    MethodDefinition);
   // Since this rule is used for both method declarations and definitions,
   // the caller is (optionally) responsible for consuming the ';'.
   return MDecl;
@@ -720,10 +722,12 @@ bool Parser::isTokIdentifier_in() const {
 ///     objc-type-qualifier
 ///     objc-type-qualifiers objc-type-qualifier
 ///
-void Parser::ParseObjCTypeQualifierList(ObjCDeclSpec &DS, bool IsParameter) {
+void Parser::ParseObjCTypeQualifierList(ObjCDeclSpec &DS,
+                                        ObjCTypeNameContext Context) {
   while (1) {
     if (Tok.is(tok::code_completion)) {
-      Actions.CodeCompleteObjCPassingType(getCurScope(), DS, IsParameter);
+      Actions.CodeCompleteObjCPassingType(getCurScope(), DS, 
+                                          Context == OTN_ParameterType);
       ConsumeCodeCompletionToken();
     }
     
@@ -760,14 +764,15 @@ void Parser::ParseObjCTypeQualifierList(ObjCDeclSpec &DS, bool IsParameter) {
 ///     '(' objc-type-qualifiers[opt] type-name ')'
 ///     '(' objc-type-qualifiers[opt] ')'
 ///
-ParsedType Parser::ParseObjCTypeName(ObjCDeclSpec &DS, bool IsParameter) {
+ParsedType Parser::ParseObjCTypeName(ObjCDeclSpec &DS, 
+                                     ObjCTypeNameContext Context) {
   assert(Tok.is(tok::l_paren) && "expected (");
 
   SourceLocation LParenLoc = ConsumeParen();
   SourceLocation TypeStartLoc = Tok.getLocation();
 
   // Parse type qualifiers, in, inout, etc.
-  ParseObjCTypeQualifierList(DS, IsParameter);
+  ParseObjCTypeQualifierList(DS, Context);
 
   ParsedType Ty;
   if (isTypeSpecifierQualifier()) {
@@ -821,7 +826,8 @@ ParsedType Parser::ParseObjCTypeName(ObjCDeclSpec &DS, bool IsParameter) {
 Decl *Parser::ParseObjCMethodDecl(SourceLocation mLoc,
                                   tok::TokenKind mType,
                                   Decl *IDecl,
-                                  tok::ObjCKeywordKind MethodImplKind) {
+                                  tok::ObjCKeywordKind MethodImplKind,
+                                  bool MethodDefinition) {
   ParsingDeclRAIIObject PD(*this);
 
   if (Tok.is(tok::code_completion)) {
@@ -834,7 +840,7 @@ Decl *Parser::ParseObjCMethodDecl(SourceLocation mLoc,
   ParsedType ReturnType;
   ObjCDeclSpec DSRet;
   if (Tok.is(tok::l_paren))
-    ReturnType = ParseObjCTypeName(DSRet, false);
+    ReturnType = ParseObjCTypeName(DSRet, OTN_ResultType);
 
   // If attributes exist before the method, parse them.
   ParsedAttributes attrs;
@@ -872,7 +878,8 @@ Decl *Parser::ParseObjCMethodDecl(SourceLocation mLoc,
                                           mType, IDecl, DSRet, ReturnType, Sel,
                                           0, 
                                           CParamInfo.data(), CParamInfo.size(),
-                                          attrs.getList(), MethodImplKind);
+                                          attrs.getList(), MethodImplKind, false, 
+                                          MethodDefinition);
     PD.complete(Result);
     return Result;
   }
@@ -894,7 +901,7 @@ Decl *Parser::ParseObjCMethodDecl(SourceLocation mLoc,
 
     ArgInfo.Type = ParsedType();
     if (Tok.is(tok::l_paren)) // Parse the argument type if present.
-      ArgInfo.Type = ParseObjCTypeName(ArgInfo.DeclSpec, true);
+      ArgInfo.Type = ParseObjCTypeName(ArgInfo.DeclSpec, OTN_ParameterType);
 
     // If attributes exist before the argument name, parse them.
     ArgInfo.ArgAttrs = 0;
@@ -993,7 +1000,7 @@ Decl *Parser::ParseObjCMethodDecl(SourceLocation mLoc,
                                         &ArgInfos[0], 
                                         CParamInfo.data(), CParamInfo.size(),
                                         attrs.getList(),
-                                        MethodImplKind, isVariadic);
+                                        MethodImplKind, isVariadic, MethodDefinition);
   // Leave prototype scope.
   PrototypeScope.Exit();
   

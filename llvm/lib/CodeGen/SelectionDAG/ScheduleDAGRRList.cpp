@@ -75,10 +75,10 @@ static cl::opt<bool> DisableSchedRegPressure(
   "disable-sched-reg-pressure", cl::Hidden, cl::init(false),
   cl::desc("Disable regpressure priority in sched=list-ilp"));
 static cl::opt<bool> DisableSchedLiveUses(
-  "disable-sched-live-uses", cl::Hidden, cl::init(false),
+  "disable-sched-live-uses", cl::Hidden, cl::init(true),
   cl::desc("Disable live use priority in sched=list-ilp"));
 static cl::opt<bool> DisableSchedStalls(
-  "disable-sched-stalls", cl::Hidden, cl::init(false),
+  "disable-sched-stalls", cl::Hidden, cl::init(true),
   cl::desc("Disable no-stall priority in sched=list-ilp"));
 static cl::opt<bool> DisableSchedCriticalPath(
   "disable-sched-critical-path", cl::Hidden, cl::init(false),
@@ -99,11 +99,11 @@ static cl::opt<unsigned> AvgIPC(
 #ifndef NDEBUG
 namespace {
   // For sched=list-ilp, Count the number of times each factor comes into play.
-  enum { FactPressureDiff, FactRegUses, FactHeight, FactDepth, FactUllman,
-         NumFactors };
+  enum { FactPressureDiff, FactRegUses, FactHeight, FactDepth, FactStatic,
+         FactOther, NumFactors };
 }
 static const char *FactorName[NumFactors] =
-{"PressureDiff", "RegUses", "Height", "Depth","Ullman"};
+{"PressureDiff", "RegUses", "Height", "Depth","Static", "Other"};
 static int FactorCount[NumFactors];
 #endif //!NDEBUG
 
@@ -1140,13 +1140,19 @@ SUnit *ScheduleDAGRRList::PickNodeToScheduleBottomUp() {
       TRI->getMinimalPhysRegClass(Reg, VT);
     const TargetRegisterClass *DestRC = TRI->getCrossCopyRegClass(RC);
 
-    // If cross copy register class is null, then it must be possible copy
-    // the value directly. Do not try duplicate the def.
+    // If cross copy register class is the same as RC, then it must be possible
+    // copy the value directly. Do not try duplicate the def.
+    // If cross copy register class is not the same as RC, then it's possible to
+    // copy the value but it require cross register class copies and it is
+    // expensive.
+    // If cross copy register class is null, then it's not possible to copy
+    // the value at all.
     SUnit *NewDef = 0;
-    if (DestRC)
+    if (DestRC != RC) {
       NewDef = CopyAndMoveSuccessors(LRDef);
-    else
-      DestRC = RC;
+      if (!DestRC && !NewDef)
+        report_fatal_error("Can't handle live physical register dependency!");
+    }
     if (!NewDef) {
       // Issue copies, these can be expensive cross register class copies.
       SmallVector<SUnit*, 2> Copies;
@@ -1458,7 +1464,7 @@ public:
       std::fill(RegPressure.begin(), RegPressure.end(), 0);
       for (TargetRegisterInfo::regclass_iterator I = TRI->regclass_begin(),
              E = TRI->regclass_end(); I != E; ++I)
-        RegLimit[(*I)->getID()] = tli->getRegPressureLimit(*I, MF);
+        RegLimit[(*I)->getID()] = tri->getRegPressureLimit(*I, MF);
     }
   }
 
@@ -1785,7 +1791,7 @@ int RegReductionPQBase::RegPressureDiff(SUnit *SU, unsigned &LiveUses) const {
   }
   const SDNode *N = SU->getNode();
 
-  if (!N->isMachineOpcode() || !SU->NumSuccs)
+  if (!N || !N->isMachineOpcode() || !SU->NumSuccs)
     return PDiff;
 
   unsigned NumDefs = TII->get(N->getMachineOpcode()).getNumDefs();
@@ -1804,6 +1810,9 @@ void RegReductionPQBase::ScheduledNode(SUnit *SU) {
   if (!TracksRegPressure)
     return;
 
+  if (!SU->getNode())
+    return;
+  
   for (SUnit::pred_iterator I = SU->Preds.begin(), E = SU->Preds.end();
        I != E; ++I) {
     if (I->isCtrl())
@@ -1870,6 +1879,8 @@ void RegReductionPQBase::UnscheduledNode(SUnit *SU) {
     return;
 
   const SDNode *N = SU->getNode();
+  if (!N) return;
+  
   if (!N->isMachineOpcode()) {
     if (N->getOpcode() != ISD::CopyToReg)
       return;
@@ -2082,7 +2093,7 @@ static int BUCompareLatency(SUnit *left, SUnit *right, bool checkPref,
     }
     else {
       // If neither instruction stalls (!LStall && !RStall) then
-      // it's height is already covered so only its depth matters. We also reach
+      // its height is already covered so only its depth matters. We also reach
       // this if both stall but have the same height.
       unsigned LDepth = left->getDepth();
       unsigned RDepth = right->getDepth();
@@ -2103,9 +2114,11 @@ static bool BURRSort(SUnit *left, SUnit *right, RegReductionPQBase *SPQ) {
   unsigned LPriority = SPQ->getNodePriority(left);
   unsigned RPriority = SPQ->getNodePriority(right);
   if (LPriority != RPriority) {
-    DEBUG(++FactorCount[FactUllman]);
+    DEBUG(++FactorCount[FactStatic]);
     return LPriority > RPriority;
   }
+  DEBUG(++FactorCount[FactOther]);
+
   // Try schedule def + use closer when Sethi-Ullman numbers are the same.
   // e.g.
   // t1 = op t2, c1
@@ -2228,6 +2241,28 @@ bool ilp_ls_rr_sort::isReady(SUnit *SU, unsigned CurCycle) const {
   return true;
 }
 
+static bool canEnableCoalescing(SUnit *SU) {
+  unsigned Opc = SU->getNode() ? SU->getNode()->getOpcode() : 0;
+  if (Opc == ISD::TokenFactor || Opc == ISD::CopyToReg)
+    // CopyToReg should be close to its uses to facilitate coalescing and
+    // avoid spilling.
+    return true;
+
+  if (Opc == TargetOpcode::EXTRACT_SUBREG ||
+      Opc == TargetOpcode::SUBREG_TO_REG ||
+      Opc == TargetOpcode::INSERT_SUBREG)
+    // EXTRACT_SUBREG, INSERT_SUBREG, and SUBREG_TO_REG nodes should be
+    // close to their uses to facilitate coalescing.
+    return true;
+
+  if (SU->NumPreds == 0 && SU->NumSuccs != 0)
+    // If SU does not have a register def, schedule it close to its uses
+    // because it does not lengthen any live ranges.
+    return true;
+
+  return false;
+}
+
 // list-ilp is currently an experimental scheduler that allows various
 // heuristics to be enabled prior to the normal register reduction logic.
 bool ilp_ls_rr_sort::operator()(SUnit *left, SUnit *right) const {
@@ -2235,39 +2270,60 @@ bool ilp_ls_rr_sort::operator()(SUnit *left, SUnit *right) const {
     // No way to compute latency of calls.
     return BURRSort(left, right, SPQ);
 
-  unsigned LLiveUses, RLiveUses;
-  int LPDiff = SPQ->RegPressureDiff(left, LLiveUses);
-  int RPDiff = SPQ->RegPressureDiff(right, RLiveUses);
+  unsigned LLiveUses = 0, RLiveUses = 0;
+  int LPDiff = 0, RPDiff = 0;
+  if (!DisableSchedRegPressure || !DisableSchedLiveUses) {
+    LPDiff = SPQ->RegPressureDiff(left, LLiveUses);
+    RPDiff = SPQ->RegPressureDiff(right, RLiveUses);
+  }
   if (!DisableSchedRegPressure && LPDiff != RPDiff) {
     DEBUG(++FactorCount[FactPressureDiff]);
+    DEBUG(dbgs() << "RegPressureDiff SU(" << left->NodeNum << "): " << LPDiff
+          << " != SU(" << right->NodeNum << "): " << RPDiff << "\n");
     return LPDiff > RPDiff;
   }
 
-  if (!DisableSchedLiveUses && LLiveUses != RLiveUses) {
-    DEBUG(dbgs() << "Live uses " << left->NodeNum << " = " << LLiveUses
-          << " != " << right->NodeNum << " = " << RLiveUses << "\n");
+  if (!DisableSchedRegPressure && (LPDiff > 0 || RPDiff > 0)) {
+    bool LReduce = canEnableCoalescing(left);
+    bool RReduce = canEnableCoalescing(right);
+    DEBUG(if (LReduce != RReduce) ++FactorCount[FactPressureDiff]);
+    if (LReduce && !RReduce) return false;
+    if (RReduce && !LReduce) return true;
+  }
+
+  if (!DisableSchedLiveUses && (LLiveUses != RLiveUses)) {
+    DEBUG(dbgs() << "Live uses SU(" << left->NodeNum << "): " << LLiveUses
+          << " != SU(" << right->NodeNum << "): " << RLiveUses << "\n");
     DEBUG(++FactorCount[FactRegUses]);
     return LLiveUses < RLiveUses;
   }
 
-  bool LStall = BUHasStall(left, left->getHeight(), SPQ);
-  bool RStall = BUHasStall(right, right->getHeight(), SPQ);
-  if (!DisableSchedStalls && LStall != RStall) {
-    DEBUG(++FactorCount[FactHeight]);
-    return left->getHeight() > right->getHeight();
+  if (!DisableSchedStalls) {
+    bool LStall = BUHasStall(left, left->getHeight(), SPQ);
+    bool RStall = BUHasStall(right, right->getHeight(), SPQ);
+    if (LStall != RStall) {
+      DEBUG(++FactorCount[FactHeight]);
+      return left->getHeight() > right->getHeight();
+    }
   }
 
   if (!DisableSchedCriticalPath) {
     int spread = (int)left->getDepth() - (int)right->getDepth();
     if (std::abs(spread) > MaxReorderWindow) {
+      DEBUG(dbgs() << "Depth of SU(" << left->NodeNum << "): "
+            << left->getDepth() << " != SU(" << right->NodeNum << "): "
+            << right->getDepth() << "\n");
       DEBUG(++FactorCount[FactDepth]);
       return left->getDepth() < right->getDepth();
     }
   }
 
   if (!DisableSchedHeight && left->getHeight() != right->getHeight()) {
-    DEBUG(++FactorCount[FactHeight]);
-    return left->getHeight() > right->getHeight();
+    int spread = (int)left->getHeight() - (int)right->getHeight();
+    if (std::abs(spread) > MaxReorderWindow) {
+      DEBUG(++FactorCount[FactHeight]);
+      return left->getHeight() > right->getHeight();
+    }
   }
 
   return BURRSort(left, right, SPQ);

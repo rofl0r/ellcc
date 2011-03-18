@@ -1,5 +1,5 @@
-// RUN: %clang_cc1 -triple i386-apple-darwin9 -analyze -analyzer-checker=core,core.experimental.IdempotentOps,core.experimental.CastToStruct,core.experimental.ReturnPtrRange,core.experimental.ReturnPtrRange,core.experimental.ArrayBound -analyzer-store=region -verify -fblocks -analyzer-opt-analyze-nested-blocks %s
-// RUN: %clang_cc1 -triple x86_64-apple-darwin9 -DTEST_64 -analyze -analyzer-checker=core,core.experimental.IdempotentOps,core.experimental.CastToStruct,core.experimental.ReturnPtrRange,core.experimental.ArrayBound -analyzer-store=region -verify -fblocks   -analyzer-opt-analyze-nested-blocks %s
+// RUN: %clang_cc1 -triple i386-apple-darwin9 -analyze -analyzer-checker=core,deadcode.IdempotentOperations,core.experimental.CastToStruct,core.experimental.ReturnPtrRange,core.experimental.ReturnPtrRange,core.experimental.ArrayBound -analyzer-store=region -verify -fblocks -analyzer-opt-analyze-nested-blocks %s
+// RUN: %clang_cc1 -triple x86_64-apple-darwin9 -DTEST_64 -analyze -analyzer-checker=core,deadcode.IdempotentOperations,core.experimental.CastToStruct,core.experimental.ReturnPtrRange,core.experimental.ArrayBound -analyzer-store=region -verify -fblocks   -analyzer-opt-analyze-nested-blocks %s
 
 typedef long unsigned int size_t;
 void *memcpy(void *, const void *, size_t);
@@ -1236,4 +1236,21 @@ void pr9048(pr9048_cdev_t dev, struct pr9048_diskslices * ssp, unsigned int slic
   } else if ((lp = sp->ds_label).opaque != ((void *) 0)) {
   }
 }
+
+// Test Store reference counting in the presence of Lazy compound values.
+// This previously caused an infinite recursion.
+typedef struct {} Rdar_9103310_A;
+typedef struct Rdar_9103310_B Rdar_9103310_B_t;
+struct Rdar_9103310_B {
+  unsigned char           Rdar_9103310_C[101];
+};
+void Rdar_9103310_E(Rdar_9103310_A * x, struct Rdar_9103310_C * b) { // expected-warning {{declaration of 'struct Rdar_9103310_C' will not be visible outside of this function}}
+  char Rdar_9103310_D[4][4] = { "a", "b", "c", "d"};
+  int i;
+  Rdar_9103310_B_t *y = (Rdar_9103310_B_t *) x;
+  for (i = 0; i < 101; i++) {
+    Rdar_9103310_F(b, "%2d%s ", (y->Rdar_9103310_C[i]) / 4, Rdar_9103310_D[(y->Rdar_9103310_C[i]) % 4]); // expected-warning {{implicit declaration of function 'Rdar_9103310_F' is invalid in C99}}
+  }
+}
+
 

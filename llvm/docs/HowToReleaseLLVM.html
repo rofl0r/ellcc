@@ -224,19 +224,19 @@ $ svn co https://llvm.org/svn/llvm-project/cfe/branches/release_<i>XY</i> clang-
 <pre>
 $ svn mkdir https://llvm.org/svn/llvm-project/llvm/tags/RELEASE_<i>XY</i>
 $ svn copy https://llvm.org/svn/llvm-project/llvm/branches/release_<i>XY</i> \
-           https://llvm.org/svn/llvm-project/llvm/tags/RELEASE_<i>XY</i>/RC1
+           https://llvm.org/svn/llvm-project/llvm/tags/RELEASE_<i>XY</i>/rc1
 
 $ svn mkdir https://llvm.org/svn/llvm-project/llvm-gcc-4.2/tags/RELEASE_<i>XY</i>
 $ svn copy https://llvm.org/svn/llvm-project/llvm-gcc-4.2/branches/release_<i>XY</i> \
-           https://llvm.org/svn/llvm-project/llvm-gcc-4.2/tags/RELEASE_<i>XY</i>/RC1
+           https://llvm.org/svn/llvm-project/llvm-gcc-4.2/tags/RELEASE_<i>XY</i>/rc1
 
 $ svn mkdir https://llvm.org/svn/llvm-project/test-suite/tags/RELEASE_<i>XY</i>
 $ svn copy https://llvm.org/svn/llvm-project/test-suite/branches/release_<i>XY</i> \
-           https://llvm.org/svn/llvm-project/test-suite/tags/RELEASE_<i>XY</i>/RC1
+           https://llvm.org/svn/llvm-project/test-suite/tags/RELEASE_<i>XY</i>/rc1
 
 $ svn mkdir https://llvm.org/svn/llvm-project/cfe/tags/RELEASE_<i>XY</i>
 $ svn copy https://llvm.org/svn/llvm-project/cfe/branches/release_<i>XY</i> \
-           https://llvm.org/svn/llvm-project/cfe/tags/RELEASE_<i>XY</i>/RC1
+           https://llvm.org/svn/llvm-project/cfe/tags/RELEASE_<i>XY</i>/rc1
 </pre>
 </div>
 
@@ -251,10 +251,10 @@ $ svn copy https://llvm.org/svn/llvm-project/cfe/branches/release_<i>XY</i> \
 
 <div class="doc_code">
 <pre>
-$ svn export https://llvm.org/svn/llvm-project/llvm/tags/RELEASE_<i>XY</i>/RC1 llvm-<i>X.Y</i>rc1
-$ svn export https://llvm.org/svn/llvm-project/llvm-gcc-4.2/tags/RELEASE_<i>XY</i>/RC1 llvm-gcc4.2-<i>X.Y</i>rc1
-$ svn export https://llvm.org/svn/llvm-project/test-suite/tags/RELEASE_<i>XY</i>/RC1 llvm-test-<i>X.Y</i>rc1
-$ svn export https://llvm.org/svn/llvm-project/cfe/tags/RELEASE_<i>XY</i>/RC1 clang-<i>X.Y</i>rc1
+$ svn export https://llvm.org/svn/llvm-project/llvm/tags/RELEASE_<i>XY</i>/rc1 llvm-<i>X.Y</i>rc1
+$ svn export https://llvm.org/svn/llvm-project/llvm-gcc-4.2/tags/RELEASE_<i>XY</i>/rc1 llvm-gcc4.2-<i>X.Y</i>rc1
+$ svn export https://llvm.org/svn/llvm-project/test-suite/tags/RELEASE_<i>XY</i>/rc1 llvm-test-<i>X.Y</i>rc1
+$ svn export https://llvm.org/svn/llvm-project/cfe/tags/RELEASE_<i>XY</i>/rc1 clang-<i>X.Y</i>rc1
 
 $ tar -czvf - llvm-<i>X.Y</i>rc1        | gzip &gt; llvm-<i>X.Y</i>rc1.src.tar.gz
 $ tar -czvf - llvm-test-<i>X.Y</i>rc1   | gzip &gt; llvm-test-<i>X.Y</i>rc1.src.tar.gz
@@ -620,7 +620,7 @@ $ svn copy https://llvm.org/svn/llvm-project/cfe/branches/release_XY \
   src="http://www.w3.org/Icons/valid-html401-blue" alt="Valid HTML 4.01"></a>
   <a href="http://llvm.cs.uiuc.edu">The LLVM Compiler Infrastructure</a>
   <br>
-  Last modified: $Date: 2011-02-27 19:10:44 -0600 (Sun, 27 Feb 2011) $
+  Last modified: $Date: 2011-03-07 01:37:12 -0600 (Mon, 07 Mar 2011) $
 </address>
 </body>
 </html>

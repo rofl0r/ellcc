@@ -107,7 +107,9 @@ ASTContext::getCanonicalTemplateTemplateParmDecl(
     if (TemplateTypeParmDecl *TTP = dyn_cast<TemplateTypeParmDecl>(*P))
       CanonParams.push_back(
                   TemplateTypeParmDecl::Create(*this, getTranslationUnitDecl(), 
-                                               SourceLocation(), TTP->getDepth(),
+                                               SourceLocation(),
+                                               SourceLocation(),
+                                               TTP->getDepth(),
                                                TTP->getIndex(), 0, false,
                                                TTP->isParameterPack()));
     else if (NonTypeTemplateParmDecl *NTTP
@@ -125,7 +127,8 @@ ASTContext::getCanonicalTemplateTemplateParmDecl(
         }
         
         Param = NonTypeTemplateParmDecl::Create(*this, getTranslationUnitDecl(),
-                                                SourceLocation(), 
+                                                SourceLocation(),
+                                                SourceLocation(),
                                                 NTTP->getDepth(),
                                                 NTTP->getPosition(), 0, 
                                                 T,
@@ -135,7 +138,8 @@ ASTContext::getCanonicalTemplateTemplateParmDecl(
                                                 ExpandedTInfos.data());
       } else {
         Param = NonTypeTemplateParmDecl::Create(*this, getTranslationUnitDecl(),
-                                                SourceLocation(), 
+                                                SourceLocation(),
+                                                SourceLocation(),
                                                 NTTP->getDepth(),
                                                 NTTP->getPosition(), 0, 
                                                 T,
@@ -1905,7 +1909,7 @@ ASTContext::getFunctionType(QualType ResultTy,
   // Unique functions, to guarantee there is only one function of a particular
   // structure.
   llvm::FoldingSetNodeID ID;
-  FunctionProtoType::Profile(ID, ResultTy, ArgArray, NumArgs, EPI);
+  FunctionProtoType::Profile(ID, ResultTy, ArgArray, NumArgs, EPI, this);
 
   void *InsertPos = 0;
   if (FunctionProtoType *FTP =
@@ -1913,7 +1917,7 @@ ASTContext::getFunctionType(QualType ResultTy,
     return QualType(FTP, 0);
 
   // Determine whether the type being created is already canonical or not.
-  bool isCanonical = !EPI.HasExceptionSpec && ResultTy.isCanonical();
+  bool isCanonical= EPI.ExceptionSpecType == EST_None && ResultTy.isCanonical();
   for (unsigned i = 0; i != NumArgs && isCanonical; ++i)
     if (!ArgArray[i].isCanonicalAsParam())
       isCanonical = false;
@@ -1932,11 +1936,8 @@ ASTContext::getFunctionType(QualType ResultTy,
       CanonicalArgs.push_back(getCanonicalParamType(ArgArray[i]));
 
     FunctionProtoType::ExtProtoInfo CanonicalEPI = EPI;
-    if (CanonicalEPI.HasExceptionSpec) {
-      CanonicalEPI.HasExceptionSpec = false;
-      CanonicalEPI.HasAnyExceptionSpec = false;
-      CanonicalEPI.NumExceptions = 0;
-    }
+    CanonicalEPI.ExceptionSpecType = EST_None;
+    CanonicalEPI.NumExceptions = 0;
     CanonicalEPI.ExtInfo
       = CanonicalEPI.ExtInfo.withCallingConv(getCanonicalCallConv(CallConv));
 
@@ -1952,14 +1953,20 @@ ASTContext::getFunctionType(QualType ResultTy,
 
   // FunctionProtoType objects are allocated with extra bytes after them
   // for two variable size arrays (for parameter and exception types) at the
-  // end of them.
+  // end of them. Instead of the exception types, there could be a noexcept
+  // expression and a context pointer.
   size_t Size = sizeof(FunctionProtoType) +
-                NumArgs * sizeof(QualType) +
-                EPI.NumExceptions * sizeof(QualType);
+                NumArgs * sizeof(QualType);
+  if (EPI.ExceptionSpecType == EST_Dynamic)
+    Size += EPI.NumExceptions * sizeof(QualType);
+  else if (EPI.ExceptionSpecType == EST_ComputedNoexcept) {
+    Size += sizeof(Expr*) + sizeof(ASTContext*);
+  }
   FunctionProtoType *FTP = (FunctionProtoType*) Allocate(Size, TypeAlignment);
   FunctionProtoType::ExtProtoInfo newEPI = EPI;
   newEPI.ExtInfo = EPI.ExtInfo.withCallingConv(CallConv);
-  new (FTP) FunctionProtoType(ResultTy, ArgArray, NumArgs, Canonical, newEPI);
+  new (FTP) FunctionProtoType(ResultTy, ArgArray, NumArgs, Canonical, newEPI,
+                              this);
   Types.push_back(FTP);
   FunctionProtoTypes.InsertNode(FTP, InsertPos);
   return QualType(FTP, 0);
@@ -3360,19 +3367,20 @@ int ASTContext::getIntegerTypeOrder(QualType LHS, QualType RHS) const {
 }
 
 static RecordDecl *
-CreateRecordDecl(const ASTContext &Ctx, RecordDecl::TagKind TK, DeclContext *DC,
-                 SourceLocation L, IdentifierInfo *Id) {
+CreateRecordDecl(const ASTContext &Ctx, RecordDecl::TagKind TK,
+                 DeclContext *DC, IdentifierInfo *Id) {
+  SourceLocation Loc;
   if (Ctx.getLangOptions().CPlusPlus)
-    return CXXRecordDecl::Create(Ctx, TK, DC, L, Id);
+    return CXXRecordDecl::Create(Ctx, TK, DC, Loc, Loc, Id);
   else
-    return RecordDecl::Create(Ctx, TK, DC, L, Id);
+    return RecordDecl::Create(Ctx, TK, DC, Loc, Loc, Id);
 }
-                                    
+
 // getCFConstantStringType - Return the type used for constant CFStrings.
 QualType ASTContext::getCFConstantStringType() const {
   if (!CFConstantStringTypeDecl) {
     CFConstantStringTypeDecl =
-      CreateRecordDecl(*this, TTK_Struct, TUDecl, SourceLocation(),
+      CreateRecordDecl(*this, TTK_Struct, TUDecl,
                        &Idents.get("NSConstantString"));
     CFConstantStringTypeDecl->startDefinition();
 
@@ -3390,6 +3398,7 @@ QualType ASTContext::getCFConstantStringType() const {
     // Create fields
     for (unsigned i = 0; i < 4; ++i) {
       FieldDecl *Field = FieldDecl::Create(*this, CFConstantStringTypeDecl,
+                                           SourceLocation(),
                                            SourceLocation(), 0,
                                            FieldTypes[i], /*TInfo=*/0,
                                            /*BitWidth=*/0,
@@ -3414,7 +3423,7 @@ void ASTContext::setCFConstantStringType(QualType T) {
 QualType ASTContext::getNSConstantStringType() const {
   if (!NSConstantStringTypeDecl) {
     NSConstantStringTypeDecl =
-    CreateRecordDecl(*this, TTK_Struct, TUDecl, SourceLocation(),
+    CreateRecordDecl(*this, TTK_Struct, TUDecl,
                      &Idents.get("__builtin_NSString"));
     NSConstantStringTypeDecl->startDefinition();
     
@@ -3430,6 +3439,7 @@ QualType ASTContext::getNSConstantStringType() const {
     // Create fields
     for (unsigned i = 0; i < 3; ++i) {
       FieldDecl *Field = FieldDecl::Create(*this, NSConstantStringTypeDecl,
+                                           SourceLocation(),
                                            SourceLocation(), 0,
                                            FieldTypes[i], /*TInfo=*/0,
                                            /*BitWidth=*/0,
@@ -3453,7 +3463,7 @@ void ASTContext::setNSConstantStringType(QualType T) {
 QualType ASTContext::getObjCFastEnumerationStateType() const {
   if (!ObjCFastEnumerationStateTypeDecl) {
     ObjCFastEnumerationStateTypeDecl =
-      CreateRecordDecl(*this, TTK_Struct, TUDecl, SourceLocation(),
+      CreateRecordDecl(*this, TTK_Struct, TUDecl,
                        &Idents.get("__objcFastEnumerationState"));
     ObjCFastEnumerationStateTypeDecl->startDefinition();
 
@@ -3468,6 +3478,7 @@ QualType ASTContext::getObjCFastEnumerationStateType() const {
     for (size_t i = 0; i < 4; ++i) {
       FieldDecl *Field = FieldDecl::Create(*this,
                                            ObjCFastEnumerationStateTypeDecl,
+                                           SourceLocation(),
                                            SourceLocation(), 0,
                                            FieldTypes[i], /*TInfo=*/0,
                                            /*BitWidth=*/0,
@@ -3488,7 +3499,7 @@ QualType ASTContext::getBlockDescriptorType() const {
 
   RecordDecl *T;
   // FIXME: Needs the FlagAppleBlock bit.
-  T = CreateRecordDecl(*this, TTK_Struct, TUDecl, SourceLocation(),
+  T = CreateRecordDecl(*this, TTK_Struct, TUDecl,
                        &Idents.get("__block_descriptor"));
   T->startDefinition();
   
@@ -3503,8 +3514,7 @@ QualType ASTContext::getBlockDescriptorType() const {
   };
 
   for (size_t i = 0; i < 2; ++i) {
-    FieldDecl *Field = FieldDecl::Create(*this,
-                                         T,
+    FieldDecl *Field = FieldDecl::Create(*this, T, SourceLocation(),
                                          SourceLocation(),
                                          &Idents.get(FieldNames[i]),
                                          FieldTypes[i], /*TInfo=*/0,
@@ -3533,7 +3543,7 @@ QualType ASTContext::getBlockDescriptorExtendedType() const {
 
   RecordDecl *T;
   // FIXME: Needs the FlagAppleBlock bit.
-  T = CreateRecordDecl(*this, TTK_Struct, TUDecl, SourceLocation(),
+  T = CreateRecordDecl(*this, TTK_Struct, TUDecl,
                        &Idents.get("__block_descriptor_withcopydispose"));
   T->startDefinition();
   
@@ -3552,8 +3562,7 @@ QualType ASTContext::getBlockDescriptorExtendedType() const {
   };
 
   for (size_t i = 0; i < 4; ++i) {
-    FieldDecl *Field = FieldDecl::Create(*this,
-                                         T,
+    FieldDecl *Field = FieldDecl::Create(*this, T, SourceLocation(),
                                          SourceLocation(),
                                          &Idents.get(FieldNames[i]),
                                          FieldTypes[i], /*TInfo=*/0,
@@ -3612,8 +3621,7 @@ ASTContext::BuildByRefType(llvm::StringRef DeclName, QualType Ty) const {
   llvm::raw_svector_ostream(Name) << "__Block_byref_" <<
                                   ++UniqueBlockByRefTypeID << '_' << DeclName;
   RecordDecl *T;
-  T = CreateRecordDecl(*this, TTK_Struct, TUDecl, SourceLocation(),
-                       &Idents.get(Name.str()));
+  T = CreateRecordDecl(*this, TTK_Struct, TUDecl, &Idents.get(Name.str()));
   T->startDefinition();
   QualType Int32Ty = IntTy;
   assert(getIntWidth(IntTy) == 32 && "non-32bit int not supported");
@@ -3641,6 +3649,7 @@ ASTContext::BuildByRefType(llvm::StringRef DeclName, QualType Ty) const {
     if (!HasCopyAndDispose && i >=4 && i <= 5)
       continue;
     FieldDecl *Field = FieldDecl::Create(*this, T, SourceLocation(),
+                                         SourceLocation(),
                                          &Idents.get(FieldNames[i]),
                                          FieldTypes[i], /*TInfo=*/0,
                                          /*BitWidth=*/0, /*Mutable=*/false);

@@ -2168,7 +2168,7 @@ SDNode *ARMDAGToDAGISel::SelectCMOVOp(SDNode *N) {
   // Emits: (tMOVCCr:i32 GPR:i32:$false, GPR:i32:$true, (imm:i32):$cc)
   // Pattern complexity = 6  cost = 11  size = 0
   //
-  // Also FCPYScc and FCPYDcc.
+  // Also VMOVScc and VMOVDcc.
   SDValue Tmp2 = CurDAG->getTargetConstant(CCVal, MVT::i32);
   SDValue Ops[] = { FalseVal, TrueVal, Tmp2, CCR, InFlag };
   unsigned Opc = 0;
@@ -2450,34 +2450,6 @@ SDNode *ARMDAGToDAGISel::Select(SDNode *N) {
   }
   case ARMISD::CMOV:
     return SelectCMOVOp(N);
-  case ARMISD::CNEG: {
-    EVT VT = N->getValueType(0);
-    SDValue N0 = N->getOperand(0);
-    SDValue N1 = N->getOperand(1);
-    SDValue N2 = N->getOperand(2);
-    SDValue N3 = N->getOperand(3);
-    SDValue InFlag = N->getOperand(4);
-    assert(N2.getOpcode() == ISD::Constant);
-    assert(N3.getOpcode() == ISD::Register);
-
-    SDValue Tmp2 = CurDAG->getTargetConstant(((unsigned)
-                               cast<ConstantSDNode>(N2)->getZExtValue()),
-                               MVT::i32);
-    SDValue Ops[] = { N0, N1, Tmp2, N3, InFlag };
-    unsigned Opc = 0;
-    switch (VT.getSimpleVT().SimpleTy) {
-    default: assert(false && "Illegal conditional move type!");
-      break;
-    case MVT::f32:
-      Opc = ARM::VNEGScc;
-      break;
-    case MVT::f64:
-      Opc = ARM::VNEGDcc;
-      break;
-    }
-    return CurDAG->SelectNodeTo(N, Opc, VT, Ops, 5);
-  }
-
   case ARMISD::VZIP: {
     unsigned Opc = 0;
     EVT VT = N->getValueType(0);

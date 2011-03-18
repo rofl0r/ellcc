@@ -178,11 +178,14 @@ void ASTTypeWriter::VisitFunctionProtoType(const FunctionProtoType *T) {
   Record.push_back(T->isVariadic());
   Record.push_back(T->getTypeQuals());
   Record.push_back(static_cast<unsigned>(T->getRefQualifier()));
-  Record.push_back(T->hasExceptionSpec());
-  Record.push_back(T->hasAnyExceptionSpec());
-  Record.push_back(T->getNumExceptions());
-  for (unsigned I = 0, N = T->getNumExceptions(); I != N; ++I)
-    Writer.AddTypeRef(T->getExceptionType(I), Record);
+  Record.push_back(T->getExceptionSpecType());
+  if (T->getExceptionSpecType() == EST_Dynamic) {
+    Record.push_back(T->getNumExceptions());
+    for (unsigned I = 0, N = T->getNumExceptions(); I != N; ++I)
+      Writer.AddTypeRef(T->getExceptionType(I), Record);
+  } else if (T->getExceptionSpecType() == EST_ComputedNoexcept) {
+    Writer.AddStmt(T->getNoexceptExpr());
+  }
   Code = TYPE_FUNCTION_PROTO;
 }
 
@@ -418,6 +421,7 @@ void TypeLocWriter::VisitRValueReferenceTypeLoc(RValueReferenceTypeLoc TL) {
 }
 void TypeLocWriter::VisitMemberPointerTypeLoc(MemberPointerTypeLoc TL) {
   Writer.AddSourceLocation(TL.getStarLoc(), Record);
+  Writer.AddTypeSourceInfo(TL.getClassTInfo(), Record);
 }
 void TypeLocWriter::VisitArrayTypeLoc(ArrayTypeLoc TL) {
   Writer.AddSourceLocation(TL.getLBracketLoc(), Record);
@@ -450,8 +454,8 @@ void TypeLocWriter::VisitExtVectorTypeLoc(ExtVectorTypeLoc TL) {
   Writer.AddSourceLocation(TL.getNameLoc(), Record);
 }
 void TypeLocWriter::VisitFunctionTypeLoc(FunctionTypeLoc TL) {
-  Writer.AddSourceLocation(TL.getLParenLoc(), Record);
-  Writer.AddSourceLocation(TL.getRParenLoc(), Record);
+  Writer.AddSourceLocation(TL.getLocalRangeBegin(), Record);
+  Writer.AddSourceLocation(TL.getLocalRangeEnd(), Record);
   Record.push_back(TL.getTrailingReturn());
   for (unsigned i = 0, e = TL.getNumArgs(); i != e; ++i)
     Writer.AddDeclRef(TL.getArg(i), Record);
@@ -1459,6 +1463,13 @@ void ASTWriter::WriteSourceManagerBlock(SourceManager &SourceMgr,
         // Turn the file name into an absolute path, if it isn't already.
         const char *Filename = Content->OrigEntry->getName();
         llvm::SmallString<128> FilePath(Filename);
+
+        // Ask the file manager to fixup the relative path for us. This will 
+        // honor the working directory.
+        SourceMgr.getFileManager().FixupRelativePath(FilePath);
+
+        // FIXME: This call to make_absolute shouldn't be necessary, the
+        // call to FixupRelativePath should always return an absolute path.
         llvm::sys::fs::make_absolute(FilePath);
         Filename = FilePath.c_str();
 
@@ -1811,6 +1822,30 @@ void ASTWriter::WritePragmaDiagnosticMappings(const Diagnostic &Diag) {
 
   if (!Record.empty())
     Stream.EmitRecord(DIAG_PRAGMA_MAPPINGS, Record);
+}
+
+void ASTWriter::WriteCXXBaseSpecifiersOffsets() {
+  if (CXXBaseSpecifiersOffsets.empty())
+    return;
+
+  RecordData Record;
+
+  // Create a blob abbreviation for the C++ base specifiers offsets.
+  using namespace llvm;
+    
+  BitCodeAbbrev *Abbrev = new BitCodeAbbrev();
+  Abbrev->Add(BitCodeAbbrevOp(CXX_BASE_SPECIFIER_OFFSETS));
+  Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 32)); // size
+  Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Blob));
+  unsigned BaseSpecifierOffsetAbbrev = Stream.EmitAbbrev(Abbrev);
+  
+  // Write the selector offsets table.
+  Record.clear();
+  Record.push_back(CXX_BASE_SPECIFIER_OFFSETS);
+  Record.push_back(CXXBaseSpecifiersOffsets.size());
+  Stream.EmitRecordWithBlob(BaseSpecifierOffsetAbbrev, Record,
+                            (const char *)CXXBaseSpecifiersOffsets.data(),
+                            CXXBaseSpecifiersOffsets.size() * sizeof(uint32_t));
 }
 
 //===----------------------------------------------------------------------===//
@@ -2801,25 +2836,7 @@ void ASTWriter::WriteASTCore(Sema &SemaRef, MemorizeStatCalls *StatCalls,
   WriteTypeDeclOffsets();
   WritePragmaDiagnosticMappings(Context.getDiagnostics());
 
-  // Write the C++ base-specifier set offsets.
-  if (!CXXBaseSpecifiersOffsets.empty()) {
-    // Create a blob abbreviation for the C++ base specifiers offsets.
-    using namespace llvm;
-    
-    BitCodeAbbrev *Abbrev = new BitCodeAbbrev();
-    Abbrev->Add(BitCodeAbbrevOp(CXX_BASE_SPECIFIER_OFFSETS));
-    Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 32)); // size
-    Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Blob));
-    unsigned BaseSpecifierOffsetAbbrev = Stream.EmitAbbrev(Abbrev);
-    
-    // Write the selector offsets table.
-    Record.clear();
-    Record.push_back(CXX_BASE_SPECIFIER_OFFSETS);
-    Record.push_back(CXXBaseSpecifiersOffsets.size());
-    Stream.EmitRecordWithBlob(BaseSpecifierOffsetAbbrev, Record,
-                              (const char *)CXXBaseSpecifiersOffsets.data(),
-                            CXXBaseSpecifiersOffsets.size() * sizeof(uint32_t));
-  }
+  WriteCXXBaseSpecifiersOffsets();
   
   // Write the record containing external, unnamed definitions.
   if (!ExternalDefinitions.empty())
@@ -3043,6 +3060,8 @@ void ASTWriter::WriteASTChain(Sema &SemaRef, MemorizeStatCalls *StatCalls,
   // FIXME: For chained PCH only write the new mappings (we currently
   // write all of them again).
   WritePragmaDiagnosticMappings(Context.getDiagnostics());
+
+  WriteCXXBaseSpecifiersOffsets();
 
   /// Build a record containing first declarations from a chained PCH and the
   /// most recent declarations in this AST that they point to.

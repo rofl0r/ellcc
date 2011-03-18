@@ -221,7 +221,13 @@ X86TargetLowering::X86TargetLowering(X86TargetMachine &TM)
 
   // X86 is weird, it always uses i8 for shift amounts and setcc results.
   setBooleanContents(ZeroOrOneBooleanContent);
-  setSchedulingPreference(Sched::RegPressure);
+    
+  // For 64-bit since we have so many registers use the ILP scheduler, for
+  // 32-bit code use the register pressure specific scheduling.
+  if (Subtarget->is64Bit())
+    setSchedulingPreference(Sched::ILP);
+  else
+    setSchedulingPreference(Sched::RegPressure);
   setStackPointerRegisterToSaveRestore(X86StackPtr);
 
   if (Subtarget->isTargetWindows() && !Subtarget->isTargetCygMing()) {
@@ -1271,27 +1277,6 @@ X86TargetLowering::findRepresentativeClass(EVT VT) const{
   return std::make_pair(RRC, Cost);
 }
 
-// FIXME: Why this routine is here? Move to RegInfo!
-unsigned
-X86TargetLowering::getRegPressureLimit(const TargetRegisterClass *RC,
-                                       MachineFunction &MF) const {
-  const TargetFrameLowering *TFI = MF.getTarget().getFrameLowering();
-
-  unsigned FPDiff = TFI->hasFP(MF) ? 1 : 0;
-  switch (RC->getID()) {
-  default:
-    return 0;
-  case X86::GR32RegClassID:
-    return 4 - FPDiff;
-  case X86::GR64RegClassID:
-    return 12 - FPDiff;
-  case X86::VR128RegClassID:
-    return Subtarget->is64Bit() ? 10 : 4;
-  case X86::VR64RegClassID:
-    return 4;
-  }
-}
-
 bool X86TargetLowering::getStackCookieLocation(unsigned &AddressSpace,
                                                unsigned &Offset) const {
   if (!Subtarget->isTargetLinux())
@@ -1765,8 +1750,8 @@ X86TargetLowering::LowerFormalArguments(SDValue Chain,
   // If the function takes variable number of arguments, make a frame index for
   // the start of the first vararg value... for expansion of llvm.va_start.
   if (isVarArg) {
-    if (!IsWin64 && (Is64Bit || (CallConv != CallingConv::X86_FastCall &&
-                    CallConv != CallingConv::X86_ThisCall))) {
+    if (Is64Bit || (CallConv != CallingConv::X86_FastCall &&
+                    CallConv != CallingConv::X86_ThisCall)) {
       FuncInfo->setVarArgsFrameIndex(MFI->CreateFixedObject(1, StackSize,true));
     }
     if (Is64Bit) {
@@ -1818,7 +1803,9 @@ X86TargetLowering::LowerFormalArguments(SDValue Chain,
         int HomeOffset = TFI.getOffsetOfLocalArea() + 8;
         FuncInfo->setRegSaveFrameIndex(
           MFI->CreateFixedObject(1, NumIntRegs * 8 + HomeOffset, false));
-        FuncInfo->setVarArgsFrameIndex(FuncInfo->getRegSaveFrameIndex());
+        // Fixup to set vararg frame on shadow area (4 x i64).
+        if (NumIntRegs < 4)
+          FuncInfo->setVarArgsFrameIndex(FuncInfo->getRegSaveFrameIndex());
       } else {
         // For X86-64, if there are vararg parameters that are passed via
         // registers, then we must store them to their spots on the stack so they
@@ -8855,8 +8842,8 @@ SDValue X86TargetLowering::LowerXALUO(SDValue Op, SelectionDAG &DAG) const {
   case ISD::SADDO:
     // A subtract of one will be selected as a INC. Note that INC doesn't
     // set CF, so we can't do this for UADDO.
-    if (ConstantSDNode *C = dyn_cast<ConstantSDNode>(Op))
-      if (C->getAPIntValue() == 1) {
+    if (ConstantSDNode *C = dyn_cast<ConstantSDNode>(RHS))
+      if (C->isOne()) {
         BaseOp = X86ISD::INC;
         Cond = X86::COND_O;
         break;
@@ -8871,8 +8858,8 @@ SDValue X86TargetLowering::LowerXALUO(SDValue Op, SelectionDAG &DAG) const {
   case ISD::SSUBO:
     // A subtract of one will be selected as a DEC. Note that DEC doesn't
     // set CF, so we can't do this for USUBO.
-    if (ConstantSDNode *C = dyn_cast<ConstantSDNode>(Op))
-      if (C->getAPIntValue() == 1) {
+    if (ConstantSDNode *C = dyn_cast<ConstantSDNode>(RHS))
+      if (C->isOne()) {
         BaseOp = X86ISD::DEC;
         Cond = X86::COND_O;
         break;

@@ -142,35 +142,36 @@ DeclaratorChunk DeclaratorChunk::getFunction(const ParsedAttributes &attrs,
                                              unsigned TypeQuals,
                                              bool RefQualifierIsLvalueRef,
                                              SourceLocation RefQualifierLoc,
-                                             bool hasExceptionSpec,
-                                             SourceLocation ThrowLoc,
-                                             bool hasAnyExceptionSpec,
+                                             ExceptionSpecificationType
+                                                 ESpecType,
+                                             SourceLocation ESpecLoc,
                                              ParsedType *Exceptions,
                                              SourceRange *ExceptionRanges,
                                              unsigned NumExceptions,
-                                             SourceLocation LPLoc,
-                                             SourceLocation RPLoc,
+                                             Expr *NoexceptExpr,
+                                             SourceLocation LocalRangeBegin,
+                                             SourceLocation LocalRangeEnd,
                                              Declarator &TheDeclarator,
                                              ParsedType TrailingReturnType) {
   DeclaratorChunk I;
-  I.Kind                 = Function;
-  I.Loc                  = LPLoc;
-  I.EndLoc               = RPLoc;
-  I.Fun.AttrList         = attrs.getList();
-  I.Fun.hasPrototype     = hasProto;
-  I.Fun.isVariadic       = isVariadic;
-  I.Fun.EllipsisLoc      = EllipsisLoc.getRawEncoding();
-  I.Fun.DeleteArgInfo    = false;
-  I.Fun.TypeQuals        = TypeQuals;
-  I.Fun.NumArgs          = NumArgs;
-  I.Fun.ArgInfo          = 0;
+  I.Kind                        = Function;
+  I.Loc                         = LocalRangeBegin;
+  I.EndLoc                      = LocalRangeEnd;
+  I.Fun.AttrList                = attrs.getList();
+  I.Fun.hasPrototype            = hasProto;
+  I.Fun.isVariadic              = isVariadic;
+  I.Fun.EllipsisLoc             = EllipsisLoc.getRawEncoding();
+  I.Fun.DeleteArgInfo           = false;
+  I.Fun.TypeQuals               = TypeQuals;
+  I.Fun.NumArgs                 = NumArgs;
+  I.Fun.ArgInfo                 = 0;
   I.Fun.RefQualifierIsLValueRef = RefQualifierIsLvalueRef;
-  I.Fun.RefQualifierLoc = RefQualifierLoc.getRawEncoding();
-  I.Fun.hasExceptionSpec = hasExceptionSpec;
-  I.Fun.ThrowLoc         = ThrowLoc.getRawEncoding();
-  I.Fun.hasAnyExceptionSpec = hasAnyExceptionSpec;
-  I.Fun.NumExceptions    = NumExceptions;
-  I.Fun.Exceptions       = 0;
+  I.Fun.RefQualifierLoc         = RefQualifierLoc.getRawEncoding();
+  I.Fun.ExceptionSpecType       = ESpecType;
+  I.Fun.ExceptionSpecLoc        = ESpecLoc.getRawEncoding();
+  I.Fun.NumExceptions           = 0;
+  I.Fun.Exceptions              = 0;
+  I.Fun.NoexceptExpr            = 0;
   I.Fun.TrailingReturnType   = TrailingReturnType.getAsOpaquePtr();
 
   // new[] an argument array if needed.
@@ -190,13 +191,25 @@ DeclaratorChunk DeclaratorChunk::getFunction(const ParsedAttributes &attrs,
     }
     memcpy(I.Fun.ArgInfo, ArgInfo, sizeof(ArgInfo[0])*NumArgs);
   }
-  // new[] an exception array if needed
-  if (NumExceptions) {
-    I.Fun.Exceptions = new DeclaratorChunk::TypeAndRange[NumExceptions];
-    for (unsigned i = 0; i != NumExceptions; ++i) {
-      I.Fun.Exceptions[i].Ty = Exceptions[i];
-      I.Fun.Exceptions[i].Range = ExceptionRanges[i];
+
+  // Check what exception specification information we should actually store.
+  switch (ESpecType) {
+  default: break; // By default, save nothing.
+  case EST_Dynamic:
+    // new[] an exception array if needed
+    if (NumExceptions) {
+      I.Fun.NumExceptions = NumExceptions;
+      I.Fun.Exceptions = new DeclaratorChunk::TypeAndRange[NumExceptions];
+      for (unsigned i = 0; i != NumExceptions; ++i) {
+        I.Fun.Exceptions[i].Ty = Exceptions[i];
+        I.Fun.Exceptions[i].Range = ExceptionRanges[i];
+      }
     }
+    break;
+
+  case EST_ComputedNoexcept:
+    I.Fun.NoexceptExpr = NoexceptExpr;
+    break;
   }
   return I;
 }
@@ -367,12 +380,14 @@ bool DeclSpec::SetStorageClassSpecThread(SourceLocation Loc,
 bool DeclSpec::SetTypeSpecWidth(TSW W, SourceLocation Loc,
                                 const char *&PrevSpec,
                                 unsigned &DiagID) {
-  if (TypeSpecWidth != TSW_unspecified &&
-      // Allow turning long -> long long.
-      (W != TSW_longlong || TypeSpecWidth != TSW_long))
+  // Overwrite TSWLoc only if TypeSpecWidth was unspecified, so that
+  // for 'long long' we will keep the source location of the first 'long'.
+  if (TypeSpecWidth == TSW_unspecified)
+    TSWLoc = Loc;
+  // Allow turning long -> long long.
+  else if (W != TSW_longlong || TypeSpecWidth != TSW_long)
     return BadSpecifier(W, (TSW)TypeSpecWidth, PrevSpec, DiagID);
   TypeSpecWidth = W;
-  TSWLoc = Loc;
   if (TypeAltiVecVector && !TypeAltiVecBool &&
       ((TypeSpecWidth == TSW_long) || (TypeSpecWidth == TSW_longlong))) {
     PrevSpec = DeclSpec::getSpecifierName((TST) TypeSpecType);
@@ -781,6 +796,8 @@ void UnqualifiedId::setOperatorFunctionId(SourceLocation OperatorLoc,
 
 bool VirtSpecifiers::SetSpecifier(Specifier VS, SourceLocation Loc,
                                   const char *&PrevSpec) {
+  LastLocation = Loc;
+  
   if (Specifiers & VS) {
     PrevSpec = getSpecifierName(VS);
     return true;

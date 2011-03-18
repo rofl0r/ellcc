@@ -678,6 +678,8 @@ public:
   /// \brief Build a partial diagnostic.
   PartialDiagnostic PDiag(unsigned DiagID = 0); // in SemaInternal.h
 
+  bool findMacroSpelling(SourceLocation &loc, llvm::StringRef name);
+
   ExprResult Owned(Expr* E) { return E; }
   ExprResult Owned(ExprResult R) { return R; }
   StmtResult Owned(Stmt* S) { return S; }
@@ -755,7 +757,8 @@ public:
       const FunctionProtoType *Old, SourceLocation OldLoc,
       const FunctionProtoType *New, SourceLocation NewLoc,
       bool *MissingExceptionSpecification = 0,
-      bool *MissingEmptyExceptionSpecification = 0);
+      bool *MissingEmptyExceptionSpecification = 0,
+      bool AllowNoexceptAllMatchWithNoSpec = false);
   bool CheckExceptionSpecSubset(
       const PartialDiagnostic &DiagID, const PartialDiagnostic & NoteID,
       const FunctionProtoType *Superset, SourceLocation SuperLoc,
@@ -841,12 +844,10 @@ public:
   ParmVarDecl *BuildParmVarDeclForTypedef(DeclContext *DC,
                                           SourceLocation Loc,
                                           QualType T);
-  ParmVarDecl *CheckParameter(DeclContext *DC,
-                              TypeSourceInfo *TSInfo, QualType T,
-                              IdentifierInfo *Name,
-                              SourceLocation NameLoc,
-                              StorageClass SC,
-                              StorageClass SCAsWritten);
+  ParmVarDecl *CheckParameter(DeclContext *DC, SourceLocation StartLoc,
+                              SourceLocation NameLoc, IdentifierInfo *Name,
+                              QualType T, TypeSourceInfo *TSInfo,
+                              StorageClass SC, StorageClass SCAsWritten);
   void ActOnParamDefaultArgument(Decl *param,
                                  SourceLocation EqualLoc,
                                  Expr *defarg);
@@ -1058,7 +1059,12 @@ public:
   /// isDeclInScope - If 'Ctx' is a function/method, isDeclInScope returns true
   /// if 'D' is in Scope 'S', otherwise 'S' is ignored and isDeclInScope returns
   /// true if 'D' belongs to the given declaration context.
-  bool isDeclInScope(NamedDecl *&D, DeclContext *Ctx, Scope *S = 0);
+  ///
+  /// \param ExplicitInstantiationOrSpecialization When true, we are checking
+  /// whether the declaration is in scope for the purposes of explicit template
+  /// instantiation or specialization. The default is false.
+  bool isDeclInScope(NamedDecl *&D, DeclContext *Ctx, Scope *S = 0,
+                     bool ExplicitInstantiationOrSpecialization = false);
 
   /// Finds the scope corresponding to the given decl context, if it
   /// happens to be an enclosing scope.  Otherwise return NULL.
@@ -1071,8 +1077,9 @@ public:
   bool MergeFunctionDecl(FunctionDecl *New, Decl *Old);
   bool MergeCompatibleFunctionDecls(FunctionDecl *New, FunctionDecl *Old);
   void mergeObjCMethodDecls(ObjCMethodDecl *New, const ObjCMethodDecl *Old);
-  void MergeVarDeclTypes(VarDecl *New, VarDecl *Old);
   void MergeVarDecl(VarDecl *New, LookupResult &OldDecls);
+  void MergeVarDeclTypes(VarDecl *New, VarDecl *Old);
+  void MergeVarDeclExceptionSpecs(VarDecl *New, VarDecl *Old);
   bool MergeCXXFunctionDecl(FunctionDecl *New, FunctionDecl *Old);
 
   // AssignmentAction - This is used by all the assignment diagnostic functions
@@ -1284,6 +1291,14 @@ public:
                                                    bool Complain = false,
                                                    DeclAccessPair* Found = 0);
 
+  ExprResult ResolveAndFixSingleFunctionTemplateSpecialization(
+                      Expr *SrcExpr, bool DoFunctionPointerConverion = false, 
+                      bool Complain = false, 
+                      const SourceRange& OpRangeForComplaining = SourceRange(), 
+                      QualType DestTypeForComplaining = QualType(), 
+                      unsigned DiagIDForComplaining = 0);
+
+
   Expr *FixOverloadedFunctionReference(Expr *E,
                                        DeclAccessPair FoundDecl,
                                        FunctionDecl *Fn);
@@ -1448,9 +1463,9 @@ public:
                                     QualType T1, QualType T2,
                                     UnresolvedSetImpl &Functions);
 
-  LabelDecl *LookupOrCreateLabel(IdentifierInfo *II, SourceLocation Loc,
-                                 bool isLocalLabel = false);
-  
+  LabelDecl *LookupOrCreateLabel(IdentifierInfo *II, SourceLocation IdentLoc,
+                                 SourceLocation GnuLabelLoc = SourceLocation());
+
   DeclContextLookupResult LookupConstructors(CXXRecordDecl *Class);
   CXXDestructorDecl *LookupDestructor(CXXRecordDecl *Class);
 
@@ -1699,6 +1714,7 @@ public:
   /// initialization.
   void CollectIvarsToConstructOrDestruct(ObjCInterfaceDecl *OI,
                                   llvm::SmallVectorImpl<ObjCIvarDecl*> &Ivars);
+
   //===--------------------------------------------------------------------===//
   // Statement Parsing Callbacks: SemaStmt.cpp.
 public:
@@ -1815,7 +1831,8 @@ public:
 
 
   VarDecl *BuildObjCExceptionDecl(TypeSourceInfo *TInfo, QualType ExceptionType,
-                                  IdentifierInfo *Name, SourceLocation NameLoc,
+                                  SourceLocation StartLoc,
+                                  SourceLocation IdLoc, IdentifierInfo *Id,
                                   bool Invalid = false);
 
   Decl *ActOnObjCExceptionDecl(Scope *S, Declarator &D);
@@ -1835,10 +1852,10 @@ public:
                                          Expr *SynchExpr,
                                          Stmt *SynchBody);
 
-  VarDecl *BuildExceptionDeclaration(Scope *S, 
-                                     TypeSourceInfo *TInfo,
-                                     IdentifierInfo *Name,
-                                     SourceLocation Loc);
+  VarDecl *BuildExceptionDeclaration(Scope *S, TypeSourceInfo *TInfo,
+                                     SourceLocation StartLoc,
+                                     SourceLocation IdLoc,
+                                     IdentifierInfo *Id);
   Decl *ActOnExceptionDeclarator(Scope *S, Declarator &D);
 
   StmtResult ActOnCXXCatchBlock(SourceLocation CatchLoc,
@@ -1983,19 +2000,25 @@ public:
   ExprResult ActOnUnaryOp(Scope *S, SourceLocation OpLoc,
                           tok::TokenKind Op, Expr *Input);
 
-  ExprResult CreateSizeOfAlignOfExpr(TypeSourceInfo *T,
-                                     SourceLocation OpLoc,
-                                     bool isSizeOf, SourceRange R);
-  ExprResult CreateSizeOfAlignOfExpr(Expr *E, SourceLocation OpLoc,
-                                     bool isSizeOf, SourceRange R);
+  ExprResult CreateUnaryExprOrTypeTraitExpr(TypeSourceInfo *T,
+                                            SourceLocation OpLoc,
+                                            UnaryExprOrTypeTrait ExprKind,
+                                            SourceRange R);
+  ExprResult CreateUnaryExprOrTypeTraitExpr(Expr *E, SourceLocation OpLoc,
+                                            UnaryExprOrTypeTrait ExprKind,
+                                            SourceRange R);
   ExprResult
-    ActOnSizeOfAlignOfExpr(SourceLocation OpLoc, bool isSizeof, bool isType,
-                           void *TyOrEx, const SourceRange &ArgRange);
+    ActOnUnaryExprOrTypeTraitExpr(SourceLocation OpLoc,
+                                  UnaryExprOrTypeTrait ExprKind,
+                                  bool isType, void *TyOrEx,
+                                  const SourceRange &ArgRange);
 
   ExprResult CheckPlaceholderExpr(Expr *E, SourceLocation Loc);
+  bool CheckVecStepExpr(Expr *E, SourceLocation OpLoc, SourceRange R);
 
-  bool CheckSizeOfAlignOfOperand(QualType type, SourceLocation OpLoc,
-                                 SourceRange R, bool isSizeof);
+  bool CheckUnaryExprOrTypeTraitOperand(QualType type, SourceLocation OpLoc,
+                                        SourceRange R,
+                                        UnaryExprOrTypeTrait ExprKind);
   ExprResult ActOnSizeofParameterPackExpr(Scope *S,
                                           SourceLocation OpLoc,
                                           IdentifierInfo &Name,
@@ -2190,6 +2213,7 @@ public:
 
   // Act on C++ namespaces
   Decl *ActOnStartNamespaceDef(Scope *S, SourceLocation InlineLoc,
+                               SourceLocation NamespaceLoc,
                                SourceLocation IdentLoc,
                                IdentifierInfo *Ident,
                                SourceLocation LBrace,
@@ -2913,9 +2937,10 @@ public:
   void ActOnFinishDelayedCXXMethodDeclaration(Scope *S, Decl *Method);
   void ActOnFinishDelayedMemberDeclarations(Scope *S, Decl *Record);
 
-  Decl *ActOnStaticAssertDeclaration(SourceLocation AssertLoc,
+  Decl *ActOnStaticAssertDeclaration(SourceLocation StaticAssertLoc,
                                      Expr *AssertExpr,
-                                     Expr *AssertMessageExpr);
+                                     Expr *AssertMessageExpr,
+                                     SourceLocation RParenLoc);
 
   FriendDecl *CheckFriendTypeDecl(SourceLocation FriendLoc,
                                   TypeSourceInfo *TSInfo);
@@ -3175,7 +3200,9 @@ public:
                                 IdentifierInfo *Name, SourceLocation NameLoc,
                                 AttributeList *Attr,
                                 TemplateParameterList *TemplateParams,
-                                AccessSpecifier AS);
+                                AccessSpecifier AS,
+                                unsigned NumOuterTemplateParamLists,
+                            TemplateParameterList **OuterTemplateParamLists);
 
   void translateTemplateArguments(const ASTTemplateArgsPtr &In,
                                   TemplateArgumentListInfo &Out);
@@ -4532,7 +4559,7 @@ public:
     ObjCArgInfo *ArgInfo,
     DeclaratorChunk::ParamInfo *CParamInfo, unsigned CNumArgs, // c-style args
     AttributeList *AttrList, tok::ObjCKeywordKind MethodImplKind,
-    bool isVariadic = false);
+    bool isVariadic, bool MethodDefinition);
 
   // Helper method for ActOnClassMethod/ActOnInstanceMethod.
   // Will search "local" class/category implementations for a method decl.
@@ -4542,6 +4569,9 @@ public:
                                            ObjCInterfaceDecl *CDecl);
   ObjCMethodDecl *LookupPrivateInstanceMethod(Selector Sel,
                                               ObjCInterfaceDecl *ClassDecl);
+  ObjCMethodDecl *LookupMethodInQualifiedType(Selector Sel,
+                                              const ObjCObjectPointerType *OPT,
+                                              bool IsInstance);
 
   ExprResult
   HandleExprPropertyRefExpr(const ObjCObjectPointerType *OPT,

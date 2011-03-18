@@ -74,7 +74,7 @@ public:
 
     Apple,
     PC,
-    ELLCC,
+    ELLCC
   };
   enum OSType {
     UnknownOS,

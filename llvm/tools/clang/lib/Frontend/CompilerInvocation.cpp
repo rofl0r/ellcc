@@ -322,7 +322,6 @@ static const char *getActionName(frontend::ActionKind Kind) {
   case frontend::ASTDump:                return "-ast-dump";
   case frontend::ASTDumpXML:             return "-ast-dump-xml";
   case frontend::ASTPrint:               return "-ast-print";
-  case frontend::ASTPrintXML:            return "-ast-print-xml";
   case frontend::ASTView:                return "-ast-view";
   case frontend::BoostCon:               return "-boostcon";
   case frontend::CreateModule:           return "-create-module";
@@ -705,6 +704,10 @@ static void PreprocessorOptsToArgs(const PreprocessorOptions &Opts,
       assert(Opts.ImplicitPTHInclude == Opts.TokenCache &&
              "Unsupported option combination!");
   }
+  for (unsigned i = 0, e = Opts.ChainedIncludes.size(); i != e; ++i) {
+    Res.push_back("-chain-include");
+    Res.push_back(Opts.ChainedIncludes[i]);
+  }
   for (unsigned i = 0, e = Opts.RemappedFiles.size(); i != e; ++i) {
     Res.push_back("-remap-file");
     Res.push_back(Opts.RemappedFiles[i].first + ";" +
@@ -1039,8 +1042,6 @@ static InputKind ParseFrontendArgs(FrontendOptions &Opts, ArgList &Args,
       Opts.ProgramAction = frontend::ASTDumpXML; break;
     case OPT_ast_print:
       Opts.ProgramAction = frontend::ASTPrint; break;
-    case OPT_ast_print_xml:
-      Opts.ProgramAction = frontend::ASTPrintXML; break;
     case OPT_ast_view:
       Opts.ProgramAction = frontend::ASTView; break;
     case OPT_boostcon:
@@ -1563,6 +1564,12 @@ static void ParsePreprocessorArgs(PreprocessorOptions &Opts, ArgList &Args,
       Opts.Includes.push_back(OriginalFile);
     } else
       Opts.Includes.push_back(A->getValue(Args));
+  }
+
+  for (arg_iterator it = Args.filtered_begin(OPT_chain_include),
+         ie = Args.filtered_end(); it != ie; ++it) {
+    const Arg *A = *it;
+    Opts.ChainedIncludes.push_back(A->getValue(Args));
   }
 
   // Include 'altivec.h' if -faltivec option present

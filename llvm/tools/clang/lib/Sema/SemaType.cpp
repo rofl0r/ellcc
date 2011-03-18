@@ -22,6 +22,7 @@
 #include "clang/AST/Expr.h"
 #include "clang/Basic/PartialDiagnostic.h"
 #include "clang/Basic/TargetInfo.h"
+#include "clang/Lex/Preprocessor.h"
 #include "clang/Sema/DeclSpec.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -68,6 +69,40 @@ static bool isOmittedBlockReturnType(const Declarator &D) {
     return true;   // ^(int X, float Y) { ... }
   
   return false;
+}
+
+/// diagnoseBadTypeAttribute - Diagnoses a type attribute which
+/// doesn't apply to the given type.
+static void diagnoseBadTypeAttribute(Sema &S, const AttributeList &attr,
+                                     QualType type) {
+  bool useInstantiationLoc = false;
+
+  unsigned diagID = 0;
+  switch (attr.getKind()) {
+  case AttributeList::AT_objc_gc:
+    diagID = diag::warn_pointer_attribute_wrong_type;
+    useInstantiationLoc = true;
+    break;
+
+  default:
+    // Assume everything else was a function attribute.
+    diagID = diag::warn_function_attribute_wrong_type;
+    break;
+  }
+
+  SourceLocation loc = attr.getLoc();
+  llvm::StringRef name = attr.getName()->getName();
+
+  // The GC attributes are usually written with macros;  special-case them.
+  if (useInstantiationLoc && loc.isMacroID() && attr.getParameterName()) {
+    if (attr.getParameterName()->isStr("strong")) {
+      if (S.findMacroSpelling(loc, "__strong")) name = "__strong";
+    } else if (attr.getParameterName()->isStr("weak")) {
+      if (S.findMacroSpelling(loc, "__weak")) name = "__weak";
+    }
+  }
+
+  S.Diag(loc, diagID) << name << type;
 }
 
 // objc_gc applies to Objective-C pointers or, otherwise, to the
@@ -162,11 +197,8 @@ namespace {
     void diagnoseIgnoredTypeAttrs(QualType type) const {
       for (llvm::SmallVectorImpl<AttributeList*>::const_iterator
              i = ignoredTypeAttrs.begin(), e = ignoredTypeAttrs.end();
-           i != e; ++i) {
-        AttributeList &attr = **i;
-        getSema().Diag(attr.getLoc(), diag::warn_function_attribute_wrong_type)
-          << attr.getName() << type;
-      }
+           i != e; ++i)
+        diagnoseBadTypeAttribute(getSema(), **i, type);
     }
 
     ~TypeProcessingState() {
@@ -287,9 +319,8 @@ static void distributeObjCPointerTypeAttr(TypeProcessingState &state,
     }
   }
  error:
-  
-  state.getSema().Diag(attr.getLoc(), diag::warn_function_attribute_wrong_type)
-    << attr.getName() << type;
+
+  diagnoseBadTypeAttribute(state.getSema(), attr, type);
 }
 
 /// Distribute an objc_gc type attribute that was written on the
@@ -374,8 +405,7 @@ static void distributeFunctionTypeAttr(TypeProcessingState &state,
     }
   }
   
-  state.getSema().Diag(attr.getLoc(), diag::warn_function_attribute_wrong_type)
-    << attr.getName() << type;
+  diagnoseBadTypeAttribute(state.getSema(), attr, type);
 }
 
 /// Try to distribute a function type attribute to the innermost
@@ -511,7 +541,7 @@ static void maybeSynthesizeBlockSignature(TypeProcessingState &state,
                              /*args*/ 0, 0,
                              /*type quals*/ 0,
                              /*ref-qualifier*/true, SourceLocation(),
-                             /*EH*/ false, SourceLocation(), false, 0, 0, 0,
+                             /*EH*/ EST_None, SourceLocation(), 0, 0, 0, 0,
                              /*parens*/ loc, loc,
                              declarator));
 
@@ -1473,10 +1503,8 @@ TypeSourceInfo *Sema::GetTypeForDeclarator(Declarator &D, Scope *S,
     
     if (!D.isInvalidType() && D.getDeclSpec().isTypeSpecOwned()) {
       TagDecl* Owned = cast<TagDecl>(D.getDeclSpec().getRepAsDecl());
-      // Owned is embedded if it was defined here, or if it is the
-      // very first (i.e., canonical) declaration of this tag type.
-      Owned->setEmbeddedInDeclarator(Owned->isDefinition() ||
-                                     Owned->isCanonicalDecl());
+      // Owned declaration is embedded in declarator.
+      Owned->setEmbeddedInDeclarator(true);
       if (OwnedDecl) *OwnedDecl = Owned;
     }
     break;
@@ -1729,6 +1757,7 @@ TypeSourceInfo *Sema::GetTypeForDeclarator(Declarator &D, Scope *S,
       // cv-qualifiers on return types are pointless except when the type is a
       // class type in C++.
       if (isa<PointerType>(T) && T.getLocalCVRQualifiers() &&
+          (D.getName().getKind() != UnqualifiedId::IK_ConversionFunctionId) &&
           (!getLangOptions().CPlusPlus || !T->isDependentType())) {
         assert(chunkIndex + 1 < e && "No DeclaratorChunk for the return type?");
         DeclaratorChunk ReturnTypeChunk = D.getTypeObject(chunkIndex + 1);
@@ -1764,9 +1793,9 @@ TypeSourceInfo *Sema::GetTypeForDeclarator(Declarator &D, Scope *S,
 
       // Exception specs are not allowed in typedefs. Complain, but add it
       // anyway.
-      if (FTI.hasExceptionSpec &&
+      if (FTI.getExceptionSpecType() != EST_None &&
           D.getDeclSpec().getStorageClassSpec() == DeclSpec::SCS_typedef)
-        Diag(FTI.getThrowLoc(), diag::err_exception_spec_in_typedef);
+        Diag(FTI.getExceptionSpecLoc(), diag::err_exception_spec_in_typedef);
 
       if (!FTI.NumArgs && !FTI.isVariadic && !getLangOptions().CPlusPlus) {
         // Simple void foo(), where the incoming T is the result type.
@@ -1845,9 +1874,12 @@ TypeSourceInfo *Sema::GetTypeForDeclarator(Declarator &D, Scope *S,
           } else if (!FTI.hasPrototype) {
             if (ArgTy->isPromotableIntegerType()) {
               ArgTy = Context.getPromotedIntegerType(ArgTy);
+              Param->setKNRPromoted(true);
             } else if (const BuiltinType* BTy = ArgTy->getAs<BuiltinType>()) {
-              if (BTy->getKind() == BuiltinType::Float)
+              if (BTy->getKind() == BuiltinType::Float) {
                 ArgTy = Context.DoubleTy;
+                Param->setKNRPromoted(true);
+              }
             }
           }
 
@@ -1855,9 +1887,8 @@ TypeSourceInfo *Sema::GetTypeForDeclarator(Declarator &D, Scope *S,
         }
 
         llvm::SmallVector<QualType, 4> Exceptions;
-        if (FTI.hasExceptionSpec) {
-          EPI.HasExceptionSpec = FTI.hasExceptionSpec;
-          EPI.HasAnyExceptionSpec = FTI.hasAnyExceptionSpec;
+        EPI.ExceptionSpecType = FTI.getExceptionSpecType();
+        if (FTI.getExceptionSpecType() == EST_Dynamic) {
           Exceptions.reserve(FTI.NumExceptions);
           for (unsigned ei = 0, ee = FTI.NumExceptions; ei != ee; ++ei) {
             // FIXME: Preserve type source info.
@@ -1869,6 +1900,23 @@ TypeSourceInfo *Sema::GetTypeForDeclarator(Declarator &D, Scope *S,
           }
           EPI.NumExceptions = Exceptions.size();
           EPI.Exceptions = Exceptions.data();
+        } else if (FTI.getExceptionSpecType() == EST_ComputedNoexcept) {
+          // If an error occurred, there's no expression here.
+          if (Expr *NoexceptExpr = FTI.NoexceptExpr) {
+            assert((NoexceptExpr->isTypeDependent() ||
+                    NoexceptExpr->getType()->getCanonicalTypeUnqualified() ==
+                        Context.BoolTy) &&
+                 "Parser should have made sure that the expression is boolean");
+            SourceLocation ErrLoc;
+            llvm::APSInt Dummy;
+            if (!NoexceptExpr->isValueDependent() &&
+                !NoexceptExpr->isIntegerConstantExpr(Dummy, Context, &ErrLoc,
+                                                     /*evaluated*/false))
+              Diag(ErrLoc, diag::err_noexcept_needs_constant_expression)
+                  << NoexceptExpr->getSourceRange();
+            else
+              EPI.NoexceptExpr = NoexceptExpr;
+          }
         }
 
         T = Context.getFunctionType(T, ArgTys.data(), ArgTys.size(), EPI);
@@ -1903,11 +1951,12 @@ TypeSourceInfo *Sema::GetTypeForDeclarator(Declarator &D, Scope *S,
         case NestedNameSpecifier::TypeSpec:
         case NestedNameSpecifier::TypeSpecWithTemplate:
           ClsType = QualType(NNS->getAsType(), 0);
-          // Note: if NNS is dependent, then its prefix (if any) is already
-          // included in ClsType; this does not hold if the NNS is
-          // nondependent: in this case (if there is indeed a prefix)
-          // ClsType needs to be wrapped into an elaborated type.
-          if (NNSPrefix && !NNS->isDependent())
+          // Note: if the NNS has a prefix and ClsType is a nondependent
+          // TemplateSpecializationType, then the NNS prefix is NOT included
+          // in ClsType; hence we wrap ClsType into an ElaboratedType.
+          // NOTE: in particular, no wrap occurs if ClsType already is an
+          // Elaborated, DependentName, or DependentTemplateSpecialization.
+          if (NNSPrefix && isa<TemplateSpecializationType>(NNS->getAsType()))
             ClsType = Context.getElaboratedType(ETK_None, NNSPrefix, ClsType);
           break;
         }
@@ -2345,10 +2394,12 @@ namespace {
   };
 
   class DeclaratorLocFiller : public TypeLocVisitor<DeclaratorLocFiller> {
+    ASTContext &Context;
     const DeclaratorChunk &Chunk;
 
   public:
-    DeclaratorLocFiller(const DeclaratorChunk &Chunk) : Chunk(Chunk) {}
+    DeclaratorLocFiller(ASTContext &Context, const DeclaratorChunk &Chunk)
+      : Context(Context), Chunk(Chunk) {}
 
     void VisitQualifiedTypeLoc(QualifiedTypeLoc TL) {
       llvm_unreachable("qualified type locs not expected here!");
@@ -2368,8 +2419,48 @@ namespace {
     }
     void VisitMemberPointerTypeLoc(MemberPointerTypeLoc TL) {
       assert(Chunk.Kind == DeclaratorChunk::MemberPointer);
+      const CXXScopeSpec& SS = Chunk.Mem.Scope();
+      NestedNameSpecifierLoc NNSLoc = SS.getWithLocInContext(Context);
+
+      const Type* ClsTy = TL.getClass();
+      QualType ClsQT = QualType(ClsTy, 0);
+      TypeSourceInfo *ClsTInfo = Context.CreateTypeSourceInfo(ClsQT, 0);
+      // Now copy source location info into the type loc component.
+      TypeLoc ClsTL = ClsTInfo->getTypeLoc();
+      switch (NNSLoc.getNestedNameSpecifier()->getKind()) {
+      case NestedNameSpecifier::Identifier:
+        assert(isa<DependentNameType>(ClsTy) && "Unexpected TypeLoc");
+        {
+          DependentNameTypeLoc DNTLoc = cast<DependentNameTypeLoc>(ClsTL);
+          DNTLoc.setKeywordLoc(SourceLocation());
+          DNTLoc.setQualifierLoc(NNSLoc.getPrefix());
+          DNTLoc.setNameLoc(NNSLoc.getLocalBeginLoc());
+        }
+        break;
+
+      case NestedNameSpecifier::TypeSpec:
+      case NestedNameSpecifier::TypeSpecWithTemplate:
+        if (isa<ElaboratedType>(ClsTy)) {
+          ElaboratedTypeLoc ETLoc = *cast<ElaboratedTypeLoc>(&ClsTL);
+          ETLoc.setKeywordLoc(SourceLocation());
+          ETLoc.setQualifierLoc(NNSLoc.getPrefix());
+          TypeLoc NamedTL = ETLoc.getNamedTypeLoc();
+          NamedTL.initializeFullCopy(NNSLoc.getTypeLoc());
+        } else {
+          ClsTL.initializeFullCopy(NNSLoc.getTypeLoc());
+        }
+        break;
+
+      case NestedNameSpecifier::Namespace:
+      case NestedNameSpecifier::NamespaceAlias:
+      case NestedNameSpecifier::Global:
+        llvm_unreachable("Nested-name-specifier must name a type");
+        break;
+      }
+
+      // Finally fill in MemberPointerLocInfo fields.
       TL.setStarLoc(Chunk.Loc);
-      // FIXME: nested name specifier
+      TL.setClassTInfo(ClsTInfo);
     }
     void VisitLValueReferenceTypeLoc(LValueReferenceTypeLoc TL) {
       assert(Chunk.Kind == DeclaratorChunk::Reference);
@@ -2390,8 +2481,8 @@ namespace {
     }
     void VisitFunctionTypeLoc(FunctionTypeLoc TL) {
       assert(Chunk.Kind == DeclaratorChunk::Function);
-      TL.setLParenLoc(Chunk.Loc);
-      TL.setRParenLoc(Chunk.EndLoc);
+      TL.setLocalRangeBegin(Chunk.Loc);
+      TL.setLocalRangeEnd(Chunk.EndLoc);
       TL.setTrailingReturn(!!Chunk.Fun.TrailingReturnType);
 
       const DeclaratorChunk::FunctionTypeInfo &FTI = Chunk.Fun;
@@ -2440,7 +2531,7 @@ Sema::GetTypeSourceInfoForDeclarator(Declarator &D, QualType T,
       CurrTL = TL.getNextTypeLoc().getUnqualifiedLoc();
     }
 
-    DeclaratorLocFiller(D.getTypeObject(i)).Visit(CurrTL);
+    DeclaratorLocFiller(Context, D.getTypeObject(i)).Visit(CurrTL);
     CurrTL = CurrTL.getNextTypeLoc().getUnqualifiedLoc();
   }
   

@@ -975,6 +975,55 @@ SourceLocation DeclaratorDecl::getOuterLocStart() const {
   return getTemplateOrInnerLocStart(this);
 }
 
+namespace {
+
+// Helper function: returns true if QT is or contains a type
+// having a postfix component.
+bool typeIsPostfix(clang::QualType QT) {
+  while (true) {
+    const Type* T = QT.getTypePtr();
+    switch (T->getTypeClass()) {
+    default:
+      return false;
+    case Type::Pointer:
+      QT = cast<PointerType>(T)->getPointeeType();
+      break;
+    case Type::BlockPointer:
+      QT = cast<BlockPointerType>(T)->getPointeeType();
+      break;
+    case Type::MemberPointer:
+      QT = cast<MemberPointerType>(T)->getPointeeType();
+      break;
+    case Type::LValueReference:
+    case Type::RValueReference:
+      QT = cast<ReferenceType>(T)->getPointeeType();
+      break;
+    case Type::PackExpansion:
+      QT = cast<PackExpansionType>(T)->getPattern();
+      break;
+    case Type::Paren:
+    case Type::ConstantArray:
+    case Type::DependentSizedArray:
+    case Type::IncompleteArray:
+    case Type::VariableArray:
+    case Type::FunctionProto:
+    case Type::FunctionNoProto:
+      return true;
+    }
+  }
+}
+
+} // namespace
+
+SourceRange DeclaratorDecl::getSourceRange() const {
+  SourceLocation RangeEnd = getLocation();
+  if (TypeSourceInfo *TInfo = getTypeSourceInfo()) {
+    if (typeIsPostfix(TInfo->getType()))
+      RangeEnd = TInfo->getTypeLoc().getSourceRange().getEnd();
+  }
+  return SourceRange(getOuterLocStart(), RangeEnd);
+}
+
 void
 QualifierInfo::setTemplateParameterListsInfo(ASTContext &Context,
                                              unsigned NumTPLists,
@@ -1017,10 +1066,11 @@ const char *VarDecl::getStorageClassSpecifierString(StorageClass SC) {
   return 0;
 }
 
-VarDecl *VarDecl::Create(ASTContext &C, DeclContext *DC, SourceLocation L,
+VarDecl *VarDecl::Create(ASTContext &C, DeclContext *DC,
+                         SourceLocation StartL, SourceLocation IdL,
                          IdentifierInfo *Id, QualType T, TypeSourceInfo *TInfo,
                          StorageClass S, StorageClass SCAsWritten) {
-  return new (C) VarDecl(Var, DC, L, Id, T, TInfo, S, SCAsWritten);
+  return new (C) VarDecl(Var, DC, StartL, IdL, Id, T, TInfo, S, SCAsWritten);
 }
 
 void VarDecl::setStorageClass(StorageClass SC) {
@@ -1031,17 +1081,10 @@ void VarDecl::setStorageClass(StorageClass SC) {
   SClass = SC;
 }
 
-SourceLocation VarDecl::getInnerLocStart() const {
-  SourceLocation Start = getTypeSpecStartLoc();
-  if (Start.isInvalid())
-    Start = getLocation();
-  return Start;
-}
-
 SourceRange VarDecl::getSourceRange() const {
   if (getInit())
     return SourceRange(getOuterLocStart(), getInit()->getLocEnd());
-  return SourceRange(getOuterLocStart(), getLocation());
+  return DeclaratorDecl::getSourceRange();
 }
 
 bool VarDecl::isExternC() const {
@@ -1257,11 +1300,12 @@ void VarDecl::setTemplateSpecializationKind(TemplateSpecializationKind TSK,
 //===----------------------------------------------------------------------===//
 
 ParmVarDecl *ParmVarDecl::Create(ASTContext &C, DeclContext *DC,
-                                 SourceLocation L, IdentifierInfo *Id,
+                                 SourceLocation StartLoc,
+                                 SourceLocation IdLoc, IdentifierInfo *Id,
                                  QualType T, TypeSourceInfo *TInfo,
                                  StorageClass S, StorageClass SCAsWritten,
                                  Expr *DefArg) {
-  return new (C) ParmVarDecl(ParmVar, DC, L, Id, T, TInfo,
+  return new (C) ParmVarDecl(ParmVar, DC, StartLoc, IdLoc, Id, T, TInfo,
                              S, SCAsWritten, DefArg);
 }
 
@@ -1932,14 +1976,20 @@ bool FunctionDecl::isOutOfLine() const {
   return false;
 }
 
+SourceRange FunctionDecl::getSourceRange() const {
+  return SourceRange(getOuterLocStart(), EndRangeLoc);
+}
+
 //===----------------------------------------------------------------------===//
 // FieldDecl Implementation
 //===----------------------------------------------------------------------===//
 
 FieldDecl *FieldDecl::Create(const ASTContext &C, DeclContext *DC,
-                             SourceLocation L, IdentifierInfo *Id, QualType T,
+                             SourceLocation StartLoc, SourceLocation IdLoc,
+                             IdentifierInfo *Id, QualType T,
                              TypeSourceInfo *TInfo, Expr *BW, bool Mutable) {
-  return new (C) FieldDecl(Decl::Field, DC, L, Id, T, TInfo, BW, Mutable);
+  return new (C) FieldDecl(Decl::Field, DC, StartLoc, IdLoc, Id, T, TInfo,
+                           BW, Mutable);
 }
 
 bool FieldDecl::isAnonymousStructOrUnion() const {
@@ -1969,6 +2019,12 @@ unsigned FieldDecl::getFieldIndex() const {
 
   CachedFieldIndex = index + 1;
   return index;
+}
+
+SourceRange FieldDecl::getSourceRange() const {
+  if (isBitField())
+    return SourceRange(getInnerLocStart(), BitWidth->getLocEnd());
+  return DeclaratorDecl::getSourceRange();
 }
 
 //===----------------------------------------------------------------------===//
@@ -2054,18 +2110,19 @@ void TagDecl::setQualifierInfo(NestedNameSpecifierLoc QualifierLoc) {
 // EnumDecl Implementation
 //===----------------------------------------------------------------------===//
 
-EnumDecl *EnumDecl::Create(ASTContext &C, DeclContext *DC, SourceLocation L,
-                           IdentifierInfo *Id, SourceLocation TKL,
+EnumDecl *EnumDecl::Create(ASTContext &C, DeclContext *DC,
+                           SourceLocation StartLoc, SourceLocation IdLoc,
+                           IdentifierInfo *Id,
                            EnumDecl *PrevDecl, bool IsScoped,
                            bool IsScopedUsingClassTag, bool IsFixed) {
-  EnumDecl *Enum = new (C) EnumDecl(DC, L, Id, PrevDecl, TKL,
+  EnumDecl *Enum = new (C) EnumDecl(DC, StartLoc, IdLoc, Id, PrevDecl,
                                     IsScoped, IsScopedUsingClassTag, IsFixed);
   C.getTypeDeclType(Enum, PrevDecl);
   return Enum;
 }
 
 EnumDecl *EnumDecl::Create(ASTContext &C, EmptyShell Empty) {
-  return new (C) EnumDecl(0, SourceLocation(), 0, 0, SourceLocation(),
+  return new (C) EnumDecl(0, SourceLocation(), SourceLocation(), 0, 0,
                           false, false, false);
 }
 
@@ -2086,10 +2143,10 @@ void EnumDecl::completeDefinition(QualType NewType,
 // RecordDecl Implementation
 //===----------------------------------------------------------------------===//
 
-RecordDecl::RecordDecl(Kind DK, TagKind TK, DeclContext *DC, SourceLocation L,
-                       IdentifierInfo *Id, RecordDecl *PrevDecl,
-                       SourceLocation TKL)
-  : TagDecl(DK, TK, DC, L, Id, PrevDecl, TKL) {
+RecordDecl::RecordDecl(Kind DK, TagKind TK, DeclContext *DC,
+                       SourceLocation StartLoc, SourceLocation IdLoc,
+                       IdentifierInfo *Id, RecordDecl *PrevDecl)
+  : TagDecl(DK, TK, DC, IdLoc, Id, PrevDecl, StartLoc) {
   HasFlexibleArrayMember = false;
   AnonymousStructOrUnion = false;
   HasObjectMember = false;
@@ -2098,17 +2155,17 @@ RecordDecl::RecordDecl(Kind DK, TagKind TK, DeclContext *DC, SourceLocation L,
 }
 
 RecordDecl *RecordDecl::Create(const ASTContext &C, TagKind TK, DeclContext *DC,
-                               SourceLocation L, IdentifierInfo *Id,
-                               SourceLocation TKL, RecordDecl* PrevDecl) {
-
-  RecordDecl* R = new (C) RecordDecl(Record, TK, DC, L, Id, PrevDecl, TKL);
+                               SourceLocation StartLoc, SourceLocation IdLoc,
+                               IdentifierInfo *Id, RecordDecl* PrevDecl) {
+  RecordDecl* R = new (C) RecordDecl(Record, TK, DC, StartLoc, IdLoc, Id,
+                                     PrevDecl);
   C.getTypeDeclType(R, PrevDecl);
   return R;
 }
 
 RecordDecl *RecordDecl::Create(const ASTContext &C, EmptyShell Empty) {
-  return new (C) RecordDecl(Record, TTK_Struct, 0, SourceLocation(), 0, 0,
-                            SourceLocation());
+  return new (C) RecordDecl(Record, TTK_Struct, 0, SourceLocation(),
+                            SourceLocation(), 0, 0);
 }
 
 bool RecordDecl::isInjectedClassName() const {
@@ -2207,15 +2264,22 @@ TranslationUnitDecl *TranslationUnitDecl::Create(ASTContext &C) {
 }
 
 LabelDecl *LabelDecl::Create(ASTContext &C, DeclContext *DC,
-                             SourceLocation L, IdentifierInfo *II,
-                             bool isGnuLocal) {
-  return new (C) LabelDecl(DC, L, II, 0, isGnuLocal);
+                             SourceLocation IdentL, IdentifierInfo *II) {
+  return new (C) LabelDecl(DC, IdentL, II, 0, IdentL);
+}
+
+LabelDecl *LabelDecl::Create(ASTContext &C, DeclContext *DC,
+                             SourceLocation IdentL, IdentifierInfo *II,
+                             SourceLocation GnuLabelL) {
+  assert(GnuLabelL != IdentL && "Use this only for GNU local labels");
+  return new (C) LabelDecl(DC, IdentL, II, 0, GnuLabelL);
 }
 
 
 NamespaceDecl *NamespaceDecl::Create(ASTContext &C, DeclContext *DC,
-                                     SourceLocation L, IdentifierInfo *Id) {
-  return new (C) NamespaceDecl(DC, L, Id);
+                                     SourceLocation StartLoc,
+                                     SourceLocation IdLoc, IdentifierInfo *Id) {
+  return new (C) NamespaceDecl(DC, StartLoc, IdLoc, Id);
 }
 
 NamespaceDecl *NamespaceDecl::getNextNamespace() {
@@ -2224,20 +2288,22 @@ NamespaceDecl *NamespaceDecl::getNextNamespace() {
 }
 
 ImplicitParamDecl *ImplicitParamDecl::Create(ASTContext &C, DeclContext *DC,
-                                             SourceLocation loc,
-                                             IdentifierInfo *name,
-                                             QualType type) {
-  return new (C) ImplicitParamDecl(DC, loc, name, type);
+                                             SourceLocation IdLoc,
+                                             IdentifierInfo *Id,
+                                             QualType Type) {
+  return new (C) ImplicitParamDecl(DC, IdLoc, Id, Type);
 }
 
 FunctionDecl *FunctionDecl::Create(ASTContext &C, DeclContext *DC,
+                                   SourceLocation StartLoc,
                                    const DeclarationNameInfo &NameInfo,
                                    QualType T, TypeSourceInfo *TInfo,
-                                   StorageClass S, StorageClass SCAsWritten,
+                                   StorageClass SC, StorageClass SCAsWritten,
                                    bool isInlineSpecified, 
                                    bool hasWrittenPrototype) {
-  FunctionDecl *New = new (C) FunctionDecl(Function, DC, NameInfo, T, TInfo,
-                                           S, SCAsWritten, isInlineSpecified);
+  FunctionDecl *New = new (C) FunctionDecl(Function, DC, StartLoc, NameInfo,
+                                           T, TInfo, SC, SCAsWritten,
+                                           isInlineSpecified);
   New->HasWrittenPrototype = hasWrittenPrototype;
   return New;
 }
@@ -2268,9 +2334,18 @@ SourceRange EnumConstantDecl::getSourceRange() const {
 }
 
 TypedefDecl *TypedefDecl::Create(ASTContext &C, DeclContext *DC,
-                                 SourceLocation L, IdentifierInfo *Id,
-                                 TypeSourceInfo *TInfo) {
-  return new (C) TypedefDecl(DC, L, Id, TInfo);
+                                 SourceLocation StartLoc, SourceLocation IdLoc,
+                                 IdentifierInfo *Id, TypeSourceInfo *TInfo) {
+  return new (C) TypedefDecl(DC, StartLoc, IdLoc, Id, TInfo);
+}
+
+SourceRange TypedefDecl::getSourceRange() const {
+  SourceLocation RangeEnd = getLocation();
+  if (TypeSourceInfo *TInfo = getTypeSourceInfo()) {
+    if (typeIsPostfix(TInfo->getType()))
+      RangeEnd = TInfo->getTypeLoc().getSourceRange().getEnd();
+  }
+  return SourceRange(getLocStart(), RangeEnd);
 }
 
 FileScopeAsmDecl *FileScopeAsmDecl::Create(ASTContext &C, DeclContext *DC,

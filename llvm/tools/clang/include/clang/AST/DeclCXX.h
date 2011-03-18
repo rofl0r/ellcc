@@ -449,9 +449,8 @@ class CXXRecordDecl : public RecordDecl {
   
 protected:
   CXXRecordDecl(Kind K, TagKind TK, DeclContext *DC,
-                SourceLocation L, IdentifierInfo *Id,
-                CXXRecordDecl *PrevDecl,
-                SourceLocation TKL = SourceLocation());
+                SourceLocation StartLoc, SourceLocation IdLoc,
+                IdentifierInfo *Id, CXXRecordDecl *PrevDecl);
 
 public:
   /// base_class_iterator - Iterator that traverses the base classes
@@ -494,9 +493,8 @@ public:
   bool hasDefinition() const { return DefinitionData != 0; }
 
   static CXXRecordDecl *Create(const ASTContext &C, TagKind TK, DeclContext *DC,
-                               SourceLocation L, IdentifierInfo *Id,
-                               SourceLocation TKL = SourceLocation(),
-                               CXXRecordDecl* PrevDecl=0,
+                               SourceLocation StartLoc, SourceLocation IdLoc,
+                               IdentifierInfo *Id, CXXRecordDecl* PrevDecl=0,
                                bool DelayTypeCreation = false);
   static CXXRecordDecl *Create(const ASTContext &C, EmptyShell Empty);
 
@@ -1034,20 +1032,27 @@ public:
 /// struct/union/class.
 class CXXMethodDecl : public FunctionDecl {
 protected:
-  CXXMethodDecl(Kind DK, CXXRecordDecl *RD,
+  CXXMethodDecl(Kind DK, CXXRecordDecl *RD, SourceLocation StartLoc,
                 const DeclarationNameInfo &NameInfo,
                 QualType T, TypeSourceInfo *TInfo,
-                bool isStatic, StorageClass SCAsWritten, bool isInline)
-    : FunctionDecl(DK, RD, NameInfo, T, TInfo, (isStatic ? SC_Static : SC_None),
-                   SCAsWritten, isInline) {}
+                bool isStatic, StorageClass SCAsWritten, bool isInline,
+                SourceLocation EndLocation)
+    : FunctionDecl(DK, RD, StartLoc, NameInfo, T, TInfo,
+                   (isStatic ? SC_Static : SC_None),
+                   SCAsWritten, isInline) {
+      if (EndLocation.isValid())
+        setRangeEnd(EndLocation);
+    }
 
 public:
   static CXXMethodDecl *Create(ASTContext &C, CXXRecordDecl *RD,
+                               SourceLocation StartLoc,
                                const DeclarationNameInfo &NameInfo,
                                QualType T, TypeSourceInfo *TInfo,
-                               bool isStatic = false,
-                               StorageClass SCAsWritten = SC_None,
-                               bool isInline = false);
+                               bool isStatic,
+                               StorageClass SCAsWritten,
+                               bool isInline,
+                               SourceLocation EndLocation);
 
   bool isStatic() const { return getStorageClass() == SC_Static; }
   bool isInstance() const { return !isStatic(); }
@@ -1395,12 +1400,13 @@ class CXXConstructorDecl : public CXXMethodDecl {
   CXXCtorInitializer **CtorInitializers;
   unsigned NumCtorInitializers;
 
-  CXXConstructorDecl(CXXRecordDecl *RD, const DeclarationNameInfo &NameInfo,
+  CXXConstructorDecl(CXXRecordDecl *RD, SourceLocation StartLoc,
+                     const DeclarationNameInfo &NameInfo,
                      QualType T, TypeSourceInfo *TInfo,
                      bool isExplicitSpecified, bool isInline, 
                      bool isImplicitlyDeclared)
-    : CXXMethodDecl(CXXConstructor, RD, NameInfo, T, TInfo, false,
-                    SC_None, isInline),
+    : CXXMethodDecl(CXXConstructor, RD, StartLoc, NameInfo, T, TInfo, false,
+                    SC_None, isInline, SourceLocation()),
       IsExplicitSpecified(isExplicitSpecified), ImplicitlyDefined(false),
       CtorInitializers(0), NumCtorInitializers(0) {
     setImplicit(isImplicitlyDeclared);
@@ -1409,6 +1415,7 @@ class CXXConstructorDecl : public CXXMethodDecl {
 public:
   static CXXConstructorDecl *Create(ASTContext &C, EmptyShell Empty);
   static CXXConstructorDecl *Create(ASTContext &C, CXXRecordDecl *RD,
+                                    SourceLocation StartLoc,
                                     const DeclarationNameInfo &NameInfo,
                                     QualType T, TypeSourceInfo *TInfo,
                                     bool isExplicit,
@@ -1589,11 +1596,12 @@ class CXXDestructorDecl : public CXXMethodDecl {
 
   FunctionDecl *OperatorDelete;
   
-  CXXDestructorDecl(CXXRecordDecl *RD, const DeclarationNameInfo &NameInfo,
+  CXXDestructorDecl(CXXRecordDecl *RD, SourceLocation StartLoc,
+                    const DeclarationNameInfo &NameInfo,
                     QualType T, TypeSourceInfo *TInfo,
                     bool isInline, bool isImplicitlyDeclared)
-    : CXXMethodDecl(CXXDestructor, RD, NameInfo, T, TInfo, false,
-                    SC_None, isInline),
+    : CXXMethodDecl(CXXDestructor, RD, StartLoc, NameInfo, T, TInfo, false,
+                    SC_None, isInline, SourceLocation()),
       ImplicitlyDefined(false), OperatorDelete(0) {
     setImplicit(isImplicitlyDeclared);
   }
@@ -1601,6 +1609,7 @@ class CXXDestructorDecl : public CXXMethodDecl {
 public:
   static CXXDestructorDecl *Create(ASTContext& C, EmptyShell Empty);
   static CXXDestructorDecl *Create(ASTContext &C, CXXRecordDecl *RD,
+                                   SourceLocation StartLoc,
                                    const DeclarationNameInfo &NameInfo,
                                    QualType T, TypeSourceInfo* TInfo,
                                    bool isInline,
@@ -1651,19 +1660,23 @@ class CXXConversionDecl : public CXXMethodDecl {
   /// explicitly wrote a cast. This is a C++0x feature.
   bool IsExplicitSpecified : 1;
 
-  CXXConversionDecl(CXXRecordDecl *RD, const DeclarationNameInfo &NameInfo,
+  CXXConversionDecl(CXXRecordDecl *RD, SourceLocation StartLoc,
+                    const DeclarationNameInfo &NameInfo,
                     QualType T, TypeSourceInfo *TInfo,
-                    bool isInline, bool isExplicitSpecified)
-    : CXXMethodDecl(CXXConversion, RD, NameInfo, T, TInfo, false,
-                    SC_None, isInline),
+                    bool isInline, bool isExplicitSpecified,
+                    SourceLocation EndLocation)
+    : CXXMethodDecl(CXXConversion, RD, StartLoc, NameInfo, T, TInfo, false,
+                    SC_None, isInline, EndLocation),
       IsExplicitSpecified(isExplicitSpecified) { }
 
 public:
   static CXXConversionDecl *Create(ASTContext &C, EmptyShell Empty);
   static CXXConversionDecl *Create(ASTContext &C, CXXRecordDecl *RD,
+                                   SourceLocation StartLoc,
                                    const DeclarationNameInfo &NameInfo,
                                    QualType T, TypeSourceInfo *TInfo,
-                                   bool isInline, bool isExplicit);
+                                   bool isInline, bool isExplicit,
+                                   SourceLocation EndLocation);
 
   /// IsExplicitSpecified - Whether this conversion function declaration is 
   /// marked "explicit", meaning that it can only be applied when the user
@@ -1710,30 +1723,35 @@ public:
 private:
   /// Language - The language for this linkage specification.
   LanguageIDs Language;
-
+  /// ExternLoc - The source location for the extern keyword.
+  SourceLocation ExternLoc;
   /// RBraceLoc - The source location for the right brace (if valid).
   SourceLocation RBraceLoc;
 
-  LinkageSpecDecl(DeclContext *DC, SourceLocation L, LanguageIDs lang,
+  LinkageSpecDecl(DeclContext *DC, SourceLocation ExternLoc,
+                  SourceLocation LangLoc, LanguageIDs lang,
                   SourceLocation RBLoc)
-    : Decl(LinkageSpec, DC, L), DeclContext(LinkageSpec),
-      Language(lang), RBraceLoc(RBLoc) { }
+    : Decl(LinkageSpec, DC, LangLoc), DeclContext(LinkageSpec),
+      Language(lang), ExternLoc(ExternLoc), RBraceLoc(RBLoc) { }
 
 public:
   static LinkageSpecDecl *Create(ASTContext &C, DeclContext *DC,
-                                 SourceLocation L, LanguageIDs Lang,
+                                 SourceLocation ExternLoc,
+                                 SourceLocation LangLoc, LanguageIDs Lang,
                                  SourceLocation RBraceLoc = SourceLocation());
 
   /// \brief Return the language specified by this linkage specification.
   LanguageIDs getLanguage() const { return Language; }
-
   /// \brief Set the language specified by this linkage specification.
   void setLanguage(LanguageIDs L) { Language = L; }
 
   /// \brief Determines whether this linkage specification had braces in
   /// its syntactic form.
   bool hasBraces() const { return RBraceLoc.isValid(); }
+
+  SourceLocation getExternLoc() const { return ExternLoc; }
   SourceLocation getRBraceLoc() const { return RBraceLoc; }
+  void setExternLoc(SourceLocation L) { ExternLoc = L; }
   void setRBraceLoc(SourceLocation L) { RBraceLoc = L; }
 
   SourceLocation getLocEnd() const {
@@ -1745,7 +1763,7 @@ public:
   }
 
   SourceRange getSourceRange() const {
-    return SourceRange(getLocation(), getLocEnd());
+    return SourceRange(ExternLoc, getLocEnd());
   }
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
@@ -2225,15 +2243,15 @@ class UnresolvedUsingTypenameDecl : public TypeDecl {
                               NestedNameSpecifierLoc QualifierLoc,
                               SourceLocation TargetNameLoc, 
                               IdentifierInfo *TargetName)
-  : TypeDecl(UnresolvedUsingTypename, DC, TargetNameLoc, TargetName),
-    UsingLocation(UsingLoc), TypenameLocation(TypenameLoc), 
-    QualifierLoc(QualifierLoc) { }
+    : TypeDecl(UnresolvedUsingTypename, DC, TargetNameLoc, TargetName,
+               UsingLoc),
+      TypenameLocation(TypenameLoc), QualifierLoc(QualifierLoc) { }
 
   friend class ASTDeclReader;
   
 public:
   /// \brief Returns the source location of the 'using' keyword.
-  SourceLocation getUsingLoc() const { return UsingLocation; }
+  SourceLocation getUsingLoc() const { return getLocStart(); }
 
   /// \brief Returns the source location of the 'typename' keyword.
   SourceLocation getTypenameLoc() const { return TypenameLocation; }
@@ -2252,10 +2270,6 @@ public:
            SourceLocation TypenameLoc, NestedNameSpecifierLoc QualifierLoc,
            SourceLocation TargetNameLoc, DeclarationName TargetName);
 
-  SourceRange getSourceRange() const {
-    return SourceRange(UsingLocation, getLocation());
-  }
-  
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classof(const UnresolvedUsingTypenameDecl *D) { return true; }
   static bool classofKind(Kind K) { return K == UnresolvedUsingTypename; }
@@ -2265,21 +2279,32 @@ public:
 class StaticAssertDecl : public Decl {
   Expr *AssertExpr;
   StringLiteral *Message;
+  SourceLocation RParenLoc;
 
-  StaticAssertDecl(DeclContext *DC, SourceLocation L,
-                   Expr *assertexpr, StringLiteral *message)
-  : Decl(StaticAssert, DC, L), AssertExpr(assertexpr), Message(message) { }
+  StaticAssertDecl(DeclContext *DC, SourceLocation StaticAssertLoc,
+                   Expr *assertexpr, StringLiteral *message,
+                   SourceLocation RParenLoc)
+  : Decl(StaticAssert, DC, StaticAssertLoc), AssertExpr(assertexpr),
+    Message(message), RParenLoc(RParenLoc) { }
 
 public:
   static StaticAssertDecl *Create(ASTContext &C, DeclContext *DC,
-                                  SourceLocation L, Expr *AssertExpr,
-                                  StringLiteral *Message);
+                                  SourceLocation StaticAssertLoc,
+                                  Expr *AssertExpr, StringLiteral *Message,
+                                  SourceLocation RParenLoc);
 
   Expr *getAssertExpr() { return AssertExpr; }
   const Expr *getAssertExpr() const { return AssertExpr; }
 
   StringLiteral *getMessage() { return Message; }
   const StringLiteral *getMessage() const { return Message; }
+
+  SourceLocation getRParenLoc() const { return RParenLoc; }
+  void setRParenLoc(SourceLocation L) { RParenLoc = L; }
+
+  SourceRange getSourceRange() const {
+    return SourceRange(getLocation(), getRParenLoc());
+  }
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classof(StaticAssertDecl *D) { return true; }

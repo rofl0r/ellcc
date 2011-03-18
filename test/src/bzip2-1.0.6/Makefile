@@ -14,7 +14,7 @@
 
 SHELL=/bin/sh
 
-all: ecc arm i386 mips microblaze ppc ppc64 x86_64
+all: ecc arm i386 microblaze ppc ppc64 x86_64 mips
 
 arm i386 microblaze mips nios2 ppc ppc64 sparc x86_64:
 	$(MAKE) clean

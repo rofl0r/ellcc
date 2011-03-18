@@ -20,7 +20,6 @@
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclObjC.h"
 #include "clang/AST/Mangle.h"
-#include "CGCall.h"
 #include "CGVTables.h"
 #include "CodeGenTypes.h"
 #include "GlobalDecl.h"
@@ -69,12 +68,14 @@ namespace clang {
 
 namespace CodeGen {
 
+  class CallArgList;
   class CodeGenFunction;
   class CodeGenTBAA;
   class CGCXXABI;
   class CGDebugInfo;
   class CGObjCRuntime;
   class BlockFieldFlags;
+  class FunctionArgList;
   
   struct OrderGlobalInits {
     unsigned int priority;
@@ -281,7 +282,8 @@ public:
     StaticLocalDeclMap[D] = GV;
   }
 
-  CGDebugInfo *getDebugInfo() { return DebugInfo; }
+  CGDebugInfo *getModuleDebugInfo() { return DebugInfo; }
+
   ASTContext &getContext() const { return Context; }
   const CodeGenOptions &getCodeGenOpts() const { return CodeGenOpts; }
   const LangOptions &getLangOptions() const { return Features; }
@@ -451,13 +453,15 @@ public:
 
   /// GetAddrOfCXXConstructor - Return the address of the constructor of the
   /// given type.
-  llvm::GlobalValue *GetAddrOfCXXConstructor(const CXXConstructorDecl *D,
-                                             CXXCtorType Type);
+  llvm::GlobalValue *GetAddrOfCXXConstructor(const CXXConstructorDecl *ctor,
+                                             CXXCtorType ctorType,
+                                             const CGFunctionInfo *fnInfo = 0);
 
   /// GetAddrOfCXXDestructor - Return the address of the constructor of the
   /// given type.
-  llvm::GlobalValue *GetAddrOfCXXDestructor(const CXXDestructorDecl *D,
-                                            CXXDtorType Type);
+  llvm::GlobalValue *GetAddrOfCXXDestructor(const CXXDestructorDecl *dtor,
+                                            CXXDtorType dtorType,
+                                            const CGFunctionInfo *fnInfo = 0);
 
   /// getBuiltinLibFunction - Given a builtin id for a function like
   /// "__builtin_fabsf", return a Function* for "fabsf".

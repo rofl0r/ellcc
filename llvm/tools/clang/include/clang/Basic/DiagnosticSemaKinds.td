@@ -30,6 +30,8 @@ def warn_float_overflow : Warning<
 def warn_float_underflow : Warning<
   "magnitude of floating-point constant too small for type %0; minimum is %1">,
   InGroup<LiteralRange>;
+def warn_double_const_requires_fp64 : Warning<
+  "double precision constant requires cl_khr_fp64, casting to single precision">;
 
 // C99 variable-length arrays
 def ext_vla : Extension<
@@ -558,6 +560,8 @@ def err_deep_exception_specs_differ : Error<
   "exception specifications of %select{return|argument}0 types differ">;
 def warn_missing_exception_specification : Warning<
   "%0 is missing exception specification '%1'">;
+def err_noexcept_needs_constant_expression : Error<
+  "argument to noexcept specifier must be a constant expression">;
 
 // C++ access checking
 def err_class_redeclared_with_different_access : Error<
@@ -1115,7 +1119,9 @@ def err_attribute_wrong_decl_type : Error<
   "classes and virtual methods|functions, methods, and parameters|"
   "classes|virtual methods|class members|variables|methods}1">;
 def warn_function_attribute_wrong_type : Warning<
-  "%0 only applies to function types; type here is %1">;
+  "'%0' only applies to function types; type here is %1">;
+def warn_pointer_attribute_wrong_type : Warning<
+  "'%0' only applies to pointer types; type here is %1">;
 def warn_gnu_inline_attribute_requires_inline : Warning<
   "'gnu_inline' attribute requires function to be marked 'inline',"
   " attribute ignored">;
@@ -2288,12 +2294,17 @@ def ext_flexible_array_in_array : Extension<
   "%0 may not be used as an array element due to flexible array member">;
 def err_flexible_array_init_nonempty : Error<
   "non-empty initialization of flexible array member inside subobject">;
-def ext_flexible_array_empty_aggregate : Extension<
+def ext_flexible_array_empty_aggregate_ms : Extension<
   "flexible array member %0 in otherwise empty %select{struct|class}1 "
   "is a Microsoft extension">, InGroup<Microsoft>;
-def ext_flexible_array_union : Extension<
+def ext_flexible_array_union_ms : Extension<
   "flexible array member %0 in a union is a Microsoft extension">,
   InGroup<Microsoft>;
+def ext_flexible_array_empty_aggregate_gnu : Extension<
+  "flexible array member %0 in otherwise empty %select{struct|class}1 "
+  "is a GNU extension">, InGroup<GNU>;
+def ext_flexible_array_union_gnu : Extension<
+  "flexible array member %0 in a union is a GNU extension">, InGroup<GNU>;
 
 def err_flexible_array_init_needs_braces : Error<
   "flexible array requires brace-enclosed initializer">;
@@ -2336,14 +2347,18 @@ def err_func_def_incomplete_result : Error<
 def ext_sizeof_function_type : Extension<
   "invalid application of 'sizeof' to a function type">, InGroup<PointerArith>;
 def err_sizeof_alignof_overloaded_function_type : Error<
-  "invalid application of '%select{sizeof|__alignof}0' to an overloaded "
-  "function">;
+  "invalid application of '%select{sizeof|__alignof|vec_step}0' to an "
+  "overloaded function">;
 def ext_sizeof_void_type : Extension<
-  "invalid application of '%0' to a void type">, InGroup<PointerArith>;
+  "invalid application of '%select{sizeof|__alignof|vec_step}0' to a void "
+  "type">, InGroup<PointerArith>;
 def err_sizeof_alignof_incomplete_type : Error<
-  "invalid application of '%select{sizeof|__alignof}0' to an incomplete type %1">;
+  "invalid application of '%select{sizeof|__alignof|vec_step}0' to an "
+  "incomplete type %1">;
 def err_sizeof_alignof_bitfield : Error<
   "invalid application of '%select{sizeof|__alignof}0' to bit-field">;
+def err_vecstep_non_scalar_vector_type : Error<
+  "'vec_step' requires built-in scalar or vector type, %0 invalid">;
 def err_offsetof_incomplete_type : Error<
   "offsetof of incomplete type %0">;
 def err_offsetof_record_type : Error<
@@ -2438,6 +2453,11 @@ def warn_subscript_is_char : Warning<"array subscript is of type 'char'">,
 
 def err_typecheck_incomplete_tag : Error<"incomplete definition of type %0">;
 def err_no_member : Error<"no member named %0 in %1">;
+
+def err_member_not_yet_instantiated : Error<
+  "no member %0 in %1; it has not yet been instantiated">;
+def note_non_instantiated_member_here : Note<
+  "not-yet-instantiated member is declared here">;
 
 def err_member_redeclared : Error<"class member cannot be redeclared">;
 def err_member_name_of_class : Error<"member %0 has the same name as its class">;

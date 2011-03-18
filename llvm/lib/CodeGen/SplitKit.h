@@ -103,7 +103,7 @@ private:
   void analyzeUses();
 
   /// calcLiveBlockInfo - Compute per-block information about CurLI.
-  void calcLiveBlockInfo();
+  bool calcLiveBlockInfo();
 
   /// canAnalyzeBranch - Return true if MBB ends in a branch that can be
   /// analyzed.
@@ -271,6 +271,9 @@ class SplitEditor {
   /// ConEq.Distribute().
   void rewriteComponents(const SmallVectorImpl<LiveInterval*> &Intvs,
                          const ConnectedVNInfoEqClasses &ConEq);
+
+  /// deleteRematVictims - Delete defs that are dead after rematerializing.
+  void deleteRematVictims();
 
 public:
   /// Create a new SplitEditor for editing the LiveInterval analyzed by SA.

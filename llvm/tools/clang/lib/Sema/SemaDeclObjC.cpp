@@ -1736,7 +1736,7 @@ Decl *Sema::ActOnMethodDeclaration(
     ObjCArgInfo *ArgInfo,
     DeclaratorChunk::ParamInfo *CParamInfo, unsigned CNumArgs, // c-style args
     AttributeList *AttrList, tok::ObjCKeywordKind MethodDeclKind,
-    bool isVariadic) {
+    bool isVariadic, bool MethodDefinition) {
   // Make sure we can establish a context for the method.
   if (!ClassDecl) {
     Diag(MethodLoc, diag::error_missing_method_context);
@@ -1789,18 +1789,23 @@ Decl *Sema::ActOnMethodDeclaration(
     if (R.isSingleResult()) {
       NamedDecl *PrevDecl = R.getFoundDecl();
       if (S->isDeclScope(PrevDecl)) {
-        // FIXME. This should be an error; but will break projects.
-        Diag(ArgInfo[i].NameLoc, diag::warn_method_param_redefinition) 
+        Diag(ArgInfo[i].NameLoc, 
+             (MethodDefinition ? diag::warn_method_param_redefinition 
+                               : diag::warn_method_param_declaration)) 
           << ArgInfo[i].Name;
         Diag(PrevDecl->getLocation(), 
              diag::note_previous_declaration);
       }
     }
 
+    SourceLocation StartLoc = DI
+      ? DI->getTypeLoc().getBeginLoc()
+      : ArgInfo[i].NameLoc;
+
     ParmVarDecl* Param
-      = ParmVarDecl::Create(Context, ObjCMethod, ArgInfo[i].NameLoc,
-                            ArgInfo[i].Name, ArgType, DI,
-                            SC_None, SC_None, 0);
+      = ParmVarDecl::Create(Context, ObjCMethod,
+                            StartLoc, ArgInfo[i].NameLoc, ArgInfo[i].Name,
+                            ArgType, DI, SC_None, SC_None, 0);
 
     if (ArgType->isObjCObjectType()) {
       Diag(ArgInfo[i].NameLoc,
@@ -1928,7 +1933,9 @@ void Sema::ActOnDefs(Scope *S, Decl *TagD, SourceLocation DeclStart,
   for (unsigned i = 0; i < Ivars.size(); i++) {
     FieldDecl* ID = cast<FieldDecl>(Ivars[i]);
     RecordDecl *Record = dyn_cast<RecordDecl>(TagD);
-    Decl *FD = ObjCAtDefsFieldDecl::Create(Context, Record, ID->getLocation(),
+    Decl *FD = ObjCAtDefsFieldDecl::Create(Context, Record,
+                                           /*FIXME: StartL=*/ID->getLocation(),
+                                           ID->getLocation(),
                                            ID->getIdentifier(), ID->getType(),
                                            ID->getBitWidth());
     Decls.push_back(FD);
@@ -1946,17 +1953,17 @@ void Sema::ActOnDefs(Scope *S, Decl *TagD, SourceLocation DeclStart,
 }
 
 /// \brief Build a type-check a new Objective-C exception variable declaration.
-VarDecl *Sema::BuildObjCExceptionDecl(TypeSourceInfo *TInfo, 
-                                      QualType T,
-                                      IdentifierInfo *Name, 
-                                      SourceLocation NameLoc,
+VarDecl *Sema::BuildObjCExceptionDecl(TypeSourceInfo *TInfo, QualType T,
+                                      SourceLocation StartLoc,
+                                      SourceLocation IdLoc,
+                                      IdentifierInfo *Id,
                                       bool Invalid) {
   // ISO/IEC TR 18037 S6.7.3: "The type of an object with automatic storage 
   // duration shall not be qualified by an address-space qualifier."
   // Since all parameters have automatic store duration, they can not have
   // an address space.
   if (T.getAddressSpace() != 0) {
-    Diag(NameLoc, diag::err_arg_with_address_space);
+    Diag(IdLoc, diag::err_arg_with_address_space);
     Invalid = true;
   }
   
@@ -1968,14 +1975,14 @@ VarDecl *Sema::BuildObjCExceptionDecl(TypeSourceInfo *TInfo,
     // Okay: we don't know what this type will instantiate to.
   } else if (!T->isObjCObjectPointerType()) {
     Invalid = true;
-    Diag(NameLoc ,diag::err_catch_param_not_objc_type);
+    Diag(IdLoc ,diag::err_catch_param_not_objc_type);
   } else if (T->isObjCQualifiedIdType()) {
     Invalid = true;
-    Diag(NameLoc, diag::err_illegal_qualifiers_on_catch_parm);
+    Diag(IdLoc, diag::err_illegal_qualifiers_on_catch_parm);
   }
   
-  VarDecl *New = VarDecl::Create(Context, CurContext, NameLoc, Name, T, TInfo,
-                                 SC_None, SC_None);
+  VarDecl *New = VarDecl::Create(Context, CurContext, StartLoc, IdLoc, Id,
+                                 T, TInfo, SC_None, SC_None);
   New->setExceptionVariable(true);
   
   if (Invalid)
@@ -2016,8 +2023,10 @@ Decl *Sema::ActOnObjCExceptionDecl(Scope *S, Declarator &D) {
       << Context.getTypeDeclType(OwnedDecl);
   }
 
-  VarDecl *New = BuildObjCExceptionDecl(TInfo, ExceptionType, D.getIdentifier(), 
-                                        D.getIdentifierLoc(), 
+  VarDecl *New = BuildObjCExceptionDecl(TInfo, ExceptionType,
+                                        D.getSourceRange().getBegin(),
+                                        D.getIdentifierLoc(),
+                                        D.getIdentifier(),
                                         D.isInvalidType());
   
   // Parameter declarators cannot be qualified (C++ [dcl.meaning]p1).
