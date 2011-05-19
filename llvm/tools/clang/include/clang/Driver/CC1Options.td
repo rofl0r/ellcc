@@ -110,6 +110,8 @@ def disable_red_zone : Flag<"-disable-red-zone">,
   HelpText<"Do not emit code that uses the red zone.">;
 def dwarf_debug_flags : Separate<"-dwarf-debug-flags">,
   HelpText<"The string to embed in the Dwarf debug flags record.">;
+def fforbid_guard_variables : Flag<"-fforbid-guard-variables">,
+  HelpText<"Emit an error if a C++ static local initializer would need a guard variable">;
 def g : Flag<"-g">, HelpText<"Generate source level debug information">;
 def fcatch_undefined_behavior : Flag<"-fcatch-undefined-behavior">,
     HelpText<"Generate runtime checks for undefined behavior.">;
@@ -509,6 +511,10 @@ def fwritable_strings : Flag<"-fwritable-strings">,
   HelpText<"Store string literals as writable data">;
 def fno_bitfield_type_align : Flag<"-fno-bitfield-type-align">,
   HelpText<"Ignore bit-field types when aligning structures">;
+def traditional_cpp : Flag<"-traditional-cpp">,
+  HelpText<"Enable some traditional CPP emulation">;
+def ffake_address_space_map : Flag<"-ffake-address-space-map">,
+  HelpText<"Use a fake address space map; OpenCL testing purposes only">;
 
 //===----------------------------------------------------------------------===//
 // Header Search Options

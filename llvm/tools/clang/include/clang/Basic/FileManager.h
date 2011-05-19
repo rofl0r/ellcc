@@ -176,10 +176,11 @@ public:
   ///
   const DirectoryEntry *getDirectory(llvm::StringRef DirName);
 
-  /// getFile - Lookup, cache, and verify the specified file (real or
+  /// \brief Lookup, cache, and verify the specified file (real or
   /// virtual).  This returns NULL if the file doesn't exist.
   ///
-  const FileEntry *getFile(llvm::StringRef Filename);
+  /// \param openFile if true and the file exists, it will be opened.
+  const FileEntry *getFile(llvm::StringRef Filename, bool openFile = false);
 
   /// \brief Retrieve a file entry for a "virtual" file that acts as
   /// if there were a file with the given name on disk. The file
@@ -194,12 +195,14 @@ public:
   llvm::MemoryBuffer *getBufferForFile(llvm::StringRef Filename,
                                        std::string *ErrorStr = 0);
 
+  // getNoncachedStatValue - Will get the 'stat' information for the given path.
+  // If the path is relative, it will be resolved against the WorkingDir of the
+  // FileManager's FileSystemOptions.
+  bool getNoncachedStatValue(llvm::StringRef Path, struct stat &StatBuf);
+
   /// \brief If path is not absolute and FileSystemOptions set the working
   /// directory, the path is modified to be relative to the given
   /// working directory.
-  static void FixupRelativePath(llvm::SmallVectorImpl<char> &path,
-                                const FileSystemOptions &FSOpts);
-
   void FixupRelativePath(llvm::SmallVectorImpl<char> &path) const;
 
   /// \brief Produce an array mapping from the unique IDs assigned to each

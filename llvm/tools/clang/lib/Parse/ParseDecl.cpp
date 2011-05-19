@@ -13,6 +13,7 @@
 
 #include "clang/Parse/Parser.h"
 #include "clang/Parse/ParseDiagnostic.h"
+#include "clang/Basic/OpenCL.h"
 #include "clang/Sema/Scope.h"
 #include "clang/Sema/ParsedTemplate.h"
 #include "clang/Sema/PrettyDeclStackTrace.h"
@@ -308,6 +309,56 @@ void Parser::ParseOpenCLAttributes(ParsedAttributes &attrs) {
     attrs.add(AttrFactory.Create(PP.getIdentifierInfo("opencl_kernel_function"),
                                  AttrNameLoc, 0, AttrNameLoc, 0,
                                  SourceLocation(), 0, 0, false));
+  }
+}
+
+void Parser::ParseOpenCLQualifiers(DeclSpec &DS) {
+  SourceLocation Loc = Tok.getLocation();
+  switch(Tok.getKind()) {
+    // OpenCL qualifiers:
+    case tok::kw___private:
+    case tok::kw_private: 
+      DS.addAttributes(AttrFactory.CreateIntegerAttribute( 
+          Actions.getASTContext(), 
+          PP.getIdentifierInfo("address_space"), Loc, 0));
+      break;
+      
+    case tok::kw___global:
+      DS.addAttributes(AttrFactory.CreateIntegerAttribute(
+          Actions.getASTContext(),
+          PP.getIdentifierInfo("address_space"), Loc, LangAS::opencl_global));
+      break;
+      
+    case tok::kw___local:
+      DS.addAttributes(AttrFactory.CreateIntegerAttribute(
+          Actions.getASTContext(),
+          PP.getIdentifierInfo("address_space"), Loc, LangAS::opencl_local));
+      break;
+      
+    case tok::kw___constant:
+      DS.addAttributes(AttrFactory.CreateIntegerAttribute(
+          Actions.getASTContext(),
+          PP.getIdentifierInfo("address_space"), Loc, LangAS::opencl_constant));
+      break;
+      
+    case tok::kw___read_only:
+      DS.addAttributes(AttrFactory.CreateIntegerAttribute(
+          Actions.getASTContext(), 
+          PP.getIdentifierInfo("opencl_image_access"), Loc, CLIA_read_only));
+      break;
+      
+    case tok::kw___write_only:
+      DS.addAttributes(AttrFactory.CreateIntegerAttribute(
+          Actions.getASTContext(), 
+          PP.getIdentifierInfo("opencl_image_access"), Loc, CLIA_write_only));
+      break;
+      
+    case tok::kw___read_write:
+      DS.addAttributes(AttrFactory.CreateIntegerAttribute(
+          Actions.getASTContext(),
+          PP.getIdentifierInfo("opencl_image_access"), Loc, CLIA_read_write));
+      break;
+    default: break;
   }
 }
 
@@ -1249,7 +1300,7 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
                                          DiagID, getLang());
       break;
     case tok::kw_auto:
-      if (getLang().CPlusPlus0x || getLang().ObjC2) {
+      if (getLang().CPlusPlus0x) {
         if (isKnownToBeTypeSpecifier(GetLookAheadToken(1))) {
           isInvalid = DS.SetStorageClassSpec(DeclSpec::SCS_auto, Loc, PrevSpec,
                                            DiagID, getLang());
@@ -1446,6 +1497,20 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
       ParseDecltypeSpecifier(DS);
       continue;
 
+    // OpenCL qualifiers:
+    case tok::kw_private: 
+      if (!getLang().OpenCL)
+        goto DoneWithDeclSpec;
+    case tok::kw___private:
+    case tok::kw___global:
+    case tok::kw___local:
+    case tok::kw___constant:
+    case tok::kw___read_only:
+    case tok::kw___write_only:
+    case tok::kw___read_write:
+      ParseOpenCLQualifiers(DS);
+      break;
+      
     case tok::less:
       // GCC ObjC supports types like "<SomeProtocol>" as a synonym for
       // "id<SomeProtocol>".  This is hopelessly old fashioned and dangerous,
@@ -1696,6 +1761,20 @@ bool Parser::ParseOptionalTypeSpecifier(DeclSpec &DS, bool& isInvalid,
   case tok::kw_decltype:
     ParseDecltypeSpecifier(DS);
     return true;
+
+  // OpenCL qualifiers:
+  case tok::kw_private: 
+    if (!getLang().OpenCL)
+      return false;
+  case tok::kw___private:
+  case tok::kw___global:
+  case tok::kw___local:
+  case tok::kw___constant:
+  case tok::kw___read_only:
+  case tok::kw___write_only:
+  case tok::kw___read_write:
+    ParseOpenCLQualifiers(DS);
+    break;
 
   // C++0x auto support.
   case tok::kw_auto:
@@ -2123,7 +2202,6 @@ void Parser::ParseEnumSpecifier(SourceLocation StartLoc, DeclSpec &DS,
       
   bool Owned = false;
   bool IsDependent = false;
-  SourceLocation TSTLoc = NameLoc.isValid()? NameLoc : StartLoc;
   const char *PrevSpec = 0;
   unsigned DiagID;
   Decl *TagDecl = Actions.ActOnTag(getCurScope(), DeclSpec::TST_enum, TUK,
@@ -2150,8 +2228,9 @@ void Parser::ParseEnumSpecifier(SourceLocation StartLoc, DeclSpec &DS,
       return;
     }
     
-    if (DS.SetTypeSpecType(DeclSpec::TST_typename, TSTLoc, PrevSpec, DiagID,
-                           Type.get()))
+    if (DS.SetTypeSpecType(DeclSpec::TST_typename, StartLoc,
+                           NameLoc.isValid() ? NameLoc : StartLoc,
+                           PrevSpec, DiagID, Type.get()))
       Diag(StartLoc, DiagID) << PrevSpec;
     
     return;
@@ -2172,10 +2251,9 @@ void Parser::ParseEnumSpecifier(SourceLocation StartLoc, DeclSpec &DS,
   if (Tok.is(tok::l_brace))
     ParseEnumBody(StartLoc, TagDecl);
 
-  // FIXME: The DeclSpec should keep the locations of both the keyword
-  // and the name (if there is one).
-  if (DS.SetTypeSpecType(DeclSpec::TST_enum, TSTLoc, PrevSpec, DiagID,
-                         TagDecl, Owned))
+  if (DS.SetTypeSpecType(DeclSpec::TST_enum, StartLoc,
+                         NameLoc.isValid() ? NameLoc : StartLoc,
+                         PrevSpec, DiagID, TagDecl, Owned))
     Diag(StartLoc, DiagID) << PrevSpec;
 }
 
@@ -2270,10 +2348,22 @@ void Parser::ParseEnumBody(SourceLocation StartLoc, Decl *EnumDecl) {
 bool Parser::isTypeQualifier() const {
   switch (Tok.getKind()) {
   default: return false;
+
+    // type-qualifier only in OpenCL
+  case tok::kw_private:
+    return getLang().OpenCL;
+
     // type-qualifier
   case tok::kw_const:
   case tok::kw_volatile:
   case tok::kw_restrict:
+  case tok::kw___private:
+  case tok::kw___local:
+  case tok::kw___global:
+  case tok::kw___constant:
+  case tok::kw___read_only:
+  case tok::kw___read_write:
+  case tok::kw___write_only:
     return true;
   }
 }
@@ -2401,7 +2491,19 @@ bool Parser::isTypeSpecifierQualifier() {
   case tok::kw___w64:
   case tok::kw___ptr64:
   case tok::kw___pascal:
+
+  case tok::kw___private:
+  case tok::kw___local:
+  case tok::kw___global:
+  case tok::kw___constant:
+  case tok::kw___read_only:
+  case tok::kw___read_write:
+  case tok::kw___write_only:
+
     return true;
+
+  case tok::kw_private:
+    return getLang().OpenCL;
   }
 }
 
@@ -2413,6 +2515,9 @@ bool Parser::isTypeSpecifierQualifier() {
 bool Parser::isDeclarationSpecifier(bool DisambiguatingWithExpression) {
   switch (Tok.getKind()) {
   default: return false;
+
+  case tok::kw_private:
+    return getLang().OpenCL;
 
   case tok::identifier:   // foo::bar
     // Unfortunate hack to support "Class.factoryMethod" notation.
@@ -2523,6 +2628,15 @@ bool Parser::isDeclarationSpecifier(bool DisambiguatingWithExpression) {
   case tok::kw___ptr64:
   case tok::kw___forceinline:
   case tok::kw___pascal:
+
+  case tok::kw___private:
+  case tok::kw___local:
+  case tok::kw___global:
+  case tok::kw___constant:
+  case tok::kw___read_only:
+  case tok::kw___read_write:
+  case tok::kw___write_only:
+
     return true;
   }
 }
@@ -2628,6 +2742,21 @@ void Parser::ParseTypeQualifierListOpt(DeclSpec &DS,
       isInvalid = DS.SetTypeQual(DeclSpec::TQ_restrict, Loc, PrevSpec, DiagID,
                                  getLang());
       break;
+
+    // OpenCL qualifiers:
+    case tok::kw_private: 
+      if (!getLang().OpenCL)
+        goto DoneWithTypeQuals;
+    case tok::kw___private:
+    case tok::kw___global:
+    case tok::kw___local:
+    case tok::kw___constant:
+    case tok::kw___read_only:
+    case tok::kw___write_only:
+    case tok::kw___read_write:
+      ParseOpenCLQualifiers(DS);
+      break;
+
     case tok::kw___w64:
     case tok::kw___ptr64:
     case tok::kw___cdecl:

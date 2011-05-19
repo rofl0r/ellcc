@@ -848,16 +848,18 @@ Sema::BuildCXXNew(SourceLocation StartLoc, bool UseGlobal,
                             diag::err_auto_new_ctor_multiple_expressions)
                        << AllocType << TypeRange);
     }
-    QualType DeducedType;
-    if (!DeduceAutoType(AllocType, ConstructorArgs.get()[0], DeducedType))
+    TypeSourceInfo *DeducedType = 0;
+    if (!DeduceAutoType(AllocTypeInfo, ConstructorArgs.get()[0], DeducedType))
       return ExprError(Diag(StartLoc, diag::err_auto_new_deduction_failure)
                        << AllocType
                        << ConstructorArgs.get()[0]->getType()
                        << TypeRange
                        << ConstructorArgs.get()[0]->getSourceRange());
+    if (!DeducedType)
+      return ExprError();
 
-    AllocType = DeducedType;
-    AllocTypeInfo = Context.getTrivialTypeSourceInfo(AllocType, StartLoc);
+    AllocTypeInfo = DeducedType;
+    AllocType = AllocTypeInfo->getType();
   }
   
   // Per C++0x [expr.new]p5, the type being constructed may be a
@@ -1404,11 +1406,18 @@ bool Sema::FindAllocationOverload(SourceLocation StartLoc, SourceRange Range,
 /// DeclareGlobalNewDelete - Declare the global forms of operator new and
 /// delete. These are:
 /// @code
+///   // C++03:
 ///   void* operator new(std::size_t) throw(std::bad_alloc);
 ///   void* operator new[](std::size_t) throw(std::bad_alloc);
 ///   void operator delete(void *) throw();
 ///   void operator delete[](void *) throw();
+///   // C++0x:
+///   void* operator new(std::size_t);
+///   void* operator new[](std::size_t);
+///   void operator delete(void *);
+///   void operator delete[](void *);
 /// @endcode
+/// C++0x operator delete is implicitly noexcept.
 /// Note that the placement and nothrow forms of new are *not* implicitly
 /// declared. Their use requires including \<new\>.
 void Sema::DeclareGlobalNewDelete() {
@@ -1420,10 +1429,16 @@ void Sema::DeclareGlobalNewDelete() {
   //   implicitly declared in global scope in each translation unit of a
   //   program
   //
+  //     C++03:
   //     void* operator new(std::size_t) throw(std::bad_alloc);
   //     void* operator new[](std::size_t) throw(std::bad_alloc);
   //     void  operator delete(void*) throw();
   //     void  operator delete[](void*) throw();
+  //     C++0x:
+  //     void* operator new(std::size_t);
+  //     void* operator new[](std::size_t);
+  //     void  operator delete(void*);
+  //     void  operator delete[](void*);
   //
   //   These implicit declarations introduce only the function names operator
   //   new, operator new[], operator delete, operator delete[].
@@ -1432,7 +1447,9 @@ void Sema::DeclareGlobalNewDelete() {
   // "std" or "bad_alloc" as necessary to form the exception specification.
   // However, we do not make these implicit declarations visible to name
   // lookup.
-  if (!StdBadAlloc) {
+  // Note that the C++0x versions of operator delete are deallocation functions,
+  // and thus are implicitly noexcept.
+  if (!StdBadAlloc && !getLangOptions().CPlusPlus0x) {
     // The "std::bad_alloc" class has not yet been declared, so build it
     // implicitly.
     StdBadAlloc = CXXRecordDecl::Create(Context, TTK_Class,
@@ -1495,18 +1512,21 @@ void Sema::DeclareGlobalAllocationFunction(DeclarationName Name,
   bool HasBadAllocExceptionSpec
     = (Name.getCXXOverloadedOperator() == OO_New ||
        Name.getCXXOverloadedOperator() == OO_Array_New);
-  if (HasBadAllocExceptionSpec) {
+  if (HasBadAllocExceptionSpec && !getLangOptions().CPlusPlus0x) {
     assert(StdBadAlloc && "Must have std::bad_alloc declared");
     BadAllocType = Context.getTypeDeclType(getStdBadAlloc());
   }
 
   FunctionProtoType::ExtProtoInfo EPI;
   if (HasBadAllocExceptionSpec) {
-    EPI.ExceptionSpecType = EST_Dynamic;
-    EPI.NumExceptions = 1;
-    EPI.Exceptions = &BadAllocType;
+    if (!getLangOptions().CPlusPlus0x) {
+      EPI.ExceptionSpecType = EST_Dynamic;
+      EPI.NumExceptions = 1;
+      EPI.Exceptions = &BadAllocType;
+    }
   } else {
-    EPI.ExceptionSpecType = EST_DynamicNone;
+    EPI.ExceptionSpecType = getLangOptions().CPlusPlus0x ?
+                                EST_BasicNoexcept : EST_DynamicNone;
   }
 
   QualType FnType = Context.getFunctionType(Return, &Argument, 1, EPI);
@@ -2273,7 +2293,8 @@ Sema::PerformImplicitConversion(Expr *&From, QualType ToType,
     ImpCastExprToType(From, ToType.getNonLValueExprType(Context),
                       CK_NoOp, VK);
 
-    if (SCS.DeprecatedStringLiteralToCharPtr)
+    if (SCS.DeprecatedStringLiteralToCharPtr &&
+        !getLangOptions().WritableStrings)
       Diag(From->getLocStart(), diag::warn_deprecated_string_literal_conversion)
         << ToType.getNonReferenceType();
 
@@ -2423,7 +2444,7 @@ static bool EvaluateUnaryTypeTrait(Sema &Self, UnaryTypeTrait UTT, QualType T,
             FoundAssign = true;
             const FunctionProtoType *CPT
                 = Operator->getType()->getAs<FunctionProtoType>();
-            if (!CPT->isNothrow()) {
+            if (!CPT->isNothrow(Self.Context)) {
               AllNoThrow = false;
               break;
             }
@@ -2465,7 +2486,7 @@ static bool EvaluateUnaryTypeTrait(Sema &Self, UnaryTypeTrait UTT, QualType T,
               = Constructor->getType()->getAs<FunctionProtoType>();
           // FIXME: check whether evaluating default arguments can throw.
           // For now, we'll be conservative and assume that they can throw.
-          if (!CPT->isNothrow() || CPT->getNumArgs() > 1) {
+          if (!CPT->isNothrow(Self.Context) || CPT->getNumArgs() > 1) {
             AllNoThrow = false;
             break;
           }
@@ -2500,7 +2521,7 @@ static bool EvaluateUnaryTypeTrait(Sema &Self, UnaryTypeTrait UTT, QualType T,
               = Constructor->getType()->getAs<FunctionProtoType>();
           // TODO: check whether evaluating default arguments can throw.
           // For now, we'll be conservative and assume that they can throw.
-          return CPT->isNothrow() && CPT->getNumArgs() == 0;
+          return CPT->isNothrow(Self.Context) && CPT->getNumArgs() == 0;
         }
       }
     }
@@ -3925,14 +3946,17 @@ ExprResult Sema::ActOnFinishFullExpr(Expr *FullExpr) {
   //  fooT<int>;
   
   if (FullExpr->getType() == Context.OverloadTy) {
-    if (!ResolveSingleFunctionTemplateSpecialization(FullExpr, 
-                                                     /* Complain */ false)) {
-      OverloadExpr* OvlExpr = OverloadExpr::find(FullExpr).Expression; 
-      Diag(FullExpr->getLocStart(), diag::err_addr_ovl_ambiguous)
-        << OvlExpr->getName();
-      NoteAllOverloadCandidates(OvlExpr);
+    ExprResult Fixed
+      = ResolveAndFixSingleFunctionTemplateSpecialization(FullExpr,
+                                        /*DoFunctionPointerConversion=*/false,
+                                                          /*Complain=*/true,
+                                                    FullExpr->getSourceRange(),
+                                                          QualType(),
+                                                 diag::err_addr_ovl_ambiguous);
+    if (Fixed.isInvalid())
       return ExprError();
-    }  
+    
+    FullExpr = Fixed.get();
   }
 
 

@@ -48,7 +48,7 @@ MemoryBuffer::~MemoryBuffer() { }
 /// memory, memory that we know is already null terminated.
 void MemoryBuffer::init(const char *BufStart, const char *BufEnd,
                         bool RequiresNullTerminator) {
-  assert((BufEnd[0] == 0 || !RequiresNullTerminator) &&
+  assert((!RequiresNullTerminator || BufEnd[0] == 0) &&
          "Buffer is not null terminated!");
   BufferStart = BufStart;
   BufferEnd = BufEnd;
@@ -92,8 +92,10 @@ public:
 /// getMemBuffer - Open the specified memory range as a MemoryBuffer.  Note
 /// that EndPtr[0] must be a null byte and be accessible!
 MemoryBuffer *MemoryBuffer::getMemBuffer(StringRef InputData,
-                                         StringRef BufferName) {
-  return GetNamedBuffer<MemoryBufferMem>(InputData, BufferName, true);
+                                         StringRef BufferName,
+                                         bool RequiresNullTerminator) {
+  return GetNamedBuffer<MemoryBufferMem>(InputData, BufferName,
+                                         RequiresNullTerminator);
 }
 
 /// getMemBufferCopy - Open the specified memory range as a MemoryBuffer,

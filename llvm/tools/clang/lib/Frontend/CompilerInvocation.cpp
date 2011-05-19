@@ -98,7 +98,7 @@ static void AnalyzerOptsToArgs(const AnalyzerOptions &Opts,
     Res.push_back("-trim-egraph");
   if (Opts.VisualizeEGDot)
     Res.push_back("-analyzer-viz-egraph-graphviz");
-  if (Opts.VisualizeEGDot)
+  if (Opts.VisualizeEGUbi)
     Res.push_back("-analyzer-viz-egraph-ubigraph");
 
   for (unsigned i = 0, e = Opts.CheckersControlList.size(); i != e; ++i) {
@@ -127,6 +127,8 @@ static void CodeGenOptsToArgs(const CodeGenOptions &Opts,
     Res.push_back("-fno-merge-all-constants");
   if (Opts.NoCommon)
     Res.push_back("-fno-common");
+  if (Opts.ForbidGuardVariables)
+    Res.push_back("-fforbid-guard-variables");
   if (Opts.NoImplicitFloat)
     Res.push_back("-no-implicit-float");
   if (Opts.OmitLeafFramePointer)
@@ -572,6 +574,8 @@ static void LangOptsToArgs(const LangOptions &Opts,
     Res.push_back("-fcxx-exceptions");
   if (Opts.SjLjExceptions)
     Res.push_back("-fsjlj-exceptions");
+  if (Opts.TraditionalCPP)
+    Res.push_back("-traditional-cpp");
   if (!Opts.RTTI)
     Res.push_back("-fno-rtti");
   if (Opts.MSBitfields)
@@ -668,6 +672,8 @@ static void LangOptsToArgs(const LangOptions &Opts,
     Res.push_back("-fconstant-string-class");
     Res.push_back(Opts.ObjCConstantStringClass);
   }
+  if (Opts.FakeAddressSpaceMap)
+    Res.push_back("-ffake-address-space-map");
 }
 
 static void PreprocessorOptsToArgs(const PreprocessorOptions &Opts,
@@ -896,6 +902,7 @@ static void ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
   Opts.LimitDebugInfo = Args.hasArg(OPT_flimit_debug_info);
   Opts.DisableLLVMOpts = Args.hasArg(OPT_disable_llvm_optzns);
   Opts.DisableRedZone = Args.hasArg(OPT_disable_red_zone);
+  Opts.ForbidGuardVariables = Args.hasArg(OPT_fforbid_guard_variables);
   Opts.RelaxedAliasing = Args.hasArg(OPT_relaxed_aliasing);
   Opts.DwarfDebugFlags = Args.getLastArgValue(OPT_dwarf_debug_flags);
   Opts.MergeAllConstants = !Args.hasArg(OPT_fno_merge_all_constants);
@@ -1439,6 +1446,7 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   Opts.ObjCExceptions = Args.hasArg(OPT_fobjc_exceptions);
   Opts.CXXExceptions = Args.hasArg(OPT_fcxx_exceptions);
   Opts.SjLjExceptions = Args.hasArg(OPT_fsjlj_exceptions);
+  Opts.TraditionalCPP = Args.hasArg(OPT_traditional_cpp);
 
   Opts.RTTI = !Args.hasArg(OPT_fno_rtti);
   Opts.Blocks = Args.hasArg(OPT_fblocks);
@@ -1477,6 +1485,7 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   Opts.FastRelaxedMath = Args.hasArg(OPT_cl_fast_relaxed_math);
   Opts.OptimizeSize = 0;
   Opts.MRTD = Args.hasArg(OPT_mrtd);
+  Opts.FakeAddressSpaceMap = Args.hasArg(OPT_ffake_address_space_map);
 
   // FIXME: Eliminate this dependency.
   unsigned Opt = getOptimizationLevel(Args, IK, Diags);

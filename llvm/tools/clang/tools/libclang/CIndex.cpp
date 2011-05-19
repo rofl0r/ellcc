@@ -188,6 +188,10 @@ class CursorVisitor : public DeclVisitor<CursorVisitor, bool>,
   // be suppressed.
   unsigned MaxPCHLevel;
 
+  /// \brief Whether we should visit the preprocessing record entries last, 
+  /// after visiting other declarations.
+  bool VisitPreprocessorLast;
+  
   /// \brief When valid, a source range to which the cursor should restrict
   /// its search.
   SourceRange RegionOfInterest;
@@ -235,11 +239,12 @@ public:
   CursorVisitor(CXTranslationUnit TU, CXCursorVisitor Visitor,
                 CXClientData ClientData,
                 unsigned MaxPCHLevel,
+                bool VisitPreprocessorLast,
                 SourceRange RegionOfInterest = SourceRange())
     : TU(TU), AU(static_cast<ASTUnit*>(TU->TUData)),
       Visitor(Visitor), ClientData(ClientData),
-      MaxPCHLevel(MaxPCHLevel), RegionOfInterest(RegionOfInterest), 
-      DI_current(0)
+      MaxPCHLevel(MaxPCHLevel), VisitPreprocessorLast(VisitPreprocessorLast),
+      RegionOfInterest(RegionOfInterest), DI_current(0)
   {
     Parent.kind = CXCursor_NoDeclFound;
     Parent.data[0] = 0;
@@ -501,46 +506,54 @@ bool CursorVisitor::VisitChildren(CXCursor Cursor) {
   if (clang_isTranslationUnit(Cursor.kind)) {
     CXTranslationUnit tu = getCursorTU(Cursor);
     ASTUnit *CXXUnit = static_cast<ASTUnit*>(tu->TUData);
-    if (!CXXUnit->isMainFileAST() && CXXUnit->getOnlyLocalDecls() &&
-        RegionOfInterest.isInvalid()) {
-      for (ASTUnit::top_level_iterator TL = CXXUnit->top_level_begin(),
-                                    TLEnd = CXXUnit->top_level_end();
-           TL != TLEnd; ++TL) {
-        if (Visit(MakeCXCursor(*TL, tu), true))
+    
+    int VisitOrder[2] = { VisitPreprocessorLast, !VisitPreprocessorLast };
+    for (unsigned I = 0; I != 2; ++I) {
+      if (VisitOrder[I]) {
+        if (!CXXUnit->isMainFileAST() && CXXUnit->getOnlyLocalDecls() &&
+            RegionOfInterest.isInvalid()) {
+          for (ASTUnit::top_level_iterator TL = CXXUnit->top_level_begin(),
+                                        TLEnd = CXXUnit->top_level_end();
+               TL != TLEnd; ++TL) {
+            if (Visit(MakeCXCursor(*TL, tu), true))
+              return true;
+          }
+        } else if (VisitDeclContext(
+                                CXXUnit->getASTContext().getTranslationUnitDecl()))
           return true;
+        continue;
       }
-    } else if (VisitDeclContext(
-                            CXXUnit->getASTContext().getTranslationUnitDecl()))
-      return true;
 
-    // Walk the preprocessing record.
-    if (CXXUnit->getPreprocessor().getPreprocessingRecord()) {
-      // FIXME: Once we have the ability to deserialize a preprocessing record,
-      // do so.
-      PreprocessingRecord::iterator E, EEnd;
-      for (llvm::tie(E, EEnd) = getPreprocessedEntities(); E != EEnd; ++E) {
-        if (MacroInstantiation *MI = dyn_cast<MacroInstantiation>(*E)) {
-          if (Visit(MakeMacroInstantiationCursor(MI, tu)))
-            return true;
+      // Walk the preprocessing record.
+      if (CXXUnit->getPreprocessor().getPreprocessingRecord()) {
+        // FIXME: Once we have the ability to deserialize a preprocessing record,
+        // do so.
+        PreprocessingRecord::iterator E, EEnd;
+        for (llvm::tie(E, EEnd) = getPreprocessedEntities(); E != EEnd; ++E) {
+          if (MacroInstantiation *MI = dyn_cast<MacroInstantiation>(*E)) {
+            if (Visit(MakeMacroInstantiationCursor(MI, tu)))
+              return true;
+            
+            continue;
+          }
           
-          continue;
-        }
-        
-        if (MacroDefinition *MD = dyn_cast<MacroDefinition>(*E)) {
-          if (Visit(MakeMacroDefinitionCursor(MD, tu)))
-            return true;
+          if (MacroDefinition *MD = dyn_cast<MacroDefinition>(*E)) {
+            if (Visit(MakeMacroDefinitionCursor(MD, tu)))
+              return true;
+            
+            continue;
+          }
           
-          continue;
-        }
-        
-        if (InclusionDirective *ID = dyn_cast<InclusionDirective>(*E)) {
-          if (Visit(MakeInclusionDirectiveCursor(ID, tu)))
-            return true;
-          
-          continue;
+          if (InclusionDirective *ID = dyn_cast<InclusionDirective>(*E)) {
+            if (Visit(MakeInclusionDirectiveCursor(ID, tu)))
+              return true;
+            
+            continue;
+          }
         }
       }
     }
+    
     return false;
   }
 
@@ -2296,6 +2309,13 @@ void clang_disposeIndex(CXIndex CIdx) {
     delete static_cast<CIndexer *>(CIdx);
 }
 
+void clang_toggleCrashRecovery(unsigned isEnabled) {
+  if (isEnabled)
+    llvm::CrashRecoveryContext::Enable();
+  else
+    llvm::CrashRecoveryContext::Disable();
+}
+  
 CXTranslationUnit clang_createTranslationUnit(CXIndex CIdx,
                                               const char *ast_filename) {
   if (!CIdx)
@@ -2860,7 +2880,8 @@ unsigned clang_visitChildren(CXCursor parent,
                              CXCursorVisitor visitor,
                              CXClientData client_data) {
   CursorVisitor CursorVis(getCursorTU(parent), visitor, client_data, 
-                          getCursorASTUnit(parent)->getMaxPCHLevel());
+                          getCursorASTUnit(parent)->getMaxPCHLevel(),
+                          false);
   return CursorVis.VisitChildren(parent);
 }
 
@@ -3316,7 +3337,7 @@ CXCursor clang_getCursor(CXTranslationUnit TU, CXSourceLocation Loc) {
     // the region of interest, rather than starting from the translation unit.
     CXCursor Parent = clang_getTranslationUnitCursor(TU);
     CursorVisitor CursorVis(TU, GetCursorVisitor, &Result,
-                            Decl::MaxPCHLevel, SourceLocation(SLoc));
+                            Decl::MaxPCHLevel, true, SourceLocation(SLoc));
     CursorVis.VisitChildren(Parent);
   }
   
@@ -3709,7 +3730,9 @@ CXCursor clang_getCursorReferenced(CXCursor C) {
   if (clang_isStatement(C.kind)) {
     Stmt *S = getCursorStmt(C);
     if (GotoStmt *Goto = dyn_cast_or_null<GotoStmt>(S))
-      return MakeCXCursor(Goto->getLabel()->getStmt(), getCursorDecl(C), tu);
+      if (LabelDecl *label = Goto->getLabel())
+        if (LabelStmt *labelS = label->getStmt())
+        return MakeCXCursor(labelS, getCursorDecl(C), tu);
 
     return clang_getNullCursor();
   }
@@ -4281,7 +4304,7 @@ public:
       NumTokens(numTokens), TokIdx(0), PreprocessingTokIdx(0),
       AnnotateVis(tu,
                   AnnotateTokensVisitor, this,
-                  Decl::MaxPCHLevel, RegionOfInterest),
+                  Decl::MaxPCHLevel, true, RegionOfInterest),
       SrcMgr(static_cast<ASTUnit*>(tu->TUData)->getSourceManager()),
       HasContextSensitiveKeywords(false) { }
 
@@ -4550,9 +4573,192 @@ static enum CXChildVisitResult AnnotateTokensVisitor(CXCursor cursor,
   return static_cast<AnnotateTokensWorker*>(client_data)->Visit(cursor, parent);
 }
 
+namespace {
+  struct clang_annotateTokens_Data {
+    CXTranslationUnit TU;
+    ASTUnit *CXXUnit;
+    CXToken *Tokens;
+    unsigned NumTokens;
+    CXCursor *Cursors;
+  };
+}
+
 // This gets run a separate thread to avoid stack blowout.
-static void runAnnotateTokensWorker(void *UserData) {
-  ((AnnotateTokensWorker*)UserData)->AnnotateTokens();
+static void clang_annotateTokensImpl(void *UserData) {
+  CXTranslationUnit TU = ((clang_annotateTokens_Data*)UserData)->TU;
+  ASTUnit *CXXUnit = ((clang_annotateTokens_Data*)UserData)->CXXUnit;
+  CXToken *Tokens = ((clang_annotateTokens_Data*)UserData)->Tokens;
+  const unsigned NumTokens = ((clang_annotateTokens_Data*)UserData)->NumTokens;
+  CXCursor *Cursors = ((clang_annotateTokens_Data*)UserData)->Cursors;
+
+  // Determine the region of interest, which contains all of the tokens.
+  SourceRange RegionOfInterest;
+  RegionOfInterest.setBegin(
+    cxloc::translateSourceLocation(clang_getTokenLocation(TU, Tokens[0])));
+  RegionOfInterest.setEnd(
+    cxloc::translateSourceLocation(clang_getTokenLocation(TU,
+                                                         Tokens[NumTokens-1])));
+
+  // A mapping from the source locations found when re-lexing or traversing the
+  // region of interest to the corresponding cursors.
+  AnnotateTokensData Annotated;
+  
+  // Relex the tokens within the source range to look for preprocessing
+  // directives.
+  SourceManager &SourceMgr = CXXUnit->getSourceManager();
+  std::pair<FileID, unsigned> BeginLocInfo
+    = SourceMgr.getDecomposedLoc(RegionOfInterest.getBegin());
+  std::pair<FileID, unsigned> EndLocInfo
+    = SourceMgr.getDecomposedLoc(RegionOfInterest.getEnd());
+  
+  llvm::StringRef Buffer;
+  bool Invalid = false;
+  if (BeginLocInfo.first == EndLocInfo.first &&
+      ((Buffer = SourceMgr.getBufferData(BeginLocInfo.first, &Invalid)),true) &&
+      !Invalid) {
+    Lexer Lex(SourceMgr.getLocForStartOfFile(BeginLocInfo.first),
+              CXXUnit->getASTContext().getLangOptions(),
+              Buffer.begin(), Buffer.data() + BeginLocInfo.second,
+              Buffer.end());
+    Lex.SetCommentRetentionState(true);
+    
+    // Lex tokens in raw mode until we hit the end of the range, to avoid
+    // entering #includes or expanding macros.
+    while (true) {
+      Token Tok;
+      Lex.LexFromRawLexer(Tok);
+      
+    reprocess:
+      if (Tok.is(tok::hash) && Tok.isAtStartOfLine()) {
+        // We have found a preprocessing directive. Gobble it up so that we
+        // don't see it while preprocessing these tokens later, but keep track
+        // of all of the token locations inside this preprocessing directive so
+        // that we can annotate them appropriately.
+        //
+        // FIXME: Some simple tests here could identify macro definitions and
+        // #undefs, to provide specific cursor kinds for those.
+        llvm::SmallVector<SourceLocation, 32> Locations;
+        do {
+          Locations.push_back(Tok.getLocation());
+          Lex.LexFromRawLexer(Tok);
+        } while (!Tok.isAtStartOfLine() && !Tok.is(tok::eof));
+        
+        using namespace cxcursor;
+        CXCursor Cursor
+        = MakePreprocessingDirectiveCursor(SourceRange(Locations.front(),
+                                                       Locations.back()),
+                                           TU);
+        for (unsigned I = 0, N = Locations.size(); I != N; ++I) {
+          Annotated[Locations[I].getRawEncoding()] = Cursor;
+        }
+        
+        if (Tok.isAtStartOfLine())
+          goto reprocess;
+        
+        continue;
+      }
+      
+      if (Tok.is(tok::eof))
+        break;
+    }
+  }
+  
+  // Annotate all of the source locations in the region of interest that map to
+  // a specific cursor.
+  AnnotateTokensWorker W(Annotated, Tokens, Cursors, NumTokens,
+                         TU, RegionOfInterest);
+  
+  // FIXME: We use a ridiculous stack size here because the data-recursion
+  // algorithm uses a large stack frame than the non-data recursive version,
+  // and AnnotationTokensWorker currently transforms the data-recursion
+  // algorithm back into a traditional recursion by explicitly calling
+  // VisitChildren().  We will need to remove this explicit recursive call.
+  W.AnnotateTokens();
+
+  // If we ran into any entities that involve context-sensitive keywords,
+  // take another pass through the tokens to mark them as such.
+  if (W.hasContextSensitiveKeywords()) {
+    for (unsigned I = 0; I != NumTokens; ++I) {
+      if (clang_getTokenKind(Tokens[I]) != CXToken_Identifier)
+        continue;
+      
+      if (Cursors[I].kind == CXCursor_ObjCPropertyDecl) {
+        IdentifierInfo *II = static_cast<IdentifierInfo *>(Tokens[I].ptr_data);
+        if (ObjCPropertyDecl *Property
+            = dyn_cast_or_null<ObjCPropertyDecl>(getCursorDecl(Cursors[I]))) {
+          if (Property->getPropertyAttributesAsWritten() != 0 &&
+              llvm::StringSwitch<bool>(II->getName())
+              .Case("readonly", true)
+              .Case("assign", true)
+              .Case("readwrite", true)
+              .Case("retain", true)
+              .Case("copy", true)
+              .Case("nonatomic", true)
+              .Case("atomic", true)
+              .Case("getter", true)
+              .Case("setter", true)
+              .Default(false))
+            Tokens[I].int_data[0] = CXToken_Keyword;
+        }
+        continue;
+      }
+      
+      if (Cursors[I].kind == CXCursor_ObjCInstanceMethodDecl ||
+          Cursors[I].kind == CXCursor_ObjCClassMethodDecl) {
+        IdentifierInfo *II = static_cast<IdentifierInfo *>(Tokens[I].ptr_data);
+        if (llvm::StringSwitch<bool>(II->getName())
+            .Case("in", true)
+            .Case("out", true)
+            .Case("inout", true)
+            .Case("oneway", true)
+            .Case("bycopy", true)
+            .Case("byref", true)
+            .Default(false))
+          Tokens[I].int_data[0] = CXToken_Keyword;
+        continue;
+      }
+      
+      if (Cursors[I].kind == CXCursor_CXXMethod) {
+        IdentifierInfo *II = static_cast<IdentifierInfo *>(Tokens[I].ptr_data);
+        if (CXXMethodDecl *Method
+            = dyn_cast_or_null<CXXMethodDecl>(getCursorDecl(Cursors[I]))) {
+          if ((Method->hasAttr<FinalAttr>() || 
+               Method->hasAttr<OverrideAttr>()) &&
+              Method->getLocation().getRawEncoding() != Tokens[I].int_data[1] &&
+              llvm::StringSwitch<bool>(II->getName())
+              .Case("final", true)
+              .Case("override", true)
+              .Default(false))
+            Tokens[I].int_data[0] = CXToken_Keyword;
+        }
+        continue;
+      }
+      
+      if (Cursors[I].kind == CXCursor_ClassDecl ||
+          Cursors[I].kind == CXCursor_StructDecl ||
+          Cursors[I].kind == CXCursor_ClassTemplate) {
+        IdentifierInfo *II = static_cast<IdentifierInfo *>(Tokens[I].ptr_data);
+        if (II->getName() == "final") {
+          // We have to be careful with 'final', since it could be the name
+          // of a member class rather than the context-sensitive keyword.
+          // So, check whether the cursor associated with this
+          Decl *D = getCursorDecl(Cursors[I]);
+          if (CXXRecordDecl *Record = dyn_cast_or_null<CXXRecordDecl>(D)) {
+            if ((Record->hasAttr<FinalAttr>()) &&
+                Record->getIdentifier() != II)
+              Tokens[I].int_data[0] = CXToken_Keyword;
+          } else if (ClassTemplateDecl *ClassTemplate
+                     = dyn_cast_or_null<ClassTemplateDecl>(D)) {
+            CXXRecordDecl *Record = ClassTemplate->getTemplatedDecl();
+            if ((Record->hasAttr<FinalAttr>()) &&
+                Record->getIdentifier() != II)
+              Tokens[I].int_data[0] = CXToken_Keyword;
+          }
+        }
+        continue;
+      }
+    }
+  }
 }
 
 extern "C" {
@@ -4574,181 +4780,15 @@ void clang_annotateTokens(CXTranslationUnit TU,
     return;
 
   ASTUnit::ConcurrencyCheck Check(*CXXUnit);
-
-  // Determine the region of interest, which contains all of the tokens.
-  SourceRange RegionOfInterest;
-  RegionOfInterest.setBegin(cxloc::translateSourceLocation(
-                                        clang_getTokenLocation(TU, Tokens[0])));
-  RegionOfInterest.setEnd(cxloc::translateSourceLocation(
-                                clang_getTokenLocation(TU, 
-                                                       Tokens[NumTokens - 1])));
-
-  // A mapping from the source locations found when re-lexing or traversing the
-  // region of interest to the corresponding cursors.
-  AnnotateTokensData Annotated;
-
-  // Relex the tokens within the source range to look for preprocessing
-  // directives.
-  SourceManager &SourceMgr = CXXUnit->getSourceManager();
-  std::pair<FileID, unsigned> BeginLocInfo
-    = SourceMgr.getDecomposedLoc(RegionOfInterest.getBegin());
-  std::pair<FileID, unsigned> EndLocInfo
-    = SourceMgr.getDecomposedLoc(RegionOfInterest.getEnd());
-
-  llvm::StringRef Buffer;
-  bool Invalid = false;
-  if (BeginLocInfo.first == EndLocInfo.first &&
-      ((Buffer = SourceMgr.getBufferData(BeginLocInfo.first, &Invalid)),true) &&
-      !Invalid) {
-    Lexer Lex(SourceMgr.getLocForStartOfFile(BeginLocInfo.first),
-              CXXUnit->getASTContext().getLangOptions(),
-              Buffer.begin(), Buffer.data() + BeginLocInfo.second,
-              Buffer.end());
-    Lex.SetCommentRetentionState(true);
-
-    // Lex tokens in raw mode until we hit the end of the range, to avoid
-    // entering #includes or expanding macros.
-    while (true) {
-      Token Tok;
-      Lex.LexFromRawLexer(Tok);
-
-    reprocess:
-      if (Tok.is(tok::hash) && Tok.isAtStartOfLine()) {
-        // We have found a preprocessing directive. Gobble it up so that we
-        // don't see it while preprocessing these tokens later, but keep track
-        // of all of the token locations inside this preprocessing directive so
-        // that we can annotate them appropriately.
-        //
-        // FIXME: Some simple tests here could identify macro definitions and
-        // #undefs, to provide specific cursor kinds for those.
-        std::vector<SourceLocation> Locations;
-        do {
-          Locations.push_back(Tok.getLocation());
-          Lex.LexFromRawLexer(Tok);
-        } while (!Tok.isAtStartOfLine() && !Tok.is(tok::eof));
-
-        using namespace cxcursor;
-        CXCursor Cursor
-          = MakePreprocessingDirectiveCursor(SourceRange(Locations.front(),
-                                                         Locations.back()),
-                                           TU);
-        for (unsigned I = 0, N = Locations.size(); I != N; ++I) {
-          Annotated[Locations[I].getRawEncoding()] = Cursor;
-        }
-
-        if (Tok.isAtStartOfLine())
-          goto reprocess;
-
-        continue;
-      }
-
-      if (Tok.is(tok::eof))
-        break;
-    }
-  }
-
-  // Annotate all of the source locations in the region of interest that map to
-  // a specific cursor.
-  AnnotateTokensWorker W(Annotated, Tokens, Cursors, NumTokens,
-                         TU, RegionOfInterest);
-
-  // Run the worker within a CrashRecoveryContext.
-  // FIXME: We use a ridiculous stack size here because the data-recursion
-  // algorithm uses a large stack frame than the non-data recursive version,
-  // and AnnotationTokensWorker currently transforms the data-recursion
-  // algorithm back into a traditional recursion by explicitly calling
-  // VisitChildren().  We will need to remove this explicit recursive call.
+  
+  clang_annotateTokens_Data data = { TU, CXXUnit, Tokens, NumTokens, Cursors };
   llvm::CrashRecoveryContext CRC;
-  if (!RunSafely(CRC, runAnnotateTokensWorker, &W,
+  if (!RunSafely(CRC, clang_annotateTokensImpl, &data,
                  GetSafetyThreadStackSize() * 2)) {
     fprintf(stderr, "libclang: crash detected while annotating tokens\n");
   }
-  
-  // If we ran into any entities that involve context-sensitive keywords,
-  // take another pass through the tokens to mark them as such.
-  if (W.hasContextSensitiveKeywords()) {
-    for (unsigned I = 0; I != NumTokens; ++I) {
-      if (clang_getTokenKind(Tokens[I]) != CXToken_Identifier)
-        continue;
-      
-      if (Cursors[I].kind == CXCursor_ObjCPropertyDecl) {
-        IdentifierInfo *II = static_cast<IdentifierInfo *>(Tokens[I].ptr_data);
-        if (ObjCPropertyDecl *Property
-              = dyn_cast_or_null<ObjCPropertyDecl>(getCursorDecl(Cursors[I]))) {
-          if (Property->getPropertyAttributesAsWritten() != 0 &&
-              llvm::StringSwitch<bool>(II->getName())
-                .Case("readonly", true)
-                .Case("assign", true)
-                .Case("readwrite", true)
-                .Case("retain", true)
-                .Case("copy", true)
-                .Case("nonatomic", true)
-                .Case("atomic", true)
-                .Case("getter", true)
-                .Case("setter", true)
-                .Default(false))
-            Tokens[I].int_data[0] = CXToken_Keyword;
-        }
-        continue;
-      }
-      
-      if (Cursors[I].kind == CXCursor_ObjCInstanceMethodDecl ||
-          Cursors[I].kind == CXCursor_ObjCClassMethodDecl) {
-        IdentifierInfo *II = static_cast<IdentifierInfo *>(Tokens[I].ptr_data);
-        if (llvm::StringSwitch<bool>(II->getName())
-              .Case("in", true)
-              .Case("out", true)
-              .Case("inout", true)
-              .Case("oneway", true)
-              .Case("bycopy", true)
-              .Case("byref", true)
-              .Default(false))
-          Tokens[I].int_data[0] = CXToken_Keyword;
-        continue;
-      }
-      
-      if (Cursors[I].kind == CXCursor_CXXMethod) {
-        IdentifierInfo *II = static_cast<IdentifierInfo *>(Tokens[I].ptr_data);
-        if (CXXMethodDecl *Method
-                 = dyn_cast_or_null<CXXMethodDecl>(getCursorDecl(Cursors[I]))) {
-          if ((Method->hasAttr<FinalAttr>() || 
-               Method->hasAttr<OverrideAttr>()) &&
-              Method->getLocation().getRawEncoding() != Tokens[I].int_data[1] &&
-              llvm::StringSwitch<bool>(II->getName())
-                .Case("final", true)
-                .Case("override", true)
-                .Default(false))
-            Tokens[I].int_data[0] = CXToken_Keyword;
-        }
-        continue;
-      }
-      
-      if (Cursors[I].kind == CXCursor_ClassDecl ||
-          Cursors[I].kind == CXCursor_StructDecl ||
-          Cursors[I].kind == CXCursor_ClassTemplate) {
-        IdentifierInfo *II = static_cast<IdentifierInfo *>(Tokens[I].ptr_data);
-        if (II->getName() == "final") {
-          // We have to be careful with 'final', since it could be the name
-          // of a member class rather than the context-sensitive keyword.
-          // So, check whether the cursor associated with this
-          Decl *D = getCursorDecl(Cursors[I]);
-          if (CXXRecordDecl *Record = dyn_cast_or_null<CXXRecordDecl>(D)) {
-            if ((Record->hasAttr<FinalAttr>()) &&
-                Record->getIdentifier() != II)
-              Tokens[I].int_data[0] = CXToken_Keyword;
-          } else if (ClassTemplateDecl *ClassTemplate
-                       = dyn_cast_or_null<ClassTemplateDecl>(D)) {
-            CXXRecordDecl *Record = ClassTemplate->getTemplatedDecl();
-            if ((Record->hasAttr<FinalAttr>()) &&
-                Record->getIdentifier() != II)
-              Tokens[I].int_data[0] = CXToken_Keyword;            
-          }
-        }
-        continue;        
-      }
-    }
-  }
 }
+
 } // end: extern "C"
 
 //===----------------------------------------------------------------------===//

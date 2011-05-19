@@ -29,7 +29,7 @@
 #include "clang/Analysis/Analyses/ReachableCode.h"
 #include "clang/Analysis/Analyses/CFGReachabilityAnalysis.h"
 #include "clang/Analysis/CFGStmtMap.h"
-#include "clang/Analysis/Analyses/UninitializedValuesV2.h"
+#include "clang/Analysis/Analyses/UninitializedValues.h"
 #include "llvm/ADT/BitVector.h"
 #include "llvm/Support/Casting.h"
 
@@ -377,18 +377,20 @@ static void CheckFallThroughForBody(Sema &S, const Decl *D, const Stmt *Body,
 // -Wuninitialized
 //===----------------------------------------------------------------------===//
 
+typedef std::pair<const Expr*, bool> UninitUse;
+
 namespace {
 struct SLocSort {
-  bool operator()(const Expr *a, const Expr *b) {
-    SourceLocation aLoc = a->getLocStart();
-    SourceLocation bLoc = b->getLocStart();
+  bool operator()(const UninitUse &a, const UninitUse &b) {
+    SourceLocation aLoc = a.first->getLocStart();
+    SourceLocation bLoc = b.first->getLocStart();
     return aLoc.getRawEncoding() < bLoc.getRawEncoding();
   }
 };
 
 class UninitValsDiagReporter : public UninitVariablesHandler {
   Sema &S;
-  typedef llvm::SmallVector<const Expr *, 2> UsesVec;
+  typedef llvm::SmallVector<UninitUse, 2> UsesVec;
   typedef llvm::DenseMap<const VarDecl *, UsesVec*> UsesMap;
   UsesMap *uses;
   
@@ -398,7 +400,8 @@ public:
     flushDiagnostics();
   }
   
-  void handleUseOfUninitVariable(const Expr *ex, const VarDecl *vd) {
+  void handleUseOfUninitVariable(const Expr *ex, const VarDecl *vd,
+                                 bool isAlwaysUninit) {
     if (!uses)
       uses = new UsesMap();
     
@@ -406,7 +409,7 @@ public:
     if (!vec)
       vec = new UsesVec();
     
-    vec->push_back(ex);
+    vec->push_back(std::make_pair(ex, isAlwaysUninit));
   }
   
   void flushDiagnostics() {
@@ -426,13 +429,18 @@ public:
       
       for (UsesVec::iterator vi = vec->begin(), ve = vec->end(); vi != ve; ++vi)
       {
-        if (const DeclRefExpr *dr = dyn_cast<DeclRefExpr>(*vi)) {
-          S.Diag(dr->getLocStart(), diag::warn_uninit_var)
+        const bool isAlwaysUninit = vi->second;
+        if (const DeclRefExpr *dr = dyn_cast<DeclRefExpr>(vi->first)) {
+          S.Diag(dr->getLocStart(),
+                 isAlwaysUninit ? diag::warn_uninit_var
+                                : diag::warn_maybe_uninit_var)
             << vd->getDeclName() << dr->getSourceRange();          
         }
         else {
-          const BlockExpr *be = cast<BlockExpr>(*vi);
-          S.Diag(be->getLocStart(), diag::warn_uninit_var_captured_by_block)
+          const BlockExpr *be = cast<BlockExpr>(vi->first);
+          S.Diag(be->getLocStart(),
+                 isAlwaysUninit ? diag::warn_uninit_var_captured_by_block
+                                : diag::warn_maybe_uninit_var_captured_by_block)
             << vd->getDeclName();
         }
         
@@ -568,7 +576,7 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
         if (const Stmt *stmt = i->stmt) {
           const CFGBlock *block = AC.getBlockForRegisteredExpression(stmt);
           assert(block);
-          if (CFGReachabilityAnalysis *cra = AC.getCFGReachablityAnalysis()) {
+          if (CFGReverseBlockReachabilityAnalysis *cra = AC.getCFGReachablityAnalysis()) {
             // Can this block be reached from the entrance?
             if (cra->isReachable(&AC.getCFG()->getEntry(), block))
               S.Diag(D.Loc, D.PD);
@@ -600,25 +608,10 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
     CheckUnreachable(S, AC);
   
   if (Diags.getDiagnosticLevel(diag::warn_uninit_var, D->getLocStart())
+      != Diagnostic::Ignored ||
+      Diags.getDiagnosticLevel(diag::warn_maybe_uninit_var, D->getLocStart())
       != Diagnostic::Ignored) {
-    ASTContext &ctx = D->getASTContext();
-    llvm::OwningPtr<CFG> tmpCFG;
-    bool useAlternateCFG = false;
-    if (ctx.getLangOptions().CPlusPlus) {
-      // Temporary workaround: implicit dtors in the CFG can confuse
-      // the path-sensitivity in the uninitialized values analysis.
-      // For now create (if necessary) a separate CFG without implicit dtors.
-      // FIXME: We should not need to do this, as it results in multiple
-      // CFGs getting constructed.
-      CFG::BuildOptions B;
-      B.AddEHEdges = false;
-      B.AddImplicitDtors = false;
-      B.AddInitializers = true;
-      tmpCFG.reset(CFG::buildCFG(D, AC.getBody(), &ctx, B));
-      useAlternateCFG = true;
-    }
-    CFG *cfg = useAlternateCFG ? tmpCFG.get() : AC.getCFG();
-    if (cfg) {
+    if (CFG *cfg = AC.getCFG()) {
       UninitValsDiagReporter reporter(S);
       runUninitializedVariablesAnalysis(*cast<DeclContext>(D), *cfg, AC,
                                         reporter);

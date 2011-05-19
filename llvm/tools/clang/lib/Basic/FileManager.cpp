@@ -313,7 +313,7 @@ const DirectoryEntry *FileManager::getDirectory(llvm::StringRef DirName) {
 /// getFile - Lookup, cache, and verify the specified file (real or
 /// virtual).  This returns NULL if the file doesn't exist.
 ///
-const FileEntry *FileManager::getFile(llvm::StringRef Filename) {
+const FileEntry *FileManager::getFile(llvm::StringRef Filename, bool openFile) {
   ++NumFileLookups;
 
   // See if there is already an entry in the map.
@@ -352,6 +352,11 @@ const FileEntry *FileManager::getFile(llvm::StringRef Filename) {
   if (getStatValue(InterndFileName, StatBuf, &FileDescriptor)) {
     // There's no real file at the given path.
     return 0;
+  }
+
+  if (FileDescriptor != -1 && !openFile) {
+    close(FileDescriptor);
+    FileDescriptor = -1;
   }
 
   // It exists.  See if we have already opened a file with the same inode.
@@ -450,41 +455,39 @@ FileManager::getVirtualFile(llvm::StringRef Filename, off_t Size,
   return UFE;
 }
 
-void FileManager::FixupRelativePath(llvm::SmallVectorImpl<char> &path,
-                                    const FileSystemOptions &FSOpts) {
+void FileManager::FixupRelativePath(llvm::SmallVectorImpl<char> &path) const {
   llvm::StringRef pathRef(path.data(), path.size());
 
-  if (FSOpts.WorkingDir.empty() || llvm::sys::path::is_absolute(pathRef))
+  if (FileSystemOpts.WorkingDir.empty() 
+      || llvm::sys::path::is_absolute(pathRef))
     return;
 
-  llvm::SmallString<128> NewPath(FSOpts.WorkingDir);
+  llvm::SmallString<128> NewPath(FileSystemOpts.WorkingDir);
   llvm::sys::path::append(NewPath, pathRef);
   path = NewPath;
-}
-
-void FileManager::FixupRelativePath(llvm::SmallVectorImpl<char> &path) const {
-  FixupRelativePath(path, FileSystemOpts);
 }
 
 llvm::MemoryBuffer *FileManager::
 getBufferForFile(const FileEntry *Entry, std::string *ErrorStr) {
   llvm::OwningPtr<llvm::MemoryBuffer> Result;
   llvm::error_code ec;
+
+  const char *Filename = Entry->getName();
+  // If the file is already open, use the open file descriptor.
+  if (Entry->FD != -1) {
+    ec = llvm::MemoryBuffer::getOpenFile(Entry->FD, Filename, Result,
+                                         Entry->getSize());
+    if (ErrorStr)
+      *ErrorStr = ec.message();
+
+    close(Entry->FD);
+    Entry->FD = -1;
+    return Result.take();
+  }
+
+  // Otherwise, open the file.
+
   if (FileSystemOpts.WorkingDir.empty()) {
-    const char *Filename = Entry->getName();
-    // If the file is already open, use the open file descriptor.
-    if (Entry->FD != -1) {
-      ec = llvm::MemoryBuffer::getOpenFile(Entry->FD, Filename, Result,
-                                           Entry->getSize());
-      if (ErrorStr)
-        *ErrorStr = ec.message();
-
-      close(Entry->FD);
-      Entry->FD = -1;
-      return Result.take();
-    }
-
-    // Otherwise, open the file.
     ec = llvm::MemoryBuffer::getFile(Filename, Result, Entry->getSize());
     if (ec && ErrorStr)
       *ErrorStr = ec.message();
@@ -536,6 +539,14 @@ bool FileManager::getStatValue(const char *Path, struct stat &StatBuf,
 
   return FileSystemStatCache::get(FilePath.c_str(), StatBuf, FileDescriptor,
                                   StatCache.get());
+}
+
+bool FileManager::getNoncachedStatValue(llvm::StringRef Path, 
+                                        struct stat &StatBuf) {
+  llvm::SmallString<128> FilePath(Path);
+  FixupRelativePath(FilePath);
+
+  return ::stat(FilePath.c_str(), &StatBuf) != 0;
 }
 
 void FileManager::GetUniqueIDMapping(

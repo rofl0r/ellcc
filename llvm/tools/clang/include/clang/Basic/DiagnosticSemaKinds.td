@@ -867,12 +867,18 @@ def note_uninit_reference_member : Note<
 def warn_field_is_uninit : Warning<"field is uninitialized when used here">,
   InGroup<Uninitialized>;
 def warn_uninit_var : Warning<"variable %0 is possibly uninitialized when used here">,
-  InGroup<DiagGroup<"uninitialized-experimental">>, DefaultIgnore;
+  InGroup<Uninitialized>, DefaultIgnore;
+def warn_maybe_uninit_var :
+  Warning<"variable %0 is possibly uninitialized when used here">,
+    InGroup<UninitializedMaybe>, DefaultIgnore;
 def note_uninit_var_def : Note<
   "variable %0 is declared here">;
 def warn_uninit_var_captured_by_block : Warning<
   "variable %0 is possibly uninitialized when captured by block">,
-  InGroup<DiagGroup<"uninitialized-experimental">>, DefaultIgnore;
+  InGroup<Uninitialized>, DefaultIgnore;
+def warn_maybe_uninit_var_captured_by_block : Warning<
+  "variable %0 is possibly uninitialized when captured by block">,
+  InGroup<UninitializedMaybe>, DefaultIgnore;
 def note_var_fixit_add_initialization : Note<
   "add initialization to silence this warning">;
 def err_init_incomplete_type : Error<"initialization of incomplete type %0">;
@@ -1493,7 +1499,7 @@ def err_ovl_no_viable_subscript :
 def err_ovl_no_oper :
     Error<"type %0 does not provide a %select{subscript|call}1 operator">;
 def err_ovl_unresolvable :
-    Error<"cannot resolve overloaded function from context">;
+    Error<"cannot resolve overloaded function %0 from context">;
   
 
 def err_ovl_no_viable_object_call : Error<
@@ -1727,6 +1733,8 @@ def err_template_spec_default_arg : Error<
 def err_not_class_template_specialization : Error<
   "cannot specialize a %select{dependent template|template template "
   "parameter}0">;
+def err_function_specialization_in_class : Error<
+  "cannot specialize a function %0 within class scope">;
 
 // C++ class template specializations and out-of-line definitions
 def err_template_spec_needs_header : Error<
@@ -2920,6 +2928,9 @@ def warn_overloaded_virtual : Warning<
   InGroup<OverloadedVirtual>, DefaultIgnore;
 def note_hidden_overloaded_virtual_declared_here : Note<
   "hidden overloaded virtual function %q0 declared here">;
+def warn_using_directive_in_header : Warning<
+  "using namespace directive in global context in header">,
+  InGroup<HeaderHygiene>, DefaultIgnore;
 
 def err_conditional_void_nonvoid : Error<
   "%select{left|right}1 operand to ? is void, but %select{right|left}1 operand "
@@ -3601,8 +3612,6 @@ def err_block_returning_array_function : Error<
 // CFString checking
 def err_cfstring_literal_not_string_constant : Error<
   "CFString literal is not a string constant">;
-def warn_cfstring_literal_contains_nul_character : Warning<
-  "CFString literal contains NUL character">;
 def warn_cfstring_truncated : Warning<
   "input conversion stopped due to an input byte that does not "
   "belong to the input codeset UTF-8">;

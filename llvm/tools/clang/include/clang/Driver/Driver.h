@@ -19,6 +19,8 @@
 #include "llvm/ADT/Triple.h"
 #include "llvm/Support/Path.h" // FIXME: Kill when CompilationInfo
                               // lands.
+#include "llvm/Config/config.h"
+#include "clang/Basic/Version.h"
 #include <list>
 #include <set>
 #include <string>
@@ -105,6 +107,9 @@ public:
   /// Whether the driver is just the preprocessor
   unsigned CCCIsCPP : 1;
 
+  /// Whether the driver is ELLCC
+  unsigned CCCIsELLCC : 1;
+
   /// Echo commands while executing (in -v style).
   unsigned CCCEcho : 1;
 
@@ -162,8 +167,7 @@ public:
          llvm::StringRef _DefaultHostTriple,
          llvm::StringRef _DefaultImageName,
          bool IsProduction, bool CXXIsProduction,
-         Diagnostic &_Diags,
-         bool CCCIsELLCC = false);
+         Diagnostic &_Diags);
   ~Driver();
 
   /// @name Accessors
@@ -197,6 +201,20 @@ public:
   }
   void setInstalledDir(llvm::StringRef Value) {
     InstalledDir = Value;
+  }
+
+  /// \brief Set the compiler's resource directory.
+  void setResourceDir() {
+      // Compute the path to the resource directory.
+      llvm::StringRef ClangResourceDir(CLANG_RESOURCE_DIR);
+      llvm::SmallString<128> P(Dir);
+      if (ClangResourceDir != "")
+        llvm::sys::path::append(P, ClangResourceDir);
+      else if (CCCIsELLCC) {
+        llvm::sys::path::append(P, "..", "libecc");
+      } else
+        llvm::sys::path::append(P, "..", "lib", "clang", CLANG_VERSION_STRING);
+      ResourceDir = P.str();
   }
 
   /// @}

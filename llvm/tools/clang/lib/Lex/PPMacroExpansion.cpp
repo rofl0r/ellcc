@@ -560,6 +560,7 @@ static bool HasFeature(const Preprocessor &PP, const IdentifierInfo *II) {
            .Case("cxx_deleted_functions", LangOpts.CPlusPlus0x)
            .Case("cxx_inline_namespaces", LangOpts.CPlusPlus0x)
          //.Case("cxx_lambdas", false)
+           .Case("cxx_noexcept", LangOpts.CPlusPlus0x)
          //.Case("cxx_nullptr", false)
            .Case("cxx_reference_qualified_functions", LangOpts.CPlusPlus0x)
            .Case("cxx_rvalue_references", LangOpts.CPlusPlus0x)
@@ -661,7 +662,8 @@ static bool EvaluateHasIncludeCommon(Token &Tok,
 
   // Search include directories.
   const DirectoryLookup *CurDir;
-  const FileEntry *File = PP.LookupFile(Filename, isAngled, LookupFrom, CurDir);
+  const FileEntry *File =
+      PP.LookupFile(Filename, isAngled, LookupFrom, CurDir, NULL);
 
   // Get the result value.  Result = true means the file exists.
   bool Result = File != 0;

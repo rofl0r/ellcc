@@ -3091,7 +3091,7 @@ namespace {
 
       // Check out noexcept specs.
       if (EST == EST_ComputedNoexcept) {
-        FunctionProtoType::NoexceptResult NR = Proto->getNoexceptSpec();
+        FunctionProtoType::NoexceptResult NR = Proto->getNoexceptSpec(Context);
         assert(NR != FunctionProtoType::NR_NoNoexcept &&
                "Must have noexcept result for EST_ComputedNoexcept.");
         assert(NR != FunctionProtoType::NR_Dependent &&
@@ -3922,6 +3922,12 @@ Decl *Sema::ActOnUsingDirective(Scope *S,
     UDir = UsingDirectiveDecl::Create(Context, CurContext, UsingLoc, NamespcLoc,
                                       SS.getWithLocInContext(Context),
                                       IdentLoc, Named, CommonAncestor);
+
+    if (CurContext->getDeclKind() == Decl::TranslationUnit &&
+        !SourceMgr.isFromMainFile(IdentLoc)) {
+      Diag(IdentLoc, diag::warn_using_directive_in_header);
+    }
+
     PushUsingDirective(S, UDir);
   } else {
     Diag(IdentLoc, diag::err_expected_namespace_name) << SS.getRange();
@@ -6137,15 +6143,17 @@ void Sema::AddCXXDirectInitializerToDecl(Decl *RealDecl,
     }
 
     Expr *Init = Exprs.get()[0];
-    QualType DeducedType;
-    if (!DeduceAutoType(VDecl->getType(), Init, DeducedType)) {
+    TypeSourceInfo *DeducedType = 0;
+    if (!DeduceAutoType(VDecl->getTypeSourceInfo(), Init, DeducedType))
       Diag(VDecl->getLocation(), diag::err_auto_var_deduction_failure)
         << VDecl->getDeclName() << VDecl->getType() << Init->getType()
         << Init->getSourceRange();
+    if (!DeducedType) {
       RealDecl->setInvalidDecl();
       return;
     }
-    VDecl->setType(DeducedType);
+    VDecl->setTypeSourceInfo(DeducedType);
+    VDecl->setType(DeducedType->getType());
 
     // If this is a redeclaration, check that the type we just deduced matches
     // the previously declared type.
@@ -6975,7 +6983,6 @@ Decl *Sema::ActOnTemplatedFriendTag(Scope *S, SourceLocation FriendLoc,
   TagTypeKind Kind = TypeWithKeyword::getTagTypeKindForTypeSpec(TagSpec);
 
   bool isExplicitSpecialization = false;
-  unsigned NumMatchedTemplateParamLists = TempParamLists.size();
   bool Invalid = false;
 
   if (TemplateParameterList *TemplateParams
@@ -6985,8 +6992,6 @@ Decl *Sema::ActOnTemplatedFriendTag(Scope *S, SourceLocation FriendLoc,
                                                   /*friend*/ true,
                                                   isExplicitSpecialization,
                                                   Invalid)) {
-    --NumMatchedTemplateParamLists;
-
     if (TemplateParams->size() > 0) {
       // This is a declaration of a class template.
       if (Invalid)
@@ -6995,7 +7000,7 @@ Decl *Sema::ActOnTemplatedFriendTag(Scope *S, SourceLocation FriendLoc,
       return CheckClassTemplate(S, TagSpec, TUK_Friend, TagLoc,
                                 SS, Name, NameLoc, Attr,
                                 TemplateParams, AS_public,
-                                NumMatchedTemplateParamLists,
+                                TempParamLists.size() - 1,
                    (TemplateParameterList**) TempParamLists.release()).take();
     } else {
       // The "template<>" header is extraneous.
@@ -7010,7 +7015,7 @@ Decl *Sema::ActOnTemplatedFriendTag(Scope *S, SourceLocation FriendLoc,
   assert(SS.isNotEmpty() && "valid templated tag with no SS and no direct?");
 
   bool isAllExplicitSpecializations = true;
-  for (unsigned I = 0; I != NumMatchedTemplateParamLists; ++I) {
+  for (unsigned I = TempParamLists.size(); I-- > 0; ) {
     if (TempParamLists.get()[I]->size()) {
       isAllExplicitSpecializations = false;
       break;

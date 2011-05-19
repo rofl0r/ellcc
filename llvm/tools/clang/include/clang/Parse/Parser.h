@@ -1286,8 +1286,8 @@ private:
                                 SourceLocation *DeclEnd = 0);
   Decl *ParseDeclarationAfterDeclarator(Declarator &D,
                const ParsedTemplateInfo &TemplateInfo = ParsedTemplateInfo());
-  Decl *ParseFunctionStatementBody(Decl *Decl);
-  Decl *ParseFunctionTryBlock(Decl *Decl);
+  Decl *ParseFunctionStatementBody(Decl *Decl, ParseScope &BodyScope);
+  Decl *ParseFunctionTryBlock(Decl *Decl, ParseScope &BodyScope);
 
   /// \brief When in code-completion, skip parsing of the function/method body
   /// unless the body contains the code-completion point.
@@ -1546,6 +1546,7 @@ private:
   void ParseMicrosoftTypeAttributes(ParsedAttributes &attrs);
   void ParseBorlandTypeAttributes(ParsedAttributes &attrs);
   void ParseOpenCLAttributes(ParsedAttributes &attrs);
+  void ParseOpenCLQualifiers(DeclSpec &DS);
 
   void ParseTypeofSpecifier(DeclSpec &DS);
   void ParseDecltypeSpecifier(DeclSpec &DS);

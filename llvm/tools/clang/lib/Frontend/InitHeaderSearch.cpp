@@ -76,6 +76,10 @@ public:
                                      llvm::StringRef Arch,
                                      llvm::StringRef Version);
 
+  /// AddMinGW64CXXPaths - Add the necessary paths to support
+  /// libstdc++ of x86_64-w64-mingw32 aka mingw-w64.
+  void AddMinGW64CXXPaths(llvm::StringRef Base);
+
   /// AddDelimitedPaths - Add a list of paths delimited by the system PATH
   /// separator. The processing follows that of the CPATH variable for gcc.
   void AddDelimitedPaths(llvm::StringRef String);
@@ -204,6 +208,15 @@ void InitHeaderSearch::AddMinGWCPlusPlusIncludePaths(llvm::StringRef Base,
   AddPath(Base + "/" + Arch + "/" + Version + "/include/c++/" + Arch,
           CXXSystem, true, false, false);
   AddPath(Base + "/" + Arch + "/" + Version + "/include/c++/backward",
+          CXXSystem, true, false, false);
+}
+
+void InitHeaderSearch::AddMinGW64CXXPaths(llvm::StringRef Base) {
+  AddPath(Base,
+          CXXSystem, true, false, false);
+  AddPath(Base + "/x86_64-w64-mingw32",
+          CXXSystem, true, false, false);
+  AddPath(Base + "/backward",
           CXXSystem, true, false, false);
 }
 
@@ -536,6 +549,10 @@ void InitHeaderSearch::AddDefaultCIncludePaths(const llvm::Triple &triple,
     AddPath("/usr/include/w32api", System, true, false, false);
     break;
   case llvm::Triple::MinGW32:
+    // FIXME: We should be aware of i686-w64-mingw32.
+    if (triple.getArch() == llvm::Triple::x86_64)
+      AddPath("c:/mingw/x86_64-w64-mingw32/include",
+              System, true, false, false);
     AddPath("/mingw/include", System, true, false, false);
     AddPath("c:/mingw/include", System, true, false, false);
     break;
@@ -602,18 +619,13 @@ AddDefaultCPlusPlusIncludePaths(const llvm::Triple &triple) {
     AddMinGWCPlusPlusIncludePaths("/usr/lib/gcc", "i686-pc-cygwin", "3.4.4");
     break;
   case llvm::Triple::MinGW32:
-    // mingw-w64-20110207
-    AddPath("c:/MinGW/include/c++/4.5.3", CXXSystem, true, false, false);
-    AddPath("c:/MinGW/include/c++/4.5.3/x86_64-w64-mingw32", CXXSystem, true,
-            false, false);
-    AddPath("c:/MinGW/include/c++/4.5.3/backward", CXXSystem, true, false,
-            false);
-    // mingw-w64-20101129
-    AddPath("c:/MinGW/include/c++/4.5.2", CXXSystem, true, false, false);
-    AddPath("c:/MinGW/include/c++/4.5.2/x86_64-w64-mingw32", CXXSystem, true,
-            false, false);
-    AddPath("c:/MinGW/include/c++/4.5.2/backward", CXXSystem, true, false,
-            false);
+    // FIXME: We should be aware of i686-w64-mingw32.
+    if (triple.getArch() == llvm::Triple::x86_64) {
+      // mingw-w64-20110207
+      AddMinGW64CXXPaths("c:/mingw/x86_64-w64-mingw32/include/c++/4.5.3");
+      // mingw-w64-20101129
+      AddMinGW64CXXPaths("c:/mingw/x86_64-w64-mingw32/include/c++/4.5.2");
+    }
     // Try gcc 4.5.2 (MSYS)
     AddMinGWCPlusPlusIncludePaths("/mingw/lib/gcc", "mingw32", "4.5.2");
     // Try gcc 4.5.0
@@ -772,7 +784,19 @@ AddDefaultCPlusPlusIncludePaths(const llvm::Triple &triple) {
                                 "i686-pc-linux-gnu", "", "", triple);
     AddGnuCPlusPlusIncludePaths("/usr/include/c++/4.3.1",
                                 "x86_64-unknown-linux-gnu", "", "", triple);
-    // Gentoo x86 2010.0 stable
+    // Gentoo x86 gcc 4.5.2
+    AddGnuCPlusPlusIncludePaths(
+      "/usr/lib/gcc/i686-pc-linux-gnu/4.5.2/include/g++-v4",
+      "i686-pc-linux-gnu", "", "", triple);
+    // Gentoo x86 gcc 4.4.5
+    AddGnuCPlusPlusIncludePaths(
+      "/usr/lib/gcc/i686-pc-linux-gnu/4.4.5/include/g++-v4",
+      "i686-pc-linux-gnu", "", "", triple);
+    // Gentoo x86 gcc 4.4.4
+    AddGnuCPlusPlusIncludePaths(
+      "/usr/lib/gcc/i686-pc-linux-gnu/4.4.4/include/g++-v4",
+      "i686-pc-linux-gnu", "", "", triple);
+   // Gentoo x86 2010.0 stable
     AddGnuCPlusPlusIncludePaths(
       "/usr/lib/gcc/i686-pc-linux-gnu/4.4.3/include/g++-v4",
       "i686-pc-linux-gnu", "", "", triple);
@@ -788,7 +812,15 @@ AddDefaultCPlusPlusIncludePaths(const llvm::Triple &triple) {
     AddGnuCPlusPlusIncludePaths(
       "/usr/lib/gcc/i686-pc-linux-gnu/4.1.2/include/g++-v4",
       "i686-pc-linux-gnu", "", "", triple);
+    // Gentoo x86 llvm-gcc trunk
+    AddGnuCPlusPlusIncludePaths(
+        "/usr/lib/llvm-gcc-4.2-9999/include/c++/4.2.1",
+        "i686-pc-linux-gnu", "", "", triple);
 
+    // Gentoo amd64 gcc 4.5.2
+    AddGnuCPlusPlusIncludePaths(
+        "/usr/lib/gcc/x86_64-pc-linux-gnu/4.5.2/include/g++-v4",
+        "x86_64-pc-linux-gnu", "32", "", triple);
     // Gentoo amd64 gcc 4.4.5
     AddGnuCPlusPlusIncludePaths(
         "/usr/lib/gcc/x86_64-pc-linux-gnu/4.4.5/include/g++-v4",
@@ -808,7 +840,7 @@ AddDefaultCPlusPlusIncludePaths(const llvm::Triple &triple) {
     // Gentoo amd64 stable
     AddGnuCPlusPlusIncludePaths(
         "/usr/lib/gcc/x86_64-pc-linux-gnu/4.1.2/include/g++-v4",
-        "i686-pc-linux-gnu", "", "", triple);
+        "x86_64-pc-linux-gnu", "", "", triple);
 
     // Gentoo amd64 llvm-gcc trunk
     AddGnuCPlusPlusIncludePaths(

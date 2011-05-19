@@ -56,15 +56,14 @@ Driver::Driver(llvm::StringRef _ClangExecutable,
                llvm::StringRef _DefaultHostTriple,
                llvm::StringRef _DefaultImageName,
                bool IsProduction, bool CXXIsProduction,
-               Diagnostic &_Diags,
-               bool CCCIsELLCC)
+               Diagnostic &_Diags)
   : Opts(createDriverOptTable()), Diags(_Diags),
     ClangExecutable(_ClangExecutable), DefaultHostTriple(_DefaultHostTriple),
     DefaultImageName(_DefaultImageName),
     DriverTitle("clang \"gcc-compatible\" driver"),
     Host(0),
     CCPrintOptionsFilename(0), CCPrintHeadersFilename(0), CCCIsCXX(false),
-    CCCIsCPP(false),CCCEcho(false), CCCPrintBindings(false),
+    CCCIsCPP(false), CCCIsELLCC(false), CCCEcho(false), CCCPrintBindings(false),
     CCPrintOptions(false), CCPrintHeaders(false), CCCGenericGCCName("gcc"),
     CheckInputsExist(true), CCCUseClang(true), CCCUseClangCXX(true),
     CCCUseClangCPP(true), CCCUsePCH(true), SuppressMissingInputWarning(false) {
@@ -86,16 +85,8 @@ Driver::Driver(llvm::StringRef _ClangExecutable,
   Name = llvm::sys::path::stem(ClangExecutable);
   Dir  = llvm::sys::path::parent_path(ClangExecutable);
 
-  // Compute the path to the resource directory.
-  llvm::StringRef ClangResourceDir(CLANG_RESOURCE_DIR);
-  llvm::SmallString<128> P(Dir);
-  if (ClangResourceDir != "")
-    llvm::sys::path::append(P, ClangResourceDir);
-  else if (CCCIsELLCC) {
-    llvm::sys::path::append(P, "..", "libecc");
-  } else
-    llvm::sys::path::append(P, "..", "lib", "clang", CLANG_VERSION_STRING);
-  ResourceDir = P.str();
+  // Set the resource directory.
+  setResourceDir();
 }
 
 Driver::~Driver() {
@@ -728,14 +719,19 @@ void Driver::BuildActions(const ToolChain &TC, const DerivedArgList &Args,
             Diag(clang::diag::err_drv_unknown_stdin_type);
           Ty = types::TY_C;
         } else {
-          // Otherwise lookup by extension, and fallback to ObjectType if not
-          // found. We use a host hook here because Darwin at least has its own
+          // Otherwise lookup by extension.
+          // Fallback is C if invoked as C preprocessor or Object otherwise.
+          // We use a host hook here because Darwin at least has its own
           // idea of what .s is.
           if (const char *Ext = strrchr(Value, '.'))
             Ty = TC.LookupTypeForExtension(Ext + 1);
 
-          if (Ty == types::TY_INVALID)
-            Ty = types::TY_Object;
+          if (Ty == types::TY_INVALID) {
+            if (CCCIsCPP)
+              Ty = types::TY_C;
+            else
+              Ty = types::TY_Object;
+          }
 
           // If the driver is invoked as C++ compiler (like clang++ or c++) it
           // should autodetect some input files as C++ for g++ compatibility.
@@ -1077,14 +1073,17 @@ static const Tool &SelectToolForJob(Compilation &C, const ToolChain *TC,
   bool HasStatic = (C.getArgs().hasArg(options::OPT_mkernel) ||
                     C.getArgs().hasArg(options::OPT_static) ||
                     C.getArgs().hasArg(options::OPT_fapple_kext));
-  bool IsIADefault = (TC->IsIntegratedAssemblerDefault() && !HasStatic);
+  bool IsDarwin = TC->getTriple().getOS() == llvm::Triple::Darwin;
+  bool IsIADefault = TC->IsIntegratedAssemblerDefault() &&
+    !(HasStatic && IsDarwin);
   if (C.getArgs().hasFlag(options::OPT_integrated_as,
                          options::OPT_no_integrated_as,
                          IsIADefault) &&
       !C.getArgs().hasArg(options::OPT_save_temps) &&
       isa<AssembleJobAction>(JA) &&
       Inputs->size() == 1 && isa<CompileJobAction>(*Inputs->begin())) {
-    const Tool &Compiler = TC->SelectTool(C,cast<JobAction>(**Inputs->begin()));
+    const Tool &Compiler = TC->SelectTool(
+      C, cast<JobAction>(**Inputs->begin()), (*Inputs)[0]->getInputs());
     if (Compiler.hasIntegratedAssembler()) {
       Inputs = &(*Inputs)[0]->getInputs();
       ToolForJob = &Compiler;
@@ -1093,7 +1092,7 @@ static const Tool &SelectToolForJob(Compilation &C, const ToolChain *TC,
 
   // Otherwise use the tool for the current job.
   if (!ToolForJob)
-    ToolForJob = &TC->SelectTool(C, *JA);
+    ToolForJob = &TC->SelectTool(C, *JA, *Inputs);
 
   // See if we should use an integrated preprocessor. We do so when we have
   // exactly one input, since this is the only use case we care about

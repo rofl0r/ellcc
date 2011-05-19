@@ -44,6 +44,7 @@
 #include "llvm/Support/Path.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/Timer.h"
+#include "llvm/Support/CrashRecoveryContext.h"
 #include <cstdlib>
 #include <cstdio>
 #include <sys/stat.h>
@@ -500,6 +501,12 @@ ASTUnit *ASTUnit::LoadFromASTFile(const std::string &Filename,
                                   unsigned NumRemappedFiles,
                                   bool CaptureDiagnostics) {
   llvm::OwningPtr<ASTUnit> AST(new ASTUnit(true));
+
+  // Recover resources if we crash before exiting this method.
+  llvm::CrashRecoveryContextCleanupRegistrar
+    ASTUnitCleanup(llvm::CrashRecoveryContextCleanup::
+                    create<ASTUnit>(AST.get()));
+
   ConfigureDiags(Diags, 0, 0, *AST, CaptureDiagnostics);
 
   AST->OnlyLocalDecls = OnlyLocalDecls;
@@ -874,7 +881,7 @@ bool ASTUnit::Parse(llvm::MemoryBuffer *OverrideMainBuffer) {
   // Configure the various subsystems.
   // FIXME: Should we retain the previous file manager?
   FileSystemOpts = Clang.getFileSystemOpts();
-  FileMgr.reset(new FileManager(Clang.getFileSystemOpts()));
+  FileMgr.reset(new FileManager(FileSystemOpts));
   SourceMgr.reset(new SourceManager(getDiagnostics(), *FileMgr));
   TheSema.reset();
   Ctx.reset();
@@ -1178,7 +1185,7 @@ llvm::MemoryBuffer *ASTUnit::getMainBufferWithPrecompiledPreamble(
            !AnyFileChanged && R != REnd;
            ++R) {
         struct stat StatBuf;
-        if (stat(R->second.c_str(), &StatBuf)) {
+        if (FileMgr->getNoncachedStatValue(R->second, StatBuf)) {
           // If we can't stat the file we're remapping to, assume that something
           // horrible happened.
           AnyFileChanged = true;
@@ -1216,7 +1223,7 @@ llvm::MemoryBuffer *ASTUnit::getMainBufferWithPrecompiledPreamble(
         
         // The file was not remapped; check whether it has changed on disk.
         struct stat StatBuf;
-        if (stat(F->first(), &StatBuf)) {
+        if (FileMgr->getNoncachedStatValue(F->first(), StatBuf)) {
           // If we can't stat the file, assume that something horrible happened.
           AnyFileChanged = true;
         } else if (StatBuf.st_size != F->second.first || 
@@ -1530,7 +1537,8 @@ ASTUnit *ASTUnit::create(CompilerInvocation *CI,
   ConfigureDiags(Diags, 0, 0, *AST, /*CaptureDiagnostics=*/false);
   AST->Diagnostics = Diags;
   AST->Invocation.reset(CI);
-  AST->FileMgr.reset(new FileManager(CI->getFileSystemOpts()));
+  AST->FileSystemOpts = CI->getFileSystemOpts();
+  AST->FileMgr.reset(new FileManager(AST->FileSystemOpts));
   AST->SourceMgr.reset(new SourceManager(*Diags, *AST->FileMgr));
 
   return AST.take();
@@ -1579,6 +1587,11 @@ ASTUnit *ASTUnit::LoadFromCompilerInvocation(CompilerInvocation *CI,
   AST->ShouldCacheCodeCompletionResults = CacheCodeCompletionResults;
   AST->Invocation.reset(CI);
   
+  // Recover resources if we crash before exiting this method.
+  llvm::CrashRecoveryContextCleanupRegistrar
+    ASTUnitCleanup(llvm::CrashRecoveryContextCleanup::
+                   create<ASTUnit>(AST.get()));
+
   return AST->LoadFromCompilerInvocation(PrecompilePreamble)? 0 : AST.take();
 }
 
@@ -1694,8 +1707,9 @@ ASTUnit *ASTUnit::LoadFromCommandLine(const char **ArgBegin,
   AST.reset(new ASTUnit(false));
   ConfigureDiags(Diags, ArgBegin, ArgEnd, *AST, CaptureDiagnostics);
   AST->Diagnostics = Diags;
-  
-  AST->FileMgr.reset(new FileManager(FileSystemOptions()));
+
+  AST->FileSystemOpts = CI->getFileSystemOpts();
+  AST->FileMgr.reset(new FileManager(AST->FileSystemOpts));
   AST->OnlyLocalDecls = OnlyLocalDecls;
   AST->CaptureDiagnostics = CaptureDiagnostics;
   AST->CompleteTranslationUnit = CompleteTranslationUnit;
@@ -1704,6 +1718,12 @@ ASTUnit *ASTUnit::LoadFromCommandLine(const char **ArgBegin,
   AST->NumStoredDiagnosticsInPreamble = StoredDiagnostics.size();
   AST->StoredDiagnostics.swap(StoredDiagnostics);
   AST->Invocation.reset(CI.take());
+  
+  // Recover resources if we crash before exiting this method.
+  llvm::CrashRecoveryContextCleanupRegistrar
+    ASTUnitCleanup(llvm::CrashRecoveryContextCleanup::
+                    create<ASTUnit>(AST.get()));
+
   return AST->LoadFromCompilerInvocation(PrecompilePreamble) ? 0 : AST.take();
 }
 

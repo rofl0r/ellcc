@@ -159,8 +159,9 @@ public:
     // Let MCSectionMachO validate this.
     llvm::StringRef Segment, Section;
     unsigned TAA, StubSize;
+    bool HasTAA;
     return llvm::MCSectionMachO::ParseSectionSpecifier(SR, Segment, Section,
-                                                       TAA, StubSize);
+                                                       TAA, HasTAA, StubSize);
   }
 
   virtual const char *getStaticInitSectionSpecifier() const {
@@ -1513,7 +1514,15 @@ public:
     Builder.defineMacro("_X86_");
     Builder.defineMacro("__MSVCRT__");
     Builder.defineMacro("__MINGW32__");
-    Builder.defineMacro("__declspec", "__declspec");
+
+    // mingw32-gcc provides __declspec(a) as alias of __attribute__((a)).
+    // In contrast, clang-cc1 provides __declspec(a) with -fms-extensions.
+    if (Opts.Microsoft)
+      // Provide "as-is" __declspec.
+      Builder.defineMacro("__declspec", "__declspec");
+    else
+      // Provide alias of __attribute__ like mingw32-gcc.
+      Builder.defineMacro("__declspec(a)", "__attribute__((a))");
   }
 };
 } // end anonymous namespace
@@ -1663,7 +1672,15 @@ public:
     Builder.defineMacro("__MSVCRT__");
     Builder.defineMacro("__MINGW32__");
     Builder.defineMacro("__MINGW64__");
-    Builder.defineMacro("__declspec", "__declspec");
+
+    // mingw32-gcc provides __declspec(a) as alias of __attribute__((a)).
+    // In contrast, clang-cc1 provides __declspec(a) with -fms-extensions.
+    if (Opts.Microsoft)
+      // Provide "as-is" __declspec.
+      Builder.defineMacro("__declspec", "__declspec");
+    else
+      // Provide alias of __attribute__ like mingw32-gcc.
+      Builder.defineMacro("__declspec(a)", "__attribute__((a))");
   }
 };
 } // end anonymous namespace

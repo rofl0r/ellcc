@@ -39,6 +39,9 @@ public:
     /// its deletion from LiveIntervals.
     virtual bool LRE_CanEraseVirtReg(unsigned) { return true; }
 
+    /// Called before shrinking the live range of a virtual register.
+    virtual void LRE_WillShrinkVirtReg(unsigned) {}
+
     virtual ~Delegate() {}
   };
 
@@ -61,6 +64,9 @@ private:
   /// rematted_ - Values that were actually rematted, and so need to have their
   /// live range trimmed or entirely removed.
   SmallPtrSet<const VNInfo*,4> rematted_;
+
+  /// createFrom - Create a new virtual register based on OldReg.
+  LiveInterval &createFrom(unsigned, LiveIntervals&, VirtRegMap &);
 
   /// scanRemattable - Identify the parent_ values that may rematerialize.
   void scanRemattable(LiveIntervals &lis,
@@ -107,9 +113,11 @@ public:
     return uselessRegs_;
   }
 
-  /// create - Create a new register with the same class and stack slot as
+  /// create - Create a new register with the same class and original slot as
   /// parent.
-  LiveInterval &create(MachineRegisterInfo&, LiveIntervals&, VirtRegMap&);
+  LiveInterval &create(LiveIntervals &LIS, VirtRegMap &VRM) {
+    return createFrom(getReg(), LIS, VRM);
+  }
 
   /// anyRematerializable - Return true if any parent values may be
   /// rematerializable.
@@ -163,7 +171,7 @@ public:
   /// (allDefsAreDead returns true). This may cause live intervals to be trimmed
   /// and further dead efs to be eliminated.
   void eliminateDeadDefs(SmallVectorImpl<MachineInstr*> &Dead,
-                         LiveIntervals&,
+                         LiveIntervals&, VirtRegMap&,
                          const TargetInstrInfo&);
 
 };

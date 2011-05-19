@@ -13,6 +13,7 @@
 
 #include "clang/Sema/SemaInternal.h"
 #include "clang/Sema/Template.h"
+#include "clang/Basic/OpenCL.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/CXXInheritance.h"
 #include "clang/AST/DeclObjC.h"
@@ -728,7 +729,7 @@ static QualType ConvertDeclSpecToType(Sema &S, TypeProcessingState &state) {
     }
 
     // If the type is deprecated or unavailable, diagnose it.
-    S.DiagnoseUseOfDecl(D, DS.getTypeSpecTypeLoc());
+    S.DiagnoseUseOfDecl(D, DS.getTypeSpecTypeNameLoc());
     
     assert(DS.getTypeSpecWidth() == 0 && DS.getTypeSpecComplex() == 0 &&
            DS.getTypeSpecSign() == 0 && "No qualifiers on tag names!");
@@ -736,12 +737,11 @@ static QualType ConvertDeclSpecToType(Sema &S, TypeProcessingState &state) {
     // TypeQuals handled by caller.
     Result = Context.getTypeDeclType(D);
 
-    // In C++, make an ElaboratedType.
-    if (S.getLangOptions().CPlusPlus) {
-      ElaboratedTypeKeyword Keyword
-        = ElaboratedType::getKeywordForTypeSpec(DS.getTypeSpecType());
-      Result = S.getElaboratedType(Keyword, DS.getTypeSpecScope(), Result);
-    }
+    // In both C and C++, make an ElaboratedType.
+    ElaboratedTypeKeyword Keyword
+      = ElaboratedType::getKeywordForTypeSpec(DS.getTypeSpecType());
+    Result = S.getElaboratedType(Keyword, DS.getTypeSpecScope(), Result);
+
     if (D->isInvalidDecl())
       declarator.setInvalidType(true);
     break;
@@ -1494,9 +1494,19 @@ TypeSourceInfo *Sema::GetTypeForDeclarator(Declarator &D, Scope *S,
 
   TypeProcessingState state(*this, D);
 
+  // In C++0x, deallocation functions (normal and array operator delete)
+  // are implicitly noexcept.
+  bool ImplicitlyNoexcept = false;
+
   switch (D.getName().getKind()) {
-  case UnqualifiedId::IK_Identifier:
   case UnqualifiedId::IK_OperatorFunctionId:
+    if (getLangOptions().CPlusPlus0x) {
+      OverloadedOperatorKind OO = D.getName().OperatorFunctionId.Operator;
+      if (OO == OO_Delete || OO == OO_Array_Delete)
+        ImplicitlyNoexcept = true;
+    }
+    // Intentional fall-through.
+  case UnqualifiedId::IK_Identifier:
   case UnqualifiedId::IK_LiteralOperatorId:
   case UnqualifiedId::IK_TemplateId:
     T = ConvertDeclSpecToType(*this, state);
@@ -1917,6 +1927,10 @@ TypeSourceInfo *Sema::GetTypeForDeclarator(Declarator &D, Scope *S,
             else
               EPI.NoexceptExpr = NoexceptExpr;
           }
+        } else if (FTI.getExceptionSpecType() == EST_None &&
+                   ImplicitlyNoexcept && chunkIndex == 0) {
+          // Only the outermost chunk is marked noexcept, of course.
+          EPI.ExceptionSpecType = EST_BasicNoexcept;
         }
 
         T = Context.getFunctionType(T, ArgTys.data(), ArgTys.size(), EPI);
@@ -2286,7 +2300,7 @@ namespace {
       // If we got no declarator info from previous Sema routines,
       // just fill with the typespec loc.
       if (!TInfo) {
-        TL.initialize(Context, DS.getTypeSpecTypeLoc());
+        TL.initialize(Context, DS.getTypeSpecTypeNameLoc());
         return;
       }
 
@@ -2363,7 +2377,7 @@ namespace {
                        : SourceLocation());
       const CXXScopeSpec& SS = DS.getTypeSpecScope();
       TL.setQualifierLoc(SS.getWithLocInContext(Context));
-      TL.setNameLoc(DS.getTypeSpecTypeLoc());
+      TL.setNameLoc(DS.getTypeSpecTypeNameLoc());
     }
     void VisitDependentTemplateSpecializationTypeLoc(
                                  DependentTemplateSpecializationTypeLoc TL) {
@@ -2384,7 +2398,10 @@ namespace {
                        : SourceLocation());
       const CXXScopeSpec& SS = DS.getTypeSpecScope();
       TL.setQualifierLoc(SS.getWithLocInContext(Context));
-      TL.setNameLoc(DS.getTypeSpecTypeLoc());
+      TL.setNameLoc(DS.getTypeSpecTypeNameLoc());
+    }
+    void VisitTagTypeLoc(TagTypeLoc TL) {
+      TL.setNameLoc(DS.getTypeSpecTypeNameLoc());
     }
 
     void VisitTypeLoc(TypeLoc TL) {
@@ -2949,6 +2966,41 @@ static bool handleFunctionTypeAttr(TypeProcessingState &state,
   return true;
 }
 
+/// Handle OpenCL image access qualifiers: read_only, write_only, read_write
+static void HandleOpenCLImageAccessAttribute(QualType& CurType,
+                                             const AttributeList &Attr,
+                                             Sema &S) {
+  // Check the attribute arguments.
+  if (Attr.getNumArgs() != 1) {
+    S.Diag(Attr.getLoc(), diag::err_attribute_wrong_number_arguments) << 1;
+    Attr.setInvalid();
+    return;
+  }
+  Expr *sizeExpr = static_cast<Expr *>(Attr.getArg(0));
+  llvm::APSInt arg(32);
+  if (sizeExpr->isTypeDependent() || sizeExpr->isValueDependent() ||
+      !sizeExpr->isIntegerConstantExpr(arg, S.Context)) {
+    S.Diag(Attr.getLoc(), diag::err_attribute_argument_not_int)
+      << "opencl_image_access" << sizeExpr->getSourceRange();
+    Attr.setInvalid();
+    return;
+  }
+  unsigned iarg = static_cast<unsigned>(arg.getZExtValue());
+  switch (iarg) {
+  case CLIA_read_only:
+  case CLIA_write_only:
+  case CLIA_read_write:
+    // Implemented in a separate patch
+    break;
+  default:
+    // Implemented in a separate patch
+    S.Diag(Attr.getLoc(), diag::err_attribute_invalid_size)
+      << sizeExpr->getSourceRange();
+    Attr.setInvalid();
+    break;
+  }
+}
+
 /// HandleVectorSizeAttribute - this attribute is only applicable to integral
 /// and float scalars, although arrays, pointers, and function return values are
 /// allowed in conjunction with this construct. Aggregates with this attribute
@@ -3101,6 +3153,10 @@ static void processTypeAttrs(TypeProcessingState &state, QualType &type,
       HandleNeonVectorTypeAttr(type, attr, state.getSema(),
                                VectorType::NeonPolyVector,
                                "neon_polyvector_type");
+      break;
+
+    case AttributeList::AT_opencl_image_access:
+      HandleOpenCLImageAccessAttribute(type, attr, state.getSema());
       break;
 
     FUNCTION_TYPE_ATTRS_CASELIST:

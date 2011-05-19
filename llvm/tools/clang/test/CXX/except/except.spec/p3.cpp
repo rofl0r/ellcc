@@ -92,3 +92,15 @@ extern void (*r20)() noexcept(false); // expected-error {{does not match}}
 
 extern void (*r21)() throw(int); // expected-note {{previous declaration}}
 extern void (*r21)() noexcept(true); // expected-error {{does not match}}
+
+
+// As a very special workaround, we allow operator new to match no spec
+// with a throw(bad_alloc) spec, because C++0x makes an incompatible change
+// here.
+extern "C++" { namespace std { class bad_alloc {}; } }
+typedef decltype(sizeof(int)) mysize_t;
+void* operator new(mysize_t) throw(std::bad_alloc);
+void* operator new(mysize_t);
+void* operator new[](mysize_t);
+void* operator new[](mysize_t) throw(std::bad_alloc);
+

@@ -552,12 +552,6 @@ bool Sema::CheckObjCString(Expr *Arg) {
     return true;
   }
 
-  size_t NulPos = Literal->getString().find('\0');
-  if (NulPos != llvm::StringRef::npos) {
-    Diag(getLocationOfStringLiteralByte(Literal, NulPos),
-         diag::warn_cfstring_literal_contains_nul_character)
-      << Arg->getSourceRange();
-  }
   if (Literal->containsNonAsciiOrNull()) {
     llvm::StringRef String = Literal->getString();
     unsigned NumBytes = String.size();
@@ -1218,10 +1212,12 @@ void CheckFormatHandler::HandleZeroPosition(const char *startPos,
 }
 
 void CheckFormatHandler::HandleNullChar(const char *nullCharacter) {
-  // The presence of a null character is likely an error.
-  S.Diag(getLocationOfByte(nullCharacter),
-         diag::warn_printf_format_string_contains_null_char)
-    << getFormatStringRange();
+  if (!IsObjCLiteral) {
+    // The presence of a null character is likely an error.
+    S.Diag(getLocationOfByte(nullCharacter),
+           diag::warn_printf_format_string_contains_null_char)
+      << getFormatStringRange();
+  }
 }
 
 const Expr *CheckFormatHandler::getDataArg(unsigned i) const {

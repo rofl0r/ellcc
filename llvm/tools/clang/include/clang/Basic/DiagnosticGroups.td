@@ -109,6 +109,7 @@ def : DiagGroup<"stack-protector">;
 def : DiagGroup<"switch-default">;
 def : DiagGroup<"synth">;
 def TautologicalCompare : DiagGroup<"tautological-compare">;
+def HeaderHygiene : DiagGroup<"header-hygiene">;
 
 // Preprocessor warnings.
 def : DiagGroup<"builtin-macro-redefined">;
@@ -137,6 +138,7 @@ def Trigraphs      : DiagGroup<"trigraphs">;
 
 def : DiagGroup<"type-limits">;
 def Uninitialized  : DiagGroup<"uninitialized">;
+def UninitializedMaybe : DiagGroup<"conditional-uninitialized">;
 def UnknownPragmas : DiagGroup<"unknown-pragmas">;
 def UnknownAttributes : DiagGroup<"unknown-attributes">;
 def UnnamedTypeTemplateArgs : DiagGroup<"unnamed-type-template-args">;

@@ -190,11 +190,28 @@ CXXABI *ASTContext::createCXXABI(const TargetInfo &T) {
   return 0;
 }
 
+static const LangAS::Map &getAddressSpaceMap(const TargetInfo &T,
+                                             const LangOptions &LOpts) {
+  if (LOpts.FakeAddressSpaceMap) {
+    // The fake address space map must have a distinct entry for each
+    // language-specific address space.
+    static const unsigned FakeAddrSpaceMap[] = {
+      1, // opencl_global
+      2, // opencl_local
+      3  // opencl_constant
+    };
+    return FakeAddrSpaceMap;
+  } else {
+    return T.getAddressSpaceMap();
+  }
+}
+
 ASTContext::ASTContext(const LangOptions& LOpts, SourceManager &SM,
                        const TargetInfo &t,
                        IdentifierTable &idents, SelectorTable &sels,
                        Builtin::Context &builtins,
                        unsigned size_reserve) :
+  FunctionProtoTypes(this_()),
   TemplateSpecializationTypes(this_()),
   DependentTemplateSpecializationTypes(this_()),
   GlobalNestedNameSpecifier(0), IsInt128Installed(false),
@@ -203,7 +220,8 @@ ASTContext::ASTContext(const LangOptions& LOpts, SourceManager &SM,
   sigjmp_bufDecl(0), BlockDescriptorType(0), BlockDescriptorExtendedType(0),
   cudaConfigureCallDecl(0),
   NullTypeSourceInfo(QualType()),
-  SourceMgr(SM), LangOpts(LOpts), ABI(createCXXABI(t)), Target(t),
+  SourceMgr(SM), LangOpts(LOpts), ABI(createCXXABI(t)),
+  AddrSpaceMap(getAddressSpaceMap(t, LOpts)), Target(t),
   Idents(idents), Selectors(sels),
   BuiltinInfo(builtins),
   DeclarationNames(*this),
@@ -805,7 +823,8 @@ ASTContext::getTypeInfo(const Type *T) const {
     Align = Target.getPointerAlign(0);
     break;
   case Type::BlockPointer: {
-    unsigned AS = cast<BlockPointerType>(T)->getPointeeType().getAddressSpace();
+    unsigned AS = getTargetAddressSpace(
+        cast<BlockPointerType>(T)->getPointeeType());
     Width = Target.getPointerWidth(AS);
     Align = Target.getPointerAlign(AS);
     break;
@@ -814,13 +833,14 @@ ASTContext::getTypeInfo(const Type *T) const {
   case Type::RValueReference: {
     // alignof and sizeof should never enter this code path here, so we go
     // the pointer route.
-    unsigned AS = cast<ReferenceType>(T)->getPointeeType().getAddressSpace();
+    unsigned AS = getTargetAddressSpace(
+        cast<ReferenceType>(T)->getPointeeType());
     Width = Target.getPointerWidth(AS);
     Align = Target.getPointerAlign(AS);
     break;
   }
   case Type::Pointer: {
-    unsigned AS = cast<PointerType>(T)->getPointeeType().getAddressSpace();
+    unsigned AS = getTargetAddressSpace(cast<PointerType>(T)->getPointeeType());
     Width = Target.getPointerWidth(AS);
     Align = Target.getPointerAlign(AS);
     break;
@@ -1467,7 +1487,7 @@ QualType ASTContext::getConstantArrayType(QualType EltTy,
   // the target.
   llvm::APInt ArySize(ArySizeIn);
   ArySize =
-    ArySize.zextOrTrunc(Target.getPointerWidth(EltTy.getAddressSpace()));
+    ArySize.zextOrTrunc(Target.getPointerWidth(getTargetAddressSpace(EltTy)));
 
   llvm::FoldingSetNodeID ID;
   ConstantArrayType::Profile(ID, EltTy, ArySize, ASM, IndexTypeQuals);
@@ -1909,7 +1929,7 @@ ASTContext::getFunctionType(QualType ResultTy,
   // Unique functions, to guarantee there is only one function of a particular
   // structure.
   llvm::FoldingSetNodeID ID;
-  FunctionProtoType::Profile(ID, ResultTy, ArgArray, NumArgs, EPI, this);
+  FunctionProtoType::Profile(ID, ResultTy, ArgArray, NumArgs, EPI, *this);
 
   void *InsertPos = 0;
   if (FunctionProtoType *FTP =
@@ -1960,13 +1980,12 @@ ASTContext::getFunctionType(QualType ResultTy,
   if (EPI.ExceptionSpecType == EST_Dynamic)
     Size += EPI.NumExceptions * sizeof(QualType);
   else if (EPI.ExceptionSpecType == EST_ComputedNoexcept) {
-    Size += sizeof(Expr*) + sizeof(ASTContext*);
+    Size += sizeof(Expr*);
   }
   FunctionProtoType *FTP = (FunctionProtoType*) Allocate(Size, TypeAlignment);
   FunctionProtoType::ExtProtoInfo newEPI = EPI;
   newEPI.ExtInfo = EPI.ExtInfo.withCallingConv(CallConv);
-  new (FTP) FunctionProtoType(ResultTy, ArgArray, NumArgs, Canonical, newEPI,
-                              this);
+  new (FTP) FunctionProtoType(ResultTy, ArgArray, NumArgs, Canonical, newEPI);
   Types.push_back(FTP);
   FunctionProtoTypes.InsertNode(FTP, InsertPos);
   return QualType(FTP, 0);
@@ -4838,7 +4857,8 @@ bool ASTContext::canAssignObjCInterfaces(const ObjCObjectPointerType *LHSOPT,
 /// not OK. For the return type, the opposite is not OK.
 bool ASTContext::canAssignObjCInterfacesInBlockPointer(
                                          const ObjCObjectPointerType *LHSOPT,
-                                         const ObjCObjectPointerType *RHSOPT) {
+                                         const ObjCObjectPointerType *RHSOPT,
+                                         bool BlockReturnType) {
   if (RHSOPT->isObjCBuiltinType() || LHSOPT->isObjCIdType())
     return true;
   
@@ -4856,9 +4876,9 @@ bool ASTContext::canAssignObjCInterfacesInBlockPointer(
   if (LHS && RHS)  { // We have 2 user-defined types.
     if (LHS != RHS) {
       if (LHS->getDecl()->isSuperClassOf(RHS->getDecl()))
-        return false;
+        return BlockReturnType;
       if (RHS->getDecl()->isSuperClassOf(LHS->getDecl()))
-        return true;
+        return !BlockReturnType;
     }
     else
       return true;
@@ -5082,7 +5102,7 @@ QualType ASTContext::mergeFunctionTypes(QualType lhs, QualType rhs,
     bool UnqualifiedResult = Unqualified;
     if (!UnqualifiedResult)
       UnqualifiedResult = (!RHS.hasQualifiers() && LHS.hasQualifiers());
-    retType = mergeTypes(RHS, LHS, true, UnqualifiedResult);
+    retType = mergeTypes(LHS, RHS, true, UnqualifiedResult, true);
   }
   else
     retType = mergeTypes(lbase->getResultType(), rbase->getResultType(), false,
@@ -5222,7 +5242,7 @@ QualType ASTContext::mergeFunctionTypes(QualType lhs, QualType rhs,
 
 QualType ASTContext::mergeTypes(QualType LHS, QualType RHS, 
                                 bool OfBlockPointer,
-                                bool Unqualified) {
+                                bool Unqualified, bool BlockReturnType) {
   // C++ [expr]: If an expression initially has the type "reference to T", the
   // type is adjusted to "T" prior to any further analysis, the expression
   // designates the object or function denoted by the reference, and the
@@ -5456,7 +5476,8 @@ QualType ASTContext::mergeTypes(QualType LHS, QualType RHS,
     if (OfBlockPointer) {
       if (canAssignObjCInterfacesInBlockPointer(
                                           LHS->getAs<ObjCObjectPointerType>(),
-                                          RHS->getAs<ObjCObjectPointerType>()))
+                                          RHS->getAs<ObjCObjectPointerType>(),
+                                          BlockReturnType))
       return LHS;
       return QualType();
     }

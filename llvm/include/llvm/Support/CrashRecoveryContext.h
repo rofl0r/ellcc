@@ -15,6 +15,8 @@
 namespace llvm {
 class StringRef;
 
+class CrashRecoveryContextCleanup;
+  
 /// \brief Crash recovery helper object.
 ///
 /// This class implements support for running operations in a safe context so
@@ -42,10 +44,14 @@ class StringRef;
 /// Crash recovery contexts may not be nested.
 class CrashRecoveryContext {
   void *Impl;
+  CrashRecoveryContextCleanup *head;
 
 public:
-  CrashRecoveryContext() : Impl(0) {}
+  CrashRecoveryContext() : Impl(0), head(0) {}
   ~CrashRecoveryContext();
+  
+  void registerCleanup(CrashRecoveryContextCleanup *cleanup);
+  void unregisterCleanup(CrashRecoveryContextCleanup *cleanup);
 
   /// \brief Enable crash recovery.
   static void Enable();
@@ -87,6 +93,92 @@ public:
   const std::string &getBacktrace() const;
 };
 
+class CrashRecoveryContextCleanup {
+public:
+  bool cleanupFired;
+  enum ProvidedCleanups { DeleteCleanup, DestructorCleanup };
+  
+  CrashRecoveryContextCleanup() : cleanupFired(false) {}
+  virtual ~CrashRecoveryContextCleanup();
+  virtual void recoverResources() = 0;
+  
+  template <typename T> static CrashRecoveryContextCleanup *create(T *,
+                          ProvidedCleanups cleanupKind =
+                            CrashRecoveryContextCleanup::DeleteCleanup);
+  
+private:
+  friend class CrashRecoveryContext;
+  CrashRecoveryContextCleanup *prev, *next;
+};
+
+template <typename T>
+class CrashRecoveryContextDestructorCleanup 
+  : public CrashRecoveryContextCleanup
+{
+  T *resource;
+public:
+  CrashRecoveryContextDestructorCleanup(T *resource) : resource(resource) {}
+  virtual void recoverResources() {
+    resource->~T();
+  }
+};
+
+template <typename T>
+class CrashRecoveryContextDeleteCleanup
+  : public CrashRecoveryContextCleanup
+{
+  T *resource;
+public:
+  CrashRecoveryContextDeleteCleanup(T *resource) : resource(resource) {}
+  virtual void recoverResources() {
+    delete resource;
+  }
+};
+
+template <typename T>
+struct CrashRecoveryContextTrait {
+  static inline CrashRecoveryContextCleanup *
+  createCleanup(T *resource,
+                CrashRecoveryContextCleanup::ProvidedCleanups cleanup) {
+    switch (cleanup) {
+      case CrashRecoveryContextCleanup::DeleteCleanup:
+        return new CrashRecoveryContextDeleteCleanup<T>(resource);
+      case CrashRecoveryContextCleanup::DestructorCleanup:
+        return new CrashRecoveryContextDestructorCleanup<T>(resource);
+    }
+    return 0;
+  }
+};
+
+template<typename T>
+inline CrashRecoveryContextCleanup*
+CrashRecoveryContextCleanup::create(T *x,
+          CrashRecoveryContextCleanup::ProvidedCleanups cleanupKind) {
+  return CrashRecoveryContext::GetCurrent() ?
+          CrashRecoveryContextTrait<T>::createCleanup(x, cleanupKind) : 
+          0;
+}
+
+class CrashRecoveryContextCleanupRegistrar {
+  CrashRecoveryContext *context;
+  CrashRecoveryContextCleanup *cleanup;
+public:
+  CrashRecoveryContextCleanupRegistrar(CrashRecoveryContextCleanup *cleanup)
+    : context(CrashRecoveryContext::GetCurrent()),
+      cleanup(cleanup) 
+  {
+    if (context && cleanup)
+      context->registerCleanup(cleanup);
+  }
+  ~CrashRecoveryContextCleanupRegistrar() {
+    if (cleanup && !cleanup->cleanupFired) {
+      if (context)
+        context->unregisterCleanup(cleanup);
+      else
+        delete cleanup;
+    }
+  }
+};
 }
 
 #endif

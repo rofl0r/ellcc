@@ -381,11 +381,17 @@ def rot_imm : Operand<i32>, PatLeaf<(i32 imm), [{
   let EncoderMethod = "getRotImmOpValue";
 }
 
+def ShifterAsmOperand : AsmOperandClass {
+  let Name = "Shifter";
+  let SuperClasses = [];
+}
+
 // shift_imm: An integer that encodes a shift amount and the type of shift
 // (currently either asr or lsl) using the same encoding used for the
 // immediates in so_reg operands.
 def shift_imm : Operand<i32> {
   let PrintMethod = "printShiftImmOperand";
+  let ParserMatchClass = ShifterAsmOperand;
 }
 
 // shifter_operand operands: so_reg and so_imm.
@@ -394,14 +400,14 @@ def so_reg : Operand<i32>,    // reg reg imm
                             [shl,srl,sra,rotr]> {
   let EncoderMethod = "getSORegOpValue";
   let PrintMethod = "printSORegOperand";
-  let MIOperandInfo = (ops GPR, GPR, i32imm);
+  let MIOperandInfo = (ops GPR, GPR, shift_imm);
 }
 def shift_so_reg : Operand<i32>,    // reg reg imm
                    ComplexPattern<i32, 3, "SelectShiftShifterOperandReg",
                                   [shl,srl,sra,rotr]> {
   let EncoderMethod = "getSORegOpValue";
   let PrintMethod = "printSORegOperand";
-  let MIOperandInfo = (ops GPR, GPR, i32imm);
+  let MIOperandInfo = (ops GPR, GPR, shift_imm);
 }
 
 // so_imm - Match a 32-bit shifter_operand immediate operand, which is an
@@ -1408,11 +1414,7 @@ let isCall = 1,
 
 // Tail calls.
 
-// FIXME: These should probably be xformed into the non-TC versions of the
-// instructions as part of MC lowering.
-// FIXME: These seem to be used for both Thumb and ARM instruction selection.
-// Thumb should have its own version since the instruction is actually
-// different, even though the mnemonic is the same.
+// FIXME: The Thumb versions of these should live in ARMInstrThumb.td
 let isCall = 1, isTerminator = 1, isReturn = 1, isBarrier = 1 in {
   // Darwin versions.
   let Defs = [R0, R1, R2, R3, R9, R12,
@@ -1426,21 +1428,21 @@ let isCall = 1, isTerminator = 1, isReturn = 1, isBarrier = 1 in {
     def TCRETURNri : PseudoInst<(outs), (ins tcGPR:$dst, variable_ops),
                        IIC_Br, []>, Requires<[IsDarwin]>;
 
-    def TAILJMPd : ABXI<0b1010, (outs), (ins brtarget:$dst, variable_ops),
-                   IIC_Br, "b\t$dst  @ TAILCALL",
+    def TAILJMPd : ARMPseudoInst<(outs), (ins brtarget:$dst, variable_ops),
+                   Size4Bytes, IIC_Br,
                    []>, Requires<[IsARM, IsDarwin]>;
 
-    def TAILJMPdt: ABXI<0b1010, (outs), (ins brtarget:$dst, variable_ops),
-                   IIC_Br, "b.w\t$dst  @ TAILCALL",
+    def tTAILJMPd: tPseudoInst<(outs), (ins brtarget:$dst, variable_ops),
+                   Size4Bytes, IIC_Br,
                    []>, Requires<[IsThumb, IsDarwin]>;
 
-    def TAILJMPr : AXI<(outs), (ins tcGPR:$dst, variable_ops),
-                     BrMiscFrm, IIC_Br, "bx\t$dst  @ TAILCALL",
-                   []>, Requires<[IsDarwin]> {
-      bits<4> dst;
-      let Inst{31-4} = 0b1110000100101111111111110001;
-      let Inst{3-0}  = dst;
-    }
+    def TAILJMPr : ARMPseudoInst<(outs), (ins tcGPR:$dst, variable_ops),
+                     Size4Bytes, IIC_Br,
+                   []>, Requires<[IsARM, IsDarwin]>;
+
+    def tTAILJMPr : tPseudoInst<(outs), (ins tcGPR:$dst, variable_ops),
+                     Size4Bytes, IIC_Br,
+                   []>, Requires<[IsThumb, IsDarwin]>;
   }
 
   // Non-Darwin versions (the difference is R9).
@@ -1455,21 +1457,20 @@ let isCall = 1, isTerminator = 1, isReturn = 1, isBarrier = 1 in {
     def TCRETURNriND : PseudoInst<(outs), (ins tcGPR:$dst, variable_ops),
                        IIC_Br, []>, Requires<[IsNotDarwin]>;
 
-    def TAILJMPdND : ABXI<0b1010, (outs), (ins brtarget:$dst, variable_ops),
-                   IIC_Br, "b\t$dst  @ TAILCALL",
+    def TAILJMPdND : ARMPseudoInst<(outs), (ins brtarget:$dst, variable_ops),
+                   Size4Bytes, IIC_Br,
                    []>, Requires<[IsARM, IsNotDarwin]>;
 
-    def TAILJMPdNDt : ABXI<0b1010, (outs), (ins brtarget:$dst, variable_ops),
-                   IIC_Br, "b.w\t$dst  @ TAILCALL",
+    def tTAILJMPdND : tPseudoInst<(outs), (ins brtarget:$dst, variable_ops),
+                   Size4Bytes, IIC_Br,
                    []>, Requires<[IsThumb, IsNotDarwin]>;
 
-    def TAILJMPrND : AXI<(outs), (ins tcGPR:$dst, variable_ops),
-                     BrMiscFrm, IIC_Br, "bx\t$dst  @ TAILCALL",
-                   []>, Requires<[IsNotDarwin]> {
-      bits<4> dst;
-      let Inst{31-4} = 0b1110000100101111111111110001;
-      let Inst{3-0}  = dst;
-    }
+    def TAILJMPrND : ARMPseudoInst<(outs), (ins tcGPR:$dst, variable_ops),
+                     Size4Bytes, IIC_Br,
+                   []>, Requires<[IsARM, IsNotDarwin]>;
+    def tTAILJMPrND : tPseudoInst<(outs), (ins tcGPR:$dst, variable_ops),
+                     Size4Bytes, IIC_Br,
+                   []>, Requires<[IsThumb, IsNotDarwin]>;
   }
 }
 
@@ -1536,6 +1537,7 @@ def SVC : ABI<0b1111, (outs), (ins i32imm:$svc), IIC_Br, "svc", "\t$svc",
   let Inst{23-0} = svc;
 }
 }
+def : MnemonicAlias<"swi", "svc">;
 
 // Store Return State is a system instruction -- for disassembly only
 let isCodeGenOnly = 1 in {  // FIXME: This should not use submode!
@@ -1895,7 +1897,7 @@ multiclass arm_ldst_mult<string asm, bit L_bit, Format f,
     let Inst{21}    = 1;          // Writeback
     let Inst{20}    = L_bit;
   }
-} 
+}
 
 let neverHasSideEffects = 1 in {
 
@@ -2633,8 +2635,8 @@ def MUL  : AsMul1I32<0b0000000, (outs GPR:$Rd), (ins GPR:$Rn, GPR:$Rm),
 let Constraints = "@earlyclobber $Rd" in
 def MLAv5: ARMPseudoInst<(outs GPR:$Rd),
                          (ins GPR:$Rn, GPR:$Rm, GPR:$Ra, pred:$p, cc_out:$s),
-                         Size4Bytes, IIC_iMAC32, 
-                         [(set GPR:$Rd, (add (mul GPR:$Rn, GPR:$Rm), GPR:$Ra))]>, 
+                         Size4Bytes, IIC_iMAC32,
+                         [(set GPR:$Rd, (add (mul GPR:$Rn, GPR:$Rm), GPR:$Ra))]>,
                         Requires<[IsARM, NoV6]> {
   bits<4> Ra;
   let Inst{15-12} = Ra;
@@ -2667,7 +2669,7 @@ let neverHasSideEffects = 1 in {
 let isCommutable = 1 in {
 let Constraints = "@earlyclobber $RdLo,@earlyclobber $RdHi" in {
 def SMULLv5 : ARMPseudoInst<(outs GPR:$RdLo, GPR:$RdHi),
-                            (ins GPR:$Rn, GPR:$Rm, pred:$p, cc_out:$s), 
+                            (ins GPR:$Rn, GPR:$Rm, pred:$p, cc_out:$s),
                             Size4Bytes, IIC_iMUL64, []>,
                            Requires<[IsARM, NoV6]>;
 
@@ -2691,15 +2693,15 @@ def UMULL : AsMul1I64<0b0000100, (outs GPR:$RdLo, GPR:$RdHi),
 // Multiply + accumulate
 let Constraints = "@earlyclobber $RdLo,@earlyclobber $RdHi" in {
 def SMLALv5 : ARMPseudoInst<(outs GPR:$RdLo, GPR:$RdHi),
-                            (ins GPR:$Rn, GPR:$Rm, pred:$p, cc_out:$s), 
+                            (ins GPR:$Rn, GPR:$Rm, pred:$p, cc_out:$s),
                             Size4Bytes, IIC_iMAC64, []>,
                            Requires<[IsARM, NoV6]>;
 def UMLALv5 : ARMPseudoInst<(outs GPR:$RdLo, GPR:$RdHi),
-                            (ins GPR:$Rn, GPR:$Rm, pred:$p, cc_out:$s), 
+                            (ins GPR:$Rn, GPR:$Rm, pred:$p, cc_out:$s),
                             Size4Bytes, IIC_iMAC64, []>,
                            Requires<[IsARM, NoV6]>;
 def UMAALv5 : ARMPseudoInst<(outs GPR:$RdLo, GPR:$RdHi),
-                            (ins GPR:$Rn, GPR:$Rm, pred:$p, cc_out:$s), 
+                            (ins GPR:$Rn, GPR:$Rm, pred:$p, cc_out:$s),
                             Size4Bytes, IIC_iMAC64, []>,
                            Requires<[IsARM, NoV6]>;
 
@@ -2980,9 +2982,17 @@ def REVSH : AMiscA1I<0b01101111, 0b1011, (outs GPR:$Rd), (ins GPR:$Rm),
                IIC_iUNAr, "revsh", "\t$Rd, $Rm",
                [(set GPR:$Rd,
                   (sext_inreg
-                    (or (srl (and GPR:$Rm, 0xFF00), (i32 8)),
+                    (or (srl GPR:$Rm, (i32 8)),
                         (shl GPR:$Rm, (i32 8))), i16))]>,
                Requires<[IsARM, HasV6]>;
+
+def : ARMV6Pat<(sext_inreg (or (srl (and GPR:$Rm, 0xFF00), (i32 8)),
+                               (shl GPR:$Rm, (i32 8))), i16),
+               (REVSH GPR:$Rm)>;
+
+// Need the AddedComplexity or else MOVs + REV would be chosen.
+let AddedComplexity = 5 in
+def : ARMV6Pat<(sra (bswap GPR:$Rm), (i32 16)), (REVSH GPR:$Rm)>;
 
 def lsl_shift_imm : SDNodeXForm<imm, [{
   unsigned Sh = ARM_AM::getSORegOpc(ARM_AM::lsl, N->getZExtValue());
@@ -3642,7 +3652,7 @@ def MSRi : ABI<0b0011, (outs), (ins msr_mask:$mask,  so_imm:$a), NoItinerary,
 //
 
 // __aeabi_read_tp preserves the registers r1-r3.
-// This is a pseudo inst so that we can get the encoding right, 
+// This is a pseudo inst so that we can get the encoding right,
 // complete with fixup for the aeabi_read_tp function.
 let isCall = 1,
   Defs = [R0, R12, LR, CPSR], Uses = [SP] in {

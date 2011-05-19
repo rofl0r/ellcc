@@ -746,7 +746,7 @@ LiveInterval* LiveIntervals::dupInterval(LiveInterval *li) {
 /// shrinkToUses - After removing some uses of a register, shrink its live
 /// range to just the remaining uses. This method does not compute reaching
 /// defs for new uses, and it doesn't remove dead defs.
-void LiveIntervals::shrinkToUses(LiveInterval *li,
+bool LiveIntervals::shrinkToUses(LiveInterval *li,
                                  SmallVectorImpl<MachineInstr*> *dead) {
   DEBUG(dbgs() << "Shrink: " << *li << '\n');
   assert(TargetRegisterInfo::isVirtualRegister(li->reg)
@@ -761,7 +761,15 @@ void LiveIntervals::shrinkToUses(LiveInterval *li,
       continue;
     SlotIndex Idx = getInstructionIndex(UseMI).getUseIndex();
     VNInfo *VNI = li->getVNInfoAt(Idx);
-    assert(VNI && "Live interval not live into reading instruction");
+    if (!VNI) {
+      // This shouldn't happen: readsVirtualRegister returns true, but there is
+      // no live value. It is likely caused by a target getting <undef> flags
+      // wrong.
+      DEBUG(dbgs() << Idx << '\t' << *UseMI
+                   << "Warning: Instr claims to read non-existent value in "
+                    << *li << '\n');
+      continue;
+    }
     if (VNI->def == Idx) {
       // Special case: An early-clobber tied operand reads and writes the
       // register one slot early.
@@ -835,6 +843,7 @@ void LiveIntervals::shrinkToUses(LiveInterval *li,
   }
 
   // Handle dead values.
+  bool CanSeparate = false;
   for (LiveInterval::vni_iterator I = li->vni_begin(), E = li->vni_end();
        I != E; ++I) {
     VNInfo *VNI = *I;
@@ -848,13 +857,15 @@ void LiveIntervals::shrinkToUses(LiveInterval *li,
       // This is a dead PHI. Remove it.
       VNI->setIsUnused(true);
       NewLI.removeRange(*LII);
+      DEBUG(dbgs() << "Dead PHI at " << VNI->def << " may separate interval\n");
+      CanSeparate = true;
     } else {
       // This is a dead def. Make sure the instruction knows.
       MachineInstr *MI = getInstructionFromIndex(VNI->def);
       assert(MI && "No instruction defining live value");
       MI->addRegisterDead(li->reg, tri_);
       if (dead && MI->allDefsAreDead()) {
-        DEBUG(dbgs() << "All defs dead: " << *MI);
+        DEBUG(dbgs() << "All defs dead: " << VNI->def << '\t' << *MI);
         dead->push_back(MI);
       }
     }
@@ -862,7 +873,8 @@ void LiveIntervals::shrinkToUses(LiveInterval *li,
 
   // Move the trimmed ranges back.
   li->ranges.swap(NewLI.ranges);
-  DEBUG(dbgs() << "Shrink: " << *li << '\n');
+  DEBUG(dbgs() << "Shrunk: " << *li << '\n');
+  return CanSeparate;
 }
 
 

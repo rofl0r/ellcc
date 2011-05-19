@@ -154,6 +154,11 @@ bool CodeGenModule::isTargetDarwin() const {
   return getContext().Target.getTriple().getOS() == llvm::Triple::Darwin;
 }
 
+void CodeGenModule::Error(SourceLocation loc, llvm::StringRef error) {
+  unsigned diagID = getDiags().getCustomDiagID(Diagnostic::Error, error);
+  getDiags().Report(Context.getFullLoc(loc), diagID);
+}
+
 /// ErrorUnsupported - Print out an error that codegen doesn't support the
 /// specified stmt yet.
 void CodeGenModule::ErrorUnsupported(const Stmt *S, const char *Type,
@@ -1055,7 +1060,7 @@ llvm::Constant *CodeGenModule::GetAddrOfGlobalVar(const VarDecl *D,
     Ty = getTypes().ConvertTypeForMem(ASTTy);
 
   const llvm::PointerType *PTy =
-    llvm::PointerType::get(Ty, ASTTy.getAddressSpace());
+    llvm::PointerType::get(Ty, getContext().getTargetAddressSpace(ASTTy));
 
   llvm::StringRef MangledName = getMangledName(D);
   return GetOrCreateLLVMGlobal(MangledName, PTy, D);
@@ -1234,7 +1239,8 @@ void CodeGenModule::EmitGlobalVarDefinition(const VarDecl *D) {
   // from the type of the global (this happens with unions).
   if (GV == 0 ||
       GV->getType()->getElementType() != InitType ||
-      GV->getType()->getAddressSpace() != ASTTy.getAddressSpace()) {
+      GV->getType()->getAddressSpace() !=
+        getContext().getTargetAddressSpace(ASTTy)) {
 
     // Move the old entry aside so that we'll create a new one.
     Entry->setName(llvm::StringRef());
@@ -1669,7 +1675,10 @@ CodeGenModule::GetAddrOfConstantCFString(const StringLiteral *Literal) {
     // does make plain ascii ones writable.
     isConstant = true;
   } else {
-    Linkage = llvm::GlobalValue::PrivateLinkage;
+    // FIXME: With OS X ld 123.2 (xcode 4) and LTO we would get a linker error
+    // when using private linkage. It is not clear if this is a bug in ld
+    // or a reasonable new restriction.
+    Linkage = llvm::GlobalValue::LinkerPrivateLinkage;
     isConstant = !Features.WritableStrings;
   }
   
@@ -1931,7 +1940,7 @@ void CodeGenModule::EmitObjCPropertyImplementations(const
 /// EmitObjCIvarInitializations - Emit information for ivar initialization
 /// for an implementation.
 void CodeGenModule::EmitObjCIvarInitializations(ObjCImplementationDecl *D) {
-  if (!Features.NeXTRuntime || D->getNumIvarInitializers() == 0)
+  if (D->getNumIvarInitializers() == 0)
     return;
   DeclContext* DC = const_cast<DeclContext*>(dyn_cast<DeclContext>(D));
   assert(DC && "EmitObjCIvarInitializations - null DeclContext");

@@ -336,10 +336,9 @@ void IdempotentOperationChecker::checkPostStmt(const BinaryOperator *B,
     = cast<StmtPoint>(C.getPredecessor()->getLocation()).getStmt();
   
   // Ignore implicit calls to setters.
-  if (isa<ObjCPropertyRefExpr>(predStmt))
+  if (!isa<BinaryOperator>(predStmt))
     return;
-  
-  assert(isa<BinaryOperator>(predStmt));
+
   Data.explodedNodes.Add(C.getPredecessor());
 }
 
@@ -532,7 +531,7 @@ IdempotentOperationChecker::pathWasCompletelyAnalyzed(AnalysisContext *AC,
                                                       const CFGBlock *CB,
                                                       const CoreEngine &CE) {
 
-  CFGReachabilityAnalysis *CRA = AC->getCFGReachablityAnalysis();
+  CFGReverseBlockReachabilityAnalysis *CRA = AC->getCFGReachablityAnalysis();
   
   // Test for reachability from any aborted blocks to this block
   typedef CoreEngine::BlocksAborted::const_iterator AbortedIterator;
@@ -557,10 +556,10 @@ IdempotentOperationChecker::pathWasCompletelyAnalyzed(AnalysisContext *AC,
   class VisitWL : public WorkList::Visitor {
     const CFGStmtMap *CBM;
     const CFGBlock *TargetBlock;
-    CFGReachabilityAnalysis &CRA;
+    CFGReverseBlockReachabilityAnalysis &CRA;
   public:
     VisitWL(const CFGStmtMap *cbm, const CFGBlock *targetBlock,
-            CFGReachabilityAnalysis &cra)
+            CFGReverseBlockReachabilityAnalysis &cra)
       : CBM(cbm), TargetBlock(targetBlock), CRA(cra) {}
     virtual bool visit(const WorkListUnit &U) {
       ProgramPoint P = U.getNode()->getLocation();

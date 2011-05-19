@@ -35,6 +35,8 @@
 #include "llvm/Support/Program.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/system_error.h"
+#include "llvm/Target/TargetRegistry.h"
+#include "llvm/Target/TargetSelect.h"
 #include <cctype>
 using namespace clang;
 using namespace clang::driver;
@@ -252,6 +254,116 @@ static void ExpandArgv(int argc, const char **argv,
   }
 }
 
+static void ParseProgName(llvm::SmallVectorImpl<const char *> &ArgVector,
+                          std::set<std::string> &SavedStrings,
+                          Driver &TheDriver)
+{
+  // Try to infer frontend type and default target from the program name.
+
+  // suffixes[] contains the list of known driver suffixes.
+  // Suffixes are compared against the program name in order.
+  // If there is a match, the frontend type is updated as necessary (CPP/C++).
+  // If there is no match, a second round is done after stripping the last
+  // hyphen and everything following it. This allows using something like
+  // "clang++-2.9".
+
+  // If there is a match in either the first or second round,
+  // the function tries to identify a target as prefix. E.g.
+  // "x86_64-linux-clang" as interpreted as suffix "clang" with
+  // target prefix "x86_64-linux". If such a target prefix is found,
+  // is gets added via -ccc-host-triple as implicit first argument.
+  static const struct {
+    const char *Suffix;
+    bool IsCXX;
+    bool IsCPP;
+    bool IsELLCC;
+  } suffixes [] = {
+    { "clang", false, false, false },
+    { "clang++", true, false, false },
+    { "clang-c++", true, false, false },
+    { "clang-cc", false, false, false },
+    { "clang-cpp", false, true, false },
+    { "clang-g++", true, false, false },
+    { "clang-gcc", false, false, false },
+    { "ecc", false, false, true },
+    { "ecc++", true, false, true },
+    { "cc", false, false, false },
+    { "cpp", false, true, false },
+    { "++", true, false, false },
+  };
+  std::string ProgName(llvm::sys::path::stem(ArgVector[0]));
+  llvm::StringRef ProgNameRef(ProgName);
+  llvm::StringRef Prefix;
+
+  for (int Components = 2; Components; --Components) {
+    bool FoundMatch = false;
+    size_t i;
+
+    for (i = 0; i < sizeof(suffixes) / sizeof(suffixes[0]); ++i) {
+      if (ProgNameRef.endswith(suffixes[i].Suffix)) {
+        FoundMatch = true;
+        if (suffixes[i].IsCXX)
+          TheDriver.CCCIsCXX = true;
+        if (suffixes[i].IsCPP)
+          TheDriver.CCCIsCPP = true;
+        if (suffixes[i].IsELLCC)
+          TheDriver.CCCIsELLCC = true;
+        break;
+      }
+    }
+
+    if (FoundMatch) {
+      llvm::StringRef::size_type LastComponent = ProgNameRef.rfind('-',
+        ProgNameRef.size() - strlen(suffixes[i].Suffix));
+      if (LastComponent != llvm::StringRef::npos)
+        Prefix = ProgNameRef.slice(0, LastComponent);
+      break;
+    }
+
+    llvm::StringRef::size_type LastComponent = ProgNameRef.rfind('-');
+    if (LastComponent == llvm::StringRef::npos)
+      break;
+    ProgNameRef = ProgNameRef.slice(0, LastComponent);
+  }
+
+  if (Prefix.empty())
+    return;
+
+  if (TheDriver.CCCIsELLCC)  {
+    llvm::Triple triple(ProgName);
+    if (triple.getArch() != llvm::Triple::UnknownArch) {
+      llvm::StringRef OS = triple.getVendorName();
+      triple.setOSName(OS);
+      if (OS == "elf" || triple.getOS() != llvm::Triple::UnknownOS) {
+        // We have a valid arch and OS.
+        // "elf" is used for OS neutural builds.
+        // Use this to create the ELLCC triple.
+        // The name looks like <arch>-<os>-*
+        if (OS == "elf") {
+            triple.setOSName("unknown");
+        }
+      }
+    }
+
+    std::vector<const char*> ExtraArgs;
+    ExtraArgs.push_back("-ccc-clang-archs");
+    ExtraArgs.push_back("");
+    ExtraArgs.push_back("-ccc-host-triple");
+    std::string et(triple.getArchName().str() + "-ellcc-" + triple.getOSName().str());
+    ExtraArgs.push_back(SaveStringInSet(SavedStrings,
+                                        et.c_str()));
+    ArgVector.insert(&ArgVector[1], ExtraArgs.begin(), ExtraArgs.end());
+  } else {
+    std::string IgnoredError;
+    if (llvm::TargetRegistry::lookupTarget(Prefix, IgnoredError)) {
+      ArgVector.insert(&ArgVector[1],
+        SaveStringInSet(SavedStrings, Prefix));
+      ArgVector.insert(&ArgVector[1],
+        SaveStringInSet(SavedStrings, std::string("-ccc-host-triple")));
+    }
+  }
+}
+
 int main(int argc_, const char **argv_) {
   llvm::sys::PrintStackTraceOnErrorSignal();
   llvm::PrettyStackTraceProgram X(argc_, argv_);
@@ -304,46 +416,9 @@ int main(int argc_, const char **argv_) {
   const bool IsProduction = false;
   const bool CXXIsProduction = false;
 #endif
-  bool CCCIsCXX = false;
-  bool CCCIsELLCC = false;
-
-  // Check for ".*++" or ".*++-[^-]*" to determine if we are a C++
-  // compiler. This matches things like "c++", "clang++", and "clang++-1.1".
-  //
-  // Note that we intentionally want to use argv[0] here, to support "clang++"
-  // being a symlink.
-  //
-  // We use *argv instead of argv[0] to work around a bogus g++ warning.
-  const char *progname = argv_[0];
-  std::string ProgName(llvm::sys::Path(progname).getBasename());
-  if (llvm::StringRef(ProgName).endswith("++") ||
-      llvm::StringRef(ProgName).rsplit('-').first.endswith("++")) {
-    CCCIsCXX = true;
-  }
-
-  // Check to see if the name starts with a valid triple:
-  // e.g. arm-linux-*
-  llvm::Triple triple(ProgName);
-  if (triple.getArch() != llvm::Triple::UnknownArch) {
-    llvm::StringRef OS = triple.getVendorName();
-    triple.setOSName(OS);
-    if (OS == "elf" || triple.getOS() != llvm::Triple::UnknownOS) {
-      // We have a valid arch and OS.
-      // "elf" is used for OS neutural builds.
-      // Use this to create the ELLCC triple.
-      // The name looks like <arch>-<os>-*
-      if (OS == "elf") {
-          triple.setOSName("unknown");
-      }
-      CCCIsELLCC = true;
-    }
-  }
-
   Driver TheDriver(Path.str(), llvm::sys::getHostTriple(),
                    "a.out", IsProduction, CXXIsProduction,
-                   Diags,
-                   CCCIsELLCC);
-  TheDriver.CCCIsCXX = CCCIsCXX;
+                   Diags);
 
   // Attempt to find the original path used to invoke the driver, to determine
   // the installed path. We do this manually, because we want to support that
@@ -365,20 +440,11 @@ int main(int argc_, const char **argv_) {
       TheDriver.setInstalledDir(InstalledPath);
   }
 
-  if (CCCIsELLCC) {
-    std::vector<const char*> ExtraArgs;
-    ExtraArgs.push_back("-ccc-clang-archs");
-    ExtraArgs.push_back("");
-    ExtraArgs.push_back("-ccc-host-triple");
-    std::string et(triple.getArchName().str() + "-ellcc-" + triple.getOSName().str());
-    ExtraArgs.push_back(SaveStringInSet(SavedStrings,
-                                        et.c_str()));
-    argv.insert(&argv[1], ExtraArgs.begin(), ExtraArgs.end());
-  }
-
-  if (llvm::StringRef(ProgName).endswith("cpp") ||
-      llvm::StringRef(ProgName).rsplit('-').first.endswith("cpp")) {
-    TheDriver.CCCIsCPP = true;
+  llvm::InitializeAllTargets();
+  ParseProgName(argv, SavedStrings, TheDriver);
+  if (TheDriver.CCCIsELLCC) {
+    // Set the ResourceDir correctly for ELLCC.
+    TheDriver.setResourceDir();
   }
 
   // Handle CC_PRINT_OPTIONS and CC_PRINT_OPTIONS_FILE.

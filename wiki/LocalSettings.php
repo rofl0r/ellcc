@@ -59,9 +59,9 @@ $wgEmailAuthentication = true;
 ## Database settings
 $wgDBtype           = "mysql";
 $wgDBserver         = "localhost";
-$wgDBname           = "ellccwiki";
+$wgDBname           = "wikidb";
 $wgDBuser           = "wikiuser";
-$wgDBpassword       = "1957root";
+$wgDBpassword       = "95windows";
 
 # MySQL specific settings
 $wgDBprefix         = "ew_";
