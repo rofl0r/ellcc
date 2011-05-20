@@ -134,8 +134,7 @@ CXXScopeSpec::getWithLocInContext(ASTContext &Context) const {
 
 /// DeclaratorChunk::getFunction - Return a DeclaratorChunk for a function.
 /// "TheDeclarator" is the declarator that this will be added to.
-DeclaratorChunk DeclaratorChunk::getFunction(const ParsedAttributes &attrs,
-                                             bool hasProto, bool isVariadic,
+DeclaratorChunk DeclaratorChunk::getFunction(bool hasProto, bool isVariadic,
                                              SourceLocation EllipsisLoc,
                                              ParamInfo *ArgInfo,
                                              unsigned NumArgs,
@@ -157,7 +156,7 @@ DeclaratorChunk DeclaratorChunk::getFunction(const ParsedAttributes &attrs,
   I.Kind                        = Function;
   I.Loc                         = LocalRangeBegin;
   I.EndLoc                      = LocalRangeEnd;
-  I.Fun.AttrList                = attrs.getList();
+  I.Fun.AttrList                = 0;
   I.Fun.hasPrototype            = hasProto;
   I.Fun.isVariadic              = isVariadic;
   I.Fun.EllipsisLoc             = EllipsisLoc.getRawEncoding();
@@ -310,6 +309,8 @@ const char *DeclSpec::getSpecifierName(DeclSpec::TST T) {
   case DeclSpec::TST_typeofExpr:  return "typeof";
   case DeclSpec::TST_auto:        return "auto";
   case DeclSpec::TST_decltype:    return "(decltype)";
+  case DeclSpec::TST_underlying_type: return "__underlying_type";
+  case DeclSpec::TST_unknown_anytype: return "__unknown_anytype";
   case DeclSpec::TST_error:       return "(error)";
   }
   llvm_unreachable("Unknown typespec!");
@@ -830,7 +831,6 @@ bool VirtSpecifiers::SetSpecifier(Specifier VS, SourceLocation Loc,
   default: assert(0 && "Unknown specifier!");
   case VS_Override: VS_overrideLoc = Loc; break;
   case VS_Final:    VS_finalLoc = Loc; break;
-  case VS_New:      VS_newLoc = Loc; break;
   }
 
   return false;
@@ -841,33 +841,5 @@ const char *VirtSpecifiers::getSpecifierName(Specifier VS) {
   default: assert(0 && "Unknown specifier");
   case VS_Override: return "override";
   case VS_Final: return "final";
-  case VS_New: return "new";
   }
 }
-
-bool ClassVirtSpecifiers::SetSpecifier(Specifier CVS, SourceLocation Loc,
-                                       const char *&PrevSpec) {
-  if (Specifiers & CVS) {
-    PrevSpec = getSpecifierName(CVS);
-    return true;
-  }
-
-  Specifiers |= CVS;
-
-  switch (CVS) {
-  default: assert(0 && "Unknown specifier!");
-  case CVS_Final: CVS_finalLoc = Loc; break;
-  case CVS_Explicit: CVS_explicitLoc = Loc; break;
-  }
-
-  return false;
-}
-
-const char *ClassVirtSpecifiers::getSpecifierName(Specifier CVS) {
-  switch (CVS) {
-  default: assert(0 && "Unknown specifier");
-  case CVS_Final: return "final";
-  case CVS_Explicit: return "explicit";
-  }
-}
-

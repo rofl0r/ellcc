@@ -49,7 +49,6 @@ namespace {
       (void) llvm::createAliasAnalysisCounterPass();
       (void) llvm::createAliasDebugger();
       (void) llvm::createArgumentPromotionPass();
-      (void) llvm::createStructRetPromotionPass();
       (void) llvm::createBasicAliasAnalysisPass();
       (void) llvm::createLibCallAliasAnalysisPass(0);
       (void) llvm::createScalarEvolutionAliasAnalysisPass();
@@ -71,6 +70,7 @@ namespace {
       (void) llvm::createEdgeProfilerPass();
       (void) llvm::createOptimalEdgeProfilerPass();
       (void) llvm::createPathProfilerPass();
+      (void) llvm::createGCOVProfilerPass(true, true, false);
       (void) llvm::createFunctionInliningPass();
       (void) llvm::createAlwaysInlinerPass();
       (void) llvm::createGlobalDCEPass();
@@ -134,7 +134,6 @@ namespace {
       (void) llvm::createMemCpyOptPass();
       (void) llvm::createLoopDeletionPass();
       (void) llvm::createPostDomTree();
-      (void) llvm::createPostDomFrontier();
       (void) llvm::createInstructionNamerPass();
       (void) llvm::createFunctionAttrsPass();
       (void) llvm::createMergeFunctionsPass();

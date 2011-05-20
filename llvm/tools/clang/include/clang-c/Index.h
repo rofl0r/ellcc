@@ -222,6 +222,14 @@ CINDEX_LINKAGE CXString clang_getFileName(CXFile SFile);
 CINDEX_LINKAGE time_t clang_getFileTime(CXFile SFile);
 
 /**
+ * \brief Determine whether the given header is guarded against
+ * multiple inclusions, either with the conventional
+ * #ifndef/#define/#endif macro guards or with #pragma once.
+ */
+CINDEX_LINKAGE unsigned 
+clang_isFileMultipleIncludeGuarded(CXTranslationUnit tu, CXFile file);
+
+/**
  * \brief Retrieve a file handle within the given translation unit.
  *
  * \param tu the translation unit
@@ -821,7 +829,18 @@ enum CXTranslationUnit_Flags {
    * Note: this is a *temporary* option that is available only while
    * we are testing C++ precompiled preamble support.
    */
-  CXTranslationUnit_CXXChainedPCH = 0x20
+  CXTranslationUnit_CXXChainedPCH = 0x20,
+  
+  /**
+   * \brief Used to indicate that the "detailed" preprocessing record,
+   * if requested, should also contain nested macro instantiations.
+   *
+   * Nested macro instantiations (i.e., macro instantiations that occur
+   * inside another macro instantiation) can, in some code bases, require
+   * a large amount of storage to due preprocessor metaprogramming. Moreover,
+   * its fairly rare that this information is useful for libclang clients.
+   */
+  CXTranslationUnit_NestedMacroInstantiations = 0x40
 };
 
 /**
@@ -1012,7 +1031,70 @@ CINDEX_LINKAGE int clang_reparseTranslationUnit(CXTranslationUnit TU,
                                                 unsigned num_unsaved_files,
                                           struct CXUnsavedFile *unsaved_files,
                                                 unsigned options);
-  
+
+/**
+  * \brief Categorizes how memory is being used by a translation unit.
+  */
+enum CXTUResourceUsageKind {
+  CXTUResourceUsage_AST = 1,
+  CXTUResourceUsage_Identifiers = 2,
+  CXTUResourceUsage_Selectors = 3,
+  CXTUResourceUsage_GlobalCompletionResults = 4,
+  CXTUResourceUsage_SourceManagerContentCache = 5,
+  CXTUResourceUsage_AST_SideTables = 6,
+  CXTUResourceUsage_SourceManager_Membuffer_Malloc = 7,
+  CXTUResourceUsage_SourceManager_Membuffer_MMap = 8,
+  CXTUResourceUsage_ExternalASTSource_Membuffer_Malloc = 9, 
+  CXTUResourceUsage_ExternalASTSource_Membuffer_MMap = 10, 
+  CXTUResourceUsage_Preprocessor = 11,
+  CXTUResourceUsage_PreprocessingRecord = 12,
+  CXTUResourceUsage_MEMORY_IN_BYTES_BEGIN = CXTUResourceUsage_AST,
+  CXTUResourceUsage_MEMORY_IN_BYTES_END =
+    CXTUResourceUsage_PreprocessingRecord,
+
+  CXTUResourceUsage_First = CXTUResourceUsage_AST,
+  CXTUResourceUsage_Last = CXTUResourceUsage_PreprocessingRecord
+};
+
+/**
+  * \brief Returns the human-readable null-terminated C string that represents
+  *  the name of the memory category.  This string should never be freed.
+  */
+CINDEX_LINKAGE
+const char *clang_getTUResourceUsageName(enum CXTUResourceUsageKind kind);
+
+typedef struct CXTUResourceUsageEntry {
+  /* \brief The memory usage category. */
+  enum CXTUResourceUsageKind kind;  
+  /* \brief Amount of resources used. 
+      The units will depend on the resource kind. */
+  unsigned long amount;
+} CXTUResourceUsageEntry;
+
+/**
+  * \brief The memory usage of a CXTranslationUnit, broken into categories.
+  */
+typedef struct CXTUResourceUsage {
+  /* \brief Private data member, used for queries. */
+  void *data;
+
+  /* \brief The number of entries in the 'entries' array. */
+  unsigned numEntries;
+
+  /* \brief An array of key-value pairs, representing the breakdown of memory
+            usage. */
+  CXTUResourceUsageEntry *entries;
+
+} CXTUResourceUsage;
+
+/**
+  * \brief Return the memory usage of a translation unit.  This object
+  *  should be released with clang_disposeCXTUResourceUsage().
+  */
+CINDEX_LINKAGE CXTUResourceUsage clang_getCXTUResourceUsage(CXTranslationUnit TU);
+
+CINDEX_LINKAGE void clang_disposeCXTUResourceUsage(CXTUResourceUsage usage);
+
 /**
  * @}
  */
@@ -1101,10 +1183,12 @@ enum CXCursorKind {
   CXCursor_NamespaceAlias                = 33,
   /** \brief A C++ using directive. */
   CXCursor_UsingDirective                = 34,
-  /** \brief A using declaration. */
+  /** \brief A C++ using declaration. */
   CXCursor_UsingDeclaration              = 35,
+  /** \brief A C++ alias declaration */
+  CXCursor_TypeAliasDecl                 = 36,
   CXCursor_FirstDecl                     = CXCursor_UnexposedDecl,
-  CXCursor_LastDecl                      = CXCursor_UsingDeclaration,
+  CXCursor_LastDecl                      = CXCursor_TypeAliasDecl,
 
   /* References */
   CXCursor_FirstRef                      = 40, /* Decl references */
@@ -2181,6 +2265,13 @@ CINDEX_LINKAGE CXCursor clang_getCanonicalCursor(CXCursor);
  * declared 'static'.
  */
 CINDEX_LINKAGE unsigned clang_CXXMethod_isStatic(CXCursor C);
+
+/**
+ * \brief Determine if a C++ member function or member function template is
+ * explicitly declared 'virtual' or if it overrides a virtual method from
+ * one of the base classes.
+ */
+CINDEX_LINKAGE unsigned clang_CXXMethod_isVirtual(CXCursor C);
 
 /**
  * \brief Given a cursor that represents a template, determine

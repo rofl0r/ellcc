@@ -400,6 +400,12 @@ void TypePrinter::printFunctionProto(const FunctionProtoType *T,
   case CC_X86Pascal:
     S += " __attribute__((pascal))";
     break;
+  case CC_AAPCS:
+    S += " __attribute__((pcs(\"aapcs\")))";
+    break;
+  case CC_AAPCS_VFP:
+    S += " __attribute__((pcs(\"aapcs-vfp\")))";
+    break;
   }
   if (Info.getNoReturn())
     S += " __attribute__((noreturn))";
@@ -540,7 +546,7 @@ void TypePrinter::AppendScope(DeclContext *DC, std::string &Buffer) {
     Buffer += Spec->getIdentifier()->getName();
     Buffer += TemplateArgsStr;
   } else if (TagDecl *Tag = dyn_cast<TagDecl>(DC)) {
-    if (TypedefDecl *Typedef = Tag->getTypedefForAnonDecl())
+    if (TypedefNameDecl *Typedef = Tag->getTypedefNameForAnonDecl())
       Buffer += Typedef->getIdentifier()->getName();
     else if (Tag->getIdentifier())
       Buffer += Tag->getIdentifier()->getName();
@@ -563,7 +569,7 @@ void TypePrinter::printTag(TagDecl *D, std::string &InnerString) {
   // We don't print tags unless this is an elaborated type.
   // In C, we just assume every RecordType is an elaborated type.
   if (!(Policy.LangOpts.CPlusPlus || Policy.SuppressTagKeyword ||
-        D->getTypedefForAnonDecl())) {
+        D->getTypedefNameForAnonDecl())) {
     HasKindDecoration = true;
     Buffer += D->getKindName();
     Buffer += ' ';
@@ -577,7 +583,7 @@ void TypePrinter::printTag(TagDecl *D, std::string &InnerString) {
 
   if (const IdentifierInfo *II = D->getIdentifier())
     Buffer += II->getNameStart();
-  else if (TypedefDecl *Typedef = D->getTypedefForAnonDecl()) {
+  else if (TypedefNameDecl *Typedef = D->getTypedefNameForAnonDecl()) {
     assert(Typedef->getIdentifier() && "Typedef without identifier?");
     Buffer += Typedef->getIdentifier()->getNameStart();
   } else {
@@ -646,12 +652,12 @@ void TypePrinter::printTemplateTypeParm(const TemplateTypeParmType *T,
                                         std::string &S) { 
   if (!S.empty())    // Prefix the basic type, e.g. 'parmname X'.
     S = ' ' + S;
-  
-  if (!T->getName())
+
+  if (IdentifierInfo *Id = T->getIdentifier())
+    S = Id->getName().str() + S;
+  else
     S = "type-parameter-" + llvm::utostr_32(T->getDepth()) + '-' +
         llvm::utostr_32(T->getIndex()) + S;
-  else
-    S = T->getName()->getName().str() + S;  
 }
 
 void TypePrinter::printSubstTemplateTypeParm(const SubstTemplateTypeParmType *T, 
@@ -851,6 +857,16 @@ void TypePrinter::printAttributed(const AttributedType *T,
   case AttributedType::attr_stdcall: S += "stdcall"; break;
   case AttributedType::attr_thiscall: S += "thiscall"; break;
   case AttributedType::attr_pascal: S += "pascal"; break;
+  case AttributedType::attr_pcs: {
+   S += "pcs(";
+   QualType t = T->getEquivalentType();
+   while (!t->isFunctionType())
+     t = t->getPointeeType();
+   S += (t->getAs<FunctionType>()->getCallConv() == CC_AAPCS ?
+         "\"aapcs\"" : "\"aapcs-vfp\"");
+   S += ")";
+   break;
+  }
   }
   S += "))";
 }

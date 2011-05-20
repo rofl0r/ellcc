@@ -344,16 +344,30 @@ bool ConstStructBuilder::Build(InitListExpr *ILE) {
 
   unsigned FieldNo = 0;
   unsigned ElementNo = 0;
+  const FieldDecl *LastFD = 0;
+  bool IsMsStruct = RD->hasAttr<MsStructAttr>();
+  
   for (RecordDecl::field_iterator Field = RD->field_begin(),
        FieldEnd = RD->field_end(); Field != FieldEnd; ++Field, ++FieldNo) {
+    if (IsMsStruct) {
+      // Zero-length bitfields following non-bitfield members are
+      // ignored:
+      if (CGM.getContext().ZeroBitfieldFollowsNonBitfield((*Field), LastFD)) {
+        --FieldNo;
+        continue;
+      }
+      LastFD = (*Field);
+    }
     
     // If this is a union, skip all the fields that aren't being initialized.
     if (RD->isUnion() && ILE->getInitializedFieldInUnion() != *Field)
       continue;
 
     // Don't emit anonymous bitfields, they just affect layout.
-    if (Field->isBitField() && !Field->getIdentifier())
+    if (Field->isBitField() && !Field->getIdentifier()) {
+      LastFD = (*Field);
       continue;
+    }
 
     // Get the initializer.  A struct can include fields without initializers,
     // we just use explicit null values for them.
@@ -455,6 +469,10 @@ public:
 
   llvm::Constant *VisitParenExpr(ParenExpr *PE) {
     return Visit(PE->getSubExpr());
+  }
+
+  llvm::Constant *VisitGenericSelectionExpr(GenericSelectionExpr *GE) {
+    return Visit(GE->getResultExpr());
   }
 
   llvm::Constant *VisitCompoundLiteralExpr(CompoundLiteralExpr *E) {
@@ -663,8 +681,16 @@ public:
 
     // Initialize remaining array elements.
     // FIXME: This doesn't handle member pointers correctly!
+    llvm::Constant *fillC;
+    if (Expr *filler = ILE->getArrayFiller())
+      fillC = CGM.EmitConstantExpr(filler, filler->getType(), CGF);
+    else
+      fillC = llvm::Constant::getNullValue(ElemTy);
+    if (!fillC)
+      return 0;
+    RewriteType |= (fillC->getType() != ElemTy);
     for (; i < NumElements; ++i)
-      Elts.push_back(llvm::Constant::getNullValue(ElemTy));
+      Elts.push_back(fillC);
 
     if (RewriteType) {
       // FIXME: Try to avoid packing the array
@@ -979,12 +1005,29 @@ llvm::Constant *CodeGenModule::EmitConstantExpr(const Expr *E,
       llvm::SmallVector<llvm::Constant *, 4> Inits;
       unsigned NumElts = Result.Val.getVectorLength();
 
-      for (unsigned i = 0; i != NumElts; ++i) {
-        APValue &Elt = Result.Val.getVectorElt(i);
-        if (Elt.isInt())
-          Inits.push_back(llvm::ConstantInt::get(VMContext, Elt.getInt()));
-        else
-          Inits.push_back(llvm::ConstantFP::get(VMContext, Elt.getFloat()));
+      if (Context.getLangOptions().AltiVec &&
+          isa<CastExpr>(E) &&
+          cast<CastExpr>(E)->getCastKind() == CK_VectorSplat) {
+        // AltiVec vector initialization with a single literal
+        APValue &Elt = Result.Val.getVectorElt(0);
+
+        llvm::Constant* InitValue = Elt.isInt()
+          ? cast<llvm::Constant>
+              (llvm::ConstantInt::get(VMContext, Elt.getInt()))
+          : cast<llvm::Constant>
+              (llvm::ConstantFP::get(VMContext, Elt.getFloat()));
+
+        for (unsigned i = 0; i != NumElts; ++i)
+          Inits.push_back(InitValue);
+
+      } else {
+        for (unsigned i = 0; i != NumElts; ++i) {
+          APValue &Elt = Result.Val.getVectorElt(i);
+          if (Elt.isInt())
+            Inits.push_back(llvm::ConstantInt::get(VMContext, Elt.getInt()));
+          else
+            Inits.push_back(llvm::ConstantFP::get(VMContext, Elt.getFloat()));
+        }
       }
       return llvm::ConstantVector::get(Inits);
     }
@@ -1035,7 +1078,8 @@ static void
 FillInNullDataMemberPointers(CodeGenModule &CGM, QualType T,
                              std::vector<llvm::Constant *> &Elements,
                              uint64_t StartOffset) {
-  assert(StartOffset % 8 == 0 && "StartOffset not byte aligned!");
+  assert(StartOffset % CGM.getContext().getCharWidth() == 0 && 
+         "StartOffset not byte aligned!");
 
   if (CGM.getTypes().isZeroInitializable(T))
     return;
@@ -1094,8 +1138,8 @@ FillInNullDataMemberPointers(CodeGenModule &CGM, QualType T,
     assert(!T->getAs<MemberPointerType>()->getPointeeType()->isFunctionType() &&
            "Should only see pointers to data members here!");
   
-    uint64_t StartIndex = StartOffset / 8;
-    uint64_t EndIndex = StartIndex + CGM.getContext().getTypeSize(T) / 8;
+    CharUnits StartIndex = CGM.getContext().toCharUnitsFromBits(StartOffset);
+    CharUnits EndIndex = StartIndex + CGM.getContext().getTypeSizeInChars(T);
 
     // FIXME: hardcodes Itanium member pointer representation!
     llvm::Constant *NegativeOne =
@@ -1103,8 +1147,8 @@ FillInNullDataMemberPointers(CodeGenModule &CGM, QualType T,
                              -1ULL, /*isSigned*/true);
 
     // Fill in the null data member pointer.
-    for (uint64_t I = StartIndex; I != EndIndex; ++I)
-      Elements[I] = NegativeOne;
+    for (CharUnits I = StartIndex; I != EndIndex; ++I)
+      Elements[I.getQuantity()] = NegativeOne;
   }
 }
 

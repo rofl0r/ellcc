@@ -306,40 +306,120 @@ class CXXRecordDecl : public RecordDecl {
     /// one pure virtual function, (that can come from a base class).
     bool Abstract : 1;
 
-    /// HasTrivialConstructor - True when this class has a trivial constructor.
+    /// IsStandardLayout - True when this class has standard layout.
     ///
-    /// C++ [class.ctor]p5.  A constructor is trivial if it is an
-    /// implicitly-declared default constructor and if:
-    /// * its class has no virtual functions and no virtual base classes, and
-    /// * all the direct base classes of its class have trivial constructors, and
-    /// * for all the nonstatic data members of its class that are of class type
-    ///   (or array thereof), each such class has a trivial constructor.
-    bool HasTrivialConstructor : 1;
+    /// C++0x [class]p7.  A standard-layout class is a class that:
+    /// * has no non-static data members of type non-standard-layout class (or
+    ///   array of such types) or reference,
+    /// * has no virtual functions (10.3) and no virtual base classes (10.1),
+    /// * has the same access control (Clause 11) for all non-static data members
+    /// * has no non-standard-layout base classes,
+    /// * either has no non-static data members in the most derived class and at
+    ///   most one base class with non-static data members, or has no base
+    ///   classes with non-static data members, and
+    /// * has no base classes of the same type as the first non-static data
+    ///   member.
+    bool IsStandardLayout : 1;
+
+    /// HasNoNonEmptyBases - True when there are no non-empty base classes.
+    ///
+    /// This is a helper bit of state used to implement IsStandardLayout more
+    /// efficiently.
+    bool HasNoNonEmptyBases : 1;
+
+    /// HasPrivateFields - True when there are private non-static data members.
+    bool HasPrivateFields : 1;
+
+    /// HasProtectedFields - True when there are protected non-static data
+    /// members.
+    bool HasProtectedFields : 1;
+
+    /// HasPublicFields - True when there are private non-static data members.
+    bool HasPublicFields : 1;
+
+    /// \brief True if this class (or any subobject) has mutable fields.
+    bool HasMutableFields : 1;
+    
+    /// HasTrivialDefaultConstructor - True when, if this class has a default
+    /// constructor, this default constructor is trivial.
+    ///
+    /// C++0x [class.ctor]p5
+    ///    A default constructor is trivial if it is not user-provided and if
+    ///     -- its class has no virtual functions and no virtual base classes,
+    ///        and
+    ///     -- no non-static data member of its class has a
+    ///        brace-or-equal-initializer, and
+    ///     -- all the direct base classes of its class have trivial
+    ///        default constructors, and
+    ///     -- for all the nonstatic data members of its class that are of class
+    ///        type (or array thereof), each such class has a trivial
+    ///        default constructor.
+    bool HasTrivialDefaultConstructor : 1;
+
+    /// HasConstExprNonCopyMoveConstructor - True when this class has at least
+    /// one constexpr constructor which is neither the copy nor move
+    /// constructor.
+    bool HasConstExprNonCopyMoveConstructor : 1;
 
     /// HasTrivialCopyConstructor - True when this class has a trivial copy
     /// constructor.
     ///
-    /// C++ [class.copy]p6.  A copy constructor for class X is trivial
-    /// if it is implicitly declared and if
-    /// * class X has no virtual functions and no virtual base classes, and
-    /// * each direct base class of X has a trivial copy constructor, and
-    /// * for all the nonstatic data members of X that are of class type (or
-    ///   array thereof), each such class type has a trivial copy constructor;
-    /// otherwise the copy constructor is non-trivial.
+    /// C++0x [class.copy]p13:
+    ///   A copy/move constructor for class X is trivial if it is neither
+    ///   user-provided and if
+    ///    -- class X has no virtual functions and no virtual base classes, and
+    ///    -- the constructor selected to copy/move each direct base class
+    ///       subobject is trivial, and
+    ///    -- for each non-static data member of X that is of class type (or an
+    ///       array thereof), the constructor selected to copy/move that member
+    ///       is trivial;
+    ///   otherwise the copy/move constructor is non-trivial.
     bool HasTrivialCopyConstructor : 1;
+
+    /// HasTrivialMoveConstructor - True when this class has a trivial move
+    /// constructor.
+    ///
+    /// C++0x [class.copy]p13:
+    ///   A copy/move constructor for class X is trivial if it is neither
+    ///   user-provided and if
+    ///    -- class X has no virtual functions and no virtual base classes, and
+    ///    -- the constructor selected to copy/move each direct base class
+    ///       subobject is trivial, and
+    ///    -- for each non-static data member of X that is of class type (or an
+    ///       array thereof), the constructor selected to copy/move that member
+    ///       is trivial;
+    ///   otherwise the copy/move constructor is non-trivial.
+    bool HasTrivialMoveConstructor : 1;
 
     /// HasTrivialCopyAssignment - True when this class has a trivial copy
     /// assignment operator.
     ///
-    /// C++ [class.copy]p11.  A copy assignment operator for class X is
-    /// trivial if it is implicitly declared and if
-    /// * class X has no virtual functions and no virtual base classes, and
-    /// * each direct base class of X has a trivial copy assignment operator, and
-    /// * for all the nonstatic data members of X that are of class type (or
-    ///   array thereof), each such class type has a trivial copy assignment
-    ///   operator;
-    /// otherwise the copy assignment operator is non-trivial.
+    /// C++0x [class.copy]p27:
+    ///   A copy/move assignment operator for class X is trivial if it is
+    ///   neither user-provided nor deleted and if
+    ///    -- class X has no virtual functions and no virtual base classes, and
+    ///    -- the assignment operator selected to copy/move each direct base
+    ///       class subobject is trivial, and
+    ///    -- for each non-static data member of X that is of class type (or an
+    ///       array thereof), the assignment operator selected to copy/move
+    ///       that member is trivial;
+    ///   otherwise the copy/move assignment operator is non-trivial.
     bool HasTrivialCopyAssignment : 1;
+
+    /// HasTrivialMoveAssignment - True when this class has a trivial move
+    /// assignment operator.
+    ///
+    /// C++0x [class.copy]p27:
+    ///   A copy/move assignment operator for class X is trivial if it is
+    ///   neither user-provided nor deleted and if
+    ///    -- class X has no virtual functions and no virtual base classes, and
+    ///    -- the assignment operator selected to copy/move each direct base
+    ///       class subobject is trivial, and
+    ///    -- for each non-static data member of X that is of class type (or an
+    ///       array thereof), the assignment operator selected to copy/move
+    ///       that member is trivial;
+    ///   otherwise the copy/move assignment operator is non-trivial.
+    bool HasTrivialMoveAssignment : 1;
 
     /// HasTrivialDestructor - True when this class has a trivial destructor.
     ///
@@ -351,12 +431,19 @@ class CXXRecordDecl : public RecordDecl {
     ///   type (or array thereof), each such class has a trivial destructor.
     bool HasTrivialDestructor : 1;
 
+    /// HasNonLiteralTypeFieldsOrBases - True when this class contains at least
+    /// one non-static data member or base class of non literal type.
+    bool HasNonLiteralTypeFieldsOrBases : 1;
+
     /// ComputedVisibleConversions - True when visible conversion functions are
     /// already computed and are available.
     bool ComputedVisibleConversions : 1;
 
-    /// \brief Whether we have already declared the default constructor or 
-    /// do not need to have one declared.
+    /// \brief Whether we have a C++0x user-provided default constructor (not
+    /// explicitly deleted or defaulted).
+    bool UserProvidedDefaultConstructor : 1;
+
+    /// \brief Whether we have already declared the default constructor.
     bool DeclaredDefaultConstructor : 1;
 
     /// \brief Whether we have already declared the copy constructor.
@@ -591,14 +678,21 @@ public:
     return data().FirstFriend != 0;
   }
 
-  /// \brief Determine whether this class has had its default constructor 
-  /// declared implicitly or does not need one declared implicitly.
+  /// \brief Determine if we need to declare a default constructor for
+  /// this class.
   ///
   /// This value is used for lazy creation of default constructors.
+  bool needsImplicitDefaultConstructor() const {
+    return !data().UserDeclaredConstructor && 
+           !data().DeclaredDefaultConstructor;
+  }
+
+  /// hasDeclaredDefaultConstructor - Whether this class's default constructor
+  /// has been declared (either explicitly or implicitly).
   bool hasDeclaredDefaultConstructor() const {
     return data().DeclaredDefaultConstructor;
   }
-  
+
   /// hasConstCopyConstructor - Determines whether this class has a
   /// copy constructor that accepts a const-qualified argument.
   bool hasConstCopyConstructor(const ASTContext &Context) const;
@@ -624,6 +718,12 @@ public:
   /// will not be implicitly declared.
   bool hasUserDeclaredConstructor() const {
     return data().UserDeclaredConstructor;
+  }
+
+  /// hasUserProvidedDefaultconstructor - Whether this class has a
+  /// user-provided default constructor per C++0x.
+  bool hasUserProvidedDefaultConstructor() const {
+    return data().UserProvidedDefaultConstructor;
   }
 
   /// hasUserDeclaredCopyConstructor - Whether this class has a
@@ -721,25 +821,75 @@ public:
   /// which means that the class contains or inherits a pure virtual function.
   bool isAbstract() const { return data().Abstract; }
 
-  // hasTrivialConstructor - Whether this class has a trivial constructor
-  // (C++ [class.ctor]p5)
-  bool hasTrivialConstructor() const { return data().HasTrivialConstructor; }
+  /// isStandardLayout - Whether this class has standard layout
+  /// (C++ [class]p7)
+  bool isStandardLayout() const { return data().IsStandardLayout; }
+
+  /// \brief Whether this class, or any of its class subobjects, contains a
+  /// mutable field.
+  bool hasMutableFields() const { return data().HasMutableFields; }
+  
+  // hasTrivialDefaultConstructor - Whether this class has a trivial default
+  // constructor
+  // (C++0x [class.ctor]p5)
+  bool hasTrivialDefaultConstructor() const {
+    return data().HasTrivialDefaultConstructor &&
+           (!data().UserDeclaredConstructor ||
+             data().DeclaredDefaultConstructor);
+  }
+
+  // hasConstExprNonCopyMoveConstructor - Whether this class has at least one
+  // constexpr constructor other than the copy or move constructors
+  bool hasConstExprNonCopyMoveConstructor() const {
+    return data().HasConstExprNonCopyMoveConstructor;
+  }
 
   // hasTrivialCopyConstructor - Whether this class has a trivial copy
-  // constructor (C++ [class.copy]p6)
+  // constructor (C++ [class.copy]p6, C++0x [class.copy]p13)
   bool hasTrivialCopyConstructor() const {
     return data().HasTrivialCopyConstructor;
   }
 
+  // hasTrivialMoveConstructor - Whether this class has a trivial move
+  // constructor (C++0x [class.copy]p13)
+  bool hasTrivialMoveConstructor() const {
+    return data().HasTrivialMoveConstructor;
+  }
+
   // hasTrivialCopyAssignment - Whether this class has a trivial copy
-  // assignment operator (C++ [class.copy]p11)
+  // assignment operator (C++ [class.copy]p11, C++0x [class.copy]p27)
   bool hasTrivialCopyAssignment() const {
     return data().HasTrivialCopyAssignment;
+  }
+
+  // hasTrivialMoveAssignment - Whether this class has a trivial move
+  // assignment operator (C++0x [class.copy]p27)
+  bool hasTrivialMoveAssignment() const {
+    return data().HasTrivialMoveAssignment;
   }
 
   // hasTrivialDestructor - Whether this class has a trivial destructor
   // (C++ [class.dtor]p3)
   bool hasTrivialDestructor() const { return data().HasTrivialDestructor; }
+
+  // hasNonLiteralTypeFieldsOrBases - Whether this class has a non-literal type
+  // non-static data member or base class.
+  bool hasNonLiteralTypeFieldsOrBases() const {
+    return data().HasNonLiteralTypeFieldsOrBases;
+  }
+
+  // isTriviallyCopyable - Whether this class is considered trivially copyable
+  // (C++0x [class]p6).
+  bool isTriviallyCopyable() const;
+
+  // isTrivial - Whether this class is considered trivial
+  //
+  // C++0x [class]p6
+  //    A trivial class is a class that has a trivial default constructor and
+  //    is trivially copiable.
+  bool isTrivial() const {
+    return isTriviallyCopyable() && hasTrivialDefaultConstructor();
+  }
 
   /// \brief If this record is an instantiation of a member class,
   /// retrieves the member class from which it was instantiated.
@@ -1081,6 +1231,12 @@ public:
   }
   CXXMethodDecl *getCanonicalDecl() {
     return cast<CXXMethodDecl>(FunctionDecl::getCanonicalDecl());
+  }
+
+  /// isUserProvided - True if it is either an implicit constructor or
+  /// if it was defaulted or deleted on first declaration.
+  bool isUserProvided() const {
+    return !(isDeleted() || getCanonicalDecl()->isDefaulted());
   }
   
   ///
@@ -1501,6 +1657,22 @@ public:
   void setCtorInitializers(CXXCtorInitializer ** initializers) {
     CtorInitializers = initializers;
   }
+
+  /// isDelegatingConstructor - Whether this constructor is a
+  /// delegating constructor
+  bool isDelegatingConstructor() const {
+    return (getNumCtorInitializers() == 1) &&
+      CtorInitializers[0]->isDelegatingInitializer();
+  }
+
+  /// getTargetConstructor - When this constructor delegates to
+  /// another, retrieve the target
+  CXXConstructorDecl *getTargetConstructor() const {
+    assert(isDelegatingConstructor() &&
+           "A non-delegating constructor has no target");
+    return CtorInitializers[0]->getTargetConstructor();
+  }
+
   /// isDefaultConstructor - Whether this constructor is a default
   /// constructor (C++ [class.ctor]p5), which can be used to
   /// default-initialize a class of this type.
@@ -1537,8 +1709,11 @@ public:
 
   /// \brief Determine whether this constructor is a move constructor
   /// (C++0x [class.copy]p3), which can be used to move values of the class.
-  bool isMoveConstructor() const;
-  
+  bool isMoveConstructor() const {
+    unsigned TypeQuals = 0;
+    return isMoveConstructor(TypeQuals);
+  }
+
   /// \brief Determine whether this is a copy or move constructor.
   ///
   /// \param TypeQuals Will be set to the type qualifiers on the reference
@@ -1566,6 +1741,13 @@ public:
 
   /// \brief Set the constructor that this inheriting constructor is based on.
   void setInheritedConstructor(const CXXConstructorDecl *BaseCtor);
+
+  const CXXConstructorDecl *getCanonicalDecl() const {
+    return cast<CXXConstructorDecl>(FunctionDecl::getCanonicalDecl());
+  }
+  CXXConstructorDecl *getCanonicalDecl() {
+    return cast<CXXConstructorDecl>(FunctionDecl::getCanonicalDecl());
+  }
   
   // Implement isa/cast/dyncast/etc.
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }

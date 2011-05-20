@@ -36,6 +36,8 @@ static unsigned ClangCallConvToLLVMCallConv(CallingConv CC) {
   case CC_X86StdCall: return llvm::CallingConv::X86_StdCall;
   case CC_X86FastCall: return llvm::CallingConv::X86_FastCall;
   case CC_X86ThisCall: return llvm::CallingConv::X86_ThisCall;
+  case CC_AAPCS: return llvm::CallingConv::ARM_AAPCS;
+  case CC_AAPCS_VFP: return llvm::CallingConv::ARM_AAPCS_VFP;
   // TODO: add support for CC_X86Pascal to llvm
   }
 }
@@ -103,6 +105,9 @@ static CallingConv getCallingConventionForDecl(const Decl *D) {
 
   if (D->hasAttr<PascalAttr>())
     return CC_X86Pascal;
+
+  if (PcsAttr *PCS = D->getAttr<PcsAttr>())
+    return (PCS->getPCS() == PcsAttr::AAPCS ? CC_AAPCS : CC_AAPCS_VFP);
 
   return CC_C;
 }
@@ -188,6 +193,7 @@ const CGFunctionInfo &CodeGenTypes::getFunctionInfo(const ObjCMethodDecl *MD) {
                          ArgTys,
                          FunctionType::ExtInfo(
                              /*NoReturn*/ false,
+                             /*HasRegParm*/ false,
                              /*RegParm*/ 0,
                              getCallingConventionForDecl(MD)));
 }
@@ -212,7 +218,7 @@ const CGFunctionInfo &CodeGenTypes::getFunctionInfo(QualType ResTy,
   llvm::SmallVector<CanQualType, 16> ArgTys;
   for (CallArgList::const_iterator i = Args.begin(), e = Args.end();
        i != e; ++i)
-    ArgTys.push_back(Context.getCanonicalParamType(i->second));
+    ArgTys.push_back(Context.getCanonicalParamType(i->Ty));
   return getFunctionInfo(GetReturnType(ResTy), ArgTys, Info);
 }
 
@@ -255,7 +261,7 @@ const CGFunctionInfo &CodeGenTypes::getFunctionInfo(CanQualType ResTy,
     return *FI;
 
   // Construct the function info.
-  FI = new CGFunctionInfo(CC, Info.getNoReturn(), Info.getRegParm(), ResTy,
+  FI = new CGFunctionInfo(CC, Info.getNoReturn(), Info.getHasRegParm(), Info.getRegParm(), ResTy,
                           ArgTys.data(), ArgTys.size());
   FunctionInfos.InsertNode(FI, InsertPos);
 
@@ -284,13 +290,13 @@ const CGFunctionInfo &CodeGenTypes::getFunctionInfo(CanQualType ResTy,
 }
 
 CGFunctionInfo::CGFunctionInfo(unsigned _CallingConvention,
-                               bool _NoReturn, unsigned _RegParm,
+                               bool _NoReturn, bool _HasRegParm, unsigned _RegParm,
                                CanQualType ResTy,
                                const CanQualType *ArgTys,
                                unsigned NumArgTys)
   : CallingConvention(_CallingConvention),
     EffectiveCallingConvention(_CallingConvention),
-    NoReturn(_NoReturn), RegParm(_RegParm)
+    NoReturn(_NoReturn), HasRegParm(_HasRegParm), RegParm(_RegParm)
 {
   NumArgs = NumArgTys;
 
@@ -303,10 +309,10 @@ CGFunctionInfo::CGFunctionInfo(unsigned _CallingConvention,
 
 /***/
 
-void CodeGenTypes::GetExpandedTypes(QualType Ty,
-                                    std::vector<const llvm::Type*> &ArgTys,
-                                    bool IsRecursive) {
-  const RecordType *RT = Ty->getAsStructureType();
+void CodeGenTypes::GetExpandedTypes(QualType type,
+                     llvm::SmallVectorImpl<const llvm::Type*> &expandedTypes,
+                                    bool isRecursive) {
+  const RecordType *RT = type->getAsStructureType();
   assert(RT && "Can only expand structure types.");
   const RecordDecl *RD = RT->getDecl();
   assert(!RD->hasFlexibleArrayMember() &&
@@ -318,11 +324,11 @@ void CodeGenTypes::GetExpandedTypes(QualType Ty,
     assert(!FD->isBitField() &&
            "Cannot expand structure with bit-field members.");
 
-    QualType FT = FD->getType();
-    if (CodeGenFunction::hasAggregateLLVMType(FT))
-      GetExpandedTypes(FT, ArgTys, IsRecursive);
+    QualType fieldType = FD->getType();
+    if (fieldType->isRecordType())
+      GetExpandedTypes(fieldType, expandedTypes, isRecursive);
     else
-      ArgTys.push_back(ConvertType(FT, IsRecursive));
+      expandedTypes.push_back(ConvertType(fieldType, isRecursive));
   }
 }
 
@@ -507,6 +513,29 @@ static llvm::Value *CreateCoercedLoad(llvm::Value *SrcPtr,
   return CGF.Builder.CreateLoad(Tmp);
 }
 
+// Function to store a first-class aggregate into memory.  We prefer to
+// store the elements rather than the aggregate to be more friendly to
+// fast-isel.
+// FIXME: Do we need to recurse here?
+static void BuildAggStore(CodeGenFunction &CGF, llvm::Value *Val,
+                          llvm::Value *DestPtr, bool DestIsVolatile,
+                          bool LowAlignment) {
+  // Prefer scalar stores to first-class aggregate stores.
+  if (const llvm::StructType *STy =
+        dyn_cast<llvm::StructType>(Val->getType())) {
+    for (unsigned i = 0, e = STy->getNumElements(); i != e; ++i) {
+      llvm::Value *EltPtr = CGF.Builder.CreateConstGEP2_32(DestPtr, 0, i);
+      llvm::Value *Elt = CGF.Builder.CreateExtractValue(Val, i);
+      llvm::StoreInst *SI = CGF.Builder.CreateStore(Elt, EltPtr,
+                                                    DestIsVolatile);
+      if (LowAlignment)
+        SI->setAlignment(1);
+    }
+  } else {
+    CGF.Builder.CreateStore(Val, DestPtr, DestIsVolatile);
+  }
+}
+
 /// CreateCoercedStore - Create a store to \arg DstPtr from \arg Src,
 /// where the source and destination may have different types.
 ///
@@ -547,7 +576,7 @@ static void CreateCoercedStore(llvm::Value *Src,
     llvm::Value *Casted =
       CGF.Builder.CreateBitCast(DstPtr, llvm::PointerType::getUnqual(SrcTy));
     // FIXME: Use better alignment / avoid requiring aligned store.
-    CGF.Builder.CreateStore(Src, Casted, DstIsVolatile)->setAlignment(1);
+    BuildAggStore(CGF, Src, Casted, DstIsVolatile, true);
   } else {
     // Otherwise do coercion through memory. This is stupid, but
     // simple.
@@ -606,49 +635,49 @@ const llvm::FunctionType *CodeGenTypes::GetFunctionType(GlobalDecl GD) {
 }
 
 const llvm::FunctionType *
-CodeGenTypes::GetFunctionType(const CGFunctionInfo &FI, bool IsVariadic,
-                              bool IsRecursive) {
-  std::vector<const llvm::Type*> ArgTys;
+CodeGenTypes::GetFunctionType(const CGFunctionInfo &FI, bool isVariadic,
+                              bool isRecursive) {
+  llvm::SmallVector<const llvm::Type*, 8> argTypes;
+  const llvm::Type *resultType = 0;
 
-  const llvm::Type *ResultType = 0;
-
-  QualType RetTy = FI.getReturnType();
-  const ABIArgInfo &RetAI = FI.getReturnInfo();
-  switch (RetAI.getKind()) {
+  const ABIArgInfo &retAI = FI.getReturnInfo();
+  switch (retAI.getKind()) {
   case ABIArgInfo::Expand:
-    assert(0 && "Invalid ABI kind for return argument");
+    llvm_unreachable("Invalid ABI kind for return argument");
 
   case ABIArgInfo::Extend:
   case ABIArgInfo::Direct:
-    ResultType = RetAI.getCoerceToType();
+    resultType = retAI.getCoerceToType();
     break;
 
   case ABIArgInfo::Indirect: {
-    assert(!RetAI.getIndirectAlign() && "Align unused on indirect return.");
-    ResultType = llvm::Type::getVoidTy(getLLVMContext());
-    const llvm::Type *STy = ConvertType(RetTy, IsRecursive);
-    unsigned AS = Context.getTargetAddressSpace(RetTy);
-    ArgTys.push_back(llvm::PointerType::get(STy, AS));
+    assert(!retAI.getIndirectAlign() && "Align unused on indirect return.");
+    resultType = llvm::Type::getVoidTy(getLLVMContext());
+
+    QualType ret = FI.getReturnType();
+    const llvm::Type *ty = ConvertType(ret, isRecursive);
+    unsigned addressSpace = Context.getTargetAddressSpace(ret);
+    argTypes.push_back(llvm::PointerType::get(ty, addressSpace));
     break;
   }
 
   case ABIArgInfo::Ignore:
-    ResultType = llvm::Type::getVoidTy(getLLVMContext());
+    resultType = llvm::Type::getVoidTy(getLLVMContext());
     break;
   }
 
   for (CGFunctionInfo::const_arg_iterator it = FI.arg_begin(),
          ie = FI.arg_end(); it != ie; ++it) {
-    const ABIArgInfo &AI = it->info;
+    const ABIArgInfo &argAI = it->info;
 
-    switch (AI.getKind()) {
+    switch (argAI.getKind()) {
     case ABIArgInfo::Ignore:
       break;
 
     case ABIArgInfo::Indirect: {
       // indirect arguments are always on the stack, which is addr space #0.
-      const llvm::Type *LTy = ConvertTypeForMem(it->type, IsRecursive);
-      ArgTys.push_back(llvm::PointerType::getUnqual(LTy));
+      const llvm::Type *LTy = ConvertTypeForMem(it->type, isRecursive);
+      argTypes.push_back(LTy->getPointerTo());
       break;
     }
 
@@ -657,23 +686,23 @@ CodeGenTypes::GetFunctionType(const CGFunctionInfo &FI, bool IsVariadic,
       // If the coerce-to type is a first class aggregate, flatten it.  Either
       // way is semantically identical, but fast-isel and the optimizer
       // generally likes scalar values better than FCAs.
-      const llvm::Type *ArgTy = AI.getCoerceToType();
-      if (const llvm::StructType *STy = dyn_cast<llvm::StructType>(ArgTy)) {
-        for (unsigned i = 0, e = STy->getNumElements(); i != e; ++i)
-          ArgTys.push_back(STy->getElementType(i));
+      const llvm::Type *argType = argAI.getCoerceToType();
+      if (const llvm::StructType *st = dyn_cast<llvm::StructType>(argType)) {
+        for (unsigned i = 0, e = st->getNumElements(); i != e; ++i)
+          argTypes.push_back(st->getElementType(i));
       } else {
-        ArgTys.push_back(ArgTy);
+        argTypes.push_back(argType);
       }
       break;
     }
 
     case ABIArgInfo::Expand:
-      GetExpandedTypes(it->type, ArgTys, IsRecursive);
+      GetExpandedTypes(it->type, argTypes, isRecursive);
       break;
     }
   }
 
-  return llvm::FunctionType::get(ResultType, ArgTys, IsVariadic);
+  return llvm::FunctionType::get(resultType, argTypes, isVariadic);
 }
 
 const llvm::Type *CodeGenTypes::GetFunctionTypeForVTable(GlobalDecl GD) {
@@ -762,8 +791,10 @@ void CodeGenModule::ConstructAttributeList(const CGFunctionInfo &FI,
     PAL.push_back(llvm::AttributeWithIndex::get(0, RetAttrs));
 
   // FIXME: RegParm should be reduced in case of global register variable.
-  signed RegParm = FI.getRegParm();
-  if (!RegParm)
+  signed RegParm;
+  if (FI.getHasRegParm())
+    RegParm = FI.getRegParm();
+  else
     RegParm = CodeGenOpts.NumRegisterParameters;
 
   unsigned PointerWidth = getContext().Target.getPointerWidth(0);
@@ -814,12 +845,12 @@ void CodeGenModule::ConstructAttributeList(const CGFunctionInfo &FI,
       continue;
 
     case ABIArgInfo::Expand: {
-      std::vector<const llvm::Type*> Tys;
+      llvm::SmallVector<const llvm::Type*, 8> types;
       // FIXME: This is rather inefficient. Do we ever actually need to do
       // anything here? The result should be just reconstructed on the other
       // side, so extension should be a non-issue.
-      getTypes().GetExpandedTypes(ParamType, Tys, false);
-      Index += Tys.size();
+      getTypes().GetExpandedTypes(ParamType, types, false);
+      Index += types.size();
       continue;
     }
     }
@@ -1209,18 +1240,18 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
   for (CallArgList::const_iterator I = CallArgs.begin(), E = CallArgs.end();
        I != E; ++I, ++info_it) {
     const ABIArgInfo &ArgInfo = info_it->info;
-    RValue RV = I->first;
+    RValue RV = I->RV;
 
     unsigned Alignment =
-      getContext().getTypeAlignInChars(I->second).getQuantity();
+      getContext().getTypeAlignInChars(I->Ty).getQuantity();
     switch (ArgInfo.getKind()) {
     case ABIArgInfo::Indirect: {
       if (RV.isScalar() || RV.isComplex()) {
         // Make a temporary alloca to pass the argument.
-        Args.push_back(CreateMemTemp(I->second));
+        Args.push_back(CreateMemTemp(I->Ty));
         if (RV.isScalar())
           EmitStoreOfScalar(RV.getScalarVal(), Args.back(), false,
-                            Alignment, I->second);
+                            Alignment, I->Ty);
         else
           StoreComplexToAddr(RV.getComplexVal(), Args.back(), false);
       } else {
@@ -1247,11 +1278,10 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
       // FIXME: Avoid the conversion through memory if possible.
       llvm::Value *SrcPtr;
       if (RV.isScalar()) {
-        SrcPtr = CreateMemTemp(I->second, "coerce");
-        EmitStoreOfScalar(RV.getScalarVal(), SrcPtr, false, Alignment,
-                          I->second);
+        SrcPtr = CreateMemTemp(I->Ty, "coerce");
+        EmitStoreOfScalar(RV.getScalarVal(), SrcPtr, false, Alignment, I->Ty);
       } else if (RV.isComplex()) {
-        SrcPtr = CreateMemTemp(I->second, "coerce");
+        SrcPtr = CreateMemTemp(I->Ty, "coerce");
         StoreComplexToAddr(RV.getComplexVal(), SrcPtr, false);
       } else
         SrcPtr = RV.getAggregateAddr();
@@ -1289,7 +1319,7 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
     }
 
     case ABIArgInfo::Expand:
-      ExpandTypeToArgs(I->second, RV, Args);
+      ExpandTypeToArgs(I->Ty, RV, Args);
       break;
     }
   }
@@ -1402,7 +1432,7 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
           DestPtr = CreateMemTemp(RetTy, "agg.tmp");
           DestIsVolatile = false;
         }
-        Builder.CreateStore(CI, DestPtr, DestIsVolatile);
+        BuildAggStore(*this, CI, DestPtr, DestIsVolatile, false);
         return RValue::getAggregate(DestPtr);
       }
       return RValue::get(CI);

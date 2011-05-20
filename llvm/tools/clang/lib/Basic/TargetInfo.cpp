@@ -70,6 +70,10 @@ TargetInfo::TargetInfo(const std::string &T) : Triple(T) {
 
   // Default to an empty address space map.
   AddrSpaceMap = &DefaultAddrSpaceMap;
+
+  // Default to an unknown platform name.
+  PlatformName = "unknown";
+  PlatformMinVersion = VersionTuple();
 }
 
 // Out of line virtual dtor for TargetInfo.
@@ -428,7 +432,7 @@ bool TargetInfo::validateInputConstraint(ConstraintInfo *OutputConstraints,
     case ',': // multiple alternative constraint.  Ignore comma.
       break;
     case '?': // Disparage slightly code.
-    case '!': // Disparage severly.
+    case '!': // Disparage severely.
       break;  // Pass them.
     }
 

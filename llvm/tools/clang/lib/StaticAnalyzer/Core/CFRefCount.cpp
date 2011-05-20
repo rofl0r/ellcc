@@ -16,6 +16,7 @@
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
 #include "clang/AST/DeclObjC.h"
+#include "clang/AST/DeclCXX.h"
 #include "clang/AST/StmtVisitor.h"
 #include "clang/Basic/LangOptions.h"
 #include "clang/Basic/SourceManager.h"
@@ -929,6 +930,13 @@ RetainSummary* RetainSummaryManager::getSummary(const FunctionDecl* FD) {
       S = getPersistentStopSummary();
       break;
     }
+    // For C++ methods, generate an implicit "stop" summary as well.  We
+    // can relax this once we have a clear policy for C++ methods and
+    // ownership attributes.
+    if (isa<CXXMethodDecl>(FD)) {
+      S = getPersistentStopSummary();
+      break;
+    }
 
     // [PR 3337] Use 'getAs<FunctionType>' to strip away any typedefs on the
     // function's type.
@@ -1200,7 +1208,7 @@ RetainSummaryManager::updateSummaryFromAnnotations(RetainSummary &Summ,
   // Effects on the parameters.
   unsigned parm_idx = 0;
   for (FunctionDecl::param_const_iterator pi = FD->param_begin(), 
-       pe = FD->param_end(); pi != pe; ++pi) {
+         pe = FD->param_end(); pi != pe; ++pi, ++parm_idx) {
     const ParmVarDecl *pd = *pi;
     if (pd->getAttr<NSConsumedAttr>()) {
       if (!GCEnabled)
@@ -2430,7 +2438,7 @@ CFRefLeakReport::CFRefLeakReport(CFRefBug& D, const CFRefCount &tf,
                                  SymbolRef sym, ExprEngine& Eng)
 : CFRefReport(D, tf, n, sym) {
 
-  // Most bug reports are cached at the location where they occured.
+  // Most bug reports are cached at the location where they occurred.
   // With leaks, we want to unique them by the location where they were
   // allocated, and only report a single path.  To do this, we need to find
   // the allocation site of a piece of tracked memory, which we do via a
@@ -2493,6 +2501,23 @@ static QualType GetReturnType(const Expr* RetE, ASTContext& Ctx) {
   return RetTy;
 }
 
+
+// HACK: Symbols that have ref-count state that are referenced directly
+//  (not as structure or array elements, or via bindings) by an argument
+//  should not have their ref-count state stripped after we have
+//  done an invalidation pass.
+//
+// FIXME: This is a global to currently share between CFRefCount and
+// RetainReleaseChecker.  Eventually all functionality in CFRefCount should
+// be migrated to RetainReleaseChecker, and we can make this a non-global.
+llvm::DenseSet<SymbolRef> WhitelistedSymbols;
+namespace {
+struct ResetWhiteList {
+  ResetWhiteList() {}
+  ~ResetWhiteList() { WhitelistedSymbols.clear(); } 
+};
+}
+
 void CFRefCount::evalSummary(ExplodedNodeSet& Dst,
                              ExprEngine& Eng,
                              StmtNodeBuilder& Builder,
@@ -2509,12 +2534,9 @@ void CFRefCount::evalSummary(ExplodedNodeSet& Dst,
   SymbolRef ErrorSym = 0;
 
   llvm::SmallVector<const MemRegion*, 10> RegionsToInvalidate;
-
-  // HACK: Symbols that have ref-count state that are referenced directly
-  //  (not as structure or array elements, or via bindings) by an argument
-  //  should not have their ref-count state stripped after we have
-  //  done an invalidation pass.
-  llvm::DenseSet<SymbolRef> WhitelistedSymbols;
+  
+  // Use RAII to make sure the whitelist is properly cleared.
+  ResetWhiteList resetWhiteList;
 
   // Invalidate all instance variables of the receiver of a message.
   // FIXME: We should be able to do better with inter-procedural analysis.
@@ -2526,6 +2548,14 @@ void CFRefCount::evalSummary(ExplodedNodeSet& Dst,
     }
     if (const MemRegion *region = V.getAsRegion())
       RegionsToInvalidate.push_back(region);
+  }
+  
+  // Invalidate all instance variables for the callee of a C++ method call.
+  // FIXME: We should be able to do better with inter-procedural analysis.
+  // FIXME: we can probably do better for const versus non-const methods.
+  if (callOrMsg.isCXXCall()) {
+    if (const MemRegion *callee = callOrMsg.getCXXCallee().getAsRegion())
+      RegionsToInvalidate.push_back(callee);
   }
   
   for (unsigned idx = 0, e = callOrMsg.getNumArgs(); idx != e; ++idx) {
@@ -2615,20 +2645,12 @@ void CFRefCount::evalSummary(ExplodedNodeSet& Dst,
 
   // NOTE: Even if RegionsToInvalidate is empty, we must still invalidate
   //  global variables.
+  // NOTE: RetainReleaseChecker handles the actual invalidation of symbols.
   state = state->invalidateRegions(RegionsToInvalidate.data(),
                                    RegionsToInvalidate.data() +
                                    RegionsToInvalidate.size(),
                                    Ex, Count, &IS,
                                    /* invalidateGlobals = */ true);
-
-  for (StoreManager::InvalidatedSymbols::iterator I = IS.begin(),
-       E = IS.end(); I!=E; ++I) {
-    SymbolRef sym = *I;
-    if (WhitelistedSymbols.count(sym))
-      continue;
-    // Remove any existing reference-count binding.
-    state = state->remove<RefBindings>(*I);
-  }
 
   // Evaluate the effect on the message receiver.
   if (!ErrorRange.isValid() && Receiver) {
@@ -2680,11 +2702,14 @@ void CFRefCount::evalSummary(ExplodedNodeSet& Dst,
       // FIXME: We eventually should handle structs and other compound types
       // that are returned by value.
 
-      QualType T = callOrMsg.getResultType(Eng.getContext());
-      if (Loc::isLocType(T) || (T->isIntegerType() && T->isScalarType())) {
+      // Use the result type from callOrMsg as it automatically adjusts
+      // for methods/functions that return references.
+      QualType resultTy = callOrMsg.getResultType(Eng.getContext());
+      if (Loc::isLocType(resultTy) || 
+            (resultTy->isIntegerType() && resultTy->isScalarType())) {
         unsigned Count = Builder.getCurrentBlockCount();
         SValBuilder &svalBuilder = Eng.getSValBuilder();
-        SVal X = svalBuilder.getConjuredSymbolVal(NULL, Ex, T, Count);
+        SVal X = svalBuilder.getConjuredSymbolVal(NULL, Ex, resultTy, Count);
         state = state->BindExpr(Ex, X, false);
       }
 
@@ -2711,9 +2736,12 @@ void CFRefCount::evalSummary(ExplodedNodeSet& Dst,
       unsigned Count = Builder.getCurrentBlockCount();
       SValBuilder &svalBuilder = Eng.getSValBuilder();
       SymbolRef Sym = svalBuilder.getConjuredSymbol(Ex, Count);
-      QualType RetT = GetReturnType(Ex, svalBuilder.getContext());
+
+      // Use the result type from callOrMsg as it automatically adjusts
+      // for methods/functions that return references.      
+      QualType resultTy = callOrMsg.getResultType(Eng.getContext());
       state = state->set<RefBindings>(Sym, RefVal::makeOwned(RE.getObjKind(),
-                                                            RetT));
+                                                            resultTy));
       state = state->BindExpr(Ex, svalBuilder.makeLoc(Sym), false);
 
       // FIXME: Add a flag to the checker where allocations are assumed to
@@ -2766,11 +2794,17 @@ void CFRefCount::evalCall(ExplodedNodeSet& Dst,
   if (dyn_cast_or_null<BlockDataRegion>(L.getAsRegion())) {
     Summ = Summaries.getPersistentStopSummary();
   }
-  else {
-    const FunctionDecl* FD = L.getAsFunctionDecl();
-    Summ = !FD ? Summaries.getDefaultSummary() :
-                 Summaries.getSummary(FD);
+  else if (const FunctionDecl* FD = L.getAsFunctionDecl()) {
+    Summ = Summaries.getSummary(FD);
   }
+  else if (const CXXMemberCallExpr *me = dyn_cast<CXXMemberCallExpr>(CE)) {
+    if (const CXXMethodDecl *MD = me->getMethodDecl())
+      Summ = Summaries.getSummary(MD);
+    else
+      Summ = Summaries.getDefaultSummary();    
+  }
+  else
+    Summ = Summaries.getDefaultSummary();
 
   assert(Summ);
   evalSummary(Dst, Eng, Builder, CE,
@@ -3397,12 +3431,43 @@ void CFRefCount::ProcessNonLeakError(ExplodedNodeSet& Dst,
 
 namespace {
 class RetainReleaseChecker
-  : public Checker< check::PostStmt<BlockExpr> > {
+  : public Checker< check::PostStmt<BlockExpr>, check::RegionChanges > {
 public:
+    bool wantsRegionUpdate;
+    
+    RetainReleaseChecker() : wantsRegionUpdate(true) {}
+    
+    
     void checkPostStmt(const BlockExpr *BE, CheckerContext &C) const;
+    const GRState *checkRegionChanges(const GRState *state,
+                            const StoreManager::InvalidatedSymbols *invalidated,
+                                      const MemRegion * const *begin,
+                                      const MemRegion * const *end) const;
+                                          
+    bool wantsRegionChangeUpdate(const GRState *state) const {
+      return wantsRegionUpdate;
+    }
 };
 } // end anonymous namespace
 
+const GRState *
+RetainReleaseChecker::checkRegionChanges(const GRState *state,
+                            const StoreManager::InvalidatedSymbols *invalidated,
+                                         const MemRegion * const *begin,
+                                         const MemRegion * const *end) const {
+  if (!invalidated)
+    return state;
+
+  for (StoreManager::InvalidatedSymbols::const_iterator I=invalidated->begin(),
+       E = invalidated->end(); I!=E; ++I) {
+    SymbolRef sym = *I;
+    if (WhitelistedSymbols.count(sym))
+      continue;
+    // Remove any existing reference-count binding.
+    state = state->remove<RefBindings>(sym);
+  }
+  return state;
+}
 
 void RetainReleaseChecker::checkPostStmt(const BlockExpr *BE,
                                          CheckerContext &C) const {

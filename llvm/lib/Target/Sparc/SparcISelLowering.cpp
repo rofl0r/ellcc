@@ -182,8 +182,6 @@ SparcTargetLowering::LowerFormalArguments(SDValue Chain,
     }
 
     if (VA.isRegLoc()) {
-      EVT RegVT = VA.getLocVT();
-
       if (VA.needsCustom()) {
         assert(VA.getLocVT() == MVT::f64);
         unsigned VRegHi = RegInfo.createVirtualRegister(&SP::IntRegsRegClass);
@@ -544,7 +542,7 @@ SparcTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
 
   // Build a sequence of copy-to-reg nodes chained together with token
   // chain and flag operands which copy the outgoing args into registers.
-  // The InFlag in necessary since all emited instructions must be
+  // The InFlag in necessary since all emitted instructions must be
   // stuck together.
   SDValue InFlag;
   for (unsigned i = 0, e = RegsToPass.size(); i != e; ++i) {
@@ -800,6 +798,8 @@ SparcTargetLowering::SparcTargetLowering(TargetMachine &TM)
 
   if (TM.getSubtarget<SparcSubtarget>().isV9())
     setOperationAction(ISD::CTPOP, MVT::i32, Legal);
+
+  setMinFunctionAlignment(2);
 
   computeRegisterProperties();
 }
@@ -1289,9 +1289,4 @@ bool
 SparcTargetLowering::isOffsetFoldingLegal(const GlobalAddressSDNode *GA) const {
   // The Sparc target isn't yet aware of offsets.
   return false;
-}
-
-/// getFunctionAlignment - Return the Log2 alignment of this function.
-unsigned SparcTargetLowering::getFunctionAlignment(const Function *) const {
-  return 2;
 }

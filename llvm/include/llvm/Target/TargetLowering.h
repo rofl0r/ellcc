@@ -761,6 +761,18 @@ public:
     return MinStackArgumentAlignment;
   }
 
+  /// getMinFunctionAlignment - return the minimum function alignment.
+  ///
+  unsigned getMinFunctionAlignment() const {
+    return MinFunctionAlignment;
+  }
+
+  /// getPrefFunctionAlignment - return the preferred function alignment.
+  ///
+  unsigned getPrefFunctionAlignment() const {
+    return PrefFunctionAlignment;
+  }
+
   /// getPrefLoopAlignment - return the preferred loop alignment.
   ///
   unsigned getPrefLoopAlignment() const {
@@ -823,9 +835,6 @@ public:
   /// with the given GlobalAddress is legal.  It is frequently not legal in
   /// PIC relocation models.
   virtual bool isOffsetFoldingLegal(const GlobalAddressSDNode *GA) const;
-
-  /// getFunctionAlignment - Return the Log2 alignment of this function.
-  virtual unsigned getFunctionAlignment(const Function *) const = 0;
 
   /// getStackCookieLocation - Return true if the target stores stack
   /// protector cookies at a fixed offset in some non-standard address
@@ -927,6 +936,7 @@ public:
     bool isCalledByLegalizer() const { return CalledByLegalizer; }
 
     void AddToWorklist(SDNode *N);
+    void RemoveFromWorklist(SDNode *N);
     SDValue CombineTo(SDNode *N, const std::vector<SDValue> &To,
                       bool AddTo = true);
     SDValue CombineTo(SDNode *N, SDValue Res, bool AddTo = true);
@@ -1041,7 +1051,7 @@ protected:
   }
 
   /// JumpIsExpensive - Tells the code generator not to expand sequence of
-  /// operations into a seperate sequences that increases the amount of
+  /// operations into a separate sequences that increases the amount of
   /// flow control.
   void setJumpIsExpensive(bool isExpensive = true) {
     JumpIsExpensive = isExpensive;
@@ -1166,6 +1176,18 @@ protected:
     JumpBufAlignment = Align;
   }
 
+  /// setMinFunctionAlignment - Set the target's minimum function alignment.
+  void setMinFunctionAlignment(unsigned Align) {
+    MinFunctionAlignment = Align;
+  }
+
+  /// setPrefFunctionAlignment - Set the target's preferred function alignment.
+  /// This should be set if there is a performance benefit to
+  /// higher-than-minimum alignment
+  void setPrefFunctionAlignment(unsigned Align) {
+    PrefFunctionAlignment = Align;
+  }
+
   /// setPrefLoopAlignment - Set the target's preferred loop alignment. Default
   /// alignment is zero, it means the target does not care about loop alignment.
   void setPrefLoopAlignment(unsigned Align) {
@@ -1252,7 +1274,7 @@ public:
   }
 
   /// HandleByVal - Target-specific cleanup for formal ByVal parameters.
-  virtual void HandleByVal(CCState *) const {}
+  virtual void HandleByVal(CCState *, unsigned &) const {}
 
   /// CanLowerReturn - This hook should be implemented to check whether the
   /// return values described by the Outs array can fit into the return
@@ -1284,6 +1306,14 @@ public:
   /// by a return node only. This is used to determine whether it is possible
   /// to codegen a libcall as tail call at legalization time.
   virtual bool isUsedByReturnOnly(SDNode *N) const {
+    return false;
+  }
+
+  /// mayBeEmittedAsTailCall - Return true if the target may be able emit the
+  /// call instruction as a tail call. This is used by optimization passes to
+  /// determine if it's profitable to duplicate return instructions to enable
+  /// tailcall optimization.
+  virtual bool mayBeEmittedAsTailCall(CallInst *CI) const {
     return false;
   }
 
@@ -1574,6 +1604,14 @@ public:
     return true;
   }
 
+  /// isLegalAddImmediate - Return true if the specified immediate is legal
+  /// add immediate, that is the target has add instructions which can add
+  /// a register with the immediate without having to materialize the
+  /// immediate into a register.
+  virtual bool isLegalAddImmediate(int64_t Imm) const {
+    return true;
+  }
+
   //===--------------------------------------------------------------------===//
   // Div utility functions
   //
@@ -1684,7 +1722,18 @@ private:
   ///
   unsigned MinStackArgumentAlignment;
 
-  /// PrefLoopAlignment - The perferred loop alignment.
+  /// MinFunctionAlignment - The minimum function alignment (used when
+  /// optimizing for size, and to prevent explicitly provided alignment
+  /// from leading to incorrect code).
+  ///
+  unsigned MinFunctionAlignment;
+
+  /// PrefFunctionAlignment - The preferred function alignment (used when
+  /// alignment unspecified and optimizing for speed).
+  ///
+  unsigned PrefFunctionAlignment;
+
+  /// PrefLoopAlignment - The preferred loop alignment.
   ///
   unsigned PrefLoopAlignment;
 

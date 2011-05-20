@@ -284,7 +284,7 @@ public:
   ///
   /// Note that this is an involved process that may invalidate pointers into
   /// the graph.
-  void Legalize(CodeGenOpt::Level OptLevel);
+  void Legalize();
 
   /// LegalizeVectors - This transforms the SelectionDAG into a SelectionDAG
   /// that only uses vector math operations supported by the target.  This is
@@ -829,7 +829,7 @@ public:
   /// These functions only replace all existing uses. It's possible that as
   /// these replacements are being performed, CSE may cause the From node
   /// to be given new uses. These new uses of From are left in place, and
-  /// not automatically transfered to To.
+  /// not automatically transferred to To.
   ///
   void ReplaceAllUsesWith(SDValue From, SDValue Op,
                           DAGUpdateListener *UpdateListener = 0);

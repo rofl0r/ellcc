@@ -44,10 +44,6 @@ CodeGenFunction::CodeGenFunction(CodeGenModule &cgm)
   CGM.getCXXABI().getMangleContext().startNewFunction();
 }
 
-ASTContext &CodeGenFunction::getContext() const {
-  return CGM.getContext();
-}
-
 
 const llvm::Type *CodeGenFunction::ConvertTypeForMem(QualType T) {
   return CGM.getTypes().ConvertTypeForMem(T);
@@ -57,9 +53,41 @@ const llvm::Type *CodeGenFunction::ConvertType(QualType T) {
   return CGM.getTypes().ConvertType(T);
 }
 
-bool CodeGenFunction::hasAggregateLLVMType(QualType T) {
-  return T->isRecordType() || T->isArrayType() || T->isAnyComplexType() ||
-    T->isObjCObjectType();
+bool CodeGenFunction::hasAggregateLLVMType(QualType type) {
+  switch (type.getCanonicalType()->getTypeClass()) {
+#define TYPE(name, parent)
+#define ABSTRACT_TYPE(name, parent)
+#define NON_CANONICAL_TYPE(name, parent) case Type::name:
+#define DEPENDENT_TYPE(name, parent) case Type::name:
+#define NON_CANONICAL_UNLESS_DEPENDENT_TYPE(name, parent) case Type::name:
+#include "clang/AST/TypeNodes.def"
+    llvm_unreachable("non-canonical or dependent type in IR-generation");
+
+  case Type::Builtin:
+  case Type::Pointer:
+  case Type::BlockPointer:
+  case Type::LValueReference:
+  case Type::RValueReference:
+  case Type::MemberPointer:
+  case Type::Vector:
+  case Type::ExtVector:
+  case Type::FunctionProto:
+  case Type::FunctionNoProto:
+  case Type::Enum:
+  case Type::ObjCObjectPointer:
+    return false;
+
+  // Complexes, arrays, records, and Objective-C objects.
+  case Type::Complex:
+  case Type::ConstantArray:
+  case Type::IncompleteArray:
+  case Type::VariableArray:
+  case Type::Record:
+  case Type::ObjCObject:
+  case Type::ObjCInterface:
+    return true;
+  }
+  llvm_unreachable("unknown type kind!");
 }
 
 void CodeGenFunction::EmitReturnBlock() {
@@ -168,7 +196,7 @@ void CodeGenFunction::FinishFunction(SourceLocation EndLoc) {
 bool CodeGenFunction::ShouldInstrumentFunction() {
   if (!CGM.getCodeGenOpts().InstrumentFunctions)
     return false;
-  if (CurFuncDecl->hasAttr<NoInstrumentFunctionAttr>())
+  if (!CurFuncDecl || CurFuncDecl->hasAttr<NoInstrumentFunctionAttr>())
     return false;
   return true;
 }
@@ -241,7 +269,7 @@ void CodeGenFunction::StartFunction(GlobalDecl GD, QualType RetTy,
           CGM.getModule().getOrInsertNamedMetadata("opencl.kernels");
           
         llvm::Value *Op = Fn;
-        OpenCLMetadata->addOperand(llvm::MDNode::get(Context, &Op, 1));
+        OpenCLMetadata->addOperand(llvm::MDNode::get(Context, Op));
       }
   }
 
@@ -469,8 +497,7 @@ ConstantFoldsToSimpleInteger(const Expr *Cond, llvm::APInt &ResultInt) {
 void CodeGenFunction::EmitBranchOnBoolExpr(const Expr *Cond,
                                            llvm::BasicBlock *TrueBlock,
                                            llvm::BasicBlock *FalseBlock) {
-  if (const ParenExpr *PE = dyn_cast<ParenExpr>(Cond))
-    return EmitBranchOnBoolExpr(PE->getSubExpr(), TrueBlock, FalseBlock);
+  Cond = Cond->IgnoreParens();
 
   if (const BinaryOperator *CondBOp = dyn_cast<BinaryOperator>(Cond)) {
     // Handle X && Y in a condition.
@@ -618,8 +645,7 @@ static void emitNonZeroVLAInit(CodeGenFunction &CGF, QualType baseType,
   // count must be nonzero.
   CGF.EmitBlock(loopBB);
 
-  llvm::PHINode *cur = Builder.CreatePHI(i8p, "vla.cur");
-  cur->reserveOperandSpace(2);
+  llvm::PHINode *cur = Builder.CreatePHI(i8p, 2, "vla.cur");
   cur->addIncoming(begin, originBB);
 
   // memcpy the individual element bit-pattern.
@@ -656,15 +682,16 @@ CodeGenFunction::EmitNullInitialization(llvm::Value *DestPtr, QualType Ty) {
     DestPtr = Builder.CreateBitCast(DestPtr, BP, "tmp");
 
   // Get size and alignment info for this aggregate.
-  std::pair<uint64_t, unsigned> TypeInfo = getContext().getTypeInfo(Ty);
-  uint64_t Size = TypeInfo.first / 8;
-  unsigned Align = TypeInfo.second / 8;
+  std::pair<CharUnits, CharUnits> TypeInfo = 
+    getContext().getTypeInfoInChars(Ty);
+  CharUnits Size = TypeInfo.first;
+  CharUnits Align = TypeInfo.second;
 
   llvm::Value *SizeVal;
   const VariableArrayType *vla;
 
   // Don't bother emitting a zero-byte memset.
-  if (Size == 0) {
+  if (Size.isZero()) {
     // But note that getTypeInfo returns 0 for a VLA.
     if (const VariableArrayType *vlaType =
           dyn_cast_or_null<VariableArrayType>(
@@ -675,7 +702,7 @@ CodeGenFunction::EmitNullInitialization(llvm::Value *DestPtr, QualType Ty) {
       return;
     }
   } else {
-    SizeVal = llvm::ConstantInt::get(IntPtrTy, Size);
+    SizeVal = llvm::ConstantInt::get(IntPtrTy, Size.getQuantity());
     vla = 0;
   }
 
@@ -700,14 +727,15 @@ CodeGenFunction::EmitNullInitialization(llvm::Value *DestPtr, QualType Ty) {
     if (vla) return emitNonZeroVLAInit(*this, Ty, DestPtr, SrcPtr, SizeVal);
 
     // Get and call the appropriate llvm.memcpy overload.
-    Builder.CreateMemCpy(DestPtr, SrcPtr, SizeVal, Align, false);
+    Builder.CreateMemCpy(DestPtr, SrcPtr, SizeVal, Align.getQuantity(), false);
     return;
   } 
   
   // Otherwise, just memset the whole thing to zero.  This is legal
   // because in LLVM, all default initializers (other than the ones we just
   // handled above) are guaranteed to have a bit pattern of all zeros.
-  Builder.CreateMemSet(DestPtr, Builder.getInt8(0), SizeVal, Align, false);
+  Builder.CreateMemSet(DestPtr, Builder.getInt8(0), SizeVal, 
+                       Align.getQuantity(), false);
 }
 
 llvm::BlockAddress *CodeGenFunction::GetAddrOfLabel(const LabelDecl *L) {
@@ -729,7 +757,8 @@ llvm::BasicBlock *CodeGenFunction::GetIndirectGotoBlock() {
   CGBuilderTy TmpBuilder(createBasicBlock("indirectgoto"));
   
   // Create the PHI node that indirect gotos will add entries to.
-  llvm::Value *DestVal = TmpBuilder.CreatePHI(Int8PtrTy, "indirect.goto.dest");
+  llvm::Value *DestVal = TmpBuilder.CreatePHI(Int8PtrTy, 0,
+                                              "indirect.goto.dest");
   
   // Create the indirect branch instruction.
   IndirectBranch = TmpBuilder.CreateIndirectBr(DestVal);

@@ -1518,7 +1518,7 @@ APInt::ms APInt::magic() const {
 /// Requires that the divisor not be 0.  Taken from "Hacker's Delight", Henry
 /// S. Warren, Jr., chapter 10.
 /// LeadingZeros can be used to simplify the calculation if the upper bits
-/// of the devided value are known zero.
+/// of the divided value are known zero.
 APInt::mu APInt::magicu(unsigned LeadingZeros) const {
   const APInt& d = *this;
   unsigned p;
@@ -2073,6 +2073,16 @@ APInt APInt::smul_ov(const APInt &RHS, bool &Overflow) const {
   
   if (*this != 0 && RHS != 0)
     Overflow = Res.sdiv(RHS) != *this || Res.sdiv(*this) != RHS;
+  else
+    Overflow = false;
+  return Res;
+}
+
+APInt APInt::umul_ov(const APInt &RHS, bool &Overflow) const {
+  APInt Res = *this * RHS;
+
+  if (*this != 0 && RHS != 0)
+    Overflow = Res.udiv(RHS) != *this || Res.udiv(*this) != RHS;
   else
     Overflow = false;
   return Res;

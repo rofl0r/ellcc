@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 #define DEBUG_TYPE "regalloc"
+#include "LiveDebugVariables.h"
 #include "LiveIntervalUnion.h"
 #include "LiveRangeEdit.h"
 #include "RegAllocBase.h"
@@ -137,6 +138,7 @@ char RABasic::ID = 0;
 } // end anonymous namespace
 
 RABasic::RABasic(): MachineFunctionPass(ID) {
+  initializeLiveDebugVariablesPass(*PassRegistry::getPassRegistry());
   initializeLiveIntervalsPass(*PassRegistry::getPassRegistry());
   initializeSlotIndexesPass(*PassRegistry::getPassRegistry());
   initializeStrongPHIEliminationPass(*PassRegistry::getPassRegistry());
@@ -155,6 +157,8 @@ void RABasic::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addPreserved<AliasAnalysis>();
   AU.addRequired<LiveIntervals>();
   AU.addPreserved<SlotIndexes>();
+  AU.addRequired<LiveDebugVariables>();
+  AU.addPreserved<LiveDebugVariables>();
   if (StrongPHIElim)
     AU.addRequiredID(StrongPHIEliminationID);
   AU.addRequiredTransitive<RegisterCoalescer>();
@@ -231,9 +235,12 @@ void RegAllocBase::init(VirtRegMap &vrm, LiveIntervals &lis) {
   MRI = &vrm.getRegInfo();
   VRM = &vrm;
   LIS = &lis;
-  PhysReg2LiveUnion.init(UnionAllocator, TRI->getNumRegs());
-  // Cache an interferece query for each physical reg
-  Queries.reset(new LiveIntervalUnion::Query[PhysReg2LiveUnion.numRegs()]);
+  const unsigned NumRegs = TRI->getNumRegs();
+  if (NumRegs != PhysReg2LiveUnion.numRegs()) {
+    PhysReg2LiveUnion.init(UnionAllocator, NumRegs);
+    // Cache an interferece query for each physical reg
+    Queries.reset(new LiveIntervalUnion::Query[PhysReg2LiveUnion.numRegs()]);
+  }
 }
 
 void RegAllocBase::LiveUnionArray::clear() {
@@ -247,13 +254,15 @@ void RegAllocBase::LiveUnionArray::clear() {
 }
 
 void RegAllocBase::releaseMemory() {
-  PhysReg2LiveUnion.clear();
+  for (unsigned r = 0, e = PhysReg2LiveUnion.numRegs(); r != e; ++r)
+    PhysReg2LiveUnion[r].clear();
 }
 
 // Visit all the live registers. If they are already assigned to a physical
 // register, unify them with the corresponding LiveIntervalUnion, otherwise push
 // them on the priority queue for later assignment.
 void RegAllocBase::seedLiveRegs() {
+  NamedRegionTimer T("Seed Live Regs", TimerGroupName, TimePassesIsEnabled);
   for (LiveIntervals::iterator I = LIS->begin(), E = LIS->end(); I != E; ++I) {
     unsigned RegNum = I->first;
     LiveInterval &VirtReg = *I->second;
@@ -269,6 +278,7 @@ void RegAllocBase::assign(LiveInterval &VirtReg, unsigned PhysReg) {
                << " to " << PrintReg(PhysReg, TRI) << '\n');
   assert(!VRM->hasPhys(VirtReg.reg) && "Duplicate VirtReg assignment");
   VRM->assignVirt2Phys(VirtReg.reg, PhysReg);
+  MRI->setPhysRegUsed(PhysReg);
   PhysReg2LiveUnion[PhysReg].unify(VirtReg);
   ++NumAssigned;
 }
@@ -289,6 +299,8 @@ void RegAllocBase::allocatePhysRegs() {
 
   // Continue assigning vregs one at a time to available physical registers.
   while (LiveInterval *VirtReg = dequeue()) {
+    assert(!VRM->hasPhys(VirtReg->reg) && "Register already assigned");
+
     // Unused registers can appear when the spiller coalesces snippets.
     if (MRI->reg_nodbg_empty(VirtReg->reg)) {
       DEBUG(dbgs() << "Dropping unused " << *VirtReg << '\n');
@@ -297,7 +309,7 @@ void RegAllocBase::allocatePhysRegs() {
     }
 
     // Invalidate all interference queries, live ranges could have changed.
-    ++UserTag;
+    invalidateVirtRegs();
 
     // selectOrSplit requests the allocator to return an available physical
     // register if possible and populate a list of new live intervals that
@@ -309,13 +321,35 @@ void RegAllocBase::allocatePhysRegs() {
     VirtRegVec SplitVRegs;
     unsigned AvailablePhysReg = selectOrSplit(*VirtReg, SplitVRegs);
 
+    if (AvailablePhysReg == ~0u) {
+      // selectOrSplit failed to find a register!
+      std::string msg;
+      raw_string_ostream Msg(msg);
+      Msg << "Ran out of registers during register allocation!"
+             "\nCannot allocate: " << *VirtReg;
+      for (MachineRegisterInfo::reg_iterator I = MRI->reg_begin(VirtReg->reg);
+      MachineInstr *MI = I.skipInstruction();) {
+        if (!MI->isInlineAsm())
+          continue;
+        Msg << "\nPlease check your inline asm statement for "
+          "invalid constraints:\n";
+        MI->print(Msg, &VRM->getMachineFunction().getTarget());
+      }
+      report_fatal_error(Msg.str());
+    }
+
     if (AvailablePhysReg)
       assign(*VirtReg, AvailablePhysReg);
 
     for (VirtRegVec::iterator I = SplitVRegs.begin(), E = SplitVRegs.end();
          I != E; ++I) {
       LiveInterval *SplitVirtReg = *I;
-      if (SplitVirtReg->empty()) continue;
+      assert(!VRM->hasPhys(SplitVirtReg->reg) && "Register already assigned");
+      if (MRI->reg_nodbg_empty(SplitVirtReg->reg)) {
+        DEBUG(dbgs() << "not queueing unused  " << *SplitVirtReg << '\n');
+        LIS->removeInterval(SplitVirtReg->reg);
+        continue;
+      }
       DEBUG(dbgs() << "queuing new interval: " << *SplitVirtReg << "\n");
       assert(TargetRegisterInfo::isVirtualRegister(SplitVirtReg->reg) &&
              "expect split value in virtual register");
@@ -393,29 +427,31 @@ RegAllocBase::spillInterferences(LiveInterval &VirtReg, unsigned PhysReg,
 // Add newly allocated physical registers to the MBB live in sets.
 void RegAllocBase::addMBBLiveIns(MachineFunction *MF) {
   NamedRegionTimer T("MBB Live Ins", TimerGroupName, TimePassesIsEnabled);
-  typedef SmallVector<MachineBasicBlock*, 8> MBBVec;
-  MBBVec liveInMBBs;
-  MachineBasicBlock &entryMBB = *MF->begin();
+  SlotIndexes *Indexes = LIS->getSlotIndexes();
+  if (MF->size() <= 1)
+    return;
 
+  LiveIntervalUnion::SegmentIter SI;
   for (unsigned PhysReg = 0; PhysReg < PhysReg2LiveUnion.numRegs(); ++PhysReg) {
     LiveIntervalUnion &LiveUnion = PhysReg2LiveUnion[PhysReg];
     if (LiveUnion.empty())
       continue;
-    for (LiveIntervalUnion::SegmentIter SI = LiveUnion.begin(); SI.valid();
-         ++SI) {
-
-      // Find the set of basic blocks which this range is live into...
-      liveInMBBs.clear();
-      if (!LIS->findLiveInMBBs(SI.start(), SI.stop(), liveInMBBs)) continue;
-
-      // And add the physreg for this interval to their live-in sets.
-      for (MBBVec::iterator I = liveInMBBs.begin(), E = liveInMBBs.end();
-           I != E; ++I) {
-        MachineBasicBlock *MBB = *I;
-        if (MBB == &entryMBB) continue;
-        if (MBB->isLiveIn(PhysReg)) continue;
-        MBB->addLiveIn(PhysReg);
-      }
+    MachineFunction::iterator MBB = llvm::next(MF->begin());
+    MachineFunction::iterator MFE = MF->end();
+    SlotIndex Start, Stop;
+    tie(Start, Stop) = Indexes->getMBBRange(MBB);
+    SI.setMap(LiveUnion.getMap());
+    SI.find(Start);
+    while (SI.valid()) {
+      if (SI.start() <= Start) {
+        if (!MBB->isLiveIn(PhysReg))
+          MBB->addLiveIn(PhysReg);
+      } else if (SI.start() > Stop)
+        MBB = Indexes->getMBBFromIndex(SI.start().getPrevIndex());
+      if (++MBB == MFE)
+        break;
+      tie(Start, Stop) = Indexes->getMBBRange(MBB);
+      SI.advanceTo(Start);
     }
   }
 }
@@ -479,8 +515,11 @@ unsigned RABasic::selectOrSplit(LiveInterval &VirtReg,
     // Tell the caller to allocate to this newly freed physical register.
     return *PhysRegI;
   }
+
   // No other spill candidates were found, so spill the current VirtReg.
   DEBUG(dbgs() << "spilling: " << VirtReg << '\n');
+  if (!VirtReg.isSpillable())
+    return ~0u;
   LiveRangeEdit LRE(VirtReg, SplitVRegs);
   spiller().spill(LRE);
 
@@ -501,7 +540,7 @@ bool RABasic::runOnMachineFunction(MachineFunction &mf) {
 
   ReservedRegs = TRI->getReservedRegs(*MF);
 
-  SpillerInstance.reset(createSpiller(*this, *MF, *VRM));
+  SpillerInstance.reset(createInlineSpiller(*this, *MF, *VRM));
 
   allocatePhysRegs();
 
@@ -535,6 +574,9 @@ bool RABasic::runOnMachineFunction(MachineFunction &mf) {
 
   // Run rewriter
   VRM->rewrite(LIS->getSlotIndexes());
+
+  // Write out new DBG_VALUE instructions.
+  getAnalysis<LiveDebugVariables>().emitDebugValues(VRM);
 
   // The pass output is in VirtRegMap. Release all the transient data.
   releaseMemory();

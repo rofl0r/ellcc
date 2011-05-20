@@ -38,6 +38,9 @@
 #ifndef OBJC2_AT_KEYWORD
 #define OBJC2_AT_KEYWORD(X)
 #endif
+#ifndef TESTING_KEYWORD
+#define TESTING_KEYWORD(X, L) KEYWORD(X, L)
+#endif
 #ifndef ANNOTATION
 #define ANNOTATION(X) TOK(annot_ ## X)
 #endif
@@ -187,6 +190,7 @@ PUNCTUATOR(greatergreatergreater, ">>>")
 //              is a keyword in the implementation namespace that should
 //              always be treated as a keyword
 //   KEYC99   - This is a keyword introduced to C in C99
+//   KEYC1X   - This is a keyword introduced to C in C1X
 //   KEYCXX   - This is a C++ keyword, or a C++-specific keyword in the
 //              implementation namespace
 //   KEYNOCXX - This is a keyword in every non-C++ dialect.
@@ -196,6 +200,7 @@ PUNCTUATOR(greatergreatergreater, ">>>")
 //   KEYOPENCL  - This is a keyword in OpenCL
 //   KEYALTIVEC - This is a keyword in AltiVec
 //   KEYBORLAND - This is a keyword if Borland extensions are enabled
+//   BOOLSUPPORT - This is a keyword if 'bool' is a built-in type
 //
 KEYWORD(auto                        , KEYALL)
 KEYWORD(break                       , KEYALL)
@@ -233,7 +238,9 @@ KEYWORD(volatile                    , KEYALL)
 KEYWORD(while                       , KEYALL)
 KEYWORD(_Bool                       , KEYNOCXX)
 KEYWORD(_Complex                    , KEYALL)
+KEYWORD(_Generic                    , KEYALL)
 KEYWORD(_Imaginary                  , KEYALL)
+KEYWORD(_Static_assert              , KEYALL)
 KEYWORD(__func__                    , KEYALL)
 
 // C++ 2.11p1: Keywords.
@@ -329,11 +336,54 @@ KEYWORD(__is_class                  , KEYCXX)
 KEYWORD(__is_convertible_to         , KEYCXX)
 KEYWORD(__is_empty                  , KEYCXX)
 KEYWORD(__is_enum                   , KEYCXX)
-KEYWORD(__is_pod                    , KEYCXX)
-KEYWORD(__is_polymorphic            , KEYCXX)
-KEYWORD(__is_union                  , KEYCXX)
 // Tentative name - there's no implementation of std::is_literal_type yet.
 KEYWORD(__is_literal                , KEYCXX)
+// Name for GCC 4.6 compatibility - people have already written libraries using
+// this name unfortunately.
+KEYWORD(__is_literal_type           , KEYCXX)
+KEYWORD(__is_pod                    , KEYCXX)
+KEYWORD(__is_polymorphic            , KEYCXX)
+KEYWORD(__is_trivial                , KEYCXX)
+KEYWORD(__is_union                  , KEYCXX)
+
+// Clang-only C++ Type Traits
+KEYWORD(__is_trivially_copyable     , KEYCXX)
+KEYWORD(__underlying_type           , KEYCXX)
+
+// Embarcadero Expression Traits
+KEYWORD(__is_lvalue_expr            , KEYCXX)
+KEYWORD(__is_rvalue_expr            , KEYCXX)
+
+// Embarcadero Unary Type Traits
+KEYWORD(__is_arithmetic             , KEYCXX)
+KEYWORD(__is_floating_point         , KEYCXX)
+KEYWORD(__is_integral               , KEYCXX)
+KEYWORD(__is_complete_type          , KEYCXX)
+KEYWORD(__is_void                   , KEYCXX)
+KEYWORD(__is_array                  , KEYCXX)
+KEYWORD(__is_function               , KEYCXX)
+KEYWORD(__is_reference              , KEYCXX)
+KEYWORD(__is_lvalue_reference       , KEYCXX)
+KEYWORD(__is_rvalue_reference       , KEYCXX)
+KEYWORD(__is_fundamental            , KEYCXX)
+KEYWORD(__is_object                 , KEYCXX)
+KEYWORD(__is_scalar                 , KEYCXX)
+KEYWORD(__is_compound               , KEYCXX)
+KEYWORD(__is_pointer                , KEYCXX)
+KEYWORD(__is_member_object_pointer  , KEYCXX)
+KEYWORD(__is_member_function_pointer, KEYCXX)
+KEYWORD(__is_member_pointer         , KEYCXX)
+KEYWORD(__is_const                  , KEYCXX)
+KEYWORD(__is_volatile               , KEYCXX)
+KEYWORD(__is_standard_layout        , KEYCXX)
+KEYWORD(__is_signed                 , KEYCXX)
+KEYWORD(__is_unsigned               , KEYCXX)
+
+// Embarcadero Binary Type Traits
+KEYWORD(__is_same                   , KEYCXX)
+KEYWORD(__is_convertible            , KEYCXX)
+KEYWORD(__array_rank                , KEYCXX)
+KEYWORD(__array_extent              , KEYCXX)
 
 // Apple Extension.
 KEYWORD(__private_extern__          , KEYALL)
@@ -373,18 +423,19 @@ KEYWORD(__pixel                     , KEYALTIVEC)
 
 // Alternate spelling for various tokens.  There are GCC extensions in all
 // languages, but should not be disabled in strict conformance mode.
-ALIAS("__attribute__", __attribute, KEYALL)
-ALIAS("__const"      , const      , KEYALL)
-ALIAS("__const__"    , const      , KEYALL)
 ALIAS("__alignof__"  , __alignof  , KEYALL)
 ALIAS("__asm"        , asm        , KEYALL)
 ALIAS("__asm__"      , asm        , KEYALL)
+ALIAS("__attribute__", __attribute, KEYALL)
 ALIAS("__complex"    , _Complex   , KEYALL)
 ALIAS("__complex__"  , _Complex   , KEYALL)
+ALIAS("__const"      , const      , KEYALL)
+ALIAS("__const__"    , const      , KEYALL)
+ALIAS("__decltype"   , decltype   , KEYCXX)
 ALIAS("__imag__"     , __imag     , KEYALL)
 ALIAS("__inline"     , inline     , KEYALL)
 ALIAS("__inline__"   , inline     , KEYALL)
-ALIAS("__nullptr"    , nullptr      , KEYCXX)
+ALIAS("__nullptr"    , nullptr    , KEYCXX)
 ALIAS("__real__"     , __real     , KEYALL)
 ALIAS("__restrict"   , restrict   , KEYALL)
 ALIAS("__restrict__" , restrict   , KEYALL)
@@ -399,6 +450,16 @@ ALIAS("__volatile__" , volatile   , KEYALL)
 KEYWORD(__ptr64                   , KEYMS)
 KEYWORD(__w64                     , KEYMS)
 KEYWORD(__uuidof                  , KEYMS | KEYBORLAND)
+KEYWORD(__try                     , KEYMS | KEYBORLAND)
+KEYWORD(__except                  , KEYMS | KEYBORLAND)
+KEYWORD(__finally                 , KEYMS | KEYBORLAND)
+KEYWORD(__leave                   , KEYMS | KEYBORLAND)
+KEYWORD(__int64                   , KEYMS)
+KEYWORD(__if_exists               , KEYMS)
+KEYWORD(__if_not_exists           , KEYMS)
+ALIAS("__int8"       , char       , KEYMS)
+ALIAS("__int16"      , short      , KEYMS)
+ALIAS("__int32"      , int        , KEYMS)
 ALIAS("_asm"         , asm        , KEYMS)
 ALIAS("_cdecl"       , __cdecl    , KEYMS | KEYBORLAND)
 ALIAS("_fastcall"    , __fastcall , KEYMS | KEYBORLAND)
@@ -406,6 +467,8 @@ ALIAS("_stdcall"     , __stdcall  , KEYMS | KEYBORLAND)
 ALIAS("_thiscall"    , __thiscall , KEYMS)
 ALIAS("_uuidof"      , __uuidof   , KEYMS | KEYBORLAND)
 ALIAS("_inline"      , inline     , KEYMS)
+ALIAS("_declspec"    , __declspec , KEYMS)
+ALIAS("__interface"  , class      , KEYMS)
 
 // Borland Extensions which should be disabled in strict conformance mode.
 ALIAS("_pascal"      , __pascal   , KEYBORLAND)
@@ -414,9 +477,12 @@ ALIAS("_pascal"      , __pascal   , KEYBORLAND)
 ALIAS("__char16_t"   , char16_t   , KEYCXX)
 ALIAS("__char32_t"   , char32_t   , KEYCXX)
 
+// Clang-specific keywords enabled only in testing.
+TESTING_KEYWORD(__unknown_anytype , KEYALL)
+
 
 //===----------------------------------------------------------------------===//
-// Objective-C @-preceeded keywords.
+// Objective-C @-preceded keywords.
 //===----------------------------------------------------------------------===//
 
 // These have meaning after an '@' in Objective-C mode. These define enums in
@@ -458,6 +524,7 @@ ANNOTATION(typename)     // annotation for a C typedef name, a C++ (possibly
 ANNOTATION(template_id)  // annotation for a C++ template-id that names a
                          // function template specialization (not a type),
                          // e.g., "std::swap<int>"
+ANNOTATION(primary_expr) // annotation for a primary expression
 
 // Annotation for #pragma unused(...)
 // For each argument inside the parentheses the pragma handler will produce
@@ -465,6 +532,7 @@ ANNOTATION(template_id)  // annotation for a C++ template-id that names a
 ANNOTATION(pragma_unused)
 
 #undef ANNOTATION
+#undef TESTING_KEYWORD
 #undef OBJC2_AT_KEYWORD
 #undef OBJC1_AT_KEYWORD
 #undef CXX_KEYWORD_OPERATOR

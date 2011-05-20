@@ -1,12 +1,12 @@
 // NOTE: Use '-fobjc-gc' to test the analysis being run twice, and multiple reports are not issued.
-// RUN: %clang_cc1 -triple i386-apple-darwin10 -analyze -analyzer-checker=core,deadcode.IdempotentOperations,core.experimental,cocoa.AtSync -analyzer-disable-checker=core.experimental.Malloc -analyzer-store=basic -fobjc-gc -analyzer-constraints=basic -verify -fblocks -Wno-unreachable-code %s
-// RUN: %clang_cc1 -triple i386-apple-darwin10 -analyze -analyzer-checker=core,deadcode.IdempotentOperations,core.experimental,cocoa.AtSync -analyzer-disable-checker=core.experimental.Malloc -analyzer-store=basic -analyzer-constraints=range -verify -fblocks -Wno-unreachable-code %s
-// RUN: %clang_cc1 -triple i386-apple-darwin10 -analyze -analyzer-checker=core,deadcode.IdempotentOperations,core.experimental,cocoa.AtSync -analyzer-store=region -analyzer-constraints=basic -verify -fblocks -Wno-unreachable-code %s
-// RUN: %clang_cc1 -triple i386-apple-darwin10 -analyze -analyzer-checker=core,deadcode.IdempotentOperations,core.experimental,cocoa.AtSync -analyzer-store=region -analyzer-constraints=range -verify -fblocks -Wno-unreachable-code %s
-// RUN: %clang_cc1 -triple x86_64-apple-darwin10 -analyze -analyzer-checker=core,deadcode.IdempotentOperations,core.experimental,cocoa.AtSync -analyzer-disable-checker=core.experimental.Malloc -analyzer-store=basic -fobjc-gc -analyzer-constraints=basic -verify -fblocks -Wno-unreachable-code %s
-// RUN: %clang_cc1 -triple x86_64-apple-darwin10 -analyze -analyzer-checker=core,deadcode.IdempotentOperations,core.experimental,cocoa.AtSync -analyzer-disable-checker=core.experimental.Malloc -analyzer-store=basic -analyzer-constraints=range -verify -fblocks -Wno-unreachable-code %s
-// RUN: %clang_cc1 -triple x86_64-apple-darwin10 -analyze -analyzer-checker=core,deadcode.IdempotentOperations,core.experimental,cocoa.AtSync -analyzer-store=region -analyzer-constraints=basic -verify -fblocks -Wno-unreachable-code %s
-// RUN: %clang_cc1 -triple x86_64-apple-darwin10 -analyze -analyzer-checker=core,deadcode.IdempotentOperations,core.experimental,cocoa.AtSync -analyzer-store=region -analyzer-constraints=range -verify -fblocks -Wno-unreachable-code %s
+// RUN: %clang_cc1 -triple i386-apple-darwin10 -analyze -analyzer-checker=core,deadcode.IdempotentOperations,core.experimental,osx.cocoa.AtSync -analyzer-disable-checker=unix.experimental.Malloc -analyzer-store=basic -fobjc-gc -analyzer-constraints=basic -verify -fblocks -Wno-unreachable-code -Wno-null-dereference %s
+// RUN: %clang_cc1 -triple i386-apple-darwin10 -analyze -analyzer-checker=core,deadcode.IdempotentOperations,core.experimental,osx.cocoa.AtSync -analyzer-disable-checker=unix.experimental.Malloc -analyzer-store=basic -analyzer-constraints=range -verify -fblocks -Wno-unreachable-code -Wno-null-dereference %s
+// RUN: %clang_cc1 -triple i386-apple-darwin10 -analyze -analyzer-checker=core,deadcode.IdempotentOperations,core.experimental,osx.cocoa.AtSync -analyzer-store=region -analyzer-constraints=basic -verify -fblocks -Wno-unreachable-code -Wno-null-dereference %s
+// RUN: %clang_cc1 -triple i386-apple-darwin10 -analyze -analyzer-checker=core,deadcode.IdempotentOperations,core.experimental,osx.cocoa.AtSync -analyzer-store=region -analyzer-constraints=range -verify -fblocks -Wno-unreachable-code -Wno-null-dereference %s
+// RUN: %clang_cc1 -triple x86_64-apple-darwin10 -analyze -analyzer-checker=core,deadcode.IdempotentOperations,core.experimental,osx.cocoa.AtSync -analyzer-disable-checker=unix.experimental.Malloc -analyzer-store=basic -fobjc-gc -analyzer-constraints=basic -verify -fblocks -Wno-unreachable-code -Wno-null-dereference %s
+// RUN: %clang_cc1 -triple x86_64-apple-darwin10 -analyze -analyzer-checker=core,deadcode.IdempotentOperations,core.experimental,osx.cocoa.AtSync -analyzer-disable-checker=unix.experimental.Malloc -analyzer-store=basic -analyzer-constraints=range -verify -fblocks -Wno-unreachable-code -Wno-null-dereference %s
+// RUN: %clang_cc1 -triple x86_64-apple-darwin10 -analyze -analyzer-checker=core,deadcode.IdempotentOperations,core.experimental,osx.cocoa.AtSync -analyzer-store=region -analyzer-constraints=basic -verify -fblocks -Wno-unreachable-code -Wno-null-dereference %s
+// RUN: %clang_cc1 -triple x86_64-apple-darwin10 -analyze -analyzer-checker=core,deadcode.IdempotentOperations,core.experimental,osx.cocoa.AtSync -analyzer-store=region -analyzer-constraints=range -verify -fblocks -Wno-unreachable-code -Wno-null-dereference %s
 
 #ifndef __clang_analyzer__
 #error __clang__analyzer__ not defined
@@ -1301,3 +1301,28 @@ static void test(unsigned int bit_mask)
     }
   }
 }
+
+// Don't crash on code containing __label__.
+int radar9414427_aux();
+void radar9414427() {
+  __label__ mylabel;
+  if (radar9414427_aux()) {
+  mylabel: do {}
+  while (0);
+  }
+}
+
+// Analyze methods in @implementation (category)
+@interface RDar9465344
+@end
+
+@implementation RDar9465344 (MyCategory)
+- (void) testcategoryImpl {
+  int *p = 0x0;
+  *p = 0xDEADBEEF; // expected-warning {{null}}
+}
+@end
+
+@implementation RDar9465344
+@end
+

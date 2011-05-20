@@ -170,6 +170,9 @@ MSP430TargetLowering::MSP430TargetLowering(MSP430TargetMachine &tm) :
     setLibcallName(RTLIB::MUL_I8,  "__mulqi3hw_noint");
     setLibcallName(RTLIB::MUL_I16, "__mulhi3hw_noint");
   }
+
+  setMinFunctionAlignment(1);
+  setPrefFunctionAlignment(2);
 }
 
 SDValue MSP430TargetLowering::LowerOperation(SDValue Op,
@@ -191,11 +194,6 @@ SDValue MSP430TargetLowering::LowerOperation(SDValue Op,
     llvm_unreachable("unimplemented operand");
     return SDValue();
   }
-}
-
-/// getFunctionAlignment - Return the Log2 alignment of this function.
-unsigned MSP430TargetLowering::getFunctionAlignment(const Function *F) const {
-  return F->hasFnAttr(Attribute::OptimizeForSize) ? 1 : 2;
 }
 
 //===----------------------------------------------------------------------===//
@@ -515,7 +513,7 @@ MSP430TargetLowering::LowerCCCCallTo(SDValue Chain, SDValue Callee,
 
   // Build a sequence of copy-to-reg nodes chained together with token chain and
   // flag operands which copy the outgoing args into registers.  The InFlag in
-  // necessary since all emited instructions must be stuck together.
+  // necessary since all emitted instructions must be stuck together.
   SDValue InFlag;
   for (unsigned i = 0, e = RegsToPass.size(); i != e; ++i) {
     Chain = DAG.getCopyToReg(Chain, dl, RegsToPass[i].first,

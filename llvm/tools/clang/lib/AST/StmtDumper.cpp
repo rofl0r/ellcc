@@ -236,6 +236,9 @@ void StmtDumper::DumpDeclarator(Decl *D) {
   if (TypedefDecl *localType = dyn_cast<TypedefDecl>(D)) {
     OS << "\"typedef " << localType->getUnderlyingType().getAsString()
        << ' ' << localType << '"';
+  } else if (TypeAliasDecl *localType = dyn_cast<TypeAliasDecl>(D)) {
+    OS << "\"using " << localType << " = "
+       << localType->getUnderlyingType().getAsString() << '"';
   } else if (ValueDecl *VD = dyn_cast<ValueDecl>(D)) {
     OS << "\"";
     // Emit storage class for vardecls.
@@ -366,6 +369,11 @@ void StmtDumper::VisitDeclRefExpr(DeclRefExpr *Node) {
 
   OS << " ";
   DumpDeclRef(Node->getDecl());
+  if (Node->getDecl() != Node->getFoundDecl()) {
+    OS << " (";
+    DumpDeclRef(Node->getFoundDecl());
+    OS << ")";
+  }
 }
 
 void StmtDumper::DumpDeclRef(Decl *d) {

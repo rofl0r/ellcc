@@ -189,6 +189,7 @@ namespace {
     SDNode *Select(SDNode *N);
     SDNode *SelectAtomic64(SDNode *Node, unsigned Opc);
     SDNode *SelectAtomicLoadAdd(SDNode *Node, EVT NVT);
+    SDNode *SelectAtomicLoadArith(SDNode *Node, EVT NVT);
 
     bool MatchLoadInAddress(LoadSDNode *N, X86ISelAddressMode &AM);
     bool MatchWrapper(SDValue N, X86ISelAddressMode &AM);
@@ -1329,6 +1330,8 @@ SDNode *X86DAGToDAGISel::SelectAtomic64(SDNode *Node, unsigned Opc) {
   return ResNode;
 }
 
+// FIXME: Figure out some way to unify this with the 'or' and other code
+// below.
 SDNode *X86DAGToDAGISel::SelectAtomicLoadAdd(SDNode *Node, EVT NVT) {
   if (Node->hasAnyUseOfValue(0))
     return 0;
@@ -1479,6 +1482,158 @@ SDNode *X86DAGToDAGISel::SelectAtomicLoadAdd(SDNode *Node, EVT NVT) {
   }
 }
 
+enum AtomicOpc {
+  OR,
+  AND,
+  XOR,
+  AtomicOpcEnd
+};
+
+enum AtomicSz {
+  ConstantI8,
+  I8,
+  SextConstantI16,
+  ConstantI16,
+  I16,
+  SextConstantI32,
+  ConstantI32,
+  I32,
+  SextConstantI64,
+  ConstantI64,
+  I64,
+  AtomicSzEnd
+};
+
+static const unsigned int AtomicOpcTbl[AtomicOpcEnd][AtomicSzEnd] = {
+  {
+    X86::LOCK_OR8mi,
+    X86::LOCK_OR8mr,
+    X86::LOCK_OR16mi8,
+    X86::LOCK_OR16mi,
+    X86::LOCK_OR16mr,
+    X86::LOCK_OR32mi8,
+    X86::LOCK_OR32mi,
+    X86::LOCK_OR32mr,
+    X86::LOCK_OR64mi8,
+    X86::LOCK_OR64mi32,
+    X86::LOCK_OR64mr
+  },
+  {
+    X86::LOCK_AND8mi,
+    X86::LOCK_AND8mr,
+    X86::LOCK_AND16mi8,
+    X86::LOCK_AND16mi,
+    X86::LOCK_AND16mr,
+    X86::LOCK_AND32mi8,
+    X86::LOCK_AND32mi,
+    X86::LOCK_AND32mr,
+    X86::LOCK_AND64mi8,
+    X86::LOCK_AND64mi32,
+    X86::LOCK_AND64mr
+  },
+  {
+    X86::LOCK_XOR8mi,
+    X86::LOCK_XOR8mr,
+    X86::LOCK_XOR16mi8,
+    X86::LOCK_XOR16mi,
+    X86::LOCK_XOR16mr,
+    X86::LOCK_XOR32mi8,
+    X86::LOCK_XOR32mi,
+    X86::LOCK_XOR32mr,
+    X86::LOCK_XOR64mi8,
+    X86::LOCK_XOR64mi32,
+    X86::LOCK_XOR64mr
+  }
+};
+
+SDNode *X86DAGToDAGISel::SelectAtomicLoadArith(SDNode *Node, EVT NVT) {
+  if (Node->hasAnyUseOfValue(0))
+    return 0;
+  
+  // Optimize common patterns for __sync_or_and_fetch and similar arith
+  // operations where the result is not used. This allows us to use the "lock"
+  // version of the arithmetic instruction.
+  // FIXME: Same as for 'add' and 'sub', try to merge those down here.
+  SDValue Chain = Node->getOperand(0);
+  SDValue Ptr = Node->getOperand(1);
+  SDValue Val = Node->getOperand(2);
+  SDValue Tmp0, Tmp1, Tmp2, Tmp3, Tmp4;
+  if (!SelectAddr(Node, Ptr, Tmp0, Tmp1, Tmp2, Tmp3, Tmp4))
+    return 0;
+
+  // Which index into the table.
+  enum AtomicOpc Op;
+  switch (Node->getOpcode()) {
+    case ISD::ATOMIC_LOAD_OR:
+      Op = OR;
+      break;
+    case ISD::ATOMIC_LOAD_AND:
+      Op = AND;
+      break;
+    case ISD::ATOMIC_LOAD_XOR:
+      Op = XOR;
+      break;
+    default:
+      return 0;
+  }
+  
+  bool isCN = false;
+  ConstantSDNode *CN = dyn_cast<ConstantSDNode>(Val);
+  if (CN) {
+    isCN = true;
+    Val = CurDAG->getTargetConstant(CN->getSExtValue(), NVT);
+  }
+  
+  unsigned Opc = 0;
+  switch (NVT.getSimpleVT().SimpleTy) {
+    default: return 0;
+    case MVT::i8:
+      if (isCN)
+        Opc = AtomicOpcTbl[Op][ConstantI8];
+      else
+        Opc = AtomicOpcTbl[Op][I8];
+      break;
+    case MVT::i16:
+      if (isCN) {
+        if (immSext8(Val.getNode()))
+          Opc = AtomicOpcTbl[Op][SextConstantI16];
+        else
+          Opc = AtomicOpcTbl[Op][ConstantI16];
+      } else
+        Opc = AtomicOpcTbl[Op][I16];
+      break;
+    case MVT::i32:
+      if (isCN) {
+        if (immSext8(Val.getNode()))
+          Opc = AtomicOpcTbl[Op][SextConstantI32];
+        else
+          Opc = AtomicOpcTbl[Op][ConstantI32];
+      } else
+        Opc = AtomicOpcTbl[Op][I32];
+      break;
+    case MVT::i64:
+      if (isCN) {
+        if (immSext8(Val.getNode()))
+          Opc = AtomicOpcTbl[Op][SextConstantI64];
+        else if (i64immSExt32(Val.getNode()))
+          Opc = AtomicOpcTbl[Op][ConstantI64];
+      } else
+        Opc = AtomicOpcTbl[Op][I64];
+      break;
+  }
+  
+  DebugLoc dl = Node->getDebugLoc();
+  SDValue Undef = SDValue(CurDAG->getMachineNode(TargetOpcode::IMPLICIT_DEF,
+                                                 dl, NVT), 0);
+  MachineSDNode::mmo_iterator MemOp = MF->allocateMemRefsArray(1);
+  MemOp[0] = cast<MemSDNode>(Node)->getMemOperand();
+  SDValue Ops[] = { Tmp0, Tmp1, Tmp2, Tmp3, Tmp4, Val, Chain };
+  SDValue Ret = SDValue(CurDAG->getMachineNode(Opc, dl, MVT::Other, Ops, 7), 0);
+  cast<MachineSDNode>(Ret)->setMemRefs(MemOp, MemOp + 1);
+  SDValue RetVals[] = { Undef, Ret };
+  return CurDAG->getMergeValues(RetVals, 2, dl).getNode();
+}
+
 /// HasNoSignedComparisonUses - Test whether the given X86ISD::CMP node has
 /// any uses which require the SF or OF bits to be accurate.
 static bool HasNoSignedComparisonUses(SDNode *N) {
@@ -1578,6 +1733,89 @@ SDNode *X86DAGToDAGISel::Select(SDNode *Node) {
     SDNode *RetVal = SelectAtomicLoadAdd(Node, NVT);
     if (RetVal)
       return RetVal;
+    break;
+  }
+  case ISD::ATOMIC_LOAD_XOR:
+  case ISD::ATOMIC_LOAD_AND:
+  case ISD::ATOMIC_LOAD_OR: {
+    SDNode *RetVal = SelectAtomicLoadArith(Node, NVT);
+    if (RetVal)
+      return RetVal;
+    break;
+  }
+  case ISD::AND:
+  case ISD::OR:
+  case ISD::XOR: {
+    // For operations of the form (x << C1) op C2, check if we can use a smaller
+    // encoding for C2 by transforming it into (x op (C2>>C1)) << C1.
+    SDValue N0 = Node->getOperand(0);
+    SDValue N1 = Node->getOperand(1);
+
+    if (N0->getOpcode() != ISD::SHL || !N0->hasOneUse())
+      break;
+
+    // i8 is unshrinkable, i16 should be promoted to i32.
+    if (NVT != MVT::i32 && NVT != MVT::i64)
+      break;
+
+    ConstantSDNode *Cst = dyn_cast<ConstantSDNode>(N1);
+    ConstantSDNode *ShlCst = dyn_cast<ConstantSDNode>(N0->getOperand(1));
+    if (!Cst || !ShlCst)
+      break;
+
+    int64_t Val = Cst->getSExtValue();
+    uint64_t ShlVal = ShlCst->getZExtValue();
+
+    // Make sure that we don't change the operation by removing bits.
+    // This only matters for OR and XOR, AND is unaffected.
+    if (Opcode != ISD::AND && ((Val >> ShlVal) << ShlVal) != Val)
+      break;
+
+    unsigned ShlOp, Op = 0;
+    EVT CstVT = NVT;
+
+    // Check the minimum bitwidth for the new constant.
+    // TODO: AND32ri is the same as AND64ri32 with zext imm.
+    // TODO: MOV32ri+OR64r is cheaper than MOV64ri64+OR64rr
+    // TODO: Using 16 and 8 bit operations is also possible for or32 & xor32.
+    if (!isInt<8>(Val) && isInt<8>(Val >> ShlVal))
+      CstVT = MVT::i8;
+    else if (!isInt<32>(Val) && isInt<32>(Val >> ShlVal))
+      CstVT = MVT::i32;
+
+    // Bail if there is no smaller encoding.
+    if (NVT == CstVT)
+      break;
+
+    switch (NVT.getSimpleVT().SimpleTy) {
+    default: llvm_unreachable("Unsupported VT!");
+    case MVT::i32:
+      assert(CstVT == MVT::i8);
+      ShlOp = X86::SHL32ri;
+
+      switch (Opcode) {
+      case ISD::AND: Op = X86::AND32ri8; break;
+      case ISD::OR:  Op =  X86::OR32ri8; break;
+      case ISD::XOR: Op = X86::XOR32ri8; break;
+      }
+      break;
+    case MVT::i64:
+      assert(CstVT == MVT::i8 || CstVT == MVT::i32);
+      ShlOp = X86::SHL64ri;
+
+      switch (Opcode) {
+      case ISD::AND: Op = CstVT==MVT::i8? X86::AND64ri8 : X86::AND64ri32; break;
+      case ISD::OR:  Op = CstVT==MVT::i8?  X86::OR64ri8 :  X86::OR64ri32; break;
+      case ISD::XOR: Op = CstVT==MVT::i8? X86::XOR64ri8 : X86::XOR64ri32; break;
+      }
+      break;
+    }
+
+    // Emit the smaller op and the shift.
+    SDValue NewCst = CurDAG->getTargetConstant(Val >> ShlVal, CstVT);
+    SDNode *New = CurDAG->getMachineNode(Op, dl, NVT, N0->getOperand(0),NewCst);
+    return CurDAG->SelectNodeTo(Node, ShlOp, NVT, SDValue(New, 0),
+                                getI8Imm(ShlVal));
     break;
   }
   case X86ISD::UMUL: {

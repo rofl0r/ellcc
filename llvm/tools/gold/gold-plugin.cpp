@@ -50,6 +50,7 @@ namespace {
   ld_plugin_add_input_file add_input_file = NULL;
   ld_plugin_add_input_library add_input_library = NULL;
   ld_plugin_set_extra_library_path set_extra_library_path = NULL;
+  ld_plugin_get_view get_view = NULL;
   ld_plugin_message message = discard_message;
 
   int api_version = 0;
@@ -205,6 +206,9 @@ ld_plugin_status onload(ld_plugin_tv *tv) {
       case LDPT_SET_EXTRA_LIBRARY_PATH:
         set_extra_library_path = tv->tv_u.tv_set_extra_library_path;
         break;
+      case LDPT_GET_VIEW:
+        get_view = tv->tv_u.tv_get_view;
+        break;
       case LDPT_MESSAGE:
         message = tv->tv_u.tv_message;
         break;
@@ -232,7 +236,14 @@ static ld_plugin_status claim_file_hook(const ld_plugin_input_file *file,
                                         int *claimed) {
   lto_module_t M;
 
-  if (file->offset) {
+  if (get_view) {
+    const void *view;
+    if (get_view(file->handle, &view) != LDPS_OK) {
+      (*message)(LDPL_ERROR, "Failed to get a view of %s", file->name);
+      return LDPS_ERR;
+    }
+    M = lto_module_create_from_memory(view, file->filesize);
+  } else if (file->offset) {
     // Gold has found what might be IR part-way inside of a file, such as
     // an .a archive.
     M = lto_module_create_from_fd_at_offset(file->fd, file->name, -1,
@@ -397,39 +408,10 @@ static ld_plugin_status all_symbols_read_hook(void) {
     if (options::generate_bc_file == options::BC_ONLY)
       exit(0);
   }
-  size_t bufsize = 0;
-  const char *buffer = static_cast<const char *>(lto_codegen_compile(code_gen,
-                                                                     &bufsize));
-
-  std::string ErrMsg;
-
   const char *objPath;
-  sys::Path uniqueObjPath("/tmp/llvmgold.o");
-  if (!options::obj_path.empty()) {
-    objPath = options::obj_path.c_str();
-  } else {
-    if (uniqueObjPath.createTemporaryFileOnDisk(true, &ErrMsg)) {
-      (*message)(LDPL_ERROR, "%s", ErrMsg.c_str());
-      return LDPS_ERR;
-    }
-    objPath = uniqueObjPath.c_str();
+  if (lto_codegen_compile_to_file(code_gen, &objPath)) {
+    (*message)(LDPL_ERROR, "Could not produce a combined object file\n");
   }
-  tool_output_file objFile(objPath, ErrMsg,
-                             raw_fd_ostream::F_Binary);
-    if (!ErrMsg.empty()) {
-      (*message)(LDPL_ERROR, "%s", ErrMsg.c_str());
-      return LDPS_ERR;
-    }
-
-  objFile.os().write(buffer, bufsize);
-  objFile.os().close();
-  if (objFile.os().has_error()) {
-    (*message)(LDPL_ERROR, "Error writing output file '%s'",
-               objPath);
-    objFile.os().clear_error();
-    return LDPS_ERR;
-  }
-  objFile.keep();
 
   lto_codegen_dispose(code_gen);
   for (std::list<claimed_file>::iterator I = Modules.begin(),

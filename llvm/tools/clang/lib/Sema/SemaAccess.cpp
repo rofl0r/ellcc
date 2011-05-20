@@ -445,8 +445,8 @@ static AccessResult MatchesFriend(Sema &S,
       continue;
 
     // If the template names don't match, it can't be a dependent
-    // match.  This isn't true in C++0x because of template aliases.
-    if (!S.LangOpts.CPlusPlus0x && CTD->getDeclName() != Friend->getDeclName())
+    // match.
+    if (CTD->getDeclName() != Friend->getDeclName())
       continue;
 
     // If the class's context can't instantiate to the friend's
@@ -1011,16 +1011,16 @@ static void DiagnoseAccessPath(Sema &S,
       // Find an original declaration.
       while (D->isOutOfLine()) {
         NamedDecl *PrevDecl = 0;
-        if (isa<VarDecl>(D))
-          PrevDecl = cast<VarDecl>(D)->getPreviousDeclaration();
-        else if (isa<FunctionDecl>(D))
-          PrevDecl = cast<FunctionDecl>(D)->getPreviousDeclaration();
-        else if (isa<TypedefDecl>(D))
-          PrevDecl = cast<TypedefDecl>(D)->getPreviousDeclaration();
-        else if (isa<TagDecl>(D)) {
+        if (VarDecl *VD = dyn_cast<VarDecl>(D))
+          PrevDecl = VD->getPreviousDeclaration();
+        else if (FunctionDecl *FD = dyn_cast<FunctionDecl>(D))
+          PrevDecl = FD->getPreviousDeclaration();
+        else if (TypedefNameDecl *TND = dyn_cast<TypedefNameDecl>(D))
+          PrevDecl = TND->getPreviousDeclaration();
+        else if (TagDecl *TD = dyn_cast<TagDecl>(D)) {
           if (isa<RecordDecl>(D) && cast<RecordDecl>(D)->isInjectedClassName())
             break;
-          PrevDecl = cast<TagDecl>(D)->getPreviousDeclaration();
+          PrevDecl = TD->getPreviousDeclaration();
         }
         if (!PrevDecl) break;
         D = PrevDecl;
@@ -1423,17 +1423,15 @@ Sema::AccessResult Sema::CheckConstructorAccess(SourceLocation UseLoc,
     break;
 
   case InitializedEntity::EK_Base:
-    AccessEntity.setDiag(PDiag(diag::err_access_base)
+    AccessEntity.setDiag(PDiag(diag::err_access_base_ctor)
                           << Entity.isInheritedVirtualBase()
-                          << Entity.getBaseSpecifier()->getType()
-                          << getSpecialMember(Constructor));
+                          << Entity.getBaseSpecifier()->getType());
     break;
 
   case InitializedEntity::EK_Member: {
     const FieldDecl *Field = cast<FieldDecl>(Entity.getDecl());
-    AccessEntity.setDiag(PDiag(diag::err_access_field)
-                          << Field->getType()
-                          << getSpecialMember(Constructor));
+    AccessEntity.setDiag(PDiag(diag::err_access_field_ctor)
+                          << Field->getType());
     break;
   }
 
@@ -1465,7 +1463,8 @@ Sema::AccessResult Sema::CheckDirectMemberAccess(SourceLocation UseLoc,
 Sema::AccessResult Sema::CheckAllocationAccess(SourceLocation OpLoc,
                                                SourceRange PlacementRange,
                                                CXXRecordDecl *NamingClass,
-                                               DeclAccessPair Found) {
+                                               DeclAccessPair Found,
+                                               bool Diagnose) {
   if (!getLangOptions().AccessControl ||
       !NamingClass ||
       Found.getAccess() == AS_public)
@@ -1473,8 +1472,9 @@ Sema::AccessResult Sema::CheckAllocationAccess(SourceLocation OpLoc,
 
   AccessTarget Entity(Context, AccessTarget::Member, NamingClass, Found,
                       QualType());
-  Entity.setDiag(diag::err_access)
-    << PlacementRange;
+  if (Diagnose)
+    Entity.setDiag(diag::err_access)
+      << PlacementRange;
 
   return CheckAccess(*this, OpLoc, Entity);
 }

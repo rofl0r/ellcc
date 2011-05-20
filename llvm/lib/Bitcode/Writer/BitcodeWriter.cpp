@@ -197,7 +197,7 @@ static void WriteTypeTable(const ValueEnumerator &VE, BitstreamWriter &Stream) {
 
   // Loop over all of the types, emitting each in turn.
   for (unsigned i = 0, e = TypeList.size(); i != e; ++i) {
-    const Type *T = TypeList[i].first;
+    const Type *T = TypeList[i];
     int AbbrevToUse = 0;
     unsigned Code = 0;
 
@@ -871,8 +871,6 @@ static void WriteConstants(unsigned FirstVal, unsigned LastVal,
         break;
       }
     } else if (const BlockAddress *BA = dyn_cast<BlockAddress>(C)) {
-      assert(BA->getFunction() == BA->getBasicBlock()->getParent() &&
-             "Malformed blockaddress");
       Code = bitc::CST_CODE_BLOCKADDRESS;
       Record.push_back(VE.getTypeID(BA->getFunction()->getType()));
       Record.push_back(VE.getValueID(BA->getFunction()));

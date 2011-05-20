@@ -22,6 +22,8 @@
 
 .syntax unified
 .align 3
+// Ok, APCS and AAPCS agree on 32 bit args, so it's safe to use the same routine.
+DEFINE_AEABI_FUNCTION_ALIAS(__aeabi_idiv, __divsi3)
 DEFINE_COMPILERRT_FUNCTION(__divsi3)
     ESTABLISH_FRAME
 //  Set aside the sign of the quotient.
@@ -32,7 +34,7 @@ DEFINE_COMPILERRT_FUNCTION(__divsi3)
     sub     r0,     r2, r0, asr #31
     sub     r1,     r3, r1, asr #31
 //  abs(a) / abs(b)
-    bl      ___udivsi3
+    bl      SYMBOL_NAME(__udivsi3)
 //  Apply sign of quotient to result and return.
     eor     r0,     r0, r4, asr #31
     sub     r0,     r0, r4, asr #31

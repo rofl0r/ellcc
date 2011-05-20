@@ -54,6 +54,7 @@ class Decl;
 class DeclContext;
 class NestedNameSpecifier;
 class CXXBaseSpecifier;
+class CXXConstructorDecl;
 class CXXCtorInitializer;
 class GotoStmt;
 class MacroDefinition;
@@ -69,6 +70,7 @@ class ASTStmtReader;
 class ASTIdentifierLookupTrait;
 class TypeLocReader;
 struct HeaderFileInfo;
+class VersionTuple;
 
 struct PCHPredefinesBlock {
   /// \brief The file ID for this predefines buffer in a PCH file.
@@ -215,7 +217,7 @@ private:
 
   /// \brief AST buffers for chained PCHs created and stored in memory.
   /// First (not depending on another) PCH in chain is in front.
-  std::deque<llvm::MemoryBuffer *> ASTBuffers;
+  std::vector<llvm::MemoryBuffer *> ASTBuffers;
 
   /// \brief Information that is needed for every module.
   struct PerFileData {
@@ -563,6 +565,10 @@ private:
   /// generating warnings.
   llvm::SmallVector<uint64_t, 16> UnusedFileScopedDecls;
 
+  /// \brief A list of all the delegating constructors we've seen, to diagnose
+  /// cycles.
+  llvm::SmallVector<uint64_t, 4> DelegatingCtorDecls;
+
   /// \brief A snapshot of Sema's weak undeclared identifier tracking, for
   /// generating warnings.
   llvm::SmallVector<uint64_t, 64> WeakUndeclaredIdentifiers;
@@ -625,6 +631,10 @@ private:
   /// AST file.
   std::string ActualOriginalFileName;
 
+  /// \brief The file ID for the original file that was used to build the
+  /// primary AST file.
+  FileID OriginalFileID;
+  
   /// \brief The directory that the PCH was originally created in. Used to
   /// allow resolving headers even after headers+PCH was moved to a new path.
   std::string OriginalDir;
@@ -810,7 +820,9 @@ private:
   ///
   /// This routine should only be used for fatal errors that have to
   /// do with non-routine failures (e.g., corrupted AST file).
-  void Error(const char *Msg);
+  void Error(llvm::StringRef Msg);
+  void Error(unsigned DiagID, llvm::StringRef Arg1 = llvm::StringRef(),
+             llvm::StringRef Arg2 = llvm::StringRef());
 
   ASTReader(const ASTReader&); // do not implement
   ASTReader &operator=(const ASTReader &); // do not implement
@@ -1063,6 +1075,10 @@ public:
   /// \brief Print some statistics about AST usage.
   virtual void PrintStats();
 
+  /// Return the amount of memory used by memory buffers, breaking down
+  /// by heap-backed versus mmap'ed memory.
+  virtual void getMemoryBufferSizes(MemoryBufferSizes &sizes) const;
+
   /// \brief Initialize the semantic source with the Sema instance
   /// being used to perform semantic analysis on the abstract syntax
   /// tree.
@@ -1119,7 +1135,7 @@ public:
   }
 
   /// \brief Read the source location entry with index ID.
-  virtual void ReadSLocEntry(unsigned ID);
+  virtual bool ReadSLocEntry(unsigned ID);
 
   Selector DecodeSelector(unsigned Idx);
 
@@ -1207,6 +1223,9 @@ public:
 
   // \brief Read a string
   std::string ReadString(const RecordData &Record, unsigned &Idx);
+
+  /// \brief Read a version tuple.
+  VersionTuple ReadVersionTuple(const RecordData &Record, unsigned &Idx);
 
   CXXTemporary *ReadCXXTemporary(const RecordData &Record, unsigned &Idx);
       

@@ -40,17 +40,15 @@ namespace llvm {
       // Handle gp_rel (small data/bss sections) relocation.
       GPRel,
 
-      // Select CC Pseudo Instruction
-      SelectCC,
-
-      // Floating Point Select CC Pseudo Instruction
-      FPSelectCC,
-
       // Floating Point Branch Conditional
       FPBrcond,
 
       // Floating Point Compare
       FPCmp,
+
+      // Floating Point Conditional Moves
+      CMovFP_T,
+      CMovFP_F,
 
       // Floating Point Rounding
       FPRound,
@@ -66,7 +64,10 @@ namespace llvm {
 
       // DivRem(u)
       DivRem,
-      DivRemU
+      DivRemU,
+
+      BuildPairF64,
+      ExtractElementF64
     };
   }
 
@@ -88,9 +89,6 @@ namespace llvm {
     /// getSetCCResultType - get the ISD::SETCC result ValueType
     MVT::SimpleValueType getSetCCResultType(EVT VT) const;
 
-    /// getFunctionAlignment - Return the Log2 alignment of this function.
-    virtual unsigned getFunctionAlignment(const Function *F) const;
-
     virtual SDValue PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const;
   private:
     // Subtarget Info
@@ -105,7 +103,6 @@ namespace llvm {
                             SmallVectorImpl<SDValue> &InVals) const;
 
     // Lower Operand specifics
-    SDValue LowerANDOR(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerBRCOND(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerConstantPool(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerDYNAMIC_STACKALLOC(SDValue Op, SelectionDAG &DAG) const;
@@ -115,7 +112,6 @@ namespace llvm {
     SDValue LowerGlobalTLSAddress(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerJumpTable(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerSELECT(SDValue Op, SelectionDAG &DAG) const;
-    SDValue LowerSETCC(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerVASTART(SDValue Op, SelectionDAG &DAG) const;
 
     virtual SDValue

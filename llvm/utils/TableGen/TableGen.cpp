@@ -65,6 +65,7 @@ enum ActionType {
   GenClangAttrSpellingList,
   GenClangDiagsDefs,
   GenClangDiagGroups,
+  GenClangDiagsIndexName,
   GenClangDeclNodes,
   GenClangStmtNodes,
   GenClangSACheckers,
@@ -133,12 +134,16 @@ namespace {
                                "Generate clang PCH attribute reader"),
                     clEnumValN(GenClangAttrPCHWrite, "gen-clang-attr-pch-write",
                                "Generate clang PCH attribute writer"),
-                    clEnumValN(GenClangAttrSpellingList, "gen-clang-attr-spelling-list",
+                    clEnumValN(GenClangAttrSpellingList,
+                               "gen-clang-attr-spelling-list",
                                "Generate a clang attribute spelling list"),
                     clEnumValN(GenClangDiagsDefs, "gen-clang-diags-defs",
                                "Generate Clang diagnostics definitions"),
                     clEnumValN(GenClangDiagGroups, "gen-clang-diag-groups",
                                "Generate Clang diagnostic groups"),
+                    clEnumValN(GenClangDiagsIndexName,
+                               "gen-clang-diags-index-name",
+                               "Generate Clang diagnostic name index"),
                     clEnumValN(GenClangDeclNodes, "gen-clang-decl-nodes",
                                "Generate Clang AST declaration nodes"),
                     clEnumValN(GenClangStmtNodes, "gen-clang-stmt-nodes",
@@ -223,19 +228,19 @@ int main(int argc, char **argv) {
   cl::ParseCommandLineOptions(argc, argv);
 
 
-  // Parse the input file.
-  if (ParseFile(InputFilename, IncludeDirs, SrcMgr, Records))
-    return 1;
-
-  std::string Error;
-  tool_output_file Out(OutputFilename.c_str(), Error);
-  if (!Error.empty()) {
-    errs() << argv[0] << ": error opening " << OutputFilename
-           << ":" << Error << "\n";
-    return 1;
-  }
-
   try {
+    // Parse the input file.
+    if (ParseFile(InputFilename, IncludeDirs, SrcMgr, Records))
+      return 1;
+
+    std::string Error;
+    tool_output_file Out(OutputFilename.c_str(), Error);
+    if (!Error.empty()) {
+      errs() << argv[0] << ": error opening " << OutputFilename
+        << ":" << Error << "\n";
+      return 1;
+    }
+
     switch (Action) {
     case PrintRecords:
       Out.os() << Records;           // No argument, dump all contents
@@ -294,6 +299,9 @@ int main(int argc, char **argv) {
       break;
     case GenClangDiagGroups:
       ClangDiagGroupsEmitter(Records).run(Out.os());
+      break;
+    case GenClangDiagsIndexName:
+      ClangDiagsIndexNameEmitter(Records).run(Out.os());
       break;
     case GenClangDeclNodes:
       ClangASTNodesEmitter(Records, "Decl", "Decl").run(Out.os());

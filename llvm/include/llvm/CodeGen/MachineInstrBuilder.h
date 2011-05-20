@@ -48,6 +48,7 @@ public:
   /// Allow automatic conversion to the machine instruction we are working on.
   ///
   operator MachineInstr*() const { return MI; }
+  MachineInstr *operator->() const { return MI; }
   operator MachineBasicBlock::iterator() const { return MI; }
 
   /// addReg - Add a new virtual register operand...
@@ -87,7 +88,7 @@ public:
     return *this;
   }
 
-  const MachineInstrBuilder &addFrameIndex(unsigned Idx) const {
+  const MachineInstrBuilder &addFrameIndex(int Idx) const {
     MI->addOperand(MachineOperand::CreateFI(Idx));
     return *this;
   }

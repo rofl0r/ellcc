@@ -46,7 +46,6 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/CFG.h"
 #include <algorithm>
-#include <map>
 #include <queue>
 using namespace llvm;
 
@@ -104,7 +103,7 @@ bool llvm::isAllocaPromotable(const AllocaInst *AI) {
 /// FindAllocaDbgDeclare - Finds the llvm.dbg.declare intrinsic describing the
 /// alloca 'V', if any.
 static DbgDeclareInst *FindAllocaDbgDeclare(Value *V) {
-  if (MDNode *DebugNode = MDNode::getIfExists(V->getContext(), &V, 1))
+  if (MDNode *DebugNode = MDNode::getIfExists(V->getContext(), V))
     for (Value::use_iterator UI = DebugNode->use_begin(),
          E = DebugNode->use_end(); UI != E; ++UI)
       if (DbgDeclareInst *DDI = dyn_cast<DbgDeclareInst>(*UI))
@@ -961,12 +960,11 @@ bool PromoteMem2Reg::QueuePhiNode(BasicBlock *BB, unsigned AllocaNo,
 
   // Create a PhiNode using the dereferenced type... and add the phi-node to the
   // BasicBlock.
-  PN = PHINode::Create(Allocas[AllocaNo]->getAllocatedType(),
+  PN = PHINode::Create(Allocas[AllocaNo]->getAllocatedType(), getNumPreds(BB),
                        Allocas[AllocaNo]->getName() + "." + Twine(Version++), 
                        BB->begin());
   ++NumPHIInsert;
   PhiToAllocaMap[PN] = AllocaNo;
-  PN->reserveOperandSpace(getNumPreds(BB));
 
   if (AST && PN->getType()->isPointerTy())
     AST->copyValue(PointerAllocaValues[AllocaNo], PN);

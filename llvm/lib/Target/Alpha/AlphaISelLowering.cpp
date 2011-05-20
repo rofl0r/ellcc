@@ -155,6 +155,8 @@ AlphaTargetLowering::AlphaTargetLowering(TargetMachine &TM)
   setJumpBufSize(272);
   setJumpBufAlignment(16);
 
+  setMinFunctionAlignment(4);
+
   computeRegisterProperties();
 }
 
@@ -178,11 +180,6 @@ const char *AlphaTargetLowering::getTargetNodeName(unsigned Opcode) const {
   case AlphaISD::COND_BRANCH_I: return "Alpha::COND_BRANCH_I";
   case AlphaISD::COND_BRANCH_F: return "Alpha::COND_BRANCH_F";
   }
-}
-
-/// getFunctionAlignment - Return the Log2 alignment of this function.
-unsigned AlphaTargetLowering::getFunctionAlignment(const Function *F) const {
-  return 4;
 }
 
 static SDValue LowerJumpTable(SDValue Op, SelectionDAG &DAG) {
@@ -296,7 +293,7 @@ AlphaTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
 
   // Build a sequence of copy-to-reg nodes chained together with token chain and
   // flag operands which copy the outgoing args into registers.  The InFlag in
-  // necessary since all emited instructions must be stuck together.
+  // necessary since all emitted instructions must be stuck together.
   SDValue InFlag;
   for (unsigned i = 0, e = RegsToPass.size(); i != e; ++i) {
     Chain = DAG.getCopyToReg(Chain, dl, RegsToPass[i].first,

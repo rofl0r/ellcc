@@ -71,12 +71,19 @@ static cl::opt<bool> DisableSchedCycles(
   cl::desc("Disable cycle-level precision during preRA scheduling"));
 
 // Temporary sched=list-ilp flags until the heuristics are robust.
+// Some options are also available under sched=list-hybrid.
 static cl::opt<bool> DisableSchedRegPressure(
   "disable-sched-reg-pressure", cl::Hidden, cl::init(false),
   cl::desc("Disable regpressure priority in sched=list-ilp"));
 static cl::opt<bool> DisableSchedLiveUses(
   "disable-sched-live-uses", cl::Hidden, cl::init(true),
   cl::desc("Disable live use priority in sched=list-ilp"));
+static cl::opt<bool> DisableSchedVRegCycle(
+  "disable-sched-vrcycle", cl::Hidden, cl::init(false),
+  cl::desc("Disable virtual register cycle interference checks"));
+static cl::opt<bool> DisableSchedPhysRegJoin(
+  "disable-sched-physreg-join", cl::Hidden, cl::init(false),
+  cl::desc("Disable physreg def-use affinity"));
 static cl::opt<bool> DisableSchedStalls(
   "disable-sched-stalls", cl::Hidden, cl::init(true),
   cl::desc("Disable no-stall priority in sched=list-ilp"));
@@ -99,11 +106,11 @@ static cl::opt<unsigned> AvgIPC(
 #ifndef NDEBUG
 namespace {
   // For sched=list-ilp, Count the number of times each factor comes into play.
-  enum { FactPressureDiff, FactRegUses, FactHeight, FactDepth, FactStatic,
-         FactOther, NumFactors };
+  enum { FactPressureDiff, FactRegUses, FactStall, FactHeight, FactDepth,
+         FactStatic, FactOther, NumFactors };
 }
 static const char *FactorName[NumFactors] =
-{"PressureDiff", "RegUses", "Height", "Depth","Static", "Other"};
+{"PressureDiff", "RegUses", "Stall", "Height", "Depth","Static", "Other"};
 static int FactorCount[NumFactors];
 #endif //!NDEBUG
 
@@ -460,6 +467,13 @@ void ScheduleDAGRRList::AdvancePastStalls(SUnit *SU) {
   if (DisableSchedCycles)
     return;
 
+  // FIXME: Nodes such as CopyFromReg probably should not advance the current
+  // cycle. Otherwise, we can wrongly mask real stalls. If the non-machine node
+  // has predecessors the cycle will be advanced when they are scheduled.
+  // But given the crude nature of modeling latency though such nodes, we
+  // currently need to treat these nodes like real instructions.
+  // if (!SU->getNode() || !SU->getNode()->isMachineOpcode()) return;
+
   unsigned ReadyCycle = isBottomUp ? SU->getHeight() : SU->getDepth();
 
   // Bump CurCycle to account for latency. We assume the latency of other
@@ -530,6 +544,8 @@ void ScheduleDAGRRList::EmitNode(SUnit *SU) {
   }
 }
 
+static void resetVRegCycle(SUnit *SU);
+
 /// ScheduleNodeBottomUp - Add the node to the schedule. Decrement the pending
 /// count of its predecessors. If a predecessor pending count is zero, add it to
 /// the Available queue.
@@ -539,12 +555,13 @@ void ScheduleDAGRRList::ScheduleNodeBottomUp(SUnit *SU) {
 
 #ifndef NDEBUG
   if (CurCycle < SU->getHeight())
-    DEBUG(dbgs() << "   Height [" << SU->getHeight() << "] pipeline stall!\n");
+    DEBUG(dbgs() << "   Height [" << SU->getHeight()
+          << "] pipeline stall!\n");
 #endif
 
   // FIXME: Do not modify node height. It may interfere with
   // backtracking. Instead add a "ready cycle" to SUnit. Before scheduling the
-  // node it's ready cycle can aid heuristics, and after scheduling it can
+  // node its ready cycle can aid heuristics, and after scheduling it can
   // indicate the scheduled cycle.
   SU->setHeightToAtLeast(CurCycle);
 
@@ -556,7 +573,7 @@ void ScheduleDAGRRList::ScheduleNodeBottomUp(SUnit *SU) {
   AvailableQueue->ScheduledNode(SU);
 
   // If HazardRec is disabled, and each inst counts as one cycle, then
-  // advance CurCycle before ReleasePredecessors to avoid useles pushed to
+  // advance CurCycle before ReleasePredecessors to avoid useless pushes to
   // PendingQueue for schedulers that implement HasReadyFilter.
   if (!HazardRec->isEnabled() && AvgIPC < 2)
     AdvanceToCycle(CurCycle + 1);
@@ -577,20 +594,25 @@ void ScheduleDAGRRList::ScheduleNodeBottomUp(SUnit *SU) {
     }
   }
 
+  resetVRegCycle(SU);
+
   SU->isScheduled = true;
 
   // Conditions under which the scheduler should eagerly advance the cycle:
   // (1) No available instructions
   // (2) All pipelines full, so available instructions must have hazards.
   //
-  // If HazardRec is disabled, the cycle was advanced earlier.
+  // If HazardRec is disabled, the cycle was pre-advanced before calling
+  // ReleasePredecessors. In that case, IssueCount should remain 0.
   //
   // Check AvailableQueue after ReleasePredecessors in case of zero latency.
-  ++IssueCount;
-  if ((HazardRec->isEnabled() && HazardRec->atIssueLimit())
-      || (!HazardRec->isEnabled() && AvgIPC > 1 && IssueCount == AvgIPC)
-      || AvailableQueue->empty())
-    AdvanceToCycle(CurCycle + 1);
+  if (HazardRec->isEnabled() || AvgIPC > 1) {
+    if (SU->getNode() && SU->getNode()->isMachineOpcode())
+      ++IssueCount;
+    if ((HazardRec->isEnabled() && HazardRec->atIssueLimit())
+        || (!HazardRec->isEnabled() && IssueCount == AvgIPC))
+      AdvanceToCycle(CurCycle + 1);
+  }
 }
 
 /// CapturePred - This does the opposite of ReleasePred. Since SU is being
@@ -935,6 +957,15 @@ void ScheduleDAGRRList::InsertCopiesAndMoveSuccs(SUnit *SU, unsigned Reg,
       AddPred(SuccSU, D);
       DelDeps.push_back(std::make_pair(SuccSU, *I));
     }
+    else {
+      // Avoid scheduling the def-side copy before other successors. Otherwise
+      // we could introduce another physreg interference on the copy and
+      // continue inserting copies indefinitely.
+      SDep D(CopyFromSU, SDep::Order, /*Latency=*/0,
+             /*Reg=*/0, /*isNormalMemory=*/false,
+             /*isMustAlias=*/false, /*isArtificial=*/true);
+      AddPred(SuccSU, D);
+    }
   }
   for (unsigned i = 0, e = DelDeps.size(); i != e; ++i)
     RemovePred(DelDeps[i].first, DelDeps[i].second);
@@ -1208,7 +1239,7 @@ void ScheduleDAGRRList::ListScheduleBottomUp() {
   // priority. If it is not ready put it back.  Schedule the node.
   Sequence.reserve(SUnits.size());
   while (!AvailableQueue->empty()) {
-    DEBUG(dbgs() << "\n*** Examining Available\n";
+    DEBUG(dbgs() << "\nExamining Available:\n";
           AvailableQueue->dump(this));
 
     // Pick the best node to schedule taking all constraints into
@@ -1491,6 +1522,8 @@ public:
   unsigned getNodePriority(const SUnit *SU) const;
 
   unsigned getNodeOrdering(const SUnit *SU) const {
+    if (!SU->getNode()) return 0;
+
     return scheduleDAG->DAG->GetOrdering(SU->getNode());
   }
 
@@ -1609,6 +1642,20 @@ ILPBURRPriorityQueue;
 //           Static Node Priority for Register Pressure Reduction
 //===----------------------------------------------------------------------===//
 
+// Check for special nodes that bypass scheduling heuristics.
+// Currently this pushes TokenFactor nodes down, but may be used for other
+// pseudo-ops as well.
+//
+// Return -1 to schedule right above left, 1 for left above right.
+// Return 0 if no bias exists.
+static int checkSpecialNodes(const SUnit *left, const SUnit *right) {
+  bool LSchedLow = left->isScheduleLow;
+  bool RSchedLow = right->isScheduleLow;
+  if (LSchedLow != RSchedLow)
+    return LSchedLow < RSchedLow ? 1 : -1;
+  return 0;
+}
+
 /// CalcNodeSethiUllmanNumber - Compute Sethi Ullman number.
 /// Smaller number is the higher priority.
 static unsigned
@@ -1645,17 +1692,6 @@ void RegReductionPQBase::CalculateSethiUllmanNumbers() {
 
   for (unsigned i = 0, e = SUnits->size(); i != e; ++i)
     CalcNodeSethiUllmanNumber(&(*SUnits)[i], SethiUllmanNumbers);
-}
-
-void RegReductionPQBase::initNodes(std::vector<SUnit> &sunits) {
-  SUnits = &sunits;
-  // Add pseudo dependency edges for two-address nodes.
-  AddPseudoTwoAddrDeps();
-  // Reroute edges to nodes with multiple uses.
-  if (!TracksRegPressure)
-    PrescheduleNodesWithMultipleUses();
-  // Calculate node priorities.
-  CalculateSethiUllmanNumbers();
 }
 
 void RegReductionPQBase::addNode(const SUnit *SU) {
@@ -1696,7 +1732,17 @@ unsigned RegReductionPQBase::getNodePriority(const SUnit *SU) const {
     // If SU does not have a register def, schedule it close to its uses
     // because it does not lengthen any live ranges.
     return 0;
+#if 1
   return SethiUllmanNumbers[SU->NodeNum];
+#else
+  unsigned Priority = SethiUllmanNumbers[SU->NodeNum];
+  if (SU->isCallOp) {
+    // FIXME: This assumes all of the defs are used as call operands.
+    int NP = (int)Priority - SU->getNode()->getNumValues();
+    return (NP > 0) ? NP : 0;
+  }
+  return Priority;
+#endif
 }
 
 //===----------------------------------------------------------------------===//
@@ -1812,7 +1858,7 @@ void RegReductionPQBase::ScheduledNode(SUnit *SU) {
 
   if (!SU->getNode())
     return;
-  
+
   for (SUnit::pred_iterator I = SU->Preds.begin(), E = SU->Preds.end();
        I != E; ++I) {
     if (I->isCtrl())
@@ -1880,7 +1926,7 @@ void RegReductionPQBase::UnscheduledNode(SUnit *SU) {
 
   const SDNode *N = SU->getNode();
   if (!N) return;
-  
+
   if (!N->isMachineOpcode()) {
     if (N->getOpcode() != ISD::CopyToReg)
       return;
@@ -1994,7 +2040,29 @@ static unsigned calcMaxScratches(const SUnit *SU) {
   return Scratches;
 }
 
-/// hasOnlyLiveOutUse - Return true if SU has a single value successor that is a
+/// hasOnlyLiveInOpers - Return true if SU has only value predecessors that are
+/// CopyFromReg from a virtual register.
+static bool hasOnlyLiveInOpers(const SUnit *SU) {
+  bool RetVal = false;
+  for (SUnit::const_pred_iterator I = SU->Preds.begin(), E = SU->Preds.end();
+       I != E; ++I) {
+    if (I->isCtrl()) continue;
+    const SUnit *PredSU = I->getSUnit();
+    if (PredSU->getNode() &&
+        PredSU->getNode()->getOpcode() == ISD::CopyFromReg) {
+      unsigned Reg =
+        cast<RegisterSDNode>(PredSU->getNode()->getOperand(1))->getReg();
+      if (TargetRegisterInfo::isVirtualRegister(Reg)) {
+        RetVal = true;
+        continue;
+      }
+    }
+    return false;
+  }
+  return RetVal;
+}
+
+/// hasOnlyLiveOutUses - Return true if SU has only value successors that are
 /// CopyToReg to a virtual register. This SU def is probably a liveout and
 /// it has no other use. It should be scheduled closer to the terminator.
 static bool hasOnlyLiveOutUses(const SUnit *SU) {
@@ -2016,20 +2084,67 @@ static bool hasOnlyLiveOutUses(const SUnit *SU) {
   return RetVal;
 }
 
-/// UnitsSharePred - Return true if the two scheduling units share a common
-/// data predecessor.
-static bool UnitsSharePred(const SUnit *left, const SUnit *right) {
-  SmallSet<const SUnit*, 4> Preds;
-  for (SUnit::const_pred_iterator I = left->Preds.begin(),E = left->Preds.end();
+// Set isVRegCycle for a node with only live in opers and live out uses. Also
+// set isVRegCycle for its CopyFromReg operands.
+//
+// This is only relevant for single-block loops, in which case the VRegCycle
+// node is likely an induction variable in which the operand and target virtual
+// registers should be coalesced (e.g. pre/post increment values). Setting the
+// isVRegCycle flag helps the scheduler prioritize other uses of the same
+// CopyFromReg so that this node becomes the virtual register "kill". This
+// avoids interference between the values live in and out of the block and
+// eliminates a copy inside the loop.
+static void initVRegCycle(SUnit *SU) {
+  if (DisableSchedVRegCycle)
+    return;
+
+  if (!hasOnlyLiveInOpers(SU) || !hasOnlyLiveOutUses(SU))
+    return;
+
+  DEBUG(dbgs() << "VRegCycle: SU(" << SU->NodeNum << ")\n");
+
+  SU->isVRegCycle = true;
+
+  for (SUnit::const_pred_iterator I = SU->Preds.begin(), E = SU->Preds.end();
        I != E; ++I) {
-    if (I->isCtrl()) continue;  // ignore chain preds
-    Preds.insert(I->getSUnit());
+    if (I->isCtrl()) continue;
+    I->getSUnit()->isVRegCycle = true;
   }
-  for (SUnit::const_pred_iterator I = right->Preds.begin(),E = right->Preds.end();
+}
+
+// After scheduling the definition of a VRegCycle, clear the isVRegCycle flag of
+// CopyFromReg operands. We should no longer penalize other uses of this VReg.
+static void resetVRegCycle(SUnit *SU) {
+  if (!SU->isVRegCycle)
+    return;
+
+  for (SUnit::const_pred_iterator I = SU->Preds.begin(),E = SU->Preds.end();
        I != E; ++I) {
     if (I->isCtrl()) continue;  // ignore chain preds
-    if (Preds.count(I->getSUnit()))
+    SUnit *PredSU = I->getSUnit();
+    if (PredSU->isVRegCycle) {
+      assert(PredSU->getNode()->getOpcode() == ISD::CopyFromReg &&
+             "VRegCycle def must be CopyFromReg");
+      I->getSUnit()->isVRegCycle = 0;
+    }
+  }
+}
+
+// Return true if this SUnit uses a CopyFromReg node marked as a VRegCycle. This
+// means a node that defines the VRegCycle has not been scheduled yet.
+static bool hasVRegCycleUse(const SUnit *SU) {
+  // If this SU also defines the VReg, don't hoist it as a "use".
+  if (SU->isVRegCycle)
+    return false;
+
+  for (SUnit::const_pred_iterator I = SU->Preds.begin(),E = SU->Preds.end();
+       I != E; ++I) {
+    if (I->isCtrl()) continue;  // ignore chain preds
+    if (I->getSUnit()->isVRegCycle &&
+        I->getSUnit()->getNode()->getOpcode() == ISD::CopyFromReg) {
+      DEBUG(dbgs() << "  VReg cycle use: SU (" << SU->NodeNum << ")\n");
       return true;
+    }
   }
   return false;
 }
@@ -2049,23 +2164,12 @@ static bool BUHasStall(SUnit *SU, int Height, RegReductionPQBase *SPQ) {
 // Return 0 if latency-based priority is equivalent.
 static int BUCompareLatency(SUnit *left, SUnit *right, bool checkPref,
                             RegReductionPQBase *SPQ) {
-  // If the two nodes share an operand and one of them has a single
-  // use that is a live out copy, favor the one that is live out. Otherwise
-  // it will be difficult to eliminate the copy if the instruction is a
-  // loop induction variable update. e.g.
-  // BB:
-  // sub r1, r3, #1
-  // str r0, [r2, r3]
-  // mov r3, r1
-  // cmp
-  // bne BB
-  bool SharePred = UnitsSharePred(left, right);
-  // FIXME: Only adjust if BB is a loop back edge.
-  // FIXME: What's the cost of a copy?
-  int LBonus = (SharePred && hasOnlyLiveOutUses(left)) ? 1 : 0;
-  int RBonus = (SharePred && hasOnlyLiveOutUses(right)) ? 1 : 0;
-  int LHeight = (int)left->getHeight() - LBonus;
-  int RHeight = (int)right->getHeight() - RBonus;
+  // Scheduling an instruction that uses a VReg whose postincrement has not yet
+  // been scheduled will induce a copy. Model this as an extra cycle of latency.
+  int LPenalty = hasVRegCycleUse(left) ? 1 : 0;
+  int RPenalty = hasVRegCycleUse(right) ? 1 : 0;
+  int LHeight = (int)left->getHeight() + LPenalty;
+  int RHeight = (int)right->getHeight() + RPenalty;
 
   bool LStall = (!checkPref || left->SchedulingPref == Sched::Latency) &&
     BUHasStall(left, LHeight, SPQ);
@@ -2076,48 +2180,102 @@ static int BUCompareLatency(SUnit *left, SUnit *right, bool checkPref,
   // If scheduling either one of the node will cause a pipeline stall, sort
   // them according to their height.
   if (LStall) {
-    if (!RStall)
+    if (!RStall) {
+      DEBUG(++FactorCount[FactStall]);
       return 1;
-    if (LHeight != RHeight)
+    }
+    if (LHeight != RHeight) {
+      DEBUG(++FactorCount[FactStall]);
       return LHeight > RHeight ? 1 : -1;
-  } else if (RStall)
+    }
+  } else if (RStall) {
+    DEBUG(++FactorCount[FactStall]);
     return -1;
+  }
 
   // If either node is scheduling for latency, sort them by height/depth
   // and latency.
   if (!checkPref || (left->SchedulingPref == Sched::Latency ||
                      right->SchedulingPref == Sched::Latency)) {
     if (DisableSchedCycles) {
-      if (LHeight != RHeight)
+      if (LHeight != RHeight) {
+        DEBUG(++FactorCount[FactHeight]);
         return LHeight > RHeight ? 1 : -1;
+      }
     }
     else {
       // If neither instruction stalls (!LStall && !RStall) then
       // its height is already covered so only its depth matters. We also reach
       // this if both stall but have the same height.
-      unsigned LDepth = left->getDepth();
-      unsigned RDepth = right->getDepth();
+      int LDepth = left->getDepth() - LPenalty;
+      int RDepth = right->getDepth() - RPenalty;
       if (LDepth != RDepth) {
+        DEBUG(++FactorCount[FactDepth]);
         DEBUG(dbgs() << "  Comparing latency of SU (" << left->NodeNum
               << ") depth " << LDepth << " vs SU (" << right->NodeNum
               << ") depth " << RDepth << "\n");
         return LDepth < RDepth ? 1 : -1;
       }
     }
-    if (left->Latency != right->Latency)
+    if (left->Latency != right->Latency) {
+      DEBUG(++FactorCount[FactOther]);
       return left->Latency > right->Latency ? 1 : -1;
+    }
   }
   return 0;
 }
 
 static bool BURRSort(SUnit *left, SUnit *right, RegReductionPQBase *SPQ) {
+  // Schedule physical register definitions close to their use. This is
+  // motivated by microarchitectures that can fuse cmp+jump macro-ops. But as
+  // long as shortening physreg live ranges is generally good, we can defer
+  // creating a subtarget hook.
+  if (!DisableSchedPhysRegJoin) {
+    bool LHasPhysReg = left->hasPhysRegDefs;
+    bool RHasPhysReg = right->hasPhysRegDefs;
+    if (LHasPhysReg != RHasPhysReg) {
+      DEBUG(++FactorCount[FactRegUses]);
+      #ifndef NDEBUG
+      const char *PhysRegMsg[] = {" has no physreg", " defines a physreg"};
+      #endif
+      DEBUG(dbgs() << "  SU (" << left->NodeNum << ") "
+            << PhysRegMsg[LHasPhysReg] << " SU(" << right->NodeNum << ") "
+            << PhysRegMsg[RHasPhysReg] << "\n");
+      return LHasPhysReg < RHasPhysReg;
+    }
+  }
+
+  // Prioritize by Sethi-Ulmann number and push CopyToReg nodes down.
   unsigned LPriority = SPQ->getNodePriority(left);
   unsigned RPriority = SPQ->getNodePriority(right);
+
+  // Be really careful about hoisting call operands above previous calls.
+  // Only allows it if it would reduce register pressure.
+  if (left->isCall && right->isCallOp) {
+    unsigned RNumVals = right->getNode()->getNumValues();
+    RPriority = (RPriority > RNumVals) ? (RPriority - RNumVals) : 0;
+  }
+  if (right->isCall && left->isCallOp) {
+    unsigned LNumVals = left->getNode()->getNumValues();
+    LPriority = (LPriority > LNumVals) ? (LPriority - LNumVals) : 0;
+  }
+
   if (LPriority != RPriority) {
     DEBUG(++FactorCount[FactStatic]);
     return LPriority > RPriority;
   }
-  DEBUG(++FactorCount[FactOther]);
+
+  // One or both of the nodes are calls and their sethi-ullman numbers are the
+  // same, then keep source order.
+  if (left->isCall || right->isCall) {
+    unsigned LOrder = SPQ->getNodeOrdering(left);
+    unsigned ROrder = SPQ->getNodeOrdering(right);
+
+    // Prefer an ordering where the lower the non-zero order number, the higher
+    // the preference.
+    if ((LOrder || ROrder) && LOrder != ROrder)
+      return LOrder != 0 && (LOrder < ROrder || ROrder == 0);
+  }
 
   // Try schedule def + use closer when Sethi-Ullman numbers are the same.
   // e.g.
@@ -2138,40 +2296,62 @@ static bool BURRSort(SUnit *left, SUnit *right, RegReductionPQBase *SPQ) {
   // This creates more short live intervals.
   unsigned LDist = closestSucc(left);
   unsigned RDist = closestSucc(right);
-  if (LDist != RDist)
+  if (LDist != RDist) {
+    DEBUG(++FactorCount[FactOther]);
     return LDist < RDist;
+  }
 
   // How many registers becomes live when the node is scheduled.
   unsigned LScratch = calcMaxScratches(left);
   unsigned RScratch = calcMaxScratches(right);
-  if (LScratch != RScratch)
+  if (LScratch != RScratch) {
+    DEBUG(++FactorCount[FactOther]);
     return LScratch > RScratch;
+  }
 
-  if (!DisableSchedCycles) {
+  // Comparing latency against a call makes little sense unless the node
+  // is register pressure-neutral.
+  if ((left->isCall && RPriority > 0) || (right->isCall && LPriority > 0))
+    return (left->NodeQueueId > right->NodeQueueId);
+
+  // Do not compare latencies when one or both of the nodes are calls.
+  if (!DisableSchedCycles &&
+      !(left->isCall || right->isCall)) {
     int result = BUCompareLatency(left, right, false /*checkPref*/, SPQ);
     if (result != 0)
       return result > 0;
   }
   else {
-    if (left->getHeight() != right->getHeight())
+    if (left->getHeight() != right->getHeight()) {
+      DEBUG(++FactorCount[FactHeight]);
       return left->getHeight() > right->getHeight();
+    }
 
-    if (left->getDepth() != right->getDepth())
+    if (left->getDepth() != right->getDepth()) {
+      DEBUG(++FactorCount[FactDepth]);
       return left->getDepth() < right->getDepth();
+    }
   }
 
   assert(left->NodeQueueId && right->NodeQueueId &&
          "NodeQueueId cannot be zero");
+  DEBUG(++FactorCount[FactOther]);
   return (left->NodeQueueId > right->NodeQueueId);
 }
 
 // Bottom up
 bool bu_ls_rr_sort::operator()(SUnit *left, SUnit *right) const {
+  if (int res = checkSpecialNodes(left, right))
+    return res > 0;
+
   return BURRSort(left, right, SPQ);
 }
 
 // Source order, otherwise bottom up.
 bool src_ls_rr_sort::operator()(SUnit *left, SUnit *right) const {
+  if (int res = checkSpecialNodes(left, right))
+    return res > 0;
+
   unsigned LOrder = SPQ->getNodeOrdering(left);
   unsigned ROrder = SPQ->getNodeOrdering(right);
 
@@ -2203,6 +2383,9 @@ bool hybrid_ls_rr_sort::isReady(SUnit *SU, unsigned CurCycle) const {
 
 // Return true if right should be scheduled with higher priority than left.
 bool hybrid_ls_rr_sort::operator()(SUnit *left, SUnit *right) const {
+  if (int res = checkSpecialNodes(left, right))
+    return res > 0;
+
   if (left->isCall || right->isCall)
     // No way to compute latency of calls.
     return BURRSort(left, right, SPQ);
@@ -2212,16 +2395,18 @@ bool hybrid_ls_rr_sort::operator()(SUnit *left, SUnit *right) const {
   // Avoid causing spills. If register pressure is high, schedule for
   // register pressure reduction.
   if (LHigh && !RHigh) {
+    DEBUG(++FactorCount[FactPressureDiff]);
     DEBUG(dbgs() << "  pressure SU(" << left->NodeNum << ") > SU("
           << right->NodeNum << ")\n");
     return true;
   }
   else if (!LHigh && RHigh) {
+    DEBUG(++FactorCount[FactPressureDiff]);
     DEBUG(dbgs() << "  pressure SU(" << right->NodeNum << ") > SU("
           << left->NodeNum << ")\n");
     return false;
   }
-  else if (!LHigh && !RHigh) {
+  if (!LHigh && !RHigh) {
     int result = BUCompareLatency(left, right, true /*checkPref*/, SPQ);
     if (result != 0)
       return result > 0;
@@ -2266,6 +2451,9 @@ static bool canEnableCoalescing(SUnit *SU) {
 // list-ilp is currently an experimental scheduler that allows various
 // heuristics to be enabled prior to the normal register reduction logic.
 bool ilp_ls_rr_sort::operator()(SUnit *left, SUnit *right) const {
+  if (int res = checkSpecialNodes(left, right))
+    return res > 0;
+
   if (left->isCall || right->isCall)
     // No way to compute latency of calls.
     return BURRSort(left, right, SPQ);
@@ -2327,6 +2515,24 @@ bool ilp_ls_rr_sort::operator()(SUnit *left, SUnit *right) const {
   }
 
   return BURRSort(left, right, SPQ);
+}
+
+void RegReductionPQBase::initNodes(std::vector<SUnit> &sunits) {
+  SUnits = &sunits;
+  // Add pseudo dependency edges for two-address nodes.
+  AddPseudoTwoAddrDeps();
+  // Reroute edges to nodes with multiple uses.
+  if (!TracksRegPressure)
+    PrescheduleNodesWithMultipleUses();
+  // Calculate node priorities.
+  CalculateSethiUllmanNumbers();
+
+  // For single block loops, mark nodes that look like canonical IV increments.
+  if (scheduleDAG->BB->isSuccessor(scheduleDAG->BB)) {
+    for (unsigned i = 0, e = sunits.size(); i != e; ++i) {
+      initVRegCycle(&sunits[i]);
+    }
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -2606,6 +2812,9 @@ static unsigned LimitedSumOfUnscheduledPredsOfSuccs(const SUnit *SU,
 
 // Top down
 bool td_ls_rr_sort::operator()(const SUnit *left, const SUnit *right) const {
+  if (int res = checkSpecialNodes(left, right))
+    return res < 0;
+
   unsigned LPriority = SPQ->getNodePriority(left);
   unsigned RPriority = SPQ->getNodePriority(right);
   bool LIsTarget = left->getNode() && left->getNode()->isMachineOpcode();

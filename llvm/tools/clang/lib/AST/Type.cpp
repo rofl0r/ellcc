@@ -27,6 +27,18 @@
 #include <algorithm>
 using namespace clang;
 
+bool Qualifiers::isStrictSupersetOf(Qualifiers Other) const {
+  return (*this != Other) &&
+    // CVR qualifiers superset
+    (((Mask & CVRMask) | (Other.Mask & CVRMask)) == (Mask & CVRMask)) &&
+    // ObjC GC qualifiers superset
+    ((getObjCGCAttr() == Other.getObjCGCAttr()) ||
+     (hasObjCGCAttr() && !Other.hasObjCGCAttr())) &&
+    // Address space superset.
+    ((getAddressSpace() == Other.getAddressSpace()) ||
+     (hasAddressSpace()&& !Other.hasAddressSpace()));
+}
+
 bool QualType::isConstant(QualType T, ASTContext &Ctx) {
   if (T.isConstQualified())
     return true;
@@ -408,6 +420,16 @@ const ObjCObjectPointerType *Type::getAsObjCQualifiedIdType() const {
   return 0;
 }
 
+const ObjCObjectPointerType *Type::getAsObjCQualifiedClassType() const {
+  // There is no sugar for ObjCQualifiedClassType's, just return the canonical
+  // type pointer if it is the right class.
+  if (const ObjCObjectPointerType *OPT = getAs<ObjCObjectPointerType>()) {
+    if (OPT->isObjCQualifiedClassType())
+      return OPT;
+  }
+  return 0;
+}
+
 const ObjCObjectPointerType *Type::getAsObjCInterfacePointerType() const {
   if (const ObjCObjectPointerType *OPT = getAs<ObjCObjectPointerType>()) {
     if (OPT->getInterfaceType())
@@ -495,7 +517,7 @@ bool Type::isIntegerType() const {
   if (const EnumType *ET = dyn_cast<EnumType>(CanonicalType))
     // Incomplete enum types are not treated as integer types.
     // FIXME: In C++, enum types are never integer types.
-    return ET->getDecl()->isComplete();
+    return ET->getDecl()->isComplete() && !ET->getDecl()->isScoped();
   return false;
 }
 
@@ -619,7 +641,7 @@ bool Type::isSignedIntegerType() const {
   if (const EnumType *ET = dyn_cast<EnumType>(CanonicalType)) {
     // Incomplete enum types are not treated as integer types.
     // FIXME: In C++, enum types are never integer types.
-    if (ET->getDecl()->isComplete())
+    if (ET->getDecl()->isComplete() && !ET->getDecl()->isScoped())
       return ET->getDecl()->getIntegerType()->isSignedIntegerType();
   }
 
@@ -645,7 +667,7 @@ bool Type::isUnsignedIntegerType() const {
   if (const EnumType *ET = dyn_cast<EnumType>(CanonicalType)) {
     // Incomplete enum types are not treated as integer types.
     // FIXME: In C++, enum types are never integer types.
-    if (ET->getDecl()->isComplete())
+    if (ET->getDecl()->isComplete() && !ET->getDecl()->isScoped())
       return ET->getDecl()->getIntegerType()->isUnsignedIntegerType();
   }
 
@@ -859,37 +881,201 @@ bool Type::isPODType() const {
 }
 
 bool Type::isLiteralType() const {
-  if (isIncompleteType())
+  if (isDependentType())
     return false;
 
   // C++0x [basic.types]p10:
   //   A type is a literal type if it is:
-  switch (CanonicalType->getTypeClass()) {
-    // We're whitelisting
-  default: return false;
+  //   [...]
+  //   -- an array of literal type
+  // Extension: variable arrays cannot be literal types, since they're
+  // runtime-sized.
+  if (isVariableArrayType())
+    return false;
+  const Type *BaseTy = getBaseElementTypeUnsafe();
+  assert(BaseTy && "NULL element type");
 
-    //   -- a scalar type
-  case Builtin:
-  case Complex:
-  case Pointer:
-  case MemberPointer:
-  case Vector:
-  case ExtVector:
-  case ObjCObjectPointer:
-  case Enum:
-    return true;
-
-    //   -- a class type with ...
-  case Record:
-    // FIXME: Do the tests
+  // Return false for incomplete types after skipping any incomplete array
+  // types; those are expressly allowed by the standard and thus our API.
+  if (BaseTy->isIncompleteType())
     return false;
 
-    //   -- an array of literal type
-    // Extension: variable arrays cannot be literal types, since they're
-    // runtime-sized.
-  case ConstantArray:
-    return cast<ArrayType>(CanonicalType)->getElementType()->isLiteralType();
+  // C++0x [basic.types]p10:
+  //   A type is a literal type if it is:
+  //    -- a scalar type; or
+  // As an extension, Clang treats vector types as Scalar types.
+  if (BaseTy->isScalarType() || BaseTy->isVectorType()) return true;
+  //    -- a reference type; or
+  if (BaseTy->isReferenceType()) return true;
+  //    -- a class type that has all of the following properties:
+  if (const RecordType *RT = BaseTy->getAs<RecordType>()) {
+    if (const CXXRecordDecl *ClassDecl =
+        dyn_cast<CXXRecordDecl>(RT->getDecl())) {
+      //    -- a trivial destructor,
+      if (!ClassDecl->hasTrivialDestructor()) return false;
+      //    -- every constructor call and full-expression in the
+      //       brace-or-equal-initializers for non-static data members (if any)
+      //       is a constant expression,
+      // FIXME: C++0x: Clang doesn't yet support non-static data member
+      // declarations with initializers, or constexprs.
+      //    -- it is an aggregate type or has at least one constexpr
+      //       constructor or constructor template that is not a copy or move
+      //       constructor, and
+      if (!ClassDecl->isAggregate() &&
+          !ClassDecl->hasConstExprNonCopyMoveConstructor())
+        return false;
+      //    -- all non-static data members and base classes of literal types
+      if (ClassDecl->hasNonLiteralTypeFieldsOrBases()) return false;
+    }
+
+    return true;
   }
+  return false;
+}
+
+bool Type::isTrivialType() const {
+  if (isDependentType())
+    return false;
+
+  // C++0x [basic.types]p9:
+  //   Scalar types, trivial class types, arrays of such types, and
+  //   cv-qualified versions of these types are collectively called trivial
+  //   types.
+  const Type *BaseTy = getBaseElementTypeUnsafe();
+  assert(BaseTy && "NULL element type");
+
+  // Return false for incomplete types after skipping any incomplete array
+  // types which are expressly allowed by the standard and thus our API.
+  if (BaseTy->isIncompleteType())
+    return false;
+
+  // As an extension, Clang treats vector types as Scalar types.
+  if (BaseTy->isScalarType() || BaseTy->isVectorType()) return true;
+  if (const RecordType *RT = BaseTy->getAs<RecordType>()) {
+    if (const CXXRecordDecl *ClassDecl =
+        dyn_cast<CXXRecordDecl>(RT->getDecl())) {
+      if (!ClassDecl->isTrivial()) return false;
+    }
+
+    return true;
+  }
+
+  // No other types can match.
+  return false;
+}
+
+bool Type::isTriviallyCopyableType() const {
+  if (isDependentType())
+    return false;
+
+  // C++0x [basic.types]p9
+  //   Scalar types, trivially copyable class types, arrays of such types, and
+  //   cv-qualified versions of these types are collectively called trivial
+  //   types.
+  const Type *BaseTy = getBaseElementTypeUnsafe();
+  assert(BaseTy && "NULL element type");
+
+  // Return false for incomplete types after skipping any incomplete array types
+  // which are expressly allowed by the standard and thus our API.
+  if (BaseTy->isIncompleteType())
+    return false;
+ 
+  // As an extension, Clang treats vector types as Scalar types.
+  if (BaseTy->isScalarType() || BaseTy->isVectorType()) return true;
+  if (const RecordType *RT = BaseTy->getAs<RecordType>()) {
+    if (const CXXRecordDecl *ClassDecl =
+        dyn_cast<CXXRecordDecl>(RT->getDecl())) {
+      if (!ClassDecl->isTriviallyCopyable()) return false;
+    }
+
+    return true;
+  }
+
+  // No other types can match.
+  return false;
+}
+
+bool Type::isStandardLayoutType() const {
+  if (isDependentType())
+    return false;
+
+  // C++0x [basic.types]p9:
+  //   Scalar types, standard-layout class types, arrays of such types, and
+  //   cv-qualified versions of these types are collectively called
+  //   standard-layout types.
+  const Type *BaseTy = getBaseElementTypeUnsafe();
+  assert(BaseTy && "NULL element type");
+
+  // Return false for incomplete types after skipping any incomplete array
+  // types which are expressly allowed by the standard and thus our API.
+  if (BaseTy->isIncompleteType())
+    return false;
+
+  // As an extension, Clang treats vector types as Scalar types.
+  if (BaseTy->isScalarType() || BaseTy->isVectorType()) return true;
+  if (const RecordType *RT = BaseTy->getAs<RecordType>()) {
+    if (const CXXRecordDecl *ClassDecl =
+        dyn_cast<CXXRecordDecl>(RT->getDecl()))
+      if (!ClassDecl->isStandardLayout())
+        return false;
+
+    // Default to 'true' for non-C++ class types.
+    // FIXME: This is a bit dubious, but plain C structs should trivially meet
+    // all the requirements of standard layout classes.
+    return true;
+  }
+
+  // No other types can match.
+  return false;
+}
+
+// This is effectively the intersection of isTrivialType and
+// isStandardLayoutType. We implement it dircetly to avoid redundant
+// conversions from a type to a CXXRecordDecl.
+bool Type::isCXX11PODType() const {
+  if (isDependentType())
+    return false;
+
+  // C++11 [basic.types]p9:
+  //   Scalar types, POD classes, arrays of such types, and cv-qualified
+  //   versions of these types are collectively called trivial types.
+  const Type *BaseTy = getBaseElementTypeUnsafe();
+  assert(BaseTy && "NULL element type");
+
+  // Return false for incomplete types after skipping any incomplete array
+  // types which are expressly allowed by the standard and thus our API.
+  if (BaseTy->isIncompleteType())
+    return false;
+
+  // As an extension, Clang treats vector types as Scalar types.
+  if (BaseTy->isScalarType() || BaseTy->isVectorType()) return true;
+  if (const RecordType *RT = BaseTy->getAs<RecordType>()) {
+    if (const CXXRecordDecl *ClassDecl =
+        dyn_cast<CXXRecordDecl>(RT->getDecl())) {
+      // C++11 [class]p10:
+      //   A POD struct is a non-union class that is both a trivial class [...]
+      if (!ClassDecl->isTrivial()) return false;
+
+      // C++11 [class]p10:
+      //   A POD struct is a non-union class that is both a trivial class and
+      //   a standard-layout class [...]
+      if (!ClassDecl->isStandardLayout()) return false;
+
+      // C++11 [class]p10:
+      //   A POD struct is a non-union class that is both a trivial class and
+      //   a standard-layout class, and has no non-static data members of type
+      //   non-POD struct, non-POD union (or array of such types). [...]
+      //
+      // We don't directly query the recursive aspect as the requiremets for
+      // both standard-layout classes and trivial classes apply recursively
+      // already.
+    }
+
+    return true;
+  }
+
+  // No other types can match.
+  return false;
 }
 
 bool Type::isPromotableIntegerType() const {
@@ -1121,7 +1307,9 @@ const char *BuiltinType::getName(const LangOptions &LO) const {
   case Char32:            return "char32_t";
   case NullPtr:           return "nullptr_t";
   case Overload:          return "<overloaded function type>";
+  case BoundMember:       return "<bound member function type>";
   case Dependent:         return "<dependent type>";
+  case UnknownAny:        return "<unknown type>";
   case ObjCId:            return "id";
   case ObjCClass:         return "Class";
   case ObjCSel:           return "SEL";
@@ -1158,6 +1346,8 @@ llvm::StringRef FunctionType::getNameForCallConv(CallingConv CC) {
   case CC_X86FastCall: return "fastcall";
   case CC_X86ThisCall: return "thiscall";
   case CC_X86Pascal: return "pascal";
+  case CC_AAPCS: return "aapcs";
+  case CC_AAPCS_VFP: return "aapcs-vfp";
   }
 
   llvm_unreachable("Invalid calling convention.");
@@ -1337,6 +1527,10 @@ bool EnumType::classof(const TagType *TT) {
   return isa<EnumDecl>(TT->getDecl());
 }
 
+IdentifierInfo *TemplateTypeParmType::getIdentifier() const {
+  return isCanonicalUnqualified() ? 0 : getDecl()->getIdentifier();
+}
+
 SubstTemplateTypeParmPackType::
 SubstTemplateTypeParmPackType(const TemplateTypeParmType *Param, 
                               QualType Canon,
@@ -1388,13 +1582,13 @@ anyDependentTemplateArguments(const TemplateArgument *Args, unsigned N) {
 
 TemplateSpecializationType::
 TemplateSpecializationType(TemplateName T,
-                           const TemplateArgument *Args,
-                           unsigned NumArgs, QualType Canon)
+                           const TemplateArgument *Args, unsigned NumArgs,
+                           QualType Canon, QualType AliasedType)
   : Type(TemplateSpecialization,
          Canon.isNull()? QualType(this, 0) : Canon,
-         T.isDependent(), false, T.containsUnexpandedParameterPack()),
-    Template(T), NumArgs(NumArgs) 
-{
+         Canon.isNull()? T.isDependent() : Canon->isDependentType(),
+         false, T.containsUnexpandedParameterPack()),
+    Template(T), NumArgs(NumArgs) {
   assert(!T.getAsDependentTemplateName() && 
          "Use DependentTemplateSpecializationType for dependent template-name");
   assert((!Canon.isNull() ||
@@ -1405,7 +1599,12 @@ TemplateSpecializationType(TemplateName T,
     = reinterpret_cast<TemplateArgument *>(this + 1);
   for (unsigned Arg = 0; Arg < NumArgs; ++Arg) {
     // Update dependent and variably-modified bits.
-    if (Args[Arg].isDependent())
+    // If the canonical type exists and is non-dependent, the template
+    // specialization type can be non-dependent even if one of the type
+    // arguments is. Given:
+    //   template<typename T> using U = int;
+    // U<T> is always non-dependent, irrespective of the type T.
+    if (Canon.isNull() && Args[Arg].isDependent())
       setDependent();
     if (Args[Arg].getKind() == TemplateArgument::Type &&
         Args[Arg].getAsType()->isVariablyModifiedType())
@@ -1414,6 +1613,15 @@ TemplateSpecializationType(TemplateName T,
       setContainsUnexpandedParameterPack();
 
     new (&TemplateArgs[Arg]) TemplateArgument(Args[Arg]);
+  }
+
+  // Store the aliased type if this is a type alias template specialization.
+  bool IsTypeAlias = !AliasedType.isNull();
+  assert(IsTypeAlias == isTypeAlias() &&
+         "allocated wrong size for type alias");
+  if (IsTypeAlias) {
+    TemplateArgument *Begin = reinterpret_cast<TemplateArgument *>(this + 1);
+    *reinterpret_cast<QualType*>(Begin + getNumArgs()) = AliasedType;
   }
 }
 
@@ -1426,6 +1634,11 @@ TemplateSpecializationType::Profile(llvm::FoldingSetNodeID &ID,
   T.Profile(ID);
   for (unsigned Idx = 0; Idx < NumArgs; ++Idx)
     Args[Idx].Profile(ID, Context);
+}
+
+bool TemplateSpecializationType::isTypeAlias() const {
+  TemplateDecl *D = Template.getAsTemplateDecl();
+  return D && isa<TypeAliasTemplateDecl>(D);
 }
 
 QualType
@@ -1565,7 +1778,7 @@ static CachedProperties computeCachedProperties(const Type *T) {
     NamedDecl::LinkageInfo LV = Tag->getLinkageAndVisibility();
     bool IsLocalOrUnnamed =
       Tag->getDeclContext()->isFunctionOrMethod() ||
-      (!Tag->getIdentifier() && !Tag->getTypedefForAnonDecl());
+      (!Tag->getIdentifier() && !Tag->getTypedefNameForAnonDecl());
     return CachedProperties(LV.linkage(), LV.visibility(), IsLocalOrUnnamed);
   }
 

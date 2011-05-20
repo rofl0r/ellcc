@@ -81,6 +81,9 @@ set(LLVM_ALL_TARGETS
   XCore
   )
 
+# List of targets with JIT support:
+set(LLVM_TARGETS_WITH_JIT X86 PowerPC ARM)
+
 if( MSVC )
   set(LLVM_TARGETS_TO_BUILD X86
     CACHE STRING "Semicolon-separated list of targets to build, or \"all\".")
@@ -151,7 +154,7 @@ else()
   option(LLVM_ENABLE_ASSERTIONS "Enable assertions" ON)
 endif()
 
-# All options refered to from HandleLLVMOptions have to be specified
+# All options referred to from HandleLLVMOptions have to be specified
 # BEFORE this include, otherwise options will not be correctly set on
 # first cmake run
 include(config-ix)
@@ -183,15 +186,6 @@ endif( ${CMAKE_SYSTEM_NAME} MATCHES SunOS )
 
 include(AddLLVM)
 include(TableGen)
-
-if( MINGW )
-  get_system_libs(LLVM_SYSTEM_LIBS_LIST)
-  foreach(l ${LLVM_SYSTEM_LIBS_LIST})
-    set(LLVM_SYSTEM_LIBS "${LLVM_SYSTEM_LIBS} -l${l}")
-  endforeach()
-  set(CMAKE_CXX_STANDARD_LIBRARIES "${CMAKE_CXX_STANDARD_LIBRARIES}${LLVM_SYSTEM_LIBS}")
-  set(CMAKE_C_STANDARD_LIBRARIES "${CMAKE_C_STANDARD_LIBRARIES}${LLVM_SYSTEM_LIBS}")
-endif()
 
 if( MINGW )
   # People report that -O3 is unreliable on MinGW. The traditional
@@ -233,6 +227,13 @@ if( LLVM_INCLUDE_TOOLS )
   add_subdirectory(tools)
 endif()
 
+option(LLVM_BUILD_RUNTIME
+  "Build the LLVM runtime libraries. If OFF, just generate build targets." ON)
+option(LLVM_INCLUDE_RUNTIME "Generate build targets for the LLVM runtimes" ON)
+if( LLVM_INCLUDE_RUNTIME )
+  add_subdirectory(runtime)
+endif()
+
 option(LLVM_BUILD_EXAMPLES
   "Build the LLVM example programs. If OFF, just generate build targets." OFF)
 option(LLVM_INCLUDE_EXAMPLES "Generate build targets for the LLVM examples" ON)
@@ -241,7 +242,7 @@ if( LLVM_INCLUDE_EXAMPLES )
 endif()
 
 option(LLVM_BUILD_TESTS
-  "Build LLVM unit tests. If OFF, just generate build targes." OFF)
+  "Build LLVM unit tests. If OFF, just generate build targets." OFF)
 if( LLVM_INCLUDE_TESTS )
   add_subdirectory(test)
   add_subdirectory(utils/unittest)

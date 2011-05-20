@@ -1,5 +1,5 @@
 // RUN: %clang_cc1 -analyze -analyzer-store=region -analyzer-constraints=range -fblocks -analyzer-opt-analyze-nested-blocks -analyzer-checker=deadcode.IdempotentOperations -verify %s
-// RUN: %clang --analyze -Xclang -analyzer-disable-checker=deadcode.DeadStores -fblocks -Xclang -verify %s
+// RUN: %clang --analyze -Xclang -analyzer-disable-checker=deadcode.DeadStores -fblocks -Xclang -verify %s -o %t
 
 // Basic tests
 
@@ -176,7 +176,7 @@ int false6() {
 
 // Check that assignments filter out false positives correctly
 int false7() {
-  int zero = 0; // psuedo-constant
+  int zero = 0; // pseudo-constant
   int one = 1;
 
   int a = 55;

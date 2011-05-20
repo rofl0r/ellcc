@@ -503,7 +503,8 @@ public:
 bool
 VariadicMethodTypeChecker::isVariadicMessage(const ObjCMessage &msg) const {
   const ObjCMethodDecl *MD = msg.getMethodDecl();
-  if (!MD || !MD->isVariadic())
+  
+  if (!MD || !MD->isVariadic() || isa<ObjCProtocolDecl>(MD->getDeclContext()))
     return false;
   
   Selector S = msg.getSelector();
@@ -590,6 +591,10 @@ void VariadicMethodTypeChecker::checkPreObjCMessage(ObjCMessage msg,
   for (unsigned I = variadicArgsBegin; I != variadicArgsEnd; ++I) {
     QualType ArgTy = msg.getArgType(I);
     if (ArgTy->isObjCObjectPointerType())
+      continue;
+
+    // Block pointers are treaded as Objective-C pointers.
+    if (ArgTy->isBlockPointerType())
       continue;
 
     // Ignore pointer constants.

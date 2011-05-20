@@ -56,7 +56,7 @@ char BreakCriticalEdges::ID = 0;
 INITIALIZE_PASS(BreakCriticalEdges, "break-crit-edges",
                 "Break critical edges in CFG", false, false)
 
-// Publically exposed interface to pass...
+// Publicly exposed interface to pass...
 char &llvm::BreakCriticalEdgesID = BreakCriticalEdges::ID;
 FunctionPass *llvm::createBreakCriticalEdgesPass() {
   return new BreakCriticalEdges();
@@ -140,7 +140,7 @@ static void CreatePHIsForSplitLoopExit(SmallVectorImpl<BasicBlock *> &Preds,
       if (VP->getParent() == SplitBB)
         continue;
     // Otherwise a new PHI is needed. Create one and populate it.
-    PHINode *NewPN = PHINode::Create(PN->getType(), "split",
+    PHINode *NewPN = PHINode::Create(PN->getType(), Preds.size(), "split",
                                      SplitBB->getTerminator());
     for (unsigned i = 0, e = Preds.size(); i != e; ++i)
       NewPN->addIncoming(V, Preds[i]);
@@ -180,7 +180,8 @@ BasicBlock *llvm::SplitCriticalEdge(TerminatorInst *TI, unsigned SuccNum,
   BasicBlock *NewBB = BasicBlock::Create(TI->getContext(),
                       TIBB->getName() + "." + DestBB->getName() + "_crit_edge");
   // Create our unconditional branch.
-  BranchInst::Create(DestBB, NewBB);
+  BranchInst *NewBI = BranchInst::Create(DestBB, NewBB);
+  NewBI->setDebugLoc(TI->getDebugLoc());
 
   // Branch to the new block, breaking the edge.
   TI->setSuccessor(SuccNum, NewBB);

@@ -30,6 +30,7 @@
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/FrontendDiagnostic.h"
 #include "clang/Lex/Lexer.h"
+#include "clang/Lex/HeaderSearch.h"
 #include "clang/Lex/PreprocessingRecord.h"
 #include "clang/Lex/Preprocessor.h"
 #include "llvm/ADT/STLExtras.h"
@@ -116,7 +117,7 @@ CXSourceRange cxloc::translateSourceRange(const SourceManager &SM,
   // location accordingly.
   SourceLocation EndLoc = R.getEnd();
   if (EndLoc.isValid() && EndLoc.isMacroID())
-    EndLoc = SM.getSpellingLoc(EndLoc);
+    EndLoc = SM.getInstantiationRange(EndLoc).second;
   if (R.isTokenRange() && !EndLoc.isInvalid() && EndLoc.isFileID()) {
     unsigned Length = Lexer::MeasureTokenLength(EndLoc, SM, LangOpts);
     EndLoc = EndLoc.getFileLocWithOffset(Length);
@@ -272,6 +273,7 @@ public:
   bool VisitChildren(CXCursor Parent);
 
   // Declaration visitors
+  bool VisitTypeAliasDecl(TypeAliasDecl *D);
   bool VisitAttributes(Decl *D);
   bool VisitBlockDecl(BlockDecl *B);
   bool VisitCXXRecordDecl(CXXRecordDecl *D);
@@ -494,14 +496,25 @@ bool CursorVisitor::VisitChildren(CXCursor Cursor) {
 
   if (clang_isDeclaration(Cursor.kind)) {
     Decl *D = getCursorDecl(Cursor);
-    assert(D && "Invalid declaration cursor");
+    if (!D)
+      return false;
+
     return VisitAttributes(D) || Visit(D);
   }
 
-  if (clang_isStatement(Cursor.kind))
-    return Visit(getCursorStmt(Cursor));
-  if (clang_isExpression(Cursor.kind))
-    return Visit(getCursorExpr(Cursor));
+  if (clang_isStatement(Cursor.kind)) {
+    if (Stmt *S = getCursorStmt(Cursor))
+      return Visit(S);
+
+    return false;
+  }
+
+  if (clang_isExpression(Cursor.kind)) {
+    if (Expr *E = getCursorExpr(Cursor))
+      return Visit(E);
+
+    return false;
+  }
 
   if (clang_isTranslationUnit(Cursor.kind)) {
     CXTranslationUnit tu = getCursorTU(Cursor);
@@ -570,8 +583,9 @@ bool CursorVisitor::VisitChildren(CXCursor Cursor) {
 }
 
 bool CursorVisitor::VisitBlockDecl(BlockDecl *B) {
-  if (Visit(B->getSignatureAsWritten()->getTypeLoc()))
-    return true;
+  if (TypeSourceInfo *TSInfo = B->getSignatureAsWritten())
+    if (Visit(TSInfo->getTypeLoc()))
+        return true;
 
   if (Stmt *Body = B->getBody())
     return Visit(MakeCXCursor(Body, StmtParent, TU));
@@ -628,6 +642,13 @@ bool CursorVisitor::VisitDeclContext(DeclContext *DC) {
 
 bool CursorVisitor::VisitTranslationUnitDecl(TranslationUnitDecl *D) {
   llvm_unreachable("Translation units are visited directly by Visit()");
+  return false;
+}
+
+bool CursorVisitor::VisitTypeAliasDecl(TypeAliasDecl *D) {
+  if (TypeSourceInfo *TSInfo = D->getTypeSourceInfo())
+    return Visit(TSInfo->getTypeLoc());
+
   return false;
 }
 
@@ -769,7 +790,7 @@ bool CursorVisitor::VisitFunctionDecl(FunctionDecl *ND) {
     // FIXME: Attributes?
   }
   
-  if (ND->isThisDeclarationADefinition()) {
+  if (ND->doesThisDeclarationHaveABody() && !ND->isLateTemplateParsed()) {
     if (CXXConstructorDecl *Constructor = dyn_cast<CXXConstructorDecl>(ND)) {
       // Find the initializers that were written in the source.
       llvm::SmallVector<CXXCtorInitializer *, 4> WrittenInits;
@@ -1392,7 +1413,9 @@ bool CursorVisitor::VisitBuiltinTypeLoc(BuiltinTypeLoc TL) {
   case BuiltinType::LongDouble:
   case BuiltinType::NullPtr:
   case BuiltinType::Overload:
+  case BuiltinType::BoundMember:
   case BuiltinType::Dependent:
+  case BuiltinType::UnknownAny:
     break;
 
   case BuiltinType::ObjCId:
@@ -1418,7 +1441,7 @@ bool CursorVisitor::VisitBuiltinTypeLoc(BuiltinTypeLoc TL) {
 }
 
 bool CursorVisitor::VisitTypedefTypeLoc(TypedefTypeLoc TL) {
-  return Visit(MakeCursorTypeRef(TL.getTypedefDecl(), TL.getNameLoc(), TU));
+  return Visit(MakeCursorTypeRef(TL.getTypedefNameDecl(), TL.getNameLoc(), TU));
 }
 
 bool CursorVisitor::VisitUnresolvedUsingTypeLoc(UnresolvedUsingTypeLoc TL) {
@@ -1430,10 +1453,7 @@ bool CursorVisitor::VisitTagTypeLoc(TagTypeLoc TL) {
 }
 
 bool CursorVisitor::VisitTemplateTypeParmTypeLoc(TemplateTypeParmTypeLoc TL) {
-  // FIXME: We can't visit the template type parameter, because there's
-  // no context information with which we can match up the depth/index in the
-  // type to the appropriate 
-  return false;
+  return Visit(MakeCursorTypeRef(TL.getDecl(), TL.getNameLoc(), TU));
 }
 
 bool CursorVisitor::VisitObjCInterfaceTypeLoc(ObjCInterfaceTypeLoc TL) {
@@ -1768,6 +1788,8 @@ public:
   void VisitWhileStmt(WhileStmt *W);
   void VisitUnaryTypeTraitExpr(UnaryTypeTraitExpr *E);
   void VisitBinaryTypeTraitExpr(BinaryTypeTraitExpr *E);
+  void VisitArrayTypeTraitExpr(ArrayTypeTraitExpr *E);
+  void VisitExpressionTraitExpr(ExpressionTraitExpr *E);
   void VisitUnresolvedMemberExpr(UnresolvedMemberExpr *U);
   void VisitVAArgExpr(VAArgExpr *E);
   void VisitSizeOfPackExpr(SizeOfPackExpr *E);
@@ -2047,6 +2069,7 @@ void EnqueueVisitor::VisitWhileStmt(WhileStmt *W) {
   AddStmt(W->getCond());
   AddDecl(W->getConditionVariable());
 }
+
 void EnqueueVisitor::VisitUnaryTypeTraitExpr(UnaryTypeTraitExpr *E) {
   AddTypeLoc(E->getQueriedTypeSourceInfo());
 }
@@ -2054,6 +2077,14 @@ void EnqueueVisitor::VisitUnaryTypeTraitExpr(UnaryTypeTraitExpr *E) {
 void EnqueueVisitor::VisitBinaryTypeTraitExpr(BinaryTypeTraitExpr *E) {
   AddTypeLoc(E->getRhsTypeSourceInfo());
   AddTypeLoc(E->getLhsTypeSourceInfo());
+}
+
+void EnqueueVisitor::VisitArrayTypeTraitExpr(ArrayTypeTraitExpr *E) {
+  AddTypeLoc(E->getQueriedTypeSourceInfo());
+}
+
+void EnqueueVisitor::VisitExpressionTraitExpr(ExpressionTraitExpr *E) {
+  EnqueueChildren(E);
 }
 
 void EnqueueVisitor::VisitUnresolvedMemberExpr(UnresolvedMemberExpr *U) {
@@ -2345,10 +2376,12 @@ clang_createTranslationUnitFromSourceFile(CXIndex CIdx,
                                           const char * const *command_line_args,
                                           unsigned num_unsaved_files,
                                           struct CXUnsavedFile *unsaved_files) {
+  unsigned Options = CXTranslationUnit_DetailedPreprocessingRecord |
+                     CXTranslationUnit_NestedMacroInstantiations;
   return clang_parseTranslationUnit(CIdx, source_filename,
                                     command_line_args, num_command_line_args,
                                     unsaved_files, num_unsaved_files,
-                                 CXTranslationUnit_DetailedPreprocessingRecord);
+                                    Options);
 }
   
 struct ParseTranslationUnitInfo {
@@ -2390,27 +2423,37 @@ static void clang_parseTranslationUnit_Impl(void *UserData) {
   
   // Configure the diagnostics.
   DiagnosticOptions DiagOpts;
-  llvm::IntrusiveRefCntPtr<Diagnostic> Diags;
-  Diags = CompilerInstance::createDiagnostics(DiagOpts, num_command_line_args, 
-                                              command_line_args);
+  llvm::IntrusiveRefCntPtr<Diagnostic>
+    Diags(CompilerInstance::createDiagnostics(DiagOpts, num_command_line_args, 
+                                                command_line_args));
 
-  llvm::SmallVector<ASTUnit::RemappedFile, 4> RemappedFiles;
+  // Recover resources if we crash before exiting this function.
+  llvm::CrashRecoveryContextCleanupRegistrar<Diagnostic,
+    llvm::CrashRecoveryContextReleaseRefCleanup<Diagnostic> >
+    DiagCleanup(Diags.getPtr());
+
+  llvm::OwningPtr<std::vector<ASTUnit::RemappedFile> >
+    RemappedFiles(new std::vector<ASTUnit::RemappedFile>());
+
+  // Recover resources if we crash before exiting this function.
+  llvm::CrashRecoveryContextCleanupRegistrar<
+    std::vector<ASTUnit::RemappedFile> > RemappedCleanup(RemappedFiles.get());
+
   for (unsigned I = 0; I != num_unsaved_files; ++I) {
     llvm::StringRef Data(unsaved_files[I].Contents, unsaved_files[I].Length);
     const llvm::MemoryBuffer *Buffer
       = llvm::MemoryBuffer::getMemBufferCopy(Data, unsaved_files[I].Filename);
-    RemappedFiles.push_back(std::make_pair(unsaved_files[I].Filename,
-                                           Buffer));
+    RemappedFiles->push_back(std::make_pair(unsaved_files[I].Filename,
+                                            Buffer));
   }
 
-  llvm::SmallVector<const char *, 16> Args;
+  llvm::OwningPtr<std::vector<const char *> > 
+    Args(new std::vector<const char*>());
 
-  // The 'source_filename' argument is optional.  If the caller does not
-  // specify it then it is assumed that the source file is specified
-  // in the actual argument list.
-  if (source_filename)
-    Args.push_back(source_filename);
-  
+  // Recover resources if we crash before exiting this method.
+  llvm::CrashRecoveryContextCleanupRegistrar<std::vector<const char*> >
+    ArgsCleanup(Args.get());
+
   // Since the Clang C library is primarily used by batch tools dealing with
   // (often very broken) source code, where spell-checking can have a
   // significant negative impact on performance (particularly when 
@@ -2425,32 +2468,46 @@ static void clang_parseTranslationUnit_Impl(void *UserData) {
     }
   }
   if (!FoundSpellCheckingArgument)
-    Args.push_back("-fno-spell-checking");
+    Args->push_back("-fno-spell-checking");
   
-  Args.insert(Args.end(), command_line_args,
-              command_line_args + num_command_line_args);
+  Args->insert(Args->end(), command_line_args,
+               command_line_args + num_command_line_args);
+
+  // The 'source_filename' argument is optional.  If the caller does not
+  // specify it then it is assumed that the source file is specified
+  // in the actual argument list.
+  // Put the source file after command_line_args otherwise if '-x' flag is
+  // present it will be unused.
+  if (source_filename)
+    Args->push_back(source_filename);
 
   // Do we need the detailed preprocessing record?
+  bool NestedMacroInstantiations = false;
   if (options & CXTranslationUnit_DetailedPreprocessingRecord) {
-    Args.push_back("-Xclang");
-    Args.push_back("-detailed-preprocessing-record");
+    Args->push_back("-Xclang");
+    Args->push_back("-detailed-preprocessing-record");
+    NestedMacroInstantiations
+      = (options & CXTranslationUnit_NestedMacroInstantiations);
   }
   
   unsigned NumErrors = Diags->getClient()->getNumErrors();
   llvm::OwningPtr<ASTUnit> Unit(
-    ASTUnit::LoadFromCommandLine(Args.data(), Args.data() + Args.size(),
+    ASTUnit::LoadFromCommandLine(Args->size() ? &(*Args)[0] : 0 
+                                 /* vector::data() not portable */,
+                                 Args->size() ? (&(*Args)[0] + Args->size()) :0,
                                  Diags,
                                  CXXIdx->getClangResourcesPath(),
                                  CXXIdx->getOnlyLocalDecls(),
                                  /*CaptureDiagnostics=*/true,
-                                 RemappedFiles.data(),
-                                 RemappedFiles.size(),
+                                 RemappedFiles->size() ? &(*RemappedFiles)[0]:0,
+                                 RemappedFiles->size(),
                                  /*RemappedFilesKeepOriginalName=*/true,
                                  PrecompilePreamble,
                                  CompleteTranslationUnit,
                                  CacheCodeCompetionResults,
                                  CXXPrecompilePreamble,
-                                 CXXChainedPCH));
+                                 CXXChainedPCH,
+                                 NestedMacroInstantiations));
 
   if (NumErrors != Diags->getClient()->getNumErrors()) {
     // Make sure to check that 'Unit' is non-NULL.
@@ -2509,8 +2566,10 @@ CXTranslationUnit clang_parseTranslationUnit(CXIndex CIdx,
     fprintf(stderr, "}\n");
     
     return 0;
+  } else if (getenv("LIBCLANG_RESOURCE_USAGE")) {
+    PrintLibclangResourceUsage(PTUI.result);
   }
-
+  
   return PTUI.result;
 }
 
@@ -2523,7 +2582,10 @@ int clang_saveTranslationUnit(CXTranslationUnit TU, const char *FileName,
   if (!TU)
     return 1;
   
-  return static_cast<ASTUnit *>(TU->TUData)->Save(FileName);
+  int result = static_cast<ASTUnit *>(TU->TUData)->Save(FileName);
+  if (getenv("LIBCLANG_RESOURCE_USAGE"))
+    PrintLibclangResourceUsage(TU);
+  return result;
 }
 
 void clang_disposeTranslationUnit(CXTranslationUnit CTUnit) {
@@ -2567,16 +2629,23 @@ static void clang_reparseTranslationUnit_Impl(void *UserData) {
   ASTUnit *CXXUnit = static_cast<ASTUnit *>(TU->TUData);
   ASTUnit::ConcurrencyCheck Check(*CXXUnit);
   
-  llvm::SmallVector<ASTUnit::RemappedFile, 4> RemappedFiles;
+  llvm::OwningPtr<std::vector<ASTUnit::RemappedFile> >
+    RemappedFiles(new std::vector<ASTUnit::RemappedFile>());
+  
+  // Recover resources if we crash before exiting this function.
+  llvm::CrashRecoveryContextCleanupRegistrar<
+    std::vector<ASTUnit::RemappedFile> > RemappedCleanup(RemappedFiles.get());
+  
   for (unsigned I = 0; I != num_unsaved_files; ++I) {
     llvm::StringRef Data(unsaved_files[I].Contents, unsaved_files[I].Length);
     const llvm::MemoryBuffer *Buffer
       = llvm::MemoryBuffer::getMemBufferCopy(Data, unsaved_files[I].Filename);
-    RemappedFiles.push_back(std::make_pair(unsaved_files[I].Filename,
-                                           Buffer));
+    RemappedFiles->push_back(std::make_pair(unsaved_files[I].Filename,
+                                            Buffer));
   }
   
-  if (!CXXUnit->Reparse(RemappedFiles.data(), RemappedFiles.size()))
+  if (!CXXUnit->Reparse(RemappedFiles->size() ? &(*RemappedFiles)[0] : 0,
+                        RemappedFiles->size()))
     RTUI->result = 0;
 }
 
@@ -2592,8 +2661,8 @@ int clang_reparseTranslationUnit(CXTranslationUnit TU,
     fprintf(stderr, "libclang: crash detected during reparsing\n");
     static_cast<ASTUnit *>(TU->TUData)->setUnsafeToFree(true);
     return 1;
-  }
-
+  } else if (getenv("LIBCLANG_RESOURCE_USAGE"))
+    PrintLibclangResourceUsage(TU);
 
   return RTUI.result;
 }
@@ -2691,7 +2760,22 @@ CXSourceRange clang_getRange(CXSourceLocation begin, CXSourceLocation end) {
                            begin.int_data, end.int_data };
   return Result;
 }
+} // end: extern "C"
 
+static void createNullLocation(CXFile *file, unsigned *line,
+                               unsigned *column, unsigned *offset) {
+  if (file)
+   *file = 0;
+  if (line)
+   *line = 0;
+  if (column)
+   *column = 0;
+  if (offset)
+   *offset = 0;
+  return;
+}
+
+extern "C" {
 void clang_getInstantiationLocation(CXSourceLocation location,
                                     CXFile *file,
                                     unsigned *line,
@@ -2700,14 +2784,7 @@ void clang_getInstantiationLocation(CXSourceLocation location,
   SourceLocation Loc = SourceLocation::getFromRawEncoding(location.int_data);
 
   if (!location.ptr_data[0] || Loc.isInvalid()) {
-    if (file)
-      *file = 0;
-    if (line)
-      *line = 0;
-    if (column)
-      *column = 0;
-    if (offset)
-      *offset = 0;
+    createNullLocation(file, line, column, offset);
     return;
   }
 
@@ -2715,8 +2792,18 @@ void clang_getInstantiationLocation(CXSourceLocation location,
     *static_cast<const SourceManager*>(location.ptr_data[0]);
   SourceLocation InstLoc = SM.getInstantiationLoc(Loc);
 
+  // Check that the FileID is invalid on the instantiation location.
+  // This can manifest in invalid code.
+  FileID fileID = SM.getFileID(InstLoc);
+  bool Invalid = false;
+  const SrcMgr::SLocEntry &sloc = SM.getSLocEntry(fileID, &Invalid);
+  if (!sloc.isFile() || Invalid) {
+    createNullLocation(file, line, column, offset);
+    return;
+  }
+
   if (file)
-    *file = (void *)SM.getFileEntryForID(SM.getFileID(InstLoc));
+    *file = (void *)SM.getFileEntryForSLocEntry(sloc);
   if (line)
     *line = SM.getInstantiationLineNumber(InstLoc);
   if (column)
@@ -2732,17 +2819,8 @@ void clang_getSpellingLocation(CXSourceLocation location,
                                unsigned *offset) {
   SourceLocation Loc = SourceLocation::getFromRawEncoding(location.int_data);
 
-  if (!location.ptr_data[0] || Loc.isInvalid()) {
-    if (file)
-      *file = 0;
-    if (line)
-      *line = 0;
-    if (column)
-      *column = 0;
-    if (offset)
-      *offset = 0;
-    return;
-  }
+  if (!location.ptr_data[0] || Loc.isInvalid())
+    return createNullLocation(file, line, column, offset);
 
   const SourceManager &SM =
     *static_cast<const SourceManager*>(location.ptr_data[0]);
@@ -2759,6 +2837,9 @@ void clang_getSpellingLocation(CXSourceLocation location,
   std::pair<FileID, unsigned> LocInfo = SM.getDecomposedLoc(SpellLoc);
   FileID FID = LocInfo.first;
   unsigned FileOffset = LocInfo.second;
+
+  if (FID.isInvalid())
+    return createNullLocation(file, line, column, offset);
 
   if (file)
     *file = (void *)SM.getFileEntryForID(FID);
@@ -2813,6 +2894,16 @@ CXFile clang_getFile(CXTranslationUnit tu, const char *file_name) {
 
   FileManager &FMgr = CXXUnit->getFileManager();
   return const_cast<FileEntry *>(FMgr.getFile(file_name));
+}
+
+unsigned clang_isFileMultipleIncludeGuarded(CXTranslationUnit tu, CXFile file) {
+  if (!tu || !file)
+    return 0;
+
+  ASTUnit *CXXUnit = static_cast<ASTUnit *>(tu->TUData);
+  FileEntry *FEnt = static_cast<FileEntry *>(file);
+  return CXXUnit->getPreprocessor().getHeaderSearchInfo()
+                                          .isFileMultipleIncludeGuarded(FEnt);
 }
 
 } // end: extern "C"
@@ -3281,6 +3372,8 @@ CXString clang_getCursorKindSpelling(enum CXCursorKind Kind) {
     return createCXString("UsingDirective");
   case CXCursor_UsingDeclaration:
     return createCXString("UsingDeclaration");
+  case CXCursor_TypeAliasDecl:
+      return createCXString("TypeAliasDecl");
   }
 
   llvm_unreachable("Unhandled CXCursorKind");
@@ -3821,6 +3914,8 @@ CXCursor clang_getCursorDefinition(CXCursor C) {
   // declaration and definition.
   case Decl::Namespace:
   case Decl::Typedef:
+  case Decl::TypeAlias:
+  case Decl::TypeAliasTemplate:
   case Decl::TemplateTypeParm:
   case Decl::EnumConstant:
   case Decl::Field:
@@ -4870,14 +4965,22 @@ extern "C" {
 enum CXAvailabilityKind clang_getCursorAvailability(CXCursor cursor) {
   if (clang_isDeclaration(cursor.kind))
     if (Decl *D = cxcursor::getCursorDecl(cursor)) {
-      if (D->hasAttr<UnavailableAttr>() ||
-          (isa<FunctionDecl>(D) && cast<FunctionDecl>(D)->isDeleted()))
+      if (isa<FunctionDecl>(D) && cast<FunctionDecl>(D)->isDeleted())
         return CXAvailability_Available;
       
-      if (D->hasAttr<DeprecatedAttr>())
+      switch (D->getAvailability()) {
+      case AR_Available:
+      case AR_NotYetIntroduced:
+        return CXAvailability_Available;
+
+      case AR_Deprecated:
         return CXAvailability_Deprecated;
+
+      case AR_Unavailable:
+        return CXAvailability_NotAvailable;
+      }
     }
-  
+
   return CXAvailability_Available;
 }
 
@@ -5083,6 +5186,19 @@ unsigned clang_CXXMethod_isStatic(CXCursor C) {
   return (Method && Method->isStatic()) ? 1 : 0;
 }
 
+unsigned clang_CXXMethod_isVirtual(CXCursor C) {
+  if (!clang_isDeclaration(C.kind))
+    return 0;
+  
+  CXXMethodDecl *Method = 0;
+  Decl *D = cxcursor::getCursorDecl(C);
+  if (FunctionTemplateDecl *FunTmpl = dyn_cast_or_null<FunctionTemplateDecl>(D))
+    Method = dyn_cast<CXXMethodDecl>(FunTmpl->getTemplatedDecl());
+  else
+    Method = dyn_cast_or_null<CXXMethodDecl>(D);
+  return (Method && Method->isVirtual()) ? 1 : 0;
+}
+
 } // end: extern "C"
 
 //===----------------------------------------------------------------------===//
@@ -5100,6 +5216,167 @@ CXType clang_getIBOutletCollectionType(CXCursor C) {
   return cxtype::MakeCXType(A->getInterFace(), cxcursor::getCursorTU(C));  
 }
 } // end: extern "C"
+
+//===----------------------------------------------------------------------===//
+// Inspecting memory usage.
+//===----------------------------------------------------------------------===//
+
+typedef std::vector<CXTUResourceUsageEntry> MemUsageEntries;
+
+static inline void createCXTUResourceUsageEntry(MemUsageEntries &entries,
+                                              enum CXTUResourceUsageKind k,
+                                              unsigned long amount) {
+  CXTUResourceUsageEntry entry = { k, amount };
+  entries.push_back(entry);
+}
+
+extern "C" {
+
+const char *clang_getTUResourceUsageName(CXTUResourceUsageKind kind) {
+  const char *str = "";
+  switch (kind) {
+    case CXTUResourceUsage_AST:
+      str = "ASTContext: expressions, declarations, and types"; 
+      break;
+    case CXTUResourceUsage_Identifiers:
+      str = "ASTContext: identifiers";
+      break;
+    case CXTUResourceUsage_Selectors:
+      str = "ASTContext: selectors";
+      break;
+    case CXTUResourceUsage_GlobalCompletionResults:
+      str = "Code completion: cached global results";
+      break;
+    case CXTUResourceUsage_SourceManagerContentCache:
+      str = "SourceManager: content cache allocator";
+      break;
+    case CXTUResourceUsage_AST_SideTables:
+      str = "ASTContext: side tables";
+      break;
+    case CXTUResourceUsage_SourceManager_Membuffer_Malloc:
+      str = "SourceManager: malloc'ed memory buffers";
+      break;
+    case CXTUResourceUsage_SourceManager_Membuffer_MMap:
+      str = "SourceManager: mmap'ed memory buffers";
+      break;
+    case CXTUResourceUsage_ExternalASTSource_Membuffer_Malloc:
+      str = "ExternalASTSource: malloc'ed memory buffers";
+      break;
+    case CXTUResourceUsage_ExternalASTSource_Membuffer_MMap:
+      str = "ExternalASTSource: mmap'ed memory buffers";
+      break;
+    case CXTUResourceUsage_Preprocessor:
+      str = "Preprocessor: malloc'ed memory";
+      break;
+    case CXTUResourceUsage_PreprocessingRecord:
+      str = "Preprocessor: PreprocessingRecord";
+      break;
+  }
+  return str;
+}
+
+CXTUResourceUsage clang_getCXTUResourceUsage(CXTranslationUnit TU) {
+  if (!TU) {
+    CXTUResourceUsage usage = { (void*) 0, 0, 0 };
+    return usage;
+  }
+  
+  ASTUnit *astUnit = static_cast<ASTUnit*>(TU->TUData);
+  llvm::OwningPtr<MemUsageEntries> entries(new MemUsageEntries());
+  ASTContext &astContext = astUnit->getASTContext();
+  
+  // How much memory is used by AST nodes and types?
+  createCXTUResourceUsageEntry(*entries, CXTUResourceUsage_AST,
+    (unsigned long) astContext.getASTAllocatedMemory());
+
+  // How much memory is used by identifiers?
+  createCXTUResourceUsageEntry(*entries, CXTUResourceUsage_Identifiers,
+    (unsigned long) astContext.Idents.getAllocator().getTotalMemory());
+
+  // How much memory is used for selectors?
+  createCXTUResourceUsageEntry(*entries, CXTUResourceUsage_Selectors,
+    (unsigned long) astContext.Selectors.getTotalMemory());
+  
+  // How much memory is used by ASTContext's side tables?
+  createCXTUResourceUsageEntry(*entries, CXTUResourceUsage_AST_SideTables,
+    (unsigned long) astContext.getSideTableAllocatedMemory());
+  
+  // How much memory is used for caching global code completion results?
+  unsigned long completionBytes = 0;
+  if (GlobalCodeCompletionAllocator *completionAllocator =
+      astUnit->getCachedCompletionAllocator().getPtr()) {
+    completionBytes = completionAllocator->getTotalMemory();
+  }
+  createCXTUResourceUsageEntry(*entries,
+                               CXTUResourceUsage_GlobalCompletionResults,
+                               completionBytes);
+  
+  // How much memory is being used by SourceManager's content cache?
+  createCXTUResourceUsageEntry(*entries,
+          CXTUResourceUsage_SourceManagerContentCache,
+          (unsigned long) astContext.getSourceManager().getContentCacheSize());
+  
+  // How much memory is being used by the MemoryBuffer's in SourceManager?
+  const SourceManager::MemoryBufferSizes &srcBufs =
+    astUnit->getSourceManager().getMemoryBufferSizes();
+  
+  createCXTUResourceUsageEntry(*entries,
+                               CXTUResourceUsage_SourceManager_Membuffer_Malloc,
+                               (unsigned long) srcBufs.malloc_bytes);
+    createCXTUResourceUsageEntry(*entries,
+                               CXTUResourceUsage_SourceManager_Membuffer_MMap,
+                               (unsigned long) srcBufs.mmap_bytes);
+  
+  // How much memory is being used by the ExternalASTSource?
+  if (ExternalASTSource *esrc = astContext.getExternalSource()) {
+    const ExternalASTSource::MemoryBufferSizes &sizes =
+      esrc->getMemoryBufferSizes();
+    
+    createCXTUResourceUsageEntry(*entries,
+      CXTUResourceUsage_ExternalASTSource_Membuffer_Malloc,
+                                 (unsigned long) sizes.malloc_bytes);
+    createCXTUResourceUsageEntry(*entries,
+      CXTUResourceUsage_ExternalASTSource_Membuffer_MMap,
+                                 (unsigned long) sizes.mmap_bytes);
+  }
+  
+  // How much memory is being used by the Preprocessor?
+  Preprocessor &pp = astUnit->getPreprocessor();
+  const llvm::BumpPtrAllocator &ppAlloc = pp.getPreprocessorAllocator();
+  createCXTUResourceUsageEntry(*entries,
+                               CXTUResourceUsage_Preprocessor,
+                               ppAlloc.getTotalMemory());
+  
+  if (PreprocessingRecord *pRec = pp.getPreprocessingRecord()) {
+    createCXTUResourceUsageEntry(*entries,
+                                 CXTUResourceUsage_PreprocessingRecord,
+                                 pRec->getTotalMemory());    
+  }
+  
+  
+  CXTUResourceUsage usage = { (void*) entries.get(),
+                            (unsigned) entries->size(),
+                            entries->size() ? &(*entries)[0] : 0 };
+  entries.take();
+  return usage;
+}
+
+void clang_disposeCXTUResourceUsage(CXTUResourceUsage usage) {
+  if (usage.data)
+    delete (MemUsageEntries*) usage.data;
+}
+
+} // end extern "C"
+
+void clang::PrintLibclangResourceUsage(CXTranslationUnit TU) {
+  CXTUResourceUsage Usage = clang_getCXTUResourceUsage(TU);
+  for (unsigned I = 0; I != Usage.numEntries; ++I)
+    fprintf(stderr, "  %s: %lu\n", 
+            clang_getTUResourceUsageName(Usage.entries[I].kind),
+            Usage.entries[I].amount);
+  
+  clang_disposeCXTUResourceUsage(Usage);
+}
 
 //===----------------------------------------------------------------------===//
 // Misc. utility functions.
@@ -5137,3 +5414,4 @@ CXString clang_getClangVersion() {
 }
 
 } // end: extern "C"
+

@@ -72,6 +72,8 @@ void CodeGenFunction::EmitStmt(const Stmt *S) {
   switch (S->getStmtClass()) {
   case Stmt::NoStmtClass:
   case Stmt::CXXCatchStmtClass:
+  case Stmt::SEHExceptStmtClass:
+  case Stmt::SEHFinallyStmtClass:
     llvm_unreachable("invalid statement class to emit generically");
   case Stmt::NullStmtClass:
   case Stmt::CompoundStmtClass:
@@ -152,6 +154,11 @@ void CodeGenFunction::EmitStmt(const Stmt *S) {
       
   case Stmt::CXXTryStmtClass:
     EmitCXXTryStmt(cast<CXXTryStmt>(*S));
+    break;
+  case Stmt::CXXForRangeStmtClass:
+    EmitCXXForRangeStmt(cast<CXXForRangeStmt>(*S));
+  case Stmt::SEHTryStmtClass:
+    // FIXME Not yet implemented
     break;
   }
 }
@@ -397,11 +404,17 @@ void CodeGenFunction::EmitIfStmt(const IfStmt &S) {
 
   // Emit the 'else' code if present.
   if (const Stmt *Else = S.getElse()) {
+    // There is no need to emit line number for unconditional branch.
+    if (getDebugInfo())
+      Builder.SetCurrentDebugLocation(llvm::DebugLoc());
     EmitBlock(ElseBlock);
     {
       RunCleanupsScope ElseScope(*this);
       EmitStmt(Else);
     }
+    // There is no need to emit line number for unconditional branch.
+    if (getDebugInfo())
+      Builder.SetCurrentDebugLocation(llvm::DebugLoc());
     EmitBranch(ContBlock);
   }
 
@@ -630,6 +643,80 @@ void CodeGenFunction::EmitForStmt(const ForStmt &S) {
   EmitBlock(LoopExit.getBlock(), true);
 }
 
+void CodeGenFunction::EmitCXXForRangeStmt(const CXXForRangeStmt &S) {
+  JumpDest LoopExit = getJumpDestInCurrentScope("for.end");
+
+  RunCleanupsScope ForScope(*this);
+
+  CGDebugInfo *DI = getDebugInfo();
+  if (DI) {
+    DI->setLocation(S.getSourceRange().getBegin());
+    DI->EmitRegionStart(Builder);
+  }
+
+  // Evaluate the first pieces before the loop.
+  EmitStmt(S.getRangeStmt());
+  EmitStmt(S.getBeginEndStmt());
+
+  // Start the loop with a block that tests the condition.
+  // If there's an increment, the continue scope will be overwritten
+  // later.
+  llvm::BasicBlock *CondBlock = createBasicBlock("for.cond");
+  EmitBlock(CondBlock);
+
+  // If there are any cleanups between here and the loop-exit scope,
+  // create a block to stage a loop exit along.
+  llvm::BasicBlock *ExitBlock = LoopExit.getBlock();
+  if (ForScope.requiresCleanups())
+    ExitBlock = createBasicBlock("for.cond.cleanup");
+  
+  // The loop body, consisting of the specified body and the loop variable.
+  llvm::BasicBlock *ForBody = createBasicBlock("for.body");
+
+  // The body is executed if the expression, contextually converted
+  // to bool, is true.
+  llvm::Value *BoolCondVal = EvaluateExprAsBool(S.getCond());
+  Builder.CreateCondBr(BoolCondVal, ForBody, ExitBlock);
+
+  if (ExitBlock != LoopExit.getBlock()) {
+    EmitBlock(ExitBlock);
+    EmitBranchThroughCleanup(LoopExit);
+  }
+
+  EmitBlock(ForBody);
+
+  // Create a block for the increment. In case of a 'continue', we jump there.
+  JumpDest Continue = getJumpDestInCurrentScope("for.inc");
+
+  // Store the blocks to use for break and continue.
+  BreakContinueStack.push_back(BreakContinue(LoopExit, Continue));
+
+  {
+    // Create a separate cleanup scope for the loop variable and body.
+    RunCleanupsScope BodyScope(*this);
+    EmitStmt(S.getLoopVarStmt());
+    EmitStmt(S.getBody());
+  }
+
+  // If there is an increment, emit it next.
+  EmitBlock(Continue.getBlock());
+  EmitStmt(S.getInc());
+
+  BreakContinueStack.pop_back();
+
+  EmitBranch(CondBlock);
+
+  ForScope.ForceCleanup();
+
+  if (DI) {
+    DI->setLocation(S.getSourceRange().getEnd());
+    DI->EmitRegionEnd(Builder);
+  }
+
+  // Emit the fall-through block.
+  EmitBlock(LoopExit.getBlock(), true);
+}
+
 void CodeGenFunction::EmitReturnOfRValue(RValue RV, QualType Ty) {
   if (RV.isScalar()) {
     Builder.CreateStore(RV.getScalarVal(), ReturnValue);
@@ -747,8 +834,7 @@ void CodeGenFunction::EmitCaseStmtRange(const CaseStmt &S) {
   if (Range.ult(llvm::APInt(Range.getBitWidth(), 64))) {
     // Range is small enough to add multiple switch instruction cases.
     for (unsigned i = 0, e = Range.getZExtValue() + 1; i != e; ++i) {
-      SwitchInsn->addCase(llvm::ConstantInt::get(getLLVMContext(), LHS),
-                          CaseDest);
+      SwitchInsn->addCase(Builder.getInt(LHS), CaseDest);
       LHS++;
     }
     return;
@@ -769,11 +855,9 @@ void CodeGenFunction::EmitCaseStmtRange(const CaseStmt &S) {
 
   // Emit range check.
   llvm::Value *Diff =
-    Builder.CreateSub(SwitchInsn->getCondition(),
-                      llvm::ConstantInt::get(getLLVMContext(), LHS),  "tmp");
+    Builder.CreateSub(SwitchInsn->getCondition(), Builder.getInt(LHS),  "tmp");
   llvm::Value *Cond =
-    Builder.CreateICmpULE(Diff, llvm::ConstantInt::get(getLLVMContext(), Range),
-                          "inbounds");
+    Builder.CreateICmpULE(Diff, Builder.getInt(Range), "inbounds");
   Builder.CreateCondBr(Cond, CaseDest, FalseDest);
 
   // Restore the appropriate insertion point.
@@ -784,16 +868,37 @@ void CodeGenFunction::EmitCaseStmtRange(const CaseStmt &S) {
 }
 
 void CodeGenFunction::EmitCaseStmt(const CaseStmt &S) {
+  // Handle case ranges.
   if (S.getRHS()) {
     EmitCaseStmtRange(S);
     return;
   }
 
+  llvm::ConstantInt *CaseVal =
+    Builder.getInt(S.getLHS()->EvaluateAsInt(getContext()));
+
+  // If the body of the case is just a 'break', and if there was no fallthrough,
+  // try to not emit an empty block.
+  if (isa<BreakStmt>(S.getSubStmt())) {
+    JumpDest Block = BreakContinueStack.back().BreakBlock;
+    
+    // Only do this optimization if there are no cleanups that need emitting.
+    if (isObviouslyBranchWithoutCleanups(Block)) {
+      SwitchInsn->addCase(CaseVal, Block.getBlock());
+
+      // If there was a fallthrough into this case, make sure to redirect it to
+      // the end of the switch as well.
+      if (Builder.GetInsertBlock()) {
+        Builder.CreateBr(Block.getBlock());
+        Builder.ClearInsertionPoint();
+      }
+      return;
+    }
+  }
+  
   EmitBlock(createBasicBlock("sw.bb"));
   llvm::BasicBlock *CaseDest = Builder.GetInsertBlock();
-  llvm::APSInt CaseVal = S.getLHS()->EvaluateAsInt(getContext());
-  SwitchInsn->addCase(llvm::ConstantInt::get(getLLVMContext(), CaseVal),
-                      CaseDest);
+  SwitchInsn->addCase(CaseVal, CaseDest);
 
   // Recursively emitting the statement is acceptable, but is not wonderful for
   // code where we have many case statements nested together, i.e.:
@@ -807,13 +912,12 @@ void CodeGenFunction::EmitCaseStmt(const CaseStmt &S) {
   const CaseStmt *CurCase = &S;
   const CaseStmt *NextCase = dyn_cast<CaseStmt>(S.getSubStmt());
 
-  // Otherwise, iteratively add consequtive cases to this switch stmt.
+  // Otherwise, iteratively add consecutive cases to this switch stmt.
   while (NextCase && NextCase->getRHS() == 0) {
     CurCase = NextCase;
-    CaseVal = CurCase->getLHS()->EvaluateAsInt(getContext());
-    SwitchInsn->addCase(llvm::ConstantInt::get(getLLVMContext(), CaseVal),
-                        CaseDest);
-
+    llvm::ConstantInt *CaseVal = 
+      Builder.getInt(CurCase->getLHS()->EvaluateAsInt(getContext()));
+    SwitchInsn->addCase(CaseVal, CaseDest);
     NextCase = dyn_cast<CaseStmt>(CurCase->getSubStmt());
   }
 
@@ -1251,7 +1355,7 @@ static llvm::MDNode *getAsmSrcLocInfo(const StringLiteral *Str,
     }
   }    
   
-  return llvm::MDNode::get(CGF.getLLVMContext(), Locs.data(), Locs.size());
+  return llvm::MDNode::get(CGF.getLLVMContext(), Locs);
 }
 
 void CodeGenFunction::EmitAsmStmt(const AsmStmt &S) {

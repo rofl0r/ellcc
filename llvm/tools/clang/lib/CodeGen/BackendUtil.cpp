@@ -30,6 +30,7 @@
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/Target/TargetRegistry.h"
+#include "llvm/Transforms/Instrumentation.h"
 using namespace clang;
 using namespace llvm;
 
@@ -108,11 +109,11 @@ void EmitAssemblyHelper::CreatePasses() {
     OptLevel = 0;
     Inlining = CodeGenOpts.NoInlining;
   }
-  
+
   FunctionPassManager *FPM = getPerFunctionPasses();
-  
-  TargetLibraryInfo *TLI =
-    new TargetLibraryInfo(Triple(TheModule->getTargetTriple()));
+
+  Triple TargetTriple(TheModule->getTargetTriple());
+  TargetLibraryInfo *TLI = new TargetLibraryInfo(TargetTriple);
   if (!CodeGenOpts.SimplifyLibCalls)
     TLI->disableAllFunctions();
   FPM->add(TLI);
@@ -133,8 +134,10 @@ void EmitAssemblyHelper::CreatePasses() {
     //
     // FIXME: Derive these constants in a principled fashion.
     unsigned Threshold = 225;
-    if (CodeGenOpts.OptimizeSize)
+    if (CodeGenOpts.OptimizeSize == 1) //-Os
       Threshold = 75;
+    else if (CodeGenOpts.OptimizeSize == 2) //-Oz
+      Threshold = 25;
     else if (OptLevel > 2)
       Threshold = 275;
     InliningPass = createFunctionInliningPass(Threshold);
@@ -146,11 +149,20 @@ void EmitAssemblyHelper::CreatePasses() {
   }
 
   PassManager *MPM = getPerModulePasses();
-  
-  TLI = new TargetLibraryInfo(Triple(TheModule->getTargetTriple()));
+
+  TLI = new TargetLibraryInfo(TargetTriple);
   if (!CodeGenOpts.SimplifyLibCalls)
     TLI->disableAllFunctions();
   MPM->add(TLI);
+
+  if (CodeGenOpts.EmitGcovArcs || CodeGenOpts.EmitGcovNotes) {
+    MPM->add(createGCOVProfilerPass(CodeGenOpts.EmitGcovNotes,
+                                    CodeGenOpts.EmitGcovArcs,
+                                    TargetTriple.isMacOSX()));
+
+    if (!CodeGenOpts.DebugInfo)
+      MPM->add(createStripSymbolsPass(true));
+  }
 
   // For now we always create per module passes.
   llvm::createStandardModulePasses(MPM, OptLevel,
@@ -190,7 +202,7 @@ bool EmitAssemblyHelper::AddEmitPasses(BackendAction Action,
   }
 
   // Set float ABI type.
-  if (CodeGenOpts.FloatABI == "soft")
+  if (CodeGenOpts.FloatABI == "soft" || CodeGenOpts.FloatABI == "softfp")
     llvm::FloatABIType = llvm::FloatABI::Soft;
   else if (CodeGenOpts.FloatABI == "hard")
     llvm::FloatABIType = llvm::FloatABI::Hard;
@@ -248,6 +260,8 @@ bool EmitAssemblyHelper::AddEmitPasses(BackendAction Action,
   }
   if (llvm::TimePassesIsEnabled)
     BackendArgs.push_back("-time-passes");
+  for (unsigned i = 0, e = CodeGenOpts.BackendOptions.size(); i != e; ++i)
+    BackendArgs.push_back(CodeGenOpts.BackendOptions[i].c_str());
   BackendArgs.push_back(0);
   llvm::cl::ParseCommandLineOptions(BackendArgs.size() - 1,
                                     const_cast<char **>(&BackendArgs[0]));
@@ -266,6 +280,10 @@ bool EmitAssemblyHelper::AddEmitPasses(BackendAction Action,
 
   if (CodeGenOpts.RelaxAll)
     TM->setMCRelaxAll(true);
+  if (CodeGenOpts.SaveTempLabels)
+    TM->setMCSaveTempLabels(true);
+  if (CodeGenOpts.NoDwarf2CFIAsm)
+    TM->setMCUseCFI(false);
 
   // Create the code generator passes.
   PassManager *PM = getCodeGenPasses();
@@ -318,6 +336,9 @@ void EmitAssemblyHelper::EmitAssembly(BackendAction Action, raw_ostream *OS) {
     if (!AddEmitPasses(Action, FormattedOS))
       return;
   }
+
+  // Before executing passes, print the final values of the LLVM options.
+  cl::PrintOptionValues();
 
   // Run passes. For now we do all passes at once, but eventually we
   // would like to have the option of streaming code generation.

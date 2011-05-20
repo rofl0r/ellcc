@@ -209,7 +209,12 @@ struct Formula {
   /// when AM.Scale is not zero.
   const SCEV *ScaledReg;
 
-  Formula() : ScaledReg(0) {}
+  /// UnfoldedOffset - An additional constant offset which added near the
+  /// use. This requires a temporary register, but the offset itself can
+  /// live in an add immediate field rather than a register.
+  int64_t UnfoldedOffset;
+
+  Formula() : ScaledReg(0), UnfoldedOffset(0) {}
 
   void InitialMatch(const SCEV *S, Loop *L, ScalarEvolution &SE);
 
@@ -378,6 +383,10 @@ void Formula::print(raw_ostream &OS) const {
     else
       OS << "<unknown>";
     OS << ')';
+  }
+  if (UnfoldedOffset != 0) {
+    if (!First) OS << " + "; else First = false;
+    OS << "imm(" << UnfoldedOffset << ')';
   }
 }
 
@@ -572,9 +581,6 @@ static bool isAddressUse(Instruction *Inst, Value *OperandVal) {
     switch (II->getIntrinsicID()) {
       default: break;
       case Intrinsic::prefetch:
-      case Intrinsic::x86_sse2_loadu_dq:
-      case Intrinsic::x86_sse2_loadu_pd:
-      case Intrinsic::x86_sse_loadu_ps:
       case Intrinsic::x86_sse_storeu_ps:
       case Intrinsic::x86_sse2_storeu_pd:
       case Intrinsic::x86_sse2_storeu_dq:
@@ -774,8 +780,10 @@ void Cost::RateFormula(const Formula &F,
     RatePrimaryRegister(BaseReg, Regs, L, SE, DT);
   }
 
-  if (F.BaseRegs.size() > 1)
-    NumBaseAdds += F.BaseRegs.size() - 1;
+  // Determine how many (unfolded) adds we'll need inside the loop.
+  size_t NumBaseParts = F.BaseRegs.size() + (F.UnfoldedOffset != 0);
+  if (NumBaseParts > 1)
+    NumBaseAdds += NumBaseParts - 1;
 
   // Tally up the non-zero immediates.
   for (SmallVectorImpl<int64_t>::const_iterator I = Offsets.begin(),
@@ -789,7 +797,7 @@ void Cost::RateFormula(const Formula &F,
   }
 }
 
-/// Loose - Set this cost to a loosing value.
+/// Loose - Set this cost to a losing value.
 void Cost::Loose() {
   NumRegs = ~0u;
   AddRecCost = ~0u;
@@ -1491,7 +1499,7 @@ void LSRInstance::OptimizeShadowIV() {
     if (!C->getValue().isStrictlyPositive()) continue;
 
     /* Add new PHINode. */
-    PHINode *NewPH = PHINode::Create(DestTy, "IV.S.", PH);
+    PHINode *NewPH = PHINode::Create(DestTy, 2, "IV.S.", PH);
 
     /* create new increment. '++d' in above example. */
     Constant *CFP = ConstantFP::get(DestTy, C->getZExtValue());
@@ -1827,7 +1835,7 @@ LSRInstance::OptimizeLoopTermCond() {
   }
 }
 
-/// reconcileNewOffset - Determine if the given use can accomodate a fixup
+/// reconcileNewOffset - Determine if the given use can accommodate a fixup
 /// at the given offset and other details. If so, update the use and
 /// return true.
 bool
@@ -1948,7 +1956,8 @@ LSRInstance::FindUseWithSimilarFormula(const Formula &OrigF,
         if (F.BaseRegs == OrigF.BaseRegs &&
             F.ScaledReg == OrigF.ScaledReg &&
             F.AM.BaseGV == OrigF.AM.BaseGV &&
-            F.AM.Scale == OrigF.AM.Scale) {
+            F.AM.Scale == OrigF.AM.Scale &&
+            F.UnfoldedOffset == OrigF.UnfoldedOffset) {
           if (F.AM.BaseOffs == 0)
             return &LU;
           // This is the formula where all the registers and symbols matched;
@@ -2064,6 +2073,10 @@ void LSRInstance::CollectFixupsAndInitialFormulae() {
         // x == y  -->  x - y == 0
         const SCEV *N = SE.getSCEV(NV);
         if (SE.isLoopInvariant(N, L)) {
+          // S is normalized, so normalize N before folding it into S
+          // to keep the result normalized.
+          N = TransformForPostIncUse(Normalize, N, CI, 0,
+                                     LF.PostIncLoops, SE, DT);
           Kind = LSRUse::ICmpZero;
           S = SE.getMinusSCEV(N, S);
         }
@@ -2316,8 +2329,29 @@ void LSRInstance::GenerateReassociations(LSRUse &LU, unsigned LUIdx,
       if (InnerSum->isZero())
         continue;
       Formula F = Base;
-      F.BaseRegs[i] = InnerSum;
-      F.BaseRegs.push_back(*J);
+
+      // Add the remaining pieces of the add back into the new formula.
+      const SCEVConstant *InnerSumSC = dyn_cast<SCEVConstant>(InnerSum);
+      if (TLI && InnerSumSC &&
+          SE.getTypeSizeInBits(InnerSumSC->getType()) <= 64 &&
+          TLI->isLegalAddImmediate((uint64_t)F.UnfoldedOffset +
+                                   InnerSumSC->getValue()->getZExtValue())) {
+        F.UnfoldedOffset = (uint64_t)F.UnfoldedOffset +
+                           InnerSumSC->getValue()->getZExtValue();
+        F.BaseRegs.erase(F.BaseRegs.begin() + i);
+      } else
+        F.BaseRegs[i] = InnerSum;
+
+      // Add J as its own register, or an unfolded immediate.
+      const SCEVConstant *SC = dyn_cast<SCEVConstant>(*J);
+      if (TLI && SC && SE.getTypeSizeInBits(SC->getType()) <= 64 &&
+          TLI->isLegalAddImmediate((uint64_t)F.UnfoldedOffset +
+                                   SC->getValue()->getZExtValue()))
+        F.UnfoldedOffset = (uint64_t)F.UnfoldedOffset +
+                           SC->getValue()->getZExtValue();
+      else
+        F.BaseRegs.push_back(*J);
+
       if (InsertFormula(LU, LUIdx, F))
         // If that formula hadn't been seen before, recurse to find more like
         // it.
@@ -2482,6 +2516,13 @@ void LSRInstance::GenerateICmpZeroScales(LSRUse &LU, unsigned LUIdx,
     if (F.ScaledReg) {
       F.ScaledReg = SE.getMulExpr(F.ScaledReg, FactorS);
       if (getExactSDiv(F.ScaledReg, FactorS, SE) != Base.ScaledReg)
+        continue;
+    }
+
+    // Check that multiplying with the unfolded offset doesn't overflow.
+    if (F.UnfoldedOffset != 0) {
+      F.UnfoldedOffset = (uint64_t)F.UnfoldedOffset * Factor;
+      if (F.UnfoldedOffset / Factor != Base.UnfoldedOffset)
         continue;
     }
 
@@ -2667,7 +2708,7 @@ void LSRInstance::GenerateCrossUseConstantOffsets() {
       // other orig regs.
       ImmMapTy::const_iterator OtherImms[] = {
         Imms.begin(), prior(Imms.end()),
-        Imms.upper_bound((Imms.begin()->first + prior(Imms.end())->first) / 2)
+        Imms.lower_bound((Imms.begin()->first + prior(Imms.end())->first) / 2)
       };
       for (size_t i = 0, e = array_lengthof(OtherImms); i != e; ++i) {
         ImmMapTy::const_iterator M = OtherImms[i];
@@ -2741,8 +2782,13 @@ void LSRInstance::GenerateCrossUseConstantOffsets() {
           Formula NewF = F;
           NewF.AM.BaseOffs = (uint64_t)NewF.AM.BaseOffs + Imm;
           if (!isLegalUse(NewF.AM, LU.MinOffset, LU.MaxOffset,
-                          LU.Kind, LU.AccessTy, TLI))
-            continue;
+                          LU.Kind, LU.AccessTy, TLI)) {
+            if (!TLI ||
+                !TLI->isLegalAddImmediate((uint64_t)NewF.UnfoldedOffset + Imm))
+              continue;
+            NewF = F;
+            NewF.UnfoldedOffset = (uint64_t)NewF.UnfoldedOffset + Imm;
+          }
           NewF.BaseRegs[N] = SE.getAddExpr(NegImmS, BaseReg);
 
           // If the new formula has a constant in a register, and adding the
@@ -3489,6 +3535,14 @@ Value *LSRInstance::Expand(const LSRFixup &LF,
       // as part of the address.
       Ops.push_back(SE.getUnknown(ConstantInt::getSigned(IntTy, Offset)));
     }
+  }
+
+  // Expand the unfolded offset portion.
+  int64_t UnfoldedOffset = F.UnfoldedOffset;
+  if (UnfoldedOffset != 0) {
+    // Just add the immediate values.
+    Ops.push_back(SE.getUnknown(ConstantInt::getSigned(IntTy,
+                                                       UnfoldedOffset)));
   }
 
   // Emit instructions summing all the operands.

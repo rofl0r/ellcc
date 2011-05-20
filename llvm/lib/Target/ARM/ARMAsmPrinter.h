@@ -89,6 +89,13 @@ public:
 
   MachineLocation getDebugValueLocation(const MachineInstr *MI) const;
 
+  /// getDwarfRegOpSize - get size required to emit given machine location
+  /// using dwarf encoding.
+  virtual unsigned getDwarfRegOpSize(const MachineLocation &MLoc) const;
+
+  /// EmitDwarfRegOp - Emit dwarf register operation.
+  virtual void EmitDwarfRegOp(const MachineLocation &MLoc) const;
+
   virtual unsigned getISAEncoding() {
     // ARM/Darwin adds ISA to the DWARF info for each function.
     if (!Subtarget->isTargetDarwin())

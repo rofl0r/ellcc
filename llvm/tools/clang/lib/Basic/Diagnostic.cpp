@@ -16,6 +16,8 @@
 #include "clang/Basic/PartialDiagnostic.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/CrashRecoveryContext.h"
+
 using namespace clang;
 
 static void DummyArgToStringFn(Diagnostic::ArgumentKind AK, intptr_t QT,
@@ -48,11 +50,6 @@ Diagnostic::Diagnostic(const llvm::IntrusiveRefCntPtr<DiagnosticIDs> &diags,
 
   ErrorLimit = 0;
   TemplateBacktraceLimit = 0;
-
-  // Create a DiagState and DiagStatePoint representing diagnostic changes
-  // through command-line.
-  DiagStates.push_back(DiagState());
-  PushDiagStatePoint(&DiagStates.back(), SourceLocation());
 
   Reset();
 }
@@ -100,6 +97,16 @@ void Diagnostic::Reset() {
   // displayed.
   LastDiagLevel = (DiagnosticIDs::Level)-1;
   DelayedDiagID = 0;
+
+  // Clear state related to #pragma diagnostic.
+  DiagStates.clear();
+  DiagStatePoints.clear();
+  DiagStateOnPushStack.clear();
+
+  // Create a DiagState and DiagStatePoint representing diagnostic changes
+  // through command-line.
+  DiagStates.push_back(DiagState());
+  PushDiagStatePoint(&DiagStates.back(), SourceLocation());
 }
 
 void Diagnostic::SetDelayedDiagnostic(unsigned DiagID, llvm::StringRef Arg1,
@@ -168,7 +175,7 @@ void Diagnostic::setDiagnosticMapping(diag::kind Diag, diag::Mapping Map,
   // after the previous one.
   if ((Loc.isValid() && LastStateChangePos.isInvalid()) ||
       LastStateChangePos.isBeforeInTranslationUnitThan(Loc)) {
-    // A diagnostic pragma occured, create a new DiagState initialized with
+    // A diagnostic pragma occurred, create a new DiagState initialized with
     // the current one and a new DiagStatePoint to record at which location
     // the new state became active.
     DiagStates.push_back(*GetCurDiagState());
@@ -203,6 +210,42 @@ void Diagnostic::setDiagnosticMapping(diag::kind Diag, diag::Mapping Map,
   setDiagnosticMappingInternal(Diag, Map, NewState, true, isPragma);
   DiagStatePoints.insert(Pos+1, DiagStatePoint(NewState,
                                                FullSourceLoc(Loc, *SourceMgr)));
+}
+
+void Diagnostic::Report(const StoredDiagnostic &storedDiag) {
+  assert(CurDiagID == ~0U && "Multiple diagnostics in flight at once!");
+
+  CurDiagLoc = storedDiag.getLocation();
+  CurDiagID = storedDiag.getID();
+  NumDiagArgs = 0;
+
+  NumDiagRanges = storedDiag.range_size();
+  assert(NumDiagRanges < sizeof(DiagRanges)/sizeof(DiagRanges[0]) &&
+         "Too many arguments to diagnostic!");
+  unsigned i = 0;
+  for (StoredDiagnostic::range_iterator
+         RI = storedDiag.range_begin(),
+         RE = storedDiag.range_end(); RI != RE; ++RI)
+    DiagRanges[i++] = *RI;
+
+  NumFixItHints = storedDiag.fixit_size();
+  assert(NumFixItHints < Diagnostic::MaxFixItHints && "Too many fix-it hints!");
+  i = 0;
+  for (StoredDiagnostic::fixit_iterator
+         FI = storedDiag.fixit_begin(),
+         FE = storedDiag.fixit_end(); FI != FE; ++FI)
+    FixItHints[i++] = *FI;
+
+  assert(Client && "DiagnosticClient not set!");
+  Level DiagLevel = storedDiag.getLevel();
+  DiagnosticInfo Info(this, storedDiag.getMessage());
+  Client->HandleDiagnostic(DiagLevel, Info);
+  if (Client->IncludeInDiagnosticCounts()) {
+    if (DiagLevel == Diagnostic::Warning)
+      ++NumWarnings;
+  }
+
+  CurDiagID = ~0U;
 }
 
 void DiagnosticBuilder::FlushCounts() {
@@ -479,6 +522,11 @@ static void HandlePluralModifier(const DiagnosticInfo &DInfo, unsigned ValNo,
 /// array.
 void DiagnosticInfo::
 FormatDiagnostic(llvm::SmallVectorImpl<char> &OutStr) const {
+  if (!StoredDiagMessage.empty()) {
+    OutStr.append(StoredDiagMessage.begin(), StoredDiagMessage.end());
+    return;
+  }
+
   const char *DiagStr = getDiags()->getDiagnosticIDs()->getDescription(getID());
   const char *DiagEnd = DiagStr+strlen(DiagStr);
 
@@ -683,5 +731,7 @@ PartialDiagnostic::StorageAllocator::StorageAllocator() {
 }
 
 PartialDiagnostic::StorageAllocator::~StorageAllocator() {
-  assert(NumFreeListEntries == NumCached && "A partial is on the lamb");
+  // Don't assert if we are in a CrashRecovery context, as this
+  // invariant may be invalidated during a crash.
+  assert((NumFreeListEntries == NumCached || llvm::CrashRecoveryContext::isRecoveringFromCrash()) && "A partial is on the lamb");
 }

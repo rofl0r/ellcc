@@ -144,7 +144,8 @@ ClassifyGlobalReference(const GlobalValue *GV, const TargetMachine &TM) const {
 /// passed as the second argument. Otherwise it returns null.
 const char *X86Subtarget::getBZeroEntry() const {
   // Darwin 10 has a __bzero entry point for this purpose.
-  if (getDarwinVers() >= 10)
+  if (getTargetTriple().isMacOSX() &&
+      !getTargetTriple().isMacOSXVersionLT(10, 6))
     return "__bzero";
 
   return 0;
@@ -264,6 +265,7 @@ void X86Subtarget::AutoDetectSubtargetFeatures() {
 
   HasCLMUL = IsIntel && ((ECX >> 1) & 0x1);
   HasFMA3  = IsIntel && ((ECX >> 12) & 0x1);
+  HasPOPCNT = IsIntel && ((ECX >> 23) & 0x1);
   HasAES   = IsIntel && ((ECX >> 25) & 0x1);
 
   if (IsIntel || IsAMD) {

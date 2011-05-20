@@ -15,6 +15,7 @@
 #define LLVM_CLANG_AST_EXPRCXX_H
 
 #include "clang/Basic/TypeTraits.h"
+#include "clang/Basic/ExpressionTraits.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/UnresolvedSet.h"
 #include "clang/AST/TemplateBase.h"
@@ -99,7 +100,10 @@ public:
   /// getImplicitObjectArgument - Retrieves the implicit object
   /// argument for the member call. For example, in "x.f(5)", this
   /// operation would return "x".
-  Expr *getImplicitObjectArgument();
+  Expr *getImplicitObjectArgument() const;
+  
+  /// Retrieves the declaration of the called method.
+  CXXMethodDecl *getMethodDecl() const;
 
   /// getRecordDecl - Retrieves the CXXRecordDecl for the underlying type of
   /// the implicit object argument. Note that this is may not be the same
@@ -249,6 +253,8 @@ public:
   
   static CXXDynamicCastExpr *CreateEmpty(ASTContext &Context,
                                          unsigned pathSize);
+
+  bool isAlwaysNull() const;
 
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == CXXDynamicCastExprClass;
@@ -774,7 +780,8 @@ public:
   enum ConstructionKind {
     CK_Complete,
     CK_NonVirtualBase,
-    CK_VirtualBase
+    CK_VirtualBase,
+    CK_Delegating
   };
     
 private:
@@ -1588,6 +1595,122 @@ public:
   friend class ASTStmtReader;
 };
 
+/// ArrayTypeTraitExpr - An Embarcadero array type trait, as used in the
+/// implementation of __array_rank and __array_extent.
+/// Example:
+/// __array_rank(int[10][20]) == 2
+/// __array_extent(int, 1)    == 20
+class ArrayTypeTraitExpr : public Expr {
+  /// ATT - The trait. An ArrayTypeTrait enum in MSVC compat unsigned.
+  unsigned ATT : 2;
+
+  /// The value of the type trait. Unspecified if dependent.
+  uint64_t Value;
+
+  /// The array dimension being queried, or -1 if not used
+  Expr *Dimension;
+
+  /// Loc - The location of the type trait keyword.
+  SourceLocation Loc;
+
+  /// RParen - The location of the closing paren.
+  SourceLocation RParen;
+
+  /// The type being queried.
+  TypeSourceInfo *QueriedType;
+
+public:
+  ArrayTypeTraitExpr(SourceLocation loc, ArrayTypeTrait att,
+                     TypeSourceInfo *queried, uint64_t value,
+                     Expr *dimension, SourceLocation rparen, QualType ty)
+    : Expr(ArrayTypeTraitExprClass, ty, VK_RValue, OK_Ordinary,
+           false, queried->getType()->isDependentType(),
+           queried->getType()->containsUnexpandedParameterPack()),
+      ATT(att), Value(value), Dimension(dimension),
+      Loc(loc), RParen(rparen), QueriedType(queried) { }
+
+
+  explicit ArrayTypeTraitExpr(EmptyShell Empty)
+    : Expr(ArrayTypeTraitExprClass, Empty), ATT(0), Value(false),
+      QueriedType() { }
+
+  virtual ~ArrayTypeTraitExpr() { }
+
+  virtual SourceRange getSourceRange() const { return SourceRange(Loc, RParen); }
+
+  ArrayTypeTrait getTrait() const { return static_cast<ArrayTypeTrait>(ATT); }
+
+  QualType getQueriedType() const { return QueriedType->getType(); }
+
+  TypeSourceInfo *getQueriedTypeSourceInfo() const { return QueriedType; }
+
+  uint64_t getValue() const { assert(!isTypeDependent()); return Value; }
+
+  Expr *getDimensionExpression() const { return Dimension; }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == ArrayTypeTraitExprClass;
+  }
+  static bool classof(const ArrayTypeTraitExpr *) { return true; }
+
+  // Iterators
+  child_range children() { return child_range(); }
+
+  friend class ASTStmtReader;
+};
+
+/// ExpressionTraitExpr - An expression trait intrinsic
+/// Example:
+/// __is_lvalue_expr(std::cout) == true
+/// __is_lvalue_expr(1) == false
+class ExpressionTraitExpr : public Expr {
+  /// ET - The trait. A ExpressionTrait enum in MSVC compat unsigned.
+  unsigned ET : 31;
+  /// The value of the type trait. Unspecified if dependent.
+  bool Value : 1;
+
+  /// Loc - The location of the type trait keyword.
+  SourceLocation Loc;
+
+  /// RParen - The location of the closing paren.
+  SourceLocation RParen;
+
+  Expr* QueriedExpression;
+public:
+  ExpressionTraitExpr(SourceLocation loc, ExpressionTrait et, 
+                     Expr *queried, bool value,
+                     SourceLocation rparen, QualType resultType)
+    : Expr(ExpressionTraitExprClass, resultType, VK_RValue, OK_Ordinary,
+           false, // Not type-dependent
+           // Value-dependent if the argument is type-dependent.
+           queried->isTypeDependent(),
+           queried->containsUnexpandedParameterPack()),
+      ET(et), Value(value), Loc(loc), RParen(rparen), QueriedExpression(queried) { }
+
+  explicit ExpressionTraitExpr(EmptyShell Empty)
+    : Expr(ExpressionTraitExprClass, Empty), ET(0), Value(false),
+      QueriedExpression() { }
+
+  SourceRange getSourceRange() const { return SourceRange(Loc, RParen);}
+
+  ExpressionTrait getTrait() const { return static_cast<ExpressionTrait>(ET); }
+
+  Expr *getQueriedExpression() const { return QueriedExpression; }
+
+  bool getValue() const { return Value; }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == ExpressionTraitExprClass;
+  }
+  static bool classof(const ExpressionTraitExpr *) { return true; }
+
+  // Iterators
+  child_range children() { return child_range(); }
+
+  friend class ASTStmtReader;
+};
+
+
 /// \brief A reference to an overloaded function set, either an
 /// \t UnresolvedLookupExpr or an \t UnresolvedMemberExpr.
 class OverloadExpr : public Expr {
@@ -1733,6 +1856,10 @@ class UnresolvedLookupExpr : public OverloadExpr {
   /// call.
   bool RequiresADL;
 
+  /// True if namespace ::std should be considered an associated namespace
+  /// for the purposes of argument-dependent lookup. See C++0x [stmt.ranged]p1.
+  bool StdIsAssociatedNamespace;
+
   /// True if these lookup results are overloaded.  This is pretty
   /// trivially rederivable if we urgently need to kill this field.
   bool Overloaded;
@@ -1750,15 +1877,19 @@ class UnresolvedLookupExpr : public OverloadExpr {
                        const DeclarationNameInfo &NameInfo,
                        bool RequiresADL, bool Overloaded, 
                        const TemplateArgumentListInfo *TemplateArgs,
-                       UnresolvedSetIterator Begin, UnresolvedSetIterator End)
+                       UnresolvedSetIterator Begin, UnresolvedSetIterator End,
+                       bool StdIsAssociatedNamespace)
     : OverloadExpr(UnresolvedLookupExprClass, C, QualifierLoc, NameInfo, 
                    TemplateArgs, Begin, End),
-      RequiresADL(RequiresADL), Overloaded(Overloaded), NamingClass(NamingClass)
+      RequiresADL(RequiresADL),
+      StdIsAssociatedNamespace(StdIsAssociatedNamespace),
+      Overloaded(Overloaded), NamingClass(NamingClass)
   {}
 
   UnresolvedLookupExpr(EmptyShell Empty)
     : OverloadExpr(UnresolvedLookupExprClass, Empty),
-      RequiresADL(false), Overloaded(false), NamingClass(0)
+      RequiresADL(false), StdIsAssociatedNamespace(false), Overloaded(false),
+      NamingClass(0)
   {}
 
   friend class ASTStmtReader;
@@ -1770,9 +1901,13 @@ public:
                                       const DeclarationNameInfo &NameInfo,
                                       bool ADL, bool Overloaded,
                                       UnresolvedSetIterator Begin, 
-                                      UnresolvedSetIterator End) {
+                                      UnresolvedSetIterator End,
+                                      bool StdIsAssociatedNamespace = false) {
+    assert((ADL || !StdIsAssociatedNamespace) &&
+           "std considered associated namespace when not performing ADL");
     return new(C) UnresolvedLookupExpr(C, NamingClass, QualifierLoc, NameInfo, 
-                                       ADL, Overloaded, 0, Begin, End);
+                                       ADL, Overloaded, 0, Begin, End,
+                                       StdIsAssociatedNamespace);
   }
 
   static UnresolvedLookupExpr *Create(ASTContext &C,
@@ -1791,6 +1926,10 @@ public:
   /// True if this declaration should be extended by
   /// argument-dependent lookup.
   bool requiresADL() const { return RequiresADL; }
+
+  /// True if namespace ::std should be artificially added to the set of
+  /// associated namespaecs for argument-dependent lookup purposes.
+  bool isStdAssociatedNamespace() const { return StdIsAssociatedNamespace; }
 
   /// True if this lookup is overloaded.
   bool isOverloaded() const { return Overloaded; }

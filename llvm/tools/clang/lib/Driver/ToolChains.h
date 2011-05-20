@@ -57,10 +57,13 @@ private:
   // the argument translation business.
   mutable bool TargetInitialized;
 
-  /// Whether we are targetting iPhoneOS target.
+  /// Whether we are targeting iPhoneOS target.
   mutable bool TargetIsIPhoneOS;
 
-  /// The OS version we are targetting.
+  /// Whether we are targeting the iPhoneOS simulator target.
+  mutable bool TargetIsIPhoneOSSimulator;
+
+  /// The OS version we are targeting.
   mutable unsigned TargetVersion[3];
 
   /// The default macosx-version-min of this tool chain; empty until
@@ -81,18 +84,22 @@ public:
 
   // FIXME: Eliminate these ...Target functions and derive separate tool chains
   // for these targets and put version in constructor.
-  void setTarget(bool isIPhoneOS, unsigned Major, unsigned Minor,
-                 unsigned Micro) const {
+  void setTarget(bool IsIPhoneOS, unsigned Major, unsigned Minor,
+                 unsigned Micro, bool IsIOSSim) const {
+    assert((!IsIOSSim || IsIPhoneOS) && "Unexpected deployment target!");
+
     // FIXME: For now, allow reinitialization as long as values don't
     // change. This will go away when we move away from argument translation.
-    if (TargetInitialized && TargetIsIPhoneOS == isIPhoneOS &&
+    if (TargetInitialized && TargetIsIPhoneOS == IsIPhoneOS &&
+        TargetIsIPhoneOSSimulator == IsIOSSim &&
         TargetVersion[0] == Major && TargetVersion[1] == Minor &&
         TargetVersion[2] == Micro)
       return;
 
     assert(!TargetInitialized && "Target already initialized!");
     TargetInitialized = true;
-    TargetIsIPhoneOS = isIPhoneOS;
+    TargetIsIPhoneOS = IsIPhoneOS;
+    TargetIsIPhoneOSSimulator = IsIOSSim;
     TargetVersion[0] = Major;
     TargetVersion[1] = Minor;
     TargetVersion[2] = Micro;
@@ -101,6 +108,11 @@ public:
   bool isTargetIPhoneOS() const {
     assert(TargetInitialized && "Target not initialized!");
     return TargetIsIPhoneOS;
+  }
+
+  bool isTargetIOSSimulator() const {
+    assert(TargetInitialized && "Target not initialized!");
+    return TargetIsIPhoneOSSimulator;
   }
 
   bool isTargetInitialized() const { return TargetInitialized; }
@@ -296,8 +308,11 @@ public:
 };
 
 class LLVM_LIBRARY_VISIBILITY NetBSD : public Generic_ELF {
+  const llvm::Triple ToolTriple;
+
 public:
-  NetBSD(const HostInfo &Host, const llvm::Triple& Triple);
+  NetBSD(const HostInfo &Host, const llvm::Triple& Triple,
+         const llvm::Triple& ToolTriple);
 
   virtual Tool &SelectTool(const Compilation &C, const JobAction &JA,
                            const ActionList &Inputs) const;

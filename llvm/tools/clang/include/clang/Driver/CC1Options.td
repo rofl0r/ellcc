@@ -113,6 +113,7 @@ def dwarf_debug_flags : Separate<"-dwarf-debug-flags">,
 def fforbid_guard_variables : Flag<"-fforbid-guard-variables">,
   HelpText<"Emit an error if a C++ static local initializer would need a guard variable">;
 def g : Flag<"-g">, HelpText<"Generate source level debug information">;
+def fno_dwarf2_cfi_asm : Flag<"-fno-dwarf2-cfi-asm">, HelpText<"Don't use the cfi directives">;
 def fcatch_undefined_behavior : Flag<"-fcatch-undefined-behavior">,
     HelpText<"Generate runtime checks for undefined behavior.">;
 def flimit_debug_info : Flag<"-flimit-debug-info">,
@@ -135,6 +136,13 @@ def fdata_sections : Flag<"-fdata-sections">,
   HelpText<"Place each data in its own section (ELF Only)">;
 def funroll_loops : Flag<"-funroll-loops">,
   HelpText<"Turn on loop unroller">;
+def femit_coverage_notes : Flag<"-femit-coverage-notes">,
+  HelpText<"Emit a gcov coverage notes file when compiling.">;
+def femit_coverage_data: Flag<"-femit-coverage-data">,
+  HelpText<"Instrument the program to emit gcov coverage data when run.">;
+def coverage_file : Separate<"-coverage-file">,
+  HelpText<"Emit coverage data to this filename. The extension will be replaced.">;
+def coverage_file_EQ : Joined<"-coverage-file=">, Alias<coverage_file>;
 def relaxed_aliasing : Flag<"-relaxed-aliasing">,
   HelpText<"Turn off Type Based Alias Analysis">;
 def masm_verbose : Flag<"-masm-verbose">,
@@ -155,10 +163,14 @@ def momit_leaf_frame_pointer : Flag<"-momit-leaf-frame-pointer">,
   HelpText<"Omit frame pointer setup for leaf functions.">;
 def msoft_float : Flag<"-msoft-float">,
   HelpText<"Use software floating point">;
+def backend_option : Separate<"-backend-option">,
+  HelpText<"Additional arguments to forward to LLVM backend (during code gen)">;
 def mregparm : Separate<"-mregparm">,
   HelpText<"Limit the number of registers available for integer arguments">;
 def mrelax_all : Flag<"-mrelax-all">,
-  HelpText<"Relax all machine instructions">;
+  HelpText<"(integrated-as) Relax all machine instructions">;
+def msave_temp_labels : Flag<"-msave-temp-labels">,
+  HelpText<"(integrated-as) Save temporary labels">;
 def mrtd: Flag<"-mrtd">,
   HelpText<"Make StdCall calling convention the default">;
 def mrelocation_model : Separate<"-mrelocation-model">,
@@ -169,8 +181,11 @@ def mconstructor_aliases : Flag<"-mconstructor-aliases">,
   HelpText<"Emit complete constructors and destructors as aliases when possible">;
 def mms_bitfields : Flag<"-mms-bitfields">,
   HelpText<"Set the default structure layout to be compatible with the Microsoft compiler standard.">;
+def mstackrealign : Flag<"-mstackrealign">,
+  HelpText<"Force realign the stack at entry to every function.">;
 def O : Joined<"-O">, HelpText<"Optimization level">;
 def Os : Flag<"-Os">, HelpText<"Optimize for size">;
+def Oz : Flag<"-Oz">, HelpText<"Optimize for size, regardless of performance">;
 def pg : Flag<"-pg">, HelpText<"Enable mcount instrumentation">;
 
 //===----------------------------------------------------------------------===//
@@ -197,6 +212,8 @@ def MP : Flag<"-MP">,
 def dump_build_information : Separate<"-dump-build-information">,
   MetaVarName<"<filename>">,
   HelpText<"output a dump of some build information to a file">;
+def diagnostic_log_file : Separate<"-diagnostic-log-file">,
+  HelpText<"Filename (or -) to log diagnostics to">;
 def fno_show_column : Flag<"-fno-show-column">,
   HelpText<"Do not include column number on diagnostics">;
 def fno_show_source_location : Flag<"-fno-show-source-location">,
@@ -208,6 +225,9 @@ def fno_caret_diagnostics : Flag<"-fno-caret-diagnostics">,
   HelpText<"Do not include source line and caret with diagnostics">;
 def fno_diagnostics_fixit_info : Flag<"-fno-diagnostics-fixit-info">,
   HelpText<"Do not include fixit information in diagnostics">;
+def fno_diagnostics_show_note_include_stack :
+  Flag<"-fno-diagnostics-show-note-include-stack">,
+  HelpText<"Display include stacks for diagnostic notes">;
 def w : Flag<"-w">, HelpText<"Suppress all warnings">;
 def pedantic : Flag<"-pedantic">;
 def pedantic_errors : Flag<"-pedantic-errors">;
@@ -221,11 +241,15 @@ def fdiagnostics_print_source_range_info : Flag<"-fdiagnostics-print-source-rang
   HelpText<"Print source range spans in numeric form">;
 def fdiagnostics_parseable_fixits : Flag<"-fdiagnostics-parseable-fixits">,
   HelpText<"Print fix-its in machine parseable form">;
+def fdiagnostics_show_name : Flag<"-fdiagnostics-show-name">,
+  HelpText<"Print diagnostic name">;
 def fdiagnostics_show_option : Flag<"-fdiagnostics-show-option">,
-  HelpText<"Print diagnostic name with mappable diagnostics">;
+  HelpText<"Print option name with mappable diagnostics">;
 def fdiagnostics_show_category : Separate<"-fdiagnostics-show-category">,
   HelpText<"Print diagnostic category">;
-
+def fdiagnostics_show_note_include_stack :
+  Flag<"-fdiagnostics-show-note-include-stack">,
+  HelpText<"Display include stacks for diagnostic notes">;
 def ftabstop : Separate<"-ftabstop">, MetaVarName<"<N>">,
   HelpText<"Set the tab stop distance.">;
 def ferror_limit : Separate<"-ferror-limit">, MetaVarName<"<N>">,
@@ -240,8 +264,6 @@ def fcolor_diagnostics : Flag<"-fcolor-diagnostics">,
   HelpText<"Use colors in diagnostics">;
 def Wno_rewrite_macros : Flag<"-Wno-rewrite-macros">,
   HelpText<"Silence ObjC rewriting warnings">;
-def Wwrite_strings : Flag<"-Wwrite-strings">,
-  HelpText<"Remove const qualifier from string literals">;
 def verify : Flag<"-verify">,
   HelpText<"Verify emitted diagnostics and warnings">;
 
@@ -509,12 +531,25 @@ def trigraphs : Flag<"-trigraphs">,
   HelpText<"Process trigraph sequences">;
 def fwritable_strings : Flag<"-fwritable-strings">,
   HelpText<"Store string literals as writable data">;
+def fconst_strings : Flag<"-fconst-strings">,
+  HelpText<"Use a const qualified type for string literals in C and ObjC">;
+def fno_const_strings : Flag<"-fno-const-strings">,
+  HelpText<"Don't use a const qualified type for string literals in C and ObjC">;
 def fno_bitfield_type_align : Flag<"-fno-bitfield-type-align">,
   HelpText<"Ignore bit-field types when aligning structures">;
 def traditional_cpp : Flag<"-traditional-cpp">,
   HelpText<"Enable some traditional CPP emulation">;
 def ffake_address_space_map : Flag<"-ffake-address-space-map">,
   HelpText<"Use a fake address space map; OpenCL testing purposes only">;
+def fdelayed_template_parsing : Flag<"-fdelayed-template-parsing">,
+  HelpText<"Parse templated function definitions at the end of the "
+           "translation unit ">;
+def funknown_anytype : Flag<"-funknown-anytype">,
+  HelpText<"Enable parser support for the __unknown_anytype type; for testing purposes only">;
+def fdeprecated_macro : Flag<"-fdeprecated-macro">,
+  HelpText<"Defines the __DEPRECATED macro">;
+def fno_deprecated_macro : Flag<"-fno-deprecated-macro">,
+  HelpText<"Undefines the __DEPRECATED macro">;
 
 //===----------------------------------------------------------------------===//
 // Header Search Options

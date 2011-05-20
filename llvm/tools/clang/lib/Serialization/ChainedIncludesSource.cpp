@@ -94,6 +94,8 @@ ChainedIncludesSource *ChainedIncludesSource::create(CompilerInstance &CI) {
     Clang->createFileManager();
     Clang->createSourceManager(Clang->getFileManager());
     Clang->createPreprocessor();
+    Clang->getDiagnosticClient().BeginSourceFile(Clang->getLangOpts(),
+                                                 &Clang->getPreprocessor());
     Clang->createASTContext();
 
     llvm::SmallVector<char, 256> serialAST;
@@ -136,6 +138,7 @@ ChainedIncludesSource *ChainedIncludesSource::create(CompilerInstance &CI) {
 
     ParseAST(Clang->getSema());
     OS.flush();
+    Clang->getDiagnosticClient().EndSourceFile();
     serialBufs.push_back(
       llvm::MemoryBuffer::getMemBufferCopy(llvm::StringRef(serialAST.data(),
                                                            serialAST.size())));
@@ -205,3 +208,28 @@ void ChainedIncludesSource::StartTranslationUnit(ASTConsumer *Consumer) {
 void ChainedIncludesSource::PrintStats() {
   return getFinalReader().PrintStats();
 }
+void ChainedIncludesSource::getMemoryBufferSizes(MemoryBufferSizes &sizes)const{
+  for (unsigned i = 0, e = CIs.size(); i != e; ++i) {
+    if (const ExternalASTSource *eSrc =
+        CIs[i]->getASTContext().getExternalSource()) {
+      eSrc->getMemoryBufferSizes(sizes);
+    }
+  }
+
+  getFinalReader().getMemoryBufferSizes(sizes);
+}
+
+void ChainedIncludesSource::InitializeSema(Sema &S) {
+  return getFinalReader().InitializeSema(S);
+}
+void ChainedIncludesSource::ForgetSema() {
+  return getFinalReader().ForgetSema();
+}
+std::pair<ObjCMethodList,ObjCMethodList>
+ChainedIncludesSource::ReadMethodPool(Selector Sel) {
+  return getFinalReader().ReadMethodPool(Sel);
+}
+bool ChainedIncludesSource::LookupUnqualified(LookupResult &R, Scope *S) {
+  return getFinalReader().LookupUnqualified(R, S);
+}
+

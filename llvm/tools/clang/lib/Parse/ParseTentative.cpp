@@ -58,6 +58,7 @@ bool Parser::isCXXDeclarationStatement() {
   case tok::kw_using:
     // static_assert-declaration
   case tok::kw_static_assert:
+  case tok::kw__Static_assert:
     return true;
     // simple-declaration
   default:
@@ -658,10 +659,13 @@ Parser::isExpressionOrTypeSpecifierSimple(tok::TokenKind Kind) {
   case tok::kw___is_convertible_to:
   case tok::kw___is_empty:
   case tok::kw___is_enum:
+  case tok::kw___is_literal:
+  case tok::kw___is_literal_type:
   case tok::kw___is_pod:
   case tok::kw___is_polymorphic:
+  case tok::kw___is_trivial:
+  case tok::kw___is_trivially_copyable:
   case tok::kw___is_union:
-  case tok::kw___is_literal:
   case tok::kw___uuidof:
     return TPResult::True();
       
@@ -673,6 +677,7 @@ Parser::isExpressionOrTypeSpecifierSimple(tok::TokenKind Kind) {
   case tok::kw_float:
   case tok::kw_int:
   case tok::kw_long:
+  case tok::kw___int64:
   case tok::kw_restrict:
   case tok::kw_short:
   case tok::kw_signed:
@@ -689,6 +694,7 @@ Parser::isExpressionOrTypeSpecifierSimple(tok::TokenKind Kind) {
   case tok::kw_char16_t:
   case tok::kw_char32_t:
   case tok::kw_decltype:
+  case tok::kw___underlying_type:
   case tok::kw_thread_local:
   case tok::kw__Decimal32:
   case tok::kw__Decimal64:
@@ -968,6 +974,7 @@ Parser::TPResult Parser::isCXXDeclarationSpecifier() {
   case tok::kw_short:
   case tok::kw_int:
   case tok::kw_long:
+  case tok::kw___int64:
   case tok::kw_signed:
   case tok::kw_unsigned:
   case tok::kw_float:
@@ -1004,6 +1011,10 @@ Parser::TPResult Parser::isCXXDeclarationSpecifier() {
 
   // C++0x decltype support.
   case tok::kw_decltype:
+    return TPResult::True();
+
+  // C++0x type traits support
+  case tok::kw___underlying_type:
     return TPResult::True();
 
   default:
@@ -1151,7 +1162,7 @@ Parser::TPResult Parser::TryParseParameterDeclarationClause() {
       return TPResult::True(); // '...' is a sign of a function declarator.
     }
 
-    ParsedAttributes attrs;
+    ParsedAttributes attrs(AttrFactory);
     MaybeParseMicrosoftAttributes(attrs);
 
     // decl-specifier-seq

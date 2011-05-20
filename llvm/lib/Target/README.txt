@@ -392,34 +392,6 @@ PHI Slicing could be extended to do this.
 
 //===---------------------------------------------------------------------===//
 
-LSR should know what GPR types a target has from TargetData.  This code:
-
-volatile short X, Y; // globals
-
-void foo(int N) {
-  int i;
-  for (i = 0; i < N; i++) { X = i; Y = i*4; }
-}
-
-produces two near identical IV's (after promotion) on PPC/ARM:
-
-LBB1_2:
-	ldr r3, LCPI1_0
-	ldr r3, [r3]
-	strh r2, [r3]
-	ldr r3, LCPI1_1
-	ldr r3, [r3]
-	strh r1, [r3]
-	add r1, r1, #4
-	add r2, r2, #1   <- [0,+,1]
-	sub r0, r0, #1   <- [0,-,1]
-	cmp r0, #0
-	bne LBB1_2
-
-LSR should reuse the "+" IV for the exit test.
-
-//===---------------------------------------------------------------------===//
-
 Tail call elim should be more aggressive, checking to see if the call is
 followed by an uncond branch to an exit block.
 
@@ -2102,11 +2074,12 @@ for.end:                                          ; preds = %entry
 }
 
 This shouldn't need the ((zext (%n - 1)) + 1) game, and it should ideally fold
-the two memset's together. The issue with %n seems to stem from poor handling
-of the original loop.
+the two memset's together.
 
-To simplify this, we need SCEV to know that "n != 0" because of the dominating
-conditional.  That would turn the second memset into a simple memset of 'n'.
+The issue with the addition only occurs in 64-bit mode, and appears to be at
+least partially caused by Scalar Evolution not keeping its cache updated: it
+returns the "wrong" result immediately after indvars runs, but figures out the
+expected result if it is run from scratch on IR resulting from running indvars.
 
 //===---------------------------------------------------------------------===//
 
@@ -2262,6 +2235,73 @@ missed cases:
       errs() << "CMP = " << I << "\n\n";
     }
   }
+
+//===---------------------------------------------------------------------===//
+
+define i1 @test1(i32 %x) nounwind {
+  %and = and i32 %x, 3
+  %cmp = icmp ult i32 %and, 2
+  ret i1 %cmp
+}
+
+Can be folded to (x & 2) == 0.
+
+define i1 @test2(i32 %x) nounwind {
+  %and = and i32 %x, 3
+  %cmp = icmp ugt i32 %and, 1
+  ret i1 %cmp
+}
+
+Can be folded to (x & 2) != 0.
+
+SimplifyDemandedBits shrinks the "and" constant to 2 but instcombine misses the
+icmp transform.
+
+//===---------------------------------------------------------------------===//
+
+This code:
+
+typedef struct {
+int f1:1;
+int f2:1;
+int f3:1;
+int f4:29;
+} t1;
+
+typedef struct {
+int f1:1;
+int f2:1;
+int f3:30;
+} t2;
+
+t1 s1;
+t2 s2;
+
+void func1(void)
+{
+s1.f1 = s2.f1;
+s1.f2 = s2.f2;
+}
+
+Compiles into this IR (on x86-64 at least):
+
+%struct.t1 = type { i8, [3 x i8] }
+@s2 = global %struct.t1 zeroinitializer, align 4
+@s1 = global %struct.t1 zeroinitializer, align 4
+define void @func1() nounwind ssp noredzone {
+entry:
+  %0 = load i32* bitcast (%struct.t1* @s2 to i32*), align 4
+  %bf.val.sext5 = and i32 %0, 1
+  %1 = load i32* bitcast (%struct.t1* @s1 to i32*), align 4
+  %2 = and i32 %1, -4
+  %3 = or i32 %2, %bf.val.sext5
+  %bf.val.sext26 = and i32 %0, 2
+  %4 = or i32 %3, %bf.val.sext26
+  store i32 %4, i32* bitcast (%struct.t1* @s1 to i32*), align 4
+  ret void
+}
+
+The two or/and's should be merged into one each.
 
 //===---------------------------------------------------------------------===//
 

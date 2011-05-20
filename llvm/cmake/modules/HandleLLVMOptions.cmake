@@ -1,5 +1,11 @@
 include(AddLLVMDefinitions)
 
+if( CMAKE_COMPILER_IS_GNUCXX )
+  set(LLVM_COMPILER_IS_GCC_COMPATIBLE ON)
+elseif( "${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang" )
+  set(LLVM_COMPILER_IS_GCC_COMPATIBLE ON)
+endif()
+
 # Run-time build mode; It is used for unittests.
 if(MSVC_IDE)
   # Expect "$(Configuration)", "$(OutDir)", etc.
@@ -84,7 +90,7 @@ if( LLVM_ENABLE_PIC )
     if( SUPPORTS_FPIC_FLAG )
       message(STATUS "Building with -fPIC")
       set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
-      set(CMAKE_C_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
+      set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
     else( SUPPORTS_FPIC_FLAG )
       message(WARNING "-fPIC not supported.")
     endif()
@@ -153,7 +159,7 @@ if( MSVC )
     -wd4715 # Suppress ''function' : not all control paths return a value'
     -wd4800 # Suppress ''type' : forcing value to bool 'true' or 'false' (performance warning)'
     -wd4065 # Suppress 'switch statement contains 'default' but no 'case' labels'
-
+    -wd4181 # Suppress 'qualifier applied to reference type; ignored'
     -w14062 # Promote "enumerator in switch of enum is not handled" to level 1 warning.
     )
 
@@ -167,7 +173,7 @@ if( MSVC )
   if (LLVM_ENABLE_WERROR)
     add_llvm_definitions( /WX )
   endif (LLVM_ENABLE_WERROR)
-elseif( CMAKE_COMPILER_IS_GNUCXX )
+elseif( LLVM_COMPILER_IS_GCC_COMPATIBLE )
   if (LLVM_ENABLE_WARNINGS)
     add_llvm_definitions( -Wall -W -Wno-unused-parameter -Wwrite-strings )
     if (LLVM_ENABLE_PEDANTIC)

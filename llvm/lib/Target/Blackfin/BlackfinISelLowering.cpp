@@ -121,6 +121,8 @@ BlackfinTargetLowering::BlackfinTargetLowering(TargetMachine &TM)
   setOperationAction(ISD::VAEND, MVT::Other, Expand);
   setOperationAction(ISD::STACKSAVE, MVT::Other, Expand);
   setOperationAction(ISD::STACKRESTORE, MVT::Other, Expand);
+
+  setMinFunctionAlignment(2);
 }
 
 const char *BlackfinTargetLowering::getTargetNodeName(unsigned Opcode) const {
@@ -345,7 +347,7 @@ BlackfinTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
 
   // Build a sequence of copy-to-reg nodes chained together with token
   // chain and flag operands which copy the outgoing args into registers.
-  // The InFlag in necessary since all emited instructions must be
+  // The InFlag in necessary since all emitted instructions must be
   // stuck together.
   SDValue InFlag;
   for (unsigned i = 0, e = RegsToPass.size(); i != e; ++i) {
@@ -495,11 +497,6 @@ BlackfinTargetLowering::ReplaceNodeResults(SDNode *N,
     return;
   }
   }
-}
-
-/// getFunctionAlignment - Return the Log2 alignment of this function.
-unsigned BlackfinTargetLowering::getFunctionAlignment(const Function *F) const {
-  return 2;
 }
 
 //===----------------------------------------------------------------------===//

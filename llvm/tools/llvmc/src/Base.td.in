@@ -191,7 +191,7 @@ class llvm_gcc_based <string cmd, string in_lang, string E_ext, dag out_lang,
          // ('-S' && '-emit-llvm') && !('opt') -> output .ll
          (and (switch_on "emit-llvm", "S"), (not (switch_on "opt"))),
               [(forward "S"), (output_suffix "ll")],
-         // Ususally just output .bc
+         // Usually just output .bc
          (not (switch_on "fsyntax-only")),
               [(append_cmd "-c"), (append_cmd "-emit-llvm")],
 
@@ -301,7 +301,7 @@ def llc : Tool<
 [(in_language "llvm-bitcode", "llvm-assembler"),
  (out_language "assembler"),
  (output_suffix "s"),
- (command "llc"),
+ (command "llc -disable-cfi"),
  (actions (case
           (switch_on "S"), (stop_compilation),
           (switch_on "O0"), (forward "O0"),

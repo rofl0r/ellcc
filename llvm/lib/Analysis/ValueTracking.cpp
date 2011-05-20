@@ -725,12 +725,13 @@ bool llvm::isPowerOfTwo(Value *V, const TargetData *TD, unsigned Depth) {
       isPowerOfTwo(SI->getFalseValue(), TD, Depth);
 
   // An exact divide or right shift can only shift off zero bits, so the result
-  // is a power of two only if the first operand is a power of two.
-  if (match(V, m_Shr(m_Value(), m_Value())) ||
-      match(V, m_IDiv(m_Value(), m_Value()))) {
-    BinaryOperator *BO = cast<BinaryOperator>(V);
-    if (BO->isExact())
-      return isPowerOfTwo(BO->getOperand(0), TD, Depth);
+  // is a power of two only if the first operand is a power of two and not
+  // copying a sign bit (sdiv int_min, 2).
+  if (match(V, m_LShr(m_Value(), m_Value())) ||
+      match(V, m_UDiv(m_Value(), m_Value()))) {
+    PossiblyExactOperator *PEO = cast<PossiblyExactOperator>(V);
+    if (PEO->isExact())
+      return isPowerOfTwo(PEO->getOperand(0), TD, Depth);
   }
 
   return false;
@@ -1327,7 +1328,7 @@ static Value *BuildSubAggregate(Value *From, Value* To, const Type *IndexedType,
         break;
       }
     }
-    // If we succesfully found a value for each of our subaggregates 
+    // If we successfully found a value for each of our subaggregates
     if (To)
       return To;
   }
@@ -1756,7 +1757,7 @@ llvm::GetUnderlyingObject(Value *V, const TargetData *TD, unsigned MaxLookup) {
     } else {
       // See if InstructionSimplify knows any relevant tricks.
       if (Instruction *I = dyn_cast<Instruction>(V))
-        // TODO: Aquire a DominatorTree and use it.
+        // TODO: Acquire a DominatorTree and use it.
         if (Value *Simplified = SimplifyInstruction(I, TD, 0)) {
           V = Simplified;
           continue;

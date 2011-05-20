@@ -71,9 +71,23 @@ void Lexer::InitLexer(const char *BufStart, const char *BufPtr,
          "We assume that the input buffer has a null character at the end"
          " to simplify lexing!");
 
+  // Check whether we have a BOM in the beginning of the buffer. If yes - act
+  // accordingly. Right now we support only UTF-8 with and without BOM, so, just
+  // skip the UTF-8 BOM if it's present.
+  if (BufferStart == BufferPtr) {
+    // Determine the size of the BOM.
+    llvm::StringRef Buf(BufferStart, BufferEnd - BufferStart);
+    size_t BOMLength = llvm::StringSwitch<size_t>(Buf)
+      .StartsWith("\xEF\xBB\xBF", 3) // UTF-8 BOM
+      .Default(0);
+
+    // Skip the BOM.
+    BufferPtr += BOMLength;
+  }
+
   Is_PragmaLexer = false;
   IsInConflictMarker = false;
-  
+
   // Start of the file is a start of line.
   IsAtStartOfLine = true;
 
@@ -674,7 +688,7 @@ SourceLocation Lexer::getLocForEndOfToken(SourceLocation Loc, unsigned Offset,
   else
     return Loc;
   
-  return AdvanceToTokenCharacter(Loc, Len, SM, Features);
+  return Loc.getFileLocWithOffset(Len);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1582,7 +1596,7 @@ static bool isEndOfBlockCommentWithEscapedNewLine(const char *CurPtr,
 /// some tokens, this will store the first token and return true.
 bool Lexer::SkipBlockComment(Token &Result, const char *CurPtr) {
   // Scan one character past where we should, looking for a '/' character.  Once
-  // we find it, check to see if it was preceeded by a *.  This common
+  // we find it, check to see if it was preceded by a *.  This common
   // optimization helps people who like to put a lot of * characters in their
   // comments.
 
@@ -2385,6 +2399,21 @@ LexNextToken:
       CurPtr = ConsumeChar(CurPtr, SizeTmp, Result);
       Kind = tok::lessequal;
     } else if (Features.Digraphs && Char == ':') {     // '<:' -> '['
+      if (Features.CPlusPlus0x &&
+          getCharAndSize(CurPtr + SizeTmp, SizeTmp2) == ':') {
+        // C++0x [lex.pptoken]p3:
+        //  Otherwise, if the next three characters are <:: and the subsequent
+        //  character is neither : nor >, the < is treated as a preprocessor
+        //  token by itself and not as the first character of the alternative
+        //  token <:.
+        unsigned SizeTmp3;
+        char After = getCharAndSize(CurPtr + SizeTmp + SizeTmp2, SizeTmp3);
+        if (After != ':' && After != '>') {
+          Kind = tok::less;
+          break;
+        }
+      }
+
       CurPtr = ConsumeChar(CurPtr, SizeTmp, Result);
       Kind = tok::l_square;
     } else if (Features.Digraphs && Char == '%') {     // '<%' -> '{'

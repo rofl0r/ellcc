@@ -247,7 +247,12 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
   Builder.defineMacro("__GNUC_PATCHLEVEL__", "1");
   Builder.defineMacro("__GNUC__", "4");
   Builder.defineMacro("__GXX_ABI_VERSION", "1002");
-  Builder.defineMacro("__VERSION__", "\"4.2.1 Compatible Clang Compiler\"");
+
+  // As sad as it is, enough software depends on the __VERSION__ for version
+  // checks that it is necessary to report 4.2.1 (the base GCC version we claim
+  // compatibility with) first.
+  Builder.defineMacro("__VERSION__", "\"4.2.1 Compatible " + 
+                      llvm::Twine(getClangFullCPPVersion()) + "\"");
 
   // Initialize language-specific preprocessor defines.
 
@@ -313,8 +318,10 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
   if (LangOpts.SjLjExceptions)
     Builder.defineMacro("__USING_SJLJ_EXCEPTIONS__");
 
-  if (LangOpts.CPlusPlus) {
+  if (LangOpts.Deprecated)
     Builder.defineMacro("__DEPRECATED");
+
+  if (LangOpts.CPlusPlus) {
     Builder.defineMacro("__GNUG__", "4");
     Builder.defineMacro("__GXX_WEAK__");
     if (LangOpts.GNUMode)
@@ -328,12 +335,6 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
   }
 
   if (LangOpts.Microsoft) {
-    // Filter out some microsoft extensions when trying to parse in ms-compat
-    // mode.
-    Builder.defineMacro("__int8", "__INT8_TYPE__");
-    Builder.defineMacro("__int16", "__INT16_TYPE__");
-    Builder.defineMacro("__int32", "__INT32_TYPE__");
-    Builder.defineMacro("__int64", "__INT64_TYPE__");
     // Both __PRETTY_FUNCTION__ and __FUNCTION__ are GCC extensions, however
     // VC++ appears to only like __FUNCTION__.
     Builder.defineMacro("__PRETTY_FUNCTION__", "__FUNCTION__");
@@ -342,6 +343,8 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
       // Since we define wchar_t in C++ mode.
       Builder.defineMacro("_WCHAR_T_DEFINED");
       Builder.defineMacro("_NATIVE_WCHAR_T_DEFINED");
+      // FIXME: Support Microsoft's __identifier extension in the lexer.
+      Builder.append("#define __identifier(x) x");
       Builder.append("class type_info;");
     }
 
@@ -417,6 +420,9 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
 
   if (!LangOpts.CharIsSigned)
     Builder.defineMacro("__CHAR_UNSIGNED__");
+
+  if (!TargetInfo::isTypeSigned(TI.getWIntType()))
+    Builder.defineMacro("__WINT_UNSIGNED__");
 
   // Define exact-width integer types for stdint.h
   Builder.defineMacro("__INT" + llvm::Twine(TI.getCharWidth()) + "_TYPE__",

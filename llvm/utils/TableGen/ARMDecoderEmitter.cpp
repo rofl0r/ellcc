@@ -607,7 +607,7 @@ void ARMFilter::recurse() {
     for (bitIndex = 0; bitIndex < NumBits; bitIndex++)
       BitValueArray[StartBit + bitIndex] = BIT_UNSET;
 
-    // Delegates to an inferior filter chooser for futher processing on this
+    // Delegates to an inferior filter chooser for further processing on this
     // group of instructions whose segment values are variable.
     FilterChooserMap.insert(std::pair<unsigned, ARMFilterChooser*>(
                               (unsigned)-1,
@@ -639,7 +639,7 @@ void ARMFilter::recurse() {
         BitValueArray[StartBit + bitIndex] = BIT_FALSE;
     }
 
-    // Delegates to an inferior filter chooser for futher processing on this
+    // Delegates to an inferior filter chooser for further processing on this
     // category of instructions.
     FilterChooserMap.insert(std::pair<unsigned, ARMFilterChooser*>(
                               mapIterator->first,
@@ -1382,7 +1382,7 @@ bool ARMFilterChooser::emit(raw_ostream &o, unsigned &Indentation) {
     // 2. source registers are identical => VMOVQ; otherwise => VORRq
     // 3. LDR, LDRcp => return LDR for now.
     // FIXME: How can we distinguish between LDR and LDRcp?  Do we need to?
-    // 4. tLDM, tLDM_UPD => Rn = Inst{10-8}, reglist = Inst{7-0},
+    // 4. tLDMIA, tLDMIA_UPD => Rn = Inst{10-8}, reglist = Inst{7-0},
     //    wback = registers<Rn> = 0
     // NOTE: (tLDM, tLDM_UPD) resolution must come before Advanced SIMD
     //       addressing mode resolution!!!
@@ -1423,7 +1423,7 @@ bool ARMFilterChooser::emit(raw_ostream &o, unsigned &Indentation) {
         << "; // Returning LDR for {LDR, LDRcp}\n";
       return true;
     }
-    if (name1 == "tLDM" && name2 == "tLDM_UPD") {
+    if (name1 == "tLDMIA" && name2 == "tLDMIA_UPD") {
       // Inserting the opening curly brace for this case block.
       --Indentation; --Indentation;
       o.indent(Indentation) << "{\n";
@@ -1584,6 +1584,10 @@ ARMDEBackend::populateInstruction(const CodeGenInstruction &CGI,
         Name == "MOVr_TC")
       return false;
 
+    // Delegate ADR disassembly to the more generic ADDri/SUBri instructions.
+    if (Name == "ADR")
+      return false;
+
     //
     // The following special cases are for conflict resolutions.
     //
@@ -1611,8 +1615,17 @@ ARMDEBackend::populateInstruction(const CodeGenInstruction &CGI,
     if (!thumbInstruction(Form))
       return false;
 
+    // A8.6.189 STM / STMIA / STMEA -- Encoding T1
+    // There's only STMIA_UPD for Thumb1.
+    if (Name == "tSTMIA")
+      return false;
+
     // On Darwin R9 is call-clobbered.  Ignore the non-Darwin counterparts.
     if (Name == "tBL" || Name == "tBLXi" || Name == "tBLXr")
+      return false;
+
+    // A8.6.25 BX.  Use the generic tBX_Rm, ignore tBX_RET and tBX_RET_vararg.
+    if (Name == "tBX_RET" || Name == "tBX_RET_vararg")
       return false;
 
     // Ignore the TPsoft (TLS) instructions, which conflict with tBLr9.
@@ -1621,6 +1634,11 @@ ARMDEBackend::populateInstruction(const CodeGenInstruction &CGI,
 
     // Ignore tADR, prefer tADDrPCi.
     if (Name == "tADR")
+      return false;
+
+    // Delegate t2ADR disassembly to the more generic t2ADDri12/t2SUBri12
+    // instructions.
+    if (Name == "t2ADR")
       return false;
 
     // Ignore tADDrSP, tADDspr, and tPICADD, prefer the generic tADDhirr.
@@ -1632,6 +1650,11 @@ ARMDEBackend::populateInstruction(const CodeGenInstruction &CGI,
         Name == "t2SUBrSPs" || Name == "t2ADDrSPs" ||
         Name == "t2ADDrSPi" || Name == "t2SUBrSPi" ||
         Name == "t2ADDrSPi12" || Name == "t2SUBrSPi12")
+      return false;
+
+    // FIXME: Use ldr.n to work around a Darwin assembler bug.
+    // Introduce a workaround with tLDRpciDIS opcode.
+    if (Name == "tLDRpci")
       return false;
 
     // Ignore t2LDRDpci, prefer the generic t2LDRDi8, t2LDRD_PRE, t2LDRD_POST.

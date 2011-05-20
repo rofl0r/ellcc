@@ -20,6 +20,7 @@
 #include "llvm/Instructions.h"
 #include "llvm/Intrinsics.h"
 #include "llvm/IntrinsicInst.h"
+#include "llvm/Operator.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Analysis/DebugInfo.h"
@@ -33,6 +34,7 @@
 #include "llvm/Support/CFG.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/GetElementPtrTypeIterator.h"
+#include "llvm/Support/IRBuilder.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/ValueHandle.h"
 #include "llvm/Support/raw_ostream.h"
@@ -48,6 +50,7 @@ using namespace llvm;
 //
 bool llvm::ConstantFoldTerminator(BasicBlock *BB) {
   TerminatorInst *T = BB->getTerminator();
+  IRBuilder<> Builder(T);
 
   // Branch - See if we are conditional jumping on constant
   if (BranchInst *BI = dyn_cast<BranchInst>(T)) {
@@ -67,11 +70,10 @@ bool llvm::ConstantFoldTerminator(BasicBlock *BB) {
 
       // Let the basic block know that we are letting go of it.  Based on this,
       // it will adjust it's PHI nodes.
-      assert(BI->getParent() && "Terminator not inserted in block!");
-      OldDest->removePredecessor(BI->getParent());
+      OldDest->removePredecessor(BB);
 
       // Replace the conditional branch with an unconditional one.
-      BranchInst::Create(Destination, BI);
+      Builder.CreateBr(Destination);
       BI->eraseFromParent();
       return true;
     }
@@ -86,7 +88,7 @@ bool llvm::ConstantFoldTerminator(BasicBlock *BB) {
       Dest1->removePredecessor(BI->getParent());
 
       // Replace the conditional branch with an unconditional one.
-      BranchInst::Create(Dest1, BI);
+      Builder.CreateBr(Dest1);
       BI->eraseFromParent();
       return true;
     }
@@ -136,7 +138,7 @@ bool llvm::ConstantFoldTerminator(BasicBlock *BB) {
     // now.
     if (TheOnlyDest) {
       // Insert the new branch.
-      BranchInst::Create(TheOnlyDest, SI);
+      Builder.CreateBr(TheOnlyDest);
       BasicBlock *BB = SI->getParent();
 
       // Remove entries from PHI nodes which we no longer branch to...
@@ -157,10 +159,11 @@ bool llvm::ConstantFoldTerminator(BasicBlock *BB) {
     if (SI->getNumSuccessors() == 2) {
       // Otherwise, we can fold this switch into a conditional branch
       // instruction if it has only one non-default destination.
-      Value *Cond = new ICmpInst(SI, ICmpInst::ICMP_EQ, SI->getCondition(),
-                                 SI->getSuccessorValue(1), "cond");
+      Value *Cond = Builder.CreateICmpEQ(SI->getCondition(),
+                                         SI->getSuccessorValue(1), "cond");
+
       // Insert the new branch.
-      BranchInst::Create(SI->getSuccessor(1), SI->getSuccessor(0), Cond, SI);
+      Builder.CreateCondBr(Cond, SI->getSuccessor(1), SI->getSuccessor(0));
 
       // Delete the old switch.
       SI->eraseFromParent();
@@ -175,7 +178,7 @@ bool llvm::ConstantFoldTerminator(BasicBlock *BB) {
           dyn_cast<BlockAddress>(IBI->getAddress()->stripPointerCasts())) {
       BasicBlock *TheOnlyDest = BA->getBasicBlock();
       // Insert the new branch.
-      BranchInst::Create(TheOnlyDest, IBI);
+      Builder.CreateBr(TheOnlyDest);
       
       for (unsigned i = 0, e = IBI->getNumDestinations(); i != e; ++i) {
         if (IBI->getDestination(i) == TheOnlyDest)
@@ -216,13 +219,12 @@ bool llvm::isInstructionTriviallyDead(Instruction *I) {
   if (DbgDeclareInst *DDI = dyn_cast<DbgDeclareInst>(I)) {
     if (DDI->getAddress()) 
       return false;
-    else
-      return true;
-  } else if (DbgValueInst *DVI = dyn_cast<DbgValueInst>(I)) {
+    return true;
+  } 
+  if (DbgValueInst *DVI = dyn_cast<DbgValueInst>(I)) {
     if (DVI->getValue())
       return false;
-    else
-      return true;
+    return true;
   }
 
   if (!I->mayHaveSideEffects()) return true;
@@ -333,8 +335,14 @@ bool llvm::SimplifyInstructionsInBlock(BasicBlock *BB, const TargetData *TD) {
         BI = BB->begin();
       continue;
     }
-    
+
+    if (Inst->isTerminator())
+      break;
+
+    WeakVH BIHandle(BI);
     MadeChange |= RecursivelyDeleteTriviallyDeadInstructions(Inst);
+    if (BIHandle != BI)
+      BI = BB->begin();
   }
   return MadeChange;
 }
@@ -780,10 +788,19 @@ bool llvm::ConvertDebugDeclareToDebugValue(DbgDeclareInst *DDI,
   if (!DIVar.Verify())
     return false;
 
-  Instruction *DbgVal = 
-    Builder.insertDbgValueIntrinsic(SI->getOperand(0), 0,
-                                    DIVar, SI);
-  
+  Instruction *DbgVal = NULL;
+  // If an argument is zero extended then use argument directly. The ZExt
+  // may be zapped by an optimization pass in future.
+  Argument *ExtendedArg = NULL;
+  if (ZExtInst *ZExt = dyn_cast<ZExtInst>(SI->getOperand(0)))
+    ExtendedArg = dyn_cast<Argument>(ZExt->getOperand(0));
+  if (SExtInst *SExt = dyn_cast<SExtInst>(SI->getOperand(0)))
+    ExtendedArg = dyn_cast<Argument>(SExt->getOperand(0));
+  if (ExtendedArg)
+    DbgVal = Builder.insertDbgValueIntrinsic(ExtendedArg, 0, DIVar, SI);
+  else
+    DbgVal = Builder.insertDbgValueIntrinsic(SI->getOperand(0), 0, DIVar, SI);
+
   // Propagate any debug metadata from the store onto the dbg.value.
   DebugLoc SIDL = SI->getDebugLoc();
   if (!SIDL.isUnknown())
@@ -833,14 +850,18 @@ bool llvm::LowerDbgDeclare(Function &F) {
          E = Dbgs.end(); I != E; ++I) {
     DbgDeclareInst *DDI = *I;
     if (AllocaInst *AI = dyn_cast_or_null<AllocaInst>(DDI->getAddress())) {
+      bool RemoveDDI = true;
       for (Value::use_iterator UI = AI->use_begin(), E = AI->use_end();
            UI != E; ++UI)
         if (StoreInst *SI = dyn_cast<StoreInst>(*UI))
           ConvertDebugDeclareToDebugValue(DDI, SI, DIB);
         else if (LoadInst *LI = dyn_cast<LoadInst>(*UI))
           ConvertDebugDeclareToDebugValue(DDI, LI, DIB);
+        else
+          RemoveDDI = false;
+      if (RemoveDDI)
+        DDI->eraseFromParent();
     }
-    DDI->eraseFromParent();
   }
   return true;
 }

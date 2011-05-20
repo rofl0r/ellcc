@@ -7,7 +7,10 @@
 ; RUN: llvm-as < %s | llvm-dis | \
 ; RUN:   not grep {llvm\\.bswap\\.i\[0-9\]*\\.i\[0-9\]*}
 ; RUN: llvm-as < %s | llvm-dis | \
+; RUN:   not grep {llvm\\.x86\\.sse2\\.loadu}
+; RUN: llvm-as < %s | llvm-dis | \
 ; RUN:   grep {llvm\\.x86\\.mmx\\.ps} | grep {x86_mmx} | count 16
+; RUN: llvm-as < %s | llvm-dis | FileCheck %s
 
 declare i32 @llvm.ctpop.i28(i28 %val)
 declare i32 @llvm.cttz.i29(i29 %val)
@@ -78,4 +81,31 @@ define void @sh64(<1 x i64> %A, <2 x i32> %B) {
 	%r1 = call <1 x i64> @llvm.x86.mmx.psll.q( <1 x i64> %A, <2 x i32> %B )		; <<1 x i64>> [#uses=0]
 	%r2 = call <1 x i64> @llvm.x86.mmx.psrl.q( <1 x i64> %A, <2 x i32> %B )		; <<1 x i64>> [#uses=0]
 	ret void
+}
+
+declare <4 x float> @llvm.x86.sse.loadu.ps(i8*) nounwind readnone
+declare <16 x i8> @llvm.x86.sse2.loadu.dq(i8*) nounwind readnone
+declare <2 x double> @llvm.x86.sse2.loadu.pd(double*) nounwind readnone
+define void @test_loadu(i8* %a, double* %b) {
+  %v0 = call <4 x float> @llvm.x86.sse.loadu.ps(i8* %a)
+  %v1 = call <16 x i8> @llvm.x86.sse2.loadu.dq(i8* %a)
+  %v2 = call <2 x double> @llvm.x86.sse2.loadu.pd(double* %b)
+  ret void
+}
+
+declare void @llvm.x86.sse.movnt.ps(i8*, <4 x float>) nounwind readnone 
+declare void @llvm.x86.sse2.movnt.dq(i8*, <2 x double>) nounwind readnone 
+declare void @llvm.x86.sse2.movnt.pd(i8*, <2 x double>) nounwind readnone 
+declare void @llvm.x86.sse2.movnt.i(i8*, i32) nounwind readnone 
+
+define void @f(<4 x float> %A, i8* %B, <2 x double> %C, i32 %D) {
+; CHECK: store{{.*}}nontemporal
+  call void @llvm.x86.sse.movnt.ps(i8* %B, <4 x float> %A)
+; CHECK: store{{.*}}nontemporal
+  call void @llvm.x86.sse2.movnt.dq(i8* %B, <2 x double> %C)
+; CHECK: store{{.*}}nontemporal
+  call void @llvm.x86.sse2.movnt.pd(i8* %B, <2 x double> %C)
+; CHECK: store{{.*}}nontemporal
+  call void @llvm.x86.sse2.movnt.i(i8* %B, i32 %D)
+  ret void
 }

@@ -482,18 +482,20 @@ struct XMLDumper : public XMLDeclVisitor<XMLDumper>,
     setFlag("trivial", D->isTrivial());
     setFlag("returnzero", D->hasImplicitReturnZero());
     setFlag("prototype", D->hasWrittenPrototype());
-    setFlag("deleted", D->isDeleted());
+    setFlag("deleted", D->isDeletedAsWritten());
     if (D->getStorageClass() != SC_None)
       set("storage",
           VarDecl::getStorageClassSpecifierString(D->getStorageClass()));
     setFlag("inline", D->isInlineSpecified());
+    if (const AsmLabelAttr *ALA = D->getAttr<AsmLabelAttr>())
+      set("asmlabel", ALA->getLabel());
     // TODO: instantiation, etc.
   }
   void visitFunctionDeclChildren(FunctionDecl *D) {
     for (FunctionDecl::param_iterator
            I = D->param_begin(), E = D->param_end(); I != E; ++I)
       dispatch(*I);
-    if (D->isThisDeclarationADefinition())
+    if (D->doesThisDeclarationHaveABody())
       dispatch(D->getBody());
   }
 
@@ -543,9 +545,17 @@ struct XMLDumper : public XMLDeclVisitor<XMLDumper>,
 
   // TypedefDecl
   void visitTypedefDeclAttrs(TypedefDecl *D) {
-    visitRedeclarableAttrs(D);
+    visitRedeclarableAttrs<TypedefNameDecl>(D);
   }
   void visitTypedefDeclChildren(TypedefDecl *D) {
+    dispatch(D->getTypeSourceInfo()->getTypeLoc());
+  }
+
+  // TypeAliasDecl
+  void visitTypeAliasDeclAttrs(TypeAliasDecl *D) {
+    visitRedeclarableAttrs<TypedefNameDecl>(D);
+  }
+  void visitTypeAliasDeclChildren(TypeAliasDecl *D) {
     dispatch(D->getTypeSourceInfo()->getTypeLoc());
   }
 
@@ -611,7 +621,8 @@ struct XMLDumper : public XMLDeclVisitor<XMLDumper>,
   // TemplateDecl
   void visitTemplateDeclChildren(TemplateDecl *D) {
     visitTemplateParameters(D->getTemplateParameters());
-    dispatch(D->getTemplatedDecl());
+    if (D->getTemplatedDecl())
+      dispatch(D->getTemplatedDecl());
   }
 
   // FunctionTemplateDecl
@@ -911,6 +922,8 @@ struct XMLDumper : public XMLDeclVisitor<XMLDumper>,
     case CC_X86StdCall: return set("cc", "x86_stdcall");
     case CC_X86ThisCall: return set("cc", "x86_thiscall");
     case CC_X86Pascal: return set("cc", "x86_pascal");
+    case CC_AAPCS: return set("cc", "aapcs");
+    case CC_AAPCS_VFP: return set("cc", "aapcs_vfp");
     }
   }
 
@@ -955,7 +968,7 @@ struct XMLDumper : public XMLDeclVisitor<XMLDumper>,
   void visitFunctionTypeAttrs(FunctionType *T) {
     setFlag("noreturn", T->getNoReturnAttr());
     setCallingConv(T->getCallConv());
-    if (T->getRegParmType()) setInteger("regparm", T->getRegParmType());
+    if (T->getHasRegParm()) setInteger("regparm", T->getRegParmType());
   }
   void visitFunctionTypeChildren(FunctionType *T) {
     dispatch(T->getResultType());

@@ -155,7 +155,7 @@ LTOModule *LTOModule::makeLTOModule(MemoryBuffer *buffer,
   if (!march)
     return NULL;
 
-  // construct LTModule, hand over ownership of module and target
+  // construct LTOModule, hand over ownership of module and target
   SubtargetFeatures Features;
   Features.getDefaultSubtargetFeatures("" /* cpu */, llvm::Triple(Triple));
   std::string FeatureStr = Features.getString();
@@ -582,11 +582,9 @@ namespace {
                                 uint64_t Size, unsigned ByteAlignment) {}
     virtual void EmitBytes(StringRef Data, unsigned AddrSpace) {}
     virtual void EmitValueImpl(const MCExpr *Value, unsigned Size,
-                               bool isPCRel, unsigned AddrSpace) {}
-    virtual void EmitULEB128Value(const MCExpr *Value,
-                                  unsigned AddrSpace = 0) {}
-    virtual void EmitSLEB128Value(const MCExpr *Value,
-                                  unsigned AddrSpace = 0) {}
+                               unsigned AddrSpace) {}
+    virtual void EmitULEB128Value(const MCExpr *Value) {}
+    virtual void EmitSLEB128Value(const MCExpr *Value) {}
     virtual void EmitValueToAlignment(unsigned ByteAlignment, int64_t Value,
                                       unsigned ValueSize,
                                       unsigned MaxBytesToEmit) {}

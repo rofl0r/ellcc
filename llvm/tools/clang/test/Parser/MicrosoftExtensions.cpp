@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 %s -fsyntax-only -Wno-unused-value -Wmicrosoft -verify -fms-extensions
+// RUN: %clang_cc1 %s -fsyntax-only -Wno-unused-value -Wmicrosoft -verify -fms-extensions -fdelayed-template-parsing
 
 /* Microsoft attribute tests */
 [repeatable][source_annotation_attribute( Parameter|ReturnValue )]
@@ -95,6 +95,23 @@ void template_uuid()
 }
 
 
+template <class T, const GUID* g = &__uuidof(T)>
+class COM_CLASS_TEMPLATE  { };
+
+typedef COM_CLASS_TEMPLATE<struct_with_uuid, &__uuidof(struct_with_uuid)> COM_TYPE_1;
+typedef COM_CLASS_TEMPLATE<struct_with_uuid> COM_TYPE_2;
+
+template <class T, const GUID& g>
+class COM_CLASS_TEMPLATE_REF  { };
+typedef COM_CLASS_TEMPLATE<struct_with_uuid, __uuidof(struct_with_uuid)> COM_TYPE_REF;
+
+  struct late_defined_uuid;
+  template<typename T>
+  void test_late_defined_uuid() {
+    __uuidof(late_defined_uuid);
+  }
+  struct __declspec(uuid("000000A0-0000-0000-C000-000000000049")) late_defined_uuid;
+
 
 class CtorCall { 
 public:
@@ -111,3 +128,100 @@ CtorCall& CtorCall::operator=(const CtorCall& that)
     }
     return *this;
 }
+
+template <class A>
+class C1 {
+public:
+  template <int B>
+  class Iterator {
+  };
+};
+ 
+template<class T>
+class C2  {
+  typename C1<T>:: /*template*/  Iterator<0> Mypos; // expected-warning {{use 'template' keyword to treat 'Iterator' as a dependent template name}}
+};
+
+template <class T>
+void missing_template_keyword(){
+  typename C1<T>:: /*template*/ Iterator<0> Mypos; // expected-warning {{use 'template' keyword to treat 'Iterator' as a dependent template name}}
+}
+
+
+
+class AAAA { };
+
+template <class T>
+void redundant_typename() {
+   typename T t;// expected-warning {{expected a qualified name after 'typename'}}
+   typename AAAA a;// expected-warning {{expected a qualified name after 'typename'}}
+   t = 3;
+}
+
+
+__interface MicrosoftInterface;
+__interface MicrosoftInterface {
+   virtual void foo1() = 0;
+   virtual void foo2() = 0;
+};
+
+__int64 x7 = __int64(0);
+
+
+
+
+class IF_EXISTS {
+private:
+    typedef int Type;
+};
+
+int __if_exists_test() {
+  int b=0;
+  __if_exists(IF_EXISTS::Type) {
+     b++;
+     b++;
+  }
+  __if_exists(IF_EXISTS::Type_not) {
+     this wont compile.
+  }
+  __if_not_exists(IF_EXISTS::Type) {
+     this wont compile.
+  }
+  __if_not_exists(IF_EXISTS::Type_not) {
+     b++;
+     b++;
+  }
+}
+
+
+__if_exists(IF_EXISTS::Type) {
+  int var23;
+}
+
+__if_exists(IF_EXISTS::Type_not) {
+ this wont compile.
+}
+
+__if_not_exists(IF_EXISTS::Type) {
+ this wont compile.
+}
+
+__if_not_exists(IF_EXISTS::Type_not) {
+  int var244;
+}
+
+int __identifier(generic) = 3;
+
+class inline_definition_pure_spec {
+   virtual int f() = 0 { return 0; }// expected-warning {{function definition with pure-specifier is a Microsoft extension}}
+   virtual int f2() = 0;
+};
+
+
+int main () {
+  // Necessary to force instantiation in -fdelayed-template-parsing mode.
+  test_late_defined_uuid<int>(); 
+  redundant_typename<int>();
+  missing_template_keyword<int>();
+}
+

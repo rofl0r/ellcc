@@ -71,6 +71,7 @@ struct AssemblerInvocation {
 
   std::vector<std::string> IncludePaths;
   unsigned NoInitialTextSection : 1;
+  unsigned SaveTemporaryLabels : 1;
 
   /// @}
   /// @name Frontend Options
@@ -156,6 +157,7 @@ void AssemblerInvocation::CreateFromArgs(AssemblerInvocation &Opts,
   // Language Options
   Opts.IncludePaths = Args->getAllArgValues(OPT_I);
   Opts.NoInitialTextSection = Args->hasArg(OPT_n);
+  Opts.SaveTemporaryLabels = Args->hasArg(OPT_L);
 
   // Frontend Options
   if (Args->hasArg(OPT_INPUT)) {
@@ -170,6 +172,8 @@ void AssemblerInvocation::CreateFromArgs(AssemblerInvocation &Opts,
     }
   }
   Opts.LLVMArgs = Args->getAllArgValues(OPT_mllvm);
+  if (Args->hasArg(OPT_fatal_warnings))
+    Opts.LLVMArgs.push_back("-fatal-assembler-warnings");
   Opts.OutputPath = Args->getLastArgValue(OPT_o);
   if (Arg *A = Args->getLastArg(OPT_filetype)) {
     StringRef Name = A->getValue(*Args);
@@ -265,6 +269,8 @@ static bool ExecuteAssembler(AssemblerInvocation &Opts, Diagnostic &Diags) {
 
   const TargetAsmInfo *tai = new TargetAsmInfo(*TM);
   MCContext Ctx(*MAI, tai);
+  if (Opts.SaveTemporaryLabels)
+    Ctx.setAllowTemporaryLabels(false);
 
   OwningPtr<MCStreamer> Str;
 
@@ -275,7 +281,7 @@ static bool ExecuteAssembler(AssemblerInvocation &Opts, Diagnostic &Diags) {
   // FIXME: There is a bit of code duplication with addPassesToEmitFile.
   if (Opts.OutputType == AssemblerInvocation::FT_Asm) {
     MCInstPrinter *IP =
-      TheTarget->createMCInstPrinter(Opts.OutputAsmVariant, *MAI);
+      TheTarget->createMCInstPrinter(*TM, Opts.OutputAsmVariant, *MAI);
     MCCodeEmitter *CE = 0;
     TargetAsmBackend *TAB = 0;
     if (Opts.ShowEncoding) {
@@ -283,7 +289,8 @@ static bool ExecuteAssembler(AssemblerInvocation &Opts, Diagnostic &Diags) {
       TAB = TheTarget->createAsmBackend(Opts.Triple);
     }
     Str.reset(TheTarget->createAsmStreamer(Ctx, *Out, /*asmverbose*/true,
-                                           /*useLoc*/ true, IP, CE, TAB,
+                                           /*useLoc*/ true,
+                                           /*useCFI*/ true, IP, CE, TAB,
                                            Opts.ShowInst));
   } else if (Opts.OutputType == AssemblerInvocation::FT_Null) {
     Str.reset(createNullStreamer(Ctx));

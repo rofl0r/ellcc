@@ -27,7 +27,6 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Support/CFG.h"
-#include <set>
 #include <algorithm>
 using namespace llvm;
 
@@ -181,6 +180,7 @@ bool PruneEH::SimplifyFunction(Function *F) {
         Call->takeName(II);
         Call->setCallingConv(II->getCallingConv());
         Call->setAttributes(II->getAttributes());
+        Call->setDebugLoc(II->getDebugLoc());
 
         // Anything that used the value produced by the invoke instruction
         // now uses the value produced by the call instruction.  Note that we

@@ -204,15 +204,6 @@ protected:
                         unsigned Op0, bool Op0IsKill,
                         uint64_t Imm, MVT ImmType);
 
-  /// FastEmit_rf_ - This method is a wrapper of FastEmit_rf. It first tries
-  /// to emit an instruction with an immediate operand using FastEmit_rf.
-  /// If that fails, it materializes the immediate into a register and try
-  /// FastEmit_rr instead.
-  unsigned FastEmit_rf_(MVT VT,
-                        unsigned Opcode,
-                        unsigned Op0, bool Op0IsKill,
-                        const ConstantFP *FPImm, MVT ImmType);
-
   /// FastEmit_i - This method is called by target-independent code
   /// to request that an instruction with the given type, opcode, and
   /// immediate operand be emitted.
@@ -250,8 +241,17 @@ protected:
                            unsigned Op0, bool Op0IsKill,
                            unsigned Op1, bool Op1IsKill);
 
-  /// FastEmitInst_ri - Emit a MachineInstr with two register operands
+  /// FastEmitInst_rrr - Emit a MachineInstr with three register operands
   /// and a result register in the given register class.
+  ///
+  unsigned FastEmitInst_rrr(unsigned MachineInstOpcode,
+                           const TargetRegisterClass *RC,
+                           unsigned Op0, bool Op0IsKill,
+                           unsigned Op1, bool Op1IsKill,
+                           unsigned Op2, bool Op2IsKill);
+
+  /// FastEmitInst_ri - Emit a MachineInstr with a register operand,
+  /// an immediate, and a result register in the given register class.
   ///
   unsigned FastEmitInst_ri(unsigned MachineInstOpcode,
                            const TargetRegisterClass *RC,
@@ -289,6 +289,11 @@ protected:
                           const TargetRegisterClass *RC,
                           uint64_t Imm);
 
+  /// FastEmitInst_ii - Emit a MachineInstr with a two immediate operands.
+  unsigned FastEmitInst_ii(unsigned MachineInstrOpcode,
+                          const TargetRegisterClass *RC,
+                          uint64_t Imm1, uint64_t Imm2);
+
   /// FastEmitInst_extractsubreg - Emit a MachineInstr for an extract_subreg
   /// from a specified index of a superregister to a specified type.
   unsigned FastEmitInst_extractsubreg(MVT RetVT,
@@ -305,7 +310,7 @@ protected:
   /// the CFG.
   void FastEmitBranch(MachineBasicBlock *MBB, DebugLoc DL);
 
-  unsigned UpdateValueMap(const Value* I, unsigned Reg);
+  void UpdateValueMap(const Value* I, unsigned Reg, unsigned NumRegs = 1);
 
   unsigned createResultReg(const TargetRegisterClass *RC);
 
@@ -321,6 +326,10 @@ protected:
     return 0;
   }
 
+  virtual unsigned TargetMaterializeFloatZero(const ConstantFP* CF) {
+    return 0;
+  }
+
 private:
   bool SelectBinaryOp(const User *I, unsigned ISDOpcode);
 
@@ -333,6 +342,8 @@ private:
   bool SelectBitCast(const User *I);
 
   bool SelectCast(const User *I, unsigned Opcode);
+
+  bool SelectExtractValue(const User *I);
 
   /// HandlePHINodesInSuccessorBlocks - Handle PHI nodes in successor blocks.
   /// Emit code to ensure constants are copied into registers when needed.

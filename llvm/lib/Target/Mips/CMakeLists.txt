@@ -14,6 +14,8 @@ tablegen(MipsGenIntrinsics.inc -gen-tgt-intrinsic)
 add_llvm_target(MipsCodeGen
   MipsAsmPrinter.cpp
   MipsDelaySlotFiller.cpp
+  MipsEmitGPRestore.cpp
+  MipsExpandPseudo.cpp
   MipsInstrInfo.cpp
   MipsISelDAGToDAG.cpp
   MipsISelLowering.cpp

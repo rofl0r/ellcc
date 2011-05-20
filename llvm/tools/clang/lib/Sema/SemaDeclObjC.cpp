@@ -28,7 +28,7 @@ static void DiagnoseObjCImplementedDeprecations(Sema &S,
                                                 NamedDecl *ND,
                                                 SourceLocation ImplLoc,
                                                 int select) {
-  if (ND && ND->getAttr<DeprecatedAttr>()) {
+  if (ND && ND->isDeprecated()) {
     S.Diag(ImplLoc, diag::warn_deprecated_def) << select;
     if (select == 0)
       S.Diag(ND->getLocation(), diag::note_method_declared_at);
@@ -174,7 +174,8 @@ ActOnStartClassInterface(SourceLocation AtInterfaceLoc,
       if (PrevDecl && SuperClassDecl == 0) {
         // The previous declaration was not a class decl. Check if we have a
         // typedef. If we do, get the underlying class type.
-        if (const TypedefDecl *TDecl = dyn_cast_or_null<TypedefDecl>(PrevDecl)) {
+        if (const TypedefNameDecl *TDecl =
+              dyn_cast_or_null<TypedefNameDecl>(PrevDecl)) {
           QualType T = TDecl->getUnderlyingType();
           if (T->isObjCObjectType()) {
             if (NamedDecl *IDecl = T->getAs<ObjCObjectType>()->getInterface())
@@ -193,7 +194,7 @@ ActOnStartClassInterface(SourceLocation AtInterfaceLoc,
         }
       }
 
-      if (!dyn_cast_or_null<TypedefDecl>(PrevDecl)) {
+      if (!dyn_cast_or_null<TypedefNameDecl>(PrevDecl)) {
         if (!SuperClassDecl)
           Diag(SuperLoc, diag::err_undef_superclass)
             << SuperName << ClassName << SourceRange(AtInterfaceLoc, ClassLoc);
@@ -242,7 +243,8 @@ Decl *Sema::ActOnCompatiblityAlias(SourceLocation AtLoc,
   // Check for class declaration
   NamedDecl *CDeclU = LookupSingleName(TUScope, ClassName, ClassLocation,
                                        LookupOrdinaryName, ForRedeclaration);
-  if (const TypedefDecl *TDecl = dyn_cast_or_null<TypedefDecl>(CDeclU)) {
+  if (const TypedefNameDecl *TDecl =
+        dyn_cast_or_null<TypedefNameDecl>(CDeclU)) {
     QualType T = TDecl->getUnderlyingType();
     if (T->isObjCObjectType()) {
       if (NamedDecl *IDecl = T->getAs<ObjCObjectType>()->getInterface()) {
@@ -270,23 +272,27 @@ Decl *Sema::ActOnCompatiblityAlias(SourceLocation AtLoc,
   return AliasDecl;
 }
 
-void Sema::CheckForwardProtocolDeclarationForCircularDependency(
+bool Sema::CheckForwardProtocolDeclarationForCircularDependency(
   IdentifierInfo *PName,
   SourceLocation &Ploc, SourceLocation PrevLoc,
   const ObjCList<ObjCProtocolDecl> &PList) {
+  
+  bool res = false;
   for (ObjCList<ObjCProtocolDecl>::iterator I = PList.begin(),
        E = PList.end(); I != E; ++I) {
-
     if (ObjCProtocolDecl *PDecl = LookupProtocol((*I)->getIdentifier(),
                                                  Ploc)) {
       if (PDecl->getIdentifier() == PName) {
         Diag(Ploc, diag::err_protocol_has_circular_dependency);
         Diag(PrevLoc, diag::note_previous_definition);
+        res = true;
       }
-      CheckForwardProtocolDeclarationForCircularDependency(PName, Ploc,
-        PDecl->getLocation(), PDecl->getReferencedProtocols());
+      if (CheckForwardProtocolDeclarationForCircularDependency(PName, Ploc,
+            PDecl->getLocation(), PDecl->getReferencedProtocols()))
+        res = true;
     }
   }
+  return res;
 }
 
 Decl *
@@ -298,6 +304,7 @@ Sema::ActOnStartProtocolInterface(SourceLocation AtProtoInterfaceLoc,
                                   const SourceLocation *ProtoLocs,
                                   SourceLocation EndProtoLoc,
                                   AttributeList *AttrList) {
+  bool err = false;
   // FIXME: Deal with AttrList.
   assert(ProtocolName && "Missing protocol identifier");
   ObjCProtocolDecl *PDecl = LookupProtocol(ProtocolName, ProtocolLoc);
@@ -312,8 +319,8 @@ Sema::ActOnStartProtocolInterface(SourceLocation AtProtoInterfaceLoc,
     }
     ObjCList<ObjCProtocolDecl> PList;
     PList.set((ObjCProtocolDecl *const*)ProtoRefs, NumProtoRefs, Context);
-    CheckForwardProtocolDeclarationForCircularDependency(
-      ProtocolName, ProtocolLoc, PDecl->getLocation(), PList);
+    err = CheckForwardProtocolDeclarationForCircularDependency(
+            ProtocolName, ProtocolLoc, PDecl->getLocation(), PList);
 
     // Make sure the cached decl gets a valid start location.
     PDecl->setLocation(AtProtoInterfaceLoc);
@@ -329,7 +336,7 @@ Sema::ActOnStartProtocolInterface(SourceLocation AtProtoInterfaceLoc,
   }
   if (AttrList)
     ProcessDeclAttributeList(TUScope, PDecl, AttrList);
-  if (NumProtoRefs) {
+  if (!err && NumProtoRefs ) {
     /// Check then save referenced protocols.
     PDecl->setProtocolList((ObjCProtocolDecl**)ProtoRefs, NumProtoRefs,
                            ProtoLocs, Context);
@@ -1242,7 +1249,7 @@ Sema::ActOnForwardClassDeclaration(SourceLocation AtClassLoc,
       // @class XCElementToggler;
       //
       // FIXME: Make an extension?
-      TypedefDecl *TDD = dyn_cast<TypedefDecl>(PrevDecl);
+      TypedefNameDecl *TDD = dyn_cast<TypedefNameDecl>(PrevDecl);
       if (!TDD || !TDD->getUnderlyingType()->isObjCObjectType()) {
         Diag(AtClassLoc, diag::err_redefinition_different_kind) << IdentList[i];
         Diag(PrevDecl->getLocation(), diag::note_previous_definition);
@@ -1369,15 +1376,14 @@ void Sema::AddMethodToGlobalPool(ObjCMethodDecl *Method, bool impl,
       PrevObjCMethod->setDefined(impl);
       // If a method is deprecated, push it in the global pool.
       // This is used for better diagnostics.
-      if (Method->getAttr<DeprecatedAttr>()) {
-        if (!PrevObjCMethod->getAttr<DeprecatedAttr>())
+      if (Method->isDeprecated()) {
+        if (!PrevObjCMethod->isDeprecated())
           List->Method = Method;
       }
       // If new method is unavailable, push it into global pool
       // unless previous one is deprecated.
-      if (Method->getAttr<UnavailableAttr>()) {
-        if (!PrevObjCMethod->getAttr<UnavailableAttr>() &&
-            !PrevObjCMethod->getAttr<DeprecatedAttr>())
+      if (Method->isUnavailable()) {
+        if (PrevObjCMethod->getAvailability() < AR_Deprecated)
           List->Method = Method;
       }
       return;
@@ -1475,7 +1481,7 @@ void Sema::CompareMethodParamsInBaseAndSuper(Decl *ClassDecl,
       assert(PrevI != SuperMethodDecl->param_end() && "Param mismatch");
       QualType T1 = Context.getCanonicalType((*ParamI)->getType());
       QualType T2 = Context.getCanonicalType((*PrevI)->getType());
-      // If type of arguement of method in this class does not match its
+      // If type of argument of method in this class does not match its
       // respective argument type in the super class method, issue warning;
       if (!Context.typesAreCompatible(T1, T2)) {
         Diag((*ParamI)->getLocation(), diag::ext_typecheck_base_super)
@@ -1535,7 +1541,7 @@ void Sema::ActOnAtEnd(Scope *S, SourceRange AtEnd,
     SourceLocation L = ClassDecl->getLocation();
     AtEnd.setBegin(L);
     AtEnd.setEnd(L);
-    Diag(L, diag::warn_missing_atend);
+    Diag(L, diag::err_missing_atend);
   }
   
   // FIXME: Remove these and use the ObjCContainerDecl/DeclContext.
@@ -1697,21 +1703,7 @@ void Sema::ActOnAtEnd(Scope *S, SourceRange AtEnd,
 /// objective-c's type qualifier from the parser version of the same info.
 static Decl::ObjCDeclQualifier
 CvtQTToAstBitMask(ObjCDeclSpec::ObjCDeclQualifier PQTVal) {
-  Decl::ObjCDeclQualifier ret = Decl::OBJC_TQ_None;
-  if (PQTVal & ObjCDeclSpec::DQ_In)
-    ret = (Decl::ObjCDeclQualifier)(ret | Decl::OBJC_TQ_In);
-  if (PQTVal & ObjCDeclSpec::DQ_Inout)
-    ret = (Decl::ObjCDeclQualifier)(ret | Decl::OBJC_TQ_Inout);
-  if (PQTVal & ObjCDeclSpec::DQ_Out)
-    ret = (Decl::ObjCDeclQualifier)(ret | Decl::OBJC_TQ_Out);
-  if (PQTVal & ObjCDeclSpec::DQ_Bycopy)
-    ret = (Decl::ObjCDeclQualifier)(ret | Decl::OBJC_TQ_Bycopy);
-  if (PQTVal & ObjCDeclSpec::DQ_Byref)
-    ret = (Decl::ObjCDeclQualifier)(ret | Decl::OBJC_TQ_Byref);
-  if (PQTVal & ObjCDeclSpec::DQ_Oneway)
-    ret = (Decl::ObjCDeclQualifier)(ret | Decl::OBJC_TQ_Oneway);
-
-  return ret;
+  return (Decl::ObjCDeclQualifier) (unsigned) PQTVal;
 }
 
 static inline
@@ -1802,17 +1794,11 @@ Decl *Sema::ActOnMethodDeclaration(
       ? DI->getTypeLoc().getBeginLoc()
       : ArgInfo[i].NameLoc;
 
-    ParmVarDecl* Param
-      = ParmVarDecl::Create(Context, ObjCMethod,
-                            StartLoc, ArgInfo[i].NameLoc, ArgInfo[i].Name,
-                            ArgType, DI, SC_None, SC_None, 0);
+    ParmVarDecl* Param = CheckParameter(ObjCMethod, StartLoc,
+                                        ArgInfo[i].NameLoc, ArgInfo[i].Name,
+                                        ArgType, DI, SC_None, SC_None);
 
-    if (ArgType->isObjCObjectType()) {
-      Diag(ArgInfo[i].NameLoc,
-           diag::err_object_cannot_be_passed_returned_by_value)
-        << 1 << ArgType;
-      Param->setInvalidDecl();
-    }
+    Param->setObjCMethodScopeInfo(i);
 
     Param->setObjCDeclQualifier(
       CvtQTToAstBitMask(ArgInfo[i].DeclSpec.getObjCDeclQualifier()));

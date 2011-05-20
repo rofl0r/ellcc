@@ -1,16 +1,42 @@
-// RUN: %clang_cc1 -fsyntax-only -verify -fblocks %s
+// RUN: %clang_cc1 -fsyntax-only -verify -Wall -fblocks %s
 
 // PR9463
 double *end;
-void f() {
+void f(bool b1, bool b2) {
   {
-    int end = 0;
-    goto end;
-    end = 1;
+    do {
+      int end = 0;
+      if (b2) {
+        do {
+          goto end;
+        } while (b2);
+      }
+      end = 1;
+    } while (b1);
   }
 
  end:
   return;
+}
+
+namespace N {
+  float* end;
+  void f(bool b1, bool b2) {
+    {
+      do {
+        int end = 0;
+        if (b2) {
+          do {
+            goto end;
+          } while (b2);
+        }
+        end = 1;
+      } while (b1);
+    }
+
+  end:
+    return;
+  }
 }
 
 void g() {
@@ -31,7 +57,7 @@ void h2(int end) {
   end:
     ::end = 0;
   }
- end:
+ end: // expected-warning{{unused label 'end'}}
   end = 1;
 }
 
@@ -66,4 +92,14 @@ namespace PR9495 {
   }
 }
 
+extern "C" {
+  void exit(int);
+}
 
+void f() {
+  {
+    goto exit;
+  }
+ exit:
+  return;
+}

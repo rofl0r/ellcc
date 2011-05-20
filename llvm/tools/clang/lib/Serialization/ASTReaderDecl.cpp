@@ -82,7 +82,8 @@ namespace clang {
 
     void Visit(Decl *D);
 
-    void UpdateDecl(Decl *D, const RecordData &Record);
+    void UpdateDecl(Decl *D, ASTReader::PerFileData &Module,
+                    const RecordData &Record);
 
     void VisitDecl(Decl *D);
     void VisitTranslationUnitDecl(TranslationUnitDecl *TU);
@@ -93,6 +94,7 @@ namespace clang {
     void VisitNamespaceAliasDecl(NamespaceAliasDecl *D);
     void VisitTypeDecl(TypeDecl *TD);
     void VisitTypedefDecl(TypedefDecl *TD);
+    void VisitTypeAliasDecl(TypeAliasDecl *TD);
     void VisitUnresolvedUsingTypenameDecl(UnresolvedUsingTypenameDecl *D);
     void VisitTagDecl(TagDecl *TD);
     void VisitEnumDecl(EnumDecl *ED);
@@ -123,6 +125,7 @@ namespace clang {
     void VisitClassTemplateDecl(ClassTemplateDecl *D);
     void VisitFunctionTemplateDecl(FunctionTemplateDecl *D);
     void VisitTemplateTemplateParmDecl(TemplateTemplateParmDecl *D);
+    void VisitTypeAliasTemplateDecl(TypeAliasTemplateDecl *D);
     void VisitUsingDecl(UsingDecl *D);
     void VisitUsingShadowDecl(UsingShadowDecl *D);
     void VisitLinkageSpecDecl(LinkageSpecDecl *D);
@@ -213,6 +216,7 @@ void ASTDeclReader::VisitDecl(Decl *D) {
   }
   D->setImplicit(Record[Idx++]);
   D->setUsed(Record[Idx++]);
+  D->setReferenced(Record[Idx++]);
   D->setAccess((AccessSpecifier)Record[Idx++]);
   D->setPCHLevel(Record[Idx++] + (F.Type <= ASTReader::PCH));
 }
@@ -240,6 +244,11 @@ void ASTDeclReader::VisitTypedefDecl(TypedefDecl *TD) {
   TD->setTypeSourceInfo(GetTypeSourceInfo(Record, Idx));
 }
 
+void ASTDeclReader::VisitTypeAliasDecl(TypeAliasDecl *TD) {
+  VisitTypeDecl(TD);
+  TD->setTypeSourceInfo(GetTypeSourceInfo(Record, Idx));
+}
+
 void ASTDeclReader::VisitTagDecl(TagDecl *TD) {
   VisitTypeDecl(TD);
   VisitRedeclarable(TD);
@@ -251,10 +260,10 @@ void ASTDeclReader::VisitTagDecl(TagDecl *TD) {
   if (Record[Idx++]) { // hasExtInfo
     TagDecl::ExtInfo *Info = new (*Reader.getContext()) TagDecl::ExtInfo();
     ReadQualifierInfo(*Info, Record, Idx);
-    TD->TypedefDeclOrQualifier = Info;
+    TD->TypedefNameDeclOrQualifier = Info;
   } else
-    TD->setTypedefForAnonDecl(
-                      cast_or_null<TypedefDecl>(Reader.GetDecl(Record[Idx++])));
+    TD->setTypedefNameForAnonDecl(
+                  cast_or_null<TypedefNameDecl>(Reader.GetDecl(Record[Idx++])));
 }
 
 void ASTDeclReader::VisitEnumDecl(EnumDecl *ED) {
@@ -420,6 +429,8 @@ void ASTDeclReader::VisitFunctionDecl(FunctionDecl *FD) {
   FD->HasWrittenPrototype = Record[Idx++];
   FD->IsDeleted = Record[Idx++];
   FD->IsTrivial = Record[Idx++];
+  FD->IsDefaulted = Record[Idx++];
+  FD->IsExplicitlyDefaulted = Record[Idx++];
   FD->HasImplicitReturnZero = Record[Idx++];
   FD->EndRangeLoc = ReadSourceLocation(Record, Idx);
 
@@ -678,12 +689,13 @@ void ASTDeclReader::VisitIndirectFieldDecl(IndirectFieldDecl *FD) {
 void ASTDeclReader::VisitVarDecl(VarDecl *VD) {
   VisitDeclaratorDecl(VD);
   VisitRedeclarable(VD);
-  VD->SClass = (StorageClass)Record[Idx++];
-  VD->setStorageClassAsWritten((StorageClass)Record[Idx++]);
-  VD->setThreadSpecified(Record[Idx++]);
-  VD->setCXXDirectInitializer(Record[Idx++]);
-  VD->setExceptionVariable(Record[Idx++]);
-  VD->setNRVOVariable(Record[Idx++]);
+  VD->VarDeclBits.SClass = (StorageClass)Record[Idx++];
+  VD->VarDeclBits.SClassAsWritten = (StorageClass)Record[Idx++];
+  VD->VarDeclBits.ThreadSpecified = Record[Idx++];
+  VD->VarDeclBits.HasCXXDirectInit = Record[Idx++];
+  VD->VarDeclBits.ExceptionVar = Record[Idx++];
+  VD->VarDeclBits.NRVOVariable = Record[Idx++];
+  VD->VarDeclBits.CXXForRangeDecl = Record[Idx++];
   if (Record[Idx++])
     VD->setInit(Reader.ReadExpr(F));
 
@@ -701,9 +713,19 @@ void ASTDeclReader::VisitImplicitParamDecl(ImplicitParamDecl *PD) {
 
 void ASTDeclReader::VisitParmVarDecl(ParmVarDecl *PD) {
   VisitVarDecl(PD);
-  PD->setObjCDeclQualifier((Decl::ObjCDeclQualifier)Record[Idx++]);
-  PD->setKNRPromoted(Record[Idx++]);
-  PD->setHasInheritedDefaultArg(Record[Idx++]);
+  unsigned isObjCMethodParam = Record[Idx++];
+  unsigned scopeDepth = Record[Idx++];
+  unsigned scopeIndex = Record[Idx++];
+  unsigned declQualifier = Record[Idx++];
+  if (isObjCMethodParam) {
+    assert(scopeDepth == 0);
+    PD->setObjCMethodScopeInfo(scopeIndex);
+    PD->ParmVarDeclBits.ScopeDepthOrObjCQuals = declQualifier;
+  } else {
+    PD->setScopeInfo(scopeDepth, scopeIndex);
+  }
+  PD->ParmVarDeclBits.IsKNRPromoted = Record[Idx++];
+  PD->ParmVarDeclBits.HasInheritedDefaultArg = Record[Idx++];
   if (Record[Idx++]) // hasUninstantiatedDefaultArg.
     PD->setUninstantiatedDefaultArg(Reader.ReadExpr(F));
 }
@@ -833,11 +855,22 @@ void ASTDeclReader::ReadCXXDefinitionData(
   Data.Empty = Record[Idx++];
   Data.Polymorphic = Record[Idx++];
   Data.Abstract = Record[Idx++];
-  Data.HasTrivialConstructor = Record[Idx++];
+  Data.IsStandardLayout = Record[Idx++];
+  Data.HasNoNonEmptyBases = Record[Idx++];
+  Data.HasPrivateFields = Record[Idx++];
+  Data.HasProtectedFields = Record[Idx++];
+  Data.HasPublicFields = Record[Idx++];
+  Data.HasMutableFields = Record[Idx++];
+  Data.HasTrivialDefaultConstructor = Record[Idx++];
+  Data.HasConstExprNonCopyMoveConstructor = Record[Idx++];
   Data.HasTrivialCopyConstructor = Record[Idx++];
+  Data.HasTrivialMoveConstructor = Record[Idx++];
   Data.HasTrivialCopyAssignment = Record[Idx++];
+  Data.HasTrivialMoveAssignment = Record[Idx++];
   Data.HasTrivialDestructor = Record[Idx++];
+  Data.HasNonLiteralTypeFieldsOrBases = Record[Idx++];
   Data.ComputedVisibleConversions = Record[Idx++];
+  Data.UserProvidedDefaultConstructor = Record[Idx++];
   Data.DeclaredDefaultConstructor = Record[Idx++];
   Data.DeclaredCopyConstructor = Record[Idx++];
   Data.DeclaredCopyAssignment = Record[Idx++];
@@ -1198,7 +1231,6 @@ void ASTDeclReader::VisitTemplateTypeParmDecl(TemplateTypeParmDecl *D) {
   VisitTypeDecl(D);
 
   D->setDeclaredWithTypename(Record[Idx++]);
-  D->setParameterPack(Record[Idx++]);
 
   bool Inherited = Record[Idx++];
   TypeSourceInfo *DefArg = GetTypeSourceInfo(Record, Idx);
@@ -1237,6 +1269,10 @@ void ASTDeclReader::VisitTemplateTemplateParmDecl(TemplateTemplateParmDecl *D) {
   bool IsInherited = Record[Idx++];
   D->setDefaultArgument(Arg, IsInherited);
   D->ParameterPack = Record[Idx++];
+}
+
+void ASTDeclReader::VisitTypeAliasTemplateDecl(TypeAliasTemplateDecl *D) {
+  VisitRedeclarableTemplateDecl(D);
 }
 
 void ASTDeclReader::VisitStaticAssertDecl(StaticAssertDecl *D) {
@@ -1353,7 +1389,7 @@ static bool isConsumerInterestedIn(Decl *D) {
     return Var->isFileVarDecl() &&
            Var->isThisDeclarationADefinition() == VarDecl::Definition;
   if (FunctionDecl *Func = dyn_cast<FunctionDecl>(D))
-    return Func->isThisDeclarationADefinition();
+    return Func->doesThisDeclarationHaveABody();
   return isa<ObjCProtocolDecl>(D) || isa<ObjCImplementationDecl>(D);
 }
 
@@ -1427,6 +1463,10 @@ Decl *ASTReader::ReadDeclRecord(unsigned Index, DeclID ID) {
   case DECL_TYPEDEF:
     D = TypedefDecl::Create(*Context, 0, SourceLocation(), SourceLocation(),
                             0, 0);
+    break;
+  case DECL_TYPEALIAS:
+    D = TypeAliasDecl::Create(*Context, 0, SourceLocation(), SourceLocation(),
+                              0, 0);
     break;
   case DECL_ENUM:
     D = EnumDecl::Create(*Context, Decl::EmptyShell());
@@ -1541,6 +1581,9 @@ Decl *ASTReader::ReadDeclRecord(unsigned Index, DeclID ID) {
     D = TemplateTemplateParmDecl::Create(*Context, 0, SourceLocation(), 0, 0,
                                          false, 0, 0);
     break;
+  case DECL_TYPE_ALIAS_TEMPLATE:
+    D = TypeAliasTemplateDecl::Create(*Context, Decl::EmptyShell());
+    break;
   case DECL_STATIC_ASSERT:
     D = StaticAssertDecl::Create(*Context, 0, SourceLocation(), 0, 0,
                                  SourceLocation());
@@ -1645,22 +1688,26 @@ Decl *ASTReader::ReadDeclRecord(unsigned Index, DeclID ID) {
       // so we need to make sure we insert in front. For all other contexts,
       // the vector is empty here anyway, so there's no loss in efficiency.
       Infos.insert(Infos.begin(), Info);
+    }
 
-      // Now add the pending visible updates for this decl context, if it has
-      // any.
-      DeclContextVisibleUpdatesPending::iterator I =
-          PendingVisibleUpdates.find(ID);
-      if (I != PendingVisibleUpdates.end()) {
-        DeclContextVisibleUpdates &U = I->second;
-        Info.LexicalDecls = 0;
-        Info.NumLexicalDecls = 0;
-        for (DeclContextVisibleUpdates::iterator UI = U.begin(), UE = U.end();
-             UI != UE; ++UI) {
-          Info.NameLookupTableData = *UI;
-          Infos.push_back(Info);
-        }
-        PendingVisibleUpdates.erase(I);
+    // Now add the pending visible updates for this decl context, if it has any.
+    DeclContextVisibleUpdatesPending::iterator I =
+        PendingVisibleUpdates.find(ID);
+    if (I != PendingVisibleUpdates.end()) {
+      // There are updates. This means the context has external visible
+      // storage, even if the original stored version didn't.
+      DC->setHasExternalVisibleStorage(true);
+      DeclContextVisibleUpdates &U = I->second;
+      DeclContextInfos &Infos = DeclContextOffsets[DC];
+      DeclContextInfo Info;
+      Info.LexicalDecls = 0;
+      Info.NumLexicalDecls = 0;
+      for (DeclContextVisibleUpdates::iterator UI = U.begin(), UE = U.end();
+           UI != UE; ++UI) {
+        Info.NameLookupTableData = *UI;
+        Infos.push_back(Info);
       }
+      PendingVisibleUpdates.erase(I);
     }
   }
   assert(Idx == Record.size());
@@ -1683,7 +1730,7 @@ Decl *ASTReader::ReadDeclRecord(unsigned Index, DeclID ID) {
       unsigned RecCode = Cursor.ReadRecord(Code, Record);
       (void)RecCode;
       assert(RecCode == DECL_UPDATES && "Expected DECL_UPDATES record!");
-      Reader.UpdateDecl(D, Record);
+      Reader.UpdateDecl(D, *F, Record);
     }
   }
 
@@ -1697,7 +1744,8 @@ Decl *ASTReader::ReadDeclRecord(unsigned Index, DeclID ID) {
   return D;
 }
 
-void ASTDeclReader::UpdateDecl(Decl *D, const RecordData &Record) {
+void ASTDeclReader::UpdateDecl(Decl *D, ASTReader::PerFileData &Module,
+                               const RecordData &Record) {
   unsigned Idx = 0;
   while (Idx < Record.size()) {
     switch ((DeclUpdateKind)Record[Idx++]) {
@@ -1717,6 +1765,26 @@ void ASTDeclReader::UpdateDecl(Decl *D, const RecordData &Record) {
     case UPD_CXX_ADDED_TEMPLATE_SPECIALIZATION:
       // It will be added to the template's specializations set when loaded.
       Reader.GetDecl(Record[Idx++]);
+      break;
+
+    case UPD_CXX_ADDED_ANONYMOUS_NAMESPACE: {
+      NamespaceDecl *Anon = cast<NamespaceDecl>(Reader.GetDecl(Record[Idx++]));
+      // Guard against these being loaded out of original order. Don't use
+      // getNextNamespace(), since it tries to access the context and can't in
+      // the middle of deserialization.
+      if (!Anon->NextNamespace) {
+        if (TranslationUnitDecl *TU = dyn_cast<TranslationUnitDecl>(D))
+          TU->setAnonymousNamespace(Anon);
+        else
+          cast<NamespaceDecl>(D)->OrigOrAnonNamespace.setPointer(Anon);
+      }
+      break;
+    }
+
+    case UPD_CXX_INSTANTIATED_STATIC_DATA_MEMBER:
+      cast<VarDecl>(D)->getMemberSpecializationInfo()->setPointOfInstantiation(
+          Reader.ReadSourceLocation(Module, Record, Idx));
+      break;
     }
   }
 }

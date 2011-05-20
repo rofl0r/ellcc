@@ -65,16 +65,16 @@ getRegisterNumbering(unsigned RegEnum)
     case Mips::T5   : case Mips::F13: return 13;
     case Mips::T6   : case Mips::F14: case Mips::D7: return 14;
     case Mips::T7   : case Mips::F15: return 15;
-    case Mips::T8   : case Mips::F16: case Mips::D8: return 16;
-    case Mips::T9   : case Mips::F17: return 17;
-    case Mips::S0   : case Mips::F18: case Mips::D9: return 18;
-    case Mips::S1   : case Mips::F19: return 19;
-    case Mips::S2   : case Mips::F20: case Mips::D10: return 20;
-    case Mips::S3   : case Mips::F21: return 21;
-    case Mips::S4   : case Mips::F22: case Mips::D11: return 22;
-    case Mips::S5   : case Mips::F23: return 23;
-    case Mips::S6   : case Mips::F24: case Mips::D12: return 24;
-    case Mips::S7   : case Mips::F25: return 25;
+    case Mips::S0   : case Mips::F16: case Mips::D8: return 16;
+    case Mips::S1   : case Mips::F17: return 17;
+    case Mips::S2   : case Mips::F18: case Mips::D9: return 18;
+    case Mips::S3   : case Mips::F19: return 19;
+    case Mips::S4   : case Mips::F20: case Mips::D10: return 20;
+    case Mips::S5   : case Mips::F21: return 21;
+    case Mips::S6   : case Mips::F22: case Mips::D11: return 22;
+    case Mips::S7   : case Mips::F23: return 23;
+    case Mips::T8   : case Mips::F24: case Mips::D12: return 24;
+    case Mips::T9   : case Mips::F25: return 25;
     case Mips::K0   : case Mips::F26: case Mips::D13: return 26;
     case Mips::K1   : case Mips::F27: return 27;
     case Mips::GP   : case Mips::F28: case Mips::D14: return 28;
@@ -110,8 +110,16 @@ getCalleeSavedRegs(const MachineFunction *MF) const
     Mips::F20, Mips::F22, Mips::F24, Mips::F26, Mips::F28, Mips::F30, 0
   };
 
+  static const unsigned Mips32CalleeSavedRegs[] = {
+    Mips::S0, Mips::S1, Mips::S2, Mips::S3,
+    Mips::S4, Mips::S5, Mips::S6, Mips::S7,
+    Mips::D10, Mips::D11, Mips::D12, Mips::D13, Mips::D14, Mips::D15, 0
+  };
+
   if (Subtarget.isSingleFloat())
     return SingleFloatOnlyCalleeSavedRegs;
+  else if (Subtarget.isMips32())
+    return Mips32CalleeSavedRegs;
   else
     return BitMode32CalleeSavedRegs;
 }
@@ -129,7 +137,7 @@ getReservedRegs(const MachineFunction &MF) const {
   Reserved.set(Mips::RA);
 
   // SRV4 requires that odd register can't be used.
-  if (!Subtarget.isSingleFloat())
+  if (!Subtarget.isSingleFloat() && !Subtarget.isMips32())
     for (unsigned FReg=(Mips::F0)+1; FReg < Mips::F30; FReg+=2)
       Reserved.set(FReg);
 
@@ -193,7 +201,7 @@ eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
   unsigned OrigReg = getFrameRegister(MF);
   int OrigImm = Offset;
 
-// OrigImm fits in the 16-bit field
+  // OrigImm fits in the 16-bit field
   if (OrigImm < 0x8000 && OrigImm >= -0x8000) {
     NewReg = OrigReg;
     NewImm = OrigImm;
@@ -203,12 +211,14 @@ eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
     const TargetInstrInfo *TII = MF.getTarget().getInstrInfo();
     DebugLoc DL = II->getDebugLoc();
     int ImmLo = OrigImm & 0xffff;
-    int ImmHi = (((unsigned)OrigImm & 0xffff0000) >> 16) + ((OrigImm & 0x8000) != 0);
+    int ImmHi = (((unsigned)OrigImm & 0xffff0000) >> 16) +
+                ((OrigImm & 0x8000) != 0);
 
     // FIXME: change this when mips goes MC".
     BuildMI(MBB, II, DL, TII->get(Mips::NOAT));
     BuildMI(MBB, II, DL, TII->get(Mips::LUi), Mips::AT).addImm(ImmHi);
-    BuildMI(MBB, II, DL, TII->get(Mips::ADDu), Mips::AT).addReg(OrigReg).addReg(Mips::AT);
+    BuildMI(MBB, II, DL, TII->get(Mips::ADDu), Mips::AT).addReg(OrigReg)
+                                                        .addReg(Mips::AT);
     NewReg = Mips::AT;
     NewImm = ImmLo;
     

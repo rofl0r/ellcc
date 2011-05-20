@@ -37,7 +37,8 @@ namespace llvm {
       enum PTXVersionEnum {
         PTX_VERSION_2_0,  /*< PTX Version 2.0 */
         PTX_VERSION_2_1,  /*< PTX Version 2.1 */
-        PTX_VERSION_2_2   /*< PTX Version 2.2 */
+        PTX_VERSION_2_2,  /*< PTX Version 2.2 */
+        PTX_VERSION_2_3   /*< PTX Version 2.3 */
       };
 
       /// Shader Model supported on the target GPU.
@@ -48,12 +49,15 @@ namespace llvm {
 
       // The native .f64 type is supported on the hardware.
       bool SupportsDouble;
-
+      
+      // Support the fused-multiply add (FMA) and multiply-add (MAD) instructions
+      bool SupportsFMA;
+      
       // Use .u64 instead of .u32 for addresses.
-      bool Use64BitAddresses;
+      bool Is64Bit;
 
     public:
-      PTXSubtarget(const std::string &TT, const std::string &FS);
+      PTXSubtarget(const std::string &TT, const std::string &FS, bool is64Bit);
 
       std::string getTargetString() const;
 
@@ -61,8 +65,10 @@ namespace llvm {
 
       bool supportsDouble() const { return SupportsDouble; }
 
-      bool use64BitAddresses() const { return Use64BitAddresses; }
+      bool is64Bit() const { return Is64Bit; }
 
+      bool supportsFMA() const { return SupportsFMA; }
+      
       bool supportsSM13() const { return PTXShaderModel >= PTX_SM_1_3; }
 
       bool supportsSM20() const { return PTXShaderModel >= PTX_SM_2_0; }
@@ -70,6 +76,8 @@ namespace llvm {
       bool supportsPTX21() const { return PTXVersion >= PTX_VERSION_2_1; }
 
       bool supportsPTX22() const { return PTXVersion >= PTX_VERSION_2_2; }
+
+      bool supportsPTX23() const { return PTXVersion >= PTX_VERSION_2_3; }
 
       std::string ParseSubtargetFeatures(const std::string &FS,
                                          const std::string &CPU);

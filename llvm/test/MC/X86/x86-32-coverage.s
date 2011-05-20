@@ -372,6 +372,14 @@
 // CHECK: 	nop
         	nop
 
+// CHECK: flds	(%edi)
+// CHECK:  encoding: [0xd9,0x07]
+        	flds	(%edi)
+
+// CHECK: filds	(%edi)
+// CHECK:  encoding: [0xdf,0x07]
+        	filds	(%edi)
+
 // CHECK: 	fldl	3735928559(%ebx,%ecx,8)
         	fldl	0xdeadbeef(%ebx,%ecx,8)
 
@@ -19562,3 +19570,8 @@
 
 // CHECK: 	aeskeygenassist	$125, (%edx,%eax,4), %xmm2
                 aeskeygenassist $125, (%edx,%eax,4), %xmm2
+
+// CHECK:   blendvps	(%rax), %xmm1   # encoding: [0x66,0x0f,0x38,0x14,0x08]
+            blendvps (%rax), %xmm1
+// CHECK:   blendvps	%xmm2, %xmm1    # encoding: [0x66,0x0f,0x38,0x14,0xca]
+            blendvps %xmm2, %xmm1

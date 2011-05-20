@@ -101,6 +101,11 @@ private:
   /// used to handle cyclic structures properly.
   void HandleLateResolvedPointers();
 
+  /// addRecordTypeName - Compute a name from the given record decl with an
+  /// optional suffix and name the given LLVM type using it.
+  void addRecordTypeName(const RecordDecl *RD, const llvm::Type *Ty,
+                         llvm::StringRef suffix);
+
 public:
   CodeGenTypes(ASTContext &Ctx, llvm::Module &M, const llvm::TargetData &TD,
                const ABIInfo &Info, CGCXXABI &CXXABI);
@@ -144,6 +149,11 @@ public:
   const llvm::Type *GetFunctionTypeForVTable(GlobalDecl GD);
 
   const CGRecordLayout &getCGRecordLayout(const RecordDecl*);
+
+  /// addBaseSubobjectTypeName - Add a type name for the base subobject of the
+  /// given record layout.
+  void addBaseSubobjectTypeName(const CXXRecordDecl *RD,
+                                const CGRecordLayout &layout);
 
   /// UpdateCompletedType - When we find the full definition for a TagDecl,
   /// replace the 'opaque' type we previously made for it if applicable.
@@ -210,8 +220,9 @@ public:  // These are internal details of CGT that shouldn't be used externally.
   /// GetExpandedTypes - Expand the type \arg Ty into the LLVM
   /// argument types it would be passed as on the provided vector \arg
   /// ArgTys. See ABIArgInfo::Expand.
-  void GetExpandedTypes(QualType Ty, std::vector<const llvm::Type*> &ArgTys,
-                        bool IsRecursive);
+  void GetExpandedTypes(QualType type,
+                        llvm::SmallVectorImpl<const llvm::Type*> &expanded,
+                        bool isRecursive);
 
   /// IsZeroInitializable - Return whether a type can be
   /// zero-initialized (in the C++ sense) with an LLVM zeroinitializer.

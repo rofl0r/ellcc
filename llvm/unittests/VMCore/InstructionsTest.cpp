@@ -9,6 +9,7 @@
 
 #include "llvm/Instructions.h"
 #include "llvm/BasicBlock.h"
+#include "llvm/Constants.h"
 #include "llvm/DerivedTypes.h"
 #include "llvm/LLVMContext.h"
 #include "llvm/ADT/STLExtras.h"
@@ -105,6 +106,27 @@ TEST(InstructionsTest, BranchInst) {
 
   delete bb0;
   delete bb1;
+}
+
+TEST(InstructionsTest, CastInst) {
+  LLVMContext &C(getGlobalContext());
+
+  const Type* Int8Ty = Type::getInt8Ty(C);
+  const Type* Int64Ty = Type::getInt64Ty(C);
+  const Type* V8x8Ty = VectorType::get(Int8Ty, 8);
+  const Type* V8x64Ty = VectorType::get(Int64Ty, 8);
+  const Type* X86MMXTy = Type::getX86_MMXTy(C);
+
+  const Constant* c8 = Constant::getNullValue(V8x8Ty);
+  const Constant* c64 = Constant::getNullValue(V8x64Ty);
+
+  EXPECT_TRUE(CastInst::isCastable(V8x8Ty, X86MMXTy));
+  EXPECT_TRUE(CastInst::isCastable(X86MMXTy, V8x8Ty));
+  EXPECT_FALSE(CastInst::isCastable(Int64Ty, X86MMXTy));
+  EXPECT_TRUE(CastInst::isCastable(V8x64Ty, V8x8Ty));
+  EXPECT_TRUE(CastInst::isCastable(V8x8Ty, V8x64Ty));
+  EXPECT_EQ(CastInst::getCastOpcode(c64, true, V8x8Ty, true), CastInst::Trunc);
+  EXPECT_EQ(CastInst::getCastOpcode(c8, true, V8x64Ty, true), CastInst::SExt);
 }
 
 }  // end anonymous namespace

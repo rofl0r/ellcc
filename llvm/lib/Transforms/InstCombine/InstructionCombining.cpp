@@ -76,7 +76,6 @@ INITIALIZE_PASS(InstCombiner, "instcombine",
                 "Combine redundant instructions", false, false)
 
 void InstCombiner::getAnalysisUsage(AnalysisUsage &AU) const {
-  AU.addPreservedID(LCSSAID);
   AU.setPreservesCFG();
 }
 
@@ -241,9 +240,9 @@ bool InstCombiner::SimplifyAssociativeOrCommutative(BinaryOperator &I) {
         Constant *C2 = cast<Constant>(Op1->getOperand(1));
 
         Constant *Folded = ConstantExpr::get(Opcode, C1, C2);
-        Instruction *New = BinaryOperator::Create(Opcode, A, B, Op1->getName(),
-                                                  &I);
-        Worklist.Add(New);
+        Instruction *New = BinaryOperator::Create(Opcode, A, B);
+        InsertNewInstBefore(New, I);
+        New->takeName(Op1);
         I.setOperand(0, New);
         I.setOperand(1, Folded);
         // Conservatively clear the optional flags, since they may not be
@@ -600,8 +599,7 @@ Instruction *InstCombiner::FoldOpIntoPhi(Instruction &I) {
   }
 
   // Okay, we can do the transformation: create the new PHI node.
-  PHINode *NewPN = PHINode::Create(I.getType(), "");
-  NewPN->reserveOperandSpace(PN->getNumOperands()/2);
+  PHINode *NewPN = PHINode::Create(I.getType(), PN->getNumIncomingValues());
   InsertNewInstBefore(NewPN, *PN);
   NewPN->takeName(PN);
   
@@ -850,22 +848,23 @@ Instruction *InstCombiner::visitGetElementPtrInst(GetElementPtrInst &GEP) {
         GetElementPtrInst::Create(Src->getOperand(0), Indices.begin(),
                                   Indices.end(), GEP.getName());
   }
-  
+
   // Handle gep(bitcast x) and gep(gep x, 0, 0, 0).
   Value *StrippedPtr = PtrOp->stripPointerCasts();
-  if (StrippedPtr != PtrOp) {
-    const PointerType *StrippedPtrTy =cast<PointerType>(StrippedPtr->getType());
+  const PointerType *StrippedPtrTy =cast<PointerType>(StrippedPtr->getType());
+  if (StrippedPtr != PtrOp &&
+    StrippedPtrTy->getAddressSpace() == GEP.getPointerAddressSpace()) {
 
     bool HasZeroPointerIndex = false;
     if (ConstantInt *C = dyn_cast<ConstantInt>(GEP.getOperand(1)))
       HasZeroPointerIndex = C->isZero();
-    
+
     // Transform: GEP (bitcast [10 x i8]* X to [0 x i8]*), i32 0, ...
     // into     : GEP [10 x i8]* X, i32 0, ...
     //
     // Likewise, transform: GEP (bitcast i8* X to [0 x i8]*), i32 0, ...
     //           into     : GEP i8* X, ...
-    // 
+    //
     // This occurs when the program declares an array extern like "int X[];"
     if (HasZeroPointerIndex) {
       const PointerType *CPTy = cast<PointerType>(PtrOp->getType());
@@ -976,7 +975,7 @@ Instruction *InstCombiner::visitGetElementPtrInst(GetElementPtrInst &GEP) {
       }
     }
   }
-  
+
   /// See if we can simplify:
   ///   X = bitcast A* to B*
   ///   Y = gep X, <...constant indices...>
@@ -984,12 +983,14 @@ Instruction *InstCombiner::visitGetElementPtrInst(GetElementPtrInst &GEP) {
   /// analysis of unions.  If "A" is also a bitcast, wait for A/X to be merged.
   if (BitCastInst *BCI = dyn_cast<BitCastInst>(PtrOp)) {
     if (TD &&
-        !isa<BitCastInst>(BCI->getOperand(0)) && GEP.hasAllConstantIndices()) {
+        !isa<BitCastInst>(BCI->getOperand(0)) && GEP.hasAllConstantIndices() &&
+        StrippedPtrTy->getAddressSpace() == GEP.getPointerAddressSpace()) {
+
       // Determine how much the GEP moves the pointer.  We are guaranteed to get
       // a constant back from EmitGEPOffset.
       ConstantInt *OffsetV = cast<ConstantInt>(EmitGEPOffset(&GEP));
       int64_t Offset = OffsetV->getSExtValue();
-      
+
       // If this GEP instruction doesn't move the pointer, just replace the GEP
       // with a bitcast of the real input to the dest type.
       if (Offset == 0) {
@@ -1087,8 +1088,8 @@ Instruction *InstCombiner::visitFree(CallInst &FI) {
   // free undef -> unreachable.
   if (isa<UndefValue>(Op)) {
     // Insert a new store to null because we cannot modify the CFG here.
-    new StoreInst(ConstantInt::getTrue(FI.getContext()),
-           UndefValue::get(Type::getInt1PtrTy(FI.getContext())), &FI);
+    Builder->CreateStore(ConstantInt::getTrue(FI.getContext()),
+                         UndefValue::get(Type::getInt1PtrTy(FI.getContext())));
     return EraseInstFromFunction(FI);
   }
   
@@ -1260,7 +1261,7 @@ Instruction *InstCombiner::visitExtractValueInst(ExtractValueInst &EV) {
       case Intrinsic::sadd_with_overflow:
         if (*EV.idx_begin() == 0) {  // Normal result.
           Value *LHS = II->getArgOperand(0), *RHS = II->getArgOperand(1);
-          II->replaceAllUsesWith(UndefValue::get(II->getType()));
+          ReplaceInstUsesWith(*II, UndefValue::get(II->getType()));
           EraseInstFromFunction(*II);
           return BinaryOperator::CreateAdd(LHS, RHS);
         }
@@ -1277,7 +1278,7 @@ Instruction *InstCombiner::visitExtractValueInst(ExtractValueInst &EV) {
       case Intrinsic::ssub_with_overflow:
         if (*EV.idx_begin() == 0) {  // Normal result.
           Value *LHS = II->getArgOperand(0), *RHS = II->getArgOperand(1);
-          II->replaceAllUsesWith(UndefValue::get(II->getType()));
+          ReplaceInstUsesWith(*II, UndefValue::get(II->getType()));
           EraseInstFromFunction(*II);
           return BinaryOperator::CreateSub(LHS, RHS);
         }
@@ -1286,7 +1287,7 @@ Instruction *InstCombiner::visitExtractValueInst(ExtractValueInst &EV) {
       case Intrinsic::smul_with_overflow:
         if (*EV.idx_begin() == 0) {  // Normal result.
           Value *LHS = II->getArgOperand(0), *RHS = II->getArgOperand(1);
-          II->replaceAllUsesWith(UndefValue::get(II->getType()));
+          ReplaceInstUsesWith(*II, UndefValue::get(II->getType()));
           EraseInstFromFunction(*II);
           return BinaryOperator::CreateMul(LHS, RHS);
         }
@@ -1574,6 +1575,7 @@ bool InstCombiner::DoOneIteration(Function &F, unsigned Iteration) {
 
     // Now that we have an instruction, try combining it to simplify it.
     Builder->SetInsertPoint(I->getParent(), I);
+    Builder->SetCurrentDebugLocation(I->getDebugLoc());
     
 #ifndef NDEBUG
     std::string OrigI;
@@ -1635,7 +1637,6 @@ bool InstCombiner::DoOneIteration(Function &F, unsigned Iteration) {
 
 
 bool InstCombiner::runOnFunction(Function &F) {
-  MustPreserveLCSSA = mustPreserveAnalysisID(LCSSAID);
   TD = getAnalysisIfAvailable<TargetData>();
 
   

@@ -30,6 +30,8 @@
 
 .syntax unified
 .align 3
+// Ok, APCS and AAPCS agree on 32 bit args, so it's safe to use the same routine.
+DEFINE_AEABI_FUNCTION_ALIAS(__aeabi_uidiv, __udivsi3)
 DEFINE_COMPILERRT_FUNCTION(__udivsi3)
 //  We use a simple digit by digit algorithm; before we get into the actual 
 //  divide loop, we must calculate the left-shift amount necessary to align
@@ -42,12 +44,12 @@ DEFINE_COMPILERRT_FUNCTION(__udivsi3)
     tst     b,      b   // detect divide-by-zero
     clz     r3,     b
     mov     q,      #0
-    beq     L_return    // return 0 if b is zero.
+    beq     LOCAL_LABEL(return)    // return 0 if b is zero.
     mov     one,    #1
     subs    i,      r3, r2
-    blt     L_return    // return 0 if MSB(a) < MSB(b)
+    blt     LOCAL_LABEL(return)    // return 0 if MSB(a) < MSB(b)
 
-L_mainLoop:
+LOCAL_LABEL(mainLoop):
 //  This loop basically implements the following:
 //
 //  do {
@@ -65,14 +67,14 @@ L_mainLoop:
     orrhs   q,      q,one, lsl i
     movhs   a,      r
     subsne  i,      i, #1
-    bhi     L_mainLoop
+    bhi     LOCAL_LABEL(mainLoop)
 
 //  Do the final test subtraction and update of quotient (i == 0), as it is
 //  not performed in the main loop.
     subs    r,      a,  b
     orrhs   q,      #1
 
-L_return:
+LOCAL_LABEL(return):
 //  Move the quotient to r0 and return.
     mov     r0,     q
     CLEAR_FRAME_AND_RETURN

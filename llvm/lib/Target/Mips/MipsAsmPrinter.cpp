@@ -77,7 +77,8 @@ namespace {
     }
     virtual void EmitFunctionBodyStart();
     virtual void EmitFunctionBodyEnd();
-    virtual bool isBlockOnlyReachableByFallthrough(const MachineBasicBlock *MBB) const;
+    virtual bool isBlockOnlyReachableByFallthrough(const MachineBasicBlock*
+                                                   MBB) const;
     static const char *getRegisterName(unsigned RegNo);
 
     virtual void EmitFunctionEntryLabel();
@@ -236,8 +237,8 @@ void MipsAsmPrinter::EmitFunctionBodyEnd() {
 /// isBlockOnlyReachableByFallthough - Return true if the basic block has
 /// exactly one predecessor and the control transfer mechanism between
 /// the predecessor and this block is a fall-through.
-bool MipsAsmPrinter::isBlockOnlyReachableByFallthrough(const MachineBasicBlock *MBB)
-    const {
+bool MipsAsmPrinter::isBlockOnlyReachableByFallthrough(const MachineBasicBlock*
+                                                       MBB) const {
   // If this is a landing pad, it isn't a fall through.  If it has no preds,
   // then nothing falls through to it.
   if (MBB->isLandingPad() || MBB->pred_empty())
@@ -258,7 +259,32 @@ bool MipsAsmPrinter::isBlockOnlyReachableByFallthrough(const MachineBasicBlock *
     if (isa<SwitchInst>(bb->getTerminator()))
       return false;
 
-  return AsmPrinter::isBlockOnlyReachableByFallthrough(MBB);
+  // If this is a landing pad, it isn't a fall through.  If it has no preds,
+  // then nothing falls through to it.
+  if (MBB->isLandingPad() || MBB->pred_empty())
+    return false;
+
+  // If there isn't exactly one predecessor, it can't be a fall through.
+  PI = MBB->pred_begin(), PI2 = PI;
+  ++PI2;
+ 
+  if (PI2 != MBB->pred_end())
+    return false;  
+
+  // The predecessor has to be immediately before this block.
+  if (!Pred->isLayoutSuccessor(MBB))
+    return false;
+   
+  // If the block is completely empty, then it definitely does fall through.
+  if (Pred->empty())
+    return true;
+  
+  // Otherwise, check the last instruction.
+  // Check if the last terminator is an unconditional branch.
+  MachineBasicBlock::const_iterator I = Pred->end();
+  while (I != Pred->begin() && !(--I)->getDesc().isTerminator()) ;
+
+  return !I->getDesc().isBarrier();
 }
 
 // Print out an operand for an inline asm expression.
@@ -284,22 +310,9 @@ void MipsAsmPrinter::printOperand(const MachineInstr *MI, int opNum,
   switch(MO.getTargetFlags()) {
   case MipsII::MO_GPREL:    O << "%gp_rel("; break;
   case MipsII::MO_GOT_CALL: O << "%call16("; break;
-  case MipsII::MO_GOT: {
-    const MachineOperand &LastMO = MI->getOperand(opNum-1);
-    bool LastMOIsGP = LastMO.getType() == MachineOperand::MO_Register
-                      && LastMO.getReg() == Mips::GP;
-    if (MI->getOpcode() == Mips::LW || LastMOIsGP)
-      O << "%got(";
-    else
-      O << "%lo(";
-    break;
-  }
-  case MipsII::MO_ABS_HILO:
-    if (MI->getOpcode() == Mips::LUi)
-      O << "%hi(";
-    else
-      O << "%lo(";
-    break;
+  case MipsII::MO_GOT:      O << "%got(";    break;
+  case MipsII::MO_ABS_HI:   O << "%hi(";     break;
+  case MipsII::MO_ABS_LO:   O << "%lo(";     break;
   }
 
   switch (MO.getType()) {

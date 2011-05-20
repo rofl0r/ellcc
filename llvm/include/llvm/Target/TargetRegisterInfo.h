@@ -46,6 +46,7 @@ struct TargetRegisterDesc {
   const unsigned *Overlaps;     // Overlapping registers, described above
   const unsigned *SubRegs;      // Sub-register set, described above
   const unsigned *SuperRegs;    // Super-register set, described above
+  unsigned CostPerUse;          // Extra cost of instructions using register.
 };
 
 class TargetRegisterClass {
@@ -426,6 +427,12 @@ public:
     return get(RegNo).Name;
   }
 
+  /// getCostPerUse - Return the additional cost of using this register instead
+  /// of other registers in its class.
+  unsigned getCostPerUse(unsigned RegNo) const {
+    return get(RegNo).CostPerUse;
+  }
+
   /// getNumRegs - Return the number of registers this target has (useful for
   /// sizing arrays holding per register information)
   unsigned getNumRegs() const {
@@ -597,6 +604,17 @@ public:
     return RC;
   }
 
+  /// getLargestLegalSuperClass - Returns the largest super class of RC that is
+  /// legal to use in the current sub-target and has the same spill size.
+  /// The returned register class can be used to create virtual registers which
+  /// means that all its registers can be copied and spilled.
+  virtual const TargetRegisterClass*
+  getLargestLegalSuperClass(const TargetRegisterClass *RC) const {
+    /// The default implementation is very conservative and doesn't allow the
+    /// register allocator to inflate register classes.
+    return RC;
+  }
+
   /// getRegPressureLimit - Return the register pressure "high water mark" for
   /// the specific register class. The scheduler is in high register pressure
   /// mode (for the specific register class) if it goes over the limit.
@@ -622,6 +640,14 @@ public:
     if (Type == 0 && Reg && isPhysicalRegister(Reg))
       return Reg;
     return 0;
+  }
+
+  /// avoidWriteAfterWrite - Return true if the register allocator should avoid
+  /// writing a register from RC in two consecutive instructions.
+  /// This can avoid pipeline stalls on certain architectures.
+  /// It does cause increased register pressure, though.
+  virtual bool avoidWriteAfterWrite(const TargetRegisterClass *RC) const {
+    return false;
   }
 
   /// UpdateRegAllocHint - A callback to allow target a chance to update

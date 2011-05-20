@@ -331,7 +331,7 @@ Instruction *InstCombiner::OptAndOp(Instruction *Op,
 
 
 /// InsertRangeTest - Emit a computation of: (V >= Lo && V < Hi) if Inside is
-/// true, otherwise (V < Lo || V >= Hi).  In pratice, we emit the more efficient
+/// true, otherwise (V < Lo || V >= Hi).  In practice, we emit the more efficient
 /// (V-Lo) <u Hi-Lo.  This method expects that Lo <= Hi. isSigned indicates
 /// whether to treat the V, Lo and HI as signed or not. IB is the location to
 /// insert new instructions.
@@ -755,6 +755,54 @@ Value *InstCombiner::FoldAndOfICmps(ICmpInst *LHS, ICmpInst *RHS) {
     if (LHSCC == ICmpInst::ICMP_EQ && LHSCst->isZero()) {
       Value *NewOr = Builder->CreateOr(Val, Val2);
       return Builder->CreateICmp(LHSCC, NewOr, LHSCst);
+    }
+
+    // (icmp slt A, 0) & (icmp slt B, 0) --> (icmp slt (A&B), 0)
+    if (LHSCC == ICmpInst::ICMP_SLT && LHSCst->isZero()) {
+      Value *NewAnd = Builder->CreateAnd(Val, Val2);
+      return Builder->CreateICmp(LHSCC, NewAnd, LHSCst);
+    }
+
+    // (icmp sgt A, -1) & (icmp sgt B, -1) --> (icmp sgt (A|B), -1)
+    if (LHSCC == ICmpInst::ICMP_SGT && LHSCst->isAllOnesValue()) {
+      Value *NewOr = Builder->CreateOr(Val, Val2);
+      return Builder->CreateICmp(LHSCC, NewOr, LHSCst);
+    }
+  }
+
+  // (trunc x) == C1 & (and x, CA) == C2 -> (and x, CA|CMAX) == C1|C2
+  // where CMAX is the all ones value for the truncated type,
+  // iff the lower bits of C2 and CA are zero.
+  if (LHSCC == RHSCC && ICmpInst::isEquality(LHSCC) &&
+      LHS->hasOneUse() && RHS->hasOneUse()) {
+    Value *V;
+    ConstantInt *AndCst, *SmallCst = 0, *BigCst = 0;
+
+    // (trunc x) == C1 & (and x, CA) == C2
+    if (match(Val2, m_Trunc(m_Value(V))) &&
+        match(Val, m_And(m_Specific(V), m_ConstantInt(AndCst)))) {
+      SmallCst = RHSCst;
+      BigCst = LHSCst;
+    }
+    // (and x, CA) == C2 & (trunc x) == C1
+    else if (match(Val, m_Trunc(m_Value(V))) &&
+             match(Val2, m_And(m_Specific(V), m_ConstantInt(AndCst)))) {
+      SmallCst = LHSCst;
+      BigCst = RHSCst;
+    }
+
+    if (SmallCst && BigCst) {
+      unsigned BigBitSize = BigCst->getType()->getBitWidth();
+      unsigned SmallBitSize = SmallCst->getType()->getBitWidth();
+
+      // Check that the low bits are zero.
+      APInt Low = APInt::getLowBitsSet(BigBitSize, SmallBitSize);
+      if ((Low & AndCst->getValue()) == 0 && (Low & BigCst->getValue()) == 0) {
+        Value *NewAnd = Builder->CreateAnd(V, Low | AndCst->getValue());
+        APInt N = SmallCst->getValue().zext(BigBitSize) | BigCst->getValue();
+        Value *NewVal = ConstantInt::get(AndCst->getType()->getContext(), N);
+        return Builder->CreateICmp(LHSCC, NewAnd, NewVal);
+      }
     }
   }
   
@@ -1442,6 +1490,18 @@ Value *InstCombiner::FoldOrOfICmps(ICmpInst *LHS, ICmpInst *RHS) {
       Value *NewOr = Builder->CreateOr(Val, Val2);
       return Builder->CreateICmp(LHSCC, NewOr, LHSCst);
     }
+
+    // (icmp slt A, 0) | (icmp slt B, 0) --> (icmp slt (A|B), 0)
+    if (LHSCC == ICmpInst::ICMP_SLT && LHSCst->isZero()) {
+      Value *NewOr = Builder->CreateOr(Val, Val2);
+      return Builder->CreateICmp(LHSCC, NewOr, LHSCst);
+    }
+
+    // (icmp sgt A, -1) | (icmp sgt B, -1) --> (icmp sgt (A&B), -1)
+    if (LHSCC == ICmpInst::ICMP_SGT && LHSCst->isAllOnesValue()) {
+      Value *NewAnd = Builder->CreateAnd(Val, Val2);
+      return Builder->CreateICmp(LHSCC, NewAnd, LHSCst);
+    }
   }
 
   // (icmp ult (X + CA), C1) | (icmp eq X, C2) -> (icmp ule (X + CA), C1)
@@ -1979,7 +2039,14 @@ Instruction *InstCombiner::visitOr(BinaryOperator &I) {
       }
     }
   }
-  
+
+  // or(sext(A), B) -> A ? -1 : B where A is an i1
+  // or(A, sext(B)) -> B ? -1 : A where B is an i1
+  if (match(Op0, m_SExt(m_Value(A))) && A->getType()->isIntegerTy(1))
+    return SelectInst::Create(A, ConstantInt::getSigned(I.getType(), -1), Op1);
+  if (match(Op1, m_SExt(m_Value(A))) && A->getType()->isIntegerTy(1))
+    return SelectInst::Create(A, ConstantInt::getSigned(I.getType(), -1), Op0);
+
   // Note: If we've gotten to the point of visiting the outer OR, then the
   // inner one couldn't be simplified.  If it was a constant, then it won't
   // be simplified by a later pass either, so we try swapping the inner/outer

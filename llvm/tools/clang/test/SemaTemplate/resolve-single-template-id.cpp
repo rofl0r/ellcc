@@ -5,11 +5,11 @@ namespace std {
 }
 
 void one() { }
-void two() { } // expected-note 2{{candidate}}
-void two(int) { } // expected-note 2{{candidate}}
+void two() { } // expected-note 3{{candidate}}
+void two(int) { } // expected-note 3{{candidate}}
 
-template<class T> void twoT() { } // expected-note 3{{candidate}}
-template<class T> void twoT(int) { } // expected-note 3{{candidate}}
+template<class T> void twoT() { } // expected-note 5{{candidate}}
+template<class T> void twoT(int) { } // expected-note 5{{candidate}}
 
 template<class T> void oneT() { }
 template<class T, class U> void oneT(U) { }
@@ -29,9 +29,9 @@ template<void (*p)(int)> struct test { };
 int main()
 {
    one;         // expected-warning {{expression result unused}}
-   two;         // expected-error {{address of overloaded}}
+   two;         // expected-error {{cannot resolve overloaded function 'two' from context}}
    oneT<int>;  // expected-warning {{expression result unused}}
-   twoT<int>;  // expected-error {{address of overloaded}}
+   twoT<int>;  // expected-error {{cannot resolve overloaded function 'twoT' from context}}
    typeid(oneT<int>); // expected-warning{{expression result unused}}
   sizeof(oneT<int>); // expected-warning {{expression result unused}}
   sizeof(twoT<int>); //expected-error {{cannot resolve overloaded function 'twoT' from context}}
@@ -51,7 +51,7 @@ int main()
   void (*p1)(int); p1 = oneT<int>;
   
   int i = (int) (false ? (void (*)(int))twoT<int> : oneT<int>); //expected-error {{incompatible operand}}
-  (twoT<int>) == oneT<int>; //expected-error {{invalid operands to binary expression}}
+  (twoT<int>) == oneT<int>; //expected-error {{cannot resolve overloaded function 'twoT' from context}}
   bool b = oneT<int>;
   void (*p)() = oneT<int>;
   test<oneT<int> > ti;
@@ -65,8 +65,8 @@ int main()
   oneT<int> < oneT<int>;  //expected-warning {{self-comparison always evaluates to false}} \
                           //expected-warning {{expression result unused}}
 
-  two < two; //expected-error {{invalid operands to binary expression}}
-  twoT<int> < twoT<int>; //expected-error {{invalid operands to binary expression}}
+  two < two; //expected-error {{cannot resolve overloaded function 'two' from context}}
+  twoT<int> < twoT<int>; //expected-error {{cannot resolve overloaded function 'twoT' from context}}
   oneT<int> == 0;   // expected-warning {{expression result unused}}
 
 }

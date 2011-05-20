@@ -167,7 +167,7 @@ DiagnoseUnexpandedParameterPacks(Sema &S, SourceLocation Loc,
     IdentifierInfo *Name = 0;
     if (const TemplateTypeParmType *TTP
           = Unexpanded[I].first.dyn_cast<const TemplateTypeParmType *>())
-      Name = TTP->getName();
+      Name = TTP->getIdentifier();
     else
       Name = Unexpanded[I].first.get<NamedDecl *>()->getIdentifier();
 
@@ -483,7 +483,7 @@ bool Sema::CheckParameterPacksForExpansion(SourceLocation EllipsisLoc,
         = Unexpanded[I].first.dyn_cast<const TemplateTypeParmType *>()) {
       Depth = TTP->getDepth();
       Index = TTP->getIndex();
-      Name = TTP->getName();
+      Name = TTP->getIdentifier();
     } else {
       NamedDecl *ND = Unexpanded[I].first.get<NamedDecl *>();
       if (isa<ParmVarDecl>(ND))
@@ -617,7 +617,8 @@ bool Sema::containsUnexpandedParameterPacks(Declarator &D) {
   const DeclSpec &DS = D.getDeclSpec();
   switch (DS.getTypeSpecType()) {
   case TST_typename:
-  case TST_typeofType: {
+  case TST_typeofType:
+  case TST_underlying_type: {
     QualType T = DS.getRepAsType().get();
     if (!T.isNull() && T->containsUnexpandedParameterPack())
       return true;
@@ -649,6 +650,7 @@ bool Sema::containsUnexpandedParameterPacks(Declarator &D) {
   case TST_struct:
   case TST_class:
   case TST_auto:
+  case TST_unknown_anytype:
   case TST_error:
     break;
   }

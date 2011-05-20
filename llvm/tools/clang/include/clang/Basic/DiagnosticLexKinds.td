@@ -114,7 +114,8 @@ def err_invalid_pth_file : Error<
 //===----------------------------------------------------------------------===//
 // Preprocessor Diagnostics
 //===----------------------------------------------------------------------===//
-def pp_hash_warning : Warning<"#warning%0">, InGroup<PoundWarning>;
+def pp_hash_warning : Warning<"#warning%0">,
+  InGroup<PoundWarning>, DefaultWarnShowInSystemHeader;
 def pp_include_next_in_primary : Warning<
   "#include_next in primary source file">;
 def pp_include_macros_out_of_predefines : Error<
@@ -239,7 +240,8 @@ def err_pragma_push_pop_macro_malformed : Error<
    "pragma %0 requires a parenthesized string">;
 def warn_pragma_pop_macro_no_push : Warning<
    "pragma pop_macro could not pop '%0', no matching push_macro">;
-def warn_pragma_message : Warning<"%0">;
+def warn_pragma_message : Warning<"%0">,
+   InGroup<PoundPragmaMessage>, DefaultWarnNoWerror;
 def warn_pragma_ignored : Warning<"unknown pragma ignored">,
    InGroup<UnknownPragmas>, DefaultIgnore;
 def ext_stdc_pragma_ignored : ExtWarn<"unknown pragma in STDC namespace">,

@@ -31,13 +31,17 @@ CXXRecordDecl::DefinitionData::DefinitionData(CXXRecordDecl *D)
   : UserDeclaredConstructor(false), UserDeclaredCopyConstructor(false),
     UserDeclaredCopyAssignment(false), UserDeclaredDestructor(false),
     Aggregate(true), PlainOldData(true), Empty(true), Polymorphic(false),
-    Abstract(false), HasTrivialConstructor(true),
-    HasTrivialCopyConstructor(true), HasTrivialCopyAssignment(true),
-    HasTrivialDestructor(true), ComputedVisibleConversions(false),
-    DeclaredDefaultConstructor(false), DeclaredCopyConstructor(false), 
-    DeclaredCopyAssignment(false), DeclaredDestructor(false),
-    NumBases(0), NumVBases(0), Bases(), VBases(),
-  Definition(D), FirstFriend(0) {
+    Abstract(false), IsStandardLayout(true), HasNoNonEmptyBases(true),
+    HasPrivateFields(false), HasProtectedFields(false), HasPublicFields(false),
+    HasMutableFields(false), HasTrivialDefaultConstructor(true),
+    HasConstExprNonCopyMoveConstructor(false), HasTrivialCopyConstructor(true),
+    HasTrivialMoveConstructor(true), HasTrivialCopyAssignment(true),
+    HasTrivialMoveAssignment(true), HasTrivialDestructor(true),
+    HasNonLiteralTypeFieldsOrBases(false), ComputedVisibleConversions(false),
+    UserProvidedDefaultConstructor(false), DeclaredDefaultConstructor(false),
+    DeclaredCopyConstructor(false), DeclaredCopyAssignment(false),
+    DeclaredDestructor(false), NumBases(0), NumVBases(0), Bases(), VBases(),
+    Definition(D), FirstFriend(0) {
 }
 
 CXXRecordDecl::CXXRecordDecl(Kind K, TagKind TK, DeclContext *DC,
@@ -108,14 +112,38 @@ CXXRecordDecl::setBases(CXXBaseSpecifier const * const *Bases,
     
     // A class with a non-empty base class is not empty.
     // FIXME: Standard ref?
-    if (!BaseClassDecl->isEmpty())
+    if (!BaseClassDecl->isEmpty()) {
+      if (!data().Empty) {
+        // C++0x [class]p7:
+        //   A standard-layout class is a class that:
+        //    [...]
+        //    -- either has no non-static data members in the most derived
+        //       class and at most one base class with non-static data members,
+        //       or has no base classes with non-static data members, and
+        // If this is the second non-empty base, then neither of these two
+        // clauses can be true.
+        data().IsStandardLayout = false;
+      }
+
       data().Empty = false;
+      data().HasNoNonEmptyBases = false;
+    }
     
     // C++ [class.virtual]p1:
     //   A class that declares or inherits a virtual function is called a 
     //   polymorphic class.
     if (BaseClassDecl->isPolymorphic())
       data().Polymorphic = true;
+
+    // C++0x [class]p7:
+    //   A standard-layout class is a class that: [...]
+    //    -- has no non-standard-layout base classes
+    if (!BaseClassDecl->isStandardLayout())
+      data().IsStandardLayout = false;
+
+    // Record if this base is the first non-literal field or base.
+    if (!hasNonLiteralTypeFieldsOrBases() && !BaseType->isLiteralType())
+      data().HasNonLiteralTypeFieldsOrBases = true;
     
     // Now go through all virtual bases of this base and add them.
     for (CXXRecordDecl::base_class_iterator VBase =
@@ -137,36 +165,59 @@ CXXRecordDecl::setBases(CXXBaseSpecifier const * const *Bases,
       data().Empty = false;
       
       // C++ [class.ctor]p5:
-      //   A constructor is trivial if its class has no virtual base classes.
-      data().HasTrivialConstructor = false;
-      
-      // C++ [class.copy]p6:
-      //   A copy constructor is trivial if its class has no virtual base 
-      //   classes.
+      //   A default constructor is trivial [...] if:
+      //    -- its class has [...] no virtual bases
+      data().HasTrivialDefaultConstructor = false;
+
+      // C++0x [class.copy]p13:
+      //   A copy/move constructor for class X is trivial if it is neither
+      //   user-provided nor deleted and if
+      //    -- class X has no virtual functions and no virtual base classes, and
       data().HasTrivialCopyConstructor = false;
-      
-      // C++ [class.copy]p11:
-      //   A copy assignment operator is trivial if its class has no virtual
-      //   base classes.
+      data().HasTrivialMoveConstructor = false;
+
+      // C++0x [class.copy]p27:
+      //   A copy/move assignment operator for class X is trivial if it is
+      //   neither user-provided nor deleted and if
+      //    -- class X has no virtual functions and no virtual base classes, and
       data().HasTrivialCopyAssignment = false;
+      data().HasTrivialMoveAssignment = false;
+
+      // C++0x [class]p7:
+      //   A standard-layout class is a class that: [...]
+      //    -- has [...] no virtual base classes
+      data().IsStandardLayout = false;
     } else {
       // C++ [class.ctor]p5:
-      //   A constructor is trivial if all the direct base classes of its
-      //   class have trivial constructors.
-      if (!BaseClassDecl->hasTrivialConstructor())
-        data().HasTrivialConstructor = false;
+      //   A default constructor is trivial [...] if:
+      //    -- all the direct base classes of its class have trivial default
+      //       constructors.
+      if (!BaseClassDecl->hasTrivialDefaultConstructor())
+        data().HasTrivialDefaultConstructor = false;
       
-      // C++ [class.copy]p6:
-      //   A copy constructor is trivial if all the direct base classes of its
-      //   class have trivial copy constructors.
+      // C++0x [class.copy]p13:
+      //   A copy/move constructor for class X is trivial if [...]
+      //    [...]
+      //    -- the constructor selected to copy/move each direct base class
+      //       subobject is trivial, and
+      // FIXME: C++0x: We need to only consider the selected constructor
+      // instead of all of them.
       if (!BaseClassDecl->hasTrivialCopyConstructor())
         data().HasTrivialCopyConstructor = false;
-      
-      // C++ [class.copy]p11:
-      //   A copy assignment operator is trivial if all the direct base classes
-      //   of its class have trivial copy assignment operators.
+      if (!BaseClassDecl->hasTrivialMoveConstructor())
+        data().HasTrivialMoveConstructor = false;
+
+      // C++0x [class.copy]p27:
+      //   A copy/move assignment operator for class X is trivial if [...]
+      //    [...]
+      //    -- the assignment operator selected to copy/move each direct base
+      //       class subobject is trivial, and
+      // FIXME: C++0x: We need to only consider the selected operator instead
+      // of all of them.
       if (!BaseClassDecl->hasTrivialCopyAssignment())
         data().HasTrivialCopyAssignment = false;
+      if (!BaseClassDecl->hasTrivialMoveAssignment())
+        data().HasTrivialMoveAssignment = false;
     }
     
     // C++ [class.ctor]p3:
@@ -174,6 +225,10 @@ CXXRecordDecl::setBases(CXXBaseSpecifier const * const *Bases,
     //   have trivial destructors.
     if (!BaseClassDecl->hasTrivialDestructor())
       data().HasTrivialDestructor = false;
+    
+    // Keep track of the presence of mutable fields.
+    if (BaseClassDecl->hasMutableFields())
+      data().HasMutableFields = true;
   }
   
   if (VBases.empty())
@@ -217,6 +272,23 @@ bool CXXRecordDecl::hasConstCopyConstructor(const ASTContext &Context) const {
   return getCopyConstructor(Context, Qualifiers::Const) != 0;
 }
 
+bool CXXRecordDecl::isTriviallyCopyable() const {
+  // C++0x [class]p5:
+  //   A trivially copyable class is a class that:
+  //   -- has no non-trivial copy constructors,
+  if (!hasTrivialCopyConstructor()) return false;
+  //   -- has no non-trivial move constructors,
+  if (!hasTrivialMoveConstructor()) return false;
+  //   -- has no non-trivial copy assignment operators,
+  if (!hasTrivialCopyAssignment()) return false;
+  //   -- has no non-trivial move assignment operators, and
+  if (!hasTrivialMoveAssignment()) return false;
+  //   -- has a trivial destructor.
+  if (!hasTrivialDestructor()) return false;
+
+  return true;
+}
+
 /// \brief Perform a simplistic form of overload resolution that only considers
 /// cv-qualifiers on a single parameter, and return the best overload candidate
 /// (if there is one).
@@ -230,11 +302,11 @@ GetBestOverloadCandidateSimple(
   
   unsigned Best = 0, N = Cands.size();
   for (unsigned I = 1; I != N; ++I)
-    if (Cands[Best].second.isSupersetOf(Cands[I].second))
+    if (Cands[Best].second.compatiblyIncludes(Cands[I].second))
       Best = I;
   
   for (unsigned I = 1; I != N; ++I)
-    if (Cands[Best].second.isSupersetOf(Cands[I].second))
+    if (Cands[Best].second.compatiblyIncludes(Cands[I].second))
       return 0;
   
   return Cands[Best].first;
@@ -355,11 +427,28 @@ void CXXRecordDecl::addedMember(Decl *D) {
       //   polymorphic class.
       data().Polymorphic = true;
       
-      // None of the special member functions are trivial.
-      data().HasTrivialConstructor = false;
+      // C++0x [class.ctor]p5
+      //   A default constructor is trivial [...] if:
+      //    -- its class has no virtual functions [...]
+      data().HasTrivialDefaultConstructor = false;
+
+      // C++0x [class.copy]p13:
+      //   A copy/move constructor for class X is trivial if [...]
+      //    -- class X has no virtual functions [...]
       data().HasTrivialCopyConstructor = false;
+      data().HasTrivialMoveConstructor = false;
+
+      // C++0x [class.copy]p27:
+      //   A copy/move assignment operator for class X is trivial if [...]
+      //    -- class X has no virtual functions [...]
       data().HasTrivialCopyAssignment = false;
+      data().HasTrivialMoveAssignment = false;
       // FIXME: Destructor?
+
+      // C++0x [class]p7:
+      //   A standard-layout class is a class that: [...]
+      //    -- has no virtual functions
+      data().IsStandardLayout = false;
     }
   }
   
@@ -373,8 +462,9 @@ void CXXRecordDecl::addedMember(Decl *D) {
     if (CXXConstructorDecl *Constructor = dyn_cast<CXXConstructorDecl>(D)) {
       // If this is the implicit default constructor, note that we have now
       // declared it.
-      if (Constructor->isDefaultConstructor())
+      if (Constructor->isDefaultConstructor()) {
         data().DeclaredDefaultConstructor = true;
+      }
       // If this is the implicit copy constructor, note that we have now
       // declared it.
       else if (Constructor->isCopyConstructor())
@@ -404,55 +494,85 @@ void CXXRecordDecl::addedMember(Decl *D) {
     // Note that we have a user-declared constructor.
     data().UserDeclaredConstructor = true;
 
-    // Note that we have no need of an implicitly-declared default constructor.
-    data().DeclaredDefaultConstructor = true;
-    
+    // FIXME: Under C++0x, /only/ special member functions may be user-provided.
+    //        This is probably a defect.
+    bool UserProvided = false;
+
+    // C++0x [class.ctor]p5:
+    //   A default constructor is trivial if it is not user-provided [...]
+    if (Constructor->isDefaultConstructor()) {
+      data().DeclaredDefaultConstructor = true;
+      if (Constructor->isUserProvided()) {
+        data().HasTrivialDefaultConstructor = false;
+        data().UserProvidedDefaultConstructor = true;
+        UserProvided = true;
+      }
+    }
+
+    // Note when we have a user-declared copy or move constructor, which will
+    // suppress the implicit declaration of those constructors.
+    if (!FunTmpl) {
+      if (Constructor->isCopyConstructor()) {
+        data().UserDeclaredCopyConstructor = true;
+        data().DeclaredCopyConstructor = true;
+
+        // C++0x [class.copy]p13:
+        //   A copy/move constructor for class X is trivial if it is not
+        //   user-provided [...]
+        if (Constructor->isUserProvided()) {
+          data().HasTrivialCopyConstructor = false;
+          UserProvided = true;
+        }
+      } else if (Constructor->isMoveConstructor()) {
+        // C++0x [class.copy]p13:
+        //   A copy/move constructor for class X is trivial if it is not
+        //   user-provided [...]
+        if (Constructor->isUserProvided()) {
+          data().HasTrivialMoveConstructor = false;
+          UserProvided = true;
+        }
+      }
+    }
+    if (Constructor->isConstExpr() &&
+        !Constructor->isCopyOrMoveConstructor()) {
+      // Record if we see any constexpr constructors which are niether copy
+      // nor move constructors.
+      data().HasConstExprNonCopyMoveConstructor = true;
+    }
+
     // C++ [dcl.init.aggr]p1:
-    //   An aggregate is an array or a class (clause 9) with no
-    //   user-declared constructors (12.1) [...].
-    data().Aggregate = false;
+    //   An aggregate is an array or a class with no user-declared
+    //   constructors [...].
+    // C++0x [dcl.init.aggr]p1:
+    //   An aggregate is an array or a class with no user-provided
+    //   constructors [...].
+    if (!getASTContext().getLangOptions().CPlusPlus0x || UserProvided)
+      data().Aggregate = false;
 
     // C++ [class]p4:
     //   A POD-struct is an aggregate class [...]
+    // Since the POD bit is meant to be C++03 POD-ness, clear it even if the
+    // type is technically an aggregate in C++0x since it wouldn't be in 03.
     data().PlainOldData = false;
 
-    // C++ [class.ctor]p5:
-    //   A constructor is trivial if it is an implicitly-declared default
-    //   constructor.
-    // FIXME: C++0x: don't do this for "= default" default constructors.
-    data().HasTrivialConstructor = false;
-
-    // Note when we have a user-declared copy constructor, which will
-    // suppress the implicit declaration of a copy constructor.
-    if (!FunTmpl && Constructor->isCopyConstructor()) {
-      data().UserDeclaredCopyConstructor = true;
-      data().DeclaredCopyConstructor = true;
-      
-      // C++ [class.copy]p6:
-      //   A copy constructor is trivial if it is implicitly declared.
-      // FIXME: C++0x: don't do this for "= default" copy constructors.
-      data().HasTrivialCopyConstructor = false;
-    }
-    
     return;
   }
 
   // Handle (user-declared) destructors.
-  if (isa<CXXDestructorDecl>(D)) {
+  if (CXXDestructorDecl *DD = dyn_cast<CXXDestructorDecl>(D)) {
     data().DeclaredDestructor = true;
     data().UserDeclaredDestructor = true;
     
     // C++ [class]p4: 
     //   A POD-struct is an aggregate class that has [...] no user-defined 
     //   destructor.
+    // This bit is the C++03 POD bit, not the 0x one.
     data().PlainOldData = false;
     
-    // C++ [class.dtor]p3: 
-    //   A destructor is trivial if it is an implicitly-declared destructor and
-    //   [...].
-    //
-    // FIXME: C++0x: don't do this for "= default" destructors
-    data().HasTrivialDestructor = false;
+    // C++0x [class.dtor]p5: 
+    //   A destructor is trivial if it is not user-provided and [...]
+    if (DD->isUserProvided())
+      data().HasTrivialDestructor = false;
     
     return;
   }
@@ -471,35 +591,51 @@ void CXXRecordDecl::addedMember(Decl *D) {
         return;
       
       ASTContext &Context = getASTContext();
-      QualType ArgType = FnType->getArgType(0);
-      if (const LValueReferenceType *Ref =ArgType->getAs<LValueReferenceType>())
-        ArgType = Ref->getPointeeType();
-      
-      ArgType = ArgType.getUnqualifiedType();
       QualType ClassType = Context.getCanonicalType(Context.getTypeDeclType(
                                              const_cast<CXXRecordDecl*>(this)));
-      
+
+      bool isRValueRefArg = false;
+      QualType ArgType = FnType->getArgType(0);
+      if (const LValueReferenceType *Ref =
+          ArgType->getAs<LValueReferenceType>()) {
+        ArgType = Ref->getPointeeType();
+      } else if (const RValueReferenceType *Ref =
+               ArgType->getAs<RValueReferenceType>()) {
+        ArgType = Ref->getPointeeType();
+        isRValueRefArg = true;
+      }
       if (!Context.hasSameUnqualifiedType(ClassType, ArgType))
         return;
-      
-      // This is a copy assignment operator.
-      // FIXME: Move assignment operators.
-      
-      // Suppress the implicit declaration of a copy constructor.
-      data().UserDeclaredCopyAssignment = true;
-      data().DeclaredCopyAssignment = true;
-      
-      // C++ [class.copy]p11:
-      //   A copy assignment operator is trivial if it is implicitly declared.
-      // FIXME: C++0x: don't do this for "= default" copy operators.
-      data().HasTrivialCopyAssignment = false;
-      
+
       // C++ [class]p4:
-      //   A POD-struct is an aggregate class that [...] has no user-defined copy
-      //   assignment operator [...].
+      //   A POD-struct is an aggregate class that [...] has no user-defined
+      //   copy assignment operator [...].
+      // This is the C++03 bit only.
       data().PlainOldData = false;
+
+      if (!isRValueRefArg) {
+        // This is a copy assignment operator.
+
+        // Suppress the implicit declaration of a copy constructor.
+        data().UserDeclaredCopyAssignment = true;
+        data().DeclaredCopyAssignment = true;
+
+        // C++0x [class.copy]p27:
+        //   A copy/move assignment operator for class X is trivial if it is
+        //   neither user-provided nor deleted [...]
+        if (Method->isUserProvided())
+          data().HasTrivialCopyAssignment = false;
+      } else {
+        // This is a move assignment operator.
+
+        // C++0x [class.copy]p27:
+        //   A copy/move assignment operator for class X is trivial if it is
+        //   neither user-provided nor deleted [...]
+        if (Method->isUserProvided())
+          data().HasTrivialMoveAssignment = false;
+      }
     }
-    
+
     // Keep the list of conversion functions up-to-date.
     if (CXXConversionDecl *Conversion = dyn_cast<CXXConversionDecl>(D)) {
       // We don't record specializations.
@@ -538,8 +674,26 @@ void CXXRecordDecl::addedMember(Decl *D) {
       data().Aggregate = false;
       data().PlainOldData = false;
     }
+
+    // C++0x [class]p7:
+    //   A standard-layout class is a class that:
+    //    [...]
+    //    -- has the same access control for all non-static data members,
+    switch (D->getAccess()) {
+    case AS_private:    data().HasPrivateFields = true;   break;
+    case AS_protected:  data().HasProtectedFields = true; break;
+    case AS_public:     data().HasPublicFields = true;    break;
+    case AS_none:       assert(0 && "Invalid access specifier");
+    };
+    if ((data().HasPrivateFields + data().HasProtectedFields +
+         data().HasPublicFields) > 1)
+      data().IsStandardLayout = false;
+
+    // Keep track of the presence of mutable fields.
+    if (Field->isMutable())
+      data().HasMutableFields = true;
     
-    // C++ [class]p9:
+    // C++0x [class]p9:
     //   A POD struct is a class that is both a trivial class and a 
     //   standard-layout class, and has no non-static data members of type 
     //   non-POD struct, non-POD union (or array of such types).
@@ -547,23 +701,107 @@ void CXXRecordDecl::addedMember(Decl *D) {
     QualType T = Context.getBaseElementType(Field->getType());
     if (!T->isPODType())
       data().PlainOldData = false;
-    if (T->isReferenceType())
-      data().HasTrivialConstructor = false;
-    
+    if (T->isReferenceType()) {
+      data().HasTrivialDefaultConstructor = false;
+
+      // C++0x [class]p7:
+      //   A standard-layout class is a class that:
+      //    -- has no non-static data members of type [...] reference,
+      data().IsStandardLayout = false;
+    }
+
+    // Record if this field is the first non-literal field or base.
+    if (!hasNonLiteralTypeFieldsOrBases() && !T->isLiteralType())
+      data().HasNonLiteralTypeFieldsOrBases = true;
+
     if (const RecordType *RecordTy = T->getAs<RecordType>()) {
       CXXRecordDecl* FieldRec = cast<CXXRecordDecl>(RecordTy->getDecl());
       if (FieldRec->getDefinition()) {
-        if (!FieldRec->hasTrivialConstructor())
-          data().HasTrivialConstructor = false;
+        // C++0x [class.ctor]p5:
+        //   A defulat constructor is trivial [...] if:
+        //    -- for all the non-static data members of its class that are of
+        //       class type (or array thereof), each such class has a trivial
+        //       default constructor.
+        if (!FieldRec->hasTrivialDefaultConstructor())
+          data().HasTrivialDefaultConstructor = false;
+
+        // C++0x [class.copy]p13:
+        //   A copy/move constructor for class X is trivial if [...]
+        //    [...]
+        //    -- for each non-static data member of X that is of class type (or
+        //       an array thereof), the constructor selected to copy/move that
+        //       member is trivial;
+        // FIXME: C++0x: We don't correctly model 'selected' constructors.
         if (!FieldRec->hasTrivialCopyConstructor())
           data().HasTrivialCopyConstructor = false;
+        if (!FieldRec->hasTrivialMoveConstructor())
+          data().HasTrivialMoveConstructor = false;
+
+        // C++0x [class.copy]p27:
+        //   A copy/move assignment operator for class X is trivial if [...]
+        //    [...]
+        //    -- for each non-static data member of X that is of class type (or
+        //       an array thereof), the assignment operator selected to
+        //       copy/move that member is trivial;
+        // FIXME: C++0x: We don't correctly model 'selected' operators.
         if (!FieldRec->hasTrivialCopyAssignment())
           data().HasTrivialCopyAssignment = false;
+        if (!FieldRec->hasTrivialMoveAssignment())
+          data().HasTrivialMoveAssignment = false;
+
         if (!FieldRec->hasTrivialDestructor())
           data().HasTrivialDestructor = false;
+
+        // C++0x [class]p7:
+        //   A standard-layout class is a class that:
+        //    -- has no non-static data members of type non-standard-layout
+        //       class (or array of such types) [...]
+        if (!FieldRec->isStandardLayout())
+          data().IsStandardLayout = false;
+
+        // C++0x [class]p7:
+        //   A standard-layout class is a class that:
+        //    [...]
+        //    -- has no base classes of the same type as the first non-static
+        //       data member.
+        // We don't want to expend bits in the state of the record decl
+        // tracking whether this is the first non-static data member so we
+        // cheat a bit and use some of the existing state: the empty bit.
+        // Virtual bases and virtual methods make a class non-empty, but they
+        // also make it non-standard-layout so we needn't check here.
+        // A non-empty base class may leave the class standard-layout, but not
+        // if we have arrived here, and have at least on non-static data
+        // member. If IsStandardLayout remains true, then the first non-static
+        // data member must come through here with Empty still true, and Empty
+        // will subsequently be set to false below.
+        if (data().IsStandardLayout && data().Empty) {
+          for (CXXRecordDecl::base_class_const_iterator BI = bases_begin(),
+                                                        BE = bases_end();
+               BI != BE; ++BI) {
+            if (Context.hasSameUnqualifiedType(BI->getType(), T)) {
+              data().IsStandardLayout = false;
+              break;
+            }
+          }
+        }
+        
+        // Keep track of the presence of mutable fields.
+        if (FieldRec->hasMutableFields())
+          data().HasMutableFields = true;
       }
     }
-    
+
+    // C++0x [class]p7:
+    //   A standard-layout class is a class that:
+    //    [...]
+    //    -- either has no non-static data members in the most derived
+    //       class and at most one base class with non-static data members,
+    //       or has no base classes with non-static data members, and
+    // At this point we know that we have a non-static data member, so the last
+    // clause holds.
+    if (!data().HasNoNonEmptyBases)
+      data().IsStandardLayout = false;
+
     // If this is not a zero-length bit-field, then the class is not empty.
     if (data().Empty) {
       if (!Field->getBitWidth())
@@ -813,8 +1051,6 @@ CXXDestructorDecl *CXXRecordDecl::getDestructor() const {
     return 0;
 
   CXXDestructorDecl *Dtor = cast<CXXDestructorDecl>(*I);
-  assert(++I == E && "Found more than one destructor!");
-
   return Dtor;
 }
 

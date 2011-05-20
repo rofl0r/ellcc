@@ -107,11 +107,11 @@ namespace ISD {
     // and returns an outchain.
     EH_SJLJ_LONGJMP,
 
-    // OUTCHAIN = EH_SJLJ_DISPATCHSETUP(INCHAIN, context)
+    // OUTCHAIN = EH_SJLJ_DISPATCHSETUP(INCHAIN, setjmpval)
     // This corresponds to the eh.sjlj.dispatchsetup intrinsic. It takes an
-    // input chain and a pointer to the sjlj function context as inputs and
-    // returns an outchain. By default, this does nothing. Targets can lower
-    // this to unwind setup code if needed.
+    // input chain and the value returning from setjmp as inputs and returns an
+    // outchain. By default, this does nothing. Targets can lower this to unwind
+    // setup code if needed.
     EH_SJLJ_DISPATCHSETUP,
 
     // TargetConstant* - Like Constant*, but the DAG does not do any folding,
@@ -219,7 +219,7 @@ namespace ISD {
     // RESULT, BOOL = [SU]ADDO(LHS, RHS) - Overflow-aware nodes for addition.
     // These nodes take two operands: the normal LHS and RHS to the add. They
     // produce two results: the normal result of the add, and a boolean that
-    // indicates if an overflow occured (*not* a flag, because it may be stored
+    // indicates if an overflow occurred (*not* a flag, because it may be stored
     // to memory, etc.).  If the type of the boolean is not i1 then the high
     // bits conform to getBooleanContents.
     // These nodes are generated from the llvm.[su]add.with.overflow intrinsics.

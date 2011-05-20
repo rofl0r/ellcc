@@ -42,10 +42,10 @@ const char *MipsTargetLowering::getTargetNodeName(unsigned Opcode) const {
     case MipsISD::Lo         : return "MipsISD::Lo";
     case MipsISD::GPRel      : return "MipsISD::GPRel";
     case MipsISD::Ret        : return "MipsISD::Ret";
-    case MipsISD::SelectCC   : return "MipsISD::SelectCC";
-    case MipsISD::FPSelectCC : return "MipsISD::FPSelectCC";
     case MipsISD::FPBrcond   : return "MipsISD::FPBrcond";
     case MipsISD::FPCmp      : return "MipsISD::FPCmp";
+    case MipsISD::CMovFP_T   : return "MipsISD::CMovFP_T";
+    case MipsISD::CMovFP_F   : return "MipsISD::CMovFP_F";
     case MipsISD::FPRound    : return "MipsISD::FPRound";
     case MipsISD::MAdd       : return "MipsISD::MAdd";
     case MipsISD::MAddu      : return "MipsISD::MAddu";
@@ -53,6 +53,8 @@ const char *MipsTargetLowering::getTargetNodeName(unsigned Opcode) const {
     case MipsISD::MSubu      : return "MipsISD::MSubu";
     case MipsISD::DivRem     : return "MipsISD::DivRem";
     case MipsISD::DivRemU    : return "MipsISD::DivRemU";
+    case MipsISD::BuildPairF64: return "MipsISD::BuildPairF64";
+    case MipsISD::ExtractElementF64: return "MipsISD::ExtractElementF64";
     default                  : return NULL;
   }
 }
@@ -111,13 +113,6 @@ MipsTargetLowering(MipsTargetMachine &TM)
   setOperationAction(ISD::DYNAMIC_STACKALLOC, MVT::i32,   Custom);
   setOperationAction(ISD::FP_TO_SINT,         MVT::i32,   Custom);
   setOperationAction(ISD::VASTART,            MVT::Other, Custom);
-
-
-  // We custom lower AND/OR to handle the case where the DAG contain 'ands/ors'
-  // with operands comming from setcc fp comparions. This is necessary since
-  // the result from these setcc are in a flag registers (FCR31).
-  setOperationAction(ISD::AND,              MVT::i32,   Custom);
-  setOperationAction(ISD::OR,               MVT::i32,   Custom);
 
   setOperationAction(ISD::SDIV, MVT::i32, Expand);
   setOperationAction(ISD::SREM, MVT::i32, Expand);
@@ -189,6 +184,9 @@ MipsTargetLowering(MipsTargetMachine &TM)
   setTargetDAGCombine(ISD::SUBE);
   setTargetDAGCombine(ISD::SDIVREM);
   setTargetDAGCombine(ISD::UDIVREM);
+  setTargetDAGCombine(ISD::SETCC);
+
+  setMinFunctionAlignment(2);
 
   setStackPointerRegisterToSaveRestore(Mips::SP);
   computeRegisterProperties();
@@ -198,11 +196,6 @@ MVT::SimpleValueType MipsTargetLowering::getSetCCResultType(EVT VT) const {
   return MVT::i32;
 }
 
-/// getFunctionAlignment - Return the Log2 alignment of this function.
-unsigned MipsTargetLowering::getFunctionAlignment(const Function *) const {
-  return 2;
-}
-
 // SelectMadd -
 // Transforms a subgraph in CurDAG if the following pattern is found:
 //  (addc multLo, Lo0), (adde multHi, Hi0),
@@ -210,7 +203,7 @@ unsigned MipsTargetLowering::getFunctionAlignment(const Function *) const {
 //  multHi/Lo: product of multiplication
 //  Lo0: initial value of Lo register
 //  Hi0: initial value of Hi register
-// Return true if mattern matching was successful.
+// Return true if pattern matching was successful.
 static bool SelectMadd(SDNode* ADDENode, SelectionDAG* CurDAG) {
   // ADDENode's second operand must be a flag output of an ADDC node in order
   // for the matching to be successful.
@@ -284,7 +277,7 @@ static bool SelectMadd(SDNode* ADDENode, SelectionDAG* CurDAG) {
 //  multHi/Lo: product of multiplication
 //  Lo0: initial value of Lo register
 //  Hi0: initial value of Hi register
-// Return true if mattern matching was successful.
+// Return true if pattern matching was successful.
 static bool SelectMsub(SDNode* SUBENode, SelectionDAG* CurDAG) {
   // SUBENode's second operand must be a flag output of an SUBC node in order
   // for the matching to be successful.
@@ -409,6 +402,96 @@ static SDValue PerformDivRemCombine(SDNode *N, SelectionDAG& DAG,
   return SDValue();
 }
 
+static Mips::CondCode FPCondCCodeToFCC(ISD::CondCode CC) {
+  switch (CC) {
+  default: llvm_unreachable("Unknown fp condition code!");
+  case ISD::SETEQ:
+  case ISD::SETOEQ: return Mips::FCOND_OEQ;
+  case ISD::SETUNE: return Mips::FCOND_UNE;
+  case ISD::SETLT:
+  case ISD::SETOLT: return Mips::FCOND_OLT;
+  case ISD::SETGT:
+  case ISD::SETOGT: return Mips::FCOND_OGT;
+  case ISD::SETLE:
+  case ISD::SETOLE: return Mips::FCOND_OLE;
+  case ISD::SETGE:
+  case ISD::SETOGE: return Mips::FCOND_OGE;
+  case ISD::SETULT: return Mips::FCOND_ULT;
+  case ISD::SETULE: return Mips::FCOND_ULE;
+  case ISD::SETUGT: return Mips::FCOND_UGT;
+  case ISD::SETUGE: return Mips::FCOND_UGE;
+  case ISD::SETUO:  return Mips::FCOND_UN;
+  case ISD::SETO:   return Mips::FCOND_OR;
+  case ISD::SETNE:
+  case ISD::SETONE: return Mips::FCOND_ONE;
+  case ISD::SETUEQ: return Mips::FCOND_UEQ;
+  }
+}
+
+
+// Returns true if condition code has to be inverted.
+static bool InvertFPCondCode(Mips::CondCode CC) {
+  if (CC >= Mips::FCOND_F && CC <= Mips::FCOND_NGT)
+    return false;
+
+  if (CC >= Mips::FCOND_T && CC <= Mips::FCOND_GT)
+    return true;
+
+  assert(false && "Illegal Condition Code");
+  return false;
+}
+
+// Creates and returns an FPCmp node from a setcc node.
+// Returns Op if setcc is not a floating point comparison.
+static SDValue CreateFPCmp(SelectionDAG& DAG, const SDValue& Op) {
+  // must be a SETCC node
+  if (Op.getOpcode() != ISD::SETCC)
+    return Op;
+
+  SDValue LHS = Op.getOperand(0);
+
+  if (!LHS.getValueType().isFloatingPoint())
+    return Op;
+
+  SDValue RHS = Op.getOperand(1);
+  DebugLoc dl = Op.getDebugLoc();
+
+  // Assume the 3rd operand is a CondCodeSDNode. Add code to check the type of
+  // node if necessary.
+  ISD::CondCode CC = cast<CondCodeSDNode>(Op.getOperand(2))->get();
+
+  return DAG.getNode(MipsISD::FPCmp, dl, MVT::Glue, LHS, RHS,
+                     DAG.getConstant(FPCondCCodeToFCC(CC), MVT::i32));
+}
+
+// Creates and returns a CMovFPT/F node.
+static SDValue CreateCMovFP(SelectionDAG& DAG, SDValue Cond, SDValue True,
+                            SDValue False, DebugLoc DL) {
+  bool invert = InvertFPCondCode((Mips::CondCode)
+                                 cast<ConstantSDNode>(Cond.getOperand(2))
+                                 ->getSExtValue());
+
+  return DAG.getNode((invert ? MipsISD::CMovFP_F : MipsISD::CMovFP_T), DL,
+                     True.getValueType(), True, False, Cond);
+}
+
+static SDValue PerformSETCCCombine(SDNode *N, SelectionDAG& DAG,
+                                   TargetLowering::DAGCombinerInfo &DCI,
+                                   const MipsSubtarget* Subtarget) {
+  if (DCI.isBeforeLegalizeOps())
+    return SDValue();
+
+  SDValue Cond = CreateFPCmp(DAG, SDValue(N, 0));
+
+  if (Cond.getOpcode() != MipsISD::FPCmp)
+    return SDValue();
+
+  SDValue True  = DAG.getConstant(1, MVT::i32);
+  SDValue False = DAG.getConstant(0, MVT::i32);
+
+  return CreateCMovFP(DAG, Cond, True, False, N->getDebugLoc());
+}
+
 SDValue  MipsTargetLowering::PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI)
   const {
   SelectionDAG &DAG = DCI.DAG;
@@ -423,6 +506,8 @@ SDValue  MipsTargetLowering::PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI)
   case ISD::SDIVREM:
   case ISD::UDIVREM:
     return PerformDivRemCombine(N, DAG, DCI, Subtarget);
+  case ISD::SETCC:
+    return PerformSETCCCombine(N, DAG, DCI, Subtarget);
   }
 
   return SDValue();
@@ -433,7 +518,6 @@ LowerOperation(SDValue Op, SelectionDAG &DAG) const
 {
   switch (Op.getOpcode())
   {
-    case ISD::AND:                return LowerANDOR(Op, DAG);
     case ISD::BRCOND:             return LowerBRCOND(Op, DAG);
     case ISD::ConstantPool:       return LowerConstantPool(Op, DAG);
     case ISD::DYNAMIC_STACKALLOC: return LowerDYNAMIC_STACKALLOC(Op, DAG);
@@ -442,9 +526,7 @@ LowerOperation(SDValue Op, SelectionDAG &DAG) const
     case ISD::BlockAddress:       return LowerBlockAddress(Op, DAG);
     case ISD::GlobalTLSAddress:   return LowerGlobalTLSAddress(Op, DAG);
     case ISD::JumpTable:          return LowerJumpTable(Op, DAG);
-    case ISD::OR:                 return LowerANDOR(Op, DAG);
     case ISD::SELECT:             return LowerSELECT(Op, DAG);
-    case ISD::SETCC:              return LowerSETCC(Op, DAG);
     case ISD::VASTART:            return LowerVASTART(Op, DAG);
   }
   return SDValue();
@@ -477,122 +559,110 @@ static Mips::FPBranchCode GetFPBranchCodeFromCond(Mips::CondCode CC) {
   return Mips::BRANCH_INVALID;
 }
 
-static unsigned FPBranchCodeToOpc(Mips::FPBranchCode BC) {
-  switch(BC) {
-    default:
-      llvm_unreachable("Unknown branch code");
-    case Mips::BRANCH_T  : return Mips::BC1T;
-    case Mips::BRANCH_F  : return Mips::BC1F;
-    case Mips::BRANCH_TL : return Mips::BC1TL;
-    case Mips::BRANCH_FL : return Mips::BC1FL;
-  }
-}
-
-static Mips::CondCode FPCondCCodeToFCC(ISD::CondCode CC) {
-  switch (CC) {
-  default: llvm_unreachable("Unknown fp condition code!");
-  case ISD::SETEQ:
-  case ISD::SETOEQ: return Mips::FCOND_EQ;
-  case ISD::SETUNE: return Mips::FCOND_OGL;
-  case ISD::SETLT:
-  case ISD::SETOLT: return Mips::FCOND_OLT;
-  case ISD::SETGT:
-  case ISD::SETOGT: return Mips::FCOND_OGT;
-  case ISD::SETLE:
-  case ISD::SETOLE: return Mips::FCOND_OLE;
-  case ISD::SETGE:
-  case ISD::SETOGE: return Mips::FCOND_OGE;
-  case ISD::SETULT: return Mips::FCOND_ULT;
-  case ISD::SETULE: return Mips::FCOND_ULE;
-  case ISD::SETUGT: return Mips::FCOND_UGT;
-  case ISD::SETUGE: return Mips::FCOND_UGE;
-  case ISD::SETUO:  return Mips::FCOND_UN;
-  case ISD::SETO:   return Mips::FCOND_OR;
-  case ISD::SETNE:
-  case ISD::SETONE: return Mips::FCOND_NEQ;
-  case ISD::SETUEQ: return Mips::FCOND_UEQ;
-  }
-}
-
 MachineBasicBlock *
 MipsTargetLowering::EmitInstrWithCustomInserter(MachineInstr *MI,
                                                 MachineBasicBlock *BB) const {
+  // There is no need to expand CMov instructions if target has
+  // conditional moves.
+  if (Subtarget->hasCondMov())
+    return BB;
+
   const TargetInstrInfo *TII = getTargetMachine().getInstrInfo();
   bool isFPCmp = false;
   DebugLoc dl = MI->getDebugLoc();
+  unsigned Opc;
 
   switch (MI->getOpcode()) {
   default: assert(false && "Unexpected instr type to insert");
-  case Mips::Select_FCC:
-  case Mips::Select_FCC_S32:
-  case Mips::Select_FCC_D32:
-    isFPCmp = true; // FALL THROUGH
-  case Mips::Select_CC:
-  case Mips::Select_CC_S32:
-  case Mips::Select_CC_D32: {
-    // To "insert" a SELECT_CC instruction, we actually have to insert the
-    // diamond control-flow pattern.  The incoming instruction knows the
-    // destination vreg to set, the condition code register to branch on, the
-    // true/false values to select between, and a branch opcode to use.
-    const BasicBlock *LLVM_BB = BB->getBasicBlock();
-    MachineFunction::iterator It = BB;
-    ++It;
+  case Mips::MOVT:
+  case Mips::MOVT_S:
+  case Mips::MOVT_D:
+    isFPCmp = true;
+    Opc = Mips::BC1F;
+    break;
+  case Mips::MOVF:
+  case Mips::MOVF_S:
+  case Mips::MOVF_D:
+    isFPCmp = true;
+    Opc = Mips::BC1T;
+    break;
+  case Mips::MOVZ_I:
+  case Mips::MOVZ_S:
+  case Mips::MOVZ_D:
+    Opc = Mips::BNE;
+    break;
+  case Mips::MOVN_I:
+  case Mips::MOVN_S:
+  case Mips::MOVN_D:
+    Opc = Mips::BEQ;
+    break;
+  }
 
-    //  thisMBB:
-    //  ...
-    //   TrueVal = ...
-    //   setcc r1, r2, r3
-    //   bNE   r1, r0, copy1MBB
-    //   fallthrough --> copy0MBB
-    MachineBasicBlock *thisMBB  = BB;
-    MachineFunction *F = BB->getParent();
-    MachineBasicBlock *copy0MBB = F->CreateMachineBasicBlock(LLVM_BB);
-    MachineBasicBlock *sinkMBB  = F->CreateMachineBasicBlock(LLVM_BB);
-    F->insert(It, copy0MBB);
-    F->insert(It, sinkMBB);
+  // To "insert" a SELECT_CC instruction, we actually have to insert the
+  // diamond control-flow pattern.  The incoming instruction knows the
+  // destination vreg to set, the condition code register to branch on, the
+  // true/false values to select between, and a branch opcode to use.
+  const BasicBlock *LLVM_BB = BB->getBasicBlock();
+  MachineFunction::iterator It = BB;
+  ++It;
 
-    // Transfer the remainder of BB and its successor edges to sinkMBB.
-    sinkMBB->splice(sinkMBB->begin(), BB,
-                    llvm::next(MachineBasicBlock::iterator(MI)),
-                    BB->end());
-    sinkMBB->transferSuccessorsAndUpdatePHIs(BB);
+  //  thisMBB:
+  //  ...
+  //   TrueVal = ...
+  //   setcc r1, r2, r3
+  //   bNE   r1, r0, copy1MBB
+  //   fallthrough --> copy0MBB
+  MachineBasicBlock *thisMBB  = BB;
+  MachineFunction *F = BB->getParent();
+  MachineBasicBlock *copy0MBB = F->CreateMachineBasicBlock(LLVM_BB);
+  MachineBasicBlock *sinkMBB  = F->CreateMachineBasicBlock(LLVM_BB);
+  F->insert(It, copy0MBB);
+  F->insert(It, sinkMBB);
 
-    // Next, add the true and fallthrough blocks as its successors.
-    BB->addSuccessor(copy0MBB);
-    BB->addSuccessor(sinkMBB);
+  // Transfer the remainder of BB and its successor edges to sinkMBB.
+  sinkMBB->splice(sinkMBB->begin(), BB,
+                  llvm::next(MachineBasicBlock::iterator(MI)),
+                  BB->end());
+  sinkMBB->transferSuccessorsAndUpdatePHIs(BB);
 
-    // Emit the right instruction according to the type of the operands compared
-    if (isFPCmp) {
-      // Find the condiction code present in the setcc operation.
-      Mips::CondCode CC = (Mips::CondCode)MI->getOperand(4).getImm();
-      // Get the branch opcode from the branch code.
-      unsigned Opc = FPBranchCodeToOpc(GetFPBranchCodeFromCond(CC));
-      BuildMI(BB, dl, TII->get(Opc)).addMBB(sinkMBB);
-    } else
-      BuildMI(BB, dl, TII->get(Mips::BNE)).addReg(MI->getOperand(1).getReg())
-        .addReg(Mips::ZERO).addMBB(sinkMBB);
+  // Next, add the true and fallthrough blocks as its successors.
+  BB->addSuccessor(copy0MBB);
+  BB->addSuccessor(sinkMBB);
 
-    //  copy0MBB:
-    //   %FalseValue = ...
-    //   # fallthrough to sinkMBB
-    BB = copy0MBB;
+  // Emit the right instruction according to the type of the operands compared
+  if (isFPCmp)
+    BuildMI(BB, dl, TII->get(Opc)).addMBB(sinkMBB);
+  else
+    BuildMI(BB, dl, TII->get(Opc)).addReg(MI->getOperand(2).getReg())
+      .addReg(Mips::ZERO).addMBB(sinkMBB);
 
-    // Update machine-CFG edges
-    BB->addSuccessor(sinkMBB);
 
-    //  sinkMBB:
-    //   %Result = phi [ %TrueValue, thisMBB ], [ %FalseValue, copy0MBB ]
-    //  ...
-    BB = sinkMBB;
+  //  copy0MBB:
+  //   %FalseValue = ...
+  //   # fallthrough to sinkMBB
+  BB = copy0MBB;
+
+  // Update machine-CFG edges
+  BB->addSuccessor(sinkMBB);
+
+  //  sinkMBB:
+  //   %Result = phi [ %TrueValue, thisMBB ], [ %FalseValue, copy0MBB ]
+  //  ...
+  BB = sinkMBB;
+
+  if (isFPCmp)
     BuildMI(*BB, BB->begin(), dl,
             TII->get(Mips::PHI), MI->getOperand(0).getReg())
       .addReg(MI->getOperand(2).getReg()).addMBB(thisMBB)
-      .addReg(MI->getOperand(3).getReg()).addMBB(copy0MBB);
+      .addReg(MI->getOperand(1).getReg()).addMBB(copy0MBB);
+  else
+    BuildMI(*BB, BB->begin(), dl,
+            TII->get(Mips::PHI), MI->getOperand(0).getReg())
+      .addReg(MI->getOperand(3).getReg()).addMBB(thisMBB)
+      .addReg(MI->getOperand(1).getReg()).addMBB(copy0MBB);
 
-    MI->eraseFromParent();   // The pseudo instruction is gone now.
-    return BB;
-  }
-  }
+  MI->eraseFromParent();   // The pseudo instruction is gone now.
+  return BB;
 }
 
 //===----------------------------------------------------------------------===//
@@ -657,27 +727,6 @@ LowerDYNAMIC_STACKALLOC(SDValue Op, SelectionDAG &DAG) const
 }
 
 SDValue MipsTargetLowering::
-LowerANDOR(SDValue Op, SelectionDAG &DAG) const
-{
-  SDValue LHS   = Op.getOperand(0);
-  SDValue RHS   = Op.getOperand(1);
-  DebugLoc dl   = Op.getDebugLoc();
-
-  if (LHS.getOpcode() != MipsISD::FPCmp || RHS.getOpcode() != MipsISD::FPCmp)
-    return Op;
-
-  SDValue True  = DAG.getConstant(1, MVT::i32);
-  SDValue False = DAG.getConstant(0, MVT::i32);
-
-  SDValue LSEL = DAG.getNode(MipsISD::FPSelectCC, dl, True.getValueType(),
-                             LHS, True, False, LHS.getOperand(2));
-  SDValue RSEL = DAG.getNode(MipsISD::FPSelectCC, dl, True.getValueType(),
-                             RHS, True, False, RHS.getOperand(2));
-
-  return DAG.getNode(Op.getOpcode(), dl, MVT::i32, LSEL, RSEL);
-}
-
-SDValue MipsTargetLowering::
 LowerBRCOND(SDValue Op, SelectionDAG &DAG) const
 {
   // The first operand is the chain, the second is the condition, the third is
@@ -686,58 +735,32 @@ LowerBRCOND(SDValue Op, SelectionDAG &DAG) const
   SDValue Dest = Op.getOperand(2);
   DebugLoc dl = Op.getDebugLoc();
 
-  if (Op.getOperand(1).getOpcode() != MipsISD::FPCmp)
+  SDValue CondRes = CreateFPCmp(DAG, Op.getOperand(1));
+
+  // Return if flag is not set by a floating point comparison.
+  if (CondRes.getOpcode() != MipsISD::FPCmp)
     return Op;
 
-  SDValue CondRes = Op.getOperand(1);
   SDValue CCNode  = CondRes.getOperand(2);
   Mips::CondCode CC =
     (Mips::CondCode)cast<ConstantSDNode>(CCNode)->getZExtValue();
   SDValue BrCode = DAG.getConstant(GetFPBranchCodeFromCond(CC), MVT::i32);
 
   return DAG.getNode(MipsISD::FPBrcond, dl, Op.getValueType(), Chain, BrCode,
-             Dest, CondRes);
-}
-
-SDValue MipsTargetLowering::
-LowerSETCC(SDValue Op, SelectionDAG &DAG) const
-{
-  // The operands to this are the left and right operands to compare (ops #0,
-  // and #1) and the condition code to compare them with (op #2) as a
-  // CondCodeSDNode.
-  SDValue LHS = Op.getOperand(0);
-  SDValue RHS = Op.getOperand(1);
-  DebugLoc dl = Op.getDebugLoc();
-
-  ISD::CondCode CC = cast<CondCodeSDNode>(Op.getOperand(2))->get();
-
-  return DAG.getNode(MipsISD::FPCmp, dl, Op.getValueType(), LHS, RHS,
-                 DAG.getConstant(FPCondCCodeToFCC(CC), MVT::i32));
+                     Dest, CondRes);
 }
 
 SDValue MipsTargetLowering::
 LowerSELECT(SDValue Op, SelectionDAG &DAG) const
 {
-  SDValue Cond  = Op.getOperand(0);
-  SDValue True  = Op.getOperand(1);
-  SDValue False = Op.getOperand(2);
-  DebugLoc dl = Op.getDebugLoc();
+  SDValue Cond = CreateFPCmp(DAG, Op.getOperand(0));
 
-  // if the incomming condition comes from a integer compare, the select
-  // operation must be SelectCC or a conditional move if the subtarget
-  // supports it.
-  if (Cond.getOpcode() != MipsISD::FPCmp) {
-    if (Subtarget->hasCondMov() && !True.getValueType().isFloatingPoint())
-      return Op;
-    return DAG.getNode(MipsISD::SelectCC, dl, True.getValueType(),
-                       Cond, True, False);
-  }
+  // Return if flag is not set by a floating point comparison.
+  if (Cond.getOpcode() != MipsISD::FPCmp)
+    return Op;
 
-  // if the incomming condition comes from fpcmp, the select
-  // operation must use FPSelectCC.
-  SDValue CCNode = Cond.getOperand(2);
-  return DAG.getNode(MipsISD::FPSelectCC, dl, True.getValueType(),
-                     Cond, True, False, CCNode);
+  return CreateCMovFP(DAG, Cond, Op.getOperand(1), Op.getOperand(2),
+                      Op.getDebugLoc());
 }
 
 SDValue MipsTargetLowering::LowerGlobalAddress(SDValue Op,
@@ -760,12 +783,13 @@ SDValue MipsTargetLowering::LowerGlobalAddress(SDValue Op,
       return DAG.getNode(ISD::ADD, dl, MVT::i32, GOT, GPRelNode);
     }
     // %hi/%lo relocation
-    SDValue GA = DAG.getTargetGlobalAddress(GV, dl, MVT::i32, 0,
-                                            MipsII::MO_ABS_HILO);
-    SDValue HiPart = DAG.getNode(MipsISD::Hi, dl, VTs, &GA, 1);
-    SDValue Lo = DAG.getNode(MipsISD::Lo, dl, MVT::i32, GA);
+    SDValue GAHi = DAG.getTargetGlobalAddress(GV, dl, MVT::i32, 0,
+                                              MipsII::MO_ABS_HI);
+    SDValue GALo = DAG.getTargetGlobalAddress(GV, dl, MVT::i32, 0,
+                                              MipsII::MO_ABS_LO);
+    SDValue HiPart = DAG.getNode(MipsISD::Hi, dl, VTs, &GAHi, 1);
+    SDValue Lo = DAG.getNode(MipsISD::Lo, dl, MVT::i32, GALo);
     return DAG.getNode(ISD::ADD, dl, MVT::i32, HiPart, Lo);
-
   } else {
     SDValue GA = DAG.getTargetGlobalAddress(GV, dl, MVT::i32, 0,
                                             MipsII::MO_GOT);
@@ -774,9 +798,12 @@ SDValue MipsTargetLowering::LowerGlobalAddress(SDValue Op,
                                   false, false, 0);
     // On functions and global targets not internal linked only
     // a load from got/GP is necessary for PIC to work.
-    if (!GV->hasLocalLinkage() || isa<Function>(GV))
+    if (!GV->hasInternalLinkage() &&
+        (!GV->hasLocalLinkage() || isa<Function>(GV)))
       return ResNode;
-    SDValue Lo = DAG.getNode(MipsISD::Lo, dl, MVT::i32, GA);
+    SDValue GALo = DAG.getTargetGlobalAddress(GV, dl, MVT::i32, 0,
+                                              MipsII::MO_ABS_LO);
+    SDValue Lo = DAG.getNode(MipsISD::Lo, dl, MVT::i32, GALo);
     return DAG.getNode(ISD::ADD, dl, MVT::i32, ResNode, Lo);
   }
 
@@ -786,24 +813,30 @@ SDValue MipsTargetLowering::LowerGlobalAddress(SDValue Op,
 
 SDValue MipsTargetLowering::LowerBlockAddress(SDValue Op,
                                               SelectionDAG &DAG) const {
+  const BlockAddress *BA = cast<BlockAddressSDNode>(Op)->getBlockAddress();
+  // FIXME there isn't actually debug info here
+  DebugLoc dl = Op.getDebugLoc();
+
   if (getTargetMachine().getRelocationModel() != Reloc::PIC_) {
-    assert(false && "implement LowerBlockAddress for -static");
-    return SDValue(0, 0);
+    // %hi/%lo relocation
+    SDValue BAHi = DAG.getBlockAddress(BA, MVT::i32, true,
+                                       MipsII::MO_ABS_HI);
+    SDValue BALo = DAG.getBlockAddress(BA, MVT::i32, true,
+                                       MipsII::MO_ABS_LO);
+    SDValue Hi = DAG.getNode(MipsISD::Hi, dl, MVT::i32, BAHi);
+    SDValue Lo = DAG.getNode(MipsISD::Lo, dl, MVT::i32, BALo);
+    return DAG.getNode(ISD::ADD, dl, MVT::i32, Hi, Lo);
   }
-  else {
-    // FIXME there isn't actually debug info here
-    DebugLoc dl = Op.getDebugLoc();
-    const BlockAddress *BA = cast<BlockAddressSDNode>(Op)->getBlockAddress();
-    SDValue BAGOTOffset = DAG.getBlockAddress(BA, MVT::i32, true,
-                                              MipsII::MO_GOT);
-    SDValue BALOOffset = DAG.getBlockAddress(BA, MVT::i32, true,
-                                             MipsII::MO_ABS_HILO);
-    SDValue Load = DAG.getLoad(MVT::i32, dl,
-                               DAG.getEntryNode(), BAGOTOffset,
-                               MachinePointerInfo(), false, false, 0);
-    SDValue Lo = DAG.getNode(MipsISD::Lo, dl, MVT::i32, BALOOffset);
-    return DAG.getNode(ISD::ADD, dl, MVT::i32, Load, Lo);
-  }
+
+  SDValue BAGOTOffset = DAG.getBlockAddress(BA, MVT::i32, true,
+                                            MipsII::MO_GOT);
+  SDValue BALOOffset = DAG.getBlockAddress(BA, MVT::i32, true,
+                                           MipsII::MO_ABS_LO);
+  SDValue Load = DAG.getLoad(MVT::i32, dl,
+                             DAG.getEntryNode(), BAGOTOffset,
+                             MachinePointerInfo(), false, false, 0);
+  SDValue Lo = DAG.getNode(MipsISD::Lo, dl, MVT::i32, BALOOffset);
+  return DAG.getNode(ISD::ADD, dl, MVT::i32, Load, Lo);
 }
 
 SDValue MipsTargetLowering::
@@ -821,7 +854,7 @@ LowerJumpTable(SDValue Op, SelectionDAG &DAG) const
   // FIXME there isn't actually debug info here
   DebugLoc dl = Op.getDebugLoc();
   bool IsPIC = getTargetMachine().getRelocationModel() == Reloc::PIC_;
-  unsigned char OpFlag = IsPIC ? MipsII::MO_GOT : MipsII::MO_ABS_HILO;
+  unsigned char OpFlag = IsPIC ? MipsII::MO_GOT : MipsII::MO_ABS_HI;
 
   EVT PtrVT = Op.getValueType();
   JumpTableSDNode *JT  = cast<JumpTableSDNode>(Op);
@@ -836,7 +869,9 @@ LowerJumpTable(SDValue Op, SelectionDAG &DAG) const
                          MachinePointerInfo(),
                          false, false, 0);
 
-  SDValue Lo = DAG.getNode(MipsISD::Lo, dl, MVT::i32, JTI);
+  SDValue JTILo = DAG.getTargetJumpTable(JT->getIndex(), PtrVT,
+                                         MipsII::MO_ABS_LO);
+  SDValue Lo = DAG.getNode(MipsISD::Lo, dl, MVT::i32, JTILo);
   ResNode = DAG.getNode(ISD::ADD, dl, MVT::i32, HiPart, Lo);
 
   return ResNode;
@@ -853,7 +888,7 @@ LowerConstantPool(SDValue Op, SelectionDAG &DAG) const
 
   // gp_rel relocation
   // FIXME: we should reference the constant pool using small data sections,
-  // but the asm printer currently doens't support this feature without
+  // but the asm printer currently doesn't support this feature without
   // hacking it. This feature should come soon so we can uncomment the
   // stuff below.
   //if (IsInSmallSection(C->getType())) {
@@ -862,18 +897,22 @@ LowerConstantPool(SDValue Op, SelectionDAG &DAG) const
   //  ResNode = DAG.getNode(ISD::ADD, MVT::i32, GOT, GPRelNode);
 
   if (getTargetMachine().getRelocationModel() != Reloc::PIC_) {
-    SDValue CP = DAG.getTargetConstantPool(C, MVT::i32, N->getAlignment(),
-                                      N->getOffset(), MipsII::MO_ABS_HILO);
-    SDValue HiPart = DAG.getNode(MipsISD::Hi, dl, MVT::i32, CP);
-    SDValue Lo = DAG.getNode(MipsISD::Lo, dl, MVT::i32, CP);
+    SDValue CPHi = DAG.getTargetConstantPool(C, MVT::i32, N->getAlignment(),
+                                             N->getOffset(), MipsII::MO_ABS_HI);
+    SDValue CPLo = DAG.getTargetConstantPool(C, MVT::i32, N->getAlignment(),
+                                             N->getOffset(), MipsII::MO_ABS_LO);
+    SDValue HiPart = DAG.getNode(MipsISD::Hi, dl, MVT::i32, CPHi);
+    SDValue Lo = DAG.getNode(MipsISD::Lo, dl, MVT::i32, CPLo);
     ResNode = DAG.getNode(ISD::ADD, dl, MVT::i32, HiPart, Lo);
   } else {
     SDValue CP = DAG.getTargetConstantPool(C, MVT::i32, N->getAlignment(),
-                                      N->getOffset(), MipsII::MO_GOT);
+                                           N->getOffset(), MipsII::MO_GOT);
     SDValue Load = DAG.getLoad(MVT::i32, dl, DAG.getEntryNode(),
                                CP, MachinePointerInfo::getConstantPool(),
                                false, false, 0);
-    SDValue Lo = DAG.getNode(MipsISD::Lo, dl, MVT::i32, CP);
+    SDValue CPLo = DAG.getTargetConstantPool(C, MVT::i32, N->getAlignment(),
+                                             N->getOffset(), MipsII::MO_ABS_LO);
+    SDValue Lo = DAG.getNode(MipsISD::Lo, dl, MVT::i32, CPLo);
     ResNode = DAG.getNode(ISD::ADD, dl, MVT::i32, Load, Lo);
   }
 
@@ -913,6 +952,8 @@ SDValue MipsTargetLowering::LowerVASTART(SDValue Op, SelectionDAG &DAG) const {
 //       yet to hold an argument. Otherwise, use A2, A3 and stack. If A1 is
 //       not used, it must be shadowed. If only A3 is avaiable, shadow it and
 //       go to stack.
+//
+//  For vararg functions, all arguments are passed in A0, A1, A2, A3 and stack.
 //===----------------------------------------------------------------------===//
 
 static bool CC_MipsO32(unsigned ValNo, MVT ValVT,
@@ -931,90 +972,6 @@ static bool CC_MipsO32(unsigned ValNo, MVT ValVT,
       Mips::D6, Mips::D7
   };
 
-  unsigned Reg = 0;
-  static bool IntRegUsed = false;
-
-  // This must be the first arg of the call if no regs have been allocated.
-  // Initialize IntRegUsed in that case.
-  if (IntRegs[State.getFirstUnallocated(IntRegs, IntRegsSize)] == Mips::A0 &&
-      F32Regs[State.getFirstUnallocated(F32Regs, FloatRegsSize)] == Mips::F12 &&
-      F64Regs[State.getFirstUnallocated(F64Regs, FloatRegsSize)] == Mips::D6)
-    IntRegUsed = false;
-
-  // Promote i8 and i16
-  if (LocVT == MVT::i8 || LocVT == MVT::i16) {
-    LocVT = MVT::i32;
-    if (ArgFlags.isSExt())
-      LocInfo = CCValAssign::SExt;
-    else if (ArgFlags.isZExt())
-      LocInfo = CCValAssign::ZExt;
-    else
-      LocInfo = CCValAssign::AExt;
-  }
-
-  if (ValVT == MVT::i32) {
-    Reg = State.AllocateReg(IntRegs, IntRegsSize);
-    IntRegUsed = true;
-  } else if (ValVT == MVT::f32) {
-    // An int reg has to be marked allocated regardless of whether or not
-    // IntRegUsed is true.
-    Reg = State.AllocateReg(IntRegs, IntRegsSize);
-
-    if (IntRegUsed) {
-      if (Reg) // Int reg is available
-        LocVT = MVT::i32;
-    } else {
-      unsigned FReg = State.AllocateReg(F32Regs, FloatRegsSize);
-      if (FReg) // F32 reg is available
-        Reg = FReg;
-      else if (Reg) // No F32 regs are available, but an int reg is available.
-        LocVT = MVT::i32;
-    }
-  } else if (ValVT == MVT::f64) {
-    // Int regs have to be marked allocated regardless of whether or not
-    // IntRegUsed is true.
-    Reg = State.AllocateReg(IntRegs, IntRegsSize);
-    if (Reg == Mips::A1)
-      Reg = State.AllocateReg(IntRegs, IntRegsSize);
-    else if (Reg == Mips::A3)
-      Reg = 0;
-    State.AllocateReg(IntRegs, IntRegsSize);
-
-    // At this point, Reg is A0, A2 or 0, and all the unavailable integer regs
-    // are marked as allocated.
-    if (IntRegUsed) {
-      if (Reg)// if int reg is available
-        LocVT = MVT::i32;
-    } else {
-      unsigned FReg = State.AllocateReg(F64Regs, FloatRegsSize);
-      if (FReg) // F64 reg is available.
-        Reg = FReg;
-      else if (Reg) // No F64 regs are available, but an int reg is available.
-        LocVT = MVT::i32;
-    }
-  } else
-    assert(false && "cannot handle this ValVT");
-
-  if (!Reg) {
-    unsigned SizeInBytes = ValVT.getSizeInBits() >> 3;
-    unsigned Offset = State.AllocateStack(SizeInBytes, SizeInBytes);
-    State.addLoc(CCValAssign::getMem(ValNo, ValVT, Offset, LocVT, LocInfo));
-  } else
-    State.addLoc(CCValAssign::getReg(ValNo, ValVT, Reg, LocVT, LocInfo));
-
-  return false; // CC must always match
-}
-
-static bool CC_MipsO32_VarArgs(unsigned ValNo, MVT ValVT,
-                       MVT LocVT, CCValAssign::LocInfo LocInfo,
-                       ISD::ArgFlagsTy ArgFlags, CCState &State) {
-
-  static const unsigned IntRegsSize=4;
-
-  static const unsigned IntRegs[] = {
-      Mips::A0, Mips::A1, Mips::A2, Mips::A3
-  };
-
   // Promote i8 and i16
   if (LocVT == MVT::i8 || LocVT == MVT::i16) {
     LocVT = MVT::i32;
@@ -1028,15 +985,37 @@ static bool CC_MipsO32_VarArgs(unsigned ValNo, MVT ValVT,
 
   unsigned Reg;
 
-  if (ValVT == MVT::i32 || ValVT == MVT::f32) {
+  // f32 and f64 are allocated in A0, A1, A2, A3 when either of the following
+  // is true: function is vararg, argument is 3rd or higher, there is previous
+  // argument which is not f32 or f64.
+  bool AllocateFloatsInIntReg = State.isVarArg() || ValNo > 1
+      || State.getFirstUnallocated(F32Regs, FloatRegsSize) != ValNo;
+
+  if (ValVT == MVT::i32 || (ValVT == MVT::f32 && AllocateFloatsInIntReg)) {
     Reg = State.AllocateReg(IntRegs, IntRegsSize);
     LocVT = MVT::i32;
-  } else if (ValVT == MVT::f64) {
+  } else if (ValVT == MVT::f64 && AllocateFloatsInIntReg) {
+    // Allocate int register and shadow next int register. If first
+    // available register is Mips::A1 or Mips::A3, shadow it too.
     Reg = State.AllocateReg(IntRegs, IntRegsSize);
     if (Reg == Mips::A1 || Reg == Mips::A3)
       Reg = State.AllocateReg(IntRegs, IntRegsSize);
     State.AllocateReg(IntRegs, IntRegsSize);
     LocVT = MVT::i32;
+  } else if (ValVT.isFloatingPoint() && !AllocateFloatsInIntReg) {
+    // we are guaranteed to find an available float register
+    if (ValVT == MVT::f32) {
+      Reg = State.AllocateReg(F32Regs, FloatRegsSize);
+      // Shadow int register
+      State.AllocateReg(IntRegs, IntRegsSize);
+    } else {
+      Reg = State.AllocateReg(F64Regs, FloatRegsSize);
+      // Shadow int registers
+      unsigned Reg2 = State.AllocateReg(IntRegs, IntRegsSize);
+      if (Reg2 == Mips::A1 || Reg2 == Mips::A3)
+        State.AllocateReg(IntRegs, IntRegsSize);
+      State.AllocateReg(IntRegs, IntRegsSize);
+    }
   } else
     llvm_unreachable("Cannot handle this ValVT.");
 
@@ -1083,8 +1062,7 @@ MipsTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
   if (Subtarget->isABI_O32()) {
     int VTsize = MVT(MVT::i32).getSizeInBits()/8;
     MFI->CreateFixedObject(VTsize, (VTsize*3), true);
-    CCInfo.AnalyzeCallOperands(Outs,
-                     isVarArg ? CC_MipsO32_VarArgs : CC_MipsO32);
+    CCInfo.AnalyzeCallOperands(Outs, CC_MipsO32);
   } else
     CCInfo.AnalyzeCallOperands(Outs, CC_Mips);
 
@@ -1114,11 +1092,12 @@ MipsTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
         if (VA.getValVT() == MVT::f32 && VA.getLocVT() == MVT::i32)
           Arg = DAG.getNode(ISD::BITCAST, dl, MVT::i32, Arg);
         if (VA.getValVT() == MVT::f64 && VA.getLocVT() == MVT::i32) {
-          Arg = DAG.getNode(ISD::BITCAST, dl, MVT::i64, Arg);
-          SDValue Lo = DAG.getNode(ISD::EXTRACT_ELEMENT, dl, MVT::i32, Arg,
-                                   DAG.getConstant(0, getPointerTy()));
-          SDValue Hi = DAG.getNode(ISD::EXTRACT_ELEMENT, dl, MVT::i32, Arg,
-                                   DAG.getConstant(1, getPointerTy()));
+          SDValue Lo = DAG.getNode(MipsISD::ExtractElementF64, dl, MVT::i32,
+                                   Arg, DAG.getConstant(0, MVT::i32));
+          SDValue Hi = DAG.getNode(MipsISD::ExtractElementF64, dl, MVT::i32,
+                                   Arg, DAG.getConstant(1, MVT::i32));
+          if (!Subtarget->isLittle())
+            std::swap(Lo, Hi);
           RegsToPass.push_back(std::make_pair(VA.getLocReg(), Lo));
           RegsToPass.push_back(std::make_pair(VA.getLocReg()+1, Hi));
           continue;
@@ -1171,7 +1150,7 @@ MipsTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
 
   // Build a sequence of copy-to-reg nodes chained together with token
   // chain and flag operands which copy the outgoing args into registers.
-  // The InFlag in necessary since all emited instructions must be
+  // The InFlag in necessary since all emitted instructions must be
   // stuck together.
   SDValue InFlag;
   for (unsigned i = 0, e = RegsToPass.size(); i != e; ++i) {
@@ -1184,12 +1163,52 @@ MipsTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
   // direct call is) turn it into a TargetGlobalAddress/TargetExternalSymbol
   // node so that legalize doesn't hack it.
   unsigned char OpFlag = IsPIC ? MipsII::MO_GOT_CALL : MipsII::MO_NO_FLAG;
-  if (GlobalAddressSDNode *G = dyn_cast<GlobalAddressSDNode>(Callee))
-    Callee = DAG.getTargetGlobalAddress(G->getGlobal(), dl,
-                                getPointerTy(), 0, OpFlag);
-  else if (ExternalSymbolSDNode *S = dyn_cast<ExternalSymbolSDNode>(Callee))
+  bool LoadSymAddr = false;
+  SDValue CalleeLo;
+
+  if (GlobalAddressSDNode *G = dyn_cast<GlobalAddressSDNode>(Callee)) {
+    if (IsPIC && G->getGlobal()->hasInternalLinkage()) {
+      Callee = DAG.getTargetGlobalAddress(G->getGlobal(), dl,
+                                          getPointerTy(), 0,MipsII:: MO_GOT);
+      CalleeLo = DAG.getTargetGlobalAddress(G->getGlobal(), dl, getPointerTy(),
+                                            0, MipsII::MO_ABS_LO);
+    } else {
+      Callee = DAG.getTargetGlobalAddress(G->getGlobal(), dl,
+                                          getPointerTy(), 0, OpFlag);
+    }
+
+    LoadSymAddr = true;
+  }
+  else if (ExternalSymbolSDNode *S = dyn_cast<ExternalSymbolSDNode>(Callee)) {
     Callee = DAG.getTargetExternalSymbol(S->getSymbol(),
                                 getPointerTy(), OpFlag);
+    LoadSymAddr = true;
+  }
+
+  // Create nodes that load address of callee and copy it to T9
+  if (IsPIC) {
+    if (LoadSymAddr) {
+      // Load callee address
+      SDValue LoadValue = DAG.getLoad(MVT::i32, dl, Chain, Callee,
+                                      MachinePointerInfo::getGOT(),
+                                      false, false, 0);
+
+      // Use GOT+LO if callee has internal linkage.
+      if (CalleeLo.getNode()) {
+        SDValue Lo = DAG.getNode(MipsISD::Lo, dl, MVT::i32, CalleeLo);
+        Callee = DAG.getNode(ISD::ADD, dl, MVT::i32, LoadValue, Lo);
+      } else
+        Callee = LoadValue;
+
+      // Use chain output from LoadValue 
+      Chain = LoadValue.getValue(1);
+    }
+
+    // copy to T9
+    Chain = DAG.getCopyToReg(Chain, dl, Mips::T9, Callee, SDValue(0, 0));
+    InFlag = Chain.getValue(1);
+    Callee = DAG.getRegister(Mips::T9, MVT::i32);
+  }
 
   // MipsJmpLink = #chain, #target_address, #opt_in_flags...
   //             = Chain, Callee, Reg#1, Reg#2, ...
@@ -1214,7 +1233,7 @@ MipsTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
 
   // Create a stack location to hold GP when PIC is used. This stack
   // location is used on function prologue to save GP and also after all
-  // emited CALL's to restore GP.
+  // emitted CALL's to restore GP.
   if (IsPIC) {
       // Function can have an arbitrary number of calls, so
       // hold the LastArgStackLoc with the biggest offset.
@@ -1230,17 +1249,6 @@ MipsTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
         }
         MipsFI->setGPStackOffset(LastArgStackLoc);
       }
-
-      // Reload GP value.
-      FI = MipsFI->getGPFI();
-      SDValue FIN = DAG.getFrameIndex(FI, getPointerTy());
-      SDValue GPLoad = DAG.getLoad(MVT::i32, dl, Chain, FIN,
-                                   MachinePointerInfo::getFixedStack(FI),
-                                   false, false, 0);
-      Chain = GPLoad.getValue(1);
-      Chain = DAG.getCopyToReg(Chain, dl, DAG.getRegister(Mips::GP, MVT::i32),
-                               GPLoad, SDValue(0,0));
-      InFlag = Chain.getValue(1);
   }
 
   // Create the CALLSEQ_END node.
@@ -1289,11 +1297,12 @@ MipsTargetLowering::LowerCallResult(SDValue Chain, SDValue InFlag,
 /// and generate load operations for arguments places on the stack.
 SDValue
 MipsTargetLowering::LowerFormalArguments(SDValue Chain,
-                                        CallingConv::ID CallConv, bool isVarArg,
-                                        const SmallVectorImpl<ISD::InputArg>
-                                        &Ins,
-                                        DebugLoc dl, SelectionDAG &DAG,
-                                        SmallVectorImpl<SDValue> &InVals)
+                                         CallingConv::ID CallConv,
+                                         bool isVarArg,
+                                         const SmallVectorImpl<ISD::InputArg>
+                                         &Ins,
+                                         DebugLoc dl, SelectionDAG &DAG,
+                                         SmallVectorImpl<SDValue> &InVals)
                                           const {
 
   MachineFunction &MF = DAG.getMachineFunction();
@@ -1314,8 +1323,7 @@ MipsTargetLowering::LowerFormalArguments(SDValue Chain,
                  ArgLocs, *DAG.getContext());
 
   if (Subtarget->isABI_O32())
-    CCInfo.AnalyzeFormalArguments(Ins,
-                        isVarArg ? CC_MipsO32_VarArgs : CC_MipsO32);
+    CCInfo.AnalyzeFormalArguments(Ins, CC_MipsO32);
   else
     CCInfo.AnalyzeFormalArguments(Ins, CC_Mips);
 
@@ -1371,9 +1379,10 @@ MipsTargetLowering::LowerFormalArguments(SDValue Chain,
           unsigned Reg2 = AddLiveIn(DAG.getMachineFunction(),
                                     VA.getLocReg()+1, RC);
           SDValue ArgValue2 = DAG.getCopyFromReg(Chain, dl, Reg2, RegVT);
-          SDValue Pair = DAG.getNode(ISD::BUILD_PAIR, dl, MVT::i64, ArgValue, 
-                                       ArgValue2);
-          ArgValue = DAG.getNode(ISD::BITCAST, dl, MVT::f64, Pair);
+          if (!Subtarget->isLittle())
+            std::swap(ArgValue, ArgValue2);
+          ArgValue = DAG.getNode(MipsISD::BuildPairF64, dl, MVT::f64,
+                                 ArgValue, ArgValue2);
         }
       }
 

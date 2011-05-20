@@ -45,6 +45,7 @@ namespace {
 
     void VisitTranslationUnitDecl(TranslationUnitDecl *D);
     void VisitTypedefDecl(TypedefDecl *D);
+    void VisitTypeAliasDecl(TypeAliasDecl *D);
     void VisitEnumDecl(EnumDecl *D);
     void VisitRecordDecl(RecordDecl *D);
     void VisitEnumConstantDecl(EnumConstantDecl *D);
@@ -60,7 +61,7 @@ namespace {
     void VisitNamespaceAliasDecl(NamespaceAliasDecl *D);
     void VisitCXXRecordDecl(CXXRecordDecl *D);
     void VisitLinkageSpecDecl(LinkageSpecDecl *D);
-    void VisitTemplateDecl(TemplateDecl *D);
+    void VisitTemplateDecl(const TemplateDecl *D);
     void VisitObjCMethodDecl(ObjCMethodDecl *D);
     void VisitObjCClassDecl(ObjCClassDecl *D);
     void VisitObjCImplementationDecl(ObjCImplementationDecl *D);
@@ -110,7 +111,7 @@ static QualType GetBaseType(QualType T) {
 }
 
 static QualType getDeclType(Decl* D) {
-  if (TypedefDecl* TDD = dyn_cast<TypedefDecl>(D))
+  if (TypedefNameDecl* TDD = dyn_cast<TypedefNameDecl>(D))
     return TDD->getUnderlyingType();
   if (ValueDecl* VD = dyn_cast<ValueDecl>(D))
     return VD->getType();
@@ -308,6 +309,11 @@ void DeclPrinter::VisitTypedefDecl(TypedefDecl *D) {
   Out << S;
 }
 
+void DeclPrinter::VisitTypeAliasDecl(TypeAliasDecl *D) {
+  Out << "using " << D->getNameAsString() << " = "
+      << D->getUnderlyingType().getAsString(Policy);
+}
+
 void DeclPrinter::VisitEnumDecl(EnumDecl *D) {
   Out << "enum ";
   if (D->isScoped()) {
@@ -394,7 +400,7 @@ void DeclPrinter::VisitFunctionDecl(FunctionDecl *D) {
         if (D->getNumParams()) POut << ", ";
         POut << "...";
       }
-    } else if (D->isThisDeclarationADefinition() && !D->hasPrototype()) {
+    } else if (D->doesThisDeclarationHaveABody() && !D->hasPrototype()) {
       for (unsigned i = 0, e = D->getNumParams(); i != e; ++i) {
         if (i)
           Proto += ", ";
@@ -512,9 +518,9 @@ void DeclPrinter::VisitFunctionDecl(FunctionDecl *D) {
 
   if (D->isPure())
     Out << " = 0";
-  else if (D->isDeleted())
+  else if (D->isDeletedAsWritten())
     Out << " = delete";
-  else if (D->isThisDeclarationADefinition()) {
+  else if (D->doesThisDeclarationHaveABody()) {
     if (!D->hasPrototype() && D->getNumParams()) {
       // This is a K&R function definition, so we need to print the
       // parameters.
@@ -567,7 +573,8 @@ void DeclPrinter::VisitVarDecl(VarDecl *D) {
     T = Parm->getOriginalType();
   T.getAsStringInternal(Name, Policy);
   Out << Name;
-  if (Expr *Init = D->getInit()) {
+  Expr *Init = D->getInit();
+  if (!Policy.SuppressInitializers && Init) {
     if (D->hasCXXDirectInitializer())
       Out << "(";
     else {
@@ -643,6 +650,9 @@ void DeclPrinter::VisitCXXRecordDecl(CXXRecordDecl *D) {
         if (AS != AS_none)
           Print(AS);
         Out << " " << Base->getType().getAsString(Policy);
+
+        if (Base->isPackExpansion())
+          Out << "...";
       }
     }
 
@@ -673,7 +683,7 @@ void DeclPrinter::VisitLinkageSpecDecl(LinkageSpecDecl *D) {
     Visit(*D->decls_begin());
 }
 
-void DeclPrinter::VisitTemplateDecl(TemplateDecl *D) {
+void DeclPrinter::VisitTemplateDecl(const TemplateDecl *D) {
   Out << "template <";
 
   TemplateParameterList *Params = D->getTemplateParameters();
@@ -685,9 +695,6 @@ void DeclPrinter::VisitTemplateDecl(TemplateDecl *D) {
     if (const TemplateTypeParmDecl *TTP =
           dyn_cast<TemplateTypeParmDecl>(Param)) {
 
-      QualType ParamType =
-        Context.getTypeDeclType(const_cast<TemplateTypeParmDecl*>(TTP));
-
       if (TTP->wasDeclaredWithTypename())
         Out << "typename ";
       else
@@ -696,7 +703,7 @@ void DeclPrinter::VisitTemplateDecl(TemplateDecl *D) {
       if (TTP->isParameterPack())
         Out << "... ";
 
-      Out << ParamType.getAsString(Policy);
+      Out << TTP->getNameAsString();
 
       if (TTP->hasDefaultArgument()) {
         Out << " = ";
@@ -719,12 +726,17 @@ void DeclPrinter::VisitTemplateDecl(TemplateDecl *D) {
         NTTP->getDefaultArgument()->printPretty(Out, Context, 0, Policy,
                                                 Indentation);
       }
+    } else if (const TemplateTemplateParmDecl *TTPD =
+                 dyn_cast<TemplateTemplateParmDecl>(Param)) {
+      VisitTemplateDecl(TTPD);
+      // FIXME: print the default argument, if present.
     }
   }
 
   Out << "> ";
 
-  if (TemplateTemplateParmDecl *TTP = dyn_cast<TemplateTemplateParmDecl>(D)) {
+  if (const TemplateTemplateParmDecl *TTP =
+        dyn_cast<TemplateTemplateParmDecl>(D)) {
     Out << "class ";
     if (TTP->isParameterPack())
       Out << "...";

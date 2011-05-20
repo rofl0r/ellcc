@@ -572,19 +572,12 @@ void LiveIntervals::handleRegisterDef(MachineBasicBlock *MBB,
   if (TargetRegisterInfo::isVirtualRegister(MO.getReg()))
     handleVirtualRegisterDef(MBB, MI, MIIdx, MO, MOIdx,
                              getOrCreateInterval(MO.getReg()));
-  else if (allocatableRegs_[MO.getReg()]) {
+  else {
     MachineInstr *CopyMI = NULL;
     if (MI->isCopyLike())
       CopyMI = MI;
     handlePhysicalRegisterDef(MBB, MI, MIIdx, MO,
                               getOrCreateInterval(MO.getReg()), CopyMI);
-    // Def of a register also defines its sub-registers.
-    for (const unsigned* AS = tri_->getSubRegisters(MO.getReg()); *AS; ++AS)
-      // If MI also modifies the sub-register explicitly, avoid processing it
-      // more than once. Do not pass in TRI here so it checks for exact match.
-      if (!MI->definesRegister(*AS))
-        handlePhysicalRegisterDef(MBB, MI, MIIdx, MO,
-                                  getOrCreateInterval(*AS), 0);
   }
 }
 
@@ -645,7 +638,7 @@ void LiveIntervals::handleLiveInRegister(MachineBasicBlock *MBB,
       end = MIIdx.getStoreIndex();
     } else {
       DEBUG(dbgs() << " live through");
-      end = baseIndex;
+      end = getMBBEndIdx(MBB);
     }
   }
 
@@ -787,6 +780,8 @@ bool LiveIntervals::shrinkToUses(LiveInterval *li,
     VNInfo *VNI = *I;
     if (VNI->isUnused())
       continue;
+    // We may eliminate PHI values, so recompute PHIKill flags.
+    VNI->setHasPHIKill(false);
     NewLI.addRange(LiveRange(VNI->def, VNI->def.getNextSlot(), VNI));
 
     // A use tied to an early-clobber def ends at the load slot and isn't caught
@@ -822,7 +817,7 @@ bool LiveIntervals::shrinkToUses(LiveInterval *li,
         VNInfo *PVNI = li->getVNInfoAt(Stop);
         // A predecessor is not required to have a live-out value for a PHI.
         if (PVNI) {
-          assert(PVNI->hasPHIKill() && "Missing hasPHIKill flag");
+          PVNI->setHasPHIKill(true);
           WorkList.push_back(std::make_pair(Stop, PVNI));
         }
       }
@@ -1512,7 +1507,7 @@ rewriteInstructionsForSpills(const LiveInterval &li, bool TrySplit,
         // ...
         // def = ...
         //     = use
-        // It's better to start a new interval to avoid artifically
+        // It's better to start a new interval to avoid artificially
         // extend the new interval.
         if (MI->readsWritesVirtualRegister(li.reg) ==
             std::make_pair(false,true)) {
@@ -1715,7 +1710,9 @@ LiveIntervals::getSpillWeight(bool isDef, bool isUse, unsigned loopDepth) {
   // overflow a float. This expression behaves like 10^d for small d, but is
   // more tempered for large d. At d=200 we get 6.7e33 which leaves a bit of
   // headroom before overflow.
-  float lc = std::pow(1 + (100.0f / (loopDepth+10)), (float)loopDepth);
+  // By the way, powf() might be unavailable here. For consistency,
+  // We may take pow(double,double).
+  float lc = std::pow(1 + (100.0 / (loopDepth + 10)), (double)loopDepth);
 
   return (isDef + isUse) * lc;
 }

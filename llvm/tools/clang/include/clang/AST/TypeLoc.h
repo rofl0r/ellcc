@@ -527,7 +527,7 @@ class TypedefTypeLoc : public InheritingConcreteTypeLoc<TypeSpecTypeLoc,
                                                         TypedefTypeLoc,
                                                         TypedefType> {
 public:
-  TypedefDecl *getTypedefDecl() const {
+  TypedefNameDecl *getTypedefNameDecl() const {
     return getTypePtr()->getDecl();
   }
 };
@@ -584,6 +584,8 @@ class TemplateTypeParmTypeLoc :
     public InheritingConcreteTypeLoc<TypeSpecTypeLoc,
                                      TemplateTypeParmTypeLoc,
                                      TemplateTypeParmType> {
+public:
+  TemplateTypeParmDecl *getDecl() const { return getTypePtr()->getDecl(); }
 };
 
 /// \brief Wrapper for substituted template type parameters.

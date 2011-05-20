@@ -534,7 +534,7 @@ void Sema::ForceDeclarationOfImplicitMembers(CXXRecordDecl *Class) {
     return;
 
   // If the default constructor has not yet been declared, do so now.
-  if (!Class->hasDeclaredDefaultConstructor())
+  if (Class->needsImplicitDefaultConstructor())
     DeclareImplicitDefaultConstructor(Class);
 
   // If the copy constructor has not yet been declared, do so now.
@@ -581,7 +581,7 @@ static void DeclareImplicitMemberFunctionsWithName(Sema &S,
     if (const CXXRecordDecl *Record = dyn_cast<CXXRecordDecl>(DC))
       if (Record->getDefinition() &&
           CanDeclareSpecialMemberFunction(S.Context, Record)) {
-        if (!Record->hasDeclaredDefaultConstructor())
+        if (Record->needsImplicitDefaultConstructor())
           S.DeclareImplicitDefaultConstructor(
                                            const_cast<CXXRecordDecl *>(Record));
         if (!Record->hasDeclaredCopyConstructor())
@@ -1129,8 +1129,8 @@ bool Sema::LookupName(LookupResult &R, Scope *S, bool AllowBuiltinCreation) {
   // If we didn't find a use of this identifier, and if the identifier
   // corresponds to a compiler builtin, create the decl object for the builtin
   // now, injecting it into translation unit scope, and return it.
-  if (AllowBuiltinCreation)
-    return LookupBuiltin(*this, R);
+  if (AllowBuiltinCreation && LookupBuiltin(*this, R))
+    return true;
 
   // If we didn't find a use of this identifier, the ExternalSource 
   // may be able to handle the situation. 
@@ -1963,10 +1963,13 @@ addAssociatedClassesAndNamespaces(AssociatedLookup &Result, QualType Ty) {
     case Type::Complex:
       break;
 
-    // These are ignored by ADL.
+    // If T is an Objective-C object or interface type, or a pointer to an 
+    // object or interface type, the associated namespace is the global
+    // namespace.
     case Type::ObjCObject:
     case Type::ObjCInterface:
     case Type::ObjCObjectPointer:
+      Result.Namespaces.insert(Result.S.Context.getTranslationUnitDecl());
       break;
     }
 
@@ -2137,7 +2140,7 @@ void Sema::LookupOverloadedOperatorName(OverloadedOperatorKind Op, Scope *S,
 DeclContext::lookup_result Sema::LookupConstructors(CXXRecordDecl *Class) {
   // If the copy constructor has not yet been declared, do so now.
   if (CanDeclareSpecialMemberFunction(Context, Class)) {
-    if (!Class->hasDeclaredDefaultConstructor())
+    if (Class->needsImplicitDefaultConstructor())
       DeclareImplicitDefaultConstructor(Class);
     if (!Class->hasDeclaredCopyConstructor())
       DeclareImplicitCopyConstructor(Class);
@@ -2202,7 +2205,8 @@ void ADLResult::insert(NamedDecl *New) {
 
 void Sema::ArgumentDependentLookup(DeclarationName Name, bool Operator,
                                    Expr **Args, unsigned NumArgs,
-                                   ADLResult &Result) {
+                                   ADLResult &Result,
+                                   bool StdNamespaceIsAssociated) {
   // Find all of the associated namespaces and classes based on the
   // arguments we have.
   AssociatedNamespaceSet AssociatedNamespaces;
@@ -2210,6 +2214,8 @@ void Sema::ArgumentDependentLookup(DeclarationName Name, bool Operator,
   FindAssociatedClassesAndNamespaces(Args, NumArgs,
                                      AssociatedNamespaces,
                                      AssociatedClasses);
+  if (StdNamespaceIsAssociated && StdNamespace)
+    AssociatedNamespaces.insert(getStdNamespace());
 
   QualType T1, T2;
   if (Operator) {
@@ -2404,8 +2410,8 @@ VisibleDeclsRecord::ShadowMapEntry::end() {
   if (DeclOrVector.isNull())
     return 0;
 
-  if (DeclOrVector.dyn_cast<NamedDecl *>())
-    return &reinterpret_cast<NamedDecl*&>(DeclOrVector) + 1;
+  if (DeclOrVector.is<NamedDecl *>())
+    return DeclOrVector.getAddrOf<NamedDecl *>() + 1;
 
   return DeclOrVector.get<DeclVector *>()->end();
 }
@@ -2857,8 +2863,6 @@ void TypoCorrectionConsumer::FoundDecl(NamedDecl *ND, NamedDecl *Hiding,
 }
 
 void TypoCorrectionConsumer::FoundName(llvm::StringRef Name) {
-  using namespace std;
-
   // Use a simple length-based heuristic to determine the minimum possible
   // edit distance. If the minimum isn't good enough, bail out early.
   unsigned MinED = abs((int)Name.size() - (int)Typo.size());
@@ -2867,7 +2871,8 @@ void TypoCorrectionConsumer::FoundName(llvm::StringRef Name) {
 
   // Compute an upper bound on the allowable edit distance, so that the
   // edit-distance algorithm can short-circuit.
-  unsigned UpperBound = min(unsigned((Typo.size() + 2) / 3), BestEditDistance);
+  unsigned UpperBound =
+    std::min(unsigned((Typo.size() + 2) / 3), BestEditDistance);
 
   // Compute the edit distance between the typo and the name of this
   // entity. If this edit distance is not worse than the best edit

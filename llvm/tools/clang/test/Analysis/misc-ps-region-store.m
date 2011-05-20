@@ -1,5 +1,5 @@
-// RUN: %clang_cc1 -triple i386-apple-darwin9 -analyze -analyzer-checker=core,deadcode.IdempotentOperations,core.experimental.CastToStruct,core.experimental.ReturnPtrRange,core.experimental.ReturnPtrRange,core.experimental.ArrayBound -analyzer-store=region -verify -fblocks -analyzer-opt-analyze-nested-blocks %s
-// RUN: %clang_cc1 -triple x86_64-apple-darwin9 -DTEST_64 -analyze -analyzer-checker=core,deadcode.IdempotentOperations,core.experimental.CastToStruct,core.experimental.ReturnPtrRange,core.experimental.ArrayBound -analyzer-store=region -verify -fblocks   -analyzer-opt-analyze-nested-blocks %s
+// RUN: %clang_cc1 -triple i386-apple-darwin9 -analyze -analyzer-checker=core,deadcode.IdempotentOperations,core.experimental.CastToStruct,security.experimental.ReturnPtrRange,security.experimental.ArrayBound -analyzer-store=region -verify -fblocks -analyzer-opt-analyze-nested-blocks %s
+// RUN: %clang_cc1 -triple x86_64-apple-darwin9 -DTEST_64 -analyze -analyzer-checker=core,deadcode.IdempotentOperations,core.experimental.CastToStruct,security.experimental.ReturnPtrRange,security.experimental.ArrayBound -analyzer-store=region -verify -fblocks   -analyzer-opt-analyze-nested-blocks %s
 
 typedef long unsigned int size_t;
 void *memcpy(void *, const void *, size_t);
@@ -1272,5 +1272,30 @@ int PR9455_2() {
     *p = 0xDEADBEEF; // expected-warning {{null}}
   }
   return 1;
+}
+
+// Test initialization of substructs via lazy compound values.
+typedef float RDar9163742_Float;
+
+typedef struct {
+    RDar9163742_Float x, y;
+} RDar9163742_Point;
+typedef struct {
+    RDar9163742_Float width, height;
+} RDar9163742_Size;
+typedef struct {
+    RDar9163742_Point origin;
+    RDar9163742_Size size;
+} RDar9163742_Rect;
+
+extern  RDar9163742_Rect RDar9163742_RectIntegral(RDar9163742_Rect);
+
+RDar9163742_Rect RDar9163742_IntegralRect(RDar9163742_Rect frame)
+{
+    RDar9163742_Rect integralFrame;
+    integralFrame.origin.x = frame.origin.x;
+    integralFrame.origin.y = frame.origin.y;
+    integralFrame.size = frame.size;
+    return RDar9163742_RectIntegral(integralFrame); // no-warning; all fields initialized
 }
 

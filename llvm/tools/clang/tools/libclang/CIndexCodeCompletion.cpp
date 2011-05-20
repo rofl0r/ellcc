@@ -216,10 +216,10 @@ struct AllocatedCXCodeCompleteResults : public CXCodeCompleteResults {
   FileSystemOptions FileSystemOpts;
 
   /// \brief File manager, used for diagnostics.
-  FileManager FileMgr;
+  llvm::IntrusiveRefCntPtr<FileManager> FileMgr;
 
   /// \brief Source manager, used for diagnostics.
-  SourceManager SourceMgr;
+  llvm::IntrusiveRefCntPtr<SourceManager> SourceMgr;
   
   /// \brief Temporary files that should be removed once we have finished
   /// with the code-completion results.
@@ -249,8 +249,8 @@ AllocatedCXCodeCompleteResults::AllocatedCXCodeCompleteResults(
     Diag(new Diagnostic(
                    llvm::IntrusiveRefCntPtr<DiagnosticIDs>(new DiagnosticIDs))),
     FileSystemOpts(FileSystemOpts),
-    FileMgr(FileSystemOpts),
-    SourceMgr(*Diag, FileMgr) { 
+    FileMgr(new FileManager(FileSystemOpts)),
+    SourceMgr(new SourceManager(*Diag, *FileMgr)) { 
   if (getenv("LIBCLANG_OBJTRACKING")) {
     llvm::sys::AtomicIncrement(&CodeCompletionResultObjects);
     fprintf(stderr, "+++ %d completion results\n", CodeCompletionResultObjects);
@@ -396,8 +396,8 @@ void clang_codeCompleteAt_Impl(void *UserData) {
                     (options & CXCodeComplete_IncludeMacros),
                     (options & CXCodeComplete_IncludeCodePatterns),
                     Capture,
-                    *Results->Diag, Results->LangOpts, Results->SourceMgr,
-                    Results->FileMgr, Results->Diagnostics,
+                    *Results->Diag, Results->LangOpts, *Results->SourceMgr,
+                    *Results->FileMgr, Results->Diagnostics,
                     Results->TemporaryBuffers);
   
   // Keep a reference to the allocator used for cached global completions, so
@@ -498,7 +498,8 @@ CXCodeCompleteResults *clang_codeCompleteAt(CXTranslationUnit TU,
     fprintf(stderr, "libclang: crash detected in code completion\n");
     static_cast<ASTUnit *>(TU->TUData)->setUnsafeToFree(true);
     return 0;
-  }
+  } else if (getenv("LIBCLANG_RESOURCE_USAGE"))
+    PrintLibclangResourceUsage(TU);
 
   return CCAI.result;
 }

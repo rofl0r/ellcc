@@ -1,5 +1,5 @@
-// RUN: %clang_cc1 -triple x86_64-apple-darwin10 -analyze -analyzer-checker=core,cocoa.VariadicMethodTypes -analyzer-store=basic -fblocks -verify %s
-// RUN: %clang_cc1 -triple x86_64-apple-darwin10 -analyze -analyzer-checker=core,cocoa.VariadicMethodTypes -analyzer-store=region -fblocks -verify %s
+// RUN: %clang_cc1 -triple x86_64-apple-darwin10 -analyze -analyzer-checker=core,osx.cocoa.VariadicMethodTypes -analyzer-store=basic -fblocks -verify %s
+// RUN: %clang_cc1 -triple x86_64-apple-darwin10 -analyze -analyzer-checker=core,osx.cocoa.VariadicMethodTypes -analyzer-store=region -fblocks -verify %s
 
 //===----------------------------------------------------------------------===//
 // The following code is reduced using delta-debugging from
@@ -67,6 +67,7 @@ typedef struct BarType * BarType;
 
 void f(id a, id<P> b, C* c, C<P> *d, FooType fooType, BarType barType) {
   [NSArray arrayWithObjects:@"Hello", a, b, c, d, nil];
+  [NSArray arrayWithObjects:@"Foo", ^{}, nil];
 
   [NSArray arrayWithObjects:@"Foo", "Bar", "Baz", nil]; // expected-warning 2 {{Argument to 'NSArray' method 'arrayWithObjects:' should be an Objective-C pointer type, not 'char *'}}
   [NSDictionary dictionaryWithObjectsAndKeys:@"Foo", "Bar", nil]; // expected-warning {{Argument to 'NSDictionary' method 'dictionaryWithObjectsAndKeys:' should be an Objective-C pointer type, not 'char *'}}
@@ -79,5 +80,14 @@ void f(id a, id<P> b, C* c, C<P> *d, FooType fooType, BarType barType) {
   [[[NSDictionary alloc] initWithObjectsAndKeys:@"Foo", fooType, nil] autorelease]; // no-warning
   [[[NSDictionary alloc] initWithObjectsAndKeys:@"Foo", barType, nil] autorelease]; // expected-warning {{Argument to method 'initWithObjectsAndKeys:' should be an Objective-C pointer type, not 'BarType'}}
   [[[NSSet alloc] initWithObjects:@"Foo", "Bar", nil] autorelease]; // expected-warning {{Argument to method 'initWithObjects:' should be an Objective-C pointer type, not 'char *'}}
+}
+
+// This previously crashed the variadic argument checker.
+@protocol RDar9273215
+- (void)rdar9273215:(id)x, ...;
+@end
+
+void test_rdar9273215(id<RDar9273215> y) {
+  return [y rdar9273215:y, y];
 }
 

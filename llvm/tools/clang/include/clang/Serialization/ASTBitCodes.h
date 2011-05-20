@@ -279,7 +279,9 @@ namespace clang {
       /// generate the AST file.
       ORIGINAL_FILE_NAME = 19,
 
-      /// Record #20 intentionally left blank.
+      /// \brief Record code for the file ID of the original file used to 
+      /// generate the AST file.
+      ORIGINAL_FILE_ID = 20,
       
       /// \brief Record code for the version control branch and revision
       /// information of the compiler used to build this AST file.
@@ -362,7 +364,10 @@ namespace clang {
       FP_PRAGMA_OPTIONS = 42,
 
       /// \brief Record code for enabled OpenCL extensions.
-      OPENCL_EXTENSIONS = 43
+      OPENCL_EXTENSIONS = 43,
+
+      /// \brief The list of delegating constructor declarations.
+      DELEGATING_CTORS = 44
     };
 
     /// \brief Record types used within a source manager block.
@@ -490,7 +495,11 @@ namespace clang {
       /// \brief The ObjC 'Class' type.
       PREDEF_TYPE_OBJC_CLASS    = 27,
       /// \brief The ObjC 'SEL' type.
-      PREDEF_TYPE_OBJC_SEL    = 28
+      PREDEF_TYPE_OBJC_SEL      = 28,
+      /// \brief The 'unknown any' placeholder type.
+      PREDEF_TYPE_UNKNOWN_ANY   = 29,
+      /// \brief The placeholder type for bound member functions.
+      PREDEF_TYPE_BOUND_MEMBER  = 30
     };
 
     /// \brief The number of predefined type IDs that are reserved for
@@ -622,7 +631,11 @@ namespace clang {
       /// \brief NSConstantString type
       SPECIAL_TYPE_NS_CONSTANT_STRING          = 15,
       /// \brief Whether __[u]int128_t identifier is installed.
-      SPECIAL_TYPE_INT128_INSTALLED            = 16
+      SPECIAL_TYPE_INT128_INSTALLED            = 16,
+      /// \brief Cached "auto" deduction type.
+      SPECIAL_TYPE_AUTO_DEDUCT                 = 17,
+      /// \brief Cached "auto &&" deduction type.
+      SPECIAL_TYPE_AUTO_RREF_DEDUCT            = 18
     };
 
     /// \brief Record codes for each kind of declaration.
@@ -636,6 +649,8 @@ namespace clang {
       DECL_TRANSLATION_UNIT = 50,
       /// \brief A TypedefDecl record.
       DECL_TYPEDEF,
+      /// \brief A TypeAliasDecl record.
+      DECL_TYPEALIAS,
       /// \brief An EnumDecl record.
       DECL_ENUM,
       /// \brief A RecordDecl record.
@@ -748,6 +763,8 @@ namespace clang {
       DECL_NON_TYPE_TEMPLATE_PARM,
       /// \brief A TemplateTemplateParmDecl record.
       DECL_TEMPLATE_TEMPLATE_PARM,
+      /// \brief A TypeAliasTemplateDecl record.
+      DECL_TYPE_ALIAS_TEMPLATE,
       /// \brief A StaticAssertDecl record.
       DECL_STATIC_ASSERT,
       /// \brief A record containing CXXBaseSpecifiers.
@@ -872,6 +889,8 @@ namespace clang {
       EXPR_BLOCK,
       /// \brief A BlockDeclRef record.
       EXPR_BLOCK_DECL_REF,
+      /// \brief A GenericSelectionExpr record.
+      EXPR_GENERIC_SELECTION,
       
       // Objective-C
 
@@ -913,6 +932,8 @@ namespace clang {
       STMT_CXX_CATCH,
       /// \brief A CXXTryStmt record.
       STMT_CXX_TRY,
+      /// \brief A CXXForRangeStmt record.
+      STMT_CXX_FOR_RANGE,
 
       /// \brief A CXXOperatorCallExpr record.
       EXPR_CXX_OPERATOR_CALL,
@@ -958,11 +979,13 @@ namespace clang {
       EXPR_CXX_UNRESOLVED_LOOKUP,        // UnresolvedLookupExpr
 
       EXPR_CXX_UNARY_TYPE_TRAIT,  // UnaryTypeTraitExpr
+      EXPR_CXX_EXPRESSION_TRAIT,  // ExpressionTraitExpr
       EXPR_CXX_NOEXCEPT,          // CXXNoexceptExpr
 
       EXPR_OPAQUE_VALUE,          // OpaqueValueExpr
       EXPR_BINARY_CONDITIONAL_OPERATOR,  // BinaryConditionalOperator
       EXPR_BINARY_TYPE_TRAIT,     // BinaryTypeTraitExpr
+      EXPR_ARRAY_TYPE_TRAIT,      // ArrayTypeTraitIntExpr
       
       EXPR_PACK_EXPANSION,        // PackExpansionExpr
       EXPR_SIZEOF_PACK,           // SizeOfPackExpr
@@ -985,6 +1008,15 @@ namespace clang {
       DESIG_ARRAY       = 2,
       /// \brief GNU array range designator.
       DESIG_ARRAY_RANGE = 3
+    };
+
+    /// \brief The different kinds of data that can occur in a
+    /// CtorInitializer.
+    enum CtorInitializerType {
+      CTOR_INITIALIZER_BASE,
+      CTOR_INITIALIZER_DELEGATING,
+      CTOR_INITIALIZER_MEMBER,
+      CTOR_INITIALIZER_INDIRECT_MEMBER
     };
 
     /// @}

@@ -188,9 +188,11 @@ public:
 
   /// processRegionChanges - Called by GRStateManager whenever a change is made
   ///  to the store. Used to update checkers that track region values.
-  const GRState* processRegionChanges(const GRState *state,
-                                      const MemRegion * const *Begin,
-                                      const MemRegion * const *End);
+  const GRState *
+  processRegionChanges(const GRState *state,
+                       const StoreManager::InvalidatedSymbols *invalidated,
+                       const MemRegion * const *Begin,
+                       const MemRegion * const *End);
 
   virtual GRStateManager& getStateManager() { return StateMgr; }
 
@@ -213,11 +215,9 @@ public:
   const SymbolManager& getSymbolManager() const { return SymMgr; }
 
   // Functions for external checking of whether we have unfinished work
-  bool wasBlockAborted() const { return Engine.wasBlockAborted(); }
+  bool wasBlocksExhausted() const { return Engine.wasBlocksExhausted(); }
   bool hasEmptyWorkList() const { return !Engine.getWorkList()->hasWork(); }
-  bool hasWorkRemaining() const {
-    return wasBlockAborted() || Engine.getWorkList()->hasWork();
-  }
+  bool hasWorkRemaining() const { return Engine.hasWorkRemaining(); }
 
   const CoreEngine &getCoreEngine() const { return Engine; }
 
@@ -264,10 +264,8 @@ public:
 
 
   /// VisitCall - Transfer function for function calls.
-  void VisitCall(const CallExpr* CE, ExplodedNode* Pred,
-                 CallExpr::const_arg_iterator AI, 
-                 CallExpr::const_arg_iterator AE,
-                 ExplodedNodeSet& Dst);
+  void VisitCallExpr(const CallExpr* CE, ExplodedNode* Pred,
+                     ExplodedNodeSet& Dst);
 
   /// VisitCast - Transfer function logic for all casts (implicit and explicit).
   void VisitCast(const CastExpr *CastE, const Expr *Ex, ExplodedNode *Pred,
@@ -288,11 +286,6 @@ public:
   /// VisitGuardedExpr - Transfer function logic for ?, __builtin_choose
   void VisitGuardedExpr(const Expr* Ex, const Expr* L, const Expr* R, 
                         ExplodedNode* Pred, ExplodedNodeSet& Dst);
-
-  /// VisitCondInit - Transfer function for handling the initialization
-  ///  of a condition variable in an IfStmt, SwitchStmt, etc.
-  void VisitCondInit(const VarDecl *VD, const Stmt *S, ExplodedNode *Pred,
-                     ExplodedNodeSet& Dst);
   
   void VisitInitListExpr(const InitListExpr* E, ExplodedNode* Pred,
                          ExplodedNodeSet& Dst);
@@ -362,12 +355,6 @@ public:
                           const MemRegion *Dest, const Stmt *S,
                           ExplodedNode *Pred, ExplodedNodeSet &Dst);
 
-  void VisitCXXMemberCallExpr(const CXXMemberCallExpr *MCE, ExplodedNode *Pred,
-                              ExplodedNodeSet &Dst);
-
-  void VisitCXXOperatorCallExpr(const CXXOperatorCallExpr *C,
-                                ExplodedNode *Pred, ExplodedNodeSet &Dst);
-
   void VisitCXXNewExpr(const CXXNewExpr *CNE, ExplodedNode *Pred,
                        ExplodedNodeSet &Dst);
 
@@ -393,12 +380,10 @@ public:
                      const FunctionProtoType *FnType, 
                      ExplodedNode *Pred, ExplodedNodeSet &Dst,
                      bool FstArgAsLValue = false);
-
-  /// Evaluate method call itself. Used for CXXMethodCallExpr and
-  /// CXXOperatorCallExpr.
-  void evalMethodCall(const CallExpr *MCE, const CXXMethodDecl *MD,
-                      const Expr *ThisExpr, ExplodedNode *Pred,
-                      ExplodedNodeSet &Src, ExplodedNodeSet &Dst);
+  
+  /// Evaluate callee expression (for a function call).
+  void evalCallee(const CallExpr *callExpr, const ExplodedNodeSet &src,
+                  ExplodedNodeSet &dest);
 
   /// evalEagerlyAssume - Given the nodes in 'Src', eagerly assume symbolic
   ///  expressions of the form 'x != 0' and generate new nodes (stored in Dst)

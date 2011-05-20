@@ -56,9 +56,11 @@ static QualType Desugar(ASTContext &Context, QualType QT, bool &ShouldAKA) {
       continue;
     }
 
-    // Don't desugar template specializations. 
-    if (isa<TemplateSpecializationType>(Ty))
-      break;
+    // Don't desugar template specializations, unless it's an alias template.
+    if (const TemplateSpecializationType *TST
+          = dyn_cast<TemplateSpecializationType>(Ty))
+      if (!TST->isTypeAlias())
+        break;
 
     // Don't desugar magic Objective-C types.
     if (QualType(Ty,0) == Context.getObjCIdType() ||
@@ -100,7 +102,7 @@ break; \
     // Don't desugar through the primary typedef of an anonymous type.
     if (const TagType *UTT = Underlying->getAs<TagType>())
       if (const TypedefType *QTT = dyn_cast<TypedefType>(QT))
-        if (UTT->getDecl()->getTypedefForAnonDecl() == QTT->getDecl())
+        if (UTT->getDecl()->getTypedefNameForAnonDecl() == QTT->getDecl())
           break;
 
     // Record that we actually looked through an opaque type here.

@@ -88,7 +88,7 @@ BitVector ARMBaseRegisterInfo::
 getReservedRegs(const MachineFunction &MF) const {
   const TargetFrameLowering *TFI = MF.getTarget().getFrameLowering();
 
-  // FIXME: avoid re-calculating this everytime.
+  // FIXME: avoid re-calculating this every time.
   BitVector Reserved(getNumRegs());
   Reserved.set(ARM::SP);
   Reserved.set(ARM::PC);
@@ -342,6 +342,25 @@ ARMBaseRegisterInfo::canCombineSubRegIndices(const TargetRegisterClass *RC,
   return false;
 }
 
+const TargetRegisterClass*
+ARMBaseRegisterInfo::getLargestLegalSuperClass(const TargetRegisterClass *RC)
+                                                                         const {
+  const TargetRegisterClass *Super = RC;
+  TargetRegisterClass::sc_iterator I = RC->superclasses_begin();
+  do {
+    switch (Super->getID()) {
+    case ARM::GPRRegClassID:
+    case ARM::SPRRegClassID:
+    case ARM::DPRRegClassID:
+    case ARM::QPRRegClassID:
+    case ARM::QQPRRegClassID:
+    case ARM::QQQQPRRegClassID:
+      return Super;
+    }
+    Super = *I++;
+  } while (Super);
+  return RC;
+}
 
 const TargetRegisterClass *
 ARMBaseRegisterInfo::getPointerRegClass(unsigned Kind) const {
@@ -448,6 +467,10 @@ ARMBaseRegisterInfo::getAllocationOrder(const TargetRegisterClass *RC,
     ARM::R0, ARM::R2, ARM::R10,ARM::R12,ARM::LR, ARM::R4, ARM::R6, ARM::R8
   };
 
+  // We only support even/odd hints for GPR and rGPR.
+  if (RC != ARM::GPRRegisterClass && RC != ARM::rGPRRegisterClass)
+    return std::make_pair(RC->allocation_order_begin(MF),
+                          RC->allocation_order_end(MF));
 
   if (HintType == ARMRI::RegPairEven) {
     if (isPhysicalRegister(HintReg) && getRegisterPairEven(HintReg, MF) == 0)
@@ -547,6 +570,29 @@ ARMBaseRegisterInfo::UpdateRegAllocHint(unsigned Reg, unsigned NewReg,
     if (Hint.second == Reg)
       // Make sure the pair has not already divorced.
       MRI->setRegAllocationHint(OtherReg, Hint.first, NewReg);
+  }
+}
+
+bool
+ARMBaseRegisterInfo::avoidWriteAfterWrite(const TargetRegisterClass *RC) const {
+  // CortexA9 has a Write-after-write hazard for NEON registers.
+  if (!STI.isCortexA9())
+    return false;
+
+  switch (RC->getID()) {
+  case ARM::DPRRegClassID:
+  case ARM::DPR_8RegClassID:
+  case ARM::DPR_VFP2RegClassID:
+  case ARM::QPRRegClassID:
+  case ARM::QPR_8RegClassID:
+  case ARM::QPR_VFP2RegClassID:
+  case ARM::SPRRegClassID:
+  case ARM::SPR_8RegClassID:
+    // Avoid reusing S, D, and Q registers.
+    // Don't increase register pressure for QQ and QQQQ.
+    return true;
+  default:
+    return false;
   }
 }
 
@@ -1065,8 +1111,11 @@ materializeFrameBaseRegister(MachineBasicBlock *MBB,
   if (Ins != MBB->end())
     DL = Ins->getDebugLoc();
 
-  MachineInstrBuilder MIB =
-    BuildMI(*MBB, Ins, DL, TII.get(ADDriOpc), BaseReg)
+  const TargetInstrDesc &TID = TII.get(ADDriOpc);
+  MachineRegisterInfo &MRI = MBB->getParent()->getRegInfo();
+  MRI.constrainRegClass(BaseReg, TID.OpInfo[0].getRegClass(this));
+
+  MachineInstrBuilder MIB = BuildMI(*MBB, Ins, DL, TID, BaseReg)
     .addFrameIndex(FrameIdx).addImm(Offset);
 
   if (!AFI->isThumb1OnlyFunction())

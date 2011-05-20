@@ -240,7 +240,7 @@ public:
                              const MemRegion * const *Begin,
                              const MemRegion * const *End,
                              const Expr *E, unsigned Count,
-                             InvalidatedSymbols *IS,
+                             InvalidatedSymbols &IS,
                              bool invalidateGlobals,
                              InvalidatedRegions *Regions);
 
@@ -358,7 +358,8 @@ public: // Part of public interface to class.
 
   /// Get the state and region whose binding this region R corresponds to.
   std::pair<Store, const MemRegion*>
-  GetLazyBinding(RegionBindings B, const MemRegion *R);
+  GetLazyBinding(RegionBindings B, const MemRegion *R,
+                 const MemRegion *originalRegion);
 
   StoreRef CopyLazyBindings(nonloc::LazyCompoundVal V, Store store,
                             const TypedRegion *R);
@@ -585,14 +586,14 @@ class invalidateRegionsWorker : public ClusterAnalysis<invalidateRegionsWorker>
 {
   const Expr *Ex;
   unsigned Count;
-  StoreManager::InvalidatedSymbols *IS;
+  StoreManager::InvalidatedSymbols &IS;
   StoreManager::InvalidatedRegions *Regions;
 public:
   invalidateRegionsWorker(RegionStoreManager &rm,
                           GRStateManager &stateMgr,
                           RegionBindings b,
                           const Expr *ex, unsigned count,
-                          StoreManager::InvalidatedSymbols *is,
+                          StoreManager::InvalidatedSymbols &is,
                           StoreManager::InvalidatedRegions *r,
                           bool includeGlobals)
     : ClusterAnalysis<invalidateRegionsWorker>(rm, stateMgr, b, includeGlobals),
@@ -608,9 +609,8 @@ private:
 
 void invalidateRegionsWorker::VisitBinding(SVal V) {
   // A symbol?  Mark it touched by the invalidation.
-  if (IS)
-    if (SymbolRef Sym = V.getAsSymbol())
-      IS->insert(Sym);
+  if (SymbolRef Sym = V.getAsSymbol())
+    IS.insert(Sym);
 
   if (const MemRegion *R = V.getAsRegion()) {
     AddToWorkList(R);
@@ -647,11 +647,9 @@ void invalidateRegionsWorker::VisitCluster(const MemRegion *baseR,
 }
 
 void invalidateRegionsWorker::VisitBaseRegion(const MemRegion *baseR) {
-  if (IS) {
-    // Symbolic region?  Mark that symbol touched by the invalidation.
-    if (const SymbolicRegion *SR = dyn_cast<SymbolicRegion>(baseR))
-      IS->insert(SR->getSymbol());
-  }
+  // Symbolic region?  Mark that symbol touched by the invalidation.
+  if (const SymbolicRegion *SR = dyn_cast<SymbolicRegion>(baseR))
+    IS.insert(SR->getSymbol());
 
   // BlockDataRegion?  If so, invalidate captured variables that are passed
   // by reference.
@@ -687,11 +685,11 @@ void invalidateRegionsWorker::VisitBaseRegion(const MemRegion *baseR) {
   QualType T = TR->getValueType();
 
     // Invalidate the binding.
-  if (T->isStructureType()) {
+  if (T->isStructureOrClassType()) {
     // Invalidate the region by setting its default value to
     // conjured symbol. The type of the symbol is irrelavant.
-    DefinedOrUnknownSVal V = svalBuilder.getConjuredSymbolVal(baseR, Ex, Ctx.IntTy,
-                                                         Count);
+    DefinedOrUnknownSVal V =
+      svalBuilder.getConjuredSymbolVal(baseR, Ex, Ctx.IntTy, Count);
     B = RM.addBinding(B, baseR, BindingKey::Default, V);
     return;
   }
@@ -723,7 +721,7 @@ StoreRef RegionStoreManager::invalidateRegions(Store store,
                                                const MemRegion * const *I,
                                                const MemRegion * const *E,
                                                const Expr *Ex, unsigned Count,
-                                               InvalidatedSymbols *IS,
+                                               InvalidatedSymbols &IS,
                                                bool invalidateGlobals,
                                                InvalidatedRegions *Regions) {
   invalidateRegionsWorker W(*this, StateMgr,
@@ -979,10 +977,20 @@ SVal RegionStoreManager::Retrieve(Store store, Loc L, QualType T) {
 }
 
 std::pair<Store, const MemRegion *>
-RegionStoreManager::GetLazyBinding(RegionBindings B, const MemRegion *R) {
+RegionStoreManager::GetLazyBinding(RegionBindings B, const MemRegion *R,
+                                   const MemRegion *originalRegion) {
+  
+  if (originalRegion != R) {
+    if (Optional<SVal> OV = getDefaultBinding(B, R)) {
+      if (const nonloc::LazyCompoundVal *V =
+          dyn_cast<nonloc::LazyCompoundVal>(OV.getPointer()))
+        return std::make_pair(V->getStore(), V->getRegion());
+    }
+  }
+  
   if (const ElementRegion *ER = dyn_cast<ElementRegion>(R)) {
     const std::pair<Store, const MemRegion *> &X =
-      GetLazyBinding(B, ER->getSuperRegion());
+      GetLazyBinding(B, ER->getSuperRegion(), originalRegion);
 
     if (X.second)
       return std::make_pair(X.first,
@@ -990,7 +998,7 @@ RegionStoreManager::GetLazyBinding(RegionBindings B, const MemRegion *R) {
   }
   else if (const FieldRegion *FR = dyn_cast<FieldRegion>(R)) {
     const std::pair<Store, const MemRegion *> &X =
-      GetLazyBinding(B, FR->getSuperRegion());
+      GetLazyBinding(B, FR->getSuperRegion(), originalRegion);
 
     if (X.second)
       return std::make_pair(X.first,
@@ -1001,16 +1009,11 @@ RegionStoreManager::GetLazyBinding(RegionBindings B, const MemRegion *R) {
   else if (const CXXBaseObjectRegion *baseReg = 
                             dyn_cast<CXXBaseObjectRegion>(R)) {
     const std::pair<Store, const MemRegion *> &X =
-      GetLazyBinding(B, baseReg->getSuperRegion());
+      GetLazyBinding(B, baseReg->getSuperRegion(), originalRegion);
     
     if (X.second)
       return std::make_pair(X.first,
                      MRMgr.getCXXBaseObjectRegionWithSuper(baseReg, X.second));
-  }
-  else if (Optional<SVal> OV = getDefaultBinding(B, R)) {
-    if (const nonloc::LazyCompoundVal *V =
-        dyn_cast<nonloc::LazyCompoundVal>(OV.getPointer()))
-      return std::make_pair(V->getStore(), V->getRegion());
   }
 
   // The NULL MemRegion indicates an non-existent lazy binding. A NULL Store is
@@ -1158,7 +1161,7 @@ SVal RegionStoreManager::RetrieveFieldOrElementCommon(Store store,
   // Lazy binding?
   Store lazyBindingStore = NULL;
   const MemRegion *lazyBindingRegion = NULL;
-  llvm::tie(lazyBindingStore, lazyBindingRegion) = GetLazyBinding(B, R);
+  llvm::tie(lazyBindingStore, lazyBindingRegion) = GetLazyBinding(B, R, R);
 
   if (lazyBindingRegion)
     return RetrieveLazyBinding(lazyBindingRegion, lazyBindingStore);

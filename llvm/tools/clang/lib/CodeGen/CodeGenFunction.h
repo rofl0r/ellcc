@@ -42,6 +42,7 @@ namespace clang {
   class APValue;
   class ASTContext;
   class CXXDestructorDecl;
+  class CXXForRangeStmt;
   class CXXTryStmt;
   class Decl;
   class LabelDecl;
@@ -768,6 +769,11 @@ public:
   /// block through the normal cleanup handling code (if any) and then
   /// on to \arg Dest.
   void EmitBranchThroughCleanup(JumpDest Dest);
+  
+  /// isObviouslyBranchWithoutCleanups - Return true if a branch to the
+  /// specified destination obviously has no cleanups to run.  'false' is always
+  /// a conservatively correct answer for this method.
+  bool isObviouslyBranchWithoutCleanups(JumpDest Dest) const;
 
   /// EmitBranchThroughEHCleanup - Emit a branch from the current
   /// insert block through the EH cleanup handling code (if any) and
@@ -1029,7 +1035,7 @@ public:
   CodeGenFunction(CodeGenModule &cgm);
 
   CodeGenTypes &getTypes() const { return CGM.getTypes(); }
-  ASTContext &getContext() const;
+  ASTContext &getContext() const { return CGM.getContext(); }
   CGDebugInfo *getDebugInfo() { 
     if (DisableDebugInfo) 
       return NULL;
@@ -1107,14 +1113,12 @@ public:
   llvm::Constant *GenerateCopyHelperFunction(const CGBlockInfo &blockInfo);
   llvm::Constant *GenerateDestroyHelperFunction(const CGBlockInfo &blockInfo);
 
-  llvm::Constant *GeneratebyrefCopyHelperFunction(const llvm::Type *,
-                                                  BlockFieldFlags flags,
-                                                  const VarDecl *BD);
-  llvm::Constant *GeneratebyrefDestroyHelperFunction(const llvm::Type *T, 
-                                                     BlockFieldFlags flags, 
-                                                     const VarDecl *BD);
-
   void BuildBlockRelease(llvm::Value *DeclPtr, BlockFieldFlags flags);
+
+  class AutoVarEmission;
+
+  void emitByrefStructureInit(const AutoVarEmission &emission);
+  void enterByrefCleanup(const AutoVarEmission &emission);
 
   llvm::Value *LoadBlockStruct() {
     assert(BlockPointer && "no block pointer set!");
@@ -1153,6 +1157,9 @@ public:
   void GenerateThunk(llvm::Function *Fn, const CGFunctionInfo &FnInfo,
                      GlobalDecl GD, const ThunkInfo &Thunk);
 
+  void GenerateVarArgsThunk(llvm::Function *Fn, const CGFunctionInfo &FnInfo,
+                            GlobalDecl GD, const ThunkInfo &Thunk);
+
   void EmitCtorPrologue(const CXXConstructorDecl *CD, CXXCtorType Type,
                         FunctionArgList &Args);
 
@@ -1161,14 +1168,14 @@ public:
   ///
   void InitializeVTablePointer(BaseSubobject Base,
                                const CXXRecordDecl *NearestVBase,
-                               uint64_t OffsetFromNearestVBase,
+                               CharUnits OffsetFromNearestVBase,
                                llvm::Constant *VTable,
                                const CXXRecordDecl *VTableClass);
 
   typedef llvm::SmallPtrSet<const CXXRecordDecl *, 4> VisitedVirtualBasesSetTy;
   void InitializeVTablePointers(BaseSubobject Base,
                                 const CXXRecordDecl *NearestVBase,
-                                uint64_t OffsetFromNearestVBase,
+                                CharUnits OffsetFromNearestVBase,
                                 bool BaseIsNonVirtualPrimaryBase,
                                 llvm::Constant *VTable,
                                 const CXXRecordDecl *VTableClass,
@@ -1492,6 +1499,12 @@ public:
   void EmitDelegateCXXConstructorCall(const CXXConstructorDecl *Ctor,
                                       CXXCtorType CtorType,
                                       const FunctionArgList &Args);
+  // It's important not to confuse this and the previous function. Delegating
+  // constructors are the C++0x feature. The constructor delegate optimization
+  // is used to reduce duplication in the base and complete consturctors where
+  // they are substantially the same.
+  void EmitDelegatingCXXConstructorCall(const CXXConstructorDecl *Ctor,
+                                        const FunctionArgList &Args);
   void EmitCXXConstructorCall(const CXXConstructorDecl *D, CXXCtorType Type,
                               bool ForVirtualBase, llvm::Value *This,
                               CallExpr::const_arg_iterator ArgBeg,
@@ -1696,6 +1709,7 @@ public:
   void ExitCXXTryStmt(const CXXTryStmt &S, bool IsFnTryBlock = false);
 
   void EmitCXXTryStmt(const CXXTryStmt &S);
+  void EmitCXXForRangeStmt(const CXXForRangeStmt &S);
 
   //===--------------------------------------------------------------------===//
   //                         LValue Expression Emission
@@ -1791,7 +1805,7 @@ public:
   LValue EmitComplexAssignmentLValue(const BinaryOperator *E);
   LValue EmitComplexCompoundAssignmentLValue(const CompoundAssignOperator *E);
 
-  // Note: only availabe for agg return types
+  // Note: only available for agg return types
   LValue EmitBinaryOperatorLValue(const BinaryOperator *E);
   LValue EmitCompoundAssignmentLValue(const CompoundAssignOperator *E);
   // Note: only available for agg return types
@@ -1904,6 +1918,9 @@ public:
   RValue EmitCXXMemberPointerCallExpr(const CXXMemberCallExpr *E,
                                       ReturnValueSlot ReturnValue);
 
+  llvm::Value *EmitCXXOperatorMemberCallee(const CXXOperatorCallExpr *E,
+                                           const CXXMethodDecl *MD,
+                                           llvm::Value *This);
   RValue EmitCXXOperatorMemberCallExpr(const CXXOperatorCallExpr *E,
                                        const CXXMethodDecl *MD,
                                        ReturnValueSlot ReturnValue);
@@ -2177,6 +2194,10 @@ private:
   }
 
   void EmitDeclMetadata();
+
+  CodeGenModule::ByrefHelpers *
+  buildByrefHelpers(const llvm::StructType &byrefType,
+                    const AutoVarEmission &emission);
 };
 
 /// Helper class with most of the code for saving a value for a

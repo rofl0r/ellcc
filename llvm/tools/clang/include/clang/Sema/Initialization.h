@@ -65,7 +65,7 @@ public:
     /// \brief The entity being initialized is a base member subobject.
     EK_Base,
     /// \brief The initialization is being done by a delegating constructor.
-    EK_Delegation,
+    EK_Delegating,
     /// \brief The entity being initialized is an element of a vector.
     /// or vector.
     EK_VectorElement,
@@ -215,7 +215,7 @@ public:
 
   /// \brief Create the initialization entity for a delegated constructor.
   static InitializedEntity InitializeDelegation(QualType Type) {
-    return InitializedEntity(EK_Delegation, SourceLocation(), Type);
+    return InitializedEntity(EK_Delegating, SourceLocation(), Type);
   }
   
   /// \brief Create the initialization entity for a member subobject.
@@ -241,7 +241,7 @@ public:
   EntityKind getKind() const { return Kind; }
   
   /// \brief Retrieve the parent of the entity being initialized, when
-  /// the initialization itself is occuring within the context of a
+  /// the initialization itself is occurring within the context of a
   /// larger initialization.
   const InitializedEntity *getParent() const { return Parent; }
 
@@ -597,6 +597,8 @@ public:
     FK_ReferenceInitFailed,
     /// \brief Implicit conversion failed.
     FK_ConversionFailed,
+    /// \brief Implicit conversion failed.
+    FK_ConversionFromPropertyFailed,
     /// \brief Too many initializers for scalar
     FK_TooManyInitsForScalar,
     /// \brief Reference initialization from an initializer list
@@ -662,7 +664,7 @@ public:
   /// \param Kind the kind of initialization being performed.
   ///
   /// \param Args the argument(s) provided for initialization, ownership of
-  /// which is transfered into the routine.
+  /// which is transferred into the routine.
   ///
   /// \param ResultType if non-NULL, will be set to the type of the
   /// initialized object, which is the type of the declaration in most

@@ -255,6 +255,25 @@ private:
   }
 };
 
+/// \brief an RAII object for [un]poisoning an identifier
+/// within a certain scope. II is allowed to be null, in
+/// which case, objects of this type have no effect.
+class PoisonIdentifierRAIIObject {
+  IdentifierInfo *const II;
+  const bool OldValue;
+public:
+  PoisonIdentifierRAIIObject(IdentifierInfo *II, bool NewValue)
+    : II(II), OldValue(II ? II->isPoisoned() : false) {
+    if(II)
+      II->setIsPoisoned(NewValue);
+  }
+
+  ~PoisonIdentifierRAIIObject() {
+    if(II)
+      II->setIsPoisoned(OldValue);
+  }
+};
+
 /// \brief An iterator that walks over all of the known identifiers
 /// in the lookup table.
 ///
@@ -325,7 +344,7 @@ public:
 
 /// IdentifierTable - This table implements an efficient mapping from strings to
 /// IdentifierInfo nodes.  It has no other purpose, but this is an
-/// extremely performance-critical piece of the code, as each occurrance of
+/// extremely performance-critical piece of the code, as each occurrence of
 /// every identifier goes through here when lexed.
 class IdentifierTable {
   // Shark shows that using MallocAllocator is *much* slower than using this
@@ -623,6 +642,9 @@ public:
   Selector getNullarySelector(IdentifierInfo *ID) {
     return Selector(ID, 0);
   }
+
+  /// Return the total amount of memory allocated for managing selectors.
+  size_t getTotalMemory() const;
 
   /// constructSetterName - Return the setter name for the given
   /// identifier, i.e. "set" + Name where the initial character of Name

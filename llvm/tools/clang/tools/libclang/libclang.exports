@@ -1,6 +1,7 @@
 clang_CXCursorSet_contains
 clang_CXCursorSet_insert
 clang_CXXMethod_isStatic
+clang_CXXMethod_isVirtual
 clang_annotateTokens
 clang_codeCompleteAt
 clang_codeCompleteGetDiagnostic
@@ -21,6 +22,7 @@ clang_defaultEditingTranslationUnitOptions
 clang_defaultReparseOptions
 clang_defaultSaveOptions
 clang_disposeCXCursorSet
+clang_disposeCXTUResourceUsage
 clang_disposeCodeCompleteResults
 clang_disposeDiagnostic
 clang_disposeIndex
@@ -35,6 +37,7 @@ clang_equalTypes
 clang_executeOnThread
 clang_formatDiagnostic
 clang_getCString
+clang_getCXTUResourceUsage
 clang_getCXXAccessSpecifier
 clang_getCanonicalCursor
 clang_getCanonicalType
@@ -98,6 +101,7 @@ clang_getRangeStart
 clang_getResultType
 clang_getSpecializedCursorTemplate
 clang_getSpellingLocation
+clang_getTUResourceUsageName
 clang_getTemplateCursorKind
 clang_getTokenExtent
 clang_getTokenKind
@@ -112,6 +116,7 @@ clang_isConstQualifiedType
 clang_isCursorDefinition
 clang_isDeclaration
 clang_isExpression
+clang_isFileMultipleIncludeGuarded
 clang_isInvalid
 clang_isPODType
 clang_isPreprocessing

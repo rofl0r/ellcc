@@ -180,17 +180,14 @@ MBlazeTargetLowering::MBlazeTargetLowering(MBlazeTargetMachine &TM)
   setLoadExtAction(ISD::EXTLOAD, MVT::f32, Expand);
   setTruncStoreAction(MVT::f64, MVT::f32, Expand);
 
+  setMinFunctionAlignment(2);
+
   setStackPointerRegisterToSaveRestore(MBlaze::R1);
   computeRegisterProperties();
 }
 
 MVT::SimpleValueType MBlazeTargetLowering::getSetCCResultType(EVT VT) const {
   return MVT::i32;
-}
-
-/// getFunctionAlignment - Return the Log2 alignment of this function.
-unsigned MBlazeTargetLowering::getFunctionAlignment(const Function *) const {
-  return 2;
 }
 
 SDValue MBlazeTargetLowering::LowerOperation(SDValue Op,
@@ -274,7 +271,7 @@ MBlazeTargetLowering::EmitCustomShift(MachineInstr *MI,
   F->insert(It, loop);
   F->insert(It, finish);
 
-  // Update machine-CFG edges by transfering adding all successors and
+  // Update machine-CFG edges by transferring adding all successors and
   // remaining instructions from the current block to the new block which
   // will contain the Phi node for the select.
   finish->splice(finish->begin(), MBB,
@@ -456,7 +453,7 @@ MBlazeTargetLowering::EmitCustomAtomic(MachineInstr *MI,
   F->insert(It, start);
   F->insert(It, exit);
 
-  // Update machine-CFG edges by transfering adding all successors and
+  // Update machine-CFG edges by transferring adding all successors and
   // remaining instructions from the current block to the new block which
   // will contain the Phi node for the select.
   exit->splice(exit->begin(), MBB, llvm::next(MachineBasicBlock::iterator(MI)),
@@ -778,7 +775,7 @@ LowerCall(SDValue Chain, SDValue Callee, CallingConv::ID CallConv,
 
   // Build a sequence of copy-to-reg nodes chained together with token
   // chain and flag operands which copy the outgoing args into registers.
-  // The InFlag in necessary since all emited instructions must be
+  // The InFlag in necessary since all emitted instructions must be
   // stuck together.
   SDValue InFlag;
   for (unsigned i = 0, e = RegsToPass.size(); i != e; ++i) {

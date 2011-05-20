@@ -15,6 +15,7 @@
 #include "clang/Parse/Parser.h"
 #include "clang/Sema/DeclSpec.h"
 #include "clang/Sema/Scope.h"
+#include "clang/AST/DeclTemplate.h"
 using namespace clang;
 
 /// ParseCXXInlineMethodDef - We parsed and verified that the specified
@@ -22,10 +23,11 @@ using namespace clang;
 /// and store its tokens for parsing after the C++ class is complete.
 Decl *Parser::ParseCXXInlineMethodDef(AccessSpecifier AS, ParsingDeclarator &D,
                                 const ParsedTemplateInfo &TemplateInfo,
-                                const VirtSpecifiers& VS) {
+                                const VirtSpecifiers& VS, ExprResult& Init) {
   assert(D.isFunctionDeclarator() && "This isn't a function declarator!");
-  assert((Tok.is(tok::l_brace) || Tok.is(tok::colon) || Tok.is(tok::kw_try)) &&
-         "Current token not a '{', ':' or 'try'!");
+  assert((Tok.is(tok::l_brace) || Tok.is(tok::colon) || Tok.is(tok::kw_try) ||
+          Tok.is(tok::equal)) &&
+         "Current token not a '{', ':', '=', or 'try'!");
 
   MultiTemplateParamsArg TemplateParams(Actions,
           TemplateInfo.TemplateParams ? TemplateInfo.TemplateParams->data() : 0,
@@ -37,21 +39,80 @@ Decl *Parser::ParseCXXInlineMethodDef(AccessSpecifier AS, ParsingDeclarator &D,
     FnD = Actions.ActOnFriendFunctionDecl(getCurScope(), D, true,
                                           move(TemplateParams));
   else { // FIXME: pass template information through
-    if (VS.isOverrideSpecified())
-      Diag(VS.getOverrideLoc(), diag::ext_override_inline) << "override";
-    if (VS.isFinalSpecified())
-      Diag(VS.getFinalLoc(), diag::ext_override_inline) << "final";
-    if (VS.isNewSpecified())
-      Diag(VS.getNewLoc(), diag::ext_override_inline) << "new";
-
     FnD = Actions.ActOnCXXMemberDeclarator(getCurScope(), AS, D,
                                            move(TemplateParams), 0, 
-                                           VS, 0, /*IsDefinition*/true);
+                                           VS, Init.release(),
+                                           /*IsDefinition*/true);
   }
 
   HandleMemberFunctionDefaultArgs(D, FnD);
 
   D.complete(FnD);
+
+  if (Tok.is(tok::equal)) {
+    ConsumeToken();
+
+    bool Delete = false;
+    SourceLocation KWLoc;
+    if (Tok.is(tok::kw_delete)) {
+      if (!getLang().CPlusPlus0x)
+        Diag(Tok, diag::warn_deleted_function_accepted_as_extension);
+
+      KWLoc = ConsumeToken();
+      Actions.SetDeclDeleted(FnD, KWLoc);
+      Delete = true;
+    } else if (Tok.is(tok::kw_default)) {
+      if (!getLang().CPlusPlus0x)
+        Diag(Tok, diag::warn_defaulted_function_accepted_as_extension);
+
+      KWLoc = ConsumeToken();
+      Actions.SetDeclDefaulted(FnD, KWLoc);
+    } else {
+      llvm_unreachable("function definition after = not 'delete' or 'default'");
+    }
+
+    if (Tok.is(tok::comma)) {
+      Diag(KWLoc, diag::err_default_delete_in_multiple_declaration)
+        << Delete;
+      SkipUntil(tok::semi);
+    } else {
+      ExpectAndConsume(tok::semi, diag::err_expected_semi_after,
+                       Delete ? "delete" : "default", tok::semi);
+    }
+
+    return FnD;
+  }
+
+  // In delayed template parsing mode, if we are within a class template
+  // or if we are about to parse function member template then consume
+  // the tokens and store them for parsing at the end of the translation unit.
+  if (getLang().DelayedTemplateParsing && 
+      ((Actions.CurContext->isDependentContext() ||
+        TemplateInfo.Kind != ParsedTemplateInfo::NonTemplate) && 
+        !Actions.IsInsideALocalClassWithinATemplateFunction()) &&
+        !D.getDeclSpec().isFriendSpecified()) {
+
+    if (FnD) {
+      LateParsedTemplatedFunction *LPT =
+        new LateParsedTemplatedFunction(this, FnD);
+
+      FunctionDecl *FD = 0;
+      if (FunctionTemplateDecl *FunTmpl = dyn_cast<FunctionTemplateDecl>(FnD))
+        FD = FunTmpl->getTemplatedDecl();
+      else
+        FD = cast<FunctionDecl>(FnD);
+      Actions.CheckForFunctionRedefinition(FD);
+
+      LateParsedTemplateMap[FD] = LPT;
+      Actions.MarkAsLateParsedTemplate(FD);
+      LexTemplateFunctionForLateParsing(LPT->Toks);
+    } else {
+      CachedTokens Toks;
+      LexTemplateFunctionForLateParsing(Toks);
+    }
+
+    return FnD;
+  }
 
   // Consume the tokens and store them for later parsing.
 
@@ -92,6 +153,14 @@ Decl *Parser::ParseCXXInlineMethodDef(AccessSpecifier AS, ParsingDeclarator &D,
       ConsumeAndStoreUntil(tok::l_brace, Toks, /*StopAtSemi=*/false);
       ConsumeAndStoreUntil(tok::r_brace, Toks, /*StopAtSemi=*/false);
     }
+  }
+
+
+  if (!FnD) {
+    // If semantic analysis could not build a function declaration,
+    // just throw away the late-parsed declaration.
+    delete getCurrentClass().LateParsedDeclarations.back();
+    getCurrentClass().LateParsedDeclarations.pop_back();
   }
 
   return FnD;

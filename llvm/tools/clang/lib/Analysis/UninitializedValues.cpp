@@ -27,6 +27,7 @@ using namespace clang;
 
 static bool isTrackedVar(const VarDecl *vd, const DeclContext *dc) {
   if (vd->isLocalVarDecl() && !vd->hasGlobalStorage() &&
+      !vd->isExceptionVariable() &&
       vd->getDeclContext() == dc) {
     QualType ty = vd->getType();
     return ty->isScalarType() || ty->isVectorType();
@@ -51,7 +52,7 @@ public:
   unsigned size() const { return map.size(); }
   
   /// Returns the bit vector index for a given declaration.
-  llvm::Optional<unsigned> getValueIndex(const VarDecl *d);
+  llvm::Optional<unsigned> getValueIndex(const VarDecl *d) const;
 };
 }
 
@@ -66,8 +67,8 @@ void DeclToIndex::computeMap(const DeclContext &dc) {
   }
 }
 
-llvm::Optional<unsigned> DeclToIndex::getValueIndex(const VarDecl *d) {
-  llvm::DenseMap<const VarDecl *, unsigned>::iterator I = map.find(d);
+llvm::Optional<unsigned> DeclToIndex::getValueIndex(const VarDecl *d) const {
+  llvm::DenseMap<const VarDecl *, unsigned>::const_iterator I = map.find(d);
   if (I == map.end())
     return llvm::Optional<unsigned>();
   return I->second;
@@ -91,6 +92,7 @@ static bool isAlwaysUninit(const Value v) {
   return v == Uninitialized;
 }
 
+namespace {
 class ValueVector {
   llvm::BitVector vec;
 public:
@@ -126,7 +128,6 @@ public:
 
 typedef std::pair<ValueVector *, ValueVector *> BVPair;
 
-namespace {
 class CFGBlockValues {
   const CFG &cfg;
   BVPair *vals;
@@ -137,6 +138,8 @@ class CFGBlockValues {
 public:
   CFGBlockValues(const CFG &cfg);
   ~CFGBlockValues();
+  
+  unsigned getNumEntries() const { return declToIndex.size(); }
   
   void computeSetOfDeclarations(const DeclContext &dc);  
   ValueVector &getValueVector(const CFGBlock *block,
@@ -152,19 +155,25 @@ public:
     return declToIndex.size() == 0;
   }
   
+  bool hasEntry(const VarDecl *vd) const {
+    return declToIndex.getValueIndex(vd).hasValue();
+  }
+  
+  bool hasValues(const CFGBlock *block);
+  
   void resetScratch();
   ValueVector &getScratch() { return scratch; }
   
   ValueVector::reference operator[](const VarDecl *vd);
 };  
-}
+} // end anonymous namespace
 
 CFGBlockValues::CFGBlockValues(const CFG &c) : cfg(c), vals(0) {
   unsigned n = cfg.getNumBlockIDs();
   if (!n)
     return;
   vals = new std::pair<ValueVector*, ValueVector*>[n];
-  memset(vals, 0, sizeof(*vals) * n);
+  memset((void*)vals, 0, sizeof(*vals) * n);
 }
 
 CFGBlockValues::~CFGBlockValues() {
@@ -205,11 +214,15 @@ static BinaryOperator *getLogicalOperatorInChain(const CFGBlock *block) {
   if (!b || !b->isLogicalOp())
     return 0;
   
-  if (block->pred_size() == 2 &&
-      ((block->succ_size() == 2 && block->getTerminatorCondition() == b) ||
-       block->size() == 1))
-    return b;
-  
+  if (block->pred_size() == 2) {
+    if (block->getTerminatorCondition() == b) {
+      if (block->succ_size() == 2)
+      return b;
+    }
+    else if (block->size() == 1)
+      return b;
+  }
+
   return 0;
 }
 
@@ -225,6 +238,11 @@ ValueVector &CFGBlockValues::getValueVector(const CFGBlock *block,
 
   assert(vals[idx].second == 0);
   return lazyCreate(vals[idx].first);
+}
+
+bool CFGBlockValues::hasValues(const CFGBlock *block) {
+  unsigned idx = block->getBlockID();
+  return vals[idx].second != 0;  
 }
 
 BVPair &CFGBlockValues::getValueVectors(const clang::CFGBlock *block,
@@ -376,6 +394,7 @@ public:
   void VisitBinaryOperator(BinaryOperator *bo);
   void VisitCastExpr(CastExpr *ce);
   void VisitUnaryExprOrTypeTraitExpr(UnaryExprOrTypeTraitExpr *se);
+  void VisitCXXTypeidExpr(CXXTypeidExpr *E);
   void BlockStmt_VisitObjCForCollectionStmt(ObjCForCollectionStmt *fs);
   
   bool isTrackedVar(const VarDecl *vd) {
@@ -430,13 +449,18 @@ void TransferFunctions::BlockStmt_VisitObjCForCollectionStmt(
 void TransferFunctions::VisitBlockExpr(BlockExpr *be) {
   if (!flagBlockUses || !handler)
     return;
-  AnalysisContext::referenced_decls_iterator i, e;
-  llvm::tie(i, e) = ac.getReferencedBlockVars(be->getBlockDecl());
-  for ( ; i != e; ++i) {
-    const VarDecl *vd = *i;
-    if (vd->getAttr<BlocksAttr>() || !vd->hasLocalStorage() || 
-        !isTrackedVar(vd))
+  const BlockDecl *bd = be->getBlockDecl();
+  for (BlockDecl::capture_const_iterator i = bd->capture_begin(),
+        e = bd->capture_end() ; i != e; ++i) {
+    const VarDecl *vd = i->getVariable();
+    if (!vd->hasLocalStorage())
       continue;
+    if (!isTrackedVar(vd))
+      continue;
+    if (i->isByRef()) {
+      vals[vd] = Initialized;
+      continue;
+    }
     Value v = vals[vd];
     if (isUninitialized(v))
       handler->handleUseOfUninitVariable(be, vd, isAlwaysUninit(v));
@@ -448,13 +472,24 @@ void TransferFunctions::VisitDeclStmt(DeclStmt *ds) {
        DI != DE; ++DI) {
     if (VarDecl *vd = dyn_cast<VarDecl>(*DI)) {
       if (isTrackedVar(vd)) {
-        vals[vd] = Uninitialized;
-        if (Stmt *init = vd->getInit()) {
+        if (Expr *init = vd->getInit()) {
           Visit(init);
-          vals[vd] = Initialized;
+
+          // If the initializer consists solely of a reference to itself, we
+          // explicitly mark the variable as uninitialized. This allows code
+          // like the following:
+          //
+          //   int x = x;
+          //
+          // to deliberately leave a variable uninitialized. Different analysis
+          // clients can detect this pattern and adjust their reporting
+          // appropriately, but we need to continue to analyze subsequent uses
+          // of the variable.
+          DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(init->IgnoreParenImpCasts());
+          vals[vd] = (DRE && DRE->getDecl() == vd) ? Uninitialized
+                                                   : Initialized;
         }
-      }
-      else if (Stmt *init = vd->getInit()) {
+      } else if (Stmt *init = vd->getInit()) {
         Visit(init);
       }
     }
@@ -582,14 +617,28 @@ void TransferFunctions::VisitUnaryExprOrTypeTraitExpr(
   }
 }
 
+void TransferFunctions::VisitCXXTypeidExpr(CXXTypeidExpr *E) {
+  // typeid(expression) is potentially evaluated when the argument is
+  // a glvalue of polymorphic type. (C++ 5.2.8p2-3)
+  if (!E->isTypeOperand() && E->Classify(ac.getASTContext()).isGLValue()) {
+    QualType SubExprTy = E->getExprOperand()->getType();
+    if (const RecordType *Record = SubExprTy->getAs<RecordType>())
+      if (cast<CXXRecordDecl>(Record->getDecl())->isPolymorphic())
+        Visit(E->getExprOperand());
+  }
+}
+
 //------------------------------------------------------------------------====//
 // High-level "driver" logic for uninitialized values analysis.
 //====------------------------------------------------------------------------//
 
 static bool runOnBlock(const CFGBlock *block, const CFG &cfg,
                        AnalysisContext &ac, CFGBlockValues &vals,
+                       llvm::BitVector &wasAnalyzed,
                        UninitVariablesHandler *handler = 0,
                        bool flagBlockUses = false) {
+  
+  wasAnalyzed[block->getBlockID()] = true;
   
   if (const BinaryOperator *b = getLogicalOperatorInChain(block)) {
     CFGBlock::const_pred_iterator itr = block->pred_begin();
@@ -644,14 +693,29 @@ void clang::runUninitializedVariablesAnalysis(const DeclContext &dc,
   vals.computeSetOfDeclarations(dc);
   if (vals.hasNoDeclarations())
     return;
+
+  // Mark all variables uninitialized at the entry.
+  const CFGBlock &entry = cfg.getEntry();
+  for (CFGBlock::const_succ_iterator i = entry.succ_begin(), 
+        e = entry.succ_end(); i != e; ++i) {
+    if (const CFGBlock *succ = *i) {
+      ValueVector &vec = vals.getValueVector(&entry, succ);
+      const unsigned n = vals.getNumEntries();
+      for (unsigned j = 0; j < n ; ++j) {
+        vec[j] = Uninitialized;
+      }
+    }
+  }
+
+  // Proceed with the workist.
   DataflowWorklist worklist(cfg);
   llvm::BitVector previouslyVisited(cfg.getNumBlockIDs());
-  
   worklist.enqueueSuccessors(&cfg.getEntry());
+  llvm::BitVector wasAnalyzed(cfg.getNumBlockIDs(), false);
 
   while (const CFGBlock *block = worklist.dequeue()) {
     // Did the block change?
-    bool changed = runOnBlock(block, cfg, ac, vals);    
+    bool changed = runOnBlock(block, cfg, ac, vals, wasAnalyzed);    
     if (changed || !previouslyVisited[block->getBlockID()])
       worklist.enqueueSuccessors(block);    
     previouslyVisited[block->getBlockID()] = true;
@@ -659,7 +723,9 @@ void clang::runUninitializedVariablesAnalysis(const DeclContext &dc,
   
   // Run through the blocks one more time, and report uninitialized variabes.
   for (CFG::const_iterator BI = cfg.begin(), BE = cfg.end(); BI != BE; ++BI) {
-    runOnBlock(*BI, cfg, ac, vals, &handler, /* flagBlockUses */ true);
+    if (wasAnalyzed[(*BI)->getBlockID()])
+      runOnBlock(*BI, cfg, ac, vals, wasAnalyzed, &handler,
+                 /* flagBlockUses */ true);
   }
 }
 

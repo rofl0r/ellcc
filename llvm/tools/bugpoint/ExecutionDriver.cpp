@@ -323,7 +323,7 @@ void BugDriver::compileProgram(Module *M, std::string *Error) const {
   }
 
   // Remove the temporary bitcode file when we are done.
-  FileRemover BitcodeFileRemover(BitcodeFile, !SaveTemps);
+  FileRemover BitcodeFileRemover(BitcodeFile.str(), !SaveTemps);
 
   // Actually compile the program!
   Interpreter->compileProgram(BitcodeFile.str(), Error, Timeout, MemoryLimit);
@@ -364,7 +364,8 @@ std::string BugDriver::executeProgram(const Module *Program,
 
   // Remove the temporary bitcode file when we are done.
   sys::Path BitcodePath(BitcodeFile);
-  FileRemover BitcodeFileRemover(BitcodePath, CreatedBitcode && !SaveTemps);
+  FileRemover BitcodeFileRemover(BitcodePath.str(),
+    CreatedBitcode && !SaveTemps);
 
   if (OutputFile.empty()) OutputFile = OutputPrefix + "-execution-output";
 
@@ -474,7 +475,7 @@ bool BugDriver::createReferenceFile(Module *M, const std::string &Filename) {
 /// diffProgram - This method executes the specified module and diffs the
 /// output against the file specified by ReferenceOutputFile.  If the output
 /// is different, 1 is returned.  If there is a problem with the code
-/// generator (e.g., llc crashes), this will return -1 and set Error.
+/// generator (e.g., llc crashes), this will set ErrMsg.
 ///
 bool BugDriver::diffProgram(const Module *Program,
                             const std::string &BitcodeFile,

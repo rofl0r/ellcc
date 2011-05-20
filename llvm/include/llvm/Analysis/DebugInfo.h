@@ -49,15 +49,16 @@ namespace llvm {
   class DIDescriptor {
   public:
     enum {
-      FlagPrivate          = 1 << 0,
-      FlagProtected        = 1 << 1,
-      FlagFwdDecl          = 1 << 2,
-      FlagAppleBlock       = 1 << 3,
-      FlagBlockByrefStruct = 1 << 4,
-      FlagVirtual          = 1 << 5,
-      FlagArtificial       = 1 << 6,
-      FlagExplicit         = 1 << 7,
-      FlagPrototyped       = 1 << 8
+      FlagPrivate            = 1 << 0,
+      FlagProtected          = 1 << 1,
+      FlagFwdDecl            = 1 << 2,
+      FlagAppleBlock         = 1 << 3,
+      FlagBlockByrefStruct   = 1 << 4,
+      FlagVirtual            = 1 << 5,
+      FlagArtificial         = 1 << 6,
+      FlagExplicit           = 1 << 7,
+      FlagPrototyped         = 1 << 8,
+      FlagObjcClassComplete  = 1 << 9
     };
   protected:
     const MDNode *DbgNode;
@@ -271,6 +272,9 @@ namespace llvm {
     bool isArtificial() const {
       return (getFlags() & FlagArtificial) != 0;
     }
+    bool isObjcClassComplete() const {
+      return (getFlags() & FlagObjcClassComplete) != 0;
+    }
     bool isValid() const {
       return DbgNode && (isBasicType() || isDerivedType() || isCompositeType());
     }
@@ -331,6 +335,32 @@ namespace llvm {
     /// getOriginalTypeSize - If this type is derived from a base type then
     /// return base type size.
     uint64_t getOriginalTypeSize() const;
+
+    StringRef getObjCPropertyName() const { return getStringField(10); }
+    StringRef getObjCPropertyGetterName() const {
+      return getStringField(11);
+    }
+    StringRef getObjCPropertySetterName() const {
+      return getStringField(12);
+    }
+    bool isReadOnlyObjCProperty() {
+      return (getUnsignedField(13) & dwarf::DW_APPLE_PROPERTY_readonly) != 0;
+    }
+    bool isReadWriteObjCProperty() {
+      return (getUnsignedField(13) & dwarf::DW_APPLE_PROPERTY_readwrite) != 0;
+    }
+    bool isAssignObjCProperty() {
+      return (getUnsignedField(13) & dwarf::DW_APPLE_PROPERTY_assign) != 0;
+    }
+    bool isRetainObjCProperty() {
+      return (getUnsignedField(13) & dwarf::DW_APPLE_PROPERTY_retain) != 0;
+    }
+    bool isCopyObjCProperty() {
+      return (getUnsignedField(13) & dwarf::DW_APPLE_PROPERTY_copy) != 0;
+    }
+    bool isNonAtomicObjCProperty() {
+      return (getUnsignedField(13) & dwarf::DW_APPLE_PROPERTY_nonatomic) != 0;
+    }
 
     /// Verify - Verify that a derived type descriptor is well formed.
     bool Verify() const;
@@ -511,6 +541,10 @@ namespace llvm {
     bool describes(const Function *F);
 
     Function *getFunction() const { return getFunctionField(16); }
+    DIArray getTemplateParams() const { return getFieldAs<DIArray>(17); }
+    DISubprogram getFunctionDeclaration() const {
+      return getFieldAs<DISubprogram>(18);
+    }
   };
 
   /// DIGlobalVariable - This is a wrapper for a global variable.
@@ -592,7 +626,9 @@ namespace llvm {
     unsigned getNumAddrElements() const;
     
     uint64_t getAddrElement(unsigned Idx) const {
-      return getUInt64Field(Idx+6);
+      if (getVersion() <= llvm::LLVMDebugVersion8)
+        return getUInt64Field(Idx+6);
+      return getUInt64Field(Idx+7);
     }
 
     /// isBlockByrefVariable - Return true if the variable was declared as

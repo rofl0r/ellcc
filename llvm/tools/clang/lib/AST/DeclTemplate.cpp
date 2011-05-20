@@ -242,6 +242,13 @@ FunctionTemplateDecl::findSpecialization(const TemplateArgument *Args,
   return findSpecializationImpl(getSpecializations(), Args, NumArgs, InsertPos);
 }
 
+void FunctionTemplateDecl::addSpecialization(
+      FunctionTemplateSpecializationInfo *Info, void *InsertPos) {
+  getSpecializations().InsertNode(Info, InsertPos);
+  if (ASTMutationListener *L = getASTMutationListener())
+    L->AddedCXXTemplateSpecialization(this, Info->Function);
+}
+
 std::pair<const TemplateArgument *, unsigned> 
 FunctionTemplateDecl::getInjectedTemplateArgs() {
   TemplateParameterList *Params = getTemplateParameters();
@@ -418,15 +425,17 @@ TemplateTypeParmDecl::Create(const ASTContext &C, DeclContext *DC,
                              SourceLocation KeyLoc, SourceLocation NameLoc,
                              unsigned D, unsigned P, IdentifierInfo *Id,
                              bool Typename, bool ParameterPack) {
-  QualType Type = C.getTemplateTypeParmType(D, P, ParameterPack, Id);
-  return new (C) TemplateTypeParmDecl(DC, KeyLoc, NameLoc, Id, Typename,
-                                      Type, ParameterPack);
+  TemplateTypeParmDecl *TTPDecl =
+    new (C) TemplateTypeParmDecl(DC, KeyLoc, NameLoc, Id, Typename);
+  QualType TTPType = C.getTemplateTypeParmType(D, P, ParameterPack, TTPDecl);
+  TTPDecl->TypeForDecl = TTPType.getTypePtr();
+  return TTPDecl;
 }
 
 TemplateTypeParmDecl *
 TemplateTypeParmDecl::Create(const ASTContext &C, EmptyShell Empty) {
   return new (C) TemplateTypeParmDecl(0, SourceLocation(), SourceLocation(),
-                                      0, false, QualType(), false);
+                                      0, false);
 }
 
 SourceLocation TemplateTypeParmDecl::getDefaultArgumentLoc() const {
@@ -449,6 +458,10 @@ unsigned TemplateTypeParmDecl::getDepth() const {
 
 unsigned TemplateTypeParmDecl::getIndex() const {
   return TypeForDecl->getAs<TemplateTypeParmType>()->getIndex();
+}
+
+bool TemplateTypeParmDecl::isParameterPack() const {
+  return TypeForDecl->getAs<TemplateTypeParmType>()->isParameterPack();
 }
 
 //===----------------------------------------------------------------------===//
@@ -722,3 +735,34 @@ FriendTemplateDecl *FriendTemplateDecl::Create(ASTContext &Context,
                                                EmptyShell Empty) {
   return new (Context) FriendTemplateDecl(Empty);
 }
+
+//===----------------------------------------------------------------------===//
+// TypeAliasTemplateDecl Implementation
+//===----------------------------------------------------------------------===//
+
+TypeAliasTemplateDecl *TypeAliasTemplateDecl::Create(ASTContext &C,
+                                                     DeclContext *DC,
+                                                     SourceLocation L,
+                                                     DeclarationName Name,
+                                                  TemplateParameterList *Params,
+                                                     NamedDecl *Decl) {
+  AdoptTemplateParameterList(Params, DC);
+  return new (C) TypeAliasTemplateDecl(DC, L, Name, Params, Decl);
+}
+
+TypeAliasTemplateDecl *TypeAliasTemplateDecl::Create(ASTContext &C,
+                                                     EmptyShell) {
+  return new (C) TypeAliasTemplateDecl(0, SourceLocation(), DeclarationName(),
+                                       0, 0);
+}
+
+void TypeAliasTemplateDecl::DeallocateCommon(void *Ptr) {
+  static_cast<Common *>(Ptr)->~Common();
+}
+RedeclarableTemplateDecl::CommonBase *
+TypeAliasTemplateDecl::newCommon(ASTContext &C) {
+  Common *CommonPtr = new (C) Common;
+  C.AddDeallocation(DeallocateCommon, CommonPtr);
+  return CommonPtr;
+}
+

@@ -446,10 +446,15 @@ void Sema::PrintInstantiationStack() {
         Diags.Report(Active->PointOfInstantiation, DiagID)
           << Function
           << Active->InstantiationRange;
-      } else {
+      } else if (VarDecl *VD = dyn_cast<VarDecl>(D)) {
         Diags.Report(Active->PointOfInstantiation,
                      diag::note_template_static_data_member_def_here)
-          << cast<VarDecl>(D)
+          << VD
+          << Active->InstantiationRange;
+      } else {
+        Diags.Report(Active->PointOfInstantiation,
+                     diag::note_template_type_alias_instantiation_here)
+          << cast<TypeAliasTemplateDecl>(D)
           << Active->InstantiationRange;
       }
       break;
@@ -757,6 +762,7 @@ namespace {
     QualType TransformFunctionProtoType(TypeLocBuilder &TLB,
                                         FunctionProtoTypeLoc TL);
     ParmVarDecl *TransformFunctionTypeParam(ParmVarDecl *OldParm,
+                                            int indexAdjustment,
                                       llvm::Optional<unsigned> NumExpansions);
 
     /// \brief Transforms a template type parameter type by performing
@@ -967,8 +973,7 @@ TemplateName TemplateInstantiator::TransformTemplateName(CXXScopeSpec &SS,
       }
       
       TemplateName Template = Arg.getAsTemplate();
-      assert(!Template.isNull() && Template.getAsTemplateDecl() &&
-             "Wrong kind of template template argument");
+      assert(!Template.isNull() && "Null template template argument");
       
       // We don't ever want to substitute for a qualified template name, since
       // the qualifier is handled separately. So, look through the qualified
@@ -1174,8 +1179,9 @@ QualType TemplateInstantiator::TransformFunctionProtoType(TypeLocBuilder &TLB,
 
 ParmVarDecl *
 TemplateInstantiator::TransformFunctionTypeParam(ParmVarDecl *OldParm,
+                                                 int indexAdjustment,
                                        llvm::Optional<unsigned> NumExpansions) {
-  return SemaRef.SubstParmVarDecl(OldParm, TemplateArgs,
+  return SemaRef.SubstParmVarDecl(OldParm, TemplateArgs, indexAdjustment,
                                   NumExpansions);
 }
 
@@ -1238,12 +1244,17 @@ TemplateInstantiator::TransformTemplateTypeParmType(TypeLocBuilder &TLB,
   // the template parameter list of a member template inside the
   // template we are instantiating). Create a new template type
   // parameter with the template "level" reduced by one.
+  TemplateTypeParmDecl *NewTTPDecl = 0;
+  if (TemplateTypeParmDecl *OldTTPDecl = T->getDecl())
+    NewTTPDecl = cast_or_null<TemplateTypeParmDecl>(
+                                  TransformDecl(TL.getNameLoc(), OldTTPDecl));
+
   QualType Result
     = getSema().Context.getTemplateTypeParmType(T->getDepth()
                                                  - TemplateArgs.getNumLevels(),
                                                 T->getIndex(),
                                                 T->isParameterPack(),
-                                                T->getName());
+                                                NewTTPDecl);
   TemplateTypeParmTypeLoc NewTL = TLB.push<TemplateTypeParmTypeLoc>(Result);
   NewTL.setNameLoc(TL.getNameLoc());
   return Result;
@@ -1377,6 +1388,12 @@ static bool NeedsInstantiationAsFunctionType(TypeSourceInfo *T) {
   for (unsigned I = 0, E = FP.getNumArgs(); I != E; ++I) {
     ParmVarDecl *P = FP.getArg(I);
 
+    // The parameter's type as written might be dependent even if the
+    // decayed type was not dependent.
+    if (TypeSourceInfo *TSInfo = P->getTypeSourceInfo())
+      if (TSInfo->getType()->isDependentType())
+        return true;
+
     // TODO: currently we always rebuild expressions.  When we
     // properly get lazier about this, we should use the same
     // logic to avoid rebuilding prototypes here.
@@ -1417,6 +1434,7 @@ TypeSourceInfo *Sema::SubstFunctionDeclType(TypeSourceInfo *T,
 
 ParmVarDecl *Sema::SubstParmVarDecl(ParmVarDecl *OldParm, 
                             const MultiLevelTemplateArgumentList &TemplateArgs,
+                                    int indexAdjustment,
                                     llvm::Optional<unsigned> NumExpansions) {
   TypeSourceInfo *OldDI = OldParm->getTypeSourceInfo();
   TypeSourceInfo *NewDI = 0;
@@ -1487,6 +1505,9 @@ ParmVarDecl *Sema::SubstParmVarDecl(ParmVarDecl *OldParm,
   // FIXME: OldParm may come from a FunctionProtoType, in which case CurContext
   // can be anything, is this right ?
   NewParm->setDeclContext(CurContext);
+
+  NewParm->setScopeInfo(OldParm->getFunctionScopeDepth(),
+                        OldParm->getFunctionScopeIndex() + indexAdjustment);
   
   return NewParm;  
 }
@@ -1650,9 +1671,18 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
 
   CXXRecordDecl *PatternDef
     = cast_or_null<CXXRecordDecl>(Pattern->getDefinition());
-  if (!PatternDef) {
-    if (!Complain) {
+  if (!PatternDef || PatternDef->isBeingDefined()) {
+    if (!Complain || (PatternDef && PatternDef->isInvalidDecl())) {
       // Say nothing
+    } else if (PatternDef) {
+      assert(PatternDef->isBeingDefined());
+      Diag(PointOfInstantiation,
+           diag::err_template_instantiate_within_definition)
+        << (TSK != TSK_ImplicitInstantiation)
+        << Context.getTypeDeclType(Instantiation);
+      // Not much point in noting the template declaration here, since
+      // we're lexically inside it.
+      Instantiation->setInvalidDecl();
     } else if (Pattern == Instantiation->getInstantiatedFromMemberClass()) {
       Diag(PointOfInstantiation,
            diag::err_implicit_instantiate_member_undefined)
@@ -1989,7 +2019,7 @@ Sema::InstantiateClassMembers(SourceLocation PointOfInstantiation,
             SuppressNew)
           continue;
         
-        if (Function->hasBody())
+        if (Function->isDefined())
           continue;
 
         if (TSK == TSK_ExplicitInstantiationDefinition) {
@@ -1999,7 +2029,7 @@ Sema::InstantiateClassMembers(SourceLocation PointOfInstantiation,
           //   specialization and is only an explicit instantiation definition 
           //   of members whose definition is visible at the point of 
           //   instantiation.
-          if (!Pattern->hasBody())
+          if (!Pattern->isDefined())
             continue;
         
           Function->setTemplateSpecializationKind(TSK, PointOfInstantiation);

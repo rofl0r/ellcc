@@ -93,6 +93,7 @@ namespace clang {
     void VisitShuffleVectorExpr(ShuffleVectorExpr *E);
     void VisitBlockExpr(BlockExpr *E);
     void VisitBlockDeclRefExpr(BlockDeclRefExpr *E);
+    void VisitGenericSelectionExpr(GenericSelectionExpr *E);
 
     // Objective-C Expressions
     void VisitObjCStringLiteral(ObjCStringLiteral *E);
@@ -115,6 +116,7 @@ namespace clang {
     // C++ Statements
     void VisitCXXCatchStmt(CXXCatchStmt *S);
     void VisitCXXTryStmt(CXXTryStmt *S);
+    void VisitCXXForRangeStmt(CXXForRangeStmt *);
 
     void VisitCXXOperatorCallExpr(CXXOperatorCallExpr *E);
     void VisitCXXMemberCallExpr(CXXMemberCallExpr *E);
@@ -151,6 +153,8 @@ namespace clang {
 
     void VisitUnaryTypeTraitExpr(UnaryTypeTraitExpr *E);
     void VisitBinaryTypeTraitExpr(BinaryTypeTraitExpr *E);
+    void VisitArrayTypeTraitExpr(ArrayTypeTraitExpr *E);
+    void VisitExpressionTraitExpr(ExpressionTraitExpr *E);
     void VisitCXXNoexceptExpr(CXXNoexceptExpr *E);
     void VisitPackExpansionExpr(PackExpansionExpr *E);
     void VisitSizeOfPackExpr(SizeOfPackExpr *E);
@@ -177,7 +181,7 @@ void ASTStmtWriter::VisitStmt(Stmt *S) {
 void ASTStmtWriter::VisitNullStmt(NullStmt *S) {
   VisitStmt(S);
   Writer.AddSourceLocation(S->getSemiLoc(), Record);
-  Record.push_back(S->LeadingEmptyMacro);
+  Writer.AddSourceLocation(S->LeadingEmptyMacro, Record);
   Code = serialization::STMT_NULL;
 }
 
@@ -380,6 +384,7 @@ void ASTStmtWriter::VisitDeclRefExpr(DeclRefExpr *E) {
   VisitExpr(E);
 
   Record.push_back(E->hasQualifier());
+  Record.push_back(E->getDecl() != E->getFoundDecl());
   Record.push_back(E->hasExplicitTemplateArgs());
 
   if (E->hasExplicitTemplateArgs()) {
@@ -389,6 +394,9 @@ void ASTStmtWriter::VisitDeclRefExpr(DeclRefExpr *E) {
 
   if (E->hasQualifier())
     Writer.AddNestedNameSpecifierLoc(E->getQualifierLoc(), Record);
+
+  if (E->getDecl() != E->getFoundDecl())
+    Writer.AddDeclRef(E->getFoundDecl(), Record);
 
   if (E->hasExplicitTemplateArgs())
     AddExplicitTemplateArgumentList(E->getExplicitTemplateArgs());
@@ -425,6 +433,7 @@ void ASTStmtWriter::VisitStringLiteral(StringLiteral *E) {
   Record.push_back(E->getByteLength());
   Record.push_back(E->getNumConcatenated());
   Record.push_back(E->isWide());
+  Record.push_back(E->isPascal());
   // FIXME: String data should be stored as a blob at the end of the
   // StringLiteral. However, we can't do so now because we have no
   // provision for coping with abbreviations when we're jumping around
@@ -664,14 +673,27 @@ void ASTStmtWriter::VisitExtVectorElementExpr(ExtVectorElementExpr *E) {
 
 void ASTStmtWriter::VisitInitListExpr(InitListExpr *E) {
   VisitExpr(E);
-  Record.push_back(E->getNumInits());
-  for (unsigned I = 0, N = E->getNumInits(); I != N; ++I)
-    Writer.AddStmt(E->getInit(I));
   Writer.AddStmt(E->getSyntacticForm());
   Writer.AddSourceLocation(E->getLBraceLoc(), Record);
   Writer.AddSourceLocation(E->getRBraceLoc(), Record);
-  Writer.AddDeclRef(E->getInitializedFieldInUnion(), Record);
+  bool isArrayFiller = E->ArrayFillerOrUnionFieldInit.is<Expr*>();
+  Record.push_back(isArrayFiller);
+  if (isArrayFiller)
+    Writer.AddStmt(E->getArrayFiller());
+  else
+    Writer.AddDeclRef(E->getInitializedFieldInUnion(), Record);
   Record.push_back(E->hadArrayRangeDesignator());
+  Record.push_back(E->getNumInits());
+  if (isArrayFiller) {
+    // ArrayFiller may have filled "holes" due to designated initializer.
+    // Replace them by 0 to indicate that the filler goes in that place.
+    Expr *filler = E->getArrayFiller();
+    for (unsigned I = 0, N = E->getNumInits(); I != N; ++I)
+      Writer.AddStmt(E->getInit(I) != filler ? E->getInit(I) : 0);
+  } else {
+    for (unsigned I = 0, N = E->getNumInits(); I != N; ++I)
+      Writer.AddStmt(E->getInit(I));
+  }
   Code = serialization::EXPR_INIT_LIST;
 }
 
@@ -781,6 +803,23 @@ void ASTStmtWriter::VisitBlockDeclRefExpr(BlockDeclRefExpr *E) {
   Record.push_back(E->isByRef());
   Record.push_back(E->isConstQualAdded());
   Code = serialization::EXPR_BLOCK_DECL_REF;
+}
+
+void ASTStmtWriter::VisitGenericSelectionExpr(GenericSelectionExpr *E) {
+  VisitExpr(E);
+  Record.push_back(E->getNumAssocs());
+
+  Writer.AddStmt(E->getControllingExpr());
+  for (unsigned I = 0, N = E->getNumAssocs(); I != N; ++I) {
+    Writer.AddTypeSourceInfo(E->getAssocTypeSourceInfo(I), Record);
+    Writer.AddStmt(E->getAssocExpr(I));
+  }
+  Record.push_back(E->isResultDependent() ? -1U : E->getResultIndex());
+
+  Writer.AddSourceLocation(E->getGenericLoc(), Record);
+  Writer.AddSourceLocation(E->getDefaultLoc(), Record);
+  Writer.AddSourceLocation(E->getRParenLoc(), Record);
+  Code = serialization::EXPR_GENERIC_SELECTION;
 }
 
 //===----------------------------------------------------------------------===//
@@ -960,6 +999,20 @@ void ASTStmtWriter::VisitCXXTryStmt(CXXTryStmt *S) {
   for (unsigned i = 0, e = S->getNumHandlers(); i != e; ++i)
     Writer.AddStmt(S->getHandler(i));
   Code = serialization::STMT_CXX_TRY;
+}
+
+void ASTStmtWriter::VisitCXXForRangeStmt(CXXForRangeStmt *S) {
+  VisitStmt(S);
+  Writer.AddSourceLocation(S->getForLoc(), Record);
+  Writer.AddSourceLocation(S->getColonLoc(), Record);
+  Writer.AddSourceLocation(S->getRParenLoc(), Record);
+  Writer.AddStmt(S->getRangeStmt());
+  Writer.AddStmt(S->getBeginEndStmt());
+  Writer.AddStmt(S->getCond());
+  Writer.AddStmt(S->getInc());
+  Writer.AddStmt(S->getLoopVarStmt());
+  Writer.AddStmt(S->getBody());
+  Code = serialization::STMT_CXX_FOR_RANGE;
 }
 
 void ASTStmtWriter::VisitCXXOperatorCallExpr(CXXOperatorCallExpr *E) {
@@ -1266,6 +1319,8 @@ void ASTStmtWriter::VisitUnresolvedMemberExpr(UnresolvedMemberExpr *E) {
 void ASTStmtWriter::VisitUnresolvedLookupExpr(UnresolvedLookupExpr *E) {
   VisitOverloadExpr(E);
   Record.push_back(E->requiresADL());
+  if (E->requiresADL())
+    Record.push_back(E->isStdAssociatedNamespace());
   Record.push_back(E->isOverloaded());
   Writer.AddDeclRef(E->getNamingClass(), Record);
   Code = serialization::EXPR_CXX_UNRESOLVED_LOOKUP;
@@ -1288,6 +1343,24 @@ void ASTStmtWriter::VisitBinaryTypeTraitExpr(BinaryTypeTraitExpr *E) {
   Writer.AddTypeSourceInfo(E->getLhsTypeSourceInfo(), Record);
   Writer.AddTypeSourceInfo(E->getRhsTypeSourceInfo(), Record);
   Code = serialization::EXPR_BINARY_TYPE_TRAIT;
+}
+
+void ASTStmtWriter::VisitArrayTypeTraitExpr(ArrayTypeTraitExpr *E) {
+  VisitExpr(E);
+  Record.push_back(E->getTrait());
+  Record.push_back(E->getValue());
+  Writer.AddSourceRange(E->getSourceRange(), Record);
+  Writer.AddTypeSourceInfo(E->getQueriedTypeSourceInfo(), Record);
+  Code = serialization::EXPR_ARRAY_TYPE_TRAIT;
+}
+
+void ASTStmtWriter::VisitExpressionTraitExpr(ExpressionTraitExpr *E) {
+  VisitExpr(E);
+  Record.push_back(E->getTrait());
+  Record.push_back(E->getValue());
+  Writer.AddSourceRange(E->getSourceRange(), Record);
+  Writer.AddStmt(E->getQueriedExpression());
+  Code = serialization::EXPR_CXX_EXPRESSION_TRAIT;
 }
 
 void ASTStmtWriter::VisitCXXNoexceptExpr(CXXNoexceptExpr *E) {
@@ -1420,7 +1493,7 @@ void ASTWriter::FlushStmts() {
     WriteSubStmt(StmtsToEmit[I]);
     
     assert(N == StmtsToEmit.size() &&
-           "Substatement writen via AddStmt rather than WriteSubStmt!");
+           "Substatement written via AddStmt rather than WriteSubStmt!");
 
     // Note that we are at the end of a full expression. Any
     // expression records that follow this one are part of a different

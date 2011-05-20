@@ -143,9 +143,9 @@ public:
   virtual void EmitBytes(StringRef Data, unsigned AddrSpace);
 
   virtual void EmitValueImpl(const MCExpr *Value, unsigned Size,
-                             bool isPCRel, unsigned AddrSpace);
-  virtual void EmitULEB128Value(const MCExpr *Value, unsigned AddrSpace = 0);
-  virtual void EmitSLEB128Value(const MCExpr *Value, unsigned AddrSpace = 0);
+                             unsigned AddrSpace);
+  virtual void EmitULEB128Value(const MCExpr *Value);
+  virtual void EmitSLEB128Value(const MCExpr *Value);
   virtual void EmitGPRel32Value(const MCExpr *Value);
 
 
@@ -352,9 +352,8 @@ void PTXMCAsmStreamer::EmitBytes(StringRef Data, unsigned AddrSpace) {
 }
 
 void PTXMCAsmStreamer::EmitValueImpl(const MCExpr *Value, unsigned Size,
-                                     bool isPCRel, unsigned AddrSpace) {
+                                     unsigned AddrSpace) {
   assert(getCurrentSection() && "Cannot emit contents before setting section!");
-  assert(!isPCRel && "Cannot emit pc relative relocations!");
   const char *Directive = 0;
   switch (Size) {
   default: break;
@@ -383,15 +382,13 @@ void PTXMCAsmStreamer::EmitValueImpl(const MCExpr *Value, unsigned Size,
   EmitEOL();
 }
 
-void PTXMCAsmStreamer::EmitULEB128Value(const MCExpr *Value,
-                                        unsigned AddrSpace) {
+void PTXMCAsmStreamer::EmitULEB128Value(const MCExpr *Value) {
   assert(MAI.hasLEB128() && "Cannot print a .uleb");
   OS << ".uleb128 " << *Value;
   EmitEOL();
 }
 
-void PTXMCAsmStreamer::EmitSLEB128Value(const MCExpr *Value,
-                                        unsigned AddrSpace) {
+void PTXMCAsmStreamer::EmitSLEB128Value(const MCExpr *Value) {
   assert(MAI.hasLEB128() && "Cannot print a .sleb");
   OS << ".sleb128 " << *Value;
   EmitEOL();
@@ -533,7 +530,7 @@ void PTXMCAsmStreamer::Finish() {}
 namespace llvm {
   MCStreamer *createPTXAsmStreamer(MCContext &Context,
                                    formatted_raw_ostream &OS,
-                                   bool isVerboseAsm, bool useLoc,
+                                   bool isVerboseAsm, bool useLoc, bool useCFI,
                                    MCInstPrinter *IP,
                                    MCCodeEmitter *CE, TargetAsmBackend *TAB,
                                    bool ShowInst) {

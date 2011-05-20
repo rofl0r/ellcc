@@ -1,4 +1,4 @@
-; RUN: llc < %s -march=ptx | FileCheck %s
+; RUN: llc < %s -march=ptx32 | FileCheck %s
 
 ;CHECK: .extern .global .b8 array_i16[20];
 @array_i16 = external global [10 x i16]
@@ -64,7 +64,7 @@
 define ptx_device i16 @t1_u16(i16* %p) {
 entry:
 ;CHECK: ld.global.u16 rh0, [r1];
-;CHECK-NEXT; ret;
+;CHECK-NEXT: ret;
   %x = load i16* %p
   ret i16 %x
 }

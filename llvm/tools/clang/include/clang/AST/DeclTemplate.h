@@ -30,6 +30,7 @@ class ClassTemplatePartialSpecializationDecl;
 class TemplateTypeParmDecl;
 class NonTypeTemplateParmDecl;
 class TemplateTemplateParmDecl;
+class TypeAliasTemplateDecl;
 
 /// \brief Stores a template parameter of any kind.
 typedef llvm::PointerUnion3<TemplateTypeParmDecl*, NonTypeTemplateParmDecl*,
@@ -230,6 +231,7 @@ public:
   static bool classof(const FunctionTemplateDecl *D) { return true; }
   static bool classof(const ClassTemplateDecl *D) { return true; }
   static bool classof(const TemplateTemplateParmDecl *D) { return true; }
+  static bool classof(const TypeAliasTemplateDecl *D) { return true; }
   static bool classofKind(Kind K) {
     return K >= firstTemplate && K <= lastTemplate;
   }
@@ -672,6 +674,7 @@ public:
   static bool classof(const RedeclarableTemplateDecl *D) { return true; }
   static bool classof(const FunctionTemplateDecl *D) { return true; }
   static bool classof(const ClassTemplateDecl *D) { return true; }
+  static bool classof(const TypeAliasTemplateDecl *D) { return true; }
   static bool classofKind(Kind K) {
     return K >= firstRedeclarableTemplate && K <= lastRedeclarableTemplate;
   }
@@ -804,6 +807,13 @@ protected:
   llvm::FoldingSet<FunctionTemplateSpecializationInfo> &getSpecializations() {
     return getCommonPtr()->Specializations;
   }
+
+  /// \brief Add a specialization of this function template.
+  ///
+  /// \param InsertPos Insert position in the FoldingSet, must have been
+  ///        retrieved by an earlier call to findSpecialization().
+  void addSpecialization(FunctionTemplateSpecializationInfo* Info,
+                         void *InsertPos);
   
 public:
   /// Get the underlying function declaration of the template.
@@ -938,19 +948,14 @@ class TemplateTypeParmDecl : public TypeDecl {
   /// default argument.
   bool InheritedDefault : 1;
 
-  /// \brief Whether this is a parameter pack.
-  bool ParameterPack : 1;
-
   /// \brief The default template argument, if any.
   TypeSourceInfo *DefaultArgument;
 
   TemplateTypeParmDecl(DeclContext *DC, SourceLocation KeyLoc,
                        SourceLocation IdLoc, IdentifierInfo *Id,
-                       bool Typename, QualType Type, bool ParameterPack)
+                       bool Typename)
     : TypeDecl(TemplateTypeParm, DC, IdLoc, Id, KeyLoc), Typename(Typename),
-      InheritedDefault(false), ParameterPack(ParameterPack), DefaultArgument() {
-    TypeForDecl = Type.getTypePtrOrNull();
-  }
+      InheritedDefault(false), DefaultArgument() { }
 
   /// Sema creates these on the stack during auto type deduction.
   friend class Sema;
@@ -1004,9 +1009,6 @@ public:
   /// the 'typename' or 'class' keyword.
   void setDeclaredWithTypename(bool withTypename) { Typename = withTypename; }
 
-  /// \brief Set whether this is a parameter pack.
-  void setParameterPack(bool isParamPack) { ParameterPack = isParamPack; }
-
   /// \brief Retrieve the depth of the template parameter.
   unsigned getDepth() const;
   
@@ -1014,7 +1016,7 @@ public:
   unsigned getIndex() const;
 
   /// \brief Returns whether this is a parameter pack.
-  bool isParameterPack() const { return ParameterPack; }
+  bool isParameterPack() const;
 
   SourceRange getSourceRange() const;
 
@@ -2013,6 +2015,78 @@ public:
   static bool classof(const FriendTemplateDecl *D) { return true; }
 
   friend class ASTDeclReader;
+};
+
+/// Declaration of an alias template.  For example:
+///
+/// template <typename T> using V = std::map<T*, int, MyCompare<T>>;
+class TypeAliasTemplateDecl : public RedeclarableTemplateDecl,
+                            public RedeclarableTemplate<TypeAliasTemplateDecl> {
+  static void DeallocateCommon(void *Ptr);
+
+protected:
+  typedef RedeclarableTemplate<TypeAliasTemplateDecl> redeclarable_base;
+
+  typedef CommonBase Common;
+
+  TypeAliasTemplateDecl(DeclContext *DC, SourceLocation L, DeclarationName Name,
+                        TemplateParameterList *Params, NamedDecl *Decl)
+    : RedeclarableTemplateDecl(TypeAliasTemplate, DC, L, Name, Params, Decl) { }
+
+  CommonBase *newCommon(ASTContext &C);
+
+  Common *getCommonPtr() {
+    return static_cast<Common *>(RedeclarableTemplateDecl::getCommonPtr());
+  }
+
+public:
+  /// Get the underlying function declaration of the template.
+  TypeAliasDecl *getTemplatedDecl() const {
+    return static_cast<TypeAliasDecl*>(TemplatedDecl);
+  }
+
+
+  TypeAliasTemplateDecl *getCanonicalDecl() {
+    return redeclarable_base::getCanonicalDecl();
+  }
+  const TypeAliasTemplateDecl *getCanonicalDecl() const {
+    return redeclarable_base::getCanonicalDecl();
+  }
+
+  /// \brief Retrieve the previous declaration of this function template, or
+  /// NULL if no such declaration exists.
+  TypeAliasTemplateDecl *getPreviousDeclaration() {
+    return redeclarable_base::getPreviousDeclaration();
+  }
+
+  /// \brief Retrieve the previous declaration of this function template, or
+  /// NULL if no such declaration exists.
+  const TypeAliasTemplateDecl *getPreviousDeclaration() const {
+    return redeclarable_base::getPreviousDeclaration();
+  }
+
+  TypeAliasTemplateDecl *getInstantiatedFromMemberTemplate() {
+    return redeclarable_base::getInstantiatedFromMemberTemplate();
+  }
+
+                               
+  /// \brief Create a function template node.
+  static TypeAliasTemplateDecl *Create(ASTContext &C, DeclContext *DC,
+                                       SourceLocation L,
+                                       DeclarationName Name,
+                                       TemplateParameterList *Params,
+                                       NamedDecl *Decl);
+
+  /// \brief Create an empty alias template node.
+  static TypeAliasTemplateDecl *Create(ASTContext &C, EmptyShell);
+
+  // Implement isa/cast/dyncast support
+  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
+  static bool classof(const TypeAliasTemplateDecl *D) { return true; }
+  static bool classofKind(Kind K) { return K == TypeAliasTemplate; }
+
+  friend class ASTDeclReader;
+  friend class ASTDeclWriter;
 };
 
 /// Implementation of inline functions that require the template declarations

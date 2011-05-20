@@ -800,6 +800,32 @@ DeduceTemplateArguments(Sema &S,
   return Sema::TDK_Success;
 }
 
+/// \brief Determine whether the parameter has qualifiers that are either
+/// inconsistent with or a superset of the argument's qualifiers.
+static bool hasInconsistentOrSupersetQualifiersOf(QualType ParamType,
+                                                  QualType ArgType) {
+  Qualifiers ParamQs = ParamType.getQualifiers();
+  Qualifiers ArgQs = ArgType.getQualifiers();
+
+  if (ParamQs == ArgQs)
+    return false;
+       
+  // Mismatched (but not missing) Objective-C GC attributes.
+  if (ParamQs.getObjCGCAttr() != ArgQs.getObjCGCAttr() && 
+      ParamQs.hasObjCGCAttr())
+    return true;
+  
+  // Mismatched (but not missing) address spaces.
+  if (ParamQs.getAddressSpace() != ArgQs.getAddressSpace() &&
+      ParamQs.hasAddressSpace())
+    return true;
+
+  // CVR qualifier superset.
+  return (ParamQs.getCVRQualifiers() != ArgQs.getCVRQualifiers()) &&
+      ((ParamQs.getCVRQualifiers() | ArgQs.getCVRQualifiers())
+                                                == ParamQs.getCVRQualifiers());
+}
+
 /// \brief Deduce the template arguments by comparing the parameter type and
 /// the argument type (C++ [temp.deduct.type]).
 ///
@@ -875,9 +901,12 @@ DeduceTemplateArguments(Sema &S,
       Comparison.ParamIsRvalueRef = ParamRef->getAs<RValueReferenceType>();
       Comparison.ArgIsRvalueRef = ArgRef->getAs<RValueReferenceType>();
       Comparison.Qualifiers = NeitherMoreQualified;
-      if (Param.isMoreQualifiedThan(Arg))
+      
+      Qualifiers ParamQuals = Param.getQualifiers();
+      Qualifiers ArgQuals = Arg.getQualifiers();
+      if (ParamQuals.isStrictSupersetOf(ArgQuals))
         Comparison.Qualifiers = ParamMoreQualified;
-      else if (Arg.isMoreQualifiedThan(Param))
+      else if (ArgQuals.isStrictSupersetOf(ParamQuals))
         Comparison.Qualifiers = ArgMoreQualified;
       RefParamComparisons->push_back(Comparison);
     }
@@ -949,7 +978,6 @@ DeduceTemplateArguments(Sema &S,
 
     // If the argument type is an array type, move the qualifiers up to the
     // top level, so they can be matched with the qualifiers on the parameter.
-    // FIXME: address spaces, ObjC GC qualifiers
     if (isa<ArrayType>(Arg)) {
       Qualifiers Quals;
       Arg = S.Context.getUnqualifiedArrayType(Arg, Quals);
@@ -961,7 +989,8 @@ DeduceTemplateArguments(Sema &S,
 
     // The argument type can not be less qualified than the parameter
     // type.
-    if (Param.isMoreQualifiedThan(Arg) && !(TDF & TDF_IgnoreQualifiers)) {
+    if (!(TDF & TDF_IgnoreQualifiers) &&
+        hasInconsistentOrSupersetQualifiersOf(Param, Arg)) {
       Info.Param = cast<TemplateTypeParmDecl>(TemplateParams->getParam(Index));
       Info.FirstArg = TemplateArgument(Param);
       Info.SecondArg = TemplateArgument(Arg);
@@ -972,8 +1001,18 @@ DeduceTemplateArguments(Sema &S,
     assert(Arg != S.Context.OverloadTy && "Unresolved overloaded function");
     QualType DeducedType = Arg;
 
-    // local manipulation is okay because it's canonical
-    DeducedType.removeLocalCVRQualifiers(Param.getCVRQualifiers());
+    // Remove any qualifiers on the parameter from the deduced type.
+    // We checked the qualifiers for consistency above.
+    Qualifiers DeducedQs = DeducedType.getQualifiers();
+    Qualifiers ParamQs = Param.getQualifiers();
+    DeducedQs.removeCVRQualifiers(ParamQs.getCVRQualifiers());
+    if (ParamQs.hasObjCGCAttr())
+      DeducedQs.removeObjCGCAttr();
+    if (ParamQs.hasAddressSpace())
+      DeducedQs.removeAddressSpace();
+    DeducedType = S.Context.getQualifiedType(DeducedType.getUnqualifiedType(),
+                                             DeducedQs);
+    
     if (RecanonicalizeArg)
       DeducedType = S.Context.getCanonicalType(DeducedType);
 
@@ -1006,7 +1045,7 @@ DeduceTemplateArguments(Sema &S,
   // Check the cv-qualifiers on the parameter and argument types.
   if (!(TDF & TDF_IgnoreQualifiers)) {
     if (TDF & TDF_ParamWithReferenceType) {
-      if (Param.isMoreQualifiedThan(Arg))
+      if (hasInconsistentOrSupersetQualifiersOf(Param, Arg))
         return Sema::TDK_NonDeducedMismatch;
     } else if (!IsPossiblyOpaquelyQualifiedType(Param)) {
       if (Param.getCVRQualifiers() != Arg.getCVRQualifiers())
@@ -2455,8 +2494,8 @@ static bool AdjustFunctionParmAndArgTypesForDeduction(Sema &S,
   // C++0x [temp.deduct.call]p3:
   //   If P is a cv-qualified type, the top level cv-qualifiers of P's type
   //   are ignored for type deduction.
-  if (ParamType.getCVRQualifiers())
-    ParamType = ParamType.getLocalUnqualifiedType();
+  if (ParamType.hasQualifiers())
+    ParamType = ParamType.getUnqualifiedType();
   const ReferenceType *ParamRefType = ParamType->getAs<ReferenceType>();
   if (ParamRefType) {
     QualType PointeeType = ParamRefType->getPointeeType();
@@ -2512,8 +2551,7 @@ static bool AdjustFunctionParmAndArgTypesForDeduction(Sema &S,
     else {
       // - If A is a cv-qualified type, the top level cv-qualifiers of A's
       //   type are ignored for type deduction.
-      if (ArgType.getCVRQualifiers())
-        ArgType = ArgType.getUnqualifiedType();
+      ArgType = ArgType.getUnqualifiedType();
     }
   }
 
@@ -3021,10 +3059,11 @@ Sema::DeduceAutoType(TypeSourceInfo *Type, Expr *Init,
   LocalInstantiationScope InstScope(*this);
 
   // Build template<class TemplParam> void Func(FuncParam);
-  QualType TemplArg = Context.getTemplateTypeParmType(0, 0, false);
-  TemplateTypeParmDecl TemplParam(0, SourceLocation(), Loc, 0, false,
-                                  TemplArg, false);
-  NamedDecl *TemplParamPtr = &TemplParam;
+  TemplateTypeParmDecl *TemplParam =
+    TemplateTypeParmDecl::Create(Context, 0, SourceLocation(), Loc, 0, 0, 0,
+                                 false, false);
+  QualType TemplArg = QualType(TemplParam->getTypeForDecl(), 0);
+  NamedDecl *TemplParamPtr = TemplParam;
   FixedSizeTemplateParameterList<1> TemplateParams(Loc, Loc, &TemplParamPtr,
                                                    Loc);
 

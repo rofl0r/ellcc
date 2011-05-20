@@ -18,13 +18,15 @@
 #ifndef LLVM_CODEGEN_LIVERANGEEDIT_H
 #define LLVM_CODEGEN_LIVERANGEEDIT_H
 
-#include "llvm/CodeGen/LiveInterval.h"
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/CodeGen/LiveInterval.h"
 
 namespace llvm {
 
 class AliasAnalysis;
 class LiveIntervals;
+class MachineLoopInfo;
 class MachineRegisterInfo;
 class VirtRegMap;
 
@@ -41,6 +43,10 @@ public:
 
     /// Called before shrinking the live range of a virtual register.
     virtual void LRE_WillShrinkVirtReg(unsigned) {}
+
+    /// Called after cloning a virtual register.
+    /// This is used for new registers representing connected components of Old.
+    virtual void LRE_DidCloneVirtReg(unsigned New, unsigned Old) {}
 
     virtual ~Delegate() {}
   };
@@ -65,9 +71,6 @@ private:
   /// live range trimmed or entirely removed.
   SmallPtrSet<const VNInfo*,4> rematted_;
 
-  /// createFrom - Create a new virtual register based on OldReg.
-  LiveInterval &createFrom(unsigned, LiveIntervals&, VirtRegMap &);
-
   /// scanRemattable - Identify the parent_ values that may rematerialize.
   void scanRemattable(LiveIntervals &lis,
                       const TargetInstrInfo &tii,
@@ -77,6 +80,11 @@ private:
   /// OrigIdx are also available with the same value at UseIdx.
   bool allUsesAvailableAt(const MachineInstr *OrigMI, SlotIndex OrigIdx,
                           SlotIndex UseIdx, LiveIntervals &lis);
+
+  /// foldAsLoad - If LI has a single use and a single def that can be folded as
+  /// a load, eliminate the register by folding the def into the use.
+  bool foldAsLoad(LiveInterval *LI, SmallVectorImpl<MachineInstr*> &Dead,
+                  MachineRegisterInfo&, LiveIntervals&, const TargetInstrInfo&);
 
 public:
   /// Create a LiveRangeEdit for breaking down parent into smaller pieces.
@@ -106,12 +114,19 @@ public:
   bool empty() const { return size() == 0; }
   LiveInterval *get(unsigned idx) const { return newRegs_[idx+firstNew_]; }
 
+  ArrayRef<LiveInterval*> regs() const {
+    return ArrayRef<LiveInterval*>(newRegs_).slice(firstNew_);
+  }
+
   /// FIXME: Temporary accessors until we can get rid of
   /// LiveIntervals::AddIntervalsForSpills
   SmallVectorImpl<LiveInterval*> *getNewVRegs() { return &newRegs_; }
   const SmallVectorImpl<LiveInterval*> *getUselessVRegs() {
     return uselessRegs_;
   }
+
+  /// createFrom - Create a new virtual register based on OldReg.
+  LiveInterval &createFrom(unsigned OldReg, LiveIntervals&, VirtRegMap&);
 
   /// create - Create a new register with the same class and original slot as
   /// parent.
@@ -124,6 +139,11 @@ public:
   /// This function must be called before any rematerialization is attempted.
   bool anyRematerializable(LiveIntervals&, const TargetInstrInfo&,
                            AliasAnalysis*);
+
+  /// checkRematerializable - Manually add VNI to the list of rematerializable
+  /// values if DefMI may be rematerializable.
+  bool checkRematerializable(VNInfo *VNI, const MachineInstr *DefMI,
+                             const TargetInstrInfo&, AliasAnalysis*);
 
   /// Remat - Information needed to rematerialize at a specific location.
   struct Remat {
@@ -150,7 +170,8 @@ public:
                             const Remat &RM,
                             LiveIntervals&,
                             const TargetInstrInfo&,
-                            const TargetRegisterInfo&);
+                            const TargetRegisterInfo&,
+                            bool Late = false);
 
   /// markRematerialized - explicitly mark a value as rematerialized after doing
   /// it manually.
@@ -174,6 +195,10 @@ public:
                          LiveIntervals&, VirtRegMap&,
                          const TargetInstrInfo&);
 
+  /// calculateRegClassAndHint - Recompute register class and hint for each new
+  /// register.
+  void calculateRegClassAndHint(MachineFunction&, LiveIntervals&,
+                                const MachineLoopInfo&);
 };
 
 }

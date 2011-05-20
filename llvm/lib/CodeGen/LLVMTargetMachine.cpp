@@ -126,6 +126,9 @@ bool LLVMTargetMachine::addPassesToEmitFile(PassManagerBase &PM,
     return true;
   assert(Context != 0 && "Failed to get MCContext");
 
+  if (hasMCSaveTempLabels())
+    Context->setAllowTemporaryLabels(false);
+
   const MCAsmInfo &MAI = *getMCAsmInfo();
   OwningPtr<MCStreamer> AsmStreamer;
 
@@ -133,7 +136,7 @@ bool LLVMTargetMachine::addPassesToEmitFile(PassManagerBase &PM,
   default: return true;
   case CGFT_AssemblyFile: {
     MCInstPrinter *InstPrinter =
-      getTarget().createMCInstPrinter(MAI.getAssemblerDialect(), MAI);
+      getTarget().createMCInstPrinter(*this, MAI.getAssemblerDialect(), MAI);
 
     // Create a code emitter if asked to show the encoding.
     MCCodeEmitter *MCE = 0;
@@ -146,6 +149,7 @@ bool LLVMTargetMachine::addPassesToEmitFile(PassManagerBase &PM,
     MCStreamer *S = getTarget().createAsmStreamer(*Context, Out,
                                                   getVerboseAsm(),
                                                   hasMCUseLoc(),
+                                                  hasMCUseCFI(),
                                                   InstPrinter,
                                                   MCE, TAB,
                                                   ShowMCInst);
@@ -230,6 +234,9 @@ bool LLVMTargetMachine::addPassesToEmitMC(PassManagerBase &PM,
   // Add common CodeGen passes.
   if (addCommonCodeGenPasses(PM, OptLevel, DisableVerify, Ctx))
     return true;
+
+  if (hasMCSaveTempLabels())
+    Ctx->setAllowTemporaryLabels(false);
 
   // Create the code emitter for the target if it exists.  If not, .o file
   // emission fails.
@@ -317,7 +324,6 @@ bool LLVMTargetMachine::addCommonCodeGenPasses(PassManagerBase &PM,
     PM.add(createSjLjEHPass(getTargetLowering()));
     // FALLTHROUGH
   case ExceptionHandling::DwarfCFI:
-  case ExceptionHandling::DwarfTable:
   case ExceptionHandling::ARM:
     PM.add(createDwarfEHPass(this));
     break;

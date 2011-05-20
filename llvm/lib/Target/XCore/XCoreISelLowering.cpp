@@ -37,8 +37,6 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/ADT/VectorExtras.h"
-#include <queue>
-#include <set>
 using namespace llvm;
 
 const char *XCoreTargetLowering::
@@ -158,6 +156,8 @@ XCoreTargetLowering::XCoreTargetLowering(XCoreTargetMachine &XTM)
   // We have target-specific dag combine patterns for the following nodes:
   setTargetDAGCombine(ISD::STORE);
   setTargetDAGCombine(ISD::ADD);
+
+  setMinFunctionAlignment(1);
 }
 
 SDValue XCoreTargetLowering::
@@ -201,12 +201,6 @@ void XCoreTargetLowering::ReplaceNodeResults(SDNode *N,
     Results.push_back(ExpandADDSUB(N, DAG));
     return;
   }
-}
-
-/// getFunctionAlignment - Return the Log2 alignment of this function.
-unsigned XCoreTargetLowering::
-getFunctionAlignment(const Function *) const {
-  return 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -967,7 +961,7 @@ XCoreTargetLowering::LowerCCCCallTo(SDValue Chain, SDValue Callee,
 
   // Build a sequence of copy-to-reg nodes chained together with token
   // chain and flag operands which copy the outgoing args into registers.
-  // The InFlag in necessary since all emited instructions must be
+  // The InFlag in necessary since all emitted instructions must be
   // stuck together.
   SDValue InFlag;
   for (unsigned i = 0, e = RegsToPass.size(); i != e; ++i) {

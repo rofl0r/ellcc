@@ -76,7 +76,9 @@ public:
 
 
 static void getDarwinDefines(MacroBuilder &Builder, const LangOptions &Opts,
-                             const llvm::Triple &Triple) {
+                             const llvm::Triple &Triple,
+                             llvm::StringRef &PlatformName,
+                             VersionTuple &PlatformMinVersion) {
   Builder.defineMacro("__APPLE_CC__", "5621");
   Builder.defineMacro("__APPLE__");
   Builder.defineMacro("__MACH__");
@@ -99,19 +101,40 @@ static void getDarwinDefines(MacroBuilder &Builder, const LangOptions &Opts,
   if (Opts.POSIXThreads)
     Builder.defineMacro("_REENTRANT");
 
-  // Get the OS version number from the triple.
+  // Get the platform type and version number from the triple.
   unsigned Maj, Min, Rev;
 
   // If no version was given, default to to 10.4.0, for simplifying tests.
-  if (Triple.getOSName() == "darwin") {
+  if (Triple.getOSName() == "darwin" || Triple.getOSName() == "osx") {
+    PlatformName = "macosx";
     Min = Rev = 0;
     Maj = 8;
-  } else
-    Triple.getDarwinNumber(Maj, Min, Rev);
+  } else {
+    // Otherwise, honor all three triple forms ("-darwinNNN[-iphoneos]",
+    // "-osxNNN", and "-iosNNN").
+
+    if (Triple.getOS() == llvm::Triple::Darwin) {
+      // For historical reasons that make little sense, the version passed here
+      // is the "darwin" version, which drops the 10 and offsets by 4.
+      Triple.getOSVersion(Maj, Min, Rev);
+
+      if (Triple.getEnvironmentName() == "iphoneos") {
+        PlatformName = "ios";
+      } else {
+        PlatformName = "macosx";
+        Rev = Min;
+        Min = Maj - 4;
+        Maj = 10;
+      }
+    } else {
+      Triple.getOSVersion(Maj, Min, Rev);
+      PlatformName = llvm::Triple::getOSTypeName(Triple.getOS());
+    }
+  }
 
   // Set the appropriate OS version define.
-  if (Triple.getEnvironmentName() == "iphoneos") {
-    assert(Maj < 10 && Min < 99 && Rev < 99 && "Invalid version!");
+  if (PlatformName == "ios") {
+    assert(Maj < 10 && Min < 100 && Rev < 100 && "Invalid version!");
     char Str[6];
     Str[0] = '0' + Maj;
     Str[1] = '0' + (Min / 10);
@@ -121,22 +144,22 @@ static void getDarwinDefines(MacroBuilder &Builder, const LangOptions &Opts,
     Str[5] = '\0';
     Builder.defineMacro("__ENVIRONMENT_IPHONE_OS_VERSION_MIN_REQUIRED__", Str);
   } else {
-    // For historical reasons that make little sense, the version passed here is
-    // the "darwin" version, which drops the 10 and offsets by 4.
-    Rev = Min;
-    Min = Maj - 4;
-    Maj = 10;
-
+    // Note that the Driver allows versions which aren't representable in the
+    // define (because we only get a single digit for the minor and micro
+    // revision numbers). So, we limit them to the maximum representable
+    // version.
     assert(Triple.getEnvironmentName().empty() && "Invalid environment!");
-    assert(Maj < 99 && Min < 10 && Rev < 10 && "Invalid version!");
+    assert(Maj < 100 && Min < 100 && Rev < 100 && "Invalid version!");
     char Str[5];
     Str[0] = '0' + (Maj / 10);
     Str[1] = '0' + (Maj % 10);
-    Str[2] = '0' + Min;
-    Str[3] = '0' + Rev;
+    Str[2] = '0' + std::min(Min, 9U);
+    Str[3] = '0' + std::min(Rev, 9U);
     Str[4] = '\0';
     Builder.defineMacro("__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__", Str);
   }
+
+  PlatformMinVersion = VersionTuple(Maj, Min, Rev);
 }
 
 namespace {
@@ -145,7 +168,8 @@ class DarwinTargetInfo : public OSTargetInfo<Target> {
 protected:
   virtual void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
                             MacroBuilder &Builder) const {
-    getDarwinDefines(Builder, Opts, Triple);
+    getDarwinDefines(Builder, Opts, Triple, this->PlatformName, 
+                     this->PlatformMinVersion);
   }
 
 public:
@@ -836,6 +860,87 @@ public:
 } // end anonymous namespace.
 
 namespace {
+  class PTXTargetInfo : public TargetInfo {
+    static const char * const GCCRegNames[];
+    static const Builtin::Info BuiltinInfo[];
+  public:
+    PTXTargetInfo(const std::string& triple) : TargetInfo(triple) {
+      TLSSupported = false;
+      LongWidth = LongAlign = 64;
+    }
+    virtual void getTargetDefines(const LangOptions &Opts,
+                                  MacroBuilder &Builder) const {
+      Builder.defineMacro("__PTX__");
+    }
+    virtual void getTargetBuiltins(const Builtin::Info *&Records,
+                                   unsigned &NumRecords) const {
+      Records = BuiltinInfo;
+      NumRecords = clang::PTX::LastTSBuiltin-Builtin::FirstTSBuiltin;
+    }
+
+    virtual void getGCCRegNames(const char * const *&Names,
+                                unsigned &NumNames) const;
+    virtual void getGCCRegAliases(const GCCRegAlias *&Aliases,
+                                  unsigned &NumAliases) const {
+      // No aliases.
+      Aliases = 0;
+      NumAliases = 0;
+    }
+    virtual bool validateAsmConstraint(const char *&Name,
+                                       TargetInfo::ConstraintInfo &info) const {
+      // FIXME: implement
+      return true;
+    }
+    virtual const char *getClobbers() const {
+      // FIXME: Is this really right?
+      return "";
+    }
+    virtual const char *getVAListDeclaration() const {
+      // FIXME: implement
+      return "typedef char* __builtin_va_list;";
+    }
+  };
+
+  const Builtin::Info PTXTargetInfo::BuiltinInfo[] = {
+#define BUILTIN(ID, TYPE, ATTRS) { #ID, TYPE, ATTRS, 0, ALL_LANGUAGES, false },
+#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER) { #ID, TYPE, ATTRS, HEADER,\
+                                              ALL_LANGUAGES, false },
+#include "clang/Basic/BuiltinsPTX.def"
+  };
+
+  const char * const PTXTargetInfo::GCCRegNames[] = {
+    "r0"
+  };
+
+  void PTXTargetInfo::getGCCRegNames(const char * const *&Names,
+                                     unsigned &NumNames) const {
+    Names = GCCRegNames;
+    NumNames = llvm::array_lengthof(GCCRegNames);
+  }
+
+
+  class PTX32TargetInfo : public PTXTargetInfo {
+  public:
+  PTX32TargetInfo(const std::string& triple) : PTXTargetInfo(triple) {
+      PointerWidth = PointerAlign = 32;
+      SizeType = PtrDiffType = IntPtrType = TargetInfo::UnsignedInt;
+      DescriptionString
+        = "e-p:32:32-i64:64:64-f64:64:64-n1:8:16:32:64";
+    }
+  };
+
+  class PTX64TargetInfo : public PTXTargetInfo {
+  public:
+  PTX64TargetInfo(const std::string& triple) : PTXTargetInfo(triple) {
+      PointerWidth = PointerAlign = 64;
+      SizeType = PtrDiffType = IntPtrType = TargetInfo::UnsignedLongLong;
+      DescriptionString
+        = "e-p:64:64-i64:64:64-f64:64:64-n1:8:16:32:64";
+    }
+  };
+}
+
+namespace {
 // MBlaze abstract base class
 class MBlazeTargetInfo : public TargetInfo {
   static const char * const GCCRegNames[];
@@ -1099,8 +1204,11 @@ void X86TargetInfo::getDefaultFeatures(const std::string &CPU,
   else if (CPU == "corei7") {
     setFeatureEnabled(Features, "sse4", true);
     setFeatureEnabled(Features, "aes", true);
-  }
-  else if (CPU == "k6" || CPU == "winchip-c6")
+  } else if (CPU == "sandybridge") {
+    setFeatureEnabled(Features, "sse4", true);
+    setFeatureEnabled(Features, "aes", true);
+//    setFeatureEnabled(Features, "avx", true);
+  } else if (CPU == "k6" || CPU == "winchip-c6")
     setFeatureEnabled(Features, "mmx", true);
   else if (CPU == "k6-2" || CPU == "k6-3" || CPU == "athlon" ||
            CPU == "athlon-tbird" || CPU == "winchip2" || CPU == "c3") {
@@ -1158,7 +1266,8 @@ bool X86TargetInfo::setFeatureEnabled(llvm::StringMap<bool> &Features,
       Features["avx"] = true;
   } else {
     if (Name == "mmx")
-      Features["mmx"] = Features["sse"] = Features["sse2"] = Features["sse3"] =
+      Features["mmx"] = Features["3dnow"] = Features["3dnowa"] =
+        Features["sse"] = Features["sse2"] = Features["sse3"] =
         Features["ssse3"] = Features["sse41"] = Features["sse42"] = false;
     else if (Name == "sse")
       Features["sse"] = Features["sse2"] = Features["sse3"] =
@@ -1171,12 +1280,10 @@ bool X86TargetInfo::setFeatureEnabled(llvm::StringMap<bool> &Features,
         Features["sse42"] = false;
     else if (Name == "ssse3")
       Features["ssse3"] = Features["sse41"] = Features["sse42"] = false;
-    else if (Name == "sse4")
+    else if (Name == "sse4" || Name == "sse4.1")
       Features["sse41"] = Features["sse42"] = false;
     else if (Name == "sse4.2")
       Features["sse42"] = false;
-    else if (Name == "sse4.1")
-      Features["sse41"] = Features["sse42"] = false;
     else if (Name == "3dnow")
       Features["3dnow"] = Features["3dnowa"] = false;
     else if (Name == "3dnowa")
@@ -1484,7 +1591,7 @@ class VisualStudioWindowsX86_32TargetInfo : public WindowsX86_32TargetInfo {
 public:
   VisualStudioWindowsX86_32TargetInfo(const std::string& triple)
     : WindowsX86_32TargetInfo(triple) {
-    LongDoubleWidth = 64;
+    LongDoubleWidth = LongDoubleAlign = 64;
     LongDoubleFormat = &llvm::APFloat::IEEEdouble;
   }
   virtual void getTargetDefines(const LangOptions &Opts,
@@ -1647,6 +1754,8 @@ class VisualStudioWindowsX86_64TargetInfo : public WindowsX86_64TargetInfo {
 public:
   VisualStudioWindowsX86_64TargetInfo(const std::string& triple)
     : WindowsX86_64TargetInfo(triple) {
+    LongDoubleWidth = LongDoubleAlign = 64;
+    LongDoubleFormat = &llvm::APFloat::IEEEdouble;
   }
   virtual void getTargetDefines(const LangOptions &Opts,
                                 MacroBuilder &Builder) const {
@@ -1750,13 +1859,15 @@ public:
     // FIXME: Should we just treat this as a feature?
     IsThumb = getTriple().getArchName().startswith("thumb");
     if (IsThumb) {
+      // Thumb1 add sp, #imm requires the immediate value be multiple of 4,
+      // so set preferred for small types to 32.
       DescriptionString = ("e-p:32:32:32-i1:8:32-i8:8:32-i16:16:32-i32:32:32-"
                            "i64:64:64-f32:32:32-f64:64:64-"
-                           "v64:64:64-v128:128:128-a0:0:32-n32");
+                           "v64:64:64-v128:64:128-a0:0:32-n32");
     } else {
       DescriptionString = ("e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-"
                            "i64:64:64-f32:32:32-f64:64:64-"
-                           "v64:64:64-v128:128:128-a0:0:64-n32");
+                           "v64:64:64-v128:64:128-a0:0:64-n32");
     }
 
     // ARM targets default to using the ARM C++ ABI.
@@ -1779,13 +1890,15 @@ public:
       UseBitFieldTypeAlignment = false;
 
       if (IsThumb) {
+        // Thumb1 add sp, #imm requires the immediate value be multiple of 4,
+        // so set preferred for small types to 32.
         DescriptionString = ("e-p:32:32:32-i1:8:32-i8:8:32-i16:16:32-i32:32:32-"
                              "i64:32:32-f32:32:32-f64:32:32-"
-                             "v64:64:64-v128:128:128-a0:0:32-n32");
+                             "v64:32:64-v128:32:128-a0:0:32-n32");
       } else {
         DescriptionString = ("e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-"
-                             "i64:32:32-f32:32:32-f64:32:32-"
-                             "v64:64:64-v128:128:128-a0:0:64-n32");
+                             "i64:32:64-f32:32:32-f64:32:64-"
+                             "v64:32:64-v128:32:128-a0:0:32-n32");
       }
 
       // FIXME: Override "preferred align" for double and long long.
@@ -1872,6 +1985,7 @@ public:
       .Cases("arm1156t2-s", "arm1156t2f-s", "6T2")
       .Cases("cortex-a8", "cortex-a9", "7A")
       .Case("cortex-m3", "7M")
+      .Case("cortex-m0", "6M")
       .Default(0);
   }
   virtual bool setCPU(const std::string &Name) {
@@ -1913,11 +2027,11 @@ public:
     if (CPU == "xscale")
       Builder.defineMacro("__XSCALE__");
 
-    bool IsThumb2 = IsThumb && (CPUArch == "6T2" || CPUArch.startswith("7"));
+    bool IsARMv7 = CPUArch.startswith("7");
     if (IsThumb) {
       Builder.defineMacro("__THUMBEL__");
       Builder.defineMacro("__thumb__");
-      if (IsThumb2)
+      if (CPUArch == "6T2" || IsARMv7)
         Builder.defineMacro("__thumb2__");
     }
 
@@ -1931,7 +2045,7 @@ public:
     // the VFP define, hence the soft float and arch check. This is subtly
     // different from gcc, we follow the intent which was that it should be set
     // when Neon instructions are actually available.
-    if (FPU == NeonFPU && !SoftFloat && IsThumb2)
+    if (FPU == NeonFPU && !SoftFloat && IsARMv7)
       Builder.defineMacro("__ARM_NEON__");
   }
   virtual void getTargetBuiltins(const Builtin::Info *&Records,
@@ -1940,7 +2054,7 @@ public:
     NumRecords = clang::ARM::LastTSBuiltin-Builtin::FirstTSBuiltin;
   }
   virtual const char *getVAListDeclaration() const {
-    return "typedef char* __builtin_va_list;";
+    return "typedef void* __builtin_va_list;";
   }
   virtual void getGCCRegNames(const char * const *&Names,
                               unsigned &NumNames) const;
@@ -2044,7 +2158,7 @@ class DarwinARMTargetInfo :
 protected:
   virtual void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
                             MacroBuilder &Builder) const {
-    getDarwinDefines(Builder, Opts, Triple);
+    getDarwinDefines(Builder, Opts, Triple, PlatformName, PlatformMinVersion);
   }
 
 public:
@@ -2657,11 +2771,12 @@ static TargetInfo *AllocateTarget(const std::string &T) {
 
   case llvm::Triple::arm:
   case llvm::Triple::thumb:
+    if (Triple.isOSDarwin())
+      return new DarwinARMTargetInfo(T);
+
     switch (os) {
     case llvm::Triple::Linux:
       return new LinuxTargetInfo<ARMTargetInfo>(T);
-    case llvm::Triple::Darwin:
-      return new DarwinARMTargetInfo(T);
     case llvm::Triple::FreeBSD:
       return new FreeBSDTargetInfo<ARMTargetInfo>(T);
     default:
@@ -2689,20 +2804,25 @@ static TargetInfo *AllocateTarget(const std::string &T) {
     return new MipselTargetInfo(T);
 
   case llvm::Triple::ppc:
-    if (os == llvm::Triple::Darwin)
+    if (Triple.isOSDarwin())
       return new DarwinPPC32TargetInfo(T);
     else if (os == llvm::Triple::FreeBSD)
       return new FreeBSDTargetInfo<PPC32TargetInfo>(T);
     return new PPC32TargetInfo(T);
 
   case llvm::Triple::ppc64:
-    if (os == llvm::Triple::Darwin)
+    if (Triple.isOSDarwin())
       return new DarwinPPC64TargetInfo(T);
     else if (os == llvm::Triple::Lv2)
       return new PS3PPUTargetInfo<PPC64TargetInfo>(T);
     else if (os == llvm::Triple::FreeBSD)
       return new FreeBSDTargetInfo<PPC64TargetInfo>(T);
     return new PPC64TargetInfo(T);
+
+  case llvm::Triple::ptx32:
+    return new PTX32TargetInfo(T);
+  case llvm::Triple::ptx64:
+    return new PTX64TargetInfo(T);
 
   case llvm::Triple::mblaze:
     return new MBlazeTargetInfo(T);
@@ -2725,11 +2845,12 @@ static TargetInfo *AllocateTarget(const std::string &T) {
     return new TCETargetInfo(T);
 
   case llvm::Triple::x86:
+    if (Triple.isOSDarwin())
+      return new DarwinI386TargetInfo(T);
+
     switch (os) {
     case llvm::Triple::AuroraUX:
       return new AuroraUXTargetInfo<X86_32TargetInfo>(T);
-    case llvm::Triple::Darwin:
-      return new DarwinI386TargetInfo(T);
     case llvm::Triple::Linux:
       return new LinuxTargetInfo<X86_32TargetInfo>(T);
     case llvm::Triple::DragonFly:
@@ -2757,11 +2878,12 @@ static TargetInfo *AllocateTarget(const std::string &T) {
     }
 
   case llvm::Triple::x86_64:
+    if (Triple.isOSDarwin() || Triple.getEnvironment() == llvm::Triple::MachO)
+      return new DarwinX86_64TargetInfo(T);
+
     switch (os) {
     case llvm::Triple::AuroraUX:
       return new AuroraUXTargetInfo<X86_64TargetInfo>(T);
-    case llvm::Triple::Darwin:
-      return new DarwinX86_64TargetInfo(T);
     case llvm::Triple::Linux:
       return new LinuxTargetInfo<X86_64TargetInfo>(T);
     case llvm::Triple::DragonFly:
@@ -2777,10 +2899,7 @@ static TargetInfo *AllocateTarget(const std::string &T) {
     case llvm::Triple::MinGW32:
       return new MinGWX86_64TargetInfo(T);
     case llvm::Triple::Win32:   // This is what Triple.h supports now.
-      if (Triple.getEnvironment() == llvm::Triple::MachO)
-        return new DarwinX86_64TargetInfo(T);
-      else
-        return new VisualStudioWindowsX86_64TargetInfo(T);
+      return new VisualStudioWindowsX86_64TargetInfo(T);
     default:
       return new X86_64TargetInfo(T);
     }
