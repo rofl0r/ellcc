@@ -2531,16 +2531,17 @@ X86TargetLowering::IsEligibleForTailCallOptimization(SDValue Callee,
     return false;
 
   // Do not sibcall optimize vararg calls unless all arguments are passed via
-  // registers
+  // registers.
   if (isVarArg && !Outs.empty()) {
+
+    // Optimizing for varargs on Win64 is unlikely to be safe without
+    // additional testing.
+    if (Subtarget->isTargetWin64())
+      return false;
+
     SmallVector<CCValAssign, 16> ArgLocs;
     CCState CCInfo(CalleeCC, isVarArg, getTargetMachine(),
                    ArgLocs, *DAG.getContext());
-
-    // Allocate shadow area for Win64
-    if (Subtarget->isTargetWin64()) {
-      CCInfo.AllocateStack(32, 8);
-    }
 
     CCInfo.AnalyzeCallOperands(Outs, CC_X86);
     for (unsigned i = 0, e = ArgLocs.size(); i != e; ++i)
@@ -10939,19 +10940,6 @@ void X86TargetLowering::computeMaskedBitsForTargetNode(const SDValue Op,
     KnownZero |= APInt::getHighBitsSet(Mask.getBitWidth(),
                                        Mask.getBitWidth() - 1);
     break;
-
-  case ISD::INTRINSIC_WO_CHAIN: {
-    unsigned IntNo = cast<ConstantSDNode>(Op.getOperand(0))->getZExtValue();
-    switch (IntNo) {
-      default: break;
-      case Intrinsic::x86_sse42_crc64_8:
-      case Intrinsic::x86_sse42_crc64_64:
-        // crc32 with 64-bit destination zeros high 32-bit.
-        KnownZero |= APInt::getHighBitsSet(64, 32);
-        break;
-    }
-    break;
-  }
   }
 }
 
@@ -12766,7 +12754,7 @@ X86TargetLowering::getRegForInlineAsmConstraint(const std::string &Constraint,
         return std::make_pair(0U, X86::GR8RegisterClass);
       if (VT == MVT::i16)
         return std::make_pair(0U, X86::GR16RegisterClass);
-      if (VT == MVT::i32 || !Subtarget->is64Bit())
+      if (VT == MVT::i32 || VT == MVT::f32 || !Subtarget->is64Bit())
         return std::make_pair(0U, X86::GR32RegisterClass);
       return std::make_pair(0U, X86::GR64RegisterClass);
     case 'R':   // LEGACY_REGS

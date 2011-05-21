@@ -14,6 +14,7 @@
 #ifndef MIPS_MACHINE_FUNCTION_INFO_H
 #define MIPS_MACHINE_FUNCTION_INFO_H
 
+#include <utility>
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/VectorExtras.h"
 #include "llvm/CodeGen/MachineFunction.h"
@@ -26,14 +27,6 @@ namespace llvm {
 class MipsFunctionInfo : public MachineFunctionInfo {
 
 private:
-  /// Holds for each function where on the stack the Frame Pointer must be
-  /// saved. This is used on Prologue and Epilogue to emit FP save/restore
-  int FPStackOffset;
-
-  /// Holds for each function where on the stack the Return Address must be
-  /// saved. This is used on Prologue and Epilogue to emit RA save/restore
-  int RAStackOffset;
-
   /// At each function entry, two special bitmask directives must be emitted
   /// to help debugging, for CPU and FPU callee saved registers. Both need
   /// the negative offset from the final stack size and its higher registers
@@ -83,19 +76,24 @@ private:
   /// VarArgsFrameIndex - FrameIndex for start of varargs area.
   int VarArgsFrameIndex;
 
+  // Range of frame object indices.
+  // InArgFIRange: Range of indices of all frame objects created during call to
+  //               LowerFormalArguments.
+  // OutArgFIRange: Range of indices of all frame objects created during call to
+  //                LowerCall except for the frame object for restoring $gp. 
+  std::pair<int, int> InArgFIRange, OutArgFIRange;
+  int GPFI; // Index of the frame object for restoring $gp 
+  bool HasCall; // True if function has a function call.
+  int MaxCallFrameSize;
 public:
   MipsFunctionInfo(MachineFunction& MF)
-  : FPStackOffset(0), RAStackOffset(0), CPUTopSavedRegOff(0),
+  : CPUTopSavedRegOff(0),
     FPUTopSavedRegOff(0), GPHolder(-1,-1), HasLoadArgs(false),
     HasStoreVarArgs(false), SRetReturnReg(0), GlobalBaseReg(0),
-    VarArgsFrameIndex(0)
+    VarArgsFrameIndex(0), InArgFIRange(std::make_pair(-1, 0)),
+    OutArgFIRange(std::make_pair(-1, 0)), GPFI(0), HasCall(false),
+    MaxCallFrameSize(-1)
   {}
-
-  int getFPStackOffset() const { return FPStackOffset; }
-  void setFPStackOffset(int Off) { FPStackOffset = Off; }
-
-  int getRAStackOffset() const { return RAStackOffset; }
-  void setRAStackOffset(int Off) { RAStackOffset = Off; }
 
   int getCPUTopSavedRegOff() const { return CPUTopSavedRegOff; }
   void setCPUTopSavedRegOff(int Off) { CPUTopSavedRegOff = Off; }
@@ -103,11 +101,27 @@ public:
   int getFPUTopSavedRegOff() const { return FPUTopSavedRegOff; }
   void setFPUTopSavedRegOff(int Off) { FPUTopSavedRegOff = Off; }
 
+  bool isInArgFI(int FI) const {
+    return FI <= InArgFIRange.first && FI >= InArgFIRange.second;
+  }
+  void setLastInArgFI(int FI) { InArgFIRange.second = FI; }
+
+  bool isOutArgFI(int FI) const { 
+    return FI <= OutArgFIRange.first && FI >= OutArgFIRange.second;
+  }
+  void extendOutArgFIRange(int FirstFI, int LastFI) {
+    if (!OutArgFIRange.second)
+      // this must be the first time this function was called.
+      OutArgFIRange.first = FirstFI;
+    OutArgFIRange.second = LastFI;
+  }
+
   int getGPStackOffset() const { return GPHolder.SPOffset; }
   int getGPFI() const { return GPHolder.FI; }
   void setGPStackOffset(int Off) { GPHolder.SPOffset = Off; }
   void setGPFI(int FI) { GPHolder.FI = FI; }
   bool needGPSaveRestore() const { return GPHolder.SPOffset != -1; }
+  bool isGPFI(int FI) const { return GPFI && GPFI == FI; }
 
   bool hasLoadArgs() const { return HasLoadArgs; }
   bool hasStoreVarArgs() const { return HasStoreVarArgs; }
@@ -140,6 +154,12 @@ public:
 
   int getVarArgsFrameIndex() const { return VarArgsFrameIndex; }
   void setVarArgsFrameIndex(int Index) { VarArgsFrameIndex = Index; }
+
+  bool hasCall() const { return HasCall; }
+  void setHasCall() { HasCall = true; }
+
+  int getMaxCallFrameSize() const { return MaxCallFrameSize; }
+  void setMaxCallFrameSize(int S) { MaxCallFrameSize = S; }
 };
 
 } // end of namespace llvm

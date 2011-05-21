@@ -501,7 +501,8 @@ Sema::ActOnFinishSwitchStmt(SourceLocation SwitchLoc, Stmt *Switch,
     = CondExpr->isTypeDependent() || CondExpr->isValueDependent();
   unsigned CondWidth
     = HasDependentValue ? 0 : Context.getIntWidth(CondTypeBeforePromotion);
-  bool CondIsSigned = CondTypeBeforePromotion->isSignedIntegerType();
+  bool CondIsSigned 
+    = CondTypeBeforePromotion->isSignedIntegerOrEnumerationType();
 
   // Accumulate all of the case values in a vector so that we can sort them
   // and detect duplicates.  This vector contains the APInt for the case after
@@ -1456,7 +1457,10 @@ Sema::ActOnBreakStmt(SourceLocation BreakLoc, Scope *CurScope) {
 /// \param E The expression being returned from the function or block, or
 /// being thrown.
 ///
-/// \param AllowFunctionParameter
+/// \param AllowFunctionParameter Whether we allow function parameters to
+/// be considered NRVO candidates. C++ prohibits this for NRVO itself, but
+/// we re-use this logic to determine whether we should try to move as part of
+/// a return or throw (which does allow function parameters).
 ///
 /// \returns The NRVO candidate variable, if the return statement may use the
 /// NRVO, or NULL if there is no such candidate.
@@ -1662,6 +1666,10 @@ Sema::ActOnBlockReturnStmt(SourceLocation ReturnLoc, Expr *RetValExp) {
 
 StmtResult
 Sema::ActOnReturnStmt(SourceLocation ReturnLoc, Expr *RetValExp) {
+  // Check for unexpanded parameter packs.
+  if (RetValExp && DiagnoseUnexpandedParameterPack(RetValExp))
+    return StmtError();
+  
   if (getCurBlock())
     return ActOnBlockReturnStmt(ReturnLoc, RetValExp);
 

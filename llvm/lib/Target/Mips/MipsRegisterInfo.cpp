@@ -99,20 +99,20 @@ getCalleeSavedRegs(const MachineFunction *MF) const
   // Mips callee-save register range is $16-$23, $f20-$f30
   static const unsigned SingleFloatOnlyCalleeSavedRegs[] = {
     Mips::S0, Mips::S1, Mips::S2, Mips::S3,
-    Mips::S4, Mips::S5, Mips::S6, Mips::S7,
+    Mips::S4, Mips::S5, Mips::S6, Mips::S7, Mips::FP, Mips::RA,
     Mips::F20, Mips::F21, Mips::F22, Mips::F23, Mips::F24, Mips::F25,
     Mips::F26, Mips::F27, Mips::F28, Mips::F29, Mips::F30, 0
   };
 
   static const unsigned BitMode32CalleeSavedRegs[] = {
     Mips::S0, Mips::S1, Mips::S2, Mips::S3,
-    Mips::S4, Mips::S5, Mips::S6, Mips::S7,
+    Mips::S4, Mips::S5, Mips::S6, Mips::S7, Mips::FP, Mips::RA,
     Mips::F20, Mips::F22, Mips::F24, Mips::F26, Mips::F28, Mips::F30, 0
   };
 
   static const unsigned Mips32CalleeSavedRegs[] = {
     Mips::S0, Mips::S1, Mips::S2, Mips::S3,
-    Mips::S4, Mips::S5, Mips::S6, Mips::S7,
+    Mips::S4, Mips::S5, Mips::S6, Mips::S7, Mips::FP, Mips::RA,
     Mips::D10, Mips::D11, Mips::D12, Mips::D13, Mips::D14, Mips::D15, 0
   };
 
@@ -161,6 +161,8 @@ eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
                     RegScavenger *RS) const {
   MachineInstr &MI = *II;
   MachineFunction &MF = *MI.getParent()->getParent();
+  MachineFrameInfo *MFI = MF.getFrameInfo();
+  MipsFunctionInfo *MipsFI = MF.getInfo<MipsFunctionInfo>();
 
   unsigned i = 0;
   while (!MI.getOperand(i).isFI()) {
@@ -198,26 +200,45 @@ eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
   int NewImm = 0;
   MachineBasicBlock &MBB = *MI.getParent();
   bool ATUsed;
-  unsigned OrigReg = getFrameRegister(MF);
-  int OrigImm = Offset;
+  unsigned FrameReg;
+  const std::vector<CalleeSavedInfo> &CSI = MFI->getCalleeSavedInfo();
+  int MinCSFI = 0;
+  int MaxCSFI = -1;
 
-  // OrigImm fits in the 16-bit field
-  if (OrigImm < 0x8000 && OrigImm >= -0x8000) {
-    NewReg = OrigReg;
-    NewImm = OrigImm;
+  if (CSI.size()) {
+    MinCSFI = CSI[0].getFrameIdx();
+    MaxCSFI = CSI[CSI.size() - 1].getFrameIdx();
+  }
+
+  // The following stack frame objects are always referenced relative to $sp:
+  //  1. Outgoing arguments.
+  //  2. Pointer to dynamically allocated stack space.
+  //  3. Locations for callee-saved registers.
+  // Everything else is referenced relative to whatever register 
+  // getFrameRegister() returns.
+  if (MipsFI->isOutArgFI(FrameIndex) ||
+      (FrameIndex >= MinCSFI && FrameIndex <= MaxCSFI))
+    FrameReg = Mips::SP;
+  else
+    FrameReg = getFrameRegister(MF); 
+  
+  // Offset fits in the 16-bit field
+  if (Offset < 0x8000 && Offset >= -0x8000) {
+    NewReg = FrameReg;
+    NewImm = Offset;
     ATUsed = false;
   }
   else {
     const TargetInstrInfo *TII = MF.getTarget().getInstrInfo();
     DebugLoc DL = II->getDebugLoc();
-    int ImmLo = OrigImm & 0xffff;
-    int ImmHi = (((unsigned)OrigImm & 0xffff0000) >> 16) +
-                ((OrigImm & 0x8000) != 0);
+    int ImmLo = Offset & 0xffff;
+    int ImmHi = (((unsigned)Offset & 0xffff0000) >> 16) +
+                ((Offset & 0x8000) != 0);
 
     // FIXME: change this when mips goes MC".
     BuildMI(MBB, II, DL, TII->get(Mips::NOAT));
     BuildMI(MBB, II, DL, TII->get(Mips::LUi), Mips::AT).addImm(ImmHi);
-    BuildMI(MBB, II, DL, TII->get(Mips::ADDu), Mips::AT).addReg(OrigReg)
+    BuildMI(MBB, II, DL, TII->get(Mips::ADDu), Mips::AT).addReg(FrameReg)
                                                         .addReg(Mips::AT);
     NewReg = Mips::AT;
     NewImm = ImmLo;

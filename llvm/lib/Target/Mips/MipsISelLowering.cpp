@@ -990,9 +990,15 @@ static bool CC_MipsO32(unsigned ValNo, MVT ValVT,
   // argument which is not f32 or f64.
   bool AllocateFloatsInIntReg = State.isVarArg() || ValNo > 1
       || State.getFirstUnallocated(F32Regs, FloatRegsSize) != ValNo;
+  unsigned OrigAlign = ArgFlags.getOrigAlign();
+  bool isI64 = (ValVT == MVT::i32 && OrigAlign == 8);
 
   if (ValVT == MVT::i32 || (ValVT == MVT::f32 && AllocateFloatsInIntReg)) {
     Reg = State.AllocateReg(IntRegs, IntRegsSize);
+    // If this is the first part of an i64 arg,
+    // the allocated register must be either A0 or A2.
+    if (isI64 && (Reg == Mips::A1 || Reg == Mips::A3))
+      Reg = State.AllocateReg(IntRegs, IntRegsSize);
     LocVT = MVT::i32;
   } else if (ValVT == MVT::f64 && AllocateFloatsInIntReg) {
     // Allocate int register and shadow next int register. If first
@@ -1019,11 +1025,12 @@ static bool CC_MipsO32(unsigned ValNo, MVT ValVT,
   } else
     llvm_unreachable("Cannot handle this ValVT.");
 
-  if (!Reg) {
-    unsigned SizeInBytes = ValVT.getSizeInBits() >> 3;
-    unsigned Offset = State.AllocateStack(SizeInBytes, SizeInBytes);
+  unsigned SizeInBytes = ValVT.getSizeInBits() >> 3;
+  unsigned Offset = State.AllocateStack(SizeInBytes, OrigAlign);
+
+  if (!Reg)
     State.addLoc(CCValAssign::getMem(ValNo, ValVT, Offset, LocVT, LocInfo));
-  } else
+  else
     State.addLoc(CCValAssign::getReg(ValNo, ValVT, Reg, LocVT, LocInfo));
 
   return false; // CC must always match
@@ -1050,18 +1057,16 @@ MipsTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
 
   MachineFunction &MF = DAG.getMachineFunction();
   MachineFrameInfo *MFI = MF.getFrameInfo();
+  const TargetFrameLowering *TFL = MF.getTarget().getFrameLowering();
   bool IsPIC = getTargetMachine().getRelocationModel() == Reloc::PIC_;
+  MipsFunctionInfo *MipsFI = MF.getInfo<MipsFunctionInfo>();
 
   // Analyze operands of the call, assigning locations to each operand.
   SmallVector<CCValAssign, 16> ArgLocs;
   CCState CCInfo(CallConv, isVarArg, getTargetMachine(), ArgLocs,
                  *DAG.getContext());
 
-  // To meet O32 ABI, Mips must always allocate 16 bytes on
-  // the stack (even if less than 4 are used as arguments)
   if (Subtarget->isABI_O32()) {
-    int VTsize = MVT(MVT::i32).getSizeInBits()/8;
-    MFI->CreateFixedObject(VTsize, (VTsize*3), true);
     CCInfo.AnalyzeCallOperands(Outs, CC_MipsO32);
   } else
     CCInfo.AnalyzeCallOperands(Outs, CC_Mips);
@@ -1073,11 +1078,16 @@ MipsTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
   // With EABI is it possible to have 16 args on registers.
   SmallVector<std::pair<unsigned, SDValue>, 16> RegsToPass;
   SmallVector<SDValue, 8> MemOpChains;
+  unsigned NextStackOffset = (Subtarget->isABI_EABI() ? 0 : 16);
 
-  // First/LastArgStackLoc contains the first/last
-  // "at stack" argument location.
-  int LastArgStackLoc = 0;
-  unsigned FirstStackArgLoc = (Subtarget->isABI_EABI() ? 0 : 16);
+  MipsFI->setHasCall();
+
+  // Create GP frame object if this is the first call. 
+  // SPOffset will be updated after call frame size is known.
+  if (IsPIC && MipsFI->getGPStackOffset() == -1)
+    MipsFI->setGPFI(MFI->CreateFixedObject(4, 0, true));
+
+  int FirstFI = -MFI->getNumFixedObjects() - 1, LastFI = 0; 
 
   // Walk the register/memloc assignments, inserting copies/loads.
   for (unsigned i = 0, e = ArgLocs.size(); i != e; ++i) {
@@ -1129,11 +1139,12 @@ MipsTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
     // This guarantees that when allocating Local Area the firsts
     // 16 bytes which are alwayes reserved won't be overwritten
     // if O32 ABI is used. For EABI the first address is zero.
-    LastArgStackLoc = (FirstStackArgLoc + VA.getLocMemOffset());
-    int FI = MFI->CreateFixedObject(VA.getValVT().getSizeInBits()/8,
-                                    LastArgStackLoc, true);
+    NextStackOffset = VA.getLocMemOffset();
+    LastFI = MFI->CreateFixedObject(VA.getValVT().getSizeInBits()/8,
+                                    NextStackOffset, true);
+    NextStackOffset += VA.getValVT().getSizeInBits()/8;
 
-    SDValue PtrOff = DAG.getFrameIndex(FI,getPointerTy());
+    SDValue PtrOff = DAG.getFrameIndex(LastFI, getPointerTy());
 
     // emit ISD::STORE whichs stores the
     // parameter value to a stack Location
@@ -1147,17 +1158,6 @@ MipsTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
   if (!MemOpChains.empty())
     Chain = DAG.getNode(ISD::TokenFactor, dl, MVT::Other,
                         &MemOpChains[0], MemOpChains.size());
-
-  // Build a sequence of copy-to-reg nodes chained together with token
-  // chain and flag operands which copy the outgoing args into registers.
-  // The InFlag in necessary since all emitted instructions must be
-  // stuck together.
-  SDValue InFlag;
-  for (unsigned i = 0, e = RegsToPass.size(); i != e; ++i) {
-    Chain = DAG.getCopyToReg(Chain, dl, RegsToPass[i].first,
-                             RegsToPass[i].second, InFlag);
-    InFlag = Chain.getValue(1);
-  }
 
   // If the callee is a GlobalAddress/ExternalSymbol node (quite common, every
   // direct call is) turn it into a TargetGlobalAddress/TargetExternalSymbol
@@ -1185,6 +1185,8 @@ MipsTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
     LoadSymAddr = true;
   }
 
+  SDValue InFlag;
+
   // Create nodes that load address of callee and copy it to T9
   if (IsPIC) {
     if (LoadSymAddr) {
@@ -1208,6 +1210,16 @@ MipsTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
     Chain = DAG.getCopyToReg(Chain, dl, Mips::T9, Callee, SDValue(0, 0));
     InFlag = Chain.getValue(1);
     Callee = DAG.getRegister(Mips::T9, MVT::i32);
+  }
+
+  // Build a sequence of copy-to-reg nodes chained together with token
+  // chain and flag operands which copy the outgoing args into registers.
+  // The InFlag in necessary since all emitted instructions must be
+  // stuck together.
+  for (unsigned i = 0, e = RegsToPass.size(); i != e; ++i) {
+    Chain = DAG.getCopyToReg(Chain, dl, RegsToPass[i].first,
+                             RegsToPass[i].second, InFlag);
+    InFlag = Chain.getValue(1);
   }
 
   // MipsJmpLink = #chain, #target_address, #opt_in_flags...
@@ -1237,19 +1249,24 @@ MipsTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
   if (IsPIC) {
       // Function can have an arbitrary number of calls, so
       // hold the LastArgStackLoc with the biggest offset.
-      int FI;
-      MipsFunctionInfo *MipsFI = MF.getInfo<MipsFunctionInfo>();
-      if (LastArgStackLoc >= MipsFI->getGPStackOffset()) {
-        LastArgStackLoc = (!LastArgStackLoc) ? (16) : (LastArgStackLoc+4);
-        // Create the frame index only once. SPOffset here can be anything
-        // (this will be fixed on processFunctionBeforeFrameFinalized)
-        if (MipsFI->getGPStackOffset() == -1) {
-          FI = MFI->CreateFixedObject(4, 0, true);
-          MipsFI->setGPFI(FI);
-        }
-        MipsFI->setGPStackOffset(LastArgStackLoc);
+      int MaxCallFrameSize = MipsFI->getMaxCallFrameSize();
+
+      if (MaxCallFrameSize < (int)NextStackOffset) {
+        MipsFI->setMaxCallFrameSize(NextStackOffset);
+
+        // $gp restore slot must be aligned.
+        unsigned StackAlignment = TFL->getStackAlignment();
+        NextStackOffset = (NextStackOffset + StackAlignment - 1) / 
+                          StackAlignment * StackAlignment;
+        MipsFI->setGPStackOffset(NextStackOffset);
       }
   }
+
+  // Extend range of indices of frame objects for outgoing arguments that were
+  // created during this function call. Skip this step if no such objects were
+  // created.
+  if (LastFI)
+    MipsFI->extendOutArgFIRange(FirstFI, LastFI);
 
   // Create the CALLSEQ_END node.
   Chain = DAG.getCALLSEQ_END(Chain, DAG.getIntPtrConstant(NumBytes, true),
@@ -1327,9 +1344,9 @@ MipsTargetLowering::LowerFormalArguments(SDValue Chain,
   else
     CCInfo.AnalyzeFormalArguments(Ins, CC_Mips);
 
-  unsigned FirstStackArgLoc = (Subtarget->isABI_EABI() ? 0 : 16);
-  unsigned LastStackArgEndOffset = 0;
+  unsigned NextStackOffset = (Subtarget->isABI_EABI() ? 0 : 16);
   EVT LastRegArgValVT;
+  int LastFI = 0;// MipsFI->LastInArgFI is 0 at the entry of this function.
 
   for (unsigned i = 0, e = ArgLocs.size(); i != e; ++i) {
     CCValAssign &VA = ArgLocs[i];
@@ -1403,15 +1420,14 @@ MipsTargetLowering::LowerFormalArguments(SDValue Chain,
       // be used on emitPrologue) to avoid mis-calc of the first stack
       // offset on PEI::calculateFrameObjectOffsets.
       unsigned ArgSize = VA.getValVT().getSizeInBits()/8;
-      LastStackArgEndOffset = FirstStackArgLoc + VA.getLocMemOffset() + ArgSize;
-      int FI = MFI->CreateFixedObject(ArgSize, 0, true);
-      MipsFI->recordLoadArgsFI(FI, -(4 +
-        (FirstStackArgLoc + VA.getLocMemOffset())));
+      NextStackOffset = VA.getLocMemOffset() + ArgSize;
+      LastFI = MFI->CreateFixedObject(ArgSize, 0, true);
+      MipsFI->recordLoadArgsFI(LastFI, -(4 + VA.getLocMemOffset()));
 
       // Create load nodes to retrieve arguments from the stack
-      SDValue FIN = DAG.getFrameIndex(FI, getPointerTy());
+      SDValue FIN = DAG.getFrameIndex(LastFI, getPointerTy());
       InVals.push_back(DAG.getLoad(VA.getValVT(), dl, Chain, FIN,
-                                   MachinePointerInfo::getFixedStack(FI),
+                                   MachinePointerInfo::getFixedStack(LastFI),
                                    false, false, 0));
     }
   }
@@ -1448,9 +1464,9 @@ MipsTargetLowering::LowerFormalArguments(SDValue Chain,
           unsigned Reg = AddLiveIn(DAG.getMachineFunction(), ArgRegEnd, RC);
           SDValue ArgValue = DAG.getCopyFromReg(Chain, dl, Reg, MVT::i32);
 
-          int FI = MFI->CreateFixedObject(4, 0, true);
-          MipsFI->recordStoreVarArgsFI(FI, -(4+(ArgRegEnd-Mips::A0)*4)); // RICH: 8+?
-          SDValue PtrOff = DAG.getFrameIndex(FI, getPointerTy());
+          LastFI = MFI->CreateFixedObject(4, 0, true);
+          MipsFI->recordStoreVarArgsFI(LastFI, -(4+(ArgRegEnd-Mips::A0)*4)); // RICH: 8+?
+          SDValue PtrOff = DAG.getFrameIndex(LastFI, getPointerTy());
           OutChains.push_back(DAG.getStore(Chain, dl, ArgValue, PtrOff,
                                            MachinePointerInfo(),
                                            false, false, 0));
@@ -1458,28 +1474,30 @@ MipsTargetLowering::LowerFormalArguments(SDValue Chain,
           // Record the frame index of the first variable argument
           // which is a value necessary to VASTART.
           if (!MipsFI->getVarArgsFrameIndex()) {
-            MFI->setObjectAlignment(FI, 4);
-            MipsFI->setVarArgsFrameIndex(FI);
+            MFI->setObjectAlignment(LastFI, 4);
+            MipsFI->setVarArgsFrameIndex(LastFI);
           }
         }
       } else {
         // Last named formal argument is in register Mips::A3, and the first
         // variable argument is on stack. Record the frame index of the first
         // variable argument.
-        int FI = MFI->CreateFixedObject(4, 0, true);
-        MFI->setObjectAlignment(FI, 4);
-        MipsFI->recordStoreVarArgsFI(FI, -20);
-        MipsFI->setVarArgsFrameIndex(FI);
+        LastFI = MFI->CreateFixedObject(4, 0, true);
+        MFI->setObjectAlignment(LastFI, 4);
+        MipsFI->recordStoreVarArgsFI(LastFI, -20);
+        MipsFI->setVarArgsFrameIndex(LastFI);
       }
     } else {
       // Last named formal argument and all the variable arguments are passed
       // on stack. Record the frame index of the first variable argument.
-      int FI = MFI->CreateFixedObject(4, 0, true);
-      MFI->setObjectAlignment(FI, 4);
-      MipsFI->recordStoreVarArgsFI(FI, -(4+LastStackArgEndOffset));
-      MipsFI->setVarArgsFrameIndex(FI);
+      LastFI = MFI->CreateFixedObject(4, 0, true);
+      MFI->setObjectAlignment(LastFI, 4);
+      MipsFI->recordStoreVarArgsFI(LastFI, -(4+NextStackOffset));
+      MipsFI->setVarArgsFrameIndex(LastFI);
     }
   }
+
+  MipsFI->setLastInArgFI(LastFI);
 
   // All stores are grouped in one node to allow the matching between
   // the size of Ins and InVals. This only happens when on varg functions

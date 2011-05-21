@@ -42,14 +42,14 @@ const MCExpr *MCStreamer::BuildSymbolDiff(MCContext &Context,
   return AddrDelta;
 }
 
-const MCExpr *MCStreamer::ForceExpAbs(MCStreamer *Streamer,
-                                      MCContext &Context, const MCExpr* Expr) {
- if (Context.getAsmInfo().hasAggressiveSymbolFolding())
-   return Expr;
+const MCExpr *MCStreamer::ForceExpAbs(const MCExpr* Expr) {
+  if (Context.getAsmInfo().hasAggressiveSymbolFolding() ||
+      isa<MCSymbolRefExpr>(Expr))
+    return Expr;
 
- MCSymbol *ABS = Context.CreateTempSymbol();
- Streamer->EmitAssignment(ABS, Expr);
- return MCSymbolRefExpr::Create(ABS, Context);
+  MCSymbol *ABS = Context.CreateTempSymbol();
+  EmitAssignment(ABS, Expr);
+  return MCSymbolRefExpr::Create(ABS, Context);
 }
 
 raw_ostream &MCStreamer::GetCommentOS() {
@@ -103,13 +103,8 @@ void MCStreamer::EmitSLEB128IntValue(int64_t Value, unsigned AddrSpace) {
 
 void MCStreamer::EmitAbsValue(const MCExpr *Value, unsigned Size,
                               unsigned AddrSpace) {
-  if (getContext().getAsmInfo().hasAggressiveSymbolFolding()) {
-    EmitValue(Value, Size, AddrSpace);
-    return;
-  }
-  MCSymbol *ABS = getContext().CreateTempSymbol();
-  EmitAssignment(ABS, Value);
-  EmitSymbolValue(ABS, Size, AddrSpace);
+  const MCExpr *ABS = ForceExpAbs(Value);
+  EmitValue(ABS, Size, AddrSpace);
 }
 
 
@@ -374,8 +369,7 @@ void MCStreamer::EmitWin64EHHandler(const MCSymbol *Sym, bool Unwind,
 }
 
 void MCStreamer::EmitWin64EHHandlerData() {
-  errs() << "Not implemented yet\n";
-  abort();
+  EnsureValidW64UnwindInfo();
 }
 
 void MCStreamer::EmitWin64EHPushReg(unsigned Register) {
@@ -389,6 +383,7 @@ void MCStreamer::EmitWin64EHSetFrame(unsigned Register, unsigned Offset) {
   EnsureValidW64UnwindInfo();
   MCWin64EHUnwindInfo *CurFrame = CurrentW64UnwindInfo;
   MCWin64EHInstruction Inst(Win64EH::UOP_SetFPReg, Register, Offset);
+  CurFrame->LastFrameInst = CurFrame->Instructions.size();
   CurFrame->Instructions.push_back(Inst);
 }
 
@@ -425,8 +420,10 @@ void MCStreamer::EmitWin64EHPushFrame(bool Code) {
 }
 
 void MCStreamer::EmitWin64EHEndProlog() {
-  errs() << "Not implemented yet\n";
-  abort();
+  EnsureValidW64UnwindInfo();
+  MCWin64EHUnwindInfo *CurFrame = CurrentW64UnwindInfo;
+  CurFrame->PrologEnd = getContext().CreateTempSymbol();
+  EmitLabel(CurFrame->PrologEnd);
 }
 
 void MCStreamer::EmitFnStart() {

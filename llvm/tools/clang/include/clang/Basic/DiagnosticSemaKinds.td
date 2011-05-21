@@ -502,6 +502,8 @@ def err_static_assert_expression_is_not_constant : Error<
   "static_assert expression is not an integral constant expression">;
 def err_static_assert_failed : Error<"static_assert failed \"%0\"">;
 
+def warn_inline_namespace_reopened_noninline : Warning<
+  "inline namespace cannot be re-opened as a non-inline namespace">;
 def err_inline_namespace_mismatch : Error<
   "%select{|non-}0inline namespace "
   "cannot be reopened as %select{non-|}0inline">;
@@ -603,9 +605,10 @@ def ext_rvalue_to_reference_access_ctor : ExtWarn<
   AccessControl, InGroup<BindToTemporaryCopy>;
 def err_access_base_ctor : Error<
   "%select{base class|inherited virtual base class}0 %1 has %select{private|"
-  "protected}2 constructor">, AccessControl;
+  "protected}3 %select{|copy }2constructor">, AccessControl;
 def err_access_field_ctor : Error<
-  "field of type %0 has %select{private|protected}1 constructor">, AccessControl;
+  "field of type %0 has %select{private|protected}2 "
+  "%select{|copy }1constructor">, AccessControl;
 
 def err_access_ctor_field :
     Error<"field of type %1 has %select{private|protected}2 constructor">,

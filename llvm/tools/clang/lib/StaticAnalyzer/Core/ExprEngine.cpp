@@ -2464,7 +2464,7 @@ void ExprEngine::VisitOffsetOfExpr(const OffsetOfExpr* OOE,
     const APSInt &IV = Res.Val.getInt();
     assert(IV.getBitWidth() == getContext().getTypeSize(OOE->getType()));
     assert(OOE->getType()->isIntegerType());
-    assert(IV.isSigned() == OOE->getType()->isSignedIntegerType());
+    assert(IV.isSigned() == OOE->getType()->isSignedIntegerOrEnumerationType());
     SVal X = svalBuilder.makeIntVal(IV);
     MakeNode(Dst, OOE, Pred, GetState(Pred)->BindExpr(OOE, X));
     return;
@@ -2703,7 +2703,7 @@ void ExprEngine::VisitUnaryOperator(const UnaryOperator* U,
       if (U->isLValue())
         state = state->BindExpr(U, loc);
       else
-        state = state->BindExpr(U, V2);
+        state = state->BindExpr(U, U->isPostfix() ? V2 : Result);
 
       // Perform the store.
       evalStore(Dst, NULL, U, *I2, state, loc, Result);

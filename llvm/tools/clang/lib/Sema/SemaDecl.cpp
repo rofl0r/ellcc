@@ -8200,10 +8200,10 @@ void Sema::ActOnFields(Scope* S,
       const CXXDestructorDecl *Dtor =
               DelayedDestructorExceptionSpecChecks.back().first;
       if (Dtor->getParent() == Record) {
-        // Don't check if we're a template. The spec hasn't been adjusted.
-        if (!Dtor->getParent()->isDependentType())
-          CheckOverridingFunctionExceptionSpec(Dtor,
-              DelayedDestructorExceptionSpecChecks.back().second);
+        assert(!Dtor->getParent()->isDependentType() &&
+            "Should not ever add destructors of templates into the list.");
+        CheckOverridingFunctionExceptionSpec(Dtor,
+            DelayedDestructorExceptionSpecChecks.back().second);
         DelayedDestructorExceptionSpecChecks.pop_back();
       }
     }
@@ -8262,7 +8262,7 @@ static bool isRepresentableIntegerValue(ASTContext &Context,
   unsigned BitWidth = Context.getIntWidth(T);
   
   if (Value.isUnsigned() || Value.isNonNegative()) {
-    if (T->isSignedIntegerType()) 
+    if (T->isSignedIntegerOrEnumerationType()) 
       --BitWidth;
     return Value.getActiveBits() <= BitWidth;
   }  
@@ -8285,8 +8285,8 @@ static QualType getNextLargerIntegralType(ASTContext &Context, QualType T) {
   };
   
   unsigned BitWidth = Context.getTypeSize(T);
-  QualType *Types = T->isSignedIntegerType()? SignedIntegralTypes
-                                            : UnsignedIntegralTypes;
+  QualType *Types = T->isSignedIntegerOrEnumerationType()? SignedIntegralTypes
+                                                        : UnsignedIntegralTypes;
   for (unsigned I = 0; I != NumTypes; ++I)
     if (Context.getTypeSize(Types[I]) > BitWidth)
       return Types[I];
@@ -8420,7 +8420,7 @@ EnumConstantDecl *Sema::CheckEnumConstant(EnumDecl *Enum,
         // type that is supposed to be large enough to represent the incremented
         // value, then increment.
         EnumVal = LastEnumConst->getInitVal();
-        EnumVal.setIsSigned(EltTy->isSignedIntegerType());
+        EnumVal.setIsSigned(EltTy->isSignedIntegerOrEnumerationType());
         EnumVal = EnumVal.zextOrTrunc(Context.getIntWidth(EltTy));
         ++EnumVal;        
         
@@ -8444,7 +8444,7 @@ EnumConstantDecl *Sema::CheckEnumConstant(EnumDecl *Enum,
     // Make the enumerator value match the signedness and size of the 
     // enumerator's type.
     EnumVal = EnumVal.zextOrTrunc(Context.getIntWidth(EltTy));
-    EnumVal.setIsSigned(EltTy->isSignedIntegerType());
+    EnumVal.setIsSigned(EltTy->isSignedIntegerOrEnumerationType());
   }
   
   return EnumConstantDecl::Create(Context, Enum, IdLoc, Id, EltTy,
@@ -8702,7 +8702,7 @@ void Sema::ActOnEnumBody(SourceLocation EnumLoc, SourceLocation LBraceLoc,
     } else {
       NewTy = BestType;
       NewWidth = BestWidth;
-      NewSign = BestType->isSignedIntegerType();
+      NewSign = BestType->isSignedIntegerOrEnumerationType();
     }
 
     // Adjust the APSInt value.
