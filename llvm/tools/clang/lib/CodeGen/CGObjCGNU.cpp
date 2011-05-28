@@ -52,7 +52,7 @@ class LazyRuntimeFunction {
   CodeGenModule *CGM;
   std::vector<const llvm::Type*> ArgTys;
   const char *FunctionName;
-  llvm::Function *Function;
+  llvm::Constant *Function;
   public:
     /// Constructor leaves this class uninitialized, because it is intended to
     /// be used as a field in another class and not all of the types that are
@@ -78,7 +78,7 @@ class LazyRuntimeFunction {
    }
    /// Overloaded cast operator, allows the class to be implicitly cast to an
    /// LLVM constant.
-   operator llvm::Function*() {
+   operator llvm::Constant*() {
      if (!Function) {
        if (0 == FunctionName) return 0;
        // We put the return type on the end of the vector, so pop it back off
@@ -86,13 +86,17 @@ class LazyRuntimeFunction {
        ArgTys.pop_back();
        llvm::FunctionType *FTy = llvm::FunctionType::get(RetTy, ArgTys, false);
        Function =
-         cast<llvm::Function>(CGM->CreateRuntimeFunction(FTy, FunctionName));
+         cast<llvm::Constant>(CGM->CreateRuntimeFunction(FTy, FunctionName));
        // We won't need to use the types again, so we may as well clean up the
        // vector now
        ArgTys.resize(0);
      }
      return Function;
    }
+   operator llvm::Function*() {
+     return cast<llvm::Function>((llvm::Constant*)*this);
+   }
+
 };
 
 
@@ -314,7 +318,7 @@ private:
 
   /// The version of the runtime that this class targets.  Must match the
   /// version in the runtime.
-  const int RuntimeVersion;
+  int RuntimeVersion;
   /// The version of the protocol class.  Used to differentiate between ObjC1
   /// and ObjC2 protocols.  Objective-C 1 protocols can not contain optional
   /// components and can not contain declared properties.  We always emit
@@ -444,10 +448,10 @@ public:
                                            const ObjCProtocolDecl *PD);
   virtual void GenerateProtocol(const ObjCProtocolDecl *PD);
   virtual llvm::Function *ModuleInitFunction();
-  virtual llvm::Function *GetPropertyGetFunction();
-  virtual llvm::Function *GetPropertySetFunction();
-  virtual llvm::Function *GetSetStructFunction();
-  virtual llvm::Function *GetGetStructFunction();
+  virtual llvm::Constant *GetPropertyGetFunction();
+  virtual llvm::Constant *GetPropertySetFunction();
+  virtual llvm::Constant *GetSetStructFunction();
+  virtual llvm::Constant *GetGetStructFunction();
   virtual llvm::Constant *EnumerationMutationFunction();
 
   virtual void EmitTryStmt(CodeGenFunction &CGF,
@@ -658,7 +662,6 @@ CGObjCGNU::CGObjCGNU(CodeGenModule &cgm, unsigned runtimeABIVersion,
   : CGM(cgm), TheModule(CGM.getModule()), VMContext(cgm.getLLVMContext()),
   ClassPtrAlias(0), MetaClassPtrAlias(0), RuntimeVersion(runtimeABIVersion),
   ProtocolVersion(protocolClassVersion) {
-    
 
   msgSendMDKind = VMContext.getMDKindID("GNUObjCMessageSend");
 
@@ -741,6 +744,10 @@ CGObjCGNU::CGObjCGNU(CodeGenModule &cgm, unsigned runtimeABIVersion,
 
   // Don't bother initialising the GC stuff unless we're compiling in GC mode
   if (CGM.getLangOptions().getGCMode() != LangOptions::NonGC) {
+    // This is a bit of an hack.  We should sort this out by having a proper
+    // CGObjCGNUstep subclass for GC, but we may want to really support the old
+    // ABI and GC added in ObjectiveC2.framework, so we fudge it a bit for now
+    RuntimeVersion = 10;
     // Get selectors needed in GC mode
     RetainSel = GetNullarySelector("retain", CGM.getContext());
     ReleaseSel = GetNullarySelector("release", CGM.getContext());
@@ -949,7 +956,7 @@ CGObjCGNU::GenerateMessageSendSuper(CodeGenFunction &CGF,
                                     bool IsClassMessage,
                                     const CallArgList &CallArgs,
                                     const ObjCMethodDecl *Method) {
-  if (CGM.getLangOptions().getGCMode() != LangOptions::NonGC) {
+  if (CGM.getLangOptions().getGCMode() == LangOptions::GCOnly) {
     if (Sel == RetainSel || Sel == AutoreleaseSel) {
       return RValue::get(Receiver);
     }
@@ -1057,7 +1064,7 @@ CGObjCGNU::GenerateMessageSend(CodeGenFunction &CGF,
                                const ObjCInterfaceDecl *Class,
                                const ObjCMethodDecl *Method) {
   // Strip out message sends to retain / release in GC mode
-  if (CGM.getLangOptions().getGCMode() != LangOptions::NonGC) {
+  if (CGM.getLangOptions().getGCMode() == LangOptions::GCOnly) {
     if (Sel == RetainSel || Sel == AutoreleaseSel) {
       return RValue::get(Receiver);
     }
@@ -2131,7 +2138,9 @@ llvm::Function *CGObjCGNU::ModuleInitFunction() {
   // The symbol table is contained in a module which has some version-checking
   // constants
   llvm::StructType * ModuleTy = llvm::StructType::get(VMContext, LongTy, LongTy,
-      PtrToInt8Ty, llvm::PointerType::getUnqual(SymTabTy), NULL);
+      PtrToInt8Ty, llvm::PointerType::getUnqual(SymTabTy), 
+      (CGM.getLangOptions().getGCMode() == LangOptions::NonGC) ? NULL : IntTy,
+      NULL);
   Elements.clear();
   // Runtime version, used for ABI compatibility checking.
   Elements.push_back(llvm::ConstantInt::get(LongTy, RuntimeVersion));
@@ -2148,8 +2157,17 @@ llvm::Function *CGObjCGNU::ModuleInitFunction() {
   std::string path =
     std::string(mainFile->getDir()->getName()) + '/' + mainFile->getName();
   Elements.push_back(MakeConstantString(path, ".objc_source_file_name"));
-
   Elements.push_back(SymTab);
+
+  switch (CGM.getLangOptions().getGCMode()) {
+    case LangOptions::GCOnly:
+        Elements.push_back(llvm::ConstantInt::get(IntTy, 2));
+    case LangOptions::NonGC:
+        break;
+    case LangOptions::HybridGC:
+        Elements.push_back(llvm::ConstantInt::get(IntTy, 1));
+  }
+
   llvm::Value *Module = MakeGlobal(ModuleTy, Elements);
 
   // Create the load function calling the runtime entry point with the module
@@ -2196,18 +2214,18 @@ llvm::Function *CGObjCGNU::GenerateMethod(const ObjCMethodDecl *OMD,
   return Method;
 }
 
-llvm::Function *CGObjCGNU::GetPropertyGetFunction() {
+llvm::Constant *CGObjCGNU::GetPropertyGetFunction() {
   return GetPropertyFn;
 }
 
-llvm::Function *CGObjCGNU::GetPropertySetFunction() {
+llvm::Constant *CGObjCGNU::GetPropertySetFunction() {
   return SetPropertyFn;
 }
 
-llvm::Function *CGObjCGNU::GetGetStructFunction() {
+llvm::Constant *CGObjCGNU::GetGetStructFunction() {
   return GetStructPropertyFn;
 }
-llvm::Function *CGObjCGNU::GetSetStructFunction() {
+llvm::Constant *CGObjCGNU::GetSetStructFunction() {
   return SetStructPropertyFn;
 }
 
@@ -2307,7 +2325,7 @@ void CGObjCGNU::EmitObjCIvarAssign(CodeGenFunction &CGF,
                                    llvm::Value *ivarOffset) {
   CGBuilderTy B = CGF.Builder;
   src = EnforceType(B, src, IdTy);
-  dst = EnforceType(B, dst, PtrToIdTy);
+  dst = EnforceType(B, dst, IdTy);
   B.CreateCall3(IvarAssignFn, src, dst, ivarOffset);
 }
 

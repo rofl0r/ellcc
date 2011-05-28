@@ -814,6 +814,9 @@ public:
 
   QualType BuildTypeofExprType(Expr *E, SourceLocation Loc);
   QualType BuildDecltypeType(Expr *E, SourceLocation Loc);
+  QualType BuildUnaryTransformType(QualType BaseType,
+                                   UnaryTransformType::UTTKind UKind,
+                                   SourceLocation Loc);
 
   //===--------------------------------------------------------------------===//
   // Symbol table / Decl tracking callbacks: SemaDecl.cpp.
@@ -1111,11 +1114,13 @@ public:
                             Declarator *D = 0);
 
   enum CXXSpecialMember {
-    CXXInvalid = -1,
-    CXXDefaultConstructor = 0,
-    CXXCopyConstructor = 1,
-    CXXCopyAssignment = 2,
-    CXXDestructor = 3
+    CXXDefaultConstructor,
+    CXXCopyConstructor,
+    CXXMoveConstructor,
+    CXXCopyAssignment,
+    CXXMoveAssignment,
+    CXXDestructor,
+    CXXInvalid
   };
   bool CheckNontrivialField(FieldDecl *FD);
   void DiagnoseNontrivial(const RecordType* Record, CXXSpecialMember mem);

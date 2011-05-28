@@ -1508,15 +1508,16 @@ Sema::CXXSpecialMember Sema::getSpecialMember(const CXXMethodDecl *MD) {
     if (Ctor->isCopyConstructor())
       return Sema::CXXCopyConstructor;
     
+    if (Ctor->isMoveConstructor())
+      return Sema::CXXMoveConstructor;
+    
     if (Ctor->isDefaultConstructor())
       return Sema::CXXDefaultConstructor;
-  } 
-  
-  if (isa<CXXDestructorDecl>(MD))
+  } else if (isa<CXXDestructorDecl>(MD)) {
     return Sema::CXXDestructor;
-  
-  if (MD->isCopyAssignmentOperator())
+  } else if (MD->isCopyAssignmentOperator()) {
     return Sema::CXXCopyAssignment;
+  }
 
   return Sema::CXXInvalid;
 }
@@ -2865,7 +2866,7 @@ static bool RebuildDeclaratorInCurrentInstantiation(Sema &S, Declarator &D,
   case DeclSpec::TST_typename:
   case DeclSpec::TST_typeofType:
   case DeclSpec::TST_decltype:
-  case DeclSpec::TST_underlying_type: {
+  case DeclSpec::TST_underlyingType: {
     // Grab the type from the parser.
     TypeSourceInfo *TSI = 0;
     QualType T = S.GetTypeFromParser(DS.getRepAsType(), &TSI);
@@ -4595,6 +4596,16 @@ Sema::ActOnFunctionDeclarator(Scope* S, Declarator& D, DeclContext* DC,
                                   (HasExplicitTemplateArgs ? &TemplateArgs : 0),
                                                      Previous))
         NewFD->setInvalidDecl();
+      
+      // C++ [dcl.stc]p1:
+      //   A storage-class-specifier shall not be specified in an explicit
+      //   specialization (14.7.3)
+      if (SC != SC_None) {
+        Diag(NewFD->getLocation(), 
+             diag::err_explicit_specialization_storage_class)
+          << FixItHint::CreateRemoval(D.getDeclSpec().getStorageClassSpecLoc());
+      }
+      
     } else if (isExplicitSpecialization && isa<CXXMethodDecl>(NewFD)) {
       if (CheckMemberSpecialization(NewFD, Previous))
           NewFD->setInvalidDecl();
@@ -5139,9 +5150,11 @@ namespace {
       if (OrigDecl != ReferenceDecl) return;
       LookupResult Result(S, DRE->getNameInfo(), Sema::LookupOrdinaryName,
                           Sema::NotForRedeclaration);
-      S.Diag(SubExpr->getLocStart(), diag::warn_uninit_self_reference_in_init)
-        << Result.getLookupName() << OrigDecl->getLocation()
-        << SubExpr->getSourceRange();
+      S.DiagRuntimeBehavior(SubExpr->getLocStart(), SubExpr,
+                            S.PDiag(diag::warn_uninit_self_reference_in_init)
+                              << Result.getLookupName() 
+                              << OrigDecl->getLocation()
+                              << SubExpr->getSourceRange());
     }
   };
 }
@@ -5616,55 +5629,53 @@ void Sema::ActOnUninitializedDecl(Decl *RealDecl,
       return;
     }
 
-    const RecordType *Record
-      = Context.getBaseElementType(Type)->getAs<RecordType>();
-    if (Record && getLangOptions().CPlusPlus && !getLangOptions().CPlusPlus0x &&
-        cast<CXXRecordDecl>(Record->getDecl())->isPOD()) {
-      // C++03 [dcl.init]p9:
-      //   If no initializer is specified for an object, and the
-      //   object is of (possibly cv-qualified) non-POD class type (or
-      //   array thereof), the object shall be default-initialized; if
-      //   the object is of const-qualified type, the underlying class
-      //   type shall have a user-declared default
-      //   constructor. Otherwise, if no initializer is specified for
-      //   a non- static object, the object and its subobjects, if
-      //   any, have an indeterminate initial value); if the object
-      //   or any of its subobjects are of const-qualified type, the
-      //   program is ill-formed.
-      // C++0x [dcl.init]p11:
-      //   If no initializer is specified for an object, the object is
-      //   default-initialized; [...].
-    } else {
-      // Check for jumps past the implicit initializer.  C++0x
-      // clarifies that this applies to a "variable with automatic
-      // storage duration", not a "local variable".
-      // C++0x [stmt.dcl]p3
-      //   A program that jumps from a point where a variable with automatic
-      //   storage duration is not ins cope to a point where it is in scope is
-      //   ill-formed unless the variable has scalar type, class type with a
-      //   trivial defautl constructor and a trivial destructor, a cv-qualified
-      //   version of one of these types, or an array of one of the preceding
-      //   types and is declared without an initializer.
-      if (getLangOptions().CPlusPlus && Var->hasLocalStorage() && Record) {
+    // Check for jumps past the implicit initializer.  C++0x
+    // clarifies that this applies to a "variable with automatic
+    // storage duration", not a "local variable".
+    // C++0x [stmt.dcl]p3
+    //   A program that jumps from a point where a variable with automatic
+    //   storage duration is not in scope to a point where it is in scope is
+    //   ill-formed unless the variable has scalar type, class type with a
+    //   trivial default constructor and a trivial destructor, a cv-qualified
+    //   version of one of these types, or an array of one of the preceding
+    //   types and is declared without an initializer.
+    if (getLangOptions().CPlusPlus && Var->hasLocalStorage()) {
+      if (const RecordType *Record
+            = Context.getBaseElementType(Type)->getAs<RecordType>()) {
         CXXRecordDecl *CXXRecord = cast<CXXRecordDecl>(Record->getDecl());
-        if (!getLangOptions().CPlusPlus0x ||
-            !CXXRecord->hasTrivialDefaultConstructor() ||
-            !CXXRecord->hasTrivialDestructor())
+        if ((!getLangOptions().CPlusPlus0x && !CXXRecord->isPOD()) ||
+            (getLangOptions().CPlusPlus0x &&
+             (!CXXRecord->hasTrivialDefaultConstructor() ||
+              (!CXXRecord->hasTrivialDestructor()))))
           getCurFunction()->setHasBranchProtectedScope();
       }
-
-      InitializedEntity Entity = InitializedEntity::InitializeVariable(Var);
-      InitializationKind Kind
-        = InitializationKind::CreateDefault(Var->getLocation());
-    
-      InitializationSequence InitSeq(*this, Entity, Kind, 0, 0);
-      ExprResult Init = InitSeq.Perform(*this, Entity, Kind,
-                                        MultiExprArg(*this, 0, 0));
-      if (Init.isInvalid())
-        Var->setInvalidDecl();
-      else if (Init.get())
-        Var->setInit(MaybeCreateExprWithCleanups(Init.get()));
     }
+    
+    // C++03 [dcl.init]p9:
+    //   If no initializer is specified for an object, and the
+    //   object is of (possibly cv-qualified) non-POD class type (or
+    //   array thereof), the object shall be default-initialized; if
+    //   the object is of const-qualified type, the underlying class
+    //   type shall have a user-declared default
+    //   constructor. Otherwise, if no initializer is specified for
+    //   a non- static object, the object and its subobjects, if
+    //   any, have an indeterminate initial value); if the object
+    //   or any of its subobjects are of const-qualified type, the
+    //   program is ill-formed.
+    // C++0x [dcl.init]p11:
+    //   If no initializer is specified for an object, the object is
+    //   default-initialized; [...].
+    InitializedEntity Entity = InitializedEntity::InitializeVariable(Var);
+    InitializationKind Kind
+      = InitializationKind::CreateDefault(Var->getLocation());
+    
+    InitializationSequence InitSeq(*this, Entity, Kind, 0, 0);
+    ExprResult Init = InitSeq.Perform(*this, Entity, Kind,
+                                      MultiExprArg(*this, 0, 0));
+    if (Init.isInvalid())
+      Var->setInvalidDecl();
+    else if (Init.get())
+      Var->setInit(MaybeCreateExprWithCleanups(Init.get()));
 
     CheckCompleteVariableDeclaration(Var);
   }
@@ -7726,7 +7737,15 @@ void Sema::DiagnoseNontrivial(const RecordType* T, CXXSpecialMember member) {
   case CXXCopyConstructor:
     if (RD->hasUserDeclaredCopyConstructor()) {
       SourceLocation CtorLoc =
-        RD->getCopyConstructor(Context, 0)->getLocation();
+        RD->getCopyConstructor(0)->getLocation();
+      Diag(CtorLoc, diag::note_nontrivial_user_defined) << QT << member;
+      return;
+    }
+    break;
+
+  case CXXMoveConstructor:
+    if (RD->hasUserDeclaredMoveConstructor()) {
+      SourceLocation CtorLoc = RD->getMoveConstructor()->getLocation();
       Diag(CtorLoc, diag::note_nontrivial_user_defined) << QT << member;
       return;
     }
@@ -7738,6 +7757,14 @@ void Sema::DiagnoseNontrivial(const RecordType* T, CXXSpecialMember member) {
       // assignment, not the type.
       SourceLocation TyLoc = RD->getSourceRange().getBegin();
       Diag(TyLoc, diag::note_nontrivial_user_defined) << QT << member;
+      return;
+    }
+    break;
+
+  case CXXMoveAssignment:
+    if (RD->hasUserDeclaredMoveAssignment()) {
+      SourceLocation AssignLoc = RD->getMoveAssignmentOperator()->getLocation();
+      Diag(AssignLoc, diag::note_nontrivial_user_defined) << QT << member;
       return;
     }
     break;

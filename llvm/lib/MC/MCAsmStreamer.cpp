@@ -208,7 +208,7 @@ public:
   virtual void EmitCFIRelOffset(int64_t Register, int64_t Offset);
   virtual void EmitCFIAdjustCfaOffset(int64_t Adjustment);
 
-  virtual void EmitWin64EHStartProc(MCSymbol *Symbol);
+  virtual void EmitWin64EHStartProc(const MCSymbol *Symbol);
   virtual void EmitWin64EHEndProc();
   virtual void EmitWin64EHStartChained();
   virtual void EmitWin64EHEndChained();
@@ -930,7 +930,7 @@ void MCAsmStreamer::EmitCFIAdjustCfaOffset(int64_t Adjustment) {
   EmitEOL();
 }
 
-void MCAsmStreamer::EmitWin64EHStartProc(MCSymbol *Symbol) {
+void MCAsmStreamer::EmitWin64EHStartProc(const MCSymbol *Symbol) {
   MCStreamer::EmitWin64EHStartProc(Symbol);
 
   OS << ".seh_proc " << *Symbol;
@@ -972,6 +972,15 @@ void MCAsmStreamer::EmitWin64EHHandler(const MCSymbol *Sym, bool Unwind,
 
 void MCAsmStreamer::EmitWin64EHHandlerData() {
   MCStreamer::EmitWin64EHHandlerData();
+
+  // Switch sections. Don't call SwitchSection directly, because that will
+  // cause the section switch to be visible in the emitted assembly.
+  // We only do this so the section switch that terminates the handler
+  // data block is visible.
+  const MCSection *xdataSect =
+                       getContext().getTargetAsmInfo().getWin64EHTableSection();
+  if (xdataSect)
+    SwitchSectionNoChange(xdataSect);
 
   OS << "\t.seh_handlerdata";
   EmitEOL();

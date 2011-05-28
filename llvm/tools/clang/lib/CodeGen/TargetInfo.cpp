@@ -648,7 +648,7 @@ ABIArgInfo X86_32ABIInfo::getIndirectResult(QualType Ty, bool ByVal) const {
   unsigned TypeAlign = getContext().getTypeAlign(Ty) / 8;
   unsigned StackAlign = getTypeStackAlignInBytes(Ty, TypeAlign);
   if (StackAlign == 0)
-    return ABIArgInfo::getIndirect(0);
+    return ABIArgInfo::getIndirect(4);
 
   // If the stack alignment is less than the type alignment, realign the
   // argument.
@@ -1315,13 +1315,10 @@ ABIArgInfo X86_64ABIInfo::getIndirectResult(QualType Ty) const {
   if (isRecordWithNonTrivialDestructorOrCopyConstructor(Ty))
     return ABIArgInfo::getIndirect(0, /*ByVal=*/false);
 
-  // Compute the byval alignment. We trust the back-end to honor the
-  // minimum ABI alignment for byval, to make cleaner IR.
-  const unsigned MinABIAlign = 8;
-  unsigned Align = getContext().getTypeAlign(Ty) / 8;
-  if (Align > MinABIAlign)
-    return ABIArgInfo::getIndirect(Align);
-  return ABIArgInfo::getIndirect(0);
+  // Compute the byval alignment. We specify the alignment of the byval in all
+  // cases so that the mid-level optimizer knows the alignment of the byval.
+  unsigned Align = std::max(getContext().getTypeAlign(Ty) / 8, 8U);
+  return ABIArgInfo::getIndirect(Align);
 }
 
 /// Get16ByteVectorType - The ABI specifies that a value should be passed in an

@@ -779,6 +779,10 @@ public:
   /// getDecltypeType - C++0x decltype.
   QualType getDecltypeType(Expr *e) const;
 
+  /// getUnaryTransformType - unary type transforms
+  QualType getUnaryTransformType(QualType BaseType, QualType UnderlyingType,
+                                 UnaryTransformType::UTTKind UKind) const;
+
   /// getAutoType - C++0x deduced auto type.
   QualType getAutoType(QualType DeducedType) const;
 
@@ -1542,12 +1546,26 @@ public:
   /// which declarations were built.
   static unsigned NumImplicitCopyConstructorsDeclared;
 
+  /// \brief The number of implicitly-declared move constructors.
+  static unsigned NumImplicitMoveConstructors;
+
+  /// \brief The number of implicitly-declared move constructors for
+  /// which declarations were built.
+  static unsigned NumImplicitMoveConstructorsDeclared;
+
   /// \brief The number of implicitly-declared copy assignment operators.
   static unsigned NumImplicitCopyAssignmentOperators;
   
   /// \brief The number of implicitly-declared copy assignment operators for 
   /// which declarations were built.
   static unsigned NumImplicitCopyAssignmentOperatorsDeclared;
+
+  /// \brief The number of implicitly-declared move assignment operators.
+  static unsigned NumImplicitMoveAssignmentOperators;
+  
+  /// \brief The number of implicitly-declared move assignment operators for 
+  /// which declarations were built.
+  static unsigned NumImplicitMoveAssignmentOperatorsDeclared;
 
   /// \brief The number of implicitly-declared destructors.
   static unsigned NumImplicitDestructors;

@@ -404,9 +404,38 @@ bool ARMAsmPrinter::PrintAsmOperand(const MachineInstr *MI, unsigned OpNum,
     case 'q': // Print a NEON quad precision register.
       printOperand(MI, OpNum, O);
       return false;
-    case 'Q':
-    case 'R':
-    case 'H':
+    case 'y': // Print a VFP single precision register as indexed double.
+      // This uses the ordering of the alias table to get the first 'd' register
+      // that overlaps the 's' register. Also, s0 is an odd register, hence the
+      // odd modulus check below.
+      if (MI->getOperand(OpNum).isReg()) {
+        unsigned Reg = MI->getOperand(OpNum).getReg();
+        const TargetRegisterInfo *TRI = MF->getTarget().getRegisterInfo();
+        O << ARMInstPrinter::getRegisterName(TRI->getAliasSet(Reg)[0]) <<
+        (((Reg % 2) == 1) ? "[0]" : "[1]");
+        return false;
+      }
+      return true;
+    case 'B': // Bitwise inverse of integer or symbol without a preceding #.
+      if (!MI->getOperand(OpNum).isImm())
+        return true;
+      O << ~(MI->getOperand(OpNum).getImm());
+      return false;
+    case 'L': // The low 16 bits of an immediate constant.
+      if (!MI->getOperand(OpNum).isImm())
+        return true;
+      O << (MI->getOperand(OpNum).getImm() & 0xffff);
+      return false;
+    case 'M': // A register range suitable for LDM/STM.
+    case 'p': // The high single-precision register of a VFP double-precision
+              // register.
+    case 'e': // The low doubleword register of a NEON quad register.
+    case 'f': // The high doubleword register of a NEON quad register.
+    case 'h': // A range of VFP/NEON registers suitable for VLD1/VST1.
+    case 'A': // A memory operand for a VLD1/VST1 instruction.
+    case 'Q': // The least significant register of a pair.
+    case 'R': // The most significant register of a pair.
+    case 'H': // The highest-numbered register of a pair.
       // These modifiers are not yet supported.
       return true;
     }
@@ -420,9 +449,20 @@ bool ARMAsmPrinter::PrintAsmMemoryOperand(const MachineInstr *MI,
                                           unsigned OpNum, unsigned AsmVariant,
                                           const char *ExtraCode,
                                           raw_ostream &O) {
-  if (ExtraCode && ExtraCode[0])
-    return true; // Unknown modifier.
-
+  // Does this asm operand have a single letter operand modifier?
+  if (ExtraCode && ExtraCode[0]) {
+    if (ExtraCode[1] != 0) return true; // Unknown modifier.
+    
+    switch (ExtraCode[0]) {
+      default: return true;  // Unknown modifier.
+      case 'm': // The base register of a memory operand.
+        if (!MI->getOperand(OpNum).isReg())
+          return true;
+        O << ARMInstPrinter::getRegisterName(MI->getOperand(OpNum).getReg());
+        return false;
+    }
+  }
+  
   const MachineOperand &MO = MI->getOperand(OpNum);
   assert(MO.isReg() && "unexpected inline asm memory operand");
   O << "[" << ARMInstPrinter::getRegisterName(MO.getReg()) << "]";
@@ -1182,6 +1222,26 @@ void ARMAsmPrinter::EmitInstruction(const MachineInstr *MI) {
     }
     return;
   }
+  case ARM::tBXr9_CALL:
+  case ARM::tBX_CALL: {
+    {
+      MCInst TmpInst;
+      TmpInst.setOpcode(ARM::tMOVr);
+      TmpInst.addOperand(MCOperand::CreateReg(ARM::LR));
+      TmpInst.addOperand(MCOperand::CreateReg(ARM::PC));
+      OutStreamer.EmitInstruction(TmpInst);
+    }
+    {
+      MCInst TmpInst;
+      TmpInst.setOpcode(ARM::tBX);
+      TmpInst.addOperand(MCOperand::CreateReg(MI->getOperand(0).getReg()));
+      // Add predicate operands.
+      TmpInst.addOperand(MCOperand::CreateImm(ARMCC::AL));
+      TmpInst.addOperand(MCOperand::CreateReg(0));
+      OutStreamer.EmitInstruction(TmpInst);
+    }
+    return;
+  }
   case ARM::BMOVPCRXr9_CALL:
   case ARM::BMOVPCRX_CALL: {
     {
@@ -1832,7 +1892,9 @@ void ARMAsmPrinter::EmitInstruction(const MachineInstr *MI) {
   case ARM::tTAILJMPdND: {
     MCInst TmpInst, TmpInst2;
     LowerARMMachineInstrToMCInst(MI, TmpInst2, *this);
-    TmpInst.setOpcode(ARM::tB);
+    // The Darwin toolchain doesn't support tail call relocations of 16-bit
+    // branches.
+    TmpInst.setOpcode(Opc == ARM::tTAILJMPd ? ARM::t2B : ARM::tB);
     TmpInst.addOperand(TmpInst2.getOperand(0));
     OutStreamer.AddComment("TAILCALL");
     OutStreamer.EmitInstruction(TmpInst);

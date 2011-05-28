@@ -602,8 +602,10 @@ Sema::CheckNonTypeTemplateParameterType(QualType T, SourceLocation Loc) {
       T->isPointerType() ||
       //   -- reference to object or reference to function,
       T->isReferenceType() ||
-      //   -- pointer to member.
+      //   -- pointer to member,
       T->isMemberPointerType() ||
+      //   -- std::nullptr_t.
+      T->isNullPtrType() ||
       // If T is a dependent type, we can't do the check now, so we
       // assume that it is well-formed.
       T->isDependentType())
@@ -3104,6 +3106,11 @@ bool UnnamedLocalNoLinkageFinder::VisitDecltypeType(const DecltypeType*) {
   return false;
 }
 
+bool UnnamedLocalNoLinkageFinder::VisitUnaryTransformType(
+                                                    const UnaryTransformType*) {
+  return false;
+}
+
 bool UnnamedLocalNoLinkageFinder::VisitAutoType(const AutoType *T) {
   return Visit(T->getDeducedType());
 }
@@ -3756,10 +3763,17 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
   // from a template argument of type std::nullptr_t to a non-type
   // template parameter of type pointer to object, pointer to
   // function, or pointer-to-member, respectively.
-  if (ArgType->isNullPtrType() &&
-      (ParamType->isPointerType() || ParamType->isMemberPointerType())) {
-    Converted = TemplateArgument((NamedDecl *)0);
-    return Owned(Arg);
+  if (ArgType->isNullPtrType()) {
+    if (ParamType->isPointerType() || ParamType->isMemberPointerType()) {
+      Converted = TemplateArgument((NamedDecl *)0);
+      return Owned(Arg);
+    }
+    
+    if (ParamType->isNullPtrType()) {
+      llvm::APSInt Zero(Context.getTypeSize(Context.NullPtrTy), true);
+      Converted = TemplateArgument(Zero, Context.NullPtrTy);
+      return Owned(Arg);
+    }
   }
 
   // Handle pointer-to-function, reference-to-function, and
@@ -4053,6 +4067,9 @@ Sema::BuildExpressionFromIntegralTemplateArgument(const TemplateArgument &Arg,
                                             Arg.getAsIntegral()->getBoolValue(),
                                             T, Loc));
 
+  if (T->isNullPtrType())
+    return Owned(new (Context) CXXNullPtrLiteralExpr(Context.NullPtrTy, Loc));
+  
   // If this is an enum type that we're instantiating, we need to use an integer
   // type the same size as the enumerator.  We don't want to build an
   // IntegerLiteral with enum type.
@@ -5377,7 +5394,7 @@ Sema::CheckFunctionTemplateSpecialization(FunctionDecl *FD,
                                          SpecInfo->getPointOfInstantiation(),
                                              HasNoEffect))
     return true;
-
+  
   // Mark the prior declaration as an explicit specialization, so that later
   // clients know that this is an explicit specialization.
   if (!isFriend) {
@@ -5397,7 +5414,8 @@ Sema::CheckFunctionTemplateSpecialization(FunctionDecl *FD,
                                         TemplArgs, /*InsertPos=*/0,
                                     SpecInfo->getTemplateSpecializationKind(),
                                         TemplArgsAsWritten);
-
+  FD->setStorageClass(Specialization->getStorageClass());
+  
   // The "previous declaration" for this function template specialization is
   // the prior function template specialization.
   Previous.clear();
@@ -5998,11 +6016,20 @@ DeclResult Sema::ActOnExplicitInstantiation(Scope *S,
   if (R.isNull())
     return true;
 
+  // C++ [dcl.stc]p1:
+  //   A storage-class-specifier shall not be specified in [...] an explicit 
+  //   instantiation (14.7.2) directive.
   if (D.getDeclSpec().getStorageClassSpec() == DeclSpec::SCS_typedef) {
-    // Cannot explicitly instantiate a typedef.
     Diag(D.getIdentifierLoc(), diag::err_explicit_instantiation_of_typedef)
       << Name;
     return true;
+  } else if (D.getDeclSpec().getStorageClassSpec() 
+                                                != DeclSpec::SCS_unspecified) {
+    // Complain about then remove the storage class specifier.
+    Diag(D.getIdentifierLoc(), diag::err_explicit_instantiation_storage_class)
+      << FixItHint::CreateRemoval(D.getDeclSpec().getStorageClassSpecLoc());
+    
+    D.getMutableDeclSpec().ClearStorageClassSpecs();
   }
 
   // C++0x [temp.explicit]p1:

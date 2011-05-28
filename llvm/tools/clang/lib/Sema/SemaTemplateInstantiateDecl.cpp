@@ -1264,6 +1264,7 @@ Decl *TemplateDeclInstantiator::VisitFunctionDecl(FunctionDecl *D,
       PrincipalDecl->isInIdentifierNamespace(Decl::IDNS_Ordinary))
     PrincipalDecl->setNonMemberOperator();
 
+  assert(!D->isDefaulted() && "only methods should be defaulted");
   return Function;
 }
 
@@ -1496,7 +1497,14 @@ TemplateDeclInstantiator::VisitCXXMethodDecl(CXXMethodDecl *D,
     else
       Owner->addDecl(DeclToAdd);
   }
-  
+
+  if (D->isExplicitlyDefaulted()) {
+    SemaRef.SetDeclDefaulted(Method, Method->getLocation());
+  } else {
+    assert(!D->isDefaulted() &&
+           "should not implicitly default uninstantiated function");
+  }
+
   return Method;
 }
 
@@ -2310,8 +2318,12 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
   // Find the function body that we'll be substituting.
   const FunctionDecl *PatternDecl = Function->getTemplateInstantiationPattern();
   Stmt *Pattern = 0;
-  if (PatternDecl)
+  if (PatternDecl) {
     Pattern = PatternDecl->getBody(PatternDecl);
+    if (!Pattern)
+      // Try to find a defaulted definition
+      PatternDecl->isDefined(PatternDecl);
+  }
 
   // Postpone late parsed template instantiations.
   if (PatternDecl && PatternDecl->isLateTemplateParsed() &&
@@ -2329,7 +2341,7 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
     Pattern = PatternDecl->getBody(PatternDecl);
   }
 
-  if (!Pattern) {
+  if (!Pattern && !PatternDecl->isDefaulted()) {
     if (DefinitionRequired) {
       if (Function->getPrimaryTemplate())
         Diag(PointOfInstantiation, 
@@ -2424,21 +2436,27 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
   MultiLevelTemplateArgumentList TemplateArgs =
     getTemplateInstantiationArgs(Function, 0, false, PatternDecl);
 
-  // If this is a constructor, instantiate the member initializers.
-  if (const CXXConstructorDecl *Ctor =
-        dyn_cast<CXXConstructorDecl>(PatternDecl)) {
-    InstantiateMemInitializers(cast<CXXConstructorDecl>(Function), Ctor,
-                               TemplateArgs);
+  if (PatternDecl->isDefaulted()) {
+    ActOnFinishFunctionBody(Function, 0, /*IsInstantiation=*/true);
+
+    SetDeclDefaulted(Function, PatternDecl->getLocation());
+  } else {
+    // If this is a constructor, instantiate the member initializers.
+    if (const CXXConstructorDecl *Ctor =
+          dyn_cast<CXXConstructorDecl>(PatternDecl)) {
+      InstantiateMemInitializers(cast<CXXConstructorDecl>(Function), Ctor,
+                                 TemplateArgs);
+    }
+
+    // Instantiate the function body.
+    StmtResult Body = SubstStmt(Pattern, TemplateArgs);
+
+    if (Body.isInvalid())
+      Function->setInvalidDecl();
+    
+    ActOnFinishFunctionBody(Function, Body.get(),
+                            /*IsInstantiation=*/true);
   }
-
-  // Instantiate the function body.
-  StmtResult Body = SubstStmt(Pattern, TemplateArgs);
-
-  if (Body.isInvalid())
-    Function->setInvalidDecl();
-  
-  ActOnFinishFunctionBody(Function, Body.get(),
-                          /*IsInstantiation=*/true);
 
   PerformDependentDiagnostics(PatternDecl, TemplateArgs);
 

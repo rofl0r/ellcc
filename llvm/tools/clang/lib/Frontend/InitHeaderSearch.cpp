@@ -1039,6 +1039,8 @@ void InitHeaderSearch::Realize(const LangOptions &Lang) {
     if (it->first == Angled)
       SearchList.push_back(it->second);
   }
+  RemoveDuplicates(SearchList, quoted, Verbose);
+  unsigned angled = SearchList.size();
 
   for (path_iterator it = IncludePath.begin(), ie = IncludePath.end();
        it != ie; ++it) {
@@ -1052,10 +1054,10 @@ void InitHeaderSearch::Realize(const LangOptions &Lang) {
       SearchList.push_back(it->second);
   }
 
-  RemoveDuplicates(SearchList, quoted, Verbose);
+  RemoveDuplicates(SearchList, angled, Verbose);
 
   bool DontSearchCurDir = false;  // TODO: set to true if -I- is set?
-  Headers.SetSearchPaths(SearchList, quoted, DontSearchCurDir);
+  Headers.SetSearchPaths(SearchList, quoted, angled, DontSearchCurDir);
 
   // If verbose, print the list of directories that will be searched.
   if (Verbose) {

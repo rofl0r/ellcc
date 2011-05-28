@@ -4705,6 +4705,10 @@ class BuiltinCandidateTypeSet  {
   /// were present in the candidate set.
   bool HasArithmeticOrEnumeralTypes;
 
+  /// \brief A flag indicating whether the nullptr type was present in the
+  /// candidate set.
+  bool HasNullPtrType;
+  
   /// Sema - The semantic analysis instance where we are building the
   /// candidate type set.
   Sema &SemaRef;
@@ -4723,6 +4727,7 @@ public:
   BuiltinCandidateTypeSet(Sema &SemaRef)
     : HasNonRecordTypes(false),
       HasArithmeticOrEnumeralTypes(false),
+      HasNullPtrType(false),
       SemaRef(SemaRef),
       Context(SemaRef.Context) { }
 
@@ -4755,6 +4760,7 @@ public:
 
   bool hasNonRecordTypes() { return HasNonRecordTypes; }
   bool hasArithmeticOrEnumeralTypes() { return HasArithmeticOrEnumeralTypes; }
+  bool hasNullPtrType() const { return HasNullPtrType; }
 };
 
 /// AddPointerWithMoreQualifiedTypeVariants - Add the pointer type @p Ty to
@@ -4915,6 +4921,8 @@ BuiltinCandidateTypeSet::AddTypesConvertedFrom(QualType Ty,
     // extension.
     HasArithmeticOrEnumeralTypes = true;
     VectorTypes.insert(Ty);
+  } else if (Ty->isNullPtrType()) {
+    HasNullPtrType = true;
   } else if (AllowUserConversions && TyRec) {
     // No conversion functions in incomplete types.
     if (SemaRef.RequireCompleteType(Loc, Ty, 0))
@@ -5374,8 +5382,8 @@ public:
 
   // C++ [over.built]p15:
   //
-  //   For every pointer or enumeration type T, there exist
-  //   candidate operator functions of the form
+  //   For every T, where T is an enumeration type, a pointer type, or 
+  //   std::nullptr_t, there exist candidate operator functions of the form
   //
   //        bool       operator<(T, T);
   //        bool       operator>(T, T);
@@ -5459,6 +5467,17 @@ public:
         QualType ParamTypes[2] = { *Enum, *Enum };
         S.AddBuiltinCandidate(S.Context.BoolTy, ParamTypes, Args, 2,
                               CandidateSet);
+      }
+      
+      if (CandidateTypes[ArgIdx].hasNullPtrType()) {
+        CanQualType NullPtrTy = S.Context.getCanonicalType(S.Context.NullPtrTy);
+        if (AddedTypes.insert(NullPtrTy) &&
+            !UserDefinedBinaryOperators.count(std::make_pair(NullPtrTy, 
+                                                             NullPtrTy))) {
+          QualType ParamTypes[2] = { NullPtrTy, NullPtrTy };
+          S.AddBuiltinCandidate(S.Context.BoolTy, ParamTypes, Args, 2, 
+                                CandidateSet);
+        }
       }
     }
   }
@@ -6417,7 +6436,9 @@ enum OverloadCandidateKind {
   oc_constructor_template,
   oc_implicit_default_constructor,
   oc_implicit_copy_constructor,
+  oc_implicit_move_constructor,
   oc_implicit_copy_assignment,
+  oc_implicit_move_assignment,
   oc_implicit_inherited_constructor
 };
 
@@ -6439,8 +6460,15 @@ OverloadCandidateKind ClassifyOverloadCandidate(Sema &S,
     if (Ctor->getInheritedConstructor())
       return oc_implicit_inherited_constructor;
 
-    return Ctor->isCopyConstructor() ? oc_implicit_copy_constructor
-                                     : oc_implicit_default_constructor;
+    if (Ctor->isDefaultConstructor())
+      return oc_implicit_default_constructor;
+
+    if (Ctor->isMoveConstructor())
+      return oc_implicit_move_constructor;
+
+    assert(Ctor->isCopyConstructor() &&
+           "unexpected sort of implicit constructor");
+    return oc_implicit_copy_constructor;
   }
 
   if (CXXMethodDecl *Meth = dyn_cast<CXXMethodDecl>(Fn)) {
@@ -6448,6 +6476,9 @@ OverloadCandidateKind ClassifyOverloadCandidate(Sema &S,
     // it doesn't hurt to split it out.
     if (!Meth->isImplicit())
       return isTemplate ? oc_method_template : oc_method;
+
+    if (Meth->isMoveAssignmentOperator())
+      return oc_implicit_move_assignment;
 
     assert(Meth->isCopyAssignmentOperator()
            && "implicit method is not copy assignment operator?");

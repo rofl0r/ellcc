@@ -153,7 +153,8 @@ class ArithR<bits<6> op, bits<6> func, string instr_asm, SDNode OpNode,
   let isCommutable = isComm;
 }
 
-class ArithOverflowR<bits<6> op, bits<6> func, string instr_asm, bit isComm = 0>:
+class ArithOverflowR<bits<6> op, bits<6> func, string instr_asm,
+                     bit isComm = 0>:
   FR<op, func, (outs CPURegs:$dst), (ins CPURegs:$b, CPURegs:$c),
      !strconcat(instr_asm, "\t$dst, $b, $c"), [], IIAlu> {
   let isCommutable = isComm;
@@ -380,7 +381,7 @@ def ATMACRO   : MipsPseudo<(outs), (ins), ".set\tat", []>;
 // are used, we have the same behavior, but get also a bunch of warnings
 // from the assembler.
 def CPLOAD : MipsPseudo<(outs), (ins CPURegs:$picreg), ".cpload\t$picreg", []>;
-def CPRESTORE : MipsPseudo<(outs), (ins uimm16:$loc), ".cprestore\t$loc\n", []>;
+def CPRESTORE : MipsPseudo<(outs), (ins i32imm:$loc), ".cprestore\t$loc\n", []>;
 
 //===----------------------------------------------------------------------===//
 // Instruction definition

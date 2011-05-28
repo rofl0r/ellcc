@@ -21,7 +21,8 @@
 using namespace llvm;
 
 MCStreamer::MCStreamer(MCContext &Ctx) : Context(Ctx), EmitEHFrame(true),
-                                         EmitDebugFrame(false) {
+                                         EmitDebugFrame(false),
+                                         CurrentW64UnwindInfo(0) {
   const MCSection *section = NULL;
   SectionStack.push_back(std::make_pair(section, section));
 }
@@ -316,7 +317,7 @@ void MCStreamer::EnsureValidW64UnwindInfo() {
     report_fatal_error("No open Win64 EH frame function!");
 }
 
-void MCStreamer::EmitWin64EHStartProc(MCSymbol *Symbol) {
+void MCStreamer::EmitWin64EHStartProc(const MCSymbol *Symbol) {
   MCWin64EHUnwindInfo *CurFrame = CurrentW64UnwindInfo;
   if (CurFrame && !CurFrame->End)
     report_fatal_error("Starting a function before ending the previous one!");
@@ -361,15 +362,22 @@ void MCStreamer::EmitWin64EHHandler(const MCSymbol *Sym, bool Unwind,
                                     bool Except) {
   EnsureValidW64UnwindInfo();
   MCWin64EHUnwindInfo *CurFrame = CurrentW64UnwindInfo;
+  if (CurFrame->ChainedParent)
+    report_fatal_error("Chained unwind areas can't have handlers!");
   CurFrame->ExceptionHandler = Sym;
-  if (Unwind)
-    CurFrame->UnwindOnly = true;
-  else if (!Except)
+  if (!Except && !Unwind)
     report_fatal_error("Don't know what kind of handler this is!");
+  if (Unwind)
+    CurFrame->HandlesUnwind = true;
+  if (Except)
+    CurFrame->HandlesExceptions = true;
 }
 
 void MCStreamer::EmitWin64EHHandlerData() {
   EnsureValidW64UnwindInfo();
+  MCWin64EHUnwindInfo *CurFrame = CurrentW64UnwindInfo;
+  if (CurFrame->ChainedParent)
+    report_fatal_error("Chained unwind areas can't have handlers!");
 }
 
 void MCStreamer::EmitWin64EHPushReg(unsigned Register) {
@@ -381,6 +389,8 @@ void MCStreamer::EmitWin64EHPushReg(unsigned Register) {
 
 void MCStreamer::EmitWin64EHSetFrame(unsigned Register, unsigned Offset) {
   EnsureValidW64UnwindInfo();
+  if (Offset & 0x0F)
+    report_fatal_error("Misaligned frame pointer offset!");
   MCWin64EHUnwindInfo *CurFrame = CurrentW64UnwindInfo;
   MCWin64EHInstruction Inst(Win64EH::UOP_SetFPReg, Register, Offset);
   CurFrame->LastFrameInst = CurFrame->Instructions.size();
@@ -389,6 +399,8 @@ void MCStreamer::EmitWin64EHSetFrame(unsigned Register, unsigned Offset) {
 
 void MCStreamer::EmitWin64EHAllocStack(unsigned Size) {
   EnsureValidW64UnwindInfo();
+  if (Size & 7)
+    report_fatal_error("Misaligned stack allocation!");
   MCWin64EHUnwindInfo *CurFrame = CurrentW64UnwindInfo;
   MCWin64EHInstruction Inst(Size);
   CurFrame->Instructions.push_back(Inst);
@@ -396,18 +408,22 @@ void MCStreamer::EmitWin64EHAllocStack(unsigned Size) {
 
 void MCStreamer::EmitWin64EHSaveReg(unsigned Register, unsigned Offset) {
   EnsureValidW64UnwindInfo();
+  if (Offset & 7)
+    report_fatal_error("Misaligned saved register offset!");
   MCWin64EHUnwindInfo *CurFrame = CurrentW64UnwindInfo;
   MCWin64EHInstruction Inst(
-         Offset > 0xFFFF ? Win64EH::UOP_SaveNonVol : Win64EH::UOP_SaveNonVolBig,
+     Offset > 512*1024-8 ? Win64EH::UOP_SaveNonVol : Win64EH::UOP_SaveNonVolBig,
                             Register, Offset);
   CurFrame->Instructions.push_back(Inst);
 }
 
 void MCStreamer::EmitWin64EHSaveXMM(unsigned Register, unsigned Offset) {
   EnsureValidW64UnwindInfo();
+  if (Offset & 0x0F)
+    report_fatal_error("Misaligned saved vector register offset!");
   MCWin64EHUnwindInfo *CurFrame = CurrentW64UnwindInfo;
   MCWin64EHInstruction Inst(
-         Offset > 0xFFFF ? Win64EH::UOP_SaveXMM128 : Win64EH::UOP_SaveXMM128Big,
+    Offset > 512*1024-16 ? Win64EH::UOP_SaveXMM128 : Win64EH::UOP_SaveXMM128Big,
                             Register, Offset);
   CurFrame->Instructions.push_back(Inst);
 }
@@ -490,4 +506,11 @@ void MCStreamer::EmitFrames(bool usingCFI) {
 
   if (EmitDebugFrame)
     MCDwarfFrameEmitter::Emit(*this, usingCFI, false);
+}
+
+void MCStreamer::EmitW64Tables() {
+  if (!getNumW64UnwindInfos())
+    return;
+
+  MCWin64EHUnwindEmitter::Emit(*this);
 }

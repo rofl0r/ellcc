@@ -2507,7 +2507,9 @@ static bool AdjustFunctionParmAndArgTypesForDeduction(Sema &S,
     if (isa<RValueReferenceType>(ParamType)) {
       if (!PointeeType.getQualifiers() &&
           isa<TemplateTypeParmType>(PointeeType) &&
-          Arg->Classify(S.Context).isLValue())
+          Arg->Classify(S.Context).isLValue() &&
+          Arg->getType() != S.Context.OverloadTy &&
+          Arg->getType() != S.Context.BoundMemberTy)
         ArgType = S.Context.getLValueReferenceType(ArgType);
     }
 
@@ -3881,6 +3883,13 @@ MarkUsedTemplateParameters(Sema &SemaRef, QualType T,
     if (!OnlyDeduced)
       MarkUsedTemplateParameters(SemaRef,
                                  cast<DecltypeType>(T)->getUnderlyingExpr(),
+                                 OnlyDeduced, Depth, Used);
+    break;
+
+  case Type::UnaryTransform:
+    if (!OnlyDeduced)
+      MarkUsedTemplateParameters(SemaRef,
+                               cast<UnaryTransformType>(T)->getUnderlyingType(),
                                  OnlyDeduced, Depth, Used);
     break;
 

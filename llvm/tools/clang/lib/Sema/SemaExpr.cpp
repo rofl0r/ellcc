@@ -449,18 +449,58 @@ ExprResult Sema::DefaultVariadicArgumentPromotion(Expr *E, VariadicCallType CT,
   if (FDecl && FDecl->getBuiltinID() == Builtin::BI__builtin_va_start)
     return Owned(E);
   
+  // Don't allow one to pass an Objective-C interface to a vararg.
   if (E->getType()->isObjCObjectType() &&
-      DiagRuntimeBehavior(E->getLocStart(), 0,
-        PDiag(diag::err_cannot_pass_objc_interface_to_vararg)
-          << E->getType() << CT))
+    DiagRuntimeBehavior(E->getLocStart(), 0,
+                        PDiag(diag::err_cannot_pass_objc_interface_to_vararg)
+                          << E->getType() << CT))
     return ExprError();
-
-  if (!E->getType()->isPODType() &&
-      DiagRuntimeBehavior(E->getLocStart(), 0,
+  
+  if (!E->getType()->isPODType()) {
+    // C++0x [expr.call]p7:
+    //   Passing a potentially-evaluated argument of class type (Clause 9) 
+    //   having a non-trivial copy constructor, a non-trivial move constructor,
+    //   or a non-trivial destructor, with no corresponding parameter, 
+    //   is conditionally-supported with implementation-defined semantics.
+    bool TrivialEnough = false;
+    if (getLangOptions().CPlusPlus0x && !E->getType()->isDependentType())  {
+      if (CXXRecordDecl *Record = E->getType()->getAsCXXRecordDecl()) {
+        if (Record->hasTrivialCopyConstructor() &&
+            Record->hasTrivialMoveConstructor() &&
+            Record->hasTrivialDestructor())
+          TrivialEnough = true;
+      }
+    }
+      
+    if (TrivialEnough) {
+      // Nothing to diagnose. This is okay.
+    } else if (DiagRuntimeBehavior(E->getLocStart(), 0,
                           PDiag(diag::warn_cannot_pass_non_pod_arg_to_vararg)
-                            << E->getType() << CT))
-    return ExprError();
+                            << getLangOptions().CPlusPlus0x << E->getType() 
+                            << CT)) {
+      // Turn this into a trap.
+      CXXScopeSpec SS;
+      UnqualifiedId Name;
+      Name.setIdentifier(PP.getIdentifierInfo("__builtin_trap"),
+                         E->getLocStart());
+      ExprResult TrapFn = ActOnIdExpression(TUScope, SS, Name, true, false);
+      if (TrapFn.isInvalid())
+        return ExprError();
 
+      ExprResult Call = ActOnCallExpr(TUScope, TrapFn.get(), E->getLocStart(),
+                                      MultiExprArg(), E->getLocEnd());
+      if (Call.isInvalid())
+        return ExprError();
+      
+      ExprResult Comma = ActOnBinOp(TUScope, E->getLocStart(), tok::comma,
+                                    Call.get(), E);
+      if (Comma.isInvalid())
+        return ExprError();
+      
+      E = Comma.get();
+    }
+  }
+  
   return Owned(E);
 }
 

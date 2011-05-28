@@ -582,6 +582,9 @@ def warn_mismatched_exception_spec : ExtWarn<
 def err_override_exception_spec : Error<
   "exception specification of overriding function is more lax than "
   "base version">;
+def warn_override_exception_spec : ExtWarn<
+  "exception specification of overriding function is more lax than "
+  "base version">, InGroup<Microsoft>;
 def err_incompatible_exception_specs : Error<
   "target exception specification is not superset of source">;
 def err_deep_exception_specs_differ : Error<
@@ -596,6 +599,10 @@ def err_class_redeclared_with_different_access : Error<
   "%0 redeclared with '%1' access">;
 def err_access : Error<
   "%1 is a %select{private|protected}0 member of %3">, AccessControl;
+def war_ms_using_declaration_inaccessible : ExtWarn<
+  "using declaration refers to inaccessible member '%0', which refers "
+  "to accessible member '%1', accepted for Microsoft compatibility">,
+    AccessControl, InGroup<Microsoft>;
 def err_access_ctor : Error<
   "calling a %select{private|protected}0 constructor of class %2">, 
   AccessControl;
@@ -604,11 +611,17 @@ def ext_rvalue_to_reference_access_ctor : ExtWarn<
   "a reference to a temporary; was %select{private|protected}0">,
   AccessControl, InGroup<BindToTemporaryCopy>;
 def err_access_base_ctor : Error<
+  // The ERRORs represent other special members that aren't constructors, in
+  // hopes that someone will bother noticing and reporting if they appear
   "%select{base class|inherited virtual base class}0 %1 has %select{private|"
-  "protected}3 %select{|copy }2constructor">, AccessControl;
+  "protected}3 %select{default |copy |move |*ERROR* |*ERROR* "
+  "|*ERROR*|}2constructor">, AccessControl;
 def err_access_field_ctor : Error<
+  // The ERRORs represent other special members that aren't constructors, in
+  // hopes that someone will bother noticing and reporting if they appear
   "field of type %0 has %select{private|protected}2 "
-  "%select{|copy }1constructor">, AccessControl;
+  "%select{default |copy |move |*ERROR* |*ERROR* |*ERROR* |}1constructor">,
+  AccessControl;
 
 def err_access_ctor_field :
     Error<"field of type %1 has %select{private|protected}2 constructor">,
@@ -742,23 +755,27 @@ def note_ivar_decl : Note<"ivar is declared here">;
 def note_bitfield_decl : Note<"bit-field is declared here">;
 def note_previous_decl : Note<"%0 declared here">;
 def note_member_synthesized_at : Note<
-  "implicit default %select{constructor|copy constructor|"
-  "copy assignment operator|destructor}0 for %1 first required here">;
+  "implicit default %select{constructor|copy constructor|move constructor|copy "
+  "assignment operator|move assignment operator|destructor}0 for %1 first "
+  "required here">;
 def err_missing_default_ctor : Error<
   "%select{|implicit default }0constructor for %1 must explicitly initialize "
   "the %select{base class|member}2 %3 which does not have a default "
   "constructor">;
 def err_illegal_union_or_anon_struct_member : Error<
   "%select{anonymous struct|union}0 member %1 has a non-trivial "
-  "%select{constructor|copy constructor|copy assignment operator|destructor}2">;
+  "%select{constructor|copy constructor|move constructor|copy assignment "
+  "operator|move assignment operator|destructor}2">;
 def note_nontrivial_has_virtual : Note<
   "because type %0 has a virtual %select{member function|base class}1">;
 def note_nontrivial_has_nontrivial : Note<
   "because type %0 has a %select{member|base class}1 with a non-trivial "
-  "%select{constructor|copy constructor|copy assignment operator|destructor}2">;
+  "%select{constructor|copy constructor|move constructor|copy assignment "
+  "operator|move assignment operator|destructor}2">;
 def note_nontrivial_user_defined : Note<
   "because type %0 has a user-declared %select{constructor|copy constructor|"
-  "copy assignment operator|destructor}1">;
+  "move constructor|copy assignment operator|move assignment operator|"
+  "destructor}1">;
 def err_static_data_member_not_allowed_in_union_or_anon_struct : Error<
   "static data member %0 not allowed in %select{anonymous struct|union}1">; 
 def err_union_member_of_reference_type : Error<
@@ -1437,7 +1454,9 @@ def note_ovl_candidate : Note<"candidate "
     "function |function |constructor |"
     "is the implicit default constructor|"
     "is the implicit copy constructor|"
+    "is the implicit move constructor|"
     "is the implicit copy assignment operator|"
+    "is the implicit move assignment operator|"
     "is an inherited constructor}0%1">;
 
 def note_ovl_candidate_inherited_constructor : Note<"inherited from here">;
@@ -1468,7 +1487,9 @@ def note_ovl_candidate_arity : Note<"candidate "
     "%select{function|function|constructor|function|function|constructor|"
     "constructor (the implicit default constructor)|"
     "constructor (the implicit copy constructor)|"
+    "constructor (the implicit move constructor)|"
     "function (the implicit copy assignment operator)|"
+    "function (the implicit move assignment operator)|"
     "constructor (inherited)}0 %select{|template }1"
     "not viable: requires%select{ at least| at most|}2 %3 argument%s3, but %4 "
     "%plural{1:was|:were}4 provided">;
@@ -1488,7 +1509,9 @@ def note_ovl_candidate_bad_conv_incomplete : Note<"candidate "
     "function |function |constructor |"
     "constructor (the implicit default constructor)|"
     "constructor (the implicit copy constructor)|"
+    "constructor (the implicit move constructor)|"
     "function (the implicit copy assignment operator)|"
+    "function (the implicit move assignment operator)|"
     "constructor (inherited)}0%1 "
     "not viable: cannot convert argument of incomplete type %2 to %3">;
 def note_ovl_candidate_bad_overload : Note<"candidate "
@@ -1496,7 +1519,9 @@ def note_ovl_candidate_bad_overload : Note<"candidate "
     "function |function |constructor |"
     "constructor (the implicit default constructor)|"
     "constructor (the implicit copy constructor)|"
+    "constructor (the implicit move constructor)|"
     "function (the implicit copy assignment operator)|"
+    "function (the implicit move assignment operator)|"
     "constructor (inherited)}0%1"
     " not viable: no overload of %3 matching %2 for %ordinal4 argument">;
 def note_ovl_candidate_bad_conv : Note<"candidate "
@@ -1504,7 +1529,9 @@ def note_ovl_candidate_bad_conv : Note<"candidate "
     "function |function |constructor |"
     "constructor (the implicit default constructor)|"
     "constructor (the implicit copy constructor)|"
+    "constructor (the implicit move constructor)|"
     "function (the implicit copy assignment operator)|"
+    "function (the implicit move assignment operator)|"
     "constructor (inherited)}0%1"
     " not viable: no known conversion from %2 to %3 for "
     "%select{%ordinal5 argument|object argument}4">;
@@ -1513,7 +1540,9 @@ def note_ovl_candidate_bad_addrspace : Note<"candidate "
     "function |function |constructor |"
     "constructor (the implicit default constructor)|"
     "constructor (the implicit copy constructor)|"
+    "constructor (the implicit move constructor)|"
     "function (the implicit copy assignment operator)|"
+    "function (the implicit move assignment operator)|"
     "constructor (inherited)}0%1 not viable: "
     "%select{%ordinal6|'this'}5 argument (%2) is in "
     "address space %3, but parameter must be in address space %4">;
@@ -1522,7 +1551,9 @@ def note_ovl_candidate_bad_gc : Note<"candidate "
     "function |function |constructor |"
     "constructor (the implicit default constructor)|"
     "constructor (the implicit copy constructor)|"
+    "constructor (the implicit move constructor)|"
     "function (the implicit copy assignment operator)|"
+    "function (the implicit move assignment operator)|"
     "constructor (inherited)}0%1 not viable: "
     "%select{%ordinal6|'this'}5 argument (%2) has %select{no|__weak|__strong}3 "
     "lifetime, but parameter has %select{no|__weak|__strong}4 lifetime">;
@@ -1537,7 +1568,9 @@ def note_ovl_candidate_bad_cvr : Note<"candidate "
     "function |function |constructor |"
     "constructor (the implicit default constructor)|"
     "constructor (the implicit copy constructor)|"
+    "constructor (the implicit move constructor)|"
     "function (the implicit copy assignment operator)|"
+    "function (the implicit move assignment operator)|"
     "constructor (inherited)}0%1 not viable: "
     "%ordinal4 argument (%2) would lose "
     "%select{const|restrict|const and restrict|volatile|const and volatile|"
@@ -1548,7 +1581,9 @@ def note_ovl_candidate_bad_base_to_derived_conv : Note<"candidate "
     "function |function |constructor |"
     "constructor (the implicit default constructor)|"
     "constructor (the implicit copy constructor)|"
+    "constructor (the implicit move constructor)|"
     "function (the implicit copy assignment operator)|"
+    "function (the implicit move assignment operator)|"
     "constructor (inherited)}0%1"
     " not viable: cannot %select{convert from|convert from|bind}2 "
     "%select{base class pointer|superclass|base class object of type}2 %3 to "
@@ -1827,6 +1862,8 @@ def err_not_class_template_specialization : Error<
   "parameter}0">;
 def err_function_specialization_in_class : Error<
   "cannot specialize a function %0 within class scope">;
+def err_explicit_specialization_storage_class : Error<
+  "explicit specialization cannot have a storage class">;
 
 // C++ class template specializations and out-of-line definitions
 def err_template_spec_needs_header : Error<
@@ -1983,6 +2020,8 @@ def err_explicit_instantiation_requires_name : Error<
   "explicit instantiation declaration requires a name">;
 def err_explicit_instantiation_of_typedef : Error<
   "explicit instantiation of typedef %0">;
+def err_explicit_instantiation_storage_class : Error<
+  "explicit instantiation cannot have a storage class">;
 def err_explicit_instantiation_not_known : Error<
   "explicit instantiation of %0 does not refer to a function template, member "
   "function, member class, or static data member">;
@@ -2158,10 +2197,12 @@ def warn_missing_prototype : Warning<
 def err_redefinition : Error<"redefinition of %0">;
 def err_definition_of_implicitly_declared_member : Error<
   "definition of implicitly declared %select{default constructor|copy "
-  "constructor|copy assignment operator|destructor}1">;
+  "constructor|move constructor|copy assignment operator|move assignment "
+  "operator|destructor}1">;
 def err_definition_of_explicitly_defaulted_member : Error<
   "definition of explicitly defaulted %select{default constructor|copy "
-  "constructor|copy assignment operator|destructor}0">;
+  "constructor|move constructor|copy assignment operator|move assignment "
+  "operator|destructor}0">;
 def err_redefinition_extern_inline : Error<
   "redefinition of a 'extern inline' function %0 is not supported in "
   "%select{C99 mode|C++}1">;
@@ -3058,6 +3099,9 @@ def err_objc_exceptions_disabled : Error<
 def warn_non_virtual_dtor : Warning<
   "%0 has virtual functions but non-virtual destructor">,
   InGroup<NonVirtualDtor>, DefaultIgnore;
+def warn_delete_non_virtual_dtor : Warning<
+  "delete called on %0 that has virtual functions but non-virtual destructor">,
+  InGroup<DeleteNonVirtualDtor>, DefaultIgnore;
 def warn_overloaded_virtual : Warning<
   "%q0 hides overloaded virtual %select{function|functions}1">,
   InGroup<OverloadedVirtual>, DefaultIgnore;
@@ -3324,8 +3368,8 @@ def err_cannot_pass_objc_interface_to_vararg : Error<
   "%select{function|block|method}1">;
 
 def warn_cannot_pass_non_pod_arg_to_vararg : Warning<
-  "cannot pass object of non-POD type %0 through variadic "
-  "%select{function|block|method|constructor}1; call will abort at runtime">,
+  "cannot pass object of %select{non-POD|non-trivial}0 type %1 through variadic"
+  " %select{function|block|method|constructor}2; call will abort at runtime">,
   InGroup<DiagGroup<"non-pod-varargs">>, DefaultError;
 
 def err_typecheck_call_invalid_ordered_compare : Error<
@@ -3665,12 +3709,15 @@ def err_defaulted_copy_assign_quals : Error<
   "or 'volatile' qualifiers">;
 def err_incorrect_defaulted_exception_spec : Error<
   "exception specification of explicitly defaulted %select{default constructor|"
-  "copy constructor|copy assignment operator|destructor}0 does not match the "
+  "copy constructor|move constructor|copy assignment operator|move assignment "
+  "operator|destructor}0 does not match the "
   "calculated one">;
 def err_out_of_line_default_deletes : Error<
-  "defaulting this %select{default constructor|copy constructor|copy "
-  "assignment operator|destructor}0 would delete it after its first "
-  "declaration">;
+  "defaulting this %select{default constructor|copy constructor|move "
+  "constructor|copy assignment operator|move assignment operator|destructor}0 "
+  "would delete it after its first declaration">;
+def err_defaulted_move_unsupported : Error<
+  "defaulting move functions not yet supported">;
 
 def warn_array_index_precedes_bounds : Warning<
   "array index of '%0' indexes before the beginning of the array">,
