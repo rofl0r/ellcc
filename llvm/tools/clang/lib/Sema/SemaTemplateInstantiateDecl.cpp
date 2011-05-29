@@ -2317,16 +2317,18 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
 
   // Find the function body that we'll be substituting.
   const FunctionDecl *PatternDecl = Function->getTemplateInstantiationPattern();
-  Stmt *Pattern = 0;
-  if (PatternDecl) {
-    Pattern = PatternDecl->getBody(PatternDecl);
-    if (!Pattern)
-      // Try to find a defaulted definition
-      PatternDecl->isDefined(PatternDecl);
+  assert(PatternDecl && "instantiating a non-template");
+
+  Stmt *Pattern = PatternDecl->getBody(PatternDecl);
+  assert(PatternDecl && "template definition is not a template");
+  if (!Pattern) {
+    // Try to find a defaulted definition
+    PatternDecl->isDefined(PatternDecl);
   }
+  assert(PatternDecl && "template definition is not a template");
 
   // Postpone late parsed template instantiations.
-  if (PatternDecl && PatternDecl->isLateTemplateParsed() &&
+  if (PatternDecl->isLateTemplateParsed() &&
       !LateTemplateParser) {
     PendingInstantiations.push_back(
       std::make_pair(Function, PointOfInstantiation));
@@ -2335,7 +2337,7 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
 
   // Call the LateTemplateParser callback if there a need to late parse
   // a templated function definition. 
-  if (!Pattern && PatternDecl && PatternDecl->isLateTemplateParsed() &&
+  if (!Pattern && PatternDecl->isLateTemplateParsed() &&
       LateTemplateParser) {
     LateTemplateParser(OpaqueParser, PatternDecl);
     Pattern = PatternDecl->getBody(PatternDecl);

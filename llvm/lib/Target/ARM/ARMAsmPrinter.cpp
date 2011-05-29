@@ -172,45 +172,6 @@ getDebugValueLocation(const MachineInstr *MI) const {
   return Location;
 }
 
-/// getDwarfRegOpSize - get size required to emit given machine location using
-/// dwarf encoding.
-unsigned ARMAsmPrinter::getDwarfRegOpSize(const MachineLocation &MLoc) const {
- const TargetRegisterInfo *RI = TM.getRegisterInfo();
-  if (RI->getDwarfRegNum(MLoc.getReg(), false) != -1)
-    return AsmPrinter::getDwarfRegOpSize(MLoc);
-  else {
-    unsigned Reg = MLoc.getReg();
-    if (Reg >= ARM::S0 && Reg <= ARM::S31) {
-      assert(ARM::S0 + 31 == ARM::S31 && "Unexpected ARM S register numbering");
-      // S registers are described as bit-pieces of a register
-      // S[2x] = DW_OP_regx(256 + (x>>1)) DW_OP_bit_piece(32, 0)
-      // S[2x+1] = DW_OP_regx(256 + (x>>1)) DW_OP_bit_piece(32, 32)
-      
-      unsigned SReg = Reg - ARM::S0;
-      unsigned Rx = 256 + (SReg >> 1);
-      // DW_OP_regx + ULEB + DW_OP_bit_piece + ULEB + ULEB
-      //   1 + ULEB(Rx) + 1 + 1 + 1
-      return 4 + MCAsmInfo::getULEB128Size(Rx);
-    } 
-    
-    if (Reg >= ARM::Q0 && Reg <= ARM::Q15) {
-      assert(ARM::Q0 + 15 == ARM::Q15 && "Unexpected ARM Q register numbering");
-      // Q registers Q0-Q15 are described by composing two D registers together.
-      // Qx = DW_OP_regx(256+2x) DW_OP_piece(8) DW_OP_regx(256+2x+1) DW_OP_piece(8)
-
-      unsigned QReg = Reg - ARM::Q0;
-      unsigned D1 = 256 + 2 * QReg;
-      unsigned D2 = D1 + 1;
-      
-      // DW_OP_regx + ULEB + DW_OP_piece + ULEB(8) +
-      // DW_OP_regx + ULEB + DW_OP_piece + ULEB(8);
-      //   6 + ULEB(D1) + ULEB(D2)
-      return 6 + MCAsmInfo::getULEB128Size(D1) + MCAsmInfo::getULEB128Size(D2);
-    }
-  }
-  return 0;
-}
-
 /// EmitDwarfRegOp - Emit dwarf register operation.
 void ARMAsmPrinter::EmitDwarfRegOp(const MachineLocation &MLoc) const {
   const TargetRegisterInfo *RI = TM.getRegisterInfo();
@@ -426,17 +387,41 @@ bool ARMAsmPrinter::PrintAsmOperand(const MachineInstr *MI, unsigned OpNum,
         return true;
       O << (MI->getOperand(OpNum).getImm() & 0xffff);
       return false;
-    case 'M': // A register range suitable for LDM/STM.
+    case 'M': { // A register range suitable for LDM/STM.
+      if (!MI->getOperand(OpNum).isReg())
+        return true;
+      const MachineOperand &MO = MI->getOperand(OpNum);
+      unsigned RegBegin = MO.getReg();
+      // This takes advantage of the 2 operand-ness of ldm/stm and that we've
+      // already got the operands in registers that are operands to the
+      // inline asm statement.
+      
+      O << "{" << ARMInstPrinter::getRegisterName(RegBegin);
+      
+      // FIXME: The register allocator not only may not have given us the
+      // registers in sequence, but may not be in ascending registers. This
+      // will require changes in the register allocator that'll need to be
+      // propagated down here if the operands change.
+      unsigned RegOps = OpNum + 1;
+      while (MI->getOperand(RegOps).isReg()) {
+        O << ", " 
+          << ARMInstPrinter::getRegisterName(MI->getOperand(RegOps).getReg());
+        RegOps++;
+      }
+
+      O << "}";
+
+      return false;
+    }
+    // These modifiers are not yet supported.
     case 'p': // The high single-precision register of a VFP double-precision
               // register.
     case 'e': // The low doubleword register of a NEON quad register.
     case 'f': // The high doubleword register of a NEON quad register.
     case 'h': // A range of VFP/NEON registers suitable for VLD1/VST1.
-    case 'A': // A memory operand for a VLD1/VST1 instruction.
     case 'Q': // The least significant register of a pair.
     case 'R': // The most significant register of a pair.
     case 'H': // The highest-numbered register of a pair.
-      // These modifiers are not yet supported.
       return true;
     }
   }
@@ -454,6 +439,7 @@ bool ARMAsmPrinter::PrintAsmMemoryOperand(const MachineInstr *MI,
     if (ExtraCode[1] != 0) return true; // Unknown modifier.
     
     switch (ExtraCode[0]) {
+      case 'A': // A memory operand for a VLD1/VST1 instruction.
       default: return true;  // Unknown modifier.
       case 'm': // The base register of a memory operand.
         if (!MI->getOperand(OpNum).isReg())
@@ -1863,7 +1849,7 @@ void ARMAsmPrinter::EmitInstruction(const MachineInstr *MI) {
     }
     {
       MCInst TmpInst;
-      TmpInst.setOpcode(ARM::tBX_RET_vararg);
+      TmpInst.setOpcode(ARM::tBX);
       TmpInst.addOperand(MCOperand::CreateReg(ScratchReg));
       // Predicate.
       TmpInst.addOperand(MCOperand::CreateImm(ARMCC::AL));

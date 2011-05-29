@@ -56,6 +56,7 @@ const char *MipsTargetLowering::getTargetNodeName(unsigned Opcode) const {
   case MipsISD::DivRemU:           return "MipsISD::DivRemU";
   case MipsISD::BuildPairF64:      return "MipsISD::BuildPairF64";
   case MipsISD::ExtractElementF64: return "MipsISD::ExtractElementF64";
+  case MipsISD::WrapperPIC:        return "MipsISD::WrapperPIC";
   default: return NULL;
   }
 }
@@ -155,8 +156,9 @@ MipsTargetLowering(MipsTargetMachine &TM)
     setOperationAction(ISD::FEXP,              MVT::f32,   Expand);
   }
 
-  setOperationAction(ISD::EH_LABEL,          MVT::Other, Expand);
-
+  setOperationAction(ISD::EXCEPTIONADDR,     MVT::i32, Expand);
+  setOperationAction(ISD::EHSELECTION,       MVT::i32, Expand);
+  
   setOperationAction(ISD::VAARG,             MVT::Other, Expand);
   setOperationAction(ISD::VACOPY,            MVT::Other, Expand);
   setOperationAction(ISD::VAEND,             MVT::Other, Expand);
@@ -191,6 +193,9 @@ MipsTargetLowering(MipsTargetMachine &TM)
 
   setStackPointerRegisterToSaveRestore(Mips::SP);
   computeRegisterProperties();
+
+  setExceptionPointerRegister(Mips::A0);
+  setExceptionSelectorRegister(Mips::A1);
 }
 
 MVT::SimpleValueType MipsTargetLowering::getSetCCResultType(EVT VT) const {
@@ -781,6 +786,7 @@ SDValue MipsTargetLowering::LowerGlobalAddress(SDValue Op,
   } else {
     SDValue GA = DAG.getTargetGlobalAddress(GV, dl, MVT::i32, 0,
                                             MipsII::MO_GOT);
+    GA = DAG.getNode(MipsISD::WrapperPIC, dl, MVT::i32, GA);
     SDValue ResNode = DAG.getLoad(MVT::i32, dl,
                                   DAG.getEntryNode(), GA, MachinePointerInfo(),
                                   false, false, 0);
@@ -818,6 +824,7 @@ SDValue MipsTargetLowering::LowerBlockAddress(SDValue Op,
 
   SDValue BAGOTOffset = DAG.getBlockAddress(BA, MVT::i32, true,
                                             MipsII::MO_GOT);
+  BAGOTOffset = DAG.getNode(MipsISD::WrapperPIC, dl, MVT::i32, BAGOTOffset);
   SDValue BALOOffset = DAG.getBlockAddress(BA, MVT::i32, true,
                                            MipsII::MO_ABS_LO);
   SDValue Load = DAG.getLoad(MVT::i32, dl,
@@ -852,10 +859,12 @@ LowerJumpTable(SDValue Op, SelectionDAG &DAG) const
   if (!IsPIC) {
     SDValue Ops[] = { JTI };
     HiPart = DAG.getNode(MipsISD::Hi, dl, DAG.getVTList(MVT::i32), Ops, 1);
-  } else // Emit Load from Global Pointer
+  } else {// Emit Load from Global Pointer
+    JTI = DAG.getNode(MipsISD::WrapperPIC, dl, MVT::i32, JTI);
     HiPart = DAG.getLoad(MVT::i32, dl, DAG.getEntryNode(), JTI,
                          MachinePointerInfo(),
                          false, false, 0);
+  }
 
   SDValue JTILo = DAG.getTargetJumpTable(JT->getIndex(), PtrVT,
                                          MipsII::MO_ABS_LO);
@@ -895,6 +904,7 @@ LowerConstantPool(SDValue Op, SelectionDAG &DAG) const
   } else {
     SDValue CP = DAG.getTargetConstantPool(C, MVT::i32, N->getAlignment(),
                                            N->getOffset(), MipsII::MO_GOT);
+    CP = DAG.getNode(MipsISD::WrapperPIC, dl, MVT::i32, CP);
     SDValue Load = DAG.getLoad(MVT::i32, dl, DAG.getEntryNode(),
                                CP, MachinePointerInfo::getConstantPool(),
                                false, false, 0);
@@ -1182,8 +1192,6 @@ MipsTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
   SmallVector<std::pair<unsigned, SDValue>, 16> RegsToPass;
   SmallVector<SDValue, 8> MemOpChains;
 
-  MipsFI->setHasCall();
-
   // If this is the first call, create a stack frame object that points to
   // a location to which .cprestore saves $gp. The offset of this frame object
   // is set to 0, since we know nothing about the size of the argument area at
@@ -1301,6 +1309,7 @@ MipsTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
   if (IsPIC) {
     if (LoadSymAddr) {
       // Load callee address
+      Callee = DAG.getNode(MipsISD::WrapperPIC, dl, MVT::i32, Callee);
       SDValue LoadValue = DAG.getLoad(MVT::i32, dl, Chain, Callee,
                                       MachinePointerInfo::getGOT(),
                                       false, false, 0);

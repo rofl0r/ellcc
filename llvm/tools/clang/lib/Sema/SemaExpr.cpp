@@ -3054,8 +3054,120 @@ ExprResult Sema::ActOnParenExpr(SourceLocation L,
   return Owned(new (Context) ParenExpr(L, R, E));
 }
 
+static bool CheckVecStepTraitOperandType(Sema &S, QualType T,
+                                         SourceLocation Loc,
+                                         SourceRange ArgRange) {
+  // [OpenCL 1.1 6.11.12] "The vec_step built-in function takes a built-in
+  // scalar or vector data type argument..."
+  // Every built-in scalar type (OpenCL 1.1 6.1.1) is either an arithmetic
+  // type (C99 6.2.5p18) or void.
+  if (!(T->isArithmeticType() || T->isVoidType() || T->isVectorType())) {
+    S.Diag(Loc, diag::err_vecstep_non_scalar_vector_type)
+      << T << ArgRange;
+    return true;
+  }
+
+  assert((T->isVoidType() || !T->isIncompleteType()) &&
+         "Scalar types should always be complete");
+  return false;
+}
+
+static bool CheckExtensionTraitOperandType(Sema &S, QualType T,
+                                           SourceLocation Loc,
+                                           SourceRange ArgRange,
+                                           UnaryExprOrTypeTrait TraitKind) {
+  // C99 6.5.3.4p1:
+  if (T->isFunctionType()) {
+    // alignof(function) is allowed as an extension.
+    if (TraitKind == UETT_SizeOf)
+      S.Diag(Loc, diag::ext_sizeof_function_type) << ArgRange;
+    return false;
+  }
+
+  // Allow sizeof(void)/alignof(void) as an extension.
+  if (T->isVoidType()) {
+    S.Diag(Loc, diag::ext_sizeof_void_type) << TraitKind << ArgRange;
+    return false;
+  }
+
+  return true;
+}
+
+static bool CheckObjCTraitOperandConstraints(Sema &S, QualType T,
+                                             SourceLocation Loc,
+                                             SourceRange ArgRange,
+                                             UnaryExprOrTypeTrait TraitKind) {
+  // Reject sizeof(interface) and sizeof(interface<proto>) in 64-bit mode.
+  if (S.LangOpts.ObjCNonFragileABI && T->isObjCObjectType()) {
+    S.Diag(Loc, diag::err_sizeof_nonfragile_interface)
+      << T << (TraitKind == UETT_SizeOf)
+      << ArgRange;
+    return true;
+  }
+
+  return false;
+}
+
+/// \brief Check the constrains on expression operands to unary type expression
+/// and type traits.
+///
+/// Completes any types necessary and validates the constraints on the operand
+/// expression. The logic mostly mirrors the type-based overload, but may modify
+/// the expression as it completes the type for that expression through template
+/// instantiation, etc.
+bool Sema::CheckUnaryExprOrTypeTraitOperand(Expr *Op,
+                                            UnaryExprOrTypeTrait ExprKind) {
+  QualType ExprTy = Op->getType();
+
+  // C++ [expr.sizeof]p2: "When applied to a reference or a reference type,
+  //   the result is the size of the referenced type."
+  // C++ [expr.alignof]p3: "When alignof is applied to a reference type, the
+  //   result shall be the alignment of the referenced type."
+  if (const ReferenceType *Ref = ExprTy->getAs<ReferenceType>())
+    ExprTy = Ref->getPointeeType();
+
+  if (ExprKind == UETT_VecStep)
+    return CheckVecStepTraitOperandType(*this, ExprTy, Op->getExprLoc(),
+                                        Op->getSourceRange());
+
+  // Whitelist some types as extensions
+  if (!CheckExtensionTraitOperandType(*this, ExprTy, Op->getExprLoc(),
+                                      Op->getSourceRange(), ExprKind))
+    return false;
+
+  if (RequireCompleteExprType(Op,
+                              PDiag(diag::err_sizeof_alignof_incomplete_type)
+                              << ExprKind << Op->getSourceRange(),
+                              std::make_pair(SourceLocation(), PDiag(0))))
+    return true;
+
+  // Completeing the expression's type may have changed it.
+  ExprTy = Op->getType();
+  if (const ReferenceType *Ref = ExprTy->getAs<ReferenceType>())
+    ExprTy = Ref->getPointeeType();
+
+  if (CheckObjCTraitOperandConstraints(*this, ExprTy, Op->getExprLoc(),
+                                       Op->getSourceRange(), ExprKind))
+    return true;
+
+  return false;
+}
+
+/// \brief Check the constraints on operands to unary expression and type
+/// traits.
+///
+/// This will complete any types necessary, and validate the various constraints
+/// on those operands.
+///
 /// The UsualUnaryConversions() function is *not* called by this routine.
-/// See C99 6.3.2.1p[2-4] for more details.
+/// C99 6.3.2.1p[2-4] all state:
+///   Except when it is the operand of the sizeof operator ...
+///
+/// C++ [expr.sizeof]p4
+///   The lvalue-to-rvalue, array-to-pointer, and function-to-pointer
+///   standard conversions are not applied to the operand of sizeof.
+///
+/// This policy is followed for all of the unary trait expressions.
 bool Sema::CheckUnaryExprOrTypeTraitOperand(QualType exprType,
                                             SourceLocation OpLoc,
                                             SourceRange ExprRange,
@@ -3070,55 +3182,27 @@ bool Sema::CheckUnaryExprOrTypeTraitOperand(QualType exprType,
   if (const ReferenceType *Ref = exprType->getAs<ReferenceType>())
     exprType = Ref->getPointeeType();
 
-  // [OpenCL 1.1 6.11.12] "The vec_step built-in function takes a built-in
-  // scalar or vector data type argument..."
-  // Every built-in scalar type (OpenCL 1.1 6.1.1) is either an arithmetic
-  // type (C99 6.2.5p18) or void.
-  if (ExprKind == UETT_VecStep) {
-    if (!(exprType->isArithmeticType() || exprType->isVoidType() ||
-          exprType->isVectorType())) {
-      Diag(OpLoc, diag::err_vecstep_non_scalar_vector_type)
-        << exprType << ExprRange;
-      return true;
-    }
-  }
+  if (ExprKind == UETT_VecStep)
+    return CheckVecStepTraitOperandType(*this, exprType, OpLoc, ExprRange);
 
-  // C99 6.5.3.4p1:
-  if (exprType->isFunctionType()) {
-    // alignof(function) is allowed as an extension.
-    if (ExprKind == UETT_SizeOf)
-      Diag(OpLoc, diag::ext_sizeof_function_type) 
-        << ExprRange;
+  // Whitelist some types as extensions
+  if (!CheckExtensionTraitOperandType(*this, exprType, OpLoc, ExprRange,
+                                      ExprKind))
     return false;
-  }
-
-  // Allow sizeof(void)/alignof(void) as an extension.  vec_step(void) is not
-  // an extension, as void is a built-in scalar type (OpenCL 1.1 6.1.1).
-  if (exprType->isVoidType()) {
-    if (ExprKind != UETT_VecStep)
-      Diag(OpLoc, diag::ext_sizeof_void_type)
-        << ExprKind << ExprRange;
-    return false;
-  }
 
   if (RequireCompleteType(OpLoc, exprType,
                           PDiag(diag::err_sizeof_alignof_incomplete_type)
                           << ExprKind << ExprRange))
     return true;
 
-  // Reject sizeof(interface) and sizeof(interface<proto>) in 64-bit mode.
-  if (LangOpts.ObjCNonFragileABI && exprType->isObjCObjectType()) {
-    Diag(OpLoc, diag::err_sizeof_nonfragile_interface)
-      << exprType << (ExprKind == UETT_SizeOf)
-      << ExprRange;
+  if (CheckObjCTraitOperandConstraints(*this, exprType, OpLoc, ExprRange,
+                                       ExprKind))
     return true;
-  }
 
   return false;
 }
 
-static bool CheckAlignOfExpr(Sema &S, Expr *E, SourceLocation OpLoc,
-                             SourceRange ExprRange) {
+static bool CheckAlignOfExpr(Sema &S, Expr *E) {
   E = E->IgnoreParens();
 
   // alignof decl is always ok.
@@ -3130,7 +3214,8 @@ static bool CheckAlignOfExpr(Sema &S, Expr *E, SourceLocation OpLoc,
     return false;
 
   if (E->getBitField()) {
-   S. Diag(OpLoc, diag::err_sizeof_alignof_bitfield) << 1 << ExprRange;
+    S.Diag(E->getExprLoc(), diag::err_sizeof_alignof_bitfield)
+       << 1 << E->getSourceRange();
     return true;
   }
 
@@ -3140,20 +3225,17 @@ static bool CheckAlignOfExpr(Sema &S, Expr *E, SourceLocation OpLoc,
     if (isa<FieldDecl>(ME->getMemberDecl()))
       return false;
 
-  return S.CheckUnaryExprOrTypeTraitOperand(E->getType(), OpLoc, ExprRange,
-                                            UETT_AlignOf);
+  return S.CheckUnaryExprOrTypeTraitOperand(E, UETT_AlignOf);
 }
 
-bool Sema::CheckVecStepExpr(Expr *E, SourceLocation OpLoc,
-                            SourceRange ExprRange) {
+bool Sema::CheckVecStepExpr(Expr *E) {
   E = E->IgnoreParens();
 
   // Cannot know anything else if the expression is dependent.
   if (E->isTypeDependent())
     return false;
 
-  return CheckUnaryExprOrTypeTraitOperand(E->getType(), OpLoc, ExprRange,
-                                          UETT_VecStep);
+  return CheckUnaryExprOrTypeTraitOperand(E, UETT_VecStep);
 }
 
 /// \brief Build a sizeof or alignof expression given a type operand.
@@ -3180,36 +3262,33 @@ Sema::CreateUnaryExprOrTypeTraitExpr(TypeSourceInfo *TInfo,
 /// \brief Build a sizeof or alignof expression given an expression
 /// operand.
 ExprResult
-Sema::CreateUnaryExprOrTypeTraitExpr(Expr *E, SourceLocation OpLoc,
-                                     UnaryExprOrTypeTrait ExprKind,
-                                     SourceRange R) {
+Sema::CreateUnaryExprOrTypeTraitExpr(Expr *E, UnaryExprOrTypeTrait ExprKind) {
   // Verify that the operand is valid.
   bool isInvalid = false;
   if (E->isTypeDependent()) {
     // Delay type-checking for type-dependent expressions.
   } else if (ExprKind == UETT_AlignOf) {
-    isInvalid = CheckAlignOfExpr(*this, E, OpLoc, R);
+    isInvalid = CheckAlignOfExpr(*this, E);
   } else if (ExprKind == UETT_VecStep) {
-    isInvalid = CheckVecStepExpr(E, OpLoc, R);
+    isInvalid = CheckVecStepExpr(E);
   } else if (E->getBitField()) {  // C99 6.5.3.4p1.
-    Diag(OpLoc, diag::err_sizeof_alignof_bitfield) << 0;
+    Diag(E->getExprLoc(), diag::err_sizeof_alignof_bitfield) << 0;
     isInvalid = true;
   } else if (E->getType()->isPlaceholderType()) {
     ExprResult PE = CheckPlaceholderExpr(E);
     if (PE.isInvalid()) return ExprError();
-    return CreateUnaryExprOrTypeTraitExpr(PE.take(), OpLoc, ExprKind, R);
+    return CreateUnaryExprOrTypeTraitExpr(PE.take(), ExprKind);
   } else {
-    isInvalid = CheckUnaryExprOrTypeTraitOperand(E->getType(), OpLoc, R,
-                                                 UETT_SizeOf);
+    isInvalid = CheckUnaryExprOrTypeTraitOperand(E, UETT_SizeOf);
   }
 
   if (isInvalid)
     return ExprError();
 
   // C99 6.5.3.4p4: the type (an unsigned integer type) is size_t.
-  return Owned(new (Context) UnaryExprOrTypeTraitExpr(ExprKind, E,
-                                                      Context.getSizeType(),
-                                                      OpLoc, R.getEnd()));
+  return Owned(new (Context) UnaryExprOrTypeTraitExpr(
+      ExprKind, E, Context.getSizeType(), E->getExprLoc(),
+      E->getSourceRange().getEnd()));
 }
 
 /// ActOnUnaryExprOrTypeTraitExpr - Handle @c sizeof(type) and @c sizeof @c
@@ -3229,9 +3308,12 @@ Sema::ActOnUnaryExprOrTypeTraitExpr(SourceLocation OpLoc,
   }
 
   Expr *ArgEx = (Expr *)TyOrEx;
-  ExprResult Result
-    = CreateUnaryExprOrTypeTraitExpr(ArgEx, OpLoc, ExprKind,
-                                     ArgEx->getSourceRange());
+
+  // Make sure the location is accurately represented in the Expr node.
+  // FIXME: Is this really needed?
+  assert(ArgEx->getExprLoc() != OpLoc && "Mismatched locations");
+
+  ExprResult Result = CreateUnaryExprOrTypeTraitExpr(ArgEx, ExprKind);
 
   return move(Result);
 }

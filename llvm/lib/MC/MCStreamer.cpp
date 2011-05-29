@@ -28,6 +28,8 @@ MCStreamer::MCStreamer(MCContext &Ctx) : Context(Ctx), EmitEHFrame(true),
 }
 
 MCStreamer::~MCStreamer() {
+  for (unsigned i = 0; i < getNumW64UnwindInfos(); ++i)
+    delete W64UnwindInfos[i];
 }
 
 const MCExpr *MCStreamer::BuildSymbolDiff(MCContext &Context,
@@ -307,8 +309,8 @@ void MCStreamer::EmitCFISameValue(int64_t Register) {
 }
 
 void MCStreamer::setCurrentW64UnwindInfo(MCWin64EHUnwindInfo *Frame) {
-  W64UnwindInfos.push_back(*Frame);
-  CurrentW64UnwindInfo = &W64UnwindInfos.back();
+  W64UnwindInfos.push_back(Frame);
+  CurrentW64UnwindInfo = W64UnwindInfos.back();
 }
 
 void MCStreamer::EnsureValidW64UnwindInfo() {
@@ -321,11 +323,11 @@ void MCStreamer::EmitWin64EHStartProc(const MCSymbol *Symbol) {
   MCWin64EHUnwindInfo *CurFrame = CurrentW64UnwindInfo;
   if (CurFrame && !CurFrame->End)
     report_fatal_error("Starting a function before ending the previous one!");
-  MCWin64EHUnwindInfo Frame;
-  Frame.Begin = getContext().CreateTempSymbol();
-  Frame.Function = Symbol;
-  EmitLabel(Frame.Begin);
-  setCurrentW64UnwindInfo(&Frame);
+  MCWin64EHUnwindInfo *Frame = new MCWin64EHUnwindInfo;
+  Frame->Begin = getContext().CreateTempSymbol();
+  Frame->Function = Symbol;
+  EmitLabel(Frame->Begin);
+  setCurrentW64UnwindInfo(Frame);
 }
 
 void MCStreamer::EmitWin64EHEndProc() {
@@ -339,13 +341,13 @@ void MCStreamer::EmitWin64EHEndProc() {
 
 void MCStreamer::EmitWin64EHStartChained() {
   EnsureValidW64UnwindInfo();
-  MCWin64EHUnwindInfo Frame;
+  MCWin64EHUnwindInfo *Frame = new MCWin64EHUnwindInfo;
   MCWin64EHUnwindInfo *CurFrame = CurrentW64UnwindInfo;
-  Frame.Begin = getContext().CreateTempSymbol();
-  Frame.Function = CurFrame->Function;
-  Frame.ChainedParent = CurFrame;
-  EmitLabel(Frame.Begin);
-  setCurrentW64UnwindInfo(&Frame);
+  Frame->Begin = getContext().CreateTempSymbol();
+  Frame->Function = CurFrame->Function;
+  Frame->ChainedParent = CurFrame;
+  EmitLabel(Frame->Begin);
+  setCurrentW64UnwindInfo(Frame);
 }
 
 void MCStreamer::EmitWin64EHEndChained() {
@@ -383,16 +385,20 @@ void MCStreamer::EmitWin64EHHandlerData() {
 void MCStreamer::EmitWin64EHPushReg(unsigned Register) {
   EnsureValidW64UnwindInfo();
   MCWin64EHUnwindInfo *CurFrame = CurrentW64UnwindInfo;
-  MCWin64EHInstruction Inst(Win64EH::UOP_PushNonVol, Register);
+  MCSymbol *Label = getContext().CreateTempSymbol();
+  MCWin64EHInstruction Inst(Win64EH::UOP_PushNonVol, Label, Register);
+  EmitLabel(Label);
   CurFrame->Instructions.push_back(Inst);
 }
 
 void MCStreamer::EmitWin64EHSetFrame(unsigned Register, unsigned Offset) {
   EnsureValidW64UnwindInfo();
+  MCWin64EHUnwindInfo *CurFrame = CurrentW64UnwindInfo;
+  if (CurFrame->LastFrameInst >= 0)
+    report_fatal_error("Frame register and offset already specified!");
   if (Offset & 0x0F)
     report_fatal_error("Misaligned frame pointer offset!");
-  MCWin64EHUnwindInfo *CurFrame = CurrentW64UnwindInfo;
-  MCWin64EHInstruction Inst(Win64EH::UOP_SetFPReg, Register, Offset);
+  MCWin64EHInstruction Inst(Win64EH::UOP_SetFPReg, NULL, Register, Offset);
   CurFrame->LastFrameInst = CurFrame->Instructions.size();
   CurFrame->Instructions.push_back(Inst);
 }
@@ -402,7 +408,9 @@ void MCStreamer::EmitWin64EHAllocStack(unsigned Size) {
   if (Size & 7)
     report_fatal_error("Misaligned stack allocation!");
   MCWin64EHUnwindInfo *CurFrame = CurrentW64UnwindInfo;
-  MCWin64EHInstruction Inst(Size);
+  MCSymbol *Label = getContext().CreateTempSymbol();
+  MCWin64EHInstruction Inst(Label, Size);
+  EmitLabel(Label);
   CurFrame->Instructions.push_back(Inst);
 }
 
@@ -411,9 +419,11 @@ void MCStreamer::EmitWin64EHSaveReg(unsigned Register, unsigned Offset) {
   if (Offset & 7)
     report_fatal_error("Misaligned saved register offset!");
   MCWin64EHUnwindInfo *CurFrame = CurrentW64UnwindInfo;
+  MCSymbol *Label = getContext().CreateTempSymbol();
   MCWin64EHInstruction Inst(
-     Offset > 512*1024-8 ? Win64EH::UOP_SaveNonVol : Win64EH::UOP_SaveNonVolBig,
-                            Register, Offset);
+     Offset > 512*1024-8 ? Win64EH::UOP_SaveNonVolBig : Win64EH::UOP_SaveNonVol,
+                            Label, Register, Offset);
+  EmitLabel(Label);
   CurFrame->Instructions.push_back(Inst);
 }
 
@@ -422,16 +432,22 @@ void MCStreamer::EmitWin64EHSaveXMM(unsigned Register, unsigned Offset) {
   if (Offset & 0x0F)
     report_fatal_error("Misaligned saved vector register offset!");
   MCWin64EHUnwindInfo *CurFrame = CurrentW64UnwindInfo;
+  MCSymbol *Label = getContext().CreateTempSymbol();
   MCWin64EHInstruction Inst(
-    Offset > 512*1024-16 ? Win64EH::UOP_SaveXMM128 : Win64EH::UOP_SaveXMM128Big,
-                            Register, Offset);
+    Offset > 512*1024-16 ? Win64EH::UOP_SaveXMM128Big : Win64EH::UOP_SaveXMM128,
+                            Label, Register, Offset);
+  EmitLabel(Label);
   CurFrame->Instructions.push_back(Inst);
 }
 
 void MCStreamer::EmitWin64EHPushFrame(bool Code) {
   EnsureValidW64UnwindInfo();
   MCWin64EHUnwindInfo *CurFrame = CurrentW64UnwindInfo;
-  MCWin64EHInstruction Inst(Win64EH::UOP_PushMachFrame, Code);
+  if (CurFrame->Instructions.size() > 0)
+    report_fatal_error("If present, PushMachFrame must be the first UOP");
+  MCSymbol *Label = getContext().CreateTempSymbol();
+  MCWin64EHInstruction Inst(Win64EH::UOP_PushMachFrame, Label, Code);
+  EmitLabel(Label);
   CurFrame->Instructions.push_back(Inst);
 }
 

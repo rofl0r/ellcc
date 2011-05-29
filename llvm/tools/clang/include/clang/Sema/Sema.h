@@ -808,6 +808,10 @@ public:
                            const PartialDiagnostic &PD);
   bool RequireCompleteType(SourceLocation Loc, QualType T,
                            unsigned DiagID);
+  bool RequireCompleteExprType(Expr *E, const PartialDiagnostic &PD,
+                               std::pair<SourceLocation,
+                                         PartialDiagnostic> Note);
+
 
   QualType getElaboratedType(ElaboratedTypeKeyword Keyword,
                              const CXXScopeSpec &SS, QualType T);
@@ -2211,9 +2215,8 @@ public:
                                             SourceLocation OpLoc,
                                             UnaryExprOrTypeTrait ExprKind,
                                             SourceRange R);
-  ExprResult CreateUnaryExprOrTypeTraitExpr(Expr *E, SourceLocation OpLoc,
-                                            UnaryExprOrTypeTrait ExprKind,
-                                            SourceRange R);
+  ExprResult CreateUnaryExprOrTypeTraitExpr(Expr *E,
+                                            UnaryExprOrTypeTrait ExprKind);
   ExprResult
     ActOnUnaryExprOrTypeTraitExpr(SourceLocation OpLoc,
                                   UnaryExprOrTypeTrait ExprKind,
@@ -2221,8 +2224,9 @@ public:
                                   const SourceRange &ArgRange);
 
   ExprResult CheckPlaceholderExpr(Expr *E);
-  bool CheckVecStepExpr(Expr *E, SourceLocation OpLoc, SourceRange R);
+  bool CheckVecStepExpr(Expr *E);
 
+  bool CheckUnaryExprOrTypeTraitOperand(Expr *E, UnaryExprOrTypeTrait ExprKind);
   bool CheckUnaryExprOrTypeTraitOperand(QualType type, SourceLocation OpLoc,
                                         SourceRange R,
                                         UnaryExprOrTypeTrait ExprKind);

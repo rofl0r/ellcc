@@ -2082,7 +2082,8 @@ SDValue ARMTargetLowering::LowerGlobalAddressDarwin(SDValue Op,
   MachineFunction &MF = DAG.getMachineFunction();
   ARMFunctionInfo *AFI = MF.getInfo<ARMFunctionInfo>();
 
-  if (Subtarget->useMovt()) {
+  // FIXME: Enable this for static codegen when tool issues are fixed.
+  if (Subtarget->useMovt() && RelocM != Reloc::Static) {
     ++NumMovwMovt;
     // FIXME: Once remat is capable of dealing with instructions with register
     // operands, expand this into two nodes.
@@ -4982,8 +4983,14 @@ ARMTargetLowering::EmitAtomicBinary(MachineInstr *MI, MachineBasicBlock *BB,
   unsigned ptr = MI->getOperand(1).getReg();
   unsigned incr = MI->getOperand(2).getReg();
   DebugLoc dl = MI->getDebugLoc();
-
   bool isThumb2 = Subtarget->isThumb2();
+
+  MachineRegisterInfo &MRI = BB->getParent()->getRegInfo();
+  if (isThumb2) {
+    MRI.constrainRegClass(dest, ARM::rGPRRegisterClass);
+    MRI.constrainRegClass(ptr, ARM::rGPRRegisterClass);
+  }
+
   unsigned ldrOpc, strOpc;
   switch (Size) {
   default: llvm_unreachable("unsupported size for AtomicCmpSwap!");
@@ -5012,10 +5019,10 @@ ARMTargetLowering::EmitAtomicBinary(MachineInstr *MI, MachineBasicBlock *BB,
                   BB->end());
   exitMBB->transferSuccessorsAndUpdatePHIs(BB);
 
-  MachineRegisterInfo &RegInfo = MF->getRegInfo();
-  unsigned scratch = RegInfo.createVirtualRegister(ARM::GPRRegisterClass);
-  unsigned scratch2 = (!BinOpcode) ? incr :
-    RegInfo.createVirtualRegister(ARM::GPRRegisterClass);
+  TargetRegisterClass *TRC =
+    isThumb2 ? ARM::tGPRRegisterClass : ARM::GPRRegisterClass;
+  unsigned scratch = MRI.createVirtualRegister(TRC);
+  unsigned scratch2 = (!BinOpcode) ? incr : MRI.createVirtualRegister(TRC);
 
   //  thisMBB:
   //   ...
@@ -5078,8 +5085,14 @@ ARMTargetLowering::EmitAtomicBinaryMinMax(MachineInstr *MI,
   unsigned incr = MI->getOperand(2).getReg();
   unsigned oldval = dest;
   DebugLoc dl = MI->getDebugLoc();
-
   bool isThumb2 = Subtarget->isThumb2();
+
+  MachineRegisterInfo &MRI = BB->getParent()->getRegInfo();
+  if (isThumb2) {
+    MRI.constrainRegClass(dest, ARM::rGPRRegisterClass);
+    MRI.constrainRegClass(ptr, ARM::rGPRRegisterClass);
+  }
+
   unsigned ldrOpc, strOpc, extendOpc;
   switch (Size) {
   default: llvm_unreachable("unsupported size for AtomicCmpSwap!");
@@ -5111,9 +5124,10 @@ ARMTargetLowering::EmitAtomicBinaryMinMax(MachineInstr *MI,
                   BB->end());
   exitMBB->transferSuccessorsAndUpdatePHIs(BB);
 
-  MachineRegisterInfo &RegInfo = MF->getRegInfo();
-  unsigned scratch = RegInfo.createVirtualRegister(ARM::GPRRegisterClass);
-  unsigned scratch2 = RegInfo.createVirtualRegister(ARM::GPRRegisterClass);
+  TargetRegisterClass *TRC =
+    isThumb2 ? ARM::tGPRRegisterClass : ARM::GPRRegisterClass;
+  unsigned scratch = MRI.createVirtualRegister(TRC);
+  unsigned scratch2 = MRI.createVirtualRegister(TRC);
 
   //  thisMBB:
   //   ...
@@ -5134,7 +5148,7 @@ ARMTargetLowering::EmitAtomicBinaryMinMax(MachineInstr *MI,
 
   // Sign extend the value, if necessary.
   if (signExtend && extendOpc) {
-    oldval = RegInfo.createVirtualRegister(ARM::GPRRegisterClass);
+    oldval = MRI.createVirtualRegister(ARM::GPRRegisterClass);
     AddDefaultPred(BuildMI(BB, dl, TII->get(extendOpc), oldval).addReg(dest));
   }
 
@@ -7642,6 +7656,28 @@ bool ARMTargetLowering::getTgtMemIntrinsic(IntrinsicInfo &Info,
     Info.vol = false; // volatile stores with NEON intrinsics not supported
     Info.readMem = false;
     Info.writeMem = true;
+    return true;
+  }
+  case Intrinsic::arm_strexd: {
+    Info.opc = ISD::INTRINSIC_W_CHAIN;
+    Info.memVT = MVT::i64;
+    Info.ptrVal = I.getArgOperand(2);
+    Info.offset = 0;
+    Info.align = 8;
+    Info.vol = false;
+    Info.readMem = false;
+    Info.writeMem = true;
+    return true;
+  }
+  case Intrinsic::arm_ldrexd: {
+    Info.opc = ISD::INTRINSIC_W_CHAIN;
+    Info.memVT = MVT::i64;
+    Info.ptrVal = I.getArgOperand(0);
+    Info.offset = 0;
+    Info.align = 8;
+    Info.vol = false;
+    Info.readMem = true;
+    Info.writeMem = false;
     return true;
   }
   default:

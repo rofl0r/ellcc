@@ -440,11 +440,27 @@ void CompileUnit::addBlockByrefAddress(DbgVariable *&DV, DIE *Die,
 }
 
 /// addConstantValue - Add constant value entry in variable DIE.
-bool CompileUnit::addConstantValue(DIE *Die, const MachineOperand &MO) {
+bool CompileUnit::addConstantValue(DIE *Die, const MachineOperand &MO,
+                                   DIType Ty) {
   assert (MO.isImm() && "Invalid machine operand!");
   DIEBlock *Block = new (DIEValueAllocator) DIEBlock();
-  unsigned Imm = MO.getImm();
-  addUInt(Block, 0, dwarf::DW_FORM_udata, Imm);
+  unsigned form = dwarf::DW_FORM_udata;
+  switch (Ty.getSizeInBits()) {
+    case 8: form = dwarf::DW_FORM_data1; break;
+    case 16: form = dwarf::DW_FORM_data2; break;
+    case 32: form = dwarf::DW_FORM_data4; break;
+    case 64: form = dwarf::DW_FORM_data8; break;
+    default: break;
+  }
+
+  DIBasicType BTy(Ty);
+  if (BTy.Verify() &&
+      (BTy.getEncoding()  == dwarf::DW_ATE_signed 
+       || BTy.getEncoding() == dwarf::DW_ATE_signed_char))
+    addSInt(Block, 0, form, MO.getImm());
+  else
+    addUInt(Block, 0, form, MO.getImm());
+
   addBlock(Die, dwarf::DW_AT_const_value, 0, Block);
   return true;
 }
@@ -477,13 +493,21 @@ bool CompileUnit::addConstantFPValue(DIE *Die, const MachineOperand &MO) {
 /// addConstantValue - Add constant value entry in variable DIE.
 bool CompileUnit::addConstantValue(DIE *Die, ConstantInt *CI,
                                    bool Unsigned) {
-  if (CI->getBitWidth() <= 64) {
+  unsigned CIBitWidth = CI->getBitWidth();
+  if (CIBitWidth <= 64) {
+    unsigned form = 0;
+    switch (CIBitWidth) {
+    case 8: form = dwarf::DW_FORM_data1; break;
+    case 16: form = dwarf::DW_FORM_data2; break;
+    case 32: form = dwarf::DW_FORM_data4; break;
+    case 64: form = dwarf::DW_FORM_data8; break;
+    default: 
+      form = Unsigned ? dwarf::DW_FORM_udata : dwarf::DW_FORM_sdata;
+    }
     if (Unsigned)
-      addUInt(Die, dwarf::DW_AT_const_value, dwarf::DW_FORM_udata,
-              CI->getZExtValue());
+      addUInt(Die, dwarf::DW_AT_const_value, form, CI->getZExtValue());
     else
-      addSInt(Die, dwarf::DW_AT_const_value, dwarf::DW_FORM_sdata,
-              CI->getSExtValue());
+      addSInt(Die, dwarf::DW_AT_const_value, form, CI->getSExtValue());
     return true;
   }
 
