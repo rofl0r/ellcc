@@ -33,9 +33,9 @@ CodeGenFunction::CodeGenFunction(CodeGenModule &cgm)
     Target(CGM.getContext().Target), Builder(cgm.getModule().getContext()),
     BlockInfo(0), BlockPointer(0),
     NormalCleanupDest(0), EHCleanupDest(0), NextCleanupDestIndex(1),
-    ExceptionSlot(0), DebugInfo(0), DisableDebugInfo(false), IndirectBranch(0),
-    SwitchInsn(0), CaseRangeBlock(0),
-    DidCallStackSave(false), UnreachableBlock(0),
+    ExceptionSlot(0), EHSelectorSlot(0),
+    DebugInfo(0), DisableDebugInfo(false), DidCallStackSave(false),
+    IndirectBranch(0), SwitchInsn(0), CaseRangeBlock(0), UnreachableBlock(0),
     CXXThisDecl(0), CXXThisValue(0), CXXVTTDecl(0), CXXVTTValue(0),
     OutermostConditional(0), TerminateLandingPad(0), TerminateHandler(0),
     TrapBB(0) {
@@ -205,16 +205,12 @@ bool CodeGenFunction::ShouldInstrumentFunction() {
 /// instrumentation function with the current function and the call site, if
 /// function instrumentation is enabled.
 void CodeGenFunction::EmitFunctionInstrumentation(const char *Fn) {
-  const llvm::PointerType *PointerTy;
-  const llvm::FunctionType *FunctionTy;
-  std::vector<const llvm::Type*> ProfileFuncArgs;
-
   // void __cyg_profile_func_{enter,exit} (void *this_fn, void *call_site);
-  PointerTy = Int8PtrTy;
-  ProfileFuncArgs.push_back(PointerTy);
-  ProfileFuncArgs.push_back(PointerTy);
-  FunctionTy = llvm::FunctionType::get(llvm::Type::getVoidTy(getLLVMContext()),
-                                       ProfileFuncArgs, false);
+  const llvm::PointerType *PointerTy = Int8PtrTy;
+  const llvm::Type *ProfileFuncArgs[] = { PointerTy, PointerTy };
+  const llvm::FunctionType *FunctionTy =
+    llvm::FunctionType::get(llvm::Type::getVoidTy(getLLVMContext()),
+                            ProfileFuncArgs, false);
 
   llvm::Constant *F = CGM.CreateRuntimeFunction(FunctionTy, Fn);
   llvm::CallInst *CallSite = Builder.CreateCall(

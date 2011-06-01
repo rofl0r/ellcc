@@ -736,9 +736,7 @@ CGObjCGNU::CGObjCGNU(CodeGenModule &cgm, unsigned runtimeABIVersion,
       PtrDiffTy, BoolTy, BoolTy, NULL);
 
   // IMP type
-  std::vector<const llvm::Type*> IMPArgs;
-  IMPArgs.push_back(IdTy);
-  IMPArgs.push_back(SelectorTy);
+  const llvm::Type *IMPArgs[] = { IdTy, SelectorTy };
   IMPTy = llvm::PointerType::getUnqual(llvm::FunctionType::get(IdTy, IMPArgs,
               true));
 
@@ -786,11 +784,8 @@ llvm::Value *CGObjCGNU::GetClass(CGBuilderTy &Builder,
   EmitClassRef(OID->getNameAsString());
   ClassName = Builder.CreateStructGEP(ClassName, 0);
 
-  std::vector<const llvm::Type*> Params(1, PtrToInt8Ty);
   llvm::Constant *ClassLookupFn =
-    CGM.CreateRuntimeFunction(llvm::FunctionType::get(IdTy,
-                                                      Params,
-                                                      true),
+    CGM.CreateRuntimeFunction(llvm::FunctionType::get(IdTy, PtrToInt8Ty, true),
                               "objc_lookup_class");
   return Builder.CreateCall(ClassLookupFn, ClassName);
 }
@@ -956,16 +951,17 @@ CGObjCGNU::GenerateMessageSendSuper(CodeGenFunction &CGF,
                                     bool IsClassMessage,
                                     const CallArgList &CallArgs,
                                     const ObjCMethodDecl *Method) {
+  CGBuilderTy &Builder = CGF.Builder;
   if (CGM.getLangOptions().getGCMode() == LangOptions::GCOnly) {
     if (Sel == RetainSel || Sel == AutoreleaseSel) {
-      return RValue::get(Receiver);
+      return RValue::get(EnforceType(Builder, Receiver,
+                  CGM.getTypes().ConvertType(ResultType)));
     }
     if (Sel == ReleaseSel) {
       return RValue::get(0);
     }
   }
 
-  CGBuilderTy &Builder = CGF.Builder;
   llvm::Value *cmd = GetSelector(Builder, Sel);
 
 
@@ -982,14 +978,12 @@ CGObjCGNU::GenerateMessageSendSuper(CodeGenFunction &CGF,
   llvm::Value *ReceiverClass = 0;
   if (isCategoryImpl) {
     llvm::Constant *classLookupFunction = 0;
-    std::vector<const llvm::Type*> Params;
-    Params.push_back(PtrTy);
     if (IsClassMessage)  {
       classLookupFunction = CGM.CreateRuntimeFunction(llvm::FunctionType::get(
-            IdTy, Params, true), "objc_get_meta_class");
+            IdTy, PtrTy, true), "objc_get_meta_class");
     } else {
       classLookupFunction = CGM.CreateRuntimeFunction(llvm::FunctionType::get(
-            IdTy, Params, true), "objc_get_class");
+            IdTy, PtrTy, true), "objc_get_class");
     }
     ReceiverClass = Builder.CreateCall(classLookupFunction,
         MakeConstantString(Class->getNameAsString()));
@@ -1063,17 +1057,18 @@ CGObjCGNU::GenerateMessageSend(CodeGenFunction &CGF,
                                const CallArgList &CallArgs,
                                const ObjCInterfaceDecl *Class,
                                const ObjCMethodDecl *Method) {
+  CGBuilderTy &Builder = CGF.Builder;
+
   // Strip out message sends to retain / release in GC mode
   if (CGM.getLangOptions().getGCMode() == LangOptions::GCOnly) {
     if (Sel == RetainSel || Sel == AutoreleaseSel) {
-      return RValue::get(Receiver);
+      return RValue::get(EnforceType(Builder, Receiver,
+                  CGM.getTypes().ConvertType(ResultType)));
     }
     if (Sel == ReleaseSel) {
       return RValue::get(0);
     }
   }
-
-  CGBuilderTy &Builder = CGF.Builder;
 
   // If the return type is something that goes in an integer register, the
   // runtime will handle 0 returns.  For other cases, we fill in the 0 value
@@ -2181,10 +2176,10 @@ llvm::Function *CGObjCGNU::ModuleInitFunction() {
   CGBuilderTy Builder(VMContext);
   Builder.SetInsertPoint(EntryBB);
 
-  std::vector<const llvm::Type*> Params(1,
-      llvm::PointerType::getUnqual(ModuleTy));
-  llvm::Value *Register = CGM.CreateRuntimeFunction(llvm::FunctionType::get(
-        llvm::Type::getVoidTy(VMContext), Params, true), "__objc_exec_class");
+  llvm::FunctionType *FT =
+    llvm::FunctionType::get(Builder.getVoidTy(),
+                            llvm::PointerType::getUnqual(ModuleTy), true);
+  llvm::Value *Register = CGM.CreateRuntimeFunction(FT, "__objc_exec_class");
   Builder.CreateCall(Register, Module);
   Builder.CreateRetVoid();
 
@@ -2342,8 +2337,8 @@ void CGObjCGNU::EmitGCMemmoveCollectable(CodeGenFunction &CGF,
                                          llvm::Value *SrcPtr,
                                          llvm::Value *Size) {
   CGBuilderTy B = CGF.Builder;
-  DestPtr = EnforceType(B, DestPtr, IdTy);
-  SrcPtr = EnforceType(B, SrcPtr, PtrToIdTy);
+  DestPtr = EnforceType(B, DestPtr, PtrTy);
+  SrcPtr = EnforceType(B, SrcPtr, PtrTy);
 
   B.CreateCall3(MemMoveFn, DestPtr, SrcPtr, Size);
 }
