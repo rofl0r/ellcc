@@ -2314,7 +2314,7 @@ Sema::FinishTemplateArgumentDeduction(FunctionTemplateDecl *FunctionTemplate,
                               FunctionTemplate->getLocation(),
                               FunctionTemplate->getSourceRange().getEnd(),
                               0, Builder,
-                              CTAK_Deduced)) {
+                              CTAK_Specified)) {
       Info.Param = makeTemplateParameter(
                          const_cast<NamedDecl *>(TemplateParams->getParam(I)));
       // FIXME: These template arguments are temporary. Free them!
@@ -2499,6 +2499,12 @@ static bool AdjustFunctionParmAndArgTypesForDeduction(Sema &S,
   const ReferenceType *ParamRefType = ParamType->getAs<ReferenceType>();
   if (ParamRefType) {
     QualType PointeeType = ParamRefType->getPointeeType();
+
+    // If the argument has incomplete array type, try to complete it's type.
+    if (ArgType->isIncompleteArrayType() &&
+        !S.RequireCompleteExprType(Arg, S.PDiag(), 
+                                   std::make_pair(SourceLocation(), S.PDiag())))
+      ArgType = Arg->getType();
 
     //   [C++0x] If P is an rvalue reference to a cv-unqualified
     //   template parameter and the argument is an lvalue, the type

@@ -7516,6 +7516,7 @@ TreeTransform<Derived>::TransformUnresolvedMemberExpr(UnresolvedMemberExpr *Old)
 template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformCXXNoexceptExpr(CXXNoexceptExpr *E) {
+  EnterExpressionEvaluationContext Unevaluated(SemaRef, Sema::Unevaluated);
   ExprResult SubExpr = getDerived().TransformExpr(E->getOperand());
   if (SubExpr.isInvalid())
     return ExprError();
@@ -7876,6 +7877,13 @@ TreeTransform<Derived>::TransformBlockDeclRefExpr(BlockDeclRefExpr *E) {
                                          ND, NameInfo, 0);
 }
 
+template<typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformAsTypeExpr(AsTypeExpr *E) {
+  assert(false && "Cannot transform asType expressions yet");
+  return SemaRef.Owned(E);
+}
+  
 //===----------------------------------------------------------------------===//
 // Type reconstruction
 //===----------------------------------------------------------------------===//

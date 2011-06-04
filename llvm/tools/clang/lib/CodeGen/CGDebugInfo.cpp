@@ -555,9 +555,12 @@ llvm::DIType CGDebugInfo::CreateType(const TypedefType *Ty,
   // We don't set size information, but do specify where the typedef was
   // declared.
   unsigned Line = getLineNumber(Ty->getDecl()->getLocation());
-  llvm::DIType DbgTy = DBuilder.createTypedef(Src, Ty->getDecl()->getName(),
-                                              Unit, Line);
-  return DbgTy;
+  const TypedefNameDecl *TyDecl = Ty->getDecl();
+  llvm::DIDescriptor TydefContext =
+    getContextDescriptor(cast<Decl>(Ty->getDecl()->getDeclContext()));
+
+  return  
+    DBuilder.createTypedef(Src, TyDecl->getName(), Unit, Line, TydefContext);
 }
 
 llvm::DIType CGDebugInfo::CreateType(const FunctionType *Ty,
@@ -1621,6 +1624,33 @@ llvm::DISubprogram CGDebugInfo::getFunctionDeclaration(const Decl *D) {
   return llvm::DISubprogram();
 }
 
+// getOrCreateFunctionType - Construct DIType. If it is a c++ method, include
+// implicit parameter "this".
+llvm::DIType CGDebugInfo::getOrCreateFunctionType(const Decl * D, QualType FnType,
+                                                  llvm::DIFile F) {
+  if (const CXXMethodDecl *Method = dyn_cast<CXXMethodDecl>(D))
+    return getOrCreateMethodType(Method, F);
+  else if (const ObjCMethodDecl *OMethod = dyn_cast<ObjCMethodDecl>(D)) {
+    // Add "self" and "_cmd"
+    llvm::SmallVector<llvm::Value *, 16> Elts;
+
+    // First element is always return type. For 'void' functions it is NULL.
+    Elts.push_back(getOrCreateType(OMethod->getResultType(), F));
+    // "self" pointer is always first argument.
+    Elts.push_back(getOrCreateType(OMethod->getSelfDecl()->getType(), F));
+    // "cmd" pointer is always second argument.
+    Elts.push_back(getOrCreateType(OMethod->getCmdDecl()->getType(), F));
+    // Get rest of the arguments.
+    for (ObjCMethodDecl::param_iterator PI = OMethod->param_begin(), 
+           PE = OMethod->param_end(); PI != PE; ++PI)
+      Elts.push_back(getOrCreateType((*PI)->getType(), F));
+
+    llvm::DIArray EltTypeArray = DBuilder.getOrCreateArray(Elts);
+    return DBuilder.createSubroutineType(F, EltTypeArray);
+  }
+  return getOrCreateType(FnType, F);
+}
+
 /// EmitFunctionStart - Constructs the debug code for entering a function -
 /// "llvm.dbg.func.start.".
 void CGDebugInfo::EmitFunctionStart(GlobalDecl GD, QualType FnType,
@@ -1685,11 +1715,10 @@ void CGDebugInfo::EmitFunctionStart(GlobalDecl GD, QualType FnType,
   unsigned LineNo = getLineNumber(CurLoc);
   if (D->isImplicit())
     Flags |= llvm::DIDescriptor::FlagArtificial;
-  llvm::DIType SPTy = getOrCreateType(FnType, Unit);
   llvm::DISubprogram SPDecl = getFunctionDeclaration(D);
   llvm::DISubprogram SP =
     DBuilder.createFunction(FDContext, Name, LinkageName, Unit,
-                            LineNo, SPTy,
+                            LineNo, getOrCreateFunctionType(D, FnType, Unit),
                             Fn->hasInternalLinkage(), true/*definition*/,
                             Flags, CGM.getLangOptions().Optimize, Fn,
                             TParamsArray, SPDecl);

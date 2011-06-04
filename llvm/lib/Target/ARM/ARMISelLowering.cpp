@@ -7265,6 +7265,9 @@ ARMTargetLowering::getConstraintType(const std::string &Constraint) const {
     case 'l': return C_RegisterClass;
     case 'w': return C_RegisterClass;
     }
+  } else {
+    if (Constraint == "Uv")
+      return C_Memory;
   }
   return TargetLowering::getConstraintType(Constraint);
 }
@@ -7376,12 +7379,16 @@ getRegClassForInlineAsmConstraint(const std::string &Constraint,
 /// LowerAsmOperandForConstraint - Lower the specified operand into the Ops
 /// vector.  If it is invalid, don't add anything to Ops.
 void ARMTargetLowering::LowerAsmOperandForConstraint(SDValue Op,
-                                                     char Constraint,
+                                                     std::string &Constraint,
                                                      std::vector<SDValue>&Ops,
                                                      SelectionDAG &DAG) const {
   SDValue Result(0, 0);
 
-  switch (Constraint) {
+  // Currently only support length 1 constraints.
+  if (Constraint.length() != 1) return;
+  
+  char ConstraintLetter = Constraint[0];
+  switch (ConstraintLetter) {
   default: break;
   case 'I': case 'J': case 'K': case 'L':
   case 'M': case 'N': case 'O':
@@ -7396,7 +7403,7 @@ void ARMTargetLowering::LowerAsmOperandForConstraint(SDValue Op,
     if (CVal != CVal64)
       return;
 
-    switch (Constraint) {
+    switch (ConstraintLetter) {
       case 'I':
         if (Subtarget->isThumb1Only()) {
           // This must be a constant between 0 and 255, for ADD

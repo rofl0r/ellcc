@@ -1527,7 +1527,7 @@ Sema::CXXSpecialMember Sema::getSpecialMember(const CXXMethodDecl *MD) {
 /// GNU89 mode.
 static bool canRedefineFunction(const FunctionDecl *FD,
                                 const LangOptions& LangOpts) {
-  return (LangOpts.GNUMode && !LangOpts.C99 && !LangOpts.CPlusPlus &&
+  return (LangOpts.GNUInline && !LangOpts.CPlusPlus &&
           FD->isInlineSpecified() &&
           FD->getStorageClass() == SC_Extern);
 }
@@ -4587,7 +4587,7 @@ Sema::ActOnFunctionDeclarator(Scope* S, Declarator& D, DeclContext* DC,
         NewFD->setInvalidDecl();
     } else if (isFunctionTemplateSpecialization) {
       if (CurContext->isDependentContext() && CurContext->isRecord() 
-          && !isFriend && !getLangOptions().Microsoft) {
+          && !isFriend) {
         Diag(NewFD->getLocation(), diag::err_function_specialization_in_class)
           << NewFD->getDeclName();
         NewFD->setInvalidDecl();
@@ -7016,8 +7016,8 @@ Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
           // for the consumer of this Decl to know it doesn't own it.
           // For our current ASTs this shouldn't be a problem, but will
           // need to be changed with DeclGroups.
-          if ((TUK == TUK_Reference && !PrevTagDecl->getFriendObjectKind()) ||
-              TUK == TUK_Friend)
+          if ((TUK == TUK_Reference && (!PrevTagDecl->getFriendObjectKind() ||
+               getLangOptions().Microsoft)) || TUK == TUK_Friend)
             return PrevTagDecl;
 
           // Diagnose attempts to redefine a tag.
@@ -7259,8 +7259,12 @@ CreateNewDecl:
   New->setLexicalDeclContext(CurContext);
 
   // Mark this as a friend decl if applicable.
+  // In Microsoft mode, a friend declaration also acts as a forward
+  // declaration so we always pass true to setObjectOfFriendDecl to make
+  // the tag name visible.
   if (TUK == TUK_Friend)
-    New->setObjectOfFriendDecl(/* PreviouslyDeclared = */ !Previous.empty());
+    New->setObjectOfFriendDecl(/* PreviouslyDeclared = */ !Previous.empty() ||
+                               getLangOptions().Microsoft);
 
   // Set the access specifier.
   if (!Invalid && SearchDC->isRecord())

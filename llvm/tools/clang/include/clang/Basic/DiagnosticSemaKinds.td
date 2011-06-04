@@ -264,12 +264,8 @@ def warn_builtin_unknown : Warning<"use of unknown builtin %0">, DefaultError;
 def warn_dyn_class_memaccess : Warning<
   "%select{destination for|source of}0 this %1 call is a pointer to dynamic "
   "class %2; vtable pointer will be overwritten">, 
-  InGroup<DiagGroup<"non-pod-memaccess">>;
-def warn_non_pod_memaccess : Warning<
-  "%select{destination for|source of}0 this %1 call is a pointer to non-POD "
-  "type %2">,
-  InGroup<DiagGroup<"non-pod-memaccess">>, DefaultIgnore;
-def note_non_pod_memaccess_silence : Note<
+  InGroup<DiagGroup<"dynamic-class-memaccess">>;
+def note_bad_memaccess_silence : Note<
   "explicitly cast the pointer to silence this warning">;
 
 /// main()
@@ -1420,11 +1416,12 @@ def err_uninitialized_member_in_ctor : Error<
   "the %select{reference|const}2 member %3">;
 def warn_default_arg_makes_ctor_special : Warning<
   "addition of default argument on redeclaration makes this constructor a "
-  "%select{default|copy|move}0 constructor">;
+  "%select{default|copy|move}0 constructor">, InGroup<DefaultArgSpecialMember>;
 def note_previous_declaration_special : Note<
   // The ERRORs are in hopes that if they occur, they'll get reported.
   "previous declaration was %select{*ERROR*|a copy constructor|a move "
-  "constructor|*ERROR*|*ERROR*|*ERROR*|not a special member function}0">;
+  "constructor|*ERROR*|*ERROR*|*ERROR*|not a special member function}0">,
+  InGroup<DefaultArgSpecialMember>;
 
 def err_use_of_default_argument_to_function_declared_later : Error<
   "use of default argument to function %0 that is declared later in class %1">;
@@ -2563,6 +2560,14 @@ def warn_precedence_bitwise_rel : Warning<
 def note_precedence_bitwise_first : Note<
   "place parentheses around the %0 expression to evaluate it first">;
 def note_precedence_bitwise_silence : Note<
+  "place parentheses around the %0 expression to silence this warning">;
+
+def warn_precedence_conditional : Warning<
+  "?: has lower precedence than %0; %0 will be evaluated first">,
+  InGroup<Parentheses>;
+def note_precedence_conditional_first : Note<
+  "place parentheses around the ?: expression to evaluate it first">;
+def note_precedence_conditional_silence : Note<
   "place parentheses around the %0 expression to silence this warning">;
 
 def warn_logical_instead_of_bitwise : Warning<
@@ -4091,6 +4096,10 @@ def err_unknown_any_var_function_type : Error<
 
 def err_filter_expression_integral : Error<
   "filter expression type should be an integral value not %0">;
+
+// OpenCL warnings and errors.
+def err_invalid_astype_of_different_size : Error<
+  "invalid reinterpretation: sizes of %0 and %1 must match">;
 
 } // end of sema category
 

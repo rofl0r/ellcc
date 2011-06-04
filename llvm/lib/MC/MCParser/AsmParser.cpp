@@ -391,7 +391,8 @@ bool AsmParser::Error(SMLoc L, const Twine &Msg) {
 }
 
 bool AsmParser::EnterIncludeFile(const std::string &Filename) {
-  int NewBuf = SrcMgr.AddIncludeFile(Filename, Lexer.getLoc());
+  std::string IncludedFile;
+  int NewBuf = SrcMgr.AddIncludeFile(Filename, Lexer.getLoc(), IncludedFile);
   if (NewBuf == -1)
     return true;
 
@@ -2329,7 +2330,7 @@ bool GenericAsmParser::ParseRegisterOrRegisterNumber(int64_t &Register,
                                                      SMLoc DirectiveLoc) {
   unsigned RegNo;
 
-  if (getLexer().is(AsmToken::Percent)) {
+  if (getLexer().isNot(AsmToken::Integer)) {
     if (getParser().getTargetParser().ParseRegister(RegNo, DirectiveLoc,
       DirectiveLoc))
       return true;

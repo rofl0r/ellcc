@@ -4995,6 +4995,26 @@ Sema::ActOnCUDAExecConfigExpr(Scope *S, SourceLocation LLLLoc,
   return ActOnCallExpr(S, ConfigDR, LLLLoc, execConfig, GGGLoc, 0);
 }
 
+/// ActOnAsTypeExpr - create a new asType (bitcast) from the arguments.
+///
+/// __builtin_astype( value, dst type )
+///
+ExprResult Sema::ActOnAsTypeExpr(Expr *expr, ParsedType destty,
+                                 SourceLocation BuiltinLoc,
+                                 SourceLocation RParenLoc) {
+  ExprValueKind VK = VK_RValue;
+  ExprObjectKind OK = OK_Ordinary;
+  QualType DstTy = GetTypeFromParser(destty);
+  QualType SrcTy = expr->getType();
+  if (Context.getTypeSize(DstTy) != Context.getTypeSize(SrcTy))
+    return ExprError(Diag(BuiltinLoc,
+                          diag::err_invalid_astype_of_different_size)
+                     << DstTy.getAsString().c_str() 
+                     << SrcTy.getAsString().c_str()
+                     << expr->getSourceRange());
+  return Owned(new (Context) AsTypeExpr(expr, DstTy, VK, OK, BuiltinLoc, RParenLoc));
+}
+
 /// BuildResolvedCallExpr - Build a call to a resolved expression,
 /// i.e. an expression not of \p OverloadTy.  The expression should
 /// unary-convert to an expression of function-pointer or
@@ -6167,6 +6187,110 @@ QualType Sema::FindCompositeObjCPointerType(ExprResult &LHS, ExprResult &RHS,
   return QualType();
 }
 
+/// SuggestParentheses - Emit a diagnostic together with a fixit hint that wraps
+/// ParenRange in parentheses.
+static void SuggestParentheses(Sema &Self, SourceLocation Loc,
+                               const PartialDiagnostic &PD,
+                               const PartialDiagnostic &FirstNote,
+                               SourceRange FirstParenRange,
+                               const PartialDiagnostic &SecondNote,
+                               SourceRange SecondParenRange) {
+  Self.Diag(Loc, PD);
+
+  if (!FirstNote.getDiagID())
+    return;
+
+  SourceLocation EndLoc = Self.PP.getLocForEndOfToken(FirstParenRange.getEnd());
+  if (!FirstParenRange.getEnd().isFileID() || EndLoc.isInvalid()) {
+    // We can't display the parentheses, so just return.
+    return;
+  }
+
+  Self.Diag(Loc, FirstNote)
+    << FixItHint::CreateInsertion(FirstParenRange.getBegin(), "(")
+    << FixItHint::CreateInsertion(EndLoc, ")");
+
+  if (!SecondNote.getDiagID())
+    return;
+
+  EndLoc = Self.PP.getLocForEndOfToken(SecondParenRange.getEnd());
+  if (!SecondParenRange.getEnd().isFileID() || EndLoc.isInvalid()) {
+    // We can't display the parentheses, so just dig the
+    // warning/error and return.
+    Self.Diag(Loc, SecondNote);
+    return;
+  }
+
+  Self.Diag(Loc, SecondNote)
+    << FixItHint::CreateInsertion(SecondParenRange.getBegin(), "(")
+    << FixItHint::CreateInsertion(EndLoc, ")");
+}
+
+static bool IsArithmeticOp(BinaryOperatorKind Opc) {
+  return Opc >= BO_Mul && Opc <= BO_Shr;
+}
+
+static bool IsLogicOp(BinaryOperatorKind Opc) {
+  return (Opc >= BO_LT && Opc <= BO_NE) || (Opc >= BO_LAnd && Opc <= BO_LOr);
+}
+
+/// DiagnoseConditionalPrecedence - Emit a warning when a conditional operator
+/// and binary operator are mixed in a way that suggests the programmer assumed
+/// the conditional operator has higher precedence, for example:
+/// "int x = a + someBinaryCondition ? 1 : 2".
+static void DiagnoseConditionalPrecedence(Sema &Self,
+                                          SourceLocation OpLoc,
+                                          Expr *cond,
+                                          Expr *lhs,
+                                          Expr *rhs) {
+  while (ImplicitCastExpr *C = dyn_cast<ImplicitCastExpr>(cond))
+    cond = C->getSubExpr();
+
+  if (BinaryOperator *OP = dyn_cast<BinaryOperator>(cond)) {
+    if (!IsArithmeticOp(OP->getOpcode()))
+      return;
+
+    // Drill down on the RHS of the condition.
+    Expr *CondRHS = OP->getRHS();
+    while (ImplicitCastExpr *C = dyn_cast<ImplicitCastExpr>(CondRHS))
+      CondRHS = C->getSubExpr();
+    while (ParenExpr *P = dyn_cast<ParenExpr>(CondRHS))
+      CondRHS = P->getSubExpr();
+
+    bool CondRHSLooksBoolean = false;
+    if (CondRHS->getType()->isBooleanType())
+      CondRHSLooksBoolean = true;
+    else if (BinaryOperator *CondRHSOP = dyn_cast<BinaryOperator>(CondRHS))
+      CondRHSLooksBoolean = IsLogicOp(CondRHSOP->getOpcode());
+    else if (UnaryOperator *CondRHSOP = dyn_cast<UnaryOperator>(CondRHS))
+      CondRHSLooksBoolean = CondRHSOP->getOpcode() == UO_LNot;
+
+    if (CondRHSLooksBoolean) {
+      // The condition is an arithmetic binary expression, with a right-
+      // hand side that looks boolean, so warn.
+
+      PartialDiagnostic Warn = Self.PDiag(diag::warn_precedence_conditional)
+          << OP->getSourceRange()
+          << BinaryOperator::getOpcodeStr(OP->getOpcode());
+
+      PartialDiagnostic FirstNote =
+          Self.PDiag(diag::note_precedence_conditional_silence)
+          << BinaryOperator::getOpcodeStr(OP->getOpcode());
+
+      SourceRange FirstParenRange(OP->getLHS()->getLocStart(),
+                                  OP->getRHS()->getLocEnd());
+
+      PartialDiagnostic SecondNote =
+          Self.PDiag(diag::note_precedence_conditional_first);
+      SourceRange SecondParenRange(OP->getRHS()->getLocStart(),
+                                   rhs->getLocEnd());
+
+      SuggestParentheses(Self, OpLoc, Warn, FirstNote, FirstParenRange,
+                         SecondNote, SecondParenRange);
+    }
+  }
+}
+
 /// ActOnConditionalOp - Parse a ?: operation.  Note that 'LHS' may be null
 /// in the case of a the GNU conditional expr extension.
 ExprResult Sema::ActOnConditionalOp(SourceLocation QuestionLoc,
@@ -6210,6 +6334,9 @@ ExprResult Sema::ActOnConditionalOp(SourceLocation QuestionLoc,
   if (result.isNull() || Cond.isInvalid() || LHS.isInvalid() ||
       RHS.isInvalid())
     return ExprError();
+
+  DiagnoseConditionalPrecedence(*this, QuestionLoc, Cond.get(), LHS.get(),
+                                RHS.get());
 
   if (!commonExpr)
     return Owned(new (Context) ConditionalOperator(Cond.take(), QuestionLoc,
@@ -7536,7 +7663,7 @@ QualType Sema::CheckCompareOperands(ExprResult &lex, ExprResult &rex, SourceLoca
     // Comparison of pointers with null pointer constants and equality
     // comparisons of member pointers to null pointer constants.
     if (RHSIsNull &&
-        ((lType->isPointerType() || lType->isNullPtrType()) ||
+        ((lType->isAnyPointerType() || lType->isNullPtrType()) ||
          (!isRelational && lType->isMemberPointerType()))) {
       rex = ImpCastExprToType(rex.take(), lType, 
                         lType->isMemberPointerType()
@@ -7545,7 +7672,7 @@ QualType Sema::CheckCompareOperands(ExprResult &lex, ExprResult &rex, SourceLoca
       return ResultTy;
     }
     if (LHSIsNull &&
-        ((rType->isPointerType() || rType->isNullPtrType()) ||
+        ((rType->isAnyPointerType() || rType->isNullPtrType()) ||
          (!isRelational && rType->isMemberPointerType()))) {
       lex = ImpCastExprToType(lex.take(), rType, 
                         rType->isMemberPointerType()
@@ -7797,13 +7924,15 @@ inline QualType Sema::CheckLogicalOperands( // C99 6.5.[13,14]
     // If the RHS can be constant folded, and if it constant folds to something
     // that isn't 0 or 1 (which indicate a potential logical operation that
     // happened to fold to true/false) then warn.
+    // Parens on the RHS are ignored.
     Expr::EvalResult Result;
-    if (rex.get()->Evaluate(Result, Context) && !Result.HasSideEffects &&
-        Result.Val.getInt() != 0 && Result.Val.getInt() != 1) {
-      Diag(Loc, diag::warn_logical_instead_of_bitwise)
-       << rex.get()->getSourceRange()
-        << (Opc == BO_LAnd ? "&&" : "||")
-        << (Opc == BO_LAnd ? "&" : "|");
+    if (rex.get()->Evaluate(Result, Context) && !Result.HasSideEffects)
+      if ((getLangOptions().Bool && !rex.get()->getType()->isBooleanType()) ||
+          (Result.Val.getInt() != 0 && Result.Val.getInt() != 1)) {
+        Diag(Loc, diag::warn_logical_instead_of_bitwise)
+          << rex.get()->getSourceRange()
+          << (Opc == BO_LAnd ? "&&" : "||")
+          << (Opc == BO_LAnd ? "&" : "|");
     }
   }
   
@@ -8731,45 +8860,6 @@ ExprResult Sema::CreateBuiltinBinOp(SourceLocation OpLoc,
   return Owned(new (Context) CompoundAssignOperator(lhs.take(), rhs.take(), Opc,
                                                     ResultTy, VK, OK, CompLHSTy,
                                                     CompResultTy, OpLoc));
-}
-
-/// SuggestParentheses - Emit a diagnostic together with a fixit hint that wraps
-/// ParenRange in parentheses.
-static void SuggestParentheses(Sema &Self, SourceLocation Loc,
-                               const PartialDiagnostic &PD,
-                               const PartialDiagnostic &FirstNote,
-                               SourceRange FirstParenRange,
-                               const PartialDiagnostic &SecondNote,
-                               SourceRange SecondParenRange) {
-  Self.Diag(Loc, PD);
-
-  if (!FirstNote.getDiagID())
-    return;
-
-  SourceLocation EndLoc = Self.PP.getLocForEndOfToken(FirstParenRange.getEnd());
-  if (!FirstParenRange.getEnd().isFileID() || EndLoc.isInvalid()) {
-    // We can't display the parentheses, so just return.
-    return;
-  }
-
-  Self.Diag(Loc, FirstNote)
-    << FixItHint::CreateInsertion(FirstParenRange.getBegin(), "(")
-    << FixItHint::CreateInsertion(EndLoc, ")");
-
-  if (!SecondNote.getDiagID())
-    return;
-
-  EndLoc = Self.PP.getLocForEndOfToken(SecondParenRange.getEnd());
-  if (!SecondParenRange.getEnd().isFileID() || EndLoc.isInvalid()) {
-    // We can't display the parentheses, so just dig the
-    // warning/error and return.
-    Self.Diag(Loc, SecondNote);
-    return;
-  }
-
-  Self.Diag(Loc, SecondNote)
-    << FixItHint::CreateInsertion(SecondParenRange.getBegin(), "(")
-    << FixItHint::CreateInsertion(EndLoc, ")");
 }
 
 /// DiagnoseBitwisePrecedence - Emit a warning when bitwise and comparison

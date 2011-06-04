@@ -713,16 +713,13 @@ void CStringChecker::evalCopyCommon(CheckerContext &C,
   // If the size is zero, there won't be any actual memory access, so
   // just bind the return value to the destination buffer and return.
   if (stateZeroSize) {
+    stateZeroSize = stateZeroSize->BindExpr(CE, destVal);
     C.addTransition(stateZeroSize);
-    if (IsMempcpy)
-      state->BindExpr(CE, destVal);
-    else
-      state->BindExpr(CE, sizeVal);
-    return;
   }
 
   // If the size can be nonzero, we have to check the other arguments.
   if (stateNonZeroSize) {
+    state = stateNonZeroSize;
 
     // Ensure the destination is not null. If it is NULL there will be a
     // NULL pointer dereference.
@@ -739,42 +736,55 @@ void CStringChecker::evalCopyCommon(CheckerContext &C,
     if (!state)
       return;
 
-    // Ensure the buffers do not overlap.
-    state = stateNonZeroSize;
+    // Ensure the accesses are valid and that the buffers do not overlap.
     state = CheckBufferAccess(C, state, Size, Dest, Source,
                               /* FirstIsDst = */ true);
     if (Restricted)
       state = CheckOverlap(C, state, Size, Dest, Source);
 
-    if (state) {
+    if (!state)
+      return;
 
-      // If this is mempcpy, get the byte after the last byte copied and 
-      // bind the expr.
-      if (IsMempcpy) {
-        loc::MemRegionVal *destRegVal = dyn_cast<loc::MemRegionVal>(&destVal);
-        
-        // Get the length to copy.
-        SVal lenVal = state->getSVal(Size);
-        NonLoc *lenValNonLoc = dyn_cast<NonLoc>(&lenVal);
-        
+    // If this is mempcpy, get the byte after the last byte copied and 
+    // bind the expr.
+    if (IsMempcpy) {
+      loc::MemRegionVal *destRegVal = dyn_cast<loc::MemRegionVal>(&destVal);
+      assert(destRegVal && "Destination should be a known MemRegionVal here");
+      
+      // Get the length to copy.
+      NonLoc *lenValNonLoc = dyn_cast<NonLoc>(&sizeVal);
+      
+      if (lenValNonLoc) {
         // Get the byte after the last byte copied.
         SVal lastElement = C.getSValBuilder().evalBinOpLN(state, BO_Add, 
                                                           *destRegVal,
                                                           *lenValNonLoc, 
                                                           Dest->getType());
-        
+      
         // The byte after the last byte copied is the return value.
         state = state->BindExpr(CE, lastElement);
+      } else {
+        // If we don't know how much we copied, we can at least
+        // conjure a return value for later.
+        unsigned Count = C.getNodeBuilder().getCurrentBlockCount();
+        SVal result =
+          C.getSValBuilder().getConjuredSymbolVal(NULL, CE, Count);
+        state = state->BindExpr(CE, result);
       }
 
-      // Invalidate the destination.
-      // FIXME: Even if we can't perfectly model the copy, we should see if we
-      // can use LazyCompoundVals to copy the source values into the destination.
-      // This would probably remove any existing bindings past the end of the
-      // copied region, but that's still an improvement over blank invalidation.
-      state = InvalidateBuffer(C, state, Dest, state->getSVal(Dest));
-      C.addTransition(state);
+    } else {
+      // All other copies return the destination buffer.
+      // (Well, bcopy() has a void return type, but this won't hurt.)
+      state = state->BindExpr(CE, destVal);
     }
+
+    // Invalidate the destination.
+    // FIXME: Even if we can't perfectly model the copy, we should see if we
+    // can use LazyCompoundVals to copy the source values into the destination.
+    // This would probably remove any existing bindings past the end of the
+    // copied region, but that's still an improvement over blank invalidation.
+    state = InvalidateBuffer(C, state, Dest, state->getSVal(Dest));
+    C.addTransition(state);
   }
 }
 
@@ -784,7 +794,7 @@ void CStringChecker::evalMemcpy(CheckerContext &C, const CallExpr *CE) const {
   // The return value is the address of the destination buffer.
   const Expr *Dest = CE->getArg(0);
   const GRState *state = C.getState();
-  state = state->BindExpr(CE, state->getSVal(Dest));
+
   evalCopyCommon(C, CE, state, CE->getArg(2), Dest, CE->getArg(1), true);
 }
 
@@ -802,7 +812,7 @@ void CStringChecker::evalMemmove(CheckerContext &C, const CallExpr *CE) const {
   // The return value is the address of the destination buffer.
   const Expr *Dest = CE->getArg(0);
   const GRState *state = C.getState();
-  state = state->BindExpr(CE, state->getSVal(Dest));
+
   evalCopyCommon(C, CE, state, CE->getArg(2), Dest, CE->getArg(1));
 }
 
@@ -955,7 +965,7 @@ void CStringChecker::evalStrcpy(CheckerContext &C, const CallExpr *CE) const {
 }
 
 void CStringChecker::evalStrncpy(CheckerContext &C, const CallExpr *CE) const {
-  // char *strcpy(char *restrict dst, const char *restrict src);
+  // char *strncpy(char *restrict dst, const char *restrict src, size_t n);
   evalStrcpyCommon(C, CE, 
                    /* returnEnd = */ false, 
                    /* isBounded = */ true,
@@ -1237,7 +1247,7 @@ bool CStringChecker::evalCall(const CallExpr *CE, CheckerContext &C) const {
 
   FnCheck evalFunction = llvm::StringSwitch<FnCheck>(Name)
     .Cases("memcpy", "__memcpy_chk", &CStringChecker::evalMemcpy)
-    .Case("mempcpy", &CStringChecker::evalMempcpy)
+    .Cases("mempcpy", "__mempcpy_chk", &CStringChecker::evalMempcpy)
     .Cases("memcmp", "bcmp", &CStringChecker::evalMemcmp)
     .Cases("memmove", "__memmove_chk", &CStringChecker::evalMemmove)
     .Cases("strcpy", "__strcpy_chk", &CStringChecker::evalStrcpy)

@@ -773,10 +773,8 @@ void CodeGenFunction::EmitReturnStmt(const ReturnStmt &S) {
 void CodeGenFunction::EmitDeclStmt(const DeclStmt &S) {
   // As long as debug info is modeled with instructions, we have to ensure we
   // have a place to insert here and write the stop point here.
-  if (getDebugInfo()) {
-    EnsureInsertPoint();
+  if (getDebugInfo() && HaveInsertPoint())
     EmitStopPoint(&S);
-  }
 
   for (DeclStmt::const_decl_iterator I = S.decl_begin(), E = S.decl_end();
        I != E; ++I)
@@ -1431,8 +1429,8 @@ void CodeGenFunction::EmitAsmStmt(const AsmStmt &S) {
     const Expr *OutExpr = S.getOutputExpr(i);
     OutExpr = OutExpr->IgnoreParenNoopCasts(getContext());
 
-    OutputConstraint = AddVariableConstraints(OutputConstraint, *OutExpr, Target,
-                                             CGM, S);
+    OutputConstraint = AddVariableConstraints(OutputConstraint, *OutExpr,
+                                              Target, CGM, S);
 
     LValue Dest = EmitLValue(OutExpr);
     if (!Constraints.empty())

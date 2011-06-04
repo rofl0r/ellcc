@@ -257,6 +257,13 @@ private:
     /// AST file.
     const uint32_t *SLocOffsets;
 
+    /// \brief The number of source location file entries in this AST file.
+    unsigned LocalNumSLocFileEntries;
+
+    /// \brief Offsets for all of the source location file entries in the
+    /// AST file.
+    const uint32_t *SLocFileOffsets;
+
     /// \brief The entire size of this module's source location offset range.
     unsigned LocalSLocSize;
 
@@ -789,6 +796,10 @@ private:
   /// \brief Reads a statement from the specified cursor.
   Stmt *ReadStmtFromStream(PerFileData &F);
 
+  /// \brief Get a FileEntry out of stored-in-PCH filename, making sure we take
+  /// into account all the necessary relocations.
+  const FileEntry *getFileEntry(llvm::StringRef filename);
+
   void MaybeAddSystemRootToFilename(std::string &Filename);
 
   ASTReadResult ReadASTCore(llvm::StringRef FileName, ASTFileType Type);
@@ -887,6 +898,10 @@ public:
   /// \brief Load the precompiled header designated by the given file
   /// name.
   ASTReadResult ReadAST(const std::string &FileName, ASTFileType Type);
+
+  /// \brief Checks that no file that is stored in PCH is out-of-sync with
+  /// the actual file in the file system.
+  ASTReadResult validateFileEntries();
 
   /// \brief Set the AST callbacks listener.
   void setListener(ASTReaderListener *listener) {

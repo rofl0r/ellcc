@@ -15,6 +15,7 @@
 #include "clang/Sema/Template.h"
 #include "clang/Basic/OpenCL.h"
 #include "clang/AST/ASTContext.h"
+#include "clang/AST/ASTMutationListener.h"
 #include "clang/AST/CXXInheritance.h"
 #include "clang/AST/DeclObjC.h"
 #include "clang/AST/DeclTemplate.h"
@@ -1479,41 +1480,37 @@ static void DiagnoseIgnoredQualifiers(unsigned Quals,
   FixItHint VolatileFixIt;
   FixItHint RestrictFixIt;
 
+  const SourceManager &SM = S.getSourceManager();
+
   // FIXME: The locations here are set kind of arbitrarily. It'd be nicer to
   // find a range and grow it to encompass all the qualifiers, regardless of
   // the order in which they textually appear.
   if (Quals & Qualifiers::Const) {
     ConstFixIt = FixItHint::CreateRemoval(ConstQualLoc);
-    Loc = ConstQualLoc;
-    ++NumQuals;
     QualStr = "const";
+    ++NumQuals;
+    if (!Loc.isValid() || SM.isBeforeInTranslationUnit(ConstQualLoc, Loc))
+      Loc = ConstQualLoc;
   }
   if (Quals & Qualifiers::Volatile) {
     VolatileFixIt = FixItHint::CreateRemoval(VolatileQualLoc);
-    if (NumQuals == 0) {
-      Loc = VolatileQualLoc;
-      QualStr = "volatile";
-    } else {
-      QualStr += " volatile";
-    }
+    QualStr += (NumQuals == 0 ? "volatile" : " volatile");
     ++NumQuals;
+    if (!Loc.isValid() || SM.isBeforeInTranslationUnit(VolatileQualLoc, Loc))
+      Loc = VolatileQualLoc;
   }
   if (Quals & Qualifiers::Restrict) {
     RestrictFixIt = FixItHint::CreateRemoval(RestrictQualLoc);
-    if (NumQuals == 0) {
-      Loc = RestrictQualLoc;
-      QualStr = "restrict";
-    } else {
-      QualStr += " restrict";
-    }
+    QualStr += (NumQuals == 0 ? "restrict" : " restrict");
     ++NumQuals;
+    if (!Loc.isValid() || SM.isBeforeInTranslationUnit(RestrictQualLoc, Loc))
+      Loc = RestrictQualLoc;
   }
 
   assert(NumQuals > 0 && "No known qualifiers?");
 
   S.Diag(Loc, diag::warn_qual_return_type)
-    << QualStr << NumQuals
-    << ConstFixIt << VolatileFixIt << RestrictFixIt;
+    << QualStr << NumQuals << ConstFixIt << VolatileFixIt << RestrictFixIt;
 }
 
 /// GetTypeForDeclarator - Convert the type for the specified
@@ -3277,12 +3274,33 @@ bool Sema::RequireCompleteExprType(Expr *E, const PartialDiagnostic &PD,
       if (VarDecl *Var = dyn_cast<VarDecl>(DRE->getDecl())) {
         if (Var->isStaticDataMember() &&
             Var->getInstantiatedFromStaticDataMember()) {
-          InstantiateStaticDataMemberDefinition(E->getExprLoc(), Var);
-          // Update the type to the newly instantiated definition's type both
-          // here and within the expression.
-          T = Var->getDefinition()->getType();
-          E->setType(T);
-
+          
+          MemberSpecializationInfo *MSInfo = Var->getMemberSpecializationInfo();
+          assert(MSInfo && "Missing member specialization information?");
+          if (MSInfo->getTemplateSpecializationKind()
+                != TSK_ExplicitSpecialization) {
+            // If we don't already have a point of instantiation, this is it.
+            if (MSInfo->getPointOfInstantiation().isInvalid()) {
+              MSInfo->setPointOfInstantiation(E->getLocStart());
+              
+              // This is a modification of an existing AST node. Notify 
+              // listeners.
+              if (ASTMutationListener *L = getASTMutationListener())
+                L->StaticDataMemberInstantiated(Var);
+            }
+            
+            InstantiateStaticDataMemberDefinition(E->getExprLoc(), Var);
+            
+            // Update the type to the newly instantiated definition's type both
+            // here and within the expression.
+            if (VarDecl *Def = Var->getDefinition()) {
+              DRE->setDecl(Def);
+              T = Def->getType();
+              DRE->setType(T);
+              E->setType(T);
+            }
+          }
+          
           // We still go on to try to complete the type independently, as it
           // may also require instantiations or diagnostics if it remains
           // incomplete.

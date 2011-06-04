@@ -282,6 +282,12 @@ static SDValue getCopyFromPartsVector(SelectionDAG &DAG, DebugLoc DL,
     // Vector/Vector bitcast.
     return DAG.getNode(ISD::BITCAST, DL, ValueVT, Val);
   }
+  
+  // Trivial bitcast if the types are the same size and the destination
+  // vector type is legal.
+  if (PartVT.getSizeInBits() == ValueVT.getSizeInBits() &&
+      TLI.isTypeLegal(ValueVT))
+    return DAG.getNode(ISD::BITCAST, DL, ValueVT, Val);
 
   assert(ValueVT.getVectorElementType() == PartVT &&
          ValueVT.getVectorNumElements() == 1 &&
@@ -5729,7 +5735,11 @@ void SelectionDAGBuilder::visitInlineAsm(ImmutableCallSite CS) {
       // Memory operands really want the address of the value.  If we don't have
       // an indirect input, put it in the constpool if we can, otherwise spill
       // it to a stack slot.
-
+      // TODO: This isn't quite right. We need to handle these according to
+      // the addressing mode that the constraint wants. Also, this may take
+      // an additional register for the computation and we don't want that
+      // either.
+      
       // If the operand is a float, integer, or vector constant, spill to a
       // constant pool entry to get its address.
       const Value *OpVal = OpInfo.CallOperandVal;
@@ -5930,7 +5940,7 @@ void SelectionDAGBuilder::visitInlineAsm(ImmutableCallSite CS) {
 
       if (OpInfo.ConstraintType == TargetLowering::C_Other) {
         std::vector<SDValue> Ops;
-        TLI.LowerAsmOperandForConstraint(InOperandVal, OpInfo.ConstraintCode[0],
+        TLI.LowerAsmOperandForConstraint(InOperandVal, OpInfo.ConstraintCode,
                                          Ops, DAG);
         if (Ops.empty())
           report_fatal_error("Invalid operand for inline asm constraint '" +

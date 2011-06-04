@@ -2658,6 +2658,16 @@ CXCursorKind clang::getCursorKindForDecl(Decl *D) {
     case Decl::UnresolvedUsingTypename: 
       return CXCursor_UsingDeclaration;
       
+    case Decl::ObjCPropertyImpl:
+      switch (cast<ObjCPropertyImplDecl>(D)->getPropertyImplementation()) {
+      case ObjCPropertyImplDecl::Dynamic:
+        return CXCursor_ObjCDynamicDecl;
+          
+      case ObjCPropertyImplDecl::Synthesize:
+        return CXCursor_ObjCSynthesizeDecl;
+      }
+      break;
+      
     default:
       if (TagDecl *TD = dyn_cast<TagDecl>(D)) {
         switch (TD->getTagKind()) {
@@ -6188,7 +6198,28 @@ static void AddObjCKeyValueCompletions(ObjCPropertyDecl *Property,
        
       Builder.AddTypedTextChunk(Allocator.CopyString(SelectorName));
       Results.AddResult(Result(Builder.TakeString(), CCP_CodePattern, 
-                              CXCursor_ObjCInstanceMethodDecl));
+                              CXCursor_ObjCClassMethodDecl));
+    }
+  }
+
+  // + (BOOL)automaticallyNotifiesObserversForKey
+  if (!IsInstanceMethod &&
+      (ReturnType.isNull() ||
+       ReturnType->isIntegerType() || 
+       ReturnType->isBooleanType())) {
+    std::string SelectorName 
+      = (llvm::Twine("automaticallyNotifiesObserversOf") + UpperKey).str();
+    IdentifierInfo *SelectorId = &Context.Idents.get(SelectorName);
+    if (KnownSelectors.insert(Selectors.getNullarySelector(SelectorId))) {
+      if (ReturnType.isNull()) {
+        Builder.AddChunk(CodeCompletionString::CK_LeftParen);
+        Builder.AddTextChunk("BOOL");
+        Builder.AddChunk(CodeCompletionString::CK_RightParen);
+      }
+       
+      Builder.AddTypedTextChunk(Allocator.CopyString(SelectorName));
+      Results.AddResult(Result(Builder.TakeString(), CCP_CodePattern, 
+                              CXCursor_ObjCClassMethodDecl));
     }
   }
 }
