@@ -255,19 +255,8 @@ void MipsAsmPrinter::EmitFunctionBodyEnd() {
 /// the predecessor and this block is a fall-through.
 bool MipsAsmPrinter::isBlockOnlyReachableByFallthrough(const MachineBasicBlock*
                                                        MBB) const {
-  // If this is a landing pad, it isn't a fall through.  If it has no preds,
-  // then nothing falls through to it.
-  if (MBB->isLandingPad() || MBB->pred_empty())
-    return false;
-
-  // If there isn't exactly one predecessor, it can't be a fall through.
-  MachineBasicBlock::const_pred_iterator PI = MBB->pred_begin(), PI2 = PI;
-  ++PI2;
-  if (PI2 != MBB->pred_end())
-    return false;
-
   // The predecessor has to be immediately before this block.
-  const MachineBasicBlock *Pred = *PI;
+  const MachineBasicBlock *Pred = *MBB->pred_begin();
 
   // If the predecessor is a switch statement, assume a jump table
   // implementation, so it is not a fall through.
@@ -281,7 +270,7 @@ bool MipsAsmPrinter::isBlockOnlyReachableByFallthrough(const MachineBasicBlock*
     return false;
 
   // If there isn't exactly one predecessor, it can't be a fall through.
-  PI = MBB->pred_begin(), PI2 = PI;
+  MachineBasicBlock::const_pred_iterator PI = MBB->pred_begin(), PI2 = PI;
   ++PI2;
  
   if (PI2 != MBB->pred_end())

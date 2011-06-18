@@ -125,9 +125,6 @@ MipsTargetLowering(MipsTargetMachine &TM)
   setOperationAction(ISD::UREM, MVT::i32, Expand);
 
   // Operations not directly supported by Mips.
-  setOperationAction(ISD::VAARG,              MVT::Other, Expand);
-  setOperationAction(ISD::VACOPY,             MVT::Other, Expand);
-  setOperationAction(ISD::VAEND,              MVT::Other, Expand);
   setOperationAction(ISD::BR_JT,             MVT::Other, Expand);
   setOperationAction(ISD::BR_CC,             MVT::Other, Expand);
   setOperationAction(ISD::SELECT_CC,         MVT::Other, Expand);
@@ -163,6 +160,10 @@ MipsTargetLowering(MipsTargetMachine &TM)
   setOperationAction(ISD::EXCEPTIONADDR,     MVT::i32, Expand);
   setOperationAction(ISD::EHSELECTION,       MVT::i32, Expand);
   
+  setOperationAction(ISD::VAARG,              MVT::Other, Expand);
+  setOperationAction(ISD::VACOPY,             MVT::Other, Expand);
+  setOperationAction(ISD::VAEND,              MVT::Other, Expand);
+  //
   // Use the default for now
   setOperationAction(ISD::STACKSAVE,         MVT::Other, Expand);
   setOperationAction(ISD::STACKRESTORE,      MVT::Other, Expand);
