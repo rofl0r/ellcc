@@ -468,6 +468,7 @@ void ASTDeclReader::VisitObjCMethodDecl(ObjCMethodDecl *MD) {
   MD->setDefined(Record[Idx++]);
   MD->setDeclImplementation((ObjCMethodDecl::ImplementationControl)Record[Idx++]);
   MD->setObjCDeclQualifier((Decl::ObjCDeclQualifier)Record[Idx++]);
+  MD->SetRelatedResultType(Record[Idx++]);
   MD->setNumSelectorArgs(unsigned(Record[Idx++]));
   MD->setResultType(Reader.GetType(Record[Idx++]));
   MD->setResultTypeSourceInfo(GetTypeSourceInfo(Record, Idx));
@@ -676,8 +677,11 @@ void ASTDeclReader::VisitObjCPropertyImplDecl(ObjCPropertyImplDecl *D) {
 void ASTDeclReader::VisitFieldDecl(FieldDecl *FD) {
   VisitDeclaratorDecl(FD);
   FD->setMutable(Record[Idx++]);
-  if (Record[Idx++])
+  int BitWidthOrInitializer = Record[Idx++];
+  if (BitWidthOrInitializer == 1)
     FD->setBitWidth(Reader.ReadExpr(F));
+  else if (BitWidthOrInitializer == 2)
+    FD->setInClassInitializer(Reader.ReadExpr(F));
   if (!FD->getDeclName()) {
     FieldDecl *Tmpl = cast_or_null<FieldDecl>(Reader.GetDecl(Record[Idx++]));
     if (Tmpl)
@@ -706,6 +710,7 @@ void ASTDeclReader::VisitVarDecl(VarDecl *VD) {
   VD->VarDeclBits.ExceptionVar = Record[Idx++];
   VD->VarDeclBits.NRVOVariable = Record[Idx++];
   VD->VarDeclBits.CXXForRangeDecl = Record[Idx++];
+  VD->VarDeclBits.ARCPseudoStrong = Record[Idx++];
   if (Record[Idx++])
     VD->setInit(Reader.ReadExpr(F));
 
@@ -1648,7 +1653,7 @@ Decl *ASTReader::ReadDeclRecord(unsigned Index, DeclID ID) {
     break;
   case DECL_FIELD:
     D = FieldDecl::Create(*Context, 0, SourceLocation(), SourceLocation(), 0,
-                          QualType(), 0, 0, false);
+                          QualType(), 0, 0, false, false);
     break;
   case DECL_INDIRECTFIELD:
     D = IndirectFieldDecl::Create(*Context, 0, SourceLocation(), 0, QualType(),

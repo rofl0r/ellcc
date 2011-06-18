@@ -77,6 +77,12 @@ public:
   unsigned FixWhatYouCan : 1;              ///< Apply fixes even if there are
                                            /// unfixable errors.
 
+  enum {
+    ARCMT_None,
+    ARCMT_Check,
+    ARCMT_Modify
+  } ARCMTAction;
+
   /// The input files and their types.
   std::vector<std::pair<InputKind, std::string> > Inputs;
 
@@ -131,6 +137,7 @@ public:
     ShowStats = 0;
     ShowTimers = 0;
     ShowVersion = 0;
+    ARCMTAction = ARCMT_None;
   }
 
   /// getInputKindForExtension - Return the appropriate input kind for a file

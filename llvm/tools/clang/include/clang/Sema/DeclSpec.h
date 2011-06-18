@@ -40,6 +40,7 @@ namespace clang {
   class NamespaceDecl;
   class NestedNameSpecifier;
   class NestedNameSpecifierLoc;
+  class ObjCDeclSpec;
   class Preprocessor;
   class Declarator;
   struct TemplateIdAnnotation;
@@ -344,6 +345,8 @@ private:
   void SaveWrittenBuiltinSpecs();
   void SaveStorageSpecifierAsWritten();
 
+  ObjCDeclSpec *ObjCQualifiers;
+
   static bool isTypeRep(TST T) {
     return (T == TST_typename || T == TST_typeofType ||
             T == TST_underlyingType);
@@ -383,7 +386,8 @@ public:
       ProtocolQualifiers(0),
       NumProtocolQualifiers(0),
       ProtocolLocs(0),
-      writtenBS() {
+      writtenBS(),
+      ObjCQualifiers(0) {
   }
   ~DeclSpec() {
     delete [] ProtocolQualifiers;
@@ -653,6 +657,9 @@ public:
     return writtenBS;
   }
 
+  ObjCDeclSpec *getObjCQualifiers() const { return ObjCQualifiers; }
+  void setObjCQualifiers(ObjCDeclSpec *quals) { ObjCQualifiers = quals; }
+
   /// isMissingDeclaratorOk - This checks if this DeclSpec can stand alone,
   /// without a Declarator. Only tag declspecs can stand alone.
   bool isMissingDeclaratorOk();
@@ -689,7 +696,10 @@ public:
     DQ_PR_copy = 0x20,
     DQ_PR_nonatomic = 0x40,
     DQ_PR_setter = 0x80,
-    DQ_PR_atomic = 0x100
+    DQ_PR_atomic = 0x100,
+    DQ_PR_weak =   0x200,
+    DQ_PR_strong = 0x400,
+    DQ_PR_unsafe_unretained = 0x800
   };
 
 
@@ -723,7 +733,7 @@ private:
   ObjCDeclQualifier objcDeclQualifier : 6;
 
   // NOTE: VC++ treats enums as signed, avoid using ObjCPropertyAttributeKind
-  unsigned PropertyAttributes : 9;
+  unsigned PropertyAttributes : 12;
   IdentifierInfo *GetterName;    // getter name of NULL if no getter
   IdentifierInfo *SetterName;    // setter name of NULL if no setter
 };
@@ -1078,8 +1088,8 @@ struct DeclaratorChunk {
     /// If this is an invalid location, there is no ref-qualifier.
     unsigned RefQualifierLoc;
 
-    /// \brief When ExceptionSpecType isn't EST_None, the location of the
-    /// keyword introducing the spec.
+    /// \brief When ExceptionSpecType isn't EST_None or EST_Delayed, the
+    /// location of the keyword introducing the spec.
     unsigned ExceptionSpecLoc;
 
     /// ArgInfo - This is a pointer to a new[]'d array of ParamInfo objects that
@@ -1614,6 +1624,29 @@ public:
     assert(!DeclTypeInfo.empty() && "No type chunks to drop.");
     DeclTypeInfo.front().destroy();
     DeclTypeInfo.erase(DeclTypeInfo.begin());
+  }
+
+  /// isArrayOfUnknownBound - This method returns true if the declarator
+  /// is a declarator for an array of unknown bound (looking through
+  /// parentheses).
+  bool isArrayOfUnknownBound() const {
+    for (unsigned i = 0, i_end = DeclTypeInfo.size(); i < i_end; ++i) {
+      switch (DeclTypeInfo[i].Kind) {
+      case DeclaratorChunk::Paren:
+        continue;
+      case DeclaratorChunk::Function:
+      case DeclaratorChunk::Pointer:
+      case DeclaratorChunk::Reference:
+      case DeclaratorChunk::BlockPointer:
+      case DeclaratorChunk::MemberPointer:
+        return false;
+      case DeclaratorChunk::Array:
+        return !DeclTypeInfo[i].Arr.NumElts;
+      }
+      llvm_unreachable("Invalid type chunk");
+      return false;
+    }
+    return false;
   }
 
   /// isFunctionDeclarator - This method returns true if the declarator

@@ -112,6 +112,11 @@ def ccc_print_phases : Flag<"-ccc-print-phases">, CCCDebugOpt,
 def ccc_print_bindings : Flag<"-ccc-print-bindings">, CCCDebugOpt,
   HelpText<"Show bindings of tools to actions">;
 
+def ccc_arrmt_check : Flag<"-ccc-arrmt-check">, CCCDriverOpt,
+  HelpText<"Check for ARC migration issues that need manual handling">;
+def ccc_arrmt_modify : Flag<"-ccc-arrmt-modify">, CCCDriverOpt,
+  HelpText<"Apply modifications to files to conform to ARC">;
+
 // Make sure all other -ccc- options are rejected.
 def ccc_ : Joined<"-ccc-">, Group<ccc_Group>, Flags<[Unsupported]>;
 
@@ -382,6 +387,10 @@ def fno_verbose_asm : Flag<"-fno-verbose-asm">, Group<f_Group>;
 def fno_working_directory : Flag<"-fno-working-directory">, Group<f_Group>;
 def fno_wrapv : Flag<"-fno-wrapv">, Group<f_Group>;
 def fno_zero_initialized_in_bss : Flag<"-fno-zero-initialized-in-bss">, Group<f_Group>;
+def fobjc_arc : Flag<"-fobjc-arc">, Group<f_Group>;
+def fno_objc_arc : Flag<"-fno-objc-arc">, Group<f_Group>;
+def fobjc_arc_exceptions : Flag<"-fobjc-arc-exceptions">, Group<f_Group>;
+def fno_objc_arc_exceptions : Flag<"-fno-objc-arc-exceptions">, Group<f_Group>;
 def fobjc_atdefs : Flag<"-fobjc-atdefs">, Group<clang_ignored_f_Group>;
 def fobjc_call_cxx_cdtors : Flag<"-fobjc-call-cxx-cdtors">, Group<clang_ignored_f_Group>;
 def fobjc_default_synthesize_properties : 
@@ -392,6 +401,10 @@ def fobjc_gc_only : Flag<"-fobjc-gc-only">, Group<f_Group>;
 def fobjc_gc : Flag<"-fobjc-gc">, Group<f_Group>;
 def fobjc_legacy_dispatch : Flag<"-fobjc-legacy-dispatch">, Group<f_Group>;
 def fobjc_new_property : Flag<"-fobjc-new-property">, Group<clang_ignored_f_Group>;
+def fobjc_infer_related_result_type : Flag<"-fobjc-infer-related-result-type">, 
+                                      Group<f_Group>;
+def fno_objc_infer_related_result_type : Flag<
+  "-fno-objc-infer-related-result-type">, Group<f_Group>;
 
 // Objective-C ABI options.
 def fobjc_abi_version_EQ : Joined<"-fobjc-abi-version=">, Group<f_Group>;
@@ -405,6 +418,7 @@ def fomit_frame_pointer : Flag<"-fomit-frame-pointer">, Group<f_Group>;
 def fopenmp : Flag<"-fopenmp">, Group<f_Group>;
 def force__cpusubtype__ALL : Flag<"-force_cpusubtype_ALL">;
 def force__flat__namespace : Flag<"-force_flat_namespace">;
+def force__load : Separate<"-force_load">;
 def foutput_class_dir_EQ : Joined<"-foutput-class-dir=">, Group<f_Group>;
 def fpascal_strings : Flag<"-fpascal-strings">, Group<f_Group>;
 def fpch_preprocess : Flag<"-fpch-preprocess">, Group<f_Group>;

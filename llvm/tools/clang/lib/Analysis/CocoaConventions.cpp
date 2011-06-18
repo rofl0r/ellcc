@@ -7,7 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file defines 
+// This file implements cocoa naming convention analysis. 
 //
 //===----------------------------------------------------------------------===//
 
@@ -44,6 +44,7 @@ cocoa::NamingConvention cocoa::deriveNamingConvention(Selector S) {
   case OMF_release:
   case OMF_retain:
   case OMF_retainCount:
+  case OMF_self:
     return NoConvention;
 
   case OMF_init:

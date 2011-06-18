@@ -18,6 +18,7 @@
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/ExprObjC.h"
 #include "clang/AST/CharUnits.h"
+#include "clang/Frontend/CodeGenOptions.h"
 #include "clang/Basic/ABI.h"
 #include "clang/Basic/TargetInfo.h"
 #include "llvm/ADT/DenseMap.h"
@@ -63,6 +64,7 @@ namespace clang {
   class ObjCAtTryStmt;
   class ObjCAtThrowStmt;
   class ObjCAtSynchronizedStmt;
+  class ObjCAutoreleasePoolStmt;
 
 namespace CodeGen {
   class CodeGenTypes;
@@ -568,6 +570,10 @@ public:
   /// CurGD - The GlobalDecl for the current function being compiled.
   GlobalDecl CurGD;
 
+  /// PrologueCleanupDepth - The cleanup depth enclosing all the
+  /// cleanups associated with the parameters.
+  EHScopeStack::stable_iterator PrologueCleanupDepth;
+
   /// ReturnBlock - Unified return block.
   JumpDest ReturnBlock;
 
@@ -583,6 +589,9 @@ public:
   llvm::AssertingVH<llvm::Instruction> AllocaInsertPt;
 
   bool CatchUndefined;
+
+  /// In ARC, whether we should autorelease the return value.
+  bool AutoreleaseResult;
 
   const CodeGen::CGBlockInfo *BlockInfo;
   llvm::Value *BlockPointer;
@@ -1048,6 +1057,9 @@ public:
   void disableDebugInfo() { DisableDebugInfo = true; }
   void enableDebugInfo() { DisableDebugInfo = false; }
 
+  bool shouldUseFusedARCCalls() {
+    return CGM.getCodeGenOpts().OptimizationLevel == 0;
+  }
 
   const LangOptions &getLangOptions() const { return CGM.getLangOptions(); }
 
@@ -1345,7 +1357,8 @@ public:
   /// CreateAggTemp - Create a temporary memory object for the given
   /// aggregate type.
   AggValueSlot CreateAggTemp(QualType T, const llvm::Twine &Name = "tmp") {
-    return AggValueSlot::forAddr(CreateMemTemp(T, Name), false, false);
+    return AggValueSlot::forAddr(CreateMemTemp(T, Name), T.getQualifiers(),
+                                 false);
   }
 
   /// Emit a cast to void* in the appropriate address space.
@@ -1379,14 +1392,12 @@ public:
   /// EmitAnyExprToMem - Emits the code necessary to evaluate an
   /// arbitrary expression into the given memory location.
   void EmitAnyExprToMem(const Expr *E, llvm::Value *Location,
-                        bool IsLocationVolatile,
-                        bool IsInitializer);
+                        Qualifiers Quals, bool IsInitializer);
 
   /// EmitExprAsInit - Emits the code necessary to initialize a
   /// location in memory with the given initializer.
-  void EmitExprAsInit(const Expr *init, const VarDecl *var,
-                      llvm::Value *loc, CharUnits alignment,
-                      bool capturedByInit);
+  void EmitExprAsInit(const Expr *init, const ValueDecl *D,
+                      LValue lvalue, bool capturedByInit);
 
   /// EmitAggregateCopy - Emit an aggrate copy.
   ///
@@ -1584,6 +1595,10 @@ public:
   /// This function can be called with a null (unreachable) insert point.
   void EmitVarDecl(const VarDecl &D);
 
+  void EmitScalarInit(const Expr *init, const ValueDecl *D,
+                      LValue lvalue, bool capturedByInit);
+  void EmitScalarInit(llvm::Value *init, LValue lvalue);
+
   typedef void SpecialInitFn(CodeGenFunction &Init, const VarDecl &D,
                              llvm::Value *Address);
 
@@ -1709,6 +1724,7 @@ public:
   void EmitObjCAtTryStmt(const ObjCAtTryStmt &S);
   void EmitObjCAtThrowStmt(const ObjCAtThrowStmt &S);
   void EmitObjCAtSynchronizedStmt(const ObjCAtSynchronizedStmt &S);
+  void EmitObjCAutoreleasePoolStmt(const ObjCAutoreleasePoolStmt &S);
 
   llvm::Constant *getUnwindResumeFn();
   llvm::Constant *getUnwindResumeOrRethrowFn();
@@ -1774,6 +1790,7 @@ public:
   llvm::Value *EmitLoadOfScalar(llvm::Value *Addr, bool Volatile,
                                 unsigned Alignment, QualType Ty,
                                 llvm::MDNode *TBAAInfo = 0);
+  llvm::Value *EmitLoadOfScalar(LValue lvalue);
 
   /// EmitStoreOfScalar - Store a scalar value to an address, taking
   /// care to appropriately convert from the memory representation to
@@ -1781,6 +1798,7 @@ public:
   void EmitStoreOfScalar(llvm::Value *Value, llvm::Value *Addr,
                          bool Volatile, unsigned Alignment, QualType Ty,
                          llvm::MDNode *TBAAInfo = 0);
+  void EmitStoreOfScalar(llvm::Value *value, LValue lvalue);
 
   /// EmitLoadOfLValue - Given an expression that represents a value lvalue,
   /// this method emits the address of the lvalue, then loads the result as an
@@ -1960,6 +1978,64 @@ public:
   llvm::Value *EmitObjCSelectorExpr(const ObjCSelectorExpr *E);
   RValue EmitObjCMessageExpr(const ObjCMessageExpr *E,
                              ReturnValueSlot Return = ReturnValueSlot());
+
+  /// Retrieves the default cleanup kind for an ARC cleanup.
+  /// Except under -fobjc-arc-eh, ARC cleanups are normal-only.
+  CleanupKind getARCCleanupKind() {
+    return CGM.getCodeGenOpts().ObjCAutoRefCountExceptions
+             ? NormalAndEHCleanup : NormalCleanup;
+  }
+
+  // ARC primitives.
+  void EmitARCInitWeak(llvm::Value *value, llvm::Value *addr);
+  void EmitARCDestroyWeak(llvm::Value *addr);
+  llvm::Value *EmitARCLoadWeak(llvm::Value *addr);
+  llvm::Value *EmitARCLoadWeakRetained(llvm::Value *addr);
+  llvm::Value *EmitARCStoreWeak(llvm::Value *value, llvm::Value *addr,
+                                bool ignored);
+  void EmitARCCopyWeak(llvm::Value *dst, llvm::Value *src);
+  void EmitARCMoveWeak(llvm::Value *dst, llvm::Value *src);
+  llvm::Value *EmitARCRetainAutorelease(QualType type, llvm::Value *value);
+  llvm::Value *EmitARCRetainAutoreleaseNonBlock(llvm::Value *value);
+  llvm::Value *EmitARCStoreStrong(LValue addr, QualType type,
+                                  llvm::Value *value, bool ignored);
+  llvm::Value *EmitARCStoreStrongCall(llvm::Value *addr, llvm::Value *value,
+                                      bool ignored);
+  llvm::Value *EmitARCRetain(QualType type, llvm::Value *value);
+  llvm::Value *EmitARCRetainNonBlock(llvm::Value *value);
+  llvm::Value *EmitARCRetainBlock(llvm::Value *value);
+  void EmitARCRelease(llvm::Value *value, bool precise);
+  llvm::Value *EmitARCAutorelease(llvm::Value *value);
+  llvm::Value *EmitARCAutoreleaseReturnValue(llvm::Value *value);
+  llvm::Value *EmitARCRetainAutoreleaseReturnValue(llvm::Value *value);
+  llvm::Value *EmitARCRetainAutoreleasedReturnValue(llvm::Value *value);
+
+  std::pair<LValue,llvm::Value*>
+  EmitARCStoreAutoreleasing(const BinaryOperator *e);
+  std::pair<LValue,llvm::Value*>
+  EmitARCStoreStrong(const BinaryOperator *e, bool ignored);
+
+  llvm::Value *EmitObjCProduceObject(QualType T, llvm::Value *Ptr);
+  llvm::Value *EmitObjCConsumeObject(QualType T, llvm::Value *Ptr);
+  llvm::Value *EmitObjCExtendObjectLifetime(QualType T, llvm::Value *Ptr);
+
+  llvm::Value *EmitARCRetainScalarExpr(const Expr *expr);
+  llvm::Value *EmitARCRetainAutoreleaseScalarExpr(const Expr *expr);
+
+  void PushARCReleaseCleanup(CleanupKind kind, QualType type,
+                             llvm::Value *addr, bool precise);
+  void PushARCWeakReleaseCleanup(CleanupKind kind, QualType type,
+                                 llvm::Value *addr);
+  void PushARCFieldReleaseCleanup(CleanupKind cleanupKind,
+                                  const FieldDecl *Field);
+  void PushARCFieldWeakReleaseCleanup(CleanupKind cleanupKind,
+                                      const FieldDecl *Field);
+
+  void EmitObjCAutoreleasePoolPop(llvm::Value *Ptr); 
+  llvm::Value *EmitObjCAutoreleasePoolPush();
+  llvm::Value *EmitObjCMRRAutoreleasePoolPush();
+  void EmitObjCAutoreleasePoolCleanup(llvm::Value *Ptr);
+  void EmitObjCMRRAutoreleasePoolPop(llvm::Value *Ptr); 
 
   /// EmitReferenceBindingToExpr - Emits a reference binding to the passed in
   /// expression. Will emit a temporary variable if E is not an LValue.

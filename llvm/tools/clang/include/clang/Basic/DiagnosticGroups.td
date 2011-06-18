@@ -115,6 +115,7 @@ def SignCompare : DiagGroup<"sign-compare">;
 def : DiagGroup<"stack-protector">;
 def : DiagGroup<"switch-default">;
 def : DiagGroup<"synth">;
+def SizeofArrayArgument : DiagGroup<"sizeof-array-argument">;
 def TautologicalCompare : DiagGroup<"tautological-compare">;
 def HeaderHygiene : DiagGroup<"header-hygiene">;
 
@@ -168,6 +169,8 @@ def ImplicitAtomic : DiagGroup<"implicit-atomic-properties">;
 def CustomAtomic : DiagGroup<"custom-atomic-properties">;
 def AtomicProperties : DiagGroup<"atomic-properties",
                                  [ImplicitAtomic, CustomAtomic]>;
+def AutomaticReferenceCountingABI : DiagGroup<"arc-abi">;
+def AutomaticReferenceCounting : DiagGroup<"arc", [AutomaticReferenceCountingABI]>;
 def Selector : DiagGroup<"selector">;
 def NonfragileAbi2 : DiagGroup<"nonfragile-abi2">;
 def Protocol : DiagGroup<"protocol">;
@@ -217,12 +220,12 @@ def Unused : DiagGroup<"unused",
 
 // Format settings.
 def FormatSecurity : DiagGroup<"format-security">;
+def FormatY2K : DiagGroup<"format-y2k">;
 def Format : DiagGroup<"format",
                        [FormatExtraArgs, FormatZeroLength, NonNull,
-                        FormatSecurity]>,
+                        FormatSecurity, FormatY2K]>,
              DiagCategory<"Format String Issue">;
 def FormatNonLiteral : DiagGroup<"format-nonliteral", [FormatSecurity]>;
-def FormatY2K : DiagGroup<"format-y2k", [Format]>;
 def Format2 : DiagGroup<"format=2",
                         [FormatNonLiteral, FormatSecurity, FormatY2K]>;
 
@@ -248,6 +251,7 @@ def Most : DiagGroup<"most", [
     ReturnType,
     SelfAssignment,
     Switch,
+    SizeofArrayArgument,
     Trigraphs,
     Uninitialized,
     UnknownPragmas,

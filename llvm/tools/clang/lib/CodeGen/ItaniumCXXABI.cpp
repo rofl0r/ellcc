@@ -24,6 +24,7 @@
 #include "CodeGenModule.h"
 #include <clang/AST/Mangle.h>
 #include <clang/AST/Type.h>
+#include <llvm/Intrinsics.h>
 #include <llvm/Target/TargetData.h>
 #include <llvm/Value.h>
 
@@ -802,10 +803,27 @@ bool ItaniumCXXABI::NeedsArrayCookie(const CXXNewExpr *expr) {
   if (expr->doesUsualArrayDeleteWantSize())
     return true;
 
+  // Automatic Reference Counting:
+  //   We need an array cookie for pointers with strong or weak lifetime.
+  QualType AllocatedType = expr->getAllocatedType();
+  if (getContext().getLangOptions().ObjCAutoRefCount &&
+      AllocatedType->isObjCLifetimeType()) {
+    switch (AllocatedType.getObjCLifetime()) {
+    case Qualifiers::OCL_None:
+    case Qualifiers::OCL_ExplicitNone:
+    case Qualifiers::OCL_Autoreleasing:
+      return false;
+      
+    case Qualifiers::OCL_Strong:
+    case Qualifiers::OCL_Weak:
+      return true;
+    }
+  }
+
   // Otherwise, if the class has a non-trivial destructor, it always
   // needs a cookie.
   const CXXRecordDecl *record =
-    expr->getAllocatedType()->getBaseElementTypeUnsafe()->getAsCXXRecordDecl();
+    AllocatedType->getBaseElementTypeUnsafe()->getAsCXXRecordDecl();
   return (record && !record->hasTrivialDestructor());
 }
 
@@ -816,6 +834,22 @@ bool ItaniumCXXABI::NeedsArrayCookie(const CXXDeleteExpr *expr,
   if (expr->doesUsualArrayDeleteWantSize())
     return true;
 
+  // Automatic Reference Counting:
+  //   We need an array cookie for pointers with strong or weak lifetime.
+  if (getContext().getLangOptions().ObjCAutoRefCount &&
+      elementType->isObjCLifetimeType()) {
+    switch (elementType.getObjCLifetime()) {
+    case Qualifiers::OCL_None:
+    case Qualifiers::OCL_ExplicitNone:
+    case Qualifiers::OCL_Autoreleasing:
+      return false;
+
+    case Qualifiers::OCL_Strong:
+    case Qualifiers::OCL_Weak:
+      return true;
+    }
+  }
+  
   // Otherwise, if the class has a non-trivial destructor, it always
   // needs a cookie.
   const CXXRecordDecl *record =
@@ -1055,19 +1089,19 @@ void ItaniumCXXABI::EmitGuardedInit(CodeGenFunction &CGF,
 
   // We only need to use thread-safe statics for local variables;
   // global initialization is always single-threaded.
-  bool ThreadsafeStatics = (getContext().getLangOptions().ThreadsafeStatics &&
-                            D.isLocalVarDecl());
+  bool threadsafe =
+    (getContext().getLangOptions().ThreadsafeStatics && D.isLocalVarDecl());
 
   const llvm::IntegerType *GuardTy;
 
   // If we have a global variable with internal linkage and thread-safe statics
   // are disabled, we can just let the guard variable be of type i8.
-  bool UseInt8GuardVariable = !ThreadsafeStatics && GV->hasInternalLinkage();
-  if (UseInt8GuardVariable)
-    GuardTy = Builder.getInt8Ty();
-  else {
+  bool useInt8GuardVariable = !threadsafe && GV->hasInternalLinkage();
+  if (useInt8GuardVariable) {
+    GuardTy = CGF.Int8Ty;
+  } else {
     // Guard variables are 64 bits in the generic ABI and 32 bits on ARM.
-    GuardTy = (IsARM ? Builder.getInt32Ty() : Builder.getInt64Ty());
+    GuardTy = (IsARM ? CGF.Int32Ty : CGF.Int64Ty);
   }
   const llvm::PointerType *GuardPtrTy = GuardTy->getPointerTo();
 
@@ -1099,7 +1133,7 @@ void ItaniumCXXABI::EmitGuardedInit(CodeGenFunction &CGF,
   //       if (__cxa_guard_acquire(&obj_guard))
   //         ...
   //     }
-  if (IsARM && !UseInt8GuardVariable) {
+  if (IsARM && !useInt8GuardVariable) {
     llvm::Value *V = Builder.CreateLoad(GuardVariable);
     V = Builder.CreateAnd(V, Builder.getInt32(1));
     IsInitialized = Builder.CreateIsNull(V, "guard.uninitialized");
@@ -1130,13 +1164,16 @@ void ItaniumCXXABI::EmitGuardedInit(CodeGenFunction &CGF,
   llvm::BasicBlock *InitCheckBlock = CGF.createBasicBlock("init.check");
   llvm::BasicBlock *EndBlock = CGF.createBasicBlock("init.end");
 
+  llvm::BasicBlock *NoCheckBlock = EndBlock;
+  if (threadsafe) NoCheckBlock = CGF.createBasicBlock("init.barrier");
+
   // Check if the first byte of the guard variable is zero.
-  Builder.CreateCondBr(IsInitialized, InitCheckBlock, EndBlock);
+  Builder.CreateCondBr(IsInitialized, InitCheckBlock, NoCheckBlock);
 
   CGF.EmitBlock(InitCheckBlock);
 
   // Variables used when coping with thread-safe statics and exceptions.
-  if (ThreadsafeStatics) {    
+  if (threadsafe) {    
     // Call __cxa_guard_acquire.
     llvm::Value *V
       = Builder.CreateCall(getGuardAcquireFn(CGM, GuardPtrTy), GuardVariable);
@@ -1155,7 +1192,7 @@ void ItaniumCXXABI::EmitGuardedInit(CodeGenFunction &CGF,
   // Emit the initializer and add a global destructor if appropriate.
   CGF.EmitCXXGlobalVarDeclInit(D, GV);
 
-  if (ThreadsafeStatics) {
+  if (threadsafe) {
     // Pop the guard-abort cleanup if we pushed one.
     CGF.PopCleanupBlock();
 
@@ -1163,6 +1200,24 @@ void ItaniumCXXABI::EmitGuardedInit(CodeGenFunction &CGF,
     Builder.CreateCall(getGuardReleaseFn(CGM, GuardPtrTy), GuardVariable);
   } else {
     Builder.CreateStore(llvm::ConstantInt::get(GuardTy, 1), GuardVariable);
+  }
+
+  // Emit an acquire memory barrier if using thread-safe statics:
+  // Itanium ABI:
+  //   An implementation supporting thread-safety on multiprocessor
+  //   systems must also guarantee that references to the initialized
+  //   object do not occur before the load of the initialization flag.
+  if (threadsafe) {
+    Builder.CreateBr(EndBlock);
+    CGF.EmitBlock(NoCheckBlock);
+
+    llvm::Value *_false = Builder.getFalse();
+    llvm::Value *_true = Builder.getTrue();
+
+    Builder.CreateCall5(CGM.getIntrinsic(llvm::Intrinsic::memory_barrier),
+                        /* load-load, load-store */ _true, _true,
+                        /* store-load, store-store */ _false, _false,
+                        /* device or I/O */ _false);
   }
 
   CGF.EmitBlock(EndBlock);

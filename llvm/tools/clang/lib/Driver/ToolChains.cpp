@@ -26,6 +26,7 @@
 
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -41,7 +42,8 @@ using namespace clang::driver::toolchains;
 /// Darwin - Darwin tool chain for i386 and x86_64.
 
 Darwin::Darwin(const HostInfo &Host, const llvm::Triple& Triple)
-  : ToolChain(Host, Triple), TargetInitialized(false)
+  : ToolChain(Host, Triple), TargetInitialized(false),
+    ARCRuntimeForSimulator(ARCSimulator_None)
 {
   // Compute the initial Darwin version based on the host.
   bool HadExtra;
@@ -68,6 +70,25 @@ types::ID Darwin::LookupTypeForExtension(const char *Ext) const {
 
 bool Darwin::HasNativeLLVMSupport() const {
   return true;
+}
+
+/// Darwin provides an ARC runtime starting in MacOS X 10.7 and iOS 5.0.
+bool Darwin::HasARCRuntime() const {
+  // FIXME: Remove this once there is a proper way to detect an ARC runtime
+  // for the simulator.
+  switch (ARCRuntimeForSimulator) {
+  case ARCSimulator_None:
+    break;
+  case ARCSimulator_HasARCRuntime:
+    return true;
+  case ARCSimulator_NoARCRuntime:
+    return false;
+  }
+
+  if (isTargetIPhoneOS())
+    return !isIPhoneOSVersionLT(5);
+  else
+    return !isMacosxVersionLT(10, 7);
 }
 
 // FIXME: Can we tablegen this?
@@ -320,6 +341,30 @@ void DarwinClang::AddLinkSearchPathArgs(const ArgList &Args,
     CmdArgs.push_back(Args.MakeArgString("-L" + P.str()));
 }
 
+void DarwinClang::AddLinkARCArgs(const ArgList &Args,
+                                 ArgStringList &CmdArgs) const {
+  
+  CmdArgs.push_back("-force_load");    
+  llvm::sys::Path P(getDriver().ClangExecutable);
+  P.eraseComponent(); // 'clang'
+  P.eraseComponent(); // 'bin'
+  P.appendComponent("lib");
+  P.appendComponent("arc");
+  P.appendComponent("libarclite_");
+  std::string s = P.str();
+  // Mash in the platform.
+  if (isTargetIPhoneOS())
+    s += "iphoneos";
+  // FIXME: isTargetIphoneOSSimulator() is not returning true.
+  else if (ARCRuntimeForSimulator != ARCSimulator_None)
+    s += "iphonesimulator";
+  else
+    s += "macosx";
+  s += ".a";
+
+  CmdArgs.push_back(Args.MakeArgString(s));
+}
+
 void DarwinClang::AddLinkRuntimeLibArgs(const ArgList &Args,
                                         ArgStringList &CmdArgs) const {
   // Darwin doesn't support real static executables, don't link any runtime
@@ -389,6 +434,35 @@ void DarwinClang::AddLinkRuntimeLibArgs(const ArgList &Args,
   }
 }
 
+static inline llvm::StringRef SimulatorVersionDefineName() {
+  return "__IPHONE_OS_VERSION_MIN_REQUIRED";
+}
+
+/// \brief Parse the simulator version define:
+/// __IPHONE_OS_VERSION_MIN_REQUIRED=([0-9])([0-9][0-9])([0-9][0-9])
+// and return the grouped values as integers, e.g:
+//   __IPHONE_OS_VERSION_MIN_REQUIRED=40201
+// will return Major=4, Minor=2, Micro=1.
+static bool GetVersionFromSimulatorDefine(llvm::StringRef define,
+                                          unsigned &Major, unsigned &Minor,
+                                          unsigned &Micro) {
+  assert(define.startswith(SimulatorVersionDefineName()));
+  llvm::StringRef name, version;
+  llvm::tie(name, version) = define.split('=');
+  if (version.empty())
+    return false;
+  std::string verstr = version.str();
+  char *end;
+  unsigned num = (unsigned) strtol(verstr.c_str(), &end, 10);
+  if (*end != '\0')
+    return false;
+  Major = num / 10000;
+  num = num % 10000;
+  Minor = num / 100;
+  Micro = num % 100;
+  return true;
+}
+
 void Darwin::AddDeploymentTarget(DerivedArgList &Args) const {
   const OptTable &Opts = getDriver().getOpts();
 
@@ -396,6 +470,27 @@ void Darwin::AddDeploymentTarget(DerivedArgList &Args) const {
   Arg *iOSVersion = Args.getLastArg(options::OPT_miphoneos_version_min_EQ);
   Arg *iOSSimVersion = Args.getLastArg(
     options::OPT_mios_simulator_version_min_EQ);
+
+  // FIXME: HACK! When compiling for the simulator we don't get a
+  // '-miphoneos-version-min' to help us know whether there is an ARC runtime
+  // or not; try to parse a __IPHONE_OS_VERSION_MIN_REQUIRED
+  // define passed in command-line.
+  if (!iOSVersion) {
+    for (arg_iterator it = Args.filtered_begin(options::OPT_D),
+           ie = Args.filtered_end(); it != ie; ++it) {
+      llvm::StringRef define = (*it)->getValue(Args);
+      if (define.startswith(SimulatorVersionDefineName())) {
+        unsigned Major, Minor, Micro;
+        if (GetVersionFromSimulatorDefine(define, Major, Minor, Micro) &&
+            Major < 10 && Minor < 100 && Micro < 100) {
+          ARCRuntimeForSimulator = Major < 5 ? ARCSimulator_NoARCRuntime
+                                             : ARCSimulator_HasARCRuntime;
+        }
+        break;
+      }
+    }
+  }
+
   if (OSXVersion && (iOSVersion || iOSSimVersion)) {
     getDriver().Diag(clang::diag::err_drv_argument_not_allowed_with)
           << OSXVersion->getAsString(Args)
@@ -1201,6 +1296,7 @@ enum LinuxDistro {
   UbuntuLucid,
   UbuntuMaverick,
   UbuntuNatty,
+  UbuntuOneiric,
   UnknownDistro
 };
 
@@ -1224,7 +1320,7 @@ static bool IsUbuntu(enum LinuxDistro Distro) {
   return Distro == UbuntuHardy  || Distro == UbuntuIntrepid ||
          Distro == UbuntuLucid  || Distro == UbuntuMaverick ||
          Distro == UbuntuJaunty || Distro == UbuntuKarmic ||
-         Distro == UbuntuNatty;
+         Distro == UbuntuNatty  || Distro == UbuntuOneiric;
 }
 
 static bool IsDebianBased(enum LinuxDistro Distro) {
@@ -1269,6 +1365,8 @@ static LinuxDistro DetectLinuxDistro(llvm::Triple::ArchType Arch) {
         return UbuntuMaverick;
       else if (Lines[i] == "DISTRIB_CODENAME=natty")
         return UbuntuNatty;
+      else if (Lines[i] == "DISTRIB_CODENAME=oneiric")
+        return UbuntuOneiric;
     }
     return UnknownDistro;
   }
@@ -1418,6 +1516,9 @@ Linux::Linux(const HostInfo &Host, const llvm::Triple &Triple)
     else if (!llvm::sys::fs::exists("/usr/lib/gcc/x86_64-pc-linux-gnu",
              Exists) && Exists)
       GccTriple = "x86_64-pc-linux-gnu";
+    else if (!llvm::sys::fs::exists("/usr/lib/gcc/x86_64-redhat-linux6E",
+             Exists) && Exists)
+      GccTriple = "x86_64-redhat-linux6E";
     else if (!llvm::sys::fs::exists("/usr/lib/gcc/x86_64-redhat-linux",
              Exists) && Exists)
       GccTriple = "x86_64-redhat-linux";
@@ -1497,7 +1598,7 @@ Linux::Linux(const HostInfo &Host, const llvm::Triple &Triple)
     ExtraOpts.push_back("-X");
 
   if (IsRedhat(Distro) || IsOpenSuse(Distro) || Distro == UbuntuMaverick ||
-      Distro == UbuntuNatty)
+      Distro == UbuntuNatty || Distro == UbuntuOneiric)
     ExtraOpts.push_back("--hash-style=gnu");
 
   if (IsDebian(Distro) || IsOpenSuse(Distro) || Distro == UbuntuLucid ||
@@ -1512,7 +1613,7 @@ Linux::Linux(const HostInfo &Host, const llvm::Triple &Triple)
       (IsRedhat(Distro) && Distro != RHEL4 && Distro != RHEL5) ||
       Distro == UbuntuLucid ||
       Distro == UbuntuMaverick || Distro == UbuntuKarmic ||
-      Distro == UbuntuNatty)
+      Distro == UbuntuNatty || Distro == UbuntuOneiric)
     ExtraOpts.push_back("--build-id");
 
   if (IsOpenSuse(Distro))

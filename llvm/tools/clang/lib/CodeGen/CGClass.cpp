@@ -398,7 +398,8 @@ static void EmitBaseInitializer(CodeGenFunction &CGF,
                                               BaseClassDecl,
                                               isBaseVirtual);
 
-  AggValueSlot AggSlot = AggValueSlot::forAddr(V, false, /*Lifetime*/ true);
+  AggValueSlot AggSlot = AggValueSlot::forAddr(V, Qualifiers(), 
+                                               /*Lifetime*/ true);
 
   CGF.EmitAggExpr(BaseInit->getInit(), AggSlot);
   
@@ -428,10 +429,18 @@ static void EmitAggMemberInitializer(CodeGenFunction &CGF,
       CGF.Builder.CreateStore(Next, ArrayIndexVar);      
     }
 
-    AggValueSlot Slot = AggValueSlot::forAddr(Dest, LHS.isVolatileQualified(),
-                                              /*Lifetime*/ true);
-    
-    CGF.EmitAggExpr(MemberInit->getInit(), Slot);
+    if (!CGF.hasAggregateLLVMType(T)) {
+      LValue lvalue = CGF.MakeAddrLValue(Dest, T);
+      CGF.EmitScalarInit(MemberInit->getInit(), /*decl*/ 0, lvalue, false);
+    } else if (T->isAnyComplexType()) {
+      CGF.EmitComplexExprIntoAddr(MemberInit->getInit(), Dest, 
+                                  LHS.isVolatileQualified());
+    } else {    
+      AggValueSlot Slot = AggValueSlot::forAddr(Dest, LHS.getQuals(),
+                                                /*Lifetime*/ true);
+      
+      CGF.EmitAggExpr(MemberInit->getInit(), Slot);
+    }
     
     return;
   }
@@ -520,6 +529,7 @@ static void EmitMemberInitializer(CodeGenFunction &CGF,
                                   FunctionArgList &Args) {
   assert(MemberInit->isAnyMemberInitializer() &&
          "Must have member initializer!");
+  assert(MemberInit->getInit() && "Must have initializer!");
   
   // non-static data member initializers.
   FieldDecl *Field = MemberInit->getAnyMember();
@@ -539,15 +549,15 @@ static void EmitMemberInitializer(CodeGenFunction &CGF,
 
   // FIXME: If there's no initializer and the CXXCtorInitializer
   // was implicitly generated, we shouldn't be zeroing memory.
-  RValue RHS;
-  if (FieldType->isReferenceType()) {
-    RHS = CGF.EmitReferenceBindingToExpr(MemberInit->getInit(), Field);
-    CGF.EmitStoreThroughLValue(RHS, LHS, FieldType);
-  } else if (FieldType->isArrayType() && !MemberInit->getInit()) {
+  if (FieldType->isArrayType() && !MemberInit->getInit()) {
     CGF.EmitNullInitialization(LHS.getAddress(), Field->getType());
   } else if (!CGF.hasAggregateLLVMType(Field->getType())) {
-    RHS = RValue::get(CGF.EmitScalarExpr(MemberInit->getInit()));
-    CGF.EmitStoreThroughLValue(RHS, LHS, FieldType);
+    if (LHS.isSimple()) {
+      CGF.EmitExprAsInit(MemberInit->getInit(), Field, LHS, false);
+    } else {
+      RValue RHS = RValue::get(CGF.EmitScalarExpr(MemberInit->getInit()));
+      CGF.EmitStoreThroughLValue(RHS, LHS, FieldType);
+    }
   } else if (MemberInit->getInit()->getType()->isAnyComplexType()) {
     CGF.EmitComplexExprIntoAddr(MemberInit->getInit(), LHS.getAddress(),
                                 LHS.isVolatileQualified());
@@ -575,11 +585,11 @@ static void EmitMemberInitializer(CodeGenFunction &CGF,
       llvm::Value *Zero = llvm::Constant::getNullValue(SizeTy);
       CGF.Builder.CreateStore(Zero, ArrayIndexVar);
       
-      // If we are copying an array of scalars or classes with trivial copy 
+      // If we are copying an array of PODs or classes with trivial copy 
       // constructors, perform a single aggregate copy.
-      const RecordType *Record = BaseElementTy->getAs<RecordType>();
-      if (!Record || 
-          cast<CXXRecordDecl>(Record->getDecl())->hasTrivialCopyConstructor()) {
+      const CXXRecordDecl *Record = BaseElementTy->getAsCXXRecordDecl();
+      if (BaseElementTy.isPODType(CGF.getContext()) ||
+          (Record && Record->hasTrivialCopyConstructor())) {
         // Find the source pointer. We knows it's the last argument because
         // we know we're in a copy constructor.
         unsigned SrcArgIndex = Args.size() - 1;
@@ -924,12 +934,8 @@ namespace {
     CallArrayFieldDtor(const FieldDecl *Field) : Field(Field) {}
 
     void Emit(CodeGenFunction &CGF, bool IsForEH) {
-      QualType FieldType = Field->getType();
-      const ConstantArrayType *Array =
-        CGF.getContext().getAsConstantArrayType(FieldType);
-      
-      QualType BaseType =
-        CGF.getContext().getBaseElementType(Array->getElementType());
+      QualType FieldType = Field->getType();      
+      QualType BaseType = CGF.getContext().getBaseElementType(FieldType);
       const CXXRecordDecl *FieldClassDecl = BaseType->getAsCXXRecordDecl();
 
       llvm::Value *ThisPtr = CGF.LoadCXXThis();
@@ -937,9 +943,12 @@ namespace {
                                           // FIXME: Qualifiers?
                                           /*CVRQualifiers=*/0);
 
-      const llvm::Type *BasePtr = CGF.ConvertType(BaseType)->getPointerTo();
-      llvm::Value *BaseAddrPtr =
-        CGF.Builder.CreateBitCast(LHS.getAddress(), BasePtr);
+      const llvm::Type *BasePtr 
+        = CGF.ConvertType(BaseType)->getPointerTo();
+      llvm::Value *BaseAddrPtr
+        = CGF.Builder.CreateBitCast(LHS.getAddress(), BasePtr);
+      const ConstantArrayType *Array
+        = CGF.getContext().getAsConstantArrayType(FieldType);
       CGF.EmitCXXAggrDestructorCall(FieldClassDecl->getDestructor(),
                                     Array, BaseAddrPtr);
     }
@@ -1041,19 +1050,26 @@ void CodeGenFunction::EnterDtorCleanups(const CXXDestructorDecl *DD,
       getContext().getAsConstantArrayType(FieldType);
     if (Array)
       FieldType = getContext().getBaseElementType(Array->getElementType());
-    
-    const RecordType *RT = FieldType->getAs<RecordType>();
-    if (!RT)
-      continue;
-    
-    CXXRecordDecl *FieldClassDecl = cast<CXXRecordDecl>(RT->getDecl());
-    if (FieldClassDecl->hasTrivialDestructor())
-        continue;
 
-    if (Array)
-      EHStack.pushCleanup<CallArrayFieldDtor>(NormalAndEHCleanup, Field);
-    else
-      EHStack.pushCleanup<CallFieldDtor>(NormalAndEHCleanup, Field);
+    switch (FieldType.isDestructedType()) {
+    case QualType::DK_none:
+      continue;
+        
+    case QualType::DK_cxx_destructor:
+      if (Array)
+        EHStack.pushCleanup<CallArrayFieldDtor>(NormalAndEHCleanup, Field);
+      else
+        EHStack.pushCleanup<CallFieldDtor>(NormalAndEHCleanup, Field);
+      break;
+        
+    case QualType::DK_objc_strong_lifetime:
+      PushARCFieldReleaseCleanup(getARCCleanupKind(), Field);
+      break;
+
+    case QualType::DK_objc_weak_lifetime:
+      PushARCFieldWeakReleaseCleanup(getARCCleanupKind(), Field);
+      break;
+    }
   }
 }
 
@@ -1383,7 +1399,8 @@ CodeGenFunction::EmitDelegatingCXXConstructorCall(const CXXConstructorDecl *Ctor
 
   llvm::Value *ThisPtr = LoadCXXThis();
 
-  AggValueSlot AggSlot = AggValueSlot::forAddr(ThisPtr, false, /*Lifetime*/ true);
+  AggValueSlot AggSlot =
+    AggValueSlot::forAddr(ThisPtr, Qualifiers(), /*Lifetime*/ true);
 
   EmitAggExpr(Ctor->init_begin()[0]->getInit(), AggSlot);
 

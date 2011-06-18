@@ -1,7 +1,7 @@
-// RUN: %clang_cc1 -analyze -analyzer-checker=core,cplusplus.experimental.CString,deadcode.experimental.UnreachableCode -analyzer-store=region -Wno-null-dereference -verify %s
-// RUN: %clang_cc1 -analyze -DUSE_BUILTINS -analyzer-checker=core,cplusplus.experimental.CString,deadcode.experimental.UnreachableCode -analyzer-store=region -Wno-null-dereference -verify %s
-// RUN: %clang_cc1 -analyze -DVARIANT -analyzer-checker=core,cplusplus.experimental.CString,deadcode.experimental.UnreachableCode -analyzer-store=region -Wno-null-dereference -verify %s
-// RUN: %clang_cc1 -analyze -DUSE_BUILTINS -DVARIANT -analyzer-checker=core,cplusplus.experimental.CString,deadcode.experimental.UnreachableCode -analyzer-store=region -Wno-null-dereference -verify %s
+// RUN: %clang_cc1 -analyze -analyzer-checker=core,unix.experimental.CString,deadcode.experimental.UnreachableCode -analyzer-store=region -Wno-null-dereference -verify %s
+// RUN: %clang_cc1 -analyze -DUSE_BUILTINS -analyzer-checker=core,unix.experimental.CString,deadcode.experimental.UnreachableCode -analyzer-store=region -Wno-null-dereference -verify %s
+// RUN: %clang_cc1 -analyze -DVARIANT -analyzer-checker=core,unix.experimental.CString,deadcode.experimental.UnreachableCode -analyzer-store=region -Wno-null-dereference -verify %s
+// RUN: %clang_cc1 -analyze -DUSE_BUILTINS -DVARIANT -analyzer-checker=core,unix.experimental.CString,deadcode.experimental.UnreachableCode -analyzer-store=region -Wno-null-dereference -verify %s
 
 //===----------------------------------------------------------------------===
 // Declarations
@@ -199,76 +199,59 @@ label:
   return strnlen((char*)&&label, 3); // expected-warning{{Argument to byte string function is the address of the label 'label', which is not a null-terminated string}}
 }
 
-void strnlen_subregion() {
-  struct two_stringsn { char a[2], b[2]; };
-  extern void use_two_stringsn(struct two_stringsn *);
-
-  struct two_stringsn z;
-  use_two_stringsn(&z);
-
-  size_t a = strnlen(z.a, 10);
-  z.b[0] = 5;
-  size_t b = strnlen(z.a, 10);
-  if (a == 0 && b != 0)
-    (void)*(char*)0; // expected-warning{{never executed}}
-
-  use_two_stringsn(&z);
-
-  size_t c = strnlen(z.a, 10);
-  if (a == 0 && c != 0)
-    (void)*(char*)0; // expected-warning{{null}}
-}
-
-extern void use_stringn(char *);
-void strnlen_argument(char *x) {
-  size_t a = strnlen(x, 10);
-  size_t b = strnlen(x, 10);
-  if (a == 0 && b != 0)
-    (void)*(char*)0; // expected-warning{{never executed}}
-
-  use_stringn(x);
-
-  size_t c = strnlen(x, 10);
-  if (a == 0 && c != 0)
-    (void)*(char*)0; // expected-warning{{null}}  
-}
-
-extern char global_strn[];
-void strnlen_global() {
-  size_t a = strnlen(global_strn, 10);
-  size_t b = strnlen(global_strn, 10);
-  if (a == 0 && b != 0)
-    (void)*(char*)0; // expected-warning{{never executed}}
-
-  // Call a function with unknown effects, which should invalidate globals.
-  use_stringn(0);
-
-  size_t c = strnlen(global_str, 10);
-  if (a == 0 && c != 0)
-    (void)*(char*)0; // expected-warning{{null}}  
-}
-
-void strnlen_indirect(char *x) {
-  size_t a = strnlen(x, 10);
-  char *p = x;
-  char **p2 = &p;
-  size_t b = strnlen(x, 10);
-  if (a == 0 && b != 0)
-    (void)*(char*)0; // expected-warning{{never executed}}
-
-  extern void use_stringn_ptr(char*const*);
-  use_stringn_ptr(p2);
-
-  size_t c = strnlen(x, 10);
-  if (a == 0 && c != 0)
-    (void)*(char*)0; // expected-warning{{null}}
-}
-
-void strnlen_liveness(const char *x) {
-  if (strnlen(x, 10) < 5)
-    return;
-  if (strnlen(x, 10) < 5)
+void strnlen_zero() {
+  if (strnlen("abc", 0) != 0)
     (void)*(char*)0; // no-warning
+  if (strnlen(NULL, 0) != 0) // no-warning
+    (void)*(char*)0; // no-warning
+}
+
+size_t strnlen_compound_literal() {
+  // This used to crash because we don't model the string lengths of
+  // compound literals.
+  return strnlen((char[]) { 'a', 'b', 0 }, 1);
+}
+
+size_t strnlen_unknown_limit(float f) {
+  // This used to crash because we don't model the integer values of floats.
+  return strnlen("abc", (int)f);
+}
+
+void strnlen_is_not_strlen(char *x) {
+  if (strnlen(x, 10) != strlen(x))
+    (void)*(char*)0; // expected-warning{{null}}
+}
+
+void strnlen_at_limit(char *x) {
+  size_t len = strnlen(x, 10);
+  if (len > 10)
+    (void)*(char*)0; // expected-warning{{never executed}}
+  if (len == 10)
+    (void)*(char*)0; // expected-warning{{null}}
+}
+
+void strnlen_less_than_limit(char *x) {
+  size_t len = strnlen(x, 10);
+  if (len > 10)
+    (void)*(char*)0; // expected-warning{{never executed}}
+  if (len < 10)
+    (void)*(char*)0; // expected-warning{{null}}
+}
+
+void strnlen_at_actual(size_t limit) {
+  size_t len = strnlen("abc", limit);
+  if (len > 3)
+    (void)*(char*)0; // expected-warning{{never executed}}
+  if (len == 3)
+    (void)*(char*)0; // expected-warning{{null}}
+}
+
+void strnlen_less_than_actual(size_t limit) {
+  size_t len = strnlen("abc", limit);
+  if (len > 3)
+    (void)*(char*)0; // expected-warning{{never executed}}
+  if (len < 3)
+    (void)*(char*)0; // expected-warning{{null}}
 }
 
 //===----------------------------------------------------------------------===
@@ -415,9 +398,6 @@ void strcat_effects(char *y) {
 
   if ((int)strlen(x) != (orig_len + strlen(y)))
     (void)*(char*)0; // no-warning
-
-  if (a != x[0])
-    (void)*(char*)0; // expected-warning{{null}}
 }
 
 void strcat_overflow_0(char *y) {
@@ -442,6 +422,37 @@ void strcat_no_overflow(char *y) {
   char x[5] = "12";
   if (strlen(y) == 2)
     strcat(x, y); // no-warning
+}
+
+void strcat_symbolic_dst_length(char *dst) {
+	strcat(dst, "1234");
+	if (strlen(dst) < 4)
+		(void)*(char*)0; // no-warning
+}
+
+void strcat_symbolic_src_length(char *src) {
+	char dst[8] = "1234";
+	strcat(dst, src);
+	if (strlen(dst) < 4)
+		(void)*(char*)0; // no-warning
+}
+
+void strcat_unknown_src_length(char *src, int offset) {
+	char dst[8] = "1234";
+	strcat(dst, &src[offset]);
+	if (strlen(dst) < 4)
+		(void)*(char*)0; // no-warning
+}
+
+// There is no strcat_unknown_dst_length because if we can't get a symbolic
+// length for the "before" strlen, we won't be able to set one for "after".
+
+void strcat_too_big(char *dst, char *src) {
+	if (strlen(dst) != (((size_t)0) - 2))
+		return;
+	if (strlen(src) != 2)
+		return;
+	strcat(dst, src); // expected-warning{{This expression will create a string whose length is too big to be represented as a size_t}}
 }
 
 
@@ -489,9 +500,6 @@ void strncat_effects(char *y) {
 
   if (strlen(x) != orig_len + strlen(y))
     (void)*(char*)0; // no-warning
-
-  if (a != x[0])
-    (void)*(char*)0; // expected-warning{{null}}
 }
 
 void strncat_overflow_0(char *y) {
@@ -534,7 +542,7 @@ void strncat_no_overflow_2(char *y) {
 //===----------------------------------------------------------------------===
 
 #define strcmp BUILTIN(strcmp)
-int strcmp(const char *restrict s1, const char *restrict s2);
+int strcmp(const char * s1, const char * s2);
 
 void strcmp_constant0() {
   if (strcmp("123", "123") != 0)
@@ -614,12 +622,22 @@ void strcmp_diff_length_3() {
     (void)*(char*)0; // no-warning
 }
 
+void strcmp_embedded_null () {
+	if (strcmp("\0z", "\0y") != 0)
+		(void)*(char*)0; // no-warning
+}
+
+void strcmp_unknown_arg (char *unknown) {
+	if (strcmp(unknown, unknown) != 0)
+		(void)*(char*)0; // no-warning
+}
+
 //===----------------------------------------------------------------------===
 // strncmp()
 //===----------------------------------------------------------------------===
 
 #define strncmp BUILTIN(strncmp)
-int strncmp(const char *restrict s1, const char *restrict s2, size_t n);
+int strncmp(const char *s1, const char *s2, size_t n);
 
 void strncmp_constant0() {
   if (strncmp("123", "123", 3) != 0)
@@ -720,12 +738,17 @@ void strncmp_diff_length_6() {
     (void)*(char*)0; // no-warning
 }
 
+void strncmp_embedded_null () {
+	if (strncmp("ab\0zz", "ab\0yy", 4) != 0)
+		(void)*(char*)0; // no-warning
+}
+
 //===----------------------------------------------------------------------===
 // strcasecmp()
 //===----------------------------------------------------------------------===
 
 #define strcasecmp BUILTIN(strcasecmp)
-int strcasecmp(const char *restrict s1, const char *restrict s2);
+int strcasecmp(const char *s1, const char *s2);
 
 void strcasecmp_constant0() {
   if (strcasecmp("abc", "Abc") != 0)
@@ -805,12 +828,17 @@ void strcasecmp_diff_length_3() {
     (void)*(char*)0; // no-warning
 }
 
+void strcasecmp_embedded_null () {
+	if (strcasecmp("ab\0zz", "ab\0yy") != 0)
+		(void)*(char*)0; // no-warning
+}
+
 //===----------------------------------------------------------------------===
 // strncasecmp()
 //===----------------------------------------------------------------------===
 
 #define strncasecmp BUILTIN(strncasecmp)
-int strncasecmp(const char *restrict s1, const char *restrict s2, size_t n);
+int strncasecmp(const char *s1, const char *s2, size_t n);
 
 void strncasecmp_constant0() {
   if (strncasecmp("abc", "Abc", 3) != 0)
@@ -909,4 +937,9 @@ void strncasecmp_diff_length_6() {
   char *y = "abc";
   if (strncasecmp(x, y, 3) != 1)
     (void)*(char*)0; // no-warning
+}
+
+void strncasecmp_embedded_null () {
+	if (strncasecmp("ab\0zz", "ab\0yy", 4) != 0)
+		(void)*(char*)0; // no-warning
 }

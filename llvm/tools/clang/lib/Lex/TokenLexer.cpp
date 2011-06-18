@@ -327,7 +327,8 @@ void TokenLexer::Lex(Token &Tok) {
   bool TokenIsFromPaste = false;
 
   // If this token is followed by a token paste (##) operator, paste the tokens!
-  if (!isAtEnd() && Tokens[CurToken].is(tok::hashhash)) {
+  // Note that ## is a normal token when not expanding a macro.
+  if (!isAtEnd() && Tokens[CurToken].is(tok::hashhash) && Macro) {
     // When handling the microsoft /##/ extension, the final token is
     // returned by PasteTokens, not the pasted token.
     if (PasteTokens(Tok))

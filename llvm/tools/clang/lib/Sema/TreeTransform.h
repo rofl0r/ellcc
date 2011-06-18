@@ -879,7 +879,8 @@ public:
       return QualType();
     }
 
-    if (!SemaRef.isAcceptableTagRedeclaration(Tag, Kind, IdLoc, *Id)) {
+    if (!SemaRef.isAcceptableTagRedeclaration(Tag, Kind, /*isDefinition*/false,
+                                              IdLoc, *Id)) {
       SemaRef.Diag(KeywordLoc, diag::err_use_with_wrong_tag) << Id;
       SemaRef.Diag(Tag->getLocation(), diag::note_previous_use);
       return QualType();
@@ -1190,6 +1191,16 @@ public:
     return getSema().ActOnObjCAtSynchronizedStmt(AtLoc, Object,
                                                  Body);
   }
+
+  /// \brief Build a new Objective-C @autoreleasepool statement.
+  ///
+  /// By default, performs semantic analysis to build the new statement.
+  /// Subclasses may override this routine to provide different behavior.
+  StmtResult RebuildObjCAutoreleasePoolStmt(SourceLocation AtLoc,
+                                            Stmt *Body) {
+    return getSema().ActOnObjCAutoreleasePoolStmt(AtLoc, Body);
+  }
+  
 
   /// \brief Build a new Objective-C fast enumeration statement.
   ///
@@ -3161,6 +3172,38 @@ TreeTransform<Derived>::TransformQualifiedType(TypeLocBuilder &TLB,
   if (Result->isFunctionType() || Result->isReferenceType())
     return Result;
 
+  // Suppress Objective-C lifetime qualifiers if they don't make sense for the
+  // resulting type.
+  if (Quals.hasObjCLifetime()) {
+    if (!Result->isObjCLifetimeType() && !Result->isDependentType())
+      Quals.removeObjCLifetime();
+    else if (Result.getObjCLifetime()) {
+      // Objective-C ARC: 
+      //   A lifetime qualifier applied to a substituted template parameter
+      //   overrides the lifetime qualifier from the template argument.
+      if (const SubstTemplateTypeParmType *SubstTypeParam 
+                                = dyn_cast<SubstTemplateTypeParmType>(Result)) {
+        QualType Replacement = SubstTypeParam->getReplacementType();
+        Qualifiers Qs = Replacement.getQualifiers();
+        Qs.removeObjCLifetime();
+        Replacement 
+          = SemaRef.Context.getQualifiedType(Replacement.getUnqualifiedType(),
+                                             Qs);
+        Result = SemaRef.Context.getSubstTemplateTypeParmType(
+                                        SubstTypeParam->getReplacedParameter(), 
+                                                              Replacement);
+        TLB.TypeWasModifiedSafely(Result);
+      } else {
+        // Otherwise, complain about the addition of a qualifier to an
+        // already-qualified type.
+        SourceRange R = TLB.getTemporaryTypeLoc(Result).getSourceRange();
+        SemaRef.Diag(R.getBegin(), diag::err_attr_objc_lifetime_redundant)
+          << Result << R;
+        
+        Quals.removeObjCLifetime();
+      }
+    }
+  }
   if (!Quals.empty()) {
     Result = SemaRef.BuildQualifiedType(Result, T.getBeginLoc(), Quals);
     TLB.push<QualifiedTypeLoc>(Result);
@@ -3332,7 +3375,11 @@ QualType TreeTransform<Derived>::TransformPointerType(TypeLocBuilder &TLB,
     if (Result.isNull())
       return QualType();
   }
-                                                            
+               
+  // Objective-C ARC can add lifetime qualifiers to the type that we're
+  // pointing to.
+  TLB.TypeWasModifiedSafely(Result->getPointeeType());
+  
   PointerTypeLoc NewT = TLB.push<PointerTypeLoc>(Result);
   NewT.setSigilLoc(TL.getSigilLoc());
   return Result;  
@@ -3385,6 +3432,11 @@ TreeTransform<Derived>::TransformReferenceType(TypeLocBuilder &TLB,
     if (Result.isNull())
       return QualType();
   }
+
+  // Objective-C ARC can add lifetime qualifiers to the type that we're
+  // referring to.
+  TLB.TypeWasModifiedSafely(
+                     Result->getAs<ReferenceType>()->getPointeeTypeAsWritten());
 
   // r-value references can be rebuilt as l-value references.
   ReferenceTypeLoc NewTL;
@@ -5434,6 +5486,25 @@ TreeTransform<Derived>::TransformObjCAtSynchronizedStmt(
 
 template<typename Derived>
 StmtResult
+TreeTransform<Derived>::TransformObjCAutoreleasePoolStmt(
+                                              ObjCAutoreleasePoolStmt *S) {
+  // Transform the body.
+  StmtResult Body = getDerived().TransformStmt(S->getSubStmt());
+  if (Body.isInvalid())
+    return StmtError();
+  
+  // If nothing changed, just retain this statement.
+  if (!getDerived().AlwaysRebuild() &&
+      Body.get() == S->getSubStmt())
+    return SemaRef.Owned(S);
+
+  // Build a new statement.
+  return getDerived().RebuildObjCAutoreleasePoolStmt(
+                        S->getAtLoc(), Body.get());
+}
+
+template<typename Derived>
+StmtResult
 TreeTransform<Derived>::TransformObjCForCollectionStmt(
                                                   ObjCForCollectionStmt *S) {
   // Transform the element statement.
@@ -6696,8 +6767,12 @@ template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformCXXThisExpr(CXXThisExpr *E) {
   DeclContext *DC = getSema().getFunctionLevelDeclContext();
-  CXXMethodDecl *MD = dyn_cast<CXXMethodDecl>(DC);
-  QualType T = MD->getThisType(getSema().Context);
+  QualType T;
+  if (CXXMethodDecl *MD = dyn_cast<CXXMethodDecl>(DC))
+    T = MD->getThisType(getSema().Context);
+  else
+    T = getSema().Context.getPointerType(
+      getSema().Context.getRecordType(cast<CXXRecordDecl>(DC)));
 
   if (!getDerived().AlwaysRebuild() && T == E->getType())
     return SemaRef.Owned(E);
@@ -7601,6 +7676,43 @@ TreeTransform<Derived>::TransformObjCEncodeExpr(ObjCEncodeExpr *E) {
   return getDerived().RebuildObjCEncodeExpr(E->getAtLoc(),
                                             EncodedTypeInfo,
                                             E->getRParenLoc());
+}
+
+template<typename Derived>
+ExprResult TreeTransform<Derived>::
+TransformObjCIndirectCopyRestoreExpr(ObjCIndirectCopyRestoreExpr *E) {
+  ExprResult result = getDerived().TransformExpr(E->getSubExpr());
+  if (result.isInvalid()) return ExprError();
+  Expr *subExpr = result.take();
+
+  if (!getDerived().AlwaysRebuild() &&
+      subExpr == E->getSubExpr())
+    return SemaRef.Owned(E);
+
+  return SemaRef.Owned(new(SemaRef.Context)
+      ObjCIndirectCopyRestoreExpr(subExpr, E->getType(), E->shouldCopy()));
+}
+
+template<typename Derived>
+ExprResult TreeTransform<Derived>::
+TransformObjCBridgedCastExpr(ObjCBridgedCastExpr *E) {
+  TypeSourceInfo *TSInfo 
+    = getDerived().TransformType(E->getTypeInfoAsWritten());
+  if (!TSInfo)
+    return ExprError();
+  
+  ExprResult Result = getDerived().TransformExpr(E->getSubExpr());
+  if (Result.isInvalid()) 
+    return ExprError();
+  
+  if (!getDerived().AlwaysRebuild() &&
+      TSInfo == E->getTypeInfoAsWritten() &&
+      Result.get() == E->getSubExpr())
+    return SemaRef.Owned(E);
+  
+  return SemaRef.BuildObjCBridgedCast(E->getLParenLoc(), E->getBridgeKind(),
+                                      E->getBridgeKeywordLoc(), TSInfo, 
+                                      Result.get());
 }
 
 template<typename Derived>

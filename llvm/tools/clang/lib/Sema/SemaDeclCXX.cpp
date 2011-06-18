@@ -113,8 +113,8 @@ namespace {
 
 void Sema::ImplicitExceptionSpecification::CalledDecl(CXXMethodDecl *Method) {
   assert(Context && "ImplicitExceptionSpecification without an ASTContext");
-  // If we have an MSAny spec already, don't bother.
-  if (!Method || ComputedEST == EST_MSAny)
+  // If we have an MSAny or unknown spec already, don't bother.
+  if (!Method || ComputedEST == EST_MSAny || ComputedEST == EST_Delayed)
     return;
 
   const FunctionProtoType *Proto
@@ -123,11 +123,14 @@ void Sema::ImplicitExceptionSpecification::CalledDecl(CXXMethodDecl *Method) {
   ExceptionSpecificationType EST = Proto->getExceptionSpecType();
 
   // If this function can throw any exceptions, make a note of that.
-  if (EST == EST_MSAny || EST == EST_None) {
+  if (EST == EST_Delayed || EST == EST_MSAny || EST == EST_None) {
     ClearExceptions();
     ComputedEST = EST;
     return;
   }
+
+  // FIXME: If the call to this decl is using any of its default arguments, we
+  // need to search them for potentially-throwing calls.
 
   // If this function has a basic noexcept, it doesn't affect the outcome.
   if (EST == EST_BasicNoexcept)
@@ -173,6 +176,35 @@ void Sema::ImplicitExceptionSpecification::CalledDecl(CXXMethodDecl *Method) {
        E != EEnd; ++E)
     if (ExceptionsSeen.insert(Context->getCanonicalType(*E)))
       Exceptions.push_back(*E);
+}
+
+void Sema::ImplicitExceptionSpecification::CalledExpr(Expr *E) {
+  if (!E || ComputedEST == EST_MSAny || ComputedEST == EST_Delayed)
+    return;
+
+  // FIXME:
+  //
+  // C++0x [except.spec]p14:
+  //   [An] implicit exception-speciﬁcation speciﬁes the type-id T if and
+  // only if T is allowed by the exception-speciﬁcation of a function directly
+  // invoked by f’s implicit deﬁnition; f shall allow all exceptions if any
+  // function it directly invokes allows all exceptions, and f shall allow no
+  // exceptions if every function it directly invokes allows no exceptions.
+  //
+  // Note in particular that if an implicit exception-specification is generated
+  // for a function containing a throw-expression, that specification can still
+  // be noexcept(true).
+  //
+  // Note also that 'directly invoked' is not defined in the standard, and there
+  // is no indication that we should only consider potentially-evaluated calls.
+  //
+  // Ultimately we should implement the intent of the standard: the exception
+  // specification should be the set of exceptions which can be thrown by the
+  // implicit definition. For now, we assume that any non-nothrow expression can
+  // throw any exception.
+
+  if (E->CanThrow(*Context))
+    ComputedEST = EST_None;
 }
 
 bool
@@ -730,13 +762,6 @@ bool Sema::AttachBaseSpecifiers(CXXRecordDecl *Class, CXXBaseSpecifier **Bases,
     QualType NewBaseType
       = Context.getCanonicalType(Bases[idx]->getType());
     NewBaseType = NewBaseType.getLocalUnqualifiedType();
-    if (!Class->hasObjectMember()) {
-      if (const RecordType *FDTTy = 
-            NewBaseType.getTypePtr()->getAs<RecordType>())
-        if (FDTTy->getDecl()->hasObjectMember())
-          Class->setHasObjectMember(true);
-    }
-    
     if (KnownBaseTypes[NewBaseType]) {
       // C++ [class.mi]p3:
       //   A class shall not be specified as a direct base class of a
@@ -1029,13 +1054,15 @@ bool Sema::CheckIfOverriddenFunctionIsMarkedFinal(const CXXMethodDecl *New,
 
 /// ActOnCXXMemberDeclarator - This is invoked when a C++ class member
 /// declarator is parsed. 'AS' is the access specifier, 'BW' specifies the
-/// bitfield width if there is one and 'InitExpr' specifies the initializer if
-/// any.
+/// bitfield width if there is one, 'InitExpr' specifies the initializer if
+/// one has been parsed, and 'HasDeferredInit' is true if an initializer is
+/// present but parsing it has been deferred.
 Decl *
 Sema::ActOnCXXMemberDeclarator(Scope *S, AccessSpecifier AS, Declarator &D,
                                MultiTemplateParamsArg TemplateParameterLists,
                                ExprTy *BW, const VirtSpecifiers &VS,
-                               ExprTy *InitExpr, bool IsDefinition) {
+                               ExprTy *InitExpr, bool HasDeferredInit,
+                               bool IsDefinition) {
   const DeclSpec &DS = D.getDeclSpec();
   DeclarationNameInfo NameInfo = GetNameForDeclarator(D);
   DeclarationName Name = NameInfo.getName();
@@ -1050,6 +1077,7 @@ Sema::ActOnCXXMemberDeclarator(Scope *S, AccessSpecifier AS, Declarator &D,
 
   assert(isa<CXXRecordDecl>(CurContext));
   assert(!DS.isFriendSpecified());
+  assert(!Init || !HasDeferredInit);
 
   bool isFunc = false;
   if (D.isFunctionDeclarator())
@@ -1121,9 +1149,11 @@ Sema::ActOnCXXMemberDeclarator(Scope *S, AccessSpecifier AS, Declarator &D,
     // FIXME: Check for template parameters!
     // FIXME: Check that the name is an identifier!
     Member = HandleField(S, cast<CXXRecordDecl>(CurContext), Loc, D, BitWidth,
-                         AS);
+                         HasDeferredInit, AS);
     assert(Member && "HandleField never returns null");
   } else {
+    assert(!HasDeferredInit);
+
     Member = HandleDeclarator(S, D, move(TemplateParameterLists), IsDefinition);
     if (!Member) {
       return 0;
@@ -1194,12 +1224,61 @@ Sema::ActOnCXXMemberDeclarator(Scope *S, AccessSpecifier AS, Declarator &D,
   if (Init)
     AddInitializerToDecl(Member, Init, false,
                          DS.getTypeSpecType() == DeclSpec::TST_auto);
+  else if (DS.getTypeSpecType() == DeclSpec::TST_auto &&
+           DS.getStorageClassSpec() == DeclSpec::SCS_static) {
+    // C++0x [dcl.spec.auto]p4: 'auto' can only be used in the type of a static
+    // data member if a brace-or-equal-initializer is provided.
+    Diag(Loc, diag::err_auto_var_requires_init)
+      << Name << cast<ValueDecl>(Member)->getType();
+    Member->setInvalidDecl();
+  }
 
   FinalizeDeclaration(Member);
 
   if (isInstField)
     FieldCollector->Add(cast<FieldDecl>(Member));
   return Member;
+}
+
+/// ActOnCXXInClassMemberInitializer - This is invoked after parsing an
+/// in-class initializer for a non-static C++ class member. Such parsing
+/// is deferred until the class is complete.
+void
+Sema::ActOnCXXInClassMemberInitializer(Decl *D, SourceLocation EqualLoc,
+                                       Expr *InitExpr) {
+  FieldDecl *FD = cast<FieldDecl>(D);
+
+  if (!InitExpr) {
+    FD->setInvalidDecl();
+    FD->removeInClassInitializer();
+    return;
+  }
+
+  ExprResult Init = InitExpr;
+  if (!FD->getType()->isDependentType() && !InitExpr->isTypeDependent()) {
+    // FIXME: if there is no EqualLoc, this is list-initialization.
+    Init = PerformCopyInitialization(
+      InitializedEntity::InitializeMember(FD), EqualLoc, InitExpr);
+    if (Init.isInvalid()) {
+      FD->setInvalidDecl();
+      return;
+    }
+
+    CheckImplicitConversions(Init.get(), EqualLoc);
+  }
+
+  // C++0x [class.base.init]p7:
+  //   The initialization of each base and member constitutes a
+  //   full-expression.
+  Init = MaybeCreateExprWithCleanups(Init);
+  if (Init.isInvalid()) {
+    FD->setInvalidDecl();
+    return;
+  }
+
+  InitExpr = Init.release();
+
+  FD->setInClassInitializer(InitExpr);
 }
 
 /// \brief Find the direct and/or virtual base specifiers that
@@ -1533,12 +1612,7 @@ Sema::BuildMemberInitializer(ValueDecl *Member, Expr **Args,
     Init = new (Context) ParenListExpr(Context, LParenLoc, Args, NumArgs,
                                        RParenLoc);
 
-    // Erase any temporaries within this evaluation context; we're not
-    // going to track them in the AST, since we'll be rebuilding the
-    // ASTs during template instantiation.
-    ExprTemporaries.erase(
-              ExprTemporaries.begin() + ExprEvalContexts.back().NumTemporaries,
-                          ExprTemporaries.end());
+    DiscardCleanupsInEvaluationContext();
   } else {
     // Initialize the member.
     InitializedEntity MemberEntity =
@@ -1731,12 +1805,7 @@ Sema::BuildBaseInitializer(QualType BaseType, TypeSourceInfo *BaseTInfo,
       = Owned(new (Context) ParenListExpr(Context, LParenLoc, Args, NumArgs,
                                           RParenLoc));
 
-    // Erase any temporaries within this evaluation context; we're not
-    // going to track them in the AST, since we'll be rebuilding the
-    // ASTs during template instantiation.
-    ExprTemporaries.erase(
-              ExprTemporaries.begin() + ExprEvalContexts.back().NumTemporaries,
-                          ExprTemporaries.end());
+    DiscardCleanupsInEvaluationContext();
 
     return new (Context) CXXCtorInitializer(Context, BaseTInfo, 
                                                     /*IsVirtual=*/false,
@@ -1903,6 +1972,11 @@ BuildImplicitMemberInitializer(Sema &SemaRef, CXXConstructorDecl *Constructor,
   if (ImplicitInitKind == IIK_Copy) {
     ParmVarDecl *Param = Constructor->getParamDecl(0);
     QualType ParamType = Param->getType().getNonReferenceType();
+
+    // Suppress copying zero-width bitfields.
+    if (const Expr *Width = Field->getBitWidth())
+      if (Width->EvaluateAsInt(SemaRef.Context) == 0)
+        return false;
     
     Expr *MemberExprBase = 
       DeclRefExpr::Create(SemaRef.Context, NestedNameSpecifierLoc(), Param, 
@@ -2048,6 +2122,20 @@ BuildImplicitMemberInitializer(Sema &SemaRef, CXXConstructorDecl *Constructor,
     }
   }
   
+  if (SemaRef.getLangOptions().ObjCAutoRefCount &&
+      FieldBaseElementType->isObjCRetainableType() &&
+      FieldBaseElementType.getObjCLifetime() != Qualifiers::OCL_None &&
+      FieldBaseElementType.getObjCLifetime() != Qualifiers::OCL_ExplicitNone) {
+    // Instant objects:
+    //   Default-initialize Objective-C pointers to NULL.
+    CXXMemberInit
+      = new (SemaRef.Context) CXXCtorInitializer(SemaRef.Context, Field, 
+                                                 Loc, Loc, 
+                 new (SemaRef.Context) ImplicitValueInitExpr(Field->getType()), 
+                                                 Loc);
+    return false;
+  }
+      
   // Nothing to initialize.
   CXXMemberInit = 0;
   return false;
@@ -2073,12 +2161,24 @@ struct BaseAndFieldInfo {
 };
 }
 
-static bool CollectFieldInitializer(BaseAndFieldInfo &Info,
+static bool CollectFieldInitializer(Sema &SemaRef, BaseAndFieldInfo &Info,
                                     FieldDecl *Top, FieldDecl *Field) {
 
   // Overwhelmingly common case: we have a direct initializer for this field.
   if (CXXCtorInitializer *Init = Info.AllBaseFields.lookup(Field)) {
     Info.AllToInit.push_back(Init);
+    return false;
+  }
+
+  // C++0x [class.base.init]p8: if the entity is a non-static data member that
+  // has a brace-or-equal-initializer, the entity is initialized as specified
+  // in [dcl.init].
+  if (Field->hasInClassInitializer()) {
+    Info.AllToInit.push_back(
+      new (SemaRef.Context) CXXCtorInitializer(SemaRef.Context, Field,
+                                               SourceLocation(),
+                                               SourceLocation(), 0,
+                                               SourceLocation()));
     return false;
   }
 
@@ -2104,7 +2204,7 @@ static bool CollectFieldInitializer(BaseAndFieldInfo &Info,
           // field in the class is also initialized, so exit immediately.
           return false;
         } else if ((*FA)->isAnonymousStructOrUnion()) {
-          if (CollectFieldInitializer(Info, Top, *FA))
+          if (CollectFieldInitializer(SemaRef, Info, Top, *FA))
             return true;
         }
       }
@@ -2119,7 +2219,7 @@ static bool CollectFieldInitializer(BaseAndFieldInfo &Info,
       // necessary.
       for (RecordDecl::field_iterator FA = FieldClassDecl->field_begin(),
            EA = FieldClassDecl->field_end(); FA != EA; FA++) {
-        if (CollectFieldInitializer(Info, Top, *FA))
+        if (CollectFieldInitializer(SemaRef, Info, Top, *FA))
           return true;
       }
     }
@@ -2128,7 +2228,7 @@ static bool CollectFieldInitializer(BaseAndFieldInfo &Info,
   // Don't try to build an implicit initializer if there were semantic
   // errors in any of the initializers (and therefore we might be
   // missing some that the user actually wrote).
-  if (Info.AnyErrorsInInits)
+  if (Info.AnyErrorsInInits || Field->isInvalidDecl())
     return false;
 
   CXXCtorInitializer *Init = 0;
@@ -2161,11 +2261,10 @@ Sema::SetDelegatingInitializer(CXXConstructorDecl *Constructor,
   return false;
 }
                                
-bool
-Sema::SetCtorInitializers(CXXConstructorDecl *Constructor,
-                                  CXXCtorInitializer **Initializers,
-                                  unsigned NumInitializers,
-                                  bool AnyErrors) {
+bool Sema::SetCtorInitializers(CXXConstructorDecl *Constructor,
+                               CXXCtorInitializer **Initializers,
+                               unsigned NumInitializers,
+                               bool AnyErrors) {
   if (Constructor->getDeclContext()->isDependentContext()) {
     // Just store the initializers as written, they will be checked during
     // instantiation.
@@ -2260,7 +2359,7 @@ Sema::SetCtorInitializers(CXXConstructorDecl *Constructor,
              "Incomplete array type is not valid");
       continue;
     }
-    if (CollectFieldInitializer(Info, *Field, *Field))
+    if (CollectFieldInitializer(*this, Info, *Field, *Field))
       HadError = true;
   }
 
@@ -2939,6 +3038,9 @@ void Sema::CheckCompletedCXXClass(CXXRecordDecl *Record) {
     for (RecordDecl::field_iterator F = Record->field_begin(), 
                                  FEnd = Record->field_end();
          F != FEnd; ++F) {
+      if (F->hasInClassInitializer())
+        continue;
+
       if (F->getType()->isReferenceType() ||
           (F->getType().isConstQualified() && F->getType()->isScalarType())) {
         if (!Complained) {
@@ -3066,6 +3168,11 @@ void Sema::CheckExplicitlyDefaultedDefaultConstructor(CXXConstructorDecl *CD) {
   ImplicitExceptionSpecification Spec
     = ComputeDefaultedDefaultCtorExceptionSpec(CD->getParent());
   FunctionProtoType::ExtProtoInfo EPI = Spec.getEPI();
+  if (EPI.ExceptionSpecType == EST_Delayed) {
+    // Exception specification depends on some deferred part of the class. We'll
+    // try again when the class's definition has been fully processed.
+    return;
+  }
   const FunctionProtoType *CtorType = CD->getType()->getAs<FunctionProtoType>(),
                           *ExceptionType = Context.getFunctionType(
                          Context.VoidTy, 0, 0, EPI)->getAs<FunctionProtoType>();
@@ -3318,7 +3425,7 @@ bool Sema::ShouldDeleteDefaultConstructor(CXXConstructorDecl *CD) {
   // FIXME: We should put some diagnostic logic right into this function.
 
   // C++0x [class.ctor]/5
-  //    A defaulted default constructor for class X is defined as delete if:
+  //    A defaulted default constructor for class X is defined as deleted if:
 
   for (CXXRecordDecl::base_class_iterator BI = RD->bases_begin(),
                                           BE = RD->bases_end();
@@ -3331,7 +3438,7 @@ bool Sema::ShouldDeleteDefaultConstructor(CXXConstructorDecl *CD) {
     assert(BaseDecl && "base isn't a CXXRecordDecl");
 
     // -- any [direct base class] has a type with a destructor that is
-    //    delete or inaccessible from the defaulted default constructor
+    //    deleted or inaccessible from the defaulted default constructor
     CXXDestructorDecl *BaseDtor = LookupDestructor(BaseDecl);
     if (BaseDtor->isDeleted())
       return true;
@@ -3343,14 +3450,12 @@ bool Sema::ShouldDeleteDefaultConstructor(CXXConstructorDecl *CD) {
     //    overload resolution as applied to [its] default constructor
     //    results in an ambiguity or in a function that is deleted or
     //    inaccessible from the defaulted default constructor
-    InitializedEntity BaseEntity =
-      InitializedEntity::InitializeBase(Context, BI, 0);
-    InitializationKind Kind =
-      InitializationKind::CreateDirect(Loc, Loc, Loc);
+    CXXConstructorDecl *BaseDefault = LookupDefaultConstructor(BaseDecl);
+    if (!BaseDefault || BaseDefault->isDeleted())
+      return true;
 
-    InitializationSequence InitSeq(*this, BaseEntity, Kind, 0, 0);
-
-    if (InitSeq.getKind() == InitializationSequence::FailedSequence)
+    if (CheckConstructorAccess(Loc, BaseDefault, BaseDefault->getAccess(),
+                               PDiag()) != AR_accessible)
       return true;
   }
 
@@ -3373,26 +3478,27 @@ bool Sema::ShouldDeleteDefaultConstructor(CXXConstructorDecl *CD) {
     //    overload resolution as applied to [its] default constructor
     //    results in an ambiguity or in a function that is deleted or
     //    inaccessible from the defaulted default constructor
-    InitializedEntity BaseEntity =
-      InitializedEntity::InitializeBase(Context, BI, BI);
-    InitializationKind Kind =
-      InitializationKind::CreateDirect(Loc, Loc, Loc);
+    CXXConstructorDecl *BaseDefault = LookupDefaultConstructor(BaseDecl);
+    if (!BaseDefault || BaseDefault->isDeleted())
+      return true;
 
-    InitializationSequence InitSeq(*this, BaseEntity, Kind, 0, 0);
-
-    if (InitSeq.getKind() == InitializationSequence::FailedSequence)
+    if (CheckConstructorAccess(Loc, BaseDefault, BaseDefault->getAccess(),
+                               PDiag()) != AR_accessible)
       return true;
   }
 
   for (CXXRecordDecl::field_iterator FI = RD->field_begin(),
                                      FE = RD->field_end();
        FI != FE; ++FI) {
+    if (FI->isInvalidDecl())
+      continue;
+    
     QualType FieldType = Context.getBaseElementType(FI->getType());
     CXXRecordDecl *FieldRecord = FieldType->getAsCXXRecordDecl();
-    
+
     // -- any non-static data member with no brace-or-equal-initializer is of
     //    reference type
-    if (FieldType->isReferenceType())
+    if (FieldType->isReferenceType() && !FI->hasInClassInitializer())
       return true;
 
     // -- X is a union and all its variant members are of const-qualified type
@@ -3417,6 +3523,7 @@ bool Sema::ShouldDeleteDefaultConstructor(CXXConstructorDecl *CD) {
       //    array thereof) with no brace-or-equal-initializer does not have a
       //    user-provided default constructor
       if (FieldType.isConstQualified() &&
+          !FI->hasInClassInitializer() &&
           !FieldRecord->hasUserProvidedDefaultConstructor())
         return true;
  
@@ -3448,22 +3555,27 @@ bool Sema::ShouldDeleteDefaultConstructor(CXXConstructorDecl *CD) {
         // This is technically non-conformant, but sanity demands it.
         continue;
       }
-    } else if (!Union && FieldType.isConstQualified()) {
+
+      // -- any non-static data member with no brace-or-equal-initializer has
+      //    class type M (or array thereof) and either M has no default
+      //    constructor or overload resolution as applied to M's default
+      //    constructor results in an ambiguity or in a function that is deleted
+      //    or inaccessible from the defaulted default constructor.
+      if (!FI->hasInClassInitializer()) {
+        CXXConstructorDecl *FieldDefault = LookupDefaultConstructor(FieldRecord);
+        if (!FieldDefault || FieldDefault->isDeleted())
+          return true;
+        if (CheckConstructorAccess(Loc, FieldDefault, FieldDefault->getAccess(),
+                                   PDiag()) != AR_accessible)
+          return true;
+      }
+    } else if (!Union && FieldType.isConstQualified() &&
+               !FI->hasInClassInitializer()) {
       // -- any non-variant non-static data member of const-qualified type (or
       //    array thereof) with no brace-or-equal-initializer does not have a
       //    user-provided default constructor
       return true;
     }
-
-    InitializedEntity MemberEntity =
-      InitializedEntity::InitializeMember(*FI, 0);
-    InitializationKind Kind = 
-      InitializationKind::CreateDirect(Loc, Loc, Loc);
-    
-    InitializationSequence InitSeq(*this, MemberEntity, Kind, 0, 0);
-
-    if (InitSeq.getKind() == InitializationSequence::FailedSequence)
-      return true;
   }
 
   if (Union && AllConst)
@@ -3483,12 +3595,13 @@ bool Sema::ShouldDeleteCopyConstructor(CXXConstructorDecl *CD) {
   // Do access control from the constructor
   ContextRAII CtorContext(*this, CD);
 
-    bool Union = RD->isUnion();
+  bool Union = RD->isUnion();
 
   assert(!CD->getParamDecl(0)->getType()->getPointeeType().isNull() &&
          "copy assignment arg has no pointee type");
-  bool ConstArg =
-    CD->getParamDecl(0)->getType()->getPointeeType().isConstQualified();
+  unsigned ArgQuals =
+    CD->getParamDecl(0)->getType()->getPointeeType().isConstQualified() ?
+      Qualifiers::Const : 0;
 
   // We do this because we should never actually use an anonymous
   // union's constructor.
@@ -3524,20 +3637,11 @@ bool Sema::ShouldDeleteCopyConstructor(CXXConstructorDecl *CD) {
     //    resolution, as applied to B's [copy] constructor, results in an
     //    ambiguity or a function that is deleted or inaccessible from the
     //    defaulted constructor
-    InitializedEntity BaseEntity =
-      InitializedEntity::InitializeBase(Context, BI, 0);
-    InitializationKind Kind =
-      InitializationKind::CreateDirect(Loc, Loc, Loc);
-
-    // Construct a fake expression to perform the copy overloading.
-    QualType ArgType = BaseType.getUnqualifiedType();
-    if (ConstArg)
-      ArgType.addConst();
-    Expr *Arg = new (Context) OpaqueValueExpr(Loc, ArgType, VK_LValue);
-
-    InitializationSequence InitSeq(*this, BaseEntity, Kind, &Arg, 1);
-
-    if (InitSeq.getKind() == InitializationSequence::FailedSequence)
+    CXXConstructorDecl *BaseCtor = LookupCopyConstructor(BaseDecl, ArgQuals);
+    if (!BaseCtor || BaseCtor->isDeleted())
+      return true;
+    if (CheckConstructorAccess(Loc, BaseCtor, BaseCtor->getAccess(), PDiag()) !=
+        AR_accessible)
       return true;
   }
 
@@ -3548,7 +3652,7 @@ bool Sema::ShouldDeleteCopyConstructor(CXXConstructorDecl *CD) {
     CXXRecordDecl *BaseDecl = BaseType->getAsCXXRecordDecl();
     assert(BaseDecl && "base isn't a CXXRecordDecl");
 
-    // -- any [direct base class] of a type with a destructor that is deleted or
+    // -- any [virtual base class] of a type with a destructor that is deleted or
     //    inaccessible from the defaulted constructor
     CXXDestructorDecl *BaseDtor = LookupDestructor(BaseDecl);
     if (BaseDtor->isDeleted())
@@ -3561,20 +3665,11 @@ bool Sema::ShouldDeleteCopyConstructor(CXXConstructorDecl *CD) {
     //    resolution, as applied to B's [copy] constructor, results in an
     //    ambiguity or a function that is deleted or inaccessible from the
     //    defaulted constructor
-    InitializedEntity BaseEntity =
-      InitializedEntity::InitializeBase(Context, BI, BI);
-    InitializationKind Kind =
-      InitializationKind::CreateDirect(Loc, Loc, Loc);
-
-    // Construct a fake expression to perform the copy overloading.
-    QualType ArgType = BaseType.getUnqualifiedType();
-    if (ConstArg)
-      ArgType.addConst();
-    Expr *Arg = new (Context) OpaqueValueExpr(Loc, ArgType, VK_LValue);
-
-    InitializationSequence InitSeq(*this, BaseEntity, Kind, &Arg, 1);
-
-    if (InitSeq.getKind() == InitializationSequence::FailedSequence)
+    CXXConstructorDecl *BaseCtor = LookupCopyConstructor(BaseDecl, ArgQuals);
+    if (!BaseCtor || BaseCtor->isDeleted())
+      return true;
+    if (CheckConstructorAccess(Loc, BaseCtor, BaseCtor->getAccess(), PDiag()) !=
+        AR_accessible)
       return true;
   }
 
@@ -3627,32 +3722,19 @@ bool Sema::ShouldDeleteCopyConstructor(CXXConstructorDecl *CD) {
             AR_accessible)
           return true;
       }
+
+    // -- a [non-static data member of class type (or array thereof)] B that
+    //    cannot be [copied] because overload resolution, as applied to B's
+    //    [copy] constructor, results in an ambiguity or a function that is
+    //    deleted or inaccessible from the defaulted constructor
+      CXXConstructorDecl *FieldCtor = LookupCopyConstructor(FieldRecord,
+                                                            ArgQuals);
+      if (!FieldCtor || FieldCtor->isDeleted())
+        return true;
+      if (CheckConstructorAccess(Loc, FieldCtor, FieldCtor->getAccess(),
+                                 PDiag()) != AR_accessible)
+        return true;
     }
-
-    llvm::SmallVector<InitializedEntity, 4> Entities;
-    QualType CurType = FI->getType();
-    Entities.push_back(InitializedEntity::InitializeMember(*FI, 0));
-    while (CurType->isArrayType()) {
-      Entities.push_back(InitializedEntity::InitializeElement(Context, 0, 
-                                                              Entities.back()));
-      CurType = Context.getAsArrayType(CurType)->getElementType();
-    }
-
-    InitializationKind Kind = 
-      InitializationKind::CreateDirect(Loc, Loc, Loc);
- 
-    // Construct a fake expression to perform the copy overloading.
-    QualType ArgType = FieldType;
-    if (ArgType->isReferenceType())
-      ArgType = ArgType->getPointeeType();
-    else if (ConstArg)
-      ArgType.addConst();
-    Expr *Arg = new (Context) OpaqueValueExpr(Loc, ArgType, VK_LValue);
-   
-    InitializationSequence InitSeq(*this, Entities.back(), Kind, &Arg, 1);
-
-    if (InitSeq.getKind() == InitializationSequence::FailedSequence)
-      return true;
   }
 
   return false;
@@ -5895,28 +5977,6 @@ namespace {
   };
 }
 
-static CXXConstructorDecl *getDefaultConstructorUnsafe(Sema &Self,
-                                                       CXXRecordDecl *D) {
-  ASTContext &Context = Self.Context;
-  QualType ClassType = Context.getTypeDeclType(D);
-  DeclarationName ConstructorName
-    = Context.DeclarationNames.getCXXConstructorName(
-                      Context.getCanonicalType(ClassType.getUnqualifiedType()));
-
-  DeclContext::lookup_const_iterator Con, ConEnd;
-  for (llvm::tie(Con, ConEnd) = D->lookup(ConstructorName);
-       Con != ConEnd; ++Con) {
-    // FIXME: In C++0x, a constructor template can be a default constructor.
-    if (isa<FunctionTemplateDecl>(*Con))
-      continue;
-
-    CXXConstructorDecl *Constructor = cast<CXXConstructorDecl>(*Con);
-    if (Constructor->isDefaultConstructor())
-      return Constructor;
-  }
-  return 0;
-}
-
 Sema::ImplicitExceptionSpecification
 Sema::ComputeDefaultedDefaultCtorExceptionSpec(CXXRecordDecl *ClassDecl) {
   // C++ [except.spec]p14:
@@ -5933,10 +5993,10 @@ Sema::ComputeDefaultedDefaultCtorExceptionSpec(CXXRecordDecl *ClassDecl) {
     
     if (const RecordType *BaseType = B->getType()->getAs<RecordType>()) {
       CXXRecordDecl *BaseClassDecl = cast<CXXRecordDecl>(BaseType->getDecl());
-      if (BaseClassDecl->needsImplicitDefaultConstructor())
-        ExceptSpec.CalledDecl(DeclareImplicitDefaultConstructor(BaseClassDecl));
-      else if (CXXConstructorDecl *Constructor
-                            = getDefaultConstructorUnsafe(*this, BaseClassDecl))
+      CXXConstructorDecl *Constructor = LookupDefaultConstructor(BaseClassDecl);
+      // If this is a deleted function, add it anyway. This might be conformant
+      // with the standard. This might not. I'm not sure. It might not matter.
+      if (Constructor)
         ExceptSpec.CalledDecl(Constructor);
     }
   }
@@ -5947,10 +6007,10 @@ Sema::ComputeDefaultedDefaultCtorExceptionSpec(CXXRecordDecl *ClassDecl) {
        B != BEnd; ++B) {
     if (const RecordType *BaseType = B->getType()->getAs<RecordType>()) {
       CXXRecordDecl *BaseClassDecl = cast<CXXRecordDecl>(BaseType->getDecl());
-      if (BaseClassDecl->needsImplicitDefaultConstructor())
-        ExceptSpec.CalledDecl(DeclareImplicitDefaultConstructor(BaseClassDecl));
-      else if (CXXConstructorDecl *Constructor
-                            = getDefaultConstructorUnsafe(*this, BaseClassDecl))
+      CXXConstructorDecl *Constructor = LookupDefaultConstructor(BaseClassDecl);
+      // If this is a deleted function, add it anyway. This might be conformant
+      // with the standard. This might not. I'm not sure. It might not matter.
+      if (Constructor)
         ExceptSpec.CalledDecl(Constructor);
     }
   }
@@ -5959,14 +6019,21 @@ Sema::ComputeDefaultedDefaultCtorExceptionSpec(CXXRecordDecl *ClassDecl) {
   for (RecordDecl::field_iterator F = ClassDecl->field_begin(),
                                FEnd = ClassDecl->field_end();
        F != FEnd; ++F) {
-    if (const RecordType *RecordTy
+    if (F->hasInClassInitializer()) {
+      if (Expr *E = F->getInClassInitializer())
+        ExceptSpec.CalledExpr(E);
+      else if (!F->isInvalidDecl())
+        ExceptSpec.SetDelayed();
+    } else if (const RecordType *RecordTy
               = Context.getBaseElementType(F->getType())->getAs<RecordType>()) {
-      CXXRecordDecl *FieldClassDecl = cast<CXXRecordDecl>(RecordTy->getDecl());
-      if (FieldClassDecl->needsImplicitDefaultConstructor())
-        ExceptSpec.CalledDecl(
-                            DeclareImplicitDefaultConstructor(FieldClassDecl));
-      else if (CXXConstructorDecl *Constructor
-                           = getDefaultConstructorUnsafe(*this, FieldClassDecl))
+      CXXRecordDecl *FieldRecDecl = cast<CXXRecordDecl>(RecordTy->getDecl());
+      CXXConstructorDecl *Constructor = LookupDefaultConstructor(FieldRecDecl);
+      // If this is a deleted function, add it anyway. This might be conformant
+      // with the standard. This might not. I'm not sure. It might not matter.
+      // In particular, the problem is that this function never gets called. It
+      // might just be ill-formed because this function attempts to refer to
+      // a deleted function here.
+      if (Constructor)
         ExceptSpec.CalledDecl(Constructor);
     }
   }
@@ -6051,6 +6118,59 @@ void Sema::DefineImplicitDefaultConstructor(SourceLocation CurrentLocation,
   if (ASTMutationListener *L = getASTMutationListener()) {
     L->CompletedImplicitDefinition(Constructor);
   }
+}
+
+/// Get any existing defaulted default constructor for the given class. Do not
+/// implicitly define one if it does not exist.
+static CXXConstructorDecl *getDefaultedDefaultConstructorUnsafe(Sema &Self,
+                                                             CXXRecordDecl *D) {
+  ASTContext &Context = Self.Context;
+  QualType ClassType = Context.getTypeDeclType(D);
+  DeclarationName ConstructorName
+    = Context.DeclarationNames.getCXXConstructorName(
+                      Context.getCanonicalType(ClassType.getUnqualifiedType()));
+
+  DeclContext::lookup_const_iterator Con, ConEnd;
+  for (llvm::tie(Con, ConEnd) = D->lookup(ConstructorName);
+       Con != ConEnd; ++Con) {
+    // A function template cannot be defaulted.
+    if (isa<FunctionTemplateDecl>(*Con))
+      continue;
+
+    CXXConstructorDecl *Constructor = cast<CXXConstructorDecl>(*Con);
+    if (Constructor->isDefaultConstructor())
+      return Constructor->isDefaulted() ? Constructor : 0;
+  }
+  return 0;
+}
+
+void Sema::ActOnFinishDelayedMemberInitializers(Decl *D) {
+  if (!D) return;
+  AdjustDeclIfTemplate(D);
+
+  CXXRecordDecl *ClassDecl = cast<CXXRecordDecl>(D);
+  CXXConstructorDecl *CtorDecl
+    = getDefaultedDefaultConstructorUnsafe(*this, ClassDecl);
+
+  if (!CtorDecl) return;
+
+  // Compute the exception specification for the default constructor.
+  const FunctionProtoType *CtorTy =
+    CtorDecl->getType()->castAs<FunctionProtoType>();
+  if (CtorTy->getExceptionSpecType() == EST_Delayed) {
+    ImplicitExceptionSpecification Spec = 
+      ComputeDefaultedDefaultCtorExceptionSpec(ClassDecl);
+    FunctionProtoType::ExtProtoInfo EPI = Spec.getEPI();
+    assert(EPI.ExceptionSpecType != EST_Delayed);
+
+    CtorDecl->setType(Context.getFunctionType(Context.VoidTy, 0, 0, EPI));
+  }
+
+  // If the default constructor is explicitly defaulted, checking the exception
+  // specification is deferred until now.
+  if (!CtorDecl->isInvalidDecl() && CtorDecl->isExplicitlyDefaulted() &&
+      !ClassDecl->isDependentType())
+    CheckExplicitlyDefaultedDefaultConstructor(CtorDecl);
 }
 
 void Sema::DeclareInheritedConstructors(CXXRecordDecl *ClassDecl) {
@@ -6146,7 +6266,9 @@ void Sema::DeclareInheritedConstructors(CXXRecordDecl *ClassDecl) {
         // Build up a function type for this particular constructor.
         // FIXME: The working paper does not consider that the exception spec
         // for the inheriting constructor might be larger than that of the
-        // source. This code doesn't yet, either.
+        // source. This code doesn't yet, either. When it does, this code will
+        // need to be delayed until after exception specifications and in-class
+        // member initializers are attached.
         const Type *NewCtorType;
         if (params == maxParams)
           NewCtorType = BaseCtorType;
@@ -6893,6 +7015,11 @@ void Sema::DefineImplicitCopyAssignment(SourceLocation CurrentLocation,
       Invalid = true;      
       continue;
     }
+
+    // Suppress assigning zero-width bitfields.
+    if (const Expr *Width = Field->getBitWidth())
+      if (Width->EvaluateAsInt(Context) == 0)
+        continue;
     
     QualType FieldType = Field->getType().getNonReferenceType();
     if (FieldType->isIncompleteArrayType()) {
@@ -6920,10 +7047,8 @@ void Sema::DefineImplicitCopyAssignment(SourceLocation CurrentLocation,
     // explicit assignments, do so. This optimization only applies for arrays 
     // of scalars and arrays of class type with trivial copy-assignment 
     // operators.
-    if (FieldType->isArrayType() &&
-        (!BaseType->isRecordType() || 
-         cast<CXXRecordDecl>(BaseType->getAs<RecordType>()->getDecl())
-           ->hasTrivialCopyAssignment())) {
+    if (FieldType->isArrayType() && 
+        BaseType.hasTrivialCopyAssignment(Context)) {
       // Compute the size of the memory buffer to be copied.
       QualType SizeType = Context.getSizeType();
       llvm::APInt Size(Context.getTypeSize(SizeType), 
@@ -7065,6 +7190,7 @@ Sema::ComputeDefaultedCopyCtorExceptionSpecAndConst(CXXRecordDecl *ClassDecl) {
   //       X::X(const X&)
   //
   //   if
+  // FIXME: It ought to be possible to store this on the record.
   bool HasConstCopyConstructor = true;
   
   //     -- each direct or virtual base class B of X has a copy
@@ -7080,10 +7206,8 @@ Sema::ComputeDefaultedCopyCtorExceptionSpecAndConst(CXXRecordDecl *ClassDecl) {
     
     CXXRecordDecl *BaseClassDecl
       = cast<CXXRecordDecl>(Base->getType()->getAs<RecordType>()->getDecl());
-    if (!BaseClassDecl->hasDeclaredCopyConstructor())
-      DeclareImplicitCopyConstructor(BaseClassDecl);
-  
-    HasConstCopyConstructor = BaseClassDecl->hasConstCopyConstructor();
+    LookupCopyConstructor(BaseClassDecl, Qualifiers::Const,
+                          &HasConstCopyConstructor);
   }
 
   for (CXXRecordDecl::base_class_iterator Base = ClassDecl->vbases_begin(),
@@ -7092,10 +7216,8 @@ Sema::ComputeDefaultedCopyCtorExceptionSpecAndConst(CXXRecordDecl *ClassDecl) {
        ++Base) {
     CXXRecordDecl *BaseClassDecl
       = cast<CXXRecordDecl>(Base->getType()->getAs<RecordType>()->getDecl());
-    if (!BaseClassDecl->hasDeclaredCopyConstructor())
-      DeclareImplicitCopyConstructor(BaseClassDecl);
-    
-    HasConstCopyConstructor= BaseClassDecl->hasConstCopyConstructor();
+    LookupCopyConstructor(BaseClassDecl, Qualifiers::Const,
+                          &HasConstCopyConstructor);
   }
   
   //     -- for all the nonstatic data members of X that are of a
@@ -7107,13 +7229,9 @@ Sema::ComputeDefaultedCopyCtorExceptionSpecAndConst(CXXRecordDecl *ClassDecl) {
        HasConstCopyConstructor && Field != FieldEnd;
        ++Field) {
     QualType FieldType = Context.getBaseElementType((*Field)->getType());
-    if (const RecordType *FieldClassType = FieldType->getAs<RecordType>()) {
-      CXXRecordDecl *FieldClassDecl
-        = cast<CXXRecordDecl>(FieldClassType->getDecl());
-      if (!FieldClassDecl->hasDeclaredCopyConstructor())
-        DeclareImplicitCopyConstructor(FieldClassDecl);
-
-      HasConstCopyConstructor = FieldClassDecl->hasConstCopyConstructor();
+    if (CXXRecordDecl *FieldClassDecl = FieldType->getAsCXXRecordDecl()) {
+      LookupCopyConstructor(FieldClassDecl, Qualifiers::Const,
+                            &HasConstCopyConstructor);
     }
   }
   //   Otherwise, the implicitly declared copy constructor will have
@@ -7136,11 +7254,8 @@ Sema::ComputeDefaultedCopyCtorExceptionSpecAndConst(CXXRecordDecl *ClassDecl) {
     
     CXXRecordDecl *BaseClassDecl
       = cast<CXXRecordDecl>(Base->getType()->getAs<RecordType>()->getDecl());
-    if (!BaseClassDecl->hasDeclaredCopyConstructor())
-      DeclareImplicitCopyConstructor(BaseClassDecl);
-
-    if (CXXConstructorDecl *CopyConstructor
-                          = BaseClassDecl->getCopyConstructor(Quals))
+    if (CXXConstructorDecl *CopyConstructor =
+          LookupCopyConstructor(BaseClassDecl, Quals))
       ExceptSpec.CalledDecl(CopyConstructor);
   }
   for (CXXRecordDecl::base_class_iterator Base = ClassDecl->vbases_begin(),
@@ -7149,11 +7264,8 @@ Sema::ComputeDefaultedCopyCtorExceptionSpecAndConst(CXXRecordDecl *ClassDecl) {
        ++Base) {
     CXXRecordDecl *BaseClassDecl
       = cast<CXXRecordDecl>(Base->getType()->getAs<RecordType>()->getDecl());
-    if (!BaseClassDecl->hasDeclaredCopyConstructor())
-      DeclareImplicitCopyConstructor(BaseClassDecl);
-
-    if (CXXConstructorDecl *CopyConstructor
-                          = BaseClassDecl->getCopyConstructor(Quals))
+    if (CXXConstructorDecl *CopyConstructor =
+          LookupCopyConstructor(BaseClassDecl, Quals))
       ExceptSpec.CalledDecl(CopyConstructor);
   }
   for (CXXRecordDecl::field_iterator Field = ClassDecl->field_begin(),
@@ -7161,15 +7273,10 @@ Sema::ComputeDefaultedCopyCtorExceptionSpecAndConst(CXXRecordDecl *ClassDecl) {
        Field != FieldEnd;
        ++Field) {
     QualType FieldType = Context.getBaseElementType((*Field)->getType());
-    if (const RecordType *FieldClassType = FieldType->getAs<RecordType>()) {
-      CXXRecordDecl *FieldClassDecl
-        = cast<CXXRecordDecl>(FieldClassType->getDecl());
-      if (!FieldClassDecl->hasDeclaredCopyConstructor())
-        DeclareImplicitCopyConstructor(FieldClassDecl);
-
-      if (CXXConstructorDecl *CopyConstructor
-                          = FieldClassDecl->getCopyConstructor(Quals))
-        ExceptSpec.CalledDecl(CopyConstructor);
+    if (CXXRecordDecl *FieldClassDecl = FieldType->getAsCXXRecordDecl()) {
+      if (CXXConstructorDecl *CopyConstructor =
+        LookupCopyConstructor(FieldClassDecl, Quals))
+      ExceptSpec.CalledDecl(CopyConstructor);
     }
   }
 
@@ -7419,6 +7526,10 @@ void Sema::AddCXXDirectInitializerToDecl(Decl *RealDecl,
     }
     VDecl->setTypeSourceInfo(DeducedType);
     VDecl->setType(DeducedType->getType());
+
+    // In ARC, infer lifetime.
+    if (getLangOptions().ObjCAutoRefCount && inferObjCARCLifetime(VDecl))
+      VDecl->setInvalidDecl();
 
     // If this is a redeclaration, check that the type we just deduced matches
     // the previously declared type.

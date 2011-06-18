@@ -30,6 +30,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/Host.h"
 #include "llvm/Support/Process.h"
+#include "llvm/Support/ErrorHandling.h"
 
 #include "InputInfo.h"
 #include "ToolChains.h"
@@ -145,6 +146,12 @@ static void AddLinkerInputs(const ToolChain &TC,
     } else
       A.renderAsInput(Args, CmdArgs);
   }
+}
+
+/// \brief Determine whether Objective-C automated reference counting is
+/// enabled.
+static bool isObjCAutoRefCount(const ArgList &Args) {
+  return Args.hasFlag(options::OPT_fobjc_arc, options::OPT_fno_objc_arc, false);
 }
 
 static void addProfileRT(const ToolChain &TC, const ArgList &Args,
@@ -318,8 +325,12 @@ void Clang::AddPreprocessingOptions(const Driver &D,
 
   // Add C++ include arguments, if needed.
   types::ID InputType = Inputs[0].getType();
-  if (types::isCXX(InputType))
-    getToolChain().AddClangCXXStdlibIncludeArgs(Args, CmdArgs);
+  if (types::isCXX(InputType)) {
+    bool ObjCXXAutoRefCount
+      = types::isObjC(InputType) && isObjCAutoRefCount(Args);
+    getToolChain().AddClangCXXStdlibIncludeArgs(Args, CmdArgs, 
+                                                ObjCXXAutoRefCount);
+  }
 
   // Add -Wp, and -Xassembler if using the preprocessor.
 
@@ -1487,6 +1498,22 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
 
   Args.AddLastArg(CmdArgs, options::OPT_working_directory);
 
+  if (!Args.hasArg(options::OPT_fno_objc_arc)) {
+    if (const Arg *A = Args.getLastArg(options::OPT_ccc_arrmt_check,
+                                       options::OPT_ccc_arrmt_modify)) {
+      switch (A->getOption().getID()) {
+      default:
+        llvm_unreachable("missed a case");
+      case options::OPT_ccc_arrmt_check:
+        CmdArgs.push_back("-arcmt-check");
+        break;
+      case options::OPT_ccc_arrmt_modify:
+        CmdArgs.push_back("-arcmt-modify");
+        break;
+      }
+    }
+  }
+    
   // Add preprocessing options like -I, -D, etc. if we are using the
   // preprocessor.
   //
@@ -1651,13 +1678,39 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
                     options::OPT_fno_lax_vector_conversions))
     CmdArgs.push_back("-fno-lax-vector-conversions");
 
+  // Allow -fno-objc-arr to trump -fobjc-arr/-fobjc-arc.
+  // NOTE: This logic is duplicated in ToolChains.cpp.
+  bool ARC = isObjCAutoRefCount(Args);
+  if (ARC) {
+    CmdArgs.push_back("-fobjc-arc");
+
+    // Certain deployment targets don't have runtime support.
+    if (!getToolChain().HasARCRuntime())
+      CmdArgs.push_back("-fobjc-no-arc-runtime");
+
+    // Allow the user to enable full exceptions code emission.
+    // We define off for Objective-CC, on for Objective-C++.
+    if (Args.hasFlag(options::OPT_fobjc_arc_exceptions,
+                     options::OPT_fno_objc_arc_exceptions,
+                     /*default*/ types::isCXX(InputType)))
+      CmdArgs.push_back("-fobjc-arc-exceptions");
+  }
+
+  // -fobjc-infer-related-result-type is the default, except in the Objective-C
+  // rewriter.
+  if (IsRewriter)
+    CmdArgs.push_back("-fno-objc-infer-related-result-type");
+  
   // Handle -fobjc-gc and -fobjc-gc-only. They are exclusive, and -fobjc-gc-only
   // takes precedence.
   const Arg *GCArg = Args.getLastArg(options::OPT_fobjc_gc_only);
   if (!GCArg)
     GCArg = Args.getLastArg(options::OPT_fobjc_gc);
   if (GCArg) {
-    if (getToolChain().SupportsObjCGC()) {
+    if (ARC) {
+      D.Diag(clang::diag::err_drv_objc_gc_arr)
+        << GCArg->getAsString(Args);
+    } else if (getToolChain().SupportsObjCGC()) {
       GCArg->render(Args, CmdArgs);
     } else {
       // FIXME: We should move this to a hard error.
@@ -3024,6 +3077,7 @@ void darwin::Link::AddLinkArgs(Compilation &C,
   Args.AddLastArg(CmdArgs, options::OPT_dynamic);
   Args.AddAllArgs(CmdArgs, options::OPT_exported__symbols__list);
   Args.AddLastArg(CmdArgs, options::OPT_flat__namespace);
+  Args.AddLastArg(CmdArgs, options::OPT_force__load);
   Args.AddAllArgs(CmdArgs, options::OPT_headerpad__max__install__names);
   Args.AddAllArgs(CmdArgs, options::OPT_image__base);
   Args.AddAllArgs(CmdArgs, options::OPT_init);
@@ -3244,6 +3298,12 @@ void darwin::Link::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back("-lgomp");
 
   getDarwinToolChain().AddLinkSearchPathArgs(Args, CmdArgs);
+
+  // In ARC, if we don't have runtime support, link in the runtime
+  // stubs.  We have to do this *before* adding any of the normal
+  // linker inputs so that its initializer gets run first.
+  if (!getDarwinToolChain().HasARCRuntime() && isObjCAutoRefCount(Args))
+    getDarwinToolChain().AddLinkARCArgs(Args, CmdArgs);
 
   AddLinkerInputs(getToolChain(), Inputs, Args, CmdArgs);
 
@@ -3860,7 +3920,6 @@ void netbsd::Link::ConstructJob(Compilation &C, const JobAction &JA,
     }
     // FIXME: For some reason GCC passes -lgcc and -lgcc_s before adding
     // the default system libraries. Just mimic this for now.
-    CmdArgs.push_back("-lgcc");
     if (Args.hasArg(options::OPT_static)) {
       CmdArgs.push_back("-lgcc_eh");
     } else {
@@ -3868,6 +3927,7 @@ void netbsd::Link::ConstructJob(Compilation &C, const JobAction &JA,
       CmdArgs.push_back("-lgcc_s");
       CmdArgs.push_back("--no-as-needed");
     }
+    CmdArgs.push_back("-lgcc");
 
     if (Args.hasArg(options::OPT_pthread))
       CmdArgs.push_back("-lpthread");

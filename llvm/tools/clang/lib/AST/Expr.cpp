@@ -22,6 +22,7 @@
 #include "clang/AST/StmtVisitor.h"
 #include "clang/Lex/LiteralSupport.h"
 #include "clang/Lex/Lexer.h"
+#include "clang/Sema/SemaDiagnostic.h"
 #include "clang/Basic/Builtins.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Basic/TargetInfo.h"
@@ -1044,6 +1045,10 @@ const char *CastExpr::getCastKindName() const {
     return "IntegralComplexCast";
   case CK_IntegralComplexToFloatingComplex:
     return "IntegralComplexToFloatingComplex";
+  case CK_ObjCConsumeObject:
+    return "ObjCConsumeObject";
+  case CK_ObjCProduceObject:
+    return "ObjCProduceObject";
   }
 
   llvm_unreachable("Unhandled cast kind!");
@@ -1489,6 +1494,17 @@ bool Expr::isUnusedResultAWarning(SourceLocation &Loc, SourceRange &R1,
 
   case ObjCMessageExprClass: {
     const ObjCMessageExpr *ME = cast<ObjCMessageExpr>(this);
+    if (Ctx.getLangOptions().ObjCAutoRefCount &&
+        ME->isInstanceMessage() &&
+        !ME->getType()->isVoidType() &&
+        ME->getSelector().getIdentifierInfoForSlot(0) &&
+        ME->getSelector().getIdentifierInfoForSlot(0)
+                                               ->getName().startswith("init")) {
+      Loc = getExprLoc();
+      R1 = ME->getSourceRange();
+      return true;
+    }
+
     const ObjCMethodDecl *MD = ME->getMethodDecl();
     if (MD && MD->getAttr<WarnUnusedResultAttr>()) {
       Loc = getExprLoc();
@@ -1653,7 +1669,8 @@ static Expr::CanThrowResult CanSubExprsThrow(ASTContext &C, const Expr *CE) {
   return R;
 }
 
-static Expr::CanThrowResult CanCalleeThrow(ASTContext &Ctx, const Decl *D,
+static Expr::CanThrowResult CanCalleeThrow(ASTContext &Ctx, const Expr *E,
+                                           const Decl *D,
                                            bool NullThrows = true) {
   if (!D)
     return NullThrows ? Expr::CT_Can : Expr::CT_Cannot;
@@ -1682,6 +1699,15 @@ static Expr::CanThrowResult CanCalleeThrow(ASTContext &Ctx, const Decl *D,
 
   if (!FT)
     return Expr::CT_Can;
+
+  if (FT->getExceptionSpecType() == EST_Delayed) {
+    assert(isa<CXXConstructorDecl>(D) &&
+           "only constructor exception specs can be unknown");
+    Ctx.getDiagnostics().Report(E->getLocStart(),
+                                diag::err_exception_spec_unknown)
+      << E->getSourceRange();
+    return Expr::CT_Can;
+  }
 
   return FT->isNothrow(Ctx) ? Expr::CT_Cannot : Expr::CT_Can;
 }
@@ -1757,7 +1783,7 @@ Expr::CanThrowResult Expr::CanThrow(ASTContext &C) const {
     else if (isa<CXXPseudoDestructorExpr>(CE->getCallee()->IgnoreParens()))
       CT = CT_Cannot;
     else
-      CT = CanCalleeThrow(C, CE->getCalleeDecl());
+      CT = CanCalleeThrow(C, this, CE->getCalleeDecl());
     if (CT == CT_Can)
       return CT;
     return MergeCanThrow(CT, CanSubExprsThrow(C, this));
@@ -1765,7 +1791,7 @@ Expr::CanThrowResult Expr::CanThrow(ASTContext &C) const {
 
   case CXXConstructExprClass:
   case CXXTemporaryObjectExprClass: {
-    CanThrowResult CT = CanCalleeThrow(C,
+    CanThrowResult CT = CanCalleeThrow(C, this,
         cast<CXXConstructExpr>(this)->getConstructor());
     if (CT == CT_Can)
       return CT;
@@ -1778,8 +1804,8 @@ Expr::CanThrowResult Expr::CanThrow(ASTContext &C) const {
       CT = CT_Dependent;
     else
       CT = MergeCanThrow(
-        CanCalleeThrow(C, cast<CXXNewExpr>(this)->getOperatorNew()),
-        CanCalleeThrow(C, cast<CXXNewExpr>(this)->getConstructor(),
+        CanCalleeThrow(C, this, cast<CXXNewExpr>(this)->getOperatorNew()),
+        CanCalleeThrow(C, this, cast<CXXNewExpr>(this)->getConstructor(),
                        /*NullThrows*/false));
     if (CT == CT_Can)
       return CT;
@@ -1792,10 +1818,11 @@ Expr::CanThrowResult Expr::CanThrow(ASTContext &C) const {
     if (DTy.isNull() || DTy->isDependentType()) {
       CT = CT_Dependent;
     } else {
-      CT = CanCalleeThrow(C, cast<CXXDeleteExpr>(this)->getOperatorDelete());
+      CT = CanCalleeThrow(C, this,
+                          cast<CXXDeleteExpr>(this)->getOperatorDelete());
       if (const RecordType *RT = DTy->getAs<RecordType>()) {
         const CXXRecordDecl *RD = cast<CXXRecordDecl>(RT->getDecl());
-        CT = MergeCanThrow(CT, CanCalleeThrow(C, RD->getDestructor()));
+        CT = MergeCanThrow(CT, CanCalleeThrow(C, this, RD->getDestructor()));
       }
       if (CT == CT_Can)
         return CT;
@@ -1805,7 +1832,7 @@ Expr::CanThrowResult Expr::CanThrow(ASTContext &C) const {
 
   case CXXBindTemporaryExprClass: {
     // The bound temporary has to be destroyed again, which might throw.
-    CanThrowResult CT = CanCalleeThrow(C,
+    CanThrowResult CT = CanCalleeThrow(C, this,
       cast<CXXBindTemporaryExpr>(this)->getTemporary()->getDestructor());
     if (CT == CT_Can)
       return CT;
@@ -1986,6 +2013,14 @@ Expr *Expr::IgnoreParenImpCasts() {
     }
     return E;
   }
+}
+
+Expr *Expr::IgnoreConversionOperator() {
+  if (CXXMemberCallExpr *MCE = dyn_cast<CXXMemberCallExpr>(this)) {
+    if (isa<CXXConversionDecl>(MCE->getMethodDecl()))
+      return MCE->getImplicitObjectArgument();
+  }
+  return this;
 }
 
 /// IgnoreParenNoopCasts - Ignore parentheses and casts that do not change the
@@ -2499,7 +2534,7 @@ ObjCMessageExpr::ObjCMessageExpr(QualType T,
          /*TypeDependent=*/false, /*ValueDependent=*/false,
          /*ContainsUnexpandedParameterPack=*/false),
     NumArgs(NumArgs), Kind(IsInstanceSuper? SuperInstance : SuperClass),
-    HasMethod(Method != 0), SuperLoc(SuperLoc),
+    HasMethod(Method != 0), IsDelegateInitCall(false), SuperLoc(SuperLoc),
     SelectorOrMethod(reinterpret_cast<uintptr_t>(Method? Method
                                                        : Sel.getAsOpaquePtr())),
     SelectorLoc(SelLoc), LBracLoc(LBracLoc), RBracLoc(RBracLoc) 
@@ -2520,7 +2555,8 @@ ObjCMessageExpr::ObjCMessageExpr(QualType T,
                                  SourceLocation RBracLoc)
   : Expr(ObjCMessageExprClass, T, VK, OK_Ordinary, T->isDependentType(),
          T->isDependentType(), T->containsUnexpandedParameterPack()),
-    NumArgs(NumArgs), Kind(Class), HasMethod(Method != 0),
+    NumArgs(NumArgs), Kind(Class),
+    HasMethod(Method != 0), IsDelegateInitCall(false),
     SelectorOrMethod(reinterpret_cast<uintptr_t>(Method? Method
                                                        : Sel.getAsOpaquePtr())),
     SelectorLoc(SelLoc), LBracLoc(LBracLoc), RBracLoc(RBracLoc) 
@@ -2551,7 +2587,8 @@ ObjCMessageExpr::ObjCMessageExpr(QualType T,
   : Expr(ObjCMessageExprClass, T, VK, OK_Ordinary, Receiver->isTypeDependent(),
          Receiver->isTypeDependent(),
          Receiver->containsUnexpandedParameterPack()),
-    NumArgs(NumArgs), Kind(Instance), HasMethod(Method != 0),
+    NumArgs(NumArgs), Kind(Instance),
+    HasMethod(Method != 0), IsDelegateInitCall(false),
     SelectorOrMethod(reinterpret_cast<uintptr_t>(Method? Method
                                                        : Sel.getAsOpaquePtr())),
     SelectorLoc(SelLoc), LBracLoc(LBracLoc), RBracLoc(RBracLoc) 
@@ -2682,6 +2719,19 @@ ObjCInterfaceDecl *ObjCMessageExpr::getReceiverInterface() const {
   return 0;
 }
 
+llvm::StringRef ObjCBridgedCastExpr::getBridgeKindName() const {
+  switch (getBridgeKind()) {
+  case OBC_Bridge:
+    return "__bridge";
+  case OBC_BridgeTransfer:
+    return "__bridge_transfer";
+  case OBC_BridgeRetained:
+    return "__bridge_retained";
+  }
+  
+  return "__bridge";
+}
+
 bool ChooseExpr::isConditionTrue(const ASTContext &C) const {
   return getCond()->EvaluateAsInt(C) != 0;
 }
@@ -2765,7 +2815,7 @@ GenericSelectionExpr::GenericSelectionExpr(ASTContext &Context,
 //  DesignatedInitExpr
 //===----------------------------------------------------------------------===//
 
-IdentifierInfo *DesignatedInitExpr::Designator::getFieldName() {
+IdentifierInfo *DesignatedInitExpr::Designator::getFieldName() const {
   assert(Kind == FieldDesignator && "Only valid on a field designator");
   if (Field.NameOrField & 0x01)
     return reinterpret_cast<IdentifierInfo *>(Field.NameOrField&~0x01);
@@ -3023,4 +3073,3 @@ BlockDeclRefExpr::BlockDeclRefExpr(VarDecl *d, QualType t, ExprValueKind VK,
   ExprBits.TypeDependent = TypeDependent;
   ExprBits.ValueDependent = ValueDependent;
 }
-

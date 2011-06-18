@@ -87,6 +87,14 @@ class TypeLocBuilder {
     Index = Capacity;
   }  
 
+  /// \brief Tell the TypeLocBuilder that the type it is storing has been
+  /// modified in some safe way that doesn't affect type-location information.
+  void TypeWasModifiedSafely(QualType T) {
+#ifndef NDEBUG
+    LastTy = T;
+#endif
+  }
+  
   /// Pushes space for a new TypeLoc of the given type.  Invalidates
   /// any TypeLocs previously retrieved from this builder.
   template <class TyLocType> TyLocType push(QualType T) {
@@ -139,7 +147,7 @@ private:
 
     Index -= LocalSize;
 
-    return getTypeLoc(T);
+    return getTemporaryTypeLoc(T);
   }
 
   /// Grow to the given capacity.
@@ -171,15 +179,17 @@ private:
     reserve(Size);
     Index -= Size;
 
-    return getTypeLoc(T);
+    return getTemporaryTypeLoc(T);
   }
 
-
-  // This is private because, when we kill off TypeSourceInfo in favor
-  // of TypeLoc, we'll want an interface that creates a TypeLoc given
-  // an ASTContext, and we don't want people to think they can just
-  // use this as an equivalent.
-  TypeLoc getTypeLoc(QualType T) {
+public:
+  /// \brief Retrieve a temporary TypeLoc that refers into this \c TypeLocBuilder
+  /// object.
+  ///
+  /// The resulting \c TypeLoc should only be used so long as the 
+  /// \c TypeLocBuilder is active and has not had more type information
+  /// pushed into it.
+  TypeLoc getTemporaryTypeLoc(QualType T) {
 #ifndef NDEBUG
     assert(LastTy == T && "type doesn't match last type pushed!");
 #endif

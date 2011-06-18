@@ -231,6 +231,14 @@ static LinkageInfo getLVForNamespaceScopeDecl(const NamedDecl *D, LVFlags F) {
       if (!FoundExtern)
         return LinkageInfo::internal();
     }
+    if (Var->getStorageClass() == SC_None) {
+      const VarDecl *PrevVar = Var->getPreviousDeclaration();
+      for (; PrevVar; PrevVar = PrevVar->getPreviousDeclaration())
+        if (PrevVar->getStorageClass() == SC_PrivateExtern)
+          break;
+        if (PrevVar)
+          return PrevVar->getLinkageAndVisibility();
+    }
   } else if (isa<FunctionDecl>(D) || isa<FunctionTemplateDecl>(D)) {
     // C++ [temp]p4:
     //   A non-member function template can have internal linkage; any
@@ -2077,9 +2085,10 @@ SourceRange FunctionDecl::getSourceRange() const {
 FieldDecl *FieldDecl::Create(const ASTContext &C, DeclContext *DC,
                              SourceLocation StartLoc, SourceLocation IdLoc,
                              IdentifierInfo *Id, QualType T,
-                             TypeSourceInfo *TInfo, Expr *BW, bool Mutable) {
+                             TypeSourceInfo *TInfo, Expr *BW, bool Mutable,
+                             bool HasInit) {
   return new (C) FieldDecl(Decl::Field, DC, StartLoc, IdLoc, Id, T, TInfo,
-                           BW, Mutable);
+                           BW, Mutable, HasInit);
 }
 
 bool FieldDecl::isAnonymousStructOrUnion() const {
@@ -2124,8 +2133,15 @@ unsigned FieldDecl::getFieldIndex() const {
 
 SourceRange FieldDecl::getSourceRange() const {
   if (isBitField())
-    return SourceRange(getInnerLocStart(), BitWidth->getLocEnd());
+    return SourceRange(getInnerLocStart(), getBitWidth()->getLocEnd());
   return DeclaratorDecl::getSourceRange();
+}
+
+void FieldDecl::setInClassInitializer(Expr *Init) {
+  assert(!InitializerOrBitWidth.getPointer() &&
+         "bit width or initializer already set");
+  InitializerOrBitWidth.setPointer(Init);
+  InitializerOrBitWidth.setInt(0);
 }
 
 //===----------------------------------------------------------------------===//
@@ -2366,6 +2382,16 @@ void BlockDecl::setCaptures(ASTContext &Context,
   void *buffer = Context.Allocate(allocationSize, /*alignment*/sizeof(void*));
   memcpy(buffer, begin, allocationSize);
   Captures = static_cast<Capture*>(buffer);
+}
+
+bool BlockDecl::capturesVariable(const VarDecl *variable) const {
+  for (capture_const_iterator
+         i = capture_begin(), e = capture_end(); i != e; ++i)
+    // Only auto vars can be captured, so no redeclaration worries.
+    if (i->getVariable() == variable)
+      return true;
+
+  return false;
 }
 
 SourceRange BlockDecl::getSourceRange() const {
