@@ -1,3 +1,9 @@
+2010-08-12  H.J. Lu  <hongjiu.lu@intel.com>
+
+	PR binutils/11909
+	* Makefile.am (coff-tic4x.lo): New.  Disable -Werror.
+	(coff-tic54x.lo): Likewise.
+
 2010-07-06  H.J. Lu  <hongjiu.lu@intel.com>
 
 	* dwarf2.c (add_line_info): Initialize prev_line.
