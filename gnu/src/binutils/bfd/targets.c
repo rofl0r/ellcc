@@ -646,6 +646,8 @@ extern const bfd_target bfd_elf32_nbigmips_vec;
 extern const bfd_target bfd_elf32_nlittlemips_vec;
 extern const bfd_target bfd_elf32_ntradbigmips_vec;
 extern const bfd_target bfd_elf32_ntradlittlemips_vec;
+extern const bfd_target bfd_elf32_littlenios2_vec;
+extern const bfd_target bfd_elf32_bignios2_vec;
 extern const bfd_target bfd_elf32_openrisc_vec;
 extern const bfd_target bfd_elf32_or32_big_vec;
 extern const bfd_target bfd_elf32_pj_vec;
@@ -863,6 +865,9 @@ extern const bfd_target sco5_core_vec;
 extern const bfd_target trad_core_vec;
 
 extern const bfd_target bfd_elf32_am33lin_vec;
+extern const bfd_target bfd_elf32_littlenios2_vec;
+extern const bfd_target bfd_elf32_bignios2_vec;
+
 static const bfd_target * const _bfd_target_vector[] =
 {
 #ifdef SELECT_VECS
@@ -993,6 +998,8 @@ static const bfd_target * const _bfd_target_vector[] =
 	&bfd_elf32_ntradbigmips_vec,
 	&bfd_elf32_ntradlittlemips_vec,
 #endif
+	&bfd_elf32_littlenios2_vec,
+	&bfd_elf32_bignios2_vec,
 	&bfd_elf32_openrisc_vec,
 	&bfd_elf32_or32_big_vec,
 	&bfd_elf32_pj_vec,

@@ -148,6 +148,7 @@
 
 #include "aout/ar.h"
 
+#include "elf/nios2.h"
 #include "getopt.h"
 #include "libiberty.h"
 #include "safe-ctype.h"
@@ -652,7 +653,6 @@ guess_is_rela (unsigned int e_machine)
     case EM_MSP430:
     case EM_MSP430_OLD:
     case EM_MT:
-    case EM_NIOS32:
     case EM_PPC64:
     case EM_PPC:
     case EM_RX:
@@ -674,6 +674,7 @@ guess_is_rela (unsigned int e_machine)
     case EM_XTENSA_OLD:
     case EM_MICROBLAZE:
     case EM_MICROBLAZE_OLD:
+    case EM_NIOS32:
       return TRUE;
 
     case EM_68HC05:
@@ -1284,6 +1285,11 @@ dump_relocations (FILE * file,
 
 	case EM_TI_C6000:
 	  rtype = elf_tic6x_reloc_type (type);
+	  break;
+
+	case EM_NIOS32:
+	case EM_ALTERA_NIOS2:
+	  rtype = elf_nios2_reloc_type (type);
 	  break;
 	}
 

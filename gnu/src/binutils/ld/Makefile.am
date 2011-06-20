@@ -371,6 +371,7 @@ ALL_EMULATION_SOURCES = \
 	emsp430x448.c \
 	emsp430x449.c \
 	enews.c \
+	enios2elf.o \
 	ens32knbsd.c \
 	eor32.c \
 	eor32elf.c \
@@ -1675,6 +1676,9 @@ emsp430x449.c: $(srcdir)/emulparams/msp430all.sh \
 enews.c: $(srcdir)/emulparams/news.sh \
   $(srcdir)/emultempl/generic.em $(srcdir)/scripttempl/aout.sc ${GEN_DEPENDS}
 	${GENSCRIPTS} news "$(tdir_news)"
+enios2elf.c: $(srcdir)/emulparams/nios2elf.sh \
+  $(ELF_GEN_DEPS) $(srcdir)/scripttempl/elf.sc ${GEN_DEPENDS}
+	${GENSCRIPTS} nios2elf "$(tdir_nios2)"
 ens32knbsd.c:	$(srcdir)/emulparams/ns32knbsd.sh \
   $(srcdir)/emultempl/generic.em $(srcdir)/emultempl/netbsd.em \
   $(srcdir)/scripttempl/aout.sc ${GEN_DEPENDS}

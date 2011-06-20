@@ -111,6 +111,7 @@ ALL_MACHINES = \
 	cpu-moxie.lo \
 	cpu-msp430.lo \
 	cpu-mt.lo \
+	cpu-nios2.lo \
 	cpu-ns32k.lo \
 	cpu-openrisc.lo \
 	cpu-or32.lo \
@@ -184,6 +185,7 @@ ALL_MACHINES_CFILES = \
 	cpu-msp430.c \
 	cpu-mt.c \
 	cpu-ns32k.c \
+	cpu-nios2.c \
 	cpu-openrisc.c \
 	cpu-or32.c \
 	cpu-pdp11.c \
@@ -304,6 +306,7 @@ BFD32_BACKENDS = \
 	elf32-moxie.lo \
 	elf32-msp430.lo \
 	elf32-mt.lo \
+	elf32-nios2.lo \
 	elf32-openrisc.lo \
 	elf32-or32.lo \
 	elf32-pj.lo \
@@ -485,6 +488,7 @@ BFD32_BACKENDS_CFILES = \
 	elf32-moxie.c \
 	elf32-msp430.c \
 	elf32-mt.c \
+	elf32-nios2.c \
 	elf32-openrisc.c \
 	elf32-or32.c \
 	elf32-pj.c \

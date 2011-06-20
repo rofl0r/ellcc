@@ -283,6 +283,7 @@ case $basic_machine in
 	| moxie \
 	| mt \
 	| msp430 \
+	| nios2 | nios2eb | nios2el \
 	| nios | nios2 \
 	| ns16k | ns32k \
 	| or32 \
