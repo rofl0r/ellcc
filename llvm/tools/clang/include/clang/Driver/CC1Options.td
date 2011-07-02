@@ -143,6 +143,8 @@ def femit_coverage_data: Flag<"-femit-coverage-data">,
 def coverage_file : Separate<"-coverage-file">,
   HelpText<"Emit coverage data to this filename. The extension will be replaced.">;
 def coverage_file_EQ : Joined<"-coverage-file=">, Alias<coverage_file>;
+def fuse_register_sized_bitfield_access: Flag<"-fuse-register-sized-bitfield-access">,
+  HelpText<"Use register sized accesses to bit-fields, when possible.">;
 def relaxed_aliasing : Flag<"-relaxed-aliasing">,
   HelpText<"Turn off Type Based Alias Analysis">;
 def masm_verbose : Flag<"-masm-verbose">,
@@ -157,6 +159,8 @@ def mfloat_abi : Separate<"-mfloat-abi">,
   HelpText<"The float ABI to use">;
 def mlimit_float_precision : Separate<"-mlimit-float-precision">,
   HelpText<"Limit float precision to the given value">;
+def mno_exec_stack : Flag<"-mnoexecstack">,
+  HelpText<"Mark the file as not needing an executable stack">;
 def mno_zero_initialized_in_bss : Flag<"-mno-zero-initialized-in-bss">,
   HelpText<"Do not put zero initialized data in the BSS">;
 def momit_leaf_frame_pointer : Flag<"-momit-leaf-frame-pointer">,
@@ -457,6 +461,8 @@ def fhidden_weak_vtables : Flag<"-fhidden-weak-vtables">,
   HelpText<"Generate weak vtables and RTTI with hidden visibility">;
 def std_EQ : Joined<"-std=">,
   HelpText<"Language standard to compile for">;
+def stdlib_EQ : Joined<"-stdlib=">,
+  HelpText<"C++ standard library to use">;
 def fmath_errno : Flag<"-fmath-errno">,
   HelpText<"Require math functions to indicate errors by setting errno">;
 def fms_extensions : Flag<"-fms-extensions">,

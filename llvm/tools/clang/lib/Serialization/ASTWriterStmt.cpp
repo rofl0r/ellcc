@@ -164,6 +164,7 @@ namespace clang {
     void VisitSizeOfPackExpr(SizeOfPackExpr *E);
     void VisitSubstNonTypeTemplateParmPackExpr(
                                            SubstNonTypeTemplateParmPackExpr *E);
+    void VisitMaterializeTemporaryExpr(MaterializeTemporaryExpr *E);
     void VisitOpaqueValueExpr(OpaqueValueExpr *E);
 
     // CUDA Expressions
@@ -374,6 +375,7 @@ void ASTStmtWriter::VisitExpr(Expr *E) {
   Writer.AddTypeRef(E->getType(), Record);
   Record.push_back(E->isTypeDependent());
   Record.push_back(E->isValueDependent());
+  Record.push_back(E->isInstantiationDependent());
   Record.push_back(E->containsUnexpandedParameterPack());
   Record.push_back(E->getValueKind());
   Record.push_back(E->getObjectKind());
@@ -1441,6 +1443,12 @@ void ASTStmtWriter::VisitSubstNonTypeTemplateParmPackExpr(
   Writer.AddTemplateArgument(E->getArgumentPack(), Record);
   Writer.AddSourceLocation(E->NameLoc, Record);
   Code = serialization::EXPR_SUBST_NON_TYPE_TEMPLATE_PARM_PACK;
+}
+
+void ASTStmtWriter::VisitMaterializeTemporaryExpr(MaterializeTemporaryExpr *E) {
+  VisitExpr(E);
+  Writer.AddStmt(E->Temporary);
+  Code = serialization::EXPR_MATERIALIZE_TEMPORARY;
 }
 
 void ASTStmtWriter::VisitOpaqueValueExpr(OpaqueValueExpr *E) {

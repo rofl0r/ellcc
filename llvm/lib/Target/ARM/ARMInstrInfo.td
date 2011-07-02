@@ -164,6 +164,8 @@ def HasFP16          : Predicate<"Subtarget->hasFP16()">, AssemblerPredicate;
 def HasDivide        : Predicate<"Subtarget->hasDivide()">, AssemblerPredicate;
 def HasT2ExtractPack : Predicate<"Subtarget->hasT2ExtractPack()">,
                                  AssemblerPredicate;
+def HasThumb2DSP     : Predicate<"Subtarget->hasThumb2DSP()">,
+                                 AssemblerPredicate;
 def HasDB            : Predicate<"Subtarget->hasDataBarrier()">,
                                  AssemblerPredicate;
 def HasMP            : Predicate<"Subtarget->hasMPExtension()">,
@@ -676,7 +678,7 @@ include "ARMInstrFormats.td"
 /// binop that produces a value.
 multiclass AsI1_bin_irs<bits<4> opcod, string opc,
                      InstrItinClass iii, InstrItinClass iir, InstrItinClass iis,
-                        PatFrag opnode, bit Commutable = 0> {
+                        PatFrag opnode, string baseOpc, bit Commutable = 0> {
   // The register-immediate version is re-materializable. This is useful
   // in particular for taking the address of a local.
   let isReMaterializable = 1 in {
@@ -716,6 +718,24 @@ multiclass AsI1_bin_irs<bits<4> opcod, string opc,
     let Inst{15-12} = Rd;
     let Inst{11-0} = shift;
   }
+
+  // Assembly aliases for optional destination operand when it's the same
+  // as the source operand.
+  def : InstAlias<!strconcat(opc, "${s}${p} $Rdn, $imm"),
+     (!cast<Instruction>(!strconcat(baseOpc, "ri")) GPR:$Rdn, GPR:$Rdn,
+                                                    so_imm:$imm, pred:$p,
+                                                    cc_out:$s)>,
+     Requires<[IsARM]>;
+  def : InstAlias<!strconcat(opc, "${s}${p} $Rdn, $Rm"),
+     (!cast<Instruction>(!strconcat(baseOpc, "rr")) GPR:$Rdn, GPR:$Rdn,
+                                                    GPR:$Rm, pred:$p,
+                                                    cc_out:$s)>,
+     Requires<[IsARM]>;
+  def : InstAlias<!strconcat(opc, "${s}${p} $Rdn, $shift"),
+     (!cast<Instruction>(!strconcat(baseOpc, "rs")) GPR:$Rdn, GPR:$Rdn,
+                                                    so_reg:$shift, pred:$p,
+                                                    cc_out:$s)>,
+     Requires<[IsARM]>;
 }
 
 /// AI1_bin_s_irs - Similar to AsI1_bin_irs except it sets the 's' bit so the
@@ -1988,6 +2008,8 @@ defm STM : arm_ldst_mult<"stm", 0, LdStMulFrm, IIC_iStore_m, IIC_iStore_mu>;
 } // neverHasSideEffects
 
 // Load / Store Multiple Mnemonic Aliases
+def : MnemonicAlias<"ldmfd", "ldmia">;
+def : MnemonicAlias<"stmfd", "stmdb">;
 def : MnemonicAlias<"ldm", "ldmia">;
 def : MnemonicAlias<"stm", "stmia">;
 
@@ -2205,10 +2227,10 @@ def UBFX  : I<(outs GPR:$Rd),
 
 defm ADD  : AsI1_bin_irs<0b0100, "add",
                          IIC_iALUi, IIC_iALUr, IIC_iALUsr,
-                         BinOpFrag<(add  node:$LHS, node:$RHS)>, 1>;
+                         BinOpFrag<(add  node:$LHS, node:$RHS)>, "ADD", 1>;
 defm SUB  : AsI1_bin_irs<0b0010, "sub",
                          IIC_iALUi, IIC_iALUr, IIC_iALUsr,
-                         BinOpFrag<(sub  node:$LHS, node:$RHS)>>;
+                         BinOpFrag<(sub  node:$LHS, node:$RHS)>, "SUB">;
 
 // ADD and SUB with 's' bit set.
 defm ADDS : AI1_bin_s_irs<0b0100, "adds",
@@ -2531,16 +2553,16 @@ def : ARMV6Pat<(int_arm_usat GPR:$a, imm:$pos), (USAT imm:$pos, GPR:$a, 0)>;
 
 defm AND   : AsI1_bin_irs<0b0000, "and",
                           IIC_iBITi, IIC_iBITr, IIC_iBITsr,
-                          BinOpFrag<(and node:$LHS, node:$RHS)>, 1>;
+                          BinOpFrag<(and node:$LHS, node:$RHS)>, "AND", 1>;
 defm ORR   : AsI1_bin_irs<0b1100, "orr",
                           IIC_iBITi, IIC_iBITr, IIC_iBITsr,
-                          BinOpFrag<(or  node:$LHS, node:$RHS)>, 1>;
+                          BinOpFrag<(or  node:$LHS, node:$RHS)>, "ORR", 1>;
 defm EOR   : AsI1_bin_irs<0b0001, "eor",
                           IIC_iBITi, IIC_iBITr, IIC_iBITsr,
-                          BinOpFrag<(xor node:$LHS, node:$RHS)>, 1>;
+                          BinOpFrag<(xor node:$LHS, node:$RHS)>, "EOR", 1>;
 defm BIC   : AsI1_bin_irs<0b1110, "bic",
                           IIC_iBITi, IIC_iBITr, IIC_iBITsr,
-                          BinOpFrag<(and node:$LHS, (not node:$RHS))>>;
+                          BinOpFrag<(and node:$LHS, (not node:$RHS))>, "BIC">;
 
 def BFC    : I<(outs GPR:$Rd), (ins GPR:$src, bf_inv_mask_imm:$imm),
                AddrMode1, Size4Bytes, IndexModeNone, DPFrm, IIC_iUNAsi,
@@ -3008,40 +3030,21 @@ def REV  : AMiscA1I<0b01101011, 0b0011, (outs GPR:$Rd), (ins GPR:$Rm),
               IIC_iUNAr, "rev", "\t$Rd, $Rm",
               [(set GPR:$Rd, (bswap GPR:$Rm))]>, Requires<[IsARM, HasV6]>;
 
+let AddedComplexity = 5 in
 def REV16 : AMiscA1I<0b01101011, 0b1011, (outs GPR:$Rd), (ins GPR:$Rm),
                IIC_iUNAr, "rev16", "\t$Rd, $Rm",
-               [(set GPR:$Rd,
-                   (or (and (srl GPR:$Rm, (i32 8)), 0xFF),
-                       (or (and (shl GPR:$Rm, (i32 8)), 0xFF00),
-                           (or (and (srl GPR:$Rm, (i32 8)), 0xFF0000),
-                               (and (shl GPR:$Rm, (i32 8)), 0xFF000000)))))]>,
+               [(set GPR:$Rd, (rotr (bswap GPR:$Rm), (i32 16)))]>,
                Requires<[IsARM, HasV6]>;
 
-def : ARMV6Pat<(or (or (or (and (srl GPR:$Rm, (i32 8)), 0xFF0000),
-                           (and (shl GPR:$Rm, (i32 8)), 0xFF000000)),
-                       (and (srl GPR:$Rm, (i32 8)), 0xFF)),
-                   (and (shl GPR:$Rm, (i32 8)), 0xFF00)),
-               (REV16 GPR:$Rm)>;
-
+let AddedComplexity = 5 in
 def REVSH : AMiscA1I<0b01101111, 0b1011, (outs GPR:$Rd), (ins GPR:$Rm),
                IIC_iUNAr, "revsh", "\t$Rd, $Rm",
-               [(set GPR:$Rd,
-                  (sext_inreg
-                    (or (srl GPR:$Rm, (i32 8)),
-                        (shl GPR:$Rm, (i32 8))), i16))]>,
+               [(set GPR:$Rd, (sra (bswap GPR:$Rm), (i32 16)))]>,
                Requires<[IsARM, HasV6]>;
-
-def : ARMV6Pat<(sext_inreg (or (srl (and GPR:$Rm, 0xFF00), (i32 8)),
-                               (shl GPR:$Rm, (i32 8))), i16),
-               (REVSH GPR:$Rm)>;
 
 def : ARMV6Pat<(or (sra (shl GPR:$Rm, (i32 24)), (i32 16)),
                    (and (srl GPR:$Rm, (i32 8)), 0xFF)),
                (REVSH GPR:$Rm)>;
-
-// Need the AddedComplexity or else MOVs + REV would be chosen.
-let AddedComplexity = 5 in
-def : ARMV6Pat<(sra (bswap GPR:$Rm), (i32 16)), (REVSH GPR:$Rm)>;
 
 def lsl_shift_imm : SDNodeXForm<imm, [{
   unsigned Sh = ARM_AM::getSORegOpc(ARM_AM::lsl, N->getZExtValue());

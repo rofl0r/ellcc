@@ -192,10 +192,6 @@ SDValue DAGTypeLegalizer::PromoteIntRes_BITCAST(SDNode *N) {
     if (NOutVT.bitsEq(NInVT))
       // The input promotes to the same size.  Convert the promoted value.
       return DAG.getNode(ISD::BITCAST, dl, NOutVT, GetPromotedInteger(InOp));
-    if (NInVT.isVector())
-      // Promote vector element via memory load/store.
-      return DAG.getNode(ISD::ANY_EXTEND, dl, NOutVT,
-                         CreateStackStoreLoad(InOp, OutVT));
     break;
   case TargetLowering::TypeSoftenFloat:
     // Promote the integer operand by hand.
@@ -342,8 +338,8 @@ SDValue DAGTypeLegalizer::PromoteIntRes_FP_TO_XINT(SDNode *N) {
   // (eg: because the value being converted is too big), then the result of the
   // original operation was undefined anyway, so the assert is still correct.
   return DAG.getNode(N->getOpcode() == ISD::FP_TO_UINT ?
-                     ISD::AssertZext : ISD::AssertSext, dl,
-                     NVT, Res, DAG.getValueType(N->getValueType(0)));
+                     ISD::AssertZext : ISD::AssertSext, dl, NVT, Res,
+                     DAG.getValueType(N->getValueType(0).getScalarType()));
 }
 
 SDValue DAGTypeLegalizer::PromoteIntRes_FP32_TO_FP16(SDNode *N) {
@@ -373,7 +369,8 @@ SDValue DAGTypeLegalizer::PromoteIntRes_INT_EXTEND(SDNode *N) {
         return DAG.getNode(ISD::SIGN_EXTEND_INREG, dl, NVT, Res,
                            DAG.getValueType(N->getOperand(0).getValueType()));
       if (N->getOpcode() == ISD::ZERO_EXTEND)
-        return DAG.getZeroExtendInReg(Res, dl, N->getOperand(0).getValueType());
+        return DAG.getZeroExtendInReg(Res, dl,
+                      N->getOperand(0).getValueType().getScalarType());
       assert(N->getOpcode() == ISD::ANY_EXTEND && "Unknown integer extension!");
       return Res;
     }
@@ -523,20 +520,44 @@ SDValue DAGTypeLegalizer::PromoteIntRes_SRL(SDNode *N) {
 SDValue DAGTypeLegalizer::PromoteIntRes_TRUNCATE(SDNode *N) {
   EVT NVT = TLI.getTypeToTransformTo(*DAG.getContext(), N->getValueType(0));
   SDValue Res;
+  SDValue InOp = N->getOperand(0);
+  DebugLoc dl = N->getDebugLoc();
 
-  switch (getTypeAction(N->getOperand(0).getValueType())) {
+  switch (getTypeAction(InOp.getValueType())) {
   default: llvm_unreachable("Unknown type action!");
   case TargetLowering::TypeLegal:
   case TargetLowering::TypeExpandInteger:
-    Res = N->getOperand(0);
+    Res = InOp;
     break;
   case TargetLowering::TypePromoteInteger:
-    Res = GetPromotedInteger(N->getOperand(0));
+    Res = GetPromotedInteger(InOp);
     break;
+  case TargetLowering::TypeSplitVector:
+    EVT InVT = InOp.getValueType();
+    assert(InVT.isVector() && "Cannot split scalar types");
+    unsigned NumElts = InVT.getVectorNumElements();
+    assert(NumElts == NVT.getVectorNumElements() &&
+           "Dst and Src must have the same number of elements");
+    EVT EltVT = InVT.getScalarType();
+    assert(isPowerOf2_32(NumElts) &&
+           "Promoted vector type must be a power of two");
+
+    EVT HalfVT = EVT::getVectorVT(*DAG.getContext(), EltVT, NumElts/2);
+    EVT HalfNVT = EVT::getVectorVT(*DAG.getContext(), NVT.getScalarType(),
+                                   NumElts/2);
+
+    SDValue EOp1 = DAG.getNode(ISD::EXTRACT_SUBVECTOR, dl, HalfVT, InOp,
+                               DAG.getIntPtrConstant(0));
+    SDValue EOp2 = DAG.getNode(ISD::EXTRACT_SUBVECTOR, dl, HalfVT, InOp,
+                               DAG.getIntPtrConstant(NumElts/2));
+    EOp1 = DAG.getNode(ISD::TRUNCATE, dl, HalfNVT, EOp1);
+    EOp2 = DAG.getNode(ISD::TRUNCATE, dl, HalfNVT, EOp2);
+
+    return DAG.getNode(ISD::CONCAT_VECTORS, dl, NVT, EOp1, EOp2);
   }
 
   // Truncate to NVT instead of VT
-  return DAG.getNode(ISD::TRUNCATE, N->getDebugLoc(), NVT, Res);
+  return DAG.getNode(ISD::TRUNCATE, dl, NVT, Res);
 }
 
 SDValue DAGTypeLegalizer::PromoteIntRes_UADDSUBO(SDNode *N, unsigned ResNo) {
@@ -2728,13 +2749,14 @@ SDValue DAGTypeLegalizer::PromoteIntRes_EXTRACT_SUBVECTOR(SDNode *N) {
   EVT OutVT = N->getValueType(0);
   EVT NOutVT = TLI.getTypeToTransformTo(*DAG.getContext(), OutVT);
   assert(NOutVT.isVector() && "This type must be promoted to a vector type");
-  unsigned OutNumElems = N->getValueType(0).getVectorNumElements();
+  unsigned OutNumElems = OutVT.getVectorNumElements();
   EVT NOutVTElem = NOutVT.getVectorElementType();
 
   DebugLoc dl = N->getDebugLoc();
   SDValue BaseIdx = N->getOperand(1);
 
   SmallVector<SDValue, 8> Ops;
+  Ops.reserve(OutNumElems);
   for (unsigned i = 0; i != OutNumElems; ++i) {
 
     // Extract the element from the original vector.
@@ -2766,9 +2788,9 @@ SDValue DAGTypeLegalizer::PromoteIntRes_VECTOR_SHUFFLE(SDNode *N) {
 
   SDValue V0 = GetPromotedInteger(N->getOperand(0));
   SDValue V1 = GetPromotedInteger(N->getOperand(1));
-  EVT OutVT = TLI.getTypeToTransformTo(*DAG.getContext(), VT);
+  EVT OutVT = V0.getValueType();
 
-  return DAG.getVectorShuffle(OutVT, dl, V0,V1, &NewMask[0]);
+  return DAG.getVectorShuffle(OutVT, dl, V0, V1, &NewMask[0]);
 }
 
 
@@ -2782,6 +2804,7 @@ SDValue DAGTypeLegalizer::PromoteIntRes_BUILD_VECTOR(SDNode *N) {
   DebugLoc dl = N->getDebugLoc();
 
   SmallVector<SDValue, 8> Ops;
+  Ops.reserve(NumElems);
   for (unsigned i = 0; i != NumElems; ++i) {
     SDValue Op = DAG.getNode(ISD::ANY_EXTEND, dl, NOutVTElem, N->getOperand(i));
     Ops.push_back(Op);

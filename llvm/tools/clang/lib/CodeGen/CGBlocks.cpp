@@ -25,6 +25,22 @@
 using namespace clang;
 using namespace CodeGen;
 
+struct CallMemsetLocalBlockObject : EHScopeStack::Cleanup {
+  llvm::AllocaInst *BlockAddr;
+  CharUnits BlockSize;
+  
+  CallMemsetLocalBlockObject(llvm::AllocaInst *blockAddr, 
+                             CharUnits blocSize) 
+    : BlockAddr(blockAddr), BlockSize(blocSize) {}
+  
+  void Emit(CodeGenFunction &CGF, bool isForEH) {
+    CGF.Builder.CreateMemSet(BlockAddr, 
+                             llvm::ConstantInt::get(CGF.Int8Ty, 0xCD), 
+                             BlockSize.getQuantity(), 
+                             BlockAddr->getAlignment());
+  }
+};
+
 CGBlockInfo::CGBlockInfo(const BlockExpr *blockExpr, const char *N)
   : Name(N), CXXThisIndex(0), CanBeGlobal(false), NeedsCopyDispose(false),
     HasCXXObject(false), UsesStret(false), StructureType(0), Block(blockExpr) {
@@ -95,9 +111,7 @@ static llvm::Constant *buildBlockDescriptor(CodeGenModule &CGM,
   else
     elements.push_back(llvm::Constant::getNullValue(i8p));
 
-  llvm::Constant *init =
-    llvm::ConstantStruct::get(CGM.getLLVMContext(), elements.data(),
-                              elements.size(), false);
+  llvm::Constant *init = llvm::ConstantStruct::getAnon(elements);
 
   llvm::GlobalVariable *global =
     new llvm::GlobalVariable(CGM.getModule(), init->getType(), true,
@@ -651,6 +665,9 @@ llvm::Value *CodeGenFunction::EmitBlockLiteral(const BlockExpr *blockExpr) {
   llvm::Value *result =
     Builder.CreateBitCast(blockAddr,
                           ConvertType(blockInfo.getBlockExpr()->getType()));
+  if (getLangOptions().CatchUndefined)
+    EHStack.pushCleanup<CallMemsetLocalBlockObject>(NormalCleanup, blockAddr, 
+                                                    blockInfo.BlockSize);
 
   return result;
 }
@@ -677,10 +694,8 @@ const llvm::Type *CodeGenModule::getBlockDescriptorType() {
   //   const char *signature;   // the block signature
   //   const char *layout;      // reserved
   // };
-  BlockDescriptorType = llvm::StructType::get(UnsignedLongTy->getContext(),
-                                              UnsignedLongTy,
-                                              UnsignedLongTy,
-                                              NULL);
+  BlockDescriptorType =
+    llvm::StructType::get(UnsignedLongTy, UnsignedLongTy, NULL);
 
   getModule().addTypeName("struct.__block_descriptor",
                           BlockDescriptorType);
@@ -703,8 +718,7 @@ const llvm::Type *CodeGenModule::getGenericBlockLiteralType() {
   //   void (*__invoke)(void *);
   //   struct __block_descriptor *__descriptor;
   // };
-  GenericBlockLiteralType = llvm::StructType::get(getLLVMContext(),
-                                                  VoidPtrTy,
+  GenericBlockLiteralType = llvm::StructType::get(VoidPtrTy,
                                                   IntTy,
                                                   IntTy,
                                                   VoidPtrTy,
@@ -854,9 +868,7 @@ static llvm::Constant *buildGlobalBlock(CodeGenModule &CGM,
   // Descriptor
   fields[4] = buildBlockDescriptor(CGM, blockInfo);
 
-  llvm::Constant *init =
-    llvm::ConstantStruct::get(CGM.getLLVMContext(), fields, BlockHeaderSize,
-                              /*packed*/ false);
+  llvm::Constant *init = llvm::ConstantStruct::getAnon(fields);
 
   llvm::GlobalVariable *literal =
     new llvm::GlobalVariable(CGM.getModule(),

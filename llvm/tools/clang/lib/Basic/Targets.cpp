@@ -189,7 +189,8 @@ protected:
 public:
   DarwinTargetInfo(const std::string& triple) :
     OSTargetInfo<Target>(triple) {
-      this->TLSSupported = llvm::Triple(triple).getDarwinMajorNumber() > 10;
+      llvm::Triple T = llvm::Triple(triple);
+      this->TLSSupported = T.isMacOSX() && !T.isMacOSXVersionLT(10,7);
       this->MCountName = "\01mcount";
     }
 
@@ -526,7 +527,6 @@ class PPCTargetInfo : public TargetInfo {
   static const Builtin::Info BuiltinInfo[];
   static const char * const GCCRegNames[];
   static const TargetInfo::GCCRegAlias GCCRegAliases[];
-
 public:
   PPCTargetInfo(const std::string& triple) : TargetInfo(triple) {}
 
@@ -1109,18 +1109,18 @@ static const char* const GCCRegNames[] = {
   "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7",
   "mm0", "mm1", "mm2", "mm3", "mm4", "mm5", "mm6", "mm7",
   "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15",
-  "xmm8", "xmm9", "xmm10", "xmm11", "xmm12", "xmm13", "xmm14", "xmm15"
+  "xmm8", "xmm9", "xmm10", "xmm11", "xmm12", "xmm13", "xmm14", "xmm15",
 };
 
-const TargetInfo::GCCRegAlias GCCRegAliases[] = {
-  { { "al", "ah", "eax", "rax" }, "ax" },
-  { { "bl", "bh", "ebx", "rbx" }, "bx" },
-  { { "cl", "ch", "ecx", "rcx" }, "cx" },
-  { { "dl", "dh", "edx", "rdx" }, "dx" },
-  { { "esi", "rsi" }, "si" },
-  { { "edi", "rdi" }, "di" },
-  { { "esp", "rsp" }, "sp" },
-  { { "ebp", "rbp" }, "bp" },
+const TargetInfo::AddlRegName AddlRegNames[] = {
+  { { "al", "ah", "eax", "rax" }, 0 },
+  { { "bl", "bh", "ebx", "rbx" }, 3 },
+  { { "cl", "ch", "ecx", "rcx" }, 2 },
+  { { "dl", "dh", "edx", "rdx" }, 1 },
+  { { "esi", "rsi" }, 4 },
+  { { "edi", "rdi" }, 5 },
+  { { "esp", "rsp" }, 7 },
+  { { "ebp", "rbp" }, 6 },
 };
 
 // X86 target abstract base class; x86-32 and x86-64 are very close, so
@@ -1154,8 +1154,13 @@ public:
   }
   virtual void getGCCRegAliases(const GCCRegAlias *&Aliases,
                                 unsigned &NumAliases) const {
-    Aliases = GCCRegAliases;
-    NumAliases = llvm::array_lengthof(GCCRegAliases);
+    Aliases = 0;
+    NumAliases = 0;
+  }
+  virtual void getGCCAddlRegNames(const AddlRegName *&Names,
+				  unsigned &NumNames) const {
+    Names = AddlRegNames;
+    NumNames = llvm::array_lengthof(AddlRegNames);
   }
   virtual bool validateAsmConstraint(const char *&Name,
                                      TargetInfo::ConstraintInfo &info) const;
@@ -1693,6 +1698,65 @@ public:
 };
 } // end anonymous namespace
 
+// RTEMS Target
+template<typename Target>
+class RTEMSTargetInfo : public OSTargetInfo<Target> {
+protected:
+  virtual void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
+                            MacroBuilder &Builder) const {
+    // RTEMS defines; list based off of gcc output
+
+    // FIXME: Move version number handling to llvm::Triple.
+    llvm::StringRef Release = Triple.getOSName().substr(strlen("rtems"), 1);
+
+    Builder.defineMacro("__rtems__");
+    Builder.defineMacro("__ELF__");
+  }
+public:
+  RTEMSTargetInfo(const std::string &triple)
+    : OSTargetInfo<Target>(triple) {
+      this->UserLabelPrefix = "";
+
+      llvm::Triple Triple(triple);
+      switch (Triple.getArch()) {
+        default:
+        case llvm::Triple::x86:
+          // this->MCountName = ".mcount";
+          break;
+        case llvm::Triple::mips:
+        case llvm::Triple::mipsel:
+        case llvm::Triple::ppc:
+        case llvm::Triple::ppc64:
+          // this->MCountName = "_mcount";
+          break;
+        case llvm::Triple::arm:
+          // this->MCountName = "__mcount";
+          break;
+      }
+
+    }
+};
+
+namespace {
+// x86-32 RTEMS target
+class RTEMSX86_32TargetInfo : public X86_32TargetInfo {
+public:
+  RTEMSX86_32TargetInfo(const std::string& triple)
+    : X86_32TargetInfo(triple) {
+    SizeType = UnsignedLong;
+    IntPtrType = SignedLong;
+    PtrDiffType = SignedLong;
+    this->UserLabelPrefix = "";
+  }
+  virtual void getTargetDefines(const LangOptions &Opts,
+                                MacroBuilder &Builder) const {
+    X86_32TargetInfo::getTargetDefines(Opts, Builder);
+    Builder.defineMacro("__INTEL__");
+    Builder.defineMacro("__rtems__");
+  }
+};
+} // end anonymous namespace
+
 namespace {
 // x86-64 generic target
 class X86_64TargetInfo : public X86TargetInfo {
@@ -1907,7 +1971,7 @@ public:
         // Thumb1 add sp, #imm requires the immediate value be multiple of 4,
         // so set preferred for small types to 32.
         DescriptionString = ("e-p:32:32:32-i1:8:32-i8:8:32-i16:16:32-i32:32:32-"
-                             "i64:32:32-f32:32:32-f64:32:32-"
+                             "i64:32:64-f32:32:32-f64:32:64-"
                              "v64:32:64-v128:32:128-a0:0:32-n32");
       } else {
         DescriptionString = ("e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-"
@@ -2825,11 +2889,15 @@ static TargetInfo *AllocateTarget(const std::string &T) {
       return new LinuxTargetInfo<ARMTargetInfo>(T);
     case llvm::Triple::FreeBSD:
       return new FreeBSDTargetInfo<ARMTargetInfo>(T);
+    case llvm::Triple::RTEMS:
+      return new RTEMSTargetInfo<ARMTargetInfo>(T);
     default:
       return new ARMTargetInfo(T);
     }
 
   case llvm::Triple::bfin:
+    if ( os == llvm::Triple::RTEMS )
+      return new RTEMSTargetInfo<BlackfinTargetInfo>(T);
     return new BlackfinTargetInfo(T);
 
   case llvm::Triple::msp430:
@@ -2840,6 +2908,8 @@ static TargetInfo *AllocateTarget(const std::string &T) {
       return new PSPTargetInfo<MipsTargetInfo>(T);
     if (os == llvm::Triple::Linux)
       return new LinuxTargetInfo<MipsTargetInfo>(T);
+    if (os == llvm::Triple::RTEMS)
+      return new RTEMSTargetInfo<MipsTargetInfo>(T);
     return new MipsTargetInfo(T);
 
   case llvm::Triple::mipsel:
@@ -2847,6 +2917,8 @@ static TargetInfo *AllocateTarget(const std::string &T) {
       return new PSPTargetInfo<MipselTargetInfo>(T);
     if (os == llvm::Triple::Linux)
       return new LinuxTargetInfo<MipselTargetInfo>(T);
+    if (os == llvm::Triple::RTEMS)
+      return new RTEMSTargetInfo<MipselTargetInfo>(T);
     return new MipselTargetInfo(T);
 
   case llvm::Triple::ppc:
@@ -2854,6 +2926,8 @@ static TargetInfo *AllocateTarget(const std::string &T) {
       return new DarwinPPC32TargetInfo(T);
     else if (os == llvm::Triple::FreeBSD)
       return new FreeBSDTargetInfo<PPC32TargetInfo>(T);
+    if ( os == llvm::Triple::RTEMS )
+      return new RTEMSTargetInfo<PPC32TargetInfo>(T);
     return new PPC32TargetInfo(T);
 
   case llvm::Triple::ppc64:
@@ -2878,6 +2952,8 @@ static TargetInfo *AllocateTarget(const std::string &T) {
       return new AuroraUXSparcV8TargetInfo(T);
     if (os == llvm::Triple::Solaris)
       return new SolarisSparcV8TargetInfo(T);
+    if ( os == llvm::Triple::RTEMS )
+      return new RTEMSTargetInfo<SparcV8TargetInfo>(T);
     return new SparcV8TargetInfo(T);
 
   // FIXME: Need a real SPU target.
@@ -2919,6 +2995,8 @@ static TargetInfo *AllocateTarget(const std::string &T) {
       return new VisualStudioWindowsX86_32TargetInfo(T);
     case llvm::Triple::Haiku:
       return new HaikuX86_32TargetInfo(T);
+    case llvm::Triple::RTEMS:
+      return new RTEMSX86_32TargetInfo(T);
     default:
       return new X86_32TargetInfo(T);
     }

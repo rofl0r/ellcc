@@ -657,7 +657,8 @@ public:
       // and associate it with the persistent ID.
       IdentifierInfo *II = KnownII;
       if (!II)
-        II = &Reader.getIdentifierTable().getOwn(k.first, k.first + k.second);
+        II = &Reader.getIdentifierTable().getOwn(llvm::StringRef(k.first,
+                                                                 k.second));
       Reader.SetIdentifierInfo(ID, II);
       II->setIsFromAST();
       return II;
@@ -684,7 +685,8 @@ public:
     // the new IdentifierInfo.
     IdentifierInfo *II = KnownII;
     if (!II)
-      II = &Reader.getIdentifierTable().getOwn(k.first, k.first + k.second);
+      II = &Reader.getIdentifierTable().getOwn(llvm::StringRef(k.first,
+                                                               k.second));
     Reader.SetIdentifierInfo(ID, II);
 
     // Set or check the various bits in the IdentifierInfo structure.
@@ -1001,8 +1003,7 @@ bool ASTReader::ParseLineTable(PerFileData &F,
     std::string Filename(&Record[Idx], &Record[Idx] + FilenameLen);
     Idx += FilenameLen;
     MaybeAddSystemRootToFilename(Filename);
-    FileIDs[I] = LineTable.getLineTableFilenameID(Filename.c_str(),
-                                                  Filename.size());
+    FileIDs[I] = LineTable.getLineTableFilenameID(Filename);
   }
 
   // Parse the line entries
@@ -2367,6 +2368,15 @@ ASTReader::ReadASTBlock(PerFileData &F) {
       else
         TentativeDefinitions.insert(TentativeDefinitions.end(),
                                     Record.begin(), Record.end());
+      break;
+        
+    case KNOWN_NAMESPACES:
+      // Optimization for the first block.
+      if (KnownNamespaces.empty())
+        KnownNamespaces.swap(Record);
+      else
+        KnownNamespaces.insert(KnownNamespaces.end(), 
+                               Record.begin(), Record.end());
       break;
     }
     First = false;
@@ -4451,6 +4461,17 @@ ASTReader::ReadMethodPool(Selector Sel) {
   return std::pair<ObjCMethodList, ObjCMethodList>();
 }
 
+void ASTReader::ReadKnownNamespaces(
+                          llvm::SmallVectorImpl<NamespaceDecl *> &Namespaces) {
+  Namespaces.clear();
+  
+  for (unsigned I = 0, N = KnownNamespaces.size(); I != N; ++I) {
+    if (NamespaceDecl *Namespace 
+                = dyn_cast_or_null<NamespaceDecl>(GetDecl(KnownNamespaces[I])))
+      Namespaces.push_back(Namespace);
+  }
+}
+
 void ASTReader::LoadSelector(Selector Sel) {
   // It would be complicated to avoid reading the methods anyway. So don't.
   ReadMethodPool(Sel);
@@ -4545,7 +4566,7 @@ IdentifierInfo *ASTReader::DecodeIdentifierInfo(unsigned ID) {
     unsigned StrLen = (((unsigned) StrLenPtr[0])
                        | (((unsigned) StrLenPtr[1]) << 8)) - 1;
     IdentifiersLoaded[ID]
-      = &PP->getIdentifierTable().get(Str, StrLen);
+      = &PP->getIdentifierTable().get(llvm::StringRef(Str, StrLen));
     if (DeserializationListener)
       DeserializationListener->IdentifierRead(ID + 1, IdentifiersLoaded[ID]);
   }
@@ -4720,6 +4741,14 @@ ASTReader::ReadTemplateName(PerFileData &F, const RecordData &Record,
                                                GetIdentifierInfo(Record, Idx));
     return Context->getDependentTemplateName(NNS,
                                          (OverloadedOperatorKind)Record[Idx++]);
+  }
+
+  case TemplateName::SubstTemplateTemplateParm: {
+    TemplateTemplateParmDecl *param
+      = cast_or_null<TemplateTemplateParmDecl>(GetDecl(Record[Idx++]));
+    if (!param) return TemplateName();
+    TemplateName replacement = ReadTemplateName(F, Record, Idx);
+    return Context->getSubstTemplateTemplateParm(param, replacement);
   }
       
   case TemplateName::SubstTemplateTemplateParmPack: {

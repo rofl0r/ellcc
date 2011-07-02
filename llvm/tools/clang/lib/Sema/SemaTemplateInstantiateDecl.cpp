@@ -132,7 +132,7 @@ Decl *TemplateDeclInstantiator::InstantiateTypedefNameDecl(TypedefNameDecl *D,
                                                            bool IsTypeAlias) {
   bool Invalid = false;
   TypeSourceInfo *DI = D->getTypeSourceInfo();
-  if (DI->getType()->isDependentType() ||
+  if (DI->getType()->isInstantiationDependentType() ||
       DI->getType()->isVariablyModifiedType()) {
     DI = SemaRef.SubstType(DI, TemplateArgs,
                            D->getLocation(), D->getDeclName());
@@ -415,8 +415,10 @@ Decl *TemplateDeclInstantiator::VisitVarDecl(VarDecl *D) {
              !Var->isCXXForRangeDecl())
     SemaRef.ActOnUninitializedDecl(Var, false);
 
-  // Diagnose unused local variables.
-  if (!Var->isInvalidDecl() && Owner->isFunctionOrMethod() && !Var->isUsed())
+  // Diagnose unused local variables with dependent types, where the diagnostic
+  // will have been deferred.
+  if (!Var->isInvalidDecl() && Owner->isFunctionOrMethod() && !Var->isUsed() &&
+      D->getType()->isDependentType())
     SemaRef.DiagnoseUnusedDecl(Var);
 
   return Var;
@@ -433,7 +435,7 @@ Decl *TemplateDeclInstantiator::VisitAccessSpecDecl(AccessSpecDecl *D) {
 Decl *TemplateDeclInstantiator::VisitFieldDecl(FieldDecl *D) {
   bool Invalid = false;
   TypeSourceInfo *DI = D->getTypeSourceInfo();
-  if (DI->getType()->isDependentType() ||
+  if (DI->getType()->isInstantiationDependentType() ||
       DI->getType()->isVariablyModifiedType())  {
     DI = SemaRef.SubstType(DI, TemplateArgs,
                            D->getLocation(), D->getDeclName());
@@ -1088,9 +1090,26 @@ Decl *TemplateDeclInstantiator::VisitFunctionDecl(FunctionDecl *D,
   Function->setLexicalDeclContext(LexicalDC);
 
   // Attach the parameters
-  for (unsigned P = 0; P < Params.size(); ++P)
-    if (Params[P])
-      Params[P]->setOwningFunction(Function);
+  if (isa<FunctionProtoType>(Function->getType())) {
+    // Adopt the already-instantiated parameters into our own context.
+    for (unsigned P = 0; P < Params.size(); ++P)
+      if (Params[P])
+        Params[P]->setOwningFunction(Function);
+  } else {
+    // Since we were instantiated via a typedef of a function type, create
+    // new parameters.
+    const FunctionProtoType *Proto
+      = Function->getType()->getAs<FunctionProtoType>();
+    assert(Proto && "No function prototype in template instantiation?");
+    for (FunctionProtoType::arg_type_iterator AI = Proto->arg_type_begin(),
+         AE = Proto->arg_type_end(); AI != AE; ++AI) {
+      ParmVarDecl *Param
+        = SemaRef.BuildParmVarDeclForTypedef(Function, Function->getLocation(),
+                                             *AI);
+      Param->setScopeInfo(0, Params.size());
+      Params.push_back(Param);
+    }
+  }
   Function->setParams(Params.data(), Params.size());
 
   SourceLocation InstantiateAtPOI;

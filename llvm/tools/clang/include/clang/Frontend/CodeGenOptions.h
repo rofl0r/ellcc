@@ -70,6 +70,7 @@ public:
   unsigned MergeAllConstants : 1; /// Merge identical constants.
   unsigned NoCommon          : 1; /// Set when -fno-common or C++ is enabled.
   unsigned NoDwarf2CFIAsm    : 1; /// Set when -fno-dwarf2-cfi-asm is enabled.
+  unsigned NoExecStack       : 1; /// Set when -Wa,--noexecstack is enabled.
   unsigned NoImplicitFloat   : 1; /// Set when -mno-implicit-float is enabled.
   unsigned NoInfsFPMath      : 1; /// Assume FP arguments, results not +-Inf.
   unsigned NoNaNsFPMath      : 1; /// Assume FP arguments, results not NaN.
@@ -90,6 +91,11 @@ public:
   unsigned UnrollLoops       : 1; /// Control whether loops are unrolled.
   unsigned UnsafeFPMath      : 1; /// Allow unsafe floating point optzns.
   unsigned UnwindTables      : 1; /// Emit unwind tables.
+
+  /// Attempt to use register sized accesses to bit-fields in structures, when
+  /// possible.
+  unsigned UseRegisterSizedBitfieldAccess : 1;
+
   unsigned VerifyModule      : 1; /// Control whether the module should be run
                                   /// through the LLVM Verifier.
 
@@ -175,6 +181,7 @@ public:
     UnrollLoops = 0;
     UnsafeFPMath = 0;
     UnwindTables = 0;
+    UseRegisterSizedBitfieldAccess = 0;
     VerifyModule = 1;
 
     Inlining = NoInlining;

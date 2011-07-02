@@ -110,6 +110,7 @@ DependentSizedExtVectorType::DependentSizedExtVectorType(const
                                                          Expr *SizeExpr, 
                                                          SourceLocation loc)
     : Type(DependentSizedExtVector, can, /*Dependent=*/true,
+           /*InstantiationDependent=*/true,
            ElementType->isVariablyModifiedType(), 
            (ElementType->containsUnexpandedParameterPack() ||
             (SizeExpr && SizeExpr->containsUnexpandedParameterPack()))),
@@ -129,6 +130,7 @@ DependentSizedExtVectorType::Profile(llvm::FoldingSetNodeID &ID,
 VectorType::VectorType(QualType vecType, unsigned nElements, QualType canonType,
                        VectorKind vecKind)
   : Type(Vector, canonType, vecType->isDependentType(),
+         vecType->isInstantiationDependentType(),
          vecType->isVariablyModifiedType(),
          vecType->containsUnexpandedParameterPack()),
     ElementType(vecType) 
@@ -140,6 +142,7 @@ VectorType::VectorType(QualType vecType, unsigned nElements, QualType canonType,
 VectorType::VectorType(TypeClass tc, QualType vecType, unsigned nElements,
                        QualType canonType, VectorKind vecKind)
   : Type(tc, canonType, vecType->isDependentType(),
+         vecType->isInstantiationDependentType(),
          vecType->isVariablyModifiedType(),
          vecType->containsUnexpandedParameterPack()), 
     ElementType(vecType) 
@@ -288,7 +291,6 @@ bool Type::isDerivedType() const {
     return false;
   }
 }
-
 bool Type::isClassType() const {
   if (const RecordType *RT = getAs<RecordType>())
     return RT->getDecl()->isClass();
@@ -388,7 +390,7 @@ const RecordType *Type::getAsUnionType() const {
 ObjCObjectType::ObjCObjectType(QualType Canonical, QualType Base,
                                ObjCProtocolDecl * const *Protocols,
                                unsigned NumProtocols)
-  : Type(ObjCObject, Canonical, false, false, false),
+  : Type(ObjCObject, Canonical, false, false, false, false),
     BaseType(Base) 
 {
   ObjCObjectTypeBits.NumProtocols = NumProtocols;
@@ -1351,7 +1353,7 @@ DependentTemplateSpecializationType::DependentTemplateSpecializationType(
                          NestedNameSpecifier *NNS, const IdentifierInfo *Name,
                          unsigned NumArgs, const TemplateArgument *Args,
                          QualType Canon)
-  : TypeWithKeyword(Keyword, DependentTemplateSpecialization, Canon, true,
+  : TypeWithKeyword(Keyword, DependentTemplateSpecialization, Canon, true, true,
                     /*VariablyModified=*/false,
                     NNS && NNS->containsUnexpandedParameterPack()),
     NNS(NNS), Name(Name), NumArgs(NumArgs) {
@@ -1486,6 +1488,7 @@ FunctionProtoType::FunctionProtoType(QualType result, const QualType *args,
   : FunctionType(FunctionProto, result, epi.Variadic, epi.TypeQuals, 
                  epi.RefQualifier, canonical,
                  result->isDependentType(),
+                 result->isInstantiationDependentType(),
                  result->isVariablyModifiedType(),
                  result->containsUnexpandedParameterPack(),
                  epi.ExtInfo),
@@ -1498,7 +1501,9 @@ FunctionProtoType::FunctionProtoType(QualType result, const QualType *args,
   for (unsigned i = 0; i != numArgs; ++i) {
     if (args[i]->isDependentType())
       setDependent();
-
+    else if (args[i]->isInstantiationDependentType())
+      setInstantiationDependent();
+    
     if (args[i]->containsUnexpandedParameterPack())
       setContainsUnexpandedParameterPack();
 
@@ -1511,7 +1516,9 @@ FunctionProtoType::FunctionProtoType(QualType result, const QualType *args,
     for (unsigned i = 0, e = epi.NumExceptions; i != e; ++i) {
       if (epi.Exceptions[i]->isDependentType())
         setDependent();
-
+      else if (epi.Exceptions[i]->isInstantiationDependentType())
+        setInstantiationDependent();
+      
       if (epi.Exceptions[i]->containsUnexpandedParameterPack())
         setContainsUnexpandedParameterPack();
 
@@ -1521,6 +1528,14 @@ FunctionProtoType::FunctionProtoType(QualType result, const QualType *args,
     // Store the noexcept expression and context.
     Expr **noexSlot = reinterpret_cast<Expr**>(argSlot + numArgs);
     *noexSlot = epi.NoexceptExpr;
+    
+    if (epi.NoexceptExpr) {
+      if (epi.NoexceptExpr->isValueDependent() 
+          || epi.NoexceptExpr->isTypeDependent())
+        setDependent();
+      else if (epi.NoexceptExpr->isInstantiationDependent())
+        setInstantiationDependent();
+    }
   }
 
   if (epi.ConsumedArguments) {
@@ -1587,10 +1602,18 @@ void FunctionProtoType::Profile(llvm::FoldingSetNodeID &ID, QualType Result,
   ID.AddPointer(Result.getAsOpaquePtr());
   for (unsigned i = 0; i != NumArgs; ++i)
     ID.AddPointer(ArgTys[i].getAsOpaquePtr());
-  ID.AddBoolean(epi.Variadic);
-  ID.AddInteger(epi.TypeQuals);
-  ID.AddInteger(epi.RefQualifier);
-  ID.AddInteger(epi.ExceptionSpecType);
+  // This method is relatively performance sensitive, so as a performance
+  // shortcut, use one AddInteger call instead of four for the next four
+  // fields.
+  assert(!(unsigned(epi.Variadic) & ~1) &&
+         !(unsigned(epi.TypeQuals) & ~255) &&
+         !(unsigned(epi.RefQualifier) & ~3) &&
+         !(unsigned(epi.ExceptionSpecType) & ~7) &&
+         "Values larger than expected.");
+  ID.AddInteger(unsigned(epi.Variadic) +
+                (epi.TypeQuals << 1) +
+                (epi.RefQualifier << 9) +
+                (epi.ExceptionSpecType << 11));
   if (epi.ExceptionSpecType == EST_Dynamic) {
     for (unsigned i = 0; i != epi.NumExceptions; ++i)
       ID.AddPointer(epi.Exceptions[i].getAsOpaquePtr());
@@ -1616,6 +1639,7 @@ QualType TypedefType::desugar() const {
 
 TypeOfExprType::TypeOfExprType(Expr *E, QualType can)
   : Type(TypeOfExpr, can, E->isTypeDependent(), 
+         E->isInstantiationDependent(),
          E->getType()->isVariablyModifiedType(),
          E->containsUnexpandedParameterPack()), 
     TOExpr(E) {
@@ -1632,6 +1656,7 @@ void DependentTypeOfExprType::Profile(llvm::FoldingSetNodeID &ID,
 
 DecltypeType::DecltypeType(Expr *E, QualType underlyingType, QualType can)
   : Type(Decltype, can, E->isTypeDependent(), 
+         E->isInstantiationDependent(),
          E->getType()->isVariablyModifiedType(), 
          E->containsUnexpandedParameterPack()), 
     E(E),
@@ -1647,7 +1672,9 @@ void DependentDecltypeType::Profile(llvm::FoldingSetNodeID &ID,
 }
 
 TagType::TagType(TypeClass TC, const TagDecl *D, QualType can)
-  : Type(TC, can, D->isDependentType(), /*VariablyModified=*/false, 
+  : Type(TC, can, D->isDependentType(), 
+         /*InstantiationDependent=*/D->isDependentType(),
+         /*VariablyModified=*/false, 
          /*ContainsUnexpandedParameterPack=*/false),
     decl(const_cast<TagDecl*>(D)) {}
 
@@ -1667,6 +1694,7 @@ UnaryTransformType::UnaryTransformType(QualType BaseType,
                                        UTTKind UKind,
                                        QualType CanonicalType)
   : Type(UnaryTransform, CanonicalType, UnderlyingType->isDependentType(),
+         UnderlyingType->isInstantiationDependentType(),
          UnderlyingType->isVariablyModifiedType(),
          BaseType->containsUnexpandedParameterPack())
   , BaseType(BaseType), UnderlyingType(UnderlyingType), UKind(UKind)
@@ -1700,7 +1728,8 @@ SubstTemplateTypeParmPackType::
 SubstTemplateTypeParmPackType(const TemplateTypeParmType *Param, 
                               QualType Canon,
                               const TemplateArgument &ArgPack)
-  : Type(SubstTemplateTypeParmPack, Canon, true, false, true), Replaced(Param), 
+  : Type(SubstTemplateTypeParmPack, Canon, true, true, false, true), 
+    Replaced(Param), 
     Arguments(ArgPack.pack_begin()), NumArguments(ArgPack.pack_size()) 
 { 
 }
@@ -1725,23 +1754,39 @@ void SubstTemplateTypeParmPackType::Profile(llvm::FoldingSetNodeID &ID,
 }
 
 bool TemplateSpecializationType::
-anyDependentTemplateArguments(const TemplateArgumentListInfo &Args) {
-  return anyDependentTemplateArguments(Args.getArgumentArray(), Args.size());
+anyDependentTemplateArguments(const TemplateArgumentListInfo &Args,
+                              bool &InstantiationDependent) {
+  return anyDependentTemplateArguments(Args.getArgumentArray(), Args.size(),
+                                       InstantiationDependent);
 }
 
 bool TemplateSpecializationType::
-anyDependentTemplateArguments(const TemplateArgumentLoc *Args, unsigned N) {
-  for (unsigned i = 0; i != N; ++i)
-    if (Args[i].getArgument().isDependent())
+anyDependentTemplateArguments(const TemplateArgumentLoc *Args, unsigned N,
+                              bool &InstantiationDependent) {
+  for (unsigned i = 0; i != N; ++i) {
+    if (Args[i].getArgument().isDependent()) {
+      InstantiationDependent = true;
       return true;
+    }
+    
+    if (Args[i].getArgument().isInstantiationDependent())
+      InstantiationDependent = true;
+  }
   return false;
 }
 
 bool TemplateSpecializationType::
-anyDependentTemplateArguments(const TemplateArgument *Args, unsigned N) {
-  for (unsigned i = 0; i != N; ++i)
-    if (Args[i].isDependent())
+anyDependentTemplateArguments(const TemplateArgument *Args, unsigned N,
+                              bool &InstantiationDependent) {
+  for (unsigned i = 0; i != N; ++i) {
+    if (Args[i].isDependent()) {
+      InstantiationDependent = true;
       return true;
+    }
+    
+    if (Args[i].isInstantiationDependent())
+      InstantiationDependent = true;
+  }
   return false;
 }
 
@@ -1752,12 +1797,22 @@ TemplateSpecializationType(TemplateName T,
   : Type(TemplateSpecialization,
          Canon.isNull()? QualType(this, 0) : Canon,
          Canon.isNull()? T.isDependent() : Canon->isDependentType(),
+         Canon.isNull()? T.isDependent() 
+                       : Canon->isInstantiationDependentType(),
          false, T.containsUnexpandedParameterPack()),
     Template(T), NumArgs(NumArgs) {
   assert(!T.getAsDependentTemplateName() && 
          "Use DependentTemplateSpecializationType for dependent template-name");
+  assert((T.getKind() == TemplateName::Template ||
+          T.getKind() == TemplateName::SubstTemplateTemplateParm ||
+          T.getKind() == TemplateName::SubstTemplateTemplateParmPack) &&
+         "Unexpected template name for TemplateSpecializationType");
+  bool InstantiationDependent;
+  (void)InstantiationDependent;
   assert((!Canon.isNull() ||
-          T.isDependent() || anyDependentTemplateArguments(Args, NumArgs)) &&
+          T.isDependent() || 
+          anyDependentTemplateArguments(Args, NumArgs, 
+                                        InstantiationDependent)) &&
          "No canonical type for non-dependent class template specialization");
 
   TemplateArgument *TemplateArgs
@@ -1771,6 +1826,9 @@ TemplateSpecializationType(TemplateName T,
     // U<T> is always non-dependent, irrespective of the type T.
     if (Canon.isNull() && Args[Arg].isDependent())
       setDependent();
+    else if (Args[Arg].isInstantiationDependent())
+      setInstantiationDependent();
+    
     if (Args[Arg].getKind() == TemplateArgument::Type &&
         Args[Arg].getAsType()->isVariablyModifiedType())
       setVariablyModified();

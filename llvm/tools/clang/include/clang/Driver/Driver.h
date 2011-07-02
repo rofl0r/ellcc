@@ -376,6 +376,8 @@ public:
   bool ShouldUseClangCompiler(const Compilation &C, const JobAction &JA,
                               const llvm::Triple &ArchName) const;
 
+  bool IsUsingLTO(const ArgList &Args) const;
+
   /// @}
 
   /// GetReleaseVersion - Parse (([0-9]+)(.([0-9]+)(.([0-9]+)?))?)? and

@@ -94,6 +94,10 @@ private:
   inline SDValue getI32Imm(unsigned Imm) {
     return CurDAG->getTargetConstant(Imm, MVT::i32);
   }
+
+  virtual bool SelectInlineAsmMemoryOperand(const SDValue &Op,
+                                            char ConstraintCode,
+                                            std::vector<SDValue> &OutOps);
 };
 
 }
@@ -166,7 +170,8 @@ SelectAddr(SDValue Addr, SDValue &Offset, SDValue &Base) {
          Addr.getOperand(0).getOpcode() == ISD::LOAD) &&
         Addr.getOperand(1).getOpcode() == MipsISD::Lo) {
       SDValue LoVal = Addr.getOperand(1);
-      if (dyn_cast<ConstantPoolSDNode>(LoVal.getOperand(0))) {
+      if (isa<ConstantPoolSDNode>(LoVal.getOperand(0)) || 
+          isa<GlobalAddressSDNode>(LoVal.getOperand(0))) {
         Base = Addr.getOperand(0);
         Offset = LoVal.getOperand(0);
         return true;
@@ -460,6 +465,14 @@ SDNode* MipsDAGToDAGISel::Select(SDNode *Node) {
     DEBUG(ResNode->dump(CurDAG));
   DEBUG(errs() << "\n");
   return ResNode;
+}
+
+bool MipsDAGToDAGISel::
+SelectInlineAsmMemoryOperand(const SDValue &Op, char ConstraintCode,
+                             std::vector<SDValue> &OutOps) {
+  assert(ConstraintCode == 'm' && "unexpected asm memory constraint");
+  OutOps.push_back(Op);
+  return false;
 }
 
 /// createMipsISelDag - This pass converts a legalized DAG into a

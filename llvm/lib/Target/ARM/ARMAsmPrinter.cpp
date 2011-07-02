@@ -1010,19 +1010,16 @@ void ARMAsmPrinter::EmitUnwindingInstruction(const MachineInstr *MI) {
         MI->dump();
         assert(0 && "Unsupported opcode for unwinding information");
       case ARM::MOVr:
-      case ARM::tMOVgpr2gpr:
-      case ARM::tMOVgpr2tgpr:
         Offset = 0;
         break;
       case ARM::ADDri:
         Offset = -MI->getOperand(2).getImm();
         break;
       case ARM::SUBri:
-      case ARM::t2SUBrSPi:
-        Offset =  MI->getOperand(2).getImm();
+        Offset = MI->getOperand(2).getImm();
         break;
       case ARM::tSUBspi:
-        Offset =  MI->getOperand(2).getImm()*4;
+        Offset = MI->getOperand(2).getImm()*4;
         break;
       case ARM::tADDspi:
       case ARM::tADDrSPi:
@@ -1097,13 +1094,22 @@ void ARMAsmPrinter::EmitInstruction(const MachineInstr *MI) {
     OutStreamer.EmitInstruction(TmpInst);
     return;
   }
-  case ARM::t2ADDrSPi:
-  case ARM::t2ADDrSPi12:
-  case ARM::t2SUBrSPi:
-  case ARM::t2SUBrSPi12:
-    assert ((MI->getOperand(1).getReg() == ARM::SP) &&
-            "Unexpected source register!");
-    break;
+  case ARM::t2LDMIA_RET: {
+    // As above for LDMIA_RET. Map to the tPOP instruction.
+    MCInst TmpInst;
+    LowerARMMachineInstrToMCInst(MI, TmpInst, *this);
+    TmpInst.setOpcode(ARM::t2LDMIA_UPD);
+    OutStreamer.EmitInstruction(TmpInst);
+    return;
+  }
+  case ARM::tPOP_RET: {
+    // As above for LDMIA_RET. Map to the tPOP instruction.
+    MCInst TmpInst;
+    LowerARMMachineInstrToMCInst(MI, TmpInst, *this);
+    TmpInst.setOpcode(ARM::tPOP);
+    OutStreamer.EmitInstruction(TmpInst);
+    return;
+  }
 
   case ARM::t2MOVi32imm: assert(0 && "Should be lowered by thumb2it pass");
   case ARM::DBG_VALUE: {
@@ -1215,6 +1221,9 @@ void ARMAsmPrinter::EmitInstruction(const MachineInstr *MI) {
       TmpInst.setOpcode(ARM::tMOVr);
       TmpInst.addOperand(MCOperand::CreateReg(ARM::LR));
       TmpInst.addOperand(MCOperand::CreateReg(ARM::PC));
+      // Add predicate operands.
+      TmpInst.addOperand(MCOperand::CreateImm(ARMCC::AL));
+      TmpInst.addOperand(MCOperand::CreateReg(0));
       OutStreamer.EmitInstruction(TmpInst);
     }
     {
@@ -1445,7 +1454,7 @@ void ARMAsmPrinter::EmitInstruction(const MachineInstr *MI) {
   case ARM::t2BR_JT: {
     // Lower and emit the instruction itself, then the jump table following it.
     MCInst TmpInst;
-    TmpInst.setOpcode(ARM::tMOVgpr2gpr);
+    TmpInst.setOpcode(ARM::tMOVr);
     TmpInst.addOperand(MCOperand::CreateReg(ARM::PC));
     TmpInst.addOperand(MCOperand::CreateReg(MI->getOperand(0).getReg()));
     // Add predicate operands.
@@ -1494,7 +1503,7 @@ void ARMAsmPrinter::EmitInstruction(const MachineInstr *MI) {
     // mov pc, target
     MCInst TmpInst;
     unsigned Opc = MI->getOpcode() == ARM::BR_JTr ?
-      ARM::MOVr : ARM::tMOVgpr2gpr;
+      ARM::MOVr : ARM::tMOVr;
     TmpInst.setOpcode(Opc);
     TmpInst.addOperand(MCOperand::CreateReg(ARM::PC));
     TmpInst.addOperand(MCOperand::CreateReg(MI->getOperand(0).getReg()));
@@ -1507,7 +1516,7 @@ void ARMAsmPrinter::EmitInstruction(const MachineInstr *MI) {
     OutStreamer.EmitInstruction(TmpInst);
 
     // Make sure the Thumb jump table is 4-byte aligned.
-    if (Opc == ARM::tMOVgpr2gpr)
+    if (Opc == ARM::tMOVr)
       EmitAlignment(2);
 
     // Output the data for the jump table itself
@@ -1599,11 +1608,12 @@ void ARMAsmPrinter::EmitInstruction(const MachineInstr *MI) {
     MCSymbol *Label = GetARMSJLJEHLabel();
     {
       MCInst TmpInst;
-      TmpInst.setOpcode(ARM::tMOVgpr2tgpr);
+      TmpInst.setOpcode(ARM::tMOVr);
       TmpInst.addOperand(MCOperand::CreateReg(ValReg));
       TmpInst.addOperand(MCOperand::CreateReg(ARM::PC));
-      // 's' bit operand
-      TmpInst.addOperand(MCOperand::CreateReg(ARM::CPSR));
+      // Predicate.
+      TmpInst.addOperand(MCOperand::CreateImm(ARMCC::AL));
+      TmpInst.addOperand(MCOperand::CreateReg(0));
       OutStreamer.AddComment("eh_setjmp begin");
       OutStreamer.EmitInstruction(TmpInst);
     }
@@ -1817,7 +1827,7 @@ void ARMAsmPrinter::EmitInstruction(const MachineInstr *MI) {
     }
     {
       MCInst TmpInst;
-      TmpInst.setOpcode(ARM::tMOVtgpr2gpr);
+      TmpInst.setOpcode(ARM::tMOVr);
       TmpInst.addOperand(MCOperand::CreateReg(ARM::SP));
       TmpInst.addOperand(MCOperand::CreateReg(ScratchReg));
       // Predicate.

@@ -375,7 +375,7 @@ void StmtProfiler::VisitConditionalOperator(const ConditionalOperator *S) {
 }
 
 void StmtProfiler::VisitBinaryConditionalOperator(
-    const BinaryConditionalOperator *S){
+    const BinaryConditionalOperator *S) {
   VisitExpr(S);
 }
 
@@ -909,6 +909,11 @@ void StmtProfiler::VisitSubstNonTypeTemplateParmPackExpr(
   VisitExpr(S);
   VisitDecl(S->getParameterPack());
   VisitTemplateArgument(S->getArgumentPack());
+}
+
+void StmtProfiler::VisitMaterializeTemporaryExpr(
+                                           const MaterializeTemporaryExpr *S) {
+  VisitExpr(S);
 }
 
 void StmtProfiler::VisitOpaqueValueExpr(const OpaqueValueExpr *E) {

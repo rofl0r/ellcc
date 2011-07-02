@@ -442,9 +442,10 @@ ActOnStartClassInterface(SourceLocation AtInterfaceLoc,
 
     if (!PrevDecl) {
       // Try to correct for a typo in the superclass name.
-      LookupResult R(*this, SuperName, SuperLoc, LookupOrdinaryName);
-      if (CorrectTypo(R, TUScope, 0, 0, false, CTC_NoKeywords) &&
-          (PrevDecl = R.getAsSingle<ObjCInterfaceDecl>())) {
+      TypoCorrection Corrected = CorrectTypo(
+          DeclarationNameInfo(SuperName, SuperLoc), LookupOrdinaryName, TUScope,
+          NULL, NULL, false, CTC_NoKeywords);
+      if ((PrevDecl = Corrected.getCorrectionDeclAs<ObjCInterfaceDecl>())) {
         Diag(SuperLoc, diag::err_undef_superclass_suggest)
           << SuperName << ClassName << PrevDecl->getDeclName();
         Diag(PrevDecl->getLocation(), diag::note_previous_decl)
@@ -491,10 +492,13 @@ ActOnStartClassInterface(SourceLocation AtInterfaceLoc,
         if (!SuperClassDecl)
           Diag(SuperLoc, diag::err_undef_superclass)
             << SuperName << ClassName << SourceRange(AtInterfaceLoc, ClassLoc);
-        else if (SuperClassDecl->isForwardDecl())
-          Diag(SuperLoc, diag::err_undef_superclass)
+        else if (SuperClassDecl->isForwardDecl()) {
+          Diag(SuperLoc, diag::err_forward_superclass)
             << SuperClassDecl->getDeclName() << ClassName
             << SourceRange(AtInterfaceLoc, ClassLoc);
+          Diag(SuperClassDecl->getLocation(), diag::note_forward_class);
+          SuperClassDecl = 0;
+        }
       }
       IDecl->setSuperClass(SuperClassDecl);
       IDecl->setSuperClassLoc(SuperLoc);
@@ -652,12 +656,12 @@ Sema::FindProtocolDeclaration(bool WarnOnDeclarations,
     ObjCProtocolDecl *PDecl = LookupProtocol(ProtocolId[i].first,
                                              ProtocolId[i].second);
     if (!PDecl) {
-      LookupResult R(*this, ProtocolId[i].first, ProtocolId[i].second,
-                     LookupObjCProtocolName);
-      if (CorrectTypo(R, TUScope, 0, 0, false, CTC_NoKeywords) &&
-          (PDecl = R.getAsSingle<ObjCProtocolDecl>())) {
+      TypoCorrection Corrected = CorrectTypo(
+          DeclarationNameInfo(ProtocolId[i].first, ProtocolId[i].second),
+          LookupObjCProtocolName, TUScope, NULL, NULL, false, CTC_NoKeywords);
+      if ((PDecl = Corrected.getCorrectionDeclAs<ObjCProtocolDecl>())) {
         Diag(ProtocolId[i].second, diag::err_undeclared_protocol_suggest)
-          << ProtocolId[i].first << R.getLookupName();
+          << ProtocolId[i].first << Corrected.getCorrection();
         Diag(PDecl->getLocation(), diag::note_previous_decl)
           << PDecl->getDeclName();
       }
@@ -894,20 +898,20 @@ Decl *Sema::ActOnStartClassImplementation(
   } else {
     // We did not find anything with the name ClassName; try to correct for 
     // typos in the class name.
-    LookupResult R(*this, ClassName, ClassLoc, LookupOrdinaryName);
-    if (CorrectTypo(R, TUScope, 0, 0, false, CTC_NoKeywords) &&
-        (IDecl = R.getAsSingle<ObjCInterfaceDecl>())) {
+    TypoCorrection Corrected = CorrectTypo(
+        DeclarationNameInfo(ClassName, ClassLoc), LookupOrdinaryName, TUScope,
+        NULL, NULL, false, CTC_NoKeywords);
+    if ((IDecl = Corrected.getCorrectionDeclAs<ObjCInterfaceDecl>())) {
       // Suggest the (potentially) correct interface name. However, put the
       // fix-it hint itself in a separate note, since changing the name in 
       // the warning would make the fix-it change semantics.However, don't
       // provide a code-modification hint or use the typo name for recovery,
       // because this is just a warning. The program may actually be correct.
+      DeclarationName CorrectedName = Corrected.getCorrection();
       Diag(ClassLoc, diag::warn_undef_interface_suggest)
-        << ClassName << R.getLookupName();
-      Diag(IDecl->getLocation(), diag::note_previous_decl)
-        << R.getLookupName()
-        << FixItHint::CreateReplacement(ClassLoc,
-                                        R.getLookupName().getAsString());
+        << ClassName << CorrectedName;
+      Diag(IDecl->getLocation(), diag::note_previous_decl) << CorrectedName
+        << FixItHint::CreateReplacement(ClassLoc, CorrectedName.getAsString());
       IDecl = 0;
     } else {
       Diag(ClassLoc, diag::warn_undef_interface) << ClassName;
@@ -1073,6 +1077,9 @@ void Sema::CheckImplementationIvars(ObjCImplementationDecl *ImpDecl,
 
 void Sema::WarnUndefinedMethod(SourceLocation ImpLoc, ObjCMethodDecl *method,
                                bool &IncompleteImpl, unsigned DiagID) {
+  // No point warning no definition of method which is 'unavailable'.
+  if (method->hasAttr<UnavailableAttr>())
+    return;
   if (!IncompleteImpl) {
     Diag(ImpLoc, diag::warn_incomplete_impl);
     IncompleteImpl = true;
@@ -2601,15 +2608,8 @@ Decl *Sema::ActOnObjCExceptionDecl(Scope *S, Declarator &D) {
   if (getLangOptions().CPlusPlus)
     CheckExtraCXXDefaultArguments(D);
   
-  TagDecl *OwnedDecl = 0;
-  TypeSourceInfo *TInfo = GetTypeForDeclarator(D, S, &OwnedDecl);
+  TypeSourceInfo *TInfo = GetTypeForDeclarator(D, S);
   QualType ExceptionType = TInfo->getType();
-  
-  if (getLangOptions().CPlusPlus && OwnedDecl && OwnedDecl->isDefinition()) {
-    // Objective-C++: Types shall not be defined in exception types.
-    Diag(OwnedDecl->getLocation(), diag::err_type_defined_in_param_type)
-      << Context.getTypeDeclType(OwnedDecl);
-  }
 
   VarDecl *New = BuildObjCExceptionDecl(TInfo, ExceptionType,
                                         D.getSourceRange().getBegin(),

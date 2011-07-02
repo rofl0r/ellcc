@@ -1406,6 +1406,9 @@ Sema::BuildCXXForRangeStmt(SourceLocation ForLoc, SourceLocation ColonLoc,
       if (LoopVar->isInvalidDecl())
         NoteForRangeBeginEndFunction(*this, BeginExpr.get(), BEF_begin);
     }
+  } else {
+    // The range is implicitly used as a placeholder when it is dependent.
+    RangeVar->setUsed();
   }
 
   return Owned(new (Context) CXXForRangeStmt(RangeDS,
@@ -1758,8 +1761,17 @@ Sema::ActOnReturnStmt(SourceLocation ReturnLoc, Expr *RetValExp) {
         if (D != diag::ext_return_has_void_expr ||
             !getLangOptions().CPlusPlus) {
           NamedDecl *CurDecl = getCurFunctionOrMethodDecl();
+
+          int FunctionKind = 0;
+          if (isa<ObjCMethodDecl>(CurDecl))
+            FunctionKind = 1;
+          else if (isa<CXXConstructorDecl>(CurDecl))
+            FunctionKind = 2;
+          else if (isa<CXXDestructorDecl>(CurDecl))
+            FunctionKind = 3;
+
           Diag(ReturnLoc, D)
-            << CurDecl->getDeclName() << isa<ObjCMethodDecl>(CurDecl)
+            << CurDecl->getDeclName() << FunctionKind
             << RetValExp->getSourceRange();
         }
       }
@@ -1987,7 +1999,7 @@ StmtResult Sema::ActOnAsmStmt(SourceLocation AsmLoc, bool IsSimple,
 
     llvm::StringRef Clobber = Literal->getString();
 
-    if (!Context.Target.isValidGCCRegisterName(Clobber))
+    if (!Context.Target.isValidClobber(Clobber))
       return StmtError(Diag(Literal->getLocStart(),
                   diag::err_asm_unknown_register_name) << Clobber);
   }
@@ -2347,4 +2359,3 @@ Sema::ActOnSEHFinallyBlock(SourceLocation Loc,
   assert(Block);
   return Owned(SEHFinallyStmt::Create(Context,Loc,Block));
 }
-

@@ -113,3 +113,13 @@ void test11(void) {
   _Bool b;
   asm volatile ("movb %%gs:%P2,%b0" : "=q"(b) : "0"(0), "i"(5L));
 }
+
+void test12(void) {
+  register int cc __asm ("cc"); // expected-error{{unknown register name 'cc' in asm}}
+}
+
+// PR10223
+void test13(void) {
+  void *esp;
+  __asm__ volatile ("mov %%esp, %o" : "=r"(esp) : : ); // expected-error {{invalid % escape in inline assembly string}}
+}

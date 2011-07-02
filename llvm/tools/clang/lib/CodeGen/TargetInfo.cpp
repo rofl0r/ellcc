@@ -1266,7 +1266,7 @@ void X86_64ABIInfo::classify(QualType Ty, uint64_t OffsetBase,
     // passed in memory.
     // 
     // (c) If the size of the aggregate exceeds two eightbytes and the first
-    // eight-byte isn’t SSE or any other eightbyte isn’t SSEUP, the whole 
+    // eight-byte isn't SSE or any other eightbyte isn't SSEUP, the whole 
     // argument is passed in memory.
     // 
     // (d) If SSEUP is not preceded by SSE or SSEUP, it is converted to SSE.
@@ -1594,8 +1594,7 @@ GetX86_64ByValArgumentPair(const llvm::Type *Lo, const llvm::Type *Hi,
     }
   }
 
-  const llvm::StructType *Result =
-    llvm::StructType::get(Lo->getContext(), Lo, Hi, NULL);
+  const llvm::StructType *Result = llvm::StructType::get(Lo, Hi, NULL);
 
 
   // Verify that the second element is at an 8-byte offset.
@@ -1671,8 +1670,7 @@ classifyReturnType(QualType RetTy) const {
     // %st1.
   case ComplexX87:
     assert(Hi == ComplexX87 && "Unexpected ComplexX87 classification.");
-    ResType = llvm::StructType::get(getVMContext(),
-                                    llvm::Type::getX86_FP80Ty(getVMContext()),
+    ResType = llvm::StructType::get(llvm::Type::getX86_FP80Ty(getVMContext()),
                                     llvm::Type::getX86_FP80Ty(getVMContext()),
                                     NULL);
     break;
@@ -1767,6 +1765,8 @@ ABIArgInfo X86_64ABIInfo::classifyArgumentType(QualType Ty, unsigned &neededInt,
     // COMPLEX_X87, it is passed in memory.
   case X87:
   case ComplexX87:
+    if (isRecordWithNonTrivialDestructorOrCopyConstructor(Ty))
+      ++neededInt;
     return getIndirectResult(Ty);
 
   case SSEUp:
@@ -1801,12 +1801,7 @@ ABIArgInfo X86_64ABIInfo::classifyArgumentType(QualType Ty, unsigned &neededInt,
     // order from %xmm0 to %xmm7.
   case SSE: {
     const llvm::Type *IRType = CGT.ConvertTypeRecursive(Ty);
-    if (Hi != NoClass || !UseX86_MMXType(IRType))
-      ResType = GetSSETypeAtOffset(IRType, 0, Ty, 0);
-    else
-      // This is an MMX type. Treat it as such.
-      ResType = llvm::Type::getX86_MMXTy(getVMContext());
-
+    ResType = GetSSETypeAtOffset(IRType, 0, Ty, 0);
     ++neededSSE;
     break;
   }
@@ -2062,7 +2057,7 @@ llvm::Value *X86_64ABIInfo::EmitVAArg(llvm::Value *VAListAddr, QualType Ty,
     const llvm::Type *DoubleTy = llvm::Type::getDoubleTy(VMContext);
     const llvm::Type *DblPtrTy =
       llvm::PointerType::getUnqual(DoubleTy);
-    const llvm::StructType *ST = llvm::StructType::get(VMContext, DoubleTy,
+    const llvm::StructType *ST = llvm::StructType::get(DoubleTy,
                                                        DoubleTy, NULL);
     llvm::Value *V, *Tmp = CGF.CreateTempAlloca(ST);
     V = CGF.Builder.CreateLoad(CGF.Builder.CreateBitCast(RegAddrLo,
@@ -2504,8 +2499,7 @@ ABIArgInfo ARMABIInfo::classifyArgumentType(QualType Ty) const {
   }
 
   const llvm::Type *STy =
-    llvm::StructType::get(getVMContext(),
-                          llvm::ArrayType::get(ElemTy, SizeRegs), NULL, NULL);
+    llvm::StructType::get(llvm::ArrayType::get(ElemTy, SizeRegs), NULL);
   return ABIArgInfo::getDirect(STy);
 }
 

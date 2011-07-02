@@ -59,6 +59,10 @@ public:
     return TLOF->getEHFrameSection();
   }
 
+  const MCSection *getCompactUnwindSection() const {
+    return TLOF->getCompactUnwindSection();
+  }
+
   const MCSection *getDwarfFrameSection() const {
     return TLOF->getDwarfFrameSection();
   }
@@ -101,6 +105,10 @@ public:
 
   int getSEHRegNum(unsigned RegNum) const {
     return TRI->getSEHRegNum(RegNum);
+  }
+
+  int getCompactUnwindRegNum(unsigned RegNum) const {
+    return TRI->getCompactUnwindRegNum(RegNum);
   }
 };
 

@@ -575,6 +575,8 @@ static bool EmitDebugValueComment(const MachineInstr *MI, AsmPrinter &AP) {
     }
   } else if (MI->getOperand(0).isImm()) {
     OS << MI->getOperand(0).getImm();
+  } else if (MI->getOperand(0).isCImm()) {
+    MI->getOperand(0).getCImm()->getValue().print(OS, false /*isSigned*/);
   } else {
     assert(MI->getOperand(0).isReg() && "Unknown operand type");
     if (MI->getOperand(0).getReg() == 0) {
@@ -1211,9 +1213,9 @@ bool AsmPrinter::EmitSpecialLLVMGlobal(const GlobalVariable *GV) {
 /// EmitLLVMUsedList - For targets that define a MAI::UsedDirective, mark each
 /// global in the specified llvm.used list for which emitUsedDirectiveFor
 /// is true, as being used with this directive.
-void AsmPrinter::EmitLLVMUsedList(Constant *List) {
+void AsmPrinter::EmitLLVMUsedList(const Constant *List) {
   // Should be an array of 'i8*'.
-  ConstantArray *InitList = dyn_cast<ConstantArray>(List);
+  const ConstantArray *InitList = dyn_cast<ConstantArray>(List);
   if (InitList == 0) return;
 
   for (unsigned i = 0, e = InitList->getNumOperands(); i != e; ++i) {
@@ -1226,11 +1228,11 @@ void AsmPrinter::EmitLLVMUsedList(Constant *List) {
 
 /// EmitXXStructorList - Emit the ctor or dtor list.  This just prints out the
 /// function pointers, ignoring the init priority.
-void AsmPrinter::EmitXXStructorList(Constant *List) {
+void AsmPrinter::EmitXXStructorList(const Constant *List) {
   // Should be an array of '{ int, void ()* }' structs.  The first value is the
   // init priority, which we ignore.
   if (!isa<ConstantArray>(List)) return;
-  ConstantArray *InitList = cast<ConstantArray>(List);
+  const ConstantArray *InitList = cast<ConstantArray>(List);
   for (unsigned i = 0, e = InitList->getNumOperands(); i != e; ++i)
     if (ConstantStruct *CS = dyn_cast<ConstantStruct>(InitList->getOperand(i))){
       if (CS->getNumOperands() != 2) return;  // Not array of 2-element structs.
@@ -1516,6 +1518,13 @@ static void EmitGlobalConstantVector(const ConstantVector *CV,
                                      unsigned AddrSpace, AsmPrinter &AP) {
   for (unsigned i = 0, e = CV->getType()->getNumElements(); i != e; ++i)
     EmitGlobalConstantImpl(CV->getOperand(i), AddrSpace, AP);
+
+  const TargetData &TD = *AP.TM.getTargetData();
+  unsigned Size = TD.getTypeAllocSize(CV->getType());
+  unsigned EmittedSize = TD.getTypeAllocSize(CV->getType()->getElementType()) *
+                         CV->getType()->getNumElements();
+  if (unsigned Padding = Size - EmittedSize)
+    AP.OutStreamer.EmitZeros(Padding, AddrSpace);
 }
 
 static void EmitGlobalConstantStruct(const ConstantStruct *CS,

@@ -18,13 +18,13 @@
 #include "llvm/Bitcode/ReaderWriter.h"
 #include "llvm/CodeGen/RegAllocRegistry.h"
 #include "llvm/CodeGen/SchedulerRegistry.h"
+#include "llvm/MC/SubtargetFeature.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FormattedStream.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/PassManagerBuilder.h"
 #include "llvm/Support/Timer.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Target/SubtargetFeature.h"
 #include "llvm/Target/TargetData.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
@@ -258,16 +258,16 @@ bool EmitAssemblyHelper::AddEmitPasses(BackendAction Action,
                                     const_cast<char **>(&BackendArgs[0]));
 
   std::string FeaturesStr;
-  if (TargetOpts.CPU.size() || TargetOpts.Features.size()) {
+  if (TargetOpts.Features.size()) {
     SubtargetFeatures Features;
-    Features.setCPU(TargetOpts.CPU);
     for (std::vector<std::string>::const_iterator
            it = TargetOpts.Features.begin(),
            ie = TargetOpts.Features.end(); it != ie; ++it)
       Features.AddFeature(*it);
     FeaturesStr = Features.getString();
   }
-  TargetMachine *TM = TheTarget->createTargetMachine(Triple, FeaturesStr);
+  TargetMachine *TM = TheTarget->createTargetMachine(Triple, TargetOpts.CPU,
+                                                     FeaturesStr);
 
   if (CodeGenOpts.RelaxAll)
     TM->setMCRelaxAll(true);
@@ -275,6 +275,8 @@ bool EmitAssemblyHelper::AddEmitPasses(BackendAction Action,
     TM->setMCSaveTempLabels(true);
   if (CodeGenOpts.NoDwarf2CFIAsm)
     TM->setMCUseCFI(false);
+  if (CodeGenOpts.NoExecStack)
+    TM->setMCNoExecStack(true);
 
   // Create the code generator passes.
   PassManager *PM = getCodeGenPasses();

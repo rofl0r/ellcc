@@ -350,6 +350,22 @@ public:
   bool isCondCode() const { return Kind == CondCode; }
   bool isCCOut() const { return Kind == CCOut; }
   bool isImm() const { return Kind == Immediate; }
+  bool isImm0_255() const {
+    if (Kind != Immediate)
+      return false;
+    const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
+    if (!CE) return false;
+    int64_t Value = CE->getValue();
+    return Value >= 0 && Value < 256;
+  }
+  bool isT2SOImm() const {
+    if (Kind != Immediate)
+      return false;
+    const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
+    if (!CE) return false;
+    int64_t Value = CE->getValue();
+    return ARM_AM::getT2SOImmVal(Value) != -1;
+  }
   bool isReg() const { return Kind == Register; }
   bool isRegList() const { return Kind == RegisterList; }
   bool isDPRRegList() const { return Kind == DPRRegisterList; }
@@ -511,6 +527,16 @@ public:
   }
 
   void addImmOperands(MCInst &Inst, unsigned N) const {
+    assert(N == 1 && "Invalid number of operands!");
+    addExpr(Inst, getImm());
+  }
+
+  void addImm0_255Operands(MCInst &Inst, unsigned N) const {
+    assert(N == 1 && "Invalid number of operands!");
+    addExpr(Inst, getImm());
+  }
+
+  void addT2SOImmOperands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
     addExpr(Inst, getImm());
   }
@@ -1761,7 +1787,7 @@ static StringRef SplitMnemonic(StringRef Mnemonic,
       Mnemonic == "vcle" ||
       (Mnemonic == "smlal" || Mnemonic == "umaal" || Mnemonic == "umlal" ||
        Mnemonic == "vabal" || Mnemonic == "vmlal" || Mnemonic == "vpadal" ||
-       Mnemonic == "vqdmlal"))
+       Mnemonic == "vqdmlal" || Mnemonic == "bics"))
     return Mnemonic;
 
   // First, split out any predication code.
@@ -1769,7 +1795,9 @@ static StringRef SplitMnemonic(StringRef Mnemonic,
     .Case("eq", ARMCC::EQ)
     .Case("ne", ARMCC::NE)
     .Case("hs", ARMCC::HS)
+    .Case("cs", ARMCC::HS)
     .Case("lo", ARMCC::LO)
+    .Case("cc", ARMCC::LO)
     .Case("mi", ARMCC::MI)
     .Case("pl", ARMCC::PL)
     .Case("vs", ARMCC::VS)
@@ -1824,6 +1852,7 @@ static StringRef SplitMnemonic(StringRef Mnemonic,
 void ARMAsmParser::
 GetMnemonicAcceptInfo(StringRef Mnemonic, bool &CanAcceptCarrySet,
                       bool &CanAcceptPredicationCode) {
+  bool isThumbOne = TM.getSubtarget<ARMSubtarget>().isThumb1Only();
   bool isThumb = TM.getSubtarget<ARMSubtarget>().isThumb();
 
   if (Mnemonic == "and" || Mnemonic == "lsl" || Mnemonic == "lsr" ||
@@ -1834,7 +1863,7 @@ GetMnemonicAcceptInfo(StringRef Mnemonic, bool &CanAcceptCarrySet,
       Mnemonic == "rsb" || Mnemonic == "rsc" || Mnemonic == "orn" ||
       Mnemonic == "sbc" || Mnemonic == "mla" || Mnemonic == "umull" ||
       Mnemonic == "eor" || Mnemonic == "smlal" ||
-      (Mnemonic == "mov" && !isThumb)) {
+      (Mnemonic == "mov" && !isThumbOne)) {
     CanAcceptCarrySet = true;
   } else {
     CanAcceptCarrySet = false;
@@ -1853,8 +1882,7 @@ GetMnemonicAcceptInfo(StringRef Mnemonic, bool &CanAcceptCarrySet,
 
   if (isThumb)
     if (Mnemonic == "bkpt" || Mnemonic == "mcr" || Mnemonic == "mcrr" ||
-        Mnemonic == "mrc" || Mnemonic == "mrrc" || Mnemonic == "cdp" ||
-        Mnemonic == "mov")
+        Mnemonic == "mrc" || Mnemonic == "mrrc" || Mnemonic == "cdp")
       CanAcceptPredicationCode = false;
 }
 

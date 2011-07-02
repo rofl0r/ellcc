@@ -1128,3 +1128,23 @@ xsetbv // CHECK: xsetbv # encoding: [0x0f,0x01,0xd1]
 // CHECK: strq
 // CHECK: encoding: [0x48,0x0f,0x00,0xc8]
 	str %rax
+
+// CHECK: movd %rdi, %xmm0
+// CHECK: encoding: [0x66,0x48,0x0f,0x6e,0xc7]
+	movq %rdi,%xmm0
+
+// CHECK: movd %rdi, %xmm0
+// CHECK: encoding: [0x66,0x48,0x0f,0x6e,0xc7]
+	movd %rdi,%xmm0
+
+// CHECK: movntil %eax, (%rdi)
+// CHECK: encoding: [0x0f,0xc3,0x07]
+// CHECK: movntil
+movntil %eax, (%rdi)
+movnti %eax, (%rdi)
+
+// CHECK: movntiq %rax, (%rdi)
+// CHECK: encoding: [0x48,0x0f,0xc3,0x07]
+// CHECK: movntiq
+movntiq %rax, (%rdi)
+movnti %rax, (%rdi)

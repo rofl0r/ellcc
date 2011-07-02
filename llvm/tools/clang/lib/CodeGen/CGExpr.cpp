@@ -140,7 +140,7 @@ void CodeGenFunction::EmitAnyExprToMem(const Expr *E,
   else {
     RValue RV = RValue::get(EmitScalarExpr(E, /*Ignore*/ false));
     LValue LV = MakeAddrLValue(Location, E->getType());
-    EmitStoreThroughLValue(RV, LV, E->getType());
+    EmitStoreThroughLValue(RV, LV);
   }
 }
 
@@ -205,8 +205,22 @@ EmitExprForReferenceBinding(CodeGenFunction &CGF, const Expr *E,
                             const CXXDestructorDecl *&ReferenceTemporaryDtor,
                             QualType &ObjCARCReferenceLifetimeType,
                             const NamedDecl *InitializedDecl) {
-  ObjCARCReferenceLifetimeType = QualType();
-  
+  // Look through expressions for materialized temporaries (for now).
+  if (const MaterializeTemporaryExpr *M 
+                                      = dyn_cast<MaterializeTemporaryExpr>(E)) {
+    // Objective-C++ ARC:
+    //   If we are binding a reference to a temporary that has ownership, we 
+    //   need to perform retain/release operations on the temporary.
+    if (CGF.getContext().getLangOptions().ObjCAutoRefCount &&        
+        E->getType()->isObjCLifetimeType() &&
+        (E->getType().getObjCLifetime() == Qualifiers::OCL_Strong ||
+         E->getType().getObjCLifetime() == Qualifiers::OCL_Weak ||
+         E->getType().getObjCLifetime() == Qualifiers::OCL_Autoreleasing))
+      ObjCARCReferenceLifetimeType = E->getType();
+    
+    E = M->GetTemporaryExpr();
+  }
+
   if (const CXXDefaultArgExpr *DAE = dyn_cast<CXXDefaultArgExpr>(E))
     E = DAE->getExpr();
   
@@ -237,8 +251,59 @@ EmitExprForReferenceBinding(CodeGenFunction &CGF, const Expr *E,
       return LV.getAddress();
     
     // We have to load the lvalue.
-    RV = CGF.EmitLoadOfLValue(LV, E->getType());
+    RV = CGF.EmitLoadOfLValue(LV);
   } else {
+    if (!ObjCARCReferenceLifetimeType.isNull()) {
+      ReferenceTemporary = CreateReferenceTemporary(CGF, 
+                                                  ObjCARCReferenceLifetimeType, 
+                                                    InitializedDecl);
+      
+      
+      LValue RefTempDst = CGF.MakeAddrLValue(ReferenceTemporary, 
+                                             ObjCARCReferenceLifetimeType);
+
+      CGF.EmitScalarInit(E, dyn_cast_or_null<ValueDecl>(InitializedDecl),
+                         RefTempDst, false);
+      
+      bool ExtendsLifeOfTemporary = false;
+      if (const VarDecl *Var = dyn_cast_or_null<VarDecl>(InitializedDecl)) {
+        if (Var->extendsLifetimeOfTemporary())
+          ExtendsLifeOfTemporary = true;
+      } else if (InitializedDecl && isa<FieldDecl>(InitializedDecl)) {
+        ExtendsLifeOfTemporary = true;
+      }
+      
+      if (!ExtendsLifeOfTemporary) {
+        // Since the lifetime of this temporary isn't going to be extended,
+        // we need to clean it up ourselves at the end of the full expression.
+        switch (ObjCARCReferenceLifetimeType.getObjCLifetime()) {
+        case Qualifiers::OCL_None:
+        case Qualifiers::OCL_ExplicitNone:
+        case Qualifiers::OCL_Autoreleasing:
+          break;
+            
+        case Qualifiers::OCL_Strong:
+          CGF.PushARCReleaseCleanup(CGF.getARCCleanupKind(), 
+                                    ObjCARCReferenceLifetimeType, 
+                                    ReferenceTemporary,
+                                    /*Precise lifetime=*/false, 
+                                    /*For full expression=*/true);
+          break;
+          
+        case Qualifiers::OCL_Weak:
+          CGF.PushARCWeakReleaseCleanup(NormalAndEHCleanup, 
+                                        ObjCARCReferenceLifetimeType, 
+                                        ReferenceTemporary,
+                                        /*For full expression=*/true);
+          break;
+        }
+        
+        ObjCARCReferenceLifetimeType = QualType();
+      }
+      
+      return ReferenceTemporary;
+    }
+    
     llvm::SmallVector<SubobjectAdjustment, 2> Adjustments;
     while (true) {
       E = E->IgnoreParens();
@@ -294,34 +359,6 @@ EmitExprForReferenceBinding(CodeGenFunction &CGF, const Expr *E,
         if (!ClassDecl->hasTrivialDestructor())
           ReferenceTemporaryDtor = ClassDecl->getDestructor();
       }
-      else if (CGF.getContext().getLangOptions().ObjCAutoRefCount) {
-        if (const ValueDecl *InitVD = dyn_cast<ValueDecl>(InitializedDecl)) {
-          if (const ReferenceType *RefType
-                                  = InitVD->getType()->getAs<ReferenceType>()) {
-            QualType PointeeType = RefType->getPointeeType();
-            if (PointeeType->isObjCLifetimeType() &&
-                PointeeType.getObjCLifetime() != Qualifiers::OCL_ExplicitNone) {
-              // Objective-C++ ARC: We're binding a reference to 
-              // lifetime-qualified type to a temporary, so we need to extend 
-              // the lifetime of the temporary with appropriate retain/release/
-              // autorelease calls.
-              ObjCARCReferenceLifetimeType = PointeeType;
-              
-              // Create a temporary variable that we can bind the reference to.
-              ReferenceTemporary = CreateReferenceTemporary(CGF, PointeeType, 
-                                                            InitializedDecl);
-
-              unsigned Alignment =
-                CGF.getContext().getTypeAlignInChars(PointeeType).getQuantity();
-              LValue lvalue =
-                CGF.MakeAddrLValue(ReferenceTemporary, PointeeType, Alignment);
-
-              CGF.EmitScalarInit(E, InitVD, lvalue, false);
-              return ReferenceTemporary;
-            }
-          }
-        }
-      }
     }
 
     RV = CGF.EmitAnyExpr(E, AggSlot);
@@ -358,7 +395,7 @@ EmitExprForReferenceBinding(CodeGenFunction &CGF, const Expr *E,
           Object = CreateReferenceTemporary(CGF, T, InitializedDecl);
           LValue TempLV = CGF.MakeAddrLValue(Object,
                                              Adjustment.Field->getType());
-          CGF.EmitStoreThroughLValue(CGF.EmitLoadOfLValue(LV, T), TempLV, T);
+          CGF.EmitStoreThroughLValue(CGF.EmitLoadOfLValue(LV), TempLV);
           break;
         }
 
@@ -667,6 +704,9 @@ LValue CodeGenFunction::EmitLValue(const Expr *E) {
   case Expr::CXXConstCastExprClass:
   case Expr::ObjCBridgedCastExprClass:
     return EmitCastLValue(cast<CastExpr>(E));
+      
+  case Expr::MaterializeTemporaryExprClass:
+    return EmitMaterializeTemporaryExpr(cast<MaterializeTemporaryExpr>(E));
   }
 }
 
@@ -740,7 +780,7 @@ void CodeGenFunction::EmitStoreOfScalar(llvm::Value *value, LValue lvalue) {
 /// EmitLoadOfLValue - Given an expression that represents a value lvalue, this
 /// method emits the address of the lvalue, then loads the result as an rvalue,
 /// returning the rvalue.
-RValue CodeGenFunction::EmitLoadOfLValue(LValue LV, QualType ExprType) {
+RValue CodeGenFunction::EmitLoadOfLValue(LValue LV) {
   if (LV.isObjCWeak()) {
     // load of a __weak object.
     llvm::Value *AddrWeakObj = LV.getAddress();
@@ -751,17 +791,10 @@ RValue CodeGenFunction::EmitLoadOfLValue(LValue LV, QualType ExprType) {
     return RValue::get(EmitARCLoadWeak(LV.getAddress()));
 
   if (LV.isSimple()) {
-    llvm::Value *Ptr = LV.getAddress();
-
-    // Functions are l-values that don't require loading.
-    if (ExprType->isFunctionType())
-      return RValue::get(Ptr);
+    assert(!LV.getType()->isFunctionType());
 
     // Everything needs a load.
-    return RValue::get(EmitLoadOfScalar(Ptr, LV.isVolatileQualified(),
-                                        LV.getAlignment(), ExprType,
-                                        LV.getTBAAInfo()));
-
+    return RValue::get(EmitLoadOfScalar(LV));
   }
 
   if (LV.isVectorElt()) {
@@ -774,21 +807,20 @@ RValue CodeGenFunction::EmitLoadOfLValue(LValue LV, QualType ExprType) {
   // If this is a reference to a subset of the elements of a vector, either
   // shuffle the input or extract/insert them as appropriate.
   if (LV.isExtVectorElt())
-    return EmitLoadOfExtVectorElementLValue(LV, ExprType);
+    return EmitLoadOfExtVectorElementLValue(LV);
 
   if (LV.isBitField())
-    return EmitLoadOfBitfieldLValue(LV, ExprType);
+    return EmitLoadOfBitfieldLValue(LV);
 
   assert(LV.isPropertyRef() && "Unknown LValue type!");
   return EmitLoadOfPropertyRefLValue(LV);
 }
 
-RValue CodeGenFunction::EmitLoadOfBitfieldLValue(LValue LV,
-                                                 QualType ExprType) {
+RValue CodeGenFunction::EmitLoadOfBitfieldLValue(LValue LV) {
   const CGBitFieldInfo &Info = LV.getBitFieldInfo();
 
   // Get the output type.
-  const llvm::Type *ResLTy = ConvertType(ExprType);
+  const llvm::Type *ResLTy = ConvertType(LV.getType());
   unsigned ResSizeInBits = CGM.getTargetData().getTypeSizeInBits(ResLTy);
 
   // Compute the result as an OR of all of the individual component accesses.
@@ -814,7 +846,7 @@ RValue CodeGenFunction::EmitLoadOfBitfieldLValue(LValue LV,
     // Cast to the access type.
     const llvm::Type *PTy = llvm::Type::getIntNPtrTy(getLLVMContext(),
                                                      AI.AccessWidth,
-                              CGM.getContext().getTargetAddressSpace(ExprType));
+                       CGM.getContext().getTargetAddressSpace(LV.getType()));
     Ptr = Builder.CreateBitCast(Ptr, PTy);
 
     // Perform the load.
@@ -858,8 +890,7 @@ RValue CodeGenFunction::EmitLoadOfBitfieldLValue(LValue LV,
 
 // If this is a reference to a subset of the elements of a vector, create an
 // appropriate shufflevector.
-RValue CodeGenFunction::EmitLoadOfExtVectorElementLValue(LValue LV,
-                                                         QualType ExprType) {
+RValue CodeGenFunction::EmitLoadOfExtVectorElementLValue(LValue LV) {
   llvm::Value *Vec = Builder.CreateLoad(LV.getExtVectorAddr(),
                                         LV.isVolatileQualified(), "tmp");
 
@@ -867,7 +898,7 @@ RValue CodeGenFunction::EmitLoadOfExtVectorElementLValue(LValue LV,
 
   // If the result of the expression is a non-vector type, we must be extracting
   // a single element.  Just codegen as an extractelement.
-  const VectorType *ExprVT = ExprType->getAs<VectorType>();
+  const VectorType *ExprVT = LV.getType()->getAs<VectorType>();
   if (!ExprVT) {
     unsigned InIdx = getAccessedFieldNo(0, Elts);
     llvm::Value *Elt = llvm::ConstantInt::get(Int32Ty, InIdx);
@@ -894,8 +925,7 @@ RValue CodeGenFunction::EmitLoadOfExtVectorElementLValue(LValue LV,
 /// EmitStoreThroughLValue - Store the specified rvalue into the specified
 /// lvalue, where both are guaranteed to the have the same type, and that type
 /// is 'Ty'.
-void CodeGenFunction::EmitStoreThroughLValue(RValue Src, LValue Dst,
-                                             QualType Ty) {
+void CodeGenFunction::EmitStoreThroughLValue(RValue Src, LValue Dst) {
   if (!Dst.isSimple()) {
     if (Dst.isVectorElt()) {
       // Read/modify/write the vector, inserting the new element.
@@ -910,10 +940,10 @@ void CodeGenFunction::EmitStoreThroughLValue(RValue Src, LValue Dst,
     // If this is an update of extended vector elements, insert them as
     // appropriate.
     if (Dst.isExtVectorElt())
-      return EmitStoreThroughExtVectorComponentLValue(Src, Dst, Ty);
+      return EmitStoreThroughExtVectorComponentLValue(Src, Dst);
 
     if (Dst.isBitField())
-      return EmitStoreThroughBitfieldLValue(Src, Dst, Ty);
+      return EmitStoreThroughBitfieldLValue(Src, Dst);
 
     assert(Dst.isPropertyRef() && "Unknown LValue type");
     return EmitStoreThroughPropertyRefLValue(Src, Dst);
@@ -930,7 +960,7 @@ void CodeGenFunction::EmitStoreThroughLValue(RValue Src, LValue Dst,
       break;
 
     case Qualifiers::OCL_Strong:
-      EmitARCStoreStrong(Dst, Ty, Src.getScalarVal(), /*ignore*/ true);
+      EmitARCStoreStrong(Dst, Src.getScalarVal(), /*ignore*/ true);
       return;
 
     case Qualifiers::OCL_Weak:
@@ -938,7 +968,8 @@ void CodeGenFunction::EmitStoreThroughLValue(RValue Src, LValue Dst,
       return;
 
     case Qualifiers::OCL_Autoreleasing:
-      Src = RValue::get(EmitObjCExtendObjectLifetime(Ty, Src.getScalarVal()));
+      Src = RValue::get(EmitObjCExtendObjectLifetime(Dst.getType(),
+                                                     Src.getScalarVal()));
       // fall into the normal path
       break;
     }
@@ -981,18 +1012,17 @@ void CodeGenFunction::EmitStoreThroughLValue(RValue Src, LValue Dst,
 }
 
 void CodeGenFunction::EmitStoreThroughBitfieldLValue(RValue Src, LValue Dst,
-                                                     QualType Ty,
                                                      llvm::Value **Result) {
   const CGBitFieldInfo &Info = Dst.getBitFieldInfo();
 
   // Get the output type.
-  const llvm::Type *ResLTy = ConvertTypeForMem(Ty);
+  const llvm::Type *ResLTy = ConvertTypeForMem(Dst.getType());
   unsigned ResSizeInBits = CGM.getTargetData().getTypeSizeInBits(ResLTy);
 
   // Get the source value, truncated to the width of the bit-field.
   llvm::Value *SrcVal = Src.getScalarVal();
 
-  if (Ty->isBooleanType())
+  if (Dst.getType()->isBooleanType())
     SrcVal = Builder.CreateIntCast(SrcVal, ResLTy, /*IsSigned=*/false);
 
   SrcVal = Builder.CreateAnd(SrcVal, llvm::APInt::getLowBitsSet(ResSizeInBits,
@@ -1087,8 +1117,7 @@ void CodeGenFunction::EmitStoreThroughBitfieldLValue(RValue Src, LValue Dst,
 }
 
 void CodeGenFunction::EmitStoreThroughExtVectorComponentLValue(RValue Src,
-                                                               LValue Dst,
-                                                               QualType Ty) {
+                                                               LValue Dst) {
   // This access turns into a read/modify/write of the vector.  Load the input
   // value now.
   llvm::Value *Vec = Builder.CreateLoad(Dst.getExtVectorAddr(),
@@ -1097,7 +1126,7 @@ void CodeGenFunction::EmitStoreThroughExtVectorComponentLValue(RValue Src,
 
   llvm::Value *SrcVal = Src.getScalarVal();
 
-  if (const VectorType *VTy = Ty->getAs<VectorType>()) {
+  if (const VectorType *VTy = Dst.getType()->getAs<VectorType>()) {
     unsigned NumSrcElts = VTy->getNumElements();
     unsigned NumDstElts =
        cast<llvm::VectorType>(Vec->getType())->getNumElements();
@@ -1539,21 +1568,27 @@ LValue CodeGenFunction::EmitArraySubscriptExpr(const ArraySubscriptExpr *E) {
   // size is a VLA or Objective-C interface.
   llvm::Value *Address = 0;
   unsigned ArrayAlignment = 0;
-  if (const VariableArrayType *VAT =
+  if (const VariableArrayType *vla =
         getContext().getAsVariableArrayType(E->getType())) {
-    llvm::Value *VLASize = GetVLASize(VAT);
+    // The base must be a pointer, which is not an aggregate.  Emit
+    // it.  It needs to be emitted first in case it's what captures
+    // the VLA bounds.
+    Address = EmitScalarExpr(E->getBase());
 
-    Idx = Builder.CreateMul(Idx, VLASize);
+    // The element count here is the total number of non-VLA elements.
+    llvm::Value *numElements = getVLASize(vla).first;
 
-    // The base must be a pointer, which is not an aggregate.  Emit it.
-    llvm::Value *Base = EmitScalarExpr(E->getBase());
-
-    Address = EmitCastToVoidPtr(Base);
-    if (getContext().getLangOptions().isSignedOverflowDefined())
+    // Effectively, the multiply by the VLA size is part of the GEP.
+    // GEP indexes are signed, and scaling an index isn't permitted to
+    // signed-overflow, so we use the same semantics for our explicit
+    // multiply.  We suppress this if overflow is not undefined behavior.
+    if (getLangOptions().isSignedOverflowDefined()) {
+      Idx = Builder.CreateMul(Idx, numElements);
       Address = Builder.CreateGEP(Address, Idx, "arrayidx");
-    else
+    } else {
+      Idx = Builder.CreateNSWMul(Idx, numElements);
       Address = Builder.CreateInBoundsGEP(Address, Idx, "arrayidx");
-    Address = Builder.CreateBitCast(Address, Base->getType());
+    }
   } else if (const ObjCObjectType *OIT = E->getType()->getAs<ObjCObjectType>()){
     // Indexing over an interface, as in "NSString *P; P[4];"
     llvm::Value *InterfaceSize =
@@ -2067,10 +2102,17 @@ LValue CodeGenFunction::EmitOpaqueValueLValue(const OpaqueValueExpr *e) {
   return getOpaqueLValueMapping(e);
 }
 
+LValue CodeGenFunction::EmitMaterializeTemporaryExpr(
+                                           const MaterializeTemporaryExpr *E) {
+  RValue RV = EmitReferenceBindingToExpr(E->GetTemporaryExpr(),
+                                         /*InitializedDecl=*/0);
+  return MakeAddrLValue(RV.getScalarVal(), E->getType());
+}
+
+
 //===--------------------------------------------------------------------===//
 //                             Expression Emission
 //===--------------------------------------------------------------------===//
-
 
 RValue CodeGenFunction::EmitCallExpr(const CallExpr *E, 
                                      ReturnValueSlot ReturnValue) {
@@ -2194,7 +2236,7 @@ LValue CodeGenFunction::EmitBinaryOperatorLValue(const BinaryOperator *E) {
 
     RValue RV = EmitAnyExpr(E->getRHS());
     LValue LV = EmitLValue(E->getLHS());
-    EmitStoreThroughLValue(RV, LV, E->getType());
+    EmitStoreThroughLValue(RV, LV);
     return LV;
   }
 

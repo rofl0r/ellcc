@@ -38,6 +38,8 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Analysis/DebugInfo.h"
+
 using namespace llvm;
 
 namespace {
@@ -56,6 +58,9 @@ namespace {
     bool PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,
                          unsigned AsmVariant, const char *ExtraCode,
                          raw_ostream &O);
+    bool PrintAsmMemoryOperand(const MachineInstr *MI, unsigned OpNum,
+                               unsigned AsmVariant, const char *ExtraCode,
+                               raw_ostream &O);
     void printOperand(const MachineInstr *MI, int opNum, raw_ostream &O);
     void printUnsignedImm(const MachineInstr *MI, int opNum, raw_ostream &O);
     void printMemOperand(const MachineInstr *MI, int opNum, raw_ostream &O,
@@ -72,6 +77,10 @@ namespace {
     void EmitInstruction(const MachineInstr *MI) {
       SmallString<128> Str;
       raw_svector_ostream OS(Str);
+
+      if (MI->isDebugValue())
+        PrintDebugValueComment(MI, OS);
+
       printInstruction(MI, OS);
       OutStreamer.EmitRawText(OS.str());
     }
@@ -83,6 +92,9 @@ namespace {
 
     virtual void EmitFunctionEntryLabel();
     void EmitStartOfAsmFile(Module &M);
+    virtual MachineLocation getDebugValueLocation(const MachineInstr *MI) const;
+
+    void PrintDebugValueComment(const MachineInstr *MI, raw_ostream &OS);
   };
 } // end of anonymous namespace
 
@@ -304,6 +316,19 @@ bool MipsAsmPrinter::PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,
   return false;
 }
 
+bool MipsAsmPrinter::PrintAsmMemoryOperand(const MachineInstr *MI,
+                                           unsigned OpNum, unsigned AsmVariant,
+                                           const char *ExtraCode,
+                                           raw_ostream &O) {
+  if (ExtraCode && ExtraCode[0])
+     return true; // Unknown modifier.
+   
+  const MachineOperand &MO = MI->getOperand(OpNum);
+  assert(MO.isReg() && "unexpected inline asm memory operand");
+  O << "0($" << MipsAsmPrinter::getRegisterName(MO.getReg()) << ")";
+  return false;
+}
+
 void MipsAsmPrinter::printOperand(const MachineInstr *MI, int opNum,
                                   raw_ostream &O) {
   const MachineOperand &MO = MI->getOperand(opNum);
@@ -423,6 +448,21 @@ void MipsAsmPrinter::EmitStartOfAsmFile(Module &M) {
 
   // return to previous section
   OutStreamer.EmitRawText(StringRef("\t.previous"));
+}
+
+MachineLocation
+MipsAsmPrinter::getDebugValueLocation(const MachineInstr *MI) const {
+  // Handles frame addresses emitted in MipsInstrInfo::emitFrameIndexDebugValue.
+  assert(MI->getNumOperands() == 4 && "Invalid no. of machine operands!");
+  assert(MI->getOperand(0).isReg() && MI->getOperand(1).isImm() &&
+         "Unexpected MachineOperand types");
+  return MachineLocation(MI->getOperand(0).getReg(),
+                         MI->getOperand(1).getImm());
+}
+
+void MipsAsmPrinter::PrintDebugValueComment(const MachineInstr *MI,
+                                           raw_ostream &OS) {
+  // TODO: implement
 }
 
 // Force static initialization.

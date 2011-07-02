@@ -500,8 +500,8 @@ public:
   //===--------------------------------------------------------------------===//
 
   /// createFileID - Create a new FileID that represents the specified file
-  /// being #included from the specified IncludePosition.  This returns 0 on
-  /// error and translates NULL into standard input.
+  /// being #included from the specified IncludePosition.  This translates NULL
+  /// into standard input.
   /// PreallocateID should be non-zero to specify which pre-allocated,
   /// lazily computed source location is being filled in by this operation.
   FileID createFileID(const FileEntry *SourceFile, SourceLocation IncludePos,
@@ -845,7 +845,7 @@ public:
 
   /// getLineTableFilenameID - Return the uniqued ID for the specified filename.
   ///
-  unsigned getLineTableFilenameID(const char *Ptr, unsigned Len);
+  unsigned getLineTableFilenameID(llvm::StringRef Str);
 
   /// AddLineNote - Add a line note to the line table for the FileID and offset
   /// specified by Loc.  If FilenameID is -1, it is considered to be

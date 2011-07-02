@@ -62,7 +62,7 @@ CodeGenModule::CodeGenModule(ASTContext &C, const CodeGenOptions &CGO,
   : Context(C), Features(C.getLangOptions()), CodeGenOpts(CGO), TheModule(M),
     TheTargetData(TD), TheTargetCodeGenInfo(0), Diags(diags),
     ABI(createCXXABI(*this)), 
-    Types(C, M, TD, getTargetCodeGenInfo().getABIInfo(), ABI),
+    Types(C, M, TD, getTargetCodeGenInfo().getABIInfo(), ABI, CGO),
     TBAA(0),
     VTables(*this), Runtime(0), DebugInfo(0), ARCData(0), RRData(0),
     CFConstantStringClassRef(0), ConstantStringClassRef(0),
@@ -194,6 +194,10 @@ void CodeGenModule::ErrorUnsupported(const Decl *D, const char *Type,
                                                "cannot compile this %0 yet");
   std::string Msg = Type;
   getDiags().Report(Context.getFullLoc(D->getLocation()), DiagID) << Msg;
+}
+
+llvm::ConstantInt *CodeGenModule::getSize(CharUnits size) {
+  return llvm::ConstantInt::get(SizeTy, size.getQuantity());
 }
 
 void CodeGenModule::setGlobalVisibility(llvm::GlobalValue *GV,
@@ -353,8 +357,8 @@ void CodeGenModule::EmitCtorList(const CtorList &Fns, const char *GlobalName) {
   llvm::Type *CtorPFTy = llvm::PointerType::getUnqual(CtorFTy);
 
   // Get the type of a ctor entry, { i32, void ()* }.
-  llvm::StructType* CtorStructTy =
-    llvm::StructType::get(VMContext, llvm::Type::getInt32Ty(VMContext),
+  llvm::StructType *CtorStructTy =
+    llvm::StructType::get(llvm::Type::getInt32Ty(VMContext),
                           llvm::PointerType::getUnqual(CtorFTy), NULL);
 
   // Construct the constructor and destructor arrays.
@@ -676,7 +680,7 @@ llvm::Constant *CodeGenModule::EmitAnnotateAttr(llvm::GlobalValue *GV,
     llvm::ConstantExpr::getBitCast(unitGV, SBP),
     llvm::ConstantInt::get(llvm::Type::getInt32Ty(VMContext), LineNo)
   };
-  return llvm::ConstantStruct::get(VMContext, Fields, 4, false);
+  return llvm::ConstantStruct::getAnon(Fields);
 }
 
 bool CodeGenModule::MayDeferGeneration(const ValueDecl *Global) {
@@ -1351,7 +1355,8 @@ CodeGenModule::GetLLVMLinkageVarDefinition(const VarDecl *D,
            ((!CodeGenOpts.NoCommon && !D->getAttr<NoCommonAttr>()) ||
              D->getAttr<CommonAttr>()) &&
            !D->hasExternalStorage() && !D->getInit() &&
-           !D->getAttr<SectionAttr>() && !D->isThreadSpecified()) {
+           !D->getAttr<SectionAttr>() && !D->isThreadSpecified() &&
+           !D->getAttr<WeakImportAttr>()) {
     // Thread local vars aren't considered common linkage.
     return llvm::GlobalVariable::CommonLinkage;
   }

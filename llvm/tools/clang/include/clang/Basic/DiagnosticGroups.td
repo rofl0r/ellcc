@@ -62,6 +62,7 @@ def ExitTimeDestructors : DiagGroup<"exit-time-destructors">;
 def FourByteMultiChar : DiagGroup<"four-char-constants">;
 def GlobalConstructors : DiagGroup<"global-constructors">;
 def : DiagGroup<"idiomatic-parentheses">;
+def BitwiseOpParentheses: DiagGroup<"bitwise-op-parentheses">;
 def LogicalOpParentheses: DiagGroup<"logical-op-parentheses">;
 def IgnoredQualifiers : DiagGroup<"ignored-qualifiers">;
 def : DiagGroup<"import">;
@@ -170,7 +171,14 @@ def CustomAtomic : DiagGroup<"custom-atomic-properties">;
 def AtomicProperties : DiagGroup<"atomic-properties",
                                  [ImplicitAtomic, CustomAtomic]>;
 def AutomaticReferenceCountingABI : DiagGroup<"arc-abi">;
-def AutomaticReferenceCounting : DiagGroup<"arc", [AutomaticReferenceCountingABI]>;
+def ARCUnsafeRetainedAssign : DiagGroup<"arc-unsafe-retained-assign">;
+def ARCRetainCycles : DiagGroup<"arc-retain-cycles">;
+def ARCNonPodMemAccess : DiagGroup<"arc-non-pod-memaccess">;
+def AutomaticReferenceCounting : DiagGroup<"arc",
+                                           [AutomaticReferenceCountingABI,
+                                            ARCUnsafeRetainedAssign,
+                                            ARCRetainCycles,
+                                            ARCNonPodMemAccess]>;
 def Selector : DiagGroup<"selector">;
 def NonfragileAbi2 : DiagGroup<"nonfragile-abi2">;
 def Protocol : DiagGroup<"protocol">;
@@ -195,7 +203,8 @@ def DuplicateArgDecl : DiagGroup<"duplicate-method-arg">;
 // in -Wparentheses because most users who use -Wparentheses explicitly
 // do not want these warnings.
 def Parentheses : DiagGroup<"parentheses",
-                            [LogicalOpParentheses]>;
+                            [LogicalOpParentheses,
+                             BitwiseOpParentheses]>;
 
 // -Wconversion has its own warnings, but we split a few out for
 // legacy reasons:
@@ -287,3 +296,6 @@ def GNU : DiagGroup<"gnu", [GNUDesignator, VLA]>;
 
 // A warning group for warnings about Microsoft extensions.
 def Microsoft : DiagGroup<"microsoft">;
+
+def ObjCNonUnifiedException : DiagGroup<"objc-nonunified-exceptions">;
+

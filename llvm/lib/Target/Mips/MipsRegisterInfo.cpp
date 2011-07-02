@@ -35,13 +35,17 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/Analysis/DebugInfo.h"
+
+#define GET_REGINFO_MC_DESC
+#define GET_REGINFO_TARGET_DESC
+#include "MipsGenRegisterInfo.inc"
 
 using namespace llvm;
 
 MipsRegisterInfo::MipsRegisterInfo(const MipsSubtarget &ST,
                                    const TargetInstrInfo &tii)
-  : MipsGenRegisterInfo(Mips::ADJCALLSTACKDOWN, Mips::ADJCALLSTACKUP),
-    Subtarget(ST), TII(tii) {}
+  : MipsGenRegisterInfo(), Subtarget(ST), TII(tii) {}
 
 /// getRegisterNumbering - Given the enum value for some register, e.g.
 /// Mips::RA, return the number that it corresponds to (e.g. 31).
@@ -183,28 +187,6 @@ eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
                << "spOffset   : " << spOffset << "\n"
                << "stackSize  : " << stackSize << "\n");
 
-  int Offset;
-
-  // Calculate final offset.
-  // - There is no need to change the offset if the frame object is an outgoing
-  //   argument or a $gp restore location,
-  // - If the frame object is any of the following, its offset must be adjusted
-  //   by adding the size of the stack:
-  //   incoming argument, callee-saved register location or local variable.  
-  if (MipsFI->isOutArgFI(FrameIndex) || MipsFI->isGPFI(FrameIndex))
-    Offset = spOffset;
-  else
-    Offset = spOffset + stackSize;
-
-  Offset    += MI.getOperand(oi).getImm();
-
-  DEBUG(errs() << "Offset     : " << Offset << "\n" << "<--------->\n");
-
-  unsigned NewReg = 0;
-  int NewImm = 0;
-  MachineBasicBlock &MBB = *MI.getParent();
-  bool ATUsed;
-  unsigned FrameReg;
   const std::vector<CalleeSavedInfo> &CSI = MFI->getCalleeSavedInfo();
   int MinCSFI = 0;
   int MaxCSFI = -1;
@@ -220,12 +202,44 @@ eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
   //  3. Locations for callee-saved registers.
   // Everything else is referenced relative to whatever register 
   // getFrameRegister() returns.
-  if (MipsFI->isOutArgFI(FrameIndex) ||
+  unsigned FrameReg;
+
+  if (MipsFI->isOutArgFI(FrameIndex) || MipsFI->isDynAllocFI(FrameIndex) ||
       (FrameIndex >= MinCSFI && FrameIndex <= MaxCSFI))
     FrameReg = Mips::SP;
   else
     FrameReg = getFrameRegister(MF); 
   
+  // Calculate final offset.
+  // - There is no need to change the offset if the frame object is one of the
+  //   following: an outgoing argument, pointer to a dynamically allocated
+  //   stack space or a $gp restore location,
+  // - If the frame object is any of the following, its offset must be adjusted
+  //   by adding the size of the stack:
+  //   incoming argument, callee-saved register location or local variable.  
+  int Offset;
+
+  if (MipsFI->isOutArgFI(FrameIndex) || MipsFI->isGPFI(FrameIndex) ||
+      MipsFI->isDynAllocFI(FrameIndex))
+    Offset = spOffset;
+  else
+    Offset = spOffset + stackSize;
+
+  if (MI.isDebugValue()) {
+    MI.getOperand(i).ChangeToRegister(FrameReg, false /*isDef*/);
+    MI.getOperand(i+1).ChangeToImmediate(Offset);
+    return;
+  }
+
+  Offset    += MI.getOperand(i-1).getImm();
+
+  DEBUG(errs() << "Offset     : " << Offset << "\n" << "<--------->\n");
+
+  unsigned NewReg = 0;
+  int NewImm = 0;
+  MachineBasicBlock &MBB = *MI.getParent();
+  bool ATUsed;
+
   // Offset fits in the 16-bit field
   if (Offset < 0x8000 && Offset >= -0x8000) {
     NewReg = FrameReg;
@@ -290,5 +304,3 @@ getDwarfRegNum(unsigned RegNum, bool isEH) const {
 int MipsRegisterInfo::getLLVMRegNum(unsigned DwarfRegNo, bool isEH) const {
   return MipsGenRegisterInfo::getLLVMRegNumFull(DwarfRegNo,0);
 }
-
-#include "MipsGenRegisterInfo.inc"

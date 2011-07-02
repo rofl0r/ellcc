@@ -956,7 +956,7 @@ public:
     : ExprEvaluatorBaseTy(info), Result(result) {}
 
   bool Success(const llvm::APSInt &SI, const Expr *E) {
-    assert(E->getType()->isIntegralOrEnumerationType() && 
+    assert(E->getType()->isIntegralOrEnumerationType() &&
            "Invalid evaluation result.");
     assert(SI.isSigned() == E->getType()->isSignedIntegerOrEnumerationType() &&
            "Invalid evaluation result.");
@@ -1106,8 +1106,25 @@ static bool EvaluateInteger(const Expr* E, APSInt &Result, EvalInfo &Info) {
 
 bool IntExprEvaluator::CheckReferencedDecl(const Expr* E, const Decl* D) {
   // Enums are integer constant exprs.
-  if (const EnumConstantDecl *ECD = dyn_cast<EnumConstantDecl>(D))
-    return Success(ECD->getInitVal(), E);
+  if (const EnumConstantDecl *ECD = dyn_cast<EnumConstantDecl>(D)) {
+    // Check for signedness/width mismatches between E type and ECD value.
+    bool SameSign = (ECD->getInitVal().isSigned()
+                     == E->getType()->isSignedIntegerOrEnumerationType());
+    bool SameWidth = (ECD->getInitVal().getBitWidth()
+                      == Info.Ctx.getIntWidth(E->getType()));
+    if (SameSign && SameWidth)
+      return Success(ECD->getInitVal(), E);
+    else {
+      // Get rid of mismatch (otherwise Success assertions will fail)
+      // by computing a new value matching the type of E.
+      llvm::APSInt Val = ECD->getInitVal();
+      if (!SameSign)
+        Val.setIsSigned(!ECD->getInitVal().isSigned());
+      if (!SameWidth)
+        Val = Val.extOrTrunc(Info.Ctx.getIntWidth(E->getType()));
+      return Success(Val, E);
+    }
+  }
 
   // In C++, const, non-volatile integers initialized with ICEs are ICEs.
   // In C, they can also be folded, although they are not ICEs.
@@ -2787,6 +2804,7 @@ static ICEDiag CheckICE(const Expr* E, ASTContext &Ctx) {
   case Expr::SubstNonTypeTemplateParmPackExprClass:
   case Expr::AsTypeExprClass:
   case Expr::ObjCIndirectCopyRestoreExprClass:
+  case Expr::MaterializeTemporaryExprClass:
     return ICEDiag(2, E->getLocStart());
 
   case Expr::SizeOfPackExprClass:

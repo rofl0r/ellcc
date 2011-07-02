@@ -244,8 +244,8 @@ static void AddObjCXXARCLibcxxDefines(const LangOptions &LangOpts,
     Out << "template <class _Tp>\n"
         << "inline __attribute__ ((__visibility__(\"hidden\"), "
         << "__always_inline__))\n"
-        << "__attribute__((objc_lifetime(strong))) _Tp*\n"
-        << "addressof(__attribute__((objc_lifetime(strong))) _Tp& __x) {\n"
+        << "__attribute__((objc_ownership(strong))) _Tp*\n"
+        << "addressof(__attribute__((objc_ownership(strong))) _Tp& __x) {\n"
         << "  return &__x;\n"
         << "}\n"
         << "\n";
@@ -254,8 +254,8 @@ static void AddObjCXXARCLibcxxDefines(const LangOptions &LangOpts,
       Out << "template <class _Tp>\n"
           << "inline __attribute__ ((__visibility__(\"hidden\"),"
           << "__always_inline__))\n"
-          << "__attribute__((objc_lifetime(weak))) _Tp*\n"
-          << "addressof(__attribute__((objc_lifetime(weak))) _Tp& __x) {\n"
+          << "__attribute__((objc_ownership(weak))) _Tp*\n"
+          << "addressof(__attribute__((objc_ownership(weak))) _Tp& __x) {\n"
           << "  return &__x;\n"
           << "};\n"
           << "\n";
@@ -264,8 +264,8 @@ static void AddObjCXXARCLibcxxDefines(const LangOptions &LangOpts,
     Out << "template <class _Tp>\n"
         << "inline __attribute__ ((__visibility__(\"hidden\"),"
         << "__always_inline__))\n"
-        << "__attribute__((objc_lifetime(autoreleasing))) _Tp*\n"
-        << "addressof(__attribute__((objc_lifetime(autoreleasing))) _Tp& __x) "
+        << "__attribute__((objc_ownership(autoreleasing))) _Tp*\n"
+        << "addressof(__attribute__((objc_ownership(autoreleasing))) _Tp& __x) "
         << "{\n"
         << " return &__x;\n"
         << "}\n"
@@ -312,7 +312,7 @@ static void AddObjCXXARCLibstdcxxDefines(const LangOptions &LangOpts,
         << "\n";
       
     Out << "template<typename _Tp>\n"
-        << "struct __is_scalar<__attribute__((objc_lifetime(strong))) _Tp> {\n"
+        << "struct __is_scalar<__attribute__((objc_ownership(strong))) _Tp> {\n"
         << "  enum { __value = 0 };\n"
         << "  typedef __false_type __type;\n"
         << "};\n"
@@ -320,7 +320,7 @@ static void AddObjCXXARCLibstdcxxDefines(const LangOptions &LangOpts,
       
     if (!LangOpts.ObjCNoAutoRefCountRuntime) {
       Out << "template<typename _Tp>\n"
-          << "struct __is_scalar<__attribute__((objc_lifetime(weak))) _Tp> {\n"
+          << "struct __is_scalar<__attribute__((objc_ownership(weak))) _Tp> {\n"
           << "  enum { __value = 0 };\n"
           << "  typedef __false_type __type;\n"
           << "};\n"
@@ -328,7 +328,7 @@ static void AddObjCXXARCLibstdcxxDefines(const LangOptions &LangOpts,
     }
     
     Out << "template<typename _Tp>\n"
-        << "struct __is_scalar<__attribute__((objc_lifetime(autoreleasing)))"
+        << "struct __is_scalar<__attribute__((objc_ownership(autoreleasing)))"
         << " _Tp> {\n"
         << "  enum { __value = 0 };\n"
         << "  typedef __false_type __type;\n"
@@ -359,11 +359,18 @@ static void InitializeStandardPredefinedMacros(const TargetInfo &TI,
   } else {
     if (LangOpts.GNUMode)
       Builder.defineMacro("__cplusplus");
-    else
-      // C++ [cpp.predefined]p1:
+    else {
+      // C++0x [cpp.predefined]p1:
+      //   The name_ _cplusplus is defined to the value 201103L when compiling a
+      //   C++ translation unit.
+      if (LangOpts.CPlusPlus0x)
+        Builder.defineMacro("__cplusplus", "201103L");
+      // C++03 [cpp.predefined]p1:
       //   The name_ _cplusplus is defined to the value 199711L when compiling a
       //   C++ translation unit.
-      Builder.defineMacro("__cplusplus", "199711L");
+      else
+        Builder.defineMacro("__cplusplus", "199711L");
+    }
   }
 
   if (LangOpts.ObjC1)
@@ -615,12 +622,12 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
     Builder.defineMacro("__ELLCC__");
  
   if (LangOpts.ObjCAutoRefCount) {
-    Builder.defineMacro("__weak", "__attribute__((objc_lifetime(weak)))");
-    Builder.defineMacro("__strong", "__attribute__((objc_lifetime(strong)))");
+    Builder.defineMacro("__weak", "__attribute__((objc_ownership(weak)))");
+    Builder.defineMacro("__strong", "__attribute__((objc_ownership(strong)))");
     Builder.defineMacro("__autoreleasing",
-                        "__attribute__((objc_lifetime(autoreleasing)))");
+                        "__attribute__((objc_ownership(autoreleasing)))");
     Builder.defineMacro("__unsafe_unretained",
-                        "__attribute__((objc_lifetime(none)))");
+                        "__attribute__((objc_ownership(none)))");
   }
 
   // Get other target #defines.

@@ -133,6 +133,8 @@ static void CodeGenOptsToArgs(const CodeGenOptions &Opts,
     Res.push_back("-fno-common");
   if (Opts.ForbidGuardVariables)
     Res.push_back("-fforbid-guard-variables");
+  if (Opts.UseRegisterSizedBitfieldAccess)
+    Res.push_back("-fuse-register-sized-bitfield-access");
   if (Opts.NoImplicitFloat)
     Res.push_back("-no-implicit-float");
   if (Opts.OmitLeafFramePointer)
@@ -201,6 +203,8 @@ static void CodeGenOptsToArgs(const CodeGenOptions &Opts,
     Res.push_back("-mregparm");
     Res.push_back(llvm::utostr(Opts.NumRegisterParameters));
   }
+  if (Opts.NoExecStack)
+    Res.push_back("-mnoexecstack");
   if (Opts.RelaxAll)
     Res.push_back("-mrelax-all");
   if (Opts.SaveTempLabels)
@@ -549,6 +553,8 @@ static void HeaderSearchOptsToArgs(const HeaderSearchOptions &Opts,
     Res.push_back("-nostdinc");
   if (!Opts.UseStandardCXXIncludes)
     Res.push_back("-nostdinc++");
+  if (Opts.UseLibcxx)
+    Res.push_back("-stdlib=libc++");
   if (Opts.Verbose)
     Res.push_back("-v");
 }
@@ -954,6 +960,8 @@ static void ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
   Opts.DisableLLVMOpts = Args.hasArg(OPT_disable_llvm_optzns);
   Opts.DisableRedZone = Args.hasArg(OPT_disable_red_zone);
   Opts.ForbidGuardVariables = Args.hasArg(OPT_fforbid_guard_variables);
+  Opts.UseRegisterSizedBitfieldAccess = Args.hasArg(
+    OPT_fuse_register_sized_bitfield_access);
   Opts.RelaxedAliasing = Args.hasArg(OPT_relaxed_aliasing);
   Opts.DwarfDebugFlags = Args.getLastArgValue(OPT_dwarf_debug_flags);
   Opts.MergeAllConstants = !Args.hasArg(OPT_fno_merge_all_constants);
@@ -982,6 +990,7 @@ static void ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
   Opts.NoZeroInitializedInBSS = Args.hasArg(OPT_mno_zero_initialized_in_bss);
   Opts.BackendOptions = Args.getAllArgValues(OPT_backend_option);
   Opts.NumRegisterParameters = Args.getLastArgIntValue(OPT_mregparm, 0, Diags);
+  Opts.NoExecStack = Args.hasArg(OPT_mno_exec_stack);
   Opts.RelaxAll = Args.hasArg(OPT_mrelax_all);
   Opts.OmitLeafFramePointer = Args.hasArg(OPT_momit_leaf_frame_pointer);
   Opts.SaveTempLabels = Args.hasArg(OPT_msave_temp_labels);
@@ -1323,13 +1332,15 @@ static void ParseHeaderSearchArgs(HeaderSearchOptions &Opts, ArgList &Args) {
   Opts.UseBuiltinIncludes = !Args.hasArg(OPT_nobuiltininc);
   Opts.UseStandardIncludes = !Args.hasArg(OPT_nostdinc);
   Opts.UseStandardCXXIncludes = !Args.hasArg(OPT_nostdincxx);
+  if (const Arg *A = Args.getLastArg(OPT_stdlib_EQ))
+    Opts.UseLibcxx = (strcmp(A->getValue(Args), "libc++") == 0);
   Opts.ResourceDir = Args.getLastArgValue(OPT_resource_dir);
 
   // Add -I... and -F... options in order.
   for (arg_iterator it = Args.filtered_begin(OPT_I, OPT_F),
          ie = Args.filtered_end(); it != ie; ++it)
     Opts.AddPath((*it)->getValue(Args), frontend::Angled, true,
-                 /*IsFramework=*/ (*it)->getOption().matches(OPT_F), true);
+                 /*IsFramework=*/ (*it)->getOption().matches(OPT_F), false);
 
   // Add -iprefix/-iwith-prefix/-iwithprefixbefore options.
   llvm::StringRef Prefix = ""; // FIXME: This isn't the correct default prefix.
@@ -1341,24 +1352,24 @@ static void ParseHeaderSearchArgs(HeaderSearchOptions &Opts, ArgList &Args) {
       Prefix = A->getValue(Args);
     else if (A->getOption().matches(OPT_iwithprefix))
       Opts.AddPath(Prefix.str() + A->getValue(Args),
-                   frontend::System, false, false, true);
+                   frontend::System, false, false, false);
     else
       Opts.AddPath(Prefix.str() + A->getValue(Args),
-                   frontend::Angled, false, false, true);
+                   frontend::Angled, false, false, false);
   }
 
   for (arg_iterator it = Args.filtered_begin(OPT_idirafter),
          ie = Args.filtered_end(); it != ie; ++it)
-    Opts.AddPath((*it)->getValue(Args), frontend::After, true, false, true);
+    Opts.AddPath((*it)->getValue(Args), frontend::After, true, false, false);
   for (arg_iterator it = Args.filtered_begin(OPT_iquote),
          ie = Args.filtered_end(); it != ie; ++it)
-    Opts.AddPath((*it)->getValue(Args), frontend::Quoted, true, false, true);
+    Opts.AddPath((*it)->getValue(Args), frontend::Quoted, true, false, false);
   for (arg_iterator it = Args.filtered_begin(OPT_cxx_isystem, OPT_isystem,
          OPT_iwithsysroot), ie = Args.filtered_end(); it != ie; ++it)
     Opts.AddPath((*it)->getValue(Args),
                  ((*it)->getOption().matches(OPT_cxx_isystem) ?
                    frontend::CXXSystem : frontend::System),
-                 true, false, (*it)->getOption().matches(OPT_iwithsysroot));
+                 true, false, !(*it)->getOption().matches(OPT_iwithsysroot));
 
   // FIXME: Need options for the various environment variables!
 }

@@ -95,7 +95,13 @@ namespace {
                               SmallSetVector<MachineBasicBlock*, 8> &Succs);
     bool TailDuplicateBlocks(MachineFunction &MF);
     bool shouldTailDuplicate(const MachineFunction &MF,
-                             MachineBasicBlock &TailBB);
+                             bool IsSimple, MachineBasicBlock &TailBB);
+    bool isSimpleBB(MachineBasicBlock *TailBB);
+    bool canCompletelyDuplicateBB(MachineBasicBlock &BB);
+    bool duplicateSimpleBB(MachineBasicBlock *TailBB,
+                           SmallVector<MachineBasicBlock*, 8> &TDBBs,
+                           const DenseSet<unsigned> &RegsUsedByPhi,
+                           SmallVector<MachineInstr*, 16> &Copies);
     bool TailDuplicate(MachineBasicBlock *TailBB, MachineFunction &MF,
                        SmallVector<MachineBasicBlock*, 8> &TDBBs,
                        SmallVector<MachineInstr*, 16> &Copies);
@@ -201,7 +207,7 @@ bool TailDuplicatePass::TailDuplicateBlocks(MachineFunction &MF) {
       // TailBB's immediate successors are now successors of those predecessors
       // which duplicated TailBB. Add the predecessors as sources to the PHI
       // instructions.
-      bool isDead = MBB->pred_empty();
+      bool isDead = MBB->pred_empty() && !MBB->hasAddressTaken();
       if (PreRegAlloc)
         UpdateSuccessorsPHIs(MBB, isDead, TDBBs, Succs);
 
@@ -495,6 +501,7 @@ TailDuplicatePass::UpdateSuccessorsPHIs(MachineBasicBlock *FromBB, bool isDead,
 /// shouldTailDuplicate - Determine if it is profitable to duplicate this block.
 bool
 TailDuplicatePass::shouldTailDuplicate(const MachineFunction &MF,
+                                       bool IsSimple,
                                        MachineBasicBlock &TailBB) {
   // Only duplicate blocks that end with unconditional branches.
   if (TailBB.canFallThrough())
@@ -520,10 +527,13 @@ TailDuplicatePass::shouldTailDuplicate(const MachineFunction &MF,
   // to allow undoing the effects of tail merging and other optimizations
   // that rearrange the predecessors of the indirect branch.
 
+  bool hasIndirectBR = false;
   if (PreRegAlloc && !TailBB.empty()) {
-    const TargetInstrDesc &TID = TailBB.back().getDesc();
-    if (TID.isIndirectBranch())
+    const MCInstrDesc &MCID = TailBB.back().getDesc();
+    if (MCID.isIndirectBranch()) {
       MaxDuplicateCount = 20;
+      hasIndirectBR = true;
+    }
   }
 
   // Check the instructions in the block to determine whether tail-duplication
@@ -554,7 +564,143 @@ TailDuplicatePass::shouldTailDuplicate(const MachineFunction &MF,
       return false;
   }
 
+  if (hasIndirectBR)
+    return true;
+
+  if (IsSimple)
+    return true;
+
+  if (!PreRegAlloc)
+    return true;
+
+  return canCompletelyDuplicateBB(TailBB);
+}
+
+/// isSimpleBB - True if this BB has only one unconditional jump.
+bool
+TailDuplicatePass::isSimpleBB(MachineBasicBlock *TailBB) {
+  if (TailBB->succ_size() != 1)
+    return false;
+  if (TailBB->pred_empty())
+    return false;
+  MachineBasicBlock::iterator I = TailBB->begin();
+  MachineBasicBlock::iterator E = TailBB->end();
+  while (I != E && I->isDebugValue())
+    ++I;
+  if (I == E)
+    return true;
+  return I->getDesc().isUnconditionalBranch();
+}
+
+static bool
+bothUsedInPHI(const MachineBasicBlock &A,
+              SmallPtrSet<MachineBasicBlock*, 8> SuccsB) {
+  for (MachineBasicBlock::const_succ_iterator SI = A.succ_begin(),
+         SE = A.succ_end(); SI != SE; ++SI) {
+    MachineBasicBlock *BB = *SI;
+    if (SuccsB.count(BB) && !BB->empty() && BB->begin()->isPHI())
+      return true;
+  }
+
+  return false;
+}
+
+bool
+TailDuplicatePass::canCompletelyDuplicateBB(MachineBasicBlock &BB) {
+  SmallPtrSet<MachineBasicBlock*, 8> Succs(BB.succ_begin(), BB.succ_end());
+
+  for (MachineBasicBlock::pred_iterator PI = BB.pred_begin(),
+       PE = BB.pred_end(); PI != PE; ++PI) {
+    MachineBasicBlock *PredBB = *PI;
+
+    if (PredBB->succ_size() > 1)
+      return false;
+
+    MachineBasicBlock *PredTBB = NULL, *PredFBB = NULL;
+    SmallVector<MachineOperand, 4> PredCond;
+    if (TII->AnalyzeBranch(*PredBB, PredTBB, PredFBB, PredCond, true))
+      return false;
+
+    if (!PredCond.empty())
+      return false;
+  }
   return true;
+}
+
+bool
+TailDuplicatePass::duplicateSimpleBB(MachineBasicBlock *TailBB,
+                                     SmallVector<MachineBasicBlock*, 8> &TDBBs,
+                                     const DenseSet<unsigned> &UsedByPhi,
+                                     SmallVector<MachineInstr*, 16> &Copies) {
+  SmallPtrSet<MachineBasicBlock*, 8> Succs(TailBB->succ_begin(),
+                                           TailBB->succ_end());
+  SmallVector<MachineBasicBlock*, 8> Preds(TailBB->pred_begin(),
+                                           TailBB->pred_end());
+  bool Changed = false;
+  for (SmallSetVector<MachineBasicBlock *, 8>::iterator PI = Preds.begin(),
+       PE = Preds.end(); PI != PE; ++PI) {
+    MachineBasicBlock *PredBB = *PI;
+
+    if (PredBB->getLandingPadSuccessor())
+      continue;
+
+    if (bothUsedInPHI(*PredBB, Succs))
+      continue;
+
+    MachineBasicBlock *PredTBB = NULL, *PredFBB = NULL;
+    SmallVector<MachineOperand, 4> PredCond;
+    if (TII->AnalyzeBranch(*PredBB, PredTBB, PredFBB, PredCond, true))
+      continue;
+
+    Changed = true;
+    DEBUG(dbgs() << "\nTail-duplicating into PredBB: " << *PredBB
+                 << "From simple Succ: " << *TailBB);
+
+    MachineBasicBlock *NewTarget = *TailBB->succ_begin();
+    MachineBasicBlock *NextBB = llvm::next(MachineFunction::iterator(PredBB));
+
+    // Make PredFBB explicit.
+    if (PredCond.empty())
+      PredFBB = PredTBB;
+
+    // Make fall through explicit.
+    if (!PredTBB)
+      PredTBB = NextBB;
+    if (!PredFBB)
+      PredFBB = NextBB;
+
+    // Redirect
+    if (PredFBB == TailBB)
+      PredFBB = NewTarget;
+    if (PredTBB == TailBB)
+      PredTBB = NewTarget;
+
+    // Make the branch unconditional if possible
+    if (PredTBB == PredFBB) {
+      PredCond.clear();
+      PredFBB = NULL;
+    }
+
+    // Avoid adding fall through branches.
+    if (PredFBB == NextBB)
+      PredFBB = NULL;
+    if (PredTBB == NextBB && PredFBB == NULL)
+      PredTBB = NULL;
+
+    TII->RemoveBranch(*PredBB);
+
+    if (PredTBB)
+      TII->InsertBranch(*PredBB, PredTBB, PredFBB, PredCond, DebugLoc());
+
+    PredBB->removeSuccessor(TailBB);
+    unsigned NumSuccessors = PredBB->succ_size();
+    assert(NumSuccessors <= 1);
+    if (NumSuccessors == 0 || *PredBB->succ_begin() != NewTarget)
+      PredBB->addSuccessor(NewTarget);
+
+    TDBBs.push_back(PredBB);
+  }
+  return Changed;
 }
 
 /// TailDuplicate - If it is profitable, duplicate TailBB's contents in each
@@ -563,10 +709,18 @@ bool
 TailDuplicatePass::TailDuplicate(MachineBasicBlock *TailBB, MachineFunction &MF,
                                  SmallVector<MachineBasicBlock*, 8> &TDBBs,
                                  SmallVector<MachineInstr*, 16> &Copies) {
-  if (!shouldTailDuplicate(MF, *TailBB))
+  bool IsSimple = isSimpleBB(TailBB);
+
+  if (!shouldTailDuplicate(MF, IsSimple, *TailBB))
     return false;
 
   DEBUG(dbgs() << "\n*** Tail-duplicating BB#" << TailBB->getNumber() << '\n');
+
+  DenseSet<unsigned> UsedByPhi;
+  getRegsUsedByPHIs(*TailBB, &UsedByPhi);
+
+  if (IsSimple)
+    return duplicateSimpleBB(TailBB, TDBBs, UsedByPhi, Copies);
 
   // Iterate through all the unique predecessors and tail-duplicate this
   // block into them, if possible. Copying the list ahead of time also
@@ -574,8 +728,6 @@ TailDuplicatePass::TailDuplicate(MachineBasicBlock *TailBB, MachineFunction &MF,
   bool Changed = false;
   SmallSetVector<MachineBasicBlock*, 8> Preds(TailBB->pred_begin(),
                                               TailBB->pred_end());
-  DenseSet<unsigned> UsedByPhi;
-  getRegsUsedByPHIs(*TailBB, &UsedByPhi);
   for (SmallSetVector<MachineBasicBlock *, 8>::iterator PI = Preds.begin(),
        PE = Preds.end(); PI != PE; ++PI) {
     MachineBasicBlock *PredBB = *PI;

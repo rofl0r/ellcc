@@ -169,11 +169,11 @@ const llvm::MemoryBuffer *ContentCache::getBuffer(Diagnostic &Diag,
   return Buffer.getPointer();
 }
 
-unsigned LineTableInfo::getLineTableFilenameID(const char *Ptr, unsigned Len) {
+unsigned LineTableInfo::getLineTableFilenameID(llvm::StringRef Name) {
   // Look up the filename in the string table, returning the pre-existing value
   // if it exists.
   llvm::StringMapEntry<unsigned> &Entry =
-    FilenameIDs.GetOrCreateValue(Ptr, Ptr+Len, ~0U);
+    FilenameIDs.GetOrCreateValue(Name, ~0U);
   if (Entry.getValue() != ~0U)
     return Entry.getValue();
 
@@ -277,10 +277,10 @@ void LineTableInfo::AddEntry(unsigned FID,
 
 /// getLineTableFilenameID - Return the uniqued ID for the specified filename.
 ///
-unsigned SourceManager::getLineTableFilenameID(const char *Ptr, unsigned Len) {
+unsigned SourceManager::getLineTableFilenameID(llvm::StringRef Name) {
   if (LineTable == 0)
     LineTable = new LineTableInfo();
-  return LineTable->getLineTableFilenameID(Ptr, Len);
+  return LineTable->getLineTableFilenameID(Name);
 }
 
 
@@ -1218,7 +1218,11 @@ PresumedLoc SourceManager::getPresumedLoc(SourceLocation Loc) const {
 bool SourceManager::isAtStartOfMacroInstantiation(SourceLocation loc) const {
   assert(loc.isValid() && loc.isMacroID() && "Expected a valid macro loc");
 
-  unsigned FID = getFileID(loc).ID;
+  std::pair<FileID, unsigned> infoLoc = getDecomposedLoc(loc);
+  if (infoLoc.second > 0)
+    return false; // Does not point at the start of token.
+
+  unsigned FID = infoLoc.first.ID;
   assert(FID > 1);
   std::pair<SourceLocation, SourceLocation>
     instRange = getImmediateInstantiationRange(loc);

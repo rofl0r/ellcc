@@ -223,6 +223,16 @@ public:
     }
   };
 
+  template <class T, class A0, class A1, class A2>
+  class UnconditionalCleanup3 : public Cleanup {
+    A0 a0; A1 a1; A2 a2;
+  public:
+    UnconditionalCleanup3(A0 a0, A1 a1, A2 a2) : a0(a0), a1(a1), a2(a2) {}
+    void Emit(CodeGenFunction &CGF, bool IsForEHCleanup) {
+      T::Emit(CGF, IsForEHCleanup, a0, a1, a2);
+    }
+  };
+
   /// ConditionalCleanupN stores the saved form of its N parameters,
   /// then restores them and performs the cleanup.
   template <class T, class A0>
@@ -256,6 +266,27 @@ public:
   public:
     ConditionalCleanup2(A0_saved a0, A1_saved a1)
       : a0_saved(a0), a1_saved(a1) {}
+  };
+
+  template <class T, class A0, class A1, class A2>
+  class ConditionalCleanup3 : public Cleanup {
+    typedef typename DominatingValue<A0>::saved_type A0_saved;
+    typedef typename DominatingValue<A1>::saved_type A1_saved;
+    typedef typename DominatingValue<A2>::saved_type A2_saved;
+    A0_saved a0_saved;
+    A1_saved a1_saved;
+    A2_saved a2_saved;
+    
+    void Emit(CodeGenFunction &CGF, bool IsForEHCleanup) {
+      A0 a0 = DominatingValue<A0>::restore(CGF, a0_saved);
+      A1 a1 = DominatingValue<A1>::restore(CGF, a1_saved);
+      A2 a2 = DominatingValue<A2>::restore(CGF, a2_saved);
+      T::Emit(CGF, IsForEHCleanup, a0, a1, a2);
+    }
+    
+  public:
+    ConditionalCleanup3(A0_saved a0, A1_saved a1, A2_saved a2)
+    : a0_saved(a0), a1_saved(a1), a2_saved(a2) {}
   };
 
 private:
@@ -635,16 +666,28 @@ public:
   /// rethrows.
   llvm::SmallVector<llvm::Value*, 8> ObjCEHValueStack;
 
-  // A struct holding information about a finally block's IR
-  // generation.  For now, doesn't actually hold anything.
-  struct FinallyInfo {
-  };
+  /// A class controlling the emission of a finally block.
+  class FinallyInfo {
+    /// Where the catchall's edge through the cleanup should go.
+    JumpDest RethrowDest;
 
-  FinallyInfo EnterFinallyBlock(const Stmt *Stmt,
-                                llvm::Constant *BeginCatchFn,
-                                llvm::Constant *EndCatchFn,
-                                llvm::Constant *RethrowFn);
-  void ExitFinallyBlock(FinallyInfo &FinallyInfo);
+    /// A function to call to enter the catch.
+    llvm::Constant *BeginCatchFn;
+
+    /// An i1 variable indicating whether or not the @finally is
+    /// running for an exception.
+    llvm::AllocaInst *ForEHVar;
+
+    /// An i8* variable into which the exception pointer to rethrow
+    /// has been saved.
+    llvm::AllocaInst *SavedExnVar;
+
+  public:
+    void enter(CodeGenFunction &CGF, const Stmt *Finally,
+               llvm::Constant *beginCatchFn, llvm::Constant *endCatchFn,
+               llvm::Constant *rethrowFn);
+    void exit(CodeGenFunction &CGF);
+  };
 
   /// pushFullExprCleanup - Push a cleanup to be run at the end of the
   /// current full-expression.  Safe against the possibility that
@@ -682,6 +725,27 @@ public:
 
     typedef EHScopeStack::ConditionalCleanup2<T, A0, A1> CleanupType;
     EHStack.pushCleanup<CleanupType>(kind, a0_saved, a1_saved);
+    initFullExprCleanup();
+  }
+
+  /// pushFullExprCleanup - Push a cleanup to be run at the end of the
+  /// current full-expression.  Safe against the possibility that
+  /// we're currently inside a conditionally-evaluated expression.
+  template <class T, class A0, class A1, class A2>
+  void pushFullExprCleanup(CleanupKind kind, A0 a0, A1 a1, A2 a2) {
+    // If we're not in a conditional branch, or if none of the
+    // arguments requires saving, then use the unconditional cleanup.
+    if (!isInConditionalBranch()) {
+      typedef EHScopeStack::UnconditionalCleanup3<T, A0, A1, A2> CleanupType;
+      return EHStack.pushCleanup<CleanupType>(kind, a0, a1, a2);
+    }
+    
+    typename DominatingValue<A0>::saved_type a0_saved = saveValueInCond(a0);
+    typename DominatingValue<A1>::saved_type a1_saved = saveValueInCond(a1);
+    typename DominatingValue<A2>::saved_type a2_saved = saveValueInCond(a2);
+    
+    typedef EHScopeStack::ConditionalCleanup3<T, A0, A1, A2> CleanupType;
+    EHStack.pushCleanup<CleanupType>(kind, a0_saved, a1_saved, a2_saved);
     initFullExprCleanup();
   }
 
@@ -1462,16 +1526,18 @@ public:
   // instruction in LLVM instead once it works well enough.
   llvm::Value *EmitVAArg(llvm::Value *VAListAddr, QualType Ty);
 
-  /// EmitVLASize - Generate code for any VLA size expressions that might occur
-  /// in a variably modified type. If Ty is a VLA, will return the value that
-  /// corresponds to the size in bytes of the VLA type. Will return 0 otherwise.
+  /// EmitVLASize - Capture all the sizes for the VLA expressions in
+  /// the given variably-modified type and store them in the VLASizeMap.
   ///
   /// This function can be called with a null (unreachable) insert point.
-  llvm::Value *EmitVLASize(QualType Ty);
+  void EmitVariablyModifiedType(QualType Ty);
 
-  // GetVLASize - Returns an LLVM value that corresponds to the size in bytes
-  // of a variable length array type.
-  llvm::Value *GetVLASize(const VariableArrayType *);
+  /// getVLASize - Returns an LLVM value that corresponds to the size,
+  /// in non-variably-sized elements, of a variable length array type,
+  /// plus that largest non-variably-sized element type.  Assumes that
+  /// the type has already been emitted with EmitVariablyModifiedType.
+  std::pair<llvm::Value*,QualType> getVLASize(const VariableArrayType *vla);
+  std::pair<llvm::Value*,QualType> getVLASize(QualType vla);
 
   /// LoadCXXThis - Load the value of 'this'. This function is only valid while
   /// generating code for an C++ member function.
@@ -1790,6 +1856,11 @@ public:
   llvm::Value *EmitLoadOfScalar(llvm::Value *Addr, bool Volatile,
                                 unsigned Alignment, QualType Ty,
                                 llvm::MDNode *TBAAInfo = 0);
+
+  /// EmitLoadOfScalar - Load a scalar value from an address, taking
+  /// care to appropriately convert from the memory representation to
+  /// the LLVM value representation.  The l-value must be a simple
+  /// l-value.
   llvm::Value *EmitLoadOfScalar(LValue lvalue);
 
   /// EmitStoreOfScalar - Store a scalar value to an address, taking
@@ -1798,23 +1869,27 @@ public:
   void EmitStoreOfScalar(llvm::Value *Value, llvm::Value *Addr,
                          bool Volatile, unsigned Alignment, QualType Ty,
                          llvm::MDNode *TBAAInfo = 0);
+
+  /// EmitStoreOfScalar - Store a scalar value to an address, taking
+  /// care to appropriately convert from the memory representation to
+  /// the LLVM value representation.  The l-value must be a simple
+  /// l-value.
   void EmitStoreOfScalar(llvm::Value *value, LValue lvalue);
 
   /// EmitLoadOfLValue - Given an expression that represents a value lvalue,
   /// this method emits the address of the lvalue, then loads the result as an
   /// rvalue, returning the rvalue.
-  RValue EmitLoadOfLValue(LValue V, QualType LVType);
-  RValue EmitLoadOfExtVectorElementLValue(LValue V, QualType LVType);
-  RValue EmitLoadOfBitfieldLValue(LValue LV, QualType ExprType);
+  RValue EmitLoadOfLValue(LValue V);
+  RValue EmitLoadOfExtVectorElementLValue(LValue V);
+  RValue EmitLoadOfBitfieldLValue(LValue LV);
   RValue EmitLoadOfPropertyRefLValue(LValue LV,
                                  ReturnValueSlot Return = ReturnValueSlot());
 
   /// EmitStoreThroughLValue - Store the specified rvalue into the specified
   /// lvalue, where both are guaranteed to the have the same type, and that type
   /// is 'Ty'.
-  void EmitStoreThroughLValue(RValue Src, LValue Dst, QualType Ty);
-  void EmitStoreThroughExtVectorComponentLValue(RValue Src, LValue Dst,
-                                                QualType Ty);
+  void EmitStoreThroughLValue(RValue Src, LValue Dst);
+  void EmitStoreThroughExtVectorComponentLValue(RValue Src, LValue Dst);
   void EmitStoreThroughPropertyRefLValue(RValue Src, LValue Dst);
 
   /// EmitStoreThroughLValue - Store Src into Dst with same constraints as
@@ -1823,7 +1898,7 @@ public:
   /// \param Result [out] - If non-null, this will be set to a Value* for the
   /// bit-field contents after the store, appropriate for use as the result of
   /// an assignment to the bit-field.
-  void EmitStoreThroughBitfieldLValue(RValue Src, LValue Dst, QualType Ty,
+  void EmitStoreThroughBitfieldLValue(RValue Src, LValue Dst,
                                       llvm::Value **Result=0);
 
   /// Emit an l-value for an assignment (simple or compound) of complex type.
@@ -1850,6 +1925,7 @@ public:
   LValue EmitConditionalOperatorLValue(const AbstractConditionalOperator *E);
   LValue EmitCastLValue(const CastExpr *E);
   LValue EmitNullInitializationLValue(const CXXScalarValueInitExpr *E);
+  LValue EmitMaterializeTemporaryExpr(const MaterializeTemporaryExpr *E);
   LValue EmitOpaqueValueLValue(const OpaqueValueExpr *e);
 
   llvm::Value *EmitIvarOffset(const ObjCInterfaceDecl *Interface,
@@ -1997,8 +2073,8 @@ public:
   void EmitARCMoveWeak(llvm::Value *dst, llvm::Value *src);
   llvm::Value *EmitARCRetainAutorelease(QualType type, llvm::Value *value);
   llvm::Value *EmitARCRetainAutoreleaseNonBlock(llvm::Value *value);
-  llvm::Value *EmitARCStoreStrong(LValue addr, QualType type,
-                                  llvm::Value *value, bool ignored);
+  llvm::Value *EmitARCStoreStrong(LValue lvalue, llvm::Value *value,
+                                  bool ignored);
   llvm::Value *EmitARCStoreStrongCall(llvm::Value *addr, llvm::Value *value,
                                       bool ignored);
   llvm::Value *EmitARCRetain(QualType type, llvm::Value *value);
@@ -2023,9 +2099,10 @@ public:
   llvm::Value *EmitARCRetainAutoreleaseScalarExpr(const Expr *expr);
 
   void PushARCReleaseCleanup(CleanupKind kind, QualType type,
-                             llvm::Value *addr, bool precise);
+                             llvm::Value *addr, bool precise,
+                             bool forFullExpr = false);
   void PushARCWeakReleaseCleanup(CleanupKind kind, QualType type,
-                                 llvm::Value *addr);
+                                 llvm::Value *addr, bool forFullExpr = false);
   void PushARCFieldReleaseCleanup(CleanupKind cleanupKind,
                                   const FieldDecl *Field);
   void PushARCFieldWeakReleaseCleanup(CleanupKind cleanupKind,
@@ -2077,6 +2154,10 @@ public:
   /// pointers.
   void EmitGCMemmoveCollectable(llvm::Value *DestPtr, llvm::Value *SrcPtr,
                                 QualType Ty);
+
+  /// EmitExtendGCLifetime - Given a pointer to an Objective-C object,
+  /// make sure it survives garbage collection until this point.
+  void EmitExtendGCLifetime(llvm::Value *object);
 
   /// EmitComplexExpr - Emit the computation of the specified expression of
   /// complex type, returning the result.

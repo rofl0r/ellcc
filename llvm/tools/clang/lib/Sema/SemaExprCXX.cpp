@@ -828,8 +828,7 @@ Sema::ActOnCXXNew(SourceLocation StartLoc, bool UseGlobal,
     }
   }
 
-  TypeSourceInfo *TInfo = GetTypeForDeclarator(D, /*Scope=*/0, /*OwnedDecl=*/0,
-                                               /*AllowAuto=*/true);
+  TypeSourceInfo *TInfo = GetTypeForDeclarator(D, /*Scope=*/0);
   QualType AllocType = TInfo->getType();
   if (D.isInvalidType())
     return ExprError();
@@ -1144,7 +1143,7 @@ bool Sema::CheckAllocatedType(QualType AllocType, SourceLocation Loc,
       QualType BaseAllocType = Context.getBaseElementType(AT);
       if (BaseAllocType.getObjCLifetime() == Qualifiers::OCL_None &&
           BaseAllocType->isObjCLifetimeType())
-        return Diag(Loc, diag::err_arc_new_array_without_lifetime)
+        return Diag(Loc, diag::err_arc_new_array_without_ownership)
           << BaseAllocType;
     }
   }
@@ -3169,6 +3168,20 @@ QualType Sema::CheckPointerToMemberOperands(ExprResult &lex, ExprResult &rex,
                                             ExprValueKind &VK,
                                             SourceLocation Loc,
                                             bool isIndirect) {
+  assert(!lex.get()->getType()->isPlaceholderType() &&
+         !rex.get()->getType()->isPlaceholderType() &&
+         "placeholders should have been weeded out by now");
+
+  // The LHS undergoes lvalue conversions if this is ->*.
+  if (isIndirect) {
+    lex = DefaultLvalueConversion(lex.take());
+    if (lex.isInvalid()) return QualType();
+  }
+
+  // The RHS always undergoes lvalue conversions.
+  rex = DefaultLvalueConversion(rex.take());
+  if (rex.isInvalid()) return QualType();
+
   const char *OpSpelling = isIndirect ? "->*" : ".*";
   // C++ 5.5p2
   //   The binary operator .* [p3: ->*] binds its second operand, which shall
@@ -3636,7 +3649,7 @@ QualType Sema::CXXCheckConditionalOperands(ExprResult &Cond, ExprResult &LHS, Ex
 
   // Extension: conditional operator involving vector types.
   if (LTy->isVectorType() || RTy->isVectorType())
-    return CheckVectorOperands(QuestionLoc, LHS, RHS);
+    return CheckVectorOperands(LHS, RHS, QuestionLoc, /*isCompAssign*/false);
 
   //   -- The second and third operands have arithmetic or enumeration type;
   //      the usual arithmetic conversions are performed to bring them to a
@@ -4461,7 +4474,16 @@ ExprResult Sema::IgnoredValueConversions(Expr *E) {
   //   [Except in specific positions,] an lvalue that does not have
   //   array type is converted to the value stored in the
   //   designated object (and is no longer an lvalue).
-  if (E->isRValue()) return Owned(E);
+  if (E->isRValue()) {
+    // In C, function designators (i.e. expressions of function type)
+    // are r-values, but we still want to do function-to-pointer decay
+    // on them.  This is both technically correct and convenient for
+    // some clients.
+    if (!getLangOptions().CPlusPlus && E->getType()->isFunctionType())
+      return DefaultFunctionArrayConversion(E);
+
+    return Owned(E);
+  }
 
   // We always want to do this on ObjC property references.
   if (E->getObjectKind() == OK_ObjCProperty) {

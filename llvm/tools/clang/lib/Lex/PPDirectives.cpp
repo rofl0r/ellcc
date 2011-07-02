@@ -784,8 +784,7 @@ void Preprocessor::HandleLineDirective(Token &Tok) {
       Diag(StrTok, diag::err_pp_linemarker_invalid_filename);
       return DiscardUntilEndOfDirective();
     }
-    FilenameID = SourceMgr.getLineTableFilenameID(Literal.GetString(),
-                                                  Literal.GetStringLength());
+    FilenameID = SourceMgr.getLineTableFilenameID(Literal.GetString());
 
     // Verify that there is nothing after the string, other than EOD.  Because
     // of C99 6.10.4p5, macros that expand to empty tokens are ok.
@@ -918,8 +917,7 @@ void Preprocessor::HandleDigitDirective(Token &DigitTok) {
       Diag(StrTok, diag::err_pp_linemarker_invalid_filename);
       return DiscardUntilEndOfDirective();
     }
-    FilenameID = SourceMgr.getLineTableFilenameID(Literal.GetString(),
-                                                  Literal.GetStringLength());
+    FilenameID = SourceMgr.getLineTableFilenameID(Literal.GetString());
 
     // If a filename was present, read any flags that are present.
     if (ReadLineMarkerFlags(IsFileEntry, IsFileExit,
@@ -1210,10 +1208,7 @@ void Preprocessor::HandleIncludeDirective(SourceLocation HashLoc,
   // Look up the file, create a File ID for it.
   FileID FID = SourceMgr.createFileID(File, FilenameTok.getLocation(),
                                       FileCharacter);
-  if (FID.isInvalid()) {
-    Diag(FilenameTok, diag::err_pp_file_not_found) << Filename;
-    return;
-  }
+  assert(!FID.isInvalid() && "Expected valid file ID");
 
   // Finally, if all is good, enter the new file!
   EnterSourceFile(FID, CurDir, FilenameTok.getLocation());

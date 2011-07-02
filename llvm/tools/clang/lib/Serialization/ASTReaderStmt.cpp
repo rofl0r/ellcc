@@ -60,7 +60,7 @@ namespace clang {
 
     /// \brief The number of record fields required for the Expr class
     /// itself.
-    static const unsigned NumExprFields = NumStmtFields + 6;
+    static const unsigned NumExprFields = NumStmtFields + 7;
     
     /// \brief Read and initialize a ExplicitTemplateArgumentList structure.
     void ReadExplicitTemplateArgumentList(ExplicitTemplateArgumentList &ArgList,
@@ -189,6 +189,7 @@ namespace clang {
     void VisitSizeOfPackExpr(SizeOfPackExpr *E);
     void VisitSubstNonTypeTemplateParmPackExpr(
                                            SubstNonTypeTemplateParmPackExpr *E);
+    void VisitMaterializeTemporaryExpr(MaterializeTemporaryExpr *E);
     void VisitOpaqueValueExpr(OpaqueValueExpr *E);
     
     // CUDA Expressions
@@ -413,6 +414,7 @@ void ASTStmtReader::VisitExpr(Expr *E) {
   E->setType(Reader.GetType(Record[Idx++]));
   E->setTypeDependent(Record[Idx++]);
   E->setValueDependent(Record[Idx++]);
+  E->setInstantiationDependent(Record[Idx++]);
   E->ExprBits.ContainsUnexpandedParameterPack = Record[Idx++];
   E->setValueKind(static_cast<ExprValueKind>(Record[Idx++]));
   E->setObjectKind(static_cast<ExprObjectKind>(Record[Idx++]));
@@ -1426,6 +1428,11 @@ void ASTStmtReader::VisitSubstNonTypeTemplateParmPackExpr(
   E->NameLoc = ReadSourceLocation(Record, Idx);
 }
 
+void ASTStmtReader::VisitMaterializeTemporaryExpr(MaterializeTemporaryExpr *E) {
+  VisitExpr(E);
+  E->Temporary = Reader.ReadSubExpr();
+}
+
 void ASTStmtReader::VisitOpaqueValueExpr(OpaqueValueExpr *E) {
   VisitExpr(E);
   Idx++; // skip ID
@@ -2012,6 +2019,10 @@ Stmt *ASTReader::ReadStmtFromStream(PerFileData &F) {
         
     case EXPR_SUBST_NON_TYPE_TEMPLATE_PARM_PACK:
       S = new (Context) SubstNonTypeTemplateParmPackExpr(Empty);
+      break;
+        
+    case EXPR_MATERIALIZE_TEMPORARY:
+      S = new (Context) MaterializeTemporaryExpr(Empty);
       break;
         
     case EXPR_OPAQUE_VALUE: {

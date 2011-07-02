@@ -3197,7 +3197,7 @@ TreeTransform<Derived>::TransformQualifiedType(TypeLocBuilder &TLB,
         // Otherwise, complain about the addition of a qualifier to an
         // already-qualified type.
         SourceRange R = TLB.getTemporaryTypeLoc(Result).getSourceRange();
-        SemaRef.Diag(R.getBegin(), diag::err_attr_objc_lifetime_redundant)
+        SemaRef.Diag(R.getBegin(), diag::err_attr_objc_ownership_redundant)
           << Result << R;
         
         Quals.removeObjCLifetime();
@@ -6937,9 +6937,13 @@ TreeTransform<Derived>::TransformCXXNewExpr(CXXNewExpr *E) {
                                         AllocType,
                                         AllocTypeInfo,
                                         ArraySize.get(),
-                                        /*FIXME:*/E->getLocStart(),
+                                        /*FIXME:*/E->hasInitializer()
+                                          ? E->getLocStart()
+                                          : SourceLocation(),
                                         move_arg(ConstructorArgs),
-                                        E->getLocEnd());
+                                        /*FIXME:*/E->hasInitializer()
+                                          ? E->getLocEnd()
+                                          : SourceLocation());
 }
 
 template<typename Derived>
@@ -7655,6 +7659,13 @@ TreeTransform<Derived>::TransformSubstNonTypeTemplateParmPackExpr(
   return SemaRef.Owned(E);
 }
 
+template<typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformMaterializeTemporaryExpr(
+                                                  MaterializeTemporaryExpr *E) {
+  return getDerived().TransformExpr(E->GetTemporaryExpr());
+}
+  
 template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformObjCStringLiteral(ObjCStringLiteral *E) {

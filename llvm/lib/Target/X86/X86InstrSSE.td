@@ -1991,11 +1991,11 @@ def : Pat<(alignednontemporalstore (v2i64 VR128:$src), addr:$dst),
 
 // There is no AVX form for instructions below this point
 def MOVNTImr : I<0xC3, MRMDestMem, (outs), (ins i32mem:$dst, GR32:$src),
-                 "movnti\t{$src, $dst|$dst, $src}",
+                 "movnti{l}\t{$src, $dst|$dst, $src}",
                  [(nontemporalstore (i32 GR32:$src), addr:$dst)]>,
                TB, Requires<[HasSSE2]>;
 def MOVNTI_64mr : RI<0xC3, MRMDestMem, (outs), (ins i64mem:$dst, GR64:$src),
-                     "movnti\t{$src, $dst|$dst, $src}",
+                     "movnti{q}\t{$src, $dst|$dst, $src}",
                      [(nontemporalstore (i64 GR64:$src), addr:$dst)]>,
                   TB, Requires<[HasSSE2]>;
 }
@@ -2967,6 +2967,22 @@ def : Pat<(v4i32 (X86vzmovl (bc_v4i32 (loadv4f32 addr:$src)))),
 def : Pat<(v4i32 (X86vzmovl (bc_v4i32 (loadv2i64 addr:$src)))),
             (MOVZDI2PDIrm addr:$src)>;
 }
+
+// These are the correct encodings of the instructions so that we know how to
+// read correct assembly, even though we continue to emit the wrong ones for
+// compatibility with Darwin's buggy assembler.
+def : InstAlias<"movq\t{$src, $dst|$dst, $src}",
+                (MOV64toPQIrr VR128:$dst, GR64:$src), 0>;
+def : InstAlias<"movq\t{$src, $dst|$dst, $src}",
+                (MOV64toSDrr FR64:$dst, GR64:$src), 0>;
+def : InstAlias<"movq\t{$src, $dst|$dst, $src}",
+                (MOVPQIto64rr GR64:$dst, VR128:$src), 0>;
+def : InstAlias<"movq\t{$src, $dst|$dst, $src}",
+                (MOVSDto64rr GR64:$dst, FR64:$src), 0>;
+def : InstAlias<"movq\t{$src, $dst|$dst, $src}",
+                (VMOVZQI2PQIrr VR128:$dst, GR64:$src), 0>;
+def : InstAlias<"movq\t{$src, $dst|$dst, $src}",
+                (MOVZQI2PQIrr VR128:$dst, GR64:$src), 0>;
 
 //===---------------------------------------------------------------------===//
 // SSE2 - Move Quadword
