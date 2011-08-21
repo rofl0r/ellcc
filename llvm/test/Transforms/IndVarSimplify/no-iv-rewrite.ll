@@ -125,9 +125,9 @@ return:
   ret void
 }
 
-%struct = type { i32 }
+%structI = type { i32 }
 
-define void @bitcastiv(i32 %start, i32 %limit, i32 %step, %struct* %base)
+define void @bitcastiv(i32 %start, i32 %limit, i32 %step, %structI* %base)
 nounwind
 {
 entry:
@@ -142,12 +142,12 @@ entry:
 ; CHECK: exit:
 loop:
   %iv = phi i32 [%start, %entry], [%next, %loop]
-  %p = phi %struct* [%base, %entry], [%pinc, %loop]
-  %adr = getelementptr %struct* %p, i32 0, i32 0
+  %p = phi %structI* [%base, %entry], [%pinc, %loop]
+  %adr = getelementptr %structI* %p, i32 0, i32 0
   store i32 3, i32* %adr
-  %pp = bitcast %struct* %p to i32*
+  %pp = bitcast %structI* %p to i32*
   store i32 4, i32* %pp
-  %pinc = getelementptr %struct* %p, i32 1
+  %pinc = getelementptr %structI* %p, i32 1
   %next = add i32 %iv, 1
   %cond = icmp ne i32 %next, %limit
   br i1 %cond, label %loop, label %exit
@@ -269,4 +269,123 @@ cond_true:
 
 return:
   ret i32 %i.0
+}
+
+; Eliminate the congruent phis j, k, and l.
+; Eliminate the redundant IV increments k.next and l.next.
+; Two phis should remain, one starting at %init, and one at %init1.
+; Two increments should remain, one by %step and one by %step1.
+; CHECK: loop:
+; CHECK: phi i32
+; CHECK: phi i32
+; CHECK-NOT: phi
+; CHECK: add i32
+; CHECK: add i32
+; CHECK-NOT: add
+; CHECK: return:
+;
+; Five live-outs should remain.
+; CHECK: lcssa = phi
+; CHECK: lcssa = phi
+; CHECK: lcssa = phi
+; CHECK: lcssa = phi
+; CHECK: lcssa = phi
+; CHECK-NOT: phi
+; CHECK: ret
+define i32 @isomorphic(i32 %init, i32 %step, i32 %lim) nounwind {
+entry:
+  %step1 = add i32 %step, 1
+  %init1 = add i32 %init, %step1
+  %l.0 = sub i32 %init1, %step1
+  br label %loop
+
+loop:
+  %ii = phi i32 [ %init1, %entry ], [ %ii.next, %loop ]
+  %i = phi i32 [ %init, %entry ], [ %ii, %loop ]
+  %j = phi i32 [ %init, %entry ], [ %j.next, %loop ]
+  %k = phi i32 [ %init1, %entry ], [ %k.next, %loop ]
+  %l = phi i32 [ %l.0, %entry ], [ %l.next, %loop ]
+  %ii.next = add i32 %ii, %step1
+  %j.next = add i32 %j, %step1
+  %k.next = add i32 %k, %step1
+  %l.step = add i32 %l, %step
+  %l.next = add i32 %l.step, 1
+  %cmp = icmp ne i32 %ii.next, %lim
+  br i1 %cmp, label %loop, label %return
+
+return:
+  %sum1 = add i32 %i, %j.next
+  %sum2 = add i32 %sum1, %k.next
+  %sum3 = add i32 %sum1, %l.step
+  %sum4 = add i32 %sum1, %l.next
+  ret i32 %sum4
+}
+
+; Test a GEP IV that is derived from another GEP IV by a nop gep that
+; lowers the type without changing the expression.
+%structIF = type { i32, float }
+
+define void @congruentgepiv(%structIF* %base) nounwind uwtable ssp {
+entry:
+  %first = getelementptr inbounds %structIF* %base, i64 0, i32 0
+  br label %loop
+
+; CHECK: loop:
+; CHECK: phi %structIF*
+; CHECK: phi i32*
+; CHECK: getelementptr inbounds
+; CHECK: getelementptr inbounds
+; CHECK: exit:
+loop:
+  %ptr.iv = phi %structIF* [ %ptr.inc, %latch ], [ %base, %entry ]
+  %next = phi i32* [ %next.inc, %latch ], [ %first, %entry ]
+  store i32 4, i32* %next
+  br i1 undef, label %latch, label %exit
+
+latch:                         ; preds = %for.inc50.i
+  %ptr.inc = getelementptr inbounds %structIF* %ptr.iv, i64 1
+  %next.inc = getelementptr inbounds %structIF* %ptr.inc, i64 0, i32 0
+  br label %loop
+
+exit:
+  ret void
+}
+
+; Test a widened IV that is used by a phi on different paths within the loop.
+;
+; CHECK: for.body:
+; CHECK: phi i64
+; CHECK: trunc i64
+; CHECK: if.then:
+; CHECK: for.inc:
+; CHECK: phi i32
+; CHECK: for.end:
+define void @phiUsesTrunc() nounwind {
+entry:
+  br i1 undef, label %for.body, label %for.end
+
+for.body:
+  %iv = phi i32 [ %inc, %for.inc ], [ 1, %entry ]
+  br i1 undef, label %if.then, label %if.else
+
+if.then:
+  br i1 undef, label %if.then33, label %for.inc
+
+if.then33:
+  br label %for.inc
+
+if.else:
+  br i1 undef, label %if.then97, label %for.inc
+
+if.then97:
+  %idxprom100 = sext i32 %iv to i64
+  br label %for.inc
+
+for.inc:
+  %kmin.1 = phi i32 [ %iv, %if.then33 ], [ 0, %if.then ], [ %iv, %if.then97 ], [ 0, %if.else ]
+  %inc = add nsw i32 %iv, 1
+  br i1 undef, label %for.body, label %for.end
+
+for.end:
+  ret void
 }
