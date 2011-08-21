@@ -37,7 +37,7 @@ namespace mipsIntrinsic {
 #undef GET_LLVM_INTRINSIC_FOR_GCC_BUILTIN
 }
 
-std::string MipsIntrinsicInfo::getName(unsigned IntrID, const Type **Tys,
+std::string MipsIntrinsicInfo::getName(unsigned IntrID, Type **Tys,
                                          unsigned numTys) const {
   static const char *const names[] = {
 #define GET_INTRINSIC_NAME_TABLE
@@ -90,9 +90,9 @@ bool MipsIntrinsicInfo::isOverloaded(unsigned IntrID) const {
 #include "MipsGenIntrinsics.inc"
 #undef GET_INTRINSIC_ATTRIBUTES
 
-static const FunctionType *getType(LLVMContext &Context, unsigned id) {
-  const Type *ResultTy = NULL;
-  std::vector<const Type*> ArgTys;
+static FunctionType *getType(LLVMContext &Context, unsigned id) {
+  Type *ResultTy = NULL;
+  std::vector<Type*> ArgTys;
   bool IsVarArg = false;
 
 #define GET_INTRINSIC_GENERATOR
@@ -103,7 +103,7 @@ static const FunctionType *getType(LLVMContext &Context, unsigned id) {
 }
 
 Function *MipsIntrinsicInfo::getDeclaration(Module *M, unsigned IntrID,
-                                                const Type **Tys,
+                                                Type **Tys,
                                                 unsigned numTy) const {
   assert(!isOverloaded(IntrID) && "Mips intrinsics are not overloaded");
   AttrListPtr AList = getAttributes((mipsIntrinsic::ID) IntrID);

@@ -586,24 +586,35 @@ public:
 class CXXThrowExpr : public Expr {
   Stmt *Op;
   SourceLocation ThrowLoc;
+  /// \brief Whether the thrown variable (if any) is in scope.
+  unsigned IsThrownVariableInScope : 1;
+  
+  friend class ASTStmtReader;
+  
 public:
   // Ty is the void type which is used as the result type of the
   // exepression.  The l is the location of the throw keyword.  expr
   // can by null, if the optional expression to throw isn't present.
-  CXXThrowExpr(Expr *expr, QualType Ty, SourceLocation l) :
+  CXXThrowExpr(Expr *expr, QualType Ty, SourceLocation l,
+               bool IsThrownVariableInScope) :
     Expr(CXXThrowExprClass, Ty, VK_RValue, OK_Ordinary, false, false,
          expr && expr->isInstantiationDependent(),
          expr && expr->containsUnexpandedParameterPack()),
-    Op(expr), ThrowLoc(l) {}
+    Op(expr), ThrowLoc(l), IsThrownVariableInScope(IsThrownVariableInScope) {}
   CXXThrowExpr(EmptyShell Empty) : Expr(CXXThrowExprClass, Empty) {}
 
   const Expr *getSubExpr() const { return cast_or_null<Expr>(Op); }
   Expr *getSubExpr() { return cast_or_null<Expr>(Op); }
-  void setSubExpr(Expr *E) { Op = E; }
 
   SourceLocation getThrowLoc() const { return ThrowLoc; }
-  void setThrowLoc(SourceLocation L) { ThrowLoc = L; }
 
+  /// \brief Determines whether the variable thrown by this expression (if any!)
+  /// is within the innermost try block.
+  ///
+  /// This information is required to determine whether the NRVO can apply to
+  /// this variable.
+  bool isThrownVariableInScope() const { return IsThrownVariableInScope; }
+  
   SourceRange getSourceRange() const {
     if (getSubExpr() == 0)
       return SourceRange(ThrowLoc, ThrowLoc);
@@ -2946,6 +2957,53 @@ public:
   child_range children() { return child_range(); }
 };
 
+/// \brief Represents a reference to a non-type template parameter
+/// that has been substituted with a template argument.
+class SubstNonTypeTemplateParmExpr : public Expr {
+  /// \brief The replaced parameter.
+  NonTypeTemplateParmDecl *Param;
+
+  /// \brief The replacement expression.
+  Stmt *Replacement;
+
+  /// \brief The location of the non-type template parameter reference.
+  SourceLocation NameLoc;
+
+  friend class ASTReader;
+  friend class ASTStmtReader;
+  explicit SubstNonTypeTemplateParmExpr(EmptyShell Empty) 
+    : Expr(SubstNonTypeTemplateParmExprClass, Empty) { }
+
+public:
+  SubstNonTypeTemplateParmExpr(QualType type, 
+                               ExprValueKind valueKind,
+                               SourceLocation loc,
+                               NonTypeTemplateParmDecl *param,
+                               Expr *replacement)
+    : Expr(SubstNonTypeTemplateParmExprClass, type, valueKind, OK_Ordinary,
+           replacement->isTypeDependent(), replacement->isValueDependent(),
+           replacement->isInstantiationDependent(),
+           replacement->containsUnexpandedParameterPack()),
+      Param(param), Replacement(replacement), NameLoc(loc) {}
+
+  SourceLocation getNameLoc() const { return NameLoc; }
+  SourceRange getSourceRange() const { return NameLoc; }
+
+  Expr *getReplacement() const { return cast<Expr>(Replacement); }
+    
+  NonTypeTemplateParmDecl *getParameter() const { return Param; }
+
+  static bool classof(const Stmt *s) {
+    return s->getStmtClass() == SubstNonTypeTemplateParmExprClass;
+  }
+  static bool classof(const SubstNonTypeTemplateParmExpr *) { 
+    return true; 
+  }
+  
+  // Iterators
+  child_range children() { return child_range(&Replacement, &Replacement+1); }
+};
+
 /// \brief Represents a reference to a non-type template parameter pack that
 /// has been substituted with a non-template argument pack.
 ///
@@ -2972,17 +3030,16 @@ class SubstNonTypeTemplateParmPackExpr : public Expr {
   /// \brief The location of the non-type template parameter pack reference.
   SourceLocation NameLoc;
   
+  friend class ASTReader;
   friend class ASTStmtReader;
-  friend class ASTStmtWriter;
+  explicit SubstNonTypeTemplateParmPackExpr(EmptyShell Empty) 
+    : Expr(SubstNonTypeTemplateParmPackExprClass, Empty) { }
   
 public:
   SubstNonTypeTemplateParmPackExpr(QualType T, 
                                    NonTypeTemplateParmDecl *Param,
                                    SourceLocation NameLoc,
                                    const TemplateArgument &ArgPack);
-  
-  SubstNonTypeTemplateParmPackExpr(EmptyShell Empty) 
-    : Expr(SubstNonTypeTemplateParmPackExprClass, Empty) { }
   
   /// \brief Retrieve the non-type template parameter pack being substituted.
   NonTypeTemplateParmDecl *getParameterPack() const { return Param; }

@@ -42,13 +42,13 @@ ExprResult Sema::ParseObjCStringLiteral(SourceLocation *AtLocs,
   if (NumStrings != 1) {
     // Concatenate objc strings.
     llvm::SmallString<128> StrBuf;
-    llvm::SmallVector<SourceLocation, 8> StrLocs;
+    SmallVector<SourceLocation, 8> StrLocs;
 
     for (unsigned i = 0; i != NumStrings; ++i) {
       S = Strings[i];
 
-      // ObjC strings can't be wide.
-      if (S->isWide()) {
+      // ObjC strings can't be wide or UTF.
+      if (!S->isAscii()) {
         Diag(S->getLocStart(), diag::err_cfstring_literal_not_string_constant)
           << S->getSourceRange();
         return true;
@@ -64,7 +64,7 @@ ExprResult Sema::ParseObjCStringLiteral(SourceLocation *AtLocs,
     // Create the aggregate string with the appropriate content and location
     // information.
     S = StringLiteral::Create(Context, StrBuf,
-                              /*Wide=*/false, /*Pascal=*/false,
+                              StringLiteral::Ascii, /*Pascal=*/false,
                               Context.getPointerType(Context.CharTy),
                               &StrLocs[0], StrLocs.size());
   }
@@ -178,11 +178,14 @@ ExprResult Sema::ParseObjCSelectorExpression(Selector Sel,
                                           SourceRange(LParenLoc, RParenLoc));
   if (!Method)
     Diag(SelLoc, diag::warn_undeclared_selector) << Sel;
-
-  llvm::DenseMap<Selector, SourceLocation>::iterator Pos
-    = ReferencedSelectors.find(Sel);
-  if (Pos == ReferencedSelectors.end())
-    ReferencedSelectors.insert(std::make_pair(Sel, SelLoc));
+  
+  if (!Method ||
+      Method->getImplementationControl() != ObjCMethodDecl::Optional) {
+    llvm::DenseMap<Selector, SourceLocation>::iterator Pos
+      = ReferencedSelectors.find(Sel);
+    if (Pos == ReferencedSelectors.end())
+      ReferencedSelectors.insert(std::make_pair(Sel, SelLoc));
+  }
 
   // In ARC, forbid the user from using @selector for 
   // retain/release/autorelease/dealloc/retainCount.
@@ -204,6 +207,7 @@ ExprResult Sema::ParseObjCSelectorExpression(Selector Sel,
     case OMF_mutableCopy:
     case OMF_new:
     case OMF_self:
+    case OMF_performSelector:
       break;
     }
   }
@@ -354,7 +358,14 @@ bool Sema::CheckMessageArgumentTypes(QualType ReceiverType,
                               : diag::warn_inst_method_not_found;
     Diag(lbrac, DiagID)
       << Sel << isClassMessage << SourceRange(lbrac, rbrac);
-    ReturnType = Context.getObjCIdType();
+
+    // In debuggers, we want to use __unknown_anytype for these
+    // results so that clients can cast them.
+    if (getLangOptions().DebuggerSupport) {
+      ReturnType = Context.UnknownAnyTy;
+    } else {
+      ReturnType = Context.getObjCIdType();
+    }
     VK = VK_RValue;
     return false;
   }
@@ -1417,6 +1428,53 @@ ExprResult Sema::BuildInstanceMessage(Expr *Receiver,
       Diag(Loc, diag::err_arc_illegal_explicit_message)
         << Sel << SelectorLoc;
       break;
+    
+    case OMF_performSelector:
+      if (Method && NumArgs >= 1) {
+        if (ObjCSelectorExpr *SelExp = dyn_cast<ObjCSelectorExpr>(Args[0])) {
+          Selector ArgSel = SelExp->getSelector();
+          ObjCMethodDecl *SelMethod = 
+            LookupInstanceMethodInGlobalPool(ArgSel,
+                                             SelExp->getSourceRange());
+          if (!SelMethod)
+            SelMethod =
+              LookupFactoryMethodInGlobalPool(ArgSel,
+                                              SelExp->getSourceRange());
+          if (SelMethod) {
+            ObjCMethodFamily SelFamily = SelMethod->getMethodFamily();
+            switch (SelFamily) {
+              case OMF_alloc:
+              case OMF_copy:
+              case OMF_mutableCopy:
+              case OMF_new:
+              case OMF_self:
+              case OMF_init:
+                // Issue error, unless ns_returns_not_retained.
+                if (!SelMethod->hasAttr<NSReturnsNotRetainedAttr>()) {
+                  // selector names a +1 method 
+                  Diag(SelectorLoc, 
+                       diag::err_arc_perform_selector_retains);
+                  Diag(SelMethod->getLocation(), diag::note_method_declared_at);
+                }
+                break;
+              default:
+                // +0 call. OK. unless ns_returns_retained.
+                if (SelMethod->hasAttr<NSReturnsRetainedAttr>()) {
+                  // selector names a +1 method
+                  Diag(SelectorLoc, 
+                       diag::err_arc_perform_selector_retains);
+                  Diag(SelMethod->getLocation(), diag::note_method_declared_at);
+                }
+                break;
+            }
+          }
+        } else {
+          // error (may leak).
+          Diag(SelectorLoc, diag::warn_arc_perform_selector_leaks);
+          Diag(Args[0]->getExprLoc(), diag::note_used_here);
+        }
+      }
+      break;
     }
   }
 
@@ -1723,6 +1781,37 @@ Sema::CheckObjCARCConversion(SourceRange castRange, QualType castType,
     << castRange << castExpr->getSourceRange();
 }
 
+bool Sema::CheckObjCARCUnavailableWeakConversion(QualType castType,
+                                                 QualType exprType) {
+  QualType canCastType = 
+    Context.getCanonicalType(castType).getUnqualifiedType();
+  QualType canExprType = 
+    Context.getCanonicalType(exprType).getUnqualifiedType();
+  if (isa<ObjCObjectPointerType>(canCastType) &&
+      castType.getObjCLifetime() == Qualifiers::OCL_Weak &&
+      canExprType->isObjCObjectPointerType()) {
+    if (const ObjCObjectPointerType *ObjT =
+        canExprType->getAs<ObjCObjectPointerType>())
+      if (ObjT->getInterfaceDecl()->isArcWeakrefUnavailable())
+        return false;
+  }
+  return true;
+}
+
+/// Look for an ObjCReclaimReturnedObject cast and destroy it.
+static Expr *maybeUndoReclaimObject(Expr *e) {
+  // For now, we just undo operands that are *immediately* reclaim
+  // expressions, which prevents the vast majority of potential
+  // problems here.  To catch them all, we'd need to rebuild arbitrary
+  // value-propagating subexpressions --- we can't reliably rebuild
+  // in-place because of expression sharing.
+  if (ImplicitCastExpr *ice = dyn_cast<ImplicitCastExpr>(e))
+    if (ice->getCastKind() == CK_ObjCReclaimReturnedObject)
+      return ice->getSubExpr();
+
+  return e;
+}
+
 ExprResult Sema::BuildObjCBridgedCast(SourceLocation LParenLoc,
                                       ObjCBridgeCastKind Kind,
                                       SourceLocation BridgeKeywordLoc,
@@ -1767,6 +1856,9 @@ ExprResult Sema::BuildObjCBridgedCast(SourceLocation LParenLoc,
     // Okay: id -> CF
     switch (Kind) {
     case OBC_Bridge:
+      // Reclaiming a value that's going to be __bridge-casted to CF
+      // is very dangerous, so we don't do it.
+      SubExpr = maybeUndoReclaimObject(SubExpr);
       break;
       
     case OBC_BridgeRetained:        

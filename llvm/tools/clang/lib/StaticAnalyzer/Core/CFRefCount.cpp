@@ -34,11 +34,10 @@
 #include "llvm/ADT/ImmutableMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringExtras.h"
-#include <stdarg.h>
+#include <cstdarg>
 
 using namespace clang;
 using namespace ento;
-using llvm::StringRef;
 using llvm::StrInStrNoCase;
 
 namespace {
@@ -83,15 +82,6 @@ public:
     return SourceRange(L, L);
   }
 };
-}
-
-static const ObjCMethodDecl*
-ResolveToInterfaceMethodDecl(const ObjCMethodDecl *MD) {
-  const ObjCInterfaceDecl *ID = MD->getClassInterface();
-
-  return MD->isInstanceMethod()
-         ? ID->lookupInstanceMethod(MD->getSelector())
-         : ID->lookupClassMethod(MD->getSelector());
 }
 
 namespace {
@@ -314,10 +304,10 @@ public:
     ID.Add(T);
   }
 
-  void print(llvm::raw_ostream& Out) const;
+  void print(raw_ostream& Out) const;
 };
 
-void RefVal::print(llvm::raw_ostream& Out) const {
+void RefVal::print(raw_ostream& Out) const {
   if (!T.isNull())
     Out << "Tracked Type:" << T.getAsString() << '\n';
 
@@ -748,7 +738,7 @@ private:
   }
 
   Selector generateSelector(va_list argp) {
-    llvm::SmallVector<IdentifierInfo*, 10> II;
+    SmallVector<IdentifierInfo*, 10> II;
 
     while (const char* s = va_arg(argp, const char*))
       II.push_back(&Ctx.Idents.get(s));
@@ -862,10 +852,6 @@ public:
     Selector S = MD->getSelector();
     IdentifierInfo *ClsName = ID->getIdentifier();
     QualType ResultTy = MD->getResultType();
-
-    // Resolve the method decl last.
-    if (const ObjCMethodDecl *InterfaceMD = ResolveToInterfaceMethodDecl(MD))
-      MD = InterfaceMD;
 
     if (MD->isInstanceMethod())
       return getInstanceMethodSummary(S, ClsName, ID, MD, ResultTy);
@@ -1135,8 +1121,7 @@ RetainSummary* RetainSummaryManager::getSummary(const FunctionDecl* FD) {
 RetainSummary*
 RetainSummaryManager::getCFCreateGetRuleSummary(const FunctionDecl* FD,
                                                 StringRef FName) {
-  if (FName.find("Create") != StringRef::npos ||
-      FName.find("Copy") != StringRef::npos)
+  if (coreFoundation::followsCreateRule(FName))
     return getCFSummaryCreateRule(FD);
 
   return getCFSummaryGetRule(FD);
@@ -1206,7 +1191,8 @@ RetainSummaryManager::getInitMethodSummary(QualType RetTy) {
   assert(ScratchArgs.isEmpty());
   // 'init' methods conceptually return a newly allocated object and claim
   // the receiver.
-  if (cocoa::isCocoaObjectRef(RetTy) || cocoa::isCFObjectRef(RetTy))
+  if (cocoa::isCocoaObjectRef(RetTy) ||
+      coreFoundation::isCFObjectRef(RetTy))
     return getPersistentSummary(ObjCInitRetE, DecRefMsg);
 
   return getDefaultSummary();
@@ -1349,15 +1335,15 @@ RetainSummaryManager::getCommonMethodSummary(const ObjCMethodDecl* MD,
   if (cocoa::isCocoaObjectRef(RetTy)) {
     // EXPERIMENTAL: assume the Cocoa conventions for all objects returned
     //  by instance methods.
-    RetEffect E = cocoa::followsFundamentalRule(S)
+    RetEffect E = cocoa::followsFundamentalRule(S, MD)
                   ? ObjCAllocRetE : RetEffect::MakeNotOwned(RetEffect::ObjC);
 
     return getPersistentSummary(E, ReceiverEff, MayEscape);
   }
 
   // Look for methods that return an owned core foundation object.
-  if (cocoa::isCFObjectRef(RetTy)) {
-    RetEffect E = cocoa::followsFundamentalRule(S)
+  if (coreFoundation::isCFObjectRef(RetTy)) {
+    RetEffect E = cocoa::followsFundamentalRule(S, MD)
       ? RetEffect::MakeOwned(RetEffect::CF, true)
       : RetEffect::MakeNotOwned(RetEffect::CF);
 
@@ -1428,7 +1414,7 @@ RetainSummaryManager::getInstanceMethodSummary(Selector S,
     assert(ScratchArgs.isEmpty());
 
     // "initXXX": pass-through for receiver.
-    if (cocoa::deriveNamingConvention(S) == cocoa::InitRule)
+    if (cocoa::deriveNamingConvention(S, MD) == cocoa::InitRule)
       Summ = getInitMethodSummary(RetTy);
     else
       Summ = getCommonMethodSummary(MD, S, RetTy);
@@ -1667,7 +1653,7 @@ class CFRefCount : public TransferFuncs {
 public:
   class BindingsPrinter : public GRState::Printer {
   public:
-    virtual void Print(llvm::raw_ostream& Out, const GRState* state,
+    virtual void Print(raw_ostream& Out, const GRState* state,
                        const char* nl, const char* sep);
   };
 
@@ -1697,10 +1683,10 @@ public:
                            RefVal::Kind hasErr, SymbolRef Sym);
 
   const GRState * HandleSymbolDeath(const GRState * state, SymbolRef sid, RefVal V,
-                               llvm::SmallVectorImpl<SymbolRef> &Leaked);
+                               SmallVectorImpl<SymbolRef> &Leaked);
 
   ExplodedNode* ProcessLeaks(const GRState * state,
-                                      llvm::SmallVectorImpl<SymbolRef> &Leaked,
+                                      SmallVectorImpl<SymbolRef> &Leaked,
                                       GenericNodeBuilderRefCount &Builder,
                                       ExprEngine &Eng,
                                       ExplodedNode *Pred = 0);
@@ -1800,7 +1786,7 @@ public:
 
 } // end anonymous namespace
 
-static void PrintPool(llvm::raw_ostream &Out, SymbolRef Sym,
+static void PrintPool(raw_ostream &Out, SymbolRef Sym,
                       const GRState *state) {
   Out << ' ';
   if (Sym)
@@ -1817,7 +1803,7 @@ static void PrintPool(llvm::raw_ostream &Out, SymbolRef Sym,
   Out << '}';
 }
 
-void CFRefCount::BindingsPrinter::Print(llvm::raw_ostream& Out,
+void CFRefCount::BindingsPrinter::Print(raw_ostream& Out,
                                         const GRState* state,
                                         const char* nl, const char* sep) {
 
@@ -1857,7 +1843,7 @@ namespace {
   protected:
     CFRefCount& TF;
 
-    CFRefBug(CFRefCount* tf, llvm::StringRef name)
+    CFRefBug(CFRefCount* tf, StringRef name)
     : BugType(name, "Memory (Core Foundation/Objective-C)"), TF(*tf) {}
   public:
 
@@ -1925,7 +1911,7 @@ namespace {
       CFRefBug(tf, "Method should return an owned object") {}
 
     const char *getDescription() const {
-      return "Object with +0 retain counts returned to caller where a +1 "
+      return "Object with a +0 retain count returned to caller where a +1 "
              "(owning) retain count is expected";
     }
   };
@@ -1933,7 +1919,7 @@ namespace {
   class Leak : public CFRefBug {
     const bool isReturn;
   protected:
-    Leak(CFRefCount* tf, llvm::StringRef name, bool isRet)
+    Leak(CFRefCount* tf, StringRef name, bool isRet)
     : CFRefBug(tf, name), isReturn(isRet) {}
   public:
 
@@ -1944,13 +1930,13 @@ namespace {
 
   class LeakAtReturn : public Leak {
   public:
-    LeakAtReturn(CFRefCount* tf, llvm::StringRef name)
+    LeakAtReturn(CFRefCount* tf, StringRef name)
     : Leak(tf, name, true) {}
   };
 
   class LeakWithinFunction : public Leak {
   public:
-    LeakWithinFunction(CFRefCount* tf, llvm::StringRef name)
+    LeakWithinFunction(CFRefCount* tf, StringRef name)
     : Leak(tf, name, false) {}
   };
 
@@ -1968,7 +1954,7 @@ namespace {
       : RangedBugReport(D, D.getDescription(), n), Sym(sym), TF(tf) {}
 
     CFRefReport(CFRefBug& D, const CFRefCount &tf,
-                ExplodedNode *n, SymbolRef sym, llvm::StringRef endText)
+                ExplodedNode *n, SymbolRef sym, StringRef endText)
       : RangedBugReport(D, D.getDescription(), endText, n), Sym(sym), TF(tf) {}
 
     virtual ~CFRefReport() {}
@@ -2049,9 +2035,9 @@ std::pair<const char**,const char**> CFRefReport::getExtraDescriptiveText() {
   }
 }
 
-static inline bool contains(const llvm::SmallVectorImpl<ArgEffect>& V,
+static inline bool contains(const SmallVectorImpl<ArgEffect>& V,
                             ArgEffect X) {
-  for (llvm::SmallVectorImpl<ArgEffect>::const_iterator I=V.begin(), E=V.end();
+  for (SmallVectorImpl<ArgEffect>::const_iterator I=V.begin(), E=V.end();
        I!=E; ++I)
     if (*I == X) return true;
 
@@ -2112,7 +2098,7 @@ PathDiagnosticPiece* CFRefReport::VisitNode(const ExplodedNode* N,
 
       if (static_cast<CFRefBug&>(getBugType()).getTF().isGCEnabled()) {
         assert(CurrV.getObjKind() == RetEffect::CF);
-        os << "  "
+        os << ".  "
         "Core Foundation objects are not automatically garbage collected.";
       }
     }
@@ -2127,7 +2113,7 @@ PathDiagnosticPiece* CFRefReport::VisitNode(const ExplodedNode* N,
 
   // Gather up the effects that were performed on the object at this
   // program point
-  llvm::SmallVector<ArgEffect, 2> AEffects;
+  SmallVector<ArgEffect, 2> AEffects;
 
   if (const RetainSummary *Summ =
         TF.getSummaryOfNode(BRC.getNodeResolver().getOriginalNode(N))) {
@@ -2262,7 +2248,7 @@ PathDiagnosticPiece* CFRefReport::VisitNode(const ExplodedNode* N,
       }
 
     // Emit any remaining diagnostics for the argument effects (if any).
-    for (llvm::SmallVectorImpl<ArgEffect>::iterator I=AEffects.begin(),
+    for (SmallVectorImpl<ArgEffect>::iterator I=AEffects.begin(),
          E=AEffects.end(); I != E; ++I) {
 
       // A bunch of things have alternate behavior under GC.
@@ -2434,14 +2420,14 @@ CFRefLeakReport::getEndPath(BugReporterContext& BRC,
 
   if (RV->getKind() == RefVal::ErrorLeakReturned) {
     // FIXME: Per comments in rdar://6320065, "create" only applies to CF
-    // ojbects.  Only "copy", "alloc", "retain" and "new" transfer ownership
+    // objects.  Only "copy", "alloc", "retain" and "new" transfer ownership
     // to the caller for NS objects.
     const Decl *D = &EndN->getCodeDecl();
     if (const ObjCMethodDecl *MD = dyn_cast<ObjCMethodDecl>(D)) {
       os << " is returned from a method whose name ('"
          << MD->getSelector().getAsString()
          << "') does not start with 'copy', 'mutableCopy', 'alloc' or 'new'."
-            "  This violates the naming convention rules "
+            "  This violates the naming convention rules"
             " given in the Memory Management Guide for Cocoa";
     }
     else {
@@ -2449,7 +2435,7 @@ CFRefLeakReport::getEndPath(BugReporterContext& BRC,
       os << " is return from a function whose name ('"
          << FD->getNameAsString()
          << "') does not contain 'Copy' or 'Create'.  This violates the naming"
-            " convention rules given the Memory Management Guide for Core "
+            " convention rules given the Memory Management Guide for Core"
             " Foundation";
     }    
   }
@@ -2494,7 +2480,7 @@ CFRefLeakReport::CFRefLeakReport(CFRefBug& D, const CFRefCount &tf,
   Description.clear();
   llvm::raw_string_ostream os(Description);
   SourceManager& SMgr = Eng.getContext().getSourceManager();
-  unsigned AllocLine = SMgr.getInstantiationLineNumber(AllocSite);
+  unsigned AllocLine = SMgr.getExpansionLineNumber(AllocSite);
   os << "Potential leak ";
   if (tf.isGCEnabled()) {
     os << "(when using garbage collection) ";
@@ -2568,7 +2554,7 @@ void CFRefCount::evalSummary(ExplodedNodeSet& Dst,
   SourceRange ErrorRange;
   SymbolRef ErrorSym = 0;
 
-  llvm::SmallVector<const MemRegion*, 10> RegionsToInvalidate;
+  SmallVector<const MemRegion*, 10> RegionsToInvalidate;
   
   // Use RAII to make sure the whitelist is properly cleared.
   ResetWhiteList resetWhiteList;
@@ -2846,9 +2832,9 @@ void CFRefCount::evalCall(ExplodedNodeSet& Dst,
 
   assert(Summ);
   evalSummary(Dst, Eng, Builder, CE,
-              CallOrObjCMessage(CE, Builder.GetState(Pred)),
+              CallOrObjCMessage(CE, Pred->getState()),
               InstanceReceiver(), *Summ,L.getAsRegion(),
-              Pred, Builder.GetState(Pred));
+              Pred, Pred->getState());
 }
 
 void CFRefCount::evalObjCMessage(ExplodedNodeSet& Dst,
@@ -2864,7 +2850,7 @@ void CFRefCount::evalObjCMessage(ExplodedNodeSet& Dst,
 
   assert(Summ && "RetainSummary is null");
   evalSummary(Dst, Eng, Builder, msg.getOriginExpr(),
-              CallOrObjCMessage(msg, Builder.GetState(Pred)),
+              CallOrObjCMessage(msg, Pred->getState()),
               InstanceReceiver(msg, Pred->getLocationContext()), *Summ, NULL,
               Pred, state);
 }
@@ -2933,7 +2919,7 @@ void CFRefCount::evalReturn(ExplodedNodeSet& Dst,
   if (!RetE)
     return;
 
-  const GRState *state = Builder.GetState(Pred);
+  const GRState *state = Pred->getState();
   SymbolRef Sym = state->getSValAsScalarOrLoc(RetE).getAsLocSymbol();
 
   if (!Sym)
@@ -3306,15 +3292,10 @@ CFRefCount::HandleAutoreleaseCounts(const GRState * state,
 
     std::string sbuf;
     llvm::raw_string_ostream os(sbuf);
-    os << "Object over-autoreleased: object was sent -autorelease";
+    os << "Object over-autoreleased: object was sent -autorelease ";
     if (V.getAutoreleaseCount() > 1)
-      os << V.getAutoreleaseCount() << " times";
-    os << " but the object has ";
-    if (V.getCount() == 0)
-      os << "zero (locally visible)";
-    else
-      os << "+" << V.getCount();
-    os << " retain counts";
+      os << V.getAutoreleaseCount() << " times ";
+    os << "but the object has a +" << V.getCount() << " retain count";
 
     CFRefReport *report =
       new CFRefReport(*static_cast<CFRefBug*>(overAutorelease),
@@ -3327,7 +3308,7 @@ CFRefCount::HandleAutoreleaseCounts(const GRState * state,
 
 const GRState *
 CFRefCount::HandleSymbolDeath(const GRState * state, SymbolRef sid, RefVal V,
-                              llvm::SmallVectorImpl<SymbolRef> &Leaked) {
+                              SmallVectorImpl<SymbolRef> &Leaked) {
 
   bool hasLeak = V.isOwned() ||
   ((V.isNotOwned() || V.isReturnedOwned()) && V.getCount() > 0);
@@ -3341,7 +3322,7 @@ CFRefCount::HandleSymbolDeath(const GRState * state, SymbolRef sid, RefVal V,
 
 ExplodedNode*
 CFRefCount::ProcessLeaks(const GRState * state,
-                         llvm::SmallVectorImpl<SymbolRef> &Leaked,
+                         SmallVectorImpl<SymbolRef> &Leaked,
                          GenericNodeBuilderRefCount &Builder,
                          ExprEngine& Eng,
                          ExplodedNode *Pred) {
@@ -3353,7 +3334,7 @@ CFRefCount::ProcessLeaks(const GRState * state,
   ExplodedNode *N = Builder.MakeNode(state, Pred);
 
   if (N) {
-    for (llvm::SmallVectorImpl<SymbolRef>::iterator
+    for (SmallVectorImpl<SymbolRef>::iterator
          I = Leaked.begin(), E = Leaked.end(); I != E; ++I) {
 
       CFRefBug *BT = static_cast<CFRefBug*>(Pred ? leakWithinFunction
@@ -3386,7 +3367,7 @@ void CFRefCount::evalEndPath(ExprEngine& Eng,
   }
 
   B = state->get<RefBindings>();
-  llvm::SmallVector<SymbolRef, 10> Leaked;
+  SmallVector<SymbolRef, 10> Leaked;
 
   for (RefBindings::iterator I = B.begin(), E = B.end(); I != E; ++I)
     state = HandleSymbolDeath(state, (*I).first, (*I).second, Leaked);
@@ -3420,7 +3401,7 @@ void CFRefCount::evalDeadSymbols(ExplodedNodeSet& Dst,
   }
 
   B = state->get<RefBindings>();
-  llvm::SmallVector<SymbolRef, 10> Leaked;
+  SmallVector<SymbolRef, 10> Leaked;
 
   for (SymbolReaper::dead_iterator I = SymReaper.dead_begin(),
        E = SymReaper.dead_end(); I != E; ++I) {
@@ -3558,7 +3539,7 @@ void RetainReleaseChecker::checkPostStmt(const BlockExpr *BE,
   // FIXME: For now we invalidate the tracking of all symbols passed to blocks
   // via captured variables, even though captured variables result in a copy
   // and in implicit increment/decrement of a retain count.
-  llvm::SmallVector<const MemRegion*, 10> Regions;
+  SmallVector<const MemRegion*, 10> Regions;
   const LocationContext *LC = C.getPredecessor()->getLocationContext();
   MemRegionManager &MemMgr = C.getSValBuilder().getRegionManager();
 

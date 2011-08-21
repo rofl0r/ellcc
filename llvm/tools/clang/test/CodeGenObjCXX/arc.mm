@@ -1,4 +1,15 @@
-// RUN: %clang_cc1 -triple x86_64-apple-darwin10 -emit-llvm -fobjc-nonfragile-abi -fblocks -fobjc-arc -O2 -disable-llvm-optzns -o - %s | FileCheck %s
+// RUN: %clang_cc1 -triple x86_64-apple-darwin10 -emit-llvm -fobjc-nonfragile-abi -fobjc-runtime-has-weak -fblocks -fobjc-arc -O2 -disable-llvm-optzns -o - %s | FileCheck %s
+
+struct NSFastEnumerationState;
+@interface NSArray
+- (unsigned long) countByEnumeratingWithState: (struct NSFastEnumerationState*) state
+                  objects: (id*) buffer
+                  count: (unsigned long) bufferSize;
+@end;
+NSArray *nsarray() { return 0; }
+// CHECK: define [[NSARRAY:%.*]]* @_Z7nsarrayv()
+
+void use(id);
 
 // rdar://problem/9315552
 // The analogous ObjC testcase test46 in arr.m.
@@ -9,17 +20,21 @@ void test0(__weak id *wp, __weak volatile id *wvp) {
   // TODO: in the non-volatile case, we do not need to be reloading.
 
   // CHECK:      [[T0:%.*]] = call i8* @_Z12test0_helperv()
-  // CHECK-NEXT: [[T1:%.*]] = load i8*** {{%.*}}, align 8
-  // CHECK-NEXT: [[T2:%.*]] = call i8* @objc_storeWeak(i8** [[T1]], i8* [[T0]])
-  // CHECK-NEXT: [[T3:%.*]] = call i8* @objc_retain(i8* [[T2]])
-  // CHECK-NEXT: store i8* [[T3]], i8**
+  // CHECK-NEXT: [[T1:%.*]] = call i8* @objc_retainAutoreleasedReturnValue(i8* [[T0]])
+  // CHECK-NEXT: [[T2:%.*]] = load i8*** {{%.*}}, align 8
+  // CHECK-NEXT: [[T3:%.*]] = call i8* @objc_storeWeak(i8** [[T2]], i8* [[T1]])
+  // CHECK-NEXT: [[T4:%.*]] = call i8* @objc_retain(i8* [[T3]])
+  // CHECK-NEXT: store i8* [[T4]], i8**
+  // CHECK-NEXT: call void @objc_release(i8* [[T1]])
   id x = *wp = test0_helper();
 
   // CHECK:      [[T0:%.*]] = call i8* @_Z12test0_helperv()
-  // CHECK-NEXT: [[T1:%.*]] = load i8*** {{%.*}}, align 8
-  // CHECK-NEXT: [[T2:%.*]] = call i8* @objc_storeWeak(i8** [[T1]], i8* [[T0]])
-  // CHECK-NEXT: [[T3:%.*]] = call i8* @objc_loadWeakRetained(i8** [[T1]])
-  // CHECK-NEXT: store i8* [[T3]], i8**
+  // CHECK-NEXT: [[T1:%.*]] = call i8* @objc_retainAutoreleasedReturnValue(i8* [[T0]])
+  // CHECK-NEXT: [[T2:%.*]] = load i8*** {{%.*}}, align 8
+  // CHECK-NEXT: [[T3:%.*]] = call i8* @objc_storeWeak(i8** [[T2]], i8* [[T1]])
+  // CHECK-NEXT: [[T4:%.*]] = call i8* @objc_loadWeakRetained(i8** [[T2]])
+  // CHECK-NEXT: store i8* [[T4]], i8**
+  // CHECK-NEXT: call void @objc_release(i8* [[T1]])
   id y = *wvp = test0_helper();
 }
 
@@ -160,3 +175,37 @@ id test36(id z) {
   // CHECK: objc_autoreleaseReturnValue
   return z;
 }
+
+// Template instantiation side of rdar://problem/9817306
+@interface Test37
+- (NSArray *) array;
+@end
+template <class T> void test37(T *a) {
+  for (id x in a.array) {
+    use(x);
+  }
+}
+extern template void test37<Test37>(Test37 *a);
+template void test37<Test37>(Test37 *a);
+// CHECK: define weak_odr void @_Z6test37I6Test37EvPT_(
+// CHECK-LP64:      [[T0:%.*]] = call [[NSARRAY]]* bitcast (i8* (i8*, i8*, ...)* @objc_msgSend to [[NSARRAY]]* (i8*, i8*)*)(
+// CHECK-LP64-NEXT: [[T1:%.*]] = bitcast [[NSARRAY]]* [[T0]] to i8*
+// CHECK-LP64-NEXT: [[T2:%.*]] = call i8* @objc_retainAutoreleasedReturnValue(i8* [[T1]])
+// CHECK-LP64-NEXT: [[COLL:%.*]] = bitcast i8* [[T2]] to [[NSARRAY]]*
+
+// Make sure it's not immediately released before starting the iteration.
+// CHECK-LP64-NEXT: load i8** @"\01L_OBJC_SELECTOR_REFERENCES_
+// CHECK-LP64-NEXT: [[T0:%.*]] = bitcast [[NSARRAY]]* [[COLL]] to i8*
+// CHECK-LP64-NEXT: @objc_msgSend
+
+// This bitcast is for the mutation check.
+// CHECK-LP64:      [[T0:%.*]] = bitcast [[NSARRAY]]* [[COLL]] to i8*
+// CHECK-LP64-NEXT: @objc_enumerationMutation
+
+// This bitcast is for the 'next' message send.
+// CHECK-LP64:      [[T0:%.*]] = bitcast [[NSARRAY]]* [[COLL]] to i8*
+// CHECK-LP64-NEXT: @objc_msgSend
+
+// This bitcast is for the final release.
+// CHECK-LP64:      [[T0:%.*]] = bitcast [[NSARRAY]]* [[COLL]] to i8*
+// CHECK-LP64-NEXT: call void @objc_release(i8* [[T0]])

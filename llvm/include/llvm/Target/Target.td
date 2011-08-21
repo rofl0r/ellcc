@@ -293,7 +293,16 @@ class Instruction {
   // code.
   list<Predicate> Predicates = [];
 
-  // Code size.
+  // Size - Size of encoded instruction, or zero if the size cannot be determined
+  // from the opcode.
+  int Size = 0;
+
+  // DecoderNamespace - The "namespace" in which this instruction exists, on
+  // targets like ARM which multiple ISA namespaces exist.
+  string DecoderNamespace = "";
+
+  // Code size, for instruction selection.
+  // FIXME: What does this actually mean?
   int CodeSize = 0;
 
   // Added complexity passed onto matching pattern.
@@ -324,6 +333,9 @@ class Instruction {
   bit isAsCheapAsAMove = 0; // As cheap (or cheaper) than a move instruction.
   bit hasExtraSrcRegAllocReq = 0; // Sources have special regalloc requirement?
   bit hasExtraDefRegAllocReq = 0; // Defs have special regalloc requirement?
+  bit isPseudo     = 0;     // Is this instruction a pseudo-instruction?
+                            // If so, won't have encoding information for
+                            // the [MC]CodeEmitter stuff.
 
   // Side effect flags - When set, the flags have these meanings:
   //
@@ -338,6 +350,11 @@ class Instruction {
   // Is this instruction a "real" instruction (with a distinct machine
   // encoding), or is it a pseudo instruction used for codegen modeling
   // purposes.
+  // FIXME: For now this is distinct from isPseudo, above, as code-gen-only
+  // instructions can (and often do) still have encoding information
+  // associated with them. Once we've migrated all of them over to true
+  // pseudo-instructions that are lowered to real instructions prior to
+  // the printer/emitter, we can remove this attribute and just use isPseudo.
   bit isCodeGenOnly = 0;
 
   // Is this instruction a pseudo instruction for use by the assembler parser.
@@ -365,6 +382,14 @@ class Instruction {
   ///@}
 }
 
+/// PseudoInstExpansion - Expansion information for a pseudo-instruction.
+/// Which instruction it expands to and how the operands map from the
+/// pseudo.
+class PseudoInstExpansion<dag Result> {
+  dag ResultInst = Result;     // The instruction to generate.
+  bit isPseudo = 1;
+}
+
 /// Predicates - These are extra conditionals which are turned into instruction
 /// selector matching code. Currently each predicate is just a string.
 class Predicate<string cond> {
@@ -374,6 +399,15 @@ class Predicate<string cond> {
   /// matcher, this is true.  Targets should set this by inheriting their
   /// feature from the AssemblerPredicate class in addition to Predicate.
   bit AssemblerMatcherPredicate = 0;
+
+  /// AssemblerCondString - Name of the subtarget feature being tested used
+  /// as alternative condition string used for assembler matcher.
+  /// e.g. "ModeThumb" is translated to "(Bits & ModeThumb) != 0".
+  ///      "!ModeThumb" is translated to "(Bits & ModeThumb) == 0".
+  /// It can also list multiple features separated by ",".
+  /// e.g. "ModeThumb,FeatureThumb2" is translated to
+  ///      "(Bits & ModeThumb) != 0 && (Bits & FeatureThumb2) != 0".
+  string AssemblerCondString = "";
 }
 
 /// NoHonorSignDependentRounding - This predicate is true if support for
@@ -470,6 +504,7 @@ class Operand<ValueType ty> {
   string EncoderMethod = "";
   string DecoderMethod = "";
   string AsmOperandLowerMethod = ?;
+  string OperandType = "OPERAND_UNKNOWN";
   dag MIOperandInfo = (ops);
 
   // ParserMatchClass - The "match class" that operands of this type fit
@@ -501,6 +536,7 @@ class RegisterOperand<RegisterClass regclass, string pm = "printOperand"> {
   AsmOperandClass ParserMatchClass;
 }
 
+let OperandType = "OPERAND_IMMEDIATE" in {
 def i1imm  : Operand<i1>;
 def i8imm  : Operand<i8>;
 def i16imm : Operand<i16>;
@@ -509,6 +545,7 @@ def i64imm : Operand<i64>;
 
 def f32imm : Operand<f32>;
 def f64imm : Operand<f64>;
+}
 
 /// zero_reg definition - Special node to stand for the zero register.
 ///
@@ -681,8 +718,9 @@ def DefaultAsmParser : AsmParser;
 
 /// AssemblerPredicate - This is a Predicate that can be used when the assembler
 /// matches instructions and aliases.
-class AssemblerPredicate {
+class AssemblerPredicate<string cond> {
   bit AssemblerMatcherPredicate = 1;
+  string AssemblerCondString = cond;
 }
 
 

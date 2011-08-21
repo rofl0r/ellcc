@@ -39,7 +39,6 @@ static FrontendAction *CreateFrontendBaseAction(CompilerInstance &CI) {
   case ASTDumpXML:             return new ASTDumpXMLAction();
   case ASTPrint:               return new ASTPrintAction();
   case ASTView:                return new ASTViewAction();
-  case BoostCon:               return new BoostConAction();
   case CreateModule:           return 0;
   case DumpRawTokens:          return new DumpRawTokensAction();
   case DumpTokens:             return new DumpTokensAction();
@@ -98,7 +97,13 @@ static FrontendAction *CreateFrontendAction(CompilerInstance &CI) {
     Act = new arcmt::CheckAction(Act);
     break;
   case FrontendOptions::ARCMT_Modify:
-    Act = new arcmt::TransformationAction(Act);
+    Act = new arcmt::ModifyAction(Act);
+    break;
+  case FrontendOptions::ARCMT_Migrate:
+    Act = new arcmt::MigrateAction(Act,
+                                   CI.getFrontendOpts().ARCMTMigrateDir,
+                                   CI.getFrontendOpts().ARCMTMigrateReportOut,
+                                CI.getFrontendOpts().ARCMTMigrateEmitARCErrors);
     break;
   }
 

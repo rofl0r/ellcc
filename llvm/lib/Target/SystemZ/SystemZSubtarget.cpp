@@ -15,10 +15,10 @@
 #include "SystemZ.h"
 #include "llvm/GlobalValue.h"
 #include "llvm/Target/TargetMachine.h"
+#include "llvm/Target/TargetRegistry.h"
 
-#define GET_SUBTARGETINFO_CTOR
-#define GET_SUBTARGETINFO_MC_DESC
 #define GET_SUBTARGETINFO_TARGET_DESC
+#define GET_SUBTARGETINFO_CTOR
 #include "SystemZGenSubtargetInfo.inc"
 
 using namespace llvm;
@@ -26,13 +26,13 @@ using namespace llvm;
 SystemZSubtarget::SystemZSubtarget(const std::string &TT, 
                                    const std::string &CPU,
                                    const std::string &FS):
-  SystemZGenSubtargetInfo(), HasZ10Insts(false) {
+  SystemZGenSubtargetInfo(TT, CPU, FS), HasZ10Insts(false) {
   std::string CPUName = CPU;
   if (CPUName.empty())
     CPUName = "z9";
 
   // Parse features string.
-  ParseSubtargetFeatures(FS, CPUName);
+  ParseSubtargetFeatures(CPUName, FS);
 }
 
 /// True if accessing the GV requires an extra load.

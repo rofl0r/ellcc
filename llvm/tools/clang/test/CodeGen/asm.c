@@ -1,4 +1,13 @@
 // RUN: %clang_cc1 -triple i386-unknown-unknown -emit-llvm %s -o - | FileCheck %s
+
+// PR10415
+__asm__ ("foo1");
+__asm__ ("foo2");
+__asm__ ("foo3");
+// CHECK: module asm "foo1"
+// CHECK-NEXT: module asm "foo2"
+// CHECK-NEXT: module asm "foo3"
+
 void t1(int len) {
   __asm__ volatile("" : "=&r"(len), "+&r"(len));
 }
@@ -49,10 +58,10 @@ unsigned t9(unsigned int a) {
 // PR3908
 void t10(int r) {
   __asm__("PR3908 %[lf] %[xx] %[li] %[r]" : [r] "+r" (r) : [lf] "mx" (0), [li] "mr" (0), [xx] "x" ((double)(0)));
-  
+
 // CHECK: @t10(
 // CHECK:PR3908 $1 $3 $2 $0
-}         
+}
 
 
 // PR3373
@@ -119,7 +128,7 @@ int t16() {
 void t17() {
   int i;
   __asm__ ( "nop": "=m"(i));
-  
+
 // CHECK: @t17()
 // CHECK: call void asm "nop", "=*m,
 }
@@ -127,7 +136,7 @@ void t17() {
 // <rdar://problem/6841383>
 int t18(unsigned data) {
   int a, b;
-  
+
   asm("xyz" :"=a"(a), "=d"(b) : "a"(data));
   return a + b;
 // CHECK: t18(i32
@@ -140,7 +149,7 @@ int t18(unsigned data) {
 // PR6780
 int t19(unsigned data) {
   int a, b;
-  
+
   asm("x{abc|def|ghi}z" :"=r"(a): "r"(data));
   return a + b;
   // CHECK: t19(i32
@@ -153,7 +162,7 @@ double t20(double x) {
   register long double result;
   __asm __volatile ("frndint"  : "=t" (result) : "0" (x));
   return result;
-  
+
   // CHECK: @t20
   // CHECK: fpext double {{.*}} to x86_fp80
   // CHECK-NEXT: call x86_fp80 asm sideeffect "frndint"
@@ -189,4 +198,27 @@ unsigned char t23(unsigned char a, unsigned char b) {
   __asm__ ("0:\n1:\n" : [res] "=la"(res) : [la] "0"(la), [lb] "c"(lb) :
                         "edx", "cc");
   return res;
+}
+
+void *t24(char c) {
+  void *addr;
+  // CHECK: @t24
+  // CHECK: zext i8 {{.*}} to i32
+  // CHECK-NEXT: call i8* asm "foobar"
+  __asm__ ("foobar" : "=a" (addr) : "0" (c));
+  return addr;
+}
+
+
+// PR10299 - fpsr, fpcr
+void test(void)
+{
+  __asm__ __volatile__(					   \
+		       "finit"				   \
+		       :				   \
+		       :				   \
+		       :"st","st(1)","st(2)","st(3)",	   \
+			"st(4)","st(5)","st(6)","st(7)",   \
+			"fpsr","fpcr"			   \
+							   );
 }

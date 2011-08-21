@@ -126,6 +126,12 @@ void CXXScopeSpec::Adopt(NestedNameSpecifierLoc Other) {
   Builder.Adopt(Other);
 }
 
+SourceLocation CXXScopeSpec::getLastQualifierNameLoc() const {
+  if (!Builder.getRepresentation())
+    return SourceLocation();
+  return Builder.getTemporary().getLocalBeginLoc();
+}
+
 NestedNameSpecifierLoc 
 CXXScopeSpec::getWithLocInContext(ASTContext &Context) const {
   if (!Builder.getRepresentation())
@@ -143,6 +149,7 @@ DeclaratorChunk DeclaratorChunk::getFunction(bool hasProto, bool isVariadic,
                                              unsigned TypeQuals,
                                              bool RefQualifierIsLvalueRef,
                                              SourceLocation RefQualifierLoc,
+                                             SourceLocation MutableLoc,
                                              ExceptionSpecificationType
                                                  ESpecType,
                                              SourceLocation ESpecLoc,
@@ -168,6 +175,7 @@ DeclaratorChunk DeclaratorChunk::getFunction(bool hasProto, bool isVariadic,
   I.Fun.ArgInfo                 = 0;
   I.Fun.RefQualifierIsLValueRef = RefQualifierIsLvalueRef;
   I.Fun.RefQualifierLoc         = RefQualifierLoc.getRawEncoding();
+  I.Fun.MutableLoc              = MutableLoc.getRawEncoding();
   I.Fun.ExceptionSpecType       = ESpecType;
   I.Fun.ExceptionSpecLoc        = ESpecLoc.getRawEncoding();
   I.Fun.NumExceptions           = 0;

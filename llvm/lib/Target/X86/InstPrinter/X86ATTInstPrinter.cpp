@@ -15,8 +15,7 @@
 #define DEBUG_TYPE "asm-printer"
 #include "X86ATTInstPrinter.h"
 #include "X86InstComments.h"
-#include "X86Subtarget.h"
-#include "MCTargetDesc/X86TargetDesc.h"
+#include "MCTargetDesc/X86MCTargetDesc.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCExpr.h"
@@ -31,11 +30,8 @@ using namespace llvm;
 #define PRINT_ALIAS_INSTR
 #include "X86GenAsmWriter.inc"
 
-X86ATTInstPrinter::X86ATTInstPrinter(TargetMachine &TM, const MCAsmInfo &MAI)
+X86ATTInstPrinter::X86ATTInstPrinter(const MCAsmInfo &MAI)
   : MCInstPrinter(MAI) {
-  // Initialize the set of available features.
-  setAvailableFeatures(ComputeAvailableFeatures(
-            &TM.getSubtarget<X86Subtarget>()));
 }
 
 void X86ATTInstPrinter::printRegName(raw_ostream &OS,

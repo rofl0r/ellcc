@@ -14,13 +14,14 @@
 #include "MipsInstrInfo.h"
 #include "MipsTargetMachine.h"
 #include "MipsMachineFunction.h"
-#include "llvm/ADT/STLExtras.h"
+#include "InstPrinter/MipsInstPrinter.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/Target/TargetRegistry.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/ADT/STLExtras.h"
 
 #define GET_INSTRINFO_CTOR
-#define GET_INSTRINFO_MC_DESC
 #include "MipsGenInstrInfo.inc"
 
 using namespace llvm;
@@ -28,6 +29,11 @@ using namespace llvm;
 MipsInstrInfo::MipsInstrInfo(MipsTargetMachine &tm)
   : MipsGenInstrInfo(Mips::ADJCALLSTACKDOWN, Mips::ADJCALLSTACKUP),
     TM(tm), RI(*TM.getSubtargetImpl(), *this) {}
+
+
+const MipsRegisterInfo &MipsInstrInfo::getRegisterInfo() const { 
+  return RI;
+}
 
 static bool isZeroImm(const MachineOperand &op) {
   return op.isImm() && op.getImm() == 0;
@@ -43,10 +49,10 @@ isLoadFromStackSlot(const MachineInstr *MI, int &FrameIndex) const
 {
   if ((MI->getOpcode() == Mips::LW) || (MI->getOpcode() == Mips::LWC1) ||
       (MI->getOpcode() == Mips::LDC1)) {
-    if ((MI->getOperand(2).isFI()) && // is a stack slot
-        (MI->getOperand(1).isImm()) &&  // the imm is zero
-        (isZeroImm(MI->getOperand(1)))) {
-      FrameIndex = MI->getOperand(2).getIndex();
+    if ((MI->getOperand(1).isFI()) && // is a stack slot
+        (MI->getOperand(2).isImm()) &&  // the imm is zero
+        (isZeroImm(MI->getOperand(2)))) {
+      FrameIndex = MI->getOperand(1).getIndex();
       return MI->getOperand(0).getReg();
     }
   }
@@ -64,10 +70,10 @@ isStoreToStackSlot(const MachineInstr *MI, int &FrameIndex) const
 {
   if ((MI->getOpcode() == Mips::SW) || (MI->getOpcode() == Mips::SWC1) ||
       (MI->getOpcode() == Mips::SDC1)) {
-    if ((MI->getOperand(2).isFI()) && // is a stack slot
-        (MI->getOperand(1).isImm()) &&  // the imm is zero
-        (isZeroImm(MI->getOperand(1)))) {
-      FrameIndex = MI->getOperand(2).getIndex();
+    if ((MI->getOperand(1).isFI()) && // is a stack slot
+        (MI->getOperand(2).isImm()) &&  // the imm is zero
+        (isZeroImm(MI->getOperand(2)))) {
+      FrameIndex = MI->getOperand(1).getIndex();
       return MI->getOperand(0).getReg();
     }
   }
@@ -164,25 +170,25 @@ storeRegToStackSlot(MachineBasicBlock &MBB, MachineBasicBlock::iterator I,
 
   if (RC == Mips::CPURegsRegisterClass)
     BuildMI(MBB, I, DL, get(Mips::SW)).addReg(SrcReg, getKillRegState(isKill))
-          .addImm(0).addFrameIndex(FI);
+                                      .addFrameIndex(FI).addImm(0);
   else if (RC == Mips::FGR32RegisterClass)
     BuildMI(MBB, I, DL, get(Mips::SWC1)).addReg(SrcReg, getKillRegState(isKill))
-          .addImm(0).addFrameIndex(FI);
+                                        .addFrameIndex(FI).addImm(0);
   else if (RC == Mips::AFGR64RegisterClass) {
     if (!TM.getSubtarget<MipsSubtarget>().isMips1()) {
       BuildMI(MBB, I, DL, get(Mips::SDC1))
         .addReg(SrcReg, getKillRegState(isKill))
-        .addImm(0).addFrameIndex(FI);
+        .addFrameIndex(FI).addImm(0);
     } else {
       const TargetRegisterInfo *TRI =
         MBB.getParent()->getTarget().getRegisterInfo();
       const unsigned *SubSet = TRI->getSubRegisters(SrcReg);
       BuildMI(MBB, I, DL, get(Mips::SWC1))
         .addReg(SubSet[0], getKillRegState(isKill))
-        .addImm(0).addFrameIndex(FI);
+        .addFrameIndex(FI).addImm(0);
       BuildMI(MBB, I, DL, get(Mips::SWC1))
         .addReg(SubSet[1], getKillRegState(isKill))
-        .addImm(4).addFrameIndex(FI);
+        .addFrameIndex(FI).addImm(4);
     }
   } else
     llvm_unreachable("Register class not handled!");
@@ -198,20 +204,20 @@ loadRegFromStackSlot(MachineBasicBlock &MBB, MachineBasicBlock::iterator I,
   if (I != MBB.end()) DL = I->getDebugLoc();
 
   if (RC == Mips::CPURegsRegisterClass)
-    BuildMI(MBB, I, DL, get(Mips::LW), DestReg).addImm(0).addFrameIndex(FI);
+    BuildMI(MBB, I, DL, get(Mips::LW), DestReg).addFrameIndex(FI).addImm(0);
   else if (RC == Mips::FGR32RegisterClass)
-    BuildMI(MBB, I, DL, get(Mips::LWC1), DestReg).addImm(0).addFrameIndex(FI);
+    BuildMI(MBB, I, DL, get(Mips::LWC1), DestReg).addFrameIndex(FI).addImm(0);
   else if (RC == Mips::AFGR64RegisterClass) {
     if (!TM.getSubtarget<MipsSubtarget>().isMips1()) {
-      BuildMI(MBB, I, DL, get(Mips::LDC1), DestReg).addImm(0).addFrameIndex(FI);
+      BuildMI(MBB, I, DL, get(Mips::LDC1), DestReg).addFrameIndex(FI).addImm(0);
     } else {
       const TargetRegisterInfo *TRI =
         MBB.getParent()->getTarget().getRegisterInfo();
       const unsigned *SubSet = TRI->getSubRegisters(DestReg);
       BuildMI(MBB, I, DL, get(Mips::LWC1), SubSet[0])
-        .addImm(0).addFrameIndex(FI);
+        .addFrameIndex(FI).addImm(0);
       BuildMI(MBB, I, DL, get(Mips::LWC1), SubSet[1])
-        .addImm(4).addFrameIndex(FI);
+        .addFrameIndex(FI).addImm(4);
     }
   } else
     llvm_unreachable("Register class not handled!");

@@ -13,17 +13,17 @@
 
 #include "MipsSubtarget.h"
 #include "Mips.h"
+#include "llvm/Target/TargetRegistry.h"
 
-#define GET_SUBTARGETINFO_CTOR
-#define GET_SUBTARGETINFO_MC_DESC
 #define GET_SUBTARGETINFO_TARGET_DESC
+#define GET_SUBTARGETINFO_CTOR
 #include "MipsGenSubtargetInfo.inc"
 
 using namespace llvm;
 
 MipsSubtarget::MipsSubtarget(const std::string &TT, const std::string &CPU,
                              const std::string &FS, bool little) :
-  MipsGenSubtargetInfo(),
+  MipsGenSubtargetInfo(TT, CPU, FS),
   MipsArchVersion(Mips1), MipsABI(O32), IsLittle(little), IsSingleFloat(false),
   IsFP64bit(false), IsGP64bit(false), HasVFPU(false), IsLinux(true),
   HasSEInReg(false), HasCondMov(false), HasMulDivAdd(false), HasMinMax(false),
@@ -35,7 +35,7 @@ MipsSubtarget::MipsSubtarget(const std::string &TT, const std::string &CPU,
   MipsArchVersion = Mips1;
 
   // Parse features string.
-  ParseSubtargetFeatures(FS, CPUName);
+  ParseSubtargetFeatures(CPUName, FS);
 
   // Initialize scheduling itinerary for the specified CPU.
   InstrItins = getInstrItineraryForCPU(CPUName);

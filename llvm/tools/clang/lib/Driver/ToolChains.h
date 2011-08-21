@@ -80,6 +80,8 @@ private:
   /// initialized.
   std::string MacosxVersionMin;
 
+  bool hasARCRuntime() const;
+
 private:
   void AddDeploymentTarget(DerivedArgList &Args) const;
 
@@ -137,7 +139,7 @@ public:
   /// getDarwinArchName - Get the "Darwin" arch name for a particular compiler
   /// invocation. For example, Darwin treats different ARM variations as
   /// distinct architectures.
-  llvm::StringRef getDarwinArchName(const ArgList &Args) const;
+  StringRef getDarwinArchName(const ArgList &Args) const;
 
   static bool isVersionLT(unsigned (&A)[3], unsigned (&B)[3]) {
     for (unsigned i=0; i < 3; ++i) {
@@ -184,7 +186,7 @@ public:
 
   virtual bool HasNativeLLVMSupport() const;
 
-  virtual bool HasARCRuntime() const;
+  virtual void configureObjCRuntime(ObjCRuntime &runtime) const;
 
   virtual DerivedArgList *TranslateArgs(const DerivedArgList &Args,
                                         const char *BoundArch) const;

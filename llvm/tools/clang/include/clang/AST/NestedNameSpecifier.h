@@ -18,10 +18,6 @@
 #include "llvm/ADT/FoldingSet.h"
 #include "llvm/ADT/PointerIntPair.h"
 
-namespace llvm {
-  class raw_ostream;
-}
-
 namespace clang {
 
 class ASTContext;
@@ -196,7 +192,7 @@ public:
 
   /// \brief Print this nested name specifier to the given output
   /// stream.
-  void print(llvm::raw_ostream &OS, const PrintingPolicy &Policy) const;
+  void print(raw_ostream &OS, const PrintingPolicy &Policy) const;
 
   void Profile(llvm::FoldingSetNodeID &ID) const {
     ID.AddPointer(Prefix.getOpaqueValue());
@@ -438,6 +434,14 @@ public:
   /// \param Context The context into which this nested-name-specifier will be
   /// copied.
   NestedNameSpecifierLoc getWithLocInContext(ASTContext &Context) const;
+
+  /// \brief Retrieve a nested-name-specifier with location
+  /// information based on the information in this builder.  This loc
+  /// will contain references to the builder's internal data and may
+  /// be invalidated by any change to the builder.
+  NestedNameSpecifierLoc getTemporary() const {
+    return NestedNameSpecifierLoc(Representation, Buffer);
+  }
 
   /// \brief Clear out this builder, and prepare it to build another
   /// nested-name-specifier with source-location information.

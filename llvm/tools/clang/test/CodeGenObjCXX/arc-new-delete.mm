@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -fobjc-nonfragile-abi -fobjc-arc -fblocks -triple x86_64-apple-darwin10.0.0 -emit-llvm -o - %s | FileCheck %s
+// RUN: %clang_cc1 -fobjc-nonfragile-abi -fobjc-arc -fobjc-runtime-has-weak -fblocks -triple x86_64-apple-darwin10.0.0 -emit-llvm -o - %s | FileCheck %s
 
 typedef __strong id strong_id;
 typedef __weak id weak_id;
@@ -70,17 +70,26 @@ void test_delete(__strong id *sptr, __weak id *wptr) {
 
 // CHECK: define void @_Z17test_array_deletePU8__strongP11objc_objectPU6__weakS0_
 void test_array_delete(__strong id *sptr, __weak id *wptr) {
-  // CHECK: load i64*
-  // CHECK: {{icmp ne i64.*, 0}}
-  // CHECK: call void @objc_release
-  // CHECK: br label
+  // CHECK: icmp eq i8** [[BEGIN:%.*]], null
+  // CHECK: [[LEN:%.*]] = load i64* {{%.*}}
+  // CHECK: [[END:%.*]] = getelementptr inbounds i8** [[BEGIN]], i64 [[LEN]]
+  // CHECK-NEXT: icmp eq i8** [[BEGIN]], [[END]]
+  // CHECK: [[PAST:%.*]] = phi i8** [ [[END]], {{%.*}} ], [ [[CUR:%.*]],
+  // CHECK-NEXT: [[CUR]] = getelementptr inbounds i8** [[PAST]], i64 -1
+  // CHECK-NEXT: [[T0:%.*]] = load i8** [[CUR]]
+  // CHECK-NEXT: call void @objc_release(i8* [[T0]])
+  // CHECK-NEXT: icmp eq i8** [[CUR]], [[BEGIN]]
   // CHECK: call void @_ZdaPv
   delete [] sptr;
 
-  // CHECK: load i64*
-  // CHECK: {{icmp ne i64.*, 0}}
-  // CHECK: call void @objc_destroyWeak
-  // CHECK: br label
+  // CHECK: icmp eq i8** [[BEGIN:%.*]], null
+  // CHECK: [[LEN:%.*]] = load i64* {{%.*}}
+  // CHECK: [[END:%.*]] = getelementptr inbounds i8** [[BEGIN]], i64 [[LEN]]
+  // CHECK-NEXT: icmp eq i8** [[BEGIN]], [[END]]
+  // CHECK: [[PAST:%.*]] = phi i8** [ [[END]], {{%.*}} ], [ [[CUR:%.*]],
+  // CHECK-NEXT: [[CUR]] = getelementptr inbounds i8** [[PAST]], i64 -1
+  // CHECK-NEXT: call void @objc_destroyWeak(i8** [[CUR]])
+  // CHECK-NEXT: icmp eq i8** [[CUR]], [[BEGIN]]
   // CHECK: call void @_ZdaPv
   delete [] wptr;
 }

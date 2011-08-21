@@ -72,7 +72,7 @@ Parser::Parser(Preprocessor &pp, Sema &actions)
 
 /// If a crash happens while the parser is active, print out a line indicating
 /// what the current token is.
-void PrettyStackTraceParserEntry::print(llvm::raw_ostream &OS) const {
+void PrettyStackTraceParserEntry::print(raw_ostream &OS) const {
   const Token &Tok = P.getCurToken();
   if (Tok.is(tok::eof)) {
     OS << "<eof> parser at end of file\n";
@@ -124,9 +124,8 @@ void Parser::SuggestParentheses(SourceLocation Loc, unsigned DK,
 
 /// MatchRHSPunctuation - For punctuation with a LHS and RHS (e.g. '['/']'),
 /// this helper function matches and consumes the specified RHS token if
-/// present.  If not present, it emits the specified diagnostic indicating
-/// that the parser failed to match the RHS of the token at LHSLoc.  LHSName
-/// should be the name of the unmatched LHS token.
+/// present.  If not present, it emits a corresponding diagnostic indicating
+/// that the parser failed to match the RHS of the token at LHSLoc.
 SourceLocation Parser::MatchRHSPunctuation(tok::TokenKind RHSTok,
                                            SourceLocation LHSLoc) {
 
@@ -299,6 +298,9 @@ bool Parser::SkipUntil(const tok::TokenKind *Toks, unsigned NumToks,
 
     case tok::string_literal:
     case tok::wide_string_literal:
+    case tok::utf8_string_literal:
+    case tok::utf16_string_literal:
+    case tok::utf32_string_literal:
       ConsumeStringToken();
       break;
         

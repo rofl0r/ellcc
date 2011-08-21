@@ -22,6 +22,7 @@
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/SelectionDAG.h"
 #include "llvm/CodeGen/TargetLoweringObjectFileImpl.h"
+#include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace llvm;
@@ -134,6 +135,8 @@ const char *PTXTargetLowering::getTargetNodeName(unsigned Opcode) const {
       return "PTXISD::EXIT";
     case PTXISD::RET:
       return "PTXISD::RET";
+    case PTXISD::CALL:
+      return "PTXISD::CALL";
   }
 }
 
@@ -183,27 +186,6 @@ LowerGlobalAddress(SDValue Op, SelectionDAG &DAG) const {
 //===----------------------------------------------------------------------===//
 //                      Calling Convention Implementation
 //===----------------------------------------------------------------------===//
-
-namespace {
-struct argmap_entry {
-  MVT::SimpleValueType VT;
-  TargetRegisterClass *RC;
-  TargetRegisterClass::iterator loc;
-
-  argmap_entry(MVT::SimpleValueType _VT, TargetRegisterClass *_RC)
-    : VT(_VT), RC(_RC), loc(_RC->begin()) {}
-
-  void reset() { loc = RC->begin(); }
-  bool operator==(MVT::SimpleValueType _VT) const { return VT == _VT; }
-} argmap[] = {
-  argmap_entry(MVT::i1,  PTX::RegPredRegisterClass),
-  argmap_entry(MVT::i16, PTX::RegI16RegisterClass),
-  argmap_entry(MVT::i32, PTX::RegI32RegisterClass),
-  argmap_entry(MVT::i64, PTX::RegI64RegisterClass),
-  argmap_entry(MVT::f32, PTX::RegF32RegisterClass),
-  argmap_entry(MVT::f64, PTX::RegF64RegisterClass)
-};
-}                               // end anonymous namespace
 
 SDValue PTXTargetLowering::
   LowerFormalArguments(SDValue Chain,
@@ -365,4 +347,50 @@ SDValue PTXTargetLowering::
   else {
     return DAG.getNode(PTXISD::RET, dl, MVT::Other, Chain, Flag);
   }
+}
+
+SDValue
+PTXTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
+                             CallingConv::ID CallConv, bool isVarArg,
+                             bool &isTailCall,
+                             const SmallVectorImpl<ISD::OutputArg> &Outs,
+                             const SmallVectorImpl<SDValue> &OutVals,
+                             const SmallVectorImpl<ISD::InputArg> &Ins,
+                             DebugLoc dl, SelectionDAG &DAG,
+                             SmallVectorImpl<SDValue> &InVals) const {
+
+  MachineFunction& MF = DAG.getMachineFunction();
+  PTXMachineFunctionInfo *MFI = MF.getInfo<PTXMachineFunctionInfo>();
+  const PTXSubtarget& ST = getTargetMachine().getSubtarget<PTXSubtarget>();
+
+  assert(ST.callsAreHandled() && "Calls are not handled for the target device");
+
+  // Is there a more "LLVM"-way to create a variable-length array of values?
+  SDValue* ops = new SDValue[OutVals.size() + 2];
+
+  ops[0] = Chain;
+
+  if (GlobalAddressSDNode *G = dyn_cast<GlobalAddressSDNode>(Callee)) {
+    const GlobalValue *GV = G->getGlobal();
+    Callee = DAG.getTargetGlobalAddress(GV, dl, getPointerTy());
+    ops[1] = Callee;
+  } else {
+    assert(false && "Function must be a GlobalAddressSDNode");
+  }
+
+  for (unsigned i = 0; i != OutVals.size(); ++i) {
+    unsigned Size = OutVals[i].getValueType().getSizeInBits();
+    SDValue Index = DAG.getTargetConstant(MFI->getNextParam(Size), MVT::i32);
+    Chain = DAG.getNode(PTXISD::STORE_PARAM, dl, MVT::Other, Chain,
+                        Index, OutVals[i]);
+    ops[i+2] = Index;
+  }
+
+  ops[0] = Chain;
+
+  Chain = DAG.getNode(PTXISD::CALL, dl, MVT::Other, ops, OutVals.size()+2);
+
+  delete [] ops;
+
+  return Chain;
 }

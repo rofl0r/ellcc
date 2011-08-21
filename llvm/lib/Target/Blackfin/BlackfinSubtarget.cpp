@@ -12,10 +12,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "BlackfinSubtarget.h"
+#include "Blackfin.h"
+#include "llvm/Target/TargetRegistry.h"
 
-#define GET_SUBTARGETINFO_CTOR
-#define GET_SUBTARGETINFO_MC_DESC
 #define GET_SUBTARGETINFO_TARGET_DESC
+#define GET_SUBTARGETINFO_CTOR
 #include "BlackfinGenSubtargetInfo.inc"
 
 using namespace llvm;
@@ -23,7 +24,7 @@ using namespace llvm;
 BlackfinSubtarget::BlackfinSubtarget(const std::string &TT,
                                      const std::string &CPU,
                                      const std::string &FS)
-  : BlackfinGenSubtargetInfo(), sdram(false),
+  : BlackfinGenSubtargetInfo(TT, CPU, FS), sdram(false),
     icplb(false),
     wa_mi_shift(false),
     wa_csync(false),
@@ -39,5 +40,5 @@ BlackfinSubtarget::BlackfinSubtarget(const std::string &TT,
   if (CPUName.empty())
     CPUName = "generic";
   // Parse features string.
-  ParseSubtargetFeatures(FS, CPUName);
+  ParseSubtargetFeatures(CPUName, FS);
 }

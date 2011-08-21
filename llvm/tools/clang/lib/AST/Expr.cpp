@@ -532,9 +532,8 @@ double FloatingLiteral::getValueAsApproximateDouble() const {
   return V.convertToDouble();
 }
 
-StringLiteral *StringLiteral::Create(ASTContext &C, llvm::StringRef Str,
-                                     bool Wide,
-                                     bool Pascal, QualType Ty,
+StringLiteral *StringLiteral::Create(ASTContext &C, StringRef Str,
+                                     StringKind Kind, bool Pascal, QualType Ty,
                                      const SourceLocation *Loc,
                                      unsigned NumStrs) {
   // Allocate enough space for the StringLiteral plus an array of locations for
@@ -549,7 +548,7 @@ StringLiteral *StringLiteral::Create(ASTContext &C, llvm::StringRef Str,
   memcpy(AStrData, Str.data(), Str.size());
   SL->StrData = AStrData;
   SL->ByteLength = Str.size();
-  SL->IsWide = Wide;
+  SL->Kind = Kind;
   SL->IsPascal = Pascal;
   SL->TokLocs[0] = Loc[0];
   SL->NumConcatenated = NumStrs;
@@ -570,7 +569,7 @@ StringLiteral *StringLiteral::CreateEmpty(ASTContext &C, unsigned NumStrs) {
   return SL;
 }
 
-void StringLiteral::setString(ASTContext &C, llvm::StringRef Str) {
+void StringLiteral::setString(ASTContext &C, StringRef Str) {
   char *AStrData = new (C, 1) char[Str.size()];
   memcpy(AStrData, Str.data(), Str.size());
   StrData = AStrData;
@@ -587,8 +586,8 @@ void StringLiteral::setString(ASTContext &C, llvm::StringRef Str) {
 SourceLocation StringLiteral::
 getLocationOfByte(unsigned ByteNo, const SourceManager &SM,
                   const LangOptions &Features, const TargetInfo &Target) const {
-  assert(!isWide() && "This doesn't work for wide strings yet");
-  
+  assert(Kind == StringLiteral::Ascii && "This only works for ASCII strings");
+
   // Loop over all of the tokens in this string until we find the one that
   // contains the byte we're looking for.
   unsigned TokNo = 0;
@@ -604,7 +603,7 @@ getLocationOfByte(unsigned ByteNo, const SourceManager &SM,
     // Re-lex the token to get its length and original spelling.
     std::pair<FileID, unsigned> LocInfo =SM.getDecomposedLoc(StrTokSpellingLoc);
     bool Invalid = false;
-    llvm::StringRef Buffer = SM.getBufferData(LocInfo.first, &Invalid);
+    StringRef Buffer = SM.getBufferData(LocInfo.first, &Invalid);
     if (Invalid)
       return StrTokSpellingLoc;
     
@@ -1102,6 +1101,8 @@ const char *CastExpr::getCastKindName() const {
     return "ObjCConsumeObject";
   case CK_ObjCProduceObject:
     return "ObjCProduceObject";
+  case CK_ObjCReclaimReturnedObject:
+    return "ObjCReclaimReturnedObject";
   }
 
   llvm_unreachable("Unhandled cast kind!");
@@ -2395,7 +2396,7 @@ bool Expr::isConstantInitializer(ASTContext &Ctx, bool IsForRef) const {
     break;
       
   case MaterializeTemporaryExprClass:
-    return llvm::cast<MaterializeTemporaryExpr>(this)->GetTemporaryExpr()
+    return cast<MaterializeTemporaryExpr>(this)->GetTemporaryExpr()
                                             ->isConstantInitializer(Ctx, false);
   }
   return isEvaluatable(Ctx);
@@ -2527,9 +2528,13 @@ FieldDecl *Expr::getBitField() {
       if (Field->isBitField())
         return Field;
 
-  if (BinaryOperator *BinOp = dyn_cast<BinaryOperator>(E))
+  if (BinaryOperator *BinOp = dyn_cast<BinaryOperator>(E)) {
     if (BinOp->isAssignmentOp() && BinOp->getLHS())
       return BinOp->getLHS()->getBitField();
+
+    if (BinOp->getOpcode() == BO_Comma && BinOp->getRHS())
+      return BinOp->getRHS()->getBitField();
+  }
 
   return 0;
 }
@@ -2570,7 +2575,7 @@ unsigned ExtVectorElementExpr::getNumElements() const {
 bool ExtVectorElementExpr::containsDuplicateElements() const {
   // FIXME: Refactor this code to an accessor on the AST node which returns the
   // "type" of component access, and share with code below and in Sema.
-  llvm::StringRef Comp = Accessor->getName();
+  StringRef Comp = Accessor->getName();
 
   // Halving swizzles do not contain duplicate elements.
   if (Comp == "hi" || Comp == "lo" || Comp == "even" || Comp == "odd")
@@ -2581,7 +2586,7 @@ bool ExtVectorElementExpr::containsDuplicateElements() const {
     Comp = Comp.substr(1);
 
   for (unsigned i = 0, e = Comp.size(); i != e; ++i)
-    if (Comp.substr(i + 1).find(Comp[i]) != llvm::StringRef::npos)
+    if (Comp.substr(i + 1).find(Comp[i]) != StringRef::npos)
         return true;
 
   return false;
@@ -2589,8 +2594,8 @@ bool ExtVectorElementExpr::containsDuplicateElements() const {
 
 /// getEncodedElementAccess - We encode the fields as a llvm ConstantArray.
 void ExtVectorElementExpr::getEncodedElementAccess(
-                                  llvm::SmallVectorImpl<unsigned> &Elts) const {
-  llvm::StringRef Comp = Accessor->getName();
+                                  SmallVectorImpl<unsigned> &Elts) const {
+  StringRef Comp = Accessor->getName();
   if (Comp[0] == 's' || Comp[0] == 'S')
     Comp = Comp.substr(1);
 
@@ -2824,7 +2829,7 @@ ObjCInterfaceDecl *ObjCMessageExpr::getReceiverInterface() const {
   return 0;
 }
 
-llvm::StringRef ObjCBridgedCastExpr::getBridgeKindName() const {
+StringRef ObjCBridgedCastExpr::getBridgeKindName() const {
   switch (getBridgeKind()) {
   case OBC_Bridge:
     return "__bridge";
