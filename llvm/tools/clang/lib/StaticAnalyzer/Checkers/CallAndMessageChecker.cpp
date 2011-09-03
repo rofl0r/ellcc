@@ -47,7 +47,8 @@ private:
   void emitNilReceiverBug(CheckerContext &C, const ObjCMessage &msg,
                           ExplodedNode *N) const;
 
-  void HandleNilReceiver(CheckerContext &C, const GRState *state,
+  void HandleNilReceiver(CheckerContext &C,
+                         const ProgramState *state,
                          ObjCMessage msg) const;
 
   static void LazyInit_BT(const char *desc, llvm::OwningPtr<BugType> &BT) {
@@ -63,9 +64,9 @@ void CallAndMessageChecker::EmitBadCall(BugType *BT, CheckerContext &C,
   if (!N)
     return;
 
-  EnhancedBugReport *R = new EnhancedBugReport(*BT, BT->getName(), N);
-  R->addVisitorCreator(bugreporter::registerTrackNullOrUndefValue,
-                       bugreporter::GetCalleeExpr(N));
+  BugReport *R = new BugReport(*BT, BT->getName(), N);
+  R->addVisitor(bugreporter::getTrackNullOrUndefValueVisitor(N,
+                               bugreporter::GetCalleeExpr(N)));
   C.EmitReport(R);
 }
 
@@ -91,10 +92,10 @@ bool CallAndMessageChecker::PreVisitProcessArg(CheckerContext &C,
       LazyInit_BT(BT_desc, BT);
 
       // Generate a report for this bug.
-      EnhancedBugReport *R = new EnhancedBugReport(*BT, BT->getName(), N);
+      BugReport *R = new BugReport(*BT, BT->getName(), N);
       R->addRange(argRange);
       if (argEx)
-        R->addVisitorCreator(bugreporter::registerTrackNullOrUndefValue, argEx);
+        R->addVisitor(bugreporter::getTrackNullOrUndefValueVisitor(N, argEx));
       C.EmitReport(R);
     }
     return true;
@@ -116,7 +117,7 @@ bool CallAndMessageChecker::PreVisitProcessArg(CheckerContext &C,
                              MemRegionManager &mrMgr, Store s)
       : C(c), StoreMgr(storeMgr), MrMgr(mrMgr), store(s) {}
 
-      bool Find(const TypedRegion *R) {
+      bool Find(const TypedValueRegion *R) {
         QualType T = R->getValueType();
         if (const RecordType *RT = T->getAsStructureType()) {
           const RecordDecl *RD = RT->getDecl()->getDefinition();
@@ -173,7 +174,7 @@ bool CallAndMessageChecker::PreVisitProcessArg(CheckerContext &C,
         }
 
         // Generate a report for this bug.
-        EnhancedBugReport *R = new EnhancedBugReport(*BT, os.str(), N);
+        BugReport *R = new BugReport(*BT, os.str(), N);
         R->addRange(argRange);
 
         // FIXME: enhance track back for uninitialized value for arbitrary
@@ -216,7 +217,7 @@ void CallAndMessageChecker::checkPreStmt(const CallExpr *CE,
 void CallAndMessageChecker::checkPreObjCMessage(ObjCMessage msg,
                                                 CheckerContext &C) const {
 
-  const GRState *state = C.getState();
+  const ProgramState *state = C.getState();
 
   // FIXME: Handle 'super'?
   if (const Expr *receiver = msg.getInstanceReceiver()) {
@@ -226,11 +227,11 @@ void CallAndMessageChecker::checkPreObjCMessage(ObjCMessage msg,
         if (!BT_msg_undef)
           BT_msg_undef.reset(new BuiltinBug("Receiver in message expression is "
                                             "an uninitialized value"));
-        EnhancedBugReport *R =
-          new EnhancedBugReport(*BT_msg_undef, BT_msg_undef->getName(), N);
+        BugReport *R =
+          new BugReport(*BT_msg_undef, BT_msg_undef->getName(), N);
         R->addRange(receiver->getSourceRange());
-        R->addVisitorCreator(bugreporter::registerTrackNullOrUndefValue,
-                             receiver);
+        R->addVisitor(bugreporter::getTrackNullOrUndefValueVisitor(N,
+                                                                   receiver));
         C.EmitReport(R);
       }
       return;
@@ -238,7 +239,7 @@ void CallAndMessageChecker::checkPreObjCMessage(ObjCMessage msg,
       // Bifurcate the state into nil and non-nil ones.
       DefinedOrUnknownSVal receiverVal = cast<DefinedOrUnknownSVal>(recVal);
   
-      const GRState *notNilState, *nilState;
+      const ProgramState *notNilState, *nilState;
       llvm::tie(notNilState, nilState) = state->assume(receiverVal);
   
       // Handle receiver must be nil.
@@ -271,11 +272,11 @@ void CallAndMessageChecker::emitNilReceiverBug(CheckerContext &C,
      << "' is nil and returns a value of type '"
      << msg.getType(C.getASTContext()).getAsString() << "' that will be garbage";
 
-  EnhancedBugReport *report = new EnhancedBugReport(*BT_msg_ret, os.str(), N);
+  BugReport *report = new BugReport(*BT_msg_ret, os.str(), N);
   if (const Expr *receiver = msg.getInstanceReceiver()) {
     report->addRange(receiver->getSourceRange());
-    report->addVisitorCreator(bugreporter::registerTrackNullOrUndefValue,
-                              receiver);
+    report->addVisitor(bugreporter::getTrackNullOrUndefValueVisitor(N,
+                                                                    receiver));
   }
   C.EmitReport(report);
 }
@@ -288,7 +289,7 @@ static bool supportsNilWithFloatRet(const llvm::Triple &triple) {
 }
 
 void CallAndMessageChecker::HandleNilReceiver(CheckerContext &C,
-                                              const GRState *state,
+                                              const ProgramState *state,
                                               ObjCMessage msg) const {
   ASTContext &Ctx = C.getASTContext();
 
@@ -303,7 +304,7 @@ void CallAndMessageChecker::HandleNilReceiver(CheckerContext &C,
     // have the "use of undefined value" be smarter about where the
     // undefined value came from.
     if (C.getPredecessor()->getParentMap().isConsumedExpr(msg.getOriginExpr())){
-      if (ExplodedNode* N = C.generateSink(state))
+      if (ExplodedNode *N = C.generateSink(state))
         emitNilReceiverBug(C, msg, N);
       return;
     }
@@ -328,7 +329,7 @@ void CallAndMessageChecker::HandleNilReceiver(CheckerContext &C,
            Ctx.LongDoubleTy == CanRetTy ||
            Ctx.LongLongTy == CanRetTy ||
            Ctx.UnsignedLongLongTy == CanRetTy))) {
-      if (ExplodedNode* N = C.generateSink(state))
+      if (ExplodedNode *N = C.generateSink(state))
         emitNilReceiverBug(C, msg, N);
       return;
     }

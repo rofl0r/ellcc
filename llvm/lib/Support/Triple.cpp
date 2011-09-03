@@ -119,6 +119,7 @@ const char *Triple::getOSTypeName(OSType Kind) {
   case Partikle: return "partikle";
   case SA: return "sa";
   case RTEMS: return "rtems";
+  case NativeClient: return "nacl";
   }
 
   return "<invalid>";

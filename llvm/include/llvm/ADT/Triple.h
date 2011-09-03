@@ -98,7 +98,8 @@ public:
     Partikle,   // ELLCC: Partikle
     SA,         // ELLCC: Stand Alone
     Minix,
-    RTEMS
+    RTEMS,
+    NativeClient
   };
   enum EnvironmentType {
     UnknownEnvironment,

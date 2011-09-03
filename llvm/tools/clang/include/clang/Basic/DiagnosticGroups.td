@@ -73,7 +73,7 @@ def : DiagGroup<"int-to-pointer-cast">;
 def : DiagGroup<"invalid-pch">;
 def LiteralRange : DiagGroup<"literal-range">;
 def LocalTypeTemplateArgs : DiagGroup<"local-type-template-args">;
-def : DiagGroup<"main">;
+def Main : DiagGroup<"main">;
 def MissingBraces : DiagGroup<"missing-braces">;
 def MissingDeclarations: DiagGroup<"missing-declarations">;
 def : DiagGroup<"missing-format-attribute">;
@@ -155,6 +155,7 @@ def UnknownPragmas : DiagGroup<"unknown-pragmas">;
 def UnknownAttributes : DiagGroup<"attributes">;
 def UnnamedTypeTemplateArgs : DiagGroup<"unnamed-type-template-args">;
 def UnusedArgument : DiagGroup<"unused-argument">;
+def UnusedComparison : DiagGroup<"unused-comparison">;
 def UnusedExceptionParameter : DiagGroup<"unused-exception-parameter">;
 def UnneededInternalDecl : DiagGroup<"unneeded-internal-declaration">;
 def UnneededMemberFunction : DiagGroup<"unneeded-member-function">;
@@ -164,7 +165,7 @@ def UnusedMemberFunction : DiagGroup<"unused-member-function",
 def UnusedLabel : DiagGroup<"unused-label">;
 def UnusedParameter : DiagGroup<"unused-parameter">;
 def UnusedResult : DiagGroup<"unused-result">;
-def UnusedValue    : DiagGroup<"unused-value", [UnusedResult]>;
+def UnusedValue : DiagGroup<"unused-value", [UnusedComparison, UnusedResult]>;
 def UnusedVariable : DiagGroup<"unused-variable">;
 def UsedButMarkedUnused : DiagGroup<"used-but-marked-unused">;
 def ReadOnlySetterAttrs : DiagGroup<"readonly-setter-attrs">;
@@ -278,7 +279,7 @@ def Most : DiagGroup<"most", [
 // Thread Safety warnings 
 def : DiagGroup<"thread-safety">;
 
-// -Wall is -Wmost -Wparentheses
+// -Wall is -Wmost -Wparentheses -Wtop-level-comparison
 def : DiagGroup<"all", [Most, Parentheses]>;
 
 // Aliases.

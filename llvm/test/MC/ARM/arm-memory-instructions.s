@@ -38,6 +38,7 @@ _func:
         ldr r2, [r5, -r3]
         ldr r1, [r5, r9]!
         ldr r6, [r7, -r8]!
+        ldr r1, [r0, r2, lsr #3]!
         ldr r5, [r9], r2
         ldr r4, [r3], -r6
         ldr r3, [r8, -r2, lsl #15]
@@ -47,6 +48,7 @@ _func:
 @ CHECK: ldr	r2, [r5, -r3]           @ encoding: [0x03,0x20,0x15,0xe7]
 @ CHECK: ldr	r1, [r5, r9]!           @ encoding: [0x09,0x10,0xb5,0xe7]
 @ CHECK: ldr	r6, [r7, -r8]!          @ encoding: [0x08,0x60,0x37,0xe7]
+@ CHECK: ldr	r1, [r0, r2, lsr #3]!   @ encoding: [0xa2,0x11,0xb0,0xe7]
 @ CHECK: ldr	r5, [r9], r2            @ encoding: [0x02,0x50,0x99,0xe6]
 @ CHECK: ldr	r4, [r3], -r6           @ encoding: [0x06,0x40,0x13,0xe6]
 @ CHECK: ldr	r3, [r8, -r2, lsl #15]  @ encoding: [0x82,0x37,0x18,0xe7]
@@ -334,3 +336,144 @@ _func:
 @ CHECK: str	r3, [r4, -r2, lsl #2]   @ encoding: [0x02,0x31,0x04,0xe7]
 @ CHECK: str	r2, [r7], r3, asr #24   @ encoding: [0x43,0x2c,0x87,0xe6]
 
+
+@------------------------------------------------------------------------------
+@ STRB (immediate)
+@------------------------------------------------------------------------------
+        strb r9, [r2]
+        strb r7, [r1, #3]
+        strb r6, [r4, #405]!
+        strb r5, [r7], #72
+        strb r1, [sp], #-1
+
+@ CHECK: strb	r9, [r2]                @ encoding: [0x00,0x90,0xc2,0xe5]
+@ CHECK: strb	r7, [r1, #3]            @ encoding: [0x03,0x70,0xc1,0xe5]
+@ CHECK: strb	r6, [r4, #405]!         @ encoding: [0x95,0x61,0xe4,0xe5]
+@ CHECK: strb	r5, [r7], #72           @ encoding: [0x48,0x50,0xc7,0xe4]
+@ CHECK: strb	r1, [sp], #-1           @ encoding: [0x01,0x10,0x4d,0xe4]
+
+@------------------------------------------------------------------------------
+@ FIXME: STRB (literal)
+@------------------------------------------------------------------------------
+
+@------------------------------------------------------------------------------
+@ STRB (register)
+@------------------------------------------------------------------------------
+        strb r1, [r2, r9]
+        strb r2, [r3, -r8]
+        strb r3, [r4, r7]!
+        strb r4, [r5, -r6]!
+        strb r5, [r6], r5
+        strb r6, [r2], -r4
+        strb r7, [r12, -r3, lsl #5]
+        strb sp, [r7], r2, asr #12
+
+@ CHECK: strb	r1, [r2, r9]            @ encoding: [0x09,0x10,0xc2,0xe7]
+@ CHECK: strb	r2, [r3, -r8]           @ encoding: [0x08,0x20,0x43,0xe7]
+@ CHECK: strb	r3, [r4, r7]!           @ encoding: [0x07,0x30,0xe4,0xe7]
+@ CHECK: strb	r4, [r5, -r6]!          @ encoding: [0x06,0x40,0x65,0xe7]
+@ CHECK: strb	r5, [r6], r5            @ encoding: [0x05,0x50,0xc6,0xe6]
+@ CHECK: strb	r6, [r2], -r4           @ encoding: [0x04,0x60,0x42,0xe6]
+@ CHECK: strb	r7, [r12, -r3, lsl #5]  @ encoding: [0x83,0x72,0x4c,0xe7]
+@ CHECK: strb	sp, [r7], r2, asr #12   @ encoding: [0x42,0xd6,0xc7,0xe6]
+
+
+@------------------------------------------------------------------------------
+@ STRBT
+@------------------------------------------------------------------------------
+@ FIXME: Optional offset operand.
+        strbt r6, [r2], #12
+        strbt r5, [r6], #-13
+        strbt r4, [r9], r5
+        strbt r3, [r8], -r2, lsl #3
+
+@ CHECK: strbt	r6, [r2], #12           @ encoding: [0x0c,0x60,0xe2,0xe4]
+@ CHECK: strbt	r5, [r6], #-13          @ encoding: [0x0d,0x50,0x66,0xe4]
+@ CHECK: strbt	r4, [r9], r5            @ encoding: [0x05,0x40,0xe9,0xe6]
+@ CHECK: strbt	r3, [r8], -r2, lsl #3   @ encoding: [0x82,0x31,0x68,0xe6]
+
+
+@------------------------------------------------------------------------------
+@ STRD (immediate)
+@------------------------------------------------------------------------------
+        strd r1, r2, [r4]
+        strd r2, r3, [r6, #1]
+        strd r3, r4, [r7, #22]!
+        strd r4, r5, [r8], #7
+        strd r5, r6, [sp], #0
+        strd r6, r7, [lr], #+0
+        strd r7, r8, [r9], #-0
+
+@ CHECK: strd	r1, r2, [r4]            @ encoding: [0xf0,0x10,0xc4,0xe1]
+@ CHECK: strd	r2, r3, [r6, #1]        @ encoding: [0xf1,0x20,0xc6,0xe1]
+@ CHECK: strd	r3, r4, [r7, #22]!      @ encoding: [0xf6,0x31,0xe7,0xe1]
+@ CHECK: strd	r4, r5, [r8], #7        @ encoding: [0xf7,0x40,0xc8,0xe0]
+@ CHECK: strd	r5, r6, [sp], #0        @ encoding: [0xf0,0x50,0xcd,0xe0]
+@ CHECK: strd	r6, r7, [lr], #0        @ encoding: [0xf0,0x60,0xce,0xe0]
+@ CHECK: strd	r7, r8, [r9], #-0       @ encoding: [0xf0,0x70,0x49,0xe0]
+
+
+@------------------------------------------------------------------------------
+@ FIXME: STRD (label)
+@------------------------------------------------------------------------------
+
+@------------------------------------------------------------------------------
+@ STRD (register)
+@------------------------------------------------------------------------------
+        strd r8, r9, [r4, r1]
+        strd r7, r8, [r3, r9]!
+        strd r6, r7, [r5], r8
+        strd r5, r6, [r12], -r10
+
+@ CHECK: strd	r8, r9, [r4, r1]        @ encoding: [0xf1,0x80,0x84,0xe1]
+@ CHECK: strd	r7, r8, [r3, r9]!       @ encoding: [0xf9,0x70,0xa3,0xe1]
+@ CHECK: strd	r6, r7, [r5], r8        @ encoding: [0xf8,0x60,0x85,0xe0]
+@ CHECK: strd	r5, r6, [r12], -r10     @ encoding: [0xfa,0x50,0x0c,0xe0]
+
+
+@------------------------------------------------------------------------------
+@ STRH (immediate)
+@------------------------------------------------------------------------------
+        strh r3, [r4]
+        strh r2, [r7, #4]
+        strh r1, [r8, #64]!
+        strh r12, [sp], #4
+
+@ CHECK: strh	r3, [r4]                @ encoding: [0xb0,0x30,0xc4,0xe1]
+@ CHECK: strh	r2, [r7, #4]            @ encoding: [0xb4,0x20,0xc7,0xe1]
+@ CHECK: strh	r1, [r8, #64]!          @ encoding: [0xb0,0x14,0xe8,0xe1]
+@ CHECK: strh	r12, [sp], #4           @ encoding: [0xb4,0xc0,0xcd,0xe0]
+
+
+@------------------------------------------------------------------------------
+@ FIXME: STRH (label)
+@------------------------------------------------------------------------------
+
+
+@------------------------------------------------------------------------------
+@ STRH (register)
+@------------------------------------------------------------------------------
+        strh r6, [r5, r4]
+        strh r3, [r8, r11]!
+        strh r1, [r2, -r1]!
+        strh r9, [r7], r2
+        strh r4, [r3], -r2
+
+@ CHECK: strh	r6, [r5, r4]            @ encoding: [0xb4,0x60,0x85,0xe1]
+@ CHECK: strh	r3, [r8, r11]!          @ encoding: [0xbb,0x30,0xa8,0xe1]
+@ CHECK: strh	r1, [r2, -r1]!          @ encoding: [0xb1,0x10,0x22,0xe1]
+@ CHECK: strh	r9, [r7], r2            @ encoding: [0xb2,0x90,0x87,0xe0]
+@ CHECK: strh	r4, [r3], -r2           @ encoding: [0xb2,0x40,0x03,0xe0]
+
+@------------------------------------------------------------------------------
+@ STRHT
+@------------------------------------------------------------------------------
+        strht r2, [r5], #76
+        strht r8, [r1], #-25
+        strht r5, [r3], r4
+        strht r6, [r8], -r0
+
+@ CHECK: strht	r2, [r5], #76           @ encoding: [0xbc,0x24,0xe5,0xe0]
+@ CHECK: strht	r8, [r1], #-25          @ encoding: [0xb9,0x81,0x61,0xe0]
+@ CHECK: strht	r5, [r3], r4            @ encoding: [0xb4,0x50,0xa3,0xe0]
+@ CHECK: strht	r6, [r8], -r0           @ encoding: [0xb0,0x60,0x28,0xe0]

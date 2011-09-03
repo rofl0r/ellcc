@@ -141,7 +141,6 @@ public:
               TypeLocVisitKind, OverloadExprPartsKind,
               DeclRefExprPartsKind, LabelRefVisitKind,
               ExplicitTemplateArgsVisitKind,
-              NestedNameSpecifierVisitKind,
               NestedNameSpecifierLocVisitKind,
               DeclarationNameInfoVisitKind,
               MemberRefVisitKind, SizeOfPackExprPartsKind };
@@ -333,35 +332,15 @@ public:
   bool VisitTemplateArgumentLoc(const TemplateArgumentLoc &TAL);
   
   // Type visitors
-  bool VisitQualifiedTypeLoc(QualifiedTypeLoc TL);
-  bool VisitBuiltinTypeLoc(BuiltinTypeLoc TL);
-  bool VisitTypedefTypeLoc(TypedefTypeLoc TL);
-  bool VisitUnresolvedUsingTypeLoc(UnresolvedUsingTypeLoc TL);
+#define ABSTRACT_TYPELOC(CLASS, PARENT)
+#define TYPELOC(CLASS, PARENT) \
+  bool Visit##CLASS##TypeLoc(CLASS##TypeLoc TyLoc);
+#include "clang/AST/TypeLocNodes.def"
+
   bool VisitTagTypeLoc(TagTypeLoc TL);
-  bool VisitTemplateTypeParmTypeLoc(TemplateTypeParmTypeLoc TL);
-  bool VisitObjCInterfaceTypeLoc(ObjCInterfaceTypeLoc TL);
-  bool VisitObjCObjectTypeLoc(ObjCObjectTypeLoc TL);
-  bool VisitObjCObjectPointerTypeLoc(ObjCObjectPointerTypeLoc TL);
-  bool VisitParenTypeLoc(ParenTypeLoc TL);
-  bool VisitPointerTypeLoc(PointerTypeLoc TL);
-  bool VisitBlockPointerTypeLoc(BlockPointerTypeLoc TL);
-  bool VisitMemberPointerTypeLoc(MemberPointerTypeLoc TL);
-  bool VisitLValueReferenceTypeLoc(LValueReferenceTypeLoc TL);
-  bool VisitRValueReferenceTypeLoc(RValueReferenceTypeLoc TL);
-  bool VisitFunctionTypeLoc(FunctionTypeLoc TL, bool SkipResultType = false);
   bool VisitArrayTypeLoc(ArrayTypeLoc TL);
-  bool VisitTemplateSpecializationTypeLoc(TemplateSpecializationTypeLoc TL);
-  // FIXME: Implement visitors here when the unimplemented TypeLocs get
-  // implemented
-  bool VisitTypeOfExprTypeLoc(TypeOfExprTypeLoc TL);
-  bool VisitPackExpansionTypeLoc(PackExpansionTypeLoc TL);
-  bool VisitTypeOfTypeLoc(TypeOfTypeLoc TL);
-  bool VisitUnaryTransformTypeLoc(UnaryTransformTypeLoc TL);
-  bool VisitDependentNameTypeLoc(DependentNameTypeLoc TL);
-  bool VisitDependentTemplateSpecializationTypeLoc(
-                                    DependentTemplateSpecializationTypeLoc TL);
-  bool VisitElaboratedTypeLoc(ElaboratedTypeLoc TL);
-  
+  bool VisitFunctionTypeLoc(FunctionTypeLoc TL, bool SkipResultType = false);
+
   // Data-recursive visitor functions.
   bool IsInRegionOfInterest(CXCursor C);
   bool RunVisitorWorkList(VisitorWorkList &WL);
@@ -396,7 +375,7 @@ bool CursorVisitor::Visit(CXCursor Cursor, bool CheckedRegionOfInterest) {
   if (clang_isDeclaration(Cursor.kind)) {
     Decl *D = getCursorDecl(Cursor);
     assert(D && "Invalid declaration cursor");
-    if (D->getPCHLevel() > MaxPCHLevel)
+    if (D->getPCHLevel() > MaxPCHLevel && !isa<TranslationUnitDecl>(D))
       return false;
 
     if (D->isImplicit())
@@ -1521,6 +1500,10 @@ bool CursorVisitor::VisitRValueReferenceTypeLoc(RValueReferenceTypeLoc TL) {
   return Visit(TL.getPointeeLoc());
 }
 
+bool CursorVisitor::VisitAttributedTypeLoc(AttributedTypeLoc TL) {
+  return Visit(TL.getModifiedLoc());
+}
+
 bool CursorVisitor::VisitFunctionTypeLoc(FunctionTypeLoc TL, 
                                          bool SkipResultType) {
   if (!SkipResultType && Visit(TL.getResultLoc()))
@@ -1610,6 +1593,38 @@ bool CursorVisitor::VisitPackExpansionTypeLoc(PackExpansionTypeLoc TL) {
   return Visit(TL.getPatternLoc());
 }
 
+bool CursorVisitor::VisitDecltypeTypeLoc(DecltypeTypeLoc TL) {
+  if (Expr *E = TL.getUnderlyingExpr())
+    return Visit(MakeCXCursor(E, StmtParent, TU));
+
+  return false;
+}
+
+bool CursorVisitor::VisitInjectedClassNameTypeLoc(InjectedClassNameTypeLoc TL) {
+  return Visit(MakeCursorTypeRef(TL.getDecl(), TL.getNameLoc(), TU));
+}
+
+#define DEFAULT_TYPELOC_IMPL(CLASS, PARENT) \
+bool CursorVisitor::Visit##CLASS##TypeLoc(CLASS##TypeLoc TL) { \
+  return Visit##PARENT##Loc(TL); \
+}
+
+DEFAULT_TYPELOC_IMPL(Complex, Type)
+DEFAULT_TYPELOC_IMPL(ConstantArray, ArrayType)
+DEFAULT_TYPELOC_IMPL(IncompleteArray, ArrayType)
+DEFAULT_TYPELOC_IMPL(VariableArray, ArrayType)
+DEFAULT_TYPELOC_IMPL(DependentSizedArray, ArrayType)
+DEFAULT_TYPELOC_IMPL(DependentSizedExtVector, Type)
+DEFAULT_TYPELOC_IMPL(Vector, Type)
+DEFAULT_TYPELOC_IMPL(ExtVector, VectorType)
+DEFAULT_TYPELOC_IMPL(FunctionProto, FunctionType)
+DEFAULT_TYPELOC_IMPL(FunctionNoProto, FunctionType)
+DEFAULT_TYPELOC_IMPL(Record, TagType)
+DEFAULT_TYPELOC_IMPL(Enum, TagType)
+DEFAULT_TYPELOC_IMPL(SubstTemplateTypeParm, Type)
+DEFAULT_TYPELOC_IMPL(SubstTemplateTypeParmPack, Type)
+DEFAULT_TYPELOC_IMPL(Auto, Type)
+
 bool CursorVisitor::VisitCXXRecordDecl(CXXRecordDecl *D) {
   // Visit the nested-name-specifier, if present.
   if (NestedNameSpecifierLoc QualifierLoc = D->getQualifierLoc())
@@ -1697,27 +1712,6 @@ public:
   LabelDecl *get() const { return static_cast<LabelDecl*>(data[0]); }
   SourceLocation getLoc() const { 
     return SourceLocation::getFromPtrEncoding(data[1]); }
-};
-class NestedNameSpecifierVisit : public VisitorJob {
-public:
-  NestedNameSpecifierVisit(NestedNameSpecifier *NS, SourceRange R,
-                           CXCursor parent)
-    : VisitorJob(parent, VisitorJob::NestedNameSpecifierVisitKind,
-                 NS, R.getBegin().getPtrEncoding(),
-                 R.getEnd().getPtrEncoding()) {}
-  static bool classof(const VisitorJob *VJ) {
-    return VJ->getKind() == VisitorJob::NestedNameSpecifierVisitKind;
-  }
-  NestedNameSpecifier *get() const {
-    return static_cast<NestedNameSpecifier*>(data[0]);
-  }
-  SourceRange getSourceRange() const {
-    SourceLocation A =
-      SourceLocation::getFromRawEncoding((unsigned)(uintptr_t) data[1]);
-    SourceLocation B =
-      SourceLocation::getFromRawEncoding((unsigned)(uintptr_t) data[2]);
-    return SourceRange(A, B);
-  }
 };
   
 class NestedNameSpecifierLocVisit : public VisitorJob {
@@ -1820,7 +1814,6 @@ public:
   
 private:
   void AddDeclarationNameInfo(Stmt *S);
-  void AddNestedNameSpecifier(NestedNameSpecifier *NS, SourceRange R);
   void AddNestedNameSpecifierLoc(NestedNameSpecifierLoc Qualifier);
   void AddExplicitTemplateArgs(const ExplicitTemplateArgumentList *A);
   void AddMemberRef(FieldDecl *D, SourceLocation L);
@@ -1835,11 +1828,6 @@ void EnqueueVisitor::AddDeclarationNameInfo(Stmt *S) {
   // 'S' should always be non-null, since it comes from the
   // statement we are visiting.
   WL.push_back(DeclarationNameInfoVisit(S, Parent));
-}
-void EnqueueVisitor::AddNestedNameSpecifier(NestedNameSpecifier *N,
-                                            SourceRange R) {
-  if (N)
-    WL.push_back(NestedNameSpecifierVisit(N, R, Parent));
 }
 
 void 
@@ -2185,14 +2173,7 @@ bool CursorVisitor::RunVisitorWorkList(VisitorWorkList &WL) {
         }
         continue;
       }
-        
-      case VisitorJob::NestedNameSpecifierVisitKind: {
-        NestedNameSpecifierVisit *V = cast<NestedNameSpecifierVisit>(&LI);
-        if (VisitNestedNameSpecifier(V->get(), V->getSourceRange()))
-          return true;
-        continue;
-      }
-        
+
       case VisitorJob::NestedNameSpecifierLocVisitKind: {
         NestedNameSpecifierLocVisit *V = cast<NestedNameSpecifierLocVisit>(&LI);
         if (VisitNestedNameSpecifierLoc(V->get()))
@@ -3460,24 +3441,27 @@ CXString clang_getCursorKindSpelling(enum CXCursorKind Kind) {
 
 struct GetCursorData {
   SourceLocation TokenBeginLoc;
+  bool PointsAtMacroArgExpansion;
   CXCursor &BestCursor;
 
-  GetCursorData(SourceLocation tokenBegin, CXCursor &outputCursor)
-    : TokenBeginLoc(tokenBegin), BestCursor(outputCursor) { }
+  GetCursorData(SourceManager &SM,
+                SourceLocation tokenBegin, CXCursor &outputCursor)
+    : TokenBeginLoc(tokenBegin), BestCursor(outputCursor) {
+    PointsAtMacroArgExpansion = SM.isMacroArgExpansion(tokenBegin);
+  }
 };
 
-enum CXChildVisitResult GetCursorVisitor(CXCursor cursor,
-                                         CXCursor parent,
-                                         CXClientData client_data) {
+static enum CXChildVisitResult GetCursorVisitor(CXCursor cursor,
+                                                CXCursor parent,
+                                                CXClientData client_data) {
   GetCursorData *Data = static_cast<GetCursorData *>(client_data);
   CXCursor *BestCursor = &Data->BestCursor;
-  
-  if (clang_isDeclaration(cursor.kind)) {
-    // Avoid having the synthesized methods override the property decls.
-    if (ObjCMethodDecl *MD = dyn_cast<ObjCMethodDecl>(getCursorDecl(cursor)))
-      if (MD->isSynthesized())
-        return CXChildVisit_Break;
-  }
+
+  // If we point inside a macro argument we should provide info of what the
+  // token is so use the actual cursor, don't replace it with a macro expansion
+  // cursor.
+  if (cursor.kind == CXCursor_MacroExpansion && Data->PointsAtMacroArgExpansion)
+    return CXChildVisit_Recurse;
 
   if (clang_isExpression(cursor.kind) &&
       clang_isDeclaration(BestCursor->kind)) {
@@ -3536,7 +3520,7 @@ CXCursor clang_getCursor(CXTranslationUnit TU, CXSourceLocation Loc) {
     // FIXME: Would be great to have a "hint" cursor, then walk from that
     // hint cursor upward until we find a cursor whose source range encloses
     // the region of interest, rather than starting from the translation unit.
-    GetCursorData ResultData(SLoc, Result);
+    GetCursorData ResultData(CXXUnit->getSourceManager(), SLoc, Result);
     CXCursor Parent = clang_getTranslationUnitCursor(TU);
     CursorVisitor CursorVis(TU, GetCursorVisitor, &ResultData,
                             Decl::MaxPCHLevel, true, SourceLocation(SLoc));
@@ -4048,6 +4032,7 @@ CXCursor clang_getCursorDefinition(CXCursor C) {
   case Decl::StaticAssert:
   case Decl::Block:
   case Decl::Label:  // FIXME: Is this right??
+  case Decl::ClassScopeFunctionSpecialization:
     return C;
 
   // Declaration kinds that don't make any sense here, but are
@@ -4404,7 +4389,7 @@ CXString clang_getTokenSpelling(CXTranslationUnit TU, CXToken CXTok) {
 
   SourceLocation Loc = SourceLocation::getFromRawEncoding(CXTok.int_data[1]);
   std::pair<FileID, unsigned> LocInfo
-    = CXXUnit->getSourceManager().getDecomposedLoc(Loc);
+    = CXXUnit->getSourceManager().getDecomposedSpellingLoc(Loc);
   bool Invalid = false;
   StringRef Buffer
     = CXXUnit->getSourceManager().getBufferData(LocInfo.first, &Invalid);
@@ -4560,6 +4545,16 @@ class AnnotateTokensWorker {
   SourceLocation GetTokenLoc(unsigned tokI) {
     return SourceLocation::getFromRawEncoding(Tokens[tokI].int_data[1]);
   }
+  bool isMacroArgToken(unsigned tokI) const {
+    return Tokens[tokI].int_data[3] != 0;
+  }
+  SourceLocation getMacroArgLoc(unsigned tokI) const {
+    return SourceLocation::getFromRawEncoding(Tokens[tokI].int_data[3]);
+  }
+
+  void annotateAndAdvanceTokens(CXCursor, RangeComparisonResult, SourceRange);
+  void annotateAndAdvanceMacroArgTokens(CXCursor, RangeComparisonResult,
+                                        SourceRange);
 
 public:
   AnnotateTokensWorker(AnnotateTokensData &annotated,
@@ -4610,6 +4605,63 @@ void AnnotateTokensWorker::AnnotateTokens(CXCursor parent) {
     AnnotateTokensData::iterator Pos = Annotated.find(Tokens[I].int_data[1]);
     Cursors[I] = (Pos == Annotated.end()) ? C : Pos->second;
   }
+}
+
+/// \brief It annotates and advances tokens with a cursor until the comparison
+//// between the cursor location and the source range is the same as
+/// \arg compResult.
+///
+/// Pass RangeBefore to annotate tokens with a cursor until a range is reached.
+/// Pass RangeOverlap to annotate tokens inside a range.
+void AnnotateTokensWorker::annotateAndAdvanceTokens(CXCursor updateC,
+                                               RangeComparisonResult compResult,
+                                               SourceRange range) {
+  while (MoreTokens()) {
+    const unsigned I = NextToken();
+    if (isMacroArgToken(I))
+      return annotateAndAdvanceMacroArgTokens(updateC, compResult, range);
+
+    SourceLocation TokLoc = GetTokenLoc(I);
+    if (LocationCompare(SrcMgr, TokLoc, range) == compResult) {
+      Cursors[I] = updateC;
+      AdvanceToken();
+      continue;
+    }
+    break;
+  }
+}
+
+/// \brief Special annotation handling for macro argument tokens.
+void AnnotateTokensWorker::annotateAndAdvanceMacroArgTokens(CXCursor updateC,
+                                               RangeComparisonResult compResult,
+                                               SourceRange range) {
+  assert(isMacroArgToken(NextToken()) &&
+         "Should be called only for macro arg tokens");
+
+  // This works differently than annotateAndAdvanceTokens; because expanded
+  // macro arguments can have arbitrary translation-unit source order, we do not
+  // advance the token index one by one until a token fails the range test.
+  // We only advance once past all of the macro arg tokens if all of them
+  // pass the range test. If one of them fails we keep the token index pointing
+  // at the start of the macro arg tokens so that the failing token will be
+  // annotated by a subsequent annotation try.
+
+  bool atLeastOneCompFail = false;
+  
+  unsigned I = NextToken();
+  for (; isMacroArgToken(I); ++I) {
+    SourceLocation TokLoc = getMacroArgLoc(I);
+    if (TokLoc.isFileID())
+      continue; // not macro arg token, it's parens or comma.
+    if (LocationCompare(SrcMgr, TokLoc, range) == compResult) {
+      if (clang_isInvalid(clang_getCursorKind(Cursors[I])))
+        Cursors[I] = updateC;
+    } else
+      atLeastOneCompFail = true;
+  }
+
+  if (!atLeastOneCompFail)
+    TokIdx = I; // All of the tokens were handled, advance beyond all of them.
 }
 
 enum CXChildVisitResult
@@ -4726,12 +4778,6 @@ AnnotateTokensWorker::Visit(CXCursor cursor, CXCursor parent) {
   const enum CXCursorKind cursorK = clang_getCursorKind(cursor);
   if (cursorK >= CXCursor_FirstDecl && cursorK <= CXCursor_LastDecl) {
     Decl *D = cxcursor::getCursorDecl(cursor);
-    // Don't visit synthesized ObjC methods, since they have no syntatic
-    // representation in the source.
-    if (const ObjCMethodDecl *MD = dyn_cast<ObjCMethodDecl>(D)) {
-      if (MD->isSynthesized())
-        return CXChildVisit_Continue;
-    }
     
     SourceLocation StartLoc;
     if (const DeclaratorDecl *DD = dyn_cast<DeclaratorDecl>(D)) {
@@ -4769,20 +4815,7 @@ AnnotateTokensWorker::Visit(CXCursor cursor, CXCursor parent) {
     (clang_isInvalid(K) || K == CXCursor_TranslationUnit)
      ? clang_getNullCursor() : parent;
 
-  while (MoreTokens()) {
-    const unsigned I = NextToken();
-    SourceLocation TokLoc = GetTokenLoc(I);
-    switch (LocationCompare(SrcMgr, TokLoc, cursorRange)) {
-      case RangeBefore:
-        Cursors[I] = updateC;
-        AdvanceToken();
-        continue;
-      case RangeAfter:
-      case RangeOverlap:
-        break;
-    }
-    break;
-  }
+  annotateAndAdvanceTokens(updateC, RangeBefore, cursorRange);
 
   // Avoid having the cursor of an expression "overwrite" the annotation of the
   // variable declaration that it belongs to.
@@ -4807,46 +4840,19 @@ AnnotateTokensWorker::Visit(CXCursor cursor, CXCursor parent) {
   VisitChildren(cursor);
   const unsigned AfterChildren = NextToken();
 
-  // Adjust 'Last' to the last token within the extent of the cursor.
-  while (MoreTokens()) {
-    const unsigned I = NextToken();
-    SourceLocation TokLoc = GetTokenLoc(I);
-    switch (LocationCompare(SrcMgr, TokLoc, cursorRange)) {
-      case RangeBefore:
-        assert(0 && "Infeasible");
-      case RangeAfter:
-        break;
-      case RangeOverlap:
-        Cursors[I] = updateC;
-        AdvanceToken();
-        continue;
-    }
-    break;
-  }
-  const unsigned Last = NextToken();
+  // Scan the tokens that are at the end of the cursor, but are not captured
+  // but the child cursors.
+  annotateAndAdvanceTokens(cursor, RangeOverlap, cursorRange);
   
   // Scan the tokens that are at the beginning of the cursor, but are not
   // capture by the child cursors.
-
-  // For AST elements within macros, rely on a post-annotate pass to
-  // to correctly annotate the tokens with cursors.  Otherwise we can
-  // get confusing results of having tokens that map to cursors that really
-  // are expanded by an instantiation.
-  if (L.isMacroID())
-    cursor = clang_getNullCursor();
-
   for (unsigned I = BeforeChildren; I != AfterChildren; ++I) {
     if (!clang_isInvalid(clang_getCursorKind(Cursors[I])))
       break;
     
     Cursors[I] = cursor;
   }
-  // Scan the tokens that are at the end of the cursor, but are not captured
-  // but the child cursors.
-  for (unsigned I = AfterChildren; I != Last; ++I)
-    Cursors[I] = cursor;
 
-  TokIdx = Last;
   return CXChildVisit_Continue;
 }
 
@@ -4854,6 +4860,74 @@ static enum CXChildVisitResult AnnotateTokensVisitor(CXCursor cursor,
                                                      CXCursor parent,
                                                      CXClientData client_data) {
   return static_cast<AnnotateTokensWorker*>(client_data)->Visit(cursor, parent);
+}
+
+namespace {
+
+/// \brief Uses the macro expansions in the preprocessing record to find
+/// and mark tokens that are macro arguments. This info is used by the
+/// AnnotateTokensWorker.
+class MarkMacroArgTokensVisitor {
+  SourceManager &SM;
+  CXToken *Tokens;
+  unsigned NumTokens;
+  unsigned CurIdx;
+  
+public:
+  MarkMacroArgTokensVisitor(SourceManager &SM,
+                            CXToken *tokens, unsigned numTokens)
+    : SM(SM), Tokens(tokens), NumTokens(numTokens), CurIdx(0) { }
+
+  CXChildVisitResult visit(CXCursor cursor, CXCursor parent) {
+    if (cursor.kind != CXCursor_MacroExpansion)
+      return CXChildVisit_Continue;
+
+    SourceRange macroRange = getCursorMacroExpansion(cursor)->getSourceRange();
+    if (macroRange.getBegin() == macroRange.getEnd())
+      return CXChildVisit_Continue; // it's not a function macro.
+
+    for (; CurIdx < NumTokens; ++CurIdx) {
+      if (!SM.isBeforeInTranslationUnit(getTokenLoc(CurIdx),
+                                        macroRange.getBegin()))
+        break;
+    }
+    
+    if (CurIdx == NumTokens)
+      return CXChildVisit_Break;
+
+    for (; CurIdx < NumTokens; ++CurIdx) {
+      SourceLocation tokLoc = getTokenLoc(CurIdx);
+      if (!SM.isBeforeInTranslationUnit(tokLoc, macroRange.getEnd()))
+        break;
+
+      setMacroArgExpandedLoc(CurIdx, SM.getMacroArgExpandedLocation(tokLoc));
+    }
+
+    if (CurIdx == NumTokens)
+      return CXChildVisit_Break;
+
+    return CXChildVisit_Continue;
+  }
+
+private:
+  SourceLocation getTokenLoc(unsigned tokI) {
+    return SourceLocation::getFromRawEncoding(Tokens[tokI].int_data[1]);
+  }
+
+  void setMacroArgExpandedLoc(unsigned tokI, SourceLocation loc) {
+    // The third field is reserved and currently not used. Use it here
+    // to mark macro arg expanded tokens with their expanded locations.
+    Tokens[tokI].int_data[3] = loc.getRawEncoding();
+  }
+};
+
+} // end anonymous namespace
+
+static CXChildVisitResult
+MarkMacroArgTokensVisitorDelegate(CXCursor cursor, CXCursor parent,
+                                  CXClientData client_data) {
+  return static_cast<MarkMacroArgTokensVisitor*>(client_data)->visit(cursor,
+                                                                     parent);
 }
 
 namespace {
@@ -4944,6 +5018,16 @@ static void clang_annotateTokensImpl(void *UserData) {
       if (Tok.is(tok::eof))
         break;
     }
+  }
+  
+  if (CXXUnit->getPreprocessor().getPreprocessingRecord()) {
+    // Search and mark tokens that are macro argument expansions.
+    MarkMacroArgTokensVisitor Visitor(CXXUnit->getSourceManager(),
+                                      Tokens, NumTokens);
+    CursorVisitor MacroArgMarker(TU,
+                                 MarkMacroArgTokensVisitorDelegate, &Visitor,
+                                 Decl::MaxPCHLevel, true, RegionOfInterest);
+    MacroArgMarker.visitPreprocessedEntitiesInRegion();
   }
   
   // Annotate all of the source locations in the region of interest that map to

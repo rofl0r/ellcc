@@ -2753,6 +2753,7 @@ static bool isTargetShuffle(unsigned Opcode) {
   case X86ISD::VPERMILPSY:
   case X86ISD::VPERMILPD:
   case X86ISD::VPERMILPDY:
+  case X86ISD::VPERM2F128:
     return true;
   }
   return false;
@@ -2795,6 +2796,7 @@ static SDValue getTargetShuffleNode(unsigned Opc, DebugLoc dl, EVT VT,
   case X86ISD::PALIGN:
   case X86ISD::SHUFPD:
   case X86ISD::SHUFPS:
+  case X86ISD::VPERM2F128:
     return DAG.getNode(Opc, dl, VT, V1, V2,
                        DAG.getConstant(TargetMask, MVT::i8));
   }
@@ -3025,12 +3027,34 @@ static bool isUndefOrInRange(int Val, int Low, int Hi) {
   return (Val < 0) || (Val >= Low && Val < Hi);
 }
 
+/// isUndefOrInRange - Return true if every element in Mask, begining
+/// from position Pos and ending in Pos+Size, falls within the specified
+/// range (L, L+Pos]. or is undef.
+static bool isUndefOrInRange(const SmallVectorImpl<int> &Mask,
+                             int Pos, int Size, int Low, int Hi) {
+  for (int i = Pos, e = Pos+Size; i != e; ++i)
+    if (!isUndefOrInRange(Mask[i], Low, Hi))
+      return false;
+  return true;
+}
+
 /// isUndefOrEqual - Val is either less than zero (undef) or equal to the
 /// specified value.
 static bool isUndefOrEqual(int Val, int CmpVal) {
   if (Val < 0 || Val == CmpVal)
     return true;
   return false;
+}
+
+/// isSequentialOrUndefInRange - Return true if every element in Mask, begining
+/// from position Pos and ending in Pos+Size, falls within the specified
+/// sequential range (L, L+Pos]. or is undef.
+static bool isSequentialOrUndefInRange(const SmallVectorImpl<int> &Mask,
+                                       int Pos, int Size, int Low) {
+  for (int i = Pos, e = Pos+Size; i != e; ++i, ++Low)
+    if (!isUndefOrEqual(Mask[i], Low))
+      return false;
+  return true;
 }
 
 /// isPSHUFDMask - Return true if the node specifies a shuffle of elements that
@@ -3442,6 +3466,67 @@ bool X86::isMOVLMask(ShuffleVectorSDNode *N) {
   SmallVector<int, 8> M;
   N->getMask(M);
   return ::isMOVLMask(M, N->getValueType(0));
+}
+
+/// isVPERM2F128Mask - Match 256-bit shuffles where the elements are considered
+/// as permutations between 128-bit chunks or halves. As an example: this
+/// shuffle bellow:
+///   vector_shuffle <4, 5, 6, 7, 12, 13, 14, 15>
+/// The first half comes from the second half of V1 and the second half from the
+/// the second half of V2.
+static bool isVPERM2F128Mask(const SmallVectorImpl<int> &Mask, EVT VT,
+                             const X86Subtarget *Subtarget) {
+  if (!Subtarget->hasAVX() || VT.getSizeInBits() != 256)
+    return false;
+
+  // The shuffle result is divided into half A and half B. In total the two
+  // sources have 4 halves, namely: C, D, E, F. The final values of A and
+  // B must come from C, D, E or F.
+  int HalfSize = VT.getVectorNumElements()/2;
+  bool MatchA = false, MatchB = false;
+
+  // Check if A comes from one of C, D, E, F.
+  for (int Half = 0; Half < 4; ++Half) {
+    if (isSequentialOrUndefInRange(Mask, 0, HalfSize, Half*HalfSize)) {
+      MatchA = true;
+      break;
+    }
+  }
+
+  // Check if B comes from one of C, D, E, F.
+  for (int Half = 0; Half < 4; ++Half) {
+    if (isSequentialOrUndefInRange(Mask, HalfSize, HalfSize, Half*HalfSize)) {
+      MatchB = true;
+      break;
+    }
+  }
+
+  return MatchA && MatchB;
+}
+
+/// getShuffleVPERM2F128Immediate - Return the appropriate immediate to shuffle
+/// the specified VECTOR_MASK mask with VPERM2F128 instructions.
+static unsigned getShuffleVPERM2F128Immediate(SDNode *N) {
+  ShuffleVectorSDNode *SVOp = cast<ShuffleVectorSDNode>(N);
+  EVT VT = SVOp->getValueType(0);
+
+  int HalfSize = VT.getVectorNumElements()/2;
+
+  int FstHalf = 0, SndHalf = 0;
+  for (int i = 0; i < HalfSize; ++i) {
+    if (SVOp->getMaskElt(i) > 0) {
+      FstHalf = SVOp->getMaskElt(i)/HalfSize;
+      break;
+    }
+  }
+  for (int i = HalfSize; i < HalfSize*2; ++i) {
+    if (SVOp->getMaskElt(i) > 0) {
+      SndHalf = SVOp->getMaskElt(i)/HalfSize;
+      break;
+    }
+  }
+
+  return (FstHalf | (SndHalf << 4));
 }
 
 /// isVPERMILPDMask - Return true if the specified VECTOR_SHUFFLE operand
@@ -4120,36 +4205,7 @@ static SDValue getLegalSplat(SelectionDAG &DAG, SDValue V, int EltNo) {
   return DAG.getNode(ISD::BITCAST, dl, VT, V);
 }
 
-/// PromoteVectorToScalarSplat - Since there's no native support for
-/// scalar_to_vector for 256-bit AVX, a 128-bit scalar_to_vector +
-/// INSERT_SUBVECTOR is generated. Recognize this idiom and do the
-/// shuffle before the insertion, this yields less instructions in the end.
-static SDValue PromoteVectorToScalarSplat(ShuffleVectorSDNode *SV,
-                                          SelectionDAG &DAG) {
-  EVT SrcVT = SV->getValueType(0);
-  SDValue V1 = SV->getOperand(0);
-  DebugLoc dl = SV->getDebugLoc();
-  int NumElems = SrcVT.getVectorNumElements();
-
-  assert(SrcVT.is256BitVector() && "unknown howto handle vector type");
-  assert(SV->isSplat() && "shuffle must be a splat");
-
-  int SplatIdx = SV->getSplatIndex();
-  const int Mask[4] = { SplatIdx, SplatIdx, SplatIdx, SplatIdx };
-
-  EVT SVT = EVT::getVectorVT(*DAG.getContext(), SrcVT.getVectorElementType(),
-                             NumElems/2);
-  SDValue SV1 = DAG.getVectorShuffle(SVT, dl, V1.getOperand(1),
-                                     DAG.getUNDEF(SVT), Mask);
-  SDValue InsV = Insert128BitVector(DAG.getUNDEF(SrcVT), SV1,
-                                    DAG.getConstant(0, MVT::i32), DAG, dl);
-
-  return Insert128BitVector(InsV, SV1,
-                       DAG.getConstant(NumElems/2, MVT::i32), DAG, dl);
-}
-
-/// PromoteSplat - Promote a splat of v4i32, v8i16 or v16i8 to v4f32 and
-/// v8i32, v16i16 or v32i8 to v8f32.
+/// PromoteSplat - Splat is promoted to target supported vector shuffles.
 static SDValue PromoteSplat(ShuffleVectorSDNode *SV, SelectionDAG &DAG) {
   EVT SrcVT = SV->getValueType(0);
   SDValue V1 = SV->getOperand(0);
@@ -4168,7 +4224,11 @@ static SDValue PromoteSplat(ShuffleVectorSDNode *SV, SelectionDAG &DAG) {
       EltNo -= NumElems/2;
   }
 
-  // Make this 128-bit vector duplicate i8 and i16 elements
+  // All i16 and i8 vector types can't be used directly by a generic shuffle
+  // instruction because the target has no such instruction. Generate shuffles
+  // which repeat i16 and i8 several times until they fit in i32, and then can
+  // be manipulated by target suported shuffles. After the insertion of the
+  // necessary shuffles, the result is bitcasted back to v4f32 or v8f32.
   EVT EltVT = SrcVT.getVectorElementType();
   if (NumElems > 4 && (EltVT == MVT::i8 || EltVT == MVT::i16))
     V1 = PromoteSplati8i16(V1, DAG, EltNo);
@@ -4316,6 +4376,11 @@ static SDValue getShuffleScalarElt(SDNode *N, int Index, SelectionDAG &DAG,
       ImmN = N->getOperand(N->getNumOperands()-1);
       DecodeVPERMILPDMask(4, cast<ConstantSDNode>(ImmN)->getZExtValue(),
                         ShuffleMask);
+      break;
+    case X86ISD::VPERM2F128:
+      ImmN = N->getOperand(N->getNumOperands()-1);
+      DecodeVPERM2F128Mask(VT, cast<ConstantSDNode>(ImmN)->getZExtValue(),
+                           ShuffleMask);
       break;
     default:
       assert("not implemented for target shuffle node");
@@ -5587,10 +5652,95 @@ static SDValue getVZextMovL(EVT VT, EVT OpVT,
                                              OpVT, SrcOp)));
 }
 
+/// areShuffleHalvesWithinDisjointLanes - Check whether each half of a vector
+/// shuffle node referes to only one lane in the sources.
+static bool areShuffleHalvesWithinDisjointLanes(ShuffleVectorSDNode *SVOp) {
+  EVT VT = SVOp->getValueType(0);
+  int NumElems = VT.getVectorNumElements();
+  int HalfSize = NumElems/2;
+  SmallVector<int, 16> M;
+  SVOp->getMask(M);
+  bool MatchA = false, MatchB = false;
+
+  for (int l = 0; l < NumElems*2; l += HalfSize) {
+    if (isUndefOrInRange(M, 0, HalfSize, l, l+HalfSize)) {
+      MatchA = true;
+      break;
+    }
+  }
+
+  for (int l = 0; l < NumElems*2; l += HalfSize) {
+    if (isUndefOrInRange(M, HalfSize, HalfSize, l, l+HalfSize)) {
+      MatchB = true;
+      break;
+    }
+  }
+
+  return MatchA && MatchB;
+}
+
 /// LowerVECTOR_SHUFFLE_256 - Handle all 256-bit wide vectors shuffles
 /// which could not be matched by any known target speficic shuffle
 static SDValue
 LowerVECTOR_SHUFFLE_256(ShuffleVectorSDNode *SVOp, SelectionDAG &DAG) {
+  if (areShuffleHalvesWithinDisjointLanes(SVOp)) {
+    // If each half of a vector shuffle node referes to only one lane in the
+    // source vectors, extract each used 128-bit lane and shuffle them using
+    // 128-bit shuffles. Then, concatenate the results. Otherwise leave
+    // the work to the legalizer.
+    DebugLoc dl = SVOp->getDebugLoc();
+    EVT VT = SVOp->getValueType(0);
+    int NumElems = VT.getVectorNumElements();
+    int HalfSize = NumElems/2;
+
+    // Extract the reference for each half
+    int FstVecExtractIdx = 0, SndVecExtractIdx = 0;
+    int FstVecOpNum = 0, SndVecOpNum = 0;
+    for (int i = 0; i < HalfSize; ++i) {
+      int Elt = SVOp->getMaskElt(i);
+      if (SVOp->getMaskElt(i) < 0)
+        continue;
+      FstVecOpNum = Elt/NumElems;
+      FstVecExtractIdx = Elt % NumElems < HalfSize ? 0 : HalfSize;
+      break;
+    }
+    for (int i = HalfSize; i < NumElems; ++i) {
+      int Elt = SVOp->getMaskElt(i);
+      if (SVOp->getMaskElt(i) < 0)
+        continue;
+      SndVecOpNum = Elt/NumElems;
+      SndVecExtractIdx = Elt % NumElems < HalfSize ? 0 : HalfSize;
+      break;
+    }
+
+    // Extract the subvectors
+    SDValue V1 = Extract128BitVector(SVOp->getOperand(FstVecOpNum),
+                      DAG.getConstant(FstVecExtractIdx, MVT::i32), DAG, dl);
+    SDValue V2 = Extract128BitVector(SVOp->getOperand(SndVecOpNum),
+                      DAG.getConstant(SndVecExtractIdx, MVT::i32), DAG, dl);
+
+    // Generate 128-bit shuffles
+    SmallVector<int, 16> MaskV1, MaskV2;
+    for (int i = 0; i < HalfSize; ++i) {
+      int Elt = SVOp->getMaskElt(i);
+      MaskV1.push_back(Elt < 0 ? Elt : Elt % HalfSize);
+    }
+    for (int i = HalfSize; i < NumElems; ++i) {
+      int Elt = SVOp->getMaskElt(i);
+      MaskV2.push_back(Elt < 0 ? Elt : Elt % HalfSize);
+    }
+
+    EVT NVT = V1.getValueType();
+    V1 = DAG.getVectorShuffle(NVT, dl, V1, DAG.getUNDEF(NVT), &MaskV1[0]);
+    V2 = DAG.getVectorShuffle(NVT, dl, V2, DAG.getUNDEF(NVT), &MaskV2[0]);
+
+    // Concatenate the result back
+    SDValue V = Insert128BitVector(DAG.getNode(ISD::UNDEF, dl, VT), V1,
+                                   DAG.getConstant(0, MVT::i32), DAG, dl);
+    return Insert128BitVector(V, V2, DAG.getConstant(NumElems/2, MVT::i32),
+                              DAG, dl);
+  }
+
   return SDValue();
 }
 
@@ -6001,6 +6151,48 @@ static inline unsigned getVPERMILOpcode(EVT VT) {
   return 0;
 }
 
+/// isVectorBroadcast - Check if the node chain is suitable to be xformed to
+/// a vbroadcast node. The nodes are suitable whenever we can fold a load coming
+/// from a 32 or 64 bit scalar. Update Op to the desired load to be folded.
+static bool isVectorBroadcast(SDValue &Op) {
+  EVT VT = Op.getValueType();
+  bool Is256 = VT.getSizeInBits() == 256;
+
+  assert((VT.getSizeInBits() == 128 || Is256) &&
+         "Unsupported type for vbroadcast node");
+
+  SDValue V = Op;
+  if (V.hasOneUse() && V.getOpcode() == ISD::BITCAST)
+    V = V.getOperand(0);
+
+  if (Is256 && !(V.hasOneUse() &&
+                 V.getOpcode() == ISD::INSERT_SUBVECTOR &&
+                 V.getOperand(0).getOpcode() == ISD::UNDEF))
+    return false;
+
+  if (Is256)
+    V = V.getOperand(1);
+  if (V.hasOneUse() && V.getOpcode() != ISD::SCALAR_TO_VECTOR)
+    return false;
+
+  // Check the source scalar_to_vector type. 256-bit broadcasts are
+  // supported for 32/64-bit sizes, while 128-bit ones are only supported
+  // for 32-bit scalars.
+  unsigned ScalarSize = V.getOperand(0).getValueType().getSizeInBits();
+  if (ScalarSize != 32 && ScalarSize != 64)
+    return false;
+  if (!Is256 && ScalarSize == 64)
+    return false;
+
+  V = V.getOperand(0);
+  if (!MayFoldLoad(V))
+    return false;
+
+  // Return the load node
+  Op = V;
+  return true;
+}
+
 static
 SDValue NormalizeVectorShuffle(SDValue Op, SelectionDAG &DAG,
                                const TargetLowering &TLI,
@@ -6024,25 +6216,15 @@ SDValue NormalizeVectorShuffle(SDValue Op, SelectionDAG &DAG,
     if (NumElem <= 4 && CanXFormVExtractWithShuffleIntoLoad(Op, DAG, TLI))
       return Op;
 
-    // Since there's no native support for scalar_to_vector for 256-bit AVX, a
-    // 128-bit scalar_to_vector + INSERT_SUBVECTOR is generated. Recognize this
-    // idiom and do the shuffle before the insertion, this yields less
-    // instructions in the end.
-    if (VT.is256BitVector() &&
-        V1.getOpcode() == ISD::INSERT_SUBVECTOR &&
-        V1.getOperand(0).getOpcode() == ISD::UNDEF &&
-        V1.getOperand(1).getOpcode() == ISD::SCALAR_TO_VECTOR)
-      return PromoteVectorToScalarSplat(SVOp, DAG);
+    // Use vbroadcast whenever the splat comes from a foldable load
+    if (Subtarget->hasAVX() && isVectorBroadcast(V1))
+      return DAG.getNode(X86ISD::VBROADCAST, dl, VT, V1);
 
     // Handle splats by matching through known shuffle masks
     if (VT.is128BitVector() && NumElem <= 4)
       return SDValue();
 
-    // All i16 and i8 vector types can't be used directly by a generic shuffle
-    // instruction because the target has no such instruction. Generate shuffles
-    // which repeat i16 and i8 several times until they fit in i32, and then can
-    // be manipulated by target suported shuffles. After the insertion of the
-    // necessary shuffles, the result is bitcasted back to v4f32 or v8f32.
+    // All remaning splats are promoted to target supported vector shuffles.
     return PromoteSplat(SVOp, DAG);
   }
 
@@ -6334,6 +6516,11 @@ X86TargetLowering::LowerVECTOR_SHUFFLE(SDValue Op, SelectionDAG &DAG) const {
   if (isVPERMILPDMask(M, VT, Subtarget))
     return getTargetShuffleNode(getVPERMILOpcode(VT), dl, VT, V1,
                                 getShuffleVPERMILPDImmediate(SVOp), DAG);
+
+  // Handle VPERM2F128 permutations
+  if (isVPERM2F128Mask(M, VT, Subtarget))
+    return getTargetShuffleNode(X86ISD::VPERM2F128, dl, VT, V1, V2,
+                                getShuffleVPERM2F128Immediate(SVOp), DAG);
 
   //===--------------------------------------------------------------------===//
   // Since no target specific shuffle was selected for this generic one,
@@ -9262,17 +9449,26 @@ SDValue X86TargetLowering::LowerShift(SDValue Op, SelectionDAG &DAG) const {
                                      DAG, dl);
 
     // Recreate the shift amount vectors
-    SmallVector<SDValue, 4> Amt1Csts;
-    SmallVector<SDValue, 4> Amt2Csts;
-    for (int i = 0; i < NumElems/2; ++i)
-      Amt1Csts.push_back(Amt->getOperand(i));
-    for (int i = NumElems/2; i < NumElems; ++i)
-      Amt2Csts.push_back(Amt->getOperand(i));
+    SDValue Amt1, Amt2;
+    if (Amt.getOpcode() == ISD::BUILD_VECTOR) {
+      // Constant shift amount
+      SmallVector<SDValue, 4> Amt1Csts;
+      SmallVector<SDValue, 4> Amt2Csts;
+      for (int i = 0; i < NumElems/2; ++i)
+        Amt1Csts.push_back(Amt->getOperand(i));
+      for (int i = NumElems/2; i < NumElems; ++i)
+        Amt2Csts.push_back(Amt->getOperand(i));
 
-    SDValue Amt1 = DAG.getNode(ISD::BUILD_VECTOR, dl, NewVT,
-                               &Amt1Csts[0], NumElems/2);
-    SDValue Amt2 = DAG.getNode(ISD::BUILD_VECTOR, dl, NewVT,
-                               &Amt2Csts[0], NumElems/2);
+      Amt1 = DAG.getNode(ISD::BUILD_VECTOR, dl, NewVT,
+                                 &Amt1Csts[0], NumElems/2);
+      Amt2 = DAG.getNode(ISD::BUILD_VECTOR, dl, NewVT,
+                                 &Amt2Csts[0], NumElems/2);
+    } else {
+      // Variable shift amount
+      Amt1 = Extract128BitVector(Amt, DAG.getConstant(0, MVT::i32), DAG, dl);
+      Amt2 = Extract128BitVector(Amt, DAG.getConstant(NumElems/2, MVT::i32),
+                                 DAG, dl);
+    }
 
     // Issue new vector shifts for the smaller types
     V1 = DAG.getNode(Op.getOpcode(), dl, NewVT, V1, Amt1);
@@ -10048,10 +10244,12 @@ const char *X86TargetLowering::getTargetNodeName(unsigned Opcode) const {
   case X86ISD::PUNPCKHWD:          return "X86ISD::PUNPCKHWD";
   case X86ISD::PUNPCKHDQ:          return "X86ISD::PUNPCKHDQ";
   case X86ISD::PUNPCKHQDQ:         return "X86ISD::PUNPCKHQDQ";
+  case X86ISD::VBROADCAST:         return "X86ISD::VBROADCAST";
   case X86ISD::VPERMILPS:          return "X86ISD::VPERMILPS";
   case X86ISD::VPERMILPSY:         return "X86ISD::VPERMILPSY";
   case X86ISD::VPERMILPD:          return "X86ISD::VPERMILPD";
   case X86ISD::VPERMILPDY:         return "X86ISD::VPERMILPDY";
+  case X86ISD::VPERM2F128:         return "X86ISD::VPERM2F128";
   case X86ISD::VASTART_SAVE_XMM_REGS: return "X86ISD::VASTART_SAVE_XMM_REGS";
   case X86ISD::VAARG_64:           return "X86ISD::VAARG_64";
   case X86ISD::WIN_ALLOCA:         return "X86ISD::WIN_ALLOCA";
@@ -11548,6 +11746,38 @@ bool X86TargetLowering::isGAPlusOffset(SDNode *N,
   return TargetLowering::isGAPlusOffset(N, GA, Offset);
 }
 
+/// isShuffleHigh128VectorInsertLow - Checks whether the shuffle node is the
+/// same as extracting the high 128-bit part of 256-bit vector and then
+/// inserting the result into the low part of a new 256-bit vector
+static bool isShuffleHigh128VectorInsertLow(ShuffleVectorSDNode *SVOp) {
+  EVT VT = SVOp->getValueType(0);
+  int NumElems = VT.getVectorNumElements();
+
+  // vector_shuffle <4, 5, 6, 7, u, u, u, u> or <2, 3, u, u>
+  for (int i = 0, j = NumElems/2; i < NumElems/2; ++i, ++j)
+    if (!isUndefOrEqual(SVOp->getMaskElt(i), j) ||
+        SVOp->getMaskElt(j) >= 0)
+      return false;
+
+  return true;
+}
+
+/// isShuffleLow128VectorInsertHigh - Checks whether the shuffle node is the
+/// same as extracting the low 128-bit part of 256-bit vector and then
+/// inserting the result into the high part of a new 256-bit vector
+static bool isShuffleLow128VectorInsertHigh(ShuffleVectorSDNode *SVOp) {
+  EVT VT = SVOp->getValueType(0);
+  int NumElems = VT.getVectorNumElements();
+
+  // vector_shuffle <u, u, u, u, 0, 1, 2, 3> or <u, u, 0, 1>
+  for (int i = NumElems/2, j = 0; i < NumElems; ++i, ++j)
+    if (!isUndefOrEqual(SVOp->getMaskElt(i), j) ||
+        SVOp->getMaskElt(j) >= 0)
+      return false;
+
+  return true;
+}
+
 /// PerformShuffleCombine256 - Performs shuffle combines for 256-bit vectors.
 static SDValue PerformShuffleCombine256(SDNode *N, SelectionDAG &DAG,
                                         TargetLowering::DAGCombinerInfo &DCI) {
@@ -11556,6 +11786,7 @@ static SDValue PerformShuffleCombine256(SDNode *N, SelectionDAG &DAG,
   SDValue V1 = SVOp->getOperand(0);
   SDValue V2 = SVOp->getOperand(1);
   EVT VT = SVOp->getValueType(0);
+  int NumElems = VT.getVectorNumElements();
 
   if (V1.getOpcode() == ISD::CONCAT_VECTORS &&
       V2.getOpcode() == ISD::CONCAT_VECTORS) {
@@ -11580,7 +11811,6 @@ static SDValue PerformShuffleCombine256(SDNode *N, SelectionDAG &DAG,
     // To match the shuffle mask, the first half of the mask should
     // be exactly the first vector, and all the rest a splat with the
     // first element of the second one.
-    int NumElems = VT.getVectorNumElements();
     for (int i = 0; i < NumElems/2; ++i)
       if (!isUndefOrEqual(SVOp->getMaskElt(i), i) ||
           !isUndefOrEqual(SVOp->getMaskElt(i+NumElems/2), NumElems))
@@ -11594,12 +11824,34 @@ static SDValue PerformShuffleCombine256(SDNode *N, SelectionDAG &DAG,
     return DCI.CombineTo(N, InsV);
   }
 
+  //===--------------------------------------------------------------------===//
+  // Combine some shuffles into subvector extracts and inserts:
+  //
+
+  // vector_shuffle <4, 5, 6, 7, u, u, u, u> or <2, 3, u, u>
+  if (isShuffleHigh128VectorInsertLow(SVOp)) {
+    SDValue V = Extract128BitVector(V1, DAG.getConstant(NumElems/2, MVT::i32),
+                                    DAG, dl);
+    SDValue InsV = Insert128BitVector(DAG.getNode(ISD::UNDEF, dl, VT),
+                                      V, DAG.getConstant(0, MVT::i32), DAG, dl);
+    return DCI.CombineTo(N, InsV);
+  }
+
+  // vector_shuffle <u, u, u, u, 0, 1, 2, 3> or <u, u, 0, 1>
+  if (isShuffleLow128VectorInsertHigh(SVOp)) {
+    SDValue V = Extract128BitVector(V1, DAG.getConstant(0, MVT::i32), DAG, dl);
+    SDValue InsV = Insert128BitVector(DAG.getNode(ISD::UNDEF, dl, VT),
+                             V, DAG.getConstant(NumElems/2, MVT::i32), DAG, dl);
+    return DCI.CombineTo(N, InsV);
+  }
+
   return SDValue();
 }
 
 /// PerformShuffleCombine - Performs several different shuffle combines.
 static SDValue PerformShuffleCombine(SDNode *N, SelectionDAG &DAG,
-                                     TargetLowering::DAGCombinerInfo &DCI) {
+                                     TargetLowering::DAGCombinerInfo &DCI,
+                                     const X86Subtarget *Subtarget) {
   DebugLoc dl = N->getDebugLoc();
   EVT VT = N->getValueType(0);
 
@@ -11608,8 +11860,9 @@ static SDValue PerformShuffleCombine(SDNode *N, SelectionDAG &DAG,
   if (!DCI.isBeforeLegalize() && !TLI.isTypeLegal(VT.getVectorElementType()))
     return SDValue();
 
-  // Only handle pure VECTOR_SHUFFLE nodes.
-  if (VT.getSizeInBits() == 256 && N->getOpcode() == ISD::VECTOR_SHUFFLE)
+  // Combine 256-bit vector shuffles. This is only profitable when in AVX mode
+  if (Subtarget->hasAVX() && VT.getSizeInBits() == 256 &&
+      N->getOpcode() == ISD::VECTOR_SHUFFLE)
     return PerformShuffleCombine256(N, DAG, DCI);
 
   // Only handle 128 wide vector from here on.
@@ -13081,7 +13334,8 @@ SDValue X86TargetLowering::PerformDAGCombine(SDNode *N,
   case X86ISD::VPERMILPSY:
   case X86ISD::VPERMILPD:
   case X86ISD::VPERMILPDY:
-  case ISD::VECTOR_SHUFFLE: return PerformShuffleCombine(N, DAG, DCI);
+  case X86ISD::VPERM2F128:
+  case ISD::VECTOR_SHUFFLE: return PerformShuffleCombine(N, DAG, DCI,Subtarget);
   }
 
   return SDValue();

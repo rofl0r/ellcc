@@ -25,7 +25,6 @@
 #include "clang/Driver/Options.h"
 #include "clang/Driver/Tool.h"
 #include "clang/Driver/ToolChain.h"
-#include "clang/Driver/Types.h"
 
 #include "llvm/Config/config.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -119,13 +118,13 @@ phases::ID Driver::getFinalPhase(const DerivedArgList &DAL, Arg **FinalPhaseArg)
 const {
   Arg *PhaseArg = 0;
   phases::ID FinalPhase;
-  
+
   // -{E,M,MM} only run the preprocessor.
   if (CCCIsCPP ||
       (PhaseArg = DAL.getLastArg(options::OPT_E)) ||
       (PhaseArg = DAL.getLastArg(options::OPT_M, options::OPT_MM))) {
     FinalPhase = phases::Preprocess;
-    
+
     // -{fsyntax-only,-analyze,emit-ast,S} only run up to the compiler.
   } else if ((PhaseArg = DAL.getLastArg(options::OPT_fsyntax_only)) ||
              (PhaseArg = DAL.getLastArg(options::OPT_rewrite_objc)) ||
@@ -227,14 +226,14 @@ DerivedArgList *Driver::TranslateInputArgs(const InputArgList &Args) const {
   }
 #endif
 
-  // If -fapple-kext has been specified, add -kext to linker command if not 
+  // If -fapple-kext has been specified, add -kext to linker command if not
   // already done so.  Also check to make sure we're actually linking.
   if (Args.hasArg(options::OPT_fapple_kext) && getFinalPhase(*DAL) ==
       phases::Link) {
     bool add_kext = true;
     std::vector<std::string> LinkerArgs =
       Args.getAllArgValues(options::OPT_Xlinker);
-    for (std::vector<std::string>::iterator it = LinkerArgs.begin(), 
+    for (std::vector<std::string>::iterator it = LinkerArgs.begin(),
            ie = LinkerArgs.end(); it != ie; it++)
       if (*it == "-kext") {
         add_kext = false;
@@ -250,7 +249,7 @@ DerivedArgList *Driver::TranslateInputArgs(const InputArgList &Args) const {
 Compilation *Driver::BuildCompilation(ArrayRef<const char *> ArgList) {
   llvm::PrettyStackTraceString CrashInfo("Compilation construction");
 
-  // FIXME: Handle environment options which effect driver behavior, somewhere
+  // FIXME: Handle environment options which affect driver behavior, somewhere
   // (client?). GCC_EXEC_PREFIX, COMPILER_PATH, LIBRARY_PATH, LPATH,
   // CC_PRINT_OPTIONS.
 
@@ -342,12 +341,17 @@ Compilation *Driver::BuildCompilation(ArrayRef<const char *> ArgList) {
   if (!HandleImmediateArgs(*C))
     return C;
 
+  // Construct the list of inputs.
+  InputList Inputs;
+  BuildInputs(C->getDefaultToolChain(), C->getArgs(), Inputs);
+
   // Construct the list of abstract actions to perform for this compilation.
   if (Host->useDriverDriver())
     BuildUniversalActions(C->getDefaultToolChain(), C->getArgs(),
-                          C->getActions());
+                          Inputs, C->getActions());
   else
-    BuildActions(C->getDefaultToolChain(), C->getArgs(), C->getActions());
+    BuildActions(C->getDefaultToolChain(), C->getArgs(), Inputs,
+                 C->getActions());
 
   if (CCCPrintActions) {
     PrintActions(*C);
@@ -359,8 +363,8 @@ Compilation *Driver::BuildCompilation(ArrayRef<const char *> ArgList) {
   return C;
 }
 
-// When clang crashes, produce diagnostic information including the fully 
-// preprocessed source file(s).  Request that the developer attach the 
+// When clang crashes, produce diagnostic information including the fully
+// preprocessed source file(s).  Request that the developer attach the
 // diagnostic information to a bug report.
 void Driver::generateCompilationDiagnostics(Compilation &C,
                                             const Command *FailingCommand) {
@@ -374,14 +378,46 @@ void Driver::generateCompilationDiagnostics(Compilation &C,
 
   // Clear stale state and suppress tool output.
   C.initCompilationForDiagnostics();
+  Diags.Reset();
+
+  // Construct the list of inputs.
+  InputList Inputs;
+  BuildInputs(C.getDefaultToolChain(), C.getArgs(), Inputs);
+
+  for (InputList::iterator it = Inputs.begin(), ie = Inputs.end(); it != ie;) {
+    bool IgnoreInput = false;
+
+    // Ignore input from stdin or any inputs that cannot be preprocessed.
+    if (!strcmp(it->second->getValue(C.getArgs()), "-")) {
+      Diag(clang::diag::note_drv_command_failed_diag_msg)
+        << "Error generating preprocessed source(s) - ignoring input from stdin"
+        ".";
+      IgnoreInput = true;
+    } else if (types::getPreprocessedType(it->first) == types::TY_INVALID) {
+      IgnoreInput = true;
+    }
+
+    if (IgnoreInput) {
+      it = Inputs.erase(it);
+      ie = Inputs.end();
+    } else {
+      ++it;
+    }
+  }
+
+  if (Inputs.empty()) {
+    Diag(clang::diag::note_drv_command_failed_diag_msg)
+      << "Error generating preprocessed source(s) - no preprocessable inputs.";
+    return;
+  }
 
   // Construct the list of abstract actions to perform for this compilation.
-  Diags.Reset();
   if (Host->useDriverDriver())
     BuildUniversalActions(C.getDefaultToolChain(), C.getArgs(),
-                          C.getActions());
+                          Inputs, C.getActions());
   else
-    BuildActions(C.getDefaultToolChain(), C.getArgs(), C.getActions());
+    BuildActions(C.getDefaultToolChain(), C.getArgs(), Inputs,
+                 C.getActions());
 
   BuildJobs(C);
 
@@ -401,7 +437,7 @@ void Driver::generateCompilationDiagnostics(Compilation &C,
     Diag(clang::diag::note_drv_command_failed_diag_msg)
       << "Preprocessed source(s) are located at:";
     ArgStringList Files = C.getTempFiles();
-    for (ArgStringList::const_iterator it = Files.begin(), ie = Files.end(); 
+    for (ArgStringList::const_iterator it = Files.begin(), ie = Files.end();
          it != ie; ++it)
       Diag(clang::diag::note_drv_command_failed_diag_msg) << *it;
   } else {
@@ -695,6 +731,7 @@ static bool ContainsCompileOrAssembleAction(const Action *A) {
 
 void Driver::BuildUniversalActions(const ToolChain &TC,
                                    const DerivedArgList &Args,
+                                   const InputList &BAInputs,
                                    ActionList &Actions) const {
   llvm::PrettyStackTraceString CrashInfo("Building universal build actions");
   // Collect the list of architectures. Duplicates are allowed, but should only
@@ -739,7 +776,7 @@ void Driver::BuildUniversalActions(const ToolChain &TC,
   }
 
   ActionList SingleActions;
-  BuildActions(TC, Args, SingleActions);
+  BuildActions(TC, Args, BAInputs, SingleActions);
 
   // Add in arch bindings for every top level action, as well as lipo and
   // dsymutil steps if needed.
@@ -789,18 +826,15 @@ void Driver::BuildUniversalActions(const ToolChain &TC,
   }
 }
 
-void Driver::BuildActions(const ToolChain &TC, const DerivedArgList &Args,
-                          ActionList &Actions) const {
-  llvm::PrettyStackTraceString CrashInfo("Building compilation actions");
-  // Start by constructing the list of inputs and their types.
-
+// Construct a the list of inputs and their types.
+void Driver::BuildInputs(const ToolChain &TC, const DerivedArgList &Args,
+                         InputList &Inputs) const {
   // Track the current user specified (-x) input. We also explicitly track the
   // argument used to set the type; we only want to claim the type when we
   // actually use it, so we warn about unused -x arguments.
   types::ID InputType = types::TY_Nothing;
   Arg *InputTypeArg = 0;
 
-  SmallVector<std::pair<types::ID, const Arg*>, 16> Inputs;
   for (ArgList::const_iterator it = Args.begin(), ie = Args.end();
        it != ie; ++it) {
     Arg *A = *it;
@@ -904,7 +938,6 @@ void Driver::BuildActions(const ToolChain &TC, const DerivedArgList &Args,
       }
     }
   }
-
   if (CCCIsCPP && Inputs.empty()) {
     // If called as standalone preprocessor, stdin is processed
     // if no other input is present.
@@ -913,6 +946,11 @@ void Driver::BuildActions(const ToolChain &TC, const DerivedArgList &Args,
     A->claim();
     Inputs.push_back(std::make_pair(types::TY_C, A));
   }
+}
+
+void Driver::BuildActions(const ToolChain &TC, const DerivedArgList &Args,
+                          const InputList &Inputs, ActionList &Actions) const {
+  llvm::PrettyStackTraceString CrashInfo("Building compilation actions");
 
   if (!SuppressMissingInputWarning && Inputs.empty()) {
     Diag(clang::diag::err_drv_no_input_files);
@@ -1337,7 +1375,7 @@ const char *Driver::GetNamedOutputPath(Compilation &C,
     NamedOutput = C.getArgs().MakeArgString(Suffixed.c_str());
   }
 
-  // If we're saving temps and the temp filename conflicts with the input 
+  // If we're saving temps and the temp filename conflicts with the input
   // filename, then avoid overwriting input file.
   if (!AtTopLevel && C.getArgs().hasArg(options::OPT_save_temps) &&
     NamedOutput == BaseName) {

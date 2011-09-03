@@ -123,13 +123,7 @@ public:
   bool hasNoDeclarations() const {
     return declToIndex.size() == 0;
   }
-  
-  bool hasEntry(const VarDecl *vd) const {
-    return declToIndex.getValueIndex(vd).hasValue();
-  }
-  
-  bool hasValues(const CFGBlock *block);
-  
+
   void resetScratch();
   ValueVector &getScratch() { return scratch; }
   
@@ -207,11 +201,6 @@ ValueVector &CFGBlockValues::getValueVector(const CFGBlock *block,
 
   assert(vals[idx].second == 0);
   return lazyCreate(vals[idx].first);
-}
-
-bool CFGBlockValues::hasValues(const CFGBlock *block) {
-  unsigned idx = block->getBlockID();
-  return vals[idx].second != 0;  
 }
 
 BVPair &CFGBlockValues::getValueVectors(const clang::CFGBlock *block,
@@ -366,7 +355,6 @@ public:
       flagBlockUses(flagBlockUses), lastDR(0), lastLoad(0),
       skipProcessUses(false) {}
   
-  const CFG &getCFG() { return cfg; }
   void reportUninit(const DeclRefExpr *ex, const VarDecl *vd,
                     bool isAlwaysUninit);
 
@@ -408,8 +396,8 @@ void TransferFunctions::reportUninit(const DeclRefExpr *ex,
   if (handler) handler->handleUseOfUninitVariable(ex, vd, isAlwaysUnit);
 }
 
-FindVarResult TransferFunctions::findBlockVarDecl(Expr* ex) {
-  if (DeclRefExpr* dr = dyn_cast<DeclRefExpr>(ex->IgnoreParenCasts()))
+FindVarResult TransferFunctions::findBlockVarDecl(Expr *ex) {
+  if (DeclRefExpr *dr = dyn_cast<DeclRefExpr>(ex->IgnoreParenCasts()))
     if (VarDecl *vd = dyn_cast<VarDecl>(dr->getDecl()))
       if (isTrackedVar(vd))
         return FindVarResult(vd, dr);  
@@ -419,14 +407,13 @@ FindVarResult TransferFunctions::findBlockVarDecl(Expr* ex) {
 void TransferFunctions::VisitObjCForCollectionStmt(ObjCForCollectionStmt *fs) {
   // This represents an initialization of the 'element' value.
   Stmt *element = fs->getElement();
-  const VarDecl* vd = 0;
+  const VarDecl *vd = 0;
   
-  if (DeclStmt* ds = dyn_cast<DeclStmt>(element)) {
+  if (DeclStmt *ds = dyn_cast<DeclStmt>(element)) {
     vd = cast<VarDecl>(ds->getSingleDecl());
     if (!isTrackedVar(vd))
       vd = 0;
-  }
-  else {
+  } else {
     // Initialize the value of the reference variable.
     const FindVarResult &res = findBlockVarDecl(cast<Expr>(element));
     vd = res.getDecl();
@@ -509,7 +496,7 @@ void TransferFunctions::VisitDeclStmt(DeclStmt *ds) {
 void TransferFunctions::VisitBinaryOperator(clang::BinaryOperator *bo) {
   if (bo->isAssignmentOp()) {
     const FindVarResult &res = findBlockVarDecl(bo->getLHS());
-    if (const VarDecl* vd = res.getDecl()) {
+    if (const VarDecl *vd = res.getDecl()) {
       ValueVector::reference val = vals[vd];
       if (isUninitialized(val)) {
         if (bo->getOpcode() != BO_Assign)
@@ -642,8 +629,7 @@ static bool runOnBlock(const CFGBlock *block, const CFG &cfg,
       vals.mergeIntoScratch(*(vB.second ? vB.second : vB.first), false);
       valsAB.first = vA.first;
       valsAB.second = &vals.getScratch();
-    }
-    else {
+    } else {
       // Merge the 'T' bits from the first and second.
       assert(b->getOpcode() == BO_LOr);
       vals.mergeIntoScratch(*vA.first, true);

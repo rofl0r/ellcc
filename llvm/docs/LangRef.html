@@ -1576,11 +1576,11 @@ as if it writes to the relevant surrounding bytes.
 </div>
 
 <!-- ======================================================================= -->
-<div class="doc_subsection">
+<h3>
       <a name="ordering">Atomic Memory Ordering Constraints</a>
-</div>
+</h3>
 
-<div class="doc_text">
+<div>
 
 <p>Atomic instructions (<a href="#i_cmpxchg"><code>cmpxchg</code></a>,
 <a href="#i_atomicrmw"><code>atomicrmw</code></a>,
@@ -2031,20 +2031,22 @@ in signal handlers).</p>
   
 <p>Structures may optionally be "packed" structures, which indicate that the 
   alignment of the struct is one byte, and that there is no padding between
-  the elements.  In non-packed structs, padding between field types is defined
-  by the target data string to match the underlying processor.</p>
+  the elements.  In non-packed structs, padding between field types is inserted
+  as defined by the TargetData string in the module, which is required to match
+  what the underlying processor expects.</p>
 
-<p>Structures can either be "anonymous" or "named".  An anonymous structure is
-  defined inline with other types (e.g. <tt>{i32, i32}*</tt>) and a named types
-  are always defined at the top level with a name.  Anonmyous types are uniqued
-  by their contents and can never be recursive since there is no way to write
-  one.  Named types can be recursive.
+<p>Structures can either be "literal" or "identified".  A literal structure is
+  defined inline with other types (e.g. <tt>{i32, i32}*</tt>) whereas identified
+  types are always defined at the top level with a name.  Literal types are
+  uniqued by their contents and can never be recursive or opaque since there is
+  no way to write one.  Identified types can be recursive, can be opaqued, and are
+  never uniqued.
 </p>
   
 <h5>Syntax:</h5>
 <pre>
-  %T1 = type { &lt;type list&gt; }     <i>; Named normal struct type</i>
-  %T2 = type &lt;{ &lt;type list&gt; }&gt;   <i>; Named packed struct type</i>
+  %T1 = type { &lt;type list&gt; }     <i>; Identified normal struct type</i>
+  %T2 = type &lt;{ &lt;type list&gt; }&gt;   <i>; Identified packed struct type</i>
 </pre>
   
 <h5>Examples:</h5>
@@ -4570,8 +4572,8 @@ that the invoke/unwind semantics are likely to change in future versions.</p>
 
 <h5>Syntax:</h5>
 <pre>
-  &lt;result&gt; = [volatile] load &lt;ty&gt;* &lt;pointer&gt;[, align &lt;alignment&gt;][, !nontemporal !&lt;index&gt;]
-  &lt;result&gt; = atomic [volatile] load &lt;ty&gt;* &lt;pointer&gt; [singlethread] &lt;ordering&gt;, align &lt;alignment&gt;
+  &lt;result&gt; = load [volatile] &lt;ty&gt;* &lt;pointer&gt;[, align &lt;alignment&gt;][, !nontemporal !&lt;index&gt;]
+  &lt;result&gt; = load atomic [volatile] &lt;ty&gt;* &lt;pointer&gt; [singlethread] &lt;ordering&gt;, align &lt;alignment&gt;
   !&lt;index&gt; = !{ i32 1 }
 </pre>
 
@@ -4642,8 +4644,8 @@ that the invoke/unwind semantics are likely to change in future versions.</p>
 
 <h5>Syntax:</h5>
 <pre>
-  [volatile] store &lt;ty&gt; &lt;value&gt;, &lt;ty&gt;* &lt;pointer&gt;[, align &lt;alignment&gt;][, !nontemporal !&lt;index&gt;]                   <i>; yields {void}</i>
-  atomic [volatile] store &lt;ty&gt; &lt;value&gt;, &lt;ty&gt;* &lt;pointer&gt; [singlethread] &lt;ordering&gt;, align &lt;alignment&gt;             <i>; yields {void}</i>
+  store [volatile] &lt;ty&gt; &lt;value&gt;, &lt;ty&gt;* &lt;pointer&gt;[, align &lt;alignment&gt;][, !nontemporal !&lt;index&gt;]                   <i>; yields {void}</i>
+  store atomic [volatile] &lt;ty&gt; &lt;value&gt;, &lt;ty&gt;* &lt;pointer&gt; [singlethread] &lt;ordering&gt;, align &lt;alignment&gt;             <i>; yields {void}</i>
 </pre>
 
 <h5>Overview:</h5>
@@ -4709,10 +4711,11 @@ that the invoke/unwind semantics are likely to change in future versions.</p>
 </div>
 
 <!-- _______________________________________________________________________ -->
-<div class="doc_subsubsection"> <a name="i_fence">'<tt>fence</tt>'
-Instruction</a> </div>
+<h4>
+<a name="i_fence">'<tt>fence</tt>' Instruction</a>
+</h4>
 
-<div class="doc_text">
+<div>
 
 <h5>Syntax:</h5>
 <pre>
@@ -4763,14 +4766,15 @@ thread.  (This is useful for interacting with signal handlers.)</p>
 </div>
 
 <!-- _______________________________________________________________________ -->
-<div class="doc_subsubsection"> <a name="i_cmpxchg">'<tt>cmpxchg</tt>'
-Instruction</a> </div>
+<h4>
+<a name="i_cmpxchg">'<tt>cmpxchg</tt>' Instruction</a>
+</h4>
 
-<div class="doc_text">
+<div>
 
 <h5>Syntax:</h5>
 <pre>
-  [volatile] cmpxchg &lt;ty&gt;* &lt;pointer&gt;, &lt;ty&gt; &lt;cmp&gt;, &lt;ty&gt; &lt;new&gt; [singlethread] &lt;ordering&gt;                   <i>; yields {ty}</i>
+  cmpxchg [volatile] &lt;ty&gt;* &lt;pointer&gt;, &lt;ty&gt; &lt;cmp&gt;, &lt;ty&gt; &lt;new&gt; [singlethread] &lt;ordering&gt;                   <i>; yields {ty}</i>
 </pre>
 
 <h5>Overview:</h5>
@@ -4845,14 +4849,15 @@ done:
 </div>
 
 <!-- _______________________________________________________________________ -->
-<div class="doc_subsubsection"> <a name="i_atomicrmw">'<tt>atomicrmw</tt>'
-Instruction</a> </div>
+<h4>
+<a name="i_atomicrmw">'<tt>atomicrmw</tt>' Instruction</a>
+</h4>
 
-<div class="doc_text">
+<div>
 
 <h5>Syntax:</h5>
 <pre>
-  [volatile] atomicrmw &lt;operation&gt; &lt;ty&gt;* &lt;pointer&gt;, &lt;ty&gt; &lt;value&gt; [singlethread] &lt;ordering&gt;                   <i>; yields {ty}</i>
+  atomicrmw [volatile] &lt;operation&gt; &lt;ty&gt;* &lt;pointer&gt;, &lt;ty&gt; &lt;value&gt; [singlethread] &lt;ordering&gt;                   <i>; yields {ty}</i>
 </pre>
 
 <h5>Overview:</h5>
@@ -4949,7 +4954,7 @@ specified by the <var>operation</var> argument:</p>
    When indexing into a (optionally packed) structure, only <tt>i32</tt>
    integer <b>constants</b> are allowed.  When indexing into an array, pointer
    or vector, integers of any width are allowed, and they are not required to be
-   constant.</p>
+   constant.  These integers are treated as signed values where relevant.</p>
 
 <p>For example, let's consider a C code fragment and how it gets compiled to
    LLVM:</p>
@@ -5015,18 +5020,20 @@ entry:
    base pointer is not an <i>in bounds</i> address of an allocated object,
    or if any of the addresses that would be formed by successive addition of
    the offsets implied by the indices to the base address with infinitely
-   precise arithmetic are not an <i>in bounds</i> address of that allocated
-   object. The <i>in bounds</i> addresses for an allocated object are all
-   the addresses that point into the object, plus the address one byte past
-   the end.</p>
+   precise signed arithmetic are not an <i>in bounds</i> address of that
+   allocated object. The <i>in bounds</i> addresses for an allocated object
+   are all the addresses that point into the object, plus the address one
+   byte past the end.</p>
 
 <p>If the <tt>inbounds</tt> keyword is not present, the offsets are added to
-   the base address with silently-wrapping two's complement arithmetic, and
-   the result value of the <tt>getelementptr</tt> may be outside the object
-   pointed to by the base pointer. The result value may not necessarily be
-   used to access memory though, even if it happens to point into allocated
-   storage. See the <a href="#pointeraliasing">Pointer Aliasing Rules</a>
-   section for more information.</p>
+   the base address with silently-wrapping two's complement arithmetic. If the
+   offsets have a different width from the pointer, they are sign-extended or
+   truncated to the width of the pointer. The result value of the
+   <tt>getelementptr</tt> may be outside the object pointed to by the base
+   pointer. The result value may not necessarily be used to access memory
+   though, even if it happens to point into allocated storage. See the
+   <a href="#pointeraliasing">Pointer Aliasing Rules</a> section for more
+   information.</p>
 
 <p>The getelementptr instruction is often confusing.  For some more insight into
    how it works, see <a href="GetElementPtr.html">the getelementptr FAQ</a>.</p>
@@ -6017,7 +6024,7 @@ freestanding environments and non-C-based languages.</p>
   &lt;resultval&gt; = landingpad &lt;somety&gt; personality &lt;type&gt; &lt;pers_fn&gt; cleanup &lt;clause&gt;*
 
   &lt;clause&gt; := catch &lt;type&gt; &lt;value&gt;
-  &lt;clause&gt; := filter &lt;type&gt; &lt;value&gt; {, &lt;type&gt; &lt;value&gt;}*
+  &lt;clause&gt; := filter &lt;array constant type&gt; &lt;array constant&gt;
 </pre>
 
 <h5>Overview:</h5>
@@ -6036,9 +6043,11 @@ freestanding environments and non-C-based languages.</p>
    <tt>cleanup</tt> flag indicates that the landing pad block is a cleanup.</p>
 
 <p>A <tt>clause</tt> begins with the clause type &mdash; <tt>catch</tt>
-   or <tt>filter</tt> &mdash; and contains a list of global variables
-   representing the "types" that may be caught or filtered respectively. The
-   '<tt>landingpad</tt>' instruction must contain <em>at least</em>
+   or <tt>filter</tt> &mdash; and contains the global variable representing the
+   "type" that may be caught or filtered respectively. Unlike the
+   <tt>catch</tt> clause, the <tt>filter</tt> clause takes an array constant as
+   its argument. Use "<tt>[0 x i8**] undef</tt>" for a filter which cannot
+   throw. The '<tt>landingpad</tt>' instruction must contain <em>at least</em>
    one <tt>clause</tt> or the <tt>cleanup</tt> flag.</p>
 
 <h5>Semantics:</h5>
@@ -6074,11 +6083,11 @@ freestanding environments and non-C-based languages.</p>
            catch i8** @_ZTIi
   ;; A landing pad that is a cleanup.
   %res = landingpad { i8*, i32 } personality i32 (...)* @__gxx_personality_v0
-           cleanup  
+           cleanup
   ;; A landing pad which can catch an integer and can only throw a double.
   %res = landingpad { i8*, i32 } personality i32 (...)* @__gxx_personality_v0
            catch i8** @_ZTIi
-           filter i8** @_ZTId
+           filter [1 x i8**] [@_ZTId]
 </pre>
 
 </div>
@@ -8387,7 +8396,7 @@ LLVM</a>.</p>
 <h5>Semantics:</h5>
 <p>This intrinsic allows annotation of local variables with arbitrary strings.
    This can be useful for special purpose optimizations that want to look for
-   these annotations.  These have no other defined use, they are ignored by code
+   these annotations.  These have no other defined use; they are ignored by code
    generation and optimization.</p>
 
 </div>
@@ -8423,7 +8432,7 @@ LLVM</a>.</p>
 <h5>Semantics:</h5>
 <p>This intrinsic allows annotations to be put on arbitrary expressions with
    arbitrary strings.  This can be useful for special purpose optimizations that
-   want to look for these annotations.  These have no other defined use, they
+   want to look for these annotations.  These have no other defined use; they
    are ignored by code generation and optimization.</p>
 
 </div>
@@ -8536,7 +8545,7 @@ LLVM</a>.</p>
 
   <a href="mailto:sabre@nondot.org">Chris Lattner</a><br>
   <a href="http://llvm.org/">The LLVM Compiler Infrastructure</a><br>
-  Last modified: $Date: 2011-08-09 18:26:12 -0500 (Tue, 09 Aug 2011) $
+  Last modified: $Date: 2011-08-19 11:57:55 -0500 (Fri, 19 Aug 2011) $
 </address>
 
 </body>

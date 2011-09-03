@@ -6012,7 +6012,9 @@ CXXConstructorDecl *Sema::DeclareImplicitDefaultConstructor(
                                  /*TInfo=*/0,
                                  /*isExplicit=*/false,
                                  /*isInline=*/true,
-                                 /*isImplicitlyDeclared=*/true);
+                                 /*isImplicitlyDeclared=*/true,
+                                 // FIXME: apply the rules for definitions here
+                                 /*isConstexpr=*/false);
   DefaultCon->setAccess(AS_public);
   DefaultCon->setDefaulted();
   DefaultCon->setImplicit();
@@ -6263,12 +6265,15 @@ void Sema::DeclareInheritedConstructors(CXXRecordDecl *ClassDecl) {
 
         // OK, we're there, now add the constructor.
         // C++0x [class.inhctor]p8: [...] that would be performed by a
-        //   user-writtern inline constructor [...]
+        //   user-written inline constructor [...]
         DeclarationNameInfo DNI(CreatedCtorName, UsingLoc);
         CXXConstructorDecl *NewCtor = CXXConstructorDecl::Create(
             Context, ClassDecl, UsingLoc, DNI, QualType(NewCtorType, 0),
             /*TInfo=*/0, BaseCtor->isExplicit(), /*Inline=*/true,
-            /*ImplicitlyDeclared=*/true);
+            /*ImplicitlyDeclared=*/true,
+            // FIXME: Due to a defect in the standard, we treat inherited
+            // constructors as constexpr even if that makes them ill-formed.
+            /*Constexpr=*/BaseCtor->isConstexpr());
         NewCtor->setAccess(BaseCtor->getAccess());
 
         // Build up the parameter decls and add them.
@@ -6777,7 +6782,7 @@ CXXMethodDecl *Sema::DeclareImplicitCopyAssignment(CXXRecordDecl *ClassDecl) {
                             Context.getFunctionType(RetType, &ArgType, 1, EPI),
                             /*TInfo=*/0, /*isStatic=*/false,
                             /*StorageClassAsWritten=*/SC_None,
-                            /*isInline=*/true,
+                            /*isInline=*/true, /*isConstexpr=*/false,
                             SourceLocation());
   CopyAssignment->setAccess(AS_public);
   CopyAssignment->setDefaulted();
@@ -7249,7 +7254,9 @@ CXXConstructorDecl *Sema::DeclareImplicitCopyConstructor(
                                  /*TInfo=*/0,
                                  /*isExplicit=*/false,
                                  /*isInline=*/true,
-                                 /*isImplicitlyDeclared=*/true);
+                                 /*isImplicitlyDeclared=*/true,
+                                 // FIXME: apply the rules for definitions here
+                                 /*isConstexpr=*/false);
   CopyConstructor->setAccess(AS_public);
   CopyConstructor->setDefaulted();
   CopyConstructor->setTrivial(ClassDecl->hasTrivialCopyConstructor());
@@ -8652,10 +8659,11 @@ Decl *Sema::ActOnFriendFunctionDecl(Scope *S, Declarator &D, bool IsDefinition,
   }
 
   bool Redeclaration = false;
+  bool AddToScope = true;
   NamedDecl *ND = ActOnFunctionDeclarator(DCScope, D, DC, T, TInfo, Previous,
                                           move(TemplateParams),
                                           IsDefinition,
-                                          Redeclaration);
+                                          Redeclaration, AddToScope);
   if (!ND) return 0;
 
   assert(ND->getDeclContext() == DC);

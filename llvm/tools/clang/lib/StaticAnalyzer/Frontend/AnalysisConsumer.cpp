@@ -62,10 +62,11 @@ namespace {
 
 class AnalysisConsumer : public ASTConsumer {
 public:
-  ASTContext* Ctx;
+  ASTContext *Ctx;
   const Preprocessor &PP;
   const std::string OutDir;
   AnalyzerOptions Opts;
+  ArrayRef<std::string> Plugins;
 
   // PD is owned by AnalysisManager.
   PathDiagnosticClient *PD;
@@ -78,9 +79,9 @@ public:
 
   AnalysisConsumer(const Preprocessor& pp,
                    const std::string& outdir,
-                   const AnalyzerOptions& opts)
-    : Ctx(0), PP(pp), OutDir(outdir),
-      Opts(opts), PD(0) {
+                   const AnalyzerOptions& opts,
+                   ArrayRef<std::string> plugins)
+    : Ctx(0), PP(pp), OutDir(outdir), Opts(opts), Plugins(plugins), PD(0) {
     DigestAnalyzerOptions();
   }
 
@@ -143,8 +144,8 @@ public:
 
   virtual void Initialize(ASTContext &Context) {
     Ctx = &Context;
-    checkerMgr.reset(registerCheckers(Opts, PP.getLangOptions(),
-                                      PP.getDiagnostics()));
+    checkerMgr.reset(createCheckerManager(Opts, PP.getLangOptions(), Plugins,
+                                          PP.getDiagnostics()));
     Mgr.reset(new AnalysisManager(*Ctx, PP.getDiagnostics(),
                                   PP.getLangOptions(), PD,
                                   CreateStoreMgr, CreateConstraintMgr,
@@ -187,7 +188,7 @@ void AnalysisConsumer::HandleDeclContext(ASTContext &C, DeclContext *dc) {
       case Decl::CXXConversion:
       case Decl::CXXMethod:
       case Decl::Function: {
-        FunctionDecl* FD = cast<FunctionDecl>(D);
+        FunctionDecl *FD = cast<FunctionDecl>(D);
         // We skip function template definitions, as their semantics is
         // only determined when they are instantiated.
         if (FD->isThisDeclarationADefinition() &&
@@ -203,7 +204,7 @@ void AnalysisConsumer::HandleDeclContext(ASTContext &C, DeclContext *dc) {
        
       case Decl::ObjCCategoryImpl:
       case Decl::ObjCImplementation: {
-        ObjCImplDecl* ID = cast<ObjCImplDecl>(*I);
+        ObjCImplDecl *ID = cast<ObjCImplDecl>(*I);
         HandleCode(ID);
         
         for (ObjCContainerDecl::method_iterator MI = ID->meth_begin(), 
@@ -366,14 +367,13 @@ static void ActionObjCMemChecker(AnalysisConsumer &C, AnalysisManager& mgr,
 //===----------------------------------------------------------------------===//
 
 ASTConsumer* ento::CreateAnalysisConsumer(const Preprocessor& pp,
-                                           const std::string& OutDir,
-                                           const AnalyzerOptions& Opts) {
-  llvm::OwningPtr<AnalysisConsumer> C(new AnalysisConsumer(pp, OutDir, Opts));
-
-  // Last, disable the effects of '-Werror' when using the AnalysisConsumer.
+                                          const std::string& outDir,
+                                          const AnalyzerOptions& opts,
+                                          ArrayRef<std::string> plugins) {
+  // Disable the effects of '-Werror' when using the AnalysisConsumer.
   pp.getDiagnostics().setWarningsAsErrors(false);
 
-  return C.take();
+  return new AnalysisConsumer(pp, outDir, opts, plugins);
 }
 
 //===----------------------------------------------------------------------===//
@@ -391,12 +391,12 @@ class UbigraphViz : public ExplodedNode::Auditor {
   VMap M;
 
 public:
-  UbigraphViz(raw_ostream* out, llvm::sys::Path& dir,
+  UbigraphViz(raw_ostream *out, llvm::sys::Path& dir,
               llvm::sys::Path& filename);
 
   ~UbigraphViz();
 
-  virtual void AddEdge(ExplodedNode* Src, ExplodedNode* Dst);
+  virtual void AddEdge(ExplodedNode *Src, ExplodedNode *Dst);
 };
 
 } // end anonymous namespace
@@ -426,7 +426,7 @@ static ExplodedNode::Auditor* CreateUbiViz() {
   return new UbigraphViz(Stream.take(), Dir, Filename);
 }
 
-void UbigraphViz::AddEdge(ExplodedNode* Src, ExplodedNode* Dst) {
+void UbigraphViz::AddEdge(ExplodedNode *Src, ExplodedNode *Dst) {
 
   assert (Src != Dst && "Self-edges are not allowed.");
 
@@ -460,7 +460,7 @@ void UbigraphViz::AddEdge(ExplodedNode* Src, ExplodedNode* Dst) {
        << ", ('arrow','true'), ('oriented', 'true'))\n";
 }
 
-UbigraphViz::UbigraphViz(raw_ostream* out, llvm::sys::Path& dir,
+UbigraphViz::UbigraphViz(raw_ostream *out, llvm::sys::Path& dir,
                          llvm::sys::Path& filename)
   : Out(out), Dir(dir), Filename(filename), Cntr(0) {
 

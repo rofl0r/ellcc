@@ -190,6 +190,10 @@ public:
   /// \brief The file name of the module file.
   std::string FileName;
   
+  /// \brief Whether this module has been directly imported by the
+  /// user.
+  bool DirectlyImported;
+
   /// \brief The memory buffer that stores the data associated with
   /// this AST file.
   llvm::OwningPtr<llvm::MemoryBuffer> Buffer;
@@ -418,7 +422,11 @@ public:
   
   /// \brief List of modules which this module depends on
   llvm::SetVector<Module *> Imports;
-  
+
+  /// \brief Determine whether this module was directly imported at
+  /// any point during translation.
+  bool isDirectlyImported() const { return DirectlyImported; }
+
   /// \brief Dump debugging output for this module.
   void dump();
 };
@@ -474,10 +482,6 @@ public:
   /// the first module loaded.
   Module &getPrimaryModule() const { return *Chain[0]; }
 
-  /// \brief Returns the latest module associated with the manager, that is,
-  /// the last module loaded
-  Module &getLastModule() { return *Chain.back(); }
-
   /// \brief Returns the module associated with the given index
   Module &operator[](unsigned Index) const { return *Chain[Index]; }
 
@@ -490,14 +494,47 @@ public:
   /// \brief Number of modules loaded
   unsigned size() const { return Chain.size(); }
 
-  /// \brief Creates a new module and adds it to the list of known modules
-  Module &addModule(StringRef FileName, ModuleKind Type);
+  /// \brief Attempts to create a new module and add it to the list of known
+  /// modules.
+  ///
+  /// \param FileName The file name of the module to be loaded.
+  ///
+  /// \param Type The kind of module being loaded.
+  ///
+  /// \param ImportedBy The module that is importing this module, or NULL if
+  /// this module is imported directly by the user.
+  ///
+  /// \param ErrorStr Will be set to a non-empty string if any errors occurred
+  /// while trying to load the module.
+  ///
+  /// \return A pointer to the module that corresponds to this file name,
+  /// and a boolean indicating whether the module was newly added.
+  std::pair<Module *, bool> 
+  addModule(StringRef FileName, ModuleKind Type, Module *ImportedBy,
+            std::string &ErrorStr);
   
   /// \brief Add an in-memory buffer the list of known buffers
   void addInMemoryBuffer(StringRef FileName, llvm::MemoryBuffer *Buffer);
 
-  /// \brief Exports the list of loaded modules with their corresponding names
-  void exportLookup(SmallVector<ModuleOffset, 16> &Target);
+  /// \brief Visit each of the modules.
+  ///
+  /// This routine visits each of the modules, starting with the
+  /// "root" modules that no other loaded modules depend on, and
+  /// proceeding to the leaf modules, visiting each module only once
+  /// during the traversal.
+  ///
+  /// This traversal is intended to support various "lookup"
+  /// operations that can find data in any of the loaded modules.
+  ///
+  /// \param Visitor A visitor function that will be invoked with each
+  /// module and the given user data pointer. The return value must be
+  /// convertible to bool; when false, the visitation continues to
+  /// modules that the current module depends on. When true, the
+  /// visitation skips any modules that the current module depends on.
+  ///
+  /// \param UserData User data associated with the visitor object, which
+  /// will be passed along to the visitor.
+  void visit(bool (*Visitor)(Module &M, void *UserData), void *UserData);
 };
 
 } // end namespace serialization
@@ -1007,7 +1044,8 @@ private:
 
   void MaybeAddSystemRootToFilename(std::string &Filename);
 
-  ASTReadResult ReadASTCore(StringRef FileName, ModuleKind Type);
+  ASTReadResult ReadASTCore(StringRef FileName, ModuleKind Type,
+                            Module *ImportedBy);
   ASTReadResult ReadASTBlock(Module &F);
   bool CheckPredefinesBuffers();
   bool ParseLineTable(Module &F, SmallVectorImpl<uint64_t> &Record);
@@ -1029,6 +1067,7 @@ private:
   void LoadedDecl(unsigned Index, Decl *D);
   Decl *ReadDeclRecord(serialization::DeclID ID);
   RecordLocation DeclCursorForID(serialization::DeclID ID);
+  void loadDeclUpdateRecords(serialization::DeclID ID, Decl *D);
   
   RecordLocation getLocalBitOffset(uint64_t GlobalOffset);
   uint64_t getGlobalBitOffset(Module &M, uint32_t LocalOffset);
@@ -1103,8 +1142,7 @@ public:
             bool DisableValidation = false, bool DisableStatCache = false);
   ~ASTReader();
 
-  /// \brief Load the precompiled header designated by the given file
-  /// name.
+  /// \brief Load the AST file designated by the given file name.
   ASTReadResult ReadAST(const std::string &FileName, ModuleKind Type);
 
   /// \brief Checks that no file that is stored in PCH is out-of-sync with
@@ -1130,10 +1168,8 @@ public:
     ModuleMgr.addInMemoryBuffer(FileName, Buffer);
   }
 
-  /// \brief Retrieve the name of the named (primary) AST file
-  const std::string &getFileName() const {
-    return ModuleMgr.getPrimaryModule().FileName;
-  }
+  /// \brief Retrieve the module manager.
+  ModuleManager &getModuleManager() { return ModuleMgr; }
 
   /// \brief Retrieve the name of the original source file name
   const std::string &getOriginalSourceFile() { return OriginalFileName; }
@@ -1221,9 +1257,6 @@ public:
   /// \brief Reads a declarator info from the given record.
   TypeSourceInfo *GetTypeSourceInfo(Module &F,
                                     const RecordData &Record, unsigned &Idx);
-
-  /// \brief Resolve and return the translation unit declaration.
-  TranslationUnitDecl *GetTranslationUnitDecl();
 
   /// \brief Resolve a type ID into a type, potentially building a new
   /// type.

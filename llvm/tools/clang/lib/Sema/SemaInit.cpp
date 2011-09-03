@@ -2321,6 +2321,7 @@ bool InitializationSequence::endsWithNarrowing(ASTContext &Ctx,
   //   the source is a constant expression and the actual value after
   //   conversion will fit into the target type and will produce the original
   //   value when converted back to the original type.
+  case ICK_Boolean_Conversion:  // Bools are integers too.
   case ICK_Integral_Conversion: {
     assert(FromType->isIntegralOrUnscopedEnumerationType());
     assert(ToType->isIntegralOrUnscopedEnumerationType());
@@ -5144,7 +5145,7 @@ static void DiagnoseNarrowingInInitList(
     bool Constant, const APValue &ConstantValue) {
   if (Constant) {
     S.Diag(InitE->getLocStart(),
-           S.getLangOptions().CPlusPlus0x
+           S.getLangOptions().CPlusPlus0x && !S.getLangOptions().Microsoft
            ? diag::err_init_list_constant_narrowing
            : diag::warn_init_list_constant_narrowing)
       << InitE->getSourceRange()
@@ -5152,7 +5153,7 @@ static void DiagnoseNarrowingInInitList(
       << EntityType;
   } else
     S.Diag(InitE->getLocStart(),
-           S.getLangOptions().CPlusPlus0x
+           S.getLangOptions().CPlusPlus0x && !S.getLangOptions().Microsoft
            ? diag::err_init_list_variable_narrowing
            : diag::warn_init_list_variable_narrowing)
       << InitE->getSourceRange()

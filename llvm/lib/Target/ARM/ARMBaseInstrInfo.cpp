@@ -628,7 +628,7 @@ void ARMBaseInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
   bool SPRDest = ARM::SPRRegClass.contains(DestReg);
   bool SPRSrc  = ARM::SPRRegClass.contains(SrcReg);
 
-  unsigned Opc;
+  unsigned Opc = 0;
   if (SPRDest && SPRSrc) {
     Opc = ARM::VMOVS;
 
@@ -666,19 +666,40 @@ void ARMBaseInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
     Opc = ARM::VMOVD;
   else if (ARM::QPRRegClass.contains(DestReg, SrcReg))
     Opc = ARM::VORRq;
-  else if (ARM::QQPRRegClass.contains(DestReg, SrcReg))
-    Opc = ARM::VMOVQQ;
-  else if (ARM::QQQQPRRegClass.contains(DestReg, SrcReg))
-    Opc = ARM::VMOVQQQQ;
-  else
-    llvm_unreachable("Impossible reg-to-reg copy");
 
-  MachineInstrBuilder MIB = BuildMI(MBB, I, DL, get(Opc), DestReg);
-  MIB.addReg(SrcReg, getKillRegState(KillSrc));
-  if (Opc == ARM::VORRq)
+  if (Opc) {
+    MachineInstrBuilder MIB = BuildMI(MBB, I, DL, get(Opc), DestReg);
     MIB.addReg(SrcReg, getKillRegState(KillSrc));
-  if (Opc != ARM::VMOVQQ && Opc != ARM::VMOVQQQQ)
+    if (Opc == ARM::VORRq)
+      MIB.addReg(SrcReg, getKillRegState(KillSrc));
     AddDefaultPred(MIB);
+    return;
+  }
+
+  // Generate instructions for VMOVQQ and VMOVQQQQ pseudos in place.
+  if (ARM::QQPRRegClass.contains(DestReg, SrcReg) ||
+      ARM::QQQQPRRegClass.contains(DestReg, SrcReg)) {
+    const TargetRegisterInfo *TRI = &getRegisterInfo();
+    assert(ARM::qsub_0 + 3 == ARM::qsub_3 && "Expected contiguous enum.");
+    unsigned EndSubReg = ARM::QQPRRegClass.contains(DestReg, SrcReg) ? 
+      ARM::qsub_1 : ARM::qsub_3;
+    for (unsigned i = ARM::qsub_0, e = EndSubReg + 1; i != e; ++i) { 
+      unsigned Dst = TRI->getSubReg(DestReg, i);
+      unsigned Src = TRI->getSubReg(SrcReg, i);
+      MachineInstrBuilder Mov =
+        AddDefaultPred(BuildMI(MBB, I, I->getDebugLoc(), get(ARM::VORRq))
+                       .addReg(Dst, RegState::Define)
+                       .addReg(Src, getKillRegState(KillSrc))
+                       .addReg(Src, getKillRegState(KillSrc)));
+      if (i == EndSubReg) {
+        Mov->addRegisterDefined(DestReg, TRI);
+        if (KillSrc)
+          Mov->addRegisterKilled(SrcReg, TRI);
+      }
+    }
+    return;
+  }
+  llvm_unreachable("Impossible reg-to-reg copy");
 }
 
 static const
@@ -909,7 +930,8 @@ loadRegFromStackSlot(MachineBasicBlock &MBB, MachineBasicBlock::iterator I,
         MIB = AddDReg(MIB, DestReg, ARM::dsub_0, RegState::Define, TRI);
         MIB = AddDReg(MIB, DestReg, ARM::dsub_1, RegState::Define, TRI);
         MIB = AddDReg(MIB, DestReg, ARM::dsub_2, RegState::Define, TRI);
-              AddDReg(MIB, DestReg, ARM::dsub_3, RegState::Define, TRI);
+        MIB = AddDReg(MIB, DestReg, ARM::dsub_3, RegState::Define, TRI);
+        MIB.addReg(DestReg, RegState::Define | RegState::Implicit);
       }
     } else
       llvm_unreachable("Unknown reg class!");
@@ -927,7 +949,8 @@ loadRegFromStackSlot(MachineBasicBlock &MBB, MachineBasicBlock::iterator I,
       MIB = AddDReg(MIB, DestReg, ARM::dsub_4, RegState::Define, TRI);
       MIB = AddDReg(MIB, DestReg, ARM::dsub_5, RegState::Define, TRI);
       MIB = AddDReg(MIB, DestReg, ARM::dsub_6, RegState::Define, TRI);
-      AddDReg(MIB, DestReg, ARM::dsub_7, RegState::Define, TRI);
+      MIB = AddDReg(MIB, DestReg, ARM::dsub_7, RegState::Define, TRI);
+      MIB.addReg(DestReg, RegState::Define | RegState::Implicit);
     } else
       llvm_unreachable("Unknown reg class!");
     break;

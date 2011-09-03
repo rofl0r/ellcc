@@ -172,6 +172,7 @@ private:
                  bool isInstance = true,
                  bool isVariadic = false,
                  bool isSynthesized = false,
+                 bool isImplicitlyDeclared = false,
                  bool isDefined = false,
                  ImplementationControl impControl = None,
                  bool HasRelatedResultType = false,
@@ -184,7 +185,9 @@ private:
     DeclImplementation(impControl), objcDeclQualifier(OBJC_TQ_None),
     RelatedResultType(HasRelatedResultType), NumSelectorArgs(numSelectorArgs), 
     MethodDeclType(T), ResultTInfo(ResultTInfo),
-    EndLoc(endLoc), Body(0), SelfDecl(0), CmdDecl(0) {}
+    EndLoc(endLoc), Body(0), SelfDecl(0), CmdDecl(0) {
+    setImplicit(isImplicitlyDeclared);
+  }
 
   /// \brief A definition will return its interface declaration.
   /// An interface declaration will return its definition.
@@ -201,6 +204,7 @@ public:
                                 bool isInstance = true,
                                 bool isVariadic = false,
                                 bool isSynthesized = false,
+                                bool isImplicitlyDeclared = false,
                                 bool isDefined = false,
                                 ImplementationControl impControl = None,
                                 bool HasRelatedResultType = false,
@@ -1429,7 +1433,7 @@ public:
     NumPropertyAttrsBits = 12
   };
 
-  enum SetterKind { Assign, Retain, Copy };
+  enum SetterKind { Assign, Retain, Copy, Weak };
   enum PropertyControl { None, Required, Optional };
 private:
   SourceLocation AtLoc;   // location of @property
@@ -1509,6 +1513,8 @@ public:
       return Retain;
     if (PropertyAttributes & OBJC_PR_copy)
       return Copy;
+    if (PropertyAttributes & OBJC_PR_weak)
+      return Weak;
     return Assign;
   }
 

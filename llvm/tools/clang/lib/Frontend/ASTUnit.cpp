@@ -473,11 +473,6 @@ const std::string &ASTUnit::getOriginalSourceFileName() {
   return OriginalSourceFile;
 }
 
-const std::string &ASTUnit::getASTFileName() {
-  assert(isMainFileAST() && "Not an ASTUnit from an AST file!");
-  return static_cast<ASTReader *>(Ctx->getExternalSource())->getFileName();
-}
-
 llvm::MemoryBuffer *ASTUnit::getBufferForFile(StringRef Filename,
                                               std::string *ErrorStr) {
   assert(FileMgr);
@@ -2063,8 +2058,7 @@ void AugmentedCodeCompleteConsumer::ProcessCodeCompleteResults(Sema &S,
   bool AddedResult = false;
   unsigned InContexts  
     = (Context.getKind() == CodeCompletionContext::CCC_Recovery? NormalContexts
-                                            : (1 << (Context.getKind() - 1)));
-
+                                        : (1ULL << (Context.getKind() - 1)));
   // Contains the set of names that are hidden by "local" completion results.
   llvm::StringSet<llvm::BumpPtrAllocator> HiddenNames;
   typedef CodeCompletionResult Result;

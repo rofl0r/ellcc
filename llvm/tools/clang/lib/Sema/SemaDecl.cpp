@@ -1324,28 +1324,23 @@ void Sema::MergeTypedefNameDecl(TypedefNameDecl *New, LookupResult &OldDecls) {
     case 2:
       if (!TypeID->isStr("id"))
         break;
-      Context.ObjCIdRedefinitionType = New->getUnderlyingType();
+      Context.setObjCIdRedefinitionType(New->getUnderlyingType());
       // Install the built-in type for 'id', ignoring the current definition.
       New->setTypeForDecl(Context.getObjCIdType().getTypePtr());
       return;
     case 5:
       if (!TypeID->isStr("Class"))
         break;
-      Context.ObjCClassRedefinitionType = New->getUnderlyingType();
+      Context.setObjCClassRedefinitionType(New->getUnderlyingType());
       // Install the built-in type for 'Class', ignoring the current definition.
       New->setTypeForDecl(Context.getObjCClassType().getTypePtr());
       return;
     case 3:
       if (!TypeID->isStr("SEL"))
         break;
-      Context.ObjCSelRedefinitionType = New->getUnderlyingType();
+      Context.setObjCSelRedefinitionType(New->getUnderlyingType());
       // Install the built-in type for 'SEL', ignoring the current definition.
       New->setTypeForDecl(Context.getObjCSelType().getTypePtr());
-      return;
-    case 8:
-      if (!TypeID->isStr("Protocol"))
-        break;
-      Context.setObjCProtoType(New->getUnderlyingType());
       return;
     }
     // Fall through - the typedef name was not a builtin type.
@@ -1727,9 +1722,16 @@ bool Sema::MergeFunctionDecl(FunctionDecl *New, Decl *OldD) {
       // Preserve triviality.
       NewMethod->setTrivial(OldMethod->isTrivial());
 
+      // MSVC allows explicit template specialization at class scope:
+      // 2 CXMethodDecls referring to the same function will be injected.
+      // We don't want a redeclartion error.
+      bool IsClassScopeExplicitSpecialization =
+                              OldMethod->isFunctionTemplateSpecialization() &&
+                              NewMethod->isFunctionTemplateSpecialization();
       bool isFriend = NewMethod->getFriendObjectKind();
 
-      if (!isFriend && NewMethod->getLexicalDeclContext()->isRecord()) {
+      if (!isFriend && NewMethod->getLexicalDeclContext()->isRecord() &&
+          !IsClassScopeExplicitSpecialization) {
         //    -- Member function declarations with the same name and the
         //       same parameter types cannot be overloaded if any of them
         //       is a static member function declaration.
@@ -2225,6 +2227,20 @@ Decl *Sema::ParsedFreeStandingDeclSpec(Scope *S, AccessSpecifier AS,
       Diag(DS.getRestrictSpecLoc(),
            diag::err_typecheck_invalid_restrict_not_pointer_noarg)
            << DS.getSourceRange();
+  }
+
+  if (DS.isConstexprSpecified()) {
+    // C++0x [dcl.constexpr]p1: constexpr can only be applied to declarations
+    // and definitions of functions and variables.
+    if (Tag)
+      Diag(DS.getConstexprSpecLoc(), diag::err_constexpr_tag)
+        << (DS.getTypeSpecType() == DeclSpec::TST_class ? 0 :
+            DS.getTypeSpecType() == DeclSpec::TST_struct ? 1 :
+            DS.getTypeSpecType() == DeclSpec::TST_union ? 2 : 3);
+    else
+      Diag(DS.getConstexprSpecLoc(), diag::err_constexpr_no_declarators);
+    // Don't emit warnings after this error.
+    return TagD;
   }
 
   if (DS.isFriendSpecified()) {
@@ -3231,6 +3247,7 @@ Decl *Sema::HandleDeclarator(Scope *S, Declarator &D,
     Previous.clear();
 
   bool Redeclaration = false;
+  bool AddToScope = true;
   if (D.getDeclSpec().getStorageClassSpec() == DeclSpec::SCS_typedef) {
     if (TemplateParamLists.size()) {
       Diag(D.getIdentifierLoc(), diag::err_template_typedef);
@@ -3241,7 +3258,8 @@ Decl *Sema::HandleDeclarator(Scope *S, Declarator &D,
   } else if (R->isFunctionType()) {
     New = ActOnFunctionDeclarator(S, D, DC, R, TInfo, Previous,
                                   move(TemplateParamLists),
-                                  IsFunctionDefinition, Redeclaration);
+                                  IsFunctionDefinition, Redeclaration,
+                                  AddToScope);
   } else {
     New = ActOnVariableDeclarator(S, D, DC, R, TInfo, Previous,
                                   move(TemplateParamLists),
@@ -3253,7 +3271,8 @@ Decl *Sema::HandleDeclarator(Scope *S, Declarator &D,
 
   // If this has an identifier and is not an invalid redeclaration or 
   // function template specialization, add it to the scope stack.
-  if (New->getDeclName() && !(Redeclaration && New->isInvalidDecl()))
+  if (New->getDeclName() && AddToScope &&
+       !(Redeclaration && New->isInvalidDecl()))
     PushOnScopeChains(New, S);
 
   return New;
@@ -3429,6 +3448,9 @@ Sema::ActOnTypedefDeclarator(Scope* S, Declarator& D, DeclContext* DC,
 
   if (D.getDeclSpec().isThreadSpecified())
     Diag(D.getDeclSpec().getThreadSpecLoc(), diag::err_invalid_thread);
+  if (D.getDeclSpec().isConstexprSpecified())
+    Diag(D.getDeclSpec().getConstexprSpecLoc(), diag::err_invalid_constexpr)
+      << 1;
 
   if (D.getName().Kind != UnqualifiedId::IK_Identifier) {
     Diag(D.getName().StartLocation, diag::err_typedef_not_identifier)
@@ -3761,6 +3783,11 @@ Sema::ActOnVariableDeclarator(Scope *S, Declarator &D, DeclContext *DC,
       NewVD->setTemplateParameterListsInfo(Context,
                                            TemplateParamLists.size(),
                                            TemplateParamLists.release());
+    }
+
+    if (D.getDeclSpec().isConstexprSpecified()) {
+      // FIXME: check this is a valid use of constexpr.
+      NewVD->setConstexpr(true);
     }
   }
 
@@ -4177,27 +4204,79 @@ bool Sema::AddOverriddenMethods(CXXRecordDecl *DC, CXXMethodDecl *MD) {
   return AddedAny;
 }
 
-static void DiagnoseInvalidRedeclaration(Sema &S, FunctionDecl *NewFD) {
-  LookupResult Prev(S, NewFD->getDeclName(), NewFD->getLocation(),
+static void DiagnoseInvalidRedeclaration(Sema &S, FunctionDecl *NewFD,
+                                         bool isFriendDecl) {
+  DeclarationName Name = NewFD->getDeclName();
+  DeclContext *DC = NewFD->getDeclContext();
+  LookupResult Prev(S, Name, NewFD->getLocation(),
                     Sema::LookupOrdinaryName, Sema::ForRedeclaration);
   llvm::SmallVector<unsigned, 1> MismatchedParams;
-  S.LookupQualifiedName(Prev, NewFD->getDeclContext());
+  llvm::SmallVector<std::pair<FunctionDecl*, unsigned>, 1> NearMatches;
+  TypoCorrection Correction;
+  unsigned DiagMsg = isFriendDecl ? diag::err_no_matching_local_friend
+                                  : diag::err_member_def_does_not_match;
+
+  NewFD->setInvalidDecl();
+  S.LookupQualifiedName(Prev, DC);
   assert(!Prev.isAmbiguous() &&
          "Cannot have an ambiguity in previous-declaration lookup");
-  for (LookupResult::iterator Func = Prev.begin(), FuncEnd = Prev.end();
-       Func != FuncEnd; ++Func) {
-    FunctionDecl *FD = dyn_cast<FunctionDecl>(*Func);
-    if (FD && isNearlyMatchingFunction(S.Context, FD, NewFD,
-                                       MismatchedParams)) {
-      if (MismatchedParams.size() > 0) {
-        unsigned Idx = MismatchedParams.front();
-        ParmVarDecl *FDParam = FD->getParamDecl(Idx);
-        S.Diag(FDParam->getTypeSpecStartLoc(),
-               diag::note_member_def_close_param_match)
-            << Idx+1 << FDParam->getType() << NewFD->getParamDecl(Idx)->getType();
-      } else
-        S.Diag(FD->getLocation(), diag::note_member_def_close_match);
+  if (!Prev.empty()) {
+    for (LookupResult::iterator Func = Prev.begin(), FuncEnd = Prev.end();
+         Func != FuncEnd; ++Func) {
+      FunctionDecl *FD = dyn_cast<FunctionDecl>(*Func);
+      if (FD && isNearlyMatchingFunction(S.Context, FD, NewFD,
+                                         MismatchedParams)) {
+        // Add 1 to the index so that 0 can mean the mismatch didn't
+        // involve a parameter
+        unsigned ParamNum =
+            MismatchedParams.empty() ? 0 : MismatchedParams.front() + 1;
+        NearMatches.push_back(std::make_pair(FD, ParamNum));
+      }
     }
+  // If the qualified name lookup yielded nothing, try typo correction
+  } else if ((Correction = S.CorrectTypo(Prev.getLookupNameInfo(),
+                                         Prev.getLookupKind(), 0, 0, DC)) &&
+             Correction.getCorrection() != Name) {
+    DiagMsg = isFriendDecl ? diag::err_no_matching_local_friend_suggest
+                           : diag::err_member_def_does_not_match_suggest;
+    for (TypoCorrection::decl_iterator CDecl = Correction.begin(),
+                                    CDeclEnd = Correction.end();
+         CDecl != CDeclEnd; ++CDecl) {
+      FunctionDecl *FD = dyn_cast<FunctionDecl>(*CDecl);
+      if (FD && isNearlyMatchingFunction(S.Context, FD, NewFD,
+                                         MismatchedParams)) {
+        // Add 1 to the index so that 0 can mean the mismatch didn't
+        // involve a parameter
+        unsigned ParamNum =
+            MismatchedParams.empty() ? 0 : MismatchedParams.front() + 1;
+        NearMatches.push_back(std::make_pair(FD, ParamNum));
+      }
+    }
+  }
+
+  if (Correction)
+    S.Diag(NewFD->getLocation(), DiagMsg)
+        << Name << DC << Correction.getQuoted(S.getLangOptions())
+        << FixItHint::CreateReplacement(
+            NewFD->getLocation(), Correction.getAsString(S.getLangOptions()));
+  else
+    S.Diag(NewFD->getLocation(), DiagMsg) << Name << DC << NewFD->getLocation();
+
+  for (llvm::SmallVector<std::pair<FunctionDecl*, unsigned>, 1>::iterator
+       NearMatch = NearMatches.begin(), NearMatchEnd = NearMatches.end();
+       NearMatch != NearMatchEnd; ++NearMatch) {
+    FunctionDecl *FD = NearMatch->first;
+
+    if (unsigned Idx = NearMatch->second) {
+      ParmVarDecl *FDParam = FD->getParamDecl(Idx-1);
+      S.Diag(FDParam->getTypeSpecStartLoc(),
+             diag::note_member_def_close_param_match)
+          << Idx << FDParam->getType() << NewFD->getParamDecl(Idx-1)->getType();
+    } else if (Correction) {
+      S.Diag(FD->getLocation(), diag::note_previous_decl)
+        << Correction.getQuoted(S.getLangOptions());
+    } else
+      S.Diag(FD->getLocation(), diag::note_member_def_close_match);
   }
 }
 
@@ -4206,7 +4285,8 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
                               QualType R, TypeSourceInfo *TInfo,
                               LookupResult &Previous,
                               MultiTemplateParamsArg TemplateParamLists,
-                              bool IsFunctionDefinition, bool &Redeclaration) {
+                              bool IsFunctionDefinition, bool &Redeclaration,
+                              bool &AddToScope) {
   assert(R.getTypePtr()->isFunctionType());
 
   // TODO: consider using NameInfo for diagnostic.
@@ -4271,6 +4351,7 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
   FunctionTemplateDecl *FunctionTemplate = 0;
   bool isExplicitSpecialization = false;
   bool isFunctionTemplateSpecialization = false;
+  bool isDependentClassScopeExplicitSpecialization = false;
 
   if (!getLangOptions().CPlusPlus) {
     // Determine whether the function was written with a
@@ -4297,6 +4378,7 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
     isFriend = D.getDeclSpec().isFriendSpecified();
     bool isVirtual = D.getDeclSpec().isVirtualSpecified();
     bool isExplicit = D.getDeclSpec().isExplicitSpecified();
+    bool isConstexpr = D.getDeclSpec().isConstexprSpecified();
     bool isVirtualOkay = false;
 
     // Check that the return type is not an abstract class type.
@@ -4323,7 +4405,8 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
                                          D.getSourceRange().getBegin(),
                                          NameInfo, R, TInfo,
                                          isExplicit, isInline,
-                                         /*isImplicitlyDeclared=*/false);
+                                         /*isImplicitlyDeclared=*/false,
+                                         isConstexpr);
 
       NewFD = NewCD;
     } else if (Name.getNameKind() == DeclarationName::CXXDestructorName) {
@@ -4357,7 +4440,7 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
         NewFD = FunctionDecl::Create(Context, DC, D.getSourceRange().getBegin(),
                                      D.getIdentifierLoc(), Name, R, TInfo,
                                      SC, SCAsWritten, isInline,
-                                     /*hasPrototype=*/true);
+                                     /*hasPrototype=*/true, isConstexpr);
         D.setInvalidType();
       }
     } else if (Name.getNameKind() == DeclarationName::CXXConversionFunctionName) {
@@ -4371,16 +4454,15 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
       NewFD = CXXConversionDecl::Create(Context, cast<CXXRecordDecl>(DC),
                                         D.getSourceRange().getBegin(),
                                         NameInfo, R, TInfo,
-                                        isInline, isExplicit,
+                                        isInline, isExplicit, isConstexpr,
                                         SourceLocation());
 
       isVirtualOkay = true;
     } else if (DC->isRecord()) {
-      // If the of the function is the same as the name of the record, then this
-      // must be an invalid constructor that has a return type.
+      // If the name of the function is the same as the name of the record,
+      // then this must be an invalid constructor that has a return type.
       // (The parser checks for a return type and makes the declarator a
       // constructor if it has no return type).
-      // must have an invalid constructor that has a return type
       if (Name.getAsIdentifierInfo() &&
           Name.getAsIdentifierInfo() == cast<CXXRecordDecl>(DC)->getIdentifier()){
         Diag(D.getIdentifierLoc(), diag::err_constructor_return_type)
@@ -4410,6 +4492,7 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
                                                D.getSourceRange().getBegin(),
                                                NameInfo, R, TInfo,
                                                isStatic, SCAsWritten, isInline,
+                                               isConstexpr,
                                                SourceLocation());
       NewFD = NewMD;
 
@@ -4420,7 +4503,7 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
       //   - we're in C++ (where every function has a prototype),
       NewFD = FunctionDecl::Create(Context, DC, D.getSourceRange().getBegin(),
                                    NameInfo, R, TInfo, SC, SCAsWritten, isInline,
-                                   true/*HasPrototype*/);
+                                   true/*HasPrototype*/, isConstexpr);
     }
 
     if (isFriend && !isInline && IsFunctionDefinition) {
@@ -4583,6 +4666,23 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
           << FixItHint::CreateRemoval(D.getDeclSpec().getExplicitSpecLoc());
       }      
     }
+
+    if (isConstexpr) {
+      // C++0x [dcl.constexpr]p2: constexpr functions and constexpr constructors
+      // are implicitly inline.
+      NewFD->setImplicitlyInline();
+
+      // FIXME: If this is a redeclaration, check the original declaration was
+      // marked constepr.
+
+      // C++0x [dcl.constexpr]p3: functions declared constexpr are required to
+      // be either constructors or to return a literal type. Therefore,
+      // destructors cannot be declared constexpr.
+      if (isa<CXXDestructorDecl>(NewFD))
+        Diag(D.getDeclSpec().getConstexprSpecLoc(),
+             diag::err_constexpr_dtor);
+    }
+
 
     // Filter out previous declarations that don't match the scope.
     FilterLookupForScope(Previous, DC, S, NewFD->hasLinkage(),
@@ -4775,10 +4875,11 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
     } else if (isFunctionTemplateSpecialization) {
       if (CurContext->isDependentContext() && CurContext->isRecord() 
           && !isFriend) {
-        Diag(NewFD->getLocation(), diag::err_function_specialization_in_class)
+        isDependentClassScopeExplicitSpecialization = true;
+        Diag(NewFD->getLocation(), getLangOptions().Microsoft ? 
+          diag::ext_function_specialization_in_class :
+          diag::err_function_specialization_in_class)
           << NewFD->getDeclName();
-        NewFD->setInvalidDecl();
-        return 0;
       } else if (CheckFunctionTemplateSpecialization(NewFD,
                                   (HasExplicitTemplateArgs ? &TemplateArgs : 0),
                                                      Previous))
@@ -4808,8 +4909,9 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
     }
 
     // Perform semantic checking on the function declaration.
-    CheckFunctionDeclaration(S, NewFD, Previous, isExplicitSpecialization,
-                             Redeclaration);
+    if (!isDependentClassScopeExplicitSpecialization)
+      CheckFunctionDeclaration(S, NewFD, Previous, isExplicitSpecialization,
+                               Redeclaration);
 
     assert((NewFD->isInvalidDecl() || !Redeclaration ||
             Previous.getResultKind() != LookupResult::FoundOverloaded) &&
@@ -4873,36 +4975,31 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
             (TemplateParamLists.size() ||
              D.getCXXScopeSpec().getScopeRep()->isDependent() ||
              CurContext->isDependentContext())) {
-              // ignore these
-            } else {
-              // The user tried to provide an out-of-line definition for a
-              // function that is a member of a class or namespace, but there
-              // was no such member function declared (C++ [class.mfct]p2,
-              // C++ [namespace.memdef]p2). For example:
-              //
-              // class X {
-              //   void f() const;
-              // };
-              //
-              // void X::f() { } // ill-formed
-              //
-              // Complain about this problem, and attempt to suggest close
-              // matches (e.g., those that differ only in cv-qualifiers and
-              // whether the parameter types are references).
-              Diag(D.getIdentifierLoc(), diag::err_member_def_does_not_match)
-              << Name << DC << D.getCXXScopeSpec().getRange();
-              NewFD->setInvalidDecl();
+          // ignore these
+        } else {
+          // The user tried to provide an out-of-line definition for a
+          // function that is a member of a class or namespace, but there
+          // was no such member function declared (C++ [class.mfct]p2,
+          // C++ [namespace.memdef]p2). For example:
+          //
+          // class X {
+          //   void f() const;
+          // };
+          //
+          // void X::f() { } // ill-formed
+          //
+          // Complain about this problem, and attempt to suggest close
+          // matches (e.g., those that differ only in cv-qualifiers and
+          // whether the parameter types are references).
 
-              DiagnoseInvalidRedeclaration(*this, NewFD);
-            }
+          DiagnoseInvalidRedeclaration(*this, NewFD, false);
+        }
 
         // Unqualified local friend declarations are required to resolve
         // to something.
-        } else if (isFriend && cast<CXXRecordDecl>(CurContext)->isLocalClass()) {
-          Diag(D.getIdentifierLoc(), diag::err_no_matching_local_friend);
-          NewFD->setInvalidDecl();
-          DiagnoseInvalidRedeclaration(*this, NewFD);
-        }
+      } else if (isFriend && cast<CXXRecordDecl>(CurContext)->isLocalClass()) {
+        DiagnoseInvalidRedeclaration(*this, NewFD, true);
+      }
 
     } else if (!IsFunctionDefinition && D.getCXXScopeSpec().isSet() &&
                !isFriend && !isFunctionTemplateSpecialization &&
@@ -4990,6 +5087,18 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
           Context.setcudaConfigureCallDecl(NewFD);
         }
       }
+  
+  // Here we have an function template explicit specialization at class scope.
+  // The actually specialization will be postponed to template instatiation
+  // time via the ClassScopeFunctionSpecializationDecl node.
+  if (isDependentClassScopeExplicitSpecialization) {
+    ClassScopeFunctionSpecializationDecl *NewSpec =
+                         ClassScopeFunctionSpecializationDecl::Create(
+                                Context, CurContext,  SourceLocation(), 
+                                cast<CXXMethodDecl>(NewFD));
+    CurContext->addDecl(NewSpec);
+    AddToScope = false;
+  }
 
   return NewFD;
 }
@@ -6085,6 +6194,9 @@ Decl *Sema::ActOnParamDeclarator(Scope *S, Declarator &D) {
 
   if (D.getDeclSpec().isThreadSpecified())
     Diag(D.getDeclSpec().getThreadSpecLoc(), diag::err_invalid_thread);
+  if (D.getDeclSpec().isConstexprSpecified())
+    Diag(D.getDeclSpec().getConstexprSpecLoc(), diag::err_invalid_constexpr)
+      << 0;
 
   DiagnoseFunctionSpecifiers(D);
 
@@ -6595,8 +6707,7 @@ Decl *Sema::ActOnFinishFunctionBody(Decl *dcl, Stmt *Body,
     if (FD && isa<CXXConstructorDecl>(FD) && isa<CXXTryStmt>(Body))
       DiagnoseReturnInConstructorExceptionHandler(cast<CXXTryStmt>(Body));
     
-    // Verify that that gotos and switch cases don't jump into scopes illegally.
-    // Verify that that gotos and switch cases don't jump into scopes illegally.
+    // Verify that gotos and switch cases don't jump into scopes illegally.
     if (getCurFunction()->NeedsScopeChecking() &&
         !dcl->isInvalidDecl() &&
         !hasAnyUnrecoverableErrorsInThisFunction())
@@ -7794,6 +7905,9 @@ FieldDecl *Sema::HandleField(Scope *S, RecordDecl *Record,
 
   if (D.getDeclSpec().isThreadSpecified())
     Diag(D.getDeclSpec().getThreadSpecLoc(), diag::err_invalid_thread);
+  if (D.getDeclSpec().isConstexprSpecified())
+    Diag(D.getDeclSpec().getConstexprSpecLoc(), diag::err_invalid_constexpr)
+      << 2;
   
   // Check to see if this name was declared as a member previously
   LookupResult Previous(*this, II, Loc, LookupMemberName, ForRedeclaration);

@@ -367,7 +367,11 @@ class IsBeforeInTranslationUnitCache {
   /// L/R QueryFID - These are the FID's of the cached query.  If these match up
   /// with a subsequent query, the result can be reused.
   FileID LQueryFID, RQueryFID;
-  
+
+  /// \brief True if LQueryFID was created before RQueryFID. This is used
+  /// to compare macro expansion locations.
+  bool IsLQFIDBeforeRQFID;
+
   /// CommonFID - This is the file found in common between the two #include
   /// traces.  It is the nearest common ancestor of the #include tree.
   FileID CommonFID;
@@ -392,13 +396,27 @@ public:
     // use the #include loc in the common file.
     if (LQueryFID != CommonFID) LOffset = LCommonOffset;
     if (RQueryFID != CommonFID) ROffset = RCommonOffset;
+
+    // It is common for multiple macro expansions to be "included" from the same
+    // location (expansion location), in which case use the order of the FileIDs
+    // to determine which came first.
+    if (LOffset == ROffset && LQueryFID != CommonFID && RQueryFID != CommonFID)
+      return IsLQFIDBeforeRQFID;
+
     return LOffset < ROffset;
   }
   
   // Set up a new query.
-  void setQueryFIDs(FileID LHS, FileID RHS) {
+  void setQueryFIDs(FileID LHS, FileID RHS, bool isLFIDBeforeRFID) {
+    assert(LHS != RHS);
     LQueryFID = LHS;
     RQueryFID = RHS;
+    IsLQFIDBeforeRQFID = isLFIDBeforeRFID;
+  }
+
+  void clear() {
+    LQueryFID = RQueryFID = FileID();
+    IsLQFIDBeforeRQFID = false;
   }
   
   void setCommonLoc(FileID commonFID, unsigned lCommonOffset,
@@ -470,6 +488,10 @@ class SourceManager : public llvm::RefCountedBase<SourceManager> {
   /// This is LoadedSLocEntryTable.back().Offset, except that that entry might
   /// not have been loaded, so that value would be unknown.
   unsigned CurrentLoadedOffset;
+
+  /// \brief The highest possible offset is 2^31-1, so CurrentLoadedOffset
+  /// starts at 2^31.
+  static const unsigned MaxLoadedOffset = 1U << 31U;
 
   /// \brief A bitmap that indicates whether the entries of LoadedSLocEntryTable
   /// have already been loaded from the external source.
@@ -892,6 +914,33 @@ public:
     return getFileCharacteristic(Loc) == SrcMgr::C_ExternCSystem;
   }
 
+  /// \brief The size of the SLocEnty that \arg FID represents.
+  unsigned getFileIDSize(FileID FID) const {
+    bool Invalid = false;
+    const SrcMgr::SLocEntry &Entry = getSLocEntry(FID, &Invalid);
+    if (Invalid)
+      return 0;
+
+    int ID = FID.ID;
+    unsigned NextOffset;
+    if ((ID > 0 && unsigned(ID+1) == local_sloc_entry_size()))
+      NextOffset = getNextLocalOffset();
+    else if (ID+1 == -1)
+      NextOffset = MaxLoadedOffset;
+    else
+      NextOffset = getSLocEntry(FileID::get(ID+1)).getOffset();
+
+    return NextOffset - Entry.getOffset() - 1;
+  }
+
+  /// \brief Given a specific FileID, returns true if \arg Loc is inside that
+  /// FileID chunk and sets relative offset (offset of \arg Loc from beginning
+  /// of FileID) to \arg relativeOffset.
+  bool isInFileID(SourceLocation Loc, FileID FID,
+                  unsigned *RelativeOffset = 0) const {
+    return isInFileID(Loc, FID, 0, getFileIDSize(FID), RelativeOffset);
+  }
+
   /// \brief Given a specific chunk of a FileID (FileID with offset+length),
   /// returns true if \arg Loc is inside that chunk and sets relative offset
   /// (offset of \arg Loc from beginning of chunk) to \arg relativeOffset.
@@ -902,21 +951,13 @@ public:
     if (Loc.isInvalid())
       return false;
 
-    unsigned start = getSLocEntry(FID).getOffset() + offset;
+    unsigned FIDOffs = getSLocEntry(FID).getOffset();
+    unsigned start = FIDOffs + offset;
     unsigned end = start + length;
 
-#ifndef NDEBUG
     // Make sure offset/length describe a chunk inside the given FileID.
-    unsigned NextOffset;
-    if (FID.ID == -2)
-      NextOffset = 1U << 31U;
-    else if (FID.ID+1 == (int)LocalSLocEntryTable.size())
-      NextOffset = getNextLocalOffset();
-    else
-      NextOffset = getSLocEntryByID(FID.ID+1).getOffset();
-    assert(start < NextOffset);
-    assert(end   < NextOffset);
-#endif
+    assert(start <  FIDOffs + getFileIDSize(FID));
+    assert(end   <= FIDOffs + getFileIDSize(FID));
 
     if (Loc.getOffset() >= start && Loc.getOffset() < end) {
       if (relativeOffset)
@@ -983,8 +1024,33 @@ public:
   ///
   /// If the source file is included multiple times, the source location will
   /// be based upon the first inclusion.
+  ///
+  /// If the location points inside a function macro argument, the returned
+  /// location will be the macro location in which the argument was expanded.
+  /// \sa getMacroArgExpandedLocation
   SourceLocation getLocation(const FileEntry *SourceFile,
-                             unsigned Line, unsigned Col);
+                             unsigned Line, unsigned Col) {
+    SourceLocation Loc = translateFileLineCol(SourceFile, Line, Col);
+    return getMacroArgExpandedLocation(Loc);
+  }
+  
+  /// \brief Get the source location for the given file:line:col triplet.
+  ///
+  /// If the source file is included multiple times, the source location will
+  /// be based upon the first inclusion.
+  SourceLocation translateFileLineCol(const FileEntry *SourceFile,
+                                      unsigned Line, unsigned Col);
+
+  /// \brief If \arg Loc points inside a function macro argument, the returned
+  /// location will be the macro location in which the argument was expanded.
+  /// If a macro argument is used multiple times, the expanded location will
+  /// be at the first expansion of the argument.
+  /// e.g.
+  ///   MY_MACRO(foo);
+  ///             ^
+  /// Passing a file location pointing at 'foo', will yield a macro location
+  /// where 'foo' was expanded into.
+  SourceLocation getMacroArgExpandedLocation(SourceLocation Loc);
 
   /// \brief Determines the order of 2 source locations in the translation unit.
   ///

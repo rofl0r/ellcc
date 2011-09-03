@@ -155,9 +155,9 @@ void ARMInstPrinter::printInst(const MCInst *MI, raw_ostream &O) {
     }
 
     if (Opcode == ARM::tLDMIA)
-      O << "\tldmia";
+      O << "\tldm";
     else if (Opcode == ARM::tSTMIA)
-      O << "\tstmia";
+      O << "\tstm";
     else
       llvm_unreachable("Unknown opcode!");
 
@@ -166,6 +166,13 @@ void ARMInstPrinter::printInst(const MCInst *MI, raw_ostream &O) {
     if (Writeback) O << "!";
     O << ", ";
     printRegisterList(MI, 3, O);
+    return;
+  }
+
+  // Thumb1 NOP
+  if (Opcode == ARM::tMOVr && MI->getOperand(0).getReg() == ARM::R8 &&
+      MI->getOperand(1).getReg() == ARM::R8) {
+    O << "\tnop";
     return;
   }
 
@@ -639,7 +646,13 @@ void ARMInstPrinter::printPCLabel(const MCInst *MI, unsigned OpNum,
 
 void ARMInstPrinter::printThumbS4ImmOperand(const MCInst *MI, unsigned OpNum,
                                             raw_ostream &O) {
-  O << "#" <<  MI->getOperand(OpNum).getImm() * 4;
+  O << "#" << MI->getOperand(OpNum).getImm() * 4;
+}
+
+void ARMInstPrinter::printThumbSRImm(const MCInst *MI, unsigned OpNum,
+                                     raw_ostream &O) {
+  unsigned Imm = MI->getOperand(OpNum).getImm();
+  O << "#" << (Imm == 0 ? 32 : Imm);
 }
 
 void ARMInstPrinter::printThumbITMask(const MCInst *MI, unsigned OpNum,
@@ -894,8 +907,8 @@ void ARMInstPrinter::printRotImmOperand(const MCInst *MI, unsigned OpNum,
   O << ", ror #";
   switch (Imm) {
   default: assert (0 && "illegal ror immediate!");
-  case 1: O << "8\n"; break;
-  case 2: O << "16\n"; break;
-  case 3: O << "24\n"; break;
+  case 1: O << "8"; break;
+  case 2: O << "16"; break;
+  case 3: O << "24"; break;
   }
 }

@@ -240,7 +240,8 @@ void llvm::emitThumbRegPlusImmediate(MachineBasicBlock &MBB,
       Bytes -= ThisVal;
       const MCInstrDesc &MCID = TII.get(isSub ? ARM::tSUBi3 : ARM::tADDi3);
       const MachineInstrBuilder MIB =
-        AddDefaultT1CC(BuildMI(MBB, MBBI, dl, MCID, DestReg).setMIFlags(MIFlags));
+        AddDefaultT1CC(BuildMI(MBB, MBBI, dl, MCID, DestReg)
+                         .setMIFlags(MIFlags));
       AddDefaultPred(MIB.addReg(BaseReg, RegState::Kill).addImm(ThisVal));
     } else {
       AddDefaultPred(BuildMI(MBB, MBBI, dl, TII.get(ARM::tMOVr), DestReg)
@@ -264,8 +265,7 @@ void llvm::emitThumbRegPlusImmediate(MachineBasicBlock &MBB,
       if (NeedPred)
         MIB = AddDefaultPred(MIB);
       MIB.setMIFlags(MIFlags);
-    }
-    else {
+    } else {
       bool isKill = BaseReg != ARM::SP;
       MachineInstrBuilder MIB = BuildMI(MBB, MBBI, dl, TII.get(Opc), DestReg);
       if (NeedCC)
@@ -544,9 +544,9 @@ Thumb1RegisterInfo::resolveFrameIndex(MachineBasicBlock::iterator I,
     ++i;
     assert(i < MI.getNumOperands() && "Instr doesn't have FrameIndex operand!");
   }
-  bool Done = false;
-  Done = rewriteFrameIndex(MI, i, BaseReg, Off, TII);
+  bool Done = rewriteFrameIndex(MI, i, BaseReg, Off, TII);
   assert (Done && "Unable to resolve frame index!");
+  (void)Done;
 }
 
 /// saveScavengerRegister - Spill the register so it can be used by the

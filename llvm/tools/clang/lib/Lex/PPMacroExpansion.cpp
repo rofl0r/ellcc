@@ -185,7 +185,8 @@ bool Preprocessor::HandleMacroExpandedIdentifier(Token &Identifier,
 
   // If this is a builtin macro, like __LINE__ or _Pragma, handle it specially.
   if (MI->isBuiltinMacro()) {
-    if (Callbacks) Callbacks->MacroExpands(Identifier, MI);
+    if (Callbacks) Callbacks->MacroExpands(Identifier, MI,
+                                           Identifier.getLocation());
     ExpandBuiltinMacro(Identifier);
     return false;
   }
@@ -226,12 +227,13 @@ bool Preprocessor::HandleMacroExpandedIdentifier(Token &Identifier,
   // Notice that this macro has been used.
   markMacroAsUsed(MI);
 
-  if (Callbacks) Callbacks->MacroExpands(Identifier, MI);
-  
-  // If we started lexing a macro, enter the macro expansion body.
-
   // Remember where the token is expanded.
   SourceLocation ExpandLoc = Identifier.getLocation();
+
+  if (Callbacks) Callbacks->MacroExpands(Identifier, MI,
+                                         SourceRange(ExpandLoc, ExpansionEnd));
+  
+  // If we started lexing a macro, enter the macro expansion body.
 
   // If this macro expands to no tokens, don't bother to push it onto the
   // expansion stack, only to take it right back off.
@@ -356,7 +358,23 @@ MacroArgs *Preprocessor::ReadFunctionLikeMacroArgs(Token &MacroName,
         if (CodeComplete)
           CodeComplete->CodeCompleteMacroArgument(MacroName.getIdentifierInfo(),
                                                   MI, NumActuals);
-        LexUnexpandedToken(Tok);
+
+        // Add the code-completion token and finish the lexing normally so that
+        // normal code-completion occurs again with the expanded tokens.
+        ArgTokens.push_back(Tok);
+        // Add a marker EOF token to the end of the token list.
+        Token EOFTok;
+        EOFTok.startToken();
+        EOFTok.setKind(tok::eof);
+        EOFTok.setLocation(Tok.getLocation());
+        EOFTok.setLength(0);
+        ArgTokens.push_back(EOFTok);
+        ++NumActuals;
+        // "Fill out" the other arguments.
+        for (; NumActuals < MI->getNumArgs(); ++NumActuals)
+          ArgTokens.push_back(EOFTok);
+        return MacroArgs::create(MI, ArgTokens.data(), ArgTokens.size(),
+                                 /*isVarargsElided=*/false, *this);
       }
       
       if (Tok.is(tok::eof) || Tok.is(tok::eod)) { // "#if f(<eof>" & "#if f(\n"

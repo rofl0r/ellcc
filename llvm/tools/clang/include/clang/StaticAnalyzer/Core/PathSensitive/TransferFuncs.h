@@ -15,7 +15,7 @@
 #ifndef LLVM_CLANG_GR_TRANSFERFUNCS
 #define LLVM_CLANG_GR_TRANSFERFUNCS
 
-#include "clang/StaticAnalyzer/Core/PathSensitive/GRState.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/ProgramState.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/SVals.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ObjCMessage.h"
 #include <vector>
@@ -36,24 +36,24 @@ public:
   TransferFuncs() {}
   virtual ~TransferFuncs() {}
 
-  virtual void RegisterPrinters(std::vector<GRState::Printer*>& Printers) {}
+  virtual void RegisterPrinters(std::vector<ProgramState::Printer*>& Printers) {}
   virtual void RegisterChecks(ExprEngine& Eng) {}
 
 
   // Calls.
 
-  virtual void evalCall(ExplodedNodeSet& Dst,
+  virtual void evalCall(ExplodedNodeSet &Dst,
                         ExprEngine& Engine,
                         StmtNodeBuilder& Builder,
-                        const CallExpr* CE, SVal L,
-                        ExplodedNode* Pred) {}
+                        const CallExpr *CE, SVal L,
+                        ExplodedNode *Pred) {}
 
-  virtual void evalObjCMessage(ExplodedNodeSet& Dst,
+  virtual void evalObjCMessage(ExplodedNodeSet &Dst,
                                ExprEngine& Engine,
                                StmtNodeBuilder& Builder,
                                ObjCMessage msg,
-                               ExplodedNode* Pred,
-                               const GRState *state) {}
+                               ExplodedNode *Pred,
+                               const ProgramState *state) {}
 
   // Stores.
 
@@ -65,22 +65,22 @@ public:
                            EndOfFunctionNodeBuilder& Builder) {}
 
 
-  virtual void evalDeadSymbols(ExplodedNodeSet& Dst,
+  virtual void evalDeadSymbols(ExplodedNodeSet &Dst,
                                ExprEngine& Engine,
                                StmtNodeBuilder& Builder,
-                               ExplodedNode* Pred,
-                               const GRState* state,
+                               ExplodedNode *Pred,
+                               const ProgramState *state,
                                SymbolReaper& SymReaper) {}
 
   // Return statements.
-  virtual void evalReturn(ExplodedNodeSet& Dst,
+  virtual void evalReturn(ExplodedNodeSet &Dst,
                           ExprEngine& Engine,
                           StmtNodeBuilder& Builder,
-                          const ReturnStmt* S,
-                          ExplodedNode* Pred) {}
+                          const ReturnStmt *S,
+                          ExplodedNode *Pred) {}
 
   // Assumptions.
-  virtual const GRState* evalAssume(const GRState *state,
+  virtual const ProgramState *evalAssume(const ProgramState *state,
                                     SVal Cond, bool Assumption) {
     return state;
   }  
