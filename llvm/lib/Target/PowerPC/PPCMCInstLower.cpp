@@ -100,9 +100,9 @@ static MCOperand GetSymbolRef(const MachineOperand &MO, const MCSymbol *Symbol,
   MCSymbolRefExpr::VariantKind RefKind = MCSymbolRefExpr::VK_None;
 
   if (MO.getTargetFlags() & PPCII::MO_LO16)
-    RefKind = /* RICH isDarwin ? MCSymbolRefExpr::VK_PPC_DARWIN_LO16 : */ MCSymbolRefExpr::VK_PPC_GAS_LO16;
+    RefKind = isDarwin ? MCSymbolRefExpr::VK_PPC_DARWIN_LO16 : MCSymbolRefExpr::VK_PPC_GAS_LO16;
   else if (MO.getTargetFlags() & PPCII::MO_HA16)
-    RefKind = /* RICH isDarwin ? MCSymbolRefExpr::VK_PPC_DARWIN_HA16 : */ MCSymbolRefExpr::VK_PPC_GAS_HA16;
+    RefKind = isDarwin ? MCSymbolRefExpr::VK_PPC_DARWIN_HA16 : MCSymbolRefExpr::VK_PPC_GAS_HA16;
 
   // FIXME: This isn't right, but we don't have a good way to express this in
   // the MC Level, see below.

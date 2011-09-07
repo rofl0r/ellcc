@@ -58,10 +58,8 @@ cl::desc("enable preincrement load/store generation on PPC (experimental)"),
                                      cl::Hidden);
 
 static TargetLoweringObjectFile *CreateTLOF(const PPCTargetMachine &TM) {
-#if RICH
   if (TM.getSubtargetImpl()->isDarwin())
     return new TargetLoweringObjectFileMachO();
-#endif
 
   return new TargetLoweringObjectFileELF();
 }

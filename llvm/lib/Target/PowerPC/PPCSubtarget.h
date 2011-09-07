@@ -140,7 +140,7 @@ public:
   const Triple &getTargetTriple() const { return TargetTriple; }
 
   /// isDarwin - True if this is any darwin platform.
-  bool isDarwin() const { return true; } // RICH: TargetTriple.isMacOSX(); }
+  bool isDarwin() const { return TargetTriple.isMacOSX(); }
 
   bool isDarwinABI() const { return isDarwin(); }
   bool isSVR4ABI() const { return !isDarwin(); }

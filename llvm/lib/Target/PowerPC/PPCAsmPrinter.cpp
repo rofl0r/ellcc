@@ -150,7 +150,7 @@ void PPCAsmPrinter::printOperand(const MachineInstr *MI, unsigned OpNo,
     const char *RegName = PPCInstPrinter::getRegisterName(MO.getReg());
     // Linux assembler (Others?) does not take register mnemonics.
     // FIXME - What about special registers used in mfspr/mtspr?
-    /* RICH if (!Subtarget.isDarwin()) */ RegName = stripRegisterPrefix(RegName);
+    if (!Subtarget.isDarwin()) RegName = stripRegisterPrefix(RegName);
     O << RegName;
     return;
   }
@@ -661,9 +661,7 @@ bool PPCDarwinAsmPrinter::doFinalization(Module &M) {
   // implementation of multiple entry points).  If this doesn't occur, the
   // linker can safely perform dead code stripping.  Since LLVM never generates
   // code that does this, it is always safe to set.
-#if RICH
   OutStreamer.EmitAssemblerFlag(MCAF_SubsectionsViaSymbols);
-#endif
 
   return AsmPrinter::doFinalization(M);
 }
@@ -676,7 +674,7 @@ static AsmPrinter *createPPCAsmPrinterPass(TargetMachine &tm,
                                            MCStreamer &Streamer) {
   const PPCSubtarget *Subtarget = &tm.getSubtarget<PPCSubtarget>();
 
-  if (0) // RICH: Subtarget->isDarwin())
+  if (Subtarget->isDarwin())
     return new PPCDarwinAsmPrinter(tm, Streamer);
   return new PPCLinuxAsmPrinter(tm, Streamer);
 }
