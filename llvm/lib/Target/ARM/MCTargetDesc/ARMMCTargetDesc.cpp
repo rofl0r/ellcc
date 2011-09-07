@@ -15,12 +15,14 @@
 #include "ARMMCAsmInfo.h"
 #include "ARMBaseInfo.h"
 #include "InstPrinter/ARMInstPrinter.h"
+#include "llvm/MC/MCCodeGenInfo.h"
+#include "llvm/MC/MCInstrAnalysis.h"
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCStreamer.h"
 #include "llvm/MC/MCSubtargetInfo.h"
-#include "llvm/Target/TargetRegistry.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/TargetRegistry.h"
 
 #define GET_REGINFO_MC_DESC
 #include "ARMGenRegisterInfo.inc"
@@ -216,16 +218,17 @@ extern "C" void LLVMInitializeARMTargetMC() {
   TargetRegistry::RegisterMCRegInfo(TheARMTarget, createARMMCRegisterInfo);
   TargetRegistry::RegisterMCRegInfo(TheThumbTarget, createARMMCRegisterInfo);
 
-  TargetRegistry::RegisterMCInstrAnalysis(TheARMTarget,
-                                          createARMMCInstrAnalysis);
-  TargetRegistry::RegisterMCInstrAnalysis(TheThumbTarget,
-                                          createARMMCInstrAnalysis);
-
   // Register the MC subtarget info.
   TargetRegistry::RegisterMCSubtargetInfo(TheARMTarget,
                                           ARM_MC::createARMMCSubtargetInfo);
   TargetRegistry::RegisterMCSubtargetInfo(TheThumbTarget,
                                           ARM_MC::createARMMCSubtargetInfo);
+
+  // Register the MC instruction analyzer.
+  TargetRegistry::RegisterMCInstrAnalysis(TheARMTarget,
+                                          createARMMCInstrAnalysis);
+  TargetRegistry::RegisterMCInstrAnalysis(TheThumbTarget,
+                                          createARMMCInstrAnalysis);
 
   // Register the MC Code Emitter
   TargetRegistry::RegisterMCCodeEmitter(TheARMTarget, createARMMCCodeEmitter);

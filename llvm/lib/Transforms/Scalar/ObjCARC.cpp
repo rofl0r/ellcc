@@ -344,6 +344,10 @@ static InstructionClass GetInstructionClass(const Value *V) {
       break;
     default:
       // For anything else, check all the operands.
+      // Note that this includes both operands of a Store: while the first
+      // operand isn't actually being dereferenced, it is being stored to
+      // memory where we can no longer track who might read it and dereference
+      // it, so we have to consider it potentially used.
       for (User::const_op_iterator OI = I->op_begin(), OE = I->op_end();
            OI != OE; ++OI)
         if (IsPotentialUse(*OI))
@@ -515,6 +519,10 @@ static bool IsObjCIdentifiedObject(const Value *V) {
     const Value *Pointer =
       StripPointerCastsAndObjCCalls(LI->getPointerOperand());
     if (const GlobalVariable *GV = dyn_cast<GlobalVariable>(Pointer)) {
+      // A constant pointer can't be pointing to an object on the heap. It may
+      // be reference-counted, but it won't be deleted.
+      if (GV->isConstant())
+        return true;
       StringRef Name = GV->getName();
       // These special variables are known to hold values which are not
       // reference-counted pointers.
@@ -2679,8 +2687,8 @@ void ObjCARCOpt::MoveCalls(Value *Arg,
       // The invoke's return value isn't available in the unwind block,
       // but our releases will never depend on it, because they must be
       // paired with retains from before the invoke.
-      InsertPts[0] = II->getNormalDest()->getFirstNonPHI();
-      InsertPts[1] = II->getUnwindDest()->getFirstNonPHI();
+      InsertPts[0] = II->getNormalDest()->getFirstInsertionPt();
+      InsertPts[1] = II->getUnwindDest()->getFirstInsertionPt();
     } else {
       // Insert code immediately after the last use.
       InsertPts[0] = llvm::next(BasicBlock::iterator(LastUse));
@@ -2743,6 +2751,15 @@ ObjCARCOpt::PerformCodePlacement(DenseMap<const BasicBlock *, BBState>
     // not being managed by ObjC reference counting, so we can delete pairs
     // regardless of what possible decrements or uses lie between them.
     bool KnownSafe = isa<Constant>(Arg) || isa<AllocaInst>(Arg);
+
+    // A constant pointer can't be pointing to an object on the heap. It may
+    // be reference-counted, but it won't be deleted.
+    if (const LoadInst *LI = dyn_cast<LoadInst>(Arg))
+      if (const GlobalVariable *GV =
+            dyn_cast<GlobalVariable>(
+              StripPointerCastsAndObjCCalls(LI->getPointerOperand())))
+        if (GV->isConstant())
+          KnownSafe = true;
 
     // If a pair happens in a region where it is known that the reference count
     // is already incremented, we can similarly ignore possible decrements.

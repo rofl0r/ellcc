@@ -652,6 +652,9 @@ TryAgain:
     case tok::pp_unassert:
       //isExtension = true;  // FIXME: implement #unassert
       break;
+        
+    case tok::pp___export_macro__:
+      return HandleMacroExportDirective(Result);
     }
     break;
   }
@@ -1000,6 +1003,37 @@ void Preprocessor::HandleIdentSCCSDirective(Token &Tok) {
   }
 }
 
+/// \brief Handle a #__export_macro__ directive.
+void Preprocessor::HandleMacroExportDirective(Token &Tok) {
+  Token MacroNameTok;
+  ReadMacroName(MacroNameTok, 2);
+  
+  // Error reading macro name?  If so, diagnostic already issued.
+  if (MacroNameTok.is(tok::eod))
+    return;
+
+  // Check to see if this is the last token on the #__export_macro__ line.
+  CheckEndOfDirective("__export_macro__");
+
+  // Okay, we finally have a valid identifier to undef.
+  MacroInfo *MI = getMacroInfo(MacroNameTok.getIdentifierInfo());
+  
+  // If the macro is not defined, this is an error.
+  if (MI == 0) {
+    Diag(MacroNameTok, diag::err_pp_export_non_macro)
+      << MacroNameTok.getIdentifierInfo();
+    return;
+  }
+  
+  // Note that this macro has now been exported.
+  MI->setExportLocation(MacroNameTok.getLocation());
+  
+  // If this macro definition came from a PCH file, mark it
+  // as having changed since serialization.
+  if (MI->isFromAST())
+    MI->setChangedAfterLoad();
+}
+
 //===----------------------------------------------------------------------===//
 // Preprocessor Include Directive Handling.
 //===----------------------------------------------------------------------===//
@@ -1187,7 +1221,8 @@ void Preprocessor::HandleIncludeDirective(SourceLocation HashLoc,
                                   End, SearchPath, RelativePath);
 
   if (File == 0) {
-    Diag(FilenameTok, diag::warn_pp_file_not_found) << Filename;
+    if (!SuppressIncludeNotFoundError)
+      Diag(FilenameTok, diag::err_pp_file_not_found) << Filename;
     return;
   }
 
@@ -1298,8 +1333,8 @@ bool Preprocessor::ReadMacroDefinitionArgList(MacroInfo *MI) {
       Diag(Tok, diag::err_pp_expected_ident_in_arg_list);
       return true;
     case tok::ellipsis:  // #define X(... -> C99 varargs
-      // Warn if use of C99 feature in non-C99 mode.
-      if (!Features.C99) Diag(Tok, diag::ext_variadic_macro);
+      if (!Features.C99 && !Features.CPlusPlus0x)
+        Diag(Tok, diag::ext_variadic_macro);
 
       // Lex the token after the identifier.
       LexUnexpandedToken(Tok);

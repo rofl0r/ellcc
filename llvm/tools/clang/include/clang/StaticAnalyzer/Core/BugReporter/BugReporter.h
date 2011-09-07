@@ -42,7 +42,6 @@ class BugReport;
 class BugReporter;
 class BugReporterContext;
 class ExprEngine;
-class ProgramState;
 class BugType;
 
 //===----------------------------------------------------------------------===//
@@ -62,6 +61,7 @@ public:
 
   typedef const SourceRange *ranges_iterator;
   typedef llvm::ImmutableList<BugReporterVisitor*>::iterator visitor_iterator;
+  typedef SmallVector<StringRef, 2> ExtraTextList;
 
 protected:
   friend class BugReporter;
@@ -73,6 +73,7 @@ protected:
   FullSourceLoc Location;
   const ExplodedNode *ErrorNode;
   SmallVector<SourceRange, 4> Ranges;
+  ExtraTextList ExtraText;
 
   // Not the most efficient data structure, but we use an ImmutableList for the
   // Callbacks because it is safe to make additions to list during iteration.
@@ -115,8 +116,12 @@ public:
   /// \brief This allows for addition of meta data to the diagnostic.
   ///
   /// Currently, only the HTMLDiagnosticClient knows how to display it. 
-  virtual std::pair<const char**,const char**> getExtraDescriptiveText() {
-    return std::make_pair((const char**)0,(const char**)0);
+  void addExtraText(StringRef S) {
+    ExtraText.push_back(S);
+  }
+
+  virtual const ExtraTextList &getExtraText() {
+    return ExtraText;
   }
 
   /// \brief Return the "definitive" location of the reported bug.
@@ -132,8 +137,12 @@ public:
   ///
   /// Ranges are used to highlight regions of interest in the source code.
   /// They should be at the same source code line as the BugReport location.
+  /// By default, the source range of the statement corresponding to the error
+  /// node will be used; add a single invalid range to specify absence of
+  /// ranges.
   void addRange(SourceRange R) {
-    assert(R.isValid());
+    assert((R.isValid() || Ranges.empty()) && "Invalid range can only be used "
+                           "to specify that the report does not have a range.");
     Ranges.push_back(R);
   }
 

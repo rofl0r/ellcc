@@ -49,6 +49,7 @@ class PPCallbacks;
 class CodeCompletionHandler;
 class DirectoryLookup;
 class PreprocessingRecord;
+class ModuleLoader;
   
 /// Preprocessor - This object engages in a tight little dance with the lexer to
 /// efficiently preprocess tokens.  Lexers know only about tokens within a
@@ -57,16 +58,18 @@ class PreprocessingRecord;
 ///
 class Preprocessor : public llvm::RefCountedBase<Preprocessor> {
   Diagnostic        *Diags;
-  LangOptions        Features;
-  const TargetInfo  &Target;
+  LangOptions       &Features;
+  const TargetInfo  *Target;
   FileManager       &FileMgr;
   SourceManager     &SourceMgr;
   ScratchBuffer     *ScratchBuf;
   HeaderSearch      &HeaderInfo;
+  ModuleLoader      &TheModuleLoader;
 
   /// \brief External source of macros.
   ExternalPreprocessorSource *ExternalSource;
 
+  
   /// PTH - An optional PTHManager object used for getting tokens from
   ///  a token cache rather than lexing the original source file.
   llvm::OwningPtr<PTHManager> PTH;
@@ -102,6 +105,7 @@ class Preprocessor : public llvm::RefCountedBase<Preprocessor> {
   // State that is set before the preprocessor begins.
   bool KeepComments : 1;
   bool KeepMacroComments : 1;
+  bool SuppressIncludeNotFoundError : 1;
 
   // State that changes while the preprocessor runs:
   bool InMacroArgs : 1;            // True if parsing fn macro invocation args.
@@ -115,6 +119,9 @@ class Preprocessor : public llvm::RefCountedBase<Preprocessor> {
   /// \brief Whether we have already loaded macros from the external source.
   mutable bool ReadMacrosFromExternalSource : 1;
 
+  /// \brief Tracks the depth of Lex() Calls.
+  unsigned LexDepth;
+  
   /// Identifiers - This is mapping/lookup information for all identifiers in
   /// the program, including program keywords.
   mutable IdentifierTable Identifiers;
@@ -220,10 +227,6 @@ class Preprocessor : public llvm::RefCountedBase<Preprocessor> {
   /// previous macro value.
   llvm::DenseMap<IdentifierInfo*, std::vector<MacroInfo*> > PragmaPushMacroInfo;
 
-  /// \brief Expansion source location for the last macro that expanded
-  /// to no tokens.
-  SourceLocation LastEmptyMacroExpansionLoc;
-
   // Various statistics we track for performance analysis.
   unsigned NumDirectives, NumIncluded, NumDefined, NumUndefined, NumPragma;
   unsigned NumIf, NumElse, NumEndif;
@@ -291,19 +294,27 @@ private:  // Cached tokens state.
   MacroInfo *getInfoForMacro(IdentifierInfo *II) const;
   
 public:
-  Preprocessor(Diagnostic &diags, const LangOptions &opts,
-               const TargetInfo &target,
+  Preprocessor(Diagnostic &diags, LangOptions &opts,
+               const TargetInfo *target,
                SourceManager &SM, HeaderSearch &Headers,
+               ModuleLoader &TheModuleLoader,
                IdentifierInfoLookup *IILookup = 0,
-               bool OwnsHeaderSearch = false);
+               bool OwnsHeaderSearch = false,
+               bool DelayInitialization = false);
 
   ~Preprocessor();
 
+  /// \brief Initialize the preprocessor, if the constructor did not already
+  /// perform the initialization.
+  ///
+  /// \param Target Information about the target.
+  void Initialize(const TargetInfo &Target);
+  
   Diagnostic &getDiagnostics() const { return *Diags; }
   void setDiagnostics(Diagnostic &D) { Diags = &D; }
 
   const LangOptions &getLangOptions() const { return Features; }
-  const TargetInfo &getTargetInfo() const { return Target; }
+  const TargetInfo &getTargetInfo() const { return *Target; }
   FileManager &getFileManager() const { return FileMgr; }
   SourceManager &getSourceManager() const { return SourceMgr; }
   HeaderSearch &getHeaderSearchInfo() const { return HeaderInfo; }
@@ -325,6 +336,9 @@ public:
     return ExternalSource;
   }
 
+  /// \brief Retrieve the module loader associated with this preprocessor.
+  ModuleLoader &getModuleLoader() const { return TheModuleLoader; }
+  
   /// SetCommentRetentionState - Control whether or not the preprocessor retains
   /// comments in output.
   void SetCommentRetentionState(bool KeepComments, bool KeepMacroComments) {
@@ -333,6 +347,14 @@ public:
   }
 
   bool getCommentRetentionState() const { return KeepComments; }
+
+  void SetSuppressIncludeNotFoundError(bool Suppress) {
+    SuppressIncludeNotFoundError = Suppress;
+  }
+
+  bool GetSuppressIncludeNotFoundError() {
+    return SuppressIncludeNotFoundError;
+  }
 
   /// isCurrentLexer - Return true if we are lexing directly from the specified
   /// lexer.
@@ -379,12 +401,6 @@ public:
                          MacroInfo*>::const_iterator macro_iterator;
   macro_iterator macro_begin(bool IncludeExternalMacros = true) const;
   macro_iterator macro_end(bool IncludeExternalMacros = true) const;
-
-  /// \brief Expansion source location for the last macro that expanded
-  /// to no tokens.
-  SourceLocation getLastEmptyMacroExpansionLoc() const {
-    return LastEmptyMacroExpansionLoc;
-  }
 
   const std::string &getPredefines() const { return Predefines; }
   /// setPredefines - Set the predefines for this Preprocessor.  These
@@ -524,6 +540,7 @@ public:
   /// Lex - To lex a token from the preprocessor, just pull a token from the
   /// current lexer or macro object.
   void Lex(Token &Result) {
+    ++LexDepth;
     if (CurLexer)
       CurLexer->Lex(Result);
     else if (CurPTHLexer)
@@ -532,6 +549,11 @@ public:
       CurTokenLexer->Lex(Result);
     else
       CachingLex(Result);
+    --LexDepth;
+    
+    // If we have the __import_module__ keyword, handle the module import now.
+    if (Result.getKind() == tok::kw___import_module__ && LexDepth == 0)
+      HandleModuleImport(Result);
   }
 
   /// LexNonComment - Lex a token.  If it's a comment, keep lexing until we get
@@ -1008,6 +1030,9 @@ private:
   /// the macro should not be expanded return true, otherwise return false.
   bool HandleMacroExpandedIdentifier(Token &Tok, MacroInfo *MI);
 
+  /// \brief Handle a module import directive.
+  void HandleModuleImport(Token &Import);
+  
   /// \brief Cache macro expanded tokens for TokenLexers.
   //
   /// Works like a stack; a TokenLexer adds the macro expanded tokens that is
@@ -1089,7 +1114,8 @@ private:
   void HandleDigitDirective(Token &Tok);
   void HandleUserDiagnosticDirective(Token &Tok, bool isWarning);
   void HandleIdentSCCSDirective(Token &Tok);
-
+  void HandleMacroExportDirective(Token &Tok);
+  
   // File inclusion.
   void HandleIncludeDirective(SourceLocation HashLoc,
                               Token &Tok,

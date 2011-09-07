@@ -255,6 +255,8 @@ Tool &Darwin::SelectTool(const Compilation &C, const JobAction &JA,
       T = new tools::darwin::Lipo(*this); break;
     case Action::DsymutilJobClass:
       T = new tools::darwin::Dsymutil(*this); break;
+    case Action::VerifyJobClass:
+      T = new tools::darwin::VerifyDebug(*this); break;
     }
   }
 
@@ -362,8 +364,8 @@ void DarwinClang::AddLinkSearchPathArgs(const ArgList &Args,
 
 void DarwinClang::AddLinkARCArgs(const ArgList &Args,
                                  ArgStringList &CmdArgs) const {
-  
-  CmdArgs.push_back("-force_load");    
+
+  CmdArgs.push_back("-force_load");
   llvm::sys::Path P(getDriver().ClangExecutable);
   P.eraseComponent(); // 'clang'
   P.eraseComponent(); // 'bin'
@@ -385,13 +387,13 @@ void DarwinClang::AddLinkARCArgs(const ArgList &Args,
 }
 
 void DarwinClang::AddLinkRuntimeLib(const ArgList &Args,
-                                    ArgStringList &CmdArgs, 
+                                    ArgStringList &CmdArgs,
                                     const char *DarwinStaticLib) const {
   llvm::sys::Path P(getDriver().ResourceDir);
   P.appendComponent("lib");
   P.appendComponent("darwin");
   P.appendComponent(DarwinStaticLib);
-  
+
   // For now, allow missing resource libraries to support developers who may
   // not have compiler-rt checked out or integrated into their build.
   bool Exists;
@@ -491,21 +493,6 @@ void Darwin::AddDeploymentTarget(DerivedArgList &Args) const {
   Arg *iOSSimVersion = Args.getLastArg(
     options::OPT_mios_simulator_version_min_EQ);
 
-  // If no '-miphoneos-version-min' specified, see if we can set the default
-  // based on isysroot.
-  if (!iOSVersion) {
-    if (const Arg *A = Args.getLastArg(options::OPT_isysroot)) {
-      StringRef first, second;
-      StringRef isysroot = A->getValue(Args);
-      llvm::tie(first, second) = isysroot.split(StringRef("SDKs/iPhoneOS"));
-      if (second != "") {
-        const Option *O = Opts.getOption(options::OPT_miphoneos_version_min_EQ);
-        iOSVersion = Args.MakeJoinedArg(0, O, second.substr(0,3));
-        Args.append(iOSVersion);
-      }
-    }
-  }
-
   // FIXME: HACK! When compiling for the simulator we don't get a
   // '-miphoneos-version-min' to help us know whether there is an ARC runtime
   // or not; try to parse a __IPHONE_OS_VERSION_MIN_REQUIRED
@@ -537,51 +524,62 @@ void Darwin::AddDeploymentTarget(DerivedArgList &Args) const {
           << iOSSimVersion->getAsString(Args);
     iOSSimVersion = 0;
   } else if (!OSXVersion && !iOSVersion && !iOSSimVersion) {
-    // If not deployment target was specified on the command line, check for
+    // If no deployment target was specified on the command line, check for
     // environment defines.
-    const char *OSXTarget = ::getenv("MACOSX_DEPLOYMENT_TARGET");
-    const char *iOSTarget = ::getenv("IPHONEOS_DEPLOYMENT_TARGET");
-    const char *iOSSimTarget = ::getenv("IOS_SIMULATOR_DEPLOYMENT_TARGET");
+    StringRef OSXTarget;
+    StringRef iOSTarget;
+    StringRef iOSSimTarget;
+    if (char *env = ::getenv("MACOSX_DEPLOYMENT_TARGET"))
+      OSXTarget = env;
+    if (char *env = ::getenv("IPHONEOS_DEPLOYMENT_TARGET"))
+      iOSTarget = env;
+    if (char *env = ::getenv("IOS_SIMULATOR_DEPLOYMENT_TARGET"))
+      iOSSimTarget = env;
 
-    // Ignore empty strings.
-    if (OSXTarget && OSXTarget[0] == '\0')
-      OSXTarget = 0;
-    if (iOSTarget && iOSTarget[0] == '\0')
-      iOSTarget = 0;
-    if (iOSSimTarget && iOSSimTarget[0] == '\0')
-      iOSSimTarget = 0;
+    // If no '-miphoneos-version-min' specified on the command line and 
+    // IPHONEOS_DEPLOYMENT_TARGET is not defined, see if we can set the default
+    // based on isysroot.
+    if (iOSTarget.empty()) {
+      if (const Arg *A = Args.getLastArg(options::OPT_isysroot)) {
+        StringRef first, second;
+        StringRef isysroot = A->getValue(Args);
+        llvm::tie(first, second) = isysroot.split(StringRef("SDKs/iPhoneOS"));
+        if (second != "")
+          iOSTarget = second.substr(0,3);
+      }
+    }
 
     // Handle conflicting deployment targets
     //
     // FIXME: Don't hardcode default here.
 
     // Do not allow conflicts with the iOS simulator target.
-    if (iOSSimTarget && (OSXTarget || iOSTarget)) {
+    if (!iOSSimTarget.empty() && (!OSXTarget.empty() || !iOSTarget.empty())) {
       getDriver().Diag(diag::err_drv_conflicting_deployment_targets)
         << "IOS_SIMULATOR_DEPLOYMENT_TARGET"
-        << (OSXTarget ? "MACOSX_DEPLOYMENT_TARGET" :
+        << (!OSXTarget.empty() ? "MACOSX_DEPLOYMENT_TARGET" :
             "IPHONEOS_DEPLOYMENT_TARGET");
     }
 
     // Allow conflicts among OSX and iOS for historical reasons, but choose the
     // default platform.
-    if (OSXTarget && iOSTarget) {
+    if (!OSXTarget.empty() && !iOSTarget.empty()) {
       if (getTriple().getArch() == llvm::Triple::arm ||
           getTriple().getArch() == llvm::Triple::thumb)
-        OSXTarget = 0;
+        OSXTarget = "";
       else
-        iOSTarget = 0;
+        iOSTarget = "";
     }
 
-    if (OSXTarget) {
+    if (!OSXTarget.empty()) {
       const Option *O = Opts.getOption(options::OPT_mmacosx_version_min_EQ);
       OSXVersion = Args.MakeJoinedArg(0, O, OSXTarget);
       Args.append(OSXVersion);
-    } else if (iOSTarget) {
+    } else if (!iOSTarget.empty()) {
       const Option *O = Opts.getOption(options::OPT_miphoneos_version_min_EQ);
       iOSVersion = Args.MakeJoinedArg(0, O, iOSTarget);
       Args.append(iOSVersion);
-    } else if (iOSSimTarget) {
+    } else if (!iOSSimTarget.empty()) {
       const Option *O = Opts.getOption(
         options::OPT_mios_simulator_version_min_EQ);
       iOSSimVersion = Args.MakeJoinedArg(0, O, iOSSimTarget);
@@ -1008,6 +1006,8 @@ Tool &Generic_GCC::SelectTool(const Compilation &C,
       T = new tools::darwin::Lipo(*this); break;
     case Action::DsymutilJobClass:
       T = new tools::darwin::Dsymutil(*this); break;
+    case Action::VerifyJobClass:
+      T = new tools::darwin::VerifyDebug(*this); break;
     }
   }
 
@@ -1371,7 +1371,7 @@ static bool HasMultilib(llvm::Triple::ArchType Arch, enum LinuxDistro Distro) {
   }
   if (Arch == llvm::Triple::ppc64)
     return true;
-  if ((Arch == llvm::Triple::x86 || Arch == llvm::Triple::ppc) && 
+  if ((Arch == llvm::Triple::x86 || Arch == llvm::Triple::ppc) &&
       IsDebianBased(Distro))
     return true;
   return false;
@@ -1488,8 +1488,8 @@ static std::string findGCCBaseLibDir(const std::string &GccTriple) {
     return ret;
   }
   static const char* GccVersions[] = {"4.6.1", "4.6.0", "4.6",
-                                      "4.5.2", "4.5.1", "4.5",
-                                      "4.4.5", "4.4.4", "4.4.3", "4.4",
+                                      "4.5.3", "4.5.2", "4.5.1", "4.5",
+                                      "4.4.6", "4.4.5", "4.4.4", "4.4.3", "4.4",
                                       "4.3.4", "4.3.3", "4.3.2", "4.3",
                                       "4.2.4", "4.2.3", "4.2.2", "4.2.1",
                                       "4.2", "4.1.1"};
@@ -1564,8 +1564,8 @@ Linux::Linux(const HostInfo &Host, const llvm::Triple &Triple)
     else if (!llvm::sys::fs::exists("/usr/lib/x86_64-linux-gnu/gcc",
              Exists) && Exists)
       GccTriple = "x86_64-linux-gnu";
-    else if (!llvm::sys::fs::exists("/usr/lib64/gcc/x86_64-slackware-linux", Exists)
-            && Exists)
+    else if (!llvm::sys::fs::exists("/usr/lib64/gcc/x86_64-slackware-linux", 
+             Exists) && Exists)
       GccTriple = "x86_64-slackware-linux";
   } else if (Arch == llvm::Triple::x86) {
     if (!llvm::sys::fs::exists("/usr/lib/gcc/i686-linux-gnu", Exists) && Exists)
@@ -1596,14 +1596,14 @@ Linux::Linux(const HostInfo &Host, const llvm::Triple &Triple)
                                Exists) && Exists)
       GccTriple = "powerpc64-unknown-linux-gnu";
     else if (!llvm::sys::fs::exists("/usr/lib64/gcc/"
-                                    "powerpc64-unknown-linux-gnu", Exists) && 
+                                    "powerpc64-unknown-linux-gnu", Exists) &&
              Exists)
       GccTriple = "powerpc64-unknown-linux-gnu";
   }
 
   std::string Base = findGCCBaseLibDir(GccTriple);
   path_list &Paths = getFilePaths();
-  bool Is32Bits = (getArch() == llvm::Triple::x86 || 
+  bool Is32Bits = (getArch() == llvm::Triple::x86 ||
                    getArch() == llvm::Triple::ppc);
 
   std::string Suffix;
@@ -1617,11 +1617,12 @@ Linux::Linux(const HostInfo &Host, const llvm::Triple &Triple)
     Lib = Lib64;
   }
 
-  llvm::sys::Path LinkerPath(Base + "/../../../../" + GccTriple + "/bin/ld");
-  if (!llvm::sys::fs::exists(LinkerPath.str(), Exists) && Exists)
-    Linker = LinkerPath.str();
-  else
-    Linker = GetProgramPath("ld");
+  // OpenSuse stores the linker with the compiler, add that to the search
+  // path.
+  ToolChain::path_list &PPaths = getProgramPaths();
+  PPaths.push_back(Base + "/../../../../" + GccTriple + "/bin");
+
+  Linker = GetProgramPath("ld");
 
   LinuxDistro Distro = DetectLinuxDistro(Arch);
 
@@ -1815,6 +1816,7 @@ Tool &Windows::SelectTool(const Compilation &C, const JobAction &JA,
     case Action::BindArchClass:
     case Action::LipoJobClass:
     case Action::DsymutilJobClass:
+    case Action::VerifyJobClass:
       assert(0 && "Invalid tool kind.");
     case Action::PreprocessJobClass:
     case Action::PrecompileJobClass:

@@ -2723,6 +2723,71 @@ bool SimplifyCFGOpt::SimplifyCondBranch(BranchInst *BI, IRBuilder<> &Builder) {
   return false;
 }
 
+/// Check if passing a value to an instruction will cause undefined behavior.
+static bool passingValueIsAlwaysUndefined(Value *V, Instruction *I) {
+  Constant *C = dyn_cast<Constant>(V);
+  if (!C)
+    return false;
+
+  if (!I->hasOneUse()) // Only look at single-use instructions, for compile time
+    return false;
+
+  if (C->isNullValue()) {
+    Instruction *Use = I->use_back();
+
+    // Now make sure that there are no instructions in between that can alter
+    // control flow (eg. calls)
+    for (BasicBlock::iterator i = ++BasicBlock::iterator(I); &*i != Use; ++i)
+      if (i == I->getParent()->end() || i->mayHaveSideEffects())
+        return false;
+
+    // Look through GEPs. A load from a GEP derived from NULL is still undefined
+    if (GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(Use))
+      if (GEP->getPointerOperand() == I)
+        return passingValueIsAlwaysUndefined(V, GEP);
+
+    // Look through bitcasts.
+    if (BitCastInst *BC = dyn_cast<BitCastInst>(Use))
+      return passingValueIsAlwaysUndefined(V, BC);
+
+    // Load from null is undefined.
+    if (LoadInst *LI = dyn_cast<LoadInst>(Use))
+      return LI->getPointerAddressSpace() == 0;
+
+    // Store to null is undefined.
+    if (StoreInst *SI = dyn_cast<StoreInst>(Use))
+      return SI->getPointerAddressSpace() == 0 && SI->getPointerOperand() == I;
+  }
+  return false;
+}
+
+/// If BB has an incoming value that will always trigger undefined behavior
+/// (eg. null pointer derefence), remove the branch leading here.
+static bool removeUndefIntroducingPredecessor(BasicBlock *BB) {
+  for (BasicBlock::iterator i = BB->begin();
+       PHINode *PHI = dyn_cast<PHINode>(i); ++i)
+    for (unsigned i = 0, e = PHI->getNumIncomingValues(); i != e; ++i)
+      if (passingValueIsAlwaysUndefined(PHI->getIncomingValue(i), PHI)) {
+        TerminatorInst *T = PHI->getIncomingBlock(i)->getTerminator();
+        IRBuilder<> Builder(T);
+        if (BranchInst *BI = dyn_cast<BranchInst>(T)) {
+          BB->removePredecessor(PHI->getIncomingBlock(i));
+          // Turn uncoditional branches into unreachables and remove the dead
+          // destination from conditional branches.
+          if (BI->isUnconditional())
+            Builder.CreateUnreachable();
+          else
+            Builder.CreateBr(BI->getSuccessor(0) == BB ? BI->getSuccessor(1) :
+                                                         BI->getSuccessor(0));
+          BI->eraseFromParent();
+          return true;
+        }
+        // TODO: SwitchInst.
+      }
+
+  return false;
+}
+
 bool SimplifyCFGOpt::run(BasicBlock *BB) {
   bool Changed = false;
 
@@ -2745,6 +2810,9 @@ bool SimplifyCFGOpt::run(BasicBlock *BB) {
 
   // Check for and eliminate duplicate PHI nodes in this block.
   Changed |= EliminateDuplicatePHINodes(BB);
+
+  // Check for and remove branches that will always cause undefined behavior.
+  Changed |= removeUndefIntroducingPredecessor(BB);
 
   // Merge basic blocks into their predecessor if there is only one distinct
   // pred, and if there is only one distinct successor of the predecessor, and

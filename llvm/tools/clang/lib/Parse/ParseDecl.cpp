@@ -303,10 +303,12 @@ void Parser::ParseMicrosoftTypeAttributes(ParsedAttributes &attrs) {
   while (Tok.is(tok::kw___fastcall) || Tok.is(tok::kw___stdcall) ||
          Tok.is(tok::kw___thiscall) || Tok.is(tok::kw___cdecl)   ||
          Tok.is(tok::kw___ptr64) || Tok.is(tok::kw___w64) ||
+         Tok.is(tok::kw___ptr32) ||
          Tok.is(tok::kw___unaligned)) {
     IdentifierInfo *AttrName = Tok.getIdentifierInfo();
     SourceLocation AttrNameLoc = ConsumeToken();
-    if (Tok.is(tok::kw___ptr64) || Tok.is(tok::kw___w64))
+    if (Tok.is(tok::kw___ptr64) || Tok.is(tok::kw___w64) ||
+        Tok.is(tok::kw___ptr32))
       // FIXME: Support these properly!
       continue;
     attrs.addNew(AttrName, AttrNameLoc, 0, AttrNameLoc, 0,
@@ -757,6 +759,9 @@ Parser::DeclGroupPtrTy Parser::ParseDeclaration(StmtVector &Stmts,
                                                 SourceLocation &DeclEnd,
                                           ParsedAttributesWithRange &attrs) {
   ParenBraceBracketBalancer BalancerRAIIObj(*this);
+  // Must temporarily exit the objective-c container scope for
+  // parsing c none objective-c decls.
+  ObjCDeclContextSwitch ObjCDC(*this);
   
   Decl *SingleDecl = 0;
   Decl *OwnedType = 0;
@@ -1722,6 +1727,7 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
       break;
 
     case tok::kw___ptr64:
+    case tok::kw___ptr32:
     case tok::kw___w64:
     case tok::kw___cdecl:
     case tok::kw___stdcall:
@@ -2271,6 +2277,7 @@ bool Parser::ParseOptionalTypeSpecifier(DeclSpec &DS, bool& isInvalid,
     break;
 
   case tok::kw___ptr64:
+  case tok::kw___ptr32:
   case tok::kw___w64:
   case tok::kw___cdecl:
   case tok::kw___stdcall:
@@ -2319,6 +2326,7 @@ bool Parser::ParseOptionalTypeSpecifier(DeclSpec &DS, bool& isInvalid,
 ///
 void Parser::
 ParseStructDeclaration(DeclSpec &DS, FieldCallback &Fields) {
+    
   if (Tok.is(tok::kw___extension__)) {
     // __extension__ silences extension warnings in the subexpression.
     ExtensionRAIIObject O(Diags);  // Use RAII to do this.
@@ -2984,6 +2992,7 @@ bool Parser::isTypeSpecifierQualifier() {
   case tok::kw___thiscall:
   case tok::kw___w64:
   case tok::kw___ptr64:
+  case tok::kw___ptr32:
   case tok::kw___pascal:
   case tok::kw___unaligned:
 
@@ -3131,6 +3140,7 @@ bool Parser::isDeclarationSpecifier(bool DisambiguatingWithExpression) {
   case tok::kw___thiscall:
   case tok::kw___w64:
   case tok::kw___ptr64:
+  case tok::kw___ptr32:
   case tok::kw___forceinline:
   case tok::kw___pascal:
   case tok::kw___unaligned:
@@ -3265,6 +3275,7 @@ void Parser::ParseTypeQualifierListOpt(DeclSpec &DS,
 
     case tok::kw___w64:
     case tok::kw___ptr64:
+    case tok::kw___ptr32:
     case tok::kw___cdecl:
     case tok::kw___stdcall:
     case tok::kw___fastcall:
@@ -3683,7 +3694,7 @@ void Parser::ParseParenDeclarator(Declarator &D) {
   if  (Tok.is(tok::kw___cdecl) || Tok.is(tok::kw___stdcall) ||
        Tok.is(tok::kw___thiscall) || Tok.is(tok::kw___fastcall) ||
        Tok.is(tok::kw___w64) || Tok.is(tok::kw___ptr64) ||
-       Tok.is(tok::kw___unaligned)) {
+       Tok.is(tok::kw___ptr32) || Tok.is(tok::kw___unaligned)) {
     ParseMicrosoftTypeAttributes(attrs);
   }
   // Eat any Borland extensions.

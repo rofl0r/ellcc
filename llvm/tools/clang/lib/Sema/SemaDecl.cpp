@@ -38,6 +38,7 @@
 // FIXME: layering (ideally, Sema shouldn't be dependent on Lex API's)
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Lex/HeaderSearch.h"
+#include "clang/Lex/ModuleLoader.h"
 #include "llvm/ADT/Triple.h"
 #include <algorithm>
 #include <cstring>
@@ -419,24 +420,6 @@ Sema::NameClassification Sema::ClassifyName(Scope *S,
     ExprResult E = LookupInObjCMethod(Result, S, Name, true);
     if (E.get() || E.isInvalid())
       return E;
-    
-    // Synthesize ivars lazily.
-    if (getLangOptions().ObjCDefaultSynthProperties &&
-        getLangOptions().ObjCNonFragileABI2) {
-      if (SynthesizeProvisionalIvar(Result, Name, NameLoc)) {
-        if (const ObjCPropertyDecl *Property = 
-                                          canSynthesizeProvisionalIvar(Name)) {
-          Diag(NameLoc, diag::warn_synthesized_ivar_access) << Name;
-          Diag(Property->getLocation(), diag::note_property_declare);
-        }
-
-        // FIXME: This is strange. Shouldn't we just take the ivar returned
-        // from SynthesizeProvisionalIvar and continue with that?
-        E = LookupInObjCMethod(Result, S, Name, true);   
-        if (E.get() || E.isInvalid())
-          return E;
-      }
-    }
   }
   
   bool SecondTry = false;
@@ -736,11 +719,6 @@ DeclContext *Sema::getContainingDC(DeclContext *DC) {
     // declared in.
     return DC;
   }
-
-  // ObjCMethodDecls are parsed (for some reason) outside the context
-  // of the class.
-  if (isa<ObjCMethodDecl>(DC))
-    return DC->getLexicalParent()->getLexicalParent();
 
   return DC->getLexicalParent();
 }
@@ -2929,7 +2907,7 @@ static bool isNearlyMatchingFunction(ASTContext &Context,
     QualType DefParamTy = Definition->getParamDecl(Idx)->getType();
 
     // The parameter types are identical
-    if (DefParamTy == DeclParamTy)
+    if (Context.hasSameType(DefParamTy, DeclParamTy))
       continue;
 
     QualType DeclParamBaseTy = getCoreType(DeclParamTy);
@@ -3794,7 +3772,7 @@ Sema::ActOnVariableDeclarator(Scope *S, Declarator &D, DeclContext *DC,
   if (D.getDeclSpec().isThreadSpecified()) {
     if (NewVD->hasLocalStorage())
       Diag(D.getDeclSpec().getThreadSpecLoc(), diag::err_thread_non_global);
-    else if (!Context.Target.isTLSSupported())
+    else if (!Context.getTargetInfo().isTLSSupported())
       Diag(D.getDeclSpec().getThreadSpecLoc(), diag::err_thread_unsupported);
     else
       NewVD->setThreadSpecified(true);
@@ -3824,7 +3802,7 @@ Sema::ActOnVariableDeclarator(Scope *S, Declarator &D, DeclContext *DC,
         Diag(E->getExprLoc(), diag::warn_asm_label_on_auto_decl) << Label;
         break;
       case SC_Register:
-        if (!Context.Target.isValidGCCRegisterName(Label))
+        if (!Context.getTargetInfo().isValidGCCRegisterName(Label))
           Diag(E->getExprLoc(), diag::err_asm_unknown_register_name) << Label;
         break;
       case SC_Static:
@@ -5350,7 +5328,7 @@ void Sema::CheckMain(FunctionDecl* FD) {
   // Darwin passes an undocumented fourth argument of type char**.  If
   // other platforms start sprouting these, the logic below will start
   // getting shifty.
-  if (nparams == 4 && Context.Target.getTriple().isOSDarwin())
+  if (nparams == 4 && Context.getTargetInfo().getTriple().isOSDarwin())
     HasExtraParameters = false;
 
   if (HasExtraParameters) {
@@ -5429,39 +5407,86 @@ namespace {
       : public EvaluatedExprVisitor<SelfReferenceChecker> {
     Sema &S;
     Decl *OrigDecl;
+    bool isRecordType;
+    bool isPODType;
 
   public:
     typedef EvaluatedExprVisitor<SelfReferenceChecker> Inherited;
 
     SelfReferenceChecker(Sema &S, Decl *OrigDecl) : Inherited(S.Context),
-                                                    S(S), OrigDecl(OrigDecl) { }
+                                                    S(S), OrigDecl(OrigDecl) {
+      isPODType = false;
+      isRecordType = false;
+      if (ValueDecl *VD = dyn_cast<ValueDecl>(OrigDecl)) {
+        isPODType = VD->getType().isPODType(S.Context);
+        isRecordType = VD->getType()->isRecordType();
+      }
+    }
 
     void VisitExpr(Expr *E) {
       if (isa<ObjCMessageExpr>(*E)) return;
+      if (isRecordType) {
+        Expr *expr = E;
+        if (MemberExpr *ME = dyn_cast<MemberExpr>(E)) {
+          ValueDecl *VD = ME->getMemberDecl();
+          if (isa<EnumConstantDecl>(VD) || isa<VarDecl>(VD)) return;
+          expr = ME->getBase();
+        }
+        if (DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(expr)) {
+          HandleDeclRefExpr(DRE);
+          return;
+        }
+      }
       Inherited::VisitExpr(E);
     }
 
+    void VisitMemberExpr(MemberExpr *E) {
+      if (isa<FieldDecl>(E->getMemberDecl()))
+        if (DeclRefExpr *DRE
+              = dyn_cast<DeclRefExpr>(E->getBase()->IgnoreParenImpCasts())) {
+          HandleDeclRefExpr(DRE);
+          return;
+        }
+      Inherited::VisitMemberExpr(E);
+    }
+
     void VisitImplicitCastExpr(ImplicitCastExpr *E) {
-      CheckForSelfReference(E);
+      if ((!isRecordType &&E->getCastKind() == CK_LValueToRValue) ||
+          (isRecordType && E->getCastKind() == CK_NoOp)) {
+        Expr* SubExpr = E->getSubExpr()->IgnoreParenImpCasts();
+        if (MemberExpr *ME = dyn_cast<MemberExpr>(SubExpr))
+          SubExpr = ME->getBase()->IgnoreParenImpCasts();
+        if (DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(SubExpr)) {
+          HandleDeclRefExpr(DRE);
+          return;
+        }
+      }
       Inherited::VisitImplicitCastExpr(E);
     }
 
-    void CheckForSelfReference(ImplicitCastExpr *E) {
-      if (E->getCastKind() != CK_LValueToRValue) return;
-      Expr* SubExpr = E->getSubExpr()->IgnoreParenImpCasts();
-      DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(SubExpr);
-      if (!DRE) return;
-      Decl* ReferenceDecl = DRE->getDecl();
+    void VisitUnaryOperator(UnaryOperator *E) {
+      // For POD record types, addresses of its own members are well-defined.
+      if (isRecordType && isPODType) return;
+      Inherited::VisitUnaryOperator(E);
+    } 
+    
+    void HandleDeclRefExpr(DeclRefExpr *DRE) {
+      Decl* ReferenceDecl = DRE->getDecl(); 
       if (OrigDecl != ReferenceDecl) return;
       LookupResult Result(S, DRE->getNameInfo(), Sema::LookupOrdinaryName,
                           Sema::NotForRedeclaration);
-      S.DiagRuntimeBehavior(SubExpr->getLocStart(), SubExpr,
+      S.DiagRuntimeBehavior(DRE->getLocStart(), DRE,
                             S.PDiag(diag::warn_uninit_self_reference_in_init)
-                              << Result.getLookupName() 
+                              << Result.getLookupName()
                               << OrigDecl->getLocation()
-                              << SubExpr->getSourceRange());
+                              << DRE->getSourceRange());
     }
   };
+}
+
+/// CheckSelfReference - Warns if OrigDecl is used in expression E.
+void Sema::CheckSelfReference(Decl* OrigDecl, Expr *E) {
+  SelfReferenceChecker(*this, OrigDecl).VisitExpr(E);
 }
 
 /// AddInitializerToDecl - Adds the initializer Init to the
@@ -5479,10 +5504,10 @@ void Sema::AddInitializerToDecl(Decl *RealDecl, Expr *Init,
     // Variables declared within a function/method body are handled
     // by a dataflow analysis.
     if (!vd->hasLocalStorage() && !vd->isStaticLocal())
-      SelfReferenceChecker(*this, RealDecl).VisitExpr(Init);    
+      CheckSelfReference(RealDecl, Init);    
   }
   else {
-    SelfReferenceChecker(*this, RealDecl).VisitExpr(Init);
+    CheckSelfReference(RealDecl, Init);
   }
 
   if (CXXMethodDecl *Method = dyn_cast<CXXMethodDecl>(RealDecl)) {
@@ -5745,27 +5770,6 @@ void Sema::AddInitializerToDecl(Decl *RealDecl, Expr *Init,
     VDecl->setType(DclT);
     Init->setType(DclT);
   }
-
-  
-  // If this variable is a local declaration with record type, make sure it
-  // doesn't have a flexible member initialization.  We only support this as a
-  // global/static definition.
-  if (VDecl->hasLocalStorage())
-    if (const RecordType *RT = VDecl->getType()->getAs<RecordType>())
-      if (RT->getDecl()->hasFlexibleArrayMember()) {
-        // Check whether the initializer tries to initialize the flexible
-        // array member itself to anything other than an empty initializer list.
-        if (InitListExpr *ILE = dyn_cast<InitListExpr>(Init)) {
-          unsigned Index = std::distance(RT->getDecl()->field_begin(),
-                                         RT->getDecl()->field_end()) - 1;
-          if (Index < ILE->getNumInits() &&
-              !(isa<InitListExpr>(ILE->getInit(Index)) &&
-                cast<InitListExpr>(ILE->getInit(Index))->getNumInits() == 0)) {
-            Diag(VDecl->getLocation(), diag::err_nonstatic_flexible_variable);
-            VDecl->setInvalidDecl();
-          }
-        }
-      }
   
   // Check any implicit conversions within the expression.
   CheckImplicitConversions(Init, VDecl->getLocation());
@@ -6695,9 +6699,22 @@ Decl *Sema::ActOnFinishFunctionBody(Decl *dcl, Stmt *Body,
       DiagnoseSizeOfParametersAndReturnValue(MD->param_begin(), MD->param_end(),
                                              MD->getResultType(), MD);
     }
+    if (ObjCShouldCallSuperDealloc) {
+      Diag(MD->getLocEnd(), diag::warn_objc_missing_super_dealloc);
+      ObjCShouldCallSuperDealloc = false;
+    }
+    if (ObjCShouldCallSuperFinalize) {
+      Diag(MD->getLocEnd(), diag::warn_objc_missing_super_finalize);
+      ObjCShouldCallSuperFinalize = false;
+    }
   } else {
     return 0;
   }
+
+  assert(!ObjCShouldCallSuperDealloc && "This should only be set for "
+         "ObjC methods, which should have been handled in the block above.");
+  assert(!ObjCShouldCallSuperFinalize && "This should only be set for "
+         "ObjC methods, which should have been handled in the block above.");
 
   // Verify and clean out per-function state.
   if (Body) {
@@ -7732,6 +7749,15 @@ void Sema::ActOnTagStartDefinition(Scope *S, Decl *TagD) {
   PushDeclContext(S, Tag);
 }
 
+void Sema::ActOnObjCContainerStartDefinition(Decl *IDecl) {
+  assert(isa<ObjCContainerDecl>(IDecl) && 
+         "ActOnObjCContainerStartDefinition - Not ObjCContainerDecl");
+  DeclContext *OCD = cast<DeclContext>(IDecl);
+  assert(getContainingDC(OCD) == CurContext &&
+      "The next DeclContext should be lexically contained in the current one.");
+  CurContext = OCD;
+}
+
 void Sema::ActOnStartCXXMemberDeclarations(Scope *S, Decl *TagD,
                                            SourceLocation FinalLoc,
                                            SourceLocation LBraceLoc) {
@@ -7783,6 +7809,11 @@ void Sema::ActOnTagFinishDefinition(Scope *S, Decl *TagD,
   Consumer.HandleTagDeclDefinition(Tag);
 }
 
+void Sema::ActOnObjCContainerFinishDefinition() {
+  // Exit this scope of this interface definition.
+  PopDeclContext();
+}
+                                          
 void Sema::ActOnTagDefinitionError(Scope *S, Decl *TagD) {
   AdjustDeclIfTemplate(TagD);
   TagDecl *Tag = cast<TagDecl>(TagD);
@@ -8327,7 +8358,6 @@ TranslateIvarVisibility(tok::ObjCKeywordKind ivarVisibility) {
 /// in order to create an IvarDecl object for it.
 Decl *Sema::ActOnIvar(Scope *S,
                                 SourceLocation DeclStart,
-                                Decl *IntfDecl,
                                 Declarator &D, ExprTy *BitfieldWidth,
                                 tok::ObjCKeywordKind Visibility) {
 
@@ -8370,7 +8400,7 @@ Decl *Sema::ActOnIvar(Scope *S,
     Visibility != tok::objc_not_keyword ? TranslateIvarVisibility(Visibility)
                                         : ObjCIvarDecl::None;
   // Must set ivar's DeclContext to its enclosing interface.
-  ObjCContainerDecl *EnclosingDecl = cast<ObjCContainerDecl>(IntfDecl);
+  ObjCContainerDecl *EnclosingDecl = cast<ObjCContainerDecl>(CurContext);
   ObjCContainerDecl *EnclosingContext;
   if (ObjCImplementationDecl *IMPDecl =
       dyn_cast<ObjCImplementationDecl>(EnclosingDecl)) {
@@ -8432,7 +8462,7 @@ Decl *Sema::ActOnIvar(Scope *S,
 /// class and class extensions. For every class @interface and class 
 /// extension @interface, if the last ivar is a bitfield of any type, 
 /// then add an implicit `char :0` ivar to the end of that interface.
-void Sema::ActOnLastBitfield(SourceLocation DeclLoc, Decl *EnclosingDecl,
+void Sema::ActOnLastBitfield(SourceLocation DeclLoc,
                              SmallVectorImpl<Decl *> &AllIvarDecls) {
   if (!LangOpts.ObjCNonFragileABI2 || AllIvarDecls.empty())
     return;
@@ -8446,9 +8476,9 @@ void Sema::ActOnLastBitfield(SourceLocation DeclLoc, Decl *EnclosingDecl,
     Ivar->getBitWidth()->EvaluateAsInt(Context).getZExtValue();
   if (BitFieldSize == 0)
     return;
-  ObjCInterfaceDecl *ID = dyn_cast<ObjCInterfaceDecl>(EnclosingDecl);
+  ObjCInterfaceDecl *ID = dyn_cast<ObjCInterfaceDecl>(CurContext);
   if (!ID) {
-    if (ObjCCategoryDecl *CD = dyn_cast<ObjCCategoryDecl>(EnclosingDecl)) {
+    if (ObjCCategoryDecl *CD = dyn_cast<ObjCCategoryDecl>(CurContext)) {
       if (!CD->IsClassExtension())
         return;
     }
@@ -8460,7 +8490,7 @@ void Sema::ActOnLastBitfield(SourceLocation DeclLoc, Decl *EnclosingDecl,
   llvm::APInt Zero(Context.getTypeSize(Context.IntTy), 0);
   Expr * BW = IntegerLiteral::Create(Context, Zero, Context.IntTy, DeclLoc);
 
-  Ivar = ObjCIvarDecl::Create(Context, cast<ObjCContainerDecl>(EnclosingDecl),
+  Ivar = ObjCIvarDecl::Create(Context, cast<ObjCContainerDecl>(CurContext),
                               DeclLoc, DeclLoc, 0,
                               Context.CharTy, 
                               Context.getTrivialTypeSourceInfo(Context.CharTy,
@@ -8856,7 +8886,7 @@ EnumConstantDecl *Sema::CheckEnumConstant(EnumDecl *Enum,
                                           SourceLocation IdLoc,
                                           IdentifierInfo *Id,
                                           Expr *Val) {
-  unsigned IntWidth = Context.Target.getIntWidth();
+  unsigned IntWidth = Context.getTargetInfo().getIntWidth();
   llvm::APSInt EnumVal(IntWidth);
   QualType EltTy;
 
@@ -9100,9 +9130,9 @@ void Sema::ActOnEnumBody(SourceLocation EnumLoc, SourceLocation LBraceLoc,
   // TODO: If the result value doesn't fit in an int, it must be a long or long
   // long value.  ISO C does not support this, but GCC does as an extension,
   // emit a warning.
-  unsigned IntWidth = Context.Target.getIntWidth();
-  unsigned CharWidth = Context.Target.getCharWidth();
-  unsigned ShortWidth = Context.Target.getShortWidth();
+  unsigned IntWidth = Context.getTargetInfo().getIntWidth();
+  unsigned CharWidth = Context.getTargetInfo().getCharWidth();
+  unsigned ShortWidth = Context.getTargetInfo().getShortWidth();
 
   // Verify that all the values are okay, compute the size of the values, and
   // reverse the list.
@@ -9175,12 +9205,12 @@ void Sema::ActOnEnumBody(SourceLocation EnumLoc, SourceLocation LBraceLoc,
       BestType = Context.IntTy;
       BestWidth = IntWidth;
     } else {
-      BestWidth = Context.Target.getLongWidth();
+      BestWidth = Context.getTargetInfo().getLongWidth();
 
       if (NumNegativeBits <= BestWidth && NumPositiveBits < BestWidth) {
         BestType = Context.LongTy;
       } else {
-        BestWidth = Context.Target.getLongLongWidth();
+        BestWidth = Context.getTargetInfo().getLongLongWidth();
 
         if (NumNegativeBits > BestWidth || NumPositiveBits >= BestWidth)
           Diag(Enum->getLocation(), diag::warn_enum_too_large);
@@ -9207,13 +9237,13 @@ void Sema::ActOnEnumBody(SourceLocation EnumLoc, SourceLocation LBraceLoc,
         = (NumPositiveBits == BestWidth || !getLangOptions().CPlusPlus)
                            ? Context.UnsignedIntTy : Context.IntTy;
     } else if (NumPositiveBits <=
-               (BestWidth = Context.Target.getLongWidth())) {
+               (BestWidth = Context.getTargetInfo().getLongWidth())) {
       BestType = Context.UnsignedLongTy;
       BestPromotionType
         = (NumPositiveBits == BestWidth || !getLangOptions().CPlusPlus)
                            ? Context.UnsignedLongTy : Context.LongTy;
     } else {
-      BestWidth = Context.Target.getLongLongWidth();
+      BestWidth = Context.getTargetInfo().getLongLongWidth();
       assert(NumPositiveBits <= BestWidth &&
              "How could an initializer get larger than ULL?");
       BestType = Context.UnsignedLongLongTy;
@@ -9300,6 +9330,19 @@ Decl *Sema::ActOnFileScopeAsmDecl(Expr *expr,
   return New;
 }
 
+DeclResult Sema::ActOnModuleImport(SourceLocation ImportLoc,
+                                   IdentifierInfo &ModuleName,
+                                   SourceLocation ModuleNameLoc) {
+  ModuleKey Module = PP.getModuleLoader().loadModule(ImportLoc, 
+                                                     ModuleName, ModuleNameLoc);
+  if (!Module)
+    return true;
+  
+  // FIXME: Actually create a declaration to describe the module import.
+  (void)Module;
+  return DeclResult((Decl *)0);
+}
+
 void Sema::ActOnPragmaWeakID(IdentifierInfo* Name,
                              SourceLocation PragmaLoc,
                              SourceLocation NameLoc) {
@@ -9331,4 +9374,8 @@ void Sema::ActOnPragmaWeakAlias(IdentifierInfo* Name,
     (void)WeakUndeclaredIdentifiers.insert(
       std::pair<IdentifierInfo*,WeakInfo>(AliasName, W));
   }
+}
+
+Decl *Sema::getObjCDeclContext() const {
+  return (dyn_cast_or_null<ObjCContainerDecl>(CurContext));
 }

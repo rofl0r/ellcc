@@ -74,7 +74,6 @@ Decl *Sema::ActOnProperty(Scope *S, SourceLocation AtLoc,
                           ObjCDeclSpec &ODS,
                           Selector GetterSel,
                           Selector SetterSel,
-                          Decl *ClassCategory,
                           bool *isOverridingProperty,
                           tok::ObjCKeywordKind MethodImplKind,
                           DeclContext *lexicalDC) {
@@ -101,12 +100,11 @@ Decl *Sema::ActOnProperty(Scope *S, SourceLocation AtLoc,
                     !(Attributes & ObjCDeclSpec::DQ_PR_weak)));
 
   // Proceed with constructing the ObjCPropertDecls.
-  ObjCContainerDecl *ClassDecl =
-    cast<ObjCContainerDecl>(ClassCategory);
+  ObjCContainerDecl *ClassDecl = cast<ObjCContainerDecl>(CurContext);
 
   if (ObjCCategoryDecl *CDecl = dyn_cast<ObjCCategoryDecl>(ClassDecl))
     if (CDecl->IsClassExtension()) {
-      Decl *Res = HandlePropertyInClassExtension(S, CDecl, AtLoc,
+      Decl *Res = HandlePropertyInClassExtension(S, AtLoc,
                                            FD, GetterSel, SetterSel,
                                            isAssign, isReadWrite,
                                            Attributes,
@@ -137,7 +135,7 @@ Decl *Sema::ActOnProperty(Scope *S, SourceLocation AtLoc,
 }
 
 Decl *
-Sema::HandlePropertyInClassExtension(Scope *S, ObjCCategoryDecl *CDecl,
+Sema::HandlePropertyInClassExtension(Scope *S,
                                      SourceLocation AtLoc, FieldDeclarator &FD,
                                      Selector GetterSel, Selector SetterSel,
                                      const bool isAssign,
@@ -146,9 +144,9 @@ Sema::HandlePropertyInClassExtension(Scope *S, ObjCCategoryDecl *CDecl,
                                      bool *isOverridingProperty,
                                      TypeSourceInfo *T,
                                      tok::ObjCKeywordKind MethodImplKind) {
-
+  ObjCCategoryDecl *CDecl = cast<ObjCCategoryDecl>(CurContext);
   // Diagnose if this property is already in continuation class.
-  DeclContext *DC = cast<DeclContext>(CDecl);
+  DeclContext *DC = CurContext;
   IdentifierInfo *PropertyId = FD.D.getIdentifier();
   ObjCInterfaceDecl *CCPrimary = CDecl->getClassInterface();
   
@@ -235,12 +233,15 @@ Sema::HandlePropertyInClassExtension(Scope *S, ObjCCategoryDecl *CDecl,
       ProtocolPropertyODS.
       setPropertyAttributes((ObjCDeclSpec::ObjCPropertyAttributeKind)
                             PIkind);
-
+      // Must re-establish the context from class extension to primary
+      // class context.
+      ContextRAII SavedContext(*this, CCPrimary);
+      
       Decl *ProtocolPtrTy =
         ActOnProperty(S, AtLoc, FD, ProtocolPropertyODS,
                       PIDecl->getGetterName(),
                       PIDecl->getSetterName(),
-                      CCPrimary, isOverridingProperty,
+                      isOverridingProperty,
                       MethodImplKind,
                       /* lexicalDC = */ CDecl);
       PIDecl = cast<ObjCPropertyDecl>(ProtocolPtrTy);
@@ -486,7 +487,9 @@ static void checkARCPropertyImpl(Sema &S, SourceLocation propertyImplLoc,
     case Qualifiers::OCL_Strong:
       S.Diag(propertyImplLoc, diag::err_arc_assign_property_ownership)
         << property->getDeclName()
-        << ivar->getDeclName();
+        << ivar->getDeclName()
+        << ((property->getPropertyAttributesAsWritten() 
+            & ObjCPropertyDecl::OBJC_PR_assign) != 0);
       break;
     }
 
@@ -507,12 +510,11 @@ Decl *Sema::ActOnPropertyImplDecl(Scope *S,
                                   SourceLocation AtLoc,
                                   SourceLocation PropertyLoc,
                                   bool Synthesize,
-                                  Decl *ClassCatImpDecl,
                                   IdentifierInfo *PropertyId,
                                   IdentifierInfo *PropertyIvar,
                                   SourceLocation PropertyIvarLoc) {
   ObjCContainerDecl *ClassImpDecl =
-    cast_or_null<ObjCContainerDecl>(ClassCatImpDecl);
+    cast_or_null<ObjCContainerDecl>(CurContext);
   // Make sure we have a context for the property implementation declaration.
   if (!ClassImpDecl) {
     Diag(AtLoc, diag::error_missing_property_context);
@@ -1281,10 +1283,20 @@ void Sema::DefaultSynthesizeProperties (Scope *S, ObjCImplDecl* IMPDecl,
     // Saying that they are located at the @implementation isn't really going
     // to help users.
     ActOnPropertyImplDecl(S, SourceLocation(), SourceLocation(),
-                          true,IMPDecl,
+                          true,
                           Prop->getIdentifier(), Prop->getIdentifier(),
                           SourceLocation());
   }
+}
+
+void Sema::DefaultSynthesizeProperties(Scope *S, Decl *D) {
+  if (!LangOpts.ObjCDefaultSynthProperties || !LangOpts.ObjCNonFragileABI2)
+    return;
+  ObjCImplementationDecl *IC=dyn_cast_or_null<ObjCImplementationDecl>(D);
+  if (!IC)
+    return;
+  if (ObjCInterfaceDecl* IDecl = IC->getClassInterface())
+    DefaultSynthesizeProperties(S, IC, IDecl);
 }
 
 void Sema::DiagnoseUnimplementedProperties(Scope *S, ObjCImplDecl* IMPDecl,
@@ -1314,23 +1326,23 @@ void Sema::DiagnoseUnimplementedProperties(Scope *S, ObjCImplDecl* IMPDecl,
         PropImplMap.count(Prop) || Prop->hasAttr<UnavailableAttr>())
       continue;
     if (!InsMap.count(Prop->getGetterName())) {
-      Diag(Prop->getLocation(),
+      Diag(IMPDecl->getLocation(),
            isa<ObjCCategoryDecl>(CDecl) ?
             diag::warn_setter_getter_impl_required_in_category :
             diag::warn_setter_getter_impl_required)
       << Prop->getDeclName() << Prop->getGetterName();
-      Diag(IMPDecl->getLocation(),
-           diag::note_property_impl_required);
+      Diag(Prop->getLocation(),
+           diag::note_property_declare);
     }
 
     if (!Prop->isReadOnly() && !InsMap.count(Prop->getSetterName())) {
-      Diag(Prop->getLocation(),
+      Diag(IMPDecl->getLocation(),
            isa<ObjCCategoryDecl>(CDecl) ?
            diag::warn_setter_getter_impl_required_in_category :
            diag::warn_setter_getter_impl_required)
       << Prop->getDeclName() << Prop->getSetterName();
-      Diag(IMPDecl->getLocation(),
-           diag::note_property_impl_required);
+      Diag(Prop->getLocation(),
+           diag::note_property_declare);
     }
   }
 }

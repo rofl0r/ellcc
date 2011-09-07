@@ -236,10 +236,10 @@ def err_maybe_falloff_nonvoid_block : Error<
 def err_falloff_nonvoid_block : Error<
   "control reaches end of non-void block">;
 def warn_suggest_noreturn_function : Warning<
-  "function could be attribute 'noreturn'">,
+  "function %0 could be declared with attribute 'noreturn'">,
   InGroup<DiagGroup<"missing-noreturn">>, DefaultIgnore;
 def warn_suggest_noreturn_block : Warning<
-  "block could be attribute 'noreturn'">,
+  "block could be declared with attribute 'noreturn'">,
   InGroup<DiagGroup<"missing-noreturn">>, DefaultIgnore;
 def warn_unreachable : Warning<"will never be executed">,
   InGroup<DiagGroup<"unreachable-code">>, DefaultIgnore;
@@ -570,6 +570,12 @@ def error_property_implemented : Error<"property %0 is already implemented">;
 def warn_objc_property_attr_mutually_exclusive : Warning<
   "property attributes '%0' and '%1' are mutually exclusive">,
   InGroup<ReadOnlySetterAttrs>, DefaultIgnore;
+def warn_objc_missing_super_dealloc : Warning<
+  "method possibly missing a [super dealloc] call">,
+  InGroup<ObjCMissingSuperCalls>;
+def warn_objc_missing_super_finalize : Warning<
+  "method possibly missing a [super finalize] call">,
+  InGroup<ObjCMissingSuperCalls>;
 def warn_undeclared_selector : Warning<
   "undeclared selector %0">, InGroup<UndeclaredSelector>, DefaultIgnore;
 def warn_implicit_atomic_property : Warning<
@@ -1380,6 +1386,36 @@ def err_attribute_argument_not_lockable : Error<
 def err_attribute_decl_not_lockable : Error<
   "%0 attribute can only be applied in a context annotated "
   "with 'lockable' attribute">;
+def warn_unlock_but_no_acquire : Warning<
+  "unlocking '%0' that was not acquired">,
+  InGroup<ThreadSafety>, DefaultIgnore;
+def warn_double_lock : Warning<
+  "locking '%0' that is already acquired">,
+  InGroup<ThreadSafety>, DefaultIgnore;
+def warn_function_requires_lock : Warning<
+  "calling function '%0' requires lock '%0'">,
+  InGroup<ThreadSafety>, DefaultIgnore;
+def warn_locks_not_released : Warning<
+  "lock '%0' is not released at the end of function '%1'">,
+  InGroup<ThreadSafety>, DefaultIgnore;
+def warn_lock_not_released_in_scope : Warning<
+  "lock '%0' is not released at the end of its scope">,
+  InGroup<ThreadSafety>, DefaultIgnore;
+def warn_expecting_lock_held_on_loop : Warning<
+  "expecting lock '%0' to be held at start of each loop">,
+  InGroup<ThreadSafety>, DefaultIgnore;
+def warn_variable_requires_lock : Warning<
+  "accessing variable '%0' requires lock '%1'">,
+  InGroup<ThreadSafety>, DefaultIgnore;
+def warn_variable_requires_any_lock : Warning<
+  "accessing variable '%0' requires some lock">,
+  InGroup<ThreadSafety>, DefaultIgnore;
+def warn_var_deref_requires_lock : Warning<
+  "accessing the value pointed to by '%0' requires lock '%1'">,
+  InGroup<ThreadSafety>, DefaultIgnore;
+def warn_var_deref_requires_any_lock : Warning<
+  "accessing the value pointed to by '%0' requires some lock">,
+  InGroup<ThreadSafety>, DefaultIgnore;
 
 
 def warn_impcast_vector_scalar : Warning<
@@ -2696,8 +2732,8 @@ def ext_flexible_array_in_struct : Extension<
   "%0 may not be nested in a struct due to flexible array member">;
 def ext_flexible_array_in_array : Extension<
   "%0 may not be used as an array element due to flexible array member">;
-def err_flexible_array_init_nonempty : Error<
-  "non-empty initialization of flexible array member inside subobject">;
+def err_flexible_array_init : Error<
+  "initialization of flexible array member is not allowed">;
 def ext_flexible_array_empty_aggregate_ms : Extension<
   "flexible array member %0 in otherwise empty %select{struct|class}1 "
   "is a Microsoft extension">, InGroup<Microsoft>;
@@ -2831,7 +2867,8 @@ def err_arc_strong_property_ownership : Error<
   "existing ivar %1 for strong property %0 may not be "
   "%select{|__unsafe_unretained||__weak}2">;
 def err_arc_assign_property_ownership : Error<
-  "existing ivar %1 for unsafe_unretained property %0 must be __unsafe_unretained">;
+  "existing ivar %1 for property %0 with %select{unsafe_unretained| assign}2 "
+  "attribute must be __unsafe_unretained">;
 def err_arc_inconsistent_property_ownership : Error<
   "%select{strong|weak|unsafe_unretained}1 property %0 may not also be "
   "declared %select{|__unsafe_unretained|__strong|__weak|__autoreleasing}2">;
@@ -3114,7 +3151,8 @@ def warn_standalone_specifier : Warning<"'%0' ignored on this declaration">;
 def err_typecheck_sclass_func : Error<"illegal storage class on function">;
 def err_static_block_func : Error<
   "function declared in block scope cannot have 'static' storage class">;
-def err_typecheck_address_of : Error<"address of %0 requested">;
+def err_typecheck_address_of : Error<"address of %select{bit-field"
+  "|vector element|property expression|register variable}0 requested">;
 def ext_typecheck_addrof_void : Extension<
   "ISO C forbids taking the address of an expression of type 'void'">;
 def err_unqualified_pointer_member_function : Error<
@@ -3351,10 +3389,11 @@ def err_incomplete_type_objc_at_encode : Error<
 
 def warn_setter_getter_impl_required : Warning<
   "property %0 requires method %1 to be defined - "
-  "use @synthesize, @dynamic or provide a method implementation">;
+  "use @synthesize, @dynamic or provide a method implementation "
+  "in this class implementation">;
 def warn_setter_getter_impl_required_in_category : Warning<
   "property %0 requires method %1 to be defined - "
-  "use @dynamic or provide a method implementation in category">;
+  "use @dynamic or provide a method implementation in this category">;
 def note_property_impl_required : Note<
   "implementation is here">;
 def note_parameter_named_here : Note<
@@ -4114,7 +4153,13 @@ def err_literal_operator_outside_namespace : Error<
 // FIXME: This diagnostic sucks
 def err_literal_operator_params : Error<
   "parameter declaration for literal operator %0 is not valid">;
-
+def warn_user_literal_hexfloat : Warning<
+  "user-defined literal with suffix '%0' is preempted by C99 hexfloat "
+  "extension">, InGroup<UserDefinedLiterals>;
+def warn_user_literal_reserved : Warning<
+  "user-defined literals not starting with '_' are reserved by the "
+  "implementation">, InGroup<UserDefinedLiterals>;
+  
 // C++ conversion functions
 def err_conv_function_not_member : Error<
   "conversion function must be a non-static member function">;
@@ -4175,6 +4220,32 @@ def err_defaulted_copy_assign_const_param : Error<
 def err_defaulted_copy_assign_quals : Error<
   "an explicitly-defaulted copy assignment operator may not have 'const' "
   "or 'volatile' qualifiers">;
+def err_defaulted_move_ctor_params : Error<
+  "an explicitly-defaulted move constructor must have exactly one parameter">;
+def err_defaulted_move_ctor_volatile_param : Error<
+  "the parameter for an explicitly-defaulted move constructor may not be "
+  "volatile">;
+def err_defaulted_move_ctor_const_param : Error<
+  "the parameter for an explicitly-defaulted move constructor may not be "
+  "const">;
+def err_defaulted_move_assign_params : Error<
+  "an explicitly-defaulted move assignment operator must have exactly one "
+  "parameter">;
+def err_defaulted_move_assign_return_type : Error<
+  "an explicitly-defaulted move assignment operator must return an unqualified "
+  "lvalue reference to its class type">;
+def err_defaulted_move_assign_not_ref : Error<
+  "the parameter for an explicitly-defaulted move assignment operator must be an "
+  "rvalue reference type">;
+def err_defaulted_move_assign_volatile_param : Error<
+  "the parameter for an explicitly-defaulted move assignment operator may not "
+  "be volatile">;
+def err_defaulted_move_assign_const_param : Error<
+  "the parameter for an explicitly-defaulted move assignment operator may not "
+  "be const">;
+def err_defaulted_move_assign_quals : Error<
+  "an explicitly-defaulted move assignment operator may not have 'const' "
+  "or 'volatile' qualifiers">;
 def err_incorrect_defaulted_exception_spec : Error<
   "exception specification of explicitly defaulted %select{default constructor|"
   "copy constructor|move constructor|copy assignment operator|move assignment "
@@ -4184,8 +4255,6 @@ def err_out_of_line_default_deletes : Error<
   "defaulting this %select{default constructor|copy constructor|move "
   "constructor|copy assignment operator|move assignment operator|destructor}0 "
   "would delete it after its first declaration">;
-def err_defaulted_move_unsupported : Error<
-  "defaulting move functions not yet supported">;
 
 def warn_ptr_arith_precedes_bounds : Warning<
   "the pointer decremented by %0 refers before the beginning of the array">,
@@ -4211,7 +4280,7 @@ def warn_printf_insufficient_data_args : Warning<
 def warn_printf_data_arg_not_used : Warning<
   "data argument not used by format string">, InGroup<FormatExtraArgs>;
 def warn_format_invalid_conversion : Warning<
-  "invalid conversion specifier '%0'">, InGroup<Format>;
+  "invalid conversion specifier '%0'">, InGroup<FormatInvalidSpecifier>;
 def warn_printf_incomplete_specifier : Warning<
   "incomplete format specifier">, InGroup<Format>;
 def warn_missing_format_string : Warning<
@@ -4285,6 +4354,19 @@ def err_ret_local_block : Error<
 def note_ref_var_local_bind : Note<
   "binding reference variable %0 here">;
 
+// Check for initializing a member variable with the address or a reference to
+// a constructor parameter.
+def warn_bind_ref_member_to_parameter : Warning<
+  "binding reference member %0 to stack allocated parameter %1">,
+  InGroup<DiagGroup<"dangling-field">>, DefaultIgnore;
+def warn_init_ptr_member_to_parameter_addr : Warning<
+  "initializing pointer member %0 with the stack address of parameter %1">,
+  InGroup<DiagGroup<"dangling-field">>, DefaultIgnore;
+def warn_bind_ref_member_to_temporary : Warning<
+  "binding reference member %0 to a temporary value">,
+  InGroup<DiagGroup<"dangling-field">>, DefaultIgnore;
+def note_ref_or_ptr_member_declared_here : Note<
+  "%select{reference|pointer}0 member declared here">;
 
 // For non-floating point, expressions of the form x == x or x != x
 // should result in a warning, since these always evaluate to a constant.
@@ -4571,9 +4653,12 @@ def err_sizeof_pack_no_pack_name_suggest : Error<
 def note_parameter_pack_here : Note<"parameter pack %0 declared here">;
 
 def err_uncasted_use_of_unknown_any : Error<
-  "%0 has unknown type;  cast it to its declared type to use it">;
+  "%0 has unknown type; cast it to its declared type to use it">;
 def err_uncasted_call_of_unknown_any : Error<
-  "%0 has unknown return type;  cast the call to its declared return type">;
+  "%0 has unknown return type; cast the call to its declared return type">;
+def err_uncasted_send_to_unknown_any_method : Error<
+  "no known method %select{%objcinstance1|%objcclass1}0; cast the "
+  "message send to the method's return type">;
 def err_unsupported_unknown_any_decl : Error<
   "%0 has unknown type, which is unsupported for this kind of declaration">;
 def err_unsupported_unknown_any_expr : Error<

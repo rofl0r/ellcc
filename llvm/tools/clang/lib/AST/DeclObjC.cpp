@@ -14,6 +14,7 @@
 #include "clang/AST/DeclObjC.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/Stmt.h"
+#include "clang/AST/ASTMutationListener.h"
 #include "llvm/ADT/STLExtras.h"
 using namespace clang;
 
@@ -446,6 +447,7 @@ ObjCMethodFamily ObjCMethodDecl::getMethodFamily() const {
 
   // These selectors have a conventional meaning only for instance methods.
   case OMF_dealloc:
+  case OMF_finalize:
   case OMF_retain:
   case OMF_release:
   case OMF_autorelease:
@@ -851,36 +853,31 @@ ObjCMethodDecl *ObjCProtocolDecl::lookupMethod(Selector Sel,
 //===----------------------------------------------------------------------===//
 
 ObjCClassDecl::ObjCClassDecl(DeclContext *DC, SourceLocation L,
-                             ObjCInterfaceDecl *const *Elts,
-                             const SourceLocation *Locs,
-                             unsigned nElts,
+                             ObjCInterfaceDecl *const Elt,
+                             const SourceLocation Loc,
                              ASTContext &C)
   : Decl(ObjCClass, DC, L) {
-  setClassList(C, Elts, Locs, nElts);
-}
-
-void ObjCClassDecl::setClassList(ASTContext &C, ObjCInterfaceDecl*const*List,
-                                 const SourceLocation *Locs, unsigned Num) {
-  ForwardDecls = (ObjCClassRef*) C.Allocate(sizeof(ObjCClassRef)*Num,
-                                            llvm::alignOf<ObjCClassRef>());
-  for (unsigned i = 0; i < Num; ++i)
-    new (&ForwardDecls[i]) ObjCClassRef(List[i], Locs[i]);
-  
-  NumDecls = Num;
+  setClass(C, Elt, Loc);
 }
 
 ObjCClassDecl *ObjCClassDecl::Create(ASTContext &C, DeclContext *DC,
                                      SourceLocation L,
-                                     ObjCInterfaceDecl *const *Elts,
-                                     const SourceLocation *Locs,
-                                     unsigned nElts) {
-  return new (C) ObjCClassDecl(DC, L, Elts, Locs, nElts, C);
+                                     ObjCInterfaceDecl *const Elt,
+                                     const SourceLocation Loc) {
+  return new (C) ObjCClassDecl(DC, L, Elt, Loc, C);
 }
 
+void ObjCClassDecl::setClass(ASTContext &C, ObjCInterfaceDecl*const Cls,
+                             const SourceLocation Loc) {
+    
+  ForwardDecl = (ObjCClassRef*) C.Allocate(sizeof(ObjCClassRef),
+                                           llvm::alignOf<ObjCClassRef>());
+  new (ForwardDecl) ObjCClassRef(Cls, Loc);
+}
+    
 SourceRange ObjCClassDecl::getSourceRange() const {
   // FIXME: We should include the semicolon
-  assert(NumDecls);
-  return SourceRange(getLocation(), ForwardDecls[NumDecls-1].getLocation());
+  return SourceRange(getLocation(), ForwardDecl->getLocation());
 }
 
 //===----------------------------------------------------------------------===//
@@ -913,8 +910,25 @@ ObjCCategoryDecl *ObjCCategoryDecl::Create(ASTContext &C, DeclContext *DC,
                                            SourceLocation AtLoc, 
                                            SourceLocation ClassNameLoc,
                                            SourceLocation CategoryNameLoc,
-                                           IdentifierInfo *Id) {
-  return new (C) ObjCCategoryDecl(DC, AtLoc, ClassNameLoc, CategoryNameLoc, Id);
+                                           IdentifierInfo *Id,
+                                           ObjCInterfaceDecl *IDecl) {
+  ObjCCategoryDecl *CatDecl = new (C) ObjCCategoryDecl(DC, AtLoc, ClassNameLoc,
+                                                       CategoryNameLoc, Id,
+                                                       IDecl);
+  if (IDecl) {
+    // Link this category into its class's category list.
+    CatDecl->NextClassCategory = IDecl->getCategoryList();
+    IDecl->setCategoryList(CatDecl);
+    if (ASTMutationListener *L = C.getASTMutationListener())
+      L->AddedObjCCategoryToInterface(CatDecl, IDecl);
+  }
+
+  return CatDecl;
+}
+
+ObjCCategoryDecl *ObjCCategoryDecl::Create(ASTContext &C, EmptyShell Empty) {
+  return new (C) ObjCCategoryDecl(0, SourceLocation(), SourceLocation(),
+                                  SourceLocation(), 0, 0);
 }
 
 ObjCCategoryImplDecl *ObjCCategoryDecl::getImplementation() const {

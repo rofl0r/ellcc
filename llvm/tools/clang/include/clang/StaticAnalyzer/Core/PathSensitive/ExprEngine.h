@@ -20,8 +20,6 @@
 #include "clang/StaticAnalyzer/Core/PathSensitive/SubEngine.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CoreEngine.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ProgramState.h"
-#include "clang/StaticAnalyzer/Core/PathSensitive/TransferFuncs.h"
-#include "clang/StaticAnalyzer/Core/PathSensitive/ObjCMessage.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugReporter.h"
 #include "clang/AST/Type.h"
 #include "clang/AST/ExprObjC.h"
@@ -35,6 +33,8 @@ class ObjCForCollectionStmt;
 namespace ento {
 
 class AnalysisManager;
+class CallOrObjCMessage;
+class ObjCMessage;
 
 class ExprEngine : public SubEngine {
   AnalysisManager &AMgr;
@@ -73,16 +73,17 @@ class ExprEngine : public SubEngine {
   // Obj-C Selectors.
   Selector* NSExceptionInstanceRaiseSelectors;
   Selector RaiseSel;
+  
+  /// Whether or not GC is enabled in this analysis.
+  bool ObjCGCEnabled;
 
   /// The BugReporter associated with this engine.  It is important that
   ///  this object be placed at the very end of member variables so that its
   ///  destructor is called before the rest of the ExprEngine is destroyed.
   GRBugReporter BR;
-  
-  llvm::OwningPtr<TransferFuncs> TF;
 
 public:
-  ExprEngine(AnalysisManager &mgr, TransferFuncs *tf);
+  ExprEngine(AnalysisManager &mgr, bool gcEnabled);
 
   ~ExprEngine();
 
@@ -110,14 +111,11 @@ public:
 
   SValBuilder &getSValBuilder() { return svalBuilder; }
 
-  TransferFuncs& getTF() { return *TF; }
-
   BugReporter& getBugReporter() { return BR; }
 
   StmtNodeBuilder &getBuilder() { assert(Builder); return *Builder; }
 
-  // FIXME: Remove once TransferFuncs is no longer referenced.
-  void setTransferFunction(TransferFuncs* tf);
+  bool isObjCGCEnabled() { return ObjCGCEnabled; }
 
   /// ViewGraph - Visualize the ExplodedGraph created by executing the
   ///  simulation.
@@ -192,8 +190,12 @@ public:
   const ProgramState *
   processRegionChanges(const ProgramState *state,
                        const StoreManager::InvalidatedSymbols *invalidated,
-                       const MemRegion * const *Begin,
-                       const MemRegion * const *End);
+                       ArrayRef<const MemRegion *> ExplicitRegions,
+                       ArrayRef<const MemRegion *> Regions);
+
+  /// printState - Called by ProgramStateManager to print checker-specific data.
+  void printState(raw_ostream &Out, const ProgramState *State,
+                  const char *NL, const char *Sep);
 
   virtual ProgramStateManager& getStateManager() { return StateMgr; }
 
@@ -408,10 +410,11 @@ public:
   
 protected:
   void evalObjCMessage(ExplodedNodeSet &Dst, const ObjCMessage &msg, 
-                       ExplodedNode *Pred, const ProgramState *state) {
-    assert (Builder && "StmtNodeBuilder must be defined.");
-    getTF().evalObjCMessage(Dst, *this, *Builder, msg, Pred, state);
-  }
+                       ExplodedNode *Pred, const ProgramState *state);
+
+  const ProgramState *invalidateArguments(const ProgramState *State,
+                                          const CallOrObjCMessage &Call,
+                                          const LocationContext *LC);
 
   const ProgramState *MarkBranch(const ProgramState *St, const Stmt *Terminator,
                             bool branchTaken);
@@ -419,8 +422,7 @@ protected:
   /// evalBind - Handle the semantics of binding a value to a specific location.
   ///  This method is used by evalStore, VisitDeclStmt, and others.
   void evalBind(ExplodedNodeSet &Dst, const Stmt *StoreE, ExplodedNode *Pred,
-                const ProgramState *St, SVal location, SVal Val,
-                bool atDeclInit = false);
+                SVal location, SVal Val, bool atDeclInit = false);
 
 public:
   // FIXME: 'tag' should be removed, and a LocationContext should be used

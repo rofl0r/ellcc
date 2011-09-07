@@ -87,6 +87,17 @@ void ABIArgInfo::dump() const {
 
 TargetCodeGenInfo::~TargetCodeGenInfo() { delete Info; }
 
+// If someone can figure out a general rule for this, that would be great.
+// It's probably just doomed to be platform-dependent, though.
+unsigned TargetCodeGenInfo::getSizeOfUnwindException() const {
+  // Verified for:
+  //   x86-64     FreeBSD, Linux, Darwin
+  //   x86-32     FreeBSD, Linux, Darwin
+  //   PowerPC    Linux, Darwin
+  //   ARM        Darwin (*not* EABI)
+  return 32;
+}
+
 static bool isEmptyRecord(ASTContext &Context, QualType T, bool AllowArrays);
 
 /// isEmptyField - Return true iff a the field is "empty", that is it
@@ -892,7 +903,7 @@ class X86_64ABIInfo : public ABIInfo {
   /// required strict binary compatibility with older versions of GCC
   /// may need to exempt themselves.
   bool honorsRevision0_98() const {
-    return !getContext().Target.getTriple().isOSDarwin();
+    return !getContext().getTargetInfo().getTriple().isOSDarwin();
   }
 
 public:
@@ -2166,7 +2177,7 @@ ABIArgInfo WinX86_64ABIInfo::classify(QualType Ty) const {
 
     // FIXME: mingw-w64-gcc emits 128-bit struct as i128
     if (Size == 128 &&
-        getContext().Target.getTriple().getOS() == llvm::Triple::MinGW32)
+        getContext().getTargetInfo().getTriple().getOS() == llvm::Triple::MinGW32)
       return ABIArgInfo::getDirect(llvm::IntegerType::get(getVMContext(),
                                                           Size));
 
@@ -2430,6 +2441,11 @@ private:
 public:
   ARMABIInfo(CodeGenTypes &CGT, ABIKind _Kind) : ABIInfo(CGT), Kind(_Kind) {}
 
+  bool isEABI() const {
+    StringRef Env = getContext().getTargetInfo().getTriple().getEnvironmentName();
+    return (Env == "gnueabi" || Env == "eabi");
+  }
+
 private:
   ABIKind getABIKind() const { return Kind; }
 
@@ -2446,6 +2462,10 @@ class ARMTargetCodeGenInfo : public TargetCodeGenInfo {
 public:
   ARMTargetCodeGenInfo(CodeGenTypes &CGT, ARMABIInfo::ABIKind K)
     :TargetCodeGenInfo(new ARMABIInfo(CGT, K)) {}
+
+  const ARMABIInfo &getABIInfo() const {
+    return static_cast<const ARMABIInfo&>(TargetCodeGenInfo::getABIInfo());
+  }
 
   int getDwarfEHStackPointer(CodeGen::CodeGenModule &M) const {
     return 13;
@@ -2468,6 +2488,11 @@ public:
 
     return false;
   }
+
+  unsigned getSizeOfUnwindException() const {
+    if (getABIInfo().isEABI()) return 88;
+    return TargetCodeGenInfo::getSizeOfUnwindException();
+  }
 };
 
 }
@@ -2484,8 +2509,7 @@ void ARMABIInfo::computeInfo(CGFunctionInfo &FI) const {
 
   // Calling convention as default by an ABI.
   llvm::CallingConv::ID DefaultCC;
-  StringRef Env = getContext().Target.getTriple().getEnvironmentName();
-  if (Env == "gnueabi" || Env == "eabi")
+  if (isEABI())
     DefaultCC = llvm::CallingConv::ARM_AAPCS;
   else
     DefaultCC = llvm::CallingConv::ARM_APCS;
@@ -2861,7 +2885,7 @@ void PTXABIInfo::computeInfo(CGFunctionInfo &FI) const {
 
   // Calling convention as default by an ABI.
   llvm::CallingConv::ID DefaultCC;
-  StringRef Env = getContext().Target.getTriple().getEnvironmentName();
+  StringRef Env = getContext().getTargetInfo().getTriple().getEnvironmentName();
   if (Env == "device")
     DefaultCC = llvm::CallingConv::PTX_Device;
   else
@@ -3129,10 +3153,10 @@ void MSP430TargetCodeGenInfo::SetTargetAttributes(const Decl *D,
 //===----------------------------------------------------------------------===//
 
 namespace {
-class MIPSABIInfo : public ABIInfo {
+class MipsABIInfo : public ABIInfo {
   static const unsigned MinABIStackAlignInBytes = 4;
 public:
-  MIPSABIInfo(CodeGenTypes &CGT) : ABIInfo(CGT) {}
+  MipsABIInfo(CodeGenTypes &CGT) : ABIInfo(CGT) {}
 
   bool isPromotableIntegerType(QualType Ty) const;
 
@@ -3143,10 +3167,12 @@ public:
                                  CodeGenFunction &CGF) const;
 };
 
+const unsigned MipsABIInfo::MinABIStackAlignInBytes;
+
 class MIPSTargetCodeGenInfo : public TargetCodeGenInfo {
 public:
   MIPSTargetCodeGenInfo(CodeGenTypes &CGT)
-    : TargetCodeGenInfo(new MIPSABIInfo(CGT)) {}
+    : TargetCodeGenInfo(new MipsABIInfo(CGT)) {}
 
   int getDwarfEHStackPointer(CodeGen::CodeGenModule &CGM) const {
     return 29;
@@ -3154,10 +3180,14 @@ public:
 
   bool initDwarfEHRegSizeTable(CodeGen::CodeGenFunction &CGF,
                                llvm::Value *Address) const;
+
+  unsigned getSizeOfUnwindException() const {
+    return 24;
+  }
 };
 }
 
-ABIArgInfo MIPSABIInfo::classifyArgumentType(QualType Ty) const {
+ABIArgInfo MipsABIInfo::classifyArgumentType(QualType Ty) const {
   if (isAggregateTypeForABI(Ty)) {
     // Ignore empty aggregates.
     if (getContext().getTypeSize(Ty) == 0)
@@ -3179,7 +3209,7 @@ ABIArgInfo MIPSABIInfo::classifyArgumentType(QualType Ty) const {
           ABIArgInfo::getExtend() : ABIArgInfo::getDirect());
 }
 
-ABIArgInfo MIPSABIInfo::classifyReturnType(QualType RetTy) const {
+ABIArgInfo MipsABIInfo::classifyReturnType(QualType RetTy) const {
   if (RetTy->isVoidType())
     return ABIArgInfo::getIgnore();
 
@@ -3198,14 +3228,14 @@ ABIArgInfo MIPSABIInfo::classifyReturnType(QualType RetTy) const {
           ABIArgInfo::getExtend() : ABIArgInfo::getDirect());
 }
 
-void MIPSABIInfo::computeInfo(CGFunctionInfo &FI) const {
+void MipsABIInfo::computeInfo(CGFunctionInfo &FI) const {
   FI.getReturnInfo() = classifyReturnType(FI.getReturnType());
   for (CGFunctionInfo::arg_iterator it = FI.arg_begin(), ie = FI.arg_end();
        it != ie; ++it)
     it->info = classifyArgumentType(it->type);
 }
 
-llvm::Value* MIPSABIInfo::EmitVAArg(llvm::Value *VAListAddr, QualType Ty,
+llvm::Value* MipsABIInfo::EmitVAArg(llvm::Value *VAListAddr, QualType Ty,
                                     CodeGenFunction &CGF) const {
   llvm::Type *BP = llvm::Type::getInt8PtrTy(CGF.getLLVMContext());
   llvm::Type *BPP = llvm::PointerType::getUnqual(BP);
@@ -3241,7 +3271,7 @@ llvm::Value* MIPSABIInfo::EmitVAArg(llvm::Value *VAListAddr, QualType Ty,
 }
 
 #if RICH
-llvm::Value *MIPSABIInfo::EmitVAArg(llvm::Value *VAListAddr, QualType Ty,
+llvm::Value *MipsABIInfo::EmitVAArg(llvm::Value *VAListAddr, QualType Ty,
                                       CodeGenFunction &CGF) const {
   // FIXME: Need to handle alignment
   const llvm::Type *BP = llvm::Type::getInt8PtrTy(CGF.getLLVMContext());
@@ -3299,7 +3329,7 @@ MIPSTargetCodeGenInfo::initDwarfEHRegSizeTable(CodeGen::CodeGenFunction &CGF,
   return false;
 }
 
-bool MIPSABIInfo::isPromotableIntegerType(QualType Ty) const {
+bool MipsABIInfo::isPromotableIntegerType(QualType Ty) const {
   // Mips ABI requires all 8 and 16 bit quantities to be extended.
   if (const BuiltinType *BT = Ty->getAs<BuiltinType>())
     switch (BT->getKind()) {
@@ -3324,7 +3354,7 @@ const TargetCodeGenInfo &CodeGenModule::getTargetCodeGenInfo() {
   // For now we just cache the TargetCodeGenInfo in CodeGenModule and don't
   // free it.
 
-  const llvm::Triple &Triple = getContext().Target.getTriple();
+  const llvm::Triple &Triple = getContext().getTargetInfo().getTriple();
   switch (Triple.getArch()) {
   default:
     return *(TheTargetCodeGenInfo = new DefaultTargetCodeGenInfo(Types));
@@ -3338,7 +3368,7 @@ const TargetCodeGenInfo &CodeGenModule::getTargetCodeGenInfo() {
     {
       ARMABIInfo::ABIKind Kind = ARMABIInfo::AAPCS;
 
-      if (strcmp(getContext().Target.getABI(), "apcs-gnu") == 0)
+      if (strcmp(getContext().getTargetInfo().getABI(), "apcs-gnu") == 0)
         Kind = ARMABIInfo::APCS;
       else if (CodeGenOpts.FloatABI == "hard")
         Kind = ARMABIInfo::AAPCS_VFP;
@@ -3366,7 +3396,7 @@ const TargetCodeGenInfo &CodeGenModule::getTargetCodeGenInfo() {
     return *(TheTargetCodeGenInfo = new MSP430TargetCodeGenInfo(Types));
 
   case llvm::Triple::x86: {
-    bool DisableMMX = strcmp(getContext().Target.getABI(), "no-mmx") == 0;
+    bool DisableMMX = strcmp(getContext().getTargetInfo().getABI(), "no-mmx") == 0;
 
     if (Triple.isOSDarwin())
       return *(TheTargetCodeGenInfo =

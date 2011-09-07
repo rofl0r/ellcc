@@ -52,7 +52,8 @@ Decl *Parser::ParseNamespace(unsigned Context,
                              SourceLocation InlineLoc) {
   assert(Tok.is(tok::kw_namespace) && "Not a namespace!");
   SourceLocation NamespaceLoc = ConsumeToken();  // eat the 'namespace'.
-
+  ObjCDeclContextSwitch ObjCDC(*this);
+    
   if (Tok.is(tok::code_completion)) {
     Actions.CodeCompleteNamespaceDecl(getCurScope());
     ConsumeCodeCompletionToken();
@@ -89,7 +90,6 @@ Decl *Parser::ParseNamespace(unsigned Context,
     if (InlineLoc.isValid())
       Diag(InlineLoc, diag::err_inline_namespace_alias)
           << FixItHint::CreateRemoval(InlineLoc);
-
     return ParseNamespaceAlias(NamespaceLoc, IdentLoc, Ident, DeclEnd);
   }
 
@@ -317,7 +317,8 @@ Decl *Parser::ParseUsingDirectiveOrDeclaration(unsigned Context,
                                              ParsedAttributesWithRange &attrs,
                                                Decl **OwnedType) {
   assert(Tok.is(tok::kw_using) && "Not using token");
-
+  ObjCDeclContextSwitch ObjCDC(*this);
+  
   // Eat 'using'.
   SourceLocation UsingLoc = ConsumeToken();
 
@@ -344,7 +345,7 @@ Decl *Parser::ParseUsingDirectiveOrDeclaration(unsigned Context,
   ProhibitAttributes(attrs);
 
   return ParseUsingDeclaration(Context, TemplateInfo, UsingLoc, DeclEnd,
-                               AS_none, OwnedType);
+                                    AS_none, OwnedType);
 }
 
 /// ParseUsingDirective - Parse C++ using-directive, assumes

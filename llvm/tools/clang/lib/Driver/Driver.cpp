@@ -226,23 +226,6 @@ DerivedArgList *Driver::TranslateInputArgs(const InputArgList &Args) const {
   }
 #endif
 
-  // If -fapple-kext has been specified, add -kext to linker command if not
-  // already done so.  Also check to make sure we're actually linking.
-  if (Args.hasArg(options::OPT_fapple_kext) && getFinalPhase(*DAL) ==
-      phases::Link) {
-    bool add_kext = true;
-    std::vector<std::string> LinkerArgs =
-      Args.getAllArgValues(options::OPT_Xlinker);
-    for (std::vector<std::string>::iterator it = LinkerArgs.begin(),
-           ie = LinkerArgs.end(); it != ie; it++)
-      if (*it == "-kext") {
-        add_kext = false;
-        break;
-      }
-    if (add_kext)
-      DAL->AddSeparateArg(0, Opts->getOption(options::OPT_Xlinker), "-kext");
-  }
-
   return DAL;
 }
 
@@ -821,6 +804,19 @@ void Driver::BuildUniversalActions(const ToolChain &TC,
         Actions.pop_back();
 
         Actions.push_back(new DsymutilJobAction(Inputs, types::TY_dSYM));
+
+	// Verify the debug output if we're in assert mode.
+	// TODO: The verifier is noisy by default so put this under an
+	// option for now.
+	#ifndef NDEBUG
+	if (Args.hasArg(options::OPT_verify)) {
+	  ActionList VerifyInputs;
+	  VerifyInputs.push_back(Actions.back());
+	  Actions.pop_back();
+	  Actions.push_back(new VerifyJobAction(VerifyInputs,
+						types::TY_Nothing));
+	}
+        #endif
       }
     }
   }
@@ -1289,6 +1285,11 @@ void Driver::BuildJobsForAction(Compilation &C,
     if (AtTopLevel && isa<DsymutilJobAction>(A))
       SubJobAtTopLevel = true;
 
+    // Also treat verify sub-jobs as being at the top-level. They don't
+    // produce any output and so don't need temporary output names.
+    if (AtTopLevel && isa<VerifyJobAction>(A))
+      SubJobAtTopLevel = true;
+
     InputInfo II;
     BuildJobsForAction(C, *it, TC, BoundArch,
                        SubJobAtTopLevel, LinkingOutput, II);
@@ -1332,7 +1333,8 @@ const char *Driver::GetNamedOutputPath(Compilation &C,
                                        bool AtTopLevel) const {
   llvm::PrettyStackTraceString CrashInfo("Computing output path");
   // Output to a user requested destination?
-  if (AtTopLevel && !isa<DsymutilJobAction>(JA)) {
+  if (AtTopLevel && !isa<DsymutilJobAction>(JA) &&
+      !isa<VerifyJobAction>(JA)) {
     if (Arg *FinalOutput = C.getArgs().getLastArg(options::OPT_o))
       return C.addResultFile(FinalOutput->getValue(C.getArgs()));
   }
@@ -1344,8 +1346,10 @@ const char *Driver::GetNamedOutputPath(Compilation &C,
   // Output to a temporary file?
   if ((!AtTopLevel && !C.getArgs().hasArg(options::OPT_save_temps)) ||
       CCGenDiagnostics) {
+    StringRef Name = llvm::sys::path::filename(BaseInput);
+    std::pair<StringRef, StringRef> Split = Name.split('.');
     std::string TmpName =
-      GetTemporaryPath(types::getTypeTempSuffix(JA.getType()));
+      GetTemporaryPath(Split.first, types::getTypeTempSuffix(JA.getType()));
     return C.addTempFile(C.getArgs().MakeArgString(TmpName.c_str()));
   }
 
@@ -1353,7 +1357,7 @@ const char *Driver::GetNamedOutputPath(Compilation &C,
   StringRef BaseName;
 
   // Dsymutil actions should use the full path.
-  if (isa<DsymutilJobAction>(JA))
+  if (isa<DsymutilJobAction>(JA) || isa<VerifyJobAction>(JA))
     BaseName = BasePath;
   else
     BaseName = llvm::sys::path::filename(BasePath);
@@ -1378,9 +1382,11 @@ const char *Driver::GetNamedOutputPath(Compilation &C,
   // If we're saving temps and the temp filename conflicts with the input
   // filename, then avoid overwriting input file.
   if (!AtTopLevel && C.getArgs().hasArg(options::OPT_save_temps) &&
-    NamedOutput == BaseName) {
+      NamedOutput == BaseName) {
+    StringRef Name = llvm::sys::path::filename(BaseInput);
+    std::pair<StringRef, StringRef> Split = Name.split('.');
     std::string TmpName =
-      GetTemporaryPath(types::getTypeTempSuffix(JA.getType()));
+      GetTemporaryPath(Split.first, types::getTypeTempSuffix(JA.getType()));
     return C.addTempFile(C.getArgs().MakeArgString(TmpName.c_str()));
   }
 
@@ -1465,7 +1471,8 @@ std::string Driver::GetProgramPath(const char *Name, const ToolChain &TC,
   return Name;
 }
 
-std::string Driver::GetTemporaryPath(const char *Suffix) const {
+std::string Driver::GetTemporaryPath(StringRef Prefix, const char *Suffix) 
+  const {
   // FIXME: This is lame; sys::Path should provide this function (in particular,
   // it should know how to find the temporary files dir).
   std::string Error;
@@ -1477,7 +1484,7 @@ std::string Driver::GetTemporaryPath(const char *Suffix) const {
   if (!TmpDir)
     TmpDir = "/tmp";
   llvm::sys::Path P(TmpDir);
-  P.appendComponent("cc");
+  P.appendComponent(Prefix);
   if (P.makeUnique(false, &Error)) {
     Diag(clang::diag::err_drv_unable_to_make_temp) << Error;
     return "";

@@ -1100,10 +1100,9 @@ bool CursorVisitor::VisitObjCForwardProtocolDecl(ObjCForwardProtocolDecl *D) {
 }
 
 bool CursorVisitor::VisitObjCClassDecl(ObjCClassDecl *D) {
-  for (ObjCClassDecl::iterator C = D->begin(), CEnd = D->end(); C != CEnd; ++C)
-    if (Visit(MakeCursorObjCClassRef(C->getInterface(), C->getLocation(), TU)))
+  if (Visit(MakeCursorObjCClassRef(D->getForwardInterfaceDecl(), 
+                                   D->getForwardDecl()->getLocation(), TU)))
       return true;
-
   return false;
 }
 
@@ -1445,6 +1444,9 @@ bool CursorVisitor::VisitUnresolvedUsingTypeLoc(UnresolvedUsingTypeLoc TL) {
 }
 
 bool CursorVisitor::VisitTagTypeLoc(TagTypeLoc TL) {
+  if (TL.isDefinition())
+    return Visit(MakeCXCursor(TL.getDecl(), TU));
+
   return Visit(MakeCursorTypeRef(TL.getDecl(), TL.getNameLoc(), TU));
 }
 
@@ -2411,9 +2413,7 @@ CXTranslationUnit clang_createTranslationUnit(CXIndex CIdx,
 
 unsigned clang_defaultEditingTranslationUnitOptions() {
   return CXTranslationUnit_PrecompiledPreamble | 
-         CXTranslationUnit_CacheCompletionResults |
-         CXTranslationUnit_CXXPrecompiledPreamble |
-         CXTranslationUnit_CXXChainedPCH;
+         CXTranslationUnit_CacheCompletionResults;
 }
   
 CXTranslationUnit
@@ -2459,14 +2459,11 @@ static void clang_parseTranslationUnit_Impl(void *UserData) {
   CIndexer *CXXIdx = static_cast<CIndexer *>(CIdx);
 
   bool PrecompilePreamble = options & CXTranslationUnit_PrecompiledPreamble;
-  bool CompleteTranslationUnit
-    = ((options & CXTranslationUnit_Incomplete) == 0);
+  // FIXME: Add a flag for modules.
+  TranslationUnitKind TUKind
+    = (options & CXTranslationUnit_Incomplete)? TU_Prefix : TU_Complete;
   bool CacheCodeCompetionResults
     = options & CXTranslationUnit_CacheCompletionResults;
-  bool CXXPrecompilePreamble
-    = options & CXTranslationUnit_CXXPrecompiledPreamble;
-  bool CXXChainedPCH
-    = options & CXTranslationUnit_CXXChainedPCH;
   
   // Configure the diagnostics.
   DiagnosticOptions DiagOpts;
@@ -2550,10 +2547,8 @@ static void clang_parseTranslationUnit_Impl(void *UserData) {
                                  RemappedFiles->size(),
                                  /*RemappedFilesKeepOriginalName=*/true,
                                  PrecompilePreamble,
-                                 CompleteTranslationUnit,
+                                 TUKind,
                                  CacheCodeCompetionResults,
-                                 CXXPrecompilePreamble,
-                                 CXXChainedPCH,
                                  NestedMacroExpansions));
 
   if (NumErrors != Diags->getClient()->getNumErrors()) {
@@ -2831,11 +2826,11 @@ static void createNullLocation(CXFile *file, unsigned *line,
 }
 
 extern "C" {
-void clang_getInstantiationLocation(CXSourceLocation location,
-                                    CXFile *file,
-                                    unsigned *line,
-                                    unsigned *column,
-                                    unsigned *offset) {
+void clang_getExpansionLocation(CXSourceLocation location,
+                                CXFile *file,
+                                unsigned *line,
+                                unsigned *column,
+                                unsigned *offset) {
   SourceLocation Loc = SourceLocation::getFromRawEncoding(location.int_data);
 
   if (!location.ptr_data[0] || Loc.isInvalid()) {
@@ -2845,11 +2840,11 @@ void clang_getInstantiationLocation(CXSourceLocation location,
 
   const SourceManager &SM =
     *static_cast<const SourceManager*>(location.ptr_data[0]);
-  SourceLocation InstLoc = SM.getExpansionLoc(Loc);
+  SourceLocation ExpansionLoc = SM.getExpansionLoc(Loc);
 
   // Check that the FileID is invalid on the expansion location.
   // This can manifest in invalid code.
-  FileID fileID = SM.getFileID(InstLoc);
+  FileID fileID = SM.getFileID(ExpansionLoc);
   bool Invalid = false;
   const SrcMgr::SLocEntry &sloc = SM.getSLocEntry(fileID, &Invalid);
   if (!sloc.isFile() || Invalid) {
@@ -2860,11 +2855,20 @@ void clang_getInstantiationLocation(CXSourceLocation location,
   if (file)
     *file = (void *)SM.getFileEntryForSLocEntry(sloc);
   if (line)
-    *line = SM.getExpansionLineNumber(InstLoc);
+    *line = SM.getExpansionLineNumber(ExpansionLoc);
   if (column)
-    *column = SM.getExpansionColumnNumber(InstLoc);
+    *column = SM.getExpansionColumnNumber(ExpansionLoc);
   if (offset)
-    *offset = SM.getDecomposedLoc(InstLoc).second;
+    *offset = SM.getDecomposedLoc(ExpansionLoc).second;
+}
+
+void clang_getInstantiationLocation(CXSourceLocation location,
+                                    CXFile *file,
+                                    unsigned *line,
+                                    unsigned *column,
+                                    unsigned *offset) {
+  // Redirect to new API.
+  clang_getExpansionLocation(location, file, line, column, offset);
 }
 
 void clang_getSpellingLocation(CXSourceLocation location,
@@ -3536,10 +3540,9 @@ CXCursor clang_getCursor(CXTranslationUnit TU, CXSourceLocation Loc) {
     const char *IsDef = clang_isCursorDefinition(Result)? " (Definition)" : "";
     CXSourceLocation ResultLoc = clang_getCursorLocation(Result);
     
-    clang_getInstantiationLocation(Loc, &SearchFile, &SearchLine, &SearchColumn,
-                                   0);
-    clang_getInstantiationLocation(ResultLoc, &ResultFile, &ResultLine, 
-                                   &ResultColumn, 0);
+    clang_getExpansionLocation(Loc, &SearchFile, &SearchLine, &SearchColumn, 0);
+    clang_getExpansionLocation(ResultLoc, &ResultFile, &ResultLine,
+                               &ResultColumn, 0);
     SearchFileName = clang_getFileName(SearchFile);
     ResultFileName = clang_getFileName(ResultFile);
     KindSpelling = clang_getCursorKindSpelling(Result.kind);
@@ -3561,8 +3564,8 @@ CXCursor clang_getCursor(CXTranslationUnit TU, CXSourceLocation Loc) {
                                 = clang_getCursorKindSpelling(Definition.kind);
       CXFile DefinitionFile;
       unsigned DefinitionLine, DefinitionColumn;
-      clang_getInstantiationLocation(DefinitionLoc, &DefinitionFile, 
-                                     &DefinitionLine, &DefinitionColumn, 0);
+      clang_getExpansionLocation(DefinitionLoc, &DefinitionFile,
+                                 &DefinitionLine, &DefinitionColumn, 0);
       CXString DefinitionFileName = clang_getFileName(DefinitionFile);
       fprintf(stderr, "  -> %s(%s:%d:%d)\n",
               clang_getCString(DefinitionKindSpelling),
@@ -4223,8 +4226,8 @@ unsigned clang_getNumOverloadedDecls(CXCursor C) {
   Decl *D = Storage.get<Decl*>();
   if (UsingDecl *Using = dyn_cast<UsingDecl>(D))
     return Using->shadow_size();
-  if (ObjCClassDecl *Classes = dyn_cast<ObjCClassDecl>(D))
-    return Classes->size();
+  if (isa<ObjCClassDecl>(D))
+    return 1;
   if (ObjCForwardProtocolDecl *Protocols =dyn_cast<ObjCForwardProtocolDecl>(D))
     return Protocols->protocol_size();
   
@@ -4254,10 +4257,8 @@ CXCursor clang_getOverloadedDecl(CXCursor cursor, unsigned index) {
     std::advance(Pos, index);
     return MakeCXCursor(cast<UsingShadowDecl>(*Pos)->getTargetDecl(), TU);
   }
-  
   if (ObjCClassDecl *Classes = dyn_cast<ObjCClassDecl>(D))
-    return MakeCXCursor(Classes->begin()[index].getInterface(), TU);
-  
+    return MakeCXCursor(Classes->getForwardInterfaceDecl(), TU);
   if (ObjCForwardProtocolDecl *Protocols = dyn_cast<ObjCForwardProtocolDecl>(D))
     return MakeCXCursor(Protocols->protocol_begin()[index], TU);
   
@@ -4545,16 +4546,16 @@ class AnnotateTokensWorker {
   SourceLocation GetTokenLoc(unsigned tokI) {
     return SourceLocation::getFromRawEncoding(Tokens[tokI].int_data[1]);
   }
-  bool isMacroArgToken(unsigned tokI) const {
+  bool isFunctionMacroToken(unsigned tokI) const {
     return Tokens[tokI].int_data[3] != 0;
   }
-  SourceLocation getMacroArgLoc(unsigned tokI) const {
+  SourceLocation getFunctionMacroTokenLoc(unsigned tokI) const {
     return SourceLocation::getFromRawEncoding(Tokens[tokI].int_data[3]);
   }
 
   void annotateAndAdvanceTokens(CXCursor, RangeComparisonResult, SourceRange);
-  void annotateAndAdvanceMacroArgTokens(CXCursor, RangeComparisonResult,
-                                        SourceRange);
+  void annotateAndAdvanceFunctionMacroTokens(CXCursor, RangeComparisonResult,
+                                             SourceRange);
 
 public:
   AnnotateTokensWorker(AnnotateTokensData &annotated,
@@ -4618,8 +4619,8 @@ void AnnotateTokensWorker::annotateAndAdvanceTokens(CXCursor updateC,
                                                SourceRange range) {
   while (MoreTokens()) {
     const unsigned I = NextToken();
-    if (isMacroArgToken(I))
-      return annotateAndAdvanceMacroArgTokens(updateC, compResult, range);
+    if (isFunctionMacroToken(I))
+      return annotateAndAdvanceFunctionMacroTokens(updateC, compResult, range);
 
     SourceLocation TokLoc = GetTokenLoc(I);
     if (LocationCompare(SrcMgr, TokLoc, range) == compResult) {
@@ -4632,10 +4633,12 @@ void AnnotateTokensWorker::annotateAndAdvanceTokens(CXCursor updateC,
 }
 
 /// \brief Special annotation handling for macro argument tokens.
-void AnnotateTokensWorker::annotateAndAdvanceMacroArgTokens(CXCursor updateC,
+void AnnotateTokensWorker::annotateAndAdvanceFunctionMacroTokens(
+                                               CXCursor updateC,
                                                RangeComparisonResult compResult,
                                                SourceRange range) {
-  assert(isMacroArgToken(NextToken()) &&
+  assert(MoreTokens());
+  assert(isFunctionMacroToken(NextToken()) &&
          "Should be called only for macro arg tokens");
 
   // This works differently than annotateAndAdvanceTokens; because expanded
@@ -4649,8 +4652,8 @@ void AnnotateTokensWorker::annotateAndAdvanceMacroArgTokens(CXCursor updateC,
   bool atLeastOneCompFail = false;
   
   unsigned I = NextToken();
-  for (; isMacroArgToken(I); ++I) {
-    SourceLocation TokLoc = getMacroArgLoc(I);
+  for (; I < NumTokens && isFunctionMacroToken(I); ++I) {
+    SourceLocation TokLoc = getFunctionMacroTokenLoc(I);
     if (TokLoc.isFileID())
       continue; // not macro arg token, it's parens or comma.
     if (LocationCompare(SrcMgr, TokLoc, range) == compResult) {
@@ -4900,7 +4903,7 @@ public:
       if (!SM.isBeforeInTranslationUnit(tokLoc, macroRange.getEnd()))
         break;
 
-      setMacroArgExpandedLoc(CurIdx, SM.getMacroArgExpandedLocation(tokLoc));
+      setFunctionMacroTokenLoc(CurIdx, SM.getMacroArgExpandedLocation(tokLoc));
     }
 
     if (CurIdx == NumTokens)
@@ -4914,7 +4917,7 @@ private:
     return SourceLocation::getFromRawEncoding(Tokens[tokI].int_data[1]);
   }
 
-  void setMacroArgExpandedLoc(unsigned tokI, SourceLocation loc) {
+  void setFunctionMacroTokenLoc(unsigned tokI, SourceLocation loc) {
     // The third field is reserved and currently not used. Use it here
     // to mark macro arg expanded tokens with their expanded locations.
     Tokens[tokI].int_data[3] = loc.getRawEncoding();

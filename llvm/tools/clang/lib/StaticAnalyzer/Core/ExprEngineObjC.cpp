@@ -13,6 +13,7 @@
 
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ExprEngine.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/ObjCMessage.h"
 #include "clang/Analysis/Support/SaveAndRestore.h"
 
 using namespace clang;
@@ -142,7 +143,6 @@ void ExprEngine::VisitObjCMessage(const ObjCMessage &msg,
     
     ExplodedNode *Pred = *DI;
     bool RaisesException = false;
-    unsigned oldSize = dstEval.size();
     SaveAndRestore<bool> OldSink(Builder->BuildSinks);
     SaveOr OldHasGen(Builder->hasGeneratedNode);
     
@@ -225,15 +225,55 @@ void ExprEngine::VisitObjCMessage(const ObjCMessage &msg,
       // Dispatch to plug-in transfer function.
       evalObjCMessage(dstEval, msg, Pred, Pred->getState());
     }
-    
-    // Handle the case where no nodes where generated.  Auto-generate that
-    // contains the updated state if we aren't generating sinks.
-    if (!Builder->BuildSinks && dstEval.size() == oldSize &&
-        !Builder->hasGeneratedNode)
-      MakeNode(dstEval, msg.getOriginExpr(), Pred, Pred->getState());
+
+    assert(Builder->BuildSinks || Builder->hasGeneratedNode);
   }
   
   // Finally, perform the post-condition check of the ObjCMessageExpr and store
   // the created nodes in 'Dst'.
   getCheckerManager().runCheckersForPostObjCMessage(Dst, dstEval, msg, *this);
 }
+
+void ExprEngine::evalObjCMessage(ExplodedNodeSet &Dst, const ObjCMessage &msg, 
+                                 ExplodedNode *Pred,
+                                 const ProgramState *state) {
+  assert (Builder && "StmtNodeBuilder must be defined.");
+
+  // First handle the return value.
+  SVal ReturnValue = UnknownVal();
+
+  // Some method families have known return values.
+  switch (msg.getMethodFamily()) {
+  default:
+    break;
+  case OMF_autorelease:
+  case OMF_retain:
+  case OMF_self: {
+    // These methods return their receivers.
+    const Expr *ReceiverE = msg.getInstanceReceiver();
+    if (ReceiverE)
+      ReturnValue = state->getSVal(ReceiverE);
+    break;
+  }
+  }
+
+  // If we failed to figure out the return value, use a conjured value instead.
+  if (ReturnValue.isUnknown()) {
+    SValBuilder &SVB = getSValBuilder();
+    QualType ResultTy = msg.getResultType(getContext());
+    unsigned Count = Builder->getCurrentBlockCount();
+    const Expr *CurrentE = cast<Expr>(currentStmt);
+    ReturnValue = SVB.getConjuredSymbolVal(NULL, CurrentE, ResultTy, Count);
+  }
+
+  // Bind the return value.
+  state = state->BindExpr(currentStmt, ReturnValue);
+
+  // Invalidate the arguments (and the receiver)
+  const LocationContext *LC = Pred->getLocationContext();
+  state = invalidateArguments(state, CallOrObjCMessage(msg, state), LC);
+
+  // And create the new node.
+  MakeNode(Dst, msg.getOriginExpr(), Pred, state);
+}
+

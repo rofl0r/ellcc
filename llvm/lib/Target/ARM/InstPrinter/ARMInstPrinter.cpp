@@ -146,7 +146,7 @@ void ARMInstPrinter::printInst(const MCInst *MI, raw_ostream &O) {
     return;
   }
 
-  if (Opcode == ARM::tLDMIA || Opcode == ARM::tSTMIA) {
+  if (Opcode == ARM::tLDMIA) {
     bool Writeback = true;
     unsigned BaseReg = MI->getOperand(0).getReg();
     for (unsigned i = 3; i < MI->getNumOperands(); ++i) {
@@ -154,12 +154,7 @@ void ARMInstPrinter::printInst(const MCInst *MI, raw_ostream &O) {
         Writeback = false;
     }
 
-    if (Opcode == ARM::tLDMIA)
-      O << "\tldm";
-    else if (Opcode == ARM::tSTMIA)
-      O << "\tstm";
-    else
-      llvm_unreachable("Unknown opcode!");
+    O << "\tldm";
 
     printPredicateOperand(MI, 1, O);
     O << '\t' << getRegisterName(BaseReg);
@@ -173,6 +168,7 @@ void ARMInstPrinter::printInst(const MCInst *MI, raw_ostream &O) {
   if (Opcode == ARM::tMOVr && MI->getOperand(0).getReg() == ARM::R8 &&
       MI->getOperand(1).getReg() == ARM::R8) {
     O << "\tnop";
+    printPredicateOperand(MI, 2, O);
     return;
   }
 
@@ -450,7 +446,9 @@ void ARMInstPrinter::printAddrMode5Operand(const MCInst *MI, unsigned OpNum,
 
   O << "[" << getRegisterName(MO1.getReg());
 
-  if (unsigned ImmOffs = ARM_AM::getAM5Offset(MO2.getImm())) {
+  unsigned ImmOffs = ARM_AM::getAM5Offset(MO2.getImm());
+  unsigned Op = ARM_AM::getAM5Op(MO2.getImm());
+  if (ImmOffs || Op == ARM_AM::sub) {
     O << ", #"
       << ARM_AM::getAddrOpcStr(ARM_AM::getAM5Op(MO2.getImm()))
       << ImmOffs * 4;

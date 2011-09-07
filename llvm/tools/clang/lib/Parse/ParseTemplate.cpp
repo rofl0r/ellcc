@@ -27,10 +27,12 @@ Decl *
 Parser::ParseDeclarationStartingWithTemplate(unsigned Context,
                                              SourceLocation &DeclEnd,
                                              AccessSpecifier AS) {
-  if (Tok.is(tok::kw_template) && NextToken().isNot(tok::less))
+  ObjCDeclContextSwitch ObjCDC(*this);
+  
+  if (Tok.is(tok::kw_template) && NextToken().isNot(tok::less)) {
     return ParseExplicitInstantiation(SourceLocation(), ConsumeToken(),
-                                      DeclEnd);
-
+                                           DeclEnd);
+  }
   return ParseTemplateDeclarationOrSpecialization(Context, DeclEnd, AS);
 }
 

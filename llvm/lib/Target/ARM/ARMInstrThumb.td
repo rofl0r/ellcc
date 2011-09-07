@@ -78,8 +78,17 @@ def t_adrlabel : Operand<i32> {
 }
 
 // Scaled 4 immediate.
-def t_imm_s4 : Operand<i32> {
+def t_imm0_1020s4_asmoperand: AsmOperandClass { let Name = "Imm0_1020s4"; }
+def t_imm0_1020s4 : Operand<i32> {
   let PrintMethod = "printThumbS4ImmOperand";
+  let ParserMatchClass = t_imm0_1020s4_asmoperand;
+  let OperandType = "OPERAND_IMMEDIATE";
+}
+
+def t_imm0_508s4_asmoperand: AsmOperandClass { let Name = "Imm0_508s4"; }
+def t_imm0_508s4 : Operand<i32> {
+  let PrintMethod = "printThumbS4ImmOperand";
+  let ParserMatchClass = t_imm0_508s4_asmoperand;
   let OperandType = "OPERAND_IMMEDIATE";
 }
 
@@ -194,6 +203,8 @@ def t_addrmode_is1 : Operand<i32>,
 
 // t_addrmode_sp := sp + imm8 * 4
 //
+// FIXME: This really shouldn't have an explicit SP operand at all. It should
+// be implicit, just like in the instruction encoding itself.
 def t_addrmode_sp_asm_operand : AsmOperandClass { let Name = "MemThumbSPI"; }
 def t_addrmode_sp : Operand<i32>,
                     ComplexPattern<i32, 2, "SelectThumbAddrModeSP", []> {
@@ -303,58 +314,64 @@ def tPICADD : TIt<(outs GPR:$dst), (ins GPR:$lhs, pclabel:$cp), IIC_iALUr, "",
 // This is rematerializable, which is particularly useful for taking the
 // address of locals.
 let isReMaterializable = 1 in
-def tADDrSPi : T1I<(outs tGPR:$dst), (ins GPR:$sp, t_imm_s4:$rhs), IIC_iALUi,
-                   "add\t$dst, $sp, $rhs", []>,
+def tADDrSPi : T1pI<(outs tGPR:$dst), (ins GPRsp:$sp, t_imm0_1020s4:$imm),
+                    IIC_iALUi, "add", "\t$dst, $sp, $imm", []>,
                T1Encoding<{1,0,1,0,1,?}> {
   // A6.2 & A8.6.8
   bits<3> dst;
-  bits<8> rhs;
+  bits<8> imm;
   let Inst{10-8} = dst;
-  let Inst{7-0}  = rhs;
+  let Inst{7-0}  = imm;
   let DecoderMethod = "DecodeThumbAddSpecialReg";
 }
 
 // ADD sp, sp, #<imm7>
-def tADDspi : TIt<(outs GPR:$dst), (ins GPR:$lhs, t_imm_s4:$rhs), IIC_iALUi,
-                  "add\t$dst, $rhs", []>,
+def tADDspi : T1pIt<(outs GPRsp:$Rdn), (ins GPRsp:$Rn, t_imm0_508s4:$imm),
+                     IIC_iALUi, "add", "\t$Rdn, $imm", []>,
               T1Misc<{0,0,0,0,0,?,?}> {
   // A6.2.5 & A8.6.8
-  bits<7> rhs;
-  let Inst{6-0} = rhs;
+  bits<7> imm;
+  let Inst{6-0} = imm;
   let DecoderMethod = "DecodeThumbAddSPImm";
 }
 
 // SUB sp, sp, #<imm7>
 // FIXME: The encoding and the ASM string don't match up.
-def tSUBspi : TIt<(outs GPR:$dst), (ins GPR:$lhs, t_imm_s4:$rhs), IIC_iALUi,
-                  "sub\t$dst, $rhs", []>,
+def tSUBspi : T1pIt<(outs GPRsp:$Rdn), (ins GPRsp:$Rn, t_imm0_508s4:$imm),
+                    IIC_iALUi, "sub", "\t$Rdn, $imm", []>,
               T1Misc<{0,0,0,0,1,?,?}> {
   // A6.2.5 & A8.6.214
-  bits<7> rhs;
-  let Inst{6-0} = rhs;
+  bits<7> imm;
+  let Inst{6-0} = imm;
   let DecoderMethod = "DecodeThumbAddSPImm";
 }
 
+// Can optionally specify SP as a three operand instruction.
+def : tInstAlias<"add${p} sp, sp, $imm",
+                 (tADDspi SP, t_imm0_508s4:$imm, pred:$p)>;
+def : tInstAlias<"sub${p} sp, sp, $imm",
+                 (tSUBspi SP, t_imm0_508s4:$imm, pred:$p)>;
+
 // ADD <Rm>, sp
-def tADDrSP : TIt<(outs GPR:$dst), (ins GPR:$lhs, GPR:$rhs), IIC_iALUr,
-                  "add\t$dst, $rhs", []>,
+def tADDrSP : T1pIt<(outs GPR:$Rdn), (ins GPR:$Rn, GPRsp:$sp), IIC_iALUr,
+                  "add", "\t$Rdn, $sp, $Rn", []>,
               T1Special<{0,0,?,?}> {
   // A8.6.9 Encoding T1
-  bits<4> dst;
-  let Inst{7}   = dst{3};
+  bits<4> Rdn;
+  let Inst{7}   = Rdn{3};
   let Inst{6-3} = 0b1101;
-  let Inst{2-0} = dst{2-0};
+  let Inst{2-0} = Rdn{2-0};
   let DecoderMethod = "DecodeThumbAddSPReg";
 }
 
 // ADD sp, <Rm>
-def tADDspr : TIt<(outs GPR:$dst), (ins GPR:$lhs, GPR:$rhs), IIC_iALUr,
-                  "add\t$dst, $rhs", []>,
+def tADDspr : T1pIt<(outs GPRsp:$Rdn), (ins GPRsp:$Rn, GPR:$Rm), IIC_iALUr,
+                  "add", "\t$Rdn, $Rm", []>,
               T1Special<{0,0,?,?}> {
   // A8.6.9 Encoding T2
-  bits<4> dst;
+  bits<4> Rm;
   let Inst{7} = 1;
-  let Inst{6-3} = dst;
+  let Inst{6-3} = Rm;
   let Inst{2-0} = 0b101;
   let DecoderMethod = "DecodeThumbAddSPReg";
 }
@@ -532,7 +549,7 @@ let isCall = 1, isTerminator = 1, isReturn = 1, isBarrier = 1 in {
 }
 
 
-// A8.6.218 Supervisor Call (Software Interrupt) -- for disassembly only
+// A8.6.218 Supervisor Call (Software Interrupt)
 // A8.6.16 B: Encoding T1
 // If Inst{11-8} == 0b1111 then SEE SVC
 let isCall = 1, Uses = [SP] in
@@ -694,51 +711,52 @@ def tSTRspi : T1pIs<(outs), (ins tGPR:$Rt, t_addrmode_sp:$addr), IIC_iStore_i,
 //  Load / store multiple Instructions.
 //
 
-multiclass thumb_ldst_mult<string asm, InstrItinClass itin,
-                           InstrItinClass itin_upd, bits<6> T1Enc,
-                           bit L_bit, string baseOpc> {
-  def IA :
-    T1I<(outs), (ins tGPR:$Rn, pred:$p, reglist:$regs, variable_ops),
-        itin, !strconcat(asm, "${p}\t$Rn, $regs"), []>,
-       T1Encoding<T1Enc> {
-    bits<3> Rn;
-    bits<8> regs;
-    let Inst{10-8} = Rn;
-    let Inst{7-0}  = regs;
-  }
-
-  def IA_UPD :
-    InstTemplate<AddrModeNone, 0, IndexModeNone, Pseudo, GenericDomain, 
-                 "$Rn = $wb", itin_upd>,
-    PseudoInstExpansion<(!cast<Instruction>(!strconcat(baseOpc, "IA"))
-                       tGPR:$Rn, pred:$p, reglist:$regs)> {
-    let Size = 2;
-    let OutOperandList = (outs GPR:$wb);
-    let InOperandList = (ins GPR:$Rn, pred:$p, reglist:$regs, variable_ops);
-    let Pattern = [];
-    let isCodeGenOnly = 1;
-    let isPseudo = 1;
-    list<Predicate> Predicates = [IsThumb];
-  }
-}
-
 // These require base address to be written back or one of the loaded regs.
 let neverHasSideEffects = 1 in {
 
 let mayLoad = 1, hasExtraDefRegAllocReq = 1 in
-defm tLDM : thumb_ldst_mult<"ldm", IIC_iLoad_m, IIC_iLoad_mu,
-                            {1,1,0,0,1,?}, 1, "tLDM">;
+def tLDMIA : T1I<(outs), (ins tGPR:$Rn, pred:$p, reglist:$regs, variable_ops),
+        IIC_iLoad_m, "ldm${p}\t$Rn, $regs", []>, T1Encoding<{1,1,0,0,1,?}> {
+  bits<3> Rn;
+  bits<8> regs;
+  let Inst{10-8} = Rn;
+  let Inst{7-0}  = regs;
+}
 
+// Writeback version is just a pseudo, as there's no encoding difference.
+// Writeback happens iff the base register is not in the destination register
+// list.
+def tLDMIA_UPD :
+    InstTemplate<AddrModeNone, 0, IndexModeNone, Pseudo, GenericDomain,
+                 "$Rn = $wb", IIC_iLoad_mu>,
+    PseudoInstExpansion<(tLDMIA tGPR:$Rn, pred:$p, reglist:$regs)> {
+  let Size = 2;
+  let OutOperandList = (outs GPR:$wb);
+  let InOperandList = (ins GPR:$Rn, pred:$p, reglist:$regs, variable_ops);
+  let Pattern = [];
+  let isCodeGenOnly = 1;
+  let isPseudo = 1;
+  list<Predicate> Predicates = [IsThumb];
+}
+
+// There is no non-writeback version of STM for Thumb.
 let mayStore = 1, hasExtraSrcRegAllocReq = 1 in
-defm tSTM : thumb_ldst_mult<"stm", IIC_iStore_m, IIC_iStore_mu,
-                            {1,1,0,0,0,?}, 0, "tSTM">;
+def tSTMIA_UPD : Thumb1I<(outs GPR:$wb),
+                         (ins tGPR:$Rn, pred:$p, reglist:$regs, variable_ops),
+                         AddrModeNone, 2, IIC_iStore_mu,
+                         "stm${p}\t$Rn!, $regs", "$Rn = $wb", []>,
+                     T1Encoding<{1,1,0,0,0,?}> {
+  bits<3> Rn;
+  bits<8> regs;
+  let Inst{10-8} = Rn;
+  let Inst{7-0}  = regs;
+}
 
 } // neverHasSideEffects
 
 def : InstAlias<"ldm${p} $Rn!, $regs",
                 (tLDMIA tGPR:$Rn, pred:$p, reglist:$regs)>,
         Requires<[IsThumb, IsThumb1Only]>;
-
 
 let mayLoad = 1, Uses = [SP], Defs = [SP], hasExtraDefRegAllocReq = 1 in
 def tPOP : T1I<(outs), (ins pred:$p, reglist:$regs, variable_ops),
@@ -1017,9 +1035,8 @@ def tMOVi8 : T1sI<(outs tGPR:$Rd), (ins imm0_255:$imm8), IIC_iMOVi,
 }
 // Because we have an explicit tMOVSr below, we need an alias to handle
 // the immediate "movs" form here. Blech.
-def : InstAlias <"movs $Rdn, $imm",
-                 (tMOVi8 tGPR:$Rdn, CPSR, imm0_255:$imm, 14, 0)>,
-        Requires<[IsThumb]>;
+def : tInstAlias <"movs $Rdn, $imm",
+                 (tMOVi8 tGPR:$Rdn, CPSR, imm0_255:$imm, 14, 0)>;
 
 // A7-73: MOV(2) - mov setting flag.
 
@@ -1061,9 +1078,8 @@ def tMUL :                      // A8.6.105 T1
   let AsmMatchConverter = "cvtThumbMultiply";
 }
 
-def : InstAlias<"mul${s}${p} $Rdm, $Rn", (tMUL tGPR:$Rdm, s_cc_out:$s, tGPR:$Rn,
-                                               pred:$p)>,
-          Requires<[IsThumb]>;
+def :tInstAlias<"mul${s}${p} $Rdm, $Rn", (tMUL tGPR:$Rdm, s_cc_out:$s, tGPR:$Rn,
+                                               pred:$p)>;
 
 // Move inverse register
 def tMVN :                      // A8.6.107
@@ -1115,9 +1131,8 @@ def tRSB :                      // A8.6.141
                "rsb", "\t$Rd, $Rn, #0",
                [(set tGPR:$Rd, (ineg tGPR:$Rn))]>;
 
-def : InstAlias<"neg${s}${p} $Rd, $Rm",
-                (tRSB tGPR:$Rd, s_cc_out:$s, tGPR:$Rm, pred:$p)>,
-        Requires<[IsThumb]>;
+def : tInstAlias<"neg${s}${p} $Rd, $Rm",
+                 (tRSB tGPR:$Rd, s_cc_out:$s, tGPR:$Rm, pred:$p)>;
 
 // Subtract with carry register
 let Uses = [CPSR] in
@@ -1149,8 +1164,6 @@ def tSUBrr :                    // A8.6.212
                 IIC_iALUr,
                 "sub", "\t$Rd, $Rn, $Rm",
                 [(set tGPR:$Rd, (sub tGPR:$Rn, tGPR:$Rm))]>;
-
-// TODO: A7-96: STMIA - store multiple.
 
 // Sign-extend byte
 def tSXTB :                     // A8.6.222

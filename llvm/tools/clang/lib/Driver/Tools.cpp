@@ -677,6 +677,14 @@ void Clang::AddARMTargetArgs(const ArgList &Args,
     CmdArgs.push_back("-arm-darwin-use-movt=0");
 #endif
   }
+
+  // Setting -mno-global-merge disables the codegen global merge pass. Setting 
+  // -mglobal-merge has no effect as the pass is enabled by default.
+  if (Arg *A = Args.getLastArg(options::OPT_mglobal_merge,
+                               options::OPT_mno_global_merge)) {
+    if (A->getOption().matches(options::OPT_mno_global_merge))
+      CmdArgs.push_back("-mno-global-merge");
+  }
 }
 
 void Clang::AddMBlazeTargetArgs(const ArgList &Args,
@@ -1780,8 +1788,10 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
       StackProtectorLevel = 1;
     else if (A->getOption().matches(options::OPT_fstack_protector_all))
       StackProtectorLevel = 2;
-  } else
-    StackProtectorLevel = getToolChain().GetDefaultStackProtectorLevel();
+  } else {
+    StackProtectorLevel =
+      getToolChain().GetDefaultStackProtectorLevel(KernelOrKext);
+  }
   if (StackProtectorLevel) {
     CmdArgs.push_back("-stack-protector");
     CmdArgs.push_back(Args.MakeArgString(Twine(StackProtectorLevel)));
@@ -1881,10 +1891,11 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
                    options::OPT_fno_borland_extensions, false))
     CmdArgs.push_back("-fborland-extensions");
 
-  // -fno-delayed-template-parsing is default.
+  // -fno-delayed-template-parsing is default, except for Windows where MSVC STL
+  // needs it.
   if (Args.hasFlag(options::OPT_fdelayed_template_parsing,
                    options::OPT_fno_delayed_template_parsing,
-                   false))
+                   getToolChain().getTriple().getOS() == llvm::Triple::Win32))
     CmdArgs.push_back("-fdelayed-template-parsing");
 
   // -fgnu-keywords default varies depending on language; only pass if
@@ -1979,18 +1990,12 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
       }
     }
 
-    // FIXME: Don't expose -fobjc-default-synthesize-properties as a top-level
-    // driver flag yet.  This feature is still under active development
-    // and shouldn't be exposed as a user visible feature (which may change).
-    // Clang still supports this as a -cc1 option for development and testing.
-#if 0
     // -fobjc-default-synthesize-properties=0 is default.
     if (Args.hasFlag(options::OPT_fobjc_default_synthesize_properties,
                      options::OPT_fno_objc_default_synthesize_properties,
                      getToolChain().IsObjCDefaultSynthPropertiesDefault())) {
       CmdArgs.push_back("-fobjc-default-synthesize-properties");
     }
-#endif
   }
 
   // Allow -fno-objc-arr to trump -fobjc-arr/-fobjc-arc.
@@ -2559,103 +2564,121 @@ void darwin::CC1::RemoveCC1UnsupportedArgs(ArgStringList &CmdArgs) const {
        it != ie;) {
 
     StringRef Option = *it;
+    bool RemoveOption = false;
 
-    // We only remove warning options.
-    if (!Option.startswith("-W")) {
-      ++it;
+    // Remove -faltivec
+    if (Option.equals("-faltivec")) {
+      it = CmdArgs.erase(it);
+      ie = CmdArgs.end();
       continue;
     }
 
-    if (Option.startswith("-Wno-"))
-      Option = Option.substr(5);
-    else
-      Option = Option.substr(2);
-
-    bool RemoveOption = llvm::StringSwitch<bool>(Option)
-      .Case("address-of-temporary", true)
-      .Case("ambiguous-member-template", true)
-      .Case("analyzer-incompatible-plugin", true)
-      .Case("array-bounds", true)
-      .Case("array-bounds-pointer-arithmetic", true)
-      .Case("bind-to-temporary-copy", true)
-      .Case("bitwise-op-parentheses", true)
-      .Case("bool-conversions", true)
-      .Case("builtin-macro-redefined", true)
-      .Case("c++-hex-floats", true)
-      .Case("c++0x-compat", true)
-      .Case("c++0x-extensions", true)
-      .Case("c++0x-narrowing", true)
-      .Case("c++0x-static-nonintegral-init", true)
-      .Case("conditional-uninitialized", true)
-      .Case("constant-conversion", true)
-      .Case("CFString-literal", true)
-      .Case("constant-logical-operand", true)
-      .Case("custom-atomic-properties", true)
-      .Case("default-arg-special-member", true)
-      .Case("delegating-ctor-cycles", true)
-      .Case("delete-non-virtual-dtor", true)
-      .Case("deprecated-implementations", true)
-      .Case("deprecated-writable-strings", true)
-      .Case("distributed-object-modifiers", true)
-      .Case("duplicate-method-arg", true)
-      .Case("dynamic-class-memaccess", true)
-      .Case("enum-compare", true)
-      .Case("exit-time-destructors", true)
-      .Case("gnu", true)
-      .Case("gnu-designator", true)
-      .Case("header-hygiene", true)
-      .Case("idiomatic-parentheses", true)
-      .Case("ignored-qualifiers", true)
-      .Case("implicit-atomic-properties", true)
-      .Case("incompatible-pointer-types", true)
-      .Case("incomplete-implementation", true)
-      .Case("initializer-overrides", true)
-      .Case("invalid-noreturn", true)
-      .Case("invalid-token-paste", true)
-      .Case("literal-conversion", true)
-      .Case("literal-range", true)
-      .Case("local-type-template-args", true)
-      .Case("logical-op-parentheses", true)
-      .Case("method-signatures", true)
-      .Case("microsoft", true)
-      .Case("mismatched-tags", true)
-      .Case("missing-method-return-type", true)
-      .Case("non-pod-varargs", true)
-      .Case("nonfragile-abi2", true)
-      .Case("null-arithmetic", true)
-      .Case("null-dereference", true)
-      .Case("out-of-line-declaration", true)
-      .Case("overriding-method-mismatch", true)
-      .Case("readonly-setter-attrs", true)
-      .Case("return-stack-address", true)
-      .Case("self-assign", true)
-      .Case("semicolon-before-method-body", true)
-      .Case("sentinel", true)
-      .Case("shift-overflow", true)
-      .Case("shift-sign-overflow", true)
-      .Case("sign-conversion", true)
-      .Case("sizeof-array-argument", true)
-      .Case("sizeof-pointer-memaccess", true)
-      .Case("string-compare", true)
-      .Case("super-class-method-mismatch", true)
-      .Case("tautological-compare", true)
-      .Case("typedef-redefinition", true)
-      .Case("typename-missing", true)
-      .Case("undefined-reinterpret-cast", true)
-      .Case("unknown-warning-option", true)
-      .Case("unnamed-type-template-args", true)
-      .Case("unneeded-internal-declaration", true)
-      .Case("unneeded-member-function", true)
-      .Case("unused-comparison", true)
-      .Case("unused-exception-parameter", true)
-      .Case("unused-member-function", true)
-      .Case("unused-result", true)
-      .Case("vector-conversions", true)
-      .Case("vla", true)
-      .Case("used-but-marked-unused", true)
-      .Case("weak-vtables", true)
-      .Default(false);
-
+    // Handle machine specific options.
+    if (Option.startswith("-m")) {
+      RemoveOption = llvm::StringSwitch<bool>(Option)
+        .Case("-mthumb", true)
+        .Case("-mno-thumb", true)
+        .Case("-mno-fused-madd", true)
+        .Case("-mlong-branch", true)
+        .Case("-mlongcall", true)
+        .Case("-mcpu=G4", true)
+        .Case("-mcpu=G5", true)
+        .Default(false);
+    }
+    
+    // Handle warning options.
+    if (Option.startswith("-W")) {
+      // Remove -W/-Wno- to reduce the number of cases.
+      if (Option.startswith("-Wno-"))
+        Option = Option.substr(5);
+      else
+        Option = Option.substr(2);
+      
+      RemoveOption = llvm::StringSwitch<bool>(Option)
+        .Case("address-of-temporary", true)
+        .Case("ambiguous-member-template", true)
+        .Case("analyzer-incompatible-plugin", true)
+        .Case("array-bounds", true)
+        .Case("array-bounds-pointer-arithmetic", true)
+        .Case("bind-to-temporary-copy", true)
+        .Case("bitwise-op-parentheses", true)
+        .Case("bool-conversions", true)
+        .Case("builtin-macro-redefined", true)
+        .Case("c++-hex-floats", true)
+        .Case("c++0x-compat", true)
+        .Case("c++0x-extensions", true)
+        .Case("c++0x-narrowing", true)
+        .Case("c++0x-static-nonintegral-init", true)
+        .Case("conditional-uninitialized", true)
+        .Case("constant-conversion", true)
+        .Case("CFString-literal", true)
+        .Case("constant-logical-operand", true)
+        .Case("custom-atomic-properties", true)
+        .Case("default-arg-special-member", true)
+        .Case("delegating-ctor-cycles", true)
+        .Case("delete-non-virtual-dtor", true)
+        .Case("deprecated-implementations", true)
+        .Case("deprecated-writable-strings", true)
+        .Case("distributed-object-modifiers", true)
+        .Case("duplicate-method-arg", true)
+        .Case("dynamic-class-memaccess", true)
+        .Case("enum-compare", true)
+        .Case("exit-time-destructors", true)
+        .Case("gnu", true)
+        .Case("gnu-designator", true)
+        .Case("header-hygiene", true)
+        .Case("idiomatic-parentheses", true)
+        .Case("ignored-qualifiers", true)
+        .Case("implicit-atomic-properties", true)
+        .Case("incompatible-pointer-types", true)
+        .Case("incomplete-implementation", true)
+        .Case("initializer-overrides", true)
+        .Case("invalid-noreturn", true)
+        .Case("invalid-token-paste", true)
+        .Case("literal-conversion", true)
+        .Case("literal-range", true)
+        .Case("local-type-template-args", true)
+        .Case("logical-op-parentheses", true)
+        .Case("method-signatures", true)
+        .Case("microsoft", true)
+        .Case("mismatched-tags", true)
+        .Case("missing-method-return-type", true)
+        .Case("non-pod-varargs", true)
+        .Case("nonfragile-abi2", true)
+        .Case("null-arithmetic", true)
+        .Case("null-dereference", true)
+        .Case("out-of-line-declaration", true)
+        .Case("overriding-method-mismatch", true)
+        .Case("readonly-setter-attrs", true)
+        .Case("return-stack-address", true)
+        .Case("self-assign", true)
+        .Case("semicolon-before-method-body", true)
+        .Case("sentinel", true)
+        .Case("shift-overflow", true)
+        .Case("shift-sign-overflow", true)
+        .Case("sign-conversion", true)
+        .Case("sizeof-array-argument", true)
+        .Case("sizeof-pointer-memaccess", true)
+        .Case("string-compare", true)
+        .Case("super-class-method-mismatch", true)
+        .Case("tautological-compare", true)
+        .Case("typedef-redefinition", true)
+        .Case("typename-missing", true)
+        .Case("undefined-reinterpret-cast", true)
+        .Case("unknown-warning-option", true)
+        .Case("unnamed-type-template-args", true)
+        .Case("unneeded-internal-declaration", true)
+        .Case("unneeded-member-function", true)
+        .Case("unused-comparison", true)
+        .Case("unused-exception-parameter", true)
+        .Case("unused-member-function", true)
+        .Case("unused-result", true)
+        .Case("vector-conversions", true)
+        .Case("vla", true)
+        .Case("used-but-marked-unused", true)
+        .Case("weak-vtables", true)
+        .Default(false);
+    } // if (Option.startswith("-W"))
     if (RemoveOption) {
       it = CmdArgs.erase(it);
       ie = CmdArgs.end();
@@ -3064,7 +3087,7 @@ void darwin::Compile::ConstructJob(Compilation &C, const JobAction &JA,
     // NOTE: gcc uses a temp .s file for this, but there doesn't seem
     // to be a good reason.
     const char *TmpPath = C.getArgs().MakeArgString(
-      D.GetTemporaryPath("s"));
+      D.GetTemporaryPath("cc", "s"));
     C.addTempFile(TmpPath);
     CmdArgs.push_back(TmpPath);
 
@@ -3206,7 +3229,7 @@ void darwin::Link::AddLinkArgs(Compilation &C,
   // dsymutil step.
   if (Version[0] >= 116 && D.IsUsingLTO(Args)) {
     const char *TmpPath = C.getArgs().MakeArgString(
-      D.GetTemporaryPath(types::getTypeTempSuffix(types::TY_Object)));
+      D.GetTemporaryPath("cc", types::getTypeTempSuffix(types::TY_Object)));
     C.addTempFile(TmpPath);
     CmdArgs.push_back("-object_path_lto");
     CmdArgs.push_back(TmpPath);
@@ -3586,6 +3609,26 @@ void darwin::Dsymutil::ConstructJob(Compilation &C, const JobAction &JA,
 
   const char *Exec =
     Args.MakeArgString(getToolChain().GetProgramPath("dsymutil"));
+  C.addCommand(new Command(JA, *this, Exec, CmdArgs));
+}
+
+void darwin::VerifyDebug::ConstructJob(Compilation &C, const JobAction &JA,
+				       const InputInfo &Output,
+				       const InputInfoList &Inputs,
+				       const ArgList &Args,
+				       const char *LinkingOutput) const {
+  ArgStringList CmdArgs;
+  CmdArgs.push_back("--verify");
+
+  assert(Inputs.size() == 1 && "Unable to handle multiple inputs.");
+  const InputInfo &Input = Inputs[0];
+  assert(Input.isFilename() && "Unexpected verify input");
+
+  // Grabbing the output of the earlier dsymutil run.
+  CmdArgs.push_back(Input.getFilename());
+
+  const char *Exec =
+    Args.MakeArgString(getToolChain().GetProgramPath("dwarfdump"));
   C.addCommand(new Command(JA, *this, Exec, CmdArgs));
 }
 

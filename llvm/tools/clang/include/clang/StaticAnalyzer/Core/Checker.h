@@ -262,10 +262,10 @@ class RegionChanges {
   _checkRegionChanges(void *checker,
                       const ProgramState *state,
                       const StoreManager::InvalidatedSymbols *invalidated,
-                      const MemRegion * const *Begin,
-                      const MemRegion * const *End) {
+                      ArrayRef<const MemRegion *> Explicits,
+                      ArrayRef<const MemRegion *> Regions) {
     return ((const CHECKER *)checker)->checkRegionChanges(state, invalidated,
-                                                          Begin, End);
+                                                          Explicits, Regions);
   }
   template <typename CHECKER>
   static bool _wantsRegionChangeUpdate(void *checker,
@@ -338,6 +338,10 @@ public:
 class CheckerBase : public ProgramPointTag {
 public:
   StringRef getTagDescription() const;
+
+  /// See CheckerManager::runCheckersForPrintState.
+  virtual void printState(raw_ostream &Out, const ProgramState *State,
+                          const char *NL, const char *Sep) const { }
 };
   
 template <typename CHECK1, typename CHECK2=check::_VoidCheck,
@@ -345,14 +349,18 @@ template <typename CHECK1, typename CHECK2=check::_VoidCheck,
           typename CHECK5=check::_VoidCheck, typename CHECK6=check::_VoidCheck,
           typename CHECK7=check::_VoidCheck, typename CHECK8=check::_VoidCheck,
           typename CHECK9=check::_VoidCheck, typename CHECK10=check::_VoidCheck,
-          typename CHECK11=check::_VoidCheck,typename CHECK12=check::_VoidCheck>
+          typename CHECK11=check::_VoidCheck,typename CHECK12=check::_VoidCheck,
+          typename CHECK13=check::_VoidCheck,typename CHECK14=check::_VoidCheck,
+          typename CHECK15=check::_VoidCheck,typename CHECK16=check::_VoidCheck>
 class Checker;
 
 template <>
 class Checker<check::_VoidCheck, check::_VoidCheck, check::_VoidCheck,
                 check::_VoidCheck, check::_VoidCheck, check::_VoidCheck,
                 check::_VoidCheck, check::_VoidCheck, check::_VoidCheck,
-                check::_VoidCheck, check::_VoidCheck, check::_VoidCheck> 
+                check::_VoidCheck, check::_VoidCheck, check::_VoidCheck,
+                check::_VoidCheck, check::_VoidCheck, check::_VoidCheck,
+                check::_VoidCheck> 
   : public CheckerBase 
 {
 public:
@@ -361,17 +369,20 @@ public:
 
 template <typename CHECK1, typename CHECK2, typename CHECK3, typename CHECK4,
           typename CHECK5, typename CHECK6, typename CHECK7, typename CHECK8,
-          typename CHECK9, typename CHECK10,typename CHECK11,typename CHECK12>
+          typename CHECK9, typename CHECK10,typename CHECK11,typename CHECK12,
+          typename CHECK13,typename CHECK14,typename CHECK15,typename CHECK16>
 class Checker
     : public CHECK1,
       public Checker<CHECK2, CHECK3, CHECK4, CHECK5, CHECK6, CHECK7, CHECK8,
-                       CHECK9, CHECK10, CHECK11, CHECK12> {
+                     CHECK9, CHECK10,CHECK11,CHECK12,CHECK13,CHECK14,CHECK15,
+                     CHECK16> {
 public:
   template <typename CHECKER>
   static void _register(CHECKER *checker, CheckerManager &mgr) {
     CHECK1::_register(checker, mgr);
-    Checker<CHECK2, CHECK3, CHECK4, CHECK5, CHECK6, CHECK7, CHECK8, CHECK9,
-              CHECK10, CHECK11,CHECK12>::_register(checker, mgr);
+    Checker<CHECK2, CHECK3, CHECK4, CHECK5, CHECK6, CHECK7, CHECK8,
+            CHECK9, CHECK10,CHECK11,CHECK12,CHECK13,CHECK14,CHECK15,
+            CHECK16>::_register(checker, mgr);
   }
 };
 
