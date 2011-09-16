@@ -14,7 +14,7 @@
 
 SHELL=/bin/sh
 
-all: ecc arm i386 microblaze ppc ppc64 x86_64 mips
+all: ecc arm i386 microblaze ppc mips x86_64 ppc64
 
 arm i386 microblaze mips nios2 ppc ppc64 sparc x86_64:
 	$(MAKE) clean
@@ -30,7 +30,7 @@ RANLIB=../../../bin/ecc-ranlib
 LDFLAGS=
 
 BIGFILES=-D_FILE_OFFSET_BITS=64
-CFLAGS=-Wall -Winline -O2 -g $(BIGFILES)
+CFLAGS=-Wall -Winline -O2 $(BIGFILES)
 
 # Where you want it installed when you do 'make install'
 PREFIX=/usr/local
